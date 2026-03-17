@@ -1,0 +1,278 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  Vault — Custody-as-a-Service Platform
+  API Gateway + Lambda + SQS + EventBridge
+
+# ---------------------------------------------------------------------------
+# Parameters
+# ---------------------------------------------------------------------------
+Parameters:
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, staging, prod]
+  
+  DatabaseURL:
+    Type: String
+    NoEcho: true
+  
+  RedisURL:
+    Type: String
+    NoEcho: true
+  
+  EthRpcURL:
+    Type: String
+  
+  PolygonRpcURL:
+    Type: String
+  
+  SolanaRpcURL:
+    Type: String
+  
+  BtcRpcURL:
+    Type: String
+  
+  ApiKeySecret:
+    Type: String
+    NoEcho: true
+
+  MasterKeyRef:
+    Type: String
+    Default: "local:dev-master-key"
+
+# ---------------------------------------------------------------------------
+# Globals
+# ---------------------------------------------------------------------------
+Globals:
+  Function:
+    Runtime: provided.al2023
+    Architectures: [arm64]
+    Timeout: 30
+    MemorySize: 256
+    Environment:
+      Variables:
+        ENV: !Ref Environment
+        DATABASE_URL: !Ref DatabaseURL
+        REDIS_URL: !Ref RedisURL
+        ETH_RPC_URL: !Ref EthRpcURL
+        POLYGON_RPC_URL: !Ref PolygonRpcURL
+        SOLANA_RPC_URL: !Ref SolanaRpcURL
+        BTC_RPC_URL: !Ref BtcRpcURL
+        API_KEY_SECRET: !Ref ApiKeySecret
+        MASTER_KEY_REF: !Ref MasterKeyRef
+        WEBHOOK_QUEUE_URL: !Ref WebhookQueue
+        WITHDRAWAL_QUEUE_URL: !Ref WithdrawalQueue
+
+# ---------------------------------------------------------------------------
+# Resources
+# ---------------------------------------------------------------------------
+Resources:
+
+  # =========================================================================
+  # API Gateway
+  # =========================================================================
+  VaultApi:
+    Type: AWS::Serverless::Api
+    Properties:
+      Name: !Sub "vault-api-${Environment}"
+      StageName: !Ref Environment
+      TracingEnabled: true
+      Cors:
+        AllowMethods: "'GET,POST,PUT,DELETE,OPTIONS'"
+        AllowHeaders: "'Content-Type,X-API-Key,X-API-Signature,X-API-Timestamp'"
+        AllowOrigin: "'*'"
+
+  # =========================================================================
+  # Lambda Functions
+  # =========================================================================
+
+  # --- API Handler (all HTTP routes) ---
+  ApiFunction:
+    Type: AWS::Serverless::Function
+    Metadata:
+      BuildMethod: go1.x
+    Properties:
+      FunctionName: !Sub "vault-api-${Environment}"
+      Handler: bootstrap
+      CodeUri: .
+      Timeout: 29  # API Gateway has 30s limit
+      MemorySize: 512
+      Policies:
+        - SQSSendMessagePolicy:
+            QueueName: !GetAtt WebhookQueue.QueueName
+        - SQSSendMessagePolicy:
+            QueueName: !GetAtt WithdrawalQueue.QueueName
+      Events:
+        CatchAll:
+          Type: Api
+          Properties:
+            RestApiId: !Ref VaultApi
+            Path: /{proxy+}
+            Method: ANY
+        Health:
+          Type: Api
+          Properties:
+            RestApiId: !Ref VaultApi
+            Path: /health
+            Method: GET
+
+  # --- Deposit Scanner (runs every 10s via EventBridge) ---
+  DepositScannerFunction:
+    Type: AWS::Serverless::Function
+    Metadata:
+      BuildMethod: go1.x
+    Properties:
+      FunctionName: !Sub "vault-deposit-scanner-${Environment}"
+      Handler: bootstrap
+      CodeUri: .
+      Timeout: 60
+      MemorySize: 512
+      Environment:
+        Variables:
+          LAMBDA_MODE: deposit_scanner
+      Policies:
+        - SQSSendMessagePolicy:
+            QueueName: !GetAtt WebhookQueue.QueueName
+      Events:
+        ScheduleEth:
+          Type: Schedule
+          Properties:
+            Name: !Sub "vault-scan-eth-${Environment}"
+            Schedule: rate(15 seconds)
+            Input: '{"chain": "eth"}'
+            Enabled: true
+        SchedulePolygon:
+          Type: Schedule
+          Properties:
+            Name: !Sub "vault-scan-polygon-${Environment}"
+            Schedule: rate(5 seconds)
+            Input: '{"chain": "polygon"}'
+            Enabled: true
+        ScheduleSolana:
+          Type: Schedule
+          Properties:
+            Name: !Sub "vault-scan-sol-${Environment}"
+            Schedule: rate(5 seconds)
+            Input: '{"chain": "sol"}'
+            Enabled: true
+        ScheduleBitcoin:
+          Type: Schedule
+          Properties:
+            Name: !Sub "vault-scan-btc-${Environment}"
+            Schedule: rate(1 minute)
+            Input: '{"chain": "btc"}'
+            Enabled: true
+
+  # --- Webhook Delivery Worker ---
+  WebhookWorkerFunction:
+    Type: AWS::Serverless::Function
+    Metadata:
+      BuildMethod: go1.x
+    Properties:
+      FunctionName: !Sub "vault-webhook-worker-${Environment}"
+      Handler: bootstrap
+      CodeUri: .
+      Timeout: 30
+      MemorySize: 256
+      Environment:
+        Variables:
+          LAMBDA_MODE: webhook_worker
+      Events:
+        SQSEvent:
+          Type: SQS
+          Properties:
+            Queue: !GetAtt WebhookQueue.Arn
+            BatchSize: 5
+            FunctionResponseTypes:
+              - ReportBatchItemFailures
+
+  # --- Withdrawal Processor ---
+  WithdrawalWorkerFunction:
+    Type: AWS::Serverless::Function
+    Metadata:
+      BuildMethod: go1.x
+    Properties:
+      FunctionName: !Sub "vault-withdrawal-worker-${Environment}"
+      Handler: bootstrap
+      CodeUri: .
+      Timeout: 60
+      MemorySize: 512
+      Environment:
+        Variables:
+          LAMBDA_MODE: withdrawal_worker
+      Policies:
+        - SQSSendMessagePolicy:
+            QueueName: !GetAtt WebhookQueue.QueueName
+      Events:
+        SQSEvent:
+          Type: SQS
+          Properties:
+            Queue: !GetAtt WithdrawalQueue.Arn
+            BatchSize: 1
+            FunctionResponseTypes:
+              - ReportBatchItemFailures
+
+  # =========================================================================
+  # SQS Queues
+  # =========================================================================
+
+  # --- Webhook Delivery Queue ---
+  WebhookQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub "vault-webhooks-${Environment}"
+      VisibilityTimeout: 60
+      MessageRetentionPeriod: 86400         # 24 hours
+      ReceiveMessageWaitTimeSeconds: 20     # long polling
+      RedrivePolicy:
+        deadLetterTargetArn: !GetAtt WebhookDLQ.Arn
+        maxReceiveCount: 10                 # 10 retries then DLQ
+
+  WebhookDLQ:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub "vault-webhooks-dlq-${Environment}"
+      MessageRetentionPeriod: 1209600       # 14 days
+
+  # --- Withdrawal Processing Queue ---
+  WithdrawalQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub "vault-withdrawals-${Environment}"
+      VisibilityTimeout: 120                # 2 min (signing + broadcast can be slow)
+      MessageRetentionPeriod: 86400
+      ReceiveMessageWaitTimeSeconds: 20
+      RedrivePolicy:
+        deadLetterTargetArn: !GetAtt WithdrawalDLQ.Arn
+        maxReceiveCount: 3                  # fewer retries — idempotency key prevents double-spend
+
+  WithdrawalDLQ:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub "vault-withdrawals-dlq-${Environment}"
+      MessageRetentionPeriod: 1209600
+
+# ---------------------------------------------------------------------------
+# Outputs
+# ---------------------------------------------------------------------------
+Outputs:
+  ApiEndpoint:
+    Description: API Gateway endpoint URL
+    Value: !Sub "https://${VaultApi}.execute-api.${AWS::Region}.amazonaws.com/${Environment}/"
+  
+  WebhookQueueURL:
+    Description: Webhook SQS Queue URL
+    Value: !Ref WebhookQueue
+  
+  WebhookDLQURL:
+    Description: Webhook Dead Letter Queue URL
+    Value: !Ref WebhookDLQ
+  
+  WithdrawalQueueURL:
+    Description: Withdrawal SQS Queue URL
+    Value: !Ref WithdrawalQueue
+  
+  WithdrawalDLQURL:
+    Description: Withdrawal Dead Letter Queue URL
+    Value: !Ref WithdrawalDLQ
