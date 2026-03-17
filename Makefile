@@ -1,93 +1,413 @@
-.PHONY: build deploy local invoke-scan test clean
+.PHONY: help build clean deploy deploy-guided delete validate local test test-coverage test-race test-verbose lint fmt vet security migrate migrate-down migrate-status db-reset db-seed docker-up docker-down docker-logs docker-build docker-test ecr-login ecr-push logs-api logs-scanner logs-webhook logs-withdrawal dlq-check dlq-replay-webhooks dlq-replay-withdrawals ping env-info
 
-# ---------------------------------------------------------------------------
-# SAM CLI
-# ---------------------------------------------------------------------------
+# =============================================================================
+# Configuration
+# =============================================================================
 
-build:
+# Default environment
+ENV ?= dev
+
+# Load environment-specific .env file
+ifeq ($(ENV),prod)
+  -include .env.prod
+  STACK_NAME = vault-prod
+else ifeq ($(ENV),staging)
+  -include .env.staging
+  STACK_NAME = vault-staging
+else
+  -include .env.dev
+  STACK_NAME = vault-dev
+endif
+
+# Docker configuration
+DOCKER_COMPOSE = docker-compose
+DOCKER_IMAGE_NAME = vault-service
+DOCKER_TAG ?= latest
+
+# AWS configuration
+AWS_REGION ?= us-east-1
+AWS_ACCOUNT_ID := $(shell aws sts get-caller-identity --query Account --output text 2>/dev/null)
+ECR_REGISTRY := $(AWS_ACCOUNT_ID).dkr.ecr.$(AWS_REGION).amazonaws.com
+ECR_IMAGE := $(ECR_REGISTRY)/$(DOCKER_IMAGE_NAME):$(DOCKER_TAG)
+
+# SAM configuration
+S3_FLAG := $(if $(S3_BUCKET),--s3-bucket $(S3_BUCKET),--resolve-s3)
+
+# Parameter overrides for SAM deployment
+PARAMETER_OVERRIDES = \
+	Environment=$(ENVIRONMENT) \
+	DatabaseURL=$(DATABASE_URL) \
+	RedisURL=$(REDIS_URL) \
+	EthRpcURL=$(ETH_RPC_URL) \
+	PolygonRpcURL=$(POLYGON_RPC_URL) \
+	SolanaRpcURL=$(SOLANA_RPC_URL) \
+	BtcRpcURL=$(BTC_RPC_URL) \
+	ApiKeySecret=$(API_KEY_SECRET) \
+	MasterKeyRef=$(MASTER_KEY_REF)
+
+# =============================================================================
+# Help
+# =============================================================================
+
+help: ## Show this help message
+	@echo "╔══════════════════════════════════════════════════════════════╗"
+	@echo "║                  Vault Service - Makefile                   ║"
+	@echo "╚══════════════════════════════════════════════════════════════╝"
+	@echo ""
+	@echo "📦 Build Commands:"
+	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; /^build/ {printf "  \033[36m%-20s\033[0m %s\n", $$1, $$2}'
+	@echo ""
+	@echo "🚀 Deployment Commands:"
+	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; /^deploy|^delete|^validate/ {printf "  \033[36m%-20s\033[0m %s\n", $$1, $$2}'
+	@echo ""
+	@echo "🧪 Testing Commands:"
+	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; /^test/ {printf "  \033[36m%-20s\033[0m %s\n", $$1, $$2}'
+	@echo ""
+	@echo "🐳 Docker Commands:"
+	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; /^docker/ {printf "  \033[36m%-20s\033[0m %s\n", $$1, $$2}'
+	@echo ""
+	@echo "💾 Database Commands:"
+	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; /^migrate|^db-/ {printf "  \033[36m%-20s\033[0m %s\n", $$1, $$2}'
+	@echo ""
+	@echo "📊 Monitoring Commands:"
+	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; /^logs|^dlq|^ping/ {printf "  \033[36m%-20s\033[0m %s\n", $$1, $$2}'
+	@echo ""
+	@echo "🔧 Utility Commands:"
+	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; /^lint|^fmt|^vet|^security|^env-info|^clean/ {printf "  \033[36m%-20s\033[0m %s\n", $$1, $$2}'
+	@echo ""
+	@echo "💡 Examples:"
+	@echo "  make docker-up              # Start local development environment"
+	@echo "  make test-coverage          # Run tests with coverage report"
+	@echo "  make deploy ENV=prod        # Deploy to production"
+	@echo "  make logs-api               # Tail API Lambda logs"
+	@echo ""
+
+# =============================================================================
+# Build Commands
+# =============================================================================
+
+build: ## Build Lambda function for deployment
+	@echo "🔨 Building Lambda function..."
 	sam build
+	@echo "✅ Build complete"
 
-deploy: build
-	sam deploy --guided
+build-lambda: ## Build Lambda binary for arm64
+	@echo "🔨 Building Lambda binary for arm64..."
+	CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -ldflags="-s -w" -o bootstrap main.go
+	zip function.zip bootstrap
+	@echo "✅ Lambda binary built: function.zip"
 
-deploy-ci: build
-	sam deploy --no-confirm-changeset --no-fail-on-empty-changeset
+clean: ## Clean build artifacts
+	@echo "🧹 Cleaning build artifacts..."
+	rm -rf .aws-sam/
+	rm -f bootstrap function.zip
+	go clean -testcache
+	@echo "✅ Clean complete"
 
-# Local dev: emulate API Gateway + Lambda
-local: build
-	sam local start-api --warm-containers EAGER
+# =============================================================================
+# Deployment Commands
+# =============================================================================
 
-# Invoke scanner manually
-invoke-scan:
+deploy: build ## Deploy to AWS using SAM (uses ENV variable)
+	@echo "🚀 Deploying to $(ENV) environment..."
+	@echo "Stack: $(STACK_NAME)"
+	sam deploy \
+		--stack-name $(STACK_NAME) \
+		--parameter-overrides "$(PARAMETER_OVERRIDES)" \
+		--capabilities CAPABILITY_IAM \
+		$(S3_FLAG) \
+		--no-confirm-changeset \
+		--no-fail-on-empty-changeset
+	@echo "✅ Deployment complete"
+
+deploy-guided: build ## Deploy with guided prompts (first time setup)
+	@echo "🚀 Running guided deployment..."
+	sam deploy --guided \
+		--stack-name $(STACK_NAME) \
+		--parameter-overrides "$(PARAMETER_OVERRIDES)" \
+		--capabilities CAPABILITY_IAM \
+		$(S3_FLAG)
+
+delete: ## Delete CloudFormation stack
+	@echo "⚠️  Deleting stack: $(STACK_NAME)"
+	sam delete --stack-name $(STACK_NAME) --no-prompts
+	@echo "✅ Stack deleted"
+
+validate: ## Validate SAM template
+	@echo "✅ Validating SAM template..."
+	sam validate
+
+# =============================================================================
+# Local Development Commands
+# =============================================================================
+
+local: build ## Run API locally with SAM (uses warm containers)
+	@echo "🔥 Starting local API with warm containers..."
+	sam local start-api --warm-containers EAGER --env-vars env.json
+
+invoke-scanner: ## Invoke deposit scanner locally
+	@echo "🔍 Invoking deposit scanner (ETH)..."
 	sam local invoke DepositScannerFunction -e '{"chain": "eth"}'
 
-invoke-scan-remote:
-	aws lambda invoke --function-name vault-deposit-scanner-dev \
+invoke-scanner-remote: ## Invoke deposit scanner on AWS
+	@echo "🔍 Invoking remote deposit scanner (ETH)..."
+	aws lambda invoke --function-name vault-deposit-scanner-$(ENV) \
 		--payload '{"chain": "eth"}' /dev/stdout
 
-# ---------------------------------------------------------------------------
-# Database
-# ---------------------------------------------------------------------------
+# =============================================================================
+# Testing Commands
+# =============================================================================
 
-migrate:
-	psql $(DATABASE_URL) < database/migrations/001_init.sql
+test: ## Run all tests
+	@echo "🧪 Running tests..."
+	go test ./... -v -count=1
 
-migrate-prod:
-	psql $(PROD_DATABASE_URL) < database/migrations/001_init.sql
+test-coverage: ## Run tests with coverage report
+	@echo "📊 Running tests with coverage..."
+	go test ./... -coverprofile=coverage.out -count=1
+	go tool cover -html=coverage.out
+	@echo "✅ Coverage report generated: coverage.out"
 
-# ---------------------------------------------------------------------------
-# Testing
-# ---------------------------------------------------------------------------
+test-race: ## Run tests with race detector
+	@echo "🏁 Running tests with race detector..."
+	go test ./... -race -count=1
 
-test:
-	go test ./... -v -race -count=1
+test-verbose: ## Run tests with verbose output
+	@echo "🔍 Running tests (verbose)..."
+	go test ./... -v -count=1
 
-lint:
-	golangci-lint run ./...
+test-unit: ## Run unit tests only (exclude integration tests)
+	@echo "🧪 Running unit tests..."
+	go test ./... -short -v -count=1
 
-# ---------------------------------------------------------------------------
-# Monitoring
-# ---------------------------------------------------------------------------
+test-integration: ## Run integration tests only
+	@echo "🔗 Running integration tests..."
+	@TEST_DATABASE_URL=$(DATABASE_URL) go test ./... -run Integration -v -count=1
 
-logs-api:
-	sam logs -n VaultApiFunction --stack-name vault --tail
+# =============================================================================
+# Code Quality Commands
+# =============================================================================
 
-logs-scanner:
-	sam logs -n DepositScannerFunction --stack-name vault --tail
+lint: ## Run golangci-lint
+	@echo "🔍 Running linter..."
+	@if command -v golangci-lint >/dev/null 2>&1; then \
+		golangci-lint run ./...; \
+	else \
+		echo "⚠️  golangci-lint not installed. Install with: go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest"; \
+	fi
 
-logs-webhook:
-	sam logs -n WebhookWorkerFunction --stack-name vault --tail
+fmt: ## Format Go code
+	@echo "✨ Formatting code..."
+	go fmt ./...
+	@echo "✅ Code formatted"
 
-logs-withdrawal:
-	sam logs -n WithdrawalWorkerFunction --stack-name vault --tail
+vet: ## Run go vet
+	@echo "🔍 Running go vet..."
+	go vet ./...
+	@echo "✅ Vet complete"
 
-# Check DLQ depth
-dlq-check:
-	@echo "=== Webhook DLQ ==="
+security: ## Run security scan with gosec
+	@echo "🔒 Running security scan..."
+	@if command -v gosec >/dev/null 2>&1; then \
+		gosec ./...; \
+	else \
+		echo "⚠️  gosec not installed. Install with: go install github.com/securego/gosec/v2/cmd/gosec@latest"; \
+	fi
+
+# =============================================================================
+# Docker Commands (Local Development)
+# =============================================================================
+
+docker-up: ## Start local development environment (PostgreSQL + Redis)
+	@echo "🐳 Starting local development environment..."
+	$(DOCKER_COMPOSE) up -d
+	@echo "⏳ Waiting for services to be healthy..."
+	@sleep 5
+	@echo "✅ Development environment ready!"
+	@echo "   PostgreSQL: localhost:5432"
+	@echo "   Redis: localhost:6379"
+	@echo "   PgAdmin: http://localhost:5050"
+
+docker-down: ## Stop local development environment
+	@echo "🛑 Stopping local development environment..."
+	$(DOCKER_COMPOSE) down
+	@echo "✅ Environment stopped"
+
+docker-down-volumes: ## Stop and remove volumes (WARNING: deletes data)
+	@echo "⚠️  Stopping environment and removing volumes..."
+	$(DOCKER_COMPOSE) down -v
+	@echo "✅ Environment stopped and volumes removed"
+
+docker-logs: ## View logs from all containers
+	$(DOCKER_COMPOSE) logs -f
+
+docker-logs-postgres: ## View PostgreSQL logs
+	$(DOCKER_COMPOSE) logs -f postgres
+
+docker-logs-redis: ## View Redis logs
+	$(DOCKER_COMPOSE) logs -f redis
+
+docker-build: ## Build Docker image for vault service
+	@echo "🐳 Building Docker image: $(DOCKER_IMAGE_NAME):$(DOCKER_TAG)..."
+	docker build -t $(DOCKER_IMAGE_NAME):$(DOCKER_TAG) .
+	@echo "✅ Image built: $(DOCKER_IMAGE_NAME):$(DOCKER_TAG)"
+
+docker-test: docker-build ## Build and run Docker container for testing
+	@echo "🧪 Running Docker container for testing..."
+	docker run --rm \
+		-p 8080:8080 \
+		--env-file .env.dev \
+		-e DATABASE_URL=postgres://vault:vault@host.docker.internal:5432/vault?sslmode=disable \
+		-e REDIS_URL=redis://host.docker.internal:6379 \
+		$(DOCKER_IMAGE_NAME):$(DOCKER_TAG)
+
+docker-shell: ## Open shell in PostgreSQL container
+	@echo "🐚 Opening PostgreSQL shell..."
+	$(DOCKER_COMPOSE) exec postgres psql -U vault -d vault
+
+docker-redis-cli: ## Open Redis CLI
+	@echo "🐚 Opening Redis CLI..."
+	$(DOCKER_COMPOSE) exec redis redis-cli
+
+# =============================================================================
+# Database Commands
+# =============================================================================
+
+migrate: ## Run database migrations
+	@echo "📦 Running database migrations..."
+	@if [ -z "$(DATABASE_URL)" ]; then \
+		echo "⚠️  DATABASE_URL not set. Using default..."; \
+		psql postgres://vault:vault@localhost:5432/vault < database/migrations/001_init.sql; \
+	else \
+		psql $(DATABASE_URL) < database/migrations/001_init.sql; \
+	fi
+	@echo "✅ Migrations complete"
+
+migrate-down: ## Rollback database migrations
+	@echo "⚠️  Rolling back migrations..."
+	@echo "Manual rollback required - drop tables or restore from backup"
+
+migrate-status: ## Check migration status
+	@echo "📊 Checking database status..."
+	@psql $(DATABASE_URL) -c "\dt"
+
+db-reset: docker-down-volumes docker-up migrate ## Reset database (WARNING: deletes all data)
+	@echo "✅ Database reset complete"
+
+db-seed: ## Seed database with test data
+	@echo "🌱 Seeding database..."
+	@echo "TODO: Create seed script in database/seeds/"
+
+# =============================================================================
+# ECR Commands
+# =============================================================================
+
+ecr-login: ## Login to AWS ECR
+	@echo "🔐 Logging into AWS ECR..."
+	@aws ecr get-login-password --region $(AWS_REGION) | docker login --username AWS --password-stdin $(ECR_REGISTRY)
+	@echo "✅ Logged in to ECR"
+
+ecr-create-repo: ## Create ECR repository
+	@echo "📦 Creating ECR repository: $(DOCKER_IMAGE_NAME)..."
+	@aws ecr describe-repositories --repository-names $(DOCKER_IMAGE_NAME) 2>/dev/null || \
+	aws ecr create-repository \
+		--repository-name $(DOCKER_IMAGE_NAME) \
+		--image-scanning-configuration scanOnPush=true \
+		--encryption-configuration encryptionType=AES256
+	@echo "✅ ECR repository ready"
+
+ecr-push: docker-build ecr-login ## Build and push Docker image to ECR
+	@echo "📤 Pushing image to ECR..."
+	docker tag $(DOCKER_IMAGE_NAME):$(DOCKER_TAG) $(ECR_IMAGE)
+	docker push $(ECR_IMAGE)
+	@echo "✅ Image pushed: $(ECR_IMAGE)"
+
+# =============================================================================
+# Monitoring Commands
+# =============================================================================
+
+logs-api: ## Tail API Lambda logs
+	sam logs -n ApiFunction --stack-name $(STACK_NAME) --tail
+
+logs-scanner: ## Tail deposit scanner logs
+	sam logs -n DepositScannerFunction --stack-name $(STACK_NAME) --tail
+
+logs-webhook: ## Tail webhook worker logs
+	sam logs -n WebhookWorkerFunction --stack-name $(STACK_NAME) --tail
+
+logs-withdrawal: ## Tail withdrawal worker logs
+	sam logs -n WithdrawalWorkerFunction --stack-name $(STACK_NAME) --tail
+
+dlq-check: ## Check DLQ message counts
+	@echo "═══════════════════════════════════════"
+	@echo "📊 Checking Dead Letter Queues"
+	@echo "═══════════════════════════════════════"
+	@echo "Webhook DLQ:"
 	@aws sqs get-queue-attributes \
-		--queue-url $$(aws sqs get-queue-url --queue-name vault-webhooks-dlq-dev --query QueueUrl --output text) \
+		--queue-url $$(aws sqs get-queue-url --queue-name vault-webhooks-dlq-$(ENV) --query QueueUrl --output text) \
 		--attribute-names ApproximateNumberOfMessages \
-		--query 'Attributes.ApproximateNumberOfMessages' --output text
-	@echo "=== Withdrawal DLQ ==="
+		--query 'Attributes.ApproximateNumberOfMessages' --output text || echo "0"
+	@echo ""
+	@echo "Withdrawal DLQ:"
 	@aws sqs get-queue-attributes \
-		--queue-url $$(aws sqs get-queue-url --queue-name vault-withdrawals-dlq-dev --query QueueUrl --output text) \
+		--queue-url $$(aws sqs get-queue-url --queue-name vault-withdrawals-dlq-$(ENV) --query QueueUrl --output text) \
 		--attribute-names ApproximateNumberOfMessages \
-		--query 'Attributes.ApproximateNumberOfMessages' --output text
+		--query 'Attributes.ApproximateNumberOfMessages' --output text || echo "0"
+	@echo "═══════════════════════════════════════"
 
-# Replay DLQ messages back to main queue
-dlq-replay-webhooks:
+dlq-replay-webhooks: ## Replay webhook DLQ messages back to main queue
+	@echo "♻️  Replaying webhook DLQ messages..."
 	aws sqs start-message-move-task \
-		--source-arn $$(aws sqs get-queue-attributes --queue-url vault-webhooks-dlq-dev --attribute-names QueueArn --query Attributes.QueueArn --output text) \
-		--destination-arn $$(aws sqs get-queue-attributes --queue-url vault-webhooks-dev --attribute-names QueueArn --query Attributes.QueueArn --output text)
+		--source-arn $$(aws sqs get-queue-attributes --queue-url $$(aws sqs get-queue-url --queue-name vault-webhooks-dlq-$(ENV) --query QueueUrl --output text) --attribute-names QueueArn --query Attributes.QueueArn --output text) \
+		--destination-arn $$(aws sqs get-queue-attributes --queue-url $$(aws sqs get-queue-url --queue-name vault-webhooks-$(ENV) --query QueueUrl --output text) --attribute-names QueueArn --query Attributes.QueueArn --output text)
+	@echo "✅ Replay initiated"
 
-# ---------------------------------------------------------------------------
-# Cleanup
-# ---------------------------------------------------------------------------
+dlq-replay-withdrawals: ## Replay withdrawal DLQ messages back to main queue
+	@echo "♻️  Replaying withdrawal DLQ messages..."
+	aws sqs start-message-move-task \
+		--source-arn $$(aws sqs get-queue-attributes --queue-url $$(aws sqs get-queue-url --queue-name vault-withdrawals-dlq-$(ENV) --query QueueUrl --output text) --attribute-names QueueArn --query Attributes.QueueArn --output text) \
+		--destination-arn $$(aws sqs get-queue-attributes --queue-url $$(aws sqs get-queue-url --queue-name vault-withdrawals-$(ENV) --query QueueUrl --output text) --attribute-names QueueArn --query Attributes.QueueArn --output text)
+	@echo "✅ Replay initiated"
 
-clean:
-	rm -rf .aws-sam/
-	sam delete --stack-name vault --no-prompts
-
-ping:
-	@curl -s $$(aws cloudformation describe-stacks --stack-name vault \
+ping: ## Check API health endpoint
+	@echo "🏓 Pinging API health endpoint..."
+	@curl -s $$(aws cloudformation describe-stacks --stack-name $(STACK_NAME) \
 		--query 'Stacks[0].Outputs[?OutputKey==`ApiEndpoint`].OutputValue' --output text)health | jq .
+
+# =============================================================================
+# Utility Commands
+# =============================================================================
+
+env-info: ## Display current environment configuration
+	@echo "╔══════════════════════════════════════════════════════════════╗"
+	@echo "║              Environment Configuration                       ║"
+	@echo "╚══════════════════════════════════════════════════════════════╝"
+	@echo ""
+	@echo "Environment:        $(ENV)"
+	@echo "Stack Name:         $(STACK_NAME)"
+	@echo "AWS Region:         $(AWS_REGION)"
+	@echo "AWS Account:        $(AWS_ACCOUNT_ID)"
+	@echo ""
+	@echo "Environment Variables:"
+	@echo "  ENVIRONMENT       = $(ENVIRONMENT)"
+	@echo "  DATABASE_URL      = $(DATABASE_URL)"
+	@echo "  REDIS_URL         = $(REDIS_URL)"
+	@echo "  ETH_RPC_URL       = $(ETH_RPC_URL)"
+	@echo "  POLYGON_RPC_URL   = $(POLYGON_RPC_URL)"
+	@echo "  SOLANA_RPC_URL    = $(SOLANA_RPC_URL)"
+	@echo "  BTC_RPC_URL       = $(BTC_RPC_URL)"
+	@echo ""
+
+deps-install: ## Install development dependencies
+	@echo "📦 Installing development dependencies..."
+	go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
+	go install github.com/securego/gosec/v2/cmd/gosec@latest
+	@echo "✅ Dependencies installed"
+
+deps-update: ## Update Go dependencies
+	@echo "🔄 Updating dependencies..."
+	go get -u ./...
+	go mod tidy
+	@echo "✅ Dependencies updated"
+
+.DEFAULT_GOAL := help

@@ -1,0 +1,157 @@
+version: '3.8'
+
+services:
+  # =============================================================================
+  # PostgreSQL Database
+  # =============================================================================
+  postgres:
+    image: postgres:15-alpine
+    container_name: vault-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: vault
+      POSTGRES_PASSWORD: vault
+      POSTGRES_DB: vault
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8"
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./database/migrations:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U vault -d vault"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - vault-network
+
+  # =============================================================================
+  # Redis Cache
+  # =============================================================================
+  redis:
+    image: redis:7-alpine
+    container_name: vault-redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes --requirepass ""
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - vault-network
+
+  # =============================================================================
+  # PgAdmin (Database UI)
+  # =============================================================================
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: vault-pgadmin
+    restart: unless-stopped
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@vault.local
+      PGADMIN_DEFAULT_PASSWORD: admin
+      PGADMIN_CONFIG_SERVER_MODE: 'False'
+      PGADMIN_CONFIG_MASTER_PASSWORD_REQUIRED: 'False'
+    ports:
+      - "5050:80"
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - vault-network
+
+  # =============================================================================
+  # Vault API Service (for local development)
+  # =============================================================================
+  vault-api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: vault-api
+    restart: unless-stopped
+    environment:
+      # Application
+      ENV: dev
+      PORT: 8080
+
+      # Database
+      DATABASE_URL: postgres://vault:vault@postgres:5432/vault?sslmode=disable
+
+      # Redis
+      REDIS_URL: redis://redis:6379
+
+      # RPC Endpoints (use your actual values from .env.dev)
+      ETH_RPC_URL: ${ETH_RPC_URL:-https://eth-mainnet.g.alchemy.com/v2/demo}
+      POLYGON_RPC_URL: ${POLYGON_RPC_URL:-https://polygon-mainnet.g.alchemy.com/v2/demo}
+      SOLANA_RPC_URL: ${SOLANA_RPC_URL:-https://api.mainnet-beta.solana.com}
+      BTC_RPC_URL: ${BTC_RPC_URL:-https://blockstream.info/api}
+
+      # Security
+      API_KEY_SECRET: ${API_KEY_SECRET:-dev-secret-key-change-in-production}
+      MASTER_KEY_REF: ${MASTER_KEY_REF:-local:dev-master-key}
+
+      # SQS Queues (empty for local dev - use in-memory fallback)
+      WEBHOOK_QUEUE_URL: ""
+      WITHDRAWAL_QUEUE_URL: ""
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - vault-network
+    profiles:
+      - api  # Only start with: docker-compose --profile api up
+
+  # =============================================================================
+  # Test Runner (for running tests in Docker)
+  # =============================================================================
+  test-runner:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: builder
+    container_name: vault-test-runner
+    environment:
+      TEST_DATABASE_URL: postgres://vault:vault@postgres:5432/vault_test?sslmode=disable
+      REDIS_URL: redis://redis:6379
+    command: go test ./... -v -race -count=1
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - vault-network
+    profiles:
+      - test  # Only start with: docker-compose --profile test up
+
+# =============================================================================
+# Volumes
+# =============================================================================
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+  pgadmin_data:
+    driver: local
+
+# =============================================================================
+# Networks
+# =============================================================================
+networks:
+  vault-network:
+    driver: bridge

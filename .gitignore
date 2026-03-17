@@ -23,12 +23,20 @@ go.work
 
 # Environment variables
 .env
+.env.dev
+.env.staging
+.env.prod
 .env.local
 .env.*.local
 
 # AWS SAM
 .aws-sam/
 samconfig.toml
+function.zip
+bootstrap
+
+# Docker
+docker-compose.override.yml
 
 # IDE
 .vscode/
