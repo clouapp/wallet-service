@@ -32,16 +32,14 @@ func AntiXSS() http.Middleware {
 
 		// Check query parameters
 		queries := ctx.Request().Queries()
-		for key, vals := range queries {
-			for _, val := range vals {
-				if security.IsDangerousHTML(val) {
-					ctx.Request().AbortWithStatus(http.StatusForbidden)
-					ctx.Response().Json(http.StatusForbidden, http.Json{
-						"error":   "Possible XSS attack detected",
-						"message": fmt.Sprintf("Dangerous content detected in query param: %s", key),
-					})
-					return
-				}
+		for key, val := range queries {
+			if security.IsDangerousHTML(val) {
+				ctx.Request().AbortWithStatus(http.StatusForbidden)
+				ctx.Response().Json(http.StatusForbidden, http.Json{
+					"error":   "Possible XSS attack detected",
+					"message": fmt.Sprintf("Dangerous content detected in query param: %s", key),
+				})
+				return
 			}
 		}
 

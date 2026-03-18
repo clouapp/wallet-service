@@ -138,13 +138,17 @@ func (s *Service) markAttempt(ctx context.Context, eventID, errMsg string) {
 
 func (s *Service) CreateConfig(ctx context.Context, url, secret string, events []string) (*models.WebhookConfig, error) {
 	cfg := &models.WebhookConfig{
-		ID: uuid.New(), URL: url, Secret: secret,
-		Events: pgArray(events), IsActive: true, CreatedAt: time.Now().UTC(),
+		ID:       uuid.New(),
+		URL:      url,
+		Secret:   secret,
+		Events:   pgArray(events),
+		IsActive: true,
+		// CreatedAt handled by orm.Model
 	}
 	if _, err := s.db.ExecContext(ctx, `
-		INSERT INTO webhook_configs (id, url, secret, events, is_active, created_at)
-		VALUES ($1, $2, $3, $4, $5, $6)`,
-		cfg.ID, cfg.URL, cfg.Secret, cfg.Events, cfg.IsActive, cfg.CreatedAt); err != nil {
+		INSERT INTO webhook_configs (id, url, secret, events, is_active, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5, NOW(), NOW())`,
+		cfg.ID, cfg.URL, cfg.Secret, cfg.Events, cfg.IsActive); err != nil {
 		return nil, err
 	}
 	return cfg, nil

@@ -2,11 +2,9 @@ package withdraw
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
 	"log/slog"
 	"math/big"
-	"time"
 
 	"github.com/google/uuid"
 	"github.com/jmoiron/sqlx"
@@ -68,33 +66,37 @@ func (s *Service) Request(ctx context.Context, req WithdrawRequest) (*models.Tra
 	}
 
 	// 4. Resolve token contract
-	var tokenContract sql.NullString
+	var tokenContract string
 	if req.Asset != adapter.NativeAsset() {
 		t, err := s.registry.FindToken(wallet.Chain, req.Asset)
 		if err != nil {
 			return nil, err
 		}
-		tokenContract = sql.NullString{String: t.Contract, Valid: true}
+		tokenContract = t.Contract
 	}
 
 	// 5. Create transaction record
 	tx := &models.Transaction{
-		ID: uuid.New(), WalletID: wallet.ID,
-		ExternalUserID: req.ExternalUserID, Chain: wallet.Chain,
-		TxType: "withdrawal", ToAddress: req.ToAddress,
-		Amount: req.Amount, Asset: req.Asset,
-		TokenContract: tokenContract,
-		RequiredConfs: int(adapter.RequiredConfirmations()),
+		ID:             uuid.New(),
+		WalletID:       wallet.ID,
+		ExternalUserID: req.ExternalUserID,
+		Chain:          wallet.Chain,
+		TxType:         "withdrawal",
+		ToAddress:      req.ToAddress,
+		Amount:         req.Amount,
+		Asset:          req.Asset,
+		TokenContract:  tokenContract,
+		RequiredConfs:  int(adapter.RequiredConfirmations()),
 		Status:         string(types.TxStatusPending),
-		IdempotencyKey: sql.NullString{String: req.IdempotencyKey, Valid: req.IdempotencyKey != ""},
-		CreatedAt:      time.Now().UTC(),
+		IdempotencyKey: req.IdempotencyKey,
+		// CreatedAt and UpdatedAt handled by orm.Model
 	}
 
 	if _, err := s.db.NamedExecContext(ctx, `
 		INSERT INTO transactions (id, wallet_id, external_user_id, chain, tx_type, to_address,
-			amount, asset, token_contract, required_confs, status, idempotency_key, created_at)
+			amount, asset, token_contract, required_confs, status, idempotency_key, created_at, updated_at)
 		VALUES (:id, :wallet_id, :external_user_id, :chain, :tx_type, :to_address,
-			:amount, :asset, :token_contract, :required_confs, :status, :idempotency_key, :created_at)`, tx); err != nil {
+			:amount, :asset, :token_contract, :required_confs, :status, :idempotency_key, NOW(), NOW())`, tx); err != nil {
 		return nil, fmt.Errorf("insert tx: %w", err)
 	}
 
@@ -111,8 +113,8 @@ func (s *Service) Request(ctx context.Context, req WithdrawRequest) (*models.Tra
 		Asset:          req.Asset,
 		ExternalUserID: req.ExternalUserID,
 	}
-	if tokenContract.Valid {
-		sqsMsg.TokenContract = tokenContract.String
+	if tokenContract != "" {
+		sqsMsg.TokenContract = tokenContract
 	}
 	if err := s.sqs.SendWithdrawal(ctx, sqsMsg); err != nil {
 		// SQS send failed — mark tx as failed

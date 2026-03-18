@@ -2,7 +2,6 @@ package deposit
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
 	"log/slog"
 	"time"
@@ -144,35 +143,41 @@ func (s *Service) processTransfer(ctx context.Context, chainID string, adapter t
 
 	// 4. Determine asset
 	asset := adapter.NativeAsset()
-	var tokenContract sql.NullString
+	var tokenContract string
 	if transfer.Token != nil {
 		asset = transfer.Token.Symbol
-		tokenContract = sql.NullString{String: transfer.Token.Contract, Valid: true}
+		tokenContract = transfer.Token.Contract
 	}
 
 	// 5. Insert transaction
 	tx := &models.Transaction{
-		ID: uuid.New(), AddressID: &addr.ID, WalletID: addr.WalletID,
-		ExternalUserID: addr.ExternalUserID, Chain: chainID,
-		TxType:  "deposit",
-		TxHash:  sql.NullString{String: transfer.TxHash, Valid: true},
-		FromAddress: sql.NullString{String: transfer.From, Valid: transfer.From != ""},
-		ToAddress: transfer.To, Amount: transfer.Amount.String(),
-		Asset: asset, TokenContract: tokenContract,
-		Confirmations: 0, RequiredConfs: int(adapter.RequiredConfirmations()),
-		Status: string(types.TxStatusPending),
-		BlockNumber: sql.NullInt64{Int64: int64(transfer.BlockNumber), Valid: true},
-		BlockHash:   sql.NullString{String: transfer.BlockHash, Valid: transfer.BlockHash != ""},
-		CreatedAt: time.Now().UTC(),
+		ID:             uuid.New(),
+		AddressID:      &addr.ID,
+		WalletID:       addr.WalletID,
+		ExternalUserID: addr.ExternalUserID,
+		Chain:          chainID,
+		TxType:         "deposit",
+		TxHash:         transfer.TxHash,
+		FromAddress:    transfer.From,
+		ToAddress:      transfer.To,
+		Amount:         transfer.Amount.String(),
+		Asset:          asset,
+		TokenContract:  tokenContract,
+		Confirmations:  0,
+		RequiredConfs:  int(adapter.RequiredConfirmations()),
+		Status:         string(types.TxStatusPending),
+		BlockNumber:    int64(transfer.BlockNumber),
+		BlockHash:      transfer.BlockHash,
+		// CreatedAt and UpdatedAt handled by orm.Model
 	}
 
 	if _, err := s.db.NamedExecContext(ctx, `
 		INSERT INTO transactions (id, address_id, wallet_id, external_user_id, chain, tx_type, tx_hash,
 			from_address, to_address, amount, asset, token_contract, confirmations, required_confs,
-			status, block_number, block_hash, created_at)
+			status, block_number, block_hash, created_at, updated_at)
 		VALUES (:id, :address_id, :wallet_id, :external_user_id, :chain, :tx_type, :tx_hash,
 			:from_address, :to_address, :amount, :asset, :token_contract, :confirmations, :required_confs,
-			:status, :block_number, :block_hash, :created_at)`, tx); err != nil {
+			:status, :block_number, :block_hash, NOW(), NOW())`, tx); err != nil {
 		return fmt.Errorf("insert tx: %w", err)
 	}
 
@@ -191,10 +196,10 @@ func (s *Service) updateConfirmations(ctx context.Context, chainID string, adapt
 	}
 
 	for _, tx := range pending {
-		if !tx.BlockNumber.Valid {
+		if tx.BlockNumber == 0 {
 			continue
 		}
-		confs := int(currentBlock) - int(tx.BlockNumber.Int64)
+		confs := int(currentBlock) - int(tx.BlockNumber)
 		if confs < 0 {
 			confs = 0
 		}

@@ -2,9 +2,7 @@ package wallet
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
-	"time"
 
 	"github.com/google/uuid"
 	"github.com/jmoiron/sqlx"
@@ -38,15 +36,19 @@ func (s *Service) CreateWallet(ctx context.Context, chainID, label string) (*mod
 	}
 
 	w := &models.Wallet{
-		ID: uuid.New(), Chain: chainID, Label: label,
-		MasterPubkey: "xpub-placeholder", KeyVaultRef: "kms://master-key",
-		DerivationPath: derivationPath(chainID), AddressIndex: 0,
-		CreatedAt: time.Now().UTC(),
+		ID:             uuid.New(),
+		Chain:          chainID,
+		Label:          label,
+		MasterPubkey:   "xpub-placeholder",
+		KeyVaultRef:    "kms://master-key",
+		DerivationPath: derivationPath(chainID),
+		AddressIndex:   0,
+		// CreatedAt and UpdatedAt handled by orm.Model
 	}
 
 	_, err := s.db.NamedExecContext(ctx, `
-		INSERT INTO wallets (id, chain, label, master_pubkey, key_vault_ref, derivation_path, address_index, created_at)
-		VALUES (:id, :chain, :label, :master_pubkey, :key_vault_ref, :derivation_path, :address_index, :created_at)`, w)
+		INSERT INTO wallets (id, chain, label, master_pubkey, key_vault_ref, derivation_path, address_index, created_at, updated_at)
+		VALUES (:id, :chain, :label, :master_pubkey, :key_vault_ref, :derivation_path, :address_index, NOW(), NOW())`, w)
 	if err != nil {
 		return nil, err
 	}
@@ -93,15 +95,20 @@ func (s *Service) GenerateAddress(ctx context.Context, walletID uuid.UUID, exter
 	}
 
 	addr := &models.Address{
-		ID: uuid.New(), WalletID: walletID, Chain: w.Chain,
-		Address: address, DerivationIndex: idx, ExternalUserID: externalUserID,
-		Metadata: sql.NullString{String: metadata, Valid: metadata != ""},
-		IsActive: true, CreatedAt: time.Now().UTC(),
+		ID:              uuid.New(),
+		WalletID:        walletID,
+		Chain:           w.Chain,
+		Address:         address,
+		DerivationIndex: idx,
+		ExternalUserID:  externalUserID,
+		Metadata:        metadata, // Changed from sql.NullString to string
+		IsActive:        true,
+		// CreatedAt and UpdatedAt handled by orm.Model
 	}
 
 	if _, err := tx.NamedExecContext(ctx, `
-		INSERT INTO addresses (id, wallet_id, chain, address, derivation_index, external_user_id, metadata, is_active, created_at)
-		VALUES (:id, :wallet_id, :chain, :address, :derivation_index, :external_user_id, :metadata, :is_active, :created_at)`, addr); err != nil {
+		INSERT INTO addresses (id, wallet_id, chain, address, derivation_index, external_user_id, metadata, is_active, created_at, updated_at)
+		VALUES (:id, :wallet_id, :chain, :address, :derivation_index, :external_user_id, :metadata, :is_active, NOW(), NOW())`, addr); err != nil {
 		return nil, err
 	}
 
