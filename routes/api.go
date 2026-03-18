@@ -7,21 +7,47 @@ import (
 
 	"github.com/macromarkets/vault/app/http/controllers"
 	"github.com/macromarkets/vault/app/http/middleware"
+	"github.com/macromarkets/vault/docs"
 )
 
 func Api() {
 	// Health check - no auth
-	facades.Route().Get("/health", func(ctx http.Context) http.Response {
-		return ctx.Response().Json(http.StatusOK, http.Json{
-			"status":  "ok",
-			"version": "0.1.0",
-		})
+	facades.Route().Get("/health", controllers.Health)
+
+	// Swagger spec
+	facades.Route().Get("/swagger/doc.json", func(ctx http.Context) http.Response {
+		return ctx.Response().
+			Header("Content-Type", "application/json").
+			String(http.StatusOK, docs.SwaggerInfo.ReadDoc())
 	})
 
-	// Swagger documentation - no auth
-	facades.Route().Get("/swagger/*any", func(ctx http.Context) http.Response {
-		// Swagger will be handled separately
-		return ctx.Response().Success().String("Swagger UI")
+	// Swagger UI (CDN-hosted)
+	facades.Route().Get("/swagger/index.html", func(ctx http.Context) http.Response {
+		html := `<!DOCTYPE html>
+<html>
+<head>
+  <title>Vault API - Swagger UI</title>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="stylesheet" type="text/css" href="https://unpkg.com/swagger-ui-dist@5/swagger-ui.css">
+</head>
+<body>
+<div id="swagger-ui"></div>
+<script src="https://unpkg.com/swagger-ui-dist@5/swagger-ui-bundle.js"></script>
+<script>
+  SwaggerUIBundle({
+    url: "/swagger/doc.json",
+    dom_id: '#swagger-ui',
+    presets: [SwaggerUIBundle.presets.apis, SwaggerUIBundle.SwaggerUIStandalonePreset],
+    layout: "BaseLayout",
+    deepLinking: true
+  })
+</script>
+</body>
+</html>`
+		return ctx.Response().
+			Header("Content-Type", "text/html; charset=utf-8").
+			String(http.StatusOK, html)
 	})
 
 	// API v1 group - authenticated

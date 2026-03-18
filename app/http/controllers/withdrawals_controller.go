@@ -8,7 +8,19 @@ import (
 	"github.com/macromarkets/vault/app/services/withdraw"
 )
 
-// CreateWithdrawal creates a new withdrawal request
+// CreateWithdrawal godoc
+// @Summary      Create a withdrawal
+// @Description  Enqueues a withdrawal request for the given wallet. The transaction is signed and broadcast asynchronously by the withdrawal worker.
+// @Tags         Withdrawals
+// @Accept       json
+// @Produce      json
+// @Security     ApiKeyAuth
+// @Security     SignatureAuth
+// @Param        id    path      string                  true  "Wallet UUID"  format(uuid)
+// @Param        body  body      CreateWithdrawalRequest true  "Withdrawal request"
+// @Success      201   {object}  models.Transaction
+// @Failure      400   {object}  ErrorResponse  "Invalid wallet ID, missing fields, or insufficient funds"
+// @Router       /v1/wallets/{id}/withdrawals [post]
 func CreateWithdrawal(ctx http.Context) http.Response {
 	walletID, err := uuid.Parse(ctx.Request().Route("id"))
 	if err != nil {
@@ -49,4 +61,13 @@ func CreateWithdrawal(ctx http.Context) http.Response {
 		})
 	}
 	return ctx.Response().Json(http.StatusCreated, tx)
+}
+
+// CreateWithdrawalRequest is the request body for creating a withdrawal.
+type CreateWithdrawalRequest struct {
+	ExternalUserID string `json:"external_user_id" example:"user_123"`
+	ToAddress      string `json:"to_address"       example:"0xABCDEF1234567890"`
+	Amount         string `json:"amount"           example:"0.5"`
+	Asset          string `json:"asset"            example:"eth"`
+	IdempotencyKey string `json:"idempotency_key"  example:"wdl_20260317_001"`
 }

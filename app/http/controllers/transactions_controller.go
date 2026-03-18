@@ -9,7 +9,22 @@ import (
 	"github.com/macromarkets/vault/app/container"
 )
 
-// ListTransactions returns paginated list of transactions with optional filters
+// ListTransactions godoc
+// @Summary      List transactions
+// @Description  Returns a paginated list of transactions with optional filters by chain, type, status, or user
+// @Tags         Transactions
+// @Produce      json
+// @Security     ApiKeyAuth
+// @Security     SignatureAuth
+// @Param        chain    query     string  false  "Chain ID filter"        example(eth)
+// @Param        type     query     string  false  "Transaction type"       Enums(deposit, withdrawal)
+// @Param        status   query     string  false  "Transaction status"     Enums(pending, confirmed, failed)
+// @Param        user_id  query     string  false  "External user ID filter"
+// @Param        limit    query     int     false  "Max results (default 50)"  example(50)
+// @Param        offset   query     int     false  "Pagination offset"         example(0)
+// @Success      200      {object}  TransactionListResponse
+// @Failure      500      {object}  ErrorResponse
+// @Router       /v1/transactions [get]
 func ListTransactions(ctx http.Context) http.Response {
 	limit, _ := strconv.Atoi(ctx.Request().Query("limit", "50"))
 	offset, _ := strconv.Atoi(ctx.Request().Query("offset", "0"))
@@ -33,7 +48,18 @@ func ListTransactions(ctx http.Context) http.Response {
 	})
 }
 
-// GetTransaction returns a single transaction by ID
+// GetTransaction godoc
+// @Summary      Get a transaction
+// @Description  Returns a single transaction by its UUID
+// @Tags         Transactions
+// @Produce      json
+// @Security     ApiKeyAuth
+// @Security     SignatureAuth
+// @Param        id   path      string  true  "Transaction UUID"  format(uuid)
+// @Success      200  {object}  models.Transaction
+// @Failure      400  {object}  ErrorResponse  "Invalid UUID"
+// @Failure      404  {object}  ErrorResponse  "Transaction not found"
+// @Router       /v1/transactions/{id} [get]
 func GetTransaction(ctx http.Context) http.Response {
 	id, err := uuid.Parse(ctx.Request().Route("id"))
 	if err != nil {
@@ -50,7 +76,19 @@ func GetTransaction(ctx http.Context) http.Response {
 	return ctx.Response().Success().Json(tx)
 }
 
-// ListUserTransactions returns all transactions for a specific user
+// ListUserTransactions godoc
+// @Summary      List transactions for a user
+// @Description  Returns paginated transactions for a specific external user ID across all chains
+// @Tags         Transactions
+// @Produce      json
+// @Security     ApiKeyAuth
+// @Security     SignatureAuth
+// @Param        external_id  path      string  true   "External user identifier"  example(user_123)
+// @Param        limit        query     int     false  "Max results (default 50)"   example(50)
+// @Param        offset       query     int     false  "Pagination offset"           example(0)
+// @Success      200          {object}  TransactionListResponse
+// @Failure      500          {object}  ErrorResponse
+// @Router       /v1/users/{external_id}/transactions [get]
 func ListUserTransactions(ctx http.Context) http.Response {
 	limit, _ := strconv.Atoi(ctx.Request().Query("limit", "50"))
 	offset, _ := strconv.Atoi(ctx.Request().Query("offset", "0"))

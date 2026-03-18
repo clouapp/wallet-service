@@ -1,4 +1,241 @@
-basePath: /v1
+basePath: /
+definitions:
+  controllers.AddressListResponse:
+    properties:
+      data:
+        items:
+          $ref: '#/definitions/models.Address'
+        type: array
+    type: object
+  controllers.ChainInfo:
+    properties:
+      id:
+        example: eth
+        type: string
+      name:
+        example: Ethereum
+        type: string
+      native_asset:
+        example: eth
+        type: string
+      required_confirmations:
+        example: 12
+        type: integer
+    type: object
+  controllers.ChainListResponse:
+    properties:
+      data:
+        items:
+          $ref: '#/definitions/controllers.ChainInfo'
+        type: array
+    type: object
+  controllers.CreateWalletRequest:
+    properties:
+      chain:
+        example: eth
+        type: string
+      label:
+        example: My Ethereum Wallet
+        type: string
+    type: object
+  controllers.CreateWebhookRequest:
+    properties:
+      events:
+        example:
+        - deposit.confirmed
+        - withdrawal.confirmed
+        items:
+          type: string
+        type: array
+      secret:
+        example: my-webhook-secret
+        type: string
+      url:
+        example: https://example.com/webhook
+        type: string
+    type: object
+  controllers.CreateWithdrawalRequest:
+    properties:
+      amount:
+        example: "0.5"
+        type: string
+      asset:
+        example: eth
+        type: string
+      external_user_id:
+        example: user_123
+        type: string
+      idempotency_key:
+        example: wdl_20260317_001
+        type: string
+      to_address:
+        example: "0xABCDEF1234567890"
+        type: string
+    type: object
+  controllers.ErrorResponse:
+    properties:
+      error:
+        example: something went wrong
+        type: string
+    type: object
+  controllers.GenerateAddressRequest:
+    properties:
+      external_user_id:
+        example: user_123
+        type: string
+      metadata:
+        example: '{"tier":"premium"}'
+        type: string
+    type: object
+  controllers.HealthResponse:
+    properties:
+      status:
+        example: ok
+        type: string
+      version:
+        example: 0.1.0
+        type: string
+    type: object
+  controllers.TransactionListResponse:
+    properties:
+      data:
+        items:
+          $ref: '#/definitions/models.Transaction'
+        type: array
+    type: object
+  controllers.WalletListResponse:
+    properties:
+      data:
+        items:
+          $ref: '#/definitions/models.Wallet'
+        type: array
+    type: object
+  controllers.WebhookConfigListResponse:
+    properties:
+      data:
+        items:
+          $ref: '#/definitions/models.WebhookConfig'
+        type: array
+    type: object
+  github_com_goravel_framework_support_carbon.DateTime:
+    properties:
+      error: {}
+    type: object
+  models.Address:
+    properties:
+      address:
+        type: string
+      chain:
+        type: string
+      created_at:
+        $ref: '#/definitions/github_com_goravel_framework_support_carbon.DateTime'
+      derivation_index:
+        type: integer
+      external_user_id:
+        type: string
+      id:
+        type: string
+      is_active:
+        type: boolean
+      metadata:
+        type: string
+      updated_at:
+        $ref: '#/definitions/github_com_goravel_framework_support_carbon.DateTime'
+      wallet:
+        allOf:
+        - $ref: '#/definitions/models.Wallet'
+        description: Relationship
+      wallet_id:
+        type: string
+    type: object
+  models.Transaction:
+    properties:
+      address:
+        allOf:
+        - $ref: '#/definitions/models.Address'
+        description: Relationships
+      address_id:
+        type: string
+      amount:
+        type: string
+      asset:
+        type: string
+      block_hash:
+        type: string
+      block_number:
+        type: integer
+      chain:
+        type: string
+      confirmations:
+        type: integer
+      confirmed_at:
+        type: string
+      created_at:
+        $ref: '#/definitions/github_com_goravel_framework_support_carbon.DateTime'
+      error_message:
+        type: string
+      external_user_id:
+        type: string
+      fee:
+        type: string
+      from_address:
+        type: string
+      id:
+        type: string
+      idempotency_key:
+        type: string
+      required_confs:
+        type: integer
+      status:
+        type: string
+      to_address:
+        type: string
+      token_contract:
+        type: string
+      tx_hash:
+        type: string
+      tx_type:
+        type: string
+      updated_at:
+        $ref: '#/definitions/github_com_goravel_framework_support_carbon.DateTime'
+      wallet:
+        $ref: '#/definitions/models.Wallet'
+      wallet_id:
+        type: string
+    type: object
+  models.Wallet:
+    properties:
+      address_index:
+        type: integer
+      chain:
+        type: string
+      created_at:
+        $ref: '#/definitions/github_com_goravel_framework_support_carbon.DateTime'
+      derivation_path:
+        type: string
+      id:
+        type: string
+      label:
+        type: string
+      updated_at:
+        $ref: '#/definitions/github_com_goravel_framework_support_carbon.DateTime'
+    type: object
+  models.WebhookConfig:
+    properties:
+      created_at:
+        $ref: '#/definitions/github_com_goravel_framework_support_carbon.DateTime'
+      events:
+        description: comma-separated event types
+        type: string
+      id:
+        type: string
+      is_active:
+        type: boolean
+      updated_at:
+        $ref: '#/definitions/github_com_goravel_framework_support_carbon.DateTime'
+      url:
+        type: string
+    type: object
 host: localhost:8080
 info:
   contact:
@@ -13,55 +250,244 @@ info:
   title: Vault Custody Service API
   version: "1.0"
 paths:
-  /chains:
-    get:
-      description: Get list of all supported blockchain networks
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: List of supported chains
-          schema:
-            additionalProperties: true
-            type: object
-      security:
-      - ApiKeyAuth: []
-      - SignatureAuth: []
-      summary: List supported chains
-      tags:
-      - Chains
   /health:
     get:
-      description: Get API health status
+      description: Returns service status and version
       produces:
       - application/json
       responses:
         "200":
           description: OK
           schema:
-            additionalProperties:
-              type: string
-            type: object
+            $ref: '#/definitions/controllers.HealthResponse'
       summary: Health check
       tags:
       - System
-  /wallets:
+  /v1/addresses/{address}:
     get:
-      description: Get list of all wallets
+      description: Finds a deposit address record by its on-chain address string.
+        Optionally filter by chain.
+      parameters:
+      - description: On-chain address
+        example: '"0xABCDEF1234567890"'
+        in: path
+        name: address
+        required: true
+        type: string
+      - description: Chain ID filter
+        example: '"eth"'
+        in: query
+        name: chain
+        type: string
       produces:
       - application/json
       responses:
         "200":
-          description: List of wallets
+          description: OK
           schema:
-            additionalProperties: true
-            type: object
+            $ref: '#/definitions/models.Address'
+        "400":
+          description: Missing chain parameter
+          schema:
+            $ref: '#/definitions/controllers.ErrorResponse'
+        "404":
+          description: Address not found
+          schema:
+            $ref: '#/definitions/controllers.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      - SignatureAuth: []
+      summary: Look up an address
+      tags:
+      - Addresses
+  /v1/chains:
+    get:
+      description: Returns all supported blockchain networks with their native asset
+        and confirmation requirements
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/controllers.ChainListResponse'
         "500":
-          description: Internal server error
+          description: Internal Server Error
           schema:
-            additionalProperties:
-              type: string
-            type: object
+            $ref: '#/definitions/controllers.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      - SignatureAuth: []
+      summary: List supported chains
+      tags:
+      - Chains
+  /v1/transactions:
+    get:
+      description: Returns a paginated list of transactions with optional filters
+        by chain, type, status, or user
+      parameters:
+      - description: Chain ID filter
+        example: eth
+        in: query
+        name: chain
+        type: string
+      - description: Transaction type
+        enum:
+        - deposit
+        - withdrawal
+        in: query
+        name: type
+        type: string
+      - description: Transaction status
+        enum:
+        - pending
+        - confirmed
+        - failed
+        in: query
+        name: status
+        type: string
+      - description: External user ID filter
+        in: query
+        name: user_id
+        type: string
+      - description: Max results (default 50)
+        example: 50
+        in: query
+        name: limit
+        type: integer
+      - description: Pagination offset
+        example: 0
+        in: query
+        name: offset
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/controllers.TransactionListResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/controllers.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      - SignatureAuth: []
+      summary: List transactions
+      tags:
+      - Transactions
+  /v1/transactions/{id}:
+    get:
+      description: Returns a single transaction by its UUID
+      parameters:
+      - description: Transaction UUID
+        format: uuid
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/models.Transaction'
+        "400":
+          description: Invalid UUID
+          schema:
+            $ref: '#/definitions/controllers.ErrorResponse'
+        "404":
+          description: Transaction not found
+          schema:
+            $ref: '#/definitions/controllers.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      - SignatureAuth: []
+      summary: Get a transaction
+      tags:
+      - Transactions
+  /v1/users/{external_id}/addresses:
+    get:
+      description: Returns all deposit addresses assigned to a specific external user
+        ID across all chains
+      parameters:
+      - description: External user identifier
+        example: '"user_123"'
+        in: path
+        name: external_id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/controllers.AddressListResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/controllers.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      - SignatureAuth: []
+      summary: List addresses for a user
+      tags:
+      - Addresses
+  /v1/users/{external_id}/transactions:
+    get:
+      description: Returns paginated transactions for a specific external user ID
+        across all chains
+      parameters:
+      - description: External user identifier
+        example: user_123
+        in: path
+        name: external_id
+        required: true
+        type: string
+      - description: Max results (default 50)
+        example: 50
+        in: query
+        name: limit
+        type: integer
+      - description: Pagination offset
+        example: 0
+        in: query
+        name: offset
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/controllers.TransactionListResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/controllers.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      - SignatureAuth: []
+      summary: List transactions for a user
+      tags:
+      - Transactions
+  /v1/wallets:
+    get:
+      description: Returns all wallets across all supported chains
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/controllers.WalletListResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/controllers.ErrorResponse'
       security:
       - ApiKeyAuth: []
       - SignatureAuth: []
@@ -71,45 +497,226 @@ paths:
     post:
       consumes:
       - application/json
-      description: Create a new wallet for a specific blockchain
+      description: Creates a new HD wallet for the specified blockchain. Only one
+        wallet per chain is allowed.
       parameters:
       - description: Wallet creation request
         in: body
-        name: request
+        name: body
         required: true
         schema:
-          properties:
-            chain:
-              type: string
-            label:
-              type: string
-          type: object
+          $ref: '#/definitions/controllers.CreateWalletRequest'
       produces:
       - application/json
       responses:
         "201":
-          description: Created wallet
+          description: Created
           schema:
-            additionalProperties: true
-            type: object
+            $ref: '#/definitions/models.Wallet'
         "400":
-          description: Bad request
+          description: Missing or invalid fields
           schema:
-            additionalProperties:
-              type: string
-            type: object
+            $ref: '#/definitions/controllers.ErrorResponse'
         "409":
-          description: Wallet already exists
+          description: Wallet for this chain already exists or chain is unsupported
           schema:
-            additionalProperties:
-              type: string
-            type: object
+            $ref: '#/definitions/controllers.ErrorResponse'
       security:
       - ApiKeyAuth: []
       - SignatureAuth: []
       summary: Create a new wallet
       tags:
       - Wallets
+  /v1/wallets/{id}:
+    get:
+      description: Returns a single wallet by its UUID
+      parameters:
+      - description: Wallet UUID
+        format: uuid
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/models.Wallet'
+        "400":
+          description: Invalid UUID
+          schema:
+            $ref: '#/definitions/controllers.ErrorResponse'
+        "404":
+          description: Wallet not found
+          schema:
+            $ref: '#/definitions/controllers.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      - SignatureAuth: []
+      summary: Get a wallet
+      tags:
+      - Wallets
+  /v1/wallets/{id}/addresses:
+    get:
+      description: Returns all deposit addresses generated for a specific wallet
+      parameters:
+      - description: Wallet UUID
+        format: uuid
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/controllers.AddressListResponse'
+        "400":
+          description: Invalid wallet UUID
+          schema:
+            $ref: '#/definitions/controllers.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/controllers.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      - SignatureAuth: []
+      summary: List wallet addresses
+      tags:
+      - Addresses
+    post:
+      consumes:
+      - application/json
+      description: Derives a new deposit address for a user from the wallet's HD key.
+        Each call produces a unique address.
+      parameters:
+      - description: Wallet UUID
+        format: uuid
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Address generation request
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/controllers.GenerateAddressRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/models.Address'
+        "400":
+          description: Invalid wallet ID or missing fields
+          schema:
+            $ref: '#/definitions/controllers.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/controllers.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      - SignatureAuth: []
+      summary: Generate a deposit address
+      tags:
+      - Addresses
+  /v1/wallets/{id}/withdrawals:
+    post:
+      consumes:
+      - application/json
+      description: Enqueues a withdrawal request for the given wallet. The transaction
+        is signed and broadcast asynchronously by the withdrawal worker.
+      parameters:
+      - description: Wallet UUID
+        format: uuid
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Withdrawal request
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/controllers.CreateWithdrawalRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/models.Transaction'
+        "400":
+          description: Invalid wallet ID, missing fields, or insufficient funds
+          schema:
+            $ref: '#/definitions/controllers.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      - SignatureAuth: []
+      summary: Create a withdrawal
+      tags:
+      - Withdrawals
+  /v1/webhooks:
+    get:
+      description: Returns all registered webhook configurations
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/controllers.WebhookConfigListResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/controllers.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      - SignatureAuth: []
+      summary: List webhooks
+      tags:
+      - Webhooks
+    post:
+      consumes:
+      - application/json
+      description: 'Registers a webhook endpoint to receive event notifications. Supported
+        events: deposit.confirmed, withdrawal.confirmed, withdrawal.failed'
+      parameters:
+      - description: Webhook configuration
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/controllers.CreateWebhookRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/models.WebhookConfig'
+        "400":
+          description: Missing required fields
+          schema:
+            $ref: '#/definitions/controllers.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/controllers.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      - SignatureAuth: []
+      summary: Create a webhook
+      tags:
+      - Webhooks
 securityDefinitions:
   ApiKeyAuth:
     in: header

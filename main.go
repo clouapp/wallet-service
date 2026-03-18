@@ -29,7 +29,7 @@ import (
 // @license.url   https://opensource.org/licenses/MIT
 
 // @host      localhost:8080
-// @BasePath  /v1
+// @BasePath  /
 
 // @securityDefinitions.apikey ApiKeyAuth
 // @in header

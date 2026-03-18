@@ -1,13 +1,26 @@
 package controllers
 
 import (
-	"github.com/goravel/framework/contracts/http"
 	"github.com/google/uuid"
+	"github.com/goravel/framework/contracts/http"
 
 	"github.com/macromarkets/vault/app/container"
 )
 
-// GenerateAddress generates a new deposit address for a wallet
+// GenerateAddress godoc
+// @Summary      Generate a deposit address
+// @Description  Derives a new deposit address for a user from the wallet's HD key. Each call produces a unique address.
+// @Tags         Addresses
+// @Accept       json
+// @Produce      json
+// @Security     ApiKeyAuth
+// @Security     SignatureAuth
+// @Param        id    path      string                  true  "Wallet UUID"  format(uuid)
+// @Param        body  body      GenerateAddressRequest  true  "Address generation request"
+// @Success      201   {object}  models.Address
+// @Failure      400   {object}  ErrorResponse  "Invalid wallet ID or missing fields"
+// @Failure      500   {object}  ErrorResponse
+// @Router       /v1/wallets/{id}/addresses [post]
 func GenerateAddress(ctx http.Context) http.Response {
 	walletID, err := uuid.Parse(ctx.Request().Route("id"))
 	if err != nil {
@@ -46,7 +59,18 @@ func GenerateAddress(ctx http.Context) http.Response {
 	return ctx.Response().Json(http.StatusCreated, addr)
 }
 
-// ListWalletAddresses returns all addresses for a wallet
+// ListWalletAddresses godoc
+// @Summary      List wallet addresses
+// @Description  Returns all deposit addresses generated for a specific wallet
+// @Tags         Addresses
+// @Produce      json
+// @Security     ApiKeyAuth
+// @Security     SignatureAuth
+// @Param        id  path      string  true  "Wallet UUID"  format(uuid)
+// @Success      200  {object}  AddressListResponse
+// @Failure      400  {object}  ErrorResponse  "Invalid wallet UUID"
+// @Failure      500  {object}  ErrorResponse
+// @Router       /v1/wallets/{id}/addresses [get]
 func ListWalletAddresses(ctx http.Context) http.Response {
 	walletID, err := uuid.Parse(ctx.Request().Route("id"))
 	if err != nil {
@@ -65,7 +89,19 @@ func ListWalletAddresses(ctx http.Context) http.Response {
 	})
 }
 
-// LookupAddress looks up an address across all chains or a specific chain
+// LookupAddress godoc
+// @Summary      Look up an address
+// @Description  Finds a deposit address record by its on-chain address string. Optionally filter by chain.
+// @Tags         Addresses
+// @Produce      json
+// @Security     ApiKeyAuth
+// @Security     SignatureAuth
+// @Param        address  path      string  true   "On-chain address"  example("0xABCDEF1234567890")
+// @Param        chain    query     string  false  "Chain ID filter"   example("eth")
+// @Success      200      {object}  models.Address
+// @Failure      400      {object}  ErrorResponse  "Missing chain parameter"
+// @Failure      404      {object}  ErrorResponse  "Address not found"
+// @Router       /v1/addresses/{address} [get]
 func LookupAddress(ctx http.Context) http.Response {
 	address := ctx.Request().Route("address")
 	chainFilter := ctx.Request().Query("chain", "")
@@ -91,7 +127,17 @@ func LookupAddress(ctx http.Context) http.Response {
 	})
 }
 
-// ListUserAddresses returns all addresses for a user
+// ListUserAddresses godoc
+// @Summary      List addresses for a user
+// @Description  Returns all deposit addresses assigned to a specific external user ID across all chains
+// @Tags         Addresses
+// @Produce      json
+// @Security     ApiKeyAuth
+// @Security     SignatureAuth
+// @Param        external_id  path      string  true  "External user identifier"  example("user_123")
+// @Success      200          {object}  AddressListResponse
+// @Failure      500          {object}  ErrorResponse
+// @Router       /v1/users/{external_id}/addresses [get]
 func ListUserAddresses(ctx http.Context) http.Response {
 	addrs, err := container.Get().WalletService.ListUserAddresses(ctx.Context(), ctx.Request().Route("external_id"))
 	if err != nil {
@@ -102,4 +148,10 @@ func ListUserAddresses(ctx http.Context) http.Response {
 	return ctx.Response().Success().Json(http.Json{
 		"data": addrs,
 	})
+}
+
+// GenerateAddressRequest is the request body for generating a deposit address.
+type GenerateAddressRequest struct {
+	ExternalUserID string `json:"external_user_id" example:"user_123"`
+	Metadata       string `json:"metadata"          example:"{\"tier\":\"premium\"}"`
 }

@@ -1,4 +1,4 @@
-.PHONY: help build clean deploy deploy-guided delete validate local test test-coverage test-race test-verbose lint fmt vet security migrate migrate-down migrate-status db-reset db-seed docker-up docker-down docker-logs docker-build docker-test ecr-login ecr-push logs-api logs-scanner logs-webhook logs-withdrawal dlq-check dlq-replay-webhooks dlq-replay-withdrawals ping env-info
+.PHONY: help build clean run dev deploy deploy-guided delete validate local test test-coverage test-race test-verbose lint fmt vet security migrate migrate-rollback migrate-status migrate-fresh db-reset db-seed docker-up docker-down docker-logs docker-build docker-test ecr-login ecr-push logs-api logs-scanner logs-webhook logs-withdrawal dlq-check dlq-replay-webhooks dlq-replay-withdrawals ping env-info swagger-install swagger-generate swagger-fmt deps-install deps-update
 
 # =============================================================================
 # Configuration
@@ -55,27 +55,32 @@ help: ## Show this help message
 	@echo "╚══════════════════════════════════════════════════════════════╝"
 	@echo ""
 	@echo "📦 Build Commands:"
-	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; /^build/ {printf "  \033[36m%-20s\033[0m %s\n", $$1, $$2}'
+	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(firstword $(MAKEFILE_LIST)) | awk 'BEGIN {FS = ":.*?## "}; /^build/ {printf "  \033[36m%-20s\033[0m %s\n", $$1, $$2}'
 	@echo ""
 	@echo "🚀 Deployment Commands:"
-	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; /^deploy|^delete|^validate/ {printf "  \033[36m%-20s\033[0m %s\n", $$1, $$2}'
+	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(firstword $(MAKEFILE_LIST)) | awk 'BEGIN {FS = ":.*?## "}; /^deploy|^delete|^validate/ {printf "  \033[36m%-20s\033[0m %s\n", $$1, $$2}'
 	@echo ""
 	@echo "🧪 Testing Commands:"
-	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; /^test/ {printf "  \033[36m%-20s\033[0m %s\n", $$1, $$2}'
+	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(firstword $(MAKEFILE_LIST)) | awk 'BEGIN {FS = ":.*?## "}; /^test/ {printf "  \033[36m%-20s\033[0m %s\n", $$1, $$2}'
 	@echo ""
 	@echo "🐳 Docker Commands:"
-	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; /^docker/ {printf "  \033[36m%-20s\033[0m %s\n", $$1, $$2}'
+	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(firstword $(MAKEFILE_LIST)) | awk 'BEGIN {FS = ":.*?## "}; /^docker/ {printf "  \033[36m%-20s\033[0m %s\n", $$1, $$2}'
 	@echo ""
 	@echo "💾 Database Commands:"
-	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; /^migrate|^db-/ {printf "  \033[36m%-20s\033[0m %s\n", $$1, $$2}'
+	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(firstword $(MAKEFILE_LIST)) | awk 'BEGIN {FS = ":.*?## "}; /^migrate|^db-/ {printf "  \033[36m%-20s\033[0m %s\n", $$1, $$2}'
 	@echo ""
 	@echo "📊 Monitoring Commands:"
-	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; /^logs|^dlq|^ping/ {printf "  \033[36m%-20s\033[0m %s\n", $$1, $$2}'
+	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(firstword $(MAKEFILE_LIST)) | awk 'BEGIN {FS = ":.*?## "}; /^logs|^dlq|^ping/ {printf "  \033[36m%-20s\033[0m %s\n", $$1, $$2}'
 	@echo ""
 	@echo "🔧 Utility Commands:"
-	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; /^lint|^fmt|^vet|^security|^env-info|^clean/ {printf "  \033[36m%-20s\033[0m %s\n", $$1, $$2}'
+	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(firstword $(MAKEFILE_LIST)) | awk 'BEGIN {FS = ":.*?## "}; /^lint|^fmt|^vet|^security|^env-info|^clean/ {printf "  \033[36m%-20s\033[0m %s\n", $$1, $$2}'
+	@echo ""
+	@echo "🖥️  Local Dev Commands:"
+	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(firstword $(MAKEFILE_LIST)) | awk 'BEGIN {FS = ":.*?## "}; /^run|^dev|^air-install/ {printf "  \033[36m%-20s\033[0m %s\n", $$1, $$2}'
 	@echo ""
 	@echo "💡 Examples:"
+	@echo "  make dev                    # Start API with live reload (Air)"
+	@echo "  make run                    # Start API without live reload"
 	@echo "  make docker-up              # Start local development environment"
 	@echo "  make test-coverage          # Run tests with coverage report"
 	@echo "  make deploy ENV=prod        # Deploy to production"
@@ -99,7 +104,7 @@ build-lambda: ## Build Lambda binary for arm64
 
 clean: ## Clean build artifacts
 	@echo "🧹 Cleaning build artifacts..."
-	rm -rf .aws-sam/
+	rm -rf .aws-sam/ tmp/
 	rm -f bootstrap function.zip
 	go clean -testcache
 	@echo "✅ Clean complete"
@@ -140,6 +145,23 @@ validate: ## Validate SAM template
 # =============================================================================
 # Local Development Commands
 # =============================================================================
+
+run: ## Run API server locally (go run)
+	@echo "🚀 Starting local API server..."
+	@export $$(grep -v '^#' .env.dev | xargs) && APP_KEY=$$(openssl rand -hex 16) go run .
+
+dev: ## Run API server with live reload (requires: go install github.com/air-verse/air@latest)
+	@echo "🔥 Starting API server with live reload (Air)..."
+	@if [ ! -f "$$(go env GOPATH)/bin/air" ]; then \
+		echo "❌ Air not found. Install with: go install github.com/air-verse/air@latest"; \
+		exit 1; \
+	fi
+	@export $$(grep -v '^#' .env.dev | xargs) && APP_KEY=$$(openssl rand -hex 16) $$(go env GOPATH)/bin/air
+
+air-install: ## Install Air live-reload tool
+	@echo "📦 Installing Air..."
+	go install github.com/air-verse/air@latest
+	@echo "✅ Air installed"
 
 local: build ## Run API locally with SAM (uses warm containers)
 	@echo "🔥 Starting local API with warm containers..."
@@ -273,24 +295,6 @@ docker-redis-cli: ## Open Redis CLI
 # Database Commands
 # =============================================================================
 
-migrate: ## Run database migrations
-	@echo "📦 Running database migrations..."
-	@if [ -z "$(DATABASE_URL)" ]; then \
-		echo "⚠️  DATABASE_URL not set. Using default..."; \
-		psql postgres://vault:vault@localhost:5432/vault < database/migrations/001_init.sql; \
-	else \
-		psql $(DATABASE_URL) < database/migrations/001_init.sql; \
-	fi
-	@echo "✅ Migrations complete"
-
-migrate-down: ## Rollback database migrations
-	@echo "⚠️  Rolling back migrations..."
-	@echo "Manual rollback required - drop tables or restore from backup"
-
-migrate-status: ## Check migration status
-	@echo "📊 Checking database status..."
-	@psql $(DATABASE_URL) -c "\dt"
-
 db-reset: docker-down-volumes docker-up migrate ## Reset database (WARNING: deletes all data)
 	@echo "✅ Database reset complete"
 
@@ -417,7 +421,7 @@ swagger-install: ## Install Swagger CLI tool
 
 swagger-generate: ## Generate Swagger documentation
 	@echo "📝 Generating Swagger documentation..."
-	swag init -g main.go --output ./docs
+	swag init -g main.go --output ./docs --parseDependency
 	@echo "✅ Swagger docs generated in ./docs"
 	@echo "   View at: http://localhost:8080/swagger/index.html"
 
@@ -432,18 +436,18 @@ swagger-fmt: ## Format Swagger comments
 
 migrate: ## Run pending database migrations
 	@echo "🔄 Running database migrations..."
-	@go run cmd/migrate/main.go up
+	@export $$(grep -v '^#' .env.dev | xargs) && go run . migrate
 
 migrate-status: ## Show migration status
 	@echo "📊 Checking migration status..."
-	@go run cmd/migrate/main.go status
+	@export $$(grep -v '^#' .env.dev | xargs) && go run . migrate:status
 
 migrate-rollback: ## Rollback last migration batch
 	@echo "⏪ Rolling back migrations..."
-	@go run cmd/migrate/main.go down
+	@export $$(grep -v '^#' .env.dev | xargs) && go run . migrate:rollback
 
 migrate-fresh: ## Drop all tables and re-run migrations
 	@echo "🆕 Dropping tables and running fresh migrations..."
-	@go run cmd/migrate/main.go fresh
+	@export $$(grep -v '^#' .env.dev | xargs) && go run . migrate:fresh
 
 .DEFAULT_GOAL := help

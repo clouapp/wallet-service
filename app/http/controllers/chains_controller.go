@@ -6,7 +6,16 @@ import (
 	"github.com/macromarkets/vault/app/container"
 )
 
-// ListChains returns all supported blockchain networks
+// ListChains godoc
+// @Summary      List supported chains
+// @Description  Returns all supported blockchain networks with their native asset and confirmation requirements
+// @Tags         Chains
+// @Produce      json
+// @Security     ApiKeyAuth
+// @Security     SignatureAuth
+// @Success      200  {object}  ChainListResponse
+// @Failure      500  {object}  ErrorResponse
+// @Router       /v1/chains [get]
 func ListChains(ctx http.Context) http.Response {
 	type info struct {
 		ID            string `json:"id"`
