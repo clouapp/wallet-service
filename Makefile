@@ -426,4 +426,24 @@ swagger-fmt: ## Format Swagger comments
 	swag fmt
 	@echo "✅ Swagger comments formatted"
 
+# =============================================================================
+# Database Migrations (Goravel)
+# =============================================================================
+
+migrate: ## Run pending database migrations
+	@echo "🔄 Running database migrations..."
+	@go run cmd/migrate/main.go up
+
+migrate-status: ## Show migration status
+	@echo "📊 Checking migration status..."
+	@go run cmd/migrate/main.go status
+
+migrate-rollback: ## Rollback last migration batch
+	@echo "⏪ Rolling back migrations..."
+	@go run cmd/migrate/main.go down
+
+migrate-fresh: ## Drop all tables and re-run migrations
+	@echo "🆕 Dropping tables and running fresh migrations..."
+	@go run cmd/migrate/main.go fresh
+
 .DEFAULT_GOAL := help
