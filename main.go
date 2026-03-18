@@ -11,13 +11,55 @@ import (
 	"github.com/aws/aws-lambda-go/lambda"
 	ginadapter "github.com/awslabs/aws-lambda-go-api-proxy/gin"
 	"github.com/gin-gonic/gin"
+	swaggerFiles "github.com/swaggo/files"
+	ginSwagger "github.com/swaggo/gin-swagger"
 
 	"github.com/macromarkets/vault/app/http/controllers"
 	"github.com/macromarkets/vault/app/http/middleware"
 	"github.com/macromarkets/vault/app/providers"
-	"github.com/macromarkets/vault/app/services/queue"
+	_ "github.com/macromarkets/vault/docs" // Import generated swagger docs
 	"github.com/macromarkets/vault/pkg/types"
 )
+
+// @title           Vault Custody Service API
+// @version         1.0
+// @description     Multi-chain cryptocurrency custody service with deposit scanning, withdrawals, and webhooks
+// @termsOfService  http://swagger.io/terms/
+
+// @contact.name   API Support
+// @contact.email  support@vault.dev
+
+// @license.name  MIT
+// @license.url   https://opensource.org/licenses/MIT
+
+// @host      localhost:8080
+// @BasePath  /v1
+
+// @securityDefinitions.apikey ApiKeyAuth
+// @in header
+// @name X-API-Key
+
+// @securityDefinitions.apikey SignatureAuth
+// @in header
+// @name X-API-Signature
+
+// @tag.name Chains
+// @tag.description Operations about blockchain networks
+
+// @tag.name Wallets
+// @tag.description Wallet management operations
+
+// @tag.name Addresses
+// @tag.description Address generation and lookup
+
+// @tag.name Withdrawals
+// @tag.description Withdrawal request operations
+
+// @tag.name Transactions
+// @tag.description Transaction history and details
+
+// @tag.name Webhooks
+// @tag.description Webhook configuration for event notifications
 
 var (
 	ginLambda *ginadapter.GinLambdaV2
@@ -68,6 +110,9 @@ func setupRouter() *gin.Engine {
 		c.JSON(http.StatusOK, gin.H{"status": "ok", "version": "0.1.0"})
 	})
 
+	// Swagger documentation — no auth
+	r.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
+
 	// API v1 — authenticated
 	v1 := r.Group("/v1")
 	v1.Use(middleware.HMACAuth(os.Getenv("API_KEY_SECRET")))
@@ -92,13 +137,13 @@ func handleDepositScan(ctx context.Context, event types.DepositScanEvent) error 
 // ---------------------------------------------------------------------------
 
 func handleWebhookWorker(ctx context.Context, sqsEvent events.SQSEvent) (events.SQSEventResponse, error) {
-	var failures []events.SQSBatchResponseFailure
+	var failures []events.SQSBatchItemFailure
 
 	for _, record := range sqsEvent.Records {
 		var msg types.WebhookMessage
 		if err := json.Unmarshal([]byte(record.Body), &msg); err != nil {
 			slog.Error("unmarshal webhook message", "error", err, "message_id", record.MessageId)
-			failures = append(failures, events.SQSBatchResponseFailure{
+			failures = append(failures, events.SQSBatchItemFailure{
 				ItemIdentifier: record.MessageId,
 			})
 			continue
@@ -106,7 +151,7 @@ func handleWebhookWorker(ctx context.Context, sqsEvent events.SQSEvent) (events.
 
 		if err := container.WebhookService.Deliver(ctx, msg); err != nil {
 			slog.Error("webhook delivery failed", "error", err, "event_id", msg.EventID)
-			failures = append(failures, events.SQSBatchResponseFailure{
+			failures = append(failures, events.SQSBatchItemFailure{
 				ItemIdentifier: record.MessageId,
 			})
 		}
@@ -120,13 +165,13 @@ func handleWebhookWorker(ctx context.Context, sqsEvent events.SQSEvent) (events.
 // ---------------------------------------------------------------------------
 
 func handleWithdrawalWorker(ctx context.Context, sqsEvent events.SQSEvent) (events.SQSEventResponse, error) {
-	var failures []events.SQSBatchResponseFailure
+	var failures []events.SQSBatchItemFailure
 
 	for _, record := range sqsEvent.Records {
 		var msg types.WithdrawalMessage
 		if err := json.Unmarshal([]byte(record.Body), &msg); err != nil {
 			slog.Error("unmarshal withdrawal message", "error", err, "message_id", record.MessageId)
-			failures = append(failures, events.SQSBatchResponseFailure{
+			failures = append(failures, events.SQSBatchItemFailure{
 				ItemIdentifier: record.MessageId,
 			})
 			continue
@@ -134,7 +179,7 @@ func handleWithdrawalWorker(ctx context.Context, sqsEvent events.SQSEvent) (even
 
 		if err := container.WithdrawalService.Execute(ctx, msg); err != nil {
 			slog.Error("withdrawal execution failed", "error", err, "tx_id", msg.TransactionID)
-			failures = append(failures, events.SQSBatchResponseFailure{
+			failures = append(failures, events.SQSBatchItemFailure{
 				ItemIdentifier: record.MessageId,
 			})
 		}

@@ -18,6 +18,12 @@ import (
 // Knows the queue URLs, handles JSON marshal, that's it.
 // ---------------------------------------------------------------------------
 
+// Sender defines the interface for sending messages to queues
+type Sender interface {
+	SendWebhook(ctx context.Context, msg types.WebhookMessage) error
+	SendWithdrawal(ctx context.Context, msg types.WithdrawalMessage) error
+}
+
 type QueueURLs struct {
 	Webhook    string
 	Withdrawal string

@@ -47,10 +47,26 @@ func (ctrl *Controller) RegisterRoutes(r *gin.RouterGroup) {
 
 // --- Health / Info ---
 
+// health godoc
+// @Summary Health check
+// @Description Get API health status
+// @Tags System
+// @Produce json
+// @Success 200 {object} map[string]string
+// @Router /health [get]
 func (ctrl *Controller) health(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"status": "ok", "version": "0.1.0"})
 }
 
+// listChains godoc
+// @Summary List supported chains
+// @Description Get list of all supported blockchain networks
+// @Tags Chains
+// @Security ApiKeyAuth
+// @Security SignatureAuth
+// @Produce json
+// @Success 200 {object} map[string]interface{} "List of supported chains"
+// @Router /chains [get]
 func (ctrl *Controller) listChains(c *gin.Context) {
 	type info struct {
 		ID            string `json:"id"`
@@ -68,6 +84,19 @@ func (ctrl *Controller) listChains(c *gin.Context) {
 
 // --- Wallets ---
 
+// createWallet godoc
+// @Summary Create a new wallet
+// @Description Create a new wallet for a specific blockchain
+// @Tags Wallets
+// @Security ApiKeyAuth
+// @Security SignatureAuth
+// @Accept json
+// @Produce json
+// @Param request body object{chain=string,label=string} true "Wallet creation request"
+// @Success 201 {object} map[string]interface{} "Created wallet"
+// @Failure 400 {object} map[string]string "Bad request"
+// @Failure 409 {object} map[string]string "Wallet already exists"
+// @Router /wallets [post]
 func (ctrl *Controller) createWallet(c *gin.Context) {
 	var req struct {
 		Chain string `json:"chain" binding:"required"`
@@ -85,6 +114,16 @@ func (ctrl *Controller) createWallet(c *gin.Context) {
 	c.JSON(http.StatusCreated, w)
 }
 
+// listWallets godoc
+// @Summary List all wallets
+// @Description Get list of all wallets
+// @Tags Wallets
+// @Security ApiKeyAuth
+// @Security SignatureAuth
+// @Produce json
+// @Success 200 {object} map[string]interface{} "List of wallets"
+// @Failure 500 {object} map[string]string "Internal server error"
+// @Router /wallets [get]
 func (ctrl *Controller) listWallets(c *gin.Context) {
 	ws, err := ctrl.c.WalletService.ListWallets(c.Request.Context())
 	if err != nil {

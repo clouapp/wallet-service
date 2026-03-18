@@ -410,4 +410,20 @@ deps-update: ## Update Go dependencies
 	go mod tidy
 	@echo "✅ Dependencies updated"
 
+swagger-install: ## Install Swagger CLI tool
+	@echo "📦 Installing Swagger CLI..."
+	go install github.com/swaggo/swag/cmd/swag@v1.8.12
+	@echo "✅ Swagger CLI installed"
+
+swagger-generate: ## Generate Swagger documentation
+	@echo "📝 Generating Swagger documentation..."
+	swag init -g main.go --output ./docs
+	@echo "✅ Swagger docs generated in ./docs"
+	@echo "   View at: http://localhost:8080/swagger/index.html"
+
+swagger-fmt: ## Format Swagger comments
+	@echo "✨ Formatting Swagger comments..."
+	swag fmt
+	@echo "✅ Swagger comments formatted"
+
 .DEFAULT_GOAL := help

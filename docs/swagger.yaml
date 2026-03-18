@@ -1,0 +1,135 @@
+basePath: /v1
+host: localhost:8080
+info:
+  contact:
+    email: support@vault.dev
+    name: API Support
+  description: Multi-chain cryptocurrency custody service with deposit scanning, withdrawals,
+    and webhooks
+  license:
+    name: MIT
+    url: https://opensource.org/licenses/MIT
+  termsOfService: http://swagger.io/terms/
+  title: Vault Custody Service API
+  version: "1.0"
+paths:
+  /chains:
+    get:
+      description: Get list of all supported blockchain networks
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: List of supported chains
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - ApiKeyAuth: []
+      - SignatureAuth: []
+      summary: List supported chains
+      tags:
+      - Chains
+  /health:
+    get:
+      description: Get API health status
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Health check
+      tags:
+      - System
+  /wallets:
+    get:
+      description: Get list of all wallets
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: List of wallets
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal server error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - ApiKeyAuth: []
+      - SignatureAuth: []
+      summary: List all wallets
+      tags:
+      - Wallets
+    post:
+      consumes:
+      - application/json
+      description: Create a new wallet for a specific blockchain
+      parameters:
+      - description: Wallet creation request
+        in: body
+        name: request
+        required: true
+        schema:
+          properties:
+            chain:
+              type: string
+            label:
+              type: string
+          type: object
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created wallet
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "409":
+          description: Wallet already exists
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - ApiKeyAuth: []
+      - SignatureAuth: []
+      summary: Create a new wallet
+      tags:
+      - Wallets
+securityDefinitions:
+  ApiKeyAuth:
+    in: header
+    name: X-API-Key
+    type: apiKey
+  SignatureAuth:
+    in: header
+    name: X-API-Signature
+    type: apiKey
+swagger: "2.0"
+tags:
+- description: Operations about blockchain networks
+  name: Chains
+- description: Wallet management operations
+  name: Wallets
+- description: Address generation and lookup
+  name: Addresses
+- description: Withdrawal request operations
+  name: Withdrawals
+- description: Transaction history and details
+  name: Transactions
+- description: Webhook configuration for event notifications
+  name: Webhooks
