@@ -5,7 +5,8 @@ import (
 	"fmt"
 
 	"github.com/google/uuid"
-	"github.com/jmoiron/sqlx"
+	"github.com/goravel/framework/contracts/database/orm"
+	"github.com/goravel/framework/facades"
 	"github.com/redis/go-redis/v9"
 
 	"github.com/macromarkets/vault/app/models"
@@ -13,13 +14,12 @@ import (
 )
 
 type Service struct {
-	db       *sqlx.DB
 	registry *chain.Registry
 	rdb      *redis.Client // optional: address cache
 }
 
-func NewService(db *sqlx.DB, registry *chain.Registry, rdb *redis.Client) *Service {
-	return &Service{db: db, registry: registry, rdb: rdb}
+func NewService(registry *chain.Registry, rdb *redis.Client) *Service {
+	return &Service{registry: registry, rdb: rdb}
 }
 
 func (s *Service) CreateWallet(ctx context.Context, chainID, label string) (*models.Wallet, error) {
@@ -27,8 +27,10 @@ func (s *Service) CreateWallet(ctx context.Context, chainID, label string) (*mod
 		return nil, fmt.Errorf("unknown chain: %s", chainID)
 	}
 
-	var count int
-	if err := s.db.GetContext(ctx, &count, "SELECT COUNT(*) FROM wallets WHERE chain = $1", chainID); err != nil {
+	// Check if wallet already exists for this chain
+	var count int64
+	count, err := facades.Orm().Query().Model(&models.Wallet{}).Where("chain", chainID).Count()
+	if err != nil {
 		return nil, err
 	}
 	if count > 0 {
@@ -43,13 +45,9 @@ func (s *Service) CreateWallet(ctx context.Context, chainID, label string) (*mod
 		KeyVaultRef:    "kms://master-key",
 		DerivationPath: derivationPath(chainID),
 		AddressIndex:   0,
-		// CreatedAt and UpdatedAt handled by orm.Model
 	}
 
-	_, err := s.db.NamedExecContext(ctx, `
-		INSERT INTO wallets (id, chain, label, master_pubkey, key_vault_ref, derivation_path, address_index, created_at, updated_at)
-		VALUES (:id, :chain, :label, :master_pubkey, :key_vault_ref, :derivation_path, :address_index, NOW(), NOW())`, w)
-	if err != nil {
+	if err := facades.Orm().Query().Create(w); err != nil {
 		return nil, err
 	}
 	return w, nil
@@ -57,12 +55,18 @@ func (s *Service) CreateWallet(ctx context.Context, chainID, label string) (*mod
 
 func (s *Service) GetWallet(ctx context.Context, id uuid.UUID) (*models.Wallet, error) {
 	var w models.Wallet
-	return &w, s.db.GetContext(ctx, &w, "SELECT * FROM wallets WHERE id = $1", id)
+	if err := facades.Orm().Query().Find(&w, id); err != nil {
+		return nil, err
+	}
+	return &w, nil
 }
 
 func (s *Service) ListWallets(ctx context.Context) ([]models.Wallet, error) {
 	var ws []models.Wallet
-	return ws, s.db.SelectContext(ctx, &ws, "SELECT * FROM wallets ORDER BY created_at")
+	if err := facades.Orm().Query().Order("created_at").Find(&ws); err != nil {
+		return nil, err
+	}
+	return ws, nil
 }
 
 // GenerateAddress derives a new deposit address for an external user.
@@ -77,52 +81,55 @@ func (s *Service) GenerateAddress(ctx context.Context, walletID uuid.UUID, exter
 		return nil, err
 	}
 
-	tx, err := s.db.BeginTxx(ctx, nil)
+	var addr *models.Address
+
+	// Use transaction for atomic operation
+	err = facades.Orm().Transaction(func(tx orm.Query) error {
+		// Lock wallet row and get current index
+		var wallet models.Wallet
+		if err := tx.LockForUpdate().Find(&wallet, walletID); err != nil {
+			return err
+		}
+		idx := wallet.AddressIndex
+
+		// Derive new address
+		masterKey := []byte("placeholder-master-key") // TODO: KMS
+		address, err := adapter.DeriveAddress(masterKey, uint32(idx))
+		if err != nil {
+			return err
+		}
+
+		// Create address record
+		addr = &models.Address{
+			ID:              uuid.New(),
+			WalletID:        walletID,
+			Chain:           w.Chain,
+			Address:         address,
+			DerivationIndex: idx,
+			ExternalUserID:  externalUserID,
+			Metadata:        metadata,
+			IsActive:        true,
+		}
+
+		if err := tx.Create(addr); err != nil {
+			return err
+		}
+
+		// Increment address index
+		if _, err := tx.Model(&models.Wallet{}).Where("id", walletID).Update("address_index", idx+1); err != nil {
+			return err
+		}
+
+		return nil
+	})
+
 	if err != nil {
-		return nil, err
-	}
-	defer tx.Rollback()
-
-	var idx int
-	if err := tx.GetContext(ctx, &idx, "SELECT address_index FROM wallets WHERE id = $1 FOR UPDATE", walletID); err != nil {
-		return nil, err
-	}
-
-	masterKey := []byte("placeholder-master-key") // TODO: KMS
-	address, err := adapter.DeriveAddress(masterKey, uint32(idx))
-	if err != nil {
-		return nil, err
-	}
-
-	addr := &models.Address{
-		ID:              uuid.New(),
-		WalletID:        walletID,
-		Chain:           w.Chain,
-		Address:         address,
-		DerivationIndex: idx,
-		ExternalUserID:  externalUserID,
-		Metadata:        metadata, // Changed from sql.NullString to string
-		IsActive:        true,
-		// CreatedAt and UpdatedAt handled by orm.Model
-	}
-
-	if _, err := tx.NamedExecContext(ctx, `
-		INSERT INTO addresses (id, wallet_id, chain, address, derivation_index, external_user_id, metadata, is_active, created_at, updated_at)
-		VALUES (:id, :wallet_id, :chain, :address, :derivation_index, :external_user_id, :metadata, :is_active, NOW(), NOW())`, addr); err != nil {
-		return nil, err
-	}
-
-	if _, err := tx.ExecContext(ctx, "UPDATE wallets SET address_index = address_index + 1 WHERE id = $1", walletID); err != nil {
-		return nil, err
-	}
-
-	if err := tx.Commit(); err != nil {
 		return nil, err
 	}
 
 	// Cache in Redis for fast deposit matching
 	if s.rdb != nil {
-		s.rdb.SAdd(ctx, "vault:addresses:"+w.Chain, address)
+		s.rdb.SAdd(ctx, "vault:addresses:"+w.Chain, addr.Address)
 	}
 
 	return addr, nil
@@ -130,17 +137,26 @@ func (s *Service) GenerateAddress(ctx context.Context, walletID uuid.UUID, exter
 
 func (s *Service) LookupAddress(ctx context.Context, chainID, address string) (*models.Address, error) {
 	var addr models.Address
-	return &addr, s.db.GetContext(ctx, &addr, "SELECT * FROM addresses WHERE chain = $1 AND address = $2", chainID, address)
+	if err := facades.Orm().Query().Where("chain", chainID).Where("address", address).First(&addr); err != nil {
+		return nil, err
+	}
+	return &addr, nil
 }
 
 func (s *Service) ListUserAddresses(ctx context.Context, externalUserID string) ([]models.Address, error) {
 	var addrs []models.Address
-	return addrs, s.db.SelectContext(ctx, &addrs, "SELECT * FROM addresses WHERE external_user_id = $1 ORDER BY created_at", externalUserID)
+	if err := facades.Orm().Query().Where("external_user_id", externalUserID).Order("created_at").Find(&addrs); err != nil {
+		return nil, err
+	}
+	return addrs, nil
 }
 
 func (s *Service) ListWalletAddresses(ctx context.Context, walletID uuid.UUID) ([]models.Address, error) {
 	var addrs []models.Address
-	return addrs, s.db.SelectContext(ctx, &addrs, "SELECT * FROM addresses WHERE wallet_id = $1 ORDER BY derivation_index", walletID)
+	if err := facades.Orm().Query().Where("wallet_id", walletID).Order("derivation_index").Find(&addrs); err != nil {
+		return nil, err
+	}
+	return addrs, nil
 }
 
 func derivationPath(chainID string) string {

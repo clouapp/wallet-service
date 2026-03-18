@@ -2,6 +2,7 @@ package withdraw
 
 import (
 	"context"
+	"os"
 	"testing"
 
 	"github.com/google/uuid"
@@ -11,29 +12,35 @@ import (
 	"github.com/macromarkets/vault/app/services/webhook"
 	"github.com/macromarkets/vault/pkg/types"
 	"github.com/macromarkets/vault/tests/mocks"
+	"github.com/macromarkets/vault/tests/testutil"
 )
+
+func TestMain(m *testing.M) {
+	// Boot Goravel once for all tests in this package
+	testutil.BootTest()
+	os.Exit(m.Run())
+}
 
 func setupWithdrawService(t *testing.T) (*Service, *mocks.MockChain) {
 	t.Helper()
-	db := mocks.TestDB(t)
+	mocks.TestDB(t)
 	registry := chain.NewRegistry()
 	mockChain := mocks.NewMockChain("eth")
 	mockChain.RequiredConfirmationsVal = 12
 	registry.RegisterChain(mockChain)
 	registry.RegisterToken(types.Token{Symbol: "usdt", ChainID: "eth", Decimals: 6, Contract: "0xdAC17F"})
 
-	webhookSvc := webhook.NewService(db, nil)
+	webhookSvc := webhook.NewService(nil)
 	sqsClient := &queue.SQSClient{} // nil inner client — send will be no-op
-	svc := NewService(db, registry, sqsClient, webhookSvc)
+	svc := NewService(registry, sqsClient, webhookSvc)
 	return svc, mockChain
 }
 
 func TestRequest_Success(t *testing.T) {
 	svc, _ := setupWithdrawService(t)
-	db := svc.db
 	ctx := context.Background()
 
-	w := mocks.InsertWallet(t, db, "eth")
+	w := mocks.InsertWallet(t, "eth")
 
 	tx, err := svc.Request(ctx, WithdrawRequest{
 		WalletID:       w.ID,
@@ -62,10 +69,9 @@ func TestRequest_Success(t *testing.T) {
 
 func TestRequest_Idempotency(t *testing.T) {
 	svc, _ := setupWithdrawService(t)
-	db := svc.db
 	ctx := context.Background()
 
-	w := mocks.InsertWallet(t, db, "eth")
+	w := mocks.InsertWallet(t, "eth")
 
 	req := WithdrawRequest{
 		WalletID:       w.ID,
@@ -93,12 +99,11 @@ func TestRequest_Idempotency(t *testing.T) {
 
 func TestRequest_InvalidAddress(t *testing.T) {
 	svc, mock := setupWithdrawService(t)
-	db := svc.db
 	ctx := context.Background()
 
 	mock.ValidateAddressFn = func(address string) bool { return false }
 
-	w := mocks.InsertWallet(t, db, "eth")
+	w := mocks.InsertWallet(t, "eth")
 
 	_, err := svc.Request(ctx, WithdrawRequest{
 		WalletID:       w.ID,
@@ -129,10 +134,9 @@ func TestRequest_WalletNotFound(t *testing.T) {
 
 func TestRequest_TokenWithdrawal(t *testing.T) {
 	svc, _ := setupWithdrawService(t)
-	db := svc.db
 	ctx := context.Background()
 
-	w := mocks.InsertWallet(t, db, "eth")
+	w := mocks.InsertWallet(t, "eth")
 
 	tx, err := svc.Request(ctx, WithdrawRequest{
 		WalletID:       w.ID,
@@ -148,17 +152,16 @@ func TestRequest_TokenWithdrawal(t *testing.T) {
 	if tx.Asset != "usdt" {
 		t.Errorf("expected usdt, got %s", tx.Asset)
 	}
-	if !tx.TokenContract.Valid {
+	if tx.TokenContract == "" {
 		t.Error("expected token_contract to be set for USDT withdrawal")
 	}
 }
 
 func TestRequest_UnknownToken(t *testing.T) {
 	svc, _ := setupWithdrawService(t)
-	db := svc.db
 	ctx := context.Background()
 
-	w := mocks.InsertWallet(t, db, "eth")
+	w := mocks.InsertWallet(t, "eth")
 
 	_, err := svc.Request(ctx, WithdrawRequest{
 		WalletID:       w.ID,
@@ -175,11 +178,10 @@ func TestRequest_UnknownToken(t *testing.T) {
 
 func TestGetTransaction(t *testing.T) {
 	svc, _ := setupWithdrawService(t)
-	db := svc.db
 	ctx := context.Background()
 
-	w := mocks.InsertWallet(t, db, "eth")
-	inserted := mocks.InsertTransaction(t, db, w.ID, nil, "eth", "withdrawal", "pending", "eth", "100", 0)
+	w := mocks.InsertWallet(t, "eth")
+	inserted := mocks.InsertTransaction(t, w.ID, nil, "eth", "withdrawal", "pending", "eth", "100", 0)
 
 	got, err := svc.GetTransaction(ctx, inserted.ID)
 	if err != nil {
@@ -200,13 +202,12 @@ func TestGetTransaction_NotFound(t *testing.T) {
 
 func TestListTransactions_Filters(t *testing.T) {
 	svc, _ := setupWithdrawService(t)
-	db := svc.db
 	ctx := context.Background()
 
-	w := mocks.InsertWallet(t, db, "eth")
-	mocks.InsertTransaction(t, db, w.ID, nil, "eth", "deposit", "confirmed", "eth", "100", 50)
-	mocks.InsertTransaction(t, db, w.ID, nil, "eth", "withdrawal", "pending", "usdt", "200", 0)
-	mocks.InsertTransaction(t, db, w.ID, nil, "eth", "deposit", "pending", "eth", "300", 60)
+	w := mocks.InsertWallet(t, "eth")
+	mocks.InsertTransaction(t, w.ID, nil, "eth", "deposit", "confirmed", "eth", "100", 50)
+	mocks.InsertTransaction(t, w.ID, nil, "eth", "withdrawal", "pending", "usdt", "200", 0)
+	mocks.InsertTransaction(t, w.ID, nil, "eth", "deposit", "pending", "eth", "300", 60)
 
 	// All
 	all, _ := svc.ListTransactions(ctx, "", "", "", "", 50, 0)
@@ -241,11 +242,10 @@ func TestListTransactions_Filters(t *testing.T) {
 
 func TestExecute_Idempotency(t *testing.T) {
 	svc, _ := setupWithdrawService(t)
-	db := svc.db
 	ctx := context.Background()
 
-	w := mocks.InsertWallet(t, db, "eth")
-	tx := mocks.InsertTransaction(t, db, w.ID, nil, "eth", "withdrawal", "confirmed", "eth", "100", 50)
+	w := mocks.InsertWallet(t, "eth")
+	tx := mocks.InsertTransaction(t, w.ID, nil, "eth", "withdrawal", "confirmed", "eth", "100", 50)
 
 	// Should skip already-confirmed transaction
 	err := svc.Execute(ctx, types.WithdrawalMessage{

@@ -9,15 +9,26 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"testing"
 
+	"github.com/goravel/framework/facades"
+
+	"github.com/macromarkets/vault/app/models"
 	"github.com/macromarkets/vault/pkg/types"
 	"github.com/macromarkets/vault/tests/mocks"
+	"github.com/macromarkets/vault/tests/testutil"
 )
 
+func TestMain(m *testing.M) {
+	// Boot Goravel once for all tests in this package
+	testutil.BootTest()
+	os.Exit(m.Run())
+}
+
 func TestCreateConfig(t *testing.T) {
-	db := mocks.TestDB(t)
-	svc := NewService(db, nil)
+	mocks.TestDB(t)
+	svc := NewService(nil)
 	ctx := context.Background()
 
 	cfg, err := svc.CreateConfig(ctx, "https://example.com/webhook", "secret123", []string{"deposit.confirmed", "withdrawal.confirmed"})
@@ -33,8 +44,8 @@ func TestCreateConfig(t *testing.T) {
 }
 
 func TestListConfigs(t *testing.T) {
-	db := mocks.TestDB(t)
-	svc := NewService(db, nil)
+	mocks.TestDB(t)
+	svc := NewService(nil)
 	ctx := context.Background()
 
 	svc.CreateConfig(ctx, "https://a.com/wh", "s1", []string{"deposit.confirmed"})
@@ -50,8 +61,8 @@ func TestListConfigs(t *testing.T) {
 }
 
 func TestDeleteConfig(t *testing.T) {
-	db := mocks.TestDB(t)
-	svc := NewService(db, nil)
+	mocks.TestDB(t)
+	svc := NewService(nil)
 	ctx := context.Background()
 
 	cfg, _ := svc.CreateConfig(ctx, "https://del.com/wh", "s", []string{"deposit.confirmed"})
@@ -66,8 +77,8 @@ func TestDeleteConfig(t *testing.T) {
 }
 
 func TestDeliver_Success(t *testing.T) {
-	db := mocks.TestDB(t)
-	svc := NewService(db, nil)
+	mocks.TestDB(t)
+	svc := NewService(nil)
 	ctx := context.Background()
 
 	// Setup test HTTP server
@@ -84,13 +95,13 @@ func TestDeliver_Success(t *testing.T) {
 	defer server.Close()
 
 	// Create webhook config + dummy transaction
-	w := mocks.InsertWallet(t, db, "eth")
-	tx := mocks.InsertTransaction(t, db, w.ID, nil, "eth", "deposit", "confirmed", "eth", "100", 50)
+	w := mocks.InsertWallet(t, "eth")
+	tx := mocks.InsertTransaction(t, w.ID, nil, "eth", "deposit", "confirmed", "eth", "100", 50)
 
 	// Insert webhook event manually
 	payload := `{"type":"deposit.confirmed","data":{"amount":"100"}}`
 	eventID := "evt-test-123"
-	db.Exec(`INSERT INTO webhook_events (id, transaction_id, event_type, payload, delivery_url, delivery_status, attempts, max_attempts, created_at)
+	facades.Orm().Query().Exec(`INSERT INTO webhook_events (id, transaction_id, event_type, payload, delivery_url, delivery_status, attempts, max_attempts, created_at)
 		VALUES ($1, $2, 'deposit.confirmed', $3, $4, 'pending', 0, 10, NOW())`,
 		eventID, tx.ID, payload, server.URL)
 
@@ -128,16 +139,18 @@ func TestDeliver_Success(t *testing.T) {
 	}
 
 	// Verify status updated in DB
-	var status string
-	db.Get(&status, "SELECT delivery_status FROM webhook_events WHERE id = $1", eventID)
-	if status != "delivered" {
-		t.Errorf("expected delivered status, got %s", status)
+	var event models.WebhookEvent
+	if err := facades.Orm().Query().Where("id", eventID).First(&event); err != nil {
+		t.Fatalf("find webhook event: %v", err)
+	}
+	if event.DeliveryStatus != "delivered" {
+		t.Errorf("expected delivered status, got %s", event.DeliveryStatus)
 	}
 }
 
 func TestDeliver_Failure(t *testing.T) {
-	db := mocks.TestDB(t)
-	svc := NewService(db, nil)
+	mocks.TestDB(t)
+	svc := NewService(nil)
 	ctx := context.Background()
 
 	// Server that returns 500
@@ -146,11 +159,11 @@ func TestDeliver_Failure(t *testing.T) {
 	}))
 	defer server.Close()
 
-	w := mocks.InsertWallet(t, db, "eth")
-	tx := mocks.InsertTransaction(t, db, w.ID, nil, "eth", "deposit", "confirmed", "eth", "100", 50)
+	w := mocks.InsertWallet(t, "eth")
+	tx := mocks.InsertTransaction(t, w.ID, nil, "eth", "deposit", "confirmed", "eth", "100", 50)
 
 	eventID := "evt-fail-123"
-	db.Exec(`INSERT INTO webhook_events (id, transaction_id, event_type, payload, delivery_url, delivery_status, attempts, max_attempts, created_at)
+	facades.Orm().Query().Exec(`INSERT INTO webhook_events (id, transaction_id, event_type, payload, delivery_url, delivery_status, attempts, max_attempts, created_at)
 		VALUES ($1, $2, 'deposit.confirmed', '{}', $3, 'pending', 0, 10, NOW())`,
 		eventID, tx.ID, server.URL)
 
@@ -164,23 +177,25 @@ func TestDeliver_Failure(t *testing.T) {
 	}
 
 	// Verify attempt incremented
-	var attempts int
-	db.Get(&attempts, "SELECT attempts FROM webhook_events WHERE id = $1", eventID)
-	if attempts != 1 {
-		t.Errorf("expected attempts=1, got %d", attempts)
+	var event models.WebhookEvent
+	if err := facades.Orm().Query().Where("id", eventID).First(&event); err != nil {
+		t.Fatalf("find webhook event: %v", err)
+	}
+	if event.Attempts != 1 {
+		t.Errorf("expected attempts=1, got %d", event.Attempts)
 	}
 }
 
 func TestDeliver_Unreachable(t *testing.T) {
-	db := mocks.TestDB(t)
-	svc := NewService(db, nil)
+	mocks.TestDB(t)
+	svc := NewService(nil)
 	ctx := context.Background()
 
-	w := mocks.InsertWallet(t, db, "eth")
-	tx := mocks.InsertTransaction(t, db, w.ID, nil, "eth", "deposit", "confirmed", "eth", "100", 50)
+	w := mocks.InsertWallet(t, "eth")
+	tx := mocks.InsertTransaction(t, w.ID, nil, "eth", "deposit", "confirmed", "eth", "100", 50)
 
 	eventID := "evt-unreach-123"
-	db.Exec(`INSERT INTO webhook_events (id, transaction_id, event_type, payload, delivery_url, delivery_status, attempts, max_attempts, created_at)
+	facades.Orm().Query().Exec(`INSERT INTO webhook_events (id, transaction_id, event_type, payload, delivery_url, delivery_status, attempts, max_attempts, created_at)
 		VALUES ($1, $2, 'deposit.confirmed', '{}', 'http://localhost:1/nope', 'pending', 0, 10, NOW())`,
 		eventID, tx.ID)
 
@@ -212,18 +227,20 @@ func TestPgArray(t *testing.T) {
 }
 
 func TestEnqueueEvent_NoConfigs(t *testing.T) {
-	db := mocks.TestDB(t)
-	svc := NewService(db, nil)
+	mocks.TestDB(t)
+	svc := NewService(nil)
 
 	// Insert a wallet + transaction for FK
-	w := mocks.InsertWallet(t, db, "eth")
-	tx := mocks.InsertTransaction(t, db, w.ID, nil, "eth", "deposit", "pending", "eth", "100", 50)
+	w := mocks.InsertWallet(t, "eth")
+	tx := mocks.InsertTransaction(t, w.ID, nil, "eth", "deposit", "pending", "eth", "100", 50)
 
 	// Should not panic with no webhook configs
 	svc.EnqueueEvent(context.Background(), tx.ID, types.EventDepositPending, map[string]string{"test": "data"})
 
-	var count int
-	db.Get(&count, "SELECT COUNT(*) FROM webhook_events")
+	count, err := facades.Orm().Query().Model(&models.WebhookEvent{}).Count()
+	if err != nil {
+		t.Fatalf("count query: %v", err)
+	}
 	if count != 0 {
 		t.Errorf("expected 0 events with no configs, got %d", count)
 	}

@@ -26,7 +26,7 @@ func signRequest(secret, timestamp, method, path, body string) string {
 
 func setupAuthRouter(secret string) *gin.Engine {
 	r := gin.New()
-	r.Use(HMACAuth(secret))
+	r.Use(GinHMACAuth(secret))
 	r.POST("/test", func(c *gin.Context) {
 		c.JSON(200, gin.H{"ok": true})
 	})

@@ -4,12 +4,22 @@ import (
 	"os"
 	"strconv"
 
-	"github.com/goravel/framework/contracts/foundation"
+	contractsfoundation "github.com/goravel/framework/contracts/foundation"
+	contractsroute "github.com/goravel/framework/contracts/route"
 	"github.com/goravel/framework/facades"
+	frameworkhttp "github.com/goravel/framework/http"
+	frameworklog "github.com/goravel/framework/log"
+	frameworkroute "github.com/goravel/framework/route"
+	frameworksession "github.com/goravel/framework/session"
+	frameworktesting "github.com/goravel/framework/testing"
+	frameworkvalidation "github.com/goravel/framework/validation"
+	frameworkview "github.com/goravel/framework/view"
+	gin "github.com/goravel/gin"
+	ginfacades "github.com/goravel/gin/facades"
 )
 
 // Boot initializes all configurations
-func Boot(app foundation.Application) {
+func Boot(app contractsfoundation.Application) {
 	facades.Config().Add("database", map[string]any{
 		// Default database connection
 		"default": env("DB_CONNECTION", "postgres"),
@@ -49,12 +59,25 @@ func Boot(app foundation.Application) {
 		"locale":   env("APP_LOCALE", "en"),
 		"key":      env("APP_KEY", ""),
 		"url":      env("APP_URL", "http://localhost"),
+		"providers": []contractsfoundation.ServiceProvider{
+			&frameworklog.ServiceProvider{},
+			&frameworkhttp.ServiceProvider{},
+			&frameworksession.ServiceProvider{},
+			&frameworkvalidation.ServiceProvider{},
+			&frameworkview.ServiceProvider{},
+			&gin.ServiceProvider{},
+			&frameworkroute.ServiceProvider{},
+			&frameworktesting.ServiceProvider{},
+		},
 	})
 
 	facades.Config().Add("http", map[string]any{
+		"default": "gin",
 		"drivers": map[string]any{
 			"gin": map[string]any{
-				"route": facades.Route(),
+				"route": func() (contractsroute.Route, error) {
+					return ginfacades.Route("gin"), nil
+				},
 			},
 		},
 	})

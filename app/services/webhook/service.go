@@ -10,10 +10,11 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/jmoiron/sqlx"
+	"github.com/goravel/framework/facades"
 
 	"github.com/macromarkets/vault/app/models"
 	"github.com/macromarkets/vault/app/services/queue"
@@ -26,12 +27,11 @@ import (
 // ---------------------------------------------------------------------------
 
 type Service struct {
-	db  *sqlx.DB
 	sqs queue.Sender
 }
 
-func NewService(db *sqlx.DB, sqs queue.Sender) *Service {
-	return &Service{db: db, sqs: sqs}
+func NewService(sqs queue.Sender) *Service {
+	return &Service{sqs: sqs}
 }
 
 // EnqueueEvent creates webhook events for all matching configs and sends to SQS.
@@ -48,22 +48,38 @@ func (s *Service) EnqueueEvent(ctx context.Context, txID uuid.UUID, eventType ty
 	}
 
 	// Find all active webhook configs subscribed to this event
-	var configs []models.WebhookConfig
-	if err := s.db.SelectContext(ctx, &configs, `
-		SELECT * FROM webhook_configs WHERE is_active = true AND $1 = ANY(events)
-	`, string(eventType)); err != nil {
+	var allConfigs []models.WebhookConfig
+	if err := facades.Orm().Query().Where("is_active", true).Find(&allConfigs); err != nil {
 		slog.Error("query webhook configs", "error", err)
 		return
+	}
+
+	// Filter configs that are subscribed to this event type
+	var configs []models.WebhookConfig
+	eventTypeStr := string(eventType)
+	for _, cfg := range allConfigs {
+		// Check if the event type is in the Events field (postgres array stored as string)
+		// The pgArray function formats as {"event1","event2"}
+		if containsEvent(cfg.Events, eventTypeStr) {
+			configs = append(configs, cfg)
+		}
 	}
 
 	for _, cfg := range configs {
 		eventID := uuid.New().String()
 
 		// Persist webhook event for auditing
-		if _, err := s.db.ExecContext(ctx, `
-			INSERT INTO webhook_events (id, transaction_id, event_type, payload, delivery_url, delivery_status, attempts, max_attempts, created_at)
-			VALUES ($1, $2, $3, $4, $5, 'pending', 0, 10, $6)
-		`, eventID, txID, string(eventType), string(payload), cfg.URL, time.Now().UTC()); err != nil {
+		webhookEvent := &models.WebhookEvent{
+			ID:             uuid.MustParse(eventID),
+			TransactionID:  &txID,
+			EventType:      string(eventType),
+			Payload:        string(payload),
+			DeliveryURL:    cfg.URL,
+			DeliveryStatus: "pending",
+			Attempts:       0,
+			MaxAttempts:    10,
+		}
+		if err := facades.Orm().Query().Create(webhookEvent); err != nil {
 			slog.Error("insert webhook event", "error", err)
 			continue
 		}
@@ -119,17 +135,15 @@ func (s *Service) Deliver(ctx context.Context, msg types.WebhookMessage) error {
 	}
 
 	// Success — mark delivered
-	s.db.ExecContext(ctx, `
-		UPDATE webhook_events SET delivery_status = 'delivered', delivered_at = $1, attempts = attempts + 1
-		WHERE id = $2`, time.Now().UTC(), msg.EventID)
+	now := time.Now().UTC()
+	facades.Orm().Query().Exec("UPDATE webhook_events SET delivery_status = 'delivered', delivered_at = ?, attempts = attempts + 1 WHERE id = ?", now, msg.EventID)
 
 	slog.Info("webhook delivered", "event_id", msg.EventID, "url", msg.DeliveryURL)
 	return nil
 }
 
 func (s *Service) markAttempt(ctx context.Context, eventID, errMsg string) {
-	s.db.ExecContext(ctx, `
-		UPDATE webhook_events SET attempts = attempts + 1, last_error = $1 WHERE id = $2`, errMsg, eventID)
+	facades.Orm().Query().Exec("UPDATE webhook_events SET attempts = attempts + 1, last_error = ? WHERE id = ?", errMsg, eventID)
 }
 
 // ---------------------------------------------------------------------------
@@ -145,10 +159,7 @@ func (s *Service) CreateConfig(ctx context.Context, url, secret string, events [
 		IsActive: true,
 		// CreatedAt handled by orm.Model
 	}
-	if _, err := s.db.ExecContext(ctx, `
-		INSERT INTO webhook_configs (id, url, secret, events, is_active, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5, NOW(), NOW())`,
-		cfg.ID, cfg.URL, cfg.Secret, cfg.Events, cfg.IsActive); err != nil {
+	if err := facades.Orm().Query().Create(cfg); err != nil {
 		return nil, err
 	}
 	return cfg, nil
@@ -156,11 +167,14 @@ func (s *Service) CreateConfig(ctx context.Context, url, secret string, events [
 
 func (s *Service) ListConfigs(ctx context.Context) ([]models.WebhookConfig, error) {
 	var configs []models.WebhookConfig
-	return configs, s.db.SelectContext(ctx, &configs, "SELECT * FROM webhook_configs ORDER BY created_at")
+	if err := facades.Orm().Query().Order("created_at").Find(&configs); err != nil {
+		return nil, err
+	}
+	return configs, nil
 }
 
 func (s *Service) DeleteConfig(ctx context.Context, id uuid.UUID) error {
-	_, err := s.db.ExecContext(ctx, "DELETE FROM webhook_configs WHERE id = $1", id)
+	_, err := facades.Orm().Query().Delete(&models.WebhookConfig{}, id)
 	return err
 }
 
@@ -173,4 +187,11 @@ func pgArray(arr []string) string {
 		s += `"` + v + `"`
 	}
 	return s + "}"
+}
+
+// containsEvent checks if an event type is in the postgres array string
+// The format is: {"event1","event2","event3"}
+func containsEvent(eventsStr, eventType string) bool {
+	// Simple string contains check for the quoted event type
+	return strings.Contains(eventsStr, `"`+eventType+`"`)
 }

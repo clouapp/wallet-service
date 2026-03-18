@@ -29,10 +29,10 @@ func (r *M20260317000002CreateAddressesTable) Up() error {
 
 		// Indexes
 		table.Index("wallet_id")
-		table.Index("chain")
 		table.Index("external_user_id")
 		table.Index("is_active")
-		table.Unique("address") // Unique address across all chains
+		table.Index("chain", "address") // Composite index for address lookups
+		table.Unique("address")         // Unique address across all chains
 
 		// Foreign key
 		table.Foreign("wallet_id").References("id").On("wallets")

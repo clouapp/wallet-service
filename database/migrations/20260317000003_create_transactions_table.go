@@ -44,11 +44,11 @@ func (r *M20260317000003CreateTransactionsTable) Up() error {
 		table.Index("address_id")
 		table.Index("wallet_id")
 		table.Index("external_user_id")
-		table.Index("chain")
 		table.Index("tx_type")
-		table.Index("tx_hash")
 		table.Index("status")
-		table.Index("created_at")
+		table.Index("chain", "tx_hash") // Composite index for deduplication
+		table.Index("chain", "status")  // Composite index for filtered queries
+		table.Index("created_at")       // Index for sorting
 		table.Unique("idempotency_key")
 
 		// Foreign keys

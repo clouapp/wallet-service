@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/jmoiron/sqlx"
+	"github.com/goravel/framework/facades"
 	"github.com/redis/go-redis/v9"
 
 	"github.com/macromarkets/vault/app/models"
@@ -23,14 +23,13 @@ import (
 // ---------------------------------------------------------------------------
 
 type Service struct {
-	db         *sqlx.DB
 	rdb        *redis.Client
 	registry   *chain.Registry
 	webhookSvc *webhook.Service
 }
 
-func NewService(db *sqlx.DB, rdb *redis.Client, registry *chain.Registry, webhookSvc *webhook.Service) *Service {
-	return &Service{db: db, rdb: rdb, registry: registry, webhookSvc: webhookSvc}
+func NewService(rdb *redis.Client, registry *chain.Registry, webhookSvc *webhook.Service) *Service {
+	return &Service{rdb: rdb, registry: registry, webhookSvc: webhookSvc}
 }
 
 // ScanLatestBlocks is the Lambda entry point. Scans new blocks for a chain.
@@ -120,21 +119,21 @@ func (s *Service) processTransfer(ctx context.Context, chainID string, adapter t
 		}
 	} else {
 		// Fallback: check DB directly
-		var count int
-		if err := s.db.GetContext(ctx, &count, "SELECT COUNT(*) FROM addresses WHERE chain = $1 AND address = $2", chainID, transfer.To); err != nil || count == 0 {
+		count, err := facades.Orm().Query().Model(&models.Address{}).Where("chain", chainID).Where("address", transfer.To).Count()
+		if err != nil || count == 0 {
 			return nil
 		}
 	}
 
 	// 2. Lookup address → user mapping
 	var addr models.Address
-	if err := s.db.GetContext(ctx, &addr, "SELECT * FROM addresses WHERE chain = $1 AND address = $2", chainID, transfer.To); err != nil {
+	if err := facades.Orm().Query().Where("chain", chainID).Where("address", transfer.To).First(&addr); err != nil {
 		return fmt.Errorf("lookup address: %w", err)
 	}
 
 	// 3. Dedup by tx_hash + chain
-	var exists int
-	if err := s.db.GetContext(ctx, &exists, "SELECT COUNT(*) FROM transactions WHERE chain = $1 AND tx_hash = $2 AND tx_type = 'deposit'", chainID, transfer.TxHash); err != nil {
+	exists, err := facades.Orm().Query().Model(&models.Transaction{}).Where("chain", chainID).Where("tx_hash", transfer.TxHash).Where("tx_type", "deposit").Count()
+	if err != nil {
 		return err
 	}
 	if exists > 0 {
@@ -171,13 +170,7 @@ func (s *Service) processTransfer(ctx context.Context, chainID string, adapter t
 		// CreatedAt and UpdatedAt handled by orm.Model
 	}
 
-	if _, err := s.db.NamedExecContext(ctx, `
-		INSERT INTO transactions (id, address_id, wallet_id, external_user_id, chain, tx_type, tx_hash,
-			from_address, to_address, amount, asset, token_contract, confirmations, required_confs,
-			status, block_number, block_hash, created_at, updated_at)
-		VALUES (:id, :address_id, :wallet_id, :external_user_id, :chain, :tx_type, :tx_hash,
-			:from_address, :to_address, :amount, :asset, :token_contract, :confirmations, :required_confs,
-			:status, :block_number, :block_hash, NOW(), NOW())`, tx); err != nil {
+	if err := facades.Orm().Query().Create(tx); err != nil {
 		return fmt.Errorf("insert tx: %w", err)
 	}
 
@@ -190,8 +183,7 @@ func (s *Service) processTransfer(ctx context.Context, chainID string, adapter t
 
 func (s *Service) updateConfirmations(ctx context.Context, chainID string, adapter types.Chain, currentBlock uint64) error {
 	var pending []models.Transaction
-	if err := s.db.SelectContext(ctx, &pending, `
-		SELECT * FROM transactions WHERE chain = $1 AND tx_type = 'deposit' AND status IN ('pending', 'confirming')`, chainID); err != nil {
+	if err := facades.Orm().Query().Where("chain", chainID).Where("tx_type", "deposit").WhereIn("status", []interface{}{"pending", "confirming"}).Find(&pending); err != nil {
 		return err
 	}
 
@@ -212,8 +204,11 @@ func (s *Service) updateConfirmations(ctx context.Context, chainID string, adapt
 			confirmedAt = &now
 		}
 
-		if _, err := s.db.ExecContext(ctx, `UPDATE transactions SET confirmations = $1, status = $2, confirmed_at = $3 WHERE id = $4`,
-			confs, newStatus, confirmedAt, tx.ID); err != nil {
+		if _, err := facades.Orm().Query().Model(&models.Transaction{}).Where("id", tx.ID).Update(map[string]interface{}{
+			"confirmations": confs,
+			"status":        newStatus,
+			"confirmed_at":  confirmedAt,
+		}); err != nil {
 			slog.Error("update confs", "tx_id", tx.ID, "error", err)
 			continue
 		}
@@ -253,7 +248,7 @@ func (s *Service) RefreshAddressCache(ctx context.Context, chainID string) error
 		return nil
 	}
 	var addresses []string
-	if err := s.db.SelectContext(ctx, &addresses, "SELECT address FROM addresses WHERE chain = $1 AND is_active = true", chainID); err != nil {
+	if err := facades.Orm().Query().Model(&models.Address{}).Where("chain", chainID).Where("is_active", true).Pluck("address", &addresses); err != nil {
 		return err
 	}
 	if len(addresses) == 0 {

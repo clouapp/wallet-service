@@ -4,19 +4,14 @@ import (
 	"context"
 	"encoding/json"
 	"log/slog"
-	"net/http"
 	"os"
 
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-lambda-go/lambda"
-	ginadapter "github.com/awslabs/aws-lambda-go-api-proxy/gin"
-	"github.com/gin-gonic/gin"
+	"github.com/awslabs/aws-lambda-go-api-proxy/httpadapter"
 	"github.com/goravel/framework/facades"
-	swaggerFiles "github.com/swaggo/files"
-	ginSwagger "github.com/swaggo/gin-swagger"
 
 	"github.com/macromarkets/vault/app/container"
-	"github.com/macromarkets/vault/app/http/middleware"
 	"github.com/macromarkets/vault/bootstrap"
 	_ "github.com/macromarkets/vault/docs" // Import generated swagger docs
 	"github.com/macromarkets/vault/pkg/types"
@@ -88,56 +83,18 @@ func main() {
 	case "withdrawal_worker":
 		lambda.Start(handleWithdrawalWorker)
 	case "api":
-		// API mode with Goravel
-		if os.Getenv("RUN_LOCAL") == "true" {
-			runLocal()
-		} else {
-			// For Lambda, we'll still use Gin for now but with Goravel routes available
-			lambda.Start(handleAPIGateway)
-		}
+		lambda.Start(handleAPIGateway)
 	default:
-		// Default: run as local HTTP server with Goravel
 		runLocal()
 	}
 }
 
 // ---------------------------------------------------------------------------
-// API Gateway Handler (Legacy Gin-based for Lambda compatibility)
+// API Gateway Handler — uses the same Goravel router as local dev
 // ---------------------------------------------------------------------------
 
 func handleAPIGateway(ctx context.Context, req events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
-	// For Lambda, convert to Gin handler for AWS adapter compatibility
-	r := setupGinRouter()
-	adapter := newGinLambdaAdapter(r)
-	return adapter.ProxyWithContext(ctx, req)
-}
-
-func newGinLambdaAdapter(r *gin.Engine) *ginadapter.GinLambdaV2 {
-	return ginadapter.NewV2(r)
-}
-
-func setupGinRouter() *gin.Engine {
-	gin.SetMode(gin.ReleaseMode)
-	r := gin.New()
-	r.Use(gin.Recovery())
-	r.Use(middleware.GinRequestLogger())
-
-	// Health — no auth
-	r.GET("/health", func(c *gin.Context) {
-		c.JSON(http.StatusOK, gin.H{"status": "ok", "version": "0.1.0"})
-	})
-
-	// Swagger documentation — no auth
-	r.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
-
-	// API v1 — authenticated (legacy Gin routes)
-	v1 := r.Group("/v1")
-	v1.Use(middleware.GinHMACAuth(os.Getenv("API_KEY_SECRET")))
-
-	// Note: In production, migrate to Goravel routes fully
-	// For now, keeping Gin routes for backward compatibility
-
-	return r
+	return httpadapter.NewV2(facades.Route()).ProxyWithContext(ctx, req)
 }
 
 // ---------------------------------------------------------------------------

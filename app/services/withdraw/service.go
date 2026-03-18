@@ -7,7 +7,7 @@ import (
 	"math/big"
 
 	"github.com/google/uuid"
-	"github.com/jmoiron/sqlx"
+	"github.com/goravel/framework/facades"
 
 	"github.com/macromarkets/vault/app/models"
 	"github.com/macromarkets/vault/app/services/chain"
@@ -17,14 +17,13 @@ import (
 )
 
 type Service struct {
-	db         *sqlx.DB
 	registry   *chain.Registry
 	sqs        queue.Sender
 	webhookSvc *webhook.Service
 }
 
-func NewService(db *sqlx.DB, registry *chain.Registry, sqs queue.Sender, webhookSvc *webhook.Service) *Service {
-	return &Service{db: db, registry: registry, sqs: sqs, webhookSvc: webhookSvc}
+func NewService(registry *chain.Registry, sqs queue.Sender, webhookSvc *webhook.Service) *Service {
+	return &Service{registry: registry, sqs: sqs, webhookSvc: webhookSvc}
 }
 
 // ---------------------------------------------------------------------------
@@ -45,14 +44,14 @@ func (s *Service) Request(ctx context.Context, req WithdrawRequest) (*models.Tra
 	// 1. Idempotency
 	if req.IdempotencyKey != "" {
 		var existing models.Transaction
-		if err := s.db.GetContext(ctx, &existing, "SELECT * FROM transactions WHERE idempotency_key = $1", req.IdempotencyKey); err == nil {
+		if err := facades.Orm().Query().Where("idempotency_key", req.IdempotencyKey).First(&existing); err == nil {
 			return &existing, nil
 		}
 	}
 
 	// 2. Get wallet
 	var wallet models.Wallet
-	if err := s.db.GetContext(ctx, &wallet, "SELECT * FROM wallets WHERE id = $1", req.WalletID); err != nil {
+	if err := facades.Orm().Query().Find(&wallet, req.WalletID); err != nil {
 		return nil, fmt.Errorf("wallet not found: %w", err)
 	}
 
@@ -92,11 +91,7 @@ func (s *Service) Request(ctx context.Context, req WithdrawRequest) (*models.Tra
 		// CreatedAt and UpdatedAt handled by orm.Model
 	}
 
-	if _, err := s.db.NamedExecContext(ctx, `
-		INSERT INTO transactions (id, wallet_id, external_user_id, chain, tx_type, to_address,
-			amount, asset, token_contract, required_confs, status, idempotency_key, created_at, updated_at)
-		VALUES (:id, :wallet_id, :external_user_id, :chain, :tx_type, :to_address,
-			:amount, :asset, :token_contract, :required_confs, :status, :idempotency_key, NOW(), NOW())`, tx); err != nil {
+	if err := facades.Orm().Query().Create(tx); err != nil {
 		return nil, fmt.Errorf("insert tx: %w", err)
 	}
 
@@ -134,7 +129,7 @@ func (s *Service) Execute(ctx context.Context, msg types.WithdrawalMessage) erro
 
 	// Check tx still pending (idempotency for SQS redelivery)
 	var tx models.Transaction
-	if err := s.db.GetContext(ctx, &tx, "SELECT * FROM transactions WHERE id = $1", txID); err != nil {
+	if err := facades.Orm().Query().Find(&tx, txID); err != nil {
 		return fmt.Errorf("tx not found: %w", err)
 	}
 	if tx.Status != string(types.TxStatusPending) {
@@ -192,7 +187,10 @@ func (s *Service) Execute(ctx context.Context, msg types.WithdrawalMessage) erro
 	}
 
 	// Update tx with hash
-	s.db.ExecContext(ctx, `UPDATE transactions SET tx_hash = $1, status = 'confirming' WHERE id = $2`, txHash, txID)
+	facades.Orm().Query().Model(&models.Transaction{}).Where("id", txID).Update(map[string]interface{}{
+		"tx_hash": txHash,
+		"status":  "confirming",
+	})
 	s.webhookSvc.EnqueueEvent(ctx, txID, types.EventWithdrawalBroadcast, map[string]string{
 		"tx_id": txID.String(), "tx_hash": txHash,
 	})
@@ -203,7 +201,10 @@ func (s *Service) Execute(ctx context.Context, msg types.WithdrawalMessage) erro
 
 func (s *Service) failTx(ctx context.Context, txID uuid.UUID, reason string) {
 	slog.Error("withdrawal failed", "tx_id", txID, "reason", reason)
-	s.db.ExecContext(ctx, `UPDATE transactions SET status = 'failed', error_message = $1 WHERE id = $2`, reason, txID)
+	facades.Orm().Query().Model(&models.Transaction{}).Where("id", txID).Update(map[string]interface{}{
+		"status":        "failed",
+		"error_message": reason,
+	})
 	s.webhookSvc.EnqueueEvent(ctx, txID, types.EventWithdrawalFailed, map[string]string{
 		"tx_id": txID.String(), "reason": reason,
 	})
@@ -215,40 +216,34 @@ func (s *Service) failTx(ctx context.Context, txID uuid.UUID, reason string) {
 
 func (s *Service) GetTransaction(ctx context.Context, id uuid.UUID) (*models.Transaction, error) {
 	var tx models.Transaction
-	return &tx, s.db.GetContext(ctx, &tx, "SELECT * FROM transactions WHERE id = $1", id)
+	if err := facades.Orm().Query().Find(&tx, id); err != nil {
+		return nil, err
+	}
+	return &tx, nil
 }
 
 func (s *Service) ListTransactions(ctx context.Context, chainID, txType, status, userID string, limit, offset int) ([]models.Transaction, error) {
-	query := "SELECT * FROM transactions WHERE 1=1"
-	args := []interface{}{}
-	idx := 1
+	query := facades.Orm().Query()
 
 	if chainID != "" {
-		query += fmt.Sprintf(" AND chain = $%d", idx)
-		args = append(args, chainID)
-		idx++
+		query = query.Where("chain", chainID)
 	}
 	if txType != "" {
-		query += fmt.Sprintf(" AND tx_type = $%d", idx)
-		args = append(args, txType)
-		idx++
+		query = query.Where("tx_type", txType)
 	}
 	if status != "" {
-		query += fmt.Sprintf(" AND status = $%d", idx)
-		args = append(args, status)
-		idx++
+		query = query.Where("status", status)
 	}
 	if userID != "" {
-		query += fmt.Sprintf(" AND external_user_id = $%d", idx)
-		args = append(args, userID)
-		idx++
+		query = query.Where("external_user_id", userID)
 	}
 	if limit <= 0 {
 		limit = 50
 	}
-	query += fmt.Sprintf(" ORDER BY created_at DESC LIMIT $%d OFFSET $%d", idx, idx+1)
-	args = append(args, limit, offset)
 
 	var txs []models.Transaction
-	return txs, s.db.SelectContext(ctx, &txs, query, args...)
+	if err := query.Order("created_at DESC").Limit(limit).Offset(offset).Find(&txs); err != nil {
+		return nil, err
+	}
+	return txs, nil
 }

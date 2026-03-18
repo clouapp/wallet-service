@@ -7,8 +7,6 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/sqs"
-	"github.com/jmoiron/sqlx"
-	_ "github.com/lib/pq"
 	"github.com/redis/go-redis/v9"
 
 	chainpkg "github.com/macromarkets/vault/app/services/chain"
@@ -25,7 +23,6 @@ import (
 // ---------------------------------------------------------------------------
 
 type Container struct {
-	DB    *sqlx.DB
 	Redis *redis.Client
 	SQS   *queue.SQSClient
 
@@ -41,16 +38,6 @@ var globalContainer *Container
 // Boot builds the full dependency graph.
 func Boot() *Container {
 	c := &Container{}
-
-	// --- Database ---
-	db, err := sqlx.Connect("postgres", os.Getenv("DATABASE_URL"))
-	if err != nil {
-		slog.Error("database connection failed", "error", err)
-		os.Exit(1)
-	}
-	db.SetMaxOpenConns(10) // conservative for Lambda
-	db.SetMaxIdleConns(2)
-	c.DB = db
 
 	// --- Redis (for address cache + checkpoints) ---
 	redisURL := os.Getenv("REDIS_URL")
@@ -105,10 +92,10 @@ func Boot() *Container {
 	}
 
 	// --- Services ---
-	c.WebhookService = webhook.NewService(c.DB, c.SQS)
-	c.WalletService = wallet.NewService(c.DB, c.Registry, c.Redis)
-	c.WithdrawalService = withdraw.NewService(c.DB, c.Registry, c.SQS, c.WebhookService)
-	c.DepositService = deposit.NewService(c.DB, c.Redis, c.Registry, c.WebhookService)
+	c.WebhookService = webhook.NewService(c.SQS)
+	c.WalletService = wallet.NewService(c.Registry, c.Redis)
+	c.WithdrawalService = withdraw.NewService(c.Registry, c.SQS, c.WebhookService)
+	c.DepositService = deposit.NewService(c.Redis, c.Registry, c.WebhookService)
 
 	globalContainer = c
 	slog.Info("container booted", "chains", c.Registry.ChainIDs())
