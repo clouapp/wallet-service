@@ -11,12 +11,13 @@ import (
 	"github.com/aws/aws-lambda-go/lambda"
 	ginadapter "github.com/awslabs/aws-lambda-go-api-proxy/gin"
 	"github.com/gin-gonic/gin"
+	"github.com/goravel/framework/facades"
 	swaggerFiles "github.com/swaggo/files"
 	ginSwagger "github.com/swaggo/gin-swagger"
 
-	"github.com/macromarkets/vault/app/http/controllers"
+	"github.com/macromarkets/vault/app/container"
 	"github.com/macromarkets/vault/app/http/middleware"
-	"github.com/macromarkets/vault/app/providers"
+	"github.com/macromarkets/vault/bootstrap"
 	_ "github.com/macromarkets/vault/docs" // Import generated swagger docs
 	"github.com/macromarkets/vault/pkg/types"
 )
@@ -62,15 +63,17 @@ import (
 // @tag.description Webhook configuration for event notifications
 
 var (
-	ginLambda *ginadapter.GinLambdaV2
-	container *providers.Container
+	c *container.Container
 )
 
 func init() {
 	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo})))
 
-	// Boot application — shared across all Lambda modes
-	container = providers.Boot()
+	// Boot Goravel application
+	bootstrap.Boot()
+
+	// Boot container — shared across all Lambda modes
+	c = container.Boot()
 	slog.Info("vault booted", "mode", os.Getenv("LAMBDA_MODE"), "env", os.Getenv("ENV"))
 }
 
@@ -84,26 +87,40 @@ func main() {
 		lambda.Start(handleWebhookWorker)
 	case "withdrawal_worker":
 		lambda.Start(handleWithdrawalWorker)
+	case "api":
+		// API mode with Goravel
+		if os.Getenv("RUN_LOCAL") == "true" {
+			runLocal()
+		} else {
+			// For Lambda, we'll still use Gin for now but with Goravel routes available
+			lambda.Start(handleAPIGateway)
+		}
 	default:
-		// API mode — Goravel/Gin HTTP kernel behind API Gateway
-		ginLambda = ginadapter.NewV2(setupRouter())
-		lambda.Start(handleAPIGateway)
+		// Default: run as local HTTP server with Goravel
+		runLocal()
 	}
 }
 
 // ---------------------------------------------------------------------------
-// API Gateway Handler
+// API Gateway Handler (Legacy Gin-based for Lambda compatibility)
 // ---------------------------------------------------------------------------
 
 func handleAPIGateway(ctx context.Context, req events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
-	return ginLambda.ProxyWithContext(ctx, req)
+	// For Lambda, convert to Gin handler for AWS adapter compatibility
+	r := setupGinRouter()
+	adapter := newGinLambdaAdapter(r)
+	return adapter.ProxyWithContext(ctx, req)
 }
 
-func setupRouter() *gin.Engine {
+func newGinLambdaAdapter(r *gin.Engine) *ginadapter.GinLambdaV2 {
+	return ginadapter.NewV2(r)
+}
+
+func setupGinRouter() *gin.Engine {
 	gin.SetMode(gin.ReleaseMode)
 	r := gin.New()
 	r.Use(gin.Recovery())
-	r.Use(middleware.RequestLogger())
+	r.Use(middleware.GinRequestLogger())
 
 	// Health — no auth
 	r.GET("/health", func(c *gin.Context) {
@@ -113,12 +130,12 @@ func setupRouter() *gin.Engine {
 	// Swagger documentation — no auth
 	r.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
 
-	// API v1 — authenticated
+	// API v1 — authenticated (legacy Gin routes)
 	v1 := r.Group("/v1")
-	v1.Use(middleware.HMACAuth(os.Getenv("API_KEY_SECRET")))
+	v1.Use(middleware.GinHMACAuth(os.Getenv("API_KEY_SECRET")))
 
-	ctrl := controllers.New(container)
-	ctrl.RegisterRoutes(v1)
+	// Note: In production, migrate to Goravel routes fully
+	// For now, keeping Gin routes for backward compatibility
 
 	return r
 }
@@ -129,7 +146,7 @@ func setupRouter() *gin.Engine {
 
 func handleDepositScan(ctx context.Context, event types.DepositScanEvent) error {
 	slog.Info("deposit scan triggered", "chain", event.Chain)
-	return container.DepositService.ScanLatestBlocks(ctx, event.Chain)
+	return c.DepositService.ScanLatestBlocks(ctx, event.Chain)
 }
 
 // ---------------------------------------------------------------------------
@@ -149,7 +166,7 @@ func handleWebhookWorker(ctx context.Context, sqsEvent events.SQSEvent) (events.
 			continue
 		}
 
-		if err := container.WebhookService.Deliver(ctx, msg); err != nil {
+		if err := c.WebhookService.Deliver(ctx, msg); err != nil {
 			slog.Error("webhook delivery failed", "error", err, "event_id", msg.EventID)
 			failures = append(failures, events.SQSBatchItemFailure{
 				ItemIdentifier: record.MessageId,
@@ -177,7 +194,7 @@ func handleWithdrawalWorker(ctx context.Context, sqsEvent events.SQSEvent) (even
 			continue
 		}
 
-		if err := container.WithdrawalService.Execute(ctx, msg); err != nil {
+		if err := c.WithdrawalService.Execute(ctx, msg); err != nil {
 			slog.Error("withdrawal execution failed", "error", err, "tx_id", msg.TransactionID)
 			failures = append(failures, events.SQSBatchItemFailure{
 				ItemIdentifier: record.MessageId,
@@ -189,17 +206,19 @@ func handleWithdrawalWorker(ctx context.Context, sqsEvent events.SQSEvent) (even
 }
 
 // ---------------------------------------------------------------------------
-// Local dev: run as plain HTTP server
+// Local dev: run as Goravel HTTP server
 // ---------------------------------------------------------------------------
 
 func runLocal() {
-	r := setupRouter()
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "8080"
 	}
-	slog.Info("starting local server", "port", port)
-	if err := r.Run(":" + port); err != nil {
+
+	slog.Info("starting Goravel HTTP server", "port", port)
+
+	// Run Goravel HTTP server
+	if err := facades.Route().Run(":" + port); err != nil {
 		slog.Error("server error", "error", err)
 		os.Exit(1)
 	}

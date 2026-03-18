@@ -16,7 +16,8 @@ func (r *M20260317000003CreateTransactionsTable) Signature() string {
 // Up Run the migrations.
 func (r *M20260317000003CreateTransactionsTable) Up() error {
 	return facades.Schema().Create("transactions", func(table schema.Blueprint) {
-		table.Uuid("id").Primary()
+		table.Uuid("id")
+		table.Primary("id")
 		table.Uuid("address_id").Nullable().Comment("Deposit address (nullable for withdrawals)")
 		table.Uuid("wallet_id").Comment("Foreign key to wallets table")
 		table.String("external_user_id", 255).Comment("Client's user identifier")

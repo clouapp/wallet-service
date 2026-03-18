@@ -16,7 +16,8 @@ func (r *M20260317000002CreateAddressesTable) Signature() string {
 // Up Run the migrations.
 func (r *M20260317000002CreateAddressesTable) Up() error {
 	return facades.Schema().Create("addresses", func(table schema.Blueprint) {
-		table.Uuid("id").Primary()
+		table.Uuid("id")
+		table.Primary("id")
 		table.Uuid("wallet_id").Comment("Foreign key to wallets table")
 		table.String("chain", 50).Comment("Blockchain identifier")
 		table.String("address", 255).Comment("Blockchain address")

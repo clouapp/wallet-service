@@ -16,7 +16,8 @@ func (r *M20260317000004CreateWebhookConfigsTable) Signature() string {
 // Up Run the migrations.
 func (r *M20260317000004CreateWebhookConfigsTable) Up() error {
 	return facades.Schema().Create("webhook_configs", func(table schema.Blueprint) {
-		table.Uuid("id").Primary()
+		table.Uuid("id")
+		table.Primary("id")
 		table.String("url", 500).Comment("Webhook endpoint URL")
 		table.String("secret", 255).Comment("HMAC secret for webhook signature")
 		table.Text("events").Comment("Comma-separated event types (deposit.confirmed, withdrawal.completed, etc.)")

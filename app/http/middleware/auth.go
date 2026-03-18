@@ -13,9 +13,9 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// HMACAuth validates X-API-Key + X-API-Signature + X-API-Timestamp.
+// GinHMACAuth validates X-API-Key + X-API-Signature + X-API-Timestamp (Gin version).
 // Signature = HMAC-SHA256(secret, timestamp + method + path + body).
-func HMACAuth(apiKeySecret string) gin.HandlerFunc {
+func GinHMACAuth(apiKeySecret string) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		apiKey := c.GetHeader("X-API-Key")
 		sig := c.GetHeader("X-API-Signature")
@@ -57,8 +57,8 @@ func HMACAuth(apiKeySecret string) gin.HandlerFunc {
 	}
 }
 
-// RequestLogger logs method, path, status, and duration as structured JSON.
-func RequestLogger() gin.HandlerFunc {
+// GinRequestLogger logs method, path, status, and duration as structured JSON (Gin version).
+func GinRequestLogger() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		start := time.Now()
 		c.Next()

@@ -16,7 +16,8 @@ func (r *M20260317000001CreateWalletsTable) Signature() string {
 // Up Run the migrations.
 func (r *M20260317000001CreateWalletsTable) Up() error {
 	return facades.Schema().Create("wallets", func(table schema.Blueprint) {
-		table.Uuid("id").Primary()
+		table.Uuid("id")
+		table.Primary("id")
 		table.String("chain", 50).Comment("Blockchain identifier (eth, polygon, sol, btc)")
 		table.String("label", 255).Nullable().Comment("User-friendly wallet label")
 		table.Text("master_pubkey").Comment("HD wallet master public key")
