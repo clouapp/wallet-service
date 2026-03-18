@@ -141,25 +141,24 @@ git commit -m "feat(mpc): add MPC service interface and types"
 Create `app/services/mpc/service_test.go`:
 
 ```go
-package mpc_test
+package mpc
 
 import (
 	"bytes"
+	"context"
 	"testing"
-
-	"github.com/macromarkets/vault/app/services/mpc"
 )
 
 func TestEncryptDecryptRoundTrip(t *testing.T) {
 	passphrase := "correct-horse-battery-staple-123"
 	plaintext := []byte("this is a fake mpc key share bytes 32b!")
 
-	encrypted, err := mpc.EncryptShare(plaintext, passphrase)
+	encrypted, err := EncryptShare(plaintext, passphrase)
 	if err != nil {
 		t.Fatalf("encrypt: %v", err)
 	}
 
-	decrypted, err := mpc.DecryptShare(encrypted, passphrase)
+	decrypted, err := DecryptShare(encrypted, passphrase)
 	if err != nil {
 		t.Fatalf("decrypt: %v", err)
 	}
@@ -171,9 +170,9 @@ func TestEncryptDecryptRoundTrip(t *testing.T) {
 
 func TestDecryptWrongPassphrase(t *testing.T) {
 	plaintext := []byte("some share data here for testing purposes!")
-	encrypted, _ := mpc.EncryptShare(plaintext, "correct-passphrase-here")
+	encrypted, _ := EncryptShare(plaintext, "correct-passphrase-here")
 
-	_, err := mpc.DecryptShare(encrypted, "wrong-passphrase-here!")
+	_, err := DecryptShare(encrypted, "wrong-passphrase-here!")
 	if err == nil {
 		t.Fatal("expected error on wrong passphrase, got nil")
 	}
@@ -181,7 +180,7 @@ func TestDecryptWrongPassphrase(t *testing.T) {
 
 func TestEncryptedShareFormat(t *testing.T) {
 	plaintext := []byte("share data for format test purposes")
-	encrypted, err := mpc.EncryptShare(plaintext, "test-passphrase-12chars")
+	encrypted, err := EncryptShare(plaintext, "test-passphrase-12chars")
 	if err != nil {
 		t.Fatalf("encrypt: %v", err)
 	}
@@ -199,6 +198,7 @@ func TestEncryptedShareFormat(t *testing.T) {
 		t.Fatalf("Ciphertext length: want %d, got %d", len(plaintext)+16, len(encrypted.Ciphertext))
 	}
 }
+
 ```
 
 - [ ] **Step 2: Run to confirm failure**
@@ -334,13 +334,13 @@ git commit -m "feat(mpc): add Argon2id+AES-256-GCM keystore with tests"
 
 - [ ] **Step 1: Add keygen tests to service_test.go**
 
-Append to `app/services/mpc/service_test.go`:
+Append to `app/services/mpc/service_test.go` (same `package mpc`, no new imports needed — `context` and `bytes` already imported):
 
 ```go
 func TestKeygenSecp256k1ProducesShares(t *testing.T) {
-	svc := mpc.NewTSSService()
+	svc := NewTSSService()
 
-	result, err := svc.Keygen(context.Background(), mpc.CurveSecp256k1)
+	result, err := svc.Keygen(context.Background(), CurveSecp256k1)
 	if err != nil {
 		t.Fatalf("keygen: %v", err)
 	}
@@ -362,13 +362,13 @@ func TestKeygenSecp256k1ProducesShares(t *testing.T) {
 }
 
 func TestKeygenSharesAreDifferent(t *testing.T) {
-	svc := mpc.NewTSSService()
+	svc := NewTSSService()
 
-	r1, err := svc.Keygen(context.Background(), mpc.CurveSecp256k1)
+	r1, err := svc.Keygen(context.Background(), CurveSecp256k1)
 	if err != nil {
 		t.Fatalf("keygen 1: %v", err)
 	}
-	r2, err := svc.Keygen(context.Background(), mpc.CurveSecp256k1)
+	r2, err := svc.Keygen(context.Background(), CurveSecp256k1)
 	if err != nil {
 		t.Fatalf("keygen 2: %v", err)
 	}
@@ -382,8 +382,6 @@ func TestKeygenSharesAreDifferent(t *testing.T) {
 	}
 }
 ```
-
-Add `"context"` to the imports block in the test file.
 
 - [ ] **Step 2: Run to confirm failure**
 
@@ -603,14 +601,14 @@ git commit -m "feat(mpc): implement 2-party secp256k1 keygen with tests"
 
 - [ ] **Step 1: Add signing test**
 
-Append to `app/services/mpc/service_test.go`:
+Append to `app/services/mpc/service_test.go` (same `package mpc`, no new imports needed):
 
 ```go
 func TestSignSecp256k1(t *testing.T) {
-	svc := mpc.NewTSSService()
+	svc := NewTSSService()
 
 	// First keygen to get shares
-	result, err := svc.Keygen(context.Background(), mpc.CurveSecp256k1)
+	result, err := svc.Keygen(context.Background(), CurveSecp256k1)
 	if err != nil {
 		t.Fatalf("keygen: %v", err)
 	}
@@ -623,10 +621,10 @@ func TestSignSecp256k1(t *testing.T) {
 
 	sig, err := svc.Sign(
 		context.Background(),
-		mpc.CurveSecp256k1,
+		CurveSecp256k1,
 		result.ShareA,
 		result.ShareB,
-		mpc.SignInputs{TxHashes: [][]byte{msgHash}},
+		SignInputs{TxHashes: [][]byte{msgHash}},
 	)
 	if err != nil {
 		t.Fatalf("sign: %v", err)
