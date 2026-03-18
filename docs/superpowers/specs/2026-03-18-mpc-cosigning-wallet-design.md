@@ -301,14 +301,11 @@ app/services/mpc/
 
 ### Decommissioned
 
-**Pre-deploy step — drain the withdrawal SQS queue first.** Before deploying this change, confirm the withdrawal SQS queue is empty (or let existing messages process through the old `withdrawal_worker` one final time). Do not cut over while messages are in-flight.
+The project is not yet in production — no queue draining is needed.
 
-After the queue is drained:
-- Delete `handleWithdrawalWorker` function from `main.go` (lines 141–163)
-- Delete the `case "withdrawal_worker"` branch from `main.go` (line 84)
-- Delete the withdrawal SQS queue and its dead-letter queue from infrastructure
-- Delete the `withdrawal_worker` Lambda function from infrastructure
-- `types.WithdrawalMessage` in `pkg/types/types.go`: delete entirely. It must not be kept as a stub, as its presence will confuse future implementors into thinking the async withdrawal path still exists. The webhook notification event uses `types.WebhookMessage`, which already exists and is sufficient.
+- Delete `handleWithdrawalWorker` function from `main.go`
+- Delete the `case "withdrawal_worker"` branch from `main.go`
+- `types.WithdrawalMessage` in `pkg/types/types.go`: delete entirely. The webhook notification event uses `types.WebhookMessage`, which already exists and is sufficient.
 
 ### New
 - `MPCService mpc.Service` in container
