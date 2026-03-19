@@ -4,21 +4,30 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/aws/aws-sdk-go-v2/service/secretsmanager"
 	"github.com/google/uuid"
 	"github.com/goravel/framework/facades"
 	"github.com/redis/go-redis/v9"
 
 	"github.com/macromarkets/vault/app/models"
 	"github.com/macromarkets/vault/app/services/chain"
+	mpc "github.com/macromarkets/vault/app/services/mpc"
 )
 
 type Service struct {
-	registry *chain.Registry
-	rdb      *redis.Client // optional: address cache
+	registry       *chain.Registry
+	rdb            *redis.Client // optional: address cache
+	mpcService     mpc.Service
+	secretsManager *secretsmanager.Client
 }
 
-func NewService(registry *chain.Registry, rdb *redis.Client) *Service {
-	return &Service{registry: registry, rdb: rdb}
+func NewService(registry *chain.Registry, rdb *redis.Client, mpcSvc mpc.Service, sm *secretsmanager.Client) *Service {
+	return &Service{
+		registry:       registry,
+		rdb:            rdb,
+		mpcService:     mpcSvc,
+		secretsManager: sm,
+	}
 }
 
 func (s *Service) CreateWallet(ctx context.Context, chainID, label string) (*models.Wallet, error) {

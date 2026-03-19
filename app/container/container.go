@@ -6,11 +6,13 @@ import (
 	"os"
 
 	"github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/service/secretsmanager"
 	"github.com/aws/aws-sdk-go-v2/service/sqs"
 	"github.com/redis/go-redis/v9"
 
 	chainpkg "github.com/macromarkets/vault/app/services/chain"
 	"github.com/macromarkets/vault/app/services/deposit"
+	mpc "github.com/macromarkets/vault/app/services/mpc"
 	"github.com/macromarkets/vault/app/services/queue"
 	"github.com/macromarkets/vault/app/services/wallet"
 	"github.com/macromarkets/vault/app/services/webhook"
@@ -23,8 +25,10 @@ import (
 // ---------------------------------------------------------------------------
 
 type Container struct {
-	Redis *redis.Client
-	SQS   *queue.SQSClient
+	Redis           *redis.Client
+	SQS             *queue.SQSClient
+	SecretsManager  *secretsmanager.Client
+	MPCService      mpc.Service
 
 	Registry          *chainpkg.Registry
 	WalletService     *wallet.Service
@@ -48,7 +52,7 @@ func Boot() *Container {
 		}
 	}
 
-	// --- AWS SQS ---
+	// --- AWS Config, SQS, Secrets Manager ---
 	awsCfg, err := config.LoadDefaultConfig(context.Background())
 	if err != nil {
 		slog.Error("aws config failed", "error", err)
@@ -58,6 +62,11 @@ func Boot() *Container {
 	c.SQS = queue.NewSQSClient(sqsClient, queue.QueueURLs{
 		Webhook: os.Getenv("WEBHOOK_QUEUE_URL"),
 	})
+
+	// --- AWS Secrets Manager ---
+	smClient := secretsmanager.NewFromConfig(awsCfg)
+	c.SecretsManager = smClient
+	c.MPCService = mpc.NewTSSService()
 
 	// --- Chain Registry ---
 	c.Registry = chainpkg.NewRegistry()
@@ -92,7 +101,7 @@ func Boot() *Container {
 
 	// --- Services ---
 	c.WebhookService = webhook.NewService(c.SQS)
-	c.WalletService = wallet.NewService(c.Registry, c.Redis)
+	c.WalletService = wallet.NewService(c.Registry, c.Redis, c.MPCService, c.SecretsManager)
 	c.WithdrawalService = withdraw.NewService(c.Registry, c.WebhookService)
 	c.DepositService = deposit.NewService(c.Redis, c.Registry, c.WebhookService)
 
