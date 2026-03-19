@@ -100,3 +100,39 @@ func TestKeygenSharesAreDifferent(t *testing.T) {
 		t.Fatal("two keygens produced identical public keys")
 	}
 }
+
+func TestSignSecp256k1(t *testing.T) {
+	svc := NewTSSService()
+
+	// First keygen to get shares
+	result, err := svc.Keygen(context.Background(), CurveSecp256k1)
+	if err != nil {
+		t.Fatalf("keygen: %v", err)
+	}
+
+	// Sign a known 32-byte hash
+	msgHash := make([]byte, 32)
+	for i := range msgHash {
+		msgHash[i] = byte(i)
+	}
+
+	sig, err := svc.Sign(
+		context.Background(),
+		CurveSecp256k1,
+		result.ShareA,
+		result.ShareB,
+		SignInputs{TxHashes: [][]byte{msgHash}},
+	)
+	if err != nil {
+		t.Fatalf("sign: %v", err)
+	}
+
+	if len(sig) == 0 {
+		t.Fatal("signature is empty")
+	}
+
+	// DER-encoded ECDSA signatures are 70-72 bytes typically
+	if len(sig) < 64 || len(sig) > 73 {
+		t.Fatalf("unexpected signature length: %d", len(sig))
+	}
+}

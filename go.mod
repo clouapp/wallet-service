@@ -22,7 +22,7 @@ require (
 )
 
 require (
-	github.com/bnb-chain/tss-lib/v2 v2.0.2
+	github.com/bnb-chain/tss-lib/v2 v2.0.0
 	github.com/goravel/framework v1.17.2
 	github.com/goravel/gin v1.17.0
 	github.com/stretchr/testify v1.11.1
@@ -52,7 +52,9 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/sts v1.27.0 // indirect
 	github.com/aws/smithy-go v1.24.2 // indirect
 	github.com/aymanbagabas/go-osc52/v2 v2.0.1 // indirect
+	github.com/btcsuite/btcd v0.0.0-20190629003639-c26ffa870fd8 // indirect
 	github.com/btcsuite/btcd/btcec/v2 v2.3.2 // indirect
+	github.com/btcsuite/btcutil v0.0.0-20190425235716-9e5f4b9a998d // indirect
 	github.com/bytedance/sonic v1.14.0 // indirect
 	github.com/bytedance/sonic/loader v0.3.0 // indirect
 	github.com/catppuccin/go v0.3.0 // indirect

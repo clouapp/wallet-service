@@ -56,7 +56,7 @@ func keygenSecp256k1(ctx context.Context) (*KeygenResult, error) {
 
 	// Buffered channels to avoid blocking during message routing.
 	outCh := make(chan tss.Message, partyCount*partyCount*10)
-	endCh := make(chan *keygen.LocalPartySaveData, partyCount)
+	endCh := make(chan keygen.LocalPartySaveData, partyCount)
 	errCh := make(chan error, partyCount*4)
 
 	// Create per-party parameters.
@@ -85,7 +85,7 @@ func keygenSecp256k1(ctx context.Context) (*KeygenResult, error) {
 	}
 
 	// Collect save data from both parties.
-	saves := make([]*keygen.LocalPartySaveData, 0, partyCount)
+	saves := make([]keygen.LocalPartySaveData, 0, partyCount)
 
 loop:
 	for {
@@ -167,13 +167,14 @@ func routeMessage(party tss.Party, msg tss.Message, errCh chan<- error) {
 }
 
 // matchSavesByIndex returns (saveA, saveB) ordered by original party index (0, 1).
-func matchSavesByIndex(saves []*keygen.LocalPartySaveData) (*keygen.LocalPartySaveData, *keygen.LocalPartySaveData, error) {
+func matchSavesByIndex(saves []keygen.LocalPartySaveData) (keygen.LocalPartySaveData, keygen.LocalPartySaveData, error) {
+	var zero keygen.LocalPartySaveData
 	if len(saves) != 2 {
-		return nil, nil, fmt.Errorf("expected 2 save data items, got %d", len(saves))
+		return zero, zero, fmt.Errorf("expected 2 save data items, got %d", len(saves))
 	}
 	idx0, err := saves[0].OriginalIndex()
 	if err != nil {
-		return nil, nil, fmt.Errorf("OriginalIndex saves[0]: %w", err)
+		return zero, zero, fmt.Errorf("OriginalIndex saves[0]: %w", err)
 	}
 	if idx0 == 0 {
 		return saves[0], saves[1], nil
