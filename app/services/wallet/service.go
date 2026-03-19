@@ -5,7 +5,6 @@ import (
 	"fmt"
 
 	"github.com/google/uuid"
-	"github.com/goravel/framework/contracts/database/orm"
 	"github.com/goravel/framework/facades"
 	"github.com/redis/go-redis/v9"
 
@@ -38,13 +37,11 @@ func (s *Service) CreateWallet(ctx context.Context, chainID, label string) (*mod
 	}
 
 	w := &models.Wallet{
-		ID:             uuid.New(),
-		Chain:          chainID,
-		Label:          label,
-		MasterPubkey:   "xpub-placeholder",
-		KeyVaultRef:    "kms://master-key",
-		DerivationPath: derivationPath(chainID),
-		AddressIndex:   0,
+		ID:     uuid.New(),
+		Chain:  chainID,
+		Label:  label,
+		// TODO: Task 9 will implement MPC wallet creation
+		// MPC fields will be set during wallet creation with MPC ceremony
 	}
 
 	if err := facades.Orm().Query().Create(w); err != nil {
@@ -70,69 +67,10 @@ func (s *Service) ListWallets(ctx context.Context) ([]models.Wallet, error) {
 }
 
 // GenerateAddress derives a new deposit address for an external user.
-// Atomic: locks wallet row, increments index, inserts address.
+// TODO: Task 9 will implement MPC address generation
 func (s *Service) GenerateAddress(ctx context.Context, walletID uuid.UUID, externalUserID, metadata string) (*models.Address, error) {
-	w, err := s.GetWallet(ctx, walletID)
-	if err != nil {
-		return nil, err
-	}
-	adapter, err := s.registry.Chain(w.Chain)
-	if err != nil {
-		return nil, err
-	}
-
-	var addr *models.Address
-
-	// Use transaction for atomic operation
-	err = facades.Orm().Transaction(func(tx orm.Query) error {
-		// Lock wallet row and get current index
-		var wallet models.Wallet
-		if err := tx.LockForUpdate().Find(&wallet, walletID); err != nil {
-			return err
-		}
-		idx := wallet.AddressIndex
-
-		// Derive new address
-		masterKey := []byte("placeholder-master-key") // TODO: KMS
-		address, err := adapter.DeriveAddress(masterKey, uint32(idx))
-		if err != nil {
-			return err
-		}
-
-		// Create address record
-		addr = &models.Address{
-			ID:              uuid.New(),
-			WalletID:        walletID,
-			Chain:           w.Chain,
-			Address:         address,
-			DerivationIndex: idx,
-			ExternalUserID:  externalUserID,
-			Metadata:        metadata,
-			IsActive:        true,
-		}
-
-		if err := tx.Create(addr); err != nil {
-			return err
-		}
-
-		// Increment address index
-		if _, err := tx.Model(&models.Wallet{}).Where("id", walletID).Update("address_index", idx+1); err != nil {
-			return err
-		}
-
-		return nil
-	})
-
-	if err != nil {
-		return nil, err
-	}
-
-	// Cache in Redis for fast deposit matching
-	if s.rdb != nil {
-		s.rdb.SAdd(ctx, "vault:addresses:"+w.Chain, addr.Address)
-	}
-
-	return addr, nil
+	// Placeholder: Task 9 will implement MPC address generation
+	return nil, fmt.Errorf("MPC address generation not yet implemented")
 }
 
 func (s *Service) LookupAddress(ctx context.Context, chainID, address string) (*models.Address, error) {
@@ -159,15 +97,4 @@ func (s *Service) ListWalletAddresses(ctx context.Context, walletID uuid.UUID) (
 	return addrs, nil
 }
 
-func derivationPath(chainID string) string {
-	switch chainID {
-	case "btc":
-		return "m/84'/0'/0'/0"
-	case "eth", "polygon":
-		return "m/44'/60'/0'/0"
-	case "sol":
-		return "m/44'/501'"
-	default:
-		return "m/44'/0'/0'/0"
-	}
-}
+// TODO: derivationPath is no longer used with MPC wallets. Removed in Task 6.

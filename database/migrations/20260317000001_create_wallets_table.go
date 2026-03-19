@@ -20,15 +20,17 @@ func (r *M20260317000001CreateWalletsTable) Up() error {
 		table.Primary("id")
 		table.String("chain", 50).Comment("Blockchain identifier (eth, polygon, sol, btc)")
 		table.String("label", 255).Nullable().Comment("User-friendly wallet label")
-		table.Text("master_pubkey").Comment("HD wallet master public key")
-		table.String("key_vault_ref", 255).Comment("Reference to key vault for private key")
-		table.String("derivation_path", 100).Comment("BIP44 derivation path")
-		table.Integer("address_index").Default(0).Comment("Current address derivation index")
+		// MPC key material (stored as hex-encoded text for bytea compatibility)
+		table.Text("mpc_customer_share").Comment("Hex-encoded AES-256-GCM encrypted share_A (ciphertext || 16-byte tag)")
+		table.Text("mpc_share_iv").Comment("Hex-encoded AES-256-GCM nonce, exactly 12 bytes")
+		table.Text("mpc_share_salt").Comment("Hex-encoded Argon2id salt, exactly 16 bytes")
+		table.Text("mpc_secret_arn").Comment("AWS Secrets Manager ARN for share_B")
+		table.Text("mpc_public_key").Comment("Hex-encoded compressed public key (33 bytes secp256k1 / 32 bytes ed25519)")
+		table.String("mpc_curve", 20).Comment("secp256k1 or ed25519")
+		table.Text("deposit_address").Comment("Blockchain deposit address derived from combined public key")
 		table.Timestamps()
-
-		// Indexes
 		table.Index("chain")
-		table.Comment("HD wallets for multi-chain custody")
+		table.Comment("MPC co-signing wallets")
 	})
 }
 

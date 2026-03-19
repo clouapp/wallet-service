@@ -72,13 +72,16 @@ func TestDB(t *testing.T) {
 func InsertWallet(t *testing.T, chainID string) models.Wallet {
 	t.Helper()
 	w := models.Wallet{
-		ID:             uuid.New(),
-		Chain:          chainID,
-		Label:          chainID + " test wallet",
-		MasterPubkey:   "xpub-test",
-		KeyVaultRef:    "kms://test",
-		DerivationPath: "m/44'/60'/0'/0",
-		AddressIndex:   0,
+		ID:               uuid.New(),
+		Chain:            chainID,
+		Label:            chainID + " test wallet",
+		MPCCustomerShare: "deadbeef", // hex-encoded test data
+		MPCShareIV:       "cafebabe", // hex-encoded test data
+		MPCShareSalt:     "feedface", // hex-encoded test data
+		MPCSecretARN:     "arn:aws:secretsmanager:us-east-1:123456789012:secret:test",
+		MPCPublicKey:     "02abc123def456", // hex-encoded compressed public key
+		MPCCurve:         "secp256k1",
+		DepositAddress:   "0x1234567890abcdef",
 	}
 	if err := facades.Orm().Query().Create(&w); err != nil {
 		t.Fatalf("insert wallet: %v", err)
