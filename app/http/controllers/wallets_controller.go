@@ -5,6 +5,7 @@ import (
 	"github.com/goravel/framework/contracts/http"
 
 	"github.com/macromarkets/vault/app/container"
+	"github.com/macromarkets/vault/app/http/requests"
 	"github.com/macromarkets/vault/app/models"
 )
 
@@ -22,25 +23,13 @@ import (
 // @Failure      409   {object}  ErrorResponse  "Wallet for this chain already exists or chain is unsupported"
 // @Router       /v1/wallets [post]
 func CreateWallet(ctx http.Context) http.Response {
-	var req struct {
-		Chain      string `json:"chain" form:"chain"`
-		Label      string `json:"label" form:"label"`
-		Passphrase string `json:"passphrase" form:"passphrase"`
+	var req requests.CreateWalletRequest
+	validationErrors, err := ctx.Request().ValidateRequest(&req)
+	if err != nil {
+		return ctx.Response().Json(http.StatusInternalServerError, http.Json{"error": err.Error()})
 	}
-	if err := ctx.Request().Bind(&req); err != nil {
-		return ctx.Response().Json(http.StatusBadRequest, http.Json{
-			"error": err.Error(),
-		})
-	}
-	if req.Chain == "" {
-		return ctx.Response().Json(http.StatusBadRequest, http.Json{
-			"error": "chain is required",
-		})
-	}
-	if len(req.Passphrase) < 12 {
-		return ctx.Response().Json(http.StatusBadRequest, http.Json{
-			"error": "passphrase must be at least 12 characters",
-		})
+	if validationErrors != nil {
+		return ctx.Response().Json(http.StatusUnprocessableEntity, validationErrors.All())
 	}
 
 	w, err := container.Get().WalletService.CreateWallet(ctx.Context(), req.Chain, req.Label, req.Passphrase)

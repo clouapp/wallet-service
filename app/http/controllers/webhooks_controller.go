@@ -4,6 +4,7 @@ import (
 	"github.com/goravel/framework/contracts/http"
 
 	"github.com/macromarkets/vault/app/container"
+	"github.com/macromarkets/vault/app/http/requests"
 )
 
 // CreateWebhook godoc
@@ -20,20 +21,13 @@ import (
 // @Failure      500   {object}  ErrorResponse
 // @Router       /v1/webhooks [post]
 func CreateWebhook(ctx http.Context) http.Response {
-	var req struct {
-		URL    string   `json:"url" form:"url"`
-		Secret string   `json:"secret" form:"secret"`
-		Events []string `json:"events" form:"events"`
+	var req requests.CreateWebhookRequest
+	validationErrors, err := ctx.Request().ValidateRequest(&req)
+	if err != nil {
+		return ctx.Response().Json(http.StatusInternalServerError, http.Json{"error": err.Error()})
 	}
-	if err := ctx.Request().Bind(&req); err != nil {
-		return ctx.Response().Json(http.StatusBadRequest, http.Json{
-			"error": err.Error(),
-		})
-	}
-	if req.URL == "" || req.Secret == "" || len(req.Events) == 0 {
-		return ctx.Response().Json(http.StatusBadRequest, http.Json{
-			"error": "url, secret, and events are required",
-		})
+	if validationErrors != nil {
+		return ctx.Response().Json(http.StatusUnprocessableEntity, validationErrors.All())
 	}
 
 	cfg, err := container.Get().WebhookService.CreateConfig(ctx.Context(), req.URL, req.Secret, req.Events)
