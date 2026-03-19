@@ -19,6 +19,7 @@ import (
 // @Param        body  body      GenerateAddressRequest  true  "Address generation request"
 // @Success      201   {object}  models.Address
 // @Failure      400   {object}  ErrorResponse  "Invalid wallet ID or missing fields"
+// @Failure      422   {object}  ErrorResponse  "Address generation not supported for MPC wallets"
 // @Failure      500   {object}  ErrorResponse
 // @Router       /v1/wallets/{id}/addresses [post]
 func GenerateAddress(ctx http.Context) http.Response {
@@ -46,7 +47,7 @@ func GenerateAddress(ctx http.Context) http.Response {
 
 	addr, err := container.Get().WalletService.GenerateAddress(ctx.Context(), walletID, req.ExternalUserID, req.Metadata)
 	if err != nil {
-		return ctx.Response().Json(http.StatusInternalServerError, http.Json{
+		return ctx.Response().Json(http.StatusUnprocessableEntity, http.Json{
 			"error": err.Error(),
 		})
 	}
