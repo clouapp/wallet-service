@@ -2,8 +2,10 @@ package wallet
 
 import (
 	"context"
+	"encoding/hex"
 	"fmt"
 
+	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/secretsmanager"
 	"github.com/google/uuid"
 	"github.com/goravel/framework/facades"
@@ -14,11 +16,17 @@ import (
 	mpc "github.com/macromarkets/vault/app/services/mpc"
 )
 
+// secretsManagerAPI is a subset of secretsmanager.Client used by the wallet service,
+// defined as an interface to allow test mocking.
+type secretsManagerAPI interface {
+	CreateSecret(ctx context.Context, input *secretsmanager.CreateSecretInput, opts ...func(*secretsmanager.Options)) (*secretsmanager.CreateSecretOutput, error)
+}
+
 type Service struct {
 	registry       *chain.Registry
 	rdb            *redis.Client // optional: address cache
 	mpcService     mpc.Service
-	secretsManager *secretsmanager.Client
+	secretsManager secretsManagerAPI
 }
 
 func NewService(registry *chain.Registry, rdb *redis.Client, mpcSvc mpc.Service, sm *secretsmanager.Client) *Service {
@@ -30,7 +38,10 @@ func NewService(registry *chain.Registry, rdb *redis.Client, mpcSvc mpc.Service,
 	}
 }
 
-func (s *Service) CreateWallet(ctx context.Context, chainID, label string) (*models.Wallet, error) {
+func (s *Service) CreateWallet(ctx context.Context, chainID, label, passphrase string) (*models.Wallet, error) {
+	if len(passphrase) < 12 {
+		return nil, fmt.Errorf("passphrase must be at least 12 characters")
+	}
 	if _, err := s.registry.Chain(chainID); err != nil {
 		return nil, fmt.Errorf("unknown chain: %s", chainID)
 	}
@@ -45,18 +56,68 @@ func (s *Service) CreateWallet(ctx context.Context, chainID, label string) (*mod
 		return nil, fmt.Errorf("wallet for chain %s already exists", chainID)
 	}
 
+	curve := curveForChain(chainID)
+
+	// 1. MPC keygen
+	result, err := s.mpcService.Keygen(ctx, curve)
+	if err != nil {
+		return nil, fmt.Errorf("mpc keygen: %w", err)
+	}
+
+	// 2. Encrypt customer share with passphrase
+	enc, err := mpc.EncryptShare(result.ShareA, passphrase)
+	if err != nil {
+		return nil, fmt.Errorf("encrypt share: %w", err)
+	}
+
+	// 3. Store service share in AWS Secrets Manager
+	walletID := uuid.New()
+	secretName := fmt.Sprintf("vault/wallet/%s/share-b", walletID.String())
+	out, err := s.secretsManager.CreateSecret(ctx, &secretsmanager.CreateSecretInput{
+		Name:         aws.String(secretName),
+		SecretBinary: result.ShareB,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("store service share: %w", err)
+	}
+	secretARN := aws.ToString(out.ARN)
+
+	// 4. Derive deposit address from combined public key
+	depositAddress, err := deriveAddress(chainID, result.CombinedPubKey)
+	if err != nil {
+		return nil, fmt.Errorf("derive address: %w", err)
+	}
+
 	w := &models.Wallet{
-		ID:     uuid.New(),
-		Chain:  chainID,
-		Label:  label,
-		// TODO: Task 9 will implement MPC wallet creation
-		// MPC fields will be set during wallet creation with MPC ceremony
+		ID:               walletID,
+		Chain:            chainID,
+		Label:            label,
+		MPCCustomerShare: hex.EncodeToString(enc.Ciphertext),
+		MPCShareIV:       hex.EncodeToString(enc.IV),
+		MPCShareSalt:     hex.EncodeToString(enc.Salt),
+		MPCSecretARN:     secretARN,
+		MPCPublicKey:     hex.EncodeToString(result.CombinedPubKey),
+		MPCCurve:         string(curve),
+		DepositAddress:   depositAddress,
 	}
 
 	if err := facades.Orm().Query().Create(w); err != nil {
 		return nil, err
 	}
+
+	// Cache deposit address in Redis for fast lookup
+	if s.rdb != nil {
+		s.rdb.SAdd(ctx, "vault:addresses:"+chainID, depositAddress)
+	}
+
 	return w, nil
+}
+
+func curveForChain(chainID string) mpc.Curve {
+	if chainID == "sol" {
+		return mpc.CurveEd25519
+	}
+	return mpc.CurveSecp256k1
 }
 
 func (s *Service) GetWallet(ctx context.Context, id uuid.UUID) (*models.Wallet, error) {
@@ -75,11 +136,9 @@ func (s *Service) ListWallets(ctx context.Context) ([]models.Wallet, error) {
 	return ws, nil
 }
 
-// GenerateAddress derives a new deposit address for an external user.
-// TODO: Task 9 will implement MPC address generation
+// GenerateAddress is not supported for MPC wallets in v1.
 func (s *Service) GenerateAddress(ctx context.Context, walletID uuid.UUID, externalUserID, metadata string) (*models.Address, error) {
-	// Placeholder: Task 9 will implement MPC address generation
-	return nil, fmt.Errorf("MPC address generation not yet implemented")
+	return nil, fmt.Errorf("address derivation not supported for MPC wallets in v1")
 }
 
 func (s *Service) LookupAddress(ctx context.Context, chainID, address string) (*models.Address, error) {
@@ -105,5 +164,3 @@ func (s *Service) ListWalletAddresses(ctx context.Context, walletID uuid.UUID) (
 	}
 	return addrs, nil
 }
-
-// TODO: derivationPath is no longer used with MPC wallets. Removed in Task 6.

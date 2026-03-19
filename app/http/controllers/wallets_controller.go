@@ -23,8 +23,9 @@ import (
 // @Router       /v1/wallets [post]
 func CreateWallet(ctx http.Context) http.Response {
 	var req struct {
-		Chain string `json:"chain" form:"chain"`
-		Label string `json:"label" form:"label"`
+		Chain      string `json:"chain" form:"chain"`
+		Label      string `json:"label" form:"label"`
+		Passphrase string `json:"passphrase" form:"passphrase"`
 	}
 	if err := ctx.Request().Bind(&req); err != nil {
 		return ctx.Response().Json(http.StatusBadRequest, http.Json{
@@ -36,8 +37,13 @@ func CreateWallet(ctx http.Context) http.Response {
 			"error": "chain is required",
 		})
 	}
+	if len(req.Passphrase) < 12 {
+		return ctx.Response().Json(http.StatusBadRequest, http.Json{
+			"error": "passphrase must be at least 12 characters",
+		})
+	}
 
-	w, err := container.Get().WalletService.CreateWallet(ctx.Context(), req.Chain, req.Label)
+	w, err := container.Get().WalletService.CreateWallet(ctx.Context(), req.Chain, req.Label, req.Passphrase)
 	if err != nil {
 		return ctx.Response().Json(http.StatusConflict, http.Json{
 			"error": err.Error(),
@@ -98,8 +104,9 @@ func GetWallet(ctx http.Context) http.Response {
 
 // CreateWalletRequest is the request body for creating a wallet.
 type CreateWalletRequest struct {
-	Chain string `json:"chain" example:"eth"`
-	Label string `json:"label" example:"My Ethereum Wallet"`
+	Chain      string `json:"chain" example:"eth"`
+	Label      string `json:"label" example:"My Ethereum Wallet"`
+	Passphrase string `json:"passphrase" example:"my-secret-passphrase-12chars"`
 }
 
 // ensure models import is used
