@@ -56,17 +56,6 @@ func TestWebhookMessage_Fields(t *testing.T) {
 	if msg.Attempt != 3 { t.Error("Attempt") }
 }
 
-func TestWithdrawalMessage_Fields(t *testing.T) {
-	msg := WithdrawalMessage{
-		TransactionID: "t1", WalletID: "w1", ChainID: "eth",
-		ToAddress: "0xto", Amount: "100", Asset: "usdt",
-		TokenContract: "0xdac", ExternalUserID: "u1",
-	}
-	if msg.ChainID != "eth" { t.Error("ChainID") }
-	if msg.Asset != "usdt" { t.Error("Asset") }
-	if msg.TokenContract != "0xdac" { t.Error("TokenContract") }
-}
-
 func TestToken_Fields(t *testing.T) {
 	tok := Token{Symbol: "usdt", Name: "Tether USD", Contract: "0xdAC17F", Decimals: 6, ChainID: "eth"}
 	if tok.Symbol != "usdt" { t.Error("Symbol") }

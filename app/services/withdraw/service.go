@@ -3,27 +3,23 @@ package withdraw
 import (
 	"context"
 	"fmt"
-	"log/slog"
-	"math/big"
 
 	"github.com/google/uuid"
 	"github.com/goravel/framework/facades"
 
 	"github.com/macromarkets/vault/app/models"
 	"github.com/macromarkets/vault/app/services/chain"
-	"github.com/macromarkets/vault/app/services/queue"
 	"github.com/macromarkets/vault/app/services/webhook"
 	"github.com/macromarkets/vault/pkg/types"
 )
 
 type Service struct {
 	registry   *chain.Registry
-	sqs        queue.Sender
 	webhookSvc *webhook.Service
 }
 
-func NewService(registry *chain.Registry, sqs queue.Sender, webhookSvc *webhook.Service) *Service {
-	return &Service{registry: registry, sqs: sqs, webhookSvc: webhookSvc}
+func NewService(registry *chain.Registry, webhookSvc *webhook.Service) *Service {
+	return &Service{registry: registry, webhookSvc: webhookSvc}
 }
 
 // ---------------------------------------------------------------------------
@@ -98,117 +94,14 @@ func (s *Service) Request(ctx context.Context, req WithdrawRequest) (*models.Tra
 	// 6. Fire webhook: pending
 	s.webhookSvc.EnqueueEvent(ctx, tx.ID, types.EventWithdrawalPending, tx)
 
-	// 7. Enqueue to SQS for async processing
-	sqsMsg := types.WithdrawalMessage{
-		TransactionID:  tx.ID.String(),
-		WalletID:       wallet.ID.String(),
-		ChainID:        wallet.Chain,
-		ToAddress:      req.ToAddress,
-		Amount:         req.Amount,
-		Asset:          req.Asset,
-		ExternalUserID: req.ExternalUserID,
-	}
-	if tokenContract != "" {
-		sqsMsg.TokenContract = tokenContract
-	}
-	if err := s.sqs.SendWithdrawal(ctx, sqsMsg); err != nil {
-		// SQS send failed — mark tx as failed
-		s.failTx(ctx, tx.ID, fmt.Sprintf("queue send: %v", err))
-		return nil, fmt.Errorf("enqueue withdrawal: %w", err)
-	}
+	// 7. TODO: MPC synchronous signing (replacing async SQS worker path)
 
 	return tx, nil
 }
 
 // ---------------------------------------------------------------------------
-// Execute is called by the SQS Lambda worker. Does the actual signing + broadcast.
+// Execute removed — replaced by synchronous MPC signing in API Lambda (Task 10)
 // ---------------------------------------------------------------------------
-
-func (s *Service) Execute(ctx context.Context, msg types.WithdrawalMessage) error {
-	txID, _ := uuid.Parse(msg.TransactionID)
-
-	// Check tx still pending (idempotency for SQS redelivery)
-	var tx models.Transaction
-	if err := facades.Orm().Query().Find(&tx, txID); err != nil {
-		return fmt.Errorf("tx not found: %w", err)
-	}
-	if tx.Status != string(types.TxStatusPending) {
-		slog.Info("tx already processed, skipping", "tx_id", txID, "status", tx.Status)
-		return nil
-	}
-
-	adapter, err := s.registry.Chain(msg.ChainID)
-	if err != nil {
-		s.failTx(ctx, txID, err.Error())
-		return err
-	}
-
-	amount, ok := new(big.Int).SetString(msg.Amount, 10)
-	if !ok {
-		s.failTx(ctx, txID, "invalid amount")
-		return fmt.Errorf("invalid amount: %s", msg.Amount)
-	}
-
-	// Resolve token
-	var token *types.Token
-	if msg.TokenContract != "" {
-		t, err := s.registry.FindToken(msg.ChainID, msg.Asset)
-		if err != nil {
-			s.failTx(ctx, txID, err.Error())
-			return err
-		}
-		token = t
-	}
-
-	// Build TX
-	fromAddress := "hot-wallet-address" // TODO: resolve from wallet
-	unsigned, err := adapter.BuildTransfer(ctx, types.TransferRequest{
-		From: fromAddress, To: msg.ToAddress, Amount: amount, Asset: msg.Asset, Token: token,
-	})
-	if err != nil {
-		s.failTx(ctx, txID, fmt.Sprintf("build: %v", err))
-		return err
-	}
-
-	// Sign
-	privateKey := []byte("placeholder") // TODO: KMS
-	signed, err := adapter.SignTransaction(ctx, unsigned, privateKey)
-	if err != nil {
-		s.failTx(ctx, txID, fmt.Sprintf("sign: %v", err))
-		return err
-	}
-	s.webhookSvc.EnqueueEvent(ctx, txID, types.EventWithdrawalSigned, tx)
-
-	// Broadcast
-	txHash, err := adapter.BroadcastTransaction(ctx, signed)
-	if err != nil {
-		s.failTx(ctx, txID, fmt.Sprintf("broadcast: %v", err))
-		return err
-	}
-
-	// Update tx with hash
-	facades.Orm().Query().Model(&models.Transaction{}).Where("id", txID).Update(map[string]interface{}{
-		"tx_hash": txHash,
-		"status":  "confirming",
-	})
-	s.webhookSvc.EnqueueEvent(ctx, txID, types.EventWithdrawalBroadcast, map[string]string{
-		"tx_id": txID.String(), "tx_hash": txHash,
-	})
-
-	slog.Info("withdrawal broadcast", "tx_id", txID, "tx_hash", txHash, "chain", msg.ChainID)
-	return nil
-}
-
-func (s *Service) failTx(ctx context.Context, txID uuid.UUID, reason string) {
-	slog.Error("withdrawal failed", "tx_id", txID, "reason", reason)
-	facades.Orm().Query().Model(&models.Transaction{}).Where("id", txID).Update(map[string]interface{}{
-		"status":        "failed",
-		"error_message": reason,
-	})
-	s.webhookSvc.EnqueueEvent(ctx, txID, types.EventWithdrawalFailed, map[string]string{
-		"tx_id": txID.String(), "reason": reason,
-	})
-}
 
 // ---------------------------------------------------------------------------
 // Query helpers (used by API controllers)

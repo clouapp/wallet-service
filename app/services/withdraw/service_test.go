@@ -8,7 +8,6 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/macromarkets/vault/app/services/chain"
-	"github.com/macromarkets/vault/app/services/queue"
 	"github.com/macromarkets/vault/app/services/webhook"
 	"github.com/macromarkets/vault/pkg/types"
 	"github.com/macromarkets/vault/tests/mocks"
@@ -31,8 +30,7 @@ func setupWithdrawService(t *testing.T) (*Service, *mocks.MockChain) {
 	registry.RegisterToken(types.Token{Symbol: "usdt", ChainID: "eth", Decimals: 6, Contract: "0xdAC17F"})
 
 	webhookSvc := webhook.NewService(nil)
-	sqsClient := &queue.SQSClient{} // nil inner client — send will be no-op
-	svc := NewService(registry, sqsClient, webhookSvc)
+	svc := NewService(registry, webhookSvc)
 	return svc, mockChain
 }
 
@@ -240,19 +238,3 @@ func TestListTransactions_Filters(t *testing.T) {
 	}
 }
 
-func TestExecute_Idempotency(t *testing.T) {
-	svc, _ := setupWithdrawService(t)
-	ctx := context.Background()
-
-	w := mocks.InsertWallet(t, "eth")
-	tx := mocks.InsertTransaction(t, w.ID, nil, "eth", "withdrawal", "confirmed", "eth", "100", 50)
-
-	// Should skip already-confirmed transaction
-	err := svc.Execute(ctx, types.WithdrawalMessage{
-		TransactionID: tx.ID.String(), WalletID: w.ID.String(),
-		ChainID: "eth", ToAddress: "0xto", Amount: "100", Asset: "eth",
-	})
-	if err != nil {
-		t.Fatalf("Execute on confirmed tx should succeed (skip): %v", err)
-	}
-}

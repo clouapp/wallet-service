@@ -80,8 +80,6 @@ func main() {
 		lambda.Start(handleDepositScan)
 	case "webhook_worker":
 		lambda.Start(handleWebhookWorker)
-	case "withdrawal_worker":
-		lambda.Start(handleWithdrawalWorker)
 	case "api":
 		lambda.Start(handleAPIGateway)
 	default:
@@ -125,34 +123,6 @@ func handleWebhookWorker(ctx context.Context, sqsEvent events.SQSEvent) (events.
 
 		if err := c.WebhookService.Deliver(ctx, msg); err != nil {
 			slog.Error("webhook delivery failed", "error", err, "event_id", msg.EventID)
-			failures = append(failures, events.SQSBatchItemFailure{
-				ItemIdentifier: record.MessageId,
-			})
-		}
-	}
-
-	return events.SQSEventResponse{BatchItemFailures: failures}, nil
-}
-
-// ---------------------------------------------------------------------------
-// Withdrawal Worker — triggered by SQS
-// ---------------------------------------------------------------------------
-
-func handleWithdrawalWorker(ctx context.Context, sqsEvent events.SQSEvent) (events.SQSEventResponse, error) {
-	var failures []events.SQSBatchItemFailure
-
-	for _, record := range sqsEvent.Records {
-		var msg types.WithdrawalMessage
-		if err := json.Unmarshal([]byte(record.Body), &msg); err != nil {
-			slog.Error("unmarshal withdrawal message", "error", err, "message_id", record.MessageId)
-			failures = append(failures, events.SQSBatchItemFailure{
-				ItemIdentifier: record.MessageId,
-			})
-			continue
-		}
-
-		if err := c.WithdrawalService.Execute(ctx, msg); err != nil {
-			slog.Error("withdrawal execution failed", "error", err, "tx_id", msg.TransactionID)
 			failures = append(failures, events.SQSBatchItemFailure{
 				ItemIdentifier: record.MessageId,
 			})

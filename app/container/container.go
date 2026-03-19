@@ -56,8 +56,7 @@ func Boot() *Container {
 	}
 	sqsClient := sqs.NewFromConfig(awsCfg)
 	c.SQS = queue.NewSQSClient(sqsClient, queue.QueueURLs{
-		Webhook:    os.Getenv("WEBHOOK_QUEUE_URL"),
-		Withdrawal: os.Getenv("WITHDRAWAL_QUEUE_URL"),
+		Webhook: os.Getenv("WEBHOOK_QUEUE_URL"),
 	})
 
 	// --- Chain Registry ---
@@ -94,7 +93,7 @@ func Boot() *Container {
 	// --- Services ---
 	c.WebhookService = webhook.NewService(c.SQS)
 	c.WalletService = wallet.NewService(c.Registry, c.Redis)
-	c.WithdrawalService = withdraw.NewService(c.Registry, c.SQS, c.WebhookService)
+	c.WithdrawalService = withdraw.NewService(c.Registry, c.WebhookService)
 	c.DepositService = deposit.NewService(c.Redis, c.Registry, c.WebhookService)
 
 	globalContainer = c

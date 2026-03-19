@@ -21,12 +21,10 @@ import (
 // Sender defines the interface for sending messages to queues
 type Sender interface {
 	SendWebhook(ctx context.Context, msg types.WebhookMessage) error
-	SendWithdrawal(ctx context.Context, msg types.WithdrawalMessage) error
 }
 
 type QueueURLs struct {
-	Webhook    string
-	Withdrawal string
+	Webhook string
 }
 
 type SQSClient struct {
@@ -42,14 +40,6 @@ func NewSQSClient(client *sqs.Client, urls QueueURLs) *SQSClient {
 func (q *SQSClient) SendWebhook(ctx context.Context, msg types.WebhookMessage) error {
 	return q.send(ctx, q.urls.Webhook, msg, map[string]string{
 		"event_type": string(msg.EventType),
-	})
-}
-
-// SendWithdrawal enqueues a withdrawal processing job.
-// Uses transaction ID as dedup key (SQS FIFO not needed — idempotency at app level).
-func (q *SQSClient) SendWithdrawal(ctx context.Context, msg types.WithdrawalMessage) error {
-	return q.send(ctx, q.urls.Withdrawal, msg, map[string]string{
-		"chain": msg.ChainID,
 	})
 }
 

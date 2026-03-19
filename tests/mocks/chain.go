@@ -127,10 +127,8 @@ func (m *MockChain) ScanBlock(ctx context.Context, blockNum uint64) ([]types.Det
 // ---------------------------------------------------------------------------
 
 type MockSQS struct {
-	WebhookMessages    []types.WebhookMessage
-	WithdrawalMessages []types.WithdrawalMessage
-	SendWebhookErr     error
-	SendWithdrawalErr  error
+	WebhookMessages []types.WebhookMessage
+	SendWebhookErr  error
 }
 
 func NewMockSQS() *MockSQS {
@@ -142,14 +140,6 @@ func (m *MockSQS) SendWebhook(ctx context.Context, msg types.WebhookMessage) err
 		return m.SendWebhookErr
 	}
 	m.WebhookMessages = append(m.WebhookMessages, msg)
-	return nil
-}
-
-func (m *MockSQS) SendWithdrawal(ctx context.Context, msg types.WithdrawalMessage) error {
-	if m.SendWithdrawalErr != nil {
-		return m.SendWithdrawalErr
-	}
-	m.WithdrawalMessages = append(m.WithdrawalMessages, msg)
 	return nil
 }
 

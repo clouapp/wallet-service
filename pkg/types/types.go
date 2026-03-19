@@ -140,17 +140,6 @@ type WebhookMessage struct {
 	Attempt       int       `json:"attempt"`
 }
 
-type WithdrawalMessage struct {
-	TransactionID  string `json:"transaction_id"`
-	WalletID       string `json:"wallet_id"`
-	ChainID        string `json:"chain_id"`
-	ToAddress      string `json:"to_address"`
-	Amount         string `json:"amount"`
-	Asset          string `json:"asset"`
-	TokenContract  string `json:"token_contract,omitempty"`
-	ExternalUserID string `json:"external_user_id"`
-}
-
 type DepositScanEvent struct {
 	Chain string `json:"chain"`
 }
