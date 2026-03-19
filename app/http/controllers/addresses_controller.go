@@ -5,6 +5,7 @@ import (
 	"github.com/goravel/framework/contracts/http"
 
 	"github.com/macromarkets/vault/app/container"
+	"github.com/macromarkets/vault/app/http/requests"
 )
 
 // GenerateAddress godoc
@@ -30,19 +31,13 @@ func GenerateAddress(ctx http.Context) http.Response {
 		})
 	}
 
-	var req struct {
-		ExternalUserID string `json:"external_user_id" form:"external_user_id"`
-		Metadata       string `json:"metadata" form:"metadata"`
+	var req requests.GenerateAddressRequest
+	validationErrors, err := ctx.Request().ValidateRequest(&req)
+	if err != nil {
+		return ctx.Response().Json(http.StatusInternalServerError, http.Json{"error": err.Error()})
 	}
-	if err := ctx.Request().Bind(&req); err != nil {
-		return ctx.Response().Json(http.StatusBadRequest, http.Json{
-			"error": err.Error(),
-		})
-	}
-	if req.ExternalUserID == "" {
-		return ctx.Response().Json(http.StatusBadRequest, http.Json{
-			"error": "external_user_id is required",
-		})
+	if validationErrors != nil {
+		return ctx.Response().Json(http.StatusUnprocessableEntity, validationErrors.All())
 	}
 
 	addr, err := container.Get().WalletService.GenerateAddress(ctx.Context(), walletID, req.ExternalUserID, req.Metadata)
