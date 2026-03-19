@@ -2,6 +2,7 @@ package mpc
 
 import (
 	"bytes"
+	"context"
 	"testing"
 )
 
@@ -52,5 +53,50 @@ func TestEncryptedShareFormat(t *testing.T) {
 	// Ciphertext must be plaintext + 16-byte GCM tag
 	if len(encrypted.Ciphertext) != len(plaintext)+16 {
 		t.Fatalf("Ciphertext length: want %d, got %d", len(plaintext)+16, len(encrypted.Ciphertext))
+	}
+}
+
+func TestKeygenSecp256k1ProducesShares(t *testing.T) {
+	svc := NewTSSService()
+
+	result, err := svc.Keygen(context.Background(), CurveSecp256k1)
+	if err != nil {
+		t.Fatalf("keygen: %v", err)
+	}
+
+	if len(result.ShareA) == 0 {
+		t.Fatal("ShareA is empty")
+	}
+	if len(result.ShareB) == 0 {
+		t.Fatal("ShareB is empty")
+	}
+	// secp256k1 compressed pubkey = 33 bytes
+	if len(result.CombinedPubKey) != 33 {
+		t.Fatalf("CombinedPubKey length: want 33, got %d", len(result.CombinedPubKey))
+	}
+	// Compressed pubkey starts with 0x02 or 0x03
+	if result.CombinedPubKey[0] != 0x02 && result.CombinedPubKey[0] != 0x03 {
+		t.Fatalf("CombinedPubKey not compressed: first byte %x", result.CombinedPubKey[0])
+	}
+}
+
+func TestKeygenSharesAreDifferent(t *testing.T) {
+	svc := NewTSSService()
+
+	r1, err := svc.Keygen(context.Background(), CurveSecp256k1)
+	if err != nil {
+		t.Fatalf("keygen 1: %v", err)
+	}
+	r2, err := svc.Keygen(context.Background(), CurveSecp256k1)
+	if err != nil {
+		t.Fatalf("keygen 2: %v", err)
+	}
+
+	// Two keygens must produce different keys
+	if bytes.Equal(r1.ShareA, r2.ShareA) {
+		t.Fatal("two keygens produced identical ShareA")
+	}
+	if bytes.Equal(r1.CombinedPubKey, r2.CombinedPubKey) {
+		t.Fatal("two keygens produced identical public keys")
 	}
 }
