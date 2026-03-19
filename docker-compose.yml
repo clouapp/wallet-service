@@ -116,6 +116,35 @@ services:
       - api  # Only start with: docker-compose --profile api up
 
   # =============================================================================
+  # LocalStack (AWS Service Emulation)
+  # =============================================================================
+  localstack:
+    image: localstack/localstack:latest
+    container_name: vault-localstack
+    restart: unless-stopped
+    environment:
+      - SERVICES=sqs,secretsmanager,kms
+      - AWS_DEFAULT_REGION=us-east-1
+      - AWS_ACCESS_KEY_ID=test
+      - AWS_SECRET_ACCESS_KEY=test
+      - DEBUG=0
+      - DOCKER_HOST=unix:///var/run/docker.sock
+    ports:
+      - "4566:4566"
+      - "4571:4571"
+    volumes:
+      - localstack_data:/var/lib/localstack
+      - /var/run/docker.sock:/var/run/docker.sock
+    healthcheck:
+      test: ["CMD", "awslocal", "sqs", "list-queues"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - vault-network
+
+  # =============================================================================
   # Test Runner (for running tests in Docker)
   # =============================================================================
   test-runner:
@@ -147,6 +176,8 @@ volumes:
   redis_data:
     driver: local
   pgadmin_data:
+    driver: local
+  localstack_data:
     driver: local
 
 # =============================================================================
