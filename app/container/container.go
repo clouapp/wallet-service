@@ -102,7 +102,7 @@ func Boot() *Container {
 	// --- Services ---
 	c.WebhookService = webhook.NewService(c.SQS)
 	c.WalletService = wallet.NewService(c.Registry, c.Redis, c.MPCService, c.SecretsManager)
-	c.WithdrawalService = withdraw.NewService(c.Registry, c.WebhookService)
+	c.WithdrawalService = withdraw.NewService(c.Registry, c.WebhookService, c.MPCService, c.SecretsManager, c.Redis)
 	c.DepositService = deposit.NewService(c.Redis, c.Registry, c.WebhookService)
 
 	globalContainer = c
