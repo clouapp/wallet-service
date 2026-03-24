@@ -1788,6 +1788,1042 @@ const docTemplate = `{
                     }
                 }
             }
+        },
+        "/wallets/{walletId}/freeze": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Freezes the wallet until the specified timestamp. Requires wallet or account owner.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Wallet Settings"
+                ],
+                "summary": "Freeze a wallet",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Wallet UUID",
+                        "name": "walletId",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Freeze payload",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/controllers.FreezeWalletRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/controllers.WalletSettingsResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/controllers.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/wallets/{walletId}/settings": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns fee, approval, and freeze settings for a wallet",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Wallet Settings"
+                ],
+                "summary": "Get wallet settings",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Wallet UUID",
+                        "name": "walletId",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/controllers.WalletSettingsResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/controllers.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/controllers.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "patch": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Updates fee rates, approval thresholds, and other wallet settings. Requires wallet or account owner/admin.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Wallet Settings"
+                ],
+                "summary": "Update wallet settings",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Wallet UUID",
+                        "name": "walletId",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Settings payload",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/controllers.UpdateWalletSettingsRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/controllers.WalletSettingsResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/controllers.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/controllers.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/wallets/{walletId}/transactions": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns a paginated list of transactions for a specific wallet",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Wallet Transactions"
+                ],
+                "summary": "List transactions for a wallet",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Wallet UUID",
+                        "name": "walletId",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "enum": [
+                            "deposit",
+                            "withdrawal"
+                        ],
+                        "type": "string",
+                        "description": "Transaction type filter",
+                        "name": "type",
+                        "in": "query"
+                    },
+                    {
+                        "enum": [
+                            "pending",
+                            "confirmed",
+                            "failed"
+                        ],
+                        "type": "string",
+                        "description": "Status filter",
+                        "name": "status",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "example": 50,
+                        "description": "Max results (default 50)",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "example": 0,
+                        "description": "Pagination offset",
+                        "name": "offset",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/controllers.TransactionListResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/controllers.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/controllers.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/wallets/{walletId}/transactions/{txId}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns a specific transaction by ID scoped to the wallet",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Wallet Transactions"
+                ],
+                "summary": "Get a single wallet transaction",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Wallet UUID",
+                        "name": "walletId",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Transaction UUID",
+                        "name": "txId",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/models.Transaction"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/controllers.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/controllers.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/wallets/{walletId}/unspents": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns UTXOs for a UTXO-model wallet (e.g. bitcoin). Not available for account-model chains. Requires the UTXOOnly middleware to be applied.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Wallet Unspents"
+                ],
+                "summary": "List unspent transaction outputs (UTXOs)",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Wallet UUID",
+                        "name": "walletId",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/controllers.UnspentOutputListResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/controllers.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/controllers.ErrorResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "Only available for UTXO chains",
+                        "schema": {
+                            "$ref": "#/definitions/controllers.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/wallets/{walletId}/users": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns all active members of a wallet",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Wallet Users"
+                ],
+                "summary": "List wallet users",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Wallet UUID",
+                        "name": "walletId",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/controllers.WalletUserListResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/controllers.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/controllers.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Adds a user to the wallet with the specified role. Requires wallet or account owner/admin.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Wallet Users"
+                ],
+                "summary": "Add a user to a wallet",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Wallet UUID",
+                        "name": "walletId",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "User and role payload",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/controllers.AddWalletUserRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/models.WalletUser"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/controllers.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/controllers.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/wallets/{walletId}/users/{userId}": {
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Soft-deletes the wallet_user membership. Requires wallet or account owner/admin.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Wallet Users"
+                ],
+                "summary": "Remove a user from a wallet",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Wallet UUID",
+                        "name": "walletId",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "User UUID to remove",
+                        "name": "userId",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No content"
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/controllers.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/controllers.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/wallets/{walletId}/webhooks": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns all webhook configurations scoped to a wallet",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Wallet Webhooks"
+                ],
+                "summary": "List webhooks for a wallet",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Wallet UUID",
+                        "name": "walletId",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/controllers.WebhookConfigListResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/controllers.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/controllers.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Registers a webhook scoped to a specific wallet. Requires wallet or account owner/admin.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Wallet Webhooks"
+                ],
+                "summary": "Create a webhook for a wallet",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Wallet UUID",
+                        "name": "walletId",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Webhook configuration",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/controllers.CreateWalletWebhookRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/models.WebhookConfig"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/controllers.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/controllers.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/wallets/{walletId}/webhooks/{webhookId}": {
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Removes a webhook configuration by ID. Requires wallet or account owner/admin.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Wallet Webhooks"
+                ],
+                "summary": "Delete a wallet webhook",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Wallet UUID",
+                        "name": "walletId",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Webhook UUID",
+                        "name": "webhookId",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No content"
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/controllers.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/controllers.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/wallets/{walletId}/whitelist": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns all address whitelist entries. Requires wallet or account membership.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Whitelist"
+                ],
+                "summary": "List whitelist entries for a wallet",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Wallet UUID",
+                        "name": "walletId",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/controllers.WhitelistEntryListResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/controllers.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/controllers.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Creates a new whitelist entry. Requires wallet or account owner/admin.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Whitelist"
+                ],
+                "summary": "Add an address to the wallet whitelist",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Wallet UUID",
+                        "name": "walletId",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Entry payload",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/controllers.AddWhitelistEntryRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/models.WhitelistEntry"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/controllers.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/controllers.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/wallets/{walletId}/whitelist/{entryId}": {
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Deletes a whitelist entry by ID. Requires wallet or account owner/admin.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Whitelist"
+                ],
+                "summary": "Remove an address from the wallet whitelist",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Wallet UUID",
+                        "name": "walletId",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Whitelist entry UUID",
+                        "name": "entryId",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No content"
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/controllers.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/controllers.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/wallets/{walletId}/withdrawals": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns a paginated list of withdrawals for a specific wallet",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Wallet Withdrawals"
+                ],
+                "summary": "List withdrawals for a wallet",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Wallet UUID",
+                        "name": "walletId",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "enum": [
+                            "pending",
+                            "approved",
+                            "rejected",
+                            "broadcast",
+                            "confirmed",
+                            "failed"
+                        ],
+                        "type": "string",
+                        "description": "Status filter",
+                        "name": "status",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Max results (default 50)",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Pagination offset",
+                        "name": "offset",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/controllers.WithdrawalListResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/controllers.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/controllers.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Initiates a new withdrawal. The withdrawal is created in 'pending' status and queued for approval/processing.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Wallet Withdrawals"
+                ],
+                "summary": "Create a withdrawal for a wallet",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Wallet UUID",
+                        "name": "walletId",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Withdrawal payload",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/controllers.CreateWalletWithdrawalRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/models.Withdrawal"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/controllers.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/controllers.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/wallets/{walletId}/withdrawals/{withdrawalId}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns a specific withdrawal by ID scoped to the wallet",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Wallet Withdrawals"
+                ],
+                "summary": "Get a single wallet withdrawal",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Wallet UUID",
+                        "name": "walletId",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Withdrawal UUID",
+                        "name": "withdrawalId",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/models.Withdrawal"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/controllers.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/controllers.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/wallets/{walletId}/withdrawals/{withdrawalId}/cancel": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Cancels a withdrawal that is still in 'pending' status. Requires the creator or an owner/admin.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Wallet Withdrawals"
+                ],
+                "summary": "Cancel a pending withdrawal",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Wallet UUID",
+                        "name": "walletId",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Withdrawal UUID",
+                        "name": "withdrawalId",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/models.Withdrawal"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/controllers.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/controllers.ErrorResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "Withdrawal cannot be cancelled in current state",
+                        "schema": {
+                            "$ref": "#/definitions/controllers.ErrorResponse"
+                        }
+                    }
+                }
+            }
         }
     },
     "definitions": {
@@ -1834,6 +2870,32 @@ const docTemplate = `{
                 "role": {
                     "type": "string",
                     "example": "admin"
+                }
+            }
+        },
+        "controllers.AddWalletUserRequest": {
+            "type": "object",
+            "properties": {
+                "roles": {
+                    "type": "string",
+                    "example": "viewer"
+                },
+                "user_id": {
+                    "type": "string",
+                    "example": "00000000-0000-0000-0000-000000000001"
+                }
+            }
+        },
+        "controllers.AddWhitelistEntryRequest": {
+            "type": "object",
+            "properties": {
+                "address": {
+                    "type": "string",
+                    "example": "bc1qar0srrr7xfkvy5l643lydnw9re59gtzzwf5mdq"
+                },
+                "label": {
+                    "type": "string",
+                    "example": "Cold Storage"
                 }
             }
         },
@@ -1954,6 +3016,40 @@ const docTemplate = `{
                 }
             }
         },
+        "controllers.CreateWalletWebhookRequest": {
+            "type": "object",
+            "properties": {
+                "events": {
+                    "type": "string",
+                    "example": "deposit.confirmed,withdrawal.confirmed"
+                },
+                "secret": {
+                    "type": "string",
+                    "example": "wh_secret_123"
+                },
+                "url": {
+                    "type": "string",
+                    "example": "https://example.com/hook"
+                }
+            }
+        },
+        "controllers.CreateWalletWithdrawalRequest": {
+            "type": "object",
+            "properties": {
+                "amount": {
+                    "type": "string",
+                    "example": "0.001"
+                },
+                "destination_address": {
+                    "type": "string",
+                    "example": "bc1q..."
+                },
+                "note": {
+                    "type": "string",
+                    "example": "Monthly payment"
+                }
+            }
+        },
         "controllers.CreateWebhookRequest": {
             "type": "object",
             "properties": {
@@ -2021,6 +3117,14 @@ const docTemplate = `{
                 "email": {
                     "type": "string",
                     "example": "user@example.com"
+                }
+            }
+        },
+        "controllers.FreezeWalletRequest": {
+            "type": "object",
+            "properties": {
+                "frozen_until": {
+                    "type": "string"
                 }
             }
         },
@@ -2127,6 +3231,37 @@ const docTemplate = `{
                 }
             }
         },
+        "controllers.UnspentOutput": {
+            "type": "object",
+            "properties": {
+                "address": {
+                    "type": "string"
+                },
+                "height": {
+                    "type": "integer"
+                },
+                "tx_hash": {
+                    "type": "string"
+                },
+                "value": {
+                    "type": "integer"
+                },
+                "vout": {
+                    "type": "integer"
+                }
+            }
+        },
+        "controllers.UnspentOutputListResponse": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/controllers.UnspentOutput"
+                    }
+                }
+            }
+        },
         "controllers.UpdateAccountRequest": {
             "type": "object",
             "properties": {
@@ -2149,6 +3284,30 @@ const docTemplate = `{
                 }
             }
         },
+        "controllers.UpdateWalletSettingsRequest": {
+            "type": "object",
+            "properties": {
+                "fee_multiplier": {
+                    "type": "number",
+                    "example": 1.25
+                },
+                "fee_rate_max": {
+                    "type": "integer",
+                    "example": 100
+                },
+                "fee_rate_min": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "frozen_until": {
+                    "type": "string"
+                },
+                "required_approvals": {
+                    "type": "integer",
+                    "example": 2
+                }
+            }
+        },
         "controllers.WalletListResponse": {
             "type": "object",
             "properties": {
@@ -2160,6 +3319,40 @@ const docTemplate = `{
                 }
             }
         },
+        "controllers.WalletSettingsResponse": {
+            "type": "object",
+            "properties": {
+                "fee_multiplier": {
+                    "type": "number"
+                },
+                "fee_rate_max": {
+                    "type": "integer"
+                },
+                "fee_rate_min": {
+                    "type": "integer"
+                },
+                "frozen_until": {
+                    "type": "string"
+                },
+                "required_approvals": {
+                    "type": "integer"
+                },
+                "status": {
+                    "type": "string"
+                }
+            }
+        },
+        "controllers.WalletUserListResponse": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/models.WalletUser"
+                    }
+                }
+            }
+        },
         "controllers.WebhookConfigListResponse": {
             "type": "object",
             "properties": {
@@ -2167,6 +3360,28 @@ const docTemplate = `{
                     "type": "array",
                     "items": {
                         "$ref": "#/definitions/models.WebhookConfig"
+                    }
+                }
+            }
+        },
+        "controllers.WhitelistEntryListResponse": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/models.WhitelistEntry"
+                    }
+                }
+            }
+        },
+        "controllers.WithdrawalListResponse": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/models.Withdrawal"
                     }
                 }
             }
@@ -2476,6 +3691,38 @@ const docTemplate = `{
                 }
             }
         },
+        "models.WalletUser": {
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "$ref": "#/definitions/github_com_goravel_framework_support_carbon.DateTime"
+                },
+                "deleted_at": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "roles": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "$ref": "#/definitions/github_com_goravel_framework_support_carbon.DateTime"
+                },
+                "user": {
+                    "$ref": "#/definitions/models.User"
+                },
+                "user_id": {
+                    "type": "string"
+                },
+                "wallet_id": {
+                    "type": "string"
+                }
+            }
+        },
         "models.WebhookConfig": {
             "type": "object",
             "properties": {
@@ -2500,6 +3747,70 @@ const docTemplate = `{
                 },
                 "url": {
                     "type": "string"
+                },
+                "wallet_id": {
+                    "type": "string"
+                }
+            }
+        },
+        "models.WhitelistEntry": {
+            "type": "object",
+            "properties": {
+                "address": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "$ref": "#/definitions/github_com_goravel_framework_support_carbon.DateTime"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "label": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "$ref": "#/definitions/github_com_goravel_framework_support_carbon.DateTime"
+                },
+                "wallet_id": {
+                    "type": "string"
+                }
+            }
+        },
+        "models.Withdrawal": {
+            "type": "object",
+            "properties": {
+                "account_id": {
+                    "type": "string"
+                },
+                "amount": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "$ref": "#/definitions/github_com_goravel_framework_support_carbon.DateTime"
+                },
+                "created_by": {
+                    "type": "string"
+                },
+                "destination_address": {
+                    "type": "string"
+                },
+                "fee_estimate": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "note": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "transaction_id": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "$ref": "#/definitions/github_com_goravel_framework_support_carbon.DateTime"
                 },
                 "wallet_id": {
                     "type": "string"

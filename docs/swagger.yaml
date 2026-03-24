@@ -30,6 +30,24 @@ definitions:
         example: admin
         type: string
     type: object
+  controllers.AddWalletUserRequest:
+    properties:
+      roles:
+        example: viewer
+        type: string
+      user_id:
+        example: 00000000-0000-0000-0000-000000000001
+        type: string
+    type: object
+  controllers.AddWhitelistEntryRequest:
+    properties:
+      address:
+        example: bc1qar0srrr7xfkvy5l643lydnw9re59gtzzwf5mdq
+        type: string
+      label:
+        example: Cold Storage
+        type: string
+    type: object
   controllers.AddressListResponse:
     properties:
       data:
@@ -108,6 +126,30 @@ definitions:
         example: my-secret-passphrase-12chars
         type: string
     type: object
+  controllers.CreateWalletWebhookRequest:
+    properties:
+      events:
+        example: deposit.confirmed,withdrawal.confirmed
+        type: string
+      secret:
+        example: wh_secret_123
+        type: string
+      url:
+        example: https://example.com/hook
+        type: string
+    type: object
+  controllers.CreateWalletWithdrawalRequest:
+    properties:
+      amount:
+        example: "0.001"
+        type: string
+      destination_address:
+        example: bc1q...
+        type: string
+      note:
+        example: Monthly payment
+        type: string
+    type: object
   controllers.CreateWebhookRequest:
     properties:
       events:
@@ -155,6 +197,11 @@ definitions:
     properties:
       email:
         example: user@example.com
+        type: string
+    type: object
+  controllers.FreezeWalletRequest:
+    properties:
+      frozen_until:
         type: string
     type: object
   controllers.GenerateAddressRequest:
@@ -227,6 +274,26 @@ definitions:
         example: ABCDEFGH12345678
         type: string
     type: object
+  controllers.UnspentOutput:
+    properties:
+      address:
+        type: string
+      height:
+        type: integer
+      tx_hash:
+        type: string
+      value:
+        type: integer
+      vout:
+        type: integer
+    type: object
+  controllers.UnspentOutputListResponse:
+    properties:
+      data:
+        items:
+          $ref: '#/definitions/controllers.UnspentOutput'
+        type: array
+    type: object
   controllers.UpdateAccountRequest:
     properties:
       name:
@@ -242,6 +309,23 @@ definitions:
         example: Alice Smith
         type: string
     type: object
+  controllers.UpdateWalletSettingsRequest:
+    properties:
+      fee_multiplier:
+        example: 1.25
+        type: number
+      fee_rate_max:
+        example: 100
+        type: integer
+      fee_rate_min:
+        example: 1
+        type: integer
+      frozen_until:
+        type: string
+      required_approvals:
+        example: 2
+        type: integer
+    type: object
   controllers.WalletListResponse:
     properties:
       data:
@@ -249,11 +333,47 @@ definitions:
           $ref: '#/definitions/models.Wallet'
         type: array
     type: object
+  controllers.WalletSettingsResponse:
+    properties:
+      fee_multiplier:
+        type: number
+      fee_rate_max:
+        type: integer
+      fee_rate_min:
+        type: integer
+      frozen_until:
+        type: string
+      required_approvals:
+        type: integer
+      status:
+        type: string
+    type: object
+  controllers.WalletUserListResponse:
+    properties:
+      data:
+        items:
+          $ref: '#/definitions/models.WalletUser'
+        type: array
+    type: object
   controllers.WebhookConfigListResponse:
     properties:
       data:
         items:
           $ref: '#/definitions/models.WebhookConfig'
+        type: array
+    type: object
+  controllers.WhitelistEntryListResponse:
+    properties:
+      data:
+        items:
+          $ref: '#/definitions/models.WhitelistEntry'
+        type: array
+    type: object
+  controllers.WithdrawalListResponse:
+    properties:
+      data:
+        items:
+          $ref: '#/definitions/models.Withdrawal'
         type: array
     type: object
   github_com_goravel_framework_support_carbon.DateTime:
@@ -455,6 +575,27 @@ definitions:
       updated_at:
         $ref: '#/definitions/github_com_goravel_framework_support_carbon.DateTime'
     type: object
+  models.WalletUser:
+    properties:
+      created_at:
+        $ref: '#/definitions/github_com_goravel_framework_support_carbon.DateTime'
+      deleted_at:
+        type: string
+      id:
+        type: string
+      roles:
+        type: string
+      status:
+        type: string
+      updated_at:
+        $ref: '#/definitions/github_com_goravel_framework_support_carbon.DateTime'
+      user:
+        $ref: '#/definitions/models.User'
+      user_id:
+        type: string
+      wallet_id:
+        type: string
+    type: object
   models.WebhookConfig:
     properties:
       created_at:
@@ -472,6 +613,48 @@ definitions:
         $ref: '#/definitions/github_com_goravel_framework_support_carbon.DateTime'
       url:
         type: string
+      wallet_id:
+        type: string
+    type: object
+  models.WhitelistEntry:
+    properties:
+      address:
+        type: string
+      created_at:
+        $ref: '#/definitions/github_com_goravel_framework_support_carbon.DateTime'
+      id:
+        type: string
+      label:
+        type: string
+      updated_at:
+        $ref: '#/definitions/github_com_goravel_framework_support_carbon.DateTime'
+      wallet_id:
+        type: string
+    type: object
+  models.Withdrawal:
+    properties:
+      account_id:
+        type: string
+      amount:
+        type: string
+      created_at:
+        $ref: '#/definitions/github_com_goravel_framework_support_carbon.DateTime'
+      created_by:
+        type: string
+      destination_address:
+        type: string
+      fee_estimate:
+        type: string
+      id:
+        type: string
+      note:
+        type: string
+      status:
+        type: string
+      transaction_id:
+        type: string
+      updated_at:
+        $ref: '#/definitions/github_com_goravel_framework_support_carbon.DateTime'
       wallet_id:
         type: string
     type: object
@@ -1621,6 +1804,682 @@ paths:
       summary: Create a webhook
       tags:
       - Webhooks
+  /wallets/{walletId}/freeze:
+    post:
+      consumes:
+      - application/json
+      description: Freezes the wallet until the specified timestamp. Requires wallet
+        or account owner.
+      parameters:
+      - description: Wallet UUID
+        in: path
+        name: walletId
+        required: true
+        type: string
+      - description: Freeze payload
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/controllers.FreezeWalletRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/controllers.WalletSettingsResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/controllers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Freeze a wallet
+      tags:
+      - Wallet Settings
+  /wallets/{walletId}/settings:
+    get:
+      description: Returns fee, approval, and freeze settings for a wallet
+      parameters:
+      - description: Wallet UUID
+        in: path
+        name: walletId
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/controllers.WalletSettingsResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/controllers.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/controllers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Get wallet settings
+      tags:
+      - Wallet Settings
+    patch:
+      consumes:
+      - application/json
+      description: Updates fee rates, approval thresholds, and other wallet settings.
+        Requires wallet or account owner/admin.
+      parameters:
+      - description: Wallet UUID
+        in: path
+        name: walletId
+        required: true
+        type: string
+      - description: Settings payload
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/controllers.UpdateWalletSettingsRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/controllers.WalletSettingsResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/controllers.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/controllers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Update wallet settings
+      tags:
+      - Wallet Settings
+  /wallets/{walletId}/transactions:
+    get:
+      description: Returns a paginated list of transactions for a specific wallet
+      parameters:
+      - description: Wallet UUID
+        in: path
+        name: walletId
+        required: true
+        type: string
+      - description: Transaction type filter
+        enum:
+        - deposit
+        - withdrawal
+        in: query
+        name: type
+        type: string
+      - description: Status filter
+        enum:
+        - pending
+        - confirmed
+        - failed
+        in: query
+        name: status
+        type: string
+      - description: Max results (default 50)
+        example: 50
+        in: query
+        name: limit
+        type: integer
+      - description: Pagination offset
+        example: 0
+        in: query
+        name: offset
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/controllers.TransactionListResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/controllers.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/controllers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: List transactions for a wallet
+      tags:
+      - Wallet Transactions
+  /wallets/{walletId}/transactions/{txId}:
+    get:
+      description: Returns a specific transaction by ID scoped to the wallet
+      parameters:
+      - description: Wallet UUID
+        in: path
+        name: walletId
+        required: true
+        type: string
+      - description: Transaction UUID
+        in: path
+        name: txId
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/models.Transaction'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/controllers.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/controllers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Get a single wallet transaction
+      tags:
+      - Wallet Transactions
+  /wallets/{walletId}/unspents:
+    get:
+      description: Returns UTXOs for a UTXO-model wallet (e.g. bitcoin). Not available
+        for account-model chains. Requires the UTXOOnly middleware to be applied.
+      parameters:
+      - description: Wallet UUID
+        in: path
+        name: walletId
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/controllers.UnspentOutputListResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/controllers.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/controllers.ErrorResponse'
+        "422":
+          description: Only available for UTXO chains
+          schema:
+            $ref: '#/definitions/controllers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: List unspent transaction outputs (UTXOs)
+      tags:
+      - Wallet Unspents
+  /wallets/{walletId}/users:
+    get:
+      description: Returns all active members of a wallet
+      parameters:
+      - description: Wallet UUID
+        in: path
+        name: walletId
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/controllers.WalletUserListResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/controllers.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/controllers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: List wallet users
+      tags:
+      - Wallet Users
+    post:
+      consumes:
+      - application/json
+      description: Adds a user to the wallet with the specified role. Requires wallet
+        or account owner/admin.
+      parameters:
+      - description: Wallet UUID
+        in: path
+        name: walletId
+        required: true
+        type: string
+      - description: User and role payload
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/controllers.AddWalletUserRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/models.WalletUser'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/controllers.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/controllers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Add a user to a wallet
+      tags:
+      - Wallet Users
+  /wallets/{walletId}/users/{userId}:
+    delete:
+      description: Soft-deletes the wallet_user membership. Requires wallet or account
+        owner/admin.
+      parameters:
+      - description: Wallet UUID
+        in: path
+        name: walletId
+        required: true
+        type: string
+      - description: User UUID to remove
+        in: path
+        name: userId
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: No content
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/controllers.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/controllers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Remove a user from a wallet
+      tags:
+      - Wallet Users
+  /wallets/{walletId}/webhooks:
+    get:
+      description: Returns all webhook configurations scoped to a wallet
+      parameters:
+      - description: Wallet UUID
+        in: path
+        name: walletId
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/controllers.WebhookConfigListResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/controllers.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/controllers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: List webhooks for a wallet
+      tags:
+      - Wallet Webhooks
+    post:
+      consumes:
+      - application/json
+      description: Registers a webhook scoped to a specific wallet. Requires wallet
+        or account owner/admin.
+      parameters:
+      - description: Wallet UUID
+        in: path
+        name: walletId
+        required: true
+        type: string
+      - description: Webhook configuration
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/controllers.CreateWalletWebhookRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/models.WebhookConfig'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/controllers.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/controllers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Create a webhook for a wallet
+      tags:
+      - Wallet Webhooks
+  /wallets/{walletId}/webhooks/{webhookId}:
+    delete:
+      description: Removes a webhook configuration by ID. Requires wallet or account
+        owner/admin.
+      parameters:
+      - description: Wallet UUID
+        in: path
+        name: walletId
+        required: true
+        type: string
+      - description: Webhook UUID
+        in: path
+        name: webhookId
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: No content
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/controllers.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/controllers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Delete a wallet webhook
+      tags:
+      - Wallet Webhooks
+  /wallets/{walletId}/whitelist:
+    get:
+      description: Returns all address whitelist entries. Requires wallet or account
+        membership.
+      parameters:
+      - description: Wallet UUID
+        in: path
+        name: walletId
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/controllers.WhitelistEntryListResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/controllers.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/controllers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: List whitelist entries for a wallet
+      tags:
+      - Whitelist
+    post:
+      consumes:
+      - application/json
+      description: Creates a new whitelist entry. Requires wallet or account owner/admin.
+      parameters:
+      - description: Wallet UUID
+        in: path
+        name: walletId
+        required: true
+        type: string
+      - description: Entry payload
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/controllers.AddWhitelistEntryRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/models.WhitelistEntry'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/controllers.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/controllers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Add an address to the wallet whitelist
+      tags:
+      - Whitelist
+  /wallets/{walletId}/whitelist/{entryId}:
+    delete:
+      description: Deletes a whitelist entry by ID. Requires wallet or account owner/admin.
+      parameters:
+      - description: Wallet UUID
+        in: path
+        name: walletId
+        required: true
+        type: string
+      - description: Whitelist entry UUID
+        in: path
+        name: entryId
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: No content
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/controllers.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/controllers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Remove an address from the wallet whitelist
+      tags:
+      - Whitelist
+  /wallets/{walletId}/withdrawals:
+    get:
+      description: Returns a paginated list of withdrawals for a specific wallet
+      parameters:
+      - description: Wallet UUID
+        in: path
+        name: walletId
+        required: true
+        type: string
+      - description: Status filter
+        enum:
+        - pending
+        - approved
+        - rejected
+        - broadcast
+        - confirmed
+        - failed
+        in: query
+        name: status
+        type: string
+      - description: Max results (default 50)
+        in: query
+        name: limit
+        type: integer
+      - description: Pagination offset
+        in: query
+        name: offset
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/controllers.WithdrawalListResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/controllers.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/controllers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: List withdrawals for a wallet
+      tags:
+      - Wallet Withdrawals
+    post:
+      consumes:
+      - application/json
+      description: Initiates a new withdrawal. The withdrawal is created in 'pending'
+        status and queued for approval/processing.
+      parameters:
+      - description: Wallet UUID
+        in: path
+        name: walletId
+        required: true
+        type: string
+      - description: Withdrawal payload
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/controllers.CreateWalletWithdrawalRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/models.Withdrawal'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/controllers.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/controllers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Create a withdrawal for a wallet
+      tags:
+      - Wallet Withdrawals
+  /wallets/{walletId}/withdrawals/{withdrawalId}:
+    get:
+      description: Returns a specific withdrawal by ID scoped to the wallet
+      parameters:
+      - description: Wallet UUID
+        in: path
+        name: walletId
+        required: true
+        type: string
+      - description: Withdrawal UUID
+        in: path
+        name: withdrawalId
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/models.Withdrawal'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/controllers.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/controllers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Get a single wallet withdrawal
+      tags:
+      - Wallet Withdrawals
+  /wallets/{walletId}/withdrawals/{withdrawalId}/cancel:
+    post:
+      description: Cancels a withdrawal that is still in 'pending' status. Requires
+        the creator or an owner/admin.
+      parameters:
+      - description: Wallet UUID
+        in: path
+        name: walletId
+        required: true
+        type: string
+      - description: Withdrawal UUID
+        in: path
+        name: withdrawalId
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/models.Withdrawal'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/controllers.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/controllers.ErrorResponse'
+        "422":
+          description: Withdrawal cannot be cancelled in current state
+          schema:
+            $ref: '#/definitions/controllers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Cancel a pending withdrawal
+      tags:
+      - Wallet Withdrawals
 securityDefinitions:
   ApiKeyAuth:
     in: header

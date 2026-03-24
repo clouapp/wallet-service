@@ -93,7 +93,47 @@ func Api() {
 		})
 	})
 
-	// API v1 group - authenticated
+	// Wallet sub-resource routes — JWT auth
+	facades.Route().Prefix("/v1/wallets").Middleware(middleware.SessionAuth).Group(func(router route.Router) {
+		router.Prefix("/{walletId}").Group(func(r route.Router) {
+			// Wallet users
+			r.Get("/users", controllers.ListWalletUsers)
+			r.Post("/users", controllers.AddWalletUser)
+			r.Delete("/users/{userId}", controllers.RemoveWalletUser)
+
+			// Whitelist
+			r.Get("/whitelist", controllers.ListWhitelistEntries)
+			r.Post("/whitelist", controllers.AddWhitelistEntry)
+			r.Delete("/whitelist/{entryId}", controllers.DeleteWhitelistEntry)
+
+			// Wallet-scoped webhooks
+			r.Get("/webhooks", controllers.ListWalletWebhooks)
+			r.Post("/webhooks", controllers.CreateWalletWebhook)
+			r.Delete("/webhooks/{webhookId}", controllers.DeleteWalletWebhook)
+
+			// Settings and freeze
+			r.Get("/settings", controllers.GetWalletSettings)
+			r.Patch("/settings", controllers.UpdateWalletSettings)
+			r.Post("/freeze", controllers.FreezeWallet)
+
+			// Wallet transactions (admin panel view)
+			r.Get("/transactions", controllers.ListWalletTransactions)
+			r.Get("/transactions/{txId}", controllers.GetWalletTransaction)
+
+			// Wallet withdrawals (admin panel view)
+			r.Get("/withdrawals", controllers.ListWalletWithdrawals)
+			r.Post("/withdrawals", controllers.CreateWalletWithdrawal)
+			r.Get("/withdrawals/{withdrawalId}", controllers.GetWalletWithdrawal)
+			r.Post("/withdrawals/{withdrawalId}/cancel", controllers.CancelWalletWithdrawal)
+
+			// UTXOs — UTXOOnly middleware rejects non-UTXO chains
+			r.Prefix("/unspents").Middleware(middleware.UTXOOnly).Group(func(ur route.Router) {
+				ur.Get("/", controllers.ListUnspentOutputs)
+			})
+		})
+	})
+
+	// API v1 group — HMAC-authenticated (legacy/external API)
 	facades.Route().Prefix("/v1").Middleware(middleware.HMACAuth).Group(func(router route.Router) {
 		// Chains
 		router.Get("/chains", controllers.ListChains)
@@ -109,15 +149,15 @@ func Api() {
 		router.Get("/addresses/{address}", controllers.LookupAddress)
 		router.Get("/users/{external_id}/addresses", controllers.ListUserAddresses)
 
-		// Withdrawals
+		// Withdrawals (flat — deprecated, prefer /wallets/{walletId}/withdrawals)
 		router.Post("/wallets/{id}/withdrawals", controllers.CreateWithdrawal)
 
-		// Transactions
+		// Transactions (flat — deprecated, prefer /wallets/{walletId}/transactions)
 		router.Get("/transactions", controllers.ListTransactions)
 		router.Get("/transactions/{id}", controllers.GetTransaction)
 		router.Get("/users/{external_id}/transactions", controllers.ListUserTransactions)
 
-		// Webhooks
+		// Webhooks (flat — deprecated, prefer /wallets/{walletId}/webhooks)
 		router.Post("/webhooks", controllers.CreateWebhook)
 		router.Get("/webhooks", controllers.ListWebhooks)
 	})
