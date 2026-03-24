@@ -4,11 +4,16 @@ import (
 	"os"
 	"strconv"
 
+	contractsdriver "github.com/goravel/framework/contracts/database/driver"
 	contractsfoundation "github.com/goravel/framework/contracts/foundation"
 	contractsroute "github.com/goravel/framework/contracts/route"
+	frameworkauth "github.com/goravel/framework/auth"
+	frameworkcrypt "github.com/goravel/framework/crypt"
+	frameworkdatabase "github.com/goravel/framework/database"
 	"github.com/goravel/framework/facades"
 	frameworkhttp "github.com/goravel/framework/http"
 	frameworklog "github.com/goravel/framework/log"
+	frameworkmail "github.com/goravel/framework/mail"
 	frameworkroute "github.com/goravel/framework/route"
 	frameworksession "github.com/goravel/framework/session"
 	frameworktesting "github.com/goravel/framework/testing"
@@ -16,6 +21,10 @@ import (
 	frameworkview "github.com/goravel/framework/view"
 	gin "github.com/goravel/gin"
 	ginfacades "github.com/goravel/gin/facades"
+	goravel_postgres "github.com/goravel/postgres"
+	postgres_facades "github.com/goravel/postgres/facades"
+	"github.com/macromarkets/vault/app/models"
+	vaultproviders "github.com/macromarkets/vault/app/providers"
 )
 
 // Boot initializes all configurations
@@ -24,7 +33,7 @@ func Boot(app contractsfoundation.Application) {
 		// Default database connection
 		"default": env("DB_CONNECTION", "postgres"),
 
-		// Database connections
+		// Database connections — Goravel v1.17 format with driver via
 		"connections": map[string]any{
 			"postgres": map[string]any{
 				"driver":   "postgres",
@@ -33,8 +42,12 @@ func Boot(app contractsfoundation.Application) {
 				"database": env("DB_DATABASE", "vault"),
 				"username": env("DB_USERNAME", "postgres"),
 				"password": env("DB_PASSWORD", ""),
-				"charset":  "utf8mb4",
+				"sslmode":  env("DB_SSLMODE", "disable"),
+				"charset":  "utf8",
 				"prefix":   "",
+				"via": func() (contractsdriver.Driver, error) {
+					return postgres_facades.Postgres("postgres")
+				},
 			},
 		},
 
@@ -61,6 +74,8 @@ func Boot(app contractsfoundation.Application) {
 		"url":      env("APP_URL", "http://localhost"),
 		"providers": []contractsfoundation.ServiceProvider{
 			&frameworklog.ServiceProvider{},
+			&goravel_postgres.ServiceProvider{},
+			&frameworkdatabase.ServiceProvider{},
 			&frameworkhttp.ServiceProvider{},
 			&frameworksession.ServiceProvider{},
 			&frameworkvalidation.ServiceProvider{},
@@ -68,6 +83,53 @@ func Boot(app contractsfoundation.Application) {
 			&gin.ServiceProvider{},
 			&frameworkroute.ServiceProvider{},
 			&frameworktesting.ServiceProvider{},
+			&frameworkauth.ServiceProvider{},
+			&frameworkmail.ServiceProvider{},
+			&frameworkcrypt.ServiceProvider{},
+			&vaultproviders.MigrationsServiceProvider{},
+		},
+	})
+
+	// Auth guards
+	facades.Config().Add("auth", map[string]any{
+		"defaults": map[string]any{"guard": "web"},
+		"guards": map[string]any{
+			"web": map[string]any{
+				"driver":   "jwt",
+				"provider": "users",
+			},
+		},
+		"providers": map[string]any{
+			"users": map[string]any{
+				"driver": "orm",
+				"model":  models.User{},
+			},
+		},
+	})
+
+	// JWT settings
+	facades.Config().Add("jwt", map[string]any{
+		"secret":      env("JWT_SECRET", ""),
+		"ttl":         envInt("JWT_TTL", 15),
+		"refresh_ttl": envInt("JWT_REFRESH_TTL", 43200),
+	})
+
+	// Mail
+	facades.Config().Add("mail", map[string]any{
+		"default": "smtp",
+		"mailers": map[string]any{
+			"smtp": map[string]any{
+				"transport":  "smtp",
+				"host":       env("MAIL_HOST", ""),
+				"port":       envInt("MAIL_PORT", 587),
+				"encryption": env("MAIL_ENCRYPTION", "tls"),
+				"username":   env("MAIL_USERNAME", ""),
+				"password":   env("MAIL_PASSWORD", ""),
+			},
+		},
+		"from": map[string]any{
+			"address": env("MAIL_FROM_ADDRESS", "noreply@vault.dev"),
+			"name":    env("MAIL_FROM_NAME", "Vault"),
 		},
 	})
 
