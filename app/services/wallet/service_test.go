@@ -5,6 +5,7 @@ import (
 	"os"
 	"testing"
 
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/suite"
 
 	"github.com/macromarkets/vault/app/services/chain"
@@ -99,30 +100,33 @@ func (s *WalletServiceTestSuite) SetupTest() {
 }
 
 func (s *WalletServiceTestSuite) TestCreateWallet_Success() {
+	os.Setenv("WALLET_SERVICE_KEY", "0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20")
 	ctx := context.Background()
 
-	w, err := s.service.CreateWallet(ctx, "eth", "Ethereum Wallet", testPassphrase)
+	result, err := s.service.CreateWallet(ctx, "eth", "Ethereum Wallet", testPassphrase)
 	s.Require().NoError(err)
-	s.Equal("eth", w.Chain)
-	s.Equal("Ethereum Wallet", w.Label)
-	s.NotEmpty(w.DepositAddress)
-	s.NotEmpty(w.MPCPublicKey)
-	s.NotEmpty(w.MPCCustomerShare)
-	s.NotEmpty(w.MPCSecretARN)
-	s.Equal("secp256k1", w.MPCCurve)
+	s.Equal("eth", result.Wallet.Chain)
+	s.Equal("Ethereum Wallet", result.Wallet.Label)
+	s.NotEmpty(result.Wallet.DepositAddress)
+	s.NotEmpty(result.Wallet.MPCPublicKey)
+	s.NotEmpty(result.Wallet.MPCCustomerShare)
+	s.NotEmpty(result.Wallet.MPCSecretARN)
+	s.Equal("secp256k1", result.Wallet.MPCCurve)
 }
 
 func (s *WalletServiceTestSuite) TestCreateWallet_SolanaUsesEd25519() {
+	os.Setenv("WALLET_SERVICE_KEY", "0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20")
 	ctx := context.Background()
 
-	w, err := s.service.CreateWallet(ctx, "sol", "Solana Wallet", testPassphrase)
+	result, err := s.service.CreateWallet(ctx, "sol", "Solana Wallet", testPassphrase)
 	s.Require().NoError(err)
-	s.Equal("sol", w.Chain)
-	s.Equal("ed25519", w.MPCCurve)
-	s.NotEmpty(w.DepositAddress)
+	s.Equal("sol", result.Wallet.Chain)
+	s.Equal("ed25519", result.Wallet.MPCCurve)
+	s.NotEmpty(result.Wallet.DepositAddress)
 }
 
 func (s *WalletServiceTestSuite) TestCreateWallet_DuplicateChain() {
+	os.Setenv("WALLET_SERVICE_KEY", "0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20")
 	ctx := context.Background()
 
 	_, err := s.service.CreateWallet(ctx, "eth", "First", testPassphrase)
@@ -131,4 +135,99 @@ func (s *WalletServiceTestSuite) TestCreateWallet_DuplicateChain() {
 	_, err = s.service.CreateWallet(ctx, "eth", "Second", testPassphrase)
 	s.Error(err)
 	s.Contains(err.Error(), "already exists")
+}
+
+func (s *WalletServiceTestSuite) TestCreateWallet_Success_ReturnsKeycardData() {
+	os.Setenv("WALLET_SERVICE_KEY", "0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20")
+	ctx := context.Background()
+
+	result, err := s.service.CreateWallet(ctx, "eth", "Ethereum Wallet", testPassphrase)
+	s.Require().NoError(err)
+
+	// Wallet fields
+	s.Equal("eth", result.Wallet.Chain)
+	s.Equal("Ethereum Wallet", result.Wallet.Label)
+	s.Equal("pending", result.Wallet.Status)
+	s.NotEmpty(result.Wallet.DepositAddress)
+	s.NotEmpty(result.Wallet.MPCPublicKey)
+	s.NotEmpty(result.Wallet.MPCCustomerShare)
+	s.NotEmpty(result.Wallet.MPCSecretARN)
+	s.Equal("secp256k1", result.Wallet.MPCCurve)
+	s.NotNil(result.Wallet.ActivationCode)
+	s.Len(*result.Wallet.ActivationCode, 6)
+
+	// Keycard fields
+	s.NotEmpty(result.EncryptedUserKey)
+	s.NotEmpty(result.ServicePublicKey)
+	s.NotEmpty(result.EncryptedPasscode)
+	s.NotEmpty(result.ActivationCode)
+	s.Len(result.ActivationCode, 6)
+	s.Regexp(`^\d{6}$`, result.ActivationCode)
+}
+
+func (s *WalletServiceTestSuite) TestCreateWallet_NormalisesChainID() {
+	os.Setenv("WALLET_SERVICE_KEY", "0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20")
+	ctx := context.Background()
+
+	result, err := s.service.CreateWallet(ctx, "ETH", "Test", testPassphrase)
+	s.Require().NoError(err)
+	s.Equal("eth", result.Wallet.Chain)
+}
+
+func (s *WalletServiceTestSuite) TestCreateWallet_MATICNormalisedToPolygon() {
+	os.Setenv("WALLET_SERVICE_KEY", "0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20")
+	// register polygon chain
+	s.registry.RegisterChain(mocks.NewMockChain("polygon"))
+	ctx := context.Background()
+
+	result, err := s.service.CreateWallet(ctx, "MATIC", "Test", testPassphrase)
+	s.Require().NoError(err)
+	s.Equal("polygon", result.Wallet.Chain)
+}
+
+func (s *WalletServiceTestSuite) TestActivateWallet_Success() {
+	os.Setenv("WALLET_SERVICE_KEY", "0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20")
+	ctx := context.Background()
+
+	result, err := s.service.CreateWallet(ctx, "eth", "Test", testPassphrase)
+	s.Require().NoError(err)
+	s.Equal("pending", result.Wallet.Status)
+
+	activated, err := s.service.ActivateWallet(ctx, result.Wallet.ID, result.ActivationCode)
+	s.Require().NoError(err)
+	s.Equal("active", activated.Status)
+	s.Nil(activated.ActivationCode)
+}
+
+func (s *WalletServiceTestSuite) TestActivateWallet_WrongCode() {
+	os.Setenv("WALLET_SERVICE_KEY", "0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20")
+	ctx := context.Background()
+
+	result, err := s.service.CreateWallet(ctx, "eth", "Test", testPassphrase)
+	s.Require().NoError(err)
+
+	_, err = s.service.ActivateWallet(ctx, result.Wallet.ID, "000000")
+	s.ErrorIs(err, ErrInvalidActivationCode)
+}
+
+func (s *WalletServiceTestSuite) TestActivateWallet_AlreadyActive() {
+	os.Setenv("WALLET_SERVICE_KEY", "0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20")
+	ctx := context.Background()
+
+	result, err := s.service.CreateWallet(ctx, "eth", "Test", testPassphrase)
+	s.Require().NoError(err)
+
+	// Activate once
+	_, err = s.service.ActivateWallet(ctx, result.Wallet.ID, result.ActivationCode)
+	s.Require().NoError(err)
+
+	// Activate again — expect error
+	_, err = s.service.ActivateWallet(ctx, result.Wallet.ID, result.ActivationCode)
+	s.ErrorIs(err, ErrWalletAlreadyActive)
+}
+
+func (s *WalletServiceTestSuite) TestActivateWallet_NotFound() {
+	ctx := context.Background()
+	_, err := s.service.ActivateWallet(ctx, uuid.New(), "123456")
+	s.ErrorIs(err, ErrWalletNotFound)
 }
