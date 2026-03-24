@@ -82,6 +82,8 @@ github.com/bnb-chain/tss-lib/v2 v2.0.0 h1:VE2X5eWmHSH4u0UI7z87oI/99IJbfevtm3OYDZ
 github.com/bnb-chain/tss-lib/v2 v2.0.0/go.mod h1:7Uai3xfLjJPD2gbd0+/1gHsfqa9PKxONdwDtnt6ZYxc=
 github.com/bnb-chain/tss-lib/v2 v2.0.2 h1:dL2GJFCSYsYQ0bHkGll+hNM2JWsC1rxDmJJJQEmUy9g=
 github.com/bnb-chain/tss-lib/v2 v2.0.2/go.mod h1:s4LRfEqj89DhfNb+oraW0dURt5LtOHWXb9Gtkghn0L8=
+github.com/boombuler/barcode v1.0.1-0.20190219062509-6c824513bacc h1:biVzkmvwrH8WK8raXaxBx6fRVTlJILwEwQGL1I/ByEI=
+github.com/boombuler/barcode v1.0.1-0.20190219062509-6c824513bacc/go.mod h1:paBWMcWSl3LHKBqUq+rly7CNSldXjb2rDl3JlRe0mD8=
 github.com/brianvoe/gofakeit/v7 v7.14.0 h1:R8tmT/rTDJmD2ngpqBL9rAKydiL7Qr2u3CXPqRt59pk=
 github.com/brianvoe/gofakeit/v7 v7.14.0/go.mod h1:QXuPeBw164PJCzCUZVmgpgHJ3Llj49jSLVkKPMtxtxA=
 github.com/bsm/ginkgo/v2 v2.12.0 h1:Ny8MWAHyOepLGlLKYmXG4IEkioBysk6GpaRTLC8zwWs=
@@ -445,6 +447,8 @@ github.com/pkg/errors v0.9.1/go.mod h1:bwawxfHBFNV+L2hUp1rHADufV3IMtnDRdf1r5NINE
 github.com/pmezard/go-difflib v1.0.0/go.mod h1:iKH77koFhYxTK1pcRnkKkqfTogsbg7gZNVY4sRDYZ/4=
 github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 h1:Jamvg5psRIccs7FGNTlIRMkT8wgtp5eCXdBlqhYGL6U=
 github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2/go.mod h1:iKH77koFhYxTK1pcRnkKkqfTogsbg7gZNVY4sRDYZ/4=
+github.com/pquerna/otp v1.5.0 h1:NMMR+WrmaqXU4EzdGJEE1aUUI0AMRzsp96fFFWNPwxs=
+github.com/pquerna/otp v1.5.0/go.mod h1:dkJfzwRKNiegxyNb54X/3fLwhCynbMspSyWKnvi1AEg=
 github.com/pterm/pterm v0.12.27/go.mod h1:PhQ89w4i95rhgE+xedAoqous6K9X+r6aSOI2eFF7DZI=
 github.com/pterm/pterm v0.12.29/go.mod h1:WI3qxgvoQFFGKGjGnJR849gU0TsEOvKn5Q8LlY1U7lg=
 github.com/pterm/pterm v0.12.30/go.mod h1:MOqLIyMOgmTDz9yorcYbcw+HsgoZo3BQfg2wtl3HEFE=
