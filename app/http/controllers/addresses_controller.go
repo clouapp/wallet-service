@@ -24,7 +24,7 @@ import (
 // @Failure      500   {object}  ErrorResponse
 // @Router       /v1/wallets/{id}/addresses [post]
 func GenerateAddress(ctx http.Context) http.Response {
-	walletID, err := uuid.Parse(ctx.Request().Route("id"))
+	walletID, err := uuid.Parse(ctx.Request().Route("walletId"))
 	if err != nil {
 		return ctx.Response().Json(http.StatusBadRequest, http.Json{
 			"error": "invalid wallet id",
@@ -68,7 +68,7 @@ func GenerateAddress(ctx http.Context) http.Response {
 // @Failure      500  {object}  ErrorResponse
 // @Router       /v1/wallets/{id}/addresses [get]
 func ListWalletAddresses(ctx http.Context) http.Response {
-	walletID, err := uuid.Parse(ctx.Request().Route("id"))
+	walletID, err := uuid.Parse(ctx.Request().Route("walletId"))
 	if err != nil {
 		return ctx.Response().Json(http.StatusBadRequest, http.Json{
 			"error": "invalid wallet id",

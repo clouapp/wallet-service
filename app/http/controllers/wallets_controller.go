@@ -70,13 +70,13 @@ func ListWallets(ctx http.Context) http.Response {
 // @Produce      json
 // @Security     ApiKeyAuth
 // @Security     SignatureAuth
-// @Param        id   path      string  true  "Wallet UUID"  format(uuid)
+// @Param        walletId   path      string  true  "Wallet UUID"  format(uuid)
 // @Success      200  {object}  models.Wallet
 // @Failure      400  {object}  ErrorResponse  "Invalid UUID"
 // @Failure      404  {object}  ErrorResponse  "Wallet not found"
-// @Router       /v1/wallets/{id} [get]
+// @Router       /v1/wallets/{walletId} [get]
 func GetWallet(ctx http.Context) http.Response {
-	id, err := uuid.Parse(ctx.Request().Route("id"))
+	id, err := uuid.Parse(ctx.Request().Route("walletId"))
 	if err != nil {
 		return ctx.Response().Json(http.StatusBadRequest, http.Json{
 			"error": "invalid wallet id",

@@ -5,17 +5,24 @@ import (
 	"testing"
 
 	"github.com/google/uuid"
+	goravelTesting "github.com/goravel/framework/testing"
 	"github.com/stretchr/testify/suite"
 
 	accountsvc "github.com/macromarkets/vault/app/services/account"
+	"github.com/macromarkets/vault/tests/mocks"
 )
 
 type AccountServiceTestSuite struct {
 	suite.Suite
+	goravelTesting.TestCase
 }
 
 func TestAccountService(t *testing.T) {
 	suite.Run(t, new(AccountServiceTestSuite))
+}
+
+func (s *AccountServiceTestSuite) SetupTest() {
+	mocks.TestDB(s.T())
 }
 
 // TestCreate_Success verifies that Create returns an account with "active" status

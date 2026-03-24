@@ -19,7 +19,7 @@ func (s *AccountControllerTestSuite) TestCreateAccount_Unauthenticated() {
 	body := `{"name":"My Account"}`
 	resp, err := s.Http(s.T()).
 		WithHeader("Content-Type", "application/json").
-		Post("/v1/accounts/", toReader(body))
+		Post("/v1/accounts", toReader(body))
 	s.Require().NoError(err)
 	resp.AssertStatus(401)
 }

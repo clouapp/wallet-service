@@ -29,7 +29,7 @@ import (
 // @Failure      429   {object}  ErrorResponse  "Too many failed passphrase attempts"
 // @Router       /v1/wallets/{id}/withdrawals [post]
 func CreateWithdrawal(ctx http.Context) http.Response {
-	walletID, err := uuid.Parse(ctx.Request().Route("id"))
+	walletID, err := uuid.Parse(ctx.Request().Route("walletId"))
 	if err != nil {
 		return ctx.Response().Json(http.StatusBadRequest, http.Json{
 			"error": "invalid wallet id",

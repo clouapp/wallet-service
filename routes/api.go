@@ -74,10 +74,10 @@ func Api() {
 
 	// Account routes — JWT auth + account membership
 	facades.Route().Prefix("/v1/accounts").Middleware(middleware.SessionAuth).Group(func(router route.Router) {
-		router.Post("/", controllers.CreateAccount)
+		router.Post("", controllers.CreateAccount)
 		router.Prefix("/{accountId}").Middleware(middleware.AccountContext).Group(func(r route.Router) {
-			r.Get("/", controllers.GetAccount)
-			r.Patch("/", controllers.UpdateAccount)
+			r.Get("", controllers.GetAccount)
+			r.Patch("", controllers.UpdateAccount)
 			r.Post("/archive", controllers.ArchiveAccount)
 			r.Post("/freeze", controllers.FreezeAccount)
 
@@ -128,7 +128,7 @@ func Api() {
 
 			// UTXOs — UTXOOnly middleware rejects non-UTXO chains
 			r.Prefix("/unspents").Middleware(middleware.UTXOOnly).Group(func(ur route.Router) {
-				ur.Get("/", controllers.ListUnspentOutputs)
+				ur.Get("", controllers.ListUnspentOutputs)
 			})
 		})
 	})
@@ -141,16 +141,13 @@ func Api() {
 		// Wallets
 		router.Post("/wallets", controllers.CreateWallet)
 		router.Get("/wallets", controllers.ListWallets)
-		router.Get("/wallets/{id}", controllers.GetWallet)
+		router.Get("/wallets/{walletId}", controllers.GetWallet)
 
 		// Addresses
-		router.Post("/wallets/{id}/addresses", controllers.GenerateAddress)
-		router.Get("/wallets/{id}/addresses", controllers.ListWalletAddresses)
+		router.Post("/wallets/{walletId}/addresses", controllers.GenerateAddress)
+		router.Get("/wallets/{walletId}/addresses", controllers.ListWalletAddresses)
 		router.Get("/addresses/{address}", controllers.LookupAddress)
 		router.Get("/users/{external_id}/addresses", controllers.ListUserAddresses)
-
-		// Withdrawals (flat — deprecated, prefer /wallets/{walletId}/withdrawals)
-		router.Post("/wallets/{id}/withdrawals", controllers.CreateWithdrawal)
 
 		// Transactions (flat — deprecated, prefer /wallets/{walletId}/transactions)
 		router.Get("/transactions", controllers.ListTransactions)
