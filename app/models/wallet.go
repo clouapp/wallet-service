@@ -31,6 +31,7 @@ type Wallet struct {
 	FeeMultiplier     *float64   `gorm:"type:decimal(8,4)" json:"fee_multiplier,omitempty"`
 	RequiredApprovals int        `gorm:"default:1" json:"required_approvals"`
 	FrozenUntil       *time.Time `json:"frozen_until,omitempty"`
+	ActivationCode    *string    `gorm:"type:char(6)" json:"-"`
 }
 
 // TableName specifies the table name for Wallet model.
