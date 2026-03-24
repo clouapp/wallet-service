@@ -4,6 +4,9 @@ import (
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/rand"
+	"encoding/base64"
+	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -86,6 +89,50 @@ func DecryptShare(enc *EncryptedShare, passphrase string) ([]byte, error) {
 	}
 
 	return plaintext, nil
+}
+
+// EncryptWithServiceKey encrypts data with a service-held AES-256-GCM key.
+// keyHex must be a 64-character hex string (32 bytes, high-entropy machine key).
+// No KDF is applied. Returns JSON: {"iv":"<b64>","ct":"<b64>","cipher":"aes-256-gcm"}.
+func EncryptWithServiceKey(data []byte, keyHex string) (string, error) {
+	key, err := hex.DecodeString(keyHex)
+	if err != nil {
+		return "", fmt.Errorf("decode key: %w", err)
+	}
+	if len(key) != 32 {
+		return "", fmt.Errorf("service key must be 32 bytes, got %d", len(key))
+	}
+
+	nonce := make([]byte, 12)
+	if _, err := io.ReadFull(rand.Reader, nonce); err != nil {
+		return "", fmt.Errorf("generate nonce: %w", err)
+	}
+
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		return "", fmt.Errorf("new cipher: %w", err)
+	}
+	gcm, err := cipher.NewGCM(block)
+	if err != nil {
+		return "", fmt.Errorf("new gcm: %w", err)
+	}
+	ct := gcm.Seal(nil, nonce, data, nil)
+
+	type payload struct {
+		IV     string `json:"iv"`
+		CT     string `json:"ct"`
+		Cipher string `json:"cipher"`
+	}
+	p := payload{
+		IV:     base64.StdEncoding.EncodeToString(nonce),
+		CT:     base64.StdEncoding.EncodeToString(ct),
+		Cipher: "aes-256-gcm",
+	}
+	b, err := json.Marshal(p)
+	if err != nil {
+		return "", err
+	}
+	return string(b), nil
 }
 
 // deriveKey runs Argon2id with the spec parameters.
