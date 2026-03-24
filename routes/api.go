@@ -50,6 +50,49 @@ func Api() {
 			String(http.StatusOK, html)
 	})
 
+	// Auth routes — no HMAC, uses JWT
+	facades.Route().Prefix("/v1/auth").Group(func(router route.Router) {
+		router.Post("/register", controllers.Register)
+		router.Post("/login", controllers.Login)
+		router.Post("/2fa/verify", controllers.VerifyTwoFactor)
+		router.Post("/refresh", controllers.RefreshToken)
+		router.Post("/forgot-password", controllers.ForgotPassword)
+		router.Post("/reset-password", controllers.ResetPassword)
+	})
+	// Logout requires session auth — separate group
+	facades.Route().Prefix("/v1/auth").Middleware(middleware.SessionAuth).Group(func(router route.Router) {
+		router.Post("/logout", controllers.Logout)
+	})
+
+	// User routes — JWT auth
+	facades.Route().Prefix("/v1/users").Middleware(middleware.SessionAuth).Group(func(router route.Router) {
+		router.Get("/me", controllers.GetMe)
+		router.Patch("/me", controllers.UpdateMe)
+		router.Post("/me/password", controllers.ChangePassword)
+		router.Get("/me/accounts", controllers.ListMyAccounts)
+	})
+
+	// Account routes — JWT auth + account membership
+	facades.Route().Prefix("/v1/accounts").Middleware(middleware.SessionAuth).Group(func(router route.Router) {
+		router.Post("/", controllers.CreateAccount)
+		router.Prefix("/{accountId}").Middleware(middleware.AccountContext).Group(func(r route.Router) {
+			r.Get("/", controllers.GetAccount)
+			r.Patch("/", controllers.UpdateAccount)
+			r.Post("/archive", controllers.ArchiveAccount)
+			r.Post("/freeze", controllers.FreezeAccount)
+
+			// Account users
+			r.Get("/users", controllers.ListAccountUsers)
+			r.Post("/users", controllers.AddAccountUser)
+			r.Delete("/users/{userId}", controllers.RemoveAccountUser)
+
+			// API tokens
+			r.Get("/tokens", controllers.ListAccountTokens)
+			r.Post("/tokens", controllers.CreateAccountToken)
+			r.Delete("/tokens/{tokenId}", controllers.RevokeAccountToken)
+		})
+	})
+
 	// API v1 group - authenticated
 	facades.Route().Prefix("/v1").Middleware(middleware.HMACAuth).Group(func(router route.Router) {
 		// Chains
