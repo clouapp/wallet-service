@@ -1,11 +1,50 @@
 basePath: /
 definitions:
+  controllers.AccessTokenListResponse:
+    properties:
+      data:
+        items:
+          $ref: '#/definitions/models.AccessToken'
+        type: array
+    type: object
+  controllers.AccountListResponse:
+    properties:
+      data:
+        items:
+          $ref: '#/definitions/models.Account'
+        type: array
+    type: object
+  controllers.AccountUserListResponse:
+    properties:
+      data:
+        items:
+          $ref: '#/definitions/models.AccountUser'
+        type: array
+    type: object
+  controllers.AddAccountUserRequest:
+    properties:
+      email:
+        example: user@example.com
+        type: string
+      role:
+        example: admin
+        type: string
+    type: object
   controllers.AddressListResponse:
     properties:
       data:
         items:
           $ref: '#/definitions/models.Address'
         type: array
+    type: object
+  controllers.AuthResponse:
+    properties:
+      access_token:
+        type: string
+      refresh_token:
+        type: string
+      user:
+        $ref: '#/definitions/models.User'
     type: object
   controllers.ChainInfo:
     properties:
@@ -29,6 +68,34 @@ definitions:
           $ref: '#/definitions/controllers.ChainInfo'
         type: array
     type: object
+  controllers.ChangePasswordRequest:
+    properties:
+      current_password:
+        type: string
+      new_password:
+        type: string
+    type: object
+  controllers.CreateAccountRequest:
+    properties:
+      name:
+        example: Acme Corp
+        type: string
+    type: object
+  controllers.CreateAccountTokenRequest:
+    properties:
+      name:
+        example: CI Token
+        type: string
+      valid_until:
+        type: string
+    type: object
+  controllers.CreateAccountTokenResponse:
+    properties:
+      metadata:
+        $ref: '#/definitions/models.AccessToken'
+      token:
+        type: string
+    type: object
   controllers.CreateWalletRequest:
     properties:
       chain:
@@ -36,6 +103,9 @@ definitions:
         type: string
       label:
         example: My Ethereum Wallet
+        type: string
+      passphrase:
+        example: my-secret-passphrase-12chars
         type: string
     type: object
   controllers.CreateWebhookRequest:
@@ -68,6 +138,9 @@ definitions:
       idempotency_key:
         example: wdl_20260317_001
         type: string
+      passphrase:
+        example: strong-passphrase-min-12
+        type: string
       to_address:
         example: "0xABCDEF1234567890"
         type: string
@@ -76,6 +149,12 @@ definitions:
     properties:
       error:
         example: something went wrong
+        type: string
+    type: object
+  controllers.ForgotPasswordRequest:
+    properties:
+      email:
+        example: user@example.com
         type: string
     type: object
   controllers.GenerateAddressRequest:
@@ -96,12 +175,72 @@ definitions:
         example: 0.1.0
         type: string
     type: object
+  controllers.LoginRequest:
+    properties:
+      email:
+        example: user@example.com
+        type: string
+      password:
+        example: s3cr3t
+        type: string
+    type: object
+  controllers.RefreshTokenRequest:
+    properties:
+      refresh_token:
+        type: string
+    type: object
+  controllers.RegisterRequest:
+    properties:
+      email:
+        example: user@example.com
+        type: string
+      full_name:
+        example: Alice Smith
+        type: string
+      password:
+        example: s3cr3t
+        type: string
+    type: object
+  controllers.ResetPasswordRequest:
+    properties:
+      new_password:
+        example: newS3cr3t
+        type: string
+      token:
+        type: string
+    type: object
   controllers.TransactionListResponse:
     properties:
       data:
         items:
           $ref: '#/definitions/models.Transaction'
         type: array
+    type: object
+  controllers.TwoFactorRequest:
+    properties:
+      code:
+        example: "123456"
+        type: string
+      partial_token:
+        type: string
+      recovery_code:
+        example: ABCDEFGH12345678
+        type: string
+    type: object
+  controllers.UpdateAccountRequest:
+    properties:
+      name:
+        example: New Name
+        type: string
+      view_all_wallets:
+        example: true
+        type: boolean
+    type: object
+  controllers.UpdateMeRequest:
+    properties:
+      full_name:
+        example: Alice Smith
+        type: string
     type: object
   controllers.WalletListResponse:
     properties:
@@ -121,6 +260,68 @@ definitions:
     properties:
       error: {}
     type: object
+  models.AccessToken:
+    properties:
+      account_id:
+        type: string
+      created_at:
+        $ref: '#/definitions/github_com_goravel_framework_support_carbon.DateTime'
+      created_by:
+        type: string
+      id:
+        type: string
+      ip_cidr:
+        type: string
+      name:
+        type: string
+      permissions:
+        type: string
+      spending_limit:
+        type: string
+      updated_at:
+        $ref: '#/definitions/github_com_goravel_framework_support_carbon.DateTime'
+      valid_until:
+        type: string
+    type: object
+  models.Account:
+    properties:
+      created_at:
+        $ref: '#/definitions/github_com_goravel_framework_support_carbon.DateTime'
+      id:
+        type: string
+      name:
+        type: string
+      status:
+        type: string
+      updated_at:
+        $ref: '#/definitions/github_com_goravel_framework_support_carbon.DateTime'
+      view_all_wallets:
+        type: boolean
+    type: object
+  models.AccountUser:
+    properties:
+      account_id:
+        type: string
+      added_by:
+        type: string
+      created_at:
+        $ref: '#/definitions/github_com_goravel_framework_support_carbon.DateTime'
+      deleted_at:
+        type: string
+      id:
+        type: string
+      role:
+        description: owner|admin|auditor|user
+        type: string
+      status:
+        type: string
+      updated_at:
+        $ref: '#/definitions/github_com_goravel_framework_support_carbon.DateTime'
+      user:
+        $ref: '#/definitions/models.User'
+      user_id:
+        type: string
+    type: object
   models.Address:
     properties:
       address:
@@ -129,6 +330,8 @@ definitions:
         type: string
       created_at:
         $ref: '#/definitions/github_com_goravel_framework_support_carbon.DateTime'
+      created_by:
+        type: string
       derivation_index:
         type: integer
       external_user_id:
@@ -137,6 +340,8 @@ definitions:
         type: string
       is_active:
         type: boolean
+      label:
+        type: string
       metadata:
         type: string
       updated_at:
@@ -203,19 +408,49 @@ definitions:
       wallet_id:
         type: string
     type: object
+  models.User:
+    properties:
+      created_at:
+        $ref: '#/definitions/github_com_goravel_framework_support_carbon.DateTime'
+      email:
+        type: string
+      full_name:
+        type: string
+      id:
+        type: string
+      status:
+        type: string
+      totp_enabled:
+        type: boolean
+      updated_at:
+        $ref: '#/definitions/github_com_goravel_framework_support_carbon.DateTime'
+    type: object
   models.Wallet:
     properties:
-      address_index:
-        type: integer
+      account_id:
+        description: Account and admin fields
+        type: string
       chain:
         type: string
       created_at:
         $ref: '#/definitions/github_com_goravel_framework_support_carbon.DateTime'
-      derivation_path:
+      deposit_address:
+        type: string
+      fee_multiplier:
+        type: number
+      fee_rate_max:
+        type: integer
+      fee_rate_min:
+        type: integer
+      frozen_until:
         type: string
       id:
         type: string
       label:
+        type: string
+      required_approvals:
+        type: integer
+      status:
         type: string
       updated_at:
         $ref: '#/definitions/github_com_goravel_framework_support_carbon.DateTime'
@@ -231,9 +466,13 @@ definitions:
         type: string
       is_active:
         type: boolean
+      type:
+        type: string
       updated_at:
         $ref: '#/definitions/github_com_goravel_framework_support_carbon.DateTime'
       url:
+        type: string
+      wallet_id:
         type: string
     type: object
 host: localhost:8080
@@ -250,6 +489,548 @@ info:
   title: Vault Custody Service API
   version: "1.0"
 paths:
+  /accounts:
+    post:
+      consumes:
+      - application/json
+      description: Creates an account and makes the caller its owner
+      parameters:
+      - description: Account payload
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/controllers.CreateAccountRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/models.Account'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/controllers.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/controllers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Create a new account
+      tags:
+      - Accounts
+  /accounts/{accountId}:
+    get:
+      description: Returns account details. Requires account membership (injected
+        by AccountContext middleware).
+      parameters:
+      - description: Account UUID
+        in: path
+        name: accountId
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/models.Account'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/controllers.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/controllers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Get an account
+      tags:
+      - Accounts
+    patch:
+      consumes:
+      - application/json
+      description: Updates account name or view_all_wallets flag. Requires owner or
+        admin role.
+      parameters:
+      - description: Account UUID
+        in: path
+        name: accountId
+        required: true
+        type: string
+      - description: Update payload
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/controllers.UpdateAccountRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/models.Account'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/controllers.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/controllers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Update account settings
+      tags:
+      - Accounts
+  /accounts/{accountId}/archive:
+    post:
+      description: Sets account status to 'archived'. Requires owner role.
+      parameters:
+      - description: Account UUID
+        in: path
+        name: accountId
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/models.Account'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/controllers.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/controllers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Archive an account
+      tags:
+      - Accounts
+  /accounts/{accountId}/freeze:
+    post:
+      description: Sets account status to 'frozen'. Requires owner role.
+      parameters:
+      - description: Account UUID
+        in: path
+        name: accountId
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/models.Account'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/controllers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Freeze an account
+      tags:
+      - Accounts
+  /accounts/{accountId}/tokens:
+    get:
+      description: Returns all non-expired access tokens for the account. Requires
+        owner or admin.
+      parameters:
+      - description: Account UUID
+        in: path
+        name: accountId
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/controllers.AccessTokenListResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/controllers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: List API access tokens for an account
+      tags:
+      - Accounts
+    post:
+      consumes:
+      - application/json
+      description: Creates a named access token. The raw token is returned once —
+        store it safely. Requires owner or admin.
+      parameters:
+      - description: Account UUID
+        in: path
+        name: accountId
+        required: true
+        type: string
+      - description: Token payload
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/controllers.CreateAccountTokenRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/controllers.CreateAccountTokenResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/controllers.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/controllers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Create an API access token for an account
+      tags:
+      - Accounts
+  /accounts/{accountId}/tokens/{tokenId}:
+    delete:
+      description: Deletes an access token by ID. Requires owner or admin.
+      parameters:
+      - description: Account UUID
+        in: path
+        name: accountId
+        required: true
+        type: string
+      - description: Token UUID
+        in: path
+        name: tokenId
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: No content
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/controllers.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/controllers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Revoke an API access token
+      tags:
+      - Accounts
+  /accounts/{accountId}/users:
+    get:
+      description: Returns all active members of the account with their roles
+      parameters:
+      - description: Account UUID
+        in: path
+        name: accountId
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/controllers.AccountUserListResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/controllers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: List account members
+      tags:
+      - Accounts
+    post:
+      consumes:
+      - application/json
+      description: Adds a user to the account with the specified role. Requires owner
+        or admin.
+      parameters:
+      - description: Account UUID
+        in: path
+        name: accountId
+        required: true
+        type: string
+      - description: User and role payload
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/controllers.AddAccountUserRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/models.AccountUser'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/controllers.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/controllers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Add a user to an account
+      tags:
+      - Accounts
+  /accounts/{accountId}/users/{userId}:
+    delete:
+      description: Soft-deletes the account_user membership. Requires owner or admin.
+      parameters:
+      - description: Account UUID
+        in: path
+        name: accountId
+        required: true
+        type: string
+      - description: User UUID to remove
+        in: path
+        name: userId
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: No content
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/controllers.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/controllers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Remove a user from an account
+      tags:
+      - Accounts
+  /auth/2fa/verify:
+    post:
+      consumes:
+      - application/json
+      description: Validates a TOTP code or recovery code and returns full JWT tokens
+      parameters:
+      - description: 2FA verification payload
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/controllers.TwoFactorRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/controllers.AuthResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/controllers.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/controllers.ErrorResponse'
+      summary: Complete 2FA login
+      tags:
+      - Auth
+  /auth/forgot-password:
+    post:
+      consumes:
+      - application/json
+      description: Sends a password reset link to the user's email if the address
+        is registered
+      parameters:
+      - description: Email address
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/controllers.ForgotPasswordRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/controllers.ErrorResponse'
+      summary: Request password reset email
+      tags:
+      - Auth
+  /auth/login:
+    post:
+      consumes:
+      - application/json
+      description: Validates credentials and returns JWT access + refresh tokens.
+        If TOTP is enabled, returns a partial token requiring 2FA.
+      parameters:
+      - description: Login credentials
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/controllers.LoginRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/controllers.AuthResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/controllers.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/controllers.ErrorResponse'
+      summary: Authenticate a user
+      tags:
+      - Auth
+  /auth/logout:
+    post:
+      description: Revokes the current JWT and all active refresh tokens for the user
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: No content
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/controllers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Logout current user
+      tags:
+      - Auth
+  /auth/refresh:
+    post:
+      consumes:
+      - application/json
+      description: Exchanges a valid refresh token for a new access + refresh token
+        pair
+      parameters:
+      - description: Refresh token
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/controllers.RefreshTokenRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/controllers.AuthResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/controllers.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/controllers.ErrorResponse'
+      summary: Refresh access token
+      tags:
+      - Auth
+  /auth/register:
+    post:
+      consumes:
+      - application/json
+      description: Creates a new user account and sends a welcome email
+      parameters:
+      - description: Registration payload
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/controllers.RegisterRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/controllers.AuthResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/controllers.ErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/controllers.ErrorResponse'
+      summary: Register a new user
+      tags:
+      - Auth
+  /auth/reset-password:
+    post:
+      consumes:
+      - application/json
+      description: Validates the reset token and updates the user's password
+      parameters:
+      - description: Token and new password
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/controllers.ResetPasswordRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/controllers.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/controllers.ErrorResponse'
+      summary: Reset password using token
+      tags:
+      - Auth
   /health:
     get:
       description: Returns service status and version
@@ -263,6 +1044,109 @@ paths:
       summary: Health check
       tags:
       - System
+  /users/me:
+    get:
+      description: Returns the authenticated user's profile
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/models.User'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/controllers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Get current user profile
+      tags:
+      - User
+    patch:
+      consumes:
+      - application/json
+      description: Updates the authenticated user's full name
+      parameters:
+      - description: Update payload
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/controllers.UpdateMeRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/models.User'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/controllers.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/controllers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Update current user profile
+      tags:
+      - User
+  /users/me/accounts:
+    get:
+      description: Returns all accounts the authenticated user is a member of
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/controllers.AccountListResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/controllers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: List accounts for current user
+      tags:
+      - User
+  /users/me/password:
+    post:
+      consumes:
+      - application/json
+      description: Validates the current password and updates it
+      parameters:
+      - description: Password change payload
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/controllers.ChangePasswordRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/controllers.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/controllers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Change password
+      tags:
+      - User
   /v1/addresses/{address}:
     get:
       description: Finds a deposit address record by its on-chain address string.
@@ -618,6 +1502,10 @@ paths:
           description: Invalid wallet ID or missing fields
           schema:
             $ref: '#/definitions/controllers.ErrorResponse'
+        "422":
+          description: Address generation not supported for MPC wallets
+          schema:
+            $ref: '#/definitions/controllers.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
@@ -632,8 +1520,8 @@ paths:
     post:
       consumes:
       - application/json
-      description: Enqueues a withdrawal request for the given wallet. The transaction
-        is signed and broadcast asynchronously by the withdrawal worker.
+      description: Signs and broadcasts a withdrawal synchronously using MPC co-signing.
+        Passphrase is required to decrypt the customer's key share.
       parameters:
       - description: Wallet UUID
         format: uuid
@@ -655,7 +1543,23 @@ paths:
           schema:
             $ref: '#/definitions/models.Transaction'
         "400":
-          description: Invalid wallet ID, missing fields, or insufficient funds
+          description: Missing fields or invalid amount
+          schema:
+            $ref: '#/definitions/controllers.ErrorResponse'
+        "401":
+          description: Invalid passphrase
+          schema:
+            $ref: '#/definitions/controllers.ErrorResponse'
+        "409":
+          description: Concurrent withdrawal in progress
+          schema:
+            $ref: '#/definitions/controllers.ErrorResponse'
+        "422":
+          description: Insufficient funds
+          schema:
+            $ref: '#/definitions/controllers.ErrorResponse'
+        "429":
+          description: Too many failed passphrase attempts
           schema:
             $ref: '#/definitions/controllers.ErrorResponse'
       security:
