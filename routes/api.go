@@ -56,8 +56,8 @@ func Api() {
 		router.Post("/login", controllers.Login)
 		router.Post("/2fa/verify", controllers.VerifyTwoFactor)
 		router.Post("/refresh", controllers.RefreshToken)
-		router.Post("/forgot-password", controllers.ForgotPassword)
-		router.Post("/reset-password", controllers.ResetPassword)
+		router.Post("/recover", controllers.ForgotPassword)
+		router.Post("/recover/confirm", controllers.ResetPassword)
 	})
 	// Logout requires session auth — separate group
 	facades.Route().Prefix("/v1/auth").Middleware(middleware.SessionAuth).Group(func(router route.Router) {
@@ -95,7 +95,11 @@ func Api() {
 
 	// Wallet sub-resource routes — JWT auth
 	facades.Route().Prefix("/v1/wallets").Middleware(middleware.SessionAuth).Group(func(router route.Router) {
+		router.Get("", controllers.ListWallets)
+		router.Post("", controllers.CreateWalletAdmin)
+		router.Get("/{walletId}", controllers.GetWallet)
 		router.Prefix("/{walletId}").Group(func(r route.Router) {
+			r.Post("/activate", controllers.ActivateWallet)
 			// Wallet users
 			r.Get("/users", controllers.ListWalletUsers)
 			r.Post("/users", controllers.AddWalletUser)
@@ -133,8 +137,9 @@ func Api() {
 		})
 	})
 
-	// API v1 group — HMAC-authenticated (legacy/external API)
-	facades.Route().Prefix("/v1").Middleware(middleware.HMACAuth).Group(func(router route.Router) {
+	// External API — account JWT token auth (Bearer JWT issued via /v1/accounts/{id}/tokens)
+	// Clients optionally add X-Signature: HMAC-SHA256(bearer_token, body) for request integrity.
+	facades.Route().Prefix("/api/v1").Middleware(middleware.APITokenAuth).Group(func(router route.Router) {
 		// Chains
 		router.Get("/chains", controllers.ListChains)
 
@@ -149,12 +154,12 @@ func Api() {
 		router.Get("/addresses/{address}", controllers.LookupAddress)
 		router.Get("/users/{external_id}/addresses", controllers.ListUserAddresses)
 
-		// Transactions (flat — deprecated, prefer /wallets/{walletId}/transactions)
+		// Transactions
 		router.Get("/transactions", controllers.ListTransactions)
 		router.Get("/transactions/{id}", controllers.GetTransaction)
 		router.Get("/users/{external_id}/transactions", controllers.ListUserTransactions)
 
-		// Webhooks (flat — deprecated, prefer /wallets/{walletId}/webhooks)
+		// Webhooks
 		router.Post("/webhooks", controllers.CreateWebhook)
 		router.Get("/webhooks", controllers.ListWebhooks)
 	})
