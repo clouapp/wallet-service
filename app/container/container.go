@@ -3,12 +3,14 @@ package container
 import (
 	"context"
 	"log/slog"
+	"net/url"
 	"os"
 
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/secretsmanager"
 	"github.com/aws/aws-sdk-go-v2/service/sqs"
 	"github.com/redis/go-redis/v9"
+	smithyendpoints "github.com/aws/smithy-go/endpoints"
 
 	chainpkg "github.com/macromarkets/vault/app/services/chain"
 	"github.com/macromarkets/vault/app/services/deposit"
@@ -39,6 +41,21 @@ type Container struct {
 
 var globalContainer *Container
 
+// staticEndpointResolver routes all Secrets Manager calls to a fixed endpoint.
+// Used in dev to point at LocalStack.
+type staticEndpointResolver struct{ url string }
+
+func (r staticEndpointResolver) ResolveEndpoint(
+	ctx context.Context,
+	params secretsmanager.EndpointParameters,
+) (smithyendpoints.Endpoint, error) {
+	u, err := url.Parse(r.url)
+	if err != nil {
+		return smithyendpoints.Endpoint{}, err
+	}
+	return smithyendpoints.Endpoint{URI: *u}, nil
+}
+
 // Boot builds the full dependency graph.
 func Boot() *Container {
 	c := &Container{}
@@ -65,6 +82,10 @@ func Boot() *Container {
 
 	// --- AWS Secrets Manager ---
 	smClient := secretsmanager.NewFromConfig(awsCfg)
+	if endpoint := os.Getenv("AWS_ENDPOINT_URL"); endpoint != "" {
+		smClient = secretsmanager.NewFromConfig(awsCfg,
+			secretsmanager.WithEndpointResolverV2(staticEndpointResolver{url: endpoint}))
+	}
 	c.SecretsManager = smClient
 	c.MPCService = mpc.NewTSSService()
 
