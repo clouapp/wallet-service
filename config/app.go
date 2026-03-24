@@ -87,6 +87,7 @@ func Boot(app contractsfoundation.Application) {
 			&frameworkmail.ServiceProvider{},
 			&frameworkcrypt.ServiceProvider{},
 			&vaultproviders.MigrationsServiceProvider{},
+			&vaultproviders.AuthServiceProvider{},
 		},
 	})
 
