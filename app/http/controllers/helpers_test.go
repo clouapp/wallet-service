@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"io"
 	"strconv"
 	"strings"
 	"time"
@@ -56,4 +57,9 @@ func (s *authSuite) SignedPost(path, body string) contractstestinghttp.Response 
 		Post(path, strings.NewReader(body))
 	s.Require().NoError(err)
 	return resp
+}
+
+// toReader converts a string into an io.Reader for HTTP request bodies.
+func toReader(s string) io.Reader {
+	return strings.NewReader(s)
 }
