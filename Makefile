@@ -1,4 +1,4 @@
-.PHONY: help build clean run dev deploy deploy-guided delete validate local test test-coverage test-race test-verbose lint fmt vet security migrate migrate-rollback migrate-status migrate-fresh db-reset db-seed docker-up docker-down docker-logs docker-build docker-test ecr-login ecr-push logs-api logs-scanner logs-webhook logs-withdrawal dlq-check dlq-replay-webhooks dlq-replay-withdrawals ping env-info swagger-install swagger-generate swagger-fmt deps-install deps-update
+.PHONY: help build clean run dev stop deploy deploy-guided delete validate local test test-coverage test-race test-verbose lint fmt vet security migrate migrate-rollback migrate-status migrate-fresh db-reset db-seed docker-up docker-down docker-logs docker-build docker-test ecr-login ecr-push logs-api logs-scanner logs-webhook logs-withdrawal dlq-check dlq-replay-webhooks dlq-replay-withdrawals ping env-info swagger-install swagger-generate swagger-fmt deps-install deps-update
 
 # =============================================================================
 # Configuration
@@ -76,7 +76,7 @@ help: ## Show this help message
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(firstword $(MAKEFILE_LIST)) | awk 'BEGIN {FS = ":.*?## "}; /^lint|^fmt|^vet|^security|^env-info|^clean/ {printf "  \033[36m%-20s\033[0m %s\n", $$1, $$2}'
 	@echo ""
 	@echo "🖥️  Local Dev Commands:"
-	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(firstword $(MAKEFILE_LIST)) | awk 'BEGIN {FS = ":.*?## "}; /^run|^dev|^air-install/ {printf "  \033[36m%-20s\033[0m %s\n", $$1, $$2}'
+	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(firstword $(MAKEFILE_LIST)) | awk 'BEGIN {FS = ":.*?## "}; /^run|^dev|^stop|^air-install/ {printf "  \033[36m%-20s\033[0m %s\n", $$1, $$2}'
 	@echo ""
 	@echo "💡 Examples:"
 	@echo "  make dev                    # Start API with live reload (Air)"
@@ -157,6 +157,13 @@ dev: ## Run API server with live reload (requires: go install github.com/air-ver
 		exit 1; \
 	fi
 	@export $$(grep -v '^#' .env.dev | xargs) && APP_KEY=$$(openssl rand -hex 16) $$(go env GOPATH)/bin/air
+
+stop: ## Stop running API server (go run or Air)
+	@echo "🛑 Stopping local API server..."
+	@pkill -f "air" 2>/dev/null && echo "  Stopped Air process" || true
+	@pkill -f "go run \." 2>/dev/null && echo "  Stopped go run process" || true
+	@lsof -ti:8080 | xargs kill -9 2>/dev/null && echo "  Killed process on port 8080" || true
+	@echo "✅ API server stopped"
 
 air-install: ## Install Air live-reload tool
 	@echo "📦 Installing Air..."
