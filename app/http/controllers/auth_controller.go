@@ -36,7 +36,8 @@ func Register(ctx http.Context) http.Response {
 
 	// Check for existing user
 	var existing models.User
-	if err := facades.Orm().Query().Where("email = ?", req.Email).First(&existing); err == nil {
+	facades.Orm().Query().Where("email = ?", req.Email).First(&existing)
+	if existing.ID != uuid.Nil {
 		return ctx.Response().Json(http.StatusConflict, http.Json{"error": "email already in use"})
 	}
 
@@ -84,7 +85,8 @@ func Login(ctx http.Context) http.Response {
 	}
 
 	var user models.User
-	if err := facades.Orm().Query().Where("email = ?", req.Email).First(&user); err != nil {
+	facades.Orm().Query().Where("email = ?", req.Email).First(&user)
+	if user.ID == uuid.Nil {
 		return ctx.Response().Json(http.StatusUnauthorized, http.Json{"error": "invalid credentials"})
 	}
 
@@ -155,7 +157,8 @@ func VerifyTwoFactor(ctx http.Context) http.Response {
 	}
 
 	var user models.User
-	if err := facades.Orm().Query().Where("id = ?", userID).First(&user); err != nil {
+	facades.Orm().Query().Where("id = ?", userID).First(&user)
+	if user.ID == uuid.Nil {
 		return ctx.Response().Json(http.StatusUnauthorized, http.Json{"error": "user not found"})
 	}
 
@@ -299,7 +302,8 @@ func ForgotPassword(ctx http.Context) http.Response {
 
 	// Always return 200 to avoid user enumeration
 	var user models.User
-	if err := facades.Orm().Query().Where("email = ?", req.Email).First(&user); err != nil {
+	facades.Orm().Query().Where("email = ?", req.Email).First(&user)
+	if user.ID == uuid.Nil {
 		return ctx.Response().Json(http.StatusOK, http.Json{"message": "if that address is registered, you will receive a reset link"})
 	}
 

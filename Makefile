@@ -298,9 +298,9 @@ docker-redis-cli: ## Open Redis CLI
 db-reset: docker-down-volumes docker-up migrate ## Reset database (WARNING: deletes all data)
 	@echo "✅ Database reset complete"
 
-db-seed: ## Seed database with test data
+db-seed: ## Seed database with test data (admin@vault.dev / Password123!)
 	@echo "🌱 Seeding database..."
-	@echo "TODO: Create seed script in database/seeds/"
+	@export $$(grep -v '^#' .env | xargs) && go run cmd/seed/main.go
 
 # =============================================================================
 # ECR Commands
