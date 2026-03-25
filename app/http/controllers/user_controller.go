@@ -5,6 +5,7 @@ import (
 	"github.com/goravel/framework/contracts/http"
 
 	"github.com/macrowallets/waas/app/container"
+	"github.com/macrowallets/waas/app/http/pagination"
 	"github.com/macrowallets/waas/app/models"
 	authsvc "github.com/macrowallets/waas/app/services/auth"
 )
@@ -105,10 +106,12 @@ func ChangePassword(ctx http.Context) http.Response {
 
 // ListMyAccounts godoc
 // @Summary      List accounts for current user
-// @Description  Returns all accounts the authenticated user is a member of
+// @Description  Returns a paginated list of accounts the authenticated user is a member of
 // @Tags         User
 // @Security     BearerAuth
 // @Produce      json
+// @Param        limit   query   int  false  "Max results (default 20)"  example(20)
+// @Param        offset  query   int  false  "Pagination offset"         example(0)
 // @Success      200  {object}  AccountListResponse
 // @Failure      401  {object}  ErrorResponse
 // @Router       /users/me/accounts [get]
@@ -118,7 +121,9 @@ func ListMyAccounts(ctx http.Context) http.Response {
 		return ctx.Response().Json(http.StatusUnauthorized, http.Json{"error": "unauthenticated"})
 	}
 
-	memberships, err := container.Get().AccountUserRepo.FindByUserID(userID)
+	limit, offset := pagination.ParseParams(ctx, 20)
+
+	memberships, total, err := container.Get().AccountUserRepo.PaginateByUserID(userID, limit, offset)
 	if err != nil {
 		return ctx.Response().Json(http.StatusInternalServerError, http.Json{"error": "failed to fetch accounts"})
 	}
@@ -128,12 +133,12 @@ func ListMyAccounts(ctx http.Context) http.Response {
 		accountIDs = append(accountIDs, m.AccountID)
 	}
 
-	accounts, err2 := container.Get().AccountRepo.FindByIDs(accountIDs)
-	if err2 != nil {
+	accounts, err := container.Get().AccountRepo.FindByIDs(accountIDs)
+	if err != nil {
 		return ctx.Response().Json(http.StatusInternalServerError, http.Json{"error": "failed to fetch accounts"})
 	}
 
-	return ctx.Response().Json(http.StatusOK, http.Json{"data": accounts})
+	return ctx.Response().Json(http.StatusOK, pagination.Response(accounts, total, limit, offset))
 }
 
 // ---- Request/Response types ----

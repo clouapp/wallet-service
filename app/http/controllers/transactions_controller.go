@@ -1,12 +1,11 @@
 package controllers
 
 import (
-	"strconv"
-
 	"github.com/goravel/framework/contracts/http"
 	"github.com/google/uuid"
 
 	"github.com/macrowallets/waas/app/container"
+	"github.com/macrowallets/waas/app/http/pagination"
 )
 
 // ListTransactions godoc
@@ -26,10 +25,9 @@ import (
 // @Failure      500      {object}  ErrorResponse
 // @Router       /v1/transactions [get]
 func ListTransactions(ctx http.Context) http.Response {
-	limit, _ := strconv.Atoi(ctx.Request().Query("limit", "50"))
-	offset, _ := strconv.Atoi(ctx.Request().Query("offset", "0"))
+	limit, offset := pagination.ParseParams(ctx, 50)
 
-	txs, err := container.Get().WithdrawalService.ListTransactions(
+	txs, total, err := container.Get().WithdrawalService.ListTransactions(
 		ctx.Context(),
 		ctx.Request().Query("chain", ""),
 		ctx.Request().Query("type", ""),
@@ -43,9 +41,7 @@ func ListTransactions(ctx http.Context) http.Response {
 			"error": err.Error(),
 		})
 	}
-	return ctx.Response().Success().Json(http.Json{
-		"data": txs,
-	})
+	return ctx.Response().Json(http.StatusOK, pagination.Response(txs, total, limit, offset))
 }
 
 // GetTransaction godoc
@@ -90,10 +86,9 @@ func GetTransaction(ctx http.Context) http.Response {
 // @Failure      500          {object}  ErrorResponse
 // @Router       /v1/users/{external_id}/transactions [get]
 func ListUserTransactions(ctx http.Context) http.Response {
-	limit, _ := strconv.Atoi(ctx.Request().Query("limit", "50"))
-	offset, _ := strconv.Atoi(ctx.Request().Query("offset", "0"))
+	limit, offset := pagination.ParseParams(ctx, 50)
 
-	txs, err := container.Get().WithdrawalService.ListTransactions(
+	txs, total, err := container.Get().WithdrawalService.ListTransactions(
 		ctx.Context(),
 		"", "", "",
 		ctx.Request().Route("external_id"),
@@ -105,7 +100,5 @@ func ListUserTransactions(ctx http.Context) http.Response {
 			"error": err.Error(),
 		})
 	}
-	return ctx.Response().Success().Json(http.Json{
-		"data": txs,
-	})
+	return ctx.Response().Json(http.StatusOK, pagination.Response(txs, total, limit, offset))
 }

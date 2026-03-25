@@ -12,11 +12,11 @@ type TransactionRepository interface {
 	FindByID(id uuid.UUID) (*models.Transaction, error)
 	FindByIDAndWallet(txID string, walletID uuid.UUID) (*models.Transaction, error)
 	FindByIdempotencyKey(key string) (*models.Transaction, error)
-	FindByWallet(walletID uuid.UUID, txType, status string, limit, offset int) ([]models.Transaction, error)
+	FindByWallet(walletID uuid.UUID, txType, status string, limit, offset int) ([]models.Transaction, int64, error)
 	CountByChainAndTxHash(chainID, txHash, txType string) (int64, error)
 	FindPendingByChain(chainID string) ([]models.Transaction, error)
 	UpdateFields(id uuid.UUID, fields map[string]interface{}) error
-	List(chainID, txType, status, userID string, limit, offset int) ([]models.Transaction, error)
+	List(chainID, txType, status, userID string, limit, offset int) ([]models.Transaction, int64, error)
 }
 
 type transactionRepository struct{}
@@ -66,22 +66,33 @@ func (r *transactionRepository) FindByIdempotencyKey(key string) (*models.Transa
 	return &tx, nil
 }
 
-func (r *transactionRepository) FindByWallet(walletID uuid.UUID, txType, status string, limit, offset int) ([]models.Transaction, error) {
-	query := facades.Orm().Query().
-		Where("wallet_id = ?", walletID).
-		Limit(limit).
-		Offset(offset)
-
+func (r *transactionRepository) FindByWallet(walletID uuid.UUID, txType, status string, limit, offset int) ([]models.Transaction, int64, error) {
+	countQuery := facades.Orm().Query().
+		Model(&models.Transaction{}).
+		Where("wallet_id = ?", walletID)
 	if txType != "" {
-		query = query.Where("tx_type = ?", txType)
+		countQuery = countQuery.Where("tx_type = ?", txType)
 	}
 	if status != "" {
-		query = query.Where("status = ?", status)
+		countQuery = countQuery.Where("status = ?", status)
+	}
+	total, err := countQuery.Count()
+	if err != nil {
+		return nil, 0, err
+	}
+
+	dataQuery := facades.Orm().Query().
+		Where("wallet_id = ?", walletID)
+	if txType != "" {
+		dataQuery = dataQuery.Where("tx_type = ?", txType)
+	}
+	if status != "" {
+		dataQuery = dataQuery.Where("status = ?", status)
 	}
 
 	var transactions []models.Transaction
-	err := query.Find(&transactions)
-	return transactions, err
+	err = dataQuery.Offset(offset).Limit(limit).Find(&transactions)
+	return transactions, total, err
 }
 
 func (r *transactionRepository) CountByChainAndTxHash(chainID, txHash, txType string) (int64, error) {
@@ -111,26 +122,36 @@ func (r *transactionRepository) UpdateFields(id uuid.UUID, fields map[string]int
 	return err
 }
 
-func (r *transactionRepository) List(chainID, txType, status, userID string, limit, offset int) ([]models.Transaction, error) {
-	query := facades.Orm().Query()
-
-	if chainID != "" {
-		query = query.Where("chain", chainID)
-	}
-	if txType != "" {
-		query = query.Where("tx_type", txType)
-	}
-	if status != "" {
-		query = query.Where("status", status)
-	}
-	if userID != "" {
-		query = query.Where("external_user_id", userID)
-	}
+func (r *transactionRepository) List(chainID, txType, status, userID string, limit, offset int) ([]models.Transaction, int64, error) {
 	if limit <= 0 {
 		limit = 50
 	}
 
+	countQuery := facades.Orm().Query().Model(&models.Transaction{})
+	dataQuery := facades.Orm().Query()
+	if chainID != "" {
+		countQuery = countQuery.Where("chain", chainID)
+		dataQuery = dataQuery.Where("chain", chainID)
+	}
+	if txType != "" {
+		countQuery = countQuery.Where("tx_type", txType)
+		dataQuery = dataQuery.Where("tx_type", txType)
+	}
+	if status != "" {
+		countQuery = countQuery.Where("status", status)
+		dataQuery = dataQuery.Where("status", status)
+	}
+	if userID != "" {
+		countQuery = countQuery.Where("external_user_id", userID)
+		dataQuery = dataQuery.Where("external_user_id", userID)
+	}
+
+	total, err := countQuery.Count()
+	if err != nil {
+		return nil, 0, err
+	}
+
 	var txs []models.Transaction
-	err := query.Order("created_at DESC").Limit(limit).Offset(offset).Find(&txs)
-	return txs, err
+	err = dataQuery.Order("created_at DESC").Limit(limit).Offset(offset).Find(&txs)
+	return txs, total, err
 }

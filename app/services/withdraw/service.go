@@ -265,6 +265,6 @@ func (s *Service) GetTransaction(ctx context.Context, id uuid.UUID) (*models.Tra
 	return tx, nil
 }
 
-func (s *Service) ListTransactions(ctx context.Context, chainID, txType, status, userID string, limit, offset int) ([]models.Transaction, error) {
+func (s *Service) ListTransactions(ctx context.Context, chainID, txType, status, userID string, limit, offset int) ([]models.Transaction, int64, error) {
 	return s.transactionRepo.List(chainID, txType, status, userID, limit, offset)
 }

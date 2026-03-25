@@ -8,6 +8,7 @@ import (
 	"github.com/goravel/framework/contracts/http"
 
 	"github.com/macrowallets/waas/app/container"
+	"github.com/macrowallets/waas/app/http/pagination"
 	"github.com/macrowallets/waas/app/http/requests"
 	"github.com/macrowallets/waas/app/models"
 	wallet "github.com/macrowallets/waas/app/services/wallet"
@@ -56,15 +57,14 @@ func CreateWallet(ctx http.Context) http.Response {
 // @Failure      500  {object}  ErrorResponse
 // @Router       /v1/wallets [get]
 func ListWallets(ctx http.Context) http.Response {
-	ws, err := container.Get().WalletService.ListWallets(ctx.Context())
+	limit, offset := pagination.ParseParams(ctx, 20)
+	wallets, total, err := container.Get().WalletRepo.PaginateAll(limit, offset)
 	if err != nil {
 		return ctx.Response().Json(http.StatusInternalServerError, http.Json{
-			"error": err.Error(),
+			"error": "failed to fetch wallets",
 		})
 	}
-	return ctx.Response().Success().Json(http.Json{
-		"data": ws,
-	})
+	return ctx.Response().Json(http.StatusOK, pagination.Response(wallets, total, limit, offset))
 }
 
 // GetWallet godoc

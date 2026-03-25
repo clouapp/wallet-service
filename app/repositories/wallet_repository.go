@@ -11,6 +11,7 @@ type WalletRepository interface {
 	Create(wallet *models.Wallet) error
 	FindByID(id uuid.UUID) (*models.Wallet, error)
 	FindAll() ([]models.Wallet, error)
+	PaginateAll(limit, offset int) ([]models.Wallet, int64, error)
 	CountByChain(chainID string) (int64, error)
 	UpdateField(id uuid.UUID, field string, value interface{}) error
 	UpdateFields(id uuid.UUID, fields map[string]interface{}) error
@@ -42,6 +43,22 @@ func (r *walletRepository) FindAll() ([]models.Wallet, error) {
 	var wallets []models.Wallet
 	err := facades.Orm().Query().Order("created_at").Find(&wallets)
 	return wallets, err
+}
+
+func (r *walletRepository) PaginateAll(limit, offset int) ([]models.Wallet, int64, error) {
+	var wallets []models.Wallet
+	var total int64
+	total, err := facades.Orm().Query().
+		Model(&models.Wallet{}).
+		Count()
+	if err != nil {
+		return nil, 0, err
+	}
+	err = facades.Orm().Query().
+		Order("created_at").
+		Offset(offset).Limit(limit).
+		Find(&wallets)
+	return wallets, total, err
 }
 
 func (r *walletRepository) CountByChain(chainID string) (int64, error) {

@@ -1,12 +1,11 @@
 package controllers
 
 import (
-	"strconv"
-
 	"github.com/google/uuid"
 	"github.com/goravel/framework/contracts/http"
 
 	"github.com/macrowallets/waas/app/container"
+	"github.com/macrowallets/waas/app/http/pagination"
 	"github.com/macrowallets/waas/app/models"
 )
 
@@ -30,18 +29,13 @@ func ListWalletWithdrawals(ctx http.Context) http.Response {
 		return errResp
 	}
 
-	limit, _ := strconv.Atoi(ctx.Request().Query("limit", "50"))
-	offset, _ := strconv.Atoi(ctx.Request().Query("offset", "0"))
-	if limit <= 0 || limit > 200 {
-		limit = 50
-	}
-
+	limit, offset := pagination.ParseParams(ctx, 50)
 	status := ctx.Request().Query("status", "")
-	withdrawals, err := container.Get().WithdrawalRepo.FindByWallet(wallet.ID, status, limit, offset)
+	withdrawals, total, err := container.Get().WithdrawalRepo.FindByWallet(wallet.ID, status, limit, offset)
 	if err != nil {
 		return ctx.Response().Json(http.StatusInternalServerError, http.Json{"error": "failed to fetch withdrawals"})
 	}
-	return ctx.Response().Json(http.StatusOK, http.Json{"data": withdrawals})
+	return ctx.Response().Json(http.StatusOK, pagination.Response(withdrawals, total, limit, offset))
 }
 
 // CreateWalletWithdrawal godoc

@@ -10,6 +10,7 @@ import (
 type WhitelistEntryRepository interface {
 	Create(entry *models.WhitelistEntry) error
 	FindByWalletID(walletID uuid.UUID) ([]models.WhitelistEntry, error)
+	PaginateByWalletID(walletID uuid.UUID, limit, offset int) ([]models.WhitelistEntry, int64, error)
 	FindByIDAndWallet(id, walletID uuid.UUID) (*models.WhitelistEntry, error)
 	Delete(entry *models.WhitelistEntry) error
 }
@@ -30,6 +31,23 @@ func (r *whitelistEntryRepository) FindByWalletID(walletID uuid.UUID) ([]models.
 		Where("wallet_id = ?", walletID).
 		Find(&entries)
 	return entries, err
+}
+
+func (r *whitelistEntryRepository) PaginateByWalletID(walletID uuid.UUID, limit, offset int) ([]models.WhitelistEntry, int64, error) {
+	var entries []models.WhitelistEntry
+	var total int64
+	total, err := facades.Orm().Query().
+		Model(&models.WhitelistEntry{}).
+		Where("wallet_id = ?", walletID).
+		Count()
+	if err != nil {
+		return nil, 0, err
+	}
+	err = facades.Orm().Query().
+		Where("wallet_id = ?", walletID).
+		Offset(offset).Limit(limit).
+		Find(&entries)
+	return entries, total, err
 }
 
 func (r *whitelistEntryRepository) FindByIDAndWallet(id, walletID uuid.UUID) (*models.WhitelistEntry, error) {

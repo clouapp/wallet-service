@@ -9,6 +9,7 @@ import (
 
 	"github.com/macrowallets/waas/app/container"
 	"github.com/macrowallets/waas/app/http/middleware"
+	"github.com/macrowallets/waas/app/http/pagination"
 	mails "github.com/macrowallets/waas/app/mails"
 	"github.com/macrowallets/waas/app/models"
 	accountsvc "github.com/macrowallets/waas/app/services/account"
@@ -185,11 +186,12 @@ func ListAccountUsers(ctx http.Context) http.Response {
 		return ctx.Response().Json(http.StatusNotFound, http.Json{"error": "account not found"})
 	}
 
-	members, err := container.Get().AccountUserRepo.FindByAccountID(account.ID)
+	limit, offset := pagination.ParseParams(ctx, 20)
+	members, total, err := container.Get().AccountUserRepo.PaginateByAccountID(account.ID, limit, offset)
 	if err != nil {
 		return ctx.Response().Json(http.StatusInternalServerError, http.Json{"error": "failed to fetch members"})
 	}
-	return ctx.Response().Json(http.StatusOK, http.Json{"data": members})
+	return ctx.Response().Json(http.StatusOK, pagination.Response(members, total, limit, offset))
 }
 
 // AddAccountUser godoc
@@ -306,11 +308,12 @@ func ListAccountTokens(ctx http.Context) http.Response {
 		return ctx.Response().Json(http.StatusForbidden, http.Json{"error": "only owners and admins may view tokens"})
 	}
 
-	tokens, err := container.Get().AccessTokenRepo.FindByAccountID(account.ID)
+	limit, offset := pagination.ParseParams(ctx, 20)
+	tokens, total, err := container.Get().AccessTokenRepo.PaginateByAccountID(account.ID, limit, offset)
 	if err != nil {
 		return ctx.Response().Json(http.StatusInternalServerError, http.Json{"error": "failed to fetch tokens"})
 	}
-	return ctx.Response().Json(http.StatusOK, http.Json{"data": tokens})
+	return ctx.Response().Json(http.StatusOK, pagination.Response(tokens, total, limit, offset))
 }
 
 // CreateAccountToken godoc

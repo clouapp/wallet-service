@@ -49,9 +49,10 @@ func (s *WithdrawalRepositoryTestSuite) TestFindByWallet_Pagination() {
 		}))
 	}
 
-	page1, err := s.repo.FindByWallet(walletID, "", 2, 0)
+	page1, total, err := s.repo.FindByWallet(walletID, "", 2, 0)
 	s.NoError(err)
 	s.Len(page1, 2)
+	s.Equal(int64(5), total)
 }
 
 func (s *WithdrawalRepositoryTestSuite) TestFindByWallet_FilterByStatus() {
@@ -59,7 +60,7 @@ func (s *WithdrawalRepositoryTestSuite) TestFindByWallet_FilterByStatus() {
 	s.Require().NoError(s.repo.Create(&models.Withdrawal{ID: uuid.New(), WalletID: walletID, Status: "pending", Amount: "0.001", DestinationAddress: "0x1"}))
 	s.Require().NoError(s.repo.Create(&models.Withdrawal{ID: uuid.New(), WalletID: walletID, Status: "cancelled", Amount: "0.002", DestinationAddress: "0x2"}))
 
-	pending, err := s.repo.FindByWallet(walletID, "pending", 50, 0)
+	pending, _, err := s.repo.FindByWallet(walletID, "pending", 50, 0)
 	s.NoError(err)
 	s.Len(pending, 1)
 }

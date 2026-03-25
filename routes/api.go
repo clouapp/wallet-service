@@ -100,6 +100,11 @@ func Api() {
 		router.Get("/{walletId}", controllers.GetWallet)
 		router.Prefix("/{walletId}").Group(func(r route.Router) {
 			r.Post("/activate", controllers.ActivateWallet)
+
+			// Addresses
+			r.Get("/addresses", controllers.ListWalletAddresses)
+			r.Post("/addresses", controllers.GenerateAddress)
+
 			// Wallet users
 			r.Get("/users", controllers.ListWalletUsers)
 			r.Post("/users", controllers.AddWalletUser)

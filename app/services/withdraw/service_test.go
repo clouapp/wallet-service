@@ -143,31 +143,31 @@ func TestListTransactions_Filters(t *testing.T) {
 	mocks.InsertTransaction(t, w.ID, nil, "eth", "deposit", "pending", "eth", "300", 60)
 
 	// All
-	all, _ := svc.ListTransactions(ctx, "", "", "", "", 50, 0)
+	all, _, _ := svc.ListTransactions(ctx, "", "", "", "", 50, 0)
 	if len(all) != 3 {
 		t.Errorf("expected 3, got %d", len(all))
 	}
 
 	// Filter by type
-	deposits, _ := svc.ListTransactions(ctx, "", "deposit", "", "", 50, 0)
+	deposits, _, _ := svc.ListTransactions(ctx, "", "deposit", "", "", 50, 0)
 	if len(deposits) != 2 {
 		t.Errorf("expected 2 deposits, got %d", len(deposits))
 	}
 
 	// Filter by status
-	pending, _ := svc.ListTransactions(ctx, "", "", "pending", "", 50, 0)
+	pending, _, _ := svc.ListTransactions(ctx, "", "", "pending", "", 50, 0)
 	if len(pending) != 2 {
 		t.Errorf("expected 2 pending, got %d", len(pending))
 	}
 
 	// Filter by chain
-	eth, _ := svc.ListTransactions(ctx, "eth", "", "", "", 50, 0)
+	eth, _, _ := svc.ListTransactions(ctx, "eth", "", "", "", 50, 0)
 	if len(eth) != 3 {
 		t.Errorf("expected 3 eth txs, got %d", len(eth))
 	}
 
 	// Limit
-	limited, _ := svc.ListTransactions(ctx, "", "", "", "", 1, 0)
+	limited, _, _ := svc.ListTransactions(ctx, "", "", "", "", 1, 0)
 	if len(limited) != 1 {
 		t.Errorf("expected 1 with limit, got %d", len(limited))
 	}

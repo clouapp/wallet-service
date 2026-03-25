@@ -10,6 +10,7 @@ import (
 type AccessTokenRepository interface {
 	Create(token *models.AccessToken) error
 	FindByAccountID(accountID uuid.UUID) ([]models.AccessToken, error)
+	PaginateByAccountID(accountID uuid.UUID, limit, offset int) ([]models.AccessToken, int64, error)
 	FindByIDAndAccount(tokenID, accountID uuid.UUID) (*models.AccessToken, error)
 	Delete(token *models.AccessToken) error
 }
@@ -30,6 +31,23 @@ func (r *accessTokenRepository) FindByAccountID(accountID uuid.UUID) ([]models.A
 		Where("account_id = ?", accountID).
 		Find(&tokens)
 	return tokens, err
+}
+
+func (r *accessTokenRepository) PaginateByAccountID(accountID uuid.UUID, limit, offset int) ([]models.AccessToken, int64, error) {
+	var tokens []models.AccessToken
+	var total int64
+	total, err := facades.Orm().Query().
+		Model(&models.AccessToken{}).
+		Where("account_id = ?", accountID).
+		Count()
+	if err != nil {
+		return nil, 0, err
+	}
+	err = facades.Orm().Query().
+		Where("account_id = ?", accountID).
+		Offset(offset).Limit(limit).
+		Find(&tokens)
+	return tokens, total, err
 }
 
 func (r *accessTokenRepository) FindByIDAndAccount(tokenID, accountID uuid.UUID) (*models.AccessToken, error) {

@@ -5,6 +5,7 @@ import (
 	"github.com/goravel/framework/contracts/http"
 
 	"github.com/macrowallets/waas/app/container"
+	"github.com/macrowallets/waas/app/http/pagination"
 	"github.com/macrowallets/waas/app/http/requests"
 )
 
@@ -74,15 +75,14 @@ func ListWalletAddresses(ctx http.Context) http.Response {
 			"error": "invalid wallet id",
 		})
 	}
-	addrs, err := container.Get().WalletService.ListWalletAddresses(ctx.Context(), walletID)
+	limit, offset := pagination.ParseParams(ctx, 20)
+	addrs, total, err := container.Get().AddressRepo.PaginateByWalletID(walletID, limit, offset)
 	if err != nil {
 		return ctx.Response().Json(http.StatusInternalServerError, http.Json{
-			"error": err.Error(),
+			"error": "failed to fetch addresses",
 		})
 	}
-	return ctx.Response().Success().Json(http.Json{
-		"data": addrs,
-	})
+	return ctx.Response().Json(http.StatusOK, pagination.Response(addrs, total, limit, offset))
 }
 
 // LookupAddress godoc

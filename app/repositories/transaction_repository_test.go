@@ -108,11 +108,12 @@ func (s *TransactionRepositoryTestSuite) TestFindByWallet_Pagination() {
 		s.Require().NoError(s.repo.Create(s.makeTx(walletID, "deposit", "confirmed")))
 	}
 
-	page1, err := s.repo.FindByWallet(walletID, "", "", 2, 0)
+	page1, total, err := s.repo.FindByWallet(walletID, "", "", 2, 0)
 	s.NoError(err)
 	s.Len(page1, 2)
+	s.Equal(int64(5), total)
 
-	page2, err := s.repo.FindByWallet(walletID, "", "", 2, 2)
+	page2, _, err := s.repo.FindByWallet(walletID, "", "", 2, 2)
 	s.NoError(err)
 	s.Len(page2, 2)
 }
@@ -122,7 +123,7 @@ func (s *TransactionRepositoryTestSuite) TestFindByWallet_FilterByType() {
 	s.Require().NoError(s.repo.Create(s.makeTx(walletID, "deposit", "confirmed")))
 	s.Require().NoError(s.repo.Create(s.makeTx(walletID, "withdrawal", "confirmed")))
 
-	deposits, err := s.repo.FindByWallet(walletID, "deposit", "", 50, 0)
+	deposits, _, err := s.repo.FindByWallet(walletID, "deposit", "", 50, 0)
 	s.NoError(err)
 	s.Len(deposits, 1)
 	s.Equal("deposit", deposits[0].TxType)
@@ -133,7 +134,7 @@ func (s *TransactionRepositoryTestSuite) TestFindByWallet_FilterByStatus() {
 	s.Require().NoError(s.repo.Create(s.makeTx(walletID, "deposit", "pending")))
 	s.Require().NoError(s.repo.Create(s.makeTx(walletID, "deposit", "confirmed")))
 
-	pending, err := s.repo.FindByWallet(walletID, "", "pending", 50, 0)
+	pending, _, err := s.repo.FindByWallet(walletID, "", "pending", 50, 0)
 	s.NoError(err)
 	s.Len(pending, 1)
 }
@@ -186,11 +187,11 @@ func (s *TransactionRepositoryTestSuite) TestList_GlobalFilters() {
 	s.Require().NoError(s.repo.Create(s.makeTx(walletID, "deposit", "confirmed")))
 	s.Require().NoError(s.repo.Create(s.makeTx(walletID, "withdrawal", "pending")))
 
-	all, err := s.repo.List("eth", "", "", "", 50, 0)
+	all, _, err := s.repo.List("eth", "", "", "", 50, 0)
 	s.NoError(err)
 	s.Len(all, 2)
 
-	deposits, err := s.repo.List("eth", "deposit", "", "", 50, 0)
+	deposits, _, err := s.repo.List("eth", "deposit", "", "", 50, 0)
 	s.NoError(err)
 	s.Len(deposits, 1)
 }

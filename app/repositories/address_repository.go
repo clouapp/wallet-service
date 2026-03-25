@@ -12,6 +12,7 @@ type AddressRepository interface {
 	FindByChainAndAddress(chainID, address string) (*models.Address, error)
 	FindByExternalUserID(externalUserID string) ([]models.Address, error)
 	FindByWalletID(walletID uuid.UUID) ([]models.Address, error)
+	PaginateByWalletID(walletID uuid.UUID, limit, offset int) ([]models.Address, int64, error)
 	PluckActiveAddresses(chainID string) ([]string, error)
 }
 
@@ -60,6 +61,24 @@ func (r *addressRepository) FindByWalletID(walletID uuid.UUID) ([]models.Address
 		Order("derivation_index").
 		Find(&addrs)
 	return addrs, err
+}
+
+func (r *addressRepository) PaginateByWalletID(walletID uuid.UUID, limit, offset int) ([]models.Address, int64, error) {
+	var addrs []models.Address
+	var total int64
+	total, err := facades.Orm().Query().
+		Model(&models.Address{}).
+		Where("wallet_id", walletID).
+		Count()
+	if err != nil {
+		return nil, 0, err
+	}
+	err = facades.Orm().Query().
+		Where("wallet_id", walletID).
+		Order("derivation_index").
+		Offset(offset).Limit(limit).
+		Find(&addrs)
+	return addrs, total, err
 }
 
 func (r *addressRepository) PluckActiveAddresses(chainID string) ([]string, error) {

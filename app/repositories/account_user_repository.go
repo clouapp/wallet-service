@@ -15,6 +15,8 @@ type AccountUserRepository interface {
 	FindByAccountAndUser(accountID, userID uuid.UUID) (*models.AccountUser, error)
 	FindByAccountAndUserIncludeDeleted(accountID, userID uuid.UUID) (*models.AccountUser, error)
 	FindByUserID(userID uuid.UUID) ([]models.AccountUser, error)
+	PaginateByUserID(userID uuid.UUID, limit, offset int) ([]models.AccountUser, int64, error)
+	PaginateByAccountID(accountID uuid.UUID, limit, offset int) ([]models.AccountUser, int64, error)
 	UpdateField(id uuid.UUID, field string, value interface{}) error
 	SoftDeleteByAccountAndUser(accountID, userID uuid.UUID) error
 }
@@ -71,6 +73,40 @@ func (r *accountUserRepository) FindByUserID(userID uuid.UUID) ([]models.Account
 		Where("user_id = ? AND deleted_at IS NULL", userID).
 		Find(&memberships)
 	return memberships, err
+}
+
+func (r *accountUserRepository) PaginateByUserID(userID uuid.UUID, limit, offset int) ([]models.AccountUser, int64, error) {
+	var memberships []models.AccountUser
+	var total int64
+	total, err := facades.Orm().Query().
+		Model(&models.AccountUser{}).
+		Where("user_id = ? AND deleted_at IS NULL", userID).
+		Count()
+	if err != nil {
+		return nil, 0, err
+	}
+	err = facades.Orm().Query().
+		Where("user_id = ? AND deleted_at IS NULL", userID).
+		Offset(offset).Limit(limit).
+		Find(&memberships)
+	return memberships, total, err
+}
+
+func (r *accountUserRepository) PaginateByAccountID(accountID uuid.UUID, limit, offset int) ([]models.AccountUser, int64, error) {
+	var members []models.AccountUser
+	var total int64
+	total, err := facades.Orm().Query().
+		Model(&models.AccountUser{}).
+		Where("account_id = ? AND deleted_at IS NULL", accountID).
+		Count()
+	if err != nil {
+		return nil, 0, err
+	}
+	err = facades.Orm().Query().
+		Where("account_id = ? AND deleted_at IS NULL", accountID).
+		Offset(offset).Limit(limit).
+		Find(&members)
+	return members, total, err
 }
 
 func (r *accountUserRepository) UpdateField(id uuid.UUID, field string, value interface{}) error {

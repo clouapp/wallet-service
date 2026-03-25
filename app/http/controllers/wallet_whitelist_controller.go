@@ -5,6 +5,7 @@ import (
 	"github.com/goravel/framework/contracts/http"
 
 	"github.com/macrowallets/waas/app/container"
+	"github.com/macrowallets/waas/app/http/pagination"
 	"github.com/macrowallets/waas/app/models"
 )
 
@@ -25,11 +26,12 @@ func ListWhitelistEntries(ctx http.Context) http.Response {
 		return errResp
 	}
 
-	entries, err := container.Get().WhitelistEntryRepo.FindByWalletID(wallet.ID)
+	limit, offset := pagination.ParseParams(ctx, 20)
+	entries, total, err := container.Get().WhitelistEntryRepo.PaginateByWalletID(wallet.ID, limit, offset)
 	if err != nil {
 		return ctx.Response().Json(http.StatusInternalServerError, http.Json{"error": "failed to fetch whitelist entries"})
 	}
-	return ctx.Response().Json(http.StatusOK, http.Json{"data": entries})
+	return ctx.Response().Json(http.StatusOK, pagination.Response(entries, total, limit, offset))
 }
 
 // AddWhitelistEntry godoc

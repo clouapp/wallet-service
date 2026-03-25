@@ -1,11 +1,10 @@
 package controllers
 
 import (
-	"strconv"
-
 	"github.com/goravel/framework/contracts/http"
 
 	"github.com/macrowallets/waas/app/container"
+	"github.com/macrowallets/waas/app/http/pagination"
 )
 
 // ListWalletTransactions godoc
@@ -29,20 +28,15 @@ func ListWalletTransactions(ctx http.Context) http.Response {
 		return errResp
 	}
 
-	limit, _ := strconv.Atoi(ctx.Request().Query("limit", "50"))
-	offset, _ := strconv.Atoi(ctx.Request().Query("offset", "0"))
-	if limit <= 0 || limit > 200 {
-		limit = 50
-	}
-
+	limit, offset := pagination.ParseParams(ctx, 50)
 	txType := ctx.Request().Query("type", "")
 	status := ctx.Request().Query("status", "")
-	transactions, err := container.Get().TransactionRepo.FindByWallet(wallet.ID, txType, status, limit, offset)
+	transactions, total, err := container.Get().TransactionRepo.FindByWallet(wallet.ID, txType, status, limit, offset)
 	if err != nil {
 		return ctx.Response().Json(http.StatusInternalServerError, http.Json{"error": "failed to fetch transactions"})
 	}
 
-	return ctx.Response().Json(http.StatusOK, http.Json{"data": transactions})
+	return ctx.Response().Json(http.StatusOK, pagination.Response(transactions, total, limit, offset))
 }
 
 // GetWalletTransaction godoc

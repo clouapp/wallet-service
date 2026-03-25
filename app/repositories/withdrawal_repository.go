@@ -9,7 +9,7 @@ import (
 
 type WithdrawalRepository interface {
 	Create(w *models.Withdrawal) error
-	FindByWallet(walletID uuid.UUID, status string, limit, offset int) ([]models.Withdrawal, error)
+	FindByWallet(walletID uuid.UUID, status string, limit, offset int) ([]models.Withdrawal, int64, error)
 	FindByIDAndWallet(withdrawalID, walletID uuid.UUID) (*models.Withdrawal, error)
 	UpdateStatus(id uuid.UUID, status string) error
 }
@@ -24,19 +24,27 @@ func (r *withdrawalRepository) Create(w *models.Withdrawal) error {
 	return facades.Orm().Query().Create(w)
 }
 
-func (r *withdrawalRepository) FindByWallet(walletID uuid.UUID, status string, limit, offset int) ([]models.Withdrawal, error) {
-	query := facades.Orm().Query().
-		Where("wallet_id = ?", walletID).
-		Limit(limit).
-		Offset(offset)
-
+func (r *withdrawalRepository) FindByWallet(walletID uuid.UUID, status string, limit, offset int) ([]models.Withdrawal, int64, error) {
+	countQuery := facades.Orm().Query().
+		Model(&models.Withdrawal{}).
+		Where("wallet_id = ?", walletID)
 	if status != "" {
-		query = query.Where("status = ?", status)
+		countQuery = countQuery.Where("status = ?", status)
+	}
+	total, err := countQuery.Count()
+	if err != nil {
+		return nil, 0, err
+	}
+
+	dataQuery := facades.Orm().Query().
+		Where("wallet_id = ?", walletID)
+	if status != "" {
+		dataQuery = dataQuery.Where("status = ?", status)
 	}
 
 	var withdrawals []models.Withdrawal
-	err := query.Find(&withdrawals)
-	return withdrawals, err
+	err = dataQuery.Offset(offset).Limit(limit).Find(&withdrawals)
+	return withdrawals, total, err
 }
 
 func (r *withdrawalRepository) FindByIDAndWallet(withdrawalID, walletID uuid.UUID) (*models.Withdrawal, error) {
