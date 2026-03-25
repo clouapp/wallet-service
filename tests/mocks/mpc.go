@@ -4,7 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 
-	mpc "github.com/macromarkets/vault/app/services/mpc"
+	mpc "github.com/macrowallets/waas/app/services/mpc"
 )
 
 // MockMPCService is a minimal in-memory MPC service for tests.

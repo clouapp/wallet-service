@@ -8,7 +8,7 @@ import (
 
 	"github.com/goravel/framework/contracts/http"
 
-	"github.com/macromarkets/vault/pkg/security"
+	"github.com/macrowallets/waas/pkg/security"
 )
 
 // AntiXSS intercepts requests with potential XSS attacks in headers, query params, or body

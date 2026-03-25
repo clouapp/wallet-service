@@ -3,9 +3,9 @@ package controllers
 import (
 	"github.com/google/uuid"
 	"github.com/goravel/framework/contracts/http"
-	"github.com/goravel/framework/facades"
 
-	"github.com/macromarkets/vault/app/models"
+	"github.com/macrowallets/waas/app/container"
+	"github.com/macrowallets/waas/app/models"
 )
 
 // ListWhitelistEntries godoc
@@ -25,8 +25,8 @@ func ListWhitelistEntries(ctx http.Context) http.Response {
 		return errResp
 	}
 
-	var entries []models.WhitelistEntry
-	if err := facades.Orm().Query().Where("wallet_id = ?", wallet.ID).Find(&entries); err != nil {
+	entries, err := container.Get().WhitelistEntryRepo.FindByWalletID(wallet.ID)
+	if err != nil {
 		return ctx.Response().Json(http.StatusInternalServerError, http.Json{"error": "failed to fetch whitelist entries"})
 	}
 	return ctx.Response().Json(http.StatusOK, http.Json{"data": entries})
@@ -68,7 +68,7 @@ func AddWhitelistEntry(ctx http.Context) http.Response {
 		Address:  req.Address,
 		Label:    req.Label,
 	}
-	if err := facades.Orm().Query().Create(entry); err != nil {
+	if err := container.Get().WhitelistEntryRepo.Create(entry); err != nil {
 		return ctx.Response().Json(http.StatusInternalServerError, http.Json{"error": "failed to add whitelist entry"})
 	}
 	return ctx.Response().Json(http.StatusCreated, entry)
@@ -101,12 +101,12 @@ func DeleteWhitelistEntry(ctx http.Context) http.Response {
 		return ctx.Response().Json(http.StatusBadRequest, http.Json{"error": "invalid entry id"})
 	}
 
-	var entry models.WhitelistEntry
-	if err := facades.Orm().Query().Where("id = ? AND wallet_id = ?", entryID, wallet.ID).First(&entry); err != nil {
+	entry, err := container.Get().WhitelistEntryRepo.FindByIDAndWallet(entryID, wallet.ID)
+	if err != nil || entry == nil {
 		return ctx.Response().Json(http.StatusNotFound, http.Json{"error": "whitelist entry not found"})
 	}
 
-	if _, err := facades.Orm().Query().Delete(&entry); err != nil {
+	if err := container.Get().WhitelistEntryRepo.Delete(entry); err != nil {
 		return ctx.Response().Json(http.StatusInternalServerError, http.Json{"error": "failed to delete whitelist entry"})
 	}
 	return ctx.Response().NoContent()

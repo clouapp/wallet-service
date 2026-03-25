@@ -4,8 +4,8 @@ import (
 	"os"
 	"testing"
 
-	"github.com/macromarkets/vault/app/container"
-	"github.com/macromarkets/vault/bootstrap"
+	"github.com/macrowallets/waas/app/container"
+	"github.com/macrowallets/waas/bootstrap"
 )
 
 // TestMain boots the full Goravel application (including routes) once

@@ -7,12 +7,13 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/macromarkets/vault/app/services/chain"
-	mpcpkg "github.com/macromarkets/vault/app/services/mpc"
-	"github.com/macromarkets/vault/app/services/webhook"
-	"github.com/macromarkets/vault/pkg/types"
-	"github.com/macromarkets/vault/tests/mocks"
-	"github.com/macromarkets/vault/tests/testutil"
+	"github.com/macrowallets/waas/app/repositories"
+	"github.com/macrowallets/waas/app/services/chain"
+	mpcpkg "github.com/macrowallets/waas/app/services/mpc"
+	"github.com/macrowallets/waas/app/services/webhook"
+	"github.com/macrowallets/waas/pkg/types"
+	"github.com/macrowallets/waas/tests/mocks"
+	"github.com/macrowallets/waas/tests/testutil"
 )
 
 func TestMain(m *testing.M) {
@@ -46,11 +47,13 @@ func setupWithdrawService(t *testing.T) (*Service, *mocks.MockChain) {
 	registry.RegisterChain(mockChain)
 	registry.RegisterToken(types.Token{Symbol: "usdt", ChainID: "eth", Decimals: 6, Contract: "0xdAC17F"})
 
-	webhookSvc := webhook.NewService(nil)
+	webhookConfigRepo := repositories.NewWebhookConfigRepository()
+	webhookEventRepo := repositories.NewWebhookEventRepository()
+	webhookSvc := webhook.NewService(nil, webhookConfigRepo, webhookEventRepo)
 	mpcSvc := &mockMPC{}
-	// nil for secrets and redis — tests that exercise the full flow must set up
-	// their own service or use the helpers that bypass passphrase validation.
-	svc := NewService(registry, webhookSvc, mpcSvc, nil, nil)
+	txRepo := repositories.NewTransactionRepository()
+	walletRepo := repositories.NewWalletRepository()
+	svc := NewService(registry, webhookSvc, mpcSvc, nil, nil, txRepo, walletRepo)
 	return svc, mockChain
 }
 

@@ -5,9 +5,9 @@ import (
 	"github.com/goravel/framework/contracts/route"
 	"github.com/goravel/framework/facades"
 
-	"github.com/macromarkets/vault/app/http/controllers"
-	"github.com/macromarkets/vault/app/http/middleware"
-	"github.com/macromarkets/vault/docs"
+	"github.com/macrowallets/waas/app/http/controllers"
+	"github.com/macrowallets/waas/app/http/middleware"
+	"github.com/macrowallets/waas/docs"
 )
 
 func Api() {

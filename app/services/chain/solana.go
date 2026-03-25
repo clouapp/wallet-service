@@ -6,7 +6,7 @@ import (
 	"math/big"
 	"time"
 
-	"github.com/macromarkets/vault/pkg/types"
+	"github.com/macrowallets/waas/pkg/types"
 )
 
 type SolanaLive struct {

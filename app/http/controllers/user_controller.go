@@ -3,10 +3,10 @@ package controllers
 import (
 	"github.com/google/uuid"
 	"github.com/goravel/framework/contracts/http"
-	"github.com/goravel/framework/facades"
 
-	"github.com/macromarkets/vault/app/models"
-	authsvc "github.com/macromarkets/vault/app/services/auth"
+	"github.com/macrowallets/waas/app/container"
+	"github.com/macrowallets/waas/app/models"
+	authsvc "github.com/macrowallets/waas/app/services/auth"
 )
 
 var userAuthService = authsvc.NewService()
@@ -52,9 +52,7 @@ func UpdateMe(ctx http.Context) http.Response {
 	}
 
 	if req.FullName != "" {
-		if _, err := facades.Orm().Query().Model(user).
-			Where("id = ?", user.ID).
-			Update("full_name", req.FullName); err != nil {
+		if err := container.Get().UserRepo.UpdateFullName(user.ID, req.FullName); err != nil {
 			return ctx.Response().Json(http.StatusInternalServerError, http.Json{"error": "failed to update profile"})
 		}
 		user.FullName = req.FullName
@@ -98,9 +96,7 @@ func ChangePassword(ctx http.Context) http.Response {
 		return ctx.Response().Json(http.StatusInternalServerError, http.Json{"error": "failed to hash password"})
 	}
 
-	if _, err := facades.Orm().Query().Model(user).
-		Where("id = ?", user.ID).
-		Update("password_hash", hash); err != nil {
+	if err := container.Get().UserRepo.UpdatePasswordHash(user.ID, hash); err != nil {
 		return ctx.Response().Json(http.StatusInternalServerError, http.Json{"error": "failed to update password"})
 	}
 
@@ -122,10 +118,8 @@ func ListMyAccounts(ctx http.Context) http.Response {
 		return ctx.Response().Json(http.StatusUnauthorized, http.Json{"error": "unauthenticated"})
 	}
 
-	var memberships []models.AccountUser
-	if err := facades.Orm().Query().
-		Where("user_id = ? AND deleted_at IS NULL", userID).
-		Find(&memberships); err != nil {
+	memberships, err := container.Get().AccountUserRepo.FindByUserID(userID)
+	if err != nil {
 		return ctx.Response().Json(http.StatusInternalServerError, http.Json{"error": "failed to fetch accounts"})
 	}
 
@@ -134,13 +128,9 @@ func ListMyAccounts(ctx http.Context) http.Response {
 		accountIDs = append(accountIDs, m.AccountID)
 	}
 
-	var accounts []models.Account
-	if len(accountIDs) > 0 {
-		if err := facades.Orm().Query().
-			Where("id IN ?", accountIDs).
-			Find(&accounts); err != nil {
-			return ctx.Response().Json(http.StatusInternalServerError, http.Json{"error": "failed to fetch accounts"})
-		}
+	accounts, err2 := container.Get().AccountRepo.FindByIDs(accountIDs)
+	if err2 != nil {
+		return ctx.Response().Json(http.StatusInternalServerError, http.Json{"error": "failed to fetch accounts"})
 	}
 
 	return ctx.Response().Json(http.StatusOK, http.Json{"data": accounts})

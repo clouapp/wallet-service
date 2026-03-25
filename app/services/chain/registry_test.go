@@ -3,8 +3,8 @@ package chain
 import (
 	"testing"
 
-	"github.com/macromarkets/vault/pkg/types"
-	"github.com/macromarkets/vault/tests/mocks"
+	"github.com/macrowallets/waas/pkg/types"
+	"github.com/macrowallets/waas/tests/mocks"
 )
 
 func TestRegistry_RegisterAndGet(t *testing.T) {

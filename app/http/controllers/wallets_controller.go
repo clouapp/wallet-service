@@ -7,10 +7,10 @@ import (
 	"github.com/google/uuid"
 	"github.com/goravel/framework/contracts/http"
 
-	"github.com/macromarkets/vault/app/container"
-	"github.com/macromarkets/vault/app/http/requests"
-	"github.com/macromarkets/vault/app/models"
-	wallet "github.com/macromarkets/vault/app/services/wallet"
+	"github.com/macrowallets/waas/app/container"
+	"github.com/macrowallets/waas/app/http/requests"
+	"github.com/macrowallets/waas/app/models"
+	wallet "github.com/macrowallets/waas/app/services/wallet"
 )
 
 // CreateWallet godoc

@@ -14,10 +14,11 @@ import (
 
 	"github.com/goravel/framework/facades"
 
-	"github.com/macromarkets/vault/app/models"
-	"github.com/macromarkets/vault/pkg/types"
-	"github.com/macromarkets/vault/tests/mocks"
-	"github.com/macromarkets/vault/tests/testutil"
+	"github.com/macrowallets/waas/app/models"
+	"github.com/macrowallets/waas/app/repositories"
+	"github.com/macrowallets/waas/pkg/types"
+	"github.com/macrowallets/waas/tests/mocks"
+	"github.com/macrowallets/waas/tests/testutil"
 )
 
 func TestMain(m *testing.M) {
@@ -26,9 +27,13 @@ func TestMain(m *testing.M) {
 	os.Exit(m.Run())
 }
 
+func newTestWebhookSvc() *Service {
+	return NewService(nil, repositories.NewWebhookConfigRepository(), repositories.NewWebhookEventRepository())
+}
+
 func TestCreateConfig(t *testing.T) {
 	mocks.TestDB(t)
-	svc := NewService(nil)
+	svc := newTestWebhookSvc()
 	ctx := context.Background()
 
 	cfg, err := svc.CreateConfig(ctx, "https://example.com/webhook", "secret123", []string{"deposit.confirmed", "withdrawal.confirmed"})
@@ -45,7 +50,7 @@ func TestCreateConfig(t *testing.T) {
 
 func TestListConfigs(t *testing.T) {
 	mocks.TestDB(t)
-	svc := NewService(nil)
+	svc := newTestWebhookSvc()
 	ctx := context.Background()
 
 	svc.CreateConfig(ctx, "https://a.com/wh", "s1", []string{"deposit.confirmed"})
@@ -62,7 +67,7 @@ func TestListConfigs(t *testing.T) {
 
 func TestDeleteConfig(t *testing.T) {
 	mocks.TestDB(t)
-	svc := NewService(nil)
+	svc := newTestWebhookSvc()
 	ctx := context.Background()
 
 	cfg, _ := svc.CreateConfig(ctx, "https://del.com/wh", "s", []string{"deposit.confirmed"})
@@ -78,7 +83,7 @@ func TestDeleteConfig(t *testing.T) {
 
 func TestDeliver_Success(t *testing.T) {
 	mocks.TestDB(t)
-	svc := NewService(nil)
+	svc := newTestWebhookSvc()
 	ctx := context.Background()
 
 	// Setup test HTTP server
@@ -150,7 +155,7 @@ func TestDeliver_Success(t *testing.T) {
 
 func TestDeliver_Failure(t *testing.T) {
 	mocks.TestDB(t)
-	svc := NewService(nil)
+	svc := newTestWebhookSvc()
 	ctx := context.Background()
 
 	// Server that returns 500
@@ -188,7 +193,7 @@ func TestDeliver_Failure(t *testing.T) {
 
 func TestDeliver_Unreachable(t *testing.T) {
 	mocks.TestDB(t)
-	svc := NewService(nil)
+	svc := newTestWebhookSvc()
 	ctx := context.Background()
 
 	w := mocks.InsertWallet(t, "eth")
@@ -228,7 +233,7 @@ func TestPgArray(t *testing.T) {
 
 func TestEnqueueEvent_NoConfigs(t *testing.T) {
 	mocks.TestDB(t)
-	svc := NewService(nil)
+	svc := newTestWebhookSvc()
 
 	// Insert a wallet + transaction for FK
 	w := mocks.InsertWallet(t, "eth")

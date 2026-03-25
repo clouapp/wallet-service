@@ -4,10 +4,12 @@ import (
 	"os"
 	"strconv"
 
+	contractscache "github.com/goravel/framework/contracts/cache"
 	contractsdriver "github.com/goravel/framework/contracts/database/driver"
 	contractsfoundation "github.com/goravel/framework/contracts/foundation"
 	contractsroute "github.com/goravel/framework/contracts/route"
 	frameworkauth "github.com/goravel/framework/auth"
+	frameworkcache "github.com/goravel/framework/cache"
 	frameworkcrypt "github.com/goravel/framework/crypt"
 	frameworkdatabase "github.com/goravel/framework/database"
 	"github.com/goravel/framework/facades"
@@ -15,7 +17,6 @@ import (
 	frameworklog "github.com/goravel/framework/log"
 	frameworkmail "github.com/goravel/framework/mail"
 	frameworkroute "github.com/goravel/framework/route"
-	frameworksession "github.com/goravel/framework/session"
 	frameworktesting "github.com/goravel/framework/testing"
 	frameworkvalidation "github.com/goravel/framework/validation"
 	frameworkview "github.com/goravel/framework/view"
@@ -23,8 +24,10 @@ import (
 	ginfacades "github.com/goravel/gin/facades"
 	goravel_postgres "github.com/goravel/postgres"
 	postgres_facades "github.com/goravel/postgres/facades"
-	"github.com/macromarkets/vault/app/models"
-	vaultproviders "github.com/macromarkets/vault/app/providers"
+	goravel_redis "github.com/goravel/redis"
+	redisfacades "github.com/goravel/redis/facades"
+	"github.com/macrowallets/waas/app/models"
+	vaultproviders "github.com/macrowallets/waas/app/providers"
 )
 
 // Boot initializes all configurations
@@ -48,6 +51,16 @@ func Boot(app contractsfoundation.Application) {
 				"via": func() (contractsdriver.Driver, error) {
 					return postgres_facades.Postgres("postgres")
 				},
+			},
+		},
+
+		// Redis connections (used by goravel/redis for cache/session)
+		"redis": map[string]any{
+			"default": map[string]any{
+				"host":     env("REDIS_HOST", "127.0.0.1"),
+				"port":     env("REDIS_PORT", "6379"),
+				"password": env("REDIS_PASSWORD", ""),
+				"database": envInt("REDIS_DB", 0),
 			},
 		},
 
@@ -77,7 +90,8 @@ func Boot(app contractsfoundation.Application) {
 			&goravel_postgres.ServiceProvider{},
 			&frameworkdatabase.ServiceProvider{},
 			&frameworkhttp.ServiceProvider{},
-			&frameworksession.ServiceProvider{},
+			&goravel_redis.ServiceProvider{},
+			&frameworkcache.ServiceProvider{},
 			&frameworkvalidation.ServiceProvider{},
 			&frameworkview.ServiceProvider{},
 			&gin.ServiceProvider{},
@@ -108,7 +122,22 @@ func Boot(app contractsfoundation.Application) {
 		},
 	})
 
-	// JWT settings
+	// Cache — use Redis via custom driver
+	facades.Config().Add("cache", map[string]any{
+		"default": env("CACHE_DRIVER", "redis"),
+		"stores": map[string]any{
+			"redis": map[string]any{
+				"driver": "custom",
+				"via": func() (contractscache.Driver, error) {
+					return redisfacades.Cache("redis")
+				},
+			},
+			"memory": map[string]any{
+				"driver": "memory",
+			},
+		},
+	})
+
 	facades.Config().Add("jwt", map[string]any{
 		"secret":      env("JWT_SECRET", ""),
 		"ttl":         envInt("JWT_TTL", 15),

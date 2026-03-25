@@ -5,7 +5,7 @@ import (
 
 	"github.com/goravel/framework/facades"
 
-	"github.com/macromarkets/vault/bootstrap"
+	"github.com/macrowallets/waas/bootstrap"
 )
 
 // Boot initializes Goravel for testing

@@ -11,14 +11,14 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/service/secretsmanager"
 	"github.com/google/uuid"
-	"github.com/goravel/framework/facades"
 	"github.com/redis/go-redis/v9"
 
-	"github.com/macromarkets/vault/app/models"
-	chainpkg "github.com/macromarkets/vault/app/services/chain"
-	mpcpkg "github.com/macromarkets/vault/app/services/mpc"
-	"github.com/macromarkets/vault/app/services/webhook"
-	"github.com/macromarkets/vault/pkg/types"
+	"github.com/macrowallets/waas/app/models"
+	"github.com/macrowallets/waas/app/repositories"
+	chainpkg "github.com/macrowallets/waas/app/services/chain"
+	mpcpkg "github.com/macrowallets/waas/app/services/mpc"
+	"github.com/macrowallets/waas/app/services/webhook"
+	"github.com/macrowallets/waas/pkg/types"
 )
 
 // Sentinel errors for HTTP response mapping in controller.
@@ -31,11 +31,13 @@ var (
 )
 
 type Service struct {
-	registry   *chainpkg.Registry
-	webhookSvc *webhook.Service
-	mpc        mpcpkg.Service
-	secrets    *secretsmanager.Client
-	rdb        *redis.Client
+	registry        *chainpkg.Registry
+	webhookSvc      *webhook.Service
+	mpc             mpcpkg.Service
+	secrets         *secretsmanager.Client
+	rdb             *redis.Client
+	transactionRepo repositories.TransactionRepository
+	walletRepo      repositories.WalletRepository
 }
 
 func NewService(
@@ -44,13 +46,17 @@ func NewService(
 	mpc mpcpkg.Service,
 	secrets *secretsmanager.Client,
 	rdb *redis.Client,
+	transactionRepo repositories.TransactionRepository,
+	walletRepo repositories.WalletRepository,
 ) *Service {
 	return &Service{
-		registry:   registry,
-		webhookSvc: webhookSvc,
-		mpc:        mpc,
-		secrets:    secrets,
-		rdb:        rdb,
+		registry:        registry,
+		webhookSvc:      webhookSvc,
+		mpc:             mpc,
+		secrets:         secrets,
+		rdb:             rdb,
+		transactionRepo: transactionRepo,
+		walletRepo:      walletRepo,
 	}
 }
 
@@ -65,20 +71,17 @@ type WithdrawRequest struct {
 }
 
 func (s *Service) Request(ctx context.Context, req WithdrawRequest) (*models.Transaction, error) {
-	// Step 1: Validate passphrase length before any I/O
 	if len(req.Passphrase) < 12 {
 		return nil, ErrPassphraseTooShort
 	}
 
-	// Step 2: Idempotency check (no lock needed)
 	if req.IdempotencyKey != "" {
-		var existing models.Transaction
-		if err := facades.Orm().Query().Where("idempotency_key", req.IdempotencyKey).First(&existing); err == nil {
-			return &existing, nil
+		existing, err := s.transactionRepo.FindByIdempotencyKey(req.IdempotencyKey)
+		if err == nil && existing != nil {
+			return existing, nil
 		}
 	}
 
-	// Step 3: Acquire per-wallet Redis lock
 	lockKey := fmt.Sprintf("vault:lock:withdrawal:%s", req.WalletID)
 	acquired, err := s.rdb.SetNX(ctx, lockKey, "1", 60*time.Second).Result()
 	if err != nil {
@@ -89,11 +92,11 @@ func (s *Service) Request(ctx context.Context, req WithdrawRequest) (*models.Tra
 	}
 	defer s.rdb.Del(ctx, lockKey)
 
-	// Step 4: Load wallet and validate
-	var wallet models.Wallet
-	if err := facades.Orm().Query().Find(&wallet, req.WalletID); err != nil {
-		return nil, fmt.Errorf("wallet not found: %w", err)
+	walletPtr, err := s.walletRepo.FindByID(req.WalletID)
+	if err != nil || walletPtr == nil {
+		return nil, fmt.Errorf("wallet not found")
 	}
+	wallet := *walletPtr
 
 	adapter, err := s.registry.Chain(wallet.Chain)
 	if err != nil {
@@ -108,12 +111,10 @@ func (s *Service) Request(ctx context.Context, req WithdrawRequest) (*models.Tra
 		return nil, fmt.Errorf("invalid amount: %s", req.Amount)
 	}
 
-	// Step 5: Check passphrase rate limit
 	if err := s.checkRateLimit(ctx, req.WalletID.String()); err != nil {
 		return nil, err
 	}
 
-	// Step 6: Check on-chain balance BEFORE loading key material
 	bal, err := adapter.GetBalance(ctx, wallet.DepositAddress)
 	if err != nil {
 		return nil, fmt.Errorf("get balance: %w", err)
@@ -122,7 +123,6 @@ func (s *Service) Request(ctx context.Context, req WithdrawRequest) (*models.Tra
 		return nil, ErrInsufficientFunds
 	}
 
-	// Step 7: Decrypt share_A — hex-decode stored fields first
 	ciphertext, err := hex.DecodeString(wallet.MPCCustomerShare)
 	if err != nil {
 		return nil, fmt.Errorf("decode customer share: %w", err)
@@ -150,7 +150,6 @@ func (s *Service) Request(ctx context.Context, req WithdrawRequest) (*models.Tra
 		return nil, err
 	}
 
-	// Step 8: Fetch share_B from Secrets Manager
 	secret, err := s.secrets.GetSecretValue(ctx, &secretsmanager.GetSecretValueInput{
 		SecretId: &wallet.MPCSecretARN,
 	})
@@ -159,7 +158,6 @@ func (s *Service) Request(ctx context.Context, req WithdrawRequest) (*models.Tra
 	}
 	shareB := secret.SecretBinary
 
-	// Step 9: Defer zero-wipe IMMEDIATELY after shares loaded
 	defer func() {
 		for i := range shareA {
 			shareA[i] = 0
@@ -169,7 +167,6 @@ func (s *Service) Request(ctx context.Context, req WithdrawRequest) (*models.Tra
 		}
 	}()
 
-	// Step 10: Build unsigned transaction
 	var tokenContract string
 	var token *types.Token
 	if req.Asset != adapter.NativeAsset() {
@@ -192,7 +189,6 @@ func (s *Service) Request(ctx context.Context, req WithdrawRequest) (*models.Tra
 		return nil, fmt.Errorf("build tx: %w", err)
 	}
 
-	// Step 11: MPC Sign
 	curve := mpcpkg.Curve(wallet.MPCCurve)
 	sig, err := s.mpc.Sign(ctx, curve, shareA, shareB, mpcpkg.SignInputs{
 		TxHashes: [][]byte{unsigned.RawBytes},
@@ -201,7 +197,6 @@ func (s *Service) Request(ctx context.Context, req WithdrawRequest) (*models.Tra
 		return nil, fmt.Errorf("mpc sign: %w", err)
 	}
 
-	// Step 12: Broadcast signed transaction
 	signed := &types.SignedTx{
 		ChainID:  wallet.Chain,
 		RawBytes: sig,
@@ -211,7 +206,6 @@ func (s *Service) Request(ctx context.Context, req WithdrawRequest) (*models.Tra
 		return nil, fmt.Errorf("broadcast: %w", err)
 	}
 
-	// Step 13: Persist transaction (no passphrase stored anywhere)
 	tx := &models.Transaction{
 		ID:             uuid.New(),
 		WalletID:       wallet.ID,
@@ -227,11 +221,10 @@ func (s *Service) Request(ctx context.Context, req WithdrawRequest) (*models.Tra
 		Status:         string(types.TxStatusConfirming),
 		IdempotencyKey: req.IdempotencyKey,
 	}
-	if err := facades.Orm().Query().Create(tx); err != nil {
+	if err := s.transactionRepo.Create(tx); err != nil {
 		return nil, fmt.Errorf("persist tx: %w", err)
 	}
 
-	// Step 14: Enqueue webhook notification (no key material)
 	s.webhookSvc.EnqueueEvent(ctx, tx.ID, types.EventWithdrawalBroadcast, map[string]string{
 		"tx_id": tx.ID.String(), "tx_hash": txHash,
 	})
@@ -244,7 +237,7 @@ func (s *Service) checkRateLimit(ctx context.Context, walletID string) error {
 	key := fmt.Sprintf("vault:ratelimit:passphrase:%s", walletID)
 	count, err := s.rdb.Get(ctx, key).Int()
 	if err != nil && err != redis.Nil {
-		return nil // fail open on Redis error — don't block legitimate withdrawals
+		return nil
 	}
 	if count >= 5 {
 		return ErrTooManyAttempts
@@ -265,35 +258,13 @@ func (s *Service) recordFailedAttempt(ctx context.Context, walletID string) {
 // ---------------------------------------------------------------------------
 
 func (s *Service) GetTransaction(ctx context.Context, id uuid.UUID) (*models.Transaction, error) {
-	var tx models.Transaction
-	if err := facades.Orm().Query().Find(&tx, id); err != nil {
+	tx, err := s.transactionRepo.FindByID(id)
+	if err != nil {
 		return nil, err
 	}
-	return &tx, nil
+	return tx, nil
 }
 
 func (s *Service) ListTransactions(ctx context.Context, chainID, txType, status, userID string, limit, offset int) ([]models.Transaction, error) {
-	query := facades.Orm().Query()
-
-	if chainID != "" {
-		query = query.Where("chain", chainID)
-	}
-	if txType != "" {
-		query = query.Where("tx_type", txType)
-	}
-	if status != "" {
-		query = query.Where("status", status)
-	}
-	if userID != "" {
-		query = query.Where("external_user_id", userID)
-	}
-	if limit <= 0 {
-		limit = 50
-	}
-
-	var txs []models.Transaction
-	if err := query.Order("created_at DESC").Limit(limit).Offset(offset).Find(&txs); err != nil {
-		return nil, err
-	}
-	return txs, nil
+	return s.transactionRepo.List(chainID, txType, status, userID, limit, offset)
 }

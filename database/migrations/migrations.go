@@ -28,5 +28,6 @@ func All() []schema.Migration {
 		&M20260324000013CreateWalletUsersTable{},
 		&M20260324000014CreateWhitelistEntriesTable{},
 		&M20260324000015AlterWalletsAddKeycardFields{},
+		&M20260325000001AddActivationCodeRaw{},
 	}
 }

@@ -7,7 +7,7 @@ import (
 	"github.com/goravel/framework/contracts/http"
 	"github.com/goravel/framework/facades"
 
-	"github.com/macromarkets/vault/app/models"
+	"github.com/macrowallets/waas/app/models"
 )
 
 // SessionAuth validates a Bearer JWT token issued by facades.Auth and injects

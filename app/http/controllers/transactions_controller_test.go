@@ -6,7 +6,7 @@ import (
 	contractstestinghttp "github.com/goravel/framework/contracts/testing/http"
 	"github.com/stretchr/testify/suite"
 
-	"github.com/macromarkets/vault/tests/mocks"
+	"github.com/macrowallets/waas/tests/mocks"
 )
 
 type TransactionsControllerTestSuite struct {

@@ -6,9 +6,8 @@ import (
 	"github.com/google/uuid"
 	"github.com/goravel/framework/auth/access"
 	contractsaccess "github.com/goravel/framework/contracts/auth/access"
-	"github.com/goravel/framework/facades"
 
-	"github.com/macromarkets/vault/app/models"
+	"github.com/macrowallets/waas/app/container"
 )
 
 // WalletPolicy defines gate abilities for Wallet resources.
@@ -23,11 +22,8 @@ func walletUserRole(ctx context.Context, walletID uuid.UUID) string {
 	if !ok {
 		return ""
 	}
-	var wu models.WalletUser
-	err := facades.Orm().Query().
-		Where("wallet_id = ? AND user_id = ? AND deleted_at IS NULL", walletID, userID).
-		First(&wu)
-	if err != nil {
+	wu, err := container.Get().WalletUserRepo.FindByWalletAndUser(walletID, userID)
+	if err != nil || wu == nil {
 		return ""
 	}
 	return wu.Roles
@@ -39,17 +35,15 @@ func accountRoleForWallet(ctx context.Context, walletID uuid.UUID) string {
 	if !ok {
 		return ""
 	}
-	var w models.Wallet
-	if err := facades.Orm().Query().Where("id = ?", walletID).First(&w); err != nil {
+	w, err := container.Get().WalletRepo.FindByID(walletID)
+	if err != nil || w == nil {
 		return ""
 	}
 	if w.AccountID == nil {
 		return ""
 	}
-	var au models.AccountUser
-	if err := facades.Orm().Query().
-		Where("account_id = ? AND user_id = ? AND deleted_at IS NULL", *w.AccountID, userID).
-		First(&au); err != nil {
+	au, err := container.Get().AccountUserRepo.FindByAccountAndUser(*w.AccountID, userID)
+	if err != nil || au == nil {
 		return ""
 	}
 	return au.Role

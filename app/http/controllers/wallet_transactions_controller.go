@@ -4,9 +4,8 @@ import (
 	"strconv"
 
 	"github.com/goravel/framework/contracts/http"
-	"github.com/goravel/framework/facades"
 
-	"github.com/macromarkets/vault/app/models"
+	"github.com/macrowallets/waas/app/container"
 )
 
 // ListWalletTransactions godoc
@@ -36,20 +35,10 @@ func ListWalletTransactions(ctx http.Context) http.Response {
 		limit = 50
 	}
 
-	query := facades.Orm().Query().
-		Where("wallet_id = ?", wallet.ID).
-		Limit(limit).
-		Offset(offset)
-
-	if txType := ctx.Request().Query("type", ""); txType != "" {
-		query = query.Where("tx_type = ?", txType)
-	}
-	if status := ctx.Request().Query("status", ""); status != "" {
-		query = query.Where("status = ?", status)
-	}
-
-	var transactions []models.Transaction
-	if err := query.Find(&transactions); err != nil {
+	txType := ctx.Request().Query("type", "")
+	status := ctx.Request().Query("status", "")
+	transactions, err := container.Get().TransactionRepo.FindByWallet(wallet.ID, txType, status, limit, offset)
+	if err != nil {
 		return ctx.Response().Json(http.StatusInternalServerError, http.Json{"error": "failed to fetch transactions"})
 	}
 
@@ -75,12 +64,10 @@ func GetWalletTransaction(ctx http.Context) http.Response {
 	}
 
 	txIDStr := ctx.Request().Route("txId")
-	var tx models.Transaction
-	if err := facades.Orm().Query().
-		Where("id = ? AND wallet_id = ?", txIDStr, wallet.ID).
-		First(&tx); err != nil {
+	tx, err := container.Get().TransactionRepo.FindByIDAndWallet(txIDStr, wallet.ID)
+	if err != nil || tx == nil {
 		return ctx.Response().Json(http.StatusNotFound, http.Json{"error": "transaction not found"})
 	}
 
-	return ctx.Response().Json(http.StatusOK, &tx)
+	return ctx.Response().Json(http.StatusOK, tx)
 }

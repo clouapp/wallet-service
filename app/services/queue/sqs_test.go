@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/macromarkets/vault/pkg/types"
+	"github.com/macrowallets/waas/pkg/types"
 )
 
 func TestSQSClient_SendWebhook_NoURL(t *testing.T) {

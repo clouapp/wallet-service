@@ -11,10 +11,10 @@ import (
 	"github.com/awslabs/aws-lambda-go-api-proxy/httpadapter"
 	"github.com/goravel/framework/facades"
 
-	"github.com/macromarkets/vault/app/container"
-	"github.com/macromarkets/vault/bootstrap"
-	_ "github.com/macromarkets/vault/docs" // Import generated swagger docs
-	"github.com/macromarkets/vault/pkg/types"
+	"github.com/macrowallets/waas/app/container"
+	"github.com/macrowallets/waas/bootstrap"
+	_ "github.com/macrowallets/waas/docs" // Import generated swagger docs
+	"github.com/macrowallets/waas/pkg/types"
 )
 
 // @title           Vault Custody Service API
@@ -73,6 +73,16 @@ func init() {
 }
 
 func main() {
+	// If CLI args are provided (e.g., "go run . artisan migrate"), dispatch to Artisan.
+	// Goravel's Run() looks for "artisan" in the args slice.
+	if len(os.Args) > 1 {
+		if err := facades.Artisan().Run(os.Args, true); err != nil {
+			slog.Error("artisan command failed", "error", err)
+			os.Exit(1)
+		}
+		return
+	}
+
 	mode := os.Getenv("LAMBDA_MODE")
 
 	switch mode {

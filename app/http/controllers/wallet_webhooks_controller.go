@@ -3,9 +3,9 @@ package controllers
 import (
 	"github.com/google/uuid"
 	"github.com/goravel/framework/contracts/http"
-	"github.com/goravel/framework/facades"
 
-	"github.com/macromarkets/vault/app/models"
+	"github.com/macrowallets/waas/app/container"
+	"github.com/macrowallets/waas/app/models"
 )
 
 // ListWalletWebhooks godoc
@@ -25,8 +25,8 @@ func ListWalletWebhooks(ctx http.Context) http.Response {
 		return errResp
 	}
 
-	var cfgs []models.WebhookConfig
-	if err := facades.Orm().Query().Where("wallet_id = ?", wallet.ID).Find(&cfgs); err != nil {
+	cfgs, err := container.Get().WebhookConfigRepo.FindByWalletID(wallet.ID)
+	if err != nil {
 		return ctx.Response().Json(http.StatusInternalServerError, http.Json{"error": "failed to fetch wallet webhooks"})
 	}
 	return ctx.Response().Json(http.StatusOK, http.Json{"data": cfgs})
@@ -70,7 +70,7 @@ func CreateWalletWebhook(ctx http.Context) http.Response {
 		WalletID: &wallet.ID,
 		Type:     "wallet",
 	}
-	if err := facades.Orm().Query().Create(cfg); err != nil {
+	if err := container.Get().WebhookConfigRepo.Create(cfg); err != nil {
 		return ctx.Response().Json(http.StatusInternalServerError, http.Json{"error": "failed to create webhook"})
 	}
 	return ctx.Response().Json(http.StatusCreated, cfg)
@@ -103,12 +103,12 @@ func DeleteWalletWebhook(ctx http.Context) http.Response {
 		return ctx.Response().Json(http.StatusBadRequest, http.Json{"error": "invalid webhook id"})
 	}
 
-	var cfg models.WebhookConfig
-	if err := facades.Orm().Query().Where("id = ? AND wallet_id = ?", webhookID, wallet.ID).First(&cfg); err != nil {
+	cfg, err := container.Get().WebhookConfigRepo.FindByIDAndWallet(webhookID, wallet.ID)
+	if err != nil || cfg == nil {
 		return ctx.Response().Json(http.StatusNotFound, http.Json{"error": "webhook not found"})
 	}
 
-	if _, err := facades.Orm().Query().Delete(&cfg); err != nil {
+	if err := container.Get().WebhookConfigRepo.Delete(cfg); err != nil {
 		return ctx.Response().Json(http.StatusInternalServerError, http.Json{"error": "failed to delete webhook"})
 	}
 	return ctx.Response().NoContent()

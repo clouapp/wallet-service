@@ -3,11 +3,9 @@ package middleware
 import (
 	"github.com/google/uuid"
 	"github.com/goravel/framework/contracts/http"
-	"github.com/goravel/framework/facades"
 
-	chainpkg "github.com/macromarkets/vault/app/services/chain"
-
-	"github.com/macromarkets/vault/app/models"
+	"github.com/macrowallets/waas/app/container"
+	chainpkg "github.com/macrowallets/waas/app/services/chain"
 )
 
 // UTXOOnly restricts a route to wallets whose chain is a UTXO-model chain
@@ -22,8 +20,8 @@ func UTXOOnly(ctx http.Context) {
 		return
 	}
 
-	var wallet models.Wallet
-	if err := facades.Orm().Query().Where("id = ?", walletID).First(&wallet); err != nil {
+	wallet, err := container.Get().WalletRepo.FindByID(walletID)
+	if err != nil || wallet == nil {
 		ctx.Request().AbortWithStatus(http.StatusNotFound)
 		ctx.Response().Json(http.StatusNotFound, http.Json{"error": "wallet not found"})
 		return

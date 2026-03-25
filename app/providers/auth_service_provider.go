@@ -8,7 +8,7 @@ import (
 	"github.com/goravel/framework/contracts/foundation"
 	"github.com/goravel/framework/facades"
 
-	"github.com/macromarkets/vault/app/policies"
+	"github.com/macrowallets/waas/app/policies"
 )
 
 // AuthServiceProvider registers Gate abilities for Account and Wallet resources.

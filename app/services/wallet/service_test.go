@@ -8,9 +8,10 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/suite"
 
-	"github.com/macromarkets/vault/app/services/chain"
-	"github.com/macromarkets/vault/tests/mocks"
-	"github.com/macromarkets/vault/tests/testutil"
+	"github.com/macrowallets/waas/app/repositories"
+	"github.com/macrowallets/waas/app/services/chain"
+	"github.com/macrowallets/waas/tests/mocks"
+	"github.com/macrowallets/waas/tests/testutil"
 )
 
 func TestMain(m *testing.M) {
@@ -23,11 +24,18 @@ const testPassphrase = "test-passphrase-long-enough"
 
 func newTestService(t *testing.T, registry *chain.Registry) *Service {
 	t.Helper()
+	return newTestServiceWithRepos(t, registry, nil, nil)
+}
+
+func newTestServiceWithRepos(t *testing.T, registry *chain.Registry, walletRepo repositories.WalletRepository, addressRepo repositories.AddressRepository) *Service {
+	t.Helper()
 	svc := NewService(
 		registry,
 		nil, // no redis in tests
 		mocks.NewMockMPCService(),
 		nil, // secretsManager concrete type replaced by mock interface below
+		walletRepo,
+		addressRepo,
 	)
 	svc.secretsManager = mocks.NewMockSecretsManager()
 	return svc
@@ -96,7 +104,7 @@ func (s *WalletServiceTestSuite) SetupTest() {
 	s.registry.RegisterChain(mocks.NewMockChain("eth"))
 	s.registry.RegisterChain(mocks.NewMockChain("btc"))
 	s.registry.RegisterChain(mocks.NewMockChain("sol"))
-	s.service = newTestService(s.T(), s.registry)
+	s.service = newTestServiceWithRepos(s.T(), s.registry, repositories.NewWalletRepository(), repositories.NewAddressRepository())
 }
 
 func (s *WalletServiceTestSuite) TestCreateWallet_Success() {

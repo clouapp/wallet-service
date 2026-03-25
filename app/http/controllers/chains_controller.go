@@ -3,7 +3,7 @@ package controllers
 import (
 	"github.com/goravel/framework/contracts/http"
 
-	"github.com/macromarkets/vault/app/container"
+	"github.com/macrowallets/waas/app/container"
 )
 
 // ListChains godoc

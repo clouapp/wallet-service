@@ -7,7 +7,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/goravel/framework/facades"
 
-	"github.com/macromarkets/vault/app/models"
+	"github.com/macrowallets/waas/app/models"
 )
 
 // ---------------------------------------------------------------------------

@@ -7,7 +7,7 @@ import (
 	"github.com/pquerna/otp/totp"
 	"github.com/stretchr/testify/suite"
 
-	authsvc "github.com/macromarkets/vault/app/services/auth"
+	authsvc "github.com/macrowallets/waas/app/services/auth"
 )
 
 type AuthServiceTestSuite struct {

@@ -6,9 +6,8 @@ import (
 	"github.com/google/uuid"
 	"github.com/goravel/framework/auth/access"
 	contractsaccess "github.com/goravel/framework/contracts/auth/access"
-	"github.com/goravel/framework/facades"
 
-	"github.com/macromarkets/vault/app/models"
+	"github.com/macrowallets/waas/app/container"
 )
 
 // AccountPolicy defines gate abilities for Account resources.
@@ -23,11 +22,8 @@ func userRole(ctx context.Context, accountID uuid.UUID) string {
 	if !ok {
 		return ""
 	}
-	var au models.AccountUser
-	err := facades.Orm().Query().
-		Where("account_id = ? AND user_id = ? AND deleted_at IS NULL", accountID, userID).
-		First(&au)
-	if err != nil {
+	au, err := container.Get().AccountUserRepo.FindByAccountAndUser(accountID, userID)
+	if err != nil || au == nil {
 		return ""
 	}
 	return au.Role

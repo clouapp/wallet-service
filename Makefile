@@ -436,18 +436,18 @@ swagger-fmt: ## Format Swagger comments
 
 migrate: ## Run pending database migrations
 	@echo "🔄 Running database migrations..."
-	@export $$(grep -v '^#' .env.dev | xargs) && go run . migrate
+	@export $$(grep -v '^#' .env.dev | xargs) && go run . artisan migrate
 
 migrate-status: ## Show migration status
 	@echo "📊 Checking migration status..."
-	@export $$(grep -v '^#' .env.dev | xargs) && go run . migrate:status
+	@export $$(grep -v '^#' .env.dev | xargs) && go run . artisan migrate:status
 
 migrate-rollback: ## Rollback last migration batch
 	@echo "⏪ Rolling back migrations..."
-	@export $$(grep -v '^#' .env.dev | xargs) && go run . migrate:rollback
+	@export $$(grep -v '^#' .env.dev | xargs) && go run . artisan migrate:rollback
 
 migrate-fresh: ## Drop all tables and re-run migrations
 	@echo "🆕 Dropping tables and running fresh migrations..."
-	@export $$(grep -v '^#' .env.dev | xargs) && go run . migrate:fresh
+	@export $$(grep -v '^#' .env.dev | xargs) && go run . artisan migrate:fresh
 
 .DEFAULT_GOAL := help

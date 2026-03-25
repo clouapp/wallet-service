@@ -5,9 +5,9 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/goravel/framework/contracts/http"
-	"github.com/goravel/framework/facades"
 
-	"github.com/macromarkets/vault/app/models"
+	"github.com/macrowallets/waas/app/container"
+	"github.com/macrowallets/waas/app/models"
 )
 
 // ListWalletWithdrawals godoc
@@ -36,17 +36,9 @@ func ListWalletWithdrawals(ctx http.Context) http.Response {
 		limit = 50
 	}
 
-	query := facades.Orm().Query().
-		Where("wallet_id = ?", wallet.ID).
-		Limit(limit).
-		Offset(offset)
-
-	if status := ctx.Request().Query("status", ""); status != "" {
-		query = query.Where("status = ?", status)
-	}
-
-	var withdrawals []models.Withdrawal
-	if err := query.Find(&withdrawals); err != nil {
+	status := ctx.Request().Query("status", "")
+	withdrawals, err := container.Get().WithdrawalRepo.FindByWallet(wallet.ID, status, limit, offset)
+	if err != nil {
 		return ctx.Response().Json(http.StatusInternalServerError, http.Json{"error": "failed to fetch withdrawals"})
 	}
 	return ctx.Response().Json(http.StatusOK, http.Json{"data": withdrawals})
@@ -95,7 +87,7 @@ func CreateWalletWithdrawal(ctx http.Context) http.Response {
 		w.AccountID = wallet.AccountID
 	}
 
-	if err := facades.Orm().Query().Create(w); err != nil {
+	if err := container.Get().WithdrawalRepo.Create(w); err != nil {
 		return ctx.Response().Json(http.StatusInternalServerError, http.Json{"error": "failed to create withdrawal"})
 	}
 	return ctx.Response().Json(http.StatusCreated, w)
@@ -125,13 +117,11 @@ func GetWalletWithdrawal(ctx http.Context) http.Response {
 		return ctx.Response().Json(http.StatusBadRequest, http.Json{"error": "invalid withdrawal id"})
 	}
 
-	var w models.Withdrawal
-	if err := facades.Orm().Query().
-		Where("id = ? AND wallet_id = ?", withdrawalID, wallet.ID).
-		First(&w); err != nil {
+	w, err := container.Get().WithdrawalRepo.FindByIDAndWallet(withdrawalID, wallet.ID)
+	if err != nil || w == nil {
 		return ctx.Response().Json(http.StatusNotFound, http.Json{"error": "withdrawal not found"})
 	}
-	return ctx.Response().Json(http.StatusOK, &w)
+	return ctx.Response().Json(http.StatusOK, w)
 }
 
 // CancelWalletWithdrawal godoc
@@ -159,10 +149,8 @@ func CancelWalletWithdrawal(ctx http.Context) http.Response {
 		return ctx.Response().Json(http.StatusBadRequest, http.Json{"error": "invalid withdrawal id"})
 	}
 
-	var w models.Withdrawal
-	if err := facades.Orm().Query().
-		Where("id = ? AND wallet_id = ?", withdrawalID, wallet.ID).
-		First(&w); err != nil {
+	w, err := container.Get().WithdrawalRepo.FindByIDAndWallet(withdrawalID, wallet.ID)
+	if err != nil || w == nil {
 		return ctx.Response().Json(http.StatusNotFound, http.Json{"error": "withdrawal not found"})
 	}
 
@@ -179,11 +167,11 @@ func CancelWalletWithdrawal(ctx http.Context) http.Response {
 		return ctx.Response().Json(http.StatusForbidden, http.Json{"error": "only the creator or an owner/admin may cancel this withdrawal"})
 	}
 
-	if _, err := facades.Orm().Query().Model(&w).Where("id = ?", w.ID).Update("status", "cancelled"); err != nil {
+	if err := container.Get().WithdrawalRepo.UpdateStatus(w.ID, "cancelled"); err != nil {
 		return ctx.Response().Json(http.StatusInternalServerError, http.Json{"error": "failed to cancel withdrawal"})
 	}
 	w.Status = "cancelled"
-	return ctx.Response().Json(http.StatusOK, &w)
+	return ctx.Response().Json(http.StatusOK, w)
 }
 
 // ---- Request/Response types ----

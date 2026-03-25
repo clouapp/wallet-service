@@ -7,7 +7,7 @@ import (
 	"github.com/goravel/framework/facades"
 	frameworkfoundation "github.com/goravel/framework/foundation"
 
-	"github.com/macromarkets/vault/database/migrations"
+	"github.com/macrowallets/waas/database/migrations"
 )
 
 // BootTest initializes Goravel for testing (service-level tests, no routes).

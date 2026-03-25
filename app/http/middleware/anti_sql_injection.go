@@ -9,7 +9,7 @@ import (
 
 	"github.com/goravel/framework/contracts/http"
 
-	"github.com/macromarkets/vault/pkg/security"
+	"github.com/macrowallets/waas/pkg/security"
 )
 
 // AWS API Gateway host pattern (should be allowed in Host header)

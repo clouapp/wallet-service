@@ -11,7 +11,7 @@ import (
 	"github.com/goravel/framework/facades"
 	"golang.org/x/crypto/bcrypt"
 
-	"github.com/macromarkets/vault/app/models"
+	"github.com/macrowallets/waas/app/models"
 )
 
 // predefined UUIDs so the seed is idempotent (same IDs every run)
@@ -109,9 +109,9 @@ func seedAccounts(ctx context.Context) error {
 
 	// Account memberships
 	members := []struct {
-		id      uuid.UUID
-		userID  uuid.UUID
-		role    string
+		id     uuid.UUID
+		userID uuid.UUID
+		role   string
 	}{
 		{uuid.MustParse("00000000-0000-0000-0000-000000000030"), adminUserID, "owner"},
 		{uuid.MustParse("00000000-0000-0000-0000-000000000031"), aliceUserID, "admin"},
@@ -171,18 +171,18 @@ func seedWallets(_ context.Context) error {
 			continue
 		}
 		wallet := models.Wallet{
-			ID:               w.id,
-			Chain:            w.chain,
-			Label:            w.label,
-			MPCCustomerShare: fakeShareHex,
-			MPCShareIV:       fakeIVHex,
-			MPCShareSalt:     fakeSaltHex,
-			MPCSecretARN:     fakeSecretARN,
-			MPCPublicKey:     fakePubKey,
-			MPCCurve:         w.curve,
-			DepositAddress:   w.depositAddress,
-			AccountID:        &accountID,
-			Status:           "active",
+			ID:                w.id,
+			Chain:             w.chain,
+			Label:             w.label,
+			MPCCustomerShare:  fakeShareHex,
+			MPCShareIV:        fakeIVHex,
+			MPCShareSalt:      fakeSaltHex,
+			MPCSecretARN:      fakeSecretARN,
+			MPCPublicKey:      fakePubKey,
+			MPCCurve:          w.curve,
+			DepositAddress:    w.depositAddress,
+			AccountID:         &accountID,
+			Status:            "active",
 			RequiredApprovals: 1,
 		}
 		if err := facades.Orm().Query().Create(&wallet); err != nil {

@@ -6,9 +6,9 @@ import (
 	"github.com/google/uuid"
 	"github.com/goravel/framework/contracts/http"
 
-	"github.com/macromarkets/vault/app/container"
-	"github.com/macromarkets/vault/app/http/requests"
-	"github.com/macromarkets/vault/app/services/withdraw"
+	"github.com/macrowallets/waas/app/container"
+	"github.com/macrowallets/waas/app/http/requests"
+	"github.com/macrowallets/waas/app/services/withdraw"
 )
 
 // CreateWithdrawal godoc

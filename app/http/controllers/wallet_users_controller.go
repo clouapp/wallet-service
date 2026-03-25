@@ -1,13 +1,11 @@
 package controllers
 
 import (
-	"time"
-
 	"github.com/google/uuid"
 	"github.com/goravel/framework/contracts/http"
-	"github.com/goravel/framework/facades"
 
-	"github.com/macromarkets/vault/app/models"
+	"github.com/macrowallets/waas/app/container"
+	"github.com/macrowallets/waas/app/models"
 )
 
 // walletFromParam resolves the {walletId} route parameter and verifies
@@ -20,8 +18,8 @@ func walletFromParam(ctx http.Context) (*models.Wallet, string, string, http.Res
 		return nil, "", "", ctx.Response().Json(http.StatusNotFound, http.Json{"error": "invalid wallet id"})
 	}
 
-	var wallet models.Wallet
-	if err := facades.Orm().Query().Where("id = ?", walletID).First(&wallet); err != nil {
+	wallet, err := container.Get().WalletRepo.FindByID(walletID)
+	if err != nil || wallet == nil {
 		return nil, "", "", ctx.Response().Json(http.StatusNotFound, http.Json{"error": "wallet not found"})
 	}
 
@@ -30,20 +28,16 @@ func walletFromParam(ctx http.Context) (*models.Wallet, string, string, http.Res
 	// Account-level role
 	accRole := ""
 	if wallet.AccountID != nil {
-		var au models.AccountUser
-		if err := facades.Orm().Query().
-			Where("account_id = ? AND user_id = ? AND deleted_at IS NULL", *wallet.AccountID, userID).
-			First(&au); err == nil {
+		au, err2 := container.Get().AccountUserRepo.FindByAccountAndUser(*wallet.AccountID, userID)
+		if err2 == nil && au != nil {
 			accRole = au.Role
 		}
 	}
 
 	// Wallet-level role
 	walletRole := ""
-	var wu models.WalletUser
-	if err := facades.Orm().Query().
-		Where("wallet_id = ? AND user_id = ? AND deleted_at IS NULL", walletID, userID).
-		First(&wu); err == nil {
+	wu, err3 := container.Get().WalletUserRepo.FindByWalletAndUser(walletID, userID)
+	if err3 == nil && wu != nil {
 		walletRole = wu.Roles
 	}
 
@@ -51,7 +45,7 @@ func walletFromParam(ctx http.Context) (*models.Wallet, string, string, http.Res
 		return nil, "", "", ctx.Response().Json(http.StatusForbidden, http.Json{"error": "not a member of this wallet or its account"})
 	}
 
-	return &wallet, accRole, walletRole, nil
+	return wallet, accRole, walletRole, nil
 }
 
 // isWalletAdmin returns true if the caller has admin or owner privileges on the wallet.
@@ -76,10 +70,8 @@ func ListWalletUsers(ctx http.Context) http.Response {
 		return errResp
 	}
 
-	var members []models.WalletUser
-	if err := facades.Orm().Query().
-		Where("wallet_id = ? AND deleted_at IS NULL", wallet.ID).
-		Find(&members); err != nil {
+	members, err := container.Get().WalletUserRepo.FindByWalletID(wallet.ID)
+	if err != nil {
 		return ctx.Response().Json(http.StatusInternalServerError, http.Json{"error": "failed to fetch wallet users"})
 	}
 	return ctx.Response().Json(http.StatusOK, http.Json{"data": members})
@@ -119,18 +111,13 @@ func AddWalletUser(ctx http.Context) http.Response {
 		return ctx.Response().Json(http.StatusBadRequest, http.Json{"error": "invalid user_id"})
 	}
 
-	// Check for existing (possibly soft-deleted) entry
-	var existing models.WalletUser
-	lookupErr := facades.Orm().Query().
-		Where("wallet_id = ? AND user_id = ?", wallet.ID, targetID).
-		First(&existing)
-	if lookupErr == nil && existing.DeletedAt != nil {
-		// Re-activate
-		_, _ = facades.Orm().Query().Model(&existing).Where("id = ?", existing.ID).Update("deleted_at", nil)
+	existing, _ := container.Get().WalletUserRepo.FindByWalletAndUserIncludeDeleted(wallet.ID, targetID)
+	if existing != nil && existing.DeletedAt != nil {
+		_ = container.Get().WalletUserRepo.UpdateField(existing.ID, "deleted_at", nil)
 		if req.Roles != "" {
-			_, _ = facades.Orm().Query().Model(&existing).Where("id = ?", existing.ID).Update("roles", req.Roles)
+			_ = container.Get().WalletUserRepo.UpdateField(existing.ID, "roles", req.Roles)
 		}
-		return ctx.Response().Json(http.StatusCreated, &existing)
+		return ctx.Response().Json(http.StatusCreated, existing)
 	}
 
 	wu := &models.WalletUser{
@@ -140,7 +127,7 @@ func AddWalletUser(ctx http.Context) http.Response {
 		Roles:    req.Roles,
 		Status:   "active",
 	}
-	if err := facades.Orm().Query().Create(wu); err != nil {
+	if err := container.Get().WalletUserRepo.Create(wu); err != nil {
 		return ctx.Response().Json(http.StatusInternalServerError, http.Json{"error": "failed to add wallet user"})
 	}
 	return ctx.Response().Json(http.StatusCreated, wu)
@@ -173,11 +160,7 @@ func RemoveWalletUser(ctx http.Context) http.Response {
 		return ctx.Response().Json(http.StatusBadRequest, http.Json{"error": "invalid user id"})
 	}
 
-	now := time.Now()
-	if _, err := facades.Orm().Query().
-		Model(&models.WalletUser{}).
-		Where("wallet_id = ? AND user_id = ? AND deleted_at IS NULL", wallet.ID, targetID).
-		Update("deleted_at", now); err != nil {
+	if err := container.Get().WalletUserRepo.SoftDelete(wallet.ID, targetID); err != nil {
 		return ctx.Response().Json(http.StatusInternalServerError, http.Json{"error": "failed to remove wallet user"})
 	}
 	return ctx.Response().NoContent()

@@ -4,7 +4,8 @@ import (
 	"time"
 
 	"github.com/goravel/framework/contracts/http"
-	"github.com/goravel/framework/facades"
+
+	"github.com/macrowallets/waas/app/container"
 )
 
 // GetWalletSettings godoc
@@ -62,31 +63,31 @@ func UpdateWalletSettings(ctx http.Context) http.Response {
 	}
 
 	if req.FeeRateMin != nil {
-		if _, err := facades.Orm().Query().Model(wallet).Where("id = ?", wallet.ID).Update("fee_rate_min", *req.FeeRateMin); err != nil {
+		if err := container.Get().WalletRepo.UpdateField(wallet.ID, "fee_rate_min", *req.FeeRateMin); err != nil {
 			return ctx.Response().Json(http.StatusInternalServerError, http.Json{"error": "failed to update wallet settings"})
 		}
 		wallet.FeeRateMin = req.FeeRateMin
 	}
 	if req.FeeRateMax != nil {
-		if _, err := facades.Orm().Query().Model(wallet).Where("id = ?", wallet.ID).Update("fee_rate_max", *req.FeeRateMax); err != nil {
+		if err := container.Get().WalletRepo.UpdateField(wallet.ID, "fee_rate_max", *req.FeeRateMax); err != nil {
 			return ctx.Response().Json(http.StatusInternalServerError, http.Json{"error": "failed to update wallet settings"})
 		}
 		wallet.FeeRateMax = req.FeeRateMax
 	}
 	if req.FeeMultiplier != nil {
-		if _, err := facades.Orm().Query().Model(wallet).Where("id = ?", wallet.ID).Update("fee_multiplier", *req.FeeMultiplier); err != nil {
+		if err := container.Get().WalletRepo.UpdateField(wallet.ID, "fee_multiplier", *req.FeeMultiplier); err != nil {
 			return ctx.Response().Json(http.StatusInternalServerError, http.Json{"error": "failed to update wallet settings"})
 		}
 		wallet.FeeMultiplier = req.FeeMultiplier
 	}
 	if req.RequiredApprovals != nil {
-		if _, err := facades.Orm().Query().Model(wallet).Where("id = ?", wallet.ID).Update("required_approvals", *req.RequiredApprovals); err != nil {
+		if err := container.Get().WalletRepo.UpdateField(wallet.ID, "required_approvals", *req.RequiredApprovals); err != nil {
 			return ctx.Response().Json(http.StatusInternalServerError, http.Json{"error": "failed to update wallet settings"})
 		}
 		wallet.RequiredApprovals = *req.RequiredApprovals
 	}
 	if req.FrozenUntil != nil {
-		if _, err := facades.Orm().Query().Model(wallet).Where("id = ?", wallet.ID).Update("frozen_until", req.FrozenUntil); err != nil {
+		if err := container.Get().WalletRepo.UpdateField(wallet.ID, "frozen_until", req.FrozenUntil); err != nil {
 			return ctx.Response().Json(http.StatusInternalServerError, http.Json{"error": "failed to update wallet settings"})
 		}
 		wallet.FrozenUntil = req.FrozenUntil
@@ -133,10 +134,10 @@ func FreezeWallet(ctx http.Context) http.Response {
 		frozenUntil = *req.FrozenUntil
 	}
 
-	if _, err := facades.Orm().Query().Model(wallet).Where("id = ?", wallet.ID).Update("frozen_until", frozenUntil); err != nil {
+	if err := container.Get().WalletRepo.UpdateField(wallet.ID, "frozen_until", frozenUntil); err != nil {
 		return ctx.Response().Json(http.StatusInternalServerError, http.Json{"error": "failed to freeze wallet"})
 	}
-	if _, err := facades.Orm().Query().Model(wallet).Where("id = ?", wallet.ID).Update("status", "frozen"); err != nil {
+	if err := container.Get().WalletRepo.UpdateField(wallet.ID, "status", "frozen"); err != nil {
 		return ctx.Response().Json(http.StatusInternalServerError, http.Json{"error": "failed to freeze wallet"})
 	}
 	wallet.FrozenUntil = &frozenUntil

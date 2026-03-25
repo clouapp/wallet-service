@@ -17,12 +17,12 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/secretsmanager"
 	"github.com/google/uuid"
-	"github.com/goravel/framework/facades"
 	"github.com/redis/go-redis/v9"
 
-	"github.com/macromarkets/vault/app/models"
-	"github.com/macromarkets/vault/app/services/chain"
-	mpc "github.com/macromarkets/vault/app/services/mpc"
+	"github.com/macrowallets/waas/app/models"
+	"github.com/macrowallets/waas/app/repositories"
+	"github.com/macrowallets/waas/app/services/chain"
+	mpc "github.com/macrowallets/waas/app/services/mpc"
 )
 
 var (
@@ -48,17 +48,21 @@ type secretsManagerAPI interface {
 
 type Service struct {
 	registry       *chain.Registry
-	rdb            *redis.Client // optional: address cache
+	rdb            *redis.Client
 	mpcService     mpc.Service
 	secretsManager secretsManagerAPI
+	walletRepo     repositories.WalletRepository
+	addressRepo    repositories.AddressRepository
 }
 
-func NewService(registry *chain.Registry, rdb *redis.Client, mpcSvc mpc.Service, sm *secretsmanager.Client) *Service {
+func NewService(registry *chain.Registry, rdb *redis.Client, mpcSvc mpc.Service, sm *secretsmanager.Client, walletRepo repositories.WalletRepository, addressRepo repositories.AddressRepository) *Service {
 	return &Service{
 		registry:       registry,
 		rdb:            rdb,
 		mpcService:     mpcSvc,
 		secretsManager: sm,
+		walletRepo:     walletRepo,
+		addressRepo:    addressRepo,
 	}
 }
 
@@ -67,7 +71,6 @@ func (s *Service) CreateWallet(ctx context.Context, chainID, label, passphrase s
 		return nil, fmt.Errorf("passphrase must be at least 12 characters")
 	}
 
-	// Normalise chain ID
 	chainID = strings.ToLower(chainID)
 	if chainID == "matic" {
 		chainID = "polygon"
@@ -77,9 +80,7 @@ func (s *Service) CreateWallet(ctx context.Context, chainID, label, passphrase s
 		return nil, fmt.Errorf("unknown chain: %s", chainID)
 	}
 
-	// Guard: one wallet per chain
-	var count int64
-	count, err := facades.Orm().Query().Model(&models.Wallet{}).Where("chain", chainID).Count()
+	count, err := s.walletRepo.CountByChain(chainID)
 	if err != nil {
 		return nil, err
 	}
@@ -89,19 +90,16 @@ func (s *Service) CreateWallet(ctx context.Context, chainID, label, passphrase s
 
 	curve := curveForChain(chainID)
 
-	// 1. MPC keygen
 	keygenResult, err := s.mpcService.Keygen(ctx, curve)
 	if err != nil {
 		return nil, fmt.Errorf("mpc keygen: %w", err)
 	}
 
-	// 2. Encrypt customer share (ShareA) with passphrase
 	enc, err := mpc.EncryptShare(keygenResult.ShareA, passphrase)
 	if err != nil {
 		return nil, fmt.Errorf("encrypt share: %w", err)
 	}
 
-	// 3. Format EncryptedUserKey JSON
 	type userKeyPayload struct {
 		IV     string `json:"iv"`
 		Salt   string `json:"salt"`
@@ -121,20 +119,17 @@ func (s *Service) CreateWallet(ctx context.Context, chainID, label, passphrase s
 		return nil, fmt.Errorf("marshal user key: %w", err)
 	}
 
-	// 4. Encrypt passphrase with service key (section D)
 	encPasscode, err := mpc.EncryptWithServiceKey([]byte(passphrase), os.Getenv("WALLET_SERVICE_KEY"))
 	if err != nil {
 		return nil, fmt.Errorf("encrypt passcode: %w", err)
 	}
 
-	// 5. Generate 6-digit activation code
 	n, err := cryptorand.Int(cryptorand.Reader, big.NewInt(1_000_000))
 	if err != nil {
 		return nil, fmt.Errorf("generate activation code: %w", err)
 	}
 	code := fmt.Sprintf("%06d", n.Int64())
 
-	// 6. Store service share (ShareB) in Secrets Manager
 	walletID := uuid.New()
 	secretName := fmt.Sprintf("vault/wallet/%s/share-b", walletID.String())
 	out, err := s.secretsManager.CreateSecret(ctx, &secretsmanager.CreateSecretInput{
@@ -146,19 +141,16 @@ func (s *Service) CreateWallet(ctx context.Context, chainID, label, passphrase s
 	}
 	secretARN := aws.ToString(out.ARN)
 
-	// All steps after CreateSecret: log orphaned ARN on any failure
 	onPostSecretErr := func(err error) (*CreateWalletResult, error) {
 		slog.Warn("orphaned secret ARN after wallet creation failure", "arn", secretARN, "error", err)
 		return nil, err
 	}
 
-	// 7. Derive deposit address
 	depositAddress, err := deriveAddress(chainID, keygenResult.CombinedPubKey)
 	if err != nil {
 		return onPostSecretErr(fmt.Errorf("derive address: %w", err))
 	}
 
-	// 8. Persist wallet
 	codeStr := code
 	w := &models.Wallet{
 		ID:               walletID,
@@ -174,11 +166,10 @@ func (s *Service) CreateWallet(ctx context.Context, chainID, label, passphrase s
 		Status:           "pending",
 		ActivationCode:   &codeStr,
 	}
-	if err := facades.Orm().Query().Create(w); err != nil {
+	if err := s.walletRepo.Create(w); err != nil {
 		return onPostSecretErr(fmt.Errorf("create wallet: %w", err))
 	}
 
-	// 9. Cache deposit address in Redis (non-fatal)
 	if s.rdb != nil {
 		if err := s.rdb.SAdd(ctx, "vault:addresses:"+chainID, depositAddress).Err(); err != nil {
 			slog.Warn("redis cache failed", "error", err)
@@ -194,13 +185,9 @@ func (s *Service) CreateWallet(ctx context.Context, chainID, label, passphrase s
 	}, nil
 }
 
-// ActivateWallet validates the activation code and transitions the wallet to active.
 func (s *Service) ActivateWallet(ctx context.Context, walletID uuid.UUID, code string) (*models.Wallet, error) {
-	var w models.Wallet
-	if err := facades.Orm().Query().Where("id", walletID).First(&w); err != nil {
-		return nil, ErrWalletNotFound
-	}
-	if w.ID == uuid.Nil {
+	w, err := s.walletRepo.FindByID(walletID)
+	if err != nil || w == nil {
 		return nil, ErrWalletNotFound
 	}
 	if w.Status != "pending" {
@@ -213,7 +200,7 @@ func (s *Service) ActivateWallet(ctx context.Context, walletID uuid.UUID, code s
 		return nil, ErrInvalidActivationCode
 	}
 
-	if _, err := facades.Orm().Query().Model(&w).Where("id = ?", w.ID).Update(map[string]interface{}{
+	if err := s.walletRepo.UpdateFields(w.ID, map[string]interface{}{
 		"status":          "active",
 		"activation_code": nil,
 	}); err != nil {
@@ -221,7 +208,7 @@ func (s *Service) ActivateWallet(ctx context.Context, walletID uuid.UUID, code s
 	}
 	w.Status = "active"
 	w.ActivationCode = nil
-	return &w, nil
+	return w, nil
 }
 
 func curveForChain(chainID string) mpc.Curve {
@@ -232,19 +219,15 @@ func curveForChain(chainID string) mpc.Curve {
 }
 
 func (s *Service) GetWallet(ctx context.Context, id uuid.UUID) (*models.Wallet, error) {
-	var w models.Wallet
-	if err := facades.Orm().Query().Find(&w, id); err != nil {
+	w, err := s.walletRepo.FindByID(id)
+	if err != nil {
 		return nil, err
 	}
-	return &w, nil
+	return w, nil
 }
 
 func (s *Service) ListWallets(ctx context.Context) ([]models.Wallet, error) {
-	var ws []models.Wallet
-	if err := facades.Orm().Query().Order("created_at").Find(&ws); err != nil {
-		return nil, err
-	}
-	return ws, nil
+	return s.walletRepo.FindAll()
 }
 
 // GenerateAddress is not supported for MPC wallets in v1.
@@ -253,25 +236,13 @@ func (s *Service) GenerateAddress(ctx context.Context, walletID uuid.UUID, exter
 }
 
 func (s *Service) LookupAddress(ctx context.Context, chainID, address string) (*models.Address, error) {
-	var addr models.Address
-	if err := facades.Orm().Query().Where("chain", chainID).Where("address", address).First(&addr); err != nil {
-		return nil, err
-	}
-	return &addr, nil
+	return s.addressRepo.FindByChainAndAddress(chainID, address)
 }
 
 func (s *Service) ListUserAddresses(ctx context.Context, externalUserID string) ([]models.Address, error) {
-	var addrs []models.Address
-	if err := facades.Orm().Query().Where("external_user_id", externalUserID).Order("created_at").Find(&addrs); err != nil {
-		return nil, err
-	}
-	return addrs, nil
+	return s.addressRepo.FindByExternalUserID(externalUserID)
 }
 
 func (s *Service) ListWalletAddresses(ctx context.Context, walletID uuid.UUID) ([]models.Address, error) {
-	var addrs []models.Address
-	if err := facades.Orm().Query().Where("wallet_id", walletID).Order("derivation_index").Find(&addrs); err != nil {
-		return nil, err
-	}
-	return addrs, nil
+	return s.addressRepo.FindByWalletID(walletID)
 }

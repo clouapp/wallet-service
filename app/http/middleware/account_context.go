@@ -3,9 +3,8 @@ package middleware
 import (
 	"github.com/google/uuid"
 	"github.com/goravel/framework/contracts/http"
-	"github.com/goravel/framework/facades"
 
-	"github.com/macromarkets/vault/app/models"
+	"github.com/macrowallets/waas/app/container"
 )
 
 // AccountContext resolves the {accountId} route parameter, verifies the
@@ -21,8 +20,8 @@ func AccountContext(ctx http.Context) {
 		return
 	}
 
-	var account models.Account
-	if err := facades.Orm().Query().Where("id = ?", accountID).First(&account); err != nil {
+	accountPtr, err := container.Get().AccountRepo.FindByID(accountID)
+	if err != nil || accountPtr == nil {
 		ctx.Request().AbortWithStatus(http.StatusNotFound)
 		ctx.Response().Json(http.StatusNotFound, http.Json{"error": "account not found"})
 		return
@@ -35,16 +34,14 @@ func AccountContext(ctx http.Context) {
 		return
 	}
 
-	var au models.AccountUser
-	if err := facades.Orm().Query().
-		Where("account_id = ? AND user_id = ? AND deleted_at IS NULL", accountID, userID).
-		First(&au); err != nil {
+	au, err := container.Get().AccountUserRepo.FindByAccountAndUser(accountID, userID)
+	if err != nil || au == nil {
 		ctx.Request().AbortWithStatus(http.StatusForbidden)
 		ctx.Response().Json(http.StatusForbidden, http.Json{"error": "not a member of this account"})
 		return
 	}
 
-	ctx.WithValue("account", &account)
+	ctx.WithValue("account", accountPtr)
 	ctx.WithValue("account_role", au.Role)
 	ctx.Request().Next()
 }

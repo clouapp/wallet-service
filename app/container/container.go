@@ -12,13 +12,14 @@ import (
 	"github.com/redis/go-redis/v9"
 	smithyendpoints "github.com/aws/smithy-go/endpoints"
 
-	chainpkg "github.com/macromarkets/vault/app/services/chain"
-	"github.com/macromarkets/vault/app/services/deposit"
-	mpc "github.com/macromarkets/vault/app/services/mpc"
-	"github.com/macromarkets/vault/app/services/queue"
-	"github.com/macromarkets/vault/app/services/wallet"
-	"github.com/macromarkets/vault/app/services/webhook"
-	"github.com/macromarkets/vault/app/services/withdraw"
+	"github.com/macrowallets/waas/app/repositories"
+	chainpkg "github.com/macrowallets/waas/app/services/chain"
+	"github.com/macrowallets/waas/app/services/deposit"
+	mpc "github.com/macrowallets/waas/app/services/mpc"
+	"github.com/macrowallets/waas/app/services/queue"
+	"github.com/macrowallets/waas/app/services/wallet"
+	"github.com/macrowallets/waas/app/services/webhook"
+	"github.com/macrowallets/waas/app/services/withdraw"
 )
 
 // ---------------------------------------------------------------------------
@@ -31,6 +32,22 @@ type Container struct {
 	SQS             *queue.SQSClient
 	SecretsManager  *secretsmanager.Client
 	MPCService      mpc.Service
+
+	UserRepo               repositories.UserRepository
+	RefreshTokenRepo       repositories.RefreshTokenRepository
+	PasswordResetTokenRepo repositories.PasswordResetTokenRepository
+	TotpRecoveryCodeRepo   repositories.TotpRecoveryCodeRepository
+	AccountRepo            repositories.AccountRepository
+	AccountUserRepo        repositories.AccountUserRepository
+	AccessTokenRepo        repositories.AccessTokenRepository
+	WalletRepo             repositories.WalletRepository
+	WalletUserRepo         repositories.WalletUserRepository
+	AddressRepo            repositories.AddressRepository
+	TransactionRepo        repositories.TransactionRepository
+	WithdrawalRepo         repositories.WithdrawalRepository
+	WebhookConfigRepo      repositories.WebhookConfigRepository
+	WebhookEventRepo       repositories.WebhookEventRepository
+	WhitelistEntryRepo     repositories.WhitelistEntryRepository
 
 	Registry          *chainpkg.Registry
 	WalletService     *wallet.Service
@@ -120,11 +137,28 @@ func Boot() *Container {
 		c.Registry.RegisterToken(t)
 	}
 
+	// --- Repositories ---
+	c.UserRepo = repositories.NewUserRepository()
+	c.RefreshTokenRepo = repositories.NewRefreshTokenRepository()
+	c.PasswordResetTokenRepo = repositories.NewPasswordResetTokenRepository()
+	c.TotpRecoveryCodeRepo = repositories.NewTotpRecoveryCodeRepository()
+	c.AccountRepo = repositories.NewAccountRepository()
+	c.AccountUserRepo = repositories.NewAccountUserRepository()
+	c.AccessTokenRepo = repositories.NewAccessTokenRepository()
+	c.WalletRepo = repositories.NewWalletRepository()
+	c.WalletUserRepo = repositories.NewWalletUserRepository()
+	c.AddressRepo = repositories.NewAddressRepository()
+	c.TransactionRepo = repositories.NewTransactionRepository()
+	c.WithdrawalRepo = repositories.NewWithdrawalRepository()
+	c.WebhookConfigRepo = repositories.NewWebhookConfigRepository()
+	c.WebhookEventRepo = repositories.NewWebhookEventRepository()
+	c.WhitelistEntryRepo = repositories.NewWhitelistEntryRepository()
+
 	// --- Services ---
-	c.WebhookService = webhook.NewService(c.SQS)
-	c.WalletService = wallet.NewService(c.Registry, c.Redis, c.MPCService, c.SecretsManager)
-	c.WithdrawalService = withdraw.NewService(c.Registry, c.WebhookService, c.MPCService, c.SecretsManager, c.Redis)
-	c.DepositService = deposit.NewService(c.Redis, c.Registry, c.WebhookService)
+	c.WebhookService = webhook.NewService(c.SQS, c.WebhookConfigRepo, c.WebhookEventRepo)
+	c.WalletService = wallet.NewService(c.Registry, c.Redis, c.MPCService, c.SecretsManager, c.WalletRepo, c.AddressRepo)
+	c.WithdrawalService = withdraw.NewService(c.Registry, c.WebhookService, c.MPCService, c.SecretsManager, c.Redis, c.TransactionRepo, c.WalletRepo)
+	c.DepositService = deposit.NewService(c.Redis, c.Registry, c.WebhookService, c.AddressRepo, c.TransactionRepo)
 
 	globalContainer = c
 	slog.Info("container booted", "chains", c.Registry.ChainIDs())

@@ -10,7 +10,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/sqs"
 	sqstypes "github.com/aws/aws-sdk-go-v2/service/sqs/types"
 
-	"github.com/macromarkets/vault/pkg/types"
+	"github.com/macrowallets/waas/pkg/types"
 )
 
 // ---------------------------------------------------------------------------

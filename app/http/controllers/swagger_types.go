@@ -1,6 +1,6 @@
 package controllers
 
-import "github.com/macromarkets/vault/app/models"
+import "github.com/macrowallets/waas/app/models"
 
 // Shared response envelope types used only for Swagger doc generation.
 

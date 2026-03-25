@@ -1,7 +1,7 @@
 package providers
 
 import (
-	"github.com/macromarkets/vault/app/container"
+	"github.com/macrowallets/waas/app/container"
 )
 
 // Boot builds the full dependency graph (delegated to container package).

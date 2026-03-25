@@ -8,18 +8,27 @@ import (
 
 	"github.com/goravel/framework/facades"
 
-	"github.com/macromarkets/vault/app/models"
-	"github.com/macromarkets/vault/app/services/chain"
-	"github.com/macromarkets/vault/app/services/webhook"
-	"github.com/macromarkets/vault/pkg/types"
-	"github.com/macromarkets/vault/tests/mocks"
-	"github.com/macromarkets/vault/tests/testutil"
+	"github.com/macrowallets/waas/app/models"
+	"github.com/macrowallets/waas/app/repositories"
+	"github.com/macrowallets/waas/app/services/chain"
+	"github.com/macrowallets/waas/app/services/webhook"
+	"github.com/macrowallets/waas/pkg/types"
+	"github.com/macrowallets/waas/tests/mocks"
+	"github.com/macrowallets/waas/tests/testutil"
 )
 
 func TestMain(m *testing.M) {
 	// Boot Goravel once for all tests in this package
 	testutil.BootTest()
 	os.Exit(m.Run())
+}
+
+func newWebhookSvc() *webhook.Service {
+	return webhook.NewService(nil, repositories.NewWebhookConfigRepository(), repositories.NewWebhookEventRepository())
+}
+
+func newDepositSvc(registry *chain.Registry, webhookSvc *webhook.Service) *Service {
+	return NewService(nil, registry, webhookSvc, repositories.NewAddressRepository(), repositories.NewTransactionRepository())
 }
 
 func setupDepositService(t *testing.T) (*Service, *mocks.MockChain, *mocks.MockSQS) {
@@ -31,8 +40,7 @@ func setupDepositService(t *testing.T) (*Service, *mocks.MockChain, *mocks.MockS
 	registry.RegisterChain(mockChain)
 
 	mockSQS := mocks.NewMockSQS()
-	webhookSvc := webhook.NewService(nil) // nil SQS — enqueue will skip send
-	svc := NewService(nil, registry, webhookSvc)
+	svc := newDepositSvc(registry, newWebhookSvc())
 	return svc, mockChain, mockSQS
 }
 
@@ -46,7 +54,7 @@ func TestScanLatestBlocks_NoNewBlocks(t *testing.T) {
 	}
 	registry.RegisterChain(mockChain)
 
-	svc := NewService(nil, registry, nil)
+	svc := newDepositSvc(registry, nil)
 	err := svc.ScanLatestBlocks(context.Background(), "eth")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -61,7 +69,7 @@ func TestScanLatestBlocks_NoNewBlocks(t *testing.T) {
 func TestScanLatestBlocks_UnknownChain(t *testing.T) {
 	mocks.TestDB(t)
 	registry := chain.NewRegistry()
-	svc := NewService(nil, registry, nil)
+	svc := newDepositSvc(registry, nil)
 
 	err := svc.ScanLatestBlocks(context.Background(), "dogecoin")
 	if err == nil {
@@ -80,7 +88,7 @@ func TestProcessTransfer_MatchesAddress(t *testing.T) {
 	w := mocks.InsertWallet(t, "eth")
 	addr := mocks.InsertAddress(t, w.ID, "eth", "0xuser_deposit_addr", "user_123", 0)
 
-	svc := NewService(nil, registry, webhook.NewService(nil))
+	svc := newDepositSvc(registry, newWebhookSvc())
 
 	transfer := types.DetectedTransfer{
 		TxHash: "0xdeposithash123", BlockNumber: 100, BlockHash: "0xblock",
@@ -118,7 +126,7 @@ func TestProcessTransfer_IgnoresUnknownAddress(t *testing.T) {
 	mockChain := mocks.NewMockChain("eth")
 	registry.RegisterChain(mockChain)
 
-	svc := NewService(nil, registry, nil)
+	svc := newDepositSvc(registry, nil)
 
 	transfer := types.DetectedTransfer{
 		TxHash: "0xignored", To: "0xunknown_address", Amount: big.NewInt(100), Asset: "eth",
@@ -148,7 +156,7 @@ func TestProcessTransfer_Dedup(t *testing.T) {
 	w := mocks.InsertWallet(t, "eth")
 	addr := mocks.InsertAddress(t, w.ID, "eth", "0xdedup_addr", "user_dedup", 0)
 
-	svc := NewService(nil, registry, webhook.NewService(nil))
+	svc := newDepositSvc(registry, newWebhookSvc())
 
 	transfer := types.DetectedTransfer{
 		TxHash: "0xsametx", BlockNumber: 100, To: addr.Address,
@@ -178,7 +186,7 @@ func TestProcessTransfer_TokenDeposit(t *testing.T) {
 	w := mocks.InsertWallet(t, "eth")
 	addr := mocks.InsertAddress(t, w.ID, "eth", "0xtoken_addr", "user_token", 0)
 
-	svc := NewService(nil, registry, webhook.NewService(nil))
+	svc := newDepositSvc(registry, newWebhookSvc())
 
 	token := types.Token{Symbol: "usdt", Contract: "0xdAC17F", Decimals: 6, ChainID: "eth"}
 	transfer := mocks.MakeTokenTransfer("0xtokentx", "0xfrom", addr.Address, 500000, token)
@@ -209,7 +217,7 @@ func TestUpdateConfirmations(t *testing.T) {
 	// Insert a pending deposit at block 100
 	insertedTx := mocks.InsertTransaction(t, w.ID, nil, "eth", "deposit", "pending", "eth", "1000", 100)
 
-	svc := NewService(nil, registry, webhook.NewService(nil))
+	svc := newDepositSvc(registry, newWebhookSvc())
 
 	// Current block = 101 → 1 conf → confirming
 	svc.updateConfirmations(context.Background(), "eth", mockChain, 101)

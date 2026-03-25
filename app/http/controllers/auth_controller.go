@@ -7,9 +7,10 @@ import (
 	"github.com/goravel/framework/contracts/http"
 	"github.com/goravel/framework/facades"
 
-	mails "github.com/macromarkets/vault/app/mails"
-	"github.com/macromarkets/vault/app/models"
-	authsvc "github.com/macromarkets/vault/app/services/auth"
+	"github.com/macrowallets/waas/app/container"
+	mails "github.com/macrowallets/waas/app/mails"
+	"github.com/macrowallets/waas/app/models"
+	authsvc "github.com/macrowallets/waas/app/services/auth"
 )
 
 var authService = authsvc.NewService()
@@ -34,10 +35,8 @@ func Register(ctx http.Context) http.Response {
 		return ctx.Response().Json(http.StatusBadRequest, http.Json{"error": "email and password are required"})
 	}
 
-	// Check for existing user
-	var existing models.User
-	facades.Orm().Query().Where("email = ?", req.Email).First(&existing)
-	if existing.ID != uuid.Nil {
+	existing, _ := container.Get().UserRepo.FindByEmail(req.Email)
+	if existing != nil {
 		return ctx.Response().Json(http.StatusConflict, http.Json{"error": "email already in use"})
 	}
 
@@ -53,7 +52,7 @@ func Register(ctx http.Context) http.Response {
 		FullName:     req.FullName,
 		Status:       "active",
 	}
-	if err := facades.Orm().Query().Create(user); err != nil {
+	if err := container.Get().UserRepo.Create(user); err != nil {
 		return ctx.Response().Json(http.StatusInternalServerError, http.Json{"error": "failed to create user"})
 	}
 
@@ -84,11 +83,11 @@ func Login(ctx http.Context) http.Response {
 		return ctx.Response().Json(http.StatusBadRequest, http.Json{"error": "invalid request body"})
 	}
 
-	var user models.User
-	facades.Orm().Query().Where("email = ?", req.Email).First(&user)
-	if user.ID == uuid.Nil {
+	userPtr, _ := container.Get().UserRepo.FindByEmail(req.Email)
+	if userPtr == nil {
 		return ctx.Response().Json(http.StatusUnauthorized, http.Json{"error": "invalid credentials"})
 	}
+	user := *userPtr
 
 	if !authService.CheckPassword(req.Password, user.PasswordHash) {
 		return ctx.Response().Json(http.StatusUnauthorized, http.Json{"error": "invalid credentials"})
@@ -98,7 +97,7 @@ func Login(ctx http.Context) http.Response {
 		// Issue a short-lived partial token — the client must call /auth/2fa/verify
 		partialToken, _ := facades.Auth(ctx).LoginUsingID(user.ID.String())
 		return ctx.Response().Json(http.StatusOK, http.Json{
-			"requires_2fa": true,
+			"requires_2fa":  true,
 			"partial_token": partialToken,
 		})
 	}
@@ -114,7 +113,7 @@ func Login(ctx http.Context) http.Response {
 		TokenHash: refreshHash,
 		ExpiresAt: time.Now().Add(30 * 24 * time.Hour),
 	}
-	_ = facades.Orm().Query().Create(rt)
+	_ = container.Get().RefreshTokenRepo.Create(rt)
 
 	return ctx.Response().Json(http.StatusOK, http.Json{
 		"access_token":  accessToken,
@@ -156,26 +155,21 @@ func VerifyTwoFactor(ctx http.Context) http.Response {
 		return ctx.Response().Json(http.StatusUnauthorized, http.Json{"error": "invalid token subject"})
 	}
 
-	var user models.User
-	facades.Orm().Query().Where("id = ?", userID).First(&user)
-	if user.ID == uuid.Nil {
+	userPtr, _ := container.Get().UserRepo.FindByID(userID)
+	if userPtr == nil {
 		return ctx.Response().Json(http.StatusUnauthorized, http.Json{"error": "user not found"})
 	}
+	user := *userPtr
 
 	verified := false
 	if req.Code != "" {
 		verified = authService.VerifyTOTP(user.TotpSecret, req.Code)
 	}
 	if !verified && req.RecoveryCode != "" {
-		// Find an unused recovery code that matches
-		var codes []models.TotpRecoveryCode
-		_ = facades.Orm().Query().
-			Where("user_id = ? AND used_at IS NULL", user.ID).
-			Find(&codes)
+		codes, _ := container.Get().TotpRecoveryCodeRepo.FindUnusedByUserID(user.ID)
 		for _, c := range codes {
 			if authService.VerifyRecoveryCode(req.RecoveryCode, c.CodeHash) {
-				now := time.Now()
-				_, _ = facades.Orm().Query().Model(&c).Where("id = ?", c.ID).Update("used_at", now)
+				_ = container.Get().TotpRecoveryCodeRepo.MarkUsed(c.ID)
 				verified = true
 				break
 			}
@@ -195,7 +189,7 @@ func VerifyTwoFactor(ctx http.Context) http.Response {
 		TokenHash: refreshHash,
 		ExpiresAt: time.Now().Add(30 * 24 * time.Hour),
 	}
-	_ = facades.Orm().Query().Create(rt)
+	_ = container.Get().RefreshTokenRepo.Create(rt)
 
 	return ctx.Response().Json(http.StatusOK, http.Json{
 		"access_token":  accessToken,
@@ -224,11 +218,7 @@ func RefreshToken(ctx http.Context) http.Response {
 		return ctx.Response().Json(http.StatusBadRequest, http.Json{"error": "refresh_token is required"})
 	}
 
-	// Find a matching, non-expired, non-revoked refresh token
-	var tokens []models.RefreshToken
-	_ = facades.Orm().Query().
-		Where("expires_at > ? AND revoked_at IS NULL", time.Now()).
-		Find(&tokens)
+	tokens, _ := container.Get().RefreshTokenRepo.FindValidTokens()
 
 	var matched *models.RefreshToken
 	for i := range tokens {
@@ -241,9 +231,7 @@ func RefreshToken(ctx http.Context) http.Response {
 		return ctx.Response().Json(http.StatusUnauthorized, http.Json{"error": "invalid or expired refresh token"})
 	}
 
-	// Revoke old token
-	now := time.Now()
-	_, _ = facades.Orm().Query().Model(matched).Where("id = ?", matched.ID).Update("revoked_at", now)
+	_ = container.Get().RefreshTokenRepo.RevokeByID(matched.ID)
 
 	accessToken, _ := facades.Auth(ctx).LoginUsingID(matched.UserID.String())
 	rawRefresh, _ := authService.GenerateRandomToken()
@@ -254,7 +242,7 @@ func RefreshToken(ctx http.Context) http.Response {
 		TokenHash: refreshHash,
 		ExpiresAt: time.Now().Add(30 * 24 * time.Hour),
 	}
-	_ = facades.Orm().Query().Create(newRT)
+	_ = container.Get().RefreshTokenRepo.Create(newRT)
 
 	return ctx.Response().Json(http.StatusOK, http.Json{
 		"access_token":  accessToken,
@@ -274,11 +262,7 @@ func RefreshToken(ctx http.Context) http.Response {
 func Logout(ctx http.Context) http.Response {
 	userID := ctx.Value("user_id")
 	if uid, ok := userID.(uuid.UUID); ok {
-		now := time.Now()
-		_, _ = facades.Orm().Query().
-			Model(&models.RefreshToken{}).
-			Where("user_id = ? AND revoked_at IS NULL", uid).
-			Update("revoked_at", now)
+		_ = container.Get().RefreshTokenRepo.RevokeAllForUser(uid)
 	}
 	_ = facades.Auth(ctx).Logout()
 	return ctx.Response().NoContent()
@@ -301,11 +285,11 @@ func ForgotPassword(ctx http.Context) http.Response {
 	}
 
 	// Always return 200 to avoid user enumeration
-	var user models.User
-	facades.Orm().Query().Where("email = ?", req.Email).First(&user)
-	if user.ID == uuid.Nil {
+	userPtr, _ := container.Get().UserRepo.FindByEmail(req.Email)
+	if userPtr == nil {
 		return ctx.Response().Json(http.StatusOK, http.Json{"message": "if that address is registered, you will receive a reset link"})
 	}
+	user := *userPtr
 
 	raw, _ := authService.GenerateRandomToken()
 	hash := authService.HashToken(raw)
@@ -315,7 +299,7 @@ func ForgotPassword(ctx http.Context) http.Response {
 		TokenHash: hash,
 		ExpiresAt: time.Now().Add(1 * time.Hour),
 	}
-	_ = facades.Orm().Query().Create(prt)
+	_ = container.Get().PasswordResetTokenRepo.Create(prt)
 
 	resetLink := "https://vault.app/reset-password?token=" + raw
 	_ = facades.Mail().To([]string{user.Email}).Send(&mails.PasswordResetMail{To: user.Email, ResetLink: resetLink})
@@ -343,10 +327,7 @@ func ResetPassword(ctx http.Context) http.Response {
 		return ctx.Response().Json(http.StatusBadRequest, http.Json{"error": "token and new_password are required"})
 	}
 
-	var tokens []models.PasswordResetToken
-	_ = facades.Orm().Query().
-		Where("expires_at > ? AND used_at IS NULL", time.Now()).
-		Find(&tokens)
+	tokens, _ := container.Get().PasswordResetTokenRepo.FindValidTokens()
 
 	var matched *models.PasswordResetToken
 	for i := range tokens {
@@ -364,12 +345,9 @@ func ResetPassword(ctx http.Context) http.Response {
 		return ctx.Response().Json(http.StatusInternalServerError, http.Json{"error": "failed to hash password"})
 	}
 
-	_, _ = facades.Orm().Query().Model(&models.User{}).
-		Where("id = ?", matched.UserID).
-		Update("password_hash", hash)
+	_ = container.Get().UserRepo.UpdatePasswordHash(matched.UserID, hash)
 
-	now := time.Now()
-	_, _ = facades.Orm().Query().Model(matched).Where("id = ?", matched.ID).Update("used_at", now)
+	_ = container.Get().PasswordResetTokenRepo.MarkUsed(matched.ID)
 
 	return ctx.Response().Json(http.StatusOK, http.Json{"message": "password reset successfully"})
 }

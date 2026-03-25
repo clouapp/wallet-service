@@ -3,7 +3,7 @@ package chain
 import (
 	"testing"
 
-	"github.com/macromarkets/vault/pkg/types"
+	"github.com/macrowallets/waas/pkg/types"
 )
 
 func TestSolana_ValidateAddress(t *testing.T) {

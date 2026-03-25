@@ -4,7 +4,7 @@ import (
 	"github.com/goravel/framework/contracts/foundation"
 	"github.com/goravel/framework/facades"
 
-	"github.com/macromarkets/vault/database/migrations"
+	"github.com/macrowallets/waas/database/migrations"
 )
 
 type MigrationsServiceProvider struct{}

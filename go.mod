@@ -1,4 +1,4 @@
-module github.com/macromarkets/vault
+module github.com/macrowallets/waas
 
 go 1.25.0
 
@@ -18,7 +18,7 @@ require (
 	github.com/jmoiron/sqlx v1.4.0 // indirect
 
 	// Redis (for address cache only — queues are SQS)
-	github.com/redis/go-redis/v9 v9.5.1
+	github.com/redis/go-redis/v9 v9.17.3
 )
 
 require (
@@ -119,6 +119,7 @@ require (
 	github.com/gookit/validate v1.5.6 // indirect
 	github.com/goravel/file-rotatelogs/v2 v2.4.2 // indirect
 	github.com/goravel/postgres v1.17.1 // indirect
+	github.com/goravel/redis v1.17.1 // indirect
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.27.3 // indirect
 	github.com/hashicorp/errwrap v1.1.0 // indirect
 	github.com/hashicorp/go-multierror v1.1.1 // indirect
@@ -132,6 +133,7 @@ require (
 	github.com/jessevdk/go-flags v1.4.0 // indirect
 	github.com/jinzhu/inflection v1.0.0 // indirect
 	github.com/jinzhu/now v1.1.5 // indirect
+	github.com/joho/godotenv v1.5.1 // indirect
 	github.com/josharian/intern v1.0.0 // indirect
 	github.com/jrick/logrotate v1.0.0 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
