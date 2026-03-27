@@ -41,6 +41,27 @@ Parameters:
     Type: String
     Default: "local:dev-master-key"
 
+  EtherscanAPIKey:
+    Type: String
+    Default: ""
+
+  AlchemyAuthToken:
+    Type: String
+    Default: ""
+
+  HeliusAPIKey:
+    Type: String
+    Default: ""
+
+  QuickNodeAPIKey:
+    Type: String
+    Default: ""
+
+  WebhookIngestBaseURL:
+    Type: String
+    Default: ""
+    Description: Public base URL for provider webhook ingest endpoints (e.g. API Gateway URL)
+
 # ---------------------------------------------------------------------------
 # Globals
 # ---------------------------------------------------------------------------
@@ -63,6 +84,10 @@ Globals:
         MASTER_KEY_REF: !Ref MasterKeyRef
         WEBHOOK_QUEUE_URL: !Ref WebhookQueue
         WITHDRAWAL_QUEUE_URL: !Ref WithdrawalQueue
+        ALCHEMY_AUTH_TOKEN: !Ref AlchemyAuthToken
+        HELIUS_API_KEY: !Ref HeliusAPIKey
+        QUICKNODE_API_KEY: !Ref QuickNodeAPIKey
+        WEBHOOK_INGEST_BASE_URL: !Ref WebhookIngestBaseURL
 
 # ---------------------------------------------------------------------------
 # Resources
@@ -186,6 +211,64 @@ Resources:
             BatchSize: 5
             FunctionResponseTypes:
               - ReportBatchItemFailures
+
+  # --- Confirmation tracker (EVM confirmations via Etherscan block height) ---
+  ConfirmationTrackerFunction:
+    Type: AWS::Serverless::Function
+    Metadata:
+      BuildMethod: go1.x
+    Properties:
+      FunctionName: !Sub "vault-confirmation-tracker-${Environment}"
+      Handler: bootstrap
+      Runtime: provided.al2023
+      Architectures: [arm64]
+      CodeUri: .
+      MemorySize: 256
+      Timeout: 60
+      Environment:
+        Variables:
+          LAMBDA_MODE: confirmation_tracker
+          ENV: !Ref Environment
+          DATABASE_URL: !Ref DatabaseURL
+          REDIS_URL: !Ref RedisURL
+          ETHERSCAN_API_KEY: !Ref EtherscanAPIKey
+      Events:
+        Schedule:
+          Type: Schedule
+          Properties:
+            Name: !Sub "vault-confirmation-tracker-${Environment}"
+            Schedule: rate(1 minute)
+            Enabled: true
+
+  # --- Webhook reconciler (daily drift check vs chain providers) ---
+  WebhookReconcilerFunction:
+    Type: AWS::Serverless::Function
+    Metadata:
+      BuildMethod: go1.x
+    Properties:
+      FunctionName: !Sub "vault-webhook-reconciler-${Environment}"
+      Handler: bootstrap
+      Runtime: provided.al2023
+      Architectures: [arm64]
+      CodeUri: .
+      MemorySize: 256
+      Timeout: 300
+      Environment:
+        Variables:
+          LAMBDA_MODE: webhook_reconciler
+          ENV: !Ref Environment
+          DATABASE_URL: !Ref DatabaseURL
+          REDIS_URL: !Ref RedisURL
+          ALCHEMY_AUTH_TOKEN: !Ref AlchemyAuthToken
+          HELIUS_API_KEY: !Ref HeliusAPIKey
+          QUICKNODE_API_KEY: !Ref QuickNodeAPIKey
+      Events:
+        DailySchedule:
+          Type: Schedule
+          Properties:
+            Name: !Sub "vault-webhook-reconciler-${Environment}"
+            Schedule: rate(1 day)
+            Enabled: true
 
   # --- Withdrawal Processor ---
   WithdrawalWorkerFunction:

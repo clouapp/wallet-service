@@ -14,6 +14,7 @@ type TransactionRepository interface {
 	FindByIdempotencyKey(key string) (*models.Transaction, error)
 	FindByWallet(walletID uuid.UUID, txType, status string, limit, offset int) ([]models.Transaction, int64, error)
 	CountByChainAndTxHash(chainID, txHash, txType string) (int64, error)
+	CountByChainTxHashAndLogIndex(chainID, txHash string, logIndex int, txType string) (int64, error)
 	FindPendingByChain(chainID string) ([]models.Transaction, error)
 	UpdateFields(id uuid.UUID, fields map[string]interface{}) error
 	List(chainID, txType, status, userID string, limit, offset int) ([]models.Transaction, int64, error)
@@ -100,6 +101,16 @@ func (r *transactionRepository) CountByChainAndTxHash(chainID, txHash, txType st
 		Model(&models.Transaction{}).
 		Where("chain", chainID).
 		Where("tx_hash", txHash).
+		Where("tx_type", txType).
+		Count()
+}
+
+func (r *transactionRepository) CountByChainTxHashAndLogIndex(chainID, txHash string, logIndex int, txType string) (int64, error) {
+	return facades.Orm().Query().
+		Model(&models.Transaction{}).
+		Where("chain", chainID).
+		Where("tx_hash", txHash).
+		Where("log_index", logIndex).
 		Where("tx_type", txType).
 		Count()
 }

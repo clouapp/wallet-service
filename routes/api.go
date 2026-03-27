@@ -50,8 +50,15 @@ func Api() {
 			String(http.StatusOK, html)
 	})
 
+	// Inbound webhooks from chain providers (per-subscription signing secret; no session/API token auth).
+	facades.Route().Prefix("/v1/webhooks/ingest").Group(func(router route.Router) {
+		router.Post("/{provider}/{chainID}", controllers.HandleWebhookIngest)
+	})
+
+	noCache := middleware.CacheControl(0)
+
 	// Auth routes — no HMAC, uses JWT
-	facades.Route().Prefix("/v1/auth").Group(func(router route.Router) {
+	facades.Route().Prefix("/v1/auth").Middleware(noCache).Group(func(router route.Router) {
 		router.Post("/register", controllers.Register)
 		router.Post("/login", controllers.Login)
 		router.Post("/2fa/verify", controllers.VerifyTwoFactor)
@@ -60,20 +67,21 @@ func Api() {
 		router.Post("/recover/confirm", controllers.ResetPassword)
 	})
 	// Logout requires session auth — separate group
-	facades.Route().Prefix("/v1/auth").Middleware(middleware.SessionAuth).Group(func(router route.Router) {
+	facades.Route().Prefix("/v1/auth").Middleware(middleware.SessionAuth, noCache).Group(func(router route.Router) {
 		router.Post("/logout", controllers.Logout)
 	})
 
 	// User routes — JWT auth
-	facades.Route().Prefix("/v1/users").Middleware(middleware.SessionAuth).Group(func(router route.Router) {
+	facades.Route().Prefix("/v1/users").Middleware(middleware.SessionAuth, noCache).Group(func(router route.Router) {
 		router.Get("/me", controllers.GetMe)
 		router.Patch("/me", controllers.UpdateMe)
 		router.Post("/me/password", controllers.ChangePassword)
 		router.Get("/me/accounts", controllers.ListMyAccounts)
+		router.Patch("/me/default-account", controllers.UpdateDefaultAccount)
 	})
 
 	// Account routes — JWT auth + account membership
-	facades.Route().Prefix("/v1/accounts").Middleware(middleware.SessionAuth).Group(func(router route.Router) {
+	facades.Route().Prefix("/v1/accounts").Middleware(middleware.SessionAuth, noCache).Group(func(router route.Router) {
 		router.Post("", controllers.CreateAccount)
 		router.Prefix("/{accountId}").Middleware(middleware.AccountContext).Group(func(r route.Router) {
 			r.Get("", controllers.GetAccount)
@@ -93,8 +101,16 @@ func Api() {
 		})
 	})
 
-	// Wallet sub-resource routes — JWT auth
-	facades.Route().Prefix("/v1/wallets").Middleware(middleware.SessionAuth).Group(func(router route.Router) {
+	// Chain routes — JWT auth + account header for environment filtering
+	facades.Route().Prefix("/v1/chains").Middleware(middleware.SessionAuth, middleware.AccountHeader, noCache).Group(func(router route.Router) {
+		router.Get("", controllers.ListChains)
+		router.Get("/{chainId}", controllers.GetChain)
+		router.Get("/{chainId}/tokens", controllers.ListChainTokens)
+		router.Get("/{chainId}/resources", controllers.ListChainResources)
+	})
+
+	// Wallet sub-resource routes — JWT auth + account header
+	facades.Route().Prefix("/v1/wallets").Middleware(middleware.SessionAuth, middleware.AccountHeader, noCache).Group(func(router route.Router) {
 		router.Get("", controllers.ListWallets)
 		router.Post("", controllers.CreateWalletAdmin)
 		router.Get("/{walletId}", controllers.GetWallet)
@@ -144,7 +160,7 @@ func Api() {
 
 	// External API — account JWT token auth (Bearer JWT issued via /v1/accounts/{id}/tokens)
 	// Clients optionally add X-Signature: HMAC-SHA256(bearer_token, body) for request integrity.
-	facades.Route().Prefix("/api/v1").Middleware(middleware.APITokenAuth).Group(func(router route.Router) {
+	facades.Route().Prefix("/api/v1").Middleware(middleware.APITokenAuth, noCache).Group(func(router route.Router) {
 		// Chains
 		router.Get("/chains", controllers.ListChains)
 

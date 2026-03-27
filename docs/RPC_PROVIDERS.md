@@ -292,5 +292,46 @@ For a production wallet service handling **10M requests/month**:
 
 ---
 
+## Webhook Providers (Deposit Monitoring)
+
+Incoming **deposit detection** is driven by **provider webhooks** (push notifications to your API), not by high-frequency RPC block polling. You still use the RPC URLs above for **wallet balance checks**, **transaction broadcast**, and other on-demand reads—so overall RPC volume drops sharply compared to a poll-every-block scanner.
+
+### Providers by chain
+
+| Role | Provider | Chains | Notes |
+|------|----------|--------|--------|
+| EVM deposits | [Alchemy](https://www.alchemy.com) | Ethereum, Polygon (mainnet + testnets) | Notify / Address Activity webhooks |
+| Solana deposits | [Helius](https://www.helius.dev) | Solana mainnet & devnet | Enhanced webhooks (e.g. enhanced / enhancedDevnet) |
+| Bitcoin deposits | [QuickNode](https://www.quicknode.com) | Bitcoin mainnet & testnet | Streams (webhook delivery to your HTTPS URL) |
+
+### Webhook documentation
+
+- **Alchemy Notify**: [Address Activity & Notify API](https://docs.alchemy.com/reference/notify-api-quickstart)
+- **Helius**: [Webhooks](https://docs.helius.dev/webhooks-and-websockets/webhooks)
+- **QuickNode Streams**: [Streams overview](https://www.quicknode.com/docs/streams)
+
+Subscriptions are created through each provider’s dashboard or API; they are **not** inserted by database seeds. Point webhook destinations at your public **ingest** base URL (see `.env.example`: `WEBHOOK_INGEST_BASE_URL`).
+
+### RPC usage after webhooks
+
+- **Deposits**: primary signal from webhooks; reconcilers may use provider APIs for drift checks.
+- **RPC**: balances, fee estimation, `eth_getTransactionReceipt`-style flows where needed, and **broadcasting signed withdrawals**.
+
+### Cost estimation (webhook-first deposits)
+
+With deposit monitoring off the hot RPC path, you can often stay on **lower RPC tiers** than a 10M+/month polling workload. Ballpark for a mid-size custody stack (same four chains), assuming webhooks cover deposit detection and RPC is moderate:
+
+| Component | Typical approach | Indicative monthly cost |
+|-----------|------------------|-------------------------|
+| EVM RPC (Alchemy) | Free or Growth for reads + broadcast | $0–$49 |
+| Polygon RPC (Alchemy) | Same app / key as ETH where possible | $0–$49 |
+| Solana RPC (Helius) | Developer or lower if not polling blocks | ~$0–$29 |
+| Bitcoin RPC (QuickNode) | Light REST for balance / broadcast | $0–$49 |
+| Webhook / Streams | Provider-specific (often included or low fixed add-on) | Varies |
+
+**Previous** “10M RPC requests/month” style estimates assumed aggressive polling; webhook-first flows usually **reduce** RPC spend; add any **paid Streams / webhook** SKUs from QuickNode or Alchemy if your plan charges for them.
+
+---
+
 **Last Updated**: March 2026
 **Maintained By**: Vault Custody Service Team

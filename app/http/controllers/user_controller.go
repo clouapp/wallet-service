@@ -141,6 +141,52 @@ func ListMyAccounts(ctx http.Context) http.Response {
 	return ctx.Response().Json(http.StatusOK, pagination.Response(accounts, total, limit, offset))
 }
 
+// UpdateDefaultAccount godoc
+// @Summary      Set default account
+// @Description  Updates the authenticated user's default account
+// @Tags         User
+// @Security     BearerAuth
+// @Accept       json
+// @Produce      json
+// @Param        request  body      UpdateDefaultAccountRequest  true  "Default account payload"
+// @Success      200      {object}  map[string]interface{}
+// @Failure      400      {object}  ErrorResponse
+// @Failure      403      {object}  ErrorResponse
+// @Router       /users/me/default-account [patch]
+func UpdateDefaultAccount(ctx http.Context) http.Response {
+	userID, ok := ctx.Value("user_id").(uuid.UUID)
+	if !ok || userID == uuid.Nil {
+		return ctx.Response().Json(http.StatusUnauthorized, http.Json{"error": "unauthenticated"})
+	}
+
+	var req UpdateDefaultAccountRequest
+	if err := ctx.Request().Bind(&req); err != nil || req.AccountID == "" {
+		return ctx.Response().Json(http.StatusBadRequest, http.Json{"error": "account_id is required"})
+	}
+
+	accountID, err := uuid.Parse(req.AccountID)
+	if err != nil {
+		return ctx.Response().Json(http.StatusBadRequest, http.Json{"error": "invalid account_id"})
+	}
+
+	au, err := container.Get().AccountUserRepo.FindByAccountAndUser(accountID, userID)
+	if err != nil || au == nil {
+		return ctx.Response().Json(http.StatusForbidden, http.Json{"error": "not a member of this account"})
+	}
+
+	userPtr, _ := container.Get().UserRepo.FindByID(userID)
+	if userPtr == nil {
+		return ctx.Response().Json(http.StatusNotFound, http.Json{"error": "user not found"})
+	}
+	userPtr.DefaultAccountID = &accountID
+	if err := container.Get().UserRepo.UpdateDefaultAccountID(userPtr.ID, &accountID); err != nil {
+		return ctx.Response().Json(http.StatusInternalServerError, http.Json{"error": "failed to update default account"})
+	}
+
+	account, _ := container.Get().AccountRepo.FindByID(accountID)
+	return ctx.Response().Json(http.StatusOK, http.Json{"account": account})
+}
+
 // ---- Request/Response types ----
 
 type UpdateMeRequest struct {
@@ -150,6 +196,10 @@ type UpdateMeRequest struct {
 type ChangePasswordRequest struct {
 	CurrentPassword string `json:"current_password"`
 	NewPassword     string `json:"new_password"`
+}
+
+type UpdateDefaultAccountRequest struct {
+	AccountID string `json:"account_id" example:"550e8400-e29b-41d4-a716-446655440000"`
 }
 
 type AccountListResponse struct {

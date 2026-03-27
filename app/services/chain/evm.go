@@ -24,6 +24,8 @@ type EVMConfig struct {
 	NetworkID     int64
 	RPCURL        string
 	Confirmations uint64
+	// ERC20Tokens lists registered ERC-20s for deposit log matching (from DB at boot).
+	ERC20Tokens []types.Token
 }
 
 // ---------------------------------------------------------------------------
@@ -213,7 +215,7 @@ func (a *EVMLive) scanERC20(ctx context.Context, blockNum uint64, blockHash stri
 
 		// Match against known tokens — O(n) but n is small (2-4 tokens per chain)
 		contractLower := strings.ToLower(log.Address)
-		for _, t := range AllTokens() {
+		for _, t := range a.cfg.ERC20Tokens {
 			if t.ChainID == a.cfg.ChainIDStr && strings.ToLower(t.Contract) == contractLower {
 				tokenCopy := t
 				result = append(result, types.DetectedTransfer{

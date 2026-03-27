@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   # =============================================================================
   # PostgreSQL Database
@@ -9,17 +7,16 @@ services:
     container_name: vault-postgres
     restart: unless-stopped
     environment:
-      POSTGRES_USER: vault
-      POSTGRES_PASSWORD: vault
-      POSTGRES_DB: vault
+      POSTGRES_USER: ${POSTGRES_USER:-vault}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-vault}
+      POSTGRES_DB: ${POSTGRES_DB:-vault}
       POSTGRES_INITDB_ARGS: "--encoding=UTF8"
     ports:
-      - "5432:5432"
+      - "${POSTGRES_PORT:-5432}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ./database/migrations:/docker-entrypoint-initdb.d:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U vault -d vault"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-vault} -d ${POSTGRES_DB:-vault}"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -36,7 +33,7 @@ services:
     restart: unless-stopped
     command: redis-server --appendonly yes --requirepass ""
     ports:
-      - "6379:6379"
+      - "${REDIS_PORT:-6379}:6379"
     volumes:
       - redis_data:/data
     healthcheck:
@@ -61,7 +58,7 @@ services:
       PGADMIN_CONFIG_SERVER_MODE: 'False'
       PGADMIN_CONFIG_MASTER_PASSWORD_REQUIRED: 'False'
     ports:
-      - "5050:80"
+      - "${PGADMIN_PORT:-5050}:80"
     volumes:
       - pgadmin_data:/var/lib/pgadmin
     depends_on:
@@ -80,31 +77,20 @@ services:
     container_name: vault-api
     restart: unless-stopped
     environment:
-      # Application
       ENV: dev
-      PORT: 8080
-
-      # Database
-      DATABASE_URL: postgres://vault:vault@postgres:5432/vault?sslmode=disable
-
-      # Redis
+      PORT: ${PORT:-2002}
+      DATABASE_URL: postgres://${POSTGRES_USER:-vault}:${POSTGRES_PASSWORD:-vault}@postgres:5432/${POSTGRES_DB:-vault}?sslmode=disable
       REDIS_URL: redis://redis:6379
-
-      # RPC Endpoints (use your actual values from .env.dev)
       ETH_RPC_URL: ${ETH_RPC_URL:-https://eth-mainnet.g.alchemy.com/v2/demo}
       POLYGON_RPC_URL: ${POLYGON_RPC_URL:-https://polygon-mainnet.g.alchemy.com/v2/demo}
       SOLANA_RPC_URL: ${SOLANA_RPC_URL:-https://api.mainnet-beta.solana.com}
       BTC_RPC_URL: ${BTC_RPC_URL:-https://blockstream.info/api}
-
-      # Security
       API_KEY_SECRET: ${API_KEY_SECRET:-dev-secret-key-change-in-production}
       MASTER_KEY_REF: ${MASTER_KEY_REF:-local:dev-master-key}
-
-      # SQS Queues (empty for local dev - use in-memory fallback)
       WEBHOOK_QUEUE_URL: ""
       WITHDRAWAL_QUEUE_URL: ""
     ports:
-      - "8080:8080"
+      - "${PORT:-2002}:${PORT:-2002}"
     depends_on:
       postgres:
         condition: service_healthy
@@ -130,8 +116,8 @@ services:
       - DEBUG=0
       - DOCKER_HOST=unix:///var/run/docker.sock
     ports:
-      - "4566:4566"
-      - "4571:4571"
+      - "${LOCALSTACK_PORT:-4566}:4566"
+      - "${LOCALSTACK_PORT_ALT:-4571}:4571"
     volumes:
       - localstack_data:/var/lib/localstack
       - /var/run/docker.sock:/var/run/docker.sock
@@ -154,7 +140,7 @@ services:
       target: builder
     container_name: vault-test-runner
     environment:
-      TEST_DATABASE_URL: postgres://vault:vault@postgres:5432/vault_test?sslmode=disable
+      TEST_DATABASE_URL: postgres://${POSTGRES_USER:-vault}:${POSTGRES_PASSWORD:-vault}@postgres:5432/${POSTGRES_DB:-vault}_test?sslmode=disable
       REDIS_URL: redis://redis:6379
     command: go test ./... -v -race -count=1
     depends_on:

@@ -16,6 +16,7 @@ type Transaction struct {
 	Chain          string     `gorm:"type:varchar(50);not null;index" json:"chain"`
 	TxType         string     `gorm:"type:varchar(20);not null;index" json:"tx_type"`
 	TxHash         string     `gorm:"type:varchar(255);index" json:"tx_hash"`
+	LogIndex       int        `gorm:"type:int;default:-1" json:"log_index"`
 	FromAddress    string     `gorm:"type:varchar(255)" json:"from_address"`
 	ToAddress      string     `gorm:"type:varchar(255);not null" json:"to_address"`
 	Amount         string     `gorm:"type:varchar(100);not null" json:"amount"`

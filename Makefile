@@ -1,4 +1,4 @@
-.PHONY: help build clean run dev stop deploy deploy-guided delete validate local test test-coverage test-race test-verbose lint fmt vet security migrate migrate-rollback migrate-status migrate-fresh db-reset db-seed docker-up docker-down docker-logs docker-build docker-test ecr-login ecr-push logs-api logs-scanner logs-webhook logs-withdrawal dlq-check dlq-replay-webhooks dlq-replay-withdrawals ping env-info swagger-install swagger-generate swagger-fmt deps-install deps-update
+.PHONY: help build clean run dev stop deploy deploy-guided delete validate local test test-coverage test-race test-verbose lint fmt vet security migrate migrate-rollback migrate-status migrate-fresh db-reset db-seed docker-up docker-down docker-logs docker-build docker-test docker-status ecr-login ecr-push logs-api logs-scanner logs-webhook logs-withdrawal dlq-check dlq-replay-webhooks dlq-replay-withdrawals ping env-info swagger-install swagger-generate swagger-fmt deps-install deps-update
 
 # =============================================================================
 # Configuration
@@ -44,6 +44,27 @@ PARAMETER_OVERRIDES = \
 	BtcRpcURL=$(BTC_RPC_URL) \
 	ApiKeySecret=$(API_KEY_SECRET) \
 	MasterKeyRef=$(MASTER_KEY_REF)
+
+# =============================================================================
+# Docker health check — auto-starts postgres + redis when needed
+# =============================================================================
+
+define ensure_docker
+	@if ! docker ps --format '{{.Names}}' | grep -q vault-postgres; then \
+		echo "⚠️  PostgreSQL not running — starting Docker services..."; \
+		$(DOCKER_COMPOSE) up -d postgres redis; \
+		echo "⏳ Waiting for PostgreSQL to accept connections..."; \
+		for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do \
+			docker exec vault-postgres pg_isready -U vault -d vault >/dev/null 2>&1 && break; \
+			sleep 1; \
+		done; \
+		if ! docker exec vault-postgres pg_isready -U vault -d vault >/dev/null 2>&1; then \
+			echo "❌ PostgreSQL failed to start within 15 s"; \
+			exit 1; \
+		fi; \
+		echo "✅ PostgreSQL ready"; \
+	fi
+endef
 
 # =============================================================================
 # Help
@@ -147,10 +168,12 @@ validate: ## Validate SAM template
 # =============================================================================
 
 run: ## Run API server locally (go run)
+	$(call ensure_docker)
 	@echo "🚀 Starting local API server..."
 	@export $$(grep -v '^#' .env.dev | xargs) && APP_KEY=$$(openssl rand -hex 16) go run .
 
 dev: ## Run API server with live reload (requires: go install github.com/air-verse/air@latest)
+	$(call ensure_docker)
 	@echo "🔥 Starting API server with live reload (Air)..."
 	@if [ ! -f "$$(go env GOPATH)/bin/air" ]; then \
 		echo "❌ Air not found. Install with: go install github.com/air-verse/air@latest"; \
@@ -162,7 +185,8 @@ stop: ## Stop running API server (go run or Air)
 	@echo "🛑 Stopping local API server..."
 	@pkill -f "air" 2>/dev/null && echo "  Stopped Air process" || true
 	@pkill -f "go run \." 2>/dev/null && echo "  Stopped go run process" || true
-	@lsof -ti:8080 | xargs kill -9 2>/dev/null && echo "  Killed process on port 8080" || true
+	@API_PORT=$$(grep -E '^PORT=' .env.dev 2>/dev/null | cut -d= -f2); \
+	lsof -ti:$${API_PORT:-2002} | xargs kill -9 2>/dev/null && echo "  Killed process on port $${API_PORT:-2002}" || true
 	@echo "✅ API server stopped"
 
 air-install: ## Install Air live-reload tool
@@ -250,12 +274,15 @@ security: ## Run security scan with gosec
 docker-up: ## Start local development environment (PostgreSQL + Redis)
 	@echo "🐳 Starting local development environment..."
 	$(DOCKER_COMPOSE) up -d
-	@echo "⏳ Waiting for services to be healthy..."
-	@sleep 5
+	@echo "⏳ Waiting for PostgreSQL to accept connections..."
+	@for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do \
+		docker exec vault-postgres pg_isready -U vault -d vault >/dev/null 2>&1 && break; \
+		sleep 1; \
+	done
 	@echo "✅ Development environment ready!"
-	@echo "   PostgreSQL: localhost:5432"
-	@echo "   Redis: localhost:6379"
-	@echo "   PgAdmin: http://localhost:5050"
+	@echo "   PostgreSQL: localhost:$(or $(POSTGRES_PORT),5432)"
+	@echo "   Redis:      localhost:$(or $(REDIS_PORT),6379)"
+	@echo "   PgAdmin:    http://localhost:$(or $(PGADMIN_PORT),5050)"
 
 docker-down: ## Stop local development environment
 	@echo "🛑 Stopping local development environment..."
@@ -298,6 +325,9 @@ docker-redis-cli: ## Open Redis CLI
 	@echo "🐚 Opening Redis CLI..."
 	$(DOCKER_COMPOSE) exec redis redis-cli
 
+docker-status: ## Show status of all vault containers
+	@docker ps -a --filter name=vault --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
+
 # =============================================================================
 # Database Commands
 # =============================================================================
@@ -306,6 +336,7 @@ db-reset: docker-down-volumes docker-up migrate ## Reset database (WARNING: dele
 	@echo "✅ Database reset complete"
 
 db-seed: ## Seed database with test data (admin@vault.dev / Password123!)
+	$(call ensure_docker)
 	@echo "🌱 Seeding database..."
 	@export $$(grep -v '^#' .env | xargs) && go run cmd/seed/main.go
 
@@ -430,7 +461,7 @@ swagger-generate: ## Generate Swagger documentation
 	@echo "📝 Generating Swagger documentation..."
 	swag init -g main.go --output ./docs --parseDependency
 	@echo "✅ Swagger docs generated in ./docs"
-	@echo "   View at: http://localhost:8080/swagger/index.html"
+	@echo "   View at: http://localhost:$(or $(PORT),2002)/swagger/index.html"
 
 swagger-fmt: ## Format Swagger comments
 	@echo "✨ Formatting Swagger comments..."
@@ -442,18 +473,22 @@ swagger-fmt: ## Format Swagger comments
 # =============================================================================
 
 migrate: ## Run pending database migrations
+	$(call ensure_docker)
 	@echo "🔄 Running database migrations..."
 	@export $$(grep -v '^#' .env.dev | xargs) && go run . artisan migrate
 
 migrate-status: ## Show migration status
+	$(call ensure_docker)
 	@echo "📊 Checking migration status..."
 	@export $$(grep -v '^#' .env.dev | xargs) && go run . artisan migrate:status
 
 migrate-rollback: ## Rollback last migration batch
+	$(call ensure_docker)
 	@echo "⏪ Rolling back migrations..."
 	@export $$(grep -v '^#' .env.dev | xargs) && go run . artisan migrate:rollback
 
 migrate-fresh: ## Drop all tables and re-run migrations
+	$(call ensure_docker)
 	@echo "🆕 Dropping tables and running fresh migrations..."
 	@export $$(grep -v '^#' .env.dev | xargs) && go run . artisan migrate:fresh
 

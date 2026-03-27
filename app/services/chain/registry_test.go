@@ -109,25 +109,3 @@ func TestRegistry_TokensForChain_Empty(t *testing.T) {
 		t.Error("expected empty token list for btc")
 	}
 }
-
-func TestAllTokens_Complete(t *testing.T) {
-	tokens := AllTokens()
-	if len(tokens) < 6 {
-		t.Fatalf("expected at least 6 tokens, got %d", len(tokens))
-	}
-	for _, tok := range tokens {
-		if tok.Symbol == "" || tok.Contract == "" || tok.ChainID == "" || tok.Decimals == 0 {
-			t.Errorf("token %s/%s has missing fields", tok.ChainID, tok.Symbol)
-		}
-	}
-	// Verify specific chains have tokens
-	chainCounts := map[string]int{}
-	for _, tok := range tokens {
-		chainCounts[tok.ChainID]++
-	}
-	for _, chain := range []string{"eth", "polygon", "sol"} {
-		if chainCounts[chain] < 2 {
-			t.Errorf("chain %s should have at least 2 tokens, got %d", chain, chainCounts[chain])
-		}
-	}
-}

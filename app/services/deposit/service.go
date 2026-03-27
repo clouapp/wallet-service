@@ -4,13 +4,13 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"time"
 
 	"github.com/google/uuid"
 	"github.com/redis/go-redis/v9"
 
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/repositories"
+	"github.com/macrowallets/waas/app/services/blockheight"
 	"github.com/macrowallets/waas/app/services/chain"
 	"github.com/macrowallets/waas/app/services/webhook"
 	"github.com/macrowallets/waas/pkg/types"
@@ -23,15 +23,25 @@ import (
 // ---------------------------------------------------------------------------
 
 type Service struct {
-	rdb         *redis.Client
-	registry    *chain.Registry
-	webhookSvc  *webhook.Service
-	addressRepo repositories.AddressRepository
-	txRepo      repositories.TransactionRepository
+	rdb                  *redis.Client
+	registry             *chain.Registry
+	webhookSvc           *webhook.Service
+	addressRepo          repositories.AddressRepository
+	txRepo               repositories.TransactionRepository
+	blockHeightProviders map[string]blockheight.Provider
+	heightFailures       map[string]int
 }
 
-func NewService(rdb *redis.Client, registry *chain.Registry, webhookSvc *webhook.Service, addressRepo repositories.AddressRepository, txRepo repositories.TransactionRepository) *Service {
-	return &Service{rdb: rdb, registry: registry, webhookSvc: webhookSvc, addressRepo: addressRepo, txRepo: txRepo}
+func NewService(rdb *redis.Client, registry *chain.Registry, webhookSvc *webhook.Service, addressRepo repositories.AddressRepository, txRepo repositories.TransactionRepository, blockHeightProviders map[string]blockheight.Provider) *Service {
+	return &Service{
+		rdb:                  rdb,
+		registry:             registry,
+		webhookSvc:           webhookSvc,
+		addressRepo:          addressRepo,
+		txRepo:               txRepo,
+		blockHeightProviders: blockHeightProviders,
+		heightFailures:       make(map[string]int),
+	}
 }
 
 // ScanLatestBlocks is the Lambda entry point. Scans new blocks for a chain.
@@ -163,47 +173,6 @@ func (s *Service) processTransfer(ctx context.Context, chainID string, adapter t
 	s.webhookSvc.EnqueueEvent(ctx, tx.ID, types.EventDepositPending, tx)
 
 	slog.Info("deposit detected", "chain", chainID, "tx", transfer.TxHash, "user", addr.ExternalUserID, "asset", asset, "amount", transfer.Amount.String())
-	return nil
-}
-
-func (s *Service) updateConfirmations(ctx context.Context, chainID string, adapter types.Chain, currentBlock uint64) error {
-	pending, err := s.txRepo.FindPendingByChain(chainID)
-	if err != nil {
-		return err
-	}
-
-	for _, tx := range pending {
-		if tx.BlockNumber == 0 {
-			continue
-		}
-		confs := int(currentBlock) - int(tx.BlockNumber)
-		if confs < 0 {
-			confs = 0
-		}
-
-		newStatus := string(types.TxStatusConfirming)
-		var confirmedAt *time.Time
-		if confs >= tx.RequiredConfs {
-			newStatus = string(types.TxStatusConfirmed)
-			now := time.Now().UTC()
-			confirmedAt = &now
-		}
-
-		if err := s.txRepo.UpdateFields(tx.ID, map[string]interface{}{
-			"confirmations": confs,
-			"status":        newStatus,
-			"confirmed_at":  confirmedAt,
-		}); err != nil {
-			slog.Error("update confs", "tx_id", tx.ID, "error", err)
-			continue
-		}
-
-		if newStatus == string(types.TxStatusConfirmed) && tx.Status != string(types.TxStatusConfirmed) {
-			s.webhookSvc.EnqueueEvent(ctx, tx.ID, types.EventDepositConfirmed, tx)
-		} else if tx.Status == string(types.TxStatusPending) && newStatus == string(types.TxStatusConfirming) {
-			s.webhookSvc.EnqueueEvent(ctx, tx.ID, types.EventDepositConfirming, tx)
-		}
-	}
 	return nil
 }
 

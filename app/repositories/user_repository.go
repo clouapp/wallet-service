@@ -11,6 +11,7 @@ type UserRepository interface {
 	FindByEmail(email string) (*models.User, error)
 	FindByID(id uuid.UUID) (*models.User, error)
 	Create(user *models.User) error
+	UpdateDefaultAccountID(id uuid.UUID, defaultAccountID *uuid.UUID) error
 	UpdateFullName(id uuid.UUID, fullName string) error
 	UpdatePasswordHash(id uuid.UUID, hash string) error
 }
@@ -47,6 +48,11 @@ func (r *userRepository) FindByID(id uuid.UUID) (*models.User, error) {
 
 func (r *userRepository) Create(user *models.User) error {
 	return facades.Orm().Query().Create(user)
+}
+
+func (r *userRepository) UpdateDefaultAccountID(id uuid.UUID, defaultAccountID *uuid.UUID) error {
+	_, err := facades.Orm().Query().Model(&models.User{}).Where("id = ?", id).Update("default_account_id", defaultAccountID)
+	return err
 }
 
 func (r *userRepository) UpdateFullName(id uuid.UUID, fullName string) error {

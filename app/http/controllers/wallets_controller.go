@@ -120,6 +120,16 @@ func CreateWalletAdmin(ctx http.Context) http.Response {
 		return ctx.Response().Json(http.StatusBadRequest, http.Json{"error": "passphrases do not match"})
 	}
 
+	if env, ok := ctx.Value("account_environment").(string); ok && env != "" {
+		chainRecord, chainErr := container.Get().ChainRepo.FindByID(req.Chain)
+		if chainErr != nil || chainRecord == nil {
+			return ctx.Response().Json(http.StatusBadRequest, http.Json{"error": "unsupported chain"})
+		}
+		if chainRecord.IsTestnet != (env == models.EnvironmentTest) {
+			return ctx.Response().Json(http.StatusForbidden, http.Json{"error": "chain not available in current environment"})
+		}
+	}
+
 	result, err := container.Get().WalletService.CreateWallet(ctx.Context(), req.Chain, req.Label, req.Passphrase)
 	if err != nil {
 		msg := err.Error()

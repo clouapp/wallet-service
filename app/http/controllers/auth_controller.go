@@ -34,6 +34,9 @@ func Register(ctx http.Context) http.Response {
 	if req.Email == "" || req.Password == "" {
 		return ctx.Response().Json(http.StatusBadRequest, http.Json{"error": "email and password are required"})
 	}
+	if req.OrganizationName == "" {
+		return ctx.Response().Json(http.StatusBadRequest, http.Json{"error": "organization_name is required"})
+	}
 
 	existing, _ := container.Get().UserRepo.FindByEmail(req.Email)
 	if existing != nil {
@@ -56,14 +59,67 @@ func Register(ctx http.Context) http.Response {
 		return ctx.Response().Json(http.StatusInternalServerError, http.Json{"error": "failed to create user"})
 	}
 
+	prodAccountID := uuid.New()
+	testAccountID := uuid.New()
+
+	prodAccount := &models.Account{
+		ID:              prodAccountID,
+		Name:            req.OrganizationName,
+		Status:          "active",
+		Environment:     models.EnvironmentProd,
+		LinkedAccountID: &testAccountID,
+	}
+	testAccount := &models.Account{
+		ID:              testAccountID,
+		Name:            req.OrganizationName + " [test]",
+		Status:          "active",
+		Environment:     models.EnvironmentTest,
+		LinkedAccountID: &prodAccountID,
+	}
+	if err := container.Get().AccountRepo.Create(prodAccount); err != nil {
+		return ctx.Response().Json(http.StatusInternalServerError, http.Json{"error": "failed to create production account"})
+	}
+	if err := container.Get().AccountRepo.Create(testAccount); err != nil {
+		return ctx.Response().Json(http.StatusInternalServerError, http.Json{"error": "failed to create test account"})
+	}
+
+	prodMembership := &models.AccountUser{
+		ID:        uuid.New(),
+		AccountID: prodAccountID,
+		UserID:    user.ID,
+		Role:      "owner",
+		Status:    "active",
+	}
+	testMembership := &models.AccountUser{
+		ID:        uuid.New(),
+		AccountID: testAccountID,
+		UserID:    user.ID,
+		Role:      "owner",
+		Status:    "active",
+	}
+	_ = container.Get().AccountUserRepo.Create(prodMembership)
+	_ = container.Get().AccountUserRepo.Create(testMembership)
+
+	user.DefaultAccountID = &prodAccountID
+	_ = container.Get().UserRepo.UpdateDefaultAccountID(user.ID, &prodAccountID)
+
 	// Send welcome email (best-effort)
 	_ = facades.Mail().To([]string{user.Email}).Send(&mails.WelcomeMail{To: user.Email, FullName: user.FullName})
 
 	accessToken, _ := facades.Auth(ctx).LoginUsingID(user.ID.String())
-	return ctx.Response().Json(http.StatusCreated, http.Json{
+
+	accounts, defaultAccount := loadUserAccounts(user)
+
+	resp := http.Json{
 		"access_token": accessToken,
 		"user":         user,
-	})
+		"accounts":     accounts,
+	}
+	if defaultAccount != nil {
+		resp["account_id"] = defaultAccount["id"]
+		resp["account"] = defaultAccount
+	}
+	return ctx.Response().Json(http.StatusCreated, resp)
 }
 
 // Login godoc
@@ -115,11 +171,19 @@ func Login(ctx http.Context) http.Response {
 	}
 	_ = container.Get().RefreshTokenRepo.Create(rt)
 
-	return ctx.Response().Json(http.StatusOK, http.Json{
+	accounts, defaultAccount := loadUserAccounts(&user)
+
+	resp := http.Json{
 		"access_token":  accessToken,
 		"refresh_token": rawRefresh,
 		"user":          user,
-	})
+		"accounts":      accounts,
+	}
+	if defaultAccount != nil {
+		resp["account_id"] = defaultAccount["id"]
+		resp["account"] = defaultAccount
+	}
+	return ctx.Response().Json(http.StatusOK, resp)
 }
 
 // VerifyTwoFactor godoc
@@ -352,12 +416,48 @@ func ResetPassword(ctx http.Context) http.Response {
 	return ctx.Response().Json(http.StatusOK, http.Json{"message": "password reset successfully"})
 }
 
+// loadUserAccounts fetches the user's account memberships and builds a
+// serialisable list. It also picks the default account (user.DefaultAccountID
+// or the first one found).
+func loadUserAccounts(user *models.User) ([]map[string]interface{}, map[string]interface{}) {
+	memberships, _ := container.Get().AccountUserRepo.FindByUserID(user.ID)
+
+	var accounts []map[string]interface{}
+	var defaultAccount map[string]interface{}
+
+	for _, m := range memberships {
+		acct, err := container.Get().AccountRepo.FindByID(m.AccountID)
+		if err != nil || acct == nil {
+			continue
+		}
+		entry := map[string]interface{}{
+			"id":                acct.ID,
+			"name":              acct.Name,
+			"environment":       acct.Environment,
+			"linked_account_id": acct.LinkedAccountID,
+			"status":            acct.Status,
+			"role":              m.Role,
+		}
+		accounts = append(accounts, entry)
+
+		if user.DefaultAccountID != nil && *user.DefaultAccountID == acct.ID {
+			defaultAccount = entry
+		}
+	}
+
+	if defaultAccount == nil && len(accounts) > 0 {
+		defaultAccount = accounts[0]
+	}
+	return accounts, defaultAccount
+}
+
 // ---- Request/Response types ----
 
 type RegisterRequest struct {
-	Email    string `json:"email" example:"user@example.com"`
-	Password string `json:"password" example:"s3cr3t"`
-	FullName string `json:"full_name" example:"Alice Smith"`
+	Email            string `json:"email" example:"user@example.com"`
+	Password         string `json:"password" example:"s3cr3t"`
+	FullName         string `json:"full_name" example:"Alice Smith"`
+	OrganizationName string `json:"organization_name" example:"Acme Corp"`
 }
 
 type LoginRequest struct {

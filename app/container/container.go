@@ -68,8 +68,7 @@ type Container struct {
 	DepositService    *deposit.Service
 	WithdrawalService *withdraw.Service
 	WebhookService    *webhook.Service
-	IngestService     *ingest.Service
-	IngestHandler     *ingest.Handler
+	IngestService *ingest.Service
 }
 
 var globalContainer *Container
@@ -239,7 +238,6 @@ func Boot() *Container {
 	}
 	c.DepositService = deposit.NewService(c.Redis, c.Registry, c.WebhookService, c.AddressRepo, c.TransactionRepo, blockHeightProviders)
 	c.IngestService = ingest.NewService(c.Redis, c.Registry, c.WebhookService, c.AddressRepo, c.TransactionRepo)
-	c.IngestHandler = ingest.NewHandler(c.IngestService, c.WebhookSubscriptionRepo, ingest.DefaultWebhookProviders())
 
 	globalContainer = c
 	slog.Info("container booted", "chains", c.Registry.ChainIDs())
