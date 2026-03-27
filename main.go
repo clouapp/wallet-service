@@ -88,6 +88,10 @@ func main() {
 	switch mode {
 	case "deposit_scanner":
 		lambda.Start(handleDepositScan)
+	case "confirmation_tracker":
+		lambda.Start(handleConfirmationTracker)
+	case "webhook_reconciler":
+		lambda.Start(handleWebhookReconciler)
 	case "webhook_worker":
 		lambda.Start(handleWebhookWorker)
 	case "api":
@@ -112,6 +116,16 @@ func handleAPIGateway(ctx context.Context, req events.APIGatewayV2HTTPRequest) (
 func handleDepositScan(ctx context.Context, event types.DepositScanEvent) error {
 	slog.Info("deposit scan triggered", "chain", event.Chain)
 	return c.DepositService.ScanLatestBlocks(ctx, event.Chain)
+}
+
+func handleConfirmationTracker(ctx context.Context) error {
+	slog.Info("confirmation tracker triggered")
+	return c.DepositService.RunConfirmationCheck(ctx)
+}
+
+func handleWebhookReconciler(ctx context.Context) error {
+	slog.Info("webhook reconciler triggered")
+	return c.WebhookSyncService.RunReconciliation(ctx)
 }
 
 // ---------------------------------------------------------------------------

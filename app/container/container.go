@@ -9,17 +9,25 @@ import (
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/secretsmanager"
 	"github.com/aws/aws-sdk-go-v2/service/sqs"
-	"github.com/redis/go-redis/v9"
 	smithyendpoints "github.com/aws/smithy-go/endpoints"
+	"github.com/redis/go-redis/v9"
 
+	"github.com/goravel/framework/facades"
+
+	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/repositories"
+	"github.com/macrowallets/waas/app/services/blockheight"
 	chainpkg "github.com/macrowallets/waas/app/services/chain"
 	"github.com/macrowallets/waas/app/services/deposit"
+	"github.com/macrowallets/waas/app/services/ingest"
+	"github.com/macrowallets/waas/app/services/ingest/providers"
 	mpc "github.com/macrowallets/waas/app/services/mpc"
 	"github.com/macrowallets/waas/app/services/queue"
 	"github.com/macrowallets/waas/app/services/wallet"
 	"github.com/macrowallets/waas/app/services/webhook"
+	"github.com/macrowallets/waas/app/services/webhooksync"
 	"github.com/macrowallets/waas/app/services/withdraw"
+	"github.com/macrowallets/waas/pkg/types"
 )
 
 // ---------------------------------------------------------------------------
@@ -28,32 +36,40 @@ import (
 // ---------------------------------------------------------------------------
 
 type Container struct {
-	Redis           *redis.Client
-	SQS             *queue.SQSClient
-	SecretsManager  *secretsmanager.Client
-	MPCService      mpc.Service
+	Redis          *redis.Client
+	SQS            *queue.SQSClient
+	SecretsManager *secretsmanager.Client
+	MPCService     mpc.Service
 
-	UserRepo               repositories.UserRepository
-	RefreshTokenRepo       repositories.RefreshTokenRepository
-	PasswordResetTokenRepo repositories.PasswordResetTokenRepository
-	TotpRecoveryCodeRepo   repositories.TotpRecoveryCodeRepository
-	AccountRepo            repositories.AccountRepository
-	AccountUserRepo        repositories.AccountUserRepository
-	AccessTokenRepo        repositories.AccessTokenRepository
-	WalletRepo             repositories.WalletRepository
-	WalletUserRepo         repositories.WalletUserRepository
-	AddressRepo            repositories.AddressRepository
-	TransactionRepo        repositories.TransactionRepository
-	WithdrawalRepo         repositories.WithdrawalRepository
-	WebhookConfigRepo      repositories.WebhookConfigRepository
-	WebhookEventRepo       repositories.WebhookEventRepository
-	WhitelistEntryRepo     repositories.WhitelistEntryRepository
+	UserRepo                repositories.UserRepository
+	RefreshTokenRepo        repositories.RefreshTokenRepository
+	PasswordResetTokenRepo  repositories.PasswordResetTokenRepository
+	TotpRecoveryCodeRepo    repositories.TotpRecoveryCodeRepository
+	AccountRepo             repositories.AccountRepository
+	AccountUserRepo         repositories.AccountUserRepository
+	AccessTokenRepo         repositories.AccessTokenRepository
+	WalletRepo              repositories.WalletRepository
+	WalletUserRepo          repositories.WalletUserRepository
+	AddressRepo             repositories.AddressRepository
+	TransactionRepo         repositories.TransactionRepository
+	WithdrawalRepo          repositories.WithdrawalRepository
+	WebhookConfigRepo       repositories.WebhookConfigRepository
+	WebhookEventRepo        repositories.WebhookEventRepository
+	WhitelistEntryRepo      repositories.WhitelistEntryRepository
+	ChainRepo               repositories.ChainRepository
+	TokenRepo               repositories.TokenRepository
+	ChainResourceRepo       repositories.ChainResourceRepository
+	WebhookSubscriptionRepo repositories.WebhookSubscriptionRepository
+	WebhookProviders        map[string]providers.WebhookProvider
+	WebhookSyncService      *webhooksync.Service
 
 	Registry          *chainpkg.Registry
 	WalletService     *wallet.Service
 	DepositService    *deposit.Service
 	WithdrawalService *withdraw.Service
 	WebhookService    *webhook.Service
+	IngestService     *ingest.Service
+	IngestHandler     *ingest.Handler
 }
 
 var globalContainer *Container
@@ -106,37 +122,6 @@ func Boot() *Container {
 	c.SecretsManager = smClient
 	c.MPCService = mpc.NewTSSService()
 
-	// --- Chain Registry ---
-	c.Registry = chainpkg.NewRegistry()
-	c.Registry.RegisterChain(chainpkg.NewEVMLive(chainpkg.EVMConfig{
-		ChainIDStr:    "eth",
-		ChainName:     "Ethereum",
-		NativeSymbol:  "eth",
-		NativeDecimal: 18,
-		NetworkID:     1,
-		RPCURL:        os.Getenv("ETH_RPC_URL"),
-		Confirmations: 12,
-	}))
-	c.Registry.RegisterChain(chainpkg.NewEVMLive(chainpkg.EVMConfig{
-		ChainIDStr:    "polygon",
-		ChainName:     "Polygon",
-		NativeSymbol:  "matic",
-		NativeDecimal: 18,
-		NetworkID:     137,
-		RPCURL:        os.Getenv("POLYGON_RPC_URL"),
-		Confirmations: 128,
-	}))
-	c.Registry.RegisterChain(chainpkg.NewSolanaLive(os.Getenv("SOLANA_RPC_URL")))
-	c.Registry.RegisterChain(chainpkg.NewBitcoinLive(chainpkg.BitcoinConfig{
-		RPCURL:  os.Getenv("BTC_RPC_URL"),
-		Network: "mainnet",
-	}))
-
-	// Tokens
-	for _, t := range chainpkg.AllTokens() {
-		c.Registry.RegisterToken(t)
-	}
-
 	// --- Repositories ---
 	c.UserRepo = repositories.NewUserRepository()
 	c.RefreshTokenRepo = repositories.NewRefreshTokenRepository()
@@ -153,12 +138,108 @@ func Boot() *Container {
 	c.WebhookConfigRepo = repositories.NewWebhookConfigRepository()
 	c.WebhookEventRepo = repositories.NewWebhookEventRepository()
 	c.WhitelistEntryRepo = repositories.NewWhitelistEntryRepository()
+	c.ChainRepo = repositories.NewChainRepository()
+	c.TokenRepo = repositories.NewTokenRepository()
+	c.ChainResourceRepo = repositories.NewChainResourceRepository()
+	c.WebhookSubscriptionRepo = repositories.NewWebhookSubscriptionRepository()
+
+	providerMap := make(map[string]providers.WebhookProvider)
+	if token := os.Getenv("ALCHEMY_AUTH_TOKEN"); token != "" {
+		providerMap["alchemy"] = providers.NewAlchemyProvider(token)
+	}
+	if key := os.Getenv("HELIUS_API_KEY"); key != "" {
+		providerMap["helius"] = providers.NewHeliusProvider(key)
+	}
+	if key := os.Getenv("QUICKNODE_API_KEY"); key != "" {
+		providerMap["quicknode"] = providers.NewQuickNodeProvider(key)
+	}
+	c.WebhookProviders = providerMap
+	c.WebhookSyncService = webhooksync.NewService(c.WebhookSubscriptionRepo, c.AddressRepo, providerMap)
+
+	// --- Chain Registry (DB-driven) ---
+	c.Registry = chainpkg.NewRegistry()
+
+	tokensByChain := make(map[string][]types.Token)
+	activeTokens, tokenErr := c.TokenRepo.FindActive()
+	if tokenErr != nil {
+		slog.Error("failed to load tokens from DB", "error", tokenErr)
+	} else {
+		for _, t := range activeTokens {
+			tok := types.Token{
+				Symbol:   t.Symbol,
+				Name:     t.Name,
+				Contract: t.ContractAddress,
+				Decimals: uint8(t.Decimals),
+				ChainID:  t.ChainID,
+			}
+			tokensByChain[t.ChainID] = append(tokensByChain[t.ChainID], tok)
+			c.Registry.RegisterToken(tok)
+		}
+	}
+
+	activeChains, chainErr := c.ChainRepo.FindActive()
+	if chainErr != nil {
+		slog.Error("failed to load chains from DB", "error", chainErr)
+	} else {
+		for _, ch := range activeChains {
+			rpcURL, decErr := facades.Crypt().DecryptString(ch.RpcURL)
+			if decErr != nil {
+				slog.Warn("failed to decrypt RPC URL, skipping chain", "chain", ch.ID, "error", decErr)
+				continue
+			}
+			if rpcURL == "" {
+				slog.Warn("empty RPC URL, skipping chain", "chain", ch.ID)
+				continue
+			}
+			var adapter types.Chain
+			switch ch.AdapterType {
+			case models.AdapterTypeEVM:
+				networkID := int64(0)
+				if ch.NetworkID != nil {
+					networkID = *ch.NetworkID
+				}
+				adapter = chainpkg.NewEVMLive(chainpkg.EVMConfig{
+					ChainIDStr:    ch.ID,
+					ChainName:     ch.Name,
+					NativeSymbol:  ch.NativeSymbol,
+					NativeDecimal: uint8(ch.NativeDecimals),
+					NetworkID:     networkID,
+					RPCURL:        rpcURL,
+					Confirmations: uint64(ch.RequiredConfirmations),
+					ERC20Tokens:   tokensByChain[ch.ID],
+				})
+			case models.AdapterTypeBitcoin:
+				network := "mainnet"
+				if ch.IsTestnet {
+					network = "testnet"
+				}
+				adapter = chainpkg.NewBitcoinLive(chainpkg.BitcoinConfig{
+					RPCURL:  rpcURL,
+					Network: network,
+				})
+			case models.AdapterTypeSolana:
+				adapter = chainpkg.NewSolanaLive(rpcURL)
+			default:
+				slog.Warn("unknown adapter type, skipping", "chain", ch.ID, "adapter", ch.AdapterType)
+				continue
+			}
+			c.Registry.RegisterChain(adapter)
+		}
+	}
 
 	// --- Services ---
 	c.WebhookService = webhook.NewService(c.SQS, c.WebhookConfigRepo, c.WebhookEventRepo)
 	c.WalletService = wallet.NewService(c.Registry, c.Redis, c.MPCService, c.SecretsManager, c.WalletRepo, c.AddressRepo)
+	c.WalletService.SetWebhookSync(c.WebhookSyncService)
 	c.WithdrawalService = withdraw.NewService(c.Registry, c.WebhookService, c.MPCService, c.SecretsManager, c.Redis, c.TransactionRepo, c.WalletRepo)
-	c.DepositService = deposit.NewService(c.Redis, c.Registry, c.WebhookService, c.AddressRepo, c.TransactionRepo)
+	blockHeightProviders := map[string]blockheight.Provider{
+		models.AdapterTypeEVM:     blockheight.NewEtherscanProvider(os.Getenv("ETHERSCAN_API_KEY")),
+		models.AdapterTypeBitcoin: blockheight.NewBlockstreamProvider(),
+		models.AdapterTypeSolana:  blockheight.NewSolanaPublicProvider(),
+	}
+	c.DepositService = deposit.NewService(c.Redis, c.Registry, c.WebhookService, c.AddressRepo, c.TransactionRepo, blockHeightProviders)
+	c.IngestService = ingest.NewService(c.Redis, c.Registry, c.WebhookService, c.AddressRepo, c.TransactionRepo)
+	c.IngestHandler = ingest.NewHandler(c.IngestService, c.WebhookSubscriptionRepo, ingest.DefaultWebhookProviders())
 
 	globalContainer = c
 	slog.Info("container booted", "chains", c.Registry.ChainIDs())

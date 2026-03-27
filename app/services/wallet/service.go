@@ -46,6 +46,10 @@ type secretsManagerAPI interface {
 	CreateSecret(ctx context.Context, input *secretsmanager.CreateSecretInput, opts ...func(*secretsmanager.Options)) (*secretsmanager.CreateSecretOutput, error)
 }
 
+type webhookAddressSyncer interface {
+	SyncChainAddresses(ctx context.Context, chainID string) error
+}
+
 type Service struct {
 	registry       *chain.Registry
 	rdb            *redis.Client
@@ -53,6 +57,7 @@ type Service struct {
 	secretsManager secretsManagerAPI
 	walletRepo     repositories.WalletRepository
 	addressRepo    repositories.AddressRepository
+	webhookSyncSvc webhookAddressSyncer
 }
 
 func NewService(registry *chain.Registry, rdb *redis.Client, mpcSvc mpc.Service, sm *secretsmanager.Client, walletRepo repositories.WalletRepository, addressRepo repositories.AddressRepository) *Service {
@@ -64,6 +69,10 @@ func NewService(registry *chain.Registry, rdb *redis.Client, mpcSvc mpc.Service,
 		walletRepo:     walletRepo,
 		addressRepo:    addressRepo,
 	}
+}
+
+func (s *Service) SetWebhookSync(syncSvc webhookAddressSyncer) {
+	s.webhookSyncSvc = syncSvc
 }
 
 func (s *Service) CreateWallet(ctx context.Context, chainID, label, passphrase string) (*CreateWalletResult, error) {
@@ -174,6 +183,15 @@ func (s *Service) CreateWallet(ctx context.Context, chainID, label, passphrase s
 		if err := s.rdb.SAdd(ctx, "vault:addresses:"+chainID, depositAddress).Err(); err != nil {
 			slog.Warn("redis cache failed", "error", err)
 		}
+	}
+
+	if s.webhookSyncSvc != nil {
+		go func() {
+			syncCtx := context.Background()
+			if err := s.webhookSyncSvc.SyncChainAddresses(syncCtx, chainID); err != nil {
+				slog.Error("webhook address sync failed", "chain", chainID, "error", err)
+			}
+		}()
 	}
 
 	return &CreateWalletResult{
