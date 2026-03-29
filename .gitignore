@@ -52,6 +52,9 @@ Thumbs.db
 # Local development
 *.log
 
+# Symbolic links
+docs/superpowers
+
 # Secrets and credentials
 *.pem
 *.key
