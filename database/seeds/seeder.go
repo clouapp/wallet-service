@@ -1,5 +1,5 @@
 // Package seeds provides deterministic seed data for local development and testing.
-// Run via: make db-seed
+// Invoked by Goravel artisan: `go run . artisan db:seed` (see database/seeders).
 package seeds
 
 import (
@@ -349,9 +349,9 @@ func seedUsers(_ context.Context) error {
 		password string
 		fullName string
 	}{
-		{adminUserID, "admin@vault.dev", "Password123!", "Admin User"},
-		{aliceUserID, "alice@vault.dev", "Password123!", "Alice Smith"},
-		{bobUserID, "bob@vault.dev", "Password123!", "Bob Jones"},
+		{adminUserID, "admin@macro.markets", "secret", "Admin User"},
+		{aliceUserID, "alice@macro.markets", "secret", "Alice Smith"},
+		{bobUserID, "bob@macro.markets", "secret", "Bob Jones"},
 	}
 
 	for _, u := range users {
@@ -540,9 +540,9 @@ func printCredentials() {
 	fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	fmt.Println("  Seed data created — login credentials")
 	fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-	fmt.Println("  admin@vault.dev  / Password123!  (account owner)")
-	fmt.Println("  alice@vault.dev  / Password123!  (account admin)")
-	fmt.Println("  bob@vault.dev    / Password123!  (auditor)")
+	fmt.Println("  admin@macro.markets / secret  (account owner)")
+	fmt.Println("  alice@macro.markets / secret  (account admin)")
+	fmt.Println("  bob@macro.markets   / secret  (auditor)")
 	fmt.Println()
 	fmt.Println("  Accounts: Acme Corp (prod) · Acme Corp (Test) — paired, default = prod")
 	fmt.Println("  Wallets: ETH · BTC · Polygon (prod) · Sepolia · Bitcoin testnet · Amoy (test)")

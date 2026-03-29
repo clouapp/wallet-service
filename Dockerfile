@@ -26,11 +26,10 @@ RUN go mod download
 # Copy source code
 COPY . .
 
-# Build the binary for Lambda (arm64)
-# For Lambda deployment
+# Build the binary for Lambda (arm64) — output outside ./bootstrap/ (Goravel package dir)
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build \
     -ldflags="-s -w -X main.Version=$(git describe --tags --always --dirty 2>/dev/null || echo 'dev')" \
-    -o bootstrap \
+    -o /tmp/lambda-bootstrap \
     main.go
 
 # Build the binary for local/Docker (amd64)
@@ -87,7 +86,7 @@ CMD ["/usr/local/bin/vault-server"]
 FROM public.ecr.aws/lambda/provided:al2023 AS lambda
 
 # Copy the bootstrap binary from builder
-COPY --from=builder /app/bootstrap ${LAMBDA_RUNTIME_DIR}/bootstrap
+COPY --from=builder /tmp/lambda-bootstrap ${LAMBDA_RUNTIME_DIR}/bootstrap
 
 # Set the CMD to your handler
 CMD ["bootstrap"]

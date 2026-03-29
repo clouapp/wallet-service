@@ -30,6 +30,29 @@ import (
 	vaultproviders "github.com/macrowallets/waas/app/providers"
 )
 
+// AppProviders returns framework + app service providers. Used by bootstrap.WithProviders
+// and by the app.providers config entry (Goravel loads bindings from WithProviders during Build).
+func AppProviders() []contractsfoundation.ServiceProvider {
+	return []contractsfoundation.ServiceProvider{
+		&frameworklog.ServiceProvider{},
+		&goravel_postgres.ServiceProvider{},
+		&frameworkdatabase.ServiceProvider{},
+		&frameworkhttp.ServiceProvider{},
+		&goravel_redis.ServiceProvider{},
+		&frameworkcache.ServiceProvider{},
+		&frameworkvalidation.ServiceProvider{},
+		&frameworkview.ServiceProvider{},
+		&gin.ServiceProvider{},
+		&frameworkroute.ServiceProvider{},
+		&frameworktesting.ServiceProvider{},
+		&frameworkauth.ServiceProvider{},
+		&frameworkmail.ServiceProvider{},
+		&frameworkcrypt.ServiceProvider{},
+		&vaultproviders.MigrationsServiceProvider{},
+		&vaultproviders.AuthServiceProvider{},
+	}
+}
+
 // Boot initializes all configurations
 func Boot(app contractsfoundation.Application) {
 	facades.Config().Add("database", map[string]any{
@@ -83,26 +106,9 @@ func Boot(app contractsfoundation.Application) {
 		"debug":    envBool("APP_DEBUG", false),
 		"timezone": env("APP_TIMEZONE", "UTC"),
 		"locale":   env("APP_LOCALE", "en"),
-		"key":      env("APP_KEY", ""),
-		"url":      env("APP_URL", "http://localhost"),
-		"providers": []contractsfoundation.ServiceProvider{
-			&frameworklog.ServiceProvider{},
-			&goravel_postgres.ServiceProvider{},
-			&frameworkdatabase.ServiceProvider{},
-			&frameworkhttp.ServiceProvider{},
-			&goravel_redis.ServiceProvider{},
-			&frameworkcache.ServiceProvider{},
-			&frameworkvalidation.ServiceProvider{},
-			&frameworkview.ServiceProvider{},
-			&gin.ServiceProvider{},
-			&frameworkroute.ServiceProvider{},
-			&frameworktesting.ServiceProvider{},
-			&frameworkauth.ServiceProvider{},
-			&frameworkmail.ServiceProvider{},
-			&frameworkcrypt.ServiceProvider{},
-			&vaultproviders.MigrationsServiceProvider{},
-			&vaultproviders.AuthServiceProvider{},
-		},
+		"key":       env("APP_KEY", ""),
+		"url":       env("APP_URL", "http://localhost"),
+		"providers": AppProviders(),
 	})
 
 	// Auth guards
