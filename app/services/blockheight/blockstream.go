@@ -8,6 +8,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/macrowallets/waas/app/models"
 )
 
 type BlockstreamProvider struct {
@@ -26,9 +28,9 @@ func NewBlockstreamProvider() *BlockstreamProvider {
 
 func (p *BlockstreamProvider) heightURL(chainID string) (string, error) {
 	switch chainID {
-	case "btc":
+	case models.ChainBTC:
 		return p.mainnetURL, nil
-	case "tbtc":
+	case models.ChainTBTC:
 		return p.testnetURL, nil
 	default:
 		return "", fmt.Errorf("blockstream: unknown chain_id %q", chainID)

@@ -35,6 +35,7 @@ func (r *M20260327000006CreateTransactionsTable) Up() error {
 		table.String("block_hash", 255).Nullable().Comment("Block hash")
 		table.Text("error_message").Nullable().Comment("Error details if failed")
 		table.String("idempotency_key", 255).Nullable().Comment("Prevents duplicate withdrawals")
+		table.Integer("log_index").Default(-1).Comment("EVM log index for deposit dedup (-1 when N/A)")
 		table.Timestamp("confirmed_at").Nullable().Comment("Timestamp when tx reached required confirmations")
 		table.Timestamps()
 
@@ -44,6 +45,7 @@ func (r *M20260327000006CreateTransactionsTable) Up() error {
 		table.Index("tx_type")
 		table.Index("status")
 		table.Index("chain", "tx_hash")
+		table.Index("chain", "tx_hash", "log_index", "tx_type").Name("idx_tx_dedup")
 		table.Index("chain", "status")
 		table.Index("created_at")
 		table.Unique("idempotency_key")

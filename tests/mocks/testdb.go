@@ -71,21 +71,37 @@ func TestDB(t *testing.T) {
 
 func InsertWallet(t *testing.T, chainID string) models.Wallet {
 	t.Helper()
+	walletID := uuid.New()
+	addrID := uuid.New()
+	addr := models.Address{
+		ID:              addrID,
+		WalletID:        walletID,
+		Chain:           chainID,
+		Address:         "0x" + uuid.NewString()[:16],
+		DerivationIndex: 0,
+		ExternalUserID:  "system",
+		IsActive:        true,
+		Label:           "Deposit Address",
+	}
+	if err := facades.Orm().Query().Create(&addr); err != nil {
+		t.Fatalf("insert deposit address: %v", err)
+	}
 	w := models.Wallet{
-		ID:               uuid.New(),
+		ID:               walletID,
 		Chain:            chainID,
 		Label:            chainID + " test wallet",
-		MPCCustomerShare: "deadbeef", // hex-encoded test data
-		MPCShareIV:       "cafebabe", // hex-encoded test data
-		MPCShareSalt:     "feedface", // hex-encoded test data
+		MPCCustomerShare: "deadbeef",
+		MPCShareIV:       "cafebabe",
+		MPCShareSalt:     "feedface",
 		MPCSecretARN:     "arn:aws:secretsmanager:us-east-1:123456789012:secret:test",
-		MPCPublicKey:     "02abc123def456", // hex-encoded compressed public key
+		MPCPublicKey:     "02abc123def456",
 		MPCCurve:         "secp256k1",
-		DepositAddress:   "0x1234567890abcdef",
+		DepositAddressID: &addrID,
 	}
 	if err := facades.Orm().Query().Create(&w); err != nil {
 		t.Fatalf("insert wallet: %v", err)
 	}
+	w.DepositAddress = &addr
 	return w
 }
 

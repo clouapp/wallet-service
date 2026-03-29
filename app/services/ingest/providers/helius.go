@@ -15,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/pkg/types"
 )
 
@@ -291,7 +292,7 @@ func (h *HeliusProvider) ParsePayload(body []byte) ([]InboundTransfer, error) {
 				From:        nt.FromUserAccount,
 				To:          nt.ToUserAccount,
 				Amount:      big.NewInt(nt.Amount),
-				Asset:       "sol",
+				Asset:       models.ChainSOL,
 				Token:       nil,
 				LogIndex:    -1,
 				Timestamp:   ts,

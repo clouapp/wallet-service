@@ -75,26 +75,21 @@ func (s *Service) SetWebhookSync(syncSvc webhookAddressSyncer) {
 	s.webhookSyncSvc = syncSvc
 }
 
-func (s *Service) CreateWallet(ctx context.Context, chainID, label, passphrase string) (*CreateWalletResult, error) {
+func (s *Service) CreateWallet(ctx context.Context, accountID uuid.UUID, chainID, label, passphrase string) (*CreateWalletResult, error) {
+	if accountID == uuid.Nil {
+		return nil, fmt.Errorf("account_id is required")
+	}
 	if len(passphrase) < 12 {
 		return nil, fmt.Errorf("passphrase must be at least 12 characters")
 	}
 
 	chainID = strings.ToLower(chainID)
-	if chainID == "matic" {
-		chainID = "polygon"
+	if chainID == models.ChainMatic {
+		chainID = models.ChainPolygon
 	}
 
 	if _, err := s.registry.Chain(chainID); err != nil {
 		return nil, fmt.Errorf("unknown chain: %s", chainID)
-	}
-
-	count, err := s.walletRepo.CountByChain(chainID)
-	if err != nil {
-		return nil, err
-	}
-	if count > 0 {
-		return nil, fmt.Errorf("wallet for chain %s already exists", chainID)
 	}
 
 	curve := curveForChain(chainID)
@@ -155,7 +150,7 @@ func (s *Service) CreateWallet(ctx context.Context, chainID, label, passphrase s
 		return nil, err
 	}
 
-	depositAddress, err := deriveAddress(chainID, keygenResult.CombinedPubKey)
+	depositAddressStr, err := deriveAddress(chainID, keygenResult.CombinedPubKey)
 	if err != nil {
 		return onPostSecretErr(fmt.Errorf("derive address: %w", err))
 	}
@@ -171,7 +166,7 @@ func (s *Service) CreateWallet(ctx context.Context, chainID, label, passphrase s
 		MPCSecretARN:     secretARN,
 		MPCPublicKey:     hex.EncodeToString(keygenResult.CombinedPubKey),
 		MPCCurve:         string(curve),
-		DepositAddress:   depositAddress,
+		AccountID:        &accountID,
 		Status:           "pending",
 		ActivationCode:   &codeStr,
 	}
@@ -179,8 +174,29 @@ func (s *Service) CreateWallet(ctx context.Context, chainID, label, passphrase s
 		return onPostSecretErr(fmt.Errorf("create wallet: %w", err))
 	}
 
+	addressID := uuid.New()
+	addr := &models.Address{
+		ID:              addressID,
+		WalletID:        walletID,
+		Chain:           chainID,
+		Address:         depositAddressStr,
+		DerivationIndex: 0,
+		ExternalUserID:  "system",
+		IsActive:        true,
+		Label:           "Deposit Address",
+	}
+	if err := s.addressRepo.Create(addr); err != nil {
+		return onPostSecretErr(fmt.Errorf("create deposit address: %w", err))
+	}
+
+	if err := s.walletRepo.UpdateField(walletID, "deposit_address_id", addressID); err != nil {
+		return onPostSecretErr(fmt.Errorf("link deposit address: %w", err))
+	}
+	w.DepositAddressID = &addressID
+	w.DepositAddress = addr
+
 	if s.rdb != nil {
-		if err := s.rdb.SAdd(ctx, "vault:addresses:"+chainID, depositAddress).Err(); err != nil {
+		if err := s.rdb.SAdd(ctx, "vault:addresses:"+chainID, depositAddressStr).Err(); err != nil {
 			slog.Warn("redis cache failed", "error", err)
 		}
 	}
@@ -230,7 +246,7 @@ func (s *Service) ActivateWallet(ctx context.Context, walletID uuid.UUID, code s
 }
 
 func curveForChain(chainID string) mpc.Curve {
-	if chainID == "sol" {
+	if chainID == models.ChainSOL || chainID == models.ChainTSOL {
 		return mpc.CurveEd25519
 	}
 	return mpc.CurveSecp256k1

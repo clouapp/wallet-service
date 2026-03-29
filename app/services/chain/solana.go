@@ -9,19 +9,27 @@ import (
 	"github.com/macrowallets/waas/pkg/types"
 )
 
+type SolanaConfig struct {
+	ChainIDStr    string
+	ChainName     string
+	NativeSymbol  string
+	RPCURL        string
+	Confirmations uint64
+}
+
 type SolanaLive struct {
-	rpcURL string
-	rpc    *RPCClient
+	cfg SolanaConfig
+	rpc *RPCClient
 }
 
-func NewSolanaLive(rpcURL string) *SolanaLive {
-	return &SolanaLive{rpcURL: rpcURL, rpc: NewRPCClient(rpcURL, "", "")}
+func NewSolanaLive(cfg SolanaConfig) *SolanaLive {
+	return &SolanaLive{cfg: cfg, rpc: NewRPCClient(cfg.RPCURL, "", "")}
 }
 
-func (a *SolanaLive) ID() string                        { return "sol" }
-func (a *SolanaLive) Name() string                      { return "Solana" }
-func (a *SolanaLive) RequiredConfirmations() uint64      { return 1 }
-func (a *SolanaLive) NativeAsset() string                { return "sol" }
+func (a *SolanaLive) ID() string                        { return a.cfg.ChainIDStr }
+func (a *SolanaLive) Name() string                      { return a.cfg.ChainName }
+func (a *SolanaLive) RequiredConfirmations() uint64      { return a.cfg.Confirmations }
+func (a *SolanaLive) NativeAsset() string                { return a.cfg.NativeSymbol }
 
 func (a *SolanaLive) DeriveAddress(masterKey []byte, index uint32) (string, error) {
 	return "", fmt.Errorf("SOL key derivation not implemented — use ed25519 SLIP-0010")
@@ -55,7 +63,7 @@ func (a *SolanaLive) GetBalance(ctx context.Context, address string) (*types.Bal
 		return nil, err
 	}
 	bal := new(big.Int).SetUint64(result.Value)
-	return &types.Balance{Address: address, Asset: "sol", Amount: bal, Decimals: 9, Human: fmtUnits(bal, 9)}, nil
+	return &types.Balance{Address: address, Asset: a.cfg.NativeSymbol, Amount: bal, Decimals: 9, Human: fmtUnits(bal, 9)}, nil
 }
 
 func (a *SolanaLive) GetTokenBalance(ctx context.Context, address string, token types.Token) (*types.Balance, error) {
@@ -76,7 +84,7 @@ func (a *SolanaLive) BuildTransfer(ctx context.Context, req types.TransferReques
 	blockhash = result.Value.Blockhash
 
 	return &types.UnsignedTx{
-		ChainID: "sol",
+		ChainID: a.cfg.ChainIDStr,
 		Metadata: map[string]interface{}{
 			"from": req.From, "to": req.To, "amount": req.Amount.String(),
 			"blockhash": blockhash, "is_spl": req.Token != nil,
@@ -138,7 +146,7 @@ func (a *SolanaLive) ScanBlock(ctx context.Context, blockNum uint64) ([]types.De
 			if post > pre {
 				transfers = append(transfers, types.DetectedTransfer{
 					TxHash: txWrap.Transaction.Signatures[0], BlockNumber: blockNum,
-					Amount: new(big.Int).SetUint64(post - pre), Asset: "sol", Timestamp: blockTime,
+					Amount: new(big.Int).SetUint64(post - pre), Asset: a.cfg.NativeSymbol, Timestamp: blockTime,
 				})
 			}
 		}

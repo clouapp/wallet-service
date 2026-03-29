@@ -32,15 +32,16 @@ func ListUnspentOutputs(ctx http.Context) http.Response {
 		})
 	}
 
-	// Fetch balance as a lightweight check that the chain adapter is functional.
-	// Full UTXO enumeration would be available through a UTXOChain extended interface.
-	balance, err := adapter.GetBalance(ctx.Context(), wallet.DepositAddress)
+	if wallet.DepositAddress == nil {
+		return ctx.Response().Json(http.StatusUnprocessableEntity, http.Json{"error": "wallet has no deposit address"})
+	}
+	depositAddr := wallet.DepositAddress.Address
+
+	balance, err := adapter.GetBalance(ctx.Context(), depositAddr)
 	if err != nil {
 		return ctx.Response().Json(http.StatusInternalServerError, http.Json{"error": "failed to fetch balance: " + err.Error()})
 	}
 
-	// Return the balance as a single synthetic UTXO representing the total spendable amount.
-	// Callers that need individual UTXOs should use a dedicated chain RPC directly.
 	result := []UnspentOutput{}
 	if balance != nil && balance.Amount != nil && balance.Amount.Sign() > 0 {
 		result = append(result, UnspentOutput{
@@ -48,7 +49,7 @@ func ListUnspentOutputs(ctx http.Context) http.Response {
 			Vout:    0,
 			Value:   balance.Amount.Int64(),
 			Height:  0,
-			Address: wallet.DepositAddress,
+			Address: depositAddr,
 		})
 	}
 

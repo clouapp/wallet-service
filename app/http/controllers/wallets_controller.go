@@ -37,7 +37,8 @@ func CreateWallet(ctx http.Context) http.Response {
 		return ctx.Response().Json(http.StatusUnprocessableEntity, validationErrors.All())
 	}
 
-	result, err := container.Get().WalletService.CreateWallet(ctx.Context(), req.Chain, req.Label, req.Passphrase)
+	accountID, _ := ctx.Value("account_id").(uuid.UUID)
+	result, err := container.Get().WalletService.CreateWallet(ctx.Context(), accountID, req.Chain, req.Label, req.Passphrase)
 	if err != nil {
 		return ctx.Response().Json(http.StatusConflict, http.Json{
 			"error": err.Error(),
@@ -57,8 +58,17 @@ func CreateWallet(ctx http.Context) http.Response {
 // @Failure      500  {object}  ErrorResponse
 // @Router       /v1/wallets [get]
 func ListWallets(ctx http.Context) http.Response {
+	accountID, ok := ctx.Value("account_id").(uuid.UUID)
+	if !ok || accountID == uuid.Nil {
+		return ctx.Response().Json(http.StatusBadRequest, http.Json{
+			"error": "account is required",
+		})
+	}
+
 	limit, offset := pagination.ParseParams(ctx, 20)
-	wallets, total, err := container.Get().WalletRepo.PaginateAll(limit, offset)
+	chain := ctx.Request().Query("chain", "")
+
+	wallets, total, err := container.Get().WalletRepo.PaginateByAccount(accountID, chain, limit, offset)
 	if err != nil {
 		return ctx.Response().Json(http.StatusInternalServerError, http.Json{
 			"error": "failed to fetch wallets",
@@ -86,8 +96,16 @@ func GetWallet(ctx http.Context) http.Response {
 			"error": "invalid wallet id",
 		})
 	}
-	w, err := container.Get().WalletService.GetWallet(ctx.Context(), id)
-	if err != nil {
+
+	accountID, ok := ctx.Value("account_id").(uuid.UUID)
+	if !ok || accountID == uuid.Nil {
+		return ctx.Response().Json(http.StatusBadRequest, http.Json{
+			"error": "account is required",
+		})
+	}
+
+	w, err := container.Get().WalletRepo.FindByIDAndAccount(id, accountID)
+	if err != nil || w == nil {
 		return ctx.Response().Json(http.StatusNotFound, http.Json{
 			"error": "wallet not found",
 		})
@@ -130,14 +148,12 @@ func CreateWalletAdmin(ctx http.Context) http.Response {
 		}
 	}
 
-	result, err := container.Get().WalletService.CreateWallet(ctx.Context(), req.Chain, req.Label, req.Passphrase)
+	accountID, _ := ctx.Value("account_id").(uuid.UUID)
+	result, err := container.Get().WalletService.CreateWallet(ctx.Context(), accountID, req.Chain, req.Label, req.Passphrase)
 	if err != nil {
 		msg := err.Error()
 		if strings.Contains(msg, "unknown chain") {
 			return ctx.Response().Json(http.StatusBadRequest, http.Json{"error": msg})
-		}
-		if strings.Contains(msg, "already exists") {
-			return ctx.Response().Json(http.StatusConflict, http.Json{"error": msg})
 		}
 		return ctx.Response().Json(http.StatusInternalServerError, http.Json{"error": msg})
 	}

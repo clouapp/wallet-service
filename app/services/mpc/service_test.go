@@ -101,6 +101,45 @@ func TestKeygenSharesAreDifferent(t *testing.T) {
 	}
 }
 
+func TestKeygenEd25519ProducesShares(t *testing.T) {
+	svc := NewTSSService()
+
+	result, err := svc.Keygen(context.Background(), CurveEd25519)
+	if err != nil {
+		t.Fatalf("keygen ed25519: %v", err)
+	}
+
+	if len(result.ShareA) == 0 {
+		t.Fatal("ShareA is empty")
+	}
+	if len(result.ShareB) == 0 {
+		t.Fatal("ShareB is empty")
+	}
+	if len(result.CombinedPubKey) != 32 {
+		t.Fatalf("CombinedPubKey length: want 32, got %d", len(result.CombinedPubKey))
+	}
+}
+
+func TestKeygenEd25519SharesAreDifferent(t *testing.T) {
+	svc := NewTSSService()
+
+	r1, err := svc.Keygen(context.Background(), CurveEd25519)
+	if err != nil {
+		t.Fatalf("keygen 1: %v", err)
+	}
+	r2, err := svc.Keygen(context.Background(), CurveEd25519)
+	if err != nil {
+		t.Fatalf("keygen 2: %v", err)
+	}
+
+	if bytes.Equal(r1.ShareA, r2.ShareA) {
+		t.Fatal("two ed25519 keygens produced identical ShareA")
+	}
+	if bytes.Equal(r1.CombinedPubKey, r2.CombinedPubKey) {
+		t.Fatal("two ed25519 keygens produced identical public keys")
+	}
+}
+
 func TestSignSecp256k1(t *testing.T) {
 	svc := NewTSSService()
 

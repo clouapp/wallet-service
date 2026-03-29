@@ -25,6 +25,6 @@ func All() []schema.Migration {
 		&M20260327000017CreateTokensTable{},
 		&M20260327000018CreateChainResourcesTable{},
 		&M20260327100001CreateWebhookSubscriptionsTable{},
-		&M20260327100002AddLogIndexToTransactions{},
+		&M20260329000001WalletDepositAddressFk{},
 	}
 }

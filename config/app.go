@@ -16,6 +16,7 @@ import (
 	frameworkhttp "github.com/goravel/framework/http"
 	frameworklog "github.com/goravel/framework/log"
 	frameworkmail "github.com/goravel/framework/mail"
+	frameworkqueue "github.com/goravel/framework/queue"
 	frameworkroute "github.com/goravel/framework/route"
 	frameworktesting "github.com/goravel/framework/testing"
 	frameworkvalidation "github.com/goravel/framework/validation"
@@ -46,6 +47,7 @@ func AppProviders() []contractsfoundation.ServiceProvider {
 		&frameworkroute.ServiceProvider{},
 		&frameworktesting.ServiceProvider{},
 		&frameworkauth.ServiceProvider{},
+		&frameworkqueue.ServiceProvider{},
 		&frameworkmail.ServiceProvider{},
 		&frameworkcrypt.ServiceProvider{},
 		&vaultproviders.MigrationsServiceProvider{},
@@ -101,8 +103,8 @@ func Boot(app contractsfoundation.Application) {
 	})
 
 	facades.Config().Add("app", map[string]any{
-		"name":     env("APP_NAME", "Vault"),
-		"env":      env("APP_ENV", "production"),
+		"name":     env("APP_NAME", "Macro Wallets"),
+		"env":      env("APP_ENV", "local"),
 		"debug":    envBool("APP_DEBUG", false),
 		"timezone": env("APP_TIMEZONE", "UTC"),
 		"locale":   env("APP_LOCALE", "en"),
@@ -169,8 +171,22 @@ func Boot(app contractsfoundation.Application) {
 		},
 	})
 
+	facades.Config().Add("queue", map[string]any{
+		"default": env("QUEUE_CONNECTION", "sync"),
+		"connections": map[string]any{
+			"sync": map[string]any{
+				"driver": "sync",
+			},
+		},
+		"failed": map[string]any{
+			"database": "postgres",
+			"table":    "failed_jobs",
+		},
+	})
+
 	facades.Config().Add("http", map[string]any{
-		"default": "gin",
+		"default":         "gin",
+		"request_timeout": envInt("HTTP_REQUEST_TIMEOUT", 30),
 		"drivers": map[string]any{
 			"gin": map[string]any{
 				"route": func() (contractsroute.Route, error) {

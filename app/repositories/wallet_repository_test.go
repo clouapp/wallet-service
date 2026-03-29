@@ -30,7 +30,6 @@ func (s *WalletRepositoryTestSuite) makeWallet(chainID string) *models.Wallet {
 		ID: uuid.New(), Chain: chainID, Label: chainID + " wallet",
 		MPCCustomerShare: "deadbeef", MPCShareIV: "cafebabe", MPCShareSalt: "feedface",
 		MPCSecretARN: "arn:test", MPCPublicKey: "02abc", MPCCurve: "secp256k1",
-		DepositAddress: "0x" + uuid.NewString()[:16],
 	}
 }
 
@@ -65,23 +64,6 @@ func (s *WalletRepositoryTestSuite) TestFindAll() {
 	s.Len(wallets, 2)
 }
 
-func (s *WalletRepositoryTestSuite) TestCountByChain() {
-	s.Require().NoError(s.repo.Create(s.makeWallet("eth")))
-	s.Require().NoError(s.repo.Create(s.makeWallet("eth")))
-	s.Require().NoError(s.repo.Create(s.makeWallet("btc")))
-
-	count, err := s.repo.CountByChain("eth")
-	s.NoError(err)
-	s.Equal(int64(2), count)
-
-	count, err = s.repo.CountByChain("btc")
-	s.NoError(err)
-	s.Equal(int64(1), count)
-
-	count, err = s.repo.CountByChain("sol")
-	s.NoError(err)
-	s.Equal(int64(0), count)
-}
 
 func (s *WalletRepositoryTestSuite) TestUpdateField() {
 	w := s.makeWallet("eth")

@@ -32,7 +32,6 @@ func (s *WalletUserRepositoryTestSuite) createWallet() uuid.UUID {
 		ID: uuid.New(), Chain: "eth", Label: "test",
 		MPCCustomerShare: "aa", MPCShareIV: "bb", MPCShareSalt: "cc",
 		MPCSecretARN: "arn:test", MPCPublicKey: "02", MPCCurve: "secp256k1",
-		DepositAddress: "0x" + uuid.NewString()[:8],
 	}
 	s.Require().NoError(s.walletRepo.Create(w))
 	return w.ID

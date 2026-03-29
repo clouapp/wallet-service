@@ -9,16 +9,20 @@ import (
 	"github.com/btcsuite/btcd/btcutil/bech32"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/mr-tron/base58"
+
+	"github.com/macrowallets/waas/app/models"
 )
 
 // deriveAddress derives the single MPC deposit address from the combined public key.
 func deriveAddress(chainID string, compressedPubKey []byte) (string, error) {
 	switch chainID {
-	case "eth", "polygon":
+	case models.ChainETH, models.ChainPolygon, models.ChainTETH, models.ChainTPolygon:
 		return deriveEthAddress(compressedPubKey)
-	case "btc":
-		return deriveBtcAddress(compressedPubKey)
-	case "sol":
+	case models.ChainBTC:
+		return deriveBtcAddress("bc", compressedPubKey)
+	case models.ChainTBTC:
+		return deriveBtcAddress("tb", compressedPubKey)
+	case models.ChainSOL, models.ChainTSOL:
 		return deriveSolAddress(compressedPubKey)
 	default:
 		return "", fmt.Errorf("unsupported chain for address derivation: %s", chainID)
@@ -36,25 +40,21 @@ func deriveEthAddress(compressedPubKey []byte) (string, error) {
 	return "0x" + hex.EncodeToString(hash[12:]), nil
 }
 
-// deriveBtcAddress derives a native SegWit (P2WPKH / bech32) mainnet address
-// without importing chaincfg to avoid btcd module version conflicts.
-func deriveBtcAddress(compressedPubKey []byte) (string, error) {
+// deriveBtcAddress derives a native SegWit (P2WPKH / bech32) address.
+// hrp is "bc" for mainnet, "tb" for testnet.
+func deriveBtcAddress(hrp string, compressedPubKey []byte) (string, error) {
 	pub, err := btcec.ParsePubKey(compressedPubKey)
 	if err != nil {
 		return "", fmt.Errorf("parse pubkey: %w", err)
 	}
-	// HASH160 = RIPEMD160(SHA256(pubkey))
 	pubHash := btcutil.Hash160(pub.SerializeCompressed())
 
-	// P2WPKH witness program: version 0, 20-byte pubkey hash
-	// Bech32 encoding: hrp "bc" for mainnet, witness version 0 prepended
 	conv, err := bech32.ConvertBits(pubHash, 8, 5, true)
 	if err != nil {
 		return "", fmt.Errorf("convert bits: %w", err)
 	}
-	// Prepend witness version 0
 	witnessProgram := append([]byte{0x00}, conv...)
-	addr, err := bech32.Encode("bc", witnessProgram)
+	addr, err := bech32.Encode(hrp, witnessProgram)
 	if err != nil {
 		return "", fmt.Errorf("bech32 encode: %w", err)
 	}

@@ -213,11 +213,22 @@ func Boot() *Container {
 					network = "testnet"
 				}
 				adapter = chainpkg.NewBitcoinLive(chainpkg.BitcoinConfig{
-					RPCURL:  rpcURL,
-					Network: network,
+					ChainIDStr:    ch.ID,
+					ChainName:     ch.Name,
+					NativeSymbol:  ch.NativeSymbol,
+					RPCURL:        rpcURL,
+					Network:       network,
+					IsTestnet:     ch.IsTestnet,
+					Confirmations: uint64(ch.RequiredConfirmations),
 				})
 			case models.AdapterTypeSolana:
-				adapter = chainpkg.NewSolanaLive(rpcURL)
+				adapter = chainpkg.NewSolanaLive(chainpkg.SolanaConfig{
+					ChainIDStr:    ch.ID,
+					ChainName:     ch.Name,
+					NativeSymbol:  ch.NativeSymbol,
+					RPCURL:        rpcURL,
+					Confirmations: uint64(ch.RequiredConfirmations),
+				})
 			default:
 				slog.Warn("unknown adapter type, skipping", "chain", ch.ID, "adapter", ch.AdapterType)
 				continue

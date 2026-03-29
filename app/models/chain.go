@@ -7,6 +7,18 @@ const (
 	AdapterTypeBitcoin = "bitcoin"
 	AdapterTypeSolana  = "solana"
 
+	ChainETH     = "eth"
+	ChainBTC     = "btc"
+	ChainPolygon = "polygon"
+	ChainSOL     = "sol"
+
+	ChainTETH     = "teth"
+	ChainTBTC     = "tbtc"
+	ChainTPolygon = "tpolygon"
+	ChainTSOL     = "tsol"
+
+	ChainMatic = "matic"
+
 	EnvironmentProd = "prod"
 	EnvironmentTest = "test"
 )

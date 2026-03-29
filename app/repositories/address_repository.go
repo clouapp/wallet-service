@@ -8,6 +8,7 @@ import (
 )
 
 type AddressRepository interface {
+	Create(addr *models.Address) error
 	CountByChainAndAddress(chainID, address string) (int64, error)
 	FindByChainAndAddress(chainID, address string) (*models.Address, error)
 	FindByExternalUserID(externalUserID string) ([]models.Address, error)
@@ -20,6 +21,10 @@ type addressRepository struct{}
 
 func NewAddressRepository() AddressRepository {
 	return &addressRepository{}
+}
+
+func (r *addressRepository) Create(addr *models.Address) error {
+	return facades.Orm().Query().Create(addr)
 }
 
 func (r *addressRepository) CountByChainAndAddress(chainID, address string) (int64, error) {

@@ -22,7 +22,7 @@ type Wallet struct {
 	MPCSecretARN     string     `gorm:"type:text;not null" json:"-"`
 	MPCPublicKey     string     `gorm:"type:text;not null" json:"-"`
 	MPCCurve         string     `gorm:"type:varchar(20);not null" json:"-"`
-	DepositAddress   string     `gorm:"type:text;not null" json:"deposit_address"`
+	DepositAddressID *uuid.UUID `gorm:"type:uuid" json:"deposit_address_id,omitempty"`
 	// Account and admin fields
 	AccountID         *uuid.UUID `gorm:"type:uuid;index" json:"account_id,omitempty"`
 	Status            string     `gorm:"type:varchar(20);default:active" json:"status"`
@@ -32,6 +32,8 @@ type Wallet struct {
 	RequiredApprovals int        `gorm:"default:1" json:"required_approvals"`
 	FrozenUntil       *time.Time `json:"frozen_until,omitempty"`
 	ActivationCode    *string    `gorm:"type:char(6)" json:"-"`
+
+	DepositAddress *Address `gorm:"foreignKey:DepositAddressID" json:"deposit_address,omitempty"`
 }
 
 // TableName specifies the table name for Wallet model.

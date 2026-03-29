@@ -1,7 +1,10 @@
 package seeders
 
 import (
-	"context"
+	"log/slog"
+
+	"github.com/goravel/framework/contracts/database/seeder"
+	"github.com/goravel/framework/facades"
 
 	"github.com/macrowallets/waas/database/seeds"
 )
@@ -14,5 +17,19 @@ func (s *DatabaseSeeder) Signature() string {
 }
 
 func (s *DatabaseSeeder) Run() error {
-	return seeds.Run(context.Background())
+	slog.Info("seeding database…")
+	if err := facades.Seeder().Call([]seeder.Seeder{
+		&ChainSeeder{},
+		&TokenSeeder{},
+		&ChainResourceSeeder{},
+		&PairedAccountSeeder{},
+		&UserSeeder{},
+		&AccountUserSeeder{},
+		&WalletSeeder{},
+	}); err != nil {
+		return err
+	}
+	slog.Info("seed complete ✓")
+	seeds.PrintCredentials()
+	return nil
 }

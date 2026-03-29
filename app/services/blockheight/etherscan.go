@@ -10,6 +10,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/macrowallets/waas/app/models"
 )
 
 const etherscanDefaultBase = "https://api.etherscan.io"
@@ -30,13 +32,13 @@ func NewEtherscanProvider(apiKey string) *EtherscanProvider {
 
 func etherscanChainID(internal string) (string, error) {
 	switch internal {
-	case "eth":
+	case models.ChainETH:
 		return "1", nil
-	case "polygon":
+	case models.ChainPolygon:
 		return "137", nil
-	case "teth":
+	case models.ChainTETH:
 		return "11155111", nil
-	case "tpolygon":
+	case models.ChainTPolygon:
 		return "80002", nil
 	default:
 		return "", fmt.Errorf("etherscan: unknown chain_id %q", internal)

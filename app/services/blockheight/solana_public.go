@@ -8,6 +8,8 @@ import (
 	"io"
 	"net/http"
 	"time"
+
+	"github.com/macrowallets/waas/app/models"
 )
 
 const solanaGetSlotBody = `{"jsonrpc":"2.0","id":1,"method":"getSlot","params":[{"commitment":"finalized"}]}`
@@ -28,9 +30,9 @@ func NewSolanaPublicProvider() *SolanaPublicProvider {
 
 func (p *SolanaPublicProvider) rpcURL(chainID string) (string, error) {
 	switch chainID {
-	case "sol":
+	case models.ChainSOL:
 		return p.mainnetRPC, nil
-	case "tsol":
+	case models.ChainTSOL:
 		return p.devnetRPC, nil
 	default:
 		return "", fmt.Errorf("solana: unknown chain_id %q", chainID)

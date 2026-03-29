@@ -115,7 +115,10 @@ func (s *Service) Request(ctx context.Context, req WithdrawRequest) (*models.Tra
 		return nil, err
 	}
 
-	bal, err := adapter.GetBalance(ctx, wallet.DepositAddress)
+	if wallet.DepositAddress == nil {
+		return nil, fmt.Errorf("wallet has no deposit address")
+	}
+	bal, err := adapter.GetBalance(ctx, wallet.DepositAddress.Address)
 	if err != nil {
 		return nil, fmt.Errorf("get balance: %w", err)
 	}
@@ -179,7 +182,7 @@ func (s *Service) Request(ctx context.Context, req WithdrawRequest) (*models.Tra
 	}
 
 	unsigned, err := adapter.BuildTransfer(ctx, types.TransferRequest{
-		From:   wallet.DepositAddress,
+		From:   wallet.DepositAddress.Address,
 		To:     req.ToAddress,
 		Amount: amount,
 		Asset:  req.Asset,

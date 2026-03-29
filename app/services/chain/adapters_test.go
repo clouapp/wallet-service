@@ -7,7 +7,7 @@ import (
 )
 
 func TestSolana_ValidateAddress(t *testing.T) {
-	adapter := NewSolanaLive("http://fake")
+	adapter := NewSolanaLive(SolanaConfig{ChainIDStr: "sol", ChainName: "Solana", NativeSymbol: "sol", RPCURL: "http://fake", Confirmations: 1})
 
 	tests := []struct {
 		addr string
@@ -35,15 +35,15 @@ func TestSolana_ValidateAddress(t *testing.T) {
 }
 
 func TestSolana_Identity(t *testing.T) {
-	a := NewSolanaLive("http://fake")
-	if a.ID() != "sol" { t.Errorf("expected sol") }
-	if a.Name() != "Solana" { t.Errorf("expected Solana") }
-	if a.NativeAsset() != "sol" { t.Errorf("expected sol") }
-	if a.RequiredConfirmations() != 1 { t.Errorf("expected 1") }
+	a := NewSolanaLive(SolanaConfig{ChainIDStr: "sol", ChainName: "Solana", NativeSymbol: "sol", RPCURL: "http://fake", Confirmations: 1})
+	if a.ID() != "sol" { t.Errorf("expected sol, got %s", a.ID()) }
+	if a.Name() != "Solana" { t.Errorf("expected Solana, got %s", a.Name()) }
+	if a.NativeAsset() != "sol" { t.Errorf("expected sol, got %s", a.NativeAsset()) }
+	if a.RequiredConfirmations() != 1 { t.Errorf("expected 1, got %d", a.RequiredConfirmations()) }
 }
 
 func TestBitcoin_ValidateAddress(t *testing.T) {
-	adapter := NewBitcoinLive(BitcoinConfig{RPCURL: "http://fake"})
+	adapter := NewBitcoinLive(BitcoinConfig{ChainIDStr: "btc", ChainName: "Bitcoin", NativeSymbol: "btc", RPCURL: "http://fake", Confirmations: 3})
 
 	tests := []struct {
 		addr string
@@ -69,15 +69,15 @@ func TestBitcoin_ValidateAddress(t *testing.T) {
 }
 
 func TestBitcoin_Identity(t *testing.T) {
-	a := NewBitcoinLive(BitcoinConfig{RPCURL: "http://fake"})
-	if a.ID() != "btc" { t.Errorf("expected btc") }
-	if a.Name() != "Bitcoin" { t.Errorf("expected Bitcoin") }
-	if a.NativeAsset() != "btc" { t.Errorf("expected btc") }
-	if a.RequiredConfirmations() != 3 { t.Errorf("expected 3") }
+	a := NewBitcoinLive(BitcoinConfig{ChainIDStr: "btc", ChainName: "Bitcoin", NativeSymbol: "btc", RPCURL: "http://fake", Confirmations: 3})
+	if a.ID() != "btc" { t.Errorf("expected btc, got %s", a.ID()) }
+	if a.Name() != "Bitcoin" { t.Errorf("expected Bitcoin, got %s", a.Name()) }
+	if a.NativeAsset() != "btc" { t.Errorf("expected btc, got %s", a.NativeAsset()) }
+	if a.RequiredConfirmations() != 3 { t.Errorf("expected 3, got %d", a.RequiredConfirmations()) }
 }
 
 func TestBitcoin_GetTokenBalance_Error(t *testing.T) {
-	a := NewBitcoinLive(BitcoinConfig{RPCURL: "http://fake"})
+	a := NewBitcoinLive(BitcoinConfig{ChainIDStr: "btc", ChainName: "Bitcoin", NativeSymbol: "btc", RPCURL: "http://fake", Confirmations: 3})
 	_, err := a.GetTokenBalance(nil, "someaddr", types.Token{Symbol: "usdt"})
 	if err == nil {
 		t.Error("expected error — bitcoin doesn't support tokens")

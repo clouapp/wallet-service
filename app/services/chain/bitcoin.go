@@ -10,10 +10,15 @@ import (
 )
 
 type BitcoinConfig struct {
-	RPCURL  string
-	RPCUser string
-	RPCPass string
-	Network string
+	ChainIDStr    string
+	ChainName     string
+	NativeSymbol  string
+	RPCURL        string
+	RPCUser       string
+	RPCPass       string
+	Network       string
+	IsTestnet     bool
+	Confirmations uint64
 }
 
 type BitcoinLive struct {
@@ -25,10 +30,10 @@ func NewBitcoinLive(cfg BitcoinConfig) *BitcoinLive {
 	return &BitcoinLive{cfg: cfg, rpc: NewRPCClient(cfg.RPCURL, cfg.RPCUser, cfg.RPCPass)}
 }
 
-func (a *BitcoinLive) ID() string                        { return "btc" }
-func (a *BitcoinLive) Name() string                      { return "Bitcoin" }
-func (a *BitcoinLive) RequiredConfirmations() uint64      { return 3 }
-func (a *BitcoinLive) NativeAsset() string                { return "btc" }
+func (a *BitcoinLive) ID() string                        { return a.cfg.ChainIDStr }
+func (a *BitcoinLive) Name() string                      { return a.cfg.ChainName }
+func (a *BitcoinLive) RequiredConfirmations() uint64      { return a.cfg.Confirmations }
+func (a *BitcoinLive) NativeAsset() string                { return a.cfg.NativeSymbol }
 
 func (a *BitcoinLive) DeriveAddress(masterKey []byte, index uint32) (string, error) {
 	return "", fmt.Errorf("BTC key derivation not implemented — use BIP-84 + hdkeychain")
@@ -37,6 +42,9 @@ func (a *BitcoinLive) DeriveAddress(masterKey []byte, index uint32) (string, err
 func (a *BitcoinLive) ValidateAddress(address string) bool {
 	if len(address) < 26 || len(address) > 62 {
 		return false
+	}
+	if a.cfg.IsTestnet {
+		return (len(address) >= 3 && address[:3] == "tb1") || address[0] == 'm' || address[0] == 'n' || address[0] == '2'
 	}
 	return address[:3] == "bc1" || address[0] == '1' || address[0] == '3'
 }
@@ -55,7 +63,7 @@ func (a *BitcoinLive) GetBalance(ctx context.Context, address string) (*types.Ba
 		s, _ := sats.Int(nil)
 		total.Add(total, s)
 	}
-	return &types.Balance{Address: address, Asset: "btc", Amount: total, Decimals: 8, Human: fmtUnits(total, 8)}, nil
+	return &types.Balance{Address: address, Asset: a.cfg.NativeSymbol, Amount: total, Decimals: 8, Human: fmtUnits(total, 8)}, nil
 }
 
 func (a *BitcoinLive) GetTokenBalance(ctx context.Context, address string, token types.Token) (*types.Balance, error) {
@@ -64,7 +72,7 @@ func (a *BitcoinLive) GetTokenBalance(ctx context.Context, address string, token
 
 func (a *BitcoinLive) BuildTransfer(ctx context.Context, req types.TransferRequest) (*types.UnsignedTx, error) {
 	return &types.UnsignedTx{
-		ChainID: "btc",
+		ChainID: a.cfg.ChainIDStr,
 		Metadata: map[string]interface{}{
 			"from": req.From, "to": req.To, "amount": req.Amount.String(),
 		},
@@ -133,7 +141,7 @@ func (a *BitcoinLive) ScanBlock(ctx context.Context, blockNum uint64) ([]types.D
 			s, _ := sats.Int(nil)
 			transfers = append(transfers, types.DetectedTransfer{
 				TxHash: tx.Txid, BlockNumber: blockNum, BlockHash: hash,
-				To: addr, Amount: s, Asset: "btc", Timestamp: blockTime,
+				To: addr, Amount: s, Asset: a.cfg.NativeSymbol, Timestamp: blockTime,
 			})
 		}
 	}

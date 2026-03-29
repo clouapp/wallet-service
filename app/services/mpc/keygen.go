@@ -8,7 +8,9 @@ import (
 	"math/big"
 
 	"github.com/bnb-chain/tss-lib/v2/ecdsa/keygen"
+	eddsaKeygen "github.com/bnb-chain/tss-lib/v2/eddsa/keygen"
 	"github.com/bnb-chain/tss-lib/v2/tss"
+	"github.com/decred/dcrd/dcrec/edwards/v2"
 )
 
 // TSSService implements the Service interface using tss-lib v2.
@@ -204,7 +206,121 @@ func randomBigInt256() (*big.Int, error) {
 	return new(big.Int).SetBytes(buf), nil
 }
 
-// keygenEd25519 is a stub; ed25519 support requires additional Solana compatibility work.
-func keygenEd25519(_ context.Context) (*KeygenResult, error) {
-	return nil, fmt.Errorf("ed25519 keygen: pending Solana compatibility gate verification")
+// keygenEd25519 performs a 2-of-2 MPC keygen on the Edwards ed25519 curve.
+func keygenEd25519(ctx context.Context) (*KeygenResult, error) {
+	keyA, err := randomBigInt256()
+	if err != nil {
+		return nil, fmt.Errorf("generate party key A: %w", err)
+	}
+	keyB, err := randomBigInt256()
+	if err != nil {
+		return nil, fmt.Errorf("generate party key B: %w", err)
+	}
+
+	partyIDA := tss.NewPartyID("A", "customer", keyA)
+	partyIDB := tss.NewPartyID("B", "service", keyB)
+
+	sortedIDs := tss.SortPartyIDs(tss.UnSortedPartyIDs{partyIDA, partyIDB})
+	peerCtx := tss.NewPeerContext(sortedIDs)
+
+	partyCount := 2
+	threshold := 1
+
+	outCh := make(chan tss.Message, partyCount*partyCount*10)
+	endCh := make(chan eddsaKeygen.LocalPartySaveData, partyCount)
+	errCh := make(chan error, partyCount*4)
+
+	paramsA := tss.NewParameters(tss.Edwards(), peerCtx, sortedIDs[0], partyCount, threshold)
+	paramsB := tss.NewParameters(tss.Edwards(), peerCtx, sortedIDs[1], partyCount, threshold)
+
+	partyA := eddsaKeygen.NewLocalParty(paramsA, outCh, endCh)
+	partyB := eddsaKeygen.NewLocalParty(paramsB, outCh, endCh)
+	parties := []tss.Party{partyA, partyB}
+
+	for _, p := range parties {
+		p := p
+		go func() {
+			if tssErr := p.Start(); tssErr != nil {
+				errCh <- tssErr.Cause()
+			}
+		}()
+	}
+
+	saves := make([]eddsaKeygen.LocalPartySaveData, 0, partyCount)
+
+loop:
+	for {
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+
+		case routeErr := <-errCh:
+			return nil, fmt.Errorf("keygen ceremony: %w", routeErr)
+
+		case msg := <-outCh:
+			dest := msg.GetTo()
+			if dest == nil {
+				for _, p := range parties {
+					if p.PartyID().Index == msg.GetFrom().Index {
+						continue
+					}
+					go routeMessage(p, msg, errCh)
+				}
+			} else {
+				go routeMessage(parties[dest[0].Index], msg, errCh)
+			}
+
+		case save := <-endCh:
+			saves = append(saves, save)
+			if len(saves) == partyCount {
+				break loop
+			}
+		}
+	}
+
+	saveA, saveB, err := matchEddsaSavesByIndex(saves)
+	if err != nil {
+		return nil, err
+	}
+
+	shareABytes, err := json.Marshal(saveA)
+	if err != nil {
+		return nil, fmt.Errorf("marshal shareA: %w", err)
+	}
+	shareBBytes, err := json.Marshal(saveB)
+	if err != nil {
+		return nil, fmt.Errorf("marshal shareB: %w", err)
+	}
+
+	pubPoint := saveA.EDDSAPub
+	if pubPoint == nil {
+		return nil, fmt.Errorf("keygen produced nil EDDSAPub")
+	}
+
+	pk := edwards.PublicKey{
+		Curve: tss.Edwards(),
+		X:     pubPoint.X(),
+		Y:     pubPoint.Y(),
+	}
+
+	return &KeygenResult{
+		ShareA:         shareABytes,
+		ShareB:         shareBBytes,
+		CombinedPubKey: pk.Serialize(),
+	}, nil
+}
+
+func matchEddsaSavesByIndex(saves []eddsaKeygen.LocalPartySaveData) (eddsaKeygen.LocalPartySaveData, eddsaKeygen.LocalPartySaveData, error) {
+	var zero eddsaKeygen.LocalPartySaveData
+	if len(saves) != 2 {
+		return zero, zero, fmt.Errorf("expected 2 save data items, got %d", len(saves))
+	}
+	idx0, err := saves[0].OriginalIndex()
+	if err != nil {
+		return zero, zero, fmt.Errorf("OriginalIndex saves[0]: %w", err)
+	}
+	if idx0 == 0 {
+		return saves[0], saves[1], nil
+	}
+	return saves[1], saves[0], nil
 }
