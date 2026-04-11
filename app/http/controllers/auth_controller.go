@@ -97,16 +97,27 @@ func Register(ctx http.Context) http.Response {
 		Role:      "owner",
 		Status:    "active",
 	}
-	_ = container.Get().AccountUserRepo.Create(prodMembership)
-	_ = container.Get().AccountUserRepo.Create(testMembership)
+	if err := container.Get().AccountUserRepo.Create(prodMembership); err != nil {
+		facades.Log().WithContext(ctx).Errorf("auth: create prod membership: %v", err)
+	}
+	if err := container.Get().AccountUserRepo.Create(testMembership); err != nil {
+		facades.Log().WithContext(ctx).Errorf("auth: create test membership: %v", err)
+	}
 
 	user.DefaultAccountID = &prodAccountID
-	_ = container.Get().UserRepo.UpdateDefaultAccountID(user.ID, &prodAccountID)
+	if err := container.Get().UserRepo.UpdateDefaultAccountID(user.ID, &prodAccountID); err != nil {
+		facades.Log().WithContext(ctx).Errorf("auth: set default account: %v", err)
+	}
 
-	// Send welcome email (best-effort)
-	_ = facades.Mail().To([]string{user.Email}).Send(&mails.WelcomeMail{To: user.Email, FullName: user.FullName})
+	if err := facades.Mail().To([]string{user.Email}).Send(&mails.WelcomeMail{To: user.Email, FullName: user.FullName}); err != nil {
+		facades.Log().WithContext(ctx).Errorf("auth: send welcome mail: %v", err)
+	}
 
-	accessToken, _ := facades.Auth(ctx).LoginUsingID(user.ID.String())
+	accessToken, err := facades.Auth(ctx).LoginUsingID(user.ID.String())
+	if err != nil {
+		facades.Log().WithContext(ctx).Errorf("auth: login after register: %v", err)
+		return ctx.Response().Json(http.StatusInternalServerError, http.Json{"error": "failed to create session"})
+	}
 
 	accounts, defaultAccount := loadUserAccounts(user)
 
@@ -139,8 +150,8 @@ func Login(ctx http.Context) http.Response {
 		return ctx.Response().Json(http.StatusBadRequest, http.Json{"error": "invalid request body"})
 	}
 
-	userPtr, _ := container.Get().UserRepo.FindByEmail(req.Email)
-	if userPtr == nil {
+	userPtr, err := container.Get().UserRepo.FindByEmail(req.Email)
+	if err != nil || userPtr == nil {
 		return ctx.Response().Json(http.StatusUnauthorized, http.Json{"error": "invalid credentials"})
 	}
 	user := *userPtr
@@ -150,18 +161,28 @@ func Login(ctx http.Context) http.Response {
 	}
 
 	if user.TotpEnabled {
-		// Issue a short-lived partial token — the client must call /auth/2fa/verify
-		partialToken, _ := facades.Auth(ctx).LoginUsingID(user.ID.String())
+		partialToken, err := facades.Auth(ctx).LoginUsingID(user.ID.String())
+		if err != nil {
+			facades.Log().WithContext(ctx).Errorf("auth: partial login: %v", err)
+			return ctx.Response().Json(http.StatusInternalServerError, http.Json{"error": "failed to create session"})
+		}
 		return ctx.Response().Json(http.StatusOK, http.Json{
 			"requires_2fa":  true,
 			"partial_token": partialToken,
 		})
 	}
 
-	accessToken, _ := facades.Auth(ctx).LoginUsingID(user.ID.String())
+	accessToken, err := facades.Auth(ctx).LoginUsingID(user.ID.String())
+	if err != nil {
+		facades.Log().WithContext(ctx).Errorf("auth: login: %v", err)
+		return ctx.Response().Json(http.StatusInternalServerError, http.Json{"error": "failed to create session"})
+	}
 
-	// Issue refresh token
-	rawRefresh, _ := authService.GenerateRandomToken()
+	rawRefresh, err := authService.GenerateRandomToken()
+	if err != nil {
+		facades.Log().WithContext(ctx).Errorf("auth: generate refresh token: %v", err)
+		return ctx.Response().Json(http.StatusInternalServerError, http.Json{"error": "internal error"})
+	}
 	refreshHash := authService.HashToken(rawRefresh)
 	rt := &models.RefreshToken{
 		ID:        uuid.New(),
@@ -169,7 +190,9 @@ func Login(ctx http.Context) http.Response {
 		TokenHash: refreshHash,
 		ExpiresAt: time.Now().Add(30 * 24 * time.Hour),
 	}
-	_ = container.Get().RefreshTokenRepo.Create(rt)
+	if err := container.Get().RefreshTokenRepo.Create(rt); err != nil {
+		facades.Log().WithContext(ctx).Errorf("auth: store refresh token: %v", err)
+	}
 
 	accounts, defaultAccount := loadUserAccounts(&user)
 
@@ -213,14 +236,17 @@ func VerifyTwoFactor(ctx http.Context) http.Response {
 		return ctx.Response().Json(http.StatusUnauthorized, http.Json{"error": "invalid or expired partial token"})
 	}
 
-	userIDStr, _ := facades.Auth(ctx).ID()
+	userIDStr, idErr := facades.Auth(ctx).ID()
+	if idErr != nil {
+		return ctx.Response().Json(http.StatusUnauthorized, http.Json{"error": "invalid token"})
+	}
 	userID, err := uuid.Parse(userIDStr)
 	if err != nil {
 		return ctx.Response().Json(http.StatusUnauthorized, http.Json{"error": "invalid token subject"})
 	}
 
-	userPtr, _ := container.Get().UserRepo.FindByID(userID)
-	if userPtr == nil {
+	userPtr, findErr := container.Get().UserRepo.FindByID(userID)
+	if findErr != nil || userPtr == nil {
 		return ctx.Response().Json(http.StatusUnauthorized, http.Json{"error": "user not found"})
 	}
 	user := *userPtr
@@ -230,10 +256,15 @@ func VerifyTwoFactor(ctx http.Context) http.Response {
 		verified = authService.VerifyTOTP(user.TotpSecret, req.Code)
 	}
 	if !verified && req.RecoveryCode != "" {
-		codes, _ := container.Get().TotpRecoveryCodeRepo.FindUnusedByUserID(user.ID)
+		codes, codesErr := container.Get().TotpRecoveryCodeRepo.FindUnusedByUserID(user.ID)
+		if codesErr != nil {
+			facades.Log().WithContext(ctx).Errorf("auth: find recovery codes: %v", codesErr)
+		}
 		for _, c := range codes {
 			if authService.VerifyRecoveryCode(req.RecoveryCode, c.CodeHash) {
-				_ = container.Get().TotpRecoveryCodeRepo.MarkUsed(c.ID)
+				if err := container.Get().TotpRecoveryCodeRepo.MarkUsed(c.ID); err != nil {
+					facades.Log().WithContext(ctx).Errorf("auth: mark recovery code used: %v", err)
+				}
 				verified = true
 				break
 			}
@@ -244,8 +275,16 @@ func VerifyTwoFactor(ctx http.Context) http.Response {
 		return ctx.Response().Json(http.StatusUnauthorized, http.Json{"error": "invalid 2FA code"})
 	}
 
-	accessToken, _ := facades.Auth(ctx).LoginUsingID(user.ID.String())
-	rawRefresh, _ := authService.GenerateRandomToken()
+	accessToken, loginErr := facades.Auth(ctx).LoginUsingID(user.ID.String())
+	if loginErr != nil {
+		facades.Log().WithContext(ctx).Errorf("auth: 2fa login: %v", loginErr)
+		return ctx.Response().Json(http.StatusInternalServerError, http.Json{"error": "failed to create session"})
+	}
+	rawRefresh, genErr := authService.GenerateRandomToken()
+	if genErr != nil {
+		facades.Log().WithContext(ctx).Errorf("auth: generate refresh token: %v", genErr)
+		return ctx.Response().Json(http.StatusInternalServerError, http.Json{"error": "internal error"})
+	}
 	refreshHash := authService.HashToken(rawRefresh)
 	rt := &models.RefreshToken{
 		ID:        uuid.New(),
@@ -253,7 +292,9 @@ func VerifyTwoFactor(ctx http.Context) http.Response {
 		TokenHash: refreshHash,
 		ExpiresAt: time.Now().Add(30 * 24 * time.Hour),
 	}
-	_ = container.Get().RefreshTokenRepo.Create(rt)
+	if err := container.Get().RefreshTokenRepo.Create(rt); err != nil {
+		facades.Log().WithContext(ctx).Errorf("auth: store refresh token: %v", err)
+	}
 
 	return ctx.Response().Json(http.StatusOK, http.Json{
 		"access_token":  accessToken,

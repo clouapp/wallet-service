@@ -97,7 +97,6 @@ func (r *walletRepository) PaginateAll(limit, offset int) ([]models.Wallet, int6
 	return wallets, total, err
 }
 
-
 func (r *walletRepository) UpdateField(id uuid.UUID, field string, value interface{}) error {
 	_, err := facades.Orm().Query().Model(&models.Wallet{}).Where("id = ?", id).Update(field, value)
 	return err

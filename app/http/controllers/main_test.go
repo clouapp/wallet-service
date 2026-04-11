@@ -16,7 +16,7 @@ func TestMain(m *testing.M) {
 	if os.Getenv("AWS_DEFAULT_REGION") == "" {
 		os.Setenv("AWS_DEFAULT_REGION", "us-east-1")
 	}
-	container.Boot()
 	bootstrap.Boot()
+	_ = container.Get()
 	os.Exit(m.Run())
 }

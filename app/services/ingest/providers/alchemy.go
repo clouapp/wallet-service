@@ -97,7 +97,7 @@ func (a *AlchemyProvider) CreateWebhook(ctx context.Context, cfg ProviderConfig)
 
 	return &ProviderWebhook{
 		ProviderWebhookID: result.Data.ID,
-		SigningSecret:      result.Data.SigningKey,
+		SigningSecret:     result.Data.SigningKey,
 	}, nil
 }
 

@@ -19,6 +19,7 @@ import (
 func accountSvc() *accountsvc.Service {
 	return accountsvc.NewService(container.Get().AccountRepo, container.Get().AccountUserRepo)
 }
+
 var accountAuthService = authsvc.NewService()
 
 // CreateAccount godoc

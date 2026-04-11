@@ -134,7 +134,7 @@ type WebhookMessage struct {
 	EventID       string    `json:"event_id"`
 	TransactionID string    `json:"transaction_id"`
 	EventType     EventType `json:"event_type"`
-	Payload       string    `json:"payload"`    // JSON string
+	Payload       string    `json:"payload"` // JSON string
 	DeliveryURL   string    `json:"delivery_url"`
 	Secret        string    `json:"secret"`
 	Attempt       int       `json:"attempt"`

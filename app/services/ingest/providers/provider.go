@@ -33,7 +33,7 @@ type ProviderConfig struct {
 
 type ProviderWebhook struct {
 	ProviderWebhookID string
-	SigningSecret      string
+	SigningSecret     string
 }
 
 type WebhookProvider interface {

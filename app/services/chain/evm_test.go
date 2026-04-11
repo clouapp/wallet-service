@@ -15,11 +15,11 @@ func TestEVM_ValidateAddress(t *testing.T) {
 		{"0x742d35Cc6634C0532925a3b844Bc9e7595f2bD12", true},
 		{"0x0000000000000000000000000000000000000000", true},
 		{"0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF", true},
-		{"0x742d35cc6634c0532925a3b844bc9e7595f2bd12", true}, // lowercase
-		{"742d35Cc6634C0532925a3b844Bc9e7595f2bD12", false},  // missing 0x
-		{"0x742d35Cc6634C0532925a3b844Bc9e7595f2bD1", false},  // too short
+		{"0x742d35cc6634c0532925a3b844bc9e7595f2bd12", true},   // lowercase
+		{"742d35Cc6634C0532925a3b844Bc9e7595f2bD12", false},    // missing 0x
+		{"0x742d35Cc6634C0532925a3b844Bc9e7595f2bD1", false},   // too short
 		{"0x742d35Cc6634C0532925a3b844Bc9e7595f2bD123", false}, // too long
-		{"0xGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGG", false}, // invalid hex
+		{"0xGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGG", false},  // invalid hex
 		{"", false},
 		{"0x", false},
 		{"hello", false},
@@ -37,13 +37,27 @@ func TestEVM_Identity(t *testing.T) {
 	eth := NewEVMLive(EVMConfig{ChainIDStr: "eth", ChainName: "Ethereum", NativeSymbol: "eth", Confirmations: 12})
 	poly := NewEVMLive(EVMConfig{ChainIDStr: "polygon", ChainName: "Polygon", NativeSymbol: "matic", Confirmations: 128})
 
-	if eth.ID() != "eth" { t.Errorf("expected eth, got %s", eth.ID()) }
-	if eth.Name() != "Ethereum" { t.Errorf("expected Ethereum, got %s", eth.Name()) }
-	if eth.NativeAsset() != "eth" { t.Errorf("expected eth, got %s", eth.NativeAsset()) }
-	if eth.RequiredConfirmations() != 12 { t.Errorf("expected 12, got %d", eth.RequiredConfirmations()) }
-	if poly.ID() != "polygon" { t.Errorf("expected polygon, got %s", poly.ID()) }
-	if poly.NativeAsset() != "matic" { t.Errorf("expected matic, got %s", poly.NativeAsset()) }
-	if poly.RequiredConfirmations() != 128 { t.Errorf("expected 128, got %d", poly.RequiredConfirmations()) }
+	if eth.ID() != "eth" {
+		t.Errorf("expected eth, got %s", eth.ID())
+	}
+	if eth.Name() != "Ethereum" {
+		t.Errorf("expected Ethereum, got %s", eth.Name())
+	}
+	if eth.NativeAsset() != "eth" {
+		t.Errorf("expected eth, got %s", eth.NativeAsset())
+	}
+	if eth.RequiredConfirmations() != 12 {
+		t.Errorf("expected 12, got %d", eth.RequiredConfirmations())
+	}
+	if poly.ID() != "polygon" {
+		t.Errorf("expected polygon, got %s", poly.ID())
+	}
+	if poly.NativeAsset() != "matic" {
+		t.Errorf("expected matic, got %s", poly.NativeAsset())
+	}
+	if poly.RequiredConfirmations() != 128 {
+		t.Errorf("expected 128, got %d", poly.RequiredConfirmations())
+	}
 }
 
 func TestEncodeERC20Transfer(t *testing.T) {
@@ -130,10 +144,10 @@ func TestFmtUnits(t *testing.T) {
 		decimals uint8
 		want     string
 	}{
-		{big.NewInt(1000000), 6, "1"},                          // 1 USDT
-		{big.NewInt(1500000), 6, "1.5"},                        // 1.5 USDT
-		{big.NewInt(1000000000000000000), 18, "1"},             // 1 ETH
-		{big.NewInt(500000000000000000), 18, "0.5"},            // 0.5 ETH
+		{big.NewInt(1000000), 6, "1"},               // 1 USDT
+		{big.NewInt(1500000), 6, "1.5"},             // 1.5 USDT
+		{big.NewInt(1000000000000000000), 18, "1"},  // 1 ETH
+		{big.NewInt(500000000000000000), 18, "0.5"}, // 0.5 ETH
 		{big.NewInt(0), 18, "0"},
 		{big.NewInt(1), 18, "0.000000000000000001"},
 		{nil, 18, "0"},

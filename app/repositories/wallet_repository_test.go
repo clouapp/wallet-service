@@ -64,7 +64,6 @@ func (s *WalletRepositoryTestSuite) TestFindAll() {
 	s.Len(wallets, 2)
 }
 
-
 func (s *WalletRepositoryTestSuite) TestUpdateField() {
 	w := s.makeWallet("eth")
 	s.Require().NoError(s.repo.Create(w))

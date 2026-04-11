@@ -44,7 +44,7 @@ func TestRegistry_ChainIDs(t *testing.T) {
 func TestRegistry_OverwriteChain(t *testing.T) {
 	r := NewRegistry()
 	r.RegisterChain(mocks.NewMockChain("eth"))
-	
+
 	mock2 := mocks.NewMockChain("eth")
 	mock2.NameVal = "Ethereum v2"
 	r.RegisterChain(mock2)

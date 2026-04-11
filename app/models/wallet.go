@@ -12,9 +12,9 @@ import (
 // Neither party can sign alone.
 type Wallet struct {
 	orm.Model
-	ID               uuid.UUID  `gorm:"type:uuid;primary_key" json:"id"`
-	Chain            string     `gorm:"type:varchar(50);not null;index" json:"chain"`
-	Label            string     `gorm:"type:varchar(255)" json:"label,omitempty"`
+	ID    uuid.UUID `gorm:"type:uuid;primary_key" json:"id"`
+	Chain string    `gorm:"type:varchar(50);not null;index" json:"chain"`
+	Label string    `gorm:"type:varchar(255)" json:"label,omitempty"`
 	// MPC key material — never exposed in JSON responses (stored as hex-encoded text)
 	MPCCustomerShare string     `gorm:"type:text;not null" json:"-"`
 	MPCShareIV       string     `gorm:"type:text;not null" json:"-"`

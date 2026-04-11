@@ -26,12 +26,12 @@ func GetWalletSettings(ctx http.Context) http.Response {
 	}
 
 	return ctx.Response().Json(http.StatusOK, http.Json{
-		"fee_rate_min":        wallet.FeeRateMin,
-		"fee_rate_max":        wallet.FeeRateMax,
-		"fee_multiplier":      wallet.FeeMultiplier,
+		"fee_rate_min":       wallet.FeeRateMin,
+		"fee_rate_max":       wallet.FeeRateMax,
+		"fee_multiplier":     wallet.FeeMultiplier,
 		"required_approvals": wallet.RequiredApprovals,
-		"frozen_until":        wallet.FrozenUntil,
-		"status":              wallet.Status,
+		"frozen_until":       wallet.FrozenUntil,
+		"status":             wallet.Status,
 	})
 }
 
@@ -94,12 +94,12 @@ func UpdateWalletSettings(ctx http.Context) http.Response {
 	}
 
 	return ctx.Response().Json(http.StatusOK, http.Json{
-		"fee_rate_min":        wallet.FeeRateMin,
-		"fee_rate_max":        wallet.FeeRateMax,
-		"fee_multiplier":      wallet.FeeMultiplier,
+		"fee_rate_min":       wallet.FeeRateMin,
+		"fee_rate_max":       wallet.FeeRateMax,
+		"fee_multiplier":     wallet.FeeMultiplier,
 		"required_approvals": wallet.RequiredApprovals,
-		"frozen_until":        wallet.FrozenUntil,
-		"status":              wallet.Status,
+		"frozen_until":       wallet.FrozenUntil,
+		"status":             wallet.Status,
 	})
 }
 
@@ -152,10 +152,10 @@ func FreezeWallet(ctx http.Context) http.Response {
 // ---- Request/Response types ----
 
 type UpdateWalletSettingsRequest struct {
-	FeeRateMin        *int     `json:"fee_rate_min,omitempty" example:"1"`
-	FeeRateMax        *int     `json:"fee_rate_max,omitempty" example:"100"`
-	FeeMultiplier     *float64 `json:"fee_multiplier,omitempty" example:"1.25"`
-	RequiredApprovals *int     `json:"required_approvals,omitempty" example:"2"`
+	FeeRateMin        *int       `json:"fee_rate_min,omitempty" example:"1"`
+	FeeRateMax        *int       `json:"fee_rate_max,omitempty" example:"100"`
+	FeeMultiplier     *float64   `json:"fee_multiplier,omitempty" example:"1.25"`
+	RequiredApprovals *int       `json:"required_approvals,omitempty" example:"2"`
 	FrozenUntil       *time.Time `json:"frozen_until,omitempty"`
 }
 

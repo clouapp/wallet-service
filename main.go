@@ -64,17 +64,15 @@ var (
 func init() {
 	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo})))
 
-	// Boot Goravel application
 	bootstrap.Boot()
+	c = container.Get()
 
-	// Boot container — shared across all Lambda modes
-	c = container.Boot()
-	slog.Info("vault booted", "mode", os.Getenv("LAMBDA_MODE"), "env", os.Getenv("ENV"))
+	mode := facades.Config().GetString("vault.lambda_mode")
+	envName := facades.Config().GetString("app.env")
+	slog.Info("vault booted", "mode", mode, "env", envName)
 }
 
 func main() {
-	// If CLI args are provided (e.g., "go run . artisan migrate"), dispatch to Artisan.
-	// Goravel's Run() looks for "artisan" in the args slice.
 	if len(os.Args) > 1 {
 		if err := facades.Artisan().Run(os.Args, true); err != nil {
 			slog.Error("artisan command failed", "error", err)
@@ -83,7 +81,7 @@ func main() {
 		return
 	}
 
-	mode := os.Getenv("LAMBDA_MODE")
+	mode := facades.Config().GetString("vault.lambda_mode")
 
 	switch mode {
 	case "deposit_scanner":
@@ -101,17 +99,9 @@ func main() {
 	}
 }
 
-// ---------------------------------------------------------------------------
-// API Gateway Handler — uses the same Goravel router as local dev
-// ---------------------------------------------------------------------------
-
 func handleAPIGateway(ctx context.Context, req events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
 	return httpadapter.NewV2(facades.Route()).ProxyWithContext(ctx, req)
 }
-
-// ---------------------------------------------------------------------------
-// Deposit Scanner — triggered by EventBridge schedule
-// ---------------------------------------------------------------------------
 
 func handleDepositScan(ctx context.Context, event types.DepositScanEvent) error {
 	slog.Info("deposit scan triggered", "chain", event.Chain)
@@ -127,10 +117,6 @@ func handleWebhookReconciler(ctx context.Context) error {
 	slog.Info("webhook reconciler triggered")
 	return c.WebhookSyncService.RunReconciliation(ctx)
 }
-
-// ---------------------------------------------------------------------------
-// Webhook Worker — triggered by SQS
-// ---------------------------------------------------------------------------
 
 func handleWebhookWorker(ctx context.Context, sqsEvent events.SQSEvent) (events.SQSEventResponse, error) {
 	var failures []events.SQSBatchItemFailure
@@ -156,19 +142,14 @@ func handleWebhookWorker(ctx context.Context, sqsEvent events.SQSEvent) (events.
 	return events.SQSEventResponse{BatchItemFailures: failures}, nil
 }
 
-// ---------------------------------------------------------------------------
-// Local dev: run as Goravel HTTP server
-// ---------------------------------------------------------------------------
-
 func runLocal() {
-	port := os.Getenv("PORT")
+	port := facades.Config().GetString("vault.port")
 	if port == "" {
 		port = "8080"
 	}
 
 	slog.Info("starting Goravel HTTP server", "port", port)
 
-	// Run Goravel HTTP server
 	if err := facades.Route().Run(":" + port); err != nil {
 		slog.Error("server error", "error", err)
 		os.Exit(1)

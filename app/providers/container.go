@@ -4,9 +4,9 @@ import (
 	"github.com/macrowallets/waas/app/container"
 )
 
-// Boot builds the full dependency graph (delegated to container package).
+// Boot resolves the WaaS container from the Goravel service container.
 func Boot() *container.Container {
-	return container.Boot()
+	return container.Get()
 }
 
 // Get returns the global container instance (delegated to container package).

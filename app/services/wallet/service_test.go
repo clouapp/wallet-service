@@ -136,7 +136,6 @@ func (s *WalletServiceTestSuite) TestCreateWallet_SolanaUsesEd25519() {
 	s.NotEmpty(result.Wallet.DepositAddress)
 }
 
-
 func (s *WalletServiceTestSuite) TestCreateWallet_Success_ReturnsKeycardData() {
 	os.Setenv("WALLET_SERVICE_KEY", "0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20")
 	ctx := context.Background()

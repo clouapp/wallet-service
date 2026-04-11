@@ -58,7 +58,7 @@ func (s *WalletsControllerTestSuite) TestGetWallet_Success() {
 	s.Nil(err)
 	walletID := j["id"].(string)
 
-	s.SignedGet("/v1/wallets/"+walletID).
+	s.SignedGet("/v1/wallets/" + walletID).
 		AssertOk().AssertJson(map[string]any{"id": walletID, "chain": "eth"})
 }
 

@@ -56,7 +56,7 @@ func (s *TransactionsControllerTestSuite) TestGetTransaction_Success() {
 		`{"external_user_id":"user","to_address":"0x742d35Cc6634C0532925a3b844Bc9e7595f2bD12","amount":"1000","asset":"eth","idempotency_key":"tx_get_001"}`).Json()
 	txID := tj["id"].(string)
 
-	s.SignedGet("/v1/transactions/"+txID).
+	s.SignedGet("/v1/transactions/" + txID).
 		AssertOk().AssertJson(map[string]any{"id": txID, "tx_type": "withdrawal", "status": "pending"})
 }
 

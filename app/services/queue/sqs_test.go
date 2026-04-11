@@ -37,9 +37,15 @@ func TestWebhookMessage_Serialization(t *testing.T) {
 		Attempt:       1,
 	}
 
-	if msg.EventID != "evt-123" { t.Error("EventID mismatch") }
-	if msg.EventType != types.EventDepositConfirmed { t.Error("EventType mismatch") }
-	if msg.Attempt != 1 { t.Error("Attempt mismatch") }
+	if msg.EventID != "evt-123" {
+		t.Error("EventID mismatch")
+	}
+	if msg.EventType != types.EventDepositConfirmed {
+		t.Error("EventType mismatch")
+	}
+	if msg.Attempt != 1 {
+		t.Error("Attempt mismatch")
+	}
 }
 
 func TestQueueURLs(t *testing.T) {

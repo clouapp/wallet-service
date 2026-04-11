@@ -23,7 +23,7 @@ endif
 FRONT_DIR = ../front
 
 # Docker configuration
-DOCKER_COMPOSE = docker-compose
+DOCKER_COMPOSE = docker compose
 DOCKER_IMAGE_NAME = waas-service
 DOCKER_TAG ?= latest
 

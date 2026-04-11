@@ -30,10 +30,10 @@ func NewBitcoinLive(cfg BitcoinConfig) *BitcoinLive {
 	return &BitcoinLive{cfg: cfg, rpc: NewRPCClient(cfg.RPCURL, cfg.RPCUser, cfg.RPCPass)}
 }
 
-func (a *BitcoinLive) ID() string                        { return a.cfg.ChainIDStr }
-func (a *BitcoinLive) Name() string                      { return a.cfg.ChainName }
-func (a *BitcoinLive) RequiredConfirmations() uint64      { return a.cfg.Confirmations }
-func (a *BitcoinLive) NativeAsset() string                { return a.cfg.NativeSymbol }
+func (a *BitcoinLive) ID() string                    { return a.cfg.ChainIDStr }
+func (a *BitcoinLive) Name() string                  { return a.cfg.ChainName }
+func (a *BitcoinLive) RequiredConfirmations() uint64 { return a.cfg.Confirmations }
+func (a *BitcoinLive) NativeAsset() string           { return a.cfg.NativeSymbol }
 
 func (a *BitcoinLive) DeriveAddress(masterKey []byte, index uint32) (string, error) {
 	return "", fmt.Errorf("BTC key derivation not implemented — use BIP-84 + hdkeychain")

@@ -50,21 +50,21 @@ func (h *HeliusProvider) ProviderName() string {
 // ---------------------------------------------------------------------------
 
 type heliusWebhookBody struct {
-	WebhookURL         string   `json:"webhookURL"`
-	WebhookType        string   `json:"webhookType"`
-	AccountAddresses   []string `json:"accountAddresses"`
-	TransactionTypes   []string `json:"transactionTypes"`
-	AuthHeader         string   `json:"authHeader"`
+	WebhookURL       string   `json:"webhookURL"`
+	WebhookType      string   `json:"webhookType"`
+	AccountAddresses []string `json:"accountAddresses"`
+	TransactionTypes []string `json:"transactionTypes"`
+	AuthHeader       string   `json:"authHeader"`
 }
 
 type heliusCreateResp struct {
-	WebhookID          string   `json:"webhookID"`
-	WebhookURL         string   `json:"webhookURL"`
-	WebhookType        string   `json:"webhookType"`
-	AccountAddresses   []string `json:"accountAddresses"`
-	TransactionTypes   []string `json:"transactionTypes"`
-	AuthHeader         string   `json:"authHeader"`
-	Active             bool     `json:"active"`
+	WebhookID        string   `json:"webhookID"`
+	WebhookURL       string   `json:"webhookURL"`
+	WebhookType      string   `json:"webhookType"`
+	AccountAddresses []string `json:"accountAddresses"`
+	TransactionTypes []string `json:"transactionTypes"`
+	AuthHeader       string   `json:"authHeader"`
+	Active           bool     `json:"active"`
 }
 
 func (h *HeliusProvider) CreateWebhook(ctx context.Context, cfg ProviderConfig) (*ProviderWebhook, error) {
@@ -121,7 +121,7 @@ func (h *HeliusProvider) CreateWebhook(ctx context.Context, cfg ProviderConfig) 
 
 	return &ProviderWebhook{
 		ProviderWebhookID: result.WebhookID,
-		SigningSecret:      authHeader,
+		SigningSecret:     authHeader,
 	}, nil
 }
 

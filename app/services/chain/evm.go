@@ -44,10 +44,10 @@ func NewEVMLive(cfg EVMConfig) *EVMLive {
 	}
 }
 
-func (a *EVMLive) ID() string                        { return a.cfg.ChainIDStr }
-func (a *EVMLive) Name() string                      { return a.cfg.ChainName }
-func (a *EVMLive) RequiredConfirmations() uint64      { return a.cfg.Confirmations }
-func (a *EVMLive) NativeAsset() string                { return a.cfg.NativeSymbol }
+func (a *EVMLive) ID() string                    { return a.cfg.ChainIDStr }
+func (a *EVMLive) Name() string                  { return a.cfg.ChainName }
+func (a *EVMLive) RequiredConfirmations() uint64 { return a.cfg.Confirmations }
+func (a *EVMLive) NativeAsset() string           { return a.cfg.NativeSymbol }
 
 func (a *EVMLive) DeriveAddress(masterKey []byte, index uint32) (string, error) {
 	// TODO: BIP-44 m/44'/60'/0'/0/{index} via hdkeychain

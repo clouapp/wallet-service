@@ -11,12 +11,12 @@ import (
 	"fmt"
 	"log/slog"
 	"math/big"
-	"os"
 	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/secretsmanager"
 	"github.com/google/uuid"
+	"github.com/goravel/framework/facades"
 	"github.com/redis/go-redis/v9"
 
 	"github.com/macrowallets/waas/app/models"
@@ -123,7 +123,7 @@ func (s *Service) CreateWallet(ctx context.Context, accountID uuid.UUID, chainID
 		return nil, fmt.Errorf("marshal user key: %w", err)
 	}
 
-	encPasscode, err := mpc.EncryptWithServiceKey([]byte(passphrase), os.Getenv("WALLET_SERVICE_KEY"))
+	encPasscode, err := mpc.EncryptWithServiceKey([]byte(passphrase), facades.Config().GetString("vault.wallet_service_key"))
 	if err != nil {
 		return nil, fmt.Errorf("encrypt passcode: %w", err)
 	}

@@ -1,10 +1,11 @@
 package middleware
 
 import (
-	"os"
 	"strings"
 
 	"github.com/goravel/framework/contracts/http"
+	"github.com/goravel/framework/facades"
+	"github.com/spf13/cast"
 )
 
 // Cors handles Cross-Origin Resource Sharing headers.
@@ -35,7 +36,7 @@ func Cors() http.Middleware {
 // isAllowedCorsOrigin checks if the origin is permitted.
 // Reads CORS_ALLOWED_ORIGINS from env (comma-separated); defaults to localhost:3000.
 func isAllowedCorsOrigin(origin string) bool {
-	raw := os.Getenv("CORS_ALLOWED_ORIGINS")
+	raw := cast.ToString(facades.Config().Env("CORS_ALLOWED_ORIGINS", ""))
 	var allowed []string
 	if raw == "" {
 		allowed = []string{"http://localhost:3000", "http://localhost:3001"}

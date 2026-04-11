@@ -7,17 +7,17 @@ import (
 	"fmt"
 	"io"
 	"math"
-	"os"
 	"strconv"
 	"time"
 
 	"github.com/goravel/framework/contracts/http"
+	"github.com/goravel/framework/facades"
 )
 
 // HMACAuth validates X-API-Key + X-API-Signature + X-API-Timestamp for Goravel.
 // Signature = HMAC-SHA256(secret, timestamp + method + path + body).
 func HMACAuth(ctx http.Context) {
-	apiKeySecret := os.Getenv("API_KEY_SECRET")
+	apiKeySecret := facades.Config().GetString("vault.api_key_secret")
 
 	apiKey := ctx.Request().Header("X-API-Key", "")
 	sig := ctx.Request().Header("X-API-Signature", "")
@@ -69,10 +69,12 @@ func HMACAuth(ctx http.Context) {
 }
 
 // RequestLogger logs method, path, status, and duration as structured JSON for Goravel.
-func RequestLogger(ctx http.Context) {
-	start := time.Now()
-	ctx.Request().Next()
+func RequestLogger() http.Middleware {
+	return func(ctx http.Context) {
+		start := time.Now()
+		ctx.Request().Next()
 
-	fmt.Printf(`{"level":"info","msg":"request","method":"%s","path":"%s","duration_ms":%d}`+"\n",
-		ctx.Request().Method(), ctx.Request().Path(), time.Since(start).Milliseconds())
+		facades.Log().Infof("request method=%s path=%s duration_ms=%d",
+			ctx.Request().Method(), ctx.Request().Path(), time.Since(start).Milliseconds())
+	}
 }

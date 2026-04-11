@@ -26,10 +26,10 @@ func NewSolanaLive(cfg SolanaConfig) *SolanaLive {
 	return &SolanaLive{cfg: cfg, rpc: NewRPCClient(cfg.RPCURL, "", "")}
 }
 
-func (a *SolanaLive) ID() string                        { return a.cfg.ChainIDStr }
-func (a *SolanaLive) Name() string                      { return a.cfg.ChainName }
-func (a *SolanaLive) RequiredConfirmations() uint64      { return a.cfg.Confirmations }
-func (a *SolanaLive) NativeAsset() string                { return a.cfg.NativeSymbol }
+func (a *SolanaLive) ID() string                    { return a.cfg.ChainIDStr }
+func (a *SolanaLive) Name() string                  { return a.cfg.ChainName }
+func (a *SolanaLive) RequiredConfirmations() uint64 { return a.cfg.Confirmations }
+func (a *SolanaLive) NativeAsset() string           { return a.cfg.NativeSymbol }
 
 func (a *SolanaLive) DeriveAddress(masterKey []byte, index uint32) (string, error) {
 	return "", fmt.Errorf("SOL key derivation not implemented — use ed25519 SLIP-0010")

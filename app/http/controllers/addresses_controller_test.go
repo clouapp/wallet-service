@@ -65,7 +65,7 @@ func (s *AddressesControllerTestSuite) TestListWalletAddresses() {
 	s.SignedPost("/v1/wallets/"+walletID+"/addresses", `{"external_user_id":"user1"}`)
 	s.SignedPost("/v1/wallets/"+walletID+"/addresses", `{"external_user_id":"user2"}`)
 
-	s.SignedGet("/v1/wallets/"+walletID+"/addresses").
+	s.SignedGet("/v1/wallets/" + walletID + "/addresses").
 		AssertOk().
 		AssertFluentJson(func(json contractstestinghttp.AssertableJSON) {
 			json.HasWithScope("data", 2, func(j contractstestinghttp.AssertableJSON) {
@@ -79,7 +79,7 @@ func (s *AddressesControllerTestSuite) TestLookupAddress_Success() {
 	j, _ := s.SignedPost("/v1/wallets/"+walletID+"/addresses", `{"external_user_id":"lookup_user"}`).Json()
 	address := j["address"].(string)
 
-	s.SignedGet("/v1/addresses/"+address+"?chain=eth").
+	s.SignedGet("/v1/addresses/" + address + "?chain=eth").
 		AssertOk().AssertJson(map[string]any{
 		"address":          address,
 		"external_user_id": "lookup_user",

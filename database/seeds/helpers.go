@@ -1,15 +1,14 @@
 package seeds
 
 import (
-	"os"
-
 	"github.com/goravel/framework/facades"
+	"github.com/spf13/cast"
 )
 
 const placeholderRPCURL = "https://placeholder.invalid"
 
 func encryptRPCFromEnv(envKey string) (string, error) {
-	raw := os.Getenv(envKey)
+	raw := cast.ToString(facades.Config().Env(envKey, ""))
 	if raw == "" {
 		raw = placeholderRPCURL
 	}

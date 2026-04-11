@@ -15,9 +15,9 @@ import (
 // ---------------------------------------------------------------------------
 
 type MockChain struct {
-	IDVal                  string
-	NameVal                string
-	NativeAssetVal         string
+	IDVal                    string
+	NameVal                  string
+	NativeAssetVal           string
 	RequiredConfirmationsVal uint64
 
 	DeriveAddressFn        func(masterKey []byte, index uint32) (string, error)
@@ -48,8 +48,8 @@ func NewMockChain(id string) *MockChain {
 	}
 }
 
-func (m *MockChain) ID() string                   { return m.IDVal }
-func (m *MockChain) Name() string                 { return m.NameVal }
+func (m *MockChain) ID() string                    { return m.IDVal }
+func (m *MockChain) Name() string                  { return m.NameVal }
 func (m *MockChain) NativeAsset() string           { return m.NativeAssetVal }
 func (m *MockChain) RequiredConfirmations() uint64 { return m.RequiredConfirmationsVal }
 

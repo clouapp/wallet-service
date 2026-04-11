@@ -1,8 +1,8 @@
 package controllers
 
 import (
-	"github.com/goravel/framework/contracts/http"
 	"github.com/google/uuid"
+	"github.com/goravel/framework/contracts/http"
 
 	"github.com/macrowallets/waas/app/container"
 	"github.com/macrowallets/waas/app/http/pagination"

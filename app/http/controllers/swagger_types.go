@@ -5,9 +5,9 @@ import "github.com/macrowallets/waas/app/models"
 // Shared response envelope types used only for Swagger doc generation.
 
 type ChainInfo struct {
-	ID                   string `json:"id" example:"eth"`
-	Name                 string `json:"name" example:"Ethereum"`
-	NativeAsset          string `json:"native_asset" example:"eth"`
+	ID                    string `json:"id" example:"eth"`
+	Name                  string `json:"name" example:"Ethereum"`
+	NativeAsset           string `json:"native_asset" example:"eth"`
 	RequiredConfirmations uint64 `json:"required_confirmations" example:"12"`
 }
 

@@ -43,22 +43,22 @@ func (s *AuthControllerTestSuite) TestLogin_InvalidCredentials() {
 	resp.AssertStatus(401)
 }
 
-// TestForgotPassword_AlwaysReturns200 ensures user enumeration is not possible.
-func (s *AuthControllerTestSuite) TestForgotPassword_AlwaysReturns200() {
+// TestRecover_AlwaysReturns200 ensures user enumeration is not possible (ForgotPassword handler).
+func (s *AuthControllerTestSuite) TestRecover_AlwaysReturns200() {
 	body := `{"email":"nobody@example.com"}`
 	resp, err := s.Http(s.T()).
 		WithHeader("Content-Type", "application/json").
-		Post("/v1/auth/forgot-password", toReader(body))
+		Post("/v1/auth/recover", toReader(body))
 	s.Require().NoError(err)
 	resp.AssertOk()
 }
 
-// TestResetPassword_InvalidToken returns 401 for a bad token.
-func (s *AuthControllerTestSuite) TestResetPassword_InvalidToken() {
+// TestRecoverConfirm_InvalidToken returns 401 for a bad token (ResetPassword handler).
+func (s *AuthControllerTestSuite) TestRecoverConfirm_InvalidToken() {
 	body := `{"token":"invalid-token","new_password":"newpass123"}`
 	resp, err := s.Http(s.T()).
 		WithHeader("Content-Type", "application/json").
-		Post("/v1/auth/reset-password", toReader(body))
+		Post("/v1/auth/recover/confirm", toReader(body))
 	s.Require().NoError(err)
 	resp.AssertStatus(401)
 }

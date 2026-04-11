@@ -1,186 +1,33 @@
 package routes
 
 import (
-	"github.com/goravel/framework/contracts/http"
 	"github.com/goravel/framework/contracts/route"
 	"github.com/goravel/framework/facades"
 
 	"github.com/macrowallets/waas/app/http/controllers"
 	"github.com/macrowallets/waas/app/http/middleware"
-	"github.com/macrowallets/waas/docs"
 )
 
-func Api() {
-	// Health check - no auth
-	facades.Route().Get("/health", controllers.Health)
-
-	// Swagger spec
-	facades.Route().Get("/swagger/doc.json", func(ctx http.Context) http.Response {
-		return ctx.Response().
-			Header("Content-Type", "application/json").
-			String(http.StatusOK, docs.SwaggerInfo.ReadDoc())
-	})
-
-	// Swagger UI (CDN-hosted)
-	facades.Route().Get("/swagger/index.html", func(ctx http.Context) http.Response {
-		html := `<!DOCTYPE html>
-<html>
-<head>
-  <title>Vault API - Swagger UI</title>
-  <meta charset="utf-8"/>
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <link rel="stylesheet" type="text/css" href="https://unpkg.com/swagger-ui-dist@5/swagger-ui.css">
-</head>
-<body>
-<div id="swagger-ui"></div>
-<script src="https://unpkg.com/swagger-ui-dist@5/swagger-ui-bundle.js"></script>
-<script>
-  SwaggerUIBundle({
-    url: "/swagger/doc.json",
-    dom_id: '#swagger-ui',
-    presets: [SwaggerUIBundle.presets.apis, SwaggerUIBundle.SwaggerUIStandalonePreset],
-    layout: "BaseLayout",
-    deepLinking: true
-  })
-</script>
-</body>
-</html>`
-		return ctx.Response().
-			Header("Content-Type", "text/html; charset=utf-8").
-			String(http.StatusOK, html)
-	})
-
-	// Inbound webhooks from chain providers (per-subscription signing secret; no session/API token auth).
-	facades.Route().Prefix("/v1/webhooks/ingest").Group(func(router route.Router) {
-		router.Post("/{provider}/{chainID}", controllers.HandleWebhookIngest)
-	})
-
+// RegisterExternalAPI registers Bearer API-token routes under /api/v1.
+func RegisterExternalAPI() {
 	noCache := middleware.CacheControl(0)
 
-	// Auth routes — no HMAC, uses JWT
-	facades.Route().Prefix("/v1/auth").Middleware(noCache).Group(func(router route.Router) {
-		router.Post("/register", controllers.Register)
-		router.Post("/login", controllers.Login)
-		router.Post("/2fa/verify", controllers.VerifyTwoFactor)
-		router.Post("/refresh", controllers.RefreshToken)
-		router.Post("/recover", controllers.ForgotPassword)
-		router.Post("/recover/confirm", controllers.ResetPassword)
-	})
-	// Logout requires session auth — separate group
-	facades.Route().Prefix("/v1/auth").Middleware(middleware.SessionAuth, noCache).Group(func(router route.Router) {
-		router.Post("/logout", controllers.Logout)
-	})
-
-	// User routes — JWT auth
-	facades.Route().Prefix("/v1/users").Middleware(middleware.SessionAuth, noCache).Group(func(router route.Router) {
-		router.Get("/me", controllers.GetMe)
-		router.Patch("/me", controllers.UpdateMe)
-		router.Post("/me/password", controllers.ChangePassword)
-		router.Get("/me/accounts", controllers.ListMyAccounts)
-		router.Patch("/me/default-account", controllers.UpdateDefaultAccount)
-	})
-
-	// Account routes — JWT auth + account membership
-	facades.Route().Prefix("/v1/accounts").Middleware(middleware.SessionAuth, noCache).Group(func(router route.Router) {
-		router.Post("", controllers.CreateAccount)
-		router.Prefix("/{accountId}").Middleware(middleware.AccountContext).Group(func(r route.Router) {
-			r.Get("", controllers.GetAccount)
-			r.Patch("", controllers.UpdateAccount)
-			r.Post("/archive", controllers.ArchiveAccount)
-			r.Post("/freeze", controllers.FreezeAccount)
-
-			// Account users
-			r.Get("/users", controllers.ListAccountUsers)
-			r.Post("/users", controllers.AddAccountUser)
-			r.Delete("/users/{userId}", controllers.RemoveAccountUser)
-
-			// API tokens
-			r.Get("/tokens", controllers.ListAccountTokens)
-			r.Post("/tokens", controllers.CreateAccountToken)
-			r.Delete("/tokens/{tokenId}", controllers.RevokeAccountToken)
-		})
-	})
-
-	// Chain routes — JWT auth + account header for environment filtering
-	facades.Route().Prefix("/v1/chains").Middleware(middleware.SessionAuth, middleware.AccountHeader, noCache).Group(func(router route.Router) {
-		router.Get("", controllers.ListChains)
-		router.Get("/{chainId}", controllers.GetChain)
-		router.Get("/{chainId}/tokens", controllers.ListChainTokens)
-		router.Get("/{chainId}/resources", controllers.ListChainResources)
-	})
-
-	// Wallet sub-resource routes — JWT auth + account header
-	facades.Route().Prefix("/v1/wallets").Middleware(middleware.SessionAuth, middleware.AccountHeader, noCache).Group(func(router route.Router) {
-		router.Get("", controllers.ListWallets)
-		router.Post("", controllers.CreateWalletAdmin)
-		router.Get("/{walletId}", controllers.GetWallet)
-		router.Prefix("/{walletId}").Group(func(r route.Router) {
-			r.Post("/activate", controllers.ActivateWallet)
-
-			// Addresses
-			r.Get("/addresses", controllers.ListWalletAddresses)
-			r.Post("/addresses", controllers.GenerateAddress)
-
-			// Wallet users
-			r.Get("/users", controllers.ListWalletUsers)
-			r.Post("/users", controllers.AddWalletUser)
-			r.Delete("/users/{userId}", controllers.RemoveWalletUser)
-
-			// Whitelist
-			r.Get("/whitelist", controllers.ListWhitelistEntries)
-			r.Post("/whitelist", controllers.AddWhitelistEntry)
-			r.Delete("/whitelist/{entryId}", controllers.DeleteWhitelistEntry)
-
-			// Wallet-scoped webhooks
-			r.Get("/webhooks", controllers.ListWalletWebhooks)
-			r.Post("/webhooks", controllers.CreateWalletWebhook)
-			r.Delete("/webhooks/{webhookId}", controllers.DeleteWalletWebhook)
-
-			// Settings and freeze
-			r.Get("/settings", controllers.GetWalletSettings)
-			r.Patch("/settings", controllers.UpdateWalletSettings)
-			r.Post("/freeze", controllers.FreezeWallet)
-
-			// Wallet transactions (admin panel view)
-			r.Get("/transactions", controllers.ListWalletTransactions)
-			r.Get("/transactions/{txId}", controllers.GetWalletTransaction)
-
-			// Wallet withdrawals (admin panel view)
-			r.Get("/withdrawals", controllers.ListWalletWithdrawals)
-			r.Post("/withdrawals", controllers.CreateWalletWithdrawal)
-			r.Get("/withdrawals/{withdrawalId}", controllers.GetWalletWithdrawal)
-			r.Post("/withdrawals/{withdrawalId}/cancel", controllers.CancelWalletWithdrawal)
-
-			// UTXOs — UTXOOnly middleware rejects non-UTXO chains
-			r.Prefix("/unspents").Middleware(middleware.UTXOOnly).Group(func(ur route.Router) {
-				ur.Get("", controllers.ListUnspentOutputs)
-			})
-		})
-	})
-
-	// External API — account JWT token auth (Bearer JWT issued via /v1/accounts/{id}/tokens)
-	// Clients optionally add X-Signature: HMAC-SHA256(bearer_token, body) for request integrity.
-	facades.Route().Prefix("/api/v1").Middleware(middleware.APITokenAuth, noCache).Group(func(router route.Router) {
-		// Chains
+	facades.Route().Prefix("/api/v1").Middleware(middleware.APITokenAuth(), noCache).Group(func(router route.Router) {
 		router.Get("/chains", controllers.ListChains)
 
-		// Wallets
 		router.Post("/wallets", controllers.CreateWallet)
 		router.Get("/wallets", controllers.ListWallets)
 		router.Get("/wallets/{walletId}", controllers.GetWallet)
 
-		// Addresses
 		router.Post("/wallets/{walletId}/addresses", controllers.GenerateAddress)
 		router.Get("/wallets/{walletId}/addresses", controllers.ListWalletAddresses)
 		router.Get("/addresses/{address}", controllers.LookupAddress)
 		router.Get("/users/{external_id}/addresses", controllers.ListUserAddresses)
 
-		// Transactions
 		router.Get("/transactions", controllers.ListTransactions)
 		router.Get("/transactions/{id}", controllers.GetTransaction)
 		router.Get("/users/{external_id}/transactions", controllers.ListUserTransactions)
 
-		// Webhooks
 		router.Post("/webhooks", controllers.CreateWebhook)
 		router.Get("/webhooks", controllers.ListWebhooks)
 	})
