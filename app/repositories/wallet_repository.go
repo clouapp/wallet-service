@@ -16,6 +16,7 @@ type WalletRepository interface {
 	PaginateByAccount(accountID uuid.UUID, chain string, limit, offset int) ([]models.Wallet, int64, error)
 	UpdateField(id uuid.UUID, field string, value interface{}) error
 	UpdateFields(id uuid.UUID, fields map[string]interface{}) error
+	IncrementAddressIndex(id uuid.UUID) (int, error)
 }
 
 type walletRepository struct{}
@@ -105,4 +106,24 @@ func (r *walletRepository) UpdateField(id uuid.UUID, field string, value interfa
 func (r *walletRepository) UpdateFields(id uuid.UUID, fields map[string]interface{}) error {
 	_, err := facades.Orm().Query().Model(&models.Wallet{}).Where("id = ?", id).Update(fields)
 	return err
+}
+
+func (r *walletRepository) IncrementAddressIndex(id uuid.UUID) (int, error) {
+	_, err := facades.Orm().Query().Exec(
+		"UPDATE wallets SET address_index = address_index + 1 WHERE id = ?",
+		id,
+	)
+	if err != nil {
+		return 0, err
+	}
+
+	var newIndex int
+	err = facades.Orm().Query().
+		Model(&models.Wallet{}).
+		Where("id = ?", id).
+		Pluck("address_index", &newIndex)
+	if err != nil {
+		return 0, err
+	}
+	return newIndex, nil
 }

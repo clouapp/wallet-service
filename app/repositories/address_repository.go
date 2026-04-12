@@ -12,7 +12,9 @@ type AddressRepository interface {
 	CountByChainAndAddress(chainID, address string) (int64, error)
 	FindByChainAndAddress(chainID, address string) (*models.Address, error)
 	FindByExternalUserID(externalUserID string) ([]models.Address, error)
+	FindByID(id uuid.UUID) (*models.Address, error)
 	FindByWalletID(walletID uuid.UUID) ([]models.Address, error)
+	MaxDerivationIndex(walletID uuid.UUID) (int, error)
 	PaginateByWalletID(walletID uuid.UUID, limit, offset int) ([]models.Address, int64, error)
 	PluckActiveAddresses(chainID string) ([]string, error)
 }
@@ -59,6 +61,18 @@ func (r *addressRepository) FindByExternalUserID(externalUserID string) ([]model
 	return addrs, err
 }
 
+func (r *addressRepository) FindByID(id uuid.UUID) (*models.Address, error) {
+	var addr models.Address
+	err := facades.Orm().Query().Where("id = ?", id).First(&addr)
+	if err != nil {
+		return nil, err
+	}
+	if addr.ID == uuid.Nil {
+		return nil, nil
+	}
+	return &addr, nil
+}
+
 func (r *addressRepository) FindByWalletID(walletID uuid.UUID) ([]models.Address, error) {
 	var addrs []models.Address
 	err := facades.Orm().Query().
@@ -66,6 +80,16 @@ func (r *addressRepository) FindByWalletID(walletID uuid.UUID) ([]models.Address
 		Order("derivation_index").
 		Find(&addrs)
 	return addrs, err
+}
+
+func (r *addressRepository) MaxDerivationIndex(walletID uuid.UUID) (int, error) {
+	var maxIdx int
+	err := facades.Orm().Query().
+		Model(&models.Address{}).
+		Where("wallet_id = ?", walletID).
+		Select("COALESCE(MAX(derivation_index), -1)").
+		Scan(&maxIdx)
+	return maxIdx, err
 }
 
 func (r *addressRepository) PaginateByWalletID(walletID uuid.UUID, limit, offset int) ([]models.Address, int64, error) {
