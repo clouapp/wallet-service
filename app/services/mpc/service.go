@@ -15,6 +15,7 @@ type KeygenResult struct {
 	ShareA         []byte // customer's share — must be encrypted before storage
 	ShareB         []byte // service's share — must be sent to Secrets Manager
 	CombinedPubKey []byte // compressed public key (33 bytes secp256k1; 32 bytes ed25519)
+	ChainCode      []byte // 32-byte chain code for BIP-32/SLIP-0010 derivation
 }
 
 // SignInputs carries all transaction data required for signing.
@@ -28,4 +29,5 @@ type SignInputs struct {
 type Service interface {
 	Keygen(ctx context.Context, curve Curve) (*KeygenResult, error)
 	Sign(ctx context.Context, curve Curve, shareA, shareB []byte, inputs SignInputs) ([]byte, error)
+	ReconstructEd25519PrivateKey(shareA, shareB []byte) ([]byte, error)
 }

@@ -2,7 +2,9 @@ package mpc
 
 import (
 	"context"
+	"crypto/hmac"
 	"crypto/rand"
+	"crypto/sha512"
 	"encoding/json"
 	"fmt"
 	"math/big"
@@ -140,10 +142,14 @@ loop:
 		return nil, fmt.Errorf("keygen produced nil ECDSAPub")
 	}
 
+	compressedPub := compressSecp256k1(pubKey.X(), pubKey.Y())
+	chainCode := generateChainCode(compressedPub, shareABytes, shareBBytes)
+
 	return &KeygenResult{
 		ShareA:         shareABytes,
 		ShareB:         shareBBytes,
-		CombinedPubKey: compressSecp256k1(pubKey.X(), pubKey.Y()),
+		CombinedPubKey: compressedPub,
+		ChainCode:      chainCode,
 	}, nil
 }
 
@@ -303,11 +309,23 @@ loop:
 		Y:     pubPoint.Y(),
 	}
 
+	serializedPub := pk.Serialize()
+	chainCode := generateChainCode(serializedPub, shareABytes, shareBBytes)
+
 	return &KeygenResult{
 		ShareA:         shareABytes,
 		ShareB:         shareBBytes,
-		CombinedPubKey: pk.Serialize(),
+		CombinedPubKey: serializedPub,
+		ChainCode:      chainCode,
 	}, nil
+}
+
+// generateChainCode produces a deterministic 32-byte chain code from key material.
+func generateChainCode(pubKey, shareA, shareB []byte) []byte {
+	h := hmac.New(sha512.New, append(shareA, shareB...))
+	h.Write(pubKey)
+	sum := h.Sum(nil)
+	return sum[32:]
 }
 
 func matchEddsaSavesByIndex(saves []eddsaKeygen.LocalPartySaveData) (eddsaKeygen.LocalPartySaveData, eddsaKeygen.LocalPartySaveData, error) {

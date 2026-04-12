@@ -9,6 +9,7 @@ import (
 	"github.com/bnb-chain/tss-lib/v2/common"
 	"github.com/bnb-chain/tss-lib/v2/ecdsa/keygen"
 	"github.com/bnb-chain/tss-lib/v2/ecdsa/signing"
+	eddsaKeygen "github.com/bnb-chain/tss-lib/v2/eddsa/keygen"
 	"github.com/bnb-chain/tss-lib/v2/tss"
 )
 
@@ -130,6 +131,32 @@ loop:
 		return nil, fmt.Errorf("Sign: signature data missing R or S")
 	}
 	return derEncode(sigData.R, sigData.S), nil
+}
+
+// ReconstructEd25519PrivateKey temporarily reconstructs the full ed25519 private key
+// from both MPC shares. The caller MUST zero the returned bytes after use.
+func (s *TSSService) ReconstructEd25519PrivateKey(shareA, shareB []byte) ([]byte, error) {
+	var saveA, saveB eddsaKeygen.LocalPartySaveData
+	if err := json.Unmarshal(shareA, &saveA); err != nil {
+		return nil, fmt.Errorf("unmarshal ed25519 shareA: %w", err)
+	}
+	if err := json.Unmarshal(shareB, &saveB); err != nil {
+		return nil, fmt.Errorf("unmarshal ed25519 shareB: %w", err)
+	}
+
+	if saveA.Xi == nil || saveB.Xi == nil {
+		return nil, fmt.Errorf("shares missing private key components")
+	}
+
+	curveOrder := tss.Edwards().Params().N
+	privateScalar := new(big.Int).Add(saveA.Xi, saveB.Xi)
+	privateScalar.Mod(privateScalar, curveOrder)
+
+	privBytes := make([]byte, 32)
+	b := privateScalar.Bytes()
+	copy(privBytes[32-len(b):], b)
+
+	return privBytes, nil
 }
 
 // derEncode produces a DER-encoded ECDSA signature from raw R and S byte slices.
