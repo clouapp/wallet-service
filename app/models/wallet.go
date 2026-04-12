@@ -22,6 +22,8 @@ type Wallet struct {
 	MPCSecretARN     string     `gorm:"type:text;not null" json:"-"`
 	MPCPublicKey     string     `gorm:"type:text;not null" json:"-"`
 	MPCCurve         string     `gorm:"type:varchar(20);not null" json:"-"`
+	MPCChainCode     string     `gorm:"type:text" json:"-"`
+	AddressIndex     int        `gorm:"type:integer;not null;default:0" json:"address_index"`
 	DepositAddressID *uuid.UUID `gorm:"type:uuid" json:"deposit_address_id,omitempty"`
 	// Account and admin fields
 	AccountID         *uuid.UUID `gorm:"type:uuid;index" json:"account_id,omitempty"`
