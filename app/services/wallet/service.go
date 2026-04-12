@@ -16,13 +16,16 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/secretsmanager"
 	"github.com/google/uuid"
+	"github.com/goravel/framework/contracts/event"
 	"github.com/goravel/framework/facades"
 	"github.com/redis/go-redis/v9"
 
+	"github.com/macrowallets/waas/app/events"
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/repositories"
 	"github.com/macrowallets/waas/app/services/chain"
 	mpc "github.com/macrowallets/waas/app/services/mpc"
+	"github.com/macrowallets/waas/pkg/types"
 )
 
 var (
@@ -167,7 +170,7 @@ func (s *Service) CreateWallet(ctx context.Context, accountID uuid.UUID, chainID
 		MPCPublicKey:     hex.EncodeToString(keygenResult.CombinedPubKey),
 		MPCCurve:         string(curve),
 		AccountID:        &accountID,
-		Status:           "pending",
+		Status:           string(types.WalletStatusPending),
 		ActivationCode:   &codeStr,
 	}
 	if err := s.walletRepo.Create(w); err != nil {
@@ -210,6 +213,11 @@ func (s *Service) CreateWallet(ctx context.Context, accountID uuid.UUID, chainID
 		}()
 	}
 
+	_ = facades.Event().Job(&events.WalletCreated{}, []event.Arg{
+		{Type: "string", Value: walletID.String()},
+		{Type: "string", Value: chainID},
+	}).Dispatch()
+
 	return &CreateWalletResult{
 		Wallet:            w,
 		EncryptedUserKey:  string(ukJSON),
@@ -224,7 +232,7 @@ func (s *Service) ActivateWallet(ctx context.Context, walletID uuid.UUID, code s
 	if err != nil || w == nil {
 		return nil, ErrWalletNotFound
 	}
-	if w.Status != "pending" {
+	if w.Status != string(types.WalletStatusPending) {
 		return nil, ErrWalletAlreadyActive
 	}
 	if w.ActivationCode == nil {
@@ -235,12 +243,12 @@ func (s *Service) ActivateWallet(ctx context.Context, walletID uuid.UUID, code s
 	}
 
 	if err := s.walletRepo.UpdateFields(w.ID, map[string]interface{}{
-		"status":          "active",
+		"status":          string(types.WalletStatusActive),
 		"activation_code": nil,
 	}); err != nil {
 		return nil, fmt.Errorf("activate wallet: %w", err)
 	}
-	w.Status = "active"
+	w.Status = string(types.WalletStatusActive)
 	w.ActivationCode = nil
 	return w, nil
 }
@@ -265,7 +273,7 @@ func (s *Service) ListWallets(ctx context.Context) ([]models.Wallet, error) {
 }
 
 // GenerateAddress is not supported for MPC wallets in v1.
-func (s *Service) GenerateAddress(ctx context.Context, walletID uuid.UUID, externalUserID, metadata string) (*models.Address, error) {
+func (s *Service) GenerateAddress(ctx context.Context, walletID uuid.UUID, externalUserID, label, metadata string) (*models.Address, error) {
 	return nil, fmt.Errorf("address derivation not supported for MPC wallets in v1")
 }
 

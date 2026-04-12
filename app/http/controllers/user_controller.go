@@ -6,6 +6,7 @@ import (
 
 	"github.com/macrowallets/waas/app/container"
 	"github.com/macrowallets/waas/app/http/pagination"
+	"github.com/macrowallets/waas/app/http/requests"
 	"github.com/macrowallets/waas/app/models"
 	authsvc "github.com/macrowallets/waas/app/services/auth"
 )
@@ -22,10 +23,7 @@ var userAuthService = authsvc.NewService()
 // @Failure      401  {object}  ErrorResponse
 // @Router       /users/me [get]
 func GetMe(ctx http.Context) http.Response {
-	user, ok := ctx.Value("user").(*models.User)
-	if !ok || user == nil {
-		return ctx.Response().Json(http.StatusUnauthorized, http.Json{"error": "unauthenticated"})
-	}
+	user := ctx.Value("user").(*models.User)
 	return ctx.Response().Json(http.StatusOK, user)
 }
 
@@ -36,20 +34,17 @@ func GetMe(ctx http.Context) http.Response {
 // @Security     BearerAuth
 // @Accept       json
 // @Produce      json
-// @Param        request  body      UpdateMeRequest  true  "Update payload"
+// @Param        request  body      UpdateMeSwagger  true  "Update payload"
 // @Success      200      {object}  models.User
 // @Failure      400      {object}  ErrorResponse
 // @Failure      401      {object}  ErrorResponse
 // @Router       /users/me [patch]
 func UpdateMe(ctx http.Context) http.Response {
-	user, ok := ctx.Value("user").(*models.User)
-	if !ok || user == nil {
-		return ctx.Response().Json(http.StatusUnauthorized, http.Json{"error": "unauthenticated"})
-	}
+	user := ctx.Value("user").(*models.User)
 
-	var req UpdateMeRequest
-	if err := ctx.Request().Bind(&req); err != nil {
-		return ctx.Response().Json(http.StatusBadRequest, http.Json{"error": "invalid request body"})
+	var req requests.UpdateMeRequest
+	if errResp := validateRequest(ctx, &req); errResp != nil {
+		return errResp
 	}
 
 	if req.FullName != "" {
@@ -69,23 +64,17 @@ func UpdateMe(ctx http.Context) http.Response {
 // @Security     BearerAuth
 // @Accept       json
 // @Produce      json
-// @Param        request  body      ChangePasswordRequest  true  "Password change payload"
+// @Param        request  body      ChangePasswordSwagger  true  "Password change payload"
 // @Success      200      {object}  map[string]string
 // @Failure      400      {object}  ErrorResponse
 // @Failure      401      {object}  ErrorResponse
 // @Router       /users/me/password [post]
 func ChangePassword(ctx http.Context) http.Response {
-	user, ok := ctx.Value("user").(*models.User)
-	if !ok || user == nil {
-		return ctx.Response().Json(http.StatusUnauthorized, http.Json{"error": "unauthenticated"})
-	}
+	user := ctx.Value("user").(*models.User)
 
-	var req ChangePasswordRequest
-	if err := ctx.Request().Bind(&req); err != nil {
-		return ctx.Response().Json(http.StatusBadRequest, http.Json{"error": "invalid request body"})
-	}
-	if req.CurrentPassword == "" || req.NewPassword == "" {
-		return ctx.Response().Json(http.StatusBadRequest, http.Json{"error": "current_password and new_password are required"})
+	var req requests.ChangePasswordRequest
+	if errResp := validateRequest(ctx, &req); errResp != nil {
+		return errResp
 	}
 
 	if !userAuthService.CheckPassword(req.CurrentPassword, user.PasswordHash) {
@@ -116,10 +105,7 @@ func ChangePassword(ctx http.Context) http.Response {
 // @Failure      401  {object}  ErrorResponse
 // @Router       /users/me/accounts [get]
 func ListMyAccounts(ctx http.Context) http.Response {
-	userID, ok := ctx.Value("user_id").(uuid.UUID)
-	if !ok || userID == uuid.Nil {
-		return ctx.Response().Json(http.StatusUnauthorized, http.Json{"error": "unauthenticated"})
-	}
+	userID := ctx.Value("user_id").(uuid.UUID)
 
 	limit, offset := pagination.ParseParams(ctx, 20)
 
@@ -148,26 +134,20 @@ func ListMyAccounts(ctx http.Context) http.Response {
 // @Security     BearerAuth
 // @Accept       json
 // @Produce      json
-// @Param        request  body      UpdateDefaultAccountRequest  true  "Default account payload"
+// @Param        request  body      UpdateDefaultAccountSwagger  true  "Default account payload"
 // @Success      200      {object}  map[string]interface{}
 // @Failure      400      {object}  ErrorResponse
 // @Failure      403      {object}  ErrorResponse
 // @Router       /users/me/default-account [patch]
 func UpdateDefaultAccount(ctx http.Context) http.Response {
-	userID, ok := ctx.Value("user_id").(uuid.UUID)
-	if !ok || userID == uuid.Nil {
-		return ctx.Response().Json(http.StatusUnauthorized, http.Json{"error": "unauthenticated"})
+	userID := ctx.Value("user_id").(uuid.UUID)
+
+	var req requests.UpdateDefaultAccountRequest
+	if errResp := validateRequest(ctx, &req); errResp != nil {
+		return errResp
 	}
 
-	var req UpdateDefaultAccountRequest
-	if err := ctx.Request().Bind(&req); err != nil || req.AccountID == "" {
-		return ctx.Response().Json(http.StatusBadRequest, http.Json{"error": "account_id is required"})
-	}
-
-	accountID, err := uuid.Parse(req.AccountID)
-	if err != nil {
-		return ctx.Response().Json(http.StatusBadRequest, http.Json{"error": "invalid account_id"})
-	}
+	accountID, _ := uuid.Parse(req.AccountID)
 
 	au, err := container.Get().AccountUserRepo.FindByAccountAndUser(accountID, userID)
 	if err != nil || au == nil {
@@ -187,18 +167,18 @@ func UpdateDefaultAccount(ctx http.Context) http.Response {
 	return ctx.Response().Json(http.StatusOK, http.Json{"account": account})
 }
 
-// ---- Request/Response types ----
+// ---- Swagger-only types ----
 
-type UpdateMeRequest struct {
+type UpdateMeSwagger struct {
 	FullName string `json:"full_name" example:"Alice Smith"`
 }
 
-type ChangePasswordRequest struct {
+type ChangePasswordSwagger struct {
 	CurrentPassword string `json:"current_password"`
 	NewPassword     string `json:"new_password"`
 }
 
-type UpdateDefaultAccountRequest struct {
+type UpdateDefaultAccountSwagger struct {
 	AccountID string `json:"account_id" example:"550e8400-e29b-41d4-a716-446655440000"`
 }
 

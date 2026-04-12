@@ -5,6 +5,7 @@ import (
 	"github.com/goravel/framework/facades"
 
 	"github.com/macrowallets/waas/app/models"
+	"github.com/macrowallets/waas/pkg/types"
 )
 
 type TransactionRepository interface {
@@ -13,11 +14,13 @@ type TransactionRepository interface {
 	FindByIDAndWallet(txID string, walletID uuid.UUID) (*models.Transaction, error)
 	FindByIdempotencyKey(key string) (*models.Transaction, error)
 	FindByWallet(walletID uuid.UUID, txType, status string, limit, offset int) ([]models.Transaction, int64, error)
+	FindByChainAndTxHash(chainID, txHash string) (*models.Transaction, error)
 	CountByChainAndTxHash(chainID, txHash, txType string) (int64, error)
 	CountByChainTxHashAndLogIndex(chainID, txHash string, logIndex int, txType string) (int64, error)
 	FindPendingByChain(chainID string) ([]models.Transaction, error)
 	UpdateFields(id uuid.UUID, fields map[string]interface{}) error
 	List(chainID, txType, status, userID string, limit, offset int) ([]models.Transaction, int64, error)
+	ListByWalletAndChain(walletID uuid.UUID, chainID string, limit, offset int) ([]models.Transaction, int64, error)
 }
 
 type transactionRepository struct{}
@@ -96,6 +99,20 @@ func (r *transactionRepository) FindByWallet(walletID uuid.UUID, txType, status 
 	return transactions, total, err
 }
 
+func (r *transactionRepository) FindByChainAndTxHash(chainID, txHash string) (*models.Transaction, error) {
+	var tx models.Transaction
+	err := facades.Orm().Query().
+		Where("chain = ? AND tx_hash = ?", chainID, txHash).
+		First(&tx)
+	if err != nil {
+		return nil, err
+	}
+	if tx.ID == uuid.Nil {
+		return nil, nil
+	}
+	return &tx, nil
+}
+
 func (r *transactionRepository) CountByChainAndTxHash(chainID, txHash, txType string) (int64, error) {
 	return facades.Orm().Query().
 		Model(&models.Transaction{}).
@@ -120,7 +137,7 @@ func (r *transactionRepository) FindPendingByChain(chainID string) ([]models.Tra
 	err := facades.Orm().Query().
 		Where("chain", chainID).
 		Where("tx_type", "deposit").
-		WhereIn("status", []interface{}{"pending", "confirming"}).
+		WhereIn("status", []interface{}{string(types.TxStatusPending), string(types.TxStatusConfirming)}).
 		Find(&pending)
 	return pending, err
 }
@@ -165,4 +182,31 @@ func (r *transactionRepository) List(chainID, txType, status, userID string, lim
 	var txs []models.Transaction
 	err = dataQuery.Order("created_at DESC").Limit(limit).Offset(offset).Find(&txs)
 	return txs, total, err
+}
+
+func (r *transactionRepository) ListByWalletAndChain(walletID uuid.UUID, chainID string, limit, offset int) ([]models.Transaction, int64, error) {
+	if limit <= 0 {
+		limit = 50
+	}
+
+	countQuery := facades.Orm().Query().
+		Model(&models.Transaction{}).
+		Where("wallet_id = ?", walletID).
+		Where("chain = ?", chainID)
+
+	total, err := countQuery.Count()
+	if err != nil {
+		return nil, 0, err
+	}
+
+	var transactions []models.Transaction
+	err = facades.Orm().Query().
+		Where("wallet_id = ?", walletID).
+		Where("chain = ?", chainID).
+		Order("block_number DESC, created_at DESC").
+		Limit(limit).
+		Offset(offset).
+		Find(&transactions)
+
+	return transactions, total, err
 }

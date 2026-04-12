@@ -11,8 +11,11 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/service/secretsmanager"
 	"github.com/google/uuid"
+	"github.com/goravel/framework/contracts/event"
+	"github.com/goravel/framework/facades"
 	"github.com/redis/go-redis/v9"
 
+	"github.com/macrowallets/waas/app/events"
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/repositories"
 	chainpkg "github.com/macrowallets/waas/app/services/chain"
@@ -231,6 +234,11 @@ func (s *Service) Request(ctx context.Context, req WithdrawRequest) (*models.Tra
 	s.webhookSvc.EnqueueEvent(ctx, tx.ID, types.EventWithdrawalBroadcast, map[string]string{
 		"tx_id": tx.ID.String(), "tx_hash": txHash,
 	})
+
+	_ = facades.Event().Job(&events.WithdrawalBroadcasted{}, []event.Arg{
+		{Type: "string", Value: tx.WalletID.String()},
+		{Type: "string", Value: wallet.Chain},
+	}).Dispatch()
 
 	slog.Info("withdrawal broadcast", "tx_id", tx.ID, "tx_hash", txHash, "chain", wallet.Chain)
 	return tx, nil

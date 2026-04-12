@@ -120,6 +120,7 @@ require (
 	github.com/goravel/file-rotatelogs/v2 v2.4.2 // indirect
 	github.com/goravel/postgres v1.17.1 // indirect
 	github.com/goravel/redis v1.17.1 // indirect
+	github.com/gorilla/websocket v1.5.3 // indirect
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.27.3 // indirect
 	github.com/hashicorp/errwrap v1.1.0 // indirect
 	github.com/hashicorp/go-multierror v1.1.1 // indirect

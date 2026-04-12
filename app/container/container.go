@@ -13,8 +13,10 @@ import (
 	"github.com/macrowallets/waas/app/services/deposit"
 	"github.com/macrowallets/waas/app/services/ingest"
 	"github.com/macrowallets/waas/app/services/ingest/providers"
-	mpc "github.com/macrowallets/waas/app/services/mpc"
+	mpc 	"github.com/macrowallets/waas/app/services/mpc"
+	"github.com/macrowallets/waas/app/services/price"
 	"github.com/macrowallets/waas/app/services/queue"
+	"github.com/macrowallets/waas/app/services/refresh"
 	"github.com/macrowallets/waas/app/services/wallet"
 	"github.com/macrowallets/waas/app/services/webhook"
 	"github.com/macrowallets/waas/app/services/webhooksync"
@@ -47,16 +49,29 @@ type Container struct {
 	ChainRepo               repositories.ChainRepository
 	TokenRepo               repositories.TokenRepository
 	ChainResourceRepo       repositories.ChainResourceRepository
-	WebhookSubscriptionRepo repositories.WebhookSubscriptionRepository
-	WebhookProviders        map[string]providers.WebhookProvider
-	WebhookSyncService      *webhooksync.Service
+	WebhookSubscriptionRepo   repositories.WebhookSubscriptionRepository
+	WalletAssetBalanceRepo    repositories.WalletAssetBalanceRepository
+	WalletBalanceSnapshotRepo repositories.WalletBalanceSnapshotRepository
+	WalletUTXORepo            repositories.WalletUTXORepository
+	WalletSyncStateRepo       repositories.WalletSyncStateRepository
+	CurrencyRepo              repositories.CurrencyRepository
+	WebhookProviders          map[string]providers.WebhookProvider
+	WebhookSyncService        *webhooksync.Service
 
-	Registry          *chainpkg.Registry
-	WalletService     *wallet.Service
-	DepositService    *deposit.Service
-	WithdrawalService *withdraw.Service
-	WebhookService    *webhook.Service
-	IngestService     *ingest.Service
+	PriceService *price.Service
+	PriceConfig  struct {
+		CoinGeckoAPIKey     string
+		CoinMarketCapAPIKey string
+		CoinAPIKey          string
+	}
+
+	Registry              *chainpkg.Registry
+	WalletService         *wallet.Service
+	DepositService        *deposit.Service
+	WithdrawalService     *withdraw.Service
+	WebhookService        *webhook.Service
+	IngestService         *ingest.Service
+	BalanceRefreshService *refresh.BalanceService
 }
 
 var (

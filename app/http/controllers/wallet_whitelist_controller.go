@@ -6,6 +6,7 @@ import (
 
 	"github.com/macrowallets/waas/app/container"
 	"github.com/macrowallets/waas/app/http/pagination"
+	"github.com/macrowallets/waas/app/http/requests"
 	"github.com/macrowallets/waas/app/models"
 )
 
@@ -21,10 +22,7 @@ import (
 // @Failure      404  {object}  ErrorResponse
 // @Router       /wallets/{walletId}/whitelist [get]
 func ListWhitelistEntries(ctx http.Context) http.Response {
-	wallet, _, _, errResp := walletFromParam(ctx)
-	if errResp != nil {
-		return errResp
-	}
+	wallet := ctx.Value("wallet").(*models.Wallet)
 
 	limit, offset := pagination.ParseParams(ctx, 20)
 	entries, total, err := container.Get().WhitelistEntryRepo.PaginateByWalletID(wallet.ID, limit, offset)
@@ -42,26 +40,20 @@ func ListWhitelistEntries(ctx http.Context) http.Response {
 // @Accept       json
 // @Produce      json
 // @Param        walletId  path      string                  true  "Wallet UUID"
-// @Param        request   body      AddWhitelistEntryRequest  true  "Entry payload"
+// @Param        request   body      AddWhitelistEntrySwagger  true  "Entry payload"
 // @Success      201  {object}  models.WhitelistEntry
 // @Failure      400  {object}  ErrorResponse
 // @Failure      403  {object}  ErrorResponse
 // @Router       /wallets/{walletId}/whitelist [post]
 func AddWhitelistEntry(ctx http.Context) http.Response {
-	wallet, accRole, walletRole, errResp := walletFromParam(ctx)
-	if errResp != nil {
-		return errResp
-	}
-	if !isWalletAdmin(accRole, walletRole) {
-		return ctx.Response().Json(http.StatusForbidden, http.Json{"error": "only wallet/account owners and admins may manage the whitelist"})
+	wallet := ctx.Value("wallet").(*models.Wallet)
+	if resp := authorize(ctx, "wallet.whitelist", map[string]any{"wallet_id": wallet.ID}); resp != nil {
+		return resp
 	}
 
-	var req AddWhitelistEntryRequest
-	if err := ctx.Request().Bind(&req); err != nil {
-		return ctx.Response().Json(http.StatusBadRequest, http.Json{"error": "invalid request body"})
-	}
-	if req.Address == "" {
-		return ctx.Response().Json(http.StatusBadRequest, http.Json{"error": "address is required"})
+	var req requests.AddWhitelistEntryRequest
+	if resp := validateRequest(ctx, &req); resp != nil {
+		return resp
 	}
 
 	entry := &models.WhitelistEntry{
@@ -89,12 +81,9 @@ func AddWhitelistEntry(ctx http.Context) http.Response {
 // @Failure      404  {object}  ErrorResponse
 // @Router       /wallets/{walletId}/whitelist/{entryId} [delete]
 func DeleteWhitelistEntry(ctx http.Context) http.Response {
-	wallet, accRole, walletRole, errResp := walletFromParam(ctx)
-	if errResp != nil {
-		return errResp
-	}
-	if !isWalletAdmin(accRole, walletRole) {
-		return ctx.Response().Json(http.StatusForbidden, http.Json{"error": "only wallet/account owners and admins may manage the whitelist"})
+	wallet := ctx.Value("wallet").(*models.Wallet)
+	if resp := authorize(ctx, "wallet.whitelist", map[string]any{"wallet_id": wallet.ID}); resp != nil {
+		return resp
 	}
 
 	entryIDStr := ctx.Request().Route("entryId")
@@ -116,7 +105,7 @@ func DeleteWhitelistEntry(ctx http.Context) http.Response {
 
 // ---- Request/Response types ----
 
-type AddWhitelistEntryRequest struct {
+type AddWhitelistEntrySwagger struct {
 	Address string `json:"address" example:"bc1qar0srrr7xfkvy5l643lydnw9re59gtzzwf5mdq"`
 	Label   string `json:"label,omitempty" example:"Cold Storage"`
 }

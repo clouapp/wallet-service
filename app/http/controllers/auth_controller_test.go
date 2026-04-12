@@ -23,14 +23,14 @@ func (s *AuthControllerTestSuite) TestRegister_MissingBody() {
 	resp.AssertStatus(400)
 }
 
-// TestRegister_MissingEmail returns 400 when email is absent.
+// TestRegister_MissingEmail returns 422 when email is absent (validation errors).
 func (s *AuthControllerTestSuite) TestRegister_MissingEmail() {
 	body := `{"password":"secret123"}`
 	resp, err := s.Http(s.T()).
 		WithHeader("Content-Type", "application/json").
 		Post("/v1/auth/register", toReader(body))
 	s.Require().NoError(err)
-	resp.AssertStatus(400)
+	resp.AssertStatus(422)
 }
 
 // TestLogin_InvalidCredentials returns 401 for an unknown email.

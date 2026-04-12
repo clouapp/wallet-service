@@ -1,9 +1,12 @@
 package controllers
 
 import (
+	"strconv"
+
 	"github.com/goravel/framework/contracts/http"
 
 	"github.com/macrowallets/waas/app/container"
+	"github.com/macrowallets/waas/app/models"
 )
 
 // ListUnspentOutputs godoc
@@ -19,37 +22,28 @@ import (
 // @Failure      422  {object}  ErrorResponse  "Only available for UTXO chains"
 // @Router       /wallets/{walletId}/unspents [get]
 func ListUnspentOutputs(ctx http.Context) http.Response {
-	wallet, _, _, errResp := walletFromParam(ctx)
-	if errResp != nil {
-		return errResp
-	}
+	wallet := ctx.Value("wallet").(*models.Wallet)
 
-	c := container.Get()
-	adapter, err := c.Registry.Chain(wallet.Chain)
+	utxos, err := container.Get().WalletUTXORepo.ListSpendable(wallet.ID, wallet.Chain)
 	if err != nil {
-		return ctx.Response().Json(http.StatusUnprocessableEntity, http.Json{
-			"error": "chain adapter not available for: " + wallet.Chain,
-		})
+		return ctx.Response().Json(http.StatusInternalServerError, http.Json{"error": "failed to list utxos: " + err.Error()})
 	}
 
-	if wallet.DepositAddress == nil {
-		return ctx.Response().Json(http.StatusUnprocessableEntity, http.Json{"error": "wallet has no deposit address"})
-	}
-	depositAddr := wallet.DepositAddress.Address
+	result := make([]UnspentOutput, 0, len(utxos))
+	for _, u := range utxos {
+		var height uint64
+		if u.BlockNumber != nil {
+			height = uint64(*u.BlockNumber)
+		}
 
-	balance, err := adapter.GetBalance(ctx.Context(), depositAddr)
-	if err != nil {
-		return ctx.Response().Json(http.StatusInternalServerError, http.Json{"error": "failed to fetch balance: " + err.Error()})
-	}
+		value, _ := strconv.ParseInt(u.ValueRaw, 10, 64)
 
-	result := []UnspentOutput{}
-	if balance != nil && balance.Amount != nil && balance.Amount.Sign() > 0 {
 		result = append(result, UnspentOutput{
-			TxHash:  "",
-			Vout:    0,
-			Value:   balance.Amount.Int64(),
-			Height:  0,
-			Address: depositAddr,
+			TxHash:  u.TxHash,
+			Vout:    uint32(u.OutputIndex),
+			Value:   value,
+			Height:  height,
+			Address: u.Address,
 		})
 	}
 

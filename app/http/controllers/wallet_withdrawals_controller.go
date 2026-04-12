@@ -6,6 +6,7 @@ import (
 
 	"github.com/macrowallets/waas/app/container"
 	"github.com/macrowallets/waas/app/http/pagination"
+	"github.com/macrowallets/waas/app/http/requests"
 	"github.com/macrowallets/waas/app/models"
 )
 
@@ -24,10 +25,7 @@ import (
 // @Failure      404  {object}  ErrorResponse
 // @Router       /wallets/{walletId}/withdrawals [get]
 func ListWalletWithdrawals(ctx http.Context) http.Response {
-	wallet, _, _, errResp := walletFromParam(ctx)
-	if errResp != nil {
-		return errResp
-	}
+	wallet := ctx.Value("wallet").(*models.Wallet)
 
 	limit, offset := pagination.ParseParams(ctx, 50)
 	status := ctx.Request().Query("status", "")
@@ -46,26 +44,20 @@ func ListWalletWithdrawals(ctx http.Context) http.Response {
 // @Accept       json
 // @Produce      json
 // @Param        walletId  path      string                    true  "Wallet UUID"
-// @Param        request   body      CreateWalletWithdrawalRequest  true  "Withdrawal payload"
+// @Param        request   body      CreateWalletWithdrawalSwagger  true  "Withdrawal payload"
 // @Success      201  {object}  models.Withdrawal
 // @Failure      400  {object}  ErrorResponse
 // @Failure      403  {object}  ErrorResponse
 // @Router       /wallets/{walletId}/withdrawals [post]
 func CreateWalletWithdrawal(ctx http.Context) http.Response {
-	wallet, _, _, errResp := walletFromParam(ctx)
-	if errResp != nil {
-		return errResp
-	}
+	wallet := ctx.Value("wallet").(*models.Wallet)
 
 	// Any member may initiate; approval is handled separately
 	callerID, _ := ctx.Value("user_id").(uuid.UUID)
 
-	var req CreateWalletWithdrawalRequest
-	if err := ctx.Request().Bind(&req); err != nil {
-		return ctx.Response().Json(http.StatusBadRequest, http.Json{"error": "invalid request body"})
-	}
-	if req.Amount == "" || req.DestinationAddress == "" {
-		return ctx.Response().Json(http.StatusBadRequest, http.Json{"error": "amount and destination_address are required"})
+	var req requests.CreateWalletWithdrawalRequest
+	if resp := validateRequest(ctx, &req); resp != nil {
+		return resp
 	}
 
 	w := &models.Withdrawal{
@@ -100,10 +92,7 @@ func CreateWalletWithdrawal(ctx http.Context) http.Response {
 // @Failure      404  {object}  ErrorResponse
 // @Router       /wallets/{walletId}/withdrawals/{withdrawalId} [get]
 func GetWalletWithdrawal(ctx http.Context) http.Response {
-	wallet, _, _, errResp := walletFromParam(ctx)
-	if errResp != nil {
-		return errResp
-	}
+	wallet := ctx.Value("wallet").(*models.Wallet)
 
 	withdrawalIDStr := ctx.Request().Route("withdrawalId")
 	withdrawalID, err := uuid.Parse(withdrawalIDStr)
@@ -132,10 +121,7 @@ func GetWalletWithdrawal(ctx http.Context) http.Response {
 // @Failure      422  {object}  ErrorResponse  "Withdrawal cannot be cancelled in current state"
 // @Router       /wallets/{walletId}/withdrawals/{withdrawalId}/cancel [post]
 func CancelWalletWithdrawal(ctx http.Context) http.Response {
-	wallet, accRole, walletRole, errResp := walletFromParam(ctx)
-	if errResp != nil {
-		return errResp
-	}
+	wallet := ctx.Value("wallet").(*models.Wallet)
 
 	withdrawalIDStr := ctx.Request().Route("withdrawalId")
 	withdrawalID, err := uuid.Parse(withdrawalIDStr)
@@ -154,11 +140,12 @@ func CancelWalletWithdrawal(ctx http.Context) http.Response {
 		})
 	}
 
-	callerID, _ := ctx.Value("user_id").(uuid.UUID)
-	isOwner := isWalletAdmin(accRole, walletRole)
-	isCreator := w.CreatedBy != nil && *w.CreatedBy == callerID
-	if !isOwner && !isCreator {
-		return ctx.Response().Json(http.StatusForbidden, http.Json{"error": "only the creator or an owner/admin may cancel this withdrawal"})
+	creatorID := uuid.Nil
+	if w.CreatedBy != nil {
+		creatorID = *w.CreatedBy
+	}
+	if resp := authorize(ctx, "wallet.cancel-withdrawal", map[string]any{"wallet_id": wallet.ID, "creator_id": creatorID}); resp != nil {
+		return resp
 	}
 
 	if err := container.Get().WithdrawalRepo.UpdateStatus(w.ID, "cancelled"); err != nil {
@@ -170,7 +157,7 @@ func CancelWalletWithdrawal(ctx http.Context) http.Response {
 
 // ---- Request/Response types ----
 
-type CreateWalletWithdrawalRequest struct {
+type CreateWalletWithdrawalSwagger struct {
 	Amount             string `json:"amount" example:"0.001"`
 	DestinationAddress string `json:"destination_address" example:"bc1q..."`
 	Note               string `json:"note,omitempty" example:"Monthly payment"`

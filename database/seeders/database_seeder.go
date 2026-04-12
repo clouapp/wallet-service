@@ -22,6 +22,7 @@ func (s *DatabaseSeeder) Run() error {
 		&ChainSeeder{},
 		&TokenSeeder{},
 		&ChainResourceSeeder{},
+		&CurrencySeeder{},
 		&PairedAccountSeeder{},
 		&UserSeeder{},
 		&AccountUserSeeder{},

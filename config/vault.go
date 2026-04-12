@@ -6,10 +6,10 @@ import "github.com/goravel/framework/facades"
 func registerVault() {
 	cfg := facades.Config()
 	cfg.Add("vault", map[string]any{
-		"redis_url":      envString("REDIS_URL", ""),
-		"lambda_mode":    envString("LAMBDA_MODE", ""),
-		"port":           envString("PORT", "8080"),
-		"api_key_secret": envString("API_KEY_SECRET", ""),
+		"redis_url":          envString("REDIS_URL", ""),
+		"lambda_mode":        envString("LAMBDA_MODE", ""),
+		"port":               envString("PORT", "8080"),
+		"api_key_secret":     envString("API_KEY_SECRET", ""),
 		"master_key_ref":     envString("MASTER_KEY_REF", ""),
 		"wallet_service_key": envString("WALLET_SERVICE_KEY", ""),
 		"aws": map[string]any{
@@ -31,6 +31,11 @@ func registerVault() {
 			"helius_api_key":     envString("HELIUS_API_KEY", ""),
 			"quicknode_api_key":  envString("QUICKNODE_API_KEY", ""),
 			"etherscan_api_key":  envString("ETHERSCAN_API_KEY", ""),
+		},
+		"price": map[string]any{
+			"coingecko_api_key":     envString("COINGECKO_API_KEY", ""),
+			"coinmarketcap_api_key": envString("COINMARKETCAP_API_KEY", ""),
+			"coinapi_key":           envString("COINAPI_KEY", ""),
 		},
 	})
 }

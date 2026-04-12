@@ -22,19 +22,15 @@ import (
 // @Produce      json
 // @Security     ApiKeyAuth
 // @Security     SignatureAuth
-// @Param        body  body      CreateWalletRequest  true  "Wallet creation request"
+// @Param        body  body      CreateWalletSwagger  true  "Wallet creation request"
 // @Success      201   {object}  models.Wallet
 // @Failure      400   {object}  ErrorResponse  "Missing or invalid fields"
 // @Failure      409   {object}  ErrorResponse  "Wallet for this chain already exists or chain is unsupported"
 // @Router       /v1/wallets [post]
 func CreateWallet(ctx http.Context) http.Response {
 	var req requests.CreateWalletRequest
-	validationErrors, err := ctx.Request().ValidateRequest(&req)
-	if err != nil {
-		return ctx.Response().Json(http.StatusInternalServerError, http.Json{"error": err.Error()})
-	}
-	if validationErrors != nil {
-		return ctx.Response().Json(http.StatusUnprocessableEntity, validationErrors.All())
+	if resp := validateRequest(ctx, &req); resp != nil {
+		return resp
 	}
 
 	accountID, _ := ctx.Value("account_id").(uuid.UUID)
@@ -116,34 +112,14 @@ func GetWallet(ctx http.Context) http.Response {
 // CreateWalletAdmin creates a wallet from the admin panel with full MPC keygen.
 // Returns keycard data including activation_code for the two-step setup flow.
 func CreateWalletAdmin(ctx http.Context) http.Response {
-	var req struct {
-		Chain             string `json:"chain"`
-		Label             string `json:"label"`
-		Passphrase        string `json:"passphrase"`
-		ConfirmPassphrase string `json:"confirm_passphrase"`
-	}
-	if err := ctx.Request().Bind(&req); err != nil {
-		return ctx.Response().Json(http.StatusBadRequest, http.Json{"error": "invalid request body"})
-	}
-	if req.Chain == "" {
-		return ctx.Response().Json(http.StatusBadRequest, http.Json{"error": "chain is required"})
-	}
-	if req.Label == "" {
-		return ctx.Response().Json(http.StatusBadRequest, http.Json{"error": "label is required"})
-	}
-	if len(req.Passphrase) < 12 {
-		return ctx.Response().Json(http.StatusBadRequest, http.Json{"error": "passphrase must be at least 12 characters"})
-	}
-	if req.Passphrase != req.ConfirmPassphrase {
-		return ctx.Response().Json(http.StatusBadRequest, http.Json{"error": "passphrases do not match"})
+	var req requests.CreateWalletAdminRequest
+	if resp := validateRequest(ctx, &req); resp != nil {
+		return resp
 	}
 
 	if env, ok := ctx.Value("account_environment").(string); ok && env != "" {
-		chainRecord, chainErr := container.Get().ChainRepo.FindByID(req.Chain)
-		if chainErr != nil || chainRecord == nil {
-			return ctx.Response().Json(http.StatusBadRequest, http.Json{"error": "unsupported chain"})
-		}
-		if chainRecord.IsTestnet != (env == models.EnvironmentTest) {
+		chainRecord, _ := container.Get().ChainRepo.FindByID(req.Chain)
+		if chainRecord != nil && chainRecord.IsTestnet != (env == models.EnvironmentTest) {
 			return ctx.Response().Json(http.StatusForbidden, http.Json{"error": "chain not available in current environment"})
 		}
 	}
@@ -174,11 +150,9 @@ func ActivateWallet(ctx http.Context) http.Response {
 		return ctx.Response().Json(http.StatusBadRequest, http.Json{"error": "invalid wallet id"})
 	}
 
-	var req struct {
-		Code string `json:"code"`
-	}
-	if err := ctx.Request().Bind(&req); err != nil {
-		return ctx.Response().Json(http.StatusBadRequest, http.Json{"error": "invalid request body"})
+	var req requests.ActivateWalletRequest
+	if resp := validateRequest(ctx, &req); resp != nil {
+		return resp
 	}
 
 	_, err = container.Get().WalletService.ActivateWallet(ctx.Context(), walletID, req.Code)
@@ -198,8 +172,8 @@ func ActivateWallet(ctx http.Context) http.Response {
 	return ctx.Response().Json(http.StatusOK, http.Json{"status": "active"})
 }
 
-// CreateWalletRequest is the request body for creating a wallet.
-type CreateWalletRequest struct {
+// CreateWalletSwagger is the request body for creating a wallet.
+type CreateWalletSwagger struct {
 	Chain      string `json:"chain" example:"eth"`
 	Label      string `json:"label" example:"My Ethereum Wallet"`
 	Passphrase string `json:"passphrase" example:"my-secret-passphrase-12chars"`

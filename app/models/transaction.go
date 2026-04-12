@@ -14,7 +14,7 @@ type Transaction struct {
 	WalletID       uuid.UUID  `gorm:"type:uuid;not null;index" json:"wallet_id"`
 	ExternalUserID string     `gorm:"type:varchar(255);not null;index" json:"external_user_id"`
 	Chain          string     `gorm:"type:varchar(50);not null;index" json:"chain"`
-	TxType         string     `gorm:"type:varchar(20);not null;index" json:"tx_type"`
+	TxType         string     `gorm:"type:transaction_type;not null;index" json:"tx_type"`
 	TxHash         string     `gorm:"type:varchar(255);index" json:"tx_hash"`
 	LogIndex       int        `gorm:"type:int;default:-1" json:"log_index"`
 	FromAddress    string     `gorm:"type:varchar(255)" json:"from_address"`
@@ -24,13 +24,17 @@ type Transaction struct {
 	TokenContract  string     `gorm:"type:varchar(255)" json:"token_contract"`
 	Confirmations  int        `gorm:"type:int;not null;default:0" json:"confirmations"`
 	RequiredConfs  int        `gorm:"type:int;not null;default:12" json:"required_confs"`
-	Status         string     `gorm:"type:varchar(20);not null;index" json:"status"`
+	Status         string     `gorm:"type:transaction_status;not null;index" json:"status"`
 	Fee            string     `gorm:"type:varchar(100)" json:"fee"`
 	BlockNumber    int64      `gorm:"type:bigint;index:idx_chain_block" json:"block_number"`
 	BlockHash      string     `gorm:"type:varchar(255)" json:"block_hash"`
 	ErrorMessage   string     `gorm:"type:text" json:"error_message"`
 	IdempotencyKey string     `gorm:"type:varchar(255);unique" json:"idempotency_key"`
 	ConfirmedAt    *time.Time `gorm:"type:timestamp" json:"confirmed_at"`
+	Direction      string     `gorm:"type:transaction_direction" json:"direction,omitempty"`
+	Source         string     `gorm:"type:transaction_source" json:"source,omitempty"`
+	RawPayload     string     `gorm:"type:jsonb" json:"-"`
+	SyncedAt       *time.Time `gorm:"type:timestamptz" json:"synced_at,omitempty"`
 
 	// Relationships
 	Address *Address `gorm:"foreignKey:AddressID" json:"address,omitempty"`

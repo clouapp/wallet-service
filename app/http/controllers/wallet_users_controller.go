@@ -3,55 +3,12 @@ package controllers
 import (
 	"github.com/google/uuid"
 	"github.com/goravel/framework/contracts/http"
+	"github.com/goravel/framework/facades"
 
 	"github.com/macrowallets/waas/app/container"
+	"github.com/macrowallets/waas/app/http/requests"
 	"github.com/macrowallets/waas/app/models"
 )
-
-// walletFromParam resolves the {walletId} route parameter and verifies
-// the caller is a member of the wallet's account or the wallet itself.
-// Returns (wallet, callerAccountRole, callerWalletRole, errResponse).
-func walletFromParam(ctx http.Context) (*models.Wallet, string, string, http.Response) {
-	rawID := ctx.Request().Input("walletId")
-	walletID, err := uuid.Parse(rawID)
-	if err != nil {
-		return nil, "", "", ctx.Response().Json(http.StatusNotFound, http.Json{"error": "invalid wallet id"})
-	}
-
-	wallet, err := container.Get().WalletRepo.FindByID(walletID)
-	if err != nil || wallet == nil {
-		return nil, "", "", ctx.Response().Json(http.StatusNotFound, http.Json{"error": "wallet not found"})
-	}
-
-	userID, _ := ctx.Value("user_id").(uuid.UUID)
-
-	// Account-level role
-	accRole := ""
-	if wallet.AccountID != nil {
-		au, err2 := container.Get().AccountUserRepo.FindByAccountAndUser(*wallet.AccountID, userID)
-		if err2 == nil && au != nil {
-			accRole = au.Role
-		}
-	}
-
-	// Wallet-level role
-	walletRole := ""
-	wu, err3 := container.Get().WalletUserRepo.FindByWalletAndUser(walletID, userID)
-	if err3 == nil && wu != nil {
-		walletRole = wu.Roles
-	}
-
-	if accRole == "" && walletRole == "" {
-		return nil, "", "", ctx.Response().Json(http.StatusForbidden, http.Json{"error": "not a member of this wallet or its account"})
-	}
-
-	return wallet, accRole, walletRole, nil
-}
-
-// isWalletAdmin returns true if the caller has admin or owner privileges on the wallet.
-func isWalletAdmin(accRole, walletRole string) bool {
-	return accRole == "owner" || accRole == "admin" || walletRole == "owner" || walletRole == "admin"
-}
 
 // ListWalletUsers godoc
 // @Summary      List wallet users
@@ -65,10 +22,7 @@ func isWalletAdmin(accRole, walletRole string) bool {
 // @Failure      404  {object}  ErrorResponse
 // @Router       /wallets/{walletId}/users [get]
 func ListWalletUsers(ctx http.Context) http.Response {
-	wallet, _, _, errResp := walletFromParam(ctx)
-	if errResp != nil {
-		return errResp
-	}
+	wallet := ctx.Value("wallet").(*models.Wallet)
 
 	members, err := container.Get().WalletUserRepo.FindByWalletID(wallet.ID)
 	if err != nil {
@@ -85,37 +39,35 @@ func ListWalletUsers(ctx http.Context) http.Response {
 // @Accept       json
 // @Produce      json
 // @Param        walletId  path      string              true  "Wallet UUID"
-// @Param        request   body      AddWalletUserRequest  true  "User and role payload"
+// @Param        request   body      AddWalletUserSwagger  true  "User and role payload"
 // @Success      201  {object}  models.WalletUser
 // @Failure      400  {object}  ErrorResponse
 // @Failure      403  {object}  ErrorResponse
 // @Router       /wallets/{walletId}/users [post]
 func AddWalletUser(ctx http.Context) http.Response {
-	wallet, accRole, walletRole, errResp := walletFromParam(ctx)
-	if errResp != nil {
-		return errResp
-	}
-	if !isWalletAdmin(accRole, walletRole) {
-		return ctx.Response().Json(http.StatusForbidden, http.Json{"error": "only wallet/account owners and admins may add users"})
+	wallet := ctx.Value("wallet").(*models.Wallet)
+	if resp := authorize(ctx, "wallet.add-user", map[string]any{"wallet_id": wallet.ID}); resp != nil {
+		return resp
 	}
 
-	var req AddWalletUserRequest
-	if err := ctx.Request().Bind(&req); err != nil {
-		return ctx.Response().Json(http.StatusBadRequest, http.Json{"error": "invalid request body"})
+	var req requests.AddWalletUserRequest
+	if resp := validateRequest(ctx, &req); resp != nil {
+		return resp
 	}
-	if req.UserID == "" {
-		return ctx.Response().Json(http.StatusBadRequest, http.Json{"error": "user_id is required"})
-	}
-	targetID, err := uuid.Parse(req.UserID)
-	if err != nil {
-		return ctx.Response().Json(http.StatusBadRequest, http.Json{"error": "invalid user_id"})
-	}
+	targetID, _ := uuid.Parse(req.UserID)
 
-	existing, _ := container.Get().WalletUserRepo.FindByWalletAndUserIncludeDeleted(wallet.ID, targetID)
+	existing, existErr := container.Get().WalletUserRepo.FindByWalletAndUserIncludeDeleted(wallet.ID, targetID)
+	if existErr != nil {
+		facades.Log().WithContext(ctx).Errorf("wallet-users: lookup existing: %v", existErr)
+	}
 	if existing != nil && existing.DeletedAt != nil {
-		_ = container.Get().WalletUserRepo.UpdateField(existing.ID, "deleted_at", nil)
+		if err := container.Get().WalletUserRepo.UpdateField(existing.ID, "deleted_at", nil); err != nil {
+			return ctx.Response().Json(http.StatusInternalServerError, http.Json{"error": "failed to restore wallet user"})
+		}
 		if req.Roles != "" {
-			_ = container.Get().WalletUserRepo.UpdateField(existing.ID, "roles", req.Roles)
+			if err := container.Get().WalletUserRepo.UpdateField(existing.ID, "roles", req.Roles); err != nil {
+				facades.Log().WithContext(ctx).Errorf("wallet-users: update roles: %v", err)
+			}
 		}
 		return ctx.Response().Json(http.StatusCreated, existing)
 	}
@@ -146,12 +98,9 @@ func AddWalletUser(ctx http.Context) http.Response {
 // @Failure      404  {object}  ErrorResponse
 // @Router       /wallets/{walletId}/users/{userId} [delete]
 func RemoveWalletUser(ctx http.Context) http.Response {
-	wallet, accRole, walletRole, errResp := walletFromParam(ctx)
-	if errResp != nil {
-		return errResp
-	}
-	if !isWalletAdmin(accRole, walletRole) {
-		return ctx.Response().Json(http.StatusForbidden, http.Json{"error": "only wallet/account owners and admins may remove users"})
+	wallet := ctx.Value("wallet").(*models.Wallet)
+	if resp := authorize(ctx, "wallet.remove-user", map[string]any{"wallet_id": wallet.ID}); resp != nil {
+		return resp
 	}
 
 	targetIDStr := ctx.Request().Route("userId")
@@ -168,7 +117,7 @@ func RemoveWalletUser(ctx http.Context) http.Response {
 
 // ---- Request/Response types ----
 
-type AddWalletUserRequest struct {
+type AddWalletUserSwagger struct {
 	UserID string `json:"user_id" example:"00000000-0000-0000-0000-000000000001"`
 	Roles  string `json:"roles" example:"viewer"`
 }

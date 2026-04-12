@@ -9,6 +9,11 @@ func registerQueue() {
 			"sync": map[string]any{
 				"driver": "sync",
 			},
+			"database": map[string]any{
+				"driver":     "database",
+				"connection": "postgres",
+				"queue":      "blockchain",
+			},
 		},
 		"failed": map[string]any{
 			"database": "postgres",

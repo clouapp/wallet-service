@@ -57,11 +57,25 @@ func RegisterAdminRoutes() {
 		router.Get("/{chainId}/resources", controllers.ListChainResources)
 	})
 
+	facades.Route().Prefix("/v1/currencies").Middleware(middleware.SessionAuth(), noCache).Group(func(router route.Router) {
+		router.Get("", controllers.ListCurrencies)
+		router.Get("/{code}", controllers.GetCurrency)
+	})
+
+	facades.Route().Prefix("/v1/me").Middleware(middleware.SessionAuth(), noCache).Group(func(router route.Router) {
+		router.Get("/preferences", controllers.GetPreferences)
+		router.Put("/preferences", controllers.UpdatePreferences)
+	})
+
+	facades.Route().Prefix("/v1/convert").Middleware(middleware.SessionAuth(), noCache).Group(func(router route.Router) {
+		router.Get("", controllers.ConvertCurrency)
+	})
+
 	facades.Route().Prefix("/v1/wallets").Middleware(middleware.SessionAuth(), middleware.AccountHeader(), noCache).Group(func(router route.Router) {
 		router.Get("", controllers.ListWallets)
 		router.Post("", controllers.CreateWalletAdmin)
 		router.Get("/{walletId}", controllers.GetWallet)
-		router.Prefix("/{walletId}").Group(func(r route.Router) {
+		router.Prefix("/{walletId}").Middleware(middleware.WalletContext()).Group(func(r route.Router) {
 			r.Post("/activate", controllers.ActivateWallet)
 
 			r.Get("/addresses", controllers.ListWalletAddresses)

@@ -25,13 +25,20 @@ type Wallet struct {
 	DepositAddressID *uuid.UUID `gorm:"type:uuid" json:"deposit_address_id,omitempty"`
 	// Account and admin fields
 	AccountID         *uuid.UUID `gorm:"type:uuid;index" json:"account_id,omitempty"`
-	Status            string     `gorm:"type:varchar(20);default:active" json:"status"`
+	Status            string     `gorm:"type:wallet_status;default:active" json:"status"`
 	FeeRateMin        *int       `gorm:"type:integer" json:"fee_rate_min,omitempty"`
 	FeeRateMax        *int       `gorm:"type:integer" json:"fee_rate_max,omitempty"`
 	FeeMultiplier     *float64   `gorm:"type:decimal(8,4)" json:"fee_multiplier,omitempty"`
 	RequiredApprovals int        `gorm:"default:1" json:"required_approvals"`
 	FrozenUntil       *time.Time `json:"frozen_until,omitempty"`
 	ActivationCode    *string    `gorm:"type:char(6)" json:"-"`
+
+	BalanceAsset        *string    `gorm:"type:varchar(32)" json:"balance_asset,omitempty"`
+	BalanceRaw          *string    `gorm:"type:text" json:"balance_raw,omitempty"`
+	BalanceDisplay      *string    `gorm:"type:text" json:"balance,omitempty"`
+	BalanceUSD          *float64   `gorm:"type:decimal(28,10)" json:"balance_usd,omitempty"`
+	BalanceLastSyncedAt *time.Time `gorm:"type:timestamptz" json:"balance_last_synced_at,omitempty"`
+	ReadModelStatus     string     `gorm:"type:wallet_read_model_status;default:idle" json:"read_model_status"`
 
 	DepositAddress *Address `gorm:"foreignKey:DepositAddressID" json:"deposit_address,omitempty"`
 }

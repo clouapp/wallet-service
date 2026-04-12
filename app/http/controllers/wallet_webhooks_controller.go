@@ -5,6 +5,7 @@ import (
 	"github.com/goravel/framework/contracts/http"
 
 	"github.com/macrowallets/waas/app/container"
+	"github.com/macrowallets/waas/app/http/requests"
 	"github.com/macrowallets/waas/app/models"
 )
 
@@ -20,10 +21,7 @@ import (
 // @Failure      404  {object}  ErrorResponse
 // @Router       /wallets/{walletId}/webhooks [get]
 func ListWalletWebhooks(ctx http.Context) http.Response {
-	wallet, _, _, errResp := walletFromParam(ctx)
-	if errResp != nil {
-		return errResp
-	}
+	wallet := ctx.Value("wallet").(*models.Wallet)
 
 	cfgs, err := container.Get().WebhookConfigRepo.FindByWalletID(wallet.ID)
 	if err != nil {
@@ -40,26 +38,20 @@ func ListWalletWebhooks(ctx http.Context) http.Response {
 // @Accept       json
 // @Produce      json
 // @Param        walletId  path      string                    true  "Wallet UUID"
-// @Param        request   body      CreateWalletWebhookRequest  true  "Webhook configuration"
+// @Param        request   body      CreateWalletWebhookSwagger  true  "Webhook configuration"
 // @Success      201  {object}  models.WebhookConfig
 // @Failure      400  {object}  ErrorResponse
 // @Failure      403  {object}  ErrorResponse
 // @Router       /wallets/{walletId}/webhooks [post]
 func CreateWalletWebhook(ctx http.Context) http.Response {
-	wallet, accRole, walletRole, errResp := walletFromParam(ctx)
-	if errResp != nil {
-		return errResp
-	}
-	if !isWalletAdmin(accRole, walletRole) {
-		return ctx.Response().Json(http.StatusForbidden, http.Json{"error": "only wallet/account owners and admins may create webhooks"})
+	wallet := ctx.Value("wallet").(*models.Wallet)
+	if resp := authorize(ctx, "wallet.manage-webhooks", map[string]any{"wallet_id": wallet.ID}); resp != nil {
+		return resp
 	}
 
-	var req CreateWalletWebhookRequest
-	if err := ctx.Request().Bind(&req); err != nil {
-		return ctx.Response().Json(http.StatusBadRequest, http.Json{"error": "invalid request body"})
-	}
-	if req.URL == "" {
-		return ctx.Response().Json(http.StatusBadRequest, http.Json{"error": "url is required"})
+	var req requests.CreateWalletWebhookRequest
+	if resp := validateRequest(ctx, &req); resp != nil {
+		return resp
 	}
 
 	cfg := &models.WebhookConfig{
@@ -89,12 +81,9 @@ func CreateWalletWebhook(ctx http.Context) http.Response {
 // @Failure      404  {object}  ErrorResponse
 // @Router       /wallets/{walletId}/webhooks/{webhookId} [delete]
 func DeleteWalletWebhook(ctx http.Context) http.Response {
-	wallet, accRole, walletRole, errResp := walletFromParam(ctx)
-	if errResp != nil {
-		return errResp
-	}
-	if !isWalletAdmin(accRole, walletRole) {
-		return ctx.Response().Json(http.StatusForbidden, http.Json{"error": "only wallet/account owners and admins may delete webhooks"})
+	wallet := ctx.Value("wallet").(*models.Wallet)
+	if resp := authorize(ctx, "wallet.manage-webhooks", map[string]any{"wallet_id": wallet.ID}); resp != nil {
+		return resp
 	}
 
 	webhookIDStr := ctx.Request().Route("webhookId")
@@ -116,7 +105,7 @@ func DeleteWalletWebhook(ctx http.Context) http.Response {
 
 // ---- Request/Response types ----
 
-type CreateWalletWebhookRequest struct {
+type CreateWalletWebhookSwagger struct {
 	URL    string `json:"url" example:"https://example.com/hook"`
 	Secret string `json:"secret,omitempty" example:"wh_secret_123"`
 	Events string `json:"events,omitempty" example:"deposit.confirmed,withdrawal.confirmed"`

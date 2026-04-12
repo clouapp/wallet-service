@@ -1,11 +1,15 @@
 package controllers
 
 import (
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/goravel/framework/contracts/http"
 
 	"github.com/macrowallets/waas/app/container"
+	"github.com/macrowallets/waas/app/http/requests"
+	"github.com/macrowallets/waas/app/models"
 )
 
 // GetWalletSettings godoc
@@ -20,10 +24,7 @@ import (
 // @Failure      404  {object}  ErrorResponse
 // @Router       /wallets/{walletId}/settings [get]
 func GetWalletSettings(ctx http.Context) http.Response {
-	wallet, _, _, errResp := walletFromParam(ctx)
-	if errResp != nil {
-		return errResp
-	}
+	wallet := ctx.Value("wallet").(*models.Wallet)
 
 	return ctx.Response().Json(http.StatusOK, http.Json{
 		"fee_rate_min":       wallet.FeeRateMin,
@@ -42,55 +43,57 @@ func GetWalletSettings(ctx http.Context) http.Response {
 // @Security     BearerAuth
 // @Accept       json
 // @Produce      json
-// @Param        walletId  path      string                    true  "Wallet UUID"
-// @Param        request   body      UpdateWalletSettingsRequest  true  "Settings payload"
+// @Param        walletId  path      string                       true  "Wallet UUID"
+// @Param        request   body      UpdateWalletSettingsSwagger  true  "Settings payload"
 // @Success      200  {object}  WalletSettingsResponse
 // @Failure      400  {object}  ErrorResponse
 // @Failure      403  {object}  ErrorResponse
 // @Router       /wallets/{walletId}/settings [patch]
 func UpdateWalletSettings(ctx http.Context) http.Response {
-	wallet, accRole, walletRole, errResp := walletFromParam(ctx)
-	if errResp != nil {
+	wallet := ctx.Value("wallet").(*models.Wallet)
+	if errResp := authorize(ctx, "wallet.update", map[string]any{"wallet_id": wallet.ID}); errResp != nil {
 		return errResp
 	}
-	if !isWalletAdmin(accRole, walletRole) {
-		return ctx.Response().Json(http.StatusForbidden, http.Json{"error": "only wallet/account owners and admins may update wallet settings"})
+
+	var req requests.UpdateWalletSettingsRequest
+	if errResp := validateRequest(ctx, &req); errResp != nil {
+		return errResp
 	}
 
-	var req UpdateWalletSettingsRequest
-	if err := ctx.Request().Bind(&req); err != nil {
-		return ctx.Response().Json(http.StatusBadRequest, http.Json{"error": "invalid request body"})
-	}
-
-	if req.FeeRateMin != nil {
-		if err := container.Get().WalletRepo.UpdateField(wallet.ID, "fee_rate_min", *req.FeeRateMin); err != nil {
+	if s := strings.TrimSpace(req.FeeRateMin); s != "" {
+		v, _ := strconv.Atoi(s)
+		if err := container.Get().WalletRepo.UpdateField(wallet.ID, "fee_rate_min", v); err != nil {
 			return ctx.Response().Json(http.StatusInternalServerError, http.Json{"error": "failed to update wallet settings"})
 		}
-		wallet.FeeRateMin = req.FeeRateMin
+		wallet.FeeRateMin = &v
 	}
-	if req.FeeRateMax != nil {
-		if err := container.Get().WalletRepo.UpdateField(wallet.ID, "fee_rate_max", *req.FeeRateMax); err != nil {
+	if s := strings.TrimSpace(req.FeeRateMax); s != "" {
+		v, _ := strconv.Atoi(s)
+		if err := container.Get().WalletRepo.UpdateField(wallet.ID, "fee_rate_max", v); err != nil {
 			return ctx.Response().Json(http.StatusInternalServerError, http.Json{"error": "failed to update wallet settings"})
 		}
-		wallet.FeeRateMax = req.FeeRateMax
+		wallet.FeeRateMax = &v
 	}
-	if req.FeeMultiplier != nil {
-		if err := container.Get().WalletRepo.UpdateField(wallet.ID, "fee_multiplier", *req.FeeMultiplier); err != nil {
+	if s := strings.TrimSpace(req.FeeMultiplier); s != "" {
+		v, _ := strconv.ParseFloat(s, 64)
+		if err := container.Get().WalletRepo.UpdateField(wallet.ID, "fee_multiplier", v); err != nil {
 			return ctx.Response().Json(http.StatusInternalServerError, http.Json{"error": "failed to update wallet settings"})
 		}
-		wallet.FeeMultiplier = req.FeeMultiplier
+		wallet.FeeMultiplier = &v
 	}
-	if req.RequiredApprovals != nil {
-		if err := container.Get().WalletRepo.UpdateField(wallet.ID, "required_approvals", *req.RequiredApprovals); err != nil {
+	if s := strings.TrimSpace(req.RequiredApprovals); s != "" {
+		v, _ := strconv.Atoi(s)
+		if err := container.Get().WalletRepo.UpdateField(wallet.ID, "required_approvals", v); err != nil {
 			return ctx.Response().Json(http.StatusInternalServerError, http.Json{"error": "failed to update wallet settings"})
 		}
-		wallet.RequiredApprovals = *req.RequiredApprovals
+		wallet.RequiredApprovals = v
 	}
-	if req.FrozenUntil != nil {
-		if err := container.Get().WalletRepo.UpdateField(wallet.ID, "frozen_until", req.FrozenUntil); err != nil {
+	if s := strings.TrimSpace(req.FrozenUntil); s != "" {
+		t, _ := time.Parse(time.RFC3339, s)
+		if err := container.Get().WalletRepo.UpdateField(wallet.ID, "frozen_until", t); err != nil {
 			return ctx.Response().Json(http.StatusInternalServerError, http.Json{"error": "failed to update wallet settings"})
 		}
-		wallet.FrozenUntil = req.FrozenUntil
+		wallet.FrozenUntil = &t
 	}
 
 	return ctx.Response().Json(http.StatusOK, http.Json{
@@ -110,28 +113,26 @@ func UpdateWalletSettings(ctx http.Context) http.Response {
 // @Security     BearerAuth
 // @Accept       json
 // @Produce      json
-// @Param        walletId  path      string             true  "Wallet UUID"
-// @Param        request   body      FreezeWalletRequest  true  "Freeze payload"
+// @Param        walletId  path      string                true  "Wallet UUID"
+// @Param        request   body      FreezeWalletSwagger   true  "Freeze payload"
 // @Success      200  {object}  WalletSettingsResponse
 // @Failure      403  {object}  ErrorResponse
 // @Router       /wallets/{walletId}/freeze [post]
 func FreezeWallet(ctx http.Context) http.Response {
-	wallet, accRole, walletRole, errResp := walletFromParam(ctx)
-	if errResp != nil {
+	wallet := ctx.Value("wallet").(*models.Wallet)
+	if errResp := authorize(ctx, "wallet.freeze", map[string]any{"wallet_id": wallet.ID}); errResp != nil {
 		return errResp
 	}
-	if walletRole != "owner" && accRole != "owner" && accRole != "admin" {
-		return ctx.Response().Json(http.StatusForbidden, http.Json{"error": "only owners and account admins may freeze wallets"})
-	}
 
-	var req FreezeWalletRequest
-	if err := ctx.Request().Bind(&req); err != nil {
-		return ctx.Response().Json(http.StatusBadRequest, http.Json{"error": "invalid request body"})
+	var req requests.FreezeWalletRequest
+	if errResp := validateRequest(ctx, &req); errResp != nil {
+		return errResp
 	}
 
 	frozenUntil := time.Now().Add(24 * time.Hour) // default: 24h freeze
-	if req.FrozenUntil != nil {
-		frozenUntil = *req.FrozenUntil
+	if s := strings.TrimSpace(req.FrozenUntil); s != "" {
+		t, _ := time.Parse(time.RFC3339, s)
+		frozenUntil = t
 	}
 
 	if err := container.Get().WalletRepo.UpdateField(wallet.ID, "frozen_until", frozenUntil); err != nil {
@@ -151,7 +152,7 @@ func FreezeWallet(ctx http.Context) http.Response {
 
 // ---- Request/Response types ----
 
-type UpdateWalletSettingsRequest struct {
+type UpdateWalletSettingsSwagger struct {
 	FeeRateMin        *int       `json:"fee_rate_min,omitempty" example:"1"`
 	FeeRateMax        *int       `json:"fee_rate_max,omitempty" example:"100"`
 	FeeMultiplier     *float64   `json:"fee_multiplier,omitempty" example:"1.25"`
@@ -159,7 +160,7 @@ type UpdateWalletSettingsRequest struct {
 	FrozenUntil       *time.Time `json:"frozen_until,omitempty"`
 }
 
-type FreezeWalletRequest struct {
+type FreezeWalletSwagger struct {
 	FrozenUntil *time.Time `json:"frozen_until,omitempty"`
 }
 

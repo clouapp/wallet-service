@@ -13,7 +13,7 @@ import (
 // AccountPolicy defines gate abilities for Account resources.
 // Abilities: account.view, account.update, account.delete,
 //
-//	account.add-user, account.remove-user, account.freeze, account.archive
+//	account.add-user, account.remove-user, account.freeze, account.archive, account.manage-tokens
 type AccountPolicy struct{}
 
 // userRole fetches the caller's role in the given account.
@@ -108,4 +108,16 @@ func (p *AccountPolicy) Archive(ctx context.Context, arguments map[string]any) c
 		return access.NewAllowResponse()
 	}
 	return access.NewDenyResponse("only owners may archive accounts")
+}
+
+func (p *AccountPolicy) ManageTokens(ctx context.Context, arguments map[string]any) contractsaccess.Response {
+	accountID, ok := arguments["account_id"].(uuid.UUID)
+	if !ok {
+		return access.NewDenyResponse("missing account_id")
+	}
+	role := userRole(ctx, accountID)
+	if role == "owner" || role == "admin" {
+		return access.NewAllowResponse()
+	}
+	return access.NewDenyResponse("only owners and admins may manage tokens")
 }

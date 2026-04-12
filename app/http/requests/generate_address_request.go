@@ -15,5 +15,9 @@ func (r *GenerateAddressRequest) Authorize(ctx http.Context) error {
 }
 
 func (r *GenerateAddressRequest) Rules(ctx http.Context) map[string]string {
-	return map[string]string{}
+	return map[string]string{
+		"label":            "max_len:255",
+		"external_user_id": "max_len:255",
+		"metadata":         "max_len:4096",
+	}
 }

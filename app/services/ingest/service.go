@@ -6,8 +6,11 @@ import (
 	"log/slog"
 
 	"github.com/google/uuid"
+	"github.com/goravel/framework/contracts/event"
+	"github.com/goravel/framework/facades"
 	"github.com/redis/go-redis/v9"
 
+	"github.com/macrowallets/waas/app/events"
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/repositories"
 	"github.com/macrowallets/waas/app/services/chain"
@@ -107,6 +110,12 @@ func (s *Service) processTransfer(ctx context.Context, chainID string, adapter t
 	}
 
 	s.webhookSvc.EnqueueEvent(ctx, tx.ID, types.EventDepositPending, tx)
+
+	_ = facades.Event().Job(&events.DepositDetected{}, []event.Arg{
+		{Type: "string", Value: tx.WalletID.String()},
+		{Type: "string", Value: chainID},
+		{Type: "string", Value: transfer.TxHash},
+	}).Dispatch()
 
 	slog.Info("ingest deposit", "chain", chainID, "tx", transfer.TxHash, "log_index", transfer.LogIndex, "user", addr.ExternalUserID, "asset", asset, "amount", transfer.Amount.String())
 	return nil

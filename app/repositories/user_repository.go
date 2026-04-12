@@ -1,6 +1,8 @@
 package repositories
 
 import (
+	"encoding/json"
+
 	"github.com/google/uuid"
 	"github.com/goravel/framework/facades"
 
@@ -14,6 +16,7 @@ type UserRepository interface {
 	UpdateDefaultAccountID(id uuid.UUID, defaultAccountID *uuid.UUID) error
 	UpdateFullName(id uuid.UUID, fullName string) error
 	UpdatePasswordHash(id uuid.UUID, hash string) error
+	UpdatePreferences(id uuid.UUID, prefs *models.UserPreferences) error
 }
 
 type userRepository struct{}
@@ -62,5 +65,14 @@ func (r *userRepository) UpdateFullName(id uuid.UUID, fullName string) error {
 
 func (r *userRepository) UpdatePasswordHash(id uuid.UUID, hash string) error {
 	_, err := facades.Orm().Query().Model(&models.User{}).Where("id = ?", id).Update("password_hash", hash)
+	return err
+}
+
+func (r *userRepository) UpdatePreferences(id uuid.UUID, prefs *models.UserPreferences) error {
+	jsonBytes, err := json.Marshal(prefs)
+	if err != nil {
+		return err
+	}
+	_, err = facades.Orm().Query().Model(&models.User{}).Where("id = ?", id).Update("preferences", string(jsonBytes))
 	return err
 }

@@ -26,5 +26,14 @@ func All() []schema.Migration {
 		&M20260327000018CreateChainResourcesTable{},
 		&M20260327100001CreateWebhookSubscriptionsTable{},
 		&M20260329000001WalletDepositAddressFk{},
+		&M20260407000001CreateBlockchainEnumTypes{},
+		&M20260407000002AddWalletReadModelColumns{},
+		&M20260407000003CreateWalletBalanceSnapshotsTable{},
+		&M20260407000004CreateWalletAssetBalancesTable{},
+		&M20260407000005ExtendTransactionsForWalletReads{},
+		&M20260407000006CreateWalletUtxosTable{},
+		&M20260407000007CreateWalletSyncStatesTable{},
+		&M20260411000001CreateCurrenciesTable{},
+		&M20260411000002AddPreferencesToUsers{},
 	}
 }

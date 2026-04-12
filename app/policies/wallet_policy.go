@@ -13,7 +13,7 @@ import (
 // WalletPolicy defines gate abilities for Wallet resources.
 // Abilities: wallet.view, wallet.update, wallet.freeze,
 //
-//	wallet.add-user, wallet.remove-user, wallet.whitelist
+//	wallet.add-user, wallet.remove-user, wallet.whitelist, wallet.manage-webhooks, wallet.cancel-withdrawal
 type WalletPolicy struct{}
 
 // walletUserRole fetches the caller's role in the given wallet.
@@ -114,4 +114,38 @@ func (p *WalletPolicy) Whitelist(ctx context.Context, arguments map[string]any) 
 		return access.NewAllowResponse()
 	}
 	return access.NewDenyResponse("only wallet/account owners and admins may manage the whitelist")
+}
+
+func (p *WalletPolicy) ManageWebhooks(ctx context.Context, arguments map[string]any) contractsaccess.Response {
+	walletID, ok := arguments["wallet_id"].(uuid.UUID)
+	if !ok {
+		return access.NewDenyResponse("missing wallet_id")
+	}
+	role := walletUserRole(ctx, walletID)
+	accRole := accountRoleForWallet(ctx, walletID)
+	if role == "owner" || role == "admin" || accRole == "owner" || accRole == "admin" {
+		return access.NewAllowResponse()
+	}
+	return access.NewDenyResponse("only wallet/account owners and admins may manage webhooks")
+}
+
+func (p *WalletPolicy) CancelWithdrawal(ctx context.Context, arguments map[string]any) contractsaccess.Response {
+	walletID, ok := arguments["wallet_id"].(uuid.UUID)
+	if !ok {
+		return access.NewDenyResponse("missing wallet_id")
+	}
+
+	role := walletUserRole(ctx, walletID)
+	accRole := accountRoleForWallet(ctx, walletID)
+	if role == "owner" || role == "admin" || accRole == "owner" || accRole == "admin" {
+		return access.NewAllowResponse()
+	}
+
+	userID, _ := ctx.Value("user_id").(uuid.UUID)
+	creatorID, ok := arguments["creator_id"].(uuid.UUID)
+	if ok && creatorID == userID {
+		return access.NewAllowResponse()
+	}
+
+	return access.NewDenyResponse("only the creator or an owner/admin may cancel this withdrawal")
 }

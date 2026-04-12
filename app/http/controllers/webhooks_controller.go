@@ -22,12 +22,8 @@ import (
 // @Router       /v1/webhooks [post]
 func CreateWebhook(ctx http.Context) http.Response {
 	var req requests.CreateWebhookRequest
-	validationErrors, err := ctx.Request().ValidateRequest(&req)
-	if err != nil {
-		return ctx.Response().Json(http.StatusInternalServerError, http.Json{"error": err.Error()})
-	}
-	if validationErrors != nil {
-		return ctx.Response().Json(http.StatusUnprocessableEntity, validationErrors.All())
+	if errResp := validateRequest(ctx, &req); errResp != nil {
+		return errResp
 	}
 
 	cfg, err := container.Get().WebhookService.CreateConfig(ctx.Context(), req.URL, req.Secret, req.Events)

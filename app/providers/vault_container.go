@@ -23,7 +23,9 @@ import (
 	"github.com/macrowallets/waas/app/services/ingest"
 	"github.com/macrowallets/waas/app/services/ingest/providers"
 	mpc "github.com/macrowallets/waas/app/services/mpc"
+	"github.com/macrowallets/waas/app/services/price"
 	"github.com/macrowallets/waas/app/services/queue"
+	"github.com/macrowallets/waas/app/services/refresh"
 	"github.com/macrowallets/waas/app/services/wallet"
 	"github.com/macrowallets/waas/app/services/webhook"
 	"github.com/macrowallets/waas/app/services/webhooksync"
@@ -103,6 +105,15 @@ func buildVaultContainer() (*container.Container, error) {
 	c.TokenRepo = repositories.NewTokenRepository()
 	c.ChainResourceRepo = repositories.NewChainResourceRepository()
 	c.WebhookSubscriptionRepo = repositories.NewWebhookSubscriptionRepository()
+	c.WalletAssetBalanceRepo = repositories.NewWalletAssetBalanceRepository()
+	c.WalletBalanceSnapshotRepo = repositories.NewWalletBalanceSnapshotRepository()
+	c.WalletUTXORepo = repositories.NewWalletUTXORepository()
+	c.WalletSyncStateRepo = repositories.NewWalletSyncStateRepository()
+	c.CurrencyRepo = repositories.NewCurrencyRepository()
+
+	c.PriceConfig.CoinGeckoAPIKey = facades.Config().GetString("vault.price.coingecko_api_key")
+	c.PriceConfig.CoinMarketCapAPIKey = facades.Config().GetString("vault.price.coinmarketcap_api_key")
+	c.PriceConfig.CoinAPIKey = facades.Config().GetString("vault.price.coinapi_key")
 
 	providerMap := make(map[string]providers.WebhookProvider)
 	if token := facades.Config().GetString("vault.webhooks.alchemy_auth_token"); token != "" {
@@ -211,6 +222,25 @@ func buildVaultContainer() (*container.Container, error) {
 	}
 	c.DepositService = deposit.NewService(c.Redis, c.Registry, c.WebhookService, c.AddressRepo, c.TransactionRepo, blockHeightProviders)
 	c.IngestService = ingest.NewService(c.Redis, c.Registry, c.WebhookService, c.AddressRepo, c.TransactionRepo)
+	c.BalanceRefreshService = refresh.NewBalanceService(
+		c.Registry,
+		c.WalletRepo,
+		c.WalletAssetBalanceRepo,
+		c.WalletBalanceSnapshotRepo,
+		c.WalletSyncStateRepo,
+	)
+
+	var priceProviders []price.PriceProvider
+	if key := c.PriceConfig.CoinGeckoAPIKey; key != "" {
+		priceProviders = append(priceProviders, price.NewCoinGeckoProvider(key))
+	}
+	if key := c.PriceConfig.CoinMarketCapAPIKey; key != "" {
+		priceProviders = append(priceProviders, price.NewCoinMarketCapProvider(key))
+	}
+	if key := c.PriceConfig.CoinAPIKey; key != "" {
+		priceProviders = append(priceProviders, price.NewCoinAPIProvider(key))
+	}
+	c.PriceService = price.NewService(priceProviders, c.CurrencyRepo, c.Redis)
 
 	slog.Info("vault container booted", "chains", c.Registry.ChainIDs())
 	return c, nil

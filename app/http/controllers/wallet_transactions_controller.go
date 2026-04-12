@@ -5,6 +5,7 @@ import (
 
 	"github.com/macrowallets/waas/app/container"
 	"github.com/macrowallets/waas/app/http/pagination"
+	"github.com/macrowallets/waas/app/models"
 )
 
 // ListWalletTransactions godoc
@@ -23,10 +24,7 @@ import (
 // @Failure      404  {object}  ErrorResponse
 // @Router       /wallets/{walletId}/transactions [get]
 func ListWalletTransactions(ctx http.Context) http.Response {
-	wallet, _, _, errResp := walletFromParam(ctx)
-	if errResp != nil {
-		return errResp
-	}
+	wallet := ctx.Value("wallet").(*models.Wallet)
 
 	limit, offset := pagination.ParseParams(ctx, 50)
 	txType := ctx.Request().Query("type", "")
@@ -52,10 +50,7 @@ func ListWalletTransactions(ctx http.Context) http.Response {
 // @Failure      404  {object}  ErrorResponse
 // @Router       /wallets/{walletId}/transactions/{txId} [get]
 func GetWalletTransaction(ctx http.Context) http.Response {
-	wallet, _, _, errResp := walletFromParam(ctx)
-	if errResp != nil {
-		return errResp
-	}
+	wallet := ctx.Value("wallet").(*models.Wallet)
 
 	txIDStr := ctx.Request().Route("txId")
 	tx, err := container.Get().TransactionRepo.FindByIDAndWallet(txIDStr, wallet.ID)

@@ -124,6 +124,98 @@ const (
 	TxStatusConfirming TxStatus = "confirming"
 	TxStatusConfirmed  TxStatus = "confirmed"
 	TxStatusFailed     TxStatus = "failed"
+	TxStatusDropped    TxStatus = "dropped"
+)
+
+// ---------------------------------------------------------------------------
+// Wallet status (maps to wallet_status enum)
+// ---------------------------------------------------------------------------
+
+type WalletStatus string
+
+const (
+	WalletStatusActive   WalletStatus = "active"
+	WalletStatusPending  WalletStatus = "pending"
+	WalletStatusArchived WalletStatus = "archived"
+	WalletStatusFrozen   WalletStatus = "frozen"
+)
+
+// ---------------------------------------------------------------------------
+// Read model status (maps to wallet_read_model_status enum)
+// ---------------------------------------------------------------------------
+
+type ReadModelStatus string
+
+const (
+	ReadModelIdle    ReadModelStatus = "idle"
+	ReadModelSyncing ReadModelStatus = "syncing"
+	ReadModelSynced  ReadModelStatus = "synced"
+	ReadModelStale   ReadModelStatus = "stale"
+	ReadModelFailed  ReadModelStatus = "failed"
+)
+
+// ---------------------------------------------------------------------------
+// Sync status (maps to wallet_sync_status enum)
+// ---------------------------------------------------------------------------
+
+type SyncStatus string
+
+const (
+	SyncStatusIdle    SyncStatus = "idle"
+	SyncStatusSyncing SyncStatus = "syncing"
+	SyncStatusSynced  SyncStatus = "synced"
+	SyncStatusStale   SyncStatus = "stale"
+	SyncStatusFailed  SyncStatus = "failed"
+)
+
+// ---------------------------------------------------------------------------
+// UTXO status (maps to utxo_status enum)
+// ---------------------------------------------------------------------------
+
+type UTXOStatus string
+
+const (
+	UTXOStatusUnspent  UTXOStatus = "unspent"
+	UTXOStatusLocked   UTXOStatus = "locked"
+	UTXOStatusSpent    UTXOStatus = "spent"
+	UTXOStatusOrphaned UTXOStatus = "orphaned"
+)
+
+// ---------------------------------------------------------------------------
+// Asset type (maps to asset_type enum)
+// ---------------------------------------------------------------------------
+
+type AssetType string
+
+const (
+	AssetTypeNative AssetType = "native"
+	AssetTypeToken  AssetType = "token"
+)
+
+// ---------------------------------------------------------------------------
+// Transaction direction (maps to transaction_direction enum)
+// ---------------------------------------------------------------------------
+
+type TxDirection string
+
+const (
+	TxDirectionInbound  TxDirection = "inbound"
+	TxDirectionOutbound TxDirection = "outbound"
+	TxDirectionSelf     TxDirection = "self"
+	TxDirectionUnknown  TxDirection = "unknown"
+)
+
+// ---------------------------------------------------------------------------
+// Transaction source (maps to transaction_source enum)
+// ---------------------------------------------------------------------------
+
+type TxSource string
+
+const (
+	TxSourceChain          TxSource = "chain"
+	TxSourceDepositIngest  TxSource = "deposit_ingest"
+	TxSourceWithdrawalFlow TxSource = "withdrawal_flow"
+	TxSourceReconciliation TxSource = "reconciliation"
 )
 
 // ---------------------------------------------------------------------------

@@ -33,15 +33,11 @@ func GenerateAddress(ctx http.Context) http.Response {
 	}
 
 	var req requests.GenerateAddressRequest
-	validationErrors, err := ctx.Request().ValidateRequest(&req)
-	if err != nil {
-		return ctx.Response().Json(http.StatusInternalServerError, http.Json{"error": err.Error()})
-	}
-	if validationErrors != nil {
-		return ctx.Response().Json(http.StatusUnprocessableEntity, validationErrors.All())
+	if errResp := validateRequest(ctx, &req); errResp != nil {
+		return errResp
 	}
 
-	addr, err := container.Get().WalletService.GenerateAddress(ctx.Context(), walletID, req.ExternalUserID, req.Metadata)
+	addr, err := container.Get().WalletService.GenerateAddress(ctx.Context(), walletID, req.ExternalUserID, req.Label, req.Metadata)
 	if err != nil {
 		return ctx.Response().Json(http.StatusUnprocessableEntity, http.Json{
 			"error": err.Error(),

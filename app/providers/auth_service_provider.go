@@ -55,6 +55,9 @@ func (r *AuthServiceProvider) Boot(app foundation.Application) {
 	gate.Define("account.archive", func(ctx context.Context, arguments map[string]any) contractsaccess.Response {
 		return ap.Archive(ctx, arguments)
 	})
+	gate.Define("account.manage-tokens", func(ctx context.Context, arguments map[string]any) contractsaccess.Response {
+		return ap.ManageTokens(ctx, arguments)
+	})
 
 	gate.Define("wallet.view", func(ctx context.Context, arguments map[string]any) contractsaccess.Response {
 		return wp.View(ctx, arguments)
@@ -73,6 +76,12 @@ func (r *AuthServiceProvider) Boot(app foundation.Application) {
 	})
 	gate.Define("wallet.whitelist", func(ctx context.Context, arguments map[string]any) contractsaccess.Response {
 		return wp.Whitelist(ctx, arguments)
+	})
+	gate.Define("wallet.manage-webhooks", func(ctx context.Context, arguments map[string]any) contractsaccess.Response {
+		return wp.ManageWebhooks(ctx, arguments)
+	})
+	gate.Define("wallet.cancel-withdrawal", func(ctx context.Context, arguments map[string]any) contractsaccess.Response {
+		return wp.CancelWithdrawal(ctx, arguments)
 	})
 
 	_ = toUUID // helper available for future extensions

@@ -10,6 +10,7 @@ import (
 	"github.com/macrowallets/waas/app/container"
 	"github.com/macrowallets/waas/app/http/middleware"
 	"github.com/macrowallets/waas/app/http/pagination"
+	"github.com/macrowallets/waas/app/http/requests"
 	mails "github.com/macrowallets/waas/app/mails"
 	"github.com/macrowallets/waas/app/models"
 	accountsvc "github.com/macrowallets/waas/app/services/account"
@@ -29,23 +30,17 @@ var accountAuthService = authsvc.NewService()
 // @Security     BearerAuth
 // @Accept       json
 // @Produce      json
-// @Param        request  body      CreateAccountRequest  true  "Account payload"
+// @Param        request  body      CreateAccountSwagger  true  "Account payload"
 // @Success      201      {object}  models.Account
 // @Failure      400      {object}  ErrorResponse
 // @Failure      401      {object}  ErrorResponse
 // @Router       /accounts [post]
 func CreateAccount(ctx http.Context) http.Response {
-	userID, ok := ctx.Value("user_id").(uuid.UUID)
-	if !ok || userID == uuid.Nil {
-		return ctx.Response().Json(http.StatusUnauthorized, http.Json{"error": "unauthenticated"})
-	}
+	userID := ctx.Value("user_id").(uuid.UUID)
 
-	var req CreateAccountRequest
-	if err := ctx.Request().Bind(&req); err != nil {
-		return ctx.Response().Json(http.StatusBadRequest, http.Json{"error": "invalid request body"})
-	}
-	if req.Name == "" {
-		return ctx.Response().Json(http.StatusBadRequest, http.Json{"error": "name is required"})
+	var req requests.CreateAccountRequest
+	if errResp := validateRequest(ctx, &req); errResp != nil {
+		return errResp
 	}
 
 	acc, err := accountSvc().Create(ctx.Context(), req.Name, userID)
@@ -67,10 +62,7 @@ func CreateAccount(ctx http.Context) http.Response {
 // @Failure      404        {object}  ErrorResponse
 // @Router       /accounts/{accountId} [get]
 func GetAccount(ctx http.Context) http.Response {
-	account, ok := ctx.Value("account").(*models.Account)
-	if !ok || account == nil {
-		return ctx.Response().Json(http.StatusNotFound, http.Json{"error": "account not found"})
-	}
+	account := ctx.Value("account").(*models.Account)
 	return ctx.Response().Json(http.StatusOK, account)
 }
 
@@ -81,25 +73,21 @@ func GetAccount(ctx http.Context) http.Response {
 // @Security     BearerAuth
 // @Accept       json
 // @Produce      json
-// @Param        accountId  path      string               true  "Account UUID"
-// @Param        request    body      UpdateAccountRequest  true  "Update payload"
+// @Param        accountId  path      string                      true  "Account UUID"
+// @Param        request    body      UpdateAccountSwagger        true  "Update payload"
 // @Success      200        {object}  models.Account
 // @Failure      400        {object}  ErrorResponse
 // @Failure      403        {object}  ErrorResponse
 // @Router       /accounts/{accountId} [patch]
 func UpdateAccount(ctx http.Context) http.Response {
-	account, ok := ctx.Value("account").(*models.Account)
-	if !ok || account == nil {
-		return ctx.Response().Json(http.StatusNotFound, http.Json{"error": "account not found"})
-	}
-	role, _ := ctx.Value("account_role").(string)
-	if role != "owner" && role != "admin" {
-		return ctx.Response().Json(http.StatusForbidden, http.Json{"error": "only owners and admins may update account settings"})
+	account := ctx.Value("account").(*models.Account)
+	if errResp := authorize(ctx, "account.update", map[string]any{"account_id": account.ID}); errResp != nil {
+		return errResp
 	}
 
-	var req UpdateAccountRequest
-	if err := ctx.Request().Bind(&req); err != nil {
-		return ctx.Response().Json(http.StatusBadRequest, http.Json{"error": "invalid request body"})
+	var req requests.UpdateAccountRequest
+	if errResp := validateRequest(ctx, &req); errResp != nil {
+		return errResp
 	}
 
 	if req.Name != "" {
@@ -130,12 +118,9 @@ func UpdateAccount(ctx http.Context) http.Response {
 // @Failure      404        {object}  ErrorResponse
 // @Router       /accounts/{accountId}/archive [post]
 func ArchiveAccount(ctx http.Context) http.Response {
-	account, ok := ctx.Value("account").(*models.Account)
-	if !ok || account == nil {
-		return ctx.Response().Json(http.StatusNotFound, http.Json{"error": "account not found"})
-	}
-	if role, _ := ctx.Value("account_role").(string); role != "owner" {
-		return ctx.Response().Json(http.StatusForbidden, http.Json{"error": "only owners may archive accounts"})
+	account := ctx.Value("account").(*models.Account)
+	if errResp := authorize(ctx, "account.archive", map[string]any{"account_id": account.ID}); errResp != nil {
+		return errResp
 	}
 
 	if err := container.Get().AccountRepo.UpdateField(account.ID, "status", "archived"); err != nil {
@@ -156,12 +141,9 @@ func ArchiveAccount(ctx http.Context) http.Response {
 // @Failure      403        {object}  ErrorResponse
 // @Router       /accounts/{accountId}/freeze [post]
 func FreezeAccount(ctx http.Context) http.Response {
-	account, ok := ctx.Value("account").(*models.Account)
-	if !ok || account == nil {
-		return ctx.Response().Json(http.StatusNotFound, http.Json{"error": "account not found"})
-	}
-	if role, _ := ctx.Value("account_role").(string); role != "owner" {
-		return ctx.Response().Json(http.StatusForbidden, http.Json{"error": "only owners may freeze accounts"})
+	account := ctx.Value("account").(*models.Account)
+	if errResp := authorize(ctx, "account.freeze", map[string]any{"account_id": account.ID}); errResp != nil {
+		return errResp
 	}
 
 	if err := container.Get().AccountRepo.UpdateField(account.ID, "status", "frozen"); err != nil {
@@ -182,10 +164,7 @@ func FreezeAccount(ctx http.Context) http.Response {
 // @Failure      403        {object}  ErrorResponse
 // @Router       /accounts/{accountId}/users [get]
 func ListAccountUsers(ctx http.Context) http.Response {
-	account, ok := ctx.Value("account").(*models.Account)
-	if !ok || account == nil {
-		return ctx.Response().Json(http.StatusNotFound, http.Json{"error": "account not found"})
-	}
+	account := ctx.Value("account").(*models.Account)
 
 	limit, offset := pagination.ParseParams(ctx, 20)
 	members, total, err := container.Get().AccountUserRepo.PaginateByAccountID(account.ID, limit, offset)
@@ -202,29 +181,22 @@ func ListAccountUsers(ctx http.Context) http.Response {
 // @Security     BearerAuth
 // @Accept       json
 // @Produce      json
-// @Param        accountId  path      string              true  "Account UUID"
-// @Param        request    body      AddAccountUserRequest  true  "User and role payload"
+// @Param        accountId  path      string                     true  "Account UUID"
+// @Param        request    body      AddAccountUserSwagger      true  "User and role payload"
 // @Success      201        {object}  models.AccountUser
 // @Failure      400        {object}  ErrorResponse
 // @Failure      403        {object}  ErrorResponse
 // @Router       /accounts/{accountId}/users [post]
 func AddAccountUser(ctx http.Context) http.Response {
-	account, ok := ctx.Value("account").(*models.Account)
-	if !ok || account == nil {
-		return ctx.Response().Json(http.StatusNotFound, http.Json{"error": "account not found"})
-	}
-	callerID, _ := ctx.Value("user_id").(uuid.UUID)
-	role, _ := ctx.Value("account_role").(string)
-	if role != "owner" && role != "admin" {
-		return ctx.Response().Json(http.StatusForbidden, http.Json{"error": "only owners and admins may add users"})
+	account := ctx.Value("account").(*models.Account)
+	callerID := ctx.Value("user_id").(uuid.UUID)
+	if errResp := authorize(ctx, "account.add-user", map[string]any{"account_id": account.ID}); errResp != nil {
+		return errResp
 	}
 
-	var req AddAccountUserRequest
-	if err := ctx.Request().Bind(&req); err != nil {
-		return ctx.Response().Json(http.StatusBadRequest, http.Json{"error": "invalid request body"})
-	}
-	if req.Email == "" || req.Role == "" {
-		return ctx.Response().Json(http.StatusBadRequest, http.Json{"error": "email and role are required"})
+	var req requests.AddAccountUserRequest
+	if errResp := validateRequest(ctx, &req); errResp != nil {
+		return errResp
 	}
 
 	targetPtr, err := container.Get().UserRepo.FindByEmail(req.Email)
@@ -239,19 +211,24 @@ func AddAccountUser(ctx http.Context) http.Response {
 			return ctx.Response().Json(http.StatusInternalServerError, http.Json{"error": "failed to create user"})
 		}
 		targetPtr = &target
-		_ = facades.Mail().To([]string{req.Email}).Send(&mails.UserInviteMail{
+		if err := facades.Mail().To([]string{req.Email}).Send(&mails.UserInviteMail{
 			To:          req.Email,
 			InvitedBy:   "your team",
 			AccountName: account.Name,
 			InviteLink:  "https://vault.app/accept-invite",
-		})
+		}); err != nil {
+			facades.Log().WithContext(ctx).Errorf("account: send invite mail: %v", err)
+		}
 	}
 
 	if err := accountSvc().AddUser(ctx.Context(), account.ID, targetPtr.ID, req.Role, callerID); err != nil {
 		return ctx.Response().Json(http.StatusInternalServerError, http.Json{"error": "failed to add user"})
 	}
 
-	au, _ := container.Get().AccountUserRepo.FindByAccountAndUser(account.ID, targetPtr.ID)
+	au, auErr := container.Get().AccountUserRepo.FindByAccountAndUser(account.ID, targetPtr.ID)
+	if auErr != nil {
+		facades.Log().WithContext(ctx).Errorf("account: find membership after add: %v", auErr)
+	}
 	return ctx.Response().Json(http.StatusCreated, au)
 }
 
@@ -268,13 +245,9 @@ func AddAccountUser(ctx http.Context) http.Response {
 // @Failure      404  {object}  ErrorResponse
 // @Router       /accounts/{accountId}/users/{userId} [delete]
 func RemoveAccountUser(ctx http.Context) http.Response {
-	account, ok := ctx.Value("account").(*models.Account)
-	if !ok || account == nil {
-		return ctx.Response().Json(http.StatusNotFound, http.Json{"error": "account not found"})
-	}
-	role, _ := ctx.Value("account_role").(string)
-	if role != "owner" && role != "admin" {
-		return ctx.Response().Json(http.StatusForbidden, http.Json{"error": "only owners and admins may remove users"})
+	account := ctx.Value("account").(*models.Account)
+	if errResp := authorize(ctx, "account.remove-user", map[string]any{"account_id": account.ID}); errResp != nil {
+		return errResp
 	}
 
 	userIDStr := ctx.Request().Route("userId")
@@ -300,13 +273,9 @@ func RemoveAccountUser(ctx http.Context) http.Response {
 // @Failure      403  {object}  ErrorResponse
 // @Router       /accounts/{accountId}/tokens [get]
 func ListAccountTokens(ctx http.Context) http.Response {
-	account, ok := ctx.Value("account").(*models.Account)
-	if !ok || account == nil {
-		return ctx.Response().Json(http.StatusNotFound, http.Json{"error": "account not found"})
-	}
-	role, _ := ctx.Value("account_role").(string)
-	if role != "owner" && role != "admin" {
-		return ctx.Response().Json(http.StatusForbidden, http.Json{"error": "only owners and admins may view tokens"})
+	account := ctx.Value("account").(*models.Account)
+	if errResp := authorize(ctx, "account.manage-tokens", map[string]any{"account_id": account.ID}); errResp != nil {
+		return errResp
 	}
 
 	limit, offset := pagination.ParseParams(ctx, 20)
@@ -324,29 +293,22 @@ func ListAccountTokens(ctx http.Context) http.Response {
 // @Security     BearerAuth
 // @Accept       json
 // @Produce      json
-// @Param        accountId  path      string                    true  "Account UUID"
-// @Param        request    body      CreateAccountTokenRequest  true  "Token payload"
+// @Param        accountId  path      string                          true  "Account UUID"
+// @Param        request    body      CreateAccountTokenSwagger       true  "Token payload"
 // @Success      201        {object}  CreateAccountTokenResponse
 // @Failure      400        {object}  ErrorResponse
 // @Failure      403        {object}  ErrorResponse
 // @Router       /accounts/{accountId}/tokens [post]
 func CreateAccountToken(ctx http.Context) http.Response {
-	account, ok := ctx.Value("account").(*models.Account)
-	if !ok || account == nil {
-		return ctx.Response().Json(http.StatusNotFound, http.Json{"error": "account not found"})
-	}
-	role, _ := ctx.Value("account_role").(string)
-	if role != "owner" && role != "admin" {
-		return ctx.Response().Json(http.StatusForbidden, http.Json{"error": "only owners and admins may create tokens"})
+	account := ctx.Value("account").(*models.Account)
+	if errResp := authorize(ctx, "account.manage-tokens", map[string]any{"account_id": account.ID}); errResp != nil {
+		return errResp
 	}
 	callerID, _ := ctx.Value("user_id").(uuid.UUID)
 
-	var req CreateAccountTokenRequest
-	if err := ctx.Request().Bind(&req); err != nil {
-		return ctx.Response().Json(http.StatusBadRequest, http.Json{"error": "invalid request body"})
-	}
-	if req.Name == "" {
-		return ctx.Response().Json(http.StatusBadRequest, http.Json{"error": "name is required"})
+	var req requests.CreateAccountTokenRequest
+	if errResp := validateRequest(ctx, &req); errResp != nil {
+		return errResp
 	}
 
 	token := &models.AccessToken{
@@ -355,21 +317,21 @@ func CreateAccountToken(ctx http.Context) http.Response {
 		CreatedBy: &callerID,
 		Name:      req.Name,
 	}
-	if req.ValidUntil != nil {
-		token.ValidUntil = req.ValidUntil
+	if req.ValidUntil != "" {
+		t, _ := time.Parse(time.RFC3339, req.ValidUntil)
+		token.ValidUntil = &t
 	}
 	if err := container.Get().AccessTokenRepo.Create(token); err != nil {
 		return ctx.Response().Json(http.StatusInternalServerError, http.Json{"error": "failed to create token"})
 	}
 
-	// Issue a JWT as the API token — shown once, never stored in plaintext
 	jwt, err := middleware.MintAPIToken(token)
 	if err != nil {
 		return ctx.Response().Json(http.StatusInternalServerError, http.Json{"error": "failed to sign token"})
 	}
 
 	return ctx.Response().Json(http.StatusCreated, http.Json{
-		"token":    jwt, // shown once — external clients store this as their Bearer token
+		"token":    jwt,
 		"metadata": token,
 	})
 }
@@ -387,13 +349,9 @@ func CreateAccountToken(ctx http.Context) http.Response {
 // @Failure      404  {object}  ErrorResponse
 // @Router       /accounts/{accountId}/tokens/{tokenId} [delete]
 func RevokeAccountToken(ctx http.Context) http.Response {
-	account, ok := ctx.Value("account").(*models.Account)
-	if !ok || account == nil {
-		return ctx.Response().Json(http.StatusNotFound, http.Json{"error": "account not found"})
-	}
-	role, _ := ctx.Value("account_role").(string)
-	if role != "owner" && role != "admin" {
-		return ctx.Response().Json(http.StatusForbidden, http.Json{"error": "only owners and admins may revoke tokens"})
+	account := ctx.Value("account").(*models.Account)
+	if errResp := authorize(ctx, "account.manage-tokens", map[string]any{"account_id": account.ID}); errResp != nil {
+		return errResp
 	}
 
 	tokenIDStr := ctx.Request().Route("tokenId")
@@ -413,23 +371,23 @@ func RevokeAccountToken(ctx http.Context) http.Response {
 	return ctx.Response().NoContent()
 }
 
-// ---- Request/Response types ----
+// ---- Swagger-only types (keep for @Param annotations) ----
 
-type CreateAccountRequest struct {
+type CreateAccountSwagger struct {
 	Name string `json:"name" example:"Acme Corp"`
 }
 
-type UpdateAccountRequest struct {
+type UpdateAccountSwagger struct {
 	Name           string `json:"name,omitempty" example:"New Name"`
 	ViewAllWallets *bool  `json:"view_all_wallets,omitempty" example:"true"`
 }
 
-type AddAccountUserRequest struct {
+type AddAccountUserSwagger struct {
 	Email string `json:"email" example:"user@example.com"`
 	Role  string `json:"role" example:"admin"`
 }
 
-type CreateAccountTokenRequest struct {
+type CreateAccountTokenSwagger struct {
 	Name       string     `json:"name" example:"CI Token"`
 	ValidUntil *time.Time `json:"valid_until,omitempty"`
 }
