@@ -79,11 +79,11 @@ func (s *WalletUnitTestSuite) TestCreateWallet_UnknownChain() {
 	s.Contains(err.Error(), "unknown chain")
 }
 
-func (s *WalletUnitTestSuite) TestGenerateAddress_ReturnsError() {
+func (s *WalletUnitTestSuite) TestGenerateAddress_WalletNotFound() {
 	ctx := context.Background()
-	_, err := s.service.GenerateAddress(ctx, [16]byte{}, "user_123", "test-label", `{}`)
+	_, err := s.service.GenerateAddress(ctx, [16]byte{}, "user_123", "test-label", `{}`, "")
 	s.Error(err)
-	s.Contains(err.Error(), "not supported for MPC wallets")
+	s.Contains(err.Error(), "wallet not found")
 }
 
 // ---------------------------------------------------------------------------

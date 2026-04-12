@@ -29,3 +29,18 @@ func (m *MockSecretsManager) CreateSecret(_ context.Context, input *secretsmanag
 		Name: aws.String(name),
 	}, nil
 }
+
+func (m *MockSecretsManager) GetSecretValue(_ context.Context, input *secretsmanager.GetSecretValueInput, opts ...func(*secretsmanager.Options)) (*secretsmanager.GetSecretValueOutput, error) {
+	secretID := aws.ToString(input.SecretId)
+	for name, data := range m.secrets {
+		arn := "arn:aws:secretsmanager:us-east-1:000000000000:secret:" + name
+		if name == secretID || arn == secretID {
+			return &secretsmanager.GetSecretValueOutput{
+				SecretBinary: data,
+				Name:         aws.String(name),
+				ARN:          aws.String(arn),
+			}, nil
+		}
+	}
+	return nil, fmt.Errorf("secret not found: %s", secretID)
+}

@@ -3,6 +3,9 @@ package wallet
 import (
 	"context"
 	cryptorand "crypto/rand"
+	"crypto/ed25519"
+	"crypto/hmac"
+	"crypto/sha512"
 	"crypto/subtle"
 	"encoding/base64"
 	"encoding/hex"
@@ -47,6 +50,7 @@ type CreateWalletResult struct {
 // defined as an interface to allow test mocking.
 type secretsManagerAPI interface {
 	CreateSecret(ctx context.Context, input *secretsmanager.CreateSecretInput, opts ...func(*secretsmanager.Options)) (*secretsmanager.CreateSecretOutput, error)
+	GetSecretValue(ctx context.Context, input *secretsmanager.GetSecretValueInput, opts ...func(*secretsmanager.Options)) (*secretsmanager.GetSecretValueOutput, error)
 }
 
 type webhookAddressSyncer interface {
@@ -169,6 +173,8 @@ func (s *Service) CreateWallet(ctx context.Context, accountID uuid.UUID, chainID
 		MPCSecretARN:     secretARN,
 		MPCPublicKey:     hex.EncodeToString(keygenResult.CombinedPubKey),
 		MPCCurve:         string(curve),
+		MPCChainCode:     hex.EncodeToString(keygenResult.ChainCode),
+		AddressIndex:     0,
 		AccountID:        &accountID,
 		Status:           string(types.WalletStatusPending),
 		ActivationCode:   &codeStr,
@@ -187,6 +193,7 @@ func (s *Service) CreateWallet(ctx context.Context, accountID uuid.UUID, chainID
 		ExternalUserID:  "system",
 		IsActive:        true,
 		Label:           "Deposit Address",
+		DerivationType:  "genesis",
 	}
 	if err := s.addressRepo.Create(addr); err != nil {
 		return onPostSecretErr(fmt.Errorf("create deposit address: %w", err))
@@ -272,9 +279,216 @@ func (s *Service) ListWallets(ctx context.Context) ([]models.Wallet, error) {
 	return s.walletRepo.FindAll()
 }
 
-// GenerateAddress is not supported for MPC wallets in v1.
-func (s *Service) GenerateAddress(ctx context.Context, walletID uuid.UUID, externalUserID, label, metadata string) (*models.Address, error) {
-	return nil, fmt.Errorf("address derivation not supported for MPC wallets in v1")
+func (s *Service) GenerateAddress(ctx context.Context, walletID uuid.UUID, externalUserID, label, metadata, passphrase string) (*models.Address, error) {
+	if s.walletRepo == nil {
+		return nil, fmt.Errorf("wallet not found")
+	}
+	w, err := s.walletRepo.FindByID(walletID)
+	if err != nil || w == nil {
+		return nil, fmt.Errorf("wallet not found")
+	}
+
+	newIndex, err := s.walletRepo.IncrementAddressIndex(walletID)
+	if err != nil {
+		return nil, fmt.Errorf("increment address index: %w", err)
+	}
+
+	curve := mpc.Curve(w.MPCCurve)
+
+	var addr *models.Address
+
+	switch curve {
+	case mpc.CurveSecp256k1:
+		addr, err = s.generateSecp256k1Address(ctx, w, uint32(newIndex), externalUserID, label, metadata)
+	case mpc.CurveEd25519:
+		if passphrase == "" {
+			return nil, fmt.Errorf("passphrase is required for ed25519 address derivation")
+		}
+		addr, err = s.generateEd25519Address(ctx, w, uint32(newIndex), externalUserID, label, metadata, passphrase)
+	default:
+		return nil, fmt.Errorf("unsupported curve: %s", w.MPCCurve)
+	}
+
+	if err != nil {
+		return nil, err
+	}
+
+	if s.rdb != nil {
+		if cacheErr := s.rdb.SAdd(ctx, "vault:addresses:"+w.Chain, addr.Address).Err(); cacheErr != nil {
+			slog.Warn("redis cache failed", "error", cacheErr)
+		}
+	}
+
+	if s.webhookSyncSvc != nil {
+		_ = s.webhookSyncSvc.SyncChainAddresses(ctx, w.Chain)
+	}
+
+	return addr, nil
+}
+
+func (s *Service) generateSecp256k1Address(ctx context.Context, w *models.Wallet, index uint32, externalUserID, label, metadata string) (*models.Address, error) {
+	pubKey, err := hex.DecodeString(w.MPCPublicKey)
+	if err != nil {
+		return nil, fmt.Errorf("decode public key: %w", err)
+	}
+	chainCode, err := s.ensureChainCode(ctx, w)
+	if err != nil {
+		return nil, fmt.Errorf("ensure chain code: %w", err)
+	}
+
+	child, err := deriveSecp256k1Child(pubKey, chainCode, index)
+	if err != nil {
+		return nil, fmt.Errorf("derive child key: %w", err)
+	}
+
+	addressStr, err := deriveAddress(w.Chain, child.ChildPubKey)
+	if err != nil {
+		return nil, fmt.Errorf("derive address: %w", err)
+	}
+
+	addr := &models.Address{
+		ID:              uuid.New(),
+		WalletID:        w.ID,
+		Chain:           w.Chain,
+		Address:         addressStr,
+		DerivationIndex: int(index),
+		ExternalUserID:  externalUserID,
+		IsActive:        true,
+		Label:           label,
+		Metadata:        metadata,
+		DerivationType:  "bip32",
+	}
+	if err := s.addressRepo.Create(addr); err != nil {
+		return nil, fmt.Errorf("create address: %w", err)
+	}
+	return addr, nil
+}
+
+func (s *Service) generateEd25519Address(ctx context.Context, w *models.Wallet, index uint32, externalUserID, label, metadata, passphrase string) (*models.Address, error) {
+	ciphertext, err := hex.DecodeString(w.MPCCustomerShare)
+	if err != nil {
+		return nil, fmt.Errorf("decode customer share: %w", err)
+	}
+	iv, err := hex.DecodeString(w.MPCShareIV)
+	if err != nil {
+		return nil, fmt.Errorf("decode share iv: %w", err)
+	}
+	salt, err := hex.DecodeString(w.MPCShareSalt)
+	if err != nil {
+		return nil, fmt.Errorf("decode share salt: %w", err)
+	}
+
+	enc := &mpc.EncryptedShare{Ciphertext: ciphertext, IV: iv, Salt: salt}
+	shareA, err := mpc.DecryptShare(enc, passphrase)
+	if err != nil {
+		return nil, fmt.Errorf("invalid passphrase")
+	}
+	defer func() {
+		for i := range shareA {
+			shareA[i] = 0
+		}
+	}()
+
+	secret, err := s.secretsManager.GetSecretValue(ctx, &secretsmanager.GetSecretValueInput{
+		SecretId: &w.MPCSecretARN,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("fetch service share: %w", err)
+	}
+	shareB := secret.SecretBinary
+	defer func() {
+		for i := range shareB {
+			shareB[i] = 0
+		}
+	}()
+
+	masterKey, err := s.mpcService.ReconstructEd25519PrivateKey(shareA, shareB)
+	if err != nil {
+		return nil, fmt.Errorf("reconstruct master key: %w", err)
+	}
+	defer func() {
+		for i := range masterKey {
+			masterKey[i] = 0
+		}
+	}()
+
+	chainCode, err := s.ensureChainCode(ctx, w)
+	if err != nil {
+		return nil, fmt.Errorf("ensure chain code: %w", err)
+	}
+
+	child, err := deriveEd25519Child(masterKey, chainCode, index)
+	if err != nil {
+		return nil, fmt.Errorf("derive child key: %w", err)
+	}
+	defer func() {
+		for i := range child.ChildPrivateKey {
+			child.ChildPrivateKey[i] = 0
+		}
+	}()
+
+	privKey := ed25519.NewKeyFromSeed(child.ChildPrivateKey)
+	pubKey := privKey.Public().(ed25519.PublicKey)
+	defer func() {
+		for i := range privKey {
+			privKey[i] = 0
+		}
+	}()
+
+	addressStr, err := deriveSolAddress([]byte(pubKey))
+	if err != nil {
+		return nil, fmt.Errorf("derive sol address: %w", err)
+	}
+
+	childEnc, err := mpc.EncryptShare(child.ChildPrivateKey, passphrase)
+	if err != nil {
+		return nil, fmt.Errorf("encrypt child key: %w", err)
+	}
+
+	addr := &models.Address{
+		ID:                  uuid.New(),
+		WalletID:            w.ID,
+		Chain:               w.Chain,
+		Address:             addressStr,
+		DerivationIndex:     int(index),
+		ExternalUserID:      externalUserID,
+		IsActive:            true,
+		Label:               label,
+		Metadata:            metadata,
+		DerivationType:      "slip0010",
+		EncryptedPrivateKey: hex.EncodeToString(childEnc.Ciphertext),
+		EncryptionIV:        hex.EncodeToString(childEnc.IV),
+		EncryptionSalt:      hex.EncodeToString(childEnc.Salt),
+	}
+	if err := s.addressRepo.Create(addr); err != nil {
+		return nil, fmt.Errorf("create address: %w", err)
+	}
+	return addr, nil
+}
+
+// ensureChainCode returns the chain code for a wallet, generating one from
+// the public key for legacy wallets that don't have one stored.
+func (s *Service) ensureChainCode(ctx context.Context, w *models.Wallet) ([]byte, error) {
+	if w.MPCChainCode != "" {
+		return hex.DecodeString(w.MPCChainCode)
+	}
+
+	pubKey, err := hex.DecodeString(w.MPCPublicKey)
+	if err != nil {
+		return nil, fmt.Errorf("decode public key: %w", err)
+	}
+
+	h := hmac.New(sha512.New, []byte("vault-chain-code-backfill"))
+	h.Write(pubKey)
+	chainCode := h.Sum(nil)[32:]
+
+	chainCodeHex := hex.EncodeToString(chainCode)
+	if err := s.walletRepo.UpdateField(w.ID, "mpc_chain_code", chainCodeHex); err != nil {
+		return nil, fmt.Errorf("persist chain code: %w", err)
+	}
+	w.MPCChainCode = chainCodeHex
+
+	return chainCode, nil
 }
 
 func (s *Service) LookupAddress(ctx context.Context, chainID, address string) (*models.Address, error) {

@@ -37,7 +37,7 @@ func GenerateAddress(ctx http.Context) http.Response {
 		return errResp
 	}
 
-	addr, err := container.Get().WalletService.GenerateAddress(ctx.Context(), walletID, req.ExternalUserID, req.Label, req.Metadata)
+	addr, err := container.Get().WalletService.GenerateAddress(ctx.Context(), walletID, req.ExternalUserID, req.Label, req.Metadata, req.Passphrase)
 	if err != nil {
 		return ctx.Response().Json(http.StatusUnprocessableEntity, http.Json{
 			"error": err.Error(),

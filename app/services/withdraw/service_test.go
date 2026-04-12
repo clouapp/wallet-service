@@ -38,6 +38,10 @@ func (m *mockMPC) Sign(ctx context.Context, curve mpcpkg.Curve, shareA, shareB [
 	return []byte("mocksig"), nil
 }
 
+func (m *mockMPC) ReconstructEd25519PrivateKey(shareA, shareB []byte) ([]byte, error) {
+	return nil, nil
+}
+
 func setupWithdrawService(t *testing.T) (*Service, *mocks.MockChain) {
 	t.Helper()
 	mocks.TestDB(t)
