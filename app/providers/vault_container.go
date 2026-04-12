@@ -212,7 +212,7 @@ func buildVaultContainer() (*container.Container, error) {
 	c.WebhookService = webhook.NewService(c.SQS, c.WebhookConfigRepo, c.WebhookEventRepo)
 	c.WalletService = wallet.NewService(c.Registry, c.Redis, c.MPCService, c.SecretsManager, c.WalletRepo, c.AddressRepo)
 	c.WalletService.SetWebhookSync(c.WebhookSyncService)
-	c.WithdrawalService = withdraw.NewService(c.Registry, c.WebhookService, c.MPCService, c.SecretsManager, c.Redis, c.TransactionRepo, c.WalletRepo)
+	c.WithdrawalService = withdraw.NewService(c.Registry, c.WebhookService, c.MPCService, c.SecretsManager, c.Redis, c.TransactionRepo, c.WalletRepo, c.AddressRepo)
 
 	etherscanKey := facades.Config().GetString("vault.webhooks.etherscan_api_key")
 	blockHeightProviders := map[string]blockheight.Provider{

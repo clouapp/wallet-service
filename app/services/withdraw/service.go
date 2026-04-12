@@ -2,6 +2,7 @@ package withdraw
 
 import (
 	"context"
+	"crypto/ed25519"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -41,6 +42,7 @@ type Service struct {
 	rdb             *redis.Client
 	transactionRepo repositories.TransactionRepository
 	walletRepo      repositories.WalletRepository
+	addressRepo     repositories.AddressRepository
 }
 
 func NewService(
@@ -51,6 +53,7 @@ func NewService(
 	rdb *redis.Client,
 	transactionRepo repositories.TransactionRepository,
 	walletRepo repositories.WalletRepository,
+	addressRepo repositories.AddressRepository,
 ) *Service {
 	return &Service{
 		registry:        registry,
@@ -60,17 +63,19 @@ func NewService(
 		rdb:             rdb,
 		transactionRepo: transactionRepo,
 		walletRepo:      walletRepo,
+		addressRepo:     addressRepo,
 	}
 }
 
 type WithdrawRequest struct {
-	WalletID       uuid.UUID `json:"wallet_id"`
-	ExternalUserID string    `json:"external_user_id"`
-	ToAddress      string    `json:"to_address"`
-	Amount         string    `json:"amount"`
-	Asset          string    `json:"asset"`
-	Passphrase     string    `json:"passphrase"`
-	IdempotencyKey string    `json:"idempotency_key"`
+	WalletID       uuid.UUID  `json:"wallet_id"`
+	FromAddressID  *uuid.UUID `json:"from_address_id"`
+	ExternalUserID string     `json:"external_user_id"`
+	ToAddress      string     `json:"to_address"`
+	Amount         string     `json:"amount"`
+	Asset          string     `json:"asset"`
+	Passphrase     string     `json:"passphrase"`
+	IdempotencyKey string     `json:"idempotency_key"`
 }
 
 func (s *Service) Request(ctx context.Context, req WithdrawRequest) (*models.Transaction, error) {
@@ -118,60 +123,29 @@ func (s *Service) Request(ctx context.Context, req WithdrawRequest) (*models.Tra
 		return nil, err
 	}
 
-	if wallet.DepositAddress == nil {
-		return nil, fmt.Errorf("wallet has no deposit address")
+	var fromAddress *models.Address
+	if req.FromAddressID != nil {
+		fromAddress, err = s.addressRepo.FindByID(*req.FromAddressID)
+		if err != nil || fromAddress == nil {
+			return nil, fmt.Errorf("from address not found")
+		}
+		if fromAddress.WalletID != wallet.ID {
+			return nil, fmt.Errorf("address does not belong to this wallet")
+		}
+	} else {
+		if wallet.DepositAddress == nil {
+			return nil, fmt.Errorf("wallet has no deposit address")
+		}
+		fromAddress = wallet.DepositAddress
 	}
-	bal, err := adapter.GetBalance(ctx, wallet.DepositAddress.Address)
+
+	bal, err := adapter.GetBalance(ctx, fromAddress.Address)
 	if err != nil {
 		return nil, fmt.Errorf("get balance: %w", err)
 	}
 	if bal.Amount.Cmp(amount) < 0 {
 		return nil, ErrInsufficientFunds
 	}
-
-	ciphertext, err := hex.DecodeString(wallet.MPCCustomerShare)
-	if err != nil {
-		return nil, fmt.Errorf("decode customer share: %w", err)
-	}
-	iv, err := hex.DecodeString(wallet.MPCShareIV)
-	if err != nil {
-		return nil, fmt.Errorf("decode share iv: %w", err)
-	}
-	salt, err := hex.DecodeString(wallet.MPCShareSalt)
-	if err != nil {
-		return nil, fmt.Errorf("decode share salt: %w", err)
-	}
-
-	enc := &mpcpkg.EncryptedShare{
-		Ciphertext: ciphertext,
-		IV:         iv,
-		Salt:       salt,
-	}
-	shareA, err := mpcpkg.DecryptShare(enc, req.Passphrase)
-	if err != nil {
-		if errors.Is(err, mpcpkg.ErrInvalidPassphrase) {
-			s.recordFailedAttempt(ctx, req.WalletID.String())
-			return nil, ErrInvalidPassphrase
-		}
-		return nil, err
-	}
-
-	secret, err := s.secrets.GetSecretValue(ctx, &secretsmanager.GetSecretValueInput{
-		SecretId: &wallet.MPCSecretARN,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("fetch service share: %w", err)
-	}
-	shareB := secret.SecretBinary
-
-	defer func() {
-		for i := range shareA {
-			shareA[i] = 0
-		}
-		for i := range shareB {
-			shareB[i] = 0
-		}
-	}()
 
 	var tokenContract string
 	var token *types.Token
@@ -185,7 +159,7 @@ func (s *Service) Request(ctx context.Context, req WithdrawRequest) (*models.Tra
 	}
 
 	unsigned, err := adapter.BuildTransfer(ctx, types.TransferRequest{
-		From:   wallet.DepositAddress.Address,
+		From:   fromAddress.Address,
 		To:     req.ToAddress,
 		Amount: amount,
 		Asset:  req.Asset,
@@ -195,12 +169,62 @@ func (s *Service) Request(ctx context.Context, req WithdrawRequest) (*models.Tra
 		return nil, fmt.Errorf("build tx: %w", err)
 	}
 
-	curve := mpcpkg.Curve(wallet.MPCCurve)
-	sig, err := s.mpc.Sign(ctx, curve, shareA, shareB, mpcpkg.SignInputs{
-		TxHashes: [][]byte{unsigned.RawBytes},
-	})
-	if err != nil {
-		return nil, fmt.Errorf("mpc sign: %w", err)
+	var sig []byte
+
+	if fromAddress.DerivationType == "slip0010" {
+		sig, err = s.signWithChildKey(fromAddress, req.Passphrase, unsigned.RawBytes)
+		if err != nil {
+			return nil, fmt.Errorf("sign with child key: %w", err)
+		}
+	} else {
+		ciphertext, decErr := hex.DecodeString(wallet.MPCCustomerShare)
+		if decErr != nil {
+			return nil, fmt.Errorf("decode customer share: %w", decErr)
+		}
+		ivBytes, decErr := hex.DecodeString(wallet.MPCShareIV)
+		if decErr != nil {
+			return nil, fmt.Errorf("decode share iv: %w", decErr)
+		}
+		saltBytes, decErr := hex.DecodeString(wallet.MPCShareSalt)
+		if decErr != nil {
+			return nil, fmt.Errorf("decode share salt: %w", decErr)
+		}
+
+		enc := &mpcpkg.EncryptedShare{Ciphertext: ciphertext, IV: ivBytes, Salt: saltBytes}
+		shareA, decErr := mpcpkg.DecryptShare(enc, req.Passphrase)
+		if decErr != nil {
+			if errors.Is(decErr, mpcpkg.ErrInvalidPassphrase) {
+				s.recordFailedAttempt(ctx, req.WalletID.String())
+				return nil, ErrInvalidPassphrase
+			}
+			return nil, decErr
+		}
+		defer func() {
+			for i := range shareA {
+				shareA[i] = 0
+			}
+		}()
+
+		secret, secretErr := s.secrets.GetSecretValue(ctx, &secretsmanager.GetSecretValueInput{
+			SecretId: &wallet.MPCSecretARN,
+		})
+		if secretErr != nil {
+			return nil, fmt.Errorf("fetch service share: %w", secretErr)
+		}
+		shareB := secret.SecretBinary
+		defer func() {
+			for i := range shareB {
+				shareB[i] = 0
+			}
+		}()
+
+		curve := mpcpkg.Curve(wallet.MPCCurve)
+		sig, err = s.mpc.Sign(ctx, curve, shareA, shareB, mpcpkg.SignInputs{
+			TxHashes: [][]byte{unsigned.RawBytes},
+		})
+		if err != nil {
+			return nil, fmt.Errorf("mpc sign: %w", err)
+		}
 	}
 
 	signed := &types.SignedTx{
@@ -242,6 +266,45 @@ func (s *Service) Request(ctx context.Context, req WithdrawRequest) (*models.Tra
 
 	slog.Info("withdrawal broadcast", "tx_id", tx.ID, "tx_hash", txHash, "chain", wallet.Chain)
 	return tx, nil
+}
+
+func (s *Service) signWithChildKey(addr *models.Address, passphrase string, txBytes []byte) ([]byte, error) {
+	if addr.EncryptedPrivateKey == "" {
+		return nil, fmt.Errorf("address has no encrypted private key")
+	}
+
+	ciphertext, err := hex.DecodeString(addr.EncryptedPrivateKey)
+	if err != nil {
+		return nil, fmt.Errorf("decode encrypted key: %w", err)
+	}
+	ivBytes, err := hex.DecodeString(addr.EncryptionIV)
+	if err != nil {
+		return nil, fmt.Errorf("decode iv: %w", err)
+	}
+	saltBytes, err := hex.DecodeString(addr.EncryptionSalt)
+	if err != nil {
+		return nil, fmt.Errorf("decode salt: %w", err)
+	}
+
+	enc := &mpcpkg.EncryptedShare{Ciphertext: ciphertext, IV: ivBytes, Salt: saltBytes}
+	childSeed, err := mpcpkg.DecryptShare(enc, passphrase)
+	if err != nil {
+		return nil, fmt.Errorf("invalid passphrase")
+	}
+	defer func() {
+		for i := range childSeed {
+			childSeed[i] = 0
+		}
+	}()
+
+	privKey := ed25519.NewKeyFromSeed(childSeed)
+	defer func() {
+		for i := range privKey {
+			privKey[i] = 0
+		}
+	}()
+
+	return ed25519.Sign(privKey, txBytes), nil
 }
 
 func (s *Service) checkRateLimit(ctx context.Context, walletID string) error {
