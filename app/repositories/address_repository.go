@@ -9,6 +9,7 @@ import (
 
 type AddressRepository interface {
 	Create(addr *models.Address) error
+	UpdateFields(id uuid.UUID, fields map[string]interface{}) error
 	CountByChainAndAddress(chainID, address string) (int64, error)
 	FindByChainAndAddress(chainID, address string) (*models.Address, error)
 	FindByExternalUserID(externalUserID string) ([]models.Address, error)
@@ -27,6 +28,14 @@ func NewAddressRepository() AddressRepository {
 
 func (r *addressRepository) Create(addr *models.Address) error {
 	return facades.Orm().Query().Create(addr)
+}
+
+func (r *addressRepository) UpdateFields(id uuid.UUID, fields map[string]interface{}) error {
+	_, err := facades.Orm().Query().
+		Model(&models.Address{}).
+		Where("id = ?", id).
+		Update(fields)
+	return err
 }
 
 func (r *addressRepository) CountByChainAndAddress(chainID, address string) (int64, error) {

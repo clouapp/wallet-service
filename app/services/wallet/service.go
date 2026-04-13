@@ -491,6 +491,23 @@ func (s *Service) ensureChainCode(ctx context.Context, w *models.Wallet) ([]byte
 	return chainCode, nil
 }
 
+func (s *Service) UpdateAddress(ctx context.Context, addressID uuid.UUID, fields map[string]interface{}) (*models.Address, error) {
+	addr, err := s.addressRepo.FindByID(addressID)
+	if err != nil || addr == nil {
+		return nil, fmt.Errorf("address not found")
+	}
+
+	if err := s.addressRepo.UpdateFields(addressID, fields); err != nil {
+		return nil, fmt.Errorf("update address: %w", err)
+	}
+
+	updated, err := s.addressRepo.FindByID(addressID)
+	if err != nil {
+		return nil, fmt.Errorf("fetch updated address: %w", err)
+	}
+	return updated, nil
+}
+
 func (s *Service) LookupAddress(ctx context.Context, chainID, address string) (*models.Address, error) {
 	return s.addressRepo.FindByChainAndAddress(chainID, address)
 }

@@ -83,6 +83,7 @@ func RegisterAdminRoutes() {
 
 			r.Get("/addresses", controllers.ListWalletAddresses)
 			r.Post("/addresses", controllers.GenerateAddress)
+			r.Patch("/addresses/{addressId}", controllers.UpdateAddress)
 
 			r.Get("/users", controllers.ListWalletUsers)
 			r.Post("/users", controllers.AddWalletUser)

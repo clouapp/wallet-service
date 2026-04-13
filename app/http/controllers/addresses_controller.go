@@ -52,6 +52,58 @@ func GenerateAddress(ctx http.Context) http.Response {
 	return ctx.Response().Json(http.StatusCreated, addr)
 }
 
+// UpdateAddress godoc
+// @Summary      Update an address
+// @Description  Updates the label and/or external_user_id of an existing address
+// @Tags         Addresses
+// @Accept       json
+// @Produce      json
+// @Security     ApiKeyAuth
+// @Param        walletId   path      string                  true  "Wallet UUID"  format(uuid)
+// @Param        addressId  path      string                  true  "Address UUID" format(uuid)
+// @Param        body       body      UpdateAddressRequest    true  "Fields to update"
+// @Success      200        {object}  models.Address
+// @Failure      400        {object}  ErrorResponse
+// @Failure      404        {object}  ErrorResponse
+// @Failure      500        {object}  ErrorResponse
+// @Router       /v1/wallets/{walletId}/addresses/{addressId} [patch]
+func UpdateAddress(ctx http.Context) http.Response {
+	addressID, err := uuid.Parse(ctx.Request().Route("addressId"))
+	if err != nil {
+		return ctx.Response().Json(http.StatusBadRequest, http.Json{
+			"error": "invalid address id",
+		})
+	}
+
+	var req requests.UpdateAddressRequest
+	if errResp := validateRequest(ctx, &req); errResp != nil {
+		return errResp
+	}
+
+	fields := make(map[string]interface{})
+	if req.Label != nil {
+		fields["label"] = *req.Label
+	}
+	if req.ExternalUserID != nil {
+		fields["external_user_id"] = *req.ExternalUserID
+	}
+
+	if len(fields) == 0 {
+		return ctx.Response().Json(http.StatusBadRequest, http.Json{
+			"error": "no fields to update",
+		})
+	}
+
+	addr, err := container.Get().WalletService.UpdateAddress(ctx.Context(), addressID, fields)
+	if err != nil {
+		return ctx.Response().Json(http.StatusNotFound, http.Json{
+			"error": err.Error(),
+		})
+	}
+
+	return ctx.Response().Success().Json(addr)
+}
+
 // ListWalletAddresses godoc
 // @Summary      List wallet addresses
 // @Description  Returns all deposit addresses generated for a specific wallet

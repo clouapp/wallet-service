@@ -21,6 +21,7 @@ func RegisterExternalAPI() {
 
 		router.Post("/wallets/{walletId}/addresses", controllers.GenerateAddress)
 		router.Get("/wallets/{walletId}/addresses", controllers.ListWalletAddresses)
+		router.Patch("/wallets/{walletId}/addresses/{addressId}", controllers.UpdateAddress)
 		router.Get("/addresses/{address}", controllers.LookupAddress)
 		router.Get("/users/{external_id}/addresses", controllers.ListUserAddresses)
 
