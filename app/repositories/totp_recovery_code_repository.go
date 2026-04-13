@@ -12,6 +12,8 @@ import (
 type TotpRecoveryCodeRepository interface {
 	FindUnusedByUserID(userID uuid.UUID) ([]models.TotpRecoveryCode, error)
 	MarkUsed(id uuid.UUID) error
+	CreateBatch(codes []models.TotpRecoveryCode) error
+	DeleteByUserID(userID uuid.UUID) error
 }
 
 type totpRecoveryCodeRepository struct{}
@@ -34,5 +36,14 @@ func (r *totpRecoveryCodeRepository) MarkUsed(id uuid.UUID) error {
 		Model(&models.TotpRecoveryCode{}).
 		Where("id = ?", id).
 		Update("used_at", now)
+	return err
+}
+
+func (r *totpRecoveryCodeRepository) CreateBatch(codes []models.TotpRecoveryCode) error {
+	return facades.Orm().Query().Create(&codes)
+}
+
+func (r *totpRecoveryCodeRepository) DeleteByUserID(userID uuid.UUID) error {
+	_, err := facades.Orm().Query().Where("user_id = ?", userID).Delete(&models.TotpRecoveryCode{})
 	return err
 }

@@ -123,6 +123,28 @@ func (a *EVMLive) BuildTransfer(ctx context.Context, req types.TransferRequest) 
 	}, nil
 }
 
+func (a *EVMLive) EstimateFee(ctx context.Context, req types.TransferRequest) (*types.FeeEstimate, error) {
+	var hexGas string
+	if err := a.rpc.Call(ctx, "eth_gasPrice", &hexGas); err != nil {
+		return nil, fmt.Errorf("gas price: %w", err)
+	}
+
+	gasPrice := hexToBigInt(hexGas)
+	gasLimit := uint64(21000)
+	if req.Token != nil {
+		gasLimit = 65000
+	}
+
+	fee := new(big.Int).Mul(gasPrice, new(big.Int).SetUint64(gasLimit))
+
+	return &types.FeeEstimate{
+		Fee:      fmtUnits(fee, a.cfg.NativeDecimal),
+		FeeAsset: a.cfg.NativeSymbol,
+		GasPrice: gasPrice.String(),
+		GasLimit: gasLimit,
+	}, nil
+}
+
 func (a *EVMLive) SignTransaction(ctx context.Context, unsigned *types.UnsignedTx, privateKey []byte) (*types.SignedTx, error) {
 	// TODO: RLP encode + secp256k1 sign with EIP-155 replay protection
 	return nil, fmt.Errorf("EVM signing not implemented — use go-ethereum/types.SignTx")

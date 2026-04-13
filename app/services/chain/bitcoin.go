@@ -14,15 +14,16 @@ import (
 )
 
 type BitcoinConfig struct {
-	ChainIDStr    string
-	ChainName     string
-	NativeSymbol  string
-	RPCURL        string
-	RPCUser       string
-	RPCPass       string
-	Network       string
-	IsTestnet     bool
-	Confirmations uint64
+	ChainIDStr     string
+	ChainName      string
+	NativeSymbol   string
+	RPCURL         string
+	RPCUser        string
+	RPCPass        string
+	Network        string
+	IsTestnet      bool
+	Confirmations  uint64
+	FeeRateDefault int
 }
 
 type BitcoinLive struct {
@@ -60,6 +61,28 @@ func (a *BitcoinLive) ValidateAddress(address string) bool {
 		return (len(address) >= 3 && address[:3] == "tb1") || address[0] == 'm' || address[0] == 'n' || address[0] == '2'
 	}
 	return address[:3] == "bc1" || address[0] == '1' || address[0] == '3'
+}
+
+func (a *BitcoinLive) EstimateFee(ctx context.Context, req types.TransferRequest) (*types.FeeEstimate, error) {
+	const estimatedVBytes = 140
+	feeRateSatPerVByte := 10
+
+	if a.cfg.FeeRateDefault > 0 {
+		feeRateSatPerVByte = a.cfg.FeeRateDefault
+	}
+
+	feeSat := int64(estimatedVBytes * feeRateSatPerVByte)
+	fee := new(big.Int).SetInt64(feeSat)
+
+	symbol := "BTC"
+	if a.cfg.IsTestnet {
+		symbol = "TBTC"
+	}
+
+	return &types.FeeEstimate{
+		Fee:      fmtUnits(fee, 8),
+		FeeAsset: symbol,
+	}, nil
 }
 
 func (a *BitcoinLive) GetBalance(ctx context.Context, address string) (*types.Balance, error) {

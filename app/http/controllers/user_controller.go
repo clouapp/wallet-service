@@ -3,6 +3,7 @@ package controllers
 import (
 	"github.com/google/uuid"
 	"github.com/goravel/framework/contracts/http"
+	"github.com/goravel/framework/facades"
 
 	"github.com/macrowallets/waas/app/container"
 	"github.com/macrowallets/waas/app/http/pagination"
@@ -167,6 +168,124 @@ func UpdateDefaultAccount(ctx http.Context) http.Response {
 	return ctx.Response().Json(http.StatusOK, http.Json{"account": account})
 }
 
+// SetupTOTP godoc
+// @Summary      Begin TOTP enrollment
+// @Description  Generates a TOTP secret and QR URL; stores encrypted secret until verified
+// @Tags         User
+// @Security     BearerAuth
+// @Produce      json
+// @Success      200  {object}  TotpSetupSwagger
+// @Failure      500  {object}  ErrorResponse
+// @Router       /users/me/totp/setup [post]
+func SetupTOTP(ctx http.Context) http.Response {
+	user := ctx.Value("user").(*models.User)
+
+	secret, qrURL, err := userAuthService.GenerateTOTP(user.Email)
+	if err != nil {
+		return ctx.Response().Json(http.StatusInternalServerError, http.Json{"error": "failed to generate TOTP secret"})
+	}
+
+	encryptedSecret, err := facades.Crypt().EncryptString(secret)
+	if err != nil {
+		return ctx.Response().Json(http.StatusInternalServerError, http.Json{"error": "failed to encrypt secret"})
+	}
+
+	if err := container.Get().UserRepo.UpdateTotpSecret(user.ID, encryptedSecret); err != nil {
+		return ctx.Response().Json(http.StatusInternalServerError, http.Json{"error": "failed to save TOTP secret"})
+	}
+
+	return ctx.Response().Json(http.StatusOK, http.Json{
+		"secret": secret,
+		"qr_url": qrURL,
+	})
+}
+
+// ConfirmTOTP godoc
+// @Summary      Complete TOTP enrollment
+// @Description  Verifies the TOTP code, enables 2FA, and returns one-time recovery codes
+// @Tags         User
+// @Security     BearerAuth
+// @Accept       json
+// @Produce      json
+// @Param        request  body      ConfirmTotpSwagger  true  "TOTP verification code"
+// @Success      200      {object}  map[string]interface{}
+// @Failure      400      {object}  ErrorResponse
+// @Failure      401      {object}  ErrorResponse
+// @Failure      500      {object}  ErrorResponse
+// @Router       /users/me/totp/verify [post]
+func ConfirmTOTP(ctx http.Context) http.Response {
+	user := ctx.Value("user").(*models.User)
+
+	var req requests.ConfirmTwoFactorRequest
+	if errResp := validateRequest(ctx, &req); errResp != nil {
+		return errResp
+	}
+
+	if user.TotpSecret == "" {
+		return ctx.Response().Json(http.StatusBadRequest, http.Json{"error": "no TOTP secret found — call setup first"})
+	}
+
+	decryptedSecret, err := facades.Crypt().DecryptString(user.TotpSecret)
+	if err != nil {
+		return ctx.Response().Json(http.StatusInternalServerError, http.Json{"error": "failed to decrypt secret"})
+	}
+
+	if !userAuthService.VerifyTOTP(decryptedSecret, req.Code) {
+		return ctx.Response().Json(http.StatusUnauthorized, http.Json{"error": "invalid verification code"})
+	}
+
+	if err := container.Get().UserRepo.EnableTotp(user.ID); err != nil {
+		return ctx.Response().Json(http.StatusInternalServerError, http.Json{"error": "failed to enable 2FA"})
+	}
+
+	codes, hashes, err := userAuthService.GenerateRecoveryCodes()
+	if err != nil {
+		return ctx.Response().Json(http.StatusInternalServerError, http.Json{"error": "failed to generate recovery codes"})
+	}
+
+	_ = container.Get().TotpRecoveryCodeRepo.DeleteByUserID(user.ID)
+
+	var recoveryCodes []models.TotpRecoveryCode
+	for _, h := range hashes {
+		recoveryCodes = append(recoveryCodes, models.TotpRecoveryCode{
+			ID:       uuid.New(),
+			UserID:   user.ID,
+			CodeHash: h,
+		})
+	}
+	_ = container.Get().TotpRecoveryCodeRepo.CreateBatch(recoveryCodes)
+
+	user.TotpEnabled = true
+	resp := map[string]interface{}{
+		"user":           user,
+		"recovery_codes": codes,
+	}
+	return ctx.Response().Json(http.StatusOK, resp)
+}
+
+// DisableTOTP godoc
+// @Summary      Disable TOTP
+// @Description  Disables 2FA and clears TOTP secret and recovery codes
+// @Tags         User
+// @Security     BearerAuth
+// @Produce      json
+// @Success      200  {object}  models.User
+// @Failure      500  {object}  ErrorResponse
+// @Router       /users/me/totp [delete]
+func DisableTOTP(ctx http.Context) http.Response {
+	user := ctx.Value("user").(*models.User)
+
+	if err := container.Get().UserRepo.DisableTotp(user.ID); err != nil {
+		return ctx.Response().Json(http.StatusInternalServerError, http.Json{"error": "failed to disable 2FA"})
+	}
+
+	_ = container.Get().TotpRecoveryCodeRepo.DeleteByUserID(user.ID)
+
+	user.TotpEnabled = false
+	user.TotpSecret = ""
+	return ctx.Response().Json(http.StatusOK, user)
+}
+
 // ---- Swagger-only types ----
 
 type UpdateMeSwagger struct {
@@ -184,4 +303,13 @@ type UpdateDefaultAccountSwagger struct {
 
 type AccountListResponse struct {
 	Data []models.Account `json:"data"`
+}
+
+type TotpSetupSwagger struct {
+	Secret string `json:"secret" example:"JBSWY3DPEHPK3PXP"`
+	QrURL  string `json:"qr_url" example:"otpauth://totp/..."`
+}
+
+type ConfirmTotpSwagger struct {
+	Code string `json:"code" example:"123456"`
 }

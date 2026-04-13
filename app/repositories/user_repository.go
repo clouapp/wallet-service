@@ -17,6 +17,9 @@ type UserRepository interface {
 	UpdateFullName(id uuid.UUID, fullName string) error
 	UpdatePasswordHash(id uuid.UUID, hash string) error
 	UpdatePreferences(id uuid.UUID, prefs *models.UserPreferences) error
+	UpdateTotpSecret(id uuid.UUID, secret string) error
+	EnableTotp(id uuid.UUID) error
+	DisableTotp(id uuid.UUID) error
 }
 
 type userRepository struct{}
@@ -74,5 +77,23 @@ func (r *userRepository) UpdatePreferences(id uuid.UUID, prefs *models.UserPrefe
 		return err
 	}
 	_, err = facades.Orm().Query().Model(&models.User{}).Where("id = ?", id).Update("preferences", string(jsonBytes))
+	return err
+}
+
+func (r *userRepository) UpdateTotpSecret(id uuid.UUID, secret string) error {
+	_, err := facades.Orm().Query().Model(&models.User{}).Where("id = ?", id).Update("totp_secret", secret)
+	return err
+}
+
+func (r *userRepository) EnableTotp(id uuid.UUID) error {
+	_, err := facades.Orm().Query().Model(&models.User{}).Where("id = ?", id).Update("totp_enabled", true)
+	return err
+}
+
+func (r *userRepository) DisableTotp(id uuid.UUID) error {
+	_, err := facades.Orm().Query().Model(&models.User{}).Where("id = ?", id).Update(map[string]interface{}{
+		"totp_enabled": false,
+		"totp_secret":  "",
+	})
 	return err
 }

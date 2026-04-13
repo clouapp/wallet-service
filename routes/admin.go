@@ -30,6 +30,9 @@ func RegisterAdminRoutes() {
 		router.Post("/me/password", controllers.ChangePassword)
 		router.Get("/me/accounts", controllers.ListMyAccounts)
 		router.Patch("/me/default-account", controllers.UpdateDefaultAccount)
+		router.Post("/me/totp/setup", controllers.SetupTOTP)
+		router.Post("/me/totp/verify", controllers.ConfirmTOTP)
+		router.Delete("/me/totp", controllers.DisableTOTP)
 	})
 
 	facades.Route().Prefix("/v1/accounts").Middleware(middleware.SessionAuth(), noCache).Group(func(router route.Router) {
@@ -102,6 +105,7 @@ func RegisterAdminRoutes() {
 
 			r.Get("/withdrawals", controllers.ListWalletWithdrawals)
 			r.Post("/withdrawals", controllers.CreateWalletWithdrawal)
+			r.Post("/withdrawals/estimate", controllers.EstimateWithdrawalFee)
 			r.Get("/withdrawals/{withdrawalId}", controllers.GetWalletWithdrawal)
 			r.Post("/withdrawals/{withdrawalId}/cancel", controllers.CancelWalletWithdrawal)
 

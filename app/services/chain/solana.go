@@ -55,6 +55,15 @@ func (a *SolanaLive) ValidateAddress(address string) bool {
 	return true
 }
 
+func (a *SolanaLive) EstimateFee(ctx context.Context, req types.TransferRequest) (*types.FeeEstimate, error) {
+	fee := new(big.Int).SetInt64(5000)
+
+	return &types.FeeEstimate{
+		Fee:      fmtUnits(fee, 9),
+		FeeAsset: a.cfg.NativeSymbol,
+	}, nil
+}
+
 func (a *SolanaLive) GetBalance(ctx context.Context, address string) (*types.Balance, error) {
 	var result struct {
 		Value uint64 `json:"value"`

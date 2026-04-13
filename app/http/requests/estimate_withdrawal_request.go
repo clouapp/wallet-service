@@ -8,28 +8,23 @@ import (
 	"github.com/macrowallets/waas/app/container"
 )
 
-type CreateWalletWithdrawalRequest struct {
+type EstimateWithdrawalRequest struct {
 	Amount             string `form:"amount"              json:"amount"`
 	DestinationAddress string `form:"destination_address" json:"destination_address"`
-	Note               string `form:"note"                json:"note,omitempty"`
-	Passphrase         string `form:"passphrase"          json:"passphrase"`
-	TotpCode           string `form:"totp_code"           json:"totp_code"`
 }
 
-func (r *CreateWalletWithdrawalRequest) Authorize(ctx http.Context) error {
+func (r *EstimateWithdrawalRequest) Authorize(ctx http.Context) error {
 	return nil
 }
 
-func (r *CreateWalletWithdrawalRequest) Rules(ctx http.Context) map[string]string {
+func (r *EstimateWithdrawalRequest) Rules(ctx http.Context) map[string]string {
 	return map[string]string{
 		"amount":              "required|decimal_string",
 		"destination_address": "required|blockchain_address",
-		"passphrase":          "required|min_len:12",
-		"totp_code":           "required|min_len:6|max_len:6",
 	}
 }
 
-func (r *CreateWalletWithdrawalRequest) PrepareForValidation(ctx http.Context, data validation.Data) error {
+func (r *EstimateWithdrawalRequest) PrepareForValidation(ctx http.Context, data validation.Data) error {
 	walletIDStr := ctx.Request().Route("walletId")
 	walletID, err := uuid.Parse(walletIDStr)
 	if err != nil {

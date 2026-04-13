@@ -25,6 +25,7 @@ type MockChain struct {
 	GetBalanceFn           func(ctx context.Context, address string) (*types.Balance, error)
 	GetTokenBalanceFn      func(ctx context.Context, address string, token types.Token) (*types.Balance, error)
 	BuildTransferFn        func(ctx context.Context, req types.TransferRequest) (*types.UnsignedTx, error)
+	EstimateFeeFn          func(ctx context.Context, req types.TransferRequest) (*types.FeeEstimate, error)
 	SignTransactionFn      func(ctx context.Context, unsigned *types.UnsignedTx, privateKey []byte) (*types.SignedTx, error)
 	BroadcastTransactionFn func(ctx context.Context, signed *types.SignedTx) (string, error)
 	GetLatestBlockFn       func(ctx context.Context) (uint64, error)
@@ -89,6 +90,13 @@ func (m *MockChain) BuildTransfer(ctx context.Context, req types.TransferRequest
 		return m.BuildTransferFn(ctx, req)
 	}
 	return &types.UnsignedTx{ChainID: m.IDVal, RawBytes: []byte("unsigned"), Metadata: map[string]interface{}{"nonce": 0}}, nil
+}
+
+func (m *MockChain) EstimateFee(ctx context.Context, req types.TransferRequest) (*types.FeeEstimate, error) {
+	if m.EstimateFeeFn != nil {
+		return m.EstimateFeeFn(ctx, req)
+	}
+	return &types.FeeEstimate{Fee: "0", FeeAsset: m.NativeAssetVal}, nil
 }
 
 func (m *MockChain) SignTransaction(ctx context.Context, unsigned *types.UnsignedTx, privateKey []byte) (*types.SignedTx, error) {

@@ -30,6 +30,15 @@ type Chain interface {
 
 	RequiredConfirmations() uint64
 	NativeAsset() string
+
+	EstimateFee(ctx context.Context, req TransferRequest) (*FeeEstimate, error)
+}
+
+type FeeEstimate struct {
+	Fee      string `json:"fee"`
+	FeeAsset string `json:"fee_asset"`
+	GasPrice string `json:"gas_price,omitempty"`
+	GasLimit uint64 `json:"gas_limit,omitempty"`
 }
 
 // ---------------------------------------------------------------------------
