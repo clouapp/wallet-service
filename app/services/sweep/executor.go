@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"math/big"
 
 	"github.com/aws/aws-sdk-go-v2/service/secretsmanager"
 	"github.com/google/uuid"
@@ -59,7 +60,7 @@ func (s *service) ExecutePlan(
 	defer zeroBytes(shareB)
 
 	curve := mpcpkg.Curve(wallet.MPCCurve)
-	result := &Result{WithdrawalTxID: withdrawalTxID}
+	result := &Result{WithdrawalTxID: withdrawalTxID, EstimatedGas: copyBigInt(plan.EstimatedGas)}
 
 	switch plan.Strategy {
 	case StrategyDirectFromBase, StrategyDirectFromChild:
@@ -373,4 +374,13 @@ func zeroBytes(b []byte) {
 	for i := range b {
 		b[i] = 0
 	}
+}
+
+// copyBigInt defensively clones a *big.Int so Plan → Result copies do not
+// share backing storage. Safe on nil (returns nil).
+func copyBigInt(v *big.Int) *big.Int {
+	if v == nil {
+		return nil
+	}
+	return new(big.Int).Set(v)
 }

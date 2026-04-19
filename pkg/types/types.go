@@ -48,6 +48,13 @@ type Chain interface {
 	// in fees than the recovered value. Returns nil when asset is unknown or chain
 	// cannot resolve a threshold (e.g. token USD threshold without price data).
 	DustThreshold(asset string) *big.Int
+
+	// EstimateGasPrice returns the current gas price suggestion for the chain,
+	// expressed in the chain's native raw units (wei for EVM). Returns nil when
+	// the chain has no gas-price concept (e.g. SOL, BTC) or when the estimate
+	// cannot be fetched; the sweep planner treats a nil return as "estimate
+	// unavailable" and surfaces plan.EstimatedGas = nil in that case.
+	EstimateGasPrice(ctx context.Context) (*big.Int, error)
 }
 
 type FeeEstimate struct {

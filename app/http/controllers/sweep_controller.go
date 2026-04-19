@@ -154,7 +154,7 @@ func mapConsolidateResponse(result *sweep.Result) http.Json {
 		"children_swept":     len(result.Sweeps),
 		"dust_ignored":       0,   // TODO: ConsolidateAll currently drops dust silently; surface when Plan is returned alongside Result.
 		"total_amount":       "0", // TODO: CompletedSweep has no Amount field; aggregate when types expose it.
-		"estimated_gas_cost": "0", // TODO: gas estimation not yet computed in sweep service.
+		"estimated_gas_cost": bigIntString(result.EstimatedGas),
 	}
 
 	body := http.Json{
@@ -211,12 +211,23 @@ func previewResponse(plan *sweep.Plan) http.Json {
 		"reaches_target":             plan.ReachesTarget,
 		"sweeps_required":            len(plan.Sweeps),
 		"dust_ignored":               dustIgnored,
-		"estimated_gas_total_native": "0", // TODO: planner does not yet emit gas cost per leg.
+		"estimated_gas_total_native": bigIntString(plan.EstimatedGas),
 	}
 	if plan.BaseBalance != nil {
 		body["base_balance"] = plan.BaseBalance.String()
 	}
 	return body
+}
+
+// bigIntString serialises a *big.Int for JSON responses. nil is normalised to
+// "0" so clients never see a missing field, matching the prior hardcoded
+// default. Callers that need to distinguish "estimate unavailable" from
+// "estimate is exactly zero" should add a separate flag to the payload.
+func bigIntString(v *big.Int) string {
+	if v == nil {
+		return "0"
+	}
+	return v.String()
 }
 
 // ---- Swagger request/response types (doc-only) ----

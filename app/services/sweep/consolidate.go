@@ -116,6 +116,7 @@ func (s *service) ConsolidateAll(
 		return &Result{}, nil
 	}
 
+
 	if err := checkAddressesPerRequest(chainEntity.AdapterType, len(eligible), limits); err != nil {
 		return nil, err
 	}
@@ -143,6 +144,7 @@ func (s *service) ConsolidateAll(
 		Sweeps:        sweeps,
 		ReachesTarget: true,
 	}
+	plan.EstimatedGas = estimatePlanGas(ctx, adapter, plan)
 
 	shareA, err := s.decryptShareA(wallet, passphrase)
 	if err != nil {
@@ -157,7 +159,7 @@ func (s *service) ConsolidateAll(
 	defer zeroBytes(shareB)
 
 	curve := mpcpkg.Curve(wallet.MPCCurve)
-	result := &Result{}
+	result := &Result{EstimatedGas: copyBigInt(plan.EstimatedGas)}
 
 	for i, leg := range plan.Sweeps {
 		sweepTxID := uuid.New()

@@ -347,3 +347,8 @@ func (a *BitcoinLive) BuildSweep(ctx context.Context, req types.SweepRequest) ([
 func (a *BitcoinLive) GasReadinessThreshold() *big.Int { return nil }
 
 func (a *BitcoinLive) DustThreshold(asset string) *big.Int { return nil }
+
+// EstimateGasPrice returns nil for Bitcoin: fees are per-vByte on the
+// UTXO itself, not a gas-price × gas-limit product, so there is no scalar
+// that composes with the planner's EVM gas-limit model.
+func (a *BitcoinLive) EstimateGasPrice(ctx context.Context) (*big.Int, error) { return nil, nil }

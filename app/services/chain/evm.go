@@ -228,6 +228,19 @@ func (a *EVMLive) BuildSweep(ctx context.Context, req types.SweepRequest) ([]typ
 	return result, nil
 }
 
+// EstimateGasPrice returns the current gas price suggestion from the RPC
+// endpoint (eth_gasPrice) in wei. Used by the sweep planner to compute
+// plan.EstimatedGas without re-coupling the planner to RPC details. Errors
+// are surfaced to the caller; the caller is expected to treat a failed
+// estimation as non-fatal (best-effort) and display an unknown total.
+func (a *EVMLive) EstimateGasPrice(ctx context.Context) (*big.Int, error) {
+	var hexGas string
+	if err := a.rpc.Call(ctx, "eth_gasPrice", &hexGas); err != nil {
+		return nil, fmt.Errorf("gas price: %w", err)
+	}
+	return hexToBigInt(hexGas), nil
+}
+
 // GasReadinessThreshold returns the minimum native balance on BaseAddress for the
 // wallet to be considered gas-ready. Value is sourced from the chains table via
 // EVMConfig. Returns nil when unset.

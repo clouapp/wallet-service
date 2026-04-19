@@ -286,6 +286,204 @@ func TestPlan_EVMOnlyGuard(t *testing.T) {
 	}
 }
 
+// TestEstimateGasTotal_PureHelper covers the pure math in isolation so every
+// strategy / asset-type permutation has a locked-in expected number. This is
+// the contract the controllers depend on when populating
+// `estimated_gas_total_native` in responses.
+func TestEstimateGasTotal_PureHelper(t *testing.T) {
+	gasPrice := big.NewInt(20_000_000_000) // 20 gwei
+
+	tests := []struct {
+		name         string
+		plan         *Plan
+		isTokenSweep bool
+		want         *big.Int
+	}{
+		{
+			name:         "nil plan",
+			plan:         nil,
+			isTokenSweep: false,
+			want:         nil,
+		},
+		{
+			name: "direct_from_base native",
+			plan: &Plan{
+				Strategy: StrategyDirectFromBase,
+			},
+			isTokenSweep: false,
+			want:         new(big.Int).Mul(gasPrice, big.NewInt(21_000)),
+		},
+		{
+			name: "direct_from_child ERC-20",
+			plan: &Plan{
+				Strategy: StrategyDirectFromChild,
+			},
+			isTokenSweep: true,
+			want:         new(big.Int).Mul(gasPrice, big.NewInt(65_000)),
+		},
+		{
+			name: "multi_sweep 2 legs ERC-20 with gas_seed",
+			plan: &Plan{
+				Strategy: StrategyMultiSweep,
+				Sweeps: []PlannedSweep{
+					{NeedsGas: true},
+					{NeedsGas: true},
+				},
+			},
+			isTokenSweep: true,
+			// 2 × (21k seed + 65k sweep) + 65k final = 237_000
+			want: new(big.Int).Mul(gasPrice, big.NewInt(237_000)),
+		},
+		{
+			name: "multi_sweep 2 legs native no gas_seed",
+			plan: &Plan{
+				Strategy: StrategyMultiSweep,
+				Sweeps: []PlannedSweep{
+					{NeedsGas: false},
+					{NeedsGas: false},
+				},
+			},
+			isTokenSweep: false,
+			// 2 × 21k sweep + 21k final = 63_000
+			want: new(big.Int).Mul(gasPrice, big.NewInt(63_000)),
+		},
+		{
+			name: "multi_sweep 1 leg mixed: one native sweep with gas_seed, token final",
+			plan: &Plan{
+				Strategy: StrategyMultiSweep,
+				Sweeps: []PlannedSweep{
+					{NeedsGas: true},
+				},
+			},
+			isTokenSweep: true,
+			// (21k seed + 65k sweep) + 65k final = 151_000
+			want: new(big.Int).Mul(gasPrice, big.NewInt(151_000)),
+		},
+		{
+			name: "insufficient strategy yields nil",
+			plan: &Plan{
+				Strategy: StrategyInsufficient,
+			},
+			isTokenSweep: false,
+			want:         nil,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := estimateGasTotal(gasPrice, tc.plan, tc.isTokenSweep)
+			switch {
+			case tc.want == nil && got == nil:
+				return
+			case tc.want == nil && got != nil:
+				t.Fatalf("expected nil, got %s", got.String())
+			case tc.want != nil && got == nil:
+				t.Fatalf("expected %s, got nil", tc.want.String())
+			case got.Cmp(tc.want) != 0:
+				t.Fatalf("expected %s, got %s", tc.want.String(), got.String())
+			}
+		})
+	}
+
+	// gasPrice = nil must short-circuit regardless of plan shape.
+	if got := estimateGasTotal(nil, &Plan{Strategy: StrategyMultiSweep}, false); got != nil {
+		t.Fatalf("nil gasPrice: expected nil, got %s", got.String())
+	}
+}
+
+// TestPlan_MultiSweep_EstimatedGas_Populated verifies that the planner wires
+// the gas-price fetch into plan.EstimatedGas for the multi_sweep branch. The
+// mock chain returns a fixed 10 gwei so the expected total is deterministic.
+func TestPlan_MultiSweep_EstimatedGas_Populated(t *testing.T) {
+	walletID := uuid.New()
+	baseAddr := models.Address{ID: uuid.New(), WalletID: walletID, Address: "BASE"}
+	cA := models.Address{ID: uuid.New(), WalletID: walletID, Address: "CHILD_A"}
+	cB := models.Address{ID: uuid.New(), WalletID: walletID, Address: "CHILD_B"}
+	wallet := &models.Wallet{ID: walletID, Chain: "eth", DepositAddress: &baseAddr}
+
+	gasPrice := big.NewInt(10_000_000_000) // 10 gwei
+	mockChain := balanceMapChain("eth", "eth", map[string]*big.Int{
+		"BASE":    big.NewInt(100),
+		"CHILD_A": big.NewInt(300),
+		"CHILD_B": big.NewInt(250),
+	})
+	mockChain.EstimateGasPriceVal = gasPrice
+
+	svc := newPlannerService(t, wallet, []models.Address{baseAddr, cA, cB}, mockChain, evmChainEntity("eth"))
+
+	plan, err := svc.PlanForWithdrawal(context.Background(), walletID, "eth", big.NewInt(600))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if plan.Strategy != StrategyMultiSweep {
+		t.Fatalf("expected multi_sweep, got %s", plan.Strategy)
+	}
+	if plan.EstimatedGas == nil {
+		t.Fatal("expected EstimatedGas to be populated")
+	}
+	// Native sweep: 2 legs × (21k seed + 21k sweep) + 21k final = 105_000 gas.
+	// 105_000 × 10 gwei = 1_050_000_000_000_000 wei.
+	want := new(big.Int).Mul(gasPrice, big.NewInt(105_000))
+	if plan.EstimatedGas.Cmp(want) != 0 {
+		t.Fatalf("expected EstimatedGas=%s, got %s", want.String(), plan.EstimatedGas.String())
+	}
+}
+
+// TestPlan_DirectFromBase_EstimatedGas_Populated proves the estimate also flows
+// through the single-source strategies, so PreviewWithdraw reports a real
+// number even when no sweeps are needed.
+func TestPlan_DirectFromBase_EstimatedGas_Populated(t *testing.T) {
+	walletID := uuid.New()
+	baseAddr := models.Address{ID: uuid.New(), WalletID: walletID, Address: "BASE"}
+	wallet := &models.Wallet{ID: walletID, Chain: "eth", DepositAddress: &baseAddr}
+
+	gasPrice := big.NewInt(15_000_000_000) // 15 gwei
+	mockChain := balanceMapChain("eth", "eth", map[string]*big.Int{
+		"BASE": big.NewInt(1000),
+	})
+	mockChain.EstimateGasPriceVal = gasPrice
+
+	svc := newPlannerService(t, wallet, []models.Address{baseAddr}, mockChain, evmChainEntity("eth"))
+
+	plan, err := svc.PlanForWithdrawal(context.Background(), walletID, "eth", big.NewInt(500))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if plan.Strategy != StrategyDirectFromBase {
+		t.Fatalf("expected direct_from_base, got %s", plan.Strategy)
+	}
+	want := new(big.Int).Mul(gasPrice, big.NewInt(21_000))
+	if plan.EstimatedGas == nil || plan.EstimatedGas.Cmp(want) != 0 {
+		t.Fatalf("expected EstimatedGas=%s, got %v", want.String(), plan.EstimatedGas)
+	}
+}
+
+// TestPlan_EstimatedGas_NilWhenPriceUnavailable ensures that a failed /
+// unavailable gas-price fetch produces a nil EstimatedGas rather than crashing
+// or silently reporting zero as if it were a real value.
+func TestPlan_EstimatedGas_NilWhenPriceUnavailable(t *testing.T) {
+	walletID := uuid.New()
+	baseAddr := models.Address{ID: uuid.New(), WalletID: walletID, Address: "BASE"}
+	wallet := &models.Wallet{ID: walletID, Chain: "eth", DepositAddress: &baseAddr}
+
+	mockChain := balanceMapChain("eth", "eth", map[string]*big.Int{
+		"BASE": big.NewInt(1000),
+	})
+	mockChain.EstimateGasPriceFn = func(ctx context.Context) (*big.Int, error) {
+		return nil, context.DeadlineExceeded
+	}
+
+	svc := newPlannerService(t, wallet, []models.Address{baseAddr}, mockChain, evmChainEntity("eth"))
+
+	plan, err := svc.PlanForWithdrawal(context.Background(), walletID, "eth", big.NewInt(500))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if plan.EstimatedGas != nil {
+		t.Fatalf("expected nil EstimatedGas when gas-price fetch fails, got %s", plan.EstimatedGas.String())
+	}
+}
+
 func TestPlan_DustIgnored(t *testing.T) {
 	walletID := uuid.New()
 	baseAddr := models.Address{ID: uuid.New(), WalletID: walletID, Address: "BASE"}

@@ -68,6 +68,11 @@ type Result struct {
 	Sweeps          []CompletedSweep
 	FinalWithdrawTx *models.Transaction
 	FailedStep      *FailedStep
+	// EstimatedGas mirrors the originating Plan.EstimatedGas so consumers of
+	// Result (dashboard, API responses) can report the gas estimate without
+	// threading the Plan through. nil means "estimate unavailable" (non-EVM,
+	// gas-price fetch failure, or empty plan).
+	EstimatedGas *big.Int
 }
 
 // GasStatus snapshots the gas-readiness check for a wallet.

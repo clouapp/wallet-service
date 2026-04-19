@@ -15,6 +15,15 @@ import (
 
 const reasonBelowDustThreshold = "below_dust_threshold"
 
+// Per-transaction gas limits used by the EVM adapter. Kept in sync with
+// EVMLive.BuildTransfer / BuildSweep (21_000 for a native transfer; 65_000
+// for an ERC-20 transfer) so the estimate reflects what execution will
+// actually emit. If those constants drift, this estimate will drift too.
+const (
+	gasLimitNativeTransfer = 21_000
+	gasLimitERC20Transfer  = 65_000
+)
+
 // PlanForWithdrawal chooses the cheapest strategy to cover `amount` of `asset`
 // from `walletID`. See docs/superpowers/plans/2026-04-18-base-address-sweep.md
 // §4.1 for the full algorithm.
@@ -71,6 +80,7 @@ func (s *service) PlanForWithdrawal(ctx context.Context, walletID uuid.UUID, ass
 		baseCopy := *wallet.DepositAddress
 		plan.SourceAddress = &baseCopy
 		plan.ReachesTarget = true
+		plan.EstimatedGas = estimatePlanGas(ctx, adapter, plan)
 		return plan, nil
 	}
 
@@ -118,6 +128,7 @@ func (s *service) PlanForWithdrawal(ctx context.Context, walletID uuid.UUID, ass
 			addrCopy := cb.addr
 			plan.SourceAddress = &addrCopy
 			plan.ReachesTarget = true
+			plan.EstimatedGas = estimatePlanGas(ctx, adapter, plan)
 			return plan, nil
 		}
 	}
@@ -152,7 +163,70 @@ func (s *service) PlanForWithdrawal(ctx context.Context, walletID uuid.UUID, ass
 	plan.Strategy = StrategyMultiSweep
 	plan.Sweeps = sweeps
 	plan.ReachesTarget = true
+	plan.EstimatedGas = estimatePlanGas(ctx, adapter, plan)
 	return plan, nil
+}
+
+// estimatePlanGas fetches the current gas price from the adapter and applies
+// the per-strategy gas-limit model encoded in estimateGasTotal. A nil return
+// means the estimate is unavailable (non-EVM chain, gas-price fetch failed,
+// or strategy has no associated gas cost); callers must tolerate a nil.
+func estimatePlanGas(ctx context.Context, adapter types.Chain, plan *Plan) *big.Int {
+	if plan == nil {
+		return nil
+	}
+	gasPrice, err := adapter.EstimateGasPrice(ctx)
+	if err != nil || gasPrice == nil {
+		return nil
+	}
+	return estimateGasTotal(gasPrice, plan, plan.Asset != adapter.NativeAsset())
+}
+
+// estimateGasTotal is a pure helper: given a gas price, a plan, and whether
+// the target asset is an ERC-20 token, it returns the total native-unit gas
+// cost the executor will consume end-to-end.
+//
+// Gas-limit model (matches EVMLive.BuildTransfer + BuildSweep):
+//   - native transfer: gasLimitNativeTransfer
+//   - ERC-20 transfer: gasLimitERC20Transfer
+//   - per sweep leg with NeedsGas=true: +gasLimitNativeTransfer (gas_seed)
+//   - per sweep leg: +native-or-ERC-20 sweep limit
+//   - final withdrawal (multi_sweep / direct_*): +native-or-ERC-20 limit
+//
+// Returns nil when the inputs make an estimate impossible (nil gasPrice,
+// nil plan, or insufficient / unknown strategy).
+func estimateGasTotal(gasPrice *big.Int, plan *Plan, isTokenSweep bool) *big.Int {
+	if gasPrice == nil || plan == nil {
+		return nil
+	}
+
+	finalLimit := uint64(gasLimitNativeTransfer)
+	if isTokenSweep {
+		finalLimit = gasLimitERC20Transfer
+	}
+
+	switch plan.Strategy {
+	case StrategyDirectFromBase, StrategyDirectFromChild:
+		return new(big.Int).Mul(gasPrice, new(big.Int).SetUint64(finalLimit))
+
+	case StrategyMultiSweep:
+		totalGas := uint64(0)
+		for _, leg := range plan.Sweeps {
+			if leg.NeedsGas {
+				totalGas += gasLimitNativeTransfer
+			}
+			if isTokenSweep {
+				totalGas += gasLimitERC20Transfer
+			} else {
+				totalGas += gasLimitNativeTransfer
+			}
+		}
+		totalGas += finalLimit
+		return new(big.Int).Mul(gasPrice, new(big.Int).SetUint64(totalGas))
+
+	default:
+		return nil
+	}
 }
 
 // fetchBalance returns the raw big.Int balance of `addr` for `asset`.

@@ -171,3 +171,9 @@ func (a *SolanaLive) BuildSweep(ctx context.Context, req types.SweepRequest) ([]
 func (a *SolanaLive) GasReadinessThreshold() *big.Int { return nil }
 
 func (a *SolanaLive) DustThreshold(asset string) *big.Int { return nil }
+
+// EstimateGasPrice returns nil for Solana: fees are flat (5_000 lamports per
+// signature) and priority fees are handled through a separate compute-unit
+// model rather than a universal gas price, so the sweep planner's gas
+// estimation is not meaningful here.
+func (a *SolanaLive) EstimateGasPrice(ctx context.Context) (*big.Int, error) { return nil, nil }
