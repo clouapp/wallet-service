@@ -147,12 +147,19 @@ func ListWalletAddresses(ctx http.Context) http.Response {
 // @Failure      404      {object}  ErrorResponse  "Address not found"
 // @Router       /v1/addresses/{address} [get]
 func LookupAddress(ctx http.Context) http.Response {
+	accountID, ok := ctx.Value("account_id").(uuid.UUID)
+	if !ok {
+		return ctx.Response().Json(http.StatusUnauthorized, http.Json{
+			"error": "unauthorized",
+		})
+	}
+
 	address := ctx.Request().Route("address")
 	chainFilter := ctx.Request().Query("chain", "")
 
 	if chainFilter != "" {
-		addr, err := container.Get().WalletService.LookupAddress(ctx.Context(), chainFilter, address)
-		if err != nil {
+		addr, err := container.Get().WalletService.LookupAddressForAccount(ctx.Context(), chainFilter, address, accountID)
+		if err != nil || addr == nil {
 			return ctx.Response().Json(http.StatusNotFound, http.Json{
 				"error": "address not found",
 			})
@@ -160,9 +167,11 @@ func LookupAddress(ctx http.Context) http.Response {
 		return ctx.Response().Success().Json(addr)
 	}
 
-	// Try all chains
+	// Try all chains — still scoped to the caller's account so a hit on any
+	// chain that belongs to a different account does not leak.
 	for _, id := range container.Get().Registry.ChainIDs() {
-		if addr, err := container.Get().WalletService.LookupAddress(ctx.Context(), id, address); err == nil {
+		addr, err := container.Get().WalletService.LookupAddressForAccount(ctx.Context(), id, address, accountID)
+		if err == nil && addr != nil {
 			return ctx.Response().Success().Json(addr)
 		}
 	}
@@ -183,12 +192,23 @@ func LookupAddress(ctx http.Context) http.Response {
 // @Failure      500          {object}  ErrorResponse
 // @Router       /v1/users/{external_id}/addresses [get]
 func ListUserAddresses(ctx http.Context) http.Response {
-	addrs, err := container.Get().WalletService.ListUserAddresses(ctx.Context(), ctx.Request().Route("external_id"))
-	if err != nil {
-		return ctx.Response().Json(http.StatusInternalServerError, http.Json{
-			"error": err.Error(),
+	accountID, ok := ctx.Value("account_id").(uuid.UUID)
+	if !ok {
+		return ctx.Response().Json(http.StatusUnauthorized, http.Json{
+			"error": "unauthorized",
 		})
 	}
+
+	addrs, err := container.Get().WalletService.ListUserAddressesForAccount(
+		ctx.Context(),
+		ctx.Request().Route("external_id"),
+		accountID,
+	)
+	if err != nil {
+		return MapInternalError(ctx, err, "list_user_addresses")
+	}
+	// An empty slice is the honest response for both "no such external_id"
+	// and "external_id exists under another account". Do not distinguish.
 	return ctx.Response().Success().Json(http.Json{
 		"data": addrs,
 	})

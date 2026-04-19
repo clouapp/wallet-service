@@ -86,19 +86,27 @@ func GetTransaction(ctx http.Context) http.Response {
 // @Failure      500          {object}  ErrorResponse
 // @Router       /v1/users/{external_id}/transactions [get]
 func ListUserTransactions(ctx http.Context) http.Response {
+	accountID, ok := ctx.Value("account_id").(uuid.UUID)
+	if !ok {
+		return ctx.Response().Json(http.StatusUnauthorized, http.Json{
+			"error": "unauthorized",
+		})
+	}
+
 	limit, offset := pagination.ParseParams(ctx, 50)
 
-	txs, total, err := container.Get().WithdrawalService.ListTransactions(
+	txs, total, err := container.Get().WithdrawalService.ListTransactionsForAccount(
 		ctx.Context(),
+		accountID,
 		"", "", "",
 		ctx.Request().Route("external_id"),
 		limit,
 		offset,
 	)
 	if err != nil {
-		return ctx.Response().Json(http.StatusInternalServerError, http.Json{
-			"error": err.Error(),
-		})
+		return MapInternalError(ctx, err, "list_user_transactions")
 	}
+	// Empty result when external_id belongs to another account — same body
+	// as the legitimate "no transactions yet" case (IDOR mitigation).
 	return ctx.Response().Json(http.StatusOK, pagination.Response(txs, total, limit, offset))
 }

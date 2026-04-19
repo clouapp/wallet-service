@@ -223,3 +223,74 @@ func (s *TransactionRepositoryTestSuite) TestList_GlobalFilters() {
 	s.NoError(err)
 	s.Len(deposits, 1)
 }
+
+// makeTxForUser is a variant of makeTx that lets the test set ExternalUserID
+// so we can exercise the user_id filter in ListForAccount.
+func (s *TransactionRepositoryTestSuite) makeTxForUser(walletID uuid.UUID, userID, txType, status string) *models.Transaction {
+	tx := s.makeTx(walletID, txType, status)
+	tx.ExternalUserID = userID
+	return tx
+}
+
+// TestListForAccount_FiltersByAccount guards the IDOR fix on
+// GET /api/v1/users/{external_id}/transactions. Two accounts each have a
+// transaction tagged external_user_id="shared_user"; a query issued with
+// accountA.ID must never see accountB's row.
+func (s *TransactionRepositoryTestSuite) TestListForAccount_FiltersByAccount() {
+	accountA := mocks.InsertAccount(s.T(), "acc-A")
+	accountB := mocks.InsertAccount(s.T(), "acc-B")
+
+	walletA := mocks.InsertWalletWithAccount(s.T(), "eth", &accountA.ID)
+	walletB := mocks.InsertWalletWithAccount(s.T(), "eth", &accountB.ID)
+
+	s.Require().NoError(s.repo.Create(s.makeTxForUser(walletA.ID, "shared_user", "deposit", "confirmed")))
+	s.Require().NoError(s.repo.Create(s.makeTxForUser(walletA.ID, "shared_user", "withdrawal", "pending")))
+	s.Require().NoError(s.repo.Create(s.makeTxForUser(walletB.ID, "shared_user", "deposit", "confirmed")))
+
+	txsA, totalA, err := s.repo.ListForAccount(accountA.ID, "", "", "", "shared_user", 50, 0)
+	s.NoError(err)
+	s.Equal(int64(2), totalA)
+	s.Len(txsA, 2)
+	for _, tx := range txsA {
+		s.Equal(walletA.ID, tx.WalletID, "account A must only see wallet A's transactions")
+	}
+
+	txsB, totalB, err := s.repo.ListForAccount(accountB.ID, "", "", "", "shared_user", 50, 0)
+	s.NoError(err)
+	s.Equal(int64(1), totalB)
+	s.Len(txsB, 1)
+	s.Equal(walletB.ID, txsB[0].WalletID)
+}
+
+// TestListForAccount_ExcludesUnassignedWallets mirrors the address case:
+// transactions on wallets with NULL account_id (legacy data) must never leak
+// into any account's scoped view.
+func (s *TransactionRepositoryTestSuite) TestListForAccount_ExcludesUnassignedWallets() {
+	account := mocks.InsertAccount(s.T(), "acc-scoped")
+	unassigned := mocks.InsertWallet(s.T(), "eth") // account_id = NULL
+	s.Require().NoError(s.repo.Create(s.makeTxForUser(unassigned.ID, "user_x", "deposit", "confirmed")))
+
+	txs, total, err := s.repo.ListForAccount(account.ID, "", "", "", "user_x", 50, 0)
+	s.NoError(err)
+	s.Equal(int64(0), total)
+	s.Empty(txs)
+}
+
+// TestListForAccount_AppliesSecondaryFilters confirms chain/type/status filters
+// are still honored in addition to the account-level filter.
+func (s *TransactionRepositoryTestSuite) TestListForAccount_AppliesSecondaryFilters() {
+	account := mocks.InsertAccount(s.T(), "acc")
+	wallet := mocks.InsertWalletWithAccount(s.T(), "eth", &account.ID)
+
+	s.Require().NoError(s.repo.Create(s.makeTxForUser(wallet.ID, "u", "deposit", "confirmed")))
+	s.Require().NoError(s.repo.Create(s.makeTxForUser(wallet.ID, "u", "withdrawal", "pending")))
+	s.Require().NoError(s.repo.Create(s.makeTxForUser(wallet.ID, "u", "deposit", "pending")))
+
+	deposits, _, err := s.repo.ListForAccount(account.ID, "eth", "deposit", "", "u", 50, 0)
+	s.NoError(err)
+	s.Len(deposits, 2)
+
+	pendingWithdrawals, _, err := s.repo.ListForAccount(account.ID, "eth", "withdrawal", "pending", "u", 50, 0)
+	s.NoError(err)
+	s.Len(pendingWithdrawals, 1)
+}

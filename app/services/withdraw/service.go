@@ -297,3 +297,11 @@ func (s *Service) GetTransaction(ctx context.Context, id uuid.UUID) (*models.Tra
 func (s *Service) ListTransactions(ctx context.Context, chainID, txType, status, userID string, limit, offset int) ([]models.Transaction, int64, error) {
 	return s.transactionRepo.List(chainID, txType, status, userID, limit, offset)
 }
+
+// ListTransactionsForAccount is the account-scoped variant used by external API
+// endpoints that accept a customer-supplied filter (e.g. external_user_id).
+// Without this scoping, any API token could retrieve transactions for another
+// account by guessing or enumerating external_ids.
+func (s *Service) ListTransactionsForAccount(ctx context.Context, accountID uuid.UUID, chainID, txType, status, userID string, limit, offset int) ([]models.Transaction, int64, error) {
+	return s.transactionRepo.ListForAccount(accountID, chainID, txType, status, userID, limit, offset)
+}

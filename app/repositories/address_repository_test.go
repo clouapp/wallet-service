@@ -81,6 +81,74 @@ func (s *AddressRepositoryTestSuite) TestFindByWalletID() {
 	s.Len(addrs, 2)
 }
 
+// TestFindByExternalUserIDAndAccount_FiltersByAccount guards the IDOR fix on
+// GET /api/v1/users/{external_id}/addresses: if two accounts each register an
+// address for the same external_user_id, a query from account A must never
+// return B's address. The filter is applied via the wallet's account_id.
+func (s *AddressRepositoryTestSuite) TestFindByExternalUserIDAndAccount_FiltersByAccount() {
+	accountA := mocks.InsertAccount(s.T(), "acc-A")
+	accountB := mocks.InsertAccount(s.T(), "acc-B")
+
+	walletA := mocks.InsertWalletWithAccount(s.T(), "eth", &accountA.ID)
+	walletB := mocks.InsertWalletWithAccount(s.T(), "eth", &accountB.ID)
+
+	mocks.InsertAddress(s.T(), walletA.ID, "eth", "0xAAA1", "user_shared", 1)
+	mocks.InsertAddress(s.T(), walletA.ID, "eth", "0xAAA2", "user_shared", 2)
+	mocks.InsertAddress(s.T(), walletB.ID, "eth", "0xBBB1", "user_shared", 1)
+
+	addrsA, err := s.repo.FindByExternalUserIDAndAccount("user_shared", accountA.ID)
+	s.NoError(err)
+	s.Len(addrsA, 2)
+	for _, a := range addrsA {
+		s.Equal(walletA.ID, a.WalletID, "account A must only see wallet A's addresses")
+	}
+
+	addrsB, err := s.repo.FindByExternalUserIDAndAccount("user_shared", accountB.ID)
+	s.NoError(err)
+	s.Len(addrsB, 1)
+	s.Equal(walletB.ID, addrsB[0].WalletID)
+}
+
+// TestFindByExternalUserIDAndAccount_ExcludesUnassignedWallets confirms that
+// addresses on wallets without an account_id (e.g. legacy data) are NOT
+// returned — the filter requires an exact account match, never NULL.
+func (s *AddressRepositoryTestSuite) TestFindByExternalUserIDAndAccount_ExcludesUnassignedWallets() {
+	account := mocks.InsertAccount(s.T(), "acc-scoped")
+	unassignedWallet := mocks.InsertWallet(s.T(), "eth") // account_id = NULL
+	mocks.InsertAddress(s.T(), unassignedWallet.ID, "eth", "0xLEGACY", "user_123", 1)
+
+	addrs, err := s.repo.FindByExternalUserIDAndAccount("user_123", account.ID)
+	s.NoError(err)
+	s.Empty(addrs)
+}
+
+// TestFindByChainAndAddressAndAccount_FiltersByAccount guards the IDOR fix on
+// GET /api/v1/addresses/{address}: a caller from account B must get
+// (nil, nil) back even when the address exists under account A.
+func (s *AddressRepositoryTestSuite) TestFindByChainAndAddressAndAccount_FiltersByAccount() {
+	accountA := mocks.InsertAccount(s.T(), "acc-A")
+	accountB := mocks.InsertAccount(s.T(), "acc-B")
+
+	walletA := mocks.InsertWalletWithAccount(s.T(), "eth", &accountA.ID)
+	mocks.InsertAddress(s.T(), walletA.ID, "eth", "0xSECRET", "user_a", 1)
+
+	found, err := s.repo.FindByChainAndAddressAndAccount("eth", "0xSECRET", accountA.ID)
+	s.NoError(err)
+	s.Require().NotNil(found)
+	s.Equal("0xSECRET", found.Address)
+
+	// Cross-account lookup must return (nil, nil), indistinguishable from
+	// the genuinely-not-found case.
+	shouldBeNil, err := s.repo.FindByChainAndAddressAndAccount("eth", "0xSECRET", accountB.ID)
+	s.NoError(err)
+	s.Nil(shouldBeNil)
+
+	// Non-existent address — same (nil, nil) result.
+	missing, err := s.repo.FindByChainAndAddressAndAccount("eth", "0xDOESNOTEXIST", accountA.ID)
+	s.NoError(err)
+	s.Nil(missing)
+}
+
 func (s *AddressRepositoryTestSuite) TestPluckActiveAddresses() {
 	walletID := s.insertWallet("eth")
 	mocks.InsertAddress(s.T(), walletID, "eth", "0xACTIVE1", "u1", 0)

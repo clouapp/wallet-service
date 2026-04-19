@@ -20,6 +20,7 @@ type TransactionRepository interface {
 	FindPendingByChain(chainID string) ([]models.Transaction, error)
 	UpdateFields(id uuid.UUID, fields map[string]interface{}) error
 	List(chainID, txType, status, userID string, limit, offset int) ([]models.Transaction, int64, error)
+	ListForAccount(accountID uuid.UUID, chainID, txType, status, userID string, limit, offset int) ([]models.Transaction, int64, error)
 	ListByWalletAndChain(walletID uuid.UUID, chainID string, limit, offset int) ([]models.Transaction, int64, error)
 }
 
@@ -168,6 +169,48 @@ func (r *transactionRepository) List(chainID, txType, status, userID string, lim
 
 	countQuery := facades.Orm().Query().Model(&models.Transaction{})
 	dataQuery := facades.Orm().Query()
+	if chainID != "" {
+		countQuery = countQuery.Where("chain", chainID)
+		dataQuery = dataQuery.Where("chain", chainID)
+	}
+	if txType != "" {
+		countQuery = countQuery.Where("tx_type", txType)
+		dataQuery = dataQuery.Where("tx_type", txType)
+	}
+	if status != "" {
+		countQuery = countQuery.Where("status", status)
+		dataQuery = dataQuery.Where("status", status)
+	}
+	if userID != "" {
+		countQuery = countQuery.Where("external_user_id", userID)
+		dataQuery = dataQuery.Where("external_user_id", userID)
+	}
+
+	total, err := countQuery.Count()
+	if err != nil {
+		return nil, 0, err
+	}
+
+	var txs []models.Transaction
+	err = dataQuery.Order("created_at DESC").Limit(limit).Offset(offset).Find(&txs)
+	return txs, total, err
+}
+
+// ListForAccount is the account-scoped variant of List used by the external API
+// to prevent IDOR: it restricts results to transactions whose wallet belongs to
+// accountID. Used by GET /api/v1/users/{external_id}/transactions so callers
+// cannot read transactions for an external_user_id that belongs to another
+// account.
+func (r *transactionRepository) ListForAccount(accountID uuid.UUID, chainID, txType, status, userID string, limit, offset int) ([]models.Transaction, int64, error) {
+	if limit <= 0 {
+		limit = 50
+	}
+
+	countQuery := facades.Orm().Query().Model(&models.Transaction{}).
+		Where("wallet_id IN (SELECT id FROM wallets WHERE account_id = ?)", accountID)
+	dataQuery := facades.Orm().Query().
+		Where("wallet_id IN (SELECT id FROM wallets WHERE account_id = ?)", accountID)
+
 	if chainID != "" {
 		countQuery = countQuery.Where("chain", chainID)
 		dataQuery = dataQuery.Where("chain", chainID)

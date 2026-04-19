@@ -71,6 +71,13 @@ func TestDB(t *testing.T) {
 
 func InsertWallet(t *testing.T, chainID string) models.Wallet {
 	t.Helper()
+	return InsertWalletWithAccount(t, chainID, nil)
+}
+
+// InsertWalletWithAccount creates a wallet optionally bound to accountID.
+// Pass a nil accountID to leave the wallet unassigned (legacy/test default).
+func InsertWalletWithAccount(t *testing.T, chainID string, accountID *uuid.UUID) models.Wallet {
+	t.Helper()
 	walletID := uuid.New()
 	addrID := uuid.New()
 	addr := models.Address{
@@ -97,12 +104,28 @@ func InsertWallet(t *testing.T, chainID string) models.Wallet {
 		MPCPublicKey:     "02abc123def456",
 		MPCCurve:         "secp256k1",
 		DepositAddressID: &addrID,
+		AccountID:        accountID,
 	}
 	if err := facades.Orm().Query().Create(&w); err != nil {
 		t.Fatalf("insert wallet: %v", err)
 	}
 	w.DepositAddress = &addr
 	return w
+}
+
+// InsertAccount creates a minimal Account row for IDOR / multi-tenant tests.
+func InsertAccount(t *testing.T, name string) models.Account {
+	t.Helper()
+	acc := models.Account{
+		ID:          uuid.New(),
+		Name:        name,
+		Status:      "active",
+		Environment: "prod",
+	}
+	if err := facades.Orm().Query().Create(&acc); err != nil {
+		t.Fatalf("insert account: %v", err)
+	}
+	return acc
 }
 
 func InsertAddress(t *testing.T, walletID uuid.UUID, chainID, address, userID string, index int) models.Address {

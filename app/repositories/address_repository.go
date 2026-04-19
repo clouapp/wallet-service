@@ -12,7 +12,9 @@ type AddressRepository interface {
 	UpdateFields(id uuid.UUID, fields map[string]interface{}) error
 	CountByChainAndAddress(chainID, address string) (int64, error)
 	FindByChainAndAddress(chainID, address string) (*models.Address, error)
+	FindByChainAndAddressAndAccount(chainID, address string, accountID uuid.UUID) (*models.Address, error)
 	FindByExternalUserID(externalUserID string) ([]models.Address, error)
+	FindByExternalUserIDAndAccount(externalUserID string, accountID uuid.UUID) ([]models.Address, error)
 	FindByID(id uuid.UUID) (*models.Address, error)
 	FindByWalletID(walletID uuid.UUID) ([]models.Address, error)
 	MaxDerivationIndex(walletID uuid.UUID) (int, error)
@@ -68,6 +70,39 @@ func (r *addressRepository) FindByExternalUserID(externalUserID string) ([]model
 		Order("created_at").
 		Find(&addrs)
 	return addrs, err
+}
+
+// FindByExternalUserIDAndAccount returns addresses matching externalUserID whose
+// wallet belongs to accountID. This is the account-scoped variant used by the
+// external API to prevent IDOR across accounts that happen to share the same
+// customer-supplied external_user_id.
+func (r *addressRepository) FindByExternalUserIDAndAccount(externalUserID string, accountID uuid.UUID) ([]models.Address, error) {
+	var addrs []models.Address
+	err := facades.Orm().Query().
+		Where("external_user_id = ?", externalUserID).
+		Where("wallet_id IN (SELECT id FROM wallets WHERE account_id = ?)", accountID).
+		Order("created_at").
+		Find(&addrs)
+	return addrs, err
+}
+
+// FindByChainAndAddressAndAccount returns the address iff its wallet belongs to
+// accountID. Returns (nil, nil) when the row doesn't exist OR belongs to a
+// different account — callers must not distinguish the two cases (IDOR mitigation).
+func (r *addressRepository) FindByChainAndAddressAndAccount(chainID, address string, accountID uuid.UUID) (*models.Address, error) {
+	var addr models.Address
+	err := facades.Orm().Query().
+		Where("chain = ?", chainID).
+		Where("address = ?", address).
+		Where("wallet_id IN (SELECT id FROM wallets WHERE account_id = ?)", accountID).
+		First(&addr)
+	if err != nil {
+		return nil, err
+	}
+	if addr.ID == uuid.Nil {
+		return nil, nil
+	}
+	return &addr, nil
 }
 
 func (r *addressRepository) FindByID(id uuid.UUID) (*models.Address, error) {

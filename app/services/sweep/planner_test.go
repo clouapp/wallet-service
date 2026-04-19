@@ -70,7 +70,13 @@ func (f *fakeAddressRepo) CountByChainAndAddress(chainID, address string) (int64
 func (f *fakeAddressRepo) FindByChainAndAddress(chainID, address string) (*models.Address, error) {
 	return nil, nil
 }
+func (f *fakeAddressRepo) FindByChainAndAddressAndAccount(chainID, address string, accountID uuid.UUID) (*models.Address, error) {
+	return nil, nil
+}
 func (f *fakeAddressRepo) FindByExternalUserID(externalUserID string) ([]models.Address, error) {
+	return nil, nil
+}
+func (f *fakeAddressRepo) FindByExternalUserIDAndAccount(externalUserID string, accountID uuid.UUID) ([]models.Address, error) {
 	return nil, nil
 }
 func (f *fakeAddressRepo) FindByID(id uuid.UUID) (*models.Address, error) { return nil, nil }

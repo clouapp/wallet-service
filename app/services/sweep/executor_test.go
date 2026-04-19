@@ -57,6 +57,9 @@ func (f *fakeTxRepo) FindPendingByChain(chainID string) ([]models.Transaction, e
 	return nil, nil
 }
 func (f *fakeTxRepo) UpdateFields(id uuid.UUID, fields map[string]interface{}) error { return nil }
+func (f *fakeTxRepo) ListForAccount(accountID uuid.UUID, chainID, txType, status, userID string, limit, offset int) ([]models.Transaction, int64, error) {
+	return nil, 0, nil
+}
 func (f *fakeTxRepo) List(chainID, txType, status, userID string, limit, offset int) ([]models.Transaction, int64, error) {
 	return nil, 0, nil
 }

@@ -501,8 +501,23 @@ func (s *Service) LookupAddress(ctx context.Context, chainID, address string) (*
 	return s.addressRepo.FindByChainAndAddress(chainID, address)
 }
 
+// LookupAddressForAccount resolves an on-chain address only if it belongs to a
+// wallet owned by accountID. Returns (nil, nil) when the address doesn't exist
+// OR belongs to a different account — callers must return a generic 404 so
+// the two cases are indistinguishable to API clients (IDOR mitigation).
+func (s *Service) LookupAddressForAccount(ctx context.Context, chainID, address string, accountID uuid.UUID) (*models.Address, error) {
+	return s.addressRepo.FindByChainAndAddressAndAccount(chainID, address, accountID)
+}
+
 func (s *Service) ListUserAddresses(ctx context.Context, externalUserID string) ([]models.Address, error) {
 	return s.addressRepo.FindByExternalUserID(externalUserID)
+}
+
+// ListUserAddressesForAccount returns addresses for an external_user_id limited
+// to the caller's account. An empty slice is a legitimate response and must
+// not be distinguished from "external_id exists but belongs to another account".
+func (s *Service) ListUserAddressesForAccount(ctx context.Context, externalUserID string, accountID uuid.UUID) ([]models.Address, error) {
+	return s.addressRepo.FindByExternalUserIDAndAccount(externalUserID, accountID)
 }
 
 func (s *Service) ListWalletAddresses(ctx context.Context, walletID uuid.UUID) ([]models.Address, error) {
