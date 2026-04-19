@@ -26,6 +26,12 @@ type EVMConfig struct {
 	Confirmations uint64
 	// ERC20Tokens lists registered ERC-20s for deposit log matching (from DB at boot).
 	ERC20Tokens []types.Token
+	// GasReadinessThreshold is the minimum native balance BaseAddress must hold to
+	// be considered gas-ready. Populated from the chains table. nil when unset.
+	GasReadinessThreshold *big.Int
+	// DustThresholdNative is the minimum native balance on a child for sweep
+	// eligibility. Populated from the chains table. nil when unset.
+	DustThresholdNative *big.Int
 }
 
 // ---------------------------------------------------------------------------
@@ -143,6 +149,92 @@ func (a *EVMLive) EstimateFee(ctx context.Context, req types.TransferRequest) (*
 		GasPrice: gasPrice.String(),
 		GasLimit: gasLimit,
 	}, nil
+}
+
+// BuildSweep builds the txs to move `asset` from req.From to req.To inside the same wallet.
+// For native (req.Token == nil): 1 tx sending (native_balance - gas_reserve) to req.To.
+// For ERC-20 tokens:
+//   - If req.NativeBalance has enough for the token transfer's gas: 1 tx (child → Base token.transfer)
+//   - Else: 2 txs — gas_seed (Base → child native) + token sweep (child → Base token.transfer)
+func (a *EVMLive) BuildSweep(ctx context.Context, req types.SweepRequest) ([]types.UnsignedTx, error) {
+	var hexGas string
+	if err := a.rpc.Call(ctx, "eth_gasPrice", &hexGas); err != nil {
+		return nil, fmt.Errorf("gas price: %w", err)
+	}
+	gasPrice := hexToBigInt(hexGas)
+
+	if req.Token == nil {
+		if req.NativeBalance == nil {
+			return nil, fmt.Errorf("native balance required for native sweep")
+		}
+		feeReserve := new(big.Int).Mul(gasPrice, big.NewInt(21000))
+		amount := new(big.Int).Sub(req.NativeBalance, feeReserve)
+		if amount.Sign() <= 0 {
+			return nil, fmt.Errorf("insufficient native for sweep: balance=%s fee=%s", req.NativeBalance, feeReserve)
+		}
+		unsigned, err := a.BuildTransfer(ctx, types.TransferRequest{
+			From: req.From, To: req.To, Amount: amount, Asset: a.cfg.NativeSymbol,
+		})
+		if err != nil {
+			return nil, err
+		}
+		return []types.UnsignedTx{*unsigned}, nil
+	}
+
+	erc20GasLimit := uint64(65_000)
+	feeNeeded := new(big.Int).Mul(gasPrice, new(big.Int).SetUint64(erc20GasLimit))
+
+	result := make([]types.UnsignedTx, 0, 2)
+	if req.NativeBalance == nil || req.NativeBalance.Cmp(feeNeeded) < 0 {
+		// 20% buffer above estimated fee.
+		seedAmount := new(big.Int).Mul(feeNeeded, big.NewInt(12))
+		seedAmount.Div(seedAmount, big.NewInt(10))
+		seedTx, err := a.BuildTransfer(ctx, types.TransferRequest{
+			From: req.To, To: req.From, Amount: seedAmount, Asset: a.cfg.NativeSymbol,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("build gas_seed: %w", err)
+		}
+		result = append(result, *seedTx)
+	}
+
+	amount := req.Amount
+	if amount == nil {
+		bal, err := a.GetTokenBalance(ctx, req.From, *req.Token)
+		if err != nil {
+			return nil, fmt.Errorf("get token balance: %w", err)
+		}
+		amount = bal.Amount
+	}
+	if amount == nil || amount.Sign() <= 0 {
+		return nil, fmt.Errorf("no token balance to sweep")
+	}
+
+	sweepTx, err := a.BuildTransfer(ctx, types.TransferRequest{
+		From: req.From, To: req.To, Amount: amount, Asset: req.Token.Symbol, Token: req.Token,
+	})
+	if err != nil {
+		return nil, err
+	}
+	result = append(result, *sweepTx)
+	return result, nil
+}
+
+// GasReadinessThreshold returns the minimum native balance on BaseAddress for the
+// wallet to be considered gas-ready. Value is sourced from the chains table via
+// EVMConfig. Returns nil when unset.
+func (a *EVMLive) GasReadinessThreshold() *big.Int {
+	return a.cfg.GasReadinessThreshold
+}
+
+// DustThreshold returns the minimum balance a child must hold for sweep eligibility.
+// For the native asset, returns cfg.DustThresholdNative. For tokens, returns nil in
+// v1 — USD→raw conversion happens in sweep.Planner using the price service.
+func (a *EVMLive) DustThreshold(asset string) *big.Int {
+	if asset == a.cfg.NativeSymbol {
+		return a.cfg.DustThresholdNative
+	}
+	return nil
 }
 
 func (a *EVMLive) SignTransaction(ctx context.Context, unsigned *types.UnsignedTx, privateKey []byte) (*types.SignedTx, error) {
