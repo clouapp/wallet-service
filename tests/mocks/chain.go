@@ -30,6 +30,10 @@ type MockChain struct {
 	BroadcastTransactionFn func(ctx context.Context, signed *types.SignedTx) (string, error)
 	GetLatestBlockFn       func(ctx context.Context) (uint64, error)
 	ScanBlockFn            func(ctx context.Context, blockNum uint64) ([]types.DetectedTransfer, error)
+	BuildSweepFn           func(ctx context.Context, req types.SweepRequest) ([]types.UnsignedTx, error)
+	DustThresholdFn        func(asset string) *big.Int
+
+	GasReadinessThresholdVal *big.Int
 
 	// Call tracking
 	DeriveAddressCalls        int
@@ -38,6 +42,7 @@ type MockChain struct {
 	SignTransactionCalls      int
 	BroadcastTransactionCalls int
 	ScanBlockCalls            int
+	BuildSweepCalls           int
 }
 
 func NewMockChain(id string) *MockChain {
@@ -128,6 +133,25 @@ func (m *MockChain) ScanBlock(ctx context.Context, blockNum uint64) ([]types.Det
 		return m.ScanBlockFn(ctx, blockNum)
 	}
 	return nil, nil
+}
+
+func (m *MockChain) BuildSweep(ctx context.Context, req types.SweepRequest) ([]types.UnsignedTx, error) {
+	m.BuildSweepCalls++
+	if m.BuildSweepFn != nil {
+		return m.BuildSweepFn(ctx, req)
+	}
+	return []types.UnsignedTx{{RawBytes: []byte("mocksweep"), ChainID: m.IDVal}}, nil
+}
+
+func (m *MockChain) GasReadinessThreshold() *big.Int {
+	return m.GasReadinessThresholdVal
+}
+
+func (m *MockChain) DustThreshold(asset string) *big.Int {
+	if m.DustThresholdFn != nil {
+		return m.DustThresholdFn(asset)
+	}
+	return big.NewInt(0)
 }
 
 // ---------------------------------------------------------------------------
