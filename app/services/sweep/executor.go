@@ -79,9 +79,12 @@ func (s *service) ExecutePlan(
 	case StrategyMultiSweep:
 		for i, leg := range plan.Sweeps {
 			sweepTxID := uuid.New()
-			hash, err := s.broadcastSweepLeg(
+			hash, err := s.broadcastLeg(
 				ctx, adapter, curve, shareA, shareB, wallet, plan,
-				leg, sweepTxID, withdrawalTxID,
+				leg, sweepTxID, legBroadcastOpts{
+					Origin:              models.TxOriginSweep,
+					ParentTransactionID: &withdrawalTxID,
+				},
 			)
 			if err != nil {
 				slog.Error(
@@ -120,16 +123,35 @@ func (s *service) ExecutePlan(
 	}
 }
 
-// broadcastSweepLeg builds, signs, broadcasts, and persists the transactions
-// required to sweep `leg.Amount` of `plan.Asset` from `leg.From` to the wallet's
-// base deposit address. On EVM with ERC-20, this produces two on-chain txs:
-// an optional gas_seed (base → child native) followed by the actual sweep
-// (child → base token transfer). On the single-tx path, only the sweep is
-// produced. Both rows are linked to the parent withdrawal via
-// parent_transaction_id; only the sweep row triggers a webhook event.
+// legBroadcastOpts carries the per-call-site differences between the
+// withdrawal-driven sweep path (ExecutePlan → multi_sweep) and the manual
+// consolidate path (ConsolidateAll). The body of broadcastLeg is
+// otherwise identical for both: same signing, broadcasting, and row
+// schema; only the origin tag and the optional parent pointer differ.
+type legBroadcastOpts struct {
+	// Origin labels the sweep row (not the gas_seed row, which is always
+	// tagged TxOriginGasSeed). Use TxOriginSweep for withdrawal-driven
+	// sweeps and TxOriginManualConsolidation for the manual flow.
+	Origin string
+	// ParentTransactionID links the sweep row to the parent withdrawal
+	// when set. Manual consolidation has no parent and passes nil.
+	ParentTransactionID *uuid.UUID
+}
+
+// broadcastLeg builds, signs, broadcasts, and persists the transactions
+// required to sweep `leg.Amount` of `plan.Asset` from `leg.From` to the
+// wallet's base deposit address. On EVM with ERC-20, this produces two
+// on-chain txs: an optional gas_seed (base → child native) followed by
+// the sweep (child → base token transfer). On the single-tx path, only
+// the sweep is produced. The sweep row inherits opts.Origin; the
+// gas_seed row is always tagged TxOriginGasSeed. Both rows share
+// opts.ParentTransactionID (so gas_seeds are traceable back to the
+// withdrawal that triggered them in the executor path, and remain NULL
+// in the manual consolidation path). Only the sweep row triggers a
+// webhook event.
 //
 // Returns the on-chain hash of the sweep (not the gas_seed).
-func (s *service) broadcastSweepLeg(
+func (s *service) broadcastLeg(
 	ctx context.Context,
 	adapter types.Chain,
 	curve mpcpkg.Curve,
@@ -137,13 +159,13 @@ func (s *service) broadcastSweepLeg(
 	wallet *models.Wallet,
 	plan *Plan,
 	leg PlannedSweep,
-	sweepTxID, parentTxID uuid.UUID,
+	sweepTxID uuid.UUID,
+	opts legBroadcastOpts,
 ) (string, error) {
 	nativeBal, err := adapter.GetBalance(ctx, leg.From.Address)
 	if err != nil {
 		return "", fmt.Errorf("native balance for %s: %w", leg.From.Address, err)
 	}
-	var nativeAmount = nativeBal.Amount
 
 	var token *types.Token
 	if plan.Asset != adapter.NativeAsset() {
@@ -159,7 +181,7 @@ func (s *service) broadcastSweepLeg(
 		To:            wallet.DepositAddress.Address,
 		Asset:         plan.Asset,
 		Amount:        leg.Amount,
-		NativeBalance: nativeAmount,
+		NativeBalance: nativeBal.Amount,
 		Token:         token,
 	})
 	if err != nil {
@@ -190,14 +212,13 @@ func (s *service) broadcastSweepLeg(
 
 		isGasSeed := hasGasSeed && idx == 0
 
-		origin := models.TxOriginSweep
+		origin := opts.Origin
 		txType := models.TxTypeSweep
 		txID := sweepTxID
 		fromAddrStr := leg.From.Address
 		toAddrStr := wallet.DepositAddress.Address
-		var addressID *uuid.UUID
 		childID := leg.From.ID
-		addressID = &childID
+		addressID := &childID
 
 		if isGasSeed {
 			origin = models.TxOriginGasSeed
@@ -224,7 +245,7 @@ func (s *service) broadcastSweepLeg(
 			Status:              string(types.TxStatusConfirming),
 			RequiredConfs:       int(adapter.RequiredConfirmations()),
 			Origin:              origin,
-			ParentTransactionID: &parentTxID,
+			ParentTransactionID: opts.ParentTransactionID,
 		}
 		if token != nil {
 			tx.TokenContract = token.Contract

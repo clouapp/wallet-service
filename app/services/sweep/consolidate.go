@@ -12,7 +12,6 @@ import (
 
 	"github.com/macrowallets/waas/app/models"
 	mpcpkg "github.com/macrowallets/waas/app/services/mpc"
-	"github.com/macrowallets/waas/pkg/types"
 )
 
 // ConsolidateAll sweeps every eligible child balance for `asset` into the
@@ -162,8 +161,12 @@ func (s *service) ConsolidateAll(
 
 	for i, leg := range plan.Sweeps {
 		sweepTxID := uuid.New()
-		hash, err := s.broadcastConsolidateLeg(
+		hash, err := s.broadcastLeg(
 			ctx, adapter, curve, shareA, shareB, wallet, plan, leg, sweepTxID,
+			legBroadcastOpts{
+				Origin:              models.TxOriginManualConsolidation,
+				ParentTransactionID: nil,
+			},
 		)
 		if err != nil {
 			slog.Error(
@@ -187,126 +190,6 @@ func (s *service) ConsolidateAll(
 		})
 	}
 	return result, nil
-}
-
-// broadcastConsolidateLeg mirrors broadcastSweepLeg but tags every resulting
-// row with Origin=manual_consolidation and leaves parent_transaction_id
-// NULL — manual consolidation has no parent withdrawal. On EVM ERC-20 this
-// still produces an optional gas_seed tx (base → child native) followed by
-// the sweep (child → base token). The gas_seed row keeps its own
-// origin/tx_type tagging so it is not confused with the sweep it enables.
-func (s *service) broadcastConsolidateLeg(
-	ctx context.Context,
-	adapter types.Chain,
-	curve mpcpkg.Curve,
-	shareA, shareB []byte,
-	wallet *models.Wallet,
-	plan *Plan,
-	leg PlannedSweep,
-	sweepTxID uuid.UUID,
-) (string, error) {
-	nativeBal, err := adapter.GetBalance(ctx, leg.From.Address)
-	if err != nil {
-		return "", fmt.Errorf("native balance for %s: %w", leg.From.Address, err)
-	}
-
-	var token *types.Token
-	if plan.Asset != adapter.NativeAsset() {
-		t, ferr := s.registry.FindToken(plan.Chain, plan.Asset)
-		if ferr != nil {
-			return "", fmt.Errorf("find token %q: %w", plan.Asset, ferr)
-		}
-		token = t
-	}
-
-	unsigneds, err := adapter.BuildSweep(ctx, types.SweepRequest{
-		From:          leg.From.Address,
-		To:            wallet.DepositAddress.Address,
-		Asset:         plan.Asset,
-		Amount:        leg.Amount,
-		NativeBalance: nativeBal.Amount,
-		Token:         token,
-	})
-	if err != nil {
-		return "", fmt.Errorf("build sweep: %w", err)
-	}
-	if len(unsigneds) == 0 {
-		return "", fmt.Errorf("adapter returned no txs for consolidate leg")
-	}
-
-	hasGasSeed := len(unsigneds) > 1
-	var finalSweepHash string
-
-	for idx := range unsigneds {
-		unsigned := unsigneds[idx]
-
-		sig, sigErr := s.mpc.Sign(ctx, curve, shareA, shareB, mpcpkg.SignInputs{
-			TxHashes: [][]byte{unsigned.RawBytes},
-		})
-		if sigErr != nil {
-			return "", fmt.Errorf("mpc sign: %w", sigErr)
-		}
-
-		signed := &types.SignedTx{ChainID: unsigned.ChainID, RawBytes: sig}
-		hash, bcErr := adapter.BroadcastTransaction(ctx, signed)
-		if bcErr != nil {
-			return "", fmt.Errorf("broadcast: %w", bcErr)
-		}
-
-		isGasSeed := hasGasSeed && idx == 0
-
-		origin := models.TxOriginManualConsolidation
-		txType := models.TxTypeSweep
-		txID := sweepTxID
-		fromAddrStr := leg.From.Address
-		toAddrStr := wallet.DepositAddress.Address
-		childID := leg.From.ID
-		addressID := &childID
-
-		if isGasSeed {
-			origin = models.TxOriginGasSeed
-			txType = models.TxTypeGasSeed
-			txID = uuid.New()
-			fromAddrStr = wallet.DepositAddress.Address
-			toAddrStr = leg.From.Address
-			baseID := wallet.DepositAddress.ID
-			addressID = &baseID
-		}
-
-		tx := &models.Transaction{
-			ID:                  txID,
-			WalletID:            wallet.ID,
-			AddressID:           addressID,
-			ExternalUserID:      leg.From.ExternalUserID,
-			Chain:               plan.Chain,
-			TxType:              txType,
-			TxHash:              hash,
-			FromAddress:         fromAddrStr,
-			ToAddress:           toAddrStr,
-			Amount:              leg.Amount.String(),
-			Asset:               plan.Asset,
-			Status:              string(types.TxStatusConfirming),
-			RequiredConfs:       int(adapter.RequiredConfirmations()),
-			Origin:              origin,
-			ParentTransactionID: nil,
-		}
-		if token != nil {
-			tx.TokenContract = token.Contract
-		}
-
-		if err := s.txRepo.Create(tx); err != nil {
-			return "", fmt.Errorf("persist %s tx: %w", txType, err)
-		}
-
-		if !isGasSeed {
-			finalSweepHash = hash
-			if s.webhookSvc != nil {
-				s.webhookSvc.EnqueueEvent(ctx, tx.ID, types.EventSweepBroadcast, tx)
-			}
-		}
-	}
-
-	return finalSweepHash, nil
 }
 
 // decryptShareA reverses the AES-GCM envelope stored on the wallet row so the
