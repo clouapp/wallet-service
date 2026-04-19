@@ -42,9 +42,9 @@ type Chain struct {
 	IconURL                  *string  `gorm:"type:varchar(500)" json:"icon_url,omitempty"`
 	DisplayOrder             int      `gorm:"default:0" json:"display_order"`
 	Status                   string   `gorm:"type:varchar(20);default:active" json:"status"`
-	GasReadinessThresholdRaw *string  `gorm:"type:text" json:"gas_readiness_threshold_raw,omitempty"`
-	DustThresholdNativeRaw   *string  `gorm:"type:text" json:"dust_threshold_native_raw,omitempty"`
-	DustThresholdUSD         *float64 `gorm:"type:decimal(16,4)" json:"dust_threshold_usd,omitempty"`
+	GasReadinessThresholdRaw *string  `gorm:"type:text" json:"-"`
+	DustThresholdNativeRaw   *string  `gorm:"type:text" json:"-"`
+	DustThresholdUSD         *float64 `gorm:"type:decimal(16,4)" json:"-"`
 }
 
 func (c *Chain) TableName() string { return "chains" }

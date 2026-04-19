@@ -52,7 +52,7 @@ type Wallet struct {
 	BalanceLastSyncedAt *time.Time `gorm:"type:timestamptz" json:"balance_last_synced_at,omitempty"`
 	ReadModelStatus     string     `gorm:"type:wallet_read_model_status;default:idle" json:"read_model_status"`
 
-	GasStatus          string     `gorm:"type:varchar(16);not null;default:unseeded;index" json:"gas_status"`
+	GasStatus          string     `gorm:"type:wallet_gas_status;not null;default:unseeded;index" json:"gas_status"`
 	GasLastCheckedAt   *time.Time `gorm:"type:timestamptz" json:"gas_last_checked_at,omitempty"`
 	SweepPolicyVersion int        `gorm:"not null;default:1" json:"sweep_policy_version"`
 
