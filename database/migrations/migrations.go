@@ -38,5 +38,6 @@ func All() []schema.Migration {
 		&M20260412000001AddAddressDerivationColumns{},
 		&M20260418000001WalletsAddGasStatus{},
 		&M20260418000002TransactionsAddSweepFields{},
+		&M20260418000003TransactionsExtendTxTypeEnum{},
 	}
 }

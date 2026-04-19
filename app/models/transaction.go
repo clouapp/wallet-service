@@ -14,6 +14,13 @@ const (
 	TxOriginManualConsolidation = "manual_consolidation"
 )
 
+const (
+	TxTypeDeposit    = "deposit"
+	TxTypeWithdrawal = "withdrawal"
+	TxTypeSweep      = "sweep"
+	TxTypeGasSeed    = "gas_seed"
+)
+
 type Transaction struct {
 	orm.Model
 	ID                  uuid.UUID  `gorm:"type:uuid;primary_key" json:"id"`
