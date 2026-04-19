@@ -19,7 +19,9 @@ import (
 // ---------------------------------------------------------------------------
 
 type fakeWalletRepo struct {
-	wallet *models.Wallet
+	wallet      *models.Wallet
+	lastUpdates map[string]interface{}
+	updateCalls int
 }
 
 func (f *fakeWalletRepo) Create(wallet *models.Wallet) error { return nil }
@@ -46,6 +48,8 @@ func (f *fakeWalletRepo) UpdateField(id uuid.UUID, field string, value interface
 	return nil
 }
 func (f *fakeWalletRepo) UpdateFields(id uuid.UUID, fields map[string]interface{}) error {
+	f.updateCalls++
+	f.lastUpdates = fields
 	return nil
 }
 func (f *fakeWalletRepo) IncrementAddressIndex(id uuid.UUID) (int, error) { return 0, nil }

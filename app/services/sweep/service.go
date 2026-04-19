@@ -87,12 +87,9 @@ func NewService(
 // downstream callers can wire the service into the container immediately.
 // PlanForWithdrawal is implemented in planner.go.
 // ExecutePlan is implemented in executor.go.
+// RefreshGasStatus is implemented in gas_readiness.go.
 
 func (s *service) ConsolidateAll(ctx context.Context, walletID uuid.UUID, asset string, passphrase string) (*Result, error) {
-	return nil, ErrNotImplemented
-}
-
-func (s *service) RefreshGasStatus(ctx context.Context, walletID uuid.UUID) (*GasStatus, error) {
 	return nil, ErrNotImplemented
 }
 
