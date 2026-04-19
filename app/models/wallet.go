@@ -7,6 +7,12 @@ import (
 	"github.com/goravel/framework/database/orm"
 )
 
+const (
+	GasStatusUnseeded = "unseeded"
+	GasStatusSeeded   = "seeded"
+	GasStatusLow      = "low"
+)
+
 // Wallet is an MPC co-signing wallet. The customer owns share_A (encrypted with
 // their passphrase); the service holds share_B in AWS Secrets Manager.
 // Neither party can sign alone.
@@ -41,6 +47,10 @@ type Wallet struct {
 	BalanceUSD          *float64   `gorm:"type:decimal(28,10)" json:"balance_usd,omitempty"`
 	BalanceLastSyncedAt *time.Time `gorm:"type:timestamptz" json:"balance_last_synced_at,omitempty"`
 	ReadModelStatus     string     `gorm:"type:wallet_read_model_status;default:idle" json:"read_model_status"`
+
+	GasStatus          string     `gorm:"type:varchar(16);not null;default:unseeded;index" json:"gas_status"`
+	GasLastCheckedAt   *time.Time `gorm:"type:timestamptz" json:"gas_last_checked_at,omitempty"`
+	SweepPolicyVersion int        `gorm:"not null;default:1" json:"sweep_policy_version"`
 
 	DepositAddress *Address `gorm:"foreignKey:DepositAddressID" json:"deposit_address,omitempty"`
 }

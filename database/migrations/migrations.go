@@ -36,5 +36,6 @@ func All() []schema.Migration {
 		&M20260411000001CreateCurrenciesTable{},
 		&M20260411000002AddPreferencesToUsers{},
 		&M20260412000001AddAddressDerivationColumns{},
+		&M20260418000001WalletsAddGasStatus{},
 	}
 }
