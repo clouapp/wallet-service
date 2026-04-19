@@ -136,7 +136,7 @@ func (r *transactionRepository) FindPendingByChain(chainID string) ([]models.Tra
 	var pending []models.Transaction
 	err := facades.Orm().Query().
 		Where("chain", chainID).
-		Where("tx_type", "deposit").
+		Where("tx_type", models.TxTypeDeposit).
 		WhereIn("status", []interface{}{string(types.TxStatusPending), string(types.TxStatusConfirming)}).
 		Find(&pending)
 	return pending, err

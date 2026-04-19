@@ -15,10 +15,13 @@ const (
 )
 
 const (
-	TxTypeDeposit    = "deposit"
-	TxTypeWithdrawal = "withdrawal"
-	TxTypeSweep      = "sweep"
-	TxTypeGasSeed    = "gas_seed"
+	TxTypeDeposit       = "deposit"
+	TxTypeWithdrawal    = "withdrawal"
+	TxTypeTransfer      = "transfer"
+	TxTypeTokenTransfer = "token_transfer"
+	TxTypeFee           = "fee"
+	TxTypeSweep         = "sweep"
+	TxTypeGasSeed       = "gas_seed"
 )
 
 type Transaction struct {

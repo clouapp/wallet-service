@@ -9,6 +9,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+
+	"github.com/macrowallets/waas/app/models"
 )
 
 // LoadLimits returns the effective sweep limits for an account: hard-coded
@@ -19,9 +21,9 @@ import (
 func (s *service) LoadLimits(ctx context.Context, accountID uuid.UUID) (*Limits, error) {
 	defaults := &Limits{
 		MaxAddressesPerRequest: map[string]int{
-			"evm":     100,
-			"sol":     25,
-			"bitcoin": 100,
+			models.AdapterTypeEVM:     100,
+			models.AdapterTypeSolana:  25,
+			models.AdapterTypeBitcoin: 100,
 		},
 		MaxConsolidateReqPerDay: 50,
 	}

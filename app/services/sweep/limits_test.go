@@ -45,11 +45,11 @@ func TestLoadLimits_NilAccountReturnsDefaults(t *testing.T) {
 	if limits.MaxConsolidateReqPerDay != 50 {
 		t.Fatalf("expected default MaxConsolidateReqPerDay=50, got %d", limits.MaxConsolidateReqPerDay)
 	}
-	if limits.MaxAddressesPerRequest["evm"] != 100 {
-		t.Fatalf("expected default evm=100, got %d", limits.MaxAddressesPerRequest["evm"])
+	if limits.MaxAddressesPerRequest[models.AdapterTypeEVM] != 100 {
+		t.Fatalf("expected default evm=100, got %d", limits.MaxAddressesPerRequest[models.AdapterTypeEVM])
 	}
-	if limits.MaxAddressesPerRequest["sol"] != 25 {
-		t.Fatalf("expected default sol=25, got %d", limits.MaxAddressesPerRequest["sol"])
+	if limits.MaxAddressesPerRequest[models.AdapterTypeSolana] != 25 {
+		t.Fatalf("expected default solana=25, got %d", limits.MaxAddressesPerRequest[models.AdapterTypeSolana])
 	}
 	if limits.DailyWithdrawCapUSD != nil {
 		t.Fatalf("expected DailyWithdrawCapUSD=nil by default, got %v", *limits.DailyWithdrawCapUSD)
@@ -72,15 +72,15 @@ func TestLoadLimits_OverrideMergesWithDefaults(t *testing.T) {
 	if limits.MaxConsolidateReqPerDay != 200 {
 		t.Fatalf("expected override MaxConsolidateReqPerDay=200, got %d", limits.MaxConsolidateReqPerDay)
 	}
-	if limits.MaxAddressesPerRequest["evm"] != 500 {
-		t.Fatalf("expected override evm=500, got %d", limits.MaxAddressesPerRequest["evm"])
+	if limits.MaxAddressesPerRequest[models.AdapterTypeEVM] != 500 {
+		t.Fatalf("expected override evm=500, got %d", limits.MaxAddressesPerRequest[models.AdapterTypeEVM])
 	}
-	// sol was not overridden — must inherit the default.
-	if limits.MaxAddressesPerRequest["sol"] != 25 {
-		t.Fatalf("expected inherited default sol=25, got %d", limits.MaxAddressesPerRequest["sol"])
+	// solana was not overridden — must inherit the default.
+	if limits.MaxAddressesPerRequest[models.AdapterTypeSolana] != 25 {
+		t.Fatalf("expected inherited default solana=25, got %d", limits.MaxAddressesPerRequest[models.AdapterTypeSolana])
 	}
-	if limits.MaxAddressesPerRequest["bitcoin"] != 100 {
-		t.Fatalf("expected inherited default bitcoin=100, got %d", limits.MaxAddressesPerRequest["bitcoin"])
+	if limits.MaxAddressesPerRequest[models.AdapterTypeBitcoin] != 100 {
+		t.Fatalf("expected inherited default bitcoin=100, got %d", limits.MaxAddressesPerRequest[models.AdapterTypeBitcoin])
 	}
 	if limits.DailyWithdrawCapUSD == nil || *limits.DailyWithdrawCapUSD != 50000.50 {
 		t.Fatalf("expected DailyWithdrawCapUSD=50000.50, got %v", limits.DailyWithdrawCapUSD)
@@ -103,8 +103,8 @@ func TestLoadLimits_InvalidJSONFallsBackToDefaults(t *testing.T) {
 	if limits.MaxConsolidateReqPerDay != 50 {
 		t.Fatalf("expected fallback default 50, got %d", limits.MaxConsolidateReqPerDay)
 	}
-	if limits.MaxAddressesPerRequest["evm"] != 100 {
-		t.Fatalf("expected fallback default evm=100, got %d", limits.MaxAddressesPerRequest["evm"])
+	if limits.MaxAddressesPerRequest[models.AdapterTypeEVM] != 100 {
+		t.Fatalf("expected fallback default evm=100, got %d", limits.MaxAddressesPerRequest[models.AdapterTypeEVM])
 	}
 }
 
@@ -143,15 +143,15 @@ func TestLoadLimits_AccountNotFoundReturnsDefaults(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestCheckAddressesPerRequest_AtLimitIsOK(t *testing.T) {
-	limits := &Limits{MaxAddressesPerRequest: map[string]int{"evm": 100}}
-	if err := checkAddressesPerRequest("evm", 100, limits); err != nil {
+	limits := &Limits{MaxAddressesPerRequest: map[string]int{models.AdapterTypeEVM: 100}}
+	if err := checkAddressesPerRequest(models.AdapterTypeEVM, 100, limits); err != nil {
 		t.Fatalf("at-limit request should pass, got %v", err)
 	}
 }
 
 func TestCheckAddressesPerRequest_AboveLimitReturnsErrTooManyAddresses(t *testing.T) {
-	limits := &Limits{MaxAddressesPerRequest: map[string]int{"evm": 100}}
-	err := checkAddressesPerRequest("evm", 101, limits)
+	limits := &Limits{MaxAddressesPerRequest: map[string]int{models.AdapterTypeEVM: 100}}
+	err := checkAddressesPerRequest(models.AdapterTypeEVM, 101, limits)
 	if err == nil {
 		t.Fatal("expected error for count above limit")
 	}
@@ -161,7 +161,7 @@ func TestCheckAddressesPerRequest_AboveLimitReturnsErrTooManyAddresses(t *testin
 }
 
 func TestCheckAddressesPerRequest_UnknownAdapterHasNoCap(t *testing.T) {
-	limits := &Limits{MaxAddressesPerRequest: map[string]int{"evm": 100}}
+	limits := &Limits{MaxAddressesPerRequest: map[string]int{models.AdapterTypeEVM: 100}}
 	if err := checkAddressesPerRequest("cosmos", 10_000, limits); err != nil {
 		t.Fatalf("unknown adapter should have no cap, got %v", err)
 	}

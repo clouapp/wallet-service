@@ -131,7 +131,7 @@ func (s *Service) processTransfer(ctx context.Context, chainID string, adapter t
 		return fmt.Errorf("lookup address: %w", err)
 	}
 
-	exists, err := s.txRepo.CountByChainAndTxHash(chainID, transfer.TxHash, "deposit")
+	exists, err := s.txRepo.CountByChainAndTxHash(chainID, transfer.TxHash, models.TxTypeDeposit)
 	if err != nil {
 		return err
 	}
@@ -152,7 +152,7 @@ func (s *Service) processTransfer(ctx context.Context, chainID string, adapter t
 		WalletID:       addr.WalletID,
 		ExternalUserID: addr.ExternalUserID,
 		Chain:          chainID,
-		TxType:         "deposit",
+		TxType:         models.TxTypeDeposit,
 		TxHash:         transfer.TxHash,
 		FromAddress:    transfer.From,
 		ToAddress:      transfer.To,
