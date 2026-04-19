@@ -110,6 +110,11 @@ func RegisterAdminRoutes() {
 			r.Get("/withdrawals/{withdrawalId}", controllers.GetWalletWithdrawal)
 			r.Post("/withdrawals/{withdrawalId}/cancel", controllers.CancelWalletWithdrawal)
 
+			r.Post("/consolidate", controllers.ConsolidateWallet)
+			r.Get("/gas-status", controllers.GetGasStatus)
+			r.Post("/gas-check", controllers.ForceGasCheck)
+			r.Post("/withdraw/preview", controllers.PreviewWithdraw)
+
 			r.Prefix("/unspents").Middleware(middleware.UTXOOnly()).Group(func(ur route.Router) {
 				ur.Get("", controllers.ListUnspentOutputs)
 			})

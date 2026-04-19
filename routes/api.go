@@ -25,6 +25,11 @@ func RegisterExternalAPI() {
 		router.Get("/addresses/{address}", controllers.LookupAddress)
 		router.Get("/users/{external_id}/addresses", controllers.ListUserAddresses)
 
+		router.Post("/wallets/{walletId}/consolidate", controllers.ConsolidateWallet)
+		router.Get("/wallets/{walletId}/gas-status", controllers.GetGasStatus)
+		router.Post("/wallets/{walletId}/gas-check", controllers.ForceGasCheck)
+		router.Post("/wallets/{walletId}/withdraw/preview", controllers.PreviewWithdraw)
+
 		router.Get("/transactions", controllers.ListTransactions)
 		router.Get("/transactions/{id}", controllers.GetTransaction)
 		router.Get("/users/{external_id}/transactions", controllers.ListUserTransactions)
