@@ -73,14 +73,20 @@ func NewService(
 // Source selection is now delegated entirely to sweep.Service — the caller no
 // longer picks which address the funds come from. The planner decides based on
 // on-chain balances (direct_from_base, direct_from_child, or multi_sweep).
+//
+// CallerAccountID is the authenticated caller's account (dashboard session or
+// API token), threaded through to the sweep planner so per-caller limits and
+// quotas apply correctly on shared wallets. Controllers must populate this
+// from the request context.
 type WithdrawRequest struct {
-	WalletID       uuid.UUID `json:"wallet_id"`
-	ExternalUserID string    `json:"external_user_id"`
-	ToAddress      string    `json:"to_address"`
-	Amount         string    `json:"amount"`
-	Asset          string    `json:"asset"`
-	Passphrase     string    `json:"passphrase"`
-	IdempotencyKey string    `json:"idempotency_key"`
+	WalletID        uuid.UUID `json:"wallet_id"`
+	ExternalUserID  string    `json:"external_user_id"`
+	ToAddress       string    `json:"to_address"`
+	Amount          string    `json:"amount"`
+	Asset           string    `json:"asset"`
+	Passphrase      string    `json:"passphrase"`
+	IdempotencyKey  string    `json:"idempotency_key"`
+	CallerAccountID uuid.UUID `json:"-"`
 }
 
 // Metadata describes the source-selection outcome for a Request. Emitted
@@ -143,7 +149,7 @@ func (s *Service) Request(ctx context.Context, req WithdrawRequest) (*models.Tra
 		return nil, nil, err
 	}
 
-	plan, err := s.sweep.PlanForWithdrawal(ctx, wallet.ID, req.Asset, amount)
+	plan, err := s.sweep.PlanForWithdrawal(ctx, wallet.ID, req.Asset, amount, req.CallerAccountID)
 	if err != nil {
 		if errors.Is(err, sweep.ErrUnsupportedChain) {
 			// Bubble the sentinel; the controller maps it to 422

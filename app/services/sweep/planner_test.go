@@ -156,7 +156,7 @@ func TestPlan_DirectFromBase(t *testing.T) {
 	})
 	svc := newPlannerService(t, wallet, []models.Address{baseAddr}, mockChain, evmChainEntity("eth"))
 
-	plan, err := svc.PlanForWithdrawal(context.Background(), walletID, "usdt", big.NewInt(500))
+	plan, err := svc.PlanForWithdrawal(context.Background(), walletID, "usdt", big.NewInt(500), uuid.Nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -188,7 +188,7 @@ func TestPlan_DirectFromChild_SingleCovers(t *testing.T) {
 	})
 	svc := newPlannerService(t, wallet, []models.Address{baseAddr, childA, childB}, mockChain, evmChainEntity("eth"))
 
-	plan, err := svc.PlanForWithdrawal(context.Background(), walletID, "usdt", big.NewInt(500))
+	plan, err := svc.PlanForWithdrawal(context.Background(), walletID, "usdt", big.NewInt(500), uuid.Nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -219,7 +219,7 @@ func TestPlan_MultiSweepGreedy(t *testing.T) {
 	})
 	svc := newPlannerService(t, wallet, []models.Address{baseAddr, cA, cB, cC}, mockChain, evmChainEntity("eth"))
 
-	plan, err := svc.PlanForWithdrawal(context.Background(), walletID, "usdt", big.NewInt(600))
+	plan, err := svc.PlanForWithdrawal(context.Background(), walletID, "usdt", big.NewInt(600), uuid.Nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -259,7 +259,7 @@ func TestPlan_Insufficient(t *testing.T) {
 	})
 	svc := newPlannerService(t, wallet, []models.Address{baseAddr, cA}, mockChain, evmChainEntity("eth"))
 
-	plan, err := svc.PlanForWithdrawal(context.Background(), walletID, "usdt", big.NewInt(100))
+	plan, err := svc.PlanForWithdrawal(context.Background(), walletID, "usdt", big.NewInt(100), uuid.Nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -282,7 +282,7 @@ func TestPlan_EVMOnlyGuard(t *testing.T) {
 		&models.Chain{ID: "sol", AdapterType: models.AdapterTypeSolana},
 	)
 
-	_, err := svc.PlanForWithdrawal(context.Background(), walletID, "sol", big.NewInt(100))
+	_, err := svc.PlanForWithdrawal(context.Background(), walletID, "sol", big.NewInt(100), uuid.Nil)
 	if err != ErrUnsupportedChain {
 		t.Fatalf("expected ErrUnsupportedChain for SOL wallet, got %v", err)
 	}
@@ -413,7 +413,7 @@ func TestPlan_MultiSweep_EstimatedGas_Populated(t *testing.T) {
 
 	svc := newPlannerService(t, wallet, []models.Address{baseAddr, cA, cB}, mockChain, evmChainEntity("eth"))
 
-	plan, err := svc.PlanForWithdrawal(context.Background(), walletID, "eth", big.NewInt(600))
+	plan, err := svc.PlanForWithdrawal(context.Background(), walletID, "eth", big.NewInt(600), uuid.Nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -447,7 +447,7 @@ func TestPlan_DirectFromBase_EstimatedGas_Populated(t *testing.T) {
 
 	svc := newPlannerService(t, wallet, []models.Address{baseAddr}, mockChain, evmChainEntity("eth"))
 
-	plan, err := svc.PlanForWithdrawal(context.Background(), walletID, "eth", big.NewInt(500))
+	plan, err := svc.PlanForWithdrawal(context.Background(), walletID, "eth", big.NewInt(500), uuid.Nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -477,7 +477,7 @@ func TestPlan_EstimatedGas_NilWhenPriceUnavailable(t *testing.T) {
 
 	svc := newPlannerService(t, wallet, []models.Address{baseAddr}, mockChain, evmChainEntity("eth"))
 
-	plan, err := svc.PlanForWithdrawal(context.Background(), walletID, "eth", big.NewInt(500))
+	plan, err := svc.PlanForWithdrawal(context.Background(), walletID, "eth", big.NewInt(500), uuid.Nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -512,7 +512,7 @@ func TestPlan_ErrTooManyAddresses(t *testing.T) {
 	mockChain := balanceMapChain("eth", "usdt", balances)
 	svc := newPlannerService(t, wallet, addresses, mockChain, evmChainEntity("eth"))
 
-	_, err := svc.PlanForWithdrawal(context.Background(), walletID, "usdt", big.NewInt(1_000_000))
+	_, err := svc.PlanForWithdrawal(context.Background(), walletID, "usdt", big.NewInt(1_000_000), uuid.Nil)
 	if err == nil {
 		t.Fatal("expected ErrTooManyAddresses, got nil")
 	}
@@ -537,7 +537,7 @@ func TestPlan_DustIgnored(t *testing.T) {
 
 	svc := newPlannerService(t, wallet, []models.Address{baseAddr, cA, cB}, mockChain, evmChainEntity("eth"))
 
-	plan, err := svc.PlanForWithdrawal(context.Background(), walletID, "usdt", big.NewInt(500))
+	plan, err := svc.PlanForWithdrawal(context.Background(), walletID, "usdt", big.NewInt(500), uuid.Nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

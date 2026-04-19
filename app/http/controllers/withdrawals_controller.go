@@ -42,14 +42,17 @@ func CreateWithdrawal(ctx http.Context) http.Response {
 		return errResp
 	}
 
+	callerAccountID, _ := ctx.Value("account_id").(uuid.UUID)
+
 	tx, meta, err := container.Get().WithdrawalService.Request(ctx.Context(), withdraw.WithdrawRequest{
-		WalletID:       walletID,
-		ExternalUserID: req.ExternalUserID,
-		ToAddress:      req.ToAddress,
-		Amount:         req.Amount,
-		Asset:          req.Asset,
-		Passphrase:     req.Passphrase,
-		IdempotencyKey: req.IdempotencyKey,
+		WalletID:        walletID,
+		ExternalUserID:  req.ExternalUserID,
+		ToAddress:       req.ToAddress,
+		Amount:          req.Amount,
+		Asset:           req.Asset,
+		Passphrase:      req.Passphrase,
+		IdempotencyKey:  req.IdempotencyKey,
+		CallerAccountID: callerAccountID,
 	})
 	if err != nil {
 		if resp := MapSweepError(ctx, err); resp != nil {

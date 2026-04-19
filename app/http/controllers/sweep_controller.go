@@ -45,7 +45,9 @@ func ConsolidateWallet(ctx http.Context) http.Response {
 		return errResp
 	}
 
-	result, err := container.Get().SweepService.ConsolidateAll(ctx.Context(), walletID, req.Asset, req.Passphrase)
+	callerAccountID, _ := ctx.Value("account_id").(uuid.UUID)
+
+	result, err := container.Get().SweepService.ConsolidateAll(ctx.Context(), walletID, req.Asset, req.Passphrase, callerAccountID)
 	if err != nil {
 		if resp := MapSweepError(ctx, err); resp != nil {
 			return resp
@@ -147,7 +149,9 @@ func PreviewWithdraw(ctx http.Context) http.Response {
 		return ctx.Response().Json(http.StatusBadRequest, http.Json{"error": "invalid amount"})
 	}
 
-	plan, err := container.Get().SweepService.PlanForWithdrawal(ctx.Context(), walletID, req.Asset, amount)
+	callerAccountID, _ := ctx.Value("account_id").(uuid.UUID)
+
+	plan, err := container.Get().SweepService.PlanForWithdrawal(ctx.Context(), walletID, req.Asset, amount, callerAccountID)
 	if err != nil {
 		if resp := MapSweepError(ctx, err); resp != nil {
 			return resp

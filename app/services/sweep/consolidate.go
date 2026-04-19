@@ -20,9 +20,16 @@ import (
 // withdrawal — the sweep rows themselves are the terminal state.
 //
 // v1 is EVM-only. Non-EVM chains return ErrUnsupportedChain. The call is
-// serialised per-wallet via acquireWalletOpsLock and metered per-account via
+// serialised per-wallet via acquireWalletOpsLock and metered per-caller via
 // incrDailyQuota, matching the withdrawal path so manual consolidations
 // share the same operational envelope.
+//
+// Quota is keyed on `callerAccountID` — the authenticated caller's account
+// — not on the wallet's owning account. For shared wallets this prevents
+// one caller from burning the whole account's daily quota. The increment
+// is deferred until after the passphrase has successfully decrypted the
+// customer share, so a bad passphrase (or any failure in the preceding
+// lookup/guard pipeline) never consumes quota.
 //
 // The function is best-effort idempotent: if a sweep leg fails mid-flight,
 // the successful legs are kept and the failure is reported on
@@ -33,6 +40,7 @@ func (s *service) ConsolidateAll(
 	walletID uuid.UUID,
 	asset string,
 	passphrase string,
+	callerAccountID uuid.UUID,
 ) (*Result, error) {
 	if len(passphrase) < 12 {
 		return nil, fmt.Errorf("passphrase must be at least 12 characters")
@@ -66,15 +74,8 @@ func (s *service) ConsolidateAll(
 	}
 	defer release()
 
-	var accountID uuid.UUID
-	if wallet.AccountID != nil {
-		accountID = *wallet.AccountID
-	}
-	limits, err := s.LoadLimits(ctx, accountID)
+	limits, err := s.LoadLimits(ctx, callerAccountID)
 	if err != nil {
-		return nil, err
-	}
-	if err := s.incrDailyQuota(ctx, accountID, limits); err != nil {
 		return nil, err
 	}
 
@@ -146,11 +147,19 @@ func (s *service) ConsolidateAll(
 	}
 	plan.EstimatedGas = estimatePlanGas(ctx, adapter, plan)
 
+	// Decrypt share A BEFORE incrementing the daily quota. An invalid
+	// passphrase or any failure up to this point must not consume quota —
+	// otherwise a caller who mistypes their passphrase can lock themselves
+	// out of the day's consolidations.
 	shareA, err := s.decryptShareA(wallet, passphrase)
 	if err != nil {
 		return nil, err
 	}
 	defer zeroBytes(shareA)
+
+	if err := s.incrDailyQuota(ctx, callerAccountID, limits); err != nil {
+		return nil, err
+	}
 
 	shareB, err := s.fetchShareB(ctx, wallet)
 	if err != nil {

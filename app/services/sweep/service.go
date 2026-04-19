@@ -28,10 +28,17 @@ var (
 )
 
 // Service coordinates withdrawal planning, sweep execution, and gas-readiness tracking.
+//
+// `callerAccountID` threads the caller's (not the wallet's) account through
+// quota enforcement. A shared wallet can have multiple account members, and a
+// per-caller counter prevents one caller from burning the whole account's
+// daily quota. Pass uuid.Nil from non-authenticated contexts (tests,
+// background workers) to fall back to default limits with no per-account
+// quota increment.
 type Service interface {
-	PlanForWithdrawal(ctx context.Context, walletID uuid.UUID, asset string, amount *big.Int) (*Plan, error)
+	PlanForWithdrawal(ctx context.Context, walletID uuid.UUID, asset string, amount *big.Int, callerAccountID uuid.UUID) (*Plan, error)
 	ExecutePlan(ctx context.Context, plan *Plan, shareA []byte, withdrawalTxID uuid.UUID, toAddress string, externalUserID string) (*Result, error)
-	ConsolidateAll(ctx context.Context, walletID uuid.UUID, asset string, passphrase string) (*Result, error)
+	ConsolidateAll(ctx context.Context, walletID uuid.UUID, asset string, passphrase string, callerAccountID uuid.UUID) (*Result, error)
 	RefreshGasStatus(ctx context.Context, walletID uuid.UUID) (*GasStatus, error)
 	LoadLimits(ctx context.Context, accountID uuid.UUID) (*Limits, error)
 }

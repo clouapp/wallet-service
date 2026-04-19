@@ -28,8 +28,13 @@ const (
 // from `walletID`. See docs/superpowers/plans/2026-04-18-base-address-sweep.md
 // §4.1 for the full algorithm.
 //
+// `callerAccountID` keys the per-request address-cap lookup on the
+// authenticated caller's account so per-caller overrides apply correctly on
+// shared wallets. Pass uuid.Nil from non-authenticated contexts (tests) to
+// fall back to system defaults.
+//
 // v1 scope: EVM-only. Non-EVM wallets return ErrUnsupportedChain.
-func (s *service) PlanForWithdrawal(ctx context.Context, walletID uuid.UUID, asset string, amount *big.Int) (*Plan, error) {
+func (s *service) PlanForWithdrawal(ctx context.Context, walletID uuid.UUID, asset string, amount *big.Int, callerAccountID uuid.UUID) (*Plan, error) {
 	if amount == nil {
 		return nil, fmt.Errorf("sweep: amount must not be nil")
 	}
@@ -93,10 +98,10 @@ func (s *service) PlanForWithdrawal(ctx context.Context, walletID uuid.UUID, ass
 	// Enforce the per-request address cap before issuing N sequential balance
 	// RPCs. This protects the planner against pathological wallets (many
 	// children) blowing up /withdraw/preview latency and per-node RPC budget.
-	// The account-scoped limit isn't threaded to this call site yet (see I3),
-	// so we load defaults via uuid.Nil. LoadLimits never returns an error for
-	// uuid.Nil, but tolerate a nil Limits just in case.
-	limits, _ := s.LoadLimits(ctx, uuid.Nil)
+	// Limits are keyed on the caller's account so per-caller overrides apply
+	// on shared wallets; uuid.Nil short-circuits LoadLimits to defaults.
+	// LoadLimits never returns an error, but tolerate a nil Limits just in case.
+	limits, _ := s.LoadLimits(ctx, callerAccountID)
 	if limits != nil {
 		if err := checkAddressesPerRequest(chainEntity.AdapterType, len(children), limits); err != nil {
 			return nil, err
