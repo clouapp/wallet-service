@@ -4,9 +4,10 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"math/big"
 	"net/url"
 
-	"github.com/aws/aws-sdk-go-v2/config"
+	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/secretsmanager"
 	"github.com/aws/aws-sdk-go-v2/service/sqs"
 	smithyendpoints "github.com/aws/smithy-go/endpoints"
@@ -30,6 +31,7 @@ import (
 	"github.com/macrowallets/waas/app/services/webhook"
 	"github.com/macrowallets/waas/app/services/webhooksync"
 	"github.com/macrowallets/waas/app/services/withdraw"
+	"github.com/macrowallets/waas/config"
 	"github.com/macrowallets/waas/pkg/types"
 )
 
@@ -69,7 +71,7 @@ func buildVaultContainer() (*container.Container, error) {
 		}
 	}
 
-	awsCfg, err := config.LoadDefaultConfig(context.Background())
+	awsCfg, err := awsconfig.LoadDefaultConfig(context.Background())
 	if err != nil {
 		return nil, fmt.Errorf("vault: aws config: %w", err)
 	}
@@ -170,14 +172,16 @@ func buildVaultContainer() (*container.Container, error) {
 					networkID = *ch.NetworkID
 				}
 				adapter = chainpkg.NewEVMLive(chainpkg.EVMConfig{
-					ChainIDStr:    ch.ID,
-					ChainName:     ch.Name,
-					NativeSymbol:  ch.NativeSymbol,
-					NativeDecimal: uint8(ch.NativeDecimals),
-					NetworkID:     networkID,
-					RPCURL:        rpcURL,
-					Confirmations: uint64(ch.RequiredConfirmations),
-					ERC20Tokens:   tokensByChain[ch.ID],
+					ChainIDStr:            ch.ID,
+					ChainName:             ch.Name,
+					NativeSymbol:          ch.NativeSymbol,
+					NativeDecimal:         uint8(ch.NativeDecimals),
+					NetworkID:             networkID,
+					RPCURL:                rpcURL,
+					Confirmations:         uint64(ch.RequiredConfirmations),
+					ERC20Tokens:           tokensByChain[ch.ID],
+					GasReadinessThreshold: resolveGasReadinessThreshold(&ch),
+					DustThresholdNative:   resolveDustThresholdNative(&ch),
 				})
 			case models.AdapterTypeBitcoin:
 				network := "mainnet"
@@ -244,4 +248,35 @@ func buildVaultContainer() (*container.Container, error) {
 
 	slog.Info("vault container booted", "chains", c.Registry.ChainIDs())
 	return c, nil
+}
+
+// resolveGasReadinessThreshold returns the gas-readiness threshold for a chain,
+// preferring the value seeded on the chains row, falling back to config.SweepDefaults.
+// Returns nil if neither source provides a value (e.g. BTC).
+func resolveGasReadinessThreshold(ch *models.Chain) *big.Int {
+	if v := ch.GasReadinessThreshold(); v != nil {
+		return v
+	}
+	defaults := config.SweepDefaults()
+	if d, ok := defaults[ch.ID]; ok && d.GasReadinessRaw != "" {
+		if v, ok := new(big.Int).SetString(d.GasReadinessRaw, 10); ok {
+			return v
+		}
+	}
+	return nil
+}
+
+// resolveDustThresholdNative returns the native dust threshold for a chain,
+// preferring the chains row, falling back to config.SweepDefaults.
+func resolveDustThresholdNative(ch *models.Chain) *big.Int {
+	if v := ch.DustThresholdNative(); v != nil {
+		return v
+	}
+	defaults := config.SweepDefaults()
+	if d, ok := defaults[ch.ID]; ok && d.DustNativeRaw != "" {
+		if v, ok := new(big.Int).SetString(d.DustNativeRaw, 10); ok {
+			return v
+		}
+	}
+	return nil
 }
