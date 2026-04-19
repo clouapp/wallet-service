@@ -13,6 +13,7 @@ type Account struct {
 	ViewAllWallets  bool       `gorm:"default:false" json:"view_all_wallets"`
 	Environment     string     `gorm:"type:varchar(4);default:prod" json:"environment"`
 	LinkedAccountID *uuid.UUID `gorm:"type:uuid" json:"linked_account_id,omitempty"`
+	SweepLimits     *string    `gorm:"type:jsonb" json:"sweep_limits,omitempty"`
 }
 
 func (a *Account) TableName() string { return "accounts" }
