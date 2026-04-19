@@ -12,8 +12,8 @@ type PasswordResetToken struct {
 	ID        uuid.UUID  `gorm:"type:uuid;primary_key" json:"id"`
 	UserID    uuid.UUID  `gorm:"type:uuid;not null" json:"user_id"`
 	TokenHash string     `gorm:"type:text;not null" json:"-"`
-	ExpiresAt time.Time  `json:"expires_at"`
-	UsedAt    *time.Time `json:"used_at,omitempty"`
+	ExpiresAt time.Time  `gorm:"type:timestamptz;not null" json:"expires_at"`
+	UsedAt    *time.Time `gorm:"type:timestamptz" json:"used_at,omitempty"`
 }
 
 func (p *PasswordResetToken) TableName() string { return "password_reset_tokens" }

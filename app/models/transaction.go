@@ -47,7 +47,7 @@ type Transaction struct {
 	BlockHash           string     `gorm:"type:varchar(255)" json:"block_hash"`
 	ErrorMessage        string     `gorm:"type:text" json:"error_message"`
 	IdempotencyKey      string     `gorm:"type:varchar(255);unique" json:"idempotency_key"`
-	ConfirmedAt         *time.Time `gorm:"type:timestamp" json:"confirmed_at"`
+	ConfirmedAt         *time.Time `gorm:"type:timestamptz" json:"confirmed_at"`
 	Direction           string     `gorm:"type:transaction_direction" json:"direction,omitempty"`
 	Source              string     `gorm:"type:transaction_source" json:"source,omitempty"`
 	ParentTransactionID *uuid.UUID `gorm:"type:uuid;index" json:"parent_transaction_id,omitempty"`

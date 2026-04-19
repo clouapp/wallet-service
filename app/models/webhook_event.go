@@ -18,7 +18,7 @@ type WebhookEvent struct {
 	Attempts       int        `gorm:"type:integer;not null;default:0" json:"attempts"`
 	MaxAttempts    int        `gorm:"type:integer;not null;default:10" json:"max_attempts"`
 	LastError      string     `gorm:"type:text" json:"last_error,omitempty"`
-	DeliveredAt    *time.Time `gorm:"type:timestamp" json:"delivered_at,omitempty"`
+	DeliveredAt    *time.Time `gorm:"type:timestamptz" json:"delivered_at,omitempty"`
 }
 
 // TableName specifies the table name for WebhookEvent model

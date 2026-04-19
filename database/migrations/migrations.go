@@ -43,5 +43,6 @@ func All() []schema.Migration {
 		&M20260418000005ChainsAddSweepThresholds{},
 		&M20260418000006NormalizeTimestamptz{},
 		&M20260418000007GasStatusToEnum{},
+		&M20260418000008NormalizeTimestamptzRemainder{},
 	}
 }
