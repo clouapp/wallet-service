@@ -200,9 +200,12 @@ func (s *Service) Request(ctx context.Context, req WithdrawRequest) (*models.Tra
 
 	// Persist the idempotency key on the final withdrawal tx. The executor
 	// creates the row without this field so we only attach it here once we
-	// know the plan executed to completion.
+	// know the plan executed to completion. The column is nullable with a
+	// partial unique index, so intermediate sweep/gas_seed rows store NULL
+	// and never collide with each other.
 	if req.IdempotencyKey != "" {
-		finalTx.IdempotencyKey = req.IdempotencyKey
+		idemKey := req.IdempotencyKey
+		finalTx.IdempotencyKey = &idemKey
 		if err := s.transactionRepo.UpdateFields(finalTx.ID, map[string]interface{}{
 			"idempotency_key": req.IdempotencyKey,
 		}); err != nil {

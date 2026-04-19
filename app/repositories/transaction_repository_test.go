@@ -87,7 +87,8 @@ func (s *TransactionRepositoryTestSuite) TestFindByIDAndWallet_WrongWallet() {
 func (s *TransactionRepositoryTestSuite) TestFindByIdempotencyKey_Found() {
 	walletID := s.insertWallet()
 	tx := s.makeTx(walletID, "withdrawal", "pending")
-	tx.IdempotencyKey = "idem-key-123"
+	idemKey := "idem-key-123"
+	tx.IdempotencyKey = &idemKey
 	s.Require().NoError(s.repo.Create(tx))
 
 	found, err := s.repo.FindByIdempotencyKey("idem-key-123")

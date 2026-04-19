@@ -45,5 +45,6 @@ func All() []schema.Migration {
 		&M20260418000007GasStatusToEnum{},
 		&M20260418000008NormalizeTimestamptzRemainder{},
 		&M20260418000009UsersPreferencesDefault{},
+		&M20260418000010TransactionsIdempotencyKeyPartialUnique{},
 	}
 }

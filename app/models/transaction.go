@@ -46,7 +46,7 @@ type Transaction struct {
 	BlockNumber         int64      `gorm:"type:bigint;index:idx_chain_block" json:"block_number"`
 	BlockHash           string     `gorm:"type:varchar(255)" json:"block_hash"`
 	ErrorMessage        string     `gorm:"type:text" json:"error_message"`
-	IdempotencyKey      string     `gorm:"type:varchar(255);unique" json:"idempotency_key"`
+	IdempotencyKey      *string    `gorm:"type:varchar(255)" json:"idempotency_key,omitempty"`
 	ConfirmedAt         *time.Time `gorm:"type:timestamptz" json:"confirmed_at"`
 	Direction           string     `gorm:"type:transaction_direction" json:"direction,omitempty"`
 	Source              string     `gorm:"type:transaction_source" json:"source,omitempty"`
