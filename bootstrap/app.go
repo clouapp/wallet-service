@@ -39,6 +39,7 @@ func Boot() contractsfoundation.Application {
 				&commands.ReconcileWallet{},
 				&commands.PriceWebSocket{},
 				&commands.PriceCheckUpdate{},
+				&commands.ChainsSetRPC{},
 			}
 		}).
 		WithEvents(func() map[contractsevent.Event][]contractsevent.Listener {
