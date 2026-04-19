@@ -3,11 +3,14 @@ package sweep
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 
 	"github.com/macrowallets/waas/app/models"
+	"github.com/macrowallets/waas/tests/testutil"
 )
 
 // fakeAccountRepo is a narrow in-memory AccountRepository used by the sweep
@@ -168,10 +171,10 @@ func TestCheckAddressesPerRequest_UnknownAdapterHasNoCap(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// Redis helpers — nil-client safety
+// Redis helpers — nil-client safety (no Redis configured)
 // ---------------------------------------------------------------------------
 
-func TestAcquireWalletOpsLock_NoRedisIsNoop(t *testing.T) {
+func TestAcquireWalletOpsLock_NilRdb_IsNoop(t *testing.T) {
 	svc := &service{rdb: nil}
 	release, err := svc.acquireWalletOpsLock(context.Background(), uuid.New())
 	if err != nil {
@@ -183,7 +186,7 @@ func TestAcquireWalletOpsLock_NoRedisIsNoop(t *testing.T) {
 	release() // must not panic
 }
 
-func TestIncrDailyQuota_NoRedisIsNoop(t *testing.T) {
+func TestIncrDailyQuota_NilRdb_IsNoop(t *testing.T) {
 	svc := &service{rdb: nil}
 	limits := &Limits{MaxConsolidateReqPerDay: 1}
 	if err := svc.incrDailyQuota(context.Background(), uuid.New(), limits); err != nil {
@@ -199,5 +202,73 @@ func TestIncrDailyQuota_NilAccountIsNoop(t *testing.T) {
 	limits := &Limits{MaxConsolidateReqPerDay: 1}
 	if err := svc.incrDailyQuota(context.Background(), uuid.Nil, limits); err != nil {
 		t.Fatalf("nil accountID must be a no-op, got %v", err)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Redis helpers — real Redis (docker-compose waas-redis on localhost:6379)
+// These tests skip automatically when Redis is offline.
+// ---------------------------------------------------------------------------
+
+// TestAcquireWalletOpsLock_RealRedis_Contention exercises the SetNX lock path
+// against a live Redis: a second acquire for the same wallet must return
+// ErrInFlightConsolidation until the first release runs, after which a fresh
+// acquire succeeds.
+func TestAcquireWalletOpsLock_RealRedis_Contention(t *testing.T) {
+	client := testutil.TestRedis(t)
+	svc := &service{rdb: client}
+	ctx := context.Background()
+
+	// Unique wallet ID isolates this test's keys from any concurrent runs.
+	walletID := uuid.New()
+	lockKey := "vault:lock:wallet_ops:" + walletID.String()
+	t.Cleanup(func() { _ = client.Del(context.Background(), lockKey).Err() })
+
+	release1, err := svc.acquireWalletOpsLock(ctx, walletID)
+	if err != nil {
+		t.Fatalf("first acquire must succeed, got %v", err)
+	}
+	if release1 == nil {
+		t.Fatal("release func must not be nil on successful acquire")
+	}
+
+	if _, err := svc.acquireWalletOpsLock(ctx, walletID); !errors.Is(err, ErrInFlightConsolidation) {
+		t.Fatalf("second acquire must return ErrInFlightConsolidation, got %v", err)
+	}
+
+	release1()
+
+	release2, err := svc.acquireWalletOpsLock(ctx, walletID)
+	if err != nil {
+		t.Fatalf("acquire after release must succeed, got %v", err)
+	}
+	release2()
+}
+
+// TestIncrDailyQuota_RealRedis_Exceeds verifies the INCR-based daily quota:
+// the first N calls (N == MaxConsolidateReqPerDay) succeed, and the (N+1)th
+// returns ErrDailyQuotaExceeded. Uses a fresh accountID per run so the daily
+// counter starts at zero.
+func TestIncrDailyQuota_RealRedis_Exceeds(t *testing.T) {
+	client := testutil.TestRedis(t)
+	svc := &service{rdb: client}
+	ctx := context.Background()
+
+	accountID := uuid.New()
+	limits := &Limits{MaxConsolidateReqPerDay: 3}
+
+	quotaKey := fmt.Sprintf("vault:quota:consolidate:%s:%s",
+		accountID.String(), time.Now().UTC().Format("2006-01-02"))
+	t.Cleanup(func() { _ = client.Del(context.Background(), quotaKey).Err() })
+
+	for i := 1; i <= limits.MaxConsolidateReqPerDay; i++ {
+		if err := svc.incrDailyQuota(ctx, accountID, limits); err != nil {
+			t.Fatalf("call %d must succeed within quota, got %v", i, err)
+		}
+	}
+
+	if err := svc.incrDailyQuota(ctx, accountID, limits); !errors.Is(err, ErrDailyQuotaExceeded) {
+		t.Fatalf("call %d must return ErrDailyQuotaExceeded, got %v",
+			limits.MaxConsolidateReqPerDay+1, err)
 	}
 }
