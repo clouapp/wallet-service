@@ -79,10 +79,7 @@ func NewService(
 // Stub method implementations — replaced by Tasks 15-19.
 // Each stub returns ErrNotImplemented so the package compiles and
 // downstream callers can wire the service into the container immediately.
-
-func (s *service) PlanForWithdrawal(ctx context.Context, walletID uuid.UUID, asset string, amount *big.Int) (*Plan, error) {
-	return nil, ErrNotImplemented
-}
+// PlanForWithdrawal is implemented in planner.go.
 
 func (s *service) ExecutePlan(ctx context.Context, plan *Plan, shareA []byte, withdrawalTxID uuid.UUID) (*Result, error) {
 	return nil, ErrNotImplemented
