@@ -88,11 +88,8 @@ func NewService(
 // PlanForWithdrawal is implemented in planner.go.
 // ExecutePlan is implemented in executor.go.
 // RefreshGasStatus is implemented in gas_readiness.go.
+// LoadLimits is implemented in limits.go.
 
 func (s *service) ConsolidateAll(ctx context.Context, walletID uuid.UUID, asset string, passphrase string) (*Result, error) {
-	return nil, ErrNotImplemented
-}
-
-func (s *service) LoadLimits(ctx context.Context, accountID uuid.UUID) (*Limits, error) {
 	return nil, ErrNotImplemented
 }
