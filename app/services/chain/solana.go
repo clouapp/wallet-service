@@ -163,3 +163,11 @@ func (a *SolanaLive) ScanBlock(ctx context.Context, blockNum uint64) ([]types.De
 
 	return transfers, nil
 }
+
+func (a *SolanaLive) BuildSweep(ctx context.Context, req types.SweepRequest) ([]types.UnsignedTx, error) {
+	return nil, ErrUnsupportedChain
+}
+
+func (a *SolanaLive) GasReadinessThreshold() *big.Int { return nil }
+
+func (a *SolanaLive) DustThreshold(asset string) *big.Int { return nil }

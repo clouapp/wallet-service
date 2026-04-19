@@ -339,3 +339,11 @@ func (a *BitcoinLive) scanBlockREST(ctx context.Context, blockNum uint64) ([]typ
 	}
 	return transfers, nil
 }
+
+func (a *BitcoinLive) BuildSweep(ctx context.Context, req types.SweepRequest) ([]types.UnsignedTx, error) {
+	return nil, ErrUnsupportedChain
+}
+
+func (a *BitcoinLive) GasReadinessThreshold() *big.Int { return nil }
+
+func (a *BitcoinLive) DustThreshold(asset string) *big.Int { return nil }
