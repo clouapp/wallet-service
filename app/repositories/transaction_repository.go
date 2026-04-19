@@ -132,11 +132,22 @@ func (r *transactionRepository) CountByChainTxHashAndLogIndex(chainID, txHash st
 		Count()
 }
 
+// FindPendingByChain returns every transaction on `chainID` that the confirmation
+// loop must advance — deposits plus outbound legs (withdrawals, sweeps, gas seeds).
+// Outbound rows are inserted by the sweep/withdrawal executor with status=confirming
+// and block_number=0; the confirmation service reconciles their block numbers and
+// drives them to confirmed. Limiting this query to deposits would strand those rows
+// at `confirming` forever.
 func (r *transactionRepository) FindPendingByChain(chainID string) ([]models.Transaction, error) {
 	var pending []models.Transaction
 	err := facades.Orm().Query().
 		Where("chain", chainID).
-		Where("tx_type", models.TxTypeDeposit).
+		WhereIn("tx_type", []interface{}{
+			models.TxTypeDeposit,
+			models.TxTypeWithdrawal,
+			models.TxTypeSweep,
+			models.TxTypeGasSeed,
+		}).
 		WhereIn("status", []interface{}{string(types.TxStatusPending), string(types.TxStatusConfirming)}).
 		Find(&pending)
 	return pending, err

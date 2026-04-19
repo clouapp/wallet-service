@@ -33,10 +33,13 @@ type MockChain struct {
 	BuildSweepFn           func(ctx context.Context, req types.SweepRequest) ([]types.UnsignedTx, error)
 	DustThresholdFn        func(asset string) *big.Int
 	EstimateGasPriceFn     func(ctx context.Context) (*big.Int, error)
+	GetTransactionBlockFn  func(ctx context.Context, txHash string) (uint64, error)
 
 	GasReadinessThresholdVal *big.Int
 	EstimateGasPriceVal      *big.Int
 	EstimateGasPriceErr      error
+	GetTransactionBlockVal   uint64
+	GetTransactionBlockErr   error
 
 	// Call tracking
 	DeriveAddressCalls        int
@@ -155,6 +158,16 @@ func (m *MockChain) DustThreshold(asset string) *big.Int {
 		return m.DustThresholdFn(asset)
 	}
 	return big.NewInt(0)
+}
+
+func (m *MockChain) GetTransactionBlock(ctx context.Context, txHash string) (uint64, error) {
+	if m.GetTransactionBlockFn != nil {
+		return m.GetTransactionBlockFn(ctx, txHash)
+	}
+	if m.GetTransactionBlockErr != nil {
+		return 0, m.GetTransactionBlockErr
+	}
+	return m.GetTransactionBlockVal, nil
 }
 
 func (m *MockChain) EstimateGasPrice(ctx context.Context) (*big.Int, error) {

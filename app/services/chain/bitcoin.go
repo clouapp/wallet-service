@@ -344,6 +344,14 @@ func (a *BitcoinLive) BuildSweep(ctx context.Context, req types.SweepRequest) ([
 	return nil, ErrUnsupportedChain
 }
 
+// GetTransactionBlock is a no-op for Bitcoin in v1: outbound confirmation
+// reconciliation (sweep/withdrawal/gas_seed) is EVM-only in this release.
+// Returning (0, nil) tells the confirmation loop "treat as still pending" so
+// the contract still holds for non-EVM chains without a custom code path.
+func (a *BitcoinLive) GetTransactionBlock(ctx context.Context, txHash string) (uint64, error) {
+	return 0, nil
+}
+
 func (a *BitcoinLive) GasReadinessThreshold() *big.Int { return nil }
 
 func (a *BitcoinLive) DustThreshold(asset string) *big.Int { return nil }

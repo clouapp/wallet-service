@@ -109,6 +109,14 @@ func (a *SolanaLive) BroadcastTransaction(ctx context.Context, signed *types.Sig
 	return "", fmt.Errorf("SOL broadcast not implemented")
 }
 
+// GetTransactionBlock is a no-op for Solana in v1: the outbound confirmation
+// reconciliation loop (sweep/withdrawal/gas_seed) is EVM-only in this release,
+// so we return (0, nil) to signal "treat as still pending" without breaking
+// the interface.
+func (a *SolanaLive) GetTransactionBlock(ctx context.Context, txHash string) (uint64, error) {
+	return 0, nil
+}
+
 func (a *SolanaLive) GetLatestBlock(ctx context.Context) (uint64, error) {
 	var slot uint64
 	if err := a.rpc.Call(ctx, "getSlot", &slot, map[string]string{"commitment": "finalized"}); err != nil {

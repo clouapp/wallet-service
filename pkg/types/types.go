@@ -28,6 +28,13 @@ type Chain interface {
 	GetLatestBlock(ctx context.Context) (uint64, error)
 	ScanBlock(ctx context.Context, blockNum uint64) ([]DetectedTransfer, error)
 
+	// GetTransactionBlock returns the block number a tx was included in, or 0 if
+	// the tx is not yet mined (still in the mempool). Used by the confirmation
+	// loop to reconcile the block number for outbound txs (sweep/withdrawal/
+	// gas_seed) that were inserted before being mined. Non-EVM chains that do
+	// not need this reconciliation return (0, nil).
+	GetTransactionBlock(ctx context.Context, txHash string) (uint64, error)
+
 	RequiredConfirmations() uint64
 	NativeAsset() string
 

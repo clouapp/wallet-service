@@ -280,6 +280,27 @@ func (a *EVMLive) GetLatestBlock(ctx context.Context) (uint64, error) {
 	return hexToUint64(hexBlock), nil
 }
 
+// GetTransactionBlock returns the block number that included `txHash`, or 0 when
+// the node reports the tx as still pending (blockNumber is null or the tx is
+// unknown). The confirmation loop uses this to backfill BlockNumber on sweep /
+// withdrawal / gas_seed rows — those are inserted immediately after
+// broadcasting and therefore carry block_number=0 until mined. A missing tx is
+// treated as "still pending" so the next tick can retry without the caller
+// having to distinguish between "not mined yet" and "dropped"; truly dropped
+// txs are handled separately when they eventually stop appearing.
+func (a *EVMLive) GetTransactionBlock(ctx context.Context, txHash string) (uint64, error) {
+	var tx *struct {
+		BlockNumber string `json:"blockNumber"`
+	}
+	if err := a.rpc.Call(ctx, "eth_getTransactionByHash", &tx, txHash); err != nil {
+		return 0, err
+	}
+	if tx == nil || tx.BlockNumber == "" {
+		return 0, nil
+	}
+	return hexToUint64(tx.BlockNumber), nil
+}
+
 func (a *EVMLive) ScanBlock(ctx context.Context, blockNum uint64) ([]types.DetectedTransfer, error) {
 	hexBlock := fmt.Sprintf("0x%x", blockNum)
 	var block struct {

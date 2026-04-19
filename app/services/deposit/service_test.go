@@ -238,3 +238,91 @@ func TestUpdateConfirmations(t *testing.T) {
 		t.Errorf("expected confirmed, got %s", tx.Status)
 	}
 }
+
+// TestUpdateConfirmations_ReconcilesOutboundBlockNumber covers Fix C2: sweep /
+// withdrawal / gas_seed rows are inserted with block_number=0 because the
+// executor only knows the tx hash at broadcast time. The confirmation loop
+// must call adapter.GetTransactionBlock to backfill the block number before
+// running confirmation math; otherwise these rows stay at `confirming`
+// forever.
+func TestUpdateConfirmations_ReconcilesOutboundBlockNumber(t *testing.T) {
+	mocks.TestDB(t)
+	registry := chain.NewRegistry()
+	mockChain := mocks.NewMockChain("eth")
+	mockChain.RequiredConfirmationsVal = 3
+	registry.RegisterChain(mockChain)
+
+	w := mocks.InsertWallet(t, "eth")
+	sweepTx := mocks.InsertTransaction(t, w.ID, nil, "eth", models.TxTypeSweep, "confirming", "eth", "1000", 0)
+
+	mockChain.GetTransactionBlockVal = 100
+	var lookedUp string
+	mockChain.GetTransactionBlockFn = func(ctx context.Context, hash string) (uint64, error) {
+		lookedUp = hash
+		return 100, nil
+	}
+
+	svc := newDepositSvc(registry, newWebhookSvc())
+
+	// currentBlock=102 → confs=2 → still confirming after reconcile.
+	svc.updateConfirmations(context.Background(), "eth", mockChain, 102)
+
+	if lookedUp != sweepTx.TxHash {
+		t.Fatalf("expected adapter lookup for %s, got %q", sweepTx.TxHash, lookedUp)
+	}
+	var reloaded models.Transaction
+	if err := facades.Orm().Query().Find(&reloaded, sweepTx.ID); err != nil {
+		t.Fatalf("find transaction: %v", err)
+	}
+	if reloaded.BlockNumber != 100 {
+		t.Fatalf("expected block_number backfilled to 100, got %d", reloaded.BlockNumber)
+	}
+	if reloaded.Status != "confirming" {
+		t.Fatalf("expected confirming at 2 confs, got %s", reloaded.Status)
+	}
+
+	// currentBlock=103 → 3 confs → confirmed; adapter is NOT called again
+	// because block_number is now persisted.
+	lookedUp = ""
+	svc.updateConfirmations(context.Background(), "eth", mockChain, 103)
+	if lookedUp != "" {
+		t.Fatalf("expected adapter not to be re-queried, got lookup for %q", lookedUp)
+	}
+	if err := facades.Orm().Query().Find(&reloaded, sweepTx.ID); err != nil {
+		t.Fatalf("find transaction: %v", err)
+	}
+	if reloaded.Status != "confirmed" {
+		t.Fatalf("expected confirmed, got %s", reloaded.Status)
+	}
+}
+
+// TestUpdateConfirmations_StillPendingOutboundSkipped ensures that when the
+// adapter reports block=0 (tx still in mempool) the row is left alone —
+// block_number stays 0, status unchanged — so the next tick retries. This
+// prevents us from flipping a pending tx to confirmed with a zero block.
+func TestUpdateConfirmations_StillPendingOutboundSkipped(t *testing.T) {
+	mocks.TestDB(t)
+	registry := chain.NewRegistry()
+	mockChain := mocks.NewMockChain("eth")
+	mockChain.RequiredConfirmationsVal = 3
+	registry.RegisterChain(mockChain)
+
+	w := mocks.InsertWallet(t, "eth")
+	withdrawal := mocks.InsertTransaction(t, w.ID, nil, "eth", models.TxTypeWithdrawal, "confirming", "eth", "1000", 0)
+
+	mockChain.GetTransactionBlockVal = 0
+
+	svc := newDepositSvc(registry, newWebhookSvc())
+	svc.updateConfirmations(context.Background(), "eth", mockChain, 500)
+
+	var reloaded models.Transaction
+	if err := facades.Orm().Query().Find(&reloaded, withdrawal.ID); err != nil {
+		t.Fatalf("find transaction: %v", err)
+	}
+	if reloaded.BlockNumber != 0 {
+		t.Fatalf("expected block_number still 0, got %d", reloaded.BlockNumber)
+	}
+	if reloaded.Status != "confirming" {
+		t.Fatalf("expected status still confirming, got %s", reloaded.Status)
+	}
+}

@@ -75,6 +75,18 @@ func (s *Service) resolveCurrentBlockHeight(ctx context.Context, chainID string,
 	return h2, true
 }
 
+// isOutboundTxType reports whether a tx type was broadcast by this service
+// (sweep / withdrawal / gas_seed). Outbound rows are inserted with
+// block_number=0 and must be reconciled against the chain before the
+// confirmation math can run.
+func isOutboundTxType(txType string) bool {
+	switch txType {
+	case models.TxTypeSweep, models.TxTypeWithdrawal, models.TxTypeGasSeed:
+		return true
+	}
+	return false
+}
+
 func (s *Service) updateConfirmations(ctx context.Context, chainID string, adapter types.Chain, currentBlock uint64) error {
 	pending, err := s.txRepo.FindPendingByChain(chainID)
 	if err != nil {
@@ -83,7 +95,22 @@ func (s *Service) updateConfirmations(ctx context.Context, chainID string, adapt
 
 	for _, tx := range pending {
 		if tx.BlockNumber == 0 {
-			continue
+			if !isOutboundTxType(tx.TxType) {
+				continue
+			}
+			block, berr := adapter.GetTransactionBlock(ctx, tx.TxHash)
+			if berr != nil {
+				slog.Warn("reconcile block number", "tx_id", tx.ID, "tx_hash", tx.TxHash, "error", berr)
+				continue
+			}
+			if block == 0 {
+				continue
+			}
+			tx.BlockNumber = int64(block)
+			if err := s.txRepo.UpdateFields(tx.ID, map[string]interface{}{"block_number": block}); err != nil {
+				slog.Error("persist block number", "tx_id", tx.ID, "error", err)
+				continue
+			}
 		}
 		confs := int(currentBlock) - int(tx.BlockNumber)
 		if confs < 0 {

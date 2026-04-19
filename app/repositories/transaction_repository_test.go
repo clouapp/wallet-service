@@ -165,6 +165,33 @@ func (s *TransactionRepositoryTestSuite) TestFindPendingByChain() {
 	s.Len(pending, 2)
 }
 
+// TestFindPendingByChain_IncludesOutbound guards Fix C2: the confirmation loop
+// must see sweep / withdrawal / gas_seed rows so their BlockNumber can be
+// reconciled and they can reach `confirmed`. Before the fix this query was
+// hard-coded to tx_type=deposit and outbound rows stayed at `confirming`
+// forever.
+func (s *TransactionRepositoryTestSuite) TestFindPendingByChain_IncludesOutbound() {
+	walletID := s.insertWallet()
+	s.Require().NoError(s.repo.Create(s.makeTx(walletID, "deposit", "pending")))
+	s.Require().NoError(s.repo.Create(s.makeTx(walletID, "withdrawal", "confirming")))
+	s.Require().NoError(s.repo.Create(s.makeTx(walletID, "sweep", "confirming")))
+	s.Require().NoError(s.repo.Create(s.makeTx(walletID, "gas_seed", "confirming")))
+	s.Require().NoError(s.repo.Create(s.makeTx(walletID, "sweep", "confirmed")))
+
+	pending, err := s.repo.FindPendingByChain("eth")
+	s.NoError(err)
+	s.Len(pending, 4)
+
+	byType := map[string]int{}
+	for _, tx := range pending {
+		byType[tx.TxType]++
+	}
+	s.Equal(1, byType["deposit"])
+	s.Equal(1, byType["withdrawal"])
+	s.Equal(1, byType["sweep"])
+	s.Equal(1, byType["gas_seed"])
+}
+
 func (s *TransactionRepositoryTestSuite) TestUpdateFields() {
 	walletID := s.insertWallet()
 	tx := s.makeTx(walletID, "deposit", "pending")

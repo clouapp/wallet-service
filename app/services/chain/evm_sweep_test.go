@@ -87,3 +87,103 @@ func TestEVMDustThresholdNativeVsToken(t *testing.T) {
 		t.Fatalf("token: expected nil, got %v", got)
 	}
 }
+
+// TestEVMGetTransactionBlock_Mined proves the adapter decodes the blockNumber
+// field returned by `eth_getTransactionByHash` so the confirmation loop can
+// reconcile sweep / withdrawal / gas_seed rows that were inserted with
+// block_number=0. The JSON shape mirrors what go-ethereum / Infura return.
+func TestEVMGetTransactionBlock_Mined(t *testing.T) {
+	var seenMethod string
+	var seenHash string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var req map[string]interface{}
+		_ = json.NewDecoder(r.Body).Decode(&req)
+		seenMethod, _ = req["method"].(string)
+		if params, ok := req["params"].([]interface{}); ok && len(params) > 0 {
+			seenHash, _ = params[0].(string)
+		}
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"jsonrpc": "2.0", "id": req["id"],
+			"result": map[string]interface{}{
+				"hash":        "0xdeadbeef",
+				"blockNumber": "0x64",
+				"from":        "0xfrom", "to": "0xto",
+			},
+		})
+	}))
+	defer server.Close()
+
+	adapter := NewEVMLive(EVMConfig{ChainIDStr: "eth", RPCURL: server.URL})
+	block, err := adapter.GetTransactionBlock(context.Background(), "0xdeadbeef")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if seenMethod != "eth_getTransactionByHash" {
+		t.Fatalf("expected eth_getTransactionByHash, got %q", seenMethod)
+	}
+	if seenHash != "0xdeadbeef" {
+		t.Fatalf("expected hash param 0xdeadbeef, got %q", seenHash)
+	}
+	if block != 100 {
+		t.Fatalf("expected block 100 (0x64), got %d", block)
+	}
+}
+
+// TestEVMGetTransactionBlock_Pending covers both "not yet mined" shapes the
+// node can return: the whole result is null (tx unknown to this node) and the
+// tx exists but blockNumber is null. Both must return (0, nil) so the
+// confirmation loop treats the row as still pending and retries next tick.
+func TestEVMGetTransactionBlock_Pending(t *testing.T) {
+	tests := []struct {
+		name   string
+		result interface{}
+	}{
+		{"result null", nil},
+		{"blockNumber null", map[string]interface{}{"hash": "0xabc", "blockNumber": nil}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				var req map[string]interface{}
+				_ = json.NewDecoder(r.Body).Decode(&req)
+				_ = json.NewEncoder(w).Encode(map[string]interface{}{
+					"jsonrpc": "2.0", "id": req["id"], "result": tt.result,
+				})
+			}))
+			defer server.Close()
+
+			adapter := NewEVMLive(EVMConfig{ChainIDStr: "eth", RPCURL: server.URL})
+			block, err := adapter.GetTransactionBlock(context.Background(), "0xabc")
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if block != 0 {
+				t.Fatalf("expected 0 for pending, got %d", block)
+			}
+		})
+	}
+}
+
+// TestEVMGetTransactionBlock_RPCError surfaces RPC-level failures so the
+// confirmation loop can skip and retry rather than silently flipping the row
+// to confirmed with a bogus block number.
+func TestEVMGetTransactionBlock_RPCError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var req map[string]interface{}
+		_ = json.NewDecoder(r.Body).Decode(&req)
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"jsonrpc": "2.0", "id": req["id"],
+			"error": map[string]interface{}{"code": -32000, "message": "rpc down"},
+		})
+	}))
+	defer server.Close()
+
+	adapter := NewEVMLive(EVMConfig{ChainIDStr: "eth", RPCURL: server.URL})
+	block, err := adapter.GetTransactionBlock(context.Background(), "0xabc")
+	if err == nil {
+		t.Fatal("expected error from RPC failure")
+	}
+	if block != 0 {
+		t.Fatalf("expected 0 on error, got %d", block)
+	}
+}
