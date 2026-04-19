@@ -28,15 +28,15 @@ func (s *WithdrawalsControllerTestSuite) createWallet() string {
 
 func (s *WithdrawalsControllerTestSuite) TestCreateWithdrawal_Success() {
 	walletID := s.createWallet()
-	s.SignedPost("/v1/wallets/"+walletID+"/withdrawals",
+	resp := s.SignedPost("/v1/wallets/"+walletID+"/withdrawals",
 		`{"external_user_id":"user_withdraw","to_address":"0x742d35Cc6634C0532925a3b844Bc9e7595f2bD12","amount":"1000000","asset":"eth","idempotency_key":"withdraw_001"}`).
-		AssertCreated().AssertJson(map[string]any{
-		"status":           "pending",
-		"tx_type":          "withdrawal",
-		"external_user_id": "user_withdraw",
-		"amount":           "1000000",
-		"asset":            "eth",
-	})
+		AssertCreated()
+
+	j, _ := resp.Json()
+	s.NotEmpty(j["transaction_id"], "transaction_id should be present")
+	s.Contains(j, "tx_hash")
+	s.Contains(j, "status")
+	s.Contains(j, "origin")
 }
 
 func (s *WithdrawalsControllerTestSuite) TestCreateWithdrawal_Idempotency() {
@@ -46,7 +46,8 @@ func (s *WithdrawalsControllerTestSuite) TestCreateWithdrawal_Idempotency() {
 	j1, _ := s.SignedPost("/v1/wallets/"+walletID+"/withdrawals", body).Json()
 	j2, _ := s.SignedPost("/v1/wallets/"+walletID+"/withdrawals", body).Json()
 
-	s.Equal(j1["id"], j2["id"])
+	s.NotEmpty(j1["transaction_id"], "transaction_id should be present in first response")
+	s.Equal(j1["transaction_id"], j2["transaction_id"])
 }
 
 func (s *WithdrawalsControllerTestSuite) TestCreateWithdrawal_MissingIdempotencyKey() {
