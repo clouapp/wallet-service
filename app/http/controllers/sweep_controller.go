@@ -2,6 +2,7 @@ package controllers
 
 import (
 	"math/big"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/goravel/framework/contracts/http"
@@ -10,6 +11,13 @@ import (
 	"github.com/macrowallets/waas/app/http/requests"
 	"github.com/macrowallets/waas/app/services/sweep"
 )
+
+// gasCheckRateLimitWindow caps ForceGasCheck to one on-chain read per wallet
+// per minute. The limit is enforced via Redis SETNX so it is shared across all
+// API nodes and Lambda handlers. When Redis is unavailable we fall through to
+// the underlying handler — availability of the endpoint is more important than
+// a perfect rate limit, and the chain adapter itself has short-term caching.
+const gasCheckRateLimitWindow = 60 * time.Second
 
 // ConsolidateWallet godoc
 // @Summary      Consolidate wallet balances
@@ -89,9 +97,23 @@ func GetGasStatus(ctx http.Context) http.Response {
 // @Failure      429       {object}  ErrorResponse
 // @Router       /v1/wallets/{walletId}/gas-check [post]
 func ForceGasCheck(ctx http.Context) http.Response {
-	// TODO: add Redis-based rate limit 1/min/wallet when rdb is wired up here.
-	// RefreshGasStatus already performs an on-chain balance read on every call,
-	// so this endpoint is semantically identical to GetGasStatus today.
+	walletID, err := uuid.Parse(ctx.Request().Route("walletId"))
+	if err != nil {
+		return ctx.Response().Json(http.StatusBadRequest, http.Json{"error": "invalid wallet id"})
+	}
+
+	if rdb := container.Get().Redis; rdb != nil {
+		key := "vault:ratelimit:gas-check:" + walletID.String()
+		ok, setErr := rdb.SetNX(ctx.Context(), key, "1", gasCheckRateLimitWindow).Result()
+		if setErr == nil && !ok {
+			return ctx.Response().Json(http.StatusTooManyRequests, http.Json{
+				"error":               "rate_limited",
+				"limit_type":          "gas_check",
+				"retry_after_seconds": int(gasCheckRateLimitWindow / time.Second),
+			})
+		}
+	}
+
 	return GetGasStatus(ctx)
 }
 
