@@ -81,6 +81,11 @@ type TransferRequest struct {
 	Token    *Token   `json:"token"`
 	Nonce    *uint64  `json:"nonce"`
 	GasLimit *uint64  `json:"gas_limit"`
+	// GasPrice, when non-nil, is used by adapters that would otherwise fetch a
+	// live gas price. Threading this through eliminates the double-fetch race
+	// where BuildSweep sizes amounts with one price and BuildTransfer encodes
+	// the tx with a drifted price. Currently honored by the EVM adapter only.
+	GasPrice *big.Int `json:"gas_price,omitempty"`
 }
 
 // SweepRequest describes an intra-wallet sweep: move `Asset` from `From` to `To`

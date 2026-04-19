@@ -92,15 +92,20 @@ func (a *EVMLive) GetTokenBalance(ctx context.Context, address string, token typ
 }
 
 func (a *EVMLive) BuildTransfer(ctx context.Context, req types.TransferRequest) (*types.UnsignedTx, error) {
-	// Resolve nonce
 	var hexNonce string
 	if err := a.rpc.Call(ctx, "eth_getTransactionCount", &hexNonce, req.From, "pending"); err != nil {
 		return nil, fmt.Errorf("nonce: %w", err)
 	}
-	// Gas price
-	var hexGas string
-	if err := a.rpc.Call(ctx, "eth_gasPrice", &hexGas); err != nil {
-		return nil, fmt.Errorf("gas price: %w", err)
+
+	// Prefer a caller-supplied gas price so callers that size amounts against a
+	// specific price (e.g. BuildSweep) encode the tx with the same price.
+	gasPrice := req.GasPrice
+	if gasPrice == nil {
+		var hexGas string
+		if err := a.rpc.Call(ctx, "eth_gasPrice", &hexGas); err != nil {
+			return nil, fmt.Errorf("gas price: %w", err)
+		}
+		gasPrice = hexToBigInt(hexGas)
 	}
 
 	var txData []byte
@@ -122,7 +127,7 @@ func (a *EVMLive) BuildTransfer(ctx context.Context, req types.TransferRequest) 
 			"to":        to,
 			"value":     value.String(),
 			"gas_limit": gasLimit,
-			"gas_price": hexToBigInt(hexGas).String(),
+			"gas_price": gasPrice.String(),
 			"chain_id":  a.cfg.NetworkID,
 			"data":      txData,
 		},
@@ -174,6 +179,7 @@ func (a *EVMLive) BuildSweep(ctx context.Context, req types.SweepRequest) ([]typ
 		}
 		unsigned, err := a.BuildTransfer(ctx, types.TransferRequest{
 			From: req.From, To: req.To, Amount: amount, Asset: a.cfg.NativeSymbol,
+			GasPrice: gasPrice,
 		})
 		if err != nil {
 			return nil, err
@@ -191,6 +197,7 @@ func (a *EVMLive) BuildSweep(ctx context.Context, req types.SweepRequest) ([]typ
 		seedAmount.Div(seedAmount, big.NewInt(10))
 		seedTx, err := a.BuildTransfer(ctx, types.TransferRequest{
 			From: req.To, To: req.From, Amount: seedAmount, Asset: a.cfg.NativeSymbol,
+			GasPrice: gasPrice,
 		})
 		if err != nil {
 			return nil, fmt.Errorf("build gas_seed: %w", err)
@@ -212,6 +219,7 @@ func (a *EVMLive) BuildSweep(ctx context.Context, req types.SweepRequest) ([]typ
 
 	sweepTx, err := a.BuildTransfer(ctx, types.TransferRequest{
 		From: req.From, To: req.To, Amount: amount, Asset: req.Token.Symbol, Token: req.Token,
+		GasPrice: gasPrice,
 	})
 	if err != nil {
 		return nil, err
