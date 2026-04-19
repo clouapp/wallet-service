@@ -4,12 +4,14 @@ import (
 	"context"
 	"errors"
 	"math/big"
+	"strings"
 	"testing"
 
 	"github.com/google/uuid"
 
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/services/chain"
+	"github.com/macrowallets/waas/app/services/webhook"
 	"github.com/macrowallets/waas/pkg/types"
 	"github.com/macrowallets/waas/tests/mocks"
 )
@@ -327,6 +329,307 @@ func TestExecute_MultiSweep_LinksParent(t *testing.T) {
 	}
 	if final.ParentTransactionID != nil {
 		t.Fatalf("final withdrawal should have no parent, got %v", final.ParentTransactionID)
+	}
+}
+
+// TestExecute_MultiSweep_RetryAfterPartialFailure simulates the end-to-end
+// retry flow for a multi-leg sweep: the first attempt broadcasts leg 0
+// successfully (gas_seed + sweep), fails mid-way through leg 1 (the gas_seed
+// broadcast returns an error), and reports the failure via FailedStep. The
+// caller (withdraw service) would then re-plan from the current wallet state
+// and call ExecutePlan again with a fresh plan containing only the
+// still-outstanding legs. This test simulates that second attempt by feeding a
+// new plan with a single leg and verifying it completes cleanly, covering the
+// "retry with same idempotency key re-plans from current state" invariant.
+func TestExecute_MultiSweep_RetryAfterPartialFailure(t *testing.T) {
+	walletID := uuid.New()
+	baseAddr := models.Address{
+		ID:             uuid.New(),
+		WalletID:       walletID,
+		Address:        "0xBASE",
+		ExternalUserID: "user-1",
+	}
+	childA := models.Address{
+		ID:             uuid.New(),
+		WalletID:       walletID,
+		Address:        "0xCHILD_A",
+		ExternalUserID: "user-1",
+	}
+	childB := models.Address{
+		ID:             uuid.New(),
+		WalletID:       walletID,
+		Address:        "0xCHILD_B",
+		ExternalUserID: "user-1",
+	}
+	wallet := &models.Wallet{
+		ID:             walletID,
+		Chain:          "eth",
+		DepositAddress: &baseAddr,
+		MPCCurve:       "secp256k1",
+	}
+
+	mockChain := sweepMockChain("eth", "eth")
+	svc, txRepo := newExecutorService(t, wallet, mockChain)
+	svc.registry.RegisterToken(types.Token{
+		Symbol: "usdt", Name: "Tether", Contract: "0xTETHER", Decimals: 6, ChainID: "eth",
+	})
+
+	// Fail broadcast call #3 (0-indexed #2): that's the childB gas_seed, i.e.
+	// the first action of leg 1. Leg 0 (childA gas_seed + sweep) has already
+	// completed; leg 1 is interrupted before any on-chain side-effect.
+	const failAt = 3
+	var broadcastCalls int
+	mockChain.BroadcastTransactionFn = func(ctx context.Context, signed *types.SignedTx) (string, error) {
+		broadcastCalls++
+		if broadcastCalls == failAt {
+			return "", errors.New("rpc: simulated broadcast failure")
+		}
+		return "0xhash_" + string(signed.RawBytes[:1]), nil
+	}
+
+	// ---- First attempt -----------------------------------------------------
+	plan := &Plan{
+		WalletID: walletID,
+		Chain:    "eth",
+		Asset:    "usdt",
+		Amount:   big.NewInt(1000),
+		Strategy: StrategyMultiSweep,
+		Sweeps: []PlannedSweep{
+			{From: childA, Amount: big.NewInt(600), NeedsGas: true},
+			{From: childB, Amount: big.NewInt(400), NeedsGas: true},
+		},
+	}
+	withdrawalTxID := uuid.New()
+
+	res, err := svc.ExecutePlan(
+		context.Background(), plan, []byte("fake-share-a"),
+		withdrawalTxID, "0xDEST", "user-1",
+	)
+	if err != nil {
+		t.Fatalf("first attempt: unexpected error: %v", err)
+	}
+	if res == nil {
+		t.Fatalf("first attempt: expected non-nil result with FailedStep")
+	}
+	if res.FailedStep == nil {
+		t.Fatalf("first attempt: expected FailedStep to be set after mid-plan failure")
+	}
+	if res.FailedStep.Index != 1 {
+		t.Fatalf("first attempt: expected FailedStep.Index=1 (leg B), got %d", res.FailedStep.Index)
+	}
+	if !res.FailedStep.RetryReady {
+		t.Fatalf("first attempt: expected RetryReady=true for transient broadcast error")
+	}
+	if !strings.Contains(res.FailedStep.LastError, "simulated broadcast failure") {
+		t.Fatalf("first attempt: LastError should contain upstream error, got %q", res.FailedStep.LastError)
+	}
+	if res.FinalWithdrawTx != nil {
+		t.Fatalf("first attempt: withdrawal must not be broadcast after sweep failure, got %+v", res.FinalWithdrawTx)
+	}
+	if len(res.Sweeps) != 1 {
+		t.Fatalf("first attempt: expected 1 completed sweep leg, got %d", len(res.Sweeps))
+	}
+	if res.Sweeps[0].From.ID != childA.ID {
+		t.Fatalf("first attempt: expected completed sweep from childA, got %s", res.Sweeps[0].From.Address)
+	}
+	// Persisted rows so far: gas_seed(A) + sweep(A) = 2. The failing childB
+	// gas_seed aborts before any row is written and no withdrawal row exists.
+	if len(txRepo.created) != 2 {
+		t.Fatalf("first attempt: expected 2 persisted txs (childA leg only), got %d", len(txRepo.created))
+	}
+	if txRepo.created[0].Origin != models.TxOriginGasSeed || txRepo.created[1].Origin != models.TxOriginSweep {
+		t.Fatalf("first attempt: unexpected origin sequence: %q, %q",
+			txRepo.created[0].Origin, txRepo.created[1].Origin)
+	}
+
+	// ---- Second attempt: planner would have detected childA is now at zero
+	// balance and returned a single-leg plan covering only childB. We feed
+	// that re-planned value in directly; broadcasts now all succeed because
+	// our failure trigger fires only on call #3 which has already passed.
+	retryPlan := &Plan{
+		WalletID: walletID,
+		Chain:    "eth",
+		Asset:    "usdt",
+		Amount:   big.NewInt(1000),
+		Strategy: StrategyMultiSweep,
+		Sweeps: []PlannedSweep{
+			{From: childB, Amount: big.NewInt(400), NeedsGas: true},
+		},
+	}
+
+	retryRes, err := svc.ExecutePlan(
+		context.Background(), retryPlan, []byte("fake-share-a"),
+		withdrawalTxID, "0xDEST", "user-1",
+	)
+	if err != nil {
+		t.Fatalf("retry: unexpected error: %v", err)
+	}
+	if retryRes == nil || retryRes.FinalWithdrawTx == nil {
+		t.Fatalf("retry: expected successful FinalWithdrawTx, got %+v", retryRes)
+	}
+	if retryRes.FailedStep != nil {
+		t.Fatalf("retry: expected nil FailedStep, got %+v", retryRes.FailedStep)
+	}
+	if len(retryRes.Sweeps) != 1 || retryRes.Sweeps[0].From.ID != childB.ID {
+		t.Fatalf("retry: expected single sweep from childB, got %+v", retryRes.Sweeps)
+	}
+	// Retry adds: gas_seed(B) + sweep(B) + withdrawal = 3, running total 5.
+	if len(txRepo.created) != 5 {
+		t.Fatalf("retry: expected 5 persisted txs cumulatively, got %d", len(txRepo.created))
+	}
+	final := txRepo.created[4]
+	if final.TxType != models.TxTypeWithdrawal {
+		t.Fatalf("retry: expected final row to be withdrawal, got %s", final.TxType)
+	}
+	if final.ID != withdrawalTxID {
+		t.Fatalf("retry: final withdrawal ID must preserve idempotency key %s, got %s",
+			withdrawalTxID, final.ID)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Fakes for exercising *webhook.Service without touching SQS or the DB.
+// ---------------------------------------------------------------------------
+
+type recordedWebhook struct {
+	eventType types.EventType
+	txID      uuid.UUID
+}
+
+type fakeQueueSender struct {
+	sent []recordedWebhook
+}
+
+func (f *fakeQueueSender) SendWebhook(ctx context.Context, msg types.WebhookMessage) error {
+	txID, _ := uuid.Parse(msg.TransactionID)
+	f.sent = append(f.sent, recordedWebhook{eventType: msg.EventType, txID: txID})
+	return nil
+}
+
+type fakeWebhookConfigRepo struct {
+	configs []models.WebhookConfig
+}
+
+func (f *fakeWebhookConfigRepo) Create(cfg *models.WebhookConfig) error { return nil }
+func (f *fakeWebhookConfigRepo) FindByWalletID(walletID uuid.UUID) ([]models.WebhookConfig, error) {
+	return nil, nil
+}
+func (f *fakeWebhookConfigRepo) FindByIDAndWallet(id, walletID uuid.UUID) (*models.WebhookConfig, error) {
+	return nil, nil
+}
+func (f *fakeWebhookConfigRepo) FindActive() ([]models.WebhookConfig, error) { return f.configs, nil }
+func (f *fakeWebhookConfigRepo) FindAll() ([]models.WebhookConfig, error)    { return f.configs, nil }
+func (f *fakeWebhookConfigRepo) Delete(cfg *models.WebhookConfig) error      { return nil }
+func (f *fakeWebhookConfigRepo) DeleteByID(id uuid.UUID) error               { return nil }
+
+type fakeWebhookEventRepo struct {
+	created []*models.WebhookEvent
+}
+
+func (f *fakeWebhookEventRepo) Create(event *models.WebhookEvent) error {
+	f.created = append(f.created, event)
+	return nil
+}
+func (f *fakeWebhookEventRepo) MarkDelivered(eventID string) error                  { return nil }
+func (f *fakeWebhookEventRepo) IncrementAttempt(eventID string, errMsg string) error { return nil }
+
+// TestExecute_MultiSweep_WebhookEmittedPerSweep verifies that for a multi-leg
+// plan the executor emits exactly one sweep.broadcast event per leg (never per
+// gas_seed) and exactly one withdrawal.broadcasting event for the final
+// transfer. Each event must carry the correct transaction id so downstream
+// consumers can correlate deliveries with the parent withdrawal.
+func TestExecute_MultiSweep_WebhookEmittedPerSweep(t *testing.T) {
+	walletID := uuid.New()
+	baseAddr := models.Address{
+		ID:             uuid.New(),
+		WalletID:       walletID,
+		Address:        "0xBASE",
+		ExternalUserID: "user-1",
+	}
+	childA := models.Address{ID: uuid.New(), WalletID: walletID, Address: "0xCHILD_A", ExternalUserID: "user-1"}
+	childB := models.Address{ID: uuid.New(), WalletID: walletID, Address: "0xCHILD_B", ExternalUserID: "user-1"}
+	wallet := &models.Wallet{
+		ID:             walletID,
+		Chain:          "eth",
+		DepositAddress: &baseAddr,
+		MPCCurve:       "secp256k1",
+	}
+
+	mockChain := sweepMockChain("eth", "eth")
+	svc, _ := newExecutorService(t, wallet, mockChain)
+	svc.registry.RegisterToken(types.Token{
+		Symbol: "usdt", Name: "Tether", Contract: "0xTETHER", Decimals: 6, ChainID: "eth",
+	})
+
+	// Wire a real webhook.Service backed by fakes; one active config that
+	// subscribes to both event types we care about. The Events column uses
+	// a postgres-array string format (see webhook.pgArray).
+	sender := &fakeQueueSender{}
+	cfgRepo := &fakeWebhookConfigRepo{
+		configs: []models.WebhookConfig{{
+			ID:       uuid.New(),
+			URL:      "https://example.test/hooks",
+			Secret:   "s",
+			Events:   `{"sweep.broadcast","withdrawal.broadcasting"}`,
+			IsActive: true,
+		}},
+	}
+	eventRepo := &fakeWebhookEventRepo{}
+	svc.webhookSvc = webhook.NewService(sender, cfgRepo, eventRepo)
+
+	plan := &Plan{
+		WalletID: walletID,
+		Chain:    "eth",
+		Asset:    "usdt",
+		Amount:   big.NewInt(1000),
+		Strategy: StrategyMultiSweep,
+		Sweeps: []PlannedSweep{
+			{From: childA, Amount: big.NewInt(600), NeedsGas: true},
+			{From: childB, Amount: big.NewInt(400), NeedsGas: true},
+		},
+	}
+	withdrawalTxID := uuid.New()
+
+	res, err := svc.ExecutePlan(
+		context.Background(), plan, []byte("fake-share-a"),
+		withdrawalTxID, "0xDEST", "user-1",
+	)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if res == nil || res.FinalWithdrawTx == nil {
+		t.Fatalf("expected successful FinalWithdrawTx, got %+v", res)
+	}
+
+	var sweepEvents, withdrawalEvents, otherEvents int
+	for _, ev := range sender.sent {
+		switch ev.eventType {
+		case types.EventSweepBroadcast:
+			sweepEvents++
+		case types.EventWithdrawalBroadcast:
+			withdrawalEvents++
+			if ev.txID != withdrawalTxID {
+				t.Fatalf("withdrawal.broadcasting event must carry withdrawalTxID %s, got %s",
+					withdrawalTxID, ev.txID)
+			}
+		default:
+			otherEvents++
+		}
+	}
+	if sweepEvents != 2 {
+		t.Fatalf("expected 2 sweep.broadcast events (one per leg, never for gas_seed), got %d", sweepEvents)
+	}
+	if withdrawalEvents != 1 {
+		t.Fatalf("expected exactly 1 withdrawal.broadcasting event, got %d", withdrawalEvents)
+	}
+	if otherEvents != 0 {
+		t.Fatalf("unexpected non-sweep/withdrawal events enqueued: %d", otherEvents)
+	}
+	// One WebhookEvent row per SQS send because we configured a single
+	// subscriber. Parity guards against accidental double-bookkeeping.
+	if len(eventRepo.created) != len(sender.sent) {
+		t.Fatalf("webhook_events rows (%d) must mirror SQS sends (%d)",
+			len(eventRepo.created), len(sender.sent))
 	}
 }
 
