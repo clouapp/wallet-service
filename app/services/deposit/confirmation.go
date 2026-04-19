@@ -107,10 +107,25 @@ func (s *Service) updateConfirmations(ctx context.Context, chainID string, adapt
 			continue
 		}
 
-		if newStatus == string(types.TxStatusConfirmed) && tx.Status != string(types.TxStatusConfirmed) {
-			s.webhookSvc.EnqueueEvent(ctx, tx.ID, types.EventDepositConfirmed, tx)
-		} else if tx.Status == string(types.TxStatusPending) && newStatus == string(types.TxStatusConfirming) {
-			s.webhookSvc.EnqueueEvent(ctx, tx.ID, types.EventDepositConfirming, tx)
+		confirmedNow := newStatus == string(types.TxStatusConfirmed) && tx.Status != string(types.TxStatusConfirmed)
+		confirmingNow := tx.Status == string(types.TxStatusPending) && newStatus == string(types.TxStatusConfirming)
+
+		switch tx.TxType {
+		case models.TxTypeDeposit:
+			if confirmedNow {
+				s.webhookSvc.EnqueueEvent(ctx, tx.ID, types.EventDepositConfirmed, tx)
+			} else if confirmingNow {
+				s.webhookSvc.EnqueueEvent(ctx, tx.ID, types.EventDepositConfirming, tx)
+			}
+		case models.TxTypeSweep:
+			if confirmedNow {
+				s.webhookSvc.EnqueueEvent(ctx, tx.ID, types.EventSweepConfirmed, tx)
+			}
+		case models.TxTypeWithdrawal:
+			if confirmedNow {
+				s.webhookSvc.EnqueueEvent(ctx, tx.ID, types.EventWithdrawalConfirmed, tx)
+			}
+		case models.TxTypeGasSeed:
 		}
 	}
 	return nil
