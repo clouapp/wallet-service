@@ -666,9 +666,9 @@ func SweepDefaults() map[string]SweepThresholds {
 			DustUSD:         getEnvFloatOr("ETH_DUST_THRESHOLD_USD", 1.0),
 		},
 		"polygon": {
-			GasReadinessRaw: getEnvOr("POL_GAS_READINESS_THRESHOLD_WEI", "500000000000000000"),
-			DustNativeRaw:   getEnvOr("POL_DUST_THRESHOLD_NATIVE_WEI", "100000000000000000"),
-			DustUSD:         getEnvFloatOr("POL_DUST_THRESHOLD_USD", 0.10),
+			GasReadinessRaw: getEnvOr("POLYGON_GAS_READINESS_THRESHOLD_WEI", "500000000000000000"),
+			DustNativeRaw:   getEnvOr("POLYGON_DUST_THRESHOLD_NATIVE_WEI", "100000000000000000"),
+			DustUSD:         getEnvFloatOr("POLYGON_DUST_THRESHOLD_USD", 0.10),
 		},
 		"sol": {
 			GasReadinessRaw: getEnvOr("SOL_GAS_READINESS_THRESHOLD_LAMPORTS", "10000000"),

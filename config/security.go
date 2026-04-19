@@ -88,14 +88,14 @@ func SweepDefaults() map[string]SweepThresholds {
 			DustUSD:         envFloat("TETH_DUST_THRESHOLD_USD", 1.0),
 		},
 		"polygon": {
-			GasReadinessRaw: envString("POL_GAS_READINESS_THRESHOLD_WEI", "500000000000000000"),
-			DustNativeRaw:   envString("POL_DUST_THRESHOLD_NATIVE_WEI", "100000000000000000"),
-			DustUSD:         envFloat("POL_DUST_THRESHOLD_USD", 0.10),
+			GasReadinessRaw: envString("POLYGON_GAS_READINESS_THRESHOLD_WEI", "500000000000000000"),
+			DustNativeRaw:   envString("POLYGON_DUST_THRESHOLD_NATIVE_WEI", "100000000000000000"),
+			DustUSD:         envFloat("POLYGON_DUST_THRESHOLD_USD", 0.10),
 		},
 		"tpolygon": {
-			GasReadinessRaw: envString("TPOL_GAS_READINESS_THRESHOLD_WEI", "500000000000000000"),
-			DustNativeRaw:   envString("TPOL_DUST_THRESHOLD_NATIVE_WEI", "100000000000000000"),
-			DustUSD:         envFloat("TPOL_DUST_THRESHOLD_USD", 0.10),
+			GasReadinessRaw: envString("TPOLYGON_GAS_READINESS_THRESHOLD_WEI", "500000000000000000"),
+			DustNativeRaw:   envString("TPOLYGON_DUST_THRESHOLD_NATIVE_WEI", "100000000000000000"),
+			DustUSD:         envFloat("TPOLYGON_DUST_THRESHOLD_USD", 0.10),
 		},
 		"sol": {
 			GasReadinessRaw: envString("SOL_GAS_READINESS_THRESHOLD_LAMPORTS", "10000000"),
