@@ -999,7 +999,23 @@ git commit -m "feat(chain/evm): implement BuildSweep for native and ERC-20"
 
 ---
 
-## Task 11: Implement `BuildSweep` in Solana adapter
+## AMENDMENT (2026-04-18): EVM-only v1
+
+Discovery during Task 10: `SolanaLive` and `BitcoinLive` adapters are POC-level (signing / broadcast / build_transfer are stubs returning `"not implemented"`). The sweep feature presupposes a working base-level adapter, which SOL/BTC lack today.
+
+**Scope cut:** v1 of this plan ships **EVM-only** (ETH, Polygon, TETH, TPolygon). SOL and BTC sweep are deferred to a dedicated epic that also implements the base adapter (derivation, build, sign, broadcast). See spec §1.3.
+
+**Tasks 11 and 12 are reduced to minimum interface satisfaction:** `BuildSweep` returns `ErrUnsupportedChain`; threshold getters return nil. This keeps the `Chain` interface contract fulfilled (package compiles) while the sweep service refuses to plan for these chains at the entry point (Task 15 guard).
+
+**Task 13 only wires thresholds for EVM** (skip SOL/BTC config wiring).
+
+**Task 15 (Planner) adds an entry guard** that returns `ErrUnsupportedChain` for any wallet whose chain is not in the EVM adapter set (inspection via the registry's adapter-type method or by chain ID allowlist).
+
+**Frontend Tasks 26–29 gate the new UI on EVM:** gas-funding banner, consolidate button, withdraw preview all only render for EVM wallets. SOL/BTC wallets keep the existing UI and existing withdraw flow (direct-from-child, POC-level).
+
+---
+
+## Task 11: Minimal `BuildSweep` stub for Solana adapter (v1 EVM-only; see AMENDMENT)
 
 **Files:**
 - Modify: `app/services/chain/solana.go`
@@ -1139,7 +1155,7 @@ git commit -m "feat(chain/solana): implement BuildSweep with fee_payer and optio
 
 ---
 
-## Task 12: Implement `BuildSweep` in Bitcoin adapter
+## Task 12: Minimal `BuildSweep` stub for Bitcoin adapter (v1 EVM-only; see AMENDMENT)
 
 **Files:**
 - Modify: `app/services/chain/bitcoin.go`

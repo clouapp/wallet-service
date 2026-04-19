@@ -19,6 +19,24 @@ Introduz o modelo **BitGo-like** sobre a infra MPC 2-of-2 existente: cada wallet
 - Preserva a semântica WaaS — `external_user_id` continua sendo tag em addresses; atribuição de saldo per-user é responsabilidade do cliente integrador (via webhooks).
 - Alinha com o modelo BitGo de **baseAddress + consolidate manual + velocity limits**.
 
+### 1.3 Escopo de chains — AMENDMENT 2026-04-18
+
+**Descoberta durante implementação:** os adapters `SolanaLive` e `BitcoinLive` em `app/services/chain/` são **POC-level**. Métodos críticos retornam `"not implemented"` (SOL: `DeriveAddress`, `GetTokenBalance`, `SignTransaction`, `BroadcastTransaction`; BTC: `DeriveAddress`, `SignTransaction`; ambos: `BuildTransfer` retorna apenas metadata map, sem instruções/PSBT reais).
+
+**Decisão:** a v1 deste spec cobre **apenas EVM (ETH + Polygon, incluindo testnets teth + tpolygon)**. SOL e BTC saem do escopo da v1. Ganham uma épica dedicada que cobre:
+- `DeriveAddress` real por chain
+- `BuildTransfer` com instruções SPL (SOL) / PSBT (BTC)
+- `GetTokenBalance` com ATA resolution (SOL)
+- `SignTransaction` + `BroadcastTransaction` reais
+- Depois disso, `BuildSweep` para essas chains
+
+**Como isso aparece no código:**
+- `sweep.Service.PlanForWithdrawal` e `ConsolidateAll` retornam `ErrUnsupportedChain` para SOL/BTC wallets.
+- `SolanaLive.BuildSweep` / `BitcoinLive.BuildSweep` retornam `ErrUnsupportedChain` (existem só pra satisfazer a interface `Chain`).
+- `sweep.RefreshGasStatus` retorna `GasStatusSeeded` estático para BTC (sem gas concept) e `ErrUnsupportedChain` para SOL (até épica separada).
+- Withdraw pre-existente continua funcionando como está para SOL/BTC (direct-from-child flow que o código atual já implementa em modo POC — nada muda).
+- Frontend: gas-funding / consolidate / withdraw preview **só aparecem para wallets EVM**. Wallets SOL/BTC mantêm a UX atual.
+
 ### 1.2 Decisões-chave
 
 | Decisão | Escolha | Racional |
@@ -26,7 +44,7 @@ Introduz o modelo **BitGo-like** sobre a infra MPC 2-of-2 existente: cada wallet
 | Modelo de chaves | Híbrido: mantém MPC 2-of-2 + adiciona BaseAddress e sweep intra-wallet | Caminho A. Sem backup key / recovery externo; zero ruptura do que está pronto. |
 | Trigger de sweep | Sweep-on-withdraw (lazy) + endpoint manual de consolidação | Respeita MPC: nunca armazena passphrase server-side. |
 | Gas funding | Base-funded puro; onboarding guia gas seed; estado `gas_ready` visível na UI | Zero subsídio da plataforma; UX compensada por guidance explícito. |
-| Mecânica de sweep | Chain-specific otimizada: EVM (gas_seed + sweep), SOL (`fee_payer`, 1 tx), BTC (PSBT) | UX e custo ótimos por chain; aceita complexidade extra. |
+| Mecânica de sweep | **v1 EVM-only** (ETH + Polygon). SOL/BTC deferred — ver §1.3. | Adapters SOL/BTC hoje são POC (signing/build stubs); sweep pressupõe base funcional. |
 | Política de saque | Opportunistic + dust threshold (policy #4) | Economiza $2-6/saque em ETH mainnet vs always-from-Base; evita dust-sweep em BTC. |
 | Per-user balance | Não há atribuição server-side | Cliente WaaS monta ledger dele via webhooks `deposit.*`, `sweep.*`, `withdrawal.*`. |
 | Migração | DB migration Goravel pura; sistema ainda não lançado | Sem feature flag, sem legacy mode, sem branching. |
