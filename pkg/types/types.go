@@ -149,11 +149,15 @@ const (
 	EventDepositConfirming   EventType = "deposit.confirming"
 	EventDepositConfirmed    EventType = "deposit.confirmed"
 	EventDepositFailed       EventType = "deposit.failed"
-	EventWithdrawalPending   EventType = "withdrawal.pending"
-	EventWithdrawalSigned    EventType = "withdrawal.signed"
-	EventWithdrawalBroadcast EventType = "withdrawal.broadcasting"
-	EventWithdrawalConfirmed EventType = "withdrawal.confirmed"
-	EventWithdrawalFailed    EventType = "withdrawal.failed"
+	EventWithdrawalPending        EventType = "withdrawal.pending"
+	EventWithdrawalSigned         EventType = "withdrawal.signed"
+	EventWithdrawalBroadcast      EventType = "withdrawal.broadcasting"
+	EventWithdrawalConfirmed      EventType = "withdrawal.confirmed"
+	EventWithdrawalFailed         EventType = "withdrawal.failed"
+	EventWithdrawalSweepRequired  EventType = "withdrawal.sweep_required"
+	EventSweepBroadcast           EventType = "sweep.broadcast"
+	EventSweepConfirmed           EventType = "sweep.confirmed"
+	EventWalletGasStatusChanged   EventType = "wallet.gas_status.changed"
 )
 
 type TxStatus string

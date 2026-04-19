@@ -9,6 +9,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/redis/go-redis/v9"
 
+	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/repositories"
 	"github.com/macrowallets/waas/app/services/chain"
 	mpcpkg "github.com/macrowallets/waas/app/services/mpc"
@@ -29,7 +30,7 @@ var (
 // Service coordinates withdrawal planning, sweep execution, and gas-readiness tracking.
 type Service interface {
 	PlanForWithdrawal(ctx context.Context, walletID uuid.UUID, asset string, amount *big.Int) (*Plan, error)
-	ExecutePlan(ctx context.Context, plan *Plan, shareA []byte, withdrawalTxID uuid.UUID) (*Result, error)
+	ExecutePlan(ctx context.Context, plan *Plan, shareA []byte, withdrawalTxID uuid.UUID, toAddress string, externalUserID string) (*Result, error)
 	ConsolidateAll(ctx context.Context, walletID uuid.UUID, asset string, passphrase string) (*Result, error)
 	RefreshGasStatus(ctx context.Context, walletID uuid.UUID) (*GasStatus, error)
 	LoadLimits(ctx context.Context, accountID uuid.UUID) (*Limits, error)
@@ -46,6 +47,11 @@ type service struct {
 	txRepo      repositories.TransactionRepository
 	accountRepo repositories.AccountRepository
 	chainRepo   repositories.ChainRepository
+
+	// fetchShareBFn is the function used to retrieve the service's MPC share for
+	// a wallet. In production it targets AWS Secrets Manager; tests override it
+	// with a pure in-memory stub to avoid mocking the secretsmanager SDK.
+	fetchShareBFn func(ctx context.Context, wallet *models.Wallet) ([]byte, error)
 }
 
 // NewService wires the sweep service. All concrete methods are implemented in
@@ -80,10 +86,7 @@ func NewService(
 // Each stub returns ErrNotImplemented so the package compiles and
 // downstream callers can wire the service into the container immediately.
 // PlanForWithdrawal is implemented in planner.go.
-
-func (s *service) ExecutePlan(ctx context.Context, plan *Plan, shareA []byte, withdrawalTxID uuid.UUID) (*Result, error) {
-	return nil, ErrNotImplemented
-}
+// ExecutePlan is implemented in executor.go.
 
 func (s *service) ConsolidateAll(ctx context.Context, walletID uuid.UUID, asset string, passphrase string) (*Result, error) {
 	return nil, ErrNotImplemented
