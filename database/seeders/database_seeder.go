@@ -20,6 +20,7 @@ func (s *DatabaseSeeder) Run() error {
 	slog.Info("seeding database…")
 	if err := facades.Seeder().Call([]seeder.Seeder{
 		&ChainSeeder{},
+		&SweepThresholdsSeeder{},
 		&TokenSeeder{},
 		&ChainResourceSeeder{},
 		&CurrencySeeder{},
