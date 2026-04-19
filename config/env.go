@@ -30,3 +30,11 @@ func envBool(key string, defaultValue bool) bool {
 	}
 	return cast.ToBool(v)
 }
+
+func envFloat(key string, defaultValue float64) float64 {
+	v := facades.Config().Env(key)
+	if cast.ToString(v) == "" {
+		return defaultValue
+	}
+	return cast.ToFloat64(v)
+}
