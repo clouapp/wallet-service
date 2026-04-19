@@ -365,23 +365,12 @@ func (s *Service) generateSecp256k1Address(ctx context.Context, w *models.Wallet
 }
 
 func (s *Service) generateEd25519Address(ctx context.Context, w *models.Wallet, index uint32, externalUserID, label, metadata, passphrase string) (*models.Address, error) {
-	ciphertext, err := hex.DecodeString(w.MPCCustomerShare)
+	shareA, err := w.DecryptShareA(passphrase)
 	if err != nil {
-		return nil, fmt.Errorf("decode customer share: %w", err)
-	}
-	iv, err := hex.DecodeString(w.MPCShareIV)
-	if err != nil {
-		return nil, fmt.Errorf("decode share iv: %w", err)
-	}
-	salt, err := hex.DecodeString(w.MPCShareSalt)
-	if err != nil {
-		return nil, fmt.Errorf("decode share salt: %w", err)
-	}
-
-	enc := &mpc.EncryptedShare{Ciphertext: ciphertext, IV: iv, Salt: salt}
-	shareA, err := mpc.DecryptShare(enc, passphrase)
-	if err != nil {
-		return nil, fmt.Errorf("invalid passphrase")
+		if errors.Is(err, mpc.ErrInvalidPassphrase) {
+			return nil, fmt.Errorf("invalid passphrase")
+		}
+		return nil, err
 	}
 	defer func() {
 		for i := range shareA {

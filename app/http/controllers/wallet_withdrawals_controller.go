@@ -1,7 +1,7 @@
 package controllers
 
 import (
-	"encoding/hex"
+	"errors"
 	"fmt"
 	"time"
 
@@ -147,31 +147,19 @@ func verifyWalletPassphrase(ctx http.Context, wallet *models.Wallet, passphrase 
 		return ctx.Response().Json(http.StatusTooManyRequests, http.Json{"error": "too many failed attempts, try again later"})
 	}
 
-	ciphertext, err := hex.DecodeString(wallet.MPCCustomerShare)
-	if err != nil {
-		return ctx.Response().Json(http.StatusInternalServerError, http.Json{"error": "internal error"})
-	}
-	iv, err := hex.DecodeString(wallet.MPCShareIV)
-	if err != nil {
-		return ctx.Response().Json(http.StatusInternalServerError, http.Json{"error": "internal error"})
-	}
-	salt, err := hex.DecodeString(wallet.MPCShareSalt)
-	if err != nil {
-		return ctx.Response().Json(http.StatusInternalServerError, http.Json{"error": "internal error"})
-	}
-
-	enc := &mpcpkg.EncryptedShare{
-		Ciphertext: ciphertext,
-		IV:         iv,
-		Salt:       salt,
-	}
-	_, decErr := mpcpkg.DecryptShare(enc, passphrase)
+	shareA, decErr := wallet.DecryptShareA(passphrase)
 	if decErr != nil {
-		pipe := rdb.Pipeline()
-		pipe.Incr(ctx.Context(), key)
-		pipe.Expire(ctx.Context(), key, 60*time.Second)
-		_, _ = pipe.Exec(ctx.Context())
-		return ctx.Response().Json(http.StatusUnauthorized, http.Json{"error": "invalid passphrase"})
+		if errors.Is(decErr, mpcpkg.ErrInvalidPassphrase) {
+			pipe := rdb.Pipeline()
+			pipe.Incr(ctx.Context(), key)
+			pipe.Expire(ctx.Context(), key, 60*time.Second)
+			_, _ = pipe.Exec(ctx.Context())
+			return ctx.Response().Json(http.StatusUnauthorized, http.Json{"error": "invalid passphrase"})
+		}
+		return ctx.Response().Json(http.StatusInternalServerError, http.Json{"error": "internal error"})
+	}
+	for i := range shareA {
+		shareA[i] = 0
 	}
 
 	return nil

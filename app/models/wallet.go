@@ -1,10 +1,14 @@
 package models
 
 import (
+	"encoding/hex"
+	"fmt"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/goravel/framework/database/orm"
+
+	mpcpkg "github.com/macrowallets/waas/app/services/mpc"
 )
 
 const (
@@ -58,4 +62,27 @@ type Wallet struct {
 // TableName specifies the table name for Wallet model.
 func (w *Wallet) TableName() string {
 	return "wallets"
+}
+
+// DecryptShareA hex-decodes the wallet's persisted MPC envelope
+// (ciphertext / IV / salt) and reverses the AES-GCM encryption using the
+// caller-supplied passphrase. On AES auth failure it returns
+// mpcpkg.ErrInvalidPassphrase so callers can branch on rate-limiting /
+// HTTP mapping; structural errors (bad hex, crypto init) are wrapped.
+// Callers own the returned slice and MUST zero it after use.
+func (w *Wallet) DecryptShareA(passphrase string) ([]byte, error) {
+	ciphertext, err := hex.DecodeString(w.MPCCustomerShare)
+	if err != nil {
+		return nil, fmt.Errorf("decode customer share: %w", err)
+	}
+	iv, err := hex.DecodeString(w.MPCShareIV)
+	if err != nil {
+		return nil, fmt.Errorf("decode share iv: %w", err)
+	}
+	salt, err := hex.DecodeString(w.MPCShareSalt)
+	if err != nil {
+		return nil, fmt.Errorf("decode share salt: %w", err)
+	}
+	enc := &mpcpkg.EncryptedShare{Ciphertext: ciphertext, IV: iv, Salt: salt}
+	return mpcpkg.DecryptShare(enc, passphrase)
 }

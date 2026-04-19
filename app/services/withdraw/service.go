@@ -2,7 +2,6 @@ package withdraw
 
 import (
 	"context"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -235,27 +234,13 @@ func (s *Service) Request(ctx context.Context, req WithdrawRequest) (*models.Tra
 // and returns ErrInvalidPassphrase. Callers are responsible for zeroing the
 // returned slice once they are done signing.
 func (s *Service) decryptShareA(ctx context.Context, wallet *models.Wallet, passphrase string) ([]byte, error) {
-	ciphertext, err := hex.DecodeString(wallet.MPCCustomerShare)
+	shareA, err := wallet.DecryptShareA(passphrase)
 	if err != nil {
-		return nil, fmt.Errorf("decode customer share: %w", err)
-	}
-	ivBytes, err := hex.DecodeString(wallet.MPCShareIV)
-	if err != nil {
-		return nil, fmt.Errorf("decode share iv: %w", err)
-	}
-	saltBytes, err := hex.DecodeString(wallet.MPCShareSalt)
-	if err != nil {
-		return nil, fmt.Errorf("decode share salt: %w", err)
-	}
-
-	enc := &mpcpkg.EncryptedShare{Ciphertext: ciphertext, IV: ivBytes, Salt: saltBytes}
-	shareA, decErr := mpcpkg.DecryptShare(enc, passphrase)
-	if decErr != nil {
-		if errors.Is(decErr, mpcpkg.ErrInvalidPassphrase) {
+		if errors.Is(err, mpcpkg.ErrInvalidPassphrase) {
 			s.recordFailedAttempt(ctx, wallet.ID.String())
 			return nil, ErrInvalidPassphrase
 		}
-		return nil, decErr
+		return nil, err
 	}
 	return shareA, nil
 }

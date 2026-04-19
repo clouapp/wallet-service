@@ -2,7 +2,6 @@ package sweep
 
 import (
 	"context"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -313,24 +312,11 @@ func (s *service) broadcastConsolidateLeg(
 // decryptShareA reverses the AES-GCM envelope stored on the wallet row so the
 // service can co-sign sweep transactions without ever persisting the
 // plaintext share. The passphrase is expected to be caller-supplied
-// (dashboard prompt / API header). Structure mirrors the withdrawal
-// service's decrypt block so both paths fail identically on tampered
-// ciphertext or wrong passphrase.
+// (dashboard prompt / API header). The consolidate path maps
+// mpcpkg.ErrInvalidPassphrase to a plain "invalid passphrase" error;
+// rate-limiting of retries is not applied here (manual flow).
 func (s *service) decryptShareA(wallet *models.Wallet, passphrase string) ([]byte, error) {
-	ciphertext, err := hex.DecodeString(wallet.MPCCustomerShare)
-	if err != nil {
-		return nil, fmt.Errorf("decode customer share: %w", err)
-	}
-	iv, err := hex.DecodeString(wallet.MPCShareIV)
-	if err != nil {
-		return nil, fmt.Errorf("decode share iv: %w", err)
-	}
-	salt, err := hex.DecodeString(wallet.MPCShareSalt)
-	if err != nil {
-		return nil, fmt.Errorf("decode share salt: %w", err)
-	}
-	enc := &mpcpkg.EncryptedShare{Ciphertext: ciphertext, IV: iv, Salt: salt}
-	shareA, err := mpcpkg.DecryptShare(enc, passphrase)
+	shareA, err := wallet.DecryptShareA(passphrase)
 	if err != nil {
 		if errors.Is(err, mpcpkg.ErrInvalidPassphrase) {
 			return nil, fmt.Errorf("invalid passphrase")
