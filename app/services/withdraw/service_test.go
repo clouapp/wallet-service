@@ -44,25 +44,28 @@ func (m *mockMPC) ReconstructEd25519PrivateKey(shareA, shareB []byte) ([]byte, e
 	return nil, nil
 }
 
-// mockSweepSvc is a minimal sweep.Service that always forces the legacy code
-// path by reporting ErrUnsupportedChain from PlanForWithdrawal. Every other
-// method panics because the legacy path must never consult the sweep service.
+// mockSweepSvc is a minimal sweep.Service used by the unit tests in this
+// package. None of these tests execute past the planner; the existing cases
+// fail earlier (passphrase guard, redis lock, wallet lookup). PlanForWithdrawal
+// returns ErrUnsupportedChain so that any test that *does* reach the planner
+// surfaces the sentinel cleanly; remaining methods panic because they should
+// never be reached by the currently covered flows.
 type mockSweepSvc struct{}
 
 func (m *mockSweepSvc) PlanForWithdrawal(context.Context, uuid.UUID, string, *big.Int) (*sweep.Plan, error) {
 	return nil, sweep.ErrUnsupportedChain
 }
 func (m *mockSweepSvc) ExecutePlan(context.Context, *sweep.Plan, []byte, uuid.UUID, string, string) (*sweep.Result, error) {
-	panic("mockSweepSvc.ExecutePlan must not be called in legacy path")
+	panic("mockSweepSvc.ExecutePlan must not be called in these tests")
 }
 func (m *mockSweepSvc) ConsolidateAll(context.Context, uuid.UUID, string, string) (*sweep.Result, error) {
-	panic("mockSweepSvc.ConsolidateAll must not be called in legacy path")
+	panic("mockSweepSvc.ConsolidateAll must not be called in these tests")
 }
 func (m *mockSweepSvc) RefreshGasStatus(context.Context, uuid.UUID) (*sweep.GasStatus, error) {
-	panic("mockSweepSvc.RefreshGasStatus must not be called in legacy path")
+	panic("mockSweepSvc.RefreshGasStatus must not be called in these tests")
 }
 func (m *mockSweepSvc) LoadLimits(context.Context, uuid.UUID) (*sweep.Limits, error) {
-	panic("mockSweepSvc.LoadLimits must not be called in legacy path")
+	panic("mockSweepSvc.LoadLimits must not be called in these tests")
 }
 
 func setupWithdrawService(t *testing.T) (*Service, *mocks.MockChain) {

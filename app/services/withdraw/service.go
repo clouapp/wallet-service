@@ -2,7 +2,6 @@ package withdraw
 
 import (
 	"context"
-	"crypto/ed25519"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -23,7 +22,6 @@ import (
 	mpcpkg "github.com/macrowallets/waas/app/services/mpc"
 	"github.com/macrowallets/waas/app/services/sweep"
 	"github.com/macrowallets/waas/app/services/webhook"
-	"github.com/macrowallets/waas/pkg/types"
 )
 
 // Sentinel errors for HTTP response mapping in controller.
@@ -34,11 +32,6 @@ var (
 	ErrPassphraseTooShort = errors.New("passphrase must be at least 12 characters")
 	ErrTooManyAttempts    = errors.New("too many failed attempts, try again later")
 )
-
-// strategyLegacy is the pseudo-strategy returned in Metadata when the withdraw
-// service takes the non-EVM legacy code path (sweep.PlanForWithdrawal reported
-// ErrUnsupportedChain). It is not part of sweep.Strategy's enumerated values.
-const strategyLegacy sweep.Strategy = "legacy"
 
 type Service struct {
 	registry        *chainpkg.Registry
@@ -102,9 +95,10 @@ type Metadata struct {
 
 // Request runs a withdrawal end-to-end: validation, plan, execute, report.
 //
-// For v1 EVM chains the sweep service is authoritative for source selection.
-// Non-EVM chains fall through to legacyWithdraw, which preserves the single
-// base-address behavior that pre-dated the sweep refactor.
+// v1 is EVM-only. Non-EVM wallets (SOL, BTC) fail fast with
+// sweep.ErrUnsupportedChain; the HTTP layer maps that to a 422 response.
+// A dedicated non-EVM epic will add base-level signing + BuildSweep + Planner
+// support before those chains can withdraw again.
 func (s *Service) Request(ctx context.Context, req WithdrawRequest) (*models.Transaction, *Metadata, error) {
 	if len(req.Passphrase) < 12 {
 		return nil, nil, ErrPassphraseTooShort
@@ -153,7 +147,9 @@ func (s *Service) Request(ctx context.Context, req WithdrawRequest) (*models.Tra
 	plan, err := s.sweep.PlanForWithdrawal(ctx, wallet.ID, req.Asset, amount)
 	if err != nil {
 		if errors.Is(err, sweep.ErrUnsupportedChain) {
-			return s.legacyWithdraw(ctx, req, &wallet, adapter, amount)
+			// Bubble the sentinel; the controller maps it to 422
+			// unsupported_chain via MapSweepError.
+			return nil, nil, err
 		}
 		return nil, nil, fmt.Errorf("plan withdrawal: %w", err)
 	}
@@ -234,127 +230,6 @@ func (s *Service) Request(ctx context.Context, req WithdrawRequest) (*models.Tra
 	return finalTx, meta, nil
 }
 
-// legacyWithdraw is the pre-sweep code path for chains the sweep service does
-// not yet support (non-EVM in v1). It always uses wallet.DepositAddress as the
-// source and preserves the original MPC / slip0010 signing branches.
-//
-// Returns Metadata with Strategy = strategyLegacy as a marker for callers.
-func (s *Service) legacyWithdraw(
-	ctx context.Context,
-	req WithdrawRequest,
-	wallet *models.Wallet,
-	adapter types.Chain,
-	amount *big.Int,
-) (*models.Transaction, *Metadata, error) {
-	if wallet.DepositAddress == nil {
-		return nil, nil, fmt.Errorf("wallet has no deposit address")
-	}
-	fromAddress := wallet.DepositAddress
-
-	bal, err := adapter.GetBalance(ctx, fromAddress.Address)
-	if err != nil {
-		return nil, nil, fmt.Errorf("get balance: %w", err)
-	}
-	if bal.Amount.Cmp(amount) < 0 {
-		return nil, nil, ErrInsufficientFunds
-	}
-
-	var tokenContract string
-	var token *types.Token
-	if req.Asset != adapter.NativeAsset() {
-		t, err := s.registry.FindToken(wallet.Chain, req.Asset)
-		if err != nil {
-			return nil, nil, err
-		}
-		token = t
-		tokenContract = t.Contract
-	}
-
-	unsigned, err := adapter.BuildTransfer(ctx, types.TransferRequest{
-		From:   fromAddress.Address,
-		To:     req.ToAddress,
-		Amount: amount,
-		Asset:  req.Asset,
-		Token:  token,
-	})
-	if err != nil {
-		return nil, nil, fmt.Errorf("build tx: %w", err)
-	}
-
-	var sig []byte
-
-	if fromAddress.DerivationType == "slip0010" {
-		sig, err = s.signWithChildKey(fromAddress, req.Passphrase, unsigned.RawBytes)
-		if err != nil {
-			return nil, nil, fmt.Errorf("sign with child key: %w", err)
-		}
-	} else {
-		shareA, decErr := s.decryptShareA(ctx, wallet, req.Passphrase)
-		if decErr != nil {
-			return nil, nil, decErr
-		}
-		defer zeroShare(shareA)
-
-		secret, secretErr := s.secrets.GetSecretValue(ctx, &secretsmanager.GetSecretValueInput{
-			SecretId: &wallet.MPCSecretARN,
-		})
-		if secretErr != nil {
-			return nil, nil, fmt.Errorf("fetch service share: %w", secretErr)
-		}
-		shareB := secret.SecretBinary
-		defer zeroShare(shareB)
-
-		curve := mpcpkg.Curve(wallet.MPCCurve)
-		sig, err = s.mpc.Sign(ctx, curve, shareA, shareB, mpcpkg.SignInputs{
-			TxHashes: [][]byte{unsigned.RawBytes},
-		})
-		if err != nil {
-			return nil, nil, fmt.Errorf("mpc sign: %w", err)
-		}
-	}
-
-	signed := &types.SignedTx{
-		ChainID:  wallet.Chain,
-		RawBytes: sig,
-	}
-	txHash, err := adapter.BroadcastTransaction(ctx, signed)
-	if err != nil {
-		return nil, nil, fmt.Errorf("broadcast: %w", err)
-	}
-
-	tx := &models.Transaction{
-		ID:             uuid.New(),
-		WalletID:       wallet.ID,
-		ExternalUserID: req.ExternalUserID,
-		Chain:          wallet.Chain,
-		TxType:         "withdrawal",
-		TxHash:         txHash,
-		ToAddress:      req.ToAddress,
-		Amount:         req.Amount,
-		Asset:          req.Asset,
-		TokenContract:  tokenContract,
-		RequiredConfs:  int(adapter.RequiredConfirmations()),
-		Status:         string(types.TxStatusConfirming),
-		IdempotencyKey: req.IdempotencyKey,
-	}
-	if err := s.transactionRepo.Create(tx); err != nil {
-		return nil, nil, fmt.Errorf("persist tx: %w", err)
-	}
-
-	s.webhookSvc.EnqueueEvent(ctx, tx.ID, types.EventWithdrawalBroadcast, map[string]string{
-		"tx_id": tx.ID.String(), "tx_hash": txHash,
-	})
-
-	_ = facades.Event().Job(&events.WithdrawalBroadcasted{}, []event.Arg{
-		{Type: "string", Value: tx.WalletID.String()},
-		{Type: "string", Value: wallet.Chain},
-	}).Dispatch()
-
-	slog.Info("withdrawal broadcast (legacy)",
-		"tx_id", tx.ID, "tx_hash", txHash, "chain", wallet.Chain)
-	return tx, &Metadata{Strategy: strategyLegacy}, nil
-}
-
 // decryptShareA decrypts the wallet's MPC customer share (share A) using the
 // passphrase. On bad passphrase it records a failed attempt for rate-limiting
 // and returns ErrInvalidPassphrase. Callers are responsible for zeroing the
@@ -383,37 +258,6 @@ func (s *Service) decryptShareA(ctx context.Context, wallet *models.Wallet, pass
 		return nil, decErr
 	}
 	return shareA, nil
-}
-
-func (s *Service) signWithChildKey(addr *models.Address, passphrase string, txBytes []byte) ([]byte, error) {
-	if addr.EncryptedPrivateKey == "" {
-		return nil, fmt.Errorf("address has no encrypted private key")
-	}
-
-	ciphertext, err := hex.DecodeString(addr.EncryptedPrivateKey)
-	if err != nil {
-		return nil, fmt.Errorf("decode encrypted key: %w", err)
-	}
-	ivBytes, err := hex.DecodeString(addr.EncryptionIV)
-	if err != nil {
-		return nil, fmt.Errorf("decode iv: %w", err)
-	}
-	saltBytes, err := hex.DecodeString(addr.EncryptionSalt)
-	if err != nil {
-		return nil, fmt.Errorf("decode salt: %w", err)
-	}
-
-	enc := &mpcpkg.EncryptedShare{Ciphertext: ciphertext, IV: ivBytes, Salt: saltBytes}
-	childSeed, err := mpcpkg.DecryptShare(enc, passphrase)
-	if err != nil {
-		return nil, fmt.Errorf("invalid passphrase")
-	}
-	defer zeroShare(childSeed)
-
-	privKey := ed25519.NewKeyFromSeed(childSeed)
-	defer zeroShare(privKey)
-
-	return ed25519.Sign(privKey, txBytes), nil
 }
 
 func (s *Service) checkRateLimit(ctx context.Context, walletID string) error {
