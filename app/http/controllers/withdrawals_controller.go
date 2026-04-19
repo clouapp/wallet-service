@@ -8,6 +8,7 @@ import (
 
 	"github.com/macrowallets/waas/app/container"
 	"github.com/macrowallets/waas/app/http/requests"
+	"github.com/macrowallets/waas/app/services/sweep"
 	"github.com/macrowallets/waas/app/services/withdraw"
 )
 
@@ -41,7 +42,7 @@ func CreateWithdrawal(ctx http.Context) http.Response {
 		return errResp
 	}
 
-	tx, err := container.Get().WithdrawalService.Request(ctx.Context(), withdraw.WithdrawRequest{
+	tx, meta, err := container.Get().WithdrawalService.Request(ctx.Context(), withdraw.WithdrawRequest{
 		WalletID:       walletID,
 		ExternalUserID: req.ExternalUserID,
 		ToAddress:      req.ToAddress,
@@ -50,13 +51,19 @@ func CreateWithdrawal(ctx http.Context) http.Response {
 		Passphrase:     req.Passphrase,
 		IdempotencyKey: req.IdempotencyKey,
 	})
+	// TODO(Task 22): surface meta.Strategy + meta.Sweeps in response JSON.
+	// TODO(Task 23): unified error→HTTP mapping (sweep.ErrWalletNotGasReady, etc.).
+	_ = meta
 	if err != nil {
 		switch {
 		case errors.Is(err, withdraw.ErrInvalidPassphrase):
 			return ctx.Response().Json(http.StatusUnauthorized, http.Json{"error": err.Error()})
 		case errors.Is(err, withdraw.ErrPassphraseTooShort):
 			return ctx.Response().Json(http.StatusBadRequest, http.Json{"error": err.Error()})
-		case errors.Is(err, withdraw.ErrInsufficientFunds):
+		case errors.Is(err, withdraw.ErrInsufficientFunds),
+			errors.Is(err, sweep.ErrInsufficientFunds):
+			return ctx.Response().Json(http.StatusUnprocessableEntity, http.Json{"error": err.Error()})
+		case errors.Is(err, sweep.ErrWalletNotGasReady):
 			return ctx.Response().Json(http.StatusUnprocessableEntity, http.Json{"error": err.Error()})
 		case errors.Is(err, withdraw.ErrConcurrentWithdraw):
 			return ctx.Response().Json(http.StatusConflict, http.Json{"error": err.Error()})

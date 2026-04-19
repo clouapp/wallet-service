@@ -2,6 +2,7 @@ package withdraw
 
 import (
 	"context"
+	"math/big"
 	"os"
 	"testing"
 
@@ -10,6 +11,7 @@ import (
 	"github.com/macrowallets/waas/app/repositories"
 	"github.com/macrowallets/waas/app/services/chain"
 	mpcpkg "github.com/macrowallets/waas/app/services/mpc"
+	"github.com/macrowallets/waas/app/services/sweep"
 	"github.com/macrowallets/waas/app/services/webhook"
 	"github.com/macrowallets/waas/pkg/types"
 	"github.com/macrowallets/waas/tests/mocks"
@@ -42,6 +44,27 @@ func (m *mockMPC) ReconstructEd25519PrivateKey(shareA, shareB []byte) ([]byte, e
 	return nil, nil
 }
 
+// mockSweepSvc is a minimal sweep.Service that always forces the legacy code
+// path by reporting ErrUnsupportedChain from PlanForWithdrawal. Every other
+// method panics because the legacy path must never consult the sweep service.
+type mockSweepSvc struct{}
+
+func (m *mockSweepSvc) PlanForWithdrawal(context.Context, uuid.UUID, string, *big.Int) (*sweep.Plan, error) {
+	return nil, sweep.ErrUnsupportedChain
+}
+func (m *mockSweepSvc) ExecutePlan(context.Context, *sweep.Plan, []byte, uuid.UUID, string, string) (*sweep.Result, error) {
+	panic("mockSweepSvc.ExecutePlan must not be called in legacy path")
+}
+func (m *mockSweepSvc) ConsolidateAll(context.Context, uuid.UUID, string, string) (*sweep.Result, error) {
+	panic("mockSweepSvc.ConsolidateAll must not be called in legacy path")
+}
+func (m *mockSweepSvc) RefreshGasStatus(context.Context, uuid.UUID) (*sweep.GasStatus, error) {
+	panic("mockSweepSvc.RefreshGasStatus must not be called in legacy path")
+}
+func (m *mockSweepSvc) LoadLimits(context.Context, uuid.UUID) (*sweep.Limits, error) {
+	panic("mockSweepSvc.LoadLimits must not be called in legacy path")
+}
+
 func setupWithdrawService(t *testing.T) (*Service, *mocks.MockChain) {
 	t.Helper()
 	mocks.TestDB(t)
@@ -58,7 +81,7 @@ func setupWithdrawService(t *testing.T) (*Service, *mocks.MockChain) {
 	txRepo := repositories.NewTransactionRepository()
 	walletRepo := repositories.NewWalletRepository()
 	addressRepo := repositories.NewAddressRepository()
-	svc := NewService(registry, webhookSvc, mpcSvc, nil, nil, txRepo, walletRepo, addressRepo)
+	svc := NewService(registry, webhookSvc, mpcSvc, nil, nil, txRepo, walletRepo, addressRepo, &mockSweepSvc{})
 	return svc, mockChain
 }
 
@@ -67,7 +90,7 @@ func TestRequest_PassphraseTooShort(t *testing.T) {
 	svc, _ := setupWithdrawService(t)
 	ctx := context.Background()
 
-	_, err := svc.Request(ctx, WithdrawRequest{
+	_, _, err := svc.Request(ctx, WithdrawRequest{
 		WalletID:       uuid.New(),
 		ToAddress:      "0x742d35Cc6634C0532925a3b844Bc9e7595f2bD12",
 		Amount:         "1000000",
@@ -100,7 +123,7 @@ func TestRequest_WalletNotFound(t *testing.T) {
 	svc, _ := setupWithdrawService(t)
 	ctx := context.Background()
 
-	_, err := svc.Request(ctx, WithdrawRequest{
+	_, _, err := svc.Request(ctx, WithdrawRequest{
 		WalletID:       uuid.New(),
 		ToAddress:      "0x123",
 		Amount:         "100",

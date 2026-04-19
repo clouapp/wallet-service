@@ -17,6 +17,7 @@ import (
 	"github.com/macrowallets/waas/app/services/price"
 	"github.com/macrowallets/waas/app/services/queue"
 	"github.com/macrowallets/waas/app/services/refresh"
+	"github.com/macrowallets/waas/app/services/sweep"
 	"github.com/macrowallets/waas/app/services/wallet"
 	"github.com/macrowallets/waas/app/services/webhook"
 	"github.com/macrowallets/waas/app/services/webhooksync"
@@ -69,6 +70,7 @@ type Container struct {
 	WalletService         *wallet.Service
 	DepositService        *deposit.Service
 	WithdrawalService     *withdraw.Service
+	SweepService          sweep.Service
 	WebhookService        *webhook.Service
 	IngestService         *ingest.Service
 	BalanceRefreshService *refresh.BalanceService

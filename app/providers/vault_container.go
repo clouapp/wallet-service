@@ -27,6 +27,7 @@ import (
 	"github.com/macrowallets/waas/app/services/price"
 	"github.com/macrowallets/waas/app/services/queue"
 	"github.com/macrowallets/waas/app/services/refresh"
+	"github.com/macrowallets/waas/app/services/sweep"
 	"github.com/macrowallets/waas/app/services/wallet"
 	"github.com/macrowallets/waas/app/services/webhook"
 	"github.com/macrowallets/waas/app/services/webhooksync"
@@ -216,7 +217,14 @@ func buildVaultContainer() (*container.Container, error) {
 	c.WebhookService = webhook.NewService(c.SQS, c.WebhookConfigRepo, c.WebhookEventRepo)
 	c.WalletService = wallet.NewService(c.Registry, c.Redis, c.MPCService, c.SecretsManager, c.WalletRepo, c.AddressRepo)
 	c.WalletService.SetWebhookSync(c.WebhookSyncService)
-	c.WithdrawalService = withdraw.NewService(c.Registry, c.WebhookService, c.MPCService, c.SecretsManager, c.Redis, c.TransactionRepo, c.WalletRepo, c.AddressRepo)
+	c.SweepService = sweep.NewService(
+		c.Registry, c.MPCService, c.SecretsManager, c.Redis, c.WebhookService,
+		c.WalletRepo, c.AddressRepo, c.TransactionRepo, c.AccountRepo, c.ChainRepo,
+	)
+	c.WithdrawalService = withdraw.NewService(
+		c.Registry, c.WebhookService, c.MPCService, c.SecretsManager, c.Redis,
+		c.TransactionRepo, c.WalletRepo, c.AddressRepo, c.SweepService,
+	)
 
 	etherscanKey := facades.Config().GetString("vault.webhooks.etherscan_api_key")
 	blockHeightProviders := map[string]blockheight.Provider{
