@@ -32,6 +32,22 @@ type Chain interface {
 	NativeAsset() string
 
 	EstimateFee(ctx context.Context, req TransferRequest) (*FeeEstimate, error)
+
+	// BuildSweep builds the transaction(s) to move `asset` from `req.From` to `req.To`
+	// within the same wallet. Returns a slice because EVM may require a gas_seed tx
+	// plus the sweep tx; SOL and BTC return a single element.
+	BuildSweep(ctx context.Context, req SweepRequest) ([]UnsignedTx, error)
+
+	// GasReadinessThreshold is the minimum native balance BaseAddress should hold
+	// to be considered "gas-ready". Returns nil for chains where the concept does
+	// not apply (e.g. BTC, where fees come from the spent UTXO).
+	GasReadinessThreshold() *big.Int
+
+	// DustThreshold is the minimum balance on a child address (in raw asset units)
+	// for that address to be considered sweepable. Below this, sweeping costs more
+	// in fees than the recovered value. Returns nil when asset is unknown or chain
+	// cannot resolve a threshold (e.g. token USD threshold without price data).
+	DustThreshold(asset string) *big.Int
 }
 
 type FeeEstimate struct {
@@ -65,6 +81,20 @@ type TransferRequest struct {
 	Token    *Token   `json:"token"`
 	Nonce    *uint64  `json:"nonce"`
 	GasLimit *uint64  `json:"gas_limit"`
+}
+
+// SweepRequest describes an intra-wallet sweep: move `Asset` from `From` to `To`
+// within the same wallet. The native `From` balance is passed so adapters can
+// decide whether to emit a preparatory gas_seed tx (EVM ERC-20). `FeePayer` is
+// Solana-specific — when set, fees are paid by that address rather than `From`.
+type SweepRequest struct {
+	From          string   `json:"from"`
+	To            string   `json:"to"`
+	Asset         string   `json:"asset"`
+	Amount        *big.Int `json:"amount,omitempty"`         // nil = total sweep (balance - buffer)
+	NativeBalance *big.Int `json:"native_balance,omitempty"` // balance of `From` in native; adapter decides gas_seed
+	FeePayer      *string  `json:"fee_payer,omitempty"`      // SOL only
+	Token         *Token   `json:"token,omitempty"`          // nil = native asset sweep
 }
 
 type UnsignedTx struct {
