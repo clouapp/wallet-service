@@ -41,15 +41,11 @@ func SeedUsers(_ context.Context) error {
 			return err
 		}
 		defAcc := acmeAccountID
-		user := models.User{
-			ID:               u.id,
-			Email:            u.email,
-			PasswordHash:     string(hash),
-			FullName:         u.fullName,
-			Status:           "active",
-			DefaultAccountID: &defAcc,
-		}
-		if err := facades.Orm().Query().Create(&user); err != nil {
+		// Raw insert: GORM Create + UserPreferences Valuer can produce invalid json for jsonb; DB default is '{}'::jsonb.
+		if _, err := facades.Orm().Query().Exec(`
+			INSERT INTO users (id, email, password_hash, full_name, status, default_account_id, preferences, totp_enabled, created_at, updated_at)
+			VALUES (?, ?, ?, ?, ?, ?, '{}'::jsonb, false, NOW(), NOW())
+		`, u.id, u.email, string(hash), u.fullName, "active", defAcc); err != nil {
 			return fmt.Errorf("create user %s: %w", u.email, err)
 		}
 		slog.Info("created user", "email", u.email)
