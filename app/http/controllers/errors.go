@@ -2,11 +2,28 @@ package controllers
 
 import (
 	"errors"
+	"log/slog"
 
 	"github.com/goravel/framework/contracts/http"
 
 	"github.com/macrowallets/waas/app/services/sweep"
 )
+
+// MapInternalError logs the real error server-side and returns a generic 500
+// body to the client. This is the single point through which controllers
+// emit unmapped errors, so raw error strings (RPC URLs, DB messages, file
+// paths, token registry details, …) never leak across the API boundary.
+// `endpoint` is a short stable label used for log filtering / alerting
+// (e.g. "consolidate", "preview_withdraw").
+func MapInternalError(ctx http.Context, err error, endpoint string) http.Response {
+	slog.Error("controller internal error",
+		"endpoint", endpoint,
+		"error", err,
+	)
+	return ctx.Response().Json(http.StatusInternalServerError, http.Json{
+		"error": "internal_error",
+	})
+}
 
 // MapSweepError maps sentinel errors from the sweep package to HTTP responses
 // consumed by dashboard + external API controllers.

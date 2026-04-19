@@ -90,6 +90,19 @@ func (s *service) PlanForWithdrawal(ctx context.Context, walletID uuid.UUID, ass
 		return nil, fmt.Errorf("sweep: list children: %w", err)
 	}
 
+	// Enforce the per-request address cap before issuing N sequential balance
+	// RPCs. This protects the planner against pathological wallets (many
+	// children) blowing up /withdraw/preview latency and per-node RPC budget.
+	// The account-scoped limit isn't threaded to this call site yet (see I3),
+	// so we load defaults via uuid.Nil. LoadLimits never returns an error for
+	// uuid.Nil, but tolerate a nil Limits just in case.
+	limits, _ := s.LoadLimits(ctx, uuid.Nil)
+	if limits != nil {
+		if err := checkAddressesPerRequest(chainEntity.AdapterType, len(children), limits); err != nil {
+			return nil, err
+		}
+	}
+
 	dust := adapter.DustThreshold(asset) // nil → no dust filtering
 	type childBal struct {
 		addr    models.Address

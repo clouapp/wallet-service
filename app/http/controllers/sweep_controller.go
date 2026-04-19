@@ -50,7 +50,7 @@ func ConsolidateWallet(ctx http.Context) http.Response {
 		if resp := MapSweepError(ctx, err); resp != nil {
 			return resp
 		}
-		return ctx.Response().Json(http.StatusInternalServerError, http.Json{"error": err.Error()})
+		return MapInternalError(ctx, err, "consolidate")
 	}
 	return ctx.Response().Success().Json(mapConsolidateResponse(result))
 }
@@ -78,7 +78,7 @@ func GetGasStatus(ctx http.Context) http.Response {
 		if resp := MapSweepError(ctx, err); resp != nil {
 			return resp
 		}
-		return ctx.Response().Json(http.StatusInternalServerError, http.Json{"error": err.Error()})
+		return MapInternalError(ctx, err, "gas_status")
 	}
 	return ctx.Response().Success().Json(gasStatusResponse(status))
 }
@@ -152,7 +152,7 @@ func PreviewWithdraw(ctx http.Context) http.Response {
 		if resp := MapSweepError(ctx, err); resp != nil {
 			return resp
 		}
-		return ctx.Response().Json(http.StatusInternalServerError, http.Json{"error": err.Error()})
+		return MapInternalError(ctx, err, "preview_withdraw")
 	}
 	return ctx.Response().Success().Json(previewResponse(plan))
 }

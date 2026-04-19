@@ -2,6 +2,8 @@ package sweep
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"math/big"
 	"testing"
 
@@ -481,6 +483,41 @@ func TestPlan_EstimatedGas_NilWhenPriceUnavailable(t *testing.T) {
 	}
 	if plan.EstimatedGas != nil {
 		t.Fatalf("expected nil EstimatedGas when gas-price fetch fails, got %s", plan.EstimatedGas.String())
+	}
+}
+
+// TestPlan_ErrTooManyAddresses asserts the planner rejects wallets whose
+// address count exceeds the per-adapter cap before it starts issuing the
+// N sequential GetBalance RPCs. The default EVM cap is 100, so we seed
+// 1 base + 101 children = 102 rows (> 100 children cap by at least one).
+// This protects /withdraw/preview from N-RPC blowups on pathological wallets.
+func TestPlan_ErrTooManyAddresses(t *testing.T) {
+	walletID := uuid.New()
+	baseAddr := models.Address{ID: uuid.New(), WalletID: walletID, Address: "BASE"}
+	wallet := &models.Wallet{ID: walletID, Chain: "eth", DepositAddress: &baseAddr}
+
+	balances := map[string]*big.Int{"BASE": big.NewInt(0)}
+	addresses := make([]models.Address, 0, 102)
+	addresses = append(addresses, baseAddr)
+	for i := 0; i < 101; i++ {
+		name := fmt.Sprintf("CHILD_%d", i)
+		addresses = append(addresses, models.Address{
+			ID:       uuid.New(),
+			WalletID: walletID,
+			Address:  name,
+		})
+		balances[name] = big.NewInt(1)
+	}
+
+	mockChain := balanceMapChain("eth", "usdt", balances)
+	svc := newPlannerService(t, wallet, addresses, mockChain, evmChainEntity("eth"))
+
+	_, err := svc.PlanForWithdrawal(context.Background(), walletID, "usdt", big.NewInt(1_000_000))
+	if err == nil {
+		t.Fatal("expected ErrTooManyAddresses, got nil")
+	}
+	if !errors.Is(err, ErrTooManyAddresses) {
+		t.Fatalf("expected errors.Is(err, ErrTooManyAddresses), got %v", err)
 	}
 }
 

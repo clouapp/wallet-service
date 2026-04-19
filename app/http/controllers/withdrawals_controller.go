@@ -67,7 +67,7 @@ func CreateWithdrawal(ctx http.Context) http.Response {
 		case errors.Is(err, withdraw.ErrTooManyAttempts):
 			return ctx.Response().Json(http.StatusTooManyRequests, http.Json{"error": err.Error()})
 		default:
-			return ctx.Response().Json(http.StatusBadRequest, http.Json{"error": err.Error()})
+			return MapInternalError(ctx, err, "create_withdrawal")
 		}
 	}
 
