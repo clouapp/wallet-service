@@ -11,9 +11,16 @@ func (r *M20260411000001CreateCurrenciesTable) Signature() string {
 }
 
 func (r *M20260411000001CreateCurrenciesTable) Up() error {
-	_, err := facades.Orm().Query().Exec(`
-		CREATE TYPE currency_type AS ENUM ('crypto', 'fiat');
+	if _, err := facades.Orm().Query().Exec(`
+		DO $$ BEGIN
+			CREATE TYPE currency_type AS ENUM ('crypto', 'fiat');
+		EXCEPTION WHEN duplicate_object THEN null;
+		END $$;
+	`); err != nil {
+		return err
+	}
 
+	_, err := facades.Orm().Query().Exec(`
 		CREATE TABLE IF NOT EXISTS currencies (
 			id               UUID            PRIMARY KEY DEFAULT gen_random_uuid(),
 			name             VARCHAR(100)    NOT NULL,

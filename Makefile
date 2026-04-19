@@ -1,4 +1,4 @@
-.PHONY: help build clean run dev dev-back dev-front stop deploy deploy-guided delete validate local test test-coverage test-race test-verbose lint fmt vet security migrate migrate-rollback migrate-status migrate-fresh migrate-fresh-seed db-reset db-seed key-generate jwt-secret docker-up docker-down docker-logs docker-build docker-test docker-status ecr-login ecr-push logs-api logs-scanner logs-webhook logs-withdrawal dlq-check dlq-replay-webhooks dlq-replay-withdrawals ping env-info swagger-install swagger-generate swagger-fmt deps-install deps-update
+.PHONY: help build clean run dev dev-back dev-front stop deploy deploy-guided delete validate local test test-coverage test-race test-verbose lint fmt vet security migrate migrate-rollback migrate-status migrate-fresh migrate-fresh-seed migrate-fresh-hard db-reset db-seed key-generate jwt-secret docker-up docker-down docker-logs docker-build docker-test docker-status ecr-login ecr-push logs-api logs-scanner logs-webhook logs-withdrawal dlq-check dlq-replay-webhooks dlq-replay-withdrawals ping env-info swagger-install swagger-generate swagger-fmt deps-install deps-update
 
 # =============================================================================
 # Configuration
@@ -608,5 +608,21 @@ migrate-fresh-seed: ## artisan migrate:fresh --seed (drop, migrate, db:seed)
 	@echo "🆕 migrate:fresh --seed..."
 	@export $$(grep -v '^#' .env.dev | xargs) && go run . artisan migrate:fresh --seed
 	@echo "✅ migrate:fresh --seed complete"
+
+migrate-fresh-hard: ## DEV ONLY: drop schema public (tables + enums + domains), migrate, seed
+	$(call ensure_docker)
+	$(call ensure_env_dev)
+	$(call ensure_app_key_dev)
+	@echo "💣 Dropping schema public (nuclear reset — tables + custom types)..."
+	@docker exec waas-postgres psql -U vault -d vault -v ON_ERROR_STOP=1 -c "\
+		DROP SCHEMA public CASCADE; \
+		CREATE SCHEMA public; \
+		GRANT ALL ON SCHEMA public TO vault; \
+		GRANT ALL ON SCHEMA public TO public;"
+	@echo "🔄 Running migrations on clean schema..."
+	@export $$(grep -v '^#' .env.dev | xargs) && go run . artisan migrate
+	@echo "🌱 Seeding database..."
+	@export $$(grep -v '^#' .env.dev | xargs) && go run . artisan db:seed
+	@echo "✅ migrate-fresh-hard complete"
 
 .DEFAULT_GOAL := help
