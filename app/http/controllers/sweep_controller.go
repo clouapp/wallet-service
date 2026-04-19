@@ -1,7 +1,6 @@
 package controllers
 
 import (
-	"errors"
 	"math/big"
 
 	"github.com/google/uuid"
@@ -40,7 +39,10 @@ func ConsolidateWallet(ctx http.Context) http.Response {
 
 	result, err := container.Get().SweepService.ConsolidateAll(ctx.Context(), walletID, req.Asset, req.Passphrase)
 	if err != nil {
-		return mapSweepError(ctx, err)
+		if resp := MapSweepError(ctx, err); resp != nil {
+			return resp
+		}
+		return ctx.Response().Json(http.StatusInternalServerError, http.Json{"error": err.Error()})
 	}
 	return ctx.Response().Success().Json(mapConsolidateResponse(result))
 }
@@ -65,7 +67,10 @@ func GetGasStatus(ctx http.Context) http.Response {
 
 	status, err := container.Get().SweepService.RefreshGasStatus(ctx.Context(), walletID)
 	if err != nil {
-		return mapSweepError(ctx, err)
+		if resp := MapSweepError(ctx, err); resp != nil {
+			return resp
+		}
+		return ctx.Response().Json(http.StatusInternalServerError, http.Json{"error": err.Error()})
 	}
 	return ctx.Response().Success().Json(gasStatusResponse(status))
 }
@@ -122,7 +127,10 @@ func PreviewWithdraw(ctx http.Context) http.Response {
 
 	plan, err := container.Get().SweepService.PlanForWithdrawal(ctx.Context(), walletID, req.Asset, amount)
 	if err != nil {
-		return mapSweepError(ctx, err)
+		if resp := MapSweepError(ctx, err); resp != nil {
+			return resp
+		}
+		return ctx.Response().Json(http.StatusInternalServerError, http.Json{"error": err.Error()})
 	}
 	return ctx.Response().Success().Json(previewResponse(plan))
 }
@@ -209,45 +217,6 @@ func previewResponse(plan *sweep.Plan) http.Json {
 		body["base_balance"] = plan.BaseBalance.String()
 	}
 	return body
-}
-
-// mapSweepError translates sentinel errors from the sweep package into HTTP
-// responses. Task 23 will unify error-mapping across controllers; until then
-// this lives next to the sweep endpoints that produce these errors.
-func mapSweepError(ctx http.Context, err error) http.Response {
-	switch {
-	case errors.Is(err, sweep.ErrInFlightConsolidation):
-		return ctx.Response().Json(http.StatusTooManyRequests, http.Json{
-			"error":               "sweep_limit_exceeded",
-			"limit_type":          "in_flight_consolidation",
-			"retry_after_seconds": 60,
-		})
-	case errors.Is(err, sweep.ErrDailyQuotaExceeded):
-		return ctx.Response().Json(http.StatusTooManyRequests, http.Json{
-			"error":      "sweep_limit_exceeded",
-			"limit_type": "daily_quota",
-		})
-	case errors.Is(err, sweep.ErrTooManyAddresses):
-		return ctx.Response().Json(http.StatusTooManyRequests, http.Json{
-			"error":      "sweep_limit_exceeded",
-			"limit_type": "addresses_per_request",
-		})
-	case errors.Is(err, sweep.ErrWalletNotGasReady):
-		return ctx.Response().Json(http.StatusUnprocessableEntity, http.Json{
-			"error":  "wallet_not_gas_ready",
-			"action": "fund_base_address",
-		})
-	case errors.Is(err, sweep.ErrInsufficientFunds):
-		return ctx.Response().Json(http.StatusUnprocessableEntity, http.Json{
-			"error": "insufficient_funds",
-		})
-	case errors.Is(err, sweep.ErrUnsupportedChain):
-		return ctx.Response().Json(http.StatusUnprocessableEntity, http.Json{
-			"error": "unsupported_chain",
-		})
-	default:
-		return ctx.Response().Json(http.StatusInternalServerError, http.Json{"error": err.Error()})
-	}
 }
 
 // ---- Swagger request/response types (doc-only) ----

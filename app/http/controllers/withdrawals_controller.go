@@ -9,7 +9,6 @@ import (
 	"github.com/macrowallets/waas/app/container"
 	"github.com/macrowallets/waas/app/http/requests"
 	"github.com/macrowallets/waas/app/models"
-	"github.com/macrowallets/waas/app/services/sweep"
 	"github.com/macrowallets/waas/app/services/withdraw"
 )
 
@@ -52,17 +51,16 @@ func CreateWithdrawal(ctx http.Context) http.Response {
 		Passphrase:     req.Passphrase,
 		IdempotencyKey: req.IdempotencyKey,
 	})
-	// TODO(Task 23): unified error→HTTP mapping (sweep.ErrWalletNotGasReady, etc.).
 	if err != nil {
+		if resp := MapSweepError(ctx, err); resp != nil {
+			return resp
+		}
 		switch {
 		case errors.Is(err, withdraw.ErrInvalidPassphrase):
 			return ctx.Response().Json(http.StatusUnauthorized, http.Json{"error": err.Error()})
 		case errors.Is(err, withdraw.ErrPassphraseTooShort):
 			return ctx.Response().Json(http.StatusBadRequest, http.Json{"error": err.Error()})
-		case errors.Is(err, withdraw.ErrInsufficientFunds),
-			errors.Is(err, sweep.ErrInsufficientFunds):
-			return ctx.Response().Json(http.StatusUnprocessableEntity, http.Json{"error": err.Error()})
-		case errors.Is(err, sweep.ErrWalletNotGasReady):
+		case errors.Is(err, withdraw.ErrInsufficientFunds):
 			return ctx.Response().Json(http.StatusUnprocessableEntity, http.Json{"error": err.Error()})
 		case errors.Is(err, withdraw.ErrConcurrentWithdraw):
 			return ctx.Response().Json(http.StatusConflict, http.Json{"error": err.Error()})
