@@ -10,7 +10,7 @@ import (
 
 // ListTransactions godoc
 // @Summary      List transactions
-// @Description  Returns a paginated list of transactions with optional filters by chain, type, status, or user
+// @Description  Returns a paginated list of transactions with optional filters by chain, type, status, or user. Always scoped to the authenticated account.
 // @Tags         Transactions
 // @Produce      json
 // @Security     ApiKeyAuth
@@ -22,13 +22,22 @@ import (
 // @Param        limit    query     int     false  "Max results (default 50)"  example(50)
 // @Param        offset   query     int     false  "Pagination offset"         example(0)
 // @Success      200      {object}  TransactionListResponse
+// @Failure      401      {object}  ErrorResponse
 // @Failure      500      {object}  ErrorResponse
 // @Router       /v1/transactions [get]
 func ListTransactions(ctx http.Context) http.Response {
+	accountID, ok := ctx.Value("account_id").(uuid.UUID)
+	if !ok {
+		return ctx.Response().Json(http.StatusUnauthorized, http.Json{
+			"error": "unauthorized",
+		})
+	}
+
 	limit, offset := pagination.ParseParams(ctx, 50)
 
-	txs, total, err := container.Get().WithdrawalService.ListTransactions(
+	txs, total, err := container.Get().WithdrawalService.ListTransactionsForAccount(
 		ctx.Context(),
+		accountID,
 		ctx.Request().Query("chain", ""),
 		ctx.Request().Query("type", ""),
 		ctx.Request().Query("status", ""),
@@ -37,9 +46,7 @@ func ListTransactions(ctx http.Context) http.Response {
 		offset,
 	)
 	if err != nil {
-		return ctx.Response().Json(http.StatusInternalServerError, http.Json{
-			"error": err.Error(),
-		})
+		return MapInternalError(ctx, err, "list_transactions")
 	}
 	return ctx.Response().Json(http.StatusOK, pagination.Response(txs, total, limit, offset))
 }
