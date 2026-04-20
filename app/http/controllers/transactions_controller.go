@@ -71,7 +71,7 @@ func GetTransaction(ctx http.Context) http.Response {
 		})
 	}
 	tx, err := container.Get().WithdrawalService.GetTransaction(ctx.Context(), id)
-	if err != nil {
+	if err != nil || tx == nil {
 		return ctx.Response().Json(http.StatusNotFound, http.Json{
 			"error": "transaction not found",
 		})
