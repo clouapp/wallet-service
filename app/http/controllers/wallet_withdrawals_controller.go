@@ -88,31 +88,52 @@ func EstimateWithdrawalFee(ctx http.Context) http.Response {
 // @Failure      400  {object}  ErrorResponse
 // @Failure      403  {object}  ErrorResponse
 // @Router       /wallets/{walletId}/withdrawals [post]
+// CreateWalletWithdrawal serves both auth surfaces:
+//
+//   - Dashboard (/v1/*): SessionAuth injects "user_id"; the caller is a
+//     human operator, so we additionally require TOTP (2FA).
+//   - External API (/api/v1/*): APITokenAuth injects "account_id" and
+//     "api_token"; the access token itself is the authentication factor
+//     (reinforced by HMAC signing when the token has require_signature=true),
+//     so no additional TOTP is required. The withdrawal is attributed to the
+//     token's account, with CreatedBy left nil for external-API callers.
+//
+// Wallet-passphrase verification runs in both flows — the encrypted MPC
+// share A is the final gate before a withdrawal row is persisted.
 func CreateWalletWithdrawal(ctx http.Context) http.Response {
 	wallet := ctx.Value("wallet").(*models.Wallet)
-	callerID, _ := ctx.Value("user_id").(uuid.UUID)
 
 	var req requests.CreateWalletWithdrawalRequest
 	if resp := validateRequest(ctx, &req); resp != nil {
 		return resp
 	}
 
-	user, err := container.Get().UserRepo.FindByID(callerID)
-	if err != nil || user == nil {
-		return ctx.Response().Json(http.StatusUnauthorized, http.Json{"error": "user not found"})
-	}
+	callerUserID, hasUser := ctx.Value("user_id").(uuid.UUID)
+	isDashboardCaller := hasUser && callerUserID != uuid.Nil
 
-	if !user.TotpEnabled {
-		return ctx.Response().Json(http.StatusForbidden, http.Json{"error": "2FA must be enabled before withdrawing"})
-	}
+	if isDashboardCaller {
+		user, err := container.Get().UserRepo.FindByID(callerUserID)
+		if err != nil || user == nil {
+			return ctx.Response().Json(http.StatusUnauthorized, http.Json{"error": "user not found"})
+		}
 
-	decryptedSecret, err := facades.Crypt().DecryptString(user.TotpSecret)
-	if err != nil {
-		return ctx.Response().Json(http.StatusInternalServerError, http.Json{"error": "internal error"})
-	}
-	authService := authsvc.NewService()
-	if !authService.VerifyTOTP(decryptedSecret, req.TotpCode) {
-		return ctx.Response().Json(http.StatusUnauthorized, http.Json{"error": "invalid 2FA code"})
+		if !user.TotpEnabled {
+			return ctx.Response().Json(http.StatusForbidden, http.Json{"error": "2FA must be enabled before withdrawing"})
+		}
+
+		decryptedSecret, err := facades.Crypt().DecryptString(user.TotpSecret)
+		if err != nil {
+			return ctx.Response().Json(http.StatusInternalServerError, http.Json{"error": "internal error"})
+		}
+		authService := authsvc.NewService()
+		if !authService.VerifyTOTP(decryptedSecret, req.TotpCode) {
+			return ctx.Response().Json(http.StatusUnauthorized, http.Json{"error": "invalid 2FA code"})
+		}
+	} else {
+		accountID, hasAccount := ctx.Value("account_id").(uuid.UUID)
+		if !hasAccount || accountID == uuid.Nil {
+			return ctx.Response().Json(http.StatusUnauthorized, http.Json{"error": "unauthenticated"})
+		}
 	}
 
 	if errResp := verifyWalletPassphrase(ctx, wallet, req.Passphrase); errResp != nil {
@@ -126,7 +147,9 @@ func CreateWalletWithdrawal(ctx http.Context) http.Response {
 		Amount:             req.Amount,
 		DestinationAddress: req.DestinationAddress,
 		Note:               req.Note,
-		CreatedBy:          &callerID,
+	}
+	if isDashboardCaller {
+		w.CreatedBy = &callerUserID
 	}
 	if wallet.AccountID != nil {
 		w.AccountID = wallet.AccountID
@@ -140,20 +163,24 @@ func CreateWalletWithdrawal(ctx http.Context) http.Response {
 
 func verifyWalletPassphrase(ctx http.Context, wallet *models.Wallet, passphrase string) http.Response {
 	rdb := container.Get().Redis
-
 	key := fmt.Sprintf("vault:ratelimit:passphrase:%s", wallet.ID)
-	count, err := rdb.Get(ctx.Context(), key).Int()
-	if err == nil && count >= 5 {
-		return ctx.Response().Json(http.StatusTooManyRequests, http.Json{"error": "too many failed attempts, try again later"})
+
+	if rdb != nil {
+		count, err := rdb.Get(ctx.Context(), key).Int()
+		if err == nil && count >= 5 {
+			return ctx.Response().Json(http.StatusTooManyRequests, http.Json{"error": "too many failed attempts, try again later"})
+		}
 	}
 
 	shareA, decErr := wallet.DecryptShareA(passphrase)
 	if decErr != nil {
 		if errors.Is(decErr, mpcpkg.ErrInvalidPassphrase) {
-			pipe := rdb.Pipeline()
-			pipe.Incr(ctx.Context(), key)
-			pipe.Expire(ctx.Context(), key, 60*time.Second)
-			_, _ = pipe.Exec(ctx.Context())
+			if rdb != nil {
+				pipe := rdb.Pipeline()
+				pipe.Incr(ctx.Context(), key)
+				pipe.Expire(ctx.Context(), key, 60*time.Second)
+				_, _ = pipe.Exec(ctx.Context())
+			}
 			return ctx.Response().Json(http.StatusUnauthorized, http.Json{"error": "invalid passphrase"})
 		}
 		return ctx.Response().Json(http.StatusInternalServerError, http.Json{"error": "internal error"})

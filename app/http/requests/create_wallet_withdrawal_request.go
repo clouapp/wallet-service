@@ -20,13 +20,25 @@ func (r *CreateWalletWithdrawalRequest) Authorize(ctx http.Context) error {
 	return nil
 }
 
+// Rules returns the validation contract for the payload.
+//
+// totp_code is only required for dashboard (session) callers — the
+// APITokenAuth surface relies on the access token itself (and, for
+// tokens with require_signature=true, HMAC signing) as the authentication
+// factor. We detect dashboard callers by the presence of "user_id" in
+// the request context (set by SessionAuth); APITokenAuth sets
+// "account_id" instead, so the rule set falls back to the minimal
+// business-required fields.
 func (r *CreateWalletWithdrawalRequest) Rules(ctx http.Context) map[string]string {
-	return map[string]string{
+	rules := map[string]string{
 		"amount":              "required|decimal_string",
 		"destination_address": "required|blockchain_address",
 		"passphrase":          "required|min_len:12",
-		"totp_code":           "required|min_len:6|max_len:6",
 	}
+	if userID, ok := ctx.Value("user_id").(uuid.UUID); ok && userID != uuid.Nil {
+		rules["totp_code"] = "required|min_len:6|max_len:6"
+	}
+	return rules
 }
 
 func (r *CreateWalletWithdrawalRequest) PrepareForValidation(ctx http.Context, data validation.Data) error {

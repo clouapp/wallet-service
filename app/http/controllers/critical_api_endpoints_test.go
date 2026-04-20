@@ -268,22 +268,40 @@ func (s *criticalEndpointsSuite) TestConsolidate_SignedTokenMissingSig_401() {
 // ---------------------------------------------------------------------------
 // CreateWalletWithdrawal — POST /api/v1/wallets/{walletId}/withdrawals
 //
-// Per the route audit done when these tests were written, this route is
-// registered only on the dashboard surface (routes/admin.go). The
-// external API under /api/v1 exposes only `/withdraw/preview`. To avoid
-// silently passing tests that don't exercise the intended path, we skip
-// these scenarios explicitly — registering a new route is a separate
-// decision outside the scope of this test suite.
+// The "AcceptsRequest" tests only assert that the middleware stack let the
+// request through — the downstream service will fail at the MPC
+// passphrase-decryption step (the test wallet carries dummy MPC material
+// so DecryptShareA cannot succeed), which the controller maps to 401
+// "invalid passphrase". That error body does not match any middleware
+// reject string, so `assertNoMiddlewareReject` correctly passes.
 // ---------------------------------------------------------------------------
 
+// critWithdrawalBody is the shared JSON payload exercised by the
+// withdrawal accept-path tests. It satisfies the external-API rule set:
+// amount, destination_address, and a ≥12-char passphrase. No totp_code
+// is sent — APITokenAuth is the authentication factor on /api/v1/*, and
+// Rules() conditionally drops totp_code when user_id is absent.
+const critWithdrawalBody = `{"amount":"1","destination_address":"0x742d35Cc6634C0532925a3b844Bc9e7595f2bD12","passphrase":"test-passphrase-123"}`
+
 func (s *criticalEndpointsSuite) TestCreateWithdrawal_UnsignedToken_AcceptsRequest() {
-	s.T().Skip("withdrawals route not registered on /api/v1/* (only on dashboard /v1/*)")
+	walletID, jwt := s.seedAccountWallet(false, "withdrawal-unsigned")
+
+	resp := s.post("/api/v1/wallets/"+walletID+"/withdrawals", jwt, critWithdrawalBody, "")
+	s.assertNoMiddlewareReject(resp)
 }
 
 func (s *criticalEndpointsSuite) TestCreateWithdrawal_SignedToken_AcceptsRequest() {
-	s.T().Skip("withdrawals route not registered on /api/v1/* (only on dashboard /v1/*)")
+	walletID, jwt := s.seedAccountWallet(true, "withdrawal-signed")
+
+	sig := signBody(jwt, critWithdrawalBody)
+	resp := s.post("/api/v1/wallets/"+walletID+"/withdrawals", jwt, critWithdrawalBody, sig)
+	s.assertNoMiddlewareReject(resp)
 }
 
 func (s *criticalEndpointsSuite) TestCreateWithdrawal_SignedTokenMissingSig_401() {
-	s.T().Skip("withdrawals route not registered on /api/v1/* (only on dashboard /v1/*)")
+	jwt := s.mintSignedToken("withdrawal-missing-sig")
+
+	s.post("/api/v1/wallets/"+uuid.NewString()+"/withdrawals", jwt, critWithdrawalBody, "").
+		AssertStatus(401).
+		AssertJson(map[string]any{"error": "missing request signature"})
 }
