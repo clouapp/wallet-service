@@ -40,18 +40,34 @@ func TestDB(t *testing.T) {
 		},
 	})
 
-	// Verify database connectivity
+	// Verify database connectivity.
+	//
+	// By default, tests are skipped when the DB is unavailable so the suite
+	// remains runnable on developer machines without Docker. CI must opt in
+	// to strict enforcement by exporting TEST_DB_REQUIRED=1, which upgrades
+	// every skip path to a hard failure so broken DB-backed tests can't hide.
+	required := os.Getenv("TEST_DB_REQUIRED") == "1"
+	fail := func(format string, args ...any) {
+		if required {
+			t.Fatalf(format, args...)
+			return
+		}
+		t.Skipf(format, args...)
+	}
+
 	orm := facades.Orm()
 	if orm == nil {
-		t.Skip("skipping DB test — Goravel ORM not initialized (no database)")
+		fail("test DB unavailable — Goravel ORM not initialized (set TEST_DB_REQUIRED=1 to fail instead of skip)")
 		return
 	}
 	db, err := orm.DB()
 	if err != nil {
-		t.Skipf("skipping DB test — cannot connect: %v", err)
+		fail("test DB unavailable — cannot connect: %v (set TEST_DB_REQUIRED=1 to fail instead of skip)", err)
+		return
 	}
 	if err := db.Ping(); err != nil {
-		t.Skipf("skipping DB test — ping failed: %v", err)
+		fail("test DB unavailable — ping failed: %v (set TEST_DB_REQUIRED=1 to fail instead of skip)", err)
+		return
 	}
 
 	// Run migrations to set up schema
