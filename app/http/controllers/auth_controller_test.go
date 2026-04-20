@@ -1,13 +1,23 @@
 package controllers_test
 
 import (
+	"strings"
 	"testing"
 
+	goravelTesting "github.com/goravel/framework/testing"
 	"github.com/stretchr/testify/suite"
 )
 
+// AuthControllerTestSuite exercises the /v1/auth/* pre-authentication routes.
+// These endpoints do NOT require a bearer token — they are the surface a
+// caller hits before having a session — so we dispatch plain HTTP requests
+// and assert on validation and credential-rejection behaviour.
+//
+// Nothing here calls /api/v1, so SetupAPIAuth is not needed. The pre-auth
+// paths intentionally skip both SessionAuth and APITokenAuth middleware.
 type AuthControllerTestSuite struct {
-	authSuite
+	suite.Suite
+	goravelTesting.TestCase
 }
 
 func TestAuthControllerSuite(t *testing.T) {
@@ -28,7 +38,7 @@ func (s *AuthControllerTestSuite) TestRegister_MissingEmail() {
 	body := `{"password":"secret123"}`
 	resp, err := s.Http(s.T()).
 		WithHeader("Content-Type", "application/json").
-		Post("/v1/auth/register", toReader(body))
+		Post("/v1/auth/register", strings.NewReader(body))
 	s.Require().NoError(err)
 	resp.AssertStatus(422)
 }
@@ -38,7 +48,7 @@ func (s *AuthControllerTestSuite) TestLogin_InvalidCredentials() {
 	body := `{"email":"nonexistent@example.com","password":"wrongpass"}`
 	resp, err := s.Http(s.T()).
 		WithHeader("Content-Type", "application/json").
-		Post("/v1/auth/login", toReader(body))
+		Post("/v1/auth/login", strings.NewReader(body))
 	s.Require().NoError(err)
 	resp.AssertStatus(401)
 }
@@ -48,7 +58,7 @@ func (s *AuthControllerTestSuite) TestRecover_AlwaysReturns200() {
 	body := `{"email":"nobody@example.com"}`
 	resp, err := s.Http(s.T()).
 		WithHeader("Content-Type", "application/json").
-		Post("/v1/auth/recover", toReader(body))
+		Post("/v1/auth/recover", strings.NewReader(body))
 	s.Require().NoError(err)
 	resp.AssertOk()
 }
@@ -58,7 +68,7 @@ func (s *AuthControllerTestSuite) TestRecoverConfirm_InvalidToken() {
 	body := `{"token":"invalid-token","new_password":"newpass123"}`
 	resp, err := s.Http(s.T()).
 		WithHeader("Content-Type", "application/json").
-		Post("/v1/auth/recover/confirm", toReader(body))
+		Post("/v1/auth/recover/confirm", strings.NewReader(body))
 	s.Require().NoError(err)
 	resp.AssertStatus(401)
 }
@@ -77,7 +87,7 @@ func (s *AuthControllerTestSuite) TestRefreshToken_InvalidToken() {
 	body := `{"refresh_token":"bad-token-value"}`
 	resp, err := s.Http(s.T()).
 		WithHeader("Content-Type", "application/json").
-		Post("/v1/auth/refresh", toReader(body))
+		Post("/v1/auth/refresh", strings.NewReader(body))
 	s.Require().NoError(err)
 	resp.AssertStatus(401)
 }

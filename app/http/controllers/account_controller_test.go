@@ -1,13 +1,23 @@
 package controllers_test
 
 import (
+	"strings"
 	"testing"
 
+	goravelTesting "github.com/goravel/framework/testing"
 	"github.com/stretchr/testify/suite"
 )
 
+// AccountControllerTestSuite verifies that every /v1/accounts/* dashboard
+// endpoint rejects unauthenticated requests with 401. These are SessionAuth-
+// guarded routes, and we only assert the rejection surface — exercising
+// authenticated paths requires a live session JWT mint helper which has not
+// been extracted yet (tracked in docs/superpowers/specs/2026-04-18-base-
+// address-sweep-follow-ups.md). Any test that would need SetupSessionAuth
+// remains deferred until the helper lands.
 type AccountControllerTestSuite struct {
-	authSuite
+	suite.Suite
+	goravelTesting.TestCase
 }
 
 func TestAccountControllerSuite(t *testing.T) {
@@ -19,7 +29,7 @@ func (s *AccountControllerTestSuite) TestCreateAccount_Unauthenticated() {
 	body := `{"name":"My Account"}`
 	resp, err := s.Http(s.T()).
 		WithHeader("Content-Type", "application/json").
-		Post("/v1/accounts", toReader(body))
+		Post("/v1/accounts", strings.NewReader(body))
 	s.Require().NoError(err)
 	resp.AssertStatus(401)
 }
@@ -38,7 +48,7 @@ func (s *AccountControllerTestSuite) TestUpdateAccount_Unauthenticated() {
 	body := `{"name":"New Name"}`
 	resp, err := s.Http(s.T()).
 		WithHeader("Content-Type", "application/json").
-		Patch("/v1/accounts/00000000-0000-0000-0000-000000000001", toReader(body))
+		Patch("/v1/accounts/00000000-0000-0000-0000-000000000001", strings.NewReader(body))
 	s.Require().NoError(err)
 	resp.AssertStatus(401)
 }
