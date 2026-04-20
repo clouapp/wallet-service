@@ -133,7 +133,7 @@ func (s *APIWalletContextTestSuite) createAccessTokenJWT(accountID uuid.UUID, na
 	)
 	s.Require().NoError(err)
 
-	jwt, err := middleware.MintAPIToken(record)
+	jwt, err := middleware.MintAPIToken(record, false)
 	s.Require().NoError(err)
 	return jwt
 }

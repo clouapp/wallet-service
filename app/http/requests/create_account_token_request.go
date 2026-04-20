@@ -5,8 +5,9 @@ import (
 )
 
 type CreateAccountTokenRequest struct {
-	Name       string `form:"name"        json:"name"`
-	ValidUntil string `form:"valid_until" json:"valid_until,omitempty"`
+	Name             string `form:"name"              json:"name"`
+	ValidUntil       string `form:"valid_until"       json:"valid_until,omitempty"`
+	RequireSignature bool   `form:"require_signature" json:"require_signature,omitempty"`
 }
 
 func (r *CreateAccountTokenRequest) Authorize(ctx http.Context) error {

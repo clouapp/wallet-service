@@ -100,7 +100,7 @@ func (s *WithdrawalsControllerTestSuite) TestCreateWithdrawal_WalletNotFound() {
 		ID:        tokenID,
 		AccountID: accountID,
 		Name:      "withdraw-not-found-token",
-	})
+	}, false)
 	s.Require().NoError(err)
 
 	body := `{"external_user_id":"user","to_address":"0x742d35Cc6634C0532925a3b844Bc9e7595f2bD12","amount":"100","asset":"eth"}`

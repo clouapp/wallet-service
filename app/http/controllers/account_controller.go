@@ -325,7 +325,7 @@ func CreateAccountToken(ctx http.Context) http.Response {
 		return ctx.Response().Json(http.StatusInternalServerError, http.Json{"error": "failed to create token"})
 	}
 
-	jwt, err := middleware.MintAPIToken(token)
+	jwt, err := middleware.MintAPIToken(token, req.RequireSignature)
 	if err != nil {
 		return ctx.Response().Json(http.StatusInternalServerError, http.Json{"error": "failed to sign token"})
 	}
@@ -388,8 +388,9 @@ type AddAccountUserSwagger struct {
 }
 
 type CreateAccountTokenSwagger struct {
-	Name       string     `json:"name" example:"CI Token"`
-	ValidUntil *time.Time `json:"valid_until,omitempty"`
+	Name             string     `json:"name" example:"CI Token"`
+	ValidUntil       *time.Time `json:"valid_until,omitempty"`
+	RequireSignature bool       `json:"require_signature,omitempty" example:"true"`
 }
 
 type AccountUserListResponse struct {
