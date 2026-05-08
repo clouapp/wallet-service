@@ -13,7 +13,10 @@ func PrintCredentials() {
 	fmt.Println("  bob@macro.markets   / secret  (auditor)")
 	fmt.Println()
 	fmt.Println("  Accounts: Acme Corp (prod) · Acme Corp (Test) — paired, default = prod")
-	fmt.Println("  Wallets: ETH · BTC · Polygon (prod) · Sepolia · Bitcoin testnet · Amoy (test)")
+	fmt.Println("  Wallets: ETH · BTC · Polygon · SOL (prod) · Sepolia · Bitcoin testnet · Amoy · Solana devnet (test)")
+	fmt.Println()
+	fmt.Println("  MPC passphrase for every seeded wallet:")
+	fmt.Println("    " + SeedPassphrase)
 	fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	fmt.Println()
 }

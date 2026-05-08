@@ -43,15 +43,25 @@ func SeedChains(_ context.Context) error {
 	}
 
 	for _, c := range append(mainnets, testnets...) {
-		var existing models.Chain
-		if err := facades.Orm().Query().Where("id", c.id).First(&existing); err == nil && existing.ID != "" {
-			slog.Info("chain already exists, skipping", "id", c.id)
-			continue
-		}
 		encRPC, err := encryptRPCFromEnv(c.envVar)
 		if err != nil {
 			return fmt.Errorf("encrypt RPC for chain %s: %w", c.id, err)
 		}
+
+		var existing models.Chain
+		if err := facades.Orm().Query().Where("id", c.id).First(&existing); err == nil && existing.ID != "" {
+			// Re-encrypt rpc_url under the current APP_KEY so a rotated key self-heals
+			// on re-seed instead of leaving the registry unable to decrypt (which shows
+			// up as "unknown chain" for every API call).
+			if _, err := facades.Orm().Query().Model(&models.Chain{}).
+				Where("id = ?", c.id).
+				Update("rpc_url", encRPC); err != nil {
+				return fmt.Errorf("refresh rpc_url for chain %s: %w", c.id, err)
+			}
+			slog.Info("chain exists, refreshed rpc_url", "id", c.id)
+			continue
+		}
+
 		iconURL := c.iconURL
 		ch := models.Chain{
 			ID:                    c.id,

@@ -15,4 +15,6 @@ var (
 	tethWalletID      = uuid.MustParse("00000000-0000-0000-0000-000000000023")
 	tbtcWalletID      = uuid.MustParse("00000000-0000-0000-0000-000000000024")
 	tpolyWalletID     = uuid.MustParse("00000000-0000-0000-0000-000000000025")
+	solWalletID       = uuid.MustParse("00000000-0000-0000-0000-000000000026")
+	tsolWalletID      = uuid.MustParse("00000000-0000-0000-0000-000000000027")
 )

@@ -270,9 +270,7 @@ dev-front: ## Start frontend only (vinext on port 2001)
 
 stop: ## Stop all running dev processes (backend + frontend)
 	@echo "🛑 Stopping all dev processes..."
-	@pkill -f "air" 2>/dev/null && echo "  Stopped Air process" || true
-	@pkill -f "go run \." 2>/dev/null && echo "  Stopped go run process" || true
-	@pkill -f "vinext dev" 2>/dev/null && echo "  Stopped vinext process" || true
+	@pkill -x air 2>/dev/null && echo "  Stopped Air process" || true
 	@API_PORT=$$(grep -E '^PORT=' .env.dev 2>/dev/null | cut -d= -f2); \
 	lsof -ti:$${API_PORT:-2002} | xargs kill -9 2>/dev/null && echo "  Killed process on port $${API_PORT:-2002}" || true
 	@lsof -ti:2001 | xargs kill -9 2>/dev/null && echo "  Killed process on port 2001" || true

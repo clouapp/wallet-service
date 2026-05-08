@@ -6,6 +6,7 @@ import (
 	"github.com/goravel/framework/contracts/foundation"
 	frameworkcrypt "github.com/goravel/framework/crypt"
 	frameworkdatabase "github.com/goravel/framework/database"
+	frameworkevent "github.com/goravel/framework/event"
 	frameworkhttp "github.com/goravel/framework/http"
 	frameworklog "github.com/goravel/framework/log"
 	frameworkmail "github.com/goravel/framework/mail"
@@ -36,6 +37,7 @@ func Providers() []foundation.ServiceProvider {
 		&frameworktesting.ServiceProvider{},
 		&frameworkauth.ServiceProvider{},
 		&frameworkqueue.ServiceProvider{},
+		&frameworkevent.ServiceProvider{},
 		&frameworkmail.ServiceProvider{},
 		&frameworkcrypt.ServiceProvider{},
 		&providers.MigrationsServiceProvider{},
