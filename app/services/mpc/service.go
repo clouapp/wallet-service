@@ -30,4 +30,5 @@ type Service interface {
 	Keygen(ctx context.Context, curve Curve) (*KeygenResult, error)
 	Sign(ctx context.Context, curve Curve, shareA, shareB []byte, inputs SignInputs) ([]byte, error)
 	ReconstructEd25519PrivateKey(shareA, shareB []byte) ([]byte, error)
+	ReconstructSecp256k1PrivateKey(shareA, shareB []byte) ([]byte, error)
 }

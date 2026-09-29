@@ -1,13 +1,18 @@
 package mocks
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 
 	mpc "github.com/macrowallets/waas/app/services/mpc"
 )
 
-type MockMPCService struct{}
+type MockMPCService struct {
+	SignCalls              int
+	ReconstructEd25519Fn   func(shareA, shareB []byte) ([]byte, error)
+	ReconstructSecp256k1Fn func(shareA, shareB []byte) ([]byte, error)
+}
 
 func NewMockMPCService() *MockMPCService {
 	return &MockMPCService{}
@@ -50,13 +55,24 @@ func (m *MockMPCService) Keygen(_ context.Context, curve mpc.Curve) (*mpc.Keygen
 }
 
 func (m *MockMPCService) Sign(_ context.Context, curve mpc.Curve, shareA, shareB []byte, inputs mpc.SignInputs) ([]byte, error) {
+	m.SignCalls++
 	sig := make([]byte, 64)
 	_, err := rand.Read(sig)
 	return sig, err
 }
 
 func (m *MockMPCService) ReconstructEd25519PrivateKey(shareA, shareB []byte) ([]byte, error) {
+	if m.ReconstructEd25519Fn != nil {
+		return m.ReconstructEd25519Fn(shareA, shareB)
+	}
 	privKey := make([]byte, 32)
 	_, err := rand.Read(privKey)
 	return privKey, err
+}
+
+func (m *MockMPCService) ReconstructSecp256k1PrivateKey(shareA, shareB []byte) ([]byte, error) {
+	if m.ReconstructSecp256k1Fn != nil {
+		return m.ReconstructSecp256k1Fn(shareA, shareB)
+	}
+	return bytes.Repeat([]byte{0x11}, 32), nil
 }

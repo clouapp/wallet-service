@@ -7,10 +7,12 @@ import (
 	"math/big"
 
 	"github.com/bnb-chain/tss-lib/v2/common"
+	"github.com/bnb-chain/tss-lib/v2/crypto/vss"
 	"github.com/bnb-chain/tss-lib/v2/ecdsa/keygen"
 	"github.com/bnb-chain/tss-lib/v2/ecdsa/signing"
 	eddsaKeygen "github.com/bnb-chain/tss-lib/v2/eddsa/keygen"
 	"github.com/bnb-chain/tss-lib/v2/tss"
+	"github.com/btcsuite/btcd/btcec/v2"
 )
 
 // Sign performs a 2-party MPC signing ceremony on secp256k1.
@@ -157,6 +159,32 @@ func (s *TSSService) ReconstructEd25519PrivateKey(shareA, shareB []byte) ([]byte
 	copy(privBytes[32-len(b):], b)
 
 	return privBytes, nil
+}
+
+// ReconstructSecp256k1PrivateKey temporarily reconstructs the secp256k1 scalar
+// from both MPC shares. The caller MUST zero the returned bytes after use.
+func (s *TSSService) ReconstructSecp256k1PrivateKey(shareA, shareB []byte) ([]byte, error) {
+	var saveA, saveB keygen.LocalPartySaveData
+	if err := json.Unmarshal(shareA, &saveA); err != nil {
+		return nil, fmt.Errorf("unmarshal secp256k1 shareA: %w", err)
+	}
+	if err := json.Unmarshal(shareB, &saveB); err != nil {
+		return nil, fmt.Errorf("unmarshal secp256k1 shareB: %w", err)
+	}
+	if saveA.Xi == nil || saveB.Xi == nil || saveA.ShareID == nil || saveB.ShareID == nil {
+		return nil, fmt.Errorf("shares missing private key components")
+	}
+	secret, err := (vss.Shares{
+		{Threshold: 1, ID: saveA.ShareID, Share: saveA.Xi},
+		{Threshold: 1, ID: saveB.ShareID, Share: saveB.Xi},
+	}).ReConstruct(btcec.S256())
+	if err != nil {
+		return nil, fmt.Errorf("reconstruct secp256k1 scalar: %w", err)
+	}
+	out := make([]byte, 32)
+	b := secret.Bytes()
+	copy(out[32-len(b):], b)
+	return out, nil
 }
 
 // derEncode produces a DER-encoded ECDSA signature from raw R and S byte slices.

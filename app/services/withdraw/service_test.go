@@ -1,6 +1,7 @@
 package withdraw
 
 import (
+	"bytes"
 	"context"
 	"math/big"
 	"os"
@@ -38,6 +39,10 @@ func (m *mockMPC) Sign(ctx context.Context, curve mpcpkg.Curve, shareA, shareB [
 		return m.signFn(ctx, curve, shareA, shareB, inputs)
 	}
 	return []byte("mocksig"), nil
+}
+
+func (m *mockMPC) ReconstructSecp256k1PrivateKey(shareA, shareB []byte) ([]byte, error) {
+	return bytes.Repeat([]byte{0x11}, 32), nil
 }
 
 func (m *mockMPC) ReconstructEd25519PrivateKey(shareA, shareB []byte) ([]byte, error) {
