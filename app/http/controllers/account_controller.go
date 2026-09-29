@@ -311,11 +311,14 @@ func CreateAccountToken(ctx http.Context) http.Response {
 		return errResp
 	}
 
+	tokenID := uuid.New()
 	token := &models.AccessToken{
-		ID:        uuid.New(),
-		AccountID: account.ID,
-		CreatedBy: &callerID,
-		Name:      req.Name,
+		ID:            tokenID,
+		AccountID:     account.ID,
+		CreatedBy:     &callerID,
+		Name:          req.Name,
+		TokenHash:     accountAuthService.HashToken(tokenID.String()),
+		SpendingLimit: "{}",
 	}
 	if req.ValidUntil != "" {
 		t, _ := time.Parse(time.RFC3339, req.ValidUntil)
