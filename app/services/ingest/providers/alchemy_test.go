@@ -152,6 +152,7 @@ func TestParsePayload_ERC20TokenTransfer(t *testing.T) {
 
 	expectedAmount, _ := new(big.Int).SetString("5f5e100", 16)
 	assert.Equal(t, 0, tx.Amount.Cmp(expectedAmount))
+	assert.False(t, tx.AmountIsHuman)
 
 	require.NotNil(t, tx.Token)
 	assert.Equal(t, "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48", tx.Token.Contract)
@@ -161,6 +162,38 @@ func TestParsePayload_ERC20TokenTransfer(t *testing.T) {
 // ---------------------------------------------------------------------------
 // diffAddresses
 // ---------------------------------------------------------------------------
+
+func TestParsePayload_ERC20OmitsRawValueKeepsHumanAmount(t *testing.T) {
+	payload := []byte(`{
+		"event": {
+			"activity": [{
+				"blockNum": "0x1",
+				"hash": "0xhuman",
+				"fromAddress": "0xfrom",
+				"toAddress": "0xto",
+				"value": 1.5,
+				"asset": "USDT",
+				"category": "token",
+				"rawContract": {
+					"rawValue": "",
+					"address": "0xdAC17F958D2ee523a2206206994597C13D831ec7",
+					"decimals": 18
+				}
+			}]
+		}
+	}`)
+
+	transfers, err := NewAlchemyProvider("test-key").ParsePayload(payload)
+	require.NoError(t, err)
+	require.Len(t, transfers, 1)
+	tx := transfers[0]
+	assert.True(t, tx.AmountIsHuman)
+	assert.Equal(t, "1.5", tx.HumanAmount)
+	scaled, _ := new(big.Int).SetString("1500000000000000000", 10)
+	if tx.Amount != nil && tx.Amount.Cmp(scaled) == 0 {
+		t.Fatal("parser must not scale the human token amount by 18")
+	}
+}
 
 func TestDiffAddresses(t *testing.T) {
 	current := []string{"0xAAA", "0xBBB", "0xCCC"}

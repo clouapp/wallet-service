@@ -12,6 +12,7 @@ import (
 	"math/big"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -25,8 +26,6 @@ const (
 
 	heliusWebhookTypeMainnet = "enhanced"
 	heliusWebhookTypeDevnet  = "enhancedDevnet"
-
-	defaultSPLDecimals = uint8(9)
 )
 
 type HeliusProvider struct {
@@ -303,29 +302,32 @@ func (h *HeliusProvider) ParsePayload(body []byte) ([]InboundTransfer, error) {
 			if strings.TrimSpace(tt.Mint) == "" {
 				continue
 			}
-			dec := defaultSPLDecimals
-			if tt.Decimals != nil {
-				dec = *tt.Decimals
-			}
-			amount, err := floatHumanToRawBigInt(tt.TokenAmount, dec)
-			if err != nil {
-				return nil, fmt.Errorf("helius: token amount (tx=%s mint=%s): %w", tx.Signature, tt.Mint, err)
-			}
-			out = append(out, InboundTransfer{
+			transfer := InboundTransfer{
 				TxHash:      tx.Signature,
 				BlockNumber: tx.Slot,
 				BlockHash:   "",
 				From:        tt.FromUserAccount,
 				To:          tt.ToUserAccount,
-				Amount:      amount,
 				Asset:       "spl",
 				Token: &types.Token{
 					Contract: tt.Mint,
-					Decimals: dec,
 				},
 				LogIndex:  -1,
 				Timestamp: ts,
-			})
+			}
+			if tt.Decimals == nil {
+				transfer.AmountIsHuman = true
+				transfer.HumanAmount = strconv.FormatFloat(tt.TokenAmount, 'f', -1, 64)
+				transfer.Token.Decimals = 0
+			} else {
+				amount, err := floatHumanToRawBigInt(tt.TokenAmount, *tt.Decimals)
+				if err != nil {
+					return nil, fmt.Errorf("helius: token amount (tx=%s mint=%s): %w", tx.Signature, tt.Mint, err)
+				}
+				transfer.Amount = amount
+				transfer.Token.Decimals = *tt.Decimals
+			}
+			out = append(out, transfer)
 		}
 	}
 	return out, nil

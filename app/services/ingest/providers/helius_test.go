@@ -134,3 +134,27 @@ func TestHeliusParsePayload_SPLTokenTransfer(t *testing.T) {
 	assert.Equal(t, uint8(6), tx.Token.Decimals)
 	assert.Equal(t, 0, big.NewInt(100_000_000).Cmp(tx.Amount))
 }
+
+func TestHeliusParsePayload_SPLOmitsDecimalsKeepsHumanAmount(t *testing.T) {
+	payload := []byte(`[{
+		"signature": "sig",
+		"slot": 1,
+		"tokenTransfers": [{
+			"fromUserAccount": "FromWalletAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+			"toUserAccount": "ToWalletBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB",
+			"tokenAmount": 1.5,
+			"mint": "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB"
+		}]
+	}]`)
+	transfers, err := NewHeliusProvider("k").ParsePayload(payload)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tx := transfers[0]
+	if tx.HumanAmount != "1.5" || !tx.AmountIsHuman {
+		t.Fatalf("%+v", tx)
+	}
+	if tx.Token == nil || tx.Token.Symbol != "" {
+		t.Fatalf("symbol must stay empty until registry resolve, got %+v", tx.Token)
+	}
+}

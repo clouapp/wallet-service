@@ -307,6 +307,13 @@ func activityToTransfer(act alchemyActivity) (InboundTransfer, error) {
 	}
 
 	amount := parseAmount(act)
+	amountIsHuman := false
+	humanAmount := ""
+	if act.Category == "token" && act.RawContract.RawValue == "" {
+		amountIsHuman = true
+		humanAmount = strconv.FormatFloat(act.Value, 'f', -1, 64)
+		amount = nil
+	}
 
 	logIndex := -1
 	if act.Log.LogIndex != "" {
@@ -318,14 +325,16 @@ func activityToTransfer(act alchemyActivity) (InboundTransfer, error) {
 	}
 
 	t := InboundTransfer{
-		TxHash:      act.Hash,
-		BlockNumber: blockNum,
-		BlockHash:   act.Log.BlockHash,
-		From:        act.FromAddress,
-		To:          act.ToAddress,
-		Amount:      amount,
-		Asset:       act.Asset,
-		LogIndex:    logIndex,
+		TxHash:        act.Hash,
+		BlockNumber:   blockNum,
+		BlockHash:     act.Log.BlockHash,
+		From:          act.FromAddress,
+		To:            act.ToAddress,
+		Amount:        amount,
+		AmountIsHuman: amountIsHuman,
+		HumanAmount:   humanAmount,
+		Asset:         act.Asset,
+		LogIndex:      logIndex,
 	}
 
 	if act.Category == "token" && act.RawContract.Address != "" {

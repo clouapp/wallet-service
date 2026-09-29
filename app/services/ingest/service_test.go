@@ -5,11 +5,16 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
+	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/services/chain"
 	"github.com/macrowallets/waas/app/services/ingest/providers"
+	"github.com/macrowallets/waas/app/services/webhook"
 	"github.com/macrowallets/waas/pkg/types"
+	"github.com/macrowallets/waas/tests/mocks"
 )
 
 func TestProcessTransfers_UnknownChain(t *testing.T) {
@@ -67,4 +72,150 @@ func TestInboundTransfer_DetectedTransferMapping(t *testing.T) {
 	assert.Equal(t, in.Token, dt.Token)
 	assert.Equal(t, uint(in.LogIndex), dt.LogIndex)
 	assert.True(t, in.Timestamp.Equal(dt.Timestamp))
+}
+
+func TestProcessTransfers_HumanUSDTUsesSeedDecimals(t *testing.T) {
+	reg := chain.NewRegistry()
+	mockChain := mocks.NewMockChain(models.ChainETH)
+	mockChain.NativeAssetVal = models.NativeETH
+	reg.RegisterChain(mockChain)
+	reg.RegisterToken(types.Token{
+		Symbol:   models.SymbolUSDT,
+		ChainID:  models.ChainETH,
+		Decimals: 6,
+		Contract: models.USDTContractETH,
+	})
+
+	const to = "0xReceiver"
+	walletID := uuid.New()
+	addrs := &ingestAddressRepo{addr: &models.Address{
+		ID:             uuid.New(),
+		WalletID:       walletID,
+		ExternalUserID: "user-1",
+		Chain:          models.ChainETH,
+		Address:        to,
+	}}
+	txs := &ingestTxRepo{}
+	svc := NewService(nil, reg, webhook.NewService(nil, &ingestWebhookConfigRepo{}, &ingestWebhookEventRepo{}), addrs, txs)
+
+	err := svc.ProcessTransfers(t.Context(), models.ChainETH, []providers.InboundTransfer{{
+		TxHash:        "0xtoken",
+		To:            to,
+		From:          "0xfrom",
+		AmountIsHuman: true,
+		HumanAmount:   "1.5",
+		LogIndex:      1,
+		Token: &types.Token{
+			Contract: models.USDTContractETH,
+			Symbol:   "",
+		},
+	}})
+	require.NoError(t, err)
+	require.Len(t, txs.created, 1)
+	assert.Equal(t, models.SymbolUSDT, txs.created[0].Asset)
+	assert.Equal(t, "1500000", txs.created[0].Amount)
+}
+
+type ingestAddressRepo struct {
+	addr *models.Address
+}
+
+func (f *ingestAddressRepo) Create(addr *models.Address) error { return nil }
+func (f *ingestAddressRepo) UpdateFields(id uuid.UUID, fields map[string]interface{}) error {
+	return nil
+}
+func (f *ingestAddressRepo) CountByChainAndAddress(chainID, address string) (int64, error) {
+	if f.addr != nil && f.addr.Chain == chainID && f.addr.Address == address {
+		return 1, nil
+	}
+	return 0, nil
+}
+func (f *ingestAddressRepo) FindByChainAndAddress(chainID, address string) (*models.Address, error) {
+	if f.addr != nil && f.addr.Chain == chainID && f.addr.Address == address {
+		return f.addr, nil
+	}
+	return nil, nil
+}
+func (f *ingestAddressRepo) FindByChainAndAddressAndAccount(chainID, address string, accountID uuid.UUID) (*models.Address, error) {
+	return nil, nil
+}
+func (f *ingestAddressRepo) FindByExternalUserID(externalUserID string) ([]models.Address, error) {
+	return nil, nil
+}
+func (f *ingestAddressRepo) FindByExternalUserIDAndAccount(externalUserID string, accountID uuid.UUID) ([]models.Address, error) {
+	return nil, nil
+}
+func (f *ingestAddressRepo) FindByID(id uuid.UUID) (*models.Address, error) { return nil, nil }
+func (f *ingestAddressRepo) FindByWalletID(walletID uuid.UUID) ([]models.Address, error) {
+	return nil, nil
+}
+func (f *ingestAddressRepo) MaxDerivationIndex(walletID uuid.UUID) (int, error) { return 0, nil }
+func (f *ingestAddressRepo) PaginateByWalletID(walletID uuid.UUID, limit, offset int) ([]models.Address, int64, error) {
+	return nil, 0, nil
+}
+func (f *ingestAddressRepo) PluckActiveAddresses(chainID string) ([]string, error) {
+	return nil, nil
+}
+
+type ingestTxRepo struct {
+	created []*models.Transaction
+}
+
+func (f *ingestTxRepo) Create(tx *models.Transaction) error {
+	f.created = append(f.created, tx)
+	return nil
+}
+func (f *ingestTxRepo) FindByID(id uuid.UUID) (*models.Transaction, error) { return nil, nil }
+func (f *ingestTxRepo) FindByIDAndWallet(txID string, walletID uuid.UUID) (*models.Transaction, error) {
+	return nil, nil
+}
+func (f *ingestTxRepo) FindByIdempotencyKey(key string) (*models.Transaction, error) {
+	return nil, nil
+}
+func (f *ingestTxRepo) FindByWallet(walletID uuid.UUID, txType, status string, limit, offset int) ([]models.Transaction, int64, error) {
+	return nil, 0, nil
+}
+func (f *ingestTxRepo) FindByChainAndTxHash(chainID, txHash string) (*models.Transaction, error) {
+	return nil, nil
+}
+func (f *ingestTxRepo) CountByChainAndTxHash(chainID, txHash, txType string) (int64, error) {
+	return 0, nil
+}
+func (f *ingestTxRepo) CountByChainTxHashAndLogIndex(chainID, txHash string, logIndex int, txType string) (int64, error) {
+	return 0, nil
+}
+func (f *ingestTxRepo) FindPendingByChain(chainID string) ([]models.Transaction, error) {
+	return nil, nil
+}
+func (f *ingestTxRepo) UpdateFields(id uuid.UUID, fields map[string]interface{}) error { return nil }
+func (f *ingestTxRepo) List(chainID, txType, status, userID string, limit, offset int) ([]models.Transaction, int64, error) {
+	return nil, 0, nil
+}
+func (f *ingestTxRepo) ListForAccount(accountID uuid.UUID, chainID, txType, status, userID string, limit, offset int) ([]models.Transaction, int64, error) {
+	return nil, 0, nil
+}
+func (f *ingestTxRepo) ListByWalletAndChain(walletID uuid.UUID, chainID string, limit, offset int) ([]models.Transaction, int64, error) {
+	return nil, 0, nil
+}
+
+type ingestWebhookConfigRepo struct{}
+
+func (f *ingestWebhookConfigRepo) Create(cfg *models.WebhookConfig) error { return nil }
+func (f *ingestWebhookConfigRepo) FindByWalletID(walletID uuid.UUID) ([]models.WebhookConfig, error) {
+	return nil, nil
+}
+func (f *ingestWebhookConfigRepo) FindByIDAndWallet(id, walletID uuid.UUID) (*models.WebhookConfig, error) {
+	return nil, nil
+}
+func (f *ingestWebhookConfigRepo) FindActive() ([]models.WebhookConfig, error) { return nil, nil }
+func (f *ingestWebhookConfigRepo) FindAll() ([]models.WebhookConfig, error)    { return nil, nil }
+func (f *ingestWebhookConfigRepo) Delete(cfg *models.WebhookConfig) error      { return nil }
+func (f *ingestWebhookConfigRepo) DeleteByID(id uuid.UUID) error               { return nil }
+
+type ingestWebhookEventRepo struct{}
+
+func (f *ingestWebhookEventRepo) Create(event *models.WebhookEvent) error { return nil }
+func (f *ingestWebhookEventRepo) MarkDelivered(eventID string) error      { return nil }
+func (f *ingestWebhookEventRepo) IncrementAttempt(eventID string, errMsg string) error {
+	return nil
 }

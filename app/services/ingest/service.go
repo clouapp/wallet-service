@@ -16,6 +16,7 @@ import (
 	"github.com/macrowallets/waas/app/services/chain"
 	"github.com/macrowallets/waas/app/services/ingest/providers"
 	"github.com/macrowallets/waas/app/services/webhook"
+	"github.com/macrowallets/waas/app/services/withdraw"
 	"github.com/macrowallets/waas/pkg/types"
 )
 
@@ -46,7 +47,7 @@ func (s *Service) ProcessTransfers(ctx context.Context, chainID string, transfer
 }
 
 func (s *Service) processTransfer(ctx context.Context, chainID string, adapter types.Chain, transfer providers.InboundTransfer) error {
-	if transfer.Amount == nil {
+	if transfer.Amount == nil && !transfer.AmountIsHuman {
 		return fmt.Errorf("missing amount")
 	}
 
@@ -78,10 +79,26 @@ func (s *Service) processTransfer(ctx context.Context, chainID string, adapter t
 	asset := adapter.NativeAsset()
 	var tokenContract string
 	if transfer.Token != nil {
-		asset = transfer.Token.Symbol
-		tokenContract = transfer.Token.Contract
+		seeded, findErr := s.registry.FindTokenByContract(chainID, transfer.Token.Contract)
+		if findErr != nil {
+			return nil
+		}
+		asset = seeded.Symbol
+		tokenContract = seeded.Contract
+		transfer.Token.Symbol = seeded.Symbol
+		transfer.Token.Decimals = seeded.Decimals
+		if transfer.AmountIsHuman {
+			base, convErr := withdraw.ResolveWithdrawalAmount(chainID, adapter.NativeAsset(), 0, seeded.Symbol, transfer.HumanAmount, []types.Token{*seeded})
+			if convErr != nil {
+				return convErr
+			}
+			transfer.Amount = base.BaseUnits
+		}
 	} else if transfer.Asset != "" {
 		asset = transfer.Asset
+	}
+	if transfer.Amount == nil {
+		return fmt.Errorf("missing amount")
 	}
 
 	tx := &models.Transaction{
@@ -111,11 +128,13 @@ func (s *Service) processTransfer(ctx context.Context, chainID string, adapter t
 
 	s.webhookSvc.EnqueueEvent(ctx, tx.ID, types.EventDepositPending, tx)
 
-	_ = facades.Event().Job(&events.DepositDetected{}, []event.Arg{
-		{Type: "string", Value: tx.WalletID.String()},
-		{Type: "string", Value: chainID},
-		{Type: "string", Value: transfer.TxHash},
-	}).Dispatch()
+	if ev := facades.Event(); ev != nil {
+		_ = ev.Job(&events.DepositDetected{}, []event.Arg{
+			{Type: "string", Value: tx.WalletID.String()},
+			{Type: "string", Value: chainID},
+			{Type: "string", Value: transfer.TxHash},
+		}).Dispatch()
+	}
 
 	slog.Info("ingest deposit", "chain", chainID, "tx", transfer.TxHash, "log_index", transfer.LogIndex, "user", addr.ExternalUserID, "asset", asset, "amount", transfer.Amount.String())
 	return nil

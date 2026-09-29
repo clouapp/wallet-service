@@ -10,16 +10,18 @@ import (
 )
 
 type InboundTransfer struct {
-	TxHash      string
-	BlockNumber uint64
-	BlockHash   string
-	From        string
-	To          string
-	Amount      *big.Int
-	Asset       string
-	Token       *types.Token
-	LogIndex    int
-	Timestamp   time.Time
+	TxHash        string
+	BlockNumber   uint64
+	BlockHash     string
+	From          string
+	To            string
+	Amount        *big.Int
+	AmountIsHuman bool
+	HumanAmount   string
+	Asset         string
+	Token         *types.Token
+	LogIndex      int
+	Timestamp     time.Time
 }
 
 type ProviderConfig struct {
