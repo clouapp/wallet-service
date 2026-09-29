@@ -1,0 +1,220 @@
+package chain
+
+import (
+	"context"
+	"crypto/ed25519"
+	"encoding/base64"
+	"fmt"
+
+	"math/big"
+	"strings"
+
+	bin "github.com/gagliardetto/binary"
+	"github.com/gagliardetto/solana-go"
+	associatedtokenaccount "github.com/gagliardetto/solana-go/programs/associated-token-account"
+	"github.com/gagliardetto/solana-go/programs/system"
+	"github.com/gagliardetto/solana-go/programs/token"
+
+	"github.com/macrowallets/waas/pkg/types"
+)
+
+const solanaNativeFeeLamports int64 = 5000
+
+func buildSolanaNativeTx(from, to solana.PublicKey, lamports uint64, blockhash string) ([]byte, error) {
+	hash, err := solana.HashFromBase58(blockhash)
+	if err != nil {
+		return nil, fmt.Errorf("sol blockhash: %w", err)
+	}
+	ix := system.NewTransferInstruction(lamports, from, to).Build()
+	tx, err := solana.NewTransaction([]solana.Instruction{ix}, hash, solana.TransactionPayer(from))
+	if err != nil {
+		return nil, err
+	}
+	return tx.Message.MarshalBinary()
+}
+
+func buildSolanaSPLTx(owner, destOwner, mint solana.PublicKey, amount uint64, blockhash string, createDest bool) ([]byte, error) {
+	hash, err := solana.HashFromBase58(blockhash)
+	if err != nil {
+		return nil, fmt.Errorf("sol blockhash: %w", err)
+	}
+	sourceATA, _, err := solana.FindAssociatedTokenAddress(owner, mint)
+	if err != nil {
+		return nil, fmt.Errorf("sol source ata: %w", err)
+	}
+	destATA, _, err := solana.FindAssociatedTokenAddress(destOwner, mint)
+	if err != nil {
+		return nil, fmt.Errorf("sol dest ata: %w", err)
+	}
+	ixs := make([]solana.Instruction, 0, 2)
+	if createDest {
+		ixs = append(ixs, associatedtokenaccount.NewCreateInstruction(owner, destOwner, mint).Build())
+	}
+	ixs = append(ixs, token.NewTransferInstruction(amount, sourceATA, destATA, owner, nil).Build())
+	tx, err := solana.NewTransaction(ixs, hash, solana.TransactionPayer(owner))
+	if err != nil {
+		return nil, err
+	}
+	return tx.Message.MarshalBinary()
+}
+
+func signSolanaTx(unsigned *types.UnsignedTx, privateKey []byte) (*types.SignedTx, error) {
+	if unsigned == nil {
+		return nil, fmt.Errorf("sol sign: missing transaction")
+	}
+	if len(privateKey) != 32 {
+		return nil, fmt.Errorf("sol private key must be 32 bytes")
+	}
+	seed := append([]byte(nil), privateKey...)
+	priv := solana.PrivateKey(ed25519.NewKeyFromSeed(seed))
+	defer zeroBytes(seed)
+	defer zeroBytes(priv)
+
+	msg := &solana.Message{}
+	if err := msg.UnmarshalWithDecoder(bin.NewBinDecoder(unsigned.RawBytes)); err != nil {
+		return nil, fmt.Errorf("sol message: %w", err)
+	}
+	tx := &solana.Transaction{Message: *msg}
+	sigs, err := tx.Sign(func(key solana.PublicKey) *solana.PrivateKey {
+		if !key.Equals(priv.PublicKey()) {
+			return nil
+		}
+		return &priv
+	})
+	if err != nil {
+		return nil, err
+	}
+	raw, err := tx.MarshalBinary()
+	if err != nil {
+		return nil, err
+	}
+	hash := ""
+	if len(sigs) > 0 {
+		hash = sigs[0].String()
+	}
+	return &types.SignedTx{ChainID: unsigned.ChainID, RawBytes: raw, TxHash: hash}, nil
+}
+
+func (a *SolanaLive) buildSolanaTransfer(ctx context.Context, req types.TransferRequest) (*types.UnsignedTx, error) {
+	if req.Amount == nil {
+		return nil, fmt.Errorf("amount is required")
+	}
+	if !req.Amount.IsUint64() {
+		return nil, fmt.Errorf("amount overflows uint64")
+	}
+	from, err := solana.PublicKeyFromBase58(req.From)
+	if err != nil {
+		return nil, fmt.Errorf("sol from: %w", err)
+	}
+	to, err := solana.PublicKeyFromBase58(req.To)
+	if err != nil {
+		return nil, fmt.Errorf("sol to: %w", err)
+	}
+	var result struct {
+		Value struct {
+			Blockhash string `json:"blockhash"`
+		} `json:"value"`
+	}
+	if err := a.rpc.Call(ctx, "getLatestBlockhash", &result, map[string]string{"commitment": "finalized"}); err != nil {
+		return nil, err
+	}
+	var raw []byte
+	meta := map[string]interface{}{}
+	if req.Token == nil {
+		raw, err = buildSolanaNativeTx(from, to, req.Amount.Uint64(), result.Value.Blockhash)
+	} else {
+		mint, mintErr := solana.PublicKeyFromBase58(req.Token.Contract)
+		if mintErr != nil {
+			return nil, fmt.Errorf("sol mint: %w", mintErr)
+		}
+		destATA, _, ataErr := solana.FindAssociatedTokenAddress(to, mint)
+		if ataErr != nil {
+			return nil, fmt.Errorf("sol dest ata: %w", ataErr)
+		}
+		createDest, exists, acctErr := a.destATAMissing(ctx, destATA.String())
+		if acctErr != nil {
+			return nil, acctErr
+		}
+		meta["dest_ata_exists"] = exists
+		raw, err = buildSolanaSPLTx(from, to, mint, req.Amount.Uint64(), result.Value.Blockhash, createDest)
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &types.UnsignedTx{ChainID: a.cfg.ChainIDStr, RawBytes: raw, Metadata: meta}, nil
+}
+
+func (a *SolanaLive) destATAMissing(ctx context.Context, ata string) (create bool, exists bool, err error) {
+	var info struct {
+		Value *struct{} `json:"value"`
+	}
+	callErr := a.rpc.Call(ctx, "getAccountInfo", &info, ata, map[string]string{"commitment": "finalized"})
+	if callErr != nil {
+		if strings.Contains(strings.ToLower(callErr.Error()), "could not find account") {
+			return true, false, nil
+		}
+		return false, false, callErr
+	}
+	return false, true, nil
+}
+
+func (a *SolanaLive) buildSolanaSweep(ctx context.Context, req types.SweepRequest) ([]types.UnsignedTx, error) {
+	fee := big.NewInt(solanaNativeFeeLamports)
+	if req.Token != nil {
+		if req.NativeBalance == nil || req.NativeBalance.Cmp(fee) < 0 {
+			return nil, fmt.Errorf("insufficient native for fee")
+		}
+		if req.Amount == nil {
+			return nil, fmt.Errorf("amount is required")
+		}
+		unsigned, err := a.buildSolanaTransfer(ctx, types.TransferRequest{
+			From:   req.From,
+			To:     req.To,
+			Amount: req.Amount,
+			Token:  req.Token,
+		})
+		if err != nil {
+			return nil, err
+		}
+		return []types.UnsignedTx{*unsigned}, nil
+	}
+	var amount *big.Int
+	if req.Amount != nil {
+		amount = new(big.Int).Set(req.Amount)
+	} else {
+		if req.NativeBalance == nil {
+			return nil, fmt.Errorf("missing native balance")
+		}
+		amount = new(big.Int).Sub(req.NativeBalance, fee)
+	}
+	if amount.Sign() <= 0 {
+		return nil, fmt.Errorf("insufficient native for fee")
+	}
+	unsigned, err := a.buildSolanaTransfer(ctx, types.TransferRequest{
+		From:   req.From,
+		To:     req.To,
+		Amount: amount,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return []types.UnsignedTx{*unsigned}, nil
+}
+
+func broadcastSolanaTx(ctx context.Context, a *SolanaLive, signed *types.SignedTx) (string, error) {
+	if signed == nil || len(signed.RawBytes) == 0 {
+		return "", fmt.Errorf("sol broadcast: empty signed transaction")
+	}
+	encoded := base64.StdEncoding.EncodeToString(signed.RawBytes)
+	var signature string
+	if err := a.rpc.Call(ctx, "sendTransaction", &signature, encoded, map[string]string{"encoding": "base64"}); err != nil {
+		return "", err
+	}
+	return signature, nil
+}
+
+func zeroBytes(b []byte) {
+	for i := range b {
+		b[i] = 0
+	}
+}

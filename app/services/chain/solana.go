@@ -76,32 +76,15 @@ func (a *SolanaLive) GetBalance(ctx context.Context, address string) (*types.Bal
 }
 
 func (a *SolanaLive) BuildTransfer(ctx context.Context, req types.TransferRequest) (*types.UnsignedTx, error) {
-	var blockhash string
-	var result struct {
-		Value struct {
-			Blockhash string `json:"blockhash"`
-		} `json:"value"`
-	}
-	if err := a.rpc.Call(ctx, "getLatestBlockhash", &result, map[string]string{"commitment": "finalized"}); err != nil {
-		return nil, err
-	}
-	blockhash = result.Value.Blockhash
-
-	return &types.UnsignedTx{
-		ChainID: a.cfg.ChainIDStr,
-		Metadata: map[string]interface{}{
-			"from": req.From, "to": req.To, "amount": req.Amount.String(),
-			"blockhash": blockhash, "is_spl": req.Token != nil,
-		},
-	}, nil
+	return a.buildSolanaTransfer(ctx, req)
 }
 
 func (a *SolanaLive) SignTransaction(ctx context.Context, unsigned *types.UnsignedTx, privateKey []byte) (*types.SignedTx, error) {
-	return nil, fmt.Errorf("SOL signing not implemented — use ed25519")
+	return signSolanaTx(unsigned, privateKey)
 }
 
 func (a *SolanaLive) BroadcastTransaction(ctx context.Context, signed *types.SignedTx) (string, error) {
-	return "", fmt.Errorf("SOL broadcast not implemented")
+	return broadcastSolanaTx(ctx, a, signed)
 }
 
 // GetTransactionBlock is a no-op for Solana in v1: the outbound confirmation
@@ -168,7 +151,7 @@ func (a *SolanaLive) ScanBlock(ctx context.Context, blockNum uint64) ([]types.De
 }
 
 func (a *SolanaLive) BuildSweep(ctx context.Context, req types.SweepRequest) ([]types.UnsignedTx, error) {
-	return nil, ErrUnsupportedChain
+	return a.buildSolanaSweep(ctx, req)
 }
 
 func (a *SolanaLive) GasReadinessThreshold() *big.Int { return nil }
