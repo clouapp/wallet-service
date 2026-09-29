@@ -75,11 +75,6 @@ func (a *SolanaLive) GetBalance(ctx context.Context, address string) (*types.Bal
 	return &types.Balance{Address: address, Asset: a.cfg.NativeSymbol, Amount: bal, Decimals: 9, Human: fmtUnits(bal, 9)}, nil
 }
 
-func (a *SolanaLive) GetTokenBalance(ctx context.Context, address string, token types.Token) (*types.Balance, error) {
-	// Need ATA derivation — stub for POC
-	return nil, fmt.Errorf("SOL token balance not implemented — need ATA derivation")
-}
-
 func (a *SolanaLive) BuildTransfer(ctx context.Context, req types.TransferRequest) (*types.UnsignedTx, error) {
 	var blockhash string
 	var result struct {
