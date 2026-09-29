@@ -33,7 +33,7 @@ const (
 // shared wallets. Pass uuid.Nil from non-authenticated contexts (tests) to
 // fall back to system defaults.
 //
-// v1 scope: EVM-only. Non-EVM wallets return ErrUnsupportedChain.
+// EVM, Solana, and Bitcoin wallets can be planned. Any other adapter returns ErrUnsupportedChain.
 func (s *service) PlanForWithdrawal(ctx context.Context, walletID uuid.UUID, asset string, amount *big.Int, callerAccountID uuid.UUID) (*Plan, error) {
 	if amount == nil {
 		return nil, fmt.Errorf("sweep: amount must not be nil")
@@ -57,7 +57,7 @@ func (s *service) PlanForWithdrawal(ctx context.Context, walletID uuid.UUID, ass
 	if chainEntity == nil {
 		return nil, fmt.Errorf("sweep: chain %q not found", wallet.Chain)
 	}
-	if chainEntity.AdapterType != models.AdapterTypeEVM {
+	if !supportedSweepAdapter(chainEntity.AdapterType) {
 		return nil, ErrUnsupportedChain
 	}
 
@@ -284,9 +284,22 @@ func fetchBalance(
 }
 
 // chainNeedsGasSeed reports whether the chain requires a preparatory gas_seed
-// transaction before an ERC-20-style sweep leg. v1 is EVM-only, so this is
-// always true when the planner reaches this code path.
+// transaction before a token sweep. SOL and BTC pay fees from the source
+// itself and do not receive an EVM gas top-up.
 func chainNeedsGasSeed(chainID string) bool {
-	_ = chainID
-	return true
+	switch chainID {
+	case models.ChainSOL, models.ChainTSOL, models.ChainBTC, models.ChainTBTC:
+		return false
+	default:
+		return true
+	}
+}
+
+func supportedSweepAdapter(adapterType string) bool {
+	switch adapterType {
+	case models.AdapterTypeEVM, models.AdapterTypeSolana, models.AdapterTypeBitcoin:
+		return true
+	default:
+		return false
+	}
 }

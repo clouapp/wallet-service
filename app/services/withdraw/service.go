@@ -100,10 +100,8 @@ type Metadata struct {
 
 // Request runs a withdrawal end-to-end: validation, plan, execute, report.
 //
-// v1 is EVM-only. Non-EVM wallets (SOL, BTC) fail fast with
-// sweep.ErrUnsupportedChain; the HTTP layer maps that to a 422 response.
-// A dedicated non-EVM epic will add base-level signing + BuildSweep + Planner
-// support before those chains can withdraw again.
+// EVM multi-sweep still requires a seeded gas balance. SOL and BTC adapters
+// report no gas threshold, so that check does not apply to them.
 func (s *Service) Request(ctx context.Context, req WithdrawRequest) (*models.Transaction, *Metadata, error) {
 	if len(req.Passphrase) < 12 {
 		return nil, nil, ErrPassphraseTooShort
@@ -116,6 +114,9 @@ func (s *Service) Request(ctx context.Context, req WithdrawRequest) (*models.Tra
 		}
 	}
 
+	if s.rdb == nil {
+		return nil, nil, fmt.Errorf("redis lock: redis is not configured")
+	}
 	lockKey := fmt.Sprintf("vault:lock:withdrawal:%s", req.WalletID)
 	acquired, err := s.rdb.SetNX(ctx, lockKey, "1", 60*time.Second).Result()
 	if err != nil {
@@ -166,7 +167,11 @@ func (s *Service) Request(ctx context.Context, req WithdrawRequest) (*models.Tra
 	case sweep.StrategyInsufficient:
 		return nil, nil, sweep.ErrInsufficientFunds
 	case sweep.StrategyMultiSweep:
-		if wallet.GasStatus != models.GasStatusSeeded {
+		adapter, adapterErr := s.registry.Chain(wallet.Chain)
+		if adapterErr != nil {
+			return nil, nil, adapterErr
+		}
+		if adapter.GasReadinessThreshold() != nil && wallet.GasStatus != models.GasStatusSeeded {
 			return nil, nil, sweep.ErrWalletNotGasReady
 		}
 	}

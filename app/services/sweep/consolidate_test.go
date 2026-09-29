@@ -36,24 +36,47 @@ func TestConsolidateAll_ShortPassphraseRejected(t *testing.T) {
 	}
 }
 
-// TestConsolidateAll_NonEVMChainRejected locks in the v1 EVM-only guard.
-// Non-EVM wallets must surface ErrUnsupportedChain before any lock / quota
-// side-effects are taken.
-func TestConsolidateAll_NonEVMChainRejected(t *testing.T) {
+func TestConsolidateAll_BitcoinNoChildren(t *testing.T) {
 	walletID := uuid.New()
 	baseAddr := models.Address{ID: uuid.New(), WalletID: walletID, Address: "BASE"}
-	wallet := &models.Wallet{ID: walletID, Chain: "btc", DepositAddress: &baseAddr}
-	chainEntity := &models.Chain{ID: "btc", AdapterType: models.AdapterTypeBitcoin}
+	wallet := &models.Wallet{ID: walletID, Chain: models.ChainBTC, DepositAddress: &baseAddr}
+	chainEntity := &models.Chain{ID: models.ChainBTC, AdapterType: models.AdapterTypeBitcoin}
+
+	mockChain := mocks.NewMockChain(models.ChainBTC)
+	mockChain.NativeAssetVal = models.NativeBTC
+	registry := chain.NewRegistry()
+	registry.RegisterChain(mockChain)
+	svc := &service{
+		registry:    registry,
+		walletRepo:  &fakeWalletRepo{wallet: wallet},
+		addressRepo: &fakeAddressRepo{children: []models.Address{baseAddr}},
+		chainRepo:   &fakeChainRepo{chain: chainEntity},
+	}
+
+	res, err := svc.ConsolidateAll(context.Background(), walletID, models.NativeBTC, "passphrase12345", uuid.Nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if res == nil || len(res.Sweeps) != 0 {
+		t.Fatalf("%+v", res)
+	}
+}
+
+func TestConsolidateAll_UnknownAdapter(t *testing.T) {
+	walletID := uuid.New()
+	baseAddr := models.Address{ID: uuid.New(), WalletID: walletID, Address: "BASE"}
+	wallet := &models.Wallet{ID: walletID, Chain: models.ChainETH, DepositAddress: &baseAddr}
+	chainEntity := &models.Chain{ID: models.ChainETH, AdapterType: ""}
 
 	registry := chain.NewRegistry()
-	registry.RegisterChain(mocks.NewMockChain("btc"))
+	registry.RegisterChain(mocks.NewMockChain(models.ChainETH))
 	svc := &service{
 		registry:   registry,
 		walletRepo: &fakeWalletRepo{wallet: wallet},
 		chainRepo:  &fakeChainRepo{chain: chainEntity},
 	}
 
-	_, err := svc.ConsolidateAll(context.Background(), walletID, "btc", "passphrase12345", uuid.Nil)
+	_, err := svc.ConsolidateAll(context.Background(), walletID, models.NativeETH, "passphrase12345", uuid.Nil)
 	if err != ErrUnsupportedChain {
 		t.Fatalf("expected ErrUnsupportedChain, got %v", err)
 	}
@@ -118,7 +141,9 @@ func TestConsolidateAll_NoEligibleChildren_Noop(t *testing.T) {
 // TestConsolidateAll_QuotaNotBurnedOnInvalidPassphrase proves the fix for I3's
 // Part B: an invalid passphrase must NOT consume the caller's daily quota.
 // The order of operations in ConsolidateAll is now
-//   load → chain guard → lock → LoadLimits → decryptShareA → incrDailyQuota
+//
+//	load → chain guard → lock → LoadLimits → decryptShareA → incrDailyQuota
+//
 // so any failure in decryptShareA short-circuits before the counter moves.
 // The wallet here has a garbage ciphertext so any passphrase yields
 // ErrInvalidPassphrase from mpcpkg.DecryptShare; after the failed call, the

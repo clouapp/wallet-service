@@ -60,7 +60,7 @@ type fakeAddressRepo struct {
 	children []models.Address
 }
 
-func (f *fakeAddressRepo) Create(addr *models.Address) error                          { return nil }
+func (f *fakeAddressRepo) Create(addr *models.Address) error { return nil }
 func (f *fakeAddressRepo) UpdateFields(id uuid.UUID, fields map[string]interface{}) error {
 	return nil
 }
@@ -95,10 +95,10 @@ type fakeChainRepo struct {
 	chain *models.Chain
 }
 
-func (f *fakeChainRepo) FindAll() ([]models.Chain, error)                        { return nil, nil }
-func (f *fakeChainRepo) FindActive() ([]models.Chain, error)                     { return nil, nil }
-func (f *fakeChainRepo) FindByTestnet(isTestnet bool) ([]models.Chain, error)    { return nil, nil }
-func (f *fakeChainRepo) Create(chain *models.Chain) error                        { return nil }
+func (f *fakeChainRepo) FindAll() ([]models.Chain, error)                     { return nil, nil }
+func (f *fakeChainRepo) FindActive() ([]models.Chain, error)                  { return nil, nil }
+func (f *fakeChainRepo) FindByTestnet(isTestnet bool) ([]models.Chain, error) { return nil, nil }
+func (f *fakeChainRepo) Create(chain *models.Chain) error                     { return nil }
 func (f *fakeChainRepo) FindByID(id string) (*models.Chain, error) {
 	if f.chain == nil || f.chain.ID != id {
 		return nil, nil
@@ -277,21 +277,64 @@ func TestPlan_Insufficient(t *testing.T) {
 	}
 }
 
-func TestPlan_EVMOnlyGuard(t *testing.T) {
+func TestPlanForWithdrawal_Solana(t *testing.T) {
+	plan, err := planNativeDirect(t, models.ChainSOL, models.NativeSOL, models.AdapterTypeSolana)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plan.Strategy != StrategyDirectFromBase {
+		t.Fatalf("strategy %s", plan.Strategy)
+	}
+}
+
+func TestPlanForWithdrawal_Bitcoin(t *testing.T) {
+	plan, err := planNativeDirect(t, models.ChainBTC, models.NativeBTC, models.AdapterTypeBitcoin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plan.Strategy != StrategyDirectFromBase {
+		t.Fatalf("strategy %s", plan.Strategy)
+	}
+}
+
+func TestPlanForWithdrawal_UnknownAdapter(t *testing.T) {
 	walletID := uuid.New()
 	baseAddr := models.Address{ID: uuid.New(), WalletID: walletID, Address: "BASE"}
-	wallet := &models.Wallet{ID: walletID, Chain: "sol", DepositAddress: &baseAddr}
+	wallet := &models.Wallet{ID: walletID, Chain: models.ChainETH, DepositAddress: &baseAddr}
+	mockChain := mocks.NewMockChain(models.ChainETH)
+	mockChain.NativeAssetVal = models.NativeETH
+	svc := newPlannerService(t, wallet, []models.Address{baseAddr}, mockChain, &models.Chain{ID: models.ChainETH, AdapterType: ""})
+	_, err := svc.PlanForWithdrawal(context.Background(), walletID, models.NativeETH, big.NewInt(100), uuid.Nil)
+	if err != ErrUnsupportedChain {
+		t.Fatalf("expected ErrUnsupportedChain, got %v", err)
+	}
+}
 
-	mockChain := mocks.NewMockChain("sol")
+func TestChainNeedsGasSeed(t *testing.T) {
+	if chainNeedsGasSeed(models.ChainSOL) || chainNeedsGasSeed(models.ChainTSOL) || chainNeedsGasSeed(models.ChainBTC) || chainNeedsGasSeed(models.ChainTBTC) {
+		t.Fatal("sol and btc do not need a gas seed")
+	}
+	if !chainNeedsGasSeed(models.ChainETH) || !chainNeedsGasSeed(models.ChainPolygon) || !chainNeedsGasSeed(models.ChainTETH) || !chainNeedsGasSeed(models.ChainTPolygon) {
+		t.Fatal("evm chains need a gas seed")
+	}
+}
+
+func planNativeDirect(t *testing.T, chainID, native, adapterType string) (*Plan, error) {
+	t.Helper()
+	amount := big.NewInt(100)
+	walletID := uuid.New()
+	baseAddr := models.Address{ID: uuid.New(), WalletID: walletID, Address: "BASE"}
+	wallet := &models.Wallet{ID: walletID, Chain: chainID, DepositAddress: &baseAddr}
+	mockChain := mocks.NewMockChain(chainID)
+	mockChain.NativeAssetVal = native
+	mockChain.GetBalanceFn = func(ctx context.Context, addr string) (*types.Balance, error) {
+		return &types.Balance{Address: addr, Asset: native, Amount: new(big.Int).Set(amount)}, nil
+	}
 	svc := newPlannerService(
 		t, wallet, []models.Address{baseAddr}, mockChain,
-		&models.Chain{ID: "sol", AdapterType: models.AdapterTypeSolana},
+		&models.Chain{ID: chainID, AdapterType: adapterType},
 	)
-
-	_, err := svc.PlanForWithdrawal(context.Background(), walletID, "sol", big.NewInt(100), uuid.Nil)
-	if err != ErrUnsupportedChain {
-		t.Fatalf("expected ErrUnsupportedChain for SOL wallet, got %v", err)
-	}
+	return svc.PlanForWithdrawal(context.Background(), walletID, native, amount, uuid.Nil)
 }
 
 // TestEstimateGasTotal_PureHelper covers the pure math in isolation so every

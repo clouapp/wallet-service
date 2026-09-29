@@ -19,7 +19,7 @@ import (
 // planner/executor pipeline: there is no target amount and no final
 // withdrawal — the sweep rows themselves are the terminal state.
 //
-// v1 is EVM-only. Non-EVM chains return ErrUnsupportedChain. The call is
+// EVM, Solana, and Bitcoin wallets can be consolidated. Any other adapter returns ErrUnsupportedChain. The call is
 // serialised per-wallet via acquireWalletOpsLock and metered per-caller via
 // incrDailyQuota, matching the withdrawal path so manual consolidations
 // share the same operational envelope.
@@ -64,7 +64,7 @@ func (s *service) ConsolidateAll(
 	if chainEntity == nil {
 		return nil, fmt.Errorf("sweep: chain %q not found", wallet.Chain)
 	}
-	if chainEntity.AdapterType != models.AdapterTypeEVM {
+	if !supportedSweepAdapter(chainEntity.AdapterType) {
 		return nil, ErrUnsupportedChain
 	}
 
@@ -116,7 +116,6 @@ func (s *service) ConsolidateAll(
 	if len(eligible) == 0 {
 		return &Result{}, nil
 	}
-
 
 	if err := checkAddressesPerRequest(chainEntity.AdapterType, len(eligible), limits); err != nil {
 		return nil, err
