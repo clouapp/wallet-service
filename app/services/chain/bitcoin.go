@@ -150,25 +150,15 @@ func (a *BitcoinLive) GetTokenBalance(ctx context.Context, address string, token
 }
 
 func (a *BitcoinLive) BuildTransfer(ctx context.Context, req types.TransferRequest) (*types.UnsignedTx, error) {
-	return &types.UnsignedTx{
-		ChainID: a.cfg.ChainIDStr,
-		Metadata: map[string]interface{}{
-			"from": req.From, "to": req.To, "amount": req.Amount.String(),
-		},
-	}, nil
+	return a.buildBitcoinTransfer(ctx, req)
 }
 
 func (a *BitcoinLive) SignTransaction(ctx context.Context, unsigned *types.UnsignedTx, privateKey []byte) (*types.SignedTx, error) {
-	return nil, fmt.Errorf("BTC signing not implemented — use btcd PSBT")
+	return signBitcoinP2WPKH(unsigned, privateKey, netParams(unsigned))
 }
 
 func (a *BitcoinLive) BroadcastTransaction(ctx context.Context, signed *types.SignedTx) (string, error) {
-	rawHex := fmt.Sprintf("%x", signed.RawBytes)
-	var txHash string
-	if err := a.rpc.Call(ctx, "sendrawtransaction", &txHash, rawHex); err != nil {
-		return "", err
-	}
-	return txHash, nil
+	return a.broadcastBitcoin(ctx, signed)
 }
 
 func (a *BitcoinLive) GetLatestBlock(ctx context.Context) (uint64, error) {
@@ -341,7 +331,7 @@ func (a *BitcoinLive) scanBlockREST(ctx context.Context, blockNum uint64) ([]typ
 }
 
 func (a *BitcoinLive) BuildSweep(ctx context.Context, req types.SweepRequest) ([]types.UnsignedTx, error) {
-	return nil, ErrUnsupportedChain
+	return a.buildBitcoinSweep(ctx, req)
 }
 
 // GetTransactionBlock is a no-op for Bitcoin in v1: outbound confirmation
