@@ -1,8 +1,10 @@
 package chain
 
 import (
+	"strings"
 	"testing"
 
+	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/pkg/types"
 	"github.com/macrowallets/waas/tests/mocks"
 )
@@ -107,5 +109,35 @@ func TestRegistry_TokensForChain_Empty(t *testing.T) {
 	r := NewRegistry()
 	if len(r.TokensForChain("btc")) != 0 {
 		t.Error("expected empty token list for btc")
+	}
+}
+
+func TestFindTokenByContract_CaseInsensitiveEVM(t *testing.T) {
+	r := NewRegistry()
+	r.RegisterToken(types.Token{
+		Symbol: models.SymbolUSDT, ChainID: models.ChainETH, Decimals: 6,
+		Contract: models.USDTContractETH,
+	})
+	got, err := r.FindTokenByContract(models.ChainETH, strings.ToLower(models.USDTContractETH))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Symbol != models.SymbolUSDT || got.Decimals != 6 {
+		t.Fatalf("got %+v", got)
+	}
+}
+
+func TestFindTokenByContract_SolanaMintExact(t *testing.T) {
+	r := NewRegistry()
+	r.RegisterToken(types.Token{
+		Symbol: models.SymbolUSDC, ChainID: models.ChainSOL, Decimals: 6,
+		Contract: models.USDCMintSOL,
+	})
+	if _, err := r.FindTokenByContract(models.ChainSOL, strings.ToLower(models.USDCMintSOL)); err == nil {
+		t.Fatal("sol mint match must stay case-sensitive")
+	}
+	got, err := r.FindTokenByContract(models.ChainSOL, models.USDCMintSOL)
+	if err != nil || got.Decimals != 6 {
+		t.Fatalf("got %+v err %v", got, err)
 	}
 }
