@@ -7,8 +7,12 @@ import (
 	"github.com/goravel/framework/facades"
 
 	"github.com/macrowallets/waas/app/models"
+	"github.com/macrowallets/waas/pkg/security"
 )
 
+// WebhookConfigRepository stores webhook configs with the signing secret
+// sealed at rest. Callers always see the plaintext secret: Create and
+// UpdateFields seal it, every Find opens it.
 type WebhookConfigRepository interface {
 	Create(cfg *models.WebhookConfig) error
 	FindByWalletID(walletID uuid.UUID) ([]models.WebhookConfig, error)
@@ -22,6 +26,8 @@ type WebhookConfigRepository interface {
 	DeleteByID(id uuid.UUID) error
 }
 
+const webhookSecretColumn = "secret"
+
 type webhookConfigRepository struct{}
 
 func NewWebhookConfigRepository() WebhookConfigRepository {
@@ -29,15 +35,28 @@ func NewWebhookConfigRepository() WebhookConfigRepository {
 }
 
 func (r *webhookConfigRepository) Create(cfg *models.WebhookConfig) error {
-	return facades.Orm().Query().Create(cfg)
+	if cfg == nil {
+		return fmt.Errorf("webhook config is required")
+	}
+	plaintext := cfg.Secret
+	sealed, err := security.SealSecret(facades.Crypt(), plaintext)
+	if err != nil {
+		return fmt.Errorf("webhook config secret: %w", err)
+	}
+	cfg.Secret = sealed
+	createErr := facades.Orm().Query().Create(cfg)
+	cfg.Secret = plaintext
+	return createErr
 }
 
 func (r *webhookConfigRepository) FindByWalletID(walletID uuid.UUID) ([]models.WebhookConfig, error) {
 	var cfgs []models.WebhookConfig
-	err := facades.Orm().Query().
+	if err := facades.Orm().Query().
 		Where("wallet_id = ?", walletID).
-		Find(&cfgs)
-	return cfgs, err
+		Find(&cfgs); err != nil {
+		return nil, err
+	}
+	return openWebhookSecrets(cfgs)
 }
 
 func (r *webhookConfigRepository) FindByIDAndWallet(id, walletID uuid.UUID) (*models.WebhookConfig, error) {
@@ -51,21 +70,25 @@ func (r *webhookConfigRepository) FindByIDAndWallet(id, walletID uuid.UUID) (*mo
 	if cfg.ID == uuid.Nil {
 		return nil, nil
 	}
-	return &cfg, nil
+	return openWebhookSecret(&cfg)
 }
 
 func (r *webhookConfigRepository) FindActive() ([]models.WebhookConfig, error) {
 	var cfgs []models.WebhookConfig
-	err := facades.Orm().Query().
+	if err := facades.Orm().Query().
 		Where("is_active", true).
-		Find(&cfgs)
-	return cfgs, err
+		Find(&cfgs); err != nil {
+		return nil, err
+	}
+	return openWebhookSecrets(cfgs)
 }
 
 func (r *webhookConfigRepository) FindAll() ([]models.WebhookConfig, error) {
 	var cfgs []models.WebhookConfig
-	err := facades.Orm().Query().Order("created_at").Find(&cfgs)
-	return cfgs, err
+	if err := facades.Orm().Query().Order("created_at").Find(&cfgs); err != nil {
+		return nil, err
+	}
+	return openWebhookSecrets(cfgs)
 }
 
 func (r *webhookConfigRepository) FindByID(id uuid.UUID) (*models.WebhookConfig, error) {
@@ -76,18 +99,20 @@ func (r *webhookConfigRepository) FindByID(id uuid.UUID) (*models.WebhookConfig,
 	if cfg.ID == uuid.Nil {
 		return nil, nil
 	}
-	return &cfg, nil
+	return openWebhookSecret(&cfg)
 }
 
 // FindVisibleToAccount returns the account's own configs plus legacy configs
 // that were created before ownership was recorded.
 func (r *webhookConfigRepository) FindVisibleToAccount(accountID uuid.UUID) ([]models.WebhookConfig, error) {
 	var cfgs []models.WebhookConfig
-	err := facades.Orm().Query().
+	if err := facades.Orm().Query().
 		Where("wallet_id IS NULL AND (account_id = ? OR account_id IS NULL)", accountID).
 		Order("created_at").
-		Find(&cfgs)
-	return cfgs, err
+		Find(&cfgs); err != nil {
+		return nil, err
+	}
+	return openWebhookSecrets(cfgs)
 }
 
 func (r *webhookConfigRepository) UpdateFields(id uuid.UUID, fields map[string]any) error {
@@ -97,7 +122,11 @@ func (r *webhookConfigRepository) UpdateFields(id uuid.UUID, fields map[string]a
 	if len(fields) == 0 {
 		return fmt.Errorf("webhook config update fields are required")
 	}
-	_, err := facades.Orm().Query().Model(&models.WebhookConfig{}).Where("id = ?", id).Update(fields)
+	persisted, err := sealSecretField(fields)
+	if err != nil {
+		return err
+	}
+	_, err = facades.Orm().Query().Model(&models.WebhookConfig{}).Where("id = ?", id).Update(persisted)
 	return err
 }
 
@@ -109,4 +138,45 @@ func (r *webhookConfigRepository) Delete(cfg *models.WebhookConfig) error {
 func (r *webhookConfigRepository) DeleteByID(id uuid.UUID) error {
 	_, err := facades.Orm().Query().Where("id = ?", id).Delete(&models.WebhookConfig{})
 	return err
+}
+
+// sealSecretField returns the fields to persist, with a plaintext secret
+// replaced by its sealed form. The caller's map is left untouched.
+func sealSecretField(fields map[string]any) (map[string]any, error) {
+	raw, hasSecret := fields[webhookSecretColumn]
+	if !hasSecret {
+		return fields, nil
+	}
+	plaintext, ok := raw.(string)
+	if !ok {
+		return nil, fmt.Errorf("webhook config secret must be a string, got %T", raw)
+	}
+	sealed, err := security.SealSecret(facades.Crypt(), plaintext)
+	if err != nil {
+		return nil, fmt.Errorf("webhook config secret: %w", err)
+	}
+	persisted := make(map[string]any, len(fields))
+	for key, value := range fields {
+		persisted[key] = value
+	}
+	persisted[webhookSecretColumn] = sealed
+	return persisted, nil
+}
+
+func openWebhookSecret(cfg *models.WebhookConfig) (*models.WebhookConfig, error) {
+	plaintext, err := security.OpenSecret(facades.Crypt(), cfg.Secret)
+	if err != nil {
+		return nil, fmt.Errorf("webhook config %s secret: %w", cfg.ID, err)
+	}
+	cfg.Secret = plaintext
+	return cfg, nil
+}
+
+func openWebhookSecrets(cfgs []models.WebhookConfig) ([]models.WebhookConfig, error) {
+	for i := range cfgs {
+		if _, err := openWebhookSecret(&cfgs[i]); err != nil {
+			return nil, err
+		}
+	}
+	return cfgs, nil
 }

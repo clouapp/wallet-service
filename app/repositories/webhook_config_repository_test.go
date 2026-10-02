@@ -9,6 +9,7 @@ import (
 
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/repositories"
+	"github.com/macrowallets/waas/pkg/security"
 	"github.com/macrowallets/waas/tests/mocks"
 )
 
@@ -39,6 +40,57 @@ func (s *WebhookConfigRepositoryTestSuite) TestCreate_Success() {
 	}
 	err := s.repo.Create(cfg)
 	s.NoError(err)
+}
+
+func (s *WebhookConfigRepositoryTestSuite) storedSecret(id uuid.UUID) string {
+	var secret string
+	s.Require().NoError(facades.Orm().Query().Raw(`SELECT secret FROM webhook_configs WHERE id = ?`, id).Scan(&secret))
+	return secret
+}
+
+func (s *WebhookConfigRepositoryTestSuite) TestSecretIsSealedAtRestAndOpenedOnRead() {
+	walletID := s.insertWallet()
+	cfg := &models.WebhookConfig{ID: uuid.New(), URL: "https://sealed.test", Secret: "whsec_plain", Events: `{"a"}`, IsActive: true, WalletID: &walletID, Type: "wallet"}
+	s.Require().NoError(s.repo.Create(cfg))
+
+	s.Equal("whsec_plain", cfg.Secret, "the caller keeps the plaintext")
+	stored := s.storedSecret(cfg.ID)
+	s.NotEqual("whsec_plain", stored)
+	s.True(security.IsSealedSecret(stored))
+
+	byID, err := s.repo.FindByID(cfg.ID)
+	s.Require().NoError(err)
+	s.Equal("whsec_plain", byID.Secret)
+	byWallet, err := s.repo.FindByWalletID(walletID)
+	s.Require().NoError(err)
+	s.Require().Len(byWallet, 1)
+	s.Equal("whsec_plain", byWallet[0].Secret)
+}
+
+func (s *WebhookConfigRepositoryTestSuite) TestUpdateFieldsSealsASecret() {
+	cfg := &models.WebhookConfig{ID: uuid.New(), URL: "https://rotate.test", Secret: "old", Events: `{"a"}`, IsActive: true}
+	s.Require().NoError(s.repo.Create(cfg))
+	fields := map[string]any{"secret": "rotated"}
+
+	s.Require().NoError(s.repo.UpdateFields(cfg.ID, fields))
+
+	s.Equal("rotated", fields["secret"], "the caller's map is not rewritten")
+	s.True(security.IsSealedSecret(s.storedSecret(cfg.ID)))
+	loaded, err := s.repo.FindByID(cfg.ID)
+	s.Require().NoError(err)
+	s.Equal("rotated", loaded.Secret)
+}
+
+func (s *WebhookConfigRepositoryTestSuite) TestFindRefusesASecretStoredInPlaintext() {
+	cfg := &models.WebhookConfig{ID: uuid.New(), URL: "https://plain.test", Secret: "s", Events: `{"a"}`, IsActive: true}
+	s.Require().NoError(s.repo.Create(cfg))
+	_, err := facades.Orm().Query().Exec(`UPDATE webhook_configs SET secret = 'plaintext' WHERE id = ?`, cfg.ID)
+	s.Require().NoError(err)
+
+	_, err = s.repo.FindByID(cfg.ID)
+	s.ErrorIs(err, security.ErrSecretNotSealed)
+	_, err = s.repo.FindActive()
+	s.ErrorIs(err, security.ErrSecretNotSealed)
 }
 
 func (s *WebhookConfigRepositoryTestSuite) TestFindByWalletID() {

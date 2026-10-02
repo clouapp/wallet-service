@@ -8,6 +8,7 @@ import (
 	"github.com/goravel/framework/facades"
 
 	"github.com/macrowallets/waas/app/models"
+	"github.com/macrowallets/waas/app/repositories"
 	"github.com/macrowallets/waas/tests/testenv"
 )
 
@@ -209,7 +210,7 @@ func InsertWebhookConfig(t *testing.T, url, secret string, events []string) mode
 		Events:   pgArray(events),
 		IsActive: true,
 	}
-	if err := facades.Orm().Query().Create(&cfg); err != nil {
+	if err := repositories.NewWebhookConfigRepository().Create(&cfg); err != nil {
 		t.Fatalf("insert webhook config: %v", err)
 	}
 	return cfg
@@ -228,7 +229,7 @@ func InsertScopedWebhookConfig(t *testing.T, url, secret string, events []string
 		AccountID: accountID,
 		WalletID:  walletID,
 	}
-	if err := facades.Orm().Query().Create(&cfg); err != nil {
+	if err := repositories.NewWebhookConfigRepository().Create(&cfg); err != nil {
 		t.Fatalf("insert scoped webhook config: %v", err)
 	}
 	return cfg
