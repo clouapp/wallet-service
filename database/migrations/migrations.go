@@ -42,5 +42,6 @@ func All() []schema.Migration {
 		&M00000000000280EnforceNonNegativeAmounts{},
 		&M00000000000290UniqueDepositPerTransaction{},
 		&M00000000000300AccountUsersRoleCheck{},
+		&M00000000000310CreateAccountInvitesTable{},
 	}
 }

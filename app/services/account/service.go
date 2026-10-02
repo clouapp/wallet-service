@@ -17,10 +17,16 @@ type Service struct {
 	accountRepo     repositories.AccountRepository
 	accountUserRepo repositories.AccountUserRepository
 	tokenRepo       repositories.AccessTokenRepository
+	inviteRepo      repositories.AccountInviteRepository
 }
 
 func NewService(accountRepo repositories.AccountRepository, accountUserRepo repositories.AccountUserRepository, tokenRepo repositories.AccessTokenRepository) *Service {
-	return &Service{accountRepo: accountRepo, accountUserRepo: accountUserRepo, tokenRepo: tokenRepo}
+	return &Service{
+		accountRepo:     accountRepo,
+		accountUserRepo: accountUserRepo,
+		tokenRepo:       tokenRepo,
+		inviteRepo:      repositories.NewAccountInviteRepository(),
+	}
 }
 
 func (s *Service) Create(ctx context.Context, name string, ownerID uuid.UUID) (*models.Account, error) {

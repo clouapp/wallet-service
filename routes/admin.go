@@ -20,6 +20,8 @@ func RegisterAdminRoutes() {
 		router.Post("/refresh", controllers.RefreshToken)
 		router.Post("/recover", controllers.ForgotPassword)
 		router.Post("/recover/confirm", controllers.ResetPassword)
+		router.Get("/invites/{token}", controllers.PreviewInvite)
+		router.Post("/invites/accept", controllers.AcceptInvite)
 	})
 	facades.Route().Prefix("/v1/auth").Middleware(middleware.SessionAuth(), noCache).Group(func(router route.Router) {
 		router.Post("/logout", controllers.Logout)

@@ -3,6 +3,7 @@ package controllers
 import (
 	"encoding/json"
 	"errors"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -200,25 +201,41 @@ func AddAccountUser(ctx http.Context) http.Response {
 	}
 
 	targetPtr, err := container.Get().UserRepo.FindByEmail(req.Email)
-	if err != nil || targetPtr == nil {
-		target := models.User{
-			ID:           uuid.New(),
-			Email:        req.Email,
-			PasswordHash: "",
-			Status:       "invited",
+	if targetPtr == nil {
+		if err != nil && !strings.Contains(strings.ToLower(err.Error()), "not found") {
+			facades.Log().WithContext(ctx).Errorf("account: lookup invitee: %v", err)
+			return ctx.Response().Json(http.StatusInternalServerError, http.Json{"error": "failed to look up user"})
 		}
-		if err2 := container.Get().UserRepo.Create(&target); err2 != nil {
-			return ctx.Response().Json(http.StatusInternalServerError, http.Json{"error": "failed to create user"})
+		issued, issueErr := accountSvc().IssueInvite(ctx.Context(), account.ID, req.Email, req.Role, callerID, frontendBaseURL())
+		if issueErr != nil {
+			if errors.Is(issueErr, policies.ErrRoleAbove) {
+				return ctx.Response().Json(http.StatusForbidden, http.Json{"error": issueErr.Error()})
+			}
+			return ctx.Response().Json(http.StatusInternalServerError, http.Json{"error": "failed to create invite"})
 		}
-		targetPtr = &target
-		if err := facades.Mail().To([]string{req.Email}).Send(&mails.UserInviteMail{
-			To:          req.Email,
-			InvitedBy:   "your team",
+		inviterName := "your team"
+		if inviter, inviterErr := container.Get().UserRepo.FindByID(callerID); inviterErr == nil && inviter != nil {
+			if inviter.FullName != "" {
+				inviterName = inviter.FullName
+			} else if inviter.Email != "" {
+				inviterName = inviter.Email
+			}
+		}
+		if mailErr := facades.Mail().To([]string{issued.Invite.Email}).Send(&mails.UserInviteMail{
+			To:          issued.Invite.Email,
+			InvitedBy:   inviterName,
 			AccountName: account.Name,
-			InviteLink:  "https://vault.app/accept-invite",
-		}); err != nil {
-			facades.Log().WithContext(ctx).Errorf("account: send invite mail: %v", err)
+			InviteLink:  issued.InviteLink,
+		}); mailErr != nil {
+			facades.Log().WithContext(ctx).Errorf("account: send invite mail: %v", mailErr)
 		}
+		return ctx.Response().Json(http.StatusAccepted, http.Json{
+			"invite_id":   issued.Invite.ID,
+			"email":       issued.Invite.Email,
+			"role":        issued.Invite.Role,
+			"expires_at":  issued.Invite.ExpiresAt,
+			"invite_link": issued.InviteLink,
+		})
 	}
 
 	if err := accountSvc().AddUser(ctx.Context(), account.ID, targetPtr.ID, req.Role, callerID); err != nil {
