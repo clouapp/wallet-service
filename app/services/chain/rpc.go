@@ -83,7 +83,7 @@ func (c *RPCClient) Call(ctx context.Context, method string, out interface{}, pa
 		}
 		if isRateLimited(status, respBody) {
 			if attempt >= c.retry.maxAttempts {
-				return fmt.Errorf("rpc call %s: rate limited (HTTP %d) after %d attempts", method, status, attempt)
+				return fmt.Errorf("rpc call %s: %w (HTTP %d) after %d attempts", method, ErrRateLimited, status, attempt)
 			}
 			delay := c.retry.delay(attempt, header.Get("Retry-After"), time.Now())
 			slog.Warn("rpc rate limited, backing off", "method", method, "status", status, "attempt", attempt, "delay", delay.String())

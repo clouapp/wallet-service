@@ -1085,7 +1085,7 @@ const docTemplate = `{
         },
         "/health": {
             "get": {
-                "description": "Returns service status and version",
+                "description": "Returns service status and version, and how many deposit blocks per chain wait for a retry",
                 "produces": [
                     "application/json"
                 ],
@@ -4097,9 +4097,34 @@ const docTemplate = `{
                 }
             }
         },
+        "controllers.DepositScannerHealth": {
+            "type": "object",
+            "properties": {
+                "error": {
+                    "type": "string"
+                },
+                "pending": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "integer"
+                    }
+                },
+                "pending_total": {
+                    "type": "integer",
+                    "example": 0
+                },
+                "status": {
+                    "type": "string",
+                    "example": "ok"
+                }
+            }
+        },
         "controllers.HealthResponse": {
             "type": "object",
             "properties": {
+                "deposit_scanner": {
+                    "$ref": "#/definitions/controllers.DepositScannerHealth"
+                },
                 "status": {
                     "type": "string",
                     "example": "ok"

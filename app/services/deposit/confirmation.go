@@ -100,6 +100,8 @@ func (s *Service) updateConfirmations(ctx context.Context, chainID string, adapt
 }
 
 func (s *Service) applyConfirmations(ctx context.Context, adapter types.Chain, currentBlock uint64, pending []models.Transaction) error {
+	confirmedWallets := newWalletSet()
+	defer func() { s.refreshBalances(ctx, confirmedWallets.ids) }()
 	for _, tx := range pending {
 		if tx.BlockNumber == 0 {
 			if !isOutboundTxType(tx.TxType) {
@@ -140,6 +142,9 @@ func (s *Service) applyConfirmations(ctx context.Context, adapter types.Chain, c
 
 		confirmedNow := newStatus == string(types.TxStatusConfirmed) && tx.Status != string(types.TxStatusConfirmed)
 		confirmingNow := tx.Status == string(types.TxStatusPending) && newStatus == string(types.TxStatusConfirming)
+		if confirmedNow && movesWalletBalance(tx.TxType) {
+			confirmedWallets.add(tx.WalletID)
+		}
 
 		switch tx.TxType {
 		case models.TxTypeDeposit:

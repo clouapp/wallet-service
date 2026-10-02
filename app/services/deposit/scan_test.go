@@ -32,6 +32,10 @@ type concurrentChain struct {
 	failAt    map[uint64]error
 	txBlocks  map[string]uint64
 
+	flakyMu sync.Mutex
+	// flaky fails a block's next N fetches, then serves it.
+	flaky map[uint64]int
+
 	calls    atomic.Int64
 	inFlight atomic.Int64
 	peak     atomic.Int64
@@ -46,7 +50,24 @@ func newConcurrentChain(head uint64) *concurrentChain {
 		transfers: map[uint64][]types.DetectedTransfer{},
 		failAt:    map[uint64]error{},
 		txBlocks:  map[string]uint64{},
+		flaky:     map[uint64]int{},
 	}
+}
+
+func (c *concurrentChain) failNextFetches(blockNum uint64, times int) {
+	c.flakyMu.Lock()
+	defer c.flakyMu.Unlock()
+	c.flaky[blockNum] = times
+}
+
+func (c *concurrentChain) takeFlakyFailure(blockNum uint64) bool {
+	c.flakyMu.Lock()
+	defer c.flakyMu.Unlock()
+	if c.flaky[blockNum] == 0 {
+		return false
+	}
+	c.flaky[blockNum]--
+	return true
 }
 
 func (c *concurrentChain) GetLatestBlock(context.Context) (uint64, error) { return c.head, nil }
@@ -69,6 +90,9 @@ func (c *concurrentChain) ScanBlock(_ context.Context, blockNum uint64) ([]types
 	time.Sleep(time.Duration(blockNum%5) * time.Millisecond)
 	if err := c.failAt[blockNum]; err != nil {
 		return nil, err
+	}
+	if c.takeFlakyFailure(blockNum) {
+		return nil, fmt.Errorf("rpc call getBlock %d: connection reset by peer", blockNum)
 	}
 	return c.transfers[blockNum], nil
 }
@@ -110,6 +134,27 @@ type scanFixture struct {
 	adapter *concurrentChain
 	events  *recordingDepositEvents
 	address string
+	sleeps  *recordedSleeps
+}
+
+// recordedSleeps stands in for the immediate-retry waits, so tests assert the backoff
+// without spending it.
+type recordedSleeps struct {
+	mu     sync.Mutex
+	delays []time.Duration
+}
+
+func (r *recordedSleeps) sleep(_ context.Context, d time.Duration) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.delays = append(r.delays, d)
+	return nil
+}
+
+func (r *recordedSleeps) recorded() []time.Duration {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return append([]time.Duration(nil), r.delays...)
 }
 
 func newScanFixture(t *testing.T, head uint64, opts ScanOptions) scanFixture {
@@ -127,7 +172,9 @@ func newScanFixture(t *testing.T, head uint64, opts ScanOptions) scanFixture {
 	}
 	events := &recordingDepositEvents{}
 	svc.SetDepositEvents(events)
-	return scanFixture{svc: svc, adapter: adapter, events: events, address: address.Address}
+	sleeps := &recordedSleeps{}
+	svc.sleep = sleeps.sleep
+	return scanFixture{svc: svc, adapter: adapter, events: events, address: address.Address, sleeps: sleeps}
 }
 
 func (f scanFixture) withRedisCheckpoint(t *testing.T, checkpoint uint64) scanFixture {

@@ -52,9 +52,11 @@ func (r *walletSyncStateRepository) Upsert(state *models.WalletSyncState) error 
 	return facades.Orm().Query().Save(state)
 }
 
+// UpdateFailure marks the scope failed, creating its row on a first sync that fails,
+// so a wallet that never synced still shows why.
 func (r *walletSyncStateRepository) UpdateFailure(walletID uuid.UUID, chainID, scope, errMsg string) error {
 	now := time.Now()
-	_, err := facades.Orm().Query().
+	result, err := facades.Orm().Query().
 		Model(&models.WalletSyncState{}).
 		Where("wallet_id = ? AND chain_id = ? AND sync_scope = ?", walletID, chainID, scope).
 		Update(map[string]any{
@@ -62,5 +64,19 @@ func (r *walletSyncStateRepository) UpdateFailure(walletID uuid.UUID, chainID, s
 			"last_error":        errMsg,
 			"last_attempted_at": now,
 		})
-	return err
+	if err != nil {
+		return err
+	}
+	if result != nil && result.RowsAffected > 0 {
+		return nil
+	}
+	return facades.Orm().Query().Create(&models.WalletSyncState{
+		ID:              uuid.New(),
+		WalletID:        walletID,
+		ChainID:         chainID,
+		SyncScope:       scope,
+		Status:          string(types.SyncStatusFailed),
+		LastAttemptedAt: &now,
+		LastError:       &errMsg,
+	})
 }

@@ -7,6 +7,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/macrowallets/waas/app/services/refresh"
 )
 
 type countingChecker struct{ runs atomic.Int32 }
@@ -38,7 +40,7 @@ func TestStart_RejectsInvalidConfiguration(t *testing.T) {
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
-			if err := Start(context.Background(), tc.cfg, tc.checker, tc.deliverer, nil); err == nil {
+			if err := Start(context.Background(), tc.cfg, Workers{Checker: tc.checker, Deliverer: tc.deliverer}); err == nil {
 				t.Fatal("expected a configuration error")
 			}
 		})
@@ -52,7 +54,7 @@ func TestStart_WaitsOneIntervalThenRunsBothLoops(t *testing.T) {
 	deliverer := &countingDeliverer{}
 	cfg := Config{ConfirmationInterval: MinInterval, DeliveryInterval: MinInterval, DeliverOutbox: true}
 
-	if err := Start(ctx, cfg, checker, deliverer, nil); err != nil {
+	if err := Start(ctx, cfg, Workers{Checker: checker, Deliverer: deliverer}); err != nil {
 		t.Fatalf("Start: %v", err)
 	}
 
@@ -76,7 +78,7 @@ func TestStart_SkipsOutboxWhenAQueueDelivers(t *testing.T) {
 	checker := &countingChecker{}
 	deliverer := &countingDeliverer{}
 
-	if err := Start(ctx, Config{ConfirmationInterval: MinInterval}, checker, deliverer, nil); err != nil {
+	if err := Start(ctx, Config{ConfirmationInterval: MinInterval}, Workers{Checker: checker, Deliverer: deliverer}); err != nil {
 		t.Fatalf("Start: %v", err)
 	}
 
@@ -90,18 +92,34 @@ func TestStart_SkipsOutboxWhenAQueueDelivers(t *testing.T) {
 }
 
 type recordingScanner struct {
-	mu      sync.Mutex
-	chains  []string
-	synced  []string
-	err     error
-	syncErr error
+	mu         sync.Mutex
+	chains     []string
+	synced     []string
+	steps      []string
+	err        error
+	syncErr    error
+	pendingErr error
 }
 
 func (s *recordingScanner) ScanLatestBlocks(_ context.Context, chainID string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.chains = append(s.chains, chainID)
+	s.steps = append(s.steps, "scan:"+chainID)
 	return s.err
+}
+
+func (s *recordingScanner) ReprocessDuePending(_ context.Context, chainID string) (int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.steps = append(s.steps, "pending:"+chainID)
+	return 0, s.pendingErr
+}
+
+func (s *recordingScanner) recordedSteps() []string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return append([]string(nil), s.steps...)
 }
 
 func (s *recordingScanner) SyncAddressCache(_ context.Context, chainID string) (bool, error) {
@@ -129,7 +147,7 @@ func TestStart_SyncsAddressCachesBeforeTheFirstScan(t *testing.T) {
 	scanner := &recordingScanner{syncErr: errors.New("redis down")}
 	cfg := Config{ConfirmationInterval: time.Hour, DepositScanChains: []string{"sol", "eth", "btc"}, DepositScanInterval: MinInterval}
 
-	if err := Start(ctx, cfg, &countingChecker{}, nil, scanner); err != nil {
+	if err := Start(ctx, cfg, Workers{Checker: &countingChecker{}, Scanner: scanner}); err != nil {
 		t.Fatalf("Start must not fail when a cache sync fails: %v", err)
 	}
 	if got := scanner.cacheSyncs(); len(got) != 3 || got[0] != "sol" || got[1] != "eth" || got[2] != "btc" {
@@ -171,7 +189,7 @@ func TestStart_RejectsInvalidDepositScanConfiguration(t *testing.T) {
 			cfg := base
 			cfg.DepositScanChains = tc.chains
 			cfg.DepositScanInterval = tc.interval
-			if err := Start(context.Background(), cfg, checker, nil, tc.scanner); err == nil {
+			if err := Start(context.Background(), cfg, Workers{Checker: checker, Scanner: tc.scanner}); err == nil {
 				t.Fatal("expected a configuration error")
 			}
 		})
@@ -185,7 +203,7 @@ func TestStart_ScansEveryConfiguredChainAndKeepsGoingAfterErrors(t *testing.T) {
 	chains := []string{"sol", "tsol"}
 	cfg := Config{ConfirmationInterval: time.Hour, DepositScanChains: chains, DepositScanInterval: MinInterval}
 
-	if err := Start(ctx, cfg, &countingChecker{}, nil, scanner); err != nil {
+	if err := Start(ctx, cfg, Workers{Checker: &countingChecker{}, Scanner: scanner}); err != nil {
 		t.Fatalf("Start: %v", err)
 	}
 	chains[0] = "mutated"
@@ -213,12 +231,85 @@ func TestStart_NoScanWithoutChains(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	scanner := &recordingScanner{}
-	if err := Start(ctx, Config{ConfirmationInterval: MinInterval, DepositScanInterval: MinInterval}, &countingChecker{}, nil, scanner); err != nil {
+	if err := Start(ctx, Config{ConfirmationInterval: MinInterval, DepositScanInterval: MinInterval}, Workers{Checker: &countingChecker{}, Scanner: scanner}); err != nil {
 		t.Fatalf("Start: %v", err)
 	}
 	time.Sleep(MinInterval + MinInterval/2)
 	if got := scanner.scanned(); len(got) != 0 {
 		t.Fatalf("no chain configured, got scans %v", got)
+	}
+}
+
+func TestStart_ReprocessesPendingBlocksAfterEachChainScan(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	scanner := &recordingScanner{err: errors.New("rpc down"), pendingErr: errors.New("redis and file down")}
+	cfg := Config{ConfirmationInterval: time.Hour, DepositScanChains: []string{"sol", "btc"}, DepositScanInterval: MinInterval}
+
+	if err := Start(ctx, cfg, Workers{Checker: &countingChecker{}, Scanner: scanner}); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	deadline := time.Now().Add(4 * MinInterval)
+	for time.Now().Before(deadline) && len(scanner.recordedSteps()) < 8 {
+		time.Sleep(50 * time.Millisecond)
+	}
+	got := scanner.recordedSteps()
+	want := []string{"scan:sol", "pending:sol", "scan:btc", "pending:btc"}
+	if len(got) < 8 {
+		t.Fatalf("expected two rounds of scan then pending per chain despite errors, got %v", got)
+	}
+	for i, step := range got[:8] {
+		if step != want[i%4] {
+			t.Fatalf("step %d is %q, want %q (all: %v)", i, step, want[i%4], got)
+		}
+	}
+}
+
+type countingBalances struct{ runs atomic.Int32 }
+
+func (b *countingBalances) RefreshAll(context.Context) (refresh.PassSummary, error) {
+	b.runs.Add(1)
+	return refresh.PassSummary{Refreshed: 1}, nil
+}
+
+func TestStart_RefreshesBalancesOnItsInterval(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	balances := &countingBalances{}
+	cfg := Config{ConfirmationInterval: time.Hour, BalanceRefreshInterval: MinInterval}
+
+	if err := Start(ctx, cfg, Workers{Checker: &countingChecker{}, Balances: balances}); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	time.Sleep(MinInterval / 2)
+	if balances.runs.Load() != 0 {
+		t.Fatal("the balance refresh must wait one interval")
+	}
+	deadline := time.Now().Add(3 * MinInterval)
+	for time.Now().Before(deadline) && balances.runs.Load() < 2 {
+		time.Sleep(50 * time.Millisecond)
+	}
+	if balances.runs.Load() < 2 {
+		t.Fatalf("expected repeated balance refreshes, got %d", balances.runs.Load())
+	}
+}
+
+func TestStart_RejectsInvalidBalanceRefreshConfiguration(t *testing.T) {
+	checker := &countingChecker{}
+	cases := map[string]struct {
+		interval time.Duration
+		balances BalanceRefresher
+	}{
+		"interval too short": {time.Millisecond, &countingBalances{}},
+		"missing refresher":  {MinInterval, nil},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			cfg := Config{ConfirmationInterval: MinInterval, BalanceRefreshInterval: tc.interval}
+			if err := Start(context.Background(), cfg, Workers{Checker: checker, Balances: tc.balances}); err == nil {
+				t.Fatal("expected a configuration error")
+			}
+		})
 	}
 }
 

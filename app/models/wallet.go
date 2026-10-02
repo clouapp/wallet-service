@@ -17,6 +17,9 @@ const (
 	GasStatusLow      = "low"
 )
 
+// WalletStatusArchived marks a retired wallet (wallet_status enum).
+const WalletStatusArchived = "archived"
+
 // Wallet is an MPC co-signing wallet. The customer owns share_A (encrypted with
 // their passphrase); the service holds share_B in AWS Secrets Manager.
 // Neither party can sign alone.

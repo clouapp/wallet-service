@@ -11,3 +11,7 @@ var ErrUnsupportedChain = errors.New("unsupported chain operation in v1 EVM-only
 // ErrGasEstimateFailed means the node could not size the transfer (for example
 // eth_estimateGas reports it would revert). Nothing may be broadcast.
 var ErrGasEstimateFailed = errors.New("gas estimate failed")
+
+// ErrRateLimited means the provider kept refusing a call after every backoff retry;
+// callers may skip further calls to that provider for the current cycle.
+var ErrRateLimited = errors.New("rate limited")

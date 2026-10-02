@@ -40,7 +40,7 @@ func (s *AmountGuardTestSuite) solDeposit(walletID uuid.UUID, amountBaseUnits st
 		ID: uuid.New(), WalletID: walletID, ExternalUserID: "user1", Chain: "sol",
 		TxType: models.TxTypeDeposit, Direction: models.TxDirectionInbound, TxHash: uuid.NewString(),
 		ToAddress: "So1To", Amount: amountBaseUnits, Asset: "sol", RequiredConfs: 1, Status: "confirmed",
-		RawPayload: "{}",
+		Source: "deposit_ingest", RawPayload: "{}",
 	}
 }
 
@@ -91,7 +91,7 @@ func (s *AmountGuardTestSuite) TestUpdateFieldsRejectsNegativeAmount() {
 
 func (s *AmountGuardTestSuite) TestWithdrawalRejectsNegativeAmounts() {
 	wallet := mocks.InsertWallet(s.T(), "sol")
-	withdrawal := &models.Withdrawal{ID: uuid.New(), WalletID: wallet.ID, Status: models.WithdrawalStatusBroadcasting, Amount: "-0.02", DestinationAddress: "So1Dest"}
+	withdrawal := &models.Withdrawal{ID: uuid.New(), WalletID: wallet.ID, Status: models.WithdrawalStatusBroadcasting, Amount: "-0.02", FeeEstimate: "0", DestinationAddress: "So1Dest"}
 	s.ErrorIs(s.withdrawals.Create(withdrawal), amount.ErrNegativeAmount)
 
 	withdrawal.Amount = "0.02"
@@ -116,7 +116,7 @@ func (s *AmountGuardTestSuite) TestDatabaseRejectsSignedAmountsOutsideTheReposit
 	wallet := mocks.InsertWallet(s.T(), "sol")
 	tx := s.solDeposit(wallet.ID, "5000000000")
 	s.Require().NoError(s.transactions.Create(tx))
-	withdrawal := &models.Withdrawal{ID: uuid.New(), WalletID: wallet.ID, Status: models.WithdrawalStatusBroadcasting, Amount: "0.02", DestinationAddress: "So1Dest"}
+	withdrawal := &models.Withdrawal{ID: uuid.New(), WalletID: wallet.ID, Status: models.WithdrawalStatusBroadcasting, Amount: "0.02", FeeEstimate: "0", DestinationAddress: "So1Dest"}
 	s.Require().NoError(s.withdrawals.Create(withdrawal))
 
 	statements := map[string][]any{

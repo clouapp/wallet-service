@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/redis/go-redis/v9"
@@ -12,6 +13,7 @@ import (
 	"github.com/macrowallets/waas/app/repositories"
 	"github.com/macrowallets/waas/app/services/blockheight"
 	"github.com/macrowallets/waas/app/services/chain"
+	"github.com/macrowallets/waas/app/services/deposit/pending"
 	"github.com/macrowallets/waas/app/services/webhook"
 	"github.com/macrowallets/waas/pkg/types"
 )
@@ -32,7 +34,12 @@ type Service struct {
 	heightFailures       map[string]int
 	withdrawals          WithdrawalConfirmations
 	deposits             DepositEvents
+	balances             WalletBalanceRefresher
 	scan                 ScanOptions
+	failure              FailurePolicy
+	pending              pending.Store
+	sleep                func(ctx context.Context, d time.Duration) error
+	now                  func() time.Time
 }
 
 // DepositEvents publishes deposit webhooks scoped to the wallet's account with the
@@ -81,6 +88,9 @@ func NewService(rdb *redis.Client, registry *chain.Registry, webhookSvc *webhook
 		blockHeightProviders: blockHeightProviders,
 		heightFailures:       make(map[string]int),
 		scan:                 DefaultScanOptions(),
+		failure:              DefaultFailurePolicy(),
+		sleep:                sleepContext,
+		now:                  func() time.Time { return time.Now().UTC() },
 	}
 }
 
@@ -138,34 +148,31 @@ func (s *Service) ScanLatestBlocks(ctx context.Context, chainID string) error {
 	return nil
 }
 
-func (s *Service) processBlock(ctx context.Context, chainID string, adapter types.Chain, blockNum uint64) error {
-	transfers, err := adapter.ScanBlock(ctx, blockNum)
-	if err != nil {
-		return err
-	}
-	s.recordTransfers(ctx, chainID, adapter, transfers)
-	return nil
-}
-
 // processTransfer records a transfer to a watched address as a pending deposit and
-// reports whether it created one; a transaction already recorded is left as it is.
+// reports whether it created one; a transaction already recorded is left as it is,
+// including one another process inserted at the same time (the unique deposit index
+// rejects the second insert).
 func (s *Service) processTransfer(ctx context.Context, chainID string, adapter types.Chain, transfer types.DetectedTransfer) (bool, error) {
 	watched, err := s.isWatchedAddress(ctx, chainID, transfer.To)
 	if err != nil {
-		return false, err
+		return false, classify(pending.ClassDatabase, err)
 	}
 	if !watched {
 		return false, nil
 	}
 
 	addr, err := s.addressRepo.FindByChainAndAddress(chainID, transfer.To)
-	if err != nil || addr == nil {
-		return false, fmt.Errorf("lookup address: %w", err)
+	if err != nil {
+		return false, classify(pending.ClassDatabase, fmt.Errorf("lookup address: %w", err))
+	}
+	if addr == nil {
+		slog.Warn("watched-address cache lists an address the database does not hold; skipping the transfer", "chain", chainID, "address", transfer.To, "tx", transfer.TxHash)
+		return false, nil
 	}
 
 	exists, err := s.txRepo.CountByChainAndTxHash(chainID, transfer.TxHash, models.TxTypeDeposit)
 	if err != nil {
-		return false, err
+		return false, classify(pending.ClassDatabase, fmt.Errorf("check recorded deposit: %w", err))
 	}
 	if exists > 0 {
 		return false, nil
@@ -186,6 +193,7 @@ func (s *Service) processTransfer(ctx context.Context, chainID string, adapter t
 		Chain:          chainID,
 		TxType:         models.TxTypeDeposit,
 		TxHash:         transfer.TxHash,
+		LogIndex:       models.ScannerDepositLogIndex,
 		FromAddress:    transfer.From,
 		ToAddress:      transfer.To,
 		Amount:         transfer.Amount.String(),
@@ -202,7 +210,11 @@ func (s *Service) processTransfer(ctx context.Context, chainID string, adapter t
 	}
 
 	if err := s.txRepo.Create(tx); err != nil {
-		return false, fmt.Errorf("insert tx: %w", err)
+		if repositories.IsUniqueViolation(err) {
+			slog.Info("deposit already recorded by another process", "chain", chainID, "tx", transfer.TxHash)
+			return false, nil
+		}
+		return false, classify(pending.ClassDatabase, fmt.Errorf("insert tx: %w", err))
 	}
 
 	s.publishDeposit(ctx, types.EventDepositPending, *tx)
