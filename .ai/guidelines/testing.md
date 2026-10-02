@@ -1,0 +1,71 @@
+# Testing Guideline
+
+> Status: TARGET. Today 130 test files are co-located with mixed styles,
+> hand-written mocks and full-app controller suites. Migration: §3.12.
+
+## Where a test lives
+
+| Kind | Where |
+|---|---|
+| unit test of a service, adapter, middleware, policy, package | beside the code, `<file>_test.go` |
+| HTTP feature test | `tests/feature/api/<surface>/<feature>/` (one Go package each, own `main_test.go`) |
+| repository integration test (real Postgres) | `tests/feature/repositories/` |
+| route wiring | `tests/feature/routes/` |
+| shared harness (suite base, docker reuse, fixtures, request signing) | `tests/feature/support/` |
+| generated mocks | `tests/mocks/` (mockery v2, never edited by hand) |
+| architecture rules | `tests/architecture/` |
+| testnet end-to-end | `scripts/e2e/`, `tools/e2e-funder/` (manual / scheduled, real funds on testnets) |
+
+Feature suites need `docker compose up -d postgres redis localstack`. There is
+no helper package in production code: `app/http/controllers/testutil` moves to
+`tests/feature/support`.
+
+**Fixtures are unique, no per-test schema reset**: a run nonce and a sequence
+key e-mails, account ids, wallet labels and client IPs, so tests and runs never
+collide in stores that outlive the process. (If the team prefers xip's
+`ResetSchema` between tests, say so here — pick one.)
+
+## Naming and assertions
+
+`TestType_Method_Scenario`, in English; in a suite
+`func (s *WalletsSuite) TestWallets_Create_RefusesAMainnetChainOnATestAccount()`.
+testify: `require` for preconditions, `assert` for independent checks.
+
+## HTTP feature suites
+
+A suite embeds `support.HTTPSuite`, runs through `support.RunSuite`, and passes
+the credential explicitly on every request (`s.Get(path, session)` /
+`s.External(path, token)` which also signs the body when the token requires it).
+**Error paths assert the body**: `s.AssertError(rec, status, code, message)`.
+
+## Mocks
+
+- mockery v2 from `.mockery.yaml`, version and Go toolchain pinned in the
+  Makefile; `make mocks`. Only `_test.go` files import `tests/mocks`.
+- What gets mocked is a **port the consumer owns** (`services.WalletStore`,
+  `mpc.SecretStore`, `withdraw.FeeEstimator`, `chain` ports). Repositories are
+  never mocked; adapters are tested against fakes of what they talk to.
+- A hand-written fake survives only where it models real semantics
+  (`FakeEVMNode`).
+
+## Services with mocks, repositories against Postgres
+
+A service test never opens a database. A repository test never mocks one: it
+proves the query, the constraint and the error mapping.
+
+## Concurrency guards
+
+Balance updates, UTXO selection, withdrawal idempotency, sweep locks and quota
+counters are tested with **a burst of goroutines behind a barrier, never a
+sleep**, through the service, asserting exactly one winner.
+
+## Do NOT
+
+- Do not edit `tests/mocks/` by hand.
+- Do not write a service test that hits the database, or a repository test that
+  mocks it.
+- Do not assert only a status on an error path.
+- Do not `sleep` to order goroutines.
+- Do not swap fields of a global container in a test — inject the port.
+- Do not add a test-only method, setter or function field to production code.
+- Do not merge a change to signing, withdrawal or sweep without the testnet e2e.
