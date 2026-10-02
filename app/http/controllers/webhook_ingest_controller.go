@@ -1,6 +1,7 @@
 package controllers
 
 import (
+	"errors"
 	"io"
 	"log/slog"
 	"strings"
@@ -10,6 +11,7 @@ import (
 
 	"github.com/macrowallets/waas/app/container"
 	"github.com/macrowallets/waas/app/http/responses"
+	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/services/ingest/providers"
 )
 
@@ -35,7 +37,10 @@ func HandleWebhookIngest(ctx http.Context) http.Response {
 		return responses.Send(ctx, http.StatusBadRequest, http.Json{"error": "provider and chainID are required"})
 	}
 
-	sub, err := c.WebhookSubscriptionRepo.FindByProviderAndChain(providerName, chainID)
+	sub, err := c.WebhookSubscriptionRepo.FindByProviderAndChain(ctx.Context(), providerName, chainID)
+	if errors.Is(err, models.ErrRepositoryNotFound) {
+		sub, err = nil, nil
+	}
 	if err != nil {
 		slog.Error("ingest subscription lookup", "provider", providerName, "chain", chainID, "error", err)
 		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "subscription lookup failed"})

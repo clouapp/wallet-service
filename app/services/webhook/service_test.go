@@ -29,7 +29,7 @@ func TestMain(m *testing.M) {
 }
 
 func newTestWebhookSvc() *Service {
-	return NewService(nil, repositories.NewWebhookConfigRepository(), repositories.NewWebhookEventRepository())
+	return NewService(nil, repositories.NewWebhookConfigRepository(nil), repositories.NewWebhookEventRepository(nil))
 }
 
 func TestCreateConfig(t *testing.T) {

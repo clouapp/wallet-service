@@ -86,8 +86,8 @@ func setupWithdrawService(t *testing.T) (*Service, *mocks.MockChain) {
 	registry.RegisterChain(mockChain)
 	registry.RegisterToken(types.Token{Symbol: "usdt", ChainID: "eth", Decimals: 6, Contract: "0xdAC17F"})
 
-	webhookConfigRepo := repositories.NewWebhookConfigRepository()
-	webhookEventRepo := repositories.NewWebhookEventRepository()
+	webhookConfigRepo := repositories.NewWebhookConfigRepository(nil)
+	webhookEventRepo := repositories.NewWebhookEventRepository(nil)
 	webhookSvc := webhook.NewService(nil, webhookConfigRepo, webhookEventRepo)
 	mpcSvc := &mockMPC{}
 	txRepo := repositories.NewTransactionRepository(nil)

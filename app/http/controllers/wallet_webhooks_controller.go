@@ -24,7 +24,7 @@ import (
 func ListWalletWebhooks(ctx http.Context) http.Response {
 	wallet := ctx.Value("wallet").(*models.Wallet)
 
-	cfgs, err := container.Get().WebhookConfigRepo.FindByWalletID(wallet.ID)
+	cfgs, err := container.Get().WebhookConfigRepo.FindByWalletID(ctx.Context(), wallet.ID)
 	if err != nil {
 		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to fetch wallet webhooks"})
 	}
@@ -63,7 +63,7 @@ func CreateWalletWebhook(ctx http.Context) http.Response {
 		WalletID: &wallet.ID,
 		Type:     "wallet",
 	}
-	if err := container.Get().WebhookConfigRepo.Create(cfg); err != nil {
+	if err := container.Get().WebhookConfigRepo.Create(ctx.Context(), cfg); err != nil {
 		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to create webhook"})
 	}
 	return ctx.Response().Json(http.StatusCreated, cfg)
@@ -93,12 +93,12 @@ func DeleteWalletWebhook(ctx http.Context) http.Response {
 		return responses.Send(ctx, http.StatusBadRequest, http.Json{"error": "invalid webhook id"})
 	}
 
-	cfg, err := container.Get().WebhookConfigRepo.FindByIDAndWallet(webhookID, wallet.ID)
+	cfg, err := container.Get().WebhookConfigRepo.FindByIDAndWallet(ctx.Context(), webhookID, wallet.ID)
 	if err != nil || cfg == nil {
 		return responses.Send(ctx, http.StatusNotFound, http.Json{"error": "webhook not found"})
 	}
 
-	if err := container.Get().WebhookConfigRepo.Delete(cfg); err != nil {
+	if err := container.Get().WebhookConfigRepo.Delete(ctx.Context(), cfg); err != nil {
 		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to delete webhook"})
 	}
 	return ctx.Response().NoContent()

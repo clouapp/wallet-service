@@ -1,6 +1,7 @@
 package repositories_test
 
 import (
+	"context"
 	"testing"
 
 	"github.com/google/uuid"
@@ -14,7 +15,7 @@ import (
 
 type WebhookEventRepositoryTestSuite struct {
 	suite.Suite
-	repo repositories.WebhookEventRepository
+	repo *repositories.WebhookEventRepository
 }
 
 func TestWebhookEventRepositorySuite(t *testing.T) {
@@ -23,7 +24,7 @@ func TestWebhookEventRepositorySuite(t *testing.T) {
 
 func (s *WebhookEventRepositoryTestSuite) SetupTest() {
 	mocks.TestDB(s.T())
-	s.repo = repositories.NewWebhookEventRepository()
+	s.repo = repositories.NewWebhookEventRepository(nil)
 }
 
 func (s *WebhookEventRepositoryTestSuite) TestCreate_Success() {
@@ -36,7 +37,7 @@ func (s *WebhookEventRepositoryTestSuite) TestCreate_Success() {
 		Attempts:       0,
 		MaxAttempts:    10,
 	}
-	err := s.repo.Create(event)
+	err := s.repo.Create(context.Background(), event)
 	s.NoError(err)
 }
 
@@ -50,9 +51,9 @@ func (s *WebhookEventRepositoryTestSuite) TestMarkDelivered() {
 		Attempts:       0,
 		MaxAttempts:    10,
 	}
-	s.Require().NoError(s.repo.Create(event))
+	s.Require().NoError(s.repo.Create(context.Background(), event))
 
-	err := s.repo.MarkDelivered(event.ID.String())
+	err := s.repo.MarkDelivered(context.Background(), event.ID.String())
 	s.NoError(err)
 
 	var check models.WebhookEvent
@@ -72,10 +73,10 @@ func (s *WebhookEventRepositoryTestSuite) TestIncrementAttempt() {
 		Attempts:       0,
 		MaxAttempts:    10,
 	}
-	s.Require().NoError(s.repo.Create(event))
+	s.Require().NoError(s.repo.Create(context.Background(), event))
 
-	_ = s.repo.IncrementAttempt(event.ID.String(), "HTTP 500")
-	_ = s.repo.IncrementAttempt(event.ID.String(), "HTTP 502")
+	_ = s.repo.IncrementAttempt(context.Background(), event.ID.String(), "HTTP 500")
+	_ = s.repo.IncrementAttempt(context.Background(), event.ID.String(), "HTTP 502")
 
 	var check models.WebhookEvent
 	facades.Orm().Query().Where("id = ?", event.ID).First(&check)

@@ -187,13 +187,25 @@ func buildVaultContainer(app foundation.Application) (*container.Container, erro
 	if err != nil {
 		return nil, err
 	}
-	c.WebhookConfigRepo = repositories.NewWebhookConfigRepository()
-	c.WebhookEventRepo = repositories.NewWebhookEventRepository()
+	webhookConfigs, err := resolve[*repositories.WebhookConfigRepository](app)
+	if err != nil {
+		return nil, err
+	}
+	webhookEvents, err := resolve[*repositories.WebhookEventRepository](app)
+	if err != nil {
+		return nil, err
+	}
+	c.WebhookConfigRepo = webhookConfigs
+	c.WebhookEventRepo = webhookEvents
 	c.WhitelistEntryRepo = whitelist
 	c.ChainRepo = chains
 	c.TokenRepo = tokens
 	c.ChainResourceRepo = chainResources
-	c.WebhookSubscriptionRepo = repositories.NewWebhookSubscriptionRepository()
+	webhookSubscriptions, err := resolve[*repositories.WebhookSubscriptionRepository](app)
+	if err != nil {
+		return nil, err
+	}
+	c.WebhookSubscriptionRepo = webhookSubscriptions
 	c.WalletAssetBalanceRepo = assetBalances
 	c.WalletBalanceSnapshotRepo = balanceSnapshots
 	c.WalletUTXORepo = utxos

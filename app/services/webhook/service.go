@@ -17,10 +17,30 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/macrowallets/waas/app/models"
-	"github.com/macrowallets/waas/app/repositories"
 	"github.com/macrowallets/waas/app/services/queue"
 	"github.com/macrowallets/waas/pkg/types"
 )
+
+// configStore is the webhook endpoint persistence this service uses.
+type configStore interface {
+	FindActive(ctx context.Context) ([]models.WebhookConfig, error)
+	Create(ctx context.Context, cfg *models.WebhookConfig) error
+	FindAll(ctx context.Context) ([]models.WebhookConfig, error)
+	FindVisibleToAccount(ctx context.Context, accountID uuid.UUID) ([]models.WebhookConfig, error)
+	FindByID(ctx context.Context, id uuid.UUID) (*models.WebhookConfig, error)
+	AssignAccount(ctx context.Context, id, accountID uuid.UUID, events *string, isActive *bool) error
+	DeleteByID(ctx context.Context, id uuid.UUID) error
+}
+
+// eventStore is the delivery-queue persistence this service uses.
+type eventStore interface {
+	Create(ctx context.Context, event *models.WebhookEvent) error
+	MarkDelivered(ctx context.Context, eventID string) error
+	IncrementAttempt(ctx context.Context, eventID, errMsg string) error
+	ExistsForSubject(ctx context.Context, configID uuid.UUID, eventType, subjectID string) (bool, error)
+	FindDueForDelivery(ctx context.Context, limit int, baseBackoff, maxBackoff time.Duration) ([]models.WebhookEvent, error)
+	MarkFailed(ctx context.Context, eventID, errMsg string) error
+}
 
 // ---------------------------------------------------------------------------
 // Service — webhook management.
@@ -29,11 +49,11 @@ import (
 
 type Service struct {
 	sqs               queue.Sender
-	webhookConfigRepo repositories.WebhookConfigRepository
-	webhookEventRepo  repositories.WebhookEventRepository
+	webhookConfigRepo configStore
+	webhookEventRepo  eventStore
 }
 
-func NewService(sqs queue.Sender, webhookConfigRepo repositories.WebhookConfigRepository, webhookEventRepo repositories.WebhookEventRepository) *Service {
+func NewService(sqs queue.Sender, webhookConfigRepo configStore, webhookEventRepo eventStore) *Service {
 	return &Service{sqs: sqs, webhookConfigRepo: webhookConfigRepo, webhookEventRepo: webhookEventRepo}
 }
 
@@ -53,7 +73,7 @@ func (s *Service) EnqueueEvent(ctx context.Context, txID uuid.UUID, eventType ty
 		return
 	}
 
-	allConfigs, err := s.webhookConfigRepo.FindActive()
+	allConfigs, err := s.webhookConfigRepo.FindActive(ctx)
 	if err != nil {
 		slog.Error("query webhook configs", "error", err)
 		return
@@ -83,7 +103,7 @@ func (s *Service) EnqueueEvent(ctx context.Context, txID uuid.UUID, eventType ty
 			Attempts:        0,
 			MaxAttempts:     10,
 		}
-		if err := s.webhookEventRepo.Create(webhookEvent); err != nil {
+		if err := s.webhookEventRepo.Create(ctx, webhookEvent); err != nil {
 			slog.Error("insert webhook event", "error", err)
 			continue
 		}
@@ -159,14 +179,14 @@ func (s *Service) Deliver(ctx context.Context, msg types.WebhookMessage) error {
 		return fmt.Errorf("delivery failed: %s", errMsg)
 	}
 
-	s.webhookEventRepo.MarkDelivered(msg.EventID)
+	s.webhookEventRepo.MarkDelivered(ctx, msg.EventID)
 
 	slog.Info("webhook delivered", "event_id", msg.EventID, "url", msg.DeliveryURL)
 	return nil
 }
 
 func (s *Service) markAttempt(ctx context.Context, eventID, errMsg string) {
-	s.webhookEventRepo.IncrementAttempt(eventID, errMsg)
+	s.webhookEventRepo.IncrementAttempt(ctx, eventID, errMsg)
 }
 
 // ---------------------------------------------------------------------------
@@ -184,14 +204,14 @@ func (s *Service) CreateConfig(ctx context.Context, url, secret string, events [
 		IsActive:  true,
 		AccountID: accountID,
 	}
-	if err := s.webhookConfigRepo.Create(cfg); err != nil {
+	if err := s.webhookConfigRepo.Create(ctx, cfg); err != nil {
 		return nil, err
 	}
 	return cfg, nil
 }
 
 func (s *Service) ListConfigs(ctx context.Context) ([]models.WebhookConfig, error) {
-	return s.webhookConfigRepo.FindAll()
+	return s.webhookConfigRepo.FindAll(ctx)
 }
 
 // ListAccountConfigs returns the account-level configs an account may manage: its own
@@ -200,7 +220,7 @@ func (s *Service) ListAccountConfigs(ctx context.Context, accountID uuid.UUID) (
 	if accountID == uuid.Nil {
 		return nil, errors.New("account id is required")
 	}
-	return s.webhookConfigRepo.FindVisibleToAccount(accountID)
+	return s.webhookConfigRepo.FindVisibleToAccount(ctx, accountID)
 }
 
 var (
@@ -229,7 +249,10 @@ func (s *Service) UpdateAccountConfig(ctx context.Context, accountID, configID u
 		return nil, ErrWebhookUpdateEmpty
 	}
 
-	cfg, err := s.webhookConfigRepo.FindByID(configID)
+	cfg, err := s.webhookConfigRepo.FindByID(ctx, configID)
+	if errors.Is(err, models.ErrRepositoryNotFound) {
+		cfg, err = nil, nil
+	}
 	if err != nil {
 		return nil, fmt.Errorf("find webhook config: %w", err)
 	}
@@ -240,20 +263,20 @@ func (s *Service) UpdateAccountConfig(ctx context.Context, accountID, configID u
 		return nil, ErrWebhookOwnershipNotProven
 	}
 
-	fields := map[string]any{"account_id": accountID}
+	var events *string
 	if update.Events != nil {
-		events, err := normalizeSubscribableEvents(update.Events)
+		normalized, err := normalizeSubscribableEvents(update.Events)
 		if err != nil {
 			return nil, err
 		}
-		fields["events"] = pgArray(events)
-		cfg.Events = pgArray(events)
+		encoded := pgArray(normalized)
+		events = &encoded
+		cfg.Events = encoded
 	}
 	if update.IsActive != nil {
-		fields["is_active"] = *update.IsActive
 		cfg.IsActive = *update.IsActive
 	}
-	if err := s.webhookConfigRepo.UpdateFields(cfg.ID, fields); err != nil {
+	if err := s.webhookConfigRepo.AssignAccount(ctx, cfg.ID, accountID, events, update.IsActive); err != nil {
 		return nil, fmt.Errorf("update webhook config: %w", err)
 	}
 	owner := accountID
@@ -282,7 +305,7 @@ func normalizeSubscribableEvents(events []string) ([]string, error) {
 }
 
 func (s *Service) DeleteConfig(ctx context.Context, id uuid.UUID) error {
-	return s.webhookConfigRepo.DeleteByID(id)
+	return s.webhookConfigRepo.DeleteByID(ctx, id)
 }
 
 func pgArray(arr []string) string {

@@ -201,36 +201,41 @@ func (f *ingestTxRepo) ListByWalletAndChain(walletID uuid.UUID, chainID string, 
 
 type ingestWebhookConfigRepo struct{}
 
-func (f *ingestWebhookConfigRepo) Create(cfg *models.WebhookConfig) error { return nil }
-func (f *ingestWebhookConfigRepo) FindByWalletID(walletID uuid.UUID) ([]models.WebhookConfig, error) {
+func (f *ingestWebhookConfigRepo) Create(_ context.Context, cfg *models.WebhookConfig) error {
+	return nil
+}
+func (f *ingestWebhookConfigRepo) FindActive(_ context.Context) ([]models.WebhookConfig, error) {
 	return nil, nil
 }
-func (f *ingestWebhookConfigRepo) FindByIDAndWallet(id, walletID uuid.UUID) (*models.WebhookConfig, error) {
+func (f *ingestWebhookConfigRepo) FindAll(_ context.Context) ([]models.WebhookConfig, error) {
 	return nil, nil
 }
-func (f *ingestWebhookConfigRepo) FindActive() ([]models.WebhookConfig, error) { return nil, nil }
-func (f *ingestWebhookConfigRepo) FindAll() ([]models.WebhookConfig, error)    { return nil, nil }
-func (f *ingestWebhookConfigRepo) Delete(cfg *models.WebhookConfig) error      { return nil }
-func (f *ingestWebhookConfigRepo) DeleteByID(id uuid.UUID) error               { return nil }
-func (f *ingestWebhookConfigRepo) FindByID(id uuid.UUID) (*models.WebhookConfig, error) {
+func (f *ingestWebhookConfigRepo) FindVisibleToAccount(_ context.Context, accountID uuid.UUID) ([]models.WebhookConfig, error) {
 	return nil, nil
 }
-func (f *ingestWebhookConfigRepo) FindVisibleToAccount(accountID uuid.UUID) ([]models.WebhookConfig, error) {
+func (f *ingestWebhookConfigRepo) FindByID(_ context.Context, id uuid.UUID) (*models.WebhookConfig, error) {
 	return nil, nil
 }
-func (f *ingestWebhookConfigRepo) UpdateFields(id uuid.UUID, fields map[string]any) error { return nil }
+func (f *ingestWebhookConfigRepo) AssignAccount(_ context.Context, id, accountID uuid.UUID, events *string, isActive *bool) error {
+	return nil
+}
+func (f *ingestWebhookConfigRepo) DeleteByID(_ context.Context, id uuid.UUID) error { return nil }
 
 type ingestWebhookEventRepo struct{}
 
-func (f *ingestWebhookEventRepo) Create(event *models.WebhookEvent) error { return nil }
-func (f *ingestWebhookEventRepo) MarkDelivered(eventID string) error      { return nil }
-func (f *ingestWebhookEventRepo) IncrementAttempt(eventID string, errMsg string) error {
+func (f *ingestWebhookEventRepo) Create(_ context.Context, event *models.WebhookEvent) error {
 	return nil
 }
-func (f *ingestWebhookEventRepo) ExistsForSubject(configID uuid.UUID, eventType, subjectID string) (bool, error) {
+func (f *ingestWebhookEventRepo) MarkDelivered(_ context.Context, eventID string) error { return nil }
+func (f *ingestWebhookEventRepo) IncrementAttempt(_ context.Context, eventID, errMsg string) error {
+	return nil
+}
+func (f *ingestWebhookEventRepo) ExistsForSubject(_ context.Context, configID uuid.UUID, eventType, subjectID string) (bool, error) {
 	return false, nil
 }
-func (f *ingestWebhookEventRepo) FindDueForDelivery(limit int, baseBackoff, maxBackoff time.Duration) ([]models.WebhookEvent, error) {
+func (f *ingestWebhookEventRepo) FindDueForDelivery(_ context.Context, limit int, baseBackoff, maxBackoff time.Duration) ([]models.WebhookEvent, error) {
 	return nil, nil
 }
-func (f *ingestWebhookEventRepo) MarkFailed(eventID string, errMsg string) error { return nil }
+func (f *ingestWebhookEventRepo) MarkFailed(_ context.Context, eventID, errMsg string) error {
+	return nil
+}
