@@ -31,3 +31,26 @@ func IsAccountRole(role string) bool {
 		return false
 	}
 }
+
+// AccountRoleRank is the ladder owner > admin > user = auditor.
+// Roles outside the ladder rank 0 so they never outrank a real role by accident;
+// callers still have to reject them before granting.
+func AccountRoleRank(role string) int {
+	switch role {
+	case AccountRoleOwner:
+		return 3
+	case AccountRoleAdmin:
+		return 2
+	case AccountRoleUser, AccountRoleAuditor:
+		return 1
+	default:
+		return 0
+	}
+}
+
+// AccountRoleOutranks reports whether role carries more authority than actor.
+// Equal ranks do not outrank. This is an authorization input and is meant to
+// be called from app/policies.
+func AccountRoleOutranks(role, actor string) bool {
+	return AccountRoleRank(role) > AccountRoleRank(actor)
+}

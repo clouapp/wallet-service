@@ -1,6 +1,7 @@
 package controllers
 
 import (
+	"errors"
 	"time"
 
 	"github.com/google/uuid"
@@ -13,12 +14,13 @@ import (
 	"github.com/macrowallets/waas/app/http/requests"
 	mails "github.com/macrowallets/waas/app/mails"
 	"github.com/macrowallets/waas/app/models"
+	"github.com/macrowallets/waas/app/policies"
 	accountsvc "github.com/macrowallets/waas/app/services/account"
 	authsvc "github.com/macrowallets/waas/app/services/auth"
 )
 
 func accountSvc() *accountsvc.Service {
-	return accountsvc.NewService(container.Get().AccountRepo, container.Get().AccountUserRepo)
+	return accountsvc.NewService(container.Get().AccountRepo, container.Get().AccountUserRepo, container.Get().AccessTokenRepo)
 }
 
 var accountAuthService = authsvc.NewService()
@@ -222,6 +224,9 @@ func AddAccountUser(ctx http.Context) http.Response {
 	}
 
 	if err := accountSvc().AddUser(ctx.Context(), account.ID, targetPtr.ID, req.Role, callerID); err != nil {
+		if errors.Is(err, policies.ErrRoleAbove) {
+			return ctx.Response().Json(http.StatusForbidden, http.Json{"error": err.Error()})
+		}
 		return ctx.Response().Json(http.StatusInternalServerError, http.Json{"error": "failed to add user"})
 	}
 
@@ -256,7 +261,14 @@ func RemoveAccountUser(ctx http.Context) http.Response {
 		return ctx.Response().Json(http.StatusBadRequest, http.Json{"error": "invalid user id"})
 	}
 
-	if err := accountSvc().RemoveUser(ctx.Context(), account.ID, targetID); err != nil {
+	callerID, _ := ctx.Value("user_id").(uuid.UUID)
+	if err := accountSvc().RemoveUser(ctx.Context(), account.ID, callerID, targetID); err != nil {
+		if errors.Is(err, accountsvc.ErrMemberNotFound) {
+			return ctx.Response().Json(http.StatusNotFound, http.Json{"error": err.Error()})
+		}
+		if errors.Is(err, policies.ErrCannotRemoveSelf) || errors.Is(err, policies.ErrCannotActOnMember) || errors.Is(err, policies.ErrLastOwner) {
+			return ctx.Response().Json(http.StatusForbidden, http.Json{"error": err.Error()})
+		}
 		return ctx.Response().Json(http.StatusInternalServerError, http.Json{"error": "failed to remove user"})
 	}
 	return ctx.Response().NoContent()

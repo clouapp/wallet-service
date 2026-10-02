@@ -1,6 +1,8 @@
 package repositories
 
 import (
+	"errors"
+
 	"github.com/google/uuid"
 	"github.com/goravel/framework/facades"
 
@@ -13,6 +15,7 @@ type AccessTokenRepository interface {
 	PaginateByAccountID(accountID uuid.UUID, limit, offset int) ([]models.AccessToken, int64, error)
 	FindByIDAndAccount(tokenID, accountID uuid.UUID) (*models.AccessToken, error)
 	Delete(token *models.AccessToken) error
+	DeleteByAccountAndCreator(accountID, creatorID uuid.UUID) error
 }
 
 type accessTokenRepository struct{}
@@ -66,5 +69,15 @@ func (r *accessTokenRepository) FindByIDAndAccount(tokenID, accountID uuid.UUID)
 
 func (r *accessTokenRepository) Delete(token *models.AccessToken) error {
 	_, err := facades.Orm().Query().Delete(token)
+	return err
+}
+
+func (r *accessTokenRepository) DeleteByAccountAndCreator(accountID, creatorID uuid.UUID) error {
+	if accountID == uuid.Nil || creatorID == uuid.Nil {
+		return errors.New("account id and creator id are required")
+	}
+	_, err := facades.Orm().Query().
+		Where("account_id = ? AND created_by = ?", accountID, creatorID).
+		Delete(&models.AccessToken{})
 	return err
 }
