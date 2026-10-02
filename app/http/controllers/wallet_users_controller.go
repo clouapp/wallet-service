@@ -55,6 +55,9 @@ func AddWalletUser(ctx http.Context) http.Response {
 		return resp
 	}
 	targetID, _ := uuid.Parse(req.UserID)
+	if resp := requireActiveAccountMember(ctx, wallet, targetID); resp != nil {
+		return resp
+	}
 
 	existing, existErr := container.Get().WalletUserRepo.FindByWalletAndUserIncludeDeleted(wallet.ID, targetID)
 	if existErr != nil {
@@ -83,6 +86,22 @@ func AddWalletUser(ctx http.Context) http.Response {
 		return ctx.Response().Json(http.StatusInternalServerError, http.Json{"error": "failed to add wallet user"})
 	}
 	return ctx.Response().Json(http.StatusCreated, wu)
+}
+
+// requireActiveAccountMember rejects a user_id that is not an active member of
+// the wallet's account. Role-set validation stays with unmerged S8.
+func requireActiveAccountMember(ctx http.Context, wallet *models.Wallet, userID uuid.UUID) http.Response {
+	if wallet.AccountID == nil {
+		return ctx.Response().Json(http.StatusUnprocessableEntity, http.Json{"error": "user is not an active member of this account"})
+	}
+	member, err := container.Get().AccountUserRepo.FindByAccountAndUser(*wallet.AccountID, userID)
+	if err != nil {
+		return ctx.Response().Json(http.StatusInternalServerError, http.Json{"error": "failed to add wallet user"})
+	}
+	if member == nil || member.Status != "active" {
+		return ctx.Response().Json(http.StatusUnprocessableEntity, http.Json{"error": "user is not an active member of this account"})
+	}
+	return nil
 }
 
 // RemoveWalletUser godoc

@@ -14,6 +14,7 @@ import (
 type WithdrawalRepository interface {
 	Create(w *models.Withdrawal) error
 	FindByWallet(walletID uuid.UUID, status string, limit, offset int) ([]models.Withdrawal, int64, error)
+	FindByID(id uuid.UUID) (*models.Withdrawal, error)
 	FindByIDAndWallet(withdrawalID, walletID uuid.UUID) (*models.Withdrawal, error)
 	FindByTransactionID(transactionID uuid.UUID) (*models.Withdrawal, error)
 	FindBroadcastWithConfirmedTransaction(limit int) ([]models.Withdrawal, error)
@@ -58,6 +59,21 @@ func (r *withdrawalRepository) FindByWallet(walletID uuid.UUID, status string, l
 	var withdrawals []models.Withdrawal
 	err = dataQuery.Offset(offset).Limit(limit).Find(&withdrawals)
 	return withdrawals, total, err
+}
+
+func (r *withdrawalRepository) FindByID(id uuid.UUID) (*models.Withdrawal, error) {
+	if id == uuid.Nil {
+		return nil, fmt.Errorf("withdrawal id is required")
+	}
+	var w models.Withdrawal
+	err := facades.Orm().Query().Where("id = ?", id).First(&w)
+	if err != nil {
+		return nil, err
+	}
+	if w.ID == uuid.Nil {
+		return nil, nil
+	}
+	return &w, nil
 }
 
 func (r *withdrawalRepository) FindByIDAndWallet(withdrawalID, walletID uuid.UUID) (*models.Withdrawal, error) {

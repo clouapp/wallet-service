@@ -377,6 +377,42 @@ func verifyWalletPassphrase(ctx http.Context, wallet *models.Wallet, passphrase 
 // @Failure      403  {object}  ErrorResponse
 // @Failure      404  {object}  ErrorResponse
 // @Router       /wallets/{walletId}/withdrawals/{withdrawalId} [get]
+// GetDashboardWithdrawal godoc
+// @Summary      Get a withdrawal by id
+// @Description  Returns one withdrawal for the account in X-Account-Id. Same session and account membership as the wallet withdrawal list. A missing id, or a withdrawal outside that account, is not found.
+// @Tags         Wallet Withdrawals
+// @Security     BearerAuth
+// @Produce      json
+// @Param        withdrawalId  path  string  true  "Withdrawal UUID"
+// @Param        X-Account-Id  header  string  true  "Account UUID"
+// @Success      200  {object}  models.Withdrawal
+// @Failure      401  {object}  ErrorResponse
+// @Failure      403  {object}  ErrorResponse
+// @Failure      404  {object}  ErrorResponse
+// @Router       /withdrawals/{withdrawalId} [get]
+func GetDashboardWithdrawal(ctx http.Context) http.Response {
+	accountID, ok := ctx.Value("account_id").(uuid.UUID)
+	if !ok || accountID == uuid.Nil {
+		return ctx.Response().Json(http.StatusBadRequest, http.Json{"error": "X-Account-Id header is required"})
+	}
+
+	withdrawalID, err := uuid.Parse(strings.TrimSpace(ctx.Request().Route("withdrawalId")))
+	if err != nil {
+		return ctx.Response().Json(http.StatusBadRequest, http.Json{"error": "invalid withdrawal id"})
+	}
+
+	withdrawal, err := container.Get().WithdrawalRepo.FindByID(withdrawalID)
+	if err != nil || withdrawal == nil {
+		return ctx.Response().Json(http.StatusNotFound, http.Json{"error": "withdrawal not found"})
+	}
+
+	wallet, err := container.Get().WalletRepo.FindByID(withdrawal.WalletID)
+	if err != nil || wallet == nil || wallet.AccountID == nil || *wallet.AccountID != accountID {
+		return ctx.Response().Json(http.StatusNotFound, http.Json{"error": "withdrawal not found"})
+	}
+	return ctx.Response().Json(http.StatusOK, withdrawal)
+}
+
 func GetWalletWithdrawal(ctx http.Context) http.Response {
 	wallet := ctx.Value("wallet").(*models.Wallet)
 

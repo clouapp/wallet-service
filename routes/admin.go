@@ -95,11 +95,13 @@ func RegisterAdminRoutes() {
 
 			r.Get("/webhooks", controllers.ListWalletWebhooks)
 			r.Post("/webhooks", controllers.CreateWalletWebhook)
+			r.Post("/webhooks/{webhookId}/test", controllers.TestWalletWebhook)
 			r.Delete("/webhooks/{webhookId}", controllers.DeleteWalletWebhook)
 
 			r.Get("/settings", controllers.GetWalletSettings)
 			r.Patch("/settings", controllers.UpdateWalletSettings)
 			r.Post("/freeze", controllers.FreezeWallet)
+			r.Post("/archive", controllers.ArchiveWallet)
 
 			r.Get("/balances", controllers.ListWalletBalances)
 
@@ -121,5 +123,11 @@ func RegisterAdminRoutes() {
 				ur.Get("", controllers.ListUnspentOutputs)
 			})
 		})
+	})
+
+	// Dashboard withdrawal detail. Same session and account-header auth as
+	// GET /v1/wallets/{walletId}/withdrawals; the id is not scoped by a wallet path.
+	facades.Route().Prefix("/v1/withdrawals").Middleware(middleware.SessionAuth(), middleware.AccountHeader(), noCache).Group(func(router route.Router) {
+		router.Get("/{withdrawalId}", controllers.GetDashboardWithdrawal)
 	})
 }

@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -128,24 +129,22 @@ func legacyEventWallet(data interface{}) *uuid.UUID {
 	return nil
 }
 
+const (
+	webhookDeliveryTimeout = 10 * time.Second
+	// Test deliveries are synchronous dashboard calls, so they fail fast.
+	webhookTestTimeout = 3 * time.Second
+	webhookTestEvent   = "webhook.test"
+)
+
 // Deliver executes the HTTP delivery. Called by the SQS Lambda worker.
 // Returns error to trigger SQS retry → eventually DLQ after 10 failures.
 func (s *Service) Deliver(ctx context.Context, msg types.WebhookMessage) error {
-	mac := hmac.New(sha256.New, []byte(msg.Secret))
-	mac.Write([]byte(msg.Payload))
-	signature := hex.EncodeToString(mac.Sum(nil))
-
-	req, err := http.NewRequestWithContext(ctx, "POST", msg.DeliveryURL, bytes.NewReader([]byte(msg.Payload)))
+	req, err := newSignedWebhookRequest(ctx, msg.DeliveryURL, msg.Secret, msg.Payload, string(msg.EventType), msg.EventID)
 	if err != nil {
 		return fmt.Errorf("build request: %w", err)
 	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("X-Vault-Signature", signature)
-	req.Header.Set("X-Vault-Event", string(msg.EventType))
-	req.Header.Set("X-Vault-Delivery-Id", msg.EventID)
-	req.Header.Set("X-Vault-Timestamp", fmt.Sprintf("%d", time.Now().Unix()))
 
-	client := &http.Client{Timeout: 10 * time.Second}
+	client := &http.Client{Timeout: webhookDeliveryTimeout}
 	resp, err := client.Do(req)
 	if err != nil {
 		s.markAttempt(ctx, msg.EventID, err.Error())
@@ -167,6 +166,64 @@ func (s *Service) Deliver(ctx context.Context, msg types.WebhookMessage) error {
 
 func (s *Service) markAttempt(ctx context.Context, eventID, errMsg string) {
 	s.webhookEventRepo.IncrementAttempt(eventID, errMsg)
+}
+
+// SendTest posts one signed webhook.test body to the config URL and does not
+// retry or persist a delivery. The signing secret is never written to logs.
+func (s *Service) SendTest(ctx context.Context, cfg *models.WebhookConfig, walletID uuid.UUID) error {
+	if cfg == nil || strings.TrimSpace(cfg.URL) == "" {
+		return ErrWebhookConfigNotFound
+	}
+	eventID := uuid.New().String()
+	payload, err := json.Marshal(map[string]any{
+		"id":         eventID,
+		"type":       webhookTestEvent,
+		"created_at": time.Now().UTC().Format(time.RFC3339),
+		"data": map[string]string{
+			"wallet_id":  walletID.String(),
+			"webhook_id": cfg.ID.String(),
+		},
+	})
+	if err != nil {
+		return fmt.Errorf("marshal webhook test: %w", err)
+	}
+
+	req, err := newSignedWebhookRequest(ctx, cfg.URL, cfg.Secret, string(payload), webhookTestEvent, eventID)
+	if err != nil {
+		return fmt.Errorf("build webhook test request: %w", err)
+	}
+
+	client := &http.Client{Timeout: webhookTestTimeout}
+	resp, err := client.Do(req)
+	if err != nil {
+		slog.Info("webhook test delivery failed", "webhook_id", cfg.ID.String(), "url", cfg.URL)
+		return fmt.Errorf("webhook test delivery failed: %w", err)
+	}
+	defer resp.Body.Close()
+	_, _ = io.Copy(io.Discard, resp.Body)
+	if resp.StatusCode >= 400 {
+		slog.Info("webhook test delivery rejected", "webhook_id", cfg.ID.String(), "url", cfg.URL, "status", resp.StatusCode)
+		return fmt.Errorf("webhook test delivery failed: HTTP %d", resp.StatusCode)
+	}
+	slog.Info("webhook test delivered", "webhook_id", cfg.ID.String(), "url", cfg.URL)
+	return nil
+}
+
+func newSignedWebhookRequest(ctx context.Context, deliveryURL, secret, payload, eventType, eventID string) (*http.Request, error) {
+	mac := hmac.New(sha256.New, []byte(secret))
+	mac.Write([]byte(payload))
+	signature := hex.EncodeToString(mac.Sum(nil))
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, deliveryURL, bytes.NewReader([]byte(payload)))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Vault-Signature", signature)
+	req.Header.Set("X-Vault-Event", eventType)
+	req.Header.Set("X-Vault-Delivery-Id", eventID)
+	req.Header.Set("X-Vault-Timestamp", fmt.Sprintf("%d", time.Now().Unix()))
+	return req, nil
 }
 
 // ---------------------------------------------------------------------------

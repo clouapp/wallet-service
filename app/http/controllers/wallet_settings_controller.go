@@ -26,14 +26,7 @@ import (
 func GetWalletSettings(ctx http.Context) http.Response {
 	wallet := ctx.Value("wallet").(*models.Wallet)
 
-	return ctx.Response().Json(http.StatusOK, http.Json{
-		"fee_rate_min":       wallet.FeeRateMin,
-		"fee_rate_max":       wallet.FeeRateMax,
-		"fee_multiplier":     wallet.FeeMultiplier,
-		"required_approvals": wallet.RequiredApprovals,
-		"frozen_until":       wallet.FrozenUntil,
-		"status":             wallet.Status,
-	})
+	return walletSettingsJSON(ctx, wallet)
 }
 
 // UpdateWalletSettings godoc
@@ -60,6 +53,12 @@ func UpdateWalletSettings(ctx http.Context) http.Response {
 		return errResp
 	}
 
+	if s := strings.TrimSpace(req.Label); s != "" {
+		if err := container.Get().WalletRepo.UpdateField(wallet.ID, "label", s); err != nil {
+			return ctx.Response().Json(http.StatusInternalServerError, http.Json{"error": "failed to update wallet settings"})
+		}
+		wallet.Label = s
+	}
 	if s := strings.TrimSpace(req.FeeRateMin); s != "" {
 		v, _ := strconv.Atoi(s)
 		if err := container.Get().WalletRepo.UpdateField(wallet.ID, "fee_rate_min", v); err != nil {
@@ -96,7 +95,12 @@ func UpdateWalletSettings(ctx http.Context) http.Response {
 		wallet.FrozenUntil = &t
 	}
 
+	return walletSettingsJSON(ctx, wallet)
+}
+
+func walletSettingsJSON(ctx http.Context, wallet *models.Wallet) http.Response {
 	return ctx.Response().Json(http.StatusOK, http.Json{
+		"label":              wallet.Label,
 		"fee_rate_min":       wallet.FeeRateMin,
 		"fee_rate_max":       wallet.FeeRateMax,
 		"fee_multiplier":     wallet.FeeMultiplier,
@@ -104,6 +108,32 @@ func UpdateWalletSettings(ctx http.Context) http.Response {
 		"frozen_until":       wallet.FrozenUntil,
 		"status":             wallet.Status,
 	})
+}
+
+// ArchiveWallet godoc
+// @Summary      Archive a wallet
+// @Description  Sets wallet status to archived. Requires a wallet or account owner/admin. Archiving an archived wallet is rejected.
+// @Tags         Wallet Settings
+// @Security     BearerAuth
+// @Produce      json
+// @Param        walletId  path  string  true  "Wallet UUID"
+// @Success      200  {object}  models.Wallet
+// @Failure      403  {object}  ErrorResponse
+// @Failure      409  {object}  ErrorResponse
+// @Router       /wallets/{walletId}/archive [post]
+func ArchiveWallet(ctx http.Context) http.Response {
+	wallet := ctx.Value("wallet").(*models.Wallet)
+	if errResp := authorize(ctx, "wallet.archive", map[string]any{"wallet_id": wallet.ID}); errResp != nil {
+		return errResp
+	}
+	if wallet.Status == models.WalletStatusArchived {
+		return ctx.Response().Json(http.StatusConflict, http.Json{"error": "wallet already archived"})
+	}
+	if err := container.Get().WalletRepo.UpdateField(wallet.ID, "status", models.WalletStatusArchived); err != nil {
+		return ctx.Response().Json(http.StatusInternalServerError, http.Json{"error": "failed to archive wallet"})
+	}
+	wallet.Status = models.WalletStatusArchived
+	return ctx.Response().Json(http.StatusOK, wallet)
 }
 
 // FreezeWallet godoc
@@ -153,6 +183,7 @@ func FreezeWallet(ctx http.Context) http.Response {
 // ---- Request/Response types ----
 
 type UpdateWalletSettingsSwagger struct {
+	Label             string     `json:"label,omitempty" example:"Treasury"`
 	FeeRateMin        *int       `json:"fee_rate_min,omitempty" example:"1"`
 	FeeRateMax        *int       `json:"fee_rate_max,omitempty" example:"100"`
 	FeeMultiplier     *float64   `json:"fee_multiplier,omitempty" example:"1.25"`
@@ -165,6 +196,7 @@ type FreezeWalletSwagger struct {
 }
 
 type WalletSettingsResponse struct {
+	Label             string     `json:"label"`
 	FeeRateMin        *int       `json:"fee_rate_min"`
 	FeeRateMax        *int       `json:"fee_rate_max"`
 	FeeMultiplier     *float64   `json:"fee_multiplier"`

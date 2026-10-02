@@ -103,7 +103,46 @@ func DeleteWalletWebhook(ctx http.Context) http.Response {
 	return ctx.Response().NoContent()
 }
 
+// TestWalletWebhook godoc
+// @Summary      Send a signed test webhook
+// @Description  Posts one webhook.test body to the webhook URL, signed the same way as a normal delivery. A refused URL is an error, not a success.
+// @Tags         Wallet Webhooks
+// @Security     BearerAuth
+// @Produce      json
+// @Param        walletId   path  string  true  "Wallet UUID"
+// @Param        webhookId  path  string  true  "Webhook UUID"
+// @Success      200  {object}  WebhookTestResponse
+// @Failure      403  {object}  ErrorResponse
+// @Failure      404  {object}  ErrorResponse
+// @Failure      502  {object}  ErrorResponse
+// @Router       /wallets/{walletId}/webhooks/{webhookId}/test [post]
+func TestWalletWebhook(ctx http.Context) http.Response {
+	wallet := ctx.Value("wallet").(*models.Wallet)
+	if resp := authorize(ctx, "wallet.manage-webhooks", map[string]any{"wallet_id": wallet.ID}); resp != nil {
+		return resp
+	}
+
+	webhookID, err := uuid.Parse(ctx.Request().Route("webhookId"))
+	if err != nil {
+		return ctx.Response().Json(http.StatusBadRequest, http.Json{"error": "invalid webhook id"})
+	}
+
+	cfg, err := container.Get().WebhookConfigRepo.FindByIDAndWallet(webhookID, wallet.ID)
+	if err != nil || cfg == nil {
+		return ctx.Response().Json(http.StatusNotFound, http.Json{"error": "webhook not found"})
+	}
+
+	if err := container.Get().WebhookService.SendTest(ctx.Context(), cfg, wallet.ID); err != nil {
+		return ctx.Response().Json(http.StatusBadGateway, http.Json{"error": "webhook test delivery failed"})
+	}
+	return ctx.Response().Json(http.StatusOK, http.Json{"delivered": true})
+}
+
 // ---- Request/Response types ----
+
+type WebhookTestResponse struct {
+	Delivered bool `json:"delivered" example:"true"`
+}
 
 type CreateWalletWebhookSwagger struct {
 	URL    string `json:"url" example:"https://example.com/hook"`
