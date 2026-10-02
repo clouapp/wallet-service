@@ -6,6 +6,7 @@ import (
 	"github.com/macrowallets/waas/app/container"
 	"github.com/macrowallets/waas/app/http/responses"
 	"github.com/macrowallets/waas/app/models"
+	"github.com/macrowallets/waas/app/repositories"
 )
 
 // ListChains godoc
@@ -25,9 +26,9 @@ func ListChains(ctx http.Context) http.Response {
 	var err error
 	if env == models.EnvironmentProd || env == models.EnvironmentTest {
 		isTestnet := env == models.EnvironmentTest
-		chainList, err = container.Get().ChainRepo.FindByTestnet(ctx.Context(), isTestnet)
+		chainList, err = container.MustMake[*repositories.ChainRepository]().FindByTestnet(ctx.Context(), isTestnet)
 	} else {
-		chainList, err = container.Get().ChainRepo.FindActive(ctx.Context())
+		chainList, err = container.MustMake[*repositories.ChainRepository]().FindActive(ctx.Context())
 	}
 	if err != nil {
 		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to fetch chains"})
@@ -43,7 +44,7 @@ func GetChain(ctx http.Context) http.Response {
 		return responses.Send(ctx, http.StatusBadRequest, http.Json{"error": "chainId is required"})
 	}
 
-	chain, err := container.Get().ChainRepo.FindByID(ctx.Context(), chainID)
+	chain, err := container.MustMake[*repositories.ChainRepository]().FindByID(ctx.Context(), chainID)
 	if err != nil || chain == nil {
 		return responses.Send(ctx, http.StatusNotFound, http.Json{"error": "chain not found"})
 	}
@@ -56,8 +57,8 @@ func GetChain(ctx http.Context) http.Response {
 		}
 	}
 
-	tokens, _ := container.Get().TokenRepo.FindByChainID(ctx.Context(), chainID)
-	resources, _ := container.Get().ChainResourceRepo.FindByChainID(ctx.Context(), chainID)
+	tokens, _ := container.MustMake[*repositories.TokenRepository]().FindByChainID(ctx.Context(), chainID)
+	resources, _ := container.MustMake[*repositories.ChainResourceRepository]().FindByChainID(ctx.Context(), chainID)
 
 	return ctx.Response().Success().Json(http.Json{
 		"chain":     chain,
@@ -73,7 +74,7 @@ func ListChainTokens(ctx http.Context) http.Response {
 		return responses.Send(ctx, http.StatusBadRequest, http.Json{"error": "chainId is required"})
 	}
 
-	chain, err := container.Get().ChainRepo.FindByID(ctx.Context(), chainID)
+	chain, err := container.MustMake[*repositories.ChainRepository]().FindByID(ctx.Context(), chainID)
 	if err != nil || chain == nil {
 		return responses.Send(ctx, http.StatusNotFound, http.Json{"error": "chain not found"})
 	}
@@ -86,7 +87,7 @@ func ListChainTokens(ctx http.Context) http.Response {
 		}
 	}
 
-	tokens, tokenErr := container.Get().TokenRepo.FindByChainID(ctx.Context(), chainID)
+	tokens, tokenErr := container.MustMake[*repositories.TokenRepository]().FindByChainID(ctx.Context(), chainID)
 	if tokenErr != nil {
 		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to fetch tokens"})
 	}
@@ -101,7 +102,7 @@ func ListChainResources(ctx http.Context) http.Response {
 		return responses.Send(ctx, http.StatusBadRequest, http.Json{"error": "chainId is required"})
 	}
 
-	chain, err := container.Get().ChainRepo.FindByID(ctx.Context(), chainID)
+	chain, err := container.MustMake[*repositories.ChainRepository]().FindByID(ctx.Context(), chainID)
 	if err != nil || chain == nil {
 		return responses.Send(ctx, http.StatusNotFound, http.Json{"error": "chain not found"})
 	}
@@ -114,7 +115,7 @@ func ListChainResources(ctx http.Context) http.Response {
 		}
 	}
 
-	resources, resErr := container.Get().ChainResourceRepo.FindByChainID(ctx.Context(), chainID)
+	resources, resErr := container.MustMake[*repositories.ChainResourceRepository]().FindByChainID(ctx.Context(), chainID)
 	if resErr != nil {
 		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to fetch resources"})
 	}

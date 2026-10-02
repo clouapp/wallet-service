@@ -6,6 +6,7 @@ import (
 
 	"github.com/macrowallets/waas/app/container"
 	"github.com/macrowallets/waas/app/http/responses"
+	"github.com/macrowallets/waas/app/repositories"
 	chainpkg "github.com/macrowallets/waas/app/services/chain"
 )
 
@@ -19,7 +20,7 @@ func UTXOOnly() http.Middleware {
 			return
 		}
 
-		wallet, err := container.Get().WalletRepo.FindByID(ctx.Context(), walletID)
+		wallet, err := container.MustMake[*repositories.WalletRepository]().FindByID(ctx.Context(), walletID)
 		if err != nil || wallet == nil {
 			_ = responses.Send(ctx, http.StatusNotFound, http.Json{"error": "wallet not found"}).Abort()
 			return

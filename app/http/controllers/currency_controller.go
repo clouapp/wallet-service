@@ -9,10 +9,11 @@ import (
 	"github.com/macrowallets/waas/app/container"
 	"github.com/macrowallets/waas/app/http/responses"
 	"github.com/macrowallets/waas/app/models"
+	"github.com/macrowallets/waas/app/repositories"
 )
 
 func ListCurrencies(ctx http.Context) http.Response {
-	currencies, err := container.Get().CurrencyRepo.FindAllActive(ctx.Context())
+	currencies, err := container.MustMake[*repositories.CurrencyRepository]().FindAllActive(ctx.Context())
 	if err != nil {
 		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to fetch currencies"})
 	}
@@ -25,7 +26,7 @@ func GetCurrency(ctx http.Context) http.Response {
 		return responses.Send(ctx, http.StatusBadRequest, http.Json{"error": "currency code is required"})
 	}
 
-	currency, err := container.Get().CurrencyRepo.FindByCode(ctx.Context(), code)
+	currency, err := container.MustMake[*repositories.CurrencyRepository]().FindByCode(ctx.Context(), code)
 	if errors.Is(err, models.ErrRepositoryNotFound) {
 		currency, err = nil, nil
 	}

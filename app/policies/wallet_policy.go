@@ -8,6 +8,7 @@ import (
 	contractsaccess "github.com/goravel/framework/contracts/auth/access"
 
 	"github.com/macrowallets/waas/app/container"
+	"github.com/macrowallets/waas/app/repositories"
 )
 
 // WalletPolicy defines gate abilities for Wallet resources.
@@ -22,7 +23,7 @@ func walletUserRole(ctx context.Context, walletID uuid.UUID) string {
 	if !ok {
 		return ""
 	}
-	wu, err := container.Get().WalletUserRepo.FindByWalletAndUser(ctx, walletID, userID)
+	wu, err := container.MustMake[*repositories.WalletUserRepository]().FindByWalletAndUser(ctx, walletID, userID)
 	if err != nil || wu == nil {
 		return ""
 	}
@@ -35,7 +36,7 @@ func accountRoleForWallet(ctx context.Context, walletID uuid.UUID) string {
 	if !ok {
 		return ""
 	}
-	w, err := container.Get().WalletRepo.FindByID(ctx, walletID)
+	w, err := container.MustMake[*repositories.WalletRepository]().FindByID(ctx, walletID)
 	if err != nil || w == nil {
 		return ""
 	}

@@ -8,6 +8,7 @@ import (
 	"github.com/macrowallets/waas/app/http/pagination"
 	"github.com/macrowallets/waas/app/http/requests"
 	"github.com/macrowallets/waas/app/http/responses"
+	"github.com/macrowallets/waas/app/repositories"
 )
 
 // GenerateAddress godoc
@@ -125,7 +126,7 @@ func ListWalletAddresses(ctx http.Context) http.Response {
 		})
 	}
 	limit, offset := pagination.ParseParams(ctx, 20)
-	addrs, total, err := container.Get().AddressRepo.PaginateByWalletID(ctx.Context(), walletID, limit, offset)
+	addrs, total, err := container.MustMake[*repositories.AddressRepository]().PaginateByWalletID(ctx.Context(), walletID, limit, offset)
 	if err != nil {
 		return responses.Send(ctx, http.StatusInternalServerError, http.Json{
 			"error": "failed to fetch addresses",

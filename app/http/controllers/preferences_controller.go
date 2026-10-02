@@ -8,6 +8,7 @@ import (
 	"github.com/macrowallets/waas/app/http/requests"
 	"github.com/macrowallets/waas/app/http/responses"
 	"github.com/macrowallets/waas/app/models"
+	"github.com/macrowallets/waas/app/repositories"
 )
 
 func GetPreferences(ctx http.Context) http.Response {
@@ -37,11 +38,9 @@ func UpdatePreferences(ctx http.Context) http.Response {
 	}
 
 	if req.PreferredFiatCode != "" {
-		if container.Get().CurrencyRepo != nil {
-			cur, err := container.Get().CurrencyRepo.FindByCode(ctx.Context(), req.PreferredFiatCode)
-			if err != nil || cur == nil || !cur.Active || cur.Type != models.CurrencyTypeFiat {
-				return responses.Send(ctx, http.StatusBadRequest, http.Json{"error": "invalid fiat currency code"})
-			}
+		cur, err := container.MustMake[*repositories.CurrencyRepository]().FindByCode(ctx.Context(), req.PreferredFiatCode)
+		if err != nil || cur == nil || !cur.Active || cur.Type != models.CurrencyTypeFiat {
+			return responses.Send(ctx, http.StatusBadRequest, http.Json{"error": "invalid fiat currency code"})
 		}
 		prefs.PreferredFiatCode = req.PreferredFiatCode
 	}

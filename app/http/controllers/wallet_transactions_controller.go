@@ -11,6 +11,7 @@ import (
 	"github.com/macrowallets/waas/app/http/pagination"
 	"github.com/macrowallets/waas/app/http/responses"
 	"github.com/macrowallets/waas/app/models"
+	"github.com/macrowallets/waas/app/repositories"
 )
 
 // ListWalletTransactions godoc
@@ -34,7 +35,7 @@ func ListWalletTransactions(ctx http.Context) http.Response {
 	limit, offset := pagination.ParseParams(ctx, 50)
 	txType := ctx.Request().Query("type", "")
 	status := ctx.Request().Query("status", "")
-	transactions, total, err := container.Get().TransactionRepo.FindByWallet(ctx.Context(), wallet.ID, txType, status, limit, offset)
+	transactions, total, err := container.MustMake[*repositories.TransactionRepository]().FindByWallet(ctx.Context(), wallet.ID, txType, status, limit, offset)
 	if err != nil {
 		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to fetch transactions"})
 	}
@@ -59,7 +60,7 @@ func GetWalletTransaction(ctx http.Context) http.Response {
 	wallet := ctx.Value("wallet").(*models.Wallet)
 
 	txIDStr := ctx.Request().Route("txId")
-	tx, err := container.Get().TransactionRepo.FindByIDAndWallet(ctx.Context(), txIDStr, wallet.ID)
+	tx, err := container.MustMake[*repositories.TransactionRepository]().FindByIDAndWallet(ctx.Context(), txIDStr, wallet.ID)
 	if err != nil || tx == nil {
 		return responses.Send(ctx, http.StatusNotFound, http.Json{"error": "transaction not found"})
 	}
@@ -71,7 +72,7 @@ func GetWalletTransaction(ctx http.Context) http.Response {
 // loadAssetDecimalsCatalog reads the chain and its active tokens; a failed read
 // leaves those decimals unknown instead of failing the listing.
 func loadAssetDecimalsCatalog(ctx context.Context, chainID string) assetDecimalsCatalog {
-	chainRecord, chainErr := container.Get().ChainRepo.FindByID(ctx, chainID)
+	chainRecord, chainErr := container.MustMake[*repositories.ChainRepository]().FindByID(ctx, chainID)
 	if errors.Is(chainErr, models.ErrRepositoryNotFound) {
 		chainRecord, chainErr = nil, nil
 	}
@@ -79,7 +80,7 @@ func loadAssetDecimalsCatalog(ctx context.Context, chainID string) assetDecimals
 		slog.Warn("load chain for transaction decimals", "chain", chainID, "error", chainErr)
 		chainRecord = nil
 	}
-	tokens, tokenErr := container.Get().TokenRepo.FindByChainID(ctx, chainID)
+	tokens, tokenErr := container.MustMake[*repositories.TokenRepository]().FindByChainID(ctx, chainID)
 	if tokenErr != nil {
 		slog.Warn("load tokens for transaction decimals", "chain", chainID, "error", tokenErr)
 		tokens = nil

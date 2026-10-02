@@ -13,6 +13,7 @@ import (
 	"github.com/macrowallets/waas/app/container"
 	"github.com/macrowallets/waas/app/jobs"
 	"github.com/macrowallets/waas/app/models"
+	"github.com/macrowallets/waas/app/repositories"
 )
 
 type RefreshTx struct{}
@@ -55,7 +56,7 @@ func (c *RefreshTx) Handle(ctx console.Context) error {
 
 	ctr := container.Get()
 
-	tx, err := ctr.TransactionRepo.FindByChainAndTxHash(context.Background(), chain, txHash)
+	tx, err := container.MustMake[*repositories.TransactionRepository]().FindByChainAndTxHash(context.Background(), chain, txHash)
 	if err != nil && !errors.Is(err, models.ErrRepositoryNotFound) {
 		ctx.Error("failed to look up transaction: " + err.Error())
 		return fmt.Errorf("look up transaction: %w", err)
@@ -65,7 +66,7 @@ func (c *RefreshTx) Handle(ctx console.Context) error {
 		return fmt.Errorf("transaction not found: chain=%s tx_hash=%s", chain, txHash)
 	}
 
-	wallet, err := ctr.WalletRepo.FindByID(context.Background(), tx.WalletID)
+	wallet, err := container.MustMake[*repositories.WalletRepository]().FindByID(context.Background(), tx.WalletID)
 	if err != nil && !errors.Is(err, models.ErrRepositoryNotFound) {
 		ctx.Error("failed to load wallet for transaction: " + err.Error())
 		return fmt.Errorf("load wallet for tx %s: %w", txHash, err)

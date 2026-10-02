@@ -6,6 +6,7 @@ import (
 	"github.com/goravel/framework/contracts/validation"
 
 	"github.com/macrowallets/waas/app/container"
+	"github.com/macrowallets/waas/app/repositories"
 )
 
 type AddWhitelistEntryRequest struct {
@@ -36,7 +37,7 @@ func (r *AddWhitelistEntryRequest) PrepareForValidation(ctx http.Context, data v
 	if err != nil {
 		return nil
 	}
-	w, err := container.Get().WalletRepo.FindByID(ctx.Context(), walletID)
+	w, err := container.MustMake[*repositories.WalletRepository]().FindByID(ctx.Context(), walletID)
 	if err != nil || w == nil {
 		return nil
 	}

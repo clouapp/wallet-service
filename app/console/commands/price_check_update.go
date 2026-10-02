@@ -10,6 +10,7 @@ import (
 
 	"github.com/macrowallets/waas/app/container"
 	"github.com/macrowallets/waas/app/models"
+	"github.com/macrowallets/waas/app/repositories"
 )
 
 type PriceCheckUpdate struct{}
@@ -30,7 +31,7 @@ func (c *PriceCheckUpdate) Handle(ctx console.Context) error {
 	ctr := container.Get()
 	bgCtx := context.Background()
 
-	staleCryptos, err := ctr.CurrencyRepo.FindStale(bgCtx, models.CurrencyTypeCrypto, 1*time.Minute)
+	staleCryptos, err := container.MustMake[*repositories.CurrencyRepository]().FindStale(bgCtx, models.CurrencyTypeCrypto, 1*time.Minute)
 	if err != nil {
 		ctx.Error("failed to check stale cryptos: " + err.Error())
 		return err
@@ -44,7 +45,7 @@ func (c *PriceCheckUpdate) Handle(ctx console.Context) error {
 			}
 		}
 
-		stillStale, _ := ctr.CurrencyRepo.FindStale(bgCtx, models.CurrencyTypeCrypto, 1*time.Minute)
+		stillStale, _ := container.MustMake[*repositories.CurrencyRepository]().FindStale(bgCtx, models.CurrencyTypeCrypto, 1*time.Minute)
 		if len(stillStale) > 0 {
 			codes := make([]string, len(stillStale))
 			for i, c := range stillStale {
@@ -58,7 +59,7 @@ func (c *PriceCheckUpdate) Handle(ctx console.Context) error {
 		ctx.Info("all crypto prices are up to date")
 	}
 
-	staleFiats, err := ctr.CurrencyRepo.FindStale(bgCtx, models.CurrencyTypeFiat, 1*time.Hour)
+	staleFiats, err := container.MustMake[*repositories.CurrencyRepository]().FindStale(bgCtx, models.CurrencyTypeFiat, 1*time.Hour)
 	if err != nil {
 		ctx.Error("failed to check stale fiats: " + err.Error())
 		return err

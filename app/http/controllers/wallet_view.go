@@ -11,6 +11,7 @@ import (
 
 	"github.com/macrowallets/waas/app/container"
 	"github.com/macrowallets/waas/app/models"
+	"github.com/macrowallets/waas/app/repositories"
 )
 
 // walletNetwork is the network a wallet's chain record really points at (for
@@ -86,7 +87,7 @@ func loadWalletListItems(ctx context.Context, wallets []models.Wallet) ([]Wallet
 	for _, wallet := range wallets {
 		walletIDs = append(walletIDs, wallet.ID)
 	}
-	balanceRows, err := container.Get().WalletAssetBalanceRepo.ListByWallets(ctx, walletIDs)
+	balanceRows, err := container.MustMake[*repositories.WalletAssetBalanceRepository]().ListByWallets(ctx, walletIDs)
 	if err != nil {
 		return nil, fmt.Errorf("list wallet asset balances: %w", err)
 	}
@@ -101,7 +102,7 @@ func loadWalletListItems(ctx context.Context, wallets []models.Wallet) ([]Wallet
 	for _, wallet := range wallets {
 		tokens, loaded := tokensByChain[wallet.Chain]
 		if !loaded {
-			tokens, err = container.Get().TokenRepo.FindByChainID(ctx, wallet.Chain)
+			tokens, err = container.MustMake[*repositories.TokenRepository]().FindByChainID(ctx, wallet.Chain)
 			if err != nil {
 				return nil, fmt.Errorf("list tokens of chain %s: %w", wallet.Chain, err)
 			}
@@ -129,7 +130,7 @@ func cachedWalletNetworkResolver(ctx context.Context) func(chainID string) model
 // resolveWalletChainNetwork reads the wallet's chain record; a failed read leaves
 // the network unknown instead of failing the wallet response.
 func resolveWalletChainNetwork(ctx context.Context, chainID string) models.ResolvedNetwork {
-	chainRecord, err := container.Get().ChainRepo.FindByID(ctx, chainID)
+	chainRecord, err := container.MustMake[*repositories.ChainRepository]().FindByID(ctx, chainID)
 	if errors.Is(err, models.ErrRepositoryNotFound) {
 		chainRecord, err = nil, nil
 	}

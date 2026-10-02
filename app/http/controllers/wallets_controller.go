@@ -13,6 +13,7 @@ import (
 	"github.com/macrowallets/waas/app/http/requests"
 	"github.com/macrowallets/waas/app/http/responses"
 	"github.com/macrowallets/waas/app/models"
+	"github.com/macrowallets/waas/app/repositories"
 	wallet "github.com/macrowallets/waas/app/services/wallet"
 )
 
@@ -94,7 +95,7 @@ func ListWallets(ctx http.Context) http.Response {
 	limit, offset := pagination.ParseParams(ctx, 20)
 	chain := ctx.Request().Query("chain", "")
 
-	wallets, total, err := container.Get().WalletRepo.PaginateByAccount(ctx.Context(), accountID, chain, limit, offset)
+	wallets, total, err := container.MustMake[*repositories.WalletRepository]().PaginateByAccount(ctx.Context(), accountID, chain, limit, offset)
 	if err != nil {
 		return responses.Send(ctx, http.StatusInternalServerError, http.Json{
 			"error": "failed to fetch wallets",
@@ -137,7 +138,7 @@ func GetWallet(ctx http.Context) http.Response {
 		})
 	}
 
-	w, err := container.Get().WalletRepo.FindByIDAndAccount(ctx.Context(), id, accountID)
+	w, err := container.MustMake[*repositories.WalletRepository]().FindByIDAndAccount(ctx.Context(), id, accountID)
 	if err != nil || w == nil {
 		return responses.Send(ctx, http.StatusNotFound, http.Json{
 			"error": "wallet not found",
@@ -155,7 +156,7 @@ func CreateWalletAdmin(ctx http.Context) http.Response {
 	}
 
 	if env, ok := ctx.Value("account_environment").(string); ok && env != "" {
-		chainRecord, _ := container.Get().ChainRepo.FindByID(ctx.Context(), req.Chain)
+		chainRecord, _ := container.MustMake[*repositories.ChainRepository]().FindByID(ctx.Context(), req.Chain)
 		if chainRecord != nil && chainRecord.IsTestnet != (env == models.EnvironmentTest) {
 			return responses.Send(ctx, http.StatusForbidden, http.Json{"error": "chain not available in current environment"})
 		}

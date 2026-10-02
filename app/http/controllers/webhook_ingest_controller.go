@@ -12,6 +12,7 @@ import (
 	"github.com/macrowallets/waas/app/container"
 	"github.com/macrowallets/waas/app/http/responses"
 	"github.com/macrowallets/waas/app/models"
+	"github.com/macrowallets/waas/app/repositories"
 	"github.com/macrowallets/waas/app/services/ingest/providers"
 )
 
@@ -37,7 +38,7 @@ func HandleWebhookIngest(ctx http.Context) http.Response {
 		return responses.Send(ctx, http.StatusBadRequest, http.Json{"error": "provider and chainID are required"})
 	}
 
-	sub, err := c.WebhookSubscriptionRepo.FindByProviderAndChain(ctx.Context(), providerName, chainID)
+	sub, err := container.MustMake[*repositories.WebhookSubscriptionRepository]().FindByProviderAndChain(ctx.Context(), providerName, chainID)
 	if errors.Is(err, models.ErrRepositoryNotFound) {
 		sub, err = nil, nil
 	}

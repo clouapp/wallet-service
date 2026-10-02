@@ -10,6 +10,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/macrowallets/waas/app/container"
 	"github.com/macrowallets/waas/app/models"
+	"github.com/macrowallets/waas/app/repositories"
 )
 
 type RefreshWalletTokens struct{}
@@ -37,7 +38,7 @@ func (j *RefreshWalletTokens) Handle(args ...any) error {
 	}
 
 	c := container.Get()
-	wallet, err := c.WalletRepo.FindByID(context.Background(), walletID)
+	wallet, err := container.MustMake[*repositories.WalletRepository]().FindByID(context.Background(), walletID)
 	if err != nil && !errors.Is(err, models.ErrRepositoryNotFound) {
 		return fmt.Errorf("refresh_wallet_tokens: load wallet: %w", err)
 	}
