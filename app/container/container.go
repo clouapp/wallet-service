@@ -44,8 +44,8 @@ type Container struct {
 	WalletRepo                *repositories.WalletRepository
 	WalletUserRepo            *repositories.WalletUserRepository
 	AddressRepo               *repositories.AddressRepository
-	TransactionRepo           repositories.TransactionRepository
-	WithdrawalRepo            repositories.WithdrawalRepository
+	TransactionRepo           *repositories.TransactionRepository
+	WithdrawalRepo            *repositories.WithdrawalRepository
 	WebhookConfigRepo         repositories.WebhookConfigRepository
 	WebhookEventRepo          repositories.WebhookEventRepository
 	WhitelistEntryRepo        *repositories.WhitelistEntryRepository

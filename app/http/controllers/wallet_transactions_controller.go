@@ -32,7 +32,7 @@ func ListWalletTransactions(ctx http.Context) http.Response {
 	limit, offset := pagination.ParseParams(ctx, 50)
 	txType := ctx.Request().Query("type", "")
 	status := ctx.Request().Query("status", "")
-	transactions, total, err := container.Get().TransactionRepo.FindByWallet(wallet.ID, txType, status, limit, offset)
+	transactions, total, err := container.Get().TransactionRepo.FindByWallet(ctx.Context(), wallet.ID, txType, status, limit, offset)
 	if err != nil {
 		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to fetch transactions"})
 	}
@@ -57,7 +57,7 @@ func GetWalletTransaction(ctx http.Context) http.Response {
 	wallet := ctx.Value("wallet").(*models.Wallet)
 
 	txIDStr := ctx.Request().Route("txId")
-	tx, err := container.Get().TransactionRepo.FindByIDAndWallet(txIDStr, wallet.ID)
+	tx, err := container.Get().TransactionRepo.FindByIDAndWallet(ctx.Context(), txIDStr, wallet.ID)
 	if err != nil || tx == nil {
 		return responses.Send(ctx, http.StatusNotFound, http.Json{"error": "transaction not found"})
 	}

@@ -56,11 +56,11 @@ func newFakeWithdrawals() *fakeWithdrawals {
 	}
 }
 
-func (f *fakeWithdrawals) FindByTransactionID(transactionID uuid.UUID) (*models.Withdrawal, error) {
+func (f *fakeWithdrawals) FindByTransactionID(_ context.Context, transactionID uuid.UUID) (*models.Withdrawal, error) {
 	return f.byTransaction[transactionID], nil
 }
 
-func (f *fakeWithdrawals) FindByIDAndWallet(withdrawalID, walletID uuid.UUID) (*models.Withdrawal, error) {
+func (f *fakeWithdrawals) FindByIDAndWallet(_ context.Context, withdrawalID, walletID uuid.UUID) (*models.Withdrawal, error) {
 	w := f.byID[withdrawalID]
 	if w == nil || w.WalletID != walletID {
 		return nil, nil
@@ -68,18 +68,23 @@ func (f *fakeWithdrawals) FindByIDAndWallet(withdrawalID, walletID uuid.UUID) (*
 	return w, nil
 }
 
-func (f *fakeWithdrawals) FindBroadcastWithConfirmedTransaction(limit int) ([]models.Withdrawal, error) {
+func (f *fakeWithdrawals) FindBroadcastWithConfirmedTransaction(_ context.Context, limit int) ([]models.Withdrawal, error) {
 	return f.toBackfill, nil
 }
 
-func (f *fakeWithdrawals) UpdateFields(id uuid.UUID, fields map[string]any) error {
-	f.updates[id] = fields
+func (f *fakeWithdrawals) MarkConfirmed(_ context.Context, id, transactionID uuid.UUID) error {
+	f.updates[id] = map[string]any{
+		"status":         models.WithdrawalStatusConfirmed,
+		"transaction_id": transactionID,
+	}
 	return nil
 }
 
 type fakeTransactions map[uuid.UUID]*models.Transaction
 
-func (f fakeTransactions) FindByID(id uuid.UUID) (*models.Transaction, error) { return f[id], nil }
+func (f fakeTransactions) FindByID(_ context.Context, id uuid.UUID) (*models.Transaction, error) {
+	return f[id], nil
+}
 
 type fakeWallets map[uuid.UUID]*models.Wallet
 

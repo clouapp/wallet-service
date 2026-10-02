@@ -62,6 +62,11 @@ type addressReader interface {
 	FindByWalletID(ctx context.Context, walletID uuid.UUID) ([]models.Address, error)
 }
 
+// transactionWriter is the row sweep persists after a broadcast. Signing does not go through it.
+type transactionWriter interface {
+	Create(ctx context.Context, tx *models.Transaction) error
+}
+
 type service struct {
 	registry    *chain.Registry
 	mpc         mpcpkg.Service
@@ -70,7 +75,7 @@ type service struct {
 	webhookSvc  *webhook.Service
 	walletRepo  walletReader
 	addressRepo addressReader
-	txRepo      repositories.TransactionRepository
+	txRepo      transactionWriter
 	accountRepo accountReader
 	chainRepo   repositories.ChainRepository
 
@@ -90,7 +95,7 @@ func NewService(
 	webhookSvc *webhook.Service,
 	walletRepo walletReader,
 	addressRepo addressReader,
-	txRepo repositories.TransactionRepository,
+	txRepo transactionWriter,
 	accountRepo accountReader,
 	chainRepo repositories.ChainRepository,
 ) Service {

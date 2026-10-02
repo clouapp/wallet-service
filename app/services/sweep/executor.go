@@ -234,7 +234,7 @@ func (s *service) broadcastLeg(
 			tx.TokenContract = token.Contract
 		}
 
-		if err := s.txRepo.Create(tx); err != nil {
+		if err := s.txRepo.Create(ctx, tx); err != nil {
 			return "", fmt.Errorf("persist %s tx: %w", txType, err)
 		}
 
@@ -297,7 +297,7 @@ func (s *service) broadcastWithdrawal(
 		tx.TokenContract = token.Contract
 	}
 
-	if err := s.txRepo.Create(tx); err != nil {
+	if err := s.txRepo.Create(ctx, tx); err != nil {
 		return nil, fmt.Errorf("persist withdrawal: %w", err)
 	}
 	if s.webhookSvc != nil {

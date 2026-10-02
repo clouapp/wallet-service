@@ -1,186 +1,237 @@
 package repositories
 
 import (
+	"context"
 	"fmt"
+	"time"
 
 	"github.com/google/uuid"
-	"github.com/goravel/framework/facades"
+	"github.com/goravel/framework/contracts/database/orm"
 
 	"github.com/macrowallets/waas/app/models"
+	"github.com/macrowallets/waas/app/repositories/internal/db"
 	"github.com/macrowallets/waas/pkg/amount"
 	"github.com/macrowallets/waas/pkg/types"
 )
 
-type TransactionRepository interface {
-	Create(tx *models.Transaction) error
-	FindByID(id uuid.UUID) (*models.Transaction, error)
-	FindByIDAndWallet(txID string, walletID uuid.UUID) (*models.Transaction, error)
-	FindByIdempotencyKey(key string) (*models.Transaction, error)
-	FindByWallet(walletID uuid.UUID, txType, status string, limit, offset int) ([]models.Transaction, int64, error)
-	FindByChainAndTxHash(chainID, txHash string) (*models.Transaction, error)
-	CountByChainAndTxHash(chainID, txHash, txType string) (int64, error)
-	CountByChainTxHashAndLogIndex(chainID, txHash string, logIndex int, txType string) (int64, error)
-	FindPendingByChain(chainID string) ([]models.Transaction, error)
-	UpdateFields(id uuid.UUID, fields map[string]interface{}) error
-	List(chainID, txType, status, userID string, limit, offset int) ([]models.Transaction, int64, error)
-	ListForAccount(accountID uuid.UUID, chainID, txType, status, userID string, limit, offset int) ([]models.Transaction, int64, error)
-	ListByWalletAndChain(walletID uuid.UUID, chainID string, limit, offset int) ([]models.Transaction, int64, error)
+// TransactionRepository loads and updates transaction rows.
+type TransactionRepository struct {
+	db.Base
 }
 
-type transactionRepository struct{}
-
-func NewTransactionRepository() TransactionRepository {
-	return &transactionRepository{}
+// NewTransactionRepository builds a repository. Nil uses a fresh query per call.
+func NewTransactionRepository(query orm.Query) *TransactionRepository {
+	return &TransactionRepository{Base: db.NewBase(query)}
 }
 
-func (r *transactionRepository) Create(tx *models.Transaction) error {
+// Create inserts a transaction after rejecting a negative amount or fee.
+func (r *TransactionRepository) Create(ctx context.Context, tx *models.Transaction) error {
 	if tx == nil {
 		return fmt.Errorf("transaction is required")
 	}
 	if err := tx.ValidateAmounts(); err != nil {
 		return err
 	}
-	return facades.Orm().Query().Create(tx)
+	if err := r.Query(ctx).Create(tx); err != nil {
+		return fmt.Errorf("create transaction: %w", err)
+	}
+	return nil
 }
 
-func (r *transactionRepository) FindByID(id uuid.UUID) (*models.Transaction, error) {
+// FindByID returns one transaction.
+func (r *TransactionRepository) FindByID(ctx context.Context, id uuid.UUID) (*models.Transaction, error) {
 	var tx models.Transaction
-	if err := facades.Orm().Query().Find(&tx, id); err != nil {
-		return nil, err
+	if err := r.Query(ctx).Find(&tx, id); err != nil {
+		return nil, fmt.Errorf("find transaction: %w", err)
 	}
 	if tx.ID == uuid.Nil {
-		return nil, nil
+		return nil, models.ErrRepositoryNotFound
 	}
 	return &tx, nil
 }
 
-func (r *transactionRepository) FindByIDAndWallet(txID string, walletID uuid.UUID) (*models.Transaction, error) {
+// FindByIDAndWallet returns the transaction when it belongs to walletID.
+func (r *TransactionRepository) FindByIDAndWallet(ctx context.Context, txID string, walletID uuid.UUID) (*models.Transaction, error) {
 	var tx models.Transaction
-	err := facades.Orm().Query().
-		Where("id = ? AND wallet_id = ?", txID, walletID).
-		First(&tx)
-	if err != nil {
-		return nil, err
+	if err := r.Query(ctx).Where("id = ? AND wallet_id = ?", txID, walletID).First(&tx); err != nil {
+		return nil, fmt.Errorf("find transaction: %w", err)
 	}
 	if tx.ID == uuid.Nil {
-		return nil, nil
+		return nil, models.ErrRepositoryNotFound
 	}
 	return &tx, nil
 }
 
-func (r *transactionRepository) FindByIdempotencyKey(key string) (*models.Transaction, error) {
+// FindByIdempotencyKey returns the transaction stored under a withdrawal idempotency key.
+func (r *TransactionRepository) FindByIdempotencyKey(ctx context.Context, key string) (*models.Transaction, error) {
 	var tx models.Transaction
-	err := facades.Orm().Query().Where("idempotency_key", key).First(&tx)
-	if err != nil {
-		return nil, err
+	if err := r.Query(ctx).Where("idempotency_key", key).First(&tx); err != nil {
+		return nil, fmt.Errorf("find transaction by idempotency key: %w", err)
 	}
 	if tx.ID == uuid.Nil {
-		return nil, nil
+		return nil, models.ErrRepositoryNotFound
 	}
 	return &tx, nil
 }
 
-func (r *transactionRepository) FindByWallet(walletID uuid.UUID, txType, status string, limit, offset int) ([]models.Transaction, int64, error) {
-	countQuery := facades.Orm().Query().
-		Model(&models.Transaction{}).
-		Where("wallet_id = ?", walletID)
+// FindByWallet lists transactions for a wallet, optionally filtered by type and status.
+func (r *TransactionRepository) FindByWallet(ctx context.Context, walletID uuid.UUID, txType, status string, limit, offset int) ([]models.Transaction, int64, error) {
+	countQuery := r.Query(ctx).Model(&models.Transaction{}).Where("wallet_id = ?", walletID)
+	dataQuery := r.Query(ctx).Where("wallet_id = ?", walletID)
 	if txType != "" {
 		countQuery = countQuery.Where("tx_type = ?", txType)
-	}
-	if status != "" {
-		countQuery = countQuery.Where("status = ?", status)
-	}
-	total, err := countQuery.Count()
-	if err != nil {
-		return nil, 0, err
-	}
-
-	dataQuery := facades.Orm().Query().
-		Where("wallet_id = ?", walletID)
-	if txType != "" {
 		dataQuery = dataQuery.Where("tx_type = ?", txType)
 	}
 	if status != "" {
+		countQuery = countQuery.Where("status = ?", status)
 		dataQuery = dataQuery.Where("status = ?", status)
 	}
-
+	total, err := countQuery.Count()
+	if err != nil {
+		return nil, 0, fmt.Errorf("count transactions: %w", err)
+	}
 	var transactions []models.Transaction
-	err = dataQuery.Offset(offset).Limit(limit).Find(&transactions)
-	return transactions, total, err
+	if err := dataQuery.Offset(offset).Limit(limit).Find(&transactions); err != nil {
+		return nil, 0, fmt.Errorf("list transactions: %w", err)
+	}
+	return transactions, total, nil
 }
 
-func (r *transactionRepository) FindByChainAndTxHash(chainID, txHash string) (*models.Transaction, error) {
+// FindByChainAndTxHash returns the transaction for a chain and hash.
+func (r *TransactionRepository) FindByChainAndTxHash(ctx context.Context, chainID, txHash string) (*models.Transaction, error) {
 	var tx models.Transaction
-	err := facades.Orm().Query().
-		Where("chain = ? AND tx_hash = ?", chainID, txHash).
-		First(&tx)
-	if err != nil {
-		return nil, err
+	if err := r.Query(ctx).Where("chain = ? AND tx_hash = ?", chainID, txHash).First(&tx); err != nil {
+		return nil, fmt.Errorf("find transaction by hash: %w", err)
 	}
 	if tx.ID == uuid.Nil {
-		return nil, nil
+		return nil, models.ErrRepositoryNotFound
 	}
 	return &tx, nil
 }
 
-func (r *transactionRepository) CountByChainAndTxHash(chainID, txHash, txType string) (int64, error) {
-	return facades.Orm().Query().
-		Model(&models.Transaction{}).
+// CountByChainAndTxHash counts rows for a chain, hash, and type.
+func (r *TransactionRepository) CountByChainAndTxHash(ctx context.Context, chainID, txHash, txType string) (int64, error) {
+	count, err := r.Query(ctx).Model(&models.Transaction{}).
 		Where("chain", chainID).
 		Where("tx_hash", txHash).
 		Where("tx_type", txType).
 		Count()
+	if err != nil {
+		return 0, fmt.Errorf("count transactions by hash: %w", err)
+	}
+	return count, nil
 }
 
-func (r *transactionRepository) CountByChainTxHashAndLogIndex(chainID, txHash string, logIndex int, txType string) (int64, error) {
-	return facades.Orm().Query().
-		Model(&models.Transaction{}).
+// CountByChainTxHashAndLogIndex counts rows for a chain, hash, log index, and type.
+func (r *TransactionRepository) CountByChainTxHashAndLogIndex(ctx context.Context, chainID, txHash string, logIndex int, txType string) (int64, error) {
+	count, err := r.Query(ctx).Model(&models.Transaction{}).
 		Where("chain", chainID).
 		Where("tx_hash", txHash).
 		Where("log_index", logIndex).
 		Where("tx_type", txType).
 		Count()
+	if err != nil {
+		return 0, fmt.Errorf("count transactions by log index: %w", err)
+	}
+	return count, nil
 }
 
-// FindPendingByChain returns every transaction on `chainID` that the confirmation
+// FindPendingByChain returns every transaction on chainID that the confirmation
 // loop must advance — deposits plus outbound legs (withdrawals, sweeps, gas seeds).
-// Outbound rows are inserted by the sweep/withdrawal executor with status=confirming
-// and block_number=0; the confirmation service reconciles their block numbers and
-// drives them to confirmed. Limiting this query to deposits would strand those rows
-// at `confirming` forever.
-func (r *transactionRepository) FindPendingByChain(chainID string) ([]models.Transaction, error) {
+func (r *TransactionRepository) FindPendingByChain(ctx context.Context, chainID string) ([]models.Transaction, error) {
 	var pending []models.Transaction
-	err := facades.Orm().Query().
+	err := r.Query(ctx).
 		Where("chain", chainID).
-		WhereIn("tx_type", []interface{}{
+		WhereIn("tx_type", []any{
 			models.TxTypeDeposit,
 			models.TxTypeWithdrawal,
 			models.TxTypeSweep,
 			models.TxTypeGasSeed,
 		}).
-		WhereIn("status", []interface{}{string(types.TxStatusPending), string(types.TxStatusConfirming)}).
+		WhereIn("status", []any{string(types.TxStatusPending), string(types.TxStatusConfirming)}).
 		Find(&pending)
-	return pending, err
+	if err != nil {
+		return nil, fmt.Errorf("list pending transactions: %w", err)
+	}
+	return pending, nil
 }
 
-func (r *transactionRepository) UpdateFields(id uuid.UUID, fields map[string]interface{}) error {
-	if err := amount.RequireNonNegativeColumns(fields, models.TransactionAmountColumns...); err != nil {
+// SetBlockNumber sets transactions.block_number.
+func (r *TransactionRepository) SetBlockNumber(ctx context.Context, id uuid.UUID, block uint64) error {
+	return r.updateColumns(ctx, id, map[string]any{"block_number": block}, "set transaction block number")
+}
+
+// RecordConfirmations stores the confirmation count, status, and confirmed_at together.
+func (r *TransactionRepository) RecordConfirmations(ctx context.Context, id uuid.UUID, confirmations int, status string, confirmedAt *time.Time) error {
+	return r.updateColumns(ctx, id, map[string]any{
+		"confirmations": confirmations,
+		"status":        status,
+		"confirmed_at":  confirmedAt,
+	}, "record transaction confirmations")
+}
+
+// SetConfirmations sets transactions.confirmations.
+func (r *TransactionRepository) SetConfirmations(ctx context.Context, id uuid.UUID, confirmations int) error {
+	return r.updateColumns(ctx, id, map[string]any{"confirmations": confirmations}, "set transaction confirmations")
+}
+
+// SetAmount sets transactions.amount.
+func (r *TransactionRepository) SetAmount(ctx context.Context, id uuid.UUID, value string) error {
+	return r.updateColumns(ctx, id, map[string]any{"amount": value}, "set transaction amount")
+}
+
+// SetIdempotencyKey sets transactions.idempotency_key.
+func (r *TransactionRepository) SetIdempotencyKey(ctx context.Context, id uuid.UUID, key string) error {
+	return r.updateColumns(ctx, id, map[string]any{"idempotency_key": key}, "set transaction idempotency key")
+}
+
+// List returns transactions matching the optional filters, newest first.
+func (r *TransactionRepository) List(ctx context.Context, chainID, txType, status, userID string, limit, offset int) ([]models.Transaction, int64, error) {
+	if limit <= 0 {
+		limit = 50
+	}
+	countQuery := r.Query(ctx).Model(&models.Transaction{})
+	dataQuery := r.Query(ctx)
+	countQuery, dataQuery = applyTransactionFilters(countQuery, dataQuery, chainID, txType, status, userID)
+	return listTransactions(countQuery, dataQuery, limit, offset, "created_at DESC")
+}
+
+// ListForAccount is the account-scoped variant of List used by the external API.
+func (r *TransactionRepository) ListForAccount(ctx context.Context, accountID uuid.UUID, chainID, txType, status, userID string, limit, offset int) ([]models.Transaction, int64, error) {
+	if limit <= 0 {
+		limit = 50
+	}
+	scope := "wallet_id IN (SELECT id FROM wallets WHERE account_id = ?)"
+	countQuery := r.Query(ctx).Model(&models.Transaction{}).Where(scope, accountID)
+	dataQuery := r.Query(ctx).Where(scope, accountID)
+	countQuery, dataQuery = applyTransactionFilters(countQuery, dataQuery, chainID, txType, status, userID)
+	return listTransactions(countQuery, dataQuery, limit, offset, "created_at DESC")
+}
+
+// ListByWalletAndChain lists one wallet's transactions on a chain, newest block first.
+func (r *TransactionRepository) ListByWalletAndChain(ctx context.Context, walletID uuid.UUID, chainID string, limit, offset int) ([]models.Transaction, int64, error) {
+	if limit <= 0 {
+		limit = 50
+	}
+	countQuery := r.Query(ctx).Model(&models.Transaction{}).Where("wallet_id = ?", walletID).Where("chain = ?", chainID)
+	dataQuery := r.Query(ctx).Where("wallet_id = ?", walletID).Where("chain = ?", chainID)
+	return listTransactions(countQuery, dataQuery, limit, offset, "block_number DESC, created_at DESC")
+}
+
+func (r *TransactionRepository) updateColumns(ctx context.Context, id uuid.UUID, columns map[string]any, op string) error {
+	if id == uuid.Nil {
+		return fmt.Errorf("transaction id is required")
+	}
+	if err := amount.RequireNonNegativeColumns(columns, models.TransactionAmountColumns...); err != nil {
 		return err
 	}
-	_, err := facades.Orm().Query().
-		Model(&models.Transaction{}).
-		Where("id", id).
-		Update(fields)
-	return err
+	if _, err := r.Query(ctx).Model(&models.Transaction{}).Where("id", id).Update(columns); err != nil {
+		return fmt.Errorf("%s: %w", op, err)
+	}
+	return nil
 }
 
-func (r *transactionRepository) List(chainID, txType, status, userID string, limit, offset int) ([]models.Transaction, int64, error) {
-	if limit <= 0 {
-		limit = 50
-	}
-
-	countQuery := facades.Orm().Query().Model(&models.Transaction{})
-	dataQuery := facades.Orm().Query()
+func applyTransactionFilters(countQuery, dataQuery orm.Query, chainID, txType, status, userID string) (orm.Query, orm.Query) {
 	if chainID != "" {
 		countQuery = countQuery.Where("chain", chainID)
 		dataQuery = dataQuery.Where("chain", chainID)
@@ -197,82 +248,17 @@ func (r *transactionRepository) List(chainID, txType, status, userID string, lim
 		countQuery = countQuery.Where("external_user_id", userID)
 		dataQuery = dataQuery.Where("external_user_id", userID)
 	}
-
-	total, err := countQuery.Count()
-	if err != nil {
-		return nil, 0, err
-	}
-
-	var txs []models.Transaction
-	err = dataQuery.Order("created_at DESC").Limit(limit).Offset(offset).Find(&txs)
-	return txs, total, err
+	return countQuery, dataQuery
 }
 
-// ListForAccount is the account-scoped variant of List used by the external API
-// to prevent IDOR: it restricts results to transactions whose wallet belongs to
-// accountID. Used by GET /api/v1/users/{external_id}/transactions so callers
-// cannot read transactions for an external_user_id that belongs to another
-// account.
-func (r *transactionRepository) ListForAccount(accountID uuid.UUID, chainID, txType, status, userID string, limit, offset int) ([]models.Transaction, int64, error) {
-	if limit <= 0 {
-		limit = 50
-	}
-
-	countQuery := facades.Orm().Query().Model(&models.Transaction{}).
-		Where("wallet_id IN (SELECT id FROM wallets WHERE account_id = ?)", accountID)
-	dataQuery := facades.Orm().Query().
-		Where("wallet_id IN (SELECT id FROM wallets WHERE account_id = ?)", accountID)
-
-	if chainID != "" {
-		countQuery = countQuery.Where("chain", chainID)
-		dataQuery = dataQuery.Where("chain", chainID)
-	}
-	if txType != "" {
-		countQuery = countQuery.Where("tx_type", txType)
-		dataQuery = dataQuery.Where("tx_type", txType)
-	}
-	if status != "" {
-		countQuery = countQuery.Where("status", status)
-		dataQuery = dataQuery.Where("status", status)
-	}
-	if userID != "" {
-		countQuery = countQuery.Where("external_user_id", userID)
-		dataQuery = dataQuery.Where("external_user_id", userID)
-	}
-
+func listTransactions(countQuery, dataQuery orm.Query, limit, offset int, order string) ([]models.Transaction, int64, error) {
 	total, err := countQuery.Count()
 	if err != nil {
-		return nil, 0, err
+		return nil, 0, fmt.Errorf("count transactions: %w", err)
 	}
-
 	var txs []models.Transaction
-	err = dataQuery.Order("created_at DESC").Limit(limit).Offset(offset).Find(&txs)
-	return txs, total, err
-}
-
-func (r *transactionRepository) ListByWalletAndChain(walletID uuid.UUID, chainID string, limit, offset int) ([]models.Transaction, int64, error) {
-	if limit <= 0 {
-		limit = 50
+	if err := dataQuery.Order(order).Limit(limit).Offset(offset).Find(&txs); err != nil {
+		return nil, 0, fmt.Errorf("list transactions: %w", err)
 	}
-
-	countQuery := facades.Orm().Query().
-		Model(&models.Transaction{}).
-		Where("wallet_id = ?", walletID).
-		Where("chain = ?", chainID)
-
-	total, err := countQuery.Count()
-	if err != nil {
-		return nil, 0, err
-	}
-
-	var transactions []models.Transaction
-	err = facades.Orm().Query().
-		Where("wallet_id = ?", walletID).
-		Where("chain = ?", chainID).
-		Order("block_number DESC, created_at DESC").
-		Limit(limit).
-		Offset(offset).
-		Find(&transactions)
-
-	return transactions, total, err
+	return txs, total, nil
 }

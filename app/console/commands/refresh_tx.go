@@ -55,12 +55,12 @@ func (c *RefreshTx) Handle(ctx console.Context) error {
 
 	ctr := container.Get()
 
-	tx, err := ctr.TransactionRepo.FindByChainAndTxHash(chain, txHash)
-	if err != nil {
+	tx, err := ctr.TransactionRepo.FindByChainAndTxHash(context.Background(), chain, txHash)
+	if err != nil && !errors.Is(err, models.ErrRepositoryNotFound) {
 		ctx.Error("failed to look up transaction: " + err.Error())
 		return fmt.Errorf("look up transaction: %w", err)
 	}
-	if tx == nil {
+	if err != nil || tx == nil {
 		ctx.Error("transaction not found: chain=" + chain + " tx_hash=" + txHash)
 		return fmt.Errorf("transaction not found: chain=%s tx_hash=%s", chain, txHash)
 	}

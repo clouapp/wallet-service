@@ -42,7 +42,7 @@ func ListWalletWithdrawals(ctx http.Context) http.Response {
 
 	limit, offset := pagination.ParseParams(ctx, 50)
 	status := ctx.Request().Query("status", "")
-	withdrawals, total, err := container.Get().WithdrawalRepo.FindByWallet(wallet.ID, status, limit, offset)
+	withdrawals, total, err := container.Get().WithdrawalRepo.FindByWallet(ctx.Context(), wallet.ID, status, limit, offset)
 	if err != nil {
 		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to fetch withdrawals"})
 	}
@@ -199,8 +199,8 @@ func CreateWalletWithdrawal(ctx http.Context) http.Response {
 		feeEstimate = estimate.Fee
 	}
 
-	existing, findErr := container.Get().WithdrawalRepo.FindByIDAndWallet(withdrawalID, wallet.ID)
-	if findErr != nil {
+	existing, findErr := container.Get().WithdrawalRepo.FindByIDAndWallet(ctx.Context(), withdrawalID, wallet.ID)
+	if findErr != nil && !errors.Is(findErr, models.ErrRepositoryNotFound) {
 		return MapInternalError(ctx, findErr, "find_idempotent_withdrawal")
 	}
 	if existing != nil && (existing.Status == "broadcast" || existing.Status == "confirmed") {
@@ -224,18 +224,11 @@ func CreateWalletWithdrawal(ctx http.Context) http.Response {
 		if wallet.AccountID != nil {
 			w.AccountID = wallet.AccountID
 		}
-		if createErr := container.Get().WithdrawalRepo.Create(w); createErr != nil {
+		if createErr := container.Get().WithdrawalRepo.Create(ctx.Context(), w); createErr != nil {
 			return MapInternalError(ctx, createErr, "create_broadcasting_withdrawal")
 		}
 	} else {
-		if updateErr := container.Get().WithdrawalRepo.UpdateFields(w.ID, map[string]any{
-			"status":              "broadcasting",
-			"failure_reason":      nil,
-			"amount":              req.Amount,
-			"destination_address": req.DestinationAddress,
-			"fee_estimate":        feeEstimate,
-			"note":                req.Note,
-		}); updateErr != nil {
+		if updateErr := container.Get().WithdrawalRepo.RetryBroadcast(ctx.Context(), w.ID, req.Amount, req.DestinationAddress, feeEstimate, req.Note); updateErr != nil {
 			return MapInternalError(ctx, updateErr, "retry_broadcasting_withdrawal")
 		}
 		w.Status = "broadcasting"
@@ -252,10 +245,7 @@ func CreateWalletWithdrawal(ctx http.Context) http.Response {
 	})
 	if err != nil {
 		failureCode := withdrawalFailureCode(err)
-		if updateErr := container.Get().WithdrawalRepo.UpdateFields(w.ID, map[string]any{
-			"status":         models.WithdrawalStatusFailed,
-			"failure_reason": failureCode,
-		}); updateErr != nil {
+		if updateErr := container.Get().WithdrawalRepo.MarkFailed(ctx.Context(), w.ID, failureCode); updateErr != nil {
 			return MapInternalError(
 				ctx,
 				fmt.Errorf("execute withdrawal: %v; mark failed: %w", err, updateErr),
@@ -292,10 +282,7 @@ func CreateWalletWithdrawal(ctx http.Context) http.Response {
 		w.TransactionID = &tx.ID
 		w.TxHash = tx.TxHash
 	}
-	if updateErr := container.Get().WithdrawalRepo.UpdateFields(w.ID, map[string]any{
-		"status":         w.Status,
-		"transaction_id": w.TransactionID,
-	}); updateErr != nil {
+	if updateErr := container.Get().WithdrawalRepo.MarkBroadcast(ctx.Context(), w.ID, w.TransactionID); updateErr != nil {
 		return MapInternalError(ctx, updateErr, "persist_broadcast_withdrawal")
 	}
 	publishWithdrawalBroadcast(ctx, w, tx)
@@ -387,7 +374,7 @@ func GetWalletWithdrawal(ctx http.Context) http.Response {
 		return responses.Send(ctx, http.StatusBadRequest, http.Json{"error": "invalid withdrawal id"})
 	}
 
-	w, err := container.Get().WithdrawalRepo.FindByIDAndWallet(withdrawalID, wallet.ID)
+	w, err := container.Get().WithdrawalRepo.FindByIDAndWallet(ctx.Context(), withdrawalID, wallet.ID)
 	if err != nil || w == nil {
 		return responses.Send(ctx, http.StatusNotFound, http.Json{"error": "withdrawal not found"})
 	}
@@ -415,7 +402,7 @@ func GetWalletWithdrawalByIdempotencyKey(ctx http.Context) http.Response {
 		return responses.Send(ctx, http.StatusBadRequest, http.Json{"error": "idempotency_key must be a UUID"})
 	}
 
-	w, err := container.Get().WithdrawalRepo.FindByIDAndWallet(withdrawalID, wallet.ID)
+	w, err := container.Get().WithdrawalRepo.FindByIDAndWallet(ctx.Context(), withdrawalID, wallet.ID)
 	if err != nil || w == nil {
 		return responses.Send(ctx, http.StatusNotFound, http.Json{"error": "withdrawal not found"})
 	}
@@ -433,7 +420,7 @@ func GetWalletWithdrawalByIdempotencyKey(ctx http.Context) http.Response {
 	}
 
 	if w.TransactionID != nil {
-		tx, txErr := container.Get().TransactionRepo.FindByID(*w.TransactionID)
+		tx, txErr := container.Get().TransactionRepo.FindByID(ctx.Context(), *w.TransactionID)
 		if txErr != nil {
 			return MapInternalError(ctx, txErr, "lookup_withdrawal_transaction")
 		}
@@ -470,7 +457,7 @@ func CancelWalletWithdrawal(ctx http.Context) http.Response {
 		return responses.Send(ctx, http.StatusBadRequest, http.Json{"error": "invalid withdrawal id"})
 	}
 
-	w, err := container.Get().WithdrawalRepo.FindByIDAndWallet(withdrawalID, wallet.ID)
+	w, err := container.Get().WithdrawalRepo.FindByIDAndWallet(ctx.Context(), withdrawalID, wallet.ID)
 	if err != nil || w == nil {
 		return responses.Send(ctx, http.StatusNotFound, http.Json{"error": "withdrawal not found"})
 	}
@@ -489,7 +476,7 @@ func CancelWalletWithdrawal(ctx http.Context) http.Response {
 		return resp
 	}
 
-	if err := container.Get().WithdrawalRepo.UpdateStatus(w.ID, "cancelled"); err != nil {
+	if err := container.Get().WithdrawalRepo.SetStatus(ctx.Context(), w.ID, "cancelled"); err != nil {
 		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to cancel withdrawal"})
 	}
 	w.Status = "cancelled"

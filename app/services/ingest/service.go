@@ -12,7 +12,6 @@ import (
 
 	"github.com/macrowallets/waas/app/events"
 	"github.com/macrowallets/waas/app/models"
-	"github.com/macrowallets/waas/app/repositories"
 	"github.com/macrowallets/waas/app/services/chain"
 	"github.com/macrowallets/waas/app/services/ingest/providers"
 	"github.com/macrowallets/waas/app/services/webhook"
@@ -26,12 +25,18 @@ type addressReader interface {
 	FindByChainAndAddress(ctx context.Context, chainID, address string) (*models.Address, error)
 }
 
+// transactionStore is the deposit row ingest writes after it attributes a transfer.
+type transactionStore interface {
+	CountByChainTxHashAndLogIndex(ctx context.Context, chainID, txHash string, logIndex int, txType string) (int64, error)
+	Create(ctx context.Context, tx *models.Transaction) error
+}
+
 type Service struct {
 	rdb         *redis.Client
 	registry    *chain.Registry
 	webhookSvc  *webhook.Service
 	addressRepo addressReader
-	txRepo      repositories.TransactionRepository
+	txRepo      transactionStore
 	deposits    DepositEvents
 }
 
@@ -46,7 +51,7 @@ func (s *Service) SetDepositEvents(deposits DepositEvents) {
 	s.deposits = deposits
 }
 
-func NewService(rdb *redis.Client, registry *chain.Registry, webhookSvc *webhook.Service, addressRepo addressReader, txRepo repositories.TransactionRepository) *Service {
+func NewService(rdb *redis.Client, registry *chain.Registry, webhookSvc *webhook.Service, addressRepo addressReader, txRepo transactionStore) *Service {
 	return &Service{rdb: rdb, registry: registry, webhookSvc: webhookSvc, addressRepo: addressRepo, txRepo: txRepo}
 }
 
@@ -86,7 +91,7 @@ func (s *Service) processTransfer(ctx context.Context, chainID string, adapter t
 		return fmt.Errorf("lookup address: %w", err)
 	}
 
-	exists, err := s.txRepo.CountByChainTxHashAndLogIndex(chainID, transfer.TxHash, transfer.LogIndex, models.TxTypeDeposit)
+	exists, err := s.txRepo.CountByChainTxHashAndLogIndex(ctx, chainID, transfer.TxHash, transfer.LogIndex, models.TxTypeDeposit)
 	if err != nil {
 		return err
 	}
@@ -140,7 +145,7 @@ func (s *Service) processTransfer(ctx context.Context, chainID string, adapter t
 		LogIndex:       transfer.LogIndex,
 	}
 
-	if err := s.txRepo.Create(tx); err != nil {
+	if err := s.txRepo.Create(ctx, tx); err != nil {
 		return fmt.Errorf("insert tx: %w", err)
 	}
 

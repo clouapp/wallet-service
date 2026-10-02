@@ -92,7 +92,7 @@ func isOutboundTxType(txType string) bool {
 }
 
 func (s *Service) updateConfirmations(ctx context.Context, chainID string, adapter types.Chain, currentBlock uint64) error {
-	pending, err := s.txRepo.FindPendingByChain(chainID)
+	pending, err := s.txRepo.FindPendingByChain(ctx, chainID)
 	if err != nil {
 		return err
 	}
@@ -114,7 +114,7 @@ func (s *Service) applyConfirmations(ctx context.Context, adapter types.Chain, c
 				continue
 			}
 			tx.BlockNumber = int64(block)
-			if err := s.txRepo.UpdateFields(tx.ID, map[string]interface{}{"block_number": block}); err != nil {
+			if err := s.txRepo.SetBlockNumber(ctx, tx.ID, block); err != nil {
 				slog.Error("persist block number", "tx_id", tx.ID, "error", err)
 				continue
 			}
@@ -129,11 +129,7 @@ func (s *Service) applyConfirmations(ctx context.Context, adapter types.Chain, c
 			confirmedAt = &now
 		}
 
-		if err := s.txRepo.UpdateFields(tx.ID, map[string]interface{}{
-			"confirmations": confs,
-			"status":        newStatus,
-			"confirmed_at":  confirmedAt,
-		}); err != nil {
+		if err := s.txRepo.RecordConfirmations(ctx, tx.ID, confs, newStatus, confirmedAt); err != nil {
 			slog.Error("update confs", "tx_id", tx.ID, "error", err)
 			continue
 		}
@@ -210,7 +206,7 @@ func (s *Service) RunWithdrawalConfirmationCheck(ctx context.Context) error {
 
 func (s *Service) runConfirmationCheck(ctx context.Context, onlyTxType string) {
 	for _, chainID := range s.registry.ChainIDs() {
-		pending, err := s.txRepo.FindPendingByChain(chainID)
+		pending, err := s.txRepo.FindPendingByChain(ctx, chainID)
 		if err != nil {
 			slog.Error("find pending by chain", "chain", chainID, "error", err)
 			continue

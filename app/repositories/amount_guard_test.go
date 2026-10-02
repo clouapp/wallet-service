@@ -16,8 +16,8 @@ import (
 
 type AmountGuardTestSuite struct {
 	suite.Suite
-	transactions repositories.TransactionRepository
-	withdrawals  repositories.WithdrawalRepository
+	transactions *repositories.TransactionRepository
+	withdrawals  *repositories.WithdrawalRepository
 	balances     *repositories.WalletAssetBalanceRepository
 	snapshots    *repositories.WalletBalanceSnapshotRepository
 	wallets      *repositories.WalletRepository
@@ -29,8 +29,8 @@ func TestAmountGuardSuite(t *testing.T) {
 
 func (s *AmountGuardTestSuite) SetupTest() {
 	mocks.TestDB(s.T())
-	s.transactions = repositories.NewTransactionRepository()
-	s.withdrawals = repositories.NewWithdrawalRepository()
+	s.transactions = repositories.NewTransactionRepository(nil)
+	s.withdrawals = repositories.NewWithdrawalRepository(nil)
 	s.balances = repositories.NewWalletAssetBalanceRepository(nil)
 	s.snapshots = repositories.NewWalletBalanceSnapshotRepository(nil)
 	s.wallets = repositories.NewWalletRepository(nil)
@@ -55,23 +55,23 @@ func (s *AmountGuardTestSuite) TestCreateRejectsNegativeAmountAndFee() {
 	wallet := mocks.InsertWallet(s.T(), "sol")
 
 	negativeAmount := s.solDeposit(wallet.ID, "-5000000000")
-	s.ErrorIs(s.transactions.Create(negativeAmount), amount.ErrNegativeAmount)
+	s.ErrorIs(s.transactions.Create(context.Background(), negativeAmount), amount.ErrNegativeAmount)
 
 	negativeFee := s.solDeposit(wallet.ID, "5000000000")
 	negativeFee.Fee = "-5000"
-	s.ErrorIs(s.transactions.Create(negativeFee), amount.ErrNegativeAmount)
+	s.ErrorIs(s.transactions.Create(context.Background(), negativeFee), amount.ErrNegativeAmount)
 
 	s.Equal(int64(0), s.countTransactions(wallet.ID), "a rejected write must not reach the database")
-	s.Error(s.transactions.Create(nil))
+	s.Error(s.transactions.Create(context.Background(), nil))
 }
 
 func (s *AmountGuardTestSuite) TestCreateStoresTheAbsoluteAmount() {
 	wallet := mocks.InsertWallet(s.T(), "sol")
 	tx := s.solDeposit(wallet.ID, "5000000000")
 
-	s.Require().NoError(s.transactions.Create(tx))
+	s.Require().NoError(s.transactions.Create(context.Background(), tx))
 
-	stored, err := s.transactions.FindByID(tx.ID)
+	stored, err := s.transactions.FindByID(context.Background(), tx.ID)
 	s.Require().NoError(err)
 	s.Equal("5000000000", stored.Amount)
 	s.Equal(models.TxDirectionInbound, stored.Direction)
@@ -80,12 +80,12 @@ func (s *AmountGuardTestSuite) TestCreateStoresTheAbsoluteAmount() {
 func (s *AmountGuardTestSuite) TestUpdateFieldsRejectsNegativeAmount() {
 	wallet := mocks.InsertWallet(s.T(), "sol")
 	tx := s.solDeposit(wallet.ID, "5000000000")
-	s.Require().NoError(s.transactions.Create(tx))
+	s.Require().NoError(s.transactions.Create(context.Background(), tx))
 
-	s.ErrorIs(s.transactions.UpdateFields(tx.ID, map[string]interface{}{"amount": "-5000000000"}), amount.ErrNegativeAmount)
-	s.NoError(s.transactions.UpdateFields(tx.ID, map[string]interface{}{"confirmations": 3}))
+	s.ErrorIs(s.transactions.SetAmount(context.Background(), tx.ID, "-5000000000"), amount.ErrNegativeAmount)
+	s.NoError(s.transactions.SetConfirmations(context.Background(), tx.ID, 3))
 
-	stored, err := s.transactions.FindByID(tx.ID)
+	stored, err := s.transactions.FindByID(context.Background(), tx.ID)
 	s.Require().NoError(err)
 	s.Equal("5000000000", stored.Amount)
 }
@@ -93,11 +93,11 @@ func (s *AmountGuardTestSuite) TestUpdateFieldsRejectsNegativeAmount() {
 func (s *AmountGuardTestSuite) TestWithdrawalRejectsNegativeAmounts() {
 	wallet := mocks.InsertWallet(s.T(), "sol")
 	withdrawal := &models.Withdrawal{ID: uuid.New(), WalletID: wallet.ID, Status: models.WithdrawalStatusBroadcasting, Amount: "-0.02", DestinationAddress: "So1Dest"}
-	s.ErrorIs(s.withdrawals.Create(withdrawal), amount.ErrNegativeAmount)
+	s.ErrorIs(s.withdrawals.Create(context.Background(), withdrawal), amount.ErrNegativeAmount)
 
 	withdrawal.Amount = "0.02"
-	s.Require().NoError(s.withdrawals.Create(withdrawal))
-	s.ErrorIs(s.withdrawals.UpdateFields(withdrawal.ID, map[string]any{"fee_estimate": "-0.000005"}), amount.ErrNegativeAmount)
+	s.Require().NoError(s.withdrawals.Create(context.Background(), withdrawal))
+	s.ErrorIs(s.withdrawals.SetFeeEstimate(context.Background(), withdrawal.ID, "-0.000005"), amount.ErrNegativeAmount)
 }
 
 func (s *AmountGuardTestSuite) TestBalanceWritesRejectNegativeAmounts() {
@@ -116,9 +116,9 @@ func (s *AmountGuardTestSuite) TestBalanceWritesRejectNegativeAmounts() {
 func (s *AmountGuardTestSuite) TestDatabaseRejectsSignedAmountsOutsideTheRepositories() {
 	wallet := mocks.InsertWallet(s.T(), "sol")
 	tx := s.solDeposit(wallet.ID, "5000000000")
-	s.Require().NoError(s.transactions.Create(tx))
+	s.Require().NoError(s.transactions.Create(context.Background(), tx))
 	withdrawal := &models.Withdrawal{ID: uuid.New(), WalletID: wallet.ID, Status: models.WithdrawalStatusBroadcasting, Amount: "0.02", DestinationAddress: "So1Dest"}
-	s.Require().NoError(s.withdrawals.Create(withdrawal))
+	s.Require().NoError(s.withdrawals.Create(context.Background(), withdrawal))
 
 	statements := map[string][]any{
 		"UPDATE transactions SET amount = ? WHERE id = ?": {"-5000000000", tx.ID},

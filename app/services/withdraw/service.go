@@ -38,7 +38,7 @@ type Service struct {
 	mpc             mpcpkg.Service
 	secrets         *secretsmanager.Client
 	rdb             *redis.Client
-	transactionRepo repositories.TransactionRepository
+	transactionRepo *repositories.TransactionRepository
 	walletRepo      *repositories.WalletRepository
 	addressRepo     *repositories.AddressRepository
 	sweep           sweep.Service
@@ -50,7 +50,7 @@ func NewService(
 	mpc mpcpkg.Service,
 	secrets *secretsmanager.Client,
 	rdb *redis.Client,
-	transactionRepo repositories.TransactionRepository,
+	transactionRepo *repositories.TransactionRepository,
 	walletRepo *repositories.WalletRepository,
 	addressRepo *repositories.AddressRepository,
 	sweepSvc sweep.Service,
@@ -108,7 +108,7 @@ func (s *Service) Request(ctx context.Context, req WithdrawRequest) (*models.Tra
 	}
 
 	if req.IdempotencyKey != "" {
-		existing, err := s.transactionRepo.FindByIdempotencyKey(req.IdempotencyKey)
+		existing, err := s.transactionRepo.FindByIdempotencyKey(ctx, req.IdempotencyKey)
 		if err == nil && existing != nil {
 			return existing, &Metadata{}, nil
 		}
@@ -218,9 +218,7 @@ func (s *Service) Request(ctx context.Context, req WithdrawRequest) (*models.Tra
 	if req.IdempotencyKey != "" {
 		idemKey := req.IdempotencyKey
 		finalTx.IdempotencyKey = &idemKey
-		if err := s.transactionRepo.UpdateFields(finalTx.ID, map[string]interface{}{
-			"idempotency_key": req.IdempotencyKey,
-		}); err != nil {
+		if err := s.transactionRepo.SetIdempotencyKey(ctx, finalTx.ID, req.IdempotencyKey); err != nil {
 			slog.Warn("failed to set idempotency_key on final withdrawal tx",
 				"tx_id", finalTx.ID, "error", err)
 		}
@@ -295,7 +293,7 @@ func zeroShare(b []byte) {
 // ---------------------------------------------------------------------------
 
 func (s *Service) GetTransaction(ctx context.Context, id uuid.UUID) (*models.Transaction, error) {
-	tx, err := s.transactionRepo.FindByID(id)
+	tx, err := s.transactionRepo.FindByID(ctx, id)
 	if err != nil {
 		return nil, err
 	}
@@ -303,7 +301,7 @@ func (s *Service) GetTransaction(ctx context.Context, id uuid.UUID) (*models.Tra
 }
 
 func (s *Service) ListTransactions(ctx context.Context, chainID, txType, status, userID string, limit, offset int) ([]models.Transaction, int64, error) {
-	return s.transactionRepo.List(chainID, txType, status, userID, limit, offset)
+	return s.transactionRepo.List(ctx, chainID, txType, status, userID, limit, offset)
 }
 
 // ListTransactionsForAccount is the account-scoped variant used by external API
@@ -311,5 +309,5 @@ func (s *Service) ListTransactions(ctx context.Context, chainID, txType, status,
 // Without this scoping, any API token could retrieve transactions for another
 // account by guessing or enumerating external_ids.
 func (s *Service) ListTransactionsForAccount(ctx context.Context, accountID uuid.UUID, chainID, txType, status, userID string, limit, offset int) ([]models.Transaction, int64, error) {
-	return s.transactionRepo.ListForAccount(accountID, chainID, txType, status, userID, limit, offset)
+	return s.transactionRepo.ListForAccount(ctx, accountID, chainID, txType, status, userID, limit, offset)
 }

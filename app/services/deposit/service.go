@@ -27,7 +27,7 @@ type Service struct {
 	registry             *chain.Registry
 	webhookSvc           *webhook.Service
 	addressRepo          *repositories.AddressRepository
-	txRepo               repositories.TransactionRepository
+	txRepo               *repositories.TransactionRepository
 	blockHeightProviders map[string]blockheight.Provider
 	heightFailures       map[string]int
 	withdrawals          WithdrawalConfirmations
@@ -71,7 +71,7 @@ func (s *Service) SetWithdrawalConfirmations(withdrawals WithdrawalConfirmations
 	s.withdrawals = withdrawals
 }
 
-func NewService(rdb *redis.Client, registry *chain.Registry, webhookSvc *webhook.Service, addressRepo *repositories.AddressRepository, txRepo repositories.TransactionRepository, blockHeightProviders map[string]blockheight.Provider) *Service {
+func NewService(rdb *redis.Client, registry *chain.Registry, webhookSvc *webhook.Service, addressRepo *repositories.AddressRepository, txRepo *repositories.TransactionRepository, blockHeightProviders map[string]blockheight.Provider) *Service {
 	return &Service{
 		rdb:                  rdb,
 		registry:             registry,
@@ -163,7 +163,7 @@ func (s *Service) processTransfer(ctx context.Context, chainID string, adapter t
 		return false, fmt.Errorf("lookup address: %w", err)
 	}
 
-	exists, err := s.txRepo.CountByChainAndTxHash(chainID, transfer.TxHash, models.TxTypeDeposit)
+	exists, err := s.txRepo.CountByChainAndTxHash(ctx, chainID, transfer.TxHash, models.TxTypeDeposit)
 	if err != nil {
 		return false, err
 	}
@@ -201,7 +201,7 @@ func (s *Service) processTransfer(ctx context.Context, chainID string, adapter t
 		RawPayload:     "{}",
 	}
 
-	if err := s.txRepo.Create(tx); err != nil {
+	if err := s.txRepo.Create(ctx, tx); err != nil {
 		return false, fmt.Errorf("insert tx: %w", err)
 	}
 

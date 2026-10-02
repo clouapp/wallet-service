@@ -162,7 +162,7 @@ type ingestTxRepo struct {
 	created []*models.Transaction
 }
 
-func (f *ingestTxRepo) Create(tx *models.Transaction) error {
+func (f *ingestTxRepo) Create(_ context.Context, tx *models.Transaction) error {
 	f.created = append(f.created, tx)
 	return nil
 }
@@ -182,7 +182,7 @@ func (f *ingestTxRepo) FindByChainAndTxHash(chainID, txHash string) (*models.Tra
 func (f *ingestTxRepo) CountByChainAndTxHash(chainID, txHash, txType string) (int64, error) {
 	return 0, nil
 }
-func (f *ingestTxRepo) CountByChainTxHashAndLogIndex(chainID, txHash string, logIndex int, txType string) (int64, error) {
+func (f *ingestTxRepo) CountByChainTxHashAndLogIndex(_ context.Context, chainID, txHash string, logIndex int, txType string) (int64, error) {
 	return 0, nil
 }
 func (f *ingestTxRepo) FindPendingByChain(chainID string) ([]models.Transaction, error) {

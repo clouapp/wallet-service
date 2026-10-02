@@ -161,8 +161,16 @@ func buildVaultContainer(app foundation.Application) (*container.Container, erro
 	c.WalletRepo = wallets
 	c.WalletUserRepo = walletUsers
 	c.AddressRepo = addresses
-	c.TransactionRepo = repositories.NewTransactionRepository()
-	c.WithdrawalRepo = repositories.NewWithdrawalRepository()
+	transactions, err := resolve[*repositories.TransactionRepository](app)
+	if err != nil {
+		return nil, err
+	}
+	withdrawals, err := resolve[*repositories.WithdrawalRepository](app)
+	if err != nil {
+		return nil, err
+	}
+	c.TransactionRepo = transactions
+	c.WithdrawalRepo = withdrawals
 	c.WebhookConfigRepo = repositories.NewWebhookConfigRepository()
 	c.WebhookEventRepo = repositories.NewWebhookEventRepository()
 	c.WhitelistEntryRepo = whitelist

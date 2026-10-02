@@ -28,7 +28,7 @@ type fakeTxRepo struct {
 	createErr error
 }
 
-func (f *fakeTxRepo) Create(tx *models.Transaction) error {
+func (f *fakeTxRepo) Create(_ context.Context, tx *models.Transaction) error {
 	if f.createErr != nil {
 		return f.createErr
 	}
