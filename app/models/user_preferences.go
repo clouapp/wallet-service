@@ -12,7 +12,13 @@ type UserPreferences struct {
 }
 
 func (p UserPreferences) Value() (driver.Value, error) {
-	return json.Marshal(p)
+	encoded, err := json.Marshal(p)
+	if err != nil {
+		return nil, err
+	}
+	// A string, not []byte: the jsonb column rejects the bytea encoding GORM
+	// sends for a []byte driver value.
+	return string(encoded), nil
 }
 
 func (p *UserPreferences) Scan(src interface{}) error {

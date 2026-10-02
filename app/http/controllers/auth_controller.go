@@ -52,12 +52,14 @@ func Register(ctx http.Context) http.Response {
 	prodAccountID := uuid.New()
 	testAccountID := uuid.New()
 
+	// The link is a foreign key, so the production row cannot point at the
+	// test row until that row exists. Create production first, then test,
+	// then point production back.
 	prodAccount := &models.Account{
-		ID:              prodAccountID,
-		Name:            req.OrganizationName,
-		Status:          "active",
-		Environment:     models.EnvironmentProd,
-		LinkedAccountID: &testAccountID,
+		ID:          prodAccountID,
+		Name:        req.OrganizationName,
+		Status:      "active",
+		Environment: models.EnvironmentProd,
 	}
 	testAccount := &models.Account{
 		ID:              testAccountID,
@@ -72,6 +74,10 @@ func Register(ctx http.Context) http.Response {
 	if err := container.Get().AccountRepo.Create(testAccount); err != nil {
 		return ctx.Response().Json(http.StatusInternalServerError, http.Json{"error": "failed to create test account"})
 	}
+	if err := container.Get().AccountRepo.UpdateField(prodAccountID, "linked_account_id", testAccountID); err != nil {
+		return ctx.Response().Json(http.StatusInternalServerError, http.Json{"error": "failed to link accounts"})
+	}
+	prodAccount.LinkedAccountID = &testAccountID
 
 	prodMembership := &models.AccountUser{
 		ID:        uuid.New(),

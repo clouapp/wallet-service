@@ -34,12 +34,14 @@ func (s *UserRepositoryTestSuite) TestCreate_Success() {
 	}
 	err := s.repo.Create(user)
 	s.NoError(err)
+	s.NotNil(user.Preferences)
 
 	found, err := s.repo.FindByEmail("test@example.com")
 	s.NoError(err)
 	s.NotNil(found)
 	s.Equal(user.ID, found.ID)
 	s.Equal("test@example.com", found.Email)
+	s.NotNil(found.Preferences)
 }
 
 func (s *UserRepositoryTestSuite) TestFindByEmail_Found() {

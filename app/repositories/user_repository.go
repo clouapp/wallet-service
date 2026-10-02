@@ -2,6 +2,7 @@ package repositories
 
 import (
 	"encoding/json"
+	"fmt"
 
 	"github.com/google/uuid"
 	"github.com/goravel/framework/facades"
@@ -53,7 +54,21 @@ func (r *userRepository) FindByID(id uuid.UUID) (*models.User, error) {
 }
 
 func (r *userRepository) Create(user *models.User) error {
-	return facades.Orm().Query().Create(user)
+	if user == nil {
+		return fmt.Errorf("create user: user is nil")
+	}
+	query := facades.Orm().Query()
+	if user.Preferences != nil {
+		return query.Create(user)
+	}
+	// users.preferences is NOT NULL. A nil pointer is inserted as NULL, and
+	// GORM's Valuer path for this type has written invalid jsonb, so leave the
+	// column out and let the '{}' default apply.
+	if err := query.Omit("Preferences").Create(user); err != nil {
+		return err
+	}
+	user.Preferences = &models.UserPreferences{}
+	return nil
 }
 
 func (r *userRepository) UpdateDefaultAccountID(id uuid.UUID, defaultAccountID *uuid.UUID) error {
