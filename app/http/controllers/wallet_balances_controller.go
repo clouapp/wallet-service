@@ -26,11 +26,11 @@ func ListWalletBalances(ctx http.Context) http.Response {
 	if err != nil {
 		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to fetch balances"})
 	}
-	tokens, err := container.Get().TokenRepo.FindByChainID(wallet.Chain)
+	tokens, err := container.Get().TokenRepo.FindByChainID(ctx.Context(), wallet.Chain)
 	if err != nil {
 		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to fetch chain tokens"})
 	}
 
-	assets := assetBalancesPricedFor(configuredAssetBalances(rows, tokens), resolveWalletChainNetwork(wallet.Chain))
+	assets := assetBalancesPricedFor(configuredAssetBalances(rows, tokens), resolveWalletChainNetwork(ctx.Context(), wallet.Chain))
 	return ctx.Response().Json(http.StatusOK, http.Json{"data": assets})
 }

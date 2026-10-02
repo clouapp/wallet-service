@@ -143,7 +143,7 @@ func GetWallet(ctx http.Context) http.Response {
 			"error": "wallet not found",
 		})
 	}
-	return ctx.Response().Success().Json(newWalletView(w, resolveWalletChainNetwork(w.Chain)))
+	return ctx.Response().Success().Json(newWalletView(w, resolveWalletChainNetwork(ctx.Context(), w.Chain)))
 }
 
 // CreateWalletAdmin creates a wallet from the admin panel with full MPC keygen.
@@ -155,7 +155,7 @@ func CreateWalletAdmin(ctx http.Context) http.Response {
 	}
 
 	if env, ok := ctx.Value("account_environment").(string); ok && env != "" {
-		chainRecord, _ := container.Get().ChainRepo.FindByID(req.Chain)
+		chainRecord, _ := container.Get().ChainRepo.FindByID(ctx.Context(), req.Chain)
 		if chainRecord != nil && chainRecord.IsTestnet != (env == models.EnvironmentTest) {
 			return responses.Send(ctx, http.StatusForbidden, http.Json{"error": "chain not available in current environment"})
 		}

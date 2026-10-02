@@ -150,7 +150,7 @@ func CreateWalletWithdrawal(ctx http.Context) http.Response {
 		return responses.Send(ctx, http.StatusUnprocessableEntity, http.Json{"error": err.Error()})
 	}
 
-	chainEntity, chainErr := container.Get().ChainRepo.FindByID(wallet.Chain)
+	chainEntity, chainErr := container.Get().ChainRepo.FindByID(ctx.Context(), wallet.Chain)
 	if chainErr != nil || chainEntity == nil {
 		return responses.Send(ctx, http.StatusUnprocessableEntity, http.Json{"error": "chain not found"})
 	}

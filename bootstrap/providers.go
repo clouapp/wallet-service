@@ -44,6 +44,7 @@ func Providers() []foundation.ServiceProvider {
 		&providers.IdentityServiceProvider{},
 		&providers.WalletServiceProvider{},
 		&providers.WithdrawalServiceProvider{},
+		&providers.ChainServiceProvider{},
 		&providers.AppServiceProvider{},
 		&providers.RouteServiceProvider{},
 	}

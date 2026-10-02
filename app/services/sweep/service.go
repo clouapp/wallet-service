@@ -11,7 +11,6 @@ import (
 	"github.com/redis/go-redis/v9"
 
 	"github.com/macrowallets/waas/app/models"
-	"github.com/macrowallets/waas/app/repositories"
 	"github.com/macrowallets/waas/app/services/chain"
 	mpcpkg "github.com/macrowallets/waas/app/services/mpc"
 	"github.com/macrowallets/waas/app/services/webhook"
@@ -67,6 +66,11 @@ type transactionWriter interface {
 	Create(ctx context.Context, tx *models.Transaction) error
 }
 
+// chainReader loads the chain record sweep needs for adapter and decimals.
+type chainReader interface {
+	FindByID(ctx context.Context, id string) (*models.Chain, error)
+}
+
 type service struct {
 	registry    *chain.Registry
 	mpc         mpcpkg.Service
@@ -77,7 +81,7 @@ type service struct {
 	addressRepo addressReader
 	txRepo      transactionWriter
 	accountRepo accountReader
-	chainRepo   repositories.ChainRepository
+	chainRepo   chainReader
 
 	// fetchShareBFn is the function used to retrieve the service's MPC share for
 	// a wallet. In production it targets AWS Secrets Manager; tests override it
@@ -97,7 +101,7 @@ func NewService(
 	addressRepo addressReader,
 	txRepo transactionWriter,
 	accountRepo accountReader,
-	chainRepo repositories.ChainRepository,
+	chainRepo chainReader,
 ) Service {
 	return &service{
 		registry:    registry,
@@ -111,6 +115,16 @@ func NewService(
 		accountRepo: accountRepo,
 		chainRepo:   chainRepo,
 	}
+}
+
+// loadChain returns the chain, or (nil, nil) when the row is missing, matching
+// the previous repository miss. A database error is returned as-is.
+func (s *service) loadChain(ctx context.Context, chainID string) (*models.Chain, error) {
+	chainEntity, err := s.chainRepo.FindByID(ctx, chainID)
+	if errors.Is(err, models.ErrRepositoryNotFound) {
+		return nil, nil
+	}
+	return chainEntity, err
 }
 
 // Concrete method implementations live alongside their domain:

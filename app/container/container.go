@@ -49,15 +49,15 @@ type Container struct {
 	WebhookConfigRepo         repositories.WebhookConfigRepository
 	WebhookEventRepo          repositories.WebhookEventRepository
 	WhitelistEntryRepo        *repositories.WhitelistEntryRepository
-	ChainRepo                 repositories.ChainRepository
-	TokenRepo                 repositories.TokenRepository
-	ChainResourceRepo         repositories.ChainResourceRepository
+	ChainRepo                 *repositories.ChainRepository
+	TokenRepo                 *repositories.TokenRepository
+	ChainResourceRepo         *repositories.ChainResourceRepository
 	WebhookSubscriptionRepo   repositories.WebhookSubscriptionRepository
 	WalletAssetBalanceRepo    *repositories.WalletAssetBalanceRepository
 	WalletBalanceSnapshotRepo *repositories.WalletBalanceSnapshotRepository
 	WalletUTXORepo            *repositories.WalletUTXORepository
 	WalletSyncStateRepo       *repositories.WalletSyncStateRepository
-	CurrencyRepo              repositories.CurrencyRepository
+	CurrencyRepo              *repositories.CurrencyRepository
 	WebhookProviders          map[string]providers.WebhookProvider
 	WebhookSyncService        *webhooksync.Service
 

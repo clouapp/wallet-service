@@ -1,16 +1,18 @@
 package controllers
 
 import (
+	"errors"
 	"strconv"
 
 	"github.com/goravel/framework/contracts/http"
 
 	"github.com/macrowallets/waas/app/container"
 	"github.com/macrowallets/waas/app/http/responses"
+	"github.com/macrowallets/waas/app/models"
 )
 
 func ListCurrencies(ctx http.Context) http.Response {
-	currencies, err := container.Get().CurrencyRepo.FindAllActive()
+	currencies, err := container.Get().CurrencyRepo.FindAllActive(ctx.Context())
 	if err != nil {
 		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to fetch currencies"})
 	}
@@ -23,7 +25,10 @@ func GetCurrency(ctx http.Context) http.Response {
 		return responses.Send(ctx, http.StatusBadRequest, http.Json{"error": "currency code is required"})
 	}
 
-	currency, err := container.Get().CurrencyRepo.FindByCode(code)
+	currency, err := container.Get().CurrencyRepo.FindByCode(ctx.Context(), code)
+	if errors.Is(err, models.ErrRepositoryNotFound) {
+		currency, err = nil, nil
+	}
 	if err != nil {
 		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to fetch currency"})
 	}

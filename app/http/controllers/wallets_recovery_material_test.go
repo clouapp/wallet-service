@@ -265,7 +265,7 @@ func (s *WalletRecoveryMaterialTestSuite) setupAdminSession() (uuid.UUID, string
 	)
 	s.Require().NoError(err)
 
-	chainRecord, err := container.Get().ChainRepo.FindByID(recoveryTestChain)
+	chainRecord, err := container.Get().ChainRepo.FindByID(context.Background(), recoveryTestChain)
 	s.Require().NoError(err)
 	s.Require().NotNil(chainRecord)
 	environment := models.EnvironmentProd

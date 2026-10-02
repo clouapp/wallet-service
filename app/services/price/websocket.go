@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
-	"github.com/macrowallets/waas/app/repositories"
 	"github.com/redis/go-redis/v9"
 )
 
@@ -32,12 +31,12 @@ func init() {
 
 type WebSocketClient struct {
 	apiKey       string
-	currencyRepo repositories.CurrencyRepository
+	currencyRepo currencyStore
 	redis        *redis.Client
 	activeCodes  []string
 }
 
-func NewWebSocketClient(apiKey string, currencyRepo repositories.CurrencyRepository, rdb *redis.Client) *WebSocketClient {
+func NewWebSocketClient(apiKey string, currencyRepo currencyStore, rdb *redis.Client) *WebSocketClient {
 	return &WebSocketClient{
 		apiKey:       apiKey,
 		currencyRepo: currencyRepo,
@@ -46,7 +45,7 @@ func NewWebSocketClient(apiKey string, currencyRepo repositories.CurrencyReposit
 }
 
 func (w *WebSocketClient) Connect(ctx context.Context) error {
-	if err := w.refreshActiveCodes(); err != nil {
+	if err := w.refreshActiveCodes(ctx); err != nil {
 		return fmt.Errorf("load active codes: %w", err)
 	}
 	if len(w.activeCodes) == 0 {
@@ -107,7 +106,7 @@ func (w *WebSocketClient) Connect(ctx context.Context) error {
 			conn.Close()
 			return ctx.Err()
 		case <-refreshTicker.C:
-			_ = w.refreshActiveCodes()
+			_ = w.refreshActiveCodes(ctx)
 		}
 	}
 }
@@ -161,13 +160,13 @@ func (w *WebSocketClient) processMessage(ctx context.Context, data []byte) {
 		return
 	}
 
-	cur, err := w.currencyRepo.FindByCode(code)
+	cur, err := w.currencyRepo.FindByCode(ctx, code)
 	if err != nil || cur == nil {
 		return
 	}
 
 	oldPrice := cur.CurrentPrice
-	if err := w.currencyRepo.UpdatePrice(code, msg.Rate, oldPrice); err != nil {
+	if err := w.currencyRepo.SetPrice(ctx, code, msg.Rate, oldPrice); err != nil {
 		slog.Warn("ws update price failed", "code", code, "error", err)
 		return
 	}
@@ -181,8 +180,8 @@ func (w *WebSocketClient) processMessage(ctx context.Context, data []byte) {
 	slog.Info("ws price updated", "code", code, "price", msg.Rate)
 }
 
-func (w *WebSocketClient) refreshActiveCodes() error {
-	cryptos, err := w.currencyRepo.FindActiveCryptos()
+func (w *WebSocketClient) refreshActiveCodes(ctx context.Context) error {
+	cryptos, err := w.currencyRepo.FindActiveCryptos(ctx)
 	if err != nil {
 		return err
 	}

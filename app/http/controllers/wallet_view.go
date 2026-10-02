@@ -2,6 +2,7 @@ package controllers
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 
@@ -94,13 +95,13 @@ func loadWalletListItems(ctx context.Context, wallets []models.Wallet) ([]Wallet
 		rowsByWallet[row.WalletID] = append(rowsByWallet[row.WalletID], row)
 	}
 
-	resolveNetwork := cachedWalletNetworkResolver()
+	resolveNetwork := cachedWalletNetworkResolver(ctx)
 	tokensByChain := make(map[string][]models.Token)
 	items := make([]WalletListItem, 0, len(wallets))
 	for _, wallet := range wallets {
 		tokens, loaded := tokensByChain[wallet.Chain]
 		if !loaded {
-			tokens, err = container.Get().TokenRepo.FindByChainID(wallet.Chain)
+			tokens, err = container.Get().TokenRepo.FindByChainID(ctx, wallet.Chain)
 			if err != nil {
 				return nil, fmt.Errorf("list tokens of chain %s: %w", wallet.Chain, err)
 			}
@@ -113,13 +114,13 @@ func loadWalletListItems(ctx context.Context, wallets []models.Wallet) ([]Wallet
 }
 
 // cachedWalletNetworkResolver resolves each chain once per request.
-func cachedWalletNetworkResolver() func(chainID string) models.ResolvedNetwork {
+func cachedWalletNetworkResolver(ctx context.Context) func(chainID string) models.ResolvedNetwork {
 	resolved := make(map[string]models.ResolvedNetwork)
 	return func(chainID string) models.ResolvedNetwork {
 		if network, ok := resolved[chainID]; ok {
 			return network
 		}
-		network := resolveWalletChainNetwork(chainID)
+		network := resolveWalletChainNetwork(ctx, chainID)
 		resolved[chainID] = network
 		return network
 	}
@@ -127,8 +128,11 @@ func cachedWalletNetworkResolver() func(chainID string) models.ResolvedNetwork {
 
 // resolveWalletChainNetwork reads the wallet's chain record; a failed read leaves
 // the network unknown instead of failing the wallet response.
-func resolveWalletChainNetwork(chainID string) models.ResolvedNetwork {
-	chainRecord, err := container.Get().ChainRepo.FindByID(chainID)
+func resolveWalletChainNetwork(ctx context.Context, chainID string) models.ResolvedNetwork {
+	chainRecord, err := container.Get().ChainRepo.FindByID(ctx, chainID)
+	if errors.Is(err, models.ErrRepositoryNotFound) {
+		chainRecord, err = nil, nil
+	}
 	if err != nil || chainRecord == nil {
 		slog.Warn("load chain for wallet network", "chain", chainID, "error", err)
 		return models.ResolvedNetwork{}

@@ -171,18 +171,34 @@ func buildVaultContainer(app foundation.Application) (*container.Container, erro
 	}
 	c.TransactionRepo = transactions
 	c.WithdrawalRepo = withdrawals
+	chains, err := resolve[*repositories.ChainRepository](app)
+	if err != nil {
+		return nil, err
+	}
+	tokens, err := resolve[*repositories.TokenRepository](app)
+	if err != nil {
+		return nil, err
+	}
+	chainResources, err := resolve[*repositories.ChainResourceRepository](app)
+	if err != nil {
+		return nil, err
+	}
+	currencies, err := resolve[*repositories.CurrencyRepository](app)
+	if err != nil {
+		return nil, err
+	}
 	c.WebhookConfigRepo = repositories.NewWebhookConfigRepository()
 	c.WebhookEventRepo = repositories.NewWebhookEventRepository()
 	c.WhitelistEntryRepo = whitelist
-	c.ChainRepo = repositories.NewChainRepository()
-	c.TokenRepo = repositories.NewTokenRepository()
-	c.ChainResourceRepo = repositories.NewChainResourceRepository()
+	c.ChainRepo = chains
+	c.TokenRepo = tokens
+	c.ChainResourceRepo = chainResources
 	c.WebhookSubscriptionRepo = repositories.NewWebhookSubscriptionRepository()
 	c.WalletAssetBalanceRepo = assetBalances
 	c.WalletBalanceSnapshotRepo = balanceSnapshots
 	c.WalletUTXORepo = utxos
 	c.WalletSyncStateRepo = syncStates
-	c.CurrencyRepo = repositories.NewCurrencyRepository()
+	c.CurrencyRepo = currencies
 
 	c.PriceConfig.CoinGeckoAPIKey = facades.Config().GetString("vault.price.coingecko_api_key")
 	c.PriceConfig.CoinMarketCapAPIKey = facades.Config().GetString("vault.price.coinmarketcap_api_key")
@@ -204,7 +220,7 @@ func buildVaultContainer(app foundation.Application) (*container.Container, erro
 	c.Registry = chainpkg.NewRegistry()
 
 	tokensByChain := make(map[string][]types.Token)
-	activeTokens, tokenErr := c.TokenRepo.FindActive()
+	activeTokens, tokenErr := c.TokenRepo.FindActive(context.Background())
 	if tokenErr != nil {
 		slog.Error("failed to load tokens from DB", "error", tokenErr)
 	} else {
@@ -222,7 +238,7 @@ func buildVaultContainer(app foundation.Application) (*container.Container, erro
 	}
 
 	networkByChain := make(map[string]string)
-	activeChains, chainErr := c.ChainRepo.FindActive()
+	activeChains, chainErr := c.ChainRepo.FindActive(context.Background())
 	if chainErr != nil {
 		slog.Error("failed to load chains from DB", "error", chainErr)
 	} else {

@@ -96,7 +96,7 @@ func (s *service) PreflightConsolidation(ctx context.Context, walletID uuid.UUID
 	if wallet == nil || wallet.DepositAddress == nil {
 		return nil, fmt.Errorf("sweep preflight: wallet %s not found or has no base address", walletID)
 	}
-	chainEntity, err := s.chainRepo.FindByID(wallet.Chain)
+	chainEntity, err := s.loadChain(ctx, wallet.Chain)
 	if err != nil || chainEntity == nil {
 		return nil, fmt.Errorf("sweep preflight: chain %q not found: %v", wallet.Chain, err)
 	}

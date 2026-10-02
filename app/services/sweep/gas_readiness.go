@@ -33,7 +33,7 @@ func (s *service) RefreshGasStatus(ctx context.Context, walletID uuid.UUID) (*Ga
 		return nil, fmt.Errorf("sweep: wallet %s has no base deposit address", walletID)
 	}
 
-	chainEntity, err := s.chainRepo.FindByID(wallet.Chain)
+	chainEntity, err := s.loadChain(ctx, wallet.Chain)
 	if err != nil {
 		return nil, fmt.Errorf("sweep: find chain %q: %w", wallet.Chain, err)
 	}

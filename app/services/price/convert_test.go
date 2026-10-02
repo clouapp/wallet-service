@@ -7,29 +7,21 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/macrowallets/waas/app/models"
-	"github.com/macrowallets/waas/app/repositories"
 )
 
 type mockCurrencyRepo struct {
 	currencies map[string]*models.Currency
 }
 
-func (m *mockCurrencyRepo) Create(_ *models.Currency) error { return nil }
-func (m *mockCurrencyRepo) CreateBatch(_ []models.Currency) error {
-	return nil
-}
-func (m *mockCurrencyRepo) FindActiveCryptos() ([]models.Currency, error) { return nil, nil }
-func (m *mockCurrencyRepo) FindActiveFiats() ([]models.Currency, error)   { return nil, nil }
-func (m *mockCurrencyRepo) FindAllActive() ([]models.Currency, error)     { return nil, nil }
-func (m *mockCurrencyRepo) UpdatePrice(_ string, _, _ float64) error      { return nil }
-func (m *mockCurrencyRepo) UpdatePriceBatch(_ map[string]repositories.PriceUpdate) error {
-	return nil
-}
-func (m *mockCurrencyRepo) FindStale(_ string, _ time.Duration) ([]models.Currency, error) {
+func (m *mockCurrencyRepo) FindActiveCryptos(context.Context) ([]models.Currency, error) {
 	return nil, nil
 }
+func (m *mockCurrencyRepo) FindActiveFiats(context.Context) ([]models.Currency, error) {
+	return nil, nil
+}
+func (m *mockCurrencyRepo) SetPrice(context.Context, string, float64, float64) error { return nil }
 
-func (m *mockCurrencyRepo) FindByCode(code string) (*models.Currency, error) {
+func (m *mockCurrencyRepo) FindByCode(_ context.Context, code string) (*models.Currency, error) {
 	if c, ok := m.currencies[code]; ok {
 		return c, nil
 	}

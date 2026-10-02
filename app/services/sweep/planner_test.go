@@ -82,11 +82,7 @@ type fakeChainRepo struct {
 	chain *models.Chain
 }
 
-func (f *fakeChainRepo) FindAll() ([]models.Chain, error)                     { return nil, nil }
-func (f *fakeChainRepo) FindActive() ([]models.Chain, error)                  { return nil, nil }
-func (f *fakeChainRepo) FindByTestnet(isTestnet bool) ([]models.Chain, error) { return nil, nil }
-func (f *fakeChainRepo) Create(chain *models.Chain) error                     { return nil }
-func (f *fakeChainRepo) FindByID(id string) (*models.Chain, error) {
+func (f *fakeChainRepo) FindByID(_ context.Context, id string) (*models.Chain, error) {
 	if f.chain == nil || f.chain.ID != id {
 		return nil, nil
 	}

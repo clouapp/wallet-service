@@ -3,26 +3,34 @@ package price
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"time"
 
 	"github.com/macrowallets/waas/app/models"
-	"github.com/macrowallets/waas/app/repositories"
 	"github.com/redis/go-redis/v9"
 )
+
+// currencyStore is the price rows this package reads and updates.
+type currencyStore interface {
+	FindByCode(ctx context.Context, code string) (*models.Currency, error)
+	FindActiveCryptos(ctx context.Context) ([]models.Currency, error)
+	FindActiveFiats(ctx context.Context) ([]models.Currency, error)
+	SetPrice(ctx context.Context, code string, currentPrice, lastPrice float64) error
+}
 
 const redisCurrencyTTL = 60 * time.Second
 
 type Service struct {
 	providers    []PriceProvider
-	currencyRepo repositories.CurrencyRepository
+	currencyRepo currencyStore
 	redis        *redis.Client
 }
 
 func NewService(
 	providers []PriceProvider,
-	currencyRepo repositories.CurrencyRepository,
+	currencyRepo currencyStore,
 	rdb *redis.Client,
 ) *Service {
 	return &Service{
@@ -33,7 +41,7 @@ func NewService(
 }
 
 func (s *Service) RefreshCryptoPrices(ctx context.Context) error {
-	cryptos, err := s.currencyRepo.FindActiveCryptos()
+	cryptos, err := s.currencyRepo.FindActiveCryptos(ctx)
 	if err != nil {
 		return fmt.Errorf("load active cryptos: %w", err)
 	}
@@ -63,7 +71,7 @@ func (s *Service) RefreshCryptoPrices(ctx context.Context) error {
 				continue
 			}
 			oldPrice := priceMap[code]
-			if err := s.currencyRepo.UpdatePrice(code, newPrice, oldPrice); err != nil {
+			if err := s.currencyRepo.SetPrice(ctx, code, newPrice, oldPrice); err != nil {
 				slog.Warn("update crypto price failed", "code", code, "error", err)
 				continue
 			}
@@ -72,13 +80,13 @@ func (s *Service) RefreshCryptoPrices(ctx context.Context) error {
 			slog.Info("crypto price updated", "provider", provider.Name(), "code", code, "price", newPrice)
 		}
 
-		cryptos, _ = s.currencyRepo.FindActiveCryptos()
+		cryptos, _ = s.currencyRepo.FindActiveCryptos(ctx)
 	}
 	return nil
 }
 
 func (s *Service) RefreshFiatRates(ctx context.Context) error {
-	fiats, err := s.currencyRepo.FindActiveFiats()
+	fiats, err := s.currencyRepo.FindActiveFiats(ctx)
 	if err != nil {
 		return fmt.Errorf("load active fiats: %w", err)
 	}
@@ -115,7 +123,7 @@ func (s *Service) RefreshFiatRates(ctx context.Context) error {
 					break
 				}
 			}
-			if err := s.currencyRepo.UpdatePrice(code, rate, oldRate); err != nil {
+			if err := s.currencyRepo.SetPrice(ctx, code, rate, oldRate); err != nil {
 				slog.Warn("update fiat rate failed", "code", code, "error", err)
 				continue
 			}
@@ -140,7 +148,10 @@ func (s *Service) GetPrice(ctx context.Context, code string) (float64, error) {
 		}
 	}
 
-	cur, err := s.currencyRepo.FindByCode(code)
+	cur, err := s.currencyRepo.FindByCode(ctx, code)
+	if errors.Is(err, models.ErrRepositoryNotFound) {
+		cur, err = nil, nil
+	}
 	if err != nil {
 		return 0, err
 	}
@@ -151,12 +162,12 @@ func (s *Service) GetPrice(ctx context.Context, code string) (float64, error) {
 }
 
 func (s *Service) UpdateSinglePrice(ctx context.Context, code string, newPrice float64) error {
-	cur, err := s.currencyRepo.FindByCode(code)
+	cur, err := s.currencyRepo.FindByCode(ctx, code)
 	if err != nil || cur == nil {
 		return fmt.Errorf("currency not found: %s", code)
 	}
 	oldPrice := cur.CurrentPrice
-	if err := s.currencyRepo.UpdatePrice(code, newPrice, oldPrice); err != nil {
+	if err := s.currencyRepo.SetPrice(ctx, code, newPrice, oldPrice); err != nil {
 		return err
 	}
 	s.cachePrice(ctx, code, newPrice)
