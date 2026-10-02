@@ -68,7 +68,7 @@ func (s *RefreshTokenRepositoryTestSuite) TestFindValidTokens() {
 }
 
 func (s *RefreshTokenRepositoryTestSuite) TestRevokeIfActive() {
-	userID := s.createUser()
+	userID := insertActiveUserRow(s.T())
 	rt := &models.RefreshToken{ID: uuid.New(), UserID: userID, TokenHash: "tok", ExpiresAt: time.Now().Add(24 * time.Hour)}
 	s.Require().NoError(s.repo.Create(rt))
 
@@ -82,7 +82,7 @@ func (s *RefreshTokenRepositoryTestSuite) TestRevokeIfActive() {
 }
 
 func (s *RefreshTokenRepositoryTestSuite) TestRevokeIfActive_SecondRevocationReportsFalse() {
-	userID := s.createUser()
+	userID := insertActiveUserRow(s.T())
 	rt := &models.RefreshToken{ID: uuid.New(), UserID: userID, TokenHash: "tok", ExpiresAt: time.Now().Add(24 * time.Hour)}
 	s.Require().NoError(s.repo.Create(rt))
 

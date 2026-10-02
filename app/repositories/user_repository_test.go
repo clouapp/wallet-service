@@ -2,6 +2,7 @@ package repositories_test
 
 import (
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/suite"
@@ -137,4 +138,19 @@ func (s *UserRepositoryTestSuite) TestAdvanceTotpCounter_OnlyMovesForward() {
 	found, err := s.repo.FindByID(userID)
 	s.Require().NoError(err)
 	s.Equal(int64(100), found.TotpLastUsedCounter)
+}
+
+func (s *UserRepositoryTestSuite) TestUpdateSessionsRevokedAt() {
+	userID := insertActiveUserRow(s.T())
+	found, err := s.repo.FindByID(userID)
+	s.Require().NoError(err)
+	s.Nil(found.SessionsRevokedAt, "no watermark until the first revocation")
+
+	watermark := time.Date(2026, 10, 2, 12, 0, 6, 0, time.UTC)
+	s.Require().NoError(s.repo.UpdateSessionsRevokedAt(userID, watermark))
+
+	found, err = s.repo.FindByID(userID)
+	s.Require().NoError(err)
+	s.Require().NotNil(found.SessionsRevokedAt)
+	s.True(watermark.Equal(*found.SessionsRevokedAt))
 }
