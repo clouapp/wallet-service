@@ -6,6 +6,7 @@ import (
 
 	"github.com/macrowallets/waas/app/http/controllers"
 	"github.com/macrowallets/waas/app/http/middleware"
+	"github.com/macrowallets/waas/app/policies"
 )
 
 // RegisterAdminRoutes registers dashboard session-auth routes under /v1.
@@ -76,13 +77,13 @@ func RegisterAdminRoutes() {
 
 	facades.Route().Prefix("/v1/wallets").Middleware(middleware.SessionAuth(), middleware.AccountHeader(), noCache).Group(func(router route.Router) {
 		router.Get("", controllers.ListWallets)
-		router.Post("", controllers.CreateWalletAdmin)
+		router.Middleware(middleware.RequireFundAction(policies.FundCreateWallet)).Post("", controllers.CreateWalletAdmin)
 		router.Get("/{walletId}", controllers.GetWallet)
 		router.Prefix("/{walletId}").Middleware(middleware.WalletContext()).Group(func(r route.Router) {
 			r.Post("/activate", controllers.ActivateWallet)
 
 			r.Get("/addresses", controllers.ListWalletAddresses)
-			r.Post("/addresses", controllers.GenerateAddress)
+			r.Middleware(middleware.RequireFundAction(policies.FundGenerateAddress)).Post("/addresses", controllers.GenerateAddress)
 			r.Patch("/addresses/{addressId}", controllers.UpdateAddress)
 
 			r.Get("/users", controllers.ListWalletUsers)
@@ -107,12 +108,12 @@ func RegisterAdminRoutes() {
 			r.Get("/transactions/{txId}", controllers.GetWalletTransaction)
 
 			r.Get("/withdrawals", controllers.ListWalletWithdrawals)
-			r.Post("/withdrawals", controllers.CreateWalletWithdrawal)
+			r.Middleware(middleware.RequireFundAction(policies.FundWithdraw)).Post("/withdrawals", controllers.CreateWalletWithdrawal)
 			r.Post("/withdrawals/estimate", controllers.EstimateWithdrawalFee)
 			r.Get("/withdrawals/{withdrawalId}", controllers.GetWalletWithdrawal)
 			r.Post("/withdrawals/{withdrawalId}/cancel", controllers.CancelWalletWithdrawal)
 
-			r.Post("/consolidate", controllers.ConsolidateWallet)
+			r.Middleware(middleware.RequireFundAction(policies.FundSweep)).Post("/consolidate", controllers.ConsolidateWallet)
 			r.Get("/gas-status", controllers.GetGasStatus)
 			r.Post("/gas-check", controllers.ForceGasCheck)
 			r.Post("/withdraw/preview", controllers.PreviewWithdraw)
