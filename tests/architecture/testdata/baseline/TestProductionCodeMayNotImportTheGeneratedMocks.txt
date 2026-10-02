@@ -1,0 +1,3 @@
+# TestProductionCodeMayNotImportTheGeneratedMocks: known violations, rewritten by go test ./tests/architecture -update-baseline
+app/http/controllers/testutil/auth.go is a test helper inside production code
+app/http/controllers/testutil/request.go is a test helper inside production code

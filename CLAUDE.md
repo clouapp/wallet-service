@@ -34,8 +34,12 @@ today and has a fix tracked elsewhere. Do not read either as permission.
 
 `routes → http (controllers, middleware, requests) → services → repositories → models`,
 with adapters to external systems beside the repositories and `app/models` importing
-nothing of the module. — UNGUARDED (TARGET: `tests/architecture`, `TestImportDirection`
-and siblings, report mode first). Known violation: `app/models → app/services/mpc`.
+nothing of the module. — guarded by `tests/architecture` (`TestImportDirection`,
+`TestLayerCoversEveryZoneOfTheRepository` and the checks beside them) in **report mode**:
+each check logs its findings against `tests/architecture/testdata/baseline/` and fails
+only under `ARCH_MODE=ratchet` (new findings) or `ARCH_MODE=enforce` (any finding).
+A check moves to enforce when the migration phase that owns it empties its baseline.
+Known violations include `app/models → app/services/mpc` and `config → app/models`.
 
 ### 3. Two surfaces, never mixed
 
@@ -46,9 +50,13 @@ and siblings, report mode first). Known violation: `app/models → app/services/
 | inbound provider webhooks | `/v1/webhooks/ingest/{provider}/{chainID}` | a chain-data provider, authenticated by its signing secret | `routes/webhooks.go` |
 | public | `/health`, `/swagger/*` | anyone | `routes/docs.go` |
 
-- Every route outside the public and inbound-webhook rows is behind exactly one auth
-  middleware: `middleware.SessionAuth()` on `/v1`, `middleware.APITokenAuth()` on
-  `/api/v1`. — UNGUARDED (TARGET: `tests/architecture/route_security_test.go`).
+- Every route outside the public, guest (`/v1/auth/*` session creation) and
+  inbound-webhook rows is behind exactly one auth middleware: `middleware.SessionAuth()`
+  on `/v1`, `middleware.APITokenAuth()` on `/api/v1`. — guarded by
+  `tests/architecture/routesecurity` (`TestEveryRouteIsInTheRouteTable`: closed table of
+  every served route and its guard, both directions; and
+  `TestAuthenticatedRoutesRefuseAnAnonymousCaller`), report mode with an empty baseline.
+  A new route needs a row in `routeTable`.
 - External integrators (Markets) consume `/api/v1`; the front consumes `/v1`. A change of
   status, error shape or success shape on either is a contract change, decided first and
   recorded in `.ai/guidelines/http-error-contract.md`. — UNGUARDED (TARGET: the HTTP
@@ -159,6 +167,7 @@ make dev            # Docker + backend (Air) + frontend
 | `make test` | all Go tests, `-p 1`, against `TEST_DB_DATABASE` (default `vault_unit_test`) |
 | `make test-race` | same with `-race` |
 | `make lint` | golangci-lint v2 with `.golangci.yml` (report mode: lists findings, exits 0) |
+| `make arch` | architecture checks with every finding listed (`ARCH_MODE=ratchet\|enforce` to block) |
 | `make docker-up` / `make docker-down` | Postgres, Redis, LocalStack |
 | `make migrate` / `make migrate-status` / `make migrate-rollback` / `make migrate-fresh` | migrations |
 | `make db-seed` / `make migrate-fresh-seed` | dev seed data |
@@ -187,7 +196,7 @@ snapshots in the `localstack_data` volume; the snapshot key lives in
 | `app/console/`, `app/jobs/`, `app/events/`, `app/listeners/`, `app/mails/`, `app/rules/` | artisan commands, queue jobs, events, mail, validation rules |
 | `database/` | migrations, seeders, seed logic |
 | `pkg/` | `amount`, `types`, `httpclient` |
-| `tests/` | `testenv`, `testutil`, hand-written `mocks` |
+| `tests/` | `testenv`, `testutil`, hand-written `mocks`, `architecture` (machine-checked rules) |
 | `docs/` | Swagger output and design notes (`GORAVEL_INTEGRATION.md`, `INTEGRATION_STATUS.md` are historical) |
 
 Everything inside a `.go` file is English.

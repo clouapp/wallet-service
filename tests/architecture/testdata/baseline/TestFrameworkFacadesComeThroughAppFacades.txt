@@ -1,0 +1,21 @@
+# TestFrameworkFacadesComeThroughAppFacades: known violations, rewritten by go test ./tests/architecture -update-baseline
+. imports the framework facades
+app/console/commands imports the framework facades (x7)
+app/container imports the framework facades
+app/http/controllers imports the framework facades (x8)
+app/http/controllers/testutil imports the framework facades
+app/http/middleware imports the framework facades (x3)
+app/listeners imports the framework facades (x3)
+app/providers imports the framework facades (x3)
+app/repositories imports the framework facades (x24)
+app/rules imports the framework facades (x2)
+app/services/chainregistry imports the framework facades
+app/services/ingest imports the framework facades
+app/services/wallet imports the framework facades
+app/services/webhooksync imports the framework facades
+app/services/withdraw imports the framework facades
+config imports the framework facades (x10)
+database/migrations imports the framework facades (x29)
+database/seeders imports the framework facades
+database/seeds imports the framework facades (x10)
+routes imports the framework facades (x4)

@@ -1,4 +1,4 @@
-.PHONY: help build clean run dev dev-back dev-front stop deploy deploy-guided delete validate local test test-coverage test-race test-verbose lint fmt vet security migrate migrate-rollback migrate-status migrate-fresh migrate-fresh-seed migrate-fresh-hard db-reset db-seed key-generate jwt-secret docker-up docker-down docker-logs docker-build docker-test docker-status ecr-login ecr-push logs-api logs-scanner logs-webhook logs-withdrawal dlq-check dlq-replay-webhooks dlq-replay-withdrawals ping env-info swagger-install swagger-generate swagger-fmt deps-install deps-update
+.PHONY: help build clean run dev dev-back dev-front stop deploy deploy-guided delete validate local test arch arch-baseline test-coverage test-race test-verbose lint fmt vet security migrate migrate-rollback migrate-status migrate-fresh migrate-fresh-seed migrate-fresh-hard db-reset db-seed key-generate jwt-secret docker-up docker-down docker-logs docker-build docker-test docker-status ecr-login ecr-push logs-api logs-scanner logs-webhook logs-withdrawal dlq-check dlq-replay-webhooks dlq-replay-withdrawals ping env-info swagger-install swagger-generate swagger-fmt deps-install deps-update
 
 # =============================================================================
 # Configuration
@@ -320,6 +320,16 @@ test: ## Run all tests
 	$(call ensure_test_database)
 	@set -a; [ ! -f .env.dev ] || . ./.env.dev; . ./.env.testing; set +a; \
 		DB_DATABASE=$(TEST_DB_DATABASE) TEST_DB_REQUIRED=1 go test -p 1 ./... -v -count=1
+
+arch: ## Architecture checks, every finding listed (ARCH_MODE=ratchet|enforce to fail)
+	$(call ensure_test_database)
+	@set -a; [ ! -f .env.dev ] || . ./.env.dev; . ./.env.testing; set +a; \
+		DB_DATABASE=$(TEST_DB_DATABASE) ARCH_VERBOSE=1 go test ./tests/architecture/... -v -count=1
+
+arch-baseline: ## Rewrite tests/architecture/testdata/baseline from the current findings
+	$(call ensure_test_database)
+	@set -a; [ ! -f .env.dev ] || . ./.env.dev; . ./.env.testing; set +a; \
+		DB_DATABASE=$(TEST_DB_DATABASE) go test ./tests/architecture/... -count=1 -args -update-baseline
 
 test-coverage: ## Run tests with coverage report
 	@echo "📊 Running tests with coverage..."
