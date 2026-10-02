@@ -53,10 +53,10 @@ func (s *TotpRecoveryCodeRepositoryTestSuite) TestFindUnusedByUserID() {
 }
 
 func (s *TotpRecoveryCodeRepositoryTestSuite) TestMarkUsedIfUnused() {
-	userID := s.createUser()
+	userID := insertActiveUserRow(s.T())
 
 	code := &models.TotpRecoveryCode{ID: uuid.New(), UserID: userID, CodeHash: "hash"}
-	facades.Orm().Query().Create(code)
+	s.Require().NoError(facades.Orm().Query().Create(code))
 
 	spent, err := s.repo.MarkUsedIfUnused(code.ID)
 	s.NoError(err)
@@ -68,10 +68,10 @@ func (s *TotpRecoveryCodeRepositoryTestSuite) TestMarkUsedIfUnused() {
 }
 
 func (s *TotpRecoveryCodeRepositoryTestSuite) TestMarkUsedIfUnused_SecondSpendIsRefused() {
-	userID := s.createUser()
+	userID := insertActiveUserRow(s.T())
 
 	code := &models.TotpRecoveryCode{ID: uuid.New(), UserID: userID, CodeHash: "hash"}
-	facades.Orm().Query().Create(code)
+	s.Require().NoError(facades.Orm().Query().Create(code))
 
 	first, err := s.repo.MarkUsedIfUnused(code.ID)
 	s.Require().NoError(err)
