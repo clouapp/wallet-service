@@ -27,7 +27,6 @@ func TestMain(m *testing.M) {
 		panic(err)
 	}
 	_ = os.Setenv("JWT_SECRET", testJWTSecret)
-	_ = os.Setenv("API_KEY_SECRET", "test-api-secret")
 	if os.Getenv("AWS_DEFAULT_REGION") == "" {
 		_ = os.Setenv("AWS_DEFAULT_REGION", "us-east-1")
 	}

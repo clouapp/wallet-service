@@ -40,7 +40,6 @@ func Providers() []foundation.ServiceProvider {
 		&frameworkevent.ServiceProvider{},
 		&frameworkmail.ServiceProvider{},
 		&frameworkcrypt.ServiceProvider{},
-		&providers.MigrationsServiceProvider{},
 		&providers.AuthServiceProvider{},
 		&providers.AppServiceProvider{},
 		&providers.RouteServiceProvider{},

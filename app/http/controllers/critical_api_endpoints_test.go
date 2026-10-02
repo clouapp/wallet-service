@@ -20,7 +20,7 @@ import (
 )
 
 // criticalEndpointsSuite exercises the high-value external API endpoints
-// (GenerateAddress, Consolidate, and — when registered — CreateWithdrawal)
+// (GenerateAddress, Consolidate)
 // under both the legacy unsigned Bearer JWT scheme and the HMAC-required
 // signed scheme introduced by the `require_signature` claim.
 //
