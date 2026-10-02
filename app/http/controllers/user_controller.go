@@ -259,7 +259,12 @@ func ConfirmTOTP(ctx http.Context) http.Response {
 		return ctx.Response().Json(http.StatusInternalServerError, http.Json{"error": "failed to decrypt secret"})
 	}
 
-	if !userAuthService.VerifyTOTP(decryptedSecret, req.Code) {
+	matched, err := container.Get().SecondFactor.RecordConfirmedCode(user.ID, decryptedSecret, req.Code)
+	if err != nil {
+		facades.Log().WithContext(ctx).Errorf("user: confirm totp: %v", err)
+		return ctx.Response().Json(http.StatusInternalServerError, http.Json{"error": "failed to enable 2FA"})
+	}
+	if !matched {
 		return ctx.Response().Json(http.StatusUnauthorized, http.Json{"error": "invalid verification code"})
 	}
 

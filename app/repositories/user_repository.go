@@ -20,6 +20,7 @@ type UserRepository interface {
 	UpdateTotpSecret(id uuid.UUID, secret string) error
 	EnableTotp(id uuid.UUID) error
 	DisableTotp(id uuid.UUID) error
+	AdvanceTotpCounter(id uuid.UUID, counter int64) (bool, error)
 }
 
 type userRepository struct{}
@@ -88,6 +89,21 @@ func (r *userRepository) UpdateTotpSecret(id uuid.UUID, secret string) error {
 func (r *userRepository) EnableTotp(id uuid.UUID) error {
 	_, err := facades.Orm().Query().Model(&models.User{}).Where("id = ?", id).Update("totp_enabled", true)
 	return err
+}
+
+// AdvanceTotpCounter stores counter as the user's last redeemed TOTP step only
+// when it is newer than the stored one. It reports false when the step was
+// already redeemed, which is how a replayed code — including one replayed
+// concurrently — is refused.
+func (r *userRepository) AdvanceTotpCounter(id uuid.UUID, counter int64) (bool, error) {
+	result, err := facades.Orm().Query().
+		Model(&models.User{}).
+		Where("id = ? AND totp_last_used_counter < ?", id, counter).
+		Update("totp_last_used_counter", counter)
+	if err != nil {
+		return false, err
+	}
+	return result.RowsAffected == 1, nil
 }
 
 func (r *userRepository) DisableTotp(id uuid.UUID) error {

@@ -9,6 +9,7 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/service/secretsmanager"
 	"github.com/macrowallets/waas/app/repositories"
+	authsvc "github.com/macrowallets/waas/app/services/auth"
 	chainpkg "github.com/macrowallets/waas/app/services/chain"
 	"github.com/macrowallets/waas/app/services/deposit"
 	"github.com/macrowallets/waas/app/services/deposit/pending"
@@ -81,6 +82,9 @@ type Container struct {
 	BalanceRefreshService *refresh.BalanceService
 	WalletRefresher       *refresh.WalletRefresher
 	PendingDeposits       pending.Store
+
+	SecondFactor   *authsvc.SecondFactorVerifier
+	TwoFactorLogin *authsvc.TwoFactorLogin
 }
 
 var (

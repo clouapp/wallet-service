@@ -16,6 +16,10 @@ type User struct {
 	Status           string           `gorm:"type:varchar(20);default:active" json:"status"`
 	DefaultAccountID *uuid.UUID       `gorm:"type:uuid" json:"default_account_id,omitempty"`
 	Preferences      *UserPreferences `gorm:"type:jsonb" json:"preferences,omitempty"`
+
+	// TotpLastUsedCounter is the last TOTP time-step this user redeemed; a code
+	// whose step is not newer is a replay.
+	TotpLastUsedCounter int64 `gorm:"not null;default:0" json:"-"`
 }
 
 func (u *User) TableName() string { return "users" }

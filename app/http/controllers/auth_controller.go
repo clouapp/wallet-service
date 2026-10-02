@@ -125,7 +125,7 @@ func Register(ctx http.Context) http.Response {
 
 // Login godoc
 // @Summary      Authenticate a user
-// @Description  Validates credentials and returns JWT access + refresh tokens. If TOTP is enabled, returns a partial token requiring 2FA.
+// @Description  Validates credentials and returns JWT access + refresh tokens. If TOTP is enabled, returns requires_2fa with a short-lived, single-use partial_token instead; it is not a session token and is only accepted by /auth/2fa/verify.
 // @Tags         Auth
 // @Accept       json
 // @Produce      json
@@ -151,57 +151,29 @@ func Login(ctx http.Context) http.Response {
 	}
 
 	if user.TotpEnabled {
-		partialToken, err := facades.Auth(ctx).LoginUsingID(user.ID.String())
+		challenge, err := container.Get().TwoFactorLogin.Begin(&user)
 		if err != nil {
-			facades.Log().WithContext(ctx).Errorf("auth: partial login: %v", err)
+			facades.Log().WithContext(ctx).Errorf("auth: begin 2fa: %v", err)
 			return ctx.Response().Json(http.StatusInternalServerError, http.Json{"error": "failed to create session"})
 		}
 		return ctx.Response().Json(http.StatusOK, http.Json{
 			"requires_2fa":  true,
-			"partial_token": partialToken,
+			"partial_token": challenge.Token,
+			"expires_in":    int(challenge.ExpiresIn.Seconds()),
 		})
 	}
 
-	accessToken, err := facades.Auth(ctx).LoginUsingID(user.ID.String())
+	tokens, err := issueSession(ctx, user.ID)
 	if err != nil {
 		facades.Log().WithContext(ctx).Errorf("auth: login: %v", err)
 		return ctx.Response().Json(http.StatusInternalServerError, http.Json{"error": "failed to create session"})
 	}
-
-	rawRefresh, err := authService.GenerateRandomToken()
-	if err != nil {
-		facades.Log().WithContext(ctx).Errorf("auth: generate refresh token: %v", err)
-		return ctx.Response().Json(http.StatusInternalServerError, http.Json{"error": "internal error"})
-	}
-	refreshHash := authService.HashToken(rawRefresh)
-	rt := &models.RefreshToken{
-		ID:        uuid.New(),
-		UserID:    user.ID,
-		TokenHash: refreshHash,
-		ExpiresAt: time.Now().Add(30 * 24 * time.Hour),
-	}
-	if err := container.Get().RefreshTokenRepo.Create(rt); err != nil {
-		facades.Log().WithContext(ctx).Errorf("auth: store refresh token: %v", err)
-	}
-
-	accounts, defaultAccount := loadUserAccounts(&user)
-
-	resp := http.Json{
-		"access_token":  accessToken,
-		"refresh_token": rawRefresh,
-		"user":          user,
-		"accounts":      accounts,
-	}
-	if defaultAccount != nil {
-		resp["account_id"] = defaultAccount["id"]
-		resp["account"] = defaultAccount
-	}
-	return ctx.Response().Json(http.StatusOK, resp)
+	return ctx.Response().Json(http.StatusOK, signedInResponse(&user, tokens))
 }
 
 // VerifyTwoFactor godoc
 // @Summary      Complete 2FA login
-// @Description  Validates a TOTP code or recovery code and returns full JWT tokens
+// @Description  Exchanges the partial_token from /auth/login plus a TOTP code (or a recovery code) for JWT tokens. A wrong code keeps the partial_token usable until the attempt cap; a code can be redeemed once.
 // @Tags         Auth
 // @Accept       json
 // @Produce      json
@@ -209,6 +181,8 @@ func Login(ctx http.Context) http.Response {
 // @Success      200      {object}  AuthResponse
 // @Failure      400      {object}  ErrorResponse
 // @Failure      401      {object}  ErrorResponse
+// @Failure      422      {object}  ErrorResponse
+// @Failure      429      {object}  ErrorResponse
 // @Router       /auth/2fa/verify [post]
 func VerifyTwoFactor(ctx http.Context) http.Response {
 	var req requests.VerifyTwoFactorRequest
@@ -216,76 +190,21 @@ func VerifyTwoFactor(ctx http.Context) http.Response {
 		return errResp
 	}
 
-	payload, err := facades.Auth(ctx).Parse(req.PartialToken)
-	if err != nil || payload == nil {
-		return ctx.Response().Json(http.StatusUnauthorized, http.Json{"error": "invalid or expired partial token"})
+	if req.Code == "" && req.RecoveryCode == "" {
+		return ctx.Response().Json(http.StatusUnprocessableEntity, http.Json{"error": "code or recovery_code is required"})
 	}
 
-	userIDStr, idErr := facades.Auth(ctx).ID()
-	if idErr != nil {
-		return ctx.Response().Json(http.StatusUnauthorized, http.Json{"error": "invalid token"})
-	}
-	userID, err := uuid.Parse(userIDStr)
+	user, err := container.Get().TwoFactorLogin.Complete(req.PartialToken, req.Code, req.RecoveryCode)
 	if err != nil {
-		return ctx.Response().Json(http.StatusUnauthorized, http.Json{"error": "invalid token subject"})
+		return twoFactorErrorResponse(ctx, err)
 	}
 
-	userPtr, findErr := container.Get().UserRepo.FindByID(userID)
-	if findErr != nil || userPtr == nil {
-		return ctx.Response().Json(http.StatusUnauthorized, http.Json{"error": "user not found"})
-	}
-	user := *userPtr
-
-	verified := false
-	if req.Code != "" {
-		verified = authService.VerifyTOTP(user.TotpSecret, req.Code)
-	}
-	if !verified && req.RecoveryCode != "" {
-		codes, codesErr := container.Get().TotpRecoveryCodeRepo.FindUnusedByUserID(user.ID)
-		if codesErr != nil {
-			facades.Log().WithContext(ctx).Errorf("auth: find recovery codes: %v", codesErr)
-		}
-		for _, c := range codes {
-			if authService.VerifyRecoveryCode(req.RecoveryCode, c.CodeHash) {
-				if err := container.Get().TotpRecoveryCodeRepo.MarkUsed(c.ID); err != nil {
-					facades.Log().WithContext(ctx).Errorf("auth: mark recovery code used: %v", err)
-				}
-				verified = true
-				break
-			}
-		}
-	}
-
-	if !verified {
-		return ctx.Response().Json(http.StatusUnauthorized, http.Json{"error": "invalid 2FA code"})
-	}
-
-	accessToken, loginErr := facades.Auth(ctx).LoginUsingID(user.ID.String())
-	if loginErr != nil {
-		facades.Log().WithContext(ctx).Errorf("auth: 2fa login: %v", loginErr)
+	tokens, err := issueSession(ctx, user.ID)
+	if err != nil {
+		facades.Log().WithContext(ctx).Errorf("auth: 2fa login: %v", err)
 		return ctx.Response().Json(http.StatusInternalServerError, http.Json{"error": "failed to create session"})
 	}
-	rawRefresh, genErr := authService.GenerateRandomToken()
-	if genErr != nil {
-		facades.Log().WithContext(ctx).Errorf("auth: generate refresh token: %v", genErr)
-		return ctx.Response().Json(http.StatusInternalServerError, http.Json{"error": "internal error"})
-	}
-	refreshHash := authService.HashToken(rawRefresh)
-	rt := &models.RefreshToken{
-		ID:        uuid.New(),
-		UserID:    user.ID,
-		TokenHash: refreshHash,
-		ExpiresAt: time.Now().Add(30 * 24 * time.Hour),
-	}
-	if err := container.Get().RefreshTokenRepo.Create(rt); err != nil {
-		facades.Log().WithContext(ctx).Errorf("auth: store refresh token: %v", err)
-	}
-
-	return ctx.Response().Json(http.StatusOK, http.Json{
-		"access_token":  accessToken,
-		"refresh_token": rawRefresh,
-		"user":          user,
-	})
+	return ctx.Response().Json(http.StatusOK, signedInResponse(user, tokens))
 }
 
 // RefreshToken godoc
@@ -325,30 +244,14 @@ func RefreshToken(ctx http.Context) http.Response {
 		facades.Log().WithContext(ctx).Errorf("auth: revoke refresh token: %v", err)
 	}
 
-	accessToken, loginErr := facades.Auth(ctx).LoginUsingID(matched.UserID.String())
-	if loginErr != nil {
-		facades.Log().WithContext(ctx).Errorf("auth: refresh login: %v", loginErr)
+	session, err := issueSession(ctx, matched.UserID)
+	if err != nil {
+		facades.Log().WithContext(ctx).Errorf("auth: refresh: %v", err)
 		return ctx.Response().Json(http.StatusInternalServerError, http.Json{"error": "failed to create session"})
 	}
-	rawRefresh, genErr := authService.GenerateRandomToken()
-	if genErr != nil {
-		facades.Log().WithContext(ctx).Errorf("auth: generate refresh token: %v", genErr)
-		return ctx.Response().Json(http.StatusInternalServerError, http.Json{"error": "internal error"})
-	}
-	refreshHash := authService.HashToken(rawRefresh)
-	newRT := &models.RefreshToken{
-		ID:        uuid.New(),
-		UserID:    matched.UserID,
-		TokenHash: refreshHash,
-		ExpiresAt: time.Now().Add(30 * 24 * time.Hour),
-	}
-	if err := container.Get().RefreshTokenRepo.Create(newRT); err != nil {
-		facades.Log().WithContext(ctx).Errorf("auth: store refresh token: %v", err)
-	}
-
 	return ctx.Response().Json(http.StatusOK, http.Json{
-		"access_token":  accessToken,
-		"refresh_token": rawRefresh,
+		"access_token":  session.AccessToken,
+		"refresh_token": session.RefreshToken,
 	})
 }
 

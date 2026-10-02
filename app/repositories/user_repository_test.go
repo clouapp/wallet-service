@@ -118,3 +118,24 @@ func (s *UserRepositoryTestSuite) TestUpdatePasswordHash() {
 	s.NoError(err)
 	s.Equal("new_hash", found.PasswordHash)
 }
+
+func (s *UserRepositoryTestSuite) TestAdvanceTotpCounter_OnlyMovesForward() {
+	user := &models.User{ID: uuid.New(), Email: "counter@example.com", PasswordHash: "h", Status: "active"}
+	s.Require().NoError(s.repo.Create(user))
+
+	advanced, err := s.repo.AdvanceTotpCounter(user.ID, 100)
+	s.Require().NoError(err)
+	s.True(advanced, "a newer step is recorded")
+
+	advanced, err = s.repo.AdvanceTotpCounter(user.ID, 100)
+	s.Require().NoError(err)
+	s.False(advanced, "the same step is a replay")
+
+	advanced, err = s.repo.AdvanceTotpCounter(user.ID, 99)
+	s.Require().NoError(err)
+	s.False(advanced, "an older step is a replay")
+
+	found, err := s.repo.FindByID(user.ID)
+	s.Require().NoError(err)
+	s.Equal(int64(100), found.TotpLastUsedCounter)
+}

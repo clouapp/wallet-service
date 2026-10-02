@@ -120,6 +120,10 @@ func buildVaultContainer() (*container.Container, error) {
 	c.WalletSyncStateRepo = repositories.NewWalletSyncStateRepository()
 	c.CurrencyRepo = repositories.NewCurrencyRepository()
 
+	if err := wireTwoFactorLogin(c); err != nil {
+		return nil, err
+	}
+
 	c.PriceConfig.CoinGeckoAPIKey = facades.Config().GetString("vault.price.coingecko_api_key")
 	c.PriceConfig.CoinMarketCapAPIKey = facades.Config().GetString("vault.price.coinmarketcap_api_key")
 	c.PriceConfig.CoinAPIKey = facades.Config().GetString("vault.price.coinapi_key")

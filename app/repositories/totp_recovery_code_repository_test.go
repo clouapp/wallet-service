@@ -52,16 +52,32 @@ func (s *TotpRecoveryCodeRepositoryTestSuite) TestFindUnusedByUserID() {
 	s.Equal(unused.ID, codes[0].ID)
 }
 
-func (s *TotpRecoveryCodeRepositoryTestSuite) TestMarkUsed() {
+func (s *TotpRecoveryCodeRepositoryTestSuite) TestMarkUsedIfUnused() {
 	userID := s.createUser()
 
 	code := &models.TotpRecoveryCode{ID: uuid.New(), UserID: userID, CodeHash: "hash"}
 	facades.Orm().Query().Create(code)
 
-	err := s.repo.MarkUsed(code.ID)
+	spent, err := s.repo.MarkUsedIfUnused(code.ID)
 	s.NoError(err)
+	s.True(spent)
 
 	var check models.TotpRecoveryCode
 	facades.Orm().Query().Where("id = ?", code.ID).First(&check)
 	s.NotNil(check.UsedAt)
+}
+
+func (s *TotpRecoveryCodeRepositoryTestSuite) TestMarkUsedIfUnused_SecondSpendIsRefused() {
+	userID := s.createUser()
+
+	code := &models.TotpRecoveryCode{ID: uuid.New(), UserID: userID, CodeHash: "hash"}
+	facades.Orm().Query().Create(code)
+
+	first, err := s.repo.MarkUsedIfUnused(code.ID)
+	s.Require().NoError(err)
+	s.Require().True(first)
+
+	second, err := s.repo.MarkUsedIfUnused(code.ID)
+	s.NoError(err)
+	s.False(second, "a spent recovery code must not be spendable again")
 }
