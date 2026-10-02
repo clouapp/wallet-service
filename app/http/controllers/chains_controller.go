@@ -4,6 +4,7 @@ import (
 	"github.com/goravel/framework/contracts/http"
 
 	"github.com/macrowallets/waas/app/container"
+	"github.com/macrowallets/waas/app/http/responses"
 	"github.com/macrowallets/waas/app/models"
 )
 
@@ -29,7 +30,7 @@ func ListChains(ctx http.Context) http.Response {
 		chainList, err = container.Get().ChainRepo.FindActive()
 	}
 	if err != nil {
-		return ctx.Response().Json(http.StatusInternalServerError, http.Json{"error": "failed to fetch chains"})
+		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to fetch chains"})
 	}
 
 	return ctx.Response().Success().Json(http.Json{"data": chainList})
@@ -39,19 +40,19 @@ func ListChains(ctx http.Context) http.Response {
 func GetChain(ctx http.Context) http.Response {
 	chainID := ctx.Request().Input("chainId")
 	if chainID == "" {
-		return ctx.Response().Json(http.StatusBadRequest, http.Json{"error": "chainId is required"})
+		return responses.Send(ctx, http.StatusBadRequest, http.Json{"error": "chainId is required"})
 	}
 
 	chain, err := container.Get().ChainRepo.FindByID(chainID)
 	if err != nil || chain == nil {
-		return ctx.Response().Json(http.StatusNotFound, http.Json{"error": "chain not found"})
+		return responses.Send(ctx, http.StatusNotFound, http.Json{"error": "chain not found"})
 	}
 
 	env, _ := ctx.Value("account_environment").(string)
 	if env == models.EnvironmentProd || env == models.EnvironmentTest {
 		isTestnet := env == models.EnvironmentTest
 		if chain.IsTestnet != isTestnet {
-			return ctx.Response().Json(http.StatusForbidden, http.Json{"error": "chain not available in current environment"})
+			return responses.Send(ctx, http.StatusForbidden, http.Json{"error": "chain not available in current environment"})
 		}
 	}
 
@@ -69,25 +70,25 @@ func GetChain(ctx http.Context) http.Response {
 func ListChainTokens(ctx http.Context) http.Response {
 	chainID := ctx.Request().Input("chainId")
 	if chainID == "" {
-		return ctx.Response().Json(http.StatusBadRequest, http.Json{"error": "chainId is required"})
+		return responses.Send(ctx, http.StatusBadRequest, http.Json{"error": "chainId is required"})
 	}
 
 	chain, err := container.Get().ChainRepo.FindByID(chainID)
 	if err != nil || chain == nil {
-		return ctx.Response().Json(http.StatusNotFound, http.Json{"error": "chain not found"})
+		return responses.Send(ctx, http.StatusNotFound, http.Json{"error": "chain not found"})
 	}
 
 	env, _ := ctx.Value("account_environment").(string)
 	if env == models.EnvironmentProd || env == models.EnvironmentTest {
 		isTestnet := env == models.EnvironmentTest
 		if chain.IsTestnet != isTestnet {
-			return ctx.Response().Json(http.StatusForbidden, http.Json{"error": "chain not available in current environment"})
+			return responses.Send(ctx, http.StatusForbidden, http.Json{"error": "chain not available in current environment"})
 		}
 	}
 
 	tokens, tokenErr := container.Get().TokenRepo.FindByChainID(chainID)
 	if tokenErr != nil {
-		return ctx.Response().Json(http.StatusInternalServerError, http.Json{"error": "failed to fetch tokens"})
+		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to fetch tokens"})
 	}
 
 	return ctx.Response().Success().Json(http.Json{"data": tokens})
@@ -97,25 +98,25 @@ func ListChainTokens(ctx http.Context) http.Response {
 func ListChainResources(ctx http.Context) http.Response {
 	chainID := ctx.Request().Input("chainId")
 	if chainID == "" {
-		return ctx.Response().Json(http.StatusBadRequest, http.Json{"error": "chainId is required"})
+		return responses.Send(ctx, http.StatusBadRequest, http.Json{"error": "chainId is required"})
 	}
 
 	chain, err := container.Get().ChainRepo.FindByID(chainID)
 	if err != nil || chain == nil {
-		return ctx.Response().Json(http.StatusNotFound, http.Json{"error": "chain not found"})
+		return responses.Send(ctx, http.StatusNotFound, http.Json{"error": "chain not found"})
 	}
 
 	env, _ := ctx.Value("account_environment").(string)
 	if env == models.EnvironmentProd || env == models.EnvironmentTest {
 		isTestnet := env == models.EnvironmentTest
 		if chain.IsTestnet != isTestnet {
-			return ctx.Response().Json(http.StatusForbidden, http.Json{"error": "chain not available in current environment"})
+			return responses.Send(ctx, http.StatusForbidden, http.Json{"error": "chain not available in current environment"})
 		}
 	}
 
 	resources, resErr := container.Get().ChainResourceRepo.FindByChainID(chainID)
 	if resErr != nil {
-		return ctx.Response().Json(http.StatusInternalServerError, http.Json{"error": "failed to fetch resources"})
+		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to fetch resources"})
 	}
 
 	return ctx.Response().Success().Json(http.Json{"data": resources})

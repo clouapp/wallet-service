@@ -7,6 +7,7 @@ import (
 	"github.com/macrowallets/waas/app/container"
 	"github.com/macrowallets/waas/app/http/pagination"
 	"github.com/macrowallets/waas/app/http/requests"
+	"github.com/macrowallets/waas/app/http/responses"
 )
 
 // GenerateAddress godoc
@@ -27,7 +28,7 @@ import (
 func GenerateAddress(ctx http.Context) http.Response {
 	walletID, err := uuid.Parse(ctx.Request().Route("walletId"))
 	if err != nil {
-		return ctx.Response().Json(http.StatusBadRequest, http.Json{
+		return responses.Send(ctx, http.StatusBadRequest, http.Json{
 			"error": "invalid wallet id",
 		})
 	}
@@ -39,7 +40,7 @@ func GenerateAddress(ctx http.Context) http.Response {
 
 	addr, err := container.Get().WalletService.GenerateAddress(ctx.Context(), walletID, req.ExternalUserID, req.Label, req.Metadata, req.Passphrase)
 	if err != nil {
-		return ctx.Response().Json(http.StatusUnprocessableEntity, http.Json{
+		return responses.Send(ctx, http.StatusUnprocessableEntity, http.Json{
 			"error": err.Error(),
 		})
 	}
@@ -70,7 +71,7 @@ func GenerateAddress(ctx http.Context) http.Response {
 func UpdateAddress(ctx http.Context) http.Response {
 	addressID, err := uuid.Parse(ctx.Request().Route("addressId"))
 	if err != nil {
-		return ctx.Response().Json(http.StatusBadRequest, http.Json{
+		return responses.Send(ctx, http.StatusBadRequest, http.Json{
 			"error": "invalid address id",
 		})
 	}
@@ -89,14 +90,14 @@ func UpdateAddress(ctx http.Context) http.Response {
 	}
 
 	if len(fields) == 0 {
-		return ctx.Response().Json(http.StatusBadRequest, http.Json{
+		return responses.Send(ctx, http.StatusBadRequest, http.Json{
 			"error": "no fields to update",
 		})
 	}
 
 	addr, err := container.Get().WalletService.UpdateAddress(ctx.Context(), addressID, fields)
 	if err != nil {
-		return ctx.Response().Json(http.StatusNotFound, http.Json{
+		return responses.Send(ctx, http.StatusNotFound, http.Json{
 			"error": err.Error(),
 		})
 	}
@@ -119,14 +120,14 @@ func UpdateAddress(ctx http.Context) http.Response {
 func ListWalletAddresses(ctx http.Context) http.Response {
 	walletID, err := uuid.Parse(ctx.Request().Route("walletId"))
 	if err != nil {
-		return ctx.Response().Json(http.StatusBadRequest, http.Json{
+		return responses.Send(ctx, http.StatusBadRequest, http.Json{
 			"error": "invalid wallet id",
 		})
 	}
 	limit, offset := pagination.ParseParams(ctx, 20)
 	addrs, total, err := container.Get().AddressRepo.PaginateByWalletID(walletID, limit, offset)
 	if err != nil {
-		return ctx.Response().Json(http.StatusInternalServerError, http.Json{
+		return responses.Send(ctx, http.StatusInternalServerError, http.Json{
 			"error": "failed to fetch addresses",
 		})
 	}
@@ -149,7 +150,7 @@ func ListWalletAddresses(ctx http.Context) http.Response {
 func LookupAddress(ctx http.Context) http.Response {
 	accountID, ok := ctx.Value("account_id").(uuid.UUID)
 	if !ok {
-		return ctx.Response().Json(http.StatusUnauthorized, http.Json{
+		return responses.Send(ctx, http.StatusUnauthorized, http.Json{
 			"error": "unauthorized",
 		})
 	}
@@ -160,7 +161,7 @@ func LookupAddress(ctx http.Context) http.Response {
 	if chainFilter != "" {
 		addr, err := container.Get().WalletService.LookupAddressForAccount(ctx.Context(), chainFilter, address, accountID)
 		if err != nil || addr == nil {
-			return ctx.Response().Json(http.StatusNotFound, http.Json{
+			return responses.Send(ctx, http.StatusNotFound, http.Json{
 				"error": "address not found",
 			})
 		}
@@ -175,7 +176,7 @@ func LookupAddress(ctx http.Context) http.Response {
 			return ctx.Response().Success().Json(addr)
 		}
 	}
-	return ctx.Response().Json(http.StatusNotFound, http.Json{
+	return responses.Send(ctx, http.StatusNotFound, http.Json{
 		"error": "address not found",
 	})
 }
@@ -194,7 +195,7 @@ func LookupAddress(ctx http.Context) http.Response {
 func ListUserAddresses(ctx http.Context) http.Response {
 	accountID, ok := ctx.Value("account_id").(uuid.UUID)
 	if !ok {
-		return ctx.Response().Json(http.StatusUnauthorized, http.Json{
+		return responses.Send(ctx, http.StatusUnauthorized, http.Json{
 			"error": "unauthorized",
 		})
 	}

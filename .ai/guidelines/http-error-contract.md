@@ -1,7 +1,9 @@
 # HTTP Error Contract Guideline
 
-> Status: TARGET, pending DECISION B2.1/B2.2 of the alignment prompt. Today at least
-> five error shapes coexist and 28 handlers return `err.Error()`. Migration: §3.5.
+> Status: DECIDED (B2.1, B2.2). Every failure on `/v1` and `/api/v1` is the
+> envelope below, written by `app/http/responses`. Success bodies stay on
+> `ctx.Response().Json` until the resources migration; this file does not claim
+> that migration is done. Some handlers still put `err.Error()` in `message`.
 
 Status codes and error codes are a contract. `macro-wallets-front` branches on
 them, and external integrators (Markets) consume `/api/v1`. A status or a code
@@ -16,10 +18,12 @@ exactly one shape, written only by `app/http/responses`:
 { "error": { "code": "insufficient_funds", "message": "insufficient funds" } }
 ```
 
-> **[DECISION 2.1]** The block above is the recommended shape (slotkit). If the
-> decision is xip's `{"error":"<string>"}`, or a transition (coded envelope on
-> `/v1`, current shape frozen on `/api/v1` until `/api/v2`), replace this
-> section and record it in the README's "Deliberate choices".
+**[DECISION B2.1]** Both surfaces use this object. There is no frozen
+`{"error":"<string>"}` on `/api/v1`. Extra fields stay inside `error`.
+
+Markets (`clouapp/back`) reads both this object and the old string, so the two
+repos can deploy in either order. That dual-read is the Markets client's
+decision, recorded on its PR; this service only emits the object.
 
 Extra fields an action needs travel INSIDE the error object and are part of the
 code's contract: `sweep_limit_exceeded` carries `limit_type` and
@@ -31,14 +35,28 @@ client already handles, is a spec change.
 
 ## Validation
 
-> **[DECISION 2.2]** Recommended: 400 `invalid_request`, ONE message (the first
-> field of `FieldOrder()`). Today the API answers 422 with Goravel's raw error
-> bag; if the front renders per-field errors, keep 422 with a declared
-> `errors` map instead and say so here.
+**[DECISION B2.2]** A form-request failure is HTTP 422, not a single 400
+message. The keys are the ones `parseApiErrorBody` on `origin/feat/forms` reads:
+
+```json
+{
+  "error": { "code": "validation_failed", "message": "validation failed" },
+  "errors": { "email": ["Email address is required"] }
+}
+```
+
+`errors` values are string arrays, rule names sorted. A domain 422 (for example
+`wallet_not_gas_ready`) has no `errors` map. `code` is snake_case;
+`FEE_ESTIMATE_FAILED` stays as the explicit code the handler already sent.
 
 ## The codes
 
-`resources.Code*`, and nothing outside `app/http/resources/error_resource.go`.
+`responses.Code*`, in `app/http/responses`. The resources package is not part of
+this change. A legacy string that matches `^[a-z][a-z0-9_]*$` is the code and
+the message. These sentences map to `invalid_signature`: "missing request
+signature", "invalid request signature", "invalid webhook signature". Anything
+else takes the status default (`invalid_request`, `unauthorized`, `forbidden`,
+`not_found`, `conflict`, `unprocessable`, `too_many_requests`, `internal`, …).
 Generic:
 
 | Code | Status |
@@ -87,7 +105,9 @@ outage behind a message about the caller.
 ## What a body may carry
 
 - **Never `err.Error()`.** A wrapped error can carry an RPC URL with its API key,
-  a SQL fragment, or what the customer typed.
+  a SQL fragment, or what the customer typed. The envelope switch did not do
+  that redaction: a handler that already sent `err.Error()` still does, now as
+  `message`.
 - **Never a provider's raw text** — `responses.ProviderError` answers the
   endpoint's own message and logs the cause.
 - A secret field never comes back on a read: `"<field>Set": true|false`.
@@ -108,4 +128,12 @@ New tests for error paths assert the body: `s.AssertError(rec, status, code, mes
 
 ## Intended differences
 
-(empty — append a table row per intended change: method, path, condition, was, is)
+Recorded with the error-envelope switch. Success bytes are unchanged except the
+two bugfixes that landed in the commits before it.
+
+| Method and path | Condition | Was | Is |
+|---|---|---|---|
+| `POST /v1/auth/register` | valid body | 500 `failed to create user` (preferences NULL) | 201, the user, `preferences: {}` |
+| `POST /v1/auth/register` | e-mail already registered | 500 | 422 `validation_failed`, `errors.email` |
+| `PATCH /v1/users/me`, `PATCH /v1/accounts/{id}` | body, request has no rules | 200, body ignored | 200, the field is applied |
+| any failure | string `error`, raw Goravel 422, or empty middleware body | those shapes | `{"error":{"code","message"}}`; validation also has `errors` |

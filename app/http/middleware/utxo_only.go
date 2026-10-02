@@ -5,6 +5,7 @@ import (
 	"github.com/goravel/framework/contracts/http"
 
 	"github.com/macrowallets/waas/app/container"
+	"github.com/macrowallets/waas/app/http/responses"
 	chainpkg "github.com/macrowallets/waas/app/services/chain"
 )
 
@@ -14,23 +15,20 @@ func UTXOOnly() http.Middleware {
 		rawID := ctx.Request().Input("walletId")
 		walletID, err := uuid.Parse(rawID)
 		if err != nil {
-			ctx.Request().AbortWithStatus(http.StatusNotFound)
-			ctx.Response().Json(http.StatusNotFound, http.Json{"error": "invalid wallet id"})
+			_ = responses.Send(ctx, http.StatusNotFound, http.Json{"error": "invalid wallet id"}).Abort()
 			return
 		}
 
 		wallet, err := container.Get().WalletRepo.FindByID(walletID)
 		if err != nil || wallet == nil {
-			ctx.Request().AbortWithStatus(http.StatusNotFound)
-			ctx.Response().Json(http.StatusNotFound, http.Json{"error": "wallet not found"})
+			_ = responses.Send(ctx, http.StatusNotFound, http.Json{"error": "wallet not found"}).Abort()
 			return
 		}
 
 		if !chainpkg.IsUTXO(wallet.Chain) {
-			ctx.Request().AbortWithStatus(http.StatusUnprocessableEntity)
-			ctx.Response().Json(http.StatusUnprocessableEntity, http.Json{
+			_ = responses.Send(ctx, http.StatusUnprocessableEntity, http.Json{
 				"error": "this endpoint is only available for UTXO-model chains (e.g. bitcoin)",
-			})
+			}).Abort()
 			return
 		}
 

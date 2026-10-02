@@ -5,6 +5,7 @@ import (
 	"github.com/goravel/framework/contracts/http"
 
 	"github.com/macrowallets/waas/app/container"
+	"github.com/macrowallets/waas/app/http/responses"
 )
 
 // WalletContext resolves the {walletId} route parameter, loads the wallet,
@@ -15,15 +16,13 @@ func WalletContext() http.Middleware {
 		rawID := ctx.Request().Route("walletId")
 		walletID, err := uuid.Parse(rawID)
 		if err != nil {
-			ctx.Request().AbortWithStatus(http.StatusNotFound)
-			ctx.Response().Json(http.StatusNotFound, http.Json{"error": "invalid wallet id"})
+			_ = responses.Send(ctx, http.StatusNotFound, http.Json{"error": "invalid wallet id"}).Abort()
 			return
 		}
 
 		wallet, err := container.Get().WalletRepo.FindByID(walletID)
 		if err != nil || wallet == nil {
-			ctx.Request().AbortWithStatus(http.StatusNotFound)
-			ctx.Response().Json(http.StatusNotFound, http.Json{"error": "wallet not found"})
+			_ = responses.Send(ctx, http.StatusNotFound, http.Json{"error": "wallet not found"}).Abort()
 			return
 		}
 
@@ -44,8 +43,7 @@ func WalletContext() http.Middleware {
 		}
 
 		if !isMember {
-			ctx.Request().AbortWithStatus(http.StatusForbidden)
-			ctx.Response().Json(http.StatusForbidden, http.Json{"error": "not a member of this wallet or its account"})
+			_ = responses.Send(ctx, http.StatusForbidden, http.Json{"error": "not a member of this wallet or its account"}).Abort()
 			return
 		}
 

@@ -54,6 +54,14 @@ func TestHTTPContract(t *testing.T) {
 		runner.run(step)
 	}
 	got := Render(runner.exchanges)
+	for _, exchange := range runner.exchanges {
+		if err := RejectLegacyErrorShape(exchange); err != nil {
+			t.Error(err)
+		}
+	}
+	if t.Failed() {
+		return
+	}
 
 	if *updateContract {
 		if err := os.MkdirAll(filepath.Dir(snapshotPath), 0o750); err != nil {

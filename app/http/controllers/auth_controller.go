@@ -1,6 +1,7 @@
 package controllers
 
 import (
+	"sort"
 	"time"
 
 	"github.com/google/uuid"
@@ -9,6 +10,7 @@ import (
 
 	"github.com/macrowallets/waas/app/container"
 	"github.com/macrowallets/waas/app/http/requests"
+	"github.com/macrowallets/waas/app/http/responses"
 	mails "github.com/macrowallets/waas/app/mails"
 	"github.com/macrowallets/waas/app/models"
 	authsvc "github.com/macrowallets/waas/app/services/auth"
@@ -35,7 +37,7 @@ func Register(ctx http.Context) http.Response {
 
 	hash, err := authService.HashPassword(req.Password)
 	if err != nil {
-		return ctx.Response().Json(http.StatusInternalServerError, http.Json{"error": "failed to hash password"})
+		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to hash password"})
 	}
 
 	user := &models.User{
@@ -46,7 +48,7 @@ func Register(ctx http.Context) http.Response {
 		Status:       "active",
 	}
 	if err := container.Get().UserRepo.Create(user); err != nil {
-		return ctx.Response().Json(http.StatusInternalServerError, http.Json{"error": "failed to create user"})
+		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to create user"})
 	}
 
 	prodAccountID := uuid.New()
@@ -69,13 +71,13 @@ func Register(ctx http.Context) http.Response {
 		LinkedAccountID: &prodAccountID,
 	}
 	if err := container.Get().AccountRepo.Create(prodAccount); err != nil {
-		return ctx.Response().Json(http.StatusInternalServerError, http.Json{"error": "failed to create production account"})
+		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to create production account"})
 	}
 	if err := container.Get().AccountRepo.Create(testAccount); err != nil {
-		return ctx.Response().Json(http.StatusInternalServerError, http.Json{"error": "failed to create test account"})
+		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to create test account"})
 	}
 	if err := container.Get().AccountRepo.UpdateField(prodAccountID, "linked_account_id", testAccountID); err != nil {
-		return ctx.Response().Json(http.StatusInternalServerError, http.Json{"error": "failed to link accounts"})
+		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to link accounts"})
 	}
 	prodAccount.LinkedAccountID = &testAccountID
 
@@ -112,7 +114,7 @@ func Register(ctx http.Context) http.Response {
 	accessToken, err := facades.Auth(ctx).LoginUsingID(user.ID.String())
 	if err != nil {
 		facades.Log().WithContext(ctx).Errorf("auth: login after register: %v", err)
-		return ctx.Response().Json(http.StatusInternalServerError, http.Json{"error": "failed to create session"})
+		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to create session"})
 	}
 
 	accounts, defaultAccount := loadUserAccounts(user)
@@ -148,19 +150,19 @@ func Login(ctx http.Context) http.Response {
 
 	userPtr, err := container.Get().UserRepo.FindByEmail(req.Email)
 	if err != nil || userPtr == nil {
-		return ctx.Response().Json(http.StatusUnauthorized, http.Json{"error": "invalid credentials"})
+		return responses.Send(ctx, http.StatusUnauthorized, http.Json{"error": "invalid credentials"})
 	}
 	user := *userPtr
 
 	if !authService.CheckPassword(req.Password, user.PasswordHash) {
-		return ctx.Response().Json(http.StatusUnauthorized, http.Json{"error": "invalid credentials"})
+		return responses.Send(ctx, http.StatusUnauthorized, http.Json{"error": "invalid credentials"})
 	}
 
 	if user.TotpEnabled {
 		partialToken, err := facades.Auth(ctx).LoginUsingID(user.ID.String())
 		if err != nil {
 			facades.Log().WithContext(ctx).Errorf("auth: partial login: %v", err)
-			return ctx.Response().Json(http.StatusInternalServerError, http.Json{"error": "failed to create session"})
+			return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to create session"})
 		}
 		return ctx.Response().Json(http.StatusOK, http.Json{
 			"requires_2fa":  true,
@@ -171,13 +173,13 @@ func Login(ctx http.Context) http.Response {
 	accessToken, err := facades.Auth(ctx).LoginUsingID(user.ID.String())
 	if err != nil {
 		facades.Log().WithContext(ctx).Errorf("auth: login: %v", err)
-		return ctx.Response().Json(http.StatusInternalServerError, http.Json{"error": "failed to create session"})
+		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to create session"})
 	}
 
 	rawRefresh, err := authService.GenerateRandomToken()
 	if err != nil {
 		facades.Log().WithContext(ctx).Errorf("auth: generate refresh token: %v", err)
-		return ctx.Response().Json(http.StatusInternalServerError, http.Json{"error": "internal error"})
+		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "internal error"})
 	}
 	refreshHash := authService.HashToken(rawRefresh)
 	rt := &models.RefreshToken{
@@ -224,21 +226,21 @@ func VerifyTwoFactor(ctx http.Context) http.Response {
 
 	payload, err := facades.Auth(ctx).Parse(req.PartialToken)
 	if err != nil || payload == nil {
-		return ctx.Response().Json(http.StatusUnauthorized, http.Json{"error": "invalid or expired partial token"})
+		return responses.Send(ctx, http.StatusUnauthorized, http.Json{"error": "invalid or expired partial token"})
 	}
 
 	userIDStr, idErr := facades.Auth(ctx).ID()
 	if idErr != nil {
-		return ctx.Response().Json(http.StatusUnauthorized, http.Json{"error": "invalid token"})
+		return responses.Send(ctx, http.StatusUnauthorized, http.Json{"error": "invalid token"})
 	}
 	userID, err := uuid.Parse(userIDStr)
 	if err != nil {
-		return ctx.Response().Json(http.StatusUnauthorized, http.Json{"error": "invalid token subject"})
+		return responses.Send(ctx, http.StatusUnauthorized, http.Json{"error": "invalid token subject"})
 	}
 
 	userPtr, findErr := container.Get().UserRepo.FindByID(userID)
 	if findErr != nil || userPtr == nil {
-		return ctx.Response().Json(http.StatusUnauthorized, http.Json{"error": "user not found"})
+		return responses.Send(ctx, http.StatusUnauthorized, http.Json{"error": "user not found"})
 	}
 	user := *userPtr
 
@@ -263,18 +265,18 @@ func VerifyTwoFactor(ctx http.Context) http.Response {
 	}
 
 	if !verified {
-		return ctx.Response().Json(http.StatusUnauthorized, http.Json{"error": "invalid 2FA code"})
+		return responses.Send(ctx, http.StatusUnauthorized, http.Json{"error": "invalid 2FA code"})
 	}
 
 	accessToken, loginErr := facades.Auth(ctx).LoginUsingID(user.ID.String())
 	if loginErr != nil {
 		facades.Log().WithContext(ctx).Errorf("auth: 2fa login: %v", loginErr)
-		return ctx.Response().Json(http.StatusInternalServerError, http.Json{"error": "failed to create session"})
+		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to create session"})
 	}
 	rawRefresh, genErr := authService.GenerateRandomToken()
 	if genErr != nil {
 		facades.Log().WithContext(ctx).Errorf("auth: generate refresh token: %v", genErr)
-		return ctx.Response().Json(http.StatusInternalServerError, http.Json{"error": "internal error"})
+		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "internal error"})
 	}
 	refreshHash := authService.HashToken(rawRefresh)
 	rt := &models.RefreshToken{
@@ -324,7 +326,7 @@ func RefreshToken(ctx http.Context) http.Response {
 		}
 	}
 	if matched == nil {
-		return ctx.Response().Json(http.StatusUnauthorized, http.Json{"error": "invalid or expired refresh token"})
+		return responses.Send(ctx, http.StatusUnauthorized, http.Json{"error": "invalid or expired refresh token"})
 	}
 
 	if err := container.Get().RefreshTokenRepo.RevokeByID(matched.ID); err != nil {
@@ -334,12 +336,12 @@ func RefreshToken(ctx http.Context) http.Response {
 	accessToken, loginErr := facades.Auth(ctx).LoginUsingID(matched.UserID.String())
 	if loginErr != nil {
 		facades.Log().WithContext(ctx).Errorf("auth: refresh login: %v", loginErr)
-		return ctx.Response().Json(http.StatusInternalServerError, http.Json{"error": "failed to create session"})
+		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to create session"})
 	}
 	rawRefresh, genErr := authService.GenerateRandomToken()
 	if genErr != nil {
 		facades.Log().WithContext(ctx).Errorf("auth: generate refresh token: %v", genErr)
-		return ctx.Response().Json(http.StatusInternalServerError, http.Json{"error": "internal error"})
+		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "internal error"})
 	}
 	refreshHash := authService.HashToken(rawRefresh)
 	newRT := &models.RefreshToken{
@@ -456,17 +458,17 @@ func ResetPassword(ctx http.Context) http.Response {
 		}
 	}
 	if matched == nil {
-		return ctx.Response().Json(http.StatusUnauthorized, http.Json{"error": "invalid or expired token"})
+		return responses.Send(ctx, http.StatusUnauthorized, http.Json{"error": "invalid or expired token"})
 	}
 
 	hash, err := authService.HashPassword(req.NewPassword)
 	if err != nil {
-		return ctx.Response().Json(http.StatusInternalServerError, http.Json{"error": "failed to hash password"})
+		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to hash password"})
 	}
 
 	if err := container.Get().UserRepo.UpdatePasswordHash(matched.UserID, hash); err != nil {
 		facades.Log().WithContext(ctx).Errorf("auth: update password: %v", err)
-		return ctx.Response().Json(http.StatusInternalServerError, http.Json{"error": "failed to update password"})
+		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to update password"})
 	}
 
 	if err := container.Get().PasswordResetTokenRepo.MarkUsed(matched.ID); err != nil {
@@ -505,6 +507,19 @@ func loadUserAccounts(user *models.User) ([]map[string]interface{}, map[string]i
 			defaultAccount = entry
 		}
 	}
+
+	// FindByUserID has no order, so Postgres can return the two onboarded
+	// accounts either way. The list is part of the success body.
+	sort.Slice(accounts, func(i, j int) bool {
+		leftEnvironment, _ := accounts[i]["environment"].(string)
+		rightEnvironment, _ := accounts[j]["environment"].(string)
+		if leftEnvironment != rightEnvironment {
+			return leftEnvironment < rightEnvironment
+		}
+		leftID, _ := accounts[i]["id"].(uuid.UUID)
+		rightID, _ := accounts[j]["id"].(uuid.UUID)
+		return leftID.String() < rightID.String()
+	})
 
 	if defaultAccount == nil && len(accounts) > 0 {
 		defaultAccount = accounts[0]

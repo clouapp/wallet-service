@@ -5,6 +5,7 @@ import (
 	"github.com/goravel/framework/contracts/http"
 
 	"github.com/macrowallets/waas/app/container"
+	"github.com/macrowallets/waas/app/http/responses"
 )
 
 // APIWalletContext verifies that the {walletId} route parameter belongs to the
@@ -46,5 +47,5 @@ func APIWalletContext() http.Middleware {
 // Response().Json(...).Abort() is the non-deprecated pattern in Goravel v1.17
 // and ensures the body is actually written before the abort takes effect.
 func abortWithJSON(ctx http.Context, code int, body http.Json) {
-	_ = ctx.Response().Json(code, body).Abort()
+	_ = responses.Send(ctx, code, body).Abort()
 }

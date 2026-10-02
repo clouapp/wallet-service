@@ -6,6 +6,7 @@ import (
 	"github.com/goravel/framework/contracts/http"
 
 	"github.com/macrowallets/waas/app/container"
+	"github.com/macrowallets/waas/app/http/responses"
 	"github.com/macrowallets/waas/app/models"
 )
 
@@ -26,7 +27,7 @@ func ListUnspentOutputs(ctx http.Context) http.Response {
 
 	utxos, err := container.Get().WalletUTXORepo.ListSpendable(wallet.ID, wallet.Chain)
 	if err != nil {
-		return ctx.Response().Json(http.StatusInternalServerError, http.Json{"error": "failed to list utxos: " + err.Error()})
+		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to list utxos: " + err.Error()})
 	}
 
 	result := make([]UnspentOutput, 0, len(utxos))

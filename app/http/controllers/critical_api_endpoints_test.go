@@ -171,12 +171,12 @@ func (s *criticalEndpointsSuite) assertNoMiddlewareReject(resp contractstestingh
 	s.Require().NoError(err)
 
 	rejects := []string{
-		`"error":"missing bearer token"`,
-		`"error":"invalid or expired api token"`,
-		`"error":"token not found or revoked"`,
-		`"error":"missing request signature"`,
-		`"error":"invalid request signature"`,
-		`"error":"wallet not found"`,
+		`"message":"missing bearer token"`,
+		`"message":"invalid or expired api token"`,
+		`"message":"token not found or revoked"`,
+		`"message":"missing request signature"`,
+		`"message":"invalid request signature"`,
+		`"message":"wallet not found"`,
 	}
 	for _, rej := range rejects {
 		s.NotContains(body, rej,
@@ -225,7 +225,10 @@ func (s *criticalEndpointsSuite) TestGenerateAddress_SignedTokenMissingSig_401()
 	body := `{"external_user_id":"user_missing_sig"}`
 	s.post("/api/v1/wallets/"+uuid.NewString()+"/addresses", jwt, body, "").
 		AssertStatus(401).
-		AssertJson(map[string]any{"error": "missing request signature"})
+		AssertJson(map[string]any{"error": map[string]any{
+			"code":    "invalid_signature",
+			"message": "missing request signature",
+		}})
 }
 
 // ---------------------------------------------------------------------------
@@ -262,7 +265,10 @@ func (s *criticalEndpointsSuite) TestConsolidate_SignedTokenMissingSig_401() {
 	body := `{"asset":"eth","passphrase":"test-pass-phrase-12345"}`
 	s.post("/api/v1/wallets/"+uuid.NewString()+"/consolidate", jwt, body, "").
 		AssertStatus(401).
-		AssertJson(map[string]any{"error": "missing request signature"})
+		AssertJson(map[string]any{"error": map[string]any{
+			"code":    "invalid_signature",
+			"message": "missing request signature",
+		}})
 }
 
 // ---------------------------------------------------------------------------
@@ -303,5 +309,8 @@ func (s *criticalEndpointsSuite) TestCreateWithdrawal_SignedTokenMissingSig_401(
 
 	s.post("/api/v1/wallets/"+uuid.NewString()+"/withdrawals", jwt, critWithdrawalBody, "").
 		AssertStatus(401).
-		AssertJson(map[string]any{"error": "missing request signature"})
+		AssertJson(map[string]any{"error": map[string]any{
+			"code":    "invalid_signature",
+			"message": "missing request signature",
+		}})
 }

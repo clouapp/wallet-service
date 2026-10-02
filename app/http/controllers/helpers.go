@@ -6,6 +6,8 @@ import (
 
 	"github.com/goravel/framework/contracts/http"
 	"github.com/goravel/framework/facades"
+
+	"github.com/macrowallets/waas/app/http/responses"
 )
 
 func validateRequest(ctx http.Context, req http.FormRequest) http.Response {
@@ -16,12 +18,12 @@ func validateRequest(ctx http.Context, req http.FormRequest) http.Response {
 	validationErrors, err := ctx.Request().ValidateRequest(req)
 	if err != nil {
 		if validationErrors != nil {
-			return ctx.Response().Json(http.StatusUnprocessableEntity, validationErrors.All())
+			return responses.ValidationFailed(ctx, validationErrors)
 		}
-		return ctx.Response().Json(http.StatusBadRequest, http.Json{"error": "invalid request body"})
+		return responses.Send(ctx, http.StatusBadRequest, http.Json{"error": "invalid request body"})
 	}
 	if validationErrors != nil {
-		return ctx.Response().Json(http.StatusUnprocessableEntity, validationErrors.All())
+		return responses.ValidationFailed(ctx, validationErrors)
 	}
 	return nil
 }
@@ -38,7 +40,7 @@ func bindRulelessRequest(ctx http.Context, req http.FormRequest) http.Response {
 		if errors.Is(err, io.EOF) {
 			return nil
 		}
-		return ctx.Response().Json(http.StatusBadRequest, http.Json{"error": "invalid request body"})
+		return responses.Send(ctx, http.StatusBadRequest, http.Json{"error": "invalid request body"})
 	}
 	return nil
 }
@@ -48,5 +50,5 @@ func authorize(ctx http.Context, ability string, arguments map[string]any) http.
 	if response.Allowed() {
 		return nil
 	}
-	return ctx.Response().Json(http.StatusForbidden, http.Json{"error": response.Message()})
+	return responses.Send(ctx, http.StatusForbidden, http.Json{"error": response.Message()})
 }

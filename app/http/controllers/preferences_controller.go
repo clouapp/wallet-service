@@ -6,6 +6,7 @@ import (
 
 	"github.com/macrowallets/waas/app/container"
 	"github.com/macrowallets/waas/app/http/requests"
+	"github.com/macrowallets/waas/app/http/responses"
 	"github.com/macrowallets/waas/app/models"
 )
 
@@ -39,7 +40,7 @@ func UpdatePreferences(ctx http.Context) http.Response {
 		if container.Get().CurrencyRepo != nil {
 			cur, err := container.Get().CurrencyRepo.FindByCode(req.PreferredFiatCode)
 			if err != nil || cur == nil || !cur.Active || cur.Type != models.CurrencyTypeFiat {
-				return ctx.Response().Json(http.StatusBadRequest, http.Json{"error": "invalid fiat currency code"})
+				return responses.Send(ctx, http.StatusBadRequest, http.Json{"error": "invalid fiat currency code"})
 			}
 		}
 		prefs.PreferredFiatCode = req.PreferredFiatCode
@@ -49,7 +50,7 @@ func UpdatePreferences(ctx http.Context) http.Response {
 	}
 
 	if err := container.Get().UserRepo.UpdatePreferences(userID, prefs); err != nil {
-		return ctx.Response().Json(http.StatusInternalServerError, http.Json{"error": "failed to update preferences"})
+		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to update preferences"})
 	}
 
 	return ctx.Response().Json(http.StatusOK, http.Json{

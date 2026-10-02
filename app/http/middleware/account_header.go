@@ -5,6 +5,7 @@ import (
 	"github.com/goravel/framework/contracts/http"
 
 	"github.com/macrowallets/waas/app/container"
+	"github.com/macrowallets/waas/app/http/responses"
 )
 
 // AccountHeader reads X-Account-Id from the request header, validates the
@@ -13,36 +14,31 @@ func AccountHeader() http.Middleware {
 	return func(ctx http.Context) {
 		rawID := ctx.Request().Header("X-Account-Id")
 		if rawID == "" {
-			ctx.Request().AbortWithStatus(http.StatusBadRequest)
-			ctx.Response().Json(http.StatusBadRequest, http.Json{"error": "X-Account-Id header is required"})
+			_ = responses.Send(ctx, http.StatusBadRequest, http.Json{"error": "X-Account-Id header is required"}).Abort()
 			return
 		}
 
 		accountID, err := uuid.Parse(rawID)
 		if err != nil {
-			ctx.Request().AbortWithStatus(http.StatusBadRequest)
-			ctx.Response().Json(http.StatusBadRequest, http.Json{"error": "invalid X-Account-Id"})
+			_ = responses.Send(ctx, http.StatusBadRequest, http.Json{"error": "invalid X-Account-Id"}).Abort()
 			return
 		}
 
 		accountPtr, err := container.Get().AccountRepo.FindByID(accountID)
 		if err != nil || accountPtr == nil {
-			ctx.Request().AbortWithStatus(http.StatusNotFound)
-			ctx.Response().Json(http.StatusNotFound, http.Json{"error": "account not found"})
+			_ = responses.Send(ctx, http.StatusNotFound, http.Json{"error": "account not found"}).Abort()
 			return
 		}
 
 		userID := contextUserID(ctx)
 		if userID == uuid.Nil {
-			ctx.Request().AbortWithStatus(http.StatusUnauthorized)
-			ctx.Response().Json(http.StatusUnauthorized, http.Json{"error": "unauthenticated"})
+			_ = responses.Send(ctx, http.StatusUnauthorized, http.Json{"error": "unauthenticated"}).Abort()
 			return
 		}
 
 		au, err := container.Get().AccountUserRepo.FindByAccountAndUser(accountID, userID)
 		if err != nil || au == nil {
-			ctx.Request().AbortWithStatus(http.StatusForbidden)
-			ctx.Response().Json(http.StatusForbidden, http.Json{"error": "not a member of this account"})
+			_ = responses.Send(ctx, http.StatusForbidden, http.Json{"error": "not a member of this account"}).Abort()
 			return
 		}
 

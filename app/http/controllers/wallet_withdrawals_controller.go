@@ -14,6 +14,7 @@ import (
 	"github.com/macrowallets/waas/app/container"
 	"github.com/macrowallets/waas/app/http/pagination"
 	"github.com/macrowallets/waas/app/http/requests"
+	"github.com/macrowallets/waas/app/http/responses"
 	"github.com/macrowallets/waas/app/models"
 	authsvc "github.com/macrowallets/waas/app/services/auth"
 	mpcpkg "github.com/macrowallets/waas/app/services/mpc"
@@ -43,7 +44,7 @@ func ListWalletWithdrawals(ctx http.Context) http.Response {
 	status := ctx.Request().Query("status", "")
 	withdrawals, total, err := container.Get().WithdrawalRepo.FindByWallet(wallet.ID, status, limit, offset)
 	if err != nil {
-		return ctx.Response().Json(http.StatusInternalServerError, http.Json{"error": "failed to fetch withdrawals"})
+		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to fetch withdrawals"})
 	}
 	return ctx.Response().Json(http.StatusOK, pagination.Response(withdrawals, total, limit, offset))
 }
@@ -58,7 +59,7 @@ func EstimateWithdrawalFee(ctx http.Context) http.Response {
 
 	adapter, err := container.Get().Registry.Chain(wallet.Chain)
 	if err != nil {
-		return ctx.Response().Json(http.StatusUnprocessableEntity, http.Json{
+		return responses.Send(ctx, http.StatusUnprocessableEntity, http.Json{
 			"error": "fee estimation unavailable",
 			"code":  "FEE_ESTIMATE_FAILED",
 		})
@@ -70,7 +71,7 @@ func EstimateWithdrawalFee(ctx http.Context) http.Response {
 		Asset: adapter.NativeAsset(),
 	})
 	if err != nil {
-		return ctx.Response().Json(http.StatusUnprocessableEntity, http.Json{
+		return responses.Send(ctx, http.StatusUnprocessableEntity, http.Json{
 			"error": "fee estimation unavailable",
 			"code":  "FEE_ESTIMATE_FAILED",
 		})
@@ -118,25 +119,25 @@ func CreateWalletWithdrawal(ctx http.Context) http.Response {
 	if isDashboardCaller {
 		user, err := container.Get().UserRepo.FindByID(callerUserID)
 		if err != nil || user == nil {
-			return ctx.Response().Json(http.StatusUnauthorized, http.Json{"error": "user not found"})
+			return responses.Send(ctx, http.StatusUnauthorized, http.Json{"error": "user not found"})
 		}
 
 		if !user.TotpEnabled {
-			return ctx.Response().Json(http.StatusForbidden, http.Json{"error": "2FA must be enabled before withdrawing"})
+			return responses.Send(ctx, http.StatusForbidden, http.Json{"error": "2FA must be enabled before withdrawing"})
 		}
 
 		decryptedSecret, err := facades.Crypt().DecryptString(user.TotpSecret)
 		if err != nil {
-			return ctx.Response().Json(http.StatusInternalServerError, http.Json{"error": "internal error"})
+			return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "internal error"})
 		}
 		authService := authsvc.NewService()
 		if !authService.VerifyTOTP(decryptedSecret, req.TotpCode) {
-			return ctx.Response().Json(http.StatusUnauthorized, http.Json{"error": "invalid 2FA code"})
+			return responses.Send(ctx, http.StatusUnauthorized, http.Json{"error": "invalid 2FA code"})
 		}
 	} else {
 		accountID, hasAccount := ctx.Value("account_id").(uuid.UUID)
 		if !hasAccount || accountID == uuid.Nil {
-			return ctx.Response().Json(http.StatusUnauthorized, http.Json{"error": "unauthenticated"})
+			return responses.Send(ctx, http.StatusUnauthorized, http.Json{"error": "unauthenticated"})
 		}
 	}
 
@@ -146,12 +147,12 @@ func CreateWalletWithdrawal(ctx http.Context) http.Response {
 
 	adapter, err := container.Get().Registry.Chain(wallet.Chain)
 	if err != nil {
-		return ctx.Response().Json(http.StatusUnprocessableEntity, http.Json{"error": err.Error()})
+		return responses.Send(ctx, http.StatusUnprocessableEntity, http.Json{"error": err.Error()})
 	}
 
 	chainEntity, chainErr := container.Get().ChainRepo.FindByID(wallet.Chain)
 	if chainErr != nil || chainEntity == nil {
-		return ctx.Response().Json(http.StatusUnprocessableEntity, http.Json{"error": "chain not found"})
+		return responses.Send(ctx, http.StatusUnprocessableEntity, http.Json{"error": "chain not found"})
 	}
 	resolved, resolveErr := withdraw.ResolveWithdrawalAmount(
 		wallet.Chain,
@@ -162,7 +163,7 @@ func CreateWalletWithdrawal(ctx http.Context) http.Response {
 		container.Get().Registry.TokensForChain(wallet.Chain),
 	)
 	if resolveErr != nil {
-		return ctx.Response().Json(http.StatusUnprocessableEntity, http.Json{"error": resolveErr.Error()})
+		return responses.Send(ctx, http.StatusUnprocessableEntity, http.Json{"error": resolveErr.Error()})
 	}
 
 	callerAccountID, _ := ctx.Value("account_id").(uuid.UUID)
@@ -172,14 +173,14 @@ func CreateWalletWithdrawal(ctx http.Context) http.Response {
 
 	withdrawalID, err := withdrawalIDFromIdempotencyKey(req.IdempotencyKey)
 	if err != nil {
-		return ctx.Response().Json(http.StatusBadRequest, http.Json{"error": err.Error()})
+		return responses.Send(ctx, http.StatusBadRequest, http.Json{"error": err.Error()})
 	}
 	idempotencyKey := req.IdempotencyKey
 	if idempotencyKey == "" {
 		idempotencyKey = withdrawalID.String()
 	}
 	if wallet.DepositAddress == nil {
-		return ctx.Response().Json(http.StatusUnprocessableEntity, http.Json{
+		return responses.Send(ctx, http.StatusUnprocessableEntity, http.Json{
 			"error": "wallet has no deposit address",
 		})
 	}
@@ -272,15 +273,15 @@ func CreateWalletWithdrawal(ctx http.Context) http.Response {
 		}
 		switch {
 		case errors.Is(err, withdraw.ErrInvalidPassphrase):
-			return ctx.Response().Json(http.StatusUnauthorized, http.Json{"error": err.Error()})
+			return responses.Send(ctx, http.StatusUnauthorized, http.Json{"error": err.Error()})
 		case errors.Is(err, withdraw.ErrPassphraseTooShort):
-			return ctx.Response().Json(http.StatusBadRequest, http.Json{"error": err.Error()})
+			return responses.Send(ctx, http.StatusBadRequest, http.Json{"error": err.Error()})
 		case errors.Is(err, withdraw.ErrInsufficientFunds):
-			return ctx.Response().Json(http.StatusUnprocessableEntity, http.Json{"error": err.Error()})
+			return responses.Send(ctx, http.StatusUnprocessableEntity, http.Json{"error": err.Error()})
 		case errors.Is(err, withdraw.ErrConcurrentWithdraw):
-			return ctx.Response().Json(http.StatusConflict, http.Json{"error": err.Error()})
+			return responses.Send(ctx, http.StatusConflict, http.Json{"error": err.Error()})
 		case errors.Is(err, withdraw.ErrTooManyAttempts):
-			return ctx.Response().Json(http.StatusTooManyRequests, http.Json{"error": err.Error()})
+			return responses.Send(ctx, http.StatusTooManyRequests, http.Json{"error": err.Error()})
 		default:
 			return MapInternalError(ctx, err, "create_wallet_withdrawal")
 		}
@@ -341,7 +342,7 @@ func verifyWalletPassphrase(ctx http.Context, wallet *models.Wallet, passphrase 
 	if rdb != nil {
 		count, err := rdb.Get(ctx.Context(), key).Int()
 		if err == nil && count >= 5 {
-			return ctx.Response().Json(http.StatusTooManyRequests, http.Json{"error": "too many failed attempts, try again later"})
+			return responses.Send(ctx, http.StatusTooManyRequests, http.Json{"error": "too many failed attempts, try again later"})
 		}
 	}
 
@@ -354,9 +355,9 @@ func verifyWalletPassphrase(ctx http.Context, wallet *models.Wallet, passphrase 
 				pipe.Expire(ctx.Context(), key, 60*time.Second)
 				_, _ = pipe.Exec(ctx.Context())
 			}
-			return ctx.Response().Json(http.StatusUnauthorized, http.Json{"error": "invalid passphrase"})
+			return responses.Send(ctx, http.StatusUnauthorized, http.Json{"error": "invalid passphrase"})
 		}
-		return ctx.Response().Json(http.StatusInternalServerError, http.Json{"error": "internal error"})
+		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "internal error"})
 	}
 	for i := range shareA {
 		shareA[i] = 0
@@ -383,12 +384,12 @@ func GetWalletWithdrawal(ctx http.Context) http.Response {
 	withdrawalIDStr := ctx.Request().Route("withdrawalId")
 	withdrawalID, err := uuid.Parse(withdrawalIDStr)
 	if err != nil {
-		return ctx.Response().Json(http.StatusBadRequest, http.Json{"error": "invalid withdrawal id"})
+		return responses.Send(ctx, http.StatusBadRequest, http.Json{"error": "invalid withdrawal id"})
 	}
 
 	w, err := container.Get().WithdrawalRepo.FindByIDAndWallet(withdrawalID, wallet.ID)
 	if err != nil || w == nil {
-		return ctx.Response().Json(http.StatusNotFound, http.Json{"error": "withdrawal not found"})
+		return responses.Send(ctx, http.StatusNotFound, http.Json{"error": "withdrawal not found"})
 	}
 	return ctx.Response().Json(http.StatusOK, w)
 }
@@ -411,12 +412,12 @@ func GetWalletWithdrawalByIdempotencyKey(ctx http.Context) http.Response {
 
 	withdrawalID, err := uuid.Parse(strings.TrimSpace(ctx.Request().Route("idempotencyKey")))
 	if err != nil {
-		return ctx.Response().Json(http.StatusBadRequest, http.Json{"error": "idempotency_key must be a UUID"})
+		return responses.Send(ctx, http.StatusBadRequest, http.Json{"error": "idempotency_key must be a UUID"})
 	}
 
 	w, err := container.Get().WithdrawalRepo.FindByIDAndWallet(withdrawalID, wallet.ID)
 	if err != nil || w == nil {
-		return ctx.Response().Json(http.StatusNotFound, http.Json{"error": "withdrawal not found"})
+		return responses.Send(ctx, http.StatusNotFound, http.Json{"error": "withdrawal not found"})
 	}
 
 	response := WithdrawalLookupResponse{
@@ -466,16 +467,16 @@ func CancelWalletWithdrawal(ctx http.Context) http.Response {
 	withdrawalIDStr := ctx.Request().Route("withdrawalId")
 	withdrawalID, err := uuid.Parse(withdrawalIDStr)
 	if err != nil {
-		return ctx.Response().Json(http.StatusBadRequest, http.Json{"error": "invalid withdrawal id"})
+		return responses.Send(ctx, http.StatusBadRequest, http.Json{"error": "invalid withdrawal id"})
 	}
 
 	w, err := container.Get().WithdrawalRepo.FindByIDAndWallet(withdrawalID, wallet.ID)
 	if err != nil || w == nil {
-		return ctx.Response().Json(http.StatusNotFound, http.Json{"error": "withdrawal not found"})
+		return responses.Send(ctx, http.StatusNotFound, http.Json{"error": "withdrawal not found"})
 	}
 
 	if w.Status != "pending" {
-		return ctx.Response().Json(http.StatusUnprocessableEntity, http.Json{
+		return responses.Send(ctx, http.StatusUnprocessableEntity, http.Json{
 			"error": "only pending withdrawals can be cancelled",
 		})
 	}
@@ -489,7 +490,7 @@ func CancelWalletWithdrawal(ctx http.Context) http.Response {
 	}
 
 	if err := container.Get().WithdrawalRepo.UpdateStatus(w.ID, "cancelled"); err != nil {
-		return ctx.Response().Json(http.StatusInternalServerError, http.Json{"error": "failed to cancel withdrawal"})
+		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to cancel withdrawal"})
 	}
 	w.Status = "cancelled"
 	return ctx.Response().Json(http.StatusOK, w)

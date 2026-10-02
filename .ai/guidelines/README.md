@@ -43,8 +43,10 @@ do not "fix" it back:
   `ctx.Response().Json()` (`http-layer.md`);
 - models carry no wire tags — not even `json:"-"`; the wire shape lives only in
   `app/http/resources` (`http-layer.md`);
-- the error envelope is **[DECISION 2.1 — fill in]** with the codes in
-  `app/http/resources/error_resource.go` (`http-error-contract.md`);
+- the error envelope is `{"error":{"code","message"}}` on `/v1` and `/api/v1`
+  (B2.1). Validation is HTTP 422 with `errors` as a per-field list of messages
+  (B2.2). Success bodies stay on `ctx.Response().Json` until the resources
+  migration (`http-error-contract.md`);
 - `app/policies` is the one arbiter of "who may do what"; route middleware, Gate
   abilities and services all ask it (`authorization.md`);
 - key material never leaves `app/services/mpc` and the custody services, and is

@@ -7,6 +7,7 @@ import (
 	"github.com/macrowallets/waas/app/container"
 	"github.com/macrowallets/waas/app/http/pagination"
 	"github.com/macrowallets/waas/app/http/requests"
+	"github.com/macrowallets/waas/app/http/responses"
 	"github.com/macrowallets/waas/app/models"
 )
 
@@ -27,7 +28,7 @@ func ListWhitelistEntries(ctx http.Context) http.Response {
 	limit, offset := pagination.ParseParams(ctx, 20)
 	entries, total, err := container.Get().WhitelistEntryRepo.PaginateByWalletID(wallet.ID, limit, offset)
 	if err != nil {
-		return ctx.Response().Json(http.StatusInternalServerError, http.Json{"error": "failed to fetch whitelist entries"})
+		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to fetch whitelist entries"})
 	}
 	return ctx.Response().Json(http.StatusOK, pagination.Response(entries, total, limit, offset))
 }
@@ -63,7 +64,7 @@ func AddWhitelistEntry(ctx http.Context) http.Response {
 		Label:    req.Label,
 	}
 	if err := container.Get().WhitelistEntryRepo.Create(entry); err != nil {
-		return ctx.Response().Json(http.StatusInternalServerError, http.Json{"error": "failed to add whitelist entry"})
+		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to add whitelist entry"})
 	}
 	return ctx.Response().Json(http.StatusCreated, entry)
 }
@@ -89,16 +90,16 @@ func DeleteWhitelistEntry(ctx http.Context) http.Response {
 	entryIDStr := ctx.Request().Route("entryId")
 	entryID, err := uuid.Parse(entryIDStr)
 	if err != nil {
-		return ctx.Response().Json(http.StatusBadRequest, http.Json{"error": "invalid entry id"})
+		return responses.Send(ctx, http.StatusBadRequest, http.Json{"error": "invalid entry id"})
 	}
 
 	entry, err := container.Get().WhitelistEntryRepo.FindByIDAndWallet(entryID, wallet.ID)
 	if err != nil || entry == nil {
-		return ctx.Response().Json(http.StatusNotFound, http.Json{"error": "whitelist entry not found"})
+		return responses.Send(ctx, http.StatusNotFound, http.Json{"error": "whitelist entry not found"})
 	}
 
 	if err := container.Get().WhitelistEntryRepo.Delete(entry); err != nil {
-		return ctx.Response().Json(http.StatusInternalServerError, http.Json{"error": "failed to delete whitelist entry"})
+		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to delete whitelist entry"})
 	}
 	return ctx.Response().NoContent()
 }

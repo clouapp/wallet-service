@@ -7,6 +7,7 @@ import (
 	"github.com/goravel/framework/contracts/http"
 	"github.com/goravel/framework/facades"
 
+	"github.com/macrowallets/waas/app/http/responses"
 	"github.com/macrowallets/waas/app/models"
 )
 
@@ -16,8 +17,7 @@ func SessionAuth() http.Middleware {
 	return func(ctx http.Context) {
 		bearer := ctx.Request().Header("Authorization", "")
 		if !strings.HasPrefix(bearer, "Bearer ") {
-			ctx.Request().AbortWithStatus(http.StatusUnauthorized)
-			ctx.Response().Json(http.StatusUnauthorized, http.Json{"error": "missing or malformed bearer token"})
+			_ = responses.Send(ctx, http.StatusUnauthorized, http.Json{"error": "missing or malformed bearer token"}).Abort()
 			return
 		}
 		token := strings.TrimPrefix(bearer, "Bearer ")
@@ -25,15 +25,13 @@ func SessionAuth() http.Middleware {
 		authGuard := facades.Auth(ctx)
 		payload, err := authGuard.Parse(token)
 		if err != nil || payload == nil {
-			ctx.Request().AbortWithStatus(http.StatusUnauthorized)
-			ctx.Response().Json(http.StatusUnauthorized, http.Json{"error": "invalid token"})
+			_ = responses.Send(ctx, http.StatusUnauthorized, http.Json{"error": "invalid token"}).Abort()
 			return
 		}
 
 		var user models.User
 		if err := authGuard.User(&user); err != nil {
-			ctx.Request().AbortWithStatus(http.StatusUnauthorized)
-			ctx.Response().Json(http.StatusUnauthorized, http.Json{"error": "user not found"})
+			_ = responses.Send(ctx, http.StatusUnauthorized, http.Json{"error": "user not found"}).Abort()
 			return
 		}
 

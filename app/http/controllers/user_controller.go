@@ -12,6 +12,7 @@ import (
 	"github.com/macrowallets/waas/app/container"
 	"github.com/macrowallets/waas/app/http/pagination"
 	"github.com/macrowallets/waas/app/http/requests"
+	"github.com/macrowallets/waas/app/http/responses"
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/repositories"
 	authsvc "github.com/macrowallets/waas/app/services/auth"
@@ -55,7 +56,7 @@ func UpdateMe(ctx http.Context) http.Response {
 
 	if req.FullName != "" {
 		if err := container.Get().UserRepo.UpdateFullName(user.ID, req.FullName); err != nil {
-			return ctx.Response().Json(http.StatusInternalServerError, http.Json{"error": "failed to update profile"})
+			return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to update profile"})
 		}
 		user.FullName = req.FullName
 	}
@@ -84,16 +85,16 @@ func ChangePassword(ctx http.Context) http.Response {
 	}
 
 	if !userAuthService.CheckPassword(req.CurrentPassword, user.PasswordHash) {
-		return ctx.Response().Json(http.StatusUnauthorized, http.Json{"error": "current password is incorrect"})
+		return responses.Send(ctx, http.StatusUnauthorized, http.Json{"error": "current password is incorrect"})
 	}
 
 	hash, err := userAuthService.HashPassword(req.NewPassword)
 	if err != nil {
-		return ctx.Response().Json(http.StatusInternalServerError, http.Json{"error": "failed to hash password"})
+		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to hash password"})
 	}
 
 	if err := container.Get().UserRepo.UpdatePasswordHash(user.ID, hash); err != nil {
-		return ctx.Response().Json(http.StatusInternalServerError, http.Json{"error": "failed to update password"})
+		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to update password"})
 	}
 
 	return ctx.Response().Json(http.StatusOK, http.Json{"message": "password updated successfully"})
@@ -126,18 +127,18 @@ func ListMyAccounts(ctx http.Context) http.Response {
 
 	limit, offset, err := pagination.ParseStrict(ctx.Request().Query("limit", ""), ctx.Request().Query("offset", ""), myAccountsBounds)
 	if err != nil {
-		return ctx.Response().Json(http.StatusBadRequest, http.Json{"error": err.Error()})
+		return responses.Send(ctx, http.StatusBadRequest, http.Json{"error": err.Error()})
 	}
 
 	filter, errMessage := parseMyAccountsFilter(ctx)
 	if errMessage != "" {
-		return ctx.Response().Json(http.StatusBadRequest, http.Json{"error": errMessage})
+		return responses.Send(ctx, http.StatusBadRequest, http.Json{"error": errMessage})
 	}
 
 	accounts, total, err := container.Get().AccountRepo.PaginateByMember(userID, filter, limit, offset)
 	if err != nil {
 		facades.Log().WithContext(ctx).Errorf("user: list my accounts: %v", err)
-		return ctx.Response().Json(http.StatusInternalServerError, http.Json{"error": "failed to fetch accounts"})
+		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to fetch accounts"})
 	}
 
 	return ctx.Response().Json(http.StatusOK, pagination.Response(accounts, total, limit, offset))
@@ -181,16 +182,16 @@ func UpdateDefaultAccount(ctx http.Context) http.Response {
 
 	au, err := container.Get().AccountUserRepo.FindByAccountAndUser(accountID, userID)
 	if err != nil || au == nil {
-		return ctx.Response().Json(http.StatusForbidden, http.Json{"error": "not a member of this account"})
+		return responses.Send(ctx, http.StatusForbidden, http.Json{"error": "not a member of this account"})
 	}
 
 	userPtr, _ := container.Get().UserRepo.FindByID(userID)
 	if userPtr == nil {
-		return ctx.Response().Json(http.StatusNotFound, http.Json{"error": "user not found"})
+		return responses.Send(ctx, http.StatusNotFound, http.Json{"error": "user not found"})
 	}
 	userPtr.DefaultAccountID = &accountID
 	if err := container.Get().UserRepo.UpdateDefaultAccountID(userPtr.ID, &accountID); err != nil {
-		return ctx.Response().Json(http.StatusInternalServerError, http.Json{"error": "failed to update default account"})
+		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to update default account"})
 	}
 
 	account, _ := container.Get().AccountRepo.FindByID(accountID)
@@ -211,16 +212,16 @@ func SetupTOTP(ctx http.Context) http.Response {
 
 	secret, qrURL, err := userAuthService.GenerateTOTP(user.Email)
 	if err != nil {
-		return ctx.Response().Json(http.StatusInternalServerError, http.Json{"error": "failed to generate TOTP secret"})
+		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to generate TOTP secret"})
 	}
 
 	encryptedSecret, err := facades.Crypt().EncryptString(secret)
 	if err != nil {
-		return ctx.Response().Json(http.StatusInternalServerError, http.Json{"error": "failed to encrypt secret"})
+		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to encrypt secret"})
 	}
 
 	if err := container.Get().UserRepo.UpdateTotpSecret(user.ID, encryptedSecret); err != nil {
-		return ctx.Response().Json(http.StatusInternalServerError, http.Json{"error": "failed to save TOTP secret"})
+		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to save TOTP secret"})
 	}
 
 	return ctx.Response().Json(http.StatusOK, http.Json{
@@ -251,25 +252,25 @@ func ConfirmTOTP(ctx http.Context) http.Response {
 	}
 
 	if user.TotpSecret == "" {
-		return ctx.Response().Json(http.StatusBadRequest, http.Json{"error": "no TOTP secret found — call setup first"})
+		return responses.Send(ctx, http.StatusBadRequest, http.Json{"error": "no TOTP secret found — call setup first"})
 	}
 
 	decryptedSecret, err := facades.Crypt().DecryptString(user.TotpSecret)
 	if err != nil {
-		return ctx.Response().Json(http.StatusInternalServerError, http.Json{"error": "failed to decrypt secret"})
+		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to decrypt secret"})
 	}
 
 	if !userAuthService.VerifyTOTP(decryptedSecret, req.Code) {
-		return ctx.Response().Json(http.StatusUnauthorized, http.Json{"error": "invalid verification code"})
+		return responses.Send(ctx, http.StatusUnauthorized, http.Json{"error": "invalid verification code"})
 	}
 
 	if err := container.Get().UserRepo.EnableTotp(user.ID); err != nil {
-		return ctx.Response().Json(http.StatusInternalServerError, http.Json{"error": "failed to enable 2FA"})
+		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to enable 2FA"})
 	}
 
 	codes, hashes, err := userAuthService.GenerateRecoveryCodes()
 	if err != nil {
-		return ctx.Response().Json(http.StatusInternalServerError, http.Json{"error": "failed to generate recovery codes"})
+		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to generate recovery codes"})
 	}
 
 	_ = container.Get().TotpRecoveryCodeRepo.DeleteByUserID(user.ID)
@@ -305,7 +306,7 @@ func DisableTOTP(ctx http.Context) http.Response {
 	user := ctx.Value("user").(*models.User)
 
 	if err := container.Get().UserRepo.DisableTotp(user.ID); err != nil {
-		return ctx.Response().Json(http.StatusInternalServerError, http.Json{"error": "failed to disable 2FA"})
+		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to disable 2FA"})
 	}
 
 	_ = container.Get().TotpRecoveryCodeRepo.DeleteByUserID(user.ID)

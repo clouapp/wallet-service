@@ -6,6 +6,7 @@ import (
 
 	"github.com/macrowallets/waas/app/container"
 	"github.com/macrowallets/waas/app/http/pagination"
+	"github.com/macrowallets/waas/app/http/responses"
 )
 
 // ListTransactions godoc
@@ -28,7 +29,7 @@ import (
 func ListTransactions(ctx http.Context) http.Response {
 	accountID, ok := ctx.Value("account_id").(uuid.UUID)
 	if !ok {
-		return ctx.Response().Json(http.StatusUnauthorized, http.Json{
+		return responses.Send(ctx, http.StatusUnauthorized, http.Json{
 			"error": "unauthorized",
 		})
 	}
@@ -66,13 +67,13 @@ func ListTransactions(ctx http.Context) http.Response {
 func GetTransaction(ctx http.Context) http.Response {
 	id, err := uuid.Parse(ctx.Request().Route("id"))
 	if err != nil {
-		return ctx.Response().Json(http.StatusBadRequest, http.Json{
+		return responses.Send(ctx, http.StatusBadRequest, http.Json{
 			"error": "invalid tx id",
 		})
 	}
 	tx, err := container.Get().WithdrawalService.GetTransaction(ctx.Context(), id)
 	if err != nil || tx == nil {
-		return ctx.Response().Json(http.StatusNotFound, http.Json{
+		return responses.Send(ctx, http.StatusNotFound, http.Json{
 			"error": "transaction not found",
 		})
 	}
@@ -95,7 +96,7 @@ func GetTransaction(ctx http.Context) http.Response {
 func ListUserTransactions(ctx http.Context) http.Response {
 	accountID, ok := ctx.Value("account_id").(uuid.UUID)
 	if !ok {
-		return ctx.Response().Json(http.StatusUnauthorized, http.Json{
+		return responses.Send(ctx, http.StatusUnauthorized, http.Json{
 			"error": "unauthorized",
 		})
 	}

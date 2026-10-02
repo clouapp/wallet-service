@@ -82,8 +82,8 @@ func hmacHex(key, body string) string {
 // its signature-related 401 bodies. Whatever the downstream controller
 // returns is acceptable — the middleware is what we're testing.
 func (s *APITokenAuthHMACTestSuite) assertNotSignatureReject(body string) {
-	s.NotContains(body, `"error":"missing request signature"`)
-	s.NotContains(body, `"error":"invalid request signature"`)
+	s.NotContains(body, `"message":"missing request signature"`)
+	s.NotContains(body, `"message":"invalid request signature"`)
 }
 
 // TestAPITokenAuth_NoSignatureOK_WhenClaimFalse: legacy/internal tokens
@@ -112,7 +112,10 @@ func (s *APITokenAuthHMACTestSuite) TestAPITokenAuth_Missing401_WhenClaimTrue() 
 		Get("/api/v1/chains")
 	s.Require().NoError(err)
 
-	resp.AssertStatus(401).AssertJson(map[string]any{"error": "missing request signature"})
+	resp.AssertStatus(401).AssertJson(map[string]any{"error": map[string]any{
+		"code":    "invalid_signature",
+		"message": "missing request signature",
+	}})
 }
 
 // TestAPITokenAuth_Invalid401: any token that presents an X-Signature header
@@ -127,7 +130,10 @@ func (s *APITokenAuthHMACTestSuite) TestAPITokenAuth_Invalid401() {
 		Get("/api/v1/chains")
 	s.Require().NoError(err)
 
-	resp.AssertStatus(401).AssertJson(map[string]any{"error": "invalid request signature"})
+	resp.AssertStatus(401).AssertJson(map[string]any{"error": map[string]any{
+		"code":    "invalid_signature",
+		"message": "invalid request signature",
+	}})
 }
 
 // TestAPITokenAuth_ValidOK_WhenClaimTrue: a token with require_signature=true

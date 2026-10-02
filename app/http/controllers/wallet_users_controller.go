@@ -7,6 +7,7 @@ import (
 
 	"github.com/macrowallets/waas/app/container"
 	"github.com/macrowallets/waas/app/http/requests"
+	"github.com/macrowallets/waas/app/http/responses"
 	"github.com/macrowallets/waas/app/models"
 )
 
@@ -26,7 +27,7 @@ func ListWalletUsers(ctx http.Context) http.Response {
 
 	members, err := container.Get().WalletUserRepo.FindByWalletID(wallet.ID)
 	if err != nil {
-		return ctx.Response().Json(http.StatusInternalServerError, http.Json{"error": "failed to fetch wallet users"})
+		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to fetch wallet users"})
 	}
 	return ctx.Response().Json(http.StatusOK, http.Json{"data": members})
 }
@@ -62,7 +63,7 @@ func AddWalletUser(ctx http.Context) http.Response {
 	}
 	if existing != nil && existing.DeletedAt != nil {
 		if err := container.Get().WalletUserRepo.UpdateField(existing.ID, "deleted_at", nil); err != nil {
-			return ctx.Response().Json(http.StatusInternalServerError, http.Json{"error": "failed to restore wallet user"})
+			return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to restore wallet user"})
 		}
 		if req.Roles != "" {
 			if err := container.Get().WalletUserRepo.UpdateField(existing.ID, "roles", req.Roles); err != nil {
@@ -80,7 +81,7 @@ func AddWalletUser(ctx http.Context) http.Response {
 		Status:   "active",
 	}
 	if err := container.Get().WalletUserRepo.Create(wu); err != nil {
-		return ctx.Response().Json(http.StatusInternalServerError, http.Json{"error": "failed to add wallet user"})
+		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to add wallet user"})
 	}
 	return ctx.Response().Json(http.StatusCreated, wu)
 }
@@ -106,11 +107,11 @@ func RemoveWalletUser(ctx http.Context) http.Response {
 	targetIDStr := ctx.Request().Route("userId")
 	targetID, err := uuid.Parse(targetIDStr)
 	if err != nil {
-		return ctx.Response().Json(http.StatusBadRequest, http.Json{"error": "invalid user id"})
+		return responses.Send(ctx, http.StatusBadRequest, http.Json{"error": "invalid user id"})
 	}
 
 	if err := container.Get().WalletUserRepo.SoftDelete(wallet.ID, targetID); err != nil {
-		return ctx.Response().Json(http.StatusInternalServerError, http.Json{"error": "failed to remove wallet user"})
+		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to remove wallet user"})
 	}
 	return ctx.Response().NoContent()
 }

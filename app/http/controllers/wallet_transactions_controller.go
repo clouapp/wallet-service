@@ -7,6 +7,7 @@ import (
 
 	"github.com/macrowallets/waas/app/container"
 	"github.com/macrowallets/waas/app/http/pagination"
+	"github.com/macrowallets/waas/app/http/responses"
 	"github.com/macrowallets/waas/app/models"
 )
 
@@ -33,7 +34,7 @@ func ListWalletTransactions(ctx http.Context) http.Response {
 	status := ctx.Request().Query("status", "")
 	transactions, total, err := container.Get().TransactionRepo.FindByWallet(wallet.ID, txType, status, limit, offset)
 	if err != nil {
-		return ctx.Response().Json(http.StatusInternalServerError, http.Json{"error": "failed to fetch transactions"})
+		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to fetch transactions"})
 	}
 
 	views := walletTransactionViews(transactions, loadAssetDecimalsCatalog(wallet.Chain))
@@ -58,7 +59,7 @@ func GetWalletTransaction(ctx http.Context) http.Response {
 	txIDStr := ctx.Request().Route("txId")
 	tx, err := container.Get().TransactionRepo.FindByIDAndWallet(txIDStr, wallet.ID)
 	if err != nil || tx == nil {
-		return ctx.Response().Json(http.StatusNotFound, http.Json{"error": "transaction not found"})
+		return responses.Send(ctx, http.StatusNotFound, http.Json{"error": "transaction not found"})
 	}
 
 	views := walletTransactionViews([]models.Transaction{*tx}, loadAssetDecimalsCatalog(wallet.Chain))

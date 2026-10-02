@@ -9,12 +9,12 @@ content-type: application/json; charset=utf-8
 ### 02 register without a body: POST /v1/auth/register
 status: 400
 content-type: application/json; charset=utf-8
-{"error":"invalid request body"}
+{"error":{"code":"invalid_request","message":"invalid request body"}}
 
 ### 03 register with missing fields: POST /v1/auth/register
 status: 422
 content-type: application/json; charset=utf-8
-{"email":{"email":"Please provide a valid email address"},"organization_name":{"required":"Organization name is required"},"password":{"required":"Password is required"}}
+{"error":{"code":"validation_failed","message":"validation failed"},"errors":{"email":["Please provide a valid email address"],"organization_name":["Organization name is required"],"password":["Password is required"]}}
 
 ### 04 register: POST /v1/auth/register
 status: 201
@@ -24,12 +24,12 @@ content-type: application/json; charset=utf-8
 ### 05 register the same e-mail again: POST /v1/auth/register
 status: 422
 content-type: application/json; charset=utf-8
-{"email":{"unique":"This email address is already registered"}}
+{"error":{"code":"validation_failed","message":"validation failed"},"errors":{"email":["This email address is already registered"]}}
 
 ### 06 login with a wrong password: POST /v1/auth/login
 status: 401
 content-type: application/json; charset=utf-8
-{"error":"invalid credentials"}
+{"error":{"code":"unauthorized","message":"invalid credentials"}}
 
 ### 07 login: POST /v1/auth/login
 status: 200
@@ -39,7 +39,7 @@ content-type: application/json; charset=utf-8
 ### 08 refresh with an unknown token: POST /v1/auth/refresh
 status: 401
 content-type: application/json; charset=utf-8
-{"error":"invalid or expired refresh token"}
+{"error":{"code":"unauthorized","message":"invalid or expired refresh token"}}
 
 ### 09 refresh: POST /v1/auth/refresh
 status: 200
@@ -49,7 +49,7 @@ content-type: application/json; charset=utf-8
 ### 10 two-factor verify with a bad token: POST /v1/auth/2fa/verify
 status: 401
 content-type: application/json; charset=utf-8
-{"error":"invalid or expired partial token"}
+{"error":{"code":"unauthorized","message":"invalid or expired partial token"}}
 
 ### 11 recover: POST /v1/auth/recover
 status: 200
@@ -59,17 +59,17 @@ content-type: application/json; charset=utf-8
 ### 12 recover confirm with an unknown token: POST /v1/auth/recover/confirm
 status: 422
 content-type: application/json; charset=utf-8
-{"new_password":{"required":"new_password is required to not be empty"}}
+{"error":{"code":"validation_failed","message":"validation failed"},"errors":{"new_password":["new_password is required to not be empty"]}}
 
 ### 13 me without a session: GET /v1/users/me
 status: 401
-content-type: 
-
+content-type: application/json; charset=utf-8
+{"error":{"code":"unauthorized","message":"missing or malformed bearer token"}}
 
 ### 14 me with a malformed session: GET /v1/users/me
 status: 401
-content-type: 
-
+content-type: application/json; charset=utf-8
+{"error":{"code":"unauthorized","message":"invalid token"}}
 
 ### 15 me: GET /v1/users/me
 status: 200
@@ -89,7 +89,7 @@ content-type: application/json; charset=utf-8
 ### 18 change password with a wrong current one: POST /v1/users/me/password
 status: 401
 content-type: application/json; charset=utf-8
-{"error":"current password is incorrect"}
+{"error":{"code":"unauthorized","message":"current password is incorrect"}}
 
 ### 19 preferences: GET /v1/me/preferences
 status: 200
@@ -104,12 +104,12 @@ content-type: application/json; charset=utf-8
 ### 21 update preferences with an unknown fiat: PUT /v1/me/preferences
 status: 400
 content-type: application/json; charset=utf-8
-{"error":"invalid fiat currency code"}
+{"error":{"code":"invalid_request","message":"invalid fiat currency code"}}
 
 ### 22 create account without a name: POST /v1/accounts
 status: 422
 content-type: application/json; charset=utf-8
-{"name":{"required":"name is required to not be empty"}}
+{"error":{"code":"validation_failed","message":"validation failed"},"errors":{"name":["name is required to not be empty"]}}
 
 ### 23 create account: POST /v1/accounts
 status: 201
@@ -123,8 +123,8 @@ content-type: application/json; charset=utf-8
 
 ### 25 get an unknown account: GET /v1/accounts/00000000-0000-4000-8000-000000000000
 status: 404
-content-type: 
-
+content-type: application/json; charset=utf-8
+{"error":{"code":"not_found","message":"account not found"}}
 
 ### 26 update account: PATCH /v1/accounts/{{account}}
 status: 200
@@ -139,7 +139,7 @@ content-type: application/json; charset=utf-8
 ### 28 add account user with an invalid role: POST /v1/accounts/{{account}}/users
 status: 422
 content-type: application/json; charset=utf-8
-{"role":{"in":"role value must be in the enum [owner admin viewer]"}}
+{"error":{"code":"validation_failed","message":"validation failed"},"errors":{"role":["role value must be in the enum [owner admin viewer]"]}}
 
 ### 29 account tokens: GET /v1/accounts/{{account}}/tokens
 status: 200
@@ -153,8 +153,8 @@ content-type: application/json; charset=utf-8
 
 ### 31 chains without an account header: GET /v1/chains
 status: 400
-content-type: 
-
+content-type: application/json; charset=utf-8
+{"error":{"code":"invalid_request","message":"X-Account-Id header is required"}}
 
 ### 32 chains: GET /v1/chains
 status: 200
@@ -169,7 +169,7 @@ content-type: application/json; charset=utf-8
 ### 34 unknown chain: GET /v1/chains/nochain
 status: 404
 content-type: application/json; charset=utf-8
-{"error":"chain not found"}
+{"error":{"code":"not_found","message":"chain not found"}}
 
 ### 35 chain tokens: GET /v1/chains/eth/tokens
 status: 200
@@ -189,7 +189,7 @@ content-type: application/json; charset=utf-8
 ### 38 unknown currency: GET /v1/currencies/zzz
 status: 404
 content-type: application/json; charset=utf-8
-{"error":"currency not found"}
+{"error":{"code":"not_found","message":"currency not found"}}
 
 ### 39 wallets: GET /v1/wallets
 status: 200
@@ -199,12 +199,12 @@ content-type: application/json; charset=utf-8
 ### 40 create wallet with an invalid body: POST /v1/wallets
 status: 422
 content-type: application/json; charset=utf-8
-{"chain":{"required":"Blockchain chain is required"},"confirm_passphrase":{"required":"Passphrase confirmation is required"},"label":{"required":"Wallet label is required"},"passphrase":{"required":"Passphrase is required"}}
+{"error":{"code":"validation_failed","message":"validation failed"},"errors":{"chain":["Blockchain chain is required"],"confirm_passphrase":["Passphrase confirmation is required"],"label":["Wallet label is required"],"passphrase":["Passphrase is required"]}}
 
 ### 41 unknown wallet: GET /v1/wallets/00000000-0000-4000-8000-000000000000
 status: 404
 content-type: application/json; charset=utf-8
-{"error":"wallet not found"}
+{"error":{"code":"not_found","message":"wallet not found"}}
 
 ### 42 wallet: GET /v1/wallets/{{wallet}}
 status: 200
@@ -249,22 +249,22 @@ content-type: application/json; charset=utf-8
 ### 50 unknown wallet withdrawal: GET /v1/wallets/{{wallet}}/withdrawals/00000000-0000-4000-8000-000000000000
 status: 404
 content-type: application/json; charset=utf-8
-{"error":"withdrawal not found"}
+{"error":{"code":"not_found","message":"withdrawal not found"}}
 
 ### 51 wallet unspents on an account chain: GET /v1/wallets/{{wallet}}/unspents
 status: 422
-content-type: 
-
+content-type: application/json; charset=utf-8
+{"error":{"code":"unprocessable","message":"this endpoint is only available for UTXO-model chains (e.g. bitcoin)"}}
 
 ### 52 external without a token: GET /api/v1/wallets
 status: 401
 content-type: application/json; charset=utf-8
-{"error":"missing bearer token"}
+{"error":{"code":"unauthorized","message":"missing bearer token"}}
 
 ### 53 external with a malformed token: GET /api/v1/wallets
 status: 401
 content-type: application/json; charset=utf-8
-{"error":"invalid or expired api token"}
+{"error":{"code":"unauthorized","message":"invalid or expired api token"}}
 
 ### 54 external chains: GET /api/v1/chains
 status: 200
@@ -284,7 +284,7 @@ content-type: application/json; charset=utf-8
 ### 57 external wallet of another account: GET /api/v1/wallets/00000000-0000-4000-8000-000000000000
 status: 404
 content-type: application/json; charset=utf-8
-{"error":"wallet not found"}
+{"error":{"code":"not_found","message":"wallet not found"}}
 
 ### 58 external wallet addresses: GET /api/v1/wallets/{{wallet}}/addresses
 status: 200
@@ -294,7 +294,7 @@ content-type: application/json; charset=utf-8
 ### 59 external unknown withdrawal: GET /api/v1/wallets/{{wallet}}/withdrawals/unknown-key
 status: 400
 content-type: application/json; charset=utf-8
-{"error":"idempotency_key must be a UUID"}
+{"error":{"code":"invalid_request","message":"idempotency_key must be a UUID"}}
 
 ### 60 external transactions: GET /api/v1/transactions
 status: 200
@@ -304,12 +304,12 @@ content-type: application/json; charset=utf-8
 ### 61 external unknown transaction: GET /api/v1/transactions/00000000-0000-4000-8000-000000000000
 status: 404
 content-type: application/json; charset=utf-8
-{"error":"transaction not found"}
+{"error":{"code":"not_found","message":"transaction not found"}}
 
 ### 62 external unknown address: GET /api/v1/addresses/0x0000000000000000000000000000000000000000
 status: 404
 content-type: application/json; charset=utf-8
-{"error":"address not found"}
+{"error":{"code":"not_found","message":"address not found"}}
 
 ### 63 external webhooks: GET /api/v1/webhooks
 status: 200
@@ -319,12 +319,12 @@ content-type: application/json; charset=utf-8
 ### 64 external create webhook with an invalid body: POST /api/v1/webhooks
 status: 422
 content-type: application/json; charset=utf-8
-{"events":{"required":"events is required to not be empty"},"secret":{"required":"secret is required to not be empty"},"url":{"required":"url is required to not be empty"}}
+{"error":{"code":"validation_failed","message":"validation failed"},"errors":{"events":["events is required to not be empty"],"secret":["secret is required to not be empty"],"url":["url is required to not be empty"]}}
 
 ### 65 ingest without a signature: POST /v1/webhooks/ingest/alchemy/eth
 status: 404
 content-type: application/json; charset=utf-8
-{"error":"webhook subscription not found"}
+{"error":{"code":"not_found","message":"webhook subscription not found"}}
 
 ### 66 revoke account token: DELETE /v1/accounts/{{account}}/tokens/{{apiTokenID}}
 status: 204
@@ -334,7 +334,7 @@ content-type:
 ### 67 external with a revoked token: GET /api/v1/wallets
 status: 401
 content-type: application/json; charset=utf-8
-{"error":"token not found or revoked"}
+{"error":{"code":"unauthorized","message":"token not found or revoked"}}
 
 ### 68 logout: POST /v1/auth/logout
 status: 204

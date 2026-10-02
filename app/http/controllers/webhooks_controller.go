@@ -8,6 +8,7 @@ import (
 
 	"github.com/macrowallets/waas/app/container"
 	"github.com/macrowallets/waas/app/http/requests"
+	"github.com/macrowallets/waas/app/http/responses"
 	"github.com/macrowallets/waas/app/services/webhook"
 )
 
@@ -37,7 +38,7 @@ func CreateWebhook(ctx http.Context) http.Response {
 
 	cfg, err := container.Get().WebhookService.CreateConfig(ctx.Context(), req.URL, req.Secret, req.Events, owner)
 	if err != nil {
-		return ctx.Response().Json(http.StatusInternalServerError, http.Json{
+		return responses.Send(ctx, http.StatusInternalServerError, http.Json{
 			"error": err.Error(),
 		})
 	}
@@ -58,12 +59,12 @@ func CreateWebhook(ctx http.Context) http.Response {
 func ListWebhooks(ctx http.Context) http.Response {
 	accountID, ok := ctx.Value("account_id").(uuid.UUID)
 	if !ok || accountID == uuid.Nil {
-		return ctx.Response().Json(http.StatusUnauthorized, http.Json{"error": "unauthenticated"})
+		return responses.Send(ctx, http.StatusUnauthorized, http.Json{"error": "unauthenticated"})
 	}
 
 	configs, err := container.Get().WebhookService.ListAccountConfigs(ctx.Context(), accountID)
 	if err != nil {
-		return ctx.Response().Json(http.StatusInternalServerError, http.Json{
+		return responses.Send(ctx, http.StatusInternalServerError, http.Json{
 			"error": err.Error(),
 		})
 	}
@@ -91,17 +92,17 @@ func ListWebhooks(ctx http.Context) http.Response {
 func UpdateWebhook(ctx http.Context) http.Response {
 	accountID, ok := ctx.Value("account_id").(uuid.UUID)
 	if !ok || accountID == uuid.Nil {
-		return ctx.Response().Json(http.StatusUnauthorized, http.Json{"error": "unauthenticated"})
+		return responses.Send(ctx, http.StatusUnauthorized, http.Json{"error": "unauthenticated"})
 	}
 
 	webhookID, err := uuid.Parse(ctx.Request().Route("webhookId"))
 	if err != nil {
-		return ctx.Response().Json(http.StatusBadRequest, http.Json{"error": "invalid webhook id"})
+		return responses.Send(ctx, http.StatusBadRequest, http.Json{"error": "invalid webhook id"})
 	}
 
 	var req requests.UpdateWebhookRequest
 	if err := ctx.Request().Bind(&req); err != nil {
-		return ctx.Response().Json(http.StatusBadRequest, http.Json{"error": "invalid request body"})
+		return responses.Send(ctx, http.StatusBadRequest, http.Json{"error": "invalid request body"})
 	}
 
 	cfg, err := container.Get().WebhookService.UpdateAccountConfig(ctx.Context(), accountID, webhookID, webhook.ConfigUpdate{
@@ -113,13 +114,13 @@ func UpdateWebhook(ctx http.Context) http.Response {
 	case err == nil:
 		return ctx.Response().Json(http.StatusOK, cfg)
 	case errors.Is(err, webhook.ErrWebhookConfigNotFound):
-		return ctx.Response().Json(http.StatusNotFound, http.Json{"error": err.Error()})
+		return responses.Send(ctx, http.StatusNotFound, http.Json{"error": err.Error()})
 	case errors.Is(err, webhook.ErrWebhookOwnershipNotProven):
-		return ctx.Response().Json(http.StatusForbidden, http.Json{"error": err.Error()})
+		return responses.Send(ctx, http.StatusForbidden, http.Json{"error": err.Error()})
 	case errors.Is(err, webhook.ErrWebhookUpdateEmpty),
 		errors.Is(err, webhook.ErrWebhookEventsEmpty),
 		errors.Is(err, webhook.ErrWebhookUnknownEvent):
-		return ctx.Response().Json(http.StatusBadRequest, http.Json{"error": err.Error()})
+		return responses.Send(ctx, http.StatusBadRequest, http.Json{"error": err.Error()})
 	default:
 		return MapInternalError(ctx, err, "update_webhook")
 	}

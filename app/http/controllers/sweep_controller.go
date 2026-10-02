@@ -9,6 +9,7 @@ import (
 
 	"github.com/macrowallets/waas/app/container"
 	"github.com/macrowallets/waas/app/http/requests"
+	"github.com/macrowallets/waas/app/http/responses"
 	"github.com/macrowallets/waas/app/services/sweep"
 )
 
@@ -37,7 +38,7 @@ const gasCheckRateLimitWindow = 60 * time.Second
 func ConsolidateWallet(ctx http.Context) http.Response {
 	walletID, err := uuid.Parse(ctx.Request().Route("walletId"))
 	if err != nil {
-		return ctx.Response().Json(http.StatusBadRequest, http.Json{"error": "invalid wallet id"})
+		return responses.Send(ctx, http.StatusBadRequest, http.Json{"error": "invalid wallet id"})
 	}
 
 	var req requests.ConsolidateRequest
@@ -72,7 +73,7 @@ func ConsolidateWallet(ctx http.Context) http.Response {
 func GetGasStatus(ctx http.Context) http.Response {
 	walletID, err := uuid.Parse(ctx.Request().Route("walletId"))
 	if err != nil {
-		return ctx.Response().Json(http.StatusBadRequest, http.Json{"error": "invalid wallet id"})
+		return responses.Send(ctx, http.StatusBadRequest, http.Json{"error": "invalid wallet id"})
 	}
 
 	status, err := container.Get().SweepService.RefreshGasStatus(ctx.Context(), walletID)
@@ -101,14 +102,14 @@ func GetGasStatus(ctx http.Context) http.Response {
 func ForceGasCheck(ctx http.Context) http.Response {
 	walletID, err := uuid.Parse(ctx.Request().Route("walletId"))
 	if err != nil {
-		return ctx.Response().Json(http.StatusBadRequest, http.Json{"error": "invalid wallet id"})
+		return responses.Send(ctx, http.StatusBadRequest, http.Json{"error": "invalid wallet id"})
 	}
 
 	if rdb := container.Get().Redis; rdb != nil {
 		key := "vault:ratelimit:gas-check:" + walletID.String()
 		ok, setErr := rdb.SetNX(ctx.Context(), key, "1", gasCheckRateLimitWindow).Result()
 		if setErr == nil && !ok {
-			return ctx.Response().Json(http.StatusTooManyRequests, http.Json{
+			return responses.Send(ctx, http.StatusTooManyRequests, http.Json{
 				"error":               "rate_limited",
 				"limit_type":          "gas_check",
 				"retry_after_seconds": int(gasCheckRateLimitWindow / time.Second),
@@ -136,7 +137,7 @@ func ForceGasCheck(ctx http.Context) http.Response {
 func PreviewWithdraw(ctx http.Context) http.Response {
 	walletID, err := uuid.Parse(ctx.Request().Route("walletId"))
 	if err != nil {
-		return ctx.Response().Json(http.StatusBadRequest, http.Json{"error": "invalid wallet id"})
+		return responses.Send(ctx, http.StatusBadRequest, http.Json{"error": "invalid wallet id"})
 	}
 
 	var req requests.WithdrawPreviewRequest
@@ -146,7 +147,7 @@ func PreviewWithdraw(ctx http.Context) http.Response {
 
 	amount, ok := new(big.Int).SetString(req.Amount, 10)
 	if !ok {
-		return ctx.Response().Json(http.StatusBadRequest, http.Json{"error": "invalid amount"})
+		return responses.Send(ctx, http.StatusBadRequest, http.Json{"error": "invalid amount"})
 	}
 
 	callerAccountID, _ := ctx.Value("account_id").(uuid.UUID)
