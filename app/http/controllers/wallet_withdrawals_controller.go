@@ -125,13 +125,8 @@ func CreateWalletWithdrawal(ctx http.Context) http.Response {
 			return ctx.Response().Json(http.StatusForbidden, http.Json{"error": "2FA must be enabled before withdrawing"})
 		}
 
-		decryptedSecret, err := facades.Crypt().DecryptString(user.TotpSecret)
-		if err != nil {
-			return ctx.Response().Json(http.StatusInternalServerError, http.Json{"error": "internal error"})
-		}
-		authService := authsvc.NewService()
-		if !authService.VerifyTOTP(decryptedSecret, req.TotpCode) {
-			return ctx.Response().Json(http.StatusUnauthorized, http.Json{"error": "invalid 2FA code"})
+		if resp := rejectReplayedWithdrawalCode(ctx, user, req.TotpCode); resp != nil {
+			return resp
 		}
 	} else {
 		accountID, hasAccount := ctx.Value("account_id").(uuid.UUID)
@@ -332,6 +327,25 @@ func withdrawalIDFromIdempotencyKey(idempotencyKey string) (uuid.UUID, error) {
 		return uuid.Nil, fmt.Errorf("idempotency_key must be a UUID")
 	}
 	return id, nil
+}
+
+// rejectReplayedWithdrawalCode spends the same persisted TOTP step login
+// uses, so a code accepted at sign-in cannot authorize a withdrawal and a
+// code accepted here cannot sign in.
+func rejectReplayedWithdrawalCode(ctx http.Context, user *models.User, code string) http.Response {
+	verifier := container.Get().SecondFactor
+	if verifier == nil {
+		return ctx.Response().Json(http.StatusInternalServerError, http.Json{"error": "internal error"})
+	}
+	err := verifier.Verify(user, code, "")
+	if err == nil {
+		return nil
+	}
+	if errors.Is(err, authsvc.ErrInvalidSecondFactor) {
+		return ctx.Response().Json(http.StatusUnauthorized, http.Json{"error": "invalid 2FA code"})
+	}
+	facades.Log().WithContext(ctx).Errorf("withdraw: totp: %v", err)
+	return ctx.Response().Json(http.StatusInternalServerError, http.Json{"error": "internal error"})
 }
 
 func verifyWalletPassphrase(ctx http.Context, wallet *models.Wallet, passphrase string) http.Response {

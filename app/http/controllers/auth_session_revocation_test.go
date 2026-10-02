@@ -60,13 +60,13 @@ func (s *SessionRevocationTestSuite) loginWithPassword(email, password string) c
 	return s.postJSON("/v1/auth/login", fmt.Sprintf(`{"email":%q,"password":%q}`, email, password))
 }
 
-func (s *SessionRevocationTestSuite) assertSessionRefused(session loginBody) {
+func (s *authSuite) assertSessionRefused(session loginBody) {
 	s.getMe(session.AccessToken).AssertStatus(401)
 	resp, _ := s.refresh(session.RefreshToken)
 	resp.AssertStatus(401)
 }
 
-func (s *SessionRevocationTestSuite) assertSessionWorks(session loginBody) {
+func (s *authSuite) assertSessionWorks(session loginBody) {
 	s.Require().NotEmpty(session.AccessToken)
 	s.Require().NotEmpty(session.RefreshToken)
 	s.getMe(session.AccessToken).AssertOk()
@@ -144,7 +144,9 @@ func (s *SessionRevocationTestSuite) TestDisableTOTPEndsEverySessionAndRenewsThe
 	_, otherDevice := s.verifyTwoFactor(second.PartialToken, "", user.RecoveryCodes[0])
 	s.Require().NotEmpty(otherDevice.AccessToken)
 
-	resp := s.authedDelete(caller.AccessToken, "/v1/users/me/totp")
+	resp := s.authedDeleteJSON(caller.AccessToken, "/v1/users/me/totp", fmt.Sprintf(
+		`{"recovery_code":%q}`, user.RecoveryCodes[1],
+	))
 
 	resp.AssertOk()
 	var body struct {

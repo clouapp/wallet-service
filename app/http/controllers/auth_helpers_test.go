@@ -3,6 +3,7 @@ package controllers_test
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"strings"
 	"time"
 
@@ -136,7 +137,18 @@ func (s *authSuite) authedPost(bearer, path, body string) contractstesting.Respo
 }
 
 func (s *authSuite) authedDelete(bearer, path string) contractstesting.Response {
-	resp, err := s.Http(s.T()).WithHeader("Authorization", "Bearer "+bearer).Delete(path, nil)
+	return s.authedDeleteJSON(bearer, path, "")
+}
+
+func (s *authSuite) authedDeleteJSON(bearer, path, body string) contractstesting.Response {
+	var payload io.Reader
+	if body != "" {
+		payload = strings.NewReader(body)
+	}
+	resp, err := s.Http(s.T()).
+		WithHeader("Authorization", "Bearer "+bearer).
+		WithHeader("Content-Type", "application/json").
+		Delete(path, payload)
 	s.Require().NoError(err)
 	return resp
 }

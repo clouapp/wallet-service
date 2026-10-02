@@ -214,10 +214,14 @@ func UpdateDefaultAccount(ctx http.Context) http.Response {
 // @Security     BearerAuth
 // @Produce      json
 // @Success      200  {object}  TotpSetupSwagger
+// @Failure      409  {object}  ErrorResponse  "2FA is already enabled"
 // @Failure      500  {object}  ErrorResponse
 // @Router       /users/me/totp/setup [post]
 func SetupTOTP(ctx http.Context) http.Response {
 	user := ctx.Value("user").(*models.User)
+	if user.TotpEnabled {
+		return ctx.Response().Json(http.StatusConflict, http.Json{"error": "2FA is already enabled"})
+	}
 
 	secret, qrURL, err := userAuthService.GenerateTOTP(user.Email)
 	if err != nil {
@@ -309,15 +313,30 @@ func ConfirmTOTP(ctx http.Context) http.Response {
 
 // DisableTOTP godoc
 // @Summary      Disable TOTP
-// @Description  Disables 2FA, clears TOTP secret and recovery codes, ends every session of the user (the caller's included) and returns the user with a fresh access + refresh token pair
+// @Description  Disables 2FA after a current TOTP code or an unused recovery code, clears the secret and recovery codes, ends every session of the user (the caller's included) and returns the user with a fresh access + refresh token pair
 // @Tags         User
 // @Security     BearerAuth
+// @Accept       json
 // @Produce      json
+// @Param        request  body      requests.DisableTotpRequest  true  "Current TOTP code or recovery code"
 // @Success      200  {object}  map[string]interface{}  "user, access_token, refresh_token"
+// @Failure      401  {object}  ErrorResponse
 // @Failure      500  {object}  ErrorResponse
 // @Router       /users/me/totp [delete]
 func DisableTOTP(ctx http.Context) http.Response {
-	user := ctx.Value("user").(*models.User)
+	sessionUser, _ := ctx.Value("user").(*models.User)
+	if sessionUser == nil || sessionUser.ID == uuid.Nil {
+		return ctx.Response().Json(http.StatusUnauthorized, http.Json{"error": "user not found"})
+	}
+	user, err := container.Get().UserRepo.FindByID(sessionUser.ID)
+	if err != nil || user == nil {
+		return ctx.Response().Json(http.StatusNotFound, http.Json{"error": "user not found"})
+	}
+	if user.TotpEnabled {
+		if resp := requireLiveSecondFactor(ctx, user); resp != nil {
+			return resp
+		}
+	}
 
 	if err := container.Get().UserRepo.DisableTotp(user.ID); err != nil {
 		return ctx.Response().Json(http.StatusInternalServerError, http.Json{"error": "failed to disable 2FA"})
@@ -338,6 +357,24 @@ func DisableTOTP(ctx http.Context) http.Response {
 		"access_token":  session.AccessToken,
 		"refresh_token": session.RefreshToken,
 	})
+}
+
+// requireLiveSecondFactor refuses to turn 2FA off unless the caller presents
+// the current TOTP code or an unused recovery code. A wrong code leaves the
+// enrollment and every session untouched.
+func requireLiveSecondFactor(ctx http.Context, user *models.User) http.Response {
+	verifier := container.Get().SecondFactor
+	if verifier == nil {
+		return ctx.Response().Json(http.StatusInternalServerError, http.Json{"error": "internal error"})
+	}
+	var req requests.DisableTotpRequest
+	if err := ctx.Request().Bind(&req); err != nil && req.Code == "" && req.RecoveryCode == "" {
+		return twoFactorErrorResponse(ctx, authsvc.ErrInvalidSecondFactor)
+	}
+	if err := verifier.Verify(user, strings.TrimSpace(req.Code), strings.TrimSpace(req.RecoveryCode)); err != nil {
+		return twoFactorErrorResponse(ctx, err)
+	}
+	return nil
 }
 
 // ---- Swagger-only types ----
