@@ -15,7 +15,6 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/goravel/framework/facades"
-	"golang.org/x/crypto/bcrypt"
 
 	"github.com/macrowallets/waas/app/container"
 	"github.com/macrowallets/waas/bootstrap"
@@ -226,7 +225,7 @@ func contractScenario() []step {
 		{name: "register", method: "POST", path: "/v1/auth/register", body: register},
 		{name: "register the same e-mail again", method: "POST", path: "/v1/auth/register", body: register},
 		{name: "login with a wrong password", method: "POST", path: "/v1/auth/login",
-			body: fmt.Sprintf(`{"email":%q,"password":"wrong-password-1"}`, contractEmail), before: insertContractUser},
+			body: fmt.Sprintf(`{"email":%q,"password":"wrong-password-1"}`, contractEmail)},
 		{name: "login", method: "POST", path: "/v1/auth/login", body: login,
 			capture: map[string]string{"session": "access_token", "refresh": "refresh_token"}},
 		{name: "refresh with an unknown token", method: "POST", path: "/v1/auth/refresh", body: `{"refresh_token":"unknown"}`},
@@ -243,8 +242,6 @@ func contractScenario() []step {
 		{name: "me with a malformed session", method: "GET", path: "/v1/users/me", bearer: "unknownToken",
 			before: func(_ *testing.T, vars map[string]string) { vars["unknownToken"] = "not-a-jwt" }},
 		{name: "me", method: "GET", path: "/v1/users/me", bearer: "session"},
-		// The PATCH answers keep the old name: validateRequest returns before
-		// binding when a request has no rules, so the body is ignored today.
 		{name: "update me", method: "PATCH", path: "/v1/users/me", bearer: "session", body: `{"full_name":"Contract User Renamed"}`},
 		{name: "my accounts", method: "GET", path: "/v1/users/me/accounts", bearer: "session"},
 		{name: "change password with a wrong current one", method: "POST", path: "/v1/users/me/password", bearer: "session",
@@ -317,23 +314,6 @@ func contractScenario() []step {
 		{name: "revoke account token", method: "DELETE", path: "/v1/accounts/{{account}}/tokens/{{apiTokenID}}", bearer: "session"},
 		{name: "external with a revoked token", method: "GET", path: "/api/v1/wallets", bearer: "apiToken"},
 		{name: "logout", method: "POST", path: "/v1/auth/logout", bearer: "session"},
-	}
-}
-
-// insertContractUser creates the scenario's user the way database/seeds does,
-// because POST /v1/auth/register currently answers 500 (the users.preferences
-// NOT NULL column receives NULL) and the snapshot records that answer as is.
-func insertContractUser(t *testing.T, _ map[string]string) {
-	t.Helper()
-	hash, err := bcrypt.GenerateFromPassword([]byte(contractPassword), bcrypt.DefaultCost)
-	if err != nil {
-		t.Fatalf("hash contract password: %v", err)
-	}
-	if _, err := facades.Orm().Query().Exec(`
-		INSERT INTO users (id, email, password_hash, full_name, status, preferences, totp_enabled, created_at, updated_at)
-		VALUES (?, ?, ?, 'Contract User', 'active', '{}'::jsonb, false, NOW(), NOW())
-	`, uuid.New(), contractEmail, string(hash)); err != nil {
-		t.Fatalf("insert contract user: %v", err)
 	}
 }
 

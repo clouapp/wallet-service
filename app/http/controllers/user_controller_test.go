@@ -99,6 +99,43 @@ func (s *UserControllerTestSuite) seedAccounts(count int, environment string) []
 	return accounts
 }
 
+func (s *UserControllerTestSuite) TestUpdateMe_AppliesFullName() {
+	body := `{"full_name":"Renamed User"}`
+	resp, err := s.Http(s.T()).
+		WithHeader("Authorization", "Bearer "+s.token).
+		WithHeader("Content-Type", "application/json").
+		Patch("/v1/users/me", strings.NewReader(body))
+	s.Require().NoError(err)
+	resp.AssertOk()
+
+	content, err := resp.Content()
+	s.Require().NoError(err)
+	var parsed struct {
+		FullName string `json:"full_name"`
+	}
+	s.Require().NoError(json.Unmarshal([]byte(content), &parsed))
+	s.Equal("Renamed User", parsed.FullName)
+}
+
+func (s *UserControllerTestSuite) TestUpdateAccount_AppliesName() {
+	account := s.seedAccounts(1, "prod")[0]
+	body := `{"name":"Renamed Account"}`
+	resp, err := s.Http(s.T()).
+		WithHeader("Authorization", "Bearer "+s.token).
+		WithHeader("Content-Type", "application/json").
+		Patch("/v1/accounts/"+account.ID.String(), strings.NewReader(body))
+	s.Require().NoError(err)
+	resp.AssertOk()
+
+	content, err := resp.Content()
+	s.Require().NoError(err)
+	var parsed struct {
+		Name string `json:"name"`
+	}
+	s.Require().NoError(json.Unmarshal([]byte(content), &parsed))
+	s.Equal("Renamed Account", parsed.Name)
+}
+
 func (s *UserControllerTestSuite) listAccounts(query url.Values) contractstesting.Response {
 	path := myAccountsPath
 	if len(query) > 0 {
