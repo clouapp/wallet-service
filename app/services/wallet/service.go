@@ -46,9 +46,9 @@ type CreateWalletResult struct {
 	ActivationCode    string // 6-digit zero-padded decimal
 }
 
-// secretsManagerAPI is a subset of secretsmanager.Client used by the wallet service,
+// SecretsManagerAPI is a subset of secretsmanager.Client used by the wallet service,
 // defined as an interface to allow test mocking.
-type secretsManagerAPI interface {
+type SecretsManagerAPI interface {
 	CreateSecret(ctx context.Context, input *secretsmanager.CreateSecretInput, opts ...func(*secretsmanager.Options)) (*secretsmanager.CreateSecretOutput, error)
 	GetSecretValue(ctx context.Context, input *secretsmanager.GetSecretValueInput, opts ...func(*secretsmanager.Options)) (*secretsmanager.GetSecretValueOutput, error)
 }
@@ -61,13 +61,13 @@ type Service struct {
 	registry       *chain.Registry
 	rdb            *redis.Client
 	mpcService     mpc.Service
-	secretsManager secretsManagerAPI
+	secretsManager SecretsManagerAPI
 	walletRepo     repositories.WalletRepository
 	addressRepo    repositories.AddressRepository
 	webhookSyncSvc webhookAddressSyncer
 }
 
-func NewService(registry *chain.Registry, rdb *redis.Client, mpcSvc mpc.Service, sm *secretsmanager.Client, walletRepo repositories.WalletRepository, addressRepo repositories.AddressRepository) *Service {
+func NewService(registry *chain.Registry, rdb *redis.Client, mpcSvc mpc.Service, sm SecretsManagerAPI, walletRepo repositories.WalletRepository, addressRepo repositories.AddressRepository) *Service {
 	return &Service{
 		registry:       registry,
 		rdb:            rdb,
@@ -157,7 +157,7 @@ func (s *Service) CreateWallet(ctx context.Context, accountID uuid.UUID, chainID
 		return nil, err
 	}
 
-	depositAddressStr, err := deriveAddress(chainID, keygenResult.CombinedPubKey)
+	depositAddressStr, err := s.deriveChainAddress(chainID, keygenResult.CombinedPubKey)
 	if err != nil {
 		return onPostSecretErr(fmt.Errorf("derive address: %w", err))
 	}
@@ -288,12 +288,15 @@ func (s *Service) GenerateAddress(ctx context.Context, walletID uuid.UUID, exter
 		return nil, fmt.Errorf("wallet not found")
 	}
 
+	curve := mpc.Curve(w.MPCCurve)
+	if curve == mpc.CurveEd25519 && passphrase == "" {
+		return nil, fmt.Errorf("passphrase is required for ed25519 address derivation")
+	}
+
 	newIndex, err := s.walletRepo.IncrementAddressIndex(walletID)
 	if err != nil {
 		return nil, fmt.Errorf("increment address index: %w", err)
 	}
-
-	curve := mpc.Curve(w.MPCCurve)
 
 	var addr *models.Address
 
@@ -301,9 +304,6 @@ func (s *Service) GenerateAddress(ctx context.Context, walletID uuid.UUID, exter
 	case mpc.CurveSecp256k1:
 		addr, err = s.generateSecp256k1Address(ctx, w, uint32(newIndex), externalUserID, label, metadata)
 	case mpc.CurveEd25519:
-		if passphrase == "" {
-			return nil, fmt.Errorf("passphrase is required for ed25519 address derivation")
-		}
 		addr, err = s.generateEd25519Address(ctx, w, uint32(newIndex), externalUserID, label, metadata, passphrase)
 	default:
 		return nil, fmt.Errorf("unsupported curve: %s", w.MPCCurve)
@@ -341,7 +341,7 @@ func (s *Service) generateSecp256k1Address(ctx context.Context, w *models.Wallet
 		return nil, fmt.Errorf("derive child key: %w", err)
 	}
 
-	addressStr, err := deriveAddress(w.Chain, child.ChildPubKey)
+	addressStr, err := s.deriveChainAddress(w.Chain, child.ChildPubKey)
 	if err != nil {
 		return nil, fmt.Errorf("derive address: %w", err)
 	}

@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"math/big"
-	"time"
 
 	"github.com/macrowallets/waas/pkg/types"
 )
@@ -64,11 +63,23 @@ func (a *SolanaLive) EstimateFee(ctx context.Context, req types.TransferRequest)
 	}, nil
 }
 
+// NativeTransferReserve returns what a native transfer costs its source besides the
+// amount (one signature fee) and the rent-exempt minimum a system account must keep
+// unless it is emptied completely.
+func (a *SolanaLive) NativeTransferReserve(ctx context.Context) (fee, minimumRemaining *big.Int, err error) {
+	var rentExemptLamports uint64
+	if err := a.rpc.Call(ctx, "getMinimumBalanceForRentExemption", &rentExemptLamports, 0,
+		map[string]string{"commitment": solanaCommitmentFinalized}); err != nil {
+		return nil, nil, fmt.Errorf("sol rent-exempt minimum: %w", err)
+	}
+	return big.NewInt(solanaNativeFeeLamports), new(big.Int).SetUint64(rentExemptLamports), nil
+}
+
 func (a *SolanaLive) GetBalance(ctx context.Context, address string) (*types.Balance, error) {
 	var result struct {
 		Value uint64 `json:"value"`
 	}
-	if err := a.rpc.Call(ctx, "getBalance", &result, address, map[string]string{"commitment": "finalized"}); err != nil {
+	if err := a.rpc.Call(ctx, "getBalance", &result, address, map[string]string{"commitment": solanaCommitmentFinalized}); err != nil {
 		return nil, err
 	}
 	bal := new(big.Int).SetUint64(result.Value)
@@ -87,67 +98,12 @@ func (a *SolanaLive) BroadcastTransaction(ctx context.Context, signed *types.Sig
 	return broadcastSolanaTx(ctx, a, signed)
 }
 
-// GetTransactionBlock is a no-op for Solana in v1: the outbound confirmation
-// reconciliation loop (sweep/withdrawal/gas_seed) is EVM-only in this release,
-// so we return (0, nil) to signal "treat as still pending" without breaking
-// the interface.
-func (a *SolanaLive) GetTransactionBlock(ctx context.Context, txHash string) (uint64, error) {
-	return 0, nil
-}
-
 func (a *SolanaLive) GetLatestBlock(ctx context.Context) (uint64, error) {
 	var slot uint64
-	if err := a.rpc.Call(ctx, "getSlot", &slot, map[string]string{"commitment": "finalized"}); err != nil {
+	if err := a.rpc.Call(ctx, "getSlot", &slot, map[string]string{"commitment": solanaCommitmentFinalized}); err != nil {
 		return 0, err
 	}
 	return slot, nil
-}
-
-func (a *SolanaLive) ScanBlock(ctx context.Context, blockNum uint64) ([]types.DetectedTransfer, error) {
-	var block struct {
-		BlockTime    int64 `json:"blockTime"`
-		Transactions []struct {
-			Transaction struct {
-				Signatures []string `json:"signatures"`
-			} `json:"transaction"`
-			Meta *struct {
-				Err          interface{} `json:"err"`
-				PreBalances  []uint64    `json:"preBalances"`
-				PostBalances []uint64    `json:"postBalances"`
-			} `json:"meta"`
-		} `json:"transactions"`
-	}
-
-	if err := a.rpc.Call(ctx, "getBlock", &block, blockNum, map[string]interface{}{
-		"encoding": "jsonParsed", "transactionDetails": "full",
-		"commitment": "finalized", "maxSupportedTransactionVersion": 0,
-	}); err != nil {
-		return nil, err
-	}
-
-	blockTime := time.Unix(block.BlockTime, 0)
-	var transfers []types.DetectedTransfer
-
-	for _, txWrap := range block.Transactions {
-		if txWrap.Meta == nil || txWrap.Meta.Err != nil {
-			continue
-		}
-		// SOL native: diff pre/post balances
-		for i := range txWrap.Meta.PreBalances {
-			if i >= len(txWrap.Meta.PostBalances) {
-				break
-			}
-			pre, post := txWrap.Meta.PreBalances[i], txWrap.Meta.PostBalances[i]
-			if post > pre {
-				transfers = append(transfers, types.DetectedTransfer{
-					TxHash: txWrap.Transaction.Signatures[0], BlockNumber: blockNum,
-					Amount: new(big.Int).SetUint64(post - pre), Asset: a.cfg.NativeSymbol, Timestamp: blockTime,
-				})
-			}
-		}
-	}
-
-	return transfers, nil
 }
 
 func (a *SolanaLive) BuildSweep(ctx context.Context, req types.SweepRequest) ([]types.UnsignedTx, error) {

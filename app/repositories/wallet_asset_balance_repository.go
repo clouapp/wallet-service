@@ -11,6 +11,7 @@ import (
 type WalletAssetBalanceRepository interface {
 	ReplaceForWallet(walletID uuid.UUID, chainID string, rows []models.WalletAssetBalance) error
 	ListByWallet(walletID uuid.UUID) ([]models.WalletAssetBalance, error)
+	ListByWallets(walletIDs []uuid.UUID) ([]models.WalletAssetBalance, error)
 }
 
 type walletAssetBalanceRepository struct{}
@@ -20,6 +21,11 @@ func NewWalletAssetBalanceRepository() WalletAssetBalanceRepository {
 }
 
 func (r *walletAssetBalanceRepository) ReplaceForWallet(walletID uuid.UUID, chainID string, rows []models.WalletAssetBalance) error {
+	for i := range rows {
+		if err := rows[i].ValidateAmounts(); err != nil {
+			return err
+		}
+	}
 	return facades.Orm().Transaction(func(tx contractsorm.Query) error {
 		_, err := tx.Where("wallet_id = ? AND chain_id = ?", walletID, chainID).
 			ForceDelete(&models.WalletAssetBalance{})
@@ -40,6 +46,18 @@ func (r *walletAssetBalanceRepository) ListByWallet(walletID uuid.UUID) ([]model
 	err := facades.Orm().Query().
 		Where("wallet_id = ?", walletID).
 		Order("chain_id ASC, asset_symbol ASC").
+		Find(&balances)
+	return balances, err
+}
+
+func (r *walletAssetBalanceRepository) ListByWallets(walletIDs []uuid.UUID) ([]models.WalletAssetBalance, error) {
+	if len(walletIDs) == 0 {
+		return []models.WalletAssetBalance{}, nil
+	}
+	var balances []models.WalletAssetBalance
+	err := facades.Orm().Query().
+		Where("wallet_id IN ?", walletIDs).
+		Order("chain_id ASC, asset_type ASC, asset_symbol ASC").
 		Find(&balances)
 	return balances, err
 }

@@ -1,6 +1,10 @@
 package controllers
 
 import (
+	"fmt"
+	"strings"
+	"unicode/utf8"
+
 	"github.com/google/uuid"
 	"github.com/goravel/framework/contracts/http"
 	"github.com/goravel/framework/facades"
@@ -9,6 +13,7 @@ import (
 	"github.com/macrowallets/waas/app/http/pagination"
 	"github.com/macrowallets/waas/app/http/requests"
 	"github.com/macrowallets/waas/app/models"
+	"github.com/macrowallets/waas/app/repositories"
 	authsvc "github.com/macrowallets/waas/app/services/auth"
 )
 
@@ -94,38 +99,62 @@ func ChangePassword(ctx http.Context) http.Response {
 	return ctx.Response().Json(http.StatusOK, http.Json{"message": "password updated successfully"})
 }
 
+const (
+	myAccountsDefaultLimit    = 20
+	myAccountsMaxLimit        = 100
+	myAccountsSearchMaxLength = 100
+)
+
+var myAccountsBounds = pagination.Bounds{DefaultLimit: myAccountsDefaultLimit, MaxLimit: myAccountsMaxLimit}
+
 // ListMyAccounts godoc
 // @Summary      List accounts for current user
-// @Description  Returns a paginated list of accounts the authenticated user is a member of
+// @Description  Returns a paginated list of accounts the authenticated user is a member of, ordered by name. A limit above 100 is capped; an offset past the end returns an empty page with the real total.
 // @Tags         User
 // @Security     BearerAuth
 // @Produce      json
-// @Param        limit   query   int  false  "Max results (default 20)"  example(20)
-// @Param        offset  query   int  false  "Pagination offset"         example(0)
+// @Param        limit        query   int     false  "Page size, 1-100 (default 20)"                 example(20)
+// @Param        offset       query   int     false  "Rows to skip, >= 0 (default 0)"                example(0)
+// @Param        search       query   string  false  "Case-insensitive match on name or id (max 100 chars)"
+// @Param        environment  query   string  false  "Only accounts in this environment"             Enums(prod, test)
 // @Success      200  {object}  AccountListResponse
+// @Failure      400  {object}  ErrorResponse
 // @Failure      401  {object}  ErrorResponse
 // @Router       /users/me/accounts [get]
 func ListMyAccounts(ctx http.Context) http.Response {
 	userID := ctx.Value("user_id").(uuid.UUID)
 
-	limit, offset := pagination.ParseParams(ctx, 20)
-
-	memberships, total, err := container.Get().AccountUserRepo.PaginateByUserID(userID, limit, offset)
+	limit, offset, err := pagination.ParseStrict(ctx.Request().Query("limit", ""), ctx.Request().Query("offset", ""), myAccountsBounds)
 	if err != nil {
-		return ctx.Response().Json(http.StatusInternalServerError, http.Json{"error": "failed to fetch accounts"})
+		return ctx.Response().Json(http.StatusBadRequest, http.Json{"error": err.Error()})
 	}
 
-	accountIDs := make([]uuid.UUID, 0, len(memberships))
-	for _, m := range memberships {
-		accountIDs = append(accountIDs, m.AccountID)
+	filter, errMessage := parseMyAccountsFilter(ctx)
+	if errMessage != "" {
+		return ctx.Response().Json(http.StatusBadRequest, http.Json{"error": errMessage})
 	}
 
-	accounts, err := container.Get().AccountRepo.FindByIDs(accountIDs)
+	accounts, total, err := container.Get().AccountRepo.PaginateByMember(userID, filter, limit, offset)
 	if err != nil {
+		facades.Log().WithContext(ctx).Errorf("user: list my accounts: %v", err)
 		return ctx.Response().Json(http.StatusInternalServerError, http.Json{"error": "failed to fetch accounts"})
 	}
 
 	return ctx.Response().Json(http.StatusOK, pagination.Response(accounts, total, limit, offset))
+}
+
+func parseMyAccountsFilter(ctx http.Context) (repositories.AccountListFilter, string) {
+	search := strings.TrimSpace(ctx.Request().Query("search", ""))
+	if utf8.RuneCountInString(search) > myAccountsSearchMaxLength {
+		return repositories.AccountListFilter{}, fmt.Sprintf("search must be at most %d characters", myAccountsSearchMaxLength)
+	}
+
+	environment := strings.TrimSpace(ctx.Request().Query("environment", ""))
+	if environment != "" && environment != models.EnvironmentProd && environment != models.EnvironmentTest {
+		return repositories.AccountListFilter{}, fmt.Sprintf("environment must be %q or %q", models.EnvironmentProd, models.EnvironmentTest)
+	}
+
+	return repositories.AccountListFilter{Search: search, Environment: environment}, ""
 }
 
 // UpdateDefaultAccount godoc
@@ -302,7 +331,10 @@ type UpdateDefaultAccountSwagger struct {
 }
 
 type AccountListResponse struct {
-	Data []models.Account `json:"data"`
+	Data   []models.Account `json:"data"`
+	Total  int64            `json:"total" example:"64"`
+	Limit  int              `json:"limit" example:"20"`
+	Offset int              `json:"offset" example:"0"`
 }
 
 type TotpSetupSwagger struct {

@@ -45,7 +45,7 @@ make dev          # starts Docker + backend + frontend
 | `make dev-front` | Frontend only (vinext) |
 | `make run` | Backend without live reload |
 | `make stop` | Kill all dev processes |
-| `make test` | Run Go tests |
+| `make test` | Run Go tests (migrates fresh `TEST_DB_DATABASE`, default `vault_unit_test`; `vault` and `vault_test` are refused) |
 | `make docker-up` | Start Docker services |
 | `make docker-down` | Stop Docker services |
 | `make migrate` | Run pending migrations |
@@ -61,6 +61,8 @@ make dev          # starts Docker + backend + frontend
 | `waas-postgres` | 5432 |
 | `waas-redis` | 6379 |
 | `waas-localstack` | 4566 |
+
+LocalStack community has no native persistence: hooks in `docker/localstack/` keep Secrets Manager (MPC share B) in encrypted, ARN-preserving snapshots in the `localstack_data` volume (restore on start, export every 60 s and on stop; key in `~/.config/macro-wallets/localstack-seed/`, never in the repo). Host-side safety net: `wallet-vault.py localstack-export | localstack-check | localstack-restore`.
 
 ## Architecture
 

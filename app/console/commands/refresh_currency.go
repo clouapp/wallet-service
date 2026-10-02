@@ -12,6 +12,7 @@ import (
 
 	"github.com/macrowallets/waas/app/container"
 	"github.com/macrowallets/waas/app/jobs"
+	"github.com/macrowallets/waas/pkg/types"
 )
 
 var ambiguousCurrencies = map[string]bool{
@@ -148,7 +149,7 @@ func resolveCurrencyToChain(ctr *container.Container, currency, chainFlag string
 		if err != nil {
 			continue
 		}
-		if strings.EqualFold(adapter.NativeAsset(), currency) {
+		if types.SameAssetSymbol(adapter.NativeAsset(), currency) {
 			return id, nil
 		}
 	}

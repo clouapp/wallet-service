@@ -41,6 +41,20 @@ func TestRefreshTxSignature(t *testing.T) {
 	}
 }
 
+func TestScanDepositsSignature(t *testing.T) {
+	cmd := &ScanDeposits{}
+	if cmd.Signature() != "scan:deposits" {
+		t.Fatalf("unexpected: %s", cmd.Signature())
+	}
+	ext := cmd.Extend()
+	if ext.Category != "deposit" {
+		t.Fatalf("expected category deposit, got %s", ext.Category)
+	}
+	if len(ext.Arguments) != 1 {
+		t.Fatalf("expected chain argument, got %d", len(ext.Arguments))
+	}
+}
+
 func TestReconcileWalletSignature(t *testing.T) {
 	cmd := &ReconcileWallet{}
 	if cmd.Signature() != "reconcile:wallet" {
@@ -118,6 +132,7 @@ func TestAllCommandDescriptionsNotEmpty(t *testing.T) {
 		&RefreshAddress{},
 		&RefreshCurrency{},
 		&RefreshTx{},
+		&ScanDeposits{},
 		&ReconcileWallet{},
 	}
 	for _, cmd := range cmds {

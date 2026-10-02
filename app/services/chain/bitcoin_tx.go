@@ -232,14 +232,6 @@ func writeVarBytes(buf *bytes.Buffer, b []byte) error {
 	return err
 }
 
-func (a *BitcoinLive) btcFeeSats() int64 {
-	rate := btcDefaultFeeRate
-	if a.cfg.FeeRateDefault > 0 {
-		rate = a.cfg.FeeRateDefault
-	}
-	return int64(btcFeeVBytes * rate)
-}
-
 func (a *BitcoinLive) buildBitcoinTransfer(ctx context.Context, req types.TransferRequest) (*types.UnsignedTx, error) {
 	if req.Amount == nil || !req.Amount.IsInt64() || req.Amount.Sign() <= 0 {
 		return nil, fmt.Errorf("amount is required")
@@ -247,76 +239,83 @@ func (a *BitcoinLive) buildBitcoinTransfer(ctx context.Context, req types.Transf
 	return a.assembleBitcoinTx(ctx, req.From, req.To, req.Amount.Int64())
 }
 
+// buildBitcoinSweep spends every confirmed UTXO of req.From. Without an amount it
+// sends all of it after the fee; with one it sends that amount and returns change
+// of at least dust to req.From (smaller leftovers go to the fee).
 func (a *BitcoinLive) buildBitcoinSweep(ctx context.Context, req types.SweepRequest) ([]types.UnsignedTx, error) {
+	if err := requireBTCEndpoints(req.From, req.To); err != nil {
+		return nil, err
+	}
+	if req.Amount != nil && (!req.Amount.IsInt64() || req.Amount.Sign() <= 0) {
+		return nil, fmt.Errorf("amount is required")
+	}
 	utxos, err := a.listConfirmedUTXOs(ctx, req.From)
 	if err != nil {
 		return nil, err
 	}
-	var sum int64
-	for _, in := range utxos {
-		sum += in.Value
-	}
-	fee := a.btcFeeSats()
-	amount := sum - fee
+	policy := a.feePolicy(ctx)
+	inputs := spendableBTCInputs(utxos)
+
+	amount := maxSendableSats(inputs, policy)
 	if req.Amount != nil {
-		if !req.Amount.IsInt64() || req.Amount.Sign() <= 0 {
-			return nil, fmt.Errorf("amount is required")
-		}
 		amount = req.Amount.Int64()
 	}
-	if len(utxos) == 0 || amount <= 0 || amount+fee > sum {
-		return nil, fmt.Errorf("insufficient funds")
+	if amount < btcDustSats {
+		return nil, fmt.Errorf("insufficient funds: %d confirmed sats leave %d sats after fees, below the %d sat dust limit",
+			sumBTCInputs(inputs), amount, btcDustSats)
 	}
-	unsigned := &types.UnsignedTx{
-		ChainID: a.cfg.ChainIDStr,
-		Metadata: map[string]interface{}{
-			"inputs":  utxos,
-			"outputs": btcPaymentOutputs(req.From, req.To, amount, fee, sum),
-			"testnet": a.cfg.IsTestnet,
-		},
+	spend, ok := spendFromInputs(inputs, amount, policy)
+	if !ok {
+		return nil, fmt.Errorf("insufficient funds: %d confirmed sats in %d utxos cannot pay %d sats plus fee %d",
+			sumBTCInputs(inputs), len(inputs), amount, policy.fee(max(len(inputs), btcTypicalInputs), btcOutputsPaymentOnly))
 	}
-	return []types.UnsignedTx{*unsigned}, nil
+	return []types.UnsignedTx{*a.unsignedBitcoinTx(req.From, req.To, amount, spend)}, nil
 }
 
 func (a *BitcoinLive) assembleBitcoinTx(ctx context.Context, from, to string, amount int64) (*types.UnsignedTx, error) {
+	if err := requireBTCEndpoints(from, to); err != nil {
+		return nil, err
+	}
 	utxos, err := a.listConfirmedUTXOs(ctx, from)
 	if err != nil {
 		return nil, err
 	}
-	fee := a.btcFeeSats()
-	selected, sum, err := selectBTCUTXOs(utxos, amount+fee)
+	spend, err := selectBTCSpend(utxos, amount, a.feePolicy(ctx))
 	if err != nil {
 		return nil, err
 	}
+	return a.unsignedBitcoinTx(from, to, amount, spend), nil
+}
+
+func (a *BitcoinLive) unsignedBitcoinTx(from, to string, amount int64, spend btcSpend) *types.UnsignedTx {
 	return &types.UnsignedTx{
 		ChainID: a.cfg.ChainIDStr,
 		Metadata: map[string]interface{}{
-			"inputs":  selected,
-			"outputs": btcPaymentOutputs(from, to, amount, fee, sum),
+			"inputs":  spend.inputs,
+			"outputs": spend.outputs(from, to, amount),
+			"fee":     spend.fee,
 			"testnet": a.cfg.IsTestnet,
 		},
-	}, nil
+	}
 }
 
-func btcPaymentOutputs(from, to string, amount, fee, sum int64) []btcOutput {
-	change := sum - amount - fee
-	if change >= btcDustSats {
+func requireBTCEndpoints(from, to string) error {
+	if strings.TrimSpace(from) == "" {
+		return fmt.Errorf("btc transfer: from address is required")
+	}
+	if strings.TrimSpace(to) == "" {
+		return fmt.Errorf("btc transfer: to address is required")
+	}
+	return nil
+}
+
+// btcPaymentOutputs pays amount to to, plus change back to from when change > 0;
+// callers only pass change of at least dust.
+func btcPaymentOutputs(from, to string, amount, change int64) []btcOutput {
+	if change > 0 {
 		return []btcOutput{{Address: to, Value: amount}, {Address: from, Value: change}}
 	}
 	return []btcOutput{{Address: to, Value: amount}}
-}
-
-func selectBTCUTXOs(utxos []btcInput, need int64) ([]btcInput, int64, error) {
-	var selected []btcInput
-	var sum int64
-	for _, utxo := range utxos {
-		selected = append(selected, utxo)
-		sum += utxo.Value
-		if sum >= need {
-			return selected, sum, nil
-		}
-	}
-	return nil, sum, fmt.Errorf("insufficient funds")
 }
 
 func (a *BitcoinLive) listConfirmedUTXOs(ctx context.Context, address string) ([]btcInput, error) {
@@ -327,22 +326,12 @@ func (a *BitcoinLive) listConfirmedUTXOs(ctx context.Context, address string) ([
 }
 
 func (a *BitcoinLive) listUTXOsREST(ctx context.Context, address string) ([]btcInput, error) {
-	url := strings.TrimRight(a.cfg.RPCURL, "/") + "/address/" + address + "/utxo"
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
-	if err != nil {
-		return nil, err
+	if strings.TrimSpace(address) == "" || strings.ContainsAny(address, "/?#") {
+		return nil, fmt.Errorf("btc utxo: invalid address %q", address)
 	}
-	resp, err := a.http.Do(req)
+	body, err := a.esploraGet(ctx, "/address/"+address+"/utxo")
 	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, err
-	}
-	if resp.StatusCode >= 300 {
-		return nil, fmt.Errorf("btc utxo %d: %s", resp.StatusCode, body)
+		return nil, fmt.Errorf("btc utxo: %w", err)
 	}
 	var raw []struct {
 		TxID   string `json:"txid"`

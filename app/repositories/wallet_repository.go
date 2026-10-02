@@ -5,6 +5,7 @@ import (
 	"github.com/goravel/framework/facades"
 
 	"github.com/macrowallets/waas/app/models"
+	"github.com/macrowallets/waas/pkg/amount"
 )
 
 type WalletRepository interface {
@@ -104,6 +105,9 @@ func (r *walletRepository) UpdateField(id uuid.UUID, field string, value interfa
 }
 
 func (r *walletRepository) UpdateFields(id uuid.UUID, fields map[string]interface{}) error {
+	if err := amount.RequireNonNegativeColumns(fields, models.WalletBalanceAmountColumns...); err != nil {
+		return err
+	}
 	_, err := facades.Orm().Query().Model(&models.Wallet{}).Where("id = ?", id).Update(fields)
 	return err
 }

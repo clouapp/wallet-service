@@ -42,6 +42,14 @@ type seedWalletSpec struct {
 
 type seedEndpointResolver struct{ url string }
 
+type seedSecretsManagerAPI interface {
+	GetSecretValue(
+		context.Context,
+		*secretsmanager.GetSecretValueInput,
+		...func(*secretsmanager.Options),
+	) (*secretsmanager.GetSecretValueOutput, error)
+}
+
 func (r seedEndpointResolver) ResolveEndpoint(
 	_ context.Context,
 	_ secretsmanager.EndpointParameters,
@@ -69,10 +77,30 @@ func SeedWallets(ctx context.Context) error {
 		{tsolWalletID, uuid.MustParse("00000000-0000-0000-0000-0000000000a7"), acmeTestAccountID, models.ChainTSOL, "Solana Devnet Wallet", mpc.CurveEd25519},
 	}
 
+	var smClient *secretsmanager.Client
+	loadSecretsManager := func() (*secretsmanager.Client, error) {
+		if smClient != nil {
+			return smClient, nil
+		}
+		client, err := buildSeedSecretsManager(ctx)
+		if err != nil {
+			return nil, err
+		}
+		smClient = client
+		return smClient, nil
+	}
+
 	pending := make([]seedWalletSpec, 0, len(specs))
 	for _, spec := range specs {
 		var existing models.Wallet
 		if err := facades.Orm().Query().Where("id", spec.id).First(&existing); err == nil && existing.ID != uuid.Nil {
+			manager, managerErr := loadSecretsManager()
+			if managerErr != nil {
+				return fmt.Errorf("seed wallet %s: build secrets manager: %w", spec.label, managerErr)
+			}
+			if secretErr := validateExistingSeedWalletSecret(ctx, manager, &existing); secretErr != nil {
+				return fmt.Errorf("seed wallet %s: %w", spec.label, secretErr)
+			}
 			slog.Info("wallet already exists, skipping", "label", spec.label)
 			continue
 		}
@@ -80,7 +108,7 @@ func SeedWallets(ctx context.Context) error {
 	}
 
 	if len(pending) > 0 {
-		smClient, err := buildSeedSecretsManager(ctx)
+		smClient, err := loadSecretsManager()
 		if err != nil {
 			return fmt.Errorf("seed wallets: build secrets manager: %w", err)
 		}
@@ -100,6 +128,44 @@ func SeedWallets(ctx context.Context) error {
 	}
 
 	return seedWalletUsers()
+}
+
+func validateExistingSeedWalletSecret(
+	ctx context.Context,
+	manager seedSecretsManagerAPI,
+	wallet *models.Wallet,
+) error {
+	if manager == nil {
+		return fmt.Errorf("secrets manager is required")
+	}
+	if wallet == nil {
+		return fmt.Errorf("wallet is required")
+	}
+	if wallet.MPCSecretARN == "" {
+		return fmt.Errorf(
+			"wallet %s has no share_B ARN; reset PostgreSQL and Secrets Manager together",
+			wallet.ID,
+		)
+	}
+
+	arn := wallet.MPCSecretARN
+	output, err := manager.GetSecretValue(ctx, &secretsmanager.GetSecretValueInput{
+		SecretId: &arn,
+	})
+	if err != nil {
+		return fmt.Errorf(
+			"wallet %s share_B is unavailable: %w; reset PostgreSQL and Secrets Manager together",
+			wallet.ID,
+			err,
+		)
+	}
+	if output == nil || len(output.SecretBinary) == 0 {
+		return fmt.Errorf(
+			"wallet %s has an empty share_B; reset PostgreSQL and Secrets Manager together",
+			wallet.ID,
+		)
+	}
+	return nil
 }
 
 type seedMaterial struct {
@@ -154,7 +220,11 @@ func generateOneMaterial(ctx context.Context, mpcSvc mpc.Service, spec seedWalle
 		return seedMaterial{}, fmt.Errorf("encrypt share_A: %w", err)
 	}
 
-	addr, err := addressing.DeriveAddress(spec.chain, kg.CombinedPubKey)
+	testnet, err := seedChainIsTestnet(spec.chain)
+	if err != nil {
+		return seedMaterial{}, err
+	}
+	addr, err := addressing.DeriveAddressOnNetwork(spec.chain, testnet, kg.CombinedPubKey)
 	if err != nil {
 		return seedMaterial{}, fmt.Errorf("derive address: %w", err)
 	}

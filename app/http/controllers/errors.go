@@ -63,6 +63,10 @@ func MapSweepError(ctx http.Context, err error) http.Response {
 		return ctx.Response().Json(http.StatusUnprocessableEntity, http.Json{
 			"error": "unsupported_chain",
 		})
+	case errors.Is(err, sweep.ErrGasEstimateFailed):
+		return ctx.Response().Json(http.StatusUnprocessableEntity, http.Json{
+			"error": "gas_estimate_failed",
+		})
 	}
 	return nil
 }

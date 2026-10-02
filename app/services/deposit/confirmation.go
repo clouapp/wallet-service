@@ -11,7 +11,11 @@ import (
 	"github.com/macrowallets/waas/pkg/types"
 )
 
-const blockHeightProviderFailureThreshold = 3
+const (
+	blockHeightProviderFailureThreshold = 3
+	withdrawalBackfillBatchSize         = 50
+	allTxTypes                          = ""
+)
 
 func adapterBlockHeightKind(adapter types.Chain) string {
 	switch adapter.(type) {
@@ -92,7 +96,10 @@ func (s *Service) updateConfirmations(ctx context.Context, chainID string, adapt
 	if err != nil {
 		return err
 	}
+	return s.applyConfirmations(ctx, adapter, currentBlock, pending)
+}
 
+func (s *Service) applyConfirmations(ctx context.Context, adapter types.Chain, currentBlock uint64, pending []models.Transaction) error {
 	for _, tx := range pending {
 		if tx.BlockNumber == 0 {
 			if !isOutboundTxType(tx.TxType) {
@@ -112,10 +119,7 @@ func (s *Service) updateConfirmations(ctx context.Context, chainID string, adapt
 				continue
 			}
 		}
-		confs := int(currentBlock) - int(tx.BlockNumber)
-		if confs < 0 {
-			confs = 0
-		}
+		confs := confirmationsAt(currentBlock, tx.BlockNumber)
 
 		newStatus := string(types.TxStatusConfirming)
 		var confirmedAt *time.Time
@@ -140,9 +144,9 @@ func (s *Service) updateConfirmations(ctx context.Context, chainID string, adapt
 		switch tx.TxType {
 		case models.TxTypeDeposit:
 			if confirmedNow {
-				s.webhookSvc.EnqueueEvent(ctx, tx.ID, types.EventDepositConfirmed, tx)
+				s.publishDeposit(ctx, types.EventDepositConfirmed, withConfirmationState(tx, confs, newStatus, confirmedAt))
 			} else if confirmingNow {
-				s.webhookSvc.EnqueueEvent(ctx, tx.ID, types.EventDepositConfirming, tx)
+				s.publishDeposit(ctx, types.EventDepositConfirming, withConfirmationState(tx, confs, newStatus, confirmedAt))
 			}
 		case models.TxTypeSweep:
 			if confirmedNow {
@@ -150,7 +154,7 @@ func (s *Service) updateConfirmations(ctx context.Context, chainID string, adapt
 			}
 		case models.TxTypeWithdrawal:
 			if confirmedNow {
-				s.webhookSvc.EnqueueEvent(ctx, tx.ID, types.EventWithdrawalConfirmed, tx)
+				s.publishWithdrawalConfirmed(ctx, tx, confs, newStatus, confirmedAt)
 			}
 		case models.TxTypeGasSeed:
 		}
@@ -158,15 +162,60 @@ func (s *Service) updateConfirmations(ctx context.Context, chainID string, adapt
 	return nil
 }
 
+// confirmationsAt counts the block that includes the transaction as its first
+// confirmation: a transaction in the tip block has 1. A block the tip has not reached
+// yet (a lagging height provider) counts 0.
+func confirmationsAt(currentBlock uint64, txBlock int64) int {
+	if txBlock <= 0 || uint64(txBlock) > currentBlock {
+		return 0
+	}
+	return int(currentBlock-uint64(txBlock)) + 1
+}
+
+// withConfirmationState returns the transaction as just persisted by the tracker.
+func withConfirmationState(tx models.Transaction, confs int, status string, confirmedAt *time.Time) models.Transaction {
+	tx.Confirmations = confs
+	tx.Status = status
+	tx.ConfirmedAt = confirmedAt
+	return tx
+}
+
+func (s *Service) publishWithdrawalConfirmed(ctx context.Context, tx models.Transaction, confs int, status string, confirmedAt *time.Time) {
+	tx = withConfirmationState(tx, confs, status, confirmedAt)
+	if s.withdrawals == nil {
+		s.webhookSvc.EnqueueEvent(ctx, tx.ID, types.EventWithdrawalConfirmed, tx)
+		return
+	}
+	if err := s.withdrawals.MarkConfirmed(ctx, &tx); err != nil {
+		slog.Error("publish withdrawal confirmed", "tx_id", tx.ID, "error", err)
+	}
+}
+
 // RunConfirmationCheck walks all registered chains that have pending deposits and
 // refreshes confirmation counts using free block-height APIs when configured.
 func (s *Service) RunConfirmationCheck(ctx context.Context) error {
+	s.runConfirmationCheck(ctx, allTxTypes)
+	s.backfillWithdrawalConfirmations(ctx)
+	return nil
+}
+
+// RunWithdrawalConfirmationCheck is the local-mode tracker: it only advances outbound
+// withdrawal transactions, so deposits, sweeps and gas seeds keep waiting for the
+// real confirmation_tracker and no deposit webhook is emitted from a dev machine.
+func (s *Service) RunWithdrawalConfirmationCheck(ctx context.Context) error {
+	s.runConfirmationCheck(ctx, models.TxTypeWithdrawal)
+	s.backfillWithdrawalConfirmations(ctx)
+	return nil
+}
+
+func (s *Service) runConfirmationCheck(ctx context.Context, onlyTxType string) {
 	for _, chainID := range s.registry.ChainIDs() {
 		pending, err := s.txRepo.FindPendingByChain(chainID)
 		if err != nil {
 			slog.Error("find pending by chain", "chain", chainID, "error", err)
 			continue
 		}
+		pending = filterByTxType(pending, onlyTxType)
 		if len(pending) == 0 {
 			continue
 		}
@@ -182,9 +231,35 @@ func (s *Service) RunConfirmationCheck(ctx context.Context) error {
 			continue
 		}
 
-		if err := s.updateConfirmations(ctx, chainID, adapter, height); err != nil {
+		if err := s.applyConfirmations(ctx, adapter, height, pending); err != nil {
 			slog.Error("update confirmations failed", "chain", chainID, "error", err)
 		}
 	}
-	return nil
+}
+
+func (s *Service) backfillWithdrawalConfirmations(ctx context.Context) {
+	if s.withdrawals == nil {
+		return
+	}
+	confirmed, err := s.withdrawals.Backfill(ctx, withdrawalBackfillBatchSize)
+	if err != nil {
+		slog.Error("backfill withdrawal confirmations", "error", err)
+		return
+	}
+	if confirmed > 0 {
+		slog.Info("withdrawal confirmations backfilled", "count", confirmed)
+	}
+}
+
+func filterByTxType(transactions []models.Transaction, txType string) []models.Transaction {
+	if txType == allTxTypes {
+		return transactions
+	}
+	filtered := make([]models.Transaction, 0, len(transactions))
+	for _, tx := range transactions {
+		if tx.TxType == txType {
+			filtered = append(filtered, tx)
+		}
+	}
+	return filtered
 }

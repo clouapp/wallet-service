@@ -64,8 +64,17 @@ func EncryptShare(share []byte, passphrase string) (*EncryptedShare, error) {
 // ErrInvalidPassphrase is returned when AES-GCM authentication fails.
 var ErrInvalidPassphrase = errors.New("invalid passphrase")
 
+// gcmNonceSize is the only nonce length cipher.NewGCM accepts; Open panics on others.
+const gcmNonceSize = 12
+
 // DecryptShare reverses EncryptShare. Returns ErrInvalidPassphrase on auth failure.
 func DecryptShare(enc *EncryptedShare, passphrase string) ([]byte, error) {
+	if enc == nil {
+		return nil, fmt.Errorf("encrypted share is required")
+	}
+	if len(enc.IV) != gcmNonceSize {
+		return nil, fmt.Errorf("encrypted share iv must be %d bytes, got %d", gcmNonceSize, len(enc.IV))
+	}
 	key := deriveKey(passphrase, enc.Salt)
 	defer func() {
 		for i := range key {

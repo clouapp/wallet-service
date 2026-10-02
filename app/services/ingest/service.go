@@ -26,6 +26,18 @@ type Service struct {
 	webhookSvc  *webhook.Service
 	addressRepo repositories.AddressRepository
 	txRepo      repositories.TransactionRepository
+	deposits    DepositEvents
+}
+
+// DepositEvents publishes deposit webhooks scoped to the wallet's account with the
+// amount in base units and as a decimal.
+type DepositEvents interface {
+	Publish(ctx context.Context, eventType types.EventType, tx models.Transaction) error
+}
+
+// SetDepositEvents wires the deposit webhook publisher; without it no deposit webhook is sent.
+func (s *Service) SetDepositEvents(deposits DepositEvents) {
+	s.deposits = deposits
 }
 
 func NewService(rdb *redis.Client, registry *chain.Registry, webhookSvc *webhook.Service, addressRepo repositories.AddressRepository, txRepo repositories.TransactionRepository) *Service {
@@ -95,7 +107,7 @@ func (s *Service) processTransfer(ctx context.Context, chainID string, adapter t
 			transfer.Amount = base.BaseUnits
 		}
 	} else if transfer.Asset != "" {
-		asset = transfer.Asset
+		asset = types.CanonicalAssetSymbol(transfer.Asset)
 	}
 	if transfer.Amount == nil {
 		return fmt.Errorf("missing amount")
@@ -126,7 +138,7 @@ func (s *Service) processTransfer(ctx context.Context, chainID string, adapter t
 		return fmt.Errorf("insert tx: %w", err)
 	}
 
-	s.webhookSvc.EnqueueEvent(ctx, tx.ID, types.EventDepositPending, tx)
+	s.publishDepositPending(ctx, *tx)
 
 	if ev := facades.Event(); ev != nil {
 		_ = ev.Job(&events.DepositDetected{}, []event.Arg{
@@ -138,4 +150,14 @@ func (s *Service) processTransfer(ctx context.Context, chainID string, adapter t
 
 	slog.Info("ingest deposit", "chain", chainID, "tx", transfer.TxHash, "log_index", transfer.LogIndex, "user", addr.ExternalUserID, "asset", asset, "amount", transfer.Amount.String())
 	return nil
+}
+
+func (s *Service) publishDepositPending(ctx context.Context, tx models.Transaction) {
+	if s.deposits == nil {
+		slog.Error("deposit webhook not sent: no deposit events publisher configured", "event_type", types.EventDepositPending, "transaction_id", tx.ID)
+		return
+	}
+	if err := s.deposits.Publish(ctx, types.EventDepositPending, tx); err != nil {
+		slog.Error("deposit webhook not sent", "event_type", types.EventDepositPending, "transaction_id", tx.ID, "error", err)
+	}
 }

@@ -32,7 +32,7 @@ func (c *ChainsSetRPC) Extend() command.Extend {
 			},
 			&command.ArgumentString{
 				Name:     "url",
-				Usage:    "new RPC URL (plaintext; will be encrypted at rest)",
+				Usage:    "new RPC URL, or env:NAME to read it from an environment variable (encrypted at rest)",
 				Required: true,
 			},
 		},
@@ -51,9 +51,14 @@ func (c *ChainsSetRPC) Handle(ctx console.Context) error {
 		ctx.Error("url is required")
 		return fmt.Errorf("url is required")
 	}
-	if !strings.HasPrefix(rawURL, "http://") && !strings.HasPrefix(rawURL, "https://") {
-		ctx.Error("url must start with http:// or https://")
-		return fmt.Errorf("invalid url scheme: %s", rawURL)
+	isEnvReference := strings.HasPrefix(rawURL, models.RPCURLEnvPrefix)
+	if isEnvReference && !models.IsValidRPCURLEnvReference(rawURL) {
+		ctx.Error("env reference must look like env:SOLANA_RPC_URL")
+		return fmt.Errorf("invalid env reference")
+	}
+	if !isEnvReference && !strings.HasPrefix(rawURL, "http://") && !strings.HasPrefix(rawURL, "https://") {
+		ctx.Error("url must start with http:// or https:// (or be env:NAME)")
+		return fmt.Errorf("invalid url scheme")
 	}
 
 	var existing models.Chain

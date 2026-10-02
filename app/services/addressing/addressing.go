@@ -17,6 +17,30 @@ import (
 	"github.com/macrowallets/waas/app/models"
 )
 
+// Bech32 human-readable parts of native SegWit addresses.
+const (
+	BtcHRPMainnet = "bc"
+	BtcHRPTestnet = "tb"
+)
+
+// BtcHRP is the bech32 prefix of the Bitcoin network: tb on a test network, bc otherwise.
+func BtcHRP(testnet bool) string {
+	if testnet {
+		return BtcHRPTestnet
+	}
+	return BtcHRPMainnet
+}
+
+// DeriveAddressOnNetwork is DeriveAddress for a chain record that may point at a
+// test network under a mainnet id: a "btc" record on testnet derives tb1 addresses.
+// The address of the other chains does not depend on the network.
+func DeriveAddressOnNetwork(chainID string, testnet bool, pubKey []byte) (string, error) {
+	if chainID == models.ChainBTC {
+		return DeriveBtcAddress(BtcHRP(testnet), pubKey)
+	}
+	return DeriveAddress(chainID, pubKey)
+}
+
 // DeriveAddress derives the on-chain deposit address for the MPC combined
 // public key. secp256k1 chains take the 33-byte compressed SEC pubkey;
 // Solana chains take a raw 32-byte ed25519 pubkey.
@@ -25,9 +49,9 @@ func DeriveAddress(chainID string, pubKey []byte) (string, error) {
 	case models.ChainETH, models.ChainPolygon, models.ChainTETH, models.ChainTPolygon:
 		return DeriveEthAddress(pubKey)
 	case models.ChainBTC:
-		return DeriveBtcAddress("bc", pubKey)
+		return DeriveBtcAddress(BtcHRPMainnet, pubKey)
 	case models.ChainTBTC:
-		return DeriveBtcAddress("tb", pubKey)
+		return DeriveBtcAddress(BtcHRPTestnet, pubKey)
 	case models.ChainSOL, models.ChainTSOL:
 		return DeriveSolAddress(pubKey)
 	default:

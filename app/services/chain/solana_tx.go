@@ -1,6 +1,7 @@
 package chain
 
 import (
+	"bytes"
 	"context"
 	"crypto/ed25519"
 	"encoding/base64"
@@ -93,6 +94,46 @@ func signSolanaTx(unsigned *types.UnsignedTx, privateKey []byte) (*types.SignedT
 		hash = sigs[0].String()
 	}
 	return &types.SignedTx{ChainID: unsigned.ChainID, RawBytes: raw, TxHash: hash}, nil
+}
+
+// SignTransactionWithScalar signs for the account whose key is known only as the
+// scalar behind publicKey, the genesis address of an MPC wallet. The message must have
+// that account as its fee payer and only signer.
+func (a *SolanaLive) SignTransactionWithScalar(ctx context.Context, unsigned *types.UnsignedTx, scalar, publicKey []byte) (*types.SignedTx, error) {
+	return signSolanaTxWithScalar(unsigned, scalar, publicKey)
+}
+
+func signSolanaTxWithScalar(unsigned *types.UnsignedTx, scalar, publicKey []byte) (*types.SignedTx, error) {
+	if unsigned == nil || len(unsigned.RawBytes) == 0 {
+		return nil, fmt.Errorf("sol sign: missing transaction")
+	}
+	msg := &solana.Message{}
+	if err := msg.UnmarshalWithDecoder(bin.NewBinDecoder(unsigned.RawBytes)); err != nil {
+		return nil, fmt.Errorf("sol message: %w", err)
+	}
+	if msg.Header.NumRequiredSignatures != 1 {
+		return nil, fmt.Errorf("sol sign: expected exactly one signer, message requires %d", msg.Header.NumRequiredSignatures)
+	}
+	if len(msg.AccountKeys) == 0 || !bytes.Equal(msg.AccountKeys[0][:], publicKey) {
+		return nil, fmt.Errorf("sol sign: fee payer is not the signing key")
+	}
+	content, err := msg.MarshalBinary()
+	if err != nil {
+		return nil, fmt.Errorf("sol message: %w", err)
+	}
+	signature, err := signEd25519WithScalar(scalar, publicKey, content)
+	if err != nil {
+		return nil, fmt.Errorf("sol sign: %w", err)
+	}
+	tx := &solana.Transaction{Message: *msg, Signatures: []solana.Signature{solana.SignatureFromBytes(signature)}}
+	if err := tx.VerifySignatures(); err != nil {
+		return nil, fmt.Errorf("sol sign: %w", err)
+	}
+	raw, err := tx.MarshalBinary()
+	if err != nil {
+		return nil, err
+	}
+	return &types.SignedTx{ChainID: unsigned.ChainID, RawBytes: raw, TxHash: tx.Signatures[0].String()}, nil
 }
 
 func (a *SolanaLive) buildSolanaTransfer(ctx context.Context, req types.TransferRequest) (*types.UnsignedTx, error) {

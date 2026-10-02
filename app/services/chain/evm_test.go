@@ -1,8 +1,15 @@
 package chain
 
 import (
+	"bytes"
 	"math/big"
 	"testing"
+
+	"github.com/ethereum/go-ethereum/common"
+	gethtypes "github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/crypto"
+
+	pkgtypes "github.com/macrowallets/waas/pkg/types"
 )
 
 func TestEVM_ValidateAddress(t *testing.T) {
@@ -163,5 +170,133 @@ func TestFmtUnits(t *testing.T) {
 				t.Errorf("fmtUnits(%v, %d) = %s, want %s", tt.amount, tt.decimals, got, tt.want)
 			}
 		})
+	}
+}
+
+func TestEVMFinalizeMPCSignatureBuildsBroadcastableTransaction(t *testing.T) {
+	t.Parallel()
+
+	privateKey, err := crypto.GenerateKey()
+	if err != nil {
+		t.Fatal(err)
+	}
+	const chainID = int64(11155111)
+	const nonce = uint64(7)
+	const gasLimit = uint64(21_000)
+	to := "0x742d35Cc6634C0532925a3b844Bc9e7595f2bD12"
+	value := big.NewInt(1_000_000_000_000_000)
+	gasPrice := big.NewInt(2_000_000_000)
+	signer := gethtypes.LatestSignerForChainID(big.NewInt(chainID))
+	unsignedTransaction := gethtypes.NewTransaction(
+		nonce,
+		common.HexToAddress(to),
+		value,
+		gasLimit,
+		gasPrice,
+		nil,
+	)
+	hash := signer.Hash(unsignedTransaction).Bytes()
+	signature, err := crypto.Sign(hash, privateKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	adapter := NewEVMLive(EVMConfig{ChainIDStr: "teth", NetworkID: chainID})
+	unsigned := &pkgtypes.UnsignedTx{
+		ChainID:  "teth",
+		RawBytes: hash,
+		Metadata: map[string]any{
+			"nonce":     nonce,
+			"to":        to,
+			"value":     value.String(),
+			"gas_limit": gasLimit,
+			"gas_price": gasPrice.String(),
+			"chain_id":  chainID,
+			"data":      []byte(nil),
+		},
+	}
+
+	signed, err := adapter.FinalizeMPCSignature(
+		unsigned,
+		signature[:64],
+		crypto.CompressPubkey(&privateKey.PublicKey),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(signed.RawBytes) == 0 {
+		t.Fatal("expected serialized signed transaction")
+	}
+
+	var decoded gethtypes.Transaction
+	if err := decoded.UnmarshalBinary(signed.RawBytes); err != nil {
+		t.Fatalf("decode signed transaction: %v", err)
+	}
+	sender, err := gethtypes.Sender(signer, &decoded)
+	if err != nil {
+		t.Fatalf("recover sender: %v", err)
+	}
+	expectedSender := crypto.PubkeyToAddress(privateKey.PublicKey)
+	if sender != expectedSender {
+		t.Fatalf("sender = %s, want %s", sender, expectedSender)
+	}
+	if decoded.Nonce() != nonce || decoded.To() == nil || *decoded.To() != common.HexToAddress(to) {
+		t.Fatalf("unexpected signed transaction fields")
+	}
+	if !bytes.Equal(decoded.Data(), nil) || decoded.Value().Cmp(value) != 0 {
+		t.Fatalf("unexpected transaction payload")
+	}
+}
+
+func TestEVMFinalizeMPCSignatureRejectsWrongPublicKey(t *testing.T) {
+	t.Parallel()
+
+	privateKey, err := crypto.GenerateKey()
+	if err != nil {
+		t.Fatal(err)
+	}
+	otherKey, err := crypto.GenerateKey()
+	if err != nil {
+		t.Fatal(err)
+	}
+	hash := crypto.Keccak256([]byte("e2e"))
+	signature, err := crypto.Sign(hash, privateKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	adapter := NewEVMLive(EVMConfig{ChainIDStr: "teth", NetworkID: 11155111})
+	unsigned := &pkgtypes.UnsignedTx{
+		ChainID:  "teth",
+		RawBytes: hash,
+		Metadata: map[string]any{
+			"nonce":     uint64(0),
+			"to":        "0x742d35Cc6634C0532925a3b844Bc9e7595f2bD12",
+			"value":     "1",
+			"gas_limit": uint64(21_000),
+			"gas_price": "1",
+			"chain_id":  int64(11155111),
+			"data":      []byte(nil),
+		},
+	}
+
+	if _, err := adapter.FinalizeMPCSignature(
+		unsigned,
+		signature[:64],
+		crypto.CompressPubkey(&otherKey.PublicKey),
+	); err == nil {
+		t.Fatal("expected public key mismatch error")
+	}
+}
+
+func TestBufferedEVMGasPrice(t *testing.T) {
+	t.Parallel()
+
+	input := big.NewInt(1_300_000_000)
+	got := bufferedEVMGasPrice(input)
+	if got.String() != "2600000000" {
+		t.Fatalf("buffered gas price = %s", got)
+	}
+	if input.String() != "1300000000" {
+		t.Fatalf("input gas price was mutated to %s", input)
 	}
 }

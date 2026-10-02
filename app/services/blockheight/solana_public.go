@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/macrowallets/waas/app/models"
+	"github.com/macrowallets/waas/pkg/httpclient"
 )
 
 const solanaGetSlotBody = `{"jsonrpc":"2.0","id":1,"method":"getSlot","params":[{"commitment":"finalized"}]}`
@@ -22,7 +23,7 @@ type SolanaPublicProvider struct {
 
 func NewSolanaPublicProvider() *SolanaPublicProvider {
 	return &SolanaPublicProvider{
-		client:     &http.Client{Timeout: 5 * time.Second},
+		client:     httpclient.New(5 * time.Second),
 		mainnetRPC: "https://api.mainnet-beta.solana.com",
 		devnetRPC:  "https://api.devnet.solana.com",
 	}

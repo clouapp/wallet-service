@@ -19,9 +19,7 @@ const (
 	wsExchange       = "BINANCE"
 )
 
-var wsAssetMapping = map[string]string{
-	"MATIC": "POL",
-}
+var wsAssetMapping = map[string]string{}
 
 var wsReverseMapping map[string]string
 

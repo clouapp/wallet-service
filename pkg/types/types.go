@@ -64,6 +64,25 @@ type Chain interface {
 	EstimateGasPrice(ctx context.Context) (*big.Int, error)
 }
 
+// TransferGasEstimator reports the gas limit an adapter will encode when it
+// builds `req`. The sweep planner budgets with it so a plan never reserves less
+// gas than execution can spend.
+type TransferGasEstimator interface {
+	EstimateTransferGasLimit(ctx context.Context, req TransferRequest) (uint64, error)
+}
+
+// MPCSignatureFinalizer converts a raw MPC secp256k1 signature into the
+// chain-specific serialized transaction accepted by BroadcastTransaction.
+// EVM adapters implement this because an R/S signature alone is not a raw
+// Ethereum transaction.
+type MPCSignatureFinalizer interface {
+	FinalizeMPCSignature(
+		unsigned *UnsignedTx,
+		signature []byte,
+		publicKey []byte,
+	) (*SignedTx, error)
+}
+
 type FeeEstimate struct {
 	Fee      string `json:"fee"`
 	FeeAsset string `json:"fee_asset"`
@@ -164,20 +183,41 @@ type DetectedTransfer struct {
 type EventType string
 
 const (
-	EventDepositPending      EventType = "deposit.pending"
-	EventDepositConfirming   EventType = "deposit.confirming"
-	EventDepositConfirmed    EventType = "deposit.confirmed"
-	EventDepositFailed       EventType = "deposit.failed"
-	EventWithdrawalPending        EventType = "withdrawal.pending"
-	EventWithdrawalSigned         EventType = "withdrawal.signed"
-	EventWithdrawalBroadcast      EventType = "withdrawal.broadcasting"
-	EventWithdrawalConfirmed      EventType = "withdrawal.confirmed"
-	EventWithdrawalFailed         EventType = "withdrawal.failed"
-	EventWithdrawalSweepRequired  EventType = "withdrawal.sweep_required"
-	EventSweepBroadcast           EventType = "sweep.broadcast"
-	EventSweepConfirmed           EventType = "sweep.confirmed"
-	EventWalletGasStatusChanged   EventType = "wallet.gas_status.changed"
+	EventDepositPending          EventType = "deposit.pending"
+	EventDepositConfirming       EventType = "deposit.confirming"
+	EventDepositConfirmed        EventType = "deposit.confirmed"
+	EventDepositFailed           EventType = "deposit.failed"
+	EventWithdrawalPending       EventType = "withdrawal.pending"
+	EventWithdrawalSigned        EventType = "withdrawal.signed"
+	EventWithdrawalBroadcasting  EventType = "withdrawal.broadcasting"
+	EventWithdrawalBroadcast     EventType = "withdrawal.broadcast"
+	EventWithdrawalConfirmed     EventType = "withdrawal.confirmed"
+	EventWithdrawalFailed        EventType = "withdrawal.failed"
+	EventWithdrawalSweepRequired EventType = "withdrawal.sweep_required"
+	EventSweepBroadcast          EventType = "sweep.broadcast"
+	EventSweepConfirmed          EventType = "sweep.confirmed"
+	EventWalletGasStatusChanged  EventType = "wallet.gas_status.changed"
 )
+
+// subscribableEvents are the event types a webhook config may subscribe to.
+var subscribableEvents = map[EventType]bool{
+	EventDepositPending:          true,
+	EventDepositConfirming:       true,
+	EventDepositConfirmed:        true,
+	EventDepositFailed:           true,
+	EventWithdrawalBroadcasting:  true,
+	EventWithdrawalBroadcast:     true,
+	EventWithdrawalConfirmed:     true,
+	EventWithdrawalFailed:        true,
+	EventWithdrawalSweepRequired: true,
+	EventSweepBroadcast:          true,
+	EventSweepConfirmed:          true,
+	EventWalletGasStatusChanged:  true,
+}
+
+func IsSubscribableEvent(event string) bool {
+	return subscribableEvents[EventType(event)]
+}
 
 type TxStatus string
 

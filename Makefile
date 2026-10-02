@@ -22,6 +22,11 @@ endif
 # Project paths
 FRONT_DIR = ../front
 
+# Destructive test database (migrate:fresh per test); must end with _test.
+# vault (dev) and vault_test (local e2e stack) are refused by tests/testenv.
+TEST_DB_DATABASE ?= vault_unit_test
+export TEST_DB_DATABASE
+
 # Docker configuration
 DOCKER_COMPOSE = docker compose
 DOCKER_IMAGE_NAME = waas-service
@@ -66,6 +71,15 @@ define ensure_docker
 			exit 1; \
 		fi; \
 		echo "✅ PostgreSQL ready"; \
+	fi
+endef
+
+define ensure_test_database
+	$(call ensure_docker)
+	@echo "🧪 Test database: $(TEST_DB_DATABASE)"
+	@if [ "$$(docker exec waas-postgres psql -U vault -d postgres -tAc "SELECT 1 FROM pg_database WHERE datname = '$(TEST_DB_DATABASE)'")" != "1" ]; then \
+		echo "🧪 Creating isolated PostgreSQL database $(TEST_DB_DATABASE)..."; \
+		docker exec waas-postgres createdb -U vault $(TEST_DB_DATABASE); \
 	fi
 endef
 
@@ -300,29 +314,41 @@ invoke-scanner-remote: ## Invoke deposit scanner on AWS
 
 test: ## Run all tests
 	@echo "🧪 Running tests..."
-	go test ./... -v -count=1
+	$(call ensure_test_database)
+	@set -a; [ ! -f .env.dev ] || . ./.env.dev; . ./.env.testing; set +a; \
+		DB_DATABASE=$(TEST_DB_DATABASE) TEST_DB_REQUIRED=1 go test -p 1 ./... -v -count=1
 
 test-coverage: ## Run tests with coverage report
 	@echo "📊 Running tests with coverage..."
-	go test ./... -coverprofile=coverage.out -count=1
+	$(call ensure_test_database)
+	@set -a; [ ! -f .env.dev ] || . ./.env.dev; . ./.env.testing; set +a; \
+		DB_DATABASE=$(TEST_DB_DATABASE) TEST_DB_REQUIRED=1 go test -p 1 ./... -coverprofile=coverage.out -count=1
 	go tool cover -html=coverage.out
 	@echo "✅ Coverage report generated: coverage.out"
 
 test-race: ## Run tests with race detector
 	@echo "🏁 Running tests with race detector..."
-	go test ./... -race -count=1
+	$(call ensure_test_database)
+	@set -a; [ ! -f .env.dev ] || . ./.env.dev; . ./.env.testing; set +a; \
+		DB_DATABASE=$(TEST_DB_DATABASE) TEST_DB_REQUIRED=1 go test -p 1 ./... -race -count=1
 
 test-verbose: ## Run tests with verbose output
 	@echo "🔍 Running tests (verbose)..."
-	go test ./... -v -count=1
+	$(call ensure_test_database)
+	@set -a; [ ! -f .env.dev ] || . ./.env.dev; . ./.env.testing; set +a; \
+		DB_DATABASE=$(TEST_DB_DATABASE) TEST_DB_REQUIRED=1 go test -p 1 ./... -v -count=1
 
 test-unit: ## Run unit tests only (exclude integration tests)
 	@echo "🧪 Running unit tests..."
-	go test ./... -short -v -count=1
+	$(call ensure_test_database)
+	@set -a; [ ! -f .env.dev ] || . ./.env.dev; . ./.env.testing; set +a; \
+		DB_DATABASE=$(TEST_DB_DATABASE) TEST_DB_REQUIRED=1 go test -p 1 ./... -short -v -count=1
 
 test-integration: ## Run integration tests only
 	@echo "🔗 Running integration tests..."
-	@TEST_DATABASE_URL=$(DATABASE_URL) go test ./... -run Integration -v -count=1
+	$(call ensure_test_database)
+	@set -a; [ ! -f .env.dev ] || . ./.env.dev; . ./.env.testing; set +a; \
+		DB_DATABASE=$(TEST_DB_DATABASE) TEST_DB_REQUIRED=1 go test -p 1 ./... -run Integration -v -count=1
 
 # =============================================================================
 # Code Quality Commands
@@ -418,8 +444,8 @@ docker-status: ## Show status of all waas containers
 # Database Commands
 # =============================================================================
 
-db-reset: docker-down-volumes docker-up migrate ## Reset database (WARNING: deletes all data)
-	@echo "✅ Database reset complete"
+db-reset: docker-down-volumes docker-up migrate-fresh-seed ## Reset DB, LocalStack secrets, and seed data (WARNING: deletes all data)
+	@echo "✅ Database and Secrets Manager reset together"
 
 key-generate: ## Generate APP_KEY in .env.dev (go run . --env=.env.dev artisan key:generate)
 	$(call ensure_env_dev)

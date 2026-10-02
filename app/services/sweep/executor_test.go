@@ -6,6 +6,7 @@ import (
 	"math/big"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 
@@ -23,7 +24,7 @@ import (
 // ---------------------------------------------------------------------------
 
 type fakeTxRepo struct {
-	created []*models.Transaction
+	created   []*models.Transaction
 	createErr error
 }
 
@@ -147,6 +148,7 @@ func TestExecute_DirectFromBase_SingleTx(t *testing.T) {
 		MPCCurve:       "secp256k1",
 	}
 
+	assignDerivedEVMAddresses(t, wallet, &baseAddr)
 	mockChain := sweepMockChain("eth", "eth")
 	svc, txRepo := newExecutorService(t, wallet, mockChain)
 
@@ -162,7 +164,7 @@ func TestExecute_DirectFromBase_SingleTx(t *testing.T) {
 	withdrawalTxID := uuid.New()
 
 	res, err := svc.ExecutePlan(
-		context.Background(), plan, []byte("fake-share-a"),
+		context.Background(), plan, SigningCredentials{ShareA: []byte("fake-share-a")},
 		withdrawalTxID, "0xDEST", "user-1",
 	)
 	if err != nil {
@@ -190,15 +192,32 @@ func TestExecute_DirectFromBase_SingleTx(t *testing.T) {
 	if tx.ID != withdrawalTxID {
 		t.Fatalf("expected withdrawal tx ID %s, got %s", withdrawalTxID, tx.ID)
 	}
-	if tx.FromAddress != "0xBASE" || tx.ToAddress != "0xDEST" {
+	if tx.FromAddress != baseAddr.Address || tx.ToAddress != "0xDEST" {
 		t.Fatalf("expected BASE → DEST, got %s → %s", tx.FromAddress, tx.ToAddress)
 	}
 	if tx.ExternalUserID != "user-1" {
 		t.Fatalf("expected external_user_id=user-1, got %q", tx.ExternalUserID)
 	}
+	if tx.Direction != models.TxDirectionOutbound {
+		t.Fatalf("expected direction=%s, got %q", models.TxDirectionOutbound, tx.Direction)
+	}
+	if tx.Source != models.TxSourceWithdrawalFlow {
+		t.Fatalf("expected source=%s, got %q", models.TxSourceWithdrawalFlow, tx.Source)
+	}
 	if tx.ParentTransactionID != nil {
 		t.Fatalf("expected no parent_transaction_id on withdrawal, got %v", tx.ParentTransactionID)
 	}
+	mpcMock := svc.mpc.(*mocks.MockMPCService)
+	if mpcMock.SignCalls != 1 {
+		t.Fatalf("expected one mpc.Sign call, got %d", mpcMock.SignCalls)
+	}
+	if mockChain.SignTransactionCalls != 0 {
+		t.Fatalf("expected no local SignTransaction, got %d", mockChain.SignTransactionCalls)
+	}
+}
+
+func TestExecutePlan_EVMUsesMPCSign(t *testing.T) {
+	TestExecute_DirectFromBase_SingleTx(t)
 }
 
 // TestExecute_MultiSweep_LinksParent covers the full multi_sweep fan-out:
@@ -207,7 +226,8 @@ func TestExecute_DirectFromBase_SingleTx(t *testing.T) {
 // then broadcast from the base deposit address.
 //
 // With 2 legs we expect 2*2 + 1 = 5 persisted rows:
-//   gas_seed(child_a), sweep(child_a), gas_seed(child_b), sweep(child_b), withdrawal(base).
+//
+//	gas_seed(child_a), sweep(child_a), gas_seed(child_b), sweep(child_b), withdrawal(base).
 func TestExecute_MultiSweep_LinksParent(t *testing.T) {
 	walletID := uuid.New()
 	baseAddr := models.Address{
@@ -234,6 +254,7 @@ func TestExecute_MultiSweep_LinksParent(t *testing.T) {
 		DepositAddress: &baseAddr,
 		MPCCurve:       "secp256k1",
 	}
+	assignDerivedEVMAddresses(t, wallet, &baseAddr, &childA, &childB)
 
 	mockChain := sweepMockChain("eth", "eth")
 	svc, txRepo := newExecutorService(t, wallet, mockChain)
@@ -256,7 +277,7 @@ func TestExecute_MultiSweep_LinksParent(t *testing.T) {
 	withdrawalTxID := uuid.New()
 
 	res, err := svc.ExecutePlan(
-		context.Background(), plan, []byte("fake-share-a"),
+		context.Background(), plan, SigningCredentials{ShareA: []byte("fake-share-a")},
 		withdrawalTxID, "0xDEST", "user-1",
 	)
 	if err != nil {
@@ -310,12 +331,12 @@ func TestExecute_MultiSweep_LinksParent(t *testing.T) {
 
 	// Gas_seed routing: base → child.
 	gasSeedA := txRepo.created[0]
-	if gasSeedA.FromAddress != "0xBASE" || gasSeedA.ToAddress != "0xCHILD_A" {
+	if gasSeedA.FromAddress != baseAddr.Address || gasSeedA.ToAddress != childA.Address {
 		t.Fatalf("gas_seed_a: expected BASE→CHILD_A, got %s→%s", gasSeedA.FromAddress, gasSeedA.ToAddress)
 	}
 	// Sweep routing: child → base, token contract carried over.
 	sweepA := txRepo.created[1]
-	if sweepA.FromAddress != "0xCHILD_A" || sweepA.ToAddress != "0xBASE" {
+	if sweepA.FromAddress != childA.Address || sweepA.ToAddress != baseAddr.Address {
 		t.Fatalf("sweep_a: expected CHILD_A→BASE, got %s→%s", sweepA.FromAddress, sweepA.ToAddress)
 	}
 	if sweepA.TokenContract != "0xTETHER" {
@@ -324,7 +345,7 @@ func TestExecute_MultiSweep_LinksParent(t *testing.T) {
 
 	// Withdrawal: base → destination, not linked to itself.
 	final := txRepo.created[4]
-	if final.FromAddress != "0xBASE" || final.ToAddress != "0xDEST" {
+	if final.FromAddress != baseAddr.Address || final.ToAddress != "0xDEST" {
 		t.Fatalf("final: expected BASE→DEST, got %s→%s", final.FromAddress, final.ToAddress)
 	}
 	if final.ID != withdrawalTxID {
@@ -370,6 +391,7 @@ func TestExecute_MultiSweep_RetryAfterPartialFailure(t *testing.T) {
 		DepositAddress: &baseAddr,
 		MPCCurve:       "secp256k1",
 	}
+	assignDerivedEVMAddresses(t, wallet, &baseAddr, &childA, &childB)
 
 	mockChain := sweepMockChain("eth", "eth")
 	svc, txRepo := newExecutorService(t, wallet, mockChain)
@@ -405,7 +427,7 @@ func TestExecute_MultiSweep_RetryAfterPartialFailure(t *testing.T) {
 	withdrawalTxID := uuid.New()
 
 	res, err := svc.ExecutePlan(
-		context.Background(), plan, []byte("fake-share-a"),
+		context.Background(), plan, SigningCredentials{ShareA: []byte("fake-share-a")},
 		withdrawalTxID, "0xDEST", "user-1",
 	)
 	if err != nil {
@@ -461,7 +483,7 @@ func TestExecute_MultiSweep_RetryAfterPartialFailure(t *testing.T) {
 	}
 
 	retryRes, err := svc.ExecutePlan(
-		context.Background(), retryPlan, []byte("fake-share-a"),
+		context.Background(), retryPlan, SigningCredentials{ShareA: []byte("fake-share-a")},
 		withdrawalTxID, "0xDEST", "user-1",
 	)
 	if err != nil {
@@ -524,6 +546,13 @@ func (f *fakeWebhookConfigRepo) FindActive() ([]models.WebhookConfig, error) { r
 func (f *fakeWebhookConfigRepo) FindAll() ([]models.WebhookConfig, error)    { return f.configs, nil }
 func (f *fakeWebhookConfigRepo) Delete(cfg *models.WebhookConfig) error      { return nil }
 func (f *fakeWebhookConfigRepo) DeleteByID(id uuid.UUID) error               { return nil }
+func (f *fakeWebhookConfigRepo) FindByID(id uuid.UUID) (*models.WebhookConfig, error) {
+	return nil, nil
+}
+func (f *fakeWebhookConfigRepo) FindVisibleToAccount(accountID uuid.UUID) ([]models.WebhookConfig, error) {
+	return f.configs, nil
+}
+func (f *fakeWebhookConfigRepo) UpdateFields(id uuid.UUID, fields map[string]any) error { return nil }
 
 type fakeWebhookEventRepo struct {
 	created []*models.WebhookEvent
@@ -533,8 +562,15 @@ func (f *fakeWebhookEventRepo) Create(event *models.WebhookEvent) error {
 	f.created = append(f.created, event)
 	return nil
 }
-func (f *fakeWebhookEventRepo) MarkDelivered(eventID string) error                  { return nil }
+func (f *fakeWebhookEventRepo) MarkDelivered(eventID string) error                   { return nil }
 func (f *fakeWebhookEventRepo) IncrementAttempt(eventID string, errMsg string) error { return nil }
+func (f *fakeWebhookEventRepo) ExistsForSubject(configID uuid.UUID, eventType, subjectID string) (bool, error) {
+	return false, nil
+}
+func (f *fakeWebhookEventRepo) FindDueForDelivery(limit int, baseBackoff, maxBackoff time.Duration) ([]models.WebhookEvent, error) {
+	return nil, nil
+}
+func (f *fakeWebhookEventRepo) MarkFailed(eventID string, errMsg string) error { return nil }
 
 // TestExecute_MultiSweep_WebhookEmittedPerSweep verifies that for a multi-leg
 // plan the executor emits exactly one sweep.broadcast event per leg (never per
@@ -557,6 +593,7 @@ func TestExecute_MultiSweep_WebhookEmittedPerSweep(t *testing.T) {
 		DepositAddress: &baseAddr,
 		MPCCurve:       "secp256k1",
 	}
+	assignDerivedEVMAddresses(t, wallet, &baseAddr, &childA, &childB)
 
 	mockChain := sweepMockChain("eth", "eth")
 	svc, _ := newExecutorService(t, wallet, mockChain)
@@ -594,7 +631,7 @@ func TestExecute_MultiSweep_WebhookEmittedPerSweep(t *testing.T) {
 	withdrawalTxID := uuid.New()
 
 	res, err := svc.ExecutePlan(
-		context.Background(), plan, []byte("fake-share-a"),
+		context.Background(), plan, SigningCredentials{ShareA: []byte("fake-share-a")},
 		withdrawalTxID, "0xDEST", "user-1",
 	)
 	if err != nil {
@@ -609,7 +646,7 @@ func TestExecute_MultiSweep_WebhookEmittedPerSweep(t *testing.T) {
 		switch ev.eventType {
 		case types.EventSweepBroadcast:
 			sweepEvents++
-		case types.EventWithdrawalBroadcast:
+		case types.EventWithdrawalBroadcasting:
 			withdrawalEvents++
 			if ev.txID != withdrawalTxID {
 				t.Fatalf("withdrawal.broadcasting event must carry withdrawalTxID %s, got %s",
@@ -655,7 +692,7 @@ func TestExecute_InsufficientStrategy_ReturnsErr(t *testing.T) {
 	}
 
 	res, err := svc.ExecutePlan(
-		context.Background(), plan, []byte("fake-share-a"),
+		context.Background(), plan, SigningCredentials{ShareA: []byte("fake-share-a")},
 		uuid.New(), "0xDEST", "user-1",
 	)
 	if !errors.Is(err, ErrInsufficientFunds) {

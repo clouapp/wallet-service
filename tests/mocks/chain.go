@@ -35,6 +35,8 @@ type MockChain struct {
 	EstimateGasPriceFn     func(ctx context.Context) (*big.Int, error)
 	GetTransactionBlockFn  func(ctx context.Context, txHash string) (uint64, error)
 
+	VerifySignedTransactionFn func(unsigned *types.UnsignedTx, signed *types.SignedTx, from string) error
+
 	GasReadinessThresholdVal *big.Int
 	EstimateGasPriceVal      *big.Int
 	EstimateGasPriceErr      error
@@ -42,13 +44,14 @@ type MockChain struct {
 	GetTransactionBlockErr   error
 
 	// Call tracking
-	DeriveAddressCalls        int
-	ValidateAddressCalls      int
-	BuildTransferCalls        int
-	SignTransactionCalls      int
-	BroadcastTransactionCalls int
-	ScanBlockCalls            int
-	BuildSweepCalls           int
+	DeriveAddressCalls           int
+	ValidateAddressCalls         int
+	BuildTransferCalls           int
+	SignTransactionCalls         int
+	BroadcastTransactionCalls    int
+	VerifySignedTransactionCalls int
+	ScanBlockCalls               int
+	BuildSweepCalls              int
 }
 
 func NewMockChain(id string) *MockChain {
@@ -116,6 +119,16 @@ func (m *MockChain) SignTransaction(ctx context.Context, unsigned *types.Unsigne
 		return m.SignTransactionFn(ctx, unsigned, privateKey)
 	}
 	return &types.SignedTx{ChainID: m.IDVal, TxHash: "0xmockhash123", RawBytes: []byte("signed")}, nil
+}
+
+// VerifySignedTransaction accepts every transaction unless VerifySignedTransactionFn
+// says otherwise; mock signatures are not real.
+func (m *MockChain) VerifySignedTransaction(unsigned *types.UnsignedTx, signed *types.SignedTx, from string) error {
+	m.VerifySignedTransactionCalls++
+	if m.VerifySignedTransactionFn != nil {
+		return m.VerifySignedTransactionFn(unsigned, signed, from)
+	}
+	return nil
 }
 
 func (m *MockChain) BroadcastTransaction(ctx context.Context, signed *types.SignedTx) (string, error) {

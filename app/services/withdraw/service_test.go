@@ -49,6 +49,10 @@ func (m *mockMPC) ReconstructEd25519PrivateKey(shareA, shareB []byte) ([]byte, e
 	return nil, nil
 }
 
+func (m *mockMPC) ReconstructEd25519Scalar(shareA, shareB []byte) ([]byte, error) {
+	return nil, nil
+}
+
 // mockSweepSvc is a minimal sweep.Service used by the unit tests in this
 // package. None of these tests execute past the planner; the existing cases
 // fail earlier (passphrase guard, redis lock, wallet lookup). PlanForWithdrawal
@@ -57,10 +61,10 @@ func (m *mockMPC) ReconstructEd25519PrivateKey(shareA, shareB []byte) ([]byte, e
 // never be reached by the currently covered flows.
 type mockSweepSvc struct{}
 
-func (m *mockSweepSvc) PlanForWithdrawal(context.Context, uuid.UUID, string, *big.Int, uuid.UUID) (*sweep.Plan, error) {
+func (m *mockSweepSvc) PlanForWithdrawal(context.Context, uuid.UUID, string, *big.Int, string, uuid.UUID) (*sweep.Plan, error) {
 	return nil, sweep.ErrUnsupportedChain
 }
-func (m *mockSweepSvc) ExecutePlan(context.Context, *sweep.Plan, []byte, uuid.UUID, string, string) (*sweep.Result, error) {
+func (m *mockSweepSvc) ExecutePlan(context.Context, *sweep.Plan, sweep.SigningCredentials, uuid.UUID, string, string) (*sweep.Result, error) {
 	panic("mockSweepSvc.ExecutePlan must not be called in these tests")
 }
 func (m *mockSweepSvc) ConsolidateAll(context.Context, uuid.UUID, string, string, uuid.UUID) (*sweep.Result, error) {

@@ -25,7 +25,7 @@ type ChainListResponse struct {
 }
 
 type WalletListResponse struct {
-	Data []models.Wallet `json:"data"`
+	Data []WalletListItem `json:"data"`
 }
 
 type AddressListResponse struct {
@@ -33,7 +33,11 @@ type AddressListResponse struct {
 }
 
 type TransactionListResponse struct {
-	Data []models.Transaction `json:"data"`
+	Data []TransactionView `json:"data"`
+}
+
+type WalletTransactionListResponse struct {
+	Data []WalletTransactionView `json:"data"`
 }
 
 type WebhookConfigListResponse struct {

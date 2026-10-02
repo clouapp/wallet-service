@@ -211,6 +211,13 @@ func (f *ingestWebhookConfigRepo) FindActive() ([]models.WebhookConfig, error) {
 func (f *ingestWebhookConfigRepo) FindAll() ([]models.WebhookConfig, error)    { return nil, nil }
 func (f *ingestWebhookConfigRepo) Delete(cfg *models.WebhookConfig) error      { return nil }
 func (f *ingestWebhookConfigRepo) DeleteByID(id uuid.UUID) error               { return nil }
+func (f *ingestWebhookConfigRepo) FindByID(id uuid.UUID) (*models.WebhookConfig, error) {
+	return nil, nil
+}
+func (f *ingestWebhookConfigRepo) FindVisibleToAccount(accountID uuid.UUID) ([]models.WebhookConfig, error) {
+	return nil, nil
+}
+func (f *ingestWebhookConfigRepo) UpdateFields(id uuid.UUID, fields map[string]any) error { return nil }
 
 type ingestWebhookEventRepo struct{}
 
@@ -219,3 +226,10 @@ func (f *ingestWebhookEventRepo) MarkDelivered(eventID string) error      { retu
 func (f *ingestWebhookEventRepo) IncrementAttempt(eventID string, errMsg string) error {
 	return nil
 }
+func (f *ingestWebhookEventRepo) ExistsForSubject(configID uuid.UUID, eventType, subjectID string) (bool, error) {
+	return false, nil
+}
+func (f *ingestWebhookEventRepo) FindDueForDelivery(limit int, baseBackoff, maxBackoff time.Duration) ([]models.WebhookEvent, error) {
+	return nil, nil
+}
+func (f *ingestWebhookEventRepo) MarkFailed(eventID string, errMsg string) error { return nil }

@@ -1,6 +1,7 @@
 package chain
 
 import (
+	"bytes"
 	"context"
 	"encoding/hex"
 	"fmt"
@@ -8,7 +9,26 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ethereum/go-ethereum/common"
+	gethtypes "github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/crypto"
+
 	"github.com/macrowallets/waas/pkg/types"
+)
+
+const evmGasPriceMultiplier = int64(2)
+
+const (
+	evmNativeTransferGasLimit = uint64(21_000)
+	// evmERC20TransferGasFloor is the lowest limit ever encoded for a token
+	// transfer, even when eth_estimateGas reports less.
+	evmERC20TransferGasFloor = uint64(65_000)
+	// evmERC20GasMarginPercent pads eth_estimateGas: proxied tokens (e.g. Circle
+	// USDC) and first-time recipients cost more than a plain ERC-20 transfer.
+	evmERC20GasMarginPercent = uint64(125)
+	// evmGasSeedBufferPercent sizes a gas_seed above the child's token sweep fee.
+	evmGasSeedBufferPercent = int64(120)
+	percentDenominator      = 100
 )
 
 // ---------------------------------------------------------------------------
@@ -92,6 +112,11 @@ func (a *EVMLive) GetTokenBalance(ctx context.Context, address string, token typ
 }
 
 func (a *EVMLive) BuildTransfer(ctx context.Context, req types.TransferRequest) (*types.UnsignedTx, error) {
+	gasLimit, err := a.EstimateTransferGasLimit(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+
 	var hexNonce string
 	if err := a.rpc.Call(ctx, "eth_getTransactionCount", &hexNonce, req.From, "pending"); err != nil {
 		return nil, fmt.Errorf("nonce: %w", err)
@@ -105,22 +130,20 @@ func (a *EVMLive) BuildTransfer(ctx context.Context, req types.TransferRequest) 
 		if err := a.rpc.Call(ctx, "eth_gasPrice", &hexGas); err != nil {
 			return nil, fmt.Errorf("gas price: %w", err)
 		}
-		gasPrice = hexToBigInt(hexGas)
+		gasPrice = bufferedEVMGasPrice(hexToBigInt(hexGas))
 	}
 
 	var txData []byte
 	to := req.To
 	value := req.Amount
-	gasLimit := uint64(21000)
 
 	if req.Token != nil {
 		txData = encodeERC20Transfer(req.To, req.Amount)
 		to = req.Token.Contract
 		value = big.NewInt(0)
-		gasLimit = 65000
 	}
 
-	return &types.UnsignedTx{
+	unsigned := &types.UnsignedTx{
 		ChainID: a.cfg.ChainIDStr,
 		Metadata: map[string]interface{}{
 			"nonce":     hexToUint64(hexNonce),
@@ -131,7 +154,13 @@ func (a *EVMLive) BuildTransfer(ctx context.Context, req types.TransferRequest) 
 			"chain_id":  a.cfg.NetworkID,
 			"data":      txData,
 		},
-	}, nil
+	}
+	transaction, signer, err := a.transactionFromUnsigned(unsigned)
+	if err != nil {
+		return nil, err
+	}
+	unsigned.RawBytes = signer.Hash(transaction).Bytes()
+	return unsigned, nil
 }
 
 func (a *EVMLive) EstimateFee(ctx context.Context, req types.TransferRequest) (*types.FeeEstimate, error) {
@@ -140,10 +169,10 @@ func (a *EVMLive) EstimateFee(ctx context.Context, req types.TransferRequest) (*
 		return nil, fmt.Errorf("gas price: %w", err)
 	}
 
-	gasPrice := hexToBigInt(hexGas)
-	gasLimit := uint64(21000)
-	if req.Token != nil {
-		gasLimit = 65000
+	gasPrice := bufferedEVMGasPrice(hexToBigInt(hexGas))
+	gasLimit, err := a.EstimateTransferGasLimit(ctx, req)
+	if err != nil {
+		return nil, err
 	}
 
 	fee := new(big.Int).Mul(gasPrice, new(big.Int).SetUint64(gasLimit))
@@ -156,6 +185,58 @@ func (a *EVMLive) EstimateFee(ctx context.Context, req types.TransferRequest) (*
 	}, nil
 }
 
+// EstimateTransferGasLimit returns the gas limit BuildTransfer encodes for req.
+// A caller-supplied req.GasLimit wins; native transfers use the fixed transfer
+// limit; token transfers simulate transfer(to, amount) from req.From with
+// eth_estimateGas, add evmERC20GasMarginPercent and never go below
+// evmERC20TransferGasFloor. A failed or zero estimate returns
+// ErrGasEstimateFailed instead of guessing, so the caller cannot broadcast.
+func (a *EVMLive) EstimateTransferGasLimit(ctx context.Context, req types.TransferRequest) (uint64, error) {
+	if req.GasLimit != nil && *req.GasLimit > 0 {
+		return *req.GasLimit, nil
+	}
+	if req.Token == nil {
+		return evmNativeTransferGasLimit, nil
+	}
+	if err := validateTokenTransferForEstimate(req); err != nil {
+		return 0, err
+	}
+
+	call := map[string]string{
+		"from": req.From,
+		"to":   req.Token.Contract,
+		"data": "0x" + hex.EncodeToString(encodeERC20Transfer(req.To, req.Amount)),
+	}
+	var hexEstimate string
+	if err := a.rpc.Call(ctx, "eth_estimateGas", &hexEstimate, call); err != nil {
+		return 0, fmt.Errorf("%w: %s transfer of %s from %s to %s: %v",
+			ErrGasEstimateFailed, req.Token.Symbol, req.Amount, req.From, req.To, err)
+	}
+	estimate := hexToUint64(hexEstimate)
+	if estimate == 0 {
+		return 0, fmt.Errorf("%w: node returned no gas for %s transfer from %s",
+			ErrGasEstimateFailed, req.Token.Symbol, req.From)
+	}
+
+	padded := estimate * evmERC20GasMarginPercent / percentDenominator
+	if padded < evmERC20TransferGasFloor {
+		return evmERC20TransferGasFloor, nil
+	}
+	return padded, nil
+}
+
+func validateTokenTransferForEstimate(req types.TransferRequest) error {
+	switch {
+	case req.From == "":
+		return fmt.Errorf("%w: %s transfer has no sender", ErrGasEstimateFailed, req.Token.Symbol)
+	case req.To == "":
+		return fmt.Errorf("%w: %s transfer has no recipient", ErrGasEstimateFailed, req.Token.Symbol)
+	case req.Amount == nil || req.Amount.Sign() <= 0:
+		return fmt.Errorf("%w: %s transfer has no positive amount", ErrGasEstimateFailed, req.Token.Symbol)
+	}
+	return nil
+}
+
 // BuildSweep builds the txs to move `asset` from req.From to req.To inside the same wallet.
 // For native (req.Token == nil): 1 tx sending (native_balance - gas_reserve) to req.To.
 // For ERC-20 tokens:
@@ -166,13 +247,13 @@ func (a *EVMLive) BuildSweep(ctx context.Context, req types.SweepRequest) ([]typ
 	if err := a.rpc.Call(ctx, "eth_gasPrice", &hexGas); err != nil {
 		return nil, fmt.Errorf("gas price: %w", err)
 	}
-	gasPrice := hexToBigInt(hexGas)
+	gasPrice := bufferedEVMGasPrice(hexToBigInt(hexGas))
 
 	if req.Token == nil {
 		if req.NativeBalance == nil {
 			return nil, fmt.Errorf("native balance required for native sweep")
 		}
-		feeReserve := new(big.Int).Mul(gasPrice, big.NewInt(21000))
+		feeReserve := new(big.Int).Mul(gasPrice, new(big.Int).SetUint64(evmNativeTransferGasLimit))
 		amount := new(big.Int).Sub(req.NativeBalance, feeReserve)
 		if amount.Sign() <= 0 {
 			return nil, fmt.Errorf("insufficient native for sweep: balance=%s fee=%s", req.NativeBalance, feeReserve)
@@ -187,24 +268,6 @@ func (a *EVMLive) BuildSweep(ctx context.Context, req types.SweepRequest) ([]typ
 		return []types.UnsignedTx{*unsigned}, nil
 	}
 
-	erc20GasLimit := uint64(65_000)
-	feeNeeded := new(big.Int).Mul(gasPrice, new(big.Int).SetUint64(erc20GasLimit))
-
-	result := make([]types.UnsignedTx, 0, 2)
-	if req.NativeBalance == nil || req.NativeBalance.Cmp(feeNeeded) < 0 {
-		// 20% buffer above estimated fee.
-		seedAmount := new(big.Int).Mul(feeNeeded, big.NewInt(12))
-		seedAmount.Div(seedAmount, big.NewInt(10))
-		seedTx, err := a.BuildTransfer(ctx, types.TransferRequest{
-			From: req.To, To: req.From, Amount: seedAmount, Asset: a.cfg.NativeSymbol,
-			GasPrice: gasPrice,
-		})
-		if err != nil {
-			return nil, fmt.Errorf("build gas_seed: %w", err)
-		}
-		result = append(result, *seedTx)
-	}
-
 	amount := req.Amount
 	if amount == nil {
 		bal, err := a.GetTokenBalance(ctx, req.From, *req.Token)
@@ -217,10 +280,32 @@ func (a *EVMLive) BuildSweep(ctx context.Context, req types.SweepRequest) ([]typ
 		return nil, fmt.Errorf("no token balance to sweep")
 	}
 
-	sweepTx, err := a.BuildTransfer(ctx, types.TransferRequest{
+	sweepReq := types.TransferRequest{
 		From: req.From, To: req.To, Amount: amount, Asset: req.Token.Symbol, Token: req.Token,
 		GasPrice: gasPrice,
-	})
+	}
+	sweepGasLimit, err := a.EstimateTransferGasLimit(ctx, sweepReq)
+	if err != nil {
+		return nil, err
+	}
+	sweepReq.GasLimit = &sweepGasLimit
+	feeNeeded := new(big.Int).Mul(gasPrice, new(big.Int).SetUint64(sweepGasLimit))
+
+	result := make([]types.UnsignedTx, 0, 2)
+	if req.NativeBalance == nil || req.NativeBalance.Cmp(feeNeeded) < 0 {
+		seedAmount := new(big.Int).Mul(feeNeeded, big.NewInt(evmGasSeedBufferPercent))
+		seedAmount.Div(seedAmount, big.NewInt(percentDenominator))
+		seedTx, err := a.BuildTransfer(ctx, types.TransferRequest{
+			From: req.To, To: req.From, Amount: seedAmount, Asset: a.cfg.NativeSymbol,
+			GasPrice: gasPrice,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("build gas_seed: %w", err)
+		}
+		result = append(result, *seedTx)
+	}
+
+	sweepTx, err := a.BuildTransfer(ctx, sweepReq)
 	if err != nil {
 		return nil, err
 	}
@@ -238,7 +323,31 @@ func (a *EVMLive) EstimateGasPrice(ctx context.Context) (*big.Int, error) {
 	if err := a.rpc.Call(ctx, "eth_gasPrice", &hexGas); err != nil {
 		return nil, fmt.Errorf("gas price: %w", err)
 	}
-	return hexToBigInt(hexGas), nil
+	return bufferedEVMGasPrice(hexToBigInt(hexGas)), nil
+}
+
+// NativeTransferReserve is the most a native transfer built now can spend on gas:
+// BuildTransfer encodes a legacy tx with the fixed native gas limit at the buffered
+// gas price (2 × eth_gasPrice), so the fee is exactly limit × price. EVM accounts
+// keep no minimum balance. The sweep planner adds the fee to native withdrawals and
+// subtracts it from native sweeps.
+func (a *EVMLive) NativeTransferReserve(ctx context.Context) (fee, minimumRemaining *big.Int, err error) {
+	gasPrice, err := a.EstimateGasPrice(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+	if gasPrice == nil || gasPrice.Sign() <= 0 {
+		return nil, nil, fmt.Errorf("gas price: node returned no usable gas price")
+	}
+	fee = new(big.Int).Mul(gasPrice, new(big.Int).SetUint64(evmNativeTransferGasLimit))
+	return fee, new(big.Int), nil
+}
+
+func bufferedEVMGasPrice(suggested *big.Int) *big.Int {
+	if suggested == nil || suggested.Sign() <= 0 {
+		return new(big.Int)
+	}
+	return new(big.Int).Mul(new(big.Int).Set(suggested), big.NewInt(evmGasPriceMultiplier))
 }
 
 // GasReadinessThreshold returns the minimum native balance on BaseAddress for the
@@ -263,13 +372,173 @@ func (a *EVMLive) SignTransaction(ctx context.Context, unsigned *types.UnsignedT
 	return nil, fmt.Errorf("EVM signing not implemented — use go-ethereum/types.SignTx")
 }
 
+func (a *EVMLive) FinalizeMPCSignature(
+	unsigned *types.UnsignedTx,
+	signature []byte,
+	publicKey []byte,
+) (*types.SignedTx, error) {
+	if unsigned == nil {
+		return nil, fmt.Errorf("unsigned transaction is required")
+	}
+	if len(signature) != 64 {
+		return nil, fmt.Errorf("MPC signature must contain exactly 64 R/S bytes")
+	}
+	if len(publicKey) != 33 && len(publicKey) != 65 {
+		return nil, fmt.Errorf("EVM public key must contain 33 or 65 bytes")
+	}
+
+	transaction, signer, err := a.transactionFromUnsigned(unsigned)
+	if err != nil {
+		return nil, err
+	}
+	signingHash := signer.Hash(transaction).Bytes()
+	if len(unsigned.RawBytes) != 32 || !bytes.Equal(unsigned.RawBytes, signingHash) {
+		return nil, fmt.Errorf("unsigned transaction signing hash mismatch")
+	}
+
+	expectedPublicKey, err := normalizeEVMCompressedPublicKey(publicKey)
+	if err != nil {
+		return nil, err
+	}
+	signatureWithRecovery, err := recoverEVMRecoveryID(signingHash, signature, expectedPublicKey)
+	if err != nil {
+		return nil, err
+	}
+	signedTransaction, err := transaction.WithSignature(signer, signatureWithRecovery)
+	if err != nil {
+		return nil, fmt.Errorf("attach MPC signature: %w", err)
+	}
+	rawTransaction, err := signedTransaction.MarshalBinary()
+	if err != nil {
+		return nil, fmt.Errorf("serialize signed EVM transaction: %w", err)
+	}
+	return &types.SignedTx{ChainID: unsigned.ChainID, RawBytes: rawTransaction, TxHash: signedTransaction.Hash().Hex()}, nil
+}
+
 func (a *EVMLive) BroadcastTransaction(ctx context.Context, signed *types.SignedTx) (string, error) {
+	if signed == nil || len(signed.RawBytes) == 0 {
+		return "", fmt.Errorf("signed transaction is required")
+	}
 	rawHex := "0x" + hex.EncodeToString(signed.RawBytes)
 	var txHash string
 	if err := a.rpc.Call(ctx, "eth_sendRawTransaction", &txHash, rawHex); err != nil {
 		return "", err
 	}
 	return txHash, nil
+}
+
+func (a *EVMLive) transactionFromUnsigned(
+	unsigned *types.UnsignedTx,
+) (*gethtypes.Transaction, gethtypes.Signer, error) {
+	if unsigned == nil || unsigned.Metadata == nil {
+		return nil, nil, fmt.Errorf("unsigned EVM transaction metadata is required")
+	}
+	metadata := unsigned.Metadata
+
+	nonce, ok := metadata["nonce"].(uint64)
+	if !ok {
+		return nil, nil, fmt.Errorf("unsigned EVM transaction nonce is invalid")
+	}
+	toAddress, ok := metadata["to"].(string)
+	if !ok || !common.IsHexAddress(toAddress) {
+		return nil, nil, fmt.Errorf("unsigned EVM transaction destination is invalid")
+	}
+	value, err := metadataBigInt(metadata, "value", true)
+	if err != nil {
+		return nil, nil, err
+	}
+	gasPrice, err := metadataBigInt(metadata, "gas_price", false)
+	if err != nil {
+		return nil, nil, err
+	}
+	gasLimit, ok := metadata["gas_limit"].(uint64)
+	if !ok || gasLimit == 0 {
+		return nil, nil, fmt.Errorf("unsigned EVM transaction gas limit is invalid")
+	}
+	data, ok := metadata["data"].([]byte)
+	if !ok && metadata["data"] != nil {
+		return nil, nil, fmt.Errorf("unsigned EVM transaction data is invalid")
+	}
+	chainID, err := metadataInt64(metadata, "chain_id")
+	if err != nil || chainID <= 0 {
+		return nil, nil, fmt.Errorf("unsigned EVM transaction chain id is invalid")
+	}
+	if a.cfg.NetworkID > 0 && chainID != a.cfg.NetworkID {
+		return nil, nil, fmt.Errorf(
+			"unsigned EVM transaction chain id %d does not match adapter chain id %d",
+			chainID,
+			a.cfg.NetworkID,
+		)
+	}
+
+	transaction := gethtypes.NewTransaction(
+		nonce,
+		common.HexToAddress(toAddress),
+		value,
+		gasLimit,
+		gasPrice,
+		data,
+	)
+	signer := gethtypes.LatestSignerForChainID(big.NewInt(chainID))
+	return transaction, signer, nil
+}
+
+func metadataBigInt(metadata map[string]interface{}, field string, allowZero bool) (*big.Int, error) {
+	value, ok := metadata[field].(string)
+	if !ok || value == "" {
+		return nil, fmt.Errorf("unsigned EVM transaction %s is invalid", field)
+	}
+	result, ok := new(big.Int).SetString(value, 10)
+	if !ok || result.Sign() < 0 || (!allowZero && result.Sign() == 0) {
+		return nil, fmt.Errorf("unsigned EVM transaction %s is invalid", field)
+	}
+	return result, nil
+}
+
+func metadataInt64(metadata map[string]interface{}, field string) (int64, error) {
+	switch value := metadata[field].(type) {
+	case int64:
+		return value, nil
+	case int:
+		return int64(value), nil
+	case uint64:
+		if value > uint64(^uint64(0)>>1) {
+			return 0, fmt.Errorf("%s overflows int64", field)
+		}
+		return int64(value), nil
+	default:
+		return 0, fmt.Errorf("%s is not an integer", field)
+	}
+}
+
+func normalizeEVMCompressedPublicKey(publicKey []byte) ([]byte, error) {
+	if len(publicKey) == 33 {
+		if _, err := crypto.DecompressPubkey(publicKey); err != nil {
+			return nil, fmt.Errorf("invalid compressed EVM public key: %w", err)
+		}
+		return append([]byte(nil), publicKey...), nil
+	}
+	parsed, err := crypto.UnmarshalPubkey(publicKey)
+	if err != nil {
+		return nil, fmt.Errorf("invalid EVM public key: %w", err)
+	}
+	return crypto.CompressPubkey(parsed), nil
+}
+
+func recoverEVMRecoveryID(hash, signature, expectedCompressedPublicKey []byte) ([]byte, error) {
+	for recoveryID := byte(0); recoveryID <= 1; recoveryID++ {
+		candidate := make([]byte, 65)
+		copy(candidate, signature)
+		candidate[64] = recoveryID
+		recovered, err := crypto.SigToPub(hash, candidate)
+		if err != nil {
+			continue
+		}
+		if bytes.Equal(crypto.CompressPubkey(recovered), expectedCompressedPublicKey) {
+			return candidate, nil
+		}
+	}
+	return nil, fmt.Errorf("MPC signature does not match wallet public key")
 }
 
 func (a *EVMLive) GetLatestBlock(ctx context.Context) (uint64, error) {

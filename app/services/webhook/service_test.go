@@ -12,6 +12,7 @@ import (
 	"os"
 	"testing"
 
+	"github.com/google/uuid"
 	"github.com/goravel/framework/facades"
 
 	"github.com/macrowallets/waas/app/models"
@@ -36,7 +37,7 @@ func TestCreateConfig(t *testing.T) {
 	svc := newTestWebhookSvc()
 	ctx := context.Background()
 
-	cfg, err := svc.CreateConfig(ctx, "https://example.com/webhook", "secret123", []string{"deposit.confirmed", "withdrawal.confirmed"})
+	cfg, err := svc.CreateConfig(ctx, "https://example.com/webhook", "secret123", []string{"deposit.confirmed", "withdrawal.confirmed"}, nil)
 	if err != nil {
 		t.Fatalf("CreateConfig: %v", err)
 	}
@@ -53,8 +54,8 @@ func TestListConfigs(t *testing.T) {
 	svc := newTestWebhookSvc()
 	ctx := context.Background()
 
-	svc.CreateConfig(ctx, "https://a.com/wh", "s1", []string{"deposit.confirmed"})
-	svc.CreateConfig(ctx, "https://b.com/wh", "s2", []string{"withdrawal.confirmed"})
+	svc.CreateConfig(ctx, "https://a.com/wh", "s1", []string{"deposit.confirmed"}, nil)
+	svc.CreateConfig(ctx, "https://b.com/wh", "s2", []string{"withdrawal.confirmed"}, nil)
 
 	configs, err := svc.ListConfigs(ctx)
 	if err != nil {
@@ -70,7 +71,7 @@ func TestDeleteConfig(t *testing.T) {
 	svc := newTestWebhookSvc()
 	ctx := context.Background()
 
-	cfg, _ := svc.CreateConfig(ctx, "https://del.com/wh", "s", []string{"deposit.confirmed"})
+	cfg, _ := svc.CreateConfig(ctx, "https://del.com/wh", "s", []string{"deposit.confirmed"}, nil)
 	if err := svc.DeleteConfig(ctx, cfg.ID); err != nil {
 		t.Fatalf("DeleteConfig: %v", err)
 	}
@@ -105,7 +106,7 @@ func TestDeliver_Success(t *testing.T) {
 
 	// Insert webhook event manually
 	payload := `{"type":"deposit.confirmed","data":{"amount":"100"}}`
-	eventID := "evt-test-123"
+	eventID := uuid.NewString()
 	facades.Orm().Query().Exec(`INSERT INTO webhook_events (id, transaction_id, event_type, payload, delivery_url, delivery_status, attempts, max_attempts, created_at)
 		VALUES ($1, $2, 'deposit.confirmed', $3, $4, 'pending', 0, 10, NOW())`,
 		eventID, tx.ID, payload, server.URL)
@@ -167,7 +168,7 @@ func TestDeliver_Failure(t *testing.T) {
 	w := mocks.InsertWallet(t, "eth")
 	tx := mocks.InsertTransaction(t, w.ID, nil, "eth", "deposit", "confirmed", "eth", "100", 50)
 
-	eventID := "evt-fail-123"
+	eventID := uuid.NewString()
 	facades.Orm().Query().Exec(`INSERT INTO webhook_events (id, transaction_id, event_type, payload, delivery_url, delivery_status, attempts, max_attempts, created_at)
 		VALUES ($1, $2, 'deposit.confirmed', '{}', $3, 'pending', 0, 10, NOW())`,
 		eventID, tx.ID, server.URL)

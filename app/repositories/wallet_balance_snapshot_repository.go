@@ -1,6 +1,8 @@
 package repositories
 
 import (
+	"fmt"
+
 	"github.com/google/uuid"
 	"github.com/goravel/framework/facades"
 
@@ -20,6 +22,12 @@ func NewWalletBalanceSnapshotRepository() WalletBalanceSnapshotRepository {
 }
 
 func (r *walletBalanceSnapshotRepository) Create(snapshot *models.WalletBalanceSnapshot) error {
+	if snapshot == nil {
+		return fmt.Errorf("balance snapshot is required")
+	}
+	if err := snapshot.ValidateAmounts(); err != nil {
+		return err
+	}
 	return facades.Orm().Query().Create(snapshot)
 }
 

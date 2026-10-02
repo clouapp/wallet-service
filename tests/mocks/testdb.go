@@ -8,37 +8,19 @@ import (
 	"github.com/goravel/framework/facades"
 
 	"github.com/macrowallets/waas/app/models"
+	"github.com/macrowallets/waas/tests/testenv"
 )
 
 // ---------------------------------------------------------------------------
 // TestDB — sets up Goravel ORM with test database
-// Uses TEST_DATABASE_URL env var. Each test gets a clean schema.
+// Uses the pre-boot .env.testing connection. Each test gets a clean schema.
 // ---------------------------------------------------------------------------
 
 // TestDB sets up test database. Assumes Goravel is already booted via TestMain.
 func TestDB(t *testing.T) {
 	t.Helper()
 
-	// Set test database connection
-	testDSN := os.Getenv("TEST_DATABASE_URL")
-	if testDSN == "" {
-		testDSN = "postgres://vault:vault@localhost:5432/vault_test?sslmode=disable"
-	}
-
-	// Override database config for testing
-	facades.Config().Add("database", map[string]any{
-		"default": "postgres",
-		"connections": map[string]any{
-			"postgres": map[string]any{
-				"driver":   "postgres",
-				"host":     "localhost",
-				"port":     5432,
-				"database": "vault_test",
-				"username": "vault",
-				"password": "vault",
-			},
-		},
-	})
+	requireSafeTestDatabase(t)
 
 	// Verify database connectivity.
 	//
@@ -76,9 +58,23 @@ func TestDB(t *testing.T) {
 	}
 
 	t.Cleanup(func() {
-		// Clean up after test
-		facades.Artisan().Call("migrate:fresh")
+		requireSafeTestDatabase(t)
+		if err := facades.Artisan().Call("migrate:fresh"); err != nil {
+			t.Errorf("test database cleanup migration failed: %v", err)
+		}
 	})
+}
+
+func requireSafeTestDatabase(t *testing.T) {
+	t.Helper()
+
+	configuration := testenv.Configuration{
+		AppEnvironment: os.Getenv("APP_ENV"),
+		DatabaseName:   facades.Config().GetString("database.connections.postgres.database"),
+	}
+	if err := testenv.ValidateConfiguration(configuration); err != nil {
+		t.Fatalf("%v", err)
+	}
 }
 
 // ---------------------------------------------------------------------------
@@ -106,9 +102,6 @@ func InsertWalletWithAccount(t *testing.T, chainID string, accountID *uuid.UUID)
 		IsActive:        true,
 		Label:           "Deposit Address",
 	}
-	if err := facades.Orm().Query().Create(&addr); err != nil {
-		t.Fatalf("insert deposit address: %v", err)
-	}
 	w := models.Wallet{
 		ID:               walletID,
 		Chain:            chainID,
@@ -122,8 +115,13 @@ func InsertWalletWithAccount(t *testing.T, chainID string, accountID *uuid.UUID)
 		DepositAddressID: &addrID,
 		AccountID:        accountID,
 	}
+	// The wallet goes first: addresses.wallet_id references wallets, while
+	// wallets.deposit_address_id carries no foreign key.
 	if err := facades.Orm().Query().Create(&w); err != nil {
 		t.Fatalf("insert wallet: %v", err)
+	}
+	if err := facades.Orm().Query().Create(&addr); err != nil {
+		t.Fatalf("insert deposit address: %v", err)
 	}
 	w.DepositAddress = &addr
 	return w
@@ -171,6 +169,9 @@ func InsertTransaction(t *testing.T, walletID uuid.UUID, addrID *uuid.UUID, chai
 		ExternalUserID: "user_test",
 		Chain:          chainID,
 		TxType:         txType,
+		Direction:      directionForTxType(txType),
+		Source:         models.TxSourceChain,
+		RawPayload:     emptyJSONObject,
 		TxHash:         txHash,
 		ToAddress:      "0xtoaddr",
 		Amount:         amount,
@@ -186,6 +187,19 @@ func InsertTransaction(t *testing.T, walletID uuid.UUID, addrID *uuid.UUID, chai
 	return tx
 }
 
+const emptyJSONObject = "{}"
+
+func directionForTxType(txType string) string {
+	switch txType {
+	case models.TxTypeDeposit:
+		return models.TxDirectionInbound
+	case models.TxTypeWithdrawal:
+		return models.TxDirectionOutbound
+	default:
+		return models.TxDirectionUnknown
+	}
+}
+
 func InsertWebhookConfig(t *testing.T, url, secret string, events []string) models.WebhookConfig {
 	t.Helper()
 	cfg := models.WebhookConfig{
@@ -197,6 +211,25 @@ func InsertWebhookConfig(t *testing.T, url, secret string, events []string) mode
 	}
 	if err := facades.Orm().Query().Create(&cfg); err != nil {
 		t.Fatalf("insert webhook config: %v", err)
+	}
+	return cfg
+}
+
+// InsertScopedWebhookConfig inserts a config owned by an account and/or limited to a
+// wallet; nil for both is a legacy config without an owner.
+func InsertScopedWebhookConfig(t *testing.T, url, secret string, events []string, accountID, walletID *uuid.UUID) models.WebhookConfig {
+	t.Helper()
+	cfg := models.WebhookConfig{
+		ID:        uuid.New(),
+		URL:       url,
+		Secret:    secret,
+		Events:    pgArray(events),
+		IsActive:  true,
+		AccountID: accountID,
+		WalletID:  walletID,
+	}
+	if err := facades.Orm().Query().Create(&cfg); err != nil {
+		t.Fatalf("insert scoped webhook config: %v", err)
 	}
 	return cfg
 }

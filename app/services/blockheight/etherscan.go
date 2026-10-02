@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/macrowallets/waas/app/models"
+	"github.com/macrowallets/waas/pkg/httpclient"
 )
 
 const etherscanDefaultBase = "https://api.etherscan.io"
@@ -25,7 +26,7 @@ type EtherscanProvider struct {
 func NewEtherscanProvider(apiKey string) *EtherscanProvider {
 	return &EtherscanProvider{
 		apiKey:  apiKey,
-		client:  &http.Client{Timeout: 5 * time.Second},
+		client:  httpclient.New(5 * time.Second),
 		baseURL: etherscanDefaultBase,
 	}
 }

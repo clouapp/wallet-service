@@ -25,6 +25,8 @@ var (
 	ErrInFlightConsolidation = errors.New("sweep: another consolidation in flight for this wallet")
 	ErrDailyQuotaExceeded    = errors.New("sweep: daily consolidation quota exceeded")
 	ErrTooManyAddresses      = errors.New("sweep: too many addresses per request")
+	// ErrGasEstimateFailed is chain.ErrGasEstimateFailed, re-exported for controllers.
+	ErrGasEstimateFailed = chain.ErrGasEstimateFailed
 )
 
 // Service coordinates withdrawal planning, sweep execution, and gas-readiness tracking.
@@ -36,8 +38,8 @@ var (
 // background workers) to fall back to default limits with no per-account
 // quota increment.
 type Service interface {
-	PlanForWithdrawal(ctx context.Context, walletID uuid.UUID, asset string, amount *big.Int, callerAccountID uuid.UUID) (*Plan, error)
-	ExecutePlan(ctx context.Context, plan *Plan, shareA []byte, withdrawalTxID uuid.UUID, toAddress string, externalUserID string) (*Result, error)
+	PlanForWithdrawal(ctx context.Context, walletID uuid.UUID, asset string, amount *big.Int, toAddress string, callerAccountID uuid.UUID) (*Plan, error)
+	ExecutePlan(ctx context.Context, plan *Plan, creds SigningCredentials, withdrawalTxID uuid.UUID, toAddress string, externalUserID string) (*Result, error)
 	ConsolidateAll(ctx context.Context, walletID uuid.UUID, asset string, passphrase string, callerAccountID uuid.UUID) (*Result, error)
 	RefreshGasStatus(ctx context.Context, walletID uuid.UUID) (*GasStatus, error)
 	LoadLimits(ctx context.Context, accountID uuid.UUID) (*Limits, error)

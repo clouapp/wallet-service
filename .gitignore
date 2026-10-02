@@ -52,6 +52,9 @@ Thumbs.db
 
 # Local development
 *.log
+/tmp/e2e-videos/
+__pycache__/
+*.pyc
 
 # Secrets and credentials
 *.pem

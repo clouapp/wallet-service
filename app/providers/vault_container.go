@@ -21,6 +21,7 @@ import (
 	"github.com/macrowallets/waas/app/services/blockheight"
 	chainpkg "github.com/macrowallets/waas/app/services/chain"
 	"github.com/macrowallets/waas/app/services/deposit"
+	"github.com/macrowallets/waas/app/services/depositevents"
 	"github.com/macrowallets/waas/app/services/ingest"
 	"github.com/macrowallets/waas/app/services/ingest/providers"
 	mpc "github.com/macrowallets/waas/app/services/mpc"
@@ -32,6 +33,7 @@ import (
 	"github.com/macrowallets/waas/app/services/webhook"
 	"github.com/macrowallets/waas/app/services/webhooksync"
 	"github.com/macrowallets/waas/app/services/withdraw"
+	"github.com/macrowallets/waas/app/services/withdrawalevents"
 	"github.com/macrowallets/waas/config"
 	"github.com/macrowallets/waas/pkg/types"
 )
@@ -151,20 +153,27 @@ func buildVaultContainer() (*container.Container, error) {
 		}
 	}
 
+	networkByChain := make(map[string]string)
 	activeChains, chainErr := c.ChainRepo.FindActive()
 	if chainErr != nil {
 		slog.Error("failed to load chains from DB", "error", chainErr)
 	} else {
 		for _, ch := range activeChains {
-			rpcURL, decErr := facades.Crypt().DecryptString(ch.RpcURL)
+			storedURL, decErr := facades.Crypt().DecryptString(ch.RpcURL)
 			if decErr != nil {
 				slog.Warn("failed to decrypt RPC URL, skipping chain", "chain", ch.ID, "error", decErr)
+				continue
+			}
+			rpcURL, resolveErr := models.ResolveRPCURL(storedURL)
+			if resolveErr != nil {
+				slog.Warn("failed to resolve RPC URL, skipping chain", "chain", ch.ID, "error", resolveErr)
 				continue
 			}
 			if rpcURL == "" {
 				slog.Warn("empty RPC URL, skipping chain", "chain", ch.ID)
 				continue
 			}
+			networkByChain[ch.ID] = ch.ResolveNetwork(rpcURL).Name
 			var adapter types.Chain
 			switch ch.AdapterType {
 			case models.AdapterTypeEVM:
@@ -227,13 +236,28 @@ func buildVaultContainer() (*container.Container, error) {
 	)
 
 	etherscanKey := facades.Config().GetString("vault.webhooks.etherscan_api_key")
-	blockHeightProviders := map[string]blockheight.Provider{
-		models.AdapterTypeEVM:     blockheight.NewEtherscanProvider(etherscanKey),
-		models.AdapterTypeBitcoin: blockheight.NewBlockstreamProvider(),
-		models.AdapterTypeSolana:  blockheight.NewSolanaPublicProvider(),
-	}
+	blockHeightProviders := blockheight.NewProviders(etherscanKey, networkByChain)
+	assetDecimals := withdrawalevents.NewRegistryDecimals(c.Registry, c.ChainRepo)
+	c.WithdrawalEvents = withdrawalevents.NewPublisher(
+		c.WebhookService, c.WithdrawalRepo, c.TransactionRepo, c.WalletRepo, assetDecimals,
+	)
+	c.DepositEvents = depositevents.NewPublisher(c.WebhookService, c.WalletRepo, assetDecimals)
 	c.DepositService = deposit.NewService(c.Redis, c.Registry, c.WebhookService, c.AddressRepo, c.TransactionRepo, blockHeightProviders)
+	c.DepositService.SetWithdrawalConfirmations(c.WithdrawalEvents)
+	c.DepositService.SetDepositEvents(c.DepositEvents)
+	scanOptions, err := deposit.ScanOptionsFromSettings(
+		facades.Config().GetInt("vault.deposit_scan.batch_blocks"),
+		facades.Config().GetInt("vault.deposit_scan.catch_up_blocks"),
+		facades.Config().GetInt("vault.deposit_scan.concurrency"),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("vault: deposit scan options: %w", err)
+	}
+	if err := c.DepositService.SetScanOptions(scanOptions); err != nil {
+		return nil, fmt.Errorf("vault: deposit scan options: %w", err)
+	}
 	c.IngestService = ingest.NewService(c.Redis, c.Registry, c.WebhookService, c.AddressRepo, c.TransactionRepo)
+	c.IngestService.SetDepositEvents(c.DepositEvents)
 	c.BalanceRefreshService = refresh.NewBalanceService(
 		c.Registry,
 		c.WalletRepo,

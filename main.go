@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"log/slog"
 	"os"
+	"time"
 
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-lambda-go/lambda"
@@ -12,6 +13,7 @@ import (
 	"github.com/goravel/framework/facades"
 
 	"github.com/macrowallets/waas/app/container"
+	"github.com/macrowallets/waas/app/services/localworkers"
 	"github.com/macrowallets/waas/bootstrap"
 	_ "github.com/macrowallets/waas/docs" // Import generated swagger docs
 	"github.com/macrowallets/waas/pkg/types"
@@ -142,11 +144,38 @@ func handleWebhookWorker(ctx context.Context, sqsEvent events.SQSEvent) (events.
 	return events.SQSEventResponse{BatchItemFailures: failures}, nil
 }
 
+// startLocalWorkers stands in for the confirmation_tracker and webhook_worker
+// Lambdas, which never run beside the local HTTP server.
+func startLocalWorkers() {
+	if !facades.Config().GetBool("vault.local_workers.enabled") {
+		slog.Info("local workers disabled")
+		return
+	}
+	cfg := localworkers.Config{
+		ConfirmationInterval: time.Duration(facades.Config().GetInt("vault.local_workers.confirmation_interval_seconds")) * time.Second,
+		DeliveryInterval:     time.Duration(facades.Config().GetInt("vault.local_workers.delivery_interval_seconds")) * time.Second,
+		DeliverOutbox:        facades.Config().GetString("vault.queues.webhook") == "",
+		DepositScanChains:    localworkers.ParseChainList(facades.Config().GetString("vault.local_workers.deposit_scan_chains")),
+		DepositScanInterval:  time.Duration(facades.Config().GetInt("vault.local_workers.deposit_scan_interval_seconds")) * time.Second,
+	}
+	for _, chainID := range cfg.DepositScanChains {
+		if _, err := c.Registry.Chain(chainID); err != nil {
+			slog.Error("local workers not started: unknown deposit scan chain", "chain", chainID, "error", err)
+			return
+		}
+	}
+	if err := localworkers.Start(context.Background(), cfg, c.DepositService, c.WebhookService, c.DepositService); err != nil {
+		slog.Error("local workers not started", "error", err)
+	}
+}
+
 func runLocal() {
 	port := facades.Config().GetString("vault.port")
 	if port == "" {
 		port = "8080"
 	}
+
+	startLocalWorkers()
 
 	slog.Info("starting Goravel HTTP server", "port", port)
 

@@ -48,7 +48,7 @@ func ListTransactions(ctx http.Context) http.Response {
 	if err != nil {
 		return MapInternalError(ctx, err, "list_transactions")
 	}
-	return ctx.Response().Json(http.StatusOK, pagination.Response(txs, total, limit, offset))
+	return ctx.Response().Json(http.StatusOK, pagination.Response(transactionViews(txs), total, limit, offset))
 }
 
 // GetTransaction godoc
@@ -59,7 +59,7 @@ func ListTransactions(ctx http.Context) http.Response {
 // @Security     ApiKeyAuth
 // @Security     SignatureAuth
 // @Param        id   path      string  true  "Transaction UUID"  format(uuid)
-// @Success      200  {object}  models.Transaction
+// @Success      200  {object}  TransactionView
 // @Failure      400  {object}  ErrorResponse  "Invalid UUID"
 // @Failure      404  {object}  ErrorResponse  "Transaction not found"
 // @Router       /v1/transactions/{id} [get]
@@ -76,7 +76,7 @@ func GetTransaction(ctx http.Context) http.Response {
 			"error": "transaction not found",
 		})
 	}
-	return ctx.Response().Success().Json(tx)
+	return ctx.Response().Success().Json(newTransactionView(*tx))
 }
 
 // ListUserTransactions godoc
@@ -115,5 +115,5 @@ func ListUserTransactions(ctx http.Context) http.Response {
 	}
 	// Empty result when external_id belongs to another account — same body
 	// as the legitimate "no transactions yet" case (IDOR mitigation).
-	return ctx.Response().Json(http.StatusOK, pagination.Response(txs, total, limit, offset))
+	return ctx.Response().Json(http.StatusOK, pagination.Response(transactionViews(txs), total, limit, offset))
 }

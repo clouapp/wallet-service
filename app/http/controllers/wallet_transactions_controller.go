@@ -1,6 +1,8 @@
 package controllers
 
 import (
+	"log/slog"
+
 	"github.com/goravel/framework/contracts/http"
 
 	"github.com/macrowallets/waas/app/container"
@@ -19,7 +21,7 @@ import (
 // @Param        status    query   string  false  "Status filter"             Enums(pending, confirmed, failed)
 // @Param        limit     query   int     false  "Max results (default 50)"  example(50)
 // @Param        offset    query   int     false  "Pagination offset"         example(0)
-// @Success      200  {object}  TransactionListResponse
+// @Success      200  {object}  WalletTransactionListResponse
 // @Failure      403  {object}  ErrorResponse
 // @Failure      404  {object}  ErrorResponse
 // @Router       /wallets/{walletId}/transactions [get]
@@ -34,7 +36,8 @@ func ListWalletTransactions(ctx http.Context) http.Response {
 		return ctx.Response().Json(http.StatusInternalServerError, http.Json{"error": "failed to fetch transactions"})
 	}
 
-	return ctx.Response().Json(http.StatusOK, pagination.Response(transactions, total, limit, offset))
+	views := walletTransactionViews(transactions, loadAssetDecimalsCatalog(wallet.Chain))
+	return ctx.Response().Json(http.StatusOK, pagination.Response(views, total, limit, offset))
 }
 
 // GetWalletTransaction godoc
@@ -45,7 +48,7 @@ func ListWalletTransactions(ctx http.Context) http.Response {
 // @Produce      json
 // @Param        walletId  path  string  true  "Wallet UUID"
 // @Param        txId      path  string  true  "Transaction UUID"
-// @Success      200  {object}  models.Transaction
+// @Success      200  {object}  WalletTransactionView
 // @Failure      403  {object}  ErrorResponse
 // @Failure      404  {object}  ErrorResponse
 // @Router       /wallets/{walletId}/transactions/{txId} [get]
@@ -58,5 +61,22 @@ func GetWalletTransaction(ctx http.Context) http.Response {
 		return ctx.Response().Json(http.StatusNotFound, http.Json{"error": "transaction not found"})
 	}
 
-	return ctx.Response().Json(http.StatusOK, tx)
+	views := walletTransactionViews([]models.Transaction{*tx}, loadAssetDecimalsCatalog(wallet.Chain))
+	return ctx.Response().Json(http.StatusOK, views[0])
+}
+
+// loadAssetDecimalsCatalog reads the chain and its active tokens; a failed read
+// leaves those decimals unknown instead of failing the listing.
+func loadAssetDecimalsCatalog(chainID string) assetDecimalsCatalog {
+	chainRecord, chainErr := container.Get().ChainRepo.FindByID(chainID)
+	if chainErr != nil {
+		slog.Warn("load chain for transaction decimals", "chain", chainID, "error", chainErr)
+		chainRecord = nil
+	}
+	tokens, tokenErr := container.Get().TokenRepo.FindByChainID(chainID)
+	if tokenErr != nil {
+		slog.Warn("load tokens for transaction decimals", "chain", chainID, "error", tokenErr)
+		tokens = nil
+	}
+	return newAssetDecimalsCatalog(chainRecord, tokens)
 }

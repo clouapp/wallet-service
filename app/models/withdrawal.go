@@ -5,6 +5,13 @@ import (
 	"github.com/goravel/framework/database/orm"
 )
 
+const (
+	WithdrawalStatusBroadcasting = "broadcasting"
+	WithdrawalStatusBroadcast    = "broadcast"
+	WithdrawalStatusConfirmed    = "confirmed"
+	WithdrawalStatusFailed       = "failed"
+)
+
 type Withdrawal struct {
 	orm.Model
 	ID                 uuid.UUID  `gorm:"type:uuid;primary_key" json:"id"`
@@ -17,6 +24,9 @@ type Withdrawal struct {
 	FeeEstimate        string     `gorm:"type:decimal(36,18)" json:"fee_estimate,omitempty"`
 	Note               string     `gorm:"type:text" json:"note,omitempty"`
 	CreatedBy          *uuid.UUID `gorm:"type:uuid" json:"created_by,omitempty"`
+	// FailureReason holds the public error code returned to the caller, never internal details.
+	FailureReason *string `gorm:"type:varchar(64)" json:"failure_reason,omitempty"`
+	TxHash        string  `gorm:"-" json:"tx_hash,omitempty"`
 }
 
 func (w *Withdrawal) TableName() string { return "withdrawals" }

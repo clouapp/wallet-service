@@ -150,7 +150,7 @@ func (s *Service) Request(ctx context.Context, req WithdrawRequest) (*models.Tra
 		return nil, nil, err
 	}
 
-	plan, err := s.sweep.PlanForWithdrawal(ctx, wallet.ID, req.Asset, amount, req.CallerAccountID)
+	plan, err := s.sweep.PlanForWithdrawal(ctx, wallet.ID, req.Asset, amount, req.ToAddress, req.CallerAccountID)
 	if err != nil {
 		if errors.Is(err, sweep.ErrUnsupportedChain) {
 			// Bubble the sentinel; the controller maps it to 422
@@ -183,7 +183,8 @@ func (s *Service) Request(ctx context.Context, req WithdrawRequest) (*models.Tra
 	defer zeroShare(shareA)
 
 	withdrawalTxID := uuid.New()
-	result, err := s.sweep.ExecutePlan(ctx, plan, shareA, withdrawalTxID, req.ToAddress, req.ExternalUserID)
+	creds := sweep.SigningCredentials{ShareA: shareA, Passphrase: req.Passphrase}
+	result, err := s.sweep.ExecutePlan(ctx, plan, creds, withdrawalTxID, req.ToAddress, req.ExternalUserID)
 	if err != nil {
 		return nil, nil, fmt.Errorf("execute plan: %w", err)
 	}
@@ -225,8 +226,10 @@ func (s *Service) Request(ctx context.Context, req WithdrawRequest) (*models.Tra
 		}
 	}
 
-	// The sweep executor already enqueues EventWithdrawalBroadcast for the
-	// final tx — do not re-emit here. We still dispatch the Goravel domain
+	// The sweep executor already enqueues EventWithdrawalBroadcasting for the
+	// final tx — do not re-emit here. The public withdrawal.broadcast event is
+	// published by withdrawalevents.Publisher once the withdrawal row is
+	// marked broadcast. We still dispatch the Goravel domain
 	// event so wallet-refresh listeners fire.
 	_ = facades.Event().Job(&events.WithdrawalBroadcasted{}, []event.Arg{
 		{Type: "string", Value: finalTx.WalletID.String()},

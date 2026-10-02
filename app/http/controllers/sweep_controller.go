@@ -151,7 +151,8 @@ func PreviewWithdraw(ctx http.Context) http.Response {
 
 	callerAccountID, _ := ctx.Value("account_id").(uuid.UUID)
 
-	plan, err := container.Get().SweepService.PlanForWithdrawal(ctx.Context(), walletID, req.Asset, amount, callerAccountID)
+	const previewHasNoDestination = ""
+	plan, err := container.Get().SweepService.PlanForWithdrawal(ctx.Context(), walletID, req.Asset, amount, previewHasNoDestination, callerAccountID)
 	if err != nil {
 		if resp := MapSweepError(ctx, err); resp != nil {
 			return resp

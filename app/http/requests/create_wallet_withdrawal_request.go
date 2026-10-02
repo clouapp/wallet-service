@@ -14,6 +14,8 @@ type CreateWalletWithdrawalRequest struct {
 	Note               string `form:"note"                json:"note,omitempty"`
 	Passphrase         string `form:"passphrase"          json:"passphrase"`
 	TotpCode           string `form:"totp_code"           json:"totp_code"`
+	IdempotencyKey     string `form:"idempotency_key"     json:"idempotency_key,omitempty"`
+	Asset              string `form:"asset"               json:"asset,omitempty"`
 }
 
 func (r *CreateWalletWithdrawalRequest) Authorize(ctx http.Context) error {
@@ -34,6 +36,7 @@ func (r *CreateWalletWithdrawalRequest) Rules(ctx http.Context) map[string]strin
 		"amount":              "required|decimal_string",
 		"destination_address": "required|blockchain_address",
 		"passphrase":          "required|min_len:12",
+		"idempotency_key":     "uuid",
 	}
 	if userID, ok := ctx.Value("user_id").(uuid.UUID); ok && userID != uuid.Nil {
 		rules["totp_code"] = "required|min_len:6|max_len:6"

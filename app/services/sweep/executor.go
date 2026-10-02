@@ -14,6 +14,14 @@ import (
 	"github.com/macrowallets/waas/pkg/types"
 )
 
+// walletKeys is the key material signUnsigned may need for one wallet. The callers
+// that build it own shareA and shareB and zero them.
+type walletKeys struct {
+	shareA     []byte
+	shareB     []byte
+	passphrase string
+}
+
 // ExecutePlan runs a Plan against the live chain, co-signing with the provided
 // ShareA (already decrypted by the caller from the wallet passphrase). It
 // persists transaction rows with parent/origin tagging, emits webhooks per
@@ -22,7 +30,7 @@ import (
 func (s *service) ExecutePlan(
 	ctx context.Context,
 	plan *Plan,
-	shareA []byte,
+	creds SigningCredentials,
 	withdrawalTxID uuid.UUID,
 	toAddress string,
 	externalUserID string,
@@ -60,6 +68,7 @@ func (s *service) ExecutePlan(
 	defer zeroBytes(shareB)
 
 	curve := mpcpkg.Curve(wallet.MPCCurve)
+	keys := walletKeys{shareA: creds.ShareA, shareB: shareB, passphrase: creds.Passphrase}
 	result := &Result{WithdrawalTxID: withdrawalTxID, EstimatedGas: copyBigInt(plan.EstimatedGas)}
 
 	switch plan.Strategy {
@@ -68,7 +77,7 @@ func (s *service) ExecutePlan(
 			return nil, fmt.Errorf("sweep: plan source address missing for strategy %s", plan.Strategy)
 		}
 		finalTx, err := s.broadcastWithdrawal(
-			ctx, adapter, curve, shareA, shareB, wallet, plan,
+			ctx, adapter, curve, keys, wallet, plan,
 			*plan.SourceAddress, toAddress, externalUserID, withdrawalTxID,
 		)
 		if err != nil {
@@ -81,7 +90,7 @@ func (s *service) ExecutePlan(
 		for i, leg := range plan.Sweeps {
 			sweepTxID := uuid.New()
 			hash, err := s.broadcastLeg(
-				ctx, adapter, curve, shareA, shareB, wallet, plan,
+				ctx, adapter, curve, keys, wallet, plan,
 				leg, sweepTxID, legBroadcastOpts{
 					Origin:              models.TxOriginSweep,
 					ParentTransactionID: &withdrawalTxID,
@@ -110,7 +119,7 @@ func (s *service) ExecutePlan(
 		}
 
 		finalTx, err := s.broadcastWithdrawal(
-			ctx, adapter, curve, shareA, shareB, wallet, plan,
+			ctx, adapter, curve, keys, wallet, plan,
 			*wallet.DepositAddress, toAddress, externalUserID, withdrawalTxID,
 		)
 		if err != nil {
@@ -156,62 +165,32 @@ func (s *service) broadcastLeg(
 	ctx context.Context,
 	adapter types.Chain,
 	curve mpcpkg.Curve,
-	shareA, shareB []byte,
+	keys walletKeys,
 	wallet *models.Wallet,
 	plan *Plan,
 	leg PlannedSweep,
 	sweepTxID uuid.UUID,
 	opts legBroadcastOpts,
 ) (string, error) {
-	nativeBal, err := adapter.GetBalance(ctx, leg.From.Address)
+	unsigneds, token, err := s.buildSweepLeg(ctx, adapter, wallet, plan, leg)
 	if err != nil {
-		return "", fmt.Errorf("native balance for %s: %w", leg.From.Address, err)
+		return "", err
 	}
 
-	var token *types.Token
-	if plan.Asset != adapter.NativeAsset() {
-		t, ferr := s.registry.FindToken(plan.Chain, plan.Asset)
-		if ferr != nil {
-			return "", fmt.Errorf("find token %q: %w", plan.Asset, ferr)
-		}
-		token = t
-	}
-
-	unsigneds, err := adapter.BuildSweep(ctx, types.SweepRequest{
-		From:          leg.From.Address,
-		To:            wallet.DepositAddress.Address,
-		Asset:         plan.Asset,
-		Amount:        leg.Amount,
-		NativeBalance: nativeBal.Amount,
-		Token:         token,
-	})
-	if err != nil {
-		return "", fmt.Errorf("build sweep: %w", err)
-	}
-	if len(unsigneds) == 0 {
-		return "", fmt.Errorf("adapter returned no txs for sweep leg")
-	}
-
-	hasGasSeed := len(unsigneds) > 1
 	var finalSweepHash string
 
 	for idx := range unsigneds {
 		unsigned := unsigneds[idx]
+		signer, isGasSeed := sweepLegSigner(wallet, leg, len(unsigneds), idx)
 
-		sig, sigErr := s.mpc.Sign(ctx, curve, shareA, shareB, mpcpkg.SignInputs{
-			TxHashes: [][]byte{unsigned.RawBytes},
-		})
-		if sigErr != nil {
-			return "", fmt.Errorf("mpc sign: %w", sigErr)
+		signed, signErr := s.signUnsigned(ctx, adapter, curve, keys, wallet, signer, &unsigned)
+		if signErr != nil {
+			return "", fmt.Errorf("sign transaction: %w", signErr)
 		}
-
-		signed := &types.SignedTx{ChainID: unsigned.ChainID, RawBytes: sig}
 		hash, bcErr := adapter.BroadcastTransaction(ctx, signed)
 		if bcErr != nil {
 			return "", fmt.Errorf("broadcast: %w", bcErr)
 		}
-
-		isGasSeed := hasGasSeed && idx == 0
 
 		origin := opts.Origin
 		txType := models.TxTypeSweep
@@ -245,7 +224,10 @@ func (s *service) broadcastLeg(
 			Asset:               plan.Asset,
 			Status:              string(types.TxStatusConfirming),
 			RequiredConfs:       int(adapter.RequiredConfirmations()),
+			Direction:           models.TxDirectionSelf,
+			Source:              models.TxSourceWithdrawalFlow,
 			Origin:              origin,
+			RawPayload:          "{}",
 			ParentTransactionID: opts.ParentTransactionID,
 		}
 		if token != nil {
@@ -275,41 +257,17 @@ func (s *service) broadcastWithdrawal(
 	ctx context.Context,
 	adapter types.Chain,
 	curve mpcpkg.Curve,
-	shareA, shareB []byte,
+	keys walletKeys,
 	wallet *models.Wallet,
 	plan *Plan,
 	source models.Address,
 	toAddress, externalUserID string,
 	txID uuid.UUID,
 ) (*models.Transaction, error) {
-	var token *types.Token
-	if plan.Asset != adapter.NativeAsset() {
-		t, err := s.registry.FindToken(plan.Chain, plan.Asset)
-		if err != nil {
-			return nil, fmt.Errorf("find token %q: %w", plan.Asset, err)
-		}
-		token = t
-	}
-
-	unsigned, err := adapter.BuildTransfer(ctx, types.TransferRequest{
-		From:   source.Address,
-		To:     toAddress,
-		Amount: plan.Amount,
-		Asset:  plan.Asset,
-		Token:  token,
-	})
+	signed, token, err := s.signWithdrawalTransfer(ctx, adapter, curve, keys, wallet, plan, source, toAddress)
 	if err != nil {
-		return nil, fmt.Errorf("build transfer: %w", err)
+		return nil, err
 	}
-
-	sig, err := s.mpc.Sign(ctx, curve, shareA, shareB, mpcpkg.SignInputs{
-		TxHashes: [][]byte{unsigned.RawBytes},
-	})
-	if err != nil {
-		return nil, fmt.Errorf("mpc sign: %w", err)
-	}
-
-	signed := &types.SignedTx{ChainID: unsigned.ChainID, RawBytes: sig}
 	hash, err := adapter.BroadcastTransaction(ctx, signed)
 	if err != nil {
 		return nil, fmt.Errorf("broadcast: %w", err)
@@ -330,7 +288,10 @@ func (s *service) broadcastWithdrawal(
 		Asset:          plan.Asset,
 		Status:         string(types.TxStatusConfirming),
 		RequiredConfs:  int(adapter.RequiredConfirmations()),
+		Direction:      models.TxDirectionOutbound,
+		Source:         models.TxSourceWithdrawalFlow,
 		Origin:         models.TxOriginUserRequest,
+		RawPayload:     "{}",
 	}
 	if token != nil {
 		tx.TokenContract = token.Contract
@@ -340,9 +301,171 @@ func (s *service) broadcastWithdrawal(
 		return nil, fmt.Errorf("persist withdrawal: %w", err)
 	}
 	if s.webhookSvc != nil {
-		s.webhookSvc.EnqueueEvent(ctx, tx.ID, types.EventWithdrawalBroadcast, tx)
+		s.webhookSvc.EnqueueEvent(ctx, tx.ID, types.EventWithdrawalBroadcasting, tx)
 	}
 	return tx, nil
+}
+
+// signWithdrawalTransfer builds and signs the transfer of plan.Amount from source to
+// toAddress; the signature is verified against source before it is returned.
+func (s *service) signWithdrawalTransfer(
+	ctx context.Context,
+	adapter types.Chain,
+	curve mpcpkg.Curve,
+	keys walletKeys,
+	wallet *models.Wallet,
+	plan *Plan,
+	source models.Address,
+	toAddress string,
+) (*types.SignedTx, *types.Token, error) {
+	token, err := s.planAssetToken(adapter, plan)
+	if err != nil {
+		return nil, nil, err
+	}
+	unsigned, err := adapter.BuildTransfer(ctx, types.TransferRequest{
+		From:   source.Address,
+		To:     toAddress,
+		Amount: plan.Amount,
+		Asset:  plan.Asset,
+		Token:  token,
+	})
+	if err != nil {
+		return nil, nil, fmt.Errorf("build transfer: %w", err)
+	}
+	signed, err := s.signUnsigned(ctx, adapter, curve, keys, wallet, source, unsigned)
+	if err != nil {
+		return nil, nil, fmt.Errorf("sign transaction: %w", err)
+	}
+	return signed, token, nil
+}
+
+// planAssetToken is the token a plan moves, or nil for the chain's native asset.
+func (s *service) planAssetToken(adapter types.Chain, plan *Plan) (*types.Token, error) {
+	if types.SameAssetSymbol(plan.Asset, adapter.NativeAsset()) {
+		return nil, nil
+	}
+	token, err := s.registry.FindToken(plan.Chain, plan.Asset)
+	if err != nil {
+		return nil, fmt.Errorf("find token %q: %w", plan.Asset, err)
+	}
+	return token, nil
+}
+
+// buildSweepLeg returns the unsigned transactions of one sweep leg, in broadcast
+// order: an optional gas seed from the base address, then the sweep itself.
+func (s *service) buildSweepLeg(
+	ctx context.Context,
+	adapter types.Chain,
+	wallet *models.Wallet,
+	plan *Plan,
+	leg PlannedSweep,
+) ([]types.UnsignedTx, *types.Token, error) {
+	nativeBal, err := adapter.GetBalance(ctx, leg.From.Address)
+	if err != nil {
+		return nil, nil, fmt.Errorf("native balance for %s: %w", leg.From.Address, err)
+	}
+	token, err := s.planAssetToken(adapter, plan)
+	if err != nil {
+		return nil, nil, err
+	}
+	unsigneds, err := adapter.BuildSweep(ctx, types.SweepRequest{
+		From:          leg.From.Address,
+		To:            wallet.DepositAddress.Address,
+		Asset:         plan.Asset,
+		Amount:        leg.Amount,
+		NativeBalance: nativeBal.Amount,
+		Token:         token,
+	})
+	if err != nil {
+		return nil, nil, fmt.Errorf("build sweep: %w", err)
+	}
+	if len(unsigneds) == 0 {
+		return nil, nil, fmt.Errorf("adapter returned no txs for sweep leg")
+	}
+	return unsigneds, token, nil
+}
+
+// sweepLegSigner is the address whose key signs transaction idx of a leg: the base
+// address for the gas seed, the child for the sweep.
+func sweepLegSigner(wallet *models.Wallet, leg PlannedSweep, legTxCount, idx int) (models.Address, bool) {
+	isGasSeed := legTxCount > 1 && idx == 0
+	if isGasSeed {
+		return *wallet.DepositAddress, true
+	}
+	return leg.From, false
+}
+
+func localSignChain(chainID string) bool {
+	switch chainID {
+	case models.ChainSOL, models.ChainTSOL, models.ChainBTC, models.ChainTBTC:
+		return true
+	default:
+		return false
+	}
+}
+
+// signUnsigned signs a transaction whose only signer is `signer`, with the key that
+// owns signer's address: the wallet key for the base address, its derived key for a
+// child.
+func (s *service) signUnsigned(ctx context.Context, adapter types.Chain, curve mpcpkg.Curve, keys walletKeys, wallet *models.Wallet, signer models.Address, unsigned *types.UnsignedTx) (*types.SignedTx, error) {
+	if unsigned == nil {
+		return nil, fmt.Errorf("unsigned transaction is required")
+	}
+	switch curve {
+	case mpcpkg.CurveEd25519:
+		if !localSignChain(unsigned.ChainID) {
+			return nil, fmt.Errorf("chain %s cannot sign with an ed25519 wallet", unsigned.ChainID)
+		}
+		return s.signEd25519(ctx, adapter, keys, wallet, signer, unsigned)
+	case mpcpkg.CurveSecp256k1:
+		key, err := resolveSecp256k1Signer(adapter, wallet, signer)
+		if err != nil {
+			return nil, err
+		}
+		var signed *types.SignedTx
+		if localSignChain(unsigned.ChainID) {
+			signed, err = s.signSecp256k1Local(ctx, adapter, keys, key, wallet.MPCPublicKey, unsigned)
+		} else {
+			signed, err = s.signSecp256k1MPC(ctx, adapter, keys, key, unsigned)
+		}
+		if err != nil {
+			return nil, err
+		}
+		if err := verifySignedBy(adapter, unsigned, signed, signer.Address); err != nil {
+			return nil, err
+		}
+		return signed, nil
+	default:
+		return nil, fmt.Errorf("unsupported curve %s", curve)
+	}
+}
+
+// finalizeMPCTransaction attaches the threshold signature; finalizing adapters
+// (EVM) recover the signer against publicKey and fail when it does not match.
+func finalizeMPCTransaction(
+	adapter types.Chain,
+	unsigned *types.UnsignedTx,
+	signature []byte,
+	publicKey []byte,
+) (*types.SignedTx, error) {
+	if adapter == nil {
+		return nil, fmt.Errorf("chain adapter is required")
+	}
+	if unsigned == nil {
+		return nil, fmt.Errorf("unsigned transaction is required")
+	}
+	if len(signature) == 0 {
+		return nil, fmt.Errorf("MPC signature is required")
+	}
+
+	finalizer, requiresFinalization := adapter.(types.MPCSignatureFinalizer)
+	if !requiresFinalization {
+		return &types.SignedTx{ChainID: unsigned.ChainID, RawBytes: signature}, nil
+	}
+	if len(publicKey) == 0 {
+		return nil, fmt.Errorf("signing public key is required")
+	}
+	return finalizer.FinalizeMPCSignature(unsigned, signature, publicKey)
 }
 
 // fetchShareB resolves the service's MPC share for `wallet`. Production paths

@@ -12,6 +12,7 @@ import (
 
 	"github.com/macrowallets/waas/app/models"
 	mpcpkg "github.com/macrowallets/waas/app/services/mpc"
+	"github.com/macrowallets/waas/pkg/types"
 )
 
 // ConsolidateAll sweeps every eligible child balance for `asset` into the
@@ -84,7 +85,82 @@ func (s *service) ConsolidateAll(
 		return nil, fmt.Errorf("sweep: adapter not registered for %q: %w", wallet.Chain, err)
 	}
 
-	children, err := s.addressRepo.FindByWalletID(walletID)
+	plan, err := s.planConsolidation(ctx, adapter, wallet, chainEntity.AdapterType, asset, limits)
+	if err != nil {
+		return nil, err
+	}
+	if plan == nil {
+		return &Result{}, nil
+	}
+
+	// Decrypt share A BEFORE incrementing the daily quota. An invalid
+	// passphrase or any failure up to this point must not consume quota —
+	// otherwise a caller who mistypes their passphrase can lock themselves
+	// out of the day's consolidations.
+	shareA, err := s.decryptShareA(wallet, passphrase)
+	if err != nil {
+		return nil, err
+	}
+	defer zeroBytes(shareA)
+
+	if err := s.incrDailyQuota(ctx, callerAccountID, limits); err != nil {
+		return nil, err
+	}
+
+	shareB, err := s.fetchShareB(ctx, wallet)
+	if err != nil {
+		return nil, err
+	}
+	defer zeroBytes(shareB)
+
+	curve := mpcpkg.Curve(wallet.MPCCurve)
+	keys := walletKeys{shareA: shareA, shareB: shareB, passphrase: passphrase}
+	result := &Result{EstimatedGas: copyBigInt(plan.EstimatedGas)}
+
+	for i, leg := range plan.Sweeps {
+		sweepTxID := uuid.New()
+		hash, err := s.broadcastLeg(
+			ctx, adapter, curve, keys, wallet, plan, leg, sweepTxID,
+			legBroadcastOpts{
+				Origin:              models.TxOriginManualConsolidation,
+				ParentTransactionID: nil,
+			},
+		)
+		if err != nil {
+			slog.Error(
+				"consolidate leg failed",
+				"index", i,
+				"child", leg.From.Address,
+				"wallet_id", wallet.ID,
+				"error", err,
+			)
+			result.FailedStep = &FailedStep{
+				Index:      i,
+				LastError:  err.Error(),
+				RetryReady: true,
+			}
+			return result, nil
+		}
+		result.Sweeps = append(result.Sweeps, CompletedSweep{
+			From:         leg.From,
+			TxHash:       hash,
+			InternalTxID: sweepTxID,
+		})
+	}
+	return result, nil
+}
+
+// planConsolidation is the multi-sweep plan that moves every eligible child balance
+// of asset to the base address, or nil when no child holds a sweepable amount.
+func (s *service) planConsolidation(
+	ctx context.Context,
+	adapter types.Chain,
+	wallet *models.Wallet,
+	adapterType string,
+	asset string,
+	limits *Limits,
+) (*Plan, error) {
+	children, err := s.addressRepo.FindByWalletID(wallet.ID)
 	if err != nil {
 		return nil, fmt.Errorf("sweep: list children: %w", err)
 	}
@@ -114,10 +190,10 @@ func (s *service) ConsolidateAll(
 	}
 
 	if len(eligible) == 0 {
-		return &Result{}, nil
+		return nil, nil
 	}
 
-	if err := checkAddressesPerRequest(chainEntity.AdapterType, len(eligible), limits); err != nil {
+	if err := checkAddressesPerRequest(adapterType, len(eligible), limits); err != nil {
 		return nil, err
 	}
 
@@ -125,18 +201,29 @@ func (s *service) ConsolidateAll(
 		return eligible[i].balance.Cmp(eligible[j].balance) > 0
 	})
 
+	reserve, err := loadNativeReserve(ctx, adapter, asset)
+	if err != nil {
+		return nil, err
+	}
 	totalAmount := new(big.Int)
 	sweeps := make([]PlannedSweep, 0, len(eligible))
 	for _, cb := range eligible {
+		swept := reserve.sweepableAmount(cb.balance)
+		if swept.Sign() <= 0 {
+			continue
+		}
 		sweeps = append(sweeps, PlannedSweep{
 			From:     cb.addr,
-			Amount:   new(big.Int).Set(cb.balance),
+			Amount:   swept,
 			NeedsGas: chainNeedsGasSeed(wallet.Chain),
 		})
-		totalAmount.Add(totalAmount, cb.balance)
+		totalAmount.Add(totalAmount, swept)
+	}
+	if len(sweeps) == 0 {
+		return nil, nil
 	}
 	plan := &Plan{
-		WalletID:      walletID,
+		WalletID:      wallet.ID,
 		Chain:         wallet.Chain,
 		Asset:         asset,
 		Amount:        totalAmount,
@@ -144,62 +231,13 @@ func (s *service) ConsolidateAll(
 		Sweeps:        sweeps,
 		ReachesTarget: true,
 	}
-	plan.EstimatedGas = estimatePlanGas(ctx, adapter, plan)
-
-	// Decrypt share A BEFORE incrementing the daily quota. An invalid
-	// passphrase or any failure up to this point must not consume quota —
-	// otherwise a caller who mistypes their passphrase can lock themselves
-	// out of the day's consolidations.
-	shareA, err := s.decryptShareA(wallet, passphrase)
+	plan.EstimatedGas, err = s.estimatePlanGas(ctx, adapter, plan, gasPlanTarget{
+		baseAddress: wallet.DepositAddress.Address,
+	})
 	if err != nil {
 		return nil, err
 	}
-	defer zeroBytes(shareA)
-
-	if err := s.incrDailyQuota(ctx, callerAccountID, limits); err != nil {
-		return nil, err
-	}
-
-	shareB, err := s.fetchShareB(ctx, wallet)
-	if err != nil {
-		return nil, err
-	}
-	defer zeroBytes(shareB)
-
-	curve := mpcpkg.Curve(wallet.MPCCurve)
-	result := &Result{EstimatedGas: copyBigInt(plan.EstimatedGas)}
-
-	for i, leg := range plan.Sweeps {
-		sweepTxID := uuid.New()
-		hash, err := s.broadcastLeg(
-			ctx, adapter, curve, shareA, shareB, wallet, plan, leg, sweepTxID,
-			legBroadcastOpts{
-				Origin:              models.TxOriginManualConsolidation,
-				ParentTransactionID: nil,
-			},
-		)
-		if err != nil {
-			slog.Error(
-				"consolidate leg failed",
-				"index", i,
-				"child", leg.From.Address,
-				"wallet_id", wallet.ID,
-				"error", err,
-			)
-			result.FailedStep = &FailedStep{
-				Index:      i,
-				LastError:  err.Error(),
-				RetryReady: true,
-			}
-			return result, nil
-		}
-		result.Sweeps = append(result.Sweeps, CompletedSweep{
-			From:         leg.From,
-			TxHash:       hash,
-			InternalTxID: sweepTxID,
-		})
-	}
-	return result, nil
+	return plan, nil
 }
 
 // decryptShareA reverses the AES-GCM envelope stored on the wallet row so the

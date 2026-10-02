@@ -22,7 +22,7 @@ func TestEVMGasReadinessThreshold(t *testing.T) {
 
 // TestEVMEstimateGasPrice proves the adapter returns the raw wei-valued price
 // fetched from `eth_gasPrice` so the sweep planner can multiply by the
-// hardcoded gas limits without an additional conversion step.
+// hardcoded gas limits and applies the execution safety multiplier.
 func TestEVMEstimateGasPrice(t *testing.T) {
 	var seenMethod string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -44,7 +44,7 @@ func TestEVMEstimateGasPrice(t *testing.T) {
 	if seenMethod != "eth_gasPrice" {
 		t.Fatalf("expected RPC method eth_gasPrice, got %q", seenMethod)
 	}
-	want := big.NewInt(20_000_000_000)
+	want := big.NewInt(40_000_000_000)
 	if got == nil || got.Cmp(want) != 0 {
 		t.Fatalf("expected %s, got %v", want.String(), got)
 	}

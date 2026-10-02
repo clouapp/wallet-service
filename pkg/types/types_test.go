@@ -7,7 +7,7 @@ import (
 func TestEventTypes(t *testing.T) {
 	events := []EventType{
 		EventDepositPending, EventDepositConfirming, EventDepositConfirmed, EventDepositFailed,
-		EventWithdrawalPending, EventWithdrawalSigned, EventWithdrawalBroadcast, EventWithdrawalConfirmed, EventWithdrawalFailed,
+		EventWithdrawalPending, EventWithdrawalSigned, EventWithdrawalBroadcasting, EventWithdrawalBroadcast, EventWithdrawalConfirmed, EventWithdrawalFailed,
 	}
 
 	seen := make(map[EventType]bool)
@@ -21,8 +21,8 @@ func TestEventTypes(t *testing.T) {
 		}
 	}
 
-	if len(events) != 9 {
-		t.Errorf("expected 9 event types, got %d", len(events))
+	if len(events) != 10 {
+		t.Errorf("expected 10 event types, got %d", len(events))
 	}
 }
 

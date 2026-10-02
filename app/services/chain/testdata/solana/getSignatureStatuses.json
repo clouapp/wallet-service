@@ -1,0 +1,45 @@
+{
+ "jsonrpc": "2.0",
+ "result": {
+  "context": {
+   "apiVersion": "4.3.0",
+   "slot": 506367988
+  },
+  "value": [
+   {
+    "confirmationStatus": "finalized",
+    "confirmations": null,
+    "err": null,
+    "slot": 506367800,
+    "status": {
+     "Ok": null
+    }
+   },
+   {
+    "confirmationStatus": "finalized",
+    "confirmations": null,
+    "err": {
+     "InstructionError": [
+      0,
+      {
+       "Custom": 56
+      }
+     ]
+    },
+    "slot": 506367800,
+    "status": {
+     "Err": {
+      "InstructionError": [
+       0,
+       {
+        "Custom": 56
+       }
+      ]
+     }
+    }
+   },
+   null
+  ]
+ },
+ "id": 1
+}

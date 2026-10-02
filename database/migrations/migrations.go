@@ -36,5 +36,9 @@ func All() []schema.Migration {
 		&M00000000000220CreateWalletAssetBalancesTable{},
 		&M00000000000230CreateWalletUtxosTable{},
 		&M00000000000240CreateWalletSyncStatesTable{},
+		&M00000000000250AddFailureReasonToWithdrawals{},
+		&M00000000000260AddWebhookOwnershipAndDedup{},
+		&M00000000000270RenamePolygonNativeMaticToPol{},
+		&M00000000000280EnforceNonNegativeAmounts{},
 	}
 }

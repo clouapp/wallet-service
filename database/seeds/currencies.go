@@ -41,7 +41,7 @@ func seedCryptos() error {
 		{"Bitcoin", "BTC", "₿", 8, true, cmcBase + "/1.png"},
 		{"Ethereum", "ETH", "Ξ", 18, true, cmcBase + "/1027.png"},
 		{"Solana", "SOL", "◎", 9, true, cmcBase + "/5426.png"},
-		{"Polygon", "MATIC", "MATIC", 18, true, cmcBase + "/3890.png"},
+		{"Polygon", "POL", "POL", 18, true, cmcBase + "/3890.png"},
 		{"Litecoin", "LTC", "Ł", 8, true, cmcBase + "/2.png"},
 		{"Dogecoin", "DOGE", "Ð", 8, true, cmcBase + "/74.png"},
 		{"Tether", "USDT", "₮", 6, true, cmcBase + "/825.png"},

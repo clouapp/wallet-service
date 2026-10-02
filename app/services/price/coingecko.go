@@ -10,7 +10,7 @@ import (
 )
 
 var geckoIDMap = map[string]string{
-	"BTC": "bitcoin", "ETH": "ethereum", "SOL": "solana", "MATIC": "matic-network",
+	"BTC": "bitcoin", "ETH": "ethereum", "SOL": "solana", "MATIC": "matic-network", "POL": "polygon-ecosystem-token",
 	"LTC": "litecoin", "DOGE": "dogecoin", "USDT": "tether", "USDC": "usd-coin",
 	"XRP": "ripple", "BNB": "binancecoin", "TRX": "tron", "ADA": "cardano",
 	"DOT": "polkadot", "LINK": "chainlink", "AVAX": "avalanche-2", "BCH": "bitcoin-cash",

@@ -21,6 +21,11 @@ func NewWalletUTXORepository() WalletUTXORepository {
 }
 
 func (r *walletUTXORepository) ReplaceForWallet(walletID uuid.UUID, chainID string, rows []models.WalletUTXO) error {
+	for i := range rows {
+		if err := rows[i].ValidateAmounts(); err != nil {
+			return err
+		}
+	}
 	return facades.Orm().Transaction(func(tx contractsorm.Query) error {
 		_, err := tx.Where("wallet_id = ? AND chain_id = ?", walletID, chainID).
 			ForceDelete(&models.WalletUTXO{})

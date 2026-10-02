@@ -15,6 +15,20 @@ const (
 )
 
 const (
+	TxDirectionInbound  = "inbound"
+	TxDirectionOutbound = "outbound"
+	TxDirectionSelf     = "self"
+	TxDirectionUnknown  = "unknown"
+)
+
+const (
+	TxSourceChain          = "chain"
+	TxSourceDepositIngest  = "deposit_ingest"
+	TxSourceWithdrawalFlow = "withdrawal_flow"
+	TxSourceReconciliation = "reconciliation"
+)
+
+const (
 	TxTypeDeposit       = "deposit"
 	TxTypeWithdrawal    = "withdrawal"
 	TxTypeTransfer      = "transfer"

@@ -9,9 +9,7 @@ import (
 	"time"
 )
 
-var coinAPIAssetMapping = map[string]string{
-	"MATIC": "POL",
-}
+var coinAPIAssetMapping = map[string]string{}
 
 var coinAPIReverseMapping map[string]string
 

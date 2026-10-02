@@ -1,10 +1,13 @@
 package repositories
 
 import (
+	"fmt"
+
 	"github.com/google/uuid"
 	"github.com/goravel/framework/facades"
 
 	"github.com/macrowallets/waas/app/models"
+	"github.com/macrowallets/waas/pkg/amount"
 	"github.com/macrowallets/waas/pkg/types"
 )
 
@@ -31,6 +34,12 @@ func NewTransactionRepository() TransactionRepository {
 }
 
 func (r *transactionRepository) Create(tx *models.Transaction) error {
+	if tx == nil {
+		return fmt.Errorf("transaction is required")
+	}
+	if err := tx.ValidateAmounts(); err != nil {
+		return err
+	}
 	return facades.Orm().Query().Create(tx)
 }
 
@@ -155,6 +164,9 @@ func (r *transactionRepository) FindPendingByChain(chainID string) ([]models.Tra
 }
 
 func (r *transactionRepository) UpdateFields(id uuid.UUID, fields map[string]interface{}) error {
+	if err := amount.RequireNonNegativeColumns(fields, models.TransactionAmountColumns...); err != nil {
+		return err
+	}
 	_, err := facades.Orm().Query().
 		Model(&models.Transaction{}).
 		Where("id", id).

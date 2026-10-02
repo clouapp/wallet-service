@@ -3,6 +3,8 @@ package controllers
 import (
 	"errors"
 	"fmt"
+	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -15,6 +17,8 @@ import (
 	"github.com/macrowallets/waas/app/models"
 	authsvc "github.com/macrowallets/waas/app/services/auth"
 	mpcpkg "github.com/macrowallets/waas/app/services/mpc"
+	"github.com/macrowallets/waas/app/services/withdraw"
+	"github.com/macrowallets/waas/app/services/withdrawalevents"
 	"github.com/macrowallets/waas/pkg/types"
 )
 
@@ -140,25 +144,194 @@ func CreateWalletWithdrawal(ctx http.Context) http.Response {
 		return errResp
 	}
 
-	w := &models.Withdrawal{
-		ID:                 uuid.New(),
-		WalletID:           wallet.ID,
-		Status:             "pending",
-		Amount:             req.Amount,
-		DestinationAddress: req.DestinationAddress,
-		Note:               req.Note,
-	}
-	if isDashboardCaller {
-		w.CreatedBy = &callerUserID
-	}
-	if wallet.AccountID != nil {
-		w.AccountID = wallet.AccountID
+	adapter, err := container.Get().Registry.Chain(wallet.Chain)
+	if err != nil {
+		return ctx.Response().Json(http.StatusUnprocessableEntity, http.Json{"error": err.Error()})
 	}
 
-	if err := container.Get().WithdrawalRepo.Create(w); err != nil {
-		return ctx.Response().Json(http.StatusInternalServerError, http.Json{"error": "failed to create withdrawal"})
+	chainEntity, chainErr := container.Get().ChainRepo.FindByID(wallet.Chain)
+	if chainErr != nil || chainEntity == nil {
+		return ctx.Response().Json(http.StatusUnprocessableEntity, http.Json{"error": "chain not found"})
 	}
+	resolved, resolveErr := withdraw.ResolveWithdrawalAmount(
+		wallet.Chain,
+		adapter.NativeAsset(),
+		chainEntity.NativeDecimals,
+		req.Asset,
+		req.Amount,
+		container.Get().Registry.TokensForChain(wallet.Chain),
+	)
+	if resolveErr != nil {
+		return ctx.Response().Json(http.StatusUnprocessableEntity, http.Json{"error": resolveErr.Error()})
+	}
+
+	callerAccountID, _ := ctx.Value("account_id").(uuid.UUID)
+	if callerAccountID == uuid.Nil && wallet.AccountID != nil {
+		callerAccountID = *wallet.AccountID
+	}
+
+	withdrawalID, err := withdrawalIDFromIdempotencyKey(req.IdempotencyKey)
+	if err != nil {
+		return ctx.Response().Json(http.StatusBadRequest, http.Json{"error": err.Error()})
+	}
+	idempotencyKey := req.IdempotencyKey
+	if idempotencyKey == "" {
+		idempotencyKey = withdrawalID.String()
+	}
+	if wallet.DepositAddress == nil {
+		return ctx.Response().Json(http.StatusUnprocessableEntity, http.Json{
+			"error": "wallet has no deposit address",
+		})
+	}
+	feeEstimate := "0"
+	feeReq := types.TransferRequest{
+		From:   wallet.DepositAddress.Address,
+		To:     req.DestinationAddress,
+		Amount: resolved.BaseUnits,
+		Asset:  resolved.WalletAsset,
+	}
+	if resolved.Token != nil {
+		feeReq.Token = resolved.Token
+		feeReq.Asset = resolved.WalletAsset
+	}
+	if estimate, estimateErr := adapter.EstimateFee(ctx.Context(), feeReq); estimateErr == nil && estimate != nil && estimate.Fee != "" {
+		feeEstimate = estimate.Fee
+	}
+
+	existing, findErr := container.Get().WithdrawalRepo.FindByIDAndWallet(withdrawalID, wallet.ID)
+	if findErr != nil {
+		return MapInternalError(ctx, findErr, "find_idempotent_withdrawal")
+	}
+	if existing != nil && (existing.Status == "broadcast" || existing.Status == "confirmed") {
+		return ctx.Response().Json(http.StatusOK, existing)
+	}
+
+	w := existing
+	if w == nil {
+		w = &models.Withdrawal{
+			ID:                 withdrawalID,
+			WalletID:           wallet.ID,
+			Status:             "broadcasting",
+			Amount:             req.Amount,
+			DestinationAddress: req.DestinationAddress,
+			FeeEstimate:        feeEstimate,
+			Note:               req.Note,
+		}
+		if isDashboardCaller {
+			w.CreatedBy = &callerUserID
+		}
+		if wallet.AccountID != nil {
+			w.AccountID = wallet.AccountID
+		}
+		if createErr := container.Get().WithdrawalRepo.Create(w); createErr != nil {
+			return MapInternalError(ctx, createErr, "create_broadcasting_withdrawal")
+		}
+	} else {
+		if updateErr := container.Get().WithdrawalRepo.UpdateFields(w.ID, map[string]any{
+			"status":              "broadcasting",
+			"failure_reason":      nil,
+			"amount":              req.Amount,
+			"destination_address": req.DestinationAddress,
+			"fee_estimate":        feeEstimate,
+			"note":                req.Note,
+		}); updateErr != nil {
+			return MapInternalError(ctx, updateErr, "retry_broadcasting_withdrawal")
+		}
+		w.Status = "broadcasting"
+	}
+
+	tx, _, err := container.Get().WithdrawalService.Request(ctx.Context(), withdraw.WithdrawRequest{
+		WalletID:        wallet.ID,
+		ToAddress:       req.DestinationAddress,
+		Amount:          resolved.BaseUnits.String(),
+		Asset:           resolved.WalletAsset,
+		Passphrase:      req.Passphrase,
+		IdempotencyKey:  idempotencyKey,
+		CallerAccountID: callerAccountID,
+	})
+	if err != nil {
+		failureCode := withdrawalFailureCode(err)
+		if updateErr := container.Get().WithdrawalRepo.UpdateFields(w.ID, map[string]any{
+			"status":         models.WithdrawalStatusFailed,
+			"failure_reason": failureCode,
+		}); updateErr != nil {
+			return MapInternalError(
+				ctx,
+				fmt.Errorf("execute withdrawal: %v; mark failed: %w", err, updateErr),
+				"mark_withdrawal_failed",
+			)
+		}
+		w.Status = models.WithdrawalStatusFailed
+		publishWithdrawalFailed(ctx, w, failureCode, withdrawalevents.FailedAttempt{
+			Chain:     wallet.Chain,
+			Asset:     resolved.WalletAsset,
+			BaseUnits: resolved.BaseUnits,
+		})
+		if resp := MapSweepError(ctx, err); resp != nil {
+			return resp
+		}
+		switch {
+		case errors.Is(err, withdraw.ErrInvalidPassphrase):
+			return ctx.Response().Json(http.StatusUnauthorized, http.Json{"error": err.Error()})
+		case errors.Is(err, withdraw.ErrPassphraseTooShort):
+			return ctx.Response().Json(http.StatusBadRequest, http.Json{"error": err.Error()})
+		case errors.Is(err, withdraw.ErrInsufficientFunds):
+			return ctx.Response().Json(http.StatusUnprocessableEntity, http.Json{"error": err.Error()})
+		case errors.Is(err, withdraw.ErrConcurrentWithdraw):
+			return ctx.Response().Json(http.StatusConflict, http.Json{"error": err.Error()})
+		case errors.Is(err, withdraw.ErrTooManyAttempts):
+			return ctx.Response().Json(http.StatusTooManyRequests, http.Json{"error": err.Error()})
+		default:
+			return MapInternalError(ctx, err, "create_wallet_withdrawal")
+		}
+	}
+
+	w.Status = "broadcast"
+	if tx != nil {
+		w.TransactionID = &tx.ID
+		w.TxHash = tx.TxHash
+	}
+	if updateErr := container.Get().WithdrawalRepo.UpdateFields(w.ID, map[string]any{
+		"status":         w.Status,
+		"transaction_id": w.TransactionID,
+	}); updateErr != nil {
+		return MapInternalError(ctx, updateErr, "persist_broadcast_withdrawal")
+	}
+	publishWithdrawalBroadcast(ctx, w, tx)
 	return ctx.Response().Json(http.StatusCreated, w)
+}
+
+// Webhook publishing never changes the HTTP outcome: the withdrawal is already
+// persisted, and the confirmation tracker backfill repairs a lost confirmation.
+func publishWithdrawalBroadcast(ctx http.Context, w *models.Withdrawal, tx *models.Transaction) {
+	publisher := container.Get().WithdrawalEvents
+	if publisher == nil || tx == nil {
+		return
+	}
+	if err := publisher.PublishBroadcast(ctx.Context(), w, tx); err != nil {
+		slog.Error("publish withdrawal.broadcast", "withdrawal_id", w.ID, "error", err)
+	}
+}
+
+func publishWithdrawalFailed(ctx http.Context, w *models.Withdrawal, failureCode string, attempt withdrawalevents.FailedAttempt) {
+	publisher := container.Get().WithdrawalEvents
+	if publisher == nil {
+		return
+	}
+	if err := publisher.PublishFailed(ctx.Context(), w, failureCode, attempt); err != nil {
+		slog.Error("publish withdrawal.failed", "withdrawal_id", w.ID, "error", err)
+	}
+}
+
+func withdrawalIDFromIdempotencyKey(idempotencyKey string) (uuid.UUID, error) {
+	if strings.TrimSpace(idempotencyKey) == "" {
+		return uuid.New(), nil
+	}
+	id, err := uuid.Parse(idempotencyKey)
+	if err != nil {
+		return uuid.Nil, fmt.Errorf("idempotency_key must be a UUID")
+	}
+	return id, nil
 }
 
 func verifyWalletPassphrase(ctx http.Context, wallet *models.Wallet, passphrase string) http.Response {
@@ -220,6 +393,60 @@ func GetWalletWithdrawal(ctx http.Context) http.Response {
 	return ctx.Response().Json(http.StatusOK, w)
 }
 
+// GetWalletWithdrawalByIdempotencyKey godoc
+// @Summary      Look up a withdrawal by idempotency key
+// @Description  Returns the outcome of a withdrawal created with the given idempotency_key (the key is also the withdrawal id). Lets a client that lost the create response learn whether the withdrawal was broadcast or failed. Scoped to the token's account.
+// @Tags         Wallet Withdrawals
+// @Security     BearerAuth
+// @Produce      json
+// @Param        walletId        path  string  true  "Wallet UUID"
+// @Param        idempotencyKey  path  string  true  "Idempotency key (UUID) sent when the withdrawal was created"
+// @Success      200  {object}  WithdrawalLookupResponse
+// @Failure      400  {object}  ErrorResponse  "idempotency_key must be a UUID"
+// @Failure      401  {object}  ErrorResponse
+// @Failure      404  {object}  ErrorResponse  "wallet not found / withdrawal not found"
+// @Router       /api/v1/wallets/{walletId}/withdrawals/{idempotencyKey} [get]
+func GetWalletWithdrawalByIdempotencyKey(ctx http.Context) http.Response {
+	wallet := ctx.Value("wallet").(*models.Wallet)
+
+	withdrawalID, err := uuid.Parse(strings.TrimSpace(ctx.Request().Route("idempotencyKey")))
+	if err != nil {
+		return ctx.Response().Json(http.StatusBadRequest, http.Json{"error": "idempotency_key must be a UUID"})
+	}
+
+	w, err := container.Get().WithdrawalRepo.FindByIDAndWallet(withdrawalID, wallet.ID)
+	if err != nil || w == nil {
+		return ctx.Response().Json(http.StatusNotFound, http.Json{"error": "withdrawal not found"})
+	}
+
+	response := WithdrawalLookupResponse{
+		ID:                 w.ID.String(),
+		IdempotencyKey:     w.ID.String(),
+		WalletID:           w.WalletID.String(),
+		Status:             w.Status,
+		Amount:             w.Amount,
+		DestinationAddress: w.DestinationAddress,
+		FailureReason:      w.FailureReason,
+		CreatedAt:          w.CreatedAt,
+		UpdatedAt:          w.UpdatedAt,
+	}
+
+	if w.TransactionID != nil {
+		tx, txErr := container.Get().TransactionRepo.FindByID(*w.TransactionID)
+		if txErr != nil {
+			return MapInternalError(ctx, txErr, "lookup_withdrawal_transaction")
+		}
+		if tx != nil {
+			if tx.TxHash != "" {
+				response.TxHash = &tx.TxHash
+			}
+			response.TransactionStatus = &tx.Status
+		}
+	}
+
+	return ctx.Response().Json(http.StatusOK, response)
+}
+
 // CancelWalletWithdrawal godoc
 // @Summary      Cancel a pending withdrawal
 // @Description  Cancels a withdrawal that is still in 'pending' status. Requires the creator or an owner/admin.
@@ -276,6 +503,7 @@ type CreateWalletWithdrawalSwagger struct {
 	Note               string `json:"note,omitempty" example:"Monthly payment"`
 	Passphrase         string `json:"passphrase" example:"my-secure-wallet-passphrase"`
 	TotpCode           string `json:"totp_code" example:"123456"`
+	Asset              string `json:"asset,omitempty" example:"USDT"`
 }
 
 type EstimateWithdrawalSwagger struct {

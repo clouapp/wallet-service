@@ -36,16 +36,19 @@ func Boot() contractsfoundation.Application {
 				&commands.RefreshAddress{},
 				&commands.RefreshCurrency{},
 				&commands.RefreshTx{},
+				&commands.ScanDeposits{},
 				&commands.ReconcileWallet{},
 				&commands.PriceWebSocket{},
 				&commands.PriceCheckUpdate{},
 				&commands.ChainsSetRPC{},
+				&commands.ChainsAlignNetwork{},
+				&commands.WithdrawPreflight{},
 			}
 		}).
 		WithEvents(func() map[contractsevent.Event][]contractsevent.Listener {
 			return map[contractsevent.Event][]contractsevent.Listener{
-				&events.WalletCreated{}:         {&listeners.EnqueueWalletRefresh{}},
-				&events.WalletActivated{}:       {&listeners.EnqueueWalletRefresh{}},
+				&events.WalletCreated{}:          {&listeners.EnqueueWalletRefresh{}},
+				&events.WalletActivated{}:        {&listeners.EnqueueWalletRefresh{}},
 				&events.DepositDetected{}:        {&listeners.EnqueueTransactionRefresh{}},
 				&events.WithdrawalBroadcasted{}:  {&listeners.EnqueueWalletRefresh{}},
 				&events.WalletRefreshRequested{}: {&listeners.EnqueueWalletRefresh{}},

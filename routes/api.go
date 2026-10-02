@@ -38,6 +38,7 @@ func RegisterExternalAPI() {
 			r.Post("/gas-check", controllers.ForceGasCheck)
 			r.Post("/withdraw/preview", controllers.PreviewWithdraw)
 			r.Post("/withdrawals", controllers.CreateWalletWithdrawal)
+			r.Get("/withdrawals/{idempotencyKey}", controllers.GetWalletWithdrawalByIdempotencyKey)
 		})
 
 		router.Get("/transactions", controllers.ListTransactions)
@@ -46,5 +47,6 @@ func RegisterExternalAPI() {
 
 		router.Post("/webhooks", controllers.CreateWebhook)
 		router.Get("/webhooks", controllers.ListWebhooks)
+		router.Patch("/webhooks/{webhookId}", controllers.UpdateWebhook)
 	})
 }

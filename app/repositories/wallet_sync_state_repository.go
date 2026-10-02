@@ -48,6 +48,7 @@ func (r *walletSyncStateRepository) Upsert(state *models.WalletSyncState) error 
 		return facades.Orm().Query().Create(state)
 	}
 	state.ID = existing.ID
+	state.CreatedAt = existing.CreatedAt
 	return facades.Orm().Query().Save(state)
 }
 

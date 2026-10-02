@@ -11,6 +11,7 @@ import (
 	"github.com/macrowallets/waas/app/repositories"
 	chainpkg "github.com/macrowallets/waas/app/services/chain"
 	"github.com/macrowallets/waas/app/services/deposit"
+	"github.com/macrowallets/waas/app/services/depositevents"
 	"github.com/macrowallets/waas/app/services/ingest"
 	"github.com/macrowallets/waas/app/services/ingest/providers"
 	mpc 	"github.com/macrowallets/waas/app/services/mpc"
@@ -22,6 +23,7 @@ import (
 	"github.com/macrowallets/waas/app/services/webhook"
 	"github.com/macrowallets/waas/app/services/webhooksync"
 	"github.com/macrowallets/waas/app/services/withdraw"
+	"github.com/macrowallets/waas/app/services/withdrawalevents"
 	"github.com/redis/go-redis/v9"
 )
 
@@ -72,6 +74,8 @@ type Container struct {
 	WithdrawalService     *withdraw.Service
 	SweepService          sweep.Service
 	WebhookService        *webhook.Service
+	WithdrawalEvents      *withdrawalevents.Publisher
+	DepositEvents         *depositevents.Publisher
 	IngestService         *ingest.Service
 	BalanceRefreshService *refresh.BalanceService
 }

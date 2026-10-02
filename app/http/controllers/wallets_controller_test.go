@@ -30,14 +30,13 @@ func TestWalletsControllerSuite(t *testing.T) {
 
 // Note on wallet creation coverage
 // --------------------------------
-// The happy-path POST /api/v1/wallets test is intentionally NOT migrated:
-// the underlying WalletService.CreateWallet requires the chain registry to
-// have an entry for the target chain (e.g. `eth`), and the chain registry
-// is populated from RPC-reachable providers at bootstrap time — behaviour
-// not suitable for a hermetic integration test. The validator-level create
-// tests below still guarantee the 422 contract for bad inputs, and
-// TestCriticalEndpointsSuite exercises the wallet-bound external API paths
-// against a directly-seeded wallet.
+// The happy-path POST /api/v1/wallets tests live in
+// WalletRecoveryMaterialTestSuite, which swaps the container's wallet service
+// for one backed by mock chain / MPC / Secrets Manager dependencies (the real
+// registry is populated from RPC-reachable providers at bootstrap). The
+// validator-level create tests below guarantee the 422 contract for bad
+// inputs, and TestCriticalEndpointsSuite exercises the wallet-bound external
+// API paths against a directly-seeded wallet.
 
 // TestCreateWallet_MissingChain confirms that the external API rejects a
 // request with no chain. The shared validator maps rule violations to 422

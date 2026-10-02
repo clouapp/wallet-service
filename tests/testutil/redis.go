@@ -3,7 +3,10 @@ package testutil
 import (
 	"context"
 	"fmt"
+	"net"
 	"os"
+	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -14,8 +17,42 @@ import (
 // Redis can never stall the test suite beyond this budget.
 const defaultTestRedisDialTimeout = 500 * time.Millisecond
 
+const (
+	liveRedisDatabase        = 0
+	defaultTestRedisDatabase = 15
+	defaultTestRedisHost     = "localhost"
+	defaultTestRedisPort     = "6379"
+)
+
+// testRedisDatabase is REDIS_DB (set by .env.testing), defaultTestRedisDatabase when unset;
+// the live index is refused.
+func testRedisDatabase() (int, error) {
+	raw := strings.TrimSpace(os.Getenv("REDIS_DB"))
+	if raw == "" {
+		return defaultTestRedisDatabase, nil
+	}
+	database, err := strconv.Atoi(raw)
+	if err != nil || database == liveRedisDatabase {
+		return 0, fmt.Errorf("REDIS_DB must be a non-live Redis index (not %d), got %q", liveRedisDatabase, raw)
+	}
+	return database, nil
+}
+
+// testRedisAddress is TEST_REDIS_ADDR, else localhost:$REDIS_PORT (the dev compose port).
+func testRedisAddress() string {
+	if addr := strings.TrimSpace(os.Getenv("TEST_REDIS_ADDR")); addr != "" {
+		return addr
+	}
+	port := strings.TrimSpace(os.Getenv("REDIS_PORT"))
+	if port == "" {
+		port = defaultTestRedisPort
+	}
+	return net.JoinHostPort(defaultTestRedisHost, port)
+}
+
 // TestRedis returns a Redis client connected to the dev docker-compose Redis
-// instance (waas-redis on localhost:6379, override with TEST_REDIS_ADDR). If
+// instance (waas-redis on localhost:$REDIS_PORT, override with TEST_REDIS_ADDR),
+// on the REDIS_DB index of .env.testing, never the live index 0. If
 // the connection fails the test is SKIPPED (not failed) so the suite stays
 // green when Redis is offline — matching gamba's real-Redis test approach.
 //
@@ -25,13 +62,15 @@ const defaultTestRedisDialTimeout = 500 * time.Millisecond
 func TestRedis(t *testing.T) *redis.Client {
 	t.Helper()
 
-	addr := os.Getenv("TEST_REDIS_ADDR")
-	if addr == "" {
-		addr = "localhost:6379"
+	addr := testRedisAddress()
+	database, err := testRedisDatabase()
+	if err != nil {
+		t.Fatalf("TestRedis: %v", err)
 	}
 
 	client := redis.NewClient(&redis.Options{
 		Addr:         addr,
+		DB:           database,
 		DialTimeout:  defaultTestRedisDialTimeout,
 		ReadTimeout:  defaultTestRedisDialTimeout,
 		WriteTimeout: defaultTestRedisDialTimeout,

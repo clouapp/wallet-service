@@ -18,6 +18,14 @@ const (
 	StrategyInsufficient    Strategy = "insufficient"
 )
 
+// SigningCredentials unlocks a wallet's keys for one plan. ShareA is the customer
+// share already decrypted by the caller; Passphrase decrypts the ed25519 child seeds
+// stored on each address. The caller owns ShareA and must zero it afterwards.
+type SigningCredentials struct {
+	ShareA     []byte
+	Passphrase string
+}
+
 // AddressBalance records a wallet address + its balance for plan transparency.
 type AddressBalance struct {
 	Address models.Address

@@ -10,8 +10,11 @@ import (
 	"strings"
 	"time"
 
+	"github.com/macrowallets/waas/pkg/httpclient"
 	"github.com/macrowallets/waas/pkg/types"
 )
+
+const bitcoinRESTTimeout = 30 * time.Second
 
 type BitcoinConfig struct {
 	ChainIDStr     string
@@ -27,20 +30,23 @@ type BitcoinConfig struct {
 }
 
 type BitcoinLive struct {
-	cfg     BitcoinConfig
-	rpc     *RPCClient
-	restAPI bool
-	http    *http.Client
+	cfg          BitcoinConfig
+	rpc          *RPCClient
+	restAPI      bool
+	http         *http.Client
+	esploraRetry rateLimitRetry
+	feeRates     btcFeeRateCache
 }
 
 func NewBitcoinLive(cfg BitcoinConfig) *BitcoinLive {
 	isREST := strings.Contains(cfg.RPCURL, "blockstream.info") ||
 		strings.Contains(cfg.RPCURL, "mempool.space")
 	return &BitcoinLive{
-		cfg:     cfg,
-		rpc:     NewRPCClient(cfg.RPCURL, cfg.RPCUser, cfg.RPCPass),
-		restAPI: isREST,
-		http:    &http.Client{Timeout: 30 * time.Second},
+		cfg:          cfg,
+		rpc:          NewRPCClient(cfg.RPCURL, cfg.RPCUser, cfg.RPCPass),
+		restAPI:      isREST,
+		http:         httpclient.New(bitcoinRESTTimeout),
+		esploraRetry: esploraRetry(),
 	}
 }
 
@@ -48,6 +54,9 @@ func (a *BitcoinLive) ID() string                    { return a.cfg.ChainIDStr }
 func (a *BitcoinLive) Name() string                  { return a.cfg.ChainName }
 func (a *BitcoinLive) RequiredConfirmations() uint64 { return a.cfg.Confirmations }
 func (a *BitcoinLive) NativeAsset() string           { return a.cfg.NativeSymbol }
+
+// IsTestnet reports whether the chain record points at Bitcoin testnet (tb1 addresses).
+func (a *BitcoinLive) IsTestnet() bool { return a.cfg.IsTestnet }
 
 func (a *BitcoinLive) DeriveAddress(masterKey []byte, index uint32) (string, error) {
 	return "", fmt.Errorf("BTC key derivation not implemented — use BIP-84 + hdkeychain")
@@ -63,16 +72,11 @@ func (a *BitcoinLive) ValidateAddress(address string) bool {
 	return address[:3] == "bc1" || address[0] == '1' || address[0] == '3'
 }
 
+// EstimateFee prices a transfer with the same fee policy and coin selection as
+// BuildTransfer: the exact fee when From's confirmed UTXOs cover Amount, otherwise
+// a typical one-input, payment-plus-change transaction at the current rate.
 func (a *BitcoinLive) EstimateFee(ctx context.Context, req types.TransferRequest) (*types.FeeEstimate, error) {
-	const estimatedVBytes = 140
-	feeRateSatPerVByte := 10
-
-	if a.cfg.FeeRateDefault > 0 {
-		feeRateSatPerVByte = a.cfg.FeeRateDefault
-	}
-
-	feeSat := int64(estimatedVBytes * feeRateSatPerVByte)
-	fee := new(big.Int).SetInt64(feeSat)
+	fee := big.NewInt(a.estimateTransferFeeSats(ctx, req))
 
 	symbol := "BTC"
 	if a.cfg.IsTestnet {
@@ -254,92 +258,18 @@ func (a *BitcoinLive) scanBlockRPC(ctx context.Context, blockNum uint64) ([]type
 	return transfers, nil
 }
 
-func (a *BitcoinLive) scanBlockREST(ctx context.Context, blockNum uint64) ([]types.DetectedTransfer, error) {
-	baseURL := strings.TrimRight(a.cfg.RPCURL, "/")
-
-	hashReq, err := http.NewRequestWithContext(ctx, "GET", fmt.Sprintf("%s/block-height/%d", baseURL, blockNum), nil)
-	if err != nil {
-		return nil, fmt.Errorf("build block hash request: %w", err)
-	}
-	hashResp, err := a.http.Do(hashReq)
-	if err != nil {
-		return nil, fmt.Errorf("fetch block hash: %w", err)
-	}
-	defer hashResp.Body.Close()
-	hashBody, _ := io.ReadAll(hashResp.Body)
-	if hashResp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("block hash API returned %d: %s", hashResp.StatusCode, string(hashBody))
-	}
-	blockHash := strings.TrimSpace(string(hashBody))
-
-	blockReq, err := http.NewRequestWithContext(ctx, "GET", fmt.Sprintf("%s/block/%s", baseURL, blockHash), nil)
-	if err != nil {
-		return nil, fmt.Errorf("build block request: %w", err)
-	}
-	blockResp, err := a.http.Do(blockReq)
-	if err != nil {
-		return nil, fmt.Errorf("fetch block: %w", err)
-	}
-	defer blockResp.Body.Close()
-	blockBody, _ := io.ReadAll(blockResp.Body)
-
-	var blockInfo struct {
-		ID        string `json:"id"`
-		Timestamp int64  `json:"timestamp"`
-	}
-	if err := json.Unmarshal(blockBody, &blockInfo); err != nil {
-		return nil, fmt.Errorf("parse block: %w", err)
-	}
-
-	txsReq, err := http.NewRequestWithContext(ctx, "GET", fmt.Sprintf("%s/block/%s/txs", baseURL, blockHash), nil)
-	if err != nil {
-		return nil, fmt.Errorf("build txs request: %w", err)
-	}
-	txsResp, err := a.http.Do(txsReq)
-	if err != nil {
-		return nil, fmt.Errorf("fetch block txs: %w", err)
-	}
-	defer txsResp.Body.Close()
-	txsBody, _ := io.ReadAll(txsResp.Body)
-
-	var txs []struct {
-		Txid string `json:"txid"`
-		Vout []struct {
-			ScriptpubkeyAddress string `json:"scriptpubkey_address"`
-			Value               int64  `json:"value"`
-		} `json:"vout"`
-	}
-	if err := json.Unmarshal(txsBody, &txs); err != nil {
-		return nil, fmt.Errorf("parse block txs: %w", err)
-	}
-
-	blockTime := time.Unix(blockInfo.Timestamp, 0)
-	var transfers []types.DetectedTransfer
-	for _, tx := range txs {
-		for _, vout := range tx.Vout {
-			if vout.Value <= 0 || vout.ScriptpubkeyAddress == "" {
-				continue
-			}
-			transfers = append(transfers, types.DetectedTransfer{
-				TxHash: tx.Txid, BlockNumber: blockNum, BlockHash: blockHash,
-				To: vout.ScriptpubkeyAddress, Amount: big.NewInt(vout.Value),
-				Asset: a.cfg.NativeSymbol, Timestamp: blockTime,
-			})
-		}
-	}
-	return transfers, nil
-}
-
 func (a *BitcoinLive) BuildSweep(ctx context.Context, req types.SweepRequest) ([]types.UnsignedTx, error) {
 	return a.buildBitcoinSweep(ctx, req)
 }
 
-// GetTransactionBlock is a no-op for Bitcoin in v1: outbound confirmation
-// reconciliation (sweep/withdrawal/gas_seed) is EVM-only in this release.
-// Returning (0, nil) tells the confirmation loop "treat as still pending" so
-// the contract still holds for non-EVM chains without a custom code path.
+// GetTransactionBlock returns the height of the block that confirmed txHash, or 0
+// while it is unconfirmed (or not yet known to the node/indexer), which the
+// confirmation loop treats as still pending. Errors are failed lookups.
 func (a *BitcoinLive) GetTransactionBlock(ctx context.Context, txHash string) (uint64, error) {
-	return 0, nil
+	if a.restAPI {
+		return a.getTransactionBlockREST(ctx, txHash)
+	}
+	return a.getTransactionBlockRPC(ctx, txHash)
 }
 
 func (a *BitcoinLive) GasReadinessThreshold() *big.Int { return nil }

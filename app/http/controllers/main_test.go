@@ -6,6 +6,7 @@ import (
 
 	"github.com/macrowallets/waas/app/container"
 	"github.com/macrowallets/waas/bootstrap"
+	"github.com/macrowallets/waas/tests/testenv"
 )
 
 // TestMain boots the full Goravel application (including routes) once
@@ -18,6 +19,9 @@ import (
 // the specific value here doesn't affect them — we just need the config
 // to be non-empty to avoid a bootstrap-time validation error.
 func TestMain(m *testing.M) {
+	if err := testenv.Load(); err != nil {
+		panic(err)
+	}
 	if os.Getenv("API_KEY_SECRET") == "" {
 		os.Setenv("API_KEY_SECRET", "test-api-secret-for-unit-tests")
 	}

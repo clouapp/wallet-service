@@ -98,3 +98,28 @@ func (s *WithdrawalRepositoryTestSuite) TestUpdateStatus() {
 	s.NoError(err)
 	s.Equal("cancelled", found.Status)
 }
+
+func (s *WithdrawalRepositoryTestSuite) TestUpdateFieldsStoresBroadcastResult() {
+	walletID := s.insertWallet()
+	withdrawal := &models.Withdrawal{
+		ID:                 uuid.New(),
+		WalletID:           walletID,
+		Status:             "broadcasting",
+		Amount:             "0.001",
+		DestinationAddress: "0x1",
+	}
+	s.Require().NoError(s.repo.Create(withdrawal))
+
+	transactionID := uuid.New()
+	s.Require().NoError(s.repo.UpdateFields(withdrawal.ID, map[string]any{
+		"status":         "broadcast",
+		"transaction_id": transactionID,
+	}))
+
+	found, err := s.repo.FindByIDAndWallet(withdrawal.ID, walletID)
+	s.Require().NoError(err)
+	s.Require().NotNil(found)
+	s.Equal("broadcast", found.Status)
+	s.Require().NotNil(found.TransactionID)
+	s.Equal(transactionID, *found.TransactionID)
+}

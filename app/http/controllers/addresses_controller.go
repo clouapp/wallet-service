@@ -61,7 +61,7 @@ func GenerateAddress(ctx http.Context) http.Response {
 // @Security     ApiKeyAuth
 // @Param        walletId   path      string                  true  "Wallet UUID"  format(uuid)
 // @Param        addressId  path      string                  true  "Address UUID" format(uuid)
-// @Param        body       body      UpdateAddressRequest    true  "Fields to update"
+// @Param        body       body      requests.UpdateAddressRequest    true  "Fields to update"
 // @Success      200        {object}  models.Address
 // @Failure      400        {object}  ErrorResponse
 // @Failure      404        {object}  ErrorResponse

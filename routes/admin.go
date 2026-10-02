@@ -101,6 +101,8 @@ func RegisterAdminRoutes() {
 			r.Patch("/settings", controllers.UpdateWalletSettings)
 			r.Post("/freeze", controllers.FreezeWallet)
 
+			r.Get("/balances", controllers.ListWalletBalances)
+
 			r.Get("/transactions", controllers.ListWalletTransactions)
 			r.Get("/transactions/{txId}", controllers.GetWalletTransaction)
 

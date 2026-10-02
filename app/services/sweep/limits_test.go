@@ -10,6 +10,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/macrowallets/waas/app/models"
+	"github.com/macrowallets/waas/app/repositories"
 	"github.com/macrowallets/waas/tests/testutil"
 )
 
@@ -31,6 +32,9 @@ func (f *fakeAccountRepo) FindByID(id uuid.UUID) (*models.Account, error) {
 	return f.byID[id], nil
 }
 func (f *fakeAccountRepo) FindByIDs(ids []uuid.UUID) ([]models.Account, error) { return nil, nil }
+func (f *fakeAccountRepo) PaginateByMember(userID uuid.UUID, filter repositories.AccountListFilter, limit, offset int) ([]models.Account, int64, error) {
+	return nil, 0, nil
+}
 func (f *fakeAccountRepo) UpdateField(id uuid.UUID, field string, value interface{}) error {
 	return nil
 }
