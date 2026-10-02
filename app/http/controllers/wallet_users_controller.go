@@ -1,6 +1,8 @@
 package controllers
 
 import (
+	"strings"
+
 	"github.com/google/uuid"
 	"github.com/goravel/framework/contracts/http"
 	"github.com/goravel/framework/facades"
@@ -54,7 +56,29 @@ func AddWalletUser(ctx http.Context) http.Response {
 	if resp := validateRequest(ctx, &req); resp != nil {
 		return resp
 	}
-	targetID, _ := uuid.Parse(req.UserID)
+	targetID, err := uuid.Parse(req.UserID)
+	if err != nil {
+		return ctx.Response().Json(http.StatusBadRequest, http.Json{"error": "invalid user id"})
+	}
+	roles, err := models.ParseWalletRoles(req.Roles)
+	if err != nil {
+		return ctx.Response().Json(http.StatusUnprocessableEntity, http.Json{"error": err.Error()})
+	}
+	roleList := models.FormatWalletRoles(roles)
+	if wallet.AccountID == nil {
+		return ctx.Response().Json(http.StatusUnprocessableEntity, http.Json{"error": "wallet is not attached to an account"})
+	}
+	member, memberErr := container.Get().AccountUserRepo.FindByAccountAndUser(*wallet.AccountID, targetID)
+	if member == nil {
+		if memberErr != nil && !strings.Contains(strings.ToLower(memberErr.Error()), "not found") {
+			facades.Log().WithContext(ctx).Errorf("wallet-users: account membership: %v", memberErr)
+			return ctx.Response().Json(http.StatusInternalServerError, http.Json{"error": "failed to check account membership"})
+		}
+		return ctx.Response().Json(http.StatusUnprocessableEntity, http.Json{"error": "user is not an active member of this account"})
+	}
+	if member.Status != "active" {
+		return ctx.Response().Json(http.StatusUnprocessableEntity, http.Json{"error": "user is not an active member of this account"})
+	}
 
 	existing, existErr := container.Get().WalletUserRepo.FindByWalletAndUserIncludeDeleted(wallet.ID, targetID)
 	if existErr != nil {
@@ -64,11 +88,11 @@ func AddWalletUser(ctx http.Context) http.Response {
 		if err := container.Get().WalletUserRepo.UpdateField(existing.ID, "deleted_at", nil); err != nil {
 			return ctx.Response().Json(http.StatusInternalServerError, http.Json{"error": "failed to restore wallet user"})
 		}
-		if req.Roles != "" {
-			if err := container.Get().WalletUserRepo.UpdateField(existing.ID, "roles", req.Roles); err != nil {
-				facades.Log().WithContext(ctx).Errorf("wallet-users: update roles: %v", err)
-			}
+		if err := container.Get().WalletUserRepo.UpdateField(existing.ID, "roles", roleList); err != nil {
+			facades.Log().WithContext(ctx).Errorf("wallet-users: update roles: %v", err)
+			return ctx.Response().Json(http.StatusInternalServerError, http.Json{"error": "failed to update wallet roles"})
 		}
+		existing.Roles = roleList
 		return ctx.Response().Json(http.StatusCreated, existing)
 	}
 
@@ -76,7 +100,7 @@ func AddWalletUser(ctx http.Context) http.Response {
 		ID:       uuid.New(),
 		WalletID: wallet.ID,
 		UserID:   targetID,
-		Roles:    req.Roles,
+		Roles:    roleList,
 		Status:   "active",
 	}
 	if err := container.Get().WalletUserRepo.Create(wu); err != nil {

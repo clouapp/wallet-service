@@ -16,5 +16,6 @@ func (r *AddWalletUserRequest) Authorize(ctx http.Context) error {
 func (r *AddWalletUserRequest) Rules(ctx http.Context) map[string]string {
 	return map[string]string{
 		"user_id": "required|uuid",
+		"roles":   "required",
 	}
 }
