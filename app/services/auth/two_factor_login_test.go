@@ -22,28 +22,29 @@ const (
 // ---- fakes for the ports ----
 
 type fakeChallengeStore struct {
-	mu    sync.Mutex
-	live  map[string]uuid.UUID
-	spent map[string]bool
+	mu       sync.Mutex
+	live     map[string]authsvc.TOTPChallenge
+	spent    map[string]bool
+	issuedAt time.Time
 }
 
-func newFakeChallengeStore() *fakeChallengeStore {
-	return &fakeChallengeStore{live: map[string]uuid.UUID{}, spent: map[string]bool{}}
+func newFakeChallengeStore(issuedAt time.Time) *fakeChallengeStore {
+	return &fakeChallengeStore{live: map[string]authsvc.TOTPChallenge{}, spent: map[string]bool{}, issuedAt: issuedAt}
 }
 
 func (f *fakeChallengeStore) Issue(userID uuid.UUID) (string, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	token := uuid.NewString()
-	f.live[token] = userID
+	f.live[token] = authsvc.TOTPChallenge{UserID: userID, IssuedAt: f.issuedAt}
 	return token, nil
 }
 
-func (f *fakeChallengeStore) Resolve(token string) (uuid.UUID, bool, error) {
+func (f *fakeChallengeStore) Resolve(token string) (authsvc.TOTPChallenge, bool, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	userID, ok := f.live[token]
-	return userID, ok, nil
+	challenge, ok := f.live[token]
+	return challenge, ok, nil
 }
 
 func (f *fakeChallengeStore) Consume(token string) bool {
@@ -194,7 +195,7 @@ func newTwoFactorFixture(t *testing.T) *twoFactorFixture {
 	require.NoError(t, err)
 	verifier = verifier.WithClock(func() time.Time { return now })
 
-	challenges := newFakeChallengeStore()
+	challenges := newFakeChallengeStore(now)
 	attempts := newFakeAttemptLimiter()
 	login, err := authsvc.NewTwoFactorLogin(challenges, attempts, verifier, users, testMaxAttempts)
 	require.NoError(t, err)
@@ -226,10 +227,33 @@ func TestTwoFactorLogin_BeginIssuesAChallengeNotASession(t *testing.T) {
 
 	require.NoError(t, err)
 	require.Equal(t, 5*time.Minute, challenge.ExpiresIn)
-	userID, ok, err := f.challenges.Resolve(challenge.Token)
+	resolved, ok, err := f.challenges.Resolve(challenge.Token)
 	require.NoError(t, err)
 	require.True(t, ok)
-	require.Equal(t, f.user.ID, userID)
+	require.Equal(t, f.user.ID, resolved.UserID)
+}
+
+func TestTwoFactorLogin_ChallengeIssuedBeforeASessionRevocationIsRefused(t *testing.T) {
+	f := newTwoFactorFixture(t)
+	token := f.begin()
+	watermark := f.now.Add(time.Second)
+	f.users.byID[f.user.ID].SessionsRevokedAt = &watermark
+
+	_, err := f.login.Complete(token, f.validCode(), "")
+
+	require.ErrorIs(t, err, authsvc.ErrChallengeInvalid)
+	_, ok, _ := f.challenges.Resolve(token)
+	require.False(t, ok, "the stale challenge is retired")
+}
+
+func TestTwoFactorLogin_ChallengeIssuedAfterTheWatermarkStillWorks(t *testing.T) {
+	f := newTwoFactorFixture(t)
+	watermark := f.now
+	f.users.byID[f.user.ID].SessionsRevokedAt = &watermark
+
+	_, err := f.login.Complete(f.begin(), f.validCode(), "")
+
+	require.NoError(t, err)
 }
 
 func TestTwoFactorLogin_ValidTOTPCompletesAndSpendsTheChallenge(t *testing.T) {

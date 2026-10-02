@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
@@ -29,14 +30,27 @@ const (
 // the atomic spend that guarantees one challenge never yields two sessions.
 type TOTPChallengeStore interface {
 	Issue(userID uuid.UUID) (string, error)
-	// Resolve returns the user a live challenge stands for; ok is false when
-	// the token is unknown, expired or already spent.
-	Resolve(token string) (userID uuid.UUID, ok bool, err error)
+	// Resolve returns what a live challenge stands for; ok is false when the
+	// token is unknown, expired or already spent.
+	Resolve(token string) (challenge TOTPChallenge, ok bool, err error)
 	// Consume spends the challenge; only the first caller gets true.
 	Consume(token string) bool
 	// Revoke drops the challenge. Revoking an absent token is not an error.
 	Revoke(token string)
 	TTL() time.Duration
+}
+
+// TOTPChallenge is the user a challenge was issued to and when. IssuedAt has
+// second precision, like a JWT iat, so both compare to the session watermark
+// the same way.
+type TOTPChallenge struct {
+	UserID   uuid.UUID
+	IssuedAt time.Time
+}
+
+type storedChallenge struct {
+	UserID   string `json:"user_id"`
+	IssuedAt int64  `json:"issued_at"`
 }
 
 // AttemptLimiter bounds second-factor guesses per user within a window.
@@ -77,25 +91,33 @@ func (s *CacheTOTPChallengeStore) Issue(userID uuid.UUID) (string, error) {
 		return "", fmt.Errorf("auth: issue totp challenge: %w", err)
 	}
 	token := base64.RawURLEncoding.EncodeToString(raw)
-	if err := s.cache.Put(challengeKey(token), userID.String(), s.ttl); err != nil {
+	payload, err := json.Marshal(storedChallenge{UserID: userID.String(), IssuedAt: time.Now().Unix()})
+	if err != nil {
+		return "", fmt.Errorf("auth: encode totp challenge: %w", err)
+	}
+	if err := s.cache.Put(challengeKey(token), string(payload), s.ttl); err != nil {
 		return "", fmt.Errorf("auth: store totp challenge: %w", err)
 	}
 	return token, nil
 }
 
-func (s *CacheTOTPChallengeStore) Resolve(token string) (uuid.UUID, bool, error) {
+func (s *CacheTOTPChallengeStore) Resolve(token string) (TOTPChallenge, bool, error) {
 	if token == "" {
-		return uuid.Nil, false, nil
+		return TOTPChallenge{}, false, nil
 	}
-	stored := s.cache.GetString(challengeKey(token), "")
-	if stored == "" {
-		return uuid.Nil, false, nil
+	raw := s.cache.GetString(challengeKey(token), "")
+	if raw == "" {
+		return TOTPChallenge{}, false, nil
 	}
-	userID, err := uuid.Parse(stored)
+	var stored storedChallenge
+	if err := json.Unmarshal([]byte(raw), &stored); err != nil {
+		return TOTPChallenge{}, false, fmt.Errorf("auth: decode totp challenge: %w", err)
+	}
+	userID, err := uuid.Parse(stored.UserID)
 	if err != nil {
-		return uuid.Nil, false, fmt.Errorf("auth: resolve totp challenge: stored value is not a user id: %w", err)
+		return TOTPChallenge{}, false, fmt.Errorf("auth: decode totp challenge: stored value is not a user id: %w", err)
 	}
-	return userID, true, nil
+	return TOTPChallenge{UserID: userID, IssuedAt: time.Unix(stored.IssuedAt, 0)}, true, nil
 }
 
 func (s *CacheTOTPChallengeStore) Consume(token string) bool {

@@ -8,6 +8,7 @@ import (
 	"github.com/goravel/framework/facades"
 
 	"github.com/macrowallets/waas/app/models"
+	authsvc "github.com/macrowallets/waas/app/services/auth"
 )
 
 // SessionAuth validates a Bearer JWT token issued by facades.Auth and injects
@@ -34,6 +35,12 @@ func SessionAuth() http.Middleware {
 		if err := authGuard.User(&user); err != nil {
 			ctx.Request().AbortWithStatus(http.StatusUnauthorized)
 			ctx.Response().Json(http.StatusUnauthorized, http.Json{"error": "user not found"})
+			return
+		}
+
+		if authsvc.SessionRevoked(payload.IssuedAt, user.SessionsRevokedAt) {
+			ctx.Request().AbortWithStatus(http.StatusUnauthorized)
+			ctx.Response().Json(http.StatusUnauthorized, http.Json{"error": "session revoked"})
 			return
 		}
 

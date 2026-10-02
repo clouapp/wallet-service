@@ -85,6 +85,7 @@ type Container struct {
 
 	SecondFactor   *authsvc.SecondFactorVerifier
 	TwoFactorLogin *authsvc.TwoFactorLogin
+	SessionRevoker *authsvc.SessionRevoker
 }
 
 var (

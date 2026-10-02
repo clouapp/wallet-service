@@ -43,12 +43,13 @@ func TestCacheTOTPChallengeStore_IssueAndResolve(t *testing.T) {
 	resolved, ok, err := store.Resolve(token)
 	require.NoError(t, err)
 	require.True(t, ok)
-	require.Equal(t, userID, resolved)
+	require.Equal(t, userID, resolved.UserID)
+	require.WithinDuration(t, time.Now(), resolved.IssuedAt, 2*time.Second)
 
 	again, ok, err := store.Resolve(token)
 	require.NoError(t, err)
 	require.True(t, ok, "resolving does not spend the challenge")
-	require.Equal(t, userID, again)
+	require.Equal(t, userID, again.UserID)
 }
 
 func TestCacheTOTPChallengeStore_KeysDoNotContainTheToken(t *testing.T) {

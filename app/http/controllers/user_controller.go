@@ -65,13 +65,13 @@ func UpdateMe(ctx http.Context) http.Response {
 
 // ChangePassword godoc
 // @Summary      Change password
-// @Description  Validates the current password and updates it
+// @Description  Validates the current password, updates it, ends every session of the user (the caller's included) and returns a fresh access + refresh token pair for the caller
 // @Tags         User
 // @Security     BearerAuth
 // @Accept       json
 // @Produce      json
 // @Param        request  body      ChangePasswordSwagger  true  "Password change payload"
-// @Success      200      {object}  map[string]string
+// @Success      200      {object}  map[string]string  "message, access_token, refresh_token"
 // @Failure      400      {object}  ErrorResponse
 // @Failure      401      {object}  ErrorResponse
 // @Router       /users/me/password [post]
@@ -96,7 +96,17 @@ func ChangePassword(ctx http.Context) http.Response {
 		return ctx.Response().Json(http.StatusInternalServerError, http.Json{"error": "failed to update password"})
 	}
 
-	return ctx.Response().Json(http.StatusOK, http.Json{"message": "password updated successfully"})
+	session, err := replaceSessions(ctx, user.ID)
+	if err != nil {
+		facades.Log().WithContext(ctx).Errorf("auth: change password: replace sessions: %v", err)
+		return ctx.Response().Json(http.StatusInternalServerError, http.Json{"error": "password updated but sessions could not be renewed"})
+	}
+
+	return ctx.Response().Json(http.StatusOK, http.Json{
+		"message":       "password updated successfully",
+		"access_token":  session.AccessToken,
+		"refresh_token": session.RefreshToken,
+	})
 }
 
 const (
@@ -299,11 +309,11 @@ func ConfirmTOTP(ctx http.Context) http.Response {
 
 // DisableTOTP godoc
 // @Summary      Disable TOTP
-// @Description  Disables 2FA and clears TOTP secret and recovery codes
+// @Description  Disables 2FA, clears TOTP secret and recovery codes, ends every session of the user (the caller's included) and returns the user with a fresh access + refresh token pair
 // @Tags         User
 // @Security     BearerAuth
 // @Produce      json
-// @Success      200  {object}  models.User
+// @Success      200  {object}  map[string]interface{}  "user, access_token, refresh_token"
 // @Failure      500  {object}  ErrorResponse
 // @Router       /users/me/totp [delete]
 func DisableTOTP(ctx http.Context) http.Response {
@@ -315,9 +325,19 @@ func DisableTOTP(ctx http.Context) http.Response {
 
 	_ = container.Get().TotpRecoveryCodeRepo.DeleteByUserID(user.ID)
 
+	session, err := replaceSessions(ctx, user.ID)
+	if err != nil {
+		facades.Log().WithContext(ctx).Errorf("auth: disable totp: replace sessions: %v", err)
+		return ctx.Response().Json(http.StatusInternalServerError, http.Json{"error": "2FA disabled but sessions could not be renewed"})
+	}
+
 	user.TotpEnabled = false
 	user.TotpSecret = ""
-	return ctx.Response().Json(http.StatusOK, user)
+	return ctx.Response().Json(http.StatusOK, http.Json{
+		"user":          user,
+		"access_token":  session.AccessToken,
+		"refresh_token": session.RefreshToken,
+	})
 }
 
 // ---- Swagger-only types ----

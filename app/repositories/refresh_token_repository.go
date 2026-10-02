@@ -12,7 +12,7 @@ import (
 type RefreshTokenRepository interface {
 	Create(token *models.RefreshToken) error
 	FindValidTokens() ([]models.RefreshToken, error)
-	RevokeByID(id uuid.UUID) error
+	RevokeIfActive(id uuid.UUID) (bool, error)
 	RevokeAllForUser(userID uuid.UUID) error
 }
 
@@ -34,13 +34,18 @@ func (r *refreshTokenRepository) FindValidTokens() ([]models.RefreshToken, error
 	return tokens, err
 }
 
-func (r *refreshTokenRepository) RevokeByID(id uuid.UUID) error {
-	now := time.Now()
-	_, err := facades.Orm().Query().
+// RevokeIfActive revokes a refresh token and reports whether this call did
+// it. A rotation that finds the token already revoked lost a race (or the
+// session was revoked meanwhile) and must not mint a new pair.
+func (r *refreshTokenRepository) RevokeIfActive(id uuid.UUID) (bool, error) {
+	result, err := facades.Orm().Query().
 		Model(&models.RefreshToken{}).
-		Where("id = ?", id).
-		Update("revoked_at", now)
-	return err
+		Where("id = ? AND revoked_at IS NULL", id).
+		Update("revoked_at", time.Now())
+	if err != nil {
+		return false, err
+	}
+	return result.RowsAffected == 1, nil
 }
 
 func (r *refreshTokenRepository) RevokeAllForUser(userID uuid.UUID) error {

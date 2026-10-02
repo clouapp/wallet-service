@@ -120,7 +120,7 @@ func buildVaultContainer() (*container.Container, error) {
 	c.WalletSyncStateRepo = repositories.NewWalletSyncStateRepository()
 	c.CurrencyRepo = repositories.NewCurrencyRepository()
 
-	if err := wireTwoFactorLogin(c); err != nil {
+	if err := wireAuthServices(c); err != nil {
 		return nil, err
 	}
 

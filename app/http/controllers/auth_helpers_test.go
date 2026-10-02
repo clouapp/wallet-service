@@ -125,3 +125,39 @@ func (s *authSuite) getMe(bearer string) contractstesting.Response {
 	s.Require().NoError(err)
 	return resp
 }
+
+func (s *authSuite) authedPost(bearer, path, body string) contractstesting.Response {
+	resp, err := s.Http(s.T()).
+		WithHeader("Authorization", "Bearer "+bearer).
+		WithHeader("Content-Type", "application/json").
+		Post(path, strings.NewReader(body))
+	s.Require().NoError(err)
+	return resp
+}
+
+func (s *authSuite) authedDelete(bearer, path string) contractstesting.Response {
+	resp, err := s.Http(s.T()).WithHeader("Authorization", "Bearer "+bearer).Delete(path, nil)
+	s.Require().NoError(err)
+	return resp
+}
+
+func (s *authSuite) refresh(refreshToken string) (contractstesting.Response, loginBody) {
+	resp := s.postJSON("/v1/auth/refresh", fmt.Sprintf(`{"refresh_token":%q}`, refreshToken))
+	var body loginBody
+	s.decode(resp, &body)
+	return resp, body
+}
+
+// signIn completes a password-only login and returns the session.
+func (s *authSuite) signIn(email string) loginBody {
+	resp, body := s.loginAs(email)
+	resp.AssertOk()
+	s.Require().NotEmpty(body.AccessToken)
+	return body
+}
+
+// waitForNextSecond lets sessions issued so far fall strictly before a
+// watermark taken afterwards; JWT iat has second precision.
+func waitForNextSecond() {
+	time.Sleep(time.Until(time.Now().Truncate(time.Second).Add(time.Second + 50*time.Millisecond)))
+}

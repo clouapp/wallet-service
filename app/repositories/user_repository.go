@@ -2,6 +2,7 @@ package repositories
 
 import (
 	"encoding/json"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/goravel/framework/facades"
@@ -21,6 +22,7 @@ type UserRepository interface {
 	EnableTotp(id uuid.UUID) error
 	DisableTotp(id uuid.UUID) error
 	AdvanceTotpCounter(id uuid.UUID, counter int64) (bool, error)
+	UpdateSessionsRevokedAt(id uuid.UUID, at time.Time) error
 }
 
 type userRepository struct{}
@@ -104,6 +106,11 @@ func (r *userRepository) AdvanceTotpCounter(id uuid.UUID, counter int64) (bool, 
 		return false, err
 	}
 	return result.RowsAffected == 1, nil
+}
+
+func (r *userRepository) UpdateSessionsRevokedAt(id uuid.UUID, at time.Time) error {
+	_, err := facades.Orm().Query().Model(&models.User{}).Where("id = ?", id).Update("sessions_revoked_at", at)
+	return err
 }
 
 func (r *userRepository) DisableTotp(id uuid.UUID) error {

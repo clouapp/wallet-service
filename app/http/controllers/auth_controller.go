@@ -240,8 +240,13 @@ func RefreshToken(ctx http.Context) http.Response {
 		return ctx.Response().Json(http.StatusUnauthorized, http.Json{"error": "invalid or expired refresh token"})
 	}
 
-	if err := container.Get().RefreshTokenRepo.RevokeByID(matched.ID); err != nil {
+	rotated, err := container.Get().RefreshTokenRepo.RevokeIfActive(matched.ID)
+	if err != nil {
 		facades.Log().WithContext(ctx).Errorf("auth: revoke refresh token: %v", err)
+		return ctx.Response().Json(http.StatusInternalServerError, http.Json{"error": "failed to create session"})
+	}
+	if !rotated {
+		return ctx.Response().Json(http.StatusUnauthorized, http.Json{"error": "invalid or expired refresh token"})
 	}
 
 	session, err := issueSession(ctx, matched.UserID)
@@ -325,7 +330,7 @@ func ForgotPassword(ctx http.Context) http.Response {
 
 // ResetPassword godoc
 // @Summary      Reset password using token
-// @Description  Validates the reset token and updates the user's password
+// @Description  Validates the reset token, updates the user's password and ends every session of the user
 // @Tags         Auth
 // @Accept       json
 // @Produce      json
@@ -368,6 +373,11 @@ func ResetPassword(ctx http.Context) http.Response {
 
 	if err := container.Get().PasswordResetTokenRepo.MarkUsed(matched.ID); err != nil {
 		facades.Log().WithContext(ctx).Errorf("auth: mark reset token used: %v", err)
+	}
+
+	if _, err := container.Get().SessionRevoker.RevokeAll(matched.UserID); err != nil {
+		facades.Log().WithContext(ctx).Errorf("auth: reset password: revoke sessions: %v", err)
+		return ctx.Response().Json(http.StatusInternalServerError, http.Json{"error": "password reset but existing sessions could not be revoked"})
 	}
 
 	return ctx.Response().Json(http.StatusOK, http.Json{"message": "password reset successfully"})

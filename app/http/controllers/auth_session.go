@@ -48,6 +48,22 @@ func issueSession(ctx http.Context, userID uuid.UUID) (sessionTokens, error) {
 	return sessionTokens{AccessToken: accessToken, RefreshToken: rawRefresh}, nil
 }
 
+// replaceSessions ends every session of the user, the caller's included, and
+// issues the caller a fresh one. It is for credential changes made by a user
+// who just proved who they are (password change, disabling TOTP).
+func replaceSessions(ctx http.Context, userID uuid.UUID) (sessionTokens, error) {
+	if _, err := container.Get().SessionRevoker.RevokeAll(userID); err != nil {
+		return sessionTokens{}, err
+	}
+	// The watermark has second precision, so a token issued earlier in the
+	// same second survives it; blacklisting the presented token closes that
+	// gap for the caller.
+	if err := facades.Auth(ctx).Logout(); err != nil {
+		facades.Log().WithContext(ctx).Warningf("auth: blacklist replaced session token: %v", err)
+	}
+	return issueSession(ctx, userID)
+}
+
 // signedInResponse is the body of every response that completes a sign-in.
 func signedInResponse(user *models.User, tokens sessionTokens) http.Json {
 	accounts, defaultAccount := loadUserAccounts(user)

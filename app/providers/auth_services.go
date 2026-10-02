@@ -16,7 +16,7 @@ const (
 	defaultTwoFactorAttemptWindowSeconds = 900
 )
 
-func wireTwoFactorLogin(c *container.Container) error {
+func wireAuthServices(c *container.Container) error {
 	cfg := facades.Config()
 	challengeTTL := time.Duration(cfg.GetInt("auth.two_factor.challenge_ttl_seconds", defaultTwoFactorChallengeTTLSeconds)) * time.Second
 	attemptWindow := time.Duration(cfg.GetInt("auth.two_factor.attempt_window_seconds", defaultTwoFactorAttemptWindowSeconds)) * time.Second
@@ -39,7 +39,13 @@ func wireTwoFactorLogin(c *container.Container) error {
 		return fmt.Errorf("vault: two factor login: %w", err)
 	}
 
+	revoker, err := authsvc.NewSessionRevoker(c.UserRepo, c.RefreshTokenRepo)
+	if err != nil {
+		return fmt.Errorf("vault: session revoker: %w", err)
+	}
+
 	c.SecondFactor = verifier
 	c.TwoFactorLogin = login
+	c.SessionRevoker = revoker
 	return nil
 }

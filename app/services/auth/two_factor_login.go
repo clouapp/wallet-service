@@ -221,18 +221,18 @@ func (l *TwoFactorLogin) Complete(token, code, recoveryCode string) (*models.Use
 }
 
 func (l *TwoFactorLogin) challengedUser(token string) (*models.User, error) {
-	userID, ok, err := l.challenges.Resolve(token)
+	challenge, ok, err := l.challenges.Resolve(token)
 	if err != nil {
 		return nil, err
 	}
 	if !ok {
 		return nil, ErrChallengeInvalid
 	}
-	user, err := l.users.FindByID(userID)
+	user, err := l.users.FindByID(challenge.UserID)
 	if err != nil {
 		return nil, fmt.Errorf("auth: load challenged user: %w", err)
 	}
-	if user == nil || !user.TotpEnabled {
+	if user == nil || !user.TotpEnabled || SessionRevoked(challenge.IssuedAt, user.SessionsRevokedAt) {
 		l.challenges.Revoke(token)
 		return nil, ErrChallengeInvalid
 	}
