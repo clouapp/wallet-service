@@ -49,7 +49,7 @@ func UpdatePreferences(ctx http.Context) http.Response {
 		prefs.DisplayInFiat = req.DisplayInFiat
 	}
 
-	if err := container.Get().UserRepo.UpdatePreferences(userID, prefs); err != nil {
+	if err := container.Get().UserRepo.UpdatePreferences(ctx.Context(), userID, prefs); err != nil {
 		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to update preferences"})
 	}
 

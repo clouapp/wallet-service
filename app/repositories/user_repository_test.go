@@ -1,6 +1,7 @@
 package repositories_test
 
 import (
+	"context"
 	"testing"
 
 	"github.com/google/uuid"
@@ -13,7 +14,7 @@ import (
 
 type UserRepositoryTestSuite struct {
 	suite.Suite
-	repo repositories.UserRepository
+	repo *repositories.UserRepository
 }
 
 func TestUserRepositorySuite(t *testing.T) {
@@ -22,7 +23,7 @@ func TestUserRepositorySuite(t *testing.T) {
 
 func (s *UserRepositoryTestSuite) SetupTest() {
 	mocks.TestDB(s.T())
-	s.repo = repositories.NewUserRepository()
+	s.repo = repositories.NewUserRepository(nil)
 }
 
 func (s *UserRepositoryTestSuite) TestCreate_Success() {
@@ -32,11 +33,11 @@ func (s *UserRepositoryTestSuite) TestCreate_Success() {
 		PasswordHash: "hashed_pw",
 		Status:       "active",
 	}
-	err := s.repo.Create(user)
+	err := s.repo.Create(context.Background(), user)
 	s.NoError(err)
 	s.NotNil(user.Preferences)
 
-	found, err := s.repo.FindByEmail("test@example.com")
+	found, err := s.repo.FindByEmail(context.Background(), "test@example.com")
 	s.NoError(err)
 	s.NotNil(found)
 	s.Equal(user.ID, found.ID)
@@ -51,17 +52,17 @@ func (s *UserRepositoryTestSuite) TestFindByEmail_Found() {
 		PasswordHash: "hash",
 		Status:       "active",
 	}
-	s.Require().NoError(s.repo.Create(user))
+	s.Require().NoError(s.repo.Create(context.Background(), user))
 
-	found, err := s.repo.FindByEmail("found@example.com")
+	found, err := s.repo.FindByEmail(context.Background(), "found@example.com")
 	s.NoError(err)
 	s.NotNil(found)
 	s.Equal(user.ID, found.ID)
 }
 
 func (s *UserRepositoryTestSuite) TestFindByEmail_NotFound() {
-	found, err := s.repo.FindByEmail("nonexistent@example.com")
-	s.NoError(err)
+	found, err := s.repo.FindByEmail(context.Background(), "nonexistent@example.com")
+	s.ErrorIs(err, models.ErrRepositoryNotFound)
 	s.Nil(found)
 }
 
@@ -72,17 +73,17 @@ func (s *UserRepositoryTestSuite) TestFindByID_Found() {
 		PasswordHash: "hash",
 		Status:       "active",
 	}
-	s.Require().NoError(s.repo.Create(user))
+	s.Require().NoError(s.repo.Create(context.Background(), user))
 
-	found, err := s.repo.FindByID(user.ID)
+	found, err := s.repo.FindByID(context.Background(), user.ID)
 	s.NoError(err)
 	s.NotNil(found)
 	s.Equal("byid@example.com", found.Email)
 }
 
 func (s *UserRepositoryTestSuite) TestFindByID_NotFound() {
-	found, err := s.repo.FindByID(uuid.New())
-	s.NoError(err)
+	found, err := s.repo.FindByID(context.Background(), uuid.New())
+	s.ErrorIs(err, models.ErrRepositoryNotFound)
 	s.Nil(found)
 }
 
@@ -94,12 +95,12 @@ func (s *UserRepositoryTestSuite) TestUpdateFullName() {
 		FullName:     "Old Name",
 		Status:       "active",
 	}
-	s.Require().NoError(s.repo.Create(user))
+	s.Require().NoError(s.repo.Create(context.Background(), user))
 
-	err := s.repo.UpdateFullName(user.ID, "New Name")
+	err := s.repo.UpdateFullName(context.Background(), user.ID, "New Name")
 	s.NoError(err)
 
-	found, err := s.repo.FindByID(user.ID)
+	found, err := s.repo.FindByID(context.Background(), user.ID)
 	s.NoError(err)
 	s.Equal("New Name", found.FullName)
 }
@@ -111,12 +112,12 @@ func (s *UserRepositoryTestSuite) TestUpdatePasswordHash() {
 		PasswordHash: "old_hash",
 		Status:       "active",
 	}
-	s.Require().NoError(s.repo.Create(user))
+	s.Require().NoError(s.repo.Create(context.Background(), user))
 
-	err := s.repo.UpdatePasswordHash(user.ID, "new_hash")
+	err := s.repo.UpdatePasswordHash(context.Background(), user.ID, "new_hash")
 	s.NoError(err)
 
-	found, err := s.repo.FindByID(user.ID)
+	found, err := s.repo.FindByID(context.Background(), user.ID)
 	s.NoError(err)
 	s.Equal("new_hash", found.PasswordHash)
 }

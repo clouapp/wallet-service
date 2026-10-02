@@ -117,7 +117,7 @@ func CreateWalletWithdrawal(ctx http.Context) http.Response {
 	isDashboardCaller := hasUser && callerUserID != uuid.Nil
 
 	if isDashboardCaller {
-		user, err := container.Get().UserRepo.FindByID(callerUserID)
+		user, err := container.Get().UserRepo.FindByID(ctx.Context(), callerUserID)
 		if err != nil || user == nil {
 			return responses.Send(ctx, http.StatusUnauthorized, http.Json{"error": "user not found"})
 		}

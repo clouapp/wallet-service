@@ -14,7 +14,7 @@ import (
 	"github.com/macrowallets/waas/app/services/depositevents"
 	"github.com/macrowallets/waas/app/services/ingest"
 	"github.com/macrowallets/waas/app/services/ingest/providers"
-	mpc 	"github.com/macrowallets/waas/app/services/mpc"
+	mpc "github.com/macrowallets/waas/app/services/mpc"
 	"github.com/macrowallets/waas/app/services/price"
 	"github.com/macrowallets/waas/app/services/queue"
 	"github.com/macrowallets/waas/app/services/refresh"
@@ -34,24 +34,24 @@ type Container struct {
 	SecretsManager *secretsmanager.Client
 	MPCService     mpc.Service
 
-	UserRepo                repositories.UserRepository
-	RefreshTokenRepo        repositories.RefreshTokenRepository
-	PasswordResetTokenRepo  repositories.PasswordResetTokenRepository
-	TotpRecoveryCodeRepo    repositories.TotpRecoveryCodeRepository
-	AccountRepo             repositories.AccountRepository
-	AccountUserRepo         repositories.AccountUserRepository
-	AccessTokenRepo         repositories.AccessTokenRepository
-	WalletRepo              repositories.WalletRepository
-	WalletUserRepo          repositories.WalletUserRepository
-	AddressRepo             repositories.AddressRepository
-	TransactionRepo         repositories.TransactionRepository
-	WithdrawalRepo          repositories.WithdrawalRepository
-	WebhookConfigRepo       repositories.WebhookConfigRepository
-	WebhookEventRepo        repositories.WebhookEventRepository
-	WhitelistEntryRepo      repositories.WhitelistEntryRepository
-	ChainRepo               repositories.ChainRepository
-	TokenRepo               repositories.TokenRepository
-	ChainResourceRepo       repositories.ChainResourceRepository
+	UserRepo                  *repositories.UserRepository
+	RefreshTokenRepo          *repositories.RefreshTokenRepository
+	PasswordResetTokenRepo    *repositories.PasswordResetTokenRepository
+	TotpRecoveryCodeRepo      *repositories.TotpRecoveryCodeRepository
+	AccountRepo               *repositories.AccountRepository
+	AccountUserRepo           *repositories.AccountUserRepository
+	AccessTokenRepo           *repositories.AccessTokenRepository
+	WalletRepo                repositories.WalletRepository
+	WalletUserRepo            repositories.WalletUserRepository
+	AddressRepo               repositories.AddressRepository
+	TransactionRepo           repositories.TransactionRepository
+	WithdrawalRepo            repositories.WithdrawalRepository
+	WebhookConfigRepo         repositories.WebhookConfigRepository
+	WebhookEventRepo          repositories.WebhookEventRepository
+	WhitelistEntryRepo        repositories.WhitelistEntryRepository
+	ChainRepo                 repositories.ChainRepository
+	TokenRepo                 repositories.TokenRepository
+	ChainResourceRepo         repositories.ChainResourceRepository
 	WebhookSubscriptionRepo   repositories.WebhookSubscriptionRepository
 	WalletAssetBalanceRepo    repositories.WalletAssetBalanceRepository
 	WalletBalanceSnapshotRepo repositories.WalletBalanceSnapshotRepository

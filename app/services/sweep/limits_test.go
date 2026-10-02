@@ -10,19 +10,16 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/macrowallets/waas/app/models"
-	"github.com/macrowallets/waas/app/repositories"
 	"github.com/macrowallets/waas/tests/testutil"
 )
 
-// fakeAccountRepo is a narrow in-memory AccountRepository used by the sweep
-// tests. Methods that tests don't exercise return zero values.
+// fakeAccountRepo is the account lookup the sweep limit tests use.
 type fakeAccountRepo struct {
 	byID map[uuid.UUID]*models.Account
 	err  error
 }
 
-func (f *fakeAccountRepo) Create(account *models.Account) error { return nil }
-func (f *fakeAccountRepo) FindByID(id uuid.UUID) (*models.Account, error) {
+func (f *fakeAccountRepo) FindByID(_ context.Context, id uuid.UUID) (*models.Account, error) {
 	if f.err != nil {
 		return nil, f.err
 	}
@@ -30,13 +27,6 @@ func (f *fakeAccountRepo) FindByID(id uuid.UUID) (*models.Account, error) {
 		return nil, nil
 	}
 	return f.byID[id], nil
-}
-func (f *fakeAccountRepo) FindByIDs(ids []uuid.UUID) ([]models.Account, error) { return nil, nil }
-func (f *fakeAccountRepo) PaginateByMember(userID uuid.UUID, filter repositories.AccountListFilter, limit, offset int) ([]models.Account, int64, error) {
-	return nil, 0, nil
-}
-func (f *fakeAccountRepo) UpdateField(id uuid.UUID, field string, value interface{}) error {
-	return nil
 }
 
 // ---------------------------------------------------------------------------

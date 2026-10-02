@@ -41,6 +41,7 @@ func Providers() []foundation.ServiceProvider {
 		&frameworkmail.ServiceProvider{},
 		&frameworkcrypt.ServiceProvider{},
 		&providers.AuthServiceProvider{},
+		&providers.IdentityServiceProvider{},
 		&providers.AppServiceProvider{},
 		&providers.RouteServiceProvider{},
 	}

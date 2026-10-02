@@ -68,7 +68,7 @@ func APITokenAuth() http.Middleware {
 			return
 		}
 
-		tokenPtr, err := container.Get().AccessTokenRepo.FindByIDAndAccount(tokenID, accountID)
+		tokenPtr, err := container.Get().AccessTokenRepo.FindByIDAndAccount(ctx.Context(), tokenID, accountID)
 		if err != nil || tokenPtr == nil {
 			abortWithJSON(ctx, http.StatusUnauthorized, http.Json{"error": "token not found or revoked"})
 			return

@@ -55,7 +55,7 @@ func UpdateMe(ctx http.Context) http.Response {
 	}
 
 	if req.FullName != "" {
-		if err := container.Get().UserRepo.UpdateFullName(user.ID, req.FullName); err != nil {
+		if err := container.Get().UserRepo.UpdateFullName(ctx.Context(), user.ID, req.FullName); err != nil {
 			return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to update profile"})
 		}
 		user.FullName = req.FullName
@@ -93,7 +93,7 @@ func ChangePassword(ctx http.Context) http.Response {
 		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to hash password"})
 	}
 
-	if err := container.Get().UserRepo.UpdatePasswordHash(user.ID, hash); err != nil {
+	if err := container.Get().UserRepo.UpdatePasswordHash(ctx.Context(), user.ID, hash); err != nil {
 		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to update password"})
 	}
 
@@ -135,7 +135,7 @@ func ListMyAccounts(ctx http.Context) http.Response {
 		return responses.Send(ctx, http.StatusBadRequest, http.Json{"error": errMessage})
 	}
 
-	accounts, total, err := container.Get().AccountRepo.PaginateByMember(userID, filter, limit, offset)
+	accounts, total, err := container.Get().AccountRepo.PaginateByMember(ctx.Context(), userID, filter, limit, offset)
 	if err != nil {
 		facades.Log().WithContext(ctx).Errorf("user: list my accounts: %v", err)
 		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to fetch accounts"})
@@ -180,21 +180,21 @@ func UpdateDefaultAccount(ctx http.Context) http.Response {
 
 	accountID, _ := uuid.Parse(req.AccountID)
 
-	au, err := container.Get().AccountUserRepo.FindByAccountAndUser(accountID, userID)
+	au, err := container.Get().AccountUserRepo.FindByAccountAndUser(ctx.Context(), accountID, userID)
 	if err != nil || au == nil {
 		return responses.Send(ctx, http.StatusForbidden, http.Json{"error": "not a member of this account"})
 	}
 
-	userPtr, _ := container.Get().UserRepo.FindByID(userID)
+	userPtr, _ := container.Get().UserRepo.FindByID(ctx.Context(), userID)
 	if userPtr == nil {
 		return responses.Send(ctx, http.StatusNotFound, http.Json{"error": "user not found"})
 	}
 	userPtr.DefaultAccountID = &accountID
-	if err := container.Get().UserRepo.UpdateDefaultAccountID(userPtr.ID, &accountID); err != nil {
+	if err := container.Get().UserRepo.UpdateDefaultAccountID(ctx.Context(), userPtr.ID, &accountID); err != nil {
 		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to update default account"})
 	}
 
-	account, _ := container.Get().AccountRepo.FindByID(accountID)
+	account, _ := container.Get().AccountRepo.FindByID(ctx.Context(), accountID)
 	return ctx.Response().Json(http.StatusOK, http.Json{"account": account})
 }
 
@@ -220,7 +220,7 @@ func SetupTOTP(ctx http.Context) http.Response {
 		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to encrypt secret"})
 	}
 
-	if err := container.Get().UserRepo.UpdateTotpSecret(user.ID, encryptedSecret); err != nil {
+	if err := container.Get().UserRepo.UpdateTotpSecret(ctx.Context(), user.ID, encryptedSecret); err != nil {
 		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to save TOTP secret"})
 	}
 
@@ -264,7 +264,7 @@ func ConfirmTOTP(ctx http.Context) http.Response {
 		return responses.Send(ctx, http.StatusUnauthorized, http.Json{"error": "invalid verification code"})
 	}
 
-	if err := container.Get().UserRepo.EnableTotp(user.ID); err != nil {
+	if err := container.Get().UserRepo.EnableTotp(ctx.Context(), user.ID); err != nil {
 		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to enable 2FA"})
 	}
 
@@ -273,7 +273,7 @@ func ConfirmTOTP(ctx http.Context) http.Response {
 		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to generate recovery codes"})
 	}
 
-	_ = container.Get().TotpRecoveryCodeRepo.DeleteByUserID(user.ID)
+	_ = container.Get().TotpRecoveryCodeRepo.DeleteByUserID(ctx.Context(), user.ID)
 
 	var recoveryCodes []models.TotpRecoveryCode
 	for _, h := range hashes {
@@ -283,7 +283,7 @@ func ConfirmTOTP(ctx http.Context) http.Response {
 			CodeHash: h,
 		})
 	}
-	_ = container.Get().TotpRecoveryCodeRepo.CreateBatch(recoveryCodes)
+	_ = container.Get().TotpRecoveryCodeRepo.CreateBatch(ctx.Context(), recoveryCodes)
 
 	user.TotpEnabled = true
 	resp := map[string]interface{}{
@@ -305,11 +305,11 @@ func ConfirmTOTP(ctx http.Context) http.Response {
 func DisableTOTP(ctx http.Context) http.Response {
 	user := ctx.Value("user").(*models.User)
 
-	if err := container.Get().UserRepo.DisableTotp(user.ID); err != nil {
+	if err := container.Get().UserRepo.DisableTotp(ctx.Context(), user.ID); err != nil {
 		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to disable 2FA"})
 	}
 
-	_ = container.Get().TotpRecoveryCodeRepo.DeleteByUserID(user.ID)
+	_ = container.Get().TotpRecoveryCodeRepo.DeleteByUserID(ctx.Context(), user.ID)
 
 	user.TotpEnabled = false
 	user.TotpSecret = ""

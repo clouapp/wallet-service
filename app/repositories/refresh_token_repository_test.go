@@ -1,6 +1,7 @@
 package repositories_test
 
 import (
+	"context"
 	"testing"
 	"time"
 
@@ -15,8 +16,8 @@ import (
 
 type RefreshTokenRepositoryTestSuite struct {
 	suite.Suite
-	repo     repositories.RefreshTokenRepository
-	userRepo repositories.UserRepository
+	repo     *repositories.RefreshTokenRepository
+	userRepo *repositories.UserRepository
 }
 
 func TestRefreshTokenRepositorySuite(t *testing.T) {
@@ -25,13 +26,13 @@ func TestRefreshTokenRepositorySuite(t *testing.T) {
 
 func (s *RefreshTokenRepositoryTestSuite) SetupTest() {
 	mocks.TestDB(s.T())
-	s.repo = repositories.NewRefreshTokenRepository()
-	s.userRepo = repositories.NewUserRepository()
+	s.repo = repositories.NewRefreshTokenRepository(nil)
+	s.userRepo = repositories.NewUserRepository(nil)
 }
 
 func (s *RefreshTokenRepositoryTestSuite) createUser() uuid.UUID {
 	u := &models.User{ID: uuid.New(), Email: uuid.NewString() + "@test.com", PasswordHash: "h", Status: "active"}
-	s.Require().NoError(s.userRepo.Create(u))
+	s.Require().NoError(s.userRepo.Create(context.Background(), u))
 	return u.ID
 }
 
@@ -43,7 +44,7 @@ func (s *RefreshTokenRepositoryTestSuite) TestCreate_Success() {
 		TokenHash: "hash123",
 		ExpiresAt: time.Now().Add(24 * time.Hour),
 	}
-	err := s.repo.Create(rt)
+	err := s.repo.Create(context.Background(), rt)
 	s.NoError(err)
 }
 
@@ -51,17 +52,17 @@ func (s *RefreshTokenRepositoryTestSuite) TestFindValidTokens() {
 	userID := s.createUser()
 
 	valid := &models.RefreshToken{ID: uuid.New(), UserID: userID, TokenHash: "valid", ExpiresAt: time.Now().Add(24 * time.Hour)}
-	s.Require().NoError(s.repo.Create(valid))
+	s.Require().NoError(s.repo.Create(context.Background(), valid))
 
 	expired := &models.RefreshToken{ID: uuid.New(), UserID: userID, TokenHash: "expired", ExpiresAt: time.Now().Add(-1 * time.Hour)}
-	s.Require().NoError(s.repo.Create(expired))
+	s.Require().NoError(s.repo.Create(context.Background(), expired))
 
 	revoked := &models.RefreshToken{ID: uuid.New(), UserID: userID, TokenHash: "revoked", ExpiresAt: time.Now().Add(24 * time.Hour)}
-	s.Require().NoError(s.repo.Create(revoked))
+	s.Require().NoError(s.repo.Create(context.Background(), revoked))
 	now := time.Now()
 	facades.Orm().Query().Model(revoked).Where("id = ?", revoked.ID).Update("revoked_at", now)
 
-	tokens, err := s.repo.FindValidTokens()
+	tokens, err := s.repo.FindValidTokens(context.Background())
 	s.NoError(err)
 	s.Len(tokens, 1)
 	s.Equal(valid.ID, tokens[0].ID)
@@ -70,9 +71,9 @@ func (s *RefreshTokenRepositoryTestSuite) TestFindValidTokens() {
 func (s *RefreshTokenRepositoryTestSuite) TestRevokeByID() {
 	userID := s.createUser()
 	rt := &models.RefreshToken{ID: uuid.New(), UserID: userID, TokenHash: "tok", ExpiresAt: time.Now().Add(24 * time.Hour)}
-	s.Require().NoError(s.repo.Create(rt))
+	s.Require().NoError(s.repo.Create(context.Background(), rt))
 
-	err := s.repo.RevokeByID(rt.ID)
+	err := s.repo.RevokeByID(context.Background(), rt.ID)
 	s.NoError(err)
 
 	var check models.RefreshToken
@@ -84,13 +85,13 @@ func (s *RefreshTokenRepositoryTestSuite) TestRevokeAllForUser() {
 	userID := s.createUser()
 	rt1 := &models.RefreshToken{ID: uuid.New(), UserID: userID, TokenHash: "t1", ExpiresAt: time.Now().Add(24 * time.Hour)}
 	rt2 := &models.RefreshToken{ID: uuid.New(), UserID: userID, TokenHash: "t2", ExpiresAt: time.Now().Add(24 * time.Hour)}
-	s.Require().NoError(s.repo.Create(rt1))
-	s.Require().NoError(s.repo.Create(rt2))
+	s.Require().NoError(s.repo.Create(context.Background(), rt1))
+	s.Require().NoError(s.repo.Create(context.Background(), rt2))
 
-	err := s.repo.RevokeAllForUser(userID)
+	err := s.repo.RevokeAllForUser(context.Background(), userID)
 	s.NoError(err)
 
-	tokens, err := s.repo.FindValidTokens()
+	tokens, err := s.repo.FindValidTokens(context.Background())
 	s.NoError(err)
 	s.Len(tokens, 0)
 }

@@ -1,114 +1,131 @@
 package repositories
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 
 	"github.com/google/uuid"
-	"github.com/goravel/framework/facades"
+	"github.com/goravel/framework/contracts/database/orm"
 
 	"github.com/macrowallets/waas/app/models"
+	"github.com/macrowallets/waas/app/repositories/internal/db"
 )
 
-type UserRepository interface {
-	FindByEmail(email string) (*models.User, error)
-	FindByID(id uuid.UUID) (*models.User, error)
-	Create(user *models.User) error
-	UpdateDefaultAccountID(id uuid.UUID, defaultAccountID *uuid.UUID) error
-	UpdateFullName(id uuid.UUID, fullName string) error
-	UpdatePasswordHash(id uuid.UUID, hash string) error
-	UpdatePreferences(id uuid.UUID, prefs *models.UserPreferences) error
-	UpdateTotpSecret(id uuid.UUID, secret string) error
-	EnableTotp(id uuid.UUID) error
-	DisableTotp(id uuid.UUID) error
+// UserRepository persists users. Preferences live on the users row, not in a
+// separate table.
+type UserRepository struct {
+	db.Base
 }
 
-type userRepository struct{}
-
-func NewUserRepository() UserRepository {
-	return &userRepository{}
+// NewUserRepository wraps an orm.Query. Pass nil for a fresh query per call.
+func NewUserRepository(query orm.Query) *UserRepository {
+	return &UserRepository{Base: db.NewBase(query)}
 }
 
-func (r *userRepository) FindByEmail(email string) (*models.User, error) {
+// FindByEmail returns the user with this email, or ErrRepositoryNotFound.
+func (r *UserRepository) FindByEmail(ctx context.Context, email string) (*models.User, error) {
 	var user models.User
-	err := facades.Orm().Query().Where("email = ?", email).First(&user)
-	if err != nil {
-		return nil, err
+	if err := r.Query(ctx).Where("email = ?", email).First(&user); err != nil {
+		return nil, fmt.Errorf("find user by email: %w", err)
 	}
 	if user.ID == uuid.Nil {
-		return nil, nil
+		return nil, models.ErrRepositoryNotFound
 	}
 	return &user, nil
 }
 
-func (r *userRepository) FindByID(id uuid.UUID) (*models.User, error) {
+// FindByID returns the user with this id, or ErrRepositoryNotFound.
+func (r *UserRepository) FindByID(ctx context.Context, id uuid.UUID) (*models.User, error) {
 	var user models.User
-	err := facades.Orm().Query().Where("id = ?", id).First(&user)
-	if err != nil {
-		return nil, err
+	if err := r.Query(ctx).Where("id = ?", id).First(&user); err != nil {
+		return nil, fmt.Errorf("find user by id: %w", err)
 	}
 	if user.ID == uuid.Nil {
-		return nil, nil
+		return nil, models.ErrRepositoryNotFound
 	}
 	return &user, nil
 }
 
-func (r *userRepository) Create(user *models.User) error {
+// Create inserts a user. A nil Preferences pointer is omitted so the column
+// default '{}' applies; users.preferences is NOT NULL.
+func (r *UserRepository) Create(ctx context.Context, user *models.User) error {
 	if user == nil {
 		return fmt.Errorf("create user: user is nil")
 	}
-	query := facades.Orm().Query()
+	query := r.Query(ctx)
 	if user.Preferences != nil {
-		return query.Create(user)
+		if err := query.Create(user); err != nil {
+			return fmt.Errorf("create user: %w", err)
+		}
+		return nil
 	}
-	// users.preferences is NOT NULL. A nil pointer is inserted as NULL, and
-	// GORM's Valuer path for this type has written invalid jsonb, so leave the
-	// column out and let the '{}' default apply.
 	if err := query.Omit("Preferences").Create(user); err != nil {
-		return err
+		return fmt.Errorf("create user: %w", err)
 	}
 	user.Preferences = &models.UserPreferences{}
 	return nil
 }
 
-func (r *userRepository) UpdateDefaultAccountID(id uuid.UUID, defaultAccountID *uuid.UUID) error {
-	_, err := facades.Orm().Query().Model(&models.User{}).Where("id = ?", id).Update("default_account_id", defaultAccountID)
-	return err
+// UpdateDefaultAccountID sets users.default_account_id.
+func (r *UserRepository) UpdateDefaultAccountID(ctx context.Context, id uuid.UUID, defaultAccountID *uuid.UUID) error {
+	if _, err := r.Query(ctx).Model(&models.User{}).Where("id = ?", id).Update("default_account_id", defaultAccountID); err != nil {
+		return fmt.Errorf("update user default account: %w", err)
+	}
+	return nil
 }
 
-func (r *userRepository) UpdateFullName(id uuid.UUID, fullName string) error {
-	_, err := facades.Orm().Query().Model(&models.User{}).Where("id = ?", id).Update("full_name", fullName)
-	return err
+// UpdateFullName sets users.full_name.
+func (r *UserRepository) UpdateFullName(ctx context.Context, id uuid.UUID, fullName string) error {
+	if _, err := r.Query(ctx).Model(&models.User{}).Where("id = ?", id).Update("full_name", fullName); err != nil {
+		return fmt.Errorf("update user full name: %w", err)
+	}
+	return nil
 }
 
-func (r *userRepository) UpdatePasswordHash(id uuid.UUID, hash string) error {
-	_, err := facades.Orm().Query().Model(&models.User{}).Where("id = ?", id).Update("password_hash", hash)
-	return err
+// UpdatePasswordHash sets users.password_hash.
+func (r *UserRepository) UpdatePasswordHash(ctx context.Context, id uuid.UUID, hash string) error {
+	if _, err := r.Query(ctx).Model(&models.User{}).Where("id = ?", id).Update("password_hash", hash); err != nil {
+		return fmt.Errorf("update user password hash: %w", err)
+	}
+	return nil
 }
 
-func (r *userRepository) UpdatePreferences(id uuid.UUID, prefs *models.UserPreferences) error {
+// UpdatePreferences sets users.preferences.
+func (r *UserRepository) UpdatePreferences(ctx context.Context, id uuid.UUID, prefs *models.UserPreferences) error {
 	jsonBytes, err := json.Marshal(prefs)
 	if err != nil {
-		return err
+		return fmt.Errorf("update user preferences: %w", err)
 	}
-	_, err = facades.Orm().Query().Model(&models.User{}).Where("id = ?", id).Update("preferences", string(jsonBytes))
-	return err
+	if _, err := r.Query(ctx).Model(&models.User{}).Where("id = ?", id).Update("preferences", string(jsonBytes)); err != nil {
+		return fmt.Errorf("update user preferences: %w", err)
+	}
+	return nil
 }
 
-func (r *userRepository) UpdateTotpSecret(id uuid.UUID, secret string) error {
-	_, err := facades.Orm().Query().Model(&models.User{}).Where("id = ?", id).Update("totp_secret", secret)
-	return err
+// UpdateTotpSecret sets users.totp_secret.
+func (r *UserRepository) UpdateTotpSecret(ctx context.Context, id uuid.UUID, secret string) error {
+	if _, err := r.Query(ctx).Model(&models.User{}).Where("id = ?", id).Update("totp_secret", secret); err != nil {
+		return fmt.Errorf("update user totp secret: %w", err)
+	}
+	return nil
 }
 
-func (r *userRepository) EnableTotp(id uuid.UUID) error {
-	_, err := facades.Orm().Query().Model(&models.User{}).Where("id = ?", id).Update("totp_enabled", true)
-	return err
+// EnableTotp sets users.totp_enabled.
+func (r *UserRepository) EnableTotp(ctx context.Context, id uuid.UUID) error {
+	if _, err := r.Query(ctx).Model(&models.User{}).Where("id = ?", id).Update("totp_enabled", true); err != nil {
+		return fmt.Errorf("enable user totp: %w", err)
+	}
+	return nil
 }
 
-func (r *userRepository) DisableTotp(id uuid.UUID) error {
-	_, err := facades.Orm().Query().Model(&models.User{}).Where("id = ?", id).Update(map[string]interface{}{
+// DisableTotp clears totp_enabled and totp_secret together.
+func (r *UserRepository) DisableTotp(ctx context.Context, id uuid.UUID) error {
+	if _, err := r.Query(ctx).Model(&models.User{}).Where("id = ?", id).Update(map[string]any{
 		"totp_enabled": false,
 		"totp_secret":  "",
-	})
-	return err
+	}); err != nil {
+		return fmt.Errorf("disable user totp: %w", err)
+	}
+	return nil
 }

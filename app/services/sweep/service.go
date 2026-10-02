@@ -45,6 +45,11 @@ type Service interface {
 	LoadLimits(ctx context.Context, accountID uuid.UUID) (*Limits, error)
 }
 
+// accountReader is the account lookup sweep uses for per-account limits.
+type accountReader interface {
+	FindByID(ctx context.Context, id uuid.UUID) (*models.Account, error)
+}
+
 type service struct {
 	registry    *chain.Registry
 	mpc         mpcpkg.Service
@@ -54,7 +59,7 @@ type service struct {
 	walletRepo  repositories.WalletRepository
 	addressRepo repositories.AddressRepository
 	txRepo      repositories.TransactionRepository
-	accountRepo repositories.AccountRepository
+	accountRepo accountReader
 	chainRepo   repositories.ChainRepository
 
 	// fetchShareBFn is the function used to retrieve the service's MPC share for
@@ -74,7 +79,7 @@ func NewService(
 	walletRepo repositories.WalletRepository,
 	addressRepo repositories.AddressRepository,
 	txRepo repositories.TransactionRepository,
-	accountRepo repositories.AccountRepository,
+	accountRepo accountReader,
 	chainRepo repositories.ChainRepository,
 ) Service {
 	return &service{

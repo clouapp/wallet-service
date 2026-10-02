@@ -29,7 +29,10 @@ func (s *AccountServiceTestSuite) SetupTest() {
 // TestCreate_Success verifies that Create returns an account with "active" status
 // and creates an owner membership. Requires a live database connection.
 func (s *AccountServiceTestSuite) TestCreate_Success() {
-	svc := accountsvc.NewService(repositories.NewAccountRepository(), repositories.NewAccountUserRepository())
+	svc := accountsvc.NewService(accountsvc.Deps{
+		Accounts:    repositories.NewAccountRepository(nil),
+		Memberships: repositories.NewAccountUserRepository(nil),
+	})
 	ownerID := uuid.New()
 	ctx := context.Background()
 
@@ -46,7 +49,10 @@ func (s *AccountServiceTestSuite) TestCreate_Success() {
 
 // TestAddUser_Success verifies that AddUser adds a new member to an account.
 func (s *AccountServiceTestSuite) TestAddUser_Success() {
-	svc := accountsvc.NewService(repositories.NewAccountRepository(), repositories.NewAccountUserRepository())
+	svc := accountsvc.NewService(accountsvc.Deps{
+		Accounts:    repositories.NewAccountRepository(nil),
+		Memberships: repositories.NewAccountUserRepository(nil),
+	})
 	ctx := context.Background()
 	ownerID := uuid.New()
 
@@ -64,7 +70,10 @@ func (s *AccountServiceTestSuite) TestAddUser_Success() {
 
 // TestAddUser_ReAdd_ClearsDeletedAt verifies that a soft-deleted member can be re-added.
 func (s *AccountServiceTestSuite) TestAddUser_ReAdd_ClearsDeletedAt() {
-	svc := accountsvc.NewService(repositories.NewAccountRepository(), repositories.NewAccountUserRepository())
+	svc := accountsvc.NewService(accountsvc.Deps{
+		Accounts:    repositories.NewAccountRepository(nil),
+		Memberships: repositories.NewAccountUserRepository(nil),
+	})
 	ctx := context.Background()
 	ownerID := uuid.New()
 
@@ -92,7 +101,10 @@ func (s *AccountServiceTestSuite) TestAddUser_ReAdd_ClearsDeletedAt() {
 // TestIsolation_UserCannotAccessOtherAccount verifies that GetUserRole returns empty
 // string when a user has no membership in the queried account.
 func (s *AccountServiceTestSuite) TestIsolation_UserCannotAccessOtherAccount() {
-	svc := accountsvc.NewService(repositories.NewAccountRepository(), repositories.NewAccountUserRepository())
+	svc := accountsvc.NewService(accountsvc.Deps{
+		Accounts:    repositories.NewAccountRepository(nil),
+		Memberships: repositories.NewAccountUserRepository(nil),
+	})
 	ctx := context.Background()
 	ownerA := uuid.New()
 	ownerB := uuid.New()

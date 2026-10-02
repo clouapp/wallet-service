@@ -24,7 +24,7 @@ func AccountHeader() http.Middleware {
 			return
 		}
 
-		accountPtr, err := container.Get().AccountRepo.FindByID(accountID)
+		accountPtr, err := container.Get().AccountRepo.FindByID(ctx.Context(), accountID)
 		if err != nil || accountPtr == nil {
 			_ = responses.Send(ctx, http.StatusNotFound, http.Json{"error": "account not found"}).Abort()
 			return
@@ -36,7 +36,7 @@ func AccountHeader() http.Middleware {
 			return
 		}
 
-		au, err := container.Get().AccountUserRepo.FindByAccountAndUser(accountID, userID)
+		au, err := container.Get().AccountUserRepo.FindByAccountAndUser(ctx.Context(), accountID, userID)
 		if err != nil || au == nil {
 			_ = responses.Send(ctx, http.StatusForbidden, http.Json{"error": "not a member of this account"}).Abort()
 			return

@@ -1,49 +1,57 @@
 package repositories
 
 import (
+	"context"
+	"fmt"
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/goravel/framework/facades"
+	"github.com/goravel/framework/contracts/database/orm"
 
 	"github.com/macrowallets/waas/app/models"
+	"github.com/macrowallets/waas/app/repositories/internal/db"
 )
 
-type TotpRecoveryCodeRepository interface {
-	FindUnusedByUserID(userID uuid.UUID) ([]models.TotpRecoveryCode, error)
-	MarkUsed(id uuid.UUID) error
-	CreateBatch(codes []models.TotpRecoveryCode) error
-	DeleteByUserID(userID uuid.UUID) error
+// TotpRecoveryCodeRepository persists one-time TOTP recovery codes.
+type TotpRecoveryCodeRepository struct {
+	db.Base
 }
 
-type totpRecoveryCodeRepository struct{}
-
-func NewTotpRecoveryCodeRepository() TotpRecoveryCodeRepository {
-	return &totpRecoveryCodeRepository{}
+// NewTotpRecoveryCodeRepository wraps an orm.Query. Pass nil for a fresh query per call.
+func NewTotpRecoveryCodeRepository(query orm.Query) *TotpRecoveryCodeRepository {
+	return &TotpRecoveryCodeRepository{Base: db.NewBase(query)}
 }
 
-func (r *totpRecoveryCodeRepository) FindUnusedByUserID(userID uuid.UUID) ([]models.TotpRecoveryCode, error) {
+// FindUnusedByUserID returns recovery codes that have not been used.
+func (r *TotpRecoveryCodeRepository) FindUnusedByUserID(ctx context.Context, userID uuid.UUID) ([]models.TotpRecoveryCode, error) {
 	var codes []models.TotpRecoveryCode
-	err := facades.Orm().Query().
-		Where("user_id = ? AND used_at IS NULL", userID).
-		Find(&codes)
-	return codes, err
+	if err := r.Query(ctx).Where("user_id = ? AND used_at IS NULL", userID).Find(&codes); err != nil {
+		return nil, fmt.Errorf("list unused recovery codes: %w", err)
+	}
+	return codes, nil
 }
 
-func (r *totpRecoveryCodeRepository) MarkUsed(id uuid.UUID) error {
+// MarkUsed sets used_at on a recovery code.
+func (r *TotpRecoveryCodeRepository) MarkUsed(ctx context.Context, id uuid.UUID) error {
 	now := time.Now()
-	_, err := facades.Orm().Query().
-		Model(&models.TotpRecoveryCode{}).
-		Where("id = ?", id).
-		Update("used_at", now)
-	return err
+	if _, err := r.Query(ctx).Model(&models.TotpRecoveryCode{}).Where("id = ?", id).Update("used_at", now); err != nil {
+		return fmt.Errorf("mark recovery code used: %w", err)
+	}
+	return nil
 }
 
-func (r *totpRecoveryCodeRepository) CreateBatch(codes []models.TotpRecoveryCode) error {
-	return facades.Orm().Query().Create(&codes)
+// CreateBatch inserts recovery codes.
+func (r *TotpRecoveryCodeRepository) CreateBatch(ctx context.Context, codes []models.TotpRecoveryCode) error {
+	if err := r.Query(ctx).Create(&codes); err != nil {
+		return fmt.Errorf("create recovery codes: %w", err)
+	}
+	return nil
 }
 
-func (r *totpRecoveryCodeRepository) DeleteByUserID(userID uuid.UUID) error {
-	_, err := facades.Orm().Query().Where("user_id = ?", userID).Delete(&models.TotpRecoveryCode{})
-	return err
+// DeleteByUserID removes every recovery code for the user.
+func (r *TotpRecoveryCodeRepository) DeleteByUserID(ctx context.Context, userID uuid.UUID) error {
+	if _, err := r.Query(ctx).Where("user_id = ?", userID).Delete(&models.TotpRecoveryCode{}); err != nil {
+		return fmt.Errorf("delete recovery codes: %w", err)
+	}
+	return nil
 }

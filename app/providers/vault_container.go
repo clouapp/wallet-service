@@ -52,8 +52,8 @@ func (r staticEndpointResolver) ResolveEndpoint(
 }
 
 func registerVaultContainer(app foundation.Application) {
-	app.Singleton(container.ContainerKey, func(_ foundation.Application) (any, error) {
-		c, err := buildVaultContainer()
+	app.Singleton(container.ContainerKey, func(app foundation.Application) (any, error) {
+		c, err := buildVaultContainer(app)
 		if err != nil {
 			return nil, err
 		}
@@ -61,7 +61,7 @@ func registerVaultContainer(app foundation.Application) {
 	})
 }
 
-func buildVaultContainer() (*container.Container, error) {
+func buildVaultContainer(app foundation.Application) (*container.Container, error) {
 	c := &container.Container{}
 
 	redisURL := facades.Config().GetString("vault.redis_url")
@@ -91,13 +91,41 @@ func buildVaultContainer() (*container.Container, error) {
 	c.SecretsManager = smClient
 	c.MPCService = mpc.NewTSSService()
 
-	c.UserRepo = repositories.NewUserRepository()
-	c.RefreshTokenRepo = repositories.NewRefreshTokenRepository()
-	c.PasswordResetTokenRepo = repositories.NewPasswordResetTokenRepository()
-	c.TotpRecoveryCodeRepo = repositories.NewTotpRecoveryCodeRepository()
-	c.AccountRepo = repositories.NewAccountRepository()
-	c.AccountUserRepo = repositories.NewAccountUserRepository()
-	c.AccessTokenRepo = repositories.NewAccessTokenRepository()
+	users, err := resolve[*repositories.UserRepository](app)
+	if err != nil {
+		return nil, err
+	}
+	refreshTokens, err := resolve[*repositories.RefreshTokenRepository](app)
+	if err != nil {
+		return nil, err
+	}
+	passwordResets, err := resolve[*repositories.PasswordResetTokenRepository](app)
+	if err != nil {
+		return nil, err
+	}
+	recoveryCodes, err := resolve[*repositories.TotpRecoveryCodeRepository](app)
+	if err != nil {
+		return nil, err
+	}
+	accounts, err := resolve[*repositories.AccountRepository](app)
+	if err != nil {
+		return nil, err
+	}
+	memberships, err := resolve[*repositories.AccountUserRepository](app)
+	if err != nil {
+		return nil, err
+	}
+	accessTokens, err := resolve[*repositories.AccessTokenRepository](app)
+	if err != nil {
+		return nil, err
+	}
+	c.UserRepo = users
+	c.RefreshTokenRepo = refreshTokens
+	c.PasswordResetTokenRepo = passwordResets
+	c.TotpRecoveryCodeRepo = recoveryCodes
+	c.AccountRepo = accounts
+	c.AccountUserRepo = memberships
+	c.AccessTokenRepo = accessTokens
 	c.WalletRepo = repositories.NewWalletRepository()
 	c.WalletUserRepo = repositories.NewWalletUserRepository()
 	c.AddressRepo = repositories.NewAddressRepository()

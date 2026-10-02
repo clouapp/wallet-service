@@ -30,7 +30,7 @@ func (s *service) LoadLimits(ctx context.Context, accountID uuid.UUID) (*Limits,
 	if accountID == uuid.Nil {
 		return defaults, nil
 	}
-	account, err := s.accountRepo.FindByID(accountID)
+	account, err := s.accountRepo.FindByID(ctx, accountID)
 	if err != nil || account == nil {
 		return defaults, nil
 	}

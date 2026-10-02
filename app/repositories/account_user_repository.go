@@ -1,127 +1,126 @@
 package repositories
 
 import (
+	"context"
+	"fmt"
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/goravel/framework/facades"
+	"github.com/goravel/framework/contracts/database/orm"
 
 	"github.com/macrowallets/waas/app/models"
+	"github.com/macrowallets/waas/app/repositories/internal/db"
 )
 
-type AccountUserRepository interface {
-	Create(au *models.AccountUser) error
-	FindByAccountID(accountID uuid.UUID) ([]models.AccountUser, error)
-	FindByAccountAndUser(accountID, userID uuid.UUID) (*models.AccountUser, error)
-	FindByAccountAndUserIncludeDeleted(accountID, userID uuid.UUID) (*models.AccountUser, error)
-	FindByUserID(userID uuid.UUID) ([]models.AccountUser, error)
-	PaginateByUserID(userID uuid.UUID, limit, offset int) ([]models.AccountUser, int64, error)
-	PaginateByAccountID(accountID uuid.UUID, limit, offset int) ([]models.AccountUser, int64, error)
-	UpdateField(id uuid.UUID, field string, value interface{}) error
-	SoftDeleteByAccountAndUser(accountID, userID uuid.UUID) error
+// AccountUserRepository persists account memberships.
+type AccountUserRepository struct {
+	db.Base
 }
 
-type accountUserRepository struct{}
-
-func NewAccountUserRepository() AccountUserRepository {
-	return &accountUserRepository{}
+// NewAccountUserRepository wraps an orm.Query. Pass nil for a fresh query per call.
+func NewAccountUserRepository(query orm.Query) *AccountUserRepository {
+	return &AccountUserRepository{Base: db.NewBase(query)}
 }
 
-func (r *accountUserRepository) Create(au *models.AccountUser) error {
-	return facades.Orm().Query().Create(au)
+// Create inserts a membership.
+func (r *AccountUserRepository) Create(ctx context.Context, au *models.AccountUser) error {
+	if au == nil {
+		return fmt.Errorf("create account user: membership is nil")
+	}
+	if err := r.Query(ctx).Create(au); err != nil {
+		return fmt.Errorf("create account user: %w", err)
+	}
+	return nil
 }
 
-func (r *accountUserRepository) FindByAccountID(accountID uuid.UUID) ([]models.AccountUser, error) {
+// FindByAccountID returns active memberships of an account.
+func (r *AccountUserRepository) FindByAccountID(ctx context.Context, accountID uuid.UUID) ([]models.AccountUser, error) {
 	var members []models.AccountUser
-	err := facades.Orm().Query().
-		Where("account_id = ? AND deleted_at IS NULL", accountID).
-		Find(&members)
-	return members, err
+	if err := r.Query(ctx).Where("account_id = ? AND deleted_at IS NULL", accountID).Find(&members); err != nil {
+		return nil, fmt.Errorf("list account users: %w", err)
+	}
+	return members, nil
 }
 
-func (r *accountUserRepository) FindByAccountAndUser(accountID, userID uuid.UUID) (*models.AccountUser, error) {
+// FindByAccountAndUser returns the active membership, or ErrRepositoryNotFound.
+func (r *AccountUserRepository) FindByAccountAndUser(ctx context.Context, accountID, userID uuid.UUID) (*models.AccountUser, error) {
+	return r.findMembership(ctx, accountID, userID, true)
+}
+
+// FindByAccountAndUserIncludeDeleted returns the membership even when soft-deleted, or ErrRepositoryNotFound.
+func (r *AccountUserRepository) FindByAccountAndUserIncludeDeleted(ctx context.Context, accountID, userID uuid.UUID) (*models.AccountUser, error) {
+	return r.findMembership(ctx, accountID, userID, false)
+}
+
+func (r *AccountUserRepository) findMembership(ctx context.Context, accountID, userID uuid.UUID, activeOnly bool) (*models.AccountUser, error) {
 	var au models.AccountUser
-	err := facades.Orm().Query().
-		Where("account_id = ? AND user_id = ? AND deleted_at IS NULL", accountID, userID).
-		First(&au)
-	if err != nil {
-		return nil, err
+	q := r.Query(ctx).Where("account_id = ? AND user_id = ?", accountID, userID)
+	if activeOnly {
+		q = q.Where("deleted_at IS NULL")
+	}
+	if err := q.First(&au); err != nil {
+		return nil, fmt.Errorf("find account user: %w", err)
 	}
 	if au.ID == uuid.Nil {
-		return nil, nil
+		return nil, models.ErrRepositoryNotFound
 	}
 	return &au, nil
 }
 
-func (r *accountUserRepository) FindByAccountAndUserIncludeDeleted(accountID, userID uuid.UUID) (*models.AccountUser, error) {
-	var au models.AccountUser
-	err := facades.Orm().Query().
-		Where("account_id = ? AND user_id = ?", accountID, userID).
-		First(&au)
-	if err != nil {
-		return nil, err
-	}
-	if au.ID == uuid.Nil {
-		return nil, nil
-	}
-	return &au, nil
-}
-
-func (r *accountUserRepository) FindByUserID(userID uuid.UUID) ([]models.AccountUser, error) {
+// FindByUserID returns the user's active memberships.
+func (r *AccountUserRepository) FindByUserID(ctx context.Context, userID uuid.UUID) ([]models.AccountUser, error) {
 	var memberships []models.AccountUser
-	err := facades.Orm().Query().
-		Where("user_id = ? AND deleted_at IS NULL", userID).
-		Find(&memberships)
-	return memberships, err
-}
-
-func (r *accountUserRepository) PaginateByUserID(userID uuid.UUID, limit, offset int) ([]models.AccountUser, int64, error) {
-	var memberships []models.AccountUser
-	var total int64
-	total, err := facades.Orm().Query().
-		Model(&models.AccountUser{}).
-		Where("user_id = ? AND deleted_at IS NULL", userID).
-		Count()
-	if err != nil {
-		return nil, 0, err
+	if err := r.Query(ctx).Where("user_id = ? AND deleted_at IS NULL", userID).Find(&memberships); err != nil {
+		return nil, fmt.Errorf("list user memberships: %w", err)
 	}
-	err = facades.Orm().Query().
-		Where("user_id = ? AND deleted_at IS NULL", userID).
-		Offset(offset).Limit(limit).
-		Find(&memberships)
-	return memberships, total, err
+	return memberships, nil
 }
 
-func (r *accountUserRepository) PaginateByAccountID(accountID uuid.UUID, limit, offset int) ([]models.AccountUser, int64, error) {
+// PaginateByUserID pages the user's active memberships.
+func (r *AccountUserRepository) PaginateByUserID(ctx context.Context, userID uuid.UUID, limit, offset int) ([]models.AccountUser, int64, error) {
+	return r.paginate(ctx, "user_id = ? AND deleted_at IS NULL", userID, limit, offset)
+}
+
+// PaginateByAccountID pages an account's active memberships.
+func (r *AccountUserRepository) PaginateByAccountID(ctx context.Context, accountID uuid.UUID, limit, offset int) ([]models.AccountUser, int64, error) {
+	return r.paginate(ctx, "account_id = ? AND deleted_at IS NULL", accountID, limit, offset)
+}
+
+func (r *AccountUserRepository) paginate(ctx context.Context, where string, id uuid.UUID, limit, offset int) ([]models.AccountUser, int64, error) {
+	total, err := r.Query(ctx).Model(&models.AccountUser{}).Where(where, id).Count()
+	if err != nil {
+		return nil, 0, fmt.Errorf("count account users: %w", err)
+	}
 	var members []models.AccountUser
-	var total int64
-	total, err := facades.Orm().Query().
-		Model(&models.AccountUser{}).
-		Where("account_id = ? AND deleted_at IS NULL", accountID).
-		Count()
-	if err != nil {
-		return nil, 0, err
+	if err := r.Query(ctx).Where(where, id).Offset(offset).Limit(limit).Find(&members); err != nil {
+		return nil, 0, fmt.Errorf("list account users: %w", err)
 	}
-	err = facades.Orm().Query().
-		Where("account_id = ? AND deleted_at IS NULL", accountID).
-		Offset(offset).Limit(limit).
-		Find(&members)
-	return members, total, err
+	return members, total, nil
 }
 
-func (r *accountUserRepository) UpdateField(id uuid.UUID, field string, value interface{}) error {
-	_, err := facades.Orm().Query().
-		Model(&models.AccountUser{}).
-		Where("id = ?", id).
-		Update(field, value)
-	return err
+// Restore clears deleted_at on a membership.
+func (r *AccountUserRepository) Restore(ctx context.Context, id uuid.UUID) error {
+	if _, err := r.Query(ctx).Model(&models.AccountUser{}).Where("id = ?", id).Update("deleted_at", nil); err != nil {
+		return fmt.Errorf("restore account user: %w", err)
+	}
+	return nil
 }
 
-func (r *accountUserRepository) SoftDeleteByAccountAndUser(accountID, userID uuid.UUID) error {
+// SetRole sets account_users.role.
+func (r *AccountUserRepository) SetRole(ctx context.Context, id uuid.UUID, role string) error {
+	if _, err := r.Query(ctx).Model(&models.AccountUser{}).Where("id = ?", id).Update("role", role); err != nil {
+		return fmt.Errorf("set account user role: %w", err)
+	}
+	return nil
+}
+
+// SoftDeleteByAccountAndUser sets deleted_at on the active membership.
+func (r *AccountUserRepository) SoftDeleteByAccountAndUser(ctx context.Context, accountID, userID uuid.UUID) error {
 	now := time.Now()
-	_, err := facades.Orm().Query().
-		Model(&models.AccountUser{}).
+	if _, err := r.Query(ctx).Model(&models.AccountUser{}).
 		Where("account_id = ? AND user_id = ? AND deleted_at IS NULL", accountID, userID).
-		Update("deleted_at", now)
-	return err
+		Update("deleted_at", now); err != nil {
+		return fmt.Errorf("soft delete account user: %w", err)
+	}
+	return nil
 }

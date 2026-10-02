@@ -30,7 +30,7 @@ func WalletContext() http.Middleware {
 		isMember := false
 
 		if wallet.AccountID != nil {
-			au, err2 := container.Get().AccountUserRepo.FindByAccountAndUser(*wallet.AccountID, userID)
+			au, err2 := container.Get().AccountUserRepo.FindByAccountAndUser(ctx.Context(), *wallet.AccountID, userID)
 			if err2 == nil && au != nil {
 				isMember = true
 			}

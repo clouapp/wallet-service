@@ -1,70 +1,78 @@
 package repositories
 
 import (
+	"context"
+	"fmt"
+
 	"github.com/google/uuid"
-	"github.com/goravel/framework/facades"
+	"github.com/goravel/framework/contracts/database/orm"
 
 	"github.com/macrowallets/waas/app/models"
+	"github.com/macrowallets/waas/app/repositories/internal/db"
 )
 
-type AccessTokenRepository interface {
-	Create(token *models.AccessToken) error
-	FindByAccountID(accountID uuid.UUID) ([]models.AccessToken, error)
-	PaginateByAccountID(accountID uuid.UUID, limit, offset int) ([]models.AccessToken, int64, error)
-	FindByIDAndAccount(tokenID, accountID uuid.UUID) (*models.AccessToken, error)
-	Delete(token *models.AccessToken) error
+// AccessTokenRepository persists API access tokens.
+type AccessTokenRepository struct {
+	db.Base
 }
 
-type accessTokenRepository struct{}
-
-func NewAccessTokenRepository() AccessTokenRepository {
-	return &accessTokenRepository{}
+// NewAccessTokenRepository wraps an orm.Query. Pass nil for a fresh query per call.
+func NewAccessTokenRepository(query orm.Query) *AccessTokenRepository {
+	return &AccessTokenRepository{Base: db.NewBase(query)}
 }
 
-func (r *accessTokenRepository) Create(token *models.AccessToken) error {
-	return facades.Orm().Query().Create(token)
-}
-
-func (r *accessTokenRepository) FindByAccountID(accountID uuid.UUID) ([]models.AccessToken, error) {
-	var tokens []models.AccessToken
-	err := facades.Orm().Query().
-		Where("account_id = ?", accountID).
-		Find(&tokens)
-	return tokens, err
-}
-
-func (r *accessTokenRepository) PaginateByAccountID(accountID uuid.UUID, limit, offset int) ([]models.AccessToken, int64, error) {
-	var tokens []models.AccessToken
-	var total int64
-	total, err := facades.Orm().Query().
-		Model(&models.AccessToken{}).
-		Where("account_id = ?", accountID).
-		Count()
-	if err != nil {
-		return nil, 0, err
+// Create inserts an access token.
+func (r *AccessTokenRepository) Create(ctx context.Context, token *models.AccessToken) error {
+	if token == nil {
+		return fmt.Errorf("create access token: token is nil")
 	}
-	err = facades.Orm().Query().
-		Where("account_id = ?", accountID).
-		Offset(offset).Limit(limit).
-		Find(&tokens)
-	return tokens, total, err
+	if err := r.Query(ctx).Create(token); err != nil {
+		return fmt.Errorf("create access token: %w", err)
+	}
+	return nil
 }
 
-func (r *accessTokenRepository) FindByIDAndAccount(tokenID, accountID uuid.UUID) (*models.AccessToken, error) {
-	var token models.AccessToken
-	err := facades.Orm().Query().
-		Where("id = ? AND account_id = ?", tokenID, accountID).
-		First(&token)
+// FindByAccountID returns the account's access tokens.
+func (r *AccessTokenRepository) FindByAccountID(ctx context.Context, accountID uuid.UUID) ([]models.AccessToken, error) {
+	var tokens []models.AccessToken
+	if err := r.Query(ctx).Where("account_id = ?", accountID).Find(&tokens); err != nil {
+		return nil, fmt.Errorf("list access tokens: %w", err)
+	}
+	return tokens, nil
+}
+
+// PaginateByAccountID pages the account's access tokens.
+func (r *AccessTokenRepository) PaginateByAccountID(ctx context.Context, accountID uuid.UUID, limit, offset int) ([]models.AccessToken, int64, error) {
+	total, err := r.Query(ctx).Model(&models.AccessToken{}).Where("account_id = ?", accountID).Count()
 	if err != nil {
-		return nil, err
+		return nil, 0, fmt.Errorf("count access tokens: %w", err)
+	}
+	var tokens []models.AccessToken
+	if err := r.Query(ctx).Where("account_id = ?", accountID).Offset(offset).Limit(limit).Find(&tokens); err != nil {
+		return nil, 0, fmt.Errorf("list access tokens: %w", err)
+	}
+	return tokens, total, nil
+}
+
+// FindByIDAndAccount returns the token when it belongs to the account, or ErrRepositoryNotFound.
+func (r *AccessTokenRepository) FindByIDAndAccount(ctx context.Context, tokenID, accountID uuid.UUID) (*models.AccessToken, error) {
+	var token models.AccessToken
+	if err := r.Query(ctx).Where("id = ? AND account_id = ?", tokenID, accountID).First(&token); err != nil {
+		return nil, fmt.Errorf("find access token: %w", err)
 	}
 	if token.ID == uuid.Nil {
-		return nil, nil
+		return nil, models.ErrRepositoryNotFound
 	}
 	return &token, nil
 }
 
-func (r *accessTokenRepository) Delete(token *models.AccessToken) error {
-	_, err := facades.Orm().Query().Delete(token)
-	return err
+// Delete removes an access token.
+func (r *AccessTokenRepository) Delete(ctx context.Context, token *models.AccessToken) error {
+	if token == nil {
+		return fmt.Errorf("delete access token: token is nil")
+	}
+	if _, err := r.Query(ctx).Delete(token); err != nil {
+		return fmt.Errorf("delete access token: %w", err)
+	}
+	return nil
 }

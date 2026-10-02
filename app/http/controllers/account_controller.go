@@ -19,7 +19,10 @@ import (
 )
 
 func accountSvc() *accountsvc.Service {
-	return accountsvc.NewService(container.Get().AccountRepo, container.Get().AccountUserRepo)
+	return accountsvc.NewService(accountsvc.Deps{
+		Accounts:    container.Get().AccountRepo,
+		Memberships: container.Get().AccountUserRepo,
+	})
 }
 
 var accountAuthService = authsvc.NewService()
@@ -92,13 +95,13 @@ func UpdateAccount(ctx http.Context) http.Response {
 	}
 
 	if req.Name != "" {
-		if err := container.Get().AccountRepo.UpdateField(account.ID, "name", req.Name); err != nil {
+		if err := container.Get().AccountRepo.SetName(ctx.Context(), account.ID, req.Name); err != nil {
 			return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to update account"})
 		}
 		account.Name = req.Name
 	}
 	if req.ViewAllWallets != nil {
-		if err := container.Get().AccountRepo.UpdateField(account.ID, "view_all_wallets", *req.ViewAllWallets); err != nil {
+		if err := container.Get().AccountRepo.SetViewAllWallets(ctx.Context(), account.ID, *req.ViewAllWallets); err != nil {
 			return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to update account"})
 		}
 		account.ViewAllWallets = *req.ViewAllWallets
@@ -124,7 +127,7 @@ func ArchiveAccount(ctx http.Context) http.Response {
 		return errResp
 	}
 
-	if err := container.Get().AccountRepo.UpdateField(account.ID, "status", "archived"); err != nil {
+	if err := container.Get().AccountRepo.SetStatus(ctx.Context(), account.ID, "archived"); err != nil {
 		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to archive account"})
 	}
 	account.Status = "archived"
@@ -147,7 +150,7 @@ func FreezeAccount(ctx http.Context) http.Response {
 		return errResp
 	}
 
-	if err := container.Get().AccountRepo.UpdateField(account.ID, "status", "frozen"); err != nil {
+	if err := container.Get().AccountRepo.SetStatus(ctx.Context(), account.ID, "frozen"); err != nil {
 		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to freeze account"})
 	}
 	account.Status = "frozen"
@@ -168,7 +171,7 @@ func ListAccountUsers(ctx http.Context) http.Response {
 	account := ctx.Value("account").(*models.Account)
 
 	limit, offset := pagination.ParseParams(ctx, 20)
-	members, total, err := container.Get().AccountUserRepo.PaginateByAccountID(account.ID, limit, offset)
+	members, total, err := container.Get().AccountUserRepo.PaginateByAccountID(ctx.Context(), account.ID, limit, offset)
 	if err != nil {
 		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to fetch members"})
 	}
@@ -200,7 +203,7 @@ func AddAccountUser(ctx http.Context) http.Response {
 		return errResp
 	}
 
-	targetPtr, err := container.Get().UserRepo.FindByEmail(req.Email)
+	targetPtr, err := container.Get().UserRepo.FindByEmail(ctx.Context(), req.Email)
 	if err != nil || targetPtr == nil {
 		target := models.User{
 			ID:           uuid.New(),
@@ -208,7 +211,7 @@ func AddAccountUser(ctx http.Context) http.Response {
 			PasswordHash: "",
 			Status:       "invited",
 		}
-		if err2 := container.Get().UserRepo.Create(&target); err2 != nil {
+		if err2 := container.Get().UserRepo.Create(ctx.Context(), &target); err2 != nil {
 			return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to create user"})
 		}
 		targetPtr = &target
@@ -226,7 +229,7 @@ func AddAccountUser(ctx http.Context) http.Response {
 		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to add user"})
 	}
 
-	au, auErr := container.Get().AccountUserRepo.FindByAccountAndUser(account.ID, targetPtr.ID)
+	au, auErr := container.Get().AccountUserRepo.FindByAccountAndUser(ctx.Context(), account.ID, targetPtr.ID)
 	if auErr != nil {
 		facades.Log().WithContext(ctx).Errorf("account: find membership after add: %v", auErr)
 	}
@@ -280,7 +283,7 @@ func ListAccountTokens(ctx http.Context) http.Response {
 	}
 
 	limit, offset := pagination.ParseParams(ctx, 20)
-	tokens, total, err := container.Get().AccessTokenRepo.PaginateByAccountID(account.ID, limit, offset)
+	tokens, total, err := container.Get().AccessTokenRepo.PaginateByAccountID(ctx.Context(), account.ID, limit, offset)
 	if err != nil {
 		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to fetch tokens"})
 	}
@@ -325,7 +328,7 @@ func CreateAccountToken(ctx http.Context) http.Response {
 		t, _ := time.Parse(time.RFC3339, req.ValidUntil)
 		token.ValidUntil = &t
 	}
-	if err := container.Get().AccessTokenRepo.Create(token); err != nil {
+	if err := container.Get().AccessTokenRepo.Create(ctx.Context(), token); err != nil {
 		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to create token"})
 	}
 
@@ -364,12 +367,12 @@ func RevokeAccountToken(ctx http.Context) http.Response {
 		return responses.Send(ctx, http.StatusBadRequest, http.Json{"error": "invalid token id"})
 	}
 
-	token, err := container.Get().AccessTokenRepo.FindByIDAndAccount(tokenID, account.ID)
+	token, err := container.Get().AccessTokenRepo.FindByIDAndAccount(ctx.Context(), tokenID, account.ID)
 	if err != nil || token == nil {
 		return responses.Send(ctx, http.StatusNotFound, http.Json{"error": "token not found"})
 	}
 
-	if err := container.Get().AccessTokenRepo.Delete(token); err != nil {
+	if err := container.Get().AccessTokenRepo.Delete(ctx.Context(), token); err != nil {
 		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to revoke token"})
 	}
 	return ctx.Response().NoContent()

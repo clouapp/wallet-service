@@ -22,7 +22,7 @@ func userRole(ctx context.Context, accountID uuid.UUID) string {
 	if !ok {
 		return ""
 	}
-	au, err := container.Get().AccountUserRepo.FindByAccountAndUser(accountID, userID)
+	au, err := container.Get().AccountUserRepo.FindByAccountAndUser(ctx, accountID, userID)
 	if err != nil || au == nil {
 		return ""
 	}
