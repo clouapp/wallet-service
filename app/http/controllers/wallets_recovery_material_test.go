@@ -94,7 +94,13 @@ func (s *WalletRecoveryMaterialTestSuite) SetupTest() {
 
 	deps := container.Get()
 	originalWalletService := deps.WalletService
-	deps.WalletService = wallet.NewService(registry, nil, s.mpcService, mocks.NewMockSecretsManager(), deps.WalletRepo, deps.AddressRepo)
+	deps.WalletService = wallet.NewService(wallet.Deps{
+		Registry:  registry,
+		MPC:       s.mpcService,
+		Secrets:   mocks.NewMockSecretsManager(),
+		Wallets:   deps.WalletRepo,
+		Addresses: deps.AddressRepo,
+	})
 	s.T().Cleanup(func() { deps.WalletService = originalWalletService })
 }
 
@@ -133,7 +139,7 @@ func (s *WalletRecoveryMaterialTestSuite) decryptEnvelope(envelope encryptedUser
 func (s *WalletRecoveryMaterialTestSuite) findWallet(walletID string) *models.Wallet {
 	id, err := uuid.Parse(walletID)
 	s.Require().NoError(err)
-	stored, err := container.Get().WalletRepo.FindByID(id)
+	stored, err := container.Get().WalletRepo.FindByID(context.Background(), id)
 	s.Require().NoError(err)
 	s.Require().NotNil(stored)
 	return stored

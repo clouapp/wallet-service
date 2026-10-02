@@ -22,12 +22,12 @@ import (
 
 type Service struct {
 	subscriptionRepo repositories.WebhookSubscriptionRepository
-	addressRepo      repositories.AddressRepository
+	addressRepo      *repositories.AddressRepository
 	providers        map[string]providers.WebhookProvider
 	mu               sync.Map // subscription id -> *sync.Mutex
 }
 
-func NewService(subRepo repositories.WebhookSubscriptionRepository, addrRepo repositories.AddressRepository, provs map[string]providers.WebhookProvider) *Service {
+func NewService(subRepo repositories.WebhookSubscriptionRepository, addrRepo *repositories.AddressRepository, provs map[string]providers.WebhookProvider) *Service {
 	return &Service{subscriptionRepo: subRepo, addressRepo: addrRepo, providers: provs}
 }
 
@@ -66,7 +66,7 @@ func (s *Service) SyncChainAddresses(ctx context.Context, chainID string) error 
 		return fmt.Errorf("set sync_status pending: %w", err)
 	}
 
-	addresses, err := s.addressRepo.PluckActiveAddresses(chainID)
+	addresses, err := s.addressRepo.PluckActiveAddresses(ctx, chainID)
 	if err != nil {
 		s.markFailed(sub.ID)
 		return fmt.Errorf("pluck active addresses: %w", err)

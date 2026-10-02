@@ -2,6 +2,7 @@ package commands
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -12,6 +13,7 @@ import (
 
 	"github.com/macrowallets/waas/app/container"
 	"github.com/macrowallets/waas/app/jobs"
+	"github.com/macrowallets/waas/app/models"
 )
 
 type RefreshAddress struct{}
@@ -63,22 +65,22 @@ func (c *RefreshAddress) Handle(ctx console.Context) error {
 	useQueue := ctx.OptionBool("queue")
 
 	for _, addr := range addresses {
-		addrRecord, err := ctr.AddressRepo.FindByChainAndAddress(chain, addr)
-		if err != nil {
+		addrRecord, err := ctr.AddressRepo.FindByChainAndAddress(context.Background(), chain, addr)
+		if err != nil && !errors.Is(err, models.ErrRepositoryNotFound) {
 			ctx.Error("failed to look up address " + addr + ": " + err.Error())
 			return fmt.Errorf("look up address %s: %w", addr, err)
 		}
-		if addrRecord == nil {
+		if err != nil || addrRecord == nil {
 			ctx.Error("address not found: chain=" + chain + " address=" + addr)
 			continue
 		}
 
-		wallet, err := ctr.WalletRepo.FindByID(addrRecord.WalletID)
-		if err != nil {
+		wallet, err := ctr.WalletRepo.FindByID(context.Background(), addrRecord.WalletID)
+		if err != nil && !errors.Is(err, models.ErrRepositoryNotFound) {
 			ctx.Error("failed to load wallet for address " + addr + ": " + err.Error())
 			return fmt.Errorf("load wallet for address %s: %w", addr, err)
 		}
-		if wallet == nil {
+		if wallet == nil || errors.Is(err, models.ErrRepositoryNotFound) {
 			ctx.Error("wallet not found for address " + addr)
 			continue
 		}

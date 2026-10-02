@@ -30,7 +30,7 @@ func (r *EstimateWithdrawalRequest) PrepareForValidation(ctx http.Context, data 
 	if err != nil {
 		return nil
 	}
-	w, err := container.Get().WalletRepo.FindByID(walletID)
+	w, err := container.Get().WalletRepo.FindByID(ctx.Context(), walletID)
 	if err != nil || w == nil {
 		return nil
 	}

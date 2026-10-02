@@ -63,35 +63,35 @@ func UpdateWalletSettings(ctx http.Context) http.Response {
 
 	if s := strings.TrimSpace(req.FeeRateMin); s != "" {
 		v, _ := strconv.Atoi(s)
-		if err := container.Get().WalletRepo.UpdateField(wallet.ID, "fee_rate_min", v); err != nil {
+		if err := container.Get().WalletRepo.SetFeeRateMin(ctx.Context(), wallet.ID, v); err != nil {
 			return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to update wallet settings"})
 		}
 		wallet.FeeRateMin = &v
 	}
 	if s := strings.TrimSpace(req.FeeRateMax); s != "" {
 		v, _ := strconv.Atoi(s)
-		if err := container.Get().WalletRepo.UpdateField(wallet.ID, "fee_rate_max", v); err != nil {
+		if err := container.Get().WalletRepo.SetFeeRateMax(ctx.Context(), wallet.ID, v); err != nil {
 			return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to update wallet settings"})
 		}
 		wallet.FeeRateMax = &v
 	}
 	if s := strings.TrimSpace(req.FeeMultiplier); s != "" {
 		v, _ := strconv.ParseFloat(s, 64)
-		if err := container.Get().WalletRepo.UpdateField(wallet.ID, "fee_multiplier", v); err != nil {
+		if err := container.Get().WalletRepo.SetFeeMultiplier(ctx.Context(), wallet.ID, v); err != nil {
 			return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to update wallet settings"})
 		}
 		wallet.FeeMultiplier = &v
 	}
 	if s := strings.TrimSpace(req.RequiredApprovals); s != "" {
 		v, _ := strconv.Atoi(s)
-		if err := container.Get().WalletRepo.UpdateField(wallet.ID, "required_approvals", v); err != nil {
+		if err := container.Get().WalletRepo.SetRequiredApprovals(ctx.Context(), wallet.ID, v); err != nil {
 			return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to update wallet settings"})
 		}
 		wallet.RequiredApprovals = v
 	}
 	if s := strings.TrimSpace(req.FrozenUntil); s != "" {
 		t, _ := time.Parse(time.RFC3339, s)
-		if err := container.Get().WalletRepo.UpdateField(wallet.ID, "frozen_until", t); err != nil {
+		if err := container.Get().WalletRepo.SetFrozenUntil(ctx.Context(), wallet.ID, t); err != nil {
 			return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to update wallet settings"})
 		}
 		wallet.FrozenUntil = &t
@@ -136,10 +136,10 @@ func FreezeWallet(ctx http.Context) http.Response {
 		frozenUntil = t
 	}
 
-	if err := container.Get().WalletRepo.UpdateField(wallet.ID, "frozen_until", frozenUntil); err != nil {
+	if err := container.Get().WalletRepo.SetFrozenUntil(ctx.Context(), wallet.ID, frozenUntil); err != nil {
 		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to freeze wallet"})
 	}
-	if err := container.Get().WalletRepo.UpdateField(wallet.ID, "status", "frozen"); err != nil {
+	if err := container.Get().WalletRepo.SetStatus(ctx.Context(), wallet.ID, "frozen"); err != nil {
 		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to freeze wallet"})
 	}
 	wallet.FrozenUntil = &frozenUntil

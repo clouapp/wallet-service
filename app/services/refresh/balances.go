@@ -16,18 +16,18 @@ import (
 
 type BalanceService struct {
 	registry         *chain.Registry
-	walletRepo       repositories.WalletRepository
-	assetBalanceRepo repositories.WalletAssetBalanceRepository
-	snapshotRepo     repositories.WalletBalanceSnapshotRepository
-	syncStateRepo    repositories.WalletSyncStateRepository
+	walletRepo       *repositories.WalletRepository
+	assetBalanceRepo *repositories.WalletAssetBalanceRepository
+	snapshotRepo     *repositories.WalletBalanceSnapshotRepository
+	syncStateRepo    *repositories.WalletSyncStateRepository
 }
 
 func NewBalanceService(
 	registry *chain.Registry,
-	walletRepo repositories.WalletRepository,
-	assetBalanceRepo repositories.WalletAssetBalanceRepository,
-	snapshotRepo repositories.WalletBalanceSnapshotRepository,
-	syncStateRepo repositories.WalletSyncStateRepository,
+	walletRepo *repositories.WalletRepository,
+	assetBalanceRepo *repositories.WalletAssetBalanceRepository,
+	snapshotRepo *repositories.WalletBalanceSnapshotRepository,
+	syncStateRepo *repositories.WalletSyncStateRepository,
 ) *BalanceService {
 	return &BalanceService{
 		registry:         registry,
@@ -51,7 +51,7 @@ func (s *BalanceService) RefreshWallet(ctx context.Context, wallet *models.Walle
 
 	nativeBal, err := adapter.GetBalance(ctx, address)
 	if err != nil {
-		s.recordFailure(wallet.ID, wallet.Chain, err)
+		s.recordFailure(ctx, wallet.ID, wallet.Chain, err)
 		return fmt.Errorf("get native balance for %s: %w", address, err)
 	}
 
@@ -79,22 +79,16 @@ func (s *BalanceService) RefreshWallet(ctx context.Context, wallet *models.Walle
 		rows = append(rows, row)
 	}
 
-	if err := s.assetBalanceRepo.ReplaceForWallet(wallet.ID, wallet.Chain, rows); err != nil {
-		s.recordFailure(wallet.ID, wallet.Chain, err)
+	if err := s.assetBalanceRepo.ReplaceForWallet(ctx, wallet.ID, wallet.Chain, rows); err != nil {
+		s.recordFailure(ctx, wallet.ID, wallet.Chain, err)
 		return fmt.Errorf("replace asset balances: %w", err)
 	}
 
 	balanceAsset := nativeBal.Asset
 	balanceRaw := nativeBal.Amount.String()
 	balanceDisplay := nativeBal.Human
-	if err := s.walletRepo.UpdateFields(wallet.ID, map[string]interface{}{
-		"balance_asset":          balanceAsset,
-		"balance_raw":            balanceRaw,
-		"balance_display":        balanceDisplay,
-		"balance_last_synced_at": now,
-		"read_model_status":      string(types.ReadModelSynced),
-	}); err != nil {
-		s.recordFailure(wallet.ID, wallet.Chain, err)
+	if err := s.walletRepo.SetBalanceSummary(ctx, wallet.ID, balanceAsset, balanceRaw, balanceDisplay, now, string(types.ReadModelSynced)); err != nil {
+		s.recordFailure(ctx, wallet.ID, wallet.Chain, err)
 		return fmt.Errorf("update wallet summary: %w", err)
 	}
 
@@ -107,17 +101,17 @@ func (s *BalanceService) RefreshWallet(ctx context.Context, wallet *models.Walle
 		BalanceDisplay: balanceDisplay,
 		CapturedAt:     now,
 	}
-	if err := s.snapshotRepo.Create(snapshot); err != nil {
-		s.recordFailure(wallet.ID, wallet.Chain, err)
+	if err := s.snapshotRepo.Create(ctx, snapshot); err != nil {
+		s.recordFailure(ctx, wallet.ID, wallet.Chain, err)
 		return fmt.Errorf("create balance snapshot: %w", err)
 	}
 
-	if err := s.snapshotRepo.TrimToLatest(wallet.ID, wallet.Chain, 10); err != nil {
+	if err := s.snapshotRepo.TrimToLatest(ctx, wallet.ID, wallet.Chain, 10); err != nil {
 		slog.Warn("trim snapshots failed", "wallet", wallet.ID, "error", err)
 	}
 
 	syncedAt := now
-	if err := s.syncStateRepo.Upsert(&models.WalletSyncState{
+	if err := s.syncStateRepo.Upsert(ctx, &models.WalletSyncState{
 		ID:           uuid.New(),
 		WalletID:     wallet.ID,
 		ChainID:      wallet.Chain,
@@ -131,8 +125,8 @@ func (s *BalanceService) RefreshWallet(ctx context.Context, wallet *models.Walle
 	return nil
 }
 
-func (s *BalanceService) recordFailure(walletID uuid.UUID, chainID string, cause error) {
-	if err := s.syncStateRepo.UpdateFailure(walletID, chainID, string(RefreshScopeBalances), cause.Error()); err != nil {
+func (s *BalanceService) recordFailure(ctx context.Context, walletID uuid.UUID, chainID string, cause error) {
+	if err := s.syncStateRepo.UpdateFailure(ctx, walletID, chainID, string(RefreshScopeBalances), cause.Error()); err != nil {
 		slog.Error("failed to record sync failure",
 			"wallet", walletID,
 			"chain", chainID,

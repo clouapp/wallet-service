@@ -50,7 +50,7 @@ func (r *CreateWalletWithdrawalRequest) PrepareForValidation(ctx http.Context, d
 	if err != nil {
 		return nil
 	}
-	w, err := container.Get().WalletRepo.FindByID(walletID)
+	w, err := container.Get().WalletRepo.FindByID(ctx.Context(), walletID)
 	if err != nil || w == nil {
 		return nil
 	}

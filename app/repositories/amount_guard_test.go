@@ -1,6 +1,7 @@
 package repositories_test
 
 import (
+	"context"
 	"testing"
 
 	"github.com/google/uuid"
@@ -17,9 +18,9 @@ type AmountGuardTestSuite struct {
 	suite.Suite
 	transactions repositories.TransactionRepository
 	withdrawals  repositories.WithdrawalRepository
-	balances     repositories.WalletAssetBalanceRepository
-	snapshots    repositories.WalletBalanceSnapshotRepository
-	wallets      repositories.WalletRepository
+	balances     *repositories.WalletAssetBalanceRepository
+	snapshots    *repositories.WalletBalanceSnapshotRepository
+	wallets      *repositories.WalletRepository
 }
 
 func TestAmountGuardSuite(t *testing.T) {
@@ -30,9 +31,9 @@ func (s *AmountGuardTestSuite) SetupTest() {
 	mocks.TestDB(s.T())
 	s.transactions = repositories.NewTransactionRepository()
 	s.withdrawals = repositories.NewWithdrawalRepository()
-	s.balances = repositories.NewWalletAssetBalanceRepository()
-	s.snapshots = repositories.NewWalletBalanceSnapshotRepository()
-	s.wallets = repositories.NewWalletRepository()
+	s.balances = repositories.NewWalletAssetBalanceRepository(nil)
+	s.snapshots = repositories.NewWalletBalanceSnapshotRepository(nil)
+	s.wallets = repositories.NewWalletRepository(nil)
 }
 
 func (s *AmountGuardTestSuite) solDeposit(walletID uuid.UUID, amountBaseUnits string) *models.Transaction {
@@ -103,12 +104,12 @@ func (s *AmountGuardTestSuite) TestBalanceWritesRejectNegativeAmounts() {
 	wallet := mocks.InsertWallet(s.T(), "sol")
 
 	row := models.WalletAssetBalance{ID: uuid.New(), WalletID: wallet.ID, ChainID: "sol", AssetType: "native", AssetSymbol: "SOL", AssetKey: "SOL", Decimals: 9, AmountRaw: "-1", AmountDisplay: "-0.000000001"}
-	s.ErrorIs(s.balances.ReplaceForWallet(wallet.ID, "sol", []models.WalletAssetBalance{row}), amount.ErrNegativeAmount)
+	s.ErrorIs(s.balances.ReplaceForWallet(context.Background(), wallet.ID, "sol", []models.WalletAssetBalance{row}), amount.ErrNegativeAmount)
 
 	snapshot := &models.WalletBalanceSnapshot{ID: uuid.New(), WalletID: wallet.ID, ChainID: "sol", BalanceAsset: "SOL", BalanceRaw: "-1", BalanceDisplay: "-0.000000001"}
-	s.ErrorIs(s.snapshots.Create(snapshot), amount.ErrNegativeAmount)
+	s.ErrorIs(s.snapshots.Create(context.Background(), snapshot), amount.ErrNegativeAmount)
 
-	s.ErrorIs(s.wallets.UpdateFields(wallet.ID, map[string]interface{}{"balance_raw": "-1"}), amount.ErrNegativeAmount)
+	s.ErrorIs(s.wallets.SetBalanceRaw(context.Background(), wallet.ID, "-1"), amount.ErrNegativeAmount)
 }
 
 // The CHECK constraints reject a signed amount even from writes that skip the repositories.

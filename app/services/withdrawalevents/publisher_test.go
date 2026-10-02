@@ -83,7 +83,9 @@ func (f fakeTransactions) FindByID(id uuid.UUID) (*models.Transaction, error) { 
 
 type fakeWallets map[uuid.UUID]*models.Wallet
 
-func (f fakeWallets) FindByID(id uuid.UUID) (*models.Wallet, error) { return f[id], nil }
+func (f fakeWallets) FindByID(_ context.Context, id uuid.UUID) (*models.Wallet, error) {
+	return f[id], nil
+}
 
 type fakeDecimals map[string]int
 

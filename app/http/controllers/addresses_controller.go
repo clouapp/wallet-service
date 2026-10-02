@@ -125,7 +125,7 @@ func ListWalletAddresses(ctx http.Context) http.Response {
 		})
 	}
 	limit, offset := pagination.ParseParams(ctx, 20)
-	addrs, total, err := container.Get().AddressRepo.PaginateByWalletID(walletID, limit, offset)
+	addrs, total, err := container.Get().AddressRepo.PaginateByWalletID(ctx.Context(), walletID, limit, offset)
 	if err != nil {
 		return responses.Send(ctx, http.StatusInternalServerError, http.Json{
 			"error": "failed to fetch addresses",

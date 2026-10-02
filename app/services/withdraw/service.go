@@ -39,8 +39,8 @@ type Service struct {
 	secrets         *secretsmanager.Client
 	rdb             *redis.Client
 	transactionRepo repositories.TransactionRepository
-	walletRepo      repositories.WalletRepository
-	addressRepo     repositories.AddressRepository
+	walletRepo      *repositories.WalletRepository
+	addressRepo     *repositories.AddressRepository
 	sweep           sweep.Service
 }
 
@@ -51,8 +51,8 @@ func NewService(
 	secrets *secretsmanager.Client,
 	rdb *redis.Client,
 	transactionRepo repositories.TransactionRepository,
-	walletRepo repositories.WalletRepository,
-	addressRepo repositories.AddressRepository,
+	walletRepo *repositories.WalletRepository,
+	addressRepo *repositories.AddressRepository,
 	sweepSvc sweep.Service,
 ) *Service {
 	return &Service{
@@ -127,7 +127,7 @@ func (s *Service) Request(ctx context.Context, req WithdrawRequest) (*models.Tra
 	}
 	defer s.rdb.Del(ctx, lockKey)
 
-	walletPtr, err := s.walletRepo.FindByID(req.WalletID)
+	walletPtr, err := s.walletRepo.FindByID(ctx, req.WalletID)
 	if err != nil || walletPtr == nil {
 		return nil, nil, fmt.Errorf("wallet not found")
 	}

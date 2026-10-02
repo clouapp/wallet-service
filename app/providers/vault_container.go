@@ -126,22 +126,54 @@ func buildVaultContainer(app foundation.Application) (*container.Container, erro
 	c.AccountRepo = accounts
 	c.AccountUserRepo = memberships
 	c.AccessTokenRepo = accessTokens
-	c.WalletRepo = repositories.NewWalletRepository()
-	c.WalletUserRepo = repositories.NewWalletUserRepository()
-	c.AddressRepo = repositories.NewAddressRepository()
+	wallets, err := resolve[*repositories.WalletRepository](app)
+	if err != nil {
+		return nil, err
+	}
+	walletUsers, err := resolve[*repositories.WalletUserRepository](app)
+	if err != nil {
+		return nil, err
+	}
+	addresses, err := resolve[*repositories.AddressRepository](app)
+	if err != nil {
+		return nil, err
+	}
+	whitelist, err := resolve[*repositories.WhitelistEntryRepository](app)
+	if err != nil {
+		return nil, err
+	}
+	assetBalances, err := resolve[*repositories.WalletAssetBalanceRepository](app)
+	if err != nil {
+		return nil, err
+	}
+	balanceSnapshots, err := resolve[*repositories.WalletBalanceSnapshotRepository](app)
+	if err != nil {
+		return nil, err
+	}
+	utxos, err := resolve[*repositories.WalletUTXORepository](app)
+	if err != nil {
+		return nil, err
+	}
+	syncStates, err := resolve[*repositories.WalletSyncStateRepository](app)
+	if err != nil {
+		return nil, err
+	}
+	c.WalletRepo = wallets
+	c.WalletUserRepo = walletUsers
+	c.AddressRepo = addresses
 	c.TransactionRepo = repositories.NewTransactionRepository()
 	c.WithdrawalRepo = repositories.NewWithdrawalRepository()
 	c.WebhookConfigRepo = repositories.NewWebhookConfigRepository()
 	c.WebhookEventRepo = repositories.NewWebhookEventRepository()
-	c.WhitelistEntryRepo = repositories.NewWhitelistEntryRepository()
+	c.WhitelistEntryRepo = whitelist
 	c.ChainRepo = repositories.NewChainRepository()
 	c.TokenRepo = repositories.NewTokenRepository()
 	c.ChainResourceRepo = repositories.NewChainResourceRepository()
 	c.WebhookSubscriptionRepo = repositories.NewWebhookSubscriptionRepository()
-	c.WalletAssetBalanceRepo = repositories.NewWalletAssetBalanceRepository()
-	c.WalletBalanceSnapshotRepo = repositories.NewWalletBalanceSnapshotRepository()
-	c.WalletUTXORepo = repositories.NewWalletUTXORepository()
-	c.WalletSyncStateRepo = repositories.NewWalletSyncStateRepository()
+	c.WalletAssetBalanceRepo = assetBalances
+	c.WalletBalanceSnapshotRepo = balanceSnapshots
+	c.WalletUTXORepo = utxos
+	c.WalletSyncStateRepo = syncStates
 	c.CurrencyRepo = repositories.NewCurrencyRepository()
 
 	c.PriceConfig.CoinGeckoAPIKey = facades.Config().GetString("vault.price.coingecko_api_key")
@@ -252,8 +284,15 @@ func buildVaultContainer(app foundation.Application) (*container.Container, erro
 	}
 
 	c.WebhookService = webhook.NewService(c.SQS, c.WebhookConfigRepo, c.WebhookEventRepo)
-	c.WalletService = wallet.NewService(c.Registry, c.Redis, c.MPCService, c.SecretsManager, c.WalletRepo, c.AddressRepo)
-	c.WalletService.SetWebhookSync(c.WebhookSyncService)
+	c.WalletService = wallet.NewService(wallet.Deps{
+		Registry:    c.Registry,
+		Redis:       c.Redis,
+		MPC:         c.MPCService,
+		Secrets:     c.SecretsManager,
+		Wallets:     c.WalletRepo,
+		Addresses:   c.AddressRepo,
+		WebhookSync: c.WebhookSyncService,
+	})
 	c.SweepService = sweep.NewService(
 		c.Registry, c.MPCService, c.SecretsManager, c.Redis, c.WebhookService,
 		c.WalletRepo, c.AddressRepo, c.TransactionRepo, c.AccountRepo, c.ChainRepo,

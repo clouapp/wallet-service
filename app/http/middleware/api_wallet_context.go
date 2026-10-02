@@ -31,7 +31,7 @@ func APIWalletContext() http.Middleware {
 			return
 		}
 
-		wallet, err := container.Get().WalletRepo.FindByIDAndAccount(walletID, accountID)
+		wallet, err := container.Get().WalletRepo.FindByIDAndAccount(ctx.Context(), walletID, accountID)
 		if err != nil || wallet == nil {
 			abortWithJSON(ctx, http.StatusNotFound, http.Json{"error": "wallet not found"})
 			return

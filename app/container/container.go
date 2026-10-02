@@ -41,22 +41,22 @@ type Container struct {
 	AccountRepo               *repositories.AccountRepository
 	AccountUserRepo           *repositories.AccountUserRepository
 	AccessTokenRepo           *repositories.AccessTokenRepository
-	WalletRepo                repositories.WalletRepository
-	WalletUserRepo            repositories.WalletUserRepository
-	AddressRepo               repositories.AddressRepository
+	WalletRepo                *repositories.WalletRepository
+	WalletUserRepo            *repositories.WalletUserRepository
+	AddressRepo               *repositories.AddressRepository
 	TransactionRepo           repositories.TransactionRepository
 	WithdrawalRepo            repositories.WithdrawalRepository
 	WebhookConfigRepo         repositories.WebhookConfigRepository
 	WebhookEventRepo          repositories.WebhookEventRepository
-	WhitelistEntryRepo        repositories.WhitelistEntryRepository
+	WhitelistEntryRepo        *repositories.WhitelistEntryRepository
 	ChainRepo                 repositories.ChainRepository
 	TokenRepo                 repositories.TokenRepository
 	ChainResourceRepo         repositories.ChainResourceRepository
 	WebhookSubscriptionRepo   repositories.WebhookSubscriptionRepository
-	WalletAssetBalanceRepo    repositories.WalletAssetBalanceRepository
-	WalletBalanceSnapshotRepo repositories.WalletBalanceSnapshotRepository
-	WalletUTXORepo            repositories.WalletUTXORepository
-	WalletSyncStateRepo       repositories.WalletSyncStateRepository
+	WalletAssetBalanceRepo    *repositories.WalletAssetBalanceRepository
+	WalletBalanceSnapshotRepo *repositories.WalletBalanceSnapshotRepository
+	WalletUTXORepo            *repositories.WalletUTXORepository
+	WalletSyncStateRepo       *repositories.WalletSyncStateRepository
 	CurrencyRepo              repositories.CurrencyRepository
 	WebhookProviders          map[string]providers.WebhookProvider
 	WebhookSyncService        *webhooksync.Service

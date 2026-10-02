@@ -1,6 +1,7 @@
 package ingest
 
 import (
+	"context"
 	"math/big"
 	"testing"
 	"time"
@@ -124,13 +125,13 @@ func (f *ingestAddressRepo) Create(addr *models.Address) error { return nil }
 func (f *ingestAddressRepo) UpdateFields(id uuid.UUID, fields map[string]interface{}) error {
 	return nil
 }
-func (f *ingestAddressRepo) CountByChainAndAddress(chainID, address string) (int64, error) {
+func (f *ingestAddressRepo) CountByChainAndAddress(_ context.Context, chainID, address string) (int64, error) {
 	if f.addr != nil && f.addr.Chain == chainID && f.addr.Address == address {
 		return 1, nil
 	}
 	return 0, nil
 }
-func (f *ingestAddressRepo) FindByChainAndAddress(chainID, address string) (*models.Address, error) {
+func (f *ingestAddressRepo) FindByChainAndAddress(_ context.Context, chainID, address string) (*models.Address, error) {
 	if f.addr != nil && f.addr.Chain == chainID && f.addr.Address == address {
 		return f.addr, nil
 	}

@@ -137,7 +137,11 @@ func newSecp256k1WalletFixture(t *testing.T, adapter types.Chain, childIndex int
 	registry := chain.NewRegistry()
 	registry.RegisterChain(adapter)
 	walletRepo := &indexedWalletRepo{fakeWalletRepo: &fakeWalletRepo{wallet: wallet}, next: childIndex}
-	addressService := walletsvc.NewService(registry, nil, nil, nil, walletRepo, &fakeAddressRepo{})
+	addressService := walletsvc.NewService(walletsvc.Deps{
+		Registry:  registry,
+		Wallets:   walletRepo,
+		Addresses: &fakeAddressRepo{},
+	})
 	child, err := addressService.GenerateAddress(context.Background(), walletID, "user-3119", "", "{}", "")
 	if err != nil {
 		t.Fatal(err)

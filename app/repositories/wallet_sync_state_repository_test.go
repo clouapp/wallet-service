@@ -1,6 +1,7 @@
 package repositories_test
 
 import (
+	"context"
 	"testing"
 	"time"
 
@@ -16,7 +17,7 @@ import (
 
 type WalletSyncStateRepositoryTestSuite struct {
 	suite.Suite
-	repo   repositories.WalletSyncStateRepository
+	repo   *repositories.WalletSyncStateRepository
 	wallet *models.Wallet
 }
 
@@ -26,13 +27,13 @@ func TestWalletSyncStateRepositorySuite(t *testing.T) {
 
 func (s *WalletSyncStateRepositoryTestSuite) SetupTest() {
 	testutil.SeededTestDB(s.T())
-	s.repo = repositories.NewWalletSyncStateRepository()
+	s.repo = repositories.NewWalletSyncStateRepository(nil)
 	s.wallet = &models.Wallet{
 		ID: uuid.New(), Chain: models.ChainPolygon, Label: "sync state wallet",
 		MPCCustomerShare: "deadbeef", MPCShareIV: "cafebabe", MPCShareSalt: "feedface",
 		MPCSecretARN: "arn:test", MPCPublicKey: "02abc", MPCCurve: "secp256k1",
 	}
-	s.Require().NoError(repositories.NewWalletRepository().Create(s.wallet))
+	s.Require().NoError(repositories.NewWalletRepository(nil).Create(context.Background(), s.wallet))
 }
 
 func (s *WalletSyncStateRepositoryTestSuite) syncedBalancesState(syncedAt time.Time) *models.WalletSyncState {
@@ -47,14 +48,14 @@ func (s *WalletSyncStateRepositoryTestSuite) syncedBalancesState(syncedAt time.T
 }
 
 func (s *WalletSyncStateRepositoryTestSuite) findBalancesState() *models.WalletSyncState {
-	state, err := s.repo.Find(s.wallet.ID, s.wallet.Chain, string(refresh.RefreshScopeBalances))
+	state, err := s.repo.Find(context.Background(), s.wallet.ID, s.wallet.Chain, string(refresh.RefreshScopeBalances))
 	s.Require().NoError(err)
 	s.Require().NotNil(state)
 	return state
 }
 
 func (s *WalletSyncStateRepositoryTestSuite) TestUpsertCreatesStateWithTimestamps() {
-	s.Require().NoError(s.repo.Upsert(s.syncedBalancesState(time.Now())))
+	s.Require().NoError(s.repo.Upsert(context.Background(), s.syncedBalancesState(time.Now())))
 
 	state := s.findBalancesState()
 	s.NotNil(state.CreatedAt)
@@ -62,12 +63,12 @@ func (s *WalletSyncStateRepositoryTestSuite) TestUpsertCreatesStateWithTimestamp
 }
 
 func (s *WalletSyncStateRepositoryTestSuite) TestUpsertOfExistingStateKeepsCreatedAt() {
-	s.Require().NoError(s.repo.Upsert(s.syncedBalancesState(time.Now().Add(-time.Hour))))
+	s.Require().NoError(s.repo.Upsert(context.Background(), s.syncedBalancesState(time.Now().Add(-time.Hour))))
 	first := s.findBalancesState()
 	s.Require().NotNil(first.CreatedAt)
 
 	secondSync := time.Now()
-	s.Require().NoError(s.repo.Upsert(s.syncedBalancesState(secondSync)))
+	s.Require().NoError(s.repo.Upsert(context.Background(), s.syncedBalancesState(secondSync)))
 
 	second := s.findBalancesState()
 	s.Equal(first.ID, second.ID)
@@ -78,9 +79,9 @@ func (s *WalletSyncStateRepositoryTestSuite) TestUpsertOfExistingStateKeepsCreat
 }
 
 func (s *WalletSyncStateRepositoryTestSuite) TestUpdateFailureAfterUpsertMarksStateFailed() {
-	s.Require().NoError(s.repo.Upsert(s.syncedBalancesState(time.Now())))
+	s.Require().NoError(s.repo.Upsert(context.Background(), s.syncedBalancesState(time.Now())))
 
-	s.Require().NoError(s.repo.UpdateFailure(s.wallet.ID, s.wallet.Chain, string(refresh.RefreshScopeBalances), "rpc unavailable"))
+	s.Require().NoError(s.repo.UpdateFailure(context.Background(), s.wallet.ID, s.wallet.Chain, string(refresh.RefreshScopeBalances), "rpc unavailable"))
 
 	state := s.findBalancesState()
 	s.Equal(string(types.SyncStatusFailed), state.Status)

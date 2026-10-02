@@ -25,7 +25,6 @@ import (
 
 	"github.com/macrowallets/waas/app/events"
 	"github.com/macrowallets/waas/app/models"
-	"github.com/macrowallets/waas/app/repositories"
 	"github.com/macrowallets/waas/app/services/chain"
 	mpc "github.com/macrowallets/waas/app/services/mpc"
 	"github.com/macrowallets/waas/pkg/types"
@@ -57,29 +56,62 @@ type webhookAddressSyncer interface {
 	SyncChainAddresses(ctx context.Context, chainID string) error
 }
 
+// WalletStore is the wallet persistence this service uses.
+type WalletStore interface {
+	Create(ctx context.Context, wallet *models.Wallet) error
+	FindByID(ctx context.Context, id uuid.UUID) (*models.Wallet, error)
+	FindAll(ctx context.Context) ([]models.Wallet, error)
+	IncrementAddressIndex(ctx context.Context, id uuid.UUID) (int, error)
+	SetDepositAddressID(ctx context.Context, id, addressID uuid.UUID) error
+	SetMPCChainCode(ctx context.Context, id uuid.UUID, chainCode string) error
+	Activate(ctx context.Context, id uuid.UUID, status string) error
+}
+
+// AddressStore is the address persistence this service uses.
+type AddressStore interface {
+	Create(ctx context.Context, addr *models.Address) error
+	FindByID(ctx context.Context, id uuid.UUID) (*models.Address, error)
+	SetLabel(ctx context.Context, id uuid.UUID, label string) error
+	SetExternalUserID(ctx context.Context, id uuid.UUID, externalUserID string) error
+	FindByChainAndAddress(ctx context.Context, chainID, address string) (*models.Address, error)
+	FindByChainAndAddressAndAccount(ctx context.Context, chainID, address string, accountID uuid.UUID) (*models.Address, error)
+	FindByExternalUserID(ctx context.Context, externalUserID string) ([]models.Address, error)
+	FindByExternalUserIDAndAccount(ctx context.Context, externalUserID string, accountID uuid.UUID) ([]models.Address, error)
+	FindByWalletID(ctx context.Context, walletID uuid.UUID) ([]models.Address, error)
+}
+
+// Deps is everything the wallet service needs. WebhookSync stays nil when unused.
+type Deps struct {
+	Registry    *chain.Registry
+	Redis       *redis.Client
+	MPC         mpc.Service
+	Secrets     SecretsManagerAPI
+	Wallets     WalletStore
+	Addresses   AddressStore
+	WebhookSync webhookAddressSyncer
+}
+
 type Service struct {
 	registry       *chain.Registry
 	rdb            *redis.Client
 	mpcService     mpc.Service
 	secretsManager SecretsManagerAPI
-	walletRepo     repositories.WalletRepository
-	addressRepo    repositories.AddressRepository
+	walletRepo     WalletStore
+	addressRepo    AddressStore
 	webhookSyncSvc webhookAddressSyncer
 }
 
-func NewService(registry *chain.Registry, rdb *redis.Client, mpcSvc mpc.Service, sm SecretsManagerAPI, walletRepo repositories.WalletRepository, addressRepo repositories.AddressRepository) *Service {
+// NewService builds a wallet service from Deps.
+func NewService(deps Deps) *Service {
 	return &Service{
-		registry:       registry,
-		rdb:            rdb,
-		mpcService:     mpcSvc,
-		secretsManager: sm,
-		walletRepo:     walletRepo,
-		addressRepo:    addressRepo,
+		registry:       deps.Registry,
+		rdb:            deps.Redis,
+		mpcService:     deps.MPC,
+		secretsManager: deps.Secrets,
+		walletRepo:     deps.Wallets,
+		addressRepo:    deps.Addresses,
+		webhookSyncSvc: deps.WebhookSync,
 	}
-}
-
-func (s *Service) SetWebhookSync(syncSvc webhookAddressSyncer) {
-	s.webhookSyncSvc = syncSvc
 }
 
 func (s *Service) CreateWallet(ctx context.Context, accountID uuid.UUID, chainID, label, passphrase string) (*CreateWalletResult, error) {
@@ -179,7 +211,7 @@ func (s *Service) CreateWallet(ctx context.Context, accountID uuid.UUID, chainID
 		Status:           string(types.WalletStatusPending),
 		ActivationCode:   &codeStr,
 	}
-	if err := s.walletRepo.Create(w); err != nil {
+	if err := s.walletRepo.Create(ctx, w); err != nil {
 		return onPostSecretErr(fmt.Errorf("create wallet: %w", err))
 	}
 
@@ -195,11 +227,11 @@ func (s *Service) CreateWallet(ctx context.Context, accountID uuid.UUID, chainID
 		Label:           "Deposit Address",
 		DerivationType:  "genesis",
 	}
-	if err := s.addressRepo.Create(addr); err != nil {
+	if err := s.addressRepo.Create(ctx, addr); err != nil {
 		return onPostSecretErr(fmt.Errorf("create deposit address: %w", err))
 	}
 
-	if err := s.walletRepo.UpdateField(walletID, "deposit_address_id", addressID); err != nil {
+	if err := s.walletRepo.SetDepositAddressID(ctx, walletID, addressID); err != nil {
 		return onPostSecretErr(fmt.Errorf("link deposit address: %w", err))
 	}
 	w.DepositAddressID = &addressID
@@ -235,7 +267,7 @@ func (s *Service) CreateWallet(ctx context.Context, accountID uuid.UUID, chainID
 }
 
 func (s *Service) ActivateWallet(ctx context.Context, walletID uuid.UUID, code string) (*models.Wallet, error) {
-	w, err := s.walletRepo.FindByID(walletID)
+	w, err := s.walletRepo.FindByID(ctx, walletID)
 	if err != nil || w == nil {
 		return nil, ErrWalletNotFound
 	}
@@ -249,10 +281,7 @@ func (s *Service) ActivateWallet(ctx context.Context, walletID uuid.UUID, code s
 		return nil, ErrInvalidActivationCode
 	}
 
-	if err := s.walletRepo.UpdateFields(w.ID, map[string]interface{}{
-		"status":          string(types.WalletStatusActive),
-		"activation_code": nil,
-	}); err != nil {
+	if err := s.walletRepo.Activate(ctx, w.ID, string(types.WalletStatusActive)); err != nil {
 		return nil, fmt.Errorf("activate wallet: %w", err)
 	}
 	w.Status = string(types.WalletStatusActive)
@@ -268,7 +297,7 @@ func curveForChain(chainID string) mpc.Curve {
 }
 
 func (s *Service) GetWallet(ctx context.Context, id uuid.UUID) (*models.Wallet, error) {
-	w, err := s.walletRepo.FindByID(id)
+	w, err := s.walletRepo.FindByID(ctx, id)
 	if err != nil {
 		return nil, err
 	}
@@ -276,14 +305,14 @@ func (s *Service) GetWallet(ctx context.Context, id uuid.UUID) (*models.Wallet, 
 }
 
 func (s *Service) ListWallets(ctx context.Context) ([]models.Wallet, error) {
-	return s.walletRepo.FindAll()
+	return s.walletRepo.FindAll(ctx)
 }
 
 func (s *Service) GenerateAddress(ctx context.Context, walletID uuid.UUID, externalUserID, label, metadata, passphrase string) (*models.Address, error) {
 	if s.walletRepo == nil {
 		return nil, fmt.Errorf("wallet not found")
 	}
-	w, err := s.walletRepo.FindByID(walletID)
+	w, err := s.walletRepo.FindByID(ctx, walletID)
 	if err != nil || w == nil {
 		return nil, fmt.Errorf("wallet not found")
 	}
@@ -293,7 +322,7 @@ func (s *Service) GenerateAddress(ctx context.Context, walletID uuid.UUID, exter
 		return nil, fmt.Errorf("passphrase is required for ed25519 address derivation")
 	}
 
-	newIndex, err := s.walletRepo.IncrementAddressIndex(walletID)
+	newIndex, err := s.walletRepo.IncrementAddressIndex(ctx, walletID)
 	if err != nil {
 		return nil, fmt.Errorf("increment address index: %w", err)
 	}
@@ -358,7 +387,7 @@ func (s *Service) generateSecp256k1Address(ctx context.Context, w *models.Wallet
 		Metadata:        metadata,
 		DerivationType:  "bip32",
 	}
-	if err := s.addressRepo.Create(addr); err != nil {
+	if err := s.addressRepo.Create(ctx, addr); err != nil {
 		return nil, fmt.Errorf("create address: %w", err)
 	}
 	return addr, nil
@@ -449,7 +478,7 @@ func (s *Service) generateEd25519Address(ctx context.Context, w *models.Wallet, 
 		EncryptionIV:        hex.EncodeToString(childEnc.IV),
 		EncryptionSalt:      hex.EncodeToString(childEnc.Salt),
 	}
-	if err := s.addressRepo.Create(addr); err != nil {
+	if err := s.addressRepo.Create(ctx, addr); err != nil {
 		return nil, fmt.Errorf("create address: %w", err)
 	}
 	return addr, nil
@@ -472,7 +501,7 @@ func (s *Service) ensureChainCode(ctx context.Context, w *models.Wallet) ([]byte
 	chainCode := h.Sum(nil)[32:]
 
 	chainCodeHex := hex.EncodeToString(chainCode)
-	if err := s.walletRepo.UpdateField(w.ID, "mpc_chain_code", chainCodeHex); err != nil {
+	if err := s.walletRepo.SetMPCChainCode(ctx, w.ID, chainCodeHex); err != nil {
 		return nil, fmt.Errorf("persist chain code: %w", err)
 	}
 	w.MPCChainCode = chainCodeHex
@@ -480,17 +509,43 @@ func (s *Service) ensureChainCode(ctx context.Context, w *models.Wallet) ([]byte
 	return chainCode, nil
 }
 
+func applyAddressFields(ctx context.Context, addresses AddressStore, addressID uuid.UUID, fields map[string]interface{}) error {
+	for key := range fields {
+		if key != "label" && key != "external_user_id" {
+			return fmt.Errorf("update address: unsupported field %s", key)
+		}
+	}
+	if label, ok := fields["label"]; ok {
+		text, ok := label.(string)
+		if !ok {
+			return fmt.Errorf("update address: label must be a string")
+		}
+		if err := addresses.SetLabel(ctx, addressID, text); err != nil {
+			return fmt.Errorf("update address: %w", err)
+		}
+	}
+	if externalUserID, ok := fields["external_user_id"]; ok {
+		text, ok := externalUserID.(string)
+		if !ok {
+			return fmt.Errorf("update address: external_user_id must be a string")
+		}
+		if err := addresses.SetExternalUserID(ctx, addressID, text); err != nil {
+			return fmt.Errorf("update address: %w", err)
+		}
+	}
+	return nil
+}
+
 func (s *Service) UpdateAddress(ctx context.Context, addressID uuid.UUID, fields map[string]interface{}) (*models.Address, error) {
-	addr, err := s.addressRepo.FindByID(addressID)
+	addr, err := s.addressRepo.FindByID(ctx, addressID)
 	if err != nil || addr == nil {
 		return nil, fmt.Errorf("address not found")
 	}
-
-	if err := s.addressRepo.UpdateFields(addressID, fields); err != nil {
-		return nil, fmt.Errorf("update address: %w", err)
+	if err := applyAddressFields(ctx, s.addressRepo, addressID, fields); err != nil {
+		return nil, err
 	}
 
-	updated, err := s.addressRepo.FindByID(addressID)
+	updated, err := s.addressRepo.FindByID(ctx, addressID)
 	if err != nil {
 		return nil, fmt.Errorf("fetch updated address: %w", err)
 	}
@@ -498,7 +553,7 @@ func (s *Service) UpdateAddress(ctx context.Context, addressID uuid.UUID, fields
 }
 
 func (s *Service) LookupAddress(ctx context.Context, chainID, address string) (*models.Address, error) {
-	return s.addressRepo.FindByChainAndAddress(chainID, address)
+	return s.addressRepo.FindByChainAndAddress(ctx, chainID, address)
 }
 
 // LookupAddressForAccount resolves an on-chain address only if it belongs to a
@@ -506,20 +561,20 @@ func (s *Service) LookupAddress(ctx context.Context, chainID, address string) (*
 // OR belongs to a different account — callers must return a generic 404 so
 // the two cases are indistinguishable to API clients (IDOR mitigation).
 func (s *Service) LookupAddressForAccount(ctx context.Context, chainID, address string, accountID uuid.UUID) (*models.Address, error) {
-	return s.addressRepo.FindByChainAndAddressAndAccount(chainID, address, accountID)
+	return s.addressRepo.FindByChainAndAddressAndAccount(ctx, chainID, address, accountID)
 }
 
 func (s *Service) ListUserAddresses(ctx context.Context, externalUserID string) ([]models.Address, error) {
-	return s.addressRepo.FindByExternalUserID(externalUserID)
+	return s.addressRepo.FindByExternalUserID(ctx, externalUserID)
 }
 
 // ListUserAddressesForAccount returns addresses for an external_user_id limited
 // to the caller's account. An empty slice is a legitimate response and must
 // not be distinguished from "external_id exists but belongs to another account".
 func (s *Service) ListUserAddressesForAccount(ctx context.Context, externalUserID string, accountID uuid.UUID) ([]models.Address, error) {
-	return s.addressRepo.FindByExternalUserIDAndAccount(externalUserID, accountID)
+	return s.addressRepo.FindByExternalUserIDAndAccount(ctx, externalUserID, accountID)
 }
 
 func (s *Service) ListWalletAddresses(ctx context.Context, walletID uuid.UUID) ([]models.Address, error) {
-	return s.addressRepo.FindByWalletID(walletID)
+	return s.addressRepo.FindByWalletID(ctx, walletID)
 }

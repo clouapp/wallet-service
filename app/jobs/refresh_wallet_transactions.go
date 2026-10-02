@@ -2,12 +2,14 @@ package jobs
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/macrowallets/waas/app/container"
+	"github.com/macrowallets/waas/app/models"
 )
 
 type RefreshWalletTransactions struct{}
@@ -35,11 +37,11 @@ func (j *RefreshWalletTransactions) Handle(args ...any) error {
 	}
 
 	c := container.Get()
-	wallet, err := c.WalletRepo.FindByID(walletID)
-	if err != nil {
+	wallet, err := c.WalletRepo.FindByID(context.Background(), walletID)
+	if err != nil && !errors.Is(err, models.ErrRepositoryNotFound) {
 		return fmt.Errorf("refresh_wallet_transactions: load wallet: %w", err)
 	}
-	if wallet == nil {
+	if wallet == nil || errors.Is(err, models.ErrRepositoryNotFound) {
 		return fmt.Errorf("refresh_wallet_transactions: wallet not found: %s", walletIDStr)
 	}
 	if wallet.Chain != chainID {

@@ -1,6 +1,7 @@
 package controllers
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 
@@ -79,12 +80,12 @@ func assetBalancesPricedFor(assets []models.WalletAssetBalance, resolved models.
 
 // loadWalletListItems adds network and asset balances to a page of wallets, reading
 // each chain and its tokens once.
-func loadWalletListItems(wallets []models.Wallet) ([]WalletListItem, error) {
+func loadWalletListItems(ctx context.Context, wallets []models.Wallet) ([]WalletListItem, error) {
 	walletIDs := make([]uuid.UUID, 0, len(wallets))
 	for _, wallet := range wallets {
 		walletIDs = append(walletIDs, wallet.ID)
 	}
-	balanceRows, err := container.Get().WalletAssetBalanceRepo.ListByWallets(walletIDs)
+	balanceRows, err := container.Get().WalletAssetBalanceRepo.ListByWallets(ctx, walletIDs)
 	if err != nil {
 		return nil, fmt.Errorf("list wallet asset balances: %w", err)
 	}

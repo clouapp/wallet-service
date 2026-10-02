@@ -61,7 +61,9 @@ type indexedWalletRepo struct {
 	next int
 }
 
-func (r *indexedWalletRepo) IncrementAddressIndex(uuid.UUID) (int, error) { return r.next, nil }
+func (r *indexedWalletRepo) IncrementAddressIndex(context.Context, uuid.UUID) (int, error) {
+	return r.next, nil
+}
 
 func newSolanaWalletFixture(t *testing.T) *solanaWalletFixture {
 	t.Helper()
@@ -110,7 +112,13 @@ func newSolanaWalletFixture(t *testing.T) *solanaWalletFixture {
 		tss:            tss,
 		wallet:         wallet,
 		shareB:         append([]byte(nil), keys.ShareB...),
-		addressService: walletsvc.NewService(chain.NewRegistry(), nil, tss, copyingSecrets{secrets}, walletRepo, &fakeAddressRepo{}),
+		addressService: walletsvc.NewService(walletsvc.Deps{
+			Registry:  chain.NewRegistry(),
+			MPC:       tss,
+			Secrets:   copyingSecrets{secrets},
+			Wallets:   walletRepo,
+			Addresses: &fakeAddressRepo{},
+		}),
 		walletRepo:     walletRepo,
 	}
 	fixture.child = fixture.deriveChild(t, solE2EChildIndex)

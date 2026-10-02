@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"math/big"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/service/secretsmanager"
 	"github.com/google/uuid"
@@ -50,14 +51,25 @@ type accountReader interface {
 	FindByID(ctx context.Context, id uuid.UUID) (*models.Account, error)
 }
 
+// walletReader is the wallet lookup and gas-status write sweep uses.
+type walletReader interface {
+	FindByID(ctx context.Context, id uuid.UUID) (*models.Wallet, error)
+	RecordGasCheck(ctx context.Context, id uuid.UUID, checkedAt time.Time, status string, updateStatus bool) error
+}
+
+// addressReader is the child-address lookup sweep uses.
+type addressReader interface {
+	FindByWalletID(ctx context.Context, walletID uuid.UUID) ([]models.Address, error)
+}
+
 type service struct {
 	registry    *chain.Registry
 	mpc         mpcpkg.Service
 	secrets     *secretsmanager.Client
 	rdb         *redis.Client
 	webhookSvc  *webhook.Service
-	walletRepo  repositories.WalletRepository
-	addressRepo repositories.AddressRepository
+	walletRepo  walletReader
+	addressRepo addressReader
 	txRepo      repositories.TransactionRepository
 	accountRepo accountReader
 	chainRepo   repositories.ChainRepository
@@ -76,8 +88,8 @@ func NewService(
 	secrets *secretsmanager.Client,
 	rdb *redis.Client,
 	webhookSvc *webhook.Service,
-	walletRepo repositories.WalletRepository,
-	addressRepo repositories.AddressRepository,
+	walletRepo walletReader,
+	addressRepo addressReader,
 	txRepo repositories.TransactionRepository,
 	accountRepo accountReader,
 	chainRepo repositories.ChainRepository,

@@ -20,11 +20,17 @@ import (
 	"github.com/macrowallets/waas/pkg/types"
 )
 
+// addressReader is the address lookup ingest uses to attribute a transfer.
+type addressReader interface {
+	CountByChainAndAddress(ctx context.Context, chainID, address string) (int64, error)
+	FindByChainAndAddress(ctx context.Context, chainID, address string) (*models.Address, error)
+}
+
 type Service struct {
 	rdb         *redis.Client
 	registry    *chain.Registry
 	webhookSvc  *webhook.Service
-	addressRepo repositories.AddressRepository
+	addressRepo addressReader
 	txRepo      repositories.TransactionRepository
 	deposits    DepositEvents
 }
@@ -40,7 +46,7 @@ func (s *Service) SetDepositEvents(deposits DepositEvents) {
 	s.deposits = deposits
 }
 
-func NewService(rdb *redis.Client, registry *chain.Registry, webhookSvc *webhook.Service, addressRepo repositories.AddressRepository, txRepo repositories.TransactionRepository) *Service {
+func NewService(rdb *redis.Client, registry *chain.Registry, webhookSvc *webhook.Service, addressRepo addressReader, txRepo repositories.TransactionRepository) *Service {
 	return &Service{rdb: rdb, registry: registry, webhookSvc: webhookSvc, addressRepo: addressRepo, txRepo: txRepo}
 }
 
@@ -69,13 +75,13 @@ func (s *Service) processTransfer(ctx context.Context, chainID string, adapter t
 			return nil
 		}
 	} else {
-		count, err := s.addressRepo.CountByChainAndAddress(chainID, transfer.To)
+		count, err := s.addressRepo.CountByChainAndAddress(ctx, chainID, transfer.To)
 		if err != nil || count == 0 {
 			return nil
 		}
 	}
 
-	addr, err := s.addressRepo.FindByChainAndAddress(chainID, transfer.To)
+	addr, err := s.addressRepo.FindByChainAndAddress(ctx, chainID, transfer.To)
 	if err != nil || addr == nil {
 		return fmt.Errorf("lookup address: %w", err)
 	}

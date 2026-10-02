@@ -19,7 +19,7 @@ func UTXOOnly() http.Middleware {
 			return
 		}
 
-		wallet, err := container.Get().WalletRepo.FindByID(walletID)
+		wallet, err := container.Get().WalletRepo.FindByID(ctx.Context(), walletID)
 		if err != nil || wallet == nil {
 			_ = responses.Send(ctx, http.StatusNotFound, http.Json{"error": "wallet not found"}).Abort()
 			return

@@ -94,13 +94,13 @@ func ListWallets(ctx http.Context) http.Response {
 	limit, offset := pagination.ParseParams(ctx, 20)
 	chain := ctx.Request().Query("chain", "")
 
-	wallets, total, err := container.Get().WalletRepo.PaginateByAccount(accountID, chain, limit, offset)
+	wallets, total, err := container.Get().WalletRepo.PaginateByAccount(ctx.Context(), accountID, chain, limit, offset)
 	if err != nil {
 		return responses.Send(ctx, http.StatusInternalServerError, http.Json{
 			"error": "failed to fetch wallets",
 		})
 	}
-	items, err := loadWalletListItems(wallets)
+	items, err := loadWalletListItems(ctx.Context(), wallets)
 	if err != nil {
 		slog.Error("load wallet list balances", "account", accountID, "error", err)
 		return responses.Send(ctx, http.StatusInternalServerError, http.Json{
@@ -137,7 +137,7 @@ func GetWallet(ctx http.Context) http.Response {
 		})
 	}
 
-	w, err := container.Get().WalletRepo.FindByIDAndAccount(id, accountID)
+	w, err := container.Get().WalletRepo.FindByIDAndAccount(ctx.Context(), id, accountID)
 	if err != nil || w == nil {
 		return responses.Send(ctx, http.StatusNotFound, http.Json{
 			"error": "wallet not found",

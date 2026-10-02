@@ -89,7 +89,7 @@ func (s *service) PreflightWithdrawal(ctx context.Context, plan *Plan, passphras
 }
 
 func (s *service) PreflightConsolidation(ctx context.Context, walletID uuid.UUID, asset string, passphrase string) (*Preflight, error) {
-	wallet, err := s.walletRepo.FindByID(walletID)
+	wallet, err := s.walletRepo.FindByID(ctx, walletID)
 	if err != nil {
 		return nil, fmt.Errorf("sweep preflight: find wallet: %w", err)
 	}
@@ -167,7 +167,7 @@ func (s *service) openPreflightSession(ctx context.Context, walletID uuid.UUID, 
 	if len(passphrase) < 12 {
 		return nil, fmt.Errorf("passphrase must be at least 12 characters")
 	}
-	wallet, err := s.walletRepo.FindByID(walletID)
+	wallet, err := s.walletRepo.FindByID(ctx, walletID)
 	if err != nil {
 		return nil, fmt.Errorf("sweep preflight: find wallet: %w", err)
 	}

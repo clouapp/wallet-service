@@ -45,7 +45,7 @@ func (s *service) ExecutePlan(
 		return nil, fmt.Errorf("sweep: toAddress must not be empty")
 	}
 
-	wallet, err := s.walletRepo.FindByID(plan.WalletID)
+	wallet, err := s.walletRepo.FindByID(ctx, plan.WalletID)
 	if err != nil {
 		return nil, fmt.Errorf("sweep: find wallet: %w", err)
 	}

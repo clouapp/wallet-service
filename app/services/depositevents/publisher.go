@@ -43,7 +43,7 @@ type Enqueuer interface {
 }
 
 type WalletStore interface {
-	FindByID(id uuid.UUID) (*models.Wallet, error)
+	FindByID(ctx context.Context, id uuid.UUID) (*models.Wallet, error)
 }
 
 // AssetDecimals resolves how many decimals an asset uses on a chain.
@@ -117,7 +117,7 @@ func (p *Publisher) Publish(ctx context.Context, eventType types.EventType, tx m
 	if err != nil {
 		return fmt.Errorf("publish %s for transaction %s: %w", eventType, tx.ID, err)
 	}
-	accountID, err := p.walletAccount(tx.WalletID)
+	accountID, err := p.walletAccount(ctx, tx.WalletID)
 	if err != nil {
 		return fmt.Errorf("publish %s for transaction %s: %w", eventType, tx.ID, err)
 	}
@@ -189,11 +189,11 @@ func (p *Publisher) payload(tx models.Transaction) (Payload, error) {
 
 // walletAccount returns the account that owns the wallet; a wallet without an account
 // is only visible to legacy and wallet-scoped configs.
-func (p *Publisher) walletAccount(walletID uuid.UUID) (*uuid.UUID, error) {
+func (p *Publisher) walletAccount(ctx context.Context, walletID uuid.UUID) (*uuid.UUID, error) {
 	if p.wallets == nil {
 		return nil, ErrWalletScopeUnknown
 	}
-	wallet, err := p.wallets.FindByID(walletID)
+	wallet, err := p.wallets.FindByID(ctx, walletID)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %v", ErrWalletScopeUnknown, err)
 	}

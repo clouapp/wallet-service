@@ -22,7 +22,7 @@ import (
 // cannot be resolved (row is NULL and config.SweepDefaults has no entry) are
 // also treated as always-seeded so downstream guards do not block them.
 func (s *service) RefreshGasStatus(ctx context.Context, walletID uuid.UUID) (*GasStatus, error) {
-	wallet, err := s.walletRepo.FindByID(walletID)
+	wallet, err := s.walletRepo.FindByID(ctx, walletID)
 	if err != nil {
 		return nil, fmt.Errorf("sweep: find wallet: %w", err)
 	}
@@ -101,13 +101,7 @@ func (s *service) persistGasStatus(
 	oldStatus := wallet.GasStatus
 	transitioned := oldStatus != newStatus
 
-	updates := map[string]interface{}{
-		"gas_last_checked_at": now,
-	}
-	if transitioned {
-		updates["gas_status"] = newStatus
-	}
-	if err := s.walletRepo.UpdateFields(wallet.ID, updates); err != nil {
+	if err := s.walletRepo.RecordGasCheck(ctx, wallet.ID, now, newStatus, transitioned); err != nil {
 		return nil, fmt.Errorf("sweep: update wallet gas status: %w", err)
 	}
 

@@ -28,7 +28,7 @@ func (r *recordingEnqueuer) EnqueueScoped(_ context.Context, event webhook.Scope
 
 type walletStore map[uuid.UUID]*models.Wallet
 
-func (w walletStore) FindByID(id uuid.UUID) (*models.Wallet, error) {
+func (w walletStore) FindByID(_ context.Context, id uuid.UUID) (*models.Wallet, error) {
 	return w[id], nil
 }
 

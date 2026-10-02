@@ -36,7 +36,7 @@ type TransactionStore interface {
 }
 
 type WalletStore interface {
-	FindByID(id uuid.UUID) (*models.Wallet, error)
+	FindByID(ctx context.Context, id uuid.UUID) (*models.Wallet, error)
 }
 
 // AssetDecimals resolves how many decimals an asset uses on a chain.
@@ -283,7 +283,7 @@ func (p *Publisher) publish(ctx context.Context, eventType types.EventType, wall
 	if p.enqueuer == nil {
 		return errors.New("publish withdrawal webhook: no enqueuer configured")
 	}
-	scopeAccount := p.walletAccount(walletID, accountID)
+	scopeAccount := p.walletAccount(ctx, walletID, accountID)
 	enqueued, err := p.enqueuer.EnqueueScoped(ctx, webhook.ScopedEvent{
 		EventType:     eventType,
 		SubjectID:     payload.WithdrawalID,
@@ -301,11 +301,11 @@ func (p *Publisher) publish(ctx context.Context, eventType types.EventType, wall
 
 // walletAccount scopes the event to the wallet's owning account; the withdrawal's
 // recorded account is only a fallback when the wallet cannot be read.
-func (p *Publisher) walletAccount(walletID uuid.UUID, fallback *uuid.UUID) *uuid.UUID {
+func (p *Publisher) walletAccount(ctx context.Context, walletID uuid.UUID, fallback *uuid.UUID) *uuid.UUID {
 	if p.wallets == nil {
 		return fallback
 	}
-	wallet, err := p.wallets.FindByID(walletID)
+	wallet, err := p.wallets.FindByID(ctx, walletID)
 	if err != nil || wallet == nil {
 		slog.Warn("withdrawal webhook: wallet lookup failed, using the withdrawal account", "wallet_id", walletID, "error", err)
 		return fallback

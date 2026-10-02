@@ -20,7 +20,7 @@ func WalletContext() http.Middleware {
 			return
 		}
 
-		wallet, err := container.Get().WalletRepo.FindByID(walletID)
+		wallet, err := container.Get().WalletRepo.FindByID(ctx.Context(), walletID)
 		if err != nil || wallet == nil {
 			_ = responses.Send(ctx, http.StatusNotFound, http.Json{"error": "wallet not found"}).Abort()
 			return
@@ -36,7 +36,7 @@ func WalletContext() http.Middleware {
 			}
 		}
 		if !isMember {
-			wu, err3 := container.Get().WalletUserRepo.FindByWalletAndUser(walletID, userID)
+			wu, err3 := container.Get().WalletUserRepo.FindByWalletAndUser(ctx.Context(), walletID, userID)
 			if err3 == nil && wu != nil {
 				isMember = true
 			}

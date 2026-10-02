@@ -25,7 +25,7 @@ import (
 func ListUnspentOutputs(ctx http.Context) http.Response {
 	wallet := ctx.Value("wallet").(*models.Wallet)
 
-	utxos, err := container.Get().WalletUTXORepo.ListSpendable(wallet.ID, wallet.Chain)
+	utxos, err := container.Get().WalletUTXORepo.ListSpendable(ctx.Context(), wallet.ID, wallet.Chain)
 	if err != nil {
 		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to list utxos: " + err.Error()})
 	}

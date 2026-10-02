@@ -22,7 +22,7 @@ import (
 func ListWalletBalances(ctx http.Context) http.Response {
 	wallet := ctx.Value("wallet").(*models.Wallet)
 
-	rows, err := container.Get().WalletAssetBalanceRepo.ListByWallet(wallet.ID)
+	rows, err := container.Get().WalletAssetBalanceRepo.ListByWallet(ctx.Context(), wallet.ID)
 	if err != nil {
 		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to fetch balances"})
 	}

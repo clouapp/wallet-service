@@ -1,66 +1,64 @@
 package repositories
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/google/uuid"
-	"github.com/goravel/framework/facades"
+	"github.com/goravel/framework/contracts/database/orm"
 
 	"github.com/macrowallets/waas/app/models"
+	"github.com/macrowallets/waas/app/repositories/internal/db"
 )
 
-type WalletBalanceSnapshotRepository interface {
-	Create(snapshot *models.WalletBalanceSnapshot) error
-	TrimToLatest(walletID uuid.UUID, chainID string, keep int) error
-	ListRecent(walletID uuid.UUID, chainID string, limit int) ([]models.WalletBalanceSnapshot, error)
+// WalletBalanceSnapshotRepository persists balance history rows.
+type WalletBalanceSnapshotRepository struct {
+	db.Base
 }
 
-type walletBalanceSnapshotRepository struct{}
-
-func NewWalletBalanceSnapshotRepository() WalletBalanceSnapshotRepository {
-	return &walletBalanceSnapshotRepository{}
+// NewWalletBalanceSnapshotRepository wraps an orm.Query. Pass nil for a fresh query per call.
+func NewWalletBalanceSnapshotRepository(query orm.Query) *WalletBalanceSnapshotRepository {
+	return &WalletBalanceSnapshotRepository{Base: db.NewBase(query)}
 }
 
-func (r *walletBalanceSnapshotRepository) Create(snapshot *models.WalletBalanceSnapshot) error {
+// Create inserts a snapshot.
+func (r *WalletBalanceSnapshotRepository) Create(ctx context.Context, snapshot *models.WalletBalanceSnapshot) error {
 	if snapshot == nil {
-		return fmt.Errorf("balance snapshot is required")
+		return fmt.Errorf("create balance snapshot: snapshot is nil")
 	}
 	if err := snapshot.ValidateAmounts(); err != nil {
 		return err
 	}
-	return facades.Orm().Query().Create(snapshot)
+	if err := r.Query(ctx).Create(snapshot); err != nil {
+		return fmt.Errorf("create balance snapshot: %w", err)
+	}
+	return nil
 }
 
-func (r *walletBalanceSnapshotRepository) TrimToLatest(walletID uuid.UUID, chainID string, keep int) error {
+// TrimToLatest keeps the newest snapshots for a wallet and chain and deletes the rest.
+func (r *WalletBalanceSnapshotRepository) TrimToLatest(ctx context.Context, walletID uuid.UUID, chainID string, keep int) error {
 	var toKeep []models.WalletBalanceSnapshot
-	if err := facades.Orm().Query().
-		Select("id").
-		Where("wallet_id = ? AND chain_id = ?", walletID, chainID).
-		Order("captured_at DESC").
-		Limit(keep).
-		Find(&toKeep); err != nil {
-		return err
+	if err := r.Query(ctx).Select("id").Where("wallet_id = ? AND chain_id = ?", walletID, chainID).Order("captured_at DESC").Limit(keep).Find(&toKeep); err != nil {
+		return fmt.Errorf("list snapshots to keep: %w", err)
 	}
 	if len(toKeep) == 0 {
 		return nil
 	}
 	keepIDs := make([]uuid.UUID, len(toKeep))
-	for i, s := range toKeep {
-		keepIDs[i] = s.ID
+	for i, snapshot := range toKeep {
+		keepIDs[i] = snapshot.ID
 	}
-	_, err := facades.Orm().Query().
-		Where("wallet_id = ? AND chain_id = ?", walletID, chainID).
-		Where("id NOT IN ?", keepIDs).
-		ForceDelete(&models.WalletBalanceSnapshot{})
-	return err
+	if _, err := r.Query(ctx).Where("wallet_id = ? AND chain_id = ?", walletID, chainID).Where("id NOT IN ?", keepIDs).ForceDelete(&models.WalletBalanceSnapshot{}); err != nil {
+		return fmt.Errorf("trim balance snapshots: %w", err)
+	}
+	return nil
 }
 
-func (r *walletBalanceSnapshotRepository) ListRecent(walletID uuid.UUID, chainID string, limit int) ([]models.WalletBalanceSnapshot, error) {
+// ListRecent returns the newest snapshots for a wallet and chain.
+func (r *WalletBalanceSnapshotRepository) ListRecent(ctx context.Context, walletID uuid.UUID, chainID string, limit int) ([]models.WalletBalanceSnapshot, error) {
 	var snapshots []models.WalletBalanceSnapshot
-	err := facades.Orm().Query().
-		Where("wallet_id = ? AND chain_id = ?", walletID, chainID).
-		Order("captured_at DESC").
-		Limit(limit).
-		Find(&snapshots)
-	return snapshots, err
+	if err := r.Query(ctx).Where("wallet_id = ? AND chain_id = ?", walletID, chainID).Order("captured_at DESC").Limit(limit).Find(&snapshots); err != nil {
+		return nil, fmt.Errorf("list balance snapshots: %w", err)
+	}
+	return snapshots, nil
 }

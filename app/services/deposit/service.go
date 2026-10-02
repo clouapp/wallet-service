@@ -26,7 +26,7 @@ type Service struct {
 	rdb                  *redis.Client
 	registry             *chain.Registry
 	webhookSvc           *webhook.Service
-	addressRepo          repositories.AddressRepository
+	addressRepo          *repositories.AddressRepository
 	txRepo               repositories.TransactionRepository
 	blockHeightProviders map[string]blockheight.Provider
 	heightFailures       map[string]int
@@ -71,7 +71,7 @@ func (s *Service) SetWithdrawalConfirmations(withdrawals WithdrawalConfirmations
 	s.withdrawals = withdrawals
 }
 
-func NewService(rdb *redis.Client, registry *chain.Registry, webhookSvc *webhook.Service, addressRepo repositories.AddressRepository, txRepo repositories.TransactionRepository, blockHeightProviders map[string]blockheight.Provider) *Service {
+func NewService(rdb *redis.Client, registry *chain.Registry, webhookSvc *webhook.Service, addressRepo *repositories.AddressRepository, txRepo repositories.TransactionRepository, blockHeightProviders map[string]blockheight.Provider) *Service {
 	return &Service{
 		rdb:                  rdb,
 		registry:             registry,
@@ -158,7 +158,7 @@ func (s *Service) processTransfer(ctx context.Context, chainID string, adapter t
 		return false, nil
 	}
 
-	addr, err := s.addressRepo.FindByChainAndAddress(chainID, transfer.To)
+	addr, err := s.addressRepo.FindByChainAndAddress(ctx, chainID, transfer.To)
 	if err != nil || addr == nil {
 		return false, fmt.Errorf("lookup address: %w", err)
 	}
@@ -250,7 +250,7 @@ func (s *Service) isWatchedAddress(ctx context.Context, chainID, address string)
 		}
 		slog.Warn("address cache unavailable, checking the database", "chain", chainID, "error", err)
 	}
-	count, err := s.addressRepo.CountByChainAndAddress(chainID, address)
+	count, err := s.addressRepo.CountByChainAndAddress(ctx, chainID, address)
 	if err != nil {
 		return false, fmt.Errorf("lookup watched address: %w", err)
 	}
@@ -263,7 +263,7 @@ func (s *Service) RefreshAddressCache(ctx context.Context, chainID string) error
 	if s.rdb == nil {
 		return nil
 	}
-	addresses, err := s.addressRepo.PluckActiveAddresses(chainID)
+	addresses, err := s.addressRepo.PluckActiveAddresses(ctx, chainID)
 	if err != nil {
 		return err
 	}
@@ -278,7 +278,7 @@ func (s *Service) SyncAddressCache(ctx context.Context, chainID string) (bool, e
 	if s.rdb == nil {
 		return false, nil
 	}
-	addresses, err := s.addressRepo.PluckActiveAddresses(chainID)
+	addresses, err := s.addressRepo.PluckActiveAddresses(ctx, chainID)
 	if err != nil {
 		return false, fmt.Errorf("load active %s addresses: %w", chainID, err)
 	}

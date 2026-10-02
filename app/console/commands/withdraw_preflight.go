@@ -146,7 +146,7 @@ func runPreflight(ctx context.Context, request preflightRequest) (*preflightOutp
 }
 
 func preflightWithdrawal(ctx context.Context, ctr *container.Container, preflighter sweep.Preflighter, walletID uuid.UUID, request preflightRequest) (*sweep.Preflight, error) {
-	wallet, err := ctr.WalletRepo.FindByID(walletID)
+	wallet, err := ctr.WalletRepo.FindByID(context.Background(), walletID)
 	if err != nil || wallet == nil {
 		return nil, fmt.Errorf("wallet %s not found", walletID)
 	}

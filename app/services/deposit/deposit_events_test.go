@@ -52,7 +52,7 @@ func newDepositEventsFixture(t *testing.T) depositEventsFixture {
 	wallet := mocks.InsertWalletWithAccount(t, "eth", &account.ID)
 
 	webhookSvc := newWebhookSvc()
-	publisher := depositevents.NewPublisher(webhookSvc, repositories.NewWalletRepository(), chainAssetDecimals{"eth/eth": etherDecimals})
+	publisher := depositevents.NewPublisher(webhookSvc, repositories.NewWalletRepository(nil), chainAssetDecimals{"eth/eth": etherDecimals})
 	svc := newDepositSvc(registry, webhookSvc)
 	svc.SetDepositEvents(publisher)
 	return depositEventsFixture{svc: svc, adapter: adapter, publisher: publisher, wallet: wallet, accountID: account.ID}

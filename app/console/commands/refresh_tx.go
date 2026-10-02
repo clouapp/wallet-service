@@ -2,6 +2,7 @@ package commands
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/goravel/framework/contracts/console"
@@ -11,6 +12,7 @@ import (
 
 	"github.com/macrowallets/waas/app/container"
 	"github.com/macrowallets/waas/app/jobs"
+	"github.com/macrowallets/waas/app/models"
 )
 
 type RefreshTx struct{}
@@ -63,12 +65,12 @@ func (c *RefreshTx) Handle(ctx console.Context) error {
 		return fmt.Errorf("transaction not found: chain=%s tx_hash=%s", chain, txHash)
 	}
 
-	wallet, err := ctr.WalletRepo.FindByID(tx.WalletID)
-	if err != nil {
+	wallet, err := ctr.WalletRepo.FindByID(context.Background(), tx.WalletID)
+	if err != nil && !errors.Is(err, models.ErrRepositoryNotFound) {
 		ctx.Error("failed to load wallet for transaction: " + err.Error())
 		return fmt.Errorf("load wallet for tx %s: %w", txHash, err)
 	}
-	if wallet == nil {
+	if wallet == nil || errors.Is(err, models.ErrRepositoryNotFound) {
 		ctx.Error("wallet not found for transaction: wallet_id=" + tx.WalletID.String())
 		return fmt.Errorf("wallet not found: %s", tx.WalletID)
 	}

@@ -47,7 +47,7 @@ func (s *service) ConsolidateAll(
 		return nil, fmt.Errorf("passphrase must be at least 12 characters")
 	}
 
-	wallet, err := s.walletRepo.FindByID(walletID)
+	wallet, err := s.walletRepo.FindByID(ctx, walletID)
 	if err != nil {
 		return nil, fmt.Errorf("sweep: find wallet: %w", err)
 	}
@@ -160,7 +160,7 @@ func (s *service) planConsolidation(
 	asset string,
 	limits *Limits,
 ) (*Plan, error) {
-	children, err := s.addressRepo.FindByWalletID(wallet.ID)
+	children, err := s.addressRepo.FindByWalletID(ctx, wallet.ID)
 	if err != nil {
 		return nil, fmt.Errorf("sweep: list children: %w", err)
 	}

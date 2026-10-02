@@ -2,6 +2,7 @@ package commands
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/google/uuid"
@@ -12,6 +13,7 @@ import (
 
 	"github.com/macrowallets/waas/app/container"
 	"github.com/macrowallets/waas/app/jobs"
+	"github.com/macrowallets/waas/app/models"
 )
 
 type ReconcileWallet struct{}
@@ -53,12 +55,12 @@ func (c *ReconcileWallet) Handle(ctx console.Context) error {
 	}
 
 	ctr := container.Get()
-	wallet, err := ctr.WalletRepo.FindByID(id)
-	if err != nil {
+	wallet, err := ctr.WalletRepo.FindByID(context.Background(), id)
+	if err != nil && !errors.Is(err, models.ErrRepositoryNotFound) {
 		ctx.Error("failed to load wallet: " + err.Error())
 		return fmt.Errorf("load wallet: %w", err)
 	}
-	if wallet == nil {
+	if wallet == nil || errors.Is(err, models.ErrRepositoryNotFound) {
 		ctx.Error("wallet not found: " + walletID)
 		return fmt.Errorf("wallet not found: %s", walletID)
 	}

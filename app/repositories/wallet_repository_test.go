@@ -1,6 +1,7 @@
 package repositories_test
 
 import (
+	"context"
 	"testing"
 
 	"github.com/google/uuid"
@@ -13,7 +14,7 @@ import (
 
 type WalletRepositoryTestSuite struct {
 	suite.Suite
-	repo repositories.WalletRepository
+	repo *repositories.WalletRepository
 }
 
 func TestWalletRepositorySuite(t *testing.T) {
@@ -22,7 +23,7 @@ func TestWalletRepositorySuite(t *testing.T) {
 
 func (s *WalletRepositoryTestSuite) SetupTest() {
 	mocks.TestDB(s.T())
-	s.repo = repositories.NewWalletRepository()
+	s.repo = repositories.NewWalletRepository(nil)
 }
 
 func (s *WalletRepositoryTestSuite) makeWallet(chainID string) *models.Wallet {
@@ -35,61 +36,59 @@ func (s *WalletRepositoryTestSuite) makeWallet(chainID string) *models.Wallet {
 
 func (s *WalletRepositoryTestSuite) TestCreate_Success() {
 	w := s.makeWallet("eth")
-	err := s.repo.Create(w)
+	err := s.repo.Create(context.Background(), w)
 	s.NoError(err)
 }
 
 func (s *WalletRepositoryTestSuite) TestFindByID_Found() {
 	w := s.makeWallet("eth")
-	s.Require().NoError(s.repo.Create(w))
+	s.Require().NoError(s.repo.Create(context.Background(), w))
 
-	found, err := s.repo.FindByID(w.ID)
+	found, err := s.repo.FindByID(context.Background(), w.ID)
 	s.NoError(err)
 	s.NotNil(found)
 	s.Equal("eth", found.Chain)
 }
 
 func (s *WalletRepositoryTestSuite) TestFindByID_NotFound() {
-	found, err := s.repo.FindByID(uuid.New())
-	s.NoError(err)
+	found, err := s.repo.FindByID(context.Background(), uuid.New())
+	s.ErrorIs(err, models.ErrRepositoryNotFound)
 	s.Nil(found)
 }
 
 func (s *WalletRepositoryTestSuite) TestFindAll() {
-	s.Require().NoError(s.repo.Create(s.makeWallet("eth")))
-	s.Require().NoError(s.repo.Create(s.makeWallet("btc")))
+	s.Require().NoError(s.repo.Create(context.Background(), s.makeWallet("eth")))
+	s.Require().NoError(s.repo.Create(context.Background(), s.makeWallet("btc")))
 
-	wallets, err := s.repo.FindAll()
+	wallets, err := s.repo.FindAll(context.Background())
 	s.NoError(err)
 	s.Len(wallets, 2)
 }
 
-func (s *WalletRepositoryTestSuite) TestUpdateField() {
+func (s *WalletRepositoryTestSuite) TestSetStatus() {
 	w := s.makeWallet("eth")
-	s.Require().NoError(s.repo.Create(w))
+	s.Require().NoError(s.repo.Create(context.Background(), w))
 
-	err := s.repo.UpdateField(w.ID, "status", "frozen")
+	err := s.repo.SetStatus(context.Background(), w.ID, "frozen")
 	s.NoError(err)
 
-	found, err := s.repo.FindByID(w.ID)
+	found, err := s.repo.FindByID(context.Background(), w.ID)
 	s.NoError(err)
 	s.Equal("frozen", found.Status)
 }
 
-func (s *WalletRepositoryTestSuite) TestUpdateFields() {
+func (s *WalletRepositoryTestSuite) TestActivateClearsTheCode() {
 	w := s.makeWallet("eth")
 	code := "123456"
 	w.ActivationCode = &code
 	w.Status = "pending"
-	s.Require().NoError(s.repo.Create(w))
+	s.Require().NoError(s.repo.Create(context.Background(), w))
 
-	err := s.repo.UpdateFields(w.ID, map[string]interface{}{
-		"status":          "active",
-		"activation_code": nil,
-	})
+	err := s.repo.Activate(context.Background(), w.ID, "active")
 	s.NoError(err)
 
-	found, err := s.repo.FindByID(w.ID)
+	found, err := s.repo.FindByID(context.Background(), w.ID)
 	s.NoError(err)
 	s.Equal("active", found.Status)
+	s.Nil(found.ActivationCode)
 }
