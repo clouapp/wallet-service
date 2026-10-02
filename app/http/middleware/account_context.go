@@ -39,6 +39,10 @@ func AccountContext() http.Middleware {
 			return
 		}
 
+		if !abortUnlessAccountAllows(ctx, accountPtr) {
+			return
+		}
+
 		ctx.WithValue("account", accountPtr)
 		ctx.WithValue("account_role", au.Role)
 		ctx.Request().Next()

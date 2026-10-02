@@ -11,6 +11,7 @@ import (
 	"github.com/macrowallets/waas/app/http/requests"
 	mails "github.com/macrowallets/waas/app/mails"
 	"github.com/macrowallets/waas/app/models"
+	"github.com/macrowallets/waas/app/policies"
 	authsvc "github.com/macrowallets/waas/app/services/auth"
 )
 
@@ -133,6 +134,7 @@ func Register(ctx http.Context) http.Response {
 // @Success      200      {object}  AuthResponse
 // @Failure      400      {object}  ErrorResponse
 // @Failure      401      {object}  ErrorResponse
+// @Failure      403      {object}  ErrorResponse  "user is not active"
 // @Router       /auth/login [post]
 func Login(ctx http.Context) http.Response {
 	var req requests.LoginRequest
@@ -148,6 +150,10 @@ func Login(ctx http.Context) http.Response {
 
 	if !authService.CheckPassword(req.Password, user.PasswordHash) {
 		return ctx.Response().Json(http.StatusUnauthorized, http.Json{"error": "invalid credentials"})
+	}
+
+	if !policies.UserMayHoldSession(user.Status) {
+		return inactiveUserResponse(ctx)
 	}
 
 	if user.TotpEnabled {
@@ -185,6 +191,7 @@ func Login(ctx http.Context) http.Response {
 // @Success      200      {object}  AuthResponse
 // @Failure      400      {object}  ErrorResponse
 // @Failure      401      {object}  ErrorResponse
+// @Failure      403      {object}  ErrorResponse  "user is not active"
 // @Failure      422      {object}  ErrorResponse
 // @Failure      429      {object}  ErrorResponse
 // @Router       /auth/2fa/verify [post]
@@ -201,6 +208,9 @@ func VerifyTwoFactor(ctx http.Context) http.Response {
 	user, err := container.Get().TwoFactorLogin.Complete(req.PartialToken, req.Code, req.RecoveryCode)
 	if err != nil {
 		return twoFactorErrorResponse(ctx, err)
+	}
+	if !policies.UserMayHoldSession(user.Status) {
+		return inactiveUserResponse(ctx)
 	}
 
 	tokens, err := issueSession(ctx, user.ID, user.SessionsRevokedAt)
@@ -260,6 +270,9 @@ func RefreshToken(ctx http.Context) http.Response {
 	}
 	if owner == nil {
 		return ctx.Response().Json(http.StatusUnauthorized, http.Json{"error": "invalid or expired refresh token"})
+	}
+	if !policies.UserMayHoldSession(owner.Status) {
+		return ctx.Response().Json(http.StatusUnauthorized, http.Json{"error": "user is not active"})
 	}
 
 	session, err := issueSession(ctx, owner.ID, owner.SessionsRevokedAt)

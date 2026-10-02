@@ -9,6 +9,11 @@ import (
 	"github.com/macrowallets/waas/app/models"
 )
 
+// WalletUserRepository reads and writes wallet memberships.
+//
+// FindByWalletAndUser answers "can this user access the wallet" and returns
+// an active membership only; FindByWalletID and *IncludeDeleted return every
+// status for membership management.
 type WalletUserRepository interface {
 	Create(wu *models.WalletUser) error
 	FindByWalletID(walletID uuid.UUID) ([]models.WalletUser, error)
@@ -39,7 +44,7 @@ func (r *walletUserRepository) FindByWalletID(walletID uuid.UUID) ([]models.Wall
 func (r *walletUserRepository) FindByWalletAndUser(walletID, userID uuid.UUID) (*models.WalletUser, error) {
 	var wu models.WalletUser
 	err := facades.Orm().Query().
-		Where("wallet_id = ? AND user_id = ? AND deleted_at IS NULL", walletID, userID).
+		Where("wallet_id = ? AND user_id = ? AND deleted_at IS NULL AND status = ?", walletID, userID, models.StatusActive).
 		First(&wu)
 	if err != nil {
 		return nil, err

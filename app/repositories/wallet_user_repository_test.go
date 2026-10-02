@@ -82,6 +82,20 @@ func (s *WalletUserRepositoryTestSuite) TestFindByWalletAndUser_NotFound() {
 	s.Nil(wu)
 }
 
+func (s *WalletUserRepositoryTestSuite) TestFindByWalletAndUser_IgnoresAMembershipThatIsNotActive() {
+	walletID := s.createWallet()
+	userID := uuid.New()
+	s.Require().NoError(s.repo.Create(&models.WalletUser{ID: uuid.New(), WalletID: walletID, UserID: userID, Roles: "admin", Status: "suspended"}))
+
+	wu, err := s.repo.FindByWalletAndUser(walletID, userID)
+	s.NoError(err)
+	s.Nil(wu, "a suspended wallet membership counts as absent")
+
+	members, err := s.repo.FindByWalletID(walletID)
+	s.NoError(err)
+	s.Len(members, 1, "membership management still sees every status")
+}
+
 func (s *WalletUserRepositoryTestSuite) TestFindByWalletAndUserIncludeDeleted() {
 	walletID := s.createWallet()
 	userID := uuid.New()

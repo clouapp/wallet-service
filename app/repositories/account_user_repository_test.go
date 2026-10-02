@@ -97,6 +97,36 @@ func (s *AccountUserRepositoryTestSuite) TestFindByUserID() {
 	s.Len(memberships, 2)
 }
 
+func (s *AccountUserRepositoryTestSuite) TestAccessLookupsIgnoreMembershipsThatAreNotActive() {
+	activeAccount := s.createAccount()
+	suspendedAccount := s.createAccount()
+	userID := uuid.New()
+	s.Require().NoError(s.repo.Create(&models.AccountUser{ID: uuid.New(), AccountID: activeAccount, UserID: userID, Role: "owner"}))
+	s.Require().NoError(s.repo.Create(&models.AccountUser{ID: uuid.New(), AccountID: suspendedAccount, UserID: userID, Role: "owner", Status: "suspended"}))
+
+	active, err := s.repo.FindByAccountAndUser(activeAccount, userID)
+	s.NoError(err)
+	s.NotNil(active)
+	suspended, err := s.repo.FindByAccountAndUser(suspendedAccount, userID)
+	s.NoError(err)
+	s.Nil(suspended, "a suspended membership counts as absent")
+
+	memberships, err := s.repo.FindByUserID(userID)
+	s.NoError(err)
+	s.Require().Len(memberships, 1)
+	s.Equal(activeAccount, memberships[0].AccountID)
+
+	page, total, err := s.repo.PaginateByUserID(userID, 10, 0)
+	s.NoError(err)
+	s.EqualValues(1, total)
+	s.Len(page, 1)
+
+	managed, err := s.repo.FindByAccountAndUserIncludeDeleted(suspendedAccount, userID)
+	s.NoError(err)
+	s.Require().NotNil(managed, "membership management still sees every status")
+	s.Equal("suspended", managed.Status)
+}
+
 func (s *AccountUserRepositoryTestSuite) TestUpdateField() {
 	accID := s.createAccount()
 	userID := uuid.New()

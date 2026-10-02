@@ -8,6 +8,7 @@ import (
 	"github.com/goravel/framework/facades"
 
 	"github.com/macrowallets/waas/app/models"
+	"github.com/macrowallets/waas/app/policies"
 	authsvc "github.com/macrowallets/waas/app/services/auth"
 )
 
@@ -35,6 +36,18 @@ func SessionAuth() http.Middleware {
 		if err := authGuard.User(&user); err != nil {
 			ctx.Request().AbortWithStatus(http.StatusUnauthorized)
 			ctx.Response().Json(http.StatusUnauthorized, http.Json{"error": "user not found"})
+			return
+		}
+
+		if user.ID == uuid.Nil {
+			ctx.Request().AbortWithStatus(http.StatusUnauthorized)
+			ctx.Response().Json(http.StatusUnauthorized, http.Json{"error": "user not found"})
+			return
+		}
+
+		if !policies.UserMayHoldSession(user.Status) {
+			ctx.Request().AbortWithStatus(http.StatusUnauthorized)
+			ctx.Response().Json(http.StatusUnauthorized, http.Json{"error": "user is not active"})
 			return
 		}
 

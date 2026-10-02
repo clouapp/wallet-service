@@ -78,6 +78,13 @@ func signedInResponse(user *models.User, tokens sessionTokens) http.Json {
 	return resp
 }
 
+// inactiveUserResponse answers a sign-in by a user whose status forbids a
+// session. It is only reached after the password matched, so it reveals the
+// status to the account holder alone.
+func inactiveUserResponse(ctx http.Context) http.Response {
+	return ctx.Response().Json(http.StatusForbidden, http.Json{"error": "user is not active"})
+}
+
 func twoFactorErrorResponse(ctx http.Context, err error) http.Response {
 	switch {
 	case errors.Is(err, authsvc.ErrChallengeInvalid):

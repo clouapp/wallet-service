@@ -49,6 +49,13 @@ func WalletContext() http.Middleware {
 			return
 		}
 
+		if wallet.AccountID != nil {
+			account, _ := container.Get().AccountRepo.FindByID(*wallet.AccountID)
+			if !abortUnlessAccountAllows(ctx, account) {
+				return
+			}
+		}
+
 		ctx.WithValue("wallet", wallet)
 		ctx.WithValue("wallet_id", wallet.ID)
 		ctx.Request().Next()

@@ -9,6 +9,12 @@ import (
 	"github.com/macrowallets/waas/app/models"
 )
 
+// AccountUserRepository reads and writes account memberships.
+//
+// FindByAccountAndUser, FindByUserID and PaginateByUserID answer "what can
+// this user access" and return active memberships only: a suspended or
+// otherwise non-active membership counts as absent. The *IncludeDeleted and
+// by-account listings return every status for membership management.
 type AccountUserRepository interface {
 	Create(au *models.AccountUser) error
 	FindByAccountID(accountID uuid.UUID) ([]models.AccountUser, error)
@@ -42,7 +48,7 @@ func (r *accountUserRepository) FindByAccountID(accountID uuid.UUID) ([]models.A
 func (r *accountUserRepository) FindByAccountAndUser(accountID, userID uuid.UUID) (*models.AccountUser, error) {
 	var au models.AccountUser
 	err := facades.Orm().Query().
-		Where("account_id = ? AND user_id = ? AND deleted_at IS NULL", accountID, userID).
+		Where("account_id = ? AND user_id = ? AND deleted_at IS NULL AND status = ?", accountID, userID, models.StatusActive).
 		First(&au)
 	if err != nil {
 		return nil, err
@@ -70,7 +76,7 @@ func (r *accountUserRepository) FindByAccountAndUserIncludeDeleted(accountID, us
 func (r *accountUserRepository) FindByUserID(userID uuid.UUID) ([]models.AccountUser, error) {
 	var memberships []models.AccountUser
 	err := facades.Orm().Query().
-		Where("user_id = ? AND deleted_at IS NULL", userID).
+		Where("user_id = ? AND deleted_at IS NULL AND status = ?", userID, models.StatusActive).
 		Find(&memberships)
 	return memberships, err
 }
@@ -80,13 +86,13 @@ func (r *accountUserRepository) PaginateByUserID(userID uuid.UUID, limit, offset
 	var total int64
 	total, err := facades.Orm().Query().
 		Model(&models.AccountUser{}).
-		Where("user_id = ? AND deleted_at IS NULL", userID).
+		Where("user_id = ? AND deleted_at IS NULL AND status = ?", userID, models.StatusActive).
 		Count()
 	if err != nil {
 		return nil, 0, err
 	}
 	err = facades.Orm().Query().
-		Where("user_id = ? AND deleted_at IS NULL", userID).
+		Where("user_id = ? AND deleted_at IS NULL AND status = ?", userID, models.StatusActive).
 		Offset(offset).Limit(limit).
 		Find(&memberships)
 	return memberships, total, err
