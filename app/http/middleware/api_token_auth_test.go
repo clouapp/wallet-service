@@ -61,9 +61,9 @@ func (s *APITokenAuthHMACTestSuite) mintToken(requireSignature bool, name string
 		Name:      name,
 	}
 	_, err := facades.Orm().Query().Exec(
-		`INSERT INTO access_tokens (id, account_id, name, token_hash, spending_limit, created_at, updated_at)
-		 VALUES (?, ?, ?, ?, ?, NOW(), NOW())`,
-		record.ID, record.AccountID, record.Name, "test-hash-"+name, "{}",
+		`INSERT INTO access_tokens (id, account_id, name, token_hash, permissions, spending_limit, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, NOW(), NOW())`,
+		record.ID, record.AccountID, record.Name, "test-hash-"+name, models.AllAPIPermissionGrants(), "{}",
 	)
 	s.Require().NoError(err)
 

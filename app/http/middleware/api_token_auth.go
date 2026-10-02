@@ -26,6 +26,7 @@ import (
 type APITokenClaims struct {
 	AccountID        string `json:"account_id"`
 	RequireSignature bool   `json:"sig,omitempty"`
+	Secret           string `json:"sec,omitempty"`
 	jwt.RegisteredClaims
 }
 
@@ -80,6 +81,11 @@ func APITokenAuth() http.Middleware {
 			return
 		}
 
+		if models.IsSHA256Hex(token.TokenHash) && !models.APITokenSecretMatches(token.TokenHash, claims.Secret) {
+			abortWithJSON(ctx, http.StatusUnauthorized, http.Json{"error": "invalid or expired api token"})
+			return
+		}
+
 		sig := ctx.Request().Header("X-Signature", "")
 		if claims.RequireSignature && sig == "" {
 			abortWithJSON(ctx, http.StatusUnauthorized, http.Json{"error": "missing request signature"})
@@ -115,6 +121,7 @@ func MintAPIToken(token *models.AccessToken, requireSignature bool) (string, err
 	claims := APITokenClaims{
 		AccountID:        token.AccountID.String(),
 		RequireSignature: requireSignature,
+		Secret:           token.Secret,
 		RegisteredClaims: jwt.RegisteredClaims{
 			ID:       token.ID.String(),
 			Subject:  "api_token",

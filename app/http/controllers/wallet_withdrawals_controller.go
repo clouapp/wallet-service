@@ -15,6 +15,7 @@ import (
 	"github.com/macrowallets/waas/app/http/pagination"
 	"github.com/macrowallets/waas/app/http/requests"
 	"github.com/macrowallets/waas/app/models"
+	"github.com/macrowallets/waas/app/services/apitoken"
 	authsvc "github.com/macrowallets/waas/app/services/auth"
 	mpcpkg "github.com/macrowallets/waas/app/services/mpc"
 	"github.com/macrowallets/waas/app/services/withdraw"
@@ -137,6 +138,16 @@ func CreateWalletWithdrawal(ctx http.Context) http.Response {
 		accountID, hasAccount := ctx.Value("account_id").(uuid.UUID)
 		if !hasAccount || accountID == uuid.Nil {
 			return ctx.Response().Json(http.StatusUnauthorized, http.Json{"error": "unauthenticated"})
+		}
+		if token, ok := ctx.Value("api_token").(*models.AccessToken); ok && token != nil {
+			asset := req.Asset
+			if asset == "" {
+				asset = wallet.Chain
+			}
+			key := fmt.Sprintf("vault:quota:token:%s:%s", token.ID.String(), time.Now().UTC().Format("2006-01-02"))
+			if err := apitoken.ReserveDailyUSD(ctx.Context(), container.Get().Redis, key, token.SpendingLimit, asset, req.Amount); err != nil {
+				return ctx.Response().Json(http.StatusForbidden, http.Json{"error": err.Error()})
+			}
 		}
 	}
 

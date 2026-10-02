@@ -1,6 +1,7 @@
 package controllers
 
 import (
+	"encoding/json"
 	"errors"
 	"time"
 
@@ -16,14 +17,11 @@ import (
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/policies"
 	accountsvc "github.com/macrowallets/waas/app/services/account"
-	authsvc "github.com/macrowallets/waas/app/services/auth"
 )
 
 func accountSvc() *accountsvc.Service {
 	return accountsvc.NewService(container.Get().AccountRepo, container.Get().AccountUserRepo, container.Get().AccessTokenRepo)
 }
-
-var accountAuthService = authsvc.NewService()
 
 // CreateAccount godoc
 // @Summary      Create a new account
@@ -324,13 +322,43 @@ func CreateAccountToken(ctx http.Context) http.Response {
 	}
 
 	tokenID := uuid.New()
+	role, _ := ctx.Value("account_role").(string)
+	if !models.RoleMayMintAPIPermissions(role, req.Permissions) {
+		return ctx.Response().Json(http.StatusForbidden, http.Json{"error": "api token scopes exceed the creator's role"})
+	}
+	permissions, err := models.MarshalAPIPermissions(req.Permissions)
+	if err != nil {
+		return ctx.Response().Json(http.StatusUnprocessableEntity, http.Json{"error": "invalid api token scopes"})
+	}
+	cidr, err := models.CanonicalIPCidr(req.IpCidr)
+	if err != nil {
+		return ctx.Response().Json(http.StatusUnprocessableEntity, http.Json{"error": "invalid ip_cidr"})
+	}
+	spendRaw := "{}"
+	if req.SpendingLimit != nil && req.SpendingLimit.DailyUSD != nil {
+		encoded, encErr := json.Marshal(map[string]float64{"daily_usd": *req.SpendingLimit.DailyUSD})
+		if encErr != nil {
+			return ctx.Response().Json(http.StatusUnprocessableEntity, http.Json{"error": "invalid spending_limit"})
+		}
+		spendRaw, err = models.CanonicalSpendingLimit(string(encoded))
+		if err != nil {
+			return ctx.Response().Json(http.StatusUnprocessableEntity, http.Json{"error": "invalid spending_limit"})
+		}
+	}
+	secret, hash, err := models.NewAPITokenSecret()
+	if err != nil {
+		return ctx.Response().Json(http.StatusInternalServerError, http.Json{"error": "failed to create token"})
+	}
 	token := &models.AccessToken{
 		ID:            tokenID,
 		AccountID:     account.ID,
 		CreatedBy:     &callerID,
 		Name:          req.Name,
-		TokenHash:     accountAuthService.HashToken(tokenID.String()),
-		SpendingLimit: "{}",
+		TokenHash:     hash,
+		Secret:        secret,
+		Permissions:   permissions,
+		IpCidr:        cidr,
+		SpendingLimit: spendRaw,
 	}
 	if req.ValidUntil != "" {
 		t, _ := time.Parse(time.RFC3339, req.ValidUntil)

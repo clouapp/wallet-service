@@ -18,6 +18,7 @@ type AccessToken struct {
 	IpCidr        string     `gorm:"type:text" json:"ip_cidr,omitempty"`
 	SpendingLimit string     `gorm:"type:jsonb" json:"spending_limit,omitempty"`
 	ValidUntil    *time.Time `gorm:"type:timestamptz" json:"valid_until,omitempty"`
+	Secret        string     `gorm:"-" json:"-"`
 }
 
 func (a *AccessToken) TableName() string { return "access_tokens" }
