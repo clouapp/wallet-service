@@ -59,8 +59,11 @@ Known violations include `app/models → app/services/mpc` and `config → app/m
   A new route needs a row in `routeTable`.
 - External integrators (Markets) consume `/api/v1`; the front consumes `/v1`. A change of
   status, error shape or success shape on either is a contract change, decided first and
-  recorded in `.ai/guidelines/http-error-contract.md`. — UNGUARDED (TARGET: the HTTP
-  contract snapshot of the alignment plan §6).
+  recorded in `.ai/guidelines/http-error-contract.md`. — guarded by `TestHTTPContract`
+  (`tests/contract`): a fixed scenario over both surfaces (success and error paths, no
+  chain call, no fund movement) whose method, path, status, content type and raw body
+  (uuids, timestamps and tokens normalized) must match `tests/contract/testdata/http_contract.txt`
+  byte for byte. Rewrite it (`make contract-update`) only for a decided change.
 
 ### 4. Authentication
 
@@ -168,6 +171,7 @@ make dev            # Docker + backend (Air) + frontend
 | `make test-race` | same with `-race` |
 | `make lint` | golangci-lint v2 with `.golangci.yml` (report mode: lists findings, exits 0) |
 | `make arch` | architecture checks with every finding listed (`ARCH_MODE=ratchet\|enforce` to block) |
+| `make contract` / `make contract-update` | compare / rewrite the HTTP contract snapshot |
 | `make docker-up` / `make docker-down` | Postgres, Redis, LocalStack |
 | `make migrate` / `make migrate-status` / `make migrate-rollback` / `make migrate-fresh` | migrations |
 | `make db-seed` / `make migrate-fresh-seed` | dev seed data |
@@ -196,7 +200,7 @@ snapshots in the `localstack_data` volume; the snapshot key lives in
 | `app/console/`, `app/jobs/`, `app/events/`, `app/listeners/`, `app/mails/`, `app/rules/` | artisan commands, queue jobs, events, mail, validation rules |
 | `database/` | migrations, seeders, seed logic |
 | `pkg/` | `amount`, `types`, `httpclient` |
-| `tests/` | `testenv`, `testutil`, hand-written `mocks`, `architecture` (machine-checked rules) |
+| `tests/` | `testenv`, `testutil`, hand-written `mocks`, `architecture` (machine-checked rules), `contract` (HTTP contract snapshot) |
 | `docs/` | Swagger output and design notes (`GORAVEL_INTEGRATION.md`, `INTEGRATION_STATUS.md` are historical) |
 
 Everything inside a `.go` file is English.

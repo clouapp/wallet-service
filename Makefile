@@ -1,4 +1,4 @@
-.PHONY: help build clean run dev dev-back dev-front stop deploy deploy-guided delete validate local test arch arch-baseline test-coverage test-race test-verbose lint fmt vet security migrate migrate-rollback migrate-status migrate-fresh migrate-fresh-seed migrate-fresh-hard db-reset db-seed key-generate jwt-secret docker-up docker-down docker-logs docker-build docker-test docker-status ecr-login ecr-push logs-api logs-scanner logs-webhook logs-withdrawal dlq-check dlq-replay-webhooks dlq-replay-withdrawals ping env-info swagger-install swagger-generate swagger-fmt deps-install deps-update
+.PHONY: help build clean run dev dev-back dev-front stop deploy deploy-guided delete validate local test arch arch-baseline contract contract-update test-coverage test-race test-verbose lint fmt vet security migrate migrate-rollback migrate-status migrate-fresh migrate-fresh-seed migrate-fresh-hard db-reset db-seed key-generate jwt-secret docker-up docker-down docker-logs docker-build docker-test docker-status ecr-login ecr-push logs-api logs-scanner logs-webhook logs-withdrawal dlq-check dlq-replay-webhooks dlq-replay-withdrawals ping env-info swagger-install swagger-generate swagger-fmt deps-install deps-update
 
 # =============================================================================
 # Configuration
@@ -330,6 +330,16 @@ arch-baseline: ## Rewrite tests/architecture/testdata/baseline from the current 
 	$(call ensure_test_database)
 	@set -a; [ ! -f .env.dev ] || . ./.env.dev; . ./.env.testing; set +a; \
 		DB_DATABASE=$(TEST_DB_DATABASE) go test ./tests/architecture/... -count=1 -args -update-baseline
+
+contract: ## Compare the HTTP contract snapshot (tests/contract/testdata/http_contract.txt)
+	$(call ensure_test_database)
+	@set -a; [ ! -f .env.dev ] || . ./.env.dev; . ./.env.testing; set +a; \
+		DB_DATABASE=$(TEST_DB_DATABASE) TEST_DB_REQUIRED=1 go test ./tests/contract/ -run TestHTTPContract -v -count=1
+
+contract-update: ## Rewrite the HTTP contract snapshot (only for a decided contract change)
+	$(call ensure_test_database)
+	@set -a; [ ! -f .env.dev ] || . ./.env.dev; . ./.env.testing; set +a; \
+		DB_DATABASE=$(TEST_DB_DATABASE) TEST_DB_REQUIRED=1 go test ./tests/contract/ -run TestHTTPContract -count=1 -args -update-contract
 
 test-coverage: ## Run tests with coverage report
 	@echo "📊 Running tests with coverage..."
