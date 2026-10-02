@@ -56,6 +56,11 @@ Thumbs.db
 __pycache__/
 *.pyc
 
+# Build output: Air builds into tmp/; `go build` at the root writes waas (or -o seed)
+/tmp/
+/seed
+/waas
+
 # Secrets and credentials
 *.pem
 *.key
