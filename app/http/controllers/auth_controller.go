@@ -151,6 +151,10 @@ func Login(ctx http.Context) http.Response {
 	}
 
 	if user.TotpEnabled {
+		if err := container.Get().SessionRevoker.AwaitIssuable(user.SessionsRevokedAt); err != nil {
+			facades.Log().WithContext(ctx).Errorf("auth: begin 2fa: %v", err)
+			return ctx.Response().Json(http.StatusInternalServerError, http.Json{"error": "failed to create session"})
+		}
 		challenge, err := container.Get().TwoFactorLogin.Begin(&user)
 		if err != nil {
 			facades.Log().WithContext(ctx).Errorf("auth: begin 2fa: %v", err)
@@ -163,7 +167,7 @@ func Login(ctx http.Context) http.Response {
 		})
 	}
 
-	tokens, err := issueSession(ctx, user.ID)
+	tokens, err := issueSession(ctx, user.ID, user.SessionsRevokedAt)
 	if err != nil {
 		facades.Log().WithContext(ctx).Errorf("auth: login: %v", err)
 		return ctx.Response().Json(http.StatusInternalServerError, http.Json{"error": "failed to create session"})
@@ -199,7 +203,7 @@ func VerifyTwoFactor(ctx http.Context) http.Response {
 		return twoFactorErrorResponse(ctx, err)
 	}
 
-	tokens, err := issueSession(ctx, user.ID)
+	tokens, err := issueSession(ctx, user.ID, user.SessionsRevokedAt)
 	if err != nil {
 		facades.Log().WithContext(ctx).Errorf("auth: 2fa login: %v", err)
 		return ctx.Response().Json(http.StatusInternalServerError, http.Json{"error": "failed to create session"})
@@ -249,7 +253,16 @@ func RefreshToken(ctx http.Context) http.Response {
 		return ctx.Response().Json(http.StatusUnauthorized, http.Json{"error": "invalid or expired refresh token"})
 	}
 
-	session, err := issueSession(ctx, matched.UserID)
+	owner, err := container.Get().UserRepo.FindByID(matched.UserID)
+	if err != nil {
+		facades.Log().WithContext(ctx).Errorf("auth: refresh: load user: %v", err)
+		return ctx.Response().Json(http.StatusInternalServerError, http.Json{"error": "failed to create session"})
+	}
+	if owner == nil {
+		return ctx.Response().Json(http.StatusUnauthorized, http.Json{"error": "invalid or expired refresh token"})
+	}
+
+	session, err := issueSession(ctx, owner.ID, owner.SessionsRevokedAt)
 	if err != nil {
 		facades.Log().WithContext(ctx).Errorf("auth: refresh: %v", err)
 		return ctx.Response().Json(http.StatusInternalServerError, http.Json{"error": "failed to create session"})

@@ -37,13 +37,26 @@ func (f *fakeRefreshRevoker) RevokeAllForUser(userID uuid.UUID) error {
 	return nil
 }
 
+type recordedSleeps struct {
+	waits []time.Duration
+}
+
+func (r *recordedSleeps) sleep(d time.Duration) { r.waits = append(r.waits, d) }
+
 func newTestRevoker(t *testing.T, now time.Time) (*authsvc.SessionRevoker, *fakeWatermarks, *fakeRefreshRevoker) {
+	t.Helper()
+	revoker, watermarks, refresh, _ := newObservedRevoker(t, now)
+	return revoker, watermarks, refresh
+}
+
+func newObservedRevoker(t *testing.T, now time.Time) (*authsvc.SessionRevoker, *fakeWatermarks, *fakeRefreshRevoker, *recordedSleeps) {
 	t.Helper()
 	watermarks := &fakeWatermarks{at: map[uuid.UUID]time.Time{}}
 	refresh := &fakeRefreshRevoker{}
+	sleeps := &recordedSleeps{}
 	revoker, err := authsvc.NewSessionRevoker(watermarks, refresh)
 	require.NoError(t, err)
-	return revoker.WithClock(func() time.Time { return now }), watermarks, refresh
+	return revoker.WithClock(func() time.Time { return now }, sleeps.sleep), watermarks, refresh, sleeps
 }
 
 func TestSessionRevoker_MovesTheWatermarkAndRevokesRefreshTokens(t *testing.T) {
@@ -54,21 +67,54 @@ func TestSessionRevoker_MovesTheWatermarkAndRevokesRefreshTokens(t *testing.T) {
 	watermark, err := revoker.RevokeAll(userID)
 
 	require.NoError(t, err)
-	require.Equal(t, now.Truncate(time.Second), watermark, "second precision, like a JWT iat")
+	require.Equal(t, time.Date(2026, 10, 2, 12, 0, 6, 0, time.UTC), watermark, "start of the next second")
 	require.Equal(t, watermark, watermarks.at[userID])
 	require.Equal(t, []uuid.UUID{userID}, refresh.revoked)
 }
 
-func TestSessionRevoker_ReplacementSessionIssuedInTheSameSecondSurvives(t *testing.T) {
-	now := time.Date(2026, 10, 2, 12, 0, 5, 750_000_000, time.UTC)
+func TestSessionRevoker_VoidsEverythingIssuedDuringTheRevocationSecond(t *testing.T) {
+	now := time.Date(2026, 10, 2, 12, 0, 5, 0, time.UTC)
 	revoker, _, _ := newTestRevoker(t, now)
 
 	watermark, err := revoker.RevokeAll(uuid.New())
 	require.NoError(t, err)
 
-	replacementIssuedAt := now.Truncate(time.Second)
-	require.False(t, authsvc.SessionRevoked(replacementIssuedAt, &watermark))
-	require.True(t, authsvc.SessionRevoked(replacementIssuedAt.Add(-time.Second), &watermark))
+	require.True(t, authsvc.SessionRevoked(now, &watermark), "a token minted in the revocation second is identical to a fresh one, so it must die")
+	require.True(t, authsvc.SessionRevoked(now.Add(-time.Second), &watermark))
+	require.False(t, authsvc.SessionRevoked(now.Add(time.Second), &watermark))
+}
+
+func TestSessionRevoker_AwaitIssuableWaitsOutTheRevocationSecond(t *testing.T) {
+	now := time.Date(2026, 10, 2, 12, 0, 5, 250_000_000, time.UTC)
+	revoker, _, _, sleeps := newObservedRevoker(t, now)
+
+	watermark, err := revoker.RevokeAll(uuid.New())
+	require.NoError(t, err)
+	require.NoError(t, revoker.AwaitIssuable(&watermark))
+
+	require.Equal(t, []time.Duration{750 * time.Millisecond}, sleeps.waits)
+}
+
+func TestSessionRevoker_AwaitIssuableDoesNotWaitOnceTheWatermarkPassed(t *testing.T) {
+	now := time.Date(2026, 10, 2, 12, 0, 5, 0, time.UTC)
+	revoker, _, _, sleeps := newObservedRevoker(t, now)
+
+	require.NoError(t, revoker.AwaitIssuable(nil))
+	passed := now.Add(-time.Minute)
+	require.NoError(t, revoker.AwaitIssuable(&passed))
+	exactlyNow := now
+	require.NoError(t, revoker.AwaitIssuable(&exactlyNow))
+
+	require.Empty(t, sleeps.waits)
+}
+
+func TestSessionRevoker_AwaitIssuableRefusesAWatermarkFarAhead(t *testing.T) {
+	now := time.Date(2026, 10, 2, 12, 0, 5, 0, time.UTC)
+	revoker, _, _, sleeps := newObservedRevoker(t, now)
+
+	farAhead := now.Add(time.Minute)
+	require.Error(t, revoker.AwaitIssuable(&farAhead))
+	require.Empty(t, sleeps.waits, "a skewed clock must not stall the request")
 }
 
 func TestSessionRevoker_PropagatesStoreFailures(t *testing.T) {

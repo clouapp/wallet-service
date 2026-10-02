@@ -24,9 +24,12 @@ type sessionTokens struct {
 // issueSession mints the session JWT and a stored refresh token. It is the
 // only place a dashboard session is created, so every path that grants one
 // (password without TOTP, completed 2FA, refresh) issues the same pair.
-func issueSession(ctx http.Context, userID uuid.UUID) (sessionTokens, error) {
+func issueSession(ctx http.Context, userID uuid.UUID, sessionsRevokedAt *time.Time) (sessionTokens, error) {
 	if userID == uuid.Nil {
 		return sessionTokens{}, errors.New("issue session: user id is required")
+	}
+	if err := container.Get().SessionRevoker.AwaitIssuable(sessionsRevokedAt); err != nil {
+		return sessionTokens{}, fmt.Errorf("issue session: %w", err)
 	}
 	accessToken, err := facades.Auth(ctx).LoginUsingID(userID.String())
 	if err != nil {
@@ -52,16 +55,11 @@ func issueSession(ctx http.Context, userID uuid.UUID) (sessionTokens, error) {
 // issues the caller a fresh one. It is for credential changes made by a user
 // who just proved who they are (password change, disabling TOTP).
 func replaceSessions(ctx http.Context, userID uuid.UUID) (sessionTokens, error) {
-	if _, err := container.Get().SessionRevoker.RevokeAll(userID); err != nil {
+	watermark, err := container.Get().SessionRevoker.RevokeAll(userID)
+	if err != nil {
 		return sessionTokens{}, err
 	}
-	// The watermark has second precision, so a token issued earlier in the
-	// same second survives it; blacklisting the presented token closes that
-	// gap for the caller.
-	if err := facades.Auth(ctx).Logout(); err != nil {
-		facades.Log().WithContext(ctx).Warningf("auth: blacklist replaced session token: %v", err)
-	}
-	return issueSession(ctx, userID)
+	return issueSession(ctx, userID, &watermark)
 }
 
 // signedInResponse is the body of every response that completes a sign-in.

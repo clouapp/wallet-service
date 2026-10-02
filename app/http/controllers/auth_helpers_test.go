@@ -155,9 +155,3 @@ func (s *authSuite) signIn(email string) loginBody {
 	s.Require().NotEmpty(body.AccessToken)
 	return body
 }
-
-// waitForNextSecond lets sessions issued so far fall strictly before a
-// watermark taken afterwards; JWT iat has second precision.
-func waitForNextSecond() {
-	time.Sleep(time.Until(time.Now().Truncate(time.Second).Add(time.Second + 50*time.Millisecond)))
-}

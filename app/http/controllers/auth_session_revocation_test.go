@@ -79,7 +79,6 @@ func (s *SessionRevocationTestSuite) TestChangePasswordEndsEverySessionAndRenews
 	user := s.seedUser(false)
 	caller := s.signIn(user.Email)
 	otherDevice := s.signIn(user.Email)
-	waitForNextSecond()
 
 	resp, renewed := s.changePassword(caller.AccessToken, authTestPassword, authTestNewPassword)
 
@@ -105,7 +104,6 @@ func (s *SessionRevocationTestSuite) TestChangePasswordRefusesTheCallersTokenEve
 func (s *SessionRevocationTestSuite) TestChangePasswordWithTheWrongPasswordRevokesNothing() {
 	user := s.seedUser(false)
 	caller := s.signIn(user.Email)
-	waitForNextSecond()
 
 	resp, _ := s.changePassword(caller.AccessToken, "not-the-password", authTestNewPassword)
 
@@ -117,7 +115,6 @@ func (s *SessionRevocationTestSuite) TestResetPasswordEndsEverySession() {
 	user := s.seedUser(false)
 	session := s.signIn(user.Email)
 	resetToken := s.seedResetToken(user.ID)
-	waitForNextSecond()
 
 	s.resetPassword(resetToken).AssertOk()
 
@@ -130,7 +127,6 @@ func (s *SessionRevocationTestSuite) TestResetPasswordRetiresAPendingTwoFactorCh
 	_, challenge := s.loginAs(user.Email)
 	s.Require().NotEmpty(challenge.PartialToken)
 	resetToken := s.seedResetToken(user.ID)
-	waitForNextSecond()
 
 	s.resetPassword(resetToken).AssertOk()
 
@@ -147,7 +143,6 @@ func (s *SessionRevocationTestSuite) TestDisableTOTPEndsEverySessionAndRenewsThe
 	_, second := s.loginAs(user.Email)
 	_, otherDevice := s.verifyTwoFactor(second.PartialToken, "", user.RecoveryCodes[0])
 	s.Require().NotEmpty(otherDevice.AccessToken)
-	waitForNextSecond()
 
 	resp := s.authedDelete(caller.AccessToken, "/v1/users/me/totp")
 
@@ -178,7 +173,7 @@ func (s *SessionRevocationTestSuite) TestRefreshTokenCanOnlyBeRotatedOnce() {
 	s.NotEmpty(renewed.RefreshToken)
 }
 
-func (s *SessionRevocationTestSuite) TestSessionsIssuedAfterTheWatermarkWork() {
+func (s *SessionRevocationTestSuite) TestSignInRightAfterAResetGetsAWorkingSession() {
 	user := s.seedUser(false)
 	s.signIn(user.Email)
 	resetToken := s.seedResetToken(user.ID)
