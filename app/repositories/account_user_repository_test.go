@@ -100,7 +100,7 @@ func (s *AccountUserRepositoryTestSuite) TestFindByUserID() {
 func (s *AccountUserRepositoryTestSuite) TestAccessLookupsIgnoreMembershipsThatAreNotActive() {
 	activeAccount := s.createAccount()
 	suspendedAccount := s.createAccount()
-	userID := uuid.New()
+	userID := insertActiveUserRow(s.T())
 	s.Require().NoError(s.repo.Create(&models.AccountUser{ID: uuid.New(), AccountID: activeAccount, UserID: userID, Role: "owner"}))
 	s.Require().NoError(s.repo.Create(&models.AccountUser{ID: uuid.New(), AccountID: suspendedAccount, UserID: userID, Role: "owner", Status: "suspended"}))
 
