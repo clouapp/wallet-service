@@ -27,6 +27,9 @@ FRONT_DIR = ../front
 TEST_DB_DATABASE ?= vault_unit_test
 export TEST_DB_DATABASE
 
+# golangci-lint v2 reads .golangci.yml; v1 cannot
+GOLANGCI_LINT_VERSION ?= v2.5.0
+
 # Docker configuration
 DOCKER_COMPOSE = docker compose
 DOCKER_IMAGE_NAME = waas-service
@@ -354,12 +357,12 @@ test-integration: ## Run integration tests only
 # Code Quality Commands
 # =============================================================================
 
-lint: ## Run golangci-lint
+lint: ## Run golangci-lint (.golangci.yml, report mode)
 	@echo "🔍 Running linter..."
 	@if command -v golangci-lint >/dev/null 2>&1; then \
 		golangci-lint run ./...; \
 	else \
-		echo "⚠️  golangci-lint not installed. Install with: go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest"; \
+		echo "⚠️  golangci-lint not installed. Install with: go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@$(GOLANGCI_LINT_VERSION)"; \
 	fi
 
 fmt: ## Format Go code

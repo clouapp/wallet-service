@@ -158,7 +158,7 @@ make dev            # Docker + backend (Air) + frontend
 | `make stop` | kill the dev processes |
 | `make test` | all Go tests, `-p 1`, against `TEST_DB_DATABASE` (default `vault_unit_test`) |
 | `make test-race` | same with `-race` |
-| `make lint` | golangci-lint |
+| `make lint` | golangci-lint v2 with `.golangci.yml` (report mode: lists findings, exits 0) |
 | `make docker-up` / `make docker-down` | Postgres, Redis, LocalStack |
 | `make migrate` / `make migrate-status` / `make migrate-rollback` / `make migrate-fresh` | migrations |
 | `make db-seed` / `make migrate-fresh-seed` | dev seed data |
@@ -186,7 +186,7 @@ snapshots in the `localstack_data` volume; the snapshot key lives in
 | `app/policies/`, `app/providers/` | Gate policies; service providers and the container wiring |
 | `app/console/`, `app/jobs/`, `app/events/`, `app/listeners/`, `app/mails/`, `app/rules/` | artisan commands, queue jobs, events, mail, validation rules |
 | `database/` | migrations, seeders, seed logic |
-| `pkg/` | `amount`, `types`, `httpclient`; `security` is dead code |
+| `pkg/` | `amount`, `types`, `httpclient` |
 | `tests/` | `testenv`, `testutil`, hand-written `mocks` |
 | `docs/` | Swagger output and design notes (`GORAVEL_INTEGRATION.md`, `INTEGRATION_STATUS.md` are historical) |
 
