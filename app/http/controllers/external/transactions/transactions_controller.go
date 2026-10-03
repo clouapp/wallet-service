@@ -1,10 +1,11 @@
-package controllers
+package transactions
 
 import (
 	"github.com/google/uuid"
 	"github.com/goravel/framework/contracts/http"
 
 	"github.com/macrowallets/waas/app/container"
+	"github.com/macrowallets/waas/app/http/controllers"
 	"github.com/macrowallets/waas/app/http/pagination"
 	"github.com/macrowallets/waas/app/http/responses"
 )
@@ -47,9 +48,9 @@ func ListTransactions(ctx http.Context) http.Response {
 		offset,
 	)
 	if err != nil {
-		return MapInternalError(ctx, err, "list_transactions")
+		return controllers.MapInternalError(ctx, err, "list_transactions")
 	}
-	return ctx.Response().Json(http.StatusOK, pagination.Response(transactionViews(txs), total, limit, offset))
+	return ctx.Response().Json(http.StatusOK, pagination.Response(controllers.TransactionViews(txs), total, limit, offset))
 }
 
 // GetTransaction godoc
@@ -77,7 +78,7 @@ func GetTransaction(ctx http.Context) http.Response {
 			"error": "transaction not found",
 		})
 	}
-	return ctx.Response().Success().Json(newTransactionView(*tx))
+	return ctx.Response().Success().Json(controllers.NewTransactionView(*tx))
 }
 
 // ListUserTransactions godoc
@@ -112,9 +113,9 @@ func ListUserTransactions(ctx http.Context) http.Response {
 		offset,
 	)
 	if err != nil {
-		return MapInternalError(ctx, err, "list_user_transactions")
+		return controllers.MapInternalError(ctx, err, "list_user_transactions")
 	}
 	// Empty result when external_id belongs to another account — same body
 	// as the legitimate "no transactions yet" case (IDOR mitigation).
-	return ctx.Response().Json(http.StatusOK, pagination.Response(transactionViews(txs), total, limit, offset))
+	return ctx.Response().Json(http.StatusOK, pagination.Response(controllers.TransactionViews(txs), total, limit, offset))
 }

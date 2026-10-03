@@ -1,9 +1,10 @@
-package controllers
+package wallets
 
 import (
 	"github.com/goravel/framework/contracts/http"
 
 	"github.com/macrowallets/waas/app/container"
+	"github.com/macrowallets/waas/app/http/controllers"
 	"github.com/macrowallets/waas/app/http/responses"
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/repositories"
@@ -32,6 +33,6 @@ func ListWalletBalances(ctx http.Context) http.Response {
 		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to fetch chain tokens"})
 	}
 
-	assets := assetBalancesPricedFor(configuredAssetBalances(rows, tokens), resolveWalletChainNetwork(ctx.Context(), wallet.Chain))
+	assets := controllers.PricedConfiguredBalances(ctx.Context(), wallet.Chain, rows, tokens)
 	return ctx.Response().Json(http.StatusOK, http.Json{"data": assets})
 }

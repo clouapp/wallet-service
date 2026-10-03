@@ -178,3 +178,10 @@ func NewWalletView(wallet *models.Wallet, resolved models.ResolvedNetwork) Walle
 func ResolveWalletChainNetwork(ctx context.Context, chainID string) models.ResolvedNetwork {
 	return resolveWalletChainNetwork(ctx, chainID)
 }
+
+// PricedConfiguredBalances is the wallet balance list: configured assets only,
+// with testnet prices removed. The dashboard balance handler calls it so the
+// JSON matches the wallet view.
+func PricedConfiguredBalances(ctx context.Context, chainID string, rows []models.WalletAssetBalance, tokens []models.Token) []models.WalletAssetBalance {
+	return assetBalancesPricedFor(configuredAssetBalances(rows, tokens), resolveWalletChainNetwork(ctx, chainID))
+}

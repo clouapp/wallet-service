@@ -1,9 +1,14 @@
 package controllers
 
 import (
+	"context"
+	"errors"
+	"log/slog"
 	"strings"
 
+	"github.com/macrowallets/waas/app/container"
 	"github.com/macrowallets/waas/app/models"
+	"github.com/macrowallets/waas/app/repositories"
 	"github.com/macrowallets/waas/app/services/txkind"
 	"github.com/macrowallets/waas/pkg/types"
 )
@@ -47,6 +52,42 @@ func transactionViews(transactions []models.Transaction) []TransactionView {
 		views = append(views, newTransactionView(tx))
 	}
 	return views
+}
+
+// TransactionViews and NewTransactionView are the account-level transaction
+// JSON. The external transaction handlers call them so the body stays the same.
+func TransactionViews(transactions []models.Transaction) []TransactionView {
+	return transactionViews(transactions)
+}
+
+func NewTransactionView(tx models.Transaction) TransactionView {
+	return newTransactionView(tx)
+}
+
+// WalletTransactionViewsForChain is the wallet transaction JSON, including
+// asset decimals. The dashboard transaction handlers call it so the body stays
+// the same.
+func WalletTransactionViewsForChain(ctx context.Context, chainID string, transactions []models.Transaction) []WalletTransactionView {
+	return walletTransactionViews(transactions, loadAssetDecimalsCatalog(ctx, chainID))
+}
+
+// loadAssetDecimalsCatalog reads the chain and its active tokens; a failed read
+// leaves those decimals unknown instead of failing the listing.
+func loadAssetDecimalsCatalog(ctx context.Context, chainID string) assetDecimalsCatalog {
+	chainRecord, chainErr := container.MustMake[*repositories.ChainRepository]().FindByID(ctx, chainID)
+	if errors.Is(chainErr, models.ErrRepositoryNotFound) {
+		chainRecord, chainErr = nil, nil
+	}
+	if chainErr != nil {
+		slog.Warn("load chain for transaction decimals", "chain", chainID, "error", chainErr)
+		chainRecord = nil
+	}
+	tokens, tokenErr := container.MustMake[*repositories.TokenRepository]().FindByChainID(ctx, chainID)
+	if tokenErr != nil {
+		slog.Warn("load tokens for transaction decimals", "chain", chainID, "error", tokenErr)
+		tokens = nil
+	}
+	return newAssetDecimalsCatalog(chainRecord, tokens)
 }
 
 // assetDecimalsCatalog holds the native and token decimals of one chain.

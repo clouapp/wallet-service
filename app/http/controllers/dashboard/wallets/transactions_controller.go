@@ -1,13 +1,10 @@
-package controllers
+package wallets
 
 import (
-	"context"
-	"errors"
-	"log/slog"
-
 	"github.com/goravel/framework/contracts/http"
 
 	"github.com/macrowallets/waas/app/container"
+	"github.com/macrowallets/waas/app/http/controllers"
 	"github.com/macrowallets/waas/app/http/pagination"
 	"github.com/macrowallets/waas/app/http/responses"
 	"github.com/macrowallets/waas/app/models"
@@ -40,7 +37,7 @@ func ListWalletTransactions(ctx http.Context) http.Response {
 		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to fetch transactions"})
 	}
 
-	views := walletTransactionViews(transactions, loadAssetDecimalsCatalog(ctx.Context(), wallet.Chain))
+	views := controllers.WalletTransactionViewsForChain(ctx.Context(), wallet.Chain, transactions)
 	return ctx.Response().Json(http.StatusOK, pagination.Response(views, total, limit, offset))
 }
 
@@ -65,25 +62,6 @@ func GetWalletTransaction(ctx http.Context) http.Response {
 		return responses.Send(ctx, http.StatusNotFound, http.Json{"error": "transaction not found"})
 	}
 
-	views := walletTransactionViews([]models.Transaction{*tx}, loadAssetDecimalsCatalog(ctx.Context(), wallet.Chain))
+	views := controllers.WalletTransactionViewsForChain(ctx.Context(), wallet.Chain, []models.Transaction{*tx})
 	return ctx.Response().Json(http.StatusOK, views[0])
-}
-
-// loadAssetDecimalsCatalog reads the chain and its active tokens; a failed read
-// leaves those decimals unknown instead of failing the listing.
-func loadAssetDecimalsCatalog(ctx context.Context, chainID string) assetDecimalsCatalog {
-	chainRecord, chainErr := container.MustMake[*repositories.ChainRepository]().FindByID(ctx, chainID)
-	if errors.Is(chainErr, models.ErrRepositoryNotFound) {
-		chainRecord, chainErr = nil, nil
-	}
-	if chainErr != nil {
-		slog.Warn("load chain for transaction decimals", "chain", chainID, "error", chainErr)
-		chainRecord = nil
-	}
-	tokens, tokenErr := container.MustMake[*repositories.TokenRepository]().FindByChainID(ctx, chainID)
-	if tokenErr != nil {
-		slog.Warn("load tokens for transaction decimals", "chain", chainID, "error", tokenErr)
-		tokens = nil
-	}
-	return newAssetDecimalsCatalog(chainRecord, tokens)
 }

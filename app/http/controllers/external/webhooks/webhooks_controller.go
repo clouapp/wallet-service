@@ -1,4 +1,4 @@
-package controllers
+package webhooks
 
 import (
 	"errors"
@@ -7,10 +7,15 @@ import (
 	"github.com/goravel/framework/contracts/http"
 
 	"github.com/macrowallets/waas/app/container"
+	"github.com/macrowallets/waas/app/http/controllers"
 	"github.com/macrowallets/waas/app/http/requests"
 	"github.com/macrowallets/waas/app/http/responses"
 	"github.com/macrowallets/waas/app/services/webhook"
 )
+
+func validateRequest(ctx http.Context, req http.FormRequest) http.Response {
+	return controllers.ValidateRequest(ctx, req)
+}
 
 // CreateWebhook godoc
 // @Summary      Create a webhook
@@ -122,7 +127,7 @@ func UpdateWebhook(ctx http.Context) http.Response {
 		errors.Is(err, webhook.ErrWebhookUnknownEvent):
 		return responses.Send(ctx, http.StatusBadRequest, http.Json{"error": err.Error()})
 	default:
-		return MapInternalError(ctx, err, "update_webhook")
+		return controllers.MapInternalError(ctx, err, "update_webhook")
 	}
 }
 

@@ -5,7 +5,9 @@ import (
 	"github.com/goravel/framework/facades"
 
 	"github.com/macrowallets/waas/app/http/controllers"
+	exttransactions "github.com/macrowallets/waas/app/http/controllers/external/transactions"
 	extwallets "github.com/macrowallets/waas/app/http/controllers/external/wallets"
+	extwebhooks "github.com/macrowallets/waas/app/http/controllers/external/webhooks"
 	"github.com/macrowallets/waas/app/http/middleware"
 )
 
@@ -42,12 +44,12 @@ func RegisterExternalAPI() {
 			r.Get("/withdrawals/{idempotencyKey}", controllers.GetWalletWithdrawalByIdempotencyKey)
 		})
 
-		router.Get("/transactions", controllers.ListTransactions)
-		router.Get("/transactions/{id}", controllers.GetTransaction)
-		router.Get("/users/{external_id}/transactions", controllers.ListUserTransactions)
+		router.Get("/transactions", exttransactions.ListTransactions)
+		router.Get("/transactions/{id}", exttransactions.GetTransaction)
+		router.Get("/users/{external_id}/transactions", exttransactions.ListUserTransactions)
 
-		router.Post("/webhooks", controllers.CreateWebhook)
-		router.Get("/webhooks", controllers.ListWebhooks)
-		router.Patch("/webhooks/{webhookId}", controllers.UpdateWebhook)
+		router.Post("/webhooks", extwebhooks.CreateWebhook)
+		router.Get("/webhooks", extwebhooks.ListWebhooks)
+		router.Patch("/webhooks/{webhookId}", extwebhooks.UpdateWebhook)
 	})
 }

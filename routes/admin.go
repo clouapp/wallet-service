@@ -89,26 +89,26 @@ func RegisterAdminRoutes() {
 			r.Post("/addresses", controllers.GenerateAddress)
 			r.Patch("/addresses/{addressId}", controllers.UpdateAddress)
 
-			r.Get("/users", controllers.ListWalletUsers)
-			r.Post("/users", controllers.AddWalletUser)
-			r.Delete("/users/{userId}", controllers.RemoveWalletUser)
+			r.Get("/users", dashwallets.ListWalletUsers)
+			r.Post("/users", dashwallets.AddWalletUser)
+			r.Delete("/users/{userId}", dashwallets.RemoveWalletUser)
 
-			r.Get("/whitelist", controllers.ListWhitelistEntries)
-			r.Post("/whitelist", controllers.AddWhitelistEntry)
-			r.Delete("/whitelist/{entryId}", controllers.DeleteWhitelistEntry)
+			r.Get("/whitelist", dashwallets.ListWhitelistEntries)
+			r.Post("/whitelist", dashwallets.AddWhitelistEntry)
+			r.Delete("/whitelist/{entryId}", dashwallets.DeleteWhitelistEntry)
 
-			r.Get("/webhooks", controllers.ListWalletWebhooks)
-			r.Post("/webhooks", controllers.CreateWalletWebhook)
-			r.Delete("/webhooks/{webhookId}", controllers.DeleteWalletWebhook)
+			r.Get("/webhooks", dashwallets.ListWalletWebhooks)
+			r.Post("/webhooks", dashwallets.CreateWalletWebhook)
+			r.Delete("/webhooks/{webhookId}", dashwallets.DeleteWalletWebhook)
 
-			r.Get("/settings", controllers.GetWalletSettings)
-			r.Patch("/settings", controllers.UpdateWalletSettings)
-			r.Post("/freeze", controllers.FreezeWallet)
+			r.Get("/settings", dashwallets.GetWalletSettings)
+			r.Patch("/settings", dashwallets.UpdateWalletSettings)
+			r.Post("/freeze", dashwallets.FreezeWallet)
 
-			r.Get("/balances", controllers.ListWalletBalances)
+			r.Get("/balances", dashwallets.ListWalletBalances)
 
-			r.Get("/transactions", controllers.ListWalletTransactions)
-			r.Get("/transactions/{txId}", controllers.GetWalletTransaction)
+			r.Get("/transactions", dashwallets.ListWalletTransactions)
+			r.Get("/transactions/{txId}", dashwallets.GetWalletTransaction)
 
 			r.Get("/withdrawals", controllers.ListWalletWithdrawals)
 			r.Post("/withdrawals", controllers.CreateWalletWithdrawal)
@@ -122,7 +122,7 @@ func RegisterAdminRoutes() {
 			r.Post("/withdraw/preview", controllers.PreviewWithdraw)
 
 			r.Prefix("/unspents").Middleware(middleware.UTXOOnly()).Group(func(ur route.Router) {
-				ur.Get("", controllers.ListUnspentOutputs)
+				ur.Get("", dashwallets.ListUnspentOutputs)
 			})
 		})
 	})

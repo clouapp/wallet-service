@@ -1,4 +1,4 @@
-package controllers
+package wallets
 
 import (
 	"github.com/google/uuid"

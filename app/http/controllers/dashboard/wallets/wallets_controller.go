@@ -22,6 +22,10 @@ func validateRequest(ctx http.Context, req http.FormRequest) http.Response {
 	return controllers.ValidateRequest(ctx, req)
 }
 
+func authorize(ctx http.Context, ability string, arguments map[string]any) http.Response {
+	return controllers.Authorize(ctx, ability, arguments)
+}
+
 // ListWallets godoc
 // @Summary      List all wallets
 // @Description  Returns the account wallets with their network (testnet flag) and the native and configured token balances of the last refresh. Testnet wallets carry no USD value.
