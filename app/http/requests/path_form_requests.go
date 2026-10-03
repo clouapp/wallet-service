@@ -73,6 +73,24 @@ func (r *SettingsGroupRequest) Load(ctx http.Context) {
 	r.Group = trimmedRoute(ctx, "group")
 }
 
+// SettingsSectionRequest is the settings section path parameter.
+// Reset takes no document: the page returns to registry defaults.
+type SettingsSectionRequest struct {
+	Open
+	Section string `form:"section" json:"section"`
+}
+
+func (r *SettingsSectionRequest) Rules(http.Context) map[string]string {
+	return optionalStringRules("section")
+}
+
+func (r *SettingsSectionRequest) Load(ctx http.Context) {
+	if r == nil {
+		return
+	}
+	r.Section = trimmedRoute(ctx, "section")
+}
+
 // WalletTransactionPathRequest is the transaction id path parameter.
 // The handler looks the id up as a string; a bad id stays 404.
 type WalletTransactionPathRequest struct {

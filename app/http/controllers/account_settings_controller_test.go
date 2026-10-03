@@ -176,6 +176,177 @@ func (s *accountSettingsSuite) TestGetDecimalTravelsAsString() {
 	s.Equal("forbidden", response["error"].(map[string]any)["code"])
 }
 
+func (s *accountSettingsSuite) TestResetSectionClearsThePageAndRecordsFieldNames() {
+	accountID, token := s.owner()
+	otherID, _ := s.owner()
+	s.patch(token, accountID, "account_webhooks", `{"signing_secret":"reset-me-secret"}`, 200)
+	s.patch(token, accountID, "account_security", `{"session_idle_minutes":45}`, 200)
+	_, err := facades.Orm().Query().Exec(
+		`INSERT INTO settings (account_id, "group", "key", value, created_at, updated_at)
+		 VALUES (?, 'account_sweep_limits', 'max_addresses_evm', '7', NOW(), NOW())`,
+		accountID,
+	)
+	s.Require().NoError(err)
+	_, err = facades.Orm().Query().Exec(
+		`INSERT INTO settings (account_id, "group", "key", value, created_at, updated_at)
+		 VALUES (?, 'account_security', 'require_2fa', 'true', NOW(), NOW())`,
+		otherID,
+	)
+	s.Require().NoError(err)
+	_, err = facades.Orm().Query().Exec(
+		`INSERT INTO settings (account_id, "group", "key", value, created_at, updated_at)
+		 VALUES (NULL, 'deposit_scan', 'batch_blocks', '80', NOW(), NOW())`,
+	)
+	s.Require().NoError(err)
+
+	raw := s.reset(token, accountID, "security", 200)
+	s.NotContains(raw, "reset-me-secret")
+	s.NotContains(raw, "enc:v1:")
+	var view struct {
+		Name   string `json:"name"`
+		Blocks []struct {
+			Groups []struct {
+				Name   string `json:"name"`
+				Fields []struct {
+					Key   string `json:"key"`
+					Value any    `json:"value"`
+					IsSet bool   `json:"is_set"`
+				} `json:"fields"`
+			} `json:"groups"`
+		} `json:"blocks"`
+	}
+	s.Require().NoError(json.Unmarshal([]byte(raw), &view))
+	s.Equal("security", view.Name)
+	s.Require().NotEmpty(view.Blocks)
+	s.Equal("account_security", view.Blocks[0].Groups[0].Name)
+	for _, field := range view.Blocks[0].Groups[0].Fields {
+		if field.Key == "session_idle_minutes" {
+			s.Equal(float64(30), field.Value)
+			s.False(field.IsSet)
+		}
+		if field.Key == "require_2fa" {
+			s.Equal(false, field.Value)
+			s.False(field.IsSet)
+		}
+	}
+
+	var securityRows int64
+	err = facades.Orm().Query().Raw(
+		`SELECT count(*) FROM settings WHERE account_id = ? AND "group" = 'account_security'`,
+		accountID,
+	).Scan(&securityRows)
+	s.Require().NoError(err)
+	s.Equal(int64(0), securityRows)
+
+	var other string
+	err = facades.Orm().Query().Raw(
+		`SELECT value FROM settings WHERE account_id = ? AND "group" = 'account_security' AND "key" = 'require_2fa'`,
+		otherID,
+	).Scan(&other)
+	s.Require().NoError(err)
+	s.Equal("true", other)
+
+	var sweep string
+	err = facades.Orm().Query().Raw(
+		`SELECT value FROM settings WHERE account_id = ? AND "group" = 'account_sweep_limits' AND "key" = 'max_addresses_evm'`,
+		accountID,
+	).Scan(&sweep)
+	s.Require().NoError(err)
+	s.Equal("7", sweep)
+
+	var scan string
+	err = facades.Orm().Query().Raw(
+		`SELECT value FROM settings WHERE account_id IS NULL AND "group" = 'deposit_scan' AND "key" = 'batch_blocks'`,
+	).Scan(&scan)
+	s.Require().NoError(err)
+	s.Equal("80", scan)
+
+	var meta string
+	err = facades.Orm().Query().Raw(
+		`SELECT metadata::text FROM account_activity WHERE account_id = ? AND action = 'settings.section_reset'`,
+		accountID,
+	).Scan(&meta)
+	s.Require().NoError(err)
+	s.Contains(meta, `"account_security"`)
+	s.Contains(meta, `"require_2fa"`)
+	s.Contains(meta, `"session_idle_minutes"`)
+	s.NotContains(meta, "reset-me-secret")
+	s.NotContains(meta, "enc:v1:")
+	s.NotContains(meta, "45")
+
+	keptSecret := s.storedSecret(accountID)
+	s.NotEmpty(keptSecret)
+	s.NotEqual("reset-me-secret", keptSecret)
+
+	webhooks := s.reset(token, accountID, "webhooks", 200)
+	s.NotContains(webhooks, "reset-me-secret")
+	s.NotContains(webhooks, keptSecret)
+	var secretRows int64
+	err = facades.Orm().Query().Raw(
+		`SELECT count(*) FROM settings WHERE account_id = ? AND "group" = 'account_webhooks'`,
+		accountID,
+	).Scan(&secretRows)
+	s.Require().NoError(err)
+	s.Equal(int64(0), secretRows)
+
+	var webhookMeta string
+	err = facades.Orm().Query().Raw(
+		`SELECT metadata::text FROM account_activity WHERE account_id = ? AND action = 'settings.section_reset' AND target_id = 'webhooks'`,
+		accountID,
+	).Scan(&webhookMeta)
+	s.Require().NoError(err)
+	s.Contains(webhookMeta, `"account_webhooks"`)
+	s.Contains(webhookMeta, `"signing_secret"`)
+	s.NotContains(webhookMeta, "reset-me-secret")
+	s.NotContains(webhookMeta, keptSecret)
+	s.NotContains(webhookMeta, "enc:v1:")
+}
+
+func (s *accountSettingsSuite) TestResetUnknownSectionIsNotFoundBeforeForbidden() {
+	accountID, token := s.owner()
+	response := s.resetParsed(token, accountID, "not-a-section", 404)
+	s.Equal("not_found", response["error"].(map[string]any)["code"])
+
+	auditor := s.member(accountID, "auditor")
+	response = s.resetParsed(auditor, accountID, "scanning", 404)
+	s.Equal("not_found", response["error"].(map[string]any)["code"])
+
+	user := s.member(accountID, "user")
+	response = s.resetParsed(user, accountID, "not-a-section", 404)
+	s.Equal("not_found", response["error"].(map[string]any)["code"])
+	response = s.resetParsed(user, accountID, "security", 403)
+	s.Equal("forbidden", response["error"].(map[string]any)["code"])
+}
+
+func (s *accountSettingsSuite) TestResetPlatformManagedSectionIsForbidden() {
+	accountID, token := s.owner()
+	_, err := facades.Orm().Query().Exec(
+		`INSERT INTO settings (account_id, "group", "key", value, created_at, updated_at)
+		 VALUES (?, 'account_sweep_limits', 'daily_withdraw_cap_usd', '12.50', NOW(), NOW())`,
+		accountID,
+	)
+	s.Require().NoError(err)
+
+	response := s.resetParsed(token, accountID, "limits", 403)
+	s.Equal("forbidden", response["error"].(map[string]any)["code"])
+
+	var cap string
+	err = facades.Orm().Query().Raw(
+		`SELECT value FROM settings WHERE account_id = ? AND "group" = 'account_sweep_limits' AND "key" = 'daily_withdraw_cap_usd'`,
+		accountID,
+	).Scan(&cap)
+	s.Require().NoError(err)
+	s.Equal("12.50", cap)
+
+	var resets int64
+	err = facades.Orm().Query().Raw(
+		`SELECT count(*) FROM account_activity WHERE account_id = ? AND action = 'settings.section_reset'`,
+		accountID,
+	).Scan(&resets)
+	s.Require().NoError(err)
+	s.Equal(int64(0), resets)
+}
+
 func (s *accountSettingsSuite) TestPatchUnknownKeyIsValidation() {
 	accountID, token := s.owner()
 	raw := s.patchRaw(token, accountID, "account_security", `{"not_a_key":"x"}`, 422)
@@ -277,6 +448,26 @@ func (s *accountSettingsSuite) patchRaw(token string, accountID uuid.UUID, group
 	content, err := resp.Content()
 	s.Require().NoError(err)
 	return content
+}
+
+func (s *accountSettingsSuite) reset(token string, accountID uuid.UUID, section string, status int) string {
+	s.T().Helper()
+	resp, err := s.Http(s.T()).
+		WithHeader("Authorization", "Bearer "+token).
+		WithHeader("Content-Type", "application/json").
+		Post("/v1/accounts/"+accountID.String()+"/settings/sections/"+section+"/reset", strings.NewReader("{}"))
+	s.Require().NoError(err)
+	resp.AssertStatus(status)
+	content, err := resp.Content()
+	s.Require().NoError(err)
+	return content
+}
+
+func (s *accountSettingsSuite) resetParsed(token string, accountID uuid.UUID, section string, status int) map[string]any {
+	s.T().Helper()
+	var parsed map[string]any
+	s.Require().NoError(json.Unmarshal([]byte(s.reset(token, accountID, section, status)), &parsed))
+	return parsed
 }
 
 func (s *accountSettingsSuite) storedSecret(accountID uuid.UUID) string {

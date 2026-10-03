@@ -215,6 +215,115 @@ func (s *Service) Save(ctx context.Context, accountID, actorID uuid.UUID, role, 
 	return s.groupView(ctx, accountID, role, group)
 }
 
+// groupDeleter removes the stored rows of one account group. The settings
+// service store is not required to delete until a section is reset.
+type groupDeleter interface {
+	DeleteGroup(ctx context.Context, accountID uuid.UUID, group string) error
+}
+
+// ResetSection deletes the stored rows of every account-managed group on one
+// page, so the next read uses registry defaults. An unknown page, including a
+// platform-only page, is ErrSectionNotFound before the role check. A page that
+// holds a platform-managed group is ErrManagedByPlatform and is not changed.
+// The activity rows name each group and its field names, never the values.
+func (s *Service) ResetSection(ctx context.Context, accountID, actorID uuid.UUID, role, section string) (SectionView, error) {
+	if err := requireAccount(ctx, accountID); err != nil {
+		return SectionView{}, err
+	}
+	groups := accountGroupsInSection(section)
+	if len(groups) == 0 {
+		return SectionView{}, ErrSectionNotFound
+	}
+	if !policies.MayUpdateSettings(role) {
+		return SectionView{}, ErrUpdateForbidden
+	}
+	for _, group := range groups {
+		if group.ManagedBy != ManagedByAccount {
+			return SectionView{}, ErrManagedByPlatform
+		}
+	}
+	if actorID == uuid.Nil {
+		return SectionView{}, fmt.Errorf("account settings: actor is required")
+	}
+	deleter, ok := s.store.(groupDeleter)
+	if !ok {
+		return SectionView{}, fmt.Errorf("account settings: store cannot delete a group")
+	}
+
+	section = strings.TrimSpace(section)
+	err := s.activity.Within(ctx, func(ctx context.Context) error {
+		id := accountID
+		for _, group := range groups {
+			if err := deleter.DeleteGroup(ctx, accountID, group.Name); err != nil {
+				return err
+			}
+			meta, err := activitylog.SettingsChange(group.Name, definitionKeys(group))
+			if err != nil {
+				return err
+			}
+			if err := s.activity.Append(ctx, models.AccountActivity{
+				AccountID:   &id,
+				ActorUserID: actorID,
+				Action:      activitylog.ActionSettingsSectionReset,
+				TargetType:  activitylog.TargetSettings,
+				TargetID:    section,
+				Metadata:    meta,
+			}); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return SectionView{}, err
+	}
+	for _, group := range groups {
+		s.cache.Forget(cacheKey(accountID, group.Name))
+	}
+	return s.renderSection(ctx, accountID, role, groups)
+}
+
+func accountGroupsInSection(section string) []Group {
+	var groups []Group
+	for _, group := range GroupsInSection(section) {
+		if group.Scope != ScopeAccount {
+			continue
+		}
+		groups = append(groups, group)
+	}
+	return groups
+}
+
+func definitionKeys(group Group) []string {
+	keys := make([]string, 0, len(group.Settings))
+	for _, definition := range group.Settings {
+		keys = append(keys, definition.Key)
+	}
+	return keys
+}
+
+func (s *Service) renderSection(ctx context.Context, accountID uuid.UUID, role string, groups []Group) (SectionView, error) {
+	if len(groups) == 0 {
+		return SectionView{}, ErrSectionNotFound
+	}
+	view := SectionView{Name: groups[0].SectionName(), Blocks: []BlockView{}}
+	blockAt := map[string]int{}
+	for _, group := range groups {
+		rendered, err := s.groupView(ctx, accountID, role, group)
+		if err != nil {
+			return SectionView{}, err
+		}
+		blockIndex, ok := blockAt[group.Block]
+		if !ok {
+			blockIndex = len(view.Blocks)
+			blockAt[group.Block] = blockIndex
+			view.Blocks = append(view.Blocks, BlockView{Title: group.Block, Groups: []GroupView{}})
+		}
+		view.Blocks[blockIndex].Groups = append(view.Blocks[blockIndex].Groups, rendered)
+	}
+	return view, nil
+}
+
 func (s *Service) groupView(ctx context.Context, accountID uuid.UUID, role string, group Group) (GroupView, error) {
 	rows, err := s.store.ListGroup(ctx, accountID, group.Name)
 	if err != nil {

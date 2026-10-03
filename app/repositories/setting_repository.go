@@ -96,6 +96,27 @@ func (r *SettingRepository) UpsertMany(ctx context.Context, accountID uuid.UUID,
 	return nil
 }
 
+// DeleteGroup removes every stored row of one account group. A platform row
+// (account_id NULL) and another account's rows are left in place. Deleting a
+// group that has no rows is success: the registry default is already in force.
+func (r *SettingRepository) DeleteGroup(ctx context.Context, accountID uuid.UUID, group string) error {
+	if accountID == uuid.Nil {
+		return fmt.Errorf("delete settings: account id is required")
+	}
+	group = strings.TrimSpace(group)
+	if group == "" {
+		return fmt.Errorf("delete settings: group is required")
+	}
+	_, err := r.Query(ctx).Exec(
+		`DELETE FROM settings WHERE account_id = ? AND "group" = ?`,
+		accountID, group,
+	)
+	if err != nil {
+		return fmt.Errorf("delete settings: %w", err)
+	}
+	return nil
+}
+
 func (r *SettingRepository) upsert(ctx context.Context, accountID uuid.UUID, group, key, value string) error {
 	key = strings.TrimSpace(key)
 	if key == "" {

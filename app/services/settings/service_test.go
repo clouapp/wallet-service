@@ -3,6 +3,7 @@ package settings
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/google/uuid"
@@ -30,6 +31,11 @@ func (s *memoryStore) ListGroup(_ context.Context, accountID uuid.UUID, group st
 		rows = append(rows, models.Setting{AccountID: &id, Group: group, Key: key, Value: value})
 	}
 	return rows, nil
+}
+
+func (s *memoryStore) DeleteGroup(_ context.Context, accountID uuid.UUID, group string) error {
+	delete(s.rows, s.key(accountID, group))
+	return nil
 }
 
 func (s *memoryStore) UpsertMany(_ context.Context, accountID uuid.UUID, group string, values map[string]string) error {
@@ -254,6 +260,185 @@ func TestDecimalStaysAString(t *testing.T) {
 	if castOut("1.50", Definition{Type: TypeDecimal}) != "1.50" {
 		t.Fatal("decimal was not returned as a string")
 	}
+}
+
+type recordingActivity struct {
+	rows []models.AccountActivity
+	err  error
+}
+
+func (a *recordingActivity) Within(ctx context.Context, fn func(context.Context) error) error {
+	if fn == nil {
+		return errors.New("activity callback is required")
+	}
+	return fn(ctx)
+}
+
+func (a *recordingActivity) Append(_ context.Context, row models.AccountActivity) error {
+	if a.err != nil {
+		return a.err
+	}
+	a.rows = append(a.rows, row)
+	return nil
+}
+
+type memoryCache struct {
+	keys []string
+}
+
+func (c *memoryCache) Forget(key string) bool {
+	c.keys = append(c.keys, key)
+	return true
+}
+
+func TestResetSectionClearsStoredRowsAndRecordsFieldNames(t *testing.T) {
+	t.Parallel()
+
+	const secret = "section-reset-secret-do-not-store"
+	store := newMemoryStore()
+	activity := &recordingActivity{}
+	cache := &memoryCache{}
+	service := NewService(store, prefixSealer{}, cache, activity)
+	accountID := uuid.New()
+	actorID := uuid.New()
+	ctx := context.Background()
+
+	if _, err := service.Save(ctx, accountID, actorID, "owner", groupAccountWebhooks, map[string]any{
+		keySigningSecret: secret,
+		keyDefaultEvents: []any{"deposit.confirmed", "withdrawal.confirmed"},
+	}); err != nil {
+		t.Fatalf("save webhooks: %v", err)
+	}
+	if _, err := service.Save(ctx, accountID, actorID, "admin", groupAccountSecurity, map[string]any{
+		keyRequire2FA: true,
+	}); err != nil {
+		t.Fatalf("save security: %v", err)
+	}
+	store.rows[store.key(accountID, groupAccountSweepLimits)] = map[string]string{keyMaxAddressesEVM: "3"}
+
+	view, err := service.ResetSection(ctx, accountID, actorID, "admin", sectionWebhooks)
+	if err != nil {
+		t.Fatalf("reset: %v", err)
+	}
+	if view.Name != sectionWebhooks {
+		t.Fatalf("section = %q", view.Name)
+	}
+	if _, ok := store.get(accountID, groupAccountWebhooks, keySigningSecret); ok {
+		t.Fatal("reset left the signing secret stored")
+	}
+	if _, ok := store.get(accountID, groupAccountWebhooks, keyDefaultEvents); ok {
+		t.Fatal("reset left default events stored")
+	}
+	if value, ok := store.get(accountID, groupAccountSecurity, keyRequire2FA); !ok || value != "true" {
+		t.Fatalf("security row = %q present %v", value, ok)
+	}
+	if value, ok := store.get(accountID, groupAccountSweepLimits, keyMaxAddressesEVM); !ok || value != "3" {
+		t.Fatalf("sweep row = %q present %v", value, ok)
+	}
+
+	group := groupInSection(t, view, groupAccountWebhooks)
+	secretField := fieldByKey(t, group, keySigningSecret)
+	if secretField.IsSet || secretField.Value != nil {
+		t.Fatalf("secret field = %+v", secretField)
+	}
+	if len(activity.rows) != 3 {
+		t.Fatalf("activity rows = %d, want two saves and the reset", len(activity.rows))
+	}
+	reset := activity.rows[2]
+	if reset.Action != "settings.section_reset" || reset.TargetType != "settings" || reset.TargetID != sectionWebhooks {
+		t.Fatalf("reset row = %+v", reset)
+	}
+	if reset.AccountID == nil || *reset.AccountID != accountID || reset.ActorUserID != actorID {
+		t.Fatalf("reset actor = %+v", reset)
+	}
+	encoded, err := reset.Metadata.Encode()
+	if err != nil {
+		t.Fatalf("encode: %v", err)
+	}
+	if encoded != `{"fields":["default_events","signing_algorithm","signing_secret"],"group":"account_webhooks"}` {
+		t.Fatalf("metadata = %s", encoded)
+	}
+	if strings.Contains(encoded, secret) || strings.Contains(encoded, "enc:v1:") {
+		t.Fatalf("metadata stored a secret: %s", encoded)
+	}
+	if len(cache.keys) != 3 || cache.keys[2] != cacheKey(accountID, groupAccountWebhooks) {
+		t.Fatalf("forgotten = %v", cache.keys)
+	}
+}
+
+func TestResetSectionUnknownIsNotFoundBeforeTheRoleCheck(t *testing.T) {
+	t.Parallel()
+
+	service := newTestService(newMemoryStore())
+	ctx := context.Background()
+	accountID := uuid.New()
+	for _, role := range []string{"owner", "auditor", "user"} {
+		_, err := service.ResetSection(ctx, accountID, uuid.New(), role, "not-a-section")
+		if !errors.Is(err, ErrSectionNotFound) {
+			t.Fatalf("role %s err = %v", role, err)
+		}
+		_, err = service.ResetSection(ctx, accountID, uuid.New(), role, sectionScanning)
+		if !errors.Is(err, ErrSectionNotFound) {
+			t.Fatalf("role %s scanning err = %v", role, err)
+		}
+	}
+}
+
+func TestResetSectionRefusesAPlatformManagedGroup(t *testing.T) {
+	t.Parallel()
+
+	store := newMemoryStore()
+	service := newTestService(store)
+	accountID := uuid.New()
+	store.rows[store.key(accountID, groupAccountSweepLimits)] = map[string]string{
+		keyDailyWithdrawCapUSD: "12.50",
+	}
+
+	_, err := service.ResetSection(context.Background(), accountID, uuid.New(), "owner", sectionLimits)
+	if !errors.Is(err, ErrManagedByPlatform) {
+		t.Fatalf("err = %v", err)
+	}
+	if value, ok := store.get(accountID, groupAccountSweepLimits, keyDailyWithdrawCapUSD); !ok || value != "12.50" {
+		t.Fatalf("sweep cap = %q present %v", value, ok)
+	}
+
+	_, err = service.ResetSection(context.Background(), accountID, uuid.New(), "auditor", sectionLimits)
+	if !errors.Is(err, ErrUpdateForbidden) {
+		t.Fatalf("auditor err = %v", err)
+	}
+	if value, ok := store.get(accountID, groupAccountSweepLimits, keyDailyWithdrawCapUSD); !ok || value != "12.50" {
+		t.Fatalf("auditor sweep cap = %q present %v", value, ok)
+	}
+}
+
+func TestResetSectionUserCannotResetAKnownSection(t *testing.T) {
+	t.Parallel()
+
+	store := newMemoryStore()
+	service := newTestService(store)
+	accountID := uuid.New()
+	store.rows[store.key(accountID, groupAccountSecurity)] = map[string]string{keyRequire2FA: "true"}
+
+	_, err := service.ResetSection(context.Background(), accountID, uuid.New(), "user", sectionSecurity)
+	if !errors.Is(err, ErrUpdateForbidden) {
+		t.Fatalf("err = %v", err)
+	}
+	if value, ok := store.get(accountID, groupAccountSecurity, keyRequire2FA); !ok || value != "true" {
+		t.Fatalf("require_2fa = %q present %v", value, ok)
+	}
+}
+
+func groupInSection(t *testing.T, view SectionView, name string) GroupView {
+	t.Helper()
+	for _, block := range view.Blocks {
+		for _, group := range block.Groups {
+			if group.Name == name {
+				return group
+			}
+		}
+	}
+	t.Fatalf("group %s not in section %s", name, view.Name)
+	return GroupView{}
 }
 
 func fieldByKey(t *testing.T, group GroupView, key string) Field {

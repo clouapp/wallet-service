@@ -6,6 +6,9 @@ var (
 	// ErrGroupNotFound is an unknown group name. The account route answers
 	// 404 before it answers 403.
 	ErrGroupNotFound = errors.New("settings group not found")
+	// ErrSectionNotFound is an unknown settings page. The reset route answers
+	// 404 before it answers 403, including a page that only holds platform groups.
+	ErrSectionNotFound = errors.New("settings section not found")
 	// ErrViewForbidden is a member who does not hold settings.view.
 	ErrViewForbidden = errors.New("you do not have permission to view account settings")
 	// ErrUpdateForbidden is a member who does not hold settings.update.

@@ -3,7 +3,10 @@
 // secret are declared here, one group per save.
 package settings
 
-import "slices"
+import (
+	"slices"
+	"strings"
+)
 
 // Scope is where a group's rows live.
 type Scope string
@@ -93,6 +96,22 @@ func UseForTest(groups []Group) func() {
 
 func catalog() []Group {
 	return slices.Clip(append(accountGroups(), platformGroups()...))
+}
+
+// GroupsInSection returns every catalog group on one page, in catalog order.
+// An unknown or blank section is an empty slice. Scope is not filtered here.
+func GroupsInSection(section string) []Group {
+	section = strings.TrimSpace(section)
+	if section == "" {
+		return nil
+	}
+	var groups []Group
+	for _, group := range Registry() {
+		if group.SectionName() == section {
+			groups = append(groups, group)
+		}
+	}
+	return groups
 }
 
 // FindGroup resolves a group by name.

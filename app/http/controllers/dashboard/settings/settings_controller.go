@@ -87,6 +87,36 @@ func (ctrl *SettingsController) Update(ctx http.Context) http.Response {
 	return responses.Send(ctx, http.StatusOK, view)
 }
 
+// Reset godoc
+// @Summary      Reset one account settings section
+// @Description  Deletes stored rows of every account-managed group on the page. Secrets are not returned. An unknown section is 404. A platform-managed group is 403 and is left unchanged.
+// @Tags         Account Settings
+// @Security     BearerAuth
+// @Produce      json
+// @Param        accountId  path  string  true  "Account UUID"
+// @Param        section    path  string  true  "Settings section"
+// @Success      200  {object}  settingssvc.SectionView
+// @Failure      403  {object}  responses.ErrorBody
+// @Failure      404  {object}  responses.ErrorBody
+// @Router       /accounts/{accountId}/settings/sections/{section}/reset [post]
+func (ctrl *SettingsController) Reset(ctx http.Context) http.Response {
+	account, role, errResp := accountCaller(ctx)
+	if errResp != nil {
+		return errResp
+	}
+	var path requests.SettingsSectionRequest
+	path.Load(ctx)
+	actorID := middleware.SessionUserID(ctx)
+	if actorID == uuid.Nil {
+		return responses.Send(ctx, http.StatusUnauthorized, http.Json{"error": "unauthenticated"})
+	}
+	view, err := ctrl.settings.ResetSection(ctx.Context(), account.ID, actorID, role, path.Section)
+	if errResp := mapSettingsError(ctx, err); errResp != nil {
+		return errResp
+	}
+	return responses.Send(ctx, http.StatusOK, view)
+}
+
 func accountCaller(ctx http.Context) (*models.Account, string, http.Response) {
 	account, _ := requestctx.Account(ctx)
 	if account == nil {
@@ -120,6 +150,8 @@ func mapSettingsError(ctx http.Context, err error) http.Response {
 	switch {
 	case errors.Is(err, settingssvc.ErrGroupNotFound):
 		return responses.Send(ctx, http.StatusNotFound, http.Json{"error": "settings group not found"})
+	case errors.Is(err, settingssvc.ErrSectionNotFound):
+		return responses.Send(ctx, http.StatusNotFound, http.Json{"error": "settings section not found"})
 	case errors.Is(err, settingssvc.ErrViewForbidden),
 		errors.Is(err, settingssvc.ErrUpdateForbidden),
 		errors.Is(err, settingssvc.ErrManagedByPlatform):
