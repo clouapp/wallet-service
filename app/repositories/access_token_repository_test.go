@@ -79,6 +79,30 @@ func (s *AccessTokenRepositoryTestSuite) TestFindByIDAndAccount_WrongAccount() {
 	s.Nil(found)
 }
 
+func (s *AccessTokenRepositoryTestSuite) TestDeleteByAccountAndCreator_LeavesOtherTokens() {
+	accID := s.createAccount()
+	otherAccount := s.createAccount()
+	creator := uuid.New()
+	otherCreator := uuid.New()
+	mine := &models.AccessToken{ID: uuid.New(), AccountID: accID, CreatedBy: &creator, Name: "Mine", SpendingLimit: "{}"}
+	theirs := &models.AccessToken{ID: uuid.New(), AccountID: accID, CreatedBy: &otherCreator, Name: "Theirs", SpendingLimit: "{}"}
+	elsewhere := &models.AccessToken{ID: uuid.New(), AccountID: otherAccount, CreatedBy: &creator, Name: "Elsewhere", SpendingLimit: "{}"}
+	s.Require().NoError(s.repo.Create(context.Background(), mine))
+	s.Require().NoError(s.repo.Create(context.Background(), theirs))
+	s.Require().NoError(s.repo.Create(context.Background(), elsewhere))
+
+	s.Require().NoError(s.repo.DeleteByAccountAndCreator(context.Background(), accID, creator))
+
+	_, err := s.repo.FindByIDAndAccount(context.Background(), mine.ID, accID)
+	s.ErrorIs(err, models.ErrRepositoryNotFound)
+	found, err := s.repo.FindByIDAndAccount(context.Background(), theirs.ID, accID)
+	s.Require().NoError(err)
+	s.Equal("Theirs", found.Name)
+	found, err = s.repo.FindByIDAndAccount(context.Background(), elsewhere.ID, otherAccount)
+	s.Require().NoError(err)
+	s.Equal("Elsewhere", found.Name)
+}
+
 func (s *AccessTokenRepositoryTestSuite) TestDelete() {
 	accID := s.createAccount()
 	token := &models.AccessToken{ID: uuid.New(), AccountID: accID, Name: "To Delete"}

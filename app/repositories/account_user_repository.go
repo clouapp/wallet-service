@@ -141,10 +141,67 @@ func (r *AccountUserRepository) Restore(ctx context.Context, id uuid.UUID) error
 
 // SetRole sets account_users.role.
 func (r *AccountUserRepository) SetRole(ctx context.Context, id uuid.UUID, role string) error {
+	if id == uuid.Nil {
+		return fmt.Errorf("set account user role: id is required")
+	}
+	if strings.TrimSpace(role) == "" {
+		return fmt.Errorf("set account user role: role is required")
+	}
 	if _, err := r.Query(ctx).Model(&models.AccountUser{}).Where("id = ?", id).Update("role", role); err != nil {
 		return fmt.Errorf("set account user role: %w", err)
 	}
 	return nil
+}
+
+// SetStatus sets account_users.status.
+func (r *AccountUserRepository) SetStatus(ctx context.Context, id uuid.UUID, status string) error {
+	if id == uuid.Nil {
+		return fmt.Errorf("set account user status: id is required")
+	}
+	if strings.TrimSpace(status) == "" {
+		return fmt.Errorf("set account user status: status is required")
+	}
+	if _, err := r.Query(ctx).Model(&models.AccountUser{}).Where("id = ?", id).Update("status", status); err != nil {
+		return fmt.Errorf("set account user status: %w", err)
+	}
+	return nil
+}
+
+// CountActiveByRole counts memberships of role that still grant access.
+// Rows are locked for update so a last-owner check and the write that follows
+// share one transaction. A suspended membership does not count.
+func (r *AccountUserRepository) CountActiveByRole(ctx context.Context, accountID uuid.UUID, role string) (int64, error) {
+	if accountID == uuid.Nil {
+		return 0, fmt.Errorf("count account users: account id is required")
+	}
+	if strings.TrimSpace(role) == "" {
+		return 0, fmt.Errorf("count account users: role is required")
+	}
+	var members []models.AccountUser
+	err := r.Query(ctx).
+		Where(
+			"account_id = ? AND role = ? AND deleted_at IS NULL AND (status = ? OR status = '')",
+			accountID,
+			role,
+			models.MembershipStatusActive,
+		).
+		LockForUpdate().
+		Find(&members)
+	if err != nil {
+		return 0, fmt.Errorf("count account users: %w", err)
+	}
+	return int64(len(members)), nil
+}
+
+// Within runs fn inside one transaction. Queries made with the callback
+// context join that transaction.
+func (r *AccountUserRepository) Within(ctx context.Context, fn func(context.Context) error) error {
+	if fn == nil {
+		return fmt.Errorf("account user transaction: callback is required")
+	}
+	return r.Transaction(ctx, func(tx orm.Query) error {
+		return fn(db.WithTx(ctx, tx))
+	})
 }
 
 // SoftDeleteByAccountAndUser sets deleted_at on the active membership.

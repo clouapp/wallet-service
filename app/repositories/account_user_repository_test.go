@@ -157,6 +157,32 @@ func (s *AccountUserRepositoryTestSuite) TestSetRole() {
 	s.Equal("admin", found.Role)
 }
 
+func (s *AccountUserRepositoryTestSuite) TestSetStatusAndCountActiveOwners() {
+	accID := s.createAccount()
+	ownerID := s.createUser()
+	suspendedID := s.createUser()
+	s.Require().NoError(s.repo.Create(context.Background(), &models.AccountUser{
+		ID: uuid.New(), AccountID: accID, UserID: ownerID, Role: "owner", Status: models.MembershipStatusActive,
+	}))
+	suspended := &models.AccountUser{
+		ID: uuid.New(), AccountID: accID, UserID: suspendedID, Role: "owner", Status: models.MembershipStatusActive,
+	}
+	s.Require().NoError(s.repo.Create(context.Background(), suspended))
+
+	owners, err := s.repo.CountActiveByRole(context.Background(), accID, "owner")
+	s.Require().NoError(err)
+	s.Equal(int64(2), owners)
+
+	s.Require().NoError(s.repo.SetStatus(context.Background(), suspended.ID, models.MembershipStatusSuspended))
+	owners, err = s.repo.CountActiveByRole(context.Background(), accID, "owner")
+	s.Require().NoError(err)
+	s.Equal(int64(1), owners)
+
+	found, err := s.repo.FindByAccountAndUser(context.Background(), accID, suspendedID)
+	s.Require().NoError(err)
+	s.Equal(models.MembershipStatusSuspended, found.Status)
+}
+
 func (s *AccountUserRepositoryTestSuite) TestSoftDeleteByAccountAndUser() {
 	accID := s.createAccount()
 	userID := uuid.New()

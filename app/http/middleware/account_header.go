@@ -6,6 +6,7 @@ import (
 
 	"github.com/macrowallets/waas/app/container"
 	"github.com/macrowallets/waas/app/http/responses"
+	"github.com/macrowallets/waas/app/models"
 )
 
 // AccountHeader reads X-Account-Id from the request header, validates the
@@ -37,7 +38,7 @@ func AccountHeader() http.Middleware {
 		}
 
 		au, err := container.Get().AccountUserRepo.FindByAccountAndUser(ctx.Context(), accountID, userID)
-		if err != nil || au == nil {
+		if err != nil || au == nil || !models.MembershipGrantsAccess(au.Status) {
 			_ = responses.Send(ctx, http.StatusForbidden, http.Json{"error": "not a member of this account"}).Abort()
 			return
 		}

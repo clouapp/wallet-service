@@ -84,6 +84,7 @@ func RegisterAdminRoutes() {
 
 			r.Get("/users", accountsCtrl.ListAccountUsers)
 			r.Post("/users", accountsCtrl.AddAccountUser)
+			r.Patch("/users/{userId}", accountsCtrl.UpdateAccountUser)
 			r.Delete("/users/{userId}", accountsCtrl.RemoveAccountUser)
 
 			r.Get("/tokens", accountsCtrl.ListAccountTokens)

@@ -14,6 +14,7 @@ import (
 	"github.com/macrowallets/waas/app/http/responses"
 	mails "github.com/macrowallets/waas/app/mails"
 	"github.com/macrowallets/waas/app/models"
+	"github.com/macrowallets/waas/app/policies"
 	"github.com/macrowallets/waas/app/repositories"
 	accountsvc "github.com/macrowallets/waas/app/services/account"
 	authsvc "github.com/macrowallets/waas/app/services/auth"
@@ -283,6 +284,64 @@ func (ctrl *AccountsController) AddAccountUser(ctx http.Context) http.Response {
 	return ctx.Response().Json(http.StatusCreated, au)
 }
 
+// UpdateAccountUser godoc
+// @Summary      Update an account member
+// @Description  Changes role and/or status. Owner and admin only. Suspending revokes the member's API tokens for this account.
+// @Tags         Accounts
+// @Security     BearerAuth
+// @Accept       json
+// @Produce      json
+// @Param        accountId  path      string                     true  "Account UUID"
+// @Param        userId     path      string                     true  "User UUID"
+// @Param        request    body      UpdateAccountUserSwagger   true  "Role and/or status"
+// @Success      200        {object}  models.AccountUser
+// @Failure      403        {object}  ErrorResponse
+// @Failure      404        {object}  ErrorResponse
+// @Failure      422        {object}  ErrorResponse
+// @Router       /accounts/{accountId}/users/{userId} [patch]
+func (ctrl *AccountsController) UpdateAccountUser(ctx http.Context) http.Response {
+	account := middleware.AccountFrom(ctx)
+	if account == nil {
+		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "internal_error"})
+	}
+	callerID := middleware.SessionUserID(ctx)
+	if callerID == uuid.Nil {
+		return responses.Send(ctx, http.StatusUnauthorized, http.Json{"error": "unauthenticated"})
+	}
+	if !policies.ManagesMembers(middleware.AccountRole(ctx)) {
+		return responses.Send(ctx, http.StatusForbidden, http.Json{"error": accountsvc.ErrManageMembers.Error()})
+	}
+
+	targetID, err := requests.RouteUUID(ctx, "userId")
+	if err != nil {
+		return responses.Send(ctx, http.StatusBadRequest, http.Json{"error": "invalid user id"})
+	}
+
+	var req requests.UpdateAccountUserRequest
+	if errResp := validateRequest(ctx, &req); errResp != nil {
+		return errResp
+	}
+
+	member, err := ctrl.accountService.UpdateMember(ctx.Context(), account.ID, callerID, targetID, memberChange(req))
+	if errResp := mapMemberError(ctx, err); errResp != nil {
+		return errResp
+	}
+	return ctx.Response().Json(http.StatusOK, member)
+}
+
+func memberChange(req requests.UpdateAccountUserRequest) accountsvc.MemberChange {
+	change := accountsvc.MemberChange{}
+	if req.Role != "" {
+		role := req.Role
+		change.Role = &role
+	}
+	if req.Status != "" {
+		status := req.Status
+		change.Status = &status
+	}
+	return change
+}
+
 // RemoveAccountUser godoc
 // @Summary      Remove a user from an account
 // @Description  Soft-deletes the account_user membership. Requires owner or admin.
@@ -301,14 +360,17 @@ func (ctrl *AccountsController) RemoveAccountUser(ctx http.Context) http.Respons
 		return errResp
 	}
 
-	userIDStr := ctx.Request().Route("userId")
-	targetID, err := uuid.Parse(userIDStr)
+	callerID := middleware.SessionUserID(ctx)
+	if callerID == uuid.Nil {
+		return responses.Send(ctx, http.StatusUnauthorized, http.Json{"error": "unauthenticated"})
+	}
+	targetID, err := requests.RouteUUID(ctx, "userId")
 	if err != nil {
 		return responses.Send(ctx, http.StatusBadRequest, http.Json{"error": "invalid user id"})
 	}
 
-	if err := ctrl.accountService.RemoveUser(ctx.Context(), account.ID, targetID); err != nil {
-		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to remove user"})
+	if err := ctrl.accountService.RemoveMember(ctx.Context(), account.ID, callerID, targetID); err != nil {
+		return mapMemberError(ctx, err)
 	}
 	return ctx.Response().NoContent()
 }
@@ -439,6 +501,11 @@ type UpdateAccountSwagger struct {
 type AddAccountUserSwagger struct {
 	Email string `json:"email" example:"user@example.com"`
 	Role  string `json:"role" example:"admin"`
+}
+
+type UpdateAccountUserSwagger struct {
+	Role   string `json:"role,omitempty" example:"admin"`
+	Status string `json:"status,omitempty" example:"suspended"`
 }
 
 type CreateAccountTokenSwagger struct {

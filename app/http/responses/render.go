@@ -58,12 +58,21 @@ func Send(ctx contractshttp.Context, status int, body any) contractshttp.Abortab
 // map is "errors", the key the dashboard parser reads; each value is the
 // field's messages in rule-name order.
 func ValidationFailed(ctx contractshttp.Context, errs contractsvalidation.Errors) contractshttp.AbortableResponse {
+	return FieldsFailed(ctx, FieldMessages(errs))
+}
+
+// FieldsFailed answers HTTP 422 with the same envelope as ValidationFailed
+// when the messages were built outside a form request.
+func FieldsFailed(ctx contractshttp.Context, fields map[string][]string) contractshttp.AbortableResponse {
+	if fields == nil {
+		fields = map[string][]string{}
+	}
 	return ctx.Response().Json(http.StatusUnprocessableEntity, validationEnvelope{
 		Error: errorBody{
 			Code:    CodeValidationFailed,
 			Message: validationMessage,
 		},
-		Errors: FieldMessages(errs),
+		Errors: fields,
 	})
 }
 

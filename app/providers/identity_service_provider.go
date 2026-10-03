@@ -47,9 +47,14 @@ func (p *IdentityServiceProvider) Register(app foundation.Application) {
 		if err != nil {
 			return nil, err
 		}
+		tokens, err := resolve[*repositories.AccessTokenRepository](app)
+		if err != nil {
+			return nil, err
+		}
 		return account.NewService(account.Deps{
 			Accounts:    accounts,
 			Memberships: memberships,
+			Tokens:      tokens,
 		}), nil
 	})
 }

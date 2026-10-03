@@ -66,6 +66,18 @@ func (r *AccessTokenRepository) FindByIDAndAccount(ctx context.Context, tokenID,
 	return &token, nil
 }
 
+// DeleteByAccountAndCreator removes every token this user created for the account.
+// Tokens with a null creator, and tokens on other accounts, stay.
+func (r *AccessTokenRepository) DeleteByAccountAndCreator(ctx context.Context, accountID, createdBy uuid.UUID) error {
+	if accountID == uuid.Nil || createdBy == uuid.Nil {
+		return fmt.Errorf("delete access tokens: account id and creator are required")
+	}
+	if _, err := r.Query(ctx).Where("account_id = ? AND created_by = ?", accountID, createdBy).Delete(&models.AccessToken{}); err != nil {
+		return fmt.Errorf("delete access tokens: %w", err)
+	}
+	return nil
+}
+
 // Delete removes an access token.
 func (r *AccessTokenRepository) Delete(ctx context.Context, token *models.AccessToken) error {
 	if token == nil {

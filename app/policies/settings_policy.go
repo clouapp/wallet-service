@@ -13,6 +13,7 @@ const (
 	roleOwner   = "owner"
 	roleAdmin   = "admin"
 	roleAuditor = "auditor"
+	roleUser    = "user"
 )
 
 // MayViewSettings reports whether the account role holds settings.view.

@@ -22,8 +22,29 @@ func NewBase(query orm.Query) Base {
 	return Base{query: query}
 }
 
+type txKey struct{}
+
+// WithTx returns a context whose queries join tx. Repositories built without
+// their own query pick it up in Query, so one transaction covers every store
+// the service calls with that context.
+func WithTx(ctx context.Context, tx orm.Query) context.Context {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	return context.WithValue(ctx, txKey{}, tx)
+}
+
+func txFrom(ctx context.Context) orm.Query {
+	if ctx == nil {
+		return nil
+	}
+	tx, _ := ctx.Value(txKey{}).(orm.Query)
+	return tx
+}
+
 // Query returns a context-bound query, keeping an open transaction when this
-// repository was built with one.
+// repository was built with one. A transaction stored on ctx wins over a fresh
+// query so callers that share the context share the transaction.
 func (b Base) Query(ctx context.Context) orm.Query {
 	if ctx == nil {
 		ctx = context.Background()
@@ -33,6 +54,9 @@ func (b Base) Query(ctx context.Context) orm.Query {
 			return q.WithContext(ctx)
 		}
 		return b.query
+	}
+	if tx := txFrom(ctx); tx != nil {
+		return tx
 	}
 	return facades.Orm().WithContext(ctx).Query()
 }
