@@ -56,9 +56,14 @@ func TestAccountDecisionsFollowTheLoadedMembership(t *testing.T) {
 		{roleAuditor, AccountAddUser, false, "only owners and admins may add users"},
 		{roleOwner, AccountRemoveUser, true, ""},
 		{roleUser, AccountRemoveUser, false, "only owners and admins may remove users"},
-		{roleOwner, AccountManageTokens, true, ""},
-		{roleAdmin, AccountManageTokens, true, ""},
-		{roleAuditor, AccountManageTokens, false, "only owners and admins may manage tokens"},
+		{roleOwner, AccountReadTokens, true, ""},
+		{roleAdmin, AccountReadTokens, true, ""},
+		{roleAuditor, AccountReadTokens, true, ""},
+		{roleUser, AccountReadTokens, false, "only owners, admins, and auditors may read tokens"},
+		{roleOwner, AccountWriteTokens, true, ""},
+		{roleAdmin, AccountWriteTokens, true, ""},
+		{roleAuditor, AccountWriteTokens, false, "only owners and admins may manage tokens"},
+		{roleUser, AccountWriteTokens, false, "only owners and admins may manage tokens"},
 		{roleOwner, AccountFreeze, true, ""},
 		{roleAdmin, AccountFreeze, false, "only owners may freeze accounts"},
 		{roleOwner, AccountArchive, true, ""},
@@ -117,7 +122,8 @@ func TestAccountPolicyKeepsTheMissingCallerDeny(t *testing.T) {
 		policy.RemoveUser,
 		policy.Freeze,
 		policy.Archive,
-		policy.ManageTokens,
+		policy.ReadTokens,
+		policy.WriteTokens,
 	} {
 		got := decide(ctx, map[string]any{"user_id": uuid.New()})
 		if got.Allowed() || got.Message() != "missing account_id" {

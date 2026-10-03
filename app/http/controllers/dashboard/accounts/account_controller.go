@@ -333,7 +333,7 @@ func (ctrl *AccountsController) RemoveAccountUser(ctx http.Context) http.Respons
 
 // ListAccountTokens godoc
 // @Summary      List API access tokens for an account
-// @Description  Returns all non-expired access tokens for the account. Requires owner or admin.
+// @Description  Returns the account's API tokens. Requires tokens.read.
 // @Tags         Accounts
 // @Security     BearerAuth
 // @Produce      json
@@ -343,7 +343,7 @@ func (ctrl *AccountsController) RemoveAccountUser(ctx http.Context) http.Respons
 // @Router       /accounts/{accountId}/tokens [get]
 func (ctrl *AccountsController) ListAccountTokens(ctx http.Context) http.Response {
 	account := requestctx.MustAccount(ctx)
-	if errResp := controllers.Deny(ctx, policies.AccountManageTokens(ctx, account.ID, middleware.SessionUserID(ctx))); errResp != nil {
+	if errResp := controllers.Deny(ctx, policies.AccountReadTokens(ctx, account.ID, middleware.SessionUserID(ctx))); errResp != nil {
 		return errResp
 	}
 
@@ -357,7 +357,7 @@ func (ctrl *AccountsController) ListAccountTokens(ctx http.Context) http.Respons
 
 // CreateAccountToken godoc
 // @Summary      Create an API access token for an account
-// @Description  Creates a named access token. The raw token is returned once — store it safely. Requires owner or admin.
+// @Description  Creates a named access token. The raw token is returned once — store it safely. Requires tokens.write.
 // @Tags         Accounts
 // @Security     BearerAuth
 // @Accept       json
@@ -370,7 +370,7 @@ func (ctrl *AccountsController) ListAccountTokens(ctx http.Context) http.Respons
 // @Router       /accounts/{accountId}/tokens [post]
 func (ctrl *AccountsController) CreateAccountToken(ctx http.Context) http.Response {
 	account := requestctx.MustAccount(ctx)
-	if errResp := controllers.Deny(ctx, policies.AccountManageTokens(ctx, account.ID, middleware.SessionUserID(ctx))); errResp != nil {
+	if errResp := controllers.Deny(ctx, policies.AccountWriteTokens(ctx, account.ID, middleware.SessionUserID(ctx))); errResp != nil {
 		return errResp
 	}
 	callerID, _ := requestctx.UserID(ctx)
@@ -428,7 +428,7 @@ func (ctrl *AccountsController) CreateAccountToken(ctx http.Context) http.Respon
 
 // RevokeAccountToken godoc
 // @Summary      Revoke an API access token
-// @Description  Deletes an access token by ID. Requires owner or admin.
+// @Description  Soft-revokes an access token by ID. The row stays for audit. Requires tokens.write.
 // @Tags         Accounts
 // @Security     BearerAuth
 // @Produce      json
@@ -440,7 +440,7 @@ func (ctrl *AccountsController) CreateAccountToken(ctx http.Context) http.Respon
 // @Router       /accounts/{accountId}/tokens/{tokenId} [delete]
 func (ctrl *AccountsController) RevokeAccountToken(ctx http.Context) http.Response {
 	account := requestctx.MustAccount(ctx)
-	if errResp := controllers.Deny(ctx, policies.AccountManageTokens(ctx, account.ID, middleware.SessionUserID(ctx))); errResp != nil {
+	if errResp := controllers.Deny(ctx, policies.AccountWriteTokens(ctx, account.ID, middleware.SessionUserID(ctx))); errResp != nil {
 		return errResp
 	}
 

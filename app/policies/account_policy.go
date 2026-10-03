@@ -8,10 +8,19 @@ import (
 	contractsaccess "github.com/goravel/framework/contracts/auth/access"
 )
 
+// Dashboard API-token permissions. Routes stay on
+// /v1/accounts/{accountId}/tokens. List is tokens.read; create and revoke
+// are tokens.write.
+const (
+	PermTokensRead  = "tokens.read"
+	PermTokensWrite = "tokens.write"
+)
+
 // AccountPolicy defines gate abilities for Account resources.
 // Abilities: account.view, account.update, account.delete,
 //
-//	account.add-user, account.remove-user, account.freeze, account.archive, account.manage-tokens
+//	account.add-user, account.remove-user, account.freeze, account.archive,
+//	tokens.read, tokens.write
 type AccountPolicy struct{}
 
 // userRole is the caller's role in the account. The caller passes the user id.
@@ -111,16 +120,30 @@ func (p *AccountPolicy) Archive(ctx context.Context, arguments map[string]any) c
 	return access.NewDenyResponse("only owners may archive accounts")
 }
 
-func (p *AccountPolicy) ManageTokens(ctx context.Context, arguments map[string]any) contractsaccess.Response {
+func (p *AccountPolicy) ReadTokens(ctx context.Context, arguments map[string]any) contractsaccess.Response {
 	accountID, ok := arguments["account_id"].(uuid.UUID)
 	if !ok {
 		return access.NewDenyResponse("missing account_id")
 	}
-	role := userRole(ctx, accountID, arguments)
-	if role == "owner" || role == "admin" {
+	switch userRole(ctx, accountID, arguments) {
+	case roleOwner, roleAdmin, roleAuditor:
 		return access.NewAllowResponse()
+	default:
+		return access.NewDenyResponse("only owners, admins, and auditors may read tokens")
 	}
-	return access.NewDenyResponse("only owners and admins may manage tokens")
+}
+
+func (p *AccountPolicy) WriteTokens(ctx context.Context, arguments map[string]any) contractsaccess.Response {
+	accountID, ok := arguments["account_id"].(uuid.UUID)
+	if !ok {
+		return access.NewDenyResponse("missing account_id")
+	}
+	switch userRole(ctx, accountID, arguments) {
+	case roleOwner, roleAdmin:
+		return access.NewAllowResponse()
+	default:
+		return access.NewDenyResponse("only owners and admins may manage tokens")
+	}
 }
 
 func accountDecisionArguments(accountID, userID uuid.UUID) map[string]any {
@@ -156,7 +179,12 @@ func AccountRemoveUser(ctx context.Context, accountID, userID uuid.UUID) contrac
 	return (&AccountPolicy{}).RemoveUser(ctx, accountDecisionArguments(accountID, userID))
 }
 
-// AccountManageTokens is the account.manage-tokens decision for one account and the caller id.
-func AccountManageTokens(ctx context.Context, accountID, userID uuid.UUID) contractsaccess.Response {
-	return (&AccountPolicy{}).ManageTokens(ctx, accountDecisionArguments(accountID, userID))
+// AccountReadTokens is the tokens.read decision for one account and the caller id.
+func AccountReadTokens(ctx context.Context, accountID, userID uuid.UUID) contractsaccess.Response {
+	return (&AccountPolicy{}).ReadTokens(ctx, accountDecisionArguments(accountID, userID))
+}
+
+// AccountWriteTokens is the tokens.write decision for one account and the caller id.
+func AccountWriteTokens(ctx context.Context, accountID, userID uuid.UUID) contractsaccess.Response {
+	return (&AccountPolicy{}).WriteTokens(ctx, accountDecisionArguments(accountID, userID))
 }

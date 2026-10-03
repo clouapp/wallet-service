@@ -62,8 +62,11 @@ func (r *AuthServiceProvider) Boot(app foundation.Application) {
 	gate.Define("account.archive", func(ctx context.Context, arguments map[string]any) contractsaccess.Response {
 		return ap.Archive(ctx, withAccountUser(ctx, arguments))
 	})
-	gate.Define("account.manage-tokens", func(ctx context.Context, arguments map[string]any) contractsaccess.Response {
-		return ap.ManageTokens(ctx, withAccountUser(ctx, arguments))
+	gate.Define(policies.PermTokensRead, func(ctx context.Context, arguments map[string]any) contractsaccess.Response {
+		return ap.ReadTokens(ctx, withAccountUser(ctx, arguments))
+	})
+	gate.Define(policies.PermTokensWrite, func(ctx context.Context, arguments map[string]any) contractsaccess.Response {
+		return ap.WriteTokens(ctx, withAccountUser(ctx, arguments))
 	})
 
 	gate.Define("wallet.view", func(ctx context.Context, arguments map[string]any) contractsaccess.Response {

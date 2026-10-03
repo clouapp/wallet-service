@@ -137,6 +137,36 @@ func (s *accountTokensSuite) TestNegativeSpendingLimitIsNotStored() {
 	s.NotEmpty(parsed.Errors["spending_limit.daily_usd"])
 }
 
+func (s *accountTokensSuite) TestAuditorCanListAndCannotMint() {
+	accountID := s.createAccount()
+	s.loginUser("owner", accountID)
+	auditor := s.loginUser("auditor", accountID)
+
+	list, err := s.Http(s.T()).
+		WithHeader("Authorization", "Bearer "+auditor.token).
+		Get("/v1/accounts/" + accountID.String() + "/tokens")
+	s.Require().NoError(err)
+	s.Equal(http.StatusOK, s.statusOf(list))
+
+	resp := s.createToken(auditor.token, accountID, `{"name":"nope"}`)
+	s.Equal(http.StatusForbidden, s.statusOf(resp))
+	s.Contains(s.body(resp), "only owners and admins may manage tokens")
+	s.Equal(int64(0), s.tokenCount(accountID))
+}
+
+func (s *accountTokensSuite) TestUserCannotListTokens() {
+	accountID := s.createAccount()
+	s.loginUser("owner", accountID)
+	user := s.loginUser("user", accountID)
+
+	list, err := s.Http(s.T()).
+		WithHeader("Authorization", "Bearer "+user.token).
+		Get("/v1/accounts/" + accountID.String() + "/tokens")
+	s.Require().NoError(err)
+	s.Equal(http.StatusForbidden, s.statusOf(list))
+	s.Contains(s.body(list), "only owners, admins, and auditors may read tokens")
+}
+
 func (s *accountTokensSuite) TestUserCannotMint() {
 	accountID := s.createAccount()
 	s.loginUser("owner", accountID)
