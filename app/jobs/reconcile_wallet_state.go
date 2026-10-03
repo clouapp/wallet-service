@@ -11,9 +11,20 @@ import (
 	"github.com/macrowallets/waas/app/container"
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/repositories"
+	"github.com/macrowallets/waas/app/services/refresh"
 )
 
-type ReconcileWalletState struct{}
+type ReconcileWalletState struct {
+	balances *refresh.BalanceService
+}
+
+// NewReconcileWalletState reconciles one wallet against chain state.
+func NewReconcileWalletState(balances *refresh.BalanceService) *ReconcileWalletState {
+	if balances == nil {
+		panic("reconcile_wallet_state: balance refresh service is required")
+	}
+	return &ReconcileWalletState{balances: balances}
+}
 
 func (j *ReconcileWalletState) Signature() string {
 	return "reconcile_wallet_state"
@@ -37,7 +48,6 @@ func (j *ReconcileWalletState) Handle(args ...any) error {
 		return fmt.Errorf("reconcile_wallet_state: invalid wallet_id: %w", err)
 	}
 
-	c := container.Get()
 	wallet, err := container.MustMake[*repositories.WalletRepository]().FindByID(context.Background(), walletID)
 	if err != nil && !errors.Is(err, models.ErrRepositoryNotFound) {
 		return fmt.Errorf("reconcile_wallet_state: load wallet: %w", err)
@@ -49,9 +59,12 @@ func (j *ReconcileWalletState) Handle(args ...any) error {
 		return fmt.Errorf("reconcile_wallet_state: chain_id %q does not match wallet chain %q", chainID, wallet.Chain)
 	}
 
+	if j.balances == nil {
+		return fmt.Errorf("reconcile_wallet_state: balance refresh service is not initialized")
+	}
 	slog.Info("reconcile_wallet_state", "wallet", walletIDStr, "chain", chainID)
 	// Full reconciliation compares chain state vs DB; for now runs a fresh balance sync
-	if err := c.BalanceRefreshService.RefreshWallet(context.Background(), wallet); err != nil {
+	if err := j.balances.RefreshWallet(context.Background(), wallet); err != nil {
 		return fmt.Errorf("reconcile_wallet_state: %w", err)
 	}
 	return nil

@@ -8,9 +8,11 @@ import (
 	"github.com/goravel/framework/foundation"
 
 	"github.com/macrowallets/waas/app/console/commands"
+	"github.com/macrowallets/waas/app/container"
 	"github.com/macrowallets/waas/app/events"
 	"github.com/macrowallets/waas/app/jobs"
 	"github.com/macrowallets/waas/app/listeners"
+	"github.com/macrowallets/waas/app/services/refresh"
 	"github.com/macrowallets/waas/config"
 	"github.com/macrowallets/waas/database/seeders"
 )
@@ -22,12 +24,13 @@ func Boot() contractsfoundation.Application {
 		WithProviders(Providers).
 		WithSeeders(seeders.All).
 		WithJobs(func() []queue.Job {
+			balances := container.MustMake[*refresh.BalanceService]()
 			return []queue.Job{
-				&jobs.RefreshWalletBalances{},
-				&jobs.RefreshWalletTransactions{},
-				&jobs.RefreshWalletTokens{},
+				jobs.NewRefreshWalletBalances(balances),
+				jobs.NewRefreshWalletTransactions(balances),
+				jobs.NewRefreshWalletTokens(balances),
 				&jobs.RefreshWalletUTXOs{},
-				&jobs.ReconcileWalletState{},
+				jobs.NewReconcileWalletState(balances),
 			}
 		}).
 		WithCommands(func() []console.Command {

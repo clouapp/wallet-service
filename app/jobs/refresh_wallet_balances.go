@@ -11,9 +11,20 @@ import (
 	"github.com/macrowallets/waas/app/container"
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/repositories"
+	"github.com/macrowallets/waas/app/services/refresh"
 )
 
-type RefreshWalletBalances struct{}
+type RefreshWalletBalances struct {
+	balances *refresh.BalanceService
+}
+
+// NewRefreshWalletBalances refreshes one wallet's balances.
+func NewRefreshWalletBalances(balances *refresh.BalanceService) *RefreshWalletBalances {
+	if balances == nil {
+		panic("refresh_wallet_balances: balance refresh service is required")
+	}
+	return &RefreshWalletBalances{balances: balances}
+}
 
 func (j *RefreshWalletBalances) Signature() string {
 	return "refresh_wallet_balances"
@@ -37,7 +48,6 @@ func (j *RefreshWalletBalances) Handle(args ...any) error {
 		return fmt.Errorf("refresh_wallet_balances: invalid wallet_id: %w", err)
 	}
 
-	c := container.Get()
 	wallet, err := container.MustMake[*repositories.WalletRepository]().FindByID(context.Background(), walletID)
 	if err != nil && !errors.Is(err, models.ErrRepositoryNotFound) {
 		return fmt.Errorf("refresh_wallet_balances: load wallet: %w", err)
@@ -49,8 +59,11 @@ func (j *RefreshWalletBalances) Handle(args ...any) error {
 		return fmt.Errorf("refresh_wallet_balances: chain_id %q does not match wallet chain %q", chainID, wallet.Chain)
 	}
 
+	if j.balances == nil {
+		return fmt.Errorf("refresh_wallet_balances: balance refresh service is not initialized")
+	}
 	slog.Info("refresh_wallet_balances", "wallet", walletIDStr, "chain", chainID)
-	if err := c.BalanceRefreshService.RefreshWallet(context.Background(), wallet); err != nil {
+	if err := j.balances.RefreshWallet(context.Background(), wallet); err != nil {
 		return fmt.Errorf("refresh_wallet_balances: %w", err)
 	}
 	return nil
