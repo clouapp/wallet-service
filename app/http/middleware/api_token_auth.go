@@ -16,7 +16,9 @@ import (
 
 	"github.com/macrowallets/waas/app/facades"
 	"github.com/macrowallets/waas/app/http/middleware/requestctx"
+	"github.com/macrowallets/waas/app/http/responses"
 	"github.com/macrowallets/waas/app/models"
+	"github.com/macrowallets/waas/app/policies"
 )
 
 // apiTokenLookup loads the access token row named by a bearer JWT and
@@ -112,6 +114,15 @@ func APITokenAuth(tokens apiTokenLookup) http.Middleware {
 				abortWithJSON(ctx, http.StatusUnauthorized, http.Json{"error": "invalid request signature"})
 				return
 			}
+		}
+
+		// S3.4.6 enforces ip_cidr against ClientIP. It does not name a code,
+		// so a miss is the 403 forbidden the error contract uses for an
+		// authenticated caller who is not permitted. A blank allowlist is
+		// not a miss.
+		if !policies.APITokenIPAllows(token.IpCidr, ClientIP(ctx)) {
+			abortWithJSON(ctx, http.StatusForbidden, http.Json{"error": responses.CodeForbidden})
+			return
 		}
 
 		if err := tokens.RecordAPITokenUse(ctx.Context(), token.ID, accountID); err != nil {

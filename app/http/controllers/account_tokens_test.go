@@ -167,6 +167,45 @@ func (s *accountTokensSuite) TestUserCannotListTokens() {
 	s.Contains(s.body(list), "only owners, admins, and auditors may read tokens")
 }
 
+func (s *accountTokensSuite) TestBlankIPCidrIsStoredEmpty() {
+	accountID := s.createAccount()
+	owner := s.loginUser("owner", accountID)
+
+	resp := s.createToken(owner.token, accountID, `{"name":"open"}`)
+	s.Equal(http.StatusCreated, s.statusOf(resp))
+	s.Equal("", s.storedIPCidr(accountID, "open"))
+}
+
+func (s *accountTokensSuite) TestIPCidrIsStored() {
+	accountID := s.createAccount()
+	owner := s.loginUser("owner", accountID)
+
+	resp := s.createToken(owner.token, accountID, `{"name":"locked","ip_cidr":" 192.0.2.0/24 "}`)
+	s.Equal(http.StatusCreated, s.statusOf(resp))
+	s.Equal("192.0.2.0/24", s.storedIPCidr(accountID, "locked"))
+}
+
+func (s *accountTokensSuite) TestInvalidIPCidrIs422() {
+	accountID := s.createAccount()
+	owner := s.loginUser("owner", accountID)
+
+	resp := s.createToken(owner.token, accountID, `{"name":"bad-cidr","ip_cidr":"not-a-cidr"}`)
+	s.Equal(http.StatusUnprocessableEntity, s.statusOf(resp))
+	s.Equal(int64(0), s.tokenCount(accountID))
+
+	var parsed struct {
+		Error struct {
+			Code    string `json:"code"`
+			Message string `json:"message"`
+		} `json:"error"`
+		Errors map[string][]string `json:"errors"`
+	}
+	s.Require().NoError(json.Unmarshal([]byte(s.body(resp)), &parsed))
+	s.Equal("validation_failed", parsed.Error.Code)
+	s.Equal("validation failed", parsed.Error.Message)
+	s.NotEmpty(parsed.Errors["ip_cidr"])
+}
+
 func (s *accountTokensSuite) TestUserCannotMint() {
 	accountID := s.createAccount()
 	s.loginUser("owner", accountID)
@@ -250,6 +289,14 @@ func (s *accountTokensSuite) storedSpendingLimit(accountID uuid.UUID, name strin
 		Where("account_id = ? AND name = ?", accountID, name).
 		First(&token))
 	return token.SpendingLimit
+}
+
+func (s *accountTokensSuite) storedIPCidr(accountID uuid.UUID, name string) string {
+	var token models.AccessToken
+	s.Require().NoError(facades.Orm().Query().
+		Where("account_id = ? AND name = ?", accountID, name).
+		First(&token))
+	return token.IpCidr
 }
 
 func (s *accountTokensSuite) storedPermissions(accountID uuid.UUID, name string) string {

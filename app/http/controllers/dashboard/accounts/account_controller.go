@@ -2,6 +2,7 @@ package accounts
 
 import (
 	"errors"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -382,6 +383,11 @@ func (ctrl *AccountsController) CreateAccountToken(ctx http.Context) http.Respon
 	if errResp := controllers.Deny(ctx, policies.MintAPITokenPermissions(middleware.AccountRole(ctx), req.Permissions)); errResp != nil {
 		return errResp
 	}
+	if !policies.ValidAPITokenIPCIDR(req.IpCidr) {
+		return responses.FieldsFailed(ctx, map[string][]string{
+			"ip_cidr": {"The ip_cidr must be a valid CIDR."},
+		})
+	}
 	storedPermissions, err := storedAPITokenPermissions(req.Permissions)
 	if err != nil {
 		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to create token"})
@@ -405,6 +411,7 @@ func (ctrl *AccountsController) CreateAccountToken(ctx http.Context) http.Respon
 		Name:          req.Name,
 		TokenHash:     ctrl.passwords.HashToken(tokenID.String()),
 		Permissions:   storedPermissions,
+		IpCidr:        strings.TrimSpace(req.IpCidr),
 		SpendingLimit: storedLimit,
 	}
 	if req.ValidUntil != "" {
@@ -484,6 +491,7 @@ type CreateAccountTokenSwagger struct {
 	ValidUntil       *time.Time `json:"valid_until,omitempty"`
 	RequireSignature bool       `json:"require_signature,omitempty" example:"true"`
 	Permissions      []string   `json:"permissions,omitempty"`
+	IpCidr           string     `json:"ip_cidr,omitempty" example:"192.0.2.0/24"`
 }
 
 type AccountUserListResponse struct {

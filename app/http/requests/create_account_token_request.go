@@ -13,6 +13,7 @@ type CreateAccountTokenRequest struct {
 	ValidUntil       string         `form:"valid_until"       json:"valid_until,omitempty"`
 	RequireSignature bool           `form:"require_signature" json:"require_signature,omitempty"`
 	Permissions      []string       `form:"permissions"       json:"permissions"`
+	IpCidr           string         `form:"ip_cidr"           json:"ip_cidr,omitempty"`
 	SpendingLimit    map[string]any `form:"spending_limit"    json:"spending_limit,omitempty"`
 }
 
@@ -22,7 +23,8 @@ func (r *CreateAccountTokenRequest) Authorize(ctx http.Context) error {
 
 func (r *CreateAccountTokenRequest) Filters(ctx http.Context) map[string]string {
 	return map[string]string{
-		"name": "trim",
+		"name":    "trim",
+		"ip_cidr": "trim",
 	}
 }
 
