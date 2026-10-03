@@ -17,6 +17,7 @@ import (
 	authsvc "github.com/macrowallets/waas/app/services/auth"
 	chainsvc "github.com/macrowallets/waas/app/services/chains"
 	featuressvc "github.com/macrowallets/waas/app/services/features"
+	"github.com/macrowallets/waas/app/services/walletrecords"
 )
 
 // RegisterExternalAPI registers Bearer API-token routes under /api/v1.
@@ -85,7 +86,7 @@ func newExternalChainsController() *extchains.ChainsController {
 
 func newExternalAddressesController() *extaddresses.AddressesController {
 	return extaddresses.NewAddressesController(
-		container.MustMake[*repositories.AddressRepository](),
+		container.MustMake[*walletrecords.Addresses](),
 		currentWalletService,
 		container.Get().DepositService,
 		container.Get().Registry,

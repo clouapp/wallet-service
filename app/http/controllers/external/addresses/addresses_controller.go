@@ -8,10 +8,10 @@ import (
 	"github.com/macrowallets/waas/app/http/pagination"
 	"github.com/macrowallets/waas/app/http/requests"
 	"github.com/macrowallets/waas/app/http/responses"
-	"github.com/macrowallets/waas/app/repositories"
 	chain "github.com/macrowallets/waas/app/services/chain"
 	deposit "github.com/macrowallets/waas/app/services/deposit"
 	wallet "github.com/macrowallets/waas/app/services/wallet"
+	"github.com/macrowallets/waas/app/services/walletrecords"
 )
 
 func validateRequest(ctx http.Context, req http.FormRequest) http.Response {
@@ -20,20 +20,20 @@ func validateRequest(ctx http.Context, req http.FormRequest) http.Response {
 
 // AddressesController serves the external address routes.
 type AddressesController struct {
-	addresses     *repositories.AddressRepository
+	addresses     *walletrecords.Addresses
 	walletService func() *wallet.Service
 	deposits      *deposit.Service
 	registry      *chain.Registry
 }
 
 func NewAddressesController(
-	addresses *repositories.AddressRepository,
+	addresses *walletrecords.Addresses,
 	walletService func() *wallet.Service,
 	deposits *deposit.Service,
 	registry *chain.Registry,
 ) *AddressesController {
 	if addresses == nil {
-		panic("external addresses controller: addresses repository is required")
+		panic("external addresses controller: addresses service is required")
 	}
 	if walletService == nil || walletService() == nil {
 		panic("external addresses controller: wallet service is required")
