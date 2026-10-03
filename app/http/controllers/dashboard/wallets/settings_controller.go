@@ -7,9 +7,11 @@ import (
 
 	"github.com/goravel/framework/contracts/http"
 
+	"github.com/macrowallets/waas/app/http/controllers"
 	"github.com/macrowallets/waas/app/http/requests"
 	"github.com/macrowallets/waas/app/http/responses"
 	"github.com/macrowallets/waas/app/models"
+	"github.com/macrowallets/waas/app/policies"
 	"github.com/macrowallets/waas/app/repositories"
 )
 
@@ -68,7 +70,7 @@ func (ctrl *SettingsController) GetWalletSettings(ctx http.Context) http.Respons
 // @Router       /wallets/{walletId}/settings [patch]
 func (ctrl *SettingsController) UpdateWalletSettings(ctx http.Context) http.Response {
 	wallet := ctx.Value("wallet").(*models.Wallet)
-	if errResp := authorize(ctx, "wallet.update", map[string]any{"wallet_id": wallet.ID}); errResp != nil {
+	if errResp := controllers.Deny(ctx, policies.WalletUpdate(ctx, wallet.ID)); errResp != nil {
 		return errResp
 	}
 
@@ -137,7 +139,7 @@ func (ctrl *SettingsController) UpdateWalletSettings(ctx http.Context) http.Resp
 // @Router       /wallets/{walletId}/freeze [post]
 func (ctrl *SettingsController) FreezeWallet(ctx http.Context) http.Response {
 	wallet := ctx.Value("wallet").(*models.Wallet)
-	if errResp := authorize(ctx, "wallet.freeze", map[string]any{"wallet_id": wallet.ID}); errResp != nil {
+	if errResp := controllers.Deny(ctx, policies.WalletFreeze(ctx, wallet.ID)); errResp != nil {
 		return errResp
 	}
 

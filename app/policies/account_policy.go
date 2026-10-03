@@ -121,3 +121,33 @@ func (p *AccountPolicy) ManageTokens(ctx context.Context, arguments map[string]a
 	}
 	return access.NewDenyResponse("only owners and admins may manage tokens")
 }
+
+// AccountUpdate is the account.update decision for one account.
+func AccountUpdate(ctx context.Context, accountID uuid.UUID) contractsaccess.Response {
+	return (&AccountPolicy{}).Update(ctx, map[string]any{"account_id": accountID})
+}
+
+// AccountArchive is the account.archive decision for one account.
+func AccountArchive(ctx context.Context, accountID uuid.UUID) contractsaccess.Response {
+	return (&AccountPolicy{}).Archive(ctx, map[string]any{"account_id": accountID})
+}
+
+// AccountFreeze is the account.freeze decision for one account.
+func AccountFreeze(ctx context.Context, accountID uuid.UUID) contractsaccess.Response {
+	return (&AccountPolicy{}).Freeze(ctx, map[string]any{"account_id": accountID})
+}
+
+// AccountAddUser is the account.add-user decision for one account.
+func AccountAddUser(ctx context.Context, accountID uuid.UUID) contractsaccess.Response {
+	return (&AccountPolicy{}).AddUser(ctx, map[string]any{"account_id": accountID})
+}
+
+// AccountRemoveUser is the account.remove-user decision for one account.
+func AccountRemoveUser(ctx context.Context, accountID uuid.UUID) contractsaccess.Response {
+	return (&AccountPolicy{}).RemoveUser(ctx, map[string]any{"account_id": accountID})
+}
+
+// AccountManageTokens is the account.manage-tokens decision for one account.
+func AccountManageTokens(ctx context.Context, accountID uuid.UUID) contractsaccess.Response {
+	return (&AccountPolicy{}).ManageTokens(ctx, map[string]any{"account_id": accountID})
+}

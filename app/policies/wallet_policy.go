@@ -150,3 +150,39 @@ func (p *WalletPolicy) CancelWithdrawal(ctx context.Context, arguments map[strin
 
 	return access.NewDenyResponse("only the creator or an owner/admin may cancel this withdrawal")
 }
+
+// WalletUpdate is the wallet.update decision for one wallet.
+func WalletUpdate(ctx context.Context, walletID uuid.UUID) contractsaccess.Response {
+	return (&WalletPolicy{}).Update(ctx, map[string]any{"wallet_id": walletID})
+}
+
+// WalletFreeze is the wallet.freeze decision for one wallet.
+func WalletFreeze(ctx context.Context, walletID uuid.UUID) contractsaccess.Response {
+	return (&WalletPolicy{}).Freeze(ctx, map[string]any{"wallet_id": walletID})
+}
+
+// WalletAddUser is the wallet.add-user decision for one wallet.
+func WalletAddUser(ctx context.Context, walletID uuid.UUID) contractsaccess.Response {
+	return (&WalletPolicy{}).AddUser(ctx, map[string]any{"wallet_id": walletID})
+}
+
+// WalletRemoveUser is the wallet.remove-user decision for one wallet.
+func WalletRemoveUser(ctx context.Context, walletID uuid.UUID) contractsaccess.Response {
+	return (&WalletPolicy{}).RemoveUser(ctx, map[string]any{"wallet_id": walletID})
+}
+
+// WalletWhitelist is the wallet.whitelist decision for one wallet.
+func WalletWhitelist(ctx context.Context, walletID uuid.UUID) contractsaccess.Response {
+	return (&WalletPolicy{}).Whitelist(ctx, map[string]any{"wallet_id": walletID})
+}
+
+// WalletManageWebhooks is the wallet.manage-webhooks decision for one wallet.
+func WalletManageWebhooks(ctx context.Context, walletID uuid.UUID) contractsaccess.Response {
+	return (&WalletPolicy{}).ManageWebhooks(ctx, map[string]any{"wallet_id": walletID})
+}
+
+// WalletCancelWithdrawal is the wallet.cancel-withdrawal decision.
+// The creator may cancel their own withdrawal; owners and admins may cancel any.
+func WalletCancelWithdrawal(ctx context.Context, walletID, creatorID uuid.UUID) contractsaccess.Response {
+	return (&WalletPolicy{}).CancelWithdrawal(ctx, map[string]any{"wallet_id": walletID, "creator_id": creatorID})
+}

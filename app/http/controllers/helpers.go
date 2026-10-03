@@ -4,8 +4,8 @@ import (
 	"errors"
 	"io"
 
+	contractsaccess "github.com/goravel/framework/contracts/auth/access"
 	"github.com/goravel/framework/contracts/http"
-	"github.com/goravel/framework/facades"
 
 	"github.com/macrowallets/waas/app/http/responses"
 )
@@ -51,15 +51,11 @@ func bindRulelessRequest(ctx http.Context, req http.FormRequest) http.Response {
 	return nil
 }
 
-func authorize(ctx http.Context, ability string, arguments map[string]any) http.Response {
-	return Authorize(ctx, ability, arguments)
-}
-
-// Authorize is the gate check shared with surface packages.
-func Authorize(ctx http.Context, ability string, arguments map[string]any) http.Response {
-	response := facades.Gate().WithContext(ctx).Inspect(ability, arguments)
-	if response.Allowed() {
+// Deny maps a policy denial to HTTP 403. The body is the policy message, the
+// same bytes the gate helper used to write. An allow returns nil.
+func Deny(ctx http.Context, decision contractsaccess.Response) http.Response {
+	if decision.Allowed() {
 		return nil
 	}
-	return responses.Send(ctx, http.StatusForbidden, http.Json{"error": response.Message()})
+	return responses.Send(ctx, http.StatusForbidden, http.Json{"error": decision.Message()})
 }

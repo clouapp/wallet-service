@@ -1,8 +1,0 @@
-# TestPermissionDecisionsGoThroughThePolicy: known violations, rewritten by go test ./tests/architecture -update-baseline
-app/http/controllers/dashboard/accounts/account_controller.go calls authorize() (x8)
-app/http/controllers/dashboard/wallets/settings_controller.go calls authorize() (x2)
-app/http/controllers/dashboard/wallets/users_controller.go calls authorize() (x2)
-app/http/controllers/dashboard/wallets/webhooks_controller.go calls authorize() (x2)
-app/http/controllers/dashboard/wallets/whitelist_controller.go calls authorize() (x2)
-app/http/controllers/dashboard/withdrawals/withdrawals_controller.go calls authorize()
-app/http/controllers/helpers.go calls facades.Gate()

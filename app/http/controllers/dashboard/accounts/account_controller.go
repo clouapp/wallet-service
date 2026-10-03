@@ -24,10 +24,6 @@ func validateRequest(ctx http.Context, req http.FormRequest) http.Response {
 	return controllers.ValidateRequest(ctx, req)
 }
 
-func authorize(ctx http.Context, ability string, arguments map[string]any) http.Response {
-	return controllers.Authorize(ctx, ability, arguments)
-}
-
 type AccountsController struct {
 	accounts       *repositories.AccountRepository
 	memberships    *repositories.AccountUserRepository
@@ -133,7 +129,7 @@ func (ctrl *AccountsController) GetAccount(ctx http.Context) http.Response {
 // @Router       /accounts/{accountId} [patch]
 func (ctrl *AccountsController) UpdateAccount(ctx http.Context) http.Response {
 	account := ctx.Value("account").(*models.Account)
-	if errResp := authorize(ctx, "account.update", map[string]any{"account_id": account.ID}); errResp != nil {
+	if errResp := controllers.Deny(ctx, policies.AccountUpdate(ctx, account.ID)); errResp != nil {
 		return errResp
 	}
 
@@ -171,7 +167,7 @@ func (ctrl *AccountsController) UpdateAccount(ctx http.Context) http.Response {
 // @Router       /accounts/{accountId}/archive [post]
 func (ctrl *AccountsController) ArchiveAccount(ctx http.Context) http.Response {
 	account := ctx.Value("account").(*models.Account)
-	if errResp := authorize(ctx, "account.archive", map[string]any{"account_id": account.ID}); errResp != nil {
+	if errResp := controllers.Deny(ctx, policies.AccountArchive(ctx, account.ID)); errResp != nil {
 		return errResp
 	}
 
@@ -194,7 +190,7 @@ func (ctrl *AccountsController) ArchiveAccount(ctx http.Context) http.Response {
 // @Router       /accounts/{accountId}/freeze [post]
 func (ctrl *AccountsController) FreezeAccount(ctx http.Context) http.Response {
 	account := ctx.Value("account").(*models.Account)
-	if errResp := authorize(ctx, "account.freeze", map[string]any{"account_id": account.ID}); errResp != nil {
+	if errResp := controllers.Deny(ctx, policies.AccountFreeze(ctx, account.ID)); errResp != nil {
 		return errResp
 	}
 
@@ -242,7 +238,7 @@ func (ctrl *AccountsController) ListAccountUsers(ctx http.Context) http.Response
 func (ctrl *AccountsController) AddAccountUser(ctx http.Context) http.Response {
 	account := ctx.Value("account").(*models.Account)
 	callerID := ctx.Value("user_id").(uuid.UUID)
-	if errResp := authorize(ctx, "account.add-user", map[string]any{"account_id": account.ID}); errResp != nil {
+	if errResp := controllers.Deny(ctx, policies.AccountAddUser(ctx, account.ID)); errResp != nil {
 		return errResp
 	}
 
@@ -356,7 +352,7 @@ func memberChange(req requests.UpdateAccountUserRequest) accountsvc.MemberChange
 // @Router       /accounts/{accountId}/users/{userId} [delete]
 func (ctrl *AccountsController) RemoveAccountUser(ctx http.Context) http.Response {
 	account := ctx.Value("account").(*models.Account)
-	if errResp := authorize(ctx, "account.remove-user", map[string]any{"account_id": account.ID}); errResp != nil {
+	if errResp := controllers.Deny(ctx, policies.AccountRemoveUser(ctx, account.ID)); errResp != nil {
 		return errResp
 	}
 
@@ -387,7 +383,7 @@ func (ctrl *AccountsController) RemoveAccountUser(ctx http.Context) http.Respons
 // @Router       /accounts/{accountId}/tokens [get]
 func (ctrl *AccountsController) ListAccountTokens(ctx http.Context) http.Response {
 	account := ctx.Value("account").(*models.Account)
-	if errResp := authorize(ctx, "account.manage-tokens", map[string]any{"account_id": account.ID}); errResp != nil {
+	if errResp := controllers.Deny(ctx, policies.AccountManageTokens(ctx, account.ID)); errResp != nil {
 		return errResp
 	}
 
@@ -414,7 +410,7 @@ func (ctrl *AccountsController) ListAccountTokens(ctx http.Context) http.Respons
 // @Router       /accounts/{accountId}/tokens [post]
 func (ctrl *AccountsController) CreateAccountToken(ctx http.Context) http.Response {
 	account := ctx.Value("account").(*models.Account)
-	if errResp := authorize(ctx, "account.manage-tokens", map[string]any{"account_id": account.ID}); errResp != nil {
+	if errResp := controllers.Deny(ctx, policies.AccountManageTokens(ctx, account.ID)); errResp != nil {
 		return errResp
 	}
 	callerID, _ := ctx.Value("user_id").(uuid.UUID)
@@ -466,7 +462,7 @@ func (ctrl *AccountsController) CreateAccountToken(ctx http.Context) http.Respon
 // @Router       /accounts/{accountId}/tokens/{tokenId} [delete]
 func (ctrl *AccountsController) RevokeAccountToken(ctx http.Context) http.Response {
 	account := ctx.Value("account").(*models.Account)
-	if errResp := authorize(ctx, "account.manage-tokens", map[string]any{"account_id": account.ID}); errResp != nil {
+	if errResp := controllers.Deny(ctx, policies.AccountManageTokens(ctx, account.ID)); errResp != nil {
 		return errResp
 	}
 

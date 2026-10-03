@@ -14,6 +14,7 @@ import (
 	"github.com/macrowallets/waas/app/http/requests"
 	"github.com/macrowallets/waas/app/http/responses"
 	"github.com/macrowallets/waas/app/models"
+	"github.com/macrowallets/waas/app/policies"
 	"github.com/macrowallets/waas/app/repositories"
 	authsvc "github.com/macrowallets/waas/app/services/auth"
 	chain "github.com/macrowallets/waas/app/services/chain"
@@ -26,12 +27,6 @@ import (
 func validateRequest(ctx http.Context, req http.FormRequest) http.Response {
 	{
 		return controllers.ValidateRequest(ctx, req)
-	}
-}
-
-func authorize(ctx http.Context, ability string, arguments map[string]any) http.Response {
-	{
-		return controllers.Authorize(ctx, ability, arguments)
 	}
 }
 
@@ -427,7 +422,7 @@ func (ctrl *WithdrawalsController) CancelWalletWithdrawal(ctx http.Context) http
 	if w.CreatedBy != nil {
 		creatorID = *w.CreatedBy
 	}
-	if resp := authorize(ctx, "wallet.cancel-withdrawal", map[string]any{"wallet_id": wallet.ID, "creator_id": creatorID}); resp != nil {
+	if resp := controllers.Deny(ctx, policies.WalletCancelWithdrawal(ctx, wallet.ID, creatorID)); resp != nil {
 		return resp
 	}
 

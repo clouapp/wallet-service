@@ -7,9 +7,11 @@ import (
 	"github.com/goravel/framework/contracts/http"
 	"github.com/goravel/framework/facades"
 
+	"github.com/macrowallets/waas/app/http/controllers"
 	"github.com/macrowallets/waas/app/http/requests"
 	"github.com/macrowallets/waas/app/http/responses"
 	"github.com/macrowallets/waas/app/models"
+	"github.com/macrowallets/waas/app/policies"
 	"github.com/macrowallets/waas/app/repositories"
 )
 
@@ -65,7 +67,7 @@ func (ctrl *UsersController) ListWalletUsers(ctx http.Context) http.Response {
 // @Router       /wallets/{walletId}/users [post]
 func (ctrl *UsersController) AddWalletUser(ctx http.Context) http.Response {
 	wallet := ctx.Value("wallet").(*models.Wallet)
-	if resp := authorize(ctx, "wallet.add-user", map[string]any{"wallet_id": wallet.ID}); resp != nil {
+	if resp := controllers.Deny(ctx, policies.WalletAddUser(ctx, wallet.ID)); resp != nil {
 		return resp
 	}
 
@@ -118,7 +120,7 @@ func (ctrl *UsersController) AddWalletUser(ctx http.Context) http.Response {
 // @Router       /wallets/{walletId}/users/{userId} [delete]
 func (ctrl *UsersController) RemoveWalletUser(ctx http.Context) http.Response {
 	wallet := ctx.Value("wallet").(*models.Wallet)
-	if resp := authorize(ctx, "wallet.remove-user", map[string]any{"wallet_id": wallet.ID}); resp != nil {
+	if resp := controllers.Deny(ctx, policies.WalletRemoveUser(ctx, wallet.ID)); resp != nil {
 		return resp
 	}
 

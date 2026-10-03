@@ -21,10 +21,6 @@ func validateRequest(ctx http.Context, req http.FormRequest) http.Response {
 	return controllers.ValidateRequest(ctx, req)
 }
 
-func authorize(ctx http.Context, ability string, arguments map[string]any) http.Response {
-	return controllers.Authorize(ctx, ability, arguments)
-}
-
 // WalletsController serves the dashboard wallet list, create, and activate routes.
 type WalletsController struct {
 	wallets       *repositories.WalletRepository
