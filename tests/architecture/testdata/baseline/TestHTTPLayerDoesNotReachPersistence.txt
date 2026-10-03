@@ -1,7 +1,6 @@
 # TestHTTPLayerDoesNotReachPersistence: known violations, rewritten by go test ./tests/architecture -update-baseline
 app/http/controllers/dashboard/addresses/addresses_controller.go imports github.com/macrowallets/waas/app/repositories
 app/http/controllers/dashboard/auth/auth_controller.go imports github.com/macrowallets/waas/app/repositories
-app/http/controllers/dashboard/preferences/preferences_controller.go imports github.com/macrowallets/waas/app/repositories
 app/http/controllers/dashboard/users/user_controller.go imports github.com/macrowallets/waas/app/repositories
 app/http/controllers/dashboard/wallets/balances_controller.go imports github.com/macrowallets/waas/app/repositories
 app/http/controllers/dashboard/wallets/settings_controller.go imports github.com/macrowallets/waas/app/repositories

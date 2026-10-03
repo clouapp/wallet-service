@@ -28,6 +28,7 @@ import (
 	"github.com/macrowallets/waas/app/services/currencies"
 	featuressvc "github.com/macrowallets/waas/app/services/features"
 	settingssvc "github.com/macrowallets/waas/app/services/settings"
+	usersvc "github.com/macrowallets/waas/app/services/users"
 	walletsvc "github.com/macrowallets/waas/app/services/wallet"
 )
 
@@ -268,8 +269,8 @@ func newDashboardCurrenciesController() *dashcurrencies.CurrenciesController {
 
 func newDashboardPreferencesController() *dashpreferences.PreferencesController {
 	return dashpreferences.NewPreferencesController(
-		container.MustMake[*repositories.UserRepository](),
-		container.MustMake[*repositories.CurrencyRepository](),
+		container.MustMake[*usersvc.Service](),
+		container.MustMake[*currencies.Service](),
 	)
 }
 

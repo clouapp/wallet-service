@@ -6,6 +6,7 @@ import (
 	"github.com/macrowallets/waas/app/repositories"
 	"github.com/macrowallets/waas/app/services/account"
 	authsvc "github.com/macrowallets/waas/app/services/auth"
+	usersvc "github.com/macrowallets/waas/app/services/users"
 )
 
 // IdentityServiceProvider binds the account-and-user repositories and the
@@ -37,6 +38,13 @@ func (p *IdentityServiceProvider) Register(app foundation.Application) {
 	})
 	app.Singleton((*authsvc.Service)(nil), func(foundation.Application) (any, error) {
 		return authsvc.NewService(), nil
+	})
+	app.Singleton((*usersvc.Service)(nil), func(app foundation.Application) (any, error) {
+		store, err := resolve[*repositories.UserRepository](app)
+		if err != nil {
+			return nil, err
+		}
+		return usersvc.NewService(store), nil
 	})
 	app.Singleton((*account.Service)(nil), func(app foundation.Application) (any, error) {
 		accounts, err := resolve[*repositories.AccountRepository](app)

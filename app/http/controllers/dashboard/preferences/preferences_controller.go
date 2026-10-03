@@ -8,7 +8,8 @@ import (
 	"github.com/macrowallets/waas/app/http/requests"
 	"github.com/macrowallets/waas/app/http/responses"
 	"github.com/macrowallets/waas/app/models"
-	"github.com/macrowallets/waas/app/repositories"
+	"github.com/macrowallets/waas/app/services/currencies"
+	usersvc "github.com/macrowallets/waas/app/services/users"
 )
 
 func validateRequest(ctx http.Context, req http.FormRequest) http.Response {
@@ -17,19 +18,19 @@ func validateRequest(ctx http.Context, req http.FormRequest) http.Response {
 
 // PreferencesController serves the dashboard preference routes.
 type PreferencesController struct {
-	users      *repositories.UserRepository
-	currencies *repositories.CurrencyRepository
+	users      *usersvc.Service
+	currencies *currencies.Service
 }
 
 func NewPreferencesController(
-	users *repositories.UserRepository,
-	currencies *repositories.CurrencyRepository,
+	users *usersvc.Service,
+	currencies *currencies.Service,
 ) *PreferencesController {
 	if users == nil {
-		panic("dashboard preferences controller: users repository is required")
+		panic("dashboard preferences controller: users service is required")
 	}
 	if currencies == nil {
-		panic("dashboard preferences controller: currencies repository is required")
+		panic("dashboard preferences controller: currencies service is required")
 	}
 	return &PreferencesController{
 		users:      users,
