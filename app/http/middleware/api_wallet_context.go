@@ -6,7 +6,7 @@ import (
 
 	"github.com/macrowallets/waas/app/container"
 	"github.com/macrowallets/waas/app/http/responses"
-	"github.com/macrowallets/waas/app/repositories"
+	"github.com/macrowallets/waas/app/services/walletrecords"
 )
 
 // APIWalletContext verifies that the {walletId} route parameter belongs to the
@@ -32,7 +32,7 @@ func APIWalletContext() http.Middleware {
 			return
 		}
 
-		wallet, err := container.MustMake[*repositories.WalletRepository]().FindByIDAndAccount(ctx.Context(), walletID, accountID)
+		wallet, err := container.MustMake[*walletrecords.Wallets]().FindByIDAndAccount(ctx.Context(), walletID, accountID)
 		if err != nil || wallet == nil {
 			abortWithJSON(ctx, http.StatusNotFound, http.Json{"error": "wallet not found"})
 			return

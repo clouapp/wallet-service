@@ -6,7 +6,8 @@ import (
 
 	"github.com/macrowallets/waas/app/container"
 	"github.com/macrowallets/waas/app/http/responses"
-	"github.com/macrowallets/waas/app/repositories"
+	accountsvc "github.com/macrowallets/waas/app/services/account"
+	"github.com/macrowallets/waas/app/services/walletrecords"
 )
 
 // WalletContext resolves the {walletId} route parameter, loads the wallet,
@@ -21,7 +22,7 @@ func WalletContext() http.Middleware {
 			return
 		}
 
-		wallet, err := container.MustMake[*repositories.WalletRepository]().FindByID(ctx.Context(), walletID)
+		wallet, err := container.MustMake[*walletrecords.Wallets]().FindByID(ctx.Context(), walletID)
 		if err != nil || wallet == nil {
 			_ = responses.Send(ctx, http.StatusNotFound, http.Json{"error": "wallet not found"}).Abort()
 			return
@@ -31,13 +32,13 @@ func WalletContext() http.Middleware {
 		isMember := false
 
 		if wallet.AccountID != nil {
-			au, err2 := container.Get().AccountUserRepo.FindByAccountAndUser(ctx.Context(), *wallet.AccountID, userID)
+			au, err2 := container.MustMake[*accountsvc.Service]().FindMember(ctx.Context(), *wallet.AccountID, userID)
 			if err2 == nil && au != nil {
 				isMember = true
 			}
 		}
 		if !isMember {
-			wu, err3 := container.MustMake[*repositories.WalletUserRepository]().FindByWalletAndUser(ctx.Context(), walletID, userID)
+			wu, err3 := container.MustMake[*walletrecords.Members]().FindByWalletAndUser(ctx.Context(), walletID, userID)
 			if err3 == nil && wu != nil {
 				isMember = true
 			}

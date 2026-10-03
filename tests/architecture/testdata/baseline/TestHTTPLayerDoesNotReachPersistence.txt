@@ -1,7 +1,4 @@
 # TestHTTPLayerDoesNotReachPersistence: known violations, rewritten by go test ./tests/architecture -update-baseline
-app/http/middleware/api_wallet_context.go imports github.com/macrowallets/waas/app/repositories
-app/http/middleware/utxo_only.go imports github.com/macrowallets/waas/app/repositories
-app/http/middleware/wallet_context.go imports github.com/macrowallets/waas/app/repositories
 app/http/requests/add_whitelist_entry_request.go imports github.com/macrowallets/waas/app/repositories
 app/http/requests/create_wallet_withdrawal_request.go imports github.com/macrowallets/waas/app/repositories
 app/http/requests/estimate_withdrawal_request.go imports github.com/macrowallets/waas/app/repositories

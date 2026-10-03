@@ -6,8 +6,8 @@ import (
 
 	"github.com/macrowallets/waas/app/container"
 	"github.com/macrowallets/waas/app/http/responses"
-	"github.com/macrowallets/waas/app/repositories"
 	chainpkg "github.com/macrowallets/waas/app/services/chain"
+	"github.com/macrowallets/waas/app/services/walletrecords"
 )
 
 // UTXOOnly restricts a route to wallets whose chain uses the UTXO model.
@@ -20,7 +20,7 @@ func UTXOOnly() http.Middleware {
 			return
 		}
 
-		wallet, err := container.MustMake[*repositories.WalletRepository]().FindByID(ctx.Context(), walletID)
+		wallet, err := container.MustMake[*walletrecords.Wallets]().FindByID(ctx.Context(), walletID)
 		if err != nil || wallet == nil {
 			_ = responses.Send(ctx, http.StatusNotFound, http.Json{"error": "wallet not found"}).Abort()
 			return
