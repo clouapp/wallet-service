@@ -16,9 +16,9 @@ import (
 
 	"github.com/macrowallets/waas/app/container"
 	"github.com/macrowallets/waas/app/models"
-	"github.com/macrowallets/waas/app/repositories"
 	authsvc "github.com/macrowallets/waas/app/services/auth"
 	"github.com/macrowallets/waas/app/services/chain"
+	chainsvc "github.com/macrowallets/waas/app/services/chains"
 	mpc "github.com/macrowallets/waas/app/services/mpc"
 	wallet "github.com/macrowallets/waas/app/services/wallet"
 	ctltestutil "github.com/macrowallets/waas/tests/feature/support"
@@ -79,7 +79,8 @@ type encryptedUserKeyEnvelope struct {
 type WalletRecoveryMaterialTestSuite struct {
 	suite.Suite
 	goravelTesting.TestCase
-	mpcService *recordingMPCService
+	mpcService    *recordingMPCService
+	walletService *wallet.Service
 }
 
 func TestWalletRecoveryMaterialSuite(t *testing.T) {
@@ -94,14 +95,17 @@ func (s *WalletRecoveryMaterialTestSuite) SetupTest() {
 	s.mpcService = &recordingMPCService{MockMPCService: mocks.NewMockMPCService()}
 
 	deps := container.Get()
+	s.Require().NotNil(deps.WalletRepo)
+	s.Require().NotNil(deps.AddressRepo)
 	originalWalletService := deps.WalletService
-	deps.WalletService = wallet.NewService(wallet.Deps{
+	s.walletService = wallet.NewService(wallet.Deps{
 		Registry:  registry,
 		MPC:       s.mpcService,
 		Secrets:   mocks.NewMockSecretsManager(),
-		Wallets:   container.MustMake[*repositories.WalletRepository](),
-		Addresses: container.MustMake[*repositories.AddressRepository](),
+		Wallets:   deps.WalletRepo,
+		Addresses: deps.AddressRepo,
 	})
+	deps.WalletService = s.walletService
 	s.T().Cleanup(func() { deps.WalletService = originalWalletService })
 }
 
@@ -140,7 +144,8 @@ func (s *WalletRecoveryMaterialTestSuite) decryptEnvelope(envelope encryptedUser
 func (s *WalletRecoveryMaterialTestSuite) findWallet(walletID string) *models.Wallet {
 	id, err := uuid.Parse(walletID)
 	s.Require().NoError(err)
-	stored, err := container.MustMake[*repositories.WalletRepository]().FindByID(context.Background(), id)
+	s.Require().NotNil(s.walletService)
+	stored, err := s.walletService.GetWallet(context.Background(), id)
 	s.Require().NoError(err)
 	s.Require().NotNil(stored)
 	return stored
@@ -266,7 +271,7 @@ func (s *WalletRecoveryMaterialTestSuite) setupAdminSession() (uuid.UUID, string
 	)
 	s.Require().NoError(err)
 
-	chainRecord, err := container.MustMake[*repositories.ChainRepository]().FindByID(context.Background(), recoveryTestChain)
+	chainRecord, err := container.MustMake[*chainsvc.Service]().FindByID(context.Background(), recoveryTestChain)
 	s.Require().NoError(err)
 	s.Require().NotNil(chainRecord)
 	environment := models.EnvironmentProd

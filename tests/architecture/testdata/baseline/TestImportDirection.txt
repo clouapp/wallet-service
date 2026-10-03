@@ -16,7 +16,6 @@ app/container → app/services/webhooksync (container → services)
 app/container → app/services/withdraw (container → services)
 app/container → app/services/withdrawalevents (container → services)
 app/http/controllers → app/repositories (http → repositories) (x2)
-app/http/controllers → app/repositories (http → repositories) [test]
 app/http/controllers/dashboard/accounts → app/repositories (http → repositories)
 app/http/controllers/dashboard/addresses → app/repositories (http → repositories)
 app/http/controllers/dashboard/auth → app/repositories (http → repositories)
