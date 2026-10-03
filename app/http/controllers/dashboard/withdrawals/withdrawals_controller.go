@@ -108,7 +108,9 @@ func (ctrl *WithdrawalsController) ListWalletWithdrawals(ctx http.Context) http.
 	wallet := ctx.Value("wallet").(*models.Wallet)
 
 	limit, offset := pagination.ParseParams(ctx, 50)
-	status := ctx.Request().Query("status", "")
+	var query requests.ListWithdrawalsRequest
+	query.Load(ctx)
+	status := query.Status
 	withdrawals, total, err := ctrl.withdrawals.FindByWallet(ctx.Context(), wallet.ID, status, limit, offset)
 	if err != nil {
 		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to fetch withdrawals"})
@@ -374,8 +376,7 @@ func (ctrl *WithdrawalsController) CreateWalletWithdrawal(ctx http.Context) http
 func (ctrl *WithdrawalsController) GetWalletWithdrawal(ctx http.Context) http.Response {
 	wallet := ctx.Value("wallet").(*models.Wallet)
 
-	withdrawalIDStr := ctx.Request().Route("withdrawalId")
-	withdrawalID, err := uuid.Parse(withdrawalIDStr)
+	withdrawalID, err := requests.RouteUUID(ctx, "withdrawalId")
 	if err != nil {
 		return responses.Send(ctx, http.StatusBadRequest, http.Json{"error": "invalid withdrawal id"})
 	}
@@ -403,8 +404,7 @@ func (ctrl *WithdrawalsController) GetWalletWithdrawal(ctx http.Context) http.Re
 func (ctrl *WithdrawalsController) CancelWalletWithdrawal(ctx http.Context) http.Response {
 	wallet := ctx.Value("wallet").(*models.Wallet)
 
-	withdrawalIDStr := ctx.Request().Route("withdrawalId")
-	withdrawalID, err := uuid.Parse(withdrawalIDStr)
+	withdrawalID, err := requests.RouteUUID(ctx, "withdrawalId")
 	if err != nil {
 		return responses.Send(ctx, http.StatusBadRequest, http.Json{"error": "invalid withdrawal id"})
 	}
