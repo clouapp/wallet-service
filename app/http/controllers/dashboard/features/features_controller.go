@@ -2,7 +2,6 @@ package features
 
 import (
 	"errors"
-	"strings"
 
 	"github.com/google/uuid"
 	"github.com/goravel/framework/contracts/http"
@@ -69,7 +68,9 @@ func (ctrl *FeaturesController) Update(ctx http.Context) http.Response {
 	if errResp != nil {
 		return errResp
 	}
-	key := strings.TrimSpace(ctx.Request().Route("key"))
+	var path requests.FeatureKeyRequest
+	path.Load(ctx)
+	key := path.Key
 	actorID := middleware.SessionUserID(ctx)
 	if actorID == uuid.Nil {
 		return responses.Send(ctx, http.StatusUnauthorized, http.Json{"error": "unauthenticated"})
