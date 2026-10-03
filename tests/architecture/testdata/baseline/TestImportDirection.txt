@@ -37,7 +37,6 @@ app/http/middleware → app/repositories (http → repositories) (x3)
 app/http/requests → app/repositories (http → repositories) (x3)
 app/jobs → app/repositories (jobs → repositories) (x5)
 app/policies → app/container (policies → container) (x2)
-app/policies → app/repositories (policies → repositories)
 app/rules → app/container (rules → container)
 app/services/account → app/repositories (services → repositories) [test]
 app/services/deposit → app/repositories (services → repositories)

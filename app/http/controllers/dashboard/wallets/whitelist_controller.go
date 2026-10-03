@@ -16,17 +16,23 @@ import (
 
 // WhitelistController serves the dashboard wallet whitelist routes.
 type WhitelistController struct {
-	entries *walletrecords.Whitelist
+	entries     *walletrecords.Whitelist
+	memberships *walletrecords.Memberships
 }
 
 func NewWhitelistController(
 	entries *walletrecords.Whitelist,
+	memberships *walletrecords.Memberships,
 ) *WhitelistController {
 	if entries == nil {
 		panic("dashboard whitelist controller: whitelist service is required")
 	}
+	if memberships == nil {
+		panic("dashboard whitelist controller: wallet memberships are required")
+	}
 	return &WhitelistController{
-		entries: entries,
+		entries:     entries,
+		memberships: memberships,
 	}
 }
 
@@ -67,7 +73,7 @@ func (ctrl *WhitelistController) ListWhitelistEntries(ctx http.Context) http.Res
 // @Router       /wallets/{walletId}/whitelist [post]
 func (ctrl *WhitelistController) AddWhitelistEntry(ctx http.Context) http.Response {
 	wallet := requestctx.MustWallet(ctx)
-	if resp := controllers.Deny(ctx, policies.WalletWhitelist(ctx, wallet.ID)); resp != nil {
+	if resp := controllers.Deny(ctx, policies.WalletWhitelist(controllers.WalletMembership(ctx, ctrl.memberships, wallet.ID))); resp != nil {
 		return resp
 	}
 
@@ -102,7 +108,7 @@ func (ctrl *WhitelistController) AddWhitelistEntry(ctx http.Context) http.Respon
 // @Router       /wallets/{walletId}/whitelist/{entryId} [delete]
 func (ctrl *WhitelistController) DeleteWhitelistEntry(ctx http.Context) http.Response {
 	wallet := requestctx.MustWallet(ctx)
-	if resp := controllers.Deny(ctx, policies.WalletWhitelist(ctx, wallet.ID)); resp != nil {
+	if resp := controllers.Deny(ctx, policies.WalletWhitelist(controllers.WalletMembership(ctx, ctrl.memberships, wallet.ID))); resp != nil {
 		return resp
 	}
 

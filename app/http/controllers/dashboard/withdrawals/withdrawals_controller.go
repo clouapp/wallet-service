@@ -21,6 +21,7 @@ import (
 	chainsvc "github.com/macrowallets/waas/app/services/chains"
 	"github.com/macrowallets/waas/app/services/features"
 	usersvc "github.com/macrowallets/waas/app/services/users"
+	"github.com/macrowallets/waas/app/services/walletrecords"
 	"github.com/macrowallets/waas/app/services/withdraw"
 	"github.com/macrowallets/waas/app/services/withdrawalevents"
 	"github.com/macrowallets/waas/app/services/withdrawalrecords"
@@ -44,6 +45,7 @@ type WithdrawalsController struct {
 	flags             *features.Service
 	events            *withdrawalevents.Publisher
 	redis             *redis.Client
+	memberships       *walletrecords.Memberships
 }
 
 func NewWithdrawalsController(
@@ -56,6 +58,7 @@ func NewWithdrawalsController(
 	flags *features.Service,
 	events *withdrawalevents.Publisher,
 	redis *redis.Client,
+	memberships *walletrecords.Memberships,
 ) *WithdrawalsController {
 	if withdrawals == nil {
 		panic("dashboard withdrawals controller: withdrawals service is required")
@@ -78,6 +81,9 @@ func NewWithdrawalsController(
 	if flags == nil {
 		panic("dashboard withdrawals controller: feature flags are required")
 	}
+	if memberships == nil {
+		panic("dashboard withdrawals controller: wallet memberships are required")
+	}
 	return &WithdrawalsController{
 		withdrawals:       withdrawals,
 		chains:            chains,
@@ -88,6 +94,7 @@ func NewWithdrawalsController(
 		flags:             flags,
 		events:            events,
 		redis:             redis,
+		memberships:       memberships,
 	}
 }
 
@@ -425,7 +432,7 @@ func (ctrl *WithdrawalsController) CancelWalletWithdrawal(ctx http.Context) http
 	if w.CreatedBy != nil {
 		creatorID = *w.CreatedBy
 	}
-	if resp := controllers.Deny(ctx, policies.WalletCancelWithdrawal(ctx, wallet.ID, creatorID)); resp != nil {
+	if resp := controllers.Deny(ctx, policies.WalletCancelWithdrawal(controllers.WalletMembership(ctx, ctrl.memberships, wallet.ID), creatorID)); resp != nil {
 		return resp
 	}
 

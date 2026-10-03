@@ -225,27 +225,39 @@ func newDashboardWalletsController() *dashwallets.WalletsController {
 	)
 }
 
+func walletPolicyMemberships() *walletrecords.Memberships {
+	return walletrecords.NewMemberships(
+		container.MustMake[*walletrecords.Wallets](),
+		container.MustMake[*walletrecords.Members](),
+		container.MustMake[*accountsvc.Service](),
+	)
+}
+
 func newDashboardWalletUsersController() *dashwallets.UsersController {
 	return dashwallets.NewUsersController(
 		container.MustMake[*walletrecords.Members](),
+		walletPolicyMemberships(),
 	)
 }
 
 func newDashboardWhitelistController() *dashwallets.WhitelistController {
 	return dashwallets.NewWhitelistController(
 		container.MustMake[*walletrecords.Whitelist](),
+		walletPolicyMemberships(),
 	)
 }
 
 func newDashboardWalletWebhooksController() *dashwallets.WebhooksController {
 	return dashwallets.NewWebhooksController(
 		container.MustMake[*walletrecords.Webhooks](),
+		walletPolicyMemberships(),
 	)
 }
 
 func newDashboardWalletSettingsController() *dashwallets.SettingsController {
 	return dashwallets.NewSettingsController(
 		container.MustMake[*walletrecords.Wallets](),
+		walletPolicyMemberships(),
 	)
 }
 
@@ -301,6 +313,7 @@ func newDashboardWithdrawalsController() *dashwithdrawals.WithdrawalsController 
 		container.MustMake[*featuressvc.Service](),
 		container.MustMake[*withdrawalevents.Publisher](),
 		container.MustMake[*container.SharedRedis]().Client,
+		walletPolicyMemberships(),
 	)
 }
 

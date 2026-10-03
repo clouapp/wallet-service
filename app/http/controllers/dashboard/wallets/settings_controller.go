@@ -17,17 +17,23 @@ import (
 
 // SettingsController serves the dashboard wallet settings and freeze routes.
 type SettingsController struct {
-	wallets *walletrecords.Wallets
+	wallets     *walletrecords.Wallets
+	memberships *walletrecords.Memberships
 }
 
 func NewSettingsController(
 	wallets *walletrecords.Wallets,
+	memberships *walletrecords.Memberships,
 ) *SettingsController {
 	if wallets == nil {
 		panic("dashboard wallet settings controller: wallets service is required")
 	}
+	if memberships == nil {
+		panic("dashboard wallet settings controller: wallet memberships are required")
+	}
 	return &SettingsController{
-		wallets: wallets,
+		wallets:     wallets,
+		memberships: memberships,
 	}
 }
 
@@ -70,7 +76,7 @@ func (ctrl *SettingsController) GetWalletSettings(ctx http.Context) http.Respons
 // @Router       /wallets/{walletId}/settings [patch]
 func (ctrl *SettingsController) UpdateWalletSettings(ctx http.Context) http.Response {
 	wallet := requestctx.MustWallet(ctx)
-	if errResp := controllers.Deny(ctx, policies.WalletUpdate(ctx, wallet.ID)); errResp != nil {
+	if errResp := controllers.Deny(ctx, policies.WalletUpdate(controllers.WalletMembership(ctx, ctrl.memberships, wallet.ID))); errResp != nil {
 		return errResp
 	}
 
@@ -139,7 +145,7 @@ func (ctrl *SettingsController) UpdateWalletSettings(ctx http.Context) http.Resp
 // @Router       /wallets/{walletId}/freeze [post]
 func (ctrl *SettingsController) FreezeWallet(ctx http.Context) http.Response {
 	wallet := requestctx.MustWallet(ctx)
-	if errResp := controllers.Deny(ctx, policies.WalletFreeze(ctx, wallet.ID)); errResp != nil {
+	if errResp := controllers.Deny(ctx, policies.WalletFreeze(controllers.WalletMembership(ctx, ctrl.memberships, wallet.ID))); errResp != nil {
 		return errResp
 	}
 

@@ -15,17 +15,23 @@ import (
 
 // WebhooksController serves the dashboard wallet webhook routes.
 type WebhooksController struct {
-	configs *walletrecords.Webhooks
+	configs     *walletrecords.Webhooks
+	memberships *walletrecords.Memberships
 }
 
 func NewWebhooksController(
 	configs *walletrecords.Webhooks,
+	memberships *walletrecords.Memberships,
 ) *WebhooksController {
 	if configs == nil {
 		panic("dashboard wallet webhooks controller: webhook configs service is required")
 	}
+	if memberships == nil {
+		panic("dashboard wallet webhooks controller: wallet memberships are required")
+	}
 	return &WebhooksController{
-		configs: configs,
+		configs:     configs,
+		memberships: memberships,
 	}
 }
 
@@ -65,7 +71,7 @@ func (ctrl *WebhooksController) ListWalletWebhooks(ctx http.Context) http.Respon
 // @Router       /wallets/{walletId}/webhooks [post]
 func (ctrl *WebhooksController) CreateWalletWebhook(ctx http.Context) http.Response {
 	wallet := requestctx.MustWallet(ctx)
-	if resp := controllers.Deny(ctx, policies.WalletManageWebhooks(ctx, wallet.ID)); resp != nil {
+	if resp := controllers.Deny(ctx, policies.WalletManageWebhooks(controllers.WalletMembership(ctx, ctrl.memberships, wallet.ID))); resp != nil {
 		return resp
 	}
 
@@ -102,7 +108,7 @@ func (ctrl *WebhooksController) CreateWalletWebhook(ctx http.Context) http.Respo
 // @Router       /wallets/{walletId}/webhooks/{webhookId} [delete]
 func (ctrl *WebhooksController) DeleteWalletWebhook(ctx http.Context) http.Response {
 	wallet := requestctx.MustWallet(ctx)
-	if resp := controllers.Deny(ctx, policies.WalletManageWebhooks(ctx, wallet.ID)); resp != nil {
+	if resp := controllers.Deny(ctx, policies.WalletManageWebhooks(controllers.WalletMembership(ctx, ctrl.memberships, wallet.ID))); resp != nil {
 		return resp
 	}
 

@@ -18,17 +18,23 @@ import (
 
 // UsersController serves the dashboard wallet membership routes.
 type UsersController struct {
-	members *walletrecords.Members
+	members     *walletrecords.Members
+	memberships *walletrecords.Memberships
 }
 
 func NewUsersController(
 	members *walletrecords.Members,
+	memberships *walletrecords.Memberships,
 ) *UsersController {
 	if members == nil {
 		panic("dashboard wallet users controller: wallet users service is required")
 	}
+	if memberships == nil {
+		panic("dashboard wallet users controller: wallet memberships are required")
+	}
 	return &UsersController{
-		members: members,
+		members:     members,
+		memberships: memberships,
 	}
 }
 
@@ -68,7 +74,7 @@ func (ctrl *UsersController) ListWalletUsers(ctx http.Context) http.Response {
 // @Router       /wallets/{walletId}/users [post]
 func (ctrl *UsersController) AddWalletUser(ctx http.Context) http.Response {
 	wallet := requestctx.MustWallet(ctx)
-	if resp := controllers.Deny(ctx, policies.WalletAddUser(ctx, wallet.ID)); resp != nil {
+	if resp := controllers.Deny(ctx, policies.WalletAddUser(controllers.WalletMembership(ctx, ctrl.memberships, wallet.ID))); resp != nil {
 		return resp
 	}
 
@@ -121,7 +127,7 @@ func (ctrl *UsersController) AddWalletUser(ctx http.Context) http.Response {
 // @Router       /wallets/{walletId}/users/{userId} [delete]
 func (ctrl *UsersController) RemoveWalletUser(ctx http.Context) http.Response {
 	wallet := requestctx.MustWallet(ctx)
-	if resp := controllers.Deny(ctx, policies.WalletRemoveUser(ctx, wallet.ID)); resp != nil {
+	if resp := controllers.Deny(ctx, policies.WalletRemoveUser(controllers.WalletMembership(ctx, ctrl.memberships, wallet.ID))); resp != nil {
 		return resp
 	}
 
