@@ -4,16 +4,52 @@ import (
 	"github.com/google/uuid"
 	"github.com/goravel/framework/contracts/http"
 
-	"github.com/macrowallets/waas/app/container"
 	"github.com/macrowallets/waas/app/http/controllers"
 	"github.com/macrowallets/waas/app/http/pagination"
 	"github.com/macrowallets/waas/app/http/requests"
 	"github.com/macrowallets/waas/app/http/responses"
 	"github.com/macrowallets/waas/app/repositories"
+	chain "github.com/macrowallets/waas/app/services/chain"
+	deposit "github.com/macrowallets/waas/app/services/deposit"
+	wallet "github.com/macrowallets/waas/app/services/wallet"
 )
 
 func validateRequest(ctx http.Context, req http.FormRequest) http.Response {
 	return controllers.ValidateRequest(ctx, req)
+}
+
+// AddressesController serves the external address routes.
+type AddressesController struct {
+	addresses     *repositories.AddressRepository
+	walletService func() *wallet.Service
+	deposits      *deposit.Service
+	registry      *chain.Registry
+}
+
+func NewAddressesController(
+	addresses *repositories.AddressRepository,
+	walletService func() *wallet.Service,
+	deposits *deposit.Service,
+	registry *chain.Registry,
+) *AddressesController {
+	if addresses == nil {
+		panic("external addresses controller: addresses repository is required")
+	}
+	if walletService == nil || walletService() == nil {
+		panic("external addresses controller: wallet service is required")
+	}
+	if deposits == nil {
+		panic("external addresses controller: deposit service is required")
+	}
+	if registry == nil {
+		panic("external addresses controller: chain registry is required")
+	}
+	return &AddressesController{
+		addresses:     addresses,
+		walletService: walletService,
+		deposits:      deposits,
+		registry:      registry,
+	}
 }
 
 // GenerateAddress godoc
@@ -31,7 +67,7 @@ func validateRequest(ctx http.Context, req http.FormRequest) http.Response {
 // @Failure      422   {object}  ErrorResponse  "Address generation not supported for MPC wallets"
 // @Failure      500   {object}  ErrorResponse
 // @Router       /v1/wallets/{id}/addresses [post]
-func GenerateAddress(ctx http.Context) http.Response {
+func (ctrl *AddressesController) GenerateAddress(ctx http.Context) http.Response {
 	walletID, err := uuid.Parse(ctx.Request().Route("walletId"))
 	if err != nil {
 		return responses.Send(ctx, http.StatusBadRequest, http.Json{
@@ -44,7 +80,7 @@ func GenerateAddress(ctx http.Context) http.Response {
 		return errResp
 	}
 
-	addr, err := container.Get().WalletService.GenerateAddress(ctx.Context(), walletID, req.ExternalUserID, req.Label, req.Metadata, req.Passphrase)
+	addr, err := ctrl.walletService().GenerateAddress(ctx.Context(), walletID, req.ExternalUserID, req.Label, req.Metadata, req.Passphrase)
 	if err != nil {
 		return responses.Send(ctx, http.StatusUnprocessableEntity, http.Json{
 			"error": err.Error(),
@@ -52,8 +88,8 @@ func GenerateAddress(ctx http.Context) http.Response {
 	}
 
 	// Refresh Redis address cache for the chain
-	if w, err := container.Get().WalletService.GetWallet(ctx.Context(), walletID); err == nil {
-		container.Get().DepositService.RefreshAddressCache(ctx.Context(), w.Chain)
+	if w, err := ctrl.walletService().GetWallet(ctx.Context(), walletID); err == nil {
+		ctrl.deposits.RefreshAddressCache(ctx.Context(), w.Chain)
 	}
 
 	return ctx.Response().Json(http.StatusCreated, addr)
@@ -74,7 +110,7 @@ func GenerateAddress(ctx http.Context) http.Response {
 // @Failure      404        {object}  ErrorResponse
 // @Failure      500        {object}  ErrorResponse
 // @Router       /v1/wallets/{walletId}/addresses/{addressId} [patch]
-func UpdateAddress(ctx http.Context) http.Response {
+func (ctrl *AddressesController) UpdateAddress(ctx http.Context) http.Response {
 	addressID, err := uuid.Parse(ctx.Request().Route("addressId"))
 	if err != nil {
 		return responses.Send(ctx, http.StatusBadRequest, http.Json{
@@ -101,7 +137,7 @@ func UpdateAddress(ctx http.Context) http.Response {
 		})
 	}
 
-	addr, err := container.Get().WalletService.UpdateAddress(ctx.Context(), addressID, fields)
+	addr, err := ctrl.walletService().UpdateAddress(ctx.Context(), addressID, fields)
 	if err != nil {
 		return responses.Send(ctx, http.StatusNotFound, http.Json{
 			"error": err.Error(),
@@ -123,7 +159,7 @@ func UpdateAddress(ctx http.Context) http.Response {
 // @Failure      400  {object}  ErrorResponse  "Invalid wallet UUID"
 // @Failure      500  {object}  ErrorResponse
 // @Router       /v1/wallets/{id}/addresses [get]
-func ListWalletAddresses(ctx http.Context) http.Response {
+func (ctrl *AddressesController) ListWalletAddresses(ctx http.Context) http.Response {
 	walletID, err := uuid.Parse(ctx.Request().Route("walletId"))
 	if err != nil {
 		return responses.Send(ctx, http.StatusBadRequest, http.Json{
@@ -131,7 +167,7 @@ func ListWalletAddresses(ctx http.Context) http.Response {
 		})
 	}
 	limit, offset := pagination.ParseParams(ctx, 20)
-	addrs, total, err := container.MustMake[*repositories.AddressRepository]().PaginateByWalletID(ctx.Context(), walletID, limit, offset)
+	addrs, total, err := ctrl.addresses.PaginateByWalletID(ctx.Context(), walletID, limit, offset)
 	if err != nil {
 		return responses.Send(ctx, http.StatusInternalServerError, http.Json{
 			"error": "failed to fetch addresses",
@@ -153,7 +189,7 @@ func ListWalletAddresses(ctx http.Context) http.Response {
 // @Failure      400      {object}  ErrorResponse  "Missing chain parameter"
 // @Failure      404      {object}  ErrorResponse  "Address not found"
 // @Router       /v1/addresses/{address} [get]
-func LookupAddress(ctx http.Context) http.Response {
+func (ctrl *AddressesController) LookupAddress(ctx http.Context) http.Response {
 	accountID, ok := ctx.Value("account_id").(uuid.UUID)
 	if !ok {
 		return responses.Send(ctx, http.StatusUnauthorized, http.Json{
@@ -165,7 +201,7 @@ func LookupAddress(ctx http.Context) http.Response {
 	chainFilter := ctx.Request().Query("chain", "")
 
 	if chainFilter != "" {
-		addr, err := container.Get().WalletService.LookupAddressForAccount(ctx.Context(), chainFilter, address, accountID)
+		addr, err := ctrl.walletService().LookupAddressForAccount(ctx.Context(), chainFilter, address, accountID)
 		if err != nil || addr == nil {
 			return responses.Send(ctx, http.StatusNotFound, http.Json{
 				"error": "address not found",
@@ -176,8 +212,8 @@ func LookupAddress(ctx http.Context) http.Response {
 
 	// Try all chains — still scoped to the caller's account so a hit on any
 	// chain that belongs to a different account does not leak.
-	for _, id := range container.Get().Registry.ChainIDs() {
-		addr, err := container.Get().WalletService.LookupAddressForAccount(ctx.Context(), id, address, accountID)
+	for _, id := range ctrl.registry.ChainIDs() {
+		addr, err := ctrl.walletService().LookupAddressForAccount(ctx.Context(), id, address, accountID)
 		if err == nil && addr != nil {
 			return ctx.Response().Success().Json(addr)
 		}
@@ -198,7 +234,7 @@ func LookupAddress(ctx http.Context) http.Response {
 // @Success      200          {object}  AddressListResponse
 // @Failure      500          {object}  ErrorResponse
 // @Router       /v1/users/{external_id}/addresses [get]
-func ListUserAddresses(ctx http.Context) http.Response {
+func (ctrl *AddressesController) ListUserAddresses(ctx http.Context) http.Response {
 	accountID, ok := ctx.Value("account_id").(uuid.UUID)
 	if !ok {
 		return responses.Send(ctx, http.StatusUnauthorized, http.Json{
@@ -206,7 +242,7 @@ func ListUserAddresses(ctx http.Context) http.Response {
 		})
 	}
 
-	addrs, err := container.Get().WalletService.ListUserAddressesForAccount(
+	addrs, err := ctrl.walletService().ListUserAddressesForAccount(
 		ctx.Context(),
 		ctx.Request().Route("external_id"),
 		accountID,

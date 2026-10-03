@@ -7,10 +7,11 @@ import (
 	"github.com/google/uuid"
 	"github.com/goravel/framework/contracts/http"
 
-	"github.com/macrowallets/waas/app/container"
 	"github.com/macrowallets/waas/app/http/controllers"
 	"github.com/macrowallets/waas/app/http/requests"
 	"github.com/macrowallets/waas/app/http/responses"
+	sweep "github.com/macrowallets/waas/app/services/sweep"
+	"github.com/redis/go-redis/v9"
 )
 
 func validateRequest(ctx http.Context, req http.FormRequest) http.Response {
@@ -23,6 +24,25 @@ func validateRequest(ctx http.Context, req http.FormRequest) http.Response {
 // the underlying handler — availability of the endpoint is more important than
 // a perfect rate limit, and the chain adapter itself has short-term caching.
 const gasCheckRateLimitWindow = 60 * time.Second
+
+// SweepController serves the dashboard consolidate and gas routes.
+type SweepController struct {
+	sweeps sweep.Service
+	redis  *redis.Client
+}
+
+func NewSweepController(
+	sweeps sweep.Service,
+	redis *redis.Client,
+) *SweepController {
+	if sweeps == nil {
+		panic("dashboard sweep controller: sweep service is required")
+	}
+	return &SweepController{
+		sweeps: sweeps,
+		redis:  redis,
+	}
+}
 
 // ConsolidateWallet godoc
 // @Summary      Consolidate wallet balances
@@ -39,7 +59,7 @@ const gasCheckRateLimitWindow = 60 * time.Second
 // @Failure      422       {object}  ErrorResponse
 // @Failure      429       {object}  ErrorResponse
 // @Router       /v1/wallets/{walletId}/consolidate [post]
-func ConsolidateWallet(ctx http.Context) http.Response {
+func (ctrl *SweepController) ConsolidateWallet(ctx http.Context) http.Response {
 	walletID, err := uuid.Parse(ctx.Request().Route("walletId"))
 	if err != nil {
 		return responses.Send(ctx, http.StatusBadRequest, http.Json{"error": "invalid wallet id"})
@@ -52,7 +72,7 @@ func ConsolidateWallet(ctx http.Context) http.Response {
 
 	callerAccountID, _ := ctx.Value("account_id").(uuid.UUID)
 
-	result, err := container.Get().SweepService.ConsolidateAll(ctx.Context(), walletID, req.Asset, req.Passphrase, callerAccountID)
+	result, err := ctrl.sweeps.ConsolidateAll(ctx.Context(), walletID, req.Asset, req.Passphrase, callerAccountID)
 	if err != nil {
 		if resp := controllers.MapSweepError(ctx, err); resp != nil {
 			return resp
@@ -74,13 +94,13 @@ func ConsolidateWallet(ctx http.Context) http.Response {
 // @Failure      400       {object}  ErrorResponse
 // @Failure      422       {object}  ErrorResponse
 // @Router       /v1/wallets/{walletId}/gas-status [get]
-func GetGasStatus(ctx http.Context) http.Response {
+func (ctrl *SweepController) GetGasStatus(ctx http.Context) http.Response {
 	walletID, err := uuid.Parse(ctx.Request().Route("walletId"))
 	if err != nil {
 		return responses.Send(ctx, http.StatusBadRequest, http.Json{"error": "invalid wallet id"})
 	}
 
-	status, err := container.Get().SweepService.RefreshGasStatus(ctx.Context(), walletID)
+	status, err := ctrl.sweeps.RefreshGasStatus(ctx.Context(), walletID)
 	if err != nil {
 		if resp := controllers.MapSweepError(ctx, err); resp != nil {
 			return resp
@@ -103,13 +123,13 @@ func GetGasStatus(ctx http.Context) http.Response {
 // @Failure      422       {object}  ErrorResponse
 // @Failure      429       {object}  ErrorResponse
 // @Router       /v1/wallets/{walletId}/gas-check [post]
-func ForceGasCheck(ctx http.Context) http.Response {
+func (ctrl *SweepController) ForceGasCheck(ctx http.Context) http.Response {
 	walletID, err := uuid.Parse(ctx.Request().Route("walletId"))
 	if err != nil {
 		return responses.Send(ctx, http.StatusBadRequest, http.Json{"error": "invalid wallet id"})
 	}
 
-	if rdb := container.Get().Redis; rdb != nil {
+	if rdb := ctrl.redis; rdb != nil {
 		key := "vault:ratelimit:gas-check:" + walletID.String()
 		ok, setErr := rdb.SetNX(ctx.Context(), key, "1", gasCheckRateLimitWindow).Result()
 		if setErr == nil && !ok {
@@ -121,7 +141,7 @@ func ForceGasCheck(ctx http.Context) http.Response {
 		}
 	}
 
-	return GetGasStatus(ctx)
+	return ctrl.GetGasStatus(ctx)
 }
 
 // PreviewWithdraw godoc
@@ -138,7 +158,7 @@ func ForceGasCheck(ctx http.Context) http.Response {
 // @Failure      400       {object}  ErrorResponse
 // @Failure      422       {object}  ErrorResponse
 // @Router       /v1/wallets/{walletId}/withdraw/preview [post]
-func PreviewWithdraw(ctx http.Context) http.Response {
+func (ctrl *SweepController) PreviewWithdraw(ctx http.Context) http.Response {
 	walletID, err := uuid.Parse(ctx.Request().Route("walletId"))
 	if err != nil {
 		return responses.Send(ctx, http.StatusBadRequest, http.Json{"error": "invalid wallet id"})
@@ -157,7 +177,7 @@ func PreviewWithdraw(ctx http.Context) http.Response {
 	callerAccountID, _ := ctx.Value("account_id").(uuid.UUID)
 
 	const previewHasNoDestination = ""
-	plan, err := container.Get().SweepService.PlanForWithdrawal(ctx.Context(), walletID, req.Asset, amount, previewHasNoDestination, callerAccountID)
+	plan, err := ctrl.sweeps.PlanForWithdrawal(ctx.Context(), walletID, req.Asset, amount, previewHasNoDestination, callerAccountID)
 	if err != nil {
 		if resp := controllers.MapSweepError(ctx, err); resp != nil {
 			return resp

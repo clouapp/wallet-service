@@ -8,7 +8,6 @@ import (
 	"github.com/goravel/framework/contracts/http"
 	"github.com/goravel/framework/facades"
 
-	"github.com/macrowallets/waas/app/container"
 	"github.com/macrowallets/waas/app/http/controllers"
 	"github.com/macrowallets/waas/app/http/pagination"
 	"github.com/macrowallets/waas/app/http/requests"
@@ -16,6 +15,7 @@ import (
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/repositories"
 	authsvc "github.com/macrowallets/waas/app/services/auth"
+	chain "github.com/macrowallets/waas/app/services/chain"
 	"github.com/macrowallets/waas/app/services/withdraw"
 	"github.com/macrowallets/waas/app/services/withdrawalevents"
 	"github.com/macrowallets/waas/pkg/types"
@@ -33,6 +33,52 @@ func authorize(ctx http.Context, ability string, arguments map[string]any) http.
 	}
 }
 
+// WithdrawalsController serves the dashboard withdrawal routes.
+type WithdrawalsController struct {
+	withdrawals       *repositories.WithdrawalRepository
+	chains            *repositories.ChainRepository
+	users             *repositories.UserRepository
+	registry          *chain.Registry
+	withdrawalService *withdraw.Service
+	passwords         *authsvc.Service
+}
+
+func NewWithdrawalsController(
+	withdrawals *repositories.WithdrawalRepository,
+	chains *repositories.ChainRepository,
+	users *repositories.UserRepository,
+	registry *chain.Registry,
+	withdrawalService *withdraw.Service,
+	passwords *authsvc.Service,
+) *WithdrawalsController {
+	if withdrawals == nil {
+		panic("dashboard withdrawals controller: withdrawals repository is required")
+	}
+	if chains == nil {
+		panic("dashboard withdrawals controller: chains repository is required")
+	}
+	if users == nil {
+		panic("dashboard withdrawals controller: users repository is required")
+	}
+	if registry == nil {
+		panic("dashboard withdrawals controller: chain registry is required")
+	}
+	if withdrawalService == nil {
+		panic("dashboard withdrawals controller: withdrawal service is required")
+	}
+	if passwords == nil {
+		panic("dashboard withdrawals controller: auth service is required")
+	}
+	return &WithdrawalsController{
+		withdrawals:       withdrawals,
+		chains:            chains,
+		users:             users,
+		registry:          registry,
+		withdrawalService: withdrawalService,
+		passwords:         passwords,
+	}
+}
+
 // ListWalletWithdrawals godoc
 // @Summary      List withdrawals for a wallet
 // @Description  Returns a paginated list of withdrawals for a specific wallet
@@ -47,19 +93,19 @@ func authorize(ctx http.Context, ability string, arguments map[string]any) http.
 // @Failure      403  {object}  ErrorResponse
 // @Failure      404  {object}  ErrorResponse
 // @Router       /wallets/{walletId}/withdrawals [get]
-func ListWalletWithdrawals(ctx http.Context) http.Response {
+func (ctrl *WithdrawalsController) ListWalletWithdrawals(ctx http.Context) http.Response {
 	wallet := ctx.Value("wallet").(*models.Wallet)
 
 	limit, offset := pagination.ParseParams(ctx, 50)
 	status := ctx.Request().Query("status", "")
-	withdrawals, total, err := container.MustMake[*repositories.WithdrawalRepository]().FindByWallet(ctx.Context(), wallet.ID, status, limit, offset)
+	withdrawals, total, err := ctrl.withdrawals.FindByWallet(ctx.Context(), wallet.ID, status, limit, offset)
 	if err != nil {
 		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to fetch withdrawals"})
 	}
 	return ctx.Response().Json(http.StatusOK, pagination.Response(withdrawals, total, limit, offset))
 }
 
-func EstimateWithdrawalFee(ctx http.Context) http.Response {
+func (ctrl *WithdrawalsController) EstimateWithdrawalFee(ctx http.Context) http.Response {
 	wallet := ctx.Value("wallet").(*models.Wallet)
 
 	var req requests.EstimateWithdrawalRequest
@@ -67,7 +113,7 @@ func EstimateWithdrawalFee(ctx http.Context) http.Response {
 		return resp
 	}
 
-	adapter, err := container.Get().Registry.Chain(wallet.Chain)
+	adapter, err := ctrl.registry.Chain(wallet.Chain)
 	if err != nil {
 		return responses.Send(ctx, http.StatusUnprocessableEntity, http.Json{
 			"error": "fee estimation unavailable",
@@ -115,7 +161,7 @@ func EstimateWithdrawalFee(ctx http.Context) http.Response {
 //
 // Wallet-passphrase verification runs in both flows — the encrypted MPC
 // share A is the final gate before a withdrawal row is persisted.
-func CreateWalletWithdrawal(ctx http.Context) http.Response {
+func (ctrl *WithdrawalsController) CreateWalletWithdrawal(ctx http.Context) http.Response {
 	wallet := ctx.Value("wallet").(*models.Wallet)
 
 	var req requests.CreateWalletWithdrawalRequest
@@ -127,7 +173,7 @@ func CreateWalletWithdrawal(ctx http.Context) http.Response {
 	isDashboardCaller := hasUser && callerUserID != uuid.Nil
 
 	if isDashboardCaller {
-		user, err := container.Get().UserRepo.FindByID(ctx.Context(), callerUserID)
+		user, err := ctrl.users.FindByID(ctx.Context(), callerUserID)
 		if err != nil || user == nil {
 			return responses.Send(ctx, http.StatusUnauthorized, http.Json{"error": "user not found"})
 		}
@@ -140,7 +186,7 @@ func CreateWalletWithdrawal(ctx http.Context) http.Response {
 		if err != nil {
 			return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "internal error"})
 		}
-		authService := authsvc.NewService()
+		authService := ctrl.passwords
 		if !authService.VerifyTOTP(decryptedSecret, req.TotpCode) {
 			return responses.Send(ctx, http.StatusUnauthorized, http.Json{"error": "invalid 2FA code"})
 		}
@@ -155,12 +201,12 @@ func CreateWalletWithdrawal(ctx http.Context) http.Response {
 		return errResp
 	}
 
-	adapter, err := container.Get().Registry.Chain(wallet.Chain)
+	adapter, err := ctrl.registry.Chain(wallet.Chain)
 	if err != nil {
 		return responses.Send(ctx, http.StatusUnprocessableEntity, http.Json{"error": err.Error()})
 	}
 
-	chainEntity, chainErr := container.MustMake[*repositories.ChainRepository]().FindByID(ctx.Context(), wallet.Chain)
+	chainEntity, chainErr := ctrl.chains.FindByID(ctx.Context(), wallet.Chain)
 	if chainErr != nil || chainEntity == nil {
 		return responses.Send(ctx, http.StatusUnprocessableEntity, http.Json{"error": "chain not found"})
 	}
@@ -170,7 +216,7 @@ func CreateWalletWithdrawal(ctx http.Context) http.Response {
 		chainEntity.NativeDecimals,
 		req.Asset,
 		req.Amount,
-		container.Get().Registry.TokensForChain(wallet.Chain),
+		ctrl.registry.TokensForChain(wallet.Chain),
 	)
 	if resolveErr != nil {
 		return responses.Send(ctx, http.StatusUnprocessableEntity, http.Json{"error": resolveErr.Error()})
@@ -209,7 +255,7 @@ func CreateWalletWithdrawal(ctx http.Context) http.Response {
 		feeEstimate = estimate.Fee
 	}
 
-	existing, findErr := container.MustMake[*repositories.WithdrawalRepository]().FindByIDAndWallet(ctx.Context(), withdrawalID, wallet.ID)
+	existing, findErr := ctrl.withdrawals.FindByIDAndWallet(ctx.Context(), withdrawalID, wallet.ID)
 	if findErr != nil && !errors.Is(findErr, models.ErrRepositoryNotFound) {
 		return controllers.MapInternalError(ctx, findErr, "find_idempotent_withdrawal")
 	}
@@ -234,17 +280,17 @@ func CreateWalletWithdrawal(ctx http.Context) http.Response {
 		if wallet.AccountID != nil {
 			w.AccountID = wallet.AccountID
 		}
-		if createErr := container.MustMake[*repositories.WithdrawalRepository]().Create(ctx.Context(), w); createErr != nil {
+		if createErr := ctrl.withdrawals.Create(ctx.Context(), w); createErr != nil {
 			return controllers.MapInternalError(ctx, createErr, "create_broadcasting_withdrawal")
 		}
 	} else {
-		if updateErr := container.MustMake[*repositories.WithdrawalRepository]().RetryBroadcast(ctx.Context(), w.ID, req.Amount, req.DestinationAddress, feeEstimate, req.Note); updateErr != nil {
+		if updateErr := ctrl.withdrawals.RetryBroadcast(ctx.Context(), w.ID, req.Amount, req.DestinationAddress, feeEstimate, req.Note); updateErr != nil {
 			return controllers.MapInternalError(ctx, updateErr, "retry_broadcasting_withdrawal")
 		}
 		w.Status = "broadcasting"
 	}
 
-	tx, _, err := container.Get().WithdrawalService.Request(ctx.Context(), withdraw.WithdrawRequest{
+	tx, _, err := ctrl.withdrawalService.Request(ctx.Context(), withdraw.WithdrawRequest{
 		WalletID:        wallet.ID,
 		ToAddress:       req.DestinationAddress,
 		Amount:          resolved.BaseUnits.String(),
@@ -255,7 +301,7 @@ func CreateWalletWithdrawal(ctx http.Context) http.Response {
 	})
 	if err != nil {
 		failureCode := controllers.WithdrawalFailureCode(err)
-		if updateErr := container.MustMake[*repositories.WithdrawalRepository]().MarkFailed(ctx.Context(), w.ID, failureCode); updateErr != nil {
+		if updateErr := ctrl.withdrawals.MarkFailed(ctx.Context(), w.ID, failureCode); updateErr != nil {
 			return controllers.MapInternalError(
 				ctx,
 				fmt.Errorf("execute withdrawal: %v; mark failed: %w", err, updateErr),
@@ -292,7 +338,7 @@ func CreateWalletWithdrawal(ctx http.Context) http.Response {
 		w.TransactionID = &tx.ID
 		w.TxHash = tx.TxHash
 	}
-	if updateErr := container.MustMake[*repositories.WithdrawalRepository]().MarkBroadcast(ctx.Context(), w.ID, w.TransactionID); updateErr != nil {
+	if updateErr := ctrl.withdrawals.MarkBroadcast(ctx.Context(), w.ID, w.TransactionID); updateErr != nil {
 		return controllers.MapInternalError(ctx, updateErr, "persist_broadcast_withdrawal")
 	}
 	controllers.PublishWithdrawalBroadcast(ctx, w, tx)
@@ -311,7 +357,7 @@ func CreateWalletWithdrawal(ctx http.Context) http.Response {
 // @Failure      403  {object}  ErrorResponse
 // @Failure      404  {object}  ErrorResponse
 // @Router       /wallets/{walletId}/withdrawals/{withdrawalId} [get]
-func GetWalletWithdrawal(ctx http.Context) http.Response {
+func (ctrl *WithdrawalsController) GetWalletWithdrawal(ctx http.Context) http.Response {
 	wallet := ctx.Value("wallet").(*models.Wallet)
 
 	withdrawalIDStr := ctx.Request().Route("withdrawalId")
@@ -320,7 +366,7 @@ func GetWalletWithdrawal(ctx http.Context) http.Response {
 		return responses.Send(ctx, http.StatusBadRequest, http.Json{"error": "invalid withdrawal id"})
 	}
 
-	w, err := container.MustMake[*repositories.WithdrawalRepository]().FindByIDAndWallet(ctx.Context(), withdrawalID, wallet.ID)
+	w, err := ctrl.withdrawals.FindByIDAndWallet(ctx.Context(), withdrawalID, wallet.ID)
 	if err != nil || w == nil {
 		return responses.Send(ctx, http.StatusNotFound, http.Json{"error": "withdrawal not found"})
 	}
@@ -340,7 +386,7 @@ func GetWalletWithdrawal(ctx http.Context) http.Response {
 // @Failure      404  {object}  ErrorResponse
 // @Failure      422  {object}  ErrorResponse  "Withdrawal cannot be cancelled in current state"
 // @Router       /wallets/{walletId}/withdrawals/{withdrawalId}/cancel [post]
-func CancelWalletWithdrawal(ctx http.Context) http.Response {
+func (ctrl *WithdrawalsController) CancelWalletWithdrawal(ctx http.Context) http.Response {
 	wallet := ctx.Value("wallet").(*models.Wallet)
 
 	withdrawalIDStr := ctx.Request().Route("withdrawalId")
@@ -349,7 +395,7 @@ func CancelWalletWithdrawal(ctx http.Context) http.Response {
 		return responses.Send(ctx, http.StatusBadRequest, http.Json{"error": "invalid withdrawal id"})
 	}
 
-	w, err := container.MustMake[*repositories.WithdrawalRepository]().FindByIDAndWallet(ctx.Context(), withdrawalID, wallet.ID)
+	w, err := ctrl.withdrawals.FindByIDAndWallet(ctx.Context(), withdrawalID, wallet.ID)
 	if err != nil || w == nil {
 		return responses.Send(ctx, http.StatusNotFound, http.Json{"error": "withdrawal not found"})
 	}
@@ -368,7 +414,7 @@ func CancelWalletWithdrawal(ctx http.Context) http.Response {
 		return resp
 	}
 
-	if err := container.MustMake[*repositories.WithdrawalRepository]().SetStatus(ctx.Context(), w.ID, "cancelled"); err != nil {
+	if err := ctrl.withdrawals.SetStatus(ctx.Context(), w.ID, "cancelled"); err != nil {
 		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to cancel withdrawal"})
 	}
 	w.Status = "cancelled"

@@ -14,6 +14,7 @@ import (
 	extwithdrawals "github.com/macrowallets/waas/app/http/controllers/external/withdrawals"
 	"github.com/macrowallets/waas/app/http/middleware"
 	"github.com/macrowallets/waas/app/repositories"
+	authsvc "github.com/macrowallets/waas/app/services/auth"
 )
 
 // RegisterExternalAPI registers Bearer API-token routes under /api/v1.
@@ -25,6 +26,9 @@ import (
 func RegisterExternalAPI() {
 	noCache := middleware.CacheControl(0)
 	walletCtrl := newExternalWalletsController()
+	addressCtrl := newExternalAddressesController()
+	sweepCtrl := newExternalSweepController()
+	withdrawalCtrl := newExternalWithdrawalsController()
 
 	facades.Route().Prefix("/api/v1").Middleware(middleware.APITokenAuth(), noCache).Group(func(router route.Router) {
 		router.Get("/chains", extchains.ListChains)
@@ -32,22 +36,22 @@ func RegisterExternalAPI() {
 		router.Post("/wallets", walletCtrl.CreateWallet)
 		router.Get("/wallets", walletCtrl.ListWallets)
 
-		router.Get("/addresses/{address}", extaddresses.LookupAddress)
-		router.Get("/users/{external_id}/addresses", extaddresses.ListUserAddresses)
+		router.Get("/addresses/{address}", addressCtrl.LookupAddress)
+		router.Get("/users/{external_id}/addresses", addressCtrl.ListUserAddresses)
 
 		router.Prefix("/wallets/{walletId}").Middleware(middleware.APIWalletContext()).Group(func(r route.Router) {
 			r.Get("", walletCtrl.GetWallet)
 
-			r.Post("/addresses", extaddresses.GenerateAddress)
-			r.Get("/addresses", extaddresses.ListWalletAddresses)
-			r.Patch("/addresses/{addressId}", extaddresses.UpdateAddress)
+			r.Post("/addresses", addressCtrl.GenerateAddress)
+			r.Get("/addresses", addressCtrl.ListWalletAddresses)
+			r.Patch("/addresses/{addressId}", addressCtrl.UpdateAddress)
 
-			r.Post("/consolidate", extsweep.ConsolidateWallet)
-			r.Get("/gas-status", extsweep.GetGasStatus)
-			r.Post("/gas-check", extsweep.ForceGasCheck)
-			r.Post("/withdraw/preview", extsweep.PreviewWithdraw)
-			r.Post("/withdrawals", extwithdrawals.CreateWalletWithdrawal)
-			r.Get("/withdrawals/{idempotencyKey}", extwithdrawals.GetWalletWithdrawalByIdempotencyKey)
+			r.Post("/consolidate", sweepCtrl.ConsolidateWallet)
+			r.Get("/gas-status", sweepCtrl.GetGasStatus)
+			r.Post("/gas-check", sweepCtrl.ForceGasCheck)
+			r.Post("/withdraw/preview", sweepCtrl.PreviewWithdraw)
+			r.Post("/withdrawals", withdrawalCtrl.CreateWalletWithdrawal)
+			r.Get("/withdrawals/{idempotencyKey}", withdrawalCtrl.GetWalletWithdrawalByIdempotencyKey)
 		})
 
 		router.Get("/transactions", exttransactions.ListTransactions)
@@ -58,6 +62,34 @@ func RegisterExternalAPI() {
 		router.Get("/webhooks", extwebhooks.ListWebhooks)
 		router.Patch("/webhooks/{webhookId}", extwebhooks.UpdateWebhook)
 	})
+}
+
+func newExternalAddressesController() *extaddresses.AddressesController {
+	return extaddresses.NewAddressesController(
+		container.MustMake[*repositories.AddressRepository](),
+		currentWalletService,
+		container.Get().DepositService,
+		container.Get().Registry,
+	)
+}
+
+func newExternalSweepController() *extsweep.SweepController {
+	return extsweep.NewSweepController(
+		container.Get().SweepService,
+		container.Get().Redis,
+	)
+}
+
+func newExternalWithdrawalsController() *extwithdrawals.WithdrawalsController {
+	return extwithdrawals.NewWithdrawalsController(
+		container.MustMake[*repositories.WithdrawalRepository](),
+		container.MustMake[*repositories.ChainRepository](),
+		container.MustMake[*repositories.UserRepository](),
+		container.MustMake[*repositories.TransactionRepository](),
+		container.Get().Registry,
+		container.Get().WithdrawalService,
+		container.MustMake[*authsvc.Service](),
+	)
 }
 
 func newExternalWalletsController() *extwallets.WalletsController {

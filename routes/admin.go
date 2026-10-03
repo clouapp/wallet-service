@@ -36,6 +36,9 @@ func RegisterAdminRoutes() {
 	balancesCtrl := newDashboardBalancesController()
 	walletTxCtrl := newDashboardWalletTransactionsController()
 	unspentsCtrl := newDashboardUnspentsController()
+	addressCtrl := newDashboardAddressesController()
+	withdrawalCtrl := newDashboardWithdrawalsController()
+	sweepCtrl := newDashboardSweepController()
 
 	facades.Route().Prefix("/v1/auth").Middleware(noCache).Group(func(router route.Router) {
 		router.Post("/register", authCtrl.Register)
@@ -106,9 +109,9 @@ func RegisterAdminRoutes() {
 		router.Prefix("/{walletId}").Middleware(middleware.WalletContext()).Group(func(r route.Router) {
 			r.Post("/activate", walletCtrl.ActivateWallet)
 
-			r.Get("/addresses", dashaddresses.ListWalletAddresses)
-			r.Post("/addresses", dashaddresses.GenerateAddress)
-			r.Patch("/addresses/{addressId}", dashaddresses.UpdateAddress)
+			r.Get("/addresses", addressCtrl.ListWalletAddresses)
+			r.Post("/addresses", addressCtrl.GenerateAddress)
+			r.Patch("/addresses/{addressId}", addressCtrl.UpdateAddress)
 
 			r.Get("/users", walletUsersCtrl.ListWalletUsers)
 			r.Post("/users", walletUsersCtrl.AddWalletUser)
@@ -131,16 +134,16 @@ func RegisterAdminRoutes() {
 			r.Get("/transactions", walletTxCtrl.ListWalletTransactions)
 			r.Get("/transactions/{txId}", walletTxCtrl.GetWalletTransaction)
 
-			r.Get("/withdrawals", dashwithdrawals.ListWalletWithdrawals)
-			r.Post("/withdrawals", dashwithdrawals.CreateWalletWithdrawal)
-			r.Post("/withdrawals/estimate", dashwithdrawals.EstimateWithdrawalFee)
-			r.Get("/withdrawals/{withdrawalId}", dashwithdrawals.GetWalletWithdrawal)
-			r.Post("/withdrawals/{withdrawalId}/cancel", dashwithdrawals.CancelWalletWithdrawal)
+			r.Get("/withdrawals", withdrawalCtrl.ListWalletWithdrawals)
+			r.Post("/withdrawals", withdrawalCtrl.CreateWalletWithdrawal)
+			r.Post("/withdrawals/estimate", withdrawalCtrl.EstimateWithdrawalFee)
+			r.Get("/withdrawals/{withdrawalId}", withdrawalCtrl.GetWalletWithdrawal)
+			r.Post("/withdrawals/{withdrawalId}/cancel", withdrawalCtrl.CancelWalletWithdrawal)
 
-			r.Post("/consolidate", dashsweep.ConsolidateWallet)
-			r.Get("/gas-status", dashsweep.GetGasStatus)
-			r.Post("/gas-check", dashsweep.ForceGasCheck)
-			r.Post("/withdraw/preview", dashsweep.PreviewWithdraw)
+			r.Post("/consolidate", sweepCtrl.ConsolidateWallet)
+			r.Get("/gas-status", sweepCtrl.GetGasStatus)
+			r.Post("/gas-check", sweepCtrl.ForceGasCheck)
+			r.Post("/withdraw/preview", sweepCtrl.PreviewWithdraw)
 
 			r.Prefix("/unspents").Middleware(middleware.UTXOOnly()).Group(func(ur route.Router) {
 				ur.Get("", unspentsCtrl.ListUnspentOutputs)
@@ -217,6 +220,32 @@ func newDashboardBalancesController() *dashwallets.BalancesController {
 func newDashboardWalletTransactionsController() *dashwallets.TransactionsController {
 	return dashwallets.NewTransactionsController(
 		container.MustMake[*repositories.TransactionRepository](),
+	)
+}
+
+func newDashboardAddressesController() *dashaddresses.AddressesController {
+	return dashaddresses.NewAddressesController(
+		container.MustMake[*repositories.AddressRepository](),
+		currentWalletService,
+		container.Get().DepositService,
+	)
+}
+
+func newDashboardWithdrawalsController() *dashwithdrawals.WithdrawalsController {
+	return dashwithdrawals.NewWithdrawalsController(
+		container.MustMake[*repositories.WithdrawalRepository](),
+		container.MustMake[*repositories.ChainRepository](),
+		container.MustMake[*repositories.UserRepository](),
+		container.Get().Registry,
+		container.Get().WithdrawalService,
+		container.MustMake[*authsvc.Service](),
+	)
+}
+
+func newDashboardSweepController() *dashsweep.SweepController {
+	return dashsweep.NewSweepController(
+		container.Get().SweepService,
+		container.Get().Redis,
 	)
 }
 
