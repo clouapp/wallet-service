@@ -45,6 +45,10 @@ func RegisterAdminRoutes() {
 	noCache := middleware.CacheControl(0)
 	accounts := container.MustMake[*accountsvc.Service]()
 	accountHeader := middleware.AccountHeader(accounts)
+	totpEnrollment := middleware.TOTPEnrollment(
+		container.MustMake[*featuressvc.Service](),
+		container.MustMake[*settingssvc.Service](),
+	)
 	chainCtrl := newDashboardChainsController()
 	currencyCtrl := newDashboardCurrenciesController()
 	preferencesCtrl := newDashboardPreferencesController()
@@ -92,7 +96,7 @@ func RegisterAdminRoutes() {
 
 	facades.Route().Prefix("/v1/accounts").Middleware(middleware.SessionAuth(), noCache).Group(func(router route.Router) {
 		router.Post("", accountsCtrl.CreateAccount)
-		router.Prefix("/{accountId}").Middleware(middleware.AccountContext(accounts)).Group(func(r route.Router) {
+		router.Prefix("/{accountId}").Middleware(middleware.AccountContext(accounts), totpEnrollment).Group(func(r route.Router) {
 			r.Get("", accountsCtrl.GetAccount)
 			r.Patch("", accountsCtrl.UpdateAccount)
 			r.Post("/archive", accountsCtrl.ArchiveAccount)
@@ -122,7 +126,7 @@ func RegisterAdminRoutes() {
 		router.Patch("/features/{key}", platformFeaturesCtrl.Update)
 	})
 
-	facades.Route().Prefix("/v1/chains").Middleware(middleware.SessionAuth(), accountHeader, noCache).Group(func(router route.Router) {
+	facades.Route().Prefix("/v1/chains").Middleware(middleware.SessionAuth(), accountHeader, totpEnrollment, noCache).Group(func(router route.Router) {
 		router.Get("", chainCtrl.ListChains)
 		router.Get("/{chainId}", chainCtrl.GetChain)
 		router.Get("/{chainId}/tokens", chainCtrl.ListChainTokens)
@@ -143,7 +147,7 @@ func RegisterAdminRoutes() {
 		router.Get("", currencyCtrl.ConvertCurrency)
 	})
 
-	facades.Route().Prefix("/v1/wallets").Middleware(middleware.SessionAuth(), accountHeader, noCache).Group(func(router route.Router) {
+	facades.Route().Prefix("/v1/wallets").Middleware(middleware.SessionAuth(), accountHeader, totpEnrollment, noCache).Group(func(router route.Router) {
 		router.Get("", walletCtrl.ListWallets)
 		router.Post("", walletCtrl.CreateWalletAdmin)
 		router.Get("/{walletId}", walletCtrl.GetWallet)
