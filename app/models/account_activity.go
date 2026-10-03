@@ -24,14 +24,14 @@ type ActivityMetadata map[string]any
 // AccountActivity is one audit row. A nil AccountID is a platform write.
 // Metadata never holds a secret value.
 type AccountActivity struct {
-	ID          uuid.UUID        `gorm:"column:id;type:uuid;primaryKey" json:"id"`
-	AccountID   *uuid.UUID       `gorm:"column:account_id" json:"account_id"`
-	ActorUserID uuid.UUID        `gorm:"column:actor_user_id" json:"actor_user_id"`
-	Action      string           `gorm:"column:action" json:"action"`
-	TargetType  string           `gorm:"column:target_type" json:"target_type"`
-	TargetID    string           `gorm:"column:target_id" json:"target_id"`
-	Metadata    ActivityMetadata `gorm:"column:metadata;type:jsonb" json:"metadata"`
-	CreatedAt   time.Time        `gorm:"column:created_at" json:"created_at"`
+	ID          uuid.UUID        `gorm:"column:id;type:uuid;primaryKey"`
+	AccountID   *uuid.UUID       `gorm:"column:account_id"`
+	ActorUserID uuid.UUID        `gorm:"column:actor_user_id"`
+	Action      string           `gorm:"column:action"`
+	TargetType  string           `gorm:"column:target_type"`
+	TargetID    string           `gorm:"column:target_id"`
+	Metadata    ActivityMetadata `gorm:"column:metadata;type:jsonb"`
+	CreatedAt   time.Time        `gorm:"column:created_at"`
 }
 
 func (AccountActivity) TableName() string { return "account_activity" }

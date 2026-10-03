@@ -1,6 +1,5 @@
 # TestModelsCarryNoWireTags: known violations, rewritten by go test ./tests/architecture -update-baseline
 app/models/access_token.go: AccessToken has json tags (x9)
-app/models/account_activity.go: AccountActivity has json tags (x8)
 app/models/account_user.go: AccountUser has json tags (x8)
 app/models/address.go: Address has json tags (x15)
 app/models/chain.go: Chain has json tags (x16)
