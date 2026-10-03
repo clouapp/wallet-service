@@ -123,7 +123,7 @@ func (ctrl *WithdrawalsController) ListWalletWithdrawals(ctx http.Context) http.
 	if err != nil {
 		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to fetch withdrawals"})
 	}
-	return responses.Send(ctx, http.StatusOK, pagination.Response(withdrawals, total, limit, offset))
+	return responses.Send(ctx, http.StatusOK, pagination.Response(controllers.WithdrawalViews(withdrawals), total, limit, offset))
 }
 
 func (ctrl *WithdrawalsController) EstimateWithdrawalFee(ctx http.Context) http.Response {
@@ -166,7 +166,7 @@ func (ctrl *WithdrawalsController) EstimateWithdrawalFee(ctx http.Context) http.
 // @Produce      json
 // @Param        walletId  path      string                    true  "Wallet UUID"
 // @Param        request   body      CreateWalletWithdrawalSwagger  true  "Withdrawal payload"
-// @Success      201  {object}  models.Withdrawal
+// @Success      201  {object}  controllers.WithdrawalView
 // @Failure      400  {object}  ErrorResponse
 // @Failure      403  {object}  ErrorResponse
 // @Router       /wallets/{walletId}/withdrawals [post]
@@ -284,7 +284,7 @@ func (ctrl *WithdrawalsController) CreateWalletWithdrawal(ctx http.Context) http
 		return controllers.MapInternalError(ctx, findErr, "find_idempotent_withdrawal")
 	}
 	if existing != nil && (existing.Status == "broadcast" || existing.Status == "confirmed") {
-		return responses.Send(ctx, http.StatusOK, existing)
+		return responses.Send(ctx, http.StatusOK, controllers.WithdrawalViewPtr(existing))
 	}
 
 	w := existing
@@ -366,7 +366,7 @@ func (ctrl *WithdrawalsController) CreateWalletWithdrawal(ctx http.Context) http
 		return controllers.MapInternalError(ctx, updateErr, "persist_broadcast_withdrawal")
 	}
 	controllers.PublishWithdrawalBroadcast(ctx, ctrl.events, w, tx)
-	return responses.Send(ctx, http.StatusCreated, w)
+	return responses.Send(ctx, http.StatusCreated, controllers.WithdrawalViewPtr(w))
 }
 
 // GetWalletWithdrawal godoc
@@ -377,7 +377,7 @@ func (ctrl *WithdrawalsController) CreateWalletWithdrawal(ctx http.Context) http
 // @Produce      json
 // @Param        walletId      path  string  true  "Wallet UUID"
 // @Param        withdrawalId  path  string  true  "Withdrawal UUID"
-// @Success      200  {object}  models.Withdrawal
+// @Success      200  {object}  controllers.WithdrawalView
 // @Failure      403  {object}  ErrorResponse
 // @Failure      404  {object}  ErrorResponse
 // @Router       /wallets/{walletId}/withdrawals/{withdrawalId} [get]
@@ -393,7 +393,7 @@ func (ctrl *WithdrawalsController) GetWalletWithdrawal(ctx http.Context) http.Re
 	if err != nil || w == nil {
 		return responses.Send(ctx, http.StatusNotFound, http.Json{"error": "withdrawal not found"})
 	}
-	return responses.Send(ctx, http.StatusOK, w)
+	return responses.Send(ctx, http.StatusOK, controllers.WithdrawalViewPtr(w))
 }
 
 // CancelWalletWithdrawal godoc
@@ -404,7 +404,7 @@ func (ctrl *WithdrawalsController) GetWalletWithdrawal(ctx http.Context) http.Re
 // @Produce      json
 // @Param        walletId      path  string  true  "Wallet UUID"
 // @Param        withdrawalId  path  string  true  "Withdrawal UUID"
-// @Success      200  {object}  models.Withdrawal
+// @Success      200  {object}  controllers.WithdrawalView
 // @Failure      403  {object}  ErrorResponse
 // @Failure      404  {object}  ErrorResponse
 // @Failure      422  {object}  ErrorResponse  "Withdrawal cannot be cancelled in current state"
@@ -440,5 +440,5 @@ func (ctrl *WithdrawalsController) CancelWalletWithdrawal(ctx http.Context) http
 		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to cancel withdrawal"})
 	}
 	w.Status = "cancelled"
-	return responses.Send(ctx, http.StatusOK, w)
+	return responses.Send(ctx, http.StatusOK, controllers.WithdrawalViewPtr(w))
 }

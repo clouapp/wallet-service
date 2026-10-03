@@ -114,5 +114,5 @@ type EstimateWithdrawalSwagger struct {
 }
 
 type WithdrawalListResponse struct {
-	Data []models.Withdrawal `json:"data"`
+	Data []WithdrawalView `json:"data"`
 }

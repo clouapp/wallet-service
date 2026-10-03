@@ -105,7 +105,7 @@ func NewWithdrawalsController(
 // @Produce      json
 // @Param        walletId  path      string                    true  "Wallet UUID"
 // @Param        request   body      CreateWalletWithdrawalSwagger  true  "Withdrawal payload"
-// @Success      201  {object}  models.Withdrawal
+// @Success      201  {object}  controllers.WithdrawalView
 // @Failure      400  {object}  ErrorResponse
 // @Failure      403  {object}  ErrorResponse
 // @Router       /wallets/{walletId}/withdrawals [post]
@@ -223,7 +223,7 @@ func (ctrl *WithdrawalsController) CreateWalletWithdrawal(ctx http.Context) http
 		return controllers.MapInternalError(ctx, findErr, "find_idempotent_withdrawal")
 	}
 	if existing != nil && (existing.Status == "broadcast" || existing.Status == "confirmed") {
-		return responses.Send(ctx, http.StatusOK, existing)
+		return responses.Send(ctx, http.StatusOK, controllers.WithdrawalViewPtr(existing))
 	}
 
 	w := existing
@@ -305,7 +305,7 @@ func (ctrl *WithdrawalsController) CreateWalletWithdrawal(ctx http.Context) http
 		return controllers.MapInternalError(ctx, updateErr, "persist_broadcast_withdrawal")
 	}
 	controllers.PublishWithdrawalBroadcast(ctx, ctrl.events, w, tx)
-	return responses.Send(ctx, http.StatusCreated, w)
+	return responses.Send(ctx, http.StatusCreated, controllers.WithdrawalViewPtr(w))
 }
 
 // GetWalletWithdrawalByIdempotencyKey godoc
