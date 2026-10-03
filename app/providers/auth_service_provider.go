@@ -42,28 +42,28 @@ func (r *AuthServiceProvider) Boot(app foundation.Application) {
 	}
 
 	gate.Define("account.view", func(ctx context.Context, arguments map[string]any) contractsaccess.Response {
-		return ap.View(ctx, arguments)
+		return ap.View(ctx, withAccountUser(ctx, arguments))
 	})
 	gate.Define("account.update", func(ctx context.Context, arguments map[string]any) contractsaccess.Response {
-		return ap.Update(ctx, arguments)
+		return ap.Update(ctx, withAccountUser(ctx, arguments))
 	})
 	gate.Define("account.delete", func(ctx context.Context, arguments map[string]any) contractsaccess.Response {
-		return ap.Delete(ctx, arguments)
+		return ap.Delete(ctx, withAccountUser(ctx, arguments))
 	})
 	gate.Define("account.add-user", func(ctx context.Context, arguments map[string]any) contractsaccess.Response {
-		return ap.AddUser(ctx, arguments)
+		return ap.AddUser(ctx, withAccountUser(ctx, arguments))
 	})
 	gate.Define("account.remove-user", func(ctx context.Context, arguments map[string]any) contractsaccess.Response {
-		return ap.RemoveUser(ctx, arguments)
+		return ap.RemoveUser(ctx, withAccountUser(ctx, arguments))
 	})
 	gate.Define("account.freeze", func(ctx context.Context, arguments map[string]any) contractsaccess.Response {
-		return ap.Freeze(ctx, arguments)
+		return ap.Freeze(ctx, withAccountUser(ctx, arguments))
 	})
 	gate.Define("account.archive", func(ctx context.Context, arguments map[string]any) contractsaccess.Response {
-		return ap.Archive(ctx, arguments)
+		return ap.Archive(ctx, withAccountUser(ctx, arguments))
 	})
 	gate.Define("account.manage-tokens", func(ctx context.Context, arguments map[string]any) contractsaccess.Response {
-		return ap.ManageTokens(ctx, arguments)
+		return ap.ManageTokens(ctx, withAccountUser(ctx, arguments))
 	})
 
 	gate.Define("wallet.view", func(ctx context.Context, arguments map[string]any) contractsaccess.Response {
@@ -92,6 +92,25 @@ func (r *AuthServiceProvider) Boot(app foundation.Application) {
 	})
 
 	_ = toUUID // helper available for future extensions
+}
+
+// withAccountUser copies the gate arguments and attaches the user id the
+// session already stored. An id already present is left alone. A missing id
+// leaves the key unset, which the policy treats as no membership.
+func withAccountUser(ctx context.Context, arguments map[string]any) map[string]any {
+	out := make(map[string]any, len(arguments)+1)
+	for key, value := range arguments {
+		out[key] = value
+	}
+	if _, ok := out["user_id"].(uuid.UUID); ok {
+		return out
+	}
+	userID, ok := requestctx.UserID(ctx)
+	if !ok || userID == uuid.Nil {
+		return out
+	}
+	out["user_id"] = userID
+	return out
 }
 
 // withWalletMembership copies the gate arguments and attaches the roles the

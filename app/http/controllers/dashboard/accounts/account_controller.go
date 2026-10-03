@@ -106,7 +106,7 @@ func (ctrl *AccountsController) GetAccount(ctx http.Context) http.Response {
 // @Router       /accounts/{accountId} [patch]
 func (ctrl *AccountsController) UpdateAccount(ctx http.Context) http.Response {
 	account := requestctx.MustAccount(ctx)
-	if errResp := controllers.Deny(ctx, policies.AccountUpdate(ctx, account.ID)); errResp != nil {
+	if errResp := controllers.Deny(ctx, policies.AccountUpdate(ctx, account.ID, middleware.SessionUserID(ctx))); errResp != nil {
 		return errResp
 	}
 
@@ -135,7 +135,7 @@ func (ctrl *AccountsController) UpdateAccount(ctx http.Context) http.Response {
 // @Router       /accounts/{accountId}/archive [post]
 func (ctrl *AccountsController) ArchiveAccount(ctx http.Context) http.Response {
 	account := requestctx.MustAccount(ctx)
-	if errResp := controllers.Deny(ctx, policies.AccountArchive(ctx, account.ID)); errResp != nil {
+	if errResp := controllers.Deny(ctx, policies.AccountArchive(ctx, account.ID, middleware.SessionUserID(ctx))); errResp != nil {
 		return errResp
 	}
 
@@ -157,7 +157,7 @@ func (ctrl *AccountsController) ArchiveAccount(ctx http.Context) http.Response {
 // @Router       /accounts/{accountId}/freeze [post]
 func (ctrl *AccountsController) FreezeAccount(ctx http.Context) http.Response {
 	account := requestctx.MustAccount(ctx)
-	if errResp := controllers.Deny(ctx, policies.AccountFreeze(ctx, account.ID)); errResp != nil {
+	if errResp := controllers.Deny(ctx, policies.AccountFreeze(ctx, account.ID, middleware.SessionUserID(ctx))); errResp != nil {
 		return errResp
 	}
 
@@ -204,7 +204,7 @@ func (ctrl *AccountsController) ListAccountUsers(ctx http.Context) http.Response
 func (ctrl *AccountsController) AddAccountUser(ctx http.Context) http.Response {
 	account := requestctx.MustAccount(ctx)
 	callerID := requestctx.MustUserID(ctx)
-	if errResp := controllers.Deny(ctx, policies.AccountAddUser(ctx, account.ID)); errResp != nil {
+	if errResp := controllers.Deny(ctx, policies.AccountAddUser(ctx, account.ID, middleware.SessionUserID(ctx))); errResp != nil {
 		return errResp
 	}
 
@@ -311,7 +311,7 @@ func memberChange(req requests.UpdateAccountUserRequest) accountsvc.MemberChange
 // @Router       /accounts/{accountId}/users/{userId} [delete]
 func (ctrl *AccountsController) RemoveAccountUser(ctx http.Context) http.Response {
 	account := requestctx.MustAccount(ctx)
-	if errResp := controllers.Deny(ctx, policies.AccountRemoveUser(ctx, account.ID)); errResp != nil {
+	if errResp := controllers.Deny(ctx, policies.AccountRemoveUser(ctx, account.ID, middleware.SessionUserID(ctx))); errResp != nil {
 		return errResp
 	}
 
@@ -342,7 +342,7 @@ func (ctrl *AccountsController) RemoveAccountUser(ctx http.Context) http.Respons
 // @Router       /accounts/{accountId}/tokens [get]
 func (ctrl *AccountsController) ListAccountTokens(ctx http.Context) http.Response {
 	account := requestctx.MustAccount(ctx)
-	if errResp := controllers.Deny(ctx, policies.AccountManageTokens(ctx, account.ID)); errResp != nil {
+	if errResp := controllers.Deny(ctx, policies.AccountManageTokens(ctx, account.ID, middleware.SessionUserID(ctx))); errResp != nil {
 		return errResp
 	}
 
@@ -369,7 +369,7 @@ func (ctrl *AccountsController) ListAccountTokens(ctx http.Context) http.Respons
 // @Router       /accounts/{accountId}/tokens [post]
 func (ctrl *AccountsController) CreateAccountToken(ctx http.Context) http.Response {
 	account := requestctx.MustAccount(ctx)
-	if errResp := controllers.Deny(ctx, policies.AccountManageTokens(ctx, account.ID)); errResp != nil {
+	if errResp := controllers.Deny(ctx, policies.AccountManageTokens(ctx, account.ID, middleware.SessionUserID(ctx))); errResp != nil {
 		return errResp
 	}
 	callerID, _ := requestctx.UserID(ctx)
@@ -421,7 +421,7 @@ func (ctrl *AccountsController) CreateAccountToken(ctx http.Context) http.Respon
 // @Router       /accounts/{accountId}/tokens/{tokenId} [delete]
 func (ctrl *AccountsController) RevokeAccountToken(ctx http.Context) http.Response {
 	account := requestctx.MustAccount(ctx)
-	if errResp := controllers.Deny(ctx, policies.AccountManageTokens(ctx, account.ID)); errResp != nil {
+	if errResp := controllers.Deny(ctx, policies.AccountManageTokens(ctx, account.ID, middleware.SessionUserID(ctx))); errResp != nil {
 		return errResp
 	}
 
