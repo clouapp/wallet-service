@@ -3,7 +3,9 @@ package bootstrap
 import (
 	"github.com/goravel/framework/contracts/validation"
 
+	"github.com/macrowallets/waas/app/container"
 	"github.com/macrowallets/waas/app/rules"
+	chainpkg "github.com/macrowallets/waas/app/services/chain"
 )
 
 func Rules() []validation.Rule {
@@ -11,7 +13,7 @@ func Rules() []validation.Rule {
 		&rules.RFC3339{},
 		&rules.IntegerString{},
 		&rules.DecimalString{},
-		&rules.BlockchainAddress{},
+		rules.NewBlockchainAddress(container.MustMake[*chainpkg.Registry]()),
 		&rules.Unique{},
 		&rules.DBExists{},
 	}
