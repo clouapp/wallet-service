@@ -8,26 +8,27 @@ import (
 
 	"github.com/goravel/framework/contracts/console"
 	"github.com/goravel/framework/contracts/console/command"
-	"github.com/goravel/framework/contracts/queue"
-	"github.com/goravel/framework/facades"
 
 	"github.com/macrowallets/waas/app/container"
-	"github.com/macrowallets/waas/app/jobs"
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/services/refresh"
 	"github.com/macrowallets/waas/app/services/walletrecords"
 )
 
 type RefreshAddress struct {
-	balances *refresh.BalanceService
+	balances   *refresh.BalanceService
+	dispatcher refresh.Dispatcher
 }
 
 // NewRefreshAddress refreshes the wallets that own the given addresses.
-func NewRefreshAddress(balances *refresh.BalanceService) *RefreshAddress {
+func NewRefreshAddress(balances *refresh.BalanceService, dispatcher refresh.Dispatcher) *RefreshAddress {
 	if balances == nil {
 		panic("refresh:address: balance refresh service is required")
 	}
-	return &RefreshAddress{balances: balances}
+	if dispatcher == nil {
+		panic("refresh:address: refresh dispatcher is required")
+	}
+	return &RefreshAddress{balances: balances, dispatcher: dispatcher}
 }
 
 func (c *RefreshAddress) Signature() string {
@@ -98,14 +99,10 @@ func (c *RefreshAddress) Handle(ctx console.Context) error {
 
 		if useQueue {
 			ctx.Info("dispatching refresh for address " + addr + " wallet=" + wallet.ID.String() + " reason=" + reason)
-			if err := facades.Queue().
-				Job(&jobs.RefreshWalletBalances{}, []queue.Arg{
-					{Type: "string", Value: wallet.ID.String()},
-					{Type: "string", Value: wallet.Chain},
-				}).
-				OnConnection("database").
-				OnQueue("blockchain").
-				Dispatch(); err != nil {
+			if c.dispatcher == nil {
+				return fmt.Errorf("refresh:address: refresh dispatcher is not initialized")
+			}
+			if err := c.dispatcher.DispatchBalances(wallet.ID.String(), wallet.Chain); err != nil {
 				ctx.Error("dispatch failed for address " + addr + ": " + err.Error())
 				return fmt.Errorf("dispatch for address %s: %w", addr, err)
 			}

@@ -8,7 +8,14 @@ import (
 	"github.com/goravel/framework/facades"
 
 	"github.com/macrowallets/waas/app/jobs"
+	"github.com/macrowallets/waas/app/services/refresh"
 )
+
+// NewRefreshDispatcher enqueues wallet refresh and reconcile jobs with the
+// process queue. Console commands receive it from the composition root.
+func NewRefreshDispatcher() refresh.Dispatcher {
+	return jobs.NewDispatcher(func() jobs.Enqueuer { return facades.Queue() })
+}
 
 type EnqueueWalletRefresh struct{}
 

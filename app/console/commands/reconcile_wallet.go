@@ -8,26 +8,27 @@ import (
 	"github.com/google/uuid"
 	"github.com/goravel/framework/contracts/console"
 	"github.com/goravel/framework/contracts/console/command"
-	"github.com/goravel/framework/contracts/queue"
-	"github.com/goravel/framework/facades"
 
 	"github.com/macrowallets/waas/app/container"
-	"github.com/macrowallets/waas/app/jobs"
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/services/refresh"
 	"github.com/macrowallets/waas/app/services/walletrecords"
 )
 
 type ReconcileWallet struct {
-	balances *refresh.BalanceService
+	balances   *refresh.BalanceService
+	dispatcher refresh.Dispatcher
 }
 
 // NewReconcileWallet reconciles one wallet in process or on the queue.
-func NewReconcileWallet(balances *refresh.BalanceService) *ReconcileWallet {
+func NewReconcileWallet(balances *refresh.BalanceService, dispatcher refresh.Dispatcher) *ReconcileWallet {
 	if balances == nil {
 		panic("reconcile:wallet: balance refresh service is required")
 	}
-	return &ReconcileWallet{balances: balances}
+	if dispatcher == nil {
+		panic("reconcile:wallet: refresh dispatcher is required")
+	}
+	return &ReconcileWallet{balances: balances, dispatcher: dispatcher}
 }
 
 func (c *ReconcileWallet) Signature() string {
@@ -78,14 +79,10 @@ func (c *ReconcileWallet) Handle(ctx console.Context) error {
 
 	if ctx.OptionBool("queue") {
 		ctx.Info("dispatching wallet reconciliation to blockchain queue: wallet=" + walletID + " reason=" + reason)
-		return facades.Queue().
-			Job(&jobs.ReconcileWalletState{}, []queue.Arg{
-				{Type: "string", Value: walletID},
-				{Type: "string", Value: wallet.Chain},
-			}).
-			OnConnection("database").
-			OnQueue("blockchain").
-			Dispatch()
+		if c.dispatcher == nil {
+			return fmt.Errorf("reconcile:wallet: refresh dispatcher is not initialized")
+		}
+		return c.dispatcher.DispatchReconcile(walletID, wallet.Chain)
 	}
 
 	ctx.Info("sync mode: reconciling wallet=" + walletID + " reason=" + reason)

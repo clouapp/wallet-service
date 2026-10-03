@@ -38,16 +38,17 @@ func Boot() contractsfoundation.Application {
 		}).
 		WithCommands(func() []console.Command {
 			balances := container.MustMake[*refresh.BalanceService]()
+			dispatcher := listeners.NewRefreshDispatcher()
 			deposits := container.MustMake[*deposit.Service]()
 			registry := container.MustMake[*chainpkg.Registry]()
 			prices := container.MustMake[*price.Service]()
 			return []console.Command{
-				commands.NewRefreshWallet(balances),
-				commands.NewRefreshAddress(balances),
-				commands.NewRefreshCurrency(registry, balances),
-				commands.NewRefreshTx(balances),
+				commands.NewRefreshWallet(balances, dispatcher),
+				commands.NewRefreshAddress(balances, dispatcher),
+				commands.NewRefreshCurrency(registry, balances, dispatcher),
+				commands.NewRefreshTx(balances, dispatcher),
 				commands.NewScanDeposits(deposits),
-				commands.NewReconcileWallet(balances),
+				commands.NewReconcileWallet(balances, dispatcher),
 				commands.NewPriceWebSocket(prices, container.MustMake[*price.CoinAPICredential]().Key, container.MustMake[*container.SharedRedis]().Client),
 				commands.NewPriceCheckUpdate(prices),
 				&commands.ChainsSetRPC{},

@@ -7,26 +7,27 @@ import (
 
 	"github.com/goravel/framework/contracts/console"
 	"github.com/goravel/framework/contracts/console/command"
-	"github.com/goravel/framework/contracts/queue"
-	"github.com/goravel/framework/facades"
 
 	"github.com/macrowallets/waas/app/container"
-	"github.com/macrowallets/waas/app/jobs"
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/services/refresh"
 	"github.com/macrowallets/waas/app/services/walletrecords"
 )
 
 type RefreshTx struct {
-	balances *refresh.BalanceService
+	balances   *refresh.BalanceService
+	dispatcher refresh.Dispatcher
 }
 
 // NewRefreshTx refreshes the wallet that owns one transaction.
-func NewRefreshTx(balances *refresh.BalanceService) *RefreshTx {
+func NewRefreshTx(balances *refresh.BalanceService, dispatcher refresh.Dispatcher) *RefreshTx {
 	if balances == nil {
 		panic("refresh:tx: balance refresh service is required")
 	}
-	return &RefreshTx{balances: balances}
+	if dispatcher == nil {
+		panic("refresh:tx: refresh dispatcher is required")
+	}
+	return &RefreshTx{balances: balances, dispatcher: dispatcher}
 }
 
 func (c *RefreshTx) Signature() string {
@@ -87,14 +88,10 @@ func (c *RefreshTx) Handle(ctx console.Context) error {
 
 	if ctx.OptionBool("queue") {
 		ctx.Info("dispatching tx refresh to blockchain queue: chain=" + chain + " tx_hash=" + txHash + " wallet=" + wallet.ID.String() + " reason=" + reason)
-		return facades.Queue().
-			Job(&jobs.RefreshWalletTransactions{}, []queue.Arg{
-				{Type: "string", Value: wallet.ID.String()},
-				{Type: "string", Value: wallet.Chain},
-			}).
-			OnConnection("database").
-			OnQueue("blockchain").
-			Dispatch()
+		if c.dispatcher == nil {
+			return fmt.Errorf("refresh:tx: refresh dispatcher is not initialized")
+		}
+		return c.dispatcher.DispatchTransactions(wallet.ID.String(), wallet.Chain)
 	}
 
 	ctx.Info("sync mode: refreshing tx chain=" + chain + " tx_hash=" + txHash + " wallet=" + wallet.ID.String())

@@ -8,11 +8,8 @@ import (
 
 	"github.com/goravel/framework/contracts/console"
 	"github.com/goravel/framework/contracts/console/command"
-	"github.com/goravel/framework/contracts/queue"
-	"github.com/goravel/framework/facades"
 
 	"github.com/macrowallets/waas/app/container"
-	"github.com/macrowallets/waas/app/jobs"
 	"github.com/macrowallets/waas/app/models"
 	chainpkg "github.com/macrowallets/waas/app/services/chain"
 	"github.com/macrowallets/waas/app/services/refresh"
@@ -29,19 +26,23 @@ var ambiguousCurrencies = map[string]bool{
 }
 
 type RefreshCurrency struct {
-	registry *chainpkg.Registry
-	balances *refresh.BalanceService
+	registry   *chainpkg.Registry
+	balances   *refresh.BalanceService
+	dispatcher refresh.Dispatcher
 }
 
 // NewRefreshCurrency refreshes wallets that hold one currency.
-func NewRefreshCurrency(registry *chainpkg.Registry, balances *refresh.BalanceService) *RefreshCurrency {
+func NewRefreshCurrency(registry *chainpkg.Registry, balances *refresh.BalanceService, dispatcher refresh.Dispatcher) *RefreshCurrency {
 	if registry == nil {
 		panic("refresh:currency: chain registry is required")
 	}
 	if balances == nil {
 		panic("refresh:currency: balance refresh service is required")
 	}
-	return &RefreshCurrency{registry: registry, balances: balances}
+	if dispatcher == nil {
+		panic("refresh:currency: refresh dispatcher is required")
+	}
+	return &RefreshCurrency{registry: registry, balances: balances, dispatcher: dispatcher}
 }
 
 func (c *RefreshCurrency) Signature() string {
@@ -125,14 +126,10 @@ func (c *RefreshCurrency) Handle(ctx console.Context) error {
 
 		if useQueue {
 			ctx.Info("dispatching refresh for currency=" + currency + " address=" + addr + " wallet=" + wallet.ID.String() + " reason=" + reason)
-			if err := facades.Queue().
-				Job(&jobs.RefreshWalletBalances{}, []queue.Arg{
-					{Type: "string", Value: wallet.ID.String()},
-					{Type: "string", Value: wallet.Chain},
-				}).
-				OnConnection("database").
-				OnQueue("blockchain").
-				Dispatch(); err != nil {
+			if c.dispatcher == nil {
+				return fmt.Errorf("refresh:currency: refresh dispatcher is not initialized")
+			}
+			if err := c.dispatcher.DispatchBalances(wallet.ID.String(), wallet.Chain); err != nil {
 				ctx.Error("dispatch failed for address " + addr + ": " + err.Error())
 				return fmt.Errorf("dispatch for address %s: %w", addr, err)
 			}
