@@ -3,6 +3,7 @@ package chains
 import (
 	"github.com/goravel/framework/contracts/http"
 
+	"github.com/macrowallets/waas/app/http/controllers"
 	"github.com/macrowallets/waas/app/http/middleware/requestctx"
 	"github.com/macrowallets/waas/app/http/requests"
 	"github.com/macrowallets/waas/app/http/responses"
@@ -40,7 +41,7 @@ func (ctrl *ChainsController) ListChains(ctx http.Context) http.Response {
 		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to fetch chains"})
 	}
 
-	return ctx.Response().Success().Json(http.Json{"data": chainList})
+	return ctx.Response().Success().Json(http.Json{"data": controllers.ChainViews(chainList)})
 }
 
 // GetChain returns a single chain by ID with its tokens and resources.
@@ -69,7 +70,7 @@ func (ctrl *ChainsController) GetChain(ctx http.Context) http.Response {
 	resources, _ := ctrl.chains.FindResources(ctx.Context(), chainID)
 
 	return ctx.Response().Success().Json(http.Json{
-		"chain":     chain,
+		"chain":     controllers.ChainViewPtr(chain),
 		"tokens":    tokenViews(tokens),
 		"resources": chainResourceViews(resources),
 	})
