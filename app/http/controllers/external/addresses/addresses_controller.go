@@ -68,7 +68,7 @@ func NewAddressesController(
 // @Failure      500   {object}  ErrorResponse
 // @Router       /v1/wallets/{id}/addresses [post]
 func (ctrl *AddressesController) GenerateAddress(ctx http.Context) http.Response {
-	walletID, err := uuid.Parse(ctx.Request().Route("walletId"))
+	walletID, err := requests.RouteUUID(ctx, "walletId")
 	if err != nil {
 		return responses.Send(ctx, http.StatusBadRequest, http.Json{
 			"error": "invalid wallet id",
@@ -111,7 +111,7 @@ func (ctrl *AddressesController) GenerateAddress(ctx http.Context) http.Response
 // @Failure      500        {object}  ErrorResponse
 // @Router       /v1/wallets/{walletId}/addresses/{addressId} [patch]
 func (ctrl *AddressesController) UpdateAddress(ctx http.Context) http.Response {
-	addressID, err := uuid.Parse(ctx.Request().Route("addressId"))
+	addressID, err := requests.RouteUUID(ctx, "addressId")
 	if err != nil {
 		return responses.Send(ctx, http.StatusBadRequest, http.Json{
 			"error": "invalid address id",
@@ -160,7 +160,7 @@ func (ctrl *AddressesController) UpdateAddress(ctx http.Context) http.Response {
 // @Failure      500  {object}  ErrorResponse
 // @Router       /v1/wallets/{id}/addresses [get]
 func (ctrl *AddressesController) ListWalletAddresses(ctx http.Context) http.Response {
-	walletID, err := uuid.Parse(ctx.Request().Route("walletId"))
+	walletID, err := requests.RouteUUID(ctx, "walletId")
 	if err != nil {
 		return responses.Send(ctx, http.StatusBadRequest, http.Json{
 			"error": "invalid wallet id",
@@ -197,8 +197,10 @@ func (ctrl *AddressesController) LookupAddress(ctx http.Context) http.Response {
 		})
 	}
 
-	address := ctx.Request().Route("address")
-	chainFilter := ctx.Request().Query("chain", "")
+	var path requests.LookupAddressRequest
+	path.Load(ctx)
+	address := path.Address
+	chainFilter := path.Chain
 
 	if chainFilter != "" {
 		addr, err := ctrl.walletService().LookupAddressForAccount(ctx.Context(), chainFilter, address, accountID)
@@ -242,9 +244,11 @@ func (ctrl *AddressesController) ListUserAddresses(ctx http.Context) http.Respon
 		})
 	}
 
+	var path requests.ExternalIDRequest
+	path.Load(ctx)
 	addrs, err := ctrl.walletService().ListUserAddressesForAccount(
 		ctx.Context(),
-		ctx.Request().Route("external_id"),
+		path.ExternalID,
 		accountID,
 	)
 	if err != nil {
