@@ -3,7 +3,7 @@ package config
 import (
 	"github.com/goravel/framework/facades"
 
-	"github.com/macrowallets/waas/app/models"
+	"github.com/macrowallets/waas/pkg/authmodel"
 )
 
 func registerAuth() {
@@ -18,7 +18,7 @@ func registerAuth() {
 		"providers": map[string]any{
 			"users": map[string]any{
 				"driver": "orm",
-				"model":  models.User{},
+				"model":  authmodel.User{},
 			},
 		},
 	})
