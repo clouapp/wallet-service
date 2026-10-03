@@ -27,8 +27,11 @@ const (
 )
 
 type listedAccount struct {
-	models.Account
-	Role string `json:"role"`
+	ID          uuid.UUID `json:"id"`
+	Name        string    `json:"name"`
+	Status      string    `json:"status"`
+	Environment string    `json:"environment"`
+	Role        string    `json:"role"`
 }
 
 type accountListBody struct {

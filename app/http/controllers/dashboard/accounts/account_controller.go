@@ -56,7 +56,7 @@ func NewAccountsController(
 // @Accept       json
 // @Produce      json
 // @Param        request  body      CreateAccountSwagger  true  "Account payload"
-// @Success      201      {object}  models.Account
+// @Success      201      {object}  AccountView
 // @Failure      400      {object}  ErrorResponse
 // @Failure      401      {object}  ErrorResponse
 // @Router       /accounts [post]
@@ -72,7 +72,7 @@ func (ctrl *AccountsController) CreateAccount(ctx http.Context) http.Response {
 	if err != nil {
 		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to create account"})
 	}
-	return responses.Send(ctx, http.StatusCreated, acc)
+	return responses.Send(ctx, http.StatusCreated, NewAccountView(*acc))
 }
 
 // GetAccount godoc
@@ -82,13 +82,13 @@ func (ctrl *AccountsController) CreateAccount(ctx http.Context) http.Response {
 // @Security     BearerAuth
 // @Produce      json
 // @Param        accountId  path      string  true  "Account UUID"
-// @Success      200        {object}  models.Account
+// @Success      200        {object}  AccountView
 // @Failure      403        {object}  ErrorResponse
 // @Failure      404        {object}  ErrorResponse
 // @Router       /accounts/{accountId} [get]
 func (ctrl *AccountsController) GetAccount(ctx http.Context) http.Response {
 	account := requestctx.MustAccount(ctx)
-	return responses.Send(ctx, http.StatusOK, account)
+	return responses.Send(ctx, http.StatusOK, NewAccountView(*account))
 }
 
 // UpdateAccount godoc
@@ -100,7 +100,7 @@ func (ctrl *AccountsController) GetAccount(ctx http.Context) http.Response {
 // @Produce      json
 // @Param        accountId  path      string                      true  "Account UUID"
 // @Param        request    body      UpdateAccountSwagger        true  "Update payload"
-// @Success      200        {object}  models.Account
+// @Success      200        {object}  AccountView
 // @Failure      400        {object}  ErrorResponse
 // @Failure      403        {object}  ErrorResponse
 // @Router       /accounts/{accountId} [patch]
@@ -119,7 +119,7 @@ func (ctrl *AccountsController) UpdateAccount(ctx http.Context) http.Response {
 		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to update account"})
 	}
 
-	return responses.Send(ctx, http.StatusOK, account)
+	return responses.Send(ctx, http.StatusOK, NewAccountView(*account))
 }
 
 // ArchiveAccount godoc
@@ -129,7 +129,7 @@ func (ctrl *AccountsController) UpdateAccount(ctx http.Context) http.Response {
 // @Security     BearerAuth
 // @Produce      json
 // @Param        accountId  path  string  true  "Account UUID"
-// @Success      200        {object}  models.Account
+// @Success      200        {object}  AccountView
 // @Failure      403        {object}  ErrorResponse
 // @Failure      404        {object}  ErrorResponse
 // @Router       /accounts/{accountId}/archive [post]
@@ -142,7 +142,7 @@ func (ctrl *AccountsController) ArchiveAccount(ctx http.Context) http.Response {
 	if err := ctrl.accountService.SetStatus(ctx.Context(), account, "archived"); err != nil {
 		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to archive account"})
 	}
-	return responses.Send(ctx, http.StatusOK, account)
+	return responses.Send(ctx, http.StatusOK, NewAccountView(*account))
 }
 
 // FreezeAccount godoc
@@ -152,7 +152,7 @@ func (ctrl *AccountsController) ArchiveAccount(ctx http.Context) http.Response {
 // @Security     BearerAuth
 // @Produce      json
 // @Param        accountId  path  string  true  "Account UUID"
-// @Success      200        {object}  models.Account
+// @Success      200        {object}  AccountView
 // @Failure      403        {object}  ErrorResponse
 // @Router       /accounts/{accountId}/freeze [post]
 func (ctrl *AccountsController) FreezeAccount(ctx http.Context) http.Response {
@@ -164,7 +164,7 @@ func (ctrl *AccountsController) FreezeAccount(ctx http.Context) http.Response {
 	if err := ctrl.accountService.SetStatus(ctx.Context(), account, "frozen"); err != nil {
 		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to freeze account"})
 	}
-	return responses.Send(ctx, http.StatusOK, account)
+	return responses.Send(ctx, http.StatusOK, NewAccountView(*account))
 }
 
 // ListAccountUsers godoc

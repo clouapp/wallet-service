@@ -10,6 +10,7 @@ import (
 
 	appfacades "github.com/macrowallets/waas/app/facades"
 	"github.com/macrowallets/waas/app/http/controllers"
+	dashboardaccounts "github.com/macrowallets/waas/app/http/controllers/dashboard/accounts"
 	"github.com/macrowallets/waas/app/http/middleware/requestctx"
 	"github.com/macrowallets/waas/app/http/pagination"
 	"github.com/macrowallets/waas/app/http/requests"
@@ -207,7 +208,7 @@ func (ctrl *UsersController) accountsWithCallerRole(ctx http.Context, userID uui
 		if !ok || strings.TrimSpace(role) == "" {
 			return nil, fmt.Errorf("account %s has no role for user %s", account.ID, userID)
 		}
-		items = append(items, myAccount{Account: account, Role: role})
+		items = append(items, myAccount{AccountView: dashboardaccounts.NewAccountView(account), Role: role})
 	}
 	return items, nil
 }
@@ -263,7 +264,7 @@ func (ctrl *UsersController) UpdateDefaultAccount(ctx http.Context) http.Respons
 	}
 
 	account, _ := ctrl.accounts.FindByID(ctx.Context(), accountID)
-	return responses.Send(ctx, http.StatusOK, http.Json{"account": account})
+	return responses.Send(ctx, http.StatusOK, http.Json{"account": dashboardaccounts.AccountViewPtr(account)})
 }
 
 // SetupTOTP godoc
@@ -403,7 +404,7 @@ type UpdateDefaultAccountSwagger struct {
 // stay; role is the caller's account_users.role, returned as stored.
 // fix/security-s7 (viewer → auditor) is not merged on this branch.
 type myAccount struct {
-	models.Account
+	dashboardaccounts.AccountView
 	Role string `json:"role" example:"owner"`
 }
 
