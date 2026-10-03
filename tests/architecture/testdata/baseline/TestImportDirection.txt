@@ -45,4 +45,3 @@ app/services/webhooksync → app/repositories (services → repositories)
 app/services/withdraw → app/repositories (services → repositories)
 app/services/withdraw → app/repositories (services → repositories) [test]
 routes → app/repositories (routes → repositories) (x3)
-routes → docs (routes → docs)
