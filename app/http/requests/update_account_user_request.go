@@ -2,6 +2,7 @@ package requests
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/google/uuid"
 	"github.com/goravel/framework/contracts/http"
@@ -15,7 +16,7 @@ func RouteUUID(ctx http.Context, name string) (uuid.UUID, error) {
 	if name == "" {
 		return uuid.Nil, fmt.Errorf("missing path parameter name")
 	}
-	id, err := uuid.Parse(ctx.Request().Route(name))
+	id, err := uuid.Parse(strings.TrimSpace(ctx.Request().Route(name)))
 	if err != nil {
 		return uuid.Nil, fmt.Errorf("invalid %s", name)
 	}
