@@ -41,5 +41,6 @@ func All() []schema.Migration {
 		&M00000000000270RenamePolygonNativeMaticToPol{},
 		&M00000000000280EnforceNonNegativeAmounts{},
 		&M00000000000290CreateSettingsTable{},
+		&M00000000000300CreateFeaturesTable{},
 	}
 }

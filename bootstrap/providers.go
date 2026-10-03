@@ -47,6 +47,7 @@ func Providers() []foundation.ServiceProvider {
 		&providers.ChainServiceProvider{},
 		&providers.WebhookServiceProvider{},
 		&providers.SettingsServiceProvider{},
+		&providers.FeaturesServiceProvider{},
 		&providers.AppServiceProvider{},
 		&providers.RouteServiceProvider{},
 	}

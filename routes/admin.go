@@ -10,6 +10,7 @@ import (
 	dashauth "github.com/macrowallets/waas/app/http/controllers/dashboard/auth"
 	dashchains "github.com/macrowallets/waas/app/http/controllers/dashboard/chains"
 	dashcurrencies "github.com/macrowallets/waas/app/http/controllers/dashboard/currencies"
+	dashfeatures "github.com/macrowallets/waas/app/http/controllers/dashboard/features"
 	dashpreferences "github.com/macrowallets/waas/app/http/controllers/dashboard/preferences"
 	dashsettings "github.com/macrowallets/waas/app/http/controllers/dashboard/settings"
 	dashsweep "github.com/macrowallets/waas/app/http/controllers/dashboard/sweep"
@@ -20,6 +21,7 @@ import (
 	"github.com/macrowallets/waas/app/repositories"
 	accountsvc "github.com/macrowallets/waas/app/services/account"
 	authsvc "github.com/macrowallets/waas/app/services/auth"
+	featuressvc "github.com/macrowallets/waas/app/services/features"
 	settingssvc "github.com/macrowallets/waas/app/services/settings"
 	walletsvc "github.com/macrowallets/waas/app/services/wallet"
 )
@@ -34,6 +36,7 @@ func RegisterAdminRoutes() {
 	usersCtrl := newDashboardUsersController()
 	accountsCtrl := newDashboardAccountsController()
 	accountSettingsCtrl := newDashboardAccountSettingsController()
+	accountFeaturesCtrl := newDashboardAccountFeaturesController()
 	walletCtrl := newDashboardWalletsController()
 	walletUsersCtrl := newDashboardWalletUsersController()
 	whitelistCtrl := newDashboardWhitelistController()
@@ -87,6 +90,9 @@ func RegisterAdminRoutes() {
 
 			r.Get("/settings", accountSettingsCtrl.Show)
 			r.Patch("/settings/{group}", accountSettingsCtrl.Update)
+
+			r.Get("/features", accountFeaturesCtrl.Index)
+			r.Patch("/features/{key}", accountFeaturesCtrl.Update)
 		})
 	})
 
@@ -289,6 +295,12 @@ func newDashboardUnspentsController() *dashwallets.UnspentsController {
 func newDashboardAccountSettingsController() *dashsettings.SettingsController {
 	return dashsettings.NewSettingsController(
 		container.MustMake[*settingssvc.Service](),
+	)
+}
+
+func newDashboardAccountFeaturesController() *dashfeatures.FeaturesController {
+	return dashfeatures.NewFeaturesController(
+		container.MustMake[*featuressvc.Service](),
 	)
 }
 
