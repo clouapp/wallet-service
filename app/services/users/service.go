@@ -23,14 +23,32 @@ type Store interface {
 	DisableTotp(ctx context.Context, id uuid.UUID) error
 }
 
+// RecoveryStore is the TOTP recovery-code persistence.
+type RecoveryStore interface {
+	FindUnusedByUserID(ctx context.Context, userID uuid.UUID) ([]models.TotpRecoveryCode, error)
+	MarkUsed(ctx context.Context, id uuid.UUID) error
+	CreateBatch(ctx context.Context, codes []models.TotpRecoveryCode) error
+	DeleteByUserID(ctx context.Context, userID uuid.UUID) error
+}
+
 // Service is the user reads and writes the dashboard handlers call.
 type Service struct {
-	store Store
+	store    Store
+	recovery RecoveryStore
 }
 
 // NewService builds a user service.
 func NewService(store Store) *Service {
 	return &Service{store: store}
+}
+
+// WithRecovery attaches recovery-code persistence. It returns the same service.
+func (s *Service) WithRecovery(recovery RecoveryStore) *Service {
+	if s == nil {
+		return nil
+	}
+	s.recovery = recovery
+	return s
 }
 
 func (s *Service) require(ctx context.Context, op string) error {
@@ -124,4 +142,46 @@ func (s *Service) DisableTotp(ctx context.Context, id uuid.UUID) error {
 		return err
 	}
 	return s.store.DisableTotp(ctx, id)
+}
+
+func (s *Service) requireRecovery(ctx context.Context, op string) error {
+	if ctx == nil {
+		return fmt.Errorf("%s: context is required", op)
+	}
+	if s == nil || s.recovery == nil {
+		return fmt.Errorf("users service: recovery codes repository is required")
+	}
+	return nil
+}
+
+// FindUnusedRecoveryCodes returns unused recovery codes for the user.
+func (s *Service) FindUnusedRecoveryCodes(ctx context.Context, userID uuid.UUID) ([]models.TotpRecoveryCode, error) {
+	if err := s.requireRecovery(ctx, "list recovery codes"); err != nil {
+		return nil, err
+	}
+	return s.recovery.FindUnusedByUserID(ctx, userID)
+}
+
+// MarkRecoveryCodeUsed marks one recovery code used.
+func (s *Service) MarkRecoveryCodeUsed(ctx context.Context, id uuid.UUID) error {
+	if err := s.requireRecovery(ctx, "mark recovery code used"); err != nil {
+		return err
+	}
+	return s.recovery.MarkUsed(ctx, id)
+}
+
+// CreateRecoveryCodes inserts a batch of recovery codes.
+func (s *Service) CreateRecoveryCodes(ctx context.Context, codes []models.TotpRecoveryCode) error {
+	if err := s.requireRecovery(ctx, "create recovery codes"); err != nil {
+		return err
+	}
+	return s.recovery.CreateBatch(ctx, codes)
+}
+
+// DeleteRecoveryCodes removes every recovery code for the user.
+func (s *Service) DeleteRecoveryCodes(ctx context.Context, userID uuid.UUID) error {
+	if err := s.requireRecovery(ctx, "delete recovery codes"); err != nil {
+		return err
+	}
+	return s.recovery.DeleteByUserID(ctx, userID)
 }

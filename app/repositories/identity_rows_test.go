@@ -67,7 +67,7 @@ func (s *IdentityRowsSuite) TestUserAccountQueriesReturnTheStoredRow() {
 	s.Equal("Row Account", foundAccount.Name)
 	s.Equal("active", foundAccount.Status)
 
-	page, total, err := s.accounts.PaginateByMember(ctx, user.ID, repositories.AccountListFilter{}, 20, 0)
+	page, total, err := s.accounts.PaginateByMember(ctx, user.ID, "", "", 20, 0)
 	s.Require().NoError(err)
 	s.Equal(int64(1), total)
 	s.Equal([]uuid.UUID{account.ID}, []uuid.UUID{page[0].ID})

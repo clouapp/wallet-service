@@ -44,7 +44,11 @@ func (p *IdentityServiceProvider) Register(app foundation.Application) {
 		if err != nil {
 			return nil, err
 		}
-		return usersvc.NewService(store), nil
+		recovery, err := resolve[*repositories.TotpRecoveryCodeRepository](app)
+		if err != nil {
+			return nil, err
+		}
+		return usersvc.NewService(store).WithRecovery(recovery), nil
 	})
 	app.Singleton((*account.Service)(nil), func(app foundation.Application) (any, error) {
 		accounts, err := resolve[*repositories.AccountRepository](app)

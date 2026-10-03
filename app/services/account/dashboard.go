@@ -104,6 +104,90 @@ func (s *Service) FindOrCreateInvitedUser(ctx context.Context, email string) (us
 	return created, true, nil
 }
 
+// FindByID returns one account. The error is the store's error.
+func (s *Service) FindByID(ctx context.Context, id uuid.UUID) (*models.Account, error) {
+	if ctx == nil {
+		return nil, fmt.Errorf("find account: context is required")
+	}
+	if err := s.requireAccounts(); err != nil {
+		return nil, err
+	}
+	return s.accounts.FindByID(ctx, id)
+}
+
+// ListForMember pages the accounts the user belongs to. Empty search and
+// environment do not filter, matching the repository.
+func (s *Service) ListForMember(ctx context.Context, userID uuid.UUID, search, environment string, limit, offset int) ([]models.Account, int64, error) {
+	if ctx == nil {
+		return nil, 0, fmt.Errorf("list member accounts: context is required")
+	}
+	if err := s.requireAccounts(); err != nil {
+		return nil, 0, err
+	}
+	return s.accounts.PaginateByMember(ctx, userID, search, environment, limit, offset)
+}
+
+// RolesForUserAccounts returns the caller's role on each account.
+func (s *Service) RolesForUserAccounts(ctx context.Context, userID uuid.UUID, accountIDs []uuid.UUID) (map[uuid.UUID]string, error) {
+	if ctx == nil {
+		return nil, fmt.Errorf("list account roles: context is required")
+	}
+	if s.memberships == nil {
+		return nil, fmt.Errorf("account service: memberships repository is required")
+	}
+	return s.memberships.RolesForUserAccounts(ctx, userID, accountIDs)
+}
+
+// InsertAccount inserts an account row the caller already filled in.
+func (s *Service) InsertAccount(ctx context.Context, account *models.Account) error {
+	if ctx == nil {
+		return fmt.Errorf("insert account: context is required")
+	}
+	if account == nil {
+		return fmt.Errorf("insert account: account is required")
+	}
+	if err := s.requireAccounts(); err != nil {
+		return err
+	}
+	return s.accounts.Create(ctx, account)
+}
+
+// LinkAccount sets accounts.linked_account_id.
+func (s *Service) LinkAccount(ctx context.Context, id, linkedID uuid.UUID) error {
+	if ctx == nil {
+		return fmt.Errorf("link account: context is required")
+	}
+	if err := s.requireAccounts(); err != nil {
+		return err
+	}
+	return s.accounts.SetLinkedAccountID(ctx, id, linkedID)
+}
+
+// InsertMembership inserts a membership the caller already filled in.
+func (s *Service) InsertMembership(ctx context.Context, membership *models.AccountUser) error {
+	if ctx == nil {
+		return fmt.Errorf("insert membership: context is required")
+	}
+	if membership == nil {
+		return fmt.Errorf("insert membership: membership is required")
+	}
+	if s.memberships == nil {
+		return fmt.Errorf("account service: memberships repository is required")
+	}
+	return s.memberships.Create(ctx, membership)
+}
+
+// ListMemberships returns the caller's active memberships.
+func (s *Service) ListMemberships(ctx context.Context, userID uuid.UUID) ([]models.AccountUser, error) {
+	if ctx == nil {
+		return nil, fmt.Errorf("list memberships: context is required")
+	}
+	if s.memberships == nil {
+		return nil, fmt.Errorf("account service: memberships repository is required")
+	}
+	return s.memberships.FindByUserID(ctx, userID)
+}
+
 // FindMember returns the active membership. The error is the store's error,
 // including not-found, so the caller can log it and still answer.
 func (s *Service) FindMember(ctx context.Context, accountID, userID uuid.UUID) (*models.AccountUser, error) {

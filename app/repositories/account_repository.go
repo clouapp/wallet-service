@@ -67,9 +67,9 @@ func (r *AccountRepository) FindByIDs(ctx context.Context, ids []uuid.UUID) ([]m
 
 // PaginateByMember pages through the accounts the user is an active member
 // of, ordered case-insensitively by name then by id so every page is stable.
-func (r *AccountRepository) PaginateByMember(ctx context.Context, userID uuid.UUID, filter AccountListFilter, limit, offset int) ([]models.Account, int64, error) {
+func (r *AccountRepository) PaginateByMember(ctx context.Context, userID uuid.UUID, search, environment string, limit, offset int) ([]models.Account, int64, error) {
 	accounts := []models.Account{}
-	q := r.memberAccountsQuery(ctx, userID, filter)
+	q := r.memberAccountsQuery(ctx, userID, AccountListFilter{Search: search, Environment: environment})
 
 	total, err := q.Count()
 	if err != nil {

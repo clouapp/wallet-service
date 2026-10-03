@@ -109,12 +109,12 @@ func (s *AccountRepositoryTestSuite) TestPaginateByMember_OrdersByNameAcrossPage
 		s.createMemberAccount(userID, name, models.EnvironmentProd)
 	}
 
-	first, total, err := s.repo.PaginateByMember(context.Background(), userID, repositories.AccountListFilter{}, 2, 0)
+	first, total, err := s.repo.PaginateByMember(context.Background(), userID, "", "", 2, 0)
 	s.Require().NoError(err)
 	s.Equal(int64(5), total)
 	s.Equal([]string{"alpha", "Bravo"}, accountNames(first))
 
-	last, total, err := s.repo.PaginateByMember(context.Background(), userID, repositories.AccountListFilter{}, 2, 4)
+	last, total, err := s.repo.PaginateByMember(context.Background(), userID, "", "", 2, 4)
 	s.Require().NoError(err)
 	s.Equal(int64(5), total)
 	s.Equal([]string{"Echo"}, accountNames(last))
@@ -124,7 +124,7 @@ func (s *AccountRepositoryTestSuite) TestPaginateByMember_OutOfRangeOffsetReturn
 	userID := s.createUser()
 	s.createMemberAccount(userID, "Only", models.EnvironmentProd)
 
-	accounts, total, err := s.repo.PaginateByMember(context.Background(), userID, repositories.AccountListFilter{}, 20, 40)
+	accounts, total, err := s.repo.PaginateByMember(context.Background(), userID, "", "", 20, 40)
 	s.Require().NoError(err)
 	s.Equal(int64(1), total)
 	s.NotNil(accounts)
@@ -132,7 +132,7 @@ func (s *AccountRepositoryTestSuite) TestPaginateByMember_OutOfRangeOffsetReturn
 }
 
 func (s *AccountRepositoryTestSuite) TestPaginateByMember_NoMemberships() {
-	accounts, total, err := s.repo.PaginateByMember(context.Background(), uuid.New(), repositories.AccountListFilter{}, 20, 0)
+	accounts, total, err := s.repo.PaginateByMember(context.Background(), uuid.New(), "", "", 20, 0)
 	s.Require().NoError(err)
 	s.Equal(int64(0), total)
 	s.NotNil(accounts)
@@ -146,7 +146,7 @@ func (s *AccountRepositoryTestSuite) TestPaginateByMember_ExcludesOtherUsersAndR
 	s.createMemberAccount(s.createUser(), "Someone else", models.EnvironmentProd)
 	s.Require().NoError(repositories.NewAccountUserRepository(nil).SoftDeleteByAccountAndUser(context.Background(), removed.ID, userID))
 
-	accounts, total, err := s.repo.PaginateByMember(context.Background(), userID, repositories.AccountListFilter{}, 20, 0)
+	accounts, total, err := s.repo.PaginateByMember(context.Background(), userID, "", "", 20, 0)
 	s.Require().NoError(err)
 	s.Equal(int64(1), total)
 	s.Require().Len(accounts, 1)
@@ -158,7 +158,7 @@ func (s *AccountRepositoryTestSuite) TestPaginateByMember_FiltersByEnvironment()
 	s.createMemberAccount(userID, "Acme Corp", models.EnvironmentProd)
 	s.createMemberAccount(userID, "Acme Corp (Test)", models.EnvironmentTest)
 
-	accounts, total, err := s.repo.PaginateByMember(context.Background(), userID, repositories.AccountListFilter{Environment: models.EnvironmentTest}, 20, 0)
+	accounts, total, err := s.repo.PaginateByMember(context.Background(), userID, "", models.EnvironmentTest, 20, 0)
 	s.Require().NoError(err)
 	s.Equal(int64(1), total)
 	s.Equal([]string{"Acme Corp (Test)"}, accountNames(accounts))
@@ -169,12 +169,12 @@ func (s *AccountRepositoryTestSuite) TestPaginateByMember_SearchesNameCaseInsens
 	custody := s.createMemberAccount(userID, "Custody Desk", models.EnvironmentProd)
 	s.createMemberAccount(userID, "Treasury", models.EnvironmentProd)
 
-	byName, total, err := s.repo.PaginateByMember(context.Background(), userID, repositories.AccountListFilter{Search: "cUsToDy"}, 20, 0)
+	byName, total, err := s.repo.PaginateByMember(context.Background(), userID, "cUsToDy", "", 20, 0)
 	s.Require().NoError(err)
 	s.Equal(int64(1), total)
 	s.Equal([]string{"Custody Desk"}, accountNames(byName))
 
-	byID, total, err := s.repo.PaginateByMember(context.Background(), userID, repositories.AccountListFilter{Search: custody.ID.String()[:8]}, 20, 0)
+	byID, total, err := s.repo.PaginateByMember(context.Background(), userID, custody.ID.String()[:8], "", 20, 0)
 	s.Require().NoError(err)
 	s.Equal(int64(1), total)
 	s.Equal(custody.ID, byID[0].ID)
@@ -187,11 +187,11 @@ func (s *AccountRepositoryTestSuite) TestPaginateByMember_TreatsLikeWildcardsLit
 	s.createMemberAccount(userID, "snake_case", models.EnvironmentProd)
 	s.createMemberAccount(userID, "snakeXcase", models.EnvironmentProd)
 
-	percent, _, err := s.repo.PaginateByMember(context.Background(), userID, repositories.AccountListFilter{Search: "100%"}, 20, 0)
+	percent, _, err := s.repo.PaginateByMember(context.Background(), userID, "100%", "", 20, 0)
 	s.Require().NoError(err)
 	s.Equal([]string{"100% Reserve"}, accountNames(percent))
 
-	underscore, _, err := s.repo.PaginateByMember(context.Background(), userID, repositories.AccountListFilter{Search: "e_c"}, 20, 0)
+	underscore, _, err := s.repo.PaginateByMember(context.Background(), userID, "e_c", "", 20, 0)
 	s.Require().NoError(err)
 	s.Equal([]string{"snake_case"}, accountNames(underscore))
 }

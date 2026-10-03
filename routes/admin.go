@@ -198,10 +198,8 @@ func newDashboardAuthController() *dashauth.AuthController {
 
 func newDashboardUsersController() *dashusers.UsersController {
 	return dashusers.NewUsersController(
-		container.MustMake[*repositories.UserRepository](),
-		container.MustMake[*repositories.AccountRepository](),
-		container.MustMake[*repositories.AccountUserRepository](),
-		container.MustMake[*repositories.TotpRecoveryCodeRepository](),
+		container.MustMake[*usersvc.Service](),
+		container.MustMake[*accountsvc.Service](),
 		container.MustMake[*authsvc.Service](),
 	)
 }

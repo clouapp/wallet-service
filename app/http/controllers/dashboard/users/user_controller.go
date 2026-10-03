@@ -14,8 +14,9 @@ import (
 	"github.com/macrowallets/waas/app/http/requests"
 	"github.com/macrowallets/waas/app/http/responses"
 	"github.com/macrowallets/waas/app/models"
-	"github.com/macrowallets/waas/app/repositories"
+	accountsvc "github.com/macrowallets/waas/app/services/account"
 	authsvc "github.com/macrowallets/waas/app/services/auth"
+	usersvc "github.com/macrowallets/waas/app/services/users"
 )
 
 func validateRequest(ctx http.Context, req http.FormRequest) http.Response {
@@ -23,43 +24,31 @@ func validateRequest(ctx http.Context, req http.FormRequest) http.Response {
 }
 
 type UsersController struct {
-	users         *repositories.UserRepository
-	accounts      *repositories.AccountRepository
-	memberships   *repositories.AccountUserRepository
-	recoveryCodes *repositories.TotpRecoveryCodeRepository
-	passwords     *authsvc.Service
+	users     *usersvc.Service
+	accounts  *accountsvc.Service
+	passwords *authsvc.Service
 }
 
-// NewUsersController wires the dashboard user handlers. Repositories and the
-// auth helper are the provider singletons, resolved once at boot.
+// NewUsersController wires the dashboard user handlers. Services are the
+// provider singletons, resolved once at boot.
 func NewUsersController(
-	users *repositories.UserRepository,
-	accounts *repositories.AccountRepository,
-	memberships *repositories.AccountUserRepository,
-	recoveryCodes *repositories.TotpRecoveryCodeRepository,
+	users *usersvc.Service,
+	accounts *accountsvc.Service,
 	passwords *authsvc.Service,
 ) *UsersController {
 	if users == nil {
-		panic("dashboard users controller: users repository is required")
+		panic("dashboard users controller: users service is required")
 	}
 	if accounts == nil {
-		panic("dashboard users controller: accounts repository is required")
-	}
-	if memberships == nil {
-		panic("dashboard users controller: memberships repository is required")
-	}
-	if recoveryCodes == nil {
-		panic("dashboard users controller: recovery codes repository is required")
+		panic("dashboard users controller: account service is required")
 	}
 	if passwords == nil {
 		panic("dashboard users controller: auth service is required")
 	}
 	return &UsersController{
-		users:         users,
-		accounts:      accounts,
-		memberships:   memberships,
-		recoveryCodes: recoveryCodes,
-		passwords:     passwords,
+		users:     users,
+		accounts:  accounts,
+		passwords: passwords,
 	}
 }
 
@@ -173,12 +162,12 @@ func (ctrl *UsersController) ListMyAccounts(ctx http.Context) http.Response {
 		return responses.Send(ctx, http.StatusBadRequest, http.Json{"error": err.Error()})
 	}
 
-	filter, errMessage := parseMyAccountsFilter(ctx)
+	search, environment, errMessage := parseMyAccountsFilter(ctx)
 	if errMessage != "" {
 		return responses.Send(ctx, http.StatusBadRequest, http.Json{"error": errMessage})
 	}
 
-	accounts, total, err := ctrl.accounts.PaginateByMember(ctx.Context(), userID, filter, limit, offset)
+	accounts, total, err := ctrl.accounts.ListForMember(ctx.Context(), userID, search, environment, limit, offset)
 	if err != nil {
 		facades.Log().WithContext(ctx).Errorf("user: list my accounts: %v", err)
 		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to fetch accounts"})
@@ -206,7 +195,7 @@ func (ctrl *UsersController) accountsWithCallerRole(ctx http.Context, userID uui
 	for i, account := range accounts {
 		accountIDs[i] = account.ID
 	}
-	roles, err := ctrl.memberships.RolesForUserAccounts(ctx.Context(), userID, accountIDs)
+	roles, err := ctrl.accounts.RolesForUserAccounts(ctx.Context(), userID, accountIDs)
 	if err != nil {
 		return nil, err
 	}
@@ -220,18 +209,18 @@ func (ctrl *UsersController) accountsWithCallerRole(ctx http.Context, userID uui
 	return items, nil
 }
 
-func parseMyAccountsFilter(ctx http.Context) (repositories.AccountListFilter, string) {
+func parseMyAccountsFilter(ctx http.Context) (string, string, string) {
 	search := strings.TrimSpace(ctx.Request().Query("search", ""))
 	if utf8.RuneCountInString(search) > myAccountsSearchMaxLength {
-		return repositories.AccountListFilter{}, fmt.Sprintf("search must be at most %d characters", myAccountsSearchMaxLength)
+		return "", "", fmt.Sprintf("search must be at most %d characters", myAccountsSearchMaxLength)
 	}
 
 	environment := strings.TrimSpace(ctx.Request().Query("environment", ""))
 	if environment != "" && environment != models.EnvironmentProd && environment != models.EnvironmentTest {
-		return repositories.AccountListFilter{}, fmt.Sprintf("environment must be %q or %q", models.EnvironmentProd, models.EnvironmentTest)
+		return "", "", fmt.Sprintf("environment must be %q or %q", models.EnvironmentProd, models.EnvironmentTest)
 	}
 
-	return repositories.AccountListFilter{Search: search, Environment: environment}, ""
+	return search, environment, ""
 }
 
 // UpdateDefaultAccount godoc
@@ -256,7 +245,7 @@ func (ctrl *UsersController) UpdateDefaultAccount(ctx http.Context) http.Respons
 
 	accountID, _ := uuid.Parse(req.AccountID)
 
-	au, err := ctrl.memberships.FindByAccountAndUser(ctx.Context(), accountID, userID)
+	au, err := ctrl.accounts.FindMember(ctx.Context(), accountID, userID)
 	if err != nil || au == nil {
 		return responses.Send(ctx, http.StatusForbidden, http.Json{"error": "not a member of this account"})
 	}
@@ -349,7 +338,7 @@ func (ctrl *UsersController) ConfirmTOTP(ctx http.Context) http.Response {
 		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to generate recovery codes"})
 	}
 
-	_ = ctrl.recoveryCodes.DeleteByUserID(ctx.Context(), user.ID)
+	_ = ctrl.users.DeleteRecoveryCodes(ctx.Context(), user.ID)
 
 	var recoveryCodes []models.TotpRecoveryCode
 	for _, h := range hashes {
@@ -359,7 +348,7 @@ func (ctrl *UsersController) ConfirmTOTP(ctx http.Context) http.Response {
 			CodeHash: h,
 		})
 	}
-	_ = ctrl.recoveryCodes.CreateBatch(ctx.Context(), recoveryCodes)
+	_ = ctrl.users.CreateRecoveryCodes(ctx.Context(), recoveryCodes)
 
 	user.TotpEnabled = true
 	resp := map[string]interface{}{
@@ -385,7 +374,7 @@ func (ctrl *UsersController) DisableTOTP(ctx http.Context) http.Response {
 		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to disable 2FA"})
 	}
 
-	_ = ctrl.recoveryCodes.DeleteByUserID(ctx.Context(), user.ID)
+	_ = ctrl.users.DeleteRecoveryCodes(ctx.Context(), user.ID)
 
 	user.TotpEnabled = false
 	user.TotpSecret = ""

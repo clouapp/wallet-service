@@ -15,9 +15,12 @@ import (
 // AccountStore is the account writes this service performs.
 type AccountStore interface {
 	Create(ctx context.Context, account *models.Account) error
+	FindByID(ctx context.Context, id uuid.UUID) (*models.Account, error)
 	SetName(ctx context.Context, id uuid.UUID, name string) error
 	SetViewAllWallets(ctx context.Context, id uuid.UUID, viewAll bool) error
 	SetStatus(ctx context.Context, id uuid.UUID, status string) error
+	SetLinkedAccountID(ctx context.Context, id, linkedID uuid.UUID) error
+	PaginateByMember(ctx context.Context, userID uuid.UUID, search, environment string, limit, offset int) ([]models.Account, int64, error)
 }
 
 // MembershipStore is the membership reads and writes this service performs.
@@ -32,6 +35,8 @@ type MembershipStore interface {
 	SoftDeleteByAccountAndUser(ctx context.Context, accountID, userID uuid.UUID) error
 	CountActiveByRole(ctx context.Context, accountID uuid.UUID, role string) (int64, error)
 	Within(ctx context.Context, fn func(context.Context) error) error
+	FindByUserID(ctx context.Context, userID uuid.UUID) ([]models.AccountUser, error)
+	RolesForUserAccounts(ctx context.Context, userID uuid.UUID, accountIDs []uuid.UUID) (map[uuid.UUID]string, error)
 }
 
 // UserStore finds an existing user or inserts one invited onto an account.
