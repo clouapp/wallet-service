@@ -10,56 +10,47 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/macrowallets/waas/app/models"
+	"github.com/macrowallets/waas/app/services/settings"
 	"github.com/macrowallets/waas/tests/testutil"
 )
-
-// fakeAccountRepo is the account lookup the sweep limit tests use.
-type fakeAccountRepo struct {
-	byID map[uuid.UUID]*models.Account
-	err  error
-}
-
-func (f *fakeAccountRepo) FindByID(_ context.Context, id uuid.UUID) (*models.Account, error) {
-	if f.err != nil {
-		return nil, f.err
-	}
-	if f.byID == nil {
-		return nil, nil
-	}
-	return f.byID[id], nil
-}
 
 // ---------------------------------------------------------------------------
 // LoadLimits
 // ---------------------------------------------------------------------------
 
-func TestLoadLimits_NilAccountReturnsDefaults(t *testing.T) {
-	svc := &service{accountRepo: &fakeAccountRepo{}}
+func TestLoadLimits_NilAccountReturnsDefaultsWithoutReading(t *testing.T) {
+	svc := &service{sweepLimits: func(context.Context, uuid.UUID) (settings.SweepLimitValues, error) {
+		t.Fatal("nil account must not read settings")
+		return settings.SweepLimitValues{}, nil
+	}}
 	limits, err := svc.LoadLimits(context.Background(), uuid.Nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if limits.MaxConsolidateReqPerDay != 50 {
-		t.Fatalf("expected default MaxConsolidateReqPerDay=50, got %d", limits.MaxConsolidateReqPerDay)
-	}
-	if limits.MaxAddressesPerRequest[models.AdapterTypeEVM] != 100 {
-		t.Fatalf("expected default evm=100, got %d", limits.MaxAddressesPerRequest[models.AdapterTypeEVM])
-	}
-	if limits.MaxAddressesPerRequest[models.AdapterTypeSolana] != 25 {
-		t.Fatalf("expected default solana=25, got %d", limits.MaxAddressesPerRequest[models.AdapterTypeSolana])
-	}
-	if limits.DailyWithdrawCapUSD != nil {
-		t.Fatalf("expected DailyWithdrawCapUSD=nil by default, got %v", *limits.DailyWithdrawCapUSD)
-	}
+	assertDefaultLimits(t, limits)
 }
 
-func TestLoadLimits_OverrideMergesWithDefaults(t *testing.T) {
-	raw := `{"max_consolidate_requests_per_day": 200, "max_addresses_per_request": {"evm": 500}, "daily_withdraw_cap_usd": "50000.50"}`
+func TestLoadLimits_NilSourceReturnsDefaults(t *testing.T) {
+	limits, err := (&service{}).LoadLimits(context.Background(), uuid.New())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	assertDefaultLimits(t, limits)
+}
+
+func TestLoadLimits_AppliesStoredSweepLimits(t *testing.T) {
 	accountID := uuid.New()
-	svc := &service{accountRepo: &fakeAccountRepo{
-		byID: map[uuid.UUID]*models.Account{
-			accountID: {ID: accountID, SweepLimits: &raw},
-		},
+	svc := &service{sweepLimits: func(_ context.Context, id uuid.UUID) (settings.SweepLimitValues, error) {
+		if id != accountID {
+			t.Fatalf("read limits for %s, want %s", id, accountID)
+		}
+		return settings.SweepLimitValues{
+			MaxAddressesEVM:              500,
+			MaxAddressesSolana:           25,
+			MaxAddressesBitcoin:          100,
+			MaxConsolidateRequestsPerDay: 200,
+			DailyWithdrawCapUSD:          "50000.50",
+		}, nil
 	}}
 
 	limits, err := svc.LoadLimits(context.Background(), accountID)
@@ -72,66 +63,60 @@ func TestLoadLimits_OverrideMergesWithDefaults(t *testing.T) {
 	if limits.MaxAddressesPerRequest[models.AdapterTypeEVM] != 500 {
 		t.Fatalf("expected override evm=500, got %d", limits.MaxAddressesPerRequest[models.AdapterTypeEVM])
 	}
-	// solana was not overridden — must inherit the default.
 	if limits.MaxAddressesPerRequest[models.AdapterTypeSolana] != 25 {
-		t.Fatalf("expected inherited default solana=25, got %d", limits.MaxAddressesPerRequest[models.AdapterTypeSolana])
+		t.Fatalf("expected solana=25, got %d", limits.MaxAddressesPerRequest[models.AdapterTypeSolana])
 	}
 	if limits.MaxAddressesPerRequest[models.AdapterTypeBitcoin] != 100 {
-		t.Fatalf("expected inherited default bitcoin=100, got %d", limits.MaxAddressesPerRequest[models.AdapterTypeBitcoin])
+		t.Fatalf("expected bitcoin=100, got %d", limits.MaxAddressesPerRequest[models.AdapterTypeBitcoin])
 	}
 	if limits.DailyWithdrawCapUSD == nil || *limits.DailyWithdrawCapUSD != 50000.50 {
 		t.Fatalf("expected DailyWithdrawCapUSD=50000.50, got %v", limits.DailyWithdrawCapUSD)
 	}
 }
 
-func TestLoadLimits_InvalidJSONFallsBackToDefaults(t *testing.T) {
-	raw := `{not json`
-	accountID := uuid.New()
-	svc := &service{accountRepo: &fakeAccountRepo{
-		byID: map[uuid.UUID]*models.Account{
-			accountID: {ID: accountID, SweepLimits: &raw},
-		},
+func TestLoadLimits_ReadErrorReturnsDefaults(t *testing.T) {
+	svc := &service{sweepLimits: func(context.Context, uuid.UUID) (settings.SweepLimitValues, error) {
+		return settings.SweepLimitValues{}, errors.New("settings unavailable")
 	}}
 
-	limits, err := svc.LoadLimits(context.Background(), accountID)
+	limits, err := svc.LoadLimits(context.Background(), uuid.New())
 	if err != nil {
-		t.Fatalf("invalid JSON must not surface an error, got %v", err)
+		t.Fatalf("a settings outage must not surface an error, got %v", err)
 	}
-	if limits.MaxConsolidateReqPerDay != 50 {
-		t.Fatalf("expected fallback default 50, got %d", limits.MaxConsolidateReqPerDay)
-	}
-	if limits.MaxAddressesPerRequest[models.AdapterTypeEVM] != 100 {
-		t.Fatalf("expected fallback default evm=100, got %d", limits.MaxAddressesPerRequest[models.AdapterTypeEVM])
-	}
+	assertDefaultLimits(t, limits)
 }
 
-func TestLoadLimits_EmptySweepLimitsStringReturnsDefaults(t *testing.T) {
-	empty := ""
-	accountID := uuid.New()
-	svc := &service{accountRepo: &fakeAccountRepo{
-		byID: map[uuid.UUID]*models.Account{
-			accountID: {ID: accountID, SweepLimits: &empty},
-		},
+func TestLoadLimits_BlankCapStaysUnlimited(t *testing.T) {
+	svc := &service{sweepLimits: func(context.Context, uuid.UUID) (settings.SweepLimitValues, error) {
+		values := settings.DefaultSweepLimits()
+		values.DailyWithdrawCapUSD = "   "
+		return values, nil
 	}}
-
-	limits, err := svc.LoadLimits(context.Background(), accountID)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if limits.MaxConsolidateReqPerDay != 50 {
-		t.Fatalf("expected default 50 for empty sweep_limits string, got %d", limits.MaxConsolidateReqPerDay)
-	}
-}
-
-func TestLoadLimits_AccountNotFoundReturnsDefaults(t *testing.T) {
-	svc := &service{accountRepo: &fakeAccountRepo{byID: map[uuid.UUID]*models.Account{}}}
-
 	limits, err := svc.LoadLimits(context.Background(), uuid.New())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
+	if limits.DailyWithdrawCapUSD != nil {
+		t.Fatalf("blank cap must stay unlimited, got %v", *limits.DailyWithdrawCapUSD)
+	}
+}
+
+func assertDefaultLimits(t *testing.T, limits *Limits) {
+	t.Helper()
 	if limits.MaxConsolidateReqPerDay != 50 {
-		t.Fatalf("expected default 50 when account is missing, got %d", limits.MaxConsolidateReqPerDay)
+		t.Fatalf("expected default MaxConsolidateReqPerDay=50, got %d", limits.MaxConsolidateReqPerDay)
+	}
+	if limits.MaxAddressesPerRequest[models.AdapterTypeEVM] != 100 {
+		t.Fatalf("expected default evm=100, got %d", limits.MaxAddressesPerRequest[models.AdapterTypeEVM])
+	}
+	if limits.MaxAddressesPerRequest[models.AdapterTypeSolana] != 25 {
+		t.Fatalf("expected default solana=25, got %d", limits.MaxAddressesPerRequest[models.AdapterTypeSolana])
+	}
+	if limits.MaxAddressesPerRequest[models.AdapterTypeBitcoin] != 100 {
+		t.Fatalf("expected default bitcoin=100, got %d", limits.MaxAddressesPerRequest[models.AdapterTypeBitcoin])
+	}
+	if limits.DailyWithdrawCapUSD != nil {
+		t.Fatalf("expected DailyWithdrawCapUSD=nil by default, got %v", *limits.DailyWithdrawCapUSD)
 	}
 }
 

@@ -11,6 +11,7 @@ import (
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/services/chain"
 	mpcpkg "github.com/macrowallets/waas/app/services/mpc"
+	"github.com/macrowallets/waas/app/services/settings"
 	"github.com/macrowallets/waas/app/services/webhook"
 )
 
@@ -43,10 +44,10 @@ type Service interface {
 	LoadLimits(ctx context.Context, accountID uuid.UUID) (*Limits, error)
 }
 
-// accountReader is the account lookup sweep uses for per-account limits.
-type accountReader interface {
-	FindByID(ctx context.Context, id uuid.UUID) (*models.Account, error)
-}
+// accountSweepLimitSource reads the effective account_sweep_limits document
+// at the moment of use. A nil source means the registry defaults. The source
+// is injected so this package does not query the settings table itself.
+type accountSweepLimitSource func(ctx context.Context, accountID uuid.UUID) (settings.SweepLimitValues, error)
 
 // walletReader is the wallet lookup and gas-status write sweep uses.
 type walletReader interface {
@@ -107,7 +108,7 @@ type service struct {
 	walletRepo  walletReader
 	addressRepo addressReader
 	txRepo      transactionWriter
-	accountRepo accountReader
+	sweepLimits accountSweepLimitSource
 	chainRepo   chainReader
 	flags       accountGate
 	gasDefaults map[string]GasReadinessDefault
@@ -128,7 +129,7 @@ func NewService(
 	walletRepo walletReader,
 	addressRepo addressReader,
 	txRepo transactionWriter,
-	accountRepo accountReader,
+	sweepLimits accountSweepLimitSource,
 	chainRepo chainReader,
 	flags accountGate,
 	gasDefaults map[string]GasReadinessDefault,
@@ -142,7 +143,7 @@ func NewService(
 		walletRepo:  walletRepo,
 		addressRepo: addressRepo,
 		txRepo:      txRepo,
-		accountRepo: accountRepo,
+		sweepLimits: sweepLimits,
 		chainRepo:   chainRepo,
 		flags:       flags,
 		gasDefaults: cloneGasDefaults(gasDefaults),

@@ -14,4 +14,6 @@ var (
 	ErrManagedByPlatform = errors.New("platform staff manage this settings group")
 	// errSealFailed is internal. The log names the key, never the plaintext.
 	errSealFailed = errors.New("seal setting")
+	// errServiceRequired is a nil settings service.
+	errServiceRequired = errors.New("account settings: service is required")
 )

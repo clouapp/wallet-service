@@ -39,6 +39,7 @@ import (
 	"github.com/macrowallets/waas/app/services/price"
 	"github.com/macrowallets/waas/app/services/queue"
 	"github.com/macrowallets/waas/app/services/refresh"
+	"github.com/macrowallets/waas/app/services/settings"
 	"github.com/macrowallets/waas/app/services/sweep"
 	"github.com/macrowallets/waas/app/services/wallet"
 	"github.com/macrowallets/waas/app/services/webhook"
@@ -345,9 +346,13 @@ func buildVaultContainer(app foundation.Application) (*container.Container, erro
 	if err != nil {
 		return nil, fmt.Errorf("vault: feature flags: %w", err)
 	}
+	accountSettings, err := container.Make[*settings.Service]()
+	if err != nil {
+		return nil, fmt.Errorf("vault: account settings: %w", err)
+	}
 	c.SweepService = sweep.NewService(
 		c.Registry, c.MPCService, sweepsecrets.New(c.SecretsManager), sweepredis.New(c.Redis), c.WebhookService,
-		c.WalletRepo, c.AddressRepo, c.TransactionRepo, c.AccountRepo, c.ChainRepo,
+		c.WalletRepo, c.AddressRepo, c.TransactionRepo, accountSettings.EffectiveSweepLimits, c.ChainRepo,
 		func(ctx context.Context, accountID uuid.UUID) error {
 			return flags.Gate(ctx, accountID, features.FlagSweepEnabled, features.CodeSweepPaused)
 		},

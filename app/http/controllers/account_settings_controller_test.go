@@ -1,6 +1,7 @@
 package controllers_test
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -11,9 +12,11 @@ import (
 	goravelTesting "github.com/goravel/framework/testing"
 	"github.com/stretchr/testify/suite"
 
+	"github.com/macrowallets/waas/app/container"
 	"github.com/macrowallets/waas/app/models"
 	authsvc "github.com/macrowallets/waas/app/services/auth"
 	"github.com/macrowallets/waas/app/services/settings"
+	"github.com/macrowallets/waas/app/services/sweep"
 	"github.com/macrowallets/waas/tests/mocks"
 )
 
@@ -30,6 +33,48 @@ func TestAccountSettingsSuite(t *testing.T) {
 
 func (s *accountSettingsSuite) SetupTest() {
 	mocks.TestDB(s.T())
+}
+
+func (s *accountSettingsSuite) TestStoredSweepLimitIsAppliedWhenSweepLoadsLimits() {
+	accountID, _ := s.owner()
+	sweepService := s.sweepService()
+
+	before, err := sweepService.LoadLimits(context.Background(), accountID)
+	s.Require().NoError(err)
+	s.Equal(100, before.MaxAddressesPerRequest[models.AdapterTypeEVM])
+	s.Equal(25, before.MaxAddressesPerRequest[models.AdapterTypeSolana])
+	s.Equal(50, before.MaxConsolidateReqPerDay)
+	s.Nil(before.DailyWithdrawCapUSD)
+
+	_, err = facades.Orm().Query().Exec(
+		`INSERT INTO settings (account_id, "group", "key", value, created_at, updated_at)
+		 VALUES (?, 'account_sweep_limits', 'max_consolidate_requests_per_day', '12', NOW(), NOW())`,
+		accountID,
+	)
+	s.Require().NoError(err)
+	_, err = facades.Orm().Query().Exec(
+		`INSERT INTO settings (account_id, "group", "key", value, created_at, updated_at)
+		 VALUES (?, 'account_security', 'require_2fa', 'true', NOW(), NOW())`,
+		accountID,
+	)
+	s.Require().NoError(err)
+
+	after, err := sweepService.LoadLimits(context.Background(), accountID)
+	s.Require().NoError(err)
+	s.Equal(12, after.MaxConsolidateReqPerDay)
+	s.Equal(100, after.MaxAddressesPerRequest[models.AdapterTypeEVM])
+	s.Equal(25, after.MaxAddressesPerRequest[models.AdapterTypeSolana])
+	s.Equal(100, after.MaxAddressesPerRequest[models.AdapterTypeBitcoin])
+	s.Nil(after.DailyWithdrawCapUSD)
+}
+
+func (s *accountSettingsSuite) sweepService() sweep.Service {
+	raw, err := facades.App().Make(container.ContainerKey)
+	s.Require().NoError(err)
+	vault, ok := raw.(*container.Container)
+	s.Require().True(ok)
+	s.Require().NotNil(vault.SweepService)
+	return vault.SweepService
 }
 
 func (s *accountSettingsSuite) TestGetHidesSecretAndShowsIsSet() {

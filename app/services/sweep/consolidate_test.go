@@ -123,7 +123,6 @@ func TestConsolidateAll_NoEligibleChildren_Noop(t *testing.T) {
 		walletRepo:  &fakeWalletRepo{wallet: wallet},
 		addressRepo: &fakeAddressRepo{children: []models.Address{baseAddr}},
 		chainRepo:   &fakeChainRepo{chain: chainEntity},
-		accountRepo: &fakeAccountRepo{},
 		txRepo:      txRepo,
 	}
 
@@ -212,7 +211,6 @@ func TestConsolidateAll_QuotaNotBurnedOnInvalidPassphrase(t *testing.T) {
 		walletRepo:  &fakeWalletRepo{wallet: wallet},
 		addressRepo: &fakeAddressRepo{children: []models.Address{baseAddr, childA}},
 		chainRepo:   &fakeChainRepo{chain: chainEntity},
-		accountRepo: &fakeAccountRepo{},
 		txRepo:      &fakeTxRepo{},
 	}
 
