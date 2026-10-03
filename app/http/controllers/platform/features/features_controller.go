@@ -45,7 +45,7 @@ func (ctrl *FeaturesController) Index(ctx http.Context) http.Response {
 	if errResp := mapPlatformFeatureError(ctx, err); errResp != nil {
 		return errResp
 	}
-	return ctx.Response().Json(http.StatusOK, view)
+	return responses.Send(ctx, http.StatusOK, view)
 }
 
 // Update godoc
@@ -77,7 +77,7 @@ func (ctrl *FeaturesController) Update(ctx http.Context) http.Response {
 	if errResp := mapPlatformFeatureError(ctx, err); errResp != nil {
 		return errResp
 	}
-	return ctx.Response().Json(http.StatusOK, flag)
+	return responses.Send(ctx, http.StatusOK, flag)
 }
 
 func platformCaller(ctx http.Context) (uuid.UUID, http.Response) {
@@ -93,7 +93,7 @@ func mapPlatformFeatureBodyError(ctx http.Context, err error) http.Response {
 	case errors.Is(err, requests.ErrAccountFeatureBodyTooLarge):
 		return responses.Send(ctx, http.StatusRequestEntityTooLarge, http.Json{"error": "request body is too large"})
 	case errors.Is(err, requests.ErrAccountFeatureEnabledRequired):
-		return ctx.Response().Json(http.StatusUnprocessableEntity, map[string]any{
+		return responses.Send(ctx, http.StatusUnprocessableEntity, map[string]any{
 			"error": map[string]any{
 				"code":    responses.CodeValidationFailed,
 				"message": "validation failed",

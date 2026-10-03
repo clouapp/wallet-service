@@ -1,2 +1,0 @@
-# TestControllersDoNotWriteJSONInline: known violations, rewritten by go test ./tests/architecture -update-baseline
-app/http/controllers/platform/features/features_controller.go calls ctx.Response().Json() (x3)
