@@ -123,7 +123,7 @@ func (ctrl *WithdrawalsController) ListWalletWithdrawals(ctx http.Context) http.
 	if err != nil {
 		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to fetch withdrawals"})
 	}
-	return ctx.Response().Json(http.StatusOK, pagination.Response(withdrawals, total, limit, offset))
+	return responses.Send(ctx, http.StatusOK, pagination.Response(withdrawals, total, limit, offset))
 }
 
 func (ctrl *WithdrawalsController) EstimateWithdrawalFee(ctx http.Context) http.Response {
@@ -154,7 +154,7 @@ func (ctrl *WithdrawalsController) EstimateWithdrawalFee(ctx http.Context) http.
 		})
 	}
 
-	return ctx.Response().Json(http.StatusOK, estimate)
+	return responses.Send(ctx, http.StatusOK, estimate)
 }
 
 // CreateWalletWithdrawal godoc
@@ -284,7 +284,7 @@ func (ctrl *WithdrawalsController) CreateWalletWithdrawal(ctx http.Context) http
 		return controllers.MapInternalError(ctx, findErr, "find_idempotent_withdrawal")
 	}
 	if existing != nil && (existing.Status == "broadcast" || existing.Status == "confirmed") {
-		return ctx.Response().Json(http.StatusOK, existing)
+		return responses.Send(ctx, http.StatusOK, existing)
 	}
 
 	w := existing
@@ -366,7 +366,7 @@ func (ctrl *WithdrawalsController) CreateWalletWithdrawal(ctx http.Context) http
 		return controllers.MapInternalError(ctx, updateErr, "persist_broadcast_withdrawal")
 	}
 	controllers.PublishWithdrawalBroadcast(ctx, ctrl.events, w, tx)
-	return ctx.Response().Json(http.StatusCreated, w)
+	return responses.Send(ctx, http.StatusCreated, w)
 }
 
 // GetWalletWithdrawal godoc
@@ -393,7 +393,7 @@ func (ctrl *WithdrawalsController) GetWalletWithdrawal(ctx http.Context) http.Re
 	if err != nil || w == nil {
 		return responses.Send(ctx, http.StatusNotFound, http.Json{"error": "withdrawal not found"})
 	}
-	return ctx.Response().Json(http.StatusOK, w)
+	return responses.Send(ctx, http.StatusOK, w)
 }
 
 // CancelWalletWithdrawal godoc
@@ -440,5 +440,5 @@ func (ctrl *WithdrawalsController) CancelWalletWithdrawal(ctx http.Context) http
 		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to cancel withdrawal"})
 	}
 	w.Status = "cancelled"
-	return ctx.Response().Json(http.StatusOK, w)
+	return responses.Send(ctx, http.StatusOK, w)
 }
