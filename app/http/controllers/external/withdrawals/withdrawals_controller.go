@@ -14,12 +14,15 @@ import (
 	"github.com/macrowallets/waas/app/http/requests"
 	"github.com/macrowallets/waas/app/http/responses"
 	"github.com/macrowallets/waas/app/models"
-	"github.com/macrowallets/waas/app/repositories"
 	authsvc "github.com/macrowallets/waas/app/services/auth"
 	chain "github.com/macrowallets/waas/app/services/chain"
+	chainsvc "github.com/macrowallets/waas/app/services/chains"
 	"github.com/macrowallets/waas/app/services/features"
+	usersvc "github.com/macrowallets/waas/app/services/users"
+	"github.com/macrowallets/waas/app/services/walletrecords"
 	"github.com/macrowallets/waas/app/services/withdraw"
 	"github.com/macrowallets/waas/app/services/withdrawalevents"
+	"github.com/macrowallets/waas/app/services/withdrawalrecords"
 	"github.com/macrowallets/waas/pkg/types"
 )
 
@@ -31,10 +34,10 @@ func validateRequest(ctx http.Context, req http.FormRequest) http.Response {
 
 // WithdrawalsController serves the external withdrawal routes.
 type WithdrawalsController struct {
-	withdrawals       *repositories.WithdrawalRepository
-	chains            *repositories.ChainRepository
-	users             *repositories.UserRepository
-	transactions      *repositories.TransactionRepository
+	withdrawals       *withdrawalrecords.Records
+	chains            *chainsvc.Service
+	users             *usersvc.Service
+	transactions      *walletrecords.Transactions
 	registry          *chain.Registry
 	withdrawalService *withdraw.Service
 	passwords         *authsvc.Service
@@ -44,10 +47,10 @@ type WithdrawalsController struct {
 }
 
 func NewWithdrawalsController(
-	withdrawals *repositories.WithdrawalRepository,
-	chains *repositories.ChainRepository,
-	users *repositories.UserRepository,
-	transactions *repositories.TransactionRepository,
+	withdrawals *withdrawalrecords.Records,
+	chains *chainsvc.Service,
+	users *usersvc.Service,
+	transactions *walletrecords.Transactions,
 	registry *chain.Registry,
 	withdrawalService *withdraw.Service,
 	passwords *authsvc.Service,
@@ -56,16 +59,16 @@ func NewWithdrawalsController(
 	redis *redis.Client,
 ) *WithdrawalsController {
 	if withdrawals == nil {
-		panic("external withdrawals controller: withdrawals repository is required")
+		panic("external withdrawals controller: withdrawals service is required")
 	}
 	if chains == nil {
-		panic("external withdrawals controller: chains repository is required")
+		panic("external withdrawals controller: chains service is required")
 	}
 	if users == nil {
-		panic("external withdrawals controller: users repository is required")
+		panic("external withdrawals controller: users service is required")
 	}
 	if transactions == nil {
-		panic("external withdrawals controller: transactions repository is required")
+		panic("external withdrawals controller: transactions service is required")
 	}
 	if registry == nil {
 		panic("external withdrawals controller: chain registry is required")

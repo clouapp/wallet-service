@@ -13,11 +13,12 @@ import (
 	extwebhooks "github.com/macrowallets/waas/app/http/controllers/external/webhooks"
 	extwithdrawals "github.com/macrowallets/waas/app/http/controllers/external/withdrawals"
 	"github.com/macrowallets/waas/app/http/middleware"
-	"github.com/macrowallets/waas/app/repositories"
 	authsvc "github.com/macrowallets/waas/app/services/auth"
 	chainsvc "github.com/macrowallets/waas/app/services/chains"
 	featuressvc "github.com/macrowallets/waas/app/services/features"
+	usersvc "github.com/macrowallets/waas/app/services/users"
 	"github.com/macrowallets/waas/app/services/walletrecords"
+	"github.com/macrowallets/waas/app/services/withdrawalrecords"
 )
 
 // RegisterExternalAPI registers Bearer API-token routes under /api/v1.
@@ -104,10 +105,10 @@ func newExternalSweepController() *extsweep.SweepController {
 func newExternalWithdrawalsController() *extwithdrawals.WithdrawalsController {
 	deps := container.Get()
 	return extwithdrawals.NewWithdrawalsController(
-		container.MustMake[*repositories.WithdrawalRepository](),
-		container.MustMake[*repositories.ChainRepository](),
-		container.MustMake[*repositories.UserRepository](),
-		container.MustMake[*repositories.TransactionRepository](),
+		container.MustMake[*withdrawalrecords.Records](),
+		container.MustMake[*chainsvc.Service](),
+		container.MustMake[*usersvc.Service](),
+		container.MustMake[*walletrecords.Transactions](),
 		deps.Registry,
 		deps.WithdrawalService,
 		container.MustMake[*authsvc.Service](),
@@ -119,7 +120,7 @@ func newExternalWithdrawalsController() *extwithdrawals.WithdrawalsController {
 
 func newExternalWalletsController() *extwallets.WalletsController {
 	return extwallets.NewWalletsController(
-		container.MustMake[*repositories.WalletRepository](),
+		container.MustMake[*walletrecords.Wallets](),
 		currentWalletService,
 	)
 }
