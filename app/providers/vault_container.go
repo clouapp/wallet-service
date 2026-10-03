@@ -20,6 +20,7 @@ import (
 	"github.com/macrowallets/waas/app/adapters/redis/addresscache"
 	"github.com/macrowallets/waas/app/adapters/redis/addressset"
 	redislock "github.com/macrowallets/waas/app/adapters/redis/lock"
+	sweepsecrets "github.com/macrowallets/waas/app/adapters/secretsmanager"
 	"github.com/macrowallets/waas/app/container"
 	"github.com/macrowallets/waas/app/facades"
 	"github.com/macrowallets/waas/app/models"
@@ -342,7 +343,7 @@ func buildVaultContainer(app foundation.Application) (*container.Container, erro
 		return nil, fmt.Errorf("vault: feature flags: %w", err)
 	}
 	c.SweepService = sweep.NewService(
-		c.Registry, c.MPCService, c.SecretsManager, c.Redis, c.WebhookService,
+		c.Registry, c.MPCService, sweepsecrets.New(c.SecretsManager), c.Redis, c.WebhookService,
 		c.WalletRepo, c.AddressRepo, c.TransactionRepo, c.AccountRepo, c.ChainRepo,
 		func(ctx context.Context, accountID uuid.UUID) error {
 			return flags.Gate(ctx, accountID, features.FlagSweepEnabled, features.CodeSweepPaused)

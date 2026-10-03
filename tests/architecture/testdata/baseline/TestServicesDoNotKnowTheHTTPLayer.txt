@@ -7,7 +7,6 @@ app/services/price imports github.com/redis/go-redis/v9 (x2)
 app/services/refresh imports app/repositories (x2)
 app/services/settings/seal.go calls facades.Crypt()
 app/services/settings/service.go calls facades.Cache()
-app/services/sweep imports github.com/aws/aws-sdk-go-v2/service/secretsmanager (x2)
 app/services/sweep imports github.com/redis/go-redis/v9
 app/services/wallet imports github.com/aws/aws-sdk-go-v2/aws
 app/services/wallet imports github.com/aws/aws-sdk-go-v2/service/secretsmanager

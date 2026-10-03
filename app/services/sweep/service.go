@@ -6,7 +6,6 @@ import (
 	"math/big"
 	"time"
 
-	"github.com/aws/aws-sdk-go-v2/service/secretsmanager"
 	"github.com/google/uuid"
 	"github.com/redis/go-redis/v9"
 
@@ -71,6 +70,13 @@ type chainReader interface {
 	FindByID(ctx context.Context, id string) (*models.Chain, error)
 }
 
+// SecretReader loads one secret's binary value. The provider supplies it;
+// this package never imports the AWS SDK. A nil SecretReader means Secrets
+// Manager is not configured. The service keeps the secret id. Bytes are not logged.
+type SecretReader interface {
+	Binary(ctx context.Context, secretID string) ([]byte, error)
+}
+
 // accountGate reports a block for one account. Nil means no reader is wired,
 // so the action proceeds. The reader is injected: this package cannot import
 // the feature-flag service without an import cycle.
@@ -86,7 +92,7 @@ type GasReadinessDefault struct {
 type service struct {
 	registry    *chain.Registry
 	mpc         mpcpkg.Service
-	secrets     *secretsmanager.Client
+	secrets     SecretReader
 	rdb         *redis.Client
 	webhookSvc  *webhook.Service
 	walletRepo  walletReader
@@ -97,9 +103,8 @@ type service struct {
 	flags       accountGate
 	gasDefaults map[string]GasReadinessDefault
 
-	// fetchShareBFn is the function used to retrieve the service's MPC share for
-	// a wallet. In production it targets AWS Secrets Manager; tests override it
-	// with a pure in-memory stub to avoid mocking the secretsmanager SDK.
+	// fetchShareBFn retrieves the service share for a wallet. Tests set it to an
+	// in-memory stub. Production uses secrets.
 	fetchShareBFn func(ctx context.Context, wallet *models.Wallet) ([]byte, error)
 }
 
@@ -108,7 +113,7 @@ type service struct {
 func NewService(
 	registry *chain.Registry,
 	mpc mpcpkg.Service,
-	secrets *secretsmanager.Client,
+	secrets SecretReader,
 	rdb *redis.Client,
 	webhookSvc *webhook.Service,
 	walletRepo walletReader,

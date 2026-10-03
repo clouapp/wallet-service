@@ -6,7 +6,6 @@ import (
 	"log/slog"
 	"math/big"
 
-	"github.com/aws/aws-sdk-go-v2/service/secretsmanager"
 	"github.com/google/uuid"
 
 	"github.com/macrowallets/waas/app/models"
@@ -469,7 +468,7 @@ func finalizeMPCTransaction(
 }
 
 // fetchShareB resolves the service's MPC share for `wallet`. Production paths
-// go through AWS Secrets Manager; tests override the behaviour by assigning
+// go through the injected secret reader; tests override the behaviour by assigning
 // `service.fetchShareBFn` directly.
 func (s *service) fetchShareB(ctx context.Context, wallet *models.Wallet) ([]byte, error) {
 	if s.fetchShareBFn != nil {
@@ -481,14 +480,11 @@ func (s *service) fetchShareB(ctx context.Context, wallet *models.Wallet) ([]byt
 	if wallet.MPCSecretARN == "" {
 		return nil, fmt.Errorf("sweep: wallet has no MPC secret ARN")
 	}
-	arn := wallet.MPCSecretARN
-	out, err := s.secrets.GetSecretValue(ctx, &secretsmanager.GetSecretValueInput{
-		SecretId: &arn,
-	})
+	binary, err := s.secrets.Binary(ctx, wallet.MPCSecretARN)
 	if err != nil {
 		return nil, fmt.Errorf("sweep: fetch share_b: %w", err)
 	}
-	return out.SecretBinary, nil
+	return binary, nil
 }
 
 // zeroBytes clears a byte slice in place to reduce the lifetime of sensitive
