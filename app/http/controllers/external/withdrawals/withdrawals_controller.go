@@ -3,7 +3,6 @@ package withdrawals
 import (
 	"errors"
 	"fmt"
-	"strings"
 
 	"github.com/google/uuid"
 	"github.com/goravel/framework/contracts/http"
@@ -324,7 +323,7 @@ func (ctrl *WithdrawalsController) CreateWalletWithdrawal(ctx http.Context) http
 func (ctrl *WithdrawalsController) GetWalletWithdrawalByIdempotencyKey(ctx http.Context) http.Response {
 	wallet := ctx.Value("wallet").(*models.Wallet)
 
-	withdrawalID, err := uuid.Parse(strings.TrimSpace(ctx.Request().Route("idempotencyKey")))
+	withdrawalID, err := requests.RouteUUID(ctx, "idempotencyKey")
 	if err != nil {
 		return responses.Send(ctx, http.StatusBadRequest, http.Json{"error": "idempotency_key must be a UUID"})
 	}
