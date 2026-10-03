@@ -15,10 +15,16 @@ import (
 	"github.com/macrowallets/waas/app/http/middleware"
 	accountsvc "github.com/macrowallets/waas/app/services/account"
 	authsvc "github.com/macrowallets/waas/app/services/auth"
+	chainpkg "github.com/macrowallets/waas/app/services/chain"
 	chainsvc "github.com/macrowallets/waas/app/services/chains"
+	"github.com/macrowallets/waas/app/services/deposit"
 	featuressvc "github.com/macrowallets/waas/app/services/features"
+	"github.com/macrowallets/waas/app/services/sweep"
 	usersvc "github.com/macrowallets/waas/app/services/users"
 	"github.com/macrowallets/waas/app/services/walletrecords"
+	"github.com/macrowallets/waas/app/services/webhook"
+	"github.com/macrowallets/waas/app/services/withdraw"
+	"github.com/macrowallets/waas/app/services/withdrawalevents"
 	"github.com/macrowallets/waas/app/services/withdrawalrecords"
 )
 
@@ -75,11 +81,11 @@ func RegisterExternalAPI() {
 }
 
 func newExternalTransactionsController() *exttransactions.TransactionsController {
-	return exttransactions.NewTransactionsController(container.Get().WithdrawalService)
+	return exttransactions.NewTransactionsController(container.MustMake[*withdraw.Service]())
 }
 
 func newExternalWebhooksController() *extwebhooks.WebhooksController {
-	return extwebhooks.NewWebhooksController(container.Get().WebhookService)
+	return extwebhooks.NewWebhooksController(container.MustMake[*webhook.Service]())
 }
 
 func newExternalChainsController() *extchains.ChainsController {
@@ -92,32 +98,31 @@ func newExternalAddressesController() *extaddresses.AddressesController {
 	return extaddresses.NewAddressesController(
 		container.MustMake[*walletrecords.Addresses](),
 		currentWalletService,
-		container.Get().DepositService,
-		container.Get().Registry,
+		container.MustMake[*deposit.Service](),
+		container.MustMake[*chainpkg.Registry](),
 	)
 }
 
 func newExternalSweepController() *extsweep.SweepController {
 	return extsweep.NewSweepController(
-		container.Get().SweepService,
-		container.Get().Redis,
+		container.MustMake[*sweep.Box]().Service,
+		container.MustMake[*container.SharedRedis]().Client,
 		container.MustMake[*featuressvc.Service](),
 	)
 }
 
 func newExternalWithdrawalsController() *extwithdrawals.WithdrawalsController {
-	deps := container.Get()
 	return extwithdrawals.NewWithdrawalsController(
 		container.MustMake[*withdrawalrecords.Records](),
 		container.MustMake[*chainsvc.Service](),
 		container.MustMake[*usersvc.Service](),
 		container.MustMake[*walletrecords.Transactions](),
-		deps.Registry,
-		deps.WithdrawalService,
+		container.MustMake[*chainpkg.Registry](),
+		container.MustMake[*withdraw.Service](),
 		container.MustMake[*authsvc.Service](),
 		container.MustMake[*featuressvc.Service](),
-		deps.WithdrawalEvents,
-		deps.Redis,
+		container.MustMake[*withdrawalevents.Publisher](),
+		container.MustMake[*container.SharedRedis]().Client,
 	)
 }
 

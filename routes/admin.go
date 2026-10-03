@@ -23,14 +23,20 @@ import (
 	accountsvc "github.com/macrowallets/waas/app/services/account"
 	activitysvc "github.com/macrowallets/waas/app/services/activity"
 	authsvc "github.com/macrowallets/waas/app/services/auth"
+	chainpkg "github.com/macrowallets/waas/app/services/chain"
 	chainsvc "github.com/macrowallets/waas/app/services/chains"
 	"github.com/macrowallets/waas/app/services/currencies"
+	"github.com/macrowallets/waas/app/services/deposit"
 	featuressvc "github.com/macrowallets/waas/app/services/features"
+	"github.com/macrowallets/waas/app/services/price"
 	"github.com/macrowallets/waas/app/services/sessions"
 	settingssvc "github.com/macrowallets/waas/app/services/settings"
+	"github.com/macrowallets/waas/app/services/sweep"
 	usersvc "github.com/macrowallets/waas/app/services/users"
 	walletsvc "github.com/macrowallets/waas/app/services/wallet"
 	"github.com/macrowallets/waas/app/services/walletrecords"
+	"github.com/macrowallets/waas/app/services/withdraw"
+	"github.com/macrowallets/waas/app/services/withdrawalevents"
 	"github.com/macrowallets/waas/app/services/withdrawalrecords"
 )
 
@@ -205,6 +211,8 @@ func newDashboardUsersController() *dashusers.UsersController {
 	)
 }
 
+// currentWalletService reads the wallet service on each call. Recovery tests
+// replace that field after boot, so a singleton captured at boot would be stale.
 func currentWalletService() *walletsvc.Service {
 	return container.Get().WalletService
 }
@@ -263,7 +271,7 @@ func newDashboardChainsController() *dashchains.ChainsController {
 func newDashboardCurrenciesController() *dashcurrencies.CurrenciesController {
 	return dashcurrencies.NewCurrenciesController(
 		container.MustMake[*currencies.Service](),
-		container.Get().PriceService,
+		container.MustMake[*price.Service](),
 	)
 }
 
@@ -278,29 +286,28 @@ func newDashboardAddressesController() *dashaddresses.AddressesController {
 	return dashaddresses.NewAddressesController(
 		container.MustMake[*walletrecords.Addresses](),
 		currentWalletService,
-		container.Get().DepositService,
+		container.MustMake[*deposit.Service](),
 	)
 }
 
 func newDashboardWithdrawalsController() *dashwithdrawals.WithdrawalsController {
-	deps := container.Get()
 	return dashwithdrawals.NewWithdrawalsController(
 		container.MustMake[*withdrawalrecords.Records](),
 		container.MustMake[*chainsvc.Service](),
 		container.MustMake[*usersvc.Service](),
-		deps.Registry,
-		deps.WithdrawalService,
+		container.MustMake[*chainpkg.Registry](),
+		container.MustMake[*withdraw.Service](),
 		container.MustMake[*authsvc.Service](),
 		container.MustMake[*featuressvc.Service](),
-		deps.WithdrawalEvents,
-		deps.Redis,
+		container.MustMake[*withdrawalevents.Publisher](),
+		container.MustMake[*container.SharedRedis]().Client,
 	)
 }
 
 func newDashboardSweepController() *dashsweep.SweepController {
 	return dashsweep.NewSweepController(
-		container.Get().SweepService,
-		container.Get().Redis,
+		container.MustMake[*sweep.Box]().Service,
+		container.MustMake[*container.SharedRedis]().Client,
 		container.MustMake[*featuressvc.Service](),
 	)
 }

@@ -13,7 +13,7 @@ import (
 func RegisterInboundWebhooks() {
 	ingestCtrl := ingest.NewIngestController(
 		container.MustMake[*ingestsvc.Subscriptions](),
-		container.Get().IngestService,
+		container.MustMake[*ingestsvc.Service](),
 	)
 	facades.Route().Prefix("/v1/webhooks/ingest").Group(func(router route.Router) {
 		router.Post("/{provider}/{chainID}", ingestCtrl.HandleWebhookIngest)
