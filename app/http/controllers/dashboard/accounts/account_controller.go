@@ -7,7 +7,6 @@ import (
 	"github.com/goravel/framework/contracts/http"
 	"github.com/goravel/framework/facades"
 
-	"github.com/macrowallets/waas/app/container"
 	"github.com/macrowallets/waas/app/http/controllers"
 	"github.com/macrowallets/waas/app/http/middleware"
 	"github.com/macrowallets/waas/app/http/pagination"
@@ -15,6 +14,7 @@ import (
 	"github.com/macrowallets/waas/app/http/responses"
 	mails "github.com/macrowallets/waas/app/mails"
 	"github.com/macrowallets/waas/app/models"
+	"github.com/macrowallets/waas/app/repositories"
 	accountsvc "github.com/macrowallets/waas/app/services/account"
 	authsvc "github.com/macrowallets/waas/app/services/auth"
 )
@@ -27,14 +27,52 @@ func authorize(ctx http.Context, ability string, arguments map[string]any) http.
 	return controllers.Authorize(ctx, ability, arguments)
 }
 
-func accountSvc() *accountsvc.Service {
-	return accountsvc.NewService(accountsvc.Deps{
-		Accounts:    container.Get().AccountRepo,
-		Memberships: container.Get().AccountUserRepo,
-	})
+type AccountsController struct {
+	accounts       *repositories.AccountRepository
+	memberships    *repositories.AccountUserRepository
+	users          *repositories.UserRepository
+	tokens         *repositories.AccessTokenRepository
+	accountService *accountsvc.Service
+	passwords      *authsvc.Service
 }
 
-var accountAuthService = authsvc.NewService()
+// NewAccountsController wires the dashboard account handlers. Repositories and
+// the account service are the provider singletons, resolved once at boot.
+func NewAccountsController(
+	accounts *repositories.AccountRepository,
+	memberships *repositories.AccountUserRepository,
+	users *repositories.UserRepository,
+	tokens *repositories.AccessTokenRepository,
+	accountService *accountsvc.Service,
+	passwords *authsvc.Service,
+) *AccountsController {
+	if accounts == nil {
+		panic("dashboard accounts controller: accounts repository is required")
+	}
+	if memberships == nil {
+		panic("dashboard accounts controller: memberships repository is required")
+	}
+	if users == nil {
+		panic("dashboard accounts controller: users repository is required")
+	}
+	if tokens == nil {
+		panic("dashboard accounts controller: access tokens repository is required")
+	}
+	if accountService == nil {
+		panic("dashboard accounts controller: account service is required")
+	}
+	if passwords == nil {
+		panic("dashboard accounts controller: auth service is required")
+	}
+	return &AccountsController{
+		accounts:       accounts,
+		memberships:    memberships,
+		users:          users,
+		tokens:         tokens,
+		accountService: accountService,
+		passwords:      passwords,
+	}
+}
 
 // CreateAccount godoc
 // @Summary      Create a new account
@@ -48,7 +86,7 @@ var accountAuthService = authsvc.NewService()
 // @Failure      400      {object}  ErrorResponse
 // @Failure      401      {object}  ErrorResponse
 // @Router       /accounts [post]
-func CreateAccount(ctx http.Context) http.Response {
+func (ctrl *AccountsController) CreateAccount(ctx http.Context) http.Response {
 	userID := ctx.Value("user_id").(uuid.UUID)
 
 	var req requests.CreateAccountRequest
@@ -56,7 +94,7 @@ func CreateAccount(ctx http.Context) http.Response {
 		return errResp
 	}
 
-	acc, err := accountSvc().Create(ctx.Context(), req.Name, userID)
+	acc, err := ctrl.accountService.Create(ctx.Context(), req.Name, userID)
 	if err != nil {
 		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to create account"})
 	}
@@ -74,7 +112,7 @@ func CreateAccount(ctx http.Context) http.Response {
 // @Failure      403        {object}  ErrorResponse
 // @Failure      404        {object}  ErrorResponse
 // @Router       /accounts/{accountId} [get]
-func GetAccount(ctx http.Context) http.Response {
+func (ctrl *AccountsController) GetAccount(ctx http.Context) http.Response {
 	account := ctx.Value("account").(*models.Account)
 	return ctx.Response().Json(http.StatusOK, account)
 }
@@ -92,7 +130,7 @@ func GetAccount(ctx http.Context) http.Response {
 // @Failure      400        {object}  ErrorResponse
 // @Failure      403        {object}  ErrorResponse
 // @Router       /accounts/{accountId} [patch]
-func UpdateAccount(ctx http.Context) http.Response {
+func (ctrl *AccountsController) UpdateAccount(ctx http.Context) http.Response {
 	account := ctx.Value("account").(*models.Account)
 	if errResp := authorize(ctx, "account.update", map[string]any{"account_id": account.ID}); errResp != nil {
 		return errResp
@@ -104,13 +142,13 @@ func UpdateAccount(ctx http.Context) http.Response {
 	}
 
 	if req.Name != "" {
-		if err := container.Get().AccountRepo.SetName(ctx.Context(), account.ID, req.Name); err != nil {
+		if err := ctrl.accounts.SetName(ctx.Context(), account.ID, req.Name); err != nil {
 			return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to update account"})
 		}
 		account.Name = req.Name
 	}
 	if req.ViewAllWallets != nil {
-		if err := container.Get().AccountRepo.SetViewAllWallets(ctx.Context(), account.ID, *req.ViewAllWallets); err != nil {
+		if err := ctrl.accounts.SetViewAllWallets(ctx.Context(), account.ID, *req.ViewAllWallets); err != nil {
 			return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to update account"})
 		}
 		account.ViewAllWallets = *req.ViewAllWallets
@@ -130,13 +168,13 @@ func UpdateAccount(ctx http.Context) http.Response {
 // @Failure      403        {object}  ErrorResponse
 // @Failure      404        {object}  ErrorResponse
 // @Router       /accounts/{accountId}/archive [post]
-func ArchiveAccount(ctx http.Context) http.Response {
+func (ctrl *AccountsController) ArchiveAccount(ctx http.Context) http.Response {
 	account := ctx.Value("account").(*models.Account)
 	if errResp := authorize(ctx, "account.archive", map[string]any{"account_id": account.ID}); errResp != nil {
 		return errResp
 	}
 
-	if err := container.Get().AccountRepo.SetStatus(ctx.Context(), account.ID, "archived"); err != nil {
+	if err := ctrl.accounts.SetStatus(ctx.Context(), account.ID, "archived"); err != nil {
 		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to archive account"})
 	}
 	account.Status = "archived"
@@ -153,13 +191,13 @@ func ArchiveAccount(ctx http.Context) http.Response {
 // @Success      200        {object}  models.Account
 // @Failure      403        {object}  ErrorResponse
 // @Router       /accounts/{accountId}/freeze [post]
-func FreezeAccount(ctx http.Context) http.Response {
+func (ctrl *AccountsController) FreezeAccount(ctx http.Context) http.Response {
 	account := ctx.Value("account").(*models.Account)
 	if errResp := authorize(ctx, "account.freeze", map[string]any{"account_id": account.ID}); errResp != nil {
 		return errResp
 	}
 
-	if err := container.Get().AccountRepo.SetStatus(ctx.Context(), account.ID, "frozen"); err != nil {
+	if err := ctrl.accounts.SetStatus(ctx.Context(), account.ID, "frozen"); err != nil {
 		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to freeze account"})
 	}
 	account.Status = "frozen"
@@ -176,11 +214,11 @@ func FreezeAccount(ctx http.Context) http.Response {
 // @Success      200        {object}  AccountUserListResponse
 // @Failure      403        {object}  ErrorResponse
 // @Router       /accounts/{accountId}/users [get]
-func ListAccountUsers(ctx http.Context) http.Response {
+func (ctrl *AccountsController) ListAccountUsers(ctx http.Context) http.Response {
 	account := ctx.Value("account").(*models.Account)
 
 	limit, offset := pagination.ParseParams(ctx, 20)
-	members, total, err := container.Get().AccountUserRepo.PaginateByAccountID(ctx.Context(), account.ID, limit, offset)
+	members, total, err := ctrl.memberships.PaginateByAccountID(ctx.Context(), account.ID, limit, offset)
 	if err != nil {
 		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to fetch members"})
 	}
@@ -200,7 +238,7 @@ func ListAccountUsers(ctx http.Context) http.Response {
 // @Failure      400        {object}  ErrorResponse
 // @Failure      403        {object}  ErrorResponse
 // @Router       /accounts/{accountId}/users [post]
-func AddAccountUser(ctx http.Context) http.Response {
+func (ctrl *AccountsController) AddAccountUser(ctx http.Context) http.Response {
 	account := ctx.Value("account").(*models.Account)
 	callerID := ctx.Value("user_id").(uuid.UUID)
 	if errResp := authorize(ctx, "account.add-user", map[string]any{"account_id": account.ID}); errResp != nil {
@@ -212,7 +250,7 @@ func AddAccountUser(ctx http.Context) http.Response {
 		return errResp
 	}
 
-	targetPtr, err := container.Get().UserRepo.FindByEmail(ctx.Context(), req.Email)
+	targetPtr, err := ctrl.users.FindByEmail(ctx.Context(), req.Email)
 	if err != nil || targetPtr == nil {
 		target := models.User{
 			ID:           uuid.New(),
@@ -220,7 +258,7 @@ func AddAccountUser(ctx http.Context) http.Response {
 			PasswordHash: "",
 			Status:       "invited",
 		}
-		if err2 := container.Get().UserRepo.Create(ctx.Context(), &target); err2 != nil {
+		if err2 := ctrl.users.Create(ctx.Context(), &target); err2 != nil {
 			return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to create user"})
 		}
 		targetPtr = &target
@@ -234,11 +272,11 @@ func AddAccountUser(ctx http.Context) http.Response {
 		}
 	}
 
-	if err := accountSvc().AddUser(ctx.Context(), account.ID, targetPtr.ID, req.Role, callerID); err != nil {
+	if err := ctrl.accountService.AddUser(ctx.Context(), account.ID, targetPtr.ID, req.Role, callerID); err != nil {
 		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to add user"})
 	}
 
-	au, auErr := container.Get().AccountUserRepo.FindByAccountAndUser(ctx.Context(), account.ID, targetPtr.ID)
+	au, auErr := ctrl.memberships.FindByAccountAndUser(ctx.Context(), account.ID, targetPtr.ID)
 	if auErr != nil {
 		facades.Log().WithContext(ctx).Errorf("account: find membership after add: %v", auErr)
 	}
@@ -257,7 +295,7 @@ func AddAccountUser(ctx http.Context) http.Response {
 // @Failure      403  {object}  ErrorResponse
 // @Failure      404  {object}  ErrorResponse
 // @Router       /accounts/{accountId}/users/{userId} [delete]
-func RemoveAccountUser(ctx http.Context) http.Response {
+func (ctrl *AccountsController) RemoveAccountUser(ctx http.Context) http.Response {
 	account := ctx.Value("account").(*models.Account)
 	if errResp := authorize(ctx, "account.remove-user", map[string]any{"account_id": account.ID}); errResp != nil {
 		return errResp
@@ -269,7 +307,7 @@ func RemoveAccountUser(ctx http.Context) http.Response {
 		return responses.Send(ctx, http.StatusBadRequest, http.Json{"error": "invalid user id"})
 	}
 
-	if err := accountSvc().RemoveUser(ctx.Context(), account.ID, targetID); err != nil {
+	if err := ctrl.accountService.RemoveUser(ctx.Context(), account.ID, targetID); err != nil {
 		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to remove user"})
 	}
 	return ctx.Response().NoContent()
@@ -285,14 +323,14 @@ func RemoveAccountUser(ctx http.Context) http.Response {
 // @Success      200  {object}  AccessTokenListResponse
 // @Failure      403  {object}  ErrorResponse
 // @Router       /accounts/{accountId}/tokens [get]
-func ListAccountTokens(ctx http.Context) http.Response {
+func (ctrl *AccountsController) ListAccountTokens(ctx http.Context) http.Response {
 	account := ctx.Value("account").(*models.Account)
 	if errResp := authorize(ctx, "account.manage-tokens", map[string]any{"account_id": account.ID}); errResp != nil {
 		return errResp
 	}
 
 	limit, offset := pagination.ParseParams(ctx, 20)
-	tokens, total, err := container.Get().AccessTokenRepo.PaginateByAccountID(ctx.Context(), account.ID, limit, offset)
+	tokens, total, err := ctrl.tokens.PaginateByAccountID(ctx.Context(), account.ID, limit, offset)
 	if err != nil {
 		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to fetch tokens"})
 	}
@@ -312,7 +350,7 @@ func ListAccountTokens(ctx http.Context) http.Response {
 // @Failure      400        {object}  ErrorResponse
 // @Failure      403        {object}  ErrorResponse
 // @Router       /accounts/{accountId}/tokens [post]
-func CreateAccountToken(ctx http.Context) http.Response {
+func (ctrl *AccountsController) CreateAccountToken(ctx http.Context) http.Response {
 	account := ctx.Value("account").(*models.Account)
 	if errResp := authorize(ctx, "account.manage-tokens", map[string]any{"account_id": account.ID}); errResp != nil {
 		return errResp
@@ -330,14 +368,14 @@ func CreateAccountToken(ctx http.Context) http.Response {
 		AccountID:     account.ID,
 		CreatedBy:     &callerID,
 		Name:          req.Name,
-		TokenHash:     accountAuthService.HashToken(tokenID.String()),
+		TokenHash:     ctrl.passwords.HashToken(tokenID.String()),
 		SpendingLimit: "{}",
 	}
 	if req.ValidUntil != "" {
 		t, _ := time.Parse(time.RFC3339, req.ValidUntil)
 		token.ValidUntil = &t
 	}
-	if err := container.Get().AccessTokenRepo.Create(ctx.Context(), token); err != nil {
+	if err := ctrl.tokens.Create(ctx.Context(), token); err != nil {
 		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to create token"})
 	}
 
@@ -364,7 +402,7 @@ func CreateAccountToken(ctx http.Context) http.Response {
 // @Failure      403  {object}  ErrorResponse
 // @Failure      404  {object}  ErrorResponse
 // @Router       /accounts/{accountId}/tokens/{tokenId} [delete]
-func RevokeAccountToken(ctx http.Context) http.Response {
+func (ctrl *AccountsController) RevokeAccountToken(ctx http.Context) http.Response {
 	account := ctx.Value("account").(*models.Account)
 	if errResp := authorize(ctx, "account.manage-tokens", map[string]any{"account_id": account.ID}); errResp != nil {
 		return errResp
@@ -376,12 +414,12 @@ func RevokeAccountToken(ctx http.Context) http.Response {
 		return responses.Send(ctx, http.StatusBadRequest, http.Json{"error": "invalid token id"})
 	}
 
-	token, err := container.Get().AccessTokenRepo.FindByIDAndAccount(ctx.Context(), tokenID, account.ID)
+	token, err := ctrl.tokens.FindByIDAndAccount(ctx.Context(), tokenID, account.ID)
 	if err != nil || token == nil {
 		return responses.Send(ctx, http.StatusNotFound, http.Json{"error": "token not found"})
 	}
 
-	if err := container.Get().AccessTokenRepo.Delete(ctx.Context(), token); err != nil {
+	if err := ctrl.tokens.Delete(ctx.Context(), token); err != nil {
 		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to revoke token"})
 	}
 	return ctx.Response().NoContent()

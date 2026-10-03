@@ -4,6 +4,7 @@ import (
 	"github.com/goravel/framework/contracts/route"
 	"github.com/goravel/framework/facades"
 
+	"github.com/macrowallets/waas/app/container"
 	dashaccounts "github.com/macrowallets/waas/app/http/controllers/dashboard/accounts"
 	dashaddresses "github.com/macrowallets/waas/app/http/controllers/dashboard/addresses"
 	dashauth "github.com/macrowallets/waas/app/http/controllers/dashboard/auth"
@@ -15,50 +16,56 @@ import (
 	dashwallets "github.com/macrowallets/waas/app/http/controllers/dashboard/wallets"
 	dashwithdrawals "github.com/macrowallets/waas/app/http/controllers/dashboard/withdrawals"
 	"github.com/macrowallets/waas/app/http/middleware"
+	"github.com/macrowallets/waas/app/repositories"
+	accountsvc "github.com/macrowallets/waas/app/services/account"
+	authsvc "github.com/macrowallets/waas/app/services/auth"
 )
 
 // RegisterAdminRoutes registers dashboard session-auth routes under /v1.
 func RegisterAdminRoutes() {
 	noCache := middleware.CacheControl(0)
+	authCtrl := newDashboardAuthController()
+	usersCtrl := newDashboardUsersController()
+	accountsCtrl := newDashboardAccountsController()
 
 	facades.Route().Prefix("/v1/auth").Middleware(noCache).Group(func(router route.Router) {
-		router.Post("/register", dashauth.Register)
-		router.Post("/login", dashauth.Login)
-		router.Post("/2fa/verify", dashauth.VerifyTwoFactor)
-		router.Post("/refresh", dashauth.RefreshToken)
-		router.Post("/recover", dashauth.ForgotPassword)
-		router.Post("/recover/confirm", dashauth.ResetPassword)
+		router.Post("/register", authCtrl.Register)
+		router.Post("/login", authCtrl.Login)
+		router.Post("/2fa/verify", authCtrl.VerifyTwoFactor)
+		router.Post("/refresh", authCtrl.RefreshToken)
+		router.Post("/recover", authCtrl.ForgotPassword)
+		router.Post("/recover/confirm", authCtrl.ResetPassword)
 	})
 	facades.Route().Prefix("/v1/auth").Middleware(middleware.SessionAuth(), noCache).Group(func(router route.Router) {
-		router.Post("/logout", dashauth.Logout)
+		router.Post("/logout", authCtrl.Logout)
 	})
 
 	facades.Route().Prefix("/v1/users").Middleware(middleware.SessionAuth(), noCache).Group(func(router route.Router) {
-		router.Get("/me", dashusers.GetMe)
-		router.Patch("/me", dashusers.UpdateMe)
-		router.Post("/me/password", dashusers.ChangePassword)
-		router.Get("/me/accounts", dashusers.ListMyAccounts)
-		router.Patch("/me/default-account", dashusers.UpdateDefaultAccount)
-		router.Post("/me/totp/setup", dashusers.SetupTOTP)
-		router.Post("/me/totp/verify", dashusers.ConfirmTOTP)
-		router.Delete("/me/totp", dashusers.DisableTOTP)
+		router.Get("/me", usersCtrl.GetMe)
+		router.Patch("/me", usersCtrl.UpdateMe)
+		router.Post("/me/password", usersCtrl.ChangePassword)
+		router.Get("/me/accounts", usersCtrl.ListMyAccounts)
+		router.Patch("/me/default-account", usersCtrl.UpdateDefaultAccount)
+		router.Post("/me/totp/setup", usersCtrl.SetupTOTP)
+		router.Post("/me/totp/verify", usersCtrl.ConfirmTOTP)
+		router.Delete("/me/totp", usersCtrl.DisableTOTP)
 	})
 
 	facades.Route().Prefix("/v1/accounts").Middleware(middleware.SessionAuth(), noCache).Group(func(router route.Router) {
-		router.Post("", dashaccounts.CreateAccount)
+		router.Post("", accountsCtrl.CreateAccount)
 		router.Prefix("/{accountId}").Middleware(middleware.AccountContext()).Group(func(r route.Router) {
-			r.Get("", dashaccounts.GetAccount)
-			r.Patch("", dashaccounts.UpdateAccount)
-			r.Post("/archive", dashaccounts.ArchiveAccount)
-			r.Post("/freeze", dashaccounts.FreezeAccount)
+			r.Get("", accountsCtrl.GetAccount)
+			r.Patch("", accountsCtrl.UpdateAccount)
+			r.Post("/archive", accountsCtrl.ArchiveAccount)
+			r.Post("/freeze", accountsCtrl.FreezeAccount)
 
-			r.Get("/users", dashaccounts.ListAccountUsers)
-			r.Post("/users", dashaccounts.AddAccountUser)
-			r.Delete("/users/{userId}", dashaccounts.RemoveAccountUser)
+			r.Get("/users", accountsCtrl.ListAccountUsers)
+			r.Post("/users", accountsCtrl.AddAccountUser)
+			r.Delete("/users/{userId}", accountsCtrl.RemoveAccountUser)
 
-			r.Get("/tokens", dashaccounts.ListAccountTokens)
-			r.Post("/tokens", dashaccounts.CreateAccountToken)
-			r.Delete("/tokens/{tokenId}", dashaccounts.RevokeAccountToken)
+			r.Get("/tokens", accountsCtrl.ListAccountTokens)
+			r.Post("/tokens", accountsCtrl.CreateAccountToken)
+			r.Delete("/tokens/{tokenId}", accountsCtrl.RevokeAccountToken)
 		})
 	})
 
@@ -131,4 +138,37 @@ func RegisterAdminRoutes() {
 			})
 		})
 	})
+}
+
+func newDashboardAuthController() *dashauth.AuthController {
+	return dashauth.NewAuthController(
+		container.MustMake[*repositories.UserRepository](),
+		container.MustMake[*repositories.AccountRepository](),
+		container.MustMake[*repositories.AccountUserRepository](),
+		container.MustMake[*repositories.RefreshTokenRepository](),
+		container.MustMake[*repositories.TotpRecoveryCodeRepository](),
+		container.MustMake[*repositories.PasswordResetTokenRepository](),
+		container.MustMake[*authsvc.Service](),
+	)
+}
+
+func newDashboardUsersController() *dashusers.UsersController {
+	return dashusers.NewUsersController(
+		container.MustMake[*repositories.UserRepository](),
+		container.MustMake[*repositories.AccountRepository](),
+		container.MustMake[*repositories.AccountUserRepository](),
+		container.MustMake[*repositories.TotpRecoveryCodeRepository](),
+		container.MustMake[*authsvc.Service](),
+	)
+}
+
+func newDashboardAccountsController() *dashaccounts.AccountsController {
+	return dashaccounts.NewAccountsController(
+		container.MustMake[*repositories.AccountRepository](),
+		container.MustMake[*repositories.AccountUserRepository](),
+		container.MustMake[*repositories.UserRepository](),
+		container.MustMake[*repositories.AccessTokenRepository](),
+		container.MustMake[*accountsvc.Service](),
+		container.MustMake[*authsvc.Service](),
+	)
 }

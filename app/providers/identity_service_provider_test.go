@@ -9,6 +9,7 @@ import (
 	"github.com/macrowallets/waas/app/container"
 	"github.com/macrowallets/waas/app/repositories"
 	"github.com/macrowallets/waas/app/services/account"
+	authsvc "github.com/macrowallets/waas/app/services/auth"
 )
 
 func TestIdentityProvider_RegistersTheAccountGraph(t *testing.T) {
@@ -46,6 +47,10 @@ func TestIdentityProvider_RegistersTheAccountGraph(t *testing.T) {
 	svc, err := container.Make[*account.Service]()
 	require.NoError(t, err)
 	require.NotNil(t, svc)
+
+	passwords, err := container.Make[*authsvc.Service]()
+	require.NoError(t, err)
+	require.NotNil(t, passwords)
 
 	require.Same(t, users, container.MustMake[*repositories.UserRepository]())
 }

@@ -9,7 +9,6 @@ import (
 	"github.com/goravel/framework/contracts/http"
 	"github.com/goravel/framework/facades"
 
-	"github.com/macrowallets/waas/app/container"
 	"github.com/macrowallets/waas/app/http/controllers"
 	"github.com/macrowallets/waas/app/http/pagination"
 	"github.com/macrowallets/waas/app/http/requests"
@@ -23,7 +22,46 @@ func validateRequest(ctx http.Context, req http.FormRequest) http.Response {
 	return controllers.ValidateRequest(ctx, req)
 }
 
-var userAuthService = authsvc.NewService()
+type UsersController struct {
+	users         *repositories.UserRepository
+	accounts      *repositories.AccountRepository
+	memberships   *repositories.AccountUserRepository
+	recoveryCodes *repositories.TotpRecoveryCodeRepository
+	passwords     *authsvc.Service
+}
+
+// NewUsersController wires the dashboard user handlers. Repositories and the
+// auth helper are the provider singletons, resolved once at boot.
+func NewUsersController(
+	users *repositories.UserRepository,
+	accounts *repositories.AccountRepository,
+	memberships *repositories.AccountUserRepository,
+	recoveryCodes *repositories.TotpRecoveryCodeRepository,
+	passwords *authsvc.Service,
+) *UsersController {
+	if users == nil {
+		panic("dashboard users controller: users repository is required")
+	}
+	if accounts == nil {
+		panic("dashboard users controller: accounts repository is required")
+	}
+	if memberships == nil {
+		panic("dashboard users controller: memberships repository is required")
+	}
+	if recoveryCodes == nil {
+		panic("dashboard users controller: recovery codes repository is required")
+	}
+	if passwords == nil {
+		panic("dashboard users controller: auth service is required")
+	}
+	return &UsersController{
+		users:         users,
+		accounts:      accounts,
+		memberships:   memberships,
+		recoveryCodes: recoveryCodes,
+		passwords:     passwords,
+	}
+}
 
 // GetMe godoc
 // @Summary      Get current user profile
@@ -34,7 +72,7 @@ var userAuthService = authsvc.NewService()
 // @Success      200  {object}  models.User
 // @Failure      401  {object}  ErrorResponse
 // @Router       /users/me [get]
-func GetMe(ctx http.Context) http.Response {
+func (ctrl *UsersController) GetMe(ctx http.Context) http.Response {
 	user := ctx.Value("user").(*models.User)
 	return ctx.Response().Json(http.StatusOK, user)
 }
@@ -51,7 +89,7 @@ func GetMe(ctx http.Context) http.Response {
 // @Failure      400      {object}  ErrorResponse
 // @Failure      401      {object}  ErrorResponse
 // @Router       /users/me [patch]
-func UpdateMe(ctx http.Context) http.Response {
+func (ctrl *UsersController) UpdateMe(ctx http.Context) http.Response {
 	user := ctx.Value("user").(*models.User)
 
 	var req requests.UpdateMeRequest
@@ -60,7 +98,7 @@ func UpdateMe(ctx http.Context) http.Response {
 	}
 
 	if req.FullName != "" {
-		if err := container.Get().UserRepo.UpdateFullName(ctx.Context(), user.ID, req.FullName); err != nil {
+		if err := ctrl.users.UpdateFullName(ctx.Context(), user.ID, req.FullName); err != nil {
 			return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to update profile"})
 		}
 		user.FullName = req.FullName
@@ -81,7 +119,7 @@ func UpdateMe(ctx http.Context) http.Response {
 // @Failure      400      {object}  ErrorResponse
 // @Failure      401      {object}  ErrorResponse
 // @Router       /users/me/password [post]
-func ChangePassword(ctx http.Context) http.Response {
+func (ctrl *UsersController) ChangePassword(ctx http.Context) http.Response {
 	user := ctx.Value("user").(*models.User)
 
 	var req requests.ChangePasswordRequest
@@ -89,16 +127,16 @@ func ChangePassword(ctx http.Context) http.Response {
 		return errResp
 	}
 
-	if !userAuthService.CheckPassword(req.CurrentPassword, user.PasswordHash) {
+	if !ctrl.passwords.CheckPassword(req.CurrentPassword, user.PasswordHash) {
 		return responses.Send(ctx, http.StatusUnauthorized, http.Json{"error": "current password is incorrect"})
 	}
 
-	hash, err := userAuthService.HashPassword(req.NewPassword)
+	hash, err := ctrl.passwords.HashPassword(req.NewPassword)
 	if err != nil {
 		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to hash password"})
 	}
 
-	if err := container.Get().UserRepo.UpdatePasswordHash(ctx.Context(), user.ID, hash); err != nil {
+	if err := ctrl.users.UpdatePasswordHash(ctx.Context(), user.ID, hash); err != nil {
 		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to update password"})
 	}
 
@@ -127,7 +165,7 @@ var myAccountsBounds = pagination.Bounds{DefaultLimit: myAccountsDefaultLimit, M
 // @Failure      400  {object}  ErrorResponse
 // @Failure      401  {object}  ErrorResponse
 // @Router       /users/me/accounts [get]
-func ListMyAccounts(ctx http.Context) http.Response {
+func (ctrl *UsersController) ListMyAccounts(ctx http.Context) http.Response {
 	userID := ctx.Value("user_id").(uuid.UUID)
 
 	limit, offset, err := pagination.ParseStrict(ctx.Request().Query("limit", ""), ctx.Request().Query("offset", ""), myAccountsBounds)
@@ -140,7 +178,7 @@ func ListMyAccounts(ctx http.Context) http.Response {
 		return responses.Send(ctx, http.StatusBadRequest, http.Json{"error": errMessage})
 	}
 
-	accounts, total, err := container.Get().AccountRepo.PaginateByMember(ctx.Context(), userID, filter, limit, offset)
+	accounts, total, err := ctrl.accounts.PaginateByMember(ctx.Context(), userID, filter, limit, offset)
 	if err != nil {
 		facades.Log().WithContext(ctx).Errorf("user: list my accounts: %v", err)
 		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to fetch accounts"})
@@ -175,7 +213,7 @@ func parseMyAccountsFilter(ctx http.Context) (repositories.AccountListFilter, st
 // @Failure      400      {object}  ErrorResponse
 // @Failure      403      {object}  ErrorResponse
 // @Router       /users/me/default-account [patch]
-func UpdateDefaultAccount(ctx http.Context) http.Response {
+func (ctrl *UsersController) UpdateDefaultAccount(ctx http.Context) http.Response {
 	userID := ctx.Value("user_id").(uuid.UUID)
 
 	var req requests.UpdateDefaultAccountRequest
@@ -185,21 +223,21 @@ func UpdateDefaultAccount(ctx http.Context) http.Response {
 
 	accountID, _ := uuid.Parse(req.AccountID)
 
-	au, err := container.Get().AccountUserRepo.FindByAccountAndUser(ctx.Context(), accountID, userID)
+	au, err := ctrl.memberships.FindByAccountAndUser(ctx.Context(), accountID, userID)
 	if err != nil || au == nil {
 		return responses.Send(ctx, http.StatusForbidden, http.Json{"error": "not a member of this account"})
 	}
 
-	userPtr, _ := container.Get().UserRepo.FindByID(ctx.Context(), userID)
+	userPtr, _ := ctrl.users.FindByID(ctx.Context(), userID)
 	if userPtr == nil {
 		return responses.Send(ctx, http.StatusNotFound, http.Json{"error": "user not found"})
 	}
 	userPtr.DefaultAccountID = &accountID
-	if err := container.Get().UserRepo.UpdateDefaultAccountID(ctx.Context(), userPtr.ID, &accountID); err != nil {
+	if err := ctrl.users.UpdateDefaultAccountID(ctx.Context(), userPtr.ID, &accountID); err != nil {
 		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to update default account"})
 	}
 
-	account, _ := container.Get().AccountRepo.FindByID(ctx.Context(), accountID)
+	account, _ := ctrl.accounts.FindByID(ctx.Context(), accountID)
 	return ctx.Response().Json(http.StatusOK, http.Json{"account": account})
 }
 
@@ -212,10 +250,10 @@ func UpdateDefaultAccount(ctx http.Context) http.Response {
 // @Success      200  {object}  TotpSetupSwagger
 // @Failure      500  {object}  ErrorResponse
 // @Router       /users/me/totp/setup [post]
-func SetupTOTP(ctx http.Context) http.Response {
+func (ctrl *UsersController) SetupTOTP(ctx http.Context) http.Response {
 	user := ctx.Value("user").(*models.User)
 
-	secret, qrURL, err := userAuthService.GenerateTOTP(user.Email)
+	secret, qrURL, err := ctrl.passwords.GenerateTOTP(user.Email)
 	if err != nil {
 		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to generate TOTP secret"})
 	}
@@ -225,7 +263,7 @@ func SetupTOTP(ctx http.Context) http.Response {
 		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to encrypt secret"})
 	}
 
-	if err := container.Get().UserRepo.UpdateTotpSecret(ctx.Context(), user.ID, encryptedSecret); err != nil {
+	if err := ctrl.users.UpdateTotpSecret(ctx.Context(), user.ID, encryptedSecret); err != nil {
 		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to save TOTP secret"})
 	}
 
@@ -248,7 +286,7 @@ func SetupTOTP(ctx http.Context) http.Response {
 // @Failure      401      {object}  ErrorResponse
 // @Failure      500      {object}  ErrorResponse
 // @Router       /users/me/totp/verify [post]
-func ConfirmTOTP(ctx http.Context) http.Response {
+func (ctrl *UsersController) ConfirmTOTP(ctx http.Context) http.Response {
 	user := ctx.Value("user").(*models.User)
 
 	var req requests.ConfirmTwoFactorRequest
@@ -265,20 +303,20 @@ func ConfirmTOTP(ctx http.Context) http.Response {
 		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to decrypt secret"})
 	}
 
-	if !userAuthService.VerifyTOTP(decryptedSecret, req.Code) {
+	if !ctrl.passwords.VerifyTOTP(decryptedSecret, req.Code) {
 		return responses.Send(ctx, http.StatusUnauthorized, http.Json{"error": "invalid verification code"})
 	}
 
-	if err := container.Get().UserRepo.EnableTotp(ctx.Context(), user.ID); err != nil {
+	if err := ctrl.users.EnableTotp(ctx.Context(), user.ID); err != nil {
 		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to enable 2FA"})
 	}
 
-	codes, hashes, err := userAuthService.GenerateRecoveryCodes()
+	codes, hashes, err := ctrl.passwords.GenerateRecoveryCodes()
 	if err != nil {
 		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to generate recovery codes"})
 	}
 
-	_ = container.Get().TotpRecoveryCodeRepo.DeleteByUserID(ctx.Context(), user.ID)
+	_ = ctrl.recoveryCodes.DeleteByUserID(ctx.Context(), user.ID)
 
 	var recoveryCodes []models.TotpRecoveryCode
 	for _, h := range hashes {
@@ -288,7 +326,7 @@ func ConfirmTOTP(ctx http.Context) http.Response {
 			CodeHash: h,
 		})
 	}
-	_ = container.Get().TotpRecoveryCodeRepo.CreateBatch(ctx.Context(), recoveryCodes)
+	_ = ctrl.recoveryCodes.CreateBatch(ctx.Context(), recoveryCodes)
 
 	user.TotpEnabled = true
 	resp := map[string]interface{}{
@@ -307,14 +345,14 @@ func ConfirmTOTP(ctx http.Context) http.Response {
 // @Success      200  {object}  models.User
 // @Failure      500  {object}  ErrorResponse
 // @Router       /users/me/totp [delete]
-func DisableTOTP(ctx http.Context) http.Response {
+func (ctrl *UsersController) DisableTOTP(ctx http.Context) http.Response {
 	user := ctx.Value("user").(*models.User)
 
-	if err := container.Get().UserRepo.DisableTotp(ctx.Context(), user.ID); err != nil {
+	if err := ctrl.users.DisableTotp(ctx.Context(), user.ID); err != nil {
 		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to disable 2FA"})
 	}
 
-	_ = container.Get().TotpRecoveryCodeRepo.DeleteByUserID(ctx.Context(), user.ID)
+	_ = ctrl.recoveryCodes.DeleteByUserID(ctx.Context(), user.ID)
 
 	user.TotpEnabled = false
 	user.TotpSecret = ""
