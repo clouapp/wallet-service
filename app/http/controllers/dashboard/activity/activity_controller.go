@@ -3,8 +3,10 @@ package activity
 import (
 	"errors"
 
+	"github.com/google/uuid"
 	"github.com/goravel/framework/contracts/http"
 
+	"github.com/macrowallets/waas/app/http/middleware"
 	"github.com/macrowallets/waas/app/http/middleware/requestctx"
 	"github.com/macrowallets/waas/app/http/pagination"
 	"github.com/macrowallets/waas/app/http/responses"
@@ -53,6 +55,31 @@ func (ctrl *ActivityController) Index(ctx http.Context) http.Response {
 	return responses.Send(ctx, http.StatusOK, pagination.Response(accountActivityViews(rows), total, limit, offset))
 }
 
+// Platform godoc
+// @Summary      Platform activity
+// @Description  Newest first. Only a platform admin may read. Rows have a null account id and never appear on an account activity list. Metadata never includes a secret.
+// @Tags         Platform Activity
+// @Security     BearerAuth
+// @Produce      json
+// @Param        limit   query  int  false  "Page size"
+// @Param        offset  query  int  false  "Rows to skip"
+// @Success      200  {object}  map[string]any
+// @Failure      401  {object}  responses.ErrorBody
+// @Failure      403  {object}  responses.ErrorBody
+// @Router       /platform/activity [get]
+func (ctrl *ActivityController) Platform(ctx http.Context) http.Response {
+	userID := middleware.SessionUserID(ctx)
+	if userID == uuid.Nil {
+		return responses.Send(ctx, http.StatusUnauthorized, http.Json{"error": "unauthorized"})
+	}
+	limit, offset := pagination.ParseParams(ctx, activityPageSize)
+	rows, total, err := ctrl.activity.ListPlatform(ctx.Context(), userID, limit, offset)
+	if errResp := mapActivityError(ctx, err); errResp != nil {
+		return errResp
+	}
+	return responses.Send(ctx, http.StatusOK, pagination.Response(accountActivityViews(rows), total, limit, offset))
+}
+
 func accountCaller(ctx http.Context) (*models.Account, string, http.Response) {
 	account, _ := requestctx.Account(ctx)
 	if account == nil {
@@ -66,7 +93,7 @@ func mapActivityError(ctx http.Context, err error) http.Response {
 	if err == nil {
 		return nil
 	}
-	if errors.Is(err, activitysvc.ErrReadForbidden) {
+	if errors.Is(err, activitysvc.ErrReadForbidden) || errors.Is(err, activitysvc.ErrPlatformForbidden) {
 		return responses.Send(ctx, http.StatusForbidden, http.Json{"error": err.Error()})
 	}
 	return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "internal_error"})

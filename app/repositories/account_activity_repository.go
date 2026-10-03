@@ -109,3 +109,26 @@ func (r *AccountActivityRepository) List(ctx context.Context, accountID uuid.UUI
 	}
 	return rows, total, nil
 }
+
+// ListPlatform returns platform rows, newest first. A row with an account id
+// is not included.
+func (r *AccountActivityRepository) ListPlatform(ctx context.Context, limit, offset int) ([]models.AccountActivity, int64, error) {
+	if limit <= 0 || offset < 0 {
+		return nil, 0, fmt.Errorf("list platform activity: limit and offset are invalid")
+	}
+	total, err := r.Query(ctx).Model(&models.AccountActivity{}).Where("account_id IS NULL").Count()
+	if err != nil {
+		return nil, 0, fmt.Errorf("list platform activity: %w", err)
+	}
+	rows := []models.AccountActivity{}
+	err = r.Query(ctx).
+		Where("account_id IS NULL").
+		Order("created_at DESC, id DESC").
+		Offset(offset).
+		Limit(limit).
+		Find(&rows)
+	if err != nil {
+		return nil, 0, fmt.Errorf("list platform activity: %w", err)
+	}
+	return rows, total, nil
+}

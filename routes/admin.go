@@ -124,6 +124,7 @@ func RegisterAdminRoutes() {
 	facades.Route().Prefix("/v1/platform").Middleware(middleware.SessionAuth(), noCache).Group(func(router route.Router) {
 		router.Get("/features", platformFeaturesCtrl.Index)
 		router.Patch("/features/{key}", platformFeaturesCtrl.Update)
+		router.Get("/activity", accountActivityCtrl.Platform)
 	})
 
 	facades.Route().Prefix("/v1/chains").Middleware(middleware.SessionAuth(), accountHeader, totpEnrollment, noCache).Group(func(router route.Router) {

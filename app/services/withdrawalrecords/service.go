@@ -7,7 +7,14 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/macrowallets/waas/app/models"
+	activitylog "github.com/macrowallets/waas/app/services/activity"
 )
+
+// ActivityLog appends one row on the caller's transaction.
+type ActivityLog interface {
+	Within(ctx context.Context, fn func(context.Context) error) error
+	Append(ctx context.Context, row models.AccountActivity) error
+}
 
 // Store is the withdrawal row persistence. Signing and broadcast publication
 // stay in the handler; these methods only read and update the row.
@@ -22,10 +29,22 @@ type Store interface {
 }
 
 // Records reads and updates withdrawal rows.
-type Records struct{ store Store }
+type Records struct {
+	store    Store
+	activity ActivityLog
+}
 
 // NewRecords builds the withdrawal record service.
 func NewRecords(store Store) *Records { return &Records{store: store} }
+
+// WithActivity attaches the audit writer Cancel uses.
+func (s *Records) WithActivity(activity ActivityLog) *Records {
+	if s == nil {
+		return nil
+	}
+	s.activity = activity
+	return s
+}
 
 func (s *Records) ready(ctx context.Context, op string) error {
 	if ctx == nil {
@@ -84,4 +103,36 @@ func (s *Records) SetStatus(ctx context.Context, id uuid.UUID, status string) er
 		return err
 	}
 	return s.store.SetStatus(ctx, id, status)
+}
+
+// Cancel marks a withdrawal cancelled and writes withdrawal.cancelled on the
+// account trail in the same transaction. The amount is not stored.
+func (s *Records) Cancel(ctx context.Context, accountID, actorID, withdrawalID uuid.UUID) error {
+	if err := s.ready(ctx, "cancel withdrawal"); err != nil {
+		return err
+	}
+	if s.activity == nil {
+		return fmt.Errorf("cancel withdrawal: activity log is required")
+	}
+	if accountID == uuid.Nil || actorID == uuid.Nil || withdrawalID == uuid.Nil {
+		return fmt.Errorf("cancel withdrawal: account, actor and withdrawal are required")
+	}
+	return s.activity.Within(ctx, func(ctx context.Context) error {
+		if err := s.store.SetStatus(ctx, withdrawalID, "cancelled"); err != nil {
+			return err
+		}
+		meta, err := activitylog.WithdrawalCancelled()
+		if err != nil {
+			return err
+		}
+		account := accountID
+		return s.activity.Append(ctx, models.AccountActivity{
+			AccountID:   &account,
+			ActorUserID: actorID,
+			Action:      activitylog.ActionWithdrawalCancelled,
+			TargetType:  activitylog.TargetWithdrawal,
+			TargetID:    withdrawalID.String(),
+			Metadata:    meta,
+		})
+	})
 }

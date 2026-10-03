@@ -21,7 +21,11 @@ func (p *ActivityServiceProvider) Register(app foundation.Application) {
 		if err != nil {
 			return nil, err
 		}
-		return activity.NewService(rows), nil
+		admins, err := resolve[*repositories.PlatformAdminRepository](app)
+		if err != nil {
+			return nil, err
+		}
+		return activity.NewService(rows).WithPlatformAdmins(admins), nil
 	})
 }
 

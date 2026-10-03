@@ -32,7 +32,11 @@ func (p *WithdrawalServiceProvider) Register(app foundation.Application) {
 		if err != nil {
 			return nil, err
 		}
-		return withdrawalrecords.NewRecords(store), nil
+		activityLog, err := resolve[*repositories.AccountActivityRepository](app)
+		if err != nil {
+			return nil, err
+		}
+		return withdrawalrecords.NewRecords(store).WithActivity(activityLog), nil
 	})
 }
 

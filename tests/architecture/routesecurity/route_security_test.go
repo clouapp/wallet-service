@@ -90,6 +90,7 @@ var routeTable = map[string]guard{
 	"GET|HEAD /v1/currencies":                                          guardSession,
 	"GET|HEAD /v1/currencies/{code}":                                   guardSession,
 	"GET|HEAD /v1/me/preferences":                                      guardSession,
+	"GET|HEAD /v1/platform/activity":                                   guardSession,
 	"GET|HEAD /v1/platform/features":                                   guardSession,
 	"PATCH /v1/platform/features/{key}":                                guardSession,
 	"PUT /v1/me/preferences":                                           guardSession,

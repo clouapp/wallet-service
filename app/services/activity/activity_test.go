@@ -124,3 +124,35 @@ func TestMemberChangeNamesTheStatusAndKeepsTheNewRole(t *testing.T) {
 		t.Fatalf("metadata = %s", encoded)
 	}
 }
+
+func TestNamedEventsOmitSecretsHashesLimitsAndAmounts(t *testing.T) {
+	t.Parallel()
+
+	const secret = "do-not-store-secret"
+	removed, err := MemberRemoved("user")
+	if err != nil {
+		t.Fatalf("member removed: %v", err)
+	}
+	reset, err := MFAReset()
+	if err != nil {
+		t.Fatalf("mfa reset: %v", err)
+	}
+	cancelled, err := WithdrawalCancelled()
+	if err != nil {
+		t.Fatalf("withdrawal cancelled: %v", err)
+	}
+	for _, meta := range []models.ActivityMetadata{removed, reset, cancelled} {
+		encoded, err := meta.Encode()
+		if err != nil {
+			t.Fatalf("encode: %v", err)
+		}
+		for _, forbidden := range []string{secret, "token_hash", "spending_limit", "amount", "-1"} {
+			if strings.Contains(encoded, forbidden) {
+				t.Fatalf("metadata stored %q: %s", forbidden, encoded)
+			}
+		}
+	}
+	if removed["role"] != "user" || reset["enabled"] != false || cancelled["key"] != "cancelled" {
+		t.Fatalf("removed=%v reset=%v cancelled=%v", removed, reset, cancelled)
+	}
+}

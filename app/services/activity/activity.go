@@ -11,18 +11,23 @@ import (
 )
 
 const (
-	ActionMemberRoleChanged = "member.role_changed"
-	ActionMemberSuspended   = "member.suspended"
-	ActionMemberReactivated = "member.reactivated"
-	ActionSettingsUpdated   = "settings.updated"
-	ActionFeaturesUpdated   = "features.updated"
-	ActionTokenCreated      = "token.created"
-	ActionTokenRevoked      = "token.revoked"
+	ActionMemberRoleChanged   = "member.role_changed"
+	ActionMemberSuspended     = "member.suspended"
+	ActionMemberReactivated   = "member.reactivated"
+	ActionSettingsUpdated     = "settings.updated"
+	ActionFeaturesUpdated     = "features.updated"
+	ActionTokenCreated        = "token.created"
+	ActionTokenRevoked        = "token.revoked"
+	ActionMemberRemoved       = "member.removed"
+	ActionUserMFAReset        = "user.mfa_reset"
+	ActionWithdrawalCancelled = "withdrawal.cancelled"
 
 	TargetAccountUser = "account_user"
 	TargetSettings    = "settings"
 	TargetFeature     = "feature"
 	TargetAccessToken = "access_token"
+	TargetUser        = "user"
+	TargetWithdrawal  = "withdrawal"
 )
 
 // MemberChange names one membership PATCH. A status change names the row;
@@ -139,6 +144,37 @@ func tokenPermissionNames(stored string, strict bool) ([]string, error) {
 	}
 	slices.Sort(out)
 	return out, nil
+}
+
+// MemberRemoved records the role the membership had. It does not accept a
+// token, a secret, or an amount.
+func MemberRemoved(role string) (models.ActivityMetadata, error) {
+	meta := models.ActivityMetadata{"role": strings.TrimSpace(role)}
+	if _, err := meta.Encode(); err != nil {
+		return nil, err
+	}
+	return meta, nil
+}
+
+// MFAReset records that TOTP was turned off. The secret is not accepted.
+func MFAReset() (models.ActivityMetadata, error) {
+	meta := models.ActivityMetadata{
+		"key":     "totp",
+		"enabled": false,
+	}
+	if _, err := meta.Encode(); err != nil {
+		return nil, err
+	}
+	return meta, nil
+}
+
+// WithdrawalCancelled records the cancellation. The amount is not accepted.
+func WithdrawalCancelled() (models.ActivityMetadata, error) {
+	meta := models.ActivityMetadata{"key": "cancelled"}
+	if _, err := meta.Encode(); err != nil {
+		return nil, err
+	}
+	return meta, nil
 }
 
 // FeatureChange records the flag key and the boolean that was stored.

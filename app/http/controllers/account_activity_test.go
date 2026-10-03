@@ -193,6 +193,58 @@ func (s *AccountActivityTestSuite) TestPlatformFeatureWriteUsesANullAccount() {
 	s.Contains(text, features.FlagSweepEnabled)
 	s.Contains(text, "false")
 	s.NotContains(text, activityPlainSecret)
+
+	platform := s.listPlatform(owner.token, "")
+	s.Equal(int64(1), platform.Total)
+	s.Require().Len(platform.Data, 1)
+	s.Equal("features.updated", platform.Data[0].Action)
+	s.Empty(platform.Data[0].AccountID)
+
+	outsider := s.loginUser("owner", accountID)
+	denied := s.get(outsider.token, "/v1/platform/activity")
+	denied.AssertForbidden()
+}
+
+func (s *AccountActivityTestSuite) TestMemberRemovedStaysOnTheAccountTrail() {
+	accountID := s.createAccount()
+	owner := s.loginUser("owner", accountID)
+	member := s.loginUser("user", accountID)
+
+	resp := s.delete(owner.token, "/v1/accounts/"+accountID.String()+"/users/"+member.id.String())
+	resp.AssertNoContent()
+
+	page := s.list(owner.token, accountID, "")
+	s.Equal(int64(1), page.Total)
+	s.Require().Len(page.Data, 1)
+	s.Equal("member.removed", page.Data[0].Action)
+	s.Equal("user", page.Data[0].Metadata.Role)
+	s.Equal(member.id.String(), page.Data[0].TargetID)
+	s.NotContains(fmt.Sprint(page.Data[0].Metadata), activityTokenHash)
+}
+
+func (s *AccountActivityTestSuite) TestMFAResetIsAPlatformRow() {
+	accountID := s.createAccount()
+	owner := s.loginUser("owner", accountID)
+	s.grantPlatformAdmin(owner.id)
+
+	resp := s.delete(owner.token, "/v1/users/me/totp")
+	resp.AssertOk()
+
+	accountPage := s.list(owner.token, accountID, "")
+	s.Equal(int64(0), accountPage.Total)
+
+	platform := s.listPlatform(owner.token, "")
+	s.Equal(int64(1), platform.Total)
+	s.Require().Len(platform.Data, 1)
+	s.Equal("user.mfa_reset", platform.Data[0].Action)
+	s.Empty(platform.Data[0].AccountID)
+	s.Equal("totp", platform.Data[0].Metadata.Key)
+	s.Require().NotNil(platform.Data[0].Metadata.Enabled)
+	s.False(*platform.Data[0].Metadata.Enabled)
+	encoded, err := json.Marshal(platform.Data[0].Metadata)
+	s.Require().NoError(err)
+	s.NotContains(string(encoded), "totp_secret")
+	s.NotContains(string(encoded), activityPlainSecret)
 }
 
 func (s *AccountActivityTestSuite) loginUser(role string, accountID uuid.UUID) activitySession {
@@ -276,6 +328,15 @@ func (s *AccountActivityTestSuite) patch(token, path, body string, status int) c
 	return resp
 }
 
+func (s *AccountActivityTestSuite) delete(token, path string) contractstesting.Response {
+	s.T().Helper()
+	resp, err := s.Http(s.T()).
+		WithHeader("Authorization", "Bearer "+token).
+		Delete(path, nil)
+	s.Require().NoError(err)
+	return resp
+}
+
 func (s *AccountActivityTestSuite) get(token, path string) contractstesting.Response {
 	s.T().Helper()
 	resp, err := s.Http(s.T()).
@@ -283,6 +344,21 @@ func (s *AccountActivityTestSuite) get(token, path string) contractstesting.Resp
 		Get(path)
 	s.Require().NoError(err)
 	return resp
+}
+
+func (s *AccountActivityTestSuite) listPlatform(token, query string) activityPage {
+	s.T().Helper()
+	path := "/v1/platform/activity"
+	if query != "" {
+		path += "?" + query
+	}
+	resp := s.get(token, path)
+	resp.AssertOk()
+	content, err := resp.Content()
+	s.Require().NoError(err)
+	var page activityPage
+	s.Require().NoError(json.Unmarshal([]byte(content), &page))
+	return page
 }
 
 func (s *AccountActivityTestSuite) list(token string, accountID uuid.UUID, query string) activityPage {

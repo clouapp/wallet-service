@@ -7,7 +7,15 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/macrowallets/waas/app/models"
+	activitylog "github.com/macrowallets/waas/app/services/activity"
+	audit "github.com/macrowallets/waas/packages/activitylog"
 )
+
+// ActivityLog appends one row on the caller's transaction.
+type ActivityLog interface {
+	Within(ctx context.Context, fn func(context.Context) error) error
+	Append(ctx context.Context, row models.AccountActivity) error
+}
 
 // Store is the user persistence dashboard handlers still performed themselves.
 type Store interface {
@@ -35,6 +43,7 @@ type RecoveryStore interface {
 type Service struct {
 	store    Store
 	recovery RecoveryStore
+	activity ActivityLog
 }
 
 // NewService builds a user service.
@@ -48,6 +57,16 @@ func (s *Service) WithRecovery(recovery RecoveryStore) *Service {
 		return nil
 	}
 	s.recovery = recovery
+	return s
+}
+
+// WithActivity attaches the account activity writer. A nil writer leaves
+// DisableTotp as a status change with no audit row.
+func (s *Service) WithActivity(activity ActivityLog) *Service {
+	if s == nil {
+		return nil
+	}
+	s.activity = activity
 	return s
 }
 
@@ -141,7 +160,29 @@ func (s *Service) DisableTotp(ctx context.Context, id uuid.UUID) error {
 	if err := s.require(ctx, "disable totp"); err != nil {
 		return err
 	}
-	return s.store.DisableTotp(ctx, id)
+	if id == uuid.Nil {
+		return fmt.Errorf("disable totp: user id is required")
+	}
+	if s.activity == nil {
+		return s.store.DisableTotp(ctx, id)
+	}
+	return s.activity.Within(ctx, func(ctx context.Context) error {
+		named := audit.WithIntent(ctx, audit.Intent{Event: activitylog.ActionUserMFAReset})
+		if err := s.store.DisableTotp(named, id); err != nil {
+			return err
+		}
+		meta, err := activitylog.MFAReset()
+		if err != nil {
+			return err
+		}
+		return s.activity.Append(ctx, models.AccountActivity{
+			ActorUserID: id,
+			Action:      activitylog.ActionUserMFAReset,
+			TargetType:  activitylog.TargetUser,
+			TargetID:    id.String(),
+			Metadata:    meta,
+		})
+	})
 }
 
 func (s *Service) requireRecovery(ctx context.Context, op string) error {

@@ -10,6 +10,7 @@ import (
 
 	"github.com/macrowallets/waas/app/facades"
 	"github.com/macrowallets/waas/app/http/controllers"
+	"github.com/macrowallets/waas/app/http/middleware"
 	"github.com/macrowallets/waas/app/http/middleware/requestctx"
 	"github.com/macrowallets/waas/app/http/pagination"
 	"github.com/macrowallets/waas/app/http/requests"
@@ -443,7 +444,11 @@ func (ctrl *WithdrawalsController) CancelWalletWithdrawal(ctx http.Context) http
 		return resp
 	}
 
-	if err := ctrl.withdrawals.SetStatus(ctx.Context(), w.ID, "cancelled"); err != nil {
+	actorID := middleware.SessionUserID(ctx)
+	if wallet.AccountID == nil || actorID == uuid.Nil {
+		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to cancel withdrawal"})
+	}
+	if err := ctrl.withdrawals.Cancel(ctx.Context(), *wallet.AccountID, actorID, w.ID); err != nil {
 		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to cancel withdrawal"})
 	}
 	w.Status = "cancelled"

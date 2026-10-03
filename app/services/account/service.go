@@ -10,6 +10,7 @@ import (
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/policies"
 	activitylog "github.com/macrowallets/waas/app/services/activity"
+	audit "github.com/macrowallets/waas/packages/activitylog"
 )
 
 // AccountStore is the account writes this service performs.
@@ -231,6 +232,9 @@ func (s *Service) RemoveMember(ctx context.Context, accountID, actorID, targetID
 	if err := s.requireTokens(); err != nil {
 		return err
 	}
+	if s.activity == nil {
+		return fmt.Errorf("account service: activity log is required")
+	}
 	return s.memberships.Within(ctx, func(ctx context.Context) error {
 		actor, target, err := s.loadActorAndTarget(ctx, accountID, actorID, targetID)
 		if err != nil {
@@ -242,7 +246,27 @@ func (s *Service) RemoveMember(ctx context.Context, accountID, actorID, targetID
 		if err := s.tokens.DeleteByAccountAndCreator(ctx, accountID, targetID); err != nil {
 			return err
 		}
-		return s.memberships.SoftDeleteByAccountAndUser(ctx, accountID, targetID)
+		removed := audit.WithIntent(ctx, audit.Intent{Event: activitylog.ActionMemberRemoved})
+		if err := s.memberships.SoftDeleteByAccountAndUser(removed, accountID, targetID); err != nil {
+			return err
+		}
+		return s.recordMemberRemoved(ctx, accountID, actorID, targetID, target.Role)
+	})
+}
+
+func (s *Service) recordMemberRemoved(ctx context.Context, accountID, actorID, targetID uuid.UUID, role string) error {
+	meta, err := activitylog.MemberRemoved(role)
+	if err != nil {
+		return err
+	}
+	account := accountID
+	return s.activity.Append(ctx, models.AccountActivity{
+		AccountID:   &account,
+		ActorUserID: actorID,
+		Action:      activitylog.ActionMemberRemoved,
+		TargetType:  activitylog.TargetAccountUser,
+		TargetID:    targetID.String(),
+		Metadata:    meta,
 	})
 }
 
