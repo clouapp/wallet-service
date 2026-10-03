@@ -29,6 +29,7 @@ func registerRuntimeServices(app foundation.Application) {
 	bindRuntime(app, func(c *container.Container) *webhook.Service { return c.WebhookService }, "webhook service")
 	bindRuntime(app, func(c *container.Container) *ingest.Service { return c.IngestService }, "ingest service")
 	bindRuntime(app, func(c *container.Container) *refresh.BalanceService { return c.BalanceRefreshService }, "balance refresh service")
+	bindRuntime(app, func(c *container.Container) *refresh.WalletRefresher { return c.WalletRefresher }, "wallet refresher")
 	bindRuntime(app, func(c *container.Container) *withdraw.Service { return c.WithdrawalService }, "withdrawal service")
 	bindRuntime(app, func(c *container.Container) *withdrawalevents.Publisher { return c.WithdrawalEvents }, "withdrawal events")
 	bindRuntime(app, func(c *container.Container) *webhooksync.Service { return c.WebhookSyncService }, "webhook sync service")

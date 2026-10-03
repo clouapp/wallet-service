@@ -41,6 +41,10 @@ func registerVault() {
 			// leaves deposit detection to the deposit_scanner Lambda.
 			"deposit_scan_chains":           envString("LOCAL_DEPOSIT_SCAN_CHAINS", ""),
 			"deposit_scan_interval_seconds": envInt("LOCAL_DEPOSIT_SCAN_INTERVAL_SECONDS", 5),
+			// Wallet balance read model refresh of every registered chain; 0 turns it off.
+			// Spacing paces the wallets of one pass so public RPCs are not rate limited.
+			"balance_refresh_interval_seconds": envInt("LOCAL_BALANCE_REFRESH_INTERVAL_SECONDS", 60),
+			"balance_refresh_spacing_ms":       envInt("LOCAL_BALANCE_REFRESH_SPACING_MS", 500),
 		},
 		// Block window and parallelism of every deposit scan (Lambda and local); 0 keeps
 		// the scanner defaults (50 blocks, 500 while catching up, 8 parallel fetches).
@@ -48,6 +52,16 @@ func registerVault() {
 			"batch_blocks":    envInt("DEPOSIT_SCAN_BATCH_BLOCKS", 0),
 			"catch_up_blocks": envInt("DEPOSIT_SCAN_CATCH_UP_BLOCKS", 0),
 			"concurrency":     envInt("DEPOSIT_SCAN_CONCURRENCY", 0),
+			// A block whose deposits fail to record is retried right away (3 retries at
+			// 100/300/900 ms by default), then kept as pending in Redis and in an
+			// append-only file under pending_dir (default ~/.local/state/macro-wallets/
+			// deposit-pending) and retried from 30 s, doubling up to 30 min. 0 keeps a default.
+			"retry_attempts":            envInt("DEPOSIT_SCAN_RETRY_ATTEMPTS", 0),
+			"retry_delay_ms":            envInt("DEPOSIT_SCAN_RETRY_DELAY_MS", 0),
+			"pending_retry_seconds":     envInt("DEPOSIT_PENDING_RETRY_SECONDS", 0),
+			"pending_retry_max_seconds": envInt("DEPOSIT_PENDING_RETRY_MAX_SECONDS", 0),
+			"max_new_pending_per_cycle": envInt("DEPOSIT_SCAN_MAX_NEW_PENDING_PER_CYCLE", 0),
+			"pending_dir":               envString("DEPOSIT_PENDING_DIR", ""),
 		},
 		"webhooks": map[string]any{
 			"alchemy_auth_token": envString("ALCHEMY_AUTH_TOKEN", ""),

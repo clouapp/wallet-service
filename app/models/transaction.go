@@ -38,6 +38,11 @@ const (
 	TxTypeGasSeed       = "gas_seed"
 )
 
+// ScannerDepositLogIndex is the log index of a block-scanner deposit, which is keyed
+// by chain and transaction alone; the unique deposit index covers (chain, tx_hash,
+// log_index), so one scanner row per transaction is enforced by the database.
+const ScannerDepositLogIndex = -1
+
 type Transaction struct {
 	orm.Model
 	ID                  uuid.UUID  `gorm:"type:uuid;primary_key"`

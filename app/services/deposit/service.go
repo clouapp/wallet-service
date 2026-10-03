@@ -2,6 +2,7 @@ package deposit
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"time"
@@ -12,6 +13,7 @@ import (
 	"github.com/macrowallets/waas/app/repositories"
 	"github.com/macrowallets/waas/app/services/blockheight"
 	"github.com/macrowallets/waas/app/services/chain"
+	"github.com/macrowallets/waas/app/services/deposit/pending"
 	"github.com/macrowallets/waas/app/services/webhook"
 	"github.com/macrowallets/waas/pkg/types"
 )
@@ -38,14 +40,28 @@ type Service struct {
 	registry             *chain.Registry
 	webhookSvc           *webhook.Service
 	addressRepo          *repositories.AddressRepository
-	txRepo               *repositories.TransactionRepository
+	txRepo               transactionStore
 	blockHeightProviders map[string]blockheight.Provider
 	heightFailures       map[string]int
 	withdrawals          WithdrawalConfirmations
 	deposits             DepositEvents
+	balances             WalletBalanceRefresher
 	scan                 ScanOptions
 	scanFallback         ScanOptions
 	scanSource           scanOptionSource
+	failure              FailurePolicy
+	pending              pending.Store
+	sleep                func(ctx context.Context, d time.Duration) error
+	now                  func() time.Time
+}
+
+// transactionStore is the deposit rows the scanner writes and the tracker updates.
+type transactionStore interface {
+	Create(ctx context.Context, tx *models.Transaction) error
+	CountByChainAndTxHash(ctx context.Context, chainID, txHash, txType string) (int64, error)
+	FindPendingByChain(ctx context.Context, chainID string) ([]models.Transaction, error)
+	SetBlockNumber(ctx context.Context, id uuid.UUID, block uint64) error
+	RecordConfirmations(ctx context.Context, id uuid.UUID, confirmations int, status string, confirmedAt *time.Time) error
 }
 
 // DepositEvents publishes deposit webhooks scoped to the wallet's account with the
@@ -95,6 +111,9 @@ func NewService(store RedisStore, registry *chain.Registry, webhookSvc *webhook.
 		heightFailures:       make(map[string]int),
 		scan:                 DefaultScanOptions(),
 		scanFallback:         DefaultScanOptions(),
+		failure:              DefaultFailurePolicy(),
+		sleep:                sleepContext,
+		now:                  func() time.Time { return time.Now().UTC() },
 	}
 }
 
@@ -154,34 +173,31 @@ func (s *Service) ScanLatestBlocks(ctx context.Context, chainID string) error {
 	return nil
 }
 
-func (s *Service) processBlock(ctx context.Context, chainID string, adapter types.Chain, blockNum uint64) error {
-	transfers, err := adapter.ScanBlock(ctx, blockNum)
-	if err != nil {
-		return err
-	}
-	s.recordTransfers(ctx, chainID, adapter, transfers)
-	return nil
-}
-
 // processTransfer records a transfer to a watched address as a pending deposit and
-// reports whether it created one; a transaction already recorded is left as it is.
+// reports whether it created one; a transaction already recorded is left as it is,
+// including one another process inserted at the same time (the unique deposit index
+// rejects the second insert).
 func (s *Service) processTransfer(ctx context.Context, chainID string, adapter types.Chain, transfer types.DetectedTransfer) (bool, error) {
 	watched, err := s.isWatchedAddress(ctx, chainID, transfer.To)
 	if err != nil {
-		return false, err
+		return false, classify(pending.ClassDatabase, err)
 	}
 	if !watched {
 		return false, nil
 	}
 
 	addr, err := s.addressRepo.FindByChainAndAddress(ctx, chainID, transfer.To)
+	if err != nil && !errors.Is(err, models.ErrRepositoryNotFound) {
+		return false, classify(pending.ClassDatabase, fmt.Errorf("lookup address: %w", err))
+	}
 	if err != nil || addr == nil {
-		return false, fmt.Errorf("lookup address: %w", err)
+		slog.Warn("watched-address cache lists an address the database does not hold; skipping the transfer", "chain", chainID, "address", transfer.To, "tx", transfer.TxHash)
+		return false, nil
 	}
 
 	exists, err := s.txRepo.CountByChainAndTxHash(ctx, chainID, transfer.TxHash, models.TxTypeDeposit)
 	if err != nil {
-		return false, err
+		return false, classify(pending.ClassDatabase, fmt.Errorf("check recorded deposit: %w", err))
 	}
 	if exists > 0 {
 		return false, nil
@@ -202,6 +218,7 @@ func (s *Service) processTransfer(ctx context.Context, chainID string, adapter t
 		Chain:          chainID,
 		TxType:         models.TxTypeDeposit,
 		TxHash:         transfer.TxHash,
+		LogIndex:       models.ScannerDepositLogIndex,
 		FromAddress:    transfer.From,
 		ToAddress:      transfer.To,
 		Amount:         transfer.Amount.String(),
@@ -218,7 +235,11 @@ func (s *Service) processTransfer(ctx context.Context, chainID string, adapter t
 	}
 
 	if err := s.txRepo.Create(ctx, tx); err != nil {
-		return false, fmt.Errorf("insert tx: %w", err)
+		if repositories.IsUniqueViolation(err) {
+			slog.Info("deposit already recorded by another process", "chain", chainID, "tx", transfer.TxHash)
+			return false, nil
+		}
+		return false, classify(pending.ClassDatabase, fmt.Errorf("insert tx: %w", err))
 	}
 
 	s.publishDeposit(ctx, types.EventDepositPending, *tx)

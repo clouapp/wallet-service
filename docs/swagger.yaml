@@ -358,8 +358,25 @@ definitions:
         example: '{"tier":"premium"}'
         type: string
     type: object
+  controllers.DepositScannerHealth:
+    properties:
+      error:
+        type: string
+      pending:
+        additionalProperties:
+          type: integer
+        type: object
+      pending_total:
+        example: 0
+        type: integer
+      status:
+        example: ok
+        type: string
+    type: object
   controllers.HealthResponse:
     properties:
+      deposit_scanner:
+        $ref: '#/definitions/controllers.DepositScannerHealth'
       status:
         example: ok
         type: string
@@ -1796,7 +1813,7 @@ paths:
       - Auth
   /health:
     get:
-      description: Returns service status and version
+      description: Returns service status and version, and how many deposit blocks per chain wait for a retry
       produces:
       - application/json
       responses:

@@ -6,6 +6,9 @@ import (
 	"log/slog"
 	"math/big"
 	"net/url"
+	"os"
+	"path/filepath"
+	"time"
 
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/secretsmanager"
@@ -31,6 +34,7 @@ import (
 	"github.com/macrowallets/waas/app/services/blockheight"
 	chainpkg "github.com/macrowallets/waas/app/services/chain"
 	"github.com/macrowallets/waas/app/services/deposit"
+	"github.com/macrowallets/waas/app/services/deposit/pending"
 	"github.com/macrowallets/waas/app/services/depositevents"
 	"github.com/macrowallets/waas/app/services/features"
 	"github.com/macrowallets/waas/app/services/ingest"
@@ -395,6 +399,23 @@ func buildVaultContainer(app foundation.Application) (*container.Container, erro
 		}
 		return deposit.ApplyStoredScanOptions(envWindow, stored.BatchBlocks, stored.CatchUpBlocks, stored.Concurrency), nil
 	})
+	failurePolicy, err := deposit.FailurePolicyFromSettings(
+		facades.Config().GetInt("vault.deposit_scan.retry_attempts"),
+		facades.Config().GetInt("vault.deposit_scan.retry_delay_ms"),
+		facades.Config().GetInt("vault.deposit_scan.pending_retry_seconds"),
+		facades.Config().GetInt("vault.deposit_scan.pending_retry_max_seconds"),
+		facades.Config().GetInt("vault.deposit_scan.max_new_pending_per_cycle"),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("vault: deposit failure policy: %w", err)
+	}
+	if err := c.DepositService.SetFailurePolicy(failurePolicy); err != nil {
+		return nil, fmt.Errorf("vault: deposit failure policy: %w", err)
+	}
+	c.PendingDeposits = buildPendingDepositStore(c.Redis, facades.Config().GetString("vault.deposit_scan.pending_dir"))
+	if c.PendingDeposits != nil {
+		c.DepositService.SetPendingStore(c.PendingDeposits)
+	}
 	c.IngestService = ingest.NewService(addressset.New(c.Redis), c.Registry, c.WebhookService, c.AddressRepo, c.TransactionRepo)
 	c.IngestService.SetDepositEvents(c.DepositEvents)
 	c.BalanceRefreshService = refresh.NewBalanceService(
@@ -404,6 +425,15 @@ func buildVaultContainer(app foundation.Application) (*container.Container, erro
 		c.WalletBalanceSnapshotRepo,
 		c.WalletSyncStateRepo,
 	)
+	walletRefresher, err := refresh.NewWalletRefresher(
+		c.BalanceRefreshService, c.WalletRepo, c.Registry,
+		time.Duration(facades.Config().GetInt("vault.local_workers.balance_refresh_spacing_ms"))*time.Millisecond,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("vault: wallet refresher: %w", err)
+	}
+	c.WalletRefresher = walletRefresher
+	c.DepositService.SetBalanceRefresher(c.WalletRefresher)
 
 	var priceProviders []price.PriceProvider
 	if key := c.PriceConfig.CoinGeckoAPIKey; key != "" {
@@ -437,6 +467,43 @@ func gasReadinessDefaultsFrom(configured map[string]config.SweepThresholds) map[
 		out[chainID] = sweep.GasReadinessDefault{Raw: thresholds.GasReadinessRaw}
 	}
 	return out
+}
+
+// buildPendingDepositStore keeps failed deposit blocks in Redis and in a local
+// append-only file; either one is enough, and with neither the scanner stops before a
+// failing block instead of skipping it.
+func buildPendingDepositStore(rdb *redis.Client, dir string) pending.Store {
+	var redisStore *pending.RedisStore
+	if rdb != nil {
+		store, err := pending.NewRedisStore(rdb, pending.DefaultRedisKeyPrefix)
+		if err != nil {
+			slog.Error("vault: pending deposit redis store unavailable", "error", err)
+		} else {
+			redisStore = store
+		}
+	}
+	if dir == "" {
+		dir = defaultPendingDepositDir()
+	}
+	fileStore, err := pending.NewFileStore(dir)
+	if err != nil {
+		slog.Error("vault: pending deposit file store unavailable", "dir", dir, "error", err)
+		fileStore = nil
+	}
+	store, err := pending.NewDurableStore(redisStore, fileStore)
+	if err != nil {
+		slog.Error("vault: no pending deposit store; a block that keeps failing stops the scan", "error", err)
+		return nil
+	}
+	slog.Info("vault: pending deposit store ready", "redis", redisStore != nil, "file_dir", dir, "file", fileStore != nil)
+	return store
+}
+
+func defaultPendingDepositDir() string {
+	if home, err := os.UserHomeDir(); err == nil && home != "" {
+		return filepath.Join(home, ".local", "state", "macro-wallets", "deposit-pending")
+	}
+	return filepath.Join(os.TempDir(), "macro-wallets", "deposit-pending")
 }
 
 // resolveGasReadinessThreshold returns the gas-readiness threshold for a chain,

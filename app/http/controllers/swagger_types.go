@@ -14,8 +14,18 @@ type ErrorResponse struct {
 }
 
 type HealthResponse struct {
-	Status  string `json:"status" example:"ok"`
-	Version string `json:"version" example:"0.1.0"`
+	Status         string               `json:"status" example:"ok"`
+	Version        string               `json:"version" example:"0.1.0"`
+	DepositScanner DepositScannerHealth `json:"deposit_scanner"`
+}
+
+// DepositScannerHealth reports the blocks whose deposits failed to record and wait for
+// the reprocessor, per chain. Status is ok, pending_blocks or pending_store_unavailable.
+type DepositScannerHealth struct {
+	Status       string         `json:"status" example:"ok"`
+	Pending      map[string]int `json:"pending"`
+	PendingTotal int            `json:"pending_total" example:"0"`
+	Error        string         `json:"error,omitempty"`
 }
 
 type ChainListResponse struct {

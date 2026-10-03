@@ -64,17 +64,33 @@ func (r *WalletSyncStateRepository) Upsert(ctx context.Context, state *models.Wa
 	return nil
 }
 
-// UpdateFailure marks a sync row failed and stores the error text.
+// UpdateFailure marks the scope failed, creating its row on a first sync that fails,
+// so a wallet that never synced still shows why.
 func (r *WalletSyncStateRepository) UpdateFailure(ctx context.Context, walletID uuid.UUID, chainID, scope, errMsg string) error {
 	now := time.Now()
-	if _, err := r.Query(ctx).Model(&models.WalletSyncState{}).
+	result, err := r.Query(ctx).Model(&models.WalletSyncState{}).
 		Where("wallet_id = ? AND chain_id = ? AND sync_scope = ?", walletID, chainID, scope).
 		Update(map[string]any{
 			"status":            string(types.SyncStatusFailed),
 			"last_error":        errMsg,
 			"last_attempted_at": now,
-		}); err != nil {
+		})
+	if err != nil {
 		return fmt.Errorf("mark wallet sync failed: %w", err)
+	}
+	if result != nil && result.RowsAffected > 0 {
+		return nil
+	}
+	if err := r.Query(ctx).Create(&models.WalletSyncState{
+		ID:              uuid.New(),
+		WalletID:        walletID,
+		ChainID:         chainID,
+		SyncScope:       scope,
+		Status:          string(types.SyncStatusFailed),
+		LastAttemptedAt: &now,
+		LastError:       &errMsg,
+	}); err != nil {
+		return fmt.Errorf("create failed wallet sync state: %w", err)
 	}
 	return nil
 }

@@ -65,8 +65,13 @@ func TestSolanaDeposit_DetectedFromRecordedBlockThenConfirmed(t *testing.T) {
 	addr := mocks.InsertAddress(t, w.ID, models.ChainSOL, solFixtureRecipient, "user_sol", 1)
 	svc := newDepositSvc(registry, newWebhookSvc())
 
-	if err := svc.processBlock(context.Background(), models.ChainSOL, adapter, solFixtureSlot); err != nil {
+	transfers, err := adapter.ScanBlock(context.Background(), solFixtureSlot)
+	if err != nil {
 		t.Fatal(err)
+	}
+	block := fetchedBlock{number: solFixtureSlot, transfers: transfers}
+	if outcome := svc.processBlock(context.Background(), models.ChainSOL, adapter, block, adapter.ScanBlock); outcome.err != nil {
+		t.Fatal(outcome.err)
 	}
 
 	var deposits []models.Transaction

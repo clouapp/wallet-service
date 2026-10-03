@@ -1,5 +1,6 @@
 // Package localworkers runs, inside the local HTTP server, the jobs that the
-// deposit_scanner, confirmation_tracker and webhook_worker Lambdas run in production.
+// deposit_scanner, confirmation_tracker and webhook_worker Lambdas run in production,
+// plus the periodic wallet balance refresh that keeps the read model current.
 package localworkers
 
 import (
@@ -9,6 +10,8 @@ import (
 	"log/slog"
 	"strings"
 	"time"
+
+	"github.com/macrowallets/waas/app/services/refresh"
 )
 
 const (
@@ -26,11 +29,27 @@ type OutboxDeliverer interface {
 
 // DepositScanner is the deposit_scanner Lambda body: scan new blocks of one chain,
 // record deposits to watched addresses, then refresh that chain's confirmations.
+// ReprocessDuePending retries the chain's pending blocks whose backoff elapsed.
 // SyncAddressCache rebuilds the chain's watched-address set when it drifted from the
 // database; the local scanner shares Redis with other processes that may overwrite it.
 type DepositScanner interface {
 	ScanLatestBlocks(ctx context.Context, chainID string) error
+	ReprocessDuePending(ctx context.Context, chainID string) (int, error)
 	SyncAddressCache(ctx context.Context, chainID string) (bool, error)
+}
+
+// BalanceRefresher re-reads every wallet's balances from the chain into the read model.
+type BalanceRefresher interface {
+	RefreshAll(ctx context.Context) (refresh.PassSummary, error)
+}
+
+// Workers are the jobs Start runs; Deliverer, Scanner and Balances are only needed
+// when the configuration enables their loop.
+type Workers struct {
+	Checker   WithdrawalConfirmationChecker
+	Deliverer OutboxDeliverer
+	Scanner   DepositScanner
+	Balances  BalanceRefresher
 }
 
 type Config struct {
@@ -43,6 +62,8 @@ type Config struct {
 	// detected and confirmed, and deposit webhooks are sent, from this machine.
 	DepositScanChains   []string
 	DepositScanInterval time.Duration
+	// BalanceRefreshInterval paces the wallet balance refresh; 0 turns it off.
+	BalanceRefreshInterval time.Duration
 }
 
 func (c Config) validate() error {
@@ -54,6 +75,9 @@ func (c Config) validate() error {
 	}
 	if len(c.DepositScanChains) > 0 && c.DepositScanInterval < MinInterval {
 		return errors.New("deposit scan interval must be at least one second")
+	}
+	if c.BalanceRefreshInterval != 0 && c.BalanceRefreshInterval < MinInterval {
+		return errors.New("balance refresh interval must be at least one second, or 0 to turn it off")
 	}
 	seen := make(map[string]bool, len(c.DepositScanChains))
 	for _, chainID := range c.DepositScanChains {
@@ -80,10 +104,11 @@ func ParseChainList(raw string) []string {
 }
 
 // Start launches the background loops; they stop when ctx is cancelled.
-func Start(ctx context.Context, cfg Config, checker WithdrawalConfirmationChecker, deliverer OutboxDeliverer, scanner DepositScanner) error {
+func Start(ctx context.Context, cfg Config, workers Workers) error {
 	if err := cfg.validate(); err != nil {
 		return err
 	}
+	checker, deliverer, scanner := workers.Checker, workers.Deliverer, workers.Scanner
 	if checker == nil {
 		return errors.New("withdrawal confirmation checker is required")
 	}
@@ -92,6 +117,9 @@ func Start(ctx context.Context, cfg Config, checker WithdrawalConfirmationChecke
 	}
 	if len(cfg.DepositScanChains) > 0 && scanner == nil {
 		return errors.New("deposit scanner is required")
+	}
+	if cfg.BalanceRefreshInterval > 0 && workers.Balances == nil {
+		return errors.New("balance refresher is required")
 	}
 	scanChains := append([]string(nil), cfg.DepositScanChains...)
 
@@ -124,7 +152,19 @@ func Start(ctx context.Context, cfg Config, checker WithdrawalConfirmationChecke
 				if err := scanner.ScanLatestBlocks(ctx, chainID); err != nil {
 					slog.Error("local deposit scan failed", "chain", chainID, "error", err)
 				}
+				reprocessPending(ctx, scanner, chainID)
 			}
+		})
+	}
+
+	if cfg.BalanceRefreshInterval > 0 {
+		go every(ctx, cfg.BalanceRefreshInterval, func() {
+			summary, err := workers.Balances.RefreshAll(ctx)
+			if err != nil {
+				slog.Error("local balance refresh failed", "error", err, "refreshed", summary.Refreshed, "failed", summary.Failed)
+				return
+			}
+			slog.Info("local balance refresh complete", "refreshed", summary.Refreshed, "failed", summary.Failed, "skipped", summary.Skipped)
 		})
 	}
 
@@ -134,6 +174,7 @@ func Start(ctx context.Context, cfg Config, checker WithdrawalConfirmationChecke
 		"delivery_interval", cfg.DeliveryInterval.String(),
 		"deposit_scan_chains", strings.Join(scanChains, ","),
 		"deposit_scan_interval", cfg.DepositScanInterval.String(),
+		"balance_refresh_interval", cfg.BalanceRefreshInterval.String(),
 	)
 	return nil
 }
@@ -143,6 +184,19 @@ func Start(ctx context.Context, cfg Config, checker WithdrawalConfirmationChecke
 func syncAddressCache(ctx context.Context, scanner DepositScanner, chainID string) {
 	if _, err := scanner.SyncAddressCache(ctx, chainID); err != nil {
 		slog.Error("local address cache sync failed", "chain", chainID, "error", err)
+	}
+}
+
+// reprocessPending runs after the scan in the same loop, so a chain's pending blocks
+// and its new blocks are never recorded at the same time.
+func reprocessPending(ctx context.Context, scanner DepositScanner, chainID string) {
+	resolved, err := scanner.ReprocessDuePending(ctx, chainID)
+	if err != nil {
+		slog.Error("local pending deposit reprocess failed", "chain", chainID, "error", err)
+		return
+	}
+	if resolved > 0 {
+		slog.Info("local pending deposit blocks recovered", "chain", chainID, "count", resolved)
 	}
 }
 

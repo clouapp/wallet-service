@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"os"
 	"time"
@@ -16,6 +17,7 @@ import (
 	chainpkg "github.com/macrowallets/waas/app/services/chain"
 	"github.com/macrowallets/waas/app/services/deposit"
 	"github.com/macrowallets/waas/app/services/localworkers"
+	"github.com/macrowallets/waas/app/services/refresh"
 	"github.com/macrowallets/waas/app/services/webhook"
 	"github.com/macrowallets/waas/app/services/webhooksync"
 	"github.com/macrowallets/waas/bootstrap"
@@ -115,9 +117,16 @@ func handleAPIGateway(ctx context.Context, req events.APIGatewayV2HTTPRequest) (
 	return httpadapter.NewV2(facades.Route()).ProxyWithContext(ctx, req)
 }
 
+// handleDepositScan scans new blocks, then retries the chain's pending blocks whose
+// backoff elapsed, in the same invocation, as the local scan loop does.
 func handleDepositScan(ctx context.Context, event types.DepositScanEvent) error {
 	slog.Info("deposit scan triggered", "chain", event.Chain)
-	return deposits.ScanLatestBlocks(ctx, event.Chain)
+	scanErr := deposits.ScanLatestBlocks(ctx, event.Chain)
+	resolved, pendingErr := deposits.ReprocessDuePending(ctx, event.Chain)
+	if resolved > 0 {
+		slog.Info("pending deposit blocks recovered", "chain", event.Chain, "count", resolved)
+	}
+	return errors.Join(scanErr, pendingErr)
 }
 
 func handleConfirmationTracker(ctx context.Context) error {
@@ -155,18 +164,20 @@ func handleWebhookWorker(ctx context.Context, sqsEvent events.SQSEvent) (events.
 }
 
 // startLocalWorkers stands in for the confirmation_tracker and webhook_worker
-// Lambdas, which never run beside the local HTTP server.
+// Lambdas, which never run beside the local HTTP server, and keeps the wallet
+// balance read model refreshed.
 func startLocalWorkers() {
 	if !facades.Config().GetBool("vault.local_workers.enabled") {
 		slog.Info("local workers disabled")
 		return
 	}
 	cfg := localworkers.Config{
-		ConfirmationInterval: time.Duration(facades.Config().GetInt("vault.local_workers.confirmation_interval_seconds")) * time.Second,
-		DeliveryInterval:     time.Duration(facades.Config().GetInt("vault.local_workers.delivery_interval_seconds")) * time.Second,
-		DeliverOutbox:        facades.Config().GetString("vault.queues.webhook") == "",
-		DepositScanChains:    localworkers.ParseChainList(facades.Config().GetString("vault.local_workers.deposit_scan_chains")),
-		DepositScanInterval:  time.Duration(facades.Config().GetInt("vault.local_workers.deposit_scan_interval_seconds")) * time.Second,
+		ConfirmationInterval:   time.Duration(facades.Config().GetInt("vault.local_workers.confirmation_interval_seconds")) * time.Second,
+		DeliveryInterval:       time.Duration(facades.Config().GetInt("vault.local_workers.delivery_interval_seconds")) * time.Second,
+		DeliverOutbox:          facades.Config().GetString("vault.queues.webhook") == "",
+		DepositScanChains:      localworkers.ParseChainList(facades.Config().GetString("vault.local_workers.deposit_scan_chains")),
+		DepositScanInterval:    time.Duration(facades.Config().GetInt("vault.local_workers.deposit_scan_interval_seconds")) * time.Second,
+		BalanceRefreshInterval: time.Duration(facades.Config().GetInt("vault.local_workers.balance_refresh_interval_seconds")) * time.Second,
 	}
 	for _, chainID := range cfg.DepositScanChains {
 		if _, err := registry.Chain(chainID); err != nil {
@@ -174,7 +185,12 @@ func startLocalWorkers() {
 			return
 		}
 	}
-	if err := localworkers.Start(context.Background(), cfg, deposits, webhooks, deposits); err != nil {
+	if err := localworkers.Start(context.Background(), cfg, localworkers.Workers{
+		Checker:   deposits,
+		Deliverer: webhooks,
+		Scanner:   deposits,
+		Balances:  container.MustMake[*refresh.WalletRefresher](),
+	}); err != nil {
 		slog.Error("local workers not started", "error", err)
 	}
 }

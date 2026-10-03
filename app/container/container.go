@@ -11,6 +11,7 @@ import (
 	"github.com/macrowallets/waas/app/repositories"
 	chainpkg "github.com/macrowallets/waas/app/services/chain"
 	"github.com/macrowallets/waas/app/services/deposit"
+	"github.com/macrowallets/waas/app/services/deposit/pending"
 	"github.com/macrowallets/waas/app/services/depositevents"
 	"github.com/macrowallets/waas/app/services/ingest"
 	"github.com/macrowallets/waas/app/services/ingest/providers"
@@ -78,6 +79,8 @@ type Container struct {
 	DepositEvents         *depositevents.Publisher
 	IngestService         *ingest.Service
 	BalanceRefreshService *refresh.BalanceService
+	WalletRefresher       *refresh.WalletRefresher
+	PendingDeposits       pending.Store
 }
 
 var (

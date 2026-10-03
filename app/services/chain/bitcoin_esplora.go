@@ -74,7 +74,7 @@ func (a *BitcoinLive) esploraGet(ctx context.Context, path string) ([]byte, erro
 			return nil, &esploraStatusError{path: path, status: status, body: strings.TrimSpace(string(body))}
 		}
 		if attempt >= a.esploraRetry.maxAttempts {
-			return nil, fmt.Errorf("esplora GET %s: rate limited (HTTP %d) after %d attempts", path, status, attempt)
+			return nil, fmt.Errorf("esplora GET %s: %w (HTTP %d) after %d attempts", path, ErrRateLimited, status, attempt)
 		}
 		delay := a.esploraRetry.delay(attempt, header.Get("Retry-After"), time.Now())
 		slog.Warn("esplora rate limited, backing off", "chain", a.cfg.ChainIDStr, "path", path, "status", status, "attempt", attempt, "delay", delay.String())

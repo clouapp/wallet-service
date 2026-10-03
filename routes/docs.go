@@ -4,14 +4,16 @@ import (
 	"github.com/goravel/framework/contracts/http"
 	"github.com/goravel/framework/facades"
 
+	"github.com/macrowallets/waas/app/container"
 	"github.com/macrowallets/waas/app/http/controllers/health"
+	"github.com/macrowallets/waas/app/services/deposit"
 )
 
 // RegisterDocs exposes health and the Swagger UI. The spec document is
 // registered by the route service provider so this package does not import
 // the generated docs package.
 func RegisterDocs() {
-	facades.Route().Get("/health", health.Health)
+	facades.Route().Get("/health", health.NewController(container.MustMake[*deposit.Service]()).Show)
 
 	facades.Route().Get("/swagger/index.html", func(ctx http.Context) http.Response {
 		html := `<!DOCTYPE html>
