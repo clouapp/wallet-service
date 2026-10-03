@@ -84,8 +84,18 @@ func (r *SessionRevoker) WithActivity(activity SessionActivity) *SessionRevoker 
 // attached, the watermark, the refresh-token revoke and the platform
 // user.sessions_revoked row commit together.
 func (r *SessionRevoker) RevokeAll(ctx context.Context, userID uuid.UUID) (time.Time, error) {
+	return r.RevokeAllBy(ctx, userID, userID)
+}
+
+// RevokeAllBy is RevokeAll with a distinct actor. A platform admin revoking
+// another user is the actor; the target is the user whose sessions end.
+// The activity row stays a platform row (null account id).
+func (r *SessionRevoker) RevokeAllBy(ctx context.Context, actorID, userID uuid.UUID) (time.Time, error) {
 	if ctx == nil {
 		return time.Time{}, errors.New("auth: revoke sessions: context is required")
+	}
+	if actorID == uuid.Nil {
+		return time.Time{}, errors.New("auth: revoke sessions: actor is required")
 	}
 	if userID == uuid.Nil {
 		return time.Time{}, errors.New("auth: revoke sessions: user id is required")
@@ -110,7 +120,7 @@ func (r *SessionRevoker) RevokeAll(ctx context.Context, userID uuid.UUID) (time.
 			return err
 		}
 		return r.activity.Append(ctx, models.AccountActivity{
-			ActorUserID: userID,
+			ActorUserID: actorID,
 			Action:      activitylog.ActionUserSessionsRevoked,
 			TargetType:  activitylog.TargetUser,
 			TargetID:    userID.String(),

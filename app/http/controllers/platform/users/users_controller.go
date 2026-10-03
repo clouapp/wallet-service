@@ -59,6 +59,34 @@ func (ctrl *UsersController) Reactivate(ctx http.Context) http.Response {
 	return ctrl.change(ctx, false)
 }
 
+// RevokeSessions godoc
+// @Summary      Revoke a platform user's sessions
+// @Description  Moves users.sessions_revoked_at and revokes refresh tokens. Only a platform admin may call it. The activity row is user.sessions_revoked with a null account id. The user is not suspended.
+// @Tags         Platform Users
+// @Security     BearerAuth
+// @Param        id  path  string  true  "User UUID"
+// @Success      204  "No content"
+// @Failure      401  {object}  responses.ErrorBody
+// @Failure      403  {object}  responses.ErrorBody
+// @Failure      404  {object}  responses.ErrorBody
+// @Router       /platform/users/{id}/sessions/revoke [post]
+func (ctrl *UsersController) RevokeSessions(ctx http.Context) http.Response {
+	actorID := middleware.SessionUserID(ctx)
+	if actorID == uuid.Nil {
+		return responses.Send(ctx, http.StatusUnauthorized, http.Json{"error": "unauthorized"})
+	}
+	targetID, err := requests.RouteUUID(ctx, "id")
+	if err != nil {
+		return responses.Send(ctx, http.StatusBadRequest, http.Json{"error": "invalid user id"})
+	}
+	if err := ctrl.users.RevokeSessions(ctx.Context(), actorID, targetID); err != nil {
+		if errResp := mapSuspensionError(ctx, err); errResp != nil {
+			return errResp
+		}
+	}
+	return ctx.Response().NoContent()
+}
+
 type suspensionBody struct {
 	ID          uuid.UUID `json:"id"`
 	SuspendedAt *string   `json:"suspended_at"`
@@ -104,7 +132,7 @@ func mapSuspensionError(ctx http.Context, err error) http.Response {
 		return nil
 	}
 	switch {
-	case errors.Is(err, usersvc.ErrPlatformForbidden):
+	case errors.Is(err, usersvc.ErrPlatformForbidden), errors.Is(err, usersvc.ErrSessionsForbidden):
 		return responses.Send(ctx, http.StatusForbidden, http.Json{"error": err.Error()})
 	case errors.Is(err, usersvc.ErrNotFound):
 		return responses.Send(ctx, http.StatusNotFound, http.Json{"error": "user not found"})

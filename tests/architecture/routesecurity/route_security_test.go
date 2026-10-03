@@ -137,6 +137,7 @@ var routeTable = map[string]routeSecurity{
 	"GET|HEAD /v1/platform/features":                                   session(chainSession),
 	"PATCH /v1/platform/features/{key}":                                session(chainSession),
 	"POST /v1/platform/users/{id}/reactivate":                          session(chainSession),
+	"POST /v1/platform/users/{id}/sessions/revoke":                     session(chainSession),
 	"POST /v1/platform/users/{id}/suspend":                             session(chainSession),
 	"PUT /v1/me/preferences":                                           session(chainSession),
 	"GET|HEAD /v1/users/me":                                            session(chainSession),

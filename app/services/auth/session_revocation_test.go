@@ -177,6 +177,31 @@ func TestSessionRevoker_RejectsInvalidInput(t *testing.T) {
 	require.Error(t, err)
 }
 
+func TestSessionRevoker_AttributesAPlatformRevokeToTheActor(t *testing.T) {
+	now := time.Date(2026, 10, 2, 12, 0, 5, 0, time.UTC)
+	watermarks := &fakeWatermarks{at: map[uuid.UUID]time.Time{}}
+	refresh := &fakeRefreshRevoker{}
+	activity := &recordingSessionActivity{}
+	revoker, err := authsvc.NewSessionRevoker(watermarks, refresh)
+	require.NoError(t, err)
+	revoker = revoker.WithClock(func() time.Time { return now }, func(time.Duration) {}).WithActivity(activity)
+	actorID := uuid.New()
+	userID := uuid.New()
+
+	_, err = revoker.RevokeAllBy(context.Background(), actorID, userID)
+
+	require.NoError(t, err)
+	require.Len(t, activity.rows, 1)
+	require.Nil(t, activity.rows[0].AccountID)
+	require.Equal(t, actorID, activity.rows[0].ActorUserID)
+	require.Equal(t, userID.String(), activity.rows[0].TargetID)
+	require.Equal(t, activitylog.ActionUserSessionsRevoked, activity.rows[0].Action)
+	require.NotEqual(t, activitylog.ActionMemberSuspended, activity.rows[0].Action)
+
+	_, err = revoker.RevokeAllBy(context.Background(), uuid.Nil, userID)
+	require.Error(t, err)
+}
+
 func TestSessionRevoker_WritesAPlatformRowInsideTheTransaction(t *testing.T) {
 	now := time.Date(2026, 10, 2, 12, 0, 5, 0, time.UTC)
 	watermarks := &fakeWatermarks{at: map[uuid.UUID]time.Time{}}

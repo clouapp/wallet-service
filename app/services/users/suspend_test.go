@@ -84,6 +84,44 @@ func TestSuspendRefusesACallerWhoIsNotAPlatformAdmin(t *testing.T) {
 	require.ErrorIs(t, err, users.ErrPlatformForbidden)
 }
 
+func TestRevokeSessionsRecordsTheAdminAndRefusesEveryoneElse(t *testing.T) {
+	t.Parallel()
+
+	actor := uuid.New()
+	target := uuid.New()
+	store := &suspensionStore{user: &models.User{ID: target, Status: models.StatusActive}}
+	activity := &suspensionActivity{}
+	sessions := &suspensionSessions{}
+	service := users.NewService(store).
+		WithActivity(activity).
+		WithPlatformAdmins(allowAdmins{actor}).
+		WithSessions(sessions)
+
+	require.NoError(t, service.RevokeSessions(context.Background(), actor, target))
+	require.Equal(t, []uuid.UUID{actor}, sessions.actors)
+	require.Equal(t, []uuid.UUID{target}, sessions.targets)
+	require.Empty(t, activity.rows)
+	require.Nil(t, store.user.SuspendedAt)
+	require.Empty(t, sessions.revoked)
+
+	require.NoError(t, service.RevokeSessions(context.Background(), actor, target))
+	require.Len(t, sessions.targets, 2)
+
+	err := users.NewService(store).
+		WithActivity(activity).
+		WithPlatformAdmins(allowAdmins{}).
+		WithSessions(sessions).
+		RevokeSessions(context.Background(), uuid.New(), target)
+	require.ErrorIs(t, err, users.ErrSessionsForbidden)
+	require.Len(t, sessions.targets, 2)
+
+	missing := users.NewService(&suspensionStore{err: models.ErrRepositoryNotFound}).
+		WithActivity(activity).
+		WithPlatformAdmins(allowAdmins{actor}).
+		WithSessions(sessions)
+	require.ErrorIs(t, missing.RevokeSessions(context.Background(), actor, uuid.New()), users.ErrNotFound)
+}
+
 func TestSuspendReportsAMissingUser(t *testing.T) {
 	t.Parallel()
 
@@ -164,9 +202,17 @@ func (a *suspensionActivity) Append(_ context.Context, row models.AccountActivit
 
 type suspensionSessions struct {
 	revoked []uuid.UUID
+	actors  []uuid.UUID
+	targets []uuid.UUID
 }
 
 func (s *suspensionSessions) RevokeAll(_ context.Context, userID uuid.UUID) (time.Time, error) {
 	s.revoked = append(s.revoked, userID)
+	return time.Time{}, nil
+}
+
+func (s *suspensionSessions) RevokeAllBy(_ context.Context, actorID, userID uuid.UUID) (time.Time, error) {
+	s.actors = append(s.actors, actorID)
+	s.targets = append(s.targets, userID)
 	return time.Time{}, nil
 }

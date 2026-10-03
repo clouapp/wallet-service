@@ -26,10 +26,12 @@ type PlatformAdmins interface {
 	Contains(ctx context.Context, userID uuid.UUID) (bool, error)
 }
 
-// Sessions ends the dashboard sessions of a user. Suspension calls it so a
-// watermark and the refresh tokens move with suspended_at.
+// Sessions ends the dashboard sessions of a user. Suspension calls RevokeAll
+// so a watermark and the refresh tokens move with suspended_at. RevokeAllBy
+// is the same revoke with the platform admin as the activity actor.
 type Sessions interface {
 	RevokeAll(ctx context.Context, userID uuid.UUID) (time.Time, error)
+	RevokeAllBy(ctx context.Context, actorID, userID uuid.UUID) (time.Time, error)
 }
 
 // WithPlatformAdmins attaches the platform-admin lookup Suspend and
@@ -72,6 +74,52 @@ func (s *Service) Suspend(ctx context.Context, actorID, targetID uuid.UUID) (Sus
 // A user who is not suspended does not get a second row.
 func (s *Service) Reactivate(ctx context.Context, actorID, targetID uuid.UUID) (Suspension, error) {
 	return s.changeSuspension(ctx, actorID, targetID, false)
+}
+
+// RevokeSessions ends one user's dashboard sessions: the watermark, their
+// refresh tokens, and a platform user.sessions_revoked row. The actor is the
+// platform admin. It does not suspend the user and it does not write
+// member.suspended. A second call revokes again.
+func (s *Service) RevokeSessions(ctx context.Context, actorID, targetID uuid.UUID) error {
+	if ctx == nil {
+		return fmt.Errorf("revoke sessions: context is required")
+	}
+	if actorID == uuid.Nil {
+		return fmt.Errorf("revoke sessions: actor is required")
+	}
+	if targetID == uuid.Nil {
+		return fmt.Errorf("revoke sessions: user id is required")
+	}
+	if s == nil || s.store == nil {
+		return fmt.Errorf("users service: users repository is required")
+	}
+	if s.admins == nil {
+		return fmt.Errorf("revoke sessions: platform admins are required")
+	}
+	if s.sessions == nil {
+		return fmt.Errorf("revoke sessions: sessions are required")
+	}
+	admin, err := s.admins.Contains(ctx, actorID)
+	if err != nil {
+		return err
+	}
+	if !admin {
+		return ErrSessionsForbidden
+	}
+	user, err := s.store.FindByID(ctx, targetID)
+	if err != nil {
+		if errors.Is(err, models.ErrRepositoryNotFound) {
+			return ErrNotFound
+		}
+		return err
+	}
+	if user == nil || user.ID == uuid.Nil {
+		return ErrNotFound
+	}
+	if _, err := s.sessions.RevokeAllBy(ctx, actorID, targetID); err != nil {
+		return err
+	}
+	return nil
 }
 
 func (s *Service) changeSuspension(ctx context.Context, actorID, targetID uuid.UUID, suspend bool) (Suspension, error) {
