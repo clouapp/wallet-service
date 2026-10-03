@@ -16,6 +16,7 @@ import (
 	"github.com/goravel/framework/facades"
 	"github.com/redis/go-redis/v9"
 
+	coinapiws "github.com/macrowallets/waas/app/adapters/price/coinapi"
 	"github.com/macrowallets/waas/app/container"
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/repositories"
@@ -393,7 +394,7 @@ func buildVaultContainer(app foundation.Application) (*container.Container, erro
 	if key := c.PriceConfig.CoinAPIKey; key != "" {
 		priceProviders = append(priceProviders, price.NewCoinAPIProvider(key))
 	}
-	c.PriceService = price.NewService(priceProviders, c.CurrencyRepo, c.Redis)
+	c.PriceService = price.NewService(priceProviders, c.CurrencyRepo, c.Redis).WithQuoteDialer(coinapiws.Dialer{})
 
 	slog.Info("vault container booted", "chains", c.Registry.ChainIDs())
 	return c, nil

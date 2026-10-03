@@ -8,9 +8,20 @@ import (
 	"strings"
 	"time"
 
-	"github.com/gorilla/websocket"
 	"github.com/redis/go-redis/v9"
 )
+
+// QuoteConn is one live CoinAPI quote socket.
+type QuoteConn interface {
+	WriteJSON(v any) error
+	ReadMessage() (messageType int, payload []byte, err error)
+	Close() error
+}
+
+// QuoteDialer opens a CoinAPI quote socket. The service keeps the URL and the reconnect loop.
+type QuoteDialer interface {
+	Dial(ctx context.Context, url string) (QuoteConn, error)
+}
 
 const (
 	wsURL            = "wss://api-ncsa.coinapi.io/v1/"
@@ -33,18 +44,26 @@ type WebSocketClient struct {
 	apiKey       string
 	currencyRepo currencyStore
 	redis        *redis.Client
+	dialer       QuoteDialer
 	activeCodes  []string
 }
 
-func NewWebSocketClient(apiKey string, currencyRepo currencyStore, rdb *redis.Client) *WebSocketClient {
+func NewWebSocketClient(apiKey string, currencyRepo currencyStore, rdb *redis.Client, dialer QuoteDialer) *WebSocketClient {
 	return &WebSocketClient{
 		apiKey:       apiKey,
 		currencyRepo: currencyRepo,
 		redis:        rdb,
+		dialer:       dialer,
 	}
 }
 
 func (w *WebSocketClient) Connect(ctx context.Context) error {
+	if w == nil {
+		return fmt.Errorf("coinapi websocket client is nil")
+	}
+	if w.dialer == nil {
+		return fmt.Errorf("coinapi quote dialer is not configured")
+	}
 	if err := w.refreshActiveCodes(ctx); err != nil {
 		return fmt.Errorf("load active codes: %w", err)
 	}
@@ -63,7 +82,7 @@ func (w *WebSocketClient) Connect(ctx context.Context) error {
 		}
 
 		slog.Info("connecting to CoinAPI WebSocket", "url", wsURL)
-		conn, _, err := websocket.DefaultDialer.DialContext(ctx, wsURL, nil)
+		conn, err := w.dialer.Dial(ctx, wsURL)
 		if err != nil {
 			slog.Error("websocket dial failed", "error", err)
 			time.Sleep(backoff)

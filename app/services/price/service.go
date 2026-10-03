@@ -27,6 +27,7 @@ type Service struct {
 	providers    []PriceProvider
 	currencyRepo currencyStore
 	redis        *redis.Client
+	quotes       QuoteDialer
 }
 
 func NewService(
@@ -141,9 +142,22 @@ func (s *Service) FindStale(ctx context.Context, currencyType string, staleDurat
 	return s.currencyRepo.FindStale(ctx, currencyType, staleDuration)
 }
 
+// WithQuoteDialer installs the CoinAPI socket opener. The provider supplies it;
+// this package never imports the websocket library.
+func (s *Service) WithQuoteDialer(dialer QuoteDialer) *Service {
+	if s == nil {
+		return nil
+	}
+	s.quotes = dialer
+	return s
+}
+
 // PriceWebSocket streams CoinAPI quotes through the currency rows this service updates.
 func (s *Service) PriceWebSocket(apiKey string, rdb *redis.Client) *WebSocketClient {
-	return NewWebSocketClient(apiKey, s.currencyRepo, rdb)
+	if s == nil {
+		return nil
+	}
+	return NewWebSocketClient(apiKey, s.currencyRepo, rdb, s.quotes)
 }
 
 func (s *Service) GetPrice(ctx context.Context, code string) (float64, error) {

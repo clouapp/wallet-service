@@ -11,6 +11,7 @@ import (
 
 type mockCurrencyRepo struct {
 	currencies map[string]*models.Currency
+	active     []models.Currency
 	stale      []models.Currency
 	staleErr   error
 	staleType  string
@@ -18,7 +19,7 @@ type mockCurrencyRepo struct {
 }
 
 func (m *mockCurrencyRepo) FindActiveCryptos(context.Context) ([]models.Currency, error) {
-	return nil, nil
+	return m.active, nil
 }
 func (m *mockCurrencyRepo) FindActiveFiats(context.Context) ([]models.Currency, error) {
 	return nil, nil
@@ -124,11 +125,18 @@ func TestFindStaleReturnsTheStoreRows(t *testing.T) {
 
 func TestPriceWebSocketUsesTheServiceCurrencyStore(t *testing.T) {
 	repo := &mockCurrencyRepo{}
-	svc := NewService(nil, repo, nil)
+	dialer := stubDialer{}
+	svc := NewService(nil, repo, nil).WithQuoteDialer(dialer)
 	client := svc.PriceWebSocket("key", nil)
-	if client == nil || client.currencyRepo != repo || client.apiKey != "key" {
+	if client == nil || client.currencyRepo != repo || client.apiKey != "key" || client.dialer != dialer {
 		t.Fatal("websocket client did not keep the service currency store")
 	}
+}
+
+type stubDialer struct{}
+
+func (stubDialer) Dial(context.Context, string) (QuoteConn, error) {
+	return nil, errStale
 }
 
 var errStale = errorString("stale")
