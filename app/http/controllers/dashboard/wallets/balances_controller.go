@@ -39,7 +39,7 @@ func NewBalancesController(
 // @Security     BearerAuth
 // @Produce      json
 // @Param        walletId  path  string  true  "Wallet UUID"
-// @Success      200  {object}  map[string][]models.WalletAssetBalance
+// @Success      200  {object}  map[string][]controllers.WalletAssetBalanceView
 // @Failure      403  {object}  ErrorResponse
 // @Failure      404  {object}  ErrorResponse
 // @Router       /wallets/{walletId}/balances [get]
@@ -55,6 +55,6 @@ func (ctrl *BalancesController) ListWalletBalances(ctx http.Context) http.Respon
 		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to fetch chain tokens"})
 	}
 
-	assets := controllers.PricedConfiguredBalances(ctx.Context(), wallet.Chain, rows, tokens)
+	assets := controllers.WalletAssetBalanceViews(controllers.PricedConfiguredBalances(ctx.Context(), wallet.Chain, rows, tokens))
 	return responses.Send(ctx, http.StatusOK, http.Json{"data": assets})
 }

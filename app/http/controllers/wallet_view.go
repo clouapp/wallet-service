@@ -49,14 +49,14 @@ func newWalletView(wallet *models.Wallet, resolved models.ResolvedNetwork) Walle
 type WalletListItem struct {
 	models.Wallet
 	walletNetwork
-	Assets []models.WalletAssetBalance `json:"assets"`
+	Assets []WalletAssetBalanceView `json:"assets"`
 }
 
 func newWalletListItem(wallet models.Wallet, resolved models.ResolvedNetwork, assets []models.WalletAssetBalance) WalletListItem {
 	return WalletListItem{
 		Wallet:        *walletPricedFor(&wallet, resolved),
 		walletNetwork: newWalletNetwork(resolved),
-		Assets:        assetBalancesPricedFor(assets, resolved),
+		Assets:        WalletAssetBalanceViews(assetBalancesPricedFor(assets, resolved)),
 	}
 }
 
