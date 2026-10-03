@@ -157,12 +157,14 @@ var myAccountsBounds = pagination.Bounds{DefaultLimit: myAccountsDefaultLimit, M
 func (ctrl *UsersController) ListMyAccounts(ctx http.Context) http.Response {
 	userID := ctx.Value("user_id").(uuid.UUID)
 
-	limit, offset, err := pagination.ParseStrict(ctx.Request().Query("limit", ""), ctx.Request().Query("offset", ""), myAccountsBounds)
+	var query requests.ListMyAccountsRequest
+	query.Load(ctx)
+	limit, offset, err := pagination.ParseStrict(query.Limit, query.Offset, myAccountsBounds)
 	if err != nil {
 		return responses.Send(ctx, http.StatusBadRequest, http.Json{"error": err.Error()})
 	}
 
-	search, environment, errMessage := parseMyAccountsFilter(ctx)
+	search, environment, errMessage := parseMyAccountsFilter(query.Search, query.Environment)
 	if errMessage != "" {
 		return responses.Send(ctx, http.StatusBadRequest, http.Json{"error": errMessage})
 	}
@@ -209,13 +211,13 @@ func (ctrl *UsersController) accountsWithCallerRole(ctx http.Context, userID uui
 	return items, nil
 }
 
-func parseMyAccountsFilter(ctx http.Context) (string, string, string) {
-	search := strings.TrimSpace(ctx.Request().Query("search", ""))
+func parseMyAccountsFilter(search, environment string) (string, string, string) {
+	search = strings.TrimSpace(search)
 	if utf8.RuneCountInString(search) > myAccountsSearchMaxLength {
 		return "", "", fmt.Sprintf("search must be at most %d characters", myAccountsSearchMaxLength)
 	}
 
-	environment := strings.TrimSpace(ctx.Request().Query("environment", ""))
+	environment = strings.TrimSpace(environment)
 	if environment != "" && environment != models.EnvironmentProd && environment != models.EnvironmentTest {
 		return "", "", fmt.Sprintf("environment must be %q or %q", models.EnvironmentProd, models.EnvironmentTest)
 	}
