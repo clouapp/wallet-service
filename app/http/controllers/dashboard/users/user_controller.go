@@ -184,7 +184,40 @@ func (ctrl *UsersController) ListMyAccounts(ctx http.Context) http.Response {
 		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to fetch accounts"})
 	}
 
-	return ctx.Response().Json(http.StatusOK, pagination.Response(accounts, total, limit, offset))
+	items, err := ctrl.accountsWithCallerRole(ctx, userID, accounts)
+	if err != nil {
+		facades.Log().WithContext(ctx).Errorf("user: list my accounts roles: %v", err)
+		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to fetch accounts"})
+	}
+
+	return ctx.Response().Json(http.StatusOK, pagination.Response(items, total, limit, offset))
+}
+
+// accountsWithCallerRole copies each account and adds the caller's stored
+// membership role. A listed account with no active role is a broken
+// membership and fails the request instead of omitting the field.
+func (ctrl *UsersController) accountsWithCallerRole(ctx http.Context, userID uuid.UUID, accounts []models.Account) ([]myAccount, error) {
+	items := make([]myAccount, 0, len(accounts))
+	if len(accounts) == 0 {
+		return items, nil
+	}
+
+	accountIDs := make([]uuid.UUID, len(accounts))
+	for i, account := range accounts {
+		accountIDs[i] = account.ID
+	}
+	roles, err := ctrl.memberships.RolesForUserAccounts(ctx.Context(), userID, accountIDs)
+	if err != nil {
+		return nil, err
+	}
+	for _, account := range accounts {
+		role, ok := roles[account.ID]
+		if !ok || strings.TrimSpace(role) == "" {
+			return nil, fmt.Errorf("account %s has no role for user %s", account.ID, userID)
+		}
+		items = append(items, myAccount{Account: account, Role: role})
+	}
+	return items, nil
 }
 
 func parseMyAccountsFilter(ctx http.Context) (repositories.AccountListFilter, string) {
@@ -374,11 +407,19 @@ type UpdateDefaultAccountSwagger struct {
 	AccountID string `json:"account_id" example:"550e8400-e29b-41d4-a716-446655440000"`
 }
 
+// myAccount is one row of GET /v1/users/me/accounts. Existing account fields
+// stay; role is the caller's account_users.role, returned as stored.
+// fix/security-s7 (viewer → auditor) is not merged on this branch.
+type myAccount struct {
+	models.Account
+	Role string `json:"role" example:"owner"`
+}
+
 type AccountListResponse struct {
-	Data   []models.Account `json:"data"`
-	Total  int64            `json:"total" example:"64"`
-	Limit  int              `json:"limit" example:"20"`
-	Offset int              `json:"offset" example:"0"`
+	Data   []myAccount `json:"data"`
+	Total  int64       `json:"total" example:"64"`
+	Limit  int         `json:"limit" example:"20"`
+	Offset int         `json:"offset" example:"0"`
 }
 
 type TotpSetupSwagger struct {

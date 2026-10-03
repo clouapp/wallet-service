@@ -3,6 +3,7 @@ package repositories
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -74,6 +75,38 @@ func (r *AccountUserRepository) FindByUserID(ctx context.Context, userID uuid.UU
 		return nil, fmt.Errorf("list user memberships: %w", err)
 	}
 	return memberships, nil
+}
+
+// RolesForUserAccounts returns the stored account_users.role for each active
+// membership of userID among accountIDs. The string is returned as stored
+// (owner, admin, auditor, user). fix/security-s7, which renames a stored
+// viewer to auditor, is not on this branch, so a viewer row stays viewer.
+// An empty accountIDs list is an empty map. A duplicate active membership
+// for one account is an error.
+func (r *AccountUserRepository) RolesForUserAccounts(ctx context.Context, userID uuid.UUID, accountIDs []uuid.UUID) (map[uuid.UUID]string, error) {
+	if userID == uuid.Nil {
+		return nil, fmt.Errorf("list membership roles: user id is required")
+	}
+	roles := map[uuid.UUID]string{}
+	if len(accountIDs) == 0 {
+		return roles, nil
+	}
+	var memberships []models.AccountUser
+	if err := r.Query(ctx).
+		Where("user_id = ? AND deleted_at IS NULL AND account_id IN ?", userID, accountIDs).
+		Find(&memberships); err != nil {
+		return nil, fmt.Errorf("list membership roles: %w", err)
+	}
+	for _, membership := range memberships {
+		if strings.TrimSpace(membership.Role) == "" {
+			return nil, fmt.Errorf("list membership roles: account %s has an empty role", membership.AccountID)
+		}
+		if _, exists := roles[membership.AccountID]; exists {
+			return nil, fmt.Errorf("list membership roles: account %s has more than one active membership", membership.AccountID)
+		}
+		roles[membership.AccountID] = membership.Role
+	}
+	return roles, nil
 }
 
 // PaginateByUserID pages the user's active memberships.

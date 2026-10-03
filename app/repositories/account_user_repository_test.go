@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/google/uuid"
+	"github.com/goravel/framework/facades"
 	"github.com/stretchr/testify/suite"
 
 	"github.com/macrowallets/waas/app/models"
@@ -32,6 +33,17 @@ func (s *AccountUserRepositoryTestSuite) createAccount() uuid.UUID {
 	acc := &models.Account{ID: uuid.New(), Name: "Acc " + uuid.NewString()[:8], Status: "active"}
 	s.Require().NoError(s.accRepo.Create(context.Background(), acc))
 	return acc.ID
+}
+
+func (s *AccountUserRepositoryTestSuite) createUser() uuid.UUID {
+	userID := uuid.New()
+	_, err := facades.Orm().Query().Exec(
+		`INSERT INTO users (id, email, password_hash, status, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, NOW(), NOW())`,
+		userID, "member-"+userID.String()[:8]+"@example.com", "unused", "active",
+	)
+	s.Require().NoError(err)
+	return userID
 }
 
 func (s *AccountUserRepositoryTestSuite) TestCreate_Success() {
@@ -84,6 +96,39 @@ func (s *AccountUserRepositoryTestSuite) TestFindByAccountAndUserIncludeDeleted(
 	s.NoError(err)
 	s.NotNil(withDeleted)
 	s.NotNil(withDeleted.DeletedAt)
+}
+
+func (s *AccountUserRepositoryTestSuite) TestRolesForUserAccounts_ReturnsStoredRoles() {
+	ownerAccount := s.createAccount()
+	auditorAccount := s.createAccount()
+	otherAccount := s.createAccount()
+	userID := s.createUser()
+	otherUserID := s.createUser()
+	s.Require().NoError(s.repo.Create(context.Background(), &models.AccountUser{ID: uuid.New(), AccountID: ownerAccount, UserID: userID, Role: "owner"}))
+	s.Require().NoError(s.repo.Create(context.Background(), &models.AccountUser{ID: uuid.New(), AccountID: auditorAccount, UserID: userID, Role: "auditor"}))
+	s.Require().NoError(s.repo.Create(context.Background(), &models.AccountUser{ID: uuid.New(), AccountID: otherAccount, UserID: otherUserID, Role: "admin"}))
+
+	roles, err := s.repo.RolesForUserAccounts(context.Background(), userID, []uuid.UUID{ownerAccount, auditorAccount, otherAccount})
+	s.Require().NoError(err)
+	s.Equal(map[uuid.UUID]string{ownerAccount: "owner", auditorAccount: "auditor"}, roles)
+
+	empty, err := s.repo.RolesForUserAccounts(context.Background(), userID, nil)
+	s.Require().NoError(err)
+	s.Empty(empty)
+
+	_, err = s.repo.RolesForUserAccounts(context.Background(), uuid.Nil, []uuid.UUID{ownerAccount})
+	s.Error(err)
+}
+
+func (s *AccountUserRepositoryTestSuite) TestRolesForUserAccounts_SkipsRemovedMembership() {
+	accountID := s.createAccount()
+	userID := s.createUser()
+	s.Require().NoError(s.repo.Create(context.Background(), &models.AccountUser{ID: uuid.New(), AccountID: accountID, UserID: userID, Role: "auditor"}))
+	s.Require().NoError(s.repo.SoftDeleteByAccountAndUser(context.Background(), accountID, userID))
+
+	roles, err := s.repo.RolesForUserAccounts(context.Background(), userID, []uuid.UUID{accountID})
+	s.Require().NoError(err)
+	s.Empty(roles)
 }
 
 func (s *AccountUserRepositoryTestSuite) TestFindByUserID() {

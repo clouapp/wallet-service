@@ -26,11 +26,16 @@ const (
 	maxAccountsLimit       = 100
 )
 
+type listedAccount struct {
+	models.Account
+	Role string `json:"role"`
+}
+
 type accountListBody struct {
-	Data   []models.Account `json:"data"`
-	Total  int64            `json:"total"`
-	Limit  int              `json:"limit"`
-	Offset int              `json:"offset"`
+	Data   []listedAccount `json:"data"`
+	Total  int64           `json:"total"`
+	Limit  int             `json:"limit"`
+	Offset int             `json:"offset"`
 }
 
 // UserControllerTestSuite exercises GET /v1/users/me/accounts with a real
@@ -84,19 +89,23 @@ func (s *UserControllerTestSuite) login(email string) string {
 func (s *UserControllerTestSuite) seedAccounts(count int, environment string) []models.Account {
 	accounts := make([]models.Account, 0, count)
 	for i := 1; i <= count; i++ {
-		acc := models.Account{
-			ID:          uuid.New(),
-			Name:        fmt.Sprintf("Account %02d", i),
-			Status:      "active",
-			Environment: environment,
-		}
-		s.Require().NoError(facades.Orm().Query().Create(&acc))
-		s.Require().NoError(facades.Orm().Query().Create(&models.AccountUser{
-			ID: uuid.New(), AccountID: acc.ID, UserID: s.userID, Role: "owner",
-		}))
-		accounts = append(accounts, acc)
+		accounts = append(accounts, s.seedAccount(fmt.Sprintf("Account %02d", i), environment, "owner"))
 	}
 	return accounts
+}
+
+func (s *UserControllerTestSuite) seedAccount(name, environment, role string) models.Account {
+	acc := models.Account{
+		ID:          uuid.New(),
+		Name:        name,
+		Status:      "active",
+		Environment: environment,
+	}
+	s.Require().NoError(facades.Orm().Query().Create(&acc))
+	s.Require().NoError(facades.Orm().Query().Create(&models.AccountUser{
+		ID: uuid.New(), AccountID: acc.ID, UserID: s.userID, Role: role,
+	}))
+	return acc
 }
 
 func (s *UserControllerTestSuite) TestUpdateMe_AppliesFullName() {
@@ -180,6 +189,32 @@ func (s *UserControllerTestSuite) TestListMyAccounts_SinglePage() {
 
 	s.Len(body.Data, 3)
 	s.Equal(int64(3), body.Total)
+	for _, account := range body.Data {
+		s.Equal("owner", account.Role)
+		s.NotEmpty(account.Name)
+		s.Equal("active", account.Status)
+	}
+}
+
+func (s *UserControllerTestSuite) TestListMyAccounts_IncludesCallerRole() {
+	owner := s.seedAccount("Owner Desk", models.EnvironmentProd, "owner")
+	auditor := s.seedAccount("Audit Desk", models.EnvironmentProd, "auditor")
+
+	resp := s.listAccounts(nil)
+	content, err := resp.Content()
+	s.Require().NoError(err)
+	s.Contains(content, `"role":"owner"`)
+	s.Contains(content, `"role":"auditor"`)
+	s.Contains(content, `"name":"Owner Desk"`)
+	s.Contains(content, `"view_all_wallets"`)
+
+	body := s.decodeList(resp)
+	roles := map[uuid.UUID]string{}
+	for _, account := range body.Data {
+		roles[account.ID] = account.Role
+	}
+	s.Equal("owner", roles[owner.ID])
+	s.Equal("auditor", roles[auditor.ID])
 }
 
 func (s *UserControllerTestSuite) TestListMyAccounts_ManyPagesReachEveryAccount() {

@@ -84,7 +84,7 @@ content-type: application/json; charset=utf-8
 ### 17 my accounts: GET /v1/users/me/accounts
 status: 200
 content-type: application/json; charset=utf-8
-{"data":[{"created_at":"<time>","updated_at":"<time>","id":"<uuid:1>","name":"Contract Org","status":"active","view_all_wallets":false,"environment":"prod","linked_account_id":"<uuid:2>"},{"created_at":"<time>","updated_at":"<time>","id":"<uuid:2>","name":"Contract Org [test]","status":"active","view_all_wallets":false,"environment":"test","linked_account_id":"<uuid:1>"}],"limit":20,"offset":0,"total":2}
+{"data":[{"created_at":"<time>","updated_at":"<time>","id":"<uuid:1>","name":"Contract Org","status":"active","view_all_wallets":false,"environment":"prod","linked_account_id":"<uuid:2>","role":"owner"},{"created_at":"<time>","updated_at":"<time>","id":"<uuid:2>","name":"Contract Org [test]","status":"active","view_all_wallets":false,"environment":"test","linked_account_id":"<uuid:1>","role":"owner"}],"limit":20,"offset":0,"total":2}
 
 ### 18 change password with a wrong current one: POST /v1/users/me/password
 status: 401
