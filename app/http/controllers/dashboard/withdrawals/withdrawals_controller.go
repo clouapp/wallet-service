@@ -10,6 +10,7 @@ import (
 	"github.com/redis/go-redis/v9"
 
 	"github.com/macrowallets/waas/app/http/controllers"
+	"github.com/macrowallets/waas/app/http/middleware/requestctx"
 	"github.com/macrowallets/waas/app/http/pagination"
 	"github.com/macrowallets/waas/app/http/requests"
 	"github.com/macrowallets/waas/app/http/responses"
@@ -105,7 +106,7 @@ func NewWithdrawalsController(
 // @Failure      404  {object}  ErrorResponse
 // @Router       /wallets/{walletId}/withdrawals [get]
 func (ctrl *WithdrawalsController) ListWalletWithdrawals(ctx http.Context) http.Response {
-	wallet := ctx.Value("wallet").(*models.Wallet)
+	wallet := requestctx.MustWallet(ctx)
 
 	limit, offset := pagination.ParseParams(ctx, 50)
 	var query requests.ListWithdrawalsRequest
@@ -119,7 +120,7 @@ func (ctrl *WithdrawalsController) ListWalletWithdrawals(ctx http.Context) http.
 }
 
 func (ctrl *WithdrawalsController) EstimateWithdrawalFee(ctx http.Context) http.Response {
-	wallet := ctx.Value("wallet").(*models.Wallet)
+	wallet := requestctx.MustWallet(ctx)
 
 	var req requests.EstimateWithdrawalRequest
 	if resp := validateRequest(ctx, &req); resp != nil {
@@ -175,7 +176,7 @@ func (ctrl *WithdrawalsController) EstimateWithdrawalFee(ctx http.Context) http.
 // Wallet-passphrase verification runs in both flows — the encrypted MPC
 // share A is the final gate before a withdrawal row is persisted.
 func (ctrl *WithdrawalsController) CreateWalletWithdrawal(ctx http.Context) http.Response {
-	wallet := ctx.Value("wallet").(*models.Wallet)
+	wallet := requestctx.MustWallet(ctx)
 	if resp := controllers.BlockFlag(ctx, ctrl.flags, controllers.AccountIDForWallet(ctx, wallet), features.FlagWithdrawalsEnabled, features.CodeWithdrawalsPaused, "create_wallet_withdrawal"); resp != nil {
 		return resp
 	}
@@ -185,7 +186,7 @@ func (ctrl *WithdrawalsController) CreateWalletWithdrawal(ctx http.Context) http
 		return resp
 	}
 
-	callerUserID, hasUser := ctx.Value("user_id").(uuid.UUID)
+	callerUserID, hasUser := requestctx.UserID(ctx)
 	isDashboardCaller := hasUser && callerUserID != uuid.Nil
 
 	if isDashboardCaller {
@@ -207,7 +208,7 @@ func (ctrl *WithdrawalsController) CreateWalletWithdrawal(ctx http.Context) http
 			return responses.Send(ctx, http.StatusUnauthorized, http.Json{"error": "invalid 2FA code"})
 		}
 	} else {
-		accountID, hasAccount := ctx.Value("account_id").(uuid.UUID)
+		accountID, hasAccount := requestctx.AccountID(ctx)
 		if !hasAccount || accountID == uuid.Nil {
 			return responses.Send(ctx, http.StatusUnauthorized, http.Json{"error": "unauthenticated"})
 		}
@@ -238,7 +239,7 @@ func (ctrl *WithdrawalsController) CreateWalletWithdrawal(ctx http.Context) http
 		return responses.Send(ctx, http.StatusUnprocessableEntity, http.Json{"error": resolveErr.Error()})
 	}
 
-	callerAccountID, _ := ctx.Value("account_id").(uuid.UUID)
+	callerAccountID, _ := requestctx.AccountID(ctx)
 	if callerAccountID == uuid.Nil && wallet.AccountID != nil {
 		callerAccountID = *wallet.AccountID
 	}
@@ -374,7 +375,7 @@ func (ctrl *WithdrawalsController) CreateWalletWithdrawal(ctx http.Context) http
 // @Failure      404  {object}  ErrorResponse
 // @Router       /wallets/{walletId}/withdrawals/{withdrawalId} [get]
 func (ctrl *WithdrawalsController) GetWalletWithdrawal(ctx http.Context) http.Response {
-	wallet := ctx.Value("wallet").(*models.Wallet)
+	wallet := requestctx.MustWallet(ctx)
 
 	withdrawalID, err := requests.RouteUUID(ctx, "withdrawalId")
 	if err != nil {
@@ -402,7 +403,7 @@ func (ctrl *WithdrawalsController) GetWalletWithdrawal(ctx http.Context) http.Re
 // @Failure      422  {object}  ErrorResponse  "Withdrawal cannot be cancelled in current state"
 // @Router       /wallets/{walletId}/withdrawals/{withdrawalId}/cancel [post]
 func (ctrl *WithdrawalsController) CancelWalletWithdrawal(ctx http.Context) http.Response {
-	wallet := ctx.Value("wallet").(*models.Wallet)
+	wallet := requestctx.MustWallet(ctx)
 
 	withdrawalID, err := requests.RouteUUID(ctx, "withdrawalId")
 	if err != nil {

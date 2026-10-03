@@ -5,8 +5,8 @@ import (
 
 	"github.com/goravel/framework/contracts/http"
 
+	"github.com/macrowallets/waas/app/http/middleware/requestctx"
 	"github.com/macrowallets/waas/app/http/responses"
-	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/services/walletrecords"
 )
 
@@ -39,7 +39,7 @@ func NewUnspentsController(
 // @Failure      422  {object}  ErrorResponse  "Only available for UTXO chains"
 // @Router       /wallets/{walletId}/unspents [get]
 func (ctrl *UnspentsController) ListUnspentOutputs(ctx http.Context) http.Response {
-	wallet := ctx.Value("wallet").(*models.Wallet)
+	wallet := requestctx.MustWallet(ctx)
 
 	utxos, err := ctrl.utxos.ListSpendable(ctx.Context(), wallet.ID, wallet.Chain)
 	if err != nil {

@@ -5,6 +5,7 @@ import (
 	"github.com/goravel/framework/contracts/http"
 
 	"github.com/macrowallets/waas/app/http/controllers"
+	"github.com/macrowallets/waas/app/http/middleware/requestctx"
 	"github.com/macrowallets/waas/app/http/requests"
 	"github.com/macrowallets/waas/app/http/responses"
 	"github.com/macrowallets/waas/app/models"
@@ -40,7 +41,7 @@ func NewWebhooksController(
 // @Failure      404  {object}  ErrorResponse
 // @Router       /wallets/{walletId}/webhooks [get]
 func (ctrl *WebhooksController) ListWalletWebhooks(ctx http.Context) http.Response {
-	wallet := ctx.Value("wallet").(*models.Wallet)
+	wallet := requestctx.MustWallet(ctx)
 
 	cfgs, err := ctrl.configs.FindByWalletID(ctx.Context(), wallet.ID)
 	if err != nil {
@@ -63,7 +64,7 @@ func (ctrl *WebhooksController) ListWalletWebhooks(ctx http.Context) http.Respon
 // @Failure      403  {object}  ErrorResponse
 // @Router       /wallets/{walletId}/webhooks [post]
 func (ctrl *WebhooksController) CreateWalletWebhook(ctx http.Context) http.Response {
-	wallet := ctx.Value("wallet").(*models.Wallet)
+	wallet := requestctx.MustWallet(ctx)
 	if resp := controllers.Deny(ctx, policies.WalletManageWebhooks(ctx, wallet.ID)); resp != nil {
 		return resp
 	}
@@ -100,7 +101,7 @@ func (ctrl *WebhooksController) CreateWalletWebhook(ctx http.Context) http.Respo
 // @Failure      404  {object}  ErrorResponse
 // @Router       /wallets/{walletId}/webhooks/{webhookId} [delete]
 func (ctrl *WebhooksController) DeleteWalletWebhook(ctx http.Context) http.Response {
-	wallet := ctx.Value("wallet").(*models.Wallet)
+	wallet := requestctx.MustWallet(ctx)
 	if resp := controllers.Deny(ctx, policies.WalletManageWebhooks(ctx, wallet.ID)); resp != nil {
 		return resp
 	}

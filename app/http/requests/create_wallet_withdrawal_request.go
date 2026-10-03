@@ -6,6 +6,7 @@ import (
 	"github.com/goravel/framework/contracts/validation"
 
 	"github.com/macrowallets/waas/app/container"
+	"github.com/macrowallets/waas/app/http/middleware/requestctx"
 	"github.com/macrowallets/waas/app/services/walletrecords"
 )
 
@@ -39,7 +40,7 @@ func (r *CreateWalletWithdrawalRequest) Rules(ctx http.Context) map[string]strin
 		"passphrase":          "required|min_len:12",
 		"idempotency_key":     "uuid",
 	}
-	if userID, ok := ctx.Value("user_id").(uuid.UUID); ok && userID != uuid.Nil {
+	if userID, ok := requestctx.UserID(ctx); ok && userID != uuid.Nil {
 		rules["totp_code"] = "required|min_len:6|max_len:6"
 	}
 	return rules

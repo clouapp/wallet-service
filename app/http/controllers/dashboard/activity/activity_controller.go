@@ -5,6 +5,7 @@ import (
 
 	"github.com/goravel/framework/contracts/http"
 
+	"github.com/macrowallets/waas/app/http/middleware/requestctx"
 	"github.com/macrowallets/waas/app/http/pagination"
 	"github.com/macrowallets/waas/app/http/responses"
 	"github.com/macrowallets/waas/app/models"
@@ -53,11 +54,11 @@ func (ctrl *ActivityController) Index(ctx http.Context) http.Response {
 }
 
 func accountCaller(ctx http.Context) (*models.Account, string, http.Response) {
-	account, _ := ctx.Value("account").(*models.Account)
+	account, _ := requestctx.Account(ctx)
 	if account == nil {
 		return nil, "", responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "internal_error"})
 	}
-	role, _ := ctx.Value("account_role").(string)
+	role, _ := requestctx.AccountRole(ctx)
 	return account, role, nil
 }
 

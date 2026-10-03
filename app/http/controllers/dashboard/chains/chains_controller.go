@@ -3,6 +3,7 @@ package chains
 import (
 	"github.com/goravel/framework/contracts/http"
 
+	"github.com/macrowallets/waas/app/http/middleware/requestctx"
 	"github.com/macrowallets/waas/app/http/requests"
 	"github.com/macrowallets/waas/app/http/responses"
 	"github.com/macrowallets/waas/app/models"
@@ -32,7 +33,7 @@ func NewChainsController(chains *chainsvc.Service) *ChainsController {
 // @Failure      500  {object}  ErrorResponse
 // @Router       /v1/chains [get]
 func (ctrl *ChainsController) ListChains(ctx http.Context) http.Response {
-	env, _ := ctx.Value("account_environment").(string)
+	env, _ := requestctx.AccountEnvironment(ctx)
 
 	chainList, err := ctrl.chains.ListForEnvironment(ctx.Context(), env)
 	if err != nil {
@@ -56,7 +57,7 @@ func (ctrl *ChainsController) GetChain(ctx http.Context) http.Response {
 		return responses.Send(ctx, http.StatusNotFound, http.Json{"error": "chain not found"})
 	}
 
-	env, _ := ctx.Value("account_environment").(string)
+	env, _ := requestctx.AccountEnvironment(ctx)
 	if env == models.EnvironmentProd || env == models.EnvironmentTest {
 		isTestnet := env == models.EnvironmentTest
 		if chain.IsTestnet != isTestnet {
@@ -88,7 +89,7 @@ func (ctrl *ChainsController) ListChainTokens(ctx http.Context) http.Response {
 		return responses.Send(ctx, http.StatusNotFound, http.Json{"error": "chain not found"})
 	}
 
-	env, _ := ctx.Value("account_environment").(string)
+	env, _ := requestctx.AccountEnvironment(ctx)
 	if env == models.EnvironmentProd || env == models.EnvironmentTest {
 		isTestnet := env == models.EnvironmentTest
 		if chain.IsTestnet != isTestnet {
@@ -118,7 +119,7 @@ func (ctrl *ChainsController) ListChainResources(ctx http.Context) http.Response
 		return responses.Send(ctx, http.StatusNotFound, http.Json{"error": "chain not found"})
 	}
 
-	env, _ := ctx.Value("account_environment").(string)
+	env, _ := requestctx.AccountEnvironment(ctx)
 	if env == models.EnvironmentProd || env == models.EnvironmentTest {
 		isTestnet := env == models.EnvironmentTest
 		if chain.IsTestnet != isTestnet {

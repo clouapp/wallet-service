@@ -4,13 +4,12 @@ import (
 	"math/big"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/goravel/framework/contracts/http"
 
 	"github.com/macrowallets/waas/app/http/controllers"
+	"github.com/macrowallets/waas/app/http/middleware/requestctx"
 	"github.com/macrowallets/waas/app/http/requests"
 	"github.com/macrowallets/waas/app/http/responses"
-	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/services/features"
 	sweep "github.com/macrowallets/waas/app/services/sweep"
 	"github.com/redis/go-redis/v9"
@@ -68,7 +67,7 @@ func NewSweepController(
 // @Failure      429       {object}  ErrorResponse
 // @Router       /v1/wallets/{walletId}/consolidate [post]
 func (ctrl *SweepController) ConsolidateWallet(ctx http.Context) http.Response {
-	wallet, _ := ctx.Value("wallet").(*models.Wallet)
+	wallet, _ := requestctx.Wallet(ctx)
 	if resp := controllers.BlockFlag(ctx, ctrl.flags, controllers.AccountIDForWallet(ctx, wallet), features.FlagSweepEnabled, features.CodeSweepPaused, "consolidate"); resp != nil {
 		return resp
 	}
@@ -83,7 +82,7 @@ func (ctrl *SweepController) ConsolidateWallet(ctx http.Context) http.Response {
 		return errResp
 	}
 
-	callerAccountID, _ := ctx.Value("account_id").(uuid.UUID)
+	callerAccountID, _ := requestctx.AccountID(ctx)
 
 	result, err := ctrl.sweeps.ConsolidateAll(ctx.Context(), walletID, req.Asset, req.Passphrase, callerAccountID)
 	if err != nil {
@@ -187,7 +186,7 @@ func (ctrl *SweepController) PreviewWithdraw(ctx http.Context) http.Response {
 		return responses.Send(ctx, http.StatusBadRequest, http.Json{"error": "invalid amount"})
 	}
 
-	callerAccountID, _ := ctx.Value("account_id").(uuid.UUID)
+	callerAccountID, _ := requestctx.AccountID(ctx)
 
 	const previewHasNoDestination = ""
 	plan, err := ctrl.sweeps.PlanForWithdrawal(ctx.Context(), walletID, req.Asset, amount, previewHasNoDestination, callerAccountID)

@@ -1,10 +1,10 @@
 package preferences
 
 import (
-	"github.com/google/uuid"
 	"github.com/goravel/framework/contracts/http"
 
 	"github.com/macrowallets/waas/app/http/controllers"
+	"github.com/macrowallets/waas/app/http/middleware/requestctx"
 	"github.com/macrowallets/waas/app/http/requests"
 	"github.com/macrowallets/waas/app/http/responses"
 	"github.com/macrowallets/waas/app/models"
@@ -39,7 +39,7 @@ func NewPreferencesController(
 }
 
 func (ctrl *PreferencesController) GetPreferences(ctx http.Context) http.Response {
-	user := ctx.Value("user").(*models.User)
+	user := requestctx.MustUser(ctx)
 	prefs := user.Preferences
 	if prefs == nil {
 		prefs = &models.UserPreferences{}
@@ -51,8 +51,8 @@ func (ctrl *PreferencesController) GetPreferences(ctx http.Context) http.Respons
 }
 
 func (ctrl *PreferencesController) UpdatePreferences(ctx http.Context) http.Response {
-	userID := ctx.Value("user_id").(uuid.UUID)
-	user := ctx.Value("user").(*models.User)
+	userID := requestctx.MustUserID(ctx)
+	user := requestctx.MustUser(ctx)
 
 	var req requests.UpdatePreferencesRequest
 	if errResp := validateRequest(ctx, &req); errResp != nil {

@@ -10,6 +10,7 @@ import (
 	"github.com/goravel/framework/facades"
 
 	"github.com/macrowallets/waas/app/http/controllers"
+	"github.com/macrowallets/waas/app/http/middleware/requestctx"
 	"github.com/macrowallets/waas/app/http/requests"
 	"github.com/macrowallets/waas/app/http/responses"
 	mails "github.com/macrowallets/waas/app/mails"
@@ -417,8 +418,7 @@ func (ctrl *AuthController) RefreshToken(ctx http.Context) http.Response {
 // @Failure      401  {object}  ErrorResponse
 // @Router       /auth/logout [post]
 func (ctrl *AuthController) Logout(ctx http.Context) http.Response {
-	userID := ctx.Value("user_id")
-	if uid, ok := userID.(uuid.UUID); ok {
+	if uid, ok := requestctx.UserID(ctx); ok {
 		if err := ctrl.refreshTokens.RevokeAllForUser(ctx.Context(), uid); err != nil {
 			facades.Log().WithContext(ctx).Errorf("auth: revoke refresh tokens: %v", err)
 		}

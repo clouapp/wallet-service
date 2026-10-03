@@ -1,10 +1,10 @@
 package addresses
 
 import (
-	"github.com/google/uuid"
 	"github.com/goravel/framework/contracts/http"
 
 	"github.com/macrowallets/waas/app/http/controllers"
+	"github.com/macrowallets/waas/app/http/middleware/requestctx"
 	"github.com/macrowallets/waas/app/http/pagination"
 	"github.com/macrowallets/waas/app/http/requests"
 	"github.com/macrowallets/waas/app/http/responses"
@@ -190,7 +190,7 @@ func (ctrl *AddressesController) ListWalletAddresses(ctx http.Context) http.Resp
 // @Failure      404      {object}  ErrorResponse  "Address not found"
 // @Router       /v1/addresses/{address} [get]
 func (ctrl *AddressesController) LookupAddress(ctx http.Context) http.Response {
-	accountID, ok := ctx.Value("account_id").(uuid.UUID)
+	accountID, ok := requestctx.AccountID(ctx)
 	if !ok {
 		return responses.Send(ctx, http.StatusUnauthorized, http.Json{
 			"error": "unauthorized",
@@ -237,7 +237,7 @@ func (ctrl *AddressesController) LookupAddress(ctx http.Context) http.Response {
 // @Failure      500          {object}  ErrorResponse
 // @Router       /v1/users/{external_id}/addresses [get]
 func (ctrl *AddressesController) ListUserAddresses(ctx http.Context) http.Response {
-	accountID, ok := ctx.Value("account_id").(uuid.UUID)
+	accountID, ok := requestctx.AccountID(ctx)
 	if !ok {
 		return responses.Send(ctx, http.StatusUnauthorized, http.Json{
 			"error": "unauthorized",

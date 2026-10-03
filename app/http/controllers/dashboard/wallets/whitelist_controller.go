@@ -5,6 +5,7 @@ import (
 	"github.com/goravel/framework/contracts/http"
 
 	"github.com/macrowallets/waas/app/http/controllers"
+	"github.com/macrowallets/waas/app/http/middleware/requestctx"
 	"github.com/macrowallets/waas/app/http/pagination"
 	"github.com/macrowallets/waas/app/http/requests"
 	"github.com/macrowallets/waas/app/http/responses"
@@ -41,7 +42,7 @@ func NewWhitelistController(
 // @Failure      404  {object}  ErrorResponse
 // @Router       /wallets/{walletId}/whitelist [get]
 func (ctrl *WhitelistController) ListWhitelistEntries(ctx http.Context) http.Response {
-	wallet := ctx.Value("wallet").(*models.Wallet)
+	wallet := requestctx.MustWallet(ctx)
 
 	limit, offset := pagination.ParseParams(ctx, 20)
 	entries, total, err := ctrl.entries.PaginateByWalletID(ctx.Context(), wallet.ID, limit, offset)
@@ -65,7 +66,7 @@ func (ctrl *WhitelistController) ListWhitelistEntries(ctx http.Context) http.Res
 // @Failure      403  {object}  ErrorResponse
 // @Router       /wallets/{walletId}/whitelist [post]
 func (ctrl *WhitelistController) AddWhitelistEntry(ctx http.Context) http.Response {
-	wallet := ctx.Value("wallet").(*models.Wallet)
+	wallet := requestctx.MustWallet(ctx)
 	if resp := controllers.Deny(ctx, policies.WalletWhitelist(ctx, wallet.ID)); resp != nil {
 		return resp
 	}
@@ -100,7 +101,7 @@ func (ctrl *WhitelistController) AddWhitelistEntry(ctx http.Context) http.Respon
 // @Failure      404  {object}  ErrorResponse
 // @Router       /wallets/{walletId}/whitelist/{entryId} [delete]
 func (ctrl *WhitelistController) DeleteWhitelistEntry(ctx http.Context) http.Response {
-	wallet := ctx.Value("wallet").(*models.Wallet)
+	wallet := requestctx.MustWallet(ctx)
 	if resp := controllers.Deny(ctx, policies.WalletWhitelist(ctx, wallet.ID)); resp != nil {
 		return resp
 	}

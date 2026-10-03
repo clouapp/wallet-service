@@ -8,6 +8,7 @@ import (
 	"github.com/google/uuid"
 	contractshttp "github.com/goravel/framework/contracts/http"
 
+	"github.com/macrowallets/waas/app/http/middleware/requestctx"
 	"github.com/macrowallets/waas/app/http/responses"
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/services/features"
@@ -22,7 +23,7 @@ func AccountIDForWallet(ctx contractshttp.Context, wallet *models.Wallet) uuid.U
 	if ctx == nil {
 		return uuid.Nil
 	}
-	accountID, _ := ctx.Value("account_id").(uuid.UUID)
+	accountID, _ := requestctx.AccountID(ctx)
 	return accountID
 }
 

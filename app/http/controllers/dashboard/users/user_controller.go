@@ -10,6 +10,7 @@ import (
 	"github.com/goravel/framework/facades"
 
 	"github.com/macrowallets/waas/app/http/controllers"
+	"github.com/macrowallets/waas/app/http/middleware/requestctx"
 	"github.com/macrowallets/waas/app/http/pagination"
 	"github.com/macrowallets/waas/app/http/requests"
 	"github.com/macrowallets/waas/app/http/responses"
@@ -62,7 +63,7 @@ func NewUsersController(
 // @Failure      401  {object}  ErrorResponse
 // @Router       /users/me [get]
 func (ctrl *UsersController) GetMe(ctx http.Context) http.Response {
-	user := ctx.Value("user").(*models.User)
+	user := requestctx.MustUser(ctx)
 	return ctx.Response().Json(http.StatusOK, user)
 }
 
@@ -79,7 +80,7 @@ func (ctrl *UsersController) GetMe(ctx http.Context) http.Response {
 // @Failure      401      {object}  ErrorResponse
 // @Router       /users/me [patch]
 func (ctrl *UsersController) UpdateMe(ctx http.Context) http.Response {
-	user := ctx.Value("user").(*models.User)
+	user := requestctx.MustUser(ctx)
 
 	var req requests.UpdateMeRequest
 	if errResp := validateRequest(ctx, &req); errResp != nil {
@@ -109,7 +110,7 @@ func (ctrl *UsersController) UpdateMe(ctx http.Context) http.Response {
 // @Failure      401      {object}  ErrorResponse
 // @Router       /users/me/password [post]
 func (ctrl *UsersController) ChangePassword(ctx http.Context) http.Response {
-	user := ctx.Value("user").(*models.User)
+	user := requestctx.MustUser(ctx)
 
 	var req requests.ChangePasswordRequest
 	if errResp := validateRequest(ctx, &req); errResp != nil {
@@ -155,7 +156,7 @@ var myAccountsBounds = pagination.Bounds{DefaultLimit: myAccountsDefaultLimit, M
 // @Failure      401  {object}  ErrorResponse
 // @Router       /users/me/accounts [get]
 func (ctrl *UsersController) ListMyAccounts(ctx http.Context) http.Response {
-	userID := ctx.Value("user_id").(uuid.UUID)
+	userID := requestctx.MustUserID(ctx)
 
 	var query requests.ListMyAccountsRequest
 	query.Load(ctx)
@@ -238,7 +239,7 @@ func parseMyAccountsFilter(search, environment string) (string, string, string) 
 // @Failure      403      {object}  ErrorResponse
 // @Router       /users/me/default-account [patch]
 func (ctrl *UsersController) UpdateDefaultAccount(ctx http.Context) http.Response {
-	userID := ctx.Value("user_id").(uuid.UUID)
+	userID := requestctx.MustUserID(ctx)
 
 	var req requests.UpdateDefaultAccountRequest
 	if errResp := validateRequest(ctx, &req); errResp != nil {
@@ -275,7 +276,7 @@ func (ctrl *UsersController) UpdateDefaultAccount(ctx http.Context) http.Respons
 // @Failure      500  {object}  ErrorResponse
 // @Router       /users/me/totp/setup [post]
 func (ctrl *UsersController) SetupTOTP(ctx http.Context) http.Response {
-	user := ctx.Value("user").(*models.User)
+	user := requestctx.MustUser(ctx)
 
 	secret, qrURL, err := ctrl.passwords.GenerateTOTP(user.Email)
 	if err != nil {
@@ -311,7 +312,7 @@ func (ctrl *UsersController) SetupTOTP(ctx http.Context) http.Response {
 // @Failure      500      {object}  ErrorResponse
 // @Router       /users/me/totp/verify [post]
 func (ctrl *UsersController) ConfirmTOTP(ctx http.Context) http.Response {
-	user := ctx.Value("user").(*models.User)
+	user := requestctx.MustUser(ctx)
 
 	var req requests.ConfirmTwoFactorRequest
 	if errResp := validateRequest(ctx, &req); errResp != nil {
@@ -370,7 +371,7 @@ func (ctrl *UsersController) ConfirmTOTP(ctx http.Context) http.Response {
 // @Failure      500  {object}  ErrorResponse
 // @Router       /users/me/totp [delete]
 func (ctrl *UsersController) DisableTOTP(ctx http.Context) http.Response {
-	user := ctx.Value("user").(*models.User)
+	user := requestctx.MustUser(ctx)
 
 	if err := ctrl.users.DisableTotp(ctx.Context(), user.ID); err != nil {
 		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to disable 2FA"})

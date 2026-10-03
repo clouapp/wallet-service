@@ -8,6 +8,7 @@ import (
 	"github.com/goravel/framework/facades"
 
 	"github.com/macrowallets/waas/app/http/controllers"
+	"github.com/macrowallets/waas/app/http/middleware/requestctx"
 	"github.com/macrowallets/waas/app/http/requests"
 	"github.com/macrowallets/waas/app/http/responses"
 	"github.com/macrowallets/waas/app/models"
@@ -43,7 +44,7 @@ func NewUsersController(
 // @Failure      404  {object}  ErrorResponse
 // @Router       /wallets/{walletId}/users [get]
 func (ctrl *UsersController) ListWalletUsers(ctx http.Context) http.Response {
-	wallet := ctx.Value("wallet").(*models.Wallet)
+	wallet := requestctx.MustWallet(ctx)
 
 	members, err := ctrl.members.FindByWalletID(ctx.Context(), wallet.ID)
 	if err != nil {
@@ -66,7 +67,7 @@ func (ctrl *UsersController) ListWalletUsers(ctx http.Context) http.Response {
 // @Failure      403  {object}  ErrorResponse
 // @Router       /wallets/{walletId}/users [post]
 func (ctrl *UsersController) AddWalletUser(ctx http.Context) http.Response {
-	wallet := ctx.Value("wallet").(*models.Wallet)
+	wallet := requestctx.MustWallet(ctx)
 	if resp := controllers.Deny(ctx, policies.WalletAddUser(ctx, wallet.ID)); resp != nil {
 		return resp
 	}
@@ -119,7 +120,7 @@ func (ctrl *UsersController) AddWalletUser(ctx http.Context) http.Response {
 // @Failure      404  {object}  ErrorResponse
 // @Router       /wallets/{walletId}/users/{userId} [delete]
 func (ctrl *UsersController) RemoveWalletUser(ctx http.Context) http.Response {
-	wallet := ctx.Value("wallet").(*models.Wallet)
+	wallet := requestctx.MustWallet(ctx)
 	if resp := controllers.Deny(ctx, policies.WalletRemoveUser(ctx, wallet.ID)); resp != nil {
 		return resp
 	}

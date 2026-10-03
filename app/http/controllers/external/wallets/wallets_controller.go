@@ -7,6 +7,7 @@ import (
 	"github.com/goravel/framework/contracts/http"
 
 	"github.com/macrowallets/waas/app/http/controllers"
+	"github.com/macrowallets/waas/app/http/middleware/requestctx"
 	"github.com/macrowallets/waas/app/http/pagination"
 	"github.com/macrowallets/waas/app/http/requests"
 	"github.com/macrowallets/waas/app/http/responses"
@@ -83,7 +84,7 @@ func (ctrl *WalletsController) CreateWallet(ctx http.Context) http.Response {
 		return resp
 	}
 
-	accountID, _ := ctx.Value("account_id").(uuid.UUID)
+	accountID, _ := requestctx.AccountID(ctx)
 	result, err := ctrl.walletService().CreateWallet(ctx.Context(), accountID, req.Chain, req.Label, req.Passphrase)
 	if err != nil {
 		return responses.Send(ctx, http.StatusConflict, http.Json{
@@ -109,7 +110,7 @@ func (ctrl *WalletsController) CreateWallet(ctx http.Context) http.Response {
 // @Failure      500  {object}  ErrorResponse
 // @Router       /v1/wallets [get]
 func (ctrl *WalletsController) ListWallets(ctx http.Context) http.Response {
-	accountID, ok := ctx.Value("account_id").(uuid.UUID)
+	accountID, ok := requestctx.AccountID(ctx)
 	if !ok || accountID == uuid.Nil {
 		return responses.Send(ctx, http.StatusBadRequest, http.Json{
 			"error": "account is required",
@@ -157,7 +158,7 @@ func (ctrl *WalletsController) GetWallet(ctx http.Context) http.Response {
 		})
 	}
 
-	accountID, ok := ctx.Value("account_id").(uuid.UUID)
+	accountID, ok := requestctx.AccountID(ctx)
 	if !ok || accountID == uuid.Nil {
 		return responses.Send(ctx, http.StatusBadRequest, http.Json{
 			"error": "account is required",

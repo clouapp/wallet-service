@@ -7,6 +7,7 @@ import (
 	"github.com/goravel/framework/contracts/http"
 
 	"github.com/macrowallets/waas/app/http/controllers"
+	"github.com/macrowallets/waas/app/http/middleware/requestctx"
 	"github.com/macrowallets/waas/app/http/requests"
 	"github.com/macrowallets/waas/app/http/responses"
 	"github.com/macrowallets/waas/app/services/webhook"
@@ -52,7 +53,7 @@ func (ctrl *WebhooksController) CreateWebhook(ctx http.Context) http.Response {
 	}
 
 	var owner *uuid.UUID
-	if accountID, ok := ctx.Value("account_id").(uuid.UUID); ok && accountID != uuid.Nil {
+	if accountID, ok := requestctx.AccountID(ctx); ok && accountID != uuid.Nil {
 		owner = &accountID
 	}
 
@@ -77,7 +78,7 @@ func (ctrl *WebhooksController) CreateWebhook(ctx http.Context) http.Response {
 // @Failure      500  {object}  ErrorResponse
 // @Router       /api/v1/webhooks [get]
 func (ctrl *WebhooksController) ListWebhooks(ctx http.Context) http.Response {
-	accountID, ok := ctx.Value("account_id").(uuid.UUID)
+	accountID, ok := requestctx.AccountID(ctx)
 	if !ok || accountID == uuid.Nil {
 		return responses.Send(ctx, http.StatusUnauthorized, http.Json{"error": "unauthenticated"})
 	}
@@ -110,7 +111,7 @@ func (ctrl *WebhooksController) ListWebhooks(ctx http.Context) http.Response {
 // @Failure      404        {object}  ErrorResponse  "webhook not found"
 // @Router       /api/v1/webhooks/{webhookId} [patch]
 func (ctrl *WebhooksController) UpdateWebhook(ctx http.Context) http.Response {
-	accountID, ok := ctx.Value("account_id").(uuid.UUID)
+	accountID, ok := requestctx.AccountID(ctx)
 	if !ok || accountID == uuid.Nil {
 		return responses.Send(ctx, http.StatusUnauthorized, http.Json{"error": "unauthenticated"})
 	}

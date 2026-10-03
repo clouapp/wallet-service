@@ -4,8 +4,8 @@ import (
 	"github.com/goravel/framework/contracts/http"
 
 	"github.com/macrowallets/waas/app/http/controllers"
+	"github.com/macrowallets/waas/app/http/middleware/requestctx"
 	"github.com/macrowallets/waas/app/http/responses"
-	"github.com/macrowallets/waas/app/models"
 	chainsvc "github.com/macrowallets/waas/app/services/chains"
 	"github.com/macrowallets/waas/app/services/walletrecords"
 )
@@ -44,7 +44,7 @@ func NewBalancesController(
 // @Failure      404  {object}  ErrorResponse
 // @Router       /wallets/{walletId}/balances [get]
 func (ctrl *BalancesController) ListWalletBalances(ctx http.Context) http.Response {
-	wallet := ctx.Value("wallet").(*models.Wallet)
+	wallet := requestctx.MustWallet(ctx)
 
 	rows, err := ctrl.balances.ListByWallet(ctx.Context(), wallet.ID)
 	if err != nil {

@@ -1,10 +1,10 @@
 package transactions
 
 import (
-	"github.com/google/uuid"
 	"github.com/goravel/framework/contracts/http"
 
 	"github.com/macrowallets/waas/app/http/controllers"
+	"github.com/macrowallets/waas/app/http/middleware/requestctx"
 	"github.com/macrowallets/waas/app/http/pagination"
 	"github.com/macrowallets/waas/app/http/requests"
 	"github.com/macrowallets/waas/app/http/responses"
@@ -45,7 +45,7 @@ func NewTransactionsController(
 // @Failure      500      {object}  ErrorResponse
 // @Router       /v1/transactions [get]
 func (ctrl *TransactionsController) ListTransactions(ctx http.Context) http.Response {
-	accountID, ok := ctx.Value("account_id").(uuid.UUID)
+	accountID, ok := requestctx.AccountID(ctx)
 	if !ok {
 		return responses.Send(ctx, http.StatusUnauthorized, http.Json{
 			"error": "unauthorized",
@@ -114,7 +114,7 @@ func (ctrl *TransactionsController) GetTransaction(ctx http.Context) http.Respon
 // @Failure      500          {object}  ErrorResponse
 // @Router       /v1/users/{external_id}/transactions [get]
 func (ctrl *TransactionsController) ListUserTransactions(ctx http.Context) http.Response {
-	accountID, ok := ctx.Value("account_id").(uuid.UUID)
+	accountID, ok := requestctx.AccountID(ctx)
 	if !ok {
 		return responses.Send(ctx, http.StatusUnauthorized, http.Json{
 			"error": "unauthorized",

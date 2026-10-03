@@ -4,6 +4,7 @@ import (
 	"github.com/goravel/framework/contracts/http"
 
 	"github.com/macrowallets/waas/app/http/controllers"
+	"github.com/macrowallets/waas/app/http/middleware/requestctx"
 	"github.com/macrowallets/waas/app/http/pagination"
 	"github.com/macrowallets/waas/app/http/requests"
 	"github.com/macrowallets/waas/app/http/responses"
@@ -43,7 +44,7 @@ func NewTransactionsController(
 // @Failure      404  {object}  ErrorResponse
 // @Router       /wallets/{walletId}/transactions [get]
 func (ctrl *TransactionsController) ListWalletTransactions(ctx http.Context) http.Response {
-	wallet := ctx.Value("wallet").(*models.Wallet)
+	wallet := requestctx.MustWallet(ctx)
 
 	var query requests.ListWalletTransactionsRequest
 	query.Load(ctx)
@@ -72,7 +73,7 @@ func (ctrl *TransactionsController) ListWalletTransactions(ctx http.Context) htt
 // @Failure      404  {object}  ErrorResponse
 // @Router       /wallets/{walletId}/transactions/{txId} [get]
 func (ctrl *TransactionsController) GetWalletTransaction(ctx http.Context) http.Response {
-	wallet := ctx.Value("wallet").(*models.Wallet)
+	wallet := requestctx.MustWallet(ctx)
 
 	var path requests.WalletTransactionPathRequest
 	path.Load(ctx)
