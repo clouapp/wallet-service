@@ -1,2 +1,0 @@
-# TestControllersTakeTheirDependenciesByConstructor: known violations, rewritten by go test ./tests/architecture -update-baseline
-app/http/controllers/wallet_withdrawals_controller.go calls container.Get() (x3)

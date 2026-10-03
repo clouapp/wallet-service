@@ -9,8 +9,8 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/goravel/framework/contracts/http"
+	"github.com/redis/go-redis/v9"
 
-	"github.com/macrowallets/waas/app/container"
 	"github.com/macrowallets/waas/app/http/responses"
 	"github.com/macrowallets/waas/app/models"
 	mpcpkg "github.com/macrowallets/waas/app/services/mpc"
@@ -19,8 +19,7 @@ import (
 
 // Webhook publishing never changes the HTTP outcome: the withdrawal is already
 // persisted, and the confirmation tracker backfill repairs a lost confirmation.
-func publishWithdrawalBroadcast(ctx http.Context, w *models.Withdrawal, tx *models.Transaction) {
-	publisher := container.Get().WithdrawalEvents
+func publishWithdrawalBroadcast(ctx http.Context, publisher *withdrawalevents.Publisher, w *models.Withdrawal, tx *models.Transaction) {
 	if publisher == nil || tx == nil {
 		return
 	}
@@ -29,8 +28,7 @@ func publishWithdrawalBroadcast(ctx http.Context, w *models.Withdrawal, tx *mode
 	}
 }
 
-func publishWithdrawalFailed(ctx http.Context, w *models.Withdrawal, failureCode string, attempt withdrawalevents.FailedAttempt) {
-	publisher := container.Get().WithdrawalEvents
+func publishWithdrawalFailed(ctx http.Context, publisher *withdrawalevents.Publisher, w *models.Withdrawal, failureCode string, attempt withdrawalevents.FailedAttempt) {
 	if publisher == nil {
 		return
 	}
@@ -50,8 +48,7 @@ func withdrawalIDFromIdempotencyKey(idempotencyKey string) (uuid.UUID, error) {
 	return id, nil
 }
 
-func verifyWalletPassphrase(ctx http.Context, wallet *models.Wallet, passphrase string) http.Response {
-	rdb := container.Get().Redis
+func verifyWalletPassphrase(ctx http.Context, rdb *redis.Client, wallet *models.Wallet, passphrase string) http.Response {
 	key := fmt.Sprintf("vault:ratelimit:passphrase:%s", wallet.ID)
 
 	if rdb != nil {
@@ -84,16 +81,16 @@ func verifyWalletPassphrase(ctx http.Context, wallet *models.Wallet, passphrase 
 // VerifyWalletPassphrase, PublishWithdrawalBroadcast, PublishWithdrawalFailed
 // and WithdrawalIDFromIdempotencyKey are shared by the dashboard and external
 // withdrawal handlers so both surfaces keep the same bytes.
-func VerifyWalletPassphrase(ctx http.Context, wallet *models.Wallet, passphrase string) http.Response {
-	return verifyWalletPassphrase(ctx, wallet, passphrase)
+func VerifyWalletPassphrase(ctx http.Context, rdb *redis.Client, wallet *models.Wallet, passphrase string) http.Response {
+	return verifyWalletPassphrase(ctx, rdb, wallet, passphrase)
 }
 
-func PublishWithdrawalBroadcast(ctx http.Context, w *models.Withdrawal, tx *models.Transaction) {
-	publishWithdrawalBroadcast(ctx, w, tx)
+func PublishWithdrawalBroadcast(ctx http.Context, publisher *withdrawalevents.Publisher, w *models.Withdrawal, tx *models.Transaction) {
+	publishWithdrawalBroadcast(ctx, publisher, w, tx)
 }
 
-func PublishWithdrawalFailed(ctx http.Context, w *models.Withdrawal, failureCode string, attempt withdrawalevents.FailedAttempt) {
-	publishWithdrawalFailed(ctx, w, failureCode, attempt)
+func PublishWithdrawalFailed(ctx http.Context, publisher *withdrawalevents.Publisher, w *models.Withdrawal, failureCode string, attempt withdrawalevents.FailedAttempt) {
+	publishWithdrawalFailed(ctx, publisher, w, failureCode, attempt)
 }
 
 func WithdrawalIDFromIdempotencyKey(idempotencyKey string) (uuid.UUID, error) {

@@ -100,15 +100,18 @@ func newExternalSweepController() *extsweep.SweepController {
 }
 
 func newExternalWithdrawalsController() *extwithdrawals.WithdrawalsController {
+	deps := container.Get()
 	return extwithdrawals.NewWithdrawalsController(
 		container.MustMake[*repositories.WithdrawalRepository](),
 		container.MustMake[*repositories.ChainRepository](),
 		container.MustMake[*repositories.UserRepository](),
 		container.MustMake[*repositories.TransactionRepository](),
-		container.Get().Registry,
-		container.Get().WithdrawalService,
+		deps.Registry,
+		deps.WithdrawalService,
 		container.MustMake[*authsvc.Service](),
 		container.MustMake[*featuressvc.Service](),
+		deps.WithdrawalEvents,
+		deps.Redis,
 	)
 }
 

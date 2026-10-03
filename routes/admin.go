@@ -282,14 +282,17 @@ func newDashboardAddressesController() *dashaddresses.AddressesController {
 }
 
 func newDashboardWithdrawalsController() *dashwithdrawals.WithdrawalsController {
+	deps := container.Get()
 	return dashwithdrawals.NewWithdrawalsController(
 		container.MustMake[*repositories.WithdrawalRepository](),
 		container.MustMake[*repositories.ChainRepository](),
 		container.MustMake[*repositories.UserRepository](),
-		container.Get().Registry,
-		container.Get().WithdrawalService,
+		deps.Registry,
+		deps.WithdrawalService,
 		container.MustMake[*authsvc.Service](),
 		container.MustMake[*featuressvc.Service](),
+		deps.WithdrawalEvents,
+		deps.Redis,
 	)
 }
 

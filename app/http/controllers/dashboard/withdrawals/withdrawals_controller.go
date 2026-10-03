@@ -7,6 +7,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/goravel/framework/contracts/http"
 	"github.com/goravel/framework/facades"
+	"github.com/redis/go-redis/v9"
 
 	"github.com/macrowallets/waas/app/http/controllers"
 	"github.com/macrowallets/waas/app/http/pagination"
@@ -43,6 +44,8 @@ type WithdrawalsController struct {
 	withdrawalService *withdraw.Service
 	passwords         *authsvc.Service
 	flags             *features.Service
+	events            *withdrawalevents.Publisher
+	redis             *redis.Client
 }
 
 func NewWithdrawalsController(
@@ -53,6 +56,8 @@ func NewWithdrawalsController(
 	withdrawalService *withdraw.Service,
 	passwords *authsvc.Service,
 	flags *features.Service,
+	events *withdrawalevents.Publisher,
+	redis *redis.Client,
 ) *WithdrawalsController {
 	if withdrawals == nil {
 		panic("dashboard withdrawals controller: withdrawals repository is required")
@@ -83,6 +88,8 @@ func NewWithdrawalsController(
 		withdrawalService: withdrawalService,
 		passwords:         passwords,
 		flags:             flags,
+		events:            events,
+		redis:             redis,
 	}
 }
 
@@ -207,7 +214,7 @@ func (ctrl *WithdrawalsController) CreateWalletWithdrawal(ctx http.Context) http
 		}
 	}
 
-	if errResp := controllers.VerifyWalletPassphrase(ctx, wallet, req.Passphrase); errResp != nil {
+	if errResp := controllers.VerifyWalletPassphrase(ctx, ctrl.redis, wallet, req.Passphrase); errResp != nil {
 		return errResp
 	}
 
@@ -319,7 +326,7 @@ func (ctrl *WithdrawalsController) CreateWalletWithdrawal(ctx http.Context) http
 			)
 		}
 		w.Status = models.WithdrawalStatusFailed
-		controllers.PublishWithdrawalFailed(ctx, w, failureCode, withdrawalevents.FailedAttempt{
+		controllers.PublishWithdrawalFailed(ctx, ctrl.events, w, failureCode, withdrawalevents.FailedAttempt{
 			Chain:     wallet.Chain,
 			Asset:     resolved.WalletAsset,
 			BaseUnits: resolved.BaseUnits,
@@ -351,7 +358,7 @@ func (ctrl *WithdrawalsController) CreateWalletWithdrawal(ctx http.Context) http
 	if updateErr := ctrl.withdrawals.MarkBroadcast(ctx.Context(), w.ID, w.TransactionID); updateErr != nil {
 		return controllers.MapInternalError(ctx, updateErr, "persist_broadcast_withdrawal")
 	}
-	controllers.PublishWithdrawalBroadcast(ctx, w, tx)
+	controllers.PublishWithdrawalBroadcast(ctx, ctrl.events, w, tx)
 	return ctx.Response().Json(http.StatusCreated, w)
 }
 
