@@ -11,8 +11,8 @@ import (
 	"github.com/macrowallets/waas/app/http/requests"
 	"github.com/macrowallets/waas/app/http/responses"
 	"github.com/macrowallets/waas/app/models"
-	"github.com/macrowallets/waas/app/repositories"
 	wallet "github.com/macrowallets/waas/app/services/wallet"
+	"github.com/macrowallets/waas/app/services/walletrecords"
 )
 
 func validateRequest(ctx http.Context, req http.FormRequest) http.Response {
@@ -40,16 +40,16 @@ func newCreateWalletResponse(result *wallet.CreateWalletResult) CreateWalletResp
 
 // WalletsController serves the external wallet list, create, and get routes.
 type WalletsController struct {
-	wallets       *repositories.WalletRepository
+	wallets       *walletrecords.Wallets
 	walletService func() *wallet.Service
 }
 
 func NewWalletsController(
-	wallets *repositories.WalletRepository,
+	wallets *walletrecords.Wallets,
 	walletService func() *wallet.Service,
 ) *WalletsController {
 	if wallets == nil {
-		panic("external wallets controller: wallets repository is required")
+		panic("external wallets controller: wallets service is required")
 	}
 	if walletService == nil || walletService() == nil {
 		panic("external wallets controller: wallet service is required")
