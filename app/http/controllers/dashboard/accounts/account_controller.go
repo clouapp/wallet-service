@@ -72,7 +72,7 @@ func (ctrl *AccountsController) CreateAccount(ctx http.Context) http.Response {
 	if err != nil {
 		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to create account"})
 	}
-	return ctx.Response().Json(http.StatusCreated, acc)
+	return responses.Send(ctx, http.StatusCreated, acc)
 }
 
 // GetAccount godoc
@@ -88,7 +88,7 @@ func (ctrl *AccountsController) CreateAccount(ctx http.Context) http.Response {
 // @Router       /accounts/{accountId} [get]
 func (ctrl *AccountsController) GetAccount(ctx http.Context) http.Response {
 	account := requestctx.MustAccount(ctx)
-	return ctx.Response().Json(http.StatusOK, account)
+	return responses.Send(ctx, http.StatusOK, account)
 }
 
 // UpdateAccount godoc
@@ -119,7 +119,7 @@ func (ctrl *AccountsController) UpdateAccount(ctx http.Context) http.Response {
 		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to update account"})
 	}
 
-	return ctx.Response().Json(http.StatusOK, account)
+	return responses.Send(ctx, http.StatusOK, account)
 }
 
 // ArchiveAccount godoc
@@ -142,7 +142,7 @@ func (ctrl *AccountsController) ArchiveAccount(ctx http.Context) http.Response {
 	if err := ctrl.accountService.SetStatus(ctx.Context(), account, "archived"); err != nil {
 		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to archive account"})
 	}
-	return ctx.Response().Json(http.StatusOK, account)
+	return responses.Send(ctx, http.StatusOK, account)
 }
 
 // FreezeAccount godoc
@@ -164,7 +164,7 @@ func (ctrl *AccountsController) FreezeAccount(ctx http.Context) http.Response {
 	if err := ctrl.accountService.SetStatus(ctx.Context(), account, "frozen"); err != nil {
 		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to freeze account"})
 	}
-	return ctx.Response().Json(http.StatusOK, account)
+	return responses.Send(ctx, http.StatusOK, account)
 }
 
 // ListAccountUsers godoc
@@ -185,7 +185,7 @@ func (ctrl *AccountsController) ListAccountUsers(ctx http.Context) http.Response
 	if err != nil {
 		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to fetch members"})
 	}
-	return ctx.Response().Json(http.StatusOK, pagination.Response(members, total, limit, offset))
+	return responses.Send(ctx, http.StatusOK, pagination.Response(members, total, limit, offset))
 }
 
 // AddAccountUser godoc
@@ -236,7 +236,7 @@ func (ctrl *AccountsController) AddAccountUser(ctx http.Context) http.Response {
 	if auErr != nil {
 		appfacades.Log().WithContext(ctx).Errorf("account: find membership after add: %v", auErr)
 	}
-	return ctx.Response().Json(http.StatusCreated, au)
+	return responses.Send(ctx, http.StatusCreated, au)
 }
 
 // UpdateAccountUser godoc
@@ -281,7 +281,7 @@ func (ctrl *AccountsController) UpdateAccountUser(ctx http.Context) http.Respons
 	if errResp := mapMemberError(ctx, err); errResp != nil {
 		return errResp
 	}
-	return ctx.Response().Json(http.StatusOK, member)
+	return responses.Send(ctx, http.StatusOK, member)
 }
 
 func memberChange(req requests.UpdateAccountUserRequest) accountsvc.MemberChange {
@@ -351,7 +351,7 @@ func (ctrl *AccountsController) ListAccountTokens(ctx http.Context) http.Respons
 	if err != nil {
 		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to fetch tokens"})
 	}
-	return ctx.Response().Json(http.StatusOK, pagination.Response(tokens, total, limit, offset))
+	return responses.Send(ctx, http.StatusOK, pagination.Response(tokens, total, limit, offset))
 }
 
 // CreateAccountToken godoc
@@ -401,7 +401,7 @@ func (ctrl *AccountsController) CreateAccountToken(ctx http.Context) http.Respon
 		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to sign token"})
 	}
 
-	return ctx.Response().Json(http.StatusCreated, http.Json{
+	return responses.Send(ctx, http.StatusCreated, http.Json{
 		"token":    jwt,
 		"metadata": token,
 	})
