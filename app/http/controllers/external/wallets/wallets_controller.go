@@ -117,7 +117,9 @@ func (ctrl *WalletsController) ListWallets(ctx http.Context) http.Response {
 	}
 
 	limit, offset := pagination.ParseParams(ctx, 20)
-	chain := ctx.Request().Query("chain", "")
+	var query requests.ListWalletsRequest
+	query.Load(ctx)
+	chain := query.Chain
 
 	wallets, total, err := ctrl.wallets.PaginateByAccount(ctx.Context(), accountID, chain, limit, offset)
 	if err != nil {
@@ -148,7 +150,7 @@ func (ctrl *WalletsController) ListWallets(ctx http.Context) http.Response {
 // @Failure      404  {object}  ErrorResponse  "Wallet not found"
 // @Router       /v1/wallets/{walletId} [get]
 func (ctrl *WalletsController) GetWallet(ctx http.Context) http.Response {
-	id, err := uuid.Parse(ctx.Request().Route("walletId"))
+	id, err := requests.RouteUUID(ctx, "walletId")
 	if err != nil {
 		return responses.Send(ctx, http.StatusBadRequest, http.Json{
 			"error": "invalid wallet id",
