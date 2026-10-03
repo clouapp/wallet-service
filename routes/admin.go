@@ -4,10 +4,12 @@ import (
 	"github.com/goravel/framework/contracts/route"
 	"github.com/goravel/framework/facades"
 
-	"github.com/macrowallets/waas/app/http/controllers"
 	dashaccounts "github.com/macrowallets/waas/app/http/controllers/dashboard/accounts"
 	dashaddresses "github.com/macrowallets/waas/app/http/controllers/dashboard/addresses"
 	dashauth "github.com/macrowallets/waas/app/http/controllers/dashboard/auth"
+	dashchains "github.com/macrowallets/waas/app/http/controllers/dashboard/chains"
+	dashcurrencies "github.com/macrowallets/waas/app/http/controllers/dashboard/currencies"
+	dashpreferences "github.com/macrowallets/waas/app/http/controllers/dashboard/preferences"
 	dashsweep "github.com/macrowallets/waas/app/http/controllers/dashboard/sweep"
 	dashusers "github.com/macrowallets/waas/app/http/controllers/dashboard/users"
 	dashwallets "github.com/macrowallets/waas/app/http/controllers/dashboard/wallets"
@@ -61,24 +63,24 @@ func RegisterAdminRoutes() {
 	})
 
 	facades.Route().Prefix("/v1/chains").Middleware(middleware.SessionAuth(), middleware.AccountHeader(), noCache).Group(func(router route.Router) {
-		router.Get("", controllers.ListChains)
-		router.Get("/{chainId}", controllers.GetChain)
-		router.Get("/{chainId}/tokens", controllers.ListChainTokens)
-		router.Get("/{chainId}/resources", controllers.ListChainResources)
+		router.Get("", dashchains.ListChains)
+		router.Get("/{chainId}", dashchains.GetChain)
+		router.Get("/{chainId}/tokens", dashchains.ListChainTokens)
+		router.Get("/{chainId}/resources", dashchains.ListChainResources)
 	})
 
 	facades.Route().Prefix("/v1/currencies").Middleware(middleware.SessionAuth(), noCache).Group(func(router route.Router) {
-		router.Get("", controllers.ListCurrencies)
-		router.Get("/{code}", controllers.GetCurrency)
+		router.Get("", dashcurrencies.ListCurrencies)
+		router.Get("/{code}", dashcurrencies.GetCurrency)
 	})
 
 	facades.Route().Prefix("/v1/me").Middleware(middleware.SessionAuth(), noCache).Group(func(router route.Router) {
-		router.Get("/preferences", controllers.GetPreferences)
-		router.Put("/preferences", controllers.UpdatePreferences)
+		router.Get("/preferences", dashpreferences.GetPreferences)
+		router.Put("/preferences", dashpreferences.UpdatePreferences)
 	})
 
 	facades.Route().Prefix("/v1/convert").Middleware(middleware.SessionAuth(), noCache).Group(func(router route.Router) {
-		router.Get("", controllers.ConvertCurrency)
+		router.Get("", dashcurrencies.ConvertCurrency)
 	})
 
 	facades.Route().Prefix("/v1/wallets").Middleware(middleware.SessionAuth(), middleware.AccountHeader(), noCache).Group(func(router route.Router) {

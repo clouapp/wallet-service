@@ -1,15 +1,20 @@
-package controllers
+package preferences
 
 import (
 	"github.com/google/uuid"
 	"github.com/goravel/framework/contracts/http"
 
 	"github.com/macrowallets/waas/app/container"
+	"github.com/macrowallets/waas/app/http/controllers"
 	"github.com/macrowallets/waas/app/http/requests"
 	"github.com/macrowallets/waas/app/http/responses"
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/repositories"
 )
+
+func validateRequest(ctx http.Context, req http.FormRequest) http.Response {
+	return controllers.ValidateRequest(ctx, req)
+}
 
 func GetPreferences(ctx http.Context) http.Response {
 	user := ctx.Value("user").(*models.User)

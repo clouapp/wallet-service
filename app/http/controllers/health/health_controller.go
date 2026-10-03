@@ -1,4 +1,4 @@
-package controllers
+package health
 
 import "github.com/goravel/framework/contracts/http"
 

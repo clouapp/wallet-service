@@ -4,13 +4,13 @@ import (
 	"github.com/goravel/framework/contracts/http"
 	"github.com/goravel/framework/facades"
 
-	"github.com/macrowallets/waas/app/http/controllers"
+	"github.com/macrowallets/waas/app/http/controllers/health"
 	"github.com/macrowallets/waas/docs"
 )
 
 // RegisterDocs exposes health and Swagger UI routes.
 func RegisterDocs() {
-	facades.Route().Get("/health", controllers.Health)
+	facades.Route().Get("/health", health.Health)
 
 	facades.Route().Get("/swagger/doc.json", func(ctx http.Context) http.Response {
 		return ctx.Response().

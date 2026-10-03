@@ -4,8 +4,8 @@ import (
 	"github.com/goravel/framework/contracts/route"
 	"github.com/goravel/framework/facades"
 
-	"github.com/macrowallets/waas/app/http/controllers"
 	extaddresses "github.com/macrowallets/waas/app/http/controllers/external/addresses"
+	extchains "github.com/macrowallets/waas/app/http/controllers/external/chains"
 	extsweep "github.com/macrowallets/waas/app/http/controllers/external/sweep"
 	exttransactions "github.com/macrowallets/waas/app/http/controllers/external/transactions"
 	extwallets "github.com/macrowallets/waas/app/http/controllers/external/wallets"
@@ -24,7 +24,7 @@ func RegisterExternalAPI() {
 	noCache := middleware.CacheControl(0)
 
 	facades.Route().Prefix("/api/v1").Middleware(middleware.APITokenAuth(), noCache).Group(func(router route.Router) {
-		router.Get("/chains", controllers.ListChains)
+		router.Get("/chains", extchains.ListChains)
 
 		router.Post("/wallets", extwallets.CreateWallet)
 		router.Get("/wallets", extwallets.ListWallets)

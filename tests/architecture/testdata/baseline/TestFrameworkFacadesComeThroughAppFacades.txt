@@ -9,6 +9,7 @@ app/http/controllers/dashboard/users imports the framework facades
 app/http/controllers/dashboard/wallets imports the framework facades
 app/http/controllers/dashboard/withdrawals imports the framework facades
 app/http/controllers/external/withdrawals imports the framework facades
+app/http/controllers/ingest imports the framework facades
 app/http/controllers/testutil imports the framework facades
 app/http/middleware imports the framework facades (x3)
 app/listeners imports the framework facades (x3)
