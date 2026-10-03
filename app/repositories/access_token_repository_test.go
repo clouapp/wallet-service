@@ -103,6 +103,44 @@ func (s *AccessTokenRepositoryTestSuite) TestDeleteByAccountAndCreator_LeavesOth
 	s.Equal("Elsewhere", found.Name)
 }
 
+func (s *AccessTokenRepositoryTestSuite) TestRecordUseSetsLastUsedAtAndSkipsRevoked() {
+	accID := s.createAccount()
+	active := &models.AccessToken{ID: uuid.New(), AccountID: accID, Name: "Active"}
+	revoked := &models.AccessToken{ID: uuid.New(), AccountID: accID, Name: "Revoked"}
+	s.Require().NoError(s.repo.Create(context.Background(), active))
+	s.Require().NoError(s.repo.Create(context.Background(), revoked))
+	s.Require().NoError(s.repo.MarkRevoked(context.Background(), revoked.ID, accID))
+
+	s.Require().NoError(s.repo.RecordUse(context.Background(), active.ID, accID))
+	s.Require().NoError(s.repo.RecordUse(context.Background(), revoked.ID, accID))
+
+	found, err := s.repo.FindByIDAndAccount(context.Background(), active.ID, accID)
+	s.Require().NoError(err)
+	s.NotNil(found.LastUsedAt)
+	s.Nil(found.RevokedAt)
+
+	found, err = s.repo.FindByIDAndAccount(context.Background(), revoked.ID, accID)
+	s.Require().NoError(err)
+	s.Nil(found.LastUsedAt)
+	s.NotNil(found.RevokedAt)
+}
+
+func (s *AccessTokenRepositoryTestSuite) TestMarkRevokedKeepsTheRowAndTheFirstStamp() {
+	accID := s.createAccount()
+	token := &models.AccessToken{ID: uuid.New(), AccountID: accID, Name: "Keep"}
+	s.Require().NoError(s.repo.Create(context.Background(), token))
+	s.Require().NoError(s.repo.MarkRevoked(context.Background(), token.ID, accID))
+
+	first, err := s.repo.FindByIDAndAccount(context.Background(), token.ID, accID)
+	s.Require().NoError(err)
+	s.Require().NotNil(first.RevokedAt)
+
+	s.Require().NoError(s.repo.MarkRevoked(context.Background(), token.ID, accID))
+	second, err := s.repo.FindByIDAndAccount(context.Background(), token.ID, accID)
+	s.Require().NoError(err)
+	s.True(first.RevokedAt.Equal(*second.RevokedAt))
+}
+
 func (s *AccessTokenRepositoryTestSuite) TestDelete() {
 	accID := s.createAccount()
 	token := &models.AccessToken{ID: uuid.New(), AccountID: accID, Name: "To Delete"}

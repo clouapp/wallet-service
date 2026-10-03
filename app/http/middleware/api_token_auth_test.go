@@ -156,3 +156,54 @@ func (s *APITokenAuthHMACTestSuite) TestAPITokenAuth_ValidOK_WhenClaimTrue() {
 	s.Require().NoError(err)
 	s.assertNotSignatureReject(content)
 }
+
+func (s *APITokenAuthHMACTestSuite) TestSuccessfulCallStampsLastUsedWithoutChangingBody() {
+	jwt := s.mintToken(false, "usage-stamp")
+
+	first, err := s.Http(s.T()).
+		WithHeader("Authorization", "Bearer "+jwt).
+		Get("/api/v1/chains")
+	s.Require().NoError(err)
+	first.AssertStatus(200)
+	firstBody, err := first.Content()
+	s.Require().NoError(err)
+
+	second, err := s.Http(s.T()).
+		WithHeader("Authorization", "Bearer "+jwt).
+		Get("/api/v1/chains")
+	s.Require().NoError(err)
+	second.AssertStatus(200)
+	secondBody, err := second.Content()
+	s.Require().NoError(err)
+
+	s.Equal(firstBody, secondBody)
+	s.NotContains(firstBody, "last_used_at")
+
+	var stored models.AccessToken
+	s.Require().NoError(facades.Orm().Query().Where("name = ?", "usage-stamp").First(&stored))
+	s.NotNil(stored.LastUsedAt)
+	s.Nil(stored.RevokedAt)
+}
+
+func (s *APITokenAuthHMACTestSuite) TestRevokedTokenIsUnauthorized() {
+	jwt := s.mintToken(false, "revoked-stamp")
+	_, err := facades.Orm().Query().Exec(
+		`UPDATE access_tokens SET revoked_at = NOW() WHERE account_id = ? AND name = ?`,
+		s.account.ID, "revoked-stamp",
+	)
+	s.Require().NoError(err)
+
+	resp, err := s.Http(s.T()).
+		WithHeader("Authorization", "Bearer "+jwt).
+		Get("/api/v1/chains")
+	s.Require().NoError(err)
+	resp.AssertStatus(401).AssertJson(map[string]any{"error": map[string]any{
+		"code":    "unauthorized",
+		"message": "token not found or revoked",
+	}})
+
+	var stored models.AccessToken
+	s.Require().NoError(facades.Orm().Query().Where("name = ?", "revoked-stamp").First(&stored))
+	s.Nil(stored.LastUsedAt)
+	s.NotNil(stored.RevokedAt)
+}

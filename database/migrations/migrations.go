@@ -46,5 +46,6 @@ func All() []schema.Migration {
 		&M00000000000320CreateGlobalFeaturesTable{},
 		&M00000000000330CreateAccountActivityTable{},
 		&M00000000000340AccessTokensSpendingLimitNonNegative{},
+		&M00000000000350AddAccessTokenUsageTimestamps{},
 	}
 }

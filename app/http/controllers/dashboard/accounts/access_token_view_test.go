@@ -52,6 +52,15 @@ func TestAccessTokenViewKeepsTheModelWire(t *testing.T) {
 			token: full,
 			want:  `{"created_at":"2024-05-06 07:08:09","updated_at":"2024-05-06 07:08:10","id":"11111111-1111-4111-8111-111111111111","account_id":"22222222-2222-4222-8222-222222222222","created_by":"11111111-1111-4111-8111-111111111111","name":"ci","permissions":["wallets.read","webhooks.write"],"ip_cidr":"10.0.0.0/8","spending_limit":"{}","valid_until":"2024-05-06T07:08:09Z"}`,
 		},
+		{
+			token: func() models.AccessToken {
+				used := full
+				used.LastUsedAt = &until
+				used.RevokedAt = &until
+				return used
+			}(),
+			want: `{"created_at":"2024-05-06 07:08:09","updated_at":"2024-05-06 07:08:10","id":"11111111-1111-4111-8111-111111111111","account_id":"22222222-2222-4222-8222-222222222222","created_by":"11111111-1111-4111-8111-111111111111","name":"ci","permissions":["wallets.read","webhooks.write"],"ip_cidr":"10.0.0.0/8","spending_limit":"{}","valid_until":"2024-05-06T07:08:09Z","last_used_at":"2024-05-06T07:08:09Z","revoked_at":"2024-05-06T07:08:09Z"}`,
+		},
 	}
 	for _, tc := range cases {
 		raw, err := json.Marshal(newAccessTokenView(tc.token))

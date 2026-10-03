@@ -27,6 +27,8 @@ type AccessTokenView struct {
 	IpCidr        string           `json:"ip_cidr,omitempty"`
 	SpendingLimit string           `json:"spending_limit,omitempty"`
 	ValidUntil    *time.Time       `json:"valid_until,omitempty"`
+	LastUsedAt    *time.Time       `json:"last_used_at,omitempty"`
+	RevokedAt     *time.Time       `json:"revoked_at,omitempty"`
 }
 
 func newAccessTokenView(token models.AccessToken) AccessTokenView {
@@ -41,6 +43,8 @@ func newAccessTokenView(token models.AccessToken) AccessTokenView {
 		IpCidr:        token.IpCidr,
 		SpendingLimit: token.SpendingLimit,
 		ValidUntil:    token.ValidUntil,
+		LastUsedAt:    token.LastUsedAt,
+		RevokedAt:     token.RevokedAt,
 	}
 }
 

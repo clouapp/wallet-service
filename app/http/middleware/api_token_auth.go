@@ -19,9 +19,11 @@ import (
 	"github.com/macrowallets/waas/app/models"
 )
 
-// apiTokenLookup loads the access token row named by a bearer JWT.
+// apiTokenLookup loads the access token row named by a bearer JWT and
+// stamps last_used_at after authentication succeeds.
 type apiTokenLookup interface {
 	FindAccessToken(ctx context.Context, tokenID, accountID uuid.UUID) (*models.AccessToken, error)
+	RecordAPITokenUse(ctx context.Context, tokenID, accountID uuid.UUID) error
 }
 
 // APITokenClaims are the JWT claims embedded in account API tokens.
@@ -84,6 +86,11 @@ func APITokenAuth(tokens apiTokenLookup) http.Middleware {
 		}
 		token := *tokenPtr
 
+		if token.RevokedAt != nil {
+			abortWithJSON(ctx, http.StatusUnauthorized, http.Json{"error": "token not found or revoked"})
+			return
+		}
+
 		if token.ValidUntil != nil && token.ValidUntil.Before(time.Now()) {
 			abortWithJSON(ctx, http.StatusUnauthorized, http.Json{"error": "token expired"})
 			return
@@ -105,6 +112,10 @@ func APITokenAuth(tokens apiTokenLookup) http.Middleware {
 				abortWithJSON(ctx, http.StatusUnauthorized, http.Json{"error": "invalid request signature"})
 				return
 			}
+		}
+
+		if err := tokens.RecordAPITokenUse(ctx.Context(), token.ID, accountID); err != nil {
+			facades.Log().Errorf("api token: last_used_at was not recorded for %s", token.ID)
 		}
 
 		ctx.WithValue(requestctx.KeyAccountID, accountID)

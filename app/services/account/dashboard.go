@@ -239,8 +239,24 @@ func (s *Service) FindAccessToken(ctx context.Context, tokenID, accountID uuid.U
 	return s.tokens.FindByIDAndAccount(ctx, tokenID, accountID)
 }
 
-// RevokeAccessToken deletes one token that belongs to the account.
-// A missing token is ErrAccessTokenNotFound.
+// RecordAPITokenUse stamps last_used_at after authentication succeeded.
+// The caller keeps the response it was already going to write.
+func (s *Service) RecordAPITokenUse(ctx context.Context, tokenID, accountID uuid.UUID) error {
+	if ctx == nil {
+		return fmt.Errorf("record access token use: context is required")
+	}
+	if tokenID == uuid.Nil || accountID == uuid.Nil {
+		return fmt.Errorf("record access token use: token id and account id are required")
+	}
+	if err := s.requireTokens(); err != nil {
+		return err
+	}
+	return s.tokens.RecordUse(ctx, tokenID, accountID)
+}
+
+// RevokeAccessToken soft-revokes one token that belongs to the account.
+// The row stays for audit. A missing token is ErrAccessTokenNotFound.
+// A token that is already revoked stays revoked at the original time.
 func (s *Service) RevokeAccessToken(ctx context.Context, accountID, tokenID uuid.UUID) error {
 	if ctx == nil {
 		return fmt.Errorf("revoke access token: context is required")
@@ -252,7 +268,10 @@ func (s *Service) RevokeAccessToken(ctx context.Context, accountID, tokenID uuid
 	if err != nil || token == nil {
 		return ErrAccessTokenNotFound
 	}
-	return s.tokens.Delete(ctx, token)
+	if token.RevokedAt != nil {
+		return nil
+	}
+	return s.tokens.MarkRevoked(ctx, tokenID, accountID)
 }
 
 func (s *Service) requireAccounts() error {

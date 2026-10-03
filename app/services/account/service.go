@@ -52,6 +52,8 @@ type TokenStore interface {
 	FindByIDAndAccount(ctx context.Context, tokenID, accountID uuid.UUID) (*models.AccessToken, error)
 	Delete(ctx context.Context, token *models.AccessToken) error
 	DeleteByAccountAndCreator(ctx context.Context, accountID, createdBy uuid.UUID) error
+	RecordUse(ctx context.Context, tokenID, accountID uuid.UUID) error
+	MarkRevoked(ctx context.Context, tokenID, accountID uuid.UUID) error
 }
 
 // ActivityLog appends one row on the caller's transaction.
