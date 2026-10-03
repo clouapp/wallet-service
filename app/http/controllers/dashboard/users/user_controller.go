@@ -7,7 +7,6 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/goravel/framework/contracts/http"
-	"github.com/goravel/framework/facades"
 
 	appfacades "github.com/macrowallets/waas/app/facades"
 	"github.com/macrowallets/waas/app/http/controllers"
@@ -284,7 +283,7 @@ func (ctrl *UsersController) SetupTOTP(ctx http.Context) http.Response {
 		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to generate TOTP secret"})
 	}
 
-	encryptedSecret, err := facades.Crypt().EncryptString(secret)
+	encryptedSecret, err := appfacades.Crypt().EncryptString(secret)
 	if err != nil {
 		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to encrypt secret"})
 	}
@@ -324,7 +323,7 @@ func (ctrl *UsersController) ConfirmTOTP(ctx http.Context) http.Response {
 		return responses.Send(ctx, http.StatusBadRequest, http.Json{"error": "no TOTP secret found — call setup first"})
 	}
 
-	decryptedSecret, err := facades.Crypt().DecryptString(user.TotpSecret)
+	decryptedSecret, err := appfacades.Crypt().DecryptString(user.TotpSecret)
 	if err != nil {
 		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to decrypt secret"})
 	}
