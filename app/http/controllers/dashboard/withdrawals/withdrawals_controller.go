@@ -15,12 +15,14 @@ import (
 	"github.com/macrowallets/waas/app/http/responses"
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/policies"
-	"github.com/macrowallets/waas/app/repositories"
 	authsvc "github.com/macrowallets/waas/app/services/auth"
 	chain "github.com/macrowallets/waas/app/services/chain"
+	chainsvc "github.com/macrowallets/waas/app/services/chains"
 	"github.com/macrowallets/waas/app/services/features"
+	usersvc "github.com/macrowallets/waas/app/services/users"
 	"github.com/macrowallets/waas/app/services/withdraw"
 	"github.com/macrowallets/waas/app/services/withdrawalevents"
+	"github.com/macrowallets/waas/app/services/withdrawalrecords"
 	"github.com/macrowallets/waas/pkg/types"
 )
 
@@ -32,9 +34,9 @@ func validateRequest(ctx http.Context, req http.FormRequest) http.Response {
 
 // WithdrawalsController serves the dashboard withdrawal routes.
 type WithdrawalsController struct {
-	withdrawals       *repositories.WithdrawalRepository
-	chains            *repositories.ChainRepository
-	users             *repositories.UserRepository
+	withdrawals       *withdrawalrecords.Records
+	chains            *chainsvc.Service
+	users             *usersvc.Service
 	registry          *chain.Registry
 	withdrawalService *withdraw.Service
 	passwords         *authsvc.Service
@@ -44,9 +46,9 @@ type WithdrawalsController struct {
 }
 
 func NewWithdrawalsController(
-	withdrawals *repositories.WithdrawalRepository,
-	chains *repositories.ChainRepository,
-	users *repositories.UserRepository,
+	withdrawals *withdrawalrecords.Records,
+	chains *chainsvc.Service,
+	users *usersvc.Service,
 	registry *chain.Registry,
 	withdrawalService *withdraw.Service,
 	passwords *authsvc.Service,
@@ -55,13 +57,13 @@ func NewWithdrawalsController(
 	redis *redis.Client,
 ) *WithdrawalsController {
 	if withdrawals == nil {
-		panic("dashboard withdrawals controller: withdrawals repository is required")
+		panic("dashboard withdrawals controller: withdrawals service is required")
 	}
 	if chains == nil {
-		panic("dashboard withdrawals controller: chains repository is required")
+		panic("dashboard withdrawals controller: chains service is required")
 	}
 	if users == nil {
-		panic("dashboard withdrawals controller: users repository is required")
+		panic("dashboard withdrawals controller: users service is required")
 	}
 	if registry == nil {
 		panic("dashboard withdrawals controller: chain registry is required")

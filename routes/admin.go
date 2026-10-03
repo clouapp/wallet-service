@@ -20,7 +20,6 @@ import (
 	dashwithdrawals "github.com/macrowallets/waas/app/http/controllers/dashboard/withdrawals"
 	platformfeatures "github.com/macrowallets/waas/app/http/controllers/platform/features"
 	"github.com/macrowallets/waas/app/http/middleware"
-	"github.com/macrowallets/waas/app/repositories"
 	accountsvc "github.com/macrowallets/waas/app/services/account"
 	activitysvc "github.com/macrowallets/waas/app/services/activity"
 	authsvc "github.com/macrowallets/waas/app/services/auth"
@@ -32,6 +31,7 @@ import (
 	usersvc "github.com/macrowallets/waas/app/services/users"
 	walletsvc "github.com/macrowallets/waas/app/services/wallet"
 	"github.com/macrowallets/waas/app/services/walletrecords"
+	"github.com/macrowallets/waas/app/services/withdrawalrecords"
 )
 
 // RegisterAdminRoutes registers dashboard session-auth routes under /v1.
@@ -283,9 +283,9 @@ func newDashboardAddressesController() *dashaddresses.AddressesController {
 func newDashboardWithdrawalsController() *dashwithdrawals.WithdrawalsController {
 	deps := container.Get()
 	return dashwithdrawals.NewWithdrawalsController(
-		container.MustMake[*repositories.WithdrawalRepository](),
-		container.MustMake[*repositories.ChainRepository](),
-		container.MustMake[*repositories.UserRepository](),
+		container.MustMake[*withdrawalrecords.Records](),
+		container.MustMake[*chainsvc.Service](),
+		container.MustMake[*usersvc.Service](),
 		deps.Registry,
 		deps.WithdrawalService,
 		container.MustMake[*authsvc.Service](),

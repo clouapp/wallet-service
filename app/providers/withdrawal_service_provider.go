@@ -5,6 +5,7 @@ import (
 
 	"github.com/macrowallets/waas/app/repositories"
 	"github.com/macrowallets/waas/app/services/walletrecords"
+	"github.com/macrowallets/waas/app/services/withdrawalrecords"
 )
 
 // WithdrawalServiceProvider binds the transaction and withdrawal repositories
@@ -25,6 +26,13 @@ func (p *WithdrawalServiceProvider) Register(app foundation.Application) {
 			return nil, err
 		}
 		return walletrecords.NewTransactions(store), nil
+	})
+	app.Singleton((*withdrawalrecords.Records)(nil), func(app foundation.Application) (any, error) {
+		store, err := resolve[*repositories.WithdrawalRepository](app)
+		if err != nil {
+			return nil, err
+		}
+		return withdrawalrecords.NewRecords(store), nil
 	})
 }
 
