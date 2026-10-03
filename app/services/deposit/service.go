@@ -4,9 +4,9 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"time"
 
 	"github.com/google/uuid"
-	"github.com/redis/go-redis/v9"
 
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/repositories"
@@ -16,6 +16,17 @@ import (
 	"github.com/macrowallets/waas/pkg/types"
 )
 
+// RedisStore runs the scanner's checkpoint and watched-address commands.
+// The service keeps the keys. A nil RedisStore means Redis is not configured.
+type RedisStore interface {
+	Uint64(ctx context.Context, key string) (uint64, error)
+	Set(ctx context.Context, key string, value uint64, expiration time.Duration) error
+	SIsMember(ctx context.Context, key, member string) (bool, error)
+	SCard(ctx context.Context, key string) (int64, error)
+	SMIsMember(ctx context.Context, key string, members ...any) ([]bool, error)
+	ReplaceSet(ctx context.Context, key string, members ...any) error
+}
+
 // ---------------------------------------------------------------------------
 // Service — stateless deposit scanner designed for Lambda invocation.
 // Each call to ScanLatestBlocks processes new blocks since last checkpoint.
@@ -23,7 +34,7 @@ import (
 // ---------------------------------------------------------------------------
 
 type Service struct {
-	rdb                  *redis.Client
+	store                RedisStore
 	registry             *chain.Registry
 	webhookSvc           *webhook.Service
 	addressRepo          *repositories.AddressRepository
@@ -71,9 +82,9 @@ func (s *Service) SetWithdrawalConfirmations(withdrawals WithdrawalConfirmations
 	s.withdrawals = withdrawals
 }
 
-func NewService(rdb *redis.Client, registry *chain.Registry, webhookSvc *webhook.Service, addressRepo *repositories.AddressRepository, txRepo *repositories.TransactionRepository, blockHeightProviders map[string]blockheight.Provider) *Service {
+func NewService(store RedisStore, registry *chain.Registry, webhookSvc *webhook.Service, addressRepo *repositories.AddressRepository, txRepo *repositories.TransactionRepository, blockHeightProviders map[string]blockheight.Provider) *Service {
 	return &Service{
-		rdb:                  rdb,
+		store:                store,
 		registry:             registry,
 		webhookSvc:           webhookSvc,
 		addressRepo:          addressRepo,
@@ -216,17 +227,17 @@ func (s *Service) processTransfer(ctx context.Context, chainID string, adapter t
 // ---------------------------------------------------------------------------
 
 func (s *Service) loadCheckpoint(ctx context.Context, chainID string) (uint64, error) {
-	if s.rdb == nil {
+	if s.store == nil {
 		return 0, fmt.Errorf("no redis")
 	}
-	return s.rdb.Get(ctx, "vault:checkpoint:"+chainID).Uint64()
+	return s.store.Uint64(ctx, "vault:checkpoint:"+chainID)
 }
 
 func (s *Service) saveCheckpoint(ctx context.Context, chainID string, blockNum uint64) error {
-	if s.rdb == nil {
+	if s.store == nil {
 		return nil
 	}
-	return s.rdb.Set(ctx, "vault:checkpoint:"+chainID, blockNum, 0).Err()
+	return s.store.Set(ctx, "vault:checkpoint:"+chainID, blockNum, 0)
 }
 
 // ---------------------------------------------------------------------------
@@ -243,8 +254,8 @@ func (s *Service) isWatchedAddress(ctx context.Context, chainID, address string)
 	if address == "" {
 		return false, nil
 	}
-	if s.rdb != nil {
-		isMember, err := s.rdb.SIsMember(ctx, addressCacheKey(chainID), address).Result()
+	if s.store != nil {
+		isMember, err := s.store.SIsMember(ctx, addressCacheKey(chainID), address)
 		if err == nil {
 			return isMember, nil
 		}
@@ -260,7 +271,7 @@ func (s *Service) isWatchedAddress(ctx context.Context, chainID, address string)
 // RefreshAddressCache reloads monitored addresses into Redis.
 // Called after generating new addresses.
 func (s *Service) RefreshAddressCache(ctx context.Context, chainID string) error {
-	if s.rdb == nil {
+	if s.store == nil {
 		return nil
 	}
 	addresses, err := s.addressRepo.PluckActiveAddresses(ctx, chainID)
@@ -275,7 +286,7 @@ func (s *Service) RefreshAddressCache(ctx context.Context, chainID string) error
 // overwrite the set, and every missing member is a deposit the scanner would skip.
 // It reports whether the set was rebuilt.
 func (s *Service) SyncAddressCache(ctx context.Context, chainID string) (bool, error) {
-	if s.rdb == nil {
+	if s.store == nil {
 		return false, nil
 	}
 	addresses, err := s.addressRepo.PluckActiveAddresses(ctx, chainID)
@@ -298,7 +309,7 @@ func (s *Service) SyncAddressCache(ctx context.Context, chainID string) (bool, e
 
 func (s *Service) addressCacheMatches(ctx context.Context, chainID string, addresses []string) (bool, int64, error) {
 	key := addressCacheKey(chainID)
-	cached, err := s.rdb.SCard(ctx, key).Result()
+	cached, err := s.store.SCard(ctx, key)
 	if err != nil {
 		return false, 0, fmt.Errorf("count cached %s addresses: %w", chainID, err)
 	}
@@ -308,7 +319,7 @@ func (s *Service) addressCacheMatches(ctx context.Context, chainID string, addre
 	if len(addresses) == 0 {
 		return true, cached, nil
 	}
-	present, err := s.rdb.SMIsMember(ctx, key, toMembers(addresses)...).Result()
+	present, err := s.store.SMIsMember(ctx, key, toMembers(addresses)...)
 	if err != nil {
 		return false, cached, fmt.Errorf("check cached %s addresses: %w", chainID, err)
 	}
@@ -323,14 +334,7 @@ func (s *Service) addressCacheMatches(ctx context.Context, chainID string, addre
 // replaceAddressCache swaps the set in one MULTI/EXEC so a concurrent scan never sees
 // it empty; an empty address list clears a stale set instead of leaving it behind.
 func (s *Service) replaceAddressCache(ctx context.Context, chainID string, addresses []string) error {
-	key := addressCacheKey(chainID)
-	pipe := s.rdb.TxPipeline()
-	pipe.Del(ctx, key)
-	if len(addresses) > 0 {
-		pipe.SAdd(ctx, key, toMembers(addresses)...)
-	}
-	_, err := pipe.Exec(ctx)
-	return err
+	return s.store.ReplaceSet(ctx, addressCacheKey(chainID), toMembers(addresses)...)
 }
 
 func toMembers(addresses []string) []interface{} {

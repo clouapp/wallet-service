@@ -21,6 +21,7 @@ import (
 	"github.com/macrowallets/waas/app/adapters/redis/addressset"
 	redislock "github.com/macrowallets/waas/app/adapters/redis/lock"
 	"github.com/macrowallets/waas/app/adapters/redis/pricecache"
+	"github.com/macrowallets/waas/app/adapters/redis/scanner"
 	sweepsecrets "github.com/macrowallets/waas/app/adapters/secretsmanager"
 	"github.com/macrowallets/waas/app/container"
 	"github.com/macrowallets/waas/app/facades"
@@ -366,7 +367,7 @@ func buildVaultContainer(app foundation.Application) (*container.Container, erro
 		c.WebhookService, c.WithdrawalRepo, c.TransactionRepo, c.WalletRepo, assetDecimals,
 	)
 	c.DepositEvents = depositevents.NewPublisher(c.WebhookService, c.WalletRepo, assetDecimals)
-	c.DepositService = deposit.NewService(c.Redis, c.Registry, c.WebhookService, c.AddressRepo, c.TransactionRepo, blockHeightProviders)
+	c.DepositService = deposit.NewService(scanner.New(c.Redis), c.Registry, c.WebhookService, c.AddressRepo, c.TransactionRepo, blockHeightProviders)
 	c.DepositService.SetWithdrawalConfirmations(c.WithdrawalEvents)
 	c.DepositService.SetDepositEvents(c.DepositEvents)
 	scanOptions, err := deposit.ScanOptionsFromSettings(

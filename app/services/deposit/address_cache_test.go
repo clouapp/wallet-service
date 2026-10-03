@@ -41,7 +41,7 @@ func testRedis(t *testing.T) *redis.Client {
 
 func newCacheTestService(t *testing.T, rdb *redis.Client) *Service {
 	t.Helper()
-	return NewService(rdb, chain.NewRegistry(), newWebhookSvc(), repositories.NewAddressRepository(nil), repositories.NewTransactionRepository(nil), nil)
+	return NewService(redisStore{client: rdb}, chain.NewRegistry(), newWebhookSvc(), repositories.NewAddressRepository(nil), repositories.NewTransactionRepository(nil), nil)
 }
 
 func cachedMembers(t *testing.T, rdb *redis.Client, chainID string) []string {

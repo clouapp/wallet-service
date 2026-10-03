@@ -138,7 +138,7 @@ func (f scanFixture) withRedisCheckpoint(t *testing.T, checkpoint uint64) scanFi
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { rdb.Del(context.Background(), key, addressCacheKey(scanTestChain)) })
-	f.svc.rdb = rdb
+	f.svc.store = redisStore{client: rdb}
 	if err := f.svc.RefreshAddressCache(context.Background(), scanTestChain); err != nil {
 		t.Fatal(err)
 	}
