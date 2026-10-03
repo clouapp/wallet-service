@@ -53,7 +53,7 @@ func (ctrl *WebhooksController) ListWalletWebhooks(ctx http.Context) http.Respon
 	if err != nil {
 		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to fetch wallet webhooks"})
 	}
-	return ctx.Response().Json(http.StatusOK, http.Json{"data": cfgs})
+	return responses.Send(ctx, http.StatusOK, http.Json{"data": cfgs})
 }
 
 // CreateWalletWebhook godoc
@@ -91,7 +91,7 @@ func (ctrl *WebhooksController) CreateWalletWebhook(ctx http.Context) http.Respo
 	if err := ctrl.configs.Create(ctx.Context(), cfg); err != nil {
 		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to create webhook"})
 	}
-	return ctx.Response().Json(http.StatusCreated, cfg)
+	return responses.Send(ctx, http.StatusCreated, cfg)
 }
 
 // DeleteWalletWebhook godoc

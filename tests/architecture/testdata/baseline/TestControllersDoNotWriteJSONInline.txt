@@ -1,12 +1,4 @@
 # TestControllersDoNotWriteJSONInline: known violations, rewritten by go test ./tests/architecture -update-baseline
-app/http/controllers/dashboard/wallets/balances_controller.go calls ctx.Response().Json()
-app/http/controllers/dashboard/wallets/settings_controller.go calls ctx.Response().Json() (x3)
-app/http/controllers/dashboard/wallets/transactions_controller.go calls ctx.Response().Json() (x2)
-app/http/controllers/dashboard/wallets/unspents_controller.go calls ctx.Response().Json()
-app/http/controllers/dashboard/wallets/users_controller.go calls ctx.Response().Json() (x3)
-app/http/controllers/dashboard/wallets/wallets_controller.go calls ctx.Response().Json() (x3)
-app/http/controllers/dashboard/wallets/webhooks_controller.go calls ctx.Response().Json() (x2)
-app/http/controllers/dashboard/wallets/whitelist_controller.go calls ctx.Response().Json() (x2)
 app/http/controllers/dashboard/withdrawals/withdrawals_controller.go calls ctx.Response().Json() (x6)
 app/http/controllers/external/addresses/addresses_controller.go calls ctx.Response().Json() (x2)
 app/http/controllers/external/transactions/transactions_controller.go calls ctx.Response().Json() (x2)

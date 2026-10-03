@@ -87,7 +87,7 @@ func (ctrl *WalletsController) ListWallets(ctx http.Context) http.Response {
 			"error": "failed to fetch wallet balances",
 		})
 	}
-	return ctx.Response().Json(http.StatusOK, pagination.Response(items, total, limit, offset))
+	return responses.Send(ctx, http.StatusOK, pagination.Response(items, total, limit, offset))
 }
 
 // GetWallet godoc
@@ -151,7 +151,7 @@ func (ctrl *WalletsController) CreateWalletAdmin(ctx http.Context) http.Response
 		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": msg})
 	}
 
-	return ctx.Response().Json(http.StatusCreated, http.Json{
+	return responses.Send(ctx, http.StatusCreated, http.Json{
 		"wallet":             result.Wallet,
 		"encrypted_user_key": result.EncryptedUserKey,
 		"service_public_key": result.ServicePublicKey,
@@ -186,5 +186,5 @@ func (ctrl *WalletsController) ActivateWallet(ctx http.Context) http.Response {
 		}
 	}
 
-	return ctx.Response().Json(http.StatusOK, http.Json{"status": "active"})
+	return responses.Send(ctx, http.StatusOK, http.Json{"status": "active"})
 }

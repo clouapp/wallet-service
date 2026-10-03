@@ -57,7 +57,7 @@ func (ctrl *TransactionsController) ListWalletTransactions(ctx http.Context) htt
 	}
 
 	views := controllers.WalletTransactionViewsForChain(ctx.Context(), wallet.Chain, transactions)
-	return ctx.Response().Json(http.StatusOK, pagination.Response(views, total, limit, offset))
+	return responses.Send(ctx, http.StatusOK, pagination.Response(views, total, limit, offset))
 }
 
 // GetWalletTransaction godoc
@@ -84,5 +84,5 @@ func (ctrl *TransactionsController) GetWalletTransaction(ctx http.Context) http.
 	}
 
 	views := controllers.WalletTransactionViewsForChain(ctx.Context(), wallet.Chain, []models.Transaction{*tx})
-	return ctx.Response().Json(http.StatusOK, views[0])
+	return responses.Send(ctx, http.StatusOK, views[0])
 }

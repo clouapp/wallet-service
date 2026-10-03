@@ -56,7 +56,7 @@ func (ctrl *UsersController) ListWalletUsers(ctx http.Context) http.Response {
 	if err != nil {
 		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to fetch wallet users"})
 	}
-	return ctx.Response().Json(http.StatusOK, http.Json{"data": members})
+	return responses.Send(ctx, http.StatusOK, http.Json{"data": members})
 }
 
 // AddWalletUser godoc
@@ -97,7 +97,7 @@ func (ctrl *UsersController) AddWalletUser(ctx http.Context) http.Response {
 				facades.Log().WithContext(ctx).Errorf("wallet-users: update roles: %v", err)
 			}
 		}
-		return ctx.Response().Json(http.StatusCreated, existing)
+		return responses.Send(ctx, http.StatusCreated, existing)
 	}
 
 	wu := &models.WalletUser{
@@ -110,7 +110,7 @@ func (ctrl *UsersController) AddWalletUser(ctx http.Context) http.Response {
 	if err := ctrl.members.Create(ctx.Context(), wu); err != nil {
 		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to add wallet user"})
 	}
-	return ctx.Response().Json(http.StatusCreated, wu)
+	return responses.Send(ctx, http.StatusCreated, wu)
 }
 
 // RemoveWalletUser godoc

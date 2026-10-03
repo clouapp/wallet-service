@@ -51,7 +51,7 @@ func NewSettingsController(
 func (ctrl *SettingsController) GetWalletSettings(ctx http.Context) http.Response {
 	wallet := requestctx.MustWallet(ctx)
 
-	return ctx.Response().Json(http.StatusOK, http.Json{
+	return responses.Send(ctx, http.StatusOK, http.Json{
 		"fee_rate_min":       wallet.FeeRateMin,
 		"fee_rate_max":       wallet.FeeRateMax,
 		"fee_multiplier":     wallet.FeeMultiplier,
@@ -121,7 +121,7 @@ func (ctrl *SettingsController) UpdateWalletSettings(ctx http.Context) http.Resp
 		wallet.FrozenUntil = &t
 	}
 
-	return ctx.Response().Json(http.StatusOK, http.Json{
+	return responses.Send(ctx, http.StatusOK, http.Json{
 		"fee_rate_min":       wallet.FeeRateMin,
 		"fee_rate_max":       wallet.FeeRateMax,
 		"fee_multiplier":     wallet.FeeMultiplier,
@@ -169,7 +169,7 @@ func (ctrl *SettingsController) FreezeWallet(ctx http.Context) http.Response {
 	wallet.FrozenUntil = &frozenUntil
 	wallet.Status = "frozen"
 
-	return ctx.Response().Json(http.StatusOK, http.Json{
+	return responses.Send(ctx, http.StatusOK, http.Json{
 		"status":       wallet.Status,
 		"frozen_until": wallet.FrozenUntil,
 	})
