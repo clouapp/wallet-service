@@ -18,6 +18,7 @@ import (
 	"github.com/macrowallets/waas/app/models"
 	accountsvc "github.com/macrowallets/waas/app/services/account"
 	authsvc "github.com/macrowallets/waas/app/services/auth"
+	featuressvc "github.com/macrowallets/waas/app/services/features"
 	"github.com/macrowallets/waas/app/services/sessions"
 	usersvc "github.com/macrowallets/waas/app/services/users"
 )
@@ -33,6 +34,7 @@ type UsersController struct {
 	refresh      *sessions.RefreshTokens
 	secondFactor *authsvc.SecondFactorVerifier
 	revoker      *authsvc.SessionRevoker
+	features     *featuressvc.Service
 }
 
 // NewUsersController wires the dashboard user handlers. Services are the
@@ -44,6 +46,7 @@ func NewUsersController(
 	refresh *sessions.RefreshTokens,
 	secondFactor *authsvc.SecondFactorVerifier,
 	revoker *authsvc.SessionRevoker,
+	features *featuressvc.Service,
 ) *UsersController {
 	if users == nil {
 		panic("dashboard users controller: users service is required")
@@ -63,6 +66,9 @@ func NewUsersController(
 	if revoker == nil {
 		panic("dashboard users controller: session revoker is required")
 	}
+	if features == nil {
+		panic("dashboard users controller: feature flags are required")
+	}
 	return &UsersController{
 		users:        users,
 		accounts:     accounts,
@@ -70,6 +76,7 @@ func NewUsersController(
 		refresh:      refresh,
 		secondFactor: secondFactor,
 		revoker:      revoker,
+		features:     features,
 	}
 }
 
@@ -83,12 +90,29 @@ func (ctrl *UsersController) sessions() controllers.SessionIssuer {
 // @Tags         User
 // @Security     BearerAuth
 // @Produce      json
-// @Success      200  {object}  models.User
+// @Success      200  {object}  MeProfile
 // @Failure      401  {object}  ErrorResponse
 // @Router       /users/me [get]
 func (ctrl *UsersController) GetMe(ctx http.Context) http.Response {
 	user := requestctx.MustUser(ctx)
-	return responses.Send(ctx, http.StatusOK, user)
+	if user == nil {
+		return responses.Send(ctx, http.StatusUnauthorized, http.Json{"error": "unauthenticated"})
+	}
+	names, err := ctrl.features.ActiveGlobal(ctx.Context())
+	if err != nil {
+		appfacades.Log().WithContext(ctx).Errorf("user: active features: %v", err)
+		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "internal_error"})
+	}
+	return responses.Send(ctx, http.StatusOK, MeProfile{User: *user, Features: names})
+}
+
+// MeProfile is GET /v1/users/me. User fields stay as they are. Features is
+// the globally active flag keys in catalog order. A missing global row uses
+// the catalog default. Account rows are not included. Login and PATCH
+// /v1/users/me do not carry this field.
+type MeProfile struct {
+	models.User
+	Features []string `json:"features"`
 }
 
 // UpdateMe godoc

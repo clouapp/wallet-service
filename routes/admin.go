@@ -238,6 +238,7 @@ func newDashboardUsersController() *dashusers.UsersController {
 		container.MustMake[*sessions.RefreshTokens](),
 		container.MustMake[*authsvc.SecondFactorVerifier](),
 		container.MustMake[*authsvc.SessionRevoker](),
+		container.MustMake[*featuressvc.Service](),
 	)
 }
 

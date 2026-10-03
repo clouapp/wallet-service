@@ -149,6 +149,32 @@ func (s *Service) ListGlobal(ctx context.Context, userID uuid.UUID) (List, error
 	return List{Features: flags}, nil
 }
 
+// ActiveGlobal returns the flag keys whose platform value is on, in catalog
+// order. A missing global row uses the catalog default, so sweep-enabled and
+// withdrawals-enabled are included until a row stores false. Account rows
+// are not read: this is the global half of GET /v1/users/me. The catalog has
+// no user scope, so there is nothing further to add. The call does not
+// insert rows and does not cache.
+func (s *Service) ActiveGlobal(ctx context.Context) ([]string, error) {
+	if s == nil {
+		return nil, fmt.Errorf("platform features: service is required")
+	}
+	if ctx == nil {
+		return nil, fmt.Errorf("platform features: context is required")
+	}
+	stored, err := s.globalStored(ctx)
+	if err != nil {
+		return nil, err
+	}
+	names := make([]string, 0)
+	for _, definition := range ForGlobal() {
+		if enabledValue(stored, definition) {
+			names = append(names, definition.Key)
+		}
+	}
+	return names, nil
+}
+
 // SetGlobal stores one platform flag and returns the row it just wrote.
 // A caller who is not a platform admin is ErrPlatformForbidden and the table
 // is unchanged, including when the key is unknown. An admin's unknown key is

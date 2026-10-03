@@ -74,7 +74,7 @@ content-type: application/json; charset=utf-8
 ### 15 me: GET /v1/users/me
 status: 200
 content-type: application/json; charset=utf-8
-{"created_at":"<time>","updated_at":"<time>","id":"<uuid:3>","email":"contract@example.com","full_name":"Contract User","totp_enabled":false,"status":"active","default_account_id":"<uuid:1>","preferences":{}}
+{"created_at":"<time>","updated_at":"<time>","id":"<uuid:3>","email":"contract@example.com","full_name":"Contract User","totp_enabled":false,"status":"active","default_account_id":"<uuid:1>","preferences":{},"features":["sweep-enabled","withdrawals-enabled"]}
 
 ### 16 update me: PATCH /v1/users/me
 status: 200

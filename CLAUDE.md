@@ -209,6 +209,11 @@ Known violations include `app/models → app/services/mpc` and `config → app/m
   `withdrawals_paused` and `sweep_paused`.
 - `user-2fa-required` and `account_security.require_2fa` are the two switches
   `TOTPEnrollment` reads on account and wallet routes.
+- `GET /v1/users/me` adds `features`: the globally active flag keys, in
+  catalog order. A missing global row uses the catalog default, so
+  `sweep-enabled` and `withdrawals-enabled` are present until a platform row
+  stores false. Account rows are not included. Login and `PATCH /v1/users/me`
+  do not carry the field.
 
 ### 12. RBAC
 

@@ -15,6 +15,7 @@ import (
 
 	"github.com/macrowallets/waas/app/models"
 	authsvc "github.com/macrowallets/waas/app/services/auth"
+	"github.com/macrowallets/waas/app/services/features"
 	"github.com/macrowallets/waas/tests/mocks"
 )
 
@@ -109,6 +110,59 @@ func (s *UserControllerTestSuite) seedAccount(name, environment, role string) mo
 		ID: uuid.New(), AccountID: acc.ID, UserID: s.userID, Role: role,
 	}))
 	return acc
+}
+
+func (s *UserControllerTestSuite) TestGetMeListsGloballyActiveFeatureKeys() {
+	body := s.getMe()
+	s.Equal([]string{features.FlagSweepEnabled, features.FlagWithdrawalsEnabled}, body.Features)
+
+	account := s.seedAccount("Flags", "prod", "owner")
+	_, err := facades.Orm().Query().Exec(
+		`INSERT INTO features (account_id, "key", enabled, created_at, updated_at)
+		 VALUES (?, ?, false, NOW(), NOW()), (?, ?, true, NOW(), NOW())`,
+		account.ID, features.FlagWithdrawalsEnabled,
+		account.ID, features.FlagWalletCreationEnabled,
+	)
+	s.Require().NoError(err)
+	body = s.getMe()
+	s.Equal([]string{features.FlagSweepEnabled, features.FlagWithdrawalsEnabled}, body.Features)
+
+	_, err = facades.Orm().Query().Exec(
+		`INSERT INTO global_features ("key", enabled, created_at, updated_at)
+		 VALUES (?, false, NOW(), NOW()), (?, true, NOW(), NOW())`,
+		features.FlagWithdrawalsEnabled, features.FlagUser2FARequired,
+	)
+	s.Require().NoError(err)
+	body = s.getMe()
+	s.Equal([]string{features.FlagSweepEnabled, features.FlagUser2FARequired}, body.Features)
+
+	patch, err := s.Http(s.T()).
+		WithHeader("Authorization", "Bearer "+s.token).
+		WithHeader("Content-Type", "application/json").
+		Patch("/v1/users/me", strings.NewReader(`{"full_name":"Renamed User"}`))
+	s.Require().NoError(err)
+	patch.AssertOk()
+	content, err := patch.Content()
+	s.Require().NoError(err)
+	s.NotContains(content, `"features"`)
+}
+
+func (s *UserControllerTestSuite) getMe() struct {
+	Features []string `json:"features"`
+} {
+	s.T().Helper()
+	resp, err := s.Http(s.T()).
+		WithHeader("Authorization", "Bearer "+s.token).
+		Get("/v1/users/me")
+	s.Require().NoError(err)
+	resp.AssertOk()
+	content, err := resp.Content()
+	s.Require().NoError(err)
+	var body struct {
+		Features []string `json:"features"`
+	}
+	s.Require().NoError(json.Unmarshal([]byte(content), &body))
+	return body
 }
 
 func (s *UserControllerTestSuite) TestUpdateMe_AppliesFullName() {

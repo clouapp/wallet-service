@@ -3,6 +3,7 @@ package features
 import (
 	"context"
 	"errors"
+	"slices"
 	"testing"
 
 	"github.com/google/uuid"
@@ -287,6 +288,71 @@ func TestPlatformListAndSetRequireAnAdminAndUseTheCatalogDefault(t *testing.T) {
 	}
 	if _, err := service.SetGlobal(ctx, userID, "not-a-flag", true); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("admin unknown key = %v", err)
+	}
+}
+
+func TestActiveGlobalUsesTheCatalogDefaultAndIgnoresAccountRows(t *testing.T) {
+	t.Parallel()
+
+	store := newMemoryStore()
+	service := newTestService(store, memoryAdmins{})
+	accountID := uuid.New()
+	if err := store.Upsert(context.Background(), accountID, FlagWithdrawalsEnabled, false); err != nil {
+		t.Fatalf("account withdrawals: %v", err)
+	}
+	if err := store.Upsert(context.Background(), accountID, FlagWalletCreationEnabled, true); err != nil {
+		t.Fatalf("account wallet creation: %v", err)
+	}
+
+	names, err := service.ActiveGlobal(context.Background())
+	if err != nil {
+		t.Fatalf("active: %v", err)
+	}
+	want := []string{FlagSweepEnabled, FlagWithdrawalsEnabled}
+	if !slices.Equal(names, want) {
+		t.Fatalf("active = %v, want %v", names, want)
+	}
+	if len(store.global) != 0 {
+		t.Fatal("active inserted a global row")
+	}
+
+	if err := store.UpsertGlobal(context.Background(), FlagWithdrawalsEnabled, false); err != nil {
+		t.Fatalf("global withdrawals: %v", err)
+	}
+	if err := store.UpsertGlobal(context.Background(), FlagUser2FARequired, true); err != nil {
+		t.Fatalf("global 2fa: %v", err)
+	}
+	names, err = service.ActiveGlobal(context.Background())
+	if err != nil {
+		t.Fatalf("active after write: %v", err)
+	}
+	want = []string{FlagSweepEnabled, FlagUser2FARequired}
+	if !slices.Equal(names, want) {
+		t.Fatalf("active after write = %v, want %v", names, want)
+	}
+
+	if _, err := service.ActiveGlobal(nil); err == nil {
+		t.Fatal("nil context must fail")
+	}
+}
+
+type failingGlobalStore struct {
+	*memoryStore
+	err error
+}
+
+func (s failingGlobalStore) ListGlobal(context.Context) ([]models.GlobalFeature, error) {
+	return nil, s.err
+}
+
+func TestActiveGlobalReportsAStoreError(t *testing.T) {
+	t.Parallel()
+
+	want := errors.New("global features unavailable")
+	service := newTestService(failingGlobalStore{memoryStore: newMemoryStore(), err: want}, memoryAdmins{})
+	_, err := service.ActiveGlobal(context.Background())
+	if !errors.Is(err, want) {
+		t.Fatalf("active error = %v, want %v", err, want)
 	}
 }
 
