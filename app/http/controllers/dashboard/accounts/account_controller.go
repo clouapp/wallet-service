@@ -8,6 +8,7 @@ import (
 	"github.com/goravel/framework/contracts/http"
 	"github.com/goravel/framework/facades"
 
+	appfacades "github.com/macrowallets/waas/app/facades"
 	"github.com/macrowallets/waas/app/http/controllers"
 	"github.com/macrowallets/waas/app/http/middleware"
 	"github.com/macrowallets/waas/app/http/middleware/requestctx"
@@ -224,7 +225,7 @@ func (ctrl *AccountsController) AddAccountUser(ctx http.Context) http.Response {
 			AccountName: account.Name,
 			InviteLink:  "https://vault.app/accept-invite",
 		}); err != nil {
-			facades.Log().WithContext(ctx).Errorf("account: send invite mail: %v", err)
+			appfacades.Log().WithContext(ctx).Errorf("account: send invite mail: %v", err)
 		}
 	}
 
@@ -234,7 +235,7 @@ func (ctrl *AccountsController) AddAccountUser(ctx http.Context) http.Response {
 
 	au, auErr := ctrl.accountService.FindMember(ctx.Context(), account.ID, targetPtr.ID)
 	if auErr != nil {
-		facades.Log().WithContext(ctx).Errorf("account: find membership after add: %v", auErr)
+		appfacades.Log().WithContext(ctx).Errorf("account: find membership after add: %v", auErr)
 	}
 	return ctx.Response().Json(http.StatusCreated, au)
 }

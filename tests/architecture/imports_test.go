@@ -124,6 +124,7 @@ func TestLayer_MapsEveryKnownZone(t *testing.T) {
 		"app/mails":                       LayerMails,
 		"app/jobs":                        LayerJobs,
 		"app/rules":                       LayerRules,
+		"app/facades":                     LayerFacades,
 		"docs":                            LayerDocs,
 		"scripts/e2e":                     LayerTools,
 		"app/http/middleware":             LayerHTTP,
@@ -180,6 +181,7 @@ func TestCheckImport_SyntheticEdges(t *testing.T) {
 	}
 	admitted := [][2]string{
 		{LayerHTTP, LayerServices},
+		{LayerHTTP, LayerFacades},
 		{LayerHTTP, LayerHTTP},
 		{LayerHTTP, LayerPackages},
 		{LayerServices, LayerModels},

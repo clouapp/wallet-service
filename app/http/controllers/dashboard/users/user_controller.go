@@ -9,6 +9,7 @@ import (
 	"github.com/goravel/framework/contracts/http"
 	"github.com/goravel/framework/facades"
 
+	appfacades "github.com/macrowallets/waas/app/facades"
 	"github.com/macrowallets/waas/app/http/controllers"
 	"github.com/macrowallets/waas/app/http/middleware/requestctx"
 	"github.com/macrowallets/waas/app/http/pagination"
@@ -172,13 +173,13 @@ func (ctrl *UsersController) ListMyAccounts(ctx http.Context) http.Response {
 
 	accounts, total, err := ctrl.accounts.ListForMember(ctx.Context(), userID, search, environment, limit, offset)
 	if err != nil {
-		facades.Log().WithContext(ctx).Errorf("user: list my accounts: %v", err)
+		appfacades.Log().WithContext(ctx).Errorf("user: list my accounts: %v", err)
 		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to fetch accounts"})
 	}
 
 	items, err := ctrl.accountsWithCallerRole(ctx, userID, accounts)
 	if err != nil {
-		facades.Log().WithContext(ctx).Errorf("user: list my accounts roles: %v", err)
+		appfacades.Log().WithContext(ctx).Errorf("user: list my accounts roles: %v", err)
 		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to fetch accounts"})
 	}
 

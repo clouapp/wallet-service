@@ -27,6 +27,7 @@ const (
 	LayerJobs         = "jobs"
 	LayerEvents       = "events"
 	LayerRules        = "rules"
+	LayerFacades      = "facades"
 	LayerDatabase     = "database"
 	LayerPackages     = "packages"
 	LayerDocs         = "docs"
@@ -56,6 +57,7 @@ var zones = map[string]string{
 	"app/events":       LayerEvents,
 	"app/listeners":    LayerEvents,
 	"app/rules":        LayerRules,
+	"app/facades":      LayerFacades,
 	"database":         LayerDatabase,
 	"pkg":              LayerPackages,
 	"packages":         LayerPackages,
@@ -70,7 +72,7 @@ var zones = map[string]string{
 var everything = []string{
 	LayerBootstrap, LayerConfig, LayerRoutes, LayerContainer, LayerProviders, LayerHTTP,
 	LayerPolicies, LayerServices, LayerAdapters, LayerRepositories, LayerDTOs, LayerModels,
-	LayerMails, LayerConsole, LayerJobs, LayerEvents, LayerRules, LayerDatabase,
+	LayerMails, LayerConsole, LayerJobs, LayerEvents, LayerRules, LayerFacades, LayerDatabase,
 	LayerPackages, LayerDocs,
 }
 
@@ -93,7 +95,8 @@ var allowed = map[string][]string{
 	LayerServices:     {LayerServices, LayerDTOs, LayerModels, LayerMails, LayerPolicies},
 	LayerAdapters:     {LayerAdapters, LayerServices, LayerDTOs, LayerModels},
 	LayerRepositories: {LayerRepositories, LayerServices, LayerDTOs, LayerModels},
-	LayerHTTP:         {LayerHTTP, LayerContainer, LayerDTOs, LayerModels, LayerServices, LayerMails, LayerPolicies},
+	LayerHTTP:         {LayerHTTP, LayerContainer, LayerDTOs, LayerModels, LayerServices, LayerMails, LayerPolicies, LayerFacades},
+	LayerFacades:      {},
 	LayerRoutes:       {LayerContainer, LayerHTTP, LayerServices, LayerModels},
 	LayerRules:        {LayerDTOs, LayerModels},
 	LayerConsole:      {LayerConsole, LayerContainer, LayerServices, LayerDTOs, LayerModels},

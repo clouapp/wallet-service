@@ -9,6 +9,7 @@ import (
 	"github.com/goravel/framework/contracts/http"
 	"github.com/goravel/framework/facades"
 
+	appfacades "github.com/macrowallets/waas/app/facades"
 	"github.com/macrowallets/waas/app/http/controllers"
 	"github.com/macrowallets/waas/app/http/middleware/requestctx"
 	"github.com/macrowallets/waas/app/http/requests"
@@ -144,24 +145,24 @@ func (ctrl *AuthController) Register(ctx http.Context) http.Response {
 		Status:    "active",
 	}
 	if err := ctrl.accounts.InsertMembership(ctx.Context(), prodMembership); err != nil {
-		facades.Log().WithContext(ctx).Errorf("auth: create prod membership: %v", err)
+		appfacades.Log().WithContext(ctx).Errorf("auth: create prod membership: %v", err)
 	}
 	if err := ctrl.accounts.InsertMembership(ctx.Context(), testMembership); err != nil {
-		facades.Log().WithContext(ctx).Errorf("auth: create test membership: %v", err)
+		appfacades.Log().WithContext(ctx).Errorf("auth: create test membership: %v", err)
 	}
 
 	user.DefaultAccountID = &prodAccountID
 	if err := ctrl.users.UpdateDefaultAccountID(ctx.Context(), user.ID, &prodAccountID); err != nil {
-		facades.Log().WithContext(ctx).Errorf("auth: set default account: %v", err)
+		appfacades.Log().WithContext(ctx).Errorf("auth: set default account: %v", err)
 	}
 
 	if err := facades.Mail().To([]string{user.Email}).Send(&mails.WelcomeMail{To: user.Email, FullName: user.FullName}); err != nil {
-		facades.Log().WithContext(ctx).Errorf("auth: send welcome mail: %v", err)
+		appfacades.Log().WithContext(ctx).Errorf("auth: send welcome mail: %v", err)
 	}
 
 	accessToken, err := facades.Auth(ctx).LoginUsingID(user.ID.String())
 	if err != nil {
-		facades.Log().WithContext(ctx).Errorf("auth: login after register: %v", err)
+		appfacades.Log().WithContext(ctx).Errorf("auth: login after register: %v", err)
 		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to create session"})
 	}
 
@@ -209,7 +210,7 @@ func (ctrl *AuthController) Login(ctx http.Context) http.Response {
 	if user.TotpEnabled {
 		partialToken, err := facades.Auth(ctx).LoginUsingID(user.ID.String())
 		if err != nil {
-			facades.Log().WithContext(ctx).Errorf("auth: partial login: %v", err)
+			appfacades.Log().WithContext(ctx).Errorf("auth: partial login: %v", err)
 			return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to create session"})
 		}
 		return ctx.Response().Json(http.StatusOK, http.Json{
@@ -220,13 +221,13 @@ func (ctrl *AuthController) Login(ctx http.Context) http.Response {
 
 	accessToken, err := facades.Auth(ctx).LoginUsingID(user.ID.String())
 	if err != nil {
-		facades.Log().WithContext(ctx).Errorf("auth: login: %v", err)
+		appfacades.Log().WithContext(ctx).Errorf("auth: login: %v", err)
 		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to create session"})
 	}
 
 	rawRefresh, err := ctrl.passwords.GenerateRandomToken()
 	if err != nil {
-		facades.Log().WithContext(ctx).Errorf("auth: generate refresh token: %v", err)
+		appfacades.Log().WithContext(ctx).Errorf("auth: generate refresh token: %v", err)
 		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "internal error"})
 	}
 	refreshHash := ctrl.passwords.HashToken(rawRefresh)
@@ -237,7 +238,7 @@ func (ctrl *AuthController) Login(ctx http.Context) http.Response {
 		ExpiresAt: time.Now().Add(30 * 24 * time.Hour),
 	}
 	if err := ctrl.refreshTokens.Create(ctx.Context(), rt); err != nil {
-		facades.Log().WithContext(ctx).Errorf("auth: store refresh token: %v", err)
+		appfacades.Log().WithContext(ctx).Errorf("auth: store refresh token: %v", err)
 	}
 
 	accounts, defaultAccount := ctrl.loadUserAccounts(&user)
@@ -299,12 +300,12 @@ func (ctrl *AuthController) VerifyTwoFactor(ctx http.Context) http.Response {
 	if !verified && req.RecoveryCode != "" {
 		codes, codesErr := ctrl.users.FindUnusedRecoveryCodes(ctx.Context(), user.ID)
 		if codesErr != nil {
-			facades.Log().WithContext(ctx).Errorf("auth: find recovery codes: %v", codesErr)
+			appfacades.Log().WithContext(ctx).Errorf("auth: find recovery codes: %v", codesErr)
 		}
 		for _, c := range codes {
 			if ctrl.passwords.VerifyRecoveryCode(req.RecoveryCode, c.CodeHash) {
 				if err := ctrl.users.MarkRecoveryCodeUsed(ctx.Context(), c.ID); err != nil {
-					facades.Log().WithContext(ctx).Errorf("auth: mark recovery code used: %v", err)
+					appfacades.Log().WithContext(ctx).Errorf("auth: mark recovery code used: %v", err)
 				}
 				verified = true
 				break
@@ -318,12 +319,12 @@ func (ctrl *AuthController) VerifyTwoFactor(ctx http.Context) http.Response {
 
 	accessToken, loginErr := facades.Auth(ctx).LoginUsingID(user.ID.String())
 	if loginErr != nil {
-		facades.Log().WithContext(ctx).Errorf("auth: 2fa login: %v", loginErr)
+		appfacades.Log().WithContext(ctx).Errorf("auth: 2fa login: %v", loginErr)
 		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to create session"})
 	}
 	rawRefresh, genErr := ctrl.passwords.GenerateRandomToken()
 	if genErr != nil {
-		facades.Log().WithContext(ctx).Errorf("auth: generate refresh token: %v", genErr)
+		appfacades.Log().WithContext(ctx).Errorf("auth: generate refresh token: %v", genErr)
 		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "internal error"})
 	}
 	refreshHash := ctrl.passwords.HashToken(rawRefresh)
@@ -334,7 +335,7 @@ func (ctrl *AuthController) VerifyTwoFactor(ctx http.Context) http.Response {
 		ExpiresAt: time.Now().Add(30 * 24 * time.Hour),
 	}
 	if err := ctrl.refreshTokens.Create(ctx.Context(), rt); err != nil {
-		facades.Log().WithContext(ctx).Errorf("auth: store refresh token: %v", err)
+		appfacades.Log().WithContext(ctx).Errorf("auth: store refresh token: %v", err)
 	}
 
 	return ctx.Response().Json(http.StatusOK, http.Json{
@@ -363,7 +364,7 @@ func (ctrl *AuthController) RefreshToken(ctx http.Context) http.Response {
 
 	tokens, tokErr := ctrl.refreshTokens.FindValidTokens(ctx.Context())
 	if tokErr != nil {
-		facades.Log().WithContext(ctx).Errorf("auth: find refresh tokens: %v", tokErr)
+		appfacades.Log().WithContext(ctx).Errorf("auth: find refresh tokens: %v", tokErr)
 	}
 
 	var matched *models.RefreshToken
@@ -378,17 +379,17 @@ func (ctrl *AuthController) RefreshToken(ctx http.Context) http.Response {
 	}
 
 	if err := ctrl.refreshTokens.RevokeByID(ctx.Context(), matched.ID); err != nil {
-		facades.Log().WithContext(ctx).Errorf("auth: revoke refresh token: %v", err)
+		appfacades.Log().WithContext(ctx).Errorf("auth: revoke refresh token: %v", err)
 	}
 
 	accessToken, loginErr := facades.Auth(ctx).LoginUsingID(matched.UserID.String())
 	if loginErr != nil {
-		facades.Log().WithContext(ctx).Errorf("auth: refresh login: %v", loginErr)
+		appfacades.Log().WithContext(ctx).Errorf("auth: refresh login: %v", loginErr)
 		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to create session"})
 	}
 	rawRefresh, genErr := ctrl.passwords.GenerateRandomToken()
 	if genErr != nil {
-		facades.Log().WithContext(ctx).Errorf("auth: generate refresh token: %v", genErr)
+		appfacades.Log().WithContext(ctx).Errorf("auth: generate refresh token: %v", genErr)
 		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "internal error"})
 	}
 	refreshHash := ctrl.passwords.HashToken(rawRefresh)
@@ -399,7 +400,7 @@ func (ctrl *AuthController) RefreshToken(ctx http.Context) http.Response {
 		ExpiresAt: time.Now().Add(30 * 24 * time.Hour),
 	}
 	if err := ctrl.refreshTokens.Create(ctx.Context(), newRT); err != nil {
-		facades.Log().WithContext(ctx).Errorf("auth: store refresh token: %v", err)
+		appfacades.Log().WithContext(ctx).Errorf("auth: store refresh token: %v", err)
 	}
 
 	return ctx.Response().Json(http.StatusOK, http.Json{
@@ -420,11 +421,11 @@ func (ctrl *AuthController) RefreshToken(ctx http.Context) http.Response {
 func (ctrl *AuthController) Logout(ctx http.Context) http.Response {
 	if uid, ok := requestctx.UserID(ctx); ok {
 		if err := ctrl.refreshTokens.RevokeAllForUser(ctx.Context(), uid); err != nil {
-			facades.Log().WithContext(ctx).Errorf("auth: revoke refresh tokens: %v", err)
+			appfacades.Log().WithContext(ctx).Errorf("auth: revoke refresh tokens: %v", err)
 		}
 	}
 	if err := facades.Auth(ctx).Logout(); err != nil {
-		facades.Log().WithContext(ctx).Errorf("auth: logout: %v", err)
+		appfacades.Log().WithContext(ctx).Errorf("auth: logout: %v", err)
 	}
 	return ctx.Response().NoContent()
 }
@@ -453,7 +454,7 @@ func (ctrl *AuthController) ForgotPassword(ctx http.Context) http.Response {
 
 	raw, genErr := ctrl.passwords.GenerateRandomToken()
 	if genErr != nil {
-		facades.Log().WithContext(ctx).Errorf("auth: generate reset token: %v", genErr)
+		appfacades.Log().WithContext(ctx).Errorf("auth: generate reset token: %v", genErr)
 		return ctx.Response().Json(http.StatusOK, http.Json{"message": "if that address is registered, you will receive a reset link"})
 	}
 	hash := ctrl.passwords.HashToken(raw)
@@ -464,12 +465,12 @@ func (ctrl *AuthController) ForgotPassword(ctx http.Context) http.Response {
 		ExpiresAt: time.Now().Add(1 * time.Hour),
 	}
 	if err := ctrl.passwordResets.Create(ctx.Context(), prt); err != nil {
-		facades.Log().WithContext(ctx).Errorf("auth: store password reset token: %v", err)
+		appfacades.Log().WithContext(ctx).Errorf("auth: store password reset token: %v", err)
 	}
 
 	resetLink := "https://vault.app/reset-password?token=" + raw
 	if err := facades.Mail().To([]string{user.Email}).Send(&mails.PasswordResetMail{To: user.Email, ResetLink: resetLink}); err != nil {
-		facades.Log().WithContext(ctx).Errorf("auth: send password reset mail: %v", err)
+		appfacades.Log().WithContext(ctx).Errorf("auth: send password reset mail: %v", err)
 	}
 
 	return ctx.Response().Json(http.StatusOK, http.Json{"message": "if that address is registered, you will receive a reset link"})
@@ -494,7 +495,7 @@ func (ctrl *AuthController) ResetPassword(ctx http.Context) http.Response {
 
 	tokens, tokErr := ctrl.passwordResets.FindValidTokens(ctx.Context())
 	if tokErr != nil {
-		facades.Log().WithContext(ctx).Errorf("auth: find reset tokens: %v", tokErr)
+		appfacades.Log().WithContext(ctx).Errorf("auth: find reset tokens: %v", tokErr)
 	}
 
 	var matched *models.PasswordResetToken
@@ -514,12 +515,12 @@ func (ctrl *AuthController) ResetPassword(ctx http.Context) http.Response {
 	}
 
 	if err := ctrl.users.UpdatePasswordHash(ctx.Context(), matched.UserID, hash); err != nil {
-		facades.Log().WithContext(ctx).Errorf("auth: update password: %v", err)
+		appfacades.Log().WithContext(ctx).Errorf("auth: update password: %v", err)
 		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to update password"})
 	}
 
 	if err := ctrl.passwordResets.MarkUsed(ctx.Context(), matched.ID); err != nil {
-		facades.Log().WithContext(ctx).Errorf("auth: mark reset token used: %v", err)
+		appfacades.Log().WithContext(ctx).Errorf("auth: mark reset token used: %v", err)
 	}
 
 	return ctx.Response().Json(http.StatusOK, http.Json{"message": "password reset successfully"})
@@ -528,7 +529,7 @@ func (ctrl *AuthController) ResetPassword(ctx http.Context) http.Response {
 func (ctrl *AuthController) loadUserAccounts(user *models.User) ([]map[string]interface{}, map[string]interface{}) {
 	memberships, err := ctrl.accounts.ListMemberships(context.Background(), user.ID)
 	if err != nil {
-		facades.Log().Errorf("auth: load memberships: %v", err)
+		appfacades.Log().Errorf("auth: load memberships: %v", err)
 		return nil, nil
 	}
 
