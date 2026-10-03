@@ -1,12 +1,13 @@
 package price
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
-	"io"
-	"net/http"
 	"strings"
 	"time"
+
+	"github.com/macrowallets/waas/pkg/httpclient"
 )
 
 var cmcAssetMapping = map[string]string{
@@ -16,14 +17,14 @@ var cmcAssetMapping = map[string]string{
 type CoinMarketCapProvider struct {
 	apiKey  string
 	baseURL string
-	client  *http.Client
+	client  *httpclient.Client
 }
 
 func NewCoinMarketCapProvider(apiKey string) *CoinMarketCapProvider {
 	return &CoinMarketCapProvider{
 		apiKey:  apiKey,
 		baseURL: "https://pro-api.coinmarketcap.com",
-		client:  &http.Client{Timeout: 15 * time.Second},
+		client:  httpclient.NewClient(15 * time.Second),
 	}
 }
 
@@ -47,23 +48,24 @@ func (p *CoinMarketCapProvider) FetchCryptoPrices(codes []string) (map[string]fl
 	}
 
 	url := fmt.Sprintf("%s/v1/cryptocurrency/quotes/latest?symbol=%s&convert=USD", p.baseURL, strings.Join(apiSymbols, ","))
-	req, err := http.NewRequest("GET", url, nil)
+	resp, err := p.client.Do(context.Background(), httpclient.Request{
+		Method: httpclient.MethodGet,
+		URL:    url,
+		Header: map[string]string{
+			"X-CMC_PRO_API_KEY": p.apiKey,
+			"Accept":            "application/json",
+		},
+	})
 	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("X-CMC_PRO_API_KEY", p.apiKey)
-	req.Header.Set("Accept", "application/json")
-
-	resp, err := p.client.Do(req)
-	if err != nil {
+		if httpclient.IsBuild(err) {
+			return nil, err
+		}
+		if httpclient.IsRead(err) {
+			return nil, err
+		}
 		return nil, fmt.Errorf("coinmarketcap: %w", err)
 	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, err
-	}
+	body := resp.Body
 
 	var result struct {
 		Data map[string]struct {
