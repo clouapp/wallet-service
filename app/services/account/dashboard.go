@@ -228,6 +228,17 @@ func (s *Service) CreateAccessToken(ctx context.Context, token *models.AccessTok
 	return s.tokens.Create(ctx, token)
 }
 
+// FindAccessToken returns the token row for this account. The error is the store's error.
+func (s *Service) FindAccessToken(ctx context.Context, tokenID, accountID uuid.UUID) (*models.AccessToken, error) {
+	if ctx == nil {
+		return nil, fmt.Errorf("find access token: context is required")
+	}
+	if err := s.requireTokens(); err != nil {
+		return nil, err
+	}
+	return s.tokens.FindByIDAndAccount(ctx, tokenID, accountID)
+}
+
 // RevokeAccessToken deletes one token that belongs to the account.
 // A missing token is ErrAccessTokenNotFound.
 func (s *Service) RevokeAccessToken(ctx context.Context, accountID, tokenID uuid.UUID) error {
