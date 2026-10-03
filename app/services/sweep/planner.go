@@ -38,9 +38,16 @@ const (
 // the plan with chain.ErrGasEstimateFailed before anything is broadcast.
 //
 // EVM, Solana, and Bitcoin wallets can be planned. Any other adapter returns ErrUnsupportedChain.
+//
+// sweep-enabled is read before any persist or broadcast. An explicit global
+// false pauses even when the account row is true. A missing row uses the
+// catalog default (on); a row stored true also lets the plan continue.
 func (s *service) PlanForWithdrawal(ctx context.Context, walletID uuid.UUID, asset string, amount *big.Int, toAddress string, callerAccountID uuid.UUID) (*Plan, error) {
 	if amount == nil {
 		return nil, fmt.Errorf("sweep: amount must not be nil")
+	}
+	if err := s.gate(ctx, callerAccountID); err != nil {
+		return nil, err
 	}
 
 	wallet, err := s.walletRepo.FindByID(ctx, walletID)
@@ -49,6 +56,15 @@ func (s *service) PlanForWithdrawal(ctx context.Context, walletID uuid.UUID, ass
 	}
 	if wallet == nil {
 		return nil, fmt.Errorf("sweep: wallet %s not found", walletID)
+	}
+	walletAccount := uuid.Nil
+	if wallet.AccountID != nil {
+		walletAccount = *wallet.AccountID
+	}
+	if walletAccount != callerAccountID {
+		if err := s.gate(ctx, walletAccount); err != nil {
+			return nil, err
+		}
 	}
 	if wallet.DepositAddress == nil {
 		return nil, fmt.Errorf("sweep: wallet %s has no base deposit address", walletID)
