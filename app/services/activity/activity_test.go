@@ -141,7 +141,19 @@ func TestNamedEventsOmitSecretsHashesLimitsAndAmounts(t *testing.T) {
 	if err != nil {
 		t.Fatalf("withdrawal cancelled: %v", err)
 	}
-	for _, meta := range []models.ActivityMetadata{removed, reset, cancelled} {
+	sessions, err := SessionsRevoked()
+	if err != nil {
+		t.Fatalf("sessions revoked: %v", err)
+	}
+	invited, err := MemberInvited("auditor")
+	if err != nil {
+		t.Fatalf("member invited: %v", err)
+	}
+	accepted, err := InviteAccepted("user")
+	if err != nil {
+		t.Fatalf("invite accepted: %v", err)
+	}
+	for _, meta := range []models.ActivityMetadata{removed, reset, cancelled, sessions, invited, accepted} {
 		encoded, err := meta.Encode()
 		if err != nil {
 			t.Fatalf("encode: %v", err)
@@ -154,5 +166,11 @@ func TestNamedEventsOmitSecretsHashesLimitsAndAmounts(t *testing.T) {
 	}
 	if removed["role"] != "user" || reset["enabled"] != false || cancelled["key"] != "cancelled" {
 		t.Fatalf("removed=%v reset=%v cancelled=%v", removed, reset, cancelled)
+	}
+	if sessions["key"] != "sessions" || invited["role"] != "auditor" || accepted["role"] != "user" {
+		t.Fatalf("sessions=%v invited=%v accepted=%v", sessions, invited, accepted)
+	}
+	if _, err := MemberInvited("token_hash"); err == nil {
+		t.Fatal("a role that is not an account role was accepted")
 	}
 }

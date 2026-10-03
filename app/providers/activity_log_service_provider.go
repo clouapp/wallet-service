@@ -12,9 +12,11 @@ const activityLogName = "audit"
 
 // ActivityLogServiceProvider registers the tables the slotkit capture package
 // watches and installs the gorm plugin. Tables the plan names that do not
-// exist on this branch are not registered: account_invites, account_role_permissions,
-// model_has_roles and role_has_permissions. users.suspended_at is not a column
-// here, so it is not on the users allowlist.
+// exist on this branch are not registered: account_role_permissions,
+// model_has_roles and role_has_permissions. account_invites exists, but its
+// token_hash must not be captured; member.invited and invite.accepted are
+// intent rows on account_activity. users.suspended_at is not a column here,
+// so it is not on the users allowlist.
 type ActivityLogServiceProvider struct{}
 
 func (p *ActivityLogServiceProvider) Register(foundation.Application) {

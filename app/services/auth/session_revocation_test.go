@@ -1,22 +1,32 @@
 package auth_test
 
 import (
+	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
+	"github.com/macrowallets/waas/app/models"
+	activitylog "github.com/macrowallets/waas/app/services/activity"
 	authsvc "github.com/macrowallets/waas/app/services/auth"
 )
 
+type revocationTx struct{}
+
 type fakeWatermarks struct {
-	at  map[uuid.UUID]time.Time
-	err error
+	at     map[uuid.UUID]time.Time
+	err    error
+	joined bool
 }
 
-func (f *fakeWatermarks) UpdateSessionsRevokedAt(id uuid.UUID, at time.Time) error {
+func (f *fakeWatermarks) UpdateSessionsRevokedAt(ctx context.Context, id uuid.UUID, at time.Time) error {
+	if ctx != nil && ctx.Value(revocationTx{}) != nil {
+		f.joined = true
+	}
 	if f.err != nil {
 		return f.err
 	}
@@ -27,13 +37,36 @@ func (f *fakeWatermarks) UpdateSessionsRevokedAt(id uuid.UUID, at time.Time) err
 type fakeRefreshRevoker struct {
 	revoked []uuid.UUID
 	err     error
+	joined  bool
 }
 
-func (f *fakeRefreshRevoker) RevokeAllForUser(userID uuid.UUID) error {
+func (f *fakeRefreshRevoker) RevokeAllForUser(ctx context.Context, userID uuid.UUID) error {
+	if ctx != nil && ctx.Value(revocationTx{}) != nil {
+		f.joined = true
+	}
 	if f.err != nil {
 		return f.err
 	}
 	f.revoked = append(f.revoked, userID)
+	return nil
+}
+
+type recordingSessionActivity struct {
+	rows   []models.AccountActivity
+	fail   error
+	opened bool
+}
+
+func (a *recordingSessionActivity) Within(ctx context.Context, fn func(context.Context) error) error {
+	a.opened = true
+	return fn(context.WithValue(ctx, revocationTx{}, true))
+}
+
+func (a *recordingSessionActivity) Append(_ context.Context, row models.AccountActivity) error {
+	if a.fail != nil {
+		return a.fail
+	}
+	a.rows = append(a.rows, row)
 	return nil
 }
 
@@ -64,7 +97,7 @@ func TestSessionRevoker_MovesTheWatermarkAndRevokesRefreshTokens(t *testing.T) {
 	revoker, watermarks, refresh := newTestRevoker(t, now)
 	userID := uuid.New()
 
-	watermark, err := revoker.RevokeAll(userID)
+	watermark, err := revoker.RevokeAll(context.Background(), userID)
 
 	require.NoError(t, err)
 	require.Equal(t, time.Date(2026, 10, 2, 12, 0, 6, 0, time.UTC), watermark, "start of the next second")
@@ -76,7 +109,7 @@ func TestSessionRevoker_VoidsEverythingIssuedDuringTheRevocationSecond(t *testin
 	now := time.Date(2026, 10, 2, 12, 0, 5, 0, time.UTC)
 	revoker, _, _ := newTestRevoker(t, now)
 
-	watermark, err := revoker.RevokeAll(uuid.New())
+	watermark, err := revoker.RevokeAll(context.Background(), uuid.New())
 	require.NoError(t, err)
 
 	require.True(t, authsvc.SessionRevoked(now, &watermark), "a token minted in the revocation second is identical to a fresh one, so it must die")
@@ -88,7 +121,7 @@ func TestSessionRevoker_AwaitIssuableWaitsOutTheRevocationSecond(t *testing.T) {
 	now := time.Date(2026, 10, 2, 12, 0, 5, 250_000_000, time.UTC)
 	revoker, _, _, sleeps := newObservedRevoker(t, now)
 
-	watermark, err := revoker.RevokeAll(uuid.New())
+	watermark, err := revoker.RevokeAll(context.Background(), uuid.New())
 	require.NoError(t, err)
 	require.NoError(t, revoker.AwaitIssuable(&watermark))
 
@@ -121,13 +154,13 @@ func TestSessionRevoker_PropagatesStoreFailures(t *testing.T) {
 	watermarkFailure := errors.New("db down")
 	revoker, err := authsvc.NewSessionRevoker(&fakeWatermarks{err: watermarkFailure}, &fakeRefreshRevoker{})
 	require.NoError(t, err)
-	_, err = revoker.RevokeAll(uuid.New())
+	_, err = revoker.RevokeAll(context.Background(), uuid.New())
 	require.ErrorIs(t, err, watermarkFailure)
 
 	refreshFailure := errors.New("refresh down")
 	revoker, err = authsvc.NewSessionRevoker(&fakeWatermarks{at: map[uuid.UUID]time.Time{}}, &fakeRefreshRevoker{err: refreshFailure})
 	require.NoError(t, err)
-	_, err = revoker.RevokeAll(uuid.New())
+	_, err = revoker.RevokeAll(context.Background(), uuid.New())
 	require.ErrorIs(t, err, refreshFailure)
 }
 
@@ -138,8 +171,57 @@ func TestSessionRevoker_RejectsInvalidInput(t *testing.T) {
 	require.Error(t, err)
 
 	revoker, _, _ := newTestRevoker(t, time.Now())
-	_, err = revoker.RevokeAll(uuid.Nil)
+	_, err = revoker.RevokeAll(nil, uuid.New())
 	require.Error(t, err)
+	_, err = revoker.RevokeAll(context.Background(), uuid.Nil)
+	require.Error(t, err)
+}
+
+func TestSessionRevoker_WritesAPlatformRowInsideTheTransaction(t *testing.T) {
+	now := time.Date(2026, 10, 2, 12, 0, 5, 0, time.UTC)
+	watermarks := &fakeWatermarks{at: map[uuid.UUID]time.Time{}}
+	refresh := &fakeRefreshRevoker{}
+	activity := &recordingSessionActivity{}
+	revoker, err := authsvc.NewSessionRevoker(watermarks, refresh)
+	require.NoError(t, err)
+	revoker = revoker.WithClock(func() time.Time { return now }, func(time.Duration) {}).WithActivity(activity)
+	userID := uuid.New()
+	const tokenHash = "session-token-hash-must-not-be-stored"
+
+	_, err = revoker.RevokeAll(context.Background(), userID)
+
+	require.NoError(t, err)
+	require.True(t, activity.opened)
+	require.True(t, watermarks.joined)
+	require.True(t, refresh.joined)
+	require.Len(t, activity.rows, 1)
+	row := activity.rows[0]
+	require.Nil(t, row.AccountID)
+	require.Equal(t, userID, row.ActorUserID)
+	require.Equal(t, activitylog.ActionUserSessionsRevoked, row.Action)
+	require.Equal(t, activitylog.TargetUser, row.TargetType)
+	require.Equal(t, userID.String(), row.TargetID)
+	encoded, err := row.Metadata.Encode()
+	require.NoError(t, err)
+	require.Contains(t, encoded, `"key":"sessions"`)
+	require.NotContains(t, encoded, tokenHash)
+	require.False(t, strings.Contains(encoded, "token_hash"))
+	require.False(t, strings.Contains(encoded, "spending_limit"))
+	require.False(t, strings.Contains(encoded, "-1"))
+}
+
+func TestSessionRevoker_ActivityFailureFailsTheRevocation(t *testing.T) {
+	watermarks := &fakeWatermarks{at: map[uuid.UUID]time.Time{}}
+	refresh := &fakeRefreshRevoker{}
+	activity := &recordingSessionActivity{fail: errors.New("activity refused")}
+	revoker, err := authsvc.NewSessionRevoker(watermarks, refresh)
+	require.NoError(t, err)
+	revoker = revoker.WithActivity(activity)
+
+	_, err = revoker.RevokeAll(context.Background(), uuid.New())
+
+	require.Error(t, err)
+	require.Empty(t, activity.rows)
 }
 
 func TestSessionRevoked(t *testing.T) {

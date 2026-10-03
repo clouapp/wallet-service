@@ -35,8 +35,8 @@ func (b authRepoBridge) AdvanceTotpCounter(id uuid.UUID, counter int64) (bool, e
 	return b.users.AdvanceTotpCounter(context.Background(), id, counter)
 }
 
-func (b authRepoBridge) UpdateSessionsRevokedAt(id uuid.UUID, at time.Time) error {
-	return b.users.UpdateSessionsRevokedAt(context.Background(), id, at)
+func (b authRepoBridge) UpdateSessionsRevokedAt(ctx context.Context, id uuid.UUID, at time.Time) error {
+	return b.users.UpdateSessionsRevokedAt(ctx, id, at)
 }
 
 func (b authRepoBridge) FindUnusedByUserID(userID uuid.UUID) ([]models.TotpRecoveryCode, error) {
@@ -47,8 +47,8 @@ func (b authRepoBridge) MarkUsedIfUnused(id uuid.UUID) (bool, error) {
 	return b.recovery.MarkUsedIfUnused(context.Background(), id)
 }
 
-func (b authRepoBridge) RevokeAllForUser(userID uuid.UUID) error {
-	return b.refresh.RevokeAllForUser(context.Background(), userID)
+func (b authRepoBridge) RevokeAllForUser(ctx context.Context, userID uuid.UUID) error {
+	return b.refresh.RevokeAllForUser(ctx, userID)
 }
 
 func wireAuthServices(c *container.Container) error {
@@ -81,6 +81,6 @@ func wireAuthServices(c *container.Container) error {
 
 	c.SecondFactor = verifier
 	c.TwoFactorLogin = login
-	c.SessionRevoker = revoker
+	c.SessionRevoker = revoker.WithActivity(repositories.NewAccountActivityRepository(nil))
 	return nil
 }

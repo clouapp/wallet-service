@@ -67,7 +67,7 @@ func (s SessionIssuer) ReplaceSessions(ctx http.Context, userID uuid.UUID) (Sess
 	if s.Revoker == nil {
 		return SessionTokens{}, errors.New("replace sessions: revoker is required")
 	}
-	watermark, err := s.Revoker.RevokeAll(userID)
+	watermark, err := s.Revoker.RevokeAll(ctx.Context(), userID)
 	if err != nil {
 		return SessionTokens{}, err
 	}

@@ -242,17 +242,32 @@ func (s *AccountActivityTestSuite) TestMFAResetIsAPlatformRow() {
 	s.Equal(int64(0), accountPage.Total)
 
 	platform := s.listPlatform(owner.token, "")
-	s.Equal(int64(1), platform.Total)
-	s.Require().Len(platform.Data, 1)
-	s.Equal("user.mfa_reset", platform.Data[0].Action)
-	s.Empty(platform.Data[0].AccountID)
-	s.Equal("totp", platform.Data[0].Metadata.Key)
-	s.Require().NotNil(platform.Data[0].Metadata.Enabled)
-	s.False(*platform.Data[0].Metadata.Enabled)
-	encoded, err := json.Marshal(platform.Data[0].Metadata)
+	s.Equal(int64(2), platform.Total)
+	s.Require().Len(platform.Data, 2)
+	seen := map[string]bool{}
+	for _, row := range platform.Data {
+		s.Empty(row.AccountID)
+		seen[row.Action] = true
+		switch row.Action {
+		case "user.mfa_reset":
+			s.Equal("totp", row.Metadata.Key)
+			s.Require().NotNil(row.Metadata.Enabled)
+			s.False(*row.Metadata.Enabled)
+		case "user.sessions_revoked":
+			s.Equal("sessions", row.Metadata.Key)
+			s.Equal("user", row.TargetType)
+			s.Equal(owner.id.String(), row.TargetID)
+		default:
+			s.Fail("unexpected platform action", row.Action)
+		}
+	}
+	s.True(seen["user.mfa_reset"])
+	s.True(seen["user.sessions_revoked"])
+	encoded, err := json.Marshal(platform.Data)
 	s.Require().NoError(err)
 	s.NotContains(string(encoded), "totp_secret")
 	s.NotContains(string(encoded), activityPlainSecret)
+	s.NotContains(string(encoded), "token_hash")
 }
 
 func (s *AccountActivityTestSuite) loginUser(role string, accountID uuid.UUID) activitySession {

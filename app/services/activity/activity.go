@@ -14,20 +14,24 @@ const (
 	ActionMemberRoleChanged   = "member.role_changed"
 	ActionMemberSuspended     = "member.suspended"
 	ActionMemberReactivated   = "member.reactivated"
+	ActionMemberInvited       = "member.invited"
+	ActionInviteAccepted      = "invite.accepted"
 	ActionSettingsUpdated     = "settings.updated"
 	ActionFeaturesUpdated     = "features.updated"
 	ActionTokenCreated        = "token.created"
 	ActionTokenRevoked        = "token.revoked"
 	ActionMemberRemoved       = "member.removed"
 	ActionUserMFAReset        = "user.mfa_reset"
+	ActionUserSessionsRevoked = "user.sessions_revoked"
 	ActionWithdrawalCancelled = "withdrawal.cancelled"
 
-	TargetAccountUser = "account_user"
-	TargetSettings    = "settings"
-	TargetFeature     = "feature"
-	TargetAccessToken = "access_token"
-	TargetUser        = "user"
-	TargetWithdrawal  = "withdrawal"
+	TargetAccountUser   = "account_user"
+	TargetAccountInvite = "account_invite"
+	TargetSettings      = "settings"
+	TargetFeature       = "feature"
+	TargetAccessToken   = "access_token"
+	TargetUser          = "user"
+	TargetWithdrawal    = "withdrawal"
 )
 
 // MemberChange names one membership PATCH. A status change names the row;
@@ -149,6 +153,36 @@ func tokenPermissionNames(stored string, strict bool) ([]string, error) {
 // MemberRemoved records the role the membership had. It does not accept a
 // token, a secret, or an amount.
 func MemberRemoved(role string) (models.ActivityMetadata, error) {
+	meta := models.ActivityMetadata{"role": strings.TrimSpace(role)}
+	if _, err := meta.Encode(); err != nil {
+		return nil, err
+	}
+	return meta, nil
+}
+
+// SessionsRevoked records that the user's sessions were voided. The watermark
+// and any token hash are not accepted.
+func SessionsRevoked() (models.ActivityMetadata, error) {
+	meta := models.ActivityMetadata{"key": "sessions"}
+	if _, err := meta.Encode(); err != nil {
+		return nil, err
+	}
+	return meta, nil
+}
+
+// MemberInvited records the role offered on an invite. The raw token, its
+// hash, and the address are not accepted.
+func MemberInvited(role string) (models.ActivityMetadata, error) {
+	return inviteRole(role)
+}
+
+// InviteAccepted records the role the invite granted. The raw token and its
+// hash are not accepted.
+func InviteAccepted(role string) (models.ActivityMetadata, error) {
+	return inviteRole(role)
+}
+
+func inviteRole(role string) (models.ActivityMetadata, error) {
 	meta := models.ActivityMetadata{"role": strings.TrimSpace(role)}
 	if _, err := meta.Encode(); err != nil {
 		return nil, err

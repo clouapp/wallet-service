@@ -467,7 +467,7 @@ func (ctrl *AuthController) ResetPassword(ctx http.Context) http.Response {
 	if err := ctrl.passwordResets.MarkUsed(ctx.Context(), matched.ID); err != nil {
 		appfacades.Log().WithContext(ctx).Errorf("auth: mark reset token used: %v", err)
 	}
-	if _, err := ctrl.revoker.RevokeAll(matched.UserID); err != nil {
+	if _, err := ctrl.revoker.RevokeAll(ctx.Context(), matched.UserID); err != nil {
 		appfacades.Log().WithContext(ctx).Errorf("auth: reset password: revoke sessions: %v", err)
 		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "password reset but existing sessions could not be revoked"})
 	}

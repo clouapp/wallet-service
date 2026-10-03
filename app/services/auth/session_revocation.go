@@ -1,22 +1,34 @@
 package auth
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"time"
 
 	"github.com/google/uuid"
+
+	"github.com/macrowallets/waas/app/models"
+	activitylog "github.com/macrowallets/waas/app/services/activity"
+	audit "github.com/macrowallets/waas/packages/activitylog"
 )
 
 // SessionWatermarkStore persists the instant before which a user's sessions
-// are void.
+// are void. The context joins the caller's transaction.
 type SessionWatermarkStore interface {
-	UpdateSessionsRevokedAt(id uuid.UUID, at time.Time) error
+	UpdateSessionsRevokedAt(ctx context.Context, id uuid.UUID, at time.Time) error
 }
 
-// RefreshTokenRevoker voids every refresh token a user holds.
+// RefreshTokenRevoker voids every refresh token a user holds. The context
+// joins the caller's transaction.
 type RefreshTokenRevoker interface {
-	RevokeAllForUser(userID uuid.UUID) error
+	RevokeAllForUser(ctx context.Context, userID uuid.UUID) error
+}
+
+// SessionActivity appends one platform row on the caller's transaction.
+type SessionActivity interface {
+	Within(ctx context.Context, fn func(context.Context) error) error
+	Append(ctx context.Context, row models.AccountActivity) error
 }
 
 // maxIssueDelay bounds how far ahead of this server's clock a watermark may
@@ -29,6 +41,7 @@ const maxIssueDelay = 2 * time.Second
 type SessionRevoker struct {
 	watermarks SessionWatermarkStore
 	refresh    RefreshTokenRevoker
+	activity   SessionActivity
 	now        func() time.Time
 	sleep      func(time.Duration)
 }
@@ -43,9 +56,23 @@ func NewSessionRevoker(watermarks SessionWatermarkStore, refresh RefreshTokenRev
 // WithClock replaces the time source and the sleeper; tests use it to pin
 // the watermark and observe waits.
 func (r *SessionRevoker) WithClock(now func() time.Time, sleep func(time.Duration)) *SessionRevoker {
+	if r == nil {
+		return nil
+	}
 	clone := *r
 	clone.now = now
 	clone.sleep = sleep
+	return &clone
+}
+
+// WithActivity attaches the platform activity writer. A nil writer leaves
+// RevokeAll as a watermark and refresh-token revoke with no audit row.
+func (r *SessionRevoker) WithActivity(activity SessionActivity) *SessionRevoker {
+	if r == nil {
+		return nil
+	}
+	clone := *r
+	clone.activity = activity
 	return &clone
 }
 
@@ -53,17 +80,51 @@ func (r *SessionRevoker) WithClock(now func() time.Time, sleep func(time.Duratio
 // of the next second. JWTs carry iat in whole seconds and Goravel's tokens
 // hold nothing else that varies, so two tokens of one user minted in the same
 // second are identical: the whole current second has to be void, and new
-// sessions wait for the watermark (AwaitIssuable).
-func (r *SessionRevoker) RevokeAll(userID uuid.UUID) (time.Time, error) {
+// sessions wait for the watermark (AwaitIssuable). When an activity writer is
+// attached, the watermark, the refresh-token revoke and the platform
+// user.sessions_revoked row commit together.
+func (r *SessionRevoker) RevokeAll(ctx context.Context, userID uuid.UUID) (time.Time, error) {
+	if ctx == nil {
+		return time.Time{}, errors.New("auth: revoke sessions: context is required")
+	}
 	if userID == uuid.Nil {
 		return time.Time{}, errors.New("auth: revoke sessions: user id is required")
 	}
 	watermark := r.now().UTC().Truncate(time.Second).Add(time.Second)
-	if err := r.watermarks.UpdateSessionsRevokedAt(userID, watermark); err != nil {
-		return time.Time{}, fmt.Errorf("auth: revoke sessions: watermark: %w", err)
+	write := func(ctx context.Context) error {
+		named := ctx
+		if r.activity != nil {
+			named = audit.WithIntent(ctx, audit.Intent{Event: activitylog.ActionUserSessionsRevoked})
+		}
+		if err := r.watermarks.UpdateSessionsRevokedAt(named, userID, watermark); err != nil {
+			return fmt.Errorf("auth: revoke sessions: watermark: %w", err)
+		}
+		if err := r.refresh.RevokeAllForUser(ctx, userID); err != nil {
+			return fmt.Errorf("auth: revoke sessions: refresh tokens: %w", err)
+		}
+		if r.activity == nil {
+			return nil
+		}
+		meta, err := activitylog.SessionsRevoked()
+		if err != nil {
+			return err
+		}
+		return r.activity.Append(ctx, models.AccountActivity{
+			ActorUserID: userID,
+			Action:      activitylog.ActionUserSessionsRevoked,
+			TargetType:  activitylog.TargetUser,
+			TargetID:    userID.String(),
+			Metadata:    meta,
+		})
 	}
-	if err := r.refresh.RevokeAllForUser(userID); err != nil {
-		return time.Time{}, fmt.Errorf("auth: revoke sessions: refresh tokens: %w", err)
+	if r.activity == nil {
+		if err := write(ctx); err != nil {
+			return time.Time{}, err
+		}
+		return watermark, nil
+	}
+	if err := r.activity.Within(ctx, write); err != nil {
+		return time.Time{}, err
 	}
 	return watermark, nil
 }
