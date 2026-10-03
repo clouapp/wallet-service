@@ -1,15 +1,12 @@
 # TestServicesDoNotKnowTheHTTPLayer: known violations, rewritten by go test ./tests/architecture -update-baseline
-app/services/account imports app/repositories
 app/services/blockheight imports net/http (x4)
 app/services/chain imports net/http (x5)
 app/services/chainregistry/orm_store.go calls facades.Orm() (x9)
 app/services/deposit imports app/repositories
 app/services/deposit imports github.com/redis/go-redis/v9
-app/services/ingest imports app/repositories
 app/services/ingest imports github.com/redis/go-redis/v9
 app/services/ingest/providers imports net/http (x4)
 app/services/ingest/service.go calls facades.Event()
-app/services/price imports app/repositories (x2)
 app/services/price imports github.com/gorilla/websocket
 app/services/price imports github.com/redis/go-redis/v9 (x2)
 app/services/price imports net/http (x3)
@@ -17,16 +14,15 @@ app/services/queue imports github.com/aws/aws-sdk-go-v2/aws
 app/services/queue imports github.com/aws/aws-sdk-go-v2/service/sqs
 app/services/queue imports github.com/aws/aws-sdk-go-v2/service/sqs/types
 app/services/refresh imports app/repositories (x2)
-app/services/sweep imports app/repositories
+app/services/settings/seal.go calls facades.Crypt()
+app/services/settings/service.go calls facades.Cache()
 app/services/sweep imports github.com/aws/aws-sdk-go-v2/service/secretsmanager (x2)
 app/services/sweep imports github.com/redis/go-redis/v9
-app/services/wallet imports app/repositories
 app/services/wallet imports github.com/aws/aws-sdk-go-v2/aws
 app/services/wallet imports github.com/aws/aws-sdk-go-v2/service/secretsmanager
 app/services/wallet imports github.com/redis/go-redis/v9
 app/services/wallet/service.go calls facades.Config()
 app/services/wallet/service.go calls facades.Event()
-app/services/webhook imports app/repositories
 app/services/webhook imports net/http
 app/services/webhooksync imports app/repositories
 app/services/webhooksync imports gorm.io/gorm

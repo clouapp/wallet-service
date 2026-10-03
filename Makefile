@@ -315,11 +315,11 @@ invoke-scanner-remote: ## Invoke deposit scanner on AWS
 # Testing Commands
 # =============================================================================
 
-test: ## Run all tests
+test: ## Run all tests (architecture checks in ratchet mode)
 	@echo "🧪 Running tests..."
 	$(call ensure_test_database)
 	@set -a; [ ! -f .env.dev ] || . ./.env.dev; . ./.env.testing; set +a; \
-		DB_DATABASE=$(TEST_DB_DATABASE) TEST_DB_REQUIRED=1 go test -p 1 ./... -v -count=1
+		DB_DATABASE=$(TEST_DB_DATABASE) TEST_DB_REQUIRED=1 ARCH_MODE=ratchet go test -p 1 ./... -v -count=1
 
 arch: ## Architecture checks, every finding listed (ARCH_MODE=ratchet|enforce to fail)
 	$(call ensure_test_database)

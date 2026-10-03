@@ -35,10 +35,14 @@ today and has a fix tracked elsewhere. Do not read either as permission.
 `routes → http (controllers, middleware, requests) → services → repositories → models`,
 with adapters to external systems beside the repositories and `app/models` importing
 nothing of the module. — guarded by `tests/architecture` (`TestImportDirection`,
-`TestLayerCoversEveryZoneOfTheRepository` and the checks beside them) in **report mode**:
-each check logs its findings against `tests/architecture/testdata/baseline/` and fails
-only under `ARCH_MODE=ratchet` (new findings) or `ARCH_MODE=enforce` (any finding).
-A check moves to enforce when the migration phase that owns it empties its baseline.
+`TestLayerCoversEveryZoneOfTheRepository` and the checks beside them). With
+`ARCH_MODE` unset the checks stay in report mode: they log findings against
+`tests/architecture/testdata/baseline/` and do not fail. `make test` sets
+`ARCH_MODE=ratchet`, so a violation absent from that baseline fails and a known
+one does not. `ARCH_MODE=enforce` fails on every violation and is not the
+default. A check moves to enforce when the migration phase that owns it empties
+its baseline. The checks read source and the route table; they do not need a
+database.
 Known violations include `app/models → app/services/mpc` and `config → app/models`.
 
 ### 3. Two surfaces, never mixed
@@ -55,8 +59,8 @@ Known violations include `app/models → app/services/mpc` and `config → app/m
   on `/v1`, `middleware.APITokenAuth()` on `/api/v1`. — guarded by
   `tests/architecture/routesecurity` (`TestEveryRouteIsInTheRouteTable`: closed table of
   every served route and its guard, both directions; and
-  `TestAuthenticatedRoutesRefuseAnAnonymousCaller`), report mode with an empty baseline.
-  A new route needs a row in `routeTable`.
+  `TestAuthenticatedRoutesRefuseAnAnonymousCaller`). The baseline is empty, so
+  ratchet fails on any mismatch. A new route needs a row in `routeTable`.
 - External integrators (Markets) consume `/api/v1`; the front consumes `/v1`. A change of
   status, error shape or success shape on either is a contract change, decided first and
   recorded in `.ai/guidelines/http-error-contract.md`. — guarded by `TestHTTPContract`
@@ -167,8 +171,8 @@ make dev            # Docker + backend (Air) + frontend
 |---|---|
 | `make dev` / `make dev-back` / `make run` | full stack / backend with live reload / backend without |
 | `make stop` | kill the dev processes |
-| `make test` | all Go tests, `-p 1`, against `TEST_DB_DATABASE` (default `vault_unit_test`) |
-| `make test-race` | same with `-race` |
+| `make test` | all Go tests, `-p 1`, against `TEST_DB_DATABASE` (default `vault_unit_test`); architecture checks in ratchet mode |
+| `make test-race` | the same suite with `-race`; architecture checks stay in report mode unless `ARCH_MODE` is set |
 | `make lint` | golangci-lint v2 with `.golangci.yml` (report mode: lists findings, exits 0) |
 | `make arch` | architecture checks with every finding listed (`ARCH_MODE=ratchet\|enforce` to block) |
 | `make contract` / `make contract-update` | compare / rewrite the HTTP contract snapshot |

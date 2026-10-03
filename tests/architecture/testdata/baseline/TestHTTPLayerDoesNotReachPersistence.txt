@@ -1,5 +1,7 @@
 # TestHTTPLayerDoesNotReachPersistence: known violations, rewritten by go test ./tests/architecture -update-baseline
+app/http/controllers/dashboard/accounts/account_controller.go imports github.com/macrowallets/waas/app/repositories
 app/http/controllers/dashboard/addresses/addresses_controller.go imports github.com/macrowallets/waas/app/repositories
+app/http/controllers/dashboard/auth/auth_controller.go imports github.com/macrowallets/waas/app/repositories
 app/http/controllers/dashboard/chains/chains_controller.go imports github.com/macrowallets/waas/app/repositories
 app/http/controllers/dashboard/currencies/currency_controller.go imports github.com/macrowallets/waas/app/repositories
 app/http/controllers/dashboard/preferences/preferences_controller.go imports github.com/macrowallets/waas/app/repositories
@@ -20,4 +22,11 @@ app/http/controllers/external/withdrawals/withdrawals_controller.go imports gith
 app/http/controllers/ingest/ingest_controller.go imports github.com/macrowallets/waas/app/repositories
 app/http/controllers/testutil/auth.go calls facades.Orm() (x2)
 app/http/controllers/wallet_asset_view.go imports github.com/macrowallets/waas/app/repositories
+app/http/controllers/wallet_view.go imports github.com/macrowallets/waas/app/repositories
 app/http/controllers/zoned_timestamps.go imports github.com/goravel/framework/database/orm
+app/http/middleware/api_wallet_context.go imports github.com/macrowallets/waas/app/repositories
+app/http/middleware/utxo_only.go imports github.com/macrowallets/waas/app/repositories
+app/http/middleware/wallet_context.go imports github.com/macrowallets/waas/app/repositories
+app/http/requests/add_whitelist_entry_request.go imports github.com/macrowallets/waas/app/repositories
+app/http/requests/create_wallet_withdrawal_request.go imports github.com/macrowallets/waas/app/repositories
+app/http/requests/estimate_withdrawal_request.go imports github.com/macrowallets/waas/app/repositories
