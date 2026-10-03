@@ -40,7 +40,7 @@ func (ctrl *CurrenciesController) ListCurrencies(ctx http.Context) http.Response
 	if err != nil {
 		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to fetch currencies"})
 	}
-	return responses.Send(ctx, http.StatusOK, http.Json{"data": currencies})
+	return responses.Send(ctx, http.StatusOK, http.Json{"data": CurrencyViews(currencies)})
 }
 
 func (ctrl *CurrenciesController) GetCurrency(ctx http.Context) http.Response {
@@ -61,7 +61,7 @@ func (ctrl *CurrenciesController) GetCurrency(ctx http.Context) http.Response {
 	if currency == nil {
 		return responses.Send(ctx, http.StatusNotFound, http.Json{"error": "currency not found"})
 	}
-	return responses.Send(ctx, http.StatusOK, currency)
+	return responses.Send(ctx, http.StatusOK, CurrencyViewPtr(currency))
 }
 
 func (ctrl *CurrenciesController) ConvertCurrency(ctx http.Context) http.Response {
