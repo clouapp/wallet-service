@@ -342,6 +342,7 @@ func buildVaultContainer(app foundation.Application) (*container.Container, erro
 		func(ctx context.Context, accountID uuid.UUID) error {
 			return flags.Gate(ctx, accountID, features.FlagSweepEnabled, features.CodeSweepPaused)
 		},
+		sweepGasDefaults(),
 	)
 	c.WithdrawalService = withdraw.NewService(
 		c.Registry, c.WebhookService, c.MPCService, c.SecretsManager, c.Redis,
@@ -396,6 +397,23 @@ func buildVaultContainer(app foundation.Application) (*container.Container, erro
 
 	slog.Info("vault container booted", "chains", c.Registry.ChainIDs())
 	return c, nil
+}
+
+// sweepGasDefaults copies the gas-readiness fallbacks SweepDefaults already
+// reads. The sweep service receives the values and does not import config.
+func sweepGasDefaults() map[string]sweep.GasReadinessDefault {
+	return gasReadinessDefaultsFrom(config.SweepDefaults())
+}
+
+func gasReadinessDefaultsFrom(configured map[string]config.SweepThresholds) map[string]sweep.GasReadinessDefault {
+	if len(configured) == 0 {
+		return nil
+	}
+	out := make(map[string]sweep.GasReadinessDefault, len(configured))
+	for chainID, thresholds := range configured {
+		out[chainID] = sweep.GasReadinessDefault{Raw: thresholds.GasReadinessRaw}
+	}
+	return out
 }
 
 // resolveGasReadinessThreshold returns the gas-readiness threshold for a chain,

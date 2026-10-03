@@ -242,6 +242,134 @@ func TestRefreshGasStatus_NoTransitionNoStatusUpdate(t *testing.T) {
 	}
 }
 
+func TestRefreshGasStatus_UsesInjectedFallbackWhenRowHasNone(t *testing.T) {
+	walletID := uuid.New()
+	baseAddr := models.Address{ID: uuid.New(), WalletID: walletID, Address: "0xBASE"}
+	wallet := &models.Wallet{
+		ID:             walletID,
+		Chain:          "eth",
+		DepositAddress: &baseAddr,
+		GasStatus:      models.GasStatusUnseeded,
+	}
+	mockChain := gasMockChain("eth", big.NewInt(10_000_000_000_000_000))
+	chainEntity := &models.Chain{
+		ID:           "eth",
+		AdapterType:  models.AdapterTypeEVM,
+		NativeSymbol: "eth",
+	}
+
+	svc, walletRepo := newGasReadinessService(t, wallet, mockChain, chainEntity)
+	svc.gasDefaults = map[string]GasReadinessDefault{
+		"eth": {Raw: "5000000000000000"},
+	}
+
+	status, err := svc.RefreshGasStatus(context.Background(), walletID)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if status.Status != models.GasStatusSeeded {
+		t.Fatalf("expected seeded from injected fallback, got %s", status.Status)
+	}
+	if status.Threshold == nil || status.Threshold.Cmp(big.NewInt(5_000_000_000_000_000)) != 0 {
+		t.Fatalf("expected injected threshold, got %v", status.Threshold)
+	}
+	if got := walletRepo.lastUpdates["gas_status"]; got != models.GasStatusSeeded {
+		t.Fatalf("expected gas_status=seeded persisted, got %v", got)
+	}
+}
+
+func TestRefreshGasStatus_RowThresholdBeatsInjectedFallback(t *testing.T) {
+	walletID := uuid.New()
+	baseAddr := models.Address{ID: uuid.New(), WalletID: walletID, Address: "0xBASE"}
+	wallet := &models.Wallet{
+		ID:             walletID,
+		Chain:          "eth",
+		DepositAddress: &baseAddr,
+		GasStatus:      models.GasStatusUnseeded,
+	}
+	// Balance is above the row threshold and below the injected fallback.
+	mockChain := gasMockChain("eth", big.NewInt(2))
+	chainEntity := evmChainWithThreshold("eth", "1")
+
+	svc, _ := newGasReadinessService(t, wallet, mockChain, chainEntity)
+	svc.gasDefaults = map[string]GasReadinessDefault{
+		"eth": {Raw: "100"},
+	}
+
+	status, err := svc.RefreshGasStatus(context.Background(), walletID)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if status.Status != models.GasStatusSeeded {
+		t.Fatalf("expected the row threshold to win, got %s", status.Status)
+	}
+	if status.Threshold == nil || status.Threshold.Cmp(big.NewInt(1)) != 0 {
+		t.Fatalf("expected row threshold 1, got %v", status.Threshold)
+	}
+}
+
+func TestRefreshGasStatus_MissingOrInvalidFallbackIsAlwaysSeeded(t *testing.T) {
+	cases := []struct {
+		name     string
+		defaults map[string]GasReadinessDefault
+	}{
+		{name: "no entry", defaults: map[string]GasReadinessDefault{}},
+		{name: "empty raw", defaults: map[string]GasReadinessDefault{"eth": {Raw: ""}}},
+		{name: "invalid raw", defaults: map[string]GasReadinessDefault{"eth": {Raw: "not-a-number"}}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			walletID := uuid.New()
+			baseAddr := models.Address{ID: uuid.New(), WalletID: walletID, Address: "0xBASE"}
+			wallet := &models.Wallet{
+				ID:             walletID,
+				Chain:          "eth",
+				DepositAddress: &baseAddr,
+				GasStatus:      models.GasStatusUnseeded,
+			}
+			mockChain := mocks.NewMockChain("eth")
+			mockChain.GetBalanceFn = func(ctx context.Context, addr string) (*types.Balance, error) {
+				t.Fatalf("missing threshold must not call GetBalance (got addr=%s)", addr)
+				return nil, errors.New("should not be called")
+			}
+			chainEntity := &models.Chain{
+				ID:           "eth",
+				AdapterType:  models.AdapterTypeEVM,
+				NativeSymbol: "eth",
+			}
+
+			svc, _ := newGasReadinessService(t, wallet, mockChain, chainEntity)
+			svc.gasDefaults = tc.defaults
+
+			status, err := svc.RefreshGasStatus(context.Background(), walletID)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if status.Status != models.GasStatusSeeded {
+				t.Fatalf("expected seeded, got %s", status.Status)
+			}
+			if status.Threshold != nil || status.NativeBalance != nil {
+				t.Fatalf("expected no threshold check, got threshold=%v balance=%v", status.Threshold, status.NativeBalance)
+			}
+		})
+	}
+}
+
+func TestNewService_CopiesGasDefaults(t *testing.T) {
+	defaults := map[string]GasReadinessDefault{"eth": {Raw: "1"}}
+	svc, ok := NewService(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, defaults).(*service)
+	if !ok {
+		t.Fatal("expected *service")
+	}
+	defaults["eth"] = GasReadinessDefault{Raw: "2"}
+	if svc.gasDefaults["eth"].Raw != "1" {
+		t.Fatalf("constructor must copy gas defaults, got %q", svc.gasDefaults["eth"].Raw)
+	}
+	if svc.gasDefaults == nil {
+		t.Fatal("expected copied gas defaults")
+	}
+}
+
 func TestRefreshGasStatus_WalletWithoutDepositAddressErrors(t *testing.T) {
 	walletID := uuid.New()
 	wallet := &models.Wallet{

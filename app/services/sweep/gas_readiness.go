@@ -9,7 +9,6 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/macrowallets/waas/app/models"
-	"github.com/macrowallets/waas/config"
 	"github.com/macrowallets/waas/pkg/types"
 )
 
@@ -19,7 +18,7 @@ import (
 //
 // Bitcoin short-circuits to "seeded" because fees come from the UTXO being
 // spent — there is no separate gas asset to monitor. Chains whose threshold
-// cannot be resolved (row is NULL and config.SweepDefaults has no entry) are
+// cannot be resolved (row is NULL and the injected fallback has no entry) are
 // also treated as always-seeded so downstream guards do not block them.
 func (s *service) RefreshGasStatus(ctx context.Context, walletID uuid.UUID) (*GasStatus, error) {
 	wallet, err := s.walletRepo.FindByID(ctx, walletID)
@@ -50,7 +49,7 @@ func (s *service) RefreshGasStatus(ctx context.Context, walletID uuid.UUID) (*Ga
 
 	threshold := chainEntity.GasReadinessThreshold()
 	if threshold == nil {
-		threshold = fallbackGasThreshold(chainEntity.ID)
+		threshold = s.fallbackGasThreshold(chainEntity.ID)
 	}
 	// No threshold anywhere → treat as always-seeded (chain has no gas concept).
 	if threshold == nil {
@@ -133,15 +132,17 @@ func (s *service) persistGasStatus(
 	}, nil
 }
 
-// fallbackGasThreshold returns the env-configured default threshold for a chain
-// when the chains row has no value. nil means the chain has no gas concept.
-func fallbackGasThreshold(chainID string) *big.Int {
-	defaults := config.SweepDefaults()
-	d, ok := defaults[chainID]
-	if !ok || d.GasReadinessRaw == "" {
+// fallbackGasThreshold returns the injected default threshold for a chain when
+// the chains row has no value. nil means the chain has no gas concept.
+func (s *service) fallbackGasThreshold(chainID string) *big.Int {
+	if s == nil || len(s.gasDefaults) == 0 {
 		return nil
 	}
-	v, ok := new(big.Int).SetString(d.GasReadinessRaw, 10)
+	d, ok := s.gasDefaults[chainID]
+	if !ok || d.Raw == "" {
+		return nil
+	}
+	v, ok := new(big.Int).SetString(d.Raw, 10)
 	if !ok {
 		return nil
 	}

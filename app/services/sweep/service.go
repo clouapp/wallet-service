@@ -76,6 +76,13 @@ type chainReader interface {
 // the feature-flag service without an import cycle.
 type accountGate func(ctx context.Context, accountID uuid.UUID) error
 
+// GasReadinessDefault is the fallback native balance, in raw units, for one
+// chain when the chains row has none. An empty Raw means the chain has no
+// separate gas asset to monitor.
+type GasReadinessDefault struct {
+	Raw string
+}
+
 type service struct {
 	registry    *chain.Registry
 	mpc         mpcpkg.Service
@@ -88,6 +95,7 @@ type service struct {
 	accountRepo accountReader
 	chainRepo   chainReader
 	flags       accountGate
+	gasDefaults map[string]GasReadinessDefault
 
 	// fetchShareBFn is the function used to retrieve the service's MPC share for
 	// a wallet. In production it targets AWS Secrets Manager; tests override it
@@ -109,6 +117,7 @@ func NewService(
 	accountRepo accountReader,
 	chainRepo chainReader,
 	flags accountGate,
+	gasDefaults map[string]GasReadinessDefault,
 ) Service {
 	return &service{
 		registry:    registry,
@@ -122,7 +131,19 @@ func NewService(
 		accountRepo: accountRepo,
 		chainRepo:   chainRepo,
 		flags:       flags,
+		gasDefaults: cloneGasDefaults(gasDefaults),
 	}
+}
+
+func cloneGasDefaults(in map[string]GasReadinessDefault) map[string]GasReadinessDefault {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make(map[string]GasReadinessDefault, len(in))
+	for chainID, value := range in {
+		out[chainID] = value
+	}
+	return out
 }
 
 // loadChain returns the chain, or (nil, nil) when the row is missing, matching
