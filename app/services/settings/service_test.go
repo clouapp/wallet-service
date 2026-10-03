@@ -49,6 +49,28 @@ func (s *memoryStore) get(accountID uuid.UUID, group, key string) (string, bool)
 	return value, ok
 }
 
+func platformStoreKey(group string) string {
+	return "platform\x00" + group
+}
+
+// PutPlatform stores one platform group (account_id NULL) for a test.
+func (s *memoryStore) PutPlatform(group string, values map[string]string) {
+	copied := make(map[string]string, len(values))
+	for key, value := range values {
+		copied[key] = value
+	}
+	s.rows[platformStoreKey(group)] = copied
+}
+
+func (s *memoryStore) ListPlatform(_ context.Context, group string) ([]models.Setting, error) {
+	values := s.rows[platformStoreKey(group)]
+	rows := make([]models.Setting, 0, len(values))
+	for key, value := range values {
+		rows = append(rows, models.Setting{Group: group, Key: key, Value: value})
+	}
+	return rows, nil
+}
+
 type prefixSealer struct{}
 
 func (prefixSealer) Seal(plaintext string) (string, error) {

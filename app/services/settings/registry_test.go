@@ -16,8 +16,14 @@ func TestAccountSectionsDoNotShareNamesWithGroups(t *testing.T) {
 		if group.SectionName() == group.Name {
 			t.Fatalf("section %s shares its name with the group", group.Name)
 		}
-		if group.Scope != ScopeAccount {
-			t.Fatalf("group %s is not account scoped", group.Name)
+		switch group.Scope {
+		case ScopeAccount:
+		case ScopePlatform:
+			if group.Name != groupDepositScan {
+				t.Fatalf("unexpected platform group %s", group.Name)
+			}
+		default:
+			t.Fatalf("group %s has unknown scope %s", group.Name, group.Scope)
 		}
 		for _, definition := range group.Settings {
 			if definition.Secret {
@@ -37,5 +43,9 @@ func TestAccountSectionsDoNotShareNamesWithGroups(t *testing.T) {
 	limits, ok := FindGroup(groupAccountSweepLimits)
 	if !ok || limits.ManagedBy != ManagedByPlatform || limits.Inherits != "sweep_limits" {
 		t.Fatalf("sweep limits group = %+v present %v", limits, ok)
+	}
+	scan, ok := FindGroup(groupDepositScan)
+	if !ok || scan.Scope != ScopePlatform || len(scan.Settings) != 3 {
+		t.Fatalf("deposit scan group = %+v present %v", scan, ok)
 	}
 }

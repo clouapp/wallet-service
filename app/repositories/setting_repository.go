@@ -46,6 +46,27 @@ func (r *SettingRepository) ListGroup(ctx context.Context, accountID uuid.UUID, 
 	return rows, nil
 }
 
+// ListPlatform returns the stored rows of one platform group (account_id NULL).
+// A missing group is an empty slice.
+func (r *SettingRepository) ListPlatform(ctx context.Context, group string) ([]models.Setting, error) {
+	group = strings.TrimSpace(group)
+	if group == "" {
+		return nil, fmt.Errorf("list platform settings: group is required")
+	}
+
+	rows := []models.Setting{}
+	err := r.Query(ctx).Raw(
+		`SELECT id, account_id, "group", "key", value, created_at, updated_at
+		 FROM settings
+		 WHERE account_id IS NULL AND "group" = ?`,
+		group,
+	).Scan(&rows)
+	if err != nil {
+		return nil, fmt.Errorf("list platform settings: %w", err)
+	}
+	return rows, nil
+}
+
 // UpsertMany writes every value of one group in a single transaction.
 // An empty map writes nothing. Callers seal secrets before they arrive here.
 func (r *SettingRepository) UpsertMany(ctx context.Context, accountID uuid.UUID, group string, values map[string]string) error {

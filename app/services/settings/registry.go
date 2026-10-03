@@ -92,7 +92,7 @@ func UseForTest(groups []Group) func() {
 }
 
 func catalog() []Group {
-	return slices.Clip(accountGroups())
+	return slices.Clip(append(accountGroups(), platformGroups()...))
 }
 
 // FindGroup resolves a group by name.

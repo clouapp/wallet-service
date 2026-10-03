@@ -197,6 +197,79 @@ func TestScanOptionsFromSettings(t *testing.T) {
 	}
 }
 
+func TestApplyStoredScanOptions(t *testing.T) {
+	base := ScanOptions{BatchBlocks: 50, CatchUpBlocks: 500, Concurrency: 8}
+	cases := []struct {
+		name                        string
+		batch, catchUp, concurrency int
+		want                        ScanOptions
+	}{
+		{name: "zeros keep the environment window", want: base},
+		{name: "one stored field overrides", batch: 80, want: ScanOptions{BatchBlocks: 80, CatchUpBlocks: 500, Concurrency: 8}},
+		{name: "a larger batch raises an omitted catch-up", batch: 1000, want: ScanOptions{BatchBlocks: 1000, CatchUpBlocks: 1000, Concurrency: 8}},
+		{name: "batch and catch-up apply together", batch: 1000, catchUp: 2000, concurrency: 4, want: ScanOptions{BatchBlocks: 1000, CatchUpBlocks: 2000, Concurrency: 4}},
+		{name: "stored catch-up and concurrency", catchUp: 200, concurrency: 4, want: ScanOptions{BatchBlocks: 50, CatchUpBlocks: 200, Concurrency: 4}},
+		{name: "an invalid catch-up is dropped and the batch still applies", batch: 100, catchUp: 50, concurrency: 4, want: ScanOptions{BatchBlocks: 100, CatchUpBlocks: 500, Concurrency: 4}},
+		{name: "concurrency above the limit is dropped", concurrency: MaxScanConcurrency + 1, want: base},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := ApplyStoredScanOptions(base, tc.batch, tc.catchUp, tc.concurrency)
+			if got != tc.want {
+				t.Fatalf("got %+v, want %+v", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestResolveScanOptions_StoredWindowReplacesTheEnvironmentAndAFailureRestoresIt(t *testing.T) {
+	svc := &Service{}
+	envWindow := ScanOptions{BatchBlocks: 50, CatchUpBlocks: 500, Concurrency: 8}
+	if err := svc.SetScanOptions(envWindow); err != nil {
+		t.Fatal(err)
+	}
+	svc.SetScanOptionSource(func(context.Context) (ScanOptions, error) {
+		return ScanOptions{BatchBlocks: 12, CatchUpBlocks: 120, Concurrency: 2}, nil
+	})
+	svc.resolveScanOptions(context.Background())
+	if svc.scan.BatchBlocks != 12 || svc.scan.Concurrency != 2 {
+		t.Fatalf("stored window = %+v", svc.scan)
+	}
+
+	svc.SetScanOptionSource(func(context.Context) (ScanOptions, error) {
+		return ScanOptions{}, errors.New("db down")
+	})
+	svc.resolveScanOptions(context.Background())
+	if svc.scan != envWindow {
+		t.Fatalf("after a read failure = %+v, want environment %+v", svc.scan, envWindow)
+	}
+}
+
+func TestScanLatestBlocks_ReadsTheWindowOnEachInvocation(t *testing.T) {
+	svc := &Service{registry: chain.NewRegistry()}
+	if err := svc.SetScanOptions(DefaultScanOptions()); err != nil {
+		t.Fatal(err)
+	}
+	calls := 0
+	svc.SetScanOptionSource(func(context.Context) (ScanOptions, error) {
+		calls++
+		return ScanOptions{BatchBlocks: uint64(10 + calls), CatchUpBlocks: 500, Concurrency: 8}, nil
+	})
+
+	if err := svc.ScanLatestBlocks(context.Background(), "not-a-chain"); err == nil {
+		t.Fatal("expected an unknown chain")
+	}
+	if calls != 1 || svc.scan.BatchBlocks != 11 {
+		t.Fatalf("first read calls=%d window=%+v", calls, svc.scan)
+	}
+	if err := svc.ScanLatestBlocks(context.Background(), "not-a-chain"); err == nil {
+		t.Fatal("expected an unknown chain")
+	}
+	if calls != 2 || svc.scan.BatchBlocks != 12 {
+		t.Fatalf("second read calls=%d window=%+v", calls, svc.scan)
+	}
+}
+
 func TestSetScanOptions_KeepsTheCurrentOptionsWhenInvalid(t *testing.T) {
 	svc := newDepositSvc(chain.NewRegistry(), nil)
 	if err := svc.SetScanOptions(ScanOptions{BatchBlocks: 0, CatchUpBlocks: 10, Concurrency: 1}); err == nil {

@@ -44,6 +44,8 @@ type Service struct {
 	withdrawals          WithdrawalConfirmations
 	deposits             DepositEvents
 	scan                 ScanOptions
+	scanFallback         ScanOptions
+	scanSource           scanOptionSource
 }
 
 // DepositEvents publishes deposit webhooks scoped to the wallet's account with the
@@ -92,12 +94,15 @@ func NewService(store RedisStore, registry *chain.Registry, webhookSvc *webhook.
 		blockHeightProviders: blockHeightProviders,
 		heightFailures:       make(map[string]int),
 		scan:                 DefaultScanOptions(),
+		scanFallback:         DefaultScanOptions(),
 	}
 }
 
 // ScanLatestBlocks is the Lambda entry point. Scans new blocks for a chain.
 // Called by EventBridge on schedule (every 5-60s depending on chain).
 func (s *Service) ScanLatestBlocks(ctx context.Context, chainID string) error {
+	s.resolveScanOptions(ctx)
+
 	adapter, err := s.registry.Chain(chainID)
 	if err != nil {
 		return err

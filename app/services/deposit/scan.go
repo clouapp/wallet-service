@@ -77,13 +77,98 @@ func (o ScanOptions) Validate() error {
 }
 
 // SetScanOptions replaces the scan window and concurrency; invalid options are rejected
-// and the current ones kept.
+// and the current ones kept. The accepted window is also the fallback used when a
+// later settings read fails.
 func (s *Service) SetScanOptions(opts ScanOptions) error {
 	if err := opts.Validate(); err != nil {
 		return err
 	}
 	s.scan = opts
+	s.scanFallback = opts
 	return nil
+}
+
+// scanOptionSource reads the deposit_scan window at the moment of use.
+// A non-nil error means the read failed and the service keeps the fallback.
+type scanOptionSource func(ctx context.Context) (ScanOptions, error)
+
+// SetScanOptionSource installs the per-scan reader. Nil keeps the window set
+// at boot.
+func (s *Service) SetScanOptionSource(source scanOptionSource) {
+	if s == nil {
+		return
+	}
+	s.scanSource = source
+}
+
+// resolveScanOptions applies a stored deposit_scan row for this invocation.
+// A missing source, a read failure, or an invalid window keeps the fallback
+// captured from the environment so a settings outage does not stop the scan.
+func (s *Service) resolveScanOptions(ctx context.Context) {
+	if s == nil || s.scanSource == nil {
+		return
+	}
+	opts, err := s.scanSource(ctx)
+	if err != nil {
+		slog.Warn("deposit scan settings unread; keeping the environment window", "error", err)
+		s.scan = s.scanFallback
+		return
+	}
+	if err := opts.Validate(); err != nil {
+		slog.Warn("deposit scan settings invalid; keeping the environment window", "error", err)
+		s.scan = s.scanFallback
+		return
+	}
+	s.scan = opts
+}
+
+// ApplyStoredScanOptions overlays a deposit_scan row on the environment window.
+// A non-positive field is missing or invalid and leaves that part of base
+// unchanged. A combination that fails Validate drops the fields that broke it.
+func ApplyStoredScanOptions(base ScanOptions, batchBlocks, catchUpBlocks, concurrency int) ScanOptions {
+	if base.Validate() != nil {
+		base = DefaultScanOptions()
+	}
+	opts := overlayScanOptions(base, batchBlocks, catchUpBlocks, concurrency, true)
+	if opts.Validate() == nil {
+		return opts
+	}
+	opts = base
+	if batchBlocks > 0 {
+		candidate := overlayScanOptions(opts, batchBlocks, 0, 0, true)
+		if candidate.Validate() == nil {
+			opts = candidate
+		}
+	}
+	if catchUpBlocks > 0 {
+		candidate := overlayScanOptions(opts, 0, catchUpBlocks, 0, false)
+		if candidate.Validate() == nil {
+			opts = candidate
+		}
+	}
+	if concurrency > 0 {
+		candidate := overlayScanOptions(opts, 0, 0, concurrency, false)
+		if candidate.Validate() == nil {
+			opts = candidate
+		}
+	}
+	return opts
+}
+
+func overlayScanOptions(base ScanOptions, batchBlocks, catchUpBlocks, concurrency int, raiseCatchUp bool) ScanOptions {
+	opts := base
+	if batchBlocks > 0 {
+		opts.BatchBlocks = uint64(batchBlocks)
+	}
+	if catchUpBlocks > 0 {
+		opts.CatchUpBlocks = uint64(catchUpBlocks)
+	} else if raiseCatchUp && opts.CatchUpBlocks < opts.BatchBlocks {
+		opts.CatchUpBlocks = opts.BatchBlocks
+	}
+	if concurrency > 0 {
+		opts.Concurrency = concurrency
+	}
+	return opts
 }
 
 // scanWindow is how many blocks after the checkpoint this cycle covers.

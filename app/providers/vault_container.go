@@ -387,6 +387,14 @@ func buildVaultContainer(app foundation.Application) (*container.Container, erro
 	if err := c.DepositService.SetScanOptions(scanOptions); err != nil {
 		return nil, fmt.Errorf("vault: deposit scan options: %w", err)
 	}
+	envWindow := scanOptions
+	c.DepositService.SetScanOptionSource(func(ctx context.Context) (deposit.ScanOptions, error) {
+		stored, readErr := accountSettings.EffectiveDepositScan(ctx)
+		if readErr != nil {
+			return deposit.ScanOptions{}, readErr
+		}
+		return deposit.ApplyStoredScanOptions(envWindow, stored.BatchBlocks, stored.CatchUpBlocks, stored.Concurrency), nil
+	})
 	c.IngestService = ingest.NewService(addressset.New(c.Redis), c.Registry, c.WebhookService, c.AddressRepo, c.TransactionRepo)
 	c.IngestService.SetDepositEvents(c.DepositEvents)
 	c.BalanceRefreshService = refresh.NewBalanceService(
