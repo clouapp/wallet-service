@@ -40,5 +40,6 @@ func All() []schema.Migration {
 		&M00000000000260AddWebhookOwnershipAndDedup{},
 		&M00000000000270RenamePolygonNativeMaticToPol{},
 		&M00000000000280EnforceNonNegativeAmounts{},
+		&M00000000000290CreateSettingsTable{},
 	}
 }

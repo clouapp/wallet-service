@@ -1,0 +1,41 @@
+package settings
+
+import "testing"
+
+func TestAccountSectionsDoNotShareNamesWithGroups(t *testing.T) {
+	t.Parallel()
+
+	names := map[string]bool{}
+	var sawSecret bool
+	var sawDecimal bool
+	for _, group := range Registry() {
+		if names[group.Name] {
+			t.Fatalf("duplicate group %s", group.Name)
+		}
+		names[group.Name] = true
+		if group.SectionName() == group.Name {
+			t.Fatalf("section %s shares its name with the group", group.Name)
+		}
+		if group.Scope != ScopeAccount {
+			t.Fatalf("group %s is not account scoped", group.Name)
+		}
+		for _, definition := range group.Settings {
+			if definition.Secret {
+				sawSecret = true
+			}
+			if definition.Type == TypeDecimal {
+				sawDecimal = true
+			}
+		}
+	}
+	if !sawSecret {
+		t.Fatal("registry has no secret")
+	}
+	if !sawDecimal {
+		t.Fatal("registry has no decimal")
+	}
+	limits, ok := FindGroup(groupAccountSweepLimits)
+	if !ok || limits.ManagedBy != ManagedByPlatform || limits.Inherits != "sweep_limits" {
+		t.Fatalf("sweep limits group = %+v present %v", limits, ok)
+	}
+}

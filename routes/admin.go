@@ -11,6 +11,7 @@ import (
 	dashchains "github.com/macrowallets/waas/app/http/controllers/dashboard/chains"
 	dashcurrencies "github.com/macrowallets/waas/app/http/controllers/dashboard/currencies"
 	dashpreferences "github.com/macrowallets/waas/app/http/controllers/dashboard/preferences"
+	dashsettings "github.com/macrowallets/waas/app/http/controllers/dashboard/settings"
 	dashsweep "github.com/macrowallets/waas/app/http/controllers/dashboard/sweep"
 	dashusers "github.com/macrowallets/waas/app/http/controllers/dashboard/users"
 	dashwallets "github.com/macrowallets/waas/app/http/controllers/dashboard/wallets"
@@ -19,6 +20,7 @@ import (
 	"github.com/macrowallets/waas/app/repositories"
 	accountsvc "github.com/macrowallets/waas/app/services/account"
 	authsvc "github.com/macrowallets/waas/app/services/auth"
+	settingssvc "github.com/macrowallets/waas/app/services/settings"
 	walletsvc "github.com/macrowallets/waas/app/services/wallet"
 )
 
@@ -31,6 +33,7 @@ func RegisterAdminRoutes() {
 	authCtrl := newDashboardAuthController()
 	usersCtrl := newDashboardUsersController()
 	accountsCtrl := newDashboardAccountsController()
+	accountSettingsCtrl := newDashboardAccountSettingsController()
 	walletCtrl := newDashboardWalletsController()
 	walletUsersCtrl := newDashboardWalletUsersController()
 	whitelistCtrl := newDashboardWhitelistController()
@@ -81,6 +84,9 @@ func RegisterAdminRoutes() {
 			r.Get("/tokens", accountsCtrl.ListAccountTokens)
 			r.Post("/tokens", accountsCtrl.CreateAccountToken)
 			r.Delete("/tokens/{tokenId}", accountsCtrl.RevokeAccountToken)
+
+			r.Get("/settings", accountSettingsCtrl.Show)
+			r.Patch("/settings/{group}", accountSettingsCtrl.Update)
 		})
 	})
 
@@ -277,6 +283,12 @@ func newDashboardSweepController() *dashsweep.SweepController {
 func newDashboardUnspentsController() *dashwallets.UnspentsController {
 	return dashwallets.NewUnspentsController(
 		container.MustMake[*repositories.WalletUTXORepository](),
+	)
+}
+
+func newDashboardAccountSettingsController() *dashsettings.SettingsController {
+	return dashsettings.NewSettingsController(
+		container.MustMake[*settingssvc.Service](),
 	)
 }
 
