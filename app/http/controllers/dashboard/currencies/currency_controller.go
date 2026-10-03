@@ -8,22 +8,22 @@ import (
 
 	"github.com/macrowallets/waas/app/http/responses"
 	"github.com/macrowallets/waas/app/models"
-	"github.com/macrowallets/waas/app/repositories"
+	"github.com/macrowallets/waas/app/services/currencies"
 	price "github.com/macrowallets/waas/app/services/price"
 )
 
 // CurrenciesController serves the dashboard currency and convert routes.
 type CurrenciesController struct {
-	currencies *repositories.CurrencyRepository
+	currencies *currencies.Service
 	prices     *price.Service
 }
 
 func NewCurrenciesController(
-	currencies *repositories.CurrencyRepository,
+	currencies *currencies.Service,
 	prices *price.Service,
 ) *CurrenciesController {
 	if currencies == nil {
-		panic("dashboard currencies controller: currencies repository is required")
+		panic("dashboard currencies controller: currencies service is required")
 	}
 	if prices == nil {
 		panic("dashboard currencies controller: price service is required")

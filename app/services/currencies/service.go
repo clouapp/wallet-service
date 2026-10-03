@@ -1,0 +1,47 @@
+package currencies
+
+import (
+	"context"
+	"fmt"
+
+	"github.com/macrowallets/waas/app/models"
+)
+
+// Store is the currency catalogue this service reads.
+type Store interface {
+	FindAllActive(ctx context.Context) ([]models.Currency, error)
+	FindByCode(ctx context.Context, code string) (*models.Currency, error)
+}
+
+// Service reads the currency catalogue for dashboard handlers.
+type Service struct {
+	store Store
+}
+
+// NewService builds a currency catalogue service.
+func NewService(store Store) *Service {
+	return &Service{store: store}
+}
+
+// FindAllActive returns every active currency, in the store's order.
+func (s *Service) FindAllActive(ctx context.Context) ([]models.Currency, error) {
+	if ctx == nil {
+		return nil, fmt.Errorf("list currencies: context is required")
+	}
+	if s == nil || s.store == nil {
+		return nil, fmt.Errorf("currencies service: currencies repository is required")
+	}
+	return s.store.FindAllActive(ctx)
+}
+
+// FindByCode returns the currency for code. A missing row is the store's
+// not-found error, which the handler already maps to 404.
+func (s *Service) FindByCode(ctx context.Context, code string) (*models.Currency, error) {
+	if ctx == nil {
+		return nil, fmt.Errorf("find currency: context is required")
+	}
+	if s == nil || s.store == nil {
+		return nil, fmt.Errorf("currencies service: currencies repository is required")
+	}
+	return s.store.FindByCode(ctx, code)
+}

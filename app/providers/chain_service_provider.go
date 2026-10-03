@@ -5,6 +5,7 @@ import (
 
 	"github.com/macrowallets/waas/app/repositories"
 	chainsvc "github.com/macrowallets/waas/app/services/chains"
+	"github.com/macrowallets/waas/app/services/currencies"
 )
 
 // ChainServiceProvider binds the chain, token, chain-resource, and currency
@@ -32,6 +33,13 @@ func (p *ChainServiceProvider) Register(app foundation.Application) {
 	})
 	app.Singleton((*repositories.CurrencyRepository)(nil), func(foundation.Application) (any, error) {
 		return repositories.NewCurrencyRepository(nil), nil
+	})
+	app.Singleton((*currencies.Service)(nil), func(app foundation.Application) (any, error) {
+		store, err := resolve[*repositories.CurrencyRepository](app)
+		if err != nil {
+			return nil, err
+		}
+		return currencies.NewService(store), nil
 	})
 }
 

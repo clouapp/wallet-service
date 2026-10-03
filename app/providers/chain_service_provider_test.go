@@ -9,6 +9,7 @@ import (
 	"github.com/macrowallets/waas/app/container"
 	"github.com/macrowallets/waas/app/repositories"
 	chainsvc "github.com/macrowallets/waas/app/services/chains"
+	currencysvc "github.com/macrowallets/waas/app/services/currencies"
 )
 
 func TestChainProvider_RegistersTheChainGraph(t *testing.T) {
@@ -38,4 +39,9 @@ func TestChainProvider_RegistersTheChainGraph(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, catalogue)
 	require.Same(t, catalogue, container.MustMake[*chainsvc.Service]())
+
+	currencyCatalogue, err := container.Make[*currencysvc.Service]()
+	require.NoError(t, err)
+	require.NotNil(t, currencyCatalogue)
+	require.Same(t, currencyCatalogue, container.MustMake[*currencysvc.Service]())
 }
