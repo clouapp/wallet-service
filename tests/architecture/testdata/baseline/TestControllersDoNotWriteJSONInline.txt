@@ -1,5 +1,4 @@
 # TestControllersDoNotWriteJSONInline: known violations, rewritten by go test ./tests/architecture -update-baseline
-app/http/controllers/dashboard/auth/auth_controller.go calls ctx.Response().Json() (x9)
 app/http/controllers/dashboard/currencies/currency_controller.go calls ctx.Response().Json() (x3)
 app/http/controllers/dashboard/features/features_controller.go calls ctx.Response().Json() (x3)
 app/http/controllers/dashboard/preferences/preferences_controller.go calls ctx.Response().Json() (x2)

@@ -176,7 +176,7 @@ func (ctrl *AuthController) Register(ctx http.Context) http.Response {
 		resp["account_id"] = defaultAccount["id"]
 		resp["account"] = defaultAccount
 	}
-	return ctx.Response().Json(http.StatusCreated, resp)
+	return responses.Send(ctx, http.StatusCreated, resp)
 }
 
 // Login godoc
@@ -212,7 +212,7 @@ func (ctrl *AuthController) Login(ctx http.Context) http.Response {
 			appfacades.Log().WithContext(ctx).Errorf("auth: partial login: %v", err)
 			return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to create session"})
 		}
-		return ctx.Response().Json(http.StatusOK, http.Json{
+		return responses.Send(ctx, http.StatusOK, http.Json{
 			"requires_2fa":  true,
 			"partial_token": partialToken,
 		})
@@ -252,7 +252,7 @@ func (ctrl *AuthController) Login(ctx http.Context) http.Response {
 		resp["account_id"] = defaultAccount["id"]
 		resp["account"] = defaultAccount
 	}
-	return ctx.Response().Json(http.StatusOK, resp)
+	return responses.Send(ctx, http.StatusOK, resp)
 }
 
 // VerifyTwoFactor godoc
@@ -337,7 +337,7 @@ func (ctrl *AuthController) VerifyTwoFactor(ctx http.Context) http.Response {
 		appfacades.Log().WithContext(ctx).Errorf("auth: store refresh token: %v", err)
 	}
 
-	return ctx.Response().Json(http.StatusOK, http.Json{
+	return responses.Send(ctx, http.StatusOK, http.Json{
 		"access_token":  accessToken,
 		"refresh_token": rawRefresh,
 		"user":          user,
@@ -402,7 +402,7 @@ func (ctrl *AuthController) RefreshToken(ctx http.Context) http.Response {
 		appfacades.Log().WithContext(ctx).Errorf("auth: store refresh token: %v", err)
 	}
 
-	return ctx.Response().Json(http.StatusOK, http.Json{
+	return responses.Send(ctx, http.StatusOK, http.Json{
 		"access_token":  accessToken,
 		"refresh_token": rawRefresh,
 	})
@@ -447,14 +447,14 @@ func (ctrl *AuthController) ForgotPassword(ctx http.Context) http.Response {
 
 	userPtr, findErr := ctrl.users.FindByEmail(ctx.Context(), req.Email)
 	if findErr != nil || userPtr == nil {
-		return ctx.Response().Json(http.StatusOK, http.Json{"message": "if that address is registered, you will receive a reset link"})
+		return responses.Send(ctx, http.StatusOK, http.Json{"message": "if that address is registered, you will receive a reset link"})
 	}
 	user := *userPtr
 
 	raw, genErr := ctrl.passwords.GenerateRandomToken()
 	if genErr != nil {
 		appfacades.Log().WithContext(ctx).Errorf("auth: generate reset token: %v", genErr)
-		return ctx.Response().Json(http.StatusOK, http.Json{"message": "if that address is registered, you will receive a reset link"})
+		return responses.Send(ctx, http.StatusOK, http.Json{"message": "if that address is registered, you will receive a reset link"})
 	}
 	hash := ctrl.passwords.HashToken(raw)
 	prt := &models.PasswordResetToken{
@@ -472,7 +472,7 @@ func (ctrl *AuthController) ForgotPassword(ctx http.Context) http.Response {
 		appfacades.Log().WithContext(ctx).Errorf("auth: send password reset mail: %v", err)
 	}
 
-	return ctx.Response().Json(http.StatusOK, http.Json{"message": "if that address is registered, you will receive a reset link"})
+	return responses.Send(ctx, http.StatusOK, http.Json{"message": "if that address is registered, you will receive a reset link"})
 }
 
 // ResetPassword godoc
@@ -522,7 +522,7 @@ func (ctrl *AuthController) ResetPassword(ctx http.Context) http.Response {
 		appfacades.Log().WithContext(ctx).Errorf("auth: mark reset token used: %v", err)
 	}
 
-	return ctx.Response().Json(http.StatusOK, http.Json{"message": "password reset successfully"})
+	return responses.Send(ctx, http.StatusOK, http.Json{"message": "password reset successfully"})
 }
 
 func (ctrl *AuthController) loadUserAccounts(user *models.User) ([]map[string]interface{}, map[string]interface{}) {
