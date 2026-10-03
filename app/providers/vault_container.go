@@ -17,6 +17,7 @@ import (
 
 	coinapiws "github.com/macrowallets/waas/app/adapters/price/coinapi"
 	queuesqs "github.com/macrowallets/waas/app/adapters/queue/sqs"
+	"github.com/macrowallets/waas/app/adapters/redis/addresscache"
 	"github.com/macrowallets/waas/app/adapters/redis/addressset"
 	redislock "github.com/macrowallets/waas/app/adapters/redis/lock"
 	"github.com/macrowallets/waas/app/container"
@@ -328,13 +329,13 @@ func buildVaultContainer(app foundation.Application) (*container.Container, erro
 
 	c.WebhookService = webhook.NewService(c.SQS, c.WebhookConfigRepo, c.WebhookEventRepo)
 	c.WalletService = wallet.NewService(wallet.Deps{
-		Registry:    c.Registry,
-		Redis:       c.Redis,
-		MPC:         c.MPCService,
-		Secrets:     c.SecretsManager,
-		Wallets:     c.WalletRepo,
-		Addresses:   c.AddressRepo,
-		WebhookSync: c.WebhookSyncService,
+		Registry:     c.Registry,
+		AddressCache: addresscache.New(c.Redis),
+		MPC:          c.MPCService,
+		Secrets:      c.SecretsManager,
+		Wallets:      c.WalletRepo,
+		Addresses:    c.AddressRepo,
+		WebhookSync:  c.WebhookSyncService,
 	})
 	flags, err := container.Make[*features.Service]()
 	if err != nil {

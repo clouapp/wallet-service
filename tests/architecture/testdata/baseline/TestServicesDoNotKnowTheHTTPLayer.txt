@@ -11,7 +11,6 @@ app/services/sweep imports github.com/aws/aws-sdk-go-v2/service/secretsmanager (
 app/services/sweep imports github.com/redis/go-redis/v9
 app/services/wallet imports github.com/aws/aws-sdk-go-v2/aws
 app/services/wallet imports github.com/aws/aws-sdk-go-v2/service/secretsmanager
-app/services/wallet imports github.com/redis/go-redis/v9
 app/services/wallet/service.go calls facades.Config()
 app/services/wallet/service.go calls facades.Event()
 app/services/webhooksync imports app/repositories

@@ -21,7 +21,6 @@ import (
 	"github.com/google/uuid"
 	"github.com/goravel/framework/contracts/event"
 	"github.com/goravel/framework/facades"
-	"github.com/redis/go-redis/v9"
 
 	"github.com/macrowallets/waas/app/dtos"
 	"github.com/macrowallets/waas/app/models"
@@ -56,6 +55,13 @@ type webhookAddressSyncer interface {
 	SyncChainAddresses(ctx context.Context, chainID string) error
 }
 
+// AddressCache adds one watched address with SADD. The provider supplies it;
+// this package never imports the Redis client. A nil AddressCache means Redis
+// is not configured. The service keeps the key.
+type AddressCache interface {
+	SAdd(ctx context.Context, key string, members ...any) error
+}
+
 // WalletStore is the wallet persistence this service uses.
 type WalletStore interface {
 	Create(ctx context.Context, wallet *models.Wallet) error
@@ -82,18 +88,18 @@ type AddressStore interface {
 
 // Deps is everything the wallet service needs. WebhookSync stays nil when unused.
 type Deps struct {
-	Registry    *chain.Registry
-	Redis       *redis.Client
-	MPC         mpc.Service
-	Secrets     SecretsManagerAPI
-	Wallets     WalletStore
-	Addresses   AddressStore
-	WebhookSync webhookAddressSyncer
+	Registry     *chain.Registry
+	AddressCache AddressCache
+	MPC          mpc.Service
+	Secrets      SecretsManagerAPI
+	Wallets      WalletStore
+	Addresses    AddressStore
+	WebhookSync  webhookAddressSyncer
 }
 
 type Service struct {
 	registry       *chain.Registry
-	rdb            *redis.Client
+	addresses      AddressCache
 	mpcService     mpc.Service
 	secretsManager SecretsManagerAPI
 	walletRepo     WalletStore
@@ -105,12 +111,23 @@ type Service struct {
 func NewService(deps Deps) *Service {
 	return &Service{
 		registry:       deps.Registry,
-		rdb:            deps.Redis,
+		addresses:      deps.AddressCache,
 		mpcService:     deps.MPC,
 		secretsManager: deps.Secrets,
 		walletRepo:     deps.Wallets,
 		addressRepo:    deps.Addresses,
 		webhookSyncSvc: deps.WebhookSync,
+	}
+}
+
+// cacheAddress records address under vault:addresses:<chain>. A nil cache is
+// the same no-op as a nil Redis client. The Redis error is only logged.
+func (s *Service) cacheAddress(ctx context.Context, chainID, address string) {
+	if s.addresses == nil {
+		return
+	}
+	if err := s.addresses.SAdd(ctx, "vault:addresses:"+chainID, address); err != nil {
+		slog.Warn("redis cache failed", "error", err)
 	}
 }
 
@@ -237,11 +254,7 @@ func (s *Service) CreateWallet(ctx context.Context, accountID uuid.UUID, chainID
 	w.DepositAddressID = &addressID
 	w.DepositAddress = addr
 
-	if s.rdb != nil {
-		if err := s.rdb.SAdd(ctx, "vault:addresses:"+chainID, depositAddressStr).Err(); err != nil {
-			slog.Warn("redis cache failed", "error", err)
-		}
-	}
+	s.cacheAddress(ctx, chainID, depositAddressStr)
 
 	if s.webhookSyncSvc != nil {
 		go func() {
@@ -342,11 +355,7 @@ func (s *Service) GenerateAddress(ctx context.Context, walletID uuid.UUID, exter
 		return nil, err
 	}
 
-	if s.rdb != nil {
-		if cacheErr := s.rdb.SAdd(ctx, "vault:addresses:"+w.Chain, addr.Address).Err(); cacheErr != nil {
-			slog.Warn("redis cache failed", "error", cacheErr)
-		}
-	}
+	s.cacheAddress(ctx, w.Chain, addr.Address)
 
 	if s.webhookSyncSvc != nil {
 		_ = s.webhookSyncSvc.SyncChainAddresses(ctx, w.Chain)
