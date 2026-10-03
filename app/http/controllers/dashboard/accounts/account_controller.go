@@ -33,7 +33,8 @@ type AccountsController struct {
 }
 
 // NewAccountsController wires the dashboard account handlers. Persistence goes
-// through the account service. The auth service only hashes a new API token.
+// through the account service. The auth service only turns a new API token
+// secret into its sha256 digest.
 func NewAccountsController(
 	accountService *accountsvc.Service,
 	passwords *authsvc.Service,
@@ -403,13 +404,17 @@ func (ctrl *AccountsController) CreateAccountToken(ctx http.Context) http.Respon
 		return responses.FieldsFailed(ctx, map[string][]string{field: {message}})
 	}
 
+	secret, err := ctrl.passwords.GenerateAPITokenSecret()
+	if err != nil {
+		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to create token"})
+	}
 	tokenID := uuid.New()
 	token := &models.AccessToken{
 		ID:            tokenID,
 		AccountID:     account.ID,
 		CreatedBy:     &callerID,
 		Name:          req.Name,
-		TokenHash:     ctrl.passwords.HashToken(tokenID.String()),
+		TokenHash:     ctrl.passwords.HashAPITokenSecret(secret),
 		Permissions:   storedPermissions,
 		IpCidr:        strings.TrimSpace(req.IpCidr),
 		SpendingLimit: storedLimit,
@@ -422,7 +427,7 @@ func (ctrl *AccountsController) CreateAccountToken(ctx http.Context) http.Respon
 		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to create token"})
 	}
 
-	jwt, err := middleware.MintAPIToken(token, req.RequireSignature)
+	jwt, err := middleware.MintAPITokenWithSecret(token, req.RequireSignature, secret)
 	if err != nil {
 		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to sign token"})
 	}

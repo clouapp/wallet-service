@@ -6,6 +6,7 @@ import (
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"io"
 	"strings"
 	"time"
@@ -19,6 +20,7 @@ import (
 	"github.com/macrowallets/waas/app/http/responses"
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/policies"
+	authsvc "github.com/macrowallets/waas/app/services/auth"
 )
 
 // apiTokenLookup loads the access token row named by a bearer JWT and
@@ -36,6 +38,9 @@ type apiTokenLookup interface {
 type APITokenClaims struct {
 	AccountID        string `json:"account_id"`
 	RequireSignature bool   `json:"sig,omitempty"`
+	// Secret is the random 32-byte secret, hex-encoded, shown once inside the
+	// minted JWT. Tokens stored before that claim omit it.
+	Secret string `json:"secret,omitempty"`
 	jwt.RegisteredClaims
 }
 
@@ -97,6 +102,10 @@ func APITokenAuth(tokens apiTokenLookup) http.Middleware {
 			abortWithJSON(ctx, http.StatusUnauthorized, http.Json{"error": "token expired"})
 			return
 		}
+		if !authsvc.APITokenHashAccepts(claims.Secret, token.TokenHash) {
+			abortWithJSON(ctx, http.StatusUnauthorized, http.Json{"error": "invalid or expired api token"})
+			return
+		}
 
 		sig := ctx.Request().Header("X-Signature", "")
 		if claims.RequireSignature && sig == "" {
@@ -142,10 +151,24 @@ func APITokenAuth(tokens apiTokenLookup) http.Middleware {
 // requests that omit a valid X-Signature HMAC header. Internal/test
 // tokens should pass false.
 func MintAPIToken(token *models.AccessToken, requireSignature bool) (string, error) {
-	secret := facades.Config().GetString("jwt.secret")
+	return mintAPIToken(token, requireSignature, "")
+}
+
+// MintAPITokenWithSecret signs a JWT that carries the one-time secret claim.
+// The database stores only sha256 of that secret.
+func MintAPITokenWithSecret(token *models.AccessToken, requireSignature bool, secret string) (string, error) {
+	if secret == "" {
+		return "", errors.New("api token secret is required")
+	}
+	return mintAPIToken(token, requireSignature, secret)
+}
+
+func mintAPIToken(token *models.AccessToken, requireSignature bool, secret string) (string, error) {
+	signingKey := facades.Config().GetString("jwt.secret")
 	claims := APITokenClaims{
 		AccountID:        token.AccountID.String(),
 		RequireSignature: requireSignature,
+		Secret:           secret,
 		RegisteredClaims: jwt.RegisteredClaims{
 			ID:       token.ID.String(),
 			Subject:  "api_token",
@@ -155,5 +178,5 @@ func MintAPIToken(token *models.AccessToken, requireSignature bool) (string, err
 	if token.ValidUntil != nil {
 		claims.ExpiresAt = jwt.NewNumericDate(*token.ValidUntil)
 	}
-	return jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString([]byte(secret))
+	return jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString([]byte(signingKey))
 }

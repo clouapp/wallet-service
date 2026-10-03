@@ -14,6 +14,7 @@ import (
 
 	"github.com/macrowallets/waas/app/http/middleware"
 	"github.com/macrowallets/waas/app/models"
+	authsvc "github.com/macrowallets/waas/app/services/auth"
 	"github.com/macrowallets/waas/tests/mocks"
 )
 
@@ -51,9 +52,9 @@ func (s *APITokenAuthHMACTestSuite) SetupTest() {
 	s.Require().NoError(facades.Orm().Query().Create(&s.account))
 }
 
-// mintToken inserts an access_tokens row (token_hash is required by the
-// schema but unused by APITokenAuth) and returns a signed JWT with the
-// given require_signature claim.
+// mintToken inserts an access_tokens row whose token_hash is the pre-secret
+// stored form (not a sha256 digest) and returns a signed JWT with the given
+// require_signature claim and no secret claim.
 func (s *APITokenAuthHMACTestSuite) mintToken(requireSignature bool, name string) string {
 	record := &models.AccessToken{
 		ID:        uuid.New(),
@@ -206,4 +207,56 @@ func (s *APITokenAuthHMACTestSuite) TestRevokedTokenIsUnauthorized() {
 	s.Require().NoError(facades.Orm().Query().Where("name = ?", "revoked-stamp").First(&stored))
 	s.Nil(stored.LastUsedAt)
 	s.NotNil(stored.RevokedAt)
+}
+
+// TestAPITokenAuth_LegacyStoredHashStillAuthenticates: a row written as the
+// previous hash-of-the-id form, and a JWT with no secret claim, still passes.
+func (s *APITokenAuthHMACTestSuite) TestAPITokenAuth_LegacyStoredHashStillAuthenticates() {
+	record := &models.AccessToken{
+		ID:        uuid.New(),
+		AccountID: s.account.ID,
+		Name:      "legacy-id-hash",
+	}
+	stored := authsvc.NewService().HashToken(record.ID.String())
+	_, err := facades.Orm().Query().Exec(
+		`INSERT INTO access_tokens (id, account_id, name, token_hash, spending_limit, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, NOW(), NOW())`,
+		record.ID, record.AccountID, record.Name, stored, "{}",
+	)
+	s.Require().NoError(err)
+	signed, err := middleware.MintAPIToken(record, false)
+	s.Require().NoError(err)
+
+	resp, err := s.Http(s.T()).
+		WithHeader("Authorization", "Bearer "+signed).
+		Get("/api/v1/chains")
+	s.Require().NoError(err)
+	resp.AssertStatus(200)
+}
+
+// TestAPITokenAuth_SecretDigestRejectsAMissingClaim: a sha256 row is not the
+// legacy form. A JWT without the secret claim is rejected.
+func (s *APITokenAuthHMACTestSuite) TestAPITokenAuth_SecretDigestRejectsAMissingClaim() {
+	record := &models.AccessToken{
+		ID:        uuid.New(),
+		AccountID: s.account.ID,
+		Name:      "digest-without-claim",
+	}
+	passwords := authsvc.NewService()
+	secret, err := passwords.GenerateAPITokenSecret()
+	s.Require().NoError(err)
+	_, err = facades.Orm().Query().Exec(
+		`INSERT INTO access_tokens (id, account_id, name, token_hash, spending_limit, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, NOW(), NOW())`,
+		record.ID, record.AccountID, record.Name, passwords.HashAPITokenSecret(secret), "{}",
+	)
+	s.Require().NoError(err)
+	signed, err := middleware.MintAPIToken(record, false)
+	s.Require().NoError(err)
+
+	resp, err := s.Http(s.T()).
+		WithHeader("Authorization", "Bearer "+signed).
+		Get("/api/v1/chains")
+	s.Require().NoError(err)
+	resp.AssertStatus(401)
 }

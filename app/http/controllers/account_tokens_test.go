@@ -9,12 +9,14 @@ import (
 	"testing"
 	"unsafe"
 
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
 	contractstesting "github.com/goravel/framework/contracts/testing/http"
 	"github.com/goravel/framework/facades"
 	goravelTesting "github.com/goravel/framework/testing"
 	"github.com/stretchr/testify/suite"
 
+	"github.com/macrowallets/waas/app/http/middleware"
 	"github.com/macrowallets/waas/app/models"
 	authsvc "github.com/macrowallets/waas/app/services/auth"
 	"github.com/macrowallets/waas/tests/mocks"
@@ -206,6 +208,47 @@ func (s *accountTokensSuite) TestInvalidIPCidrIs422() {
 	s.NotEmpty(parsed.Errors["ip_cidr"])
 }
 
+func (s *accountTokensSuite) TestCreateStoresOnlyTheSecretHash() {
+	accountID := s.createAccount()
+	owner := s.loginUser("owner", accountID)
+
+	resp := s.createToken(owner.token, accountID, `{"name":"sealed"}`)
+	s.Equal(http.StatusCreated, s.statusOf(resp))
+
+	var parsed struct {
+		Token    string                     `json:"token"`
+		Metadata map[string]json.RawMessage `json:"metadata"`
+	}
+	s.Require().NoError(json.Unmarshal([]byte(s.body(resp)), &parsed))
+	claims := &middleware.APITokenClaims{}
+	_, _, err := jwt.NewParser().ParseUnverified(parsed.Token, claims)
+	s.Require().NoError(err)
+	if claims.Secret == "" {
+		s.Fail("create response omitted the one-time secret")
+	}
+	stored := s.storedHash(accountID, "sealed")
+	if stored == claims.Secret || !authsvc.APITokenSecretMatches(claims.Secret, stored) {
+		s.Fail("token_hash is not the sha256 of the secret")
+	}
+	if _, onWire := parsed.Metadata["token_hash"]; onWire {
+		s.Fail("token hash is on the create response")
+	}
+	s.assertAbsent(s.body(resp), stored, "stored digest")
+
+	list := s.listTokens(owner.token, accountID)
+	s.Equal(http.StatusOK, s.statusOf(list))
+	s.assertAbsent(s.body(list), claims.Secret, "secret")
+	s.assertAbsent(s.body(list), stored, "stored digest")
+
+	external, err := s.Http(s.T()).
+		WithHeader("Authorization", "Bearer "+parsed.Token).
+		Get("/api/v1/chains")
+	s.Require().NoError(err)
+	if s.statusOf(external) == http.StatusUnauthorized {
+		s.Fail("minted token was rejected")
+	}
+}
+
 func (s *accountTokensSuite) TestUserCannotMint() {
 	accountID := s.createAccount()
 	s.loginUser("owner", accountID)
@@ -281,6 +324,29 @@ func (s *accountTokensSuite) metadataHasPermissions(resp contractstesting.Respon
 	s.Require().NoError(json.Unmarshal([]byte(s.body(resp)), &parsed))
 	_, ok := parsed.Metadata["permissions"]
 	return ok
+}
+
+func (s *accountTokensSuite) listTokens(token string, accountID uuid.UUID) contractstesting.Response {
+	resp, err := s.Http(s.T()).
+		WithHeader("Authorization", "Bearer "+token).
+		Get("/v1/accounts/" + accountID.String() + "/tokens")
+	s.Require().NoError(err)
+	return resp
+}
+
+func (s *accountTokensSuite) storedHash(accountID uuid.UUID, name string) string {
+	var token models.AccessToken
+	s.Require().NoError(facades.Orm().Query().
+		Where("account_id = ? AND name = ?", accountID, name).
+		First(&token))
+	return token.TokenHash
+}
+
+func (s *accountTokensSuite) assertAbsent(body, hidden, label string) {
+	s.T().Helper()
+	if hidden != "" && strings.Contains(body, hidden) {
+		s.Fail(label + " appeared in a response")
+	}
 }
 
 func (s *accountTokensSuite) storedSpendingLimit(accountID uuid.UUID, name string) string {
