@@ -8,9 +8,9 @@ import (
 	"github.com/macrowallets/waas/app/http/pagination"
 	"github.com/macrowallets/waas/app/http/requests"
 	"github.com/macrowallets/waas/app/http/responses"
-	"github.com/macrowallets/waas/app/repositories"
 	deposit "github.com/macrowallets/waas/app/services/deposit"
 	wallet "github.com/macrowallets/waas/app/services/wallet"
+	"github.com/macrowallets/waas/app/services/walletrecords"
 )
 
 func validateRequest(ctx http.Context, req http.FormRequest) http.Response {
@@ -19,18 +19,18 @@ func validateRequest(ctx http.Context, req http.FormRequest) http.Response {
 
 // AddressesController serves the dashboard address routes.
 type AddressesController struct {
-	addresses     *repositories.AddressRepository
+	addresses     *walletrecords.Addresses
 	walletService func() *wallet.Service
 	deposits      *deposit.Service
 }
 
 func NewAddressesController(
-	addresses *repositories.AddressRepository,
+	addresses *walletrecords.Addresses,
 	walletService func() *wallet.Service,
 	deposits *deposit.Service,
 ) *AddressesController {
 	if addresses == nil {
-		panic("dashboard addresses controller: addresses repository is required")
+		panic("dashboard addresses controller: addresses service is required")
 	}
 	if walletService == nil || walletService() == nil {
 		panic("dashboard addresses controller: wallet service is required")

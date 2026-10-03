@@ -277,7 +277,7 @@ func newDashboardPreferencesController() *dashpreferences.PreferencesController 
 
 func newDashboardAddressesController() *dashaddresses.AddressesController {
 	return dashaddresses.NewAddressesController(
-		container.MustMake[*repositories.AddressRepository](),
+		container.MustMake[*walletrecords.Addresses](),
 		currentWalletService,
 		container.Get().DepositService,
 	)
