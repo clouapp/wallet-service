@@ -13,7 +13,11 @@ import (
 	"github.com/goravel/framework/facades"
 
 	"github.com/macrowallets/waas/app/container"
+	chainpkg "github.com/macrowallets/waas/app/services/chain"
+	"github.com/macrowallets/waas/app/services/deposit"
 	"github.com/macrowallets/waas/app/services/localworkers"
+	"github.com/macrowallets/waas/app/services/webhook"
+	"github.com/macrowallets/waas/app/services/webhooksync"
 	"github.com/macrowallets/waas/bootstrap"
 	_ "github.com/macrowallets/waas/docs" // Import generated swagger docs
 	"github.com/macrowallets/waas/pkg/types"
@@ -60,14 +64,20 @@ import (
 // @tag.description Webhook configuration for event notifications
 
 var (
-	c *container.Container
+	deposits    *deposit.Service
+	webhooks    *webhook.Service
+	webhookSync *webhooksync.Service
+	registry    *chainpkg.Registry
 )
 
 func init() {
 	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo})))
 
 	bootstrap.Boot()
-	c = container.Get()
+	deposits = container.MustMake[*deposit.Service]()
+	webhooks = container.MustMake[*webhook.Service]()
+	webhookSync = container.MustMake[*webhooksync.Service]()
+	registry = container.MustMake[*chainpkg.Registry]()
 
 	mode := facades.Config().GetString("vault.lambda_mode")
 	envName := facades.Config().GetString("app.env")
@@ -107,17 +117,17 @@ func handleAPIGateway(ctx context.Context, req events.APIGatewayV2HTTPRequest) (
 
 func handleDepositScan(ctx context.Context, event types.DepositScanEvent) error {
 	slog.Info("deposit scan triggered", "chain", event.Chain)
-	return c.DepositService.ScanLatestBlocks(ctx, event.Chain)
+	return deposits.ScanLatestBlocks(ctx, event.Chain)
 }
 
 func handleConfirmationTracker(ctx context.Context) error {
 	slog.Info("confirmation tracker triggered")
-	return c.DepositService.RunConfirmationCheck(ctx)
+	return deposits.RunConfirmationCheck(ctx)
 }
 
 func handleWebhookReconciler(ctx context.Context) error {
 	slog.Info("webhook reconciler triggered")
-	return c.WebhookSyncService.RunReconciliation(ctx)
+	return webhookSync.RunReconciliation(ctx)
 }
 
 func handleWebhookWorker(ctx context.Context, sqsEvent events.SQSEvent) (events.SQSEventResponse, error) {
@@ -133,7 +143,7 @@ func handleWebhookWorker(ctx context.Context, sqsEvent events.SQSEvent) (events.
 			continue
 		}
 
-		if err := c.WebhookService.Deliver(ctx, msg); err != nil {
+		if err := webhooks.Deliver(ctx, msg); err != nil {
 			slog.Error("webhook delivery failed", "error", err, "event_id", msg.EventID)
 			failures = append(failures, events.SQSBatchItemFailure{
 				ItemIdentifier: record.MessageId,
@@ -159,12 +169,12 @@ func startLocalWorkers() {
 		DepositScanInterval:  time.Duration(facades.Config().GetInt("vault.local_workers.deposit_scan_interval_seconds")) * time.Second,
 	}
 	for _, chainID := range cfg.DepositScanChains {
-		if _, err := c.Registry.Chain(chainID); err != nil {
+		if _, err := registry.Chain(chainID); err != nil {
 			slog.Error("local workers not started: unknown deposit scan chain", "chain", chainID, "error", err)
 			return
 		}
 	}
-	if err := localworkers.Start(context.Background(), cfg, c.DepositService, c.WebhookService, c.DepositService); err != nil {
+	if err := localworkers.Start(context.Background(), cfg, deposits, webhooks, deposits); err != nil {
 		slog.Error("local workers not started", "error", err)
 	}
 }
