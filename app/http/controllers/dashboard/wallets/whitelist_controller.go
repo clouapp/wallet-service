@@ -3,6 +3,7 @@ package wallets
 import (
 	"github.com/google/uuid"
 	"github.com/goravel/framework/contracts/http"
+	"github.com/goravel/framework/support/carbon"
 
 	"github.com/macrowallets/waas/app/http/controllers"
 	"github.com/macrowallets/waas/app/http/middleware/requestctx"
@@ -55,7 +56,7 @@ func (ctrl *WhitelistController) ListWhitelistEntries(ctx http.Context) http.Res
 	if err != nil {
 		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to fetch whitelist entries"})
 	}
-	return responses.Send(ctx, http.StatusOK, pagination.Response(entries, total, limit, offset))
+	return responses.Send(ctx, http.StatusOK, pagination.Response(whitelistEntryViews(entries), total, limit, offset))
 }
 
 // AddWhitelistEntry godoc
@@ -67,7 +68,7 @@ func (ctrl *WhitelistController) ListWhitelistEntries(ctx http.Context) http.Res
 // @Produce      json
 // @Param        walletId  path      string                  true  "Wallet UUID"
 // @Param        request   body      AddWhitelistEntrySwagger  true  "Entry payload"
-// @Success      201  {object}  models.WhitelistEntry
+// @Success      201  {object}  WhitelistEntryView
 // @Failure      400  {object}  ErrorResponse
 // @Failure      403  {object}  ErrorResponse
 // @Router       /wallets/{walletId}/whitelist [post]
@@ -91,7 +92,7 @@ func (ctrl *WhitelistController) AddWhitelistEntry(ctx http.Context) http.Respon
 	if err := ctrl.entries.Create(ctx.Context(), entry); err != nil {
 		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to add whitelist entry"})
 	}
-	return responses.Send(ctx, http.StatusCreated, entry)
+	return responses.Send(ctx, http.StatusCreated, newWhitelistEntryView(*entry))
 }
 
 // DeleteWhitelistEntry godoc
@@ -135,6 +136,40 @@ type AddWhitelistEntrySwagger struct {
 	Label   string `json:"label,omitempty" example:"Cold Storage"`
 }
 
+// WhitelistEntryView is the whitelist row the dashboard reads. Field order and
+// tags match the model wire, including the embedded timestamps and the
+// omission of an empty label. A nil page stays nil; an empty page stays empty.
+type WhitelistEntryView struct {
+	CreatedAt *carbon.DateTime `json:"created_at"`
+	UpdatedAt *carbon.DateTime `json:"updated_at"`
+	ID        uuid.UUID        `json:"id"`
+	WalletID  uuid.UUID        `json:"wallet_id"`
+	Label     string           `json:"label,omitempty"`
+	Address   string           `json:"address"`
+}
+
+func newWhitelistEntryView(entry models.WhitelistEntry) WhitelistEntryView {
+	return WhitelistEntryView{
+		CreatedAt: entry.CreatedAt,
+		UpdatedAt: entry.UpdatedAt,
+		ID:        entry.ID,
+		WalletID:  entry.WalletID,
+		Label:     entry.Label,
+		Address:   entry.Address,
+	}
+}
+
+func whitelistEntryViews(entries []models.WhitelistEntry) []WhitelistEntryView {
+	if entries == nil {
+		return nil
+	}
+	views := make([]WhitelistEntryView, len(entries))
+	for i := range entries {
+		views[i] = newWhitelistEntryView(entries[i])
+	}
+	return views
+}
+
 type WhitelistEntryListResponse struct {
-	Data []models.WhitelistEntry `json:"data"`
+	Data []WhitelistEntryView `json:"data"`
 }
