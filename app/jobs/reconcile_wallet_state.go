@@ -10,8 +10,8 @@ import (
 	"github.com/google/uuid"
 	"github.com/macrowallets/waas/app/container"
 	"github.com/macrowallets/waas/app/models"
-	"github.com/macrowallets/waas/app/repositories"
 	"github.com/macrowallets/waas/app/services/refresh"
+	"github.com/macrowallets/waas/app/services/walletrecords"
 )
 
 type ReconcileWalletState struct {
@@ -48,7 +48,7 @@ func (j *ReconcileWalletState) Handle(args ...any) error {
 		return fmt.Errorf("reconcile_wallet_state: invalid wallet_id: %w", err)
 	}
 
-	wallet, err := container.MustMake[*repositories.WalletRepository]().FindByID(context.Background(), walletID)
+	wallet, err := container.MustMake[*walletrecords.Wallets]().FindByID(context.Background(), walletID)
 	if err != nil && !errors.Is(err, models.ErrRepositoryNotFound) {
 		return fmt.Errorf("reconcile_wallet_state: load wallet: %w", err)
 	}

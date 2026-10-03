@@ -10,7 +10,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/macrowallets/waas/app/container"
 	"github.com/macrowallets/waas/app/models"
-	"github.com/macrowallets/waas/app/repositories"
+	"github.com/macrowallets/waas/app/services/walletrecords"
 )
 
 type RefreshWalletUTXOs struct{}
@@ -37,7 +37,7 @@ func (j *RefreshWalletUTXOs) Handle(args ...any) error {
 		return fmt.Errorf("refresh_wallet_utxos: invalid wallet_id: %w", err)
 	}
 
-	wallet, err := container.MustMake[*repositories.WalletRepository]().FindByID(context.Background(), walletID)
+	wallet, err := container.MustMake[*walletrecords.Wallets]().FindByID(context.Background(), walletID)
 	if err != nil && !errors.Is(err, models.ErrRepositoryNotFound) {
 		return fmt.Errorf("refresh_wallet_utxos: load wallet: %w", err)
 	}
