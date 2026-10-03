@@ -25,6 +25,9 @@ import (
 // RegisterAdminRoutes registers dashboard session-auth routes under /v1.
 func RegisterAdminRoutes() {
 	noCache := middleware.CacheControl(0)
+	chainCtrl := newDashboardChainsController()
+	currencyCtrl := newDashboardCurrenciesController()
+	preferencesCtrl := newDashboardPreferencesController()
 	authCtrl := newDashboardAuthController()
 	usersCtrl := newDashboardUsersController()
 	accountsCtrl := newDashboardAccountsController()
@@ -82,24 +85,24 @@ func RegisterAdminRoutes() {
 	})
 
 	facades.Route().Prefix("/v1/chains").Middleware(middleware.SessionAuth(), middleware.AccountHeader(), noCache).Group(func(router route.Router) {
-		router.Get("", dashchains.ListChains)
-		router.Get("/{chainId}", dashchains.GetChain)
-		router.Get("/{chainId}/tokens", dashchains.ListChainTokens)
-		router.Get("/{chainId}/resources", dashchains.ListChainResources)
+		router.Get("", chainCtrl.ListChains)
+		router.Get("/{chainId}", chainCtrl.GetChain)
+		router.Get("/{chainId}/tokens", chainCtrl.ListChainTokens)
+		router.Get("/{chainId}/resources", chainCtrl.ListChainResources)
 	})
 
 	facades.Route().Prefix("/v1/currencies").Middleware(middleware.SessionAuth(), noCache).Group(func(router route.Router) {
-		router.Get("", dashcurrencies.ListCurrencies)
-		router.Get("/{code}", dashcurrencies.GetCurrency)
+		router.Get("", currencyCtrl.ListCurrencies)
+		router.Get("/{code}", currencyCtrl.GetCurrency)
 	})
 
 	facades.Route().Prefix("/v1/me").Middleware(middleware.SessionAuth(), noCache).Group(func(router route.Router) {
-		router.Get("/preferences", dashpreferences.GetPreferences)
-		router.Put("/preferences", dashpreferences.UpdatePreferences)
+		router.Get("/preferences", preferencesCtrl.GetPreferences)
+		router.Put("/preferences", preferencesCtrl.UpdatePreferences)
 	})
 
 	facades.Route().Prefix("/v1/convert").Middleware(middleware.SessionAuth(), noCache).Group(func(router route.Router) {
-		router.Get("", dashcurrencies.ConvertCurrency)
+		router.Get("", currencyCtrl.ConvertCurrency)
 	})
 
 	facades.Route().Prefix("/v1/wallets").Middleware(middleware.SessionAuth(), middleware.AccountHeader(), noCache).Group(func(router route.Router) {
@@ -220,6 +223,28 @@ func newDashboardBalancesController() *dashwallets.BalancesController {
 func newDashboardWalletTransactionsController() *dashwallets.TransactionsController {
 	return dashwallets.NewTransactionsController(
 		container.MustMake[*repositories.TransactionRepository](),
+	)
+}
+
+func newDashboardChainsController() *dashchains.ChainsController {
+	return dashchains.NewChainsController(
+		container.MustMake[*repositories.ChainRepository](),
+		container.MustMake[*repositories.TokenRepository](),
+		container.MustMake[*repositories.ChainResourceRepository](),
+	)
+}
+
+func newDashboardCurrenciesController() *dashcurrencies.CurrenciesController {
+	return dashcurrencies.NewCurrenciesController(
+		container.MustMake[*repositories.CurrencyRepository](),
+		container.Get().PriceService,
+	)
+}
+
+func newDashboardPreferencesController() *dashpreferences.PreferencesController {
+	return dashpreferences.NewPreferencesController(
+		container.MustMake[*repositories.UserRepository](),
+		container.MustMake[*repositories.CurrencyRepository](),
 	)
 }
 

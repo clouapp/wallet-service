@@ -6,27 +6,49 @@ import (
 
 	"github.com/goravel/framework/contracts/http"
 
-	"github.com/macrowallets/waas/app/container"
 	"github.com/macrowallets/waas/app/http/responses"
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/repositories"
+	price "github.com/macrowallets/waas/app/services/price"
 )
 
-func ListCurrencies(ctx http.Context) http.Response {
-	currencies, err := container.MustMake[*repositories.CurrencyRepository]().FindAllActive(ctx.Context())
+// CurrenciesController serves the dashboard currency and convert routes.
+type CurrenciesController struct {
+	currencies *repositories.CurrencyRepository
+	prices     *price.Service
+}
+
+func NewCurrenciesController(
+	currencies *repositories.CurrencyRepository,
+	prices *price.Service,
+) *CurrenciesController {
+	if currencies == nil {
+		panic("dashboard currencies controller: currencies repository is required")
+	}
+	if prices == nil {
+		panic("dashboard currencies controller: price service is required")
+	}
+	return &CurrenciesController{
+		currencies: currencies,
+		prices:     prices,
+	}
+}
+
+func (ctrl *CurrenciesController) ListCurrencies(ctx http.Context) http.Response {
+	currencies, err := ctrl.currencies.FindAllActive(ctx.Context())
 	if err != nil {
 		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to fetch currencies"})
 	}
 	return ctx.Response().Json(http.StatusOK, http.Json{"data": currencies})
 }
 
-func GetCurrency(ctx http.Context) http.Response {
+func (ctrl *CurrenciesController) GetCurrency(ctx http.Context) http.Response {
 	code := ctx.Request().Route("code")
 	if code == "" {
 		return responses.Send(ctx, http.StatusBadRequest, http.Json{"error": "currency code is required"})
 	}
 
-	currency, err := container.MustMake[*repositories.CurrencyRepository]().FindByCode(ctx.Context(), code)
+	currency, err := ctrl.currencies.FindByCode(ctx.Context(), code)
 	if errors.Is(err, models.ErrRepositoryNotFound) {
 		currency, err = nil, nil
 	}
@@ -39,7 +61,7 @@ func GetCurrency(ctx http.Context) http.Response {
 	return ctx.Response().Json(http.StatusOK, currency)
 }
 
-func ConvertCurrency(ctx http.Context) http.Response {
+func (ctrl *CurrenciesController) ConvertCurrency(ctx http.Context) http.Response {
 	from := ctx.Request().Query("from", "")
 	to := ctx.Request().Query("to", "")
 	amountStr := ctx.Request().Query("amount", "0")
@@ -53,7 +75,7 @@ func ConvertCurrency(ctx http.Context) http.Response {
 		return responses.Send(ctx, http.StatusBadRequest, http.Json{"error": "amount must be a positive number"})
 	}
 
-	result, err := container.Get().PriceService.Convert(ctx.Request().Origin().Context(), from, to, amount)
+	result, err := ctrl.prices.Convert(ctx.Request().Origin().Context(), from, to, amount)
 	if err != nil {
 		return responses.Send(ctx, http.StatusBadRequest, http.Json{"error": err.Error()})
 	}

@@ -25,13 +25,14 @@ import (
 // valid API token cannot operate on another account's wallets.
 func RegisterExternalAPI() {
 	noCache := middleware.CacheControl(0)
+	chainCtrl := newExternalChainsController()
 	walletCtrl := newExternalWalletsController()
 	addressCtrl := newExternalAddressesController()
 	sweepCtrl := newExternalSweepController()
 	withdrawalCtrl := newExternalWithdrawalsController()
 
 	facades.Route().Prefix("/api/v1").Middleware(middleware.APITokenAuth(), noCache).Group(func(router route.Router) {
-		router.Get("/chains", extchains.ListChains)
+		router.Get("/chains", chainCtrl.ListChains)
 
 		router.Post("/wallets", walletCtrl.CreateWallet)
 		router.Get("/wallets", walletCtrl.ListWallets)
@@ -62,6 +63,12 @@ func RegisterExternalAPI() {
 		router.Get("/webhooks", extwebhooks.ListWebhooks)
 		router.Patch("/webhooks/{webhookId}", extwebhooks.UpdateWebhook)
 	})
+}
+
+func newExternalChainsController() *extchains.ChainsController {
+	return extchains.NewChainsController(
+		container.MustMake[*repositories.ChainRepository](),
+	)
 }
 
 func newExternalAddressesController() *extaddresses.AddressesController {

@@ -3,11 +3,26 @@ package chains
 import (
 	"github.com/goravel/framework/contracts/http"
 
-	"github.com/macrowallets/waas/app/container"
 	"github.com/macrowallets/waas/app/http/responses"
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/repositories"
 )
+
+// ChainsController serves the external chain list.
+type ChainsController struct {
+	chains *repositories.ChainRepository
+}
+
+func NewChainsController(
+	chains *repositories.ChainRepository,
+) *ChainsController {
+	if chains == nil {
+		panic("external chains controller: chains repository is required")
+	}
+	return &ChainsController{
+		chains: chains,
+	}
+}
 
 // ListChains godoc
 // @Summary      List supported chains
@@ -19,16 +34,16 @@ import (
 // @Success      200  {object}  ChainListResponse
 // @Failure      500  {object}  ErrorResponse
 // @Router       /v1/chains [get]
-func ListChains(ctx http.Context) http.Response {
+func (ctrl *ChainsController) ListChains(ctx http.Context) http.Response {
 	env, _ := ctx.Value("account_environment").(string)
 
 	var chainList []models.Chain
 	var err error
 	if env == models.EnvironmentProd || env == models.EnvironmentTest {
 		isTestnet := env == models.EnvironmentTest
-		chainList, err = container.MustMake[*repositories.ChainRepository]().FindByTestnet(ctx.Context(), isTestnet)
+		chainList, err = ctrl.chains.FindByTestnet(ctx.Context(), isTestnet)
 	} else {
-		chainList, err = container.MustMake[*repositories.ChainRepository]().FindActive(ctx.Context())
+		chainList, err = ctrl.chains.FindActive(ctx.Context())
 	}
 	if err != nil {
 		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to fetch chains"})

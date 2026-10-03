@@ -9,10 +9,10 @@ import (
 	"github.com/goravel/framework/contracts/http"
 	"github.com/goravel/framework/facades"
 
-	"github.com/macrowallets/waas/app/container"
 	"github.com/macrowallets/waas/app/http/responses"
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/repositories"
+	ingestsvc "github.com/macrowallets/waas/app/services/ingest"
 	"github.com/macrowallets/waas/app/services/ingest/providers"
 )
 
@@ -22,9 +22,29 @@ var ingestProviders = map[string]providers.WebhookProvider{
 	"quicknode": providers.NewQuickNodeProvider(""),
 }
 
-func HandleWebhookIngest(ctx http.Context) http.Response {
-	c := container.Get()
+// IngestController serves inbound provider webhooks.
+type IngestController struct {
+	subscriptions *repositories.WebhookSubscriptionRepository
+	ingest        *ingestsvc.Service
+}
 
+func NewIngestController(
+	subscriptions *repositories.WebhookSubscriptionRepository,
+	ingest *ingestsvc.Service,
+) *IngestController {
+	if subscriptions == nil {
+		panic("ingest controller: webhook subscriptions repository is required")
+	}
+	if ingest == nil {
+		panic("ingest controller: ingest service is required")
+	}
+	return &IngestController{
+		subscriptions: subscriptions,
+		ingest:        ingest,
+	}
+}
+
+func (ctrl *IngestController) HandleWebhookIngest(ctx http.Context) http.Response {
 	req := ctx.Request().Origin()
 	rawBody, err := io.ReadAll(req.Body)
 	if err != nil {
@@ -38,7 +58,7 @@ func HandleWebhookIngest(ctx http.Context) http.Response {
 		return responses.Send(ctx, http.StatusBadRequest, http.Json{"error": "provider and chainID are required"})
 	}
 
-	sub, err := container.MustMake[*repositories.WebhookSubscriptionRepository]().FindByProviderAndChain(ctx.Context(), providerName, chainID)
+	sub, err := ctrl.subscriptions.FindByProviderAndChain(ctx.Context(), providerName, chainID)
 	if errors.Is(err, models.ErrRepositoryNotFound) {
 		sub, err = nil, nil
 	}
@@ -76,7 +96,7 @@ func HandleWebhookIngest(ctx http.Context) http.Response {
 		return responses.Send(ctx, http.StatusBadRequest, http.Json{"error": "invalid payload"})
 	}
 
-	if err := c.IngestService.ProcessTransfers(ctx.Context(), chainID, transfers); err != nil {
+	if err := ctrl.ingest.ProcessTransfers(ctx.Context(), chainID, transfers); err != nil {
 		slog.Warn("ingest process", "chain", chainID, "error", err)
 		return responses.Send(ctx, http.StatusBadRequest, http.Json{"error": err.Error()})
 	}

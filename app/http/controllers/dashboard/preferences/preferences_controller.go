@@ -4,7 +4,6 @@ import (
 	"github.com/google/uuid"
 	"github.com/goravel/framework/contracts/http"
 
-	"github.com/macrowallets/waas/app/container"
 	"github.com/macrowallets/waas/app/http/controllers"
 	"github.com/macrowallets/waas/app/http/requests"
 	"github.com/macrowallets/waas/app/http/responses"
@@ -16,7 +15,29 @@ func validateRequest(ctx http.Context, req http.FormRequest) http.Response {
 	return controllers.ValidateRequest(ctx, req)
 }
 
-func GetPreferences(ctx http.Context) http.Response {
+// PreferencesController serves the dashboard preference routes.
+type PreferencesController struct {
+	users      *repositories.UserRepository
+	currencies *repositories.CurrencyRepository
+}
+
+func NewPreferencesController(
+	users *repositories.UserRepository,
+	currencies *repositories.CurrencyRepository,
+) *PreferencesController {
+	if users == nil {
+		panic("dashboard preferences controller: users repository is required")
+	}
+	if currencies == nil {
+		panic("dashboard preferences controller: currencies repository is required")
+	}
+	return &PreferencesController{
+		users:      users,
+		currencies: currencies,
+	}
+}
+
+func (ctrl *PreferencesController) GetPreferences(ctx http.Context) http.Response {
 	user := ctx.Value("user").(*models.User)
 	prefs := user.Preferences
 	if prefs == nil {
@@ -28,7 +49,7 @@ func GetPreferences(ctx http.Context) http.Response {
 	})
 }
 
-func UpdatePreferences(ctx http.Context) http.Response {
+func (ctrl *PreferencesController) UpdatePreferences(ctx http.Context) http.Response {
 	userID := ctx.Value("user_id").(uuid.UUID)
 	user := ctx.Value("user").(*models.User)
 
@@ -43,7 +64,7 @@ func UpdatePreferences(ctx http.Context) http.Response {
 	}
 
 	if req.PreferredFiatCode != "" {
-		cur, err := container.MustMake[*repositories.CurrencyRepository]().FindByCode(ctx.Context(), req.PreferredFiatCode)
+		cur, err := ctrl.currencies.FindByCode(ctx.Context(), req.PreferredFiatCode)
 		if err != nil || cur == nil || !cur.Active || cur.Type != models.CurrencyTypeFiat {
 			return responses.Send(ctx, http.StatusBadRequest, http.Json{"error": "invalid fiat currency code"})
 		}
@@ -53,7 +74,7 @@ func UpdatePreferences(ctx http.Context) http.Response {
 		prefs.DisplayInFiat = req.DisplayInFiat
 	}
 
-	if err := container.Get().UserRepo.UpdatePreferences(ctx.Context(), userID, prefs); err != nil {
+	if err := ctrl.users.UpdatePreferences(ctx.Context(), userID, prefs); err != nil {
 		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to update preferences"})
 	}
 
