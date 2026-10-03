@@ -8,7 +8,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/goravel/framework/database/orm"
 
-	mpcpkg "github.com/macrowallets/waas/app/services/mpc"
+	"github.com/macrowallets/waas/pkg/mpcshare"
 )
 
 const (
@@ -67,7 +67,7 @@ func (w *Wallet) TableName() string {
 // DecryptShareA hex-decodes the wallet's persisted MPC envelope
 // (ciphertext / IV / salt) and reverses the AES-GCM encryption using the
 // caller-supplied passphrase. On AES auth failure it returns
-// mpcpkg.ErrInvalidPassphrase so callers can branch on rate-limiting /
+// mpcshare.ErrInvalidPassphrase so callers can branch on rate-limiting /
 // HTTP mapping; structural errors (bad hex, crypto init) are wrapped.
 // Callers own the returned slice and MUST zero it after use.
 func (w *Wallet) DecryptShareA(passphrase string) ([]byte, error) {
@@ -83,6 +83,6 @@ func (w *Wallet) DecryptShareA(passphrase string) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("decode share salt: %w", err)
 	}
-	enc := &mpcpkg.EncryptedShare{Ciphertext: ciphertext, IV: iv, Salt: salt}
-	return mpcpkg.DecryptShare(enc, passphrase)
+	enc := &mpcshare.EncryptedShare{Ciphertext: ciphertext, IV: iv, Salt: salt}
+	return mpcshare.DecryptShare(enc, passphrase)
 }
