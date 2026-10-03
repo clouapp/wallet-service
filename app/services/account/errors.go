@@ -21,4 +21,6 @@ var (
 	ErrMemberStatus = errors.New("invalid member status")
 	// ErrMemberChangeEmpty is a change that sets neither role nor status.
 	ErrMemberChangeEmpty = errors.New("role or status is required")
+	// ErrAccessTokenNotFound is a token that is missing or belongs to another account.
+	ErrAccessTokenNotFound = errors.New("token not found")
 )

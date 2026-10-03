@@ -15,6 +15,9 @@ import (
 // AccountStore is the account writes this service performs.
 type AccountStore interface {
 	Create(ctx context.Context, account *models.Account) error
+	SetName(ctx context.Context, id uuid.UUID, name string) error
+	SetViewAllWallets(ctx context.Context, id uuid.UUID, viewAll bool) error
+	SetStatus(ctx context.Context, id uuid.UUID, status string) error
 }
 
 // MembershipStore is the membership reads and writes this service performs.
@@ -22,6 +25,7 @@ type MembershipStore interface {
 	Create(ctx context.Context, au *models.AccountUser) error
 	FindByAccountAndUser(ctx context.Context, accountID, userID uuid.UUID) (*models.AccountUser, error)
 	FindByAccountAndUserIncludeDeleted(ctx context.Context, accountID, userID uuid.UUID) (*models.AccountUser, error)
+	PaginateByAccountID(ctx context.Context, accountID uuid.UUID, limit, offset int) ([]models.AccountUser, int64, error)
 	Restore(ctx context.Context, id uuid.UUID) error
 	SetRole(ctx context.Context, id uuid.UUID, role string) error
 	SetStatus(ctx context.Context, id uuid.UUID, status string) error
@@ -30,8 +34,18 @@ type MembershipStore interface {
 	Within(ctx context.Context, fn func(context.Context) error) error
 }
 
-// TokenStore revokes API tokens a member created for one account.
+// UserStore finds an existing user or inserts one invited onto an account.
+type UserStore interface {
+	FindByEmail(ctx context.Context, email string) (*models.User, error)
+	Create(ctx context.Context, user *models.User) error
+}
+
+// TokenStore reads and writes API tokens for one account.
 type TokenStore interface {
+	Create(ctx context.Context, token *models.AccessToken) error
+	PaginateByAccountID(ctx context.Context, accountID uuid.UUID, limit, offset int) ([]models.AccessToken, int64, error)
+	FindByIDAndAccount(ctx context.Context, tokenID, accountID uuid.UUID) (*models.AccessToken, error)
+	Delete(ctx context.Context, token *models.AccessToken) error
 	DeleteByAccountAndCreator(ctx context.Context, accountID, createdBy uuid.UUID) error
 }
 
@@ -40,11 +54,13 @@ type ActivityLog interface {
 	Append(ctx context.Context, row models.AccountActivity) error
 }
 
-// Deps is everything Account needs. Tokens and Activity are required for
-// member updates. Older callers that only create accounts may leave them nil.
+// Deps is everything Account needs. Users, Tokens and Activity are required
+// for the dashboard member and token handlers. Older callers that only create
+// accounts may leave them nil.
 type Deps struct {
 	Accounts    AccountStore
 	Memberships MembershipStore
+	Users       UserStore
 	Tokens      TokenStore
 	Activity    ActivityLog
 }
@@ -59,6 +75,7 @@ type MemberChange struct {
 type Service struct {
 	accounts    AccountStore
 	memberships MembershipStore
+	users       UserStore
 	tokens      TokenStore
 	activity    ActivityLog
 }
@@ -68,6 +85,7 @@ func NewService(deps Deps) *Service {
 	return &Service{
 		accounts:    deps.Accounts,
 		memberships: deps.Memberships,
+		users:       deps.Users,
 		tokens:      deps.Tokens,
 		activity:    deps.Activity,
 	}

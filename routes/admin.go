@@ -336,10 +336,6 @@ func newPlatformFeaturesController() *platformfeatures.FeaturesController {
 
 func newDashboardAccountsController() *dashaccounts.AccountsController {
 	return dashaccounts.NewAccountsController(
-		container.MustMake[*repositories.AccountRepository](),
-		container.MustMake[*repositories.AccountUserRepository](),
-		container.MustMake[*repositories.UserRepository](),
-		container.MustMake[*repositories.AccessTokenRepository](),
 		container.MustMake[*accountsvc.Service](),
 		container.MustMake[*authsvc.Service](),
 	)
