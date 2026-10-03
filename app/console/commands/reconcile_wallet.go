@@ -14,8 +14,8 @@ import (
 	"github.com/macrowallets/waas/app/container"
 	"github.com/macrowallets/waas/app/jobs"
 	"github.com/macrowallets/waas/app/models"
-	"github.com/macrowallets/waas/app/repositories"
 	"github.com/macrowallets/waas/app/services/refresh"
+	"github.com/macrowallets/waas/app/services/walletrecords"
 )
 
 type ReconcileWallet struct {
@@ -66,7 +66,7 @@ func (c *ReconcileWallet) Handle(ctx console.Context) error {
 		return fmt.Errorf("invalid wallet_id: %w", err)
 	}
 
-	wallet, err := container.MustMake[*repositories.WalletRepository]().FindByID(context.Background(), id)
+	wallet, err := container.MustMake[*walletrecords.Wallets]().FindByID(context.Background(), id)
 	if err != nil && !errors.Is(err, models.ErrRepositoryNotFound) {
 		ctx.Error("failed to load wallet: " + err.Error())
 		return fmt.Errorf("load wallet: %w", err)

@@ -6,8 +6,6 @@ import (
 	"github.com/goravel/framework/contracts/console"
 	"github.com/goravel/framework/contracts/console/command"
 
-	"github.com/macrowallets/waas/app/container"
-	"github.com/macrowallets/waas/app/repositories"
 	"github.com/macrowallets/waas/app/services/price"
 	"github.com/redis/go-redis/v9"
 )
@@ -54,7 +52,7 @@ func (c *PriceWebSocket) Handle(ctx console.Context) error {
 		return nil
 	}
 
-	ws := price.NewWebSocketClient(apiKey, container.MustMake[*repositories.CurrencyRepository](), c.redis)
+	ws := c.prices.PriceWebSocket(apiKey, c.redis)
 	ctx.Info("starting CoinAPI WebSocket connection...")
 	return ws.Connect(bgCtx)
 }

@@ -14,8 +14,8 @@ import (
 	"github.com/macrowallets/waas/app/container"
 	"github.com/macrowallets/waas/app/jobs"
 	"github.com/macrowallets/waas/app/models"
-	"github.com/macrowallets/waas/app/repositories"
 	"github.com/macrowallets/waas/app/services/refresh"
+	"github.com/macrowallets/waas/app/services/walletrecords"
 )
 
 type RefreshAddress struct {
@@ -76,7 +76,7 @@ func (c *RefreshAddress) Handle(ctx console.Context) error {
 	useQueue := ctx.OptionBool("queue")
 
 	for _, addr := range addresses {
-		addrRecord, err := container.MustMake[*repositories.AddressRepository]().FindByChainAndAddress(context.Background(), chain, addr)
+		addrRecord, err := container.MustMake[*walletrecords.Addresses]().FindByChainAndAddress(context.Background(), chain, addr)
 		if err != nil && !errors.Is(err, models.ErrRepositoryNotFound) {
 			ctx.Error("failed to look up address " + addr + ": " + err.Error())
 			return fmt.Errorf("look up address %s: %w", addr, err)
@@ -86,7 +86,7 @@ func (c *RefreshAddress) Handle(ctx console.Context) error {
 			continue
 		}
 
-		wallet, err := container.MustMake[*repositories.WalletRepository]().FindByID(context.Background(), addrRecord.WalletID)
+		wallet, err := container.MustMake[*walletrecords.Wallets]().FindByID(context.Background(), addrRecord.WalletID)
 		if err != nil && !errors.Is(err, models.ErrRepositoryNotFound) {
 			ctx.Error("failed to load wallet for address " + addr + ": " + err.Error())
 			return fmt.Errorf("load wallet for address %s: %w", addr, err)

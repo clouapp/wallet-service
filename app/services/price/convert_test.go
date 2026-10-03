@@ -11,6 +11,10 @@ import (
 
 type mockCurrencyRepo struct {
 	currencies map[string]*models.Currency
+	stale      []models.Currency
+	staleErr   error
+	staleType  string
+	staleFor   time.Duration
 }
 
 func (m *mockCurrencyRepo) FindActiveCryptos(context.Context) ([]models.Currency, error) {
@@ -20,6 +24,12 @@ func (m *mockCurrencyRepo) FindActiveFiats(context.Context) ([]models.Currency, 
 	return nil, nil
 }
 func (m *mockCurrencyRepo) SetPrice(context.Context, string, float64, float64) error { return nil }
+
+func (m *mockCurrencyRepo) FindStale(_ context.Context, currencyType string, staleDuration time.Duration) ([]models.Currency, error) {
+	m.staleType = currencyType
+	m.staleFor = staleDuration
+	return m.stale, m.staleErr
+}
 
 func (m *mockCurrencyRepo) FindByCode(_ context.Context, code string) (*models.Currency, error) {
 	if c, ok := m.currencies[code]; ok {
@@ -95,6 +105,37 @@ func TestConvertUnknownCurrency(t *testing.T) {
 		t.Error("expected error for unknown currency")
 	}
 }
+
+func TestFindStaleReturnsTheStoreRows(t *testing.T) {
+	want := []models.Currency{{Code: "BTC"}}
+	repo := &mockCurrencyRepo{stale: want, staleErr: errStale}
+	svc := NewService(nil, repo, nil)
+	got, err := svc.FindStale(context.Background(), models.CurrencyTypeCrypto, time.Minute)
+	if err != errStale {
+		t.Fatalf("error = %v", err)
+	}
+	if len(got) != 1 || got[0].Code != "BTC" {
+		t.Fatalf("rows = %+v", got)
+	}
+	if repo.staleType != models.CurrencyTypeCrypto || repo.staleFor != time.Minute {
+		t.Fatalf("query = %s %s", repo.staleType, repo.staleFor)
+	}
+}
+
+func TestPriceWebSocketUsesTheServiceCurrencyStore(t *testing.T) {
+	repo := &mockCurrencyRepo{}
+	svc := NewService(nil, repo, nil)
+	client := svc.PriceWebSocket("key", nil)
+	if client == nil || client.currencyRepo != repo || client.apiKey != "key" {
+		t.Fatal("websocket client did not keep the service currency store")
+	}
+}
+
+var errStale = errorString("stale")
+
+type errorString string
+
+func (e errorString) Error() string { return string(e) }
 
 func absDiff(a, b float64) float64 {
 	d := a - b

@@ -64,3 +64,86 @@ func (f *fakeWallets) SetFeeMultiplier(context.Context, uuid.UUID, float64) erro
 func (f *fakeWallets) SetRequiredApprovals(context.Context, uuid.UUID, int) error { return f.err }
 func (f *fakeWallets) SetFrozenUntil(context.Context, uuid.UUID, time.Time) error { return f.err }
 func (f *fakeWallets) SetStatus(context.Context, uuid.UUID, string) error         { return f.err }
+
+func TestTransactionsFindByChainAndTxHashForwards(t *testing.T) {
+	t.Parallel()
+
+	want := &models.Transaction{ID: uuid.New(), TxHash: "0xabc"}
+	store := &fakeTransactions{row: want}
+	got, err := walletrecords.NewTransactions(store).FindByChainAndTxHash(context.Background(), "eth", "0xabc")
+	require.NoError(t, err)
+	require.Equal(t, want, got)
+	require.Equal(t, "eth", store.chainID)
+	require.Equal(t, "0xabc", store.txHash)
+
+	store.err = errors.New("store down")
+	_, err = walletrecords.NewTransactions(store).FindByChainAndTxHash(context.Background(), "eth", "0xabc")
+	require.ErrorIs(t, err, store.err)
+
+	_, err = walletrecords.NewTransactions(store).FindByChainAndTxHash(nil, "eth", "0xabc")
+	require.EqualError(t, err, "find transaction: context is required")
+}
+
+type fakeTransactions struct {
+	row     *models.Transaction
+	chainID string
+	txHash  string
+	err     error
+}
+
+func (f *fakeTransactions) FindByWallet(context.Context, uuid.UUID, string, string, int, int) ([]models.Transaction, int64, error) {
+	return nil, 0, f.err
+}
+func (f *fakeTransactions) FindByIDAndWallet(context.Context, string, uuid.UUID) (*models.Transaction, error) {
+	return nil, f.err
+}
+func (f *fakeTransactions) FindByID(context.Context, uuid.UUID) (*models.Transaction, error) {
+	return nil, f.err
+}
+func (f *fakeTransactions) FindByChainAndTxHash(_ context.Context, chainID, txHash string) (*models.Transaction, error) {
+	f.chainID = chainID
+	f.txHash = txHash
+	if f.err != nil {
+		return nil, f.err
+	}
+	return f.row, nil
+}
+
+func TestAddressesFindByChainAndAddressForwards(t *testing.T) {
+	t.Parallel()
+
+	want := &models.Address{ID: uuid.New(), Address: "0xabc"}
+	store := &fakeAddresses{row: want}
+	got, err := walletrecords.NewAddresses(store).FindByChainAndAddress(context.Background(), "eth", "0xabc")
+	require.NoError(t, err)
+	require.Equal(t, want, got)
+	require.Equal(t, "eth", store.chainID)
+	require.Equal(t, "0xabc", store.address)
+
+	store.err = errors.New("store down")
+	_, err = walletrecords.NewAddresses(store).FindByChainAndAddress(context.Background(), "eth", "0xabc")
+	require.ErrorIs(t, err, store.err)
+
+	_, err = walletrecords.NewAddresses(store).FindByChainAndAddress(nil, "eth", "0xabc")
+	require.EqualError(t, err, "find address: context is required")
+}
+
+type fakeAddresses struct {
+	row     *models.Address
+	chainID string
+	address string
+	err     error
+}
+
+func (f *fakeAddresses) PaginateByWalletID(context.Context, uuid.UUID, int, int) ([]models.Address, int64, error) {
+	return nil, 0, f.err
+}
+
+func (f *fakeAddresses) FindByChainAndAddress(_ context.Context, chainID, address string) (*models.Address, error) {
+	f.chainID = chainID
+	f.address = address
+	if f.err != nil {
+		return nil, f.err
+	}
+	return f.row, nil
+}

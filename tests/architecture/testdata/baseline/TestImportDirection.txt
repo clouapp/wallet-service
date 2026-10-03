@@ -1,6 +1,5 @@
 # TestImportDirection: known violations, rewritten by go test ./tests/architecture -update-baseline
 app/console/commands → app/jobs (console → jobs) (x5)
-app/console/commands → app/repositories (console → repositories) (x8)
 app/container → app/repositories (container → repositories)
 app/container → app/services/chain (container → services)
 app/container → app/services/deposit (container → services)

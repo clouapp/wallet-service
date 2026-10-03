@@ -357,6 +357,7 @@ type TransactionStore interface {
 	FindByWallet(ctx context.Context, walletID uuid.UUID, txType, status string, limit, offset int) ([]models.Transaction, int64, error)
 	FindByIDAndWallet(ctx context.Context, txID string, walletID uuid.UUID) (*models.Transaction, error)
 	FindByID(ctx context.Context, id uuid.UUID) (*models.Transaction, error)
+	FindByChainAndTxHash(ctx context.Context, chainID, txHash string) (*models.Transaction, error)
 }
 
 // Transactions reads stored transactions.
@@ -395,9 +396,17 @@ func (s *Transactions) FindByID(ctx context.Context, id uuid.UUID) (*models.Tran
 	return s.store.FindByID(ctx, id)
 }
 
-// AddressStore pages addresses of one wallet.
+func (s *Transactions) FindByChainAndTxHash(ctx context.Context, chainID, txHash string) (*models.Transaction, error) {
+	if err := s.ready(ctx, "find transaction"); err != nil {
+		return nil, err
+	}
+	return s.store.FindByChainAndTxHash(ctx, chainID, txHash)
+}
+
+// AddressStore reads stored addresses.
 type AddressStore interface {
 	PaginateByWalletID(ctx context.Context, walletID uuid.UUID, limit, offset int) ([]models.Address, int64, error)
+	FindByChainAndAddress(ctx context.Context, chainID, address string) (*models.Address, error)
 }
 
 // Addresses pages wallet addresses.
@@ -416,4 +425,16 @@ func (s *Addresses) PaginateByWalletID(ctx context.Context, walletID uuid.UUID, 
 		return nil, 0, err
 	}
 	return s.store.PaginateByWalletID(ctx, walletID, limit, offset)
+}
+
+func (s *Addresses) FindByChainAndAddress(ctx context.Context, chainID, address string) (*models.Address, error) {
+	if err := requireStore(ctx, storeOf(s, func() any {
+		if s == nil {
+			return nil
+		}
+		return s.store
+	}), "find address", "addresses"); err != nil {
+		return nil, err
+	}
+	return s.store.FindByChainAndAddress(ctx, chainID, address)
 }

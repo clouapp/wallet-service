@@ -17,6 +17,7 @@ type currencyStore interface {
 	FindByCode(ctx context.Context, code string) (*models.Currency, error)
 	FindActiveCryptos(ctx context.Context) ([]models.Currency, error)
 	FindActiveFiats(ctx context.Context) ([]models.Currency, error)
+	FindStale(ctx context.Context, currencyType string, staleDuration time.Duration) ([]models.Currency, error)
 	SetPrice(ctx context.Context, code string, currentPrice, lastPrice float64) error
 }
 
@@ -133,6 +134,16 @@ func (s *Service) RefreshFiatRates(ctx context.Context) error {
 		break
 	}
 	return nil
+}
+
+// FindStale returns the currency store's stale rows for currencyType.
+func (s *Service) FindStale(ctx context.Context, currencyType string, staleDuration time.Duration) ([]models.Currency, error) {
+	return s.currencyRepo.FindStale(ctx, currencyType, staleDuration)
+}
+
+// PriceWebSocket streams CoinAPI quotes through the currency rows this service updates.
+func (s *Service) PriceWebSocket(apiKey string, rdb *redis.Client) *WebSocketClient {
+	return NewWebSocketClient(apiKey, s.currencyRepo, rdb)
 }
 
 func (s *Service) GetPrice(ctx context.Context, code string) (float64, error) {
