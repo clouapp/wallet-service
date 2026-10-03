@@ -28,6 +28,9 @@ func (p *IdentityServiceProvider) Register(app foundation.Application) {
 	app.Singleton((*repositories.AccessTokenRepository)(nil), func(foundation.Application) (any, error) {
 		return repositories.NewAccessTokenRepository(nil), nil
 	})
+	app.Singleton((*repositories.AccountInviteRepository)(nil), func(foundation.Application) (any, error) {
+		return repositories.NewAccountInviteRepository(nil), nil
+	})
 	app.Singleton((*repositories.RefreshTokenRepository)(nil), func(foundation.Application) (any, error) {
 		return repositories.NewRefreshTokenRepository(nil), nil
 	})
@@ -90,12 +93,17 @@ func (p *IdentityServiceProvider) Register(app foundation.Application) {
 		if err != nil {
 			return nil, err
 		}
+		invites, err := resolve[*repositories.AccountInviteRepository](app)
+		if err != nil {
+			return nil, err
+		}
 		return account.NewService(account.Deps{
 			Accounts:    accounts,
 			Memberships: memberships,
 			Users:       users,
 			Tokens:      tokens,
 			Activity:    activityLog,
+			Invites:     invites,
 		}), nil
 	})
 }

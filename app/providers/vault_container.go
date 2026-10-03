@@ -416,9 +416,8 @@ func buildVaultContainer(app foundation.Application) (*container.Container, erro
 	if err := c.DepositService.SetFailurePolicy(failurePolicy); err != nil {
 		return nil, fmt.Errorf("vault: deposit failure policy: %w", err)
 	}
-	c.PendingDeposits = buildPendingDepositStore(c.Redis, facades.Config().GetString("vault.deposit_scan.pending_dir"))
-	if c.PendingDeposits != nil {
-		c.DepositService.SetPendingStore(c.PendingDeposits)
+	if pendingDeposits := buildPendingDepositStore(c.Redis, facades.Config().GetString("vault.deposit_scan.pending_dir")); pendingDeposits != nil {
+		c.DepositService.SetPendingStore(pendingDeposits)
 	}
 	c.IngestService = ingest.NewService(addressset.New(c.Redis), c.Registry, c.WebhookService, c.AddressRepo, c.TransactionRepo)
 	c.IngestService.SetDepositEvents(c.DepositEvents)

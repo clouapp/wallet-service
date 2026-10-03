@@ -9,10 +9,8 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/service/secretsmanager"
 	"github.com/macrowallets/waas/app/repositories"
-	authsvc "github.com/macrowallets/waas/app/services/auth"
 	chainpkg "github.com/macrowallets/waas/app/services/chain"
 	"github.com/macrowallets/waas/app/services/deposit"
-	"github.com/macrowallets/waas/app/services/deposit/pending"
 	"github.com/macrowallets/waas/app/services/depositevents"
 	"github.com/macrowallets/waas/app/services/ingest"
 	"github.com/macrowallets/waas/app/services/ingest/providers"
@@ -81,11 +79,12 @@ type Container struct {
 	IngestService         *ingest.Service
 	BalanceRefreshService *refresh.BalanceService
 	WalletRefresher       *refresh.WalletRefresher
-	PendingDeposits       pending.Store
 
-	SecondFactor   *authsvc.SecondFactorVerifier
-	TwoFactorLogin *authsvc.TwoFactorLogin
-	SessionRevoker *authsvc.SessionRevoker
+	// Auth services are stored as any so this package does not import app/services/auth.
+	// The providers that construct and bind them own the concrete types.
+	SecondFactor   any
+	TwoFactorLogin any
+	SessionRevoker any
 }
 
 var (

@@ -105,6 +105,22 @@ func (s *Service) FindOrCreateInvitedUser(ctx context.Context, email string) (us
 	return created, true, nil
 }
 
+// FindUserByEmail returns the user, or the store's not-found error.
+func (s *Service) FindUserByEmail(ctx context.Context, email string) (*models.User, error) {
+	if s.users == nil {
+		return nil, fmt.Errorf("account service: users repository is required")
+	}
+	return s.users.FindByEmail(ctx, email)
+}
+
+// FindUserByID returns the user, or the store's not-found error.
+func (s *Service) FindUserByID(ctx context.Context, id uuid.UUID) (*models.User, error) {
+	if s.users == nil {
+		return nil, fmt.Errorf("account service: users repository is required")
+	}
+	return s.users.FindByID(ctx, id)
+}
+
 // FindByID returns one account. The error is the store's error.
 func (s *Service) FindByID(ctx context.Context, id uuid.UUID) (*models.Account, error) {
 	if ctx == nil {

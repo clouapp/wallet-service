@@ -216,22 +216,47 @@ func (ctrl *AccountsController) AddAccountUser(ctx http.Context) http.Response {
 		return errResp
 	}
 
-	targetPtr, invited, err := ctrl.accountService.FindOrCreateInvitedUser(ctx.Context(), req.Email)
-	if err != nil {
-		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to create user"})
+	targetPtr, findErr := ctrl.accountService.FindUserByEmail(ctx.Context(), req.Email)
+	if findErr != nil && !errors.Is(findErr, models.ErrRepositoryNotFound) {
+		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to look up user"})
 	}
-	if invited {
-		if err := appfacades.Mail().To([]string{req.Email}).Send(&mails.UserInviteMail{
-			To:          req.Email,
-			InvitedBy:   "your team",
-			AccountName: account.Name,
-			InviteLink:  "https://vault.app/accept-invite",
-		}); err != nil {
-			appfacades.Log().WithContext(ctx).Errorf("account: send invite mail: %v", err)
+	if targetPtr == nil || errors.Is(findErr, models.ErrRepositoryNotFound) {
+		issued, issueErr := ctrl.accountService.IssueInvite(ctx.Context(), account.ID, req.Email, req.Role, callerID, frontendBaseURL())
+		if issueErr != nil {
+			if errors.Is(issueErr, accountsvc.ErrGrantRole) {
+				return responses.Send(ctx, http.StatusForbidden, http.Json{"error": issueErr.Error()})
+			}
+			return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to create invite"})
 		}
+		inviterName := "your team"
+		if inviter, inviterErr := ctrl.accountService.FindUserByID(ctx.Context(), callerID); inviterErr == nil && inviter != nil {
+			if inviter.FullName != "" {
+				inviterName = inviter.FullName
+			} else if inviter.Email != "" {
+				inviterName = inviter.Email
+			}
+		}
+		if mailErr := appfacades.Mail().To([]string{issued.Invite.Email}).Send(&mails.UserInviteMail{
+			To:          issued.Invite.Email,
+			InvitedBy:   inviterName,
+			AccountName: account.Name,
+			InviteLink:  issued.InviteLink,
+		}); mailErr != nil {
+			appfacades.Log().WithContext(ctx).Errorf("account: send invite mail: %v", mailErr)
+		}
+		return responses.Send(ctx, http.StatusAccepted, http.Json{
+			"invite_id":   issued.Invite.ID,
+			"email":       issued.Invite.Email,
+			"role":        issued.Invite.Role,
+			"expires_at":  issued.Invite.ExpiresAt,
+			"invite_link": issued.InviteLink,
+		})
 	}
 
 	if err := ctrl.accountService.AddUser(ctx.Context(), account.ID, targetPtr.ID, req.Role, callerID); err != nil {
+		if errors.Is(err, accountsvc.ErrGrantRole) {
+			return responses.Send(ctx, http.StatusForbidden, http.Json{"error": err.Error()})
+		}
 		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to add user"})
 	}
 

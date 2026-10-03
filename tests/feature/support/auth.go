@@ -60,9 +60,9 @@ func SetupAPIAuth(t *testing.T, requireSignature bool) (accountID uuid.UUID, bea
 	tokenID := uuid.New()
 	tokenName := "test-token-" + shortID
 	if _, err := facades.Orm().Query().Exec(
-		`INSERT INTO access_tokens (id, account_id, name, token_hash, spending_limit, created_at, updated_at)
-		 VALUES (?, ?, ?, ?, ?, NOW(), NOW())`,
-		tokenID, accountID, tokenName, "test-hash-"+shortID, "{}",
+		`INSERT INTO access_tokens (id, account_id, name, token_hash, permissions, spending_limit, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, NOW(), NOW())`,
+		tokenID, accountID, tokenName, "test-hash-"+shortID, models.AllAPIPermissionGrants(), "{}",
 	); err != nil {
 		t.Fatalf("insert access_token: %v", err)
 	}

@@ -444,7 +444,10 @@ func (ctrl *UsersController) DisableTOTP(ctx http.Context) http.Response {
 
 func (ctrl *UsersController) requireLiveSecondFactor(ctx http.Context, user *models.User) http.Response {
 	var req requests.DisableTotpRequest
-	if err := ctx.Request().Bind(&req); err != nil && req.Code == "" && req.RecoveryCode == "" {
+	if errResp := validateRequest(ctx, &req); errResp != nil {
+		return errResp
+	}
+	if strings.TrimSpace(req.Code) == "" && strings.TrimSpace(req.RecoveryCode) == "" {
 		return controllers.TwoFactorErrorResponse(ctx, authsvc.ErrInvalidSecondFactor)
 	}
 	if err := ctrl.secondFactor.Verify(user, strings.TrimSpace(req.Code), strings.TrimSpace(req.RecoveryCode)); err != nil {
@@ -469,8 +472,8 @@ type UpdateDefaultAccountSwagger struct {
 }
 
 // myAccount is one row of GET /v1/users/me/accounts. Existing account fields
-// stay; role is the caller's account_users.role, returned as stored.
-// fix/security-s7 (viewer → auditor) is not merged on this branch.
+// stay; role is the caller's account_users.role, returned as stored
+// (owner, admin, auditor, or user).
 type myAccount struct {
 	dashboardaccounts.AccountView
 	Role string `json:"role" example:"owner"`

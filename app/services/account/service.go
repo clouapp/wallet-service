@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/google/uuid"
 
@@ -43,6 +44,7 @@ type MembershipStore interface {
 // UserStore finds an existing user or inserts one invited onto an account.
 type UserStore interface {
 	FindByEmail(ctx context.Context, email string) (*models.User, error)
+	FindByID(ctx context.Context, id uuid.UUID) (*models.User, error)
 	Create(ctx context.Context, user *models.User) error
 }
 
@@ -63,6 +65,15 @@ type ActivityLog interface {
 	Append(ctx context.Context, row models.AccountActivity) error
 }
 
+// InviteStore persists hashed account-invite tokens.
+type InviteStore interface {
+	Create(ctx context.Context, invite *models.AccountInvite) error
+	FindPendingByAccountEmail(ctx context.Context, accountID uuid.UUID, email string) (*models.AccountInvite, error)
+	FindPendingByTokenHash(ctx context.Context, tokenHash string, now time.Time) (*models.AccountInvite, error)
+	Rotate(ctx context.Context, id uuid.UUID, tokenHash, role string, expiresAt time.Time) error
+	MarkAccepted(ctx context.Context, id uuid.UUID, acceptedAt time.Time) error
+}
+
 // Deps is everything Account needs. Users, Tokens and Activity are required
 // for the dashboard member and token handlers. Older callers that only create
 // accounts may leave them nil.
@@ -72,6 +83,7 @@ type Deps struct {
 	Users       UserStore
 	Tokens      TokenStore
 	Activity    ActivityLog
+	Invites     InviteStore
 }
 
 // MemberChange is a PATCH of one membership. A nil field is left as stored.
@@ -87,6 +99,7 @@ type Service struct {
 	users       UserStore
 	tokens      TokenStore
 	activity    ActivityLog
+	invites     InviteStore
 }
 
 // NewService builds an account service from Deps.
@@ -97,6 +110,7 @@ func NewService(deps Deps) *Service {
 		users:       deps.Users,
 		tokens:      deps.Tokens,
 		activity:    deps.Activity,
+		invites:     deps.Invites,
 	}
 }
 
@@ -130,6 +144,19 @@ func (s *Service) GetUserRole(ctx context.Context, accountID, userID uuid.UUID) 
 
 // AddUser adds a member, restoring a soft-deleted membership when one exists.
 func (s *Service) AddUser(ctx context.Context, accountID, userID uuid.UUID, role string, addedBy uuid.UUID) error {
+	if s.memberships == nil {
+		return fmt.Errorf("account service: memberships repository is required")
+	}
+	actor, err := s.memberships.FindByAccountAndUser(ctx, accountID, addedBy)
+	if err != nil {
+		if errors.Is(err, models.ErrRepositoryNotFound) {
+			return ErrGrantRole
+		}
+		return err
+	}
+	if actor == nil || !policies.MayGrant(actor.Role, role) {
+		return ErrGrantRole
+	}
 	existing, err := s.memberships.FindByAccountAndUserIncludeDeleted(ctx, accountID, userID)
 	if err == nil && existing != nil && existing.DeletedAt != nil {
 		if err := s.memberships.Restore(ctx, existing.ID); err != nil {
@@ -207,8 +234,11 @@ func (s *Service) UpdateMember(ctx context.Context, accountID, actorID, targetID
 				return err
 			}
 		}
-		updated, err = s.memberships.FindByAccountAndUser(ctx, accountID, targetID)
+		updated, err = s.memberships.FindByAccountAndUserIncludeDeleted(ctx, accountID, targetID)
 		if err != nil {
+			if errors.Is(err, models.ErrRepositoryNotFound) {
+				return ErrMemberNotFound
+			}
 			return err
 		}
 		if updated == nil {

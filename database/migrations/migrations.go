@@ -52,5 +52,7 @@ func All() []schema.Migration {
 		&M00000000000440SealWebhookConfigSecrets{},
 		&M00000000000450AddTotpLastUsedCounterToUsers{},
 		&M00000000000460AddSessionsRevokedAtToUsers{},
+		&M00000000000470AccountUsersRoleCheck{},
+		&M00000000000480CreateAccountInvitesTable{},
 	}
 }

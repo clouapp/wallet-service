@@ -48,15 +48,15 @@ func (s *AccountUserRepositoryTestSuite) createUser() uuid.UUID {
 
 func (s *AccountUserRepositoryTestSuite) TestCreate_Success() {
 	accID := s.createAccount()
-	au := &models.AccountUser{ID: uuid.New(), AccountID: accID, UserID: uuid.New(), Role: "owner"}
+	au := &models.AccountUser{ID: uuid.New(), AccountID: accID, UserID: s.createUser(), Role: "owner"}
 	err := s.repo.Create(context.Background(), au)
 	s.NoError(err)
 }
 
 func (s *AccountUserRepositoryTestSuite) TestFindByAccountID() {
 	accID := s.createAccount()
-	s.Require().NoError(s.repo.Create(context.Background(), &models.AccountUser{ID: uuid.New(), AccountID: accID, UserID: uuid.New(), Role: "owner"}))
-	s.Require().NoError(s.repo.Create(context.Background(), &models.AccountUser{ID: uuid.New(), AccountID: accID, UserID: uuid.New(), Role: "admin"}))
+	s.Require().NoError(s.repo.Create(context.Background(), &models.AccountUser{ID: uuid.New(), AccountID: accID, UserID: s.createUser(), Role: "owner"}))
+	s.Require().NoError(s.repo.Create(context.Background(), &models.AccountUser{ID: uuid.New(), AccountID: accID, UserID: s.createUser(), Role: "admin"}))
 
 	members, err := s.repo.FindByAccountID(context.Background(), accID)
 	s.NoError(err)
@@ -65,7 +65,7 @@ func (s *AccountUserRepositoryTestSuite) TestFindByAccountID() {
 
 func (s *AccountUserRepositoryTestSuite) TestFindByAccountAndUser_Found() {
 	accID := s.createAccount()
-	userID := uuid.New()
+	userID := s.createUser()
 	s.Require().NoError(s.repo.Create(context.Background(), &models.AccountUser{ID: uuid.New(), AccountID: accID, UserID: userID, Role: "admin"}))
 
 	au, err := s.repo.FindByAccountAndUser(context.Background(), accID, userID)
@@ -82,7 +82,7 @@ func (s *AccountUserRepositoryTestSuite) TestFindByAccountAndUser_NotFound() {
 
 func (s *AccountUserRepositoryTestSuite) TestFindByAccountAndUserIncludeDeleted() {
 	accID := s.createAccount()
-	userID := uuid.New()
+	userID := s.createUser()
 	s.Require().NoError(s.repo.Create(context.Background(), &models.AccountUser{ID: uuid.New(), AccountID: accID, UserID: userID, Role: "admin"}))
 
 	err := s.repo.SoftDeleteByAccountAndUser(context.Background(), accID, userID)
@@ -134,7 +134,7 @@ func (s *AccountUserRepositoryTestSuite) TestRolesForUserAccounts_SkipsRemovedMe
 func (s *AccountUserRepositoryTestSuite) TestFindByUserID() {
 	acc1 := s.createAccount()
 	acc2 := s.createAccount()
-	userID := uuid.New()
+	userID := s.createUser()
 	s.Require().NoError(s.repo.Create(context.Background(), &models.AccountUser{ID: uuid.New(), AccountID: acc1, UserID: userID, Role: "owner"}))
 	s.Require().NoError(s.repo.Create(context.Background(), &models.AccountUser{ID: uuid.New(), AccountID: acc2, UserID: userID, Role: "admin"}))
 
@@ -175,7 +175,7 @@ func (s *AccountUserRepositoryTestSuite) TestAccessLookupsIgnoreMembershipsThatA
 
 func (s *AccountUserRepositoryTestSuite) TestSetRole() {
 	accID := s.createAccount()
-	userID := uuid.New()
+	userID := s.createUser()
 	au := &models.AccountUser{ID: uuid.New(), AccountID: accID, UserID: userID, Role: "auditor"}
 	s.Require().NoError(s.repo.Create(context.Background(), au))
 
@@ -208,14 +208,18 @@ func (s *AccountUserRepositoryTestSuite) TestSetStatusAndCountActiveOwners() {
 	s.Require().NoError(err)
 	s.Equal(int64(1), owners)
 
-	found, err := s.repo.FindByAccountAndUser(context.Background(), accID, suspendedID)
+	access, err := s.repo.FindByAccountAndUser(context.Background(), accID, suspendedID)
+	s.ErrorIs(err, models.ErrRepositoryNotFound)
+	s.Nil(access)
+
+	found, err := s.repo.FindByAccountAndUserIncludeDeleted(context.Background(), accID, suspendedID)
 	s.Require().NoError(err)
 	s.Equal(models.MembershipStatusSuspended, found.Status)
 }
 
 func (s *AccountUserRepositoryTestSuite) TestSoftDeleteByAccountAndUser() {
 	accID := s.createAccount()
-	userID := uuid.New()
+	userID := s.createUser()
 	s.Require().NoError(s.repo.Create(context.Background(), &models.AccountUser{ID: uuid.New(), AccountID: accID, UserID: userID, Role: "user"}))
 
 	err := s.repo.SoftDeleteByAccountAndUser(context.Background(), accID, userID)

@@ -1,0 +1,62 @@
+package policies
+
+import (
+	"testing"
+
+	"github.com/google/uuid"
+	"github.com/macrowallets/waas/app/models"
+)
+
+func TestMayGrantDoesNotAllowARoleAboveTheActor(t *testing.T) {
+	if !MayGrant(models.AccountRoleOwner, models.AccountRoleOwner) {
+		t.Fatal("owner may grant owner")
+	}
+	if !MayGrant(models.AccountRoleAdmin, models.AccountRoleAdmin) {
+		t.Fatal("admin may grant an equal role")
+	}
+	if !MayGrant(models.AccountRoleAdmin, models.AccountRoleUser) || !MayGrant(models.AccountRoleAdmin, models.AccountRoleAuditor) {
+		t.Fatal("admin may grant user and auditor")
+	}
+	if MayGrant(models.AccountRoleAdmin, models.AccountRoleOwner) {
+		t.Fatal("admin must not grant owner")
+	}
+	if !MayGrant(models.AccountRoleUser, models.AccountRoleAuditor) || !MayGrant(models.AccountRoleAuditor, models.AccountRoleUser) {
+		t.Fatal("user and auditor are the same rank")
+	}
+	if MayGrant(models.AccountRoleUser, models.AccountRoleAdmin) || MayGrant(models.AccountRoleAuditor, models.AccountRoleOwner) {
+		t.Fatal("a lower role must not grant above itself")
+	}
+	if MayGrant("", models.AccountRoleUser) || MayGrant(models.AccountRoleOwner, "viewer") || MayGrant(models.AccountRoleOwner, "") {
+		t.Fatal("unknown roles are not grantable")
+	}
+}
+
+func TestMayActOnUsesTheSameRankAndRemovalRefusesSelfAndLastOwner(t *testing.T) {
+	if !MayActOn(models.AccountRoleAdmin, models.AccountRoleAdmin) {
+		t.Fatal("admin may act on another admin")
+	}
+	if MayActOn(models.AccountRoleAdmin, models.AccountRoleOwner) {
+		t.Fatal("admin must not act on an owner")
+	}
+	if !MayActOn(models.AccountRoleOwner, models.AccountRoleOwner) {
+		t.Fatal("an owner may act on another owner")
+	}
+
+	actor := uuid.New()
+	other := uuid.New()
+	if err := RefuseMemberRemoval(actor, actor, models.AccountRoleOwner, models.AccountRoleOwner, 2); err != ErrCannotRemoveSelf {
+		t.Fatalf("self removal = %v", err)
+	}
+	if err := RefuseMemberRemoval(actor, other, models.AccountRoleAdmin, models.AccountRoleOwner, 1); err != ErrCannotActOnMember {
+		t.Fatalf("admin removing owner = %v", err)
+	}
+	if err := RefuseMemberRemoval(actor, other, models.AccountRoleOwner, models.AccountRoleOwner, 1); err != ErrLastOwner {
+		t.Fatalf("last owner = %v", err)
+	}
+	if err := RefuseMemberRemoval(actor, other, models.AccountRoleOwner, models.AccountRoleOwner, 2); err != nil {
+		t.Fatalf("second owner = %v", err)
+	}
+	if err := RefuseMemberRemoval(actor, other, models.AccountRoleAdmin, models.AccountRoleAdmin, 1); err != nil {
+		t.Fatalf("admin removing admin = %v", err)
+	}
+}

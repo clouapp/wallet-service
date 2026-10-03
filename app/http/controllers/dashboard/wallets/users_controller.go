@@ -90,6 +90,9 @@ func (ctrl *UsersController) AddWalletUser(ctx http.Context) http.Response {
 		return resp
 	}
 	targetID, _ := uuid.Parse(req.UserID)
+	if _, err := models.ParseWalletRoles(req.Roles); err != nil {
+		return responses.Send(ctx, http.StatusUnprocessableEntity, http.Json{"error": err.Error()})
+	}
 	if resp := ctrl.requireActiveAccountMember(ctx, wallet, targetID); resp != nil {
 		return resp
 	}

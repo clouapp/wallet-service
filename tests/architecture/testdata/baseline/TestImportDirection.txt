@@ -36,8 +36,9 @@ app/policies → app/container (policies → container) (x2)
 app/rules → app/container (rules → container)
 app/services/account → app/repositories (services → repositories) [test]
 app/services/deposit → app/repositories (services → repositories)
-app/services/deposit → app/repositories (services → repositories) [test] (x4)
+app/services/deposit → app/repositories (services → repositories) [test] (x5)
 app/services/refresh → app/repositories (services → repositories) (x2)
+app/services/refresh → app/repositories (services → repositories) [test]
 app/services/wallet → app/repositories (services → repositories) [test]
 app/services/webhook → app/repositories (services → repositories) [test]
 app/services/webhooksync → app/repositories (services → repositories)

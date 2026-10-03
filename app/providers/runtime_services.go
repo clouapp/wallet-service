@@ -34,9 +34,18 @@ func registerRuntimeServices(app foundation.Application) {
 	bindRuntime(app, func(c *container.Container) *withdraw.Service { return c.WithdrawalService }, "withdrawal service")
 	bindRuntime(app, func(c *container.Container) *withdrawalevents.Publisher { return c.WithdrawalEvents }, "withdrawal events")
 	bindRuntime(app, func(c *container.Container) *webhooksync.Service { return c.WebhookSyncService }, "webhook sync service")
-	bindRuntime(app, func(c *container.Container) *authsvc.SecondFactorVerifier { return c.SecondFactor }, "second factor verifier")
-	bindRuntime(app, func(c *container.Container) *authsvc.TwoFactorLogin { return c.TwoFactorLogin }, "two factor login")
-	bindRuntime(app, func(c *container.Container) *authsvc.SessionRevoker { return c.SessionRevoker }, "session revoker")
+	bindRuntime(app, func(c *container.Container) *authsvc.SecondFactorVerifier {
+		verifier, _ := c.SecondFactor.(*authsvc.SecondFactorVerifier)
+		return verifier
+	}, "second factor verifier")
+	bindRuntime(app, func(c *container.Container) *authsvc.TwoFactorLogin {
+		login, _ := c.TwoFactorLogin.(*authsvc.TwoFactorLogin)
+		return login
+	}, "two factor login")
+	bindRuntime(app, func(c *container.Container) *authsvc.SessionRevoker {
+		revoker, _ := c.SessionRevoker.(*authsvc.SessionRevoker)
+		return revoker
+	}, "session revoker")
 
 	app.Singleton((*price.CoinAPICredential)(nil), func(foundation.Application) (any, error) {
 		return &price.CoinAPICredential{Key: container.Get().PriceConfig.CoinAPIKey}, nil

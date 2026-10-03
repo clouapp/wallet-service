@@ -79,7 +79,7 @@ func (s *totpEnrollmentSuite) TestGlobalFlagBlocksLoginStillWorksAndConfirmedTOT
 
 	s.Require().NoError(s.setTotpEnabled(userID, true))
 	partial := s.loginPartial(email)
-	s.Equal(http.StatusOK, s.statusOf(s.getAccount(partial, accountID)))
+	s.Equal(http.StatusUnauthorized, s.statusOf(s.getAccount(partial, accountID)))
 
 	verify := s.post("", "/v1/auth/2fa/verify", fmt.Sprintf(`{"partial_token":%q,"code":"000000"}`, partial))
 	status, code := s.errorCode(verify)

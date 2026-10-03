@@ -35,7 +35,9 @@ const (
 	chainSession       = "SessionAuth"
 	chainAccount       = "SessionAuth > AccountContext > TOTPEnrollment"
 	chainHeader        = "SessionAuth > AccountHeader > TOTPEnrollment"
+	chainCreateWallet  = chainHeader + " > RequireFundAction"
 	chainWallet        = "SessionAuth > AccountHeader > TOTPEnrollment > WalletContext"
+	chainMoveFunds     = chainWallet + " > RequireFundAction"
 	chainUnspent       = "SessionAuth > AccountHeader > TOTPEnrollment > WalletContext > UTXOOnly"
 	chainAPI           = "APITokenAuth"
 	chainAPIWallet     = "APITokenAuth > APIWalletContext"
@@ -114,6 +116,8 @@ var routeTable = map[string]routeSecurity{
 	"POST /v1/auth/2fa/verify":                                         guest(),
 	"POST /v1/auth/login":                                              guest(),
 	"POST /v1/auth/logout":                                             session(chainSession),
+	"GET|HEAD /v1/auth/invites/{token}":                                guest(),
+	"POST /v1/auth/invites/accept":                                     guest(),
 	"POST /v1/auth/recover":                                            guest(),
 	"POST /v1/auth/recover/confirm":                                    guest(),
 	"POST /v1/auth/refresh":                                            guest(),
@@ -139,14 +143,15 @@ var routeTable = map[string]routeSecurity{
 	"POST /v1/users/me/totp/setup":                                     session(chainSession),
 	"POST /v1/users/me/totp/verify":                                    session(chainSession),
 	"GET|HEAD /v1/wallets":                                             session(chainHeader),
-	"POST /v1/wallets":                                                 session(chainHeader),
+	"POST /v1/wallets":                                                 session(chainCreateWallet),
 	"GET|HEAD /v1/wallets/{walletId}":                                  session(chainHeader),
 	"POST /v1/wallets/{walletId}/activate":                             session(chainWallet),
+	"POST /v1/wallets/{walletId}/archive":                              session(chainWallet),
 	"GET|HEAD /v1/wallets/{walletId}/addresses":                        session(chainWallet),
-	"POST /v1/wallets/{walletId}/addresses":                            session(chainWallet),
+	"POST /v1/wallets/{walletId}/addresses":                            session(chainMoveFunds),
 	"PATCH /v1/wallets/{walletId}/addresses/{addressId}":               session(chainWallet),
 	"GET|HEAD /v1/wallets/{walletId}/balances":                         session(chainWallet),
-	"POST /v1/wallets/{walletId}/consolidate":                          session(chainWallet),
+	"POST /v1/wallets/{walletId}/consolidate":                          session(chainMoveFunds),
 	"POST /v1/wallets/{walletId}/freeze":                               session(chainWallet),
 	"POST /v1/wallets/{walletId}/gas-check":                            session(chainWallet),
 	"GET|HEAD /v1/wallets/{walletId}/gas-status":                       session(chainWallet),
@@ -160,16 +165,18 @@ var routeTable = map[string]routeSecurity{
 	"DELETE /v1/wallets/{walletId}/users/{userId}":                     session(chainWallet),
 	"GET|HEAD /v1/wallets/{walletId}/webhooks":                         session(chainWallet),
 	"POST /v1/wallets/{walletId}/webhooks":                             session(chainWallet),
+	"POST /v1/wallets/{walletId}/webhooks/{webhookId}/test":            session(chainWallet),
 	"DELETE /v1/wallets/{walletId}/webhooks/{webhookId}":               session(chainWallet),
 	"GET|HEAD /v1/wallets/{walletId}/whitelist":                        session(chainWallet),
 	"POST /v1/wallets/{walletId}/whitelist":                            session(chainWallet),
 	"DELETE /v1/wallets/{walletId}/whitelist/{entryId}":                session(chainWallet),
 	"POST /v1/wallets/{walletId}/withdraw/preview":                     session(chainWallet),
 	"GET|HEAD /v1/wallets/{walletId}/withdrawals":                      session(chainWallet),
-	"POST /v1/wallets/{walletId}/withdrawals":                          session(chainWallet),
+	"POST /v1/wallets/{walletId}/withdrawals":                          session(chainMoveFunds),
 	"POST /v1/wallets/{walletId}/withdrawals/estimate":                 session(chainWallet),
 	"GET|HEAD /v1/wallets/{walletId}/withdrawals/{withdrawalId}":       session(chainWallet),
 	"POST /v1/wallets/{walletId}/withdrawals/{withdrawalId}/cancel":    session(chainWallet),
+	"GET|HEAD /v1/withdrawals/{withdrawalId}":                          session(chainHeader),
 	"POST /v1/webhooks/ingest/{provider}/{chainID}":                    provider(),
 }
 

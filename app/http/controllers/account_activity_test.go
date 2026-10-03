@@ -229,6 +229,14 @@ func (s *AccountActivityTestSuite) TestMFAResetIsAPlatformRow() {
 
 	resp := s.delete(owner.token, "/v1/users/me/totp")
 	resp.AssertOk()
+	content, err := resp.Content()
+	s.Require().NoError(err)
+	var renewed struct {
+		AccessToken string `json:"access_token"`
+	}
+	s.Require().NoError(json.Unmarshal([]byte(content), &renewed))
+	s.Require().NotEmpty(renewed.AccessToken)
+	owner.token = renewed.AccessToken
 
 	accountPage := s.list(owner.token, accountID, "")
 	s.Equal(int64(0), accountPage.Total)

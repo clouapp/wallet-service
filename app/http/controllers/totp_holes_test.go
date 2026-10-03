@@ -56,7 +56,7 @@ func (s *TotpHolesTestSuite) TestDisableTOTPWithoutACodeLeavesItOn() {
 
 	resp := s.authedDelete(session.AccessToken, "/v1/users/me/totp")
 
-	resp.AssertStatus(401).AssertJson(map[string]any{"error": "invalid 2FA code"})
+	resp.AssertStatus(401).AssertJson(map[string]any{"error": map[string]any{"code": "unauthorized", "message": "invalid 2FA code"}})
 	after := s.storedUser(user.ID)
 	s.True(after.TotpEnabled)
 	s.Equal(before.TotpSecret, after.TotpSecret)
@@ -69,7 +69,7 @@ func (s *TotpHolesTestSuite) TestDisableTOTPWithAWrongCodeRevokesNothing() {
 
 	resp := s.authedDeleteJSON(session.AccessToken, "/v1/users/me/totp", `{"code":"000000"}`)
 
-	resp.AssertStatus(401).AssertJson(map[string]any{"error": "invalid 2FA code"})
+	resp.AssertStatus(401).AssertJson(map[string]any{"error": map[string]any{"code": "unauthorized", "message": "invalid 2FA code"}})
 	s.True(s.storedUser(user.ID).TotpEnabled)
 	s.assertSessionWorks(session)
 }
@@ -108,7 +108,7 @@ func (s *TotpHolesTestSuite) TestSetupTOTPWhileActiveIsRejected() {
 
 	resp := s.authedPost(session.AccessToken, "/v1/users/me/totp/setup", "")
 
-	resp.AssertStatus(409).AssertJson(map[string]any{"error": "2FA is already enabled"})
+	resp.AssertStatus(409).AssertJson(map[string]any{"error": map[string]any{"code": "conflict", "message": "2FA is already enabled"}})
 	after := s.storedUser(user.ID)
 	s.True(after.TotpEnabled)
 	s.Equal(before.TotpSecret, after.TotpSecret)
@@ -161,5 +161,5 @@ func (s *TotpHolesTestSuite) TestCodeConsumedAtLoginIsRejectedForWithdrawal() {
 		WithHeader("X-Account-Id", accountID.String())
 	withdrawalResp, err := withdrawal.Post("/v1/wallets/"+walletID.String()+"/withdrawals", strings.NewReader(body))
 	s.Require().NoError(err)
-	withdrawalResp.AssertStatus(401).AssertJson(map[string]any{"error": "invalid 2FA code"})
+	withdrawalResp.AssertStatus(401).AssertJson(map[string]any{"error": map[string]any{"code": "unauthorized", "message": "invalid 2FA code"}})
 }

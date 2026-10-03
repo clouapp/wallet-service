@@ -46,6 +46,7 @@ func RegisterAdminRoutes() {
 	noCache := middleware.CacheControl(0)
 	accounts := container.MustMake[*accountsvc.Service]()
 	accountHeader := middleware.AccountHeader(accounts)
+	inviteCtrl := newDashboardInvitesController()
 	totpEnrollment := middleware.TOTPEnrollment(
 		container.MustMake[*featuressvc.Service](),
 		container.MustMake[*settingssvc.Service](),
@@ -79,6 +80,8 @@ func RegisterAdminRoutes() {
 		router.Post("/refresh", authCtrl.RefreshToken)
 		router.Post("/recover", authCtrl.ForgotPassword)
 		router.Post("/recover/confirm", authCtrl.ResetPassword)
+		router.Get("/invites/{token}", inviteCtrl.Preview)
+		router.Post("/invites/accept", inviteCtrl.Accept)
 	})
 	facades.Route().Prefix("/v1/auth").Middleware(middleware.SessionAuth(), noCache).Group(func(router route.Router) {
 		router.Post("/logout", authCtrl.Logout)
@@ -151,13 +154,13 @@ func RegisterAdminRoutes() {
 
 	facades.Route().Prefix("/v1/wallets").Middleware(middleware.SessionAuth(), accountHeader, totpEnrollment, noCache).Group(func(router route.Router) {
 		router.Get("", walletCtrl.ListWallets)
-		router.Post("", walletCtrl.CreateWalletAdmin)
+		router.Middleware(middleware.RequireFundAction(middleware.FundCreateWallet)).Post("", walletCtrl.CreateWalletAdmin)
 		router.Get("/{walletId}", walletCtrl.GetWallet)
 		router.Prefix("/{walletId}").Middleware(middleware.WalletContext()).Group(func(r route.Router) {
 			r.Post("/activate", walletCtrl.ActivateWallet)
 
 			r.Get("/addresses", addressCtrl.ListWalletAddresses)
-			r.Post("/addresses", addressCtrl.GenerateAddress)
+			r.Middleware(middleware.RequireFundAction(middleware.FundGenerateAddress)).Post("/addresses", addressCtrl.GenerateAddress)
 			r.Patch("/addresses/{addressId}", addressCtrl.UpdateAddress)
 
 			r.Get("/users", walletUsersCtrl.ListWalletUsers)
@@ -184,12 +187,12 @@ func RegisterAdminRoutes() {
 			r.Get("/transactions/{txId}", walletTxCtrl.GetWalletTransaction)
 
 			r.Get("/withdrawals", withdrawalCtrl.ListWalletWithdrawals)
-			r.Post("/withdrawals", withdrawalCtrl.CreateWalletWithdrawal)
+			r.Middleware(middleware.RequireFundAction(middleware.FundWithdraw)).Post("/withdrawals", withdrawalCtrl.CreateWalletWithdrawal)
 			r.Post("/withdrawals/estimate", withdrawalCtrl.EstimateWithdrawalFee)
 			r.Get("/withdrawals/{withdrawalId}", withdrawalCtrl.GetWalletWithdrawal)
 			r.Post("/withdrawals/{withdrawalId}/cancel", withdrawalCtrl.CancelWalletWithdrawal)
 
-			r.Post("/consolidate", sweepCtrl.ConsolidateWallet)
+			r.Middleware(middleware.RequireFundAction(middleware.FundSweep)).Post("/consolidate", sweepCtrl.ConsolidateWallet)
 			r.Get("/gas-status", sweepCtrl.GetGasStatus)
 			r.Post("/gas-check", sweepCtrl.ForceGasCheck)
 			r.Post("/withdraw/preview", sweepCtrl.PreviewWithdraw)
@@ -382,5 +385,12 @@ func newDashboardAccountsController() *dashaccounts.AccountsController {
 	return dashaccounts.NewAccountsController(
 		container.MustMake[*accountsvc.Service](),
 		container.MustMake[*authsvc.Service](),
+	)
+}
+
+func newDashboardInvitesController() *dashaccounts.InvitesController {
+	return dashaccounts.NewInvitesController(
+		container.MustMake[*accountsvc.Service](),
+		container.MustMake[*usersvc.Service](),
 	)
 }

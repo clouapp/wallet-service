@@ -67,9 +67,9 @@ func (s *criticalEndpointsSuite) seedAccountWallet(requireSignature bool, label 
 
 	tokenID := uuid.New()
 	_, err := facades.Orm().Query().Exec(
-		`INSERT INTO access_tokens (id, account_id, name, token_hash, spending_limit, created_at, updated_at)
-		 VALUES (?, ?, ?, ?, ?, NOW(), NOW())`,
-		tokenID, accountID, "critical-token-"+label, "test-hash-critical-"+label, "{}",
+		`INSERT INTO access_tokens (id, account_id, name, token_hash, permissions, spending_limit, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, NOW(), NOW())`,
+		tokenID, accountID, "critical-token-"+label, "test-hash-critical-"+label, models.AllAPIPermissionGrants(), "{}",
 	)
 	s.Require().NoError(err)
 
@@ -119,9 +119,9 @@ func (s *criticalEndpointsSuite) mintSignedToken(label string) string {
 
 	tokenID := uuid.New()
 	_, err := facades.Orm().Query().Exec(
-		`INSERT INTO access_tokens (id, account_id, name, token_hash, spending_limit, created_at, updated_at)
-		 VALUES (?, ?, ?, ?, ?, NOW(), NOW())`,
-		tokenID, accountID, "critical-token-"+label, "test-hash-critical-"+label, "{}",
+		`INSERT INTO access_tokens (id, account_id, name, token_hash, permissions, spending_limit, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, NOW(), NOW())`,
+		tokenID, accountID, "critical-token-"+label, "test-hash-critical-"+label, models.AllAPIPermissionGrants(), "{}",
 	)
 	s.Require().NoError(err)
 

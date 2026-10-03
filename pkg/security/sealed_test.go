@@ -1,4 +1,4 @@
-package security_test
+package security
 
 import (
 	"crypto/aes"
@@ -10,8 +10,6 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
-
-	"github.com/macrowallets/waas/pkg/security"
 )
 
 // gcmCipher produces the same envelope as facades.Crypt(): base64 of
@@ -63,12 +61,12 @@ func (failingCipher) DecryptString(string) (string, error) { return "", errors.N
 func TestSealAndOpenSecret_RoundTrip(t *testing.T) {
 	c := newGCMCipher(t)
 	for _, secret := range []string{"whsec_markets", "", "a secret with spaces and ünïcode", string(make([]byte, 255))} {
-		sealed, err := security.SealSecret(c, secret)
+		sealed, err := SealSecret(c, secret)
 		require.NoError(t, err)
 		require.NotEqual(t, secret, sealed)
-		require.True(t, security.IsSealedSecret(sealed))
+		require.True(t, IsSealedSecret(sealed))
 
-		opened, err := security.OpenSecret(c, sealed)
+		opened, err := OpenSecret(c, sealed)
 		require.NoError(t, err)
 		require.Equal(t, secret, opened)
 	}
@@ -76,9 +74,9 @@ func TestSealAndOpenSecret_RoundTrip(t *testing.T) {
 
 func TestSealSecret_IsRandomised(t *testing.T) {
 	c := newGCMCipher(t)
-	first, err := security.SealSecret(c, "same")
+	first, err := SealSecret(c, "same")
 	require.NoError(t, err)
-	second, err := security.SealSecret(c, "same")
+	second, err := SealSecret(c, "same")
 	require.NoError(t, err)
 	require.NotEqual(t, first, second, "a fresh nonce per seal")
 }
@@ -86,14 +84,14 @@ func TestSealSecret_IsRandomised(t *testing.T) {
 func TestOpenSecret_RefusesPlaintextAndForeignKeys(t *testing.T) {
 	c := newGCMCipher(t)
 
-	_, err := security.OpenSecret(c, "plaintext-secret")
-	require.ErrorIs(t, err, security.ErrSecretNotSealed)
-	_, err = security.OpenSecret(c, "")
-	require.ErrorIs(t, err, security.ErrSecretNotSealed)
+	_, err := OpenSecret(c, "plaintext-secret")
+	require.ErrorIs(t, err, ErrSecretNotSealed)
+	_, err = OpenSecret(c, "")
+	require.ErrorIs(t, err, ErrSecretNotSealed)
 
-	sealedElsewhere, err := security.SealSecret(newGCMCipher(t), "secret")
+	sealedElsewhere, err := SealSecret(newGCMCipher(t), "secret")
 	require.NoError(t, err)
-	_, err = security.OpenSecret(c, sealedElsewhere)
+	_, err = OpenSecret(c, sealedElsewhere)
 	require.Error(t, err, "a value sealed under another key does not open")
 }
 
@@ -113,20 +111,20 @@ func TestIsSealedSecret_RejectsLookalikes(t *testing.T) {
 		"not an envelope": encode([]string{"iv", "value"}),
 	}
 	for name, value := range cases {
-		require.False(t, security.IsSealedSecret(value), name)
+		require.False(t, IsSealedSecret(value), name)
 	}
 }
 
 func TestSealAndOpenSecret_ReportCipherFailures(t *testing.T) {
-	_, err := security.SealSecret(failingCipher{}, "secret")
+	_, err := SealSecret(failingCipher{}, "secret")
 	require.Error(t, err)
-	_, err = security.SealSecret(nil, "secret")
+	_, err = SealSecret(nil, "secret")
 	require.Error(t, err)
 
-	sealed, err := security.SealSecret(newGCMCipher(t), "secret")
+	sealed, err := SealSecret(newGCMCipher(t), "secret")
 	require.NoError(t, err)
-	_, err = security.OpenSecret(failingCipher{}, sealed)
+	_, err = OpenSecret(failingCipher{}, sealed)
 	require.Error(t, err)
-	_, err = security.OpenSecret(nil, sealed)
+	_, err = OpenSecret(nil, sealed)
 	require.Error(t, err)
 }

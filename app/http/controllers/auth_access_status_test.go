@@ -81,12 +81,14 @@ func (s *AccessStatusTestSuite) send(method, path, bearer string, accountID uuid
 func (s *AccessStatusTestSuite) assertReadOnlyRefusal(resp contractstesting.Response, status string) {
 	resp.AssertStatus(403)
 	var body struct {
-		Error  string `json:"error"`
-		Status string `json:"status"`
+		Error struct {
+			Message string `json:"message"`
+			Status  string `json:"status"`
+		} `json:"error"`
 	}
 	s.decode(resp, &body)
-	s.Contains(body.Error, "only reads are allowed")
-	s.Equal(status, body.Status)
+	s.Contains(body.Error.Message, "only reads are allowed")
+	s.Equal(status, body.Error.Status)
 }
 
 func (s *AccessStatusTestSuite) TestLoginRefusesAUserWhoIsNotActive() {

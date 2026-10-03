@@ -1,8 +1,10 @@
 package withdrawals
 
 import (
+	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/goravel/framework/contracts/http"
@@ -13,6 +15,7 @@ import (
 	"github.com/macrowallets/waas/app/http/requests"
 	"github.com/macrowallets/waas/app/http/responses"
 	"github.com/macrowallets/waas/app/models"
+	"github.com/macrowallets/waas/app/services/apitoken"
 	authsvc "github.com/macrowallets/waas/app/services/auth"
 	chain "github.com/macrowallets/waas/app/services/chain"
 	chainsvc "github.com/macrowallets/waas/app/services/chains"
@@ -24,6 +27,16 @@ import (
 	"github.com/macrowallets/waas/app/services/withdrawalrecords"
 	"github.com/macrowallets/waas/pkg/types"
 )
+
+type redisDailyCounter struct{ client *redis.Client }
+
+func (c redisDailyCounter) IncrByFloat(ctx context.Context, key string, value float64) (float64, error) {
+	return c.client.IncrByFloat(ctx, key, value).Result()
+}
+
+func (c redisDailyCounter) Expire(ctx context.Context, key string, ttl time.Duration) error {
+	return c.client.Expire(ctx, key, ttl).Err()
+}
 
 func validateRequest(ctx http.Context, req http.FormRequest) http.Response {
 	{
@@ -157,6 +170,20 @@ func (ctrl *WithdrawalsController) CreateWalletWithdrawal(ctx http.Context) http
 		accountID, hasAccount := requestctx.AccountID(ctx)
 		if !hasAccount || accountID == uuid.Nil {
 			return responses.Send(ctx, http.StatusUnauthorized, http.Json{"error": "unauthenticated"})
+		}
+		if token, ok := requestctx.APIToken(ctx.Context()); ok && token != nil {
+			asset := req.Asset
+			if asset == "" {
+				asset = wallet.Chain
+			}
+			key := fmt.Sprintf("vault:quota:token:%s:%s", token.ID.String(), time.Now().UTC().Format("2006-01-02"))
+			var counter apitoken.DailyCounter
+			if ctrl.redis != nil {
+				counter = redisDailyCounter{client: ctrl.redis}
+			}
+			if err := apitoken.ReserveDailyUSD(ctx.Context(), counter, key, token.SpendingLimit, asset, req.Amount); err != nil {
+				return responses.Send(ctx, http.StatusForbidden, http.Json{"error": err.Error()})
+			}
 		}
 	}
 
