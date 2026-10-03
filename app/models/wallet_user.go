@@ -9,13 +9,13 @@ import (
 
 type WalletUser struct {
 	orm.Model
-	ID        uuid.UUID  `gorm:"type:uuid;primary_key" json:"id"`
-	WalletID  uuid.UUID  `gorm:"type:uuid;not null;index" json:"wallet_id"`
-	UserID    uuid.UUID  `gorm:"type:uuid;not null;index" json:"user_id"`
-	Roles     string     `gorm:"type:text" json:"roles,omitempty"`
-	Status    string     `gorm:"type:varchar(20);default:active" json:"status"`
-	DeletedAt *time.Time `gorm:"index" json:"deleted_at,omitempty"`
-	User      *User      `gorm:"foreignKey:UserID" json:"user,omitempty"`
+	ID        uuid.UUID  `gorm:"type:uuid;primary_key"`
+	WalletID  uuid.UUID  `gorm:"type:uuid;not null;index"`
+	UserID    uuid.UUID  `gorm:"type:uuid;not null;index"`
+	Roles     string     `gorm:"type:text"`
+	Status    string     `gorm:"type:varchar(20);default:active"`
+	DeletedAt *time.Time `gorm:"index"`
+	User      *User      `gorm:"foreignKey:UserID"`
 }
 
 func (w *WalletUser) TableName() string { return "wallet_users" }
