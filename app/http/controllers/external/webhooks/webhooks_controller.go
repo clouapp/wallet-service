@@ -63,7 +63,7 @@ func (ctrl *WebhooksController) CreateWebhook(ctx http.Context) http.Response {
 			"error": err.Error(),
 		})
 	}
-	return ctx.Response().Json(http.StatusCreated, cfg)
+	return responses.Send(ctx, http.StatusCreated, cfg)
 }
 
 // ListWebhooks godoc
@@ -133,7 +133,7 @@ func (ctrl *WebhooksController) UpdateWebhook(ctx http.Context) http.Response {
 	})
 	switch {
 	case err == nil:
-		return ctx.Response().Json(http.StatusOK, cfg)
+		return responses.Send(ctx, http.StatusOK, cfg)
 	case errors.Is(err, webhook.ErrWebhookConfigNotFound):
 		return responses.Send(ctx, http.StatusNotFound, http.Json{"error": err.Error()})
 	case errors.Is(err, webhook.ErrWebhookOwnershipNotProven):
