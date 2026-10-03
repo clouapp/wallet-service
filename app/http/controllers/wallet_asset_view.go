@@ -8,7 +8,7 @@ import (
 
 	"github.com/macrowallets/waas/app/container"
 	"github.com/macrowallets/waas/app/models"
-	"github.com/macrowallets/waas/app/repositories"
+	chainsvc "github.com/macrowallets/waas/app/services/chains"
 	"github.com/macrowallets/waas/app/services/txkind"
 	"github.com/macrowallets/waas/pkg/types"
 )
@@ -74,7 +74,7 @@ func WalletTransactionViewsForChain(ctx context.Context, chainID string, transac
 // loadAssetDecimalsCatalog reads the chain and its active tokens; a failed read
 // leaves those decimals unknown instead of failing the listing.
 func loadAssetDecimalsCatalog(ctx context.Context, chainID string) assetDecimalsCatalog {
-	chainRecord, chainErr := container.MustMake[*repositories.ChainRepository]().FindByID(ctx, chainID)
+	chainRecord, chainErr := container.MustMake[*chainsvc.Service]().FindByID(ctx, chainID)
 	if errors.Is(chainErr, models.ErrRepositoryNotFound) {
 		chainRecord, chainErr = nil, nil
 	}
@@ -82,7 +82,7 @@ func loadAssetDecimalsCatalog(ctx context.Context, chainID string) assetDecimals
 		slog.Warn("load chain for transaction decimals", "chain", chainID, "error", chainErr)
 		chainRecord = nil
 	}
-	tokens, tokenErr := container.MustMake[*repositories.TokenRepository]().FindByChainID(ctx, chainID)
+	tokens, tokenErr := container.MustMake[*chainsvc.Service]().FindTokens(ctx, chainID)
 	if tokenErr != nil {
 		slog.Warn("load tokens for transaction decimals", "chain", chainID, "error", tokenErr)
 		tokens = nil
@@ -143,7 +143,7 @@ func walletTransactionViews(transactions []models.Transaction, catalog assetDeci
 		kind := classifyTransaction(tx)
 		views = append(views, WalletTransactionView{
 			Transaction:     tx,
-			zonedTimestamps: newZonedTimestamps(tx.Timestamps),
+			zonedTimestamps: newZonedTimestamps(tx.CreatedAt, tx.UpdatedAt),
 			Decimals:        catalog.decimalsFor(tx),
 			Type:            kind.Type,
 			Direction:       kind.Direction,

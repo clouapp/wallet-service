@@ -11,7 +11,8 @@ import (
 
 	"github.com/macrowallets/waas/app/container"
 	"github.com/macrowallets/waas/app/models"
-	"github.com/macrowallets/waas/app/repositories"
+	chainsvc "github.com/macrowallets/waas/app/services/chains"
+	"github.com/macrowallets/waas/app/services/walletrecords"
 )
 
 // walletNetwork is the network a wallet's chain record really points at (for
@@ -38,7 +39,7 @@ type WalletView struct {
 func newWalletView(wallet *models.Wallet, resolved models.ResolvedNetwork) WalletView {
 	return WalletView{
 		Wallet:          walletPricedFor(wallet, resolved),
-		zonedTimestamps: newZonedTimestamps(wallet.Timestamps),
+		zonedTimestamps: newZonedTimestamps(wallet.CreatedAt, wallet.UpdatedAt),
 		walletNetwork:   newWalletNetwork(resolved),
 	}
 }
@@ -87,7 +88,7 @@ func loadWalletListItems(ctx context.Context, wallets []models.Wallet) ([]Wallet
 	for _, wallet := range wallets {
 		walletIDs = append(walletIDs, wallet.ID)
 	}
-	balanceRows, err := container.MustMake[*repositories.WalletAssetBalanceRepository]().ListByWallets(ctx, walletIDs)
+	balanceRows, err := container.MustMake[*walletrecords.Balances]().ListByWallets(ctx, walletIDs)
 	if err != nil {
 		return nil, fmt.Errorf("list wallet asset balances: %w", err)
 	}
@@ -102,7 +103,7 @@ func loadWalletListItems(ctx context.Context, wallets []models.Wallet) ([]Wallet
 	for _, wallet := range wallets {
 		tokens, loaded := tokensByChain[wallet.Chain]
 		if !loaded {
-			tokens, err = container.MustMake[*repositories.TokenRepository]().FindByChainID(ctx, wallet.Chain)
+			tokens, err = container.MustMake[*chainsvc.Service]().FindTokens(ctx, wallet.Chain)
 			if err != nil {
 				return nil, fmt.Errorf("list tokens of chain %s: %w", wallet.Chain, err)
 			}
@@ -130,7 +131,7 @@ func cachedWalletNetworkResolver(ctx context.Context) func(chainID string) model
 // resolveWalletChainNetwork reads the wallet's chain record; a failed read leaves
 // the network unknown instead of failing the wallet response.
 func resolveWalletChainNetwork(ctx context.Context, chainID string) models.ResolvedNetwork {
-	chainRecord, err := container.MustMake[*repositories.ChainRepository]().FindByID(ctx, chainID)
+	chainRecord, err := container.MustMake[*chainsvc.Service]().FindByID(ctx, chainID)
 	if errors.Is(err, models.ErrRepositoryNotFound) {
 		chainRecord, err = nil, nil
 	}
