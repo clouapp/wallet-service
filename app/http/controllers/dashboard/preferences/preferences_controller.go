@@ -44,7 +44,7 @@ func (ctrl *PreferencesController) GetPreferences(ctx http.Context) http.Respons
 	if prefs == nil {
 		prefs = &models.UserPreferences{}
 	}
-	return ctx.Response().Json(http.StatusOK, http.Json{
+	return responses.Send(ctx, http.StatusOK, http.Json{
 		"preferred_fiat_code": prefs.GetPreferredFiat(),
 		"display_in_fiat":     prefs.IsDisplayInFiat(),
 	})
@@ -79,7 +79,7 @@ func (ctrl *PreferencesController) UpdatePreferences(ctx http.Context) http.Resp
 		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to update preferences"})
 	}
 
-	return ctx.Response().Json(http.StatusOK, http.Json{
+	return responses.Send(ctx, http.StatusOK, http.Json{
 		"preferred_fiat_code": prefs.GetPreferredFiat(),
 		"display_in_fiat":     prefs.IsDisplayInFiat(),
 	})
