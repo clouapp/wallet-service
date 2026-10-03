@@ -15,6 +15,7 @@ import (
 
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/policies"
+	activitylog "github.com/macrowallets/waas/app/services/activity"
 )
 
 const cacheKeyPrefix = "settings:account:"
@@ -37,23 +38,27 @@ type Cache interface {
 
 // Service reads and writes the account settings registry.
 type Service struct {
-	store  Store
-	sealer Sealer
-	cache  Cache
+	store    Store
+	sealer   Sealer
+	cache    Cache
+	activity activitylog.Writer
 }
 
 // NewService builds the account settings service.
-func NewService(store Store, sealer Sealer, cache Cache) *Service {
+func NewService(store Store, sealer Sealer, cache Cache, activity activitylog.Writer) *Service {
 	if store == nil {
 		panic("account settings service: store is required")
 	}
 	if sealer == nil {
 		panic("account settings service: sealer is required")
 	}
+	if activity == nil {
+		panic("account settings service: activity log is required")
+	}
 	if cache == nil {
 		cache = nopCache{}
 	}
-	return &Service{store: store, sealer: sealer, cache: cache}
+	return &Service{store: store, sealer: sealer, cache: cache, activity: activity}
 }
 
 // FacadeCache forgets keys through the process cache.
@@ -123,7 +128,9 @@ func (s *Service) Registry(ctx context.Context, accountID uuid.UUID, role string
 
 // Save writes one group. An unknown group is ErrGroupNotFound before the
 // permission check. A blank or omitted secret keeps the stored ciphertext.
-func (s *Service) Save(ctx context.Context, accountID uuid.UUID, role, groupName string, body map[string]any) (GroupView, error) {
+// A real write and its activity row commit together. Metadata stores the
+// group and the field names, never the values.
+func (s *Service) Save(ctx context.Context, accountID, actorID uuid.UUID, role, groupName string, body map[string]any) (GroupView, error) {
 	if err := requireAccount(ctx, accountID); err != nil {
 		return GroupView{}, err
 	}
@@ -176,12 +183,35 @@ func (s *Service) Save(ctx context.Context, accountID uuid.UUID, role, groupName
 			return GroupView{}, validateErr
 		}
 	}
-	if err := s.store.UpsertMany(ctx, accountID, group.Name, writes); err != nil {
+	if len(writes) == 0 {
+		return s.groupView(ctx, accountID, role, group)
+	}
+	if actorID == uuid.Nil {
+		return GroupView{}, fmt.Errorf("account settings: actor is required")
+	}
+	fields := slices.Sorted(maps.Keys(writes))
+	err = s.activity.Within(ctx, func(ctx context.Context) error {
+		if err := s.store.UpsertMany(ctx, accountID, group.Name, writes); err != nil {
+			return err
+		}
+		meta, err := activitylog.SettingsChange(group.Name, fields)
+		if err != nil {
+			return err
+		}
+		id := accountID
+		return s.activity.Append(ctx, models.AccountActivity{
+			AccountID:   &id,
+			ActorUserID: actorID,
+			Action:      activitylog.ActionSettingsUpdated,
+			TargetType:  activitylog.TargetSettings,
+			TargetID:    group.Name,
+			Metadata:    meta,
+		})
+	})
+	if err != nil {
 		return GroupView{}, err
 	}
-	if len(writes) > 0 {
-		s.cache.Forget(cacheKey(accountID, group.Name))
-	}
+	s.cache.Forget(cacheKey(accountID, group.Name))
 	return s.groupView(ctx, accountID, role, group)
 }
 

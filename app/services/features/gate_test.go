@@ -23,7 +23,7 @@ func TestGateMissingRowAndOnProceedOffBlocks(t *testing.T) {
 			t.Parallel()
 
 			store := newMemoryStore()
-			service := NewService(store, memoryAdmins{})
+			service := newTestService(store, memoryAdmins{})
 			accountID := uuid.New()
 			ctx := context.Background()
 
@@ -34,14 +34,14 @@ func TestGateMissingRowAndOnProceedOffBlocks(t *testing.T) {
 				t.Fatal("gate inserted a row")
 			}
 
-			if _, err := service.Set(ctx, accountID, "owner", tc.key, true); err != nil {
+			if _, err := service.Set(ctx, accountID, uuid.New(), "owner", tc.key, true); err != nil {
 				t.Fatalf("store on: %v", err)
 			}
 			if err := service.Gate(ctx, accountID, tc.key, tc.code); err != nil {
 				t.Fatalf("flag on: %v", err)
 			}
 
-			if _, err := service.Set(ctx, accountID, "owner", tc.key, false); err != nil {
+			if _, err := service.Set(ctx, accountID, uuid.New(), "owner", tc.key, false); err != nil {
 				t.Fatalf("store off: %v", err)
 			}
 			err := service.Gate(ctx, accountID, tc.key, tc.code)
@@ -50,7 +50,7 @@ func TestGateMissingRowAndOnProceedOffBlocks(t *testing.T) {
 				t.Fatalf("flag off: %v", err)
 			}
 
-			if _, err := service.Set(ctx, accountID, "owner", tc.key, true); err != nil {
+			if _, err := service.Set(ctx, accountID, uuid.New(), "owner", tc.key, true); err != nil {
 				t.Fatalf("store on again: %v", err)
 			}
 			if err := service.Gate(ctx, accountID, tc.key, tc.code); err != nil {
@@ -64,11 +64,11 @@ func TestGateOffUsesTheGivenPauseCode(t *testing.T) {
 	t.Parallel()
 
 	store := newMemoryStore()
-	service := NewService(store, memoryAdmins{})
+	service := newTestService(store, memoryAdmins{})
 	accountID := uuid.New()
 	ctx := context.Background()
 
-	if _, err := service.Set(ctx, accountID, "owner", FlagSweepEnabled, false); err != nil {
+	if _, err := service.Set(ctx, accountID, uuid.New(), "owner", FlagSweepEnabled, false); err != nil {
 		t.Fatalf("store: %v", err)
 	}
 	err := service.Gate(ctx, accountID, FlagSweepEnabled, "")
@@ -98,11 +98,11 @@ func TestGateGlobalFalseBlocksEvenWhenTheAccountFlagIsOn(t *testing.T) {
 			t.Parallel()
 
 			store := newMemoryStore()
-			service := NewService(store, memoryAdmins{})
+			service := newTestService(store, memoryAdmins{})
 			accountID := uuid.New()
 			ctx := context.Background()
 
-			if _, err := service.Set(ctx, accountID, "owner", tc.key, true); err != nil {
+			if _, err := service.Set(ctx, accountID, uuid.New(), "owner", tc.key, true); err != nil {
 				t.Fatalf("account on: %v", err)
 			}
 			if err := store.UpsertGlobal(ctx, tc.key, false); err != nil {
@@ -128,14 +128,14 @@ func TestGateAccountOffStillBlocksWhenGlobalIsOn(t *testing.T) {
 	t.Parallel()
 
 	store := newMemoryStore()
-	service := NewService(store, memoryAdmins{})
+	service := newTestService(store, memoryAdmins{})
 	accountID := uuid.New()
 	ctx := context.Background()
 
 	if err := store.UpsertGlobal(ctx, FlagWithdrawalsEnabled, true); err != nil {
 		t.Fatalf("global on: %v", err)
 	}
-	if _, err := service.Set(ctx, accountID, "owner", FlagWithdrawalsEnabled, false); err != nil {
+	if _, err := service.Set(ctx, accountID, uuid.New(), "owner", FlagWithdrawalsEnabled, false); err != nil {
 		t.Fatalf("account off: %v", err)
 	}
 	err := service.Gate(ctx, accountID, FlagWithdrawalsEnabled, CodeWithdrawalsPaused)
@@ -149,7 +149,7 @@ func TestGateGlobalMissingDoesNotBlock(t *testing.T) {
 	t.Parallel()
 
 	store := newMemoryStore()
-	service := NewService(store, memoryAdmins{})
+	service := newTestService(store, memoryAdmins{})
 	accountID := uuid.New()
 	ctx := context.Background()
 
@@ -164,7 +164,7 @@ func TestGateGlobalMissingDoesNotBlock(t *testing.T) {
 func TestGateNilAccountProceeds(t *testing.T) {
 	t.Parallel()
 
-	service := NewService(newMemoryStore(), memoryAdmins{})
+	service := newTestService(newMemoryStore(), memoryAdmins{})
 	if err := service.Gate(context.Background(), uuid.Nil, FlagSweepEnabled, CodeSweepPaused); err != nil {
 		t.Fatalf("nil account: %v", err)
 	}

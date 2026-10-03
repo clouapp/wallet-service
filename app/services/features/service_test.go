@@ -82,11 +82,26 @@ func (s *memoryStore) globalWritten(key string) (bool, bool) {
 	return value, ok
 }
 
+type discardActivity struct{}
+
+func (discardActivity) Within(ctx context.Context, fn func(context.Context) error) error {
+	if fn == nil {
+		return errors.New("activity callback is required")
+	}
+	return fn(ctx)
+}
+
+func (discardActivity) Append(context.Context, models.AccountActivity) error { return nil }
+
+func newTestService(store Store, admins PlatformAdmins) *Service {
+	return NewService(store, admins, discardActivity{})
+}
+
 func TestListMissingRowUsesCatalogDefaultAndWritesNothing(t *testing.T) {
 	t.Parallel()
 
 	store := newMemoryStore()
-	service := NewService(store, memoryAdmins{})
+	service := newTestService(store, memoryAdmins{})
 	accountID := uuid.New()
 
 	view, err := service.List(context.Background(), accountID, "auditor")
@@ -114,11 +129,11 @@ func TestSetThenListReadsTheStoredBoolean(t *testing.T) {
 	t.Parallel()
 
 	store := newMemoryStore()
-	service := NewService(store, memoryAdmins{})
+	service := newTestService(store, memoryAdmins{})
 	accountID := uuid.New()
 	ctx := context.Background()
 
-	written, err := service.Set(ctx, accountID, "owner", FlagWithdrawalsEnabled, true)
+	written, err := service.Set(ctx, accountID, uuid.New(), "owner", FlagWithdrawalsEnabled, true)
 	if err != nil {
 		t.Fatalf("enable: %v", err)
 	}
@@ -143,7 +158,7 @@ func TestSetThenListReadsTheStoredBoolean(t *testing.T) {
 		}
 	}
 
-	written, err = service.Set(ctx, accountID, "admin", FlagWithdrawalsEnabled, false)
+	written, err = service.Set(ctx, accountID, uuid.New(), "admin", FlagWithdrawalsEnabled, false)
 	if err != nil {
 		t.Fatalf("disable: %v", err)
 	}
@@ -163,11 +178,11 @@ func TestSetRejectsUnknownKeyAndAuditorBeforeWriting(t *testing.T) {
 	t.Parallel()
 
 	store := newMemoryStore()
-	service := NewService(store, memoryAdmins{})
+	service := newTestService(store, memoryAdmins{})
 	accountID := uuid.New()
 	ctx := context.Background()
 
-	_, err := service.Set(ctx, accountID, "owner", "not-a-flag", true)
+	_, err := service.Set(ctx, accountID, uuid.New(), "owner", "not-a-flag", true)
 	if !errors.Is(err, ErrNotFound) {
 		t.Fatalf("unknown key error = %v", err)
 	}
@@ -175,11 +190,11 @@ func TestSetRejectsUnknownKeyAndAuditorBeforeWriting(t *testing.T) {
 		t.Fatal("unknown key was stored")
 	}
 
-	_, err = service.Set(ctx, accountID, "auditor", FlagSweepEnabled, true)
+	_, err = service.Set(ctx, accountID, uuid.New(), "auditor", FlagSweepEnabled, true)
 	if !errors.Is(err, ErrUpdateForbidden) {
 		t.Fatalf("auditor error = %v", err)
 	}
-	_, err = service.Set(ctx, accountID, "user", FlagSweepEnabled, true)
+	_, err = service.Set(ctx, accountID, uuid.New(), "user", FlagSweepEnabled, true)
 	if !errors.Is(err, ErrUpdateForbidden) {
 		t.Fatalf("user error = %v", err)
 	}
@@ -187,7 +202,7 @@ func TestSetRejectsUnknownKeyAndAuditorBeforeWriting(t *testing.T) {
 		t.Fatal("forbidden write was stored")
 	}
 
-	_, err = service.Set(ctx, accountID, "user", "not-a-flag", true)
+	_, err = service.Set(ctx, accountID, uuid.New(), "user", "not-a-flag", true)
 	if !errors.Is(err, ErrNotFound) {
 		t.Fatalf("unknown key for a user = %v, want not found before forbidden", err)
 	}
@@ -197,7 +212,7 @@ func TestListHidesFlagsFromAUserAndFromAnotherAccount(t *testing.T) {
 	t.Parallel()
 
 	store := newMemoryStore()
-	service := NewService(store, memoryAdmins{})
+	service := newTestService(store, memoryAdmins{})
 	accountID := uuid.New()
 	otherID := uuid.New()
 	ctx := context.Background()
@@ -205,7 +220,7 @@ func TestListHidesFlagsFromAUserAndFromAnotherAccount(t *testing.T) {
 	if _, err := service.List(ctx, accountID, "user"); !errors.Is(err, ErrViewForbidden) {
 		t.Fatalf("user list error = %v", err)
 	}
-	if _, err := service.Set(ctx, accountID, "owner", FlagWalletCreationEnabled, true); err != nil {
+	if _, err := service.Set(ctx, accountID, uuid.New(), "owner", FlagWalletCreationEnabled, true); err != nil {
 		t.Fatalf("enable: %v", err)
 	}
 	other, err := service.List(ctx, otherID, "auditor")
@@ -219,7 +234,7 @@ func TestListHidesFlagsFromAUserAndFromAnotherAccount(t *testing.T) {
 	if _, err := service.List(nil, accountID, "owner"); err == nil {
 		t.Fatal("nil context was accepted")
 	}
-	if _, err := service.Set(ctx, uuid.Nil, "owner", FlagSweepEnabled, true); err == nil {
+	if _, err := service.Set(ctx, uuid.Nil, uuid.New(), "owner", FlagSweepEnabled, true); err == nil {
 		t.Fatal("nil account id was accepted")
 	}
 }
@@ -230,7 +245,7 @@ func TestPlatformListAndSetRequireAnAdminAndUseTheCatalogDefault(t *testing.T) {
 	store := newMemoryStore()
 	userID := uuid.New()
 	admins := memoryAdmins{users: map[uuid.UUID]struct{}{userID: {}}}
-	service := NewService(store, admins)
+	service := newTestService(store, admins)
 	ctx := context.Background()
 
 	if _, err := service.ListGlobal(ctx, uuid.New()); !errors.Is(err, ErrPlatformForbidden) {

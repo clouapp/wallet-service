@@ -19,7 +19,11 @@ func (p *SettingsServiceProvider) Register(app foundation.Application) {
 		if err != nil {
 			return nil, err
 		}
-		return settings.NewService(store, settings.CryptSealer{}, settings.FacadeCache{}), nil
+		activityLog, err := resolve[*repositories.AccountActivityRepository](app)
+		if err != nil {
+			return nil, err
+		}
+		return settings.NewService(store, settings.CryptSealer{}, settings.FacadeCache{}, activityLog), nil
 	})
 }
 

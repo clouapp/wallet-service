@@ -4,8 +4,10 @@ import (
 	"errors"
 	"strings"
 
+	"github.com/google/uuid"
 	"github.com/goravel/framework/contracts/http"
 
+	"github.com/macrowallets/waas/app/http/middleware"
 	"github.com/macrowallets/waas/app/http/requests"
 	"github.com/macrowallets/waas/app/http/responses"
 	"github.com/macrowallets/waas/app/models"
@@ -68,11 +70,15 @@ func (ctrl *SettingsController) Update(ctx http.Context) http.Response {
 		return errResp
 	}
 	group := strings.TrimSpace(ctx.Request().Route("group"))
+	actorID := middleware.SessionUserID(ctx)
+	if actorID == uuid.Nil {
+		return responses.Send(ctx, http.StatusUnauthorized, http.Json{"error": "unauthenticated"})
+	}
 	document, err := requests.AccountSettingsDocument(ctx)
 	if err != nil {
 		return mapDocumentError(ctx, err)
 	}
-	view, err := ctrl.settings.Save(ctx.Context(), account.ID, role, group, document)
+	view, err := ctrl.settings.Save(ctx.Context(), account.ID, actorID, role, group, document)
 	if errResp := mapSettingsError(ctx, err); errResp != nil {
 		return errResp
 	}

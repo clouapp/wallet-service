@@ -4,8 +4,10 @@ import (
 	"errors"
 	"strings"
 
+	"github.com/google/uuid"
 	"github.com/goravel/framework/contracts/http"
 
+	"github.com/macrowallets/waas/app/http/middleware"
 	"github.com/macrowallets/waas/app/http/requests"
 	"github.com/macrowallets/waas/app/http/responses"
 	"github.com/macrowallets/waas/app/models"
@@ -68,11 +70,15 @@ func (ctrl *FeaturesController) Update(ctx http.Context) http.Response {
 		return errResp
 	}
 	key := strings.TrimSpace(ctx.Request().Route("key"))
+	actorID := middleware.SessionUserID(ctx)
+	if actorID == uuid.Nil {
+		return responses.Send(ctx, http.StatusUnauthorized, http.Json{"error": "unauthenticated"})
+	}
 	enabled, err := requests.AccountFeatureEnabled(ctx)
 	if err != nil {
 		return mapFeatureBodyError(ctx, err)
 	}
-	flag, err := ctrl.features.Set(ctx.Context(), account.ID, role, key, enabled)
+	flag, err := ctrl.features.Set(ctx.Context(), account.ID, actorID, role, key, enabled)
 	if errResp := mapFeatureError(ctx, err); errResp != nil {
 		return errResp
 	}

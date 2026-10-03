@@ -9,6 +9,7 @@ import (
 
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/policies"
+	activitylog "github.com/macrowallets/waas/app/services/activity"
 )
 
 // AccountStore is the account writes this service performs.
@@ -34,12 +35,18 @@ type TokenStore interface {
 	DeleteByAccountAndCreator(ctx context.Context, accountID, createdBy uuid.UUID) error
 }
 
-// Deps is everything Account needs. Tokens is required for member updates
-// that revoke API tokens. Older callers that only create accounts may leave it nil.
+// ActivityLog appends one row on the caller's transaction.
+type ActivityLog interface {
+	Append(ctx context.Context, row models.AccountActivity) error
+}
+
+// Deps is everything Account needs. Tokens and Activity are required for
+// member updates. Older callers that only create accounts may leave them nil.
 type Deps struct {
 	Accounts    AccountStore
 	Memberships MembershipStore
 	Tokens      TokenStore
+	Activity    ActivityLog
 }
 
 // MemberChange is a PATCH of one membership. A nil field is left as stored.
@@ -53,11 +60,17 @@ type Service struct {
 	accounts    AccountStore
 	memberships MembershipStore
 	tokens      TokenStore
+	activity    ActivityLog
 }
 
 // NewService builds an account service from Deps.
 func NewService(deps Deps) *Service {
-	return &Service{accounts: deps.Accounts, memberships: deps.Memberships, tokens: deps.Tokens}
+	return &Service{
+		accounts:    deps.Accounts,
+		memberships: deps.Memberships,
+		tokens:      deps.Tokens,
+		activity:    deps.Activity,
+	}
 }
 
 // Create inserts an active account and an owner membership.
@@ -131,6 +144,9 @@ func (s *Service) UpdateMember(ctx context.Context, accountID, actorID, targetID
 	if err := s.requireTokens(); err != nil {
 		return nil, err
 	}
+	if s.activity == nil {
+		return nil, fmt.Errorf("account service: activity log is required")
+	}
 
 	var updated *models.AccountUser
 	err := s.memberships.Within(ctx, func(ctx context.Context) error {
@@ -141,18 +157,26 @@ func (s *Service) UpdateMember(ctx context.Context, accountID, actorID, targetID
 		if err := s.authorizeMemberChange(ctx, accountID, actor, target, change); err != nil {
 			return err
 		}
+		var changedRole, changedStatus *string
 		if change.Role != nil && *change.Role != target.Role {
 			if err := s.memberships.SetRole(ctx, target.ID, *change.Role); err != nil {
 				return err
 			}
+			changedRole = change.Role
 		}
 		if change.Status != nil && *change.Status != target.Status {
 			if err := s.memberships.SetStatus(ctx, target.ID, *change.Status); err != nil {
 				return err
 			}
+			changedStatus = change.Status
 		}
-		if change.Status != nil && *change.Status == models.MembershipStatusSuspended {
+		if changedStatus != nil && *changedStatus == models.MembershipStatusSuspended {
 			if err := s.tokens.DeleteByAccountAndCreator(ctx, accountID, targetID); err != nil {
+				return err
+			}
+		}
+		if changedRole != nil || changedStatus != nil {
+			if err := s.recordMemberChange(ctx, accountID, actorID, targetID, changedRole, changedStatus); err != nil {
 				return err
 			}
 		}
@@ -193,6 +217,22 @@ func (s *Service) RemoveMember(ctx context.Context, accountID, actorID, targetID
 			return err
 		}
 		return s.memberships.SoftDeleteByAccountAndUser(ctx, accountID, targetID)
+	})
+}
+
+func (s *Service) recordMemberChange(ctx context.Context, accountID, actorID, targetID uuid.UUID, role, status *string) error {
+	action, meta, err := activitylog.MemberChange(role, status)
+	if err != nil {
+		return err
+	}
+	account := accountID
+	return s.activity.Append(ctx, models.AccountActivity{
+		AccountID:   &account,
+		ActorUserID: actorID,
+		Action:      action,
+		TargetType:  activitylog.TargetAccountUser,
+		TargetID:    targetID.String(),
+		Metadata:    meta,
 	})
 }
 

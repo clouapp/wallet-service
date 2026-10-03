@@ -9,6 +9,7 @@ import (
 
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/policies"
+	activitylog "github.com/macrowallets/waas/app/services/activity"
 )
 
 // Store reads and writes flag rows. It does not know the catalog.
@@ -30,19 +31,24 @@ type PlatformAdmins interface {
 // default. A write is stored and then read back; the response is that row,
 // not the request echoed before the write.
 type Service struct {
-	store  Store
-	admins PlatformAdmins
+	store    Store
+	admins   PlatformAdmins
+	activity activitylog.Writer
 }
 
-// NewService builds the feature-flag service. Both dependencies are required.
-func NewService(store Store, admins PlatformAdmins) *Service {
+// NewService builds the feature-flag service. Store, admins and the activity
+// log are required.
+func NewService(store Store, admins PlatformAdmins, activity activitylog.Writer) *Service {
 	if store == nil {
 		panic("account features service: store is required")
 	}
 	if admins == nil {
 		panic("account features service: platform admins are required")
 	}
-	return &Service{store: store, admins: admins}
+	if activity == nil {
+		panic("account features service: activity log is required")
+	}
+	return &Service{store: store, admins: admins, activity: activity}
 }
 
 // List returns every account flag the role may read. A missing row is the
@@ -71,7 +77,7 @@ func (s *Service) List(ctx context.Context, accountID uuid.UUID, role string) (L
 // Set stores one flag and returns the row it just wrote. An unknown key is
 // ErrNotFound before the permission check. Auditor and user are
 // ErrUpdateForbidden and leave the table unchanged.
-func (s *Service) Set(ctx context.Context, accountID uuid.UUID, role, key string, enabled bool) (Flag, error) {
+func (s *Service) Set(ctx context.Context, accountID, actorID uuid.UUID, role, key string, enabled bool) (Flag, error) {
 	if err := requireAccount(ctx, accountID); err != nil {
 		return Flag{}, err
 	}
@@ -82,18 +88,41 @@ func (s *Service) Set(ctx context.Context, accountID uuid.UUID, role, key string
 	if !policies.MayUpdateSettings(role) {
 		return Flag{}, ErrUpdateForbidden
 	}
-	if err := s.store.Upsert(ctx, accountID, key, enabled); err != nil {
-		return Flag{}, err
+	if actorID == uuid.Nil {
+		return Flag{}, fmt.Errorf("account features: actor is required")
 	}
-	stored, err := s.stored(ctx, accountID)
+	var flag Flag
+	err := s.activity.Within(ctx, func(ctx context.Context) error {
+		if err := s.store.Upsert(ctx, accountID, key, enabled); err != nil {
+			return err
+		}
+		stored, err := s.stored(ctx, accountID)
+		if err != nil {
+			return err
+		}
+		value, ok := stored[key]
+		if !ok {
+			return ErrNotStored
+		}
+		flag = Flag{Key: key, Enabled: value}
+		meta, err := activitylog.FeatureChange(key, value)
+		if err != nil {
+			return err
+		}
+		id := accountID
+		return s.activity.Append(ctx, models.AccountActivity{
+			AccountID:   &id,
+			ActorUserID: actorID,
+			Action:      activitylog.ActionFeaturesUpdated,
+			TargetType:  activitylog.TargetFeature,
+			TargetID:    key,
+			Metadata:    meta,
+		})
+	})
 	if err != nil {
 		return Flag{}, err
 	}
-	value, ok := stored[key]
-	if !ok {
-		return Flag{}, ErrNotStored
-	}
-	return Flag{Key: key, Enabled: value}, nil
+	return flag, nil
 }
 
 // ListGlobal returns every platform flag a platform admin may read. A missing
@@ -135,17 +164,35 @@ func (s *Service) SetGlobal(ctx context.Context, userID uuid.UUID, key string, e
 	if _, ok := Find(key); !ok || !globalFlag(key) {
 		return Flag{}, ErrNotFound
 	}
-	if err := s.store.UpsertGlobal(ctx, key, enabled); err != nil {
-		return Flag{}, err
-	}
-	value, found, err := s.store.GetGlobal(ctx, key)
+	var flag Flag
+	err := s.activity.Within(ctx, func(ctx context.Context) error {
+		if err := s.store.UpsertGlobal(ctx, key, enabled); err != nil {
+			return err
+		}
+		value, found, err := s.store.GetGlobal(ctx, key)
+		if err != nil {
+			return err
+		}
+		if !found {
+			return ErrNotStored
+		}
+		flag = Flag{Key: key, Enabled: value}
+		meta, err := activitylog.FeatureChange(key, value)
+		if err != nil {
+			return err
+		}
+		return s.activity.Append(ctx, models.AccountActivity{
+			ActorUserID: userID,
+			Action:      activitylog.ActionFeaturesUpdated,
+			TargetType:  activitylog.TargetFeature,
+			TargetID:    key,
+			Metadata:    meta,
+		})
+	})
 	if err != nil {
 		return Flag{}, err
 	}
-	if !found {
-		return Flag{}, ErrNotStored
-	}
-	return Flag{Key: key, Enabled: value}, nil
+	return flag, nil
 }
 
 func (s *Service) stored(ctx context.Context, accountID uuid.UUID) (map[string]bool, error) {

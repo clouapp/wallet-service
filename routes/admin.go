@@ -6,6 +6,7 @@ import (
 
 	"github.com/macrowallets/waas/app/container"
 	dashaccounts "github.com/macrowallets/waas/app/http/controllers/dashboard/accounts"
+	dashactivity "github.com/macrowallets/waas/app/http/controllers/dashboard/activity"
 	dashaddresses "github.com/macrowallets/waas/app/http/controllers/dashboard/addresses"
 	dashauth "github.com/macrowallets/waas/app/http/controllers/dashboard/auth"
 	dashchains "github.com/macrowallets/waas/app/http/controllers/dashboard/chains"
@@ -21,6 +22,7 @@ import (
 	"github.com/macrowallets/waas/app/http/middleware"
 	"github.com/macrowallets/waas/app/repositories"
 	accountsvc "github.com/macrowallets/waas/app/services/account"
+	activitysvc "github.com/macrowallets/waas/app/services/activity"
 	authsvc "github.com/macrowallets/waas/app/services/auth"
 	featuressvc "github.com/macrowallets/waas/app/services/features"
 	settingssvc "github.com/macrowallets/waas/app/services/settings"
@@ -37,6 +39,7 @@ func RegisterAdminRoutes() {
 	usersCtrl := newDashboardUsersController()
 	accountsCtrl := newDashboardAccountsController()
 	accountSettingsCtrl := newDashboardAccountSettingsController()
+	accountActivityCtrl := newDashboardAccountActivityController()
 	accountFeaturesCtrl := newDashboardAccountFeaturesController()
 	platformFeaturesCtrl := newPlatformFeaturesController()
 	walletCtrl := newDashboardWalletsController()
@@ -93,6 +96,8 @@ func RegisterAdminRoutes() {
 
 			r.Get("/settings", accountSettingsCtrl.Show)
 			r.Patch("/settings/{group}", accountSettingsCtrl.Update)
+
+			r.Get("/activity", accountActivityCtrl.Index)
 
 			r.Get("/features", accountFeaturesCtrl.Index)
 			r.Patch("/features/{key}", accountFeaturesCtrl.Update)
@@ -299,6 +304,12 @@ func newDashboardSweepController() *dashsweep.SweepController {
 func newDashboardUnspentsController() *dashwallets.UnspentsController {
 	return dashwallets.NewUnspentsController(
 		container.MustMake[*repositories.WalletUTXORepository](),
+	)
+}
+
+func newDashboardAccountActivityController() *dashactivity.ActivityController {
+	return dashactivity.NewActivityController(
+		container.MustMake[*activitysvc.Service](),
 	)
 }
 

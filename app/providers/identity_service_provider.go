@@ -51,10 +51,15 @@ func (p *IdentityServiceProvider) Register(app foundation.Application) {
 		if err != nil {
 			return nil, err
 		}
+		activityLog, err := resolve[*repositories.AccountActivityRepository](app)
+		if err != nil {
+			return nil, err
+		}
 		return account.NewService(account.Deps{
 			Accounts:    accounts,
 			Memberships: memberships,
 			Tokens:      tokens,
+			Activity:    activityLog,
 		}), nil
 	})
 }

@@ -63,6 +63,7 @@ var routeTable = map[string]guard{
 	"PATCH /v1/accounts/{accountId}":                                   guardSession,
 	"POST /v1/accounts/{accountId}/archive":                            guardSession,
 	"POST /v1/accounts/{accountId}/freeze":                             guardSession,
+	"GET|HEAD /v1/accounts/{accountId}/activity":                       guardSession,
 	"GET|HEAD /v1/accounts/{accountId}/tokens":                         guardSession,
 	"POST /v1/accounts/{accountId}/tokens":                             guardSession,
 	"DELETE /v1/accounts/{accountId}/tokens/{tokenId}":                 guardSession,

@@ -55,15 +55,30 @@ func (prefixSealer) Seal(plaintext string) (string, error) {
 	return "enc:v1:" + plaintext, nil
 }
 
+type discardActivity struct{}
+
+func (discardActivity) Within(ctx context.Context, fn func(context.Context) error) error {
+	if fn == nil {
+		return errors.New("activity callback is required")
+	}
+	return fn(ctx)
+}
+
+func (discardActivity) Append(context.Context, models.AccountActivity) error { return nil }
+
+func newTestService(store Store) *Service {
+	return NewService(store, prefixSealer{}, nopCache{}, discardActivity{})
+}
+
 func TestSaveBlankSecretKeepsTheStoredCiphertext(t *testing.T) {
 	t.Parallel()
 
 	store := newMemoryStore()
-	service := NewService(store, prefixSealer{}, nopCache{})
+	service := newTestService(store)
 	accountID := uuid.New()
 	ctx := context.Background()
 
-	if _, err := service.Save(ctx, accountID, "owner", groupAccountWebhooks, map[string]any{
+	if _, err := service.Save(ctx, accountID, uuid.New(), "owner", groupAccountWebhooks, map[string]any{
 		keySigningSecret: "first-secret",
 	}); err != nil {
 		t.Fatalf("save secret: %v", err)
@@ -73,7 +88,7 @@ func TestSaveBlankSecretKeepsTheStoredCiphertext(t *testing.T) {
 		t.Fatalf("stored secret = %q, present %v", before, ok)
 	}
 
-	if _, err := service.Save(ctx, accountID, "admin", groupAccountWebhooks, map[string]any{
+	if _, err := service.Save(ctx, accountID, uuid.New(), "admin", groupAccountWebhooks, map[string]any{
 		keySigningSecret: "",
 	}); err != nil {
 		t.Fatalf("save blank secret: %v", err)
@@ -83,7 +98,7 @@ func TestSaveBlankSecretKeepsTheStoredCiphertext(t *testing.T) {
 		t.Fatalf("blank secret replaced %q with %q", before, after)
 	}
 
-	view, err := service.Save(ctx, accountID, "owner", groupAccountWebhooks, map[string]any{
+	view, err := service.Save(ctx, accountID, uuid.New(), "owner", groupAccountWebhooks, map[string]any{
 		keyDefaultEvents: []any{"deposit.confirmed", "withdrawal.confirmed"},
 	})
 	if err != nil {
@@ -103,10 +118,10 @@ func TestSaveNewSecretIsStoredAndHidden(t *testing.T) {
 	t.Parallel()
 
 	store := newMemoryStore()
-	service := NewService(store, prefixSealer{}, nopCache{})
+	service := newTestService(store)
 	accountID := uuid.New()
 
-	view, err := service.Save(context.Background(), accountID, "owner", groupAccountWebhooks, map[string]any{
+	view, err := service.Save(context.Background(), accountID, uuid.New(), "owner", groupAccountWebhooks, map[string]any{
 		keySigningSecret: "second-secret",
 	})
 	if err != nil {
@@ -125,8 +140,8 @@ func TestSaveNewSecretIsStoredAndHidden(t *testing.T) {
 func TestSaveRejectsAnUnknownGroupBeforeTheRoleCheck(t *testing.T) {
 	t.Parallel()
 
-	service := NewService(newMemoryStore(), prefixSealer{}, nopCache{})
-	_, err := service.Save(context.Background(), uuid.New(), "auditor", "not-a-group", map[string]any{})
+	service := newTestService(newMemoryStore())
+	_, err := service.Save(context.Background(), uuid.New(), uuid.New(), "auditor", "not-a-group", map[string]any{})
 	if !errors.Is(err, ErrGroupNotFound) {
 		t.Fatalf("err = %v", err)
 	}
@@ -135,8 +150,8 @@ func TestSaveRejectsAnUnknownGroupBeforeTheRoleCheck(t *testing.T) {
 func TestSaveAuditorCannotUpdate(t *testing.T) {
 	t.Parallel()
 
-	service := NewService(newMemoryStore(), prefixSealer{}, nopCache{})
-	_, err := service.Save(context.Background(), uuid.New(), "auditor", groupAccountWebhooks, map[string]any{
+	service := newTestService(newMemoryStore())
+	_, err := service.Save(context.Background(), uuid.New(), uuid.New(), "auditor", groupAccountWebhooks, map[string]any{
 		keySigningSecret: "nope",
 	})
 	if !errors.Is(err, ErrUpdateForbidden) {
@@ -147,8 +162,8 @@ func TestSaveAuditorCannotUpdate(t *testing.T) {
 func TestSaveUnknownKeyIsValidation(t *testing.T) {
 	t.Parallel()
 
-	service := NewService(newMemoryStore(), prefixSealer{}, nopCache{})
-	_, err := service.Save(context.Background(), uuid.New(), "owner", groupAccountSecurity, map[string]any{
+	service := newTestService(newMemoryStore())
+	_, err := service.Save(context.Background(), uuid.New(), uuid.New(), "owner", groupAccountSecurity, map[string]any{
 		"not_a_key": "x",
 	})
 	var invalid *ValidationError
@@ -164,10 +179,10 @@ func TestRegistryHidesSecrets(t *testing.T) {
 	t.Parallel()
 
 	store := newMemoryStore()
-	service := NewService(store, prefixSealer{}, nopCache{})
+	service := newTestService(store)
 	accountID := uuid.New()
 	ctx := context.Background()
-	if _, err := service.Save(ctx, accountID, "owner", groupAccountWebhooks, map[string]any{
+	if _, err := service.Save(ctx, accountID, uuid.New(), "owner", groupAccountWebhooks, map[string]any{
 		keySigningSecret: "hidden",
 	}); err != nil {
 		t.Fatalf("save: %v", err)

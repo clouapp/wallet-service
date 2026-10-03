@@ -27,7 +27,11 @@ func (p *FeaturesServiceProvider) Register(app foundation.Application) {
 		if err != nil {
 			return nil, err
 		}
-		return features.NewService(store, admins), nil
+		activityLog, err := resolve[*repositories.AccountActivityRepository](app)
+		if err != nil {
+			return nil, err
+		}
+		return features.NewService(store, admins, activityLog), nil
 	})
 }
 
