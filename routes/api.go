@@ -15,6 +15,7 @@ import (
 	"github.com/macrowallets/waas/app/http/middleware"
 	"github.com/macrowallets/waas/app/repositories"
 	authsvc "github.com/macrowallets/waas/app/services/auth"
+	chainsvc "github.com/macrowallets/waas/app/services/chains"
 	featuressvc "github.com/macrowallets/waas/app/services/features"
 )
 
@@ -78,7 +79,7 @@ func newExternalWebhooksController() *extwebhooks.WebhooksController {
 
 func newExternalChainsController() *extchains.ChainsController {
 	return extchains.NewChainsController(
-		container.MustMake[*repositories.ChainRepository](),
+		container.MustMake[*chainsvc.Service](),
 	)
 }
 

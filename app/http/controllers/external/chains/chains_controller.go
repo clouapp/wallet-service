@@ -4,20 +4,17 @@ import (
 	"github.com/goravel/framework/contracts/http"
 
 	"github.com/macrowallets/waas/app/http/responses"
-	"github.com/macrowallets/waas/app/models"
-	"github.com/macrowallets/waas/app/repositories"
+	chainsvc "github.com/macrowallets/waas/app/services/chains"
 )
 
 // ChainsController serves the external chain list.
 type ChainsController struct {
-	chains *repositories.ChainRepository
+	chains *chainsvc.Service
 }
 
-func NewChainsController(
-	chains *repositories.ChainRepository,
-) *ChainsController {
+func NewChainsController(chains *chainsvc.Service) *ChainsController {
 	if chains == nil {
-		panic("external chains controller: chains repository is required")
+		panic("external chains controller: chains service is required")
 	}
 	return &ChainsController{
 		chains: chains,
@@ -37,14 +34,7 @@ func NewChainsController(
 func (ctrl *ChainsController) ListChains(ctx http.Context) http.Response {
 	env, _ := ctx.Value("account_environment").(string)
 
-	var chainList []models.Chain
-	var err error
-	if env == models.EnvironmentProd || env == models.EnvironmentTest {
-		isTestnet := env == models.EnvironmentTest
-		chainList, err = ctrl.chains.FindByTestnet(ctx.Context(), isTestnet)
-	} else {
-		chainList, err = ctrl.chains.FindActive(ctx.Context())
-	}
+	chainList, err := ctrl.chains.ListForEnvironment(ctx.Context(), env)
 	if err != nil {
 		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to fetch chains"})
 	}
