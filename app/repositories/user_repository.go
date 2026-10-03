@@ -143,6 +143,29 @@ func (r *UserRepository) AdvanceTotpCounter(ctx context.Context, id uuid.UUID, c
 	return result.RowsAffected == 1, nil
 }
 
+// SetSuspendedAt sets or clears the platform suspension. A nil instant clears
+// it. The reason column is not written.
+func (r *UserRepository) SetSuspendedAt(ctx context.Context, id uuid.UUID, at *time.Time) error {
+	if id == uuid.Nil {
+		return fmt.Errorf("set suspended at: user id is required")
+	}
+	var value any
+	if at != nil {
+		if at.IsZero() {
+			return fmt.Errorf("set suspended at: instant is required")
+		}
+		value = at.UTC()
+	}
+	result, err := r.Query(ctx).Model(&models.User{}).Where("id = ?", id).Update("suspended_at", value)
+	if err != nil {
+		return fmt.Errorf("set suspended at: %w", err)
+	}
+	if result.RowsAffected != 1 {
+		return fmt.Errorf("set suspended at: user was not updated")
+	}
+	return nil
+}
+
 // UpdateSessionsRevokedAt sets the session watermark. Sessions issued before it are refused.
 func (r *UserRepository) UpdateSessionsRevokedAt(ctx context.Context, id uuid.UUID, at time.Time) error {
 	if _, err := r.Query(ctx).Model(&models.User{}).Where("id = ?", id).Update("sessions_revoked_at", at); err != nil {

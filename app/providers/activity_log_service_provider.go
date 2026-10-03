@@ -15,8 +15,8 @@ const activityLogName = "audit"
 // exist on this branch are not registered: account_role_permissions,
 // model_has_roles and role_has_permissions. account_invites exists, but its
 // token_hash must not be captured; member.invited and invite.accepted are
-// intent rows on account_activity. users.suspended_at is not a column here,
-// so it is not on the users allowlist.
+// intent rows on account_activity. users.suspended_at is on the allowlist.
+// suspension_reason is not: a free-text reason can carry a secret.
 type ActivityLogServiceProvider struct{}
 
 func (p *ActivityLogServiceProvider) Register(foundation.Application) {
@@ -95,7 +95,7 @@ func auditedTables() []activitylog.Table {
 			Name:    "users",
 			LogName: activityLogName,
 			Subject: "user",
-			Columns: []string{"email", "full_name", "status", "totp_enabled"},
+			Columns: []string{"email", "full_name", "status", "totp_enabled", "suspended_at"},
 		},
 		{
 			Name:       "features",

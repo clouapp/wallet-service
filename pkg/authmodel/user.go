@@ -28,6 +28,12 @@ type User struct {
 	// SessionsRevokedAt is the session watermark: sessions and 2FA challenges
 	// issued before it are refused.
 	SessionsRevokedAt *time.Time `gorm:"type:timestamptz" json:"-"`
+	// SuspendedAt is the platform suspension. A set value refuses login,
+	// refresh and the next session request. It is not a membership status.
+	SuspendedAt *time.Time `gorm:"type:timestamptz" json:"-"`
+	// SuspensionReason is stored only for operators. It is never returned
+	// and never copied into activity metadata.
+	SuspensionReason *string `gorm:"type:text" json:"-"`
 }
 
 func (u *User) TableName() string { return "users" }

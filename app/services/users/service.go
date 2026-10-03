@@ -3,6 +3,7 @@ package users
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/google/uuid"
 
@@ -29,6 +30,7 @@ type Store interface {
 	UpdateTotpSecret(ctx context.Context, id uuid.UUID, secret string) error
 	EnableTotp(ctx context.Context, id uuid.UUID) error
 	DisableTotp(ctx context.Context, id uuid.UUID) error
+	SetSuspendedAt(ctx context.Context, id uuid.UUID, at *time.Time) error
 }
 
 // RecoveryStore is the TOTP recovery-code persistence.
@@ -44,6 +46,9 @@ type Service struct {
 	store    Store
 	recovery RecoveryStore
 	activity ActivityLog
+	admins   PlatformAdmins
+	sessions Sessions
+	clock    func() time.Time
 }
 
 // NewService builds a user service.

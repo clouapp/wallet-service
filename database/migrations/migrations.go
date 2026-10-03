@@ -54,5 +54,6 @@ func All() []schema.Migration {
 		&M00000000000460AddSessionsRevokedAtToUsers{},
 		&M00000000000470AccountUsersRoleCheck{},
 		&M00000000000480CreateAccountInvitesTable{},
+		&M00000000000490AddUsersSuspendedAt{},
 	}
 }

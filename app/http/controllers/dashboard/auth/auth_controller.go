@@ -226,6 +226,9 @@ func (ctrl *AuthController) Login(ctx http.Context) http.Response {
 	if !policies.UserMayHoldSession(user.Status) {
 		return controllers.InactiveUserResponse(ctx)
 	}
+	if policies.UserIsSuspended(user.SuspendedAt) {
+		return responses.SuspendedUser(ctx)
+	}
 
 	if user.TotpEnabled {
 		if err := ctrl.revoker.AwaitIssuable(user.SessionsRevokedAt); err != nil {
@@ -279,6 +282,9 @@ func (ctrl *AuthController) VerifyTwoFactor(ctx http.Context) http.Response {
 	}
 	if !policies.UserMayHoldSession(user.Status) {
 		return controllers.InactiveUserResponse(ctx)
+	}
+	if policies.UserIsSuspended(user.SuspendedAt) {
+		return responses.SuspendedUser(ctx)
 	}
 
 	tokens, err := ctrl.sessions().IssueSession(ctx, user.ID, user.SessionsRevokedAt)
@@ -341,6 +347,9 @@ func (ctrl *AuthController) RefreshToken(ctx http.Context) http.Response {
 	}
 	if !policies.UserMayHoldSession(owner.Status) {
 		return responses.Send(ctx, http.StatusUnauthorized, http.Json{"error": "user is not active"})
+	}
+	if policies.UserIsSuspended(owner.SuspendedAt) {
+		return responses.SuspendedUser(ctx)
 	}
 
 	session, err := ctrl.sessions().IssueSession(ctx, owner.ID, owner.SessionsRevokedAt)

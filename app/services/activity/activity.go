@@ -23,6 +23,8 @@ const (
 	ActionMemberRemoved       = "member.removed"
 	ActionUserMFAReset        = "user.mfa_reset"
 	ActionUserSessionsRevoked = "user.sessions_revoked"
+	ActionUserSuspended       = "user.suspended"
+	ActionUserReactivated     = "user.reactivated"
 	ActionWithdrawalCancelled = "withdrawal.cancelled"
 
 	TargetAccountUser   = "account_user"
@@ -184,6 +186,26 @@ func InviteAccepted(role string) (models.ActivityMetadata, error) {
 
 func inviteRole(role string) (models.ActivityMetadata, error) {
 	meta := models.ActivityMetadata{"role": strings.TrimSpace(role)}
+	if _, err := meta.Encode(); err != nil {
+		return nil, err
+	}
+	return meta, nil
+}
+
+// UserSuspended records a platform suspension. The reason, the watermark
+// and any secret are not accepted. member.suspended is a membership change.
+func UserSuspended() (models.ActivityMetadata, error) {
+	return userSuspension("suspended")
+}
+
+// UserReactivated records that a platform suspension was cleared. A secret
+// is not accepted.
+func UserReactivated() (models.ActivityMetadata, error) {
+	return userSuspension("reactivated")
+}
+
+func userSuspension(key string) (models.ActivityMetadata, error) {
+	meta := models.ActivityMetadata{"key": key}
 	if _, err := meta.Encode(); err != nil {
 		return nil, err
 	}

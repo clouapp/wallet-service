@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
@@ -62,3 +63,6 @@ func (f *fakeStore) UpdatePreferences(_ context.Context, id uuid.UUID, prefs *mo
 func (f *fakeStore) UpdateTotpSecret(context.Context, uuid.UUID, string) error { return f.err }
 func (f *fakeStore) EnableTotp(context.Context, uuid.UUID) error               { return f.err }
 func (f *fakeStore) DisableTotp(context.Context, uuid.UUID) error              { return f.err }
+func (f *fakeStore) SetSuspendedAt(context.Context, uuid.UUID, *time.Time) error {
+	return f.err
+}

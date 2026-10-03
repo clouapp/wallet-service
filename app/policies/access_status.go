@@ -3,6 +3,7 @@ package policies
 import (
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/macrowallets/waas/app/models"
 )
@@ -12,6 +13,12 @@ import (
 // any other status (suspended) is a deliberate block.
 func UserMayHoldSession(status string) bool {
 	return status == models.StatusActive
+}
+
+// UserIsSuspended reports a platform suspension. Membership status is a
+// different column and a different check.
+func UserIsSuspended(suspendedAt *time.Time) bool {
+	return suspendedAt != nil && !suspendedAt.IsZero()
 }
 
 // AccountAllowsRequest reports whether a request may act on an account in

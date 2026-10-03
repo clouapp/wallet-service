@@ -157,3 +157,24 @@ func (s *UserRepositoryTestSuite) TestUpdateSessionsRevokedAt() {
 	s.Require().NotNil(found.SessionsRevokedAt)
 	s.True(watermark.Equal(*found.SessionsRevokedAt))
 }
+
+func (s *UserRepositoryTestSuite) TestSetSuspendedAtSetsAndClearsTheColumn() {
+	userID := insertActiveUserRow(s.T())
+	found, err := s.repo.FindByID(context.Background(), userID)
+	s.Require().NoError(err)
+	s.Nil(found.SuspendedAt)
+
+	at := time.Date(2026, 10, 3, 18, 4, 0, 0, time.UTC)
+	s.Require().NoError(s.repo.SetSuspendedAt(context.Background(), userID, &at))
+	found, err = s.repo.FindByID(context.Background(), userID)
+	s.Require().NoError(err)
+	s.Require().NotNil(found.SuspendedAt)
+	s.True(at.Equal(found.SuspendedAt.UTC()))
+	s.Nil(found.SuspensionReason)
+
+	s.Require().NoError(s.repo.SetSuspendedAt(context.Background(), userID, nil))
+	found, err = s.repo.FindByID(context.Background(), userID)
+	s.Require().NoError(err)
+	s.Nil(found.SuspendedAt)
+	s.EqualError(s.repo.SetSuspendedAt(context.Background(), uuid.Nil, &at), "set suspended at: user id is required")
+}

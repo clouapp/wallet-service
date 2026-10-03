@@ -15,11 +15,16 @@ import (
 )
 
 const (
-	CodeInvalidRequest      = "invalid_request"
-	CodeInvalidJSON         = "invalid_json"
-	CodeInvalidSignature    = "invalid_signature"
-	CodeUnauthorized        = "unauthorized"
-	CodeForbidden           = "forbidden"
+	CodeInvalidRequest   = "invalid_request"
+	CodeInvalidJSON      = "invalid_json"
+	CodeInvalidSignature = "invalid_signature"
+	CodeUnauthorized     = "unauthorized"
+	CodeForbidden        = "forbidden"
+
+	// SuspendedUserMessage is the human text for a platform user suspension.
+	// The status is 403 and the code is forbidden: the suspension row of the
+	// error contract. account_suspended is the account, not the user.
+	SuspendedUserMessage    = "user is suspended"
 	CodeNotFound            = "not_found"
 	CodeConflict            = "conflict"
 	CodeValidationFailed    = "validation_failed"
@@ -43,6 +48,15 @@ var messageCodes = map[string]string{
 	"missing request signature": CodeInvalidSignature,
 	"invalid request signature": CodeInvalidSignature,
 	"invalid webhook signature": CodeInvalidSignature,
+}
+
+// SuspendedUser answers login, refresh and the next session request when
+// users.suspended_at is set. The envelope is {"error":{"code","message"}}.
+func SuspendedUser(ctx contractshttp.Context) contractshttp.AbortableResponse {
+	return Send(ctx, http.StatusForbidden, contractshttp.Json{
+		"error": SuspendedUserMessage,
+		"code":  CodeForbidden,
+	})
 }
 
 // Send writes body, wrapping a legacy {"error":"text"} map into the envelope.

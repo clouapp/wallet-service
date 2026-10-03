@@ -47,6 +47,10 @@ func SessionAuth() http.Middleware {
 			_ = responses.Send(ctx, http.StatusUnauthorized, http.Json{"error": "user is not active"}).Abort()
 			return
 		}
+		if policies.UserIsSuspended(user.SuspendedAt) {
+			_ = responses.SuspendedUser(ctx).Abort()
+			return
+		}
 		if authsvc.SessionRevoked(payload.IssuedAt, user.SessionsRevokedAt) {
 			_ = responses.Send(ctx, http.StatusUnauthorized, http.Json{"error": "session revoked"}).Abort()
 			return

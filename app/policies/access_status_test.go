@@ -2,6 +2,7 @@ package policies
 
 import (
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
@@ -13,6 +14,14 @@ func TestUserMayHoldSession(t *testing.T) {
 	for _, status := range []string{models.UserStatusInvited, "suspended", "", "ACTIVE"} {
 		require.False(t, UserMayHoldSession(status), status)
 	}
+}
+
+func TestUserIsSuspended(t *testing.T) {
+	require.False(t, UserIsSuspended(nil))
+	zero := time.Time{}
+	require.False(t, UserIsSuspended(&zero))
+	at := time.Date(2026, 10, 3, 18, 0, 0, 0, time.UTC)
+	require.True(t, UserIsSuspended(&at))
 }
 
 func TestAccountAllowsRequest_ActiveAccountAllowsEverything(t *testing.T) {
