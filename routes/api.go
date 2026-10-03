@@ -5,6 +5,7 @@ import (
 	"github.com/goravel/framework/facades"
 
 	"github.com/macrowallets/waas/app/http/controllers"
+	extwallets "github.com/macrowallets/waas/app/http/controllers/external/wallets"
 	"github.com/macrowallets/waas/app/http/middleware"
 )
 
@@ -20,14 +21,14 @@ func RegisterExternalAPI() {
 	facades.Route().Prefix("/api/v1").Middleware(middleware.APITokenAuth(), noCache).Group(func(router route.Router) {
 		router.Get("/chains", controllers.ListChains)
 
-		router.Post("/wallets", controllers.CreateWallet)
-		router.Get("/wallets", controllers.ListWallets)
+		router.Post("/wallets", extwallets.CreateWallet)
+		router.Get("/wallets", extwallets.ListWallets)
 
 		router.Get("/addresses/{address}", controllers.LookupAddress)
 		router.Get("/users/{external_id}/addresses", controllers.ListUserAddresses)
 
 		router.Prefix("/wallets/{walletId}").Middleware(middleware.APIWalletContext()).Group(func(r route.Router) {
-			r.Get("", controllers.GetWallet)
+			r.Get("", extwallets.GetWallet)
 
 			r.Post("/addresses", controllers.GenerateAddress)
 			r.Get("/addresses", controllers.ListWalletAddresses)

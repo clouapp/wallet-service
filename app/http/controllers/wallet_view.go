@@ -163,3 +163,18 @@ func networkRPCURL(chainRecord *models.Chain) string {
 func networkReadFromRPCURL(adapterType string) bool {
 	return adapterType == models.AdapterTypeSolana || adapterType == models.AdapterTypeBitcoin
 }
+
+// LoadWalletListItems, NewWalletView and ResolveWalletChainNetwork are the
+// list/detail wire helpers. Dashboard and external wallet handlers both call
+// them so the JSON stays the same bytes.
+func LoadWalletListItems(ctx context.Context, wallets []models.Wallet) ([]WalletListItem, error) {
+	return loadWalletListItems(ctx, wallets)
+}
+
+func NewWalletView(wallet *models.Wallet, resolved models.ResolvedNetwork) WalletView {
+	return newWalletView(wallet, resolved)
+}
+
+func ResolveWalletChainNetwork(ctx context.Context, chainID string) models.ResolvedNetwork {
+	return resolveWalletChainNetwork(ctx, chainID)
+}

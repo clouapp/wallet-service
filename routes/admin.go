@@ -8,6 +8,7 @@ import (
 	dashaccounts "github.com/macrowallets/waas/app/http/controllers/dashboard/accounts"
 	dashauth "github.com/macrowallets/waas/app/http/controllers/dashboard/auth"
 	dashusers "github.com/macrowallets/waas/app/http/controllers/dashboard/users"
+	dashwallets "github.com/macrowallets/waas/app/http/controllers/dashboard/wallets"
 	"github.com/macrowallets/waas/app/http/middleware"
 )
 
@@ -78,11 +79,11 @@ func RegisterAdminRoutes() {
 	})
 
 	facades.Route().Prefix("/v1/wallets").Middleware(middleware.SessionAuth(), middleware.AccountHeader(), noCache).Group(func(router route.Router) {
-		router.Get("", controllers.ListWallets)
-		router.Post("", controllers.CreateWalletAdmin)
-		router.Get("/{walletId}", controllers.GetWallet)
+		router.Get("", dashwallets.ListWallets)
+		router.Post("", dashwallets.CreateWalletAdmin)
+		router.Get("/{walletId}", dashwallets.GetWallet)
 		router.Prefix("/{walletId}").Middleware(middleware.WalletContext()).Group(func(r route.Router) {
-			r.Post("/activate", controllers.ActivateWallet)
+			r.Post("/activate", dashwallets.ActivateWallet)
 
 			r.Get("/addresses", controllers.ListWalletAddresses)
 			r.Post("/addresses", controllers.GenerateAddress)
