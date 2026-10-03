@@ -7,7 +7,6 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/goravel/framework/contracts/http"
-	"github.com/goravel/framework/facades"
 
 	appfacades "github.com/macrowallets/waas/app/facades"
 	"github.com/macrowallets/waas/app/http/controllers"
@@ -156,11 +155,11 @@ func (ctrl *AuthController) Register(ctx http.Context) http.Response {
 		appfacades.Log().WithContext(ctx).Errorf("auth: set default account: %v", err)
 	}
 
-	if err := facades.Mail().To([]string{user.Email}).Send(&mails.WelcomeMail{To: user.Email, FullName: user.FullName}); err != nil {
+	if err := appfacades.Mail().To([]string{user.Email}).Send(&mails.WelcomeMail{To: user.Email, FullName: user.FullName}); err != nil {
 		appfacades.Log().WithContext(ctx).Errorf("auth: send welcome mail: %v", err)
 	}
 
-	accessToken, err := facades.Auth(ctx).LoginUsingID(user.ID.String())
+	accessToken, err := appfacades.Auth(ctx).LoginUsingID(user.ID.String())
 	if err != nil {
 		appfacades.Log().WithContext(ctx).Errorf("auth: login after register: %v", err)
 		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to create session"})
@@ -208,7 +207,7 @@ func (ctrl *AuthController) Login(ctx http.Context) http.Response {
 	}
 
 	if user.TotpEnabled {
-		partialToken, err := facades.Auth(ctx).LoginUsingID(user.ID.String())
+		partialToken, err := appfacades.Auth(ctx).LoginUsingID(user.ID.String())
 		if err != nil {
 			appfacades.Log().WithContext(ctx).Errorf("auth: partial login: %v", err)
 			return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to create session"})
@@ -219,7 +218,7 @@ func (ctrl *AuthController) Login(ctx http.Context) http.Response {
 		})
 	}
 
-	accessToken, err := facades.Auth(ctx).LoginUsingID(user.ID.String())
+	accessToken, err := appfacades.Auth(ctx).LoginUsingID(user.ID.String())
 	if err != nil {
 		appfacades.Log().WithContext(ctx).Errorf("auth: login: %v", err)
 		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to create session"})
@@ -273,12 +272,12 @@ func (ctrl *AuthController) VerifyTwoFactor(ctx http.Context) http.Response {
 		return errResp
 	}
 
-	payload, err := facades.Auth(ctx).Parse(req.PartialToken)
+	payload, err := appfacades.Auth(ctx).Parse(req.PartialToken)
 	if err != nil || payload == nil {
 		return responses.Send(ctx, http.StatusUnauthorized, http.Json{"error": "invalid or expired partial token"})
 	}
 
-	userIDStr, idErr := facades.Auth(ctx).ID()
+	userIDStr, idErr := appfacades.Auth(ctx).ID()
 	if idErr != nil {
 		return responses.Send(ctx, http.StatusUnauthorized, http.Json{"error": "invalid token"})
 	}
@@ -317,7 +316,7 @@ func (ctrl *AuthController) VerifyTwoFactor(ctx http.Context) http.Response {
 		return responses.Send(ctx, http.StatusUnauthorized, http.Json{"error": "invalid 2FA code"})
 	}
 
-	accessToken, loginErr := facades.Auth(ctx).LoginUsingID(user.ID.String())
+	accessToken, loginErr := appfacades.Auth(ctx).LoginUsingID(user.ID.String())
 	if loginErr != nil {
 		appfacades.Log().WithContext(ctx).Errorf("auth: 2fa login: %v", loginErr)
 		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to create session"})
@@ -382,7 +381,7 @@ func (ctrl *AuthController) RefreshToken(ctx http.Context) http.Response {
 		appfacades.Log().WithContext(ctx).Errorf("auth: revoke refresh token: %v", err)
 	}
 
-	accessToken, loginErr := facades.Auth(ctx).LoginUsingID(matched.UserID.String())
+	accessToken, loginErr := appfacades.Auth(ctx).LoginUsingID(matched.UserID.String())
 	if loginErr != nil {
 		appfacades.Log().WithContext(ctx).Errorf("auth: refresh login: %v", loginErr)
 		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to create session"})
@@ -424,7 +423,7 @@ func (ctrl *AuthController) Logout(ctx http.Context) http.Response {
 			appfacades.Log().WithContext(ctx).Errorf("auth: revoke refresh tokens: %v", err)
 		}
 	}
-	if err := facades.Auth(ctx).Logout(); err != nil {
+	if err := appfacades.Auth(ctx).Logout(); err != nil {
 		appfacades.Log().WithContext(ctx).Errorf("auth: logout: %v", err)
 	}
 	return ctx.Response().NoContent()
@@ -469,7 +468,7 @@ func (ctrl *AuthController) ForgotPassword(ctx http.Context) http.Response {
 	}
 
 	resetLink := "https://vault.app/reset-password?token=" + raw
-	if err := facades.Mail().To([]string{user.Email}).Send(&mails.PasswordResetMail{To: user.Email, ResetLink: resetLink}); err != nil {
+	if err := appfacades.Mail().To([]string{user.Email}).Send(&mails.PasswordResetMail{To: user.Email, ResetLink: resetLink}); err != nil {
 		appfacades.Log().WithContext(ctx).Errorf("auth: send password reset mail: %v", err)
 	}
 
