@@ -84,7 +84,7 @@ func (ctrl *AddressesController) GenerateAddress(ctx http.Context) http.Response
 		ctrl.deposits.RefreshAddressCache(ctx.Context(), w.Chain)
 	}
 
-	return ctx.Response().Json(http.StatusCreated, addr)
+	return responses.Send(ctx, http.StatusCreated, addr)
 }
 
 // UpdateAddress godoc
@@ -165,5 +165,5 @@ func (ctrl *AddressesController) ListWalletAddresses(ctx http.Context) http.Resp
 			"error": "failed to fetch addresses",
 		})
 	}
-	return ctx.Response().Json(http.StatusOK, pagination.Response(addrs, total, limit, offset))
+	return responses.Send(ctx, http.StatusOK, pagination.Response(addrs, total, limit, offset))
 }
