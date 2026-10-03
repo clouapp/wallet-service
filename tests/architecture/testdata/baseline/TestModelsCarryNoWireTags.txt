@@ -2,7 +2,6 @@
 app/models/access_token.go: AccessToken has json tags (x9)
 app/models/address.go: Address has json tags (x15)
 app/models/chain.go: Chain has json tags (x16)
-app/models/chain_resource.go: ChainResource has json tags (x8)
 app/models/currency.go: Currency has json tags (x11)
 app/models/token.go: Token has json tags (x8)
 app/models/transaction.go: Transaction has json tags (x30)
