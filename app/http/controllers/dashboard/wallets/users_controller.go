@@ -13,27 +13,34 @@ import (
 	"github.com/macrowallets/waas/app/http/responses"
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/policies"
+	accountsvc "github.com/macrowallets/waas/app/services/account"
 	"github.com/macrowallets/waas/app/services/walletrecords"
 )
 
 // UsersController serves the dashboard wallet membership routes.
 type UsersController struct {
 	members     *walletrecords.Members
+	accounts    *accountsvc.Service
 	memberships *walletrecords.Memberships
 }
 
 func NewUsersController(
 	members *walletrecords.Members,
+	accounts *accountsvc.Service,
 	memberships *walletrecords.Memberships,
 ) *UsersController {
 	if members == nil {
 		panic("dashboard wallet users controller: wallet users service is required")
+	}
+	if accounts == nil {
+		panic("dashboard wallet users controller: account service is required")
 	}
 	if memberships == nil {
 		panic("dashboard wallet users controller: wallet memberships are required")
 	}
 	return &UsersController{
 		members:     members,
+		accounts:    accounts,
 		memberships: memberships,
 	}
 }
@@ -83,6 +90,9 @@ func (ctrl *UsersController) AddWalletUser(ctx http.Context) http.Response {
 		return resp
 	}
 	targetID, _ := uuid.Parse(req.UserID)
+	if resp := ctrl.requireActiveAccountMember(ctx, wallet, targetID); resp != nil {
+		return resp
+	}
 
 	existing, existErr := ctrl.members.FindByWalletAndUserIncludeDeleted(ctx.Context(), wallet.ID, targetID)
 	if existErr != nil && !errors.Is(existErr, models.ErrRepositoryNotFound) {
@@ -111,6 +121,25 @@ func (ctrl *UsersController) AddWalletUser(ctx http.Context) http.Response {
 		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to add wallet user"})
 	}
 	return responses.Send(ctx, http.StatusCreated, walletUserViewPtr(wu))
+}
+
+// requireActiveAccountMember rejects a user_id that is not an active member of
+// the wallet's account. Role-set validation stays with unmerged S8.
+func (ctrl *UsersController) requireActiveAccountMember(ctx http.Context, wallet *models.Wallet, userID uuid.UUID) http.Response {
+	if wallet.AccountID == nil {
+		return responses.Send(ctx, http.StatusUnprocessableEntity, http.Json{"error": "user is not an active member of this account"})
+	}
+	member, err := ctrl.accounts.FindMember(ctx.Context(), *wallet.AccountID, userID)
+	if err != nil {
+		if errors.Is(err, models.ErrRepositoryNotFound) {
+			return responses.Send(ctx, http.StatusUnprocessableEntity, http.Json{"error": "user is not an active member of this account"})
+		}
+		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to add wallet user"})
+	}
+	if member == nil || member.Status != "active" {
+		return responses.Send(ctx, http.StatusUnprocessableEntity, http.Json{"error": "user is not an active member of this account"})
+	}
+	return nil
 }
 
 // RemoveWalletUser godoc

@@ -11,26 +11,33 @@ import (
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/policies"
 	"github.com/macrowallets/waas/app/services/walletrecords"
+	"github.com/macrowallets/waas/app/services/webhook"
 )
 
 // WebhooksController serves the dashboard wallet webhook routes.
 type WebhooksController struct {
 	configs     *walletrecords.Webhooks
+	delivery    *webhook.Service
 	memberships *walletrecords.Memberships
 }
 
 func NewWebhooksController(
 	configs *walletrecords.Webhooks,
+	delivery *webhook.Service,
 	memberships *walletrecords.Memberships,
 ) *WebhooksController {
 	if configs == nil {
 		panic("dashboard wallet webhooks controller: webhook configs service is required")
+	}
+	if delivery == nil {
+		panic("dashboard wallet webhooks controller: webhook delivery service is required")
 	}
 	if memberships == nil {
 		panic("dashboard wallet webhooks controller: wallet memberships are required")
 	}
 	return &WebhooksController{
 		configs:     configs,
+		delivery:    delivery,
 		memberships: memberships,
 	}
 }
@@ -128,7 +135,46 @@ func (ctrl *WebhooksController) DeleteWalletWebhook(ctx http.Context) http.Respo
 	return ctx.Response().NoContent()
 }
 
+// TestWalletWebhook godoc
+// @Summary      Send a signed test webhook
+// @Description  Posts one webhook.test body to the webhook URL, signed the same way as a normal delivery. A refused URL is an error, not a success.
+// @Tags         Wallet Webhooks
+// @Security     BearerAuth
+// @Produce      json
+// @Param        walletId   path  string  true  "Wallet UUID"
+// @Param        webhookId  path  string  true  "Webhook UUID"
+// @Success      200  {object}  WebhookTestResponse
+// @Failure      403  {object}  ErrorResponse
+// @Failure      404  {object}  ErrorResponse
+// @Failure      502  {object}  ErrorResponse
+// @Router       /wallets/{walletId}/webhooks/{webhookId}/test [post]
+func (ctrl *WebhooksController) TestWalletWebhook(ctx http.Context) http.Response {
+	wallet := requestctx.MustWallet(ctx)
+	if resp := controllers.Deny(ctx, policies.WalletManageWebhooks(controllers.WalletMembership(ctx, ctrl.memberships, wallet.ID))); resp != nil {
+		return resp
+	}
+
+	webhookID, err := requests.RouteUUID(ctx, "webhookId")
+	if err != nil {
+		return responses.Send(ctx, http.StatusBadRequest, http.Json{"error": "invalid webhook id"})
+	}
+
+	cfg, err := ctrl.configs.FindByIDAndWallet(ctx.Context(), webhookID, wallet.ID)
+	if err != nil || cfg == nil {
+		return responses.Send(ctx, http.StatusNotFound, http.Json{"error": "webhook not found"})
+	}
+
+	if err := ctrl.delivery.SendTest(ctx.Context(), cfg, wallet.ID); err != nil {
+		return responses.Send(ctx, http.StatusBadGateway, http.Json{"error": "webhook test delivery failed"})
+	}
+	return responses.Send(ctx, http.StatusOK, http.Json{"delivered": true})
+}
+
 // ---- Request/Response types ----
+
+type WebhookTestResponse struct {
+	Delivered bool `json:"delivered" example:"true"`
+}
 
 type CreateWalletWebhookSwagger struct {
 	URL    string `json:"url" example:"https://example.com/hook"`

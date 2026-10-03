@@ -147,27 +147,17 @@ func legacyEventWallet(data interface{}) *uuid.UUID {
 	return nil
 }
 
+const (
+	webhookDeliveryTimeout = 10 * time.Second
+	// Test deliveries are synchronous dashboard calls, so they fail fast.
+	webhookTestTimeout = 3 * time.Second
+	webhookTestEvent   = "webhook.test"
+)
+
 // Deliver executes the HTTP delivery. Called by the SQS Lambda worker.
 // Returns error to trigger SQS retry → eventually DLQ after 10 failures.
 func (s *Service) Deliver(ctx context.Context, msg types.WebhookMessage) error {
-	mac := hmac.New(sha256.New, []byte(msg.Secret))
-	mac.Write([]byte(msg.Payload))
-	signature := hex.EncodeToString(mac.Sum(nil))
-
-	const webhookDeliveryTimeout = 10 * time.Second
-	resp, err := httpclient.NewClient(webhookDeliveryTimeout).Do(ctx, httpclient.Request{
-		Method: httpclient.MethodPost,
-		URL:    msg.DeliveryURL,
-		Header: map[string]string{
-			"Content-Type":        "application/json",
-			"X-Vault-Signature":   signature,
-			"X-Vault-Event":       string(msg.EventType),
-			"X-Vault-Delivery-Id": msg.EventID,
-			"X-Vault-Timestamp":   fmt.Sprintf("%d", time.Now().Unix()),
-		},
-		Body:    []byte(msg.Payload),
-		HasBody: true,
-	})
+	resp, err := postSignedWebhook(ctx, msg.DeliveryURL, msg.Secret, msg.Payload, string(msg.EventType), msg.EventID, webhookDeliveryTimeout)
 	if err != nil {
 		if httpclient.IsBuild(err) {
 			return fmt.Errorf("build request: %w", err)
@@ -190,6 +180,58 @@ func (s *Service) Deliver(ctx context.Context, msg types.WebhookMessage) error {
 
 func (s *Service) markAttempt(ctx context.Context, eventID, errMsg string) {
 	s.webhookEventRepo.IncrementAttempt(ctx, eventID, errMsg)
+}
+
+// SendTest posts one signed webhook.test body to the config URL and does not
+// retry or persist a delivery. The signing secret is never written to logs.
+func (s *Service) SendTest(ctx context.Context, cfg *models.WebhookConfig, walletID uuid.UUID) error {
+	if cfg == nil || strings.TrimSpace(cfg.URL) == "" {
+		return ErrWebhookConfigNotFound
+	}
+	eventID := uuid.New().String()
+	payload, err := json.Marshal(map[string]any{
+		"id":         eventID,
+		"type":       webhookTestEvent,
+		"created_at": time.Now().UTC().Format(time.RFC3339),
+		"data": map[string]string{
+			"wallet_id":  walletID.String(),
+			"webhook_id": cfg.ID.String(),
+		},
+	})
+	if err != nil {
+		return fmt.Errorf("marshal webhook test: %w", err)
+	}
+
+	resp, err := postSignedWebhook(ctx, cfg.URL, cfg.Secret, string(payload), webhookTestEvent, eventID, webhookTestTimeout)
+	if err != nil {
+		slog.Info("webhook test delivery failed", "webhook_id", cfg.ID.String(), "url", cfg.URL)
+		return fmt.Errorf("webhook test delivery failed: %w", err)
+	}
+	if resp.StatusCode >= httpclient.StatusBadRequest {
+		slog.Info("webhook test delivery rejected", "webhook_id", cfg.ID.String(), "url", cfg.URL, "status", resp.StatusCode)
+		return fmt.Errorf("webhook test delivery failed: HTTP %d", resp.StatusCode)
+	}
+	slog.Info("webhook test delivered", "webhook_id", cfg.ID.String(), "url", cfg.URL)
+	return nil
+}
+
+func postSignedWebhook(ctx context.Context, deliveryURL, secret, payload, eventType, eventID string, timeout time.Duration) (httpclient.Response, error) {
+	mac := hmac.New(sha256.New, []byte(secret))
+	mac.Write([]byte(payload))
+	signature := hex.EncodeToString(mac.Sum(nil))
+	return httpclient.NewClient(timeout).Do(ctx, httpclient.Request{
+		Method: httpclient.MethodPost,
+		URL:    deliveryURL,
+		Header: map[string]string{
+			"Content-Type":        "application/json",
+			"X-Vault-Signature":   signature,
+			"X-Vault-Event":       eventType,
+			"X-Vault-Delivery-Id": eventID,
+			"X-Vault-Timestamp":   fmt.Sprintf("%d", time.Now().Unix()),
+		},
+		Body:    []byte(payload),
+		HasBody: true,
+	})
 }
 
 // ---------------------------------------------------------------------------

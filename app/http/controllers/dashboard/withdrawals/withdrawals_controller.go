@@ -47,6 +47,7 @@ type WithdrawalsController struct {
 	events            *withdrawalevents.Publisher
 	redis             *redis.Client
 	memberships       *walletrecords.Memberships
+	wallets           *walletrecords.Wallets
 }
 
 func NewWithdrawalsController(
@@ -60,6 +61,7 @@ func NewWithdrawalsController(
 	events *withdrawalevents.Publisher,
 	redis *redis.Client,
 	memberships *walletrecords.Memberships,
+	wallets *walletrecords.Wallets,
 ) *WithdrawalsController {
 	if withdrawals == nil {
 		panic("dashboard withdrawals controller: withdrawals service is required")
@@ -85,6 +87,9 @@ func NewWithdrawalsController(
 	if memberships == nil {
 		panic("dashboard withdrawals controller: wallet memberships are required")
 	}
+	if wallets == nil {
+		panic("dashboard withdrawals controller: wallets service is required")
+	}
 	return &WithdrawalsController{
 		withdrawals:       withdrawals,
 		chains:            chains,
@@ -96,6 +101,7 @@ func NewWithdrawalsController(
 		events:            events,
 		redis:             redis,
 		memberships:       memberships,
+		wallets:           wallets,
 	}
 }
 
@@ -402,6 +408,41 @@ func (ctrl *WithdrawalsController) GetWalletWithdrawal(ctx http.Context) http.Re
 		return responses.Send(ctx, http.StatusNotFound, http.Json{"error": "withdrawal not found"})
 	}
 	return responses.Send(ctx, http.StatusOK, controllers.WithdrawalViewPtr(w))
+}
+
+// GetDashboardWithdrawal godoc
+// @Summary      Get a withdrawal by id
+// @Description  Returns one withdrawal for the account in X-Account-Id. A missing id, or a withdrawal outside that account, is not found.
+// @Tags         Wallet Withdrawals
+// @Security     BearerAuth
+// @Produce      json
+// @Param        withdrawalId  path  string  true  "Withdrawal UUID"
+// @Param        X-Account-Id  header  string  true  "Account UUID"
+// @Success      200  {object}  controllers.WithdrawalView
+// @Failure      401  {object}  ErrorResponse
+// @Failure      404  {object}  ErrorResponse
+// @Router       /withdrawals/{withdrawalId} [get]
+func (ctrl *WithdrawalsController) GetDashboardWithdrawal(ctx http.Context) http.Response {
+	accountID, ok := requestctx.AccountID(ctx)
+	if !ok || accountID == uuid.Nil {
+		return responses.Send(ctx, http.StatusBadRequest, http.Json{"error": "X-Account-Id header is required"})
+	}
+
+	withdrawalID, err := requests.RouteUUID(ctx, "withdrawalId")
+	if err != nil {
+		return responses.Send(ctx, http.StatusBadRequest, http.Json{"error": "invalid withdrawal id"})
+	}
+
+	withdrawal, err := ctrl.withdrawals.FindByID(ctx.Context(), withdrawalID)
+	if err != nil || withdrawal == nil {
+		return responses.Send(ctx, http.StatusNotFound, http.Json{"error": "withdrawal not found"})
+	}
+
+	wallet, err := ctrl.wallets.FindByID(ctx.Context(), withdrawal.WalletID)
+	if err != nil || wallet == nil || wallet.AccountID == nil || *wallet.AccountID != accountID {
+		return responses.Send(ctx, http.StatusNotFound, http.Json{"error": "withdrawal not found"})
+	}
+	return responses.Send(ctx, http.StatusOK, controllers.WithdrawalViewPtr(withdrawal))
 }
 
 // CancelWalletWithdrawal godoc

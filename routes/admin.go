@@ -35,6 +35,7 @@ import (
 	usersvc "github.com/macrowallets/waas/app/services/users"
 	walletsvc "github.com/macrowallets/waas/app/services/wallet"
 	"github.com/macrowallets/waas/app/services/walletrecords"
+	"github.com/macrowallets/waas/app/services/webhook"
 	"github.com/macrowallets/waas/app/services/withdraw"
 	"github.com/macrowallets/waas/app/services/withdrawalevents"
 	"github.com/macrowallets/waas/app/services/withdrawalrecords"
@@ -169,11 +170,13 @@ func RegisterAdminRoutes() {
 
 			r.Get("/webhooks", walletWebhooksCtrl.ListWalletWebhooks)
 			r.Post("/webhooks", walletWebhooksCtrl.CreateWalletWebhook)
+			r.Post("/webhooks/{webhookId}/test", walletWebhooksCtrl.TestWalletWebhook)
 			r.Delete("/webhooks/{webhookId}", walletWebhooksCtrl.DeleteWalletWebhook)
 
 			r.Get("/settings", walletSettingsCtrl.GetWalletSettings)
 			r.Patch("/settings", walletSettingsCtrl.UpdateWalletSettings)
 			r.Post("/freeze", walletSettingsCtrl.FreezeWallet)
+			r.Post("/archive", walletSettingsCtrl.ArchiveWallet)
 
 			r.Get("/balances", balancesCtrl.ListWalletBalances)
 
@@ -195,6 +198,12 @@ func RegisterAdminRoutes() {
 				ur.Get("", unspentsCtrl.ListUnspentOutputs)
 			})
 		})
+	})
+
+	// Dashboard withdrawal detail. Same session and account-header auth as
+	// GET /v1/wallets/{walletId}/withdrawals; the id is not scoped by a wallet path.
+	facades.Route().Prefix("/v1/withdrawals").Middleware(middleware.SessionAuth(), accountHeader, totpEnrollment, noCache).Group(func(router route.Router) {
+		router.Get("/{withdrawalId}", withdrawalCtrl.GetDashboardWithdrawal)
 	})
 }
 
@@ -241,6 +250,7 @@ func walletPolicyMemberships() *walletrecords.Memberships {
 func newDashboardWalletUsersController() *dashwallets.UsersController {
 	return dashwallets.NewUsersController(
 		container.MustMake[*walletrecords.Members](),
+		container.MustMake[*accountsvc.Service](),
 		walletPolicyMemberships(),
 	)
 }
@@ -255,6 +265,7 @@ func newDashboardWhitelistController() *dashwallets.WhitelistController {
 func newDashboardWalletWebhooksController() *dashwallets.WebhooksController {
 	return dashwallets.NewWebhooksController(
 		container.MustMake[*walletrecords.Webhooks](),
+		container.MustMake[*webhook.Service](),
 		walletPolicyMemberships(),
 	)
 }
@@ -319,6 +330,7 @@ func newDashboardWithdrawalsController() *dashwithdrawals.WithdrawalsController 
 		container.MustMake[*withdrawalevents.Publisher](),
 		container.MustMake[*container.SharedRedis]().Client,
 		walletPolicyMemberships(),
+		container.MustMake[*walletrecords.Wallets](),
 	)
 }
 

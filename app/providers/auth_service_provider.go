@@ -75,6 +75,9 @@ func (r *AuthServiceProvider) Boot(app foundation.Application) {
 	gate.Define("wallet.update", func(ctx context.Context, arguments map[string]any) contractsaccess.Response {
 		return wp.Update(ctx, withWalletMembership(ctx, arguments))
 	})
+	gate.Define("wallet.archive", func(ctx context.Context, arguments map[string]any) contractsaccess.Response {
+		return wp.Archive(ctx, arguments)
+	})
 	gate.Define("wallet.freeze", func(ctx context.Context, arguments map[string]any) contractsaccess.Response {
 		return wp.Freeze(ctx, withWalletMembership(ctx, arguments))
 	})

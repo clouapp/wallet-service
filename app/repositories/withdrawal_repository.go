@@ -59,6 +59,21 @@ func (r *WithdrawalRepository) FindByWallet(ctx context.Context, walletID uuid.U
 	return withdrawals, total, nil
 }
 
+// FindByID returns the withdrawal, or ErrRepositoryNotFound.
+func (r *WithdrawalRepository) FindByID(ctx context.Context, id uuid.UUID) (*models.Withdrawal, error) {
+	if id == uuid.Nil {
+		return nil, fmt.Errorf("withdrawal id is required")
+	}
+	var w models.Withdrawal
+	if err := r.Query(ctx).Where("id = ?", id).First(&w); err != nil {
+		return nil, fmt.Errorf("find withdrawal: %w", err)
+	}
+	if w.ID == uuid.Nil {
+		return nil, models.ErrRepositoryNotFound
+	}
+	return &w, nil
+}
+
 // FindByIDAndWallet returns the withdrawal when it belongs to walletID.
 func (r *WithdrawalRepository) FindByIDAndWallet(ctx context.Context, withdrawalID, walletID uuid.UUID) (*models.Withdrawal, error) {
 	var w models.Withdrawal

@@ -5,6 +5,7 @@ import (
 )
 
 type UpdateWalletSettingsRequest struct {
+	Label             string `form:"label"               json:"label,omitempty"`
 	FeeRateMin        string `form:"fee_rate_min"        json:"fee_rate_min,omitempty"`
 	FeeRateMax        string `form:"fee_rate_max"        json:"fee_rate_max,omitempty"`
 	FeeMultiplier     string `form:"fee_multiplier"      json:"fee_multiplier,omitempty"`
@@ -18,6 +19,7 @@ func (r *UpdateWalletSettingsRequest) Authorize(ctx http.Context) error {
 
 func (r *UpdateWalletSettingsRequest) Rules(ctx http.Context) map[string]string {
 	return map[string]string{
+		"label":              "max_len:255",
 		"fee_rate_min":       "decimal_string",
 		"fee_rate_max":       "decimal_string",
 		"fee_multiplier":     "decimal_string",

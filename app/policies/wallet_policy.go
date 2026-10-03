@@ -9,7 +9,7 @@ import (
 )
 
 // WalletPolicy defines gate abilities for Wallet resources.
-// Abilities: wallet.view, wallet.update, wallet.freeze,
+// Abilities: wallet.view, wallet.update, wallet.archive, wallet.freeze,
 //
 //	wallet.add-user, wallet.remove-user, wallet.whitelist, wallet.manage-webhooks, wallet.cancel-withdrawal
 type WalletPolicy struct{}
@@ -34,6 +34,15 @@ func (p *WalletPolicy) Update(ctx context.Context, arguments map[string]any) con
 		return access.NewDenyResponse("missing wallet_id")
 	}
 	return WalletUpdate(membershipFrom(arguments))
+}
+
+// Archive allows the same wallet or account owner/admin as Update.
+// S3 (#12, unmerged) will replace this helper with a per-route permission table.
+func (p *WalletPolicy) Archive(ctx context.Context, arguments map[string]any) contractsaccess.Response {
+	if p.Update(ctx, arguments).Allowed() {
+		return access.NewAllowResponse()
+	}
+	return access.NewDenyResponse("only wallet/account owners and admins may archive wallets")
 }
 
 func (p *WalletPolicy) Freeze(ctx context.Context, arguments map[string]any) contractsaccess.Response {
@@ -89,6 +98,15 @@ func WalletView(membership WalletMembership) contractsaccess.Response {
 		return access.NewAllowResponse()
 	}
 	return access.NewDenyResponse("not a member of this wallet or its account")
+}
+
+// WalletArchive is the wallet.archive decision. The allow rule matches update;
+// the denial names archive so the route can say what was refused.
+func WalletArchive(membership WalletMembership) contractsaccess.Response {
+	if mayAdministerWallet(membership) {
+		return access.NewAllowResponse()
+	}
+	return access.NewDenyResponse("only wallet/account owners and admins may archive wallets")
 }
 
 // WalletUpdate is the wallet.update decision for a membership the caller loaded.

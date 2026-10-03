@@ -153,6 +153,11 @@ func (r *WalletRepository) SetStatus(ctx context.Context, id uuid.UUID, status s
 	return r.updateColumn(ctx, id, "status", status, "set wallet status")
 }
 
+// SetLabel sets wallets.label.
+func (r *WalletRepository) SetLabel(ctx context.Context, id uuid.UUID, label string) error {
+	return r.updateColumn(ctx, id, "label", label, "set wallet label")
+}
+
 // SetBalanceSummary writes the native balance columns and the read-model status.
 func (r *WalletRepository) SetBalanceSummary(ctx context.Context, id uuid.UUID, asset, raw, display string, syncedAt time.Time, readModelStatus string) error {
 	fields := map[string]any{

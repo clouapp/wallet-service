@@ -31,6 +31,7 @@ type WalletStore interface {
 	SetRequiredApprovals(ctx context.Context, id uuid.UUID, value int) error
 	SetFrozenUntil(ctx context.Context, id uuid.UUID, until time.Time) error
 	SetStatus(ctx context.Context, id uuid.UUID, status string) error
+	SetLabel(ctx context.Context, id uuid.UUID, label string) error
 }
 
 // Wallets reads and updates wallet rows.
@@ -100,6 +101,13 @@ func (s *Wallets) SetStatus(ctx context.Context, id uuid.UUID, status string) er
 		return err
 	}
 	return s.store.SetStatus(ctx, id, status)
+}
+
+func (s *Wallets) SetLabel(ctx context.Context, id uuid.UUID, label string) error {
+	if err := requireStore(ctx, s.storeOrNil(), "set wallet label", "wallets"); err != nil {
+		return err
+	}
+	return s.store.SetLabel(ctx, id, label)
 }
 
 func (s *Wallets) storeOrNil() any {

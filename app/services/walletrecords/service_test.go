@@ -64,6 +64,7 @@ func (f *fakeWallets) SetFeeMultiplier(context.Context, uuid.UUID, float64) erro
 func (f *fakeWallets) SetRequiredApprovals(context.Context, uuid.UUID, int) error { return f.err }
 func (f *fakeWallets) SetFrozenUntil(context.Context, uuid.UUID, time.Time) error { return f.err }
 func (f *fakeWallets) SetStatus(context.Context, uuid.UUID, string) error         { return f.err }
+func (f *fakeWallets) SetLabel(context.Context, uuid.UUID, string) error          { return f.err }
 
 func TestTransactionsFindByChainAndTxHashForwards(t *testing.T) {
 	t.Parallel()

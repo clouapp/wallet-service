@@ -20,6 +20,7 @@ type ActivityLog interface {
 // stay in the handler; these methods only read and update the row.
 type Store interface {
 	FindByWallet(ctx context.Context, walletID uuid.UUID, status string, limit, offset int) ([]models.Withdrawal, int64, error)
+	FindByID(ctx context.Context, id uuid.UUID) (*models.Withdrawal, error)
 	FindByIDAndWallet(ctx context.Context, withdrawalID, walletID uuid.UUID) (*models.Withdrawal, error)
 	Create(ctx context.Context, withdrawal *models.Withdrawal) error
 	RetryBroadcast(ctx context.Context, id uuid.UUID, amount, destination, feeEstimate, note string) error
@@ -61,6 +62,13 @@ func (s *Records) FindByWallet(ctx context.Context, walletID uuid.UUID, status s
 		return nil, 0, err
 	}
 	return s.store.FindByWallet(ctx, walletID, status, limit, offset)
+}
+
+func (s *Records) FindByID(ctx context.Context, id uuid.UUID) (*models.Withdrawal, error) {
+	if err := s.ready(ctx, "find withdrawal"); err != nil {
+		return nil, err
+	}
+	return s.store.FindByID(ctx, id)
 }
 
 func (s *Records) FindByIDAndWallet(ctx context.Context, withdrawalID, walletID uuid.UUID) (*models.Withdrawal, error) {

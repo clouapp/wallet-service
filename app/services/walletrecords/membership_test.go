@@ -95,6 +95,7 @@ func (f *roleWallets) SetFeeMultiplier(context.Context, uuid.UUID, float64) erro
 func (f *roleWallets) SetRequiredApprovals(context.Context, uuid.UUID, int) error { return f.err }
 func (f *roleWallets) SetFrozenUntil(context.Context, uuid.UUID, time.Time) error { return f.err }
 func (f *roleWallets) SetStatus(context.Context, uuid.UUID, string) error         { return f.err }
+func (f *roleWallets) SetLabel(context.Context, uuid.UUID, string) error          { return f.err }
 
 type roleMembers struct {
 	member   *models.WalletUser

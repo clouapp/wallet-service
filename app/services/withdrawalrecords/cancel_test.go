@@ -18,6 +18,9 @@ type cancelStore struct {
 func (s *cancelStore) FindByWallet(context.Context, uuid.UUID, string, int, int) ([]models.Withdrawal, int64, error) {
 	return nil, 0, nil
 }
+func (s *cancelStore) FindByID(context.Context, uuid.UUID) (*models.Withdrawal, error) {
+	return nil, nil
+}
 func (s *cancelStore) FindByIDAndWallet(context.Context, uuid.UUID, uuid.UUID) (*models.Withdrawal, error) {
 	return nil, nil
 }

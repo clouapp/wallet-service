@@ -11,6 +11,7 @@ import (
 	"github.com/macrowallets/waas/app/http/middleware/requestctx"
 	"github.com/macrowallets/waas/app/http/requests"
 	"github.com/macrowallets/waas/app/http/responses"
+	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/policies"
 	"github.com/macrowallets/waas/app/services/walletrecords"
 )
@@ -51,14 +52,7 @@ func NewSettingsController(
 func (ctrl *SettingsController) GetWalletSettings(ctx http.Context) http.Response {
 	wallet := requestctx.MustWallet(ctx)
 
-	return responses.Send(ctx, http.StatusOK, http.Json{
-		"fee_rate_min":       wallet.FeeRateMin,
-		"fee_rate_max":       wallet.FeeRateMax,
-		"fee_multiplier":     wallet.FeeMultiplier,
-		"required_approvals": wallet.RequiredApprovals,
-		"frozen_until":       wallet.FrozenUntil,
-		"status":             wallet.Status,
-	})
+	return walletSettingsJSON(ctx, wallet)
 }
 
 // UpdateWalletSettings godoc
@@ -85,6 +79,12 @@ func (ctrl *SettingsController) UpdateWalletSettings(ctx http.Context) http.Resp
 		return errResp
 	}
 
+	if s := strings.TrimSpace(req.Label); s != "" {
+		if err := ctrl.wallets.SetLabel(ctx.Context(), wallet.ID, s); err != nil {
+			return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to update wallet settings"})
+		}
+		wallet.Label = s
+	}
 	if s := strings.TrimSpace(req.FeeRateMin); s != "" {
 		v, _ := strconv.Atoi(s)
 		if err := ctrl.wallets.SetFeeRateMin(ctx.Context(), wallet.ID, v); err != nil {
@@ -121,7 +121,12 @@ func (ctrl *SettingsController) UpdateWalletSettings(ctx http.Context) http.Resp
 		wallet.FrozenUntil = &t
 	}
 
+	return walletSettingsJSON(ctx, wallet)
+}
+
+func walletSettingsJSON(ctx http.Context, wallet *models.Wallet) http.Response {
 	return responses.Send(ctx, http.StatusOK, http.Json{
+		"label":              wallet.Label,
 		"fee_rate_min":       wallet.FeeRateMin,
 		"fee_rate_max":       wallet.FeeRateMax,
 		"fee_multiplier":     wallet.FeeMultiplier,
@@ -129,6 +134,32 @@ func (ctrl *SettingsController) UpdateWalletSettings(ctx http.Context) http.Resp
 		"frozen_until":       wallet.FrozenUntil,
 		"status":             wallet.Status,
 	})
+}
+
+// ArchiveWallet godoc
+// @Summary      Archive a wallet
+// @Description  Sets wallet status to archived. Requires a wallet or account owner/admin. Archiving an archived wallet is rejected.
+// @Tags         Wallet Settings
+// @Security     BearerAuth
+// @Produce      json
+// @Param        walletId  path  string  true  "Wallet UUID"
+// @Success      200  {object}  models.Wallet
+// @Failure      403  {object}  ErrorResponse
+// @Failure      409  {object}  ErrorResponse
+// @Router       /wallets/{walletId}/archive [post]
+func (ctrl *SettingsController) ArchiveWallet(ctx http.Context) http.Response {
+	wallet := requestctx.MustWallet(ctx)
+	if errResp := controllers.Deny(ctx, policies.WalletArchive(controllers.WalletMembership(ctx, ctrl.memberships, wallet.ID))); errResp != nil {
+		return errResp
+	}
+	if wallet.Status == models.WalletStatusArchived {
+		return responses.Send(ctx, http.StatusConflict, http.Json{"error": "wallet already archived"})
+	}
+	if err := ctrl.wallets.SetStatus(ctx.Context(), wallet.ID, models.WalletStatusArchived); err != nil {
+		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to archive wallet"})
+	}
+	wallet.Status = models.WalletStatusArchived
+	return responses.Send(ctx, http.StatusOK, controllers.NewWalletView(wallet, controllers.ResolveWalletChainNetwork(ctx.Context(), wallet.Chain)))
 }
 
 // FreezeWallet godoc
@@ -178,6 +209,7 @@ func (ctrl *SettingsController) FreezeWallet(ctx http.Context) http.Response {
 // ---- Request/Response types ----
 
 type UpdateWalletSettingsSwagger struct {
+	Label             string     `json:"label,omitempty" example:"Treasury"`
 	FeeRateMin        *int       `json:"fee_rate_min,omitempty" example:"1"`
 	FeeRateMax        *int       `json:"fee_rate_max,omitempty" example:"100"`
 	FeeMultiplier     *float64   `json:"fee_multiplier,omitempty" example:"1.25"`
@@ -190,6 +222,7 @@ type FreezeWalletSwagger struct {
 }
 
 type WalletSettingsResponse struct {
+	Label             string     `json:"label"`
 	FeeRateMin        *int       `json:"fee_rate_min"`
 	FeeRateMax        *int       `json:"fee_rate_max"`
 	FeeMultiplier     *float64   `json:"fee_multiplier"`
