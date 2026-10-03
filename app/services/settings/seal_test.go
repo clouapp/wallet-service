@@ -1,6 +1,9 @@
 package settings
 
-import "testing"
+import (
+	"errors"
+	"testing"
+)
 
 type stubCipher struct {
 	prefix string
@@ -49,7 +52,65 @@ func TestSealTagsCiphertextAndOpenRefusesPlaintext(t *testing.T) {
 	if opened != plaintext {
 		t.Fatalf("Open = %q", opened)
 	}
-	if _, err := Open(stubCipher{prefix: "cipher:"}, plaintext); err == nil {
-		t.Fatal("Open accepted an unsealed value")
+	openedAgain, err := Open(stubCipher{prefix: "cipher:"}, plaintext)
+	if !errors.Is(err, ErrNotSealed) {
+		t.Fatalf("Open(unsealed) error = %v", err)
+	}
+	if openedAgain != "" {
+		t.Fatalf("Open(unsealed) = %q", openedAgain)
+	}
+}
+
+func TestOpenWithTheWrongKeyFailsClosed(t *testing.T) {
+	t.Parallel()
+
+	sealed, err := Seal(stubCipher{prefix: "one:"}, "JBSWY3DPEHPK3PXP")
+	if err != nil {
+		t.Fatalf("Seal: %v", err)
+	}
+	got, err := Open(stubCipher{prefix: "two:"}, sealed)
+	if err == nil {
+		t.Fatal("decrypt with the wrong key succeeded")
+	}
+	if got != "" {
+		t.Fatalf("Open(wrong key) = %q", got)
+	}
+}
+
+func TestSealOpenRoundTrip(t *testing.T) {
+	t.Parallel()
+
+	const secret = "JBSWY3DPEHPK3PXP"
+	cipher := stubCipher{prefix: "aes:"}
+	sealed, err := Seal(cipher, secret)
+	if err != nil {
+		t.Fatalf("Seal: %v", err)
+	}
+	if sealed == secret || !IsSealed(sealed) {
+		t.Fatalf("Seal = %q", sealed)
+	}
+	opened, err := Open(cipher, sealed)
+	if err != nil || opened != secret {
+		t.Fatalf("Open = %q, %v", opened, err)
+	}
+}
+
+func TestSealIsIdempotentAndEmptySafe(t *testing.T) {
+	t.Parallel()
+
+	cipher := stubCipher{prefix: "aes:"}
+	if got, err := Seal(cipher, ""); err != nil || got != "" {
+		t.Fatalf("Seal empty = %q, %v", got, err)
+	}
+	if got, err := Open(cipher, ""); err != nil || got != "" {
+		t.Fatalf("Open empty = %q, %v", got, err)
+	}
+	sealed, err := Seal(cipher, "JBSWY3DPEHPK3PXP")
+	if err != nil {
+		t.Fatalf("Seal: %v", err)
+	}
+	again, err := Seal(cipher, sealed)
+	if err != nil || again != sealed {
+		t.Fatalf("Seal(sealed) = %q, %v", again, err)
 	}
 }

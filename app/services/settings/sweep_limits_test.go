@@ -92,6 +92,89 @@ func TestEffectiveSweepLimits_InvalidKeyFallsBackToThatDefault(t *testing.T) {
 	}
 }
 
+func TestEffectiveSweepLimits_FallbackChain(t *testing.T) {
+	child, ok := FindGroup(groupAccountSweepLimits)
+	if !ok {
+		t.Fatal("account_sweep_limits is not in the registry")
+	}
+	restore := UseForTest([]Group{
+		{Name: child.Inherits, Scope: ScopePlatform},
+		child,
+	})
+	defer restore()
+
+	store := newCountingStore()
+	service := newTestService(store)
+	accountID := uuid.New()
+	otherID := uuid.New()
+	ctx := context.Background()
+
+	missing, err := service.EffectiveSweepLimits(ctx, accountID)
+	if err != nil {
+		t.Fatalf("empty chain: %v", err)
+	}
+	if missing != DefaultSweepLimits() {
+		t.Fatalf("empty chain = %+v", missing)
+	}
+	if store.platformReads == 0 {
+		t.Fatal("the parent group was not read")
+	}
+
+	store.PutPlatform(child.Inherits, map[string]string{
+		keyMaxAddressesEVM:     "200",
+		keyDailyWithdrawCapUSD: "10.00",
+	})
+	fromPlatform, err := service.EffectiveSweepLimits(ctx, accountID)
+	if err != nil {
+		t.Fatalf("platform chain: %v", err)
+	}
+	if fromPlatform.MaxAddressesEVM != 200 || fromPlatform.DailyWithdrawCapUSD != "10.00" {
+		t.Fatalf("platform chain = %+v", fromPlatform)
+	}
+	if fromPlatform.MaxAddressesSolana != defaultMaxAddressesSolana {
+		t.Fatalf("solana = %d, want the registry default", fromPlatform.MaxAddressesSolana)
+	}
+
+	if err := store.UpsertMany(ctx, accountID, groupAccountSweepLimits, map[string]string{
+		keyMaxAddressesEVM: "7",
+	}); err != nil {
+		t.Fatalf("store account override: %v", err)
+	}
+	overridden, err := service.EffectiveSweepLimits(ctx, accountID)
+	if err != nil {
+		t.Fatalf("account override: %v", err)
+	}
+	if overridden.MaxAddressesEVM != 7 || overridden.DailyWithdrawCapUSD != "10.00" {
+		t.Fatalf("account override = %+v", overridden)
+	}
+
+	other, err := service.EffectiveSweepLimits(ctx, otherID)
+	if err != nil {
+		t.Fatalf("other account: %v", err)
+	}
+	if other.MaxAddressesEVM != 200 {
+		t.Fatalf("other account read %d from the first account", other.MaxAddressesEVM)
+	}
+
+	if err := store.UpsertMany(ctx, accountID, groupAccountSweepLimits, map[string]string{
+		keyMaxAddressesEVM: "nope",
+	}); err != nil {
+		t.Fatalf("store invalid account value: %v", err)
+	}
+	invalid, err := service.EffectiveSweepLimits(ctx, accountID)
+	if err != nil {
+		t.Fatalf("invalid account value: %v", err)
+	}
+	if invalid.MaxAddressesEVM != defaultMaxAddressesEVM {
+		t.Fatalf("invalid account value = %d, want the registry default", invalid.MaxAddressesEVM)
+	}
+
+	store.platformErr = errors.New("db down")
+	if _, err := service.EffectiveSweepLimits(ctx, otherID); err == nil || err.Error() != "db down" {
+		t.Fatalf("platform error = %v", err)
+	}
+}
+
 func TestEffectiveSweepLimits_DoesNotReadThePlatformGroup(t *testing.T) {
 	t.Parallel()
 

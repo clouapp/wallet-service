@@ -31,6 +31,12 @@ const (
 
 	signingAlgorithmHMACSHA256 = "hmac-sha256"
 
+	// A secret group names its own pair. The account route still gates on
+	// settings.view and settings.update; this pair is what a later check
+	// requires on top of that, so the route permission is not the credential.
+	permAccountWebhooksView   = "settings.webhooks.view"
+	permAccountWebhooksUpdate = "settings.webhooks.update"
+
 	defaultSessionIdleMinutes           = 30
 	minSessionIdleMinutes               = 5
 	maxSessionIdleMinutes               = 10080
@@ -67,11 +73,13 @@ func accountGroups() []Group {
 			Validate: validateSessionIdle,
 		},
 		{
-			Name:      groupAccountWebhooks,
-			Scope:     ScopeAccount,
-			ManagedBy: ManagedByAccount,
-			Section:   sectionWebhooks,
-			Block:     "Delivery",
+			Name:             groupAccountWebhooks,
+			Scope:            ScopeAccount,
+			ManagedBy:        ManagedByAccount,
+			Section:          sectionWebhooks,
+			Block:            "Delivery",
+			ViewPermission:   permAccountWebhooksView,
+			UpdatePermission: permAccountWebhooksUpdate,
 			Settings: []Definition{
 				{
 					Key:     keySigningAlgorithm,

@@ -51,6 +51,34 @@ func TestListPlatformReadsOnlyPlatformRows(t *testing.T) {
 	}
 }
 
+func TestListGroupDoesNotReturnAnotherAccount(t *testing.T) {
+	mocks.TestDB(t)
+	ctx := context.Background()
+	repo := repositories.NewSettingRepository(nil)
+	accountA := mocks.InsertAccount(t, "settings-scope-a")
+	accountB := mocks.InsertAccount(t, "settings-scope-b")
+
+	if err := repo.UpsertMany(ctx, accountA.ID, "account_security", map[string]string{
+		"require_2fa": "true",
+	}); err != nil {
+		t.Fatalf("store account A: %v", err)
+	}
+	if err := repo.UpsertMany(ctx, accountB.ID, "account_security", map[string]string{
+		"require_2fa": "false",
+	}); err != nil {
+		t.Fatalf("store account B: %v", err)
+	}
+
+	rowsA, err := repo.ListGroup(ctx, accountA.ID, "account_security")
+	if err != nil || len(rowsA) != 1 || rowsA[0].Value != "true" || rowsA[0].AccountID == nil || *rowsA[0].AccountID != accountA.ID {
+		t.Fatalf("account A = %+v, %v", rowsA, err)
+	}
+	rowsB, err := repo.ListGroup(ctx, accountB.ID, "account_security")
+	if err != nil || len(rowsB) != 1 || rowsB[0].Value != "false" || rowsB[0].AccountID == nil || *rowsB[0].AccountID != accountB.ID {
+		t.Fatalf("account B = %+v, %v", rowsB, err)
+	}
+}
+
 func TestDeleteGroupLeavesPlatformRowsAndOtherAccounts(t *testing.T) {
 	mocks.TestDB(t)
 	ctx := context.Background()

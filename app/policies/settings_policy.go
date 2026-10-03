@@ -2,8 +2,7 @@ package policies
 
 // Account settings permissions. The dashboard route pair is settings.view
 // and settings.update (the names the settings registry and the front share).
-// A group may later demand an extra permission; none of the account groups
-// in this pass do.
+// A group that stores a secret declares its own pair on top of this one.
 const (
 	PermSettingsView   = "settings.view"
 	PermSettingsUpdate = "settings.update"

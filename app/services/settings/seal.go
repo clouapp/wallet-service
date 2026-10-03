@@ -1,6 +1,7 @@
 package settings
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 
@@ -23,14 +24,19 @@ func IsSealed(value string) bool {
 	return strings.HasPrefix(value, sealedPrefix)
 }
 
+// ErrNotSealed is an Open of a value that was never sealed. The plaintext
+// is not returned.
+var ErrNotSealed = errors.New("open setting: value is not sealed")
+
 // Seal encrypts a secret and tags it. Empty plaintext stays empty and is not
-// a sealed value. The plaintext is never written into the error.
+// a sealed value. Sealing an already sealed value returns it unchanged.
+// The plaintext is never written into the error.
 func Seal(c Cipher, plaintext string) (string, error) {
 	if c == nil {
 		return "", fmt.Errorf("seal setting: cipher is required")
 	}
-	if plaintext == "" {
-		return "", nil
+	if plaintext == "" || IsSealed(plaintext) {
+		return plaintext, nil
 	}
 	ciphertext, err := c.EncryptString(plaintext)
 	if err != nil {
@@ -50,7 +56,7 @@ func Open(c Cipher, value string) (string, error) {
 	}
 	raw, ok := strings.CutPrefix(value, sealedPrefix)
 	if !ok {
-		return "", fmt.Errorf("open setting: value is not sealed")
+		return "", ErrNotSealed
 	}
 	plaintext, err := c.DecryptString(raw)
 	if err != nil {

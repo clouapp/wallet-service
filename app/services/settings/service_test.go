@@ -174,6 +174,70 @@ func TestSaveNewSecretIsStoredAndHidden(t *testing.T) {
 	}
 }
 
+func TestSaveRefusesAPlatformManagedGroup(t *testing.T) {
+	t.Parallel()
+
+	store := newMemoryStore()
+	service := newTestService(store)
+	accountID := uuid.New()
+	ctx := context.Background()
+	store.rows[store.key(accountID, groupAccountSweepLimits)] = map[string]string{
+		keyDailyWithdrawCapUSD: "12.50",
+	}
+
+	_, err := service.Save(ctx, accountID, uuid.New(), "owner", groupAccountSweepLimits, map[string]any{
+		keyDailyWithdrawCapUSD: "9.00",
+	})
+	if !errors.Is(err, ErrManagedByPlatform) {
+		t.Fatalf("err = %v", err)
+	}
+	if value, ok := store.get(accountID, groupAccountSweepLimits, keyDailyWithdrawCapUSD); !ok || value != "12.50" {
+		t.Fatalf("cap = %q present %v", value, ok)
+	}
+
+	_, err = service.Save(ctx, accountID, uuid.New(), "auditor", groupAccountSweepLimits, map[string]any{
+		keyDailyWithdrawCapUSD: "9.00",
+	})
+	if !errors.Is(err, ErrUpdateForbidden) {
+		t.Fatalf("auditor err = %v", err)
+	}
+}
+
+func TestAccountCannotReadAnotherAccountsSettings(t *testing.T) {
+	t.Parallel()
+
+	store := newMemoryStore()
+	cache := &memoryCache{}
+	service := NewService(store, prefixSealer{}, cache, discardActivity{})
+	accountA := uuid.New()
+	accountB := uuid.New()
+	ctx := context.Background()
+	store.rows[store.key(accountA, groupAccountSecurity)] = map[string]string{keyRequire2FA: "true"}
+	store.rows[store.key(accountB, groupAccountSecurity)] = map[string]string{keyRequire2FA: "false"}
+	store.rows[store.key(accountA, groupAccountSweepLimits)] = map[string]string{keyMaxAddressesEVM: "9"}
+	store.rows[store.key(accountB, groupAccountSweepLimits)] = map[string]string{keyMaxAddressesEVM: "3"}
+
+	requiredA, err := service.Require2FA(ctx, accountA)
+	if err != nil || !requiredA {
+		t.Fatalf("account A require_2fa = %v, %v", requiredA, err)
+	}
+	requiredB, err := service.Require2FA(ctx, accountB)
+	if err != nil || requiredB {
+		t.Fatalf("account B require_2fa = %v, %v", requiredB, err)
+	}
+	limitsA, err := service.EffectiveSweepLimits(ctx, accountA)
+	if err != nil || limitsA.MaxAddressesEVM != 9 {
+		t.Fatalf("account A limits = %+v, %v", limitsA, err)
+	}
+	limitsB, err := service.EffectiveSweepLimits(ctx, accountB)
+	if err != nil || limitsB.MaxAddressesEVM != 3 {
+		t.Fatalf("account B limits = %+v, %v", limitsB, err)
+	}
+	if cacheKey(accountA, groupAccountSecurity) == cacheKey(accountB, groupAccountSecurity) {
+		t.Fatal("two accounts share a cache key")
+	}
+}
+
 func TestSaveRejectsAnUnknownGroupBeforeTheRoleCheck(t *testing.T) {
 	t.Parallel()
 
