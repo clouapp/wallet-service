@@ -1,16 +1,26 @@
 package middleware
 
 import (
+	"context"
+
 	"github.com/google/uuid"
 	"github.com/goravel/framework/contracts/http"
 
-	"github.com/macrowallets/waas/app/container"
 	"github.com/macrowallets/waas/app/http/responses"
 	"github.com/macrowallets/waas/app/models"
 )
 
+// accountScope is the account and membership lookup AccountContext and AccountHeader need.
+type accountScope interface {
+	FindByID(ctx context.Context, id uuid.UUID) (*models.Account, error)
+	FindMember(ctx context.Context, accountID, userID uuid.UUID) (*models.AccountUser, error)
+}
+
 // AccountContext resolves the {accountId} route parameter and verifies membership.
-func AccountContext() http.Middleware {
+func AccountContext(accounts accountScope) http.Middleware {
+	if accounts == nil {
+		panic("account context: account service is required")
+	}
 	return func(ctx http.Context) {
 		rawID := ctx.Request().Input("accountId")
 		accountID, err := uuid.Parse(rawID)
@@ -19,7 +29,7 @@ func AccountContext() http.Middleware {
 			return
 		}
 
-		accountPtr, err := container.Get().AccountRepo.FindByID(ctx.Context(), accountID)
+		accountPtr, err := accounts.FindByID(ctx.Context(), accountID)
 		if err != nil || accountPtr == nil {
 			_ = responses.Send(ctx, http.StatusNotFound, http.Json{"error": "account not found"}).Abort()
 			return
@@ -31,7 +41,7 @@ func AccountContext() http.Middleware {
 			return
 		}
 
-		au, err := container.Get().AccountUserRepo.FindByAccountAndUser(ctx.Context(), accountID, userID)
+		au, err := accounts.FindMember(ctx.Context(), accountID, userID)
 		if err != nil || au == nil || !models.MembershipGrantsAccess(au.Status) {
 			_ = responses.Send(ctx, http.StatusForbidden, http.Json{"error": "not a member of this account"}).Abort()
 			return

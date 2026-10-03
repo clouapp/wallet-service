@@ -2,6 +2,7 @@ package middleware
 
 import (
 	"bytes"
+	"context"
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
@@ -14,9 +15,13 @@ import (
 	"github.com/goravel/framework/contracts/http"
 	"github.com/goravel/framework/facades"
 
-	"github.com/macrowallets/waas/app/container"
 	"github.com/macrowallets/waas/app/models"
 )
+
+// apiTokenLookup loads the access token row named by a bearer JWT.
+type apiTokenLookup interface {
+	FindAccessToken(ctx context.Context, tokenID, accountID uuid.UUID) (*models.AccessToken, error)
+}
 
 // APITokenClaims are the JWT claims embedded in account API tokens.
 //
@@ -30,7 +35,10 @@ type APITokenClaims struct {
 }
 
 // APITokenAuth validates a Bearer JWT issued as an account API token.
-func APITokenAuth() http.Middleware {
+func APITokenAuth(tokens apiTokenLookup) http.Middleware {
+	if tokens == nil {
+		panic("api token auth: access token lookup is required")
+	}
 	return func(ctx http.Context) {
 		bearer := ctx.Request().Header("Authorization", "")
 		if !strings.HasPrefix(bearer, "Bearer ") {
@@ -68,7 +76,7 @@ func APITokenAuth() http.Middleware {
 			return
 		}
 
-		tokenPtr, err := container.Get().AccessTokenRepo.FindByIDAndAccount(ctx.Context(), tokenID, accountID)
+		tokenPtr, err := tokens.FindAccessToken(ctx.Context(), tokenID, accountID)
 		if err != nil || tokenPtr == nil {
 			abortWithJSON(ctx, http.StatusUnauthorized, http.Json{"error": "token not found or revoked"})
 			return

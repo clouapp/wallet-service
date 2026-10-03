@@ -13,6 +13,7 @@ import (
 	extwebhooks "github.com/macrowallets/waas/app/http/controllers/external/webhooks"
 	extwithdrawals "github.com/macrowallets/waas/app/http/controllers/external/withdrawals"
 	"github.com/macrowallets/waas/app/http/middleware"
+	accountsvc "github.com/macrowallets/waas/app/services/account"
 	authsvc "github.com/macrowallets/waas/app/services/auth"
 	chainsvc "github.com/macrowallets/waas/app/services/chains"
 	featuressvc "github.com/macrowallets/waas/app/services/features"
@@ -37,7 +38,9 @@ func RegisterExternalAPI() {
 	sweepCtrl := newExternalSweepController()
 	withdrawalCtrl := newExternalWithdrawalsController()
 
-	facades.Route().Prefix("/api/v1").Middleware(middleware.APITokenAuth(), noCache).Group(func(router route.Router) {
+	facades.Route().Prefix("/api/v1").Middleware(middleware.APITokenAuth(
+		container.MustMake[*accountsvc.Service](),
+	), noCache).Group(func(router route.Router) {
 		router.Get("/chains", chainCtrl.ListChains)
 
 		router.Post("/wallets", walletCtrl.CreateWallet)
