@@ -1,0 +1,100 @@
+package pricecache
+
+import (
+	"bytes"
+	"context"
+	"errors"
+	"testing"
+	"time"
+
+	"github.com/redis/go-redis/v9"
+
+	"github.com/macrowallets/waas/tests/testutil"
+)
+
+func TestNewReturnsNilForANilClient(t *testing.T) {
+	if New(nil) != nil {
+		t.Fatal("expected a nil price cache when Redis is not configured")
+	}
+}
+
+func TestNilCacheReportsAMissingClient(t *testing.T) {
+	var cache *Cache
+	if _, err := cache.Float64(context.Background(), "currency:BTC"); err == nil {
+		t.Fatal("expected error for a nil cache read")
+	}
+	if err := cache.Set(context.Background(), "currency:BTC", []byte("1"), time.Second); err == nil {
+		t.Fatal("expected error for a nil cache write")
+	}
+}
+
+func TestSetWritesTheBytesAndKeepsTheTTL(t *testing.T) {
+	client := testutil.TestRedis(t)
+	prefix := testutil.TestRedisPrefix(t, client)
+	key := prefix + "currency:BTC"
+	ctx := context.Background()
+	value := []byte("42.5")
+
+	if err := New(client).Set(ctx, key, value, 45*time.Second); err != nil {
+		t.Fatalf("set: %v", err)
+	}
+
+	stored, err := client.Get(ctx, key).Bytes()
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if !bytes.Equal(stored, value) {
+		t.Fatal("SET value changed")
+	}
+	ttl, err := client.TTL(ctx, key).Result()
+	if err != nil {
+		t.Fatalf("ttl: %v", err)
+	}
+	if ttl <= 30*time.Second || ttl > 45*time.Second {
+		t.Fatalf("ttl = %s", ttl)
+	}
+}
+
+func TestFloat64ReadsTheStoredNumber(t *testing.T) {
+	client := testutil.TestRedis(t)
+	prefix := testutil.TestRedisPrefix(t, client)
+	key := prefix + "currency:ETH"
+	ctx := context.Background()
+	cache := New(client)
+	if err := cache.Set(ctx, key, []byte("3200"), time.Minute); err != nil {
+		t.Fatalf("set: %v", err)
+	}
+
+	got, err := cache.Float64(ctx, key)
+	if err != nil {
+		t.Fatalf("float64: %v", err)
+	}
+	if got != 3200 {
+		t.Fatalf("value = %v", got)
+	}
+}
+
+func TestFloat64MissingKeyIsRedisNil(t *testing.T) {
+	client := testutil.TestRedis(t)
+	prefix := testutil.TestRedisPrefix(t, client)
+
+	_, err := New(client).Float64(context.Background(), prefix+"currency:missing")
+	if !errors.Is(err, redis.Nil) {
+		t.Fatalf("error = %v", err)
+	}
+}
+
+func TestCommandsCanceledContext(t *testing.T) {
+	client := testutil.TestRedis(t)
+	prefix := testutil.TestRedisPrefix(t, client)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	cache := New(client)
+
+	if _, err := cache.Float64(ctx, prefix+"currency:BTC"); !errors.Is(err, context.Canceled) {
+		t.Fatalf("get error = %v", err)
+	}
+	if err := cache.Set(ctx, prefix+"currency:BTC", []byte("1"), time.Second); !errors.Is(err, context.Canceled) {
+		t.Fatalf("set error = %v", err)
+	}
+}

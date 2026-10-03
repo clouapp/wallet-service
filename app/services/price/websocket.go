@@ -7,8 +7,6 @@ import (
 	"log/slog"
 	"strings"
 	"time"
-
-	"github.com/redis/go-redis/v9"
 )
 
 // QuoteConn is one live CoinAPI quote socket.
@@ -43,16 +41,16 @@ func init() {
 type WebSocketClient struct {
 	apiKey       string
 	currencyRepo currencyStore
-	redis        *redis.Client
+	cache        PriceCache
 	dialer       QuoteDialer
 	activeCodes  []string
 }
 
-func NewWebSocketClient(apiKey string, currencyRepo currencyStore, rdb *redis.Client, dialer QuoteDialer) *WebSocketClient {
+func NewWebSocketClient(apiKey string, currencyRepo currencyStore, cache PriceCache, dialer QuoteDialer) *WebSocketClient {
 	return &WebSocketClient{
 		apiKey:       apiKey,
 		currencyRepo: currencyRepo,
-		redis:        rdb,
+		cache:        cache,
 		dialer:       dialer,
 	}
 }
@@ -190,10 +188,10 @@ func (w *WebSocketClient) processMessage(ctx context.Context, data []byte) {
 		return
 	}
 
-	if w.redis != nil {
+	if w.cache != nil {
 		key := "currency:" + code
 		priceJSON, _ := json.Marshal(msg.Rate)
-		w.redis.Set(ctx, key, priceJSON, redisCurrencyTTL)
+		_ = w.cache.Set(ctx, key, priceJSON, redisCurrencyTTL)
 	}
 
 	slog.Info("ws price updated", "code", code, "price", msg.Rate)

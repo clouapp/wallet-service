@@ -20,6 +20,7 @@ import (
 	"github.com/macrowallets/waas/app/adapters/redis/addresscache"
 	"github.com/macrowallets/waas/app/adapters/redis/addressset"
 	redislock "github.com/macrowallets/waas/app/adapters/redis/lock"
+	"github.com/macrowallets/waas/app/adapters/redis/pricecache"
 	sweepsecrets "github.com/macrowallets/waas/app/adapters/secretsmanager"
 	"github.com/macrowallets/waas/app/container"
 	"github.com/macrowallets/waas/app/facades"
@@ -399,7 +400,7 @@ func buildVaultContainer(app foundation.Application) (*container.Container, erro
 	if key := c.PriceConfig.CoinAPIKey; key != "" {
 		priceProviders = append(priceProviders, price.NewCoinAPIProvider(key))
 	}
-	c.PriceService = price.NewService(priceProviders, c.CurrencyRepo, c.Redis).WithQuoteDialer(coinapiws.Dialer{})
+	c.PriceService = price.NewService(priceProviders, c.CurrencyRepo, pricecache.New(c.Redis)).WithQuoteDialer(coinapiws.Dialer{})
 
 	slog.Info("vault container booted", "chains", c.Registry.ChainIDs())
 	return c, nil

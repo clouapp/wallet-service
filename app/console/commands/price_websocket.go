@@ -7,18 +7,17 @@ import (
 	"github.com/goravel/framework/contracts/console/command"
 
 	"github.com/macrowallets/waas/app/services/price"
-	"github.com/redis/go-redis/v9"
 )
 
 type PriceWebSocket struct {
 	prices     *price.Service
 	coinAPIKey string
-	redis      *redis.Client
+	cache      price.PriceCache
 }
 
-// NewPriceWebSocket streams CoinAPI prices. redis may be nil when Redis is not configured.
-func NewPriceWebSocket(prices *price.Service, coinAPIKey string, redisClient *redis.Client) *PriceWebSocket {
-	return &PriceWebSocket{prices: prices, coinAPIKey: coinAPIKey, redis: redisClient}
+// NewPriceWebSocket streams CoinAPI prices. cache may be nil when Redis is not configured.
+func NewPriceWebSocket(prices *price.Service, coinAPIKey string, cache price.PriceCache) *PriceWebSocket {
+	return &PriceWebSocket{prices: prices, coinAPIKey: coinAPIKey, cache: cache}
 }
 
 func (c *PriceWebSocket) Signature() string {
@@ -52,7 +51,7 @@ func (c *PriceWebSocket) Handle(ctx console.Context) error {
 		return nil
 	}
 
-	ws := c.prices.PriceWebSocket(apiKey, c.redis)
+	ws := c.prices.PriceWebSocket(apiKey, c.cache)
 	ctx.Info("starting CoinAPI WebSocket connection...")
 	return ws.Connect(bgCtx)
 }

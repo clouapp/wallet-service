@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/macrowallets/waas/app/models"
-	"github.com/redis/go-redis/v9"
 )
 
 // currencyStore is the price rows this package reads and updates.
@@ -23,22 +22,30 @@ type currencyStore interface {
 
 const redisCurrencyTTL = 60 * time.Second
 
+// PriceCache reads and writes one currency price.
+// The service keeps the key, the TTL, and the JSON number.
+// A nil PriceCache means Redis is not configured.
+type PriceCache interface {
+	Float64(ctx context.Context, key string) (float64, error)
+	Set(ctx context.Context, key string, value []byte, expiration time.Duration) error
+}
+
 type Service struct {
 	providers    []PriceProvider
 	currencyRepo currencyStore
-	redis        *redis.Client
+	cache        PriceCache
 	quotes       QuoteDialer
 }
 
 func NewService(
 	providers []PriceProvider,
 	currencyRepo currencyStore,
-	rdb *redis.Client,
+	cache PriceCache,
 ) *Service {
 	return &Service{
 		providers:    providers,
 		currencyRepo: currencyRepo,
-		redis:        rdb,
+		cache:        cache,
 	}
 }
 
@@ -153,11 +160,12 @@ func (s *Service) WithQuoteDialer(dialer QuoteDialer) *Service {
 }
 
 // PriceWebSocket streams CoinAPI quotes through the currency rows this service updates.
-func (s *Service) PriceWebSocket(apiKey string, rdb *redis.Client) *WebSocketClient {
+// cache may be nil when Redis is not configured; it is not the service's own cache.
+func (s *Service) PriceWebSocket(apiKey string, cache PriceCache) *WebSocketClient {
 	if s == nil {
 		return nil
 	}
-	return NewWebSocketClient(apiKey, s.currencyRepo, rdb, s.quotes)
+	return NewWebSocketClient(apiKey, s.currencyRepo, cache, s.quotes)
 }
 
 func (s *Service) GetPrice(ctx context.Context, code string) (float64, error) {
@@ -165,9 +173,9 @@ func (s *Service) GetPrice(ctx context.Context, code string) (float64, error) {
 		return 1.0, nil
 	}
 
-	if s.redis != nil {
+	if s.cache != nil {
 		key := "currency:" + code
-		val, err := s.redis.Get(ctx, key).Float64()
+		val, err := s.cache.Float64(ctx, key)
 		if err == nil && val > 0 {
 			return val, nil
 		}
@@ -200,12 +208,12 @@ func (s *Service) UpdateSinglePrice(ctx context.Context, code string, newPrice f
 }
 
 func (s *Service) cachePrice(ctx context.Context, code string, price float64) {
-	if s.redis == nil {
+	if s.cache == nil {
 		return
 	}
 	key := "currency:" + code
 	data, _ := json.Marshal(price)
-	if err := s.redis.Set(ctx, key, data, redisCurrencyTTL).Err(); err != nil {
+	if err := s.cache.Set(ctx, key, data, redisCurrencyTTL); err != nil {
 		slog.Warn("redis cache currency failed", "code", code, "error", err)
 	}
 }
