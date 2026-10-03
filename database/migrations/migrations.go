@@ -42,5 +42,7 @@ func All() []schema.Migration {
 		&M00000000000280EnforceNonNegativeAmounts{},
 		&M00000000000290CreateSettingsTable{},
 		&M00000000000300CreateFeaturesTable{},
+		&M00000000000310CreatePlatformAdminsTable{},
+		&M00000000000320CreateGlobalFeaturesTable{},
 	}
 }

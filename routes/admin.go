@@ -17,6 +17,7 @@ import (
 	dashusers "github.com/macrowallets/waas/app/http/controllers/dashboard/users"
 	dashwallets "github.com/macrowallets/waas/app/http/controllers/dashboard/wallets"
 	dashwithdrawals "github.com/macrowallets/waas/app/http/controllers/dashboard/withdrawals"
+	platformfeatures "github.com/macrowallets/waas/app/http/controllers/platform/features"
 	"github.com/macrowallets/waas/app/http/middleware"
 	"github.com/macrowallets/waas/app/repositories"
 	accountsvc "github.com/macrowallets/waas/app/services/account"
@@ -37,6 +38,7 @@ func RegisterAdminRoutes() {
 	accountsCtrl := newDashboardAccountsController()
 	accountSettingsCtrl := newDashboardAccountSettingsController()
 	accountFeaturesCtrl := newDashboardAccountFeaturesController()
+	platformFeaturesCtrl := newPlatformFeaturesController()
 	walletCtrl := newDashboardWalletsController()
 	walletUsersCtrl := newDashboardWalletUsersController()
 	whitelistCtrl := newDashboardWhitelistController()
@@ -94,6 +96,11 @@ func RegisterAdminRoutes() {
 			r.Get("/features", accountFeaturesCtrl.Index)
 			r.Patch("/features/{key}", accountFeaturesCtrl.Update)
 		})
+	})
+
+	facades.Route().Prefix("/v1/platform").Middleware(middleware.SessionAuth(), noCache).Group(func(router route.Router) {
+		router.Get("/features", platformFeaturesCtrl.Index)
+		router.Patch("/features/{key}", platformFeaturesCtrl.Update)
 	})
 
 	facades.Route().Prefix("/v1/chains").Middleware(middleware.SessionAuth(), middleware.AccountHeader(), noCache).Group(func(router route.Router) {
@@ -302,6 +309,12 @@ func newDashboardAccountSettingsController() *dashsettings.SettingsController {
 
 func newDashboardAccountFeaturesController() *dashfeatures.FeaturesController {
 	return dashfeatures.NewFeaturesController(
+		container.MustMake[*featuressvc.Service](),
+	)
+}
+
+func newPlatformFeaturesController() *platformfeatures.FeaturesController {
+	return platformfeatures.NewFeaturesController(
 		container.MustMake[*featuressvc.Service](),
 	)
 }

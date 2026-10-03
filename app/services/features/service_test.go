@@ -11,11 +11,27 @@ import (
 )
 
 type memoryStore struct {
-	rows map[uuid.UUID]map[string]bool
+	rows   map[uuid.UUID]map[string]bool
+	global map[string]bool
 }
 
 func newMemoryStore() *memoryStore {
-	return &memoryStore{rows: map[uuid.UUID]map[string]bool{}}
+	return &memoryStore{
+		rows:   map[uuid.UUID]map[string]bool{},
+		global: map[string]bool{},
+	}
+}
+
+type memoryAdmins struct {
+	users map[uuid.UUID]struct{}
+}
+
+func (a memoryAdmins) Contains(_ context.Context, userID uuid.UUID) (bool, error) {
+	if a.users == nil {
+		return false, nil
+	}
+	_, ok := a.users[userID]
+	return ok, nil
 }
 
 func (s *memoryStore) ListAccount(_ context.Context, accountID uuid.UUID) ([]models.Feature, error) {
@@ -40,11 +56,37 @@ func (s *memoryStore) written(accountID uuid.UUID, key string) (bool, bool) {
 	return value, ok
 }
 
+func (s *memoryStore) ListGlobal(context.Context) ([]models.GlobalFeature, error) {
+	rows := make([]models.GlobalFeature, 0, len(s.global))
+	for key, enabled := range s.global {
+		rows = append(rows, models.GlobalFeature{Key: key, Enabled: enabled})
+	}
+	return rows, nil
+}
+
+func (s *memoryStore) GetGlobal(_ context.Context, key string) (bool, bool, error) {
+	value, ok := s.global[key]
+	return value, ok, nil
+}
+
+func (s *memoryStore) UpsertGlobal(_ context.Context, key string, enabled bool) error {
+	if s.global == nil {
+		s.global = map[string]bool{}
+	}
+	s.global[key] = enabled
+	return nil
+}
+
+func (s *memoryStore) globalWritten(key string) (bool, bool) {
+	value, ok := s.global[key]
+	return value, ok
+}
+
 func TestListMissingRowUsesCatalogDefaultAndWritesNothing(t *testing.T) {
 	t.Parallel()
 
 	store := newMemoryStore()
-	service := NewService(store)
+	service := NewService(store, memoryAdmins{})
 	accountID := uuid.New()
 
 	view, err := service.List(context.Background(), accountID, "auditor")
@@ -72,7 +114,7 @@ func TestSetThenListReadsTheStoredBoolean(t *testing.T) {
 	t.Parallel()
 
 	store := newMemoryStore()
-	service := NewService(store)
+	service := NewService(store, memoryAdmins{})
 	accountID := uuid.New()
 	ctx := context.Background()
 
@@ -121,7 +163,7 @@ func TestSetRejectsUnknownKeyAndAuditorBeforeWriting(t *testing.T) {
 	t.Parallel()
 
 	store := newMemoryStore()
-	service := NewService(store)
+	service := NewService(store, memoryAdmins{})
 	accountID := uuid.New()
 	ctx := context.Background()
 
@@ -155,7 +197,7 @@ func TestListHidesFlagsFromAUserAndFromAnotherAccount(t *testing.T) {
 	t.Parallel()
 
 	store := newMemoryStore()
-	service := NewService(store)
+	service := NewService(store, memoryAdmins{})
 	accountID := uuid.New()
 	otherID := uuid.New()
 	ctx := context.Background()
@@ -179,6 +221,57 @@ func TestListHidesFlagsFromAUserAndFromAnotherAccount(t *testing.T) {
 	}
 	if _, err := service.Set(ctx, uuid.Nil, "owner", FlagSweepEnabled, true); err == nil {
 		t.Fatal("nil account id was accepted")
+	}
+}
+
+func TestPlatformListAndSetRequireAnAdminAndUseTheCatalogDefault(t *testing.T) {
+	t.Parallel()
+
+	store := newMemoryStore()
+	userID := uuid.New()
+	admins := memoryAdmins{users: map[uuid.UUID]struct{}{userID: {}}}
+	service := NewService(store, admins)
+	ctx := context.Background()
+
+	if _, err := service.ListGlobal(ctx, uuid.New()); !errors.Is(err, ErrPlatformForbidden) {
+		t.Fatalf("non-admin list error = %v", err)
+	}
+	if _, err := service.SetGlobal(ctx, uuid.New(), FlagWithdrawalsEnabled, false); !errors.Is(err, ErrPlatformForbidden) {
+		t.Fatalf("non-admin set error = %v", err)
+	}
+	if _, err := service.SetGlobal(ctx, uuid.New(), "not-a-flag", false); !errors.Is(err, ErrPlatformForbidden) {
+		t.Fatalf("non-admin unknown key = %v, want forbidden before not found", err)
+	}
+	if _, ok := store.globalWritten(FlagWithdrawalsEnabled); ok {
+		t.Fatal("a non-admin write was stored")
+	}
+
+	view, err := service.ListGlobal(ctx, userID)
+	if err != nil {
+		t.Fatalf("admin list: %v", err)
+	}
+	if len(view.Features) != len(ForGlobal()) {
+		t.Fatalf("features = %d, want %d", len(view.Features), len(ForGlobal()))
+	}
+	for _, flag := range view.Features {
+		definition, ok := Find(flag.Key)
+		if !ok || flag.Enabled != definition.Default {
+			t.Fatalf("%s enabled = %v, catalog default %v", flag.Key, flag.Enabled, definition.Default)
+		}
+	}
+	if len(store.global) != 0 {
+		t.Fatal("list inserted a global row")
+	}
+
+	written, err := service.SetGlobal(ctx, userID, FlagWithdrawalsEnabled, false)
+	if err != nil {
+		t.Fatalf("set off: %v", err)
+	}
+	if written.Enabled || written.Key != FlagWithdrawalsEnabled {
+		t.Fatalf("write response = %+v", written)
+	}
+	if _, err := service.SetGlobal(ctx, userID, "not-a-flag", true); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("admin unknown key = %v", err)
 	}
 }
 

@@ -46,3 +46,12 @@ func contextUserID(ctx http.Context) uuid.UUID {
 	id, _ := ctx.Value("user_id").(uuid.UUID)
 	return id
 }
+
+// SessionUserID is the dashboard user SessionAuth stored. A missing value is
+// uuid.Nil. Callers outside middleware use this instead of reading the key.
+func SessionUserID(ctx http.Context) uuid.UUID {
+	if ctx == nil {
+		return uuid.Nil
+	}
+	return contextUserID(ctx)
+}

@@ -1,7 +1,7 @@
 package features
 
-// Flag is one account switch on the wire. Enabled is the stored row, or the
-// catalog default when the account has no row for that key.
+// Flag is one switch on the wire. Enabled is the stored row, or the catalog
+// default when that scope has no row for the key.
 type Flag struct {
 	Key     string `json:"key"`
 	Enabled bool   `json:"enabled"`

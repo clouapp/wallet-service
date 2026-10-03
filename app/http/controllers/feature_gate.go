@@ -26,10 +26,11 @@ func AccountIDForWallet(ctx contractshttp.Context, wallet *models.Wallet) uuid.U
 	return accountID
 }
 
-// BlockFlag asks the shared account-flag gate. A flag that is off is HTTP
-// 409 with {"error":{"code","message"}}. A missing row uses the catalog
+// BlockFlag asks the shared flag gate. A flag that is off is HTTP 409 with
+// {"error":{"code","message"}}. A missing account row uses the catalog
 // default, so withdrawals and consolidate continue until enabled=false is
-// stored. A read failure is a generic 500.
+// stored. An explicit global false is the same 409 even when the account
+// flag is true. A read failure is a generic 500.
 func BlockFlag(ctx contractshttp.Context, flags *features.Service, accountID uuid.UUID, key, code, endpoint string) contractshttp.Response {
 	if flags == nil {
 		return MapInternalError(ctx, fmt.Errorf("%s: feature flags are not configured", endpoint), endpoint)

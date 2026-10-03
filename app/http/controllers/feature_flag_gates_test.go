@@ -52,7 +52,7 @@ func (s *featureGateSuite) TestSweepEnabled() {
 
 func (s *featureGateSuite) gateBothSurfaces(key, code, suffix string) {
 	s.T().Helper()
-	accountID, session, walletID := s.ownerWallet()
+	_, accountID, session, walletID := s.ownerWallet()
 	apiToken := s.apiToken(accountID, key)
 
 	surfaces := []gateSurface{
@@ -160,7 +160,7 @@ func (s *featureGateSuite) rows(model any, walletID uuid.UUID) int64 {
 	return count
 }
 
-func (s *featureGateSuite) ownerWallet() (uuid.UUID, string, uuid.UUID) {
+func (s *featureGateSuite) ownerWallet() (uuid.UUID, uuid.UUID, string, uuid.UUID) {
 	s.T().Helper()
 	hash, err := authsvc.NewService().HashPassword(featureGatePassword)
 	s.Require().NoError(err)
@@ -211,7 +211,7 @@ func (s *featureGateSuite) ownerWallet() (uuid.UUID, string, uuid.UUID) {
 	}
 	s.Require().NoError(json.Unmarshal([]byte(content), &parsed))
 	s.Require().NotEmpty(parsed.AccessToken)
-	return accountID, parsed.AccessToken, walletID
+	return userID, accountID, parsed.AccessToken, walletID
 }
 
 func (s *featureGateSuite) apiToken(accountID uuid.UUID, label string) string {

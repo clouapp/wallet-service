@@ -12,4 +12,7 @@ var (
 	ErrUpdateForbidden = errors.New("you do not have permission to update account features")
 	// ErrNotStored means the write returned without a row to read back.
 	ErrNotStored = errors.New("feature flag was not stored")
+	// ErrPlatformForbidden is a caller who is not a platform admin. Account
+	// ownership does not grant this.
+	ErrPlatformForbidden = errors.New("you do not have permission to manage platform features")
 )
