@@ -7,6 +7,7 @@ import (
 	"github.com/macrowallets/waas/app/http/middleware/requestctx"
 	"github.com/macrowallets/waas/app/http/responses"
 	"github.com/macrowallets/waas/app/models"
+	"github.com/macrowallets/waas/packages/activitylog"
 )
 
 // AccountHeader reads X-Account-Id from the request header, validates the
@@ -50,6 +51,7 @@ func AccountHeader(accounts accountScope) http.Middleware {
 		ctx.WithValue(requestctx.KeyAccountID, accountID)
 		ctx.WithValue(requestctx.KeyAccountRole, au.Role)
 		ctx.WithValue(requestctx.KeyAccountEnvironment, accountPtr.Environment)
+		ctx.WithContext(activitylog.WithScope(ctx.Context(), "account:"+accountID.String()))
 		ctx.Request().Next()
 	}
 }

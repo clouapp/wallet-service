@@ -9,6 +9,7 @@ import (
 	"github.com/macrowallets/waas/app/http/middleware/requestctx"
 	"github.com/macrowallets/waas/app/http/responses"
 	"github.com/macrowallets/waas/app/models"
+	"github.com/macrowallets/waas/packages/activitylog"
 )
 
 // accountScope is the account and membership lookup AccountContext and AccountHeader need.
@@ -50,6 +51,7 @@ func AccountContext(accounts accountScope) http.Middleware {
 
 		ctx.WithValue(requestctx.KeyAccount, accountPtr)
 		ctx.WithValue(requestctx.KeyAccountRole, au.Role)
+		ctx.WithContext(activitylog.WithScope(ctx.Context(), "account:"+accountID.String()))
 		ctx.Request().Next()
 	}
 }

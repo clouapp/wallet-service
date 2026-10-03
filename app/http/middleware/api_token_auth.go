@@ -21,6 +21,7 @@ import (
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/policies"
 	authsvc "github.com/macrowallets/waas/app/services/auth"
+	"github.com/macrowallets/waas/packages/activitylog"
 )
 
 // apiTokenLookup loads the access token row named by a bearer JWT and
@@ -134,6 +135,13 @@ func APITokenAuth(tokens apiTokenLookup) http.Middleware {
 			return
 		}
 
+		actor := activitylog.WithCauser(ctx.Context(), activitylog.Causer{
+			Type:  activitylog.CauserAPITokens,
+			ID:    token.ID.String(),
+			Label: token.Name,
+		})
+		actor = activitylog.WithScope(actor, "account:"+accountID.String())
+		ctx.WithContext(actor)
 		if err := tokens.RecordAPITokenUse(ctx.Context(), token.ID, accountID); err != nil {
 			facades.Log().Errorf("api token: last_used_at was not recorded for %s", token.ID)
 		}

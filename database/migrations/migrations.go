@@ -47,5 +47,6 @@ func All() []schema.Migration {
 		&M00000000000330CreateAccountActivityTable{},
 		&M00000000000340AccessTokensSpendingLimitNonNegative{},
 		&M00000000000350AddAccessTokenUsageTimestamps{},
+		&M00000000000420CreateActivityLogTable{},
 	}
 }

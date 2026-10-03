@@ -10,6 +10,7 @@ import (
 	"github.com/macrowallets/waas/app/http/middleware/requestctx"
 	"github.com/macrowallets/waas/app/http/responses"
 	"github.com/macrowallets/waas/app/models"
+	"github.com/macrowallets/waas/packages/activitylog"
 )
 
 // SessionAuth validates a Bearer JWT token issued by facades.Auth and injects
@@ -38,6 +39,11 @@ func SessionAuth() http.Middleware {
 
 		ctx.WithValue(requestctx.KeyUserID, user.ID)
 		ctx.WithValue(requestctx.KeyUser, &user)
+		ctx.WithContext(activitylog.WithCauser(ctx.Context(), activitylog.Causer{
+			Type:  activitylog.CauserUsers,
+			ID:    user.ID.String(),
+			Label: user.Email,
+		}))
 		ctx.Request().Next()
 	}
 }

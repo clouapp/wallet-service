@@ -55,6 +55,7 @@ func Boot() contractsfoundation.Application {
 				&commands.ChainsSetRPC{},
 				commands.NewChainsAlignNetwork(deposits),
 				&commands.WithdrawPreflight{},
+				commands.NewPruneActivity(),
 			}
 		}).
 		WithEvents(func() map[contractsevent.Event][]contractsevent.Listener {
