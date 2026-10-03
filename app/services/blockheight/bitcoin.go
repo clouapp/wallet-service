@@ -3,7 +3,6 @@ package blockheight
 import (
 	"context"
 	"fmt"
-	"net/http"
 
 	"github.com/macrowallets/waas/pkg/httpclient"
 )
@@ -14,13 +13,13 @@ const TipSourceBitcoinTestnet4 = "btc-testnet4"
 
 // MempoolTestnet4Provider reads the Bitcoin testnet4 tip from mempool.space.
 type MempoolTestnet4Provider struct {
-	client *http.Client
+	client *httpclient.Client
 	url    string
 }
 
 func NewMempoolTestnet4Provider() *MempoolTestnet4Provider {
 	return &MempoolTestnet4Provider{
-		client: httpclient.New(esploraHTTPTimeout),
+		client: httpclient.NewClient(esploraHTTPTimeout),
 		url:    "https://mempool.space/testnet4/api/blocks/tip/height",
 	}
 }

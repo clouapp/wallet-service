@@ -4,8 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
-	"net/http"
 	"net/url"
 	"strconv"
 	"strings"
@@ -19,14 +17,14 @@ const etherscanDefaultBase = "https://api.etherscan.io"
 
 type EtherscanProvider struct {
 	apiKey  string
-	client  *http.Client
+	client  *httpclient.Client
 	baseURL string
 }
 
 func NewEtherscanProvider(apiKey string) *EtherscanProvider {
 	return &EtherscanProvider{
 		apiKey:  apiKey,
-		client:  httpclient.New(5 * time.Second),
+		client:  httpclient.NewClient(5 * time.Second),
 		baseURL: etherscanDefaultBase,
 	}
 }
@@ -73,28 +71,23 @@ func (p *EtherscanProvider) GetBlockHeight(ctx context.Context, chainID string) 
 	base := strings.TrimSuffix(p.baseURL, "/")
 	reqURL := fmt.Sprintf("%s/v2/api?%s", base, q.Encode())
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, nil)
+	resp, err := p.client.Do(ctx, httpclient.Request{Method: httpclient.MethodGet, URL: reqURL})
 	if err != nil {
-		return 0, fmt.Errorf("etherscan: build request: %w", err)
-	}
-
-	resp, err := p.client.Do(req)
-	if err != nil {
+		if httpclient.IsBuild(err) {
+			return 0, fmt.Errorf("etherscan: build request: %w", err)
+		}
+		if httpclient.IsRead(err) {
+			return 0, fmt.Errorf("etherscan: read body: %w", err)
+		}
 		return 0, fmt.Errorf("etherscan: http: %w", err)
 	}
-	defer resp.Body.Close()
 
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return 0, fmt.Errorf("etherscan: read body: %w", err)
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		return 0, fmt.Errorf("etherscan: unexpected status %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
+	if resp.StatusCode != httpclient.StatusOK {
+		return 0, fmt.Errorf("etherscan: unexpected status %d: %s", resp.StatusCode, strings.TrimSpace(string(resp.Body)))
 	}
 
 	var env etherscanBlockNumberResp
-	if err := json.Unmarshal(body, &env); err != nil {
+	if err := json.Unmarshal(resp.Body, &env); err != nil {
 		return 0, fmt.Errorf("etherscan: decode json: %w", err)
 	}
 

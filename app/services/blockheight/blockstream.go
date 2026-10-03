@@ -3,8 +3,6 @@ package blockheight
 import (
 	"context"
 	"fmt"
-	"io"
-	"net/http"
 	"strconv"
 	"strings"
 	"time"
@@ -21,14 +19,14 @@ const (
 // BlockstreamProvider reads Bitcoin mainnet and testnet3 tips from Blockstream. It
 // does not serve testnet4: see BitcoinProvider.
 type BlockstreamProvider struct {
-	client     *http.Client
+	client     *httpclient.Client
 	mainnetURL string
 	testnetURL string
 }
 
 func NewBlockstreamProvider() *BlockstreamProvider {
 	return &BlockstreamProvider{
-		client:     httpclient.New(esploraHTTPTimeout),
+		client:     httpclient.NewClient(esploraHTTPTimeout),
 		mainnetURL: "https://blockstream.info/api/blocks/tip/height",
 		testnetURL: "https://blockstream.info/testnet/api/blocks/tip/height",
 	}
@@ -54,28 +52,27 @@ func (p *BlockstreamProvider) GetBlockHeight(ctx context.Context, chainID string
 }
 
 // fetchEsploraTipHeight reads an Esplora GET /blocks/tip/height body: a bare decimal.
-func fetchEsploraTipHeight(ctx context.Context, client *http.Client, heightURL, source string) (uint64, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, heightURL, nil)
+func fetchEsploraTipHeight(ctx context.Context, client *httpclient.Client, heightURL, source string) (uint64, error) {
+	resp, err := client.Do(ctx, httpclient.Request{
+		Method:   httpclient.MethodGet,
+		URL:      heightURL,
+		MaxBytes: esploraMaxResponseBytes,
+	})
 	if err != nil {
-		return 0, fmt.Errorf("%s: build request: %w", source, err)
-	}
-
-	resp, err := client.Do(req)
-	if err != nil {
+		if httpclient.IsBuild(err) {
+			return 0, fmt.Errorf("%s: build request: %w", source, err)
+		}
+		if httpclient.IsRead(err) {
+			return 0, fmt.Errorf("%s: read body: %w", source, err)
+		}
 		return 0, fmt.Errorf("%s: http: %w", source, err)
 	}
-	defer resp.Body.Close()
 
-	body, err := io.ReadAll(io.LimitReader(resp.Body, esploraMaxResponseBytes))
-	if err != nil {
-		return 0, fmt.Errorf("%s: read body: %w", source, err)
+	if resp.StatusCode != httpclient.StatusOK {
+		return 0, fmt.Errorf("%s: unexpected status %d: %s", source, resp.StatusCode, strings.TrimSpace(string(resp.Body)))
 	}
 
-	if resp.StatusCode != http.StatusOK {
-		return 0, fmt.Errorf("%s: unexpected status %d: %s", source, resp.StatusCode, strings.TrimSpace(string(body)))
-	}
-
-	s := strings.TrimSpace(string(body))
+	s := strings.TrimSpace(string(resp.Body))
 	height, err := strconv.ParseUint(s, 10, 64)
 	if err != nil {
 		return 0, fmt.Errorf("%s: parse height %q: %w", source, s, err)

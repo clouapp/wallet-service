@@ -1,12 +1,9 @@
 package blockheight
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
-	"net/http"
 	"time"
 
 	"github.com/macrowallets/waas/app/models"
@@ -16,14 +13,14 @@ import (
 const solanaGetSlotBody = `{"jsonrpc":"2.0","id":1,"method":"getSlot","params":[{"commitment":"finalized"}]}`
 
 type SolanaPublicProvider struct {
-	client     *http.Client
+	client     *httpclient.Client
 	mainnetRPC string
 	devnetRPC  string
 }
 
 func NewSolanaPublicProvider() *SolanaPublicProvider {
 	return &SolanaPublicProvider{
-		client:     httpclient.New(5 * time.Second),
+		client:     httpclient.NewClient(5 * time.Second),
 		mainnetRPC: "https://api.mainnet-beta.solana.com",
 		devnetRPC:  "https://api.devnet.solana.com",
 	}
@@ -56,29 +53,29 @@ func (p *SolanaPublicProvider) GetBlockHeight(ctx context.Context, chainID strin
 		return 0, err
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, u, bytes.NewReader([]byte(solanaGetSlotBody)))
+	resp, err := p.client.Do(ctx, httpclient.Request{
+		Method:  httpclient.MethodPost,
+		URL:     u,
+		Header:  map[string]string{"Content-Type": "application/json"},
+		Body:    []byte(solanaGetSlotBody),
+		HasBody: true,
+	})
 	if err != nil {
-		return 0, fmt.Errorf("solana: build request: %w", err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := p.client.Do(req)
-	if err != nil {
+		if httpclient.IsBuild(err) {
+			return 0, fmt.Errorf("solana: build request: %w", err)
+		}
+		if httpclient.IsRead(err) {
+			return 0, fmt.Errorf("solana: read body: %w", err)
+		}
 		return 0, fmt.Errorf("solana: http: %w", err)
 	}
-	defer resp.Body.Close()
 
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return 0, fmt.Errorf("solana: read body: %w", err)
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		return 0, fmt.Errorf("solana: unexpected status %d: %s", resp.StatusCode, string(body))
+	if resp.StatusCode != httpclient.StatusOK {
+		return 0, fmt.Errorf("solana: unexpected status %d: %s", resp.StatusCode, string(resp.Body))
 	}
 
 	var out solanaSlotResp
-	if err := json.Unmarshal(body, &out); err != nil {
+	if err := json.Unmarshal(resp.Body, &out); err != nil {
 		return 0, fmt.Errorf("solana: decode json: %w", err)
 	}
 
