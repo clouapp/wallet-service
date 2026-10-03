@@ -18,6 +18,7 @@ import (
 
 	"github.com/macrowallets/waas/app/http/middleware"
 	"github.com/macrowallets/waas/app/models"
+	activitylog "github.com/macrowallets/waas/app/services/activity"
 	authsvc "github.com/macrowallets/waas/app/services/auth"
 	"github.com/macrowallets/waas/tests/mocks"
 )
@@ -127,6 +128,7 @@ func (s *accountTokensSuite) TestNegativeSpendingLimitIsNotStored() {
 	resp := s.createToken(owner.token, accountID, `{"name":"negative","spending_limit":{"daily_usd":"-1"}}`)
 	s.Equal(http.StatusUnprocessableEntity, s.statusOf(resp))
 	s.Equal(int64(0), s.tokenCount(accountID))
+	s.Equal(int64(0), s.activityCount(accountID, activitylog.ActionTokenCreated))
 
 	var parsed struct {
 		Error struct {
@@ -249,6 +251,51 @@ func (s *accountTokensSuite) TestCreateStoresOnlyTheSecretHash() {
 	}
 }
 
+func (s *accountTokensSuite) TestCreateAndRevokeWriteActivityWithoutTheSecret() {
+	accountID := s.createAccount()
+	owner := s.loginUser("owner", accountID)
+
+	resp := s.createToken(owner.token, accountID, `{"name":"audited","permissions":["webhooks.write","wallets.read"],"spending_limit":{"daily_usd":"3.00"}}`)
+	s.Equal(http.StatusCreated, s.statusOf(resp))
+
+	var parsed struct {
+		Token    string `json:"token"`
+		Metadata struct {
+			ID string `json:"id"`
+		} `json:"metadata"`
+	}
+	s.Require().NoError(json.Unmarshal([]byte(s.body(resp)), &parsed))
+	claims := &middleware.APITokenClaims{}
+	_, _, err := jwt.NewParser().ParseUnverified(parsed.Token, claims)
+	s.Require().NoError(err)
+	if claims.Secret == "" {
+		s.Fail("create response omitted the one-time secret")
+	}
+	stored := s.storedHash(accountID, "audited")
+
+	created := s.activityBody(owner.token, accountID)
+	s.Contains(created, activitylog.ActionTokenCreated)
+	s.Contains(created, `"name":"audited"`)
+	s.Contains(created, `"wallets.read"`)
+	s.Contains(created, `"webhooks.write"`)
+	s.NotContains(created, "daily_usd")
+	s.assertAbsent(created, claims.Secret, "secret")
+	s.assertAbsent(created, stored, "stored digest")
+	s.Equal(int64(1), s.activityCount(accountID, activitylog.ActionTokenCreated))
+
+	revoked := s.revokeToken(owner.token, accountID, parsed.Metadata.ID)
+	s.Equal(http.StatusNoContent, s.statusOf(revoked))
+	again := s.revokeToken(owner.token, accountID, parsed.Metadata.ID)
+	s.Equal(http.StatusNoContent, s.statusOf(again))
+	s.Equal(int64(1), s.activityCount(accountID, activitylog.ActionTokenRevoked))
+
+	listed := s.activityBody(owner.token, accountID)
+	s.Contains(listed, activitylog.ActionTokenRevoked)
+	s.NotContains(listed, "daily_usd")
+	s.assertAbsent(listed, claims.Secret, "secret")
+	s.assertAbsent(listed, stored, "stored digest")
+}
+
 func (s *accountTokensSuite) TestUserCannotMint() {
 	accountID := s.createAccount()
 	s.loginUser("owner", accountID)
@@ -324,6 +371,31 @@ func (s *accountTokensSuite) metadataHasPermissions(resp contractstesting.Respon
 	s.Require().NoError(json.Unmarshal([]byte(s.body(resp)), &parsed))
 	_, ok := parsed.Metadata["permissions"]
 	return ok
+}
+
+func (s *accountTokensSuite) revokeToken(token string, accountID uuid.UUID, tokenID string) contractstesting.Response {
+	resp, err := s.Http(s.T()).
+		WithHeader("Authorization", "Bearer "+token).
+		Delete("/v1/accounts/"+accountID.String()+"/tokens/"+tokenID, strings.NewReader(""))
+	s.Require().NoError(err)
+	return resp
+}
+
+func (s *accountTokensSuite) activityBody(token string, accountID uuid.UUID) string {
+	resp, err := s.Http(s.T()).
+		WithHeader("Authorization", "Bearer "+token).
+		Get("/v1/accounts/" + accountID.String() + "/activity")
+	s.Require().NoError(err)
+	s.Equal(http.StatusOK, s.statusOf(resp))
+	return s.body(resp)
+}
+
+func (s *accountTokensSuite) activityCount(accountID uuid.UUID, action string) int64 {
+	total, err := facades.Orm().Query().Model(&models.AccountActivity{}).
+		Where("account_id = ? AND action = ?", accountID, action).
+		Count()
+	s.Require().NoError(err)
+	return total
 }
 
 func (s *accountTokensSuite) listTokens(token string, accountID uuid.UUID) contractstesting.Response {

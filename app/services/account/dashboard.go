@@ -7,6 +7,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/macrowallets/waas/app/models"
+	activitylog "github.com/macrowallets/waas/app/services/activity"
 )
 
 // UpdateAccount applies a name and/or view_all_wallets change on the account
@@ -214,18 +215,45 @@ func (s *Service) ListAccessTokens(ctx context.Context, accountID uuid.UUID, lim
 	return s.tokens.PaginateByAccountID(ctx, accountID, limit, offset)
 }
 
-// CreateAccessToken inserts a token the caller has already hashed.
+// CreateAccessToken inserts a token the caller has already hashed and writes
+// token.created in the same transaction. The activity row keeps the name and
+// catalog permissions. It does not keep the secret, the hash, or the spending limit.
 func (s *Service) CreateAccessToken(ctx context.Context, token *models.AccessToken) error {
 	if ctx == nil {
 		return fmt.Errorf("create access token: context is required")
 	}
-	if token == nil {
+	if token == nil || token.ID == uuid.Nil || token.AccountID == uuid.Nil {
 		return fmt.Errorf("create access token: token is required")
+	}
+	if token.CreatedBy == nil || *token.CreatedBy == uuid.Nil {
+		return fmt.Errorf("create access token: actor is required")
 	}
 	if err := s.requireTokens(); err != nil {
 		return err
 	}
-	return s.tokens.Create(ctx, token)
+	if err := s.requireActivity(); err != nil {
+		return err
+	}
+	meta, err := activitylog.TokenCreated(token.Name, token.Permissions)
+	if err != nil {
+		return err
+	}
+	accountID := token.AccountID
+	actorID := *token.CreatedBy
+	tokenID := token.ID
+	return s.activity.Within(ctx, func(ctx context.Context) error {
+		if err := s.tokens.Create(ctx, token); err != nil {
+			return err
+		}
+		return s.activity.Append(ctx, models.AccountActivity{
+			AccountID:   &accountID,
+			ActorUserID: actorID,
+			Action:      activitylog.ActionTokenCreated,
+			TargetType:  activitylog.TargetAccessToken,
+			TargetID:    tokenID.String(),
+			Metadata:    meta,
+		})
+	})
 }
 
 // FindAccessToken returns the token row for this account. The error is the store's error.
@@ -254,24 +282,52 @@ func (s *Service) RecordAPITokenUse(ctx context.Context, tokenID, accountID uuid
 	return s.tokens.RecordUse(ctx, tokenID, accountID)
 }
 
-// RevokeAccessToken soft-revokes one token that belongs to the account.
-// The row stays for audit. A missing token is ErrAccessTokenNotFound.
-// A token that is already revoked stays revoked at the original time.
-func (s *Service) RevokeAccessToken(ctx context.Context, accountID, tokenID uuid.UUID) error {
+// RevokeAccessToken soft-revokes one token that belongs to the account and
+// writes token.revoked in the same transaction. The row stays. A missing
+// token is ErrAccessTokenNotFound. A token that is already revoked stays
+// revoked at the original time and does not gain a second activity row.
+func (s *Service) RevokeAccessToken(ctx context.Context, accountID, actorID, tokenID uuid.UUID) error {
 	if ctx == nil {
 		return fmt.Errorf("revoke access token: context is required")
+	}
+	if accountID == uuid.Nil || actorID == uuid.Nil || tokenID == uuid.Nil {
+		return fmt.Errorf("revoke access token: account, actor and token are required")
 	}
 	if err := s.requireTokens(); err != nil {
 		return err
 	}
-	token, err := s.tokens.FindByIDAndAccount(ctx, tokenID, accountID)
-	if err != nil || token == nil {
-		return ErrAccessTokenNotFound
+	if err := s.requireActivity(); err != nil {
+		return err
 	}
-	if token.RevokedAt != nil {
-		return nil
-	}
-	return s.tokens.MarkRevoked(ctx, tokenID, accountID)
+	return s.activity.Within(ctx, func(ctx context.Context) error {
+		token, err := s.tokens.FindByIDAndAccount(ctx, tokenID, accountID)
+		if err != nil || token == nil {
+			return ErrAccessTokenNotFound
+		}
+		if token.RevokedAt != nil {
+			return nil
+		}
+		changed, err := s.tokens.MarkRevoked(ctx, tokenID, accountID)
+		if err != nil {
+			return err
+		}
+		if !changed {
+			return nil
+		}
+		meta, err := activitylog.TokenRevoked(token.Name, token.Permissions)
+		if err != nil {
+			return err
+		}
+		id := accountID
+		return s.activity.Append(ctx, models.AccountActivity{
+			AccountID:   &id,
+			ActorUserID: actorID,
+			Action:      activitylog.ActionTokenRevoked,
+			TargetType:  activitylog.TargetAccessToken,
+			TargetID:    tokenID.String(),
+			Metadata:    meta,
+		})
+	})
 }
 
 func (s *Service) requireAccounts() error {

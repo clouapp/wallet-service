@@ -109,7 +109,9 @@ func (s *AccessTokenRepositoryTestSuite) TestRecordUseSetsLastUsedAtAndSkipsRevo
 	revoked := &models.AccessToken{ID: uuid.New(), AccountID: accID, Name: "Revoked"}
 	s.Require().NoError(s.repo.Create(context.Background(), active))
 	s.Require().NoError(s.repo.Create(context.Background(), revoked))
-	s.Require().NoError(s.repo.MarkRevoked(context.Background(), revoked.ID, accID))
+	changed, err := s.repo.MarkRevoked(context.Background(), revoked.ID, accID)
+	s.Require().NoError(err)
+	s.True(changed)
 
 	s.Require().NoError(s.repo.RecordUse(context.Background(), active.ID, accID))
 	s.Require().NoError(s.repo.RecordUse(context.Background(), revoked.ID, accID))
@@ -129,13 +131,17 @@ func (s *AccessTokenRepositoryTestSuite) TestMarkRevokedKeepsTheRowAndTheFirstSt
 	accID := s.createAccount()
 	token := &models.AccessToken{ID: uuid.New(), AccountID: accID, Name: "Keep"}
 	s.Require().NoError(s.repo.Create(context.Background(), token))
-	s.Require().NoError(s.repo.MarkRevoked(context.Background(), token.ID, accID))
+	changed, err := s.repo.MarkRevoked(context.Background(), token.ID, accID)
+	s.Require().NoError(err)
+	s.True(changed)
 
 	first, err := s.repo.FindByIDAndAccount(context.Background(), token.ID, accID)
 	s.Require().NoError(err)
 	s.Require().NotNil(first.RevokedAt)
 
-	s.Require().NoError(s.repo.MarkRevoked(context.Background(), token.ID, accID))
+	changed, err = s.repo.MarkRevoked(context.Background(), token.ID, accID)
+	s.Require().NoError(err)
+	s.False(changed)
 	second, err := s.repo.FindByIDAndAccount(context.Background(), token.ID, accID)
 	s.Require().NoError(err)
 	s.True(first.RevokedAt.Equal(*second.RevokedAt))

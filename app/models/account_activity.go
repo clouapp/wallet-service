@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"regexp"
+	"slices"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -13,8 +15,9 @@ import (
 const activityMetadataMaxBytes = 4096
 
 var (
-	activityFieldName = regexp.MustCompile(`^[a-z][a-z0-9_]*$`)
-	activityName      = regexp.MustCompile(`^[a-z][a-z0-9_-]*$`)
+	activityFieldName  = regexp.MustCompile(`^[a-z][a-z0-9_]*$`)
+	activityName       = regexp.MustCompile(`^[a-z][a-z0-9_-]*$`)
+	activityPermission = regexp.MustCompile(`^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)+$`)
 )
 
 // ActivityMetadata is the JSON object stored with one activity row.
@@ -62,6 +65,18 @@ func (m ActivityMetadata) Encode() (string, error) {
 				return "", fmt.Errorf("activity metadata %s: %w", key, err)
 			}
 			cleaned[key] = text
+		case "name":
+			text, err := activityLabel(value)
+			if err != nil {
+				return "", fmt.Errorf("activity metadata name: %w", err)
+			}
+			cleaned[key] = text
+		case "permissions":
+			names, err := activityPermissions(value)
+			if err != nil {
+				return "", err
+			}
+			cleaned[key] = names
 		case "fields":
 			names, err := activityFields(value)
 			if err != nil {
@@ -154,6 +169,56 @@ func activityNameValue(value any) (string, error) {
 		return "", fmt.Errorf("must be a short name")
 	}
 	return text, nil
+}
+
+func activityLabel(value any) (string, error) {
+	text, ok := value.(string)
+	if !ok {
+		return "", fmt.Errorf("must be a string")
+	}
+	text = strings.TrimSpace(text)
+	if text == "" || len([]rune(text)) > 255 {
+		return "", fmt.Errorf("must be a short label")
+	}
+	for _, r := range text {
+		if r < 0x20 || r == 0x7f {
+			return "", fmt.Errorf("must be a short label")
+		}
+	}
+	return text, nil
+}
+
+func activityPermissions(value any) ([]string, error) {
+	names, ok := value.([]string)
+	if !ok || len(names) == 0 {
+		return nil, fmt.Errorf("activity metadata permissions are required")
+	}
+	out := make([]string, len(names))
+	seen := map[string]struct{}{}
+	for i, name := range names {
+		if !activityPermission.MatchString(name) || len(name) > 64 || !activityPermissionAllowed(name) {
+			return nil, fmt.Errorf("activity metadata permission %q is not allowed", name)
+		}
+		if _, ok := seen[name]; ok {
+			return nil, fmt.Errorf("activity metadata permission %q is duplicated", name)
+		}
+		seen[name] = struct{}{}
+		out[i] = name
+	}
+	slices.Sort(out)
+	return out, nil
+}
+
+func activityPermissionAllowed(name string) bool {
+	switch name {
+	case "addresses.create", "sweep.execute", "transactions.read",
+		"wallets.create", "wallets.read",
+		"webhooks.read", "webhooks.write",
+		"withdrawals.create":
+		return true
+	default:
+		return false
+	}
 }
 
 func activityFields(value any) ([]string, error) {

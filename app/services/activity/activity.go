@@ -1,11 +1,13 @@
 package activity
 
 import (
+	"encoding/json"
 	"fmt"
 	"slices"
 	"strings"
 
 	"github.com/macrowallets/waas/app/models"
+	"github.com/macrowallets/waas/app/policies"
 )
 
 const (
@@ -14,10 +16,13 @@ const (
 	ActionMemberReactivated = "member.reactivated"
 	ActionSettingsUpdated   = "settings.updated"
 	ActionFeaturesUpdated   = "features.updated"
+	ActionTokenCreated      = "token.created"
+	ActionTokenRevoked      = "token.revoked"
 
 	TargetAccountUser = "account_user"
 	TargetSettings    = "settings"
 	TargetFeature     = "feature"
+	TargetAccessToken = "access_token"
 )
 
 // MemberChange names one membership PATCH. A status change names the row;
@@ -69,6 +74,71 @@ func SettingsChange(group string, fields []string) (models.ActivityMetadata, err
 		return nil, err
 	}
 	return meta, nil
+}
+
+// TokenCreated records a minted API token. The metadata is the name and the
+// catalog permissions. The plaintext secret, token_hash and spending limit
+// are not accepted.
+func TokenCreated(name, storedPermissions string) (models.ActivityMetadata, error) {
+	return tokenAudit(name, storedPermissions, true)
+}
+
+// TokenRevoked records a soft revoke. A stored permission list that is not
+// the catalog is omitted rather than copied, so a legacy value cannot land
+// in the trail. The name is still required.
+func TokenRevoked(name, storedPermissions string) (models.ActivityMetadata, error) {
+	return tokenAudit(name, storedPermissions, false)
+}
+
+func tokenAudit(name, storedPermissions string, strict bool) (models.ActivityMetadata, error) {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return nil, fmt.Errorf("activity: token name is required")
+	}
+	permissions, err := tokenPermissionNames(storedPermissions, strict)
+	if err != nil {
+		return nil, err
+	}
+	meta := models.ActivityMetadata{"name": name}
+	if len(permissions) > 0 {
+		meta["permissions"] = permissions
+	}
+	if _, err := meta.Encode(); err != nil {
+		return nil, err
+	}
+	return meta, nil
+}
+
+func tokenPermissionNames(stored string, strict bool) ([]string, error) {
+	stored = strings.TrimSpace(stored)
+	if stored == "" {
+		return nil, nil
+	}
+	var names []string
+	if err := json.Unmarshal([]byte(stored), &names); err != nil {
+		if strict {
+			return nil, fmt.Errorf("activity: token permissions are not a list")
+		}
+		return nil, nil
+	}
+	seen := map[string]struct{}{}
+	out := make([]string, 0, len(names))
+	for _, name := range names {
+		name = strings.TrimSpace(name)
+		if !policies.IsAPITokenPermission(name) {
+			if strict {
+				return nil, fmt.Errorf("activity: token permission %q is not allowed", name)
+			}
+			continue
+		}
+		if _, ok := seen[name]; ok {
+			continue
+		}
+		seen[name] = struct{}{}
+		out = append(out, name)
+	}
+	slices.Sort(out)
+	return out, nil
 }
 
 // FeatureChange records the flag key and the boolean that was stored.

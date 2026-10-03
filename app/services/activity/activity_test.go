@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/macrowallets/waas/app/models"
+	"github.com/macrowallets/waas/app/policies"
 )
 
 func TestSettingsChangeKeepsFieldNamesAndDropsValues(t *testing.T) {
@@ -34,6 +35,71 @@ func TestMetadataRejectsSecretKeys(t *testing.T) {
 		_, err := models.ActivityMetadata{key: "hidden"}.Encode()
 		if err == nil {
 			t.Fatalf("key %q was accepted", key)
+		}
+	}
+}
+
+func TestTokenCreatedKeepsNameAndPermissionsAndDropsTheSecret(t *testing.T) {
+	t.Parallel()
+
+	const secret = "activity-token-secret-do-not-store"
+	const digest = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+	meta, err := TokenCreated("CI Token", `["webhooks.write","wallets.read","wallets.read"]`)
+	if err != nil {
+		t.Fatalf("token created: %v", err)
+	}
+	encoded, err := meta.Encode()
+	if err != nil {
+		t.Fatalf("encode: %v", err)
+	}
+	if strings.Contains(encoded, secret) || strings.Contains(encoded, digest) || strings.Contains(encoded, "daily_usd") {
+		t.Fatalf("metadata stored a secret or a limit: %s", encoded)
+	}
+	if !strings.Contains(encoded, `"name":"CI Token"`) || !strings.Contains(encoded, `"permissions":["wallets.read","webhooks.write"]`) {
+		t.Fatalf("metadata = %s", encoded)
+	}
+}
+
+func TestTokenCreatedRejectsAPermissionOutsideTheCatalog(t *testing.T) {
+	t.Parallel()
+
+	if _, err := TokenCreated("ci", `["wallets:read"]`); err == nil {
+		t.Fatal("a permission outside the catalog was accepted")
+	}
+	if _, err := TokenCreated("  ", `["wallets.read"]`); err == nil {
+		t.Fatal("a blank token name was accepted")
+	}
+}
+
+func TestTokenRevokedOmitsALegacyPermissionValue(t *testing.T) {
+	t.Parallel()
+
+	meta, err := TokenRevoked("legacy", "read")
+	if err != nil {
+		t.Fatalf("token revoked: %v", err)
+	}
+	encoded, err := meta.Encode()
+	if err != nil {
+		t.Fatalf("encode: %v", err)
+	}
+	if strings.Contains(encoded, "read") || strings.Contains(encoded, "permissions") {
+		t.Fatalf("legacy permissions were stored: %s", encoded)
+	}
+	if !strings.Contains(encoded, `"name":"legacy"`) {
+		t.Fatalf("metadata = %s", encoded)
+	}
+}
+
+func TestTokenPermissionAllowlistMatchesTheAPICatalog(t *testing.T) {
+	t.Parallel()
+
+	for _, name := range policies.APITokenPermissionCatalog() {
+		meta, err := TokenCreated("ci", `["`+name+`"]`)
+		if err != nil {
+			t.Fatalf("catalog permission %s: %v", name, err)
+		}
+		if _, err := meta.Encode(); err != nil {
+			t.Fatalf("encode %s: %v", name, err)
 		}
 	}
 }

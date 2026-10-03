@@ -53,11 +53,12 @@ type TokenStore interface {
 	Delete(ctx context.Context, token *models.AccessToken) error
 	DeleteByAccountAndCreator(ctx context.Context, accountID, createdBy uuid.UUID) error
 	RecordUse(ctx context.Context, tokenID, accountID uuid.UUID) error
-	MarkRevoked(ctx context.Context, tokenID, accountID uuid.UUID) error
+	MarkRevoked(ctx context.Context, tokenID, accountID uuid.UUID) (bool, error)
 }
 
 // ActivityLog appends one row on the caller's transaction.
 type ActivityLog interface {
+	Within(ctx context.Context, fn func(context.Context) error) error
 	Append(ctx context.Context, row models.AccountActivity) error
 }
 
@@ -343,6 +344,13 @@ func (s *Service) requireTokens() error {
 	}
 	if s.memberships == nil {
 		return fmt.Errorf("account service: memberships repository is required")
+	}
+	return nil
+}
+
+func (s *Service) requireActivity() error {
+	if s.activity == nil {
+		return fmt.Errorf("account service: activity log is required")
 	}
 	return nil
 }

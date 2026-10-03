@@ -20,6 +20,7 @@ type AccountActivityRepositoryTestSuite struct {
 	activity    *repositories.AccountActivityRepository
 	memberships *repositories.AccountUserRepository
 	settings    *repositories.SettingRepository
+	tokens      *repositories.AccessTokenRepository
 }
 
 func TestAccountActivityRepositorySuite(t *testing.T) {
@@ -31,6 +32,7 @@ func (s *AccountActivityRepositoryTestSuite) SetupTest() {
 	s.activity = repositories.NewAccountActivityRepository(nil)
 	s.memberships = repositories.NewAccountUserRepository(nil)
 	s.settings = repositories.NewSettingRepository(nil)
+	s.tokens = repositories.NewAccessTokenRepository(nil)
 }
 
 func (s *AccountActivityRepositoryTestSuite) TestMembershipAndActivityRollBackTogether() {
@@ -123,6 +125,104 @@ func (s *AccountActivityRepositoryTestSuite) TestSettingsWriteAndActivityRollBac
 	_, total, err := s.activity.List(ctx, accountID, 20, 0)
 	s.Require().NoError(err)
 	s.Equal(int64(0), total)
+}
+
+func (s *AccountActivityRepositoryTestSuite) TestTokenAndActivityRollBackTogether() {
+	ctx := context.Background()
+	accountID := s.account()
+	actorID := s.user()
+	tokenID := uuid.New()
+	const digest = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+
+	err := s.activity.Within(ctx, func(ctx context.Context) error {
+		token := &models.AccessToken{
+			ID: tokenID, AccountID: accountID, CreatedBy: &actorID, Name: "CI Token",
+			TokenHash: digest, Permissions: `["wallets.read"]`, SpendingLimit: `{"daily_usd":"1.00"}`,
+		}
+		if err := s.tokens.Create(ctx, token); err != nil {
+			return err
+		}
+		meta, err := activitylog.TokenCreated(token.Name, token.Permissions)
+		if err != nil {
+			return err
+		}
+		id := accountID
+		if err := s.activity.Append(ctx, models.AccountActivity{
+			AccountID:   &id,
+			ActorUserID: actorID,
+			Action:      activitylog.ActionTokenCreated,
+			TargetType:  activitylog.TargetAccessToken,
+			TargetID:    tokenID.String(),
+			Metadata:    meta,
+		}); err != nil {
+			return err
+		}
+		return errors.New("rollback")
+	})
+	s.Require().Error(err)
+
+	total, err := facades.Orm().Query().Model(&models.AccessToken{}).Where("id = ?", tokenID).Count()
+	s.Require().NoError(err)
+	s.Equal(int64(0), total)
+	_, activityTotal, err := s.activity.List(ctx, accountID, 20, 0)
+	s.Require().NoError(err)
+	s.Equal(int64(0), activityTotal)
+}
+
+func (s *AccountActivityRepositoryTestSuite) TestTokenAndActivityCommitTogether() {
+	ctx := context.Background()
+	accountID := s.account()
+	actorID := s.user()
+	tokenID := uuid.New()
+	const digest = "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+
+	err := s.activity.Within(ctx, func(ctx context.Context) error {
+		token := &models.AccessToken{
+			ID: tokenID, AccountID: accountID, CreatedBy: &actorID, Name: "CI Token",
+			TokenHash: digest, Permissions: `["webhooks.write","wallets.read"]`,
+		}
+		if err := s.tokens.Create(ctx, token); err != nil {
+			return err
+		}
+		meta, err := activitylog.TokenCreated(token.Name, token.Permissions)
+		if err != nil {
+			return err
+		}
+		id := accountID
+		return s.activity.Append(ctx, models.AccountActivity{
+			AccountID:   &id,
+			ActorUserID: actorID,
+			Action:      activitylog.ActionTokenCreated,
+			TargetType:  activitylog.TargetAccessToken,
+			TargetID:    tokenID.String(),
+			Metadata:    meta,
+		})
+	})
+	s.Require().NoError(err)
+
+	rows, total, err := s.activity.List(ctx, accountID, 20, 0)
+	s.Require().NoError(err)
+	s.Equal(int64(1), total)
+	s.Require().Len(rows, 1)
+	s.Equal(activitylog.ActionTokenCreated, rows[0].Action)
+	s.Equal(activitylog.TargetAccessToken, rows[0].TargetType)
+	s.Equal(tokenID.String(), rows[0].TargetID)
+	s.Equal(actorID, rows[0].ActorUserID)
+	encoded, err := jsonMarshal(rows[0].Metadata)
+	s.Require().NoError(err)
+	s.NotContains(encoded, digest)
+	s.NotContains(encoded, "daily_usd")
+	s.Contains(encoded, `"name":"CI Token"`)
+	s.Contains(encoded, `"wallets.read"`)
+	s.Contains(encoded, `"webhooks.write"`)
+}
+
+func jsonMarshal(meta models.ActivityMetadata) (string, error) {
+	raw, err := meta.MarshalJSON()
+	if err != nil {
+		return "", err
+	}
+	return string(raw), nil
 }
 
 func (s *AccountActivityRepositoryTestSuite) TestPlatformRowUsesANullAccountID() {

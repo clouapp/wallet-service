@@ -99,19 +99,22 @@ func (r *AccessTokenRepository) RecordUse(ctx context.Context, tokenID, accountI
 }
 
 // MarkRevoked sets revoked_at when it is still empty. The row stays.
-// A second call keeps the original stamp.
-func (r *AccessTokenRepository) MarkRevoked(ctx context.Context, tokenID, accountID uuid.UUID) error {
+// A second call keeps the original stamp and reports that nothing changed.
+func (r *AccessTokenRepository) MarkRevoked(ctx context.Context, tokenID, accountID uuid.UUID) (bool, error) {
 	if tokenID == uuid.Nil || accountID == uuid.Nil {
-		return fmt.Errorf("revoke access token: token id and account id are required")
+		return false, fmt.Errorf("revoke access token: token id and account id are required")
 	}
-	_, err := r.Query(ctx).Exec(
+	result, err := r.Query(ctx).Exec(
 		`UPDATE access_tokens SET revoked_at = NOW() WHERE id = ? AND account_id = ? AND revoked_at IS NULL`,
 		tokenID, accountID,
 	)
 	if err != nil {
-		return fmt.Errorf("revoke access token: %w", err)
+		return false, fmt.Errorf("revoke access token: %w", err)
 	}
-	return nil
+	if result == nil {
+		return false, fmt.Errorf("revoke access token: no result")
+	}
+	return result.RowsAffected > 0, nil
 }
 
 // Delete removes an access token.

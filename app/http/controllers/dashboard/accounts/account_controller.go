@@ -461,7 +461,8 @@ func (ctrl *AccountsController) RevokeAccountToken(ctx http.Context) http.Respon
 		return responses.Send(ctx, http.StatusBadRequest, http.Json{"error": "invalid token id"})
 	}
 
-	if err := ctrl.accountService.RevokeAccessToken(ctx.Context(), account.ID, tokenID); err != nil {
+	callerID, _ := requestctx.UserID(ctx)
+	if err := ctrl.accountService.RevokeAccessToken(ctx.Context(), account.ID, callerID, tokenID); err != nil {
 		if errors.Is(err, accountsvc.ErrAccessTokenNotFound) {
 			return responses.Send(ctx, http.StatusNotFound, http.Json{"error": "token not found"})
 		}
