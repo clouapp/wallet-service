@@ -152,7 +152,7 @@ func (ctrl *WalletsController) CreateWalletAdmin(ctx http.Context) http.Response
 	}
 
 	return responses.Send(ctx, http.StatusCreated, http.Json{
-		"wallet":             result.Wallet,
+		"wallet":             controllers.WalletBodyViewPtr(result.Wallet),
 		"encrypted_user_key": result.EncryptedUserKey,
 		"service_public_key": result.ServicePublicKey,
 		"encrypted_passcode": result.EncryptedPasscode,

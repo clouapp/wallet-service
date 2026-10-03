@@ -1,4 +1,2 @@
 # TestModelsCarryNoWireTags: known violations, rewritten by go test ./tests/architecture -update-baseline
-app/models/address.go: Address has json tags (x15)
 app/models/transaction.go: Transaction has json tags (x30)
-app/models/wallet.go: Wallet has json tags (x30)

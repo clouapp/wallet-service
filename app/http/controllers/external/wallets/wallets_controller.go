@@ -11,7 +11,6 @@ import (
 	"github.com/macrowallets/waas/app/http/pagination"
 	"github.com/macrowallets/waas/app/http/requests"
 	"github.com/macrowallets/waas/app/http/responses"
-	"github.com/macrowallets/waas/app/models"
 	wallet "github.com/macrowallets/waas/app/services/wallet"
 	"github.com/macrowallets/waas/app/services/walletrecords"
 )
@@ -24,7 +23,7 @@ func validateRequest(ctx http.Context, req http.FormRequest) http.Response {
 // the KeyCard recovery material, which is returned only here, once. The service
 // share (share B) and the plaintext customer share are never part of it.
 type CreateWalletResponse struct {
-	*models.Wallet
+	controllers.WalletBodyView
 	// JSON {iv,salt,ct,cipher,kdf}: the customer share (share A) encrypted with the wallet passphrase (AES-256-GCM, Argon2id), base64 fields.
 	EncryptedUserKey string `json:"encrypted_user_key" example:"{\"iv\":\"...\",\"salt\":\"...\",\"ct\":\"...\",\"cipher\":\"aes-256-gcm\",\"kdf\":\"argon2id\"}"`
 	// Hex of the combined MPC public key.
@@ -33,7 +32,7 @@ type CreateWalletResponse struct {
 
 func newCreateWalletResponse(result *wallet.CreateWalletResult) CreateWalletResponse {
 	return CreateWalletResponse{
-		Wallet:           result.Wallet,
+		WalletBodyView:   controllers.NewWalletBodyView(*result.Wallet),
 		EncryptedUserKey: result.EncryptedUserKey,
 		ServicePublicKey: result.ServicePublicKey,
 	}

@@ -22,41 +22,41 @@ const (
 // Neither party can sign alone.
 type Wallet struct {
 	orm.Model
-	ID    uuid.UUID `gorm:"type:uuid;primary_key" json:"id"`
-	Chain string    `gorm:"type:varchar(50);not null;index" json:"chain"`
-	Label string    `gorm:"type:varchar(255)" json:"label,omitempty"`
-	// MPC key material — never exposed in JSON responses (stored as hex-encoded text)
-	MPCCustomerShare string     `gorm:"type:text;not null" json:"-"`
-	MPCShareIV       string     `gorm:"type:text;not null" json:"-"`
-	MPCShareSalt     string     `gorm:"type:text;not null" json:"-"`
-	MPCSecretARN     string     `gorm:"type:text;not null" json:"-"`
-	MPCPublicKey     string     `gorm:"type:text;not null" json:"-"`
-	MPCCurve         string     `gorm:"type:varchar(20);not null" json:"-"`
-	MPCChainCode     string     `gorm:"type:text" json:"-"`
-	AddressIndex     int        `gorm:"type:integer;not null;default:0" json:"address_index"`
-	DepositAddressID *uuid.UUID `gorm:"type:uuid" json:"deposit_address_id,omitempty"`
+	ID    uuid.UUID `gorm:"type:uuid;primary_key"`
+	Chain string    `gorm:"type:varchar(50);not null;index"`
+	Label string    `gorm:"type:varchar(255)"`
+	// MPC key material — never part of an HTTP body (stored as hex-encoded text)
+	MPCCustomerShare string     `gorm:"type:text;not null"`
+	MPCShareIV       string     `gorm:"type:text;not null"`
+	MPCShareSalt     string     `gorm:"type:text;not null"`
+	MPCSecretARN     string     `gorm:"type:text;not null"`
+	MPCPublicKey     string     `gorm:"type:text;not null"`
+	MPCCurve         string     `gorm:"type:varchar(20);not null"`
+	MPCChainCode     string     `gorm:"type:text"`
+	AddressIndex     int        `gorm:"type:integer;not null;default:0"`
+	DepositAddressID *uuid.UUID `gorm:"type:uuid"`
 	// Account and admin fields
-	AccountID         *uuid.UUID `gorm:"type:uuid;index" json:"account_id,omitempty"`
-	Status            string     `gorm:"type:wallet_status;default:active" json:"status"`
-	FeeRateMin        *int       `gorm:"type:integer" json:"fee_rate_min,omitempty"`
-	FeeRateMax        *int       `gorm:"type:integer" json:"fee_rate_max,omitempty"`
-	FeeMultiplier     *float64   `gorm:"type:decimal(8,4)" json:"fee_multiplier,omitempty"`
-	RequiredApprovals int        `gorm:"default:1" json:"required_approvals"`
-	FrozenUntil       *time.Time `json:"frozen_until,omitempty"`
-	ActivationCode    *string    `gorm:"type:char(6)" json:"-"`
+	AccountID         *uuid.UUID `gorm:"type:uuid;index"`
+	Status            string     `gorm:"type:wallet_status;default:active"`
+	FeeRateMin        *int       `gorm:"type:integer"`
+	FeeRateMax        *int       `gorm:"type:integer"`
+	FeeMultiplier     *float64   `gorm:"type:decimal(8,4)"`
+	RequiredApprovals int        `gorm:"default:1"`
+	FrozenUntil       *time.Time
+	ActivationCode    *string `gorm:"type:char(6)"`
 
-	BalanceAsset        *string    `gorm:"type:varchar(32)" json:"balance_asset,omitempty"`
-	BalanceRaw          *string    `gorm:"type:text" json:"balance_raw,omitempty"`
-	BalanceDisplay      *string    `gorm:"type:text" json:"balance,omitempty"`
-	BalanceUSD          *float64   `gorm:"type:decimal(28,10)" json:"balance_usd,omitempty"`
-	BalanceLastSyncedAt *time.Time `gorm:"type:timestamptz" json:"balance_last_synced_at,omitempty"`
-	ReadModelStatus     string     `gorm:"type:wallet_read_model_status;default:idle" json:"read_model_status"`
+	BalanceAsset        *string    `gorm:"type:varchar(32)"`
+	BalanceRaw          *string    `gorm:"type:text"`
+	BalanceDisplay      *string    `gorm:"type:text"`
+	BalanceUSD          *float64   `gorm:"type:decimal(28,10)"`
+	BalanceLastSyncedAt *time.Time `gorm:"type:timestamptz"`
+	ReadModelStatus     string     `gorm:"type:wallet_read_model_status;default:idle"`
 
-	GasStatus          string     `gorm:"type:wallet_gas_status;not null;default:unseeded;index" json:"gas_status"`
-	GasLastCheckedAt   *time.Time `gorm:"type:timestamptz" json:"gas_last_checked_at,omitempty"`
-	SweepPolicyVersion int        `gorm:"not null;default:1" json:"sweep_policy_version"`
+	GasStatus          string     `gorm:"type:wallet_gas_status;not null;default:unseeded;index"`
+	GasLastCheckedAt   *time.Time `gorm:"type:timestamptz"`
+	SweepPolicyVersion int        `gorm:"not null;default:1"`
 
-	DepositAddress *Address `gorm:"foreignKey:DepositAddressID" json:"deposit_address,omitempty"`
+	DepositAddress *Address `gorm:"foreignKey:DepositAddressID"`
 }
 
 // TableName specifies the table name for Wallet model.

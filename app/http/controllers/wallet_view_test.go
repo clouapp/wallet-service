@@ -2,6 +2,7 @@ package controllers
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 	"time"
 
@@ -143,6 +144,97 @@ func TestWalletListItemCarriesTokenBalancesUnpricedOnATestnet(t *testing.T) {
 	}
 	if body["testnet"] != true || body["label"] != "polygon_deposit" {
 		t.Fatalf("list item = %v", body)
+	}
+}
+
+func TestWalletBodyAndDetailViewsKeepTheModelWire(t *testing.T) {
+	t.Parallel()
+
+	id := uuid.MustParse("11111111-1111-4111-8111-111111111111")
+	other := uuid.MustParse("22222222-2222-4222-8222-222222222222")
+	created := carbon.NewDateTime(carbon.Parse("2024-05-06 07:08:09"))
+	updated := carbon.NewDateTime(carbon.Parse("2024-05-06 07:08:10"))
+	createdBy := other
+	feeMin := 0
+	feeMax := 10
+	mult := 1.5
+	frozen := time.Date(2024, 5, 6, 7, 8, 9, 0, time.UTC)
+	asset := "ETH"
+	rawBal := "1"
+	display := "1"
+	usd := 4.97
+	zeroUSD := 0.0
+	activation := "123456"
+	const share = "share-secret"
+	const cipher = "cipher-secret"
+	const iv = "iv-secret"
+	const salt = "salt-secret"
+
+	addr := models.Address{
+		ID: id, WalletID: other, Chain: "eth", Address: "0xabc",
+		ExternalUserID: "system", IsActive: true, Label: "Deposit Address",
+		CreatedBy: &createdBy, DerivationType: "genesis",
+		EncryptedPrivateKey: cipher, EncryptionIV: iv, EncryptionSalt: salt,
+	}
+	addr.CreatedAt = created
+	addr.UpdatedAt = updated
+
+	wallet := models.Wallet{
+		ID: id, Chain: "eth", Label: "hot",
+		MPCCustomerShare: share, MPCShareIV: iv, MPCShareSalt: salt,
+		MPCSecretARN: "arn-secret", MPCPublicKey: "pub-secret", MPCCurve: "secp256k1", MPCChainCode: "code-secret",
+		AddressIndex: 3, DepositAddressID: &other, AccountID: &other, Status: "active",
+		FeeRateMin: &feeMin, FeeRateMax: &feeMax, FeeMultiplier: &mult, RequiredApprovals: 1,
+		FrozenUntil: &frozen, ActivationCode: &activation,
+		BalanceAsset: &asset, BalanceRaw: &rawBal, BalanceDisplay: &display, BalanceUSD: &usd,
+		BalanceLastSyncedAt: &frozen, ReadModelStatus: "idle", GasStatus: "unseeded",
+		GasLastCheckedAt: &frozen, SweepPolicyVersion: 1, DepositAddress: &addr,
+	}
+	wallet.CreatedAt = created
+	wallet.UpdatedAt = updated
+
+	deposit := `{"created_at":"2024-05-06 07:08:09","updated_at":"2024-05-06 07:08:10","id":"11111111-1111-4111-8111-111111111111","wallet_id":"22222222-2222-4222-8222-222222222222","chain":"eth","address":"0xabc","derivation_index":0,"external_user_id":"system","metadata":"","is_active":true,"label":"Deposit Address","created_by":"22222222-2222-4222-8222-222222222222","derivation_type":"genesis"}`
+	bodyFields := `"id":"11111111-1111-4111-8111-111111111111","chain":"eth","label":"hot","address_index":3,"deposit_address_id":"22222222-2222-4222-8222-222222222222","account_id":"22222222-2222-4222-8222-222222222222","status":"active","fee_rate_min":0,"fee_rate_max":10,"fee_multiplier":1.5,"required_approvals":1,"frozen_until":"2024-05-06T07:08:09Z","balance_asset":"ETH","balance_raw":"1","balance":"1","balance_usd":4.97,"balance_last_synced_at":"2024-05-06T07:08:09Z","read_model_status":"idle","gas_status":"unseeded","gas_last_checked_at":"2024-05-06T07:08:09Z","sweep_policy_version":1,"deposit_address":` + deposit
+
+	cases := []struct {
+		name  string
+		value any
+		want  string
+	}{
+		{
+			name:  "body",
+			value: newWalletBodyView(wallet),
+			want:  `{"created_at":"2024-05-06 07:08:09","updated_at":"2024-05-06 07:08:10",` + bodyFields + `}`,
+		},
+		{
+			name:  "detail",
+			value: newWalletView(&wallet, models.ResolvedNetwork{Name: "ethereum-mainnet", Testnet: false}),
+			want:  `{` + bodyFields + `,"created_at":"2024-05-06T07:08:09Z","updated_at":"2024-05-06T07:08:10Z","network":"ethereum-mainnet","testnet":false}`,
+		},
+		{
+			name:  "list",
+			value: newWalletListItem(wallet, models.ResolvedNetwork{Name: "ethereum-mainnet", Testnet: false}, nil),
+			want:  `{"created_at":"2024-05-06 07:08:09","updated_at":"2024-05-06 07:08:10",` + bodyFields + `,"network":"ethereum-mainnet","testnet":false,"assets":[]}`,
+		},
+		{
+			name:  "empty label keeps a zero usd pointer",
+			value: newWalletBodyView(models.Wallet{Label: "", BalanceUSD: &zeroUSD, Status: "active"}),
+			want:  `{"created_at":null,"updated_at":null,"id":"00000000-0000-0000-0000-000000000000","chain":"","address_index":0,"status":"active","required_approvals":0,"balance_usd":0,"read_model_status":"","gas_status":"","sweep_policy_version":0}`,
+		},
+	}
+	for _, tc := range cases {
+		raw, err := json.Marshal(tc.value)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, secret := range []string{share, cipher, iv, salt, activation, "arn-secret", "pub-secret", "code-secret"} {
+			if strings.Contains(string(raw), secret) {
+				t.Fatalf("%s put key material on the wire", tc.name)
+			}
+		}
+		if string(raw) != tc.want {
+			t.Fatalf("%s wire changed\n got %s\nwant %s", tc.name, raw, tc.want)
+		}
 	}
 }
 

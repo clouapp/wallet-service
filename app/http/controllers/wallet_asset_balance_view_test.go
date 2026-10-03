@@ -67,20 +67,21 @@ func TestWalletAssetBalanceViewKeepsARelatedWallet(t *testing.T) {
 	t.Parallel()
 
 	id := uuid.MustParse("11111111-1111-4111-8111-111111111111")
-	wallet := &models.Wallet{ID: id, Chain: "eth", Label: "hot", MPCCustomerShare: "share-secret"}
+	const share = "share-secret"
+	wallet := &models.Wallet{ID: id, Chain: "eth", Label: "hot", MPCCustomerShare: share}
 	raw, err := json.Marshal(newWalletAssetBalanceView(models.WalletAssetBalance{Wallet: wallet}))
 	if err != nil {
 		t.Fatal(err)
 	}
-	walletRaw, err := json.Marshal(wallet)
+	if strings.Contains(string(raw), share) {
+		t.Fatal("wallet share is on the wire")
+	}
+	walletRaw, err := json.Marshal(newWalletBodyView(*wallet))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(string(raw), string(walletRaw)) {
-		t.Fatalf("related wallet changed\n got %s\nwant it to contain %s", raw, walletRaw)
-	}
-	if strings.Contains(string(raw), wallet.MPCCustomerShare) {
-		t.Fatal("wallet share is on the wire")
+		t.Fatal("related wallet changed")
 	}
 }
 

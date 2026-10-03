@@ -12,6 +12,7 @@ import (
 // WalletAssetBalanceView is a wallet asset balance HTTP clients read. Field
 // order and tags match the model wire, including embedded timestamps. A nil
 // page stays nil; an empty page stays empty. A nil related wallet stays omitted.
+// A related wallet is the wallet body view, so share material stays off the wire.
 type WalletAssetBalanceView struct {
 	CreatedAt     *carbon.DateTime `json:"created_at"`
 	UpdatedAt     *carbon.DateTime `json:"updated_at"`
@@ -30,7 +31,7 @@ type WalletAssetBalanceView struct {
 	ValueUSD      *float64         `json:"value_usd,omitempty"`
 	SourceAddress *string          `json:"source_address,omitempty"`
 	LastSyncedAt  time.Time        `json:"last_synced_at"`
-	Wallet        *models.Wallet   `json:"wallet,omitempty"`
+	Wallet        *WalletBodyView  `json:"wallet,omitempty"`
 }
 
 func newWalletAssetBalanceView(row models.WalletAssetBalance) WalletAssetBalanceView {
@@ -52,7 +53,7 @@ func newWalletAssetBalanceView(row models.WalletAssetBalance) WalletAssetBalance
 		ValueUSD:      row.ValueUSD,
 		SourceAddress: row.SourceAddress,
 		LastSyncedAt:  row.LastSyncedAt,
-		Wallet:        row.Wallet,
+		Wallet:        walletBodyViewPtr(row.Wallet),
 	}
 }
 

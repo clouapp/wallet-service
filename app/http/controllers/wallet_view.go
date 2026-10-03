@@ -5,8 +5,10 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"time"
 
 	"github.com/google/uuid"
+	"github.com/goravel/framework/support/carbon"
 
 	"github.com/macrowallets/waas/app/container"
 	"github.com/macrowallets/waas/app/facades"
@@ -28,35 +30,161 @@ func newWalletNetwork(resolved models.ResolvedNetwork) walletNetwork {
 	return walletNetwork{Network: resolved.Name, Testnet: resolved.Testnet}
 }
 
-// WalletView is a wallet plus its network. created_at and updated_at are RFC 3339
-// in UTC. Testnet wallets carry no USD value: test coins have no market price.
+// WalletBodyView is the wallet JSON the model used to emit: carbon timestamps
+// first, the same names and omitempty rules, and the nested deposit address as
+// an address view. MPC share material and the activation code stay off the wire.
+// A nil wallet stays null.
+type WalletBodyView struct {
+	CreatedAt           *carbon.DateTime `json:"created_at"`
+	UpdatedAt           *carbon.DateTime `json:"updated_at"`
+	ID                  uuid.UUID        `json:"id"`
+	Chain               string           `json:"chain"`
+	Label               string           `json:"label,omitempty"`
+	AddressIndex        int              `json:"address_index"`
+	DepositAddressID    *uuid.UUID       `json:"deposit_address_id,omitempty"`
+	AccountID           *uuid.UUID       `json:"account_id,omitempty"`
+	Status              string           `json:"status"`
+	FeeRateMin          *int             `json:"fee_rate_min,omitempty"`
+	FeeRateMax          *int             `json:"fee_rate_max,omitempty"`
+	FeeMultiplier       *float64         `json:"fee_multiplier,omitempty"`
+	RequiredApprovals   int              `json:"required_approvals"`
+	FrozenUntil         *time.Time       `json:"frozen_until,omitempty"`
+	BalanceAsset        *string          `json:"balance_asset,omitempty"`
+	BalanceRaw          *string          `json:"balance_raw,omitempty"`
+	BalanceDisplay      *string          `json:"balance,omitempty"`
+	BalanceUSD          *float64         `json:"balance_usd,omitempty"`
+	BalanceLastSyncedAt *time.Time       `json:"balance_last_synced_at,omitempty"`
+	ReadModelStatus     string           `json:"read_model_status"`
+	GasStatus           string           `json:"gas_status"`
+	GasLastCheckedAt    *time.Time       `json:"gas_last_checked_at,omitempty"`
+	SweepPolicyVersion  int              `json:"sweep_policy_version"`
+	DepositAddress      *AddressView     `json:"deposit_address,omitempty"`
+}
+
+func newWalletBodyView(wallet models.Wallet) WalletBodyView {
+	return WalletBodyView{
+		CreatedAt:           wallet.CreatedAt,
+		UpdatedAt:           wallet.UpdatedAt,
+		ID:                  wallet.ID,
+		Chain:               wallet.Chain,
+		Label:               wallet.Label,
+		AddressIndex:        wallet.AddressIndex,
+		DepositAddressID:    wallet.DepositAddressID,
+		AccountID:           wallet.AccountID,
+		Status:              wallet.Status,
+		FeeRateMin:          wallet.FeeRateMin,
+		FeeRateMax:          wallet.FeeRateMax,
+		FeeMultiplier:       wallet.FeeMultiplier,
+		RequiredApprovals:   wallet.RequiredApprovals,
+		FrozenUntil:         wallet.FrozenUntil,
+		BalanceAsset:        wallet.BalanceAsset,
+		BalanceRaw:          wallet.BalanceRaw,
+		BalanceDisplay:      wallet.BalanceDisplay,
+		BalanceUSD:          wallet.BalanceUSD,
+		BalanceLastSyncedAt: wallet.BalanceLastSyncedAt,
+		ReadModelStatus:     wallet.ReadModelStatus,
+		GasStatus:           wallet.GasStatus,
+		GasLastCheckedAt:    wallet.GasLastCheckedAt,
+		SweepPolicyVersion:  wallet.SweepPolicyVersion,
+		DepositAddress:      addressViewPtr(wallet.DepositAddress),
+	}
+}
+
+func walletBodyViewPtr(wallet *models.Wallet) *WalletBodyView {
+	if wallet == nil {
+		return nil
+	}
+	view := newWalletBodyView(*wallet)
+	return &view
+}
+
+// NewWalletBodyView is the wallet object embedded in create responses and in a
+// related balance row. It does not add network fields or reformat timestamps.
+func NewWalletBodyView(wallet models.Wallet) WalletBodyView {
+	return newWalletBodyView(wallet)
+}
+
+// WalletBodyViewPtr keeps a nil wallet as JSON null.
+func WalletBodyViewPtr(wallet *models.Wallet) *WalletBodyView {
+	return walletBodyViewPtr(wallet)
+}
+
+// WalletView is a wallet plus its network. Field order matches the previous
+// embedded response: wallet fields, then RFC 3339 created_at and updated_at in
+// UTC, then network and testnet. Testnet wallets carry no USD value.
 type WalletView struct {
-	*models.Wallet
+	ID                  uuid.UUID    `json:"id"`
+	Chain               string       `json:"chain"`
+	Label               string       `json:"label,omitempty"`
+	AddressIndex        int          `json:"address_index"`
+	DepositAddressID    *uuid.UUID   `json:"deposit_address_id,omitempty"`
+	AccountID           *uuid.UUID   `json:"account_id,omitempty"`
+	Status              string       `json:"status"`
+	FeeRateMin          *int         `json:"fee_rate_min,omitempty"`
+	FeeRateMax          *int         `json:"fee_rate_max,omitempty"`
+	FeeMultiplier       *float64     `json:"fee_multiplier,omitempty"`
+	RequiredApprovals   int          `json:"required_approvals"`
+	FrozenUntil         *time.Time   `json:"frozen_until,omitempty"`
+	BalanceAsset        *string      `json:"balance_asset,omitempty"`
+	BalanceRaw          *string      `json:"balance_raw,omitempty"`
+	BalanceDisplay      *string      `json:"balance,omitempty"`
+	BalanceUSD          *float64     `json:"balance_usd,omitempty"`
+	BalanceLastSyncedAt *time.Time   `json:"balance_last_synced_at,omitempty"`
+	ReadModelStatus     string       `json:"read_model_status"`
+	GasStatus           string       `json:"gas_status"`
+	GasLastCheckedAt    *time.Time   `json:"gas_last_checked_at,omitempty"`
+	SweepPolicyVersion  int          `json:"sweep_policy_version"`
+	DepositAddress      *AddressView `json:"deposit_address,omitempty"`
 	zonedTimestamps
 	walletNetwork
 }
 
 func newWalletView(wallet *models.Wallet, resolved models.ResolvedNetwork) WalletView {
+	priced := walletPricedFor(wallet, resolved)
 	return WalletView{
-		Wallet:          walletPricedFor(wallet, resolved),
-		zonedTimestamps: newZonedTimestamps(wallet.CreatedAt, wallet.UpdatedAt),
-		walletNetwork:   newWalletNetwork(resolved),
+		ID:                  priced.ID,
+		Chain:               priced.Chain,
+		Label:               priced.Label,
+		AddressIndex:        priced.AddressIndex,
+		DepositAddressID:    priced.DepositAddressID,
+		AccountID:           priced.AccountID,
+		Status:              priced.Status,
+		FeeRateMin:          priced.FeeRateMin,
+		FeeRateMax:          priced.FeeRateMax,
+		FeeMultiplier:       priced.FeeMultiplier,
+		RequiredApprovals:   priced.RequiredApprovals,
+		FrozenUntil:         priced.FrozenUntil,
+		BalanceAsset:        priced.BalanceAsset,
+		BalanceRaw:          priced.BalanceRaw,
+		BalanceDisplay:      priced.BalanceDisplay,
+		BalanceUSD:          priced.BalanceUSD,
+		BalanceLastSyncedAt: priced.BalanceLastSyncedAt,
+		ReadModelStatus:     priced.ReadModelStatus,
+		GasStatus:           priced.GasStatus,
+		GasLastCheckedAt:    priced.GasLastCheckedAt,
+		SweepPolicyVersion:  priced.SweepPolicyVersion,
+		DepositAddress:      addressViewPtr(priced.DepositAddress),
+		zonedTimestamps:     newZonedTimestamps(wallet.CreatedAt, wallet.UpdatedAt),
+		walletNetwork:       newWalletNetwork(resolved),
 	}
 }
 
-// WalletListItem is a list entry: the wallet fields, its network and the native
+// WalletListItem is a list entry: the wallet body, its network and the native
 // and configured token balances of its last refresh (as GET /wallets/{id}/balances).
+// Timestamps stay in the stored carbon format. A nil asset page becomes [] because
+// the priced balance list is always a non-nil slice.
 type WalletListItem struct {
-	models.Wallet
+	WalletBodyView
 	walletNetwork
 	Assets []WalletAssetBalanceView `json:"assets"`
 }
 
 func newWalletListItem(wallet models.Wallet, resolved models.ResolvedNetwork, assets []models.WalletAssetBalance) WalletListItem {
+	priced := walletPricedFor(&wallet, resolved)
 	return WalletListItem{
-		Wallet:        *walletPricedFor(&wallet, resolved),
-		walletNetwork: newWalletNetwork(resolved),
-		Assets:        WalletAssetBalanceViews(assetBalancesPricedFor(assets, resolved)),
+		WalletBodyView: newWalletBodyView(*priced),
+		walletNetwork:  newWalletNetwork(resolved),
+		Assets:         WalletAssetBalanceViews(assetBalancesPricedFor(assets, resolved)),
 	}
 }
 
