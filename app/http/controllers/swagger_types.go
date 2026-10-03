@@ -41,5 +41,5 @@ type WalletTransactionListResponse struct {
 }
 
 type WebhookConfigListResponse struct {
-	Data []models.WebhookConfig `json:"data"`
+	Data []WebhookConfigView `json:"data"`
 }
