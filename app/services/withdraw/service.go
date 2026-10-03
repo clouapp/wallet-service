@@ -25,11 +25,12 @@ import (
 
 // Sentinel errors for HTTP response mapping in controller.
 var (
-	ErrInvalidPassphrase  = errors.New("invalid passphrase")
-	ErrInsufficientFunds  = errors.New("insufficient funds")
-	ErrConcurrentWithdraw = errors.New("withdrawal already in progress for this wallet")
-	ErrPassphraseTooShort = errors.New("passphrase must be at least 12 characters")
-	ErrTooManyAttempts    = errors.New("too many failed attempts, try again later")
+	ErrInvalidPassphrase   = errors.New("invalid passphrase")
+	ErrInsufficientFunds   = errors.New("insufficient funds")
+	ErrConcurrentWithdraw  = errors.New("withdrawal already in progress for this wallet")
+	ErrPassphraseTooShort  = errors.New("passphrase must be at least 12 characters")
+	ErrTooManyAttempts     = errors.New("too many failed attempts, try again later")
+	ErrTransactionNotFound = errors.New("transaction not found")
 )
 
 type Service struct {
@@ -298,6 +299,9 @@ func (s *Service) GetTransaction(ctx context.Context, id uuid.UUID) (*models.Tra
 	tx, err := s.transactionRepo.FindByID(id)
 	if err != nil {
 		return nil, err
+	}
+	if tx == nil {
+		return nil, ErrTransactionNotFound
 	}
 	return tx, nil
 }

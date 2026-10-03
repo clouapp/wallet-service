@@ -37,6 +37,7 @@ func RegisterExternalAPI() {
 			r.Get("/gas-status", controllers.GetGasStatus)
 			r.Post("/gas-check", controllers.ForceGasCheck)
 			r.Post("/withdraw/preview", controllers.PreviewWithdraw)
+			r.Get("/fee-estimate", controllers.GetWalletFeeEstimate)
 			r.Post("/withdrawals", controllers.CreateWalletWithdrawal)
 			r.Get("/withdrawals/{idempotencyKey}", controllers.GetWalletWithdrawalByIdempotencyKey)
 		})

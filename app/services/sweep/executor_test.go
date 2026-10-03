@@ -54,6 +54,9 @@ func (f *fakeTxRepo) CountByChainAndTxHash(chainID, txHash, txType string) (int6
 func (f *fakeTxRepo) CountByChainTxHashAndLogIndex(chainID, txHash string, logIndex int, txType string) (int64, error) {
 	return 0, nil
 }
+func (f *fakeTxRepo) CountInternalTransfers(chainID, txHash string, walletID uuid.UUID) (int64, error) {
+	return 0, nil
+}
 func (f *fakeTxRepo) FindPendingByChain(chainID string) ([]models.Transaction, error) {
 	return nil, nil
 }
@@ -353,6 +356,78 @@ func TestExecute_MultiSweep_LinksParent(t *testing.T) {
 	}
 	if final.ParentTransactionID != nil {
 		t.Fatalf("final withdrawal should have no parent, got %v", final.ParentTransactionID)
+	}
+}
+
+// executeSingleLegSweep runs a one-leg multi_sweep of asset from a child and
+// returns the persisted rows (leg txs, then the final withdrawal).
+func executeSingleLegSweep(t *testing.T, mockChain *mocks.MockChain, asset string, legAmount *big.Int) []*models.Transaction {
+	t.Helper()
+	walletID := uuid.New()
+	baseAddr := models.Address{ID: uuid.New(), WalletID: walletID, Address: "0xBASE", ExternalUserID: "user-1"}
+	child := models.Address{ID: uuid.New(), WalletID: walletID, Address: "0xCHILD", ExternalUserID: "user-1"}
+	wallet := &models.Wallet{ID: walletID, Chain: "eth", DepositAddress: &baseAddr, MPCCurve: "secp256k1"}
+	assignDerivedEVMAddresses(t, wallet, &baseAddr, &child)
+
+	svc, txRepo := newExecutorService(t, wallet, mockChain)
+	svc.registry.RegisterToken(types.Token{Symbol: "usdt", Name: "Tether", Contract: "0xTETHER", Decimals: 6, ChainID: "eth"})
+	plan := &Plan{
+		WalletID: walletID, Chain: "eth", Asset: asset, Amount: legAmount, Strategy: StrategyMultiSweep,
+		Sweeps: []PlannedSweep{{From: child, Amount: legAmount, NeedsGas: asset != "eth"}},
+	}
+	if _, err := svc.ExecutePlan(context.Background(), plan, SigningCredentials{ShareA: []byte("fake-share-a")},
+		uuid.New(), "0xDEST", "user-1"); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	return txRepo.created
+}
+
+// The adapter re-sizes a native sweep at build time (balance minus the fee at the
+// gas price it encodes), so the row must record what the tx moves, not the plan.
+func TestExecute_NativeSweepRowRecordsTheBuiltAmount(t *testing.T) {
+	builtAmount := big.NewInt(3_996_861_184_300_000)
+	mockChain := sweepMockChain("eth", "eth")
+	mockChain.BuildSweepFn = func(ctx context.Context, req types.SweepRequest) ([]types.UnsignedTx, error) {
+		return []types.UnsignedTx{{ChainID: "eth", RawBytes: []byte("native_sweep"), TransferAmount: builtAmount}}, nil
+	}
+
+	rows := executeSingleLegSweep(t, mockChain, "eth", big.NewInt(3_996_857_484_644_000))
+
+	if rows[0].TxType != models.TxTypeSweep || rows[0].Amount != builtAmount.String() {
+		t.Fatalf("sweep row %s amount %s, want the built %s", rows[0].TxType, rows[0].Amount, builtAmount)
+	}
+}
+
+func TestExecute_SweepRowFallsBackToThePlannedAmount(t *testing.T) {
+	legAmount := big.NewInt(600)
+
+	rows := executeSingleLegSweep(t, sweepMockChain("eth", "eth"), "eth", legAmount)
+
+	if rows[0].Amount != legAmount.String() {
+		t.Fatalf("sweep row amount %s, want the planned %s when the adapter reports none", rows[0].Amount, legAmount)
+	}
+}
+
+func TestExecute_GasSeedRowRecordsNativeGas(t *testing.T) {
+	seedAmount := big.NewInt(42_000)
+	tokenAmount := big.NewInt(600)
+	mockChain := sweepMockChain("eth", "eth")
+	mockChain.BuildSweepFn = func(ctx context.Context, req types.SweepRequest) ([]types.UnsignedTx, error) {
+		return []types.UnsignedTx{
+			{ChainID: "eth", RawBytes: []byte("gas_seed"), TransferAmount: seedAmount},
+			{ChainID: "eth", RawBytes: []byte("sweep"), TransferAmount: tokenAmount},
+		}, nil
+	}
+
+	rows := executeSingleLegSweep(t, mockChain, "usdt", tokenAmount)
+
+	seed, sweepRow := rows[0], rows[1]
+	if seed.TxType != models.TxTypeGasSeed || seed.Asset != "eth" || seed.TokenContract != "" || seed.Amount != seedAmount.String() {
+		t.Fatalf("gas_seed row %s %s %s (contract %q), want %s eth with no token contract",
+			seed.TxType, seed.Amount, seed.Asset, seed.TokenContract, seedAmount)
+	}
+	if sweepRow.Asset != "usdt" || sweepRow.TokenContract != "0xTETHER" || sweepRow.Amount != tokenAmount.String() {
+		t.Fatalf("sweep row %s %s (contract %q), want %s usdt 0xTETHER", sweepRow.Amount, sweepRow.Asset, sweepRow.TokenContract, tokenAmount)
 	}
 }
 

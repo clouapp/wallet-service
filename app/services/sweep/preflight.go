@@ -114,7 +114,7 @@ func (s *service) PreflightConsolidation(ctx context.Context, walletID uuid.UUID
 	}
 	defer session.close()
 
-	plan, err := s.planConsolidation(ctx, session.adapter, session.wallet, chainEntity.AdapterType, asset, limits)
+	plan, err := s.planConsolidation(ctx, session.adapter, session.wallet, chainEntity, asset, limits)
 	if err != nil {
 		return nil, err
 	}
@@ -177,7 +177,7 @@ func (s *service) openPreflightSession(ctx context.Context, walletID uuid.UUID, 
 	if wallet.Chain != chainID {
 		return nil, fmt.Errorf("sweep preflight: wallet %s is on %s, plan is on %s", walletID, wallet.Chain, chainID)
 	}
-	adapter, err := s.registry.Chain(chainID)
+	adapter, err := s.registry.ChainForWallet(wallet)
 	if err != nil {
 		return nil, fmt.Errorf("sweep preflight: adapter for %q: %w", chainID, err)
 	}

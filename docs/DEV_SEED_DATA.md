@@ -112,7 +112,7 @@ Login and hit any dashboard endpoint:
 TOKEN=$(curl -s -X POST http://127.0.0.1:2002/v1/auth/login \
   -H 'Content-Type: application/json' \
   -d '{"email":"alice@macro.markets","password":"secret"}' \
-  | python3 -c 'import json,sys;print(json.load(sys.stdin)["access_token"])')
+  | jq -r .access_token)
 
 curl -s http://127.0.0.1:2002/v1/wallets \
   -H "Authorization: Bearer $TOKEN" \

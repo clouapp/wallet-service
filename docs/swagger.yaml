@@ -197,6 +197,7 @@ definitions:
       balance_raw:
         type: string
       balance_usd:
+        example: 1250.5
         type: number
       chain:
         type: string
@@ -212,6 +213,7 @@ definitions:
         example: '{"iv":"...","salt":"...","ct":"...","cipher":"aes-256-gcm","kdf":"argon2id"}'
         type: string
       fee_multiplier:
+        example: 1.25
         type: number
       fee_rate_max:
         type: integer
@@ -326,10 +328,34 @@ definitions:
         example: "0xABCDEF1234567890"
         type: string
     type: object
+  controllers.DepositScannerHealth:
+    properties:
+      error:
+        type: string
+      pending:
+        additionalProperties:
+          type: integer
+        type: object
+      pending_total:
+        example: 0
+        type: integer
+      status:
+        example: ok
+        type: string
+    type: object
   controllers.ErrorResponse:
     properties:
       error:
         example: something went wrong
+        type: string
+    type: object
+  controllers.FeeEstimateErrorResponse:
+    properties:
+      code:
+        example: fee_estimate_unavailable
+        type: string
+      error:
+        example: the chain node could not price this withdrawal; try again later
         type: string
     type: object
   controllers.ForgotPasswordSwagger:
@@ -377,21 +403,6 @@ definitions:
         type: string
       metadata:
         example: '{"tier":"premium"}'
-        type: string
-    type: object
-  controllers.DepositScannerHealth:
-    properties:
-      error:
-        type: string
-      pending:
-        additionalProperties:
-          type: integer
-        type: object
-      pending_total:
-        example: 0
-        type: integer
-      status:
-        example: ok
         type: string
     type: object
   controllers.HealthResponse:
@@ -455,8 +466,98 @@ definitions:
     properties:
       data:
         items:
-          $ref: '#/definitions/models.Transaction'
+          $ref: '#/definitions/controllers.TransactionView'
         type: array
+    type: object
+  controllers.TransactionView:
+    properties:
+      address:
+        allOf:
+        - $ref: '#/definitions/models.Address'
+        description: Relationships
+      address_id:
+        type: string
+      amount:
+        type: string
+      asset:
+        type: string
+      block_hash:
+        type: string
+      block_number:
+        type: integer
+      chain:
+        type: string
+      chain_direction:
+        enum:
+        - inbound
+        - outbound
+        - self
+        - unknown
+        type: string
+      confirmations:
+        type: integer
+      confirmed_at:
+        type: string
+      created_at:
+        $ref: '#/definitions/github_com_goravel_framework_support_carbon.DateTime'
+      direction:
+        enum:
+        - incoming
+        - outgoing
+        - internal
+        - unknown
+        type: string
+      error_message:
+        type: string
+      external_user_id:
+        type: string
+      fee:
+        type: string
+      from_address:
+        type: string
+      id:
+        type: string
+      idempotency_key:
+        type: string
+      log_index:
+        type: integer
+      origin:
+        type: string
+      parent_transaction_id:
+        type: string
+      required_confs:
+        type: integer
+      source:
+        type: string
+      status:
+        type: string
+      synced_at:
+        type: string
+      to_address:
+        type: string
+      token_contract:
+        type: string
+      tx_hash:
+        type: string
+      tx_type:
+        type: string
+      type:
+        enum:
+        - deposit
+        - withdrawal
+        - sweep
+        - consolidation
+        - gas_funding
+        - transfer
+        - fee
+        - unknown
+        type: string
+      updated_at:
+        $ref: '#/definitions/github_com_goravel_framework_support_carbon.DateTime'
+      wallet:
+        $ref: '#/definitions/models.Wallet'
+      wallet_id:
+        type: string
     type: object
   controllers.TwoFactorSwagger:
     properties:
@@ -514,17 +615,26 @@ definitions:
     properties:
       fee_multiplier:
         example: 1.25
+        maximum: 5
+        minimum: 1
         type: number
       fee_rate_max:
-        example: 100
+        example: 50
+        maximum: 10000
+        minimum: 1
         type: integer
       fee_rate_min:
-        example: 1
+        example: 2
+        maximum: 10000
+        minimum: 1
         type: integer
-      frozen_until:
+      label:
+        example: Treasury
         type: string
       required_approvals:
-        example: 2
+        example: 1
+        maximum: 10
+        minimum: 1
         type: integer
     type: object
   controllers.UpdateWebhookRequest:
@@ -545,16 +655,38 @@ definitions:
         example: my-webhook-secret
         type: string
     type: object
-  controllers.WalletListResponse:
+  controllers.WalletListItem:
     properties:
-      data:
+      account_id:
+        description: Account and admin fields
+        type: string
+      address_index:
+        type: integer
+      assets:
         items:
-          $ref: '#/definitions/models.Wallet'
+          $ref: '#/definitions/models.WalletAssetBalance'
         type: array
-    type: object
-  controllers.WalletSettingsResponse:
-    properties:
+      balance:
+        type: string
+      balance_asset:
+        type: string
+      balance_last_synced_at:
+        type: string
+      balance_raw:
+        type: string
+      balance_usd:
+        example: 1250.5
+        type: number
+      chain:
+        type: string
+      created_at:
+        $ref: '#/definitions/github_com_goravel_framework_support_carbon.DateTime'
+      deposit_address:
+        $ref: '#/definitions/models.Address'
+      deposit_address_id:
+        type: string
       fee_multiplier:
+        example: 1.25
         type: number
       fee_rate_max:
         type: integer
@@ -562,10 +694,72 @@ definitions:
         type: integer
       frozen_until:
         type: string
+      gas_last_checked_at:
+        type: string
+      gas_status:
+        type: string
+      id:
+        type: string
+      label:
+        type: string
+      network:
+        example: polygon-amoy
+        type: string
+      read_model_status:
+        type: string
       required_approvals:
         type: integer
       status:
         type: string
+      sweep_policy_version:
+        type: integer
+      testnet:
+        example: true
+        type: boolean
+      updated_at:
+        $ref: '#/definitions/github_com_goravel_framework_support_carbon.DateTime'
+    type: object
+  controllers.WalletListResponse:
+    properties:
+      data:
+        items:
+          $ref: '#/definitions/controllers.WalletListItem'
+        type: array
+    type: object
+  controllers.WalletSettingsFieldError:
+    properties:
+      error:
+        example: 'fee_multiplier: must be between 1.00 and 5.00 with at most 4 decimal
+          places'
+        type: string
+      field:
+        example: fee_multiplier
+        type: string
+    type: object
+  controllers.WalletSettingsResponse:
+    properties:
+      fee_multiplier:
+        example: 1.25
+        type: number
+      fee_rate_max:
+        type: integer
+      fee_rate_min:
+        type: integer
+      frozen_until:
+        type: string
+      label:
+        type: string
+      required_approvals:
+        type: integer
+      status:
+        type: string
+    type: object
+  controllers.WalletTransactionListResponse:
+    properties:
+      data:
+        items:
+          $ref: '#/definitions/controllers.WalletTransactionView'
+        type: array
     type: object
   controllers.WalletTransactionView:
     properties:
@@ -585,15 +779,28 @@ definitions:
         type: integer
       chain:
         type: string
+      chain_direction:
+        enum:
+        - inbound
+        - outbound
+        - self
+        - unknown
+        type: string
       confirmations:
         type: integer
       confirmed_at:
         type: string
       created_at:
-        $ref: '#/definitions/github_com_goravel_framework_support_carbon.DateTime'
+        format: date-time
+        type: string
       decimals:
         type: integer
       direction:
+        enum:
+        - incoming
+        - outgoing
+        - internal
+        - unknown
         type: string
       error_message:
         type: string
@@ -629,8 +836,20 @@ definitions:
         type: string
       tx_type:
         type: string
+      type:
+        enum:
+        - deposit
+        - withdrawal
+        - sweep
+        - consolidation
+        - gas_funding
+        - transfer
+        - fee
+        - unknown
+        type: string
       updated_at:
-        $ref: '#/definitions/github_com_goravel_framework_support_carbon.DateTime'
+        format: date-time
+        type: string
       wallet:
         $ref: '#/definitions/models.Wallet'
       wallet_id:
@@ -642,6 +861,68 @@ definitions:
         items:
           $ref: '#/definitions/models.WalletUser'
         type: array
+    type: object
+  controllers.WalletView:
+    properties:
+      account_id:
+        description: Account and admin fields
+        type: string
+      address_index:
+        type: integer
+      balance:
+        type: string
+      balance_asset:
+        type: string
+      balance_last_synced_at:
+        type: string
+      balance_raw:
+        type: string
+      balance_usd:
+        example: 1250.5
+        type: number
+      chain:
+        type: string
+      created_at:
+        format: date-time
+        type: string
+      deposit_address:
+        $ref: '#/definitions/models.Address'
+      deposit_address_id:
+        type: string
+      fee_multiplier:
+        example: 1.25
+        type: number
+      fee_rate_max:
+        type: integer
+      fee_rate_min:
+        type: integer
+      frozen_until:
+        type: string
+      gas_last_checked_at:
+        type: string
+      gas_status:
+        type: string
+      id:
+        type: string
+      label:
+        type: string
+      network:
+        example: polygon-amoy
+        type: string
+      read_model_status:
+        type: string
+      required_approvals:
+        type: integer
+      status:
+        type: string
+      sweep_policy_version:
+        type: integer
+      testnet:
+        example: true
+        type: boolean
+      updated_at:
+        format: date-time
+        type: string
     type: object
   controllers.WebhookConfigListResponse:
     properties:
@@ -786,6 +1067,132 @@ definitions:
         example: 1f2d3c4b-5a6b-7c8d-9e0f-112233445566
         type: string
     type: object
+  feeestimate.BitcoinDetails:
+    properties:
+      fee_rate_sat_per_vbyte:
+        example: "1"
+        type: string
+      fee_rate_source:
+        example: estimator
+        type: string
+      inputs:
+        example: 1
+        type: integer
+      outputs:
+        example: 2
+        type: integer
+      vsize:
+        example: 141
+        type: integer
+    type: object
+  feeestimate.Details:
+    properties:
+      bitcoin:
+        $ref: '#/definitions/feeestimate.BitcoinDetails'
+      evm:
+        $ref: '#/definitions/feeestimate.EVMDetails'
+      solana:
+        $ref: '#/definitions/feeestimate.SolanaDetails'
+    type: object
+  feeestimate.EVMDetails:
+    properties:
+      gas_limit:
+        example: 21000
+        type: integer
+      gas_price_gwei:
+        example: "1.994918016"
+        type: string
+      gas_price_wei:
+        example: "1994918016"
+        type: string
+      l1_data_fee_wei:
+        example: "0"
+        type: string
+      tx_type:
+        example: legacy
+        type: string
+    type: object
+  feeestimate.Estimate:
+    properties:
+      amount:
+        example: "0.001"
+        type: string
+      amount_base_units:
+        example: "1000000000000000"
+        type: string
+      amount_is_reference:
+        example: false
+        type: boolean
+      amount_spendable:
+        example: true
+        type: boolean
+      asset:
+        example: ETH
+        type: string
+      base_balance_base_units:
+        example: "1958106721664000"
+        type: string
+      basis:
+        example: plan
+        type: string
+      cached:
+        example: false
+        type: boolean
+      chain:
+        example: eth
+        type: string
+      details:
+        $ref: '#/definitions/feeestimate.Details'
+      estimated_at:
+        type: string
+      expires_at:
+        type: string
+      fee:
+        example: "0.000041893278336"
+        type: string
+      fee_asset:
+        example: ETH
+        type: string
+      fee_base_units:
+        example: "41893278336000"
+        type: string
+      fee_decimals:
+        example: 18
+        type: integer
+      fee_multiplier:
+        example: "1"
+        type: string
+      insufficient_funds:
+        example: false
+        type: boolean
+      minimum_remaining_base_units:
+        example: "0"
+        type: string
+      recipient:
+        example: provided
+        type: string
+      strategy:
+        example: direct_from_base
+        type: string
+      transfers:
+        example: 1
+        type: integer
+      wallet_id:
+        example: d6a8ce92-b637-44c2-a9f1-774344802e1a
+        type: string
+    type: object
+  feeestimate.SolanaDetails:
+    properties:
+      lamports_per_signature:
+        example: 5000
+        type: integer
+      signatures:
+        example: 1
+        type: integer
+      token_account_creation_lamports:
+        example: "0"
+        type: string
+    type: object
   github_com_goravel_framework_support_carbon.DateTime:
     properties:
       error: {}
@@ -891,73 +1298,6 @@ definitions:
       wallet_id:
         type: string
     type: object
-  models.Transaction:
-    properties:
-      address:
-        allOf:
-        - $ref: '#/definitions/models.Address'
-        description: Relationships
-      address_id:
-        type: string
-      amount:
-        type: string
-      asset:
-        type: string
-      block_hash:
-        type: string
-      block_number:
-        type: integer
-      chain:
-        type: string
-      confirmations:
-        type: integer
-      confirmed_at:
-        type: string
-      created_at:
-        $ref: '#/definitions/github_com_goravel_framework_support_carbon.DateTime'
-      direction:
-        type: string
-      error_message:
-        type: string
-      external_user_id:
-        type: string
-      fee:
-        type: string
-      from_address:
-        type: string
-      id:
-        type: string
-      idempotency_key:
-        type: string
-      log_index:
-        type: integer
-      origin:
-        type: string
-      parent_transaction_id:
-        type: string
-      required_confs:
-        type: integer
-      source:
-        type: string
-      status:
-        type: string
-      synced_at:
-        type: string
-      to_address:
-        type: string
-      token_contract:
-        type: string
-      tx_hash:
-        type: string
-      tx_type:
-        type: string
-      updated_at:
-        $ref: '#/definitions/github_com_goravel_framework_support_carbon.DateTime'
-      wallet:
-        $ref: '#/definitions/models.Wallet'
-      wallet_id:
-        type: string
-    type: object
   models.User:
     properties:
       created_at:
@@ -1002,6 +1342,7 @@ definitions:
       balance_raw:
         type: string
       balance_usd:
+        example: 1250.5
         type: number
       chain:
         type: string
@@ -1012,6 +1353,7 @@ definitions:
       deposit_address_id:
         type: string
       fee_multiplier:
+        example: 1.25
         type: number
       fee_rate_max:
         type: integer
@@ -1065,12 +1407,14 @@ definitions:
       last_synced_at:
         type: string
       price_usd:
+        example: 1
         type: number
       source_address:
         type: string
       updated_at:
         $ref: '#/definitions/github_com_goravel_framework_support_carbon.DateTime'
       value_usd:
+        example: 6
         type: number
       wallet:
         $ref: '#/definitions/models.Wallet'
@@ -1531,6 +1875,73 @@ paths:
       summary: Remove a user from an account
       tags:
       - Accounts
+  /api/v1/wallets/{walletId}/fee-estimate:
+    get:
+      description: Prices the withdrawal POST /withdrawals would send, with the same
+        planner and chain adapters, without signing or broadcasting. The fee is always
+        in the chain's native coin (ETH, POL, BTC, SOL), also for tokens. EVM transfers
+        are legacy transactions paying gas_price_wei for every unit of gas (plus the
+        L1 data fee on OP-stack networks); Bitcoin uses the 3–6 block fee rate and
+        the coin selection the builder runs; Solana pays 5000 lamports per signature
+        plus the recipient's token account when it must be created. When the wallet
+        cannot cover the amount, the fee of the transfer from the base address is
+        returned with insufficient_funds=true. Answers are cached for FEE_ESTIMATE_CACHE_TTL_SECONDS
+        (default 15). Node failures answer 503; no value is guessed.
+      parameters:
+      - description: Wallet UUID
+        format: uuid
+        in: path
+        name: walletId
+        required: true
+        type: string
+      - description: Asset symbol; the chain's native coin when omitted
+        example: USDC
+        in: query
+        name: asset
+        type: string
+      - description: Decimal amount, as sent to POST /withdrawals; the smallest transfer
+          when omitted
+        example: "0.001"
+        in: query
+        name: amount
+        type: string
+      - description: Destination address; a probe recipient when omitted
+        in: query
+        name: to
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/feeestimate.Estimate'
+        "400":
+          description: invalid_amount
+          schema:
+            $ref: '#/definitions/controllers.FeeEstimateErrorResponse'
+        "404":
+          description: wallet not found (or owned by another account)
+          schema:
+            $ref: '#/definitions/controllers.ErrorResponse'
+        "422":
+          description: unknown_asset, invalid_address, amount_below_minimum, token_balance_required,
+            unsupported_chain
+          schema:
+            $ref: '#/definitions/controllers.FeeEstimateErrorResponse'
+        "429":
+          description: sweep_limit_exceeded
+          schema:
+            $ref: '#/definitions/controllers.FeeEstimateErrorResponse'
+        "503":
+          description: fee_estimate_unavailable, gas_estimate_failed
+          schema:
+            $ref: '#/definitions/controllers.FeeEstimateErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Estimate a withdrawal's network fee
+      tags:
+      - Wallet Withdrawals
   /api/v1/wallets/{walletId}/withdrawals/{idempotencyKey}:
     get:
       description: Returns the outcome of a withdrawal created with the given idempotency_key
@@ -1885,7 +2296,8 @@ paths:
       - Auth
   /health:
     get:
-      description: Returns service status and version, and how many deposit blocks per chain wait for a retry
+      description: Returns service status and version, and how many deposit blocks
+        per chain wait for a retry
       produces:
       - application/json
       responses:
@@ -2270,7 +2682,7 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/models.Transaction'
+            $ref: '#/definitions/controllers.TransactionView'
         "400":
           description: Invalid UUID
           schema:
@@ -2353,7 +2765,9 @@ paths:
       - Transactions
   /v1/wallets:
     get:
-      description: Returns all wallets across all supported chains
+      description: Returns the account wallets with their network (testnet flag) and
+        the native and configured token balances of the last refresh. Testnet wallets
+        carry no USD value.
       produces:
       - application/json
       responses:
@@ -2556,7 +2970,7 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/models.Wallet'
+            $ref: '#/definitions/controllers.WalletView'
         "400":
           description: Invalid UUID
           schema:
@@ -2731,6 +3145,81 @@ paths:
       summary: Get wallet gas readiness
       tags:
       - Wallets
+  /v1/wallets/{walletId}/settings:
+    get:
+      description: Returns fee, approval, and freeze settings for a wallet
+      parameters:
+      - description: Wallet UUID
+        in: path
+        name: walletId
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/controllers.WalletSettingsResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/controllers.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/controllers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Get wallet settings
+      tags:
+      - Wallet Settings
+    patch:
+      consumes:
+      - application/json
+      description: Updates the wallet's name and fee settings. Requires wallet or
+        account owner/admin. Only the listed fields are accepted; each may be omitted
+        (unchanged) or null (reset to the network default). fee_multiplier (1.0000–5.0000,
+        up to 4 decimals) scales the gas price on EVM chains and the fee rate on Bitcoin,
+        in fee estimates and in the withdrawals themselves; it does not apply to Solana.
+        fee_rate_min/fee_rate_max (1–10000 sat/vB, min ≤ max) clamp the Bitcoin fee
+        rate. Freezing uses POST /freeze.
+      parameters:
+      - description: Wallet UUID
+        in: path
+        name: walletId
+        required: true
+        type: string
+      - description: Settings payload
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/controllers.UpdateWalletSettingsSwagger'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/controllers.WalletSettingsResponse'
+        "400":
+          description: no settings to update
+          schema:
+            $ref: '#/definitions/controllers.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/controllers.ErrorResponse'
+        "422":
+          description: invalid or unknown field
+          schema:
+            $ref: '#/definitions/controllers.WalletSettingsFieldError'
+      security:
+      - BearerAuth: []
+      summary: Update wallet settings
+      tags:
+      - Wallet Settings
   /v1/wallets/{walletId}/withdraw/preview:
     post:
       consumes:
@@ -2774,7 +3263,8 @@ paths:
     get:
       description: Returns the native balance and the balances of the tokens the wallet
         chain configures, as of the last balance refresh. Amounts come raw (base units)
-        and for display, with the asset decimals.
+        and for display, with the asset decimals. Testnet wallets carry no USD price
+        or value.
       parameters:
       - description: Wallet UUID
         in: path
@@ -2839,72 +3329,6 @@ paths:
       summary: Freeze a wallet
       tags:
       - Wallet Settings
-  /wallets/{walletId}/settings:
-    get:
-      description: Returns fee, approval, and freeze settings for a wallet
-      parameters:
-      - description: Wallet UUID
-        in: path
-        name: walletId
-        required: true
-        type: string
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/controllers.WalletSettingsResponse'
-        "403":
-          description: Forbidden
-          schema:
-            $ref: '#/definitions/controllers.ErrorResponse'
-        "404":
-          description: Not Found
-          schema:
-            $ref: '#/definitions/controllers.ErrorResponse'
-      security:
-      - BearerAuth: []
-      summary: Get wallet settings
-      tags:
-      - Wallet Settings
-    patch:
-      consumes:
-      - application/json
-      description: Updates fee rates, approval thresholds, and other wallet settings.
-        Requires wallet or account owner/admin.
-      parameters:
-      - description: Wallet UUID
-        in: path
-        name: walletId
-        required: true
-        type: string
-      - description: Settings payload
-        in: body
-        name: request
-        required: true
-        schema:
-          $ref: '#/definitions/controllers.UpdateWalletSettingsSwagger'
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/controllers.WalletSettingsResponse'
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/controllers.ErrorResponse'
-        "403":
-          description: Forbidden
-          schema:
-            $ref: '#/definitions/controllers.ErrorResponse'
-      security:
-      - BearerAuth: []
-      summary: Update wallet settings
-      tags:
-      - Wallet Settings
   /wallets/{walletId}/transactions:
     get:
       description: Returns a paginated list of transactions for a specific wallet
@@ -2945,7 +3369,7 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/controllers.TransactionListResponse'
+            $ref: '#/definitions/controllers.WalletTransactionListResponse'
         "403":
           description: Forbidden
           schema:

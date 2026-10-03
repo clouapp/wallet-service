@@ -56,7 +56,7 @@ func EstimateWithdrawalFee(ctx http.Context) http.Response {
 		return resp
 	}
 
-	adapter, err := container.Get().Registry.Chain(wallet.Chain)
+	adapter, err := container.Get().Registry.ChainForWallet(wallet)
 	if err != nil {
 		return ctx.Response().Json(http.StatusUnprocessableEntity, http.Json{
 			"error": "fee estimation unavailable",
@@ -144,7 +144,7 @@ func CreateWalletWithdrawal(ctx http.Context) http.Response {
 		return errResp
 	}
 
-	adapter, err := container.Get().Registry.Chain(wallet.Chain)
+	adapter, err := container.Get().Registry.ChainForWallet(wallet)
 	if err != nil {
 		return ctx.Response().Json(http.StatusUnprocessableEntity, http.Json{"error": err.Error()})
 	}

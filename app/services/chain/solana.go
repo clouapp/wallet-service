@@ -67,12 +67,11 @@ func (a *SolanaLive) EstimateFee(ctx context.Context, req types.TransferRequest)
 // amount (one signature fee) and the rent-exempt minimum a system account must keep
 // unless it is emptied completely.
 func (a *SolanaLive) NativeTransferReserve(ctx context.Context) (fee, minimumRemaining *big.Int, err error) {
-	var rentExemptLamports uint64
-	if err := a.rpc.Call(ctx, "getMinimumBalanceForRentExemption", &rentExemptLamports, 0,
-		map[string]string{"commitment": solanaCommitmentFinalized}); err != nil {
-		return nil, nil, fmt.Errorf("sol rent-exempt minimum: %w", err)
+	rentExemptLamports, err := a.rentExemptMinimum(ctx, 0)
+	if err != nil {
+		return nil, nil, err
 	}
-	return big.NewInt(solanaNativeFeeLamports), new(big.Int).SetUint64(rentExemptLamports), nil
+	return big.NewInt(solanaNativeFeeLamports), rentExemptLamports, nil
 }
 
 func (a *SolanaLive) GetBalance(ctx context.Context, address string) (*types.Balance, error) {

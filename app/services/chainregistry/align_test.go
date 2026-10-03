@@ -22,6 +22,9 @@ const (
 	btcTestnetRPC  = "https://blockstream.info/testnet/api"
 	solanaDevnet   = "https://api.devnet.solana.com"
 	solanaMainnet  = "https://api.mainnet-beta.solana.com"
+	baseSepoliaRPC = "https://base-sepolia-rpc.publicnode.com"
+	arbSepoliaRPC  = "https://arbitrum-sepolia-rpc.publicnode.com"
+	bscTestnetRPC  = "https://bsc-testnet-rpc.publicnode.com"
 	compressedPub  = "0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798"
 	mainnetGenesis = "bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4"
 )
@@ -108,7 +111,8 @@ func ptr(v int64) *int64 { return &v }
 
 // vaultTestRegistry is the vault_test registry before the fix: eth signs for
 // mainnet over a Sepolia RPC, btc is mainnet, polygon is Amoy but listed as
-// mainnet, sol runs on devnet but is listed as mainnet.
+// mainnet, sol runs on devnet but is listed as mainnet. base, arbitrum and bsc
+// were created by chains:add-missing on their testnets.
 func vaultTestRegistry() *fakeStore {
 	return &fakeStore{
 		chains: map[string]models.Chain{
@@ -117,6 +121,9 @@ func vaultTestRegistry() *fakeStore {
 			models.ChainPolygon:  {ID: models.ChainPolygon, AdapterType: models.AdapterTypeEVM, NetworkID: ptr(models.EVMNetworkIDPolygonAmoy), RpcURL: amoyRPC},
 			models.ChainSOL:      {ID: models.ChainSOL, AdapterType: models.AdapterTypeSolana, RpcURL: solanaDevnet},
 			models.ChainTPolygon: {ID: models.ChainTPolygon, AdapterType: models.AdapterTypeEVM, NetworkID: ptr(models.EVMNetworkIDPolygonAmoy), IsTestnet: true, RpcURL: amoyRPC},
+			models.ChainBase:     {ID: models.ChainBase, AdapterType: models.AdapterTypeEVM, NetworkID: ptr(models.EVMNetworkIDBaseSepolia), IsTestnet: true, RpcURL: baseSepoliaRPC},
+			models.ChainArbitrum: {ID: models.ChainArbitrum, AdapterType: models.AdapterTypeEVM, NetworkID: ptr(models.EVMNetworkIDArbitrumSepolia), IsTestnet: true, RpcURL: arbSepoliaRPC},
+			models.ChainBSC:      {ID: models.ChainBSC, AdapterType: models.AdapterTypeEVM, NetworkID: ptr(models.EVMNetworkIDBSCTestnet), IsTestnet: true, RpcURL: bscTestnetRPC},
 		},
 		funded:    map[string]bool{models.ChainPolygon: true},
 		accounts:  map[uuid.UUID]models.Account{},
@@ -259,6 +266,21 @@ func TestPlanWarnsWhenTheProbeCannotTell(t *testing.T) {
 	assert.Contains(t, plan.Warnings[0], models.ChainBTC)
 }
 
+func TestPlanWarnsAboutAddedChainsMissingFromTheRegistry(t *testing.T) {
+	store := vaultTestRegistry()
+	delete(store.chains, models.ChainBase)
+	delete(store.chains, models.ChainBSC)
+
+	plan, err := BuildPlan(context.Background(), models.ChainNetworkProfileTestnet, store, plainDecrypt, staticProbe)
+
+	require.NoError(t, err)
+	require.Len(t, plan.Warnings, 2)
+	assert.Contains(t, plan.Warnings[0], models.ChainBase)
+	assert.Contains(t, plan.Warnings[1], models.ChainBSC)
+	assert.Contains(t, plan.Warnings[0], "chains:add-missing")
+	assert.NotContains(t, changeByChain(plan), models.ChainArbitrum)
+}
+
 func TestPlanRejectsUnknownProfileAndMissingDependencies(t *testing.T) {
 	ctx := context.Background()
 	_, err := BuildPlan(ctx, "staging", vaultTestRegistry(), plainDecrypt, nil)
@@ -274,6 +296,14 @@ func TestPlanRejectsUnknownProfileAndMissingDependencies(t *testing.T) {
 func staticProbe(_ context.Context, record models.Chain, rpcURL string) (string, error) {
 	switch record.AdapterType {
 	case models.AdapterTypeEVM:
+		switch rpcURL {
+		case baseSepoliaRPC:
+			return models.NetworkBaseSepolia, nil
+		case arbSepoliaRPC:
+			return models.NetworkArbitrumSepolia, nil
+		case bscTestnetRPC:
+			return models.NetworkBSCTestnet, nil
+		}
 		if strings.Contains(rpcURL, "sepolia") {
 			return models.NetworkEthereumSepolia, nil
 		}

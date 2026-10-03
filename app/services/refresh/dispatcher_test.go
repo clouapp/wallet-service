@@ -57,7 +57,7 @@ func TestExpandScopesUnknownChain(t *testing.T) {
 }
 
 func TestExpandScopesForTestnetEVM(t *testing.T) {
-	for _, chainID := range []string{"teth", "tpolygon"} {
+	for _, chainID := range []string{"teth", "tpolygon", "base", "tbase", "arbitrum", "tarbitrum", "bsc", "tbsc"} {
 		req := RefreshRequest{ChainID: chainID, Scope: RefreshScopeFull}
 		scopes, err := ExpandScopes(req)
 		if err != nil {

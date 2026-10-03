@@ -9,6 +9,7 @@ import (
 
 	"github.com/macrowallets/waas/app/container"
 	"github.com/macrowallets/waas/app/models"
+	"github.com/macrowallets/waas/pkg/numeric"
 )
 
 // walletNetwork is the network a wallet's chain record really points at (for
@@ -61,7 +62,7 @@ func walletPricedFor(wallet *models.Wallet, resolved models.ResolvedNetwork) *mo
 		return wallet
 	}
 	unpriced := *wallet
-	unpriced.BalanceUSD = nil
+	unpriced.BalanceUSD = numeric.NullDecimal{}
 	return &unpriced
 }
 
@@ -69,8 +70,8 @@ func assetBalancesPricedFor(assets []models.WalletAssetBalance, resolved models.
 	priced := make([]models.WalletAssetBalance, 0, len(assets))
 	for _, asset := range assets {
 		if resolved.Testnet {
-			asset.PriceUSD = nil
-			asset.ValueUSD = nil
+			asset.PriceUSD = numeric.NullDecimal{}
+			asset.ValueUSD = numeric.NullDecimal{}
 		}
 		priced = append(priced, asset)
 	}

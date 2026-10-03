@@ -109,6 +109,7 @@ func RegisterAdminRoutes() {
 			r.Get("/withdrawals", controllers.ListWalletWithdrawals)
 			r.Post("/withdrawals", controllers.CreateWalletWithdrawal)
 			r.Post("/withdrawals/estimate", controllers.EstimateWithdrawalFee)
+			r.Get("/fee-estimate", controllers.GetWalletFeeEstimate)
 			r.Get("/withdrawals/{withdrawalId}", controllers.GetWalletWithdrawal)
 			r.Post("/withdrawals/{withdrawalId}/cancel", controllers.CancelWalletWithdrawal)
 

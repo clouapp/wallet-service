@@ -71,6 +71,13 @@ type TransferGasEstimator interface {
 	EstimateTransferGasLimit(ctx context.Context, req TransferRequest) (uint64, error)
 }
 
+// L1DataFeeEstimator reports what a rollup charges a transfer's sender on top of
+// gas limit × gas price for posting it to L1 (OP-stack L1 data fee), in native raw
+// units; zero on networks without one.
+type L1DataFeeEstimator interface {
+	EstimateL1DataFee(ctx context.Context, req TransferRequest) (*big.Int, error)
+}
+
 // MPCSignatureFinalizer converts a raw MPC secp256k1 signature into the
 // chain-specific serialized transaction accepted by BroadcastTransaction.
 // EVM adapters implement this because an R/S signature alone is not a raw
@@ -139,6 +146,9 @@ type UnsignedTx struct {
 	ChainID  string                 `json:"chain_id"`
 	RawBytes []byte                 `json:"raw_bytes"`
 	Metadata map[string]interface{} `json:"metadata"`
+	// TransferAmount is what the tx delivers to its recipient in base units of the
+	// asset it moves (native or token); nil when the builder does not report it.
+	TransferAmount *big.Int `json:"transfer_amount,omitempty"`
 }
 
 type SignedTx struct {

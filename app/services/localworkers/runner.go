@@ -9,8 +9,10 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"sync"
 	"time"
 
+	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/services/refresh"
 )
 
@@ -18,6 +20,27 @@ const (
 	MinInterval       = time.Second
 	DeliveryBatchSize = 25
 )
+
+// dedicatedScanChains produce blocks too fast (Arbitrum about every 0.25 s, BSC 0.75 s,
+// Base 2 s) to wait for the other chains' scans; each one runs in a loop of its own.
+var dedicatedScanChains = map[string]bool{
+	models.ChainBase: true, models.ChainTBase: true,
+	models.ChainArbitrum: true, models.ChainTArbitrum: true,
+	models.ChainBSC: true, models.ChainTBSC: true,
+}
+
+// splitScanChains keeps the configured order: shared chains are scanned one after the
+// other in one loop, dedicated chains each in their own loop.
+func splitScanChains(chainIDs []string) (shared, dedicated []string) {
+	for _, chainID := range chainIDs {
+		if dedicatedScanChains[chainID] {
+			dedicated = append(dedicated, chainID)
+			continue
+		}
+		shared = append(shared, chainID)
+	}
+	return shared, dedicated
+}
 
 type WithdrawalConfirmationChecker interface {
 	RunWithdrawalConfirmationCheck(ctx context.Context) error
@@ -103,34 +126,55 @@ func ParseChainList(raw string) []string {
 	return chains
 }
 
+// Loops are the background loops launched by Start.
+type Loops struct{ running sync.WaitGroup }
+
+// Wait blocks until every loop returned: after ctx is cancelled, each loop finishes
+// the run in progress, if any, and returns.
+func (l *Loops) Wait() {
+	if l == nil {
+		return
+	}
+	l.running.Wait()
+}
+
+func (l *Loops) every(ctx context.Context, interval time.Duration, run func()) {
+	l.running.Add(1)
+	go func() {
+		defer l.running.Done()
+		every(ctx, interval, run)
+	}()
+}
+
 // Start launches the background loops; they stop when ctx is cancelled.
-func Start(ctx context.Context, cfg Config, workers Workers) error {
+func Start(ctx context.Context, cfg Config, workers Workers) (*Loops, error) {
 	if err := cfg.validate(); err != nil {
-		return err
+		return nil, err
 	}
 	checker, deliverer, scanner := workers.Checker, workers.Deliverer, workers.Scanner
 	if checker == nil {
-		return errors.New("withdrawal confirmation checker is required")
+		return nil, errors.New("withdrawal confirmation checker is required")
 	}
 	if cfg.DeliverOutbox && deliverer == nil {
-		return errors.New("outbox deliverer is required")
+		return nil, errors.New("outbox deliverer is required")
 	}
 	if len(cfg.DepositScanChains) > 0 && scanner == nil {
-		return errors.New("deposit scanner is required")
+		return nil, errors.New("deposit scanner is required")
 	}
 	if cfg.BalanceRefreshInterval > 0 && workers.Balances == nil {
-		return errors.New("balance refresher is required")
+		return nil, errors.New("balance refresher is required")
 	}
 	scanChains := append([]string(nil), cfg.DepositScanChains...)
+	loops := &Loops{}
 
-	go every(ctx, cfg.ConfirmationInterval, func() {
+	loops.every(ctx, cfg.ConfirmationInterval, func() {
 		if err := checker.RunWithdrawalConfirmationCheck(ctx); err != nil {
 			slog.Error("local withdrawal confirmation check failed", "error", err)
 		}
 	})
 
 	if cfg.DeliverOutbox {
-		go every(ctx, cfg.DeliveryInterval, func() {
+		loops.every(ctx, cfg.DeliveryInterval, func() {
 			delivered, err := deliverer.DeliverPending(ctx, DeliveryBatchSize)
 			if err != nil {
 				slog.Error("local webhook delivery failed", "error", err)
@@ -146,19 +190,26 @@ func Start(ctx context.Context, cfg Config, workers Workers) error {
 		for _, chainID := range scanChains {
 			syncAddressCache(ctx, scanner, chainID)
 		}
-		go every(ctx, cfg.DepositScanInterval, func() {
-			for _, chainID := range scanChains {
-				syncAddressCache(ctx, scanner, chainID)
-				if err := scanner.ScanLatestBlocks(ctx, chainID); err != nil {
-					slog.Error("local deposit scan failed", "chain", chainID, "error", err)
+		sharedChains, dedicatedChains := splitScanChains(scanChains)
+		if len(sharedChains) > 0 {
+			loops.every(ctx, cfg.DepositScanInterval, func() {
+				for _, chainID := range sharedChains {
+					if ctx.Err() != nil {
+						return
+					}
+					scanChain(ctx, scanner, chainID)
 				}
-				reprocessPending(ctx, scanner, chainID)
-			}
-		})
+			})
+		}
+		for _, chainID := range dedicatedChains {
+			loops.every(ctx, cfg.DepositScanInterval, func() {
+				scanChain(ctx, scanner, chainID)
+			})
+		}
 	}
 
 	if cfg.BalanceRefreshInterval > 0 {
-		go every(ctx, cfg.BalanceRefreshInterval, func() {
+		loops.every(ctx, cfg.BalanceRefreshInterval, func() {
 			summary, err := workers.Balances.RefreshAll(ctx)
 			if err != nil {
 				slog.Error("local balance refresh failed", "error", err, "refreshed", summary.Refreshed, "failed", summary.Failed)
@@ -176,7 +227,15 @@ func Start(ctx context.Context, cfg Config, workers Workers) error {
 		"deposit_scan_interval", cfg.DepositScanInterval.String(),
 		"balance_refresh_interval", cfg.BalanceRefreshInterval.String(),
 	)
-	return nil
+	return loops, nil
+}
+
+func scanChain(ctx context.Context, scanner DepositScanner, chainID string) {
+	syncAddressCache(ctx, scanner, chainID)
+	if err := scanner.ScanLatestBlocks(ctx, chainID); err != nil {
+		slog.Error("local deposit scan failed", "chain", chainID, "error", err)
+	}
+	reprocessPending(ctx, scanner, chainID)
 }
 
 // syncAddressCache logs instead of failing: when Redis is unreachable the scanner
@@ -210,6 +269,9 @@ func every(ctx context.Context, interval time.Duration, run func()) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
+		}
+		if ctx.Err() != nil {
+			return
 		}
 		run()
 	}

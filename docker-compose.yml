@@ -107,9 +107,9 @@ services:
     volumes:
       - localstack_data:/var/lib/localstack
       - /var/run/docker.sock:/var/run/docker.sock
-      - ./docker/localstack/secrets_snapshot.py:/etc/localstack/secrets-snapshot/secrets_snapshot.py:ro
+      - ./docker/localstack/bin:/etc/localstack/secrets-snapshot:ro
       - ./docker/localstack/init/ready.d/50-secrets-snapshot.sh:/etc/localstack/init/ready.d/50-secrets-snapshot.sh:ro
-      - ./docker/localstack/init/shutdown.d/50-secrets-snapshot.py:/etc/localstack/init/shutdown.d/50-secrets-snapshot.py:ro
+      - ./docker/localstack/init/shutdown.d/50-secrets-snapshot.sh:/etc/localstack/init/shutdown.d/50-secrets-snapshot.sh:ro
       - ${LOCALSTACK_SEED_KEY_DIR:-${HOME}/.config/macro-wallets/localstack-seed}:/run/secrets/localstack-seed:ro
     healthcheck:
       test: ["CMD", "awslocal", "sqs", "list-queues"]

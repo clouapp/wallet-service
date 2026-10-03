@@ -20,6 +20,7 @@ type TransactionRepository interface {
 	FindByChainAndTxHash(chainID, txHash string) (*models.Transaction, error)
 	CountByChainAndTxHash(chainID, txHash, txType string) (int64, error)
 	CountByChainTxHashAndLogIndex(chainID, txHash string, logIndex int, txType string) (int64, error)
+	CountInternalTransfers(chainID, txHash string, walletID uuid.UUID) (int64, error)
 	FindPendingByChain(chainID string) ([]models.Transaction, error)
 	UpdateFields(id uuid.UUID, fields map[string]interface{}) error
 	List(chainID, txType, status, userID string, limit, offset int) ([]models.Transaction, int64, error)
@@ -139,6 +140,26 @@ func (r *transactionRepository) CountByChainTxHashAndLogIndex(chainID, txHash st
 		Where("tx_hash", txHash).
 		Where("log_index", logIndex).
 		Where("tx_type", txType).
+		Count()
+}
+
+// internalTransferTxTypes move funds between addresses of one wallet: a sweep
+// (child → base) and the gas seed that pays for it (base → child). Withdrawals are not
+// listed: one that reaches a watched address is a real deposit for its owner.
+var internalTransferTxTypes = []string{models.TxTypeSweep, models.TxTypeGasSeed}
+
+// CountInternalTransfers counts the sweeps and gas seeds the wallet recorded for this
+// transaction, so the deposit scanners do not record the same move again as a deposit.
+func (r *transactionRepository) CountInternalTransfers(chainID, txHash string, walletID uuid.UUID) (int64, error) {
+	if chainID == "" || txHash == "" || walletID == uuid.Nil {
+		return 0, fmt.Errorf("chain, transaction hash and wallet are required to look up internal transfers")
+	}
+	return facades.Orm().Query().
+		Model(&models.Transaction{}).
+		Where("chain", chainID).
+		Where("tx_hash", txHash).
+		Where("wallet_id", walletID).
+		Where("tx_type IN ?", internalTransferTxTypes).
 		Count()
 }
 

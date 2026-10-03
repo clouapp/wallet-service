@@ -12,6 +12,12 @@ func registerVault() {
 		"api_key_secret":     envString("API_KEY_SECRET", ""),
 		"master_key_ref":     envString("MASTER_KEY_REF", ""),
 		"wallet_service_key": envString("WALLET_SERVICE_KEY", ""),
+
+		// Local HTTP mode: SIGINT/SIGTERM drain HTTP and stop the local workers within
+		// this deadline. Keep it below the e2e starter's 20 s SIGTERM grace, after which
+		// it sends SIGKILL.
+		"shutdown_timeout_seconds": envInt("SHUTDOWN_TIMEOUT_SECONDS", 15),
+
 		"aws": map[string]any{
 			"region":       envString("AWS_REGION", "us-east-1"),
 			"endpoint_url": envString("AWS_ENDPOINT_URL", ""),
@@ -26,6 +32,14 @@ func registerVault() {
 		// existing records as they are and seeds new ones as mainnet.
 		"chains": map[string]any{
 			"network_profile": envString("CHAIN_NETWORK_PROFILE", ""),
+			// Confirmations seeded on new chain rows (and their t-prefixed test
+			// records). Base ~2 s blocks: 12 ≈ 24 s; Arbitrum ~0.25 s: 120 ≈ 30 s;
+			// BSC ~0.45 s with fast finality: 30 ≈ 14 s.
+			"required_confirmations": map[string]any{
+				"base":     envInt("BASE_REQUIRED_CONFIRMATIONS", 12),
+				"arbitrum": envInt("ARBITRUM_REQUIRED_CONFIRMATIONS", 120),
+				"bsc":      envInt("BSC_REQUIRED_CONFIRMATIONS", 30),
+			},
 		},
 		"queues": map[string]any{
 			"webhook":    envString("WEBHOOK_QUEUE_URL", ""),

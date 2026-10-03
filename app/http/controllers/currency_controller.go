@@ -1,11 +1,11 @@
 package controllers
 
 import (
-	"strconv"
-
 	"github.com/goravel/framework/contracts/http"
 
 	"github.com/macrowallets/waas/app/container"
+	"github.com/macrowallets/waas/app/services/price"
+	"github.com/macrowallets/waas/pkg/numeric"
 )
 
 func ListCurrencies(ctx http.Context) http.Response {
@@ -32,6 +32,7 @@ func GetCurrency(ctx http.Context) http.Response {
 	return ctx.Response().Json(http.StatusOK, currency)
 }
 
+// ConvertCurrency answers amount, result and rate as JSON numbers with exact digits.
 func ConvertCurrency(ctx http.Context) http.Response {
 	from := ctx.Request().Query("from", "")
 	to := ctx.Request().Query("to", "")
@@ -41,8 +42,8 @@ func ConvertCurrency(ctx http.Context) http.Response {
 		return ctx.Response().Json(http.StatusBadRequest, http.Json{"error": "from, to, and amount are required"})
 	}
 
-	amount, err := strconv.ParseFloat(amountStr, 64)
-	if err != nil || amount <= 0 {
+	amount, err := numeric.Parse("amount", amountStr)
+	if err != nil || !amount.IsPositive() {
 		return ctx.Response().Json(http.StatusBadRequest, http.Json{"error": "amount must be a positive number"})
 	}
 
@@ -51,12 +52,12 @@ func ConvertCurrency(ctx http.Context) http.Response {
 		return ctx.Response().Json(http.StatusBadRequest, http.Json{"error": err.Error()})
 	}
 
-	rate := result / amount
+	rate := result.DivRound(amount, price.ConversionScale)
 	return ctx.Response().Json(http.StatusOK, http.Json{
 		"from":   from,
 		"to":     to,
-		"amount": amount,
-		"result": result,
-		"rate":   rate,
+		"amount": numeric.NewDecimal(amount),
+		"result": numeric.NewDecimal(result),
+		"rate":   numeric.NewDecimal(rate),
 	})
 }

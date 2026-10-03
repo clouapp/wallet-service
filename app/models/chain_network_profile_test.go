@@ -7,6 +7,7 @@ func TestEveryProfileDecidesEveryPrimaryChainAndResolvesToItsNetwork(t *testing.
 
 	adapterByChain := map[string]string{
 		ChainETH: AdapterTypeEVM, ChainPolygon: AdapterTypeEVM, ChainBTC: AdapterTypeBitcoin, ChainSOL: AdapterTypeSolana,
+		ChainBase: AdapterTypeEVM, ChainArbitrum: AdapterTypeEVM, ChainBSC: AdapterTypeEVM,
 	}
 	for _, profile := range []string{ChainNetworkProfileMainnet, ChainNetworkProfileTestnet} {
 		for _, chainID := range PrimaryChainIDs {
@@ -38,6 +39,62 @@ func TestTestnetProfileUsesSepoliaAmoyBitcoinTestnetAndSolanaDevnet(t *testing.T
 		}
 		if spec.Network != network || !spec.IsTestnet {
 			t.Errorf("%s: got %+v, want %s on a testnet", chainID, spec, network)
+		}
+	}
+}
+
+func TestProfilesPointBaseArbitrumAndBSCAtTheirMainnetsOrTestnets(t *testing.T) {
+	t.Parallel()
+
+	type target struct {
+		network   string
+		networkID int64
+		testnet   bool
+	}
+	want := map[string]map[string]target{
+		ChainNetworkProfileMainnet: {
+			ChainBase:     {NetworkBaseMainnet, 8453, false},
+			ChainArbitrum: {NetworkArbitrumMainnet, 42161, false},
+			ChainBSC:      {NetworkBSCMainnet, 56, false},
+		},
+		ChainNetworkProfileTestnet: {
+			ChainBase:     {NetworkBaseSepolia, 84532, true},
+			ChainArbitrum: {NetworkArbitrumSepolia, 421614, true},
+			ChainBSC:      {NetworkBSCTestnet, 97, true},
+		},
+	}
+	for profile, chains := range want {
+		for chainID, expected := range chains {
+			spec, decided, err := PrimaryChainNetwork(profile, chainID)
+			if err != nil || !decided {
+				t.Fatalf("%s/%s: decided=%t err=%v", profile, chainID, decided, err)
+			}
+			if spec.Network != expected.network || spec.NetworkID == nil || *spec.NetworkID != expected.networkID || spec.IsTestnet != expected.testnet {
+				t.Errorf("%s/%s: got %+v (id %v), want %+v", profile, chainID, spec, spec.NetworkID, expected)
+			}
+		}
+	}
+}
+
+func TestAddedTestRecordsAreAlwaysTestnetsAndEVM(t *testing.T) {
+	t.Parallel()
+
+	for _, chainID := range []string{ChainTBase, ChainTArbitrum, ChainTBSC} {
+		if !IsTestChainID(chainID) {
+			t.Errorf("%s must be a test record", chainID)
+		}
+		if _, decided, err := PrimaryChainNetwork(ChainNetworkProfileMainnet, chainID); err != nil || decided {
+			t.Errorf("%s: decided=%t err=%v, want undecided", chainID, decided, err)
+		}
+	}
+	for _, chainID := range []string{ChainETH, ChainTETH, ChainPolygon, ChainTPolygon, ChainBase, ChainTBase, ChainArbitrum, ChainTArbitrum, ChainBSC, ChainTBSC} {
+		if !IsEVMChainID(chainID) {
+			t.Errorf("%s must be an EVM chain", chainID)
+		}
+	}
+	for _, chainID := range []string{ChainBTC, ChainTBTC, ChainSOL, ChainTSOL, ChainMatic, "", "base-sepolia"} {
+		if IsEVMChainID(chainID) {
+			t.Errorf("%q must not be an EVM chain", chainID)
 		}
 	}
 }

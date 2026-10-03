@@ -56,6 +56,9 @@ type service struct {
 	txRepo      repositories.TransactionRepository
 	accountRepo repositories.AccountRepository
 	chainRepo   repositories.ChainRepository
+	// tokenPricer converts the chains' USD dust thresholds to token amounts; nil
+	// disables token dust filtering.
+	tokenPricer TokenPricer
 
 	// fetchShareBFn is the function used to retrieve the service's MPC share for
 	// a wallet. In production it targets AWS Secrets Manager; tests override it
@@ -76,6 +79,7 @@ func NewService(
 	txRepo repositories.TransactionRepository,
 	accountRepo repositories.AccountRepository,
 	chainRepo repositories.ChainRepository,
+	tokenPricer TokenPricer,
 ) Service {
 	return &service{
 		registry:    registry,
@@ -88,6 +92,7 @@ func NewService(
 		txRepo:      txRepo,
 		accountRepo: accountRepo,
 		chainRepo:   chainRepo,
+		tokenPricer: tokenPricer,
 	}
 }
 

@@ -5,12 +5,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
-	"strconv"
 	"time"
 
 	"github.com/google/uuid"
 
 	"github.com/macrowallets/waas/app/models"
+	"github.com/macrowallets/waas/pkg/numeric"
 )
 
 // LoadLimits returns the effective sweep limits for an account: hard-coded
@@ -62,8 +62,8 @@ func (s *service) LoadLimits(ctx context.Context, accountID uuid.UUID) (*Limits,
 		merged.MaxConsolidateReqPerDay = *override.MaxConsolidateReqPerDay
 	}
 	if override.DailyWithdrawCapUSD != nil {
-		if f, err := strconv.ParseFloat(*override.DailyWithdrawCapUSD, 64); err == nil {
-			merged.DailyWithdrawCapUSD = &f
+		if capUSD, err := numeric.ParseNonNegative("daily_withdraw_cap_usd", *override.DailyWithdrawCapUSD); err == nil {
+			merged.DailyWithdrawCapUSD = &capUSD
 		} else {
 			slog.Warn("parse account sweep_limits.daily_withdraw_cap_usd",
 				"account_id", accountID, "value", *override.DailyWithdrawCapUSD, "error", err)

@@ -3,6 +3,7 @@ package localworkers
 import (
 	"context"
 	"errors"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -40,7 +41,7 @@ func TestStart_RejectsInvalidConfiguration(t *testing.T) {
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
-			if err := Start(context.Background(), tc.cfg, Workers{Checker: tc.checker, Deliverer: tc.deliverer}); err == nil {
+			if _, err := Start(context.Background(), tc.cfg, Workers{Checker: tc.checker, Deliverer: tc.deliverer}); err == nil {
 				t.Fatal("expected a configuration error")
 			}
 		})
@@ -54,7 +55,7 @@ func TestStart_WaitsOneIntervalThenRunsBothLoops(t *testing.T) {
 	deliverer := &countingDeliverer{}
 	cfg := Config{ConfirmationInterval: MinInterval, DeliveryInterval: MinInterval, DeliverOutbox: true}
 
-	if err := Start(ctx, cfg, Workers{Checker: checker, Deliverer: deliverer}); err != nil {
+	if _, err := Start(ctx, cfg, Workers{Checker: checker, Deliverer: deliverer}); err != nil {
 		t.Fatalf("Start: %v", err)
 	}
 
@@ -78,7 +79,7 @@ func TestStart_SkipsOutboxWhenAQueueDelivers(t *testing.T) {
 	checker := &countingChecker{}
 	deliverer := &countingDeliverer{}
 
-	if err := Start(ctx, Config{ConfirmationInterval: MinInterval}, Workers{Checker: checker, Deliverer: deliverer}); err != nil {
+	if _, err := Start(ctx, Config{ConfirmationInterval: MinInterval}, Workers{Checker: checker, Deliverer: deliverer}); err != nil {
 		t.Fatalf("Start: %v", err)
 	}
 
@@ -147,7 +148,7 @@ func TestStart_SyncsAddressCachesBeforeTheFirstScan(t *testing.T) {
 	scanner := &recordingScanner{syncErr: errors.New("redis down")}
 	cfg := Config{ConfirmationInterval: time.Hour, DepositScanChains: []string{"sol", "eth", "btc"}, DepositScanInterval: MinInterval}
 
-	if err := Start(ctx, cfg, Workers{Checker: &countingChecker{}, Scanner: scanner}); err != nil {
+	if _, err := Start(ctx, cfg, Workers{Checker: &countingChecker{}, Scanner: scanner}); err != nil {
 		t.Fatalf("Start must not fail when a cache sync fails: %v", err)
 	}
 	if got := scanner.cacheSyncs(); len(got) != 3 || got[0] != "sol" || got[1] != "eth" || got[2] != "btc" {
@@ -189,7 +190,7 @@ func TestStart_RejectsInvalidDepositScanConfiguration(t *testing.T) {
 			cfg := base
 			cfg.DepositScanChains = tc.chains
 			cfg.DepositScanInterval = tc.interval
-			if err := Start(context.Background(), cfg, Workers{Checker: checker, Scanner: tc.scanner}); err == nil {
+			if _, err := Start(context.Background(), cfg, Workers{Checker: checker, Scanner: tc.scanner}); err == nil {
 				t.Fatal("expected a configuration error")
 			}
 		})
@@ -203,7 +204,7 @@ func TestStart_ScansEveryConfiguredChainAndKeepsGoingAfterErrors(t *testing.T) {
 	chains := []string{"sol", "tsol"}
 	cfg := Config{ConfirmationInterval: time.Hour, DepositScanChains: chains, DepositScanInterval: MinInterval}
 
-	if err := Start(ctx, cfg, Workers{Checker: &countingChecker{}, Scanner: scanner}); err != nil {
+	if _, err := Start(ctx, cfg, Workers{Checker: &countingChecker{}, Scanner: scanner}); err != nil {
 		t.Fatalf("Start: %v", err)
 	}
 	chains[0] = "mutated"
@@ -231,7 +232,7 @@ func TestStart_NoScanWithoutChains(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	scanner := &recordingScanner{}
-	if err := Start(ctx, Config{ConfirmationInterval: MinInterval, DepositScanInterval: MinInterval}, Workers{Checker: &countingChecker{}, Scanner: scanner}); err != nil {
+	if _, err := Start(ctx, Config{ConfirmationInterval: MinInterval, DepositScanInterval: MinInterval}, Workers{Checker: &countingChecker{}, Scanner: scanner}); err != nil {
 		t.Fatalf("Start: %v", err)
 	}
 	time.Sleep(MinInterval + MinInterval/2)
@@ -246,7 +247,7 @@ func TestStart_ReprocessesPendingBlocksAfterEachChainScan(t *testing.T) {
 	scanner := &recordingScanner{err: errors.New("rpc down"), pendingErr: errors.New("redis and file down")}
 	cfg := Config{ConfirmationInterval: time.Hour, DepositScanChains: []string{"sol", "btc"}, DepositScanInterval: MinInterval}
 
-	if err := Start(ctx, cfg, Workers{Checker: &countingChecker{}, Scanner: scanner}); err != nil {
+	if _, err := Start(ctx, cfg, Workers{Checker: &countingChecker{}, Scanner: scanner}); err != nil {
 		t.Fatalf("Start: %v", err)
 	}
 	deadline := time.Now().Add(4 * MinInterval)
@@ -278,7 +279,7 @@ func TestStart_RefreshesBalancesOnItsInterval(t *testing.T) {
 	balances := &countingBalances{}
 	cfg := Config{ConfirmationInterval: time.Hour, BalanceRefreshInterval: MinInterval}
 
-	if err := Start(ctx, cfg, Workers{Checker: &countingChecker{}, Balances: balances}); err != nil {
+	if _, err := Start(ctx, cfg, Workers{Checker: &countingChecker{}, Balances: balances}); err != nil {
 		t.Fatalf("Start: %v", err)
 	}
 	time.Sleep(MinInterval / 2)
@@ -306,7 +307,7 @@ func TestStart_RejectsInvalidBalanceRefreshConfiguration(t *testing.T) {
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
 			cfg := Config{ConfirmationInterval: MinInterval, BalanceRefreshInterval: tc.interval}
-			if err := Start(context.Background(), cfg, Workers{Checker: checker, Balances: tc.balances}); err == nil {
+			if _, err := Start(context.Background(), cfg, Workers{Checker: checker, Balances: tc.balances}); err == nil {
 				t.Fatal("expected a configuration error")
 			}
 		})
@@ -330,5 +331,151 @@ func TestParseChainList(t *testing.T) {
 				t.Fatalf("%q: got %v, want %v", raw, got, want)
 			}
 		}
+	}
+}
+
+// stuckScanner never finishes a scan of stuckChain until the test ends.
+type stuckScanner struct {
+	*recordingScanner
+	stuckChain string
+	release    chan struct{}
+}
+
+func (s *stuckScanner) ScanLatestBlocks(ctx context.Context, chainID string) error {
+	err := s.recordingScanner.ScanLatestBlocks(ctx, chainID)
+	if chainID == s.stuckChain {
+		select {
+		case <-s.release:
+		case <-ctx.Done():
+		}
+	}
+	return err
+}
+
+func (s *recordingScanner) scansOf(chainID string) int {
+	count := 0
+	for _, scanned := range s.scanned() {
+		if scanned == chainID {
+			count++
+		}
+	}
+	return count
+}
+
+func TestStart_ScansFastChainsInLoopsOfTheirOwn(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	scanner := &stuckScanner{recordingScanner: &recordingScanner{}, stuckChain: "sol", release: make(chan struct{})}
+	defer close(scanner.release)
+	cfg := Config{ConfirmationInterval: time.Hour, DepositScanChains: []string{"sol", "eth", "arbitrum", "bsc"}, DepositScanInterval: MinInterval}
+
+	if _, err := Start(ctx, cfg, Workers{Checker: &countingChecker{}, Scanner: scanner}); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+
+	deadline := time.Now().Add(5 * MinInterval)
+	for time.Now().Before(deadline) && (scanner.scansOf("arbitrum") < 2 || scanner.scansOf("bsc") < 2) {
+		time.Sleep(50 * time.Millisecond)
+	}
+	if scanner.scansOf("arbitrum") < 2 || scanner.scansOf("bsc") < 2 {
+		t.Fatalf("arbitrum and bsc must keep scanning while sol is stuck, got %v", scanner.scanned())
+	}
+	if got := scanner.scansOf("sol"); got != 1 {
+		t.Fatalf("sol must be scanned once and stay stuck, got %d", got)
+	}
+	if got := scanner.scansOf("eth"); got != 0 {
+		t.Fatalf("eth shares the loop stuck on sol, got %d scans", got)
+	}
+}
+
+// cancelAwareChecker blocks each run until ctx is cancelled, then takes finishDelay
+// to wind down, like an RPC call returning after its context ended.
+type cancelAwareChecker struct {
+	started     chan struct{}
+	startOnce   sync.Once
+	finishDelay time.Duration
+	finished    atomic.Bool
+}
+
+func (c *cancelAwareChecker) RunWithdrawalConfirmationCheck(ctx context.Context) error {
+	c.startOnce.Do(func() { close(c.started) })
+	<-ctx.Done()
+	time.Sleep(c.finishDelay)
+	c.finished.Store(true)
+	return ctx.Err()
+}
+
+func TestLoops_WaitReturnsAfterCancelOnceTheRunInProgressFinished(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	checker := &cancelAwareChecker{started: make(chan struct{}), finishDelay: 200 * time.Millisecond}
+	cfg := Config{
+		ConfirmationInterval:   MinInterval,
+		DeliveryInterval:       MinInterval,
+		DeliverOutbox:          true,
+		DepositScanChains:      []string{"sol", "base"},
+		DepositScanInterval:    MinInterval,
+		BalanceRefreshInterval: MinInterval,
+	}
+	workers := Workers{Checker: checker, Deliverer: &countingDeliverer{}, Scanner: &recordingScanner{}, Balances: &countingBalances{}}
+
+	loops, err := Start(ctx, cfg, workers)
+	if err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	select {
+	case <-checker.started:
+	case <-time.After(3 * MinInterval):
+		t.Fatal("the confirmation loop never ran")
+	}
+
+	cancel()
+	waited := make(chan struct{})
+	go func() {
+		loops.Wait()
+		close(waited)
+	}()
+	select {
+	case <-waited:
+	case <-time.After(2 * time.Second):
+		t.Fatal("Wait did not return after ctx was cancelled")
+	}
+	if !checker.finished.Load() {
+		t.Fatal("Wait must not return before the run in progress finished")
+	}
+}
+
+func TestLoops_WaitReturnsRightAwayForIdleLoops(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	loops, err := Start(ctx, Config{ConfirmationInterval: time.Hour}, Workers{Checker: &countingChecker{}})
+	if err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	cancel()
+	waited := make(chan struct{})
+	go func() {
+		loops.Wait()
+		close(waited)
+	}()
+	select {
+	case <-waited:
+	case <-time.After(time.Second):
+		t.Fatal("idle loops must stop as soon as ctx is cancelled")
+	}
+}
+
+func TestLoops_WaitOnNilLoopsReturns(t *testing.T) {
+	var loops *Loops
+	loops.Wait()
+}
+
+func TestSplitScanChainsKeepsTheConfiguredOrder(t *testing.T) {
+	shared, dedicated := splitScanChains([]string{"sol", "base", "eth", "btc", "tarbitrum", "polygon", "bsc"})
+
+	if want := []string{"sol", "eth", "btc", "polygon"}; strings.Join(shared, ",") != strings.Join(want, ",") {
+		t.Fatalf("shared %v, want %v", shared, want)
+	}
+	if want := []string{"base", "tarbitrum", "bsc"}; strings.Join(dedicated, ",") != strings.Join(want, ",") {
+		t.Fatalf("dedicated %v, want %v", dedicated, want)
 	}
 }

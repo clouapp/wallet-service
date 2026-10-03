@@ -2,6 +2,7 @@ package deposit
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"time"
 
@@ -47,19 +48,16 @@ func (s *Service) providerForAdapter(adapter types.Chain) blockheight.Provider {
 func (s *Service) resolveCurrentBlockHeight(ctx context.Context, chainID string, adapter types.Chain) (uint64, bool) {
 	provider := s.providerForAdapter(adapter)
 	if provider == nil {
-		h, err := adapter.GetLatestBlock(ctx)
-		if err != nil {
-			slog.Warn("get latest block (no block height provider)", "chain", chainID, "error", err)
-			return 0, false
-		}
-		s.heightFailures[chainID] = 0
-		return h, true
+		return s.adapterBlockHeight(ctx, chainID, adapter, "no block height provider")
 	}
 
 	h, err := provider.GetBlockHeight(ctx, chainID)
 	if err == nil {
 		s.heightFailures[chainID] = 0
 		return h, true
+	}
+	if errors.Is(err, blockheight.ErrTipFromChainRPC) {
+		return s.adapterBlockHeight(ctx, chainID, adapter, "network served by the chain RPC")
 	}
 
 	slog.Warn("block height provider failed", "chain", chainID, "error", err)
@@ -77,6 +75,16 @@ func (s *Service) resolveCurrentBlockHeight(ctx context.Context, chainID string,
 	}
 	s.heightFailures[chainID] = 0
 	return h2, true
+}
+
+func (s *Service) adapterBlockHeight(ctx context.Context, chainID string, adapter types.Chain, reason string) (uint64, bool) {
+	h, err := adapter.GetLatestBlock(ctx)
+	if err != nil {
+		slog.Warn("get latest block ("+reason+")", "chain", chainID, "error", err)
+		return 0, false
+	}
+	s.heightFailures[chainID] = 0
+	return h, true
 }
 
 // isOutboundTxType reports whether a tx type was broadcast by this service

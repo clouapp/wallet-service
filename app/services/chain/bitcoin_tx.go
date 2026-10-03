@@ -9,7 +9,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"math"
+	"math/big"
 	"net/http"
 	"strings"
 
@@ -19,6 +19,7 @@ import (
 	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/wire"
+	"github.com/shopspring/decimal"
 
 	"github.com/macrowallets/waas/pkg/types"
 )
@@ -296,6 +297,7 @@ func (a *BitcoinLive) unsignedBitcoinTx(from, to string, amount int64, spend btc
 			"fee":     spend.fee,
 			"testnet": a.cfg.IsTestnet,
 		},
+		TransferAmount: big.NewInt(amount),
 	}
 }
 
@@ -356,17 +358,23 @@ func (a *BitcoinLive) listUTXOsREST(ctx context.Context, address string) ([]btcI
 
 func (a *BitcoinLive) listUTXOsRPC(ctx context.Context, address string) ([]btcInput, error) {
 	var raw []struct {
-		TxID   string  `json:"txid"`
-		Vout   uint32  `json:"vout"`
-		Amount float64 `json:"amount"`
+		TxID   string          `json:"txid"`
+		Vout   uint32          `json:"vout"`
+		Amount decimal.Decimal `json:"amount"`
 	}
 	if err := a.rpc.Call(ctx, "listunspent", &raw, 1, 9999999, []string{address}); err != nil {
 		return nil, err
 	}
 	out := make([]btcInput, 0, len(raw))
 	for _, utxo := range raw {
-		sats := int64(math.Round(utxo.Amount * 1e8))
-		out = append(out, btcInput{TxID: utxo.TxID, Vout: utxo.Vout, Value: sats, Address: address})
+		sats, err := btcToSats(utxo.Amount)
+		if err != nil {
+			return nil, fmt.Errorf("utxo %s:%d: %w", utxo.TxID, utxo.Vout, err)
+		}
+		if !sats.IsInt64() {
+			return nil, fmt.Errorf("utxo %s:%d: %s sats overflow int64", utxo.TxID, utxo.Vout, sats.String())
+		}
+		out = append(out, btcInput{TxID: utxo.TxID, Vout: utxo.Vout, Value: sats.Int64(), Address: address})
 	}
 	return out, nil
 }

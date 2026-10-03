@@ -2,7 +2,7 @@
 # Restore Secrets Manager (MPC share B) from the encrypted snapshot, then keep exporting it.
 set -u
 
-SNAPSHOT_TOOL=/etc/localstack/secrets-snapshot/secrets_snapshot.py
+SNAPSHOT_TOOL=/etc/localstack/secrets-snapshot/secrets-snapshot
 LOOP_LOG=/var/lib/localstack/logs/secrets-snapshot.log
 
 if ! "$SNAPSHOT_TOOL" restore; then

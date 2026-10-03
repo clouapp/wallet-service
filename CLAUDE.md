@@ -53,6 +53,8 @@ make dev          # starts Docker + backend + frontend
 | `make db-seed` | `artisan db:seed` (dev data) |
 | `make migrate-fresh-seed` | `artisan migrate:fresh --seed` |
 | `make key-generate` | `artisan key:generate` on `.env.dev` (also runs automatically when `APP_KEY` is empty) |
+| `make e2e-tools` | Build the `macro-e2e` helper into `~/.local/state/macro-e2e/bin/` |
+| `make localstack-hooks` | Build the static LocalStack `secrets-snapshot` binary (also run by `docker-up`/`dev`) |
 
 ## Docker (project: `macro-wallets`, prefix: `waas-`)
 
@@ -62,7 +64,20 @@ make dev          # starts Docker + backend + frontend
 | `waas-redis` | 6379 |
 | `waas-localstack` | 4566 |
 
-LocalStack community has no native persistence: hooks in `docker/localstack/` keep Secrets Manager (MPC share B) in encrypted, ARN-preserving snapshots in the `localstack_data` volume (restore on start, export every 60 s and on stop; key in `~/.config/macro-wallets/localstack-seed/`, never in the repo). Host-side safety net: `wallet-vault.py localstack-export | localstack-check | localstack-restore`.
+LocalStack community has no native persistence: hooks in `docker/localstack/` run the Go binary `secrets-snapshot` (`tools/localstack-secrets-snapshot`, built by `make localstack-hooks`, mounted from `docker/localstack/bin/`) to keep Secrets Manager (MPC share B) in encrypted, ARN-preserving snapshots in the `localstack_data` volume (restore on start, export every 60 s and on stop; key in `~/.config/macro-wallets/localstack-seed/`, never in the repo). The container is created with `--env-file .env.dev`. Checks: `docker exec waas-localstack /etc/localstack/secrets-snapshot/secrets-snapshot verify`; host-side safety net: `wallet-vault.py localstack-export | localstack-check | localstack-restore`. See `docs/LOCALSTACK_SECRETS_SNAPSHOT.md`.
+
+## E2E helpers (`tools/macro-e2e`)
+
+Standalone binary (no Goravel boot: it targets `vault_test` through `~/.local/state/macro-e2e/wallets-api.environ`, never `.env`). Run from `back/` (`go run ./tools/macro-e2e ...`) or use the prebuilt `~/.local/state/macro-e2e/bin/macro-e2e` (`make e2e-tools`; the Markets recordings call it).
+
+| Command | What it does |
+|---------|--------------|
+| `capture-env [--dry-run]` | Rebuild `wallets-api.environ` (0600, NUL-separated) from `.env.dev` + e2e overrides (vault_test, testnet, scan chains `sol,eth,btc,polygon,base,arbitrum,bsc`, BTC testnet4); prints key names only. `--dry-run` writes nothing and compares with the current environ (differing key names + sha256 digest, never values) |
+| `fee-estimate WALLET ASSET TO [--amount DECIMAL]` | Read-only `GET /api/v1/wallets/{id}/fee-estimate` with the Markets token (kept in memory); exit 1 unless HTTP 200 |
+| `api [--build] [--status] [--no-start]` | Build/stop/start the e2e API binary; takes `locks/wallets-api-restart.lock` itself (do not wrap it in `flock`), refuses during a recording; stop = SIGTERM, 20 s grace, then SIGKILL |
+| `preflight withdrawal WALLET ASSET BASE_UNITS TO` / `preflight consolidation WALLET ASSET` | Off-chain plan + MPC sign + verify; nothing broadcast |
+| `send-from-base TAG WALLET ASSET BASE_UNITS DECIMALS TO EXT_USER [--chain C] [--recording-lock-held-by OWNER] [--apply]` | One guarded funding transfer (ledger, vault_test, claim, recording lock, pre-flight, UUIDv5 idempotency); dry run without `--apply` |
+| `consolidate TAG WALLET ASSET [--apply]` | One guarded child-address sweep, same guards |
 
 ## Architecture
 
@@ -79,6 +94,19 @@ Single Go binary, multiple Lambda modes via `LAMBDA_MODE` env:
 
 Locally, it runs as a standard Goravel HTTP server (`facades.Route().Run()`).
 In production, the same binary is deployed to Lambda with `LAMBDA_MODE` selecting the handler.
+
+Local mode shuts down gracefully (`pkg/lifecycle`): SIGTERM/SIGINT stops the HTTP server (in-flight requests drain) and the local scanner/refresher loops within `SHUTDOWN_TIMEOUT_SECONDS` (default 15, keep it below the 20 s grace of `macro-e2e api`); exit 0 when clean, 2 when the deadline expires, 1 on a second signal.
+
+## Key export (`artisan wallets:export-keys`)
+
+Reconstructs each selected wallet's private keys from share A (DB) + share B (Secrets Manager), checks them against every address, and writes them with both shares and an `INSTRUCOES.md` into a WinZip AES-256 zip (0600, default `~/.local/state/macro-wallets/exports/`, paths inside the repo refused).
+
+```bash
+go run . artisan wallets:export-keys --wallet <UUID> [--wallet <UUID>] [--out FILE.zip] [--passphrase-vault]
+go run . artisan wallets:export-keys --all      # every wallet; never the default
+```
+
+Passwords are typed on the terminal only (zip password twice, ≥16 chars); never flags/env. `APP_ENV=production` needs `--allow-production` plus a typed confirmation. Open the zip with 7-Zip/WinZip (not Info-ZIP `unzip`). Solana genesis keys are raw scalars (not importable in Phantom); child keys are.
 
 ## Project Structure
 
@@ -130,8 +158,11 @@ back/
 │
 ├── pkg/
 │   ├── types/               # Shared types (WebhookMessage, etc.)
-│   └── security/            # Input sanitization
+│   ├── security/            # Input sanitization
+│   ├── pyjson/              # Python-compatible JSON (ledger/snapshot formats)
+│   └── e2evault/            # Verified wallet passphrases from the e2e vault
 ├── docs/                    # Swagger specs + design docs
+├── tools/                   # Standalone binaries: macro-e2e, localstack-secrets-snapshot
 └── tests/                   # Mocks + test utilities
 ```
 

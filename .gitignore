@@ -6,6 +6,8 @@
 *.dylib
 bin/
 dist/
+# Built by `make localstack-hooks` (static secrets-snapshot for waas-localstack)
+/docker/localstack/bin/
 
 # Test binary, built with `go test -c`
 *.test

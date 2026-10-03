@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/shopspring/decimal"
 
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/repositories"
@@ -89,8 +90,47 @@ func TestLoadLimits_OverrideMergesWithDefaults(t *testing.T) {
 	if limits.MaxAddressesPerRequest[models.AdapterTypeBitcoin] != 100 {
 		t.Fatalf("expected inherited default bitcoin=100, got %d", limits.MaxAddressesPerRequest[models.AdapterTypeBitcoin])
 	}
-	if limits.DailyWithdrawCapUSD == nil || *limits.DailyWithdrawCapUSD != 50000.50 {
+	if limits.DailyWithdrawCapUSD == nil || !limits.DailyWithdrawCapUSD.Equal(decimal.RequireFromString("50000.50")) {
 		t.Fatalf("expected DailyWithdrawCapUSD=50000.50, got %v", limits.DailyWithdrawCapUSD)
+	}
+}
+
+func TestLoadLimits_DailyWithdrawCapKeepsExactCents(t *testing.T) {
+	raw := `{"daily_withdraw_cap_usd":"0.30"}`
+	accountID := uuid.New()
+	svc := &service{accountRepo: &fakeAccountRepo{
+		byID: map[uuid.UUID]*models.Account{
+			accountID: {ID: accountID, SweepLimits: &raw},
+		},
+	}}
+
+	limits, err := svc.LoadLimits(context.Background(), accountID)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	sum := decimal.RequireFromString("0.1").Add(decimal.RequireFromString("0.2"))
+	if limits.DailyWithdrawCapUSD == nil || !limits.DailyWithdrawCapUSD.Equal(sum) {
+		t.Fatalf("expected DailyWithdrawCapUSD=0.3 exactly, got %v", limits.DailyWithdrawCapUSD)
+	}
+}
+
+func TestLoadLimits_InvalidOrNegativeDailyWithdrawCapIsIgnored(t *testing.T) {
+	for _, capText := range []string{"-1", "NaN", "Inf", "0x1p-2", "", "ten"} {
+		raw := fmt.Sprintf(`{"daily_withdraw_cap_usd":%q}`, capText)
+		accountID := uuid.New()
+		svc := &service{accountRepo: &fakeAccountRepo{
+			byID: map[uuid.UUID]*models.Account{
+				accountID: {ID: accountID, SweepLimits: &raw},
+			},
+		}}
+
+		limits, err := svc.LoadLimits(context.Background(), accountID)
+		if err != nil {
+			t.Fatalf("cap %q: unexpected error: %v", capText, err)
+		}
+		if limits.DailyWithdrawCapUSD != nil {
+			t.Fatalf("cap %q: expected it ignored (unlimited), got %v", capText, limits.DailyWithdrawCapUSD)
+		}
 	}
 }
 

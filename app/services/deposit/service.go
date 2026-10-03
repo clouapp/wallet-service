@@ -178,6 +178,15 @@ func (s *Service) processTransfer(ctx context.Context, chainID string, adapter t
 		return false, nil
 	}
 
+	internal, err := s.txRepo.CountInternalTransfers(chainID, transfer.TxHash, addr.WalletID)
+	if err != nil {
+		return false, classify(pending.ClassDatabase, fmt.Errorf("check internal transfer: %w", err))
+	}
+	if internal > 0 {
+		slog.Info("transfer is a sweep or gas seed of the wallet, not a deposit", "chain", chainID, "tx", transfer.TxHash, "to", transfer.To)
+		return false, nil
+	}
+
 	asset := adapter.NativeAsset()
 	var tokenContract string
 	if transfer.Token != nil {

@@ -1,17 +1,21 @@
 package repositories
 
 import (
+	"fmt"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/goravel/framework/facades"
+	"github.com/shopspring/decimal"
 
 	"github.com/macrowallets/waas/app/models"
+	"github.com/macrowallets/waas/pkg/numeric"
 )
 
 type PriceUpdate struct {
-	CurrentPrice float64
-	LastPrice    float64
+	CurrentPrice decimal.Decimal
+	LastPrice    decimal.Decimal
 }
 
 type CurrencyRepository interface {
@@ -21,7 +25,7 @@ type CurrencyRepository interface {
 	FindActiveCryptos() ([]models.Currency, error)
 	FindActiveFiats() ([]models.Currency, error)
 	FindAllActive() ([]models.Currency, error)
-	UpdatePrice(code string, currentPrice, lastPrice float64) error
+	UpdatePrice(code string, currentPrice, lastPrice decimal.Decimal) error
 	UpdatePriceBatch(updates map[string]PriceUpdate) error
 	FindStale(currencyType string, staleDuration time.Duration) ([]models.Currency, error)
 }
@@ -87,13 +91,32 @@ func (r *currencyRepository) FindAllActive() ([]models.Currency, error) {
 	return currencies, err
 }
 
-func (r *currencyRepository) UpdatePrice(code string, currentPrice, lastPrice float64) error {
-	_, err := facades.Orm().Query().
+// UpdatePrice stores a positive current price and the previous one, both fitted to
+// the price column.
+func (r *currencyRepository) UpdatePrice(code string, currentPrice, lastPrice decimal.Decimal) error {
+	if strings.TrimSpace(code) == "" {
+		return fmt.Errorf("currency code is required to update a price")
+	}
+	current, err := models.CurrencyPriceColumn.Fit(currentPrice)
+	if err != nil {
+		return fmt.Errorf("currency %s current price: %w", code, err)
+	}
+	if !current.IsPositive() {
+		return fmt.Errorf("currency %s current price %s: %w", code, current.String(), numeric.ErrNotPositive)
+	}
+	last, err := models.CurrencyPriceColumn.Fit(lastPrice)
+	if err != nil {
+		return fmt.Errorf("currency %s last price: %w", code, err)
+	}
+	if last.IsNegative() {
+		return fmt.Errorf("currency %s last price %s: %w", code, last.String(), numeric.ErrNegative)
+	}
+	_, err = facades.Orm().Query().
 		Model(&models.Currency{}).
 		Where("code = ?", code).
 		Update(map[string]interface{}{
-			"current_price":    currentPrice,
-			"last_price":       lastPrice,
+			"current_price":    current,
+			"last_price":       last,
 			"price_updated_at": time.Now(),
 		})
 	return err

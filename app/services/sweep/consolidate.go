@@ -80,12 +80,12 @@ func (s *service) ConsolidateAll(
 		return nil, err
 	}
 
-	adapter, err := s.registry.Chain(wallet.Chain)
+	adapter, err := s.registry.ChainForWallet(wallet)
 	if err != nil {
-		return nil, fmt.Errorf("sweep: adapter not registered for %q: %w", wallet.Chain, err)
+		return nil, fmt.Errorf("sweep: adapter for %q: %w", wallet.Chain, err)
 	}
 
-	plan, err := s.planConsolidation(ctx, adapter, wallet, chainEntity.AdapterType, asset, limits)
+	plan, err := s.planConsolidation(ctx, adapter, wallet, chainEntity, asset, limits)
 	if err != nil {
 		return nil, err
 	}
@@ -156,7 +156,7 @@ func (s *service) planConsolidation(
 	ctx context.Context,
 	adapter types.Chain,
 	wallet *models.Wallet,
-	adapterType string,
+	chainEntity *models.Chain,
 	asset string,
 	limits *Limits,
 ) (*Plan, error) {
@@ -165,7 +165,7 @@ func (s *service) planConsolidation(
 		return nil, fmt.Errorf("sweep: list children: %w", err)
 	}
 
-	dust := adapter.DustThreshold(asset)
+	dust := s.childDustThreshold(ctx, adapter, chainEntity, asset)
 	type childBal struct {
 		addr    models.Address
 		balance *big.Int
@@ -193,7 +193,7 @@ func (s *service) planConsolidation(
 		return nil, nil
 	}
 
-	if err := checkAddressesPerRequest(adapterType, len(eligible), limits); err != nil {
+	if err := checkAddressesPerRequest(chainEntity.AdapterType, len(eligible), limits); err != nil {
 		return nil, err
 	}
 

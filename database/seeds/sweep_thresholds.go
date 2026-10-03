@@ -2,11 +2,14 @@ package seeds
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 
 	"github.com/goravel/framework/facades"
+	"github.com/shopspring/decimal"
 
 	"github.com/macrowallets/waas/app/models"
+	"github.com/macrowallets/waas/pkg/numeric"
 )
 
 // SeedSweepThresholds populates per-chain sweep + gas readiness thresholds on the `chains` table.
@@ -17,19 +20,28 @@ func SeedSweepThresholds(_ context.Context) error {
 		chainID         string
 		gasReadinessRaw string
 		dustNativeRaw   string
-		dustUSD         *float64
+		dustUSD         numeric.NullDecimal
 	}
-	p := func(f float64) *float64 { return &f }
+	dustHigh := numeric.NewNullDecimal(decimal.New(1, 0))
+	dustLow := numeric.NewNullDecimal(decimal.New(1, -1))
+	noDust := numeric.NullDecimal{}
 
 	defs := []thresholdDef{
-		{models.ChainETH, "5000000000000000", "500000000000000", p(1.0)},
-		{models.ChainTETH, "5000000000000000", "500000000000000", p(1.0)},
-		{models.ChainPolygon, "500000000000000000", "100000000000000000", p(0.1)},
-		{models.ChainTPolygon, "500000000000000000", "100000000000000000", p(0.1)},
-		{models.ChainSOL, "10000000", "1000000", p(1.0)},
-		{models.ChainTSOL, "10000000", "1000000", p(1.0)},
-		{models.ChainBTC, "", "10000", nil},
-		{models.ChainTBTC, "", "10000", nil},
+		{models.ChainETH, "5000000000000000", "500000000000000", dustHigh},
+		{models.ChainTETH, "5000000000000000", "500000000000000", dustHigh},
+		{models.ChainPolygon, "500000000000000000", "100000000000000000", dustLow},
+		{models.ChainTPolygon, "500000000000000000", "100000000000000000", dustLow},
+		{models.ChainSOL, "10000000", "1000000", dustHigh},
+		{models.ChainTSOL, "10000000", "1000000", dustHigh},
+		{models.ChainBTC, "", "10000", noDust},
+		{models.ChainTBTC, "", "10000", noDust},
+	}
+	for _, chainID := range AddedEVMChainIDs {
+		thresholds, err := addedChainThresholds(chainID)
+		if err != nil {
+			return err
+		}
+		defs = append(defs, thresholdDef{chainID, derefOrEmpty(thresholds.gasReadinessRaw), derefOrEmpty(thresholds.dustNativeRaw), thresholds.dustUSD})
 	}
 
 	const sql = `UPDATE chains SET
@@ -39,6 +51,11 @@ func SeedSweepThresholds(_ context.Context) error {
 		WHERE id = ?`
 
 	for _, d := range defs {
+		if d.dustUSD.Valid {
+			if err := models.DustThresholdUSDColumn.Validate(d.dustUSD.Decimal); err != nil {
+				return fmt.Errorf("seed sweep thresholds for chain %s: %w", d.chainID, err)
+			}
+		}
 		if _, err := facades.Orm().Query().Exec(sql, d.gasReadinessRaw, d.dustNativeRaw, d.dustUSD, d.chainID); err != nil {
 			slog.Error("seed sweep thresholds failed", "chain", d.chainID, "error", err)
 			return err

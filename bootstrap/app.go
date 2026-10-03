@@ -42,7 +42,10 @@ func Boot() contractsfoundation.Application {
 				&commands.PriceCheckUpdate{},
 				&commands.ChainsSetRPC{},
 				&commands.ChainsAlignNetwork{},
+				&commands.ChainsAddMissing{},
 				&commands.WithdrawPreflight{},
+				&commands.EVMCall{},
+				&commands.WalletsExportKeys{},
 			}
 		}).
 		WithEvents(func() map[contractsevent.Event][]contractsevent.Listener {

@@ -4,6 +4,7 @@ import (
 	"math/big"
 
 	"github.com/google/uuid"
+	"github.com/shopspring/decimal"
 
 	"github.com/macrowallets/waas/app/models"
 )
@@ -98,5 +99,5 @@ type GasStatus struct {
 type Limits struct {
 	MaxAddressesPerRequest  map[string]int // chain-type → max
 	MaxConsolidateReqPerDay int
-	DailyWithdrawCapUSD     *float64 // nil = unlimited
+	DailyWithdrawCapUSD     *decimal.Decimal // nil = unlimited
 }

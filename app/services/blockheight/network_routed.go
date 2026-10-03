@@ -2,6 +2,7 @@ package blockheight
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/macrowallets/waas/app/models"
@@ -19,6 +20,19 @@ var providerChainIDByNetwork = map[string]string{
 	models.NetworkBitcoinTestnet4: TipSourceBitcoinTestnet4,
 	models.NetworkSolanaMainnet:   models.ChainSOL,
 	models.NetworkSolanaDevnet:    models.ChainTSOL,
+}
+
+// ErrTipFromChainRPC means no provider serves the network's tip: the caller reads
+// the chain's own RPC instead (Etherscan's free tier does not cover Base or BSC).
+var ErrTipFromChainRPC = errors.New("blockheight: network tip comes from the chain RPC")
+
+var chainRPCTipNetworks = map[string]struct{}{
+	models.NetworkBaseMainnet:     {},
+	models.NetworkBaseSepolia:     {},
+	models.NetworkArbitrumMainnet: {},
+	models.NetworkArbitrumSepolia: {},
+	models.NetworkBSCMainnet:      {},
+	models.NetworkBSCTestnet:      {},
 }
 
 // NetworkRouted asks the inner provider for the tip of the network a chain record
@@ -46,6 +60,9 @@ func (p *NetworkRouted) GetBlockHeight(ctx context.Context, chainID string) (uin
 	network, known := p.networkByChain[chainID]
 	if !known || network == "" {
 		return p.inner.GetBlockHeight(ctx, chainID)
+	}
+	if _, fromChainRPC := chainRPCTipNetworks[network]; fromChainRPC {
+		return 0, fmt.Errorf("%w: network %q of chain %q", ErrTipFromChainRPC, network, chainID)
 	}
 	providerChainID, routed := providerChainIDByNetwork[network]
 	if !routed {

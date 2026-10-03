@@ -86,7 +86,7 @@ func BuildPlan(ctx context.Context, profile string, store Store, decrypt RPCDecr
 	for _, chainID := range models.PrimaryChainIDs {
 		current, found := byID[chainID]
 		if !found {
-			plan.Warnings = append(plan.Warnings, fmt.Sprintf("chain %s is not in the registry; the seeder creates it", chainID))
+			plan.Warnings = append(plan.Warnings, fmt.Sprintf("chain %s is not in the registry; the seeder or chains:add-missing creates it", chainID))
 			continue
 		}
 		change, warning, err := planChain(ctx, profile, current, store, decrypt, probe)

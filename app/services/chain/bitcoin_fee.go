@@ -85,6 +85,9 @@ type btcFeeRateCache struct {
 }
 
 func (c *btcFeeRateCache) get(now time.Time) (int64, bool) {
+	if c == nil {
+		return 0, false
+	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.milliSatPerVByte <= 0 || now.Sub(c.fetchedAt) >= btcFeeRateCacheTTL {
@@ -94,28 +97,34 @@ func (c *btcFeeRateCache) get(now time.Time) (int64, bool) {
 }
 
 func (c *btcFeeRateCache) put(rate int64, now time.Time) {
+	if c == nil {
+		return
+	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.milliSatPerVByte = rate
 	c.fetchedAt = now
 }
 
-// flatBTCFee is the fallback fee: btcFeeVBytes at the configured (or default) rate.
+// flatBTCFee is the fallback fee: btcFeeVBytes at the configured (or default) rate,
+// adjusted by the wallet's fee policy.
 func (a *BitcoinLive) flatBTCFee() int64 {
 	rate := btcDefaultFeeRate
 	if a.cfg.FeeRateDefault > 0 {
 		rate = a.cfg.FeeRateDefault
 	}
-	return int64(btcFeeVBytes * rate)
+	milliSatPerVByte := a.fee.adjustMilliSatRate(int64(rate) * milliSatsPerSat)
+	return ceilDiv(int64(btcFeeVBytes)*milliSatPerVByte, milliSatsPerSat)
 }
 
 // feePolicy prices transactions at the estimated rate for a 3-6 block target, or at
-// the flat fallback fee when the estimator fails or answers garbage.
+// the flat fallback fee when the estimator fails or answers garbage. Both are
+// adjusted by the wallet's fee policy; the cache keeps the network's rate.
 func (a *BitcoinLive) feePolicy(ctx context.Context) btcFeePolicy {
 	policy := btcFeePolicy{flatFee: a.flatBTCFee()}
 	now := time.Now()
 	if rate, ok := a.feeRates.get(now); ok {
-		policy.milliSatPerVByte = rate
+		policy.milliSatPerVByte = a.fee.adjustMilliSatRate(rate)
 		return policy
 	}
 	rate, err := a.fetchFeeRate(ctx)
@@ -124,7 +133,7 @@ func (a *BitcoinLive) feePolicy(ctx context.Context) btcFeePolicy {
 		return policy
 	}
 	a.feeRates.put(rate, now)
-	policy.milliSatPerVByte = rate
+	policy.milliSatPerVByte = a.fee.adjustMilliSatRate(rate)
 	return policy
 }
 
@@ -270,20 +279,94 @@ func sumBTCInputs(inputs []btcInput) int64 {
 // estimateTransferFeeSats is the fee BuildTransfer would pay for req, or a typical
 // one-input transfer with change when From, Amount or its UTXOs cannot say.
 func (a *BitcoinLive) estimateTransferFeeSats(ctx context.Context, req types.TransferRequest) int64 {
-	policy := a.feePolicy(ctx)
-	typical := policy.fee(btcTypicalInputs, btcOutputsPaymentWithChange)
 	if strings.TrimSpace(req.From) == "" || req.Amount == nil || !req.Amount.IsInt64() || req.Amount.Sign() <= 0 {
-		return typical
+		return a.feePolicy(ctx).fee(btcTypicalInputs, btcOutputsPaymentWithChange)
 	}
-	utxos, err := a.listConfirmedUTXOs(ctx, req.From)
+	quote, err := a.QuoteTransferFee(ctx, req.From, req.Amount, nil)
+	if err != nil || !quote.Covered {
+		return a.feePolicy(ctx).fee(btcTypicalInputs, btcOutputsPaymentWithChange)
+	}
+	return quote.Fee
+}
+
+// BitcoinFeeQuote prices one transfer. Covered is false when the inputs cannot pay
+// the amount; the quote is then for a typical one-input transfer with change.
+type BitcoinFeeQuote struct {
+	Fee              int64
+	Inputs           int
+	Outputs          int
+	VSize            int64
+	MilliSatPerVByte int64
+	FlatFallback     bool
+	Covered          bool
+}
+
+// QuoteTransferFee is the fee BuildTransfer would pay sending amount from `from`:
+// the same confirmed UTXOs, fee policy and largest-first selection. pendingInputs
+// are outputs the transfer will also be able to spend (sweep legs into `from`).
+// A failed UTXO listing is returned as an error, never replaced by a typical fee.
+func (a *BitcoinLive) QuoteTransferFee(ctx context.Context, from string, amount *big.Int, pendingInputs []*big.Int) (BitcoinFeeQuote, error) {
+	if strings.TrimSpace(from) == "" {
+		return BitcoinFeeQuote{}, fmt.Errorf("btc fee quote: from address is required")
+	}
+	if amount == nil || !amount.IsInt64() || amount.Sign() <= 0 {
+		return BitcoinFeeQuote{}, fmt.Errorf("btc fee quote: amount must be a positive number of sats")
+	}
+	utxos, err := a.listConfirmedUTXOs(ctx, from)
 	if err != nil {
-		return typical
+		return BitcoinFeeQuote{}, fmt.Errorf("btc fee quote: utxos of %s: %w", from, err)
 	}
-	spend, err := selectBTCSpend(utxos, req.Amount.Int64(), policy)
+	for index, pending := range pendingInputs {
+		if pending == nil || !pending.IsInt64() || pending.Sign() <= 0 {
+			return BitcoinFeeQuote{}, fmt.Errorf("btc fee quote: pending input %d is not a positive number of sats", index)
+		}
+		utxos = append(utxos, btcInput{Value: pending.Int64(), Address: from})
+	}
+	policy := a.feePolicy(ctx)
+	spend, err := selectBTCSpend(utxos, amount.Int64(), policy)
 	if err != nil {
-		return typical
+		return policy.quote(btcTypicalInputs, btcOutputsPaymentWithChange, policy.fee(btcTypicalInputs, btcOutputsPaymentWithChange), false), nil
 	}
-	return spend.fee
+	outputs := btcOutputsPaymentOnly
+	if spend.change > 0 {
+		outputs = btcOutputsPaymentWithChange
+	}
+	return policy.quote(len(spend.inputs), outputs, spend.fee, true), nil
+}
+
+// QuoteSweepFee is the fee BuildSweep pays emptying every confirmed UTXO of `from`
+// into one output. Covered is false when nothing above dust can be swept.
+func (a *BitcoinLive) QuoteSweepFee(ctx context.Context, from string) (BitcoinFeeQuote, error) {
+	if strings.TrimSpace(from) == "" {
+		return BitcoinFeeQuote{}, fmt.Errorf("btc fee quote: from address is required")
+	}
+	utxos, err := a.listConfirmedUTXOs(ctx, from)
+	if err != nil {
+		return BitcoinFeeQuote{}, fmt.Errorf("btc fee quote: utxos of %s: %w", from, err)
+	}
+	policy := a.feePolicy(ctx)
+	inputs := spendableBTCInputs(utxos)
+	if maxSendableSats(inputs, policy) == 0 {
+		return policy.quote(max(len(inputs), btcTypicalInputs), btcOutputsPaymentOnly, policy.fee(max(len(inputs), btcTypicalInputs), btcOutputsPaymentOnly), false), nil
+	}
+	return policy.quote(len(inputs), btcOutputsPaymentOnly, policy.fee(len(inputs), btcOutputsPaymentOnly), true), nil
+}
+
+func (p btcFeePolicy) quote(inputs, outputs int, fee int64, covered bool) BitcoinFeeQuote {
+	return BitcoinFeeQuote{
+		Fee:              fee,
+		Inputs:           inputs,
+		Outputs:          outputs,
+		VSize:            p2wpkhVSize(inputs, outputs),
+		MilliSatPerVByte: p.milliSatPerVByte,
+		FlatFallback:     p.milliSatPerVByte <= 0,
+		Covered:          covered,
+	}
+}
+
+// MinimumTransferAmount is the smallest amount BuildTransfer accepts (the dust limit).
+func (a *BitcoinLive) MinimumTransferAmount() *big.Int {
+	return big.NewInt(btcDustSats)
 }
 
 // ---------------------------------------------------------------------------

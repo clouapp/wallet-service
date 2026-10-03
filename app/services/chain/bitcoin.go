@@ -10,9 +10,15 @@ import (
 	"strings"
 	"time"
 
+	"github.com/shopspring/decimal"
+
 	"github.com/macrowallets/waas/pkg/httpclient"
+	"github.com/macrowallets/waas/pkg/numeric"
 	"github.com/macrowallets/waas/pkg/types"
 )
+
+// btcDecimals is the number of decimal places of one BTC in satoshis.
+const btcDecimals = 8
 
 const bitcoinRESTTimeout = 30 * time.Second
 
@@ -35,7 +41,8 @@ type BitcoinLive struct {
 	restAPI      bool
 	http         *http.Client
 	esploraRetry rateLimitRetry
-	feeRates     btcFeeRateCache
+	feeRates     *btcFeeRateCache
+	fee          FeePolicy
 }
 
 func NewBitcoinLive(cfg BitcoinConfig) *BitcoinLive {
@@ -47,8 +54,20 @@ func NewBitcoinLive(cfg BitcoinConfig) *BitcoinLive {
 		restAPI:      isREST,
 		http:         httpclient.New(bitcoinRESTTimeout),
 		esploraRetry: esploraRetry(),
+		feeRates:     &btcFeeRateCache{},
 	}
 }
+
+// WithFeePolicy is this adapter pricing fee rates with policy; it shares the
+// clients and the network fee-rate cache.
+func (a *BitcoinLive) WithFeePolicy(policy FeePolicy) types.Chain {
+	scoped := *a
+	scoped.fee = policy
+	return &scoped
+}
+
+// FeePolicy is the wallet fee policy this adapter prices with.
+func (a *BitcoinLive) FeePolicy() FeePolicy { return a.fee }
 
 func (a *BitcoinLive) ID() string                    { return a.cfg.ChainIDStr }
 func (a *BitcoinLive) Name() string                  { return a.cfg.ChainName }
@@ -98,17 +117,18 @@ func (a *BitcoinLive) GetBalance(ctx context.Context, address string) (*types.Ba
 
 func (a *BitcoinLive) getBalanceRPC(ctx context.Context, address string) (*types.Balance, error) {
 	var utxos []struct {
-		Amount float64 `json:"amount"`
+		Amount decimal.Decimal `json:"amount"`
 	}
 	if err := a.rpc.Call(ctx, "listunspent", &utxos, 0, 9999999, []string{address}); err != nil {
 		return nil, err
 	}
 	total := big.NewInt(0)
 	for _, u := range utxos {
-		sats := new(big.Float).SetFloat64(u.Amount)
-		sats.Mul(sats, new(big.Float).SetFloat64(1e8))
-		s, _ := sats.Int(nil)
-		total.Add(total, s)
+		sats, err := btcToSats(u.Amount)
+		if err != nil {
+			return nil, fmt.Errorf("listunspent for %s: %w", address, err)
+		}
+		total.Add(total, sats)
 	}
 	return &types.Balance{Address: address, Asset: a.cfg.NativeSymbol, Amount: total, Decimals: 8, Human: fmtUnits(total, 8)}, nil
 }
@@ -220,7 +240,7 @@ func (a *BitcoinLive) scanBlockRPC(ctx context.Context, blockNum uint64) ([]type
 		Tx   []struct {
 			Txid string `json:"txid"`
 			Vout []struct {
-				Value        float64 `json:"value"`
+				Value        decimal.Decimal `json:"value"`
 				ScriptPubKey struct {
 					Address   string   `json:"address"`
 					Addresses []string `json:"addresses"`
@@ -236,7 +256,7 @@ func (a *BitcoinLive) scanBlockRPC(ctx context.Context, blockNum uint64) ([]type
 	var transfers []types.DetectedTransfer
 	for _, tx := range block.Tx {
 		for _, vout := range tx.Vout {
-			if vout.Value <= 0 {
+			if !vout.Value.IsPositive() {
 				continue
 			}
 			addr := vout.ScriptPubKey.Address
@@ -246,9 +266,10 @@ func (a *BitcoinLive) scanBlockRPC(ctx context.Context, blockNum uint64) ([]type
 			if addr == "" {
 				continue
 			}
-			sats := new(big.Float).SetFloat64(vout.Value)
-			sats.Mul(sats, new(big.Float).SetFloat64(1e8))
-			s, _ := sats.Int(nil)
+			s, err := btcToSats(vout.Value)
+			if err != nil {
+				return nil, fmt.Errorf("block %d tx %s: %w", blockNum, tx.Txid, err)
+			}
 			transfers = append(transfers, types.DetectedTransfer{
 				TxHash: tx.Txid, BlockNumber: blockNum, BlockHash: hash,
 				To: addr, Amount: s, Asset: a.cfg.NativeSymbol, Timestamp: blockTime,
@@ -256,6 +277,16 @@ func (a *BitcoinLive) scanBlockRPC(ctx context.Context, blockNum uint64) ([]type
 		}
 	}
 	return transfers, nil
+}
+
+// btcToSats converts a bitcoind BTC amount (JSON number with up to 8 decimals) to
+// satoshis exactly.
+func btcToSats(btc decimal.Decimal) (*big.Int, error) {
+	sats, err := numeric.ToBaseUnits(btc, btcDecimals)
+	if err != nil {
+		return nil, fmt.Errorf("btc amount %s: %w", btc.String(), err)
+	}
+	return sats, nil
 }
 
 func (a *BitcoinLive) BuildSweep(ctx context.Context, req types.SweepRequest) ([]types.UnsignedTx, error) {

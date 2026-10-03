@@ -45,9 +45,10 @@ func DeriveAddressOnNetwork(chainID string, testnet bool, pubKey []byte) (string
 // public key. secp256k1 chains take the 33-byte compressed SEC pubkey;
 // Solana chains take a raw 32-byte ed25519 pubkey.
 func DeriveAddress(chainID string, pubKey []byte) (string, error) {
-	switch chainID {
-	case models.ChainETH, models.ChainPolygon, models.ChainTETH, models.ChainTPolygon:
+	if models.IsEVMChainID(chainID) {
 		return DeriveEthAddress(pubKey)
+	}
+	switch chainID {
 	case models.ChainBTC:
 		return DeriveBtcAddress(BtcHRPMainnet, pubKey)
 	case models.ChainTBTC:

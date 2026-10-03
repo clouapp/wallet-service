@@ -9,13 +9,15 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"math"
 	"math/big"
 	"net/http"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/shopspring/decimal"
+
+	"github.com/macrowallets/waas/pkg/numeric"
 	"github.com/macrowallets/waas/pkg/types"
 )
 
@@ -25,6 +27,8 @@ const (
 	alchemyAuthTokenHdr  = "X-Alchemy-Token"
 	alchemyAddrPageLimit = 100
 	alchemyHTTPTimeout   = 30 * time.Second
+	// alchemyNativeDecimals converts a native ETH value to wei.
+	alchemyNativeDecimals = 18
 )
 
 type AlchemyProvider struct {
@@ -265,13 +269,13 @@ type alchemyEvent struct {
 }
 
 type alchemyActivity struct {
-	BlockNum    string  `json:"blockNum"`
-	Hash        string  `json:"hash"`
-	FromAddress string  `json:"fromAddress"`
-	ToAddress   string  `json:"toAddress"`
-	Value       float64 `json:"value"`
-	Asset       string  `json:"asset"`
-	Category    string  `json:"category"`
+	BlockNum    string          `json:"blockNum"`
+	Hash        string          `json:"hash"`
+	FromAddress string          `json:"fromAddress"`
+	ToAddress   string          `json:"toAddress"`
+	Value       decimal.Decimal `json:"value"`
+	Asset       string          `json:"asset"`
+	Category    string          `json:"category"`
 	RawContract struct {
 		RawValue string `json:"rawValue"`
 		Address  string `json:"address"`
@@ -306,13 +310,17 @@ func activityToTransfer(act alchemyActivity) (InboundTransfer, error) {
 		return InboundTransfer{}, fmt.Errorf("parse blockNum %q: %w", act.BlockNum, err)
 	}
 
-	amount := parseAmount(act)
 	amountIsHuman := false
 	humanAmount := ""
+	var amount *big.Int
 	if act.Category == "token" && act.RawContract.RawValue == "" {
 		amountIsHuman = true
-		humanAmount = strconv.FormatFloat(act.Value, 'f', -1, 64)
-		amount = nil
+		humanAmount = act.Value.String()
+	} else {
+		amount, err = parseAmount(act)
+		if err != nil {
+			return InboundTransfer{}, err
+		}
 	}
 
 	logIndex := -1
@@ -347,24 +355,21 @@ func activityToTransfer(act alchemyActivity) (InboundTransfer, error) {
 	return t, nil
 }
 
-func parseAmount(act alchemyActivity) *big.Int {
+// parseAmount prefers the exact raw value; otherwise it converts the decimal value
+// to wei (native ETH has alchemyNativeDecimals).
+func parseAmount(act alchemyActivity) (*big.Int, error) {
 	if act.RawContract.RawValue != "" {
 		raw := strings.TrimPrefix(act.RawContract.RawValue, "0x")
 		if val, ok := new(big.Int).SetString(raw, 16); ok {
-			return val
+			return val, nil
 		}
 	}
 
-	// Fallback: convert the float value to wei (18 decimals for native ETH).
-	if act.Value != 0 {
-		weiPerEth := new(big.Float).SetFloat64(math.Pow10(18))
-		val := new(big.Float).SetFloat64(act.Value)
-		val.Mul(val, weiPerEth)
-		wei, _ := val.Int(nil)
-		return wei
+	wei, err := numeric.ToBaseUnits(act.Value, alchemyNativeDecimals)
+	if err != nil {
+		return nil, fmt.Errorf("value %s: %w", act.Value.String(), err)
 	}
-
-	return big.NewInt(0)
+	return wei, nil
 }
 
 func parseHexUint64(s string) (uint64, error) {

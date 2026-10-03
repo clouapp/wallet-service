@@ -2,17 +2,30 @@ package price
 
 import (
 	"context"
-	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
+
+	"github.com/redis/go-redis/v9"
+	"github.com/shopspring/decimal"
 
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/repositories"
-	"github.com/redis/go-redis/v9"
+	"github.com/macrowallets/waas/pkg/numeric"
 )
 
-const redisCurrencyTTL = 60 * time.Second
+const (
+	redisCurrencyTTL       = 60 * time.Second
+	redisCurrencyKeyPrefix = "currency:"
+	usdCode                = "USD"
+)
+
+var usdPrice = decimal.NewFromInt(1)
+
+// ErrPriceNotQuoted marks a currency whose stored price no provider ever quoted.
+var ErrPriceNotQuoted = errors.New("price was never quoted by a provider")
 
 type Service struct {
 	providers    []PriceProvider
@@ -41,9 +54,9 @@ func (s *Service) RefreshCryptoPrices(ctx context.Context) error {
 		return nil
 	}
 
-	priceMap := make(map[string]float64, len(cryptos))
+	priceMap := make(map[string]decimal.Decimal, len(cryptos))
 	for _, c := range cryptos {
-		priceMap[c.Code] = c.CurrentPrice
+		priceMap[c.Code] = c.CurrentPrice.Decimal
 	}
 
 	for _, provider := range s.providers {
@@ -58,8 +71,9 @@ func (s *Service) RefreshCryptoPrices(ctx context.Context) error {
 			continue
 		}
 
-		for code, newPrice := range prices {
-			if newPrice <= 0 {
+		for code, quoted := range prices {
+			newPrice, ok := fitQuotedPrice(code, quoted)
+			if !ok {
 				continue
 			}
 			oldPrice := priceMap[code]
@@ -69,7 +83,7 @@ func (s *Service) RefreshCryptoPrices(ctx context.Context) error {
 			}
 			priceMap[code] = newPrice
 			s.cachePrice(ctx, code, newPrice)
-			slog.Info("crypto price updated", "provider", provider.Name(), "code", code, "price", newPrice)
+			slog.Info("crypto price updated", "provider", provider.Name(), "code", code, "price", newPrice.String())
 		}
 
 		cryptos, _ = s.currencyRepo.FindActiveCryptos()
@@ -85,7 +99,7 @@ func (s *Service) RefreshFiatRates(ctx context.Context) error {
 
 	codes := make([]string, 0, len(fiats))
 	for _, f := range fiats {
-		if f.Code == "USD" {
+		if f.Code == usdCode {
 			continue
 		}
 		codes = append(codes, f.Code)
@@ -104,14 +118,15 @@ func (s *Service) RefreshFiatRates(ctx context.Context) error {
 			continue
 		}
 
-		for code, rate := range rates {
-			if rate <= 0 {
+		for code, quoted := range rates {
+			rate, ok := fitQuotedPrice(code, quoted)
+			if !ok {
 				continue
 			}
-			var oldRate float64
+			oldRate := decimal.Zero
 			for _, f := range fiats {
 				if f.Code == code {
-					oldRate = f.CurrentPrice
+					oldRate = f.CurrentPrice.Decimal
 					break
 				}
 			}
@@ -127,51 +142,111 @@ func (s *Service) RefreshFiatRates(ctx context.Context) error {
 	return nil
 }
 
-func (s *Service) GetPrice(ctx context.Context, code string) (float64, error) {
-	if code == "USD" {
-		return 1.0, nil
+// GetPrice returns the USD price of code: the cached quote when present, otherwise
+// the stored one.
+func (s *Service) GetPrice(ctx context.Context, code string) (decimal.Decimal, error) {
+	if strings.TrimSpace(code) == "" {
+		return decimal.Decimal{}, fmt.Errorf("currency code is required")
+	}
+	if code == usdCode {
+		return usdPrice, nil
 	}
 
-	if s.redis != nil {
-		key := "currency:" + code
-		val, err := s.redis.Get(ctx, key).Float64()
-		if err == nil && val > 0 {
-			return val, nil
-		}
+	if cached, ok := s.cachedPrice(ctx, code); ok {
+		return cached, nil
 	}
 
 	cur, err := s.currencyRepo.FindByCode(code)
 	if err != nil {
-		return 0, err
+		return decimal.Decimal{}, err
 	}
 	if cur == nil {
-		return 0, fmt.Errorf("currency not found: %s", code)
+		return decimal.Decimal{}, fmt.Errorf("currency not found: %s", code)
 	}
-	return cur.CurrentPrice, nil
+	return cur.CurrentPrice.Decimal, nil
 }
 
-func (s *Service) UpdateSinglePrice(ctx context.Context, code string, newPrice float64) error {
+// QuotedUSDPrice is GetPrice restricted to prices a provider quoted: the cached
+// quote, or a stored price with a price_updated_at. A currency still at the
+// column default was never priced and answers ErrPriceNotQuoted.
+func (s *Service) QuotedUSDPrice(ctx context.Context, code string) (decimal.Decimal, error) {
+	if strings.TrimSpace(code) == "" {
+		return decimal.Decimal{}, fmt.Errorf("currency code is required")
+	}
+	if code == usdCode {
+		return usdPrice, nil
+	}
+	if cached, ok := s.cachedPrice(ctx, code); ok {
+		return cached, nil
+	}
+	cur, err := s.currencyRepo.FindByCode(code)
+	if err != nil {
+		return decimal.Decimal{}, err
+	}
+	if cur == nil {
+		return decimal.Decimal{}, fmt.Errorf("currency not found: %s", code)
+	}
+	if cur.PriceUpdatedAt == nil || !cur.CurrentPrice.Decimal.IsPositive() {
+		return decimal.Decimal{}, fmt.Errorf("%w: %s", ErrPriceNotQuoted, code)
+	}
+	return cur.CurrentPrice.Decimal, nil
+}
+
+func (s *Service) UpdateSinglePrice(ctx context.Context, code string, newPrice decimal.Decimal) error {
+	fitted, ok := fitQuotedPrice(code, newPrice)
+	if !ok {
+		return fmt.Errorf("currency %s price %s is not a storable positive price", code, newPrice.String())
+	}
 	cur, err := s.currencyRepo.FindByCode(code)
 	if err != nil || cur == nil {
 		return fmt.Errorf("currency not found: %s", code)
 	}
-	oldPrice := cur.CurrentPrice
-	if err := s.currencyRepo.UpdatePrice(code, newPrice, oldPrice); err != nil {
+	oldPrice := cur.CurrentPrice.Decimal
+	if err := s.currencyRepo.UpdatePrice(code, fitted, oldPrice); err != nil {
 		return err
 	}
-	s.cachePrice(ctx, code, newPrice)
+	s.cachePrice(ctx, code, fitted)
 	return nil
 }
 
-func (s *Service) cachePrice(ctx context.Context, code string, price float64) {
+// cachedPrice reads a cached quote; a missing, unreadable or non-positive entry is
+// a cache miss.
+func (s *Service) cachedPrice(ctx context.Context, code string) (decimal.Decimal, bool) {
+	if s.redis == nil {
+		return decimal.Decimal{}, false
+	}
+	text, err := s.redis.Get(ctx, redisCurrencyKeyPrefix+code).Result()
+	if err != nil {
+		return decimal.Decimal{}, false
+	}
+	cached, err := numeric.Parse("cached price of "+code, text)
+	if err != nil || !cached.IsPositive() {
+		return decimal.Decimal{}, false
+	}
+	return cached, true
+}
+
+func (s *Service) cachePrice(ctx context.Context, code string, price decimal.Decimal) {
 	if s.redis == nil {
 		return
 	}
-	key := "currency:" + code
-	data, _ := json.Marshal(price)
-	if err := s.redis.Set(ctx, key, data, redisCurrencyTTL).Err(); err != nil {
+	if err := s.redis.Set(ctx, redisCurrencyKeyPrefix+code, price.String(), redisCurrencyTTL).Err(); err != nil {
 		slog.Warn("redis cache currency failed", "code", code, "error", err)
 	}
+}
+
+// fitQuotedPrice rounds a provider quote to the price column; quotes that are not
+// positive or do not fit are skipped.
+func fitQuotedPrice(code string, quoted decimal.Decimal) (decimal.Decimal, bool) {
+	fitted, err := models.CurrencyPriceColumn.Fit(quoted)
+	if err != nil {
+		slog.Warn("skipping price quote", "code", code, "price", quoted.String(), "error", err)
+		return decimal.Decimal{}, false
+	}
+	if !fitted.IsPositive() {
+		return decimal.Decimal{}, false
+	}
+	return fitted, true
 }
 
 func findStaleCodes(currencies []models.Currency) []string {

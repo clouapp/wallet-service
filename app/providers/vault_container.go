@@ -196,6 +196,7 @@ func buildVaultContainer() (*container.Container, error) {
 					ERC20Tokens:           tokensByChain[ch.ID],
 					GasReadinessThreshold: resolveGasReadinessThreshold(&ch),
 					DustThresholdNative:   resolveDustThresholdNative(&ch),
+					StrictLogScan:         !lenientLogScanChains[ch.ID],
 				})
 			case models.AdapterTypeBitcoin:
 				network := "mainnet"
@@ -230,9 +231,11 @@ func buildVaultContainer() (*container.Container, error) {
 	c.WebhookService = webhook.NewService(c.SQS, c.WebhookConfigRepo, c.WebhookEventRepo)
 	c.WalletService = wallet.NewService(c.Registry, c.Redis, c.MPCService, c.SecretsManager, c.WalletRepo, c.AddressRepo)
 	c.WalletService.SetWebhookSync(c.WebhookSyncService)
+	c.PriceService = buildPriceService(c)
 	c.SweepService = sweep.NewService(
 		c.Registry, c.MPCService, c.SecretsManager, c.Redis, c.WebhookService,
 		c.WalletRepo, c.AddressRepo, c.TransactionRepo, c.AccountRepo, c.ChainRepo,
+		c.PriceService,
 	)
 	c.WithdrawalService = withdraw.NewService(
 		c.Registry, c.WebhookService, c.MPCService, c.SecretsManager, c.Redis,
@@ -296,6 +299,12 @@ func buildVaultContainer() (*container.Container, error) {
 	c.WalletRefresher = walletRefresher
 	c.DepositService.SetBalanceRefresher(c.WalletRefresher)
 
+	slog.Info("vault container booted", "chains", c.Registry.ChainIDs())
+	return c, nil
+}
+
+// buildPriceService quotes prices with every provider that has an API key.
+func buildPriceService(c *container.Container) *price.Service {
 	var priceProviders []price.PriceProvider
 	if key := c.PriceConfig.CoinGeckoAPIKey; key != "" {
 		priceProviders = append(priceProviders, price.NewCoinGeckoProvider(key))
@@ -306,10 +315,7 @@ func buildVaultContainer() (*container.Container, error) {
 	if key := c.PriceConfig.CoinAPIKey; key != "" {
 		priceProviders = append(priceProviders, price.NewCoinAPIProvider(key))
 	}
-	c.PriceService = price.NewService(priceProviders, c.CurrencyRepo, c.Redis)
-
-	slog.Info("vault container booted", "chains", c.Registry.ChainIDs())
-	return c, nil
+	return price.NewService(priceProviders, c.CurrencyRepo, c.Redis)
 }
 
 // buildPendingDepositStore keeps failed deposit blocks in Redis and in a local
@@ -347,6 +353,16 @@ func defaultPendingDepositDir() string {
 		return filepath.Join(home, ".local", "state", "macro-wallets", "deposit-pending")
 	}
 	return filepath.Join(os.TempDir(), "macro-wallets", "deposit-pending")
+}
+
+// lenientLogScanChains keep their deployed deposit scan: a block whose eth_getLogs
+// fails is scanned for native transfers only. Every other EVM record fails the block
+// so the scanner retries it (chain.EVMConfig.StrictLogScan).
+var lenientLogScanChains = map[string]bool{
+	models.ChainETH:      true,
+	models.ChainTETH:     true,
+	models.ChainPolygon:  true,
+	models.ChainTPolygon: true,
 }
 
 // resolveGasReadinessThreshold returns the gas-readiness threshold for a chain,

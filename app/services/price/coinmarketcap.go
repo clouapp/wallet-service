@@ -7,6 +7,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/shopspring/decimal"
 )
 
 var cmcAssetMapping = map[string]string{
@@ -29,7 +31,7 @@ func NewCoinMarketCapProvider(apiKey string) *CoinMarketCapProvider {
 
 func (p *CoinMarketCapProvider) Name() string { return "coinmarketcap" }
 
-func (p *CoinMarketCapProvider) FetchCryptoPrices(codes []string) (map[string]float64, error) {
+func (p *CoinMarketCapProvider) FetchCryptoPrices(codes []string) (map[string]decimal.Decimal, error) {
 	if p.apiKey == "" {
 		return nil, fmt.Errorf("coinmarketcap: api key not configured")
 	}
@@ -69,7 +71,7 @@ func (p *CoinMarketCapProvider) FetchCryptoPrices(codes []string) (map[string]fl
 		Data map[string]struct {
 			Quote struct {
 				USD struct {
-					Price float64 `json:"price"`
+					Price decimal.Decimal `json:"price"`
 				} `json:"USD"`
 			} `json:"quote"`
 		} `json:"data"`
@@ -78,15 +80,15 @@ func (p *CoinMarketCapProvider) FetchCryptoPrices(codes []string) (map[string]fl
 		return nil, fmt.Errorf("coinmarketcap parse: %w", err)
 	}
 
-	prices := make(map[string]float64, len(result.Data))
+	prices := make(map[string]decimal.Decimal, len(result.Data))
 	for apiSym, data := range result.Data {
-		if code, ok := reverseMap[apiSym]; ok && data.Quote.USD.Price > 0 {
+		if code, ok := reverseMap[apiSym]; ok && data.Quote.USD.Price.IsPositive() {
 			prices[code] = data.Quote.USD.Price
 		}
 	}
 	return prices, nil
 }
 
-func (p *CoinMarketCapProvider) FetchFiatRates(codes []string) (map[string]float64, error) {
+func (p *CoinMarketCapProvider) FetchFiatRates(codes []string) (map[string]decimal.Decimal, error) {
 	return nil, fmt.Errorf("coinmarketcap: fiat rates not supported")
 }
