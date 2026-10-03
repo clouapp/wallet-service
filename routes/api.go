@@ -26,6 +26,8 @@ import (
 func RegisterExternalAPI() {
 	noCache := middleware.CacheControl(0)
 	chainCtrl := newExternalChainsController()
+	transactionCtrl := newExternalTransactionsController()
+	webhookCtrl := newExternalWebhooksController()
 	walletCtrl := newExternalWalletsController()
 	addressCtrl := newExternalAddressesController()
 	sweepCtrl := newExternalSweepController()
@@ -55,14 +57,22 @@ func RegisterExternalAPI() {
 			r.Get("/withdrawals/{idempotencyKey}", withdrawalCtrl.GetWalletWithdrawalByIdempotencyKey)
 		})
 
-		router.Get("/transactions", exttransactions.ListTransactions)
-		router.Get("/transactions/{id}", exttransactions.GetTransaction)
-		router.Get("/users/{external_id}/transactions", exttransactions.ListUserTransactions)
+		router.Get("/transactions", transactionCtrl.ListTransactions)
+		router.Get("/transactions/{id}", transactionCtrl.GetTransaction)
+		router.Get("/users/{external_id}/transactions", transactionCtrl.ListUserTransactions)
 
-		router.Post("/webhooks", extwebhooks.CreateWebhook)
-		router.Get("/webhooks", extwebhooks.ListWebhooks)
-		router.Patch("/webhooks/{webhookId}", extwebhooks.UpdateWebhook)
+		router.Post("/webhooks", webhookCtrl.CreateWebhook)
+		router.Get("/webhooks", webhookCtrl.ListWebhooks)
+		router.Patch("/webhooks/{webhookId}", webhookCtrl.UpdateWebhook)
 	})
+}
+
+func newExternalTransactionsController() *exttransactions.TransactionsController {
+	return exttransactions.NewTransactionsController(container.Get().WithdrawalService)
+}
+
+func newExternalWebhooksController() *extwebhooks.WebhooksController {
+	return extwebhooks.NewWebhooksController(container.Get().WebhookService)
 }
 
 func newExternalChainsController() *extchains.ChainsController {

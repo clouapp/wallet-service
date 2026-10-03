@@ -4,11 +4,27 @@ import (
 	"github.com/google/uuid"
 	"github.com/goravel/framework/contracts/http"
 
-	"github.com/macrowallets/waas/app/container"
 	"github.com/macrowallets/waas/app/http/controllers"
 	"github.com/macrowallets/waas/app/http/pagination"
 	"github.com/macrowallets/waas/app/http/responses"
+	withdraw "github.com/macrowallets/waas/app/services/withdraw"
 )
+
+// TransactionsController serves the external transaction routes.
+type TransactionsController struct {
+	withdrawals *withdraw.Service
+}
+
+func NewTransactionsController(
+	withdrawals *withdraw.Service,
+) *TransactionsController {
+	if withdrawals == nil {
+		panic("external transactions controller: withdrawal service is required")
+	}
+	return &TransactionsController{
+		withdrawals: withdrawals,
+	}
+}
 
 // ListTransactions godoc
 // @Summary      List transactions
@@ -27,7 +43,7 @@ import (
 // @Failure      401      {object}  ErrorResponse
 // @Failure      500      {object}  ErrorResponse
 // @Router       /v1/transactions [get]
-func ListTransactions(ctx http.Context) http.Response {
+func (ctrl *TransactionsController) ListTransactions(ctx http.Context) http.Response {
 	accountID, ok := ctx.Value("account_id").(uuid.UUID)
 	if !ok {
 		return responses.Send(ctx, http.StatusUnauthorized, http.Json{
@@ -37,7 +53,7 @@ func ListTransactions(ctx http.Context) http.Response {
 
 	limit, offset := pagination.ParseParams(ctx, 50)
 
-	txs, total, err := container.Get().WithdrawalService.ListTransactionsForAccount(
+	txs, total, err := ctrl.withdrawals.ListTransactionsForAccount(
 		ctx.Context(),
 		accountID,
 		ctx.Request().Query("chain", ""),
@@ -65,14 +81,14 @@ func ListTransactions(ctx http.Context) http.Response {
 // @Failure      400  {object}  ErrorResponse  "Invalid UUID"
 // @Failure      404  {object}  ErrorResponse  "Transaction not found"
 // @Router       /v1/transactions/{id} [get]
-func GetTransaction(ctx http.Context) http.Response {
+func (ctrl *TransactionsController) GetTransaction(ctx http.Context) http.Response {
 	id, err := uuid.Parse(ctx.Request().Route("id"))
 	if err != nil {
 		return responses.Send(ctx, http.StatusBadRequest, http.Json{
 			"error": "invalid tx id",
 		})
 	}
-	tx, err := container.Get().WithdrawalService.GetTransaction(ctx.Context(), id)
+	tx, err := ctrl.withdrawals.GetTransaction(ctx.Context(), id)
 	if err != nil || tx == nil {
 		return responses.Send(ctx, http.StatusNotFound, http.Json{
 			"error": "transaction not found",
@@ -94,7 +110,7 @@ func GetTransaction(ctx http.Context) http.Response {
 // @Success      200          {object}  TransactionListResponse
 // @Failure      500          {object}  ErrorResponse
 // @Router       /v1/users/{external_id}/transactions [get]
-func ListUserTransactions(ctx http.Context) http.Response {
+func (ctrl *TransactionsController) ListUserTransactions(ctx http.Context) http.Response {
 	accountID, ok := ctx.Value("account_id").(uuid.UUID)
 	if !ok {
 		return responses.Send(ctx, http.StatusUnauthorized, http.Json{
@@ -104,7 +120,7 @@ func ListUserTransactions(ctx http.Context) http.Response {
 
 	limit, offset := pagination.ParseParams(ctx, 50)
 
-	txs, total, err := container.Get().WithdrawalService.ListTransactionsForAccount(
+	txs, total, err := ctrl.withdrawals.ListTransactionsForAccount(
 		ctx.Context(),
 		accountID,
 		"", "", "",

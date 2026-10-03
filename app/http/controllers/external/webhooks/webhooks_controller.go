@@ -6,7 +6,6 @@ import (
 	"github.com/google/uuid"
 	"github.com/goravel/framework/contracts/http"
 
-	"github.com/macrowallets/waas/app/container"
 	"github.com/macrowallets/waas/app/http/controllers"
 	"github.com/macrowallets/waas/app/http/requests"
 	"github.com/macrowallets/waas/app/http/responses"
@@ -15,6 +14,22 @@ import (
 
 func validateRequest(ctx http.Context, req http.FormRequest) http.Response {
 	return controllers.ValidateRequest(ctx, req)
+}
+
+// WebhooksController serves the external webhook routes.
+type WebhooksController struct {
+	webhooks *webhook.Service
+}
+
+func NewWebhooksController(
+	webhooks *webhook.Service,
+) *WebhooksController {
+	if webhooks == nil {
+		panic("external webhooks controller: webhook service is required")
+	}
+	return &WebhooksController{
+		webhooks: webhooks,
+	}
 }
 
 // CreateWebhook godoc
@@ -30,7 +45,7 @@ func validateRequest(ctx http.Context, req http.FormRequest) http.Response {
 // @Failure      400   {object}  ErrorResponse  "Missing required fields"
 // @Failure      500   {object}  ErrorResponse
 // @Router       /api/v1/webhooks [post]
-func CreateWebhook(ctx http.Context) http.Response {
+func (ctrl *WebhooksController) CreateWebhook(ctx http.Context) http.Response {
 	var req requests.CreateWebhookRequest
 	if errResp := validateRequest(ctx, &req); errResp != nil {
 		return errResp
@@ -41,7 +56,7 @@ func CreateWebhook(ctx http.Context) http.Response {
 		owner = &accountID
 	}
 
-	cfg, err := container.Get().WebhookService.CreateConfig(ctx.Context(), req.URL, req.Secret, req.Events, owner)
+	cfg, err := ctrl.webhooks.CreateConfig(ctx.Context(), req.URL, req.Secret, req.Events, owner)
 	if err != nil {
 		return responses.Send(ctx, http.StatusInternalServerError, http.Json{
 			"error": err.Error(),
@@ -61,13 +76,13 @@ func CreateWebhook(ctx http.Context) http.Response {
 // @Failure      401  {object}  ErrorResponse
 // @Failure      500  {object}  ErrorResponse
 // @Router       /api/v1/webhooks [get]
-func ListWebhooks(ctx http.Context) http.Response {
+func (ctrl *WebhooksController) ListWebhooks(ctx http.Context) http.Response {
 	accountID, ok := ctx.Value("account_id").(uuid.UUID)
 	if !ok || accountID == uuid.Nil {
 		return responses.Send(ctx, http.StatusUnauthorized, http.Json{"error": "unauthenticated"})
 	}
 
-	configs, err := container.Get().WebhookService.ListAccountConfigs(ctx.Context(), accountID)
+	configs, err := ctrl.webhooks.ListAccountConfigs(ctx.Context(), accountID)
 	if err != nil {
 		return responses.Send(ctx, http.StatusInternalServerError, http.Json{
 			"error": err.Error(),
@@ -94,7 +109,7 @@ func ListWebhooks(ctx http.Context) http.Response {
 // @Failure      403        {object}  ErrorResponse  "Secret does not match a legacy webhook"
 // @Failure      404        {object}  ErrorResponse  "webhook not found"
 // @Router       /api/v1/webhooks/{webhookId} [patch]
-func UpdateWebhook(ctx http.Context) http.Response {
+func (ctrl *WebhooksController) UpdateWebhook(ctx http.Context) http.Response {
 	accountID, ok := ctx.Value("account_id").(uuid.UUID)
 	if !ok || accountID == uuid.Nil {
 		return responses.Send(ctx, http.StatusUnauthorized, http.Json{"error": "unauthenticated"})
@@ -110,7 +125,7 @@ func UpdateWebhook(ctx http.Context) http.Response {
 		return responses.Send(ctx, http.StatusBadRequest, http.Json{"error": "invalid request body"})
 	}
 
-	cfg, err := container.Get().WebhookService.UpdateAccountConfig(ctx.Context(), accountID, webhookID, webhook.ConfigUpdate{
+	cfg, err := ctrl.webhooks.UpdateAccountConfig(ctx.Context(), accountID, webhookID, webhook.ConfigUpdate{
 		Events:   req.Events,
 		IsActive: req.IsActive,
 		Secret:   req.Secret,
