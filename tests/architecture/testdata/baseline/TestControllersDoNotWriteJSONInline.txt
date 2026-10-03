@@ -22,6 +22,5 @@ app/http/controllers/external/transactions/transactions_controller.go calls ctx.
 app/http/controllers/external/wallets/wallets_controller.go calls ctx.Response().Json() (x2)
 app/http/controllers/external/webhooks/webhooks_controller.go calls ctx.Response().Json() (x2)
 app/http/controllers/external/withdrawals/withdrawals_controller.go calls ctx.Response().Json() (x3)
-app/http/controllers/health/health_controller.go calls ctx.Response().Json()
 app/http/controllers/ingest/ingest_controller.go calls ctx.Response().Json()
 app/http/controllers/platform/features/features_controller.go calls ctx.Response().Json() (x3)

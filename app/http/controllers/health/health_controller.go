@@ -1,6 +1,10 @@
 package health
 
-import "github.com/goravel/framework/contracts/http"
+import (
+	"github.com/goravel/framework/contracts/http"
+
+	"github.com/macrowallets/waas/app/http/responses"
+)
 
 // Health godoc
 // @Summary      Health check
@@ -10,7 +14,7 @@ import "github.com/goravel/framework/contracts/http"
 // @Success      200  {object}  HealthResponse
 // @Router       /health [get]
 func Health(ctx http.Context) http.Response {
-	return ctx.Response().Json(http.StatusOK, http.Json{
+	return responses.Send(ctx, http.StatusOK, http.Json{
 		"status":  "ok",
 		"version": "0.1.0",
 	})
