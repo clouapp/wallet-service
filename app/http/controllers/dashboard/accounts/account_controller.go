@@ -424,8 +424,7 @@ func (ctrl *AccountsController) RevokeAccountToken(ctx http.Context) http.Respon
 		return errResp
 	}
 
-	tokenIDStr := ctx.Request().Route("tokenId")
-	tokenID, err := uuid.Parse(tokenIDStr)
+	tokenID, err := requests.RouteUUID(ctx, "tokenId")
 	if err != nil {
 		return responses.Send(ctx, http.StatusBadRequest, http.Json{"error": "invalid token id"})
 	}
