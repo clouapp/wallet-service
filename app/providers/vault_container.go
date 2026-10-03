@@ -16,6 +16,7 @@ import (
 	"github.com/redis/go-redis/v9"
 
 	coinapiws "github.com/macrowallets/waas/app/adapters/price/coinapi"
+	queuesqs "github.com/macrowallets/waas/app/adapters/queue/sqs"
 	"github.com/macrowallets/waas/app/adapters/redis/addressset"
 	"github.com/macrowallets/waas/app/container"
 	"github.com/macrowallets/waas/app/facades"
@@ -84,7 +85,7 @@ func buildVaultContainer(app foundation.Application) (*container.Container, erro
 		return nil, fmt.Errorf("vault: aws config: %w", err)
 	}
 	sqsClient := sqs.NewFromConfig(awsCfg)
-	c.SQS = queue.NewSQSClient(sqsClient, queue.QueueURLs{
+	c.SQS = queue.NewSQSClient(queuesqs.New(sqsClient), queue.QueueURLs{
 		Webhook: facades.Config().GetString("vault.queues.webhook"),
 	})
 
