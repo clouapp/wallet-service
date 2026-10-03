@@ -3,6 +3,7 @@ package providers
 import (
 	"github.com/goravel/framework/contracts/foundation"
 
+	"github.com/macrowallets/waas/app/facades"
 	"github.com/macrowallets/waas/app/repositories"
 	"github.com/macrowallets/waas/app/services/ingest"
 	"github.com/macrowallets/waas/app/services/walletrecords"
@@ -15,7 +16,7 @@ type WebhookServiceProvider struct{}
 
 func (p *WebhookServiceProvider) Register(app foundation.Application) {
 	app.Singleton((*repositories.WebhookConfigRepository)(nil), func(foundation.Application) (any, error) {
-		return repositories.NewWebhookConfigRepository(nil), nil
+		return repositories.NewWebhookConfigRepository(nil, facades.Crypt()), nil
 	})
 	app.Singleton((*repositories.WebhookEventRepository)(nil), func(foundation.Application) (any, error) {
 		return repositories.NewWebhookEventRepository(nil), nil

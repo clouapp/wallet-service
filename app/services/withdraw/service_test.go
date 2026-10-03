@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/goravel/framework/facades"
 
 	"github.com/macrowallets/waas/app/repositories"
 	"github.com/macrowallets/waas/app/services/chain"
@@ -88,7 +89,7 @@ func setupWithdrawService(t *testing.T) (*Service, *mocks.MockChain) {
 	registry.RegisterChain(mockChain)
 	registry.RegisterToken(types.Token{Symbol: "usdt", ChainID: "eth", Decimals: 6, Contract: "0xdAC17F"})
 
-	webhookConfigRepo := repositories.NewWebhookConfigRepository(nil)
+	webhookConfigRepo := repositories.NewWebhookConfigRepository(nil, facades.Crypt())
 	webhookEventRepo := repositories.NewWebhookEventRepository(nil)
 	webhookSvc := webhook.NewService(nil, webhookConfigRepo, webhookEventRepo)
 	mpcSvc := &mockMPC{}

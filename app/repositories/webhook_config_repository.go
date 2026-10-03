@@ -9,37 +9,54 @@ import (
 
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/repositories/internal/db"
+	"github.com/macrowallets/waas/pkg/security"
 )
 
+const webhookSecretColumn = "secret"
+
 // WebhookConfigRepository persists webhook endpoint configuration.
-// The signing secret stays in webhook_configs.secret as this branch stores it.
+// The signing secret is sealed at rest. Create and UpdateFields seal it, and
+// every Find opens it, so callers always see the plaintext.
 type WebhookConfigRepository struct {
 	db.Base
+	cipher security.Cipher
 }
 
 // NewWebhookConfigRepository wraps an orm.Query. Pass nil for a fresh query per call.
-func NewWebhookConfigRepository(query orm.Query) *WebhookConfigRepository {
-	return &WebhookConfigRepository{Base: db.NewBase(query)}
+// cipher seals and opens webhook_configs.secret; it is required.
+func NewWebhookConfigRepository(query orm.Query, cipher security.Cipher) *WebhookConfigRepository {
+	if cipher == nil {
+		panic("webhook config repository: cipher is required")
+	}
+	return &WebhookConfigRepository{Base: db.NewBase(query), cipher: cipher}
 }
 
-// Create inserts a webhook config, including the secret column as given.
+// Create inserts a webhook config. The stored secret is sealed; cfg.Secret stays plaintext.
 func (r *WebhookConfigRepository) Create(ctx context.Context, cfg *models.WebhookConfig) error {
 	if cfg == nil {
 		return fmt.Errorf("create webhook config: config is nil")
 	}
-	if err := r.Query(ctx).Create(cfg); err != nil {
+	plaintext := cfg.Secret
+	sealed, err := security.SealSecret(r.cipher, plaintext)
+	if err != nil {
 		return fmt.Errorf("create webhook config: %w", err)
+	}
+	cfg.Secret = sealed
+	createErr := r.Query(ctx).Create(cfg)
+	cfg.Secret = plaintext
+	if createErr != nil {
+		return fmt.Errorf("create webhook config: %w", createErr)
 	}
 	return nil
 }
 
-// FindByWalletID returns the configs scoped to a wallet.
+// FindByWalletID returns the configs scoped to a wallet, with secrets opened.
 func (r *WebhookConfigRepository) FindByWalletID(ctx context.Context, walletID uuid.UUID) ([]models.WebhookConfig, error) {
 	var cfgs []models.WebhookConfig
 	if err := r.Query(ctx).Where("wallet_id = ?", walletID).Find(&cfgs); err != nil {
 		return nil, fmt.Errorf("list webhook configs: %w", err)
 	}
-	return cfgs, nil
+	return r.openWebhookSecrets(cfgs)
 }
 
 // FindByIDAndWallet returns the config when it belongs to the wallet, or ErrRepositoryNotFound.
@@ -51,28 +68,28 @@ func (r *WebhookConfigRepository) FindByIDAndWallet(ctx context.Context, id, wal
 	if cfg.ID == uuid.Nil {
 		return nil, models.ErrRepositoryNotFound
 	}
-	return &cfg, nil
+	return r.openWebhookSecret(&cfg)
 }
 
-// FindActive returns every active config.
+// FindActive returns every active config, with secrets opened.
 func (r *WebhookConfigRepository) FindActive(ctx context.Context) ([]models.WebhookConfig, error) {
 	var cfgs []models.WebhookConfig
 	if err := r.Query(ctx).Where("is_active", true).Find(&cfgs); err != nil {
 		return nil, fmt.Errorf("list active webhook configs: %w", err)
 	}
-	return cfgs, nil
+	return r.openWebhookSecrets(cfgs)
 }
 
-// FindAll returns every config ordered by created_at.
+// FindAll returns every config ordered by created_at, with secrets opened.
 func (r *WebhookConfigRepository) FindAll(ctx context.Context) ([]models.WebhookConfig, error) {
 	var cfgs []models.WebhookConfig
 	if err := r.Query(ctx).Order("created_at").Find(&cfgs); err != nil {
 		return nil, fmt.Errorf("list webhook configs: %w", err)
 	}
-	return cfgs, nil
+	return r.openWebhookSecrets(cfgs)
 }
 
-// FindByID returns the config, or ErrRepositoryNotFound.
+// FindByID returns the config, or ErrRepositoryNotFound. The secret is opened.
 func (r *WebhookConfigRepository) FindByID(ctx context.Context, id uuid.UUID) (*models.WebhookConfig, error) {
 	var cfg models.WebhookConfig
 	if err := r.Query(ctx).Where("id = ?", id).First(&cfg); err != nil {
@@ -81,7 +98,7 @@ func (r *WebhookConfigRepository) FindByID(ctx context.Context, id uuid.UUID) (*
 	if cfg.ID == uuid.Nil {
 		return nil, models.ErrRepositoryNotFound
 	}
-	return &cfg, nil
+	return r.openWebhookSecret(&cfg)
 }
 
 // FindVisibleToAccount returns the account's own configs plus legacy configs
@@ -94,7 +111,23 @@ func (r *WebhookConfigRepository) FindVisibleToAccount(ctx context.Context, acco
 		Find(&cfgs); err != nil {
 		return nil, fmt.Errorf("list visible webhook configs: %w", err)
 	}
-	return cfgs, nil
+	return r.openWebhookSecrets(cfgs)
+}
+
+// UpdateFields writes columns on one config. A plaintext secret in fields is sealed
+// for storage; the caller's map is left untouched.
+func (r *WebhookConfigRepository) UpdateFields(ctx context.Context, id uuid.UUID, fields map[string]any) error {
+	if id == uuid.Nil {
+		return fmt.Errorf("update webhook config: id is required")
+	}
+	persisted, err := r.sealSecretField(fields)
+	if err != nil {
+		return fmt.Errorf("update webhook config: %w", err)
+	}
+	if _, err := r.Query(ctx).Model(&models.WebhookConfig{}).Where("id = ?", id).Update(persisted); err != nil {
+		return fmt.Errorf("update webhook config: %w", err)
+	}
+	return nil
 }
 
 // AssignAccount sets account_id and, when the pointer is non-nil, events and is_active.
@@ -133,4 +166,43 @@ func (r *WebhookConfigRepository) DeleteByID(ctx context.Context, id uuid.UUID) 
 		return fmt.Errorf("delete webhook config: %w", err)
 	}
 	return nil
+}
+
+func (r *WebhookConfigRepository) sealSecretField(fields map[string]any) (map[string]any, error) {
+	raw, hasSecret := fields[webhookSecretColumn]
+	if !hasSecret {
+		return fields, nil
+	}
+	plaintext, ok := raw.(string)
+	if !ok {
+		return nil, fmt.Errorf("webhook config secret must be a string, got %T", raw)
+	}
+	sealed, err := security.SealSecret(r.cipher, plaintext)
+	if err != nil {
+		return nil, err
+	}
+	persisted := make(map[string]any, len(fields))
+	for key, value := range fields {
+		persisted[key] = value
+	}
+	persisted[webhookSecretColumn] = sealed
+	return persisted, nil
+}
+
+func (r *WebhookConfigRepository) openWebhookSecret(cfg *models.WebhookConfig) (*models.WebhookConfig, error) {
+	plaintext, err := security.OpenSecret(r.cipher, cfg.Secret)
+	if err != nil {
+		return nil, fmt.Errorf("webhook config %s secret: %w", cfg.ID, err)
+	}
+	cfg.Secret = plaintext
+	return cfg, nil
+}
+
+func (r *WebhookConfigRepository) openWebhookSecrets(cfgs []models.WebhookConfig) ([]models.WebhookConfig, error) {
+	for i := range cfgs {
+		if _, err := r.openWebhookSecret(&cfgs[i]); err != nil {
+			return nil, err
+		}
+	}
+	return cfgs, nil
 }

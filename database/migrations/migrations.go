@@ -49,5 +49,6 @@ func All() []schema.Migration {
 		&M00000000000350AddAccessTokenUsageTimestamps{},
 		&M00000000000420CreateActivityLogTable{},
 		&M00000000000430UniqueDepositPerTransaction{},
+		&M00000000000440SealWebhookConfigSecrets{},
 	}
 }
