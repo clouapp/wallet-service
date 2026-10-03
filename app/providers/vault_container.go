@@ -351,7 +351,7 @@ func buildVaultContainer(app foundation.Application) (*container.Container, erro
 		sweepGasDefaults(),
 	)
 	c.WithdrawalService = withdraw.NewService(
-		c.Registry, c.WebhookService, c.MPCService, c.SecretsManager, redislock.New(c.Redis),
+		c.Registry, c.WebhookService, c.MPCService, redislock.New(c.Redis),
 		c.TransactionRepo, c.WalletRepo, c.AddressRepo, c.SweepService,
 		func(ctx context.Context, accountID uuid.UUID) error {
 			return flags.Gate(ctx, accountID, features.FlagWithdrawalsEnabled, features.CodeWithdrawalsPaused)

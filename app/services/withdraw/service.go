@@ -8,7 +8,6 @@ import (
 	"math/big"
 	"time"
 
-	"github.com/aws/aws-sdk-go-v2/service/secretsmanager"
 	"github.com/google/uuid"
 	"github.com/goravel/framework/contracts/event"
 	"github.com/goravel/framework/facades"
@@ -52,7 +51,6 @@ type Service struct {
 	registry        *chainpkg.Registry
 	webhookSvc      *webhook.Service
 	mpc             mpcpkg.Service
-	secrets         *secretsmanager.Client
 	locker          Locker
 	transactionRepo *repositories.TransactionRepository
 	walletRepo      *repositories.WalletRepository
@@ -65,7 +63,6 @@ func NewService(
 	registry *chainpkg.Registry,
 	webhookSvc *webhook.Service,
 	mpc mpcpkg.Service,
-	secrets *secretsmanager.Client,
 	locker Locker,
 	transactionRepo *repositories.TransactionRepository,
 	walletRepo *repositories.WalletRepository,
@@ -77,7 +74,6 @@ func NewService(
 		registry:        registry,
 		webhookSvc:      webhookSvc,
 		mpc:             mpc,
-		secrets:         secrets,
 		locker:          locker,
 		transactionRepo: transactionRepo,
 		walletRepo:      walletRepo,

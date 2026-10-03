@@ -95,7 +95,7 @@ func setupWithdrawService(t *testing.T) (*Service, *mocks.MockChain) {
 	txRepo := repositories.NewTransactionRepository(nil)
 	walletRepo := repositories.NewWalletRepository(nil)
 	addressRepo := repositories.NewAddressRepository(nil)
-	svc := NewService(registry, webhookSvc, mpcSvc, nil, nil, txRepo, walletRepo, addressRepo, &mockSweepSvc{}, nil)
+	svc := NewService(registry, webhookSvc, mpcSvc, nil, txRepo, walletRepo, addressRepo, &mockSweepSvc{}, nil)
 	return svc, mockChain
 }
 
