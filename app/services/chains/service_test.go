@@ -89,6 +89,38 @@ func TestListForEnvironment(t *testing.T) {
 	}
 }
 
+func TestFindByIDTokensAndResources(t *testing.T) {
+	t.Parallel()
+
+	store := &fakeCatalog{active: []models.Chain{{ID: "eth"}}}
+	tokens := &fakeTokens{rows: []models.Token{{ChainID: "eth"}}}
+	resources := &fakeResources{rows: []models.ChainResource{{ChainID: "eth"}}}
+	svc := chainsvc.NewService(store).WithTokens(tokens).WithResources(resources)
+
+	chain, err := svc.FindByID(context.Background(), "eth")
+	require.NoError(t, err)
+	require.Equal(t, "eth", chain.ID)
+
+	missing, err := svc.FindByID(context.Background(), "nope")
+	require.NoError(t, err)
+	require.Nil(t, missing)
+
+	gotTokens, err := svc.FindTokens(context.Background(), "eth")
+	require.NoError(t, err)
+	require.Equal(t, tokens.rows, gotTokens)
+
+	gotResources, err := svc.FindResources(context.Background(), "eth")
+	require.NoError(t, err)
+	require.Equal(t, resources.rows, gotResources)
+
+	_, err = svc.FindTokens(nil, "eth")
+	require.EqualError(t, err, "list chain tokens: context is required")
+	_, err = chainsvc.NewService(store).FindTokens(context.Background(), "eth")
+	require.EqualError(t, err, "chains service: tokens repository is required")
+	_, err = chainsvc.NewService(store).FindResources(context.Background(), "eth")
+	require.EqualError(t, err, "chains service: chain resources repository is required")
+}
+
 func TestListForEnvironmentRequiresContextAndCatalog(t *testing.T) {
 	t.Parallel()
 
@@ -121,6 +153,18 @@ func (f *fakeCatalog) FindActive(context.Context) ([]models.Chain, error) {
 	return f.active, nil
 }
 
+func (f *fakeCatalog) FindByID(_ context.Context, id string) (*models.Chain, error) {
+	if f.err != nil {
+		return nil, f.err
+	}
+	for i := range f.active {
+		if f.active[i].ID == id {
+			return &f.active[i], nil
+		}
+	}
+	return nil, nil
+}
+
 func (f *fakeCatalog) FindByTestnet(_ context.Context, isTestnet bool) ([]models.Chain, error) {
 	f.testnetCalls++
 	f.lastTestnet = isTestnet
@@ -131,4 +175,20 @@ func (f *fakeCatalog) FindByTestnet(_ context.Context, isTestnet bool) ([]models
 		return f.testnet, nil
 	}
 	return f.mainnet, nil
+}
+
+type fakeTokens struct {
+	rows []models.Token
+}
+
+func (f *fakeTokens) FindByChainID(context.Context, string) ([]models.Token, error) {
+	return f.rows, nil
+}
+
+type fakeResources struct {
+	rows []models.ChainResource
+}
+
+func (f *fakeResources) FindByChainID(context.Context, string) ([]models.ChainResource, error) {
+	return f.rows, nil
 }

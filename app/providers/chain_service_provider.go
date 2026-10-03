@@ -23,7 +23,15 @@ func (p *ChainServiceProvider) Register(app foundation.Application) {
 		if err != nil {
 			return nil, err
 		}
-		return chainsvc.NewService(chains), nil
+		tokens, err := resolve[*repositories.TokenRepository](app)
+		if err != nil {
+			return nil, err
+		}
+		resources, err := resolve[*repositories.ChainResourceRepository](app)
+		if err != nil {
+			return nil, err
+		}
+		return chainsvc.NewService(chains).WithTokens(tokens).WithResources(resources), nil
 	})
 	app.Singleton((*repositories.TokenRepository)(nil), func(foundation.Application) (any, error) {
 		return repositories.NewTokenRepository(nil), nil

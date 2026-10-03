@@ -22,9 +22,10 @@ import (
 	"github.com/macrowallets/waas/app/http/middleware"
 	"github.com/macrowallets/waas/app/repositories"
 	accountsvc "github.com/macrowallets/waas/app/services/account"
-	"github.com/macrowallets/waas/app/services/currencies"
 	activitysvc "github.com/macrowallets/waas/app/services/activity"
 	authsvc "github.com/macrowallets/waas/app/services/auth"
+	chainsvc "github.com/macrowallets/waas/app/services/chains"
+	"github.com/macrowallets/waas/app/services/currencies"
 	featuressvc "github.com/macrowallets/waas/app/services/features"
 	settingssvc "github.com/macrowallets/waas/app/services/settings"
 	walletsvc "github.com/macrowallets/waas/app/services/wallet"
@@ -254,9 +255,7 @@ func newDashboardWalletTransactionsController() *dashwallets.TransactionsControl
 
 func newDashboardChainsController() *dashchains.ChainsController {
 	return dashchains.NewChainsController(
-		container.MustMake[*repositories.ChainRepository](),
-		container.MustMake[*repositories.TokenRepository](),
-		container.MustMake[*repositories.ChainResourceRepository](),
+		container.MustMake[*chainsvc.Service](),
 	)
 }
 

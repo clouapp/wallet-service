@@ -5,35 +5,19 @@ import (
 
 	"github.com/macrowallets/waas/app/http/responses"
 	"github.com/macrowallets/waas/app/models"
-	"github.com/macrowallets/waas/app/repositories"
+	chainsvc "github.com/macrowallets/waas/app/services/chains"
 )
 
 // ChainsController serves the dashboard chain catalogue.
 type ChainsController struct {
-	chains    *repositories.ChainRepository
-	tokens    *repositories.TokenRepository
-	resources *repositories.ChainResourceRepository
+	chains *chainsvc.Service
 }
 
-func NewChainsController(
-	chains *repositories.ChainRepository,
-	tokens *repositories.TokenRepository,
-	resources *repositories.ChainResourceRepository,
-) *ChainsController {
+func NewChainsController(chains *chainsvc.Service) *ChainsController {
 	if chains == nil {
-		panic("dashboard chains controller: chains repository is required")
+		panic("dashboard chains controller: chains service is required")
 	}
-	if tokens == nil {
-		panic("dashboard chains controller: tokens repository is required")
-	}
-	if resources == nil {
-		panic("dashboard chains controller: chain resources repository is required")
-	}
-	return &ChainsController{
-		chains:    chains,
-		tokens:    tokens,
-		resources: resources,
-	}
+	return &ChainsController{chains: chains}
 }
 
 // ListChains godoc
@@ -49,14 +33,7 @@ func NewChainsController(
 func (ctrl *ChainsController) ListChains(ctx http.Context) http.Response {
 	env, _ := ctx.Value("account_environment").(string)
 
-	var chainList []models.Chain
-	var err error
-	if env == models.EnvironmentProd || env == models.EnvironmentTest {
-		isTestnet := env == models.EnvironmentTest
-		chainList, err = ctrl.chains.FindByTestnet(ctx.Context(), isTestnet)
-	} else {
-		chainList, err = ctrl.chains.FindActive(ctx.Context())
-	}
+	chainList, err := ctrl.chains.ListForEnvironment(ctx.Context(), env)
 	if err != nil {
 		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to fetch chains"})
 	}
@@ -84,8 +61,8 @@ func (ctrl *ChainsController) GetChain(ctx http.Context) http.Response {
 		}
 	}
 
-	tokens, _ := ctrl.tokens.FindByChainID(ctx.Context(), chainID)
-	resources, _ := ctrl.resources.FindByChainID(ctx.Context(), chainID)
+	tokens, _ := ctrl.chains.FindTokens(ctx.Context(), chainID)
+	resources, _ := ctrl.chains.FindResources(ctx.Context(), chainID)
 
 	return ctx.Response().Success().Json(http.Json{
 		"chain":     chain,
@@ -114,7 +91,7 @@ func (ctrl *ChainsController) ListChainTokens(ctx http.Context) http.Response {
 		}
 	}
 
-	tokens, tokenErr := ctrl.tokens.FindByChainID(ctx.Context(), chainID)
+	tokens, tokenErr := ctrl.chains.FindTokens(ctx.Context(), chainID)
 	if tokenErr != nil {
 		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to fetch tokens"})
 	}
@@ -142,7 +119,7 @@ func (ctrl *ChainsController) ListChainResources(ctx http.Context) http.Response
 		}
 	}
 
-	resources, resErr := ctrl.resources.FindByChainID(ctx.Context(), chainID)
+	resources, resErr := ctrl.chains.FindResources(ctx.Context(), chainID)
 	if resErr != nil {
 		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to fetch resources"})
 	}
