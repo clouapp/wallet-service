@@ -223,7 +223,7 @@ func (ctrl *WithdrawalsController) CreateWalletWithdrawal(ctx http.Context) http
 		return controllers.MapInternalError(ctx, findErr, "find_idempotent_withdrawal")
 	}
 	if existing != nil && (existing.Status == "broadcast" || existing.Status == "confirmed") {
-		return ctx.Response().Json(http.StatusOK, existing)
+		return responses.Send(ctx, http.StatusOK, existing)
 	}
 
 	w := existing
@@ -305,7 +305,7 @@ func (ctrl *WithdrawalsController) CreateWalletWithdrawal(ctx http.Context) http
 		return controllers.MapInternalError(ctx, updateErr, "persist_broadcast_withdrawal")
 	}
 	controllers.PublishWithdrawalBroadcast(ctx, ctrl.events, w, tx)
-	return ctx.Response().Json(http.StatusCreated, w)
+	return responses.Send(ctx, http.StatusCreated, w)
 }
 
 // GetWalletWithdrawalByIdempotencyKey godoc
@@ -359,5 +359,5 @@ func (ctrl *WithdrawalsController) GetWalletWithdrawalByIdempotencyKey(ctx http.
 		}
 	}
 
-	return ctx.Response().Json(http.StatusOK, response)
+	return responses.Send(ctx, http.StatusOK, response)
 }
