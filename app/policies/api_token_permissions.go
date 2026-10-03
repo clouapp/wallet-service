@@ -1,6 +1,9 @@
 package policies
 
 import (
+	"encoding/json"
+	"strings"
+
 	"github.com/goravel/framework/auth/access"
 	contractsaccess "github.com/goravel/framework/contracts/auth/access"
 )
@@ -72,6 +75,33 @@ func HoldsAPITokenPermission(role, permission string) bool {
 	default:
 		return false
 	}
+}
+
+// APITokenAllows reports whether stored permissions may call a route that
+// requires permission. A blank store is the omitted grant, and that token
+// keeps the access it has today: S3.4.6 does not take it away. A JSON array
+// is limited to the names it lists, including an empty array. Any other
+// store denies. An empty permission name, or a name outside the catalog,
+// denies: that is a wiring bug, not a grant.
+func APITokenAllows(stored, permission string) bool {
+	permission = strings.TrimSpace(permission)
+	if permission == "" || !IsAPITokenPermission(permission) {
+		return false
+	}
+	stored = strings.TrimSpace(stored)
+	if stored == "" {
+		return true
+	}
+	var permissions []string
+	if err := json.Unmarshal([]byte(stored), &permissions); err != nil {
+		return false
+	}
+	for _, name := range permissions {
+		if name == permission {
+			return true
+		}
+	}
+	return false
 }
 
 // MintAPITokenPermissions is the MayGrant analogue for a token: every named

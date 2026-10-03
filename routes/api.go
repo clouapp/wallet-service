@@ -47,36 +47,43 @@ func RegisterExternalAPI() {
 	facades.Route().Prefix("/api/v1").Middleware(middleware.APITokenAuth(
 		container.MustMake[*accountsvc.Service](),
 	), noCache).Group(func(router route.Router) {
+		// APIScope follows the S3.4.6 catalog and the S3.4.2 verbs:
+		// wallets.read/create, addresses.create, withdrawals.create,
+		// sweep.execute, webhooks.read/write, transactions.read.
+		// A route the plan does not name stays behind APITokenAuth only.
+		// Wallet routes resolve the wallet (404) before the scope check (403).
 		router.Get("/chains", chainCtrl.ListChains)
 
-		router.Post("/wallets", walletCtrl.CreateWallet)
-		router.Get("/wallets", walletCtrl.ListWallets)
+		router.Middleware(middleware.APIScope(middleware.PermWalletsCreate)).Post("/wallets", walletCtrl.CreateWallet)
+		router.Middleware(middleware.APIScope(middleware.PermWalletsRead)).Get("/wallets", walletCtrl.ListWallets)
 
 		router.Get("/addresses/{address}", addressCtrl.LookupAddress)
 		router.Get("/users/{external_id}/addresses", addressCtrl.ListUserAddresses)
 
 		router.Prefix("/wallets/{walletId}").Middleware(middleware.APIWalletContext()).Group(func(r route.Router) {
-			r.Get("", walletCtrl.GetWallet)
+			r.Middleware(middleware.APIScope(middleware.PermWalletsRead)).Get("", walletCtrl.GetWallet)
 
-			r.Post("/addresses", addressCtrl.GenerateAddress)
+			r.Middleware(middleware.APIScope(middleware.PermAddressesCreate)).Post("/addresses", addressCtrl.GenerateAddress)
 			r.Get("/addresses", addressCtrl.ListWalletAddresses)
 			r.Patch("/addresses/{addressId}", addressCtrl.UpdateAddress)
 
-			r.Post("/consolidate", sweepCtrl.ConsolidateWallet)
+			r.Middleware(middleware.APIScope(middleware.PermSweepExecute)).Post("/consolidate", sweepCtrl.ConsolidateWallet)
 			r.Get("/gas-status", sweepCtrl.GetGasStatus)
 			r.Post("/gas-check", sweepCtrl.ForceGasCheck)
 			r.Post("/withdraw/preview", sweepCtrl.PreviewWithdraw)
-			r.Post("/withdrawals", withdrawalCtrl.CreateWalletWithdrawal)
+			r.Middleware(middleware.APIScope(middleware.PermWithdrawalsCreate)).Post("/withdrawals", withdrawalCtrl.CreateWalletWithdrawal)
 			r.Get("/withdrawals/{idempotencyKey}", withdrawalCtrl.GetWalletWithdrawalByIdempotencyKey)
 		})
 
-		router.Get("/transactions", transactionCtrl.ListTransactions)
-		router.Get("/transactions/{id}", transactionCtrl.GetTransaction)
-		router.Get("/users/{external_id}/transactions", transactionCtrl.ListUserTransactions)
+		router.Middleware(middleware.APIScope(middleware.PermTransactionsRead)).Group(func(r route.Router) {
+			r.Get("/transactions", transactionCtrl.ListTransactions)
+			r.Get("/transactions/{id}", transactionCtrl.GetTransaction)
+			r.Get("/users/{external_id}/transactions", transactionCtrl.ListUserTransactions)
+		})
 
-		router.Post("/webhooks", webhookCtrl.CreateWebhook)
-		router.Get("/webhooks", webhookCtrl.ListWebhooks)
-		router.Patch("/webhooks/{webhookId}", webhookCtrl.UpdateWebhook)
+		router.Middleware(middleware.APIScope(middleware.PermWebhooksWrite)).Post("/webhooks", webhookCtrl.CreateWebhook)
+		router.Middleware(middleware.APIScope(middleware.PermWebhooksRead)).Get("/webhooks", webhookCtrl.ListWebhooks)
+		router.Middleware(middleware.APIScope(middleware.PermWebhooksWrite)).Patch("/webhooks/{webhookId}", webhookCtrl.UpdateWebhook)
 	})
 }
 

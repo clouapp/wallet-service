@@ -87,6 +87,16 @@ func AccountEnvironment(ctx context.Context) (string, bool) {
 	return stringValue(ctx, KeyAccountEnvironment)
 }
 
+// APIToken is the access token APITokenAuth stored. A missing or wrong-typed
+// value is nil, false.
+func APIToken(ctx context.Context) (*models.AccessToken, bool) {
+	if ctx == nil {
+		return nil, false
+	}
+	token, ok := ctx.Value(KeyAPIToken).(*models.AccessToken)
+	return token, ok
+}
+
 // Wallet is the wallet in scope. A missing or wrong-typed value is nil, false.
 func Wallet(ctx context.Context) (*models.Wallet, bool) {
 	if ctx == nil {

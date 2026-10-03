@@ -67,6 +67,34 @@ func TestHoldsAPITokenPermission(t *testing.T) {
 	}
 }
 
+func TestAPITokenAllows(t *testing.T) {
+	t.Parallel()
+
+	for _, permission := range APITokenPermissionCatalog() {
+		if !APITokenAllows("", permission) || !APITokenAllows("  ", permission) {
+			t.Fatalf("blank store must keep today's access to %s", permission)
+		}
+	}
+	if APITokenAllows("", "") || APITokenAllows(`["wallets.read"]`, "") || APITokenAllows("", "wallets:read") {
+		t.Fatal("an empty or unknown permission name must deny")
+	}
+	if APITokenAllows("[]", PermWalletsRead) {
+		t.Fatal("an empty JSON array lists nothing")
+	}
+	if !APITokenAllows(`["wallets.read","webhooks.write"]`, PermWalletsRead) {
+		t.Fatal("a listed permission must allow")
+	}
+	if APITokenAllows(`["wallets.read","webhooks.write"]`, PermWalletsCreate) {
+		t.Fatal("a permission the token does not list must deny")
+	}
+	if APITokenAllows("read", PermWalletsRead) || APITokenAllows(`{"wallets.read":true}`, PermWalletsRead) {
+		t.Fatal("a store that is not a JSON array must deny")
+	}
+	if APITokenAllows("null", PermTransactionsRead) {
+		t.Fatal("JSON null must deny")
+	}
+}
+
 func TestMintAPITokenPermissionsRefusesWhatTheCreatorDoesNotHold(t *testing.T) {
 	t.Parallel()
 

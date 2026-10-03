@@ -63,8 +63,8 @@ func TestReadersSeeTheHistoricalStringKeys(t *testing.T) {
 	if got := MustWallet(ctx); got != wallet {
 		t.Fatalf("MustWallet = %v", got)
 	}
-	if got, ok := ctx.Value(KeyAPIToken).(*models.AccessToken); !ok || got != token {
-		t.Fatalf("api token = %v, %v", got, ok)
+	if got, ok := APIToken(ctx); !ok || got != token {
+		t.Fatalf("APIToken = %v, %v", got, ok)
 	}
 	if got, ok := ctx.Value(KeyWalletID).(uuid.UUID); !ok || got != walletID {
 		t.Fatalf("wallet id = %v, %v", got, ok)
@@ -96,6 +96,12 @@ func TestMissingValuesStayAbsent(t *testing.T) {
 	}
 	if wallet, ok := Wallet(ctx); ok || wallet != nil {
 		t.Fatal("missing wallet reported present")
+	}
+	if token, ok := APIToken(ctx); ok || token != nil {
+		t.Fatal("missing api token reported present")
+	}
+	if token, ok := APIToken(nil); ok || token != nil {
+		t.Fatal("nil context reported an api token")
 	}
 }
 
