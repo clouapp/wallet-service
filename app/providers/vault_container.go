@@ -16,6 +16,7 @@ import (
 	"github.com/redis/go-redis/v9"
 
 	coinapiws "github.com/macrowallets/waas/app/adapters/price/coinapi"
+	"github.com/macrowallets/waas/app/adapters/redis/addressset"
 	"github.com/macrowallets/waas/app/container"
 	"github.com/macrowallets/waas/app/facades"
 	"github.com/macrowallets/waas/app/models"
@@ -374,7 +375,7 @@ func buildVaultContainer(app foundation.Application) (*container.Container, erro
 	if err := c.DepositService.SetScanOptions(scanOptions); err != nil {
 		return nil, fmt.Errorf("vault: deposit scan options: %w", err)
 	}
-	c.IngestService = ingest.NewService(c.Redis, c.Registry, c.WebhookService, c.AddressRepo, c.TransactionRepo)
+	c.IngestService = ingest.NewService(addressset.New(c.Redis), c.Registry, c.WebhookService, c.AddressRepo, c.TransactionRepo)
 	c.IngestService.SetDepositEvents(c.DepositEvents)
 	c.BalanceRefreshService = refresh.NewBalanceService(
 		c.Registry,

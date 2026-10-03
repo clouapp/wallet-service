@@ -8,7 +8,6 @@ import (
 	"github.com/google/uuid"
 	"github.com/goravel/framework/contracts/event"
 	"github.com/goravel/framework/facades"
-	"github.com/redis/go-redis/v9"
 
 	"github.com/macrowallets/waas/app/dtos"
 	"github.com/macrowallets/waas/app/models"
@@ -31,8 +30,19 @@ type transactionStore interface {
 	Create(ctx context.Context, tx *models.Transaction) error
 }
 
+// AddressSet is the watched-address set. The provider supplies it; this package
+// never imports the Redis client. A nil AddressSet means Redis is not configured.
+type AddressSet interface {
+	SIsMember(ctx context.Context, key string, member any) Membership
+}
+
+// Membership is one SISMEMBER answer. Result is false with a nil error when the member is absent.
+type Membership interface {
+	Result() (bool, error)
+}
+
 type Service struct {
-	rdb         *redis.Client
+	addresses   AddressSet
 	registry    *chain.Registry
 	webhookSvc  *webhook.Service
 	addressRepo addressReader
@@ -51,8 +61,8 @@ func (s *Service) SetDepositEvents(deposits DepositEvents) {
 	s.deposits = deposits
 }
 
-func NewService(rdb *redis.Client, registry *chain.Registry, webhookSvc *webhook.Service, addressRepo addressReader, txRepo transactionStore) *Service {
-	return &Service{rdb: rdb, registry: registry, webhookSvc: webhookSvc, addressRepo: addressRepo, txRepo: txRepo}
+func NewService(addresses AddressSet, registry *chain.Registry, webhookSvc *webhook.Service, addressRepo addressReader, txRepo transactionStore) *Service {
+	return &Service{addresses: addresses, registry: registry, webhookSvc: webhookSvc, addressRepo: addressRepo, txRepo: txRepo}
 }
 
 func (s *Service) ProcessTransfers(ctx context.Context, chainID string, transfers []providers.InboundTransfer) error {
@@ -74,8 +84,8 @@ func (s *Service) processTransfer(ctx context.Context, chainID string, adapter t
 		return fmt.Errorf("missing amount")
 	}
 
-	if s.rdb != nil {
-		isMine, err := s.rdb.SIsMember(ctx, "vault:addresses:"+chainID, transfer.To).Result()
+	if s.addresses != nil {
+		isMine, err := s.addresses.SIsMember(ctx, "vault:addresses:"+chainID, transfer.To).Result()
 		if err != nil || !isMine {
 			return nil
 		}

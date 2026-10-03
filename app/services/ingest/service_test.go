@@ -117,6 +117,86 @@ func TestProcessTransfers_HumanUSDTUsesSeedDecimals(t *testing.T) {
 	assert.Equal(t, "1500000", txs.created[0].Amount)
 }
 
+func TestProcessTransfers_AddressSetKeepsTheMembershipDecision(t *testing.T) {
+	const to = "0xReceiver"
+	reg, addrs, txs := ingestFixture(to)
+	member := &stubAddressSet{member: true}
+	svc := NewService(member, reg, nil, addrs, txs)
+
+	err := svc.ProcessTransfers(t.Context(), models.ChainETH, []providers.InboundTransfer{{
+		TxHash: "0xnative",
+		To:     to,
+		From:   "0xfrom",
+		Amount: big.NewInt(42),
+	}})
+	require.NoError(t, err)
+	require.Len(t, txs.created, 1)
+	assert.Equal(t, "42", txs.created[0].Amount)
+	assert.Equal(t, "vault:addresses:"+models.ChainETH, member.key)
+	assert.Equal(t, to, member.value)
+
+	skipped := &ingestTxRepo{}
+	absent := &stubAddressSet{}
+	absentSvc := NewService(absent, reg, nil, addrs, skipped)
+	err = absentSvc.ProcessTransfers(t.Context(), models.ChainETH, []providers.InboundTransfer{{
+		TxHash: "0xskip",
+		To:     to,
+		From:   "0xfrom",
+		Amount: big.NewInt(1),
+	}})
+	require.NoError(t, err)
+	assert.Empty(t, skipped.created)
+
+	failed := &ingestTxRepo{}
+	broken := &stubAddressSet{err: assert.AnError}
+	brokenSvc := NewService(broken, reg, nil, addrs, failed)
+	err = brokenSvc.ProcessTransfers(t.Context(), models.ChainETH, []providers.InboundTransfer{{
+		TxHash: "0xerr",
+		To:     to,
+		From:   "0xfrom",
+		Amount: big.NewInt(1),
+	}})
+	require.NoError(t, err)
+	assert.Empty(t, failed.created)
+}
+
+func ingestFixture(to string) (*chain.Registry, *ingestAddressRepo, *ingestTxRepo) {
+	reg := chain.NewRegistry()
+	mockChain := mocks.NewMockChain(models.ChainETH)
+	mockChain.NativeAssetVal = models.NativeETH
+	reg.RegisterChain(mockChain)
+	addrs := &ingestAddressRepo{addr: &models.Address{
+		ID:             uuid.New(),
+		WalletID:       uuid.New(),
+		ExternalUserID: "user-1",
+		Chain:          models.ChainETH,
+		Address:        to,
+	}}
+	return reg, addrs, &ingestTxRepo{}
+}
+
+type stubAddressSet struct {
+	member bool
+	err    error
+	key    string
+	value  any
+}
+
+func (s *stubAddressSet) SIsMember(_ context.Context, key string, member any) Membership {
+	s.key = key
+	s.value = member
+	return stubMembership{member: s.member, err: s.err}
+}
+
+type stubMembership struct {
+	member bool
+	err    error
+}
+
+func (s stubMembership) Result() (bool, error) {
+	return s.member, s.err
+}
+
 type ingestAddressRepo struct {
 	addr *models.Address
 }

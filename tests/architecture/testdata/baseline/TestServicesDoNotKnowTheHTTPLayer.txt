@@ -2,7 +2,6 @@
 app/services/chainregistry/orm_store.go calls facades.Orm() (x9)
 app/services/deposit imports app/repositories
 app/services/deposit imports github.com/redis/go-redis/v9
-app/services/ingest imports github.com/redis/go-redis/v9
 app/services/ingest/service.go calls facades.Event()
 app/services/price imports github.com/redis/go-redis/v9 (x2)
 app/services/queue imports github.com/aws/aws-sdk-go-v2/aws
