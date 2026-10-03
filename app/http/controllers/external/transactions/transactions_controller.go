@@ -69,7 +69,7 @@ func (ctrl *TransactionsController) ListTransactions(ctx http.Context) http.Resp
 	if err != nil {
 		return controllers.MapInternalError(ctx, err, "list_transactions")
 	}
-	return ctx.Response().Json(http.StatusOK, pagination.Response(controllers.TransactionViews(txs), total, limit, offset))
+	return responses.Send(ctx, http.StatusOK, pagination.Response(controllers.TransactionViews(txs), total, limit, offset))
 }
 
 // GetTransaction godoc
@@ -138,5 +138,5 @@ func (ctrl *TransactionsController) ListUserTransactions(ctx http.Context) http.
 	}
 	// Empty result when external_id belongs to another account — same body
 	// as the legitimate "no transactions yet" case (IDOR mitigation).
-	return ctx.Response().Json(http.StatusOK, pagination.Response(controllers.TransactionViews(txs), total, limit, offset))
+	return responses.Send(ctx, http.StatusOK, pagination.Response(controllers.TransactionViews(txs), total, limit, offset))
 }
