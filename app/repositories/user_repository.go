@@ -166,6 +166,32 @@ func (r *UserRepository) SetSuspendedAt(ctx context.Context, id uuid.UUID, at *t
 	return nil
 }
 
+// List pages every user, newest created_at first. Equal timestamps break on
+// id descending so a page is stable. limit must be positive and offset must
+// not be negative.
+func (r *UserRepository) List(ctx context.Context, limit, offset int) ([]models.User, int64, error) {
+	if ctx == nil {
+		return nil, 0, fmt.Errorf("list users: context is required")
+	}
+	if limit <= 0 || offset < 0 {
+		return nil, 0, fmt.Errorf("list users: limit and offset are invalid")
+	}
+	total, err := r.Query(ctx).Model(&models.User{}).Count()
+	if err != nil {
+		return nil, 0, fmt.Errorf("list users: %w", err)
+	}
+	rows := []models.User{}
+	err = r.Query(ctx).
+		Order("created_at DESC, id DESC").
+		Offset(offset).
+		Limit(limit).
+		Find(&rows)
+	if err != nil {
+		return nil, 0, fmt.Errorf("list users: %w", err)
+	}
+	return rows, total, nil
+}
+
 // UpdateSessionsRevokedAt sets the session watermark. Sessions issued before it are refused.
 func (r *UserRepository) UpdateSessionsRevokedAt(ctx context.Context, id uuid.UUID, at time.Time) error {
 	if _, err := r.Query(ctx).Model(&models.User{}).Where("id = ?", id).Update("sessions_revoked_at", at); err != nil {

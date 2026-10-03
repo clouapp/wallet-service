@@ -31,6 +31,9 @@ type Store interface {
 	EnableTotp(ctx context.Context, id uuid.UUID) error
 	DisableTotp(ctx context.Context, id uuid.UUID) error
 	SetSuspendedAt(ctx context.Context, id uuid.UUID, at *time.Time) error
+	// List pages every user, newest created_at first, id descending when the
+	// timestamps match. The rows still hold secrets; the HTTP view drops them.
+	List(ctx context.Context, limit, offset int) ([]models.User, int64, error)
 }
 
 // RecoveryStore is the TOTP recovery-code persistence.

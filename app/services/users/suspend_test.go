@@ -179,6 +179,9 @@ func (s *suspensionStore) UpdateTotpSecret(context.Context, uuid.UUID, string) e
 }
 func (s *suspensionStore) EnableTotp(context.Context, uuid.UUID) error  { return errors.New("unused") }
 func (s *suspensionStore) DisableTotp(context.Context, uuid.UUID) error { return errors.New("unused") }
+func (s *suspensionStore) List(context.Context, int, int) ([]models.User, int64, error) {
+	return nil, 0, errors.New("unused")
+}
 func (s *suspensionStore) SetSuspendedAt(_ context.Context, id uuid.UUID, at *time.Time) error {
 	if s.user == nil || s.user.ID != id {
 		return errors.New("missing user")

@@ -66,3 +66,6 @@ func (f *fakeStore) DisableTotp(context.Context, uuid.UUID) error              {
 func (f *fakeStore) SetSuspendedAt(context.Context, uuid.UUID, *time.Time) error {
 	return f.err
 }
+func (f *fakeStore) List(context.Context, int, int) ([]models.User, int64, error) {
+	return nil, 0, f.err
+}

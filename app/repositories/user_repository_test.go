@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/goravel/framework/facades"
 	"github.com/stretchr/testify/suite"
 
 	"github.com/macrowallets/waas/app/models"
@@ -177,4 +178,39 @@ func (s *UserRepositoryTestSuite) TestSetSuspendedAtSetsAndClearsTheColumn() {
 	s.Require().NoError(err)
 	s.Nil(found.SuspendedAt)
 	s.EqualError(s.repo.SetSuspendedAt(context.Background(), uuid.Nil, &at), "set suspended at: user id is required")
+}
+
+func (s *UserRepositoryTestSuite) TestListOrdersByCreatedAtDescending() {
+	older := insertActiveUserRow(s.T())
+	newer := insertActiveUserRow(s.T())
+	s.stampCreatedAt(older, time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC))
+	s.stampCreatedAt(newer, time.Date(2024, 6, 1, 0, 0, 0, 0, time.UTC))
+
+	first, total, err := s.repo.List(context.Background(), 1, 0)
+	s.Require().NoError(err)
+	s.Equal(int64(2), total)
+	s.Require().Len(first, 1)
+	s.Equal(newer, first[0].ID)
+
+	second, total, err := s.repo.List(context.Background(), 1, 1)
+	s.Require().NoError(err)
+	s.Equal(int64(2), total)
+	s.Require().Len(second, 1)
+	s.Equal(older, second[0].ID)
+
+	past, total, err := s.repo.List(context.Background(), 20, 2)
+	s.Require().NoError(err)
+	s.Equal(int64(2), total)
+	s.Empty(past)
+
+	_, _, err = s.repo.List(context.Background(), 0, 0)
+	s.EqualError(err, "list users: limit and offset are invalid")
+	_, _, err = s.repo.List(nil, 20, 0)
+	s.EqualError(err, "list users: context is required")
+}
+
+func (s *UserRepositoryTestSuite) stampCreatedAt(id uuid.UUID, at time.Time) {
+	s.T().Helper()
+	_, err := facades.Orm().Query().Exec(`UPDATE users SET created_at = ? WHERE id = ?`, at, id)
+	s.Require().NoError(err)
 }

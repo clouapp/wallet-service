@@ -175,6 +175,9 @@ func (s *mfaStore) DisableTotp(_ context.Context, id uuid.UUID) error {
 func (s *mfaStore) SetSuspendedAt(context.Context, uuid.UUID, *time.Time) error {
 	return errors.New("unused")
 }
+func (s *mfaStore) List(context.Context, int, int) ([]models.User, int64, error) {
+	return nil, 0, errors.New("unused")
+}
 
 type mfaRecovery struct {
 	count   int64

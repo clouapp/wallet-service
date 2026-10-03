@@ -134,6 +134,7 @@ func RegisterAdminRoutes() {
 		router.Get("/features", platformFeaturesCtrl.Index)
 		router.Patch("/features/{key}", platformFeaturesCtrl.Update)
 		router.Get("/activity", accountActivityCtrl.Platform)
+		router.Get("/users", platformUsersCtrl.Index)
 		router.Post("/users/{id}/suspend", platformUsersCtrl.Suspend)
 		router.Post("/users/{id}/reactivate", platformUsersCtrl.Reactivate)
 		router.Post("/users/{id}/sessions/revoke", platformUsersCtrl.RevokeSessions)
