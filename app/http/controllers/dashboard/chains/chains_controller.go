@@ -70,7 +70,7 @@ func (ctrl *ChainsController) GetChain(ctx http.Context) http.Response {
 
 	return ctx.Response().Success().Json(http.Json{
 		"chain":     chain,
-		"tokens":    tokens,
+		"tokens":    tokenViews(tokens),
 		"resources": chainResourceViews(resources),
 	})
 }
@@ -102,7 +102,7 @@ func (ctrl *ChainsController) ListChainTokens(ctx http.Context) http.Response {
 		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to fetch tokens"})
 	}
 
-	return ctx.Response().Success().Json(http.Json{"data": tokens})
+	return ctx.Response().Success().Json(http.Json{"data": tokenViews(tokens)})
 }
 
 // ListChainResources returns resources (explorers, faucets, docs) for a chain.

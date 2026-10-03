@@ -7,14 +7,14 @@ import (
 
 type Token struct {
 	orm.Model
-	ID              uuid.UUID `gorm:"type:uuid;primary_key" json:"id"`
-	ChainID         string    `gorm:"type:varchar(20);not null" json:"chain_id"`
-	Symbol          string    `gorm:"type:varchar(20);not null" json:"symbol"`
-	Name            string    `gorm:"type:varchar(100);not null" json:"name"`
-	ContractAddress string    `gorm:"type:varchar(255);not null" json:"contract_address"`
-	Decimals        int       `gorm:"not null" json:"decimals"`
-	IconURL         *string   `gorm:"type:varchar(500)" json:"icon_url,omitempty"`
-	Status          string    `gorm:"type:varchar(20);default:active" json:"status"`
+	ID              uuid.UUID `gorm:"type:uuid;primary_key"`
+	ChainID         string    `gorm:"type:varchar(20);not null"`
+	Symbol          string    `gorm:"type:varchar(20);not null"`
+	Name            string    `gorm:"type:varchar(100);not null"`
+	ContractAddress string    `gorm:"type:varchar(255);not null"`
+	Decimals        int       `gorm:"not null"`
+	IconURL         *string   `gorm:"type:varchar(500)"`
+	Status          string    `gorm:"type:varchar(20);default:active"`
 }
 
 func (t *Token) TableName() string { return "tokens" }
