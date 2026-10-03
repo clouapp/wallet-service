@@ -137,6 +137,7 @@ func RegisterAdminRoutes() {
 		router.Post("/users/{id}/suspend", platformUsersCtrl.Suspend)
 		router.Post("/users/{id}/reactivate", platformUsersCtrl.Reactivate)
 		router.Post("/users/{id}/sessions/revoke", platformUsersCtrl.RevokeSessions)
+		router.Delete("/users/{id}/mfa", platformUsersCtrl.ResetMFA)
 	})
 
 	facades.Route().Prefix("/v1/chains").Middleware(middleware.SessionAuth(), accountHeader, totpEnrollment, noCache).Group(func(router route.Router) {

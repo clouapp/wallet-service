@@ -13,8 +13,8 @@ import (
 	usersvc "github.com/macrowallets/waas/app/services/users"
 )
 
-// UsersController suspends and reactivates platform users. Only a platform
-// admin may call it. Membership suspension stays on the account member route.
+// UsersController is the platform user actions a platform admin may call.
+// Membership suspension stays on the account member route.
 type UsersController struct {
 	users *usersvc.Service
 }
@@ -85,6 +85,43 @@ func (ctrl *UsersController) RevokeSessions(ctx http.Context) http.Response {
 		}
 	}
 	return ctx.Response().NoContent()
+}
+
+// ResetMFA godoc
+// @Summary      Reset a platform user's TOTP
+// @Description  Disables TOTP and clears the secret and recovery codes. Permission users.mfa.reset; a platform admin may call it. The activity row is user.mfa_reset with a null account id. The user is not suspended and sessions stay.
+// @Tags         Platform Users
+// @Security     BearerAuth
+// @Param        id  path  string  true  "User UUID"
+// @Success      204  "No content"
+// @Failure      401  {object}  responses.ErrorBody
+// @Failure      403  {object}  responses.ErrorBody
+// @Failure      404  {object}  responses.ErrorBody
+// @Router       /platform/users/{id}/mfa [delete]
+func (ctrl *UsersController) ResetMFA(ctx http.Context) http.Response {
+	actorID := middleware.SessionUserID(ctx)
+	if actorID == uuid.Nil {
+		return responses.Send(ctx, http.StatusUnauthorized, http.Json{"error": "unauthorized"})
+	}
+	targetID, err := requests.RouteUUID(ctx, "id")
+	if err != nil {
+		return responses.Send(ctx, http.StatusBadRequest, http.Json{"error": "invalid user id"})
+	}
+	if err := ctrl.users.ResetMFA(ctx.Context(), actorID, targetID); err != nil {
+		return mapMFAResetError(ctx, err)
+	}
+	return ctx.Response().NoContent()
+}
+
+func mapMFAResetError(ctx http.Context, err error) http.Response {
+	switch {
+	case errors.Is(err, usersvc.ErrNotFound):
+		return responses.Send(ctx, http.StatusNotFound, http.Json{"error": "user not found"})
+	case errors.Is(err, usersvc.ErrMFAForbidden):
+		return responses.Send(ctx, http.StatusForbidden, http.Json{"error": err.Error()})
+	default:
+		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "internal_error"})
+	}
 }
 
 type suspensionBody struct {

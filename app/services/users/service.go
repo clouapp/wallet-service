@@ -39,6 +39,9 @@ type RecoveryStore interface {
 	MarkUsed(ctx context.Context, id uuid.UUID) error
 	CreateBatch(ctx context.Context, codes []models.TotpRecoveryCode) error
 	DeleteByUserID(ctx context.Context, userID uuid.UUID) error
+	// CountByUserID reports how many recovery rows the user still has. It
+	// does not return the codes or their hashes.
+	CountByUserID(ctx context.Context, userID uuid.UUID) (int64, error)
 }
 
 // Service is the user reads and writes the dashboard handlers call.

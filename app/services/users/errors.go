@@ -13,4 +13,8 @@ var (
 	// names users.sessions.revoke; this branch has no platform permission
 	// catalog, so the gate is the platform_admins row.
 	ErrSessionsForbidden = errors.New("you do not have permission to revoke user sessions")
+	// ErrMFAForbidden is a caller who is not a platform admin. S3.4.1 names
+	// users.mfa.reset; this branch has no platform permission catalog, so the
+	// gate is the platform_admins row.
+	ErrMFAForbidden = errors.New("you do not have permission to reset user mfa")
 )

@@ -58,6 +58,22 @@ func (r *TotpRecoveryCodeRepository) CreateBatch(ctx context.Context, codes []mo
 	return nil
 }
 
+// CountByUserID reports how many recovery rows the user still has. The
+// hashes stay in the table.
+func (r *TotpRecoveryCodeRepository) CountByUserID(ctx context.Context, userID uuid.UUID) (int64, error) {
+	if userID == uuid.Nil {
+		return 0, fmt.Errorf("count recovery codes: user id is required")
+	}
+	total, err := r.Query(ctx).Model(&models.TotpRecoveryCode{}).Where("user_id = ?", userID).Count()
+	if err != nil {
+		return 0, fmt.Errorf("count recovery codes: %w", err)
+	}
+	if total < 0 {
+		return 0, fmt.Errorf("count recovery codes: count is negative")
+	}
+	return total, nil
+}
+
 // DeleteByUserID removes every recovery code for the user.
 func (r *TotpRecoveryCodeRepository) DeleteByUserID(ctx context.Context, userID uuid.UUID) error {
 	if _, err := r.Query(ctx).Where("user_id = ?", userID).Delete(&models.TotpRecoveryCode{}); err != nil {
