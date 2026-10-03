@@ -2,7 +2,6 @@
 . imports the framework facades
 app/console/commands imports the framework facades (x7)
 app/container imports the framework facades (x2)
-app/http/controllers/dashboard/accounts imports the framework facades
 app/http/controllers/dashboard/auth imports the framework facades
 app/http/controllers/testutil imports the framework facades
 app/http/middleware imports the framework facades (x3)

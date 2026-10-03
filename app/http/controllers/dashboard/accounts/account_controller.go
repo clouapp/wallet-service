@@ -6,7 +6,6 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/goravel/framework/contracts/http"
-	"github.com/goravel/framework/facades"
 
 	appfacades "github.com/macrowallets/waas/app/facades"
 	"github.com/macrowallets/waas/app/http/controllers"
@@ -219,7 +218,7 @@ func (ctrl *AccountsController) AddAccountUser(ctx http.Context) http.Response {
 		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to create user"})
 	}
 	if invited {
-		if err := facades.Mail().To([]string{req.Email}).Send(&mails.UserInviteMail{
+		if err := appfacades.Mail().To([]string{req.Email}).Send(&mails.UserInviteMail{
 			To:          req.Email,
 			InvitedBy:   "your team",
 			AccountName: account.Name,
