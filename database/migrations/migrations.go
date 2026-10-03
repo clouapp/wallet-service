@@ -50,5 +50,7 @@ func All() []schema.Migration {
 		&M00000000000420CreateActivityLogTable{},
 		&M00000000000430UniqueDepositPerTransaction{},
 		&M00000000000440SealWebhookConfigSecrets{},
+		&M00000000000450AddTotpLastUsedCounterToUsers{},
+		&M00000000000460AddSessionsRevokedAtToUsers{},
 	}
 }

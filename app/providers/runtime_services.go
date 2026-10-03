@@ -6,6 +6,7 @@ import (
 	"github.com/goravel/framework/contracts/foundation"
 
 	"github.com/macrowallets/waas/app/container"
+	authsvc "github.com/macrowallets/waas/app/services/auth"
 	chainpkg "github.com/macrowallets/waas/app/services/chain"
 	"github.com/macrowallets/waas/app/services/deposit"
 	"github.com/macrowallets/waas/app/services/ingest"
@@ -33,6 +34,9 @@ func registerRuntimeServices(app foundation.Application) {
 	bindRuntime(app, func(c *container.Container) *withdraw.Service { return c.WithdrawalService }, "withdrawal service")
 	bindRuntime(app, func(c *container.Container) *withdrawalevents.Publisher { return c.WithdrawalEvents }, "withdrawal events")
 	bindRuntime(app, func(c *container.Container) *webhooksync.Service { return c.WebhookSyncService }, "webhook sync service")
+	bindRuntime(app, func(c *container.Container) *authsvc.SecondFactorVerifier { return c.SecondFactor }, "second factor verifier")
+	bindRuntime(app, func(c *container.Container) *authsvc.TwoFactorLogin { return c.TwoFactorLogin }, "two factor login")
+	bindRuntime(app, func(c *container.Container) *authsvc.SessionRevoker { return c.SessionRevoker }, "session revoker")
 
 	app.Singleton((*price.CoinAPICredential)(nil), func(foundation.Application) (any, error) {
 		return &price.CoinAPICredential{Key: container.Get().PriceConfig.CoinAPIKey}, nil

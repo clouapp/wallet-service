@@ -14,6 +14,9 @@ import (
 )
 
 // AccountUserRepository persists account memberships.
+// FindByAccountAndUser and FindByUserID answer what the user can access and
+// return active memberships only. IncludeDeleted and by-account listings
+// return every status for membership management.
 type AccountUserRepository struct {
 	db.Base
 }
@@ -57,7 +60,7 @@ func (r *AccountUserRepository) findMembership(ctx context.Context, accountID, u
 	var au models.AccountUser
 	q := r.Query(ctx).Where("account_id = ? AND user_id = ?", accountID, userID)
 	if activeOnly {
-		q = q.Where("deleted_at IS NULL")
+		q = q.Where("deleted_at IS NULL AND status = ?", models.StatusActive)
 	}
 	if err := q.First(&au); err != nil {
 		return nil, fmt.Errorf("find account user: %w", err)
@@ -71,7 +74,7 @@ func (r *AccountUserRepository) findMembership(ctx context.Context, accountID, u
 // FindByUserID returns the user's active memberships.
 func (r *AccountUserRepository) FindByUserID(ctx context.Context, userID uuid.UUID) ([]models.AccountUser, error) {
 	var memberships []models.AccountUser
-	if err := r.Query(ctx).Where("user_id = ? AND deleted_at IS NULL", userID).Find(&memberships); err != nil {
+	if err := r.Query(ctx).Where("user_id = ? AND deleted_at IS NULL AND status = ?", userID, models.StatusActive).Find(&memberships); err != nil {
 		return nil, fmt.Errorf("list user memberships: %w", err)
 	}
 	return memberships, nil
@@ -111,7 +114,7 @@ func (r *AccountUserRepository) RolesForUserAccounts(ctx context.Context, userID
 
 // PaginateByUserID pages the user's active memberships.
 func (r *AccountUserRepository) PaginateByUserID(ctx context.Context, userID uuid.UUID, limit, offset int) ([]models.AccountUser, int64, error) {
-	return r.paginate(ctx, "user_id = ? AND deleted_at IS NULL", userID, limit, offset)
+	return r.paginate(ctx, "user_id = ? AND deleted_at IS NULL AND status = '"+models.StatusActive+"'", userID, limit, offset)
 }
 
 // PaginateByAccountID pages an account's active memberships.

@@ -13,6 +13,8 @@ import (
 )
 
 // WalletUserRepository persists wallet memberships.
+// FindByWalletAndUser returns an active membership only. FindByWalletID and
+// IncludeDeleted return every status for membership management.
 type WalletUserRepository struct {
 	db.Base
 }
@@ -45,7 +47,7 @@ func (r *WalletUserRepository) FindByWalletID(ctx context.Context, walletID uuid
 // FindByWalletAndUser returns the active membership, or ErrRepositoryNotFound.
 func (r *WalletUserRepository) FindByWalletAndUser(ctx context.Context, walletID, userID uuid.UUID) (*models.WalletUser, error) {
 	var wu models.WalletUser
-	if err := r.Query(ctx).Where("wallet_id = ? AND user_id = ? AND deleted_at IS NULL", walletID, userID).First(&wu); err != nil {
+	if err := r.Query(ctx).Where("wallet_id = ? AND user_id = ? AND deleted_at IS NULL AND status = ?", walletID, userID, models.StatusActive).First(&wu); err != nil {
 		return nil, fmt.Errorf("find wallet user: %w", err)
 	}
 	if wu.ID == uuid.Nil {

@@ -29,6 +29,7 @@ import (
 type apiTokenLookup interface {
 	FindAccessToken(ctx context.Context, tokenID, accountID uuid.UUID) (*models.AccessToken, error)
 	RecordAPITokenUse(ctx context.Context, tokenID, accountID uuid.UUID) error
+	FindByID(ctx context.Context, id uuid.UUID) (*models.Account, error)
 }
 
 // APITokenClaims are the JWT claims embedded in account API tokens.
@@ -124,6 +125,15 @@ func APITokenAuth(tokens apiTokenLookup) http.Middleware {
 				abortWithJSON(ctx, http.StatusUnauthorized, http.Json{"error": "invalid request signature"})
 				return
 			}
+		}
+
+		account, err := tokens.FindByID(ctx.Context(), accountID)
+		if err != nil || account == nil {
+			abortWithJSON(ctx, http.StatusUnauthorized, http.Json{"error": "token not found or revoked"})
+			return
+		}
+		if !abortUnlessAccountAllows(ctx, account) {
+			return
 		}
 
 		// S3.4.6 enforces ip_cidr against ClientIP. It does not name a code,

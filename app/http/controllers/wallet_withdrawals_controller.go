@@ -11,8 +11,10 @@ import (
 	"github.com/goravel/framework/contracts/http"
 	"github.com/redis/go-redis/v9"
 
+	appfacades "github.com/macrowallets/waas/app/facades"
 	"github.com/macrowallets/waas/app/http/responses"
 	"github.com/macrowallets/waas/app/models"
+	authsvc "github.com/macrowallets/waas/app/services/auth"
 	mpcpkg "github.com/macrowallets/waas/app/services/mpc"
 	"github.com/macrowallets/waas/app/services/withdrawalevents"
 )
@@ -46,6 +48,24 @@ func withdrawalIDFromIdempotencyKey(idempotencyKey string) (uuid.UUID, error) {
 		return uuid.Nil, fmt.Errorf("idempotency_key must be a UUID")
 	}
 	return id, nil
+}
+
+// RejectReplayedWithdrawalCode spends the same persisted TOTP step login uses,
+// so a code accepted at sign-in cannot authorize a withdrawal and a code
+// accepted here cannot sign in.
+func RejectReplayedWithdrawalCode(ctx http.Context, verifier *authsvc.SecondFactorVerifier, user *models.User, code string) http.Response {
+	if verifier == nil {
+		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "internal error"})
+	}
+	err := verifier.Verify(user, code, "")
+	if err == nil {
+		return nil
+	}
+	if errors.Is(err, authsvc.ErrInvalidSecondFactor) {
+		return responses.Send(ctx, http.StatusUnauthorized, http.Json{"error": "invalid 2FA code"})
+	}
+	appfacades.Log().WithContext(ctx).Errorf("withdraw: totp: %v", err)
+	return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "internal error"})
 }
 
 func verifyWalletPassphrase(ctx http.Context, rdb *redis.Client, wallet *models.Wallet, passphrase string) http.Response {

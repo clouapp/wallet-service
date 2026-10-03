@@ -50,6 +50,13 @@ func WalletContext() http.Middleware {
 			return
 		}
 
+		if wallet.AccountID != nil {
+			account, _ := container.MustMake[*accountsvc.Service]().FindByID(ctx.Context(), *wallet.AccountID)
+			if !abortUnlessAccountAllows(ctx, account) {
+				return
+			}
+		}
+
 		ctx.WithValue(requestctx.KeyWallet, wallet)
 		ctx.WithValue(requestctx.KeyWalletID, wallet.ID)
 		ctx.Request().Next()

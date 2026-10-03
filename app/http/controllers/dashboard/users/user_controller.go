@@ -18,6 +18,7 @@ import (
 	"github.com/macrowallets/waas/app/models"
 	accountsvc "github.com/macrowallets/waas/app/services/account"
 	authsvc "github.com/macrowallets/waas/app/services/auth"
+	"github.com/macrowallets/waas/app/services/sessions"
 	usersvc "github.com/macrowallets/waas/app/services/users"
 )
 
@@ -26,9 +27,12 @@ func validateRequest(ctx http.Context, req http.FormRequest) http.Response {
 }
 
 type UsersController struct {
-	users     *usersvc.Service
-	accounts  *accountsvc.Service
-	passwords *authsvc.Service
+	users        *usersvc.Service
+	accounts     *accountsvc.Service
+	passwords    *authsvc.Service
+	refresh      *sessions.RefreshTokens
+	secondFactor *authsvc.SecondFactorVerifier
+	revoker      *authsvc.SessionRevoker
 }
 
 // NewUsersController wires the dashboard user handlers. Services are the
@@ -37,6 +41,9 @@ func NewUsersController(
 	users *usersvc.Service,
 	accounts *accountsvc.Service,
 	passwords *authsvc.Service,
+	refresh *sessions.RefreshTokens,
+	secondFactor *authsvc.SecondFactorVerifier,
+	revoker *authsvc.SessionRevoker,
 ) *UsersController {
 	if users == nil {
 		panic("dashboard users controller: users service is required")
@@ -47,11 +54,27 @@ func NewUsersController(
 	if passwords == nil {
 		panic("dashboard users controller: auth service is required")
 	}
-	return &UsersController{
-		users:     users,
-		accounts:  accounts,
-		passwords: passwords,
+	if refresh == nil {
+		panic("dashboard users controller: refresh tokens are required")
 	}
+	if secondFactor == nil {
+		panic("dashboard users controller: second factor verifier is required")
+	}
+	if revoker == nil {
+		panic("dashboard users controller: session revoker is required")
+	}
+	return &UsersController{
+		users:        users,
+		accounts:     accounts,
+		passwords:    passwords,
+		refresh:      refresh,
+		secondFactor: secondFactor,
+		revoker:      revoker,
+	}
+}
+
+func (ctrl *UsersController) sessions() controllers.SessionIssuer {
+	return controllers.SessionIssuer{Passwords: ctrl.passwords, Refresh: ctrl.refresh, Revoker: ctrl.revoker}
 }
 
 // GetMe godoc
@@ -131,7 +154,16 @@ func (ctrl *UsersController) ChangePassword(ctx http.Context) http.Response {
 		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to update password"})
 	}
 
-	return responses.Send(ctx, http.StatusOK, http.Json{"message": "password updated successfully"})
+	session, err := ctrl.sessions().ReplaceSessions(ctx, user.ID)
+	if err != nil {
+		appfacades.Log().WithContext(ctx).Errorf("auth: change password: replace sessions: %v", err)
+		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "password updated but sessions could not be renewed"})
+	}
+	return responses.Send(ctx, http.StatusOK, http.Json{
+		"message":       "password updated successfully",
+		"access_token":  session.AccessToken,
+		"refresh_token": session.RefreshToken,
+	})
 }
 
 const (
@@ -278,6 +310,9 @@ func (ctrl *UsersController) UpdateDefaultAccount(ctx http.Context) http.Respons
 // @Router       /users/me/totp/setup [post]
 func (ctrl *UsersController) SetupTOTP(ctx http.Context) http.Response {
 	user := requestctx.MustUser(ctx)
+	if user.TotpEnabled {
+		return responses.Send(ctx, http.StatusConflict, http.Json{"error": "2FA is already enabled"})
+	}
 
 	secret, qrURL, err := ctrl.passwords.GenerateTOTP(user.Email)
 	if err != nil {
@@ -329,7 +364,12 @@ func (ctrl *UsersController) ConfirmTOTP(ctx http.Context) http.Response {
 		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to decrypt secret"})
 	}
 
-	if !ctrl.passwords.VerifyTOTP(decryptedSecret, req.Code) {
+	matched, err := ctrl.secondFactor.RecordConfirmedCode(user.ID, decryptedSecret, req.Code)
+	if err != nil {
+		appfacades.Log().WithContext(ctx).Errorf("user: confirm totp: %v", err)
+		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to enable 2FA"})
+	}
+	if !matched {
 		return responses.Send(ctx, http.StatusUnauthorized, http.Json{"error": "invalid verification code"})
 	}
 
@@ -372,17 +412,45 @@ func (ctrl *UsersController) ConfirmTOTP(ctx http.Context) http.Response {
 // @Failure      500  {object}  ErrorResponse
 // @Router       /users/me/totp [delete]
 func (ctrl *UsersController) DisableTOTP(ctx http.Context) http.Response {
-	user := requestctx.MustUser(ctx)
+	sessionUser := requestctx.MustUser(ctx)
+	user, err := ctrl.users.FindByID(ctx.Context(), sessionUser.ID)
+	if err != nil || user == nil {
+		return responses.Send(ctx, http.StatusNotFound, http.Json{"error": "user not found"})
+	}
+	if user.TotpEnabled {
+		if resp := ctrl.requireLiveSecondFactor(ctx, user); resp != nil {
+			return resp
+		}
+	}
 
 	if err := ctrl.users.DisableTotp(ctx.Context(), user.ID); err != nil {
 		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to disable 2FA"})
 	}
-
 	_ = ctrl.users.DeleteRecoveryCodes(ctx.Context(), user.ID)
 
+	session, err := ctrl.sessions().ReplaceSessions(ctx, user.ID)
+	if err != nil {
+		appfacades.Log().WithContext(ctx).Errorf("auth: disable totp: replace sessions: %v", err)
+		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "2FA disabled but sessions could not be renewed"})
+	}
 	user.TotpEnabled = false
 	user.TotpSecret = ""
-	return responses.Send(ctx, http.StatusOK, user)
+	return responses.Send(ctx, http.StatusOK, http.Json{
+		"user":          user,
+		"access_token":  session.AccessToken,
+		"refresh_token": session.RefreshToken,
+	})
+}
+
+func (ctrl *UsersController) requireLiveSecondFactor(ctx http.Context, user *models.User) http.Response {
+	var req requests.DisableTotpRequest
+	if err := ctx.Request().Bind(&req); err != nil && req.Code == "" && req.RecoveryCode == "" {
+		return controllers.TwoFactorErrorResponse(ctx, authsvc.ErrInvalidSecondFactor)
+	}
+	if err := ctrl.secondFactor.Verify(user, strings.TrimSpace(req.Code), strings.TrimSpace(req.RecoveryCode)); err != nil {
+		return controllers.TwoFactorErrorResponse(ctx, err)
+	}
+	return nil
 }
 
 // ---- Swagger-only types ----

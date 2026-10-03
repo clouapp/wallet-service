@@ -51,6 +51,16 @@ func (r *RefreshTokenRepository) RevokeByID(ctx context.Context, id uuid.UUID) e
 	return nil
 }
 
+// RevokeIfActive revokes a live refresh token and reports whether this call
+// did it. A rotation that finds the token already revoked must not mint a new pair.
+func (r *RefreshTokenRepository) RevokeIfActive(ctx context.Context, id uuid.UUID) (bool, error) {
+	result, err := r.Query(ctx).Model(&models.RefreshToken{}).Where("id = ? AND revoked_at IS NULL", id).Update("revoked_at", time.Now())
+	if err != nil {
+		return false, fmt.Errorf("revoke refresh token: %w", err)
+	}
+	return result.RowsAffected == 1, nil
+}
+
 // RevokeAllForUser sets revoked_at on the user's live refresh tokens.
 func (r *RefreshTokenRepository) RevokeAllForUser(ctx context.Context, userID uuid.UUID) error {
 	now := time.Now()

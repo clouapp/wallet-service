@@ -40,6 +40,16 @@ func (r *TotpRecoveryCodeRepository) MarkUsed(ctx context.Context, id uuid.UUID)
 	return nil
 }
 
+// MarkUsedIfUnused spends a recovery code. It reports false when the code was
+// already spent, so two concurrent logins cannot both redeem the same code.
+func (r *TotpRecoveryCodeRepository) MarkUsedIfUnused(ctx context.Context, id uuid.UUID) (bool, error) {
+	result, err := r.Query(ctx).Model(&models.TotpRecoveryCode{}).Where("id = ? AND used_at IS NULL", id).Update("used_at", time.Now())
+	if err != nil {
+		return false, fmt.Errorf("mark recovery code used: %w", err)
+	}
+	return result.RowsAffected == 1, nil
+}
+
 // CreateBatch inserts recovery codes.
 func (r *TotpRecoveryCodeRepository) CreateBatch(ctx context.Context, codes []models.TotpRecoveryCode) error {
 	if err := r.Query(ctx).Create(&codes); err != nil {

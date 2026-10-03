@@ -2,6 +2,7 @@ package auth
 
 import (
 	"context"
+	"errors"
 	"sort"
 	"time"
 
@@ -15,6 +16,7 @@ import (
 	"github.com/macrowallets/waas/app/http/responses"
 	mails "github.com/macrowallets/waas/app/mails"
 	"github.com/macrowallets/waas/app/models"
+	"github.com/macrowallets/waas/app/policies"
 	accountsvc "github.com/macrowallets/waas/app/services/account"
 	authsvc "github.com/macrowallets/waas/app/services/auth"
 	"github.com/macrowallets/waas/app/services/sessions"
@@ -31,6 +33,8 @@ type AuthController struct {
 	refreshTokens  *sessions.RefreshTokens
 	passwordResets *sessions.PasswordResets
 	passwords      *authsvc.Service
+	twoFactor      *authsvc.TwoFactorLogin
+	revoker        *authsvc.SessionRevoker
 }
 
 // NewAuthController wires the dashboard auth handlers. Every dependency is a
@@ -41,6 +45,8 @@ func NewAuthController(
 	refreshTokens *sessions.RefreshTokens,
 	passwordResets *sessions.PasswordResets,
 	passwords *authsvc.Service,
+	twoFactor *authsvc.TwoFactorLogin,
+	revoker *authsvc.SessionRevoker,
 ) *AuthController {
 	if users == nil {
 		panic("dashboard auth controller: users service is required")
@@ -57,13 +63,25 @@ func NewAuthController(
 	if passwords == nil {
 		panic("dashboard auth controller: auth service is required")
 	}
+	if twoFactor == nil {
+		panic("dashboard auth controller: two factor login is required")
+	}
+	if revoker == nil {
+		panic("dashboard auth controller: session revoker is required")
+	}
 	return &AuthController{
 		users:          users,
 		accounts:       accounts,
 		refreshTokens:  refreshTokens,
 		passwordResets: passwordResets,
 		passwords:      passwords,
+		twoFactor:      twoFactor,
+		revoker:        revoker,
 	}
+}
+
+func (ctrl *AuthController) sessions() controllers.SessionIssuer {
+	return controllers.SessionIssuer{Passwords: ctrl.passwords, Refresh: ctrl.refreshTokens, Revoker: ctrl.revoker}
 }
 
 // Register godoc
@@ -205,54 +223,33 @@ func (ctrl *AuthController) Login(ctx http.Context) http.Response {
 	if !ctrl.passwords.CheckPassword(req.Password, user.PasswordHash) {
 		return responses.Send(ctx, http.StatusUnauthorized, http.Json{"error": "invalid credentials"})
 	}
+	if !policies.UserMayHoldSession(user.Status) {
+		return controllers.InactiveUserResponse(ctx)
+	}
 
 	if user.TotpEnabled {
-		partialToken, err := appfacades.Auth(ctx).LoginUsingID(user.ID.String())
+		if err := ctrl.revoker.AwaitIssuable(user.SessionsRevokedAt); err != nil {
+			appfacades.Log().WithContext(ctx).Errorf("auth: begin 2fa: %v", err)
+			return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to create session"})
+		}
+		challenge, err := ctrl.twoFactor.Begin(&user)
 		if err != nil {
-			appfacades.Log().WithContext(ctx).Errorf("auth: partial login: %v", err)
+			appfacades.Log().WithContext(ctx).Errorf("auth: begin 2fa: %v", err)
 			return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to create session"})
 		}
 		return responses.Send(ctx, http.StatusOK, http.Json{
 			"requires_2fa":  true,
-			"partial_token": partialToken,
+			"partial_token": challenge.Token,
+			"expires_in":    int(challenge.ExpiresIn.Seconds()),
 		})
 	}
 
-	accessToken, err := appfacades.Auth(ctx).LoginUsingID(user.ID.String())
+	tokens, err := ctrl.sessions().IssueSession(ctx, user.ID, user.SessionsRevokedAt)
 	if err != nil {
 		appfacades.Log().WithContext(ctx).Errorf("auth: login: %v", err)
 		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to create session"})
 	}
-
-	rawRefresh, err := ctrl.passwords.GenerateRandomToken()
-	if err != nil {
-		appfacades.Log().WithContext(ctx).Errorf("auth: generate refresh token: %v", err)
-		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "internal error"})
-	}
-	refreshHash := ctrl.passwords.HashToken(rawRefresh)
-	rt := &models.RefreshToken{
-		ID:        uuid.New(),
-		UserID:    user.ID,
-		TokenHash: refreshHash,
-		ExpiresAt: time.Now().Add(30 * 24 * time.Hour),
-	}
-	if err := ctrl.refreshTokens.Create(ctx.Context(), rt); err != nil {
-		appfacades.Log().WithContext(ctx).Errorf("auth: store refresh token: %v", err)
-	}
-
-	accounts, defaultAccount := ctrl.loadUserAccounts(&user)
-
-	resp := http.Json{
-		"access_token":  accessToken,
-		"refresh_token": rawRefresh,
-		"user":          user,
-		"accounts":      accounts,
-	}
-	if defaultAccount != nil {
-		resp["account_id"] = defaultAccount["id"]
-		resp["account"] = defaultAccount
-	}
-	return responses.Send(ctx, http.StatusOK, resp)
+	return responses.Send(ctx, http.StatusOK, ctrl.signedInResponse(&user, tokens))
 }
 
 // VerifyTwoFactor godoc
@@ -272,76 +269,24 @@ func (ctrl *AuthController) VerifyTwoFactor(ctx http.Context) http.Response {
 		return errResp
 	}
 
-	payload, err := appfacades.Auth(ctx).Parse(req.PartialToken)
-	if err != nil || payload == nil {
-		return responses.Send(ctx, http.StatusUnauthorized, http.Json{"error": "invalid or expired partial token"})
+	if req.Code == "" && req.RecoveryCode == "" {
+		return responses.Send(ctx, http.StatusUnprocessableEntity, http.Json{"error": "code or recovery_code is required"})
 	}
 
-	userIDStr, idErr := appfacades.Auth(ctx).ID()
-	if idErr != nil {
-		return responses.Send(ctx, http.StatusUnauthorized, http.Json{"error": "invalid token"})
-	}
-	userID, err := uuid.Parse(userIDStr)
+	user, err := ctrl.twoFactor.Complete(req.PartialToken, req.Code, req.RecoveryCode)
 	if err != nil {
-		return responses.Send(ctx, http.StatusUnauthorized, http.Json{"error": "invalid token subject"})
+		return controllers.TwoFactorErrorResponse(ctx, err)
+	}
+	if !policies.UserMayHoldSession(user.Status) {
+		return controllers.InactiveUserResponse(ctx)
 	}
 
-	userPtr, findErr := ctrl.users.FindByID(ctx.Context(), userID)
-	if findErr != nil || userPtr == nil {
-		return responses.Send(ctx, http.StatusUnauthorized, http.Json{"error": "user not found"})
-	}
-	user := *userPtr
-
-	verified := false
-	if req.Code != "" {
-		verified = ctrl.passwords.VerifyTOTP(user.TotpSecret, req.Code)
-	}
-	if !verified && req.RecoveryCode != "" {
-		codes, codesErr := ctrl.users.FindUnusedRecoveryCodes(ctx.Context(), user.ID)
-		if codesErr != nil {
-			appfacades.Log().WithContext(ctx).Errorf("auth: find recovery codes: %v", codesErr)
-		}
-		for _, c := range codes {
-			if ctrl.passwords.VerifyRecoveryCode(req.RecoveryCode, c.CodeHash) {
-				if err := ctrl.users.MarkRecoveryCodeUsed(ctx.Context(), c.ID); err != nil {
-					appfacades.Log().WithContext(ctx).Errorf("auth: mark recovery code used: %v", err)
-				}
-				verified = true
-				break
-			}
-		}
-	}
-
-	if !verified {
-		return responses.Send(ctx, http.StatusUnauthorized, http.Json{"error": "invalid 2FA code"})
-	}
-
-	accessToken, loginErr := appfacades.Auth(ctx).LoginUsingID(user.ID.String())
-	if loginErr != nil {
-		appfacades.Log().WithContext(ctx).Errorf("auth: 2fa login: %v", loginErr)
+	tokens, err := ctrl.sessions().IssueSession(ctx, user.ID, user.SessionsRevokedAt)
+	if err != nil {
+		appfacades.Log().WithContext(ctx).Errorf("auth: 2fa login: %v", err)
 		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to create session"})
 	}
-	rawRefresh, genErr := ctrl.passwords.GenerateRandomToken()
-	if genErr != nil {
-		appfacades.Log().WithContext(ctx).Errorf("auth: generate refresh token: %v", genErr)
-		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "internal error"})
-	}
-	refreshHash := ctrl.passwords.HashToken(rawRefresh)
-	rt := &models.RefreshToken{
-		ID:        uuid.New(),
-		UserID:    user.ID,
-		TokenHash: refreshHash,
-		ExpiresAt: time.Now().Add(30 * 24 * time.Hour),
-	}
-	if err := ctrl.refreshTokens.Create(ctx.Context(), rt); err != nil {
-		appfacades.Log().WithContext(ctx).Errorf("auth: store refresh token: %v", err)
-	}
-
-	return responses.Send(ctx, http.StatusOK, http.Json{
-		"access_token":  accessToken,
-		"refresh_token": rawRefresh,
-		"user":          user,
-	})
+	return responses.Send(ctx, http.StatusOK, ctrl.signedInResponse(user, tokens))
 }
 
 // RefreshToken godoc
@@ -377,34 +322,35 @@ func (ctrl *AuthController) RefreshToken(ctx http.Context) http.Response {
 		return responses.Send(ctx, http.StatusUnauthorized, http.Json{"error": "invalid or expired refresh token"})
 	}
 
-	if err := ctrl.refreshTokens.RevokeByID(ctx.Context(), matched.ID); err != nil {
+	rotated, err := ctrl.refreshTokens.RevokeIfActive(ctx.Context(), matched.ID)
+	if err != nil {
 		appfacades.Log().WithContext(ctx).Errorf("auth: revoke refresh token: %v", err)
-	}
-
-	accessToken, loginErr := appfacades.Auth(ctx).LoginUsingID(matched.UserID.String())
-	if loginErr != nil {
-		appfacades.Log().WithContext(ctx).Errorf("auth: refresh login: %v", loginErr)
 		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to create session"})
 	}
-	rawRefresh, genErr := ctrl.passwords.GenerateRandomToken()
-	if genErr != nil {
-		appfacades.Log().WithContext(ctx).Errorf("auth: generate refresh token: %v", genErr)
-		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "internal error"})
-	}
-	refreshHash := ctrl.passwords.HashToken(rawRefresh)
-	newRT := &models.RefreshToken{
-		ID:        uuid.New(),
-		UserID:    matched.UserID,
-		TokenHash: refreshHash,
-		ExpiresAt: time.Now().Add(30 * 24 * time.Hour),
-	}
-	if err := ctrl.refreshTokens.Create(ctx.Context(), newRT); err != nil {
-		appfacades.Log().WithContext(ctx).Errorf("auth: store refresh token: %v", err)
+	if !rotated {
+		return responses.Send(ctx, http.StatusUnauthorized, http.Json{"error": "invalid or expired refresh token"})
 	}
 
+	owner, err := ctrl.users.FindByID(ctx.Context(), matched.UserID)
+	if err != nil {
+		appfacades.Log().WithContext(ctx).Errorf("auth: refresh: load user: %v", err)
+		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to create session"})
+	}
+	if owner == nil || errors.Is(err, models.ErrRepositoryNotFound) {
+		return responses.Send(ctx, http.StatusUnauthorized, http.Json{"error": "invalid or expired refresh token"})
+	}
+	if !policies.UserMayHoldSession(owner.Status) {
+		return responses.Send(ctx, http.StatusUnauthorized, http.Json{"error": "user is not active"})
+	}
+
+	session, err := ctrl.sessions().IssueSession(ctx, owner.ID, owner.SessionsRevokedAt)
+	if err != nil {
+		appfacades.Log().WithContext(ctx).Errorf("auth: refresh: %v", err)
+		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to create session"})
+	}
 	return responses.Send(ctx, http.StatusOK, http.Json{
-		"access_token":  accessToken,
-		"refresh_token": rawRefresh,
+		"access_token":  session.AccessToken,
+		"refresh_token": session.RefreshToken,
 	})
 }
 
@@ -521,8 +467,27 @@ func (ctrl *AuthController) ResetPassword(ctx http.Context) http.Response {
 	if err := ctrl.passwordResets.MarkUsed(ctx.Context(), matched.ID); err != nil {
 		appfacades.Log().WithContext(ctx).Errorf("auth: mark reset token used: %v", err)
 	}
+	if _, err := ctrl.revoker.RevokeAll(matched.UserID); err != nil {
+		appfacades.Log().WithContext(ctx).Errorf("auth: reset password: revoke sessions: %v", err)
+		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "password reset but existing sessions could not be revoked"})
+	}
 
 	return responses.Send(ctx, http.StatusOK, http.Json{"message": "password reset successfully"})
+}
+
+func (ctrl *AuthController) signedInResponse(user *models.User, tokens controllers.SessionTokens) http.Json {
+	accounts, defaultAccount := ctrl.loadUserAccounts(user)
+	resp := http.Json{
+		"access_token":  tokens.AccessToken,
+		"refresh_token": tokens.RefreshToken,
+		"user":          user,
+		"accounts":      accounts,
+	}
+	if defaultAccount != nil {
+		resp["account_id"] = defaultAccount["id"]
+		resp["account"] = defaultAccount
+	}
+	return resp
 }
 
 func (ctrl *AuthController) loadUserAccounts(user *models.User) ([]map[string]interface{}, map[string]interface{}) {

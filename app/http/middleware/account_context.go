@@ -49,6 +49,10 @@ func AccountContext(accounts accountScope) http.Middleware {
 			return
 		}
 
+		if !abortUnlessAccountAllows(ctx, accountPtr) {
+			return
+		}
+
 		ctx.WithValue(requestctx.KeyAccount, accountPtr)
 		ctx.WithValue(requestctx.KeyAccountRole, au.Role)
 		ctx.WithContext(activitylog.WithScope(ctx.Context(), "account:"+accountID.String()))

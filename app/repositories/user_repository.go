@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/goravel/framework/contracts/database/orm"
@@ -126,6 +127,26 @@ func (r *UserRepository) DisableTotp(ctx context.Context, id uuid.UUID) error {
 		"totp_secret":  "",
 	}); err != nil {
 		return fmt.Errorf("disable user totp: %w", err)
+	}
+	return nil
+}
+
+// AdvanceTotpCounter stores counter as the user's last redeemed TOTP step only
+// when it is newer than the stored one. It reports false when the step was
+// already redeemed, which is how a replayed code — including one replayed
+// concurrently — is refused.
+func (r *UserRepository) AdvanceTotpCounter(ctx context.Context, id uuid.UUID, counter int64) (bool, error) {
+	result, err := r.Query(ctx).Model(&models.User{}).Where("id = ? AND totp_last_used_counter < ?", id, counter).Update("totp_last_used_counter", counter)
+	if err != nil {
+		return false, fmt.Errorf("advance totp counter: %w", err)
+	}
+	return result.RowsAffected == 1, nil
+}
+
+// UpdateSessionsRevokedAt sets the session watermark. Sessions issued before it are refused.
+func (r *UserRepository) UpdateSessionsRevokedAt(ctx context.Context, id uuid.UUID, at time.Time) error {
+	if _, err := r.Query(ctx).Model(&models.User{}).Where("id = ?", id).Update("sessions_revoked_at", at); err != nil {
+		return fmt.Errorf("update sessions revoked at: %w", err)
 	}
 	return nil
 }

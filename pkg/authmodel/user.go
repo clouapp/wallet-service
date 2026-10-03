@@ -4,6 +4,8 @@
 package authmodel
 
 import (
+	"time"
+
 	"github.com/google/uuid"
 	"github.com/goravel/framework/database/orm"
 )
@@ -19,6 +21,13 @@ type User struct {
 	Status           string           `gorm:"type:varchar(20);default:active" json:"status"`
 	DefaultAccountID *uuid.UUID       `gorm:"type:uuid" json:"default_account_id,omitempty"`
 	Preferences      *UserPreferences `gorm:"type:jsonb" json:"preferences,omitempty"`
+
+	// TotpLastUsedCounter is the last TOTP time-step this user redeemed; a code
+	// whose step is not newer is a replay.
+	TotpLastUsedCounter int64 `gorm:"not null;default:0" json:"-"`
+	// SessionsRevokedAt is the session watermark: sessions and 2FA challenges
+	// issued before it are refused.
+	SessionsRevokedAt *time.Time `gorm:"type:timestamptz" json:"-"`
 }
 
 func (u *User) TableName() string { return "users" }

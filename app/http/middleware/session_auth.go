@@ -10,6 +10,8 @@ import (
 	"github.com/macrowallets/waas/app/http/middleware/requestctx"
 	"github.com/macrowallets/waas/app/http/responses"
 	"github.com/macrowallets/waas/app/models"
+	"github.com/macrowallets/waas/app/policies"
+	authsvc "github.com/macrowallets/waas/app/services/auth"
 	"github.com/macrowallets/waas/packages/activitylog"
 )
 
@@ -34,6 +36,19 @@ func SessionAuth() http.Middleware {
 		var user models.User
 		if err := authGuard.User(&user); err != nil {
 			_ = responses.Send(ctx, http.StatusUnauthorized, http.Json{"error": "user not found"}).Abort()
+			return
+		}
+
+		if user.ID == uuid.Nil {
+			_ = responses.Send(ctx, http.StatusUnauthorized, http.Json{"error": "user not found"}).Abort()
+			return
+		}
+		if !policies.UserMayHoldSession(user.Status) {
+			_ = responses.Send(ctx, http.StatusUnauthorized, http.Json{"error": "user is not active"}).Abort()
+			return
+		}
+		if authsvc.SessionRevoked(payload.IssuedAt, user.SessionsRevokedAt) {
+			_ = responses.Send(ctx, http.StatusUnauthorized, http.Json{"error": "session revoked"}).Abort()
 			return
 		}
 

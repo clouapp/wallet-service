@@ -83,6 +83,20 @@ func (s *WalletUserRepositoryTestSuite) TestFindByWalletAndUser_NotFound() {
 	s.Nil(wu)
 }
 
+func (s *WalletUserRepositoryTestSuite) TestFindByWalletAndUser_IgnoresAMembershipThatIsNotActive() {
+	walletID := s.createWallet()
+	userID := uuid.New()
+	s.Require().NoError(s.repo.Create(context.Background(), &models.WalletUser{ID: uuid.New(), WalletID: walletID, UserID: userID, Roles: "admin", Status: "suspended"}))
+
+	wu, err := s.repo.FindByWalletAndUser(context.Background(), walletID, userID)
+	s.ErrorIs(err, models.ErrRepositoryNotFound)
+	s.Nil(wu)
+
+	members, err := s.repo.FindByWalletID(context.Background(), walletID)
+	s.NoError(err)
+	s.Len(members, 1, "membership management still sees every status")
+}
+
 func (s *WalletUserRepositoryTestSuite) TestFindByWalletAndUserIncludeDeleted() {
 	walletID := s.createWallet()
 	userID := uuid.New()

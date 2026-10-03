@@ -214,6 +214,8 @@ func newDashboardAuthController() *dashauth.AuthController {
 		container.MustMake[*sessions.RefreshTokens](),
 		container.MustMake[*sessions.PasswordResets](),
 		container.MustMake[*authsvc.Service](),
+		container.MustMake[*authsvc.TwoFactorLogin](),
+		container.MustMake[*authsvc.SessionRevoker](),
 	)
 }
 
@@ -222,6 +224,9 @@ func newDashboardUsersController() *dashusers.UsersController {
 		container.MustMake[*usersvc.Service](),
 		container.MustMake[*accountsvc.Service](),
 		container.MustMake[*authsvc.Service](),
+		container.MustMake[*sessions.RefreshTokens](),
+		container.MustMake[*authsvc.SecondFactorVerifier](),
+		container.MustMake[*authsvc.SessionRevoker](),
 	)
 }
 
@@ -331,6 +336,7 @@ func newDashboardWithdrawalsController() *dashwithdrawals.WithdrawalsController 
 		container.MustMake[*container.SharedRedis]().Client,
 		walletPolicyMemberships(),
 		container.MustMake[*walletrecords.Wallets](),
+		container.MustMake[*authsvc.SecondFactorVerifier](),
 	)
 }
 

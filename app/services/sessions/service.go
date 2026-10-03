@@ -24,6 +24,7 @@ type RefreshStore interface {
 	Create(ctx context.Context, token *models.RefreshToken) error
 	FindValidTokens(ctx context.Context) ([]models.RefreshToken, error)
 	RevokeByID(ctx context.Context, id uuid.UUID) error
+	RevokeIfActive(ctx context.Context, id uuid.UUID) (bool, error)
 	RevokeAllForUser(ctx context.Context, userID uuid.UUID) error
 }
 
@@ -59,6 +60,13 @@ func (s *RefreshTokens) RevokeByID(ctx context.Context, id uuid.UUID) error {
 		return err
 	}
 	return s.store.RevokeByID(ctx, id)
+}
+
+func (s *RefreshTokens) RevokeIfActive(ctx context.Context, id uuid.UUID) (bool, error) {
+	if err := requireStore(ctx, s.storeOrNil(), "revoke refresh token", "refresh tokens"); err != nil {
+		return false, err
+	}
+	return s.store.RevokeIfActive(ctx, id)
 }
 
 func (s *RefreshTokens) RevokeAllForUser(ctx context.Context, userID uuid.UUID) error {

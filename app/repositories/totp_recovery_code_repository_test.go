@@ -53,16 +53,32 @@ func (s *TotpRecoveryCodeRepositoryTestSuite) TestFindUnusedByUserID() {
 	s.Equal(unused.ID, codes[0].ID)
 }
 
-func (s *TotpRecoveryCodeRepositoryTestSuite) TestMarkUsed() {
-	userID := s.createUser()
+func (s *TotpRecoveryCodeRepositoryTestSuite) TestMarkUsedIfUnused() {
+	userID := insertActiveUserRow(s.T())
 
 	code := &models.TotpRecoveryCode{ID: uuid.New(), UserID: userID, CodeHash: "hash"}
-	facades.Orm().Query().Create(code)
+	s.Require().NoError(facades.Orm().Query().Create(code))
 
-	err := s.repo.MarkUsed(context.Background(), code.ID)
+	spent, err := s.repo.MarkUsedIfUnused(context.Background(), code.ID)
 	s.NoError(err)
+	s.True(spent)
 
 	var check models.TotpRecoveryCode
 	facades.Orm().Query().Where("id = ?", code.ID).First(&check)
 	s.NotNil(check.UsedAt)
+}
+
+func (s *TotpRecoveryCodeRepositoryTestSuite) TestMarkUsedIfUnused_SecondSpendIsRefused() {
+	userID := insertActiveUserRow(s.T())
+
+	code := &models.TotpRecoveryCode{ID: uuid.New(), UserID: userID, CodeHash: "hash"}
+	s.Require().NoError(facades.Orm().Query().Create(code))
+
+	first, err := s.repo.MarkUsedIfUnused(context.Background(), code.ID)
+	s.Require().NoError(err)
+	s.Require().True(first)
+
+	second, err := s.repo.MarkUsedIfUnused(context.Background(), code.ID)
+	s.NoError(err)
+	s.False(second, "a spent recovery code must not be spendable again")
 }

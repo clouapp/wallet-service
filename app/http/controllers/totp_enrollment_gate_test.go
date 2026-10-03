@@ -150,12 +150,6 @@ func (s *totpEnrollmentSuite) loginPartial(email string) string {
 	return parsed.PartialToken
 }
 
-type loginBody struct {
-	AccessToken  string `json:"access_token"`
-	PartialToken string `json:"partial_token"`
-	Requires2FA  bool   `json:"requires_2fa"`
-}
-
 func (s *totpEnrollmentSuite) login(email string) loginBody {
 	s.T().Helper()
 	response := s.post("", "/v1/auth/login", fmt.Sprintf(`{"email":%q,"password":%q}`, email, totpEnrollmentPassword))

@@ -8,7 +8,6 @@ import (
 	"github.com/goravel/framework/contracts/http"
 	"github.com/redis/go-redis/v9"
 
-	"github.com/macrowallets/waas/app/facades"
 	"github.com/macrowallets/waas/app/http/controllers"
 	"github.com/macrowallets/waas/app/http/middleware"
 	"github.com/macrowallets/waas/app/http/middleware/requestctx"
@@ -48,6 +47,7 @@ type WithdrawalsController struct {
 	redis             *redis.Client
 	memberships       *walletrecords.Memberships
 	wallets           *walletrecords.Wallets
+	secondFactor      *authsvc.SecondFactorVerifier
 }
 
 func NewWithdrawalsController(
@@ -62,6 +62,7 @@ func NewWithdrawalsController(
 	redis *redis.Client,
 	memberships *walletrecords.Memberships,
 	wallets *walletrecords.Wallets,
+	secondFactor *authsvc.SecondFactorVerifier,
 ) *WithdrawalsController {
 	if withdrawals == nil {
 		panic("dashboard withdrawals controller: withdrawals service is required")
@@ -90,6 +91,9 @@ func NewWithdrawalsController(
 	if wallets == nil {
 		panic("dashboard withdrawals controller: wallets service is required")
 	}
+	if secondFactor == nil {
+		panic("dashboard withdrawals controller: second factor verifier is required")
+	}
 	return &WithdrawalsController{
 		withdrawals:       withdrawals,
 		chains:            chains,
@@ -102,6 +106,7 @@ func NewWithdrawalsController(
 		redis:             redis,
 		memberships:       memberships,
 		wallets:           wallets,
+		secondFactor:      secondFactor,
 	}
 }
 
@@ -213,13 +218,8 @@ func (ctrl *WithdrawalsController) CreateWalletWithdrawal(ctx http.Context) http
 			return responses.Send(ctx, http.StatusForbidden, http.Json{"error": "2FA must be enabled before withdrawing"})
 		}
 
-		decryptedSecret, err := facades.Crypt().DecryptString(user.TotpSecret)
-		if err != nil {
-			return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "internal error"})
-		}
-		authService := ctrl.passwords
-		if !authService.VerifyTOTP(decryptedSecret, req.TotpCode) {
-			return responses.Send(ctx, http.StatusUnauthorized, http.Json{"error": "invalid 2FA code"})
+		if resp := controllers.RejectReplayedWithdrawalCode(ctx, ctrl.secondFactor, user, req.TotpCode); resp != nil {
+			return resp
 		}
 	} else {
 		accountID, hasAccount := requestctx.AccountID(ctx)

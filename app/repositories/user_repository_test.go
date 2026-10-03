@@ -3,6 +3,7 @@ package repositories_test
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/suite"
@@ -120,4 +121,39 @@ func (s *UserRepositoryTestSuite) TestUpdatePasswordHash() {
 	found, err := s.repo.FindByID(context.Background(), user.ID)
 	s.NoError(err)
 	s.Equal("new_hash", found.PasswordHash)
+}
+
+func (s *UserRepositoryTestSuite) TestAdvanceTotpCounter_OnlyMovesForward() {
+	userID := insertActiveUserRow(s.T())
+
+	advanced, err := s.repo.AdvanceTotpCounter(context.Background(), userID, 100)
+	s.Require().NoError(err)
+	s.True(advanced, "a newer step is recorded")
+
+	advanced, err = s.repo.AdvanceTotpCounter(context.Background(), userID, 100)
+	s.Require().NoError(err)
+	s.False(advanced, "the same step is a replay")
+
+	advanced, err = s.repo.AdvanceTotpCounter(context.Background(), userID, 99)
+	s.Require().NoError(err)
+	s.False(advanced, "an older step is a replay")
+
+	found, err := s.repo.FindByID(context.Background(), userID)
+	s.Require().NoError(err)
+	s.Equal(int64(100), found.TotpLastUsedCounter)
+}
+
+func (s *UserRepositoryTestSuite) TestUpdateSessionsRevokedAt() {
+	userID := insertActiveUserRow(s.T())
+	found, err := s.repo.FindByID(context.Background(), userID)
+	s.Require().NoError(err)
+	s.Nil(found.SessionsRevokedAt, "no watermark until the first revocation")
+
+	watermark := time.Date(2026, 10, 2, 12, 0, 6, 0, time.UTC)
+	s.Require().NoError(s.repo.UpdateSessionsRevokedAt(context.Background(), userID, watermark))
+
+	found, err = s.repo.FindByID(context.Background(), userID)
+	s.Require().NoError(err)
+	s.Require().NotNil(found.SessionsRevokedAt)
+	s.True(watermark.Equal(*found.SessionsRevokedAt))
 }

@@ -68,17 +68,32 @@ func (s *RefreshTokenRepositoryTestSuite) TestFindValidTokens() {
 	s.Equal(valid.ID, tokens[0].ID)
 }
 
-func (s *RefreshTokenRepositoryTestSuite) TestRevokeByID() {
-	userID := s.createUser()
+func (s *RefreshTokenRepositoryTestSuite) TestRevokeIfActive() {
+	userID := insertActiveUserRow(s.T())
 	rt := &models.RefreshToken{ID: uuid.New(), UserID: userID, TokenHash: "tok", ExpiresAt: time.Now().Add(24 * time.Hour)}
 	s.Require().NoError(s.repo.Create(context.Background(), rt))
 
-	err := s.repo.RevokeByID(context.Background(), rt.ID)
+	revoked, err := s.repo.RevokeIfActive(context.Background(), rt.ID)
 	s.NoError(err)
+	s.True(revoked)
 
 	var check models.RefreshToken
-	facades.Orm().Query().Where("id = ?", rt.ID).First(&check)
+	s.Require().NoError(facades.Orm().Query().Where("id = ?", rt.ID).First(&check))
 	s.NotNil(check.RevokedAt)
+}
+
+func (s *RefreshTokenRepositoryTestSuite) TestRevokeIfActive_SecondRevocationReportsFalse() {
+	userID := insertActiveUserRow(s.T())
+	rt := &models.RefreshToken{ID: uuid.New(), UserID: userID, TokenHash: "tok", ExpiresAt: time.Now().Add(24 * time.Hour)}
+	s.Require().NoError(s.repo.Create(context.Background(), rt))
+
+	first, err := s.repo.RevokeIfActive(context.Background(), rt.ID)
+	s.Require().NoError(err)
+	second, err := s.repo.RevokeIfActive(context.Background(), rt.ID)
+	s.Require().NoError(err)
+
+	s.True(first)
+	s.False(second, "a token can only be rotated once")
 }
 
 func (s *RefreshTokenRepositoryTestSuite) TestRevokeAllForUser() {

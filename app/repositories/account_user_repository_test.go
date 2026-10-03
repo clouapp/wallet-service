@@ -143,6 +143,36 @@ func (s *AccountUserRepositoryTestSuite) TestFindByUserID() {
 	s.Len(memberships, 2)
 }
 
+func (s *AccountUserRepositoryTestSuite) TestAccessLookupsIgnoreMembershipsThatAreNotActive() {
+	activeAccount := s.createAccount()
+	suspendedAccount := s.createAccount()
+	userID := insertActiveUserRow(s.T())
+	s.Require().NoError(s.repo.Create(context.Background(), &models.AccountUser{ID: uuid.New(), AccountID: activeAccount, UserID: userID, Role: "owner", Status: models.StatusActive}))
+	s.Require().NoError(s.repo.Create(context.Background(), &models.AccountUser{ID: uuid.New(), AccountID: suspendedAccount, UserID: userID, Role: "owner", Status: "suspended"}))
+
+	active, err := s.repo.FindByAccountAndUser(context.Background(), activeAccount, userID)
+	s.NoError(err)
+	s.NotNil(active)
+	suspended, err := s.repo.FindByAccountAndUser(context.Background(), suspendedAccount, userID)
+	s.ErrorIs(err, models.ErrRepositoryNotFound)
+	s.Nil(suspended)
+
+	memberships, err := s.repo.FindByUserID(context.Background(), userID)
+	s.NoError(err)
+	s.Require().Len(memberships, 1)
+	s.Equal(activeAccount, memberships[0].AccountID)
+
+	page, total, err := s.repo.PaginateByUserID(context.Background(), userID, 10, 0)
+	s.NoError(err)
+	s.EqualValues(1, total)
+	s.Len(page, 1)
+
+	managed, err := s.repo.FindByAccountAndUserIncludeDeleted(context.Background(), suspendedAccount, userID)
+	s.NoError(err)
+	s.Require().NotNil(managed)
+	s.Equal("suspended", managed.Status)
+}
+
 func (s *AccountUserRepositoryTestSuite) TestSetRole() {
 	accID := s.createAccount()
 	userID := uuid.New()
