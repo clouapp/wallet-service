@@ -100,5 +100,5 @@ func (ctrl *IngestController) HandleWebhookIngest(ctx http.Context) http.Respons
 		return responses.Send(ctx, http.StatusBadRequest, http.Json{"error": err.Error()})
 	}
 
-	return ctx.Response().Json(http.StatusOK, http.Json{"ok": true})
+	return responses.Send(ctx, http.StatusOK, http.Json{"ok": true})
 }
