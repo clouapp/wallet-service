@@ -1,21 +1,19 @@
 package providers
 
 import (
-	"bytes"
 	"context"
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"io"
 	"math"
 	"math/big"
-	"net/http"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/macrowallets/waas/pkg/httpclient"
 	"github.com/macrowallets/waas/pkg/types"
 )
 
@@ -29,13 +27,13 @@ const (
 
 type AlchemyProvider struct {
 	apiKey string
-	client *http.Client
+	client *httpclient.Client
 }
 
 func NewAlchemyProvider(apiKey string) *AlchemyProvider {
 	return &AlchemyProvider{
 		apiKey: apiKey,
-		client: &http.Client{Timeout: alchemyHTTPTimeout},
+		client: httpclient.NewClient(alchemyHTTPTimeout),
 	}
 }
 
@@ -74,24 +72,19 @@ func (a *AlchemyProvider) CreateWebhook(ctx context.Context, cfg ProviderConfig)
 		return nil, fmt.Errorf("alchemy: marshal create request: %w", err)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, alchemyAPIBase+"/create-webhook", bytes.NewReader(body))
+	status, respBody, err := exchange(ctx, a.client, httpclient.MethodPost, alchemyAPIBase+"/create-webhook", a.apiHeaders(), body)
 	if err != nil {
-		return nil, fmt.Errorf("alchemy: build create request: %w", err)
-	}
-	a.setHeaders(req)
-
-	resp, err := a.client.Do(req)
-	if err != nil {
+		if httpclient.IsBuild(err) {
+			return nil, fmt.Errorf("alchemy: build create request: %w", err)
+		}
 		return nil, fmt.Errorf("alchemy: create webhook call: %w", err)
 	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, a.readError("create-webhook", resp)
+	if status != httpclient.StatusOK {
+		return nil, fmt.Errorf("alchemy create-webhook: status %d: %s", status, respBody)
 	}
 
 	var result alchemyCreateResp
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+	if err := json.Unmarshal(respBody, &result); err != nil {
 		return nil, fmt.Errorf("alchemy: decode create response: %w", err)
 	}
 
@@ -142,20 +135,15 @@ func (a *AlchemyProvider) SyncAddresses(ctx context.Context, webhookID string, a
 		return fmt.Errorf("alchemy: marshal patch request: %w", err)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPatch, alchemyAPIBase+"/update-webhook-addresses", bytes.NewReader(body))
+	status, respBody, err := exchange(ctx, a.client, httpclient.MethodPatch, alchemyAPIBase+"/update-webhook-addresses", a.apiHeaders(), body)
 	if err != nil {
-		return fmt.Errorf("alchemy: build patch request: %w", err)
-	}
-	a.setHeaders(req)
-
-	resp, err := a.client.Do(req)
-	if err != nil {
+		if httpclient.IsBuild(err) {
+			return fmt.Errorf("alchemy: build patch request: %w", err)
+		}
 		return fmt.Errorf("alchemy: patch addresses call: %w", err)
 	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return a.readError("update-webhook-addresses", resp)
+	if status != httpclient.StatusOK {
+		return fmt.Errorf("alchemy update-webhook-addresses: status %d: %s", status, respBody)
 	}
 	return nil
 }
@@ -170,29 +158,18 @@ func (a *AlchemyProvider) fetchAllAddresses(ctx context.Context, webhookID strin
 			u += "&after=" + cursor
 		}
 
-		req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
+		status, respBody, err := exchange(ctx, a.client, httpclient.MethodGet, u, a.apiHeaders(), nil)
 		if err != nil {
 			return nil, err
 		}
-		a.setHeaders(req)
-
-		resp, err := a.client.Do(req)
-		if err != nil {
-			return nil, err
-		}
-
-		if resp.StatusCode != http.StatusOK {
-			respErr := a.readError("webhook-addresses", resp)
-			resp.Body.Close()
-			return nil, respErr
+		if status != httpclient.StatusOK {
+			return nil, fmt.Errorf("alchemy webhook-addresses: status %d: %s", status, respBody)
 		}
 
 		var page alchemyAddrPage
-		if err := json.NewDecoder(resp.Body).Decode(&page); err != nil {
-			resp.Body.Close()
+		if err := json.Unmarshal(respBody, &page); err != nil {
 			return nil, err
 		}
-		resp.Body.Close()
 
 		all = append(all, page.Data...)
 
@@ -219,20 +196,15 @@ func (a *AlchemyProvider) DeleteWebhook(ctx context.Context, webhookID string) e
 		return fmt.Errorf("alchemy: marshal delete request: %w", err)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodDelete, alchemyAPIBase+"/delete-webhook", bytes.NewReader(body))
+	status, respBody, err := exchange(ctx, a.client, httpclient.MethodDelete, alchemyAPIBase+"/delete-webhook", a.apiHeaders(), body)
 	if err != nil {
-		return fmt.Errorf("alchemy: build delete request: %w", err)
-	}
-	a.setHeaders(req)
-
-	resp, err := a.client.Do(req)
-	if err != nil {
+		if httpclient.IsBuild(err) {
+			return fmt.Errorf("alchemy: build delete request: %w", err)
+		}
 		return fmt.Errorf("alchemy: delete webhook call: %w", err)
 	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusNoContent {
-		return a.readError("delete-webhook", resp)
+	if status != httpclient.StatusOK && status != httpclient.StatusNoContent {
+		return fmt.Errorf("alchemy delete-webhook: status %d: %s", status, respBody)
 	}
 	return nil
 }
@@ -241,7 +213,7 @@ func (a *AlchemyProvider) DeleteWebhook(ctx context.Context, webhookID string) e
 // VerifyInbound — HMAC-SHA256 signature verification
 // ---------------------------------------------------------------------------
 
-func (a *AlchemyProvider) VerifyInbound(headers http.Header, body []byte, secret string) (bool, error) {
+func (a *AlchemyProvider) VerifyInbound(headers Header, body []byte, secret string) (bool, error) {
 	sig := headers.Get(alchemySignatureHdr)
 	if sig == "" {
 		return false, fmt.Errorf("alchemy: missing %s header", alchemySignatureHdr)
@@ -382,14 +354,11 @@ func parseHexInt(s string) (int, error) {
 // Helpers
 // ---------------------------------------------------------------------------
 
-func (a *AlchemyProvider) setHeaders(req *http.Request) {
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set(alchemyAuthTokenHdr, a.apiKey)
-}
-
-func (a *AlchemyProvider) readError(endpoint string, resp *http.Response) error {
-	body, _ := io.ReadAll(resp.Body)
-	return fmt.Errorf("alchemy %s: status %d: %s", endpoint, resp.StatusCode, string(body))
+func (a *AlchemyProvider) apiHeaders() map[string]string {
+	return map[string]string{
+		"Content-Type":      "application/json",
+		alchemyAuthTokenHdr: a.apiKey,
+	}
 }
 
 func diffAddresses(current, desired []string) (toAdd, toRemove []string) {

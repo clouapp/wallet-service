@@ -1,7 +1,6 @@
 package providers
 
 import (
-	"bytes"
 	"context"
 	"crypto/hmac"
 	"crypto/sha256"
@@ -9,12 +8,12 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"io"
 	"math"
 	"math/big"
-	"net/http"
 	"strings"
 	"time"
+
+	"github.com/macrowallets/waas/pkg/httpclient"
 )
 
 const (
@@ -27,7 +26,7 @@ const (
 // QuickNodeProvider manages QuickNode Streams webhooks for Bitcoin block filtering.
 type QuickNodeProvider struct {
 	apiKey          string
-	client          *http.Client
+	client          *httpclient.Client
 	signatureHeader string
 }
 
@@ -35,7 +34,7 @@ type QuickNodeProvider struct {
 func NewQuickNodeProvider(apiKey string) *QuickNodeProvider {
 	return &QuickNodeProvider{
 		apiKey:          apiKey,
-		client:          &http.Client{Timeout: quicknodeHTTPTimeout},
+		client:          httpclient.NewClient(quicknodeHTTPTimeout),
 		signatureHeader: quicknodeDefaultSignatureHeader,
 	}
 }
@@ -120,24 +119,19 @@ func (q *QuickNodeProvider) CreateWebhook(ctx context.Context, cfg ProviderConfi
 		return nil, fmt.Errorf("quicknode: marshal create request: %w", err)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, quicknodeAPIBase+"/streams", bytes.NewReader(body))
+	status, respBody, err := exchange(ctx, q.client, httpclient.MethodPost, quicknodeAPIBase+"/streams", q.apiHeaders(), body)
 	if err != nil {
-		return nil, fmt.Errorf("quicknode: build create request: %w", err)
-	}
-	q.setAPIHeaders(req)
-
-	resp, err := q.client.Do(req)
-	if err != nil {
+		if httpclient.IsBuild(err) {
+			return nil, fmt.Errorf("quicknode: build create request: %w", err)
+		}
 		return nil, fmt.Errorf("quicknode: create stream: %w", err)
 	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
-		return nil, q.readAPIError("create stream", resp)
+	if status != httpclient.StatusOK && status != httpclient.StatusCreated {
+		return nil, fmt.Errorf("quicknode create stream: status %d: %s", status, respBody)
 	}
 
 	var result quicknodeCreateStreamResp
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+	if err := json.Unmarshal(respBody, &result); err != nil {
 		return nil, fmt.Errorf("quicknode: decode create response: %w", err)
 	}
 	if strings.TrimSpace(result.ID) == "" {
@@ -186,20 +180,15 @@ func (q *QuickNodeProvider) SyncAddresses(ctx context.Context, webhookID string,
 	}
 
 	u := fmt.Sprintf("%s/streams/%s", quicknodeAPIBase, id)
-	req, err := http.NewRequestWithContext(ctx, http.MethodPatch, u, bytes.NewReader(body))
+	status, respBody, err := exchange(ctx, q.client, httpclient.MethodPatch, u, q.apiHeaders(), body)
 	if err != nil {
-		return fmt.Errorf("quicknode: build patch request: %w", err)
-	}
-	q.setAPIHeaders(req)
-
-	resp, err := q.client.Do(req)
-	if err != nil {
+		if httpclient.IsBuild(err) {
+			return fmt.Errorf("quicknode: build patch request: %w", err)
+		}
 		return fmt.Errorf("quicknode: patch stream: %w", err)
 	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusNoContent {
-		return q.readAPIError("patch stream", resp)
+	if status != httpclient.StatusOK && status != httpclient.StatusNoContent {
+		return fmt.Errorf("quicknode patch stream: status %d: %s", status, respBody)
 	}
 	return nil
 }
@@ -218,20 +207,15 @@ func (q *QuickNodeProvider) DeleteWebhook(ctx context.Context, webhookID string)
 	}
 
 	u := fmt.Sprintf("%s/streams/%s", quicknodeAPIBase, id)
-	req, err := http.NewRequestWithContext(ctx, http.MethodDelete, u, nil)
+	status, respBody, err := exchange(ctx, q.client, httpclient.MethodDelete, u, q.apiHeaders(), nil)
 	if err != nil {
-		return fmt.Errorf("quicknode: build delete request: %w", err)
-	}
-	q.setAPIHeaders(req)
-
-	resp, err := q.client.Do(req)
-	if err != nil {
+		if httpclient.IsBuild(err) {
+			return fmt.Errorf("quicknode: build delete request: %w", err)
+		}
 		return fmt.Errorf("quicknode: delete stream: %w", err)
 	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusNoContent {
-		return q.readAPIError("delete stream", resp)
+	if status != httpclient.StatusOK && status != httpclient.StatusNoContent {
+		return fmt.Errorf("quicknode delete stream: status %d: %s", status, respBody)
 	}
 	return nil
 }
@@ -240,7 +224,7 @@ func (q *QuickNodeProvider) DeleteWebhook(ctx context.Context, webhookID string)
 // VerifyInbound — HMAC-SHA256 over raw body, hex digest (same pattern as Alchemy)
 // ---------------------------------------------------------------------------
 
-func (q *QuickNodeProvider) VerifyInbound(headers http.Header, body []byte, secret string) (bool, error) {
+func (q *QuickNodeProvider) VerifyInbound(headers Header, body []byte, secret string) (bool, error) {
 	hdr := q.SignatureHeader()
 	sig := headers.Get(hdr)
 	if sig == "" {
@@ -377,14 +361,11 @@ func buildFilterFunctionBase64(addresses []string) (string, error) {
 	return base64.StdEncoding.EncodeToString([]byte(js)), nil
 }
 
-func (q *QuickNodeProvider) setAPIHeaders(req *http.Request) {
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("x-api-key", q.apiKey)
-}
-
-func (q *QuickNodeProvider) readAPIError(op string, resp *http.Response) error {
-	b, _ := io.ReadAll(resp.Body)
-	return fmt.Errorf("quicknode %s: status %d: %s", op, resp.StatusCode, string(b))
+func (q *QuickNodeProvider) apiHeaders() map[string]string {
+	return map[string]string{
+		"Content-Type": "application/json",
+		"x-api-key":    q.apiKey,
+	}
 }
 
 var _ WebhookProvider = (*QuickNodeProvider)(nil)

@@ -80,7 +80,7 @@ func (ctrl *IngestController) HandleWebhookIngest(ctx http.Context) http.Respons
 		return responses.Send(ctx, http.StatusBadRequest, http.Json{"error": "unknown provider"})
 	}
 
-	valid, verifyErr := provider.VerifyInbound(req.Header, rawBody, secret)
+	valid, verifyErr := provider.VerifyInbound(providers.Header(req.Header), rawBody, secret)
 	if verifyErr != nil {
 		slog.Warn("ingest verify", "provider", providerName, "error", verifyErr)
 		return responses.Send(ctx, http.StatusUnauthorized, http.Json{"error": "invalid webhook signature"})
