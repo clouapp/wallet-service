@@ -10,7 +10,7 @@ import (
 	"github.com/goravel/framework/facades"
 	"github.com/redis/go-redis/v9"
 
-	"github.com/macrowallets/waas/app/events"
+	"github.com/macrowallets/waas/app/dtos"
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/services/chain"
 	"github.com/macrowallets/waas/app/services/ingest/providers"
@@ -152,7 +152,7 @@ func (s *Service) processTransfer(ctx context.Context, chainID string, adapter t
 	s.publishDepositPending(ctx, *tx)
 
 	if ev := facades.Event(); ev != nil {
-		_ = ev.Job(&events.DepositDetected{}, []event.Arg{
+		_ = ev.Job(&dtos.DepositDetected{}, []event.Arg{
 			{Type: "string", Value: tx.WalletID.String()},
 			{Type: "string", Value: chainID},
 			{Type: "string", Value: transfer.TxHash},

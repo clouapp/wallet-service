@@ -9,7 +9,7 @@ import (
 
 	"github.com/macrowallets/waas/app/console/commands"
 	"github.com/macrowallets/waas/app/container"
-	"github.com/macrowallets/waas/app/events"
+	"github.com/macrowallets/waas/app/dtos"
 	"github.com/macrowallets/waas/app/jobs"
 	"github.com/macrowallets/waas/app/listeners"
 	chainpkg "github.com/macrowallets/waas/app/services/chain"
@@ -57,11 +57,11 @@ func Boot() contractsfoundation.Application {
 		}).
 		WithEvents(func() map[contractsevent.Event][]contractsevent.Listener {
 			return map[contractsevent.Event][]contractsevent.Listener{
-				&events.WalletCreated{}:          {&listeners.EnqueueWalletRefresh{}},
-				&events.WalletActivated{}:        {&listeners.EnqueueWalletRefresh{}},
-				&events.DepositDetected{}:        {&listeners.EnqueueTransactionRefresh{}},
-				&events.WithdrawalBroadcasted{}:  {&listeners.EnqueueWalletRefresh{}},
-				&events.WalletRefreshRequested{}: {&listeners.EnqueueWalletRefresh{}},
+				&dtos.WalletCreated{}:          {&listeners.EnqueueWalletRefresh{}},
+				&dtos.WalletActivated{}:        {&listeners.EnqueueWalletRefresh{}},
+				&dtos.DepositDetected{}:        {&listeners.EnqueueTransactionRefresh{}},
+				&dtos.WithdrawalBroadcasted{}:  {&listeners.EnqueueWalletRefresh{}},
+				&dtos.WalletRefreshRequested{}: {&listeners.EnqueueWalletRefresh{}},
 			}
 		}).
 		WithRules(Rules).

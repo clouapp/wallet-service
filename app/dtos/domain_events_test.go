@@ -1,4 +1,4 @@
-package events
+package dtos
 
 import (
 	"testing"
@@ -152,12 +152,12 @@ func TestAllEventsPreserveArgTypes(t *testing.T) {
 			if len(result) != 3 {
 				t.Fatalf("expected 3 args, got %d", len(result))
 			}
-			for i, a := range args {
-				if result[i].Type != a.Type {
-					t.Errorf("arg[%d]: expected type %q, got %q", i, a.Type, result[i].Type)
+			for i, arg := range args {
+				if result[i].Type != arg.Type {
+					t.Errorf("arg[%d]: expected type %q, got %q", i, arg.Type, result[i].Type)
 				}
-				if result[i].Value != a.Value {
-					t.Errorf("arg[%d]: expected value %v, got %v", i, a.Value, result[i].Value)
+				if result[i].Value != arg.Value {
+					t.Errorf("arg[%d]: expected value %v, got %v", i, arg.Value, result[i].Value)
 				}
 			}
 		})

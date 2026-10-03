@@ -14,7 +14,7 @@ import (
 	"github.com/goravel/framework/facades"
 	"github.com/redis/go-redis/v9"
 
-	"github.com/macrowallets/waas/app/events"
+	"github.com/macrowallets/waas/app/dtos"
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/repositories"
 	chainpkg "github.com/macrowallets/waas/app/services/chain"
@@ -249,7 +249,7 @@ func (s *Service) Request(ctx context.Context, req WithdrawRequest) (*models.Tra
 	// published by withdrawalevents.Publisher once the withdrawal row is
 	// marked broadcast. We still dispatch the Goravel domain
 	// event so wallet-refresh listeners fire.
-	_ = facades.Event().Job(&events.WithdrawalBroadcasted{}, []event.Arg{
+	_ = facades.Event().Job(&dtos.WithdrawalBroadcasted{}, []event.Arg{
 		{Type: "string", Value: finalTx.WalletID.String()},
 		{Type: "string", Value: wallet.Chain},
 	}).Dispatch()

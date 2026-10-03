@@ -2,9 +2,9 @@ package wallet
 
 import (
 	"context"
-	cryptorand "crypto/rand"
 	"crypto/ed25519"
 	"crypto/hmac"
+	cryptorand "crypto/rand"
 	"crypto/sha512"
 	"crypto/subtle"
 	"encoding/base64"
@@ -23,7 +23,7 @@ import (
 	"github.com/goravel/framework/facades"
 	"github.com/redis/go-redis/v9"
 
-	"github.com/macrowallets/waas/app/events"
+	"github.com/macrowallets/waas/app/dtos"
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/services/chain"
 	mpc "github.com/macrowallets/waas/app/services/mpc"
@@ -252,7 +252,7 @@ func (s *Service) CreateWallet(ctx context.Context, accountID uuid.UUID, chainID
 		}()
 	}
 
-	_ = facades.Event().Job(&events.WalletCreated{}, []event.Arg{
+	_ = facades.Event().Job(&dtos.WalletCreated{}, []event.Arg{
 		{Type: "string", Value: walletID.String()},
 		{Type: "string", Value: chainID},
 	}).Dispatch()
