@@ -15,9 +15,20 @@ import (
 	"github.com/macrowallets/waas/app/jobs"
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/repositories"
+	"github.com/macrowallets/waas/app/services/refresh"
 )
 
-type RefreshAddress struct{}
+type RefreshAddress struct {
+	balances *refresh.BalanceService
+}
+
+// NewRefreshAddress refreshes the wallets that own the given addresses.
+func NewRefreshAddress(balances *refresh.BalanceService) *RefreshAddress {
+	if balances == nil {
+		panic("refresh:address: balance refresh service is required")
+	}
+	return &RefreshAddress{balances: balances}
+}
 
 func (c *RefreshAddress) Signature() string {
 	return "refresh:address"
@@ -62,7 +73,6 @@ func (c *RefreshAddress) Handle(ctx console.Context) error {
 		return fmt.Errorf("at least one address is required")
 	}
 
-	ctr := container.Get()
 	useQueue := ctx.OptionBool("queue")
 
 	for _, addr := range addresses {
@@ -103,7 +113,10 @@ func (c *RefreshAddress) Handle(ctx console.Context) error {
 		}
 
 		ctx.Info("sync mode: refreshing address " + addr + " wallet=" + wallet.ID.String())
-		if err := ctr.BalanceRefreshService.RefreshWallet(context.Background(), wallet); err != nil {
+		if c.balances == nil {
+			return fmt.Errorf("refresh:address: balance refresh service is not initialized")
+		}
+		if err := c.balances.RefreshWallet(context.Background(), wallet); err != nil {
 			ctx.Error("refresh failed for address " + addr + ": " + err.Error())
 			return fmt.Errorf("refresh address %s: %w", addr, err)
 		}

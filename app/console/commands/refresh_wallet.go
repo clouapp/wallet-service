@@ -15,9 +15,20 @@ import (
 	"github.com/macrowallets/waas/app/jobs"
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/repositories"
+	"github.com/macrowallets/waas/app/services/refresh"
 )
 
-type RefreshWallet struct{}
+type RefreshWallet struct {
+	balances *refresh.BalanceService
+}
+
+// NewRefreshWallet refreshes one wallet's read model.
+func NewRefreshWallet(balances *refresh.BalanceService) *RefreshWallet {
+	if balances == nil {
+		panic("refresh:wallet: balance refresh service is required")
+	}
+	return &RefreshWallet{balances: balances}
+}
 
 func (c *RefreshWallet) Signature() string {
 	return "refresh:wallet"
@@ -58,7 +69,6 @@ func (c *RefreshWallet) Handle(ctx console.Context) error {
 		return fmt.Errorf("invalid wallet_id: %w", err)
 	}
 
-	ctr := container.Get()
 	wallet, err := container.MustMake[*repositories.WalletRepository]().FindByID(context.Background(), id)
 	if err != nil && !errors.Is(err, models.ErrRepositoryNotFound) {
 		ctx.Error("failed to load wallet: " + err.Error())
@@ -80,7 +90,10 @@ func (c *RefreshWallet) Handle(ctx console.Context) error {
 	}
 
 	ctx.Info("sync mode: refreshing wallet=" + walletID + " scope=" + scope + " reason=" + reason)
-	if err := ctr.BalanceRefreshService.RefreshWallet(context.Background(), wallet); err != nil {
+	if c.balances == nil {
+		return fmt.Errorf("refresh:wallet: balance refresh service is not initialized")
+	}
+	if err := c.balances.RefreshWallet(context.Background(), wallet); err != nil {
 		ctx.Error("refresh failed: " + err.Error())
 		return fmt.Errorf("refresh wallet: %w", err)
 	}

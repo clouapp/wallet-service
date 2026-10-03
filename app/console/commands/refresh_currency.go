@@ -15,6 +15,8 @@ import (
 	"github.com/macrowallets/waas/app/jobs"
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/repositories"
+	chainpkg "github.com/macrowallets/waas/app/services/chain"
+	"github.com/macrowallets/waas/app/services/refresh"
 	"github.com/macrowallets/waas/pkg/types"
 )
 
@@ -26,7 +28,21 @@ var ambiguousCurrencies = map[string]bool{
 	"weth": true,
 }
 
-type RefreshCurrency struct{}
+type RefreshCurrency struct {
+	registry *chainpkg.Registry
+	balances *refresh.BalanceService
+}
+
+// NewRefreshCurrency refreshes wallets that hold one currency.
+func NewRefreshCurrency(registry *chainpkg.Registry, balances *refresh.BalanceService) *RefreshCurrency {
+	if registry == nil {
+		panic("refresh:currency: chain registry is required")
+	}
+	if balances == nil {
+		panic("refresh:currency: balance refresh service is required")
+	}
+	return &RefreshCurrency{registry: registry, balances: balances}
+}
 
 func (c *RefreshCurrency) Signature() string {
 	return "refresh:currency"
@@ -78,8 +94,7 @@ func (c *RefreshCurrency) Handle(ctx console.Context) error {
 		return fmt.Errorf("ambiguous currency %q requires --chain flag", currency)
 	}
 
-	ctr := container.Get()
-	chain, err := resolveCurrencyToChain(ctr, currency, chainFlag)
+	chain, err := resolveCurrencyToChain(c.registry, currency, chainFlag)
 	if err != nil {
 		ctx.Error(err.Error())
 		return err
@@ -125,7 +140,10 @@ func (c *RefreshCurrency) Handle(ctx console.Context) error {
 		}
 
 		ctx.Info("sync mode: refreshing currency=" + currency + " address=" + addr + " wallet=" + wallet.ID.String())
-		if err := ctr.BalanceRefreshService.RefreshWallet(context.Background(), wallet); err != nil {
+		if c.balances == nil {
+			return fmt.Errorf("refresh:currency: balance refresh service is not initialized")
+		}
+		if err := c.balances.RefreshWallet(context.Background(), wallet); err != nil {
 			ctx.Error("refresh failed for address " + addr + ": " + err.Error())
 			return fmt.Errorf("refresh address %s: %w", addr, err)
 		}
@@ -136,19 +154,22 @@ func (c *RefreshCurrency) Handle(ctx console.Context) error {
 	return nil
 }
 
-func resolveCurrencyToChain(ctr *container.Container, currency, chainFlag string) (string, error) {
+func resolveCurrencyToChain(registry *chainpkg.Registry, currency, chainFlag string) (string, error) {
+	if registry == nil {
+		return "", fmt.Errorf("refresh:currency: chain registry is not initialized")
+	}
 	if chainFlag != "" {
 		return chainFlag, nil
 	}
 
-	for _, id := range ctr.Registry.ChainIDs() {
+	for _, id := range registry.ChainIDs() {
 		if id == currency {
 			return id, nil
 		}
 	}
 
-	for _, id := range ctr.Registry.ChainIDs() {
-		adapter, err := ctr.Registry.Chain(id)
+	for _, id := range registry.ChainIDs() {
+		adapter, err := registry.Chain(id)
 		if err != nil {
 			continue
 		}

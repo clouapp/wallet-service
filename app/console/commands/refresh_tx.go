@@ -14,9 +14,20 @@ import (
 	"github.com/macrowallets/waas/app/jobs"
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/repositories"
+	"github.com/macrowallets/waas/app/services/refresh"
 )
 
-type RefreshTx struct{}
+type RefreshTx struct {
+	balances *refresh.BalanceService
+}
+
+// NewRefreshTx refreshes the wallet that owns one transaction.
+func NewRefreshTx(balances *refresh.BalanceService) *RefreshTx {
+	if balances == nil {
+		panic("refresh:tx: balance refresh service is required")
+	}
+	return &RefreshTx{balances: balances}
+}
 
 func (c *RefreshTx) Signature() string {
 	return "refresh:tx"
@@ -54,8 +65,6 @@ func (c *RefreshTx) Handle(ctx console.Context) error {
 	txHash := ctx.ArgumentString("tx_hash")
 	reason := ctx.Option("reason")
 
-	ctr := container.Get()
-
 	tx, err := container.MustMake[*repositories.TransactionRepository]().FindByChainAndTxHash(context.Background(), chain, txHash)
 	if err != nil && !errors.Is(err, models.ErrRepositoryNotFound) {
 		ctx.Error("failed to look up transaction: " + err.Error())
@@ -89,7 +98,10 @@ func (c *RefreshTx) Handle(ctx console.Context) error {
 	}
 
 	ctx.Info("sync mode: refreshing tx chain=" + chain + " tx_hash=" + txHash + " wallet=" + wallet.ID.String())
-	if err := ctr.BalanceRefreshService.RefreshWallet(context.Background(), wallet); err != nil {
+	if c.balances == nil {
+		return fmt.Errorf("refresh:tx: balance refresh service is not initialized")
+	}
+	if err := c.balances.RefreshWallet(context.Background(), wallet); err != nil {
 		ctx.Error("refresh failed: " + err.Error())
 		return fmt.Errorf("refresh wallet for tx %s: %w", txHash, err)
 	}

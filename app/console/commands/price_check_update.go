@@ -11,9 +11,17 @@ import (
 	"github.com/macrowallets/waas/app/container"
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/repositories"
+	"github.com/macrowallets/waas/app/services/price"
 )
 
-type PriceCheckUpdate struct{}
+type PriceCheckUpdate struct {
+	prices *price.Service
+}
+
+// NewPriceCheckUpdate refreshes stale currency prices.
+func NewPriceCheckUpdate(prices *price.Service) *PriceCheckUpdate {
+	return &PriceCheckUpdate{prices: prices}
+}
 
 func (c *PriceCheckUpdate) Signature() string {
 	return "price:check-update"
@@ -28,7 +36,6 @@ func (c *PriceCheckUpdate) Extend() command.Extend {
 }
 
 func (c *PriceCheckUpdate) Handle(ctx console.Context) error {
-	ctr := container.Get()
 	bgCtx := context.Background()
 
 	staleCryptos, err := container.MustMake[*repositories.CurrencyRepository]().FindStale(bgCtx, models.CurrencyTypeCrypto, 1*time.Minute)
@@ -39,8 +46,8 @@ func (c *PriceCheckUpdate) Handle(ctx console.Context) error {
 
 	if len(staleCryptos) > 0 {
 		ctx.Info(fmt.Sprintf("found %d stale crypto currencies, refreshing...", len(staleCryptos)))
-		if ctr.PriceService != nil {
-			if err := ctr.PriceService.RefreshCryptoPrices(bgCtx); err != nil {
+		if c.prices != nil {
+			if err := c.prices.RefreshCryptoPrices(bgCtx); err != nil {
 				ctx.Error("crypto refresh failed: " + err.Error())
 			}
 		}
@@ -67,8 +74,8 @@ func (c *PriceCheckUpdate) Handle(ctx console.Context) error {
 
 	if len(staleFiats) > 0 {
 		ctx.Info(fmt.Sprintf("found %d stale fiat currencies, refreshing...", len(staleFiats)))
-		if ctr.PriceService != nil {
-			if err := ctr.PriceService.RefreshFiatRates(bgCtx); err != nil {
+		if c.prices != nil {
+			if err := c.prices.RefreshFiatRates(bgCtx); err != nil {
 				ctx.Error("fiat refresh failed: " + err.Error())
 			}
 		}

@@ -15,9 +15,20 @@ import (
 	"github.com/macrowallets/waas/app/jobs"
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/repositories"
+	"github.com/macrowallets/waas/app/services/refresh"
 )
 
-type ReconcileWallet struct{}
+type ReconcileWallet struct {
+	balances *refresh.BalanceService
+}
+
+// NewReconcileWallet reconciles one wallet in process or on the queue.
+func NewReconcileWallet(balances *refresh.BalanceService) *ReconcileWallet {
+	if balances == nil {
+		panic("reconcile:wallet: balance refresh service is required")
+	}
+	return &ReconcileWallet{balances: balances}
+}
 
 func (c *ReconcileWallet) Signature() string {
 	return "reconcile:wallet"
@@ -55,7 +66,6 @@ func (c *ReconcileWallet) Handle(ctx console.Context) error {
 		return fmt.Errorf("invalid wallet_id: %w", err)
 	}
 
-	ctr := container.Get()
 	wallet, err := container.MustMake[*repositories.WalletRepository]().FindByID(context.Background(), id)
 	if err != nil && !errors.Is(err, models.ErrRepositoryNotFound) {
 		ctx.Error("failed to load wallet: " + err.Error())
@@ -79,7 +89,10 @@ func (c *ReconcileWallet) Handle(ctx console.Context) error {
 	}
 
 	ctx.Info("sync mode: reconciling wallet=" + walletID + " reason=" + reason)
-	if err := ctr.BalanceRefreshService.RefreshWallet(context.Background(), wallet); err != nil {
+	if c.balances == nil {
+		return fmt.Errorf("reconcile:wallet: balance refresh service is not initialized")
+	}
+	if err := c.balances.RefreshWallet(context.Background(), wallet); err != nil {
 		ctx.Error("reconciliation failed: " + err.Error())
 		return fmt.Errorf("reconcile wallet: %w", err)
 	}

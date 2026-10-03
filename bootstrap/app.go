@@ -12,6 +12,9 @@ import (
 	"github.com/macrowallets/waas/app/events"
 	"github.com/macrowallets/waas/app/jobs"
 	"github.com/macrowallets/waas/app/listeners"
+	chainpkg "github.com/macrowallets/waas/app/services/chain"
+	"github.com/macrowallets/waas/app/services/deposit"
+	"github.com/macrowallets/waas/app/services/price"
 	"github.com/macrowallets/waas/app/services/refresh"
 	"github.com/macrowallets/waas/config"
 	"github.com/macrowallets/waas/database/seeders"
@@ -34,17 +37,21 @@ func Boot() contractsfoundation.Application {
 			}
 		}).
 		WithCommands(func() []console.Command {
+			balances := container.MustMake[*refresh.BalanceService]()
+			deposits := container.MustMake[*deposit.Service]()
+			registry := container.MustMake[*chainpkg.Registry]()
+			prices := container.MustMake[*price.Service]()
 			return []console.Command{
-				&commands.RefreshWallet{},
-				&commands.RefreshAddress{},
-				&commands.RefreshCurrency{},
-				&commands.RefreshTx{},
-				&commands.ScanDeposits{},
-				&commands.ReconcileWallet{},
-				&commands.PriceWebSocket{},
-				&commands.PriceCheckUpdate{},
+				commands.NewRefreshWallet(balances),
+				commands.NewRefreshAddress(balances),
+				commands.NewRefreshCurrency(registry, balances),
+				commands.NewRefreshTx(balances),
+				commands.NewScanDeposits(deposits),
+				commands.NewReconcileWallet(balances),
+				commands.NewPriceWebSocket(prices, container.MustMake[*price.CoinAPICredential]().Key, container.MustMake[*container.SharedRedis]().Client),
+				commands.NewPriceCheckUpdate(prices),
 				&commands.ChainsSetRPC{},
-				&commands.ChainsAlignNetwork{},
+				commands.NewChainsAlignNetwork(deposits),
 				&commands.WithdrawPreflight{},
 			}
 		}).

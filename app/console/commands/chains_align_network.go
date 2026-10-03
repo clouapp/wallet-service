@@ -10,14 +10,21 @@ import (
 	"github.com/goravel/framework/contracts/console/command"
 	"github.com/goravel/framework/facades"
 
-	"github.com/macrowallets/waas/app/container"
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/services/chainregistry"
+	"github.com/macrowallets/waas/app/services/deposit"
 )
 
 const chainNetworkProfileConfigKey = "vault.chains.network_profile"
 
-type ChainsAlignNetwork struct{}
+type ChainsAlignNetwork struct {
+	deposits *deposit.Service
+}
+
+// NewChainsAlignNetwork points configured chains at a network profile.
+func NewChainsAlignNetwork(deposits *deposit.Service) *ChainsAlignNetwork {
+	return &ChainsAlignNetwork{deposits: deposits}
+}
 
 func (c *ChainsAlignNetwork) Signature() string {
 	return "chains:align-network"
@@ -76,7 +83,7 @@ func (c *ChainsAlignNetwork) Handle(ctx console.Context) error {
 		return failCommand(ctx, err)
 	}
 	for chainID := range alignment.Reissues {
-		refreshAddressCache(ctx, background, chainID)
+		refreshAddressCache(ctx, background, chainID, c.deposits)
 	}
 	ctx.Info("applied; restart the API and workers so the chain adapters reload")
 	return nil
@@ -108,13 +115,12 @@ func printAlignment(ctx console.Context, alignment *chainregistry.Alignment) {
 
 // refreshAddressCache rebuilds the Redis set of watched addresses of the chain so
 // retired addresses stop matching deposits.
-func refreshAddressCache(ctx console.Context, background context.Context, chainID string) {
-	ctr := container.Get()
-	if ctr == nil || ctr.DepositService == nil {
+func refreshAddressCache(ctx console.Context, background context.Context, chainID string, deposits *deposit.Service) {
+	if deposits == nil {
 		ctx.Warning(fmt.Sprintf("address cache of %s not refreshed: no deposit service", chainID))
 		return
 	}
-	if err := ctr.DepositService.RefreshAddressCache(background, chainID); err != nil {
+	if err := deposits.RefreshAddressCache(background, chainID); err != nil {
 		ctx.Warning(fmt.Sprintf("address cache of %s not refreshed: %s", chainID, err))
 	}
 }
