@@ -119,6 +119,7 @@ func RegisterAdminRoutes() {
 			r.Delete("/tokens/{tokenId}", accountsCtrl.RevokeAccountToken)
 
 			r.Get("/settings", accountSettingsCtrl.Show)
+			r.Post("/settings/sections/{section}/cache", accountSettingsCtrl.Flush)
 			r.Post("/settings/sections/{section}/reset", accountSettingsCtrl.Reset)
 			r.Patch("/settings/{group}", accountSettingsCtrl.Update)
 

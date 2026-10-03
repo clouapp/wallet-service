@@ -74,7 +74,7 @@ func (r *SettingsGroupRequest) Load(ctx http.Context) {
 }
 
 // SettingsSectionRequest is the settings section path parameter.
-// Reset takes no document: the page returns to registry defaults.
+// Reset and the section cache flush take no document.
 type SettingsSectionRequest struct {
 	Open
 	Section string `form:"section" json:"section"`

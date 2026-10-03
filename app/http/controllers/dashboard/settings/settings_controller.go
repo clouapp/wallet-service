@@ -87,6 +87,30 @@ func (ctrl *SettingsController) Update(ctx http.Context) http.Response {
 	return responses.Send(ctx, http.StatusOK, view)
 }
 
+// Flush godoc
+// @Summary      Flush one account settings section cache
+// @Description  Drops the cached rows of every account-managed group on the page. Stored values stay. An unknown section is 404. A platform-managed group is 403 and the cache is left in place.
+// @Tags         Account Settings
+// @Security     BearerAuth
+// @Param        accountId  path  string  true  "Account UUID"
+// @Param        section    path  string  true  "Settings section"
+// @Success      204  "No content"
+// @Failure      403  {object}  responses.ErrorBody
+// @Failure      404  {object}  responses.ErrorBody
+// @Router       /accounts/{accountId}/settings/sections/{section}/cache [post]
+func (ctrl *SettingsController) Flush(ctx http.Context) http.Response {
+	account, role, errResp := accountCaller(ctx)
+	if errResp != nil {
+		return errResp
+	}
+	var path requests.SettingsSectionRequest
+	path.Load(ctx)
+	if err := ctrl.settings.FlushSection(ctx.Context(), account.ID, role, path.Section); err != nil {
+		return mapSettingsError(ctx, err)
+	}
+	return ctx.Response().NoContent()
+}
+
 // Reset godoc
 // @Summary      Reset one account settings section
 // @Description  Deletes stored rows of every account-managed group on the page. Secrets are not returned. An unknown section is 404. A platform-managed group is 403 and is left unchanged.

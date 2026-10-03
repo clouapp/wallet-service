@@ -283,6 +283,34 @@ func (s *Service) ResetSection(ctx context.Context, accountID, actorID uuid.UUID
 	return s.renderSection(ctx, accountID, role, groups)
 }
 
+// FlushSection drops the cached rows of every account-managed group on one
+// page, so the next read sees an edit made outside this service. Stored rows
+// stay. An unknown page, including a platform-only page, is ErrSectionNotFound
+// before the role check. A page that holds a platform-managed group is
+// ErrManagedByPlatform and its cache is left in place. The activity vocabulary
+// has no flush event, so this writes nothing.
+func (s *Service) FlushSection(ctx context.Context, accountID uuid.UUID, role, section string) error {
+	if err := requireAccount(ctx, accountID); err != nil {
+		return err
+	}
+	groups := accountGroupsInSection(section)
+	if len(groups) == 0 {
+		return ErrSectionNotFound
+	}
+	if !policies.MayUpdateSettings(role) {
+		return ErrUpdateForbidden
+	}
+	for _, group := range groups {
+		if group.ManagedBy != ManagedByAccount {
+			return ErrManagedByPlatform
+		}
+	}
+	for _, group := range groups {
+		s.cache.Forget(cacheKey(accountID, group.Name))
+	}
+	return nil
+}
+
 func accountGroupsInSection(section string) []Group {
 	var groups []Group
 	for _, group := range GroupsInSection(section) {

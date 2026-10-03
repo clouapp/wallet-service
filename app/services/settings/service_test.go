@@ -428,6 +428,134 @@ func TestResetSectionUserCannotResetAKnownSection(t *testing.T) {
 	}
 }
 
+func TestFlushSectionForgetsThePageAndLeavesStoredRows(t *testing.T) {
+	t.Parallel()
+
+	store := newMemoryStore()
+	activity := &recordingActivity{}
+	cache := &memoryCache{}
+	service := NewService(store, prefixSealer{}, cache, activity)
+	accountID := uuid.New()
+	ctx := context.Background()
+	store.rows[store.key(accountID, groupAccountSecurity)] = map[string]string{keyRequire2FA: "true"}
+	store.rows[store.key(accountID, groupAccountWebhooks)] = map[string]string{keyDefaultEvents: `["deposit.confirmed"]`}
+	store.rows[store.key(accountID, groupAccountSweepLimits)] = map[string]string{keyMaxAddressesEVM: "3"}
+
+	if err := service.FlushSection(ctx, accountID, "admin", sectionSecurity); err != nil {
+		t.Fatalf("flush: %v", err)
+	}
+	if value, ok := store.get(accountID, groupAccountSecurity, keyRequire2FA); !ok || value != "true" {
+		t.Fatalf("security row = %q present %v", value, ok)
+	}
+	if value, ok := store.get(accountID, groupAccountWebhooks, keyDefaultEvents); !ok || value != `["deposit.confirmed"]` {
+		t.Fatalf("webhooks row = %q present %v", value, ok)
+	}
+	if value, ok := store.get(accountID, groupAccountSweepLimits, keyMaxAddressesEVM); !ok || value != "3" {
+		t.Fatalf("sweep row = %q present %v", value, ok)
+	}
+	if len(activity.rows) != 0 {
+		t.Fatalf("activity rows = %d, want none", len(activity.rows))
+	}
+	if len(cache.keys) != 1 || cache.keys[0] != cacheKey(accountID, groupAccountSecurity) {
+		t.Fatalf("forgotten = %v", cache.keys)
+	}
+
+	if err := service.FlushSection(ctx, accountID, "owner", sectionWebhooks); err != nil {
+		t.Fatalf("flush webhooks: %v", err)
+	}
+	if len(cache.keys) != 2 || cache.keys[1] != cacheKey(accountID, groupAccountWebhooks) {
+		t.Fatalf("forgotten = %v", cache.keys)
+	}
+	if value, ok := store.get(accountID, groupAccountWebhooks, keyDefaultEvents); !ok || value != `["deposit.confirmed"]` {
+		t.Fatalf("webhooks row after flush = %q present %v", value, ok)
+	}
+}
+
+func TestFlushSectionUnknownForgetsNothing(t *testing.T) {
+	t.Parallel()
+
+	cache := &memoryCache{}
+	service := NewService(newMemoryStore(), prefixSealer{}, cache, &recordingActivity{})
+	ctx := context.Background()
+	accountID := uuid.New()
+	for _, role := range []string{"owner", "auditor", "user"} {
+		if err := service.FlushSection(ctx, accountID, role, "not-a-section"); !errors.Is(err, ErrSectionNotFound) {
+			t.Fatalf("role %s err = %v", role, err)
+		}
+		if err := service.FlushSection(ctx, accountID, role, sectionScanning); !errors.Is(err, ErrSectionNotFound) {
+			t.Fatalf("role %s scanning err = %v", role, err)
+		}
+	}
+	if len(cache.keys) != 0 {
+		t.Fatalf("forgotten = %v", cache.keys)
+	}
+}
+
+func TestFlushSectionRefusesAPlatformManagedGroup(t *testing.T) {
+	t.Parallel()
+
+	store := newMemoryStore()
+	cache := &memoryCache{}
+	service := NewService(store, prefixSealer{}, cache, &recordingActivity{})
+	accountID := uuid.New()
+	store.rows[store.key(accountID, groupAccountSweepLimits)] = map[string]string{
+		keyDailyWithdrawCapUSD: "12.50",
+	}
+
+	err := service.FlushSection(context.Background(), accountID, "owner", sectionLimits)
+	if !errors.Is(err, ErrManagedByPlatform) {
+		t.Fatalf("err = %v", err)
+	}
+	if value, ok := store.get(accountID, groupAccountSweepLimits, keyDailyWithdrawCapUSD); !ok || value != "12.50" {
+		t.Fatalf("sweep cap = %q present %v", value, ok)
+	}
+	if len(cache.keys) != 0 {
+		t.Fatalf("forgotten = %v", cache.keys)
+	}
+
+	err = service.FlushSection(context.Background(), accountID, "auditor", sectionLimits)
+	if !errors.Is(err, ErrUpdateForbidden) {
+		t.Fatalf("auditor err = %v", err)
+	}
+	if len(cache.keys) != 0 {
+		t.Fatalf("auditor forgotten = %v", cache.keys)
+	}
+}
+
+func TestFlushSectionUserCannotFlushAKnownSection(t *testing.T) {
+	t.Parallel()
+
+	store := newMemoryStore()
+	cache := &memoryCache{}
+	service := NewService(store, prefixSealer{}, cache, &recordingActivity{})
+	accountID := uuid.New()
+	store.rows[store.key(accountID, groupAccountSecurity)] = map[string]string{keyRequire2FA: "true"}
+
+	err := service.FlushSection(context.Background(), accountID, "user", sectionSecurity)
+	if !errors.Is(err, ErrUpdateForbidden) {
+		t.Fatalf("err = %v", err)
+	}
+	if value, ok := store.get(accountID, groupAccountSecurity, keyRequire2FA); !ok || value != "true" {
+		t.Fatalf("require_2fa = %q present %v", value, ok)
+	}
+	if len(cache.keys) != 0 {
+		t.Fatalf("forgotten = %v", cache.keys)
+	}
+}
+
+func TestFlushSectionRequiresAccount(t *testing.T) {
+	t.Parallel()
+
+	service := newTestService(newMemoryStore())
+	accountID := uuid.New()
+	if err := service.FlushSection(nil, accountID, "owner", sectionSecurity); err == nil {
+		t.Fatal("nil context was accepted")
+	}
+	if err := service.FlushSection(context.Background(), uuid.Nil, "owner", sectionSecurity); err == nil {
+		t.Fatal("nil account was accepted")
+	}
+}
+
 func groupInSection(t *testing.T, view SectionView, name string) GroupView {
 	t.Helper()
 	for _, block := range view.Blocks {

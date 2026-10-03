@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/goravel/framework/facades"
@@ -302,6 +303,115 @@ func (s *accountSettingsSuite) TestResetSectionClearsThePageAndRecordsFieldNames
 	s.NotContains(webhookMeta, "enc:v1:")
 }
 
+func (s *accountSettingsSuite) TestFlushSectionLeavesStoredRowsAndDropsOnlyThatPageCache() {
+	accountID, token := s.owner()
+	s.patch(token, accountID, "account_security", `{"session_idle_minutes":45}`, 200)
+	_, err := facades.Orm().Query().Exec(
+		`INSERT INTO settings (account_id, "group", "key", value, created_at, updated_at)
+		 VALUES (?, 'account_sweep_limits', 'max_addresses_evm', '7', NOW(), NOW())`,
+		accountID,
+	)
+	s.Require().NoError(err)
+
+	var before int64
+	err = facades.Orm().Query().Raw(
+		`SELECT count(*) FROM account_activity WHERE account_id = ?`,
+		accountID,
+	).Scan(&before)
+	s.Require().NoError(err)
+
+	securityKey := accountSettingsCacheKey(accountID, "account_security")
+	webhooksKey := accountSettingsCacheKey(accountID, "account_webhooks")
+	limitsKey := accountSettingsCacheKey(accountID, "account_sweep_limits")
+	s.T().Cleanup(func() {
+		facades.Cache().Forget(securityKey)
+		facades.Cache().Forget(webhooksKey)
+		facades.Cache().Forget(limitsKey)
+	})
+	s.Require().NoError(facades.Cache().Put(securityKey, "stale-security", 10*time.Minute))
+	s.Require().NoError(facades.Cache().Put(webhooksKey, "stale-webhooks", 10*time.Minute))
+	s.Require().NoError(facades.Cache().Put(limitsKey, "stale-limits", 10*time.Minute))
+	s.True(facades.Cache().Has(securityKey))
+
+	body := s.flush(token, accountID, "security", 204)
+	s.Empty(strings.TrimSpace(body))
+	s.False(facades.Cache().Has(securityKey))
+	s.Equal("stale-webhooks", facades.Cache().GetString(webhooksKey))
+	s.Equal("stale-limits", facades.Cache().GetString(limitsKey))
+
+	var idle string
+	err = facades.Orm().Query().Raw(
+		`SELECT value FROM settings WHERE account_id = ? AND "group" = 'account_security' AND "key" = 'session_idle_minutes'`,
+		accountID,
+	).Scan(&idle)
+	s.Require().NoError(err)
+	s.Equal("45", idle)
+
+	var sweep string
+	err = facades.Orm().Query().Raw(
+		`SELECT value FROM settings WHERE account_id = ? AND "group" = 'account_sweep_limits' AND "key" = 'max_addresses_evm'`,
+		accountID,
+	).Scan(&sweep)
+	s.Require().NoError(err)
+	s.Equal("7", sweep)
+
+	var after int64
+	err = facades.Orm().Query().Raw(
+		`SELECT count(*) FROM account_activity WHERE account_id = ?`,
+		accountID,
+	).Scan(&after)
+	s.Require().NoError(err)
+	s.Equal(before, after)
+}
+
+func (s *accountSettingsSuite) TestFlushUnknownSectionIsNotFoundBeforeForbidden() {
+	accountID, token := s.owner()
+	securityKey := accountSettingsCacheKey(accountID, "account_security")
+	s.T().Cleanup(func() { facades.Cache().Forget(securityKey) })
+	s.Require().NoError(facades.Cache().Put(securityKey, "stale-security", 10*time.Minute))
+
+	response := s.flushParsed(token, accountID, "not-a-section", 404)
+	s.Equal("not_found", response["error"].(map[string]any)["code"])
+	s.Equal("stale-security", facades.Cache().GetString(securityKey))
+
+	auditor := s.member(accountID, "auditor")
+	response = s.flushParsed(auditor, accountID, "scanning", 404)
+	s.Equal("not_found", response["error"].(map[string]any)["code"])
+	s.Equal("stale-security", facades.Cache().GetString(securityKey))
+
+	user := s.member(accountID, "user")
+	response = s.flushParsed(user, accountID, "not-a-section", 404)
+	s.Equal("not_found", response["error"].(map[string]any)["code"])
+	response = s.flushParsed(user, accountID, "security", 403)
+	s.Equal("forbidden", response["error"].(map[string]any)["code"])
+	s.Equal("stale-security", facades.Cache().GetString(securityKey))
+}
+
+func (s *accountSettingsSuite) TestFlushPlatformManagedSectionIsForbidden() {
+	accountID, token := s.owner()
+	_, err := facades.Orm().Query().Exec(
+		`INSERT INTO settings (account_id, "group", "key", value, created_at, updated_at)
+		 VALUES (?, 'account_sweep_limits', 'daily_withdraw_cap_usd', '12.50', NOW(), NOW())`,
+		accountID,
+	)
+	s.Require().NoError(err)
+	limitsKey := accountSettingsCacheKey(accountID, "account_sweep_limits")
+	s.T().Cleanup(func() { facades.Cache().Forget(limitsKey) })
+	s.Require().NoError(facades.Cache().Put(limitsKey, "stale-limits", 10*time.Minute))
+
+	response := s.flushParsed(token, accountID, "limits", 403)
+	s.Equal("forbidden", response["error"].(map[string]any)["code"])
+	s.Equal("stale-limits", facades.Cache().GetString(limitsKey))
+
+	var cap string
+	err = facades.Orm().Query().Raw(
+		`SELECT value FROM settings WHERE account_id = ? AND "group" = 'account_sweep_limits' AND "key" = 'daily_withdraw_cap_usd'`,
+		accountID,
+	).Scan(&cap)
+	s.Require().NoError(err)
+	s.Equal("12.50", cap)
+}
+
 func (s *accountSettingsSuite) TestResetUnknownSectionIsNotFoundBeforeForbidden() {
 	accountID, token := s.owner()
 	response := s.resetParsed(token, accountID, "not-a-section", 404)
@@ -448,6 +558,30 @@ func (s *accountSettingsSuite) patchRaw(token string, accountID uuid.UUID, group
 	content, err := resp.Content()
 	s.Require().NoError(err)
 	return content
+}
+
+func accountSettingsCacheKey(accountID uuid.UUID, group string) string {
+	return "settings:account:" + accountID.String() + ":" + group
+}
+
+func (s *accountSettingsSuite) flush(token string, accountID uuid.UUID, section string, status int) string {
+	s.T().Helper()
+	resp, err := s.Http(s.T()).
+		WithHeader("Authorization", "Bearer "+token).
+		WithHeader("Content-Type", "application/json").
+		Post("/v1/accounts/"+accountID.String()+"/settings/sections/"+section+"/cache", strings.NewReader("{}"))
+	s.Require().NoError(err)
+	resp.AssertStatus(status)
+	content, err := resp.Content()
+	s.Require().NoError(err)
+	return content
+}
+
+func (s *accountSettingsSuite) flushParsed(token string, accountID uuid.UUID, section string, status int) map[string]any {
+	s.T().Helper()
+	var parsed map[string]any
+	s.Require().NoError(json.Unmarshal([]byte(s.flush(token, accountID, section, status)), &parsed))
+	return parsed
 }
 
 func (s *accountSettingsSuite) reset(token string, accountID uuid.UUID, section string, status int) string {

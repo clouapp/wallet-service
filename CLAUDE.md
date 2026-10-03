@@ -181,7 +181,15 @@ Known violations include `app/models → app/services/mpc` and `config → app/m
   `settings.update` (owner, admin). The user role holds neither. The service
   asks `policies.MayViewSettings` and `policies.MayUpdateSettings`. — guarded by
   `TestSettingsPermissionsFollowTheAccountRoles`.
-- There is no `settings.section_reset` on this branch.
+- `POST /v1/accounts/{accountId}/settings/sections/{section}/reset` deletes
+  the stored rows of every account-managed group on the page and writes
+  `settings.section_reset` with the group and the field names.
+- `POST /v1/accounts/{accountId}/settings/sections/{section}/cache` is
+  `FlushSection`. It drops `settings:account:<uuid>:<group>` for every
+  account-managed group on that page so an out-of-band edit is read next
+  time. Stored rows stay, and no activity row is written. An unknown page,
+  including a platform-only page, is 404 before the role check. A page that
+  holds a platform-managed group is 403 and the cache is left in place.
 
 ### 11. Feature flags
 
