@@ -64,7 +64,7 @@ func NewUsersController(
 // @Router       /users/me [get]
 func (ctrl *UsersController) GetMe(ctx http.Context) http.Response {
 	user := requestctx.MustUser(ctx)
-	return ctx.Response().Json(http.StatusOK, user)
+	return responses.Send(ctx, http.StatusOK, user)
 }
 
 // UpdateMe godoc
@@ -94,7 +94,7 @@ func (ctrl *UsersController) UpdateMe(ctx http.Context) http.Response {
 		user.FullName = req.FullName
 	}
 
-	return ctx.Response().Json(http.StatusOK, user)
+	return responses.Send(ctx, http.StatusOK, user)
 }
 
 // ChangePassword godoc
@@ -130,7 +130,7 @@ func (ctrl *UsersController) ChangePassword(ctx http.Context) http.Response {
 		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to update password"})
 	}
 
-	return ctx.Response().Json(http.StatusOK, http.Json{"message": "password updated successfully"})
+	return responses.Send(ctx, http.StatusOK, http.Json{"message": "password updated successfully"})
 }
 
 const (
@@ -182,7 +182,7 @@ func (ctrl *UsersController) ListMyAccounts(ctx http.Context) http.Response {
 		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to fetch accounts"})
 	}
 
-	return ctx.Response().Json(http.StatusOK, pagination.Response(items, total, limit, offset))
+	return responses.Send(ctx, http.StatusOK, pagination.Response(items, total, limit, offset))
 }
 
 // accountsWithCallerRole copies each account and adds the caller's stored
@@ -263,7 +263,7 @@ func (ctrl *UsersController) UpdateDefaultAccount(ctx http.Context) http.Respons
 	}
 
 	account, _ := ctrl.accounts.FindByID(ctx.Context(), accountID)
-	return ctx.Response().Json(http.StatusOK, http.Json{"account": account})
+	return responses.Send(ctx, http.StatusOK, http.Json{"account": account})
 }
 
 // SetupTOTP godoc
@@ -292,7 +292,7 @@ func (ctrl *UsersController) SetupTOTP(ctx http.Context) http.Response {
 		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to save TOTP secret"})
 	}
 
-	return ctx.Response().Json(http.StatusOK, http.Json{
+	return responses.Send(ctx, http.StatusOK, http.Json{
 		"secret": secret,
 		"qr_url": qrURL,
 	})
@@ -358,7 +358,7 @@ func (ctrl *UsersController) ConfirmTOTP(ctx http.Context) http.Response {
 		"user":           user,
 		"recovery_codes": codes,
 	}
-	return ctx.Response().Json(http.StatusOK, resp)
+	return responses.Send(ctx, http.StatusOK, resp)
 }
 
 // DisableTOTP godoc
@@ -381,7 +381,7 @@ func (ctrl *UsersController) DisableTOTP(ctx http.Context) http.Response {
 
 	user.TotpEnabled = false
 	user.TotpSecret = ""
-	return ctx.Response().Json(http.StatusOK, user)
+	return responses.Send(ctx, http.StatusOK, user)
 }
 
 // ---- Swagger-only types ----
