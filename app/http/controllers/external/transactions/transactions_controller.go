@@ -6,6 +6,7 @@ import (
 
 	"github.com/macrowallets/waas/app/http/controllers"
 	"github.com/macrowallets/waas/app/http/pagination"
+	"github.com/macrowallets/waas/app/http/requests"
 	"github.com/macrowallets/waas/app/http/responses"
 	withdraw "github.com/macrowallets/waas/app/services/withdraw"
 )
@@ -52,14 +53,16 @@ func (ctrl *TransactionsController) ListTransactions(ctx http.Context) http.Resp
 	}
 
 	limit, offset := pagination.ParseParams(ctx, 50)
+	var query requests.ListTransactionsRequest
+	query.Load(ctx)
 
 	txs, total, err := ctrl.withdrawals.ListTransactionsForAccount(
 		ctx.Context(),
 		accountID,
-		ctx.Request().Query("chain", ""),
-		ctx.Request().Query("type", ""),
-		ctx.Request().Query("status", ""),
-		ctx.Request().Query("user_id", ""),
+		query.Chain,
+		query.Type,
+		query.Status,
+		query.UserID,
 		limit,
 		offset,
 	)
@@ -82,7 +85,7 @@ func (ctrl *TransactionsController) ListTransactions(ctx http.Context) http.Resp
 // @Failure      404  {object}  ErrorResponse  "Transaction not found"
 // @Router       /v1/transactions/{id} [get]
 func (ctrl *TransactionsController) GetTransaction(ctx http.Context) http.Response {
-	id, err := uuid.Parse(ctx.Request().Route("id"))
+	id, err := requests.RouteUUID(ctx, "id")
 	if err != nil {
 		return responses.Send(ctx, http.StatusBadRequest, http.Json{
 			"error": "invalid tx id",
@@ -120,11 +123,13 @@ func (ctrl *TransactionsController) ListUserTransactions(ctx http.Context) http.
 
 	limit, offset := pagination.ParseParams(ctx, 50)
 
+	var path requests.ExternalIDRequest
+	path.Load(ctx)
 	txs, total, err := ctrl.withdrawals.ListTransactionsForAccount(
 		ctx.Context(),
 		accountID,
 		"", "", "",
-		ctx.Request().Route("external_id"),
+		path.ExternalID,
 		limit,
 		offset,
 	)
