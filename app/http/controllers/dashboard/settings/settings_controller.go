@@ -47,7 +47,7 @@ func (ctrl *SettingsController) Show(ctx http.Context) http.Response {
 	if errResp := mapSettingsError(ctx, err); errResp != nil {
 		return errResp
 	}
-	return ctx.Response().Json(http.StatusOK, view)
+	return responses.Send(ctx, http.StatusOK, view)
 }
 
 // Update godoc
@@ -84,7 +84,7 @@ func (ctrl *SettingsController) Update(ctx http.Context) http.Response {
 	if errResp := mapSettingsError(ctx, err); errResp != nil {
 		return errResp
 	}
-	return ctx.Response().Json(http.StatusOK, view)
+	return responses.Send(ctx, http.StatusOK, view)
 }
 
 func accountCaller(ctx http.Context) (*models.Account, string, http.Response) {
@@ -109,7 +109,7 @@ func mapSettingsError(ctx http.Context, err error) http.Response {
 	}
 	var invalid *settingssvc.ValidationError
 	if errors.As(err, &invalid) {
-		return ctx.Response().Json(http.StatusUnprocessableEntity, map[string]any{
+		return responses.Send(ctx, http.StatusUnprocessableEntity, map[string]any{
 			"error": map[string]any{
 				"code":    responses.CodeValidationFailed,
 				"message": "validation failed",
