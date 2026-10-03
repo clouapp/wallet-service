@@ -83,12 +83,33 @@ func (r *WalletRepository) PaginateAll(ctx context.Context, limit, offset int) (
 	return wallets, total, nil
 }
 
+// assignedWalletMembership keeps wallets the user still belongs to.
+// A soft-deleted or non-active wallet membership does not count.
+const assignedWalletMembership = "id IN (SELECT wallet_id FROM wallet_users WHERE user_id = ? AND deleted_at IS NULL AND status = ?)"
+
 // PaginateByAccount pages through one account's wallets, optionally one chain.
 func (r *WalletRepository) PaginateByAccount(ctx context.Context, accountID uuid.UUID, chain string, limit, offset int) ([]models.Wallet, int64, error) {
+	return r.paginateByAccount(ctx, accountID, chain, limit, offset, nil)
+}
+
+// PaginateByAccountAndMember pages the account wallets the user belongs to.
+func (r *WalletRepository) PaginateByAccountAndMember(ctx context.Context, accountID, userID uuid.UUID, chain string, limit, offset int) ([]models.Wallet, int64, error) {
+	if userID == uuid.Nil {
+		return nil, 0, fmt.Errorf("list account wallets: user is required")
+	}
+	return r.paginateByAccount(ctx, accountID, chain, limit, offset, func(query orm.Query) orm.Query {
+		return query.Where(assignedWalletMembership, userID, models.StatusActive)
+	})
+}
+
+func (r *WalletRepository) paginateByAccount(ctx context.Context, accountID uuid.UUID, chain string, limit, offset int, restrict func(orm.Query) orm.Query) ([]models.Wallet, int64, error) {
 	var wallets []models.Wallet
 	countQuery := r.Query(ctx).Model(&models.Wallet{}).Where("account_id = ?", accountID)
 	if chain != "" {
 		countQuery = countQuery.Where("chain = ?", chain)
+	}
+	if restrict != nil {
+		countQuery = restrict(countQuery)
 	}
 	total, err := countQuery.Count()
 	if err != nil {
@@ -98,6 +119,9 @@ func (r *WalletRepository) PaginateByAccount(ctx context.Context, accountID uuid
 	listQuery := r.Query(ctx).With("DepositAddress").Where("account_id = ?", accountID)
 	if chain != "" {
 		listQuery = listQuery.Where("chain = ?", chain)
+	}
+	if restrict != nil {
+		listQuery = restrict(listQuery)
 	}
 	if err := listQuery.Order("created_at").Offset(offset).Limit(limit).Find(&wallets); err != nil {
 		return nil, 0, fmt.Errorf("list account wallets: %w", err)

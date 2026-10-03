@@ -92,3 +92,61 @@ func (s *WalletRepositoryTestSuite) TestActivateClearsTheCode() {
 	s.Equal("active", found.Status)
 	s.Nil(found.ActivationCode)
 }
+
+func (s *WalletRepositoryTestSuite) TestPaginateByAccountAndMemberKeepsOnlyActiveMemberships() {
+	accountID := uuid.New()
+	otherAccountID := uuid.New()
+	userID := uuid.New()
+	assigned := s.walletOn(accountID, "eth")
+	otherChain := s.walletOn(accountID, "btc")
+	suspended := s.walletOn(accountID, "eth")
+	removed := s.walletOn(accountID, "eth")
+	elsewhere := s.walletOn(otherAccountID, "eth")
+
+	members := repositories.NewWalletUserRepository(nil)
+	s.membership(members, assigned.ID, userID, "active")
+	s.membership(members, otherChain.ID, userID, "active")
+	s.membership(members, suspended.ID, userID, "suspended")
+	s.membership(members, removed.ID, userID, "active")
+	s.Require().NoError(members.SoftDelete(context.Background(), removed.ID, userID))
+	s.membership(members, elsewhere.ID, userID, "active")
+
+	got, total, err := s.repo.PaginateByAccountAndMember(context.Background(), accountID, userID, "", 20, 0)
+	s.Require().NoError(err)
+	s.Equal(int64(2), total)
+	s.ElementsMatch([]uuid.UUID{assigned.ID, otherChain.ID}, walletIDs(got))
+
+	ethOnly, ethTotal, err := s.repo.PaginateByAccountAndMember(context.Background(), accountID, userID, "eth", 20, 0)
+	s.Require().NoError(err)
+	s.Equal(int64(1), ethTotal)
+	s.Equal([]uuid.UUID{assigned.ID}, walletIDs(ethOnly))
+
+	none, noneTotal, err := s.repo.PaginateByAccountAndMember(context.Background(), accountID, uuid.New(), "", 20, 0)
+	s.Require().NoError(err)
+	s.Equal(int64(0), noneTotal)
+	s.Empty(none)
+
+	_, _, err = s.repo.PaginateByAccountAndMember(context.Background(), accountID, uuid.Nil, "", 20, 0)
+	s.EqualError(err, "list account wallets: user is required")
+}
+
+func (s *WalletRepositoryTestSuite) walletOn(accountID uuid.UUID, chainID string) *models.Wallet {
+	wallet := s.makeWallet(chainID)
+	wallet.AccountID = &accountID
+	s.Require().NoError(s.repo.Create(context.Background(), wallet))
+	return wallet
+}
+
+func (s *WalletRepositoryTestSuite) membership(members *repositories.WalletUserRepository, walletID, userID uuid.UUID, status string) {
+	s.Require().NoError(members.Create(context.Background(), &models.WalletUser{
+		ID: uuid.New(), WalletID: walletID, UserID: userID, Roles: "viewer", Status: status,
+	}))
+}
+
+func walletIDs(wallets []models.Wallet) []uuid.UUID {
+	ids := make([]uuid.UUID, 0, len(wallets))
+	for _, wallet := range wallets {
+		ids = append(ids, wallet.ID)
+	}
+	return ids
+}

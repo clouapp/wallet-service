@@ -36,6 +36,11 @@ func TestWalletSettingsSuite(t *testing.T) {
 func (s *WalletSettingsTestSuite) SetupTest() {
 	mocks.TestDB(s.T())
 	s.account = mocks.InsertAccount(s.T(), "settings")
+	// The auditor still has to reach the settings policy. With the flag off,
+	// a user or auditor who is not a wallet member never sees the wallet.
+	_, err := facades.Orm().Query().Exec(`UPDATE accounts SET view_all_wallets = TRUE WHERE id = ?`, s.account.ID)
+	s.Require().NoError(err)
+	s.account.ViewAllWallets = true
 	s.ownerToken = s.memberToken(models.AccountRoleOwner)
 	s.viewerToken = s.memberToken(models.AccountRoleAuditor)
 	for _, chain := range []struct{ id, adapter string }{

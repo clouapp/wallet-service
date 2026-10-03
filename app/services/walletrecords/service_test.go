@@ -51,6 +51,17 @@ func (f *fakeWallets) PaginateByAccount(_ context.Context, accountID uuid.UUID, 
 	}
 	return f.rows, f.total, nil
 }
+func (f *fakeWallets) PaginateByAccountAndMember(_ context.Context, accountID, userID uuid.UUID, chain string, _, _ int) ([]models.Wallet, int64, error) {
+	f.accountID = accountID
+	f.chain = chain
+	if userID == uuid.Nil {
+		return nil, 0, errors.New("user is required")
+	}
+	if f.err != nil {
+		return nil, 0, f.err
+	}
+	return f.rows, f.total, nil
+}
 func (f *fakeWallets) FindByID(context.Context, uuid.UUID) (*models.Wallet, error) {
 	return nil, f.err
 }
@@ -63,10 +74,10 @@ func (f *fakeWallets) SetFeeMultiplier(context.Context, uuid.UUID, numeric.NullD
 	return f.err
 }
 func (f *fakeWallets) UpdateSettings(context.Context, uuid.UUID, map[string]any) error { return f.err }
-func (f *fakeWallets) SetRequiredApprovals(context.Context, uuid.UUID, int) error { return f.err }
-func (f *fakeWallets) SetFrozenUntil(context.Context, uuid.UUID, time.Time) error { return f.err }
-func (f *fakeWallets) SetStatus(context.Context, uuid.UUID, string) error         { return f.err }
-func (f *fakeWallets) SetLabel(context.Context, uuid.UUID, string) error          { return f.err }
+func (f *fakeWallets) SetRequiredApprovals(context.Context, uuid.UUID, int) error      { return f.err }
+func (f *fakeWallets) SetFrozenUntil(context.Context, uuid.UUID, time.Time) error      { return f.err }
+func (f *fakeWallets) SetStatus(context.Context, uuid.UUID, string) error              { return f.err }
+func (f *fakeWallets) SetLabel(context.Context, uuid.UUID, string) error               { return f.err }
 
 func TestTransactionsFindByChainAndTxHashForwards(t *testing.T) {
 	t.Parallel()

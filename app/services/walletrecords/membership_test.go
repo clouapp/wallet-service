@@ -82,6 +82,9 @@ type roleWallets struct {
 func (f *roleWallets) PaginateByAccount(context.Context, uuid.UUID, string, int, int) ([]models.Wallet, int64, error) {
 	return nil, 0, f.err
 }
+func (f *roleWallets) PaginateByAccountAndMember(context.Context, uuid.UUID, uuid.UUID, string, int, int) ([]models.Wallet, int64, error) {
+	return nil, 0, f.err
+}
 func (f *roleWallets) FindByID(context.Context, uuid.UUID) (*models.Wallet, error) {
 	return f.wallet, f.err
 }
@@ -94,10 +97,10 @@ func (f *roleWallets) SetFeeMultiplier(context.Context, uuid.UUID, numeric.NullD
 	return f.err
 }
 func (f *roleWallets) UpdateSettings(context.Context, uuid.UUID, map[string]any) error { return f.err }
-func (f *roleWallets) SetRequiredApprovals(context.Context, uuid.UUID, int) error { return f.err }
-func (f *roleWallets) SetFrozenUntil(context.Context, uuid.UUID, time.Time) error { return f.err }
-func (f *roleWallets) SetStatus(context.Context, uuid.UUID, string) error         { return f.err }
-func (f *roleWallets) SetLabel(context.Context, uuid.UUID, string) error          { return f.err }
+func (f *roleWallets) SetRequiredApprovals(context.Context, uuid.UUID, int) error      { return f.err }
+func (f *roleWallets) SetFrozenUntil(context.Context, uuid.UUID, time.Time) error      { return f.err }
+func (f *roleWallets) SetStatus(context.Context, uuid.UUID, string) error              { return f.err }
+func (f *roleWallets) SetLabel(context.Context, uuid.UUID, string) error               { return f.err }
 
 type roleMembers struct {
 	member   *models.WalletUser

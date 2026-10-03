@@ -24,6 +24,7 @@ func requireStore(ctx context.Context, store any, op, what string) error {
 // WalletStore is the wallet persistence dashboard and middleware handlers use.
 type WalletStore interface {
 	PaginateByAccount(ctx context.Context, accountID uuid.UUID, chain string, limit, offset int) ([]models.Wallet, int64, error)
+	PaginateByAccountAndMember(ctx context.Context, accountID, userID uuid.UUID, chain string, limit, offset int) ([]models.Wallet, int64, error)
 	FindByID(ctx context.Context, id uuid.UUID) (*models.Wallet, error)
 	FindByIDAndAccount(ctx context.Context, id, accountID uuid.UUID) (*models.Wallet, error)
 	SetFeeRateMin(ctx context.Context, id uuid.UUID, value int) error
@@ -47,6 +48,16 @@ func (s *Wallets) PaginateByAccount(ctx context.Context, accountID uuid.UUID, ch
 		return nil, 0, err
 	}
 	return s.store.PaginateByAccount(ctx, accountID, chain, limit, offset)
+}
+
+func (s *Wallets) PaginateByAccountAndMember(ctx context.Context, accountID, userID uuid.UUID, chain string, limit, offset int) ([]models.Wallet, int64, error) {
+	if userID == uuid.Nil {
+		return nil, 0, fmt.Errorf("list wallets: user is required")
+	}
+	if err := requireStore(ctx, s.storeOrNil(), "list wallets", "wallets"); err != nil {
+		return nil, 0, err
+	}
+	return s.store.PaginateByAccountAndMember(ctx, accountID, userID, chain, limit, offset)
 }
 
 func (s *Wallets) FindByID(ctx context.Context, id uuid.UUID) (*models.Wallet, error) {

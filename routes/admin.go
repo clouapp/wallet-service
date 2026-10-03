@@ -256,6 +256,7 @@ func newDashboardWalletsController() *dashwallets.WalletsController {
 		container.MustMake[*walletrecords.Wallets](),
 		container.MustMake[*chainsvc.Service](),
 		currentWalletService,
+		container.MustMake[*walletrecords.Members](),
 	)
 }
 
