@@ -12,8 +12,8 @@ import (
 	goravelTesting "github.com/goravel/framework/testing"
 	"github.com/stretchr/testify/suite"
 
-	"github.com/macrowallets/waas/app/http/controllers/testutil"
 	"github.com/macrowallets/waas/app/models"
+	testutil "github.com/macrowallets/waas/tests/feature/support"
 	"github.com/macrowallets/waas/tests/mocks"
 )
 

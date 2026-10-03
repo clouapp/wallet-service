@@ -15,13 +15,13 @@ import (
 	"github.com/stretchr/testify/suite"
 
 	"github.com/macrowallets/waas/app/container"
-	ctltestutil "github.com/macrowallets/waas/app/http/controllers/testutil"
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/repositories"
 	authsvc "github.com/macrowallets/waas/app/services/auth"
 	"github.com/macrowallets/waas/app/services/chain"
 	mpc "github.com/macrowallets/waas/app/services/mpc"
 	wallet "github.com/macrowallets/waas/app/services/wallet"
+	ctltestutil "github.com/macrowallets/waas/tests/feature/support"
 	"github.com/macrowallets/waas/tests/mocks"
 	"github.com/macrowallets/waas/tests/testutil"
 )

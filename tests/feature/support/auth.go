@@ -1,4 +1,4 @@
-// Package testutil provides shared helpers for controller integration tests.
+// Package support provides shared helpers for controller integration tests.
 //
 // These helpers centralise the three patterns that every external /api/v1
 // controller test needs to repeat:
@@ -7,9 +7,10 @@
 //  2. Minting a Bearer JWT via middleware.MintAPIToken.
 //  3. Building an HMAC signer keyed by the raw JWT when a token requires it.
 //
-// Keep the helpers dependency-free of specific controller packages so they can
-// be imported from any *_test.go under app/http/controllers.
-package testutil
+// They live under tests/ so production packages do not compile them. Keep the
+// helpers dependency-free of specific controller packages so any *_test.go
+// under app/http/controllers can import them.
+package support
 
 import (
 	"crypto/hmac"
