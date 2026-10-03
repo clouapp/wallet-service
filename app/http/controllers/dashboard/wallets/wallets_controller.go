@@ -13,8 +13,9 @@ import (
 	"github.com/macrowallets/waas/app/http/requests"
 	"github.com/macrowallets/waas/app/http/responses"
 	"github.com/macrowallets/waas/app/models"
-	"github.com/macrowallets/waas/app/repositories"
+	chainsvc "github.com/macrowallets/waas/app/services/chains"
 	wallet "github.com/macrowallets/waas/app/services/wallet"
+	"github.com/macrowallets/waas/app/services/walletrecords"
 )
 
 func validateRequest(ctx http.Context, req http.FormRequest) http.Response {
@@ -23,21 +24,21 @@ func validateRequest(ctx http.Context, req http.FormRequest) http.Response {
 
 // WalletsController serves the dashboard wallet list, create, and activate routes.
 type WalletsController struct {
-	wallets       *repositories.WalletRepository
-	chains        *repositories.ChainRepository
+	wallets       *walletrecords.Wallets
+	chains        *chainsvc.Service
 	walletService func() *wallet.Service
 }
 
 func NewWalletsController(
-	wallets *repositories.WalletRepository,
-	chains *repositories.ChainRepository,
+	wallets *walletrecords.Wallets,
+	chains *chainsvc.Service,
 	walletService func() *wallet.Service,
 ) *WalletsController {
 	if wallets == nil {
-		panic("dashboard wallets controller: wallets repository is required")
+		panic("dashboard wallets controller: wallets service is required")
 	}
 	if chains == nil {
-		panic("dashboard wallets controller: chains repository is required")
+		panic("dashboard wallets controller: chains service is required")
 	}
 	if walletService == nil || walletService() == nil {
 		panic("dashboard wallets controller: wallet service is required")

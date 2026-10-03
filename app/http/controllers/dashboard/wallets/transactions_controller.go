@@ -7,19 +7,19 @@ import (
 	"github.com/macrowallets/waas/app/http/pagination"
 	"github.com/macrowallets/waas/app/http/responses"
 	"github.com/macrowallets/waas/app/models"
-	"github.com/macrowallets/waas/app/repositories"
+	"github.com/macrowallets/waas/app/services/walletrecords"
 )
 
 // TransactionsController serves the dashboard wallet transaction routes.
 type TransactionsController struct {
-	transactions *repositories.TransactionRepository
+	transactions *walletrecords.Transactions
 }
 
 func NewTransactionsController(
-	transactions *repositories.TransactionRepository,
+	transactions *walletrecords.Transactions,
 ) *TransactionsController {
 	if transactions == nil {
-		panic("dashboard wallet transactions controller: transactions repository is required")
+		panic("dashboard wallet transactions controller: transactions service is required")
 	}
 	return &TransactionsController{
 		transactions: transactions,

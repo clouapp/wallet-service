@@ -12,19 +12,19 @@ import (
 	"github.com/macrowallets/waas/app/http/responses"
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/policies"
-	"github.com/macrowallets/waas/app/repositories"
+	"github.com/macrowallets/waas/app/services/walletrecords"
 )
 
 // SettingsController serves the dashboard wallet settings and freeze routes.
 type SettingsController struct {
-	wallets *repositories.WalletRepository
+	wallets *walletrecords.Wallets
 }
 
 func NewSettingsController(
-	wallets *repositories.WalletRepository,
+	wallets *walletrecords.Wallets,
 ) *SettingsController {
 	if wallets == nil {
-		panic("dashboard wallet settings controller: wallets repository is required")
+		panic("dashboard wallet settings controller: wallets service is required")
 	}
 	return &SettingsController{
 		wallets: wallets,

@@ -6,24 +6,25 @@ import (
 	"github.com/macrowallets/waas/app/http/controllers"
 	"github.com/macrowallets/waas/app/http/responses"
 	"github.com/macrowallets/waas/app/models"
-	"github.com/macrowallets/waas/app/repositories"
+	chainsvc "github.com/macrowallets/waas/app/services/chains"
+	"github.com/macrowallets/waas/app/services/walletrecords"
 )
 
 // BalancesController serves the dashboard wallet balance route.
 type BalancesController struct {
-	balances *repositories.WalletAssetBalanceRepository
-	tokens   *repositories.TokenRepository
+	balances *walletrecords.Balances
+	tokens   *chainsvc.Service
 }
 
 func NewBalancesController(
-	balances *repositories.WalletAssetBalanceRepository,
-	tokens *repositories.TokenRepository,
+	balances *walletrecords.Balances,
+	tokens *chainsvc.Service,
 ) *BalancesController {
 	if balances == nil {
-		panic("dashboard balances controller: balances repository is required")
+		panic("dashboard balances controller: balances service is required")
 	}
 	if tokens == nil {
-		panic("dashboard balances controller: tokens repository is required")
+		panic("dashboard balances controller: chains service is required")
 	}
 	return &BalancesController{
 		balances: balances,
@@ -49,7 +50,7 @@ func (ctrl *BalancesController) ListWalletBalances(ctx http.Context) http.Respon
 	if err != nil {
 		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to fetch balances"})
 	}
-	tokens, err := ctrl.tokens.FindByChainID(ctx.Context(), wallet.Chain)
+	tokens, err := ctrl.tokens.FindTokens(ctx.Context(), wallet.Chain)
 	if err != nil {
 		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to fetch chain tokens"})
 	}

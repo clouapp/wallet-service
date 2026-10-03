@@ -12,19 +12,19 @@ import (
 	"github.com/macrowallets/waas/app/http/responses"
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/policies"
-	"github.com/macrowallets/waas/app/repositories"
+	"github.com/macrowallets/waas/app/services/walletrecords"
 )
 
 // UsersController serves the dashboard wallet membership routes.
 type UsersController struct {
-	members *repositories.WalletUserRepository
+	members *walletrecords.Members
 }
 
 func NewUsersController(
-	members *repositories.WalletUserRepository,
+	members *walletrecords.Members,
 ) *UsersController {
 	if members == nil {
-		panic("dashboard wallet users controller: wallet users repository is required")
+		panic("dashboard wallet users controller: wallet users service is required")
 	}
 	return &UsersController{
 		members: members,

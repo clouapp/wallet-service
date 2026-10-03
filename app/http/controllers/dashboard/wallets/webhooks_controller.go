@@ -9,19 +9,19 @@ import (
 	"github.com/macrowallets/waas/app/http/responses"
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/policies"
-	"github.com/macrowallets/waas/app/repositories"
+	"github.com/macrowallets/waas/app/services/walletrecords"
 )
 
 // WebhooksController serves the dashboard wallet webhook routes.
 type WebhooksController struct {
-	configs *repositories.WebhookConfigRepository
+	configs *walletrecords.Webhooks
 }
 
 func NewWebhooksController(
-	configs *repositories.WebhookConfigRepository,
+	configs *walletrecords.Webhooks,
 ) *WebhooksController {
 	if configs == nil {
-		panic("dashboard wallet webhooks controller: webhook configs repository is required")
+		panic("dashboard wallet webhooks controller: webhook configs service is required")
 	}
 	return &WebhooksController{
 		configs: configs,

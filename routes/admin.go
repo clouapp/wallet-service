@@ -30,6 +30,7 @@ import (
 	settingssvc "github.com/macrowallets/waas/app/services/settings"
 	usersvc "github.com/macrowallets/waas/app/services/users"
 	walletsvc "github.com/macrowallets/waas/app/services/wallet"
+	"github.com/macrowallets/waas/app/services/walletrecords"
 )
 
 // RegisterAdminRoutes registers dashboard session-auth routes under /v1.
@@ -211,46 +212,46 @@ func currentWalletService() *walletsvc.Service {
 
 func newDashboardWalletsController() *dashwallets.WalletsController {
 	return dashwallets.NewWalletsController(
-		container.MustMake[*repositories.WalletRepository](),
-		container.MustMake[*repositories.ChainRepository](),
+		container.MustMake[*walletrecords.Wallets](),
+		container.MustMake[*chainsvc.Service](),
 		currentWalletService,
 	)
 }
 
 func newDashboardWalletUsersController() *dashwallets.UsersController {
 	return dashwallets.NewUsersController(
-		container.MustMake[*repositories.WalletUserRepository](),
+		container.MustMake[*walletrecords.Members](),
 	)
 }
 
 func newDashboardWhitelistController() *dashwallets.WhitelistController {
 	return dashwallets.NewWhitelistController(
-		container.MustMake[*repositories.WhitelistEntryRepository](),
+		container.MustMake[*walletrecords.Whitelist](),
 	)
 }
 
 func newDashboardWalletWebhooksController() *dashwallets.WebhooksController {
 	return dashwallets.NewWebhooksController(
-		container.MustMake[*repositories.WebhookConfigRepository](),
+		container.MustMake[*walletrecords.Webhooks](),
 	)
 }
 
 func newDashboardWalletSettingsController() *dashwallets.SettingsController {
 	return dashwallets.NewSettingsController(
-		container.MustMake[*repositories.WalletRepository](),
+		container.MustMake[*walletrecords.Wallets](),
 	)
 }
 
 func newDashboardBalancesController() *dashwallets.BalancesController {
 	return dashwallets.NewBalancesController(
-		container.MustMake[*repositories.WalletAssetBalanceRepository](),
-		container.MustMake[*repositories.TokenRepository](),
+		container.MustMake[*walletrecords.Balances](),
+		container.MustMake[*chainsvc.Service](),
 	)
 }
 
 func newDashboardWalletTransactionsController() *dashwallets.TransactionsController {
 	return dashwallets.NewTransactionsController(
-		container.MustMake[*repositories.TransactionRepository](),
+		container.MustMake[*walletrecords.Transactions](),
 	)
 }
 
@@ -307,7 +308,7 @@ func newDashboardSweepController() *dashsweep.SweepController {
 
 func newDashboardUnspentsController() *dashwallets.UnspentsController {
 	return dashwallets.NewUnspentsController(
-		container.MustMake[*repositories.WalletUTXORepository](),
+		container.MustMake[*walletrecords.UTXOs](),
 	)
 }
 

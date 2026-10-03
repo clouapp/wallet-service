@@ -7,19 +7,19 @@ import (
 
 	"github.com/macrowallets/waas/app/http/responses"
 	"github.com/macrowallets/waas/app/models"
-	"github.com/macrowallets/waas/app/repositories"
+	"github.com/macrowallets/waas/app/services/walletrecords"
 )
 
 // UnspentsController serves the dashboard UTXO list route.
 type UnspentsController struct {
-	utxos *repositories.WalletUTXORepository
+	utxos *walletrecords.UTXOs
 }
 
 func NewUnspentsController(
-	utxos *repositories.WalletUTXORepository,
+	utxos *walletrecords.UTXOs,
 ) *UnspentsController {
 	if utxos == nil {
-		panic("dashboard unspents controller: utxo repository is required")
+		panic("dashboard unspents controller: utxo service is required")
 	}
 	return &UnspentsController{
 		utxos: utxos,

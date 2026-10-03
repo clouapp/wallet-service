@@ -10,19 +10,19 @@ import (
 	"github.com/macrowallets/waas/app/http/responses"
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/policies"
-	"github.com/macrowallets/waas/app/repositories"
+	"github.com/macrowallets/waas/app/services/walletrecords"
 )
 
 // WhitelistController serves the dashboard wallet whitelist routes.
 type WhitelistController struct {
-	entries *repositories.WhitelistEntryRepository
+	entries *walletrecords.Whitelist
 }
 
 func NewWhitelistController(
-	entries *repositories.WhitelistEntryRepository,
+	entries *walletrecords.Whitelist,
 ) *WhitelistController {
 	if entries == nil {
-		panic("dashboard whitelist controller: whitelist repository is required")
+		panic("dashboard whitelist controller: whitelist service is required")
 	}
 	return &WhitelistController{
 		entries: entries,
