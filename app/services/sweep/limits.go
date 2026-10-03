@@ -81,7 +81,7 @@ func (s *service) acquireWalletOpsLock(ctx context.Context, walletID uuid.UUID) 
 		return func() {}, nil
 	}
 	key := "vault:lock:wallet_ops:" + walletID.String()
-	ok, err := s.rdb.SetNX(ctx, key, "1", 60*time.Second).Result()
+	ok, err := s.rdb.SetNX(ctx, key, "1", 60*time.Second)
 	if err != nil {
 		return nil, fmt.Errorf("acquire wallet ops lock: %w", err)
 	}
@@ -91,7 +91,7 @@ func (s *service) acquireWalletOpsLock(ctx context.Context, walletID uuid.UUID) 
 	return func() {
 		// Use a background context for release so an already-cancelled
 		// request context cannot leak the lock until its 60s TTL.
-		s.rdb.Del(context.Background(), key)
+		_ = s.rdb.Del(context.Background(), key)
 	}, nil
 }
 
@@ -105,12 +105,12 @@ func (s *service) incrDailyQuota(ctx context.Context, accountID uuid.UUID, limit
 	}
 	key := fmt.Sprintf("vault:quota:consolidate:%s:%s",
 		accountID.String(), time.Now().UTC().Format("2006-01-02"))
-	n, err := s.rdb.Incr(ctx, key).Result()
+	n, err := s.rdb.Incr(ctx, key)
 	if err != nil {
 		return fmt.Errorf("incr daily quota: %w", err)
 	}
 	if n == 1 {
-		s.rdb.Expire(ctx, key, 24*time.Hour)
+		_ = s.rdb.Expire(ctx, key, 24*time.Hour)
 	}
 	if int(n) > limits.MaxConsolidateReqPerDay {
 		return ErrDailyQuotaExceeded

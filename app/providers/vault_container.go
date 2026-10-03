@@ -22,6 +22,7 @@ import (
 	redislock "github.com/macrowallets/waas/app/adapters/redis/lock"
 	"github.com/macrowallets/waas/app/adapters/redis/pricecache"
 	"github.com/macrowallets/waas/app/adapters/redis/scanner"
+	sweepredis "github.com/macrowallets/waas/app/adapters/redis/sweep"
 	sweepsecrets "github.com/macrowallets/waas/app/adapters/secretsmanager"
 	"github.com/macrowallets/waas/app/container"
 	"github.com/macrowallets/waas/app/facades"
@@ -345,7 +346,7 @@ func buildVaultContainer(app foundation.Application) (*container.Container, erro
 		return nil, fmt.Errorf("vault: feature flags: %w", err)
 	}
 	c.SweepService = sweep.NewService(
-		c.Registry, c.MPCService, sweepsecrets.New(c.SecretsManager), c.Redis, c.WebhookService,
+		c.Registry, c.MPCService, sweepsecrets.New(c.SecretsManager), sweepredis.New(c.Redis), c.WebhookService,
 		c.WalletRepo, c.AddressRepo, c.TransactionRepo, c.AccountRepo, c.ChainRepo,
 		func(ctx context.Context, accountID uuid.UUID) error {
 			return flags.Gate(ctx, accountID, features.FlagSweepEnabled, features.CodeSweepPaused)

@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/redis/go-redis/v9"
 
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/services/chain"
@@ -77,6 +76,16 @@ type SecretReader interface {
 	Binary(ctx context.Context, secretID string) ([]byte, error)
 }
 
+// RedisStore runs the wallet-ops lock and the daily consolidate counter.
+// The service keeps the keys, the lock value, and the TTLs. A nil RedisStore
+// means Redis is not configured.
+type RedisStore interface {
+	SetNX(ctx context.Context, key, value string, expiration time.Duration) (bool, error)
+	Del(ctx context.Context, key string) error
+	Incr(ctx context.Context, key string) (int64, error)
+	Expire(ctx context.Context, key string, expiration time.Duration) error
+}
+
 // accountGate reports a block for one account. Nil means no reader is wired,
 // so the action proceeds. The reader is injected: this package cannot import
 // the feature-flag service without an import cycle.
@@ -93,7 +102,7 @@ type service struct {
 	registry    *chain.Registry
 	mpc         mpcpkg.Service
 	secrets     SecretReader
-	rdb         *redis.Client
+	rdb         RedisStore
 	webhookSvc  *webhook.Service
 	walletRepo  walletReader
 	addressRepo addressReader
@@ -114,7 +123,7 @@ func NewService(
 	registry *chain.Registry,
 	mpc mpcpkg.Service,
 	secrets SecretReader,
-	rdb *redis.Client,
+	rdb RedisStore,
 	webhookSvc *webhook.Service,
 	walletRepo walletReader,
 	addressRepo addressReader,

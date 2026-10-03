@@ -210,7 +210,7 @@ func TestIncrDailyQuota_NilAccountIsNoop(t *testing.T) {
 // acquire succeeds.
 func TestAcquireWalletOpsLock_RealRedis_Contention(t *testing.T) {
 	client := testutil.TestRedis(t)
-	svc := &service{rdb: client}
+	svc := &service{rdb: redisStore{client: client}}
 	ctx := context.Background()
 
 	// Unique wallet ID isolates this test's keys from any concurrent runs.
@@ -245,7 +245,7 @@ func TestAcquireWalletOpsLock_RealRedis_Contention(t *testing.T) {
 // counter starts at zero.
 func TestIncrDailyQuota_RealRedis_Exceeds(t *testing.T) {
 	client := testutil.TestRedis(t)
-	svc := &service{rdb: client}
+	svc := &service{rdb: redisStore{client: client}}
 	ctx := context.Background()
 
 	accountID := uuid.New()

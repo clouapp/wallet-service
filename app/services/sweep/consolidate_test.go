@@ -208,7 +208,7 @@ func TestConsolidateAll_QuotaNotBurnedOnInvalidPassphrase(t *testing.T) {
 
 	svc := &service{
 		registry:    registry,
-		rdb:         client,
+		rdb:         redisStore{client: client},
 		walletRepo:  &fakeWalletRepo{wallet: wallet},
 		addressRepo: &fakeAddressRepo{children: []models.Address{baseAddr, childA}},
 		chainRepo:   &fakeChainRepo{chain: chainEntity},
