@@ -10,6 +10,8 @@ import (
 	"github.com/macrowallets/waas/app/http/controllers"
 	"github.com/macrowallets/waas/app/http/requests"
 	"github.com/macrowallets/waas/app/http/responses"
+	"github.com/macrowallets/waas/app/models"
+	"github.com/macrowallets/waas/app/services/features"
 	sweep "github.com/macrowallets/waas/app/services/sweep"
 	"github.com/redis/go-redis/v9"
 )
@@ -29,18 +31,24 @@ const gasCheckRateLimitWindow = 60 * time.Second
 type SweepController struct {
 	sweeps sweep.Service
 	redis  *redis.Client
+	flags  *features.Service
 }
 
 func NewSweepController(
 	sweeps sweep.Service,
 	redis *redis.Client,
+	flags *features.Service,
 ) *SweepController {
 	if sweeps == nil {
 		panic("dashboard sweep controller: sweep service is required")
 	}
+	if flags == nil {
+		panic("dashboard sweep controller: feature flags are required")
+	}
 	return &SweepController{
 		sweeps: sweeps,
 		redis:  redis,
+		flags:  flags,
 	}
 }
 
@@ -60,6 +68,11 @@ func NewSweepController(
 // @Failure      429       {object}  ErrorResponse
 // @Router       /v1/wallets/{walletId}/consolidate [post]
 func (ctrl *SweepController) ConsolidateWallet(ctx http.Context) http.Response {
+	wallet, _ := ctx.Value("wallet").(*models.Wallet)
+	if resp := controllers.BlockFlag(ctx, ctrl.flags, controllers.AccountIDForWallet(ctx, wallet), features.FlagSweepEnabled, features.FlagSweepEnabled, "consolidate"); resp != nil {
+		return resp
+	}
+
 	walletID, err := uuid.Parse(ctx.Request().Route("walletId"))
 	if err != nil {
 		return responses.Send(ctx, http.StatusBadRequest, http.Json{"error": "invalid wallet id"})

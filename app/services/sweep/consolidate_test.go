@@ -25,6 +25,16 @@ import (
 // TestConsolidateAll_ShortPassphraseRejected verifies the input guard fires
 // before any repository / lock / quota work, so a bad call cannot burn the
 // per-account daily quota.
+func TestConsolidateAll_SweepFlagStopsBeforeWalletLookup(t *testing.T) {
+	paused := errors.New("sweep-enabled")
+	svc := &service{flags: func(context.Context, uuid.UUID) error { return paused }}
+
+	_, err := svc.ConsolidateAll(context.Background(), uuid.New(), "eth", "passphrase12345", uuid.New())
+	if !errors.Is(err, paused) {
+		t.Fatalf("got %v", err)
+	}
+}
+
 func TestConsolidateAll_ShortPassphraseRejected(t *testing.T) {
 	svc := &service{}
 	_, err := svc.ConsolidateAll(context.Background(), uuid.New(), "usdt", "short", uuid.Nil)

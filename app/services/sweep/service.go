@@ -71,6 +71,11 @@ type chainReader interface {
 	FindByID(ctx context.Context, id string) (*models.Chain, error)
 }
 
+// accountGate reports a block for one account. Nil means no reader is wired,
+// so the action proceeds. The reader is injected: this package cannot import
+// the feature-flag service without an import cycle.
+type accountGate func(ctx context.Context, accountID uuid.UUID) error
+
 type service struct {
 	registry    *chain.Registry
 	mpc         mpcpkg.Service
@@ -82,6 +87,7 @@ type service struct {
 	txRepo      transactionWriter
 	accountRepo accountReader
 	chainRepo   chainReader
+	flags       accountGate
 
 	// fetchShareBFn is the function used to retrieve the service's MPC share for
 	// a wallet. In production it targets AWS Secrets Manager; tests override it
@@ -102,6 +108,7 @@ func NewService(
 	txRepo transactionWriter,
 	accountRepo accountReader,
 	chainRepo chainReader,
+	flags accountGate,
 ) Service {
 	return &service{
 		registry:    registry,
@@ -114,6 +121,7 @@ func NewService(
 		txRepo:      txRepo,
 		accountRepo: accountRepo,
 		chainRepo:   chainRepo,
+		flags:       flags,
 	}
 }
 

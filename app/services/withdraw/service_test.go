@@ -3,6 +3,7 @@ package withdraw
 import (
 	"bytes"
 	"context"
+	"errors"
 	"math/big"
 	"os"
 	"testing"
@@ -93,8 +94,20 @@ func setupWithdrawService(t *testing.T) (*Service, *mocks.MockChain) {
 	txRepo := repositories.NewTransactionRepository(nil)
 	walletRepo := repositories.NewWalletRepository(nil)
 	addressRepo := repositories.NewAddressRepository(nil)
-	svc := NewService(registry, webhookSvc, mpcSvc, nil, nil, txRepo, walletRepo, addressRepo, &mockSweepSvc{})
+	svc := NewService(registry, webhookSvc, mpcSvc, nil, nil, txRepo, walletRepo, addressRepo, &mockSweepSvc{}, nil)
 	return svc, mockChain
+}
+
+func TestRequest_WithdrawalsFlagStopsBeforeRedis(t *testing.T) {
+	paused := errors.New("withdrawals_paused")
+	svc := &Service{flags: func(context.Context, uuid.UUID) error { return paused }}
+	_, _, err := svc.Request(context.Background(), WithdrawRequest{
+		Passphrase:      "validpassphrase123",
+		CallerAccountID: uuid.New(),
+	})
+	if !errors.Is(err, paused) {
+		t.Fatalf("got %v", err)
+	}
 }
 
 // TestRequest_PassphraseTooShort verifies step-1 guard fires before any I/O.

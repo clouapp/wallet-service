@@ -276,6 +276,7 @@ func newDashboardWithdrawalsController() *dashwithdrawals.WithdrawalsController 
 		container.Get().Registry,
 		container.Get().WithdrawalService,
 		container.MustMake[*authsvc.Service](),
+		container.MustMake[*featuressvc.Service](),
 	)
 }
 
@@ -283,6 +284,7 @@ func newDashboardSweepController() *dashsweep.SweepController {
 	return dashsweep.NewSweepController(
 		container.Get().SweepService,
 		container.Get().Redis,
+		container.MustMake[*featuressvc.Service](),
 	)
 }
 

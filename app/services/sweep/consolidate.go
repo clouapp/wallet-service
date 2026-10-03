@@ -36,6 +36,13 @@ import (
 // the successful legs are kept and the failure is reported on
 // Result.FailedStep so the caller can retry from the remaining children
 // without redoing work.
+func (s *service) gate(ctx context.Context, accountID uuid.UUID) error {
+	if s.flags == nil || accountID == uuid.Nil {
+		return nil
+	}
+	return s.flags(ctx, accountID)
+}
+
 func (s *service) ConsolidateAll(
 	ctx context.Context,
 	walletID uuid.UUID,
@@ -46,6 +53,9 @@ func (s *service) ConsolidateAll(
 	if len(passphrase) < 12 {
 		return nil, fmt.Errorf("passphrase must be at least 12 characters")
 	}
+	if err := s.gate(ctx, callerAccountID); err != nil {
+		return nil, err
+	}
 
 	wallet, err := s.walletRepo.FindByID(ctx, walletID)
 	if err != nil {
@@ -53,6 +63,15 @@ func (s *service) ConsolidateAll(
 	}
 	if wallet == nil {
 		return nil, fmt.Errorf("sweep: wallet %s not found", walletID)
+	}
+	walletAccount := uuid.Nil
+	if wallet.AccountID != nil {
+		walletAccount = *wallet.AccountID
+	}
+	if walletAccount != callerAccountID {
+		if err := s.gate(ctx, walletAccount); err != nil {
+			return nil, err
+		}
 	}
 	if wallet.DepositAddress == nil {
 		return nil, fmt.Errorf("sweep: wallet %s has no base deposit address", walletID)

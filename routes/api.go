@@ -15,6 +15,7 @@ import (
 	"github.com/macrowallets/waas/app/http/middleware"
 	"github.com/macrowallets/waas/app/repositories"
 	authsvc "github.com/macrowallets/waas/app/services/auth"
+	featuressvc "github.com/macrowallets/waas/app/services/features"
 )
 
 // RegisterExternalAPI registers Bearer API-token routes under /api/v1.
@@ -94,6 +95,7 @@ func newExternalSweepController() *extsweep.SweepController {
 	return extsweep.NewSweepController(
 		container.Get().SweepService,
 		container.Get().Redis,
+		container.MustMake[*featuressvc.Service](),
 	)
 }
 
@@ -106,6 +108,7 @@ func newExternalWithdrawalsController() *extwithdrawals.WithdrawalsController {
 		container.Get().Registry,
 		container.Get().WithdrawalService,
 		container.MustMake[*authsvc.Service](),
+		container.MustMake[*featuressvc.Service](),
 	)
 }
 

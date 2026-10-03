@@ -16,6 +16,7 @@ import (
 	"github.com/macrowallets/waas/app/repositories"
 	authsvc "github.com/macrowallets/waas/app/services/auth"
 	chain "github.com/macrowallets/waas/app/services/chain"
+	"github.com/macrowallets/waas/app/services/features"
 	"github.com/macrowallets/waas/app/services/withdraw"
 	"github.com/macrowallets/waas/app/services/withdrawalevents"
 	"github.com/macrowallets/waas/pkg/types"
@@ -36,6 +37,7 @@ type WithdrawalsController struct {
 	registry          *chain.Registry
 	withdrawalService *withdraw.Service
 	passwords         *authsvc.Service
+	flags             *features.Service
 }
 
 func NewWithdrawalsController(
@@ -46,6 +48,7 @@ func NewWithdrawalsController(
 	registry *chain.Registry,
 	withdrawalService *withdraw.Service,
 	passwords *authsvc.Service,
+	flags *features.Service,
 ) *WithdrawalsController {
 	if withdrawals == nil {
 		panic("external withdrawals controller: withdrawals repository is required")
@@ -68,6 +71,9 @@ func NewWithdrawalsController(
 	if passwords == nil {
 		panic("external withdrawals controller: auth service is required")
 	}
+	if flags == nil {
+		panic("external withdrawals controller: feature flags are required")
+	}
 	return &WithdrawalsController{
 		withdrawals:       withdrawals,
 		chains:            chains,
@@ -76,6 +82,7 @@ func NewWithdrawalsController(
 		registry:          registry,
 		withdrawalService: withdrawalService,
 		passwords:         passwords,
+		flags:             flags,
 	}
 }
 
@@ -106,6 +113,9 @@ func NewWithdrawalsController(
 // share A is the final gate before a withdrawal row is persisted.
 func (ctrl *WithdrawalsController) CreateWalletWithdrawal(ctx http.Context) http.Response {
 	wallet := ctx.Value("wallet").(*models.Wallet)
+	if resp := controllers.BlockFlag(ctx, ctrl.flags, controllers.AccountIDForWallet(ctx, wallet), features.FlagWithdrawalsEnabled, features.CodeWithdrawalsPaused, "create_wallet_withdrawal"); resp != nil {
+		return resp
+	}
 
 	var req requests.CreateWalletWithdrawalRequest
 	if resp := validateRequest(ctx, &req); resp != nil {

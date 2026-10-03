@@ -23,6 +23,11 @@ import (
 	"github.com/macrowallets/waas/app/services/webhook"
 )
 
+// accountGate reports a block for one account. Nil means the caller has no
+// flag reader wired, so the action proceeds. The concrete reader lives outside
+// this package: importing it would cycle through the container.
+type accountGate func(ctx context.Context, accountID uuid.UUID) error
+
 // Sentinel errors for HTTP response mapping in controller.
 var (
 	ErrInvalidPassphrase  = errors.New("invalid passphrase")
@@ -42,6 +47,7 @@ type Service struct {
 	walletRepo      *repositories.WalletRepository
 	addressRepo     *repositories.AddressRepository
 	sweep           sweep.Service
+	flags           accountGate
 }
 
 func NewService(
@@ -54,6 +60,7 @@ func NewService(
 	walletRepo *repositories.WalletRepository,
 	addressRepo *repositories.AddressRepository,
 	sweepSvc sweep.Service,
+	flags accountGate,
 ) *Service {
 	return &Service{
 		registry:        registry,
@@ -65,6 +72,7 @@ func NewService(
 		walletRepo:      walletRepo,
 		addressRepo:     addressRepo,
 		sweep:           sweepSvc,
+		flags:           flags,
 	}
 }
 
@@ -106,6 +114,9 @@ func (s *Service) Request(ctx context.Context, req WithdrawRequest) (*models.Tra
 	if len(req.Passphrase) < 12 {
 		return nil, nil, ErrPassphraseTooShort
 	}
+	if err := s.gate(ctx, req.CallerAccountID); err != nil {
+		return nil, nil, err
+	}
 
 	if req.IdempotencyKey != "" {
 		existing, err := s.transactionRepo.FindByIdempotencyKey(ctx, req.IdempotencyKey)
@@ -132,6 +143,15 @@ func (s *Service) Request(ctx context.Context, req WithdrawRequest) (*models.Tra
 		return nil, nil, fmt.Errorf("wallet not found")
 	}
 	wallet := *walletPtr
+	walletAccount := uuid.Nil
+	if wallet.AccountID != nil {
+		walletAccount = *wallet.AccountID
+	}
+	if walletAccount != req.CallerAccountID {
+		if err := s.gate(ctx, walletAccount); err != nil {
+			return nil, nil, err
+		}
+	}
 
 	adapter, err := s.registry.Chain(wallet.Chain)
 	if err != nil {
@@ -248,6 +268,13 @@ func (s *Service) Request(ctx context.Context, req WithdrawRequest) (*models.Tra
 // passphrase. On bad passphrase it records a failed attempt for rate-limiting
 // and returns ErrInvalidPassphrase. Callers are responsible for zeroing the
 // returned slice once they are done signing.
+func (s *Service) gate(ctx context.Context, accountID uuid.UUID) error {
+	if s.flags == nil || accountID == uuid.Nil {
+		return nil
+	}
+	return s.flags(ctx, accountID)
+}
+
 func (s *Service) decryptShareA(ctx context.Context, wallet *models.Wallet, passphrase string) ([]byte, error) {
 	shareA, err := wallet.DecryptShareA(passphrase)
 	if err != nil {

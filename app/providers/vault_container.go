@@ -11,6 +11,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/secretsmanager"
 	"github.com/aws/aws-sdk-go-v2/service/sqs"
 	smithyendpoints "github.com/aws/smithy-go/endpoints"
+	"github.com/google/uuid"
 	"github.com/goravel/framework/contracts/foundation"
 	"github.com/goravel/framework/facades"
 	"github.com/redis/go-redis/v9"
@@ -22,6 +23,7 @@ import (
 	chainpkg "github.com/macrowallets/waas/app/services/chain"
 	"github.com/macrowallets/waas/app/services/deposit"
 	"github.com/macrowallets/waas/app/services/depositevents"
+	"github.com/macrowallets/waas/app/services/features"
 	"github.com/macrowallets/waas/app/services/ingest"
 	"github.com/macrowallets/waas/app/services/ingest/providers"
 	mpc "github.com/macrowallets/waas/app/services/mpc"
@@ -329,13 +331,23 @@ func buildVaultContainer(app foundation.Application) (*container.Container, erro
 		Addresses:   c.AddressRepo,
 		WebhookSync: c.WebhookSyncService,
 	})
+	flags, err := container.Make[*features.Service]()
+	if err != nil {
+		return nil, fmt.Errorf("vault: feature flags: %w", err)
+	}
 	c.SweepService = sweep.NewService(
 		c.Registry, c.MPCService, c.SecretsManager, c.Redis, c.WebhookService,
 		c.WalletRepo, c.AddressRepo, c.TransactionRepo, c.AccountRepo, c.ChainRepo,
+		func(ctx context.Context, accountID uuid.UUID) error {
+			return flags.Gate(ctx, accountID, features.FlagSweepEnabled, features.FlagSweepEnabled)
+		},
 	)
 	c.WithdrawalService = withdraw.NewService(
 		c.Registry, c.WebhookService, c.MPCService, c.SecretsManager, c.Redis,
 		c.TransactionRepo, c.WalletRepo, c.AddressRepo, c.SweepService,
+		func(ctx context.Context, accountID uuid.UUID) error {
+			return flags.Gate(ctx, accountID, features.FlagWithdrawalsEnabled, features.CodeWithdrawalsPaused)
+		},
 	)
 
 	etherscanKey := facades.Config().GetString("vault.webhooks.etherscan_api_key")
