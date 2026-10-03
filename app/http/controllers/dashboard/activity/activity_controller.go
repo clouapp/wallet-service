@@ -50,7 +50,7 @@ func (ctrl *ActivityController) Index(ctx http.Context) http.Response {
 	if errResp := mapActivityError(ctx, err); errResp != nil {
 		return errResp
 	}
-	return ctx.Response().Json(http.StatusOK, pagination.Response(rows, total, limit, offset))
+	return responses.Send(ctx, http.StatusOK, pagination.Response(rows, total, limit, offset))
 }
 
 func accountCaller(ctx http.Context) (*models.Account, string, http.Response) {
