@@ -1,6 +1,9 @@
 package accounts
 
 import (
+	"encoding/json"
+	"fmt"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -20,7 +23,7 @@ type AccessTokenView struct {
 	AccountID     uuid.UUID        `json:"account_id"`
 	CreatedBy     *uuid.UUID       `json:"created_by,omitempty"`
 	Name          string           `json:"name"`
-	Permissions   string           `json:"permissions,omitempty"`
+	Permissions   []string         `json:"permissions,omitempty"`
 	IpCidr        string           `json:"ip_cidr,omitempty"`
 	SpendingLimit string           `json:"spending_limit,omitempty"`
 	ValidUntil    *time.Time       `json:"valid_until,omitempty"`
@@ -34,7 +37,7 @@ func newAccessTokenView(token models.AccessToken) AccessTokenView {
 		AccountID:     token.AccountID,
 		CreatedBy:     token.CreatedBy,
 		Name:          token.Name,
-		Permissions:   token.Permissions,
+		Permissions:   apiTokenPermissionsOnWire(token.Permissions),
 		IpCidr:        token.IpCidr,
 		SpendingLimit: token.SpendingLimit,
 		ValidUntil:    token.ValidUntil,
@@ -51,6 +54,33 @@ func AccessTokenViews(tokens []models.AccessToken) []AccessTokenView {
 		views[i] = newAccessTokenView(tokens[i])
 	}
 	return views
+}
+
+// storedAPITokenPermissions keeps an empty grant as the column's empty
+// text. A non-empty grant is the JSON array the plan stores.
+func storedAPITokenPermissions(permissions []string) (string, error) {
+	if len(permissions) == 0 {
+		return "", nil
+	}
+	raw, err := json.Marshal(permissions)
+	if err != nil {
+		return "", fmt.Errorf("encode api token permissions: %w", err)
+	}
+	return string(raw), nil
+}
+
+// apiTokenPermissionsOnWire reads the stored JSON array. Empty text and a
+// value that is not a JSON array stay off the wire.
+func apiTokenPermissionsOnWire(stored string) []string {
+	stored = strings.TrimSpace(stored)
+	if stored == "" {
+		return nil
+	}
+	var permissions []string
+	if err := json.Unmarshal([]byte(stored), &permissions); err != nil || len(permissions) == 0 {
+		return nil
+	}
+	return permissions
 }
 
 // AccessTokenViewPtr keeps a nil token as JSON null.

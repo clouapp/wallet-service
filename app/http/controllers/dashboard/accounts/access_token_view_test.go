@@ -23,7 +23,7 @@ func TestAccessTokenViewKeepsTheModelWire(t *testing.T) {
 	until := time.Date(2024, 5, 6, 7, 8, 9, 0, time.UTC)
 	full := models.AccessToken{
 		ID: id, AccountID: other, CreatedBy: &id, Name: "ci", TokenHash: "super-secret",
-		Permissions: "read", IpCidr: "10.0.0.0/8", SpendingLimit: "{}", ValidUntil: &until,
+		Permissions: `["wallets.read","webhooks.write"]`, IpCidr: "10.0.0.0/8", SpendingLimit: "{}", ValidUntil: &until,
 	}
 	full.CreatedAt = created
 	full.UpdatedAt = updated
@@ -45,8 +45,12 @@ func TestAccessTokenViewKeepsTheModelWire(t *testing.T) {
 			want:  `{"created_at":null,"updated_at":null,"id":"00000000-0000-0000-0000-000000000000","account_id":"00000000-0000-0000-0000-000000000000","name":"n"}`,
 		},
 		{
+			token: models.AccessToken{Permissions: "read"},
+			want:  `{"created_at":null,"updated_at":null,"id":"00000000-0000-0000-0000-000000000000","account_id":"00000000-0000-0000-0000-000000000000","name":""}`,
+		},
+		{
 			token: full,
-			want:  `{"created_at":"2024-05-06 07:08:09","updated_at":"2024-05-06 07:08:10","id":"11111111-1111-4111-8111-111111111111","account_id":"22222222-2222-4222-8222-222222222222","created_by":"11111111-1111-4111-8111-111111111111","name":"ci","permissions":"read","ip_cidr":"10.0.0.0/8","spending_limit":"{}","valid_until":"2024-05-06T07:08:09Z"}`,
+			want:  `{"created_at":"2024-05-06 07:08:09","updated_at":"2024-05-06 07:08:10","id":"11111111-1111-4111-8111-111111111111","account_id":"22222222-2222-4222-8222-222222222222","created_by":"11111111-1111-4111-8111-111111111111","name":"ci","permissions":["wallets.read","webhooks.write"],"ip_cidr":"10.0.0.0/8","spending_limit":"{}","valid_until":"2024-05-06T07:08:09Z"}`,
 		},
 	}
 	for _, tc := range cases {

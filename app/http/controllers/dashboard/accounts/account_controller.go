@@ -378,6 +378,13 @@ func (ctrl *AccountsController) CreateAccountToken(ctx http.Context) http.Respon
 	if errResp := validateRequest(ctx, &req); errResp != nil {
 		return errResp
 	}
+	if errResp := controllers.Deny(ctx, policies.MintAPITokenPermissions(middleware.AccountRole(ctx), req.Permissions)); errResp != nil {
+		return errResp
+	}
+	storedPermissions, err := storedAPITokenPermissions(req.Permissions)
+	if err != nil {
+		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to create token"})
+	}
 
 	tokenID := uuid.New()
 	token := &models.AccessToken{
@@ -386,6 +393,7 @@ func (ctrl *AccountsController) CreateAccountToken(ctx http.Context) http.Respon
 		CreatedBy:     &callerID,
 		Name:          req.Name,
 		TokenHash:     ctrl.passwords.HashToken(tokenID.String()),
+		Permissions:   storedPermissions,
 		SpendingLimit: "{}",
 	}
 	if req.ValidUntil != "" {
@@ -464,6 +472,7 @@ type CreateAccountTokenSwagger struct {
 	Name             string     `json:"name" example:"CI Token"`
 	ValidUntil       *time.Time `json:"valid_until,omitempty"`
 	RequireSignature bool       `json:"require_signature,omitempty" example:"true"`
+	Permissions      []string   `json:"permissions,omitempty"`
 }
 
 type AccountUserListResponse struct {
