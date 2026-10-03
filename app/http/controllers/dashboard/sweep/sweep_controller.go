@@ -73,7 +73,7 @@ func (ctrl *SweepController) ConsolidateWallet(ctx http.Context) http.Response {
 		return resp
 	}
 
-	walletID, err := uuid.Parse(ctx.Request().Route("walletId"))
+	walletID, err := requests.RouteUUID(ctx, "walletId")
 	if err != nil {
 		return responses.Send(ctx, http.StatusBadRequest, http.Json{"error": "invalid wallet id"})
 	}
@@ -108,7 +108,7 @@ func (ctrl *SweepController) ConsolidateWallet(ctx http.Context) http.Response {
 // @Failure      422       {object}  ErrorResponse
 // @Router       /v1/wallets/{walletId}/gas-status [get]
 func (ctrl *SweepController) GetGasStatus(ctx http.Context) http.Response {
-	walletID, err := uuid.Parse(ctx.Request().Route("walletId"))
+	walletID, err := requests.RouteUUID(ctx, "walletId")
 	if err != nil {
 		return responses.Send(ctx, http.StatusBadRequest, http.Json{"error": "invalid wallet id"})
 	}
@@ -137,7 +137,7 @@ func (ctrl *SweepController) GetGasStatus(ctx http.Context) http.Response {
 // @Failure      429       {object}  ErrorResponse
 // @Router       /v1/wallets/{walletId}/gas-check [post]
 func (ctrl *SweepController) ForceGasCheck(ctx http.Context) http.Response {
-	walletID, err := uuid.Parse(ctx.Request().Route("walletId"))
+	walletID, err := requests.RouteUUID(ctx, "walletId")
 	if err != nil {
 		return responses.Send(ctx, http.StatusBadRequest, http.Json{"error": "invalid wallet id"})
 	}
@@ -172,7 +172,7 @@ func (ctrl *SweepController) ForceGasCheck(ctx http.Context) http.Response {
 // @Failure      422       {object}  ErrorResponse
 // @Router       /v1/wallets/{walletId}/withdraw/preview [post]
 func (ctrl *SweepController) PreviewWithdraw(ctx http.Context) http.Response {
-	walletID, err := uuid.Parse(ctx.Request().Route("walletId"))
+	walletID, err := requests.RouteUUID(ctx, "walletId")
 	if err != nil {
 		return responses.Send(ctx, http.StatusBadRequest, http.Json{"error": "invalid wallet id"})
 	}
