@@ -14,8 +14,10 @@ import (
 	"github.com/macrowallets/waas/app/http/responses"
 	mails "github.com/macrowallets/waas/app/mails"
 	"github.com/macrowallets/waas/app/models"
-	"github.com/macrowallets/waas/app/repositories"
+	accountsvc "github.com/macrowallets/waas/app/services/account"
 	authsvc "github.com/macrowallets/waas/app/services/auth"
+	"github.com/macrowallets/waas/app/services/sessions"
+	usersvc "github.com/macrowallets/waas/app/services/users"
 )
 
 func validateRequest(ctx http.Context, req http.FormRequest) http.Response {
@@ -23,43 +25,33 @@ func validateRequest(ctx http.Context, req http.FormRequest) http.Response {
 }
 
 type AuthController struct {
-	users          *repositories.UserRepository
-	accounts       *repositories.AccountRepository
-	memberships    *repositories.AccountUserRepository
-	refreshTokens  *repositories.RefreshTokenRepository
-	recoveryCodes  *repositories.TotpRecoveryCodeRepository
-	passwordResets *repositories.PasswordResetTokenRepository
+	users          *usersvc.Service
+	accounts       *accountsvc.Service
+	refreshTokens  *sessions.RefreshTokens
+	passwordResets *sessions.PasswordResets
 	passwords      *authsvc.Service
 }
 
 // NewAuthController wires the dashboard auth handlers. Every dependency is a
 // provider singleton, resolved once when the route table is built.
 func NewAuthController(
-	users *repositories.UserRepository,
-	accounts *repositories.AccountRepository,
-	memberships *repositories.AccountUserRepository,
-	refreshTokens *repositories.RefreshTokenRepository,
-	recoveryCodes *repositories.TotpRecoveryCodeRepository,
-	passwordResets *repositories.PasswordResetTokenRepository,
+	users *usersvc.Service,
+	accounts *accountsvc.Service,
+	refreshTokens *sessions.RefreshTokens,
+	passwordResets *sessions.PasswordResets,
 	passwords *authsvc.Service,
 ) *AuthController {
 	if users == nil {
-		panic("dashboard auth controller: users repository is required")
+		panic("dashboard auth controller: users service is required")
 	}
 	if accounts == nil {
-		panic("dashboard auth controller: accounts repository is required")
-	}
-	if memberships == nil {
-		panic("dashboard auth controller: memberships repository is required")
+		panic("dashboard auth controller: account service is required")
 	}
 	if refreshTokens == nil {
-		panic("dashboard auth controller: refresh tokens repository is required")
-	}
-	if recoveryCodes == nil {
-		panic("dashboard auth controller: recovery codes repository is required")
+		panic("dashboard auth controller: refresh token service is required")
 	}
 	if passwordResets == nil {
-		panic("dashboard auth controller: password reset repository is required")
+		panic("dashboard auth controller: password reset service is required")
 	}
 	if passwords == nil {
 		panic("dashboard auth controller: auth service is required")
@@ -67,9 +59,7 @@ func NewAuthController(
 	return &AuthController{
 		users:          users,
 		accounts:       accounts,
-		memberships:    memberships,
 		refreshTokens:  refreshTokens,
-		recoveryCodes:  recoveryCodes,
 		passwordResets: passwordResets,
 		passwords:      passwords,
 	}
@@ -127,13 +117,13 @@ func (ctrl *AuthController) Register(ctx http.Context) http.Response {
 		Environment:     models.EnvironmentTest,
 		LinkedAccountID: &prodAccountID,
 	}
-	if err := ctrl.accounts.Create(ctx.Context(), prodAccount); err != nil {
+	if err := ctrl.accounts.InsertAccount(ctx.Context(), prodAccount); err != nil {
 		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to create production account"})
 	}
-	if err := ctrl.accounts.Create(ctx.Context(), testAccount); err != nil {
+	if err := ctrl.accounts.InsertAccount(ctx.Context(), testAccount); err != nil {
 		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to create test account"})
 	}
-	if err := ctrl.accounts.SetLinkedAccountID(ctx.Context(), prodAccountID, testAccountID); err != nil {
+	if err := ctrl.accounts.LinkAccount(ctx.Context(), prodAccountID, testAccountID); err != nil {
 		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to link accounts"})
 	}
 	prodAccount.LinkedAccountID = &testAccountID
@@ -152,10 +142,10 @@ func (ctrl *AuthController) Register(ctx http.Context) http.Response {
 		Role:      "owner",
 		Status:    "active",
 	}
-	if err := ctrl.memberships.Create(ctx.Context(), prodMembership); err != nil {
+	if err := ctrl.accounts.InsertMembership(ctx.Context(), prodMembership); err != nil {
 		facades.Log().WithContext(ctx).Errorf("auth: create prod membership: %v", err)
 	}
-	if err := ctrl.memberships.Create(ctx.Context(), testMembership); err != nil {
+	if err := ctrl.accounts.InsertMembership(ctx.Context(), testMembership); err != nil {
 		facades.Log().WithContext(ctx).Errorf("auth: create test membership: %v", err)
 	}
 
@@ -306,13 +296,13 @@ func (ctrl *AuthController) VerifyTwoFactor(ctx http.Context) http.Response {
 		verified = ctrl.passwords.VerifyTOTP(user.TotpSecret, req.Code)
 	}
 	if !verified && req.RecoveryCode != "" {
-		codes, codesErr := ctrl.recoveryCodes.FindUnusedByUserID(ctx.Context(), user.ID)
+		codes, codesErr := ctrl.users.FindUnusedRecoveryCodes(ctx.Context(), user.ID)
 		if codesErr != nil {
 			facades.Log().WithContext(ctx).Errorf("auth: find recovery codes: %v", codesErr)
 		}
 		for _, c := range codes {
 			if ctrl.passwords.VerifyRecoveryCode(req.RecoveryCode, c.CodeHash) {
-				if err := ctrl.recoveryCodes.MarkUsed(ctx.Context(), c.ID); err != nil {
+				if err := ctrl.users.MarkRecoveryCodeUsed(ctx.Context(), c.ID); err != nil {
 					facades.Log().WithContext(ctx).Errorf("auth: mark recovery code used: %v", err)
 				}
 				verified = true
@@ -536,7 +526,7 @@ func (ctrl *AuthController) ResetPassword(ctx http.Context) http.Response {
 }
 
 func (ctrl *AuthController) loadUserAccounts(user *models.User) ([]map[string]interface{}, map[string]interface{}) {
-	memberships, err := ctrl.memberships.FindByUserID(context.Background(), user.ID)
+	memberships, err := ctrl.accounts.ListMemberships(context.Background(), user.ID)
 	if err != nil {
 		facades.Log().Errorf("auth: load memberships: %v", err)
 		return nil, nil

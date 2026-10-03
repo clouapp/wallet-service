@@ -27,6 +27,7 @@ import (
 	chainsvc "github.com/macrowallets/waas/app/services/chains"
 	"github.com/macrowallets/waas/app/services/currencies"
 	featuressvc "github.com/macrowallets/waas/app/services/features"
+	"github.com/macrowallets/waas/app/services/sessions"
 	settingssvc "github.com/macrowallets/waas/app/services/settings"
 	usersvc "github.com/macrowallets/waas/app/services/users"
 	walletsvc "github.com/macrowallets/waas/app/services/wallet"
@@ -186,12 +187,10 @@ func RegisterAdminRoutes() {
 
 func newDashboardAuthController() *dashauth.AuthController {
 	return dashauth.NewAuthController(
-		container.MustMake[*repositories.UserRepository](),
-		container.MustMake[*repositories.AccountRepository](),
-		container.MustMake[*repositories.AccountUserRepository](),
-		container.MustMake[*repositories.RefreshTokenRepository](),
-		container.MustMake[*repositories.TotpRecoveryCodeRepository](),
-		container.MustMake[*repositories.PasswordResetTokenRepository](),
+		container.MustMake[*usersvc.Service](),
+		container.MustMake[*accountsvc.Service](),
+		container.MustMake[*sessions.RefreshTokens](),
+		container.MustMake[*sessions.PasswordResets](),
 		container.MustMake[*authsvc.Service](),
 	)
 }

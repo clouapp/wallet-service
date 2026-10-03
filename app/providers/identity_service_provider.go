@@ -6,6 +6,7 @@ import (
 	"github.com/macrowallets/waas/app/repositories"
 	"github.com/macrowallets/waas/app/services/account"
 	authsvc "github.com/macrowallets/waas/app/services/auth"
+	"github.com/macrowallets/waas/app/services/sessions"
 	usersvc "github.com/macrowallets/waas/app/services/users"
 )
 
@@ -49,6 +50,20 @@ func (p *IdentityServiceProvider) Register(app foundation.Application) {
 			return nil, err
 		}
 		return usersvc.NewService(store).WithRecovery(recovery), nil
+	})
+	app.Singleton((*sessions.RefreshTokens)(nil), func(app foundation.Application) (any, error) {
+		store, err := resolve[*repositories.RefreshTokenRepository](app)
+		if err != nil {
+			return nil, err
+		}
+		return sessions.NewRefreshTokens(store), nil
+	})
+	app.Singleton((*sessions.PasswordResets)(nil), func(app foundation.Application) (any, error) {
+		store, err := resolve[*repositories.PasswordResetTokenRepository](app)
+		if err != nil {
+			return nil, err
+		}
+		return sessions.NewPasswordResets(store), nil
 	})
 	app.Singleton((*account.Service)(nil), func(app foundation.Application) (any, error) {
 		accounts, err := resolve[*repositories.AccountRepository](app)
