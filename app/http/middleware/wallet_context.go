@@ -5,6 +5,7 @@ import (
 	"github.com/goravel/framework/contracts/http"
 
 	"github.com/macrowallets/waas/app/container"
+	"github.com/macrowallets/waas/app/http/middleware/requestctx"
 	"github.com/macrowallets/waas/app/http/responses"
 	accountsvc "github.com/macrowallets/waas/app/services/account"
 	"github.com/macrowallets/waas/app/services/walletrecords"
@@ -49,8 +50,8 @@ func WalletContext() http.Middleware {
 			return
 		}
 
-		ctx.WithValue("wallet", wallet)
-		ctx.WithValue("wallet_id", wallet.ID)
+		ctx.WithValue(requestctx.KeyWallet, wallet)
+		ctx.WithValue(requestctx.KeyWalletID, wallet.ID)
 		ctx.Request().Next()
 	}
 }

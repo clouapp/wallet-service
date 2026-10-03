@@ -5,6 +5,7 @@ import (
 	"github.com/goravel/framework/contracts/http"
 
 	"github.com/macrowallets/waas/app/container"
+	"github.com/macrowallets/waas/app/http/middleware/requestctx"
 	"github.com/macrowallets/waas/app/http/responses"
 	"github.com/macrowallets/waas/app/services/walletrecords"
 )
@@ -26,7 +27,7 @@ func APIWalletContext() http.Middleware {
 			return
 		}
 
-		accountID, ok := ctx.Value("account_id").(uuid.UUID)
+		accountID, ok := requestctx.AccountID(ctx)
 		if !ok || accountID == uuid.Nil {
 			abortWithJSON(ctx, http.StatusUnauthorized, http.Json{"error": "unauthenticated"})
 			return
@@ -38,8 +39,8 @@ func APIWalletContext() http.Middleware {
 			return
 		}
 
-		ctx.WithValue("wallet", wallet)
-		ctx.WithValue("wallet_id", wallet.ID)
+		ctx.WithValue(requestctx.KeyWallet, wallet)
+		ctx.WithValue(requestctx.KeyWalletID, wallet.ID)
 		ctx.Request().Next()
 	}
 }

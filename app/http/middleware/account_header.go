@@ -4,6 +4,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/goravel/framework/contracts/http"
 
+	"github.com/macrowallets/waas/app/http/middleware/requestctx"
 	"github.com/macrowallets/waas/app/http/responses"
 	"github.com/macrowallets/waas/app/models"
 )
@@ -45,10 +46,10 @@ func AccountHeader(accounts accountScope) http.Middleware {
 			return
 		}
 
-		ctx.WithValue("account", accountPtr)
-		ctx.WithValue("account_id", accountID)
-		ctx.WithValue("account_role", au.Role)
-		ctx.WithValue("account_environment", accountPtr.Environment)
+		ctx.WithValue(requestctx.KeyAccount, accountPtr)
+		ctx.WithValue(requestctx.KeyAccountID, accountID)
+		ctx.WithValue(requestctx.KeyAccountRole, au.Role)
+		ctx.WithValue(requestctx.KeyAccountEnvironment, accountPtr.Environment)
 		ctx.Request().Next()
 	}
 }

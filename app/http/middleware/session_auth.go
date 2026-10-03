@@ -7,6 +7,7 @@ import (
 	"github.com/goravel/framework/contracts/http"
 	"github.com/goravel/framework/facades"
 
+	"github.com/macrowallets/waas/app/http/middleware/requestctx"
 	"github.com/macrowallets/waas/app/http/responses"
 	"github.com/macrowallets/waas/app/models"
 )
@@ -35,15 +36,15 @@ func SessionAuth() http.Middleware {
 			return
 		}
 
-		ctx.WithValue("user_id", user.ID)
-		ctx.WithValue("user", &user)
+		ctx.WithValue(requestctx.KeyUserID, user.ID)
+		ctx.WithValue(requestctx.KeyUser, &user)
 		ctx.Request().Next()
 	}
 }
 
 // contextUserID extracts the user UUID from the request context.
 func contextUserID(ctx http.Context) uuid.UUID {
-	id, _ := ctx.Value("user_id").(uuid.UUID)
+	id, _ := requestctx.UserID(ctx)
 	return id
 }
 

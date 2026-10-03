@@ -15,6 +15,7 @@ import (
 	"github.com/goravel/framework/contracts/http"
 	"github.com/goravel/framework/facades"
 
+	"github.com/macrowallets/waas/app/http/middleware/requestctx"
 	"github.com/macrowallets/waas/app/models"
 )
 
@@ -106,8 +107,8 @@ func APITokenAuth(tokens apiTokenLookup) http.Middleware {
 			}
 		}
 
-		ctx.WithValue("account_id", accountID)
-		ctx.WithValue("api_token", &token)
+		ctx.WithValue(requestctx.KeyAccountID, accountID)
+		ctx.WithValue(requestctx.KeyAPIToken, &token)
 		ctx.Request().Next()
 	}
 }
