@@ -16,7 +16,7 @@ code that implements them.
 | [`service-layout.md`](./service-layout.md) | one subject one service, file names, narrow store interfaces |
 | [`repository-layer.md`](./repository-layer.md) | where a query lives, `internal/db`, how a repository method is shaped |
 | [`identity-and-scope.md`](./identity-and-scope.md) | who is asking (a user or an API token) and the account → wallet scope chain |
-| [`authorization.md`](./authorization.md) | the three layers a decision can live in, roles, the account environment, the inventory |
+| [`authorization.md`](./authorization.md) | the three layers a decision can live in, the middleware order, the rank rule, the inventory |
 | [`http-error-contract.md`](./http-error-contract.md) | the error envelope, the code list, what each status means, what a body may carry |
 | [`errors-and-logging.md`](./errors-and-logging.md) | sentinels per package, wrapping, the redacted log sink, what is never logged |
 | [`custody-and-signing.md`](./custody-and-signing.md) | MPC shares, the passphrase, Secrets Manager, what may touch key material |

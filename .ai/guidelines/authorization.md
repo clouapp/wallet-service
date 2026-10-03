@@ -1,9 +1,10 @@
 # Authorization Guideline
 
-> Status: TARGET. Today 15 Gate abilities are checked INSIDE handlers through
-> `authorize(...)` (18 sites), the policies re-query membership and compare role
-> strings, and six mutating handlers have no permission check at all (see the
-> inventory). Migration: alignment prompt (Part 1) §3.9 — reviewed as a security change.
+> Status: TARGET for the three layers below. This branch already runs the
+> middleware order and the rank rule in `app/policies`, `APIScope` on the
+> external token catalog, and `tokens.read` / `tokens.write` / `settings.view` /
+> `settings.update` / `activity.read`. Gate abilities are still asked from
+> handlers. Migration of those calls: alignment prompt (Part 1) §3.9.
 
 Every authorization decision belongs in exactly one of three places, and **what
 the decision depends on picks the place.**
@@ -20,6 +21,62 @@ is why no handler calls `facades.Gate()` or an `authorize` helper.
 
 `app/policies` is the only code that answers "who may do what". The middleware
 asks it, the services ask it, and the Gate abilities delegate to it.
+
+## Middleware order
+
+Scope is route middleware, outer first: the session (or the API token), then
+the account or the wallet, then the permission. A later step does not run when
+an earlier one refuses. `Cors` and `CacheControl` are not guards.
+
+| Surface | Order |
+|---|---|
+| dashboard account `/v1/accounts/{accountId}` | `SessionAuth` → `AccountContext` → `TOTPEnrollment` |
+| dashboard wallet `/v1/wallets` | `SessionAuth` → `AccountHeader` → `TOTPEnrollment`, then `WalletContext` on the nested `/{walletId}` group, then `UTXOOnly` on unspents |
+| external `/api/v1` | `APITokenAuth` (includes `ip_cidr`) → `APIWalletContext` on `/{walletId}` (404 before the scope check) → `APIScope(permission)` on the routes the token catalog names |
+| guest `/v1/auth/*` except logout | no auth middleware |
+| public `/health`, `/swagger/*` | no auth middleware |
+| inbound `/v1/webhooks/ingest/...` | no auth middleware; the provider signature is checked in the ingest handler |
+
+`AccountContext` answers 404 for an unknown account and 403 when the caller has
+no active membership. `APIScope` answers 403 when a token that lists
+permissions does not hold the route's permission. A blank permissions store
+keeps the previous access. A blank `ip_cidr` does the same for the allowlist.
+
+There is no `Can(perm)` / `WalletCan(perm)` middleware on this branch. Where a
+permission is already decided, the service asks `app/policies` (`settings.view`,
+`settings.update`, `activity.read`) or the controller asks it (`tokens.read`,
+`tokens.write`, the wallet Gate abilities). A new route still writes its chain
+down before it merges.
+
+`GET /v1/wallets/{walletId}` is registered beside `WalletContext`, not inside
+it. The nested group (`/activate`, addresses, users, and the rest) is the one
+that runs `WalletContext`.
+
+## Rank rule
+
+Account roles are one ladder, decided only in `app/policies`
+(`member_rank.go`):
+
+| Role | Rank |
+|---|---|
+| `owner` | 3 |
+| `admin` | 2 |
+| `auditor`, `user` | 1 |
+
+An unknown role has no rank and fails closed. `MayGrant(actor, granted)` and
+`MayActOn(actor, target)` allow an equal or lower rank and refuse a higher
+one. Auditor and user share a rank; `ManagesMembers` is still owner and admin
+only.
+
+`models.AccountRoleOutranks` is that comparison. Only `app/policies` may call
+it (`TestOnlyPoliciesCallAccountRoleOutranks`). The function is not declared
+on this branch; the test fails when a call shows up in a service, a handler,
+or anywhere else.
+
+Platform RBAC pivots (`model_has_roles`, `role_has_permissions`,
+`model_has_permissions`) are not on this branch. Only `app/policies` may read
+them (`TestOnlyPoliciesReadRBACPivots`). A migration may create the tables. A
+repository, a service, or a handler may not query them.
 
 ## Roles
 
@@ -92,8 +149,12 @@ service (layer 2) — never a call inside a handler.
 | `ActivateWallet` | dashboard | `wallet.update` | **product decision** |
 | `UpdateWalletSettings` | dashboard | `wallet.update` | **product decision** |
 
-Until decided, these are reachable by ANY member of the account (or any token of
-the account). Closing them may remove access someone has today.
+On the external API, create wallet, generate address, consolidate, and create
+withdrawal now run `APIScope` with `wallets.create`, `addresses.create`,
+`sweep.execute`, and `withdrawals.create`. A token with a blank permissions
+store still reaches them. Update address has no `APIScope`. The dashboard
+handlers in this table still check membership only. Closing that gap may
+remove access someone has today.
 
 ## Adding a route
 
@@ -101,6 +162,9 @@ A new route is authenticated and scoped unless it is in the explicit exceptions
 list in `CLAUDE.md` (health, docs, inbound provider webhooks).
 
 **Its chain is written down before it merges**:
-`tests/architecture/route_security_test.go` is the closed table of every (verb,
-path) and the ordered guards it runs behind, checked against the booted router
-in both directions — a route with no row fails, a row that does not match fails.
+`tests/architecture/routesecurity/route_security_test.go` is the closed table of
+every (verb, path) and the ordered guards it runs behind.
+`TestEveryRouteIsInTheRouteTable` checks the table against the booted router in
+both directions. `TestGuardChainMatchesRegistration` checks each row's chain
+against the middleware the route files register, and fails on a route with no
+row, a row the router does not serve, or a chain that does not match.

@@ -58,7 +58,10 @@ Known violations include `app/models → app/services/mpc` and `config → app/m
   inbound-webhook rows is behind exactly one auth middleware: `middleware.SessionAuth()`
   on `/v1`, `middleware.APITokenAuth()` on `/api/v1`. — guarded by
   `tests/architecture/routesecurity` (`TestEveryRouteIsInTheRouteTable`: closed table of
-  every served route and its guard, both directions; and
+  every served route and its guard, both directions;
+  `TestGuardChainMatchesRegistration`: the ordered guard chain on that row,
+  checked against the middleware the route files register, failing on any
+  unlisted route or a chain that does not match; and
   `TestAuthenticatedRoutesRefuseAnAnonymousCaller`). The baseline is empty, so
   ratchet fails on any mismatch. A new route needs a row in `routeTable`.
 - External integrators (Markets) consume `/api/v1`; the front consumes `/v1`. A change of
@@ -84,9 +87,14 @@ Known violations include `app/models → app/services/mpc` and `config → app/m
   and checked before the body is read. — guarded by `TestAPITokenAuthHMACSuite`
   (`app/http/middleware/api_token_auth_test.go`) and `criticalEndpointsSuite`
   (`app/http/controllers/critical_api_endpoints_test.go`).
-  **KNOWN VIOLATION** S9: `permissions` and `ip_cidr` are stored and never
-  enforced. `spending_limit` is a per-token daily USD cap enforced in
-  `withdraw.Service`; a blank cap leaves withdrawal behavior unchanged.
+  `permissions` is a JSON array of the token catalog. `APIScope` enforces it on
+  the routes that catalog names; a blank store keeps the previous access.
+  `ip_cidr` is enforced against `ClientIP`; a blank allowlist keeps the previous
+  access. `spending_limit` is a per-token daily USD cap enforced in
+  `withdraw.Service`; a blank cap leaves withdrawal behavior unchanged. A newly
+  minted token stores `sha256` of the random secret. — guarded by
+  `TestAPITokenIP`, `app/http/middleware/api_scope_test.go`, and
+  `app/policies/api_token_permissions_test.go`.
 
 ### 5. Scope: actor → account → wallet
 
@@ -160,6 +168,63 @@ Known violations include `app/models → app/services/mpc` and `config → app/m
   never `FLUSHALL`/`FLUSHDB`; keys are namespaced per test. — guarded by
   `TestTestRedisURLRefusesTheLiveIndexAndBadInput`,
   `TestTestingEnvironmentFileUsesANonLiveRedisIndex`.
+
+### 10. Settings
+
+- Account settings are the registry in `app/services/settings`. Account-managed
+  groups are `account_security` and `account_webhooks`. `account_sweep_limits`
+  is platform-managed and inherited. The platform group on this branch is
+  `deposit_scan`. A secret (the webhook signing secret) is written and then
+  redacted on read.
+- `GET /v1/accounts/{accountId}/settings` is `settings.view` (owner, admin,
+  auditor). `PATCH /v1/accounts/{accountId}/settings/{group}` is
+  `settings.update` (owner, admin). The user role holds neither. The service
+  asks `policies.MayViewSettings` and `policies.MayUpdateSettings`. — guarded by
+  `TestSettingsPermissionsFollowTheAccountRoles`.
+- There is no `settings.section_reset` on this branch.
+
+### 11. Feature flags
+
+- The catalog is `app/services/features`: `api-request-signature-required`,
+  `deposit-scan-enabled`, `sweep-enabled`, `user-2fa-required`,
+  `wallet-creation-enabled`, `webhook-delivery-enabled`, `withdrawals-enabled`.
+  Each flag has an account row and a global row. A missing row is the catalog
+  default and is not inserted. Nothing is cached, so the next read sees a write.
+- Account flags reuse the settings permissions: list is `settings.view`, write
+  is `settings.update`. An unknown key on write is 404 before the permission
+  check. `GET|PATCH /v1/platform/features` is a platform admin
+  (`platform_admins`), not an account owner. — guarded by
+  `app/services/features/service_test.go` and `gate_test.go`.
+- `withdrawals-enabled` and `sweep-enabled` default to on. `Gate` pauses the
+  action when the account flag is off, and when the global row is an explicit
+  false. A missing global row does not pause. The conflict codes are
+  `withdrawals_paused` and `sweep_paused`.
+- `user-2fa-required` and `account_security.require_2fa` are the two switches
+  `TOTPEnrollment` reads on account and wallet routes.
+
+### 12. RBAC
+
+- One role per membership: owner (3) > admin (2) > auditor = user (1). Unknown
+  roles fail closed. `MayGrant` and `MayActOn` allow an equal or lower rank and
+  refuse a higher one. Auditor and user share a rank and do not manage members.
+  The ladder lives in `app/policies/member_rank.go`. — guarded by the policy
+  tests beside it.
+- `models.AccountRoleOutranks` may be called only from `app/policies`. The
+  function is not declared on this branch. — guarded by
+  `TestOnlyPoliciesCallAccountRoleOutranks` (`tests/architecture`).
+- The platform pivot tables `model_has_roles`, `role_has_permissions`, and
+  `model_has_permissions` are not on this branch. Only `app/policies` may read
+  them. A migration may create them. — guarded by
+  `TestOnlyPoliciesReadRBACPivots`.
+- Dashboard permissions decided on this branch: `tokens.read` / `tokens.write`
+  on `/v1/accounts/{accountId}/tokens`, `settings.view` / `settings.update`,
+  `activity.read` on `GET /v1/accounts/{accountId}/activity` (owner, admin,
+  auditor). External token permissions are the catalog in
+  `app/policies/api_token_permissions.go`, checked by `APIScope`. Minting
+  refuses a permission the creator does not hold.
+- `GET /v1/platform/activity` is a platform admin, the same gate as platform
+  flags. There is no `audit.view` permission row on this branch.
+- Invites, user suspension, and the session watermark are not on this branch.
 
 ## Running it
 

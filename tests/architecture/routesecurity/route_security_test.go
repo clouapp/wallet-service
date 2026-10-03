@@ -17,9 +17,8 @@ import (
 	"github.com/macrowallets/waas/tests/testenv"
 )
 
-// guard is the authentication a route runs behind. Permissions inside a
-// surface are not recorded here: they are a pending product decision
-// (alignment plan §0.5, .ai/guidelines/authorization.md).
+// guard is the authentication a route runs behind. The ordered middleware
+// chain is routeSecurity.chain (.ai/guidelines/authorization.md).
 type guard string
 
 const (
@@ -30,111 +29,148 @@ const (
 	guardAPIToken          guard = "api-token"          // middleware.APITokenAuth (external, /api/v1)
 )
 
+// Repeated guard chains. Cors and CacheControl are not guards. The ingest
+// signature is checked in the handler, so that route's chain is empty.
+const (
+	chainSession       = "SessionAuth"
+	chainAccount       = "SessionAuth > AccountContext > TOTPEnrollment"
+	chainHeader        = "SessionAuth > AccountHeader > TOTPEnrollment"
+	chainWallet        = "SessionAuth > AccountHeader > TOTPEnrollment > WalletContext"
+	chainUnspent       = "SessionAuth > AccountHeader > TOTPEnrollment > WalletContext > UTXOOnly"
+	chainAPI           = "APITokenAuth"
+	chainAPIWallet     = "APITokenAuth > APIWalletContext"
+	chainWalletsRead   = "APITokenAuth > APIScope(wallets.read)"
+	chainWalletsCreate = "APITokenAuth > APIScope(wallets.create)"
+	chainWalletRead    = "APITokenAuth > APIWalletContext > APIScope(wallets.read)"
+	chainAddresses     = "APITokenAuth > APIWalletContext > APIScope(addresses.create)"
+	chainSweep         = "APITokenAuth > APIWalletContext > APIScope(sweep.execute)"
+	chainWithdrawals   = "APITokenAuth > APIWalletContext > APIScope(withdrawals.create)"
+	chainTransactions  = "APITokenAuth > APIScope(transactions.read)"
+	chainWebhooksRead  = "APITokenAuth > APIScope(webhooks.read)"
+	chainWebhooksWrite = "APITokenAuth > APIScope(webhooks.write)"
+)
+
+// routeSecurity is one row of the closed table: who may call the route, and
+// the ordered guards the route files register.
+type routeSecurity struct {
+	auth  guard
+	chain string
+}
+
+func session(chain string) routeSecurity { return routeSecurity{auth: guardSession, chain: chain} }
+func api(chain string) routeSecurity     { return routeSecurity{auth: guardAPIToken, chain: chain} }
+
+func guest() routeSecurity { return routeSecurity{auth: guardGuest} }
+func public() routeSecurity {
+	return routeSecurity{auth: guardPublic}
+}
+func provider() routeSecurity { return routeSecurity{auth: guardProviderSignature} }
+
 // routeTable is the closed list of every route the router serves, keyed by
-// Goravel's "METHOD /path", with the guard it runs behind. A new route fails
-// TestEveryRouteIsInTheRouteTable until it gets a row here.
-var routeTable = map[string]guard{
-	"GET|HEAD /api/v1/addresses/{address}":                             guardAPIToken,
-	"GET|HEAD /api/v1/chains":                                          guardAPIToken,
-	"GET|HEAD /api/v1/transactions":                                    guardAPIToken,
-	"GET|HEAD /api/v1/transactions/{id}":                               guardAPIToken,
-	"GET|HEAD /api/v1/users/{external_id}/addresses":                   guardAPIToken,
-	"GET|HEAD /api/v1/users/{external_id}/transactions":                guardAPIToken,
-	"GET|HEAD /api/v1/wallets":                                         guardAPIToken,
-	"POST /api/v1/wallets":                                             guardAPIToken,
-	"GET|HEAD /api/v1/wallets/{walletId}":                              guardAPIToken,
-	"GET|HEAD /api/v1/wallets/{walletId}/addresses":                    guardAPIToken,
-	"POST /api/v1/wallets/{walletId}/addresses":                        guardAPIToken,
-	"PATCH /api/v1/wallets/{walletId}/addresses/{addressId}":           guardAPIToken,
-	"POST /api/v1/wallets/{walletId}/consolidate":                      guardAPIToken,
-	"POST /api/v1/wallets/{walletId}/gas-check":                        guardAPIToken,
-	"GET|HEAD /api/v1/wallets/{walletId}/gas-status":                   guardAPIToken,
-	"POST /api/v1/wallets/{walletId}/withdraw/preview":                 guardAPIToken,
-	"POST /api/v1/wallets/{walletId}/withdrawals":                      guardAPIToken,
-	"GET|HEAD /api/v1/wallets/{walletId}/withdrawals/{idempotencyKey}": guardAPIToken,
-	"GET|HEAD /api/v1/webhooks":                                        guardAPIToken,
-	"POST /api/v1/webhooks":                                            guardAPIToken,
-	"PATCH /api/v1/webhooks/{webhookId}":                               guardAPIToken,
-	"GET|HEAD /health":                                                 guardPublic,
-	"GET|HEAD /swagger/doc.json":                                       guardPublic,
-	"GET|HEAD /swagger/index.html":                                     guardPublic,
-	"POST /v1/accounts":                                                guardSession,
-	"GET|HEAD /v1/accounts/{accountId}":                                guardSession,
-	"PATCH /v1/accounts/{accountId}":                                   guardSession,
-	"POST /v1/accounts/{accountId}/archive":                            guardSession,
-	"POST /v1/accounts/{accountId}/freeze":                             guardSession,
-	"GET|HEAD /v1/accounts/{accountId}/activity":                       guardSession,
-	"GET|HEAD /v1/accounts/{accountId}/tokens":                         guardSession,
-	"POST /v1/accounts/{accountId}/tokens":                             guardSession,
-	"DELETE /v1/accounts/{accountId}/tokens/{tokenId}":                 guardSession,
-	"GET|HEAD /v1/accounts/{accountId}/users":                          guardSession,
-	"POST /v1/accounts/{accountId}/users":                              guardSession,
-	"PATCH /v1/accounts/{accountId}/users/{userId}":                    guardSession,
-	"DELETE /v1/accounts/{accountId}/users/{userId}":                   guardSession,
-	"GET|HEAD /v1/accounts/{accountId}/settings":                       guardSession,
-	"PATCH /v1/accounts/{accountId}/settings/{group}":                  guardSession,
-	"GET|HEAD /v1/accounts/{accountId}/features":                       guardSession,
-	"PATCH /v1/accounts/{accountId}/features/{key}":                    guardSession,
-	"POST /v1/auth/2fa/verify":                                         guardGuest,
-	"POST /v1/auth/login":                                              guardGuest,
-	"POST /v1/auth/logout":                                             guardSession,
-	"POST /v1/auth/recover":                                            guardGuest,
-	"POST /v1/auth/recover/confirm":                                    guardGuest,
-	"POST /v1/auth/refresh":                                            guardGuest,
-	"POST /v1/auth/register":                                           guardGuest,
-	"GET|HEAD /v1/chains":                                              guardSession,
-	"GET|HEAD /v1/chains/{chainId}":                                    guardSession,
-	"GET|HEAD /v1/chains/{chainId}/resources":                          guardSession,
-	"GET|HEAD /v1/chains/{chainId}/tokens":                             guardSession,
-	"GET|HEAD /v1/convert":                                             guardSession,
-	"GET|HEAD /v1/currencies":                                          guardSession,
-	"GET|HEAD /v1/currencies/{code}":                                   guardSession,
-	"GET|HEAD /v1/me/preferences":                                      guardSession,
-	"GET|HEAD /v1/platform/activity":                                   guardSession,
-	"GET|HEAD /v1/platform/features":                                   guardSession,
-	"PATCH /v1/platform/features/{key}":                                guardSession,
-	"PUT /v1/me/preferences":                                           guardSession,
-	"GET|HEAD /v1/users/me":                                            guardSession,
-	"PATCH /v1/users/me":                                               guardSession,
-	"GET|HEAD /v1/users/me/accounts":                                   guardSession,
-	"PATCH /v1/users/me/default-account":                               guardSession,
-	"POST /v1/users/me/password":                                       guardSession,
-	"DELETE /v1/users/me/totp":                                         guardSession,
-	"POST /v1/users/me/totp/setup":                                     guardSession,
-	"POST /v1/users/me/totp/verify":                                    guardSession,
-	"GET|HEAD /v1/wallets":                                             guardSession,
-	"POST /v1/wallets":                                                 guardSession,
-	"GET|HEAD /v1/wallets/{walletId}":                                  guardSession,
-	"POST /v1/wallets/{walletId}/activate":                             guardSession,
-	"GET|HEAD /v1/wallets/{walletId}/addresses":                        guardSession,
-	"POST /v1/wallets/{walletId}/addresses":                            guardSession,
-	"PATCH /v1/wallets/{walletId}/addresses/{addressId}":               guardSession,
-	"GET|HEAD /v1/wallets/{walletId}/balances":                         guardSession,
-	"POST /v1/wallets/{walletId}/consolidate":                          guardSession,
-	"POST /v1/wallets/{walletId}/freeze":                               guardSession,
-	"POST /v1/wallets/{walletId}/gas-check":                            guardSession,
-	"GET|HEAD /v1/wallets/{walletId}/gas-status":                       guardSession,
-	"GET|HEAD /v1/wallets/{walletId}/settings":                         guardSession,
-	"PATCH /v1/wallets/{walletId}/settings":                            guardSession,
-	"GET|HEAD /v1/wallets/{walletId}/transactions":                     guardSession,
-	"GET|HEAD /v1/wallets/{walletId}/transactions/{txId}":              guardSession,
-	"GET|HEAD /v1/wallets/{walletId}/unspents":                         guardSession,
-	"GET|HEAD /v1/wallets/{walletId}/users":                            guardSession,
-	"POST /v1/wallets/{walletId}/users":                                guardSession,
-	"DELETE /v1/wallets/{walletId}/users/{userId}":                     guardSession,
-	"GET|HEAD /v1/wallets/{walletId}/webhooks":                         guardSession,
-	"POST /v1/wallets/{walletId}/webhooks":                             guardSession,
-	"DELETE /v1/wallets/{walletId}/webhooks/{webhookId}":               guardSession,
-	"GET|HEAD /v1/wallets/{walletId}/whitelist":                        guardSession,
-	"POST /v1/wallets/{walletId}/whitelist":                            guardSession,
-	"DELETE /v1/wallets/{walletId}/whitelist/{entryId}":                guardSession,
-	"POST /v1/wallets/{walletId}/withdraw/preview":                     guardSession,
-	"GET|HEAD /v1/wallets/{walletId}/withdrawals":                      guardSession,
-	"POST /v1/wallets/{walletId}/withdrawals":                          guardSession,
-	"POST /v1/wallets/{walletId}/withdrawals/estimate":                 guardSession,
-	"GET|HEAD /v1/wallets/{walletId}/withdrawals/{withdrawalId}":       guardSession,
-	"POST /v1/wallets/{walletId}/withdrawals/{withdrawalId}/cancel":    guardSession,
-	"POST /v1/webhooks/ingest/{provider}/{chainID}":                    guardProviderSignature,
+// Goravel's "METHOD /path". A new route fails TestEveryRouteIsInTheRouteTable
+// and TestGuardChainMatchesRegistration until it gets a row here.
+var routeTable = map[string]routeSecurity{
+	"GET|HEAD /api/v1/addresses/{address}":                             api(chainAPI),
+	"GET|HEAD /api/v1/chains":                                          api(chainAPI),
+	"GET|HEAD /api/v1/transactions":                                    api(chainTransactions),
+	"GET|HEAD /api/v1/transactions/{id}":                               api(chainTransactions),
+	"GET|HEAD /api/v1/users/{external_id}/addresses":                   api(chainAPI),
+	"GET|HEAD /api/v1/users/{external_id}/transactions":                api(chainTransactions),
+	"GET|HEAD /api/v1/wallets":                                         api(chainWalletsRead),
+	"POST /api/v1/wallets":                                             api(chainWalletsCreate),
+	"GET|HEAD /api/v1/wallets/{walletId}":                              api(chainWalletRead),
+	"GET|HEAD /api/v1/wallets/{walletId}/addresses":                    api(chainAPIWallet),
+	"POST /api/v1/wallets/{walletId}/addresses":                        api(chainAddresses),
+	"PATCH /api/v1/wallets/{walletId}/addresses/{addressId}":           api(chainAPIWallet),
+	"POST /api/v1/wallets/{walletId}/consolidate":                      api(chainSweep),
+	"POST /api/v1/wallets/{walletId}/gas-check":                        api(chainAPIWallet),
+	"GET|HEAD /api/v1/wallets/{walletId}/gas-status":                   api(chainAPIWallet),
+	"POST /api/v1/wallets/{walletId}/withdraw/preview":                 api(chainAPIWallet),
+	"POST /api/v1/wallets/{walletId}/withdrawals":                      api(chainWithdrawals),
+	"GET|HEAD /api/v1/wallets/{walletId}/withdrawals/{idempotencyKey}": api(chainAPIWallet),
+	"GET|HEAD /api/v1/webhooks":                                        api(chainWebhooksRead),
+	"POST /api/v1/webhooks":                                            api(chainWebhooksWrite),
+	"PATCH /api/v1/webhooks/{webhookId}":                               api(chainWebhooksWrite),
+	"GET|HEAD /health":                                                 public(),
+	"GET|HEAD /swagger/doc.json":                                       public(),
+	"GET|HEAD /swagger/index.html":                                     public(),
+	"POST /v1/accounts":                                                session(chainSession),
+	"GET|HEAD /v1/accounts/{accountId}":                                session(chainAccount),
+	"PATCH /v1/accounts/{accountId}":                                   session(chainAccount),
+	"POST /v1/accounts/{accountId}/archive":                            session(chainAccount),
+	"POST /v1/accounts/{accountId}/freeze":                             session(chainAccount),
+	"GET|HEAD /v1/accounts/{accountId}/activity":                       session(chainAccount),
+	"GET|HEAD /v1/accounts/{accountId}/tokens":                         session(chainAccount),
+	"POST /v1/accounts/{accountId}/tokens":                             session(chainAccount),
+	"DELETE /v1/accounts/{accountId}/tokens/{tokenId}":                 session(chainAccount),
+	"GET|HEAD /v1/accounts/{accountId}/users":                          session(chainAccount),
+	"POST /v1/accounts/{accountId}/users":                              session(chainAccount),
+	"PATCH /v1/accounts/{accountId}/users/{userId}":                    session(chainAccount),
+	"DELETE /v1/accounts/{accountId}/users/{userId}":                   session(chainAccount),
+	"GET|HEAD /v1/accounts/{accountId}/settings":                       session(chainAccount),
+	"PATCH /v1/accounts/{accountId}/settings/{group}":                  session(chainAccount),
+	"GET|HEAD /v1/accounts/{accountId}/features":                       session(chainAccount),
+	"PATCH /v1/accounts/{accountId}/features/{key}":                    session(chainAccount),
+	"POST /v1/auth/2fa/verify":                                         guest(),
+	"POST /v1/auth/login":                                              guest(),
+	"POST /v1/auth/logout":                                             session(chainSession),
+	"POST /v1/auth/recover":                                            guest(),
+	"POST /v1/auth/recover/confirm":                                    guest(),
+	"POST /v1/auth/refresh":                                            guest(),
+	"POST /v1/auth/register":                                           guest(),
+	"GET|HEAD /v1/chains":                                              session(chainHeader),
+	"GET|HEAD /v1/chains/{chainId}":                                    session(chainHeader),
+	"GET|HEAD /v1/chains/{chainId}/resources":                          session(chainHeader),
+	"GET|HEAD /v1/chains/{chainId}/tokens":                             session(chainHeader),
+	"GET|HEAD /v1/convert":                                             session(chainSession),
+	"GET|HEAD /v1/currencies":                                          session(chainSession),
+	"GET|HEAD /v1/currencies/{code}":                                   session(chainSession),
+	"GET|HEAD /v1/me/preferences":                                      session(chainSession),
+	"GET|HEAD /v1/platform/activity":                                   session(chainSession),
+	"GET|HEAD /v1/platform/features":                                   session(chainSession),
+	"PATCH /v1/platform/features/{key}":                                session(chainSession),
+	"PUT /v1/me/preferences":                                           session(chainSession),
+	"GET|HEAD /v1/users/me":                                            session(chainSession),
+	"PATCH /v1/users/me":                                               session(chainSession),
+	"GET|HEAD /v1/users/me/accounts":                                   session(chainSession),
+	"PATCH /v1/users/me/default-account":                               session(chainSession),
+	"POST /v1/users/me/password":                                       session(chainSession),
+	"DELETE /v1/users/me/totp":                                         session(chainSession),
+	"POST /v1/users/me/totp/setup":                                     session(chainSession),
+	"POST /v1/users/me/totp/verify":                                    session(chainSession),
+	"GET|HEAD /v1/wallets":                                             session(chainHeader),
+	"POST /v1/wallets":                                                 session(chainHeader),
+	"GET|HEAD /v1/wallets/{walletId}":                                  session(chainHeader),
+	"POST /v1/wallets/{walletId}/activate":                             session(chainWallet),
+	"GET|HEAD /v1/wallets/{walletId}/addresses":                        session(chainWallet),
+	"POST /v1/wallets/{walletId}/addresses":                            session(chainWallet),
+	"PATCH /v1/wallets/{walletId}/addresses/{addressId}":               session(chainWallet),
+	"GET|HEAD /v1/wallets/{walletId}/balances":                         session(chainWallet),
+	"POST /v1/wallets/{walletId}/consolidate":                          session(chainWallet),
+	"POST /v1/wallets/{walletId}/freeze":                               session(chainWallet),
+	"POST /v1/wallets/{walletId}/gas-check":                            session(chainWallet),
+	"GET|HEAD /v1/wallets/{walletId}/gas-status":                       session(chainWallet),
+	"GET|HEAD /v1/wallets/{walletId}/settings":                         session(chainWallet),
+	"PATCH /v1/wallets/{walletId}/settings":                            session(chainWallet),
+	"GET|HEAD /v1/wallets/{walletId}/transactions":                     session(chainWallet),
+	"GET|HEAD /v1/wallets/{walletId}/transactions/{txId}":              session(chainWallet),
+	"GET|HEAD /v1/wallets/{walletId}/unspents":                         session(chainUnspent),
+	"GET|HEAD /v1/wallets/{walletId}/users":                            session(chainWallet),
+	"POST /v1/wallets/{walletId}/users":                                session(chainWallet),
+	"DELETE /v1/wallets/{walletId}/users/{userId}":                     session(chainWallet),
+	"GET|HEAD /v1/wallets/{walletId}/webhooks":                         session(chainWallet),
+	"POST /v1/wallets/{walletId}/webhooks":                             session(chainWallet),
+	"DELETE /v1/wallets/{walletId}/webhooks/{webhookId}":               session(chainWallet),
+	"GET|HEAD /v1/wallets/{walletId}/whitelist":                        session(chainWallet),
+	"POST /v1/wallets/{walletId}/whitelist":                            session(chainWallet),
+	"DELETE /v1/wallets/{walletId}/whitelist/{entryId}":                session(chainWallet),
+	"POST /v1/wallets/{walletId}/withdraw/preview":                     session(chainWallet),
+	"GET|HEAD /v1/wallets/{walletId}/withdrawals":                      session(chainWallet),
+	"POST /v1/wallets/{walletId}/withdrawals":                          session(chainWallet),
+	"POST /v1/wallets/{walletId}/withdrawals/estimate":                 session(chainWallet),
+	"GET|HEAD /v1/wallets/{walletId}/withdrawals/{withdrawalId}":       session(chainWallet),
+	"POST /v1/wallets/{walletId}/withdrawals/{withdrawalId}/cancel":    session(chainWallet),
+	"POST /v1/webhooks/ingest/{provider}/{chainID}":                    provider(),
 }
 
 func TestMain(m *testing.M) {
@@ -170,8 +206,8 @@ func TestEveryRouteIsInTheRouteTable(t *testing.T) {
 // handler runs.
 func TestAuthenticatedRoutesRefuseAnAnonymousCaller(t *testing.T) {
 	var violations architecture.Violations
-	for route, routeGuard := range routeTable {
-		if routeGuard != guardSession && routeGuard != guardAPIToken {
+	for route, entry := range routeTable {
+		if entry.auth != guardSession && entry.auth != guardAPIToken {
 			continue
 		}
 		method, path := requestFor(route)
