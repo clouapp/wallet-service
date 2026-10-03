@@ -6,9 +6,12 @@ import (
 
 	"github.com/macrowallets/waas/app/http/controllers"
 	dashaccounts "github.com/macrowallets/waas/app/http/controllers/dashboard/accounts"
+	dashaddresses "github.com/macrowallets/waas/app/http/controllers/dashboard/addresses"
 	dashauth "github.com/macrowallets/waas/app/http/controllers/dashboard/auth"
+	dashsweep "github.com/macrowallets/waas/app/http/controllers/dashboard/sweep"
 	dashusers "github.com/macrowallets/waas/app/http/controllers/dashboard/users"
 	dashwallets "github.com/macrowallets/waas/app/http/controllers/dashboard/wallets"
+	dashwithdrawals "github.com/macrowallets/waas/app/http/controllers/dashboard/withdrawals"
 	"github.com/macrowallets/waas/app/http/middleware"
 )
 
@@ -85,9 +88,9 @@ func RegisterAdminRoutes() {
 		router.Prefix("/{walletId}").Middleware(middleware.WalletContext()).Group(func(r route.Router) {
 			r.Post("/activate", dashwallets.ActivateWallet)
 
-			r.Get("/addresses", controllers.ListWalletAddresses)
-			r.Post("/addresses", controllers.GenerateAddress)
-			r.Patch("/addresses/{addressId}", controllers.UpdateAddress)
+			r.Get("/addresses", dashaddresses.ListWalletAddresses)
+			r.Post("/addresses", dashaddresses.GenerateAddress)
+			r.Patch("/addresses/{addressId}", dashaddresses.UpdateAddress)
 
 			r.Get("/users", dashwallets.ListWalletUsers)
 			r.Post("/users", dashwallets.AddWalletUser)
@@ -110,16 +113,16 @@ func RegisterAdminRoutes() {
 			r.Get("/transactions", dashwallets.ListWalletTransactions)
 			r.Get("/transactions/{txId}", dashwallets.GetWalletTransaction)
 
-			r.Get("/withdrawals", controllers.ListWalletWithdrawals)
-			r.Post("/withdrawals", controllers.CreateWalletWithdrawal)
-			r.Post("/withdrawals/estimate", controllers.EstimateWithdrawalFee)
-			r.Get("/withdrawals/{withdrawalId}", controllers.GetWalletWithdrawal)
-			r.Post("/withdrawals/{withdrawalId}/cancel", controllers.CancelWalletWithdrawal)
+			r.Get("/withdrawals", dashwithdrawals.ListWalletWithdrawals)
+			r.Post("/withdrawals", dashwithdrawals.CreateWalletWithdrawal)
+			r.Post("/withdrawals/estimate", dashwithdrawals.EstimateWithdrawalFee)
+			r.Get("/withdrawals/{withdrawalId}", dashwithdrawals.GetWalletWithdrawal)
+			r.Post("/withdrawals/{withdrawalId}/cancel", dashwithdrawals.CancelWalletWithdrawal)
 
-			r.Post("/consolidate", controllers.ConsolidateWallet)
-			r.Get("/gas-status", controllers.GetGasStatus)
-			r.Post("/gas-check", controllers.ForceGasCheck)
-			r.Post("/withdraw/preview", controllers.PreviewWithdraw)
+			r.Post("/consolidate", dashsweep.ConsolidateWallet)
+			r.Get("/gas-status", dashsweep.GetGasStatus)
+			r.Post("/gas-check", dashsweep.ForceGasCheck)
+			r.Post("/withdraw/preview", dashsweep.PreviewWithdraw)
 
 			r.Prefix("/unspents").Middleware(middleware.UTXOOnly()).Group(func(ur route.Router) {
 				ur.Get("", dashwallets.ListUnspentOutputs)

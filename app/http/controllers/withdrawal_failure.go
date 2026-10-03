@@ -39,6 +39,11 @@ type WithdrawalLookupResponse struct {
 	UpdatedAt          *carbon.DateTime `json:"updated_at" swaggertype:"string"`
 }
 
+// WithdrawalFailureCode is the persisted failure_reason both withdrawal surfaces write.
+func WithdrawalFailureCode(err error) string {
+	return withdrawalFailureCode(err)
+}
+
 func withdrawalFailureCode(err error) string {
 	switch {
 	case err == nil:

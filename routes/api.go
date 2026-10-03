@@ -5,9 +5,12 @@ import (
 	"github.com/goravel/framework/facades"
 
 	"github.com/macrowallets/waas/app/http/controllers"
+	extaddresses "github.com/macrowallets/waas/app/http/controllers/external/addresses"
+	extsweep "github.com/macrowallets/waas/app/http/controllers/external/sweep"
 	exttransactions "github.com/macrowallets/waas/app/http/controllers/external/transactions"
 	extwallets "github.com/macrowallets/waas/app/http/controllers/external/wallets"
 	extwebhooks "github.com/macrowallets/waas/app/http/controllers/external/webhooks"
+	extwithdrawals "github.com/macrowallets/waas/app/http/controllers/external/withdrawals"
 	"github.com/macrowallets/waas/app/http/middleware"
 )
 
@@ -26,22 +29,22 @@ func RegisterExternalAPI() {
 		router.Post("/wallets", extwallets.CreateWallet)
 		router.Get("/wallets", extwallets.ListWallets)
 
-		router.Get("/addresses/{address}", controllers.LookupAddress)
-		router.Get("/users/{external_id}/addresses", controllers.ListUserAddresses)
+		router.Get("/addresses/{address}", extaddresses.LookupAddress)
+		router.Get("/users/{external_id}/addresses", extaddresses.ListUserAddresses)
 
 		router.Prefix("/wallets/{walletId}").Middleware(middleware.APIWalletContext()).Group(func(r route.Router) {
 			r.Get("", extwallets.GetWallet)
 
-			r.Post("/addresses", controllers.GenerateAddress)
-			r.Get("/addresses", controllers.ListWalletAddresses)
-			r.Patch("/addresses/{addressId}", controllers.UpdateAddress)
+			r.Post("/addresses", extaddresses.GenerateAddress)
+			r.Get("/addresses", extaddresses.ListWalletAddresses)
+			r.Patch("/addresses/{addressId}", extaddresses.UpdateAddress)
 
-			r.Post("/consolidate", controllers.ConsolidateWallet)
-			r.Get("/gas-status", controllers.GetGasStatus)
-			r.Post("/gas-check", controllers.ForceGasCheck)
-			r.Post("/withdraw/preview", controllers.PreviewWithdraw)
-			r.Post("/withdrawals", controllers.CreateWalletWithdrawal)
-			r.Get("/withdrawals/{idempotencyKey}", controllers.GetWalletWithdrawalByIdempotencyKey)
+			r.Post("/consolidate", extsweep.ConsolidateWallet)
+			r.Get("/gas-status", extsweep.GetGasStatus)
+			r.Post("/gas-check", extsweep.ForceGasCheck)
+			r.Post("/withdraw/preview", extsweep.PreviewWithdraw)
+			r.Post("/withdrawals", extwithdrawals.CreateWalletWithdrawal)
+			r.Get("/withdrawals/{idempotencyKey}", extwithdrawals.GetWalletWithdrawalByIdempotencyKey)
 		})
 
 		router.Get("/transactions", exttransactions.ListTransactions)
