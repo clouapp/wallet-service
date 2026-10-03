@@ -29,6 +29,36 @@ func TestChainNetworkFollowsTheConfiguredNetworkNotTheChainID(t *testing.T) {
 	}
 }
 
+func TestBaseArbitrumAndBSCAreClassifiedByTheirNetworkID(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		chain    Chain
+		want     ResolvedNetwork
+		feeModel EVMFeeModel
+	}{
+		{Chain{ID: ChainBase, AdapterType: AdapterTypeEVM, NetworkID: networkIDPointer(8453)}, ResolvedNetwork{Name: NetworkBaseMainnet}, EVMFeeModelOPStack},
+		{Chain{ID: ChainBase, AdapterType: AdapterTypeEVM, NetworkID: networkIDPointer(84532)}, ResolvedNetwork{Name: NetworkBaseSepolia, Testnet: true}, EVMFeeModelOPStack},
+		{Chain{ID: ChainArbitrum, AdapterType: AdapterTypeEVM, NetworkID: networkIDPointer(42161)}, ResolvedNetwork{Name: NetworkArbitrumMainnet}, EVMFeeModelArbitrum},
+		{Chain{ID: ChainTArbitrum, AdapterType: AdapterTypeEVM, NetworkID: networkIDPointer(421614), IsTestnet: true}, ResolvedNetwork{Name: NetworkArbitrumSepolia, Testnet: true}, EVMFeeModelArbitrum},
+		{Chain{ID: ChainBSC, AdapterType: AdapterTypeEVM, NetworkID: networkIDPointer(56)}, ResolvedNetwork{Name: NetworkBSCMainnet}, EVMFeeModelStandard},
+		{Chain{ID: ChainBSC, AdapterType: AdapterTypeEVM, NetworkID: networkIDPointer(97)}, ResolvedNetwork{Name: NetworkBSCTestnet, Testnet: true}, EVMFeeModelStandard},
+		{Chain{ID: ChainETH, AdapterType: AdapterTypeEVM, NetworkID: networkIDPointer(1)}, ResolvedNetwork{Name: NetworkEthereumMainnet}, EVMFeeModelStandard},
+		{Chain{ID: ChainPolygon, AdapterType: AdapterTypeEVM, NetworkID: networkIDPointer(80002)}, ResolvedNetwork{Name: NetworkPolygonAmoy, Testnet: true}, EVMFeeModelStandard},
+	}
+	for _, tc := range cases {
+		if got := tc.chain.ResolveNetwork(""); got != tc.want {
+			t.Errorf("%s/%d: ResolveNetwork() = %+v, want %+v", tc.chain.ID, *tc.chain.NetworkID, got, tc.want)
+		}
+		if got := EVMFeeModelOf(*tc.chain.NetworkID); got != tc.feeModel {
+			t.Errorf("%s/%d: fee model %q, want %q", tc.chain.ID, *tc.chain.NetworkID, got, tc.feeModel)
+		}
+	}
+	if got := EVMFeeModelOf(0); got != EVMFeeModelStandard {
+		t.Errorf("an unknown network must use the standard fee model, got %q", got)
+	}
+}
+
 func TestResolveNetworkFlagsTestnetsByTheNetworkActuallyUsed(t *testing.T) {
 	t.Parallel()
 

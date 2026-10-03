@@ -136,6 +136,30 @@ func (r *TransactionRepository) CountByChainTxHashAndLogIndex(ctx context.Contex
 	return count, nil
 }
 
+// internalTransferTxTypes move funds between addresses of one wallet: a sweep
+// (child to base) and the gas seed that pays for it (base to child). Withdrawals are not
+// listed: one that reaches a watched address is a real deposit for its owner.
+var internalTransferTxTypes = []string{models.TxTypeSweep, models.TxTypeGasSeed}
+
+// CountInternalTransfers counts the sweeps and gas seeds the wallet recorded for this
+// transaction, so the deposit scanners do not record the same move again as a deposit.
+func (r *TransactionRepository) CountInternalTransfers(ctx context.Context, chainID, txHash string, walletID uuid.UUID) (int64, error) {
+	if chainID == "" || txHash == "" || walletID == uuid.Nil {
+		return 0, fmt.Errorf("chain, transaction hash and wallet are required to look up internal transfers")
+	}
+	count, err := r.Query(ctx).
+		Model(&models.Transaction{}).
+		Where("chain", chainID).
+		Where("tx_hash", txHash).
+		Where("wallet_id", walletID).
+		WhereIn("tx_type", []any{models.TxTypeSweep, models.TxTypeGasSeed}).
+		Count()
+	if err != nil {
+		return 0, fmt.Errorf("count internal transfers: %w", err)
+	}
+	return count, nil
+}
+
 // FindPendingByChain returns every transaction on chainID that the confirmation
 // loop must advance — deposits plus outbound legs (withdrawals, sweeps, gas seeds).
 func (r *TransactionRepository) FindPendingByChain(ctx context.Context, chainID string) ([]models.Transaction, error) {

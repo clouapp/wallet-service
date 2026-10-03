@@ -1,14 +1,22 @@
 package providers
 
 import (
+	"context"
 	"fmt"
+	"time"
 
+	"github.com/aws/aws-sdk-go-v2/service/secretsmanager"
 	"github.com/goravel/framework/contracts/foundation"
 
+	"github.com/macrowallets/waas/app/adapters/redis/feecache"
 	"github.com/macrowallets/waas/app/container"
+	"github.com/macrowallets/waas/app/facades"
+	"github.com/macrowallets/waas/app/models"
+	"github.com/macrowallets/waas/app/repositories"
 	authsvc "github.com/macrowallets/waas/app/services/auth"
 	chainpkg "github.com/macrowallets/waas/app/services/chain"
 	"github.com/macrowallets/waas/app/services/deposit"
+	"github.com/macrowallets/waas/app/services/feeestimate"
 	"github.com/macrowallets/waas/app/services/ingest"
 	"github.com/macrowallets/waas/app/services/price"
 	"github.com/macrowallets/waas/app/services/refresh"
@@ -50,6 +58,13 @@ func registerRuntimeServices(app foundation.Application) {
 	app.Singleton((*price.CoinAPICredential)(nil), func(foundation.Application) (any, error) {
 		return &price.CoinAPICredential{Key: container.Get().PriceConfig.CoinAPIKey}, nil
 	})
+	app.Singleton((*secretsmanager.Client)(nil), func(foundation.Application) (any, error) {
+		client := container.Get().SecretsManager
+		if client == nil {
+			return nil, fmt.Errorf("secrets manager is not configured")
+		}
+		return client, nil
+	})
 	app.Singleton((*container.SharedRedis)(nil), func(foundation.Application) (any, error) {
 		return &container.SharedRedis{Client: container.Get().Redis}, nil
 	})
@@ -60,6 +75,40 @@ func registerRuntimeServices(app foundation.Application) {
 		}
 		return &sweep.Box{Service: service}, nil
 	})
+	app.Singleton((*feeestimate.Service)(nil), func(foundation.Application) (any, error) {
+		c := container.Get()
+		quoter, ok := c.SweepService.(sweep.FeeQuoter)
+		if !ok || quoter == nil {
+			return nil, fmt.Errorf("vault: sweep service cannot quote withdrawal fees")
+		}
+		seconds := facades.Config().GetInt("fee_estimate.cache_ttl_seconds")
+		if seconds < 0 {
+			seconds = int(feeestimate.DefaultCacheTTL / time.Second)
+		}
+		return feeestimate.NewService(
+			quoter,
+			c.Registry,
+			feeEstimateChains{repo: c.ChainRepo},
+			feecache.New(c.Redis),
+			time.Duration(seconds)*time.Second,
+			time.Now,
+		)
+	})
+}
+
+// feeEstimateChains adapts the context-aware chain repository to the estimator catalog.
+type feeEstimateChains struct {
+	repo *repositories.ChainRepository
+}
+
+func (c feeEstimateChains) FindByID(id string) (*models.Chain, error) {
+	if c.repo == nil {
+		return nil, fmt.Errorf("fee estimate: chain repository is required")
+	}
+	if id == "" {
+		return nil, fmt.Errorf("fee estimate: chain id is required")
+	}
+	return c.repo.FindByID(context.Background(), id)
 }
 
 func bindRuntime[T any](app foundation.Application, load func(*container.Container) T, name string) {

@@ -1,6 +1,11 @@
 package wallets
 
 import (
+	"bytes"
+	"errors"
+	"io"
+	"log/slog"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -13,18 +18,23 @@ import (
 	"github.com/macrowallets/waas/app/http/responses"
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/policies"
+	chainsvc "github.com/macrowallets/waas/app/services/chains"
 	"github.com/macrowallets/waas/app/services/walletrecords"
+	"github.com/macrowallets/waas/app/services/walletsettings"
+	"github.com/macrowallets/waas/pkg/numeric"
 )
 
 // SettingsController serves the dashboard wallet settings and freeze routes.
 type SettingsController struct {
 	wallets     *walletrecords.Wallets
 	memberships *walletrecords.Memberships
+	chains      *chainsvc.Service
 }
 
 func NewSettingsController(
 	wallets *walletrecords.Wallets,
 	memberships *walletrecords.Memberships,
+	chains *chainsvc.Service,
 ) *SettingsController {
 	if wallets == nil {
 		panic("dashboard wallet settings controller: wallets service is required")
@@ -32,9 +42,13 @@ func NewSettingsController(
 	if memberships == nil {
 		panic("dashboard wallet settings controller: wallet memberships are required")
 	}
+	if chains == nil {
+		panic("dashboard wallet settings controller: chains service is required")
+	}
 	return &SettingsController{
 		wallets:     wallets,
 		memberships: memberships,
+		chains:      chains,
 	}
 }
 
@@ -46,18 +60,16 @@ func NewSettingsController(
 // @Produce      json
 // @Param        walletId  path  string  true  "Wallet UUID"
 // @Success      200  {object}  WalletSettingsResponse
-// @Failure      403  {object}  ErrorResponse
-// @Failure      404  {object}  ErrorResponse
+// @Failure      403  {object}  controllers.ErrorResponse
+// @Failure      404  {object}  controllers.ErrorResponse
 // @Router       /wallets/{walletId}/settings [get]
 func (ctrl *SettingsController) GetWalletSettings(ctx http.Context) http.Response {
-	wallet := requestctx.MustWallet(ctx)
-
-	return walletSettingsJSON(ctx, wallet)
+	return walletSettingsJSON(ctx, requestctx.MustWallet(ctx))
 }
 
 // UpdateWalletSettings godoc
 // @Summary      Update wallet settings
-// @Description  Updates fee rates, approval thresholds, and other wallet settings. Requires wallet or account owner/admin.
+// @Description  Updates the wallet's name and fee settings. Requires wallet or account owner/admin. Only the listed fields are accepted; each may be omitted (unchanged) or null (reset to the network default). fee_multiplier (1.0000–5.0000, up to 4 decimals) scales the gas price on EVM chains and the fee rate on Bitcoin, in fee estimates and in the withdrawals themselves; it does not apply to Solana. fee_rate_min/fee_rate_max (1–10000 sat/vB, min ≤ max) clamp the Bitcoin fee rate. Freezing uses POST /freeze.
 // @Tags         Wallet Settings
 // @Security     BearerAuth
 // @Accept       json
@@ -65,8 +77,9 @@ func (ctrl *SettingsController) GetWalletSettings(ctx http.Context) http.Respons
 // @Param        walletId  path      string                       true  "Wallet UUID"
 // @Param        request   body      UpdateWalletSettingsSwagger  true  "Settings payload"
 // @Success      200  {object}  WalletSettingsResponse
-// @Failure      400  {object}  ErrorResponse
-// @Failure      403  {object}  ErrorResponse
+// @Failure      400  {object}  controllers.ErrorResponse  "no settings to update"
+// @Failure      403  {object}  controllers.ErrorResponse
+// @Failure      422  {object}  controllers.ErrorResponse  "invalid or unknown field"
 // @Router       /wallets/{walletId}/settings [patch]
 func (ctrl *SettingsController) UpdateWalletSettings(ctx http.Context) http.Response {
 	wallet := requestctx.MustWallet(ctx)
@@ -74,65 +87,114 @@ func (ctrl *SettingsController) UpdateWalletSettings(ctx http.Context) http.Resp
 		return errResp
 	}
 
-	var req requests.UpdateWalletSettingsRequest
-	if errResp := validateRequest(ctx, &req); errResp != nil {
+	body, err := readSettingsBody(ctx)
+	if err != nil {
+		return responses.Send(ctx, http.StatusBadRequest, http.Json{"error": err.Error()})
+	}
+	update, err := walletsettings.Parse(body)
+	if err != nil {
+		return walletSettingsErrorResponse(ctx, err)
+	}
+	adapterType, errResp := ctrl.settingsAdapterType(ctx, wallet.Chain, update)
+	if errResp != nil {
 		return errResp
 	}
+	columns, err := update.Columns(wallet, adapterType)
+	if err != nil {
+		return walletSettingsErrorResponse(ctx, err)
+	}
+	if err := ctrl.wallets.UpdateSettings(ctx.Context(), wallet.ID, columns); err != nil {
+		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to update wallet settings"})
+	}
+	updated, err := ctrl.wallets.FindByID(ctx.Context(), wallet.ID)
+	if err != nil || updated == nil {
+		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to update wallet settings"})
+	}
+	auditWalletSettingsChange(ctx, wallet, updated, columns)
+	return walletSettingsJSON(ctx, updated)
+}
 
-	if s := strings.TrimSpace(req.Label); s != "" {
-		if err := ctrl.wallets.SetLabel(ctx.Context(), wallet.ID, s); err != nil {
-			return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to update wallet settings"})
-		}
-		wallet.Label = s
+// settingsAdapterType loads the chain only when a fee field is present. A label
+// or approval change does not need a chain row.
+func (ctrl *SettingsController) settingsAdapterType(ctx http.Context, chainID string, update walletsettings.Update) (string, http.Response) {
+	if !update.FeeMultiplier.Set && !update.FeeRateMin.Set && !update.FeeRateMax.Set {
+		return "", nil
 	}
-	if s := strings.TrimSpace(req.FeeRateMin); s != "" {
-		v, _ := strconv.Atoi(s)
-		if err := ctrl.wallets.SetFeeRateMin(ctx.Context(), wallet.ID, v); err != nil {
-			return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to update wallet settings"})
-		}
-		wallet.FeeRateMin = &v
+	chainEntity, err := ctrl.chains.FindByID(ctx.Context(), chainID)
+	if err != nil || chainEntity == nil {
+		return "", responses.Send(ctx, http.StatusUnprocessableEntity, http.Json{"error": "chain not found"})
 	}
-	if s := strings.TrimSpace(req.FeeRateMax); s != "" {
-		v, _ := strconv.Atoi(s)
-		if err := ctrl.wallets.SetFeeRateMax(ctx.Context(), wallet.ID, v); err != nil {
-			return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to update wallet settings"})
-		}
-		wallet.FeeRateMax = &v
-	}
-	if s := strings.TrimSpace(req.FeeMultiplier); s != "" {
-		v, _ := strconv.ParseFloat(s, 64)
-		if err := ctrl.wallets.SetFeeMultiplier(ctx.Context(), wallet.ID, v); err != nil {
-			return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to update wallet settings"})
-		}
-		wallet.FeeMultiplier = &v
-	}
-	if s := strings.TrimSpace(req.RequiredApprovals); s != "" {
-		v, _ := strconv.Atoi(s)
-		if err := ctrl.wallets.SetRequiredApprovals(ctx.Context(), wallet.ID, v); err != nil {
-			return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to update wallet settings"})
-		}
-		wallet.RequiredApprovals = v
-	}
-	if s := strings.TrimSpace(req.FrozenUntil); s != "" {
-		t, _ := time.Parse(time.RFC3339, s)
-		if err := ctrl.wallets.SetFrozenUntil(ctx.Context(), wallet.ID, t); err != nil {
-			return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to update wallet settings"})
-		}
-		wallet.FrozenUntil = &t
-	}
+	return chainEntity.AdapterType, nil
+}
 
-	return walletSettingsJSON(ctx, wallet)
+func readSettingsBody(ctx http.Context) ([]byte, error) {
+	request := ctx.Request().Origin()
+	if request == nil || request.Body == nil {
+		return nil, errors.New("request body is required")
+	}
+	body, err := io.ReadAll(io.LimitReader(request.Body, walletsettings.MaxBodyBytes+1))
+	if err != nil {
+		return nil, errors.New("request body could not be read")
+	}
+	request.Body = io.NopCloser(bytes.NewReader(body))
+	return body, nil
+}
+
+func walletSettingsErrorResponse(ctx http.Context, err error) http.Response {
+	if errors.Is(err, walletsettings.ErrNoFields) {
+		return responses.Send(ctx, http.StatusBadRequest, http.Json{"error": err.Error()})
+	}
+	var fieldErr *walletsettings.FieldError
+	if errors.As(err, &fieldErr) {
+		return responses.FieldsFailed(ctx, map[string][]string{fieldErr.Field: {fieldErr.Message}})
+	}
+	return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to update wallet settings"})
+}
+
+func auditWalletSettingsChange(ctx http.Context, before, after *models.Wallet, columns map[string]any) {
+	changed := make([]string, 0, len(columns))
+	for column := range columns {
+		changed = append(changed, column)
+	}
+	sort.Strings(changed)
+	userID, _ := requestctx.UserID(ctx)
+	slog.Info("wallet settings updated",
+		"wallet_id", before.ID,
+		"chain", before.Chain,
+		"user_id", userID,
+		"fields", strings.Join(changed, ","),
+		"fee_multiplier_before", nullDecimalText(before.FeeMultiplier),
+		"fee_multiplier_after", nullDecimalText(after.FeeMultiplier),
+		"fee_rate_min_before", intPointerText(before.FeeRateMin),
+		"fee_rate_min_after", intPointerText(after.FeeRateMin),
+		"fee_rate_max_before", intPointerText(before.FeeRateMax),
+		"fee_rate_max_after", intPointerText(after.FeeRateMax),
+	)
+}
+
+func nullDecimalText(value numeric.NullDecimal) string {
+	if !value.Valid {
+		return "null"
+	}
+	return value.Decimal.String()
+}
+
+func intPointerText(value *int) string {
+	if value == nil {
+		return "null"
+	}
+	return strconv.Itoa(*value)
 }
 
 func walletSettingsJSON(ctx http.Context, wallet *models.Wallet) http.Response {
-	return responses.Send(ctx, http.StatusOK, http.Json{
-		"label":              wallet.Label,
-		"fee_rate_min":       wallet.FeeRateMin,
-		"fee_rate_max":       wallet.FeeRateMax,
-		"fee_multiplier":     wallet.FeeMultiplier,
-		"required_approvals": wallet.RequiredApprovals,
-		"frozen_until":       wallet.FrozenUntil,
-		"status":             wallet.Status,
+	return responses.Send(ctx, http.StatusOK, WalletSettingsResponse{
+		Label:             wallet.Label,
+		FeeRateMin:        wallet.FeeRateMin,
+		FeeRateMax:        wallet.FeeRateMax,
+		FeeMultiplier:     wallet.FeeMultiplier,
+		RequiredApprovals: wallet.RequiredApprovals,
+		FrozenUntil:       wallet.FrozenUntil,
+		Status:            wallet.Status,
 	})
 }
 
@@ -143,9 +205,9 @@ func walletSettingsJSON(ctx http.Context, wallet *models.Wallet) http.Response {
 // @Security     BearerAuth
 // @Produce      json
 // @Param        walletId  path  string  true  "Wallet UUID"
-// @Success      200  {object}  models.Wallet
-// @Failure      403  {object}  ErrorResponse
-// @Failure      409  {object}  ErrorResponse
+// @Success      200  {object}  controllers.WalletBodyView
+// @Failure      403  {object}  controllers.ErrorResponse
+// @Failure      409  {object}  controllers.ErrorResponse
 // @Router       /wallets/{walletId}/archive [post]
 func (ctrl *SettingsController) ArchiveWallet(ctx http.Context) http.Response {
 	wallet := requestctx.MustWallet(ctx)
@@ -172,7 +234,7 @@ func (ctrl *SettingsController) ArchiveWallet(ctx http.Context) http.Response {
 // @Param        walletId  path      string                true  "Wallet UUID"
 // @Param        request   body      FreezeWalletSwagger   true  "Freeze payload"
 // @Success      200  {object}  WalletSettingsResponse
-// @Failure      403  {object}  ErrorResponse
+// @Failure      403  {object}  controllers.ErrorResponse
 // @Router       /wallets/{walletId}/freeze [post]
 func (ctrl *SettingsController) FreezeWallet(ctx http.Context) http.Response {
 	wallet := requestctx.MustWallet(ctx)
@@ -185,10 +247,13 @@ func (ctrl *SettingsController) FreezeWallet(ctx http.Context) http.Response {
 		return errResp
 	}
 
-	frozenUntil := time.Now().Add(24 * time.Hour) // default: 24h freeze
+	frozenUntil := time.Now().Add(24 * time.Hour)
 	if s := strings.TrimSpace(req.FrozenUntil); s != "" {
-		t, _ := time.Parse(time.RFC3339, s)
-		frozenUntil = t
+		parsed, err := time.Parse(time.RFC3339, s)
+		if err != nil {
+			return responses.FieldsFailed(ctx, map[string][]string{"frozen_until": {"must be an RFC3339 timestamp"}})
+		}
+		frozenUntil = parsed
 	}
 
 	if err := ctrl.wallets.SetFrozenUntil(ctx.Context(), wallet.ID, frozenUntil); err != nil {
@@ -206,15 +271,14 @@ func (ctrl *SettingsController) FreezeWallet(ctx http.Context) http.Response {
 	})
 }
 
-// ---- Request/Response types ----
-
+// UpdateWalletSettingsSwagger lists the accepted fields; omit a field to keep
+// it, send null to reset it.
 type UpdateWalletSettingsSwagger struct {
-	Label             string     `json:"label,omitempty" example:"Treasury"`
-	FeeRateMin        *int       `json:"fee_rate_min,omitempty" example:"1"`
-	FeeRateMax        *int       `json:"fee_rate_max,omitempty" example:"100"`
-	FeeMultiplier     *float64   `json:"fee_multiplier,omitempty" example:"1.25"`
-	RequiredApprovals *int       `json:"required_approvals,omitempty" example:"2"`
-	FrozenUntil       *time.Time `json:"frozen_until,omitempty"`
+	Label             *string  `json:"label,omitempty" example:"Treasury"`
+	FeeRateMin        *int     `json:"fee_rate_min,omitempty" example:"2"`
+	FeeRateMax        *int     `json:"fee_rate_max,omitempty" example:"50"`
+	FeeMultiplier     *float64 `json:"fee_multiplier,omitempty" example:"1.25"`
+	RequiredApprovals *int     `json:"required_approvals,omitempty" example:"1"`
 }
 
 type FreezeWalletSwagger struct {
@@ -222,11 +286,11 @@ type FreezeWalletSwagger struct {
 }
 
 type WalletSettingsResponse struct {
-	Label             string     `json:"label"`
-	FeeRateMin        *int       `json:"fee_rate_min"`
-	FeeRateMax        *int       `json:"fee_rate_max"`
-	FeeMultiplier     *float64   `json:"fee_multiplier"`
-	RequiredApprovals int        `json:"required_approvals"`
-	FrozenUntil       *time.Time `json:"frozen_until"`
-	Status            string     `json:"status"`
+	Label             string              `json:"label"`
+	FeeRateMin        *int                `json:"fee_rate_min"`
+	FeeRateMax        *int                `json:"fee_rate_max"`
+	FeeMultiplier     numeric.NullDecimal `json:"fee_multiplier"`
+	RequiredApprovals int                 `json:"required_approvals"`
+	FrozenUntil       *time.Time          `json:"frozen_until"`
+	Status            string              `json:"status"`
 }

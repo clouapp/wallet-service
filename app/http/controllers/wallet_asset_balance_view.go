@@ -7,6 +7,7 @@ import (
 	"github.com/goravel/framework/support/carbon"
 
 	"github.com/macrowallets/waas/app/models"
+	"github.com/macrowallets/waas/pkg/numeric"
 )
 
 // WalletAssetBalanceView is a wallet asset balance HTTP clients read. Field
@@ -14,24 +15,24 @@ import (
 // page stays nil; an empty page stays empty. A nil related wallet stays omitted.
 // A related wallet is the wallet body view, so share material stays off the wire.
 type WalletAssetBalanceView struct {
-	CreatedAt     *carbon.DateTime `json:"created_at"`
-	UpdatedAt     *carbon.DateTime `json:"updated_at"`
-	ID            uuid.UUID        `json:"id"`
-	WalletID      uuid.UUID        `json:"wallet_id"`
-	ChainID       string           `json:"chain_id"`
-	AssetType     string           `json:"asset_type"`
-	AssetSymbol   string           `json:"asset_symbol"`
-	AssetName     *string          `json:"asset_name,omitempty"`
-	AssetContract *string          `json:"asset_contract,omitempty"`
-	AssetKey      string           `json:"asset_key"`
-	Decimals      int              `json:"decimals"`
-	AmountRaw     string           `json:"amount_raw"`
-	AmountDisplay string           `json:"amount_display"`
-	PriceUSD      *float64         `json:"price_usd,omitempty"`
-	ValueUSD      *float64         `json:"value_usd,omitempty"`
-	SourceAddress *string          `json:"source_address,omitempty"`
-	LastSyncedAt  time.Time        `json:"last_synced_at"`
-	Wallet        *WalletBodyView  `json:"wallet,omitempty"`
+	CreatedAt     *carbon.DateTime    `json:"created_at"`
+	UpdatedAt     *carbon.DateTime    `json:"updated_at"`
+	ID            uuid.UUID           `json:"id"`
+	WalletID      uuid.UUID           `json:"wallet_id"`
+	ChainID       string              `json:"chain_id"`
+	AssetType     string              `json:"asset_type"`
+	AssetSymbol   string              `json:"asset_symbol"`
+	AssetName     *string             `json:"asset_name,omitempty"`
+	AssetContract *string             `json:"asset_contract,omitempty"`
+	AssetKey      string              `json:"asset_key"`
+	Decimals      int                 `json:"decimals"`
+	AmountRaw     string              `json:"amount_raw"`
+	AmountDisplay string              `json:"amount_display"`
+	PriceUSD      numeric.NullDecimal `json:"price_usd,omitzero"`
+	ValueUSD      numeric.NullDecimal `json:"value_usd,omitzero"`
+	SourceAddress *string             `json:"source_address,omitempty"`
+	LastSyncedAt  time.Time           `json:"last_synced_at"`
+	Wallet        *WalletBodyView     `json:"wallet,omitempty"`
 }
 
 func newWalletAssetBalanceView(row models.WalletAssetBalance) WalletAssetBalanceView {

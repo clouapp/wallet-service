@@ -2,7 +2,6 @@ package currencies
 
 import (
 	"errors"
-	"strconv"
 
 	"github.com/goravel/framework/contracts/http"
 
@@ -11,6 +10,7 @@ import (
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/services/currencies"
 	price "github.com/macrowallets/waas/app/services/price"
+	"github.com/macrowallets/waas/pkg/numeric"
 )
 
 // CurrenciesController serves the dashboard currency and convert routes.
@@ -75,22 +75,21 @@ func (ctrl *CurrenciesController) ConvertCurrency(ctx http.Context) http.Respons
 		return responses.Send(ctx, http.StatusBadRequest, http.Json{"error": "from, to, and amount are required"})
 	}
 
-	amount, err := strconv.ParseFloat(amountStr, 64)
-	if err != nil || amount <= 0 {
+	amount, err := numeric.Parse("amount", amountStr)
+	if err != nil || !amount.IsPositive() {
 		return responses.Send(ctx, http.StatusBadRequest, http.Json{"error": "amount must be a positive number"})
 	}
 
-	result, err := ctrl.prices.Convert(ctx.Request().Origin().Context(), from, to, amount)
+	result, err := ctrl.prices.Convert(ctx.Context(), from, to, amount)
 	if err != nil {
 		return responses.Send(ctx, http.StatusBadRequest, http.Json{"error": err.Error()})
 	}
-
-	rate := result / amount
+	rate := result.DivRound(amount, price.ConversionScale)
 	return responses.Send(ctx, http.StatusOK, http.Json{
 		"from":   from,
 		"to":     to,
-		"amount": amount,
-		"result": result,
-		"rate":   rate,
+		"amount": numeric.NewDecimal(amount),
+		"result": numeric.NewDecimal(result),
+		"rate":   numeric.NewDecimal(rate),
 	})
 }

@@ -17,6 +17,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/goravel/framework/contracts/foundation"
 	"github.com/redis/go-redis/v9"
+	"github.com/shopspring/decimal"
 
 	coinapiws "github.com/macrowallets/waas/app/adapters/price/coinapi"
 	queuesqs "github.com/macrowallets/waas/app/adapters/queue/sqs"
@@ -309,6 +310,7 @@ func buildVaultContainer(app foundation.Application) (*container.Container, erro
 					ERC20Tokens:           tokensByChain[ch.ID],
 					GasReadinessThreshold: resolveGasReadinessThreshold(&ch),
 					DustThresholdNative:   resolveDustThresholdNative(&ch),
+					StrictLogScan:         !lenientLogScanChains[ch.ID],
 				})
 			case models.AdapterTypeBitcoin:
 				network := "mainnet"
@@ -358,6 +360,7 @@ func buildVaultContainer(app foundation.Application) (*container.Container, erro
 	if err != nil {
 		return nil, fmt.Errorf("vault: account settings: %w", err)
 	}
+	c.PriceService = buildPriceService(c)
 	c.SweepService = sweep.NewService(
 		c.Registry, c.MPCService, sweepsecrets.New(c.SecretsManager), sweepredis.New(c.Redis), c.WebhookService,
 		c.WalletRepo, c.AddressRepo, c.TransactionRepo, accountSettings.EffectiveSweepLimits, c.ChainRepo,
@@ -365,6 +368,8 @@ func buildVaultContainer(app foundation.Application) (*container.Container, erro
 			return flags.Gate(ctx, accountID, features.FlagSweepEnabled, features.CodeSweepPaused)
 		},
 		sweepGasDefaults(),
+		c.PriceService,
+		sweepDustUSD,
 	)
 	c.WithdrawalService = withdraw.NewService(
 		c.Registry, c.WebhookService, c.MPCService, redislock.New(c.Redis),
@@ -373,6 +378,7 @@ func buildVaultContainer(app foundation.Application) (*container.Container, erro
 			return flags.Gate(ctx, accountID, features.FlagWithdrawalsEnabled, features.CodeWithdrawalsPaused)
 		},
 	)
+	c.WithdrawalService.UseUSDQuote(c.PriceService)
 
 	etherscanKey := facades.Config().GetString("vault.webhooks.etherscan_api_key")
 	blockHeightProviders := blockheight.NewProviders(etherscanKey, networkByChain)
@@ -438,6 +444,12 @@ func buildVaultContainer(app foundation.Application) (*container.Container, erro
 	c.WalletRefresher = walletRefresher
 	c.DepositService.SetBalanceRefresher(c.WalletRefresher)
 
+	slog.Info("vault container booted", "chains", c.Registry.ChainIDs())
+	return c, nil
+}
+
+// buildPriceService quotes prices with every provider that has an API key.
+func buildPriceService(c *container.Container) *price.Service {
 	var priceProviders []price.PriceProvider
 	if key := c.PriceConfig.CoinGeckoAPIKey; key != "" {
 		priceProviders = append(priceProviders, price.NewCoinGeckoProvider(key))
@@ -448,17 +460,21 @@ func buildVaultContainer(app foundation.Application) (*container.Container, erro
 	if key := c.PriceConfig.CoinAPIKey; key != "" {
 		priceProviders = append(priceProviders, price.NewCoinAPIProvider(key))
 	}
-	c.PriceService = price.NewService(priceProviders, c.CurrencyRepo, pricecache.New(c.Redis)).WithQuoteDialer(coinapiws.Dialer{})
-	c.WithdrawalService.UseUSDQuote(c.PriceService)
-
-	slog.Info("vault container booted", "chains", c.Registry.ChainIDs())
-	return c, nil
+	return price.NewService(priceProviders, c.CurrencyRepo, pricecache.New(c.Redis)).WithQuoteDialer(coinapiws.Dialer{})
 }
 
 // sweepGasDefaults copies the gas-readiness fallbacks SweepDefaults already
 // reads. The sweep service receives the values and does not import config.
 func sweepGasDefaults() map[string]sweep.GasReadinessDefault {
 	return gasReadinessDefaultsFrom(config.SweepDefaults())
+}
+
+func sweepDustUSD(chainID string) decimal.Decimal {
+	thresholds, ok := config.SweepDefaults()[chainID]
+	if !ok || thresholds.DustUSD.IsNegative() {
+		return decimal.Zero
+	}
+	return thresholds.DustUSD
 }
 
 func gasReadinessDefaultsFrom(configured map[string]config.SweepThresholds) map[string]sweep.GasReadinessDefault {
@@ -507,6 +523,16 @@ func defaultPendingDepositDir() string {
 		return filepath.Join(home, ".local", "state", "macro-wallets", "deposit-pending")
 	}
 	return filepath.Join(os.TempDir(), "macro-wallets", "deposit-pending")
+}
+
+// lenientLogScanChains keep their deployed deposit scan: a block whose eth_getLogs
+// fails is scanned for native transfers only. Every other EVM record fails the block
+// so the scanner retries it (chain.EVMConfig.StrictLogScan).
+var lenientLogScanChains = map[string]bool{
+	models.ChainETH:      true,
+	models.ChainTETH:     true,
+	models.ChainPolygon:  true,
+	models.ChainTPolygon: true,
 }
 
 // resolveGasReadinessThreshold returns the gas-readiness threshold for a chain,

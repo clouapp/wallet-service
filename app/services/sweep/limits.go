@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"strconv"
 	"strings"
 	"time"
 
@@ -12,6 +11,7 @@ import (
 
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/services/settings"
+	"github.com/macrowallets/waas/pkg/numeric"
 )
 
 // LoadLimits returns the effective sweep limits for an account. It reads the
@@ -45,7 +45,7 @@ func limitsFromSettings(accountID uuid.UUID, values settings.SweepLimitValues) *
 	if capUSD == "" {
 		return limits
 	}
-	parsed, err := strconv.ParseFloat(capUSD, 64)
+	parsed, err := numeric.ParseNonNegative("daily_withdraw_cap_usd", capUSD)
 	if err != nil {
 		slog.Warn("parse account sweep limit daily_withdraw_cap_usd",
 			"account_id", accountID, "error", err)

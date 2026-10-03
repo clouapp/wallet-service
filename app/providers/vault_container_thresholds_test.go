@@ -3,13 +3,15 @@ package providers
 import (
 	"testing"
 
+	"github.com/shopspring/decimal"
+
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/config"
 )
 
 func TestGasReadinessDefaultsFrom_CopiesRawThresholds(t *testing.T) {
 	got := gasReadinessDefaultsFrom(map[string]config.SweepThresholds{
-		"eth": {GasReadinessRaw: "5000000000000000", DustNativeRaw: "1", DustUSD: 1},
+		"eth": {GasReadinessRaw: "5000000000000000", DustNativeRaw: "1", DustUSD: decimal.NewFromInt(1)},
 		"btc": {GasReadinessRaw: "", DustNativeRaw: "10000"},
 	})
 	if len(got) != 2 {

@@ -3,7 +3,8 @@ package models
 import "fmt"
 
 // Chain network profiles: which networks the primary chain records (eth, btc,
-// polygon, sol) point at. The t-prefixed records are always test networks.
+// polygon, sol, base, arbitrum, bsc) point at. The t-prefixed records are always
+// test networks.
 const (
 	ChainNetworkProfileMainnet = "mainnet"
 	ChainNetworkProfileTestnet = "testnet"
@@ -39,27 +40,56 @@ func (s ChainNetworkSpec) Accepts(network string) bool {
 
 var primaryChainNetworks = map[string]map[string]ChainNetworkSpec{
 	ChainNetworkProfileMainnet: {
-		ChainETH:     {Network: NetworkEthereumMainnet, NetworkID: int64Ptr(EVMNetworkIDEthereumMainnet)},
-		ChainPolygon: {Network: NetworkPolygonMainnet, NetworkID: int64Ptr(EVMNetworkIDPolygonMainnet)},
-		ChainBTC:     {Network: NetworkBitcoinMainnet},
-		ChainSOL:     {Network: NetworkSolanaMainnet},
+		ChainETH:      {Network: NetworkEthereumMainnet, NetworkID: int64Ptr(EVMNetworkIDEthereumMainnet)},
+		ChainPolygon:  {Network: NetworkPolygonMainnet, NetworkID: int64Ptr(EVMNetworkIDPolygonMainnet)},
+		ChainBTC:      {Network: NetworkBitcoinMainnet},
+		ChainSOL:      {Network: NetworkSolanaMainnet},
+		ChainBase:     {Network: NetworkBaseMainnet, NetworkID: int64Ptr(EVMNetworkIDBaseMainnet)},
+		ChainArbitrum: {Network: NetworkArbitrumMainnet, NetworkID: int64Ptr(EVMNetworkIDArbitrumMainnet)},
+		ChainBSC:      {Network: NetworkBSCMainnet, NetworkID: int64Ptr(EVMNetworkIDBSCMainnet)},
 	},
 	ChainNetworkProfileTestnet: {
-		ChainETH:     {Network: NetworkEthereumSepolia, NetworkID: int64Ptr(EVMNetworkIDEthereumSepolia), IsTestnet: true},
-		ChainPolygon: {Network: NetworkPolygonAmoy, NetworkID: int64Ptr(EVMNetworkIDPolygonAmoy), IsTestnet: true},
-		ChainBTC:     {Network: NetworkBitcoinTestnet, CompatibleNetworks: []string{NetworkBitcoinTestnet4}, IsTestnet: true},
-		ChainSOL:     {Network: NetworkSolanaDevnet, IsTestnet: true},
+		ChainETH:      {Network: NetworkEthereumSepolia, NetworkID: int64Ptr(EVMNetworkIDEthereumSepolia), IsTestnet: true},
+		ChainPolygon:  {Network: NetworkPolygonAmoy, NetworkID: int64Ptr(EVMNetworkIDPolygonAmoy), IsTestnet: true},
+		ChainBTC:      {Network: NetworkBitcoinTestnet, CompatibleNetworks: []string{NetworkBitcoinTestnet4}, IsTestnet: true},
+		ChainSOL:      {Network: NetworkSolanaDevnet, IsTestnet: true},
+		ChainBase:     {Network: NetworkBaseSepolia, NetworkID: int64Ptr(EVMNetworkIDBaseSepolia), IsTestnet: true},
+		ChainArbitrum: {Network: NetworkArbitrumSepolia, NetworkID: int64Ptr(EVMNetworkIDArbitrumSepolia), IsTestnet: true},
+		ChainBSC:      {Network: NetworkBSCTestnet, NetworkID: int64Ptr(EVMNetworkIDBSCTestnet), IsTestnet: true},
 	},
 }
 
 // PrimaryChainIDs lists the records a profile decides, in display order.
-var PrimaryChainIDs = []string{ChainETH, ChainBTC, ChainPolygon, ChainSOL}
+var PrimaryChainIDs = []string{ChainETH, ChainBTC, ChainPolygon, ChainSOL, ChainBase, ChainArbitrum, ChainBSC}
 
 var testChainIDs = map[string]struct{}{
-	ChainTETH:     {},
-	ChainTBTC:     {},
-	ChainTPolygon: {},
-	ChainTSOL:     {},
+	ChainTETH:      {},
+	ChainTBTC:      {},
+	ChainTPolygon:  {},
+	ChainTSOL:      {},
+	ChainTBase:     {},
+	ChainTArbitrum: {},
+	ChainTBSC:      {},
+}
+
+var evmChainIDs = map[string]struct{}{
+	ChainETH:       {},
+	ChainTETH:      {},
+	ChainPolygon:   {},
+	ChainTPolygon:  {},
+	ChainBase:      {},
+	ChainTBase:     {},
+	ChainArbitrum:  {},
+	ChainTArbitrum: {},
+	ChainBSC:       {},
+	ChainTBSC:      {},
+}
+
+// IsEVMChainID reports whether chainID is a known EVM chain record (0x addresses
+// derived from the secp256k1 key, the same on every EVM network).
+func IsEVMChainID(chainID string) bool {
+	_, ok := evmChainIDs[chainID]
+	return ok
 }
 
 // IsTestChainID reports whether chainID is a t-prefixed record, on a test network

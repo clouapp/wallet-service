@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/shopspring/decimal"
 
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/services/settings"
@@ -69,15 +70,14 @@ func TestLoadLimits_AppliesStoredSweepLimits(t *testing.T) {
 	if limits.MaxAddressesPerRequest[models.AdapterTypeBitcoin] != 100 {
 		t.Fatalf("expected bitcoin=100, got %d", limits.MaxAddressesPerRequest[models.AdapterTypeBitcoin])
 	}
-	if limits.DailyWithdrawCapUSD == nil || *limits.DailyWithdrawCapUSD != 50000.50 {
+	if limits.DailyWithdrawCapUSD == nil || !limits.DailyWithdrawCapUSD.Equal(decimal.RequireFromString("50000.50")) {
 		t.Fatalf("expected DailyWithdrawCapUSD=50000.50, got %v", limits.DailyWithdrawCapUSD)
 	}
 }
 
 func TestLoadLimits_ReadErrorReturnsDefaults(t *testing.T) {
 	svc := &service{sweepLimits: func(context.Context, uuid.UUID) (settings.SweepLimitValues, error) {
-		return settings.SweepLimitValues{}, errors.New("settings unavailable")
-	}}
+		return settings.SweepLimitValues{}, errors.New("settings unavailable")	}}
 
 	limits, err := svc.LoadLimits(context.Background(), uuid.New())
 	if err != nil {

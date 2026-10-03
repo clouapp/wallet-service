@@ -6,8 +6,10 @@ import (
 	"testing"
 
 	"github.com/goravel/framework/support/carbon"
+	"github.com/shopspring/decimal"
 
 	"github.com/macrowallets/waas/app/models"
+	"github.com/macrowallets/waas/pkg/numeric"
 )
 
 func TestChainViewKeepsTheModelWire(t *testing.T) {
@@ -22,12 +24,12 @@ func TestChainViewKeepsTheModelWire(t *testing.T) {
 	mainnet := "eth"
 	threshold := "gas-secret-value"
 	dust := "dust-secret-value"
-	usd := 12.34
+	usd := numeric.NewNullDecimal(decimal.RequireFromString("12.34"))
 	full := models.Chain{
 		ID: "eth", Name: "Ethereum", AdapterType: models.AdapterTypeEVM, NativeSymbol: "eth",
 		NativeDecimals: 18, NetworkID: &network, RpcURL: "rpc-secret-value", IsTestnet: false,
 		MainnetChainID: &mainnet, RequiredConfirmations: 12, IconURL: &icon, DisplayOrder: 1,
-		Status: "active", GasReadinessThresholdRaw: &threshold, DustThresholdNativeRaw: &dust, DustThresholdUSD: &usd,
+		Status: "active", GasReadinessThresholdRaw: &threshold, DustThresholdNativeRaw: &dust, DustThresholdUSD: usd,
 	}
 	full.CreatedAt = created
 	full.UpdatedAt = updated
@@ -62,7 +64,7 @@ func TestChainViewKeepsTheModelWire(t *testing.T) {
 				t.Fatal("a chain secret is on the wire")
 			}
 		}
-		if tc.chain.DustThresholdUSD != nil && strings.Contains(string(raw), "12.34") {
+		if tc.chain.DustThresholdUSD.Valid && strings.Contains(string(raw), "12.34") {
 			t.Fatal("dust threshold USD is on the wire")
 		}
 	}

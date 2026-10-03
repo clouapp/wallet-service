@@ -13,6 +13,7 @@ import (
 	"github.com/macrowallets/waas/app/dtos"
 	"github.com/macrowallets/waas/app/jobs"
 	"github.com/macrowallets/waas/app/listeners"
+	"github.com/macrowallets/waas/app/repositories"
 	chainpkg "github.com/macrowallets/waas/app/services/chain"
 	"github.com/macrowallets/waas/app/services/deposit"
 	"github.com/macrowallets/waas/app/services/price"
@@ -54,8 +55,15 @@ func Boot() contractsfoundation.Application {
 				commands.NewPriceCheckUpdate(prices),
 				&commands.ChainsSetRPC{},
 				commands.NewChainsAlignNetwork(deposits),
+				commands.NewChainsAddMissing(seedMissingAddedChains),
 				&commands.WithdrawPreflight{},
 				commands.NewPruneActivity(),
+				commands.NewEVMCall(container.MustMake[*repositories.WalletRepository](), evmCallSigner()),
+				commands.NewWalletsExportKeys(
+					container.MustMake[*repositories.WalletRepository](),
+					container.MustMake[*repositories.AddressRepository](),
+					container.MustMake[*repositories.ChainRepository](),
+				),
 			}
 		}).
 		WithEvents(func() map[contractsevent.Event][]contractsevent.Listener {

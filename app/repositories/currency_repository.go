@@ -3,19 +3,22 @@ package repositories
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/goravel/framework/contracts/database/orm"
+	"github.com/shopspring/decimal"
 
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/repositories/internal/db"
+	"github.com/macrowallets/waas/pkg/numeric"
 )
 
 // PriceUpdate is one currency's new price and the price it replaces.
 type PriceUpdate struct {
-	CurrentPrice float64
-	LastPrice    float64
+	CurrentPrice decimal.Decimal
+	LastPrice    decimal.Decimal
 }
 
 // CurrencyRepository persists fiat and crypto price rows.
@@ -92,11 +95,35 @@ func (r *CurrencyRepository) FindAllActive(ctx context.Context) ([]models.Curren
 	return currencies, nil
 }
 
-// SetPrice writes current_price, last_price, and price_updated_at for one code.
-func (r *CurrencyRepository) SetPrice(ctx context.Context, code string, currentPrice, lastPrice float64) error {
-	_, err := r.Query(ctx).Model(&models.Currency{}).Where("code = ?", code).Update(map[string]any{
-		"current_price":    currentPrice,
-		"last_price":       lastPrice,
+// SetPrice stores a positive current price and the previous one, both fitted to
+// the price column. A negative last price is refused. UpdatePrice is the same write.
+func (r *CurrencyRepository) SetPrice(ctx context.Context, code string, currentPrice, lastPrice decimal.Decimal) error {
+	return r.UpdatePrice(ctx, code, currentPrice, lastPrice)
+}
+
+// UpdatePrice stores a positive current price and the previous one, both fitted to
+// the price column.
+func (r *CurrencyRepository) UpdatePrice(ctx context.Context, code string, currentPrice, lastPrice decimal.Decimal) error {
+	if strings.TrimSpace(code) == "" {
+		return fmt.Errorf("currency code is required to update a price")
+	}
+	current, err := models.CurrencyPriceColumn.Fit(currentPrice)
+	if err != nil {
+		return fmt.Errorf("currency %s current price: %w", code, err)
+	}
+	if !current.IsPositive() {
+		return fmt.Errorf("currency %s current price %s: %w", code, current.String(), numeric.ErrNotPositive)
+	}
+	last, err := models.CurrencyPriceColumn.Fit(lastPrice)
+	if err != nil {
+		return fmt.Errorf("currency %s last price: %w", code, err)
+	}
+	if last.IsNegative() {
+		return fmt.Errorf("currency %s last price %s: %w", code, last.String(), numeric.ErrNegative)
+	}
+	_, err = r.Query(ctx).Model(&models.Currency{}).Where("code = ?", code).Update(map[string]any{
+		"current_price":    current,
+		"last_price":       last,
 		"price_updated_at": time.Now(),
 	})
 	if err != nil {

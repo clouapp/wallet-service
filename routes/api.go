@@ -5,6 +5,7 @@ import (
 	"github.com/goravel/framework/facades"
 
 	"github.com/macrowallets/waas/app/container"
+	"github.com/macrowallets/waas/app/http/controllers"
 	extaddresses "github.com/macrowallets/waas/app/http/controllers/external/addresses"
 	extchains "github.com/macrowallets/waas/app/http/controllers/external/chains"
 	extsweep "github.com/macrowallets/waas/app/http/controllers/external/sweep"
@@ -19,6 +20,7 @@ import (
 	chainsvc "github.com/macrowallets/waas/app/services/chains"
 	"github.com/macrowallets/waas/app/services/deposit"
 	featuressvc "github.com/macrowallets/waas/app/services/features"
+	"github.com/macrowallets/waas/app/services/feeestimate"
 	"github.com/macrowallets/waas/app/services/sweep"
 	usersvc "github.com/macrowallets/waas/app/services/users"
 	"github.com/macrowallets/waas/app/services/walletrecords"
@@ -43,6 +45,7 @@ func RegisterExternalAPI() {
 	addressCtrl := newExternalAddressesController()
 	sweepCtrl := newExternalSweepController()
 	withdrawalCtrl := newExternalWithdrawalsController()
+	feeEstimateCtrl := newFeeEstimateController()
 
 	facades.Route().Prefix("/api/v1").Middleware(middleware.APITokenAuth(
 		container.MustMake[*accountsvc.Service](),
@@ -71,6 +74,7 @@ func RegisterExternalAPI() {
 			r.Get("/gas-status", sweepCtrl.GetGasStatus)
 			r.Post("/gas-check", sweepCtrl.ForceGasCheck)
 			r.Post("/withdraw/preview", sweepCtrl.PreviewWithdraw)
+			r.Get("/fee-estimate", feeEstimateCtrl.GetWalletFeeEstimate)
 			r.Middleware(middleware.APIScope(middleware.PermWithdrawalsCreate)).Post("/withdrawals", withdrawalCtrl.CreateWalletWithdrawal)
 			r.Get("/withdrawals/{idempotencyKey}", withdrawalCtrl.GetWalletWithdrawalByIdempotencyKey)
 		})
@@ -85,6 +89,10 @@ func RegisterExternalAPI() {
 		router.Middleware(middleware.APIScope(middleware.PermWebhooksRead)).Get("/webhooks", webhookCtrl.ListWebhooks)
 		router.Middleware(middleware.APIScope(middleware.PermWebhooksWrite)).Patch("/webhooks/{webhookId}", webhookCtrl.UpdateWebhook)
 	})
+}
+
+func newFeeEstimateController() *controllers.FeeEstimateController {
+	return controllers.NewFeeEstimateController(container.MustMake[*feeestimate.Service]())
 }
 
 func newExternalTransactionsController() *exttransactions.TransactionsController {

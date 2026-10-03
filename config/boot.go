@@ -11,4 +11,5 @@ func Boot() {
 	registerQueue()
 	registerHTTP()
 	registerVault()
+	registerFeeEstimate()
 }

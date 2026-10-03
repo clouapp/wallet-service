@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/shopspring/decimal"
 )
 
 func TestStoreSpendingLimitBlankAndNonNegative(t *testing.T) {
@@ -60,7 +61,7 @@ func TestStoreSpendingLimitRejectsANegativeAmount(t *testing.T) {
 
 func TestBlankSpendingLimitDoesNotTouchRedisOrTheQuote(t *testing.T) {
 	locker := &spendLocker{}
-	quote := &fixedQuote{usd: 1, fail: errors.New("quote must not run")}
+	quote := &fixedQuote{usd: decimal.NewFromInt(1), fail: errors.New("quote must not run")}
 	svc := &Service{locker: locker, usdQuote: quote}
 	for _, stored := range []string{"", "{}", "null", `{"daily_usd":""}`, `{"daily_usd":null}`} {
 		err := svc.enforceTokenSpendingLimit(context.Background(), WithdrawRequest{
@@ -85,7 +86,9 @@ func TestDailyUSDCapIsPerTokenAndRefundsARejectedSpend(t *testing.T) {
 	tokenID := uuid.New()
 	otherID := uuid.New()
 	locker := &spendLocker{}
-	quote := &scriptedQuote{usd: []float64{60, 50, 30, 10}}
+	quote := &scriptedQuote{usd: []decimal.Decimal{
+		decimal.NewFromInt(60), decimal.NewFromInt(50), decimal.NewFromInt(30), decimal.NewFromInt(10),
+	}}
 	svc := &Service{locker: locker, usdQuote: quote}
 	req := WithdrawRequest{
 		AccessTokenID: tokenID,
@@ -122,7 +125,7 @@ func TestDailyUSDCapIsPerTokenAndRefundsARejectedSpend(t *testing.T) {
 	if locker.totals[otherKey] != 1000 {
 		t.Fatalf("other token counter = %d cents, want 1000", locker.totals[otherKey])
 	}
-	if quote.assets[0] != "USDC" || quote.amounts[0] != 1 {
+	if quote.assets[0] != "USDC" || !quote.amounts[0].Equal(decimal.NewFromInt(1)) {
 		t.Fatalf("quote saw asset %s amount %v", quote.assets[0], quote.amounts[0])
 	}
 }
@@ -144,7 +147,7 @@ func TestSetCapWithoutAPriceStopsTheWithdrawal(t *testing.T) {
 }
 
 func TestStoredNegativeCapIsNotTreatedAsUnlimited(t *testing.T) {
-	err := (&Service{locker: &spendLocker{}, usdQuote: &fixedQuote{usd: 1}}).enforceTokenSpendingLimit(
+	err := (&Service{locker: &spendLocker{}, usdQuote: &fixedQuote{usd: decimal.NewFromInt(1)}}).enforceTokenSpendingLimit(
 		context.Background(),
 		WithdrawRequest{
 			AccessTokenID: uuid.New(),
@@ -160,7 +163,7 @@ func TestStoredNegativeCapIsNotTreatedAsUnlimited(t *testing.T) {
 
 func TestRequestOverTheDailyCapDoesNotNeedAWallet(t *testing.T) {
 	locker := &spendLocker{acquired: true}
-	svc := &Service{locker: locker, usdQuote: &fixedQuote{usd: 25}}
+	svc := &Service{locker: locker, usdQuote: &fixedQuote{usd: decimal.NewFromInt(25)}}
 	_, _, err := svc.Request(context.Background(), WithdrawRequest{
 		Passphrase:    "validpassphrase123",
 		WalletID:      uuid.New(),
@@ -237,31 +240,31 @@ func (s *spendLocker) DecrBy(_ context.Context, key string, delta int64) error {
 }
 
 type fixedQuote struct {
-	usd    float64
+	usd    decimal.Decimal
 	fail   error
 	calls  int
 	asset  string
-	amount float64
+	amount decimal.Decimal
 }
 
-func (f *fixedQuote) ConvertToUSD(_ context.Context, code string, amount float64) (float64, error) {
+func (f *fixedQuote) ConvertToUSD(_ context.Context, code string, amount decimal.Decimal) (decimal.Decimal, error) {
 	f.calls++
 	f.asset = code
 	f.amount = amount
 	if f.fail != nil {
-		return 0, f.fail
+		return decimal.Decimal{}, f.fail
 	}
 	return f.usd, nil
 }
 
 type scriptedQuote struct {
-	usd     []float64
+	usd     []decimal.Decimal
 	index   int
 	assets  []string
-	amounts []float64
+	amounts []decimal.Decimal
 }
 
-func (s *scriptedQuote) ConvertToUSD(_ context.Context, code string, amount float64) (float64, error) {
+func (s *scriptedQuote) ConvertToUSD(_ context.Context, code string, amount decimal.Decimal) (decimal.Decimal, error) {
 	s.assets = append(s.assets, code)
 	s.amounts = append(s.amounts, amount)
 	usd := s.usd[s.index]
@@ -271,6 +274,6 @@ func (s *scriptedQuote) ConvertToUSD(_ context.Context, code string, amount floa
 
 type failingQuote struct{}
 
-func (failingQuote) ConvertToUSD(context.Context, string, float64) (float64, error) {
-	return 0, errors.New("dial price provider secret-key: timeout")
+func (failingQuote) ConvertToUSD(context.Context, string, decimal.Decimal) (decimal.Decimal, error) {
+	return decimal.Decimal{}, errors.New("dial price provider secret-key: timeout")
 }

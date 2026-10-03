@@ -8,8 +8,10 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/goravel/framework/support/carbon"
+	"github.com/shopspring/decimal"
 
 	"github.com/macrowallets/waas/app/models"
+	"github.com/macrowallets/waas/pkg/numeric"
 )
 
 func TestWalletAssetBalanceViewKeepsTheModelWire(t *testing.T) {
@@ -23,13 +25,13 @@ func TestWalletAssetBalanceViewKeepsTheModelWire(t *testing.T) {
 	contract := "0xabc"
 	source := "0xsource"
 	empty := ""
-	price := 1.5
-	zero := 0.0
+	price := numeric.NewNullDecimal(decimal.RequireFromString("1.5"))
+	zero := numeric.NewNullDecimal(decimal.Zero)
 	synced := time.Date(2024, 5, 6, 7, 8, 9, 0, time.UTC)
 	full := models.WalletAssetBalance{
 		ID: id, WalletID: other, ChainID: "eth", AssetType: "token", AssetSymbol: "USDC",
 		AssetName: &name, AssetContract: &contract, AssetKey: "eth:usdc", Decimals: 6,
-		AmountRaw: "6000000", AmountDisplay: "6", PriceUSD: &price, ValueUSD: &price,
+		AmountRaw: "6000000", AmountDisplay: "6", PriceUSD: price, ValueUSD: price,
 		SourceAddress: &source, LastSyncedAt: synced,
 	}
 	full.CreatedAt = created
@@ -44,7 +46,7 @@ func TestWalletAssetBalanceViewKeepsTheModelWire(t *testing.T) {
 			want: `{"created_at":null,"updated_at":null,"id":"00000000-0000-0000-0000-000000000000","wallet_id":"00000000-0000-0000-0000-000000000000","chain_id":"","asset_type":"","asset_symbol":"","asset_key":"","decimals":0,"amount_raw":"","amount_display":"","last_synced_at":"0001-01-01T00:00:00Z"}`,
 		},
 		{
-			row:  models.WalletAssetBalance{AssetName: &empty, PriceUSD: &zero},
+			row:  models.WalletAssetBalance{AssetName: &empty, PriceUSD: zero},
 			want: `{"created_at":null,"updated_at":null,"id":"00000000-0000-0000-0000-000000000000","wallet_id":"00000000-0000-0000-0000-000000000000","chain_id":"","asset_type":"","asset_symbol":"","asset_name":"","asset_key":"","decimals":0,"amount_raw":"","amount_display":"","price_usd":0,"last_synced_at":"0001-01-01T00:00:00Z"}`,
 		},
 		{

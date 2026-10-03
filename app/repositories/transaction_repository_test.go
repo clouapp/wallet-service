@@ -38,7 +38,21 @@ func (s *TransactionRepositoryTestSuite) makeTx(walletID uuid.UUID, txType, stat
 		Chain: "eth", TxType: txType, TxHash: "0x" + uuid.NewString()[:16],
 		ToAddress: "0xto", Amount: "1000", Asset: "eth",
 		RequiredConfs: 12, Status: status,
-		Direction: models.TxDirectionInbound, Source: models.TxSourceChain, RawPayload: "{}",
+		Direction: testTxDirection(txType), Source: models.TxSourceChain, RawPayload: "{}",
+	}
+}
+
+// testTxDirection is the direction the writers of each transaction type record.
+func testTxDirection(txType string) string {
+	switch txType {
+	case models.TxTypeDeposit:
+		return models.TxDirectionInbound
+	case models.TxTypeWithdrawal:
+		return models.TxDirectionOutbound
+	case models.TxTypeSweep, models.TxTypeGasSeed:
+		return models.TxDirectionSelf
+	default:
+		return models.TxDirectionUnknown
 	}
 }
 
@@ -156,6 +170,56 @@ func (s *TransactionRepositoryTestSuite) TestCountByChainAndTxHash() {
 	count, err = s.repo.CountByChainAndTxHash(context.Background(), "eth", "0xuniquehash", "withdrawal")
 	s.NoError(err)
 	s.Equal(int64(0), count)
+}
+
+func (s *TransactionRepositoryTestSuite) TestCountInternalTransfers_OnlySweepsAndGasSeedsOfTheWallet() {
+	walletID := s.insertWallet()
+	otherWalletID := s.insertWallet()
+	record := func(wallet uuid.UUID, txType, hash string) {
+		tx := s.makeTx(wallet, txType, "confirming")
+		tx.TxHash = hash
+		s.Require().NoError(s.repo.Create(context.Background(), tx))
+	}
+	record(walletID, models.TxTypeSweep, "0xsweep")
+	record(walletID, models.TxTypeGasSeed, "0xgasseed")
+	record(walletID, models.TxTypeWithdrawal, "0xwithdrawal")
+	record(otherWalletID, models.TxTypeSweep, "0xothersweep")
+
+	cases := map[string]struct {
+		chain, hash string
+		want        int64
+	}{
+		"sweep of the wallet":         {"eth", "0xsweep", 1},
+		"gas seed of the wallet":      {"eth", "0xgasseed", 1},
+		"withdrawal is not internal":  {"eth", "0xwithdrawal", 0},
+		"sweep of another wallet":     {"eth", "0xothersweep", 0},
+		"same hash on another chain":  {"base", "0xsweep", 0},
+		"hash the wallet never wrote": {"eth", "0xunknown", 0},
+	}
+	for name, tc := range cases {
+		s.Run(name, func() {
+			count, err := s.repo.CountInternalTransfers(context.Background(), tc.chain, tc.hash, walletID)
+			s.NoError(err)
+			s.Equal(tc.want, count)
+		})
+	}
+}
+
+func (s *TransactionRepositoryTestSuite) TestCountInternalTransfers_RejectsMissingKeys() {
+	walletID := s.insertWallet()
+	for name, args := range map[string]struct {
+		chain, hash string
+		wallet      uuid.UUID
+	}{
+		"no chain":  {"", "0xsweep", walletID},
+		"no hash":   {"eth", "", walletID},
+		"no wallet": {"eth", "0xsweep", uuid.Nil},
+	} {
+		s.Run(name, func() {
+			_, err := s.repo.CountInternalTransfers(context.Background(), args.chain, args.hash, args.wallet)
+			s.Error(err)
+		})
+	}
 }
 
 func (s *TransactionRepositoryTestSuite) TestFindPendingByChain() {

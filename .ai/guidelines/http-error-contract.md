@@ -137,3 +137,7 @@ two bugfixes that landed in the commits before it.
 | `POST /v1/auth/register` | e-mail already registered | 500 | 422 `validation_failed`, `errors.email` |
 | `PATCH /v1/users/me`, `PATCH /v1/accounts/{id}` | body, request has no rules | 200, body ignored | 200, the field is applied |
 | any failure | string `error`, raw Goravel 422, or empty middleware body | those shapes | `{"error":{"code","message"}}`; validation also has `errors` |
+| `GET /health` | 2026-10-03, scanner already on the branch | `{"status","version"}` | also `deposit_scanner` |
+| `POST /v1/accounts/{id}/users` | invalid role, 2026-10-03, account roles | enum `owner admin viewer` | enum `owner admin auditor user` |
+| `GET /v1/chains`, `GET /api/v1/chains` | 2026-10-03, base/arbitrum/bsc from #1 | eth, btc, polygon, sol and their testnets | also `base`, `tbase`, `arbitrum`, `tarbitrum`, `bsc`, `tbsc` |
+| `GET /v1/wallets/{id}/settings` | 2026-10-03, label already returned by the settings controller | no `label` | `label` plus the same fee fields (`fee_multiplier` stays JSON null) |

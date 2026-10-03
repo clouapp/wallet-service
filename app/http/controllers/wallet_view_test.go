@@ -8,8 +8,10 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/goravel/framework/support/carbon"
+	"github.com/shopspring/decimal"
 
 	"github.com/macrowallets/waas/app/models"
+	"github.com/macrowallets/waas/pkg/numeric"
 	"github.com/macrowallets/waas/pkg/types"
 )
 
@@ -36,7 +38,14 @@ func mainnetPolygonRecord() *models.Chain {
 	return &models.Chain{ID: models.ChainPolygon, AdapterType: models.AdapterTypeEVM, NetworkID: &mainnet}
 }
 
-func floatPointer(value float64) *float64 { return &value }
+func usdValue(t *testing.T, text string) numeric.NullDecimal {
+	t.Helper()
+	value, err := decimal.NewFromString(text)
+	if err != nil {
+		t.Fatalf("usd value %q: %v", text, err)
+	}
+	return numeric.NewNullDecimal(value)
+}
 
 func TestWalletViewNamesTheNetworkOfAPolygonRecordConfiguredForAmoy(t *testing.T) {
 	t.Parallel()
@@ -63,14 +72,14 @@ func TestWalletViewNamesTheNetworkOfAPolygonRecordConfiguredForAmoy(t *testing.T
 func TestWalletViewDropsTheUSDValueOfATestnetWalletWithoutTouchingTheWallet(t *testing.T) {
 	t.Parallel()
 
-	wallet := &models.Wallet{ID: uuid.New(), Chain: models.ChainPolygon, BalanceUSD: floatPointer(4.97)}
+	wallet := &models.Wallet{ID: uuid.New(), Chain: models.ChainPolygon, BalanceUSD: usdValue(t, "4.97")}
 
 	body := marshalToMap(t, newWalletView(wallet, amoyPolygonRecord().ResolveNetwork("")))
 
 	if _, present := body["balance_usd"]; present {
 		t.Fatalf("balance_usd = %v, want it omitted on a testnet", body["balance_usd"])
 	}
-	if wallet.BalanceUSD == nil {
+	if !wallet.BalanceUSD.Valid {
 		t.Fatal("the stored wallet lost its balance_usd")
 	}
 }
@@ -78,12 +87,41 @@ func TestWalletViewDropsTheUSDValueOfATestnetWalletWithoutTouchingTheWallet(t *t
 func TestWalletViewKeepsTheUSDValueOnMainnet(t *testing.T) {
 	t.Parallel()
 
-	wallet := &models.Wallet{ID: uuid.New(), Chain: models.ChainPolygon, BalanceUSD: floatPointer(4.97)}
+	wallet := &models.Wallet{ID: uuid.New(), Chain: models.ChainPolygon, BalanceUSD: usdValue(t, "4.97")}
 
 	body := marshalToMap(t, newWalletView(wallet, mainnetPolygonRecord().ResolveNetwork("")))
 
 	if body["balance_usd"] != 4.97 || body["testnet"] != false || body["network"] != models.NetworkPolygonMainnet {
 		t.Fatalf("mainnet view = %v", body)
+	}
+}
+
+func TestWalletViewWritesExactUSDDigitsAsJSONNumbers(t *testing.T) {
+	t.Parallel()
+
+	const exactUSD = "1234567890123456.0123456789"
+	wallet := &models.Wallet{ID: uuid.New(), Chain: models.ChainPolygon, BalanceUSD: usdValue(t, exactUSD), FeeMultiplier: usdValue(t, "1.2500")}
+
+	raw, err := json.Marshal(newWalletView(wallet, mainnetPolygonRecord().ResolveNetwork("")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{`"balance_usd":` + exactUSD + `,`, `"fee_multiplier":1.25,`} {
+		if !strings.Contains(string(raw), want) {
+			t.Fatalf("wallet JSON %s does not contain %s", raw, want)
+		}
+	}
+}
+
+func TestWalletViewOmitsUnsetDecimals(t *testing.T) {
+	t.Parallel()
+
+	body := marshalToMap(t, newWalletView(&models.Wallet{ID: uuid.New(), Chain: models.ChainPolygon}, mainnetPolygonRecord().ResolveNetwork("")))
+
+	for _, field := range []string{"balance_usd", "fee_multiplier"} {
+		if _, present := body[field]; present {
+			t.Fatalf("%s = %v, want it omitted when NULL", field, body[field])
+		}
 	}
 }
 
@@ -122,7 +160,7 @@ func TestWalletListItemCarriesTokenBalancesUnpricedOnATestnet(t *testing.T) {
 	usdcContract := "0x41E94Eb019C0762f9Bfcf9Fb1E58725BfB0e7582"
 	assets := []models.WalletAssetBalance{
 		{WalletID: walletID, ChainID: models.ChainPolygon, AssetType: "native", AssetSymbol: types.NativeSymbolPOL, Decimals: 18, AmountRaw: "0", AmountDisplay: "0"},
-		{WalletID: walletID, ChainID: models.ChainPolygon, AssetType: "token", AssetSymbol: "USDC", AssetContract: &usdcContract, Decimals: 6, AmountRaw: "6000000", AmountDisplay: "6", PriceUSD: floatPointer(1), ValueUSD: floatPointer(6)},
+		{WalletID: walletID, ChainID: models.ChainPolygon, AssetType: "token", AssetSymbol: "USDC", AssetContract: &usdcContract, Decimals: 6, AmountRaw: "6000000", AmountDisplay: "6", PriceUSD: usdValue(t, "1"), ValueUSD: usdValue(t, "6")},
 	}
 
 	item := newWalletListItem(models.Wallet{ID: walletID, Chain: models.ChainPolygon, Label: "polygon_deposit"}, amoyPolygonRecord().ResolveNetwork(""), assets)
@@ -139,7 +177,7 @@ func TestWalletListItemCarriesTokenBalancesUnpricedOnATestnet(t *testing.T) {
 	if _, priced := usdc["value_usd"]; priced {
 		t.Fatalf("value_usd = %v, want it omitted on a testnet", usdc["value_usd"])
 	}
-	if assets[1].ValueUSD == nil {
+	if !assets[1].ValueUSD.Valid {
 		t.Fatal("the stored balance row lost its value_usd")
 	}
 	if body["testnet"] != true || body["label"] != "polygon_deposit" {
@@ -157,13 +195,13 @@ func TestWalletBodyAndDetailViewsKeepTheModelWire(t *testing.T) {
 	createdBy := other
 	feeMin := 0
 	feeMax := 10
-	mult := 1.5
+	mult := usdValue(t, "1.5")
 	frozen := time.Date(2024, 5, 6, 7, 8, 9, 0, time.UTC)
 	asset := "ETH"
 	rawBal := "1"
 	display := "1"
-	usd := 4.97
-	zeroUSD := 0.0
+	usd := usdValue(t, "4.97")
+	zeroUSD := numeric.NewNullDecimal(decimal.Zero)
 	activation := "123456"
 	const share = "share-secret"
 	const cipher = "cipher-secret"
@@ -184,9 +222,9 @@ func TestWalletBodyAndDetailViewsKeepTheModelWire(t *testing.T) {
 		MPCCustomerShare: share, MPCShareIV: iv, MPCShareSalt: salt,
 		MPCSecretARN: "arn-secret", MPCPublicKey: "pub-secret", MPCCurve: "secp256k1", MPCChainCode: "code-secret",
 		AddressIndex: 3, DepositAddressID: &other, AccountID: &other, Status: "active",
-		FeeRateMin: &feeMin, FeeRateMax: &feeMax, FeeMultiplier: &mult, RequiredApprovals: 1,
+		FeeRateMin: &feeMin, FeeRateMax: &feeMax, FeeMultiplier: mult, RequiredApprovals: 1,
 		FrozenUntil: &frozen, ActivationCode: &activation,
-		BalanceAsset: &asset, BalanceRaw: &rawBal, BalanceDisplay: &display, BalanceUSD: &usd,
+		BalanceAsset: &asset, BalanceRaw: &rawBal, BalanceDisplay: &display, BalanceUSD: usd,
 		BalanceLastSyncedAt: &frozen, ReadModelStatus: "idle", GasStatus: "unseeded",
 		GasLastCheckedAt: &frozen, SweepPolicyVersion: 1, DepositAddress: &addr,
 	}
@@ -218,7 +256,7 @@ func TestWalletBodyAndDetailViewsKeepTheModelWire(t *testing.T) {
 		},
 		{
 			name:  "empty label keeps a zero usd pointer",
-			value: newWalletBodyView(models.Wallet{Label: "", BalanceUSD: &zeroUSD, Status: "active"}),
+			value: newWalletBodyView(models.Wallet{Label: "", BalanceUSD: zeroUSD, Status: "active"}),
 			want:  `{"created_at":null,"updated_at":null,"id":"00000000-0000-0000-0000-000000000000","chain":"","address_index":0,"status":"active","required_approvals":0,"balance_usd":0,"read_model_status":"","gas_status":"","sweep_policy_version":0}`,
 		},
 	}

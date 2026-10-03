@@ -8,6 +8,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/macrowallets/waas/app/models"
+	"github.com/macrowallets/waas/pkg/numeric"
 )
 
 func requireStore(ctx context.Context, store any, op, what string) error {
@@ -27,7 +28,8 @@ type WalletStore interface {
 	FindByIDAndAccount(ctx context.Context, id, accountID uuid.UUID) (*models.Wallet, error)
 	SetFeeRateMin(ctx context.Context, id uuid.UUID, value int) error
 	SetFeeRateMax(ctx context.Context, id uuid.UUID, value int) error
-	SetFeeMultiplier(ctx context.Context, id uuid.UUID, value float64) error
+	SetFeeMultiplier(ctx context.Context, id uuid.UUID, value numeric.NullDecimal) error
+	UpdateSettings(ctx context.Context, id uuid.UUID, columns map[string]any) error
 	SetRequiredApprovals(ctx context.Context, id uuid.UUID, value int) error
 	SetFrozenUntil(ctx context.Context, id uuid.UUID, until time.Time) error
 	SetStatus(ctx context.Context, id uuid.UUID, status string) error
@@ -75,11 +77,21 @@ func (s *Wallets) SetFeeRateMax(ctx context.Context, id uuid.UUID, value int) er
 	return s.store.SetFeeRateMax(ctx, id, value)
 }
 
-func (s *Wallets) SetFeeMultiplier(ctx context.Context, id uuid.UUID, value float64) error {
+func (s *Wallets) SetFeeMultiplier(ctx context.Context, id uuid.UUID, value numeric.NullDecimal) error {
 	if err := requireStore(ctx, s.storeOrNil(), "set fee multiplier", "wallets"); err != nil {
 		return err
 	}
 	return s.store.SetFeeMultiplier(ctx, id, value)
+}
+
+func (s *Wallets) UpdateSettings(ctx context.Context, id uuid.UUID, columns map[string]any) error {
+	if err := requireStore(ctx, s.storeOrNil(), "update wallet settings", "wallets"); err != nil {
+		return err
+	}
+	if len(columns) == 0 {
+		return fmt.Errorf("update wallet settings: no columns to write")
+	}
+	return s.store.UpdateSettings(ctx, id, columns)
 }
 
 func (s *Wallets) SetRequiredApprovals(ctx context.Context, id uuid.UUID, value int) error {

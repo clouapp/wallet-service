@@ -26,12 +26,12 @@ func New(client *redis.Client) price.PriceCache {
 	return &Cache{client: client}
 }
 
-// Float64 reads key with GET and parses it as a float. The Redis error is returned unchanged.
-func (c *Cache) Float64(ctx context.Context, key string) (float64, error) {
+// Get reads key with GET and returns the stored decimal text. The Redis error is returned unchanged.
+func (c *Cache) Get(ctx context.Context, key string) (string, error) {
 	if c == nil || c.client == nil {
-		return 0, fmt.Errorf("redis price cache: client is nil")
+		return "", fmt.Errorf("redis price cache: client is nil")
 	}
-	return c.client.Get(ctx, key).Float64()
+	return c.client.Get(ctx, key).Result()
 }
 
 // Set writes key with SET and the given TTL. The Redis error is returned unchanged.

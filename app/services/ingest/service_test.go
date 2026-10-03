@@ -197,6 +197,41 @@ func (s stubMembership) Result() (bool, error) {
 	return s.member, s.err
 }
 
+// A provider webhook for the sweep that moved funds into the base address is not a
+// deposit of the base owner; a transfer from anywhere else to that address still is.
+func TestProcessTransfers_SkipsSweepOfTheSameWallet(t *testing.T) {
+	const (
+		baseAddress = "0xBase"
+		sweepHash   = "0xsweep"
+		inboundHash = "0xinbound"
+		baseOwner   = "system"
+	)
+	reg := chain.NewRegistry()
+	mockChain := mocks.NewMockChain(models.ChainBase)
+	mockChain.NativeAssetVal = models.NativeETH
+	reg.RegisterChain(mockChain)
+
+	walletID := uuid.New()
+	addrs := &ingestAddressRepo{addr: &models.Address{
+		ID:             uuid.New(),
+		WalletID:       walletID,
+		ExternalUserID: baseOwner,
+		Chain:          models.ChainBase,
+		Address:        baseAddress,
+	}}
+	txs := &ingestTxRepo{internalHashes: map[string]uuid.UUID{sweepHash: walletID}}
+	svc := NewService(nil, reg, webhook.NewService(nil, &ingestWebhookConfigRepo{}, &ingestWebhookEventRepo{}), addrs, txs)
+
+	err := svc.ProcessTransfers(t.Context(), models.ChainBase, []providers.InboundTransfer{
+		{TxHash: sweepHash, To: baseAddress, From: "0xchild", Amount: big.NewInt(304736467038418)},
+		{TxHash: inboundHash, To: baseAddress, From: "0xexternal", Amount: big.NewInt(30000000000000)},
+	})
+	require.NoError(t, err)
+	require.Len(t, txs.created, 1)
+	assert.Equal(t, inboundHash, txs.created[0].TxHash)
+	assert.Equal(t, baseOwner, txs.created[0].ExternalUserID)
+}
+
 type ingestAddressRepo struct {
 	addr *models.Address
 }
@@ -240,6 +275,8 @@ func (f *ingestAddressRepo) PluckActiveAddresses(chainID string) ([]string, erro
 
 type ingestTxRepo struct {
 	created []*models.Transaction
+	// internalHashes lists the transaction hashes recorded as a sweep or gas seed.
+	internalHashes map[string]uuid.UUID
 }
 
 func (f *ingestTxRepo) Create(_ context.Context, tx *models.Transaction) error {
@@ -263,6 +300,12 @@ func (f *ingestTxRepo) CountByChainAndTxHash(chainID, txHash, txType string) (in
 	return 0, nil
 }
 func (f *ingestTxRepo) CountByChainTxHashAndLogIndex(_ context.Context, chainID, txHash string, logIndex int, txType string) (int64, error) {
+	return 0, nil
+}
+func (f *ingestTxRepo) CountInternalTransfers(_ context.Context, chainID, txHash string, walletID uuid.UUID) (int64, error) {
+	if owner, ok := f.internalHashes[txHash]; ok && owner == walletID {
+		return 1, nil
+	}
 	return 0, nil
 }
 func (f *ingestTxRepo) FindPendingByChain(chainID string) ([]models.Transaction, error) {

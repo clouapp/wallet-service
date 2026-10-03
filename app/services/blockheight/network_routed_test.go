@@ -72,3 +72,18 @@ func TestRoutedProviderCopiesItsMapAndRejectsANilInner(t *testing.T) {
 	_, err = RouteByNetwork(nil, nil).GetBlockHeight(context.Background(), models.ChainBTC)
 	assert.Error(t, err)
 }
+
+func TestRoutedProviderSendsBaseArbitrumAndBSCToTheChainRPC(t *testing.T) {
+	inner := &recordingProvider{}
+	routed := RouteByNetwork(inner, map[string]string{
+		models.ChainBase:      models.NetworkBaseSepolia,
+		models.ChainTArbitrum: models.NetworkArbitrumSepolia,
+		models.ChainBSC:       models.NetworkBSCMainnet,
+	})
+
+	for _, chainID := range []string{models.ChainBase, models.ChainTArbitrum, models.ChainBSC} {
+		_, err := routed.GetBlockHeight(context.Background(), chainID)
+		assert.ErrorIs(t, err, ErrTipFromChainRPC, chainID)
+	}
+	assert.Empty(t, inner.asked, "Etherscan must not be asked for networks its free tier does not serve")
+}

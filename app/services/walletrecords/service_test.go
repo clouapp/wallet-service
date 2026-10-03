@@ -11,6 +11,7 @@ import (
 
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/services/walletrecords"
+	"github.com/macrowallets/waas/pkg/numeric"
 )
 
 func TestWalletsPaginateByAccountForwards(t *testing.T) {
@@ -58,9 +59,10 @@ func (f *fakeWallets) FindByIDAndAccount(context.Context, uuid.UUID, uuid.UUID) 
 }
 func (f *fakeWallets) SetFeeRateMin(context.Context, uuid.UUID, int) error { return f.err }
 func (f *fakeWallets) SetFeeRateMax(context.Context, uuid.UUID, int) error { return f.err }
-func (f *fakeWallets) SetFeeMultiplier(context.Context, uuid.UUID, float64) error {
+func (f *fakeWallets) SetFeeMultiplier(context.Context, uuid.UUID, numeric.NullDecimal) error {
 	return f.err
 }
+func (f *fakeWallets) UpdateSettings(context.Context, uuid.UUID, map[string]any) error { return f.err }
 func (f *fakeWallets) SetRequiredApprovals(context.Context, uuid.UUID, int) error { return f.err }
 func (f *fakeWallets) SetFrozenUntil(context.Context, uuid.UUID, time.Time) error { return f.err }
 func (f *fakeWallets) SetStatus(context.Context, uuid.UUID, string) error         { return f.err }

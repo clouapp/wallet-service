@@ -55,6 +55,22 @@ func TestNetworkDoesNotChangeEVMAddresses(t *testing.T) {
 	}
 }
 
+func TestBaseArbitrumAndBSCShareTheEthereumAddressOfTheKey(t *testing.T) {
+	t.Parallel()
+	pub := mustPubKey(t)
+
+	eth, err := DeriveAddress(models.ChainETH, pub)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, chainID := range []string{models.ChainBase, models.ChainTBase, models.ChainArbitrum, models.ChainTArbitrum, models.ChainBSC, models.ChainTBSC} {
+		got, err := DeriveAddressOnNetwork(chainID, true, pub)
+		if err != nil || got != eth {
+			t.Errorf("%s: %q, %v; want the eth address %q", chainID, got, err, eth)
+		}
+	}
+}
+
 func TestBtcHRPAndUnsupportedChains(t *testing.T) {
 	t.Parallel()
 

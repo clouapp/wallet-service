@@ -182,7 +182,7 @@ func (a *SolanaLive) buildSolanaTransfer(ctx context.Context, req types.Transfer
 	if err != nil {
 		return nil, err
 	}
-	return &types.UnsignedTx{ChainID: a.cfg.ChainIDStr, RawBytes: raw, Metadata: meta}, nil
+	return &types.UnsignedTx{ChainID: a.cfg.ChainIDStr, RawBytes: raw, Metadata: meta, TransferAmount: new(big.Int).Set(req.Amount)}, nil
 }
 
 func (a *SolanaLive) destATAMissing(ctx context.Context, ata string) (create bool, exists bool, err error) {
@@ -195,6 +195,9 @@ func (a *SolanaLive) destATAMissing(ctx context.Context, ata string) (create boo
 			return true, false, nil
 		}
 		return false, false, callErr
+	}
+	if info.Value == nil {
+		return true, false, nil
 	}
 	return false, true, nil
 }

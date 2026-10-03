@@ -16,6 +16,12 @@ const (
 	NetworkSolanaMainnet   = "solana-mainnet"
 	NetworkSolanaDevnet    = "solana-devnet"
 	NetworkSolanaTestnet   = "solana-testnet"
+	NetworkBaseMainnet     = "base-mainnet"
+	NetworkBaseSepolia     = "base-sepolia"
+	NetworkArbitrumMainnet = "arbitrum-mainnet"
+	NetworkArbitrumSepolia = "arbitrum-sepolia"
+	NetworkBSCMainnet      = "bsc-mainnet"
+	NetworkBSCTestnet      = "bsc-testnet"
 )
 
 const (
@@ -23,7 +29,47 @@ const (
 	EVMNetworkIDEthereumSepolia int64 = 11155111
 	EVMNetworkIDPolygonMainnet  int64 = 137
 	EVMNetworkIDPolygonAmoy     int64 = 80002
+	EVMNetworkIDBaseMainnet     int64 = 8453
+	EVMNetworkIDBaseSepolia     int64 = 84532
+	EVMNetworkIDArbitrumMainnet int64 = 42161
+	EVMNetworkIDArbitrumSepolia int64 = 421614
+	EVMNetworkIDBSCMainnet      int64 = 56
+	EVMNetworkIDBSCTestnet      int64 = 97
 )
+
+// EVMFeeModel is how an EVM network bills a transaction beyond gas used × gas price.
+type EVMFeeModel string
+
+const (
+	// EVMFeeModelStandard: the fee is gas used × gas price (Ethereum, Polygon, BSC).
+	EVMFeeModelStandard EVMFeeModel = "standard"
+	// EVMFeeModelOPStack: an L1 data fee, quoted by the GasPriceOracle predeploy, is
+	// charged to the sender on top of gas × price (Base).
+	EVMFeeModelOPStack EVMFeeModel = "op_stack"
+	// EVMFeeModelArbitrum: the L1 cost is billed as extra L2 gas, so even a plain
+	// native transfer needs more than 21000 gas and must be estimated.
+	EVMFeeModelArbitrum EVMFeeModel = "arbitrum"
+)
+
+var evmNetworkNames = map[int64]string{
+	EVMNetworkIDEthereumMainnet: NetworkEthereumMainnet,
+	EVMNetworkIDEthereumSepolia: NetworkEthereumSepolia,
+	EVMNetworkIDPolygonMainnet:  NetworkPolygonMainnet,
+	EVMNetworkIDPolygonAmoy:     NetworkPolygonAmoy,
+	EVMNetworkIDBaseMainnet:     NetworkBaseMainnet,
+	EVMNetworkIDBaseSepolia:     NetworkBaseSepolia,
+	EVMNetworkIDArbitrumMainnet: NetworkArbitrumMainnet,
+	EVMNetworkIDArbitrumSepolia: NetworkArbitrumSepolia,
+	EVMNetworkIDBSCMainnet:      NetworkBSCMainnet,
+	EVMNetworkIDBSCTestnet:      NetworkBSCTestnet,
+}
+
+var evmFeeModels = map[int64]EVMFeeModel{
+	EVMNetworkIDBaseMainnet:     EVMFeeModelOPStack,
+	EVMNetworkIDBaseSepolia:     EVMFeeModelOPStack,
+	EVMNetworkIDArbitrumMainnet: EVMFeeModelArbitrum,
+	EVMNetworkIDArbitrumSepolia: EVMFeeModelArbitrum,
+}
 
 const (
 	solanaClusterMainnet = "mainnet"
@@ -40,6 +86,9 @@ var testnetNetworks = map[string]struct{}{
 	NetworkBitcoinTestnet4: {},
 	NetworkSolanaDevnet:    {},
 	NetworkSolanaTestnet:   {},
+	NetworkBaseSepolia:     {},
+	NetworkArbitrumSepolia: {},
+	NetworkBSCTestnet:      {},
 }
 
 // ResolvedNetwork is where a chain record actually points. Name is "" when the
@@ -161,16 +210,14 @@ func IsBitcoinTestnet4RPCURL(rpcURL string) bool {
 
 // EVMNetworkName names the EVM network a chain id signs for, or "" when unknown.
 func EVMNetworkName(networkID int64) string {
-	switch networkID {
-	case EVMNetworkIDEthereumMainnet:
-		return NetworkEthereumMainnet
-	case EVMNetworkIDEthereumSepolia:
-		return NetworkEthereumSepolia
-	case EVMNetworkIDPolygonMainnet:
-		return NetworkPolygonMainnet
-	case EVMNetworkIDPolygonAmoy:
-		return NetworkPolygonAmoy
-	default:
-		return ""
+	return evmNetworkNames[networkID]
+}
+
+// EVMFeeModelOf is the fee model of the EVM network a chain id signs for; unknown
+// networks are standard.
+func EVMFeeModelOf(networkID int64) EVMFeeModel {
+	if model, ok := evmFeeModels[networkID]; ok {
+		return model
 	}
+	return EVMFeeModelStandard
 }

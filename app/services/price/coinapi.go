@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/macrowallets/waas/pkg/httpclient"
+	"github.com/shopspring/decimal"
 )
 
 var coinAPIAssetMapping = map[string]string{}
@@ -37,7 +38,7 @@ func NewCoinAPIProvider(apiKey string) *CoinAPIProvider {
 
 func (p *CoinAPIProvider) Name() string { return "coinapi" }
 
-func (p *CoinAPIProvider) FetchCryptoPrices(codes []string) (map[string]float64, error) {
+func (p *CoinAPIProvider) FetchCryptoPrices(codes []string) (map[string]decimal.Decimal, error) {
 	if p.apiKey == "" {
 		return nil, fmt.Errorf("coinapi: api key not configured")
 	}
@@ -60,28 +61,28 @@ func (p *CoinAPIProvider) FetchCryptoPrices(codes []string) (map[string]float64,
 
 	var result struct {
 		Rates []struct {
-			AssetIDQuote string  `json:"asset_id_quote"`
-			Rate         float64 `json:"rate"`
+			AssetIDQuote string          `json:"asset_id_quote"`
+			Rate         decimal.Decimal `json:"rate"`
 		} `json:"rates"`
 	}
 	if err := json.Unmarshal(body, &result); err != nil {
 		return nil, fmt.Errorf("coinapi parse: %w", err)
 	}
 
-	prices := make(map[string]float64, len(result.Rates))
+	prices := make(map[string]decimal.Decimal, len(result.Rates))
 	for _, rate := range result.Rates {
 		code := rate.AssetIDQuote
 		if reversed, ok := coinAPIReverseMapping[code]; ok {
 			code = reversed
 		}
-		if rate.Rate > 0 {
+		if rate.Rate.IsPositive() {
 			prices[code] = rate.Rate
 		}
 	}
 	return prices, nil
 }
 
-func (p *CoinAPIProvider) FetchFiatRates(codes []string) (map[string]float64, error) {
+func (p *CoinAPIProvider) FetchFiatRates(codes []string) (map[string]decimal.Decimal, error) {
 	if p.apiKey == "" {
 		return nil, fmt.Errorf("coinapi: api key not configured")
 	}
@@ -94,18 +95,18 @@ func (p *CoinAPIProvider) FetchFiatRates(codes []string) (map[string]float64, er
 
 	var result struct {
 		Rates []struct {
-			AssetIDQuote string  `json:"asset_id_quote"`
-			Rate         float64 `json:"rate"`
+			AssetIDQuote string          `json:"asset_id_quote"`
+			Rate         decimal.Decimal `json:"rate"`
 		} `json:"rates"`
 	}
 	if err := json.Unmarshal(body, &result); err != nil {
 		return nil, fmt.Errorf("coinapi fiat parse: %w", err)
 	}
 
-	rates := make(map[string]float64, len(result.Rates))
+	rates := make(map[string]decimal.Decimal, len(result.Rates))
 	for _, rate := range result.Rates {
-		if rate.Rate > 0 {
-			rates[rate.AssetIDQuote] = 1.0 / rate.Rate
+		if rate.Rate.IsPositive() {
+			rates[rate.AssetIDQuote] = invertRate(rate.Rate)
 		}
 	}
 	return rates, nil

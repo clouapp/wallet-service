@@ -8,9 +8,12 @@ import (
 	"github.com/google/uuid"
 	"github.com/goravel/framework/contracts/database/orm"
 
+	"github.com/shopspring/decimal"
+
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/repositories/internal/db"
 	"github.com/macrowallets/waas/pkg/amount"
+	"github.com/macrowallets/waas/pkg/numeric"
 )
 
 // WalletRepository persists wallets.
@@ -133,9 +136,53 @@ func (r *WalletRepository) SetFeeRateMax(ctx context.Context, id uuid.UUID, valu
 	return r.updateColumn(ctx, id, "fee_rate_max", value, "set wallet fee_rate_max")
 }
 
-// SetFeeMultiplier sets wallets.fee_multiplier.
-func (r *WalletRepository) SetFeeMultiplier(ctx context.Context, id uuid.UUID, value float64) error {
+// SetFeeMultiplier sets wallets.fee_multiplier. A negative multiplier is refused.
+func (r *WalletRepository) SetFeeMultiplier(ctx context.Context, id uuid.UUID, value numeric.NullDecimal) error {
+	if err := rejectNegativeWalletSetting("fee_multiplier", value); err != nil {
+		return err
+	}
 	return r.updateColumn(ctx, id, "fee_multiplier", value, "set wallet fee_multiplier")
+}
+
+// UpdateSettings writes the validated settings columns. A negative amount is refused
+// and nothing is stored.
+func (r *WalletRepository) UpdateSettings(ctx context.Context, id uuid.UUID, columns map[string]any) error {
+	if ctx == nil {
+		return fmt.Errorf("update wallet settings: context is required")
+	}
+	if id == uuid.Nil {
+		return fmt.Errorf("update wallet settings: wallet id is required")
+	}
+	if len(columns) == 0 {
+		return fmt.Errorf("update wallet settings: no columns to write")
+	}
+	for column, value := range columns {
+		if err := rejectNegativeWalletSetting(column, value); err != nil {
+			return err
+		}
+	}
+	if _, err := r.Query(ctx).Model(&models.Wallet{}).Where("id = ?", id).Update(columns); err != nil {
+		return fmt.Errorf("update wallet settings: %w", err)
+	}
+	return nil
+}
+
+func rejectNegativeWalletSetting(column string, value any) error {
+	switch typed := value.(type) {
+	case numeric.NullDecimal:
+		if typed.Valid && typed.Decimal.IsNegative() {
+			return fmt.Errorf("wallet %s %s: %w", column, typed.Decimal.String(), numeric.ErrNegative)
+		}
+	case numeric.Decimal:
+		if typed.IsNegative() {
+			return fmt.Errorf("wallet %s %s: %w", column, typed.String(), numeric.ErrNegative)
+		}
+	case decimal.Decimal:
+		if typed.IsNegative() {
+			return fmt.Errorf("wallet %s %s: %w", column, typed.String(), numeric.ErrNegative)
+		}
+	}
+	return nil
 }
 
 // SetRequiredApprovals sets wallets.required_approvals.

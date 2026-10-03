@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"log/slog"
+	"net"
 	"os"
 	"time"
 
@@ -22,6 +23,7 @@ import (
 	"github.com/macrowallets/waas/app/services/webhooksync"
 	"github.com/macrowallets/waas/bootstrap"
 	_ "github.com/macrowallets/waas/docs" // Import generated swagger docs
+	"github.com/macrowallets/waas/pkg/lifecycle"
 	"github.com/macrowallets/waas/pkg/types"
 )
 
@@ -165,11 +167,11 @@ func handleWebhookWorker(ctx context.Context, sqsEvent events.SQSEvent) (events.
 
 // startLocalWorkers stands in for the confirmation_tracker and webhook_worker
 // Lambdas, which never run beside the local HTTP server, and keeps the wallet
-// balance read model refreshed.
-func startLocalWorkers() {
+// balance read model refreshed. It returns nil when no worker was started.
+func startLocalWorkers(ctx context.Context) lifecycle.Workers {
 	if !facades.Config().GetBool("vault.local_workers.enabled") {
 		slog.Info("local workers disabled")
-		return
+		return nil
 	}
 	cfg := localworkers.Config{
 		ConfirmationInterval:   time.Duration(facades.Config().GetInt("vault.local_workers.confirmation_interval_seconds")) * time.Second,
@@ -182,31 +184,62 @@ func startLocalWorkers() {
 	for _, chainID := range cfg.DepositScanChains {
 		if _, err := registry.Chain(chainID); err != nil {
 			slog.Error("local workers not started: unknown deposit scan chain", "chain", chainID, "error", err)
-			return
+			return nil
 		}
 	}
-	if err := localworkers.Start(context.Background(), cfg, localworkers.Workers{
+	loops, err := localworkers.Start(ctx, cfg, localworkers.Workers{
 		Checker:   deposits,
 		Deliverer: webhooks,
 		Scanner:   deposits,
 		Balances:  container.MustMake[*refresh.WalletRefresher](),
-	}); err != nil {
+	})
+	if err != nil {
 		slog.Error("local workers not started", "error", err)
+		return nil
 	}
+	return loops
 }
 
+const (
+	defaultLocalPort        = "8080"
+	exitCodeFailure         = 1
+	exitCodeShutdownTimeout = 2
+)
+
+// runLocal serves HTTP and runs the local workers until SIGINT or SIGTERM, then
+// drains both within vault.shutdown_timeout_seconds.
 func runLocal() {
 	port := facades.Config().GetString("vault.port")
 	if port == "" {
-		port = "8080"
+		port = defaultLocalPort
 	}
+	shutdownTimeout := time.Duration(facades.Config().GetInt("vault.shutdown_timeout_seconds")) * time.Second
 
-	startLocalWorkers()
-
-	slog.Info("starting Goravel HTTP server", "port", port)
-
-	if err := facades.Route().Run(":" + port); err != nil {
+	listener, err := net.Listen("tcp", ":"+port)
+	if err != nil {
 		slog.Error("server error", "error", err)
-		os.Exit(1)
+		os.Exit(exitCodeFailure)
 	}
+	server, err := lifecycle.NewListenerServer(facades.Route(), listener)
+	if err != nil {
+		slog.Error("server error", "error", err)
+		os.Exit(exitCodeFailure)
+	}
+
+	slog.Info("starting Goravel HTTP server", "port", port, "shutdown_timeout", shutdownTimeout.String())
+
+	err = lifecycle.Run(context.Background(), lifecycle.Config{
+		Server:          server,
+		StartWorkers:    startLocalWorkers,
+		ShutdownTimeout: shutdownTimeout,
+	})
+	switch {
+	case errors.Is(err, lifecycle.ErrShutdownTimeout):
+		slog.Error("local server exiting before a clean shutdown", "error", err)
+		os.Exit(exitCodeShutdownTimeout)
+	case err != nil:
+		slog.Error("local server exiting with error", "error", err)
+		os.Exit(exitCodeFailure)
+	}
+	slog.Info("local server exited cleanly")
 }

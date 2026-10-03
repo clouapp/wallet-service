@@ -51,10 +51,14 @@ func newFixture() fixture {
 	walletID := uuid.New()
 	enqueuer := &recordingEnqueuer{}
 	publisher := NewPublisher(enqueuer, walletStore{walletID: {ID: walletID, AccountID: &accountID}}, fixedDecimals{
-		"polygon/USDC": 6,
-		"eth/ETH":      18,
-		"btc/BTC":      8,
-		"sol/SOL":      9,
+		"polygon/USDC":  6,
+		"eth/ETH":       18,
+		"btc/BTC":       8,
+		"sol/SOL":       9,
+		"bsc/USDT":      18,
+		"bsc/bnb":       18,
+		"base/eth":      18,
+		"arbitrum/USDC": 6,
 	})
 	publisher.now = func() time.Time { return time.Date(2026, 10, 1, 12, 0, 0, 0, time.UTC) }
 	return fixture{enqueuer: enqueuer, publisher: publisher, accountID: accountID, walletID: walletID}
@@ -105,6 +109,10 @@ func TestPublish_SendsDecimalAndBaseUnitsForEveryAssetPrecision(t *testing.T) {
 		{"eth", "ETH", "500000000000000000", 18, "0.5"},
 		{"btc", "BTC", "150000000", 8, "1.5"},
 		{"sol", "SOL", "2500000000", 9, "2.5"},
+		{"bsc", "USDT", "12500000000000000000", 18, "12.5"},
+		{"bsc", "bnb", "10000000000000000", 18, "0.01"},
+		{"base", "eth", "1000000000000000", 18, "0.001"},
+		{"arbitrum", "USDC", "3000000", 6, "3"},
 	}
 	for _, c := range cases {
 		t.Run(c.asset, func(t *testing.T) {

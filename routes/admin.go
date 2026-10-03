@@ -72,6 +72,7 @@ func RegisterAdminRoutes() {
 	addressCtrl := newDashboardAddressesController()
 	withdrawalCtrl := newDashboardWithdrawalsController()
 	sweepCtrl := newDashboardSweepController()
+	feeEstimateCtrl := newFeeEstimateController()
 
 	facades.Route().Prefix("/v1/auth").Middleware(noCache).Group(func(router route.Router) {
 		router.Post("/register", authCtrl.Register)
@@ -189,6 +190,7 @@ func RegisterAdminRoutes() {
 			r.Get("/withdrawals", withdrawalCtrl.ListWalletWithdrawals)
 			r.Middleware(middleware.RequireFundAction(middleware.FundWithdraw)).Post("/withdrawals", withdrawalCtrl.CreateWalletWithdrawal)
 			r.Post("/withdrawals/estimate", withdrawalCtrl.EstimateWithdrawalFee)
+			r.Get("/fee-estimate", feeEstimateCtrl.GetWalletFeeEstimate)
 			r.Get("/withdrawals/{withdrawalId}", withdrawalCtrl.GetWalletWithdrawal)
 			r.Post("/withdrawals/{withdrawalId}/cancel", withdrawalCtrl.CancelWalletWithdrawal)
 
@@ -282,6 +284,7 @@ func newDashboardWalletSettingsController() *dashwallets.SettingsController {
 	return dashwallets.NewSettingsController(
 		container.MustMake[*walletrecords.Wallets](),
 		walletPolicyMemberships(),
+		container.MustMake[*chainsvc.Service](),
 	)
 }
 

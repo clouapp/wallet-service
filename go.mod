@@ -40,10 +40,13 @@ require (
 	github.com/joho/godotenv v1.5.1
 	github.com/mr-tron/base58 v1.2.0
 	github.com/pquerna/otp v1.5.0
+	github.com/shopspring/decimal v1.3.1
 	github.com/spf13/cast v1.10.0
 	github.com/stretchr/testify v1.11.1
 	github.com/swaggo/swag v1.8.12
+	github.com/yeka/zip v0.0.0-20231116150916-03d6312748a9
 	golang.org/x/crypto v0.49.0
+	golang.org/x/term v0.41.0
 	gorm.io/gorm v1.31.1
 )
 
@@ -233,7 +236,6 @@ require (
 	golang.org/x/net v0.51.0 // indirect
 	golang.org/x/sync v0.20.0 // indirect
 	golang.org/x/sys v0.42.0 // indirect
-	golang.org/x/term v0.41.0 // indirect
 	golang.org/x/text v0.35.0 // indirect
 	golang.org/x/time v0.9.0 // indirect
 	golang.org/x/tools v0.42.0 // indirect

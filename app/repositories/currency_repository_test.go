@@ -5,10 +5,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/shopspring/decimal"
 	"github.com/stretchr/testify/suite"
 
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/repositories"
+	"github.com/macrowallets/waas/pkg/numeric"
 	"github.com/macrowallets/waas/tests/mocks"
 )
 
@@ -27,7 +29,7 @@ func (s *CurrencyRepositoryTestSuite) SetupTest() {
 }
 
 func (s *CurrencyRepositoryTestSuite) currency(code, kind string, active bool) *models.Currency {
-	return &models.Currency{Name: code, Code: code, Type: kind, Active: active, CurrentPrice: 1}
+	return &models.Currency{Name: code, Code: code, Type: kind, Active: active, CurrentPrice: numeric.NewDecimal(decimal.NewFromInt(1))}
 }
 
 func (s *CurrencyRepositoryTestSuite) TestFindByCode_NotFound() {
@@ -44,13 +46,13 @@ func (s *CurrencyRepositoryTestSuite) TestSetPriceAndFindActive() {
 	s.Require().NoError(s.repo.Create(context.Background(), usd))
 	s.Require().NoError(s.repo.Create(context.Background(), brl))
 
-	s.Require().NoError(s.repo.SetPrice(context.Background(), "BTC", 65000, 64000))
+	s.Require().NoError(s.repo.SetPrice(context.Background(), "BTC", decimal.NewFromInt(65000), decimal.NewFromInt(64000)))
 
 	found, err := s.repo.FindByCode(context.Background(), "BTC")
 	s.NoError(err)
-	s.Equal(65000.0, found.CurrentPrice)
-	s.Require().NotNil(found.LastPrice)
-	s.Equal(64000.0, *found.LastPrice)
+	s.True(found.CurrentPrice.Equal(decimal.NewFromInt(65000)))
+	s.True(found.LastPrice.Valid)
+	s.True(found.LastPrice.Decimal.Equal(decimal.NewFromInt(64000)))
 	s.Require().NotNil(found.PriceUpdatedAt)
 
 	cryptos, err := s.repo.FindActiveCryptos(context.Background())

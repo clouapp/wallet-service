@@ -1,4 +1,4 @@
-.PHONY: help build clean run dev dev-back dev-front stop deploy deploy-guided delete validate local test arch arch-baseline contract contract-update test-coverage test-race test-verbose lint fmt vet security migrate migrate-rollback migrate-status migrate-fresh migrate-fresh-seed migrate-fresh-hard db-reset db-seed key-generate jwt-secret docker-up docker-down docker-logs docker-build docker-test docker-status ecr-login ecr-push logs-api logs-scanner logs-webhook logs-withdrawal dlq-check dlq-replay-webhooks dlq-replay-withdrawals ping env-info swagger-install swagger-generate swagger-fmt deps-install deps-update
+.PHONY: help build localstack-hooks e2e-tools clean run dev dev-back dev-front stop deploy deploy-guided delete validate local test arch arch-baseline contract contract-update test-coverage test-race test-verbose lint fmt vet security migrate migrate-rollback migrate-status migrate-fresh migrate-fresh-seed migrate-fresh-hard db-reset db-seed key-generate jwt-secret docker-up docker-down docker-logs docker-build docker-test docker-status ecr-login ecr-push logs-api logs-scanner logs-webhook logs-withdrawal dlq-check dlq-replay-webhooks dlq-replay-withdrawals ping env-info swagger-install swagger-generate swagger-fmt deps-install deps-update
 
 # =============================================================================
 # Configuration
@@ -31,7 +31,10 @@ export TEST_DB_DATABASE
 GOLANGCI_LINT_VERSION ?= v2.5.0
 
 # Docker configuration
-DOCKER_COMPOSE = docker compose
+# The running containers were created from .env.dev (ports 4567/5433/6380); composing without it
+# renders other ports and recreates postgres, redis and waas-localstack.
+DOCKER_COMPOSE_ENV_FILE ?= .env.dev
+DOCKER_COMPOSE = docker compose $(if $(wildcard $(DOCKER_COMPOSE_ENV_FILE)),--env-file $(DOCKER_COMPOSE_ENV_FILE))
 DOCKER_IMAGE_NAME = waas-service
 DOCKER_TAG ?= latest
 
@@ -178,6 +181,28 @@ build-lambda: ## Build Lambda binary for arm64
 	cd dist && zip -q ../function.zip bootstrap
 	@echo "✅ Lambda binary built: function.zip"
 
+# The waas-localstack image has no Go: its Secrets Manager snapshot hooks run this
+# static binary (gitignored, rebuilt before every docker-up / dev). The bin directory is
+# bind-mounted, so a rebuild takes effect on the next container restart, without recreation.
+LOCALSTACK_HOOK_BIN = docker/localstack/bin/secrets-snapshot
+LOCALSTACK_HOOK_ARCH ?= $(shell go env GOARCH)
+
+localstack-hooks: ## Build the static LocalStack secrets-snapshot binary (linux, CGO off)
+	@mkdir -p $(dir $(LOCALSTACK_HOOK_BIN))
+	@CGO_ENABLED=0 GOOS=linux GOARCH=$(LOCALSTACK_HOOK_ARCH) go build -trimpath -ldflags="-s -w" -o $(LOCALSTACK_HOOK_BIN) ./tools/localstack-secrets-snapshot
+	@echo "✅ $(LOCALSTACK_HOOK_BIN) built for linux/$(LOCALSTACK_HOOK_ARCH)"
+
+# e2e helpers (capture-env, api, preflight, send-from-base, consolidate). Recordings run this
+# prebuilt binary so they never compile the working tree mid-run.
+MACRO_E2E_STATE_DIR ?= $(HOME)/.local/state/macro-e2e
+MACRO_E2E_BIN = $(MACRO_E2E_STATE_DIR)/bin/macro-e2e
+
+e2e-tools: ## Build the macro-e2e helper into <e2e state dir>/bin (0700)
+	@mkdir -p -m 700 $(dir $(MACRO_E2E_BIN))
+	@go build -trimpath -o $(MACRO_E2E_BIN).new ./tools/macro-e2e
+	@chmod 700 $(MACRO_E2E_BIN).new && mv -f $(MACRO_E2E_BIN).new $(MACRO_E2E_BIN)
+	@echo "✅ $(MACRO_E2E_BIN) built"
+
 clean: ## Clean build artifacts
 	@echo "🧹 Cleaning build artifacts..."
 	rm -rf .aws-sam/ tmp/ dist/
@@ -230,7 +255,7 @@ run: ## Run API server locally (go run)
 	@echo "🚀 Starting local API server..."
 	@export $$(grep -v '^#' .env.dev | xargs) && go run .
 
-dev: ## Start full stack: Docker + backend (Air) + frontend (vinext)
+dev: localstack-hooks ## Start full stack: Docker + backend (Air) + frontend (vinext)
 	$(call ensure_docker)
 	$(call ensure_env_dev)
 	$(call ensure_app_key_dev)
@@ -407,7 +432,7 @@ security: ## Run security scan with gosec
 # Docker Commands (Local Development)
 # =============================================================================
 
-docker-up: ## Start local development environment (PostgreSQL + Redis)
+docker-up: localstack-hooks ## Start local development environment (PostgreSQL + Redis)
 	@echo "🐳 Starting local development environment..."
 	$(DOCKER_COMPOSE) up -d
 	@echo "⏳ Waiting for PostgreSQL to accept connections..."

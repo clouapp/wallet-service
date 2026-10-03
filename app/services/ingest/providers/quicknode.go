@@ -8,12 +8,13 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"math"
-	"math/big"
 	"strings"
 	"time"
 
+	"github.com/shopspring/decimal"
+
 	"github.com/macrowallets/waas/pkg/httpclient"
+	"github.com/macrowallets/waas/pkg/numeric"
 )
 
 const (
@@ -21,6 +22,8 @@ const (
 	quicknodeDefaultSignatureHeader = "X-QN-Signature"
 	quicknodeHTTPTimeout            = 30 * time.Second
 	quicknodeDefaultNetwork         = "bitcoin-mainnet"
+	// quicknodeBTCDecimals converts a BTC amount to satoshis.
+	quicknodeBTCDecimals = 8
 )
 
 // QuickNodeProvider manages QuickNode Streams webhooks for Bitcoin block filtering.
@@ -243,12 +246,12 @@ func (q *QuickNodeProvider) VerifyInbound(headers Header, body []byte, secret st
 // ---------------------------------------------------------------------------
 
 type quicknodeTransferItem struct {
-	Txid        string  `json:"txid"`
-	BlockNumber uint64  `json:"blockNumber"`
-	BlockHash   string  `json:"blockHash"`
-	ToAddress   string  `json:"toAddress"`
-	Amount      float64 `json:"amount"`
-	Timestamp   int64   `json:"timestamp"`
+	Txid        string          `json:"txid"`
+	BlockNumber uint64          `json:"blockNumber"`
+	BlockHash   string          `json:"blockHash"`
+	ToAddress   string          `json:"toAddress"`
+	Amount      decimal.Decimal `json:"amount"`
+	Timestamp   int64           `json:"timestamp"`
 }
 
 func (q *QuickNodeProvider) ParsePayload(body []byte) ([]InboundTransfer, error) {
@@ -276,9 +279,12 @@ func quicknodeItemToTransfer(item quicknodeTransferItem) (InboundTransfer, error
 		return InboundTransfer{}, fmt.Errorf("empty toAddress")
 	}
 
-	amount := btcFloatToSatoshis(item.Amount)
-	if amount.Sign() < 0 {
+	if item.Amount.IsNegative() {
 		return InboundTransfer{}, fmt.Errorf("negative amount")
+	}
+	amount, err := numeric.ToBaseUnits(item.Amount, quicknodeBTCDecimals)
+	if err != nil {
+		return InboundTransfer{}, fmt.Errorf("amount %s: %w", item.Amount.String(), err)
 	}
 
 	ts := time.Unix(item.Timestamp, 0)
@@ -298,18 +304,6 @@ func quicknodeItemToTransfer(item quicknodeTransferItem) (InboundTransfer, error
 		LogIndex:    -1,
 		Timestamp:   ts,
 	}, nil
-}
-
-func btcFloatToSatoshis(btc float64) *big.Int {
-	if math.IsNaN(btc) || math.IsInf(btc, 0) {
-		return big.NewInt(0)
-	}
-	sats := math.Round(btc * 1e8)
-	if sats > float64(math.MaxInt64) || sats < float64(math.MinInt64) {
-		// Unrealistic for BTC; clamp to zero to avoid undefined behavior
-		return big.NewInt(0)
-	}
-	return big.NewInt(int64(sats))
 }
 
 // ---------------------------------------------------------------------------

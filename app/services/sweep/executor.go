@@ -55,7 +55,10 @@ func (s *service) ExecutePlan(
 		return nil, fmt.Errorf("sweep: wallet %s has no deposit address", plan.WalletID)
 	}
 
-	adapter, err := s.registry.Chain(plan.Chain)
+	if wallet.Chain != plan.Chain {
+		return nil, fmt.Errorf("sweep: wallet %s is on %s, plan is on %s", wallet.ID, wallet.Chain, plan.Chain)
+	}
+	adapter, err := s.registry.ChainForWallet(wallet)
 	if err != nil {
 		return nil, fmt.Errorf("sweep: adapter for %q: %w", plan.Chain, err)
 	}
@@ -198,6 +201,9 @@ func (s *service) broadcastLeg(
 		toAddrStr := wallet.DepositAddress.Address
 		childID := leg.From.ID
 		addressID := &childID
+		asset := plan.Asset
+		amount := builtAmount(&unsigned, leg.Amount)
+		rowToken := token
 
 		if isGasSeed {
 			origin = models.TxOriginGasSeed
@@ -207,6 +213,9 @@ func (s *service) broadcastLeg(
 			toAddrStr = leg.From.Address
 			baseID := wallet.DepositAddress.ID
 			addressID = &baseID
+			asset = adapter.NativeAsset()
+			amount = builtAmount(&unsigned, nil)
+			rowToken = nil
 		}
 
 		tx := &models.Transaction{
@@ -219,8 +228,8 @@ func (s *service) broadcastLeg(
 			TxHash:              hash,
 			FromAddress:         fromAddrStr,
 			ToAddress:           toAddrStr,
-			Amount:              leg.Amount.String(),
-			Asset:               plan.Asset,
+			Amount:              amount,
+			Asset:               asset,
 			Status:              string(types.TxStatusConfirming),
 			RequiredConfs:       int(adapter.RequiredConfirmations()),
 			Direction:           models.TxDirectionSelf,
@@ -229,8 +238,8 @@ func (s *service) broadcastLeg(
 			RawPayload:          "{}",
 			ParentTransactionID: opts.ParentTransactionID,
 		}
-		if token != nil {
-			tx.TokenContract = token.Contract
+		if rowToken != nil {
+			tx.TokenContract = rowToken.Contract
 		}
 
 		if err := s.txRepo.Create(ctx, tx); err != nil {
@@ -382,6 +391,23 @@ func (s *service) buildSweepLeg(
 		return nil, nil, fmt.Errorf("adapter returned no txs for sweep leg")
 	}
 	return unsigneds, token, nil
+}
+
+// unknownBuiltAmount is recorded for a gas seed whose adapter does not report the
+// value it encoded; the planned leg amount is denominated in the swept token.
+const unknownBuiltAmount = "0"
+
+// builtAmount is the amount the unsigned tx moves, falling back to planned when the
+// adapter does not report it. Native EVM sweeps re-size at build time, so the plan
+// can differ from what is broadcast.
+func builtAmount(unsigned *types.UnsignedTx, planned *big.Int) string {
+	if unsigned != nil && unsigned.TransferAmount != nil {
+		return unsigned.TransferAmount.String()
+	}
+	if planned == nil {
+		return unknownBuiltAmount
+	}
+	return planned.String()
 }
 
 // sweepLegSigner is the address whose key signs transaction idx of a leg: the base

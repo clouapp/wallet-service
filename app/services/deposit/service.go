@@ -59,6 +59,7 @@ type Service struct {
 type transactionStore interface {
 	Create(ctx context.Context, tx *models.Transaction) error
 	CountByChainAndTxHash(ctx context.Context, chainID, txHash, txType string) (int64, error)
+	CountInternalTransfers(ctx context.Context, chainID, txHash string, walletID uuid.UUID) (int64, error)
 	FindPendingByChain(ctx context.Context, chainID string) ([]models.Transaction, error)
 	SetBlockNumber(ctx context.Context, id uuid.UUID, block uint64) error
 	RecordConfirmations(ctx context.Context, id uuid.UUID, confirmations int, status string, confirmedAt *time.Time) error
@@ -200,6 +201,15 @@ func (s *Service) processTransfer(ctx context.Context, chainID string, adapter t
 		return false, classify(pending.ClassDatabase, fmt.Errorf("check recorded deposit: %w", err))
 	}
 	if exists > 0 {
+		return false, nil
+	}
+
+	internal, err := s.txRepo.CountInternalTransfers(ctx, chainID, transfer.TxHash, addr.WalletID)
+	if err != nil {
+		return false, classify(pending.ClassDatabase, fmt.Errorf("check internal transfer: %w", err))
+	}
+	if internal > 0 {
+		slog.Info("transfer is a sweep or gas seed of the wallet, not a deposit", "chain", chainID, "tx", transfer.TxHash, "to", transfer.To)
 		return false, nil
 	}
 

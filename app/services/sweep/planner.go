@@ -65,9 +65,9 @@ func (s *service) PlanForWithdrawal(ctx context.Context, walletID uuid.UUID, ass
 		return nil, ErrUnsupportedChain
 	}
 
-	adapter, err := s.registry.Chain(wallet.Chain)
+	adapter, err := s.registry.ChainForWallet(wallet)
 	if err != nil {
-		return nil, fmt.Errorf("sweep: adapter not registered for %q: %w", wallet.Chain, err)
+		return nil, fmt.Errorf("sweep: adapter for %q: %w", wallet.Chain, err)
 	}
 
 	reserve, err := loadNativeReserve(ctx, adapter, asset)
@@ -123,7 +123,7 @@ func (s *service) PlanForWithdrawal(ctx context.Context, walletID uuid.UUID, ass
 		}
 	}
 
-	dust := adapter.DustThreshold(asset) // nil → no dust filtering
+	dust := s.childDustThreshold(ctx, adapter, chainEntity, asset) // nil → no dust filtering
 	type childBal struct {
 		addr    models.Address
 		balance *big.Int
@@ -254,7 +254,82 @@ func (s *service) estimatePlanGas(ctx context.Context, adapter types.Chain, plan
 	if !known || err != nil || gasPrice == nil {
 		return nil, nil
 	}
-	return new(big.Int).Mul(gasPrice, new(big.Int).SetUint64(gasUnits)), nil
+	total := new(big.Int).Mul(gasPrice, new(big.Int).SetUint64(gasUnits))
+	l1Fees, err := planL1DataFees(ctx, adapter, plan, token, target, gasPrice)
+	if err != nil {
+		return nil, err
+	}
+	return total.Add(total, l1Fees), nil
+}
+
+// gasSeedLimiter is implemented by chains whose gas_seed (a native transfer from
+// base) can need more than gasLimitNativeTransfer (Arbitrum bills L1 cost as gas).
+type gasSeedLimiter interface {
+	NativeTransferGasLimit(ctx context.Context, from, to string) (uint64, error)
+}
+
+func gasSeedGasLimit(ctx context.Context, estimator types.TransferGasEstimator, from, to string) (uint64, error) {
+	limiter, ok := estimator.(gasSeedLimiter)
+	if !ok {
+		return gasLimitNativeTransfer, nil
+	}
+	return limiter.NativeTransferGasLimit(ctx, from, to)
+}
+
+// planL1DataFees sums the L1 data fee of every transfer the executor will send for
+// plan; zero for adapters that charge none.
+func planL1DataFees(
+	ctx context.Context,
+	adapter types.Chain,
+	plan *Plan,
+	token *types.Token,
+	target gasPlanTarget,
+	gasPrice *big.Int,
+) (*big.Int, error) {
+	total := new(big.Int)
+	estimator, ok := adapter.(types.L1DataFeeEstimator)
+	if !ok {
+		return total, nil
+	}
+	for _, req := range planTransfers(plan, token, target) {
+		req.GasPrice = gasPrice
+		fee, err := estimator.EstimateL1DataFee(ctx, req)
+		if err != nil {
+			return nil, fmt.Errorf("sweep: estimate L1 data fee from %s: %w", req.From, err)
+		}
+		if fee == nil || fee.Sign() < 0 {
+			return nil, fmt.Errorf("sweep: chain %s returned an invalid L1 data fee", adapter.ID())
+		}
+		total.Add(total, fee)
+	}
+	return total, nil
+}
+
+// planTransfers lists the transfers the executor sends for plan, in order: per
+// sweep leg an optional gas_seed (base → child) and the sweep (child → base), then
+// the withdrawal itself.
+func planTransfers(plan *Plan, token *types.Token, target gasPlanTarget) []types.TransferRequest {
+	transfers := make([]types.TransferRequest, 0, 2*len(plan.Sweeps)+1)
+	final := func(from string) types.TransferRequest {
+		return planTransferRequest(plan, token, from, target.toAddress, plan.Amount)
+	}
+	switch plan.Strategy {
+	case StrategyDirectFromBase, StrategyDirectFromChild:
+		if plan.SourceAddress != nil {
+			transfers = append(transfers, final(plan.SourceAddress.Address))
+		}
+	case StrategyMultiSweep:
+		for _, leg := range plan.Sweeps {
+			if leg.NeedsGas {
+				transfers = append(transfers, types.TransferRequest{From: target.baseAddress, To: leg.From.Address})
+			}
+			transfers = append(transfers, planTransferRequest(plan, token, leg.From.Address, target.baseAddress, leg.Amount))
+		}
+		if target.includeFinalTransfer {
+			transfers = append(transfers, final(target.baseAddress))
+		}
+	}
+	return transfers
 }
 
 func (s *service) planToken(adapter types.Chain, plan *Plan) (*types.Token, error) {
@@ -288,7 +363,11 @@ func estimatedPlanGasUnits(
 		var total uint64
 		for _, leg := range plan.Sweeps {
 			if leg.NeedsGas {
-				total += gasLimitNativeTransfer
+				seedLimit, err := gasSeedGasLimit(ctx, estimator, target.baseAddress, leg.From.Address)
+				if err != nil {
+					return 0, false, fmt.Errorf("sweep: estimate gas_seed to %s: %w", leg.From.Address, err)
+				}
+				total += seedLimit
 			}
 			limit, err := estimator.EstimateTransferGasLimit(ctx, planTransferRequest(plan, token, leg.From.Address, target.baseAddress, leg.Amount))
 			if err != nil {

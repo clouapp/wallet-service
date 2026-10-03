@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/shopspring/decimal"
 	"log/slog"
 	"strings"
 	"time"
@@ -151,13 +152,14 @@ func (w *WebSocketClient) buildHelloMessage() map[string]interface{} {
 
 func (w *WebSocketClient) processMessage(ctx context.Context, data []byte) {
 	var msg struct {
-		AssetIDBase string  `json:"asset_id_base"`
-		Rate        float64 `json:"rate"`
+		AssetIDBase string          `json:"asset_id_base"`
+		Rate        decimal.Decimal `json:"rate"`
 	}
 	if err := json.Unmarshal(data, &msg); err != nil {
 		return
 	}
-	if msg.Rate <= 0 {
+	rate, ok := fitQuotedPrice(msg.AssetIDBase, msg.Rate)
+	if !ok {
 		return
 	}
 
@@ -182,19 +184,19 @@ func (w *WebSocketClient) processMessage(ctx context.Context, data []byte) {
 		return
 	}
 
-	oldPrice := cur.CurrentPrice
-	if err := w.currencyRepo.SetPrice(ctx, code, msg.Rate, oldPrice); err != nil {
+	oldPrice := cur.CurrentPrice.Decimal
+	if err := w.currencyRepo.SetPrice(ctx, code, rate, oldPrice); err != nil {
 		slog.Warn("ws update price failed", "code", code, "error", err)
 		return
 	}
 
 	if w.cache != nil {
-		key := "currency:" + code
-		priceJSON, _ := json.Marshal(msg.Rate)
-		_ = w.cache.Set(ctx, key, priceJSON, redisCurrencyTTL)
+		if err := w.cache.Set(ctx, "currency:"+code, []byte(rate.String()), redisCurrencyTTL); err != nil {
+			slog.Warn("ws redis cache currency failed", "code", code, "error", err)
+		}
 	}
 
-	slog.Info("ws price updated", "code", code, "price", msg.Rate)
+	slog.Info("ws price updated", "code", code, "price", rate.String())
 }
 
 func (w *WebSocketClient) refreshActiveCodes(ctx context.Context) error {

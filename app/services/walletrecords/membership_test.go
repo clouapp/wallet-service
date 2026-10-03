@@ -11,6 +11,7 @@ import (
 
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/services/walletrecords"
+	"github.com/macrowallets/waas/pkg/numeric"
 )
 
 func TestMembershipsForWalletReturnsTheStoredRoles(t *testing.T) {
@@ -89,9 +90,10 @@ func (f *roleWallets) FindByIDAndAccount(context.Context, uuid.UUID, uuid.UUID) 
 }
 func (f *roleWallets) SetFeeRateMin(context.Context, uuid.UUID, int) error { return f.err }
 func (f *roleWallets) SetFeeRateMax(context.Context, uuid.UUID, int) error { return f.err }
-func (f *roleWallets) SetFeeMultiplier(context.Context, uuid.UUID, float64) error {
+func (f *roleWallets) SetFeeMultiplier(context.Context, uuid.UUID, numeric.NullDecimal) error {
 	return f.err
 }
+func (f *roleWallets) UpdateSettings(context.Context, uuid.UUID, map[string]any) error { return f.err }
 func (f *roleWallets) SetRequiredApprovals(context.Context, uuid.UUID, int) error { return f.err }
 func (f *roleWallets) SetFrozenUntil(context.Context, uuid.UUID, time.Time) error { return f.err }
 func (f *roleWallets) SetStatus(context.Context, uuid.UUID, string) error         { return f.err }

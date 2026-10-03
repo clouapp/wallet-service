@@ -27,6 +27,7 @@ type addressReader interface {
 // transactionStore is the deposit row ingest writes after it attributes a transfer.
 type transactionStore interface {
 	CountByChainTxHashAndLogIndex(ctx context.Context, chainID, txHash string, logIndex int, txType string) (int64, error)
+	CountInternalTransfers(ctx context.Context, chainID, txHash string, walletID uuid.UUID) (int64, error)
 	Create(ctx context.Context, tx *models.Transaction) error
 }
 
@@ -106,6 +107,15 @@ func (s *Service) processTransfer(ctx context.Context, chainID string, adapter t
 		return err
 	}
 	if exists > 0 {
+		return nil
+	}
+
+	internal, err := s.txRepo.CountInternalTransfers(ctx, chainID, transfer.TxHash, addr.WalletID)
+	if err != nil {
+		return fmt.Errorf("check internal transfer: %w", err)
+	}
+	if internal > 0 {
+		slog.Info("ingest skipped a sweep or gas seed of the wallet", "chain", chainID, "tx", transfer.TxHash, "to", transfer.To)
 		return nil
 	}
 

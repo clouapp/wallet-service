@@ -33,7 +33,8 @@ const (
 
 // ---------------------------------------------------------------------------
 // EVMConfig — all that differs between EVM chains.
-// ETH, Polygon, Arbitrum, Base, etc. = same adapter, different config.
+// ETH, Polygon, Arbitrum, Base, etc. = same adapter, different config. The fee
+// model (L1 data fee on Base, L1 gas on Arbitrum) follows NetworkID.
 // ---------------------------------------------------------------------------
 
 type EVMConfig struct {
@@ -52,6 +53,9 @@ type EVMConfig struct {
 	// DustThresholdNative is the minimum native balance on a child for sweep
 	// eligibility. Populated from the chains table. nil when unset.
 	DustThresholdNative *big.Int
+	// StrictLogScan fails ScanBlock when eth_getLogs fails, so the deposit scanner
+	// retries the block instead of marking it scanned without its ERC-20 deposits.
+	StrictLogScan bool
 }
 
 // ---------------------------------------------------------------------------
@@ -61,7 +65,17 @@ type EVMConfig struct {
 type EVMLive struct {
 	cfg EVMConfig
 	rpc *RPCClient
+	fee FeePolicy
 }
+
+// WithFeePolicy is this adapter bidding gas prices scaled by policy; it shares
+// the RPC client.
+func (a *EVMLive) WithFeePolicy(policy FeePolicy) types.Chain {
+	return &EVMLive{cfg: a.cfg, rpc: a.rpc, fee: policy}
+}
+
+// FeePolicy is the wallet fee policy this adapter prices with.
+func (a *EVMLive) FeePolicy() FeePolicy { return a.fee }
 
 func NewEVMLive(cfg EVMConfig) *EVMLive {
 	return &EVMLive{
@@ -126,11 +140,11 @@ func (a *EVMLive) BuildTransfer(ctx context.Context, req types.TransferRequest) 
 	// specific price (e.g. BuildSweep) encode the tx with the same price.
 	gasPrice := req.GasPrice
 	if gasPrice == nil {
-		var hexGas string
-		if err := a.rpc.Call(ctx, "eth_gasPrice", &hexGas); err != nil {
-			return nil, fmt.Errorf("gas price: %w", err)
+		suggested, err := a.EstimateGasPrice(ctx)
+		if err != nil {
+			return nil, err
 		}
-		gasPrice = bufferedEVMGasPrice(hexToBigInt(hexGas))
+		gasPrice = suggested
 	}
 
 	var txData []byte
@@ -155,6 +169,9 @@ func (a *EVMLive) BuildTransfer(ctx context.Context, req types.TransferRequest) 
 			"data":      txData,
 		},
 	}
+	if req.Amount != nil {
+		unsigned.TransferAmount = new(big.Int).Set(req.Amount)
+	}
 	transaction, signer, err := a.transactionFromUnsigned(unsigned)
 	if err != nil {
 		return nil, err
@@ -164,18 +181,19 @@ func (a *EVMLive) BuildTransfer(ctx context.Context, req types.TransferRequest) 
 }
 
 func (a *EVMLive) EstimateFee(ctx context.Context, req types.TransferRequest) (*types.FeeEstimate, error) {
-	var hexGas string
-	if err := a.rpc.Call(ctx, "eth_gasPrice", &hexGas); err != nil {
-		return nil, fmt.Errorf("gas price: %w", err)
+	gasPrice, err := a.EstimateGasPrice(ctx)
+	if err != nil {
+		return nil, err
 	}
-
-	gasPrice := bufferedEVMGasPrice(hexToBigInt(hexGas))
 	gasLimit, err := a.EstimateTransferGasLimit(ctx, req)
 	if err != nil {
 		return nil, err
 	}
 
-	fee := new(big.Int).Mul(gasPrice, new(big.Int).SetUint64(gasLimit))
+	fee, err := a.transferFee(ctx, req, gasLimit, gasPrice)
+	if err != nil {
+		return nil, err
+	}
 
 	return &types.FeeEstimate{
 		Fee:      fmtUnits(fee, a.cfg.NativeDecimal),
@@ -186,8 +204,9 @@ func (a *EVMLive) EstimateFee(ctx context.Context, req types.TransferRequest) (*
 }
 
 // EstimateTransferGasLimit returns the gas limit BuildTransfer encodes for req.
-// A caller-supplied req.GasLimit wins; native transfers use the fixed transfer
-// limit; token transfers simulate transfer(to, amount) from req.From with
+// A caller-supplied req.GasLimit wins; native transfers use NativeTransferGasLimit
+// (the fixed transfer limit except on Arbitrum); token transfers simulate
+// transfer(to, amount) from req.From with
 // eth_estimateGas, add evmERC20GasMarginPercent and never go below
 // evmERC20TransferGasFloor. A failed or zero estimate returns
 // ErrGasEstimateFailed instead of guessing, so the caller cannot broadcast.
@@ -196,7 +215,7 @@ func (a *EVMLive) EstimateTransferGasLimit(ctx context.Context, req types.Transf
 		return *req.GasLimit, nil
 	}
 	if req.Token == nil {
-		return evmNativeTransferGasLimit, nil
+		return a.NativeTransferGasLimit(ctx, req.From, req.To)
 	}
 	if err := validateTokenTransferForEstimate(req); err != nil {
 		return 0, err
@@ -243,25 +262,31 @@ func validateTokenTransferForEstimate(req types.TransferRequest) error {
 //   - If req.NativeBalance has enough for the token transfer's gas: 1 tx (child → Base token.transfer)
 //   - Else: 2 txs — gas_seed (Base → child native) + token sweep (child → Base token.transfer)
 func (a *EVMLive) BuildSweep(ctx context.Context, req types.SweepRequest) ([]types.UnsignedTx, error) {
-	var hexGas string
-	if err := a.rpc.Call(ctx, "eth_gasPrice", &hexGas); err != nil {
-		return nil, fmt.Errorf("gas price: %w", err)
+	gasPrice, err := a.EstimateGasPrice(ctx)
+	if err != nil {
+		return nil, err
 	}
-	gasPrice := bufferedEVMGasPrice(hexToBigInt(hexGas))
 
 	if req.Token == nil {
 		if req.NativeBalance == nil {
 			return nil, fmt.Errorf("native balance required for native sweep")
 		}
-		feeReserve := new(big.Int).Mul(gasPrice, new(big.Int).SetUint64(evmNativeTransferGasLimit))
+		nativeReq := types.TransferRequest{From: req.From, To: req.To, Asset: a.cfg.NativeSymbol, GasPrice: gasPrice}
+		gasLimit, err := a.NativeTransferGasLimit(ctx, req.From, req.To)
+		if err != nil {
+			return nil, err
+		}
+		feeReserve, err := a.transferFee(ctx, nativeReq, gasLimit, gasPrice)
+		if err != nil {
+			return nil, err
+		}
 		amount := new(big.Int).Sub(req.NativeBalance, feeReserve)
 		if amount.Sign() <= 0 {
 			return nil, fmt.Errorf("insufficient native for sweep: balance=%s fee=%s", req.NativeBalance, feeReserve)
 		}
-		unsigned, err := a.BuildTransfer(ctx, types.TransferRequest{
-			From: req.From, To: req.To, Amount: amount, Asset: a.cfg.NativeSymbol,
-			GasPrice: gasPrice,
-		})
+		nativeReq.Amount = amount
+		nativeReq.GasLimit = &gasLimit
+		unsigned, err := a.BuildTransfer(ctx, nativeReq)
 		if err != nil {
 			return nil, err
 		}
@@ -289,7 +314,10 @@ func (a *EVMLive) BuildSweep(ctx context.Context, req types.SweepRequest) ([]typ
 		return nil, err
 	}
 	sweepReq.GasLimit = &sweepGasLimit
-	feeNeeded := new(big.Int).Mul(gasPrice, new(big.Int).SetUint64(sweepGasLimit))
+	feeNeeded, err := a.transferFee(ctx, sweepReq, sweepGasLimit, gasPrice)
+	if err != nil {
+		return nil, err
+	}
 
 	result := make([]types.UnsignedTx, 0, 2)
 	if req.NativeBalance == nil || req.NativeBalance.Cmp(feeNeeded) < 0 {
@@ -313,24 +341,23 @@ func (a *EVMLive) BuildSweep(ctx context.Context, req types.SweepRequest) ([]typ
 	return result, nil
 }
 
-// EstimateGasPrice returns the current gas price suggestion from the RPC
-// endpoint (eth_gasPrice) in wei. Used by the sweep planner to compute
-// plan.EstimatedGas without re-coupling the planner to RPC details. Errors
-// are surfaced to the caller; the caller is expected to treat a failed
-// estimation as non-fatal (best-effort) and display an unknown total.
+// EstimateGasPrice is the gas price every transaction this adapter builds bids,
+// in wei: evmGasPriceMultiplier × eth_gasPrice, scaled by the wallet's fee
+// policy. The planner, the fee quote and BuildTransfer / BuildSweep all price
+// with it, so an estimate and the broadcast transaction use the same formula.
 func (a *EVMLive) EstimateGasPrice(ctx context.Context) (*big.Int, error) {
 	var hexGas string
 	if err := a.rpc.Call(ctx, "eth_gasPrice", &hexGas); err != nil {
 		return nil, fmt.Errorf("gas price: %w", err)
 	}
-	return bufferedEVMGasPrice(hexToBigInt(hexGas)), nil
+	return a.fee.scaleGasPrice(bufferedEVMGasPrice(hexToBigInt(hexGas))), nil
 }
 
-// NativeTransferReserve is the most a native transfer built now can spend on gas:
-// BuildTransfer encodes a legacy tx with the fixed native gas limit at the buffered
-// gas price (2 × eth_gasPrice), so the fee is exactly limit × price. EVM accounts
-// keep no minimum balance. The sweep planner adds the fee to native withdrawals and
-// subtracts it from native sweeps.
+// NativeTransferReserve is the most a native transfer built now can spend on fees:
+// BuildTransfer encodes a legacy tx with the native gas limit at the buffered gas
+// price (EstimateGasPrice), so the fee is limit × price, plus the buffered L1 data
+// fee on OP-stack networks. EVM accounts keep no minimum balance. The sweep planner
+// adds the fee to native withdrawals and subtracts it from native sweeps.
 func (a *EVMLive) NativeTransferReserve(ctx context.Context) (fee, minimumRemaining *big.Int, err error) {
 	gasPrice, err := a.EstimateGasPrice(ctx)
 	if err != nil {
@@ -339,7 +366,14 @@ func (a *EVMLive) NativeTransferReserve(ctx context.Context) (fee, minimumRemain
 	if gasPrice == nil || gasPrice.Sign() <= 0 {
 		return nil, nil, fmt.Errorf("gas price: node returned no usable gas price")
 	}
-	fee = new(big.Int).Mul(gasPrice, new(big.Int).SetUint64(evmNativeTransferGasLimit))
+	gasLimit, err := a.NativeTransferGasLimit(ctx, "", "")
+	if err != nil {
+		return nil, nil, err
+	}
+	fee, err = a.transferFee(ctx, types.TransferRequest{GasPrice: gasPrice}, gasLimit, gasPrice)
+	if err != nil {
+		return nil, nil, err
+	}
 	return fee, new(big.Int), nil
 }
 
@@ -602,13 +636,16 @@ func (a *EVMLive) ScanBlock(ctx context.Context, blockNum uint64) ([]types.Detec
 	}
 
 	// ERC-20 Transfer events
-	tokens := a.scanERC20(ctx, blockNum, block.Hash, blockTime)
+	tokens, err := a.scanERC20(ctx, blockNum, block.Hash, blockTime)
+	if err != nil && a.cfg.StrictLogScan {
+		return nil, fmt.Errorf("erc20 logs of block %d: %w", blockNum, err)
+	}
 	transfers = append(transfers, tokens...)
 
 	return transfers, nil
 }
 
-func (a *EVMLive) scanERC20(ctx context.Context, blockNum uint64, blockHash string, blockTime time.Time) []types.DetectedTransfer {
+func (a *EVMLive) scanERC20(ctx context.Context, blockNum uint64, blockHash string, blockTime time.Time) ([]types.DetectedTransfer, error) {
 	// Caller must have registered tokens in the registry — we access via package-level
 	// In production, inject registry into adapter. For POC, accept this coupling.
 	transferTopic := "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"
@@ -624,10 +661,12 @@ func (a *EVMLive) scanERC20(ctx context.Context, blockNum uint64, blockHash stri
 
 	// Single getLogs call for the entire block, no address filter
 	// We'll match against known token contracts in Go
-	_ = a.rpc.Call(ctx, "eth_getLogs", &logs, map[string]interface{}{
+	if err := a.rpc.Call(ctx, "eth_getLogs", &logs, map[string]interface{}{
 		"fromBlock": hexBlock, "toBlock": hexBlock,
 		"topics": []string{transferTopic},
-	})
+	}); err != nil {
+		return nil, err
+	}
 
 	var result []types.DetectedTransfer
 	for _, log := range logs {
@@ -653,7 +692,7 @@ func (a *EVMLive) scanERC20(ctx context.Context, blockNum uint64, blockHash stri
 			}
 		}
 	}
-	return result
+	return result, nil
 }
 
 // ---------------------------------------------------------------------------

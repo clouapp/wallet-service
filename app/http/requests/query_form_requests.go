@@ -123,3 +123,25 @@ func (r *ListTransactionsRequest) Load(ctx http.Context) {
 	r.Status = queryValue(ctx, "status", "")
 	r.UserID = queryValue(ctx, "user_id", "")
 }
+
+// FeeEstimateRequest is the optional fee-estimate query. Amount stays a string;
+// the estimator rejects a non-decimal amount.
+type FeeEstimateRequest struct {
+	Open
+	Asset  string `form:"asset" json:"asset"`
+	Amount string `form:"amount" json:"amount"`
+	To     string `form:"to" json:"to"`
+}
+
+func (r *FeeEstimateRequest) Rules(http.Context) map[string]string {
+	return optionalStringRules("asset", "amount", "to")
+}
+
+func (r *FeeEstimateRequest) Load(ctx http.Context) {
+	if r == nil {
+		return
+	}
+	r.Asset = queryValue(ctx, "asset", "")
+	r.Amount = queryValue(ctx, "amount", "")
+	r.To = queryValue(ctx, "to", "")
+}

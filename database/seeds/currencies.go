@@ -6,9 +6,13 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/goravel/framework/facades"
+	"github.com/shopspring/decimal"
 
 	"github.com/macrowallets/waas/app/models"
+	"github.com/macrowallets/waas/pkg/numeric"
 )
+
+const usdFiatCode = "USD"
 
 type currencySeed struct {
 	Name     string
@@ -67,15 +71,14 @@ func seedCryptos() error {
 		}
 		logo := c.Logo
 		cur := models.Currency{
-			ID:           uuid.New(),
-			Name:         c.Name,
-			Code:         c.Code,
-			Symbol:       c.Symbol,
-			Type:         models.CurrencyTypeCrypto,
-			Logo:         &logo,
-			Subunits:     c.Subunits,
-			CurrentPrice: 0,
-			Active:       c.Active,
+			ID:       uuid.New(),
+			Name:     c.Name,
+			Code:     c.Code,
+			Symbol:   c.Symbol,
+			Type:     models.CurrencyTypeCrypto,
+			Logo:     &logo,
+			Subunits: c.Subunits,
+			Active:   c.Active,
 		}
 		if err := facades.Orm().Query().Create(&cur); err != nil {
 			return err
@@ -239,9 +242,10 @@ func seedFiats() error {
 			slog.Info("currency already exists, skipping", "code", f.Code)
 			continue
 		}
-		price := 0.0
-		if f.Code == "USD" {
-			price = 1.0
+		// The zero value is omitted on insert, so the column default (1) applies.
+		var price numeric.Decimal
+		if f.Code == usdFiatCode {
+			price = numeric.NewDecimal(decimal.NewFromInt(1))
 		}
 		cur := models.Currency{
 			ID:           uuid.New(),

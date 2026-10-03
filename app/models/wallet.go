@@ -9,6 +9,7 @@ import (
 	"github.com/goravel/framework/database/orm"
 
 	"github.com/macrowallets/waas/pkg/mpcshare"
+	"github.com/macrowallets/waas/pkg/numeric"
 )
 
 const (
@@ -39,22 +40,21 @@ type Wallet struct {
 	AddressIndex     int        `gorm:"type:integer;not null;default:0"`
 	DepositAddressID *uuid.UUID `gorm:"type:uuid"`
 	// Account and admin fields
-	AccountID         *uuid.UUID `gorm:"type:uuid;index"`
-	Status            string     `gorm:"type:wallet_status;default:active"`
-	FeeRateMin        *int       `gorm:"type:integer"`
-	FeeRateMax        *int       `gorm:"type:integer"`
-	FeeMultiplier     *float64   `gorm:"type:decimal(8,4)"`
-	RequiredApprovals int        `gorm:"default:1"`
+	AccountID         *uuid.UUID          `gorm:"type:uuid;index"`
+	Status            string              `gorm:"type:wallet_status;default:active"`
+	FeeRateMin        *int                `gorm:"type:integer"`
+	FeeRateMax        *int                `gorm:"type:integer"`
+	FeeMultiplier     numeric.NullDecimal `gorm:"type:decimal(8,4)"`
+	RequiredApprovals int                 `gorm:"default:1"`
 	FrozenUntil       *time.Time
-	ActivationCode    *string `gorm:"type:char(6)"`
+	ActivationCode    *string             `gorm:"type:char(6)"`
 
-	BalanceAsset        *string    `gorm:"type:varchar(32)"`
-	BalanceRaw          *string    `gorm:"type:text"`
-	BalanceDisplay      *string    `gorm:"type:text"`
-	BalanceUSD          *float64   `gorm:"type:decimal(28,10)"`
-	BalanceLastSyncedAt *time.Time `gorm:"type:timestamptz"`
-	ReadModelStatus     string     `gorm:"type:wallet_read_model_status;default:idle"`
-
+	BalanceAsset        *string             `gorm:"type:varchar(32)"`
+	BalanceRaw          *string             `gorm:"type:text"`
+	BalanceDisplay      *string             `gorm:"type:text"`
+	BalanceUSD          numeric.NullDecimal `gorm:"type:decimal(28,10)"`
+	BalanceLastSyncedAt *time.Time          `gorm:"type:timestamptz"`
+	ReadModelStatus     string              `gorm:"type:wallet_read_model_status;default:idle"`
 	GasStatus          string     `gorm:"type:wallet_gas_status;not null;default:unseeded;index"`
 	GasLastCheckedAt   *time.Time `gorm:"type:timestamptz"`
 	SweepPolicyVersion int        `gorm:"not null;default:1"`

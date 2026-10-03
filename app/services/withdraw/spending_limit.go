@@ -5,16 +5,16 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"math"
 	"math/big"
 	"regexp"
-	"strconv"
 	"strings"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/shopspring/decimal"
 
 	"github.com/macrowallets/waas/app/models"
+	"github.com/macrowallets/waas/pkg/numeric"
 )
 
 const (
@@ -43,7 +43,7 @@ var (
 // USDQuote prices one asset amount in USD. A nil quote blocks a set cap and
 // is never called when the cap is blank.
 type USDQuote interface {
-	ConvertToUSD(ctx context.Context, code string, amount float64) (float64, error)
+	ConvertToUSD(ctx context.Context, code string, amount decimal.Decimal) (decimal.Decimal, error)
 }
 
 // StoreSpendingLimit turns the create-token object into the column value.
@@ -146,19 +146,15 @@ func (s *Service) quoteSpendCents(ctx context.Context, req WithdrawRequest) (int
 	if s == nil || s.usdQuote == nil {
 		return 0, ErrSpendingQuoteUnavailable
 	}
-	human, ok := new(big.Rat).SetString(strings.TrimSpace(req.QuoteAmount))
-	if !ok || human.Sign() <= 0 {
-		return 0, ErrSpendingQuoteUnavailable
-	}
-	amount, _ := human.Float64()
-	if amount <= 0 || math.IsNaN(amount) || math.IsInf(amount, 0) {
+	amount, err := numeric.Parse("amount", strings.TrimSpace(req.QuoteAmount))
+	if err != nil || !amount.IsPositive() {
 		return 0, ErrSpendingQuoteUnavailable
 	}
 	usd, err := s.usdQuote.ConvertToUSD(ctx, asset, amount)
-	if err != nil || math.IsNaN(usd) || math.IsInf(usd, 0) || usd <= 0 {
+	if err != nil || !usd.IsPositive() {
 		return 0, ErrSpendingQuoteUnavailable
 	}
-	cents, err := usdFloatToCents(usd)
+	cents, err := decimalToCents(usd.String())
 	if err != nil || cents <= 0 {
 		return 0, ErrSpendingQuoteUnavailable
 	}
@@ -221,10 +217,11 @@ func dailyUSDText(value any) (string, bool, error) {
 		}
 		return text, true, nil
 	case float64:
-		if math.IsNaN(typed) || math.IsInf(typed, 0) {
+		parsed := decimal.NewFromFloat(typed)
+		if parsed.IsNegative() {
 			return "", true, ErrSpendingLimitInvalid
 		}
-		return strconv.FormatFloat(typed, 'f', -1, 64), true, nil
+		return parsed.String(), true, nil
 	case json.Number:
 		text := strings.TrimSpace(typed.String())
 		if text == "" {
@@ -269,13 +266,6 @@ func decimalToCents(text string) (int64, error) {
 		return 0, ErrSpendingLimitInvalid
 	}
 	return cents.Int64(), nil
-}
-
-func usdFloatToCents(amount float64) (int64, error) {
-	if math.IsNaN(amount) || math.IsInf(amount, 0) || amount < 0 {
-		return 0, ErrSpendingLimitInvalid
-	}
-	return decimalToCents(strconv.FormatFloat(amount, 'f', 8, 64))
 }
 
 func amountIsNegative(value any) bool {

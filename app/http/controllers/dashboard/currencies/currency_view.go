@@ -7,6 +7,7 @@ import (
 	"github.com/goravel/framework/support/carbon"
 
 	"github.com/macrowallets/waas/app/models"
+	"github.com/macrowallets/waas/pkg/numeric"
 )
 
 // CurrencyView is the currency row the dashboard reads. Field order and tags
@@ -14,19 +15,19 @@ import (
 // an empty page stays empty. A nil currency stays null. A non-nil empty logo
 // stays "".
 type CurrencyView struct {
-	CreatedAt      *carbon.DateTime `json:"created_at"`
-	UpdatedAt      *carbon.DateTime `json:"updated_at"`
-	ID             uuid.UUID        `json:"id"`
-	Name           string           `json:"name"`
-	Code           string           `json:"code"`
-	Symbol         string           `json:"symbol"`
-	Type           string           `json:"type"`
-	Logo           *string          `json:"logo,omitempty"`
-	Subunits       int              `json:"subunits"`
-	CurrentPrice   float64          `json:"current_price"`
-	LastPrice      *float64         `json:"last_price,omitempty"`
-	PriceUpdatedAt *time.Time       `json:"price_updated_at,omitempty"`
-	Active         bool             `json:"active"`
+	CreatedAt      *carbon.DateTime    `json:"created_at"`
+	UpdatedAt      *carbon.DateTime    `json:"updated_at"`
+	ID             uuid.UUID           `json:"id"`
+	Name           string              `json:"name"`
+	Code           string              `json:"code"`
+	Symbol         string              `json:"symbol"`
+	Type           string              `json:"type"`
+	Logo           *string             `json:"logo,omitempty"`
+	Subunits       int                 `json:"subunits"`
+	CurrentPrice   numeric.Decimal     `json:"current_price"`
+	LastPrice      numeric.NullDecimal `json:"last_price,omitzero"`
+	PriceUpdatedAt *time.Time          `json:"price_updated_at,omitempty"`
+	Active         bool                `json:"active"`
 }
 
 func newCurrencyView(currency models.Currency) CurrencyView {

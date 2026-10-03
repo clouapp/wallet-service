@@ -1,6 +1,7 @@
 package withdraw
 
 import (
+	"errors"
 	"fmt"
 	"math/big"
 	"strings"
@@ -8,9 +9,19 @@ import (
 	"github.com/macrowallets/waas/pkg/types"
 )
 
+// ErrUnknownAsset: the asset is neither the chain's native coin nor a seeded token.
+var ErrUnknownAsset = errors.New("unknown asset")
+
 type ResolvedWithdrawal struct {
 	WalletAsset string
 	BaseUnits   *big.Int
+	Token       *types.Token
+}
+
+// ResolvedAsset is a withdrawable asset of a chain; Token is nil for the native coin.
+type ResolvedAsset struct {
+	WalletAsset string
+	Decimals    int
 	Token       *types.Token
 }
 
@@ -19,30 +30,35 @@ type ResolvedWithdrawal struct {
 // seeded token symbol, case-insensitively, and uses that token's decimals.
 // Polygon native is POL; the legacy MATIC ticker is accepted as an alias.
 func ResolveWithdrawalAmount(chainID, nativeSymbol string, nativeDecimals int, requested, human string, tokens []types.Token) (*ResolvedWithdrawal, error) {
-	req := strings.TrimSpace(requested)
-	if req == "" || types.SameAssetSymbol(req, nativeSymbol) {
-		base, err := humanToBaseUnits(human, nativeDecimals)
-		if err != nil {
-			return nil, err
-		}
-		return &ResolvedWithdrawal{WalletAsset: nativeSymbol, BaseUnits: base}, nil
-	}
-	var match *types.Token
-	for i := range tokens {
-		if strings.EqualFold(tokens[i].Symbol, req) {
-			copy := tokens[i]
-			match = &copy
-			break
-		}
-	}
-	if match == nil {
-		return nil, fmt.Errorf("unknown asset %s on chain %s", req, chainID)
-	}
-	base, err := humanToBaseUnits(human, int(match.Decimals))
+	asset, err := ResolveAsset(chainID, nativeSymbol, nativeDecimals, requested, tokens)
 	if err != nil {
 		return nil, err
 	}
-	return &ResolvedWithdrawal{WalletAsset: match.Symbol, BaseUnits: base, Token: match}, nil
+	base, err := ParseHumanAmount(human, asset.Decimals)
+	if err != nil {
+		return nil, err
+	}
+	return &ResolvedWithdrawal{WalletAsset: asset.WalletAsset, BaseUnits: base, Token: asset.Token}, nil
+}
+
+// ResolveAsset applies ResolveWithdrawalAmount's asset rules without an amount.
+func ResolveAsset(chainID, nativeSymbol string, nativeDecimals int, requested string, tokens []types.Token) (ResolvedAsset, error) {
+	req := strings.TrimSpace(requested)
+	if req == "" || types.SameAssetSymbol(req, nativeSymbol) {
+		return ResolvedAsset{WalletAsset: nativeSymbol, Decimals: nativeDecimals}, nil
+	}
+	for i := range tokens {
+		if strings.EqualFold(tokens[i].Symbol, req) {
+			token := tokens[i]
+			return ResolvedAsset{WalletAsset: token.Symbol, Decimals: int(token.Decimals), Token: &token}, nil
+		}
+	}
+	return ResolvedAsset{}, fmt.Errorf("%w %s on chain %s", ErrUnknownAsset, req, chainID)
+}
+
+// ParseHumanAmount converts a positive human decimal amount into base units.
+func ParseHumanAmount(human string, decimals int) (*big.Int, error) {
+	return humanToBaseUnits(human, decimals)
 }
 
 func humanToBaseUnits(human string, decimals int) (*big.Int, error) {

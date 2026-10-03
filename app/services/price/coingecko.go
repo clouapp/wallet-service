@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/macrowallets/waas/pkg/httpclient"
+	"github.com/shopspring/decimal"
 )
 
 var geckoIDMap = map[string]string{
@@ -47,7 +48,7 @@ func NewCoinGeckoProvider(apiKey string) *CoinGeckoProvider {
 
 func (p *CoinGeckoProvider) Name() string { return "coingecko" }
 
-func (p *CoinGeckoProvider) FetchCryptoPrices(codes []string) (map[string]float64, error) {
+func (p *CoinGeckoProvider) FetchCryptoPrices(codes []string) (map[string]decimal.Decimal, error) {
 	ids := make([]string, 0, len(codes))
 	for _, code := range codes {
 		if id, ok := geckoIDMap[strings.ToUpper(code)]; ok {
@@ -55,7 +56,7 @@ func (p *CoinGeckoProvider) FetchCryptoPrices(codes []string) (map[string]float6
 		}
 	}
 	if len(ids) == 0 {
-		return map[string]float64{}, nil
+		return map[string]decimal.Decimal{}, nil
 	}
 
 	url := fmt.Sprintf("%s/simple/price?ids=%s&vs_currencies=usd", p.baseURL, strings.Join(ids, ","))
@@ -64,15 +65,15 @@ func (p *CoinGeckoProvider) FetchCryptoPrices(codes []string) (map[string]float6
 		return nil, fmt.Errorf("coingecko crypto prices: %w", err)
 	}
 
-	var result map[string]map[string]float64
+	var result map[string]map[string]decimal.Decimal
 	if err := json.Unmarshal(body, &result); err != nil {
 		return nil, fmt.Errorf("coingecko parse: %w", err)
 	}
 
-	prices := make(map[string]float64, len(result))
+	prices := make(map[string]decimal.Decimal, len(result))
 	for geckoID, data := range result {
 		if code, ok := geckoReverseMap[geckoID]; ok {
-			if usdPrice, exists := data["usd"]; exists && usdPrice > 0 {
+			if usdPrice, exists := data["usd"]; exists && usdPrice.IsPositive() {
 				prices[code] = usdPrice
 			}
 		}
@@ -80,7 +81,7 @@ func (p *CoinGeckoProvider) FetchCryptoPrices(codes []string) (map[string]float6
 	return prices, nil
 }
 
-func (p *CoinGeckoProvider) FetchFiatRates(codes []string) (map[string]float64, error) {
+func (p *CoinGeckoProvider) FetchFiatRates(codes []string) (map[string]decimal.Decimal, error) {
 	lowerCodes := make([]string, len(codes))
 	for i, c := range codes {
 		lowerCodes[i] = strings.ToLower(c)
@@ -92,17 +93,17 @@ func (p *CoinGeckoProvider) FetchFiatRates(codes []string) (map[string]float64, 
 		return nil, fmt.Errorf("coingecko fiat rates: %w", err)
 	}
 
-	var result map[string]map[string]float64
+	var result map[string]map[string]decimal.Decimal
 	if err := json.Unmarshal(body, &result); err != nil {
 		return nil, fmt.Errorf("coingecko fiat parse: %w", err)
 	}
 
-	rates := make(map[string]float64, len(codes))
+	rates := make(map[string]decimal.Decimal, len(codes))
 	if usdcData, ok := result["usd-coin"]; ok {
 		for _, code := range codes {
 			lower := strings.ToLower(code)
-			if fiatVal, exists := usdcData[lower]; exists && fiatVal > 0 {
-				rates[code] = 1.0 / fiatVal
+			if fiatVal, exists := usdcData[lower]; exists && fiatVal.IsPositive() {
+				rates[code] = invertRate(fiatVal)
 			}
 		}
 	}

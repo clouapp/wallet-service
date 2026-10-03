@@ -20,7 +20,7 @@ func TestNewReturnsNilForANilClient(t *testing.T) {
 
 func TestNilCacheReportsAMissingClient(t *testing.T) {
 	var cache *Cache
-	if _, err := cache.Float64(context.Background(), "currency:BTC"); err == nil {
+	if _, err := cache.Get(context.Background(), "currency:BTC"); err == nil {
 		t.Fatal("expected error for a nil cache read")
 	}
 	if err := cache.Set(context.Background(), "currency:BTC", []byte("1"), time.Second); err == nil {
@@ -55,7 +55,7 @@ func TestSetWritesTheBytesAndKeepsTheTTL(t *testing.T) {
 	}
 }
 
-func TestFloat64ReadsTheStoredNumber(t *testing.T) {
+func TestGetReadsTheStoredDecimalText(t *testing.T) {
 	client := testutil.TestRedis(t)
 	prefix := testutil.TestRedisPrefix(t, client)
 	key := prefix + "currency:ETH"
@@ -65,20 +65,20 @@ func TestFloat64ReadsTheStoredNumber(t *testing.T) {
 		t.Fatalf("set: %v", err)
 	}
 
-	got, err := cache.Float64(ctx, key)
+	got, err := cache.Get(ctx, key)
 	if err != nil {
-		t.Fatalf("float64: %v", err)
+		t.Fatalf("get: %v", err)
 	}
-	if got != 3200 {
-		t.Fatalf("value = %v", got)
+	if got != "3200" {
+		t.Fatalf("value = %q", got)
 	}
 }
 
-func TestFloat64MissingKeyIsRedisNil(t *testing.T) {
+func TestGetMissingKeyIsRedisNil(t *testing.T) {
 	client := testutil.TestRedis(t)
 	prefix := testutil.TestRedisPrefix(t, client)
 
-	_, err := New(client).Float64(context.Background(), prefix+"currency:missing")
+	_, err := New(client).Get(context.Background(), prefix+"currency:missing")
 	if !errors.Is(err, redis.Nil) {
 		t.Fatalf("error = %v", err)
 	}
@@ -91,7 +91,7 @@ func TestCommandsCanceledContext(t *testing.T) {
 	cancel()
 	cache := New(client)
 
-	if _, err := cache.Float64(ctx, prefix+"currency:BTC"); !errors.Is(err, context.Canceled) {
+	if _, err := cache.Get(ctx, prefix+"currency:BTC"); !errors.Is(err, context.Canceled) {
 		t.Fatalf("get error = %v", err)
 	}
 	if err := cache.Set(ctx, prefix+"currency:BTC", []byte("1"), time.Second); !errors.Is(err, context.Canceled) {

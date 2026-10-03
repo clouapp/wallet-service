@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/shopspring/decimal"
 
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/services/chain"
@@ -112,6 +113,10 @@ type service struct {
 	chainRepo   chainReader
 	flags       accountGate
 	gasDefaults map[string]GasReadinessDefault
+	// dustUSDDefault is the configured USD dust for a chain when the row's column is NULL.
+	dustUSDDefault func(chainID string) decimal.Decimal
+	// tokenPricer converts USD dust thresholds to token amounts; nil disables token dust filtering.
+	tokenPricer TokenPricer
 
 	// fetchShareBFn retrieves the service share for a wallet. Tests set it to an
 	// in-memory stub. Production uses secrets.
@@ -133,20 +138,24 @@ func NewService(
 	chainRepo chainReader,
 	flags accountGate,
 	gasDefaults map[string]GasReadinessDefault,
+	tokenPricer TokenPricer,
+	dustUSDDefault func(chainID string) decimal.Decimal,
 ) Service {
 	return &service{
-		registry:    registry,
-		mpc:         mpc,
-		secrets:     secrets,
-		rdb:         rdb,
-		webhookSvc:  webhookSvc,
-		walletRepo:  walletRepo,
-		addressRepo: addressRepo,
-		txRepo:      txRepo,
-		sweepLimits: sweepLimits,
-		chainRepo:   chainRepo,
-		flags:       flags,
-		gasDefaults: cloneGasDefaults(gasDefaults),
+		registry:       registry,
+		mpc:            mpc,
+		secrets:        secrets,
+		rdb:            rdb,
+		webhookSvc:     webhookSvc,
+		walletRepo:     walletRepo,
+		addressRepo:    addressRepo,
+		txRepo:         txRepo,
+		sweepLimits:    sweepLimits,
+		chainRepo:      chainRepo,
+		flags:          flags,
+		gasDefaults:    cloneGasDefaults(gasDefaults),
+		dustUSDDefault: dustUSDDefault,
+		tokenPricer:    tokenPricer,
 	}
 }
 

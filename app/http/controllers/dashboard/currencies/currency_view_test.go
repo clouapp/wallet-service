@@ -7,8 +7,10 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/goravel/framework/support/carbon"
+	"github.com/shopspring/decimal"
 
 	"github.com/macrowallets/waas/app/models"
+	"github.com/macrowallets/waas/pkg/numeric"
 )
 
 func TestCurrencyViewKeepsTheModelWire(t *testing.T) {
@@ -18,13 +20,13 @@ func TestCurrencyViewKeepsTheModelWire(t *testing.T) {
 	created := carbon.NewDateTime(carbon.Parse("2024-05-06 07:08:09"))
 	updated := carbon.NewDateTime(carbon.Parse("2024-05-06 07:08:10"))
 	until := time.Date(2024, 5, 6, 7, 8, 9, 0, time.UTC)
-	price := 1.5
-	zero := 0.0
+	price := numeric.NewNullDecimal(decimal.RequireFromString("1.5"))
+	zero := numeric.NewNullDecimal(decimal.Zero)
 	logo := "https://example.test/logo.png"
 	empty := ""
 	full := models.Currency{
 		ID: id, Name: "Dollar", Code: "USD", Symbol: "$", Type: models.CurrencyTypeFiat,
-		Logo: &logo, Subunits: 2, CurrentPrice: 1, LastPrice: &price, PriceUpdatedAt: &until, Active: true,
+		Logo: &logo, Subunits: 2, CurrentPrice: numeric.NewDecimal(decimal.NewFromInt(1)), LastPrice: price, PriceUpdatedAt: &until, Active: true,
 	}
 	full.CreatedAt = created
 	full.UpdatedAt = updated
@@ -38,7 +40,7 @@ func TestCurrencyViewKeepsTheModelWire(t *testing.T) {
 			want:     `{"created_at":null,"updated_at":null,"id":"00000000-0000-0000-0000-000000000000","name":"","code":"","symbol":"","type":"","subunits":0,"current_price":0,"active":false}`,
 		},
 		{
-			currency: models.Currency{Logo: &empty, LastPrice: &zero},
+			currency: models.Currency{Logo: &empty, LastPrice: zero},
 			want:     `{"created_at":null,"updated_at":null,"id":"00000000-0000-0000-0000-000000000000","name":"","code":"","symbol":"","type":"","logo":"","subunits":0,"current_price":0,"last_price":0,"active":false}`,
 		},
 		{

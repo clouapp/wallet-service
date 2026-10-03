@@ -9,18 +9,22 @@ import (
 	"fmt"
 	"math/big"
 	"net/url"
-	"strconv"
 	"strings"
 	"time"
 
+	"github.com/shopspring/decimal"
+
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/pkg/httpclient"
+	"github.com/macrowallets/waas/pkg/numeric"
 	"github.com/macrowallets/waas/pkg/types"
 )
 
 const (
 	heliusAPIBase     = "https://api-mainnet.helius-rpc.com"
 	heliusHTTPTimeout = 30 * time.Second
+	// heliusMaxTokenDecimals bounds SPL mint decimals.
+	heliusMaxTokenDecimals = 18
 
 	heliusWebhookTypeMainnet = "enhanced"
 	heliusWebhookTypeDevnet  = "enhancedDevnet"
@@ -240,11 +244,11 @@ type heliusNativeTransfer struct {
 }
 
 type heliusTokenTransfer struct {
-	FromUserAccount string  `json:"fromUserAccount"`
-	ToUserAccount   string  `json:"toUserAccount"`
-	TokenAmount     float64 `json:"tokenAmount"`
-	Mint            string  `json:"mint"`
-	Decimals        *uint8  `json:"decimals,omitempty"`
+	FromUserAccount string          `json:"fromUserAccount"`
+	ToUserAccount   string          `json:"toUserAccount"`
+	TokenAmount     decimal.Decimal `json:"tokenAmount"`
+	Mint            string          `json:"mint"`
+	Decimals        *uint8          `json:"decimals,omitempty"`
 }
 
 func (h *HeliusProvider) ParsePayload(body []byte) ([]InboundTransfer, error) {
@@ -297,10 +301,10 @@ func (h *HeliusProvider) ParsePayload(body []byte) ([]InboundTransfer, error) {
 			}
 			if tt.Decimals == nil {
 				transfer.AmountIsHuman = true
-				transfer.HumanAmount = strconv.FormatFloat(tt.TokenAmount, 'f', -1, 64)
+				transfer.HumanAmount = tt.TokenAmount.String()
 				transfer.Token.Decimals = 0
 			} else {
-				amount, err := floatHumanToRawBigInt(tt.TokenAmount, *tt.Decimals)
+				amount, err := humanToRawBigInt(tt.TokenAmount, *tt.Decimals)
 				if err != nil {
 					return nil, fmt.Errorf("helius: token amount (tx=%s mint=%s): %w", tx.Signature, tt.Mint, err)
 				}
@@ -350,21 +354,14 @@ func resolveHeliusAuthHeader(cfgSecret string) (string, error) {
 	return "Bearer " + hex.EncodeToString(b[:]), nil
 }
 
-func floatHumanToRawBigInt(human float64, decimals uint8) (*big.Int, error) {
-	if decimals > 18 {
+func humanToRawBigInt(human decimal.Decimal, decimals uint8) (*big.Int, error) {
+	if decimals > heliusMaxTokenDecimals {
 		return nil, fmt.Errorf("decimals %d out of range", decimals)
 	}
-	scale := new(big.Float).SetInt(new(big.Int).Exp(big.NewInt(10), big.NewInt(int64(decimals)), nil))
-	val := new(big.Float).SetFloat64(human)
-	if val == nil {
-		return nil, fmt.Errorf("invalid token amount")
-	}
-	val.Mul(val, scale)
-	raw, _ := val.Int(nil)
-	if raw.Sign() < 0 {
+	if human.IsNegative() {
 		return nil, fmt.Errorf("negative token amount")
 	}
-	return raw, nil
+	return numeric.ToBaseUnits(human, int32(decimals))
 }
 
 var _ WebhookProvider = (*HeliusProvider)(nil)

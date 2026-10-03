@@ -2,25 +2,11 @@ package seeds
 
 import (
 	"context"
-	"fmt"
-	"log/slog"
-
-	"github.com/google/uuid"
-	"github.com/goravel/framework/facades"
-
-	"github.com/macrowallets/waas/app/models"
 )
 
 // SeedChainResources inserts explorer / faucet links per chain.
 func SeedChainResources(_ context.Context) error {
-	type resSeed struct {
-		chainID string
-		type_   string
-		name    string
-		url     string
-	}
-
-	resources := []resSeed{
+	resources := []resourceSeed{
 		{"eth", "explorer", "Etherscan", "https://etherscan.io"},
 		{"teth", "explorer", "Sepolia Etherscan", "https://sepolia.etherscan.io"},
 		{"teth", "faucet", "Sepolia Faucet", "https://sepoliafaucet.com"},
@@ -36,28 +22,19 @@ func SeedChainResources(_ context.Context) error {
 		{"tsol", "faucet", "Solana Devnet Faucet", "https://faucet.solana.com"},
 	}
 
-	for _, r := range resources {
-		var existing models.ChainResource
-		err := facades.Orm().Query().
-			Where("chain_id", r.chainID).
-			Where("type", r.type_).
-			Where("name", r.name).
-			First(&existing)
-		if err == nil && existing.ID != uuid.Nil {
-			continue
+	profile, err := configuredChainNetworkProfile()
+	if err != nil {
+		return err
+	}
+	added, err := addedChainResources(profileOrMainnet(profile))
+	if err != nil {
+		return err
+	}
+
+	for _, r := range append(resources, added...) {
+		if _, err := createResourceUnlessPresent(r); err != nil {
+			return err
 		}
-		cr := models.ChainResource{
-			ID:      uuid.New(),
-			ChainID: r.chainID,
-			Type:    r.type_,
-			Name:    r.name,
-			URL:     r.url,
-			Status:  "active",
-		}
-		if err := facades.Orm().Query().Create(&cr); err != nil {
-			return fmt.Errorf("create chain resource %s %s: %w", r.chainID, r.name, err)
-		}
-		slog.Info("created chain resource", "chain_id", r.chainID, "name", r.name)
 	}
 	return nil
 }
