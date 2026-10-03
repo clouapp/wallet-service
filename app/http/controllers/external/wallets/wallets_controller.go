@@ -96,7 +96,7 @@ func (ctrl *WalletsController) CreateWallet(ctx http.Context) http.Response {
 			"error": "wallet service returned no wallet",
 		})
 	}
-	return ctx.Response().Json(http.StatusCreated, newCreateWalletResponse(result))
+	return responses.Send(ctx, http.StatusCreated, newCreateWalletResponse(result))
 }
 
 // ListWallets godoc
@@ -135,7 +135,7 @@ func (ctrl *WalletsController) ListWallets(ctx http.Context) http.Response {
 			"error": "failed to fetch wallet balances",
 		})
 	}
-	return ctx.Response().Json(http.StatusOK, pagination.Response(items, total, limit, offset))
+	return responses.Send(ctx, http.StatusOK, pagination.Response(items, total, limit, offset))
 }
 
 // GetWallet godoc
