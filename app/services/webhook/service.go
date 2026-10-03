@@ -1,7 +1,6 @@
 package webhook
 
 import (
-	"bytes"
 	"context"
 	"crypto/hmac"
 	"crypto/sha256"
@@ -10,7 +9,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"net/http"
 	"strings"
 	"time"
 
@@ -18,6 +16,7 @@ import (
 
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/services/queue"
+	"github.com/macrowallets/waas/pkg/httpclient"
 	"github.com/macrowallets/waas/pkg/types"
 )
 
@@ -155,25 +154,29 @@ func (s *Service) Deliver(ctx context.Context, msg types.WebhookMessage) error {
 	mac.Write([]byte(msg.Payload))
 	signature := hex.EncodeToString(mac.Sum(nil))
 
-	req, err := http.NewRequestWithContext(ctx, "POST", msg.DeliveryURL, bytes.NewReader([]byte(msg.Payload)))
+	const webhookDeliveryTimeout = 10 * time.Second
+	resp, err := httpclient.NewClient(webhookDeliveryTimeout).Do(ctx, httpclient.Request{
+		Method: httpclient.MethodPost,
+		URL:    msg.DeliveryURL,
+		Header: map[string]string{
+			"Content-Type":        "application/json",
+			"X-Vault-Signature":   signature,
+			"X-Vault-Event":       string(msg.EventType),
+			"X-Vault-Delivery-Id": msg.EventID,
+			"X-Vault-Timestamp":   fmt.Sprintf("%d", time.Now().Unix()),
+		},
+		Body:    []byte(msg.Payload),
+		HasBody: true,
+	})
 	if err != nil {
-		return fmt.Errorf("build request: %w", err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("X-Vault-Signature", signature)
-	req.Header.Set("X-Vault-Event", string(msg.EventType))
-	req.Header.Set("X-Vault-Delivery-Id", msg.EventID)
-	req.Header.Set("X-Vault-Timestamp", fmt.Sprintf("%d", time.Now().Unix()))
-
-	client := &http.Client{Timeout: 10 * time.Second}
-	resp, err := client.Do(req)
-	if err != nil {
+		if httpclient.IsBuild(err) {
+			return fmt.Errorf("build request: %w", err)
+		}
 		s.markAttempt(ctx, msg.EventID, err.Error())
 		return fmt.Errorf("http send: %w", err)
 	}
-	defer resp.Body.Close()
 
-	if resp.StatusCode >= 400 {
+	if resp.StatusCode >= httpclient.StatusBadRequest {
 		errMsg := fmt.Sprintf("HTTP %d", resp.StatusCode)
 		s.markAttempt(ctx, msg.EventID, errMsg)
 		return fmt.Errorf("delivery failed: %s", errMsg)
