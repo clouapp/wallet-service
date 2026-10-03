@@ -336,7 +336,7 @@ func buildVaultContainer(app foundation.Application) (*container.Container, erro
 		Registry:     c.Registry,
 		AddressCache: addresscache.New(c.Redis),
 		MPC:          c.MPCService,
-		Secrets:      c.SecretsManager,
+		Secrets:      sweepsecrets.NewWalletStore(c.SecretsManager),
 		Wallets:      c.WalletRepo,
 		Addresses:    c.AddressRepo,
 		WebhookSync:  c.WebhookSyncService,

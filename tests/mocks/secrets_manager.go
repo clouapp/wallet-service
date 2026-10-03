@@ -30,6 +30,27 @@ func (m *MockSecretsManager) CreateSecret(_ context.Context, input *secretsmanag
 	}, nil
 }
 
+// Create stores secretBinary under name and returns the same ARN CreateSecret would.
+func (m *MockSecretsManager) Create(ctx context.Context, name string, secretBinary []byte) (string, error) {
+	out, err := m.CreateSecret(ctx, &secretsmanager.CreateSecretInput{
+		Name:         aws.String(name),
+		SecretBinary: secretBinary,
+	})
+	if err != nil {
+		return "", err
+	}
+	return aws.ToString(out.ARN), nil
+}
+
+// Binary returns the stored bytes for secretID. The slice is the one Create stored.
+func (m *MockSecretsManager) Binary(ctx context.Context, secretID string) ([]byte, error) {
+	out, err := m.GetSecretValue(ctx, &secretsmanager.GetSecretValueInput{SecretId: &secretID})
+	if err != nil {
+		return nil, err
+	}
+	return out.SecretBinary, nil
+}
+
 func (m *MockSecretsManager) GetSecretValue(_ context.Context, input *secretsmanager.GetSecretValueInput, opts ...func(*secretsmanager.Options)) (*secretsmanager.GetSecretValueOutput, error) {
 	secretID := aws.ToString(input.SecretId)
 	for name, data := range m.secrets {

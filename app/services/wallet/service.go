@@ -16,8 +16,6 @@ import (
 	"math/big"
 	"strings"
 
-	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/service/secretsmanager"
 	"github.com/google/uuid"
 	"github.com/goravel/framework/contracts/event"
 	"github.com/goravel/framework/facades"
@@ -44,11 +42,12 @@ type CreateWalletResult struct {
 	ActivationCode    string // 6-digit zero-padded decimal
 }
 
-// SecretsManagerAPI is a subset of secretsmanager.Client used by the wallet service,
-// defined as an interface to allow test mocking.
-type SecretsManagerAPI interface {
-	CreateSecret(ctx context.Context, input *secretsmanager.CreateSecretInput, opts ...func(*secretsmanager.Options)) (*secretsmanager.CreateSecretOutput, error)
-	GetSecretValue(ctx context.Context, input *secretsmanager.GetSecretValueInput, opts ...func(*secretsmanager.Options)) (*secretsmanager.GetSecretValueOutput, error)
+// SecretStore stores and loads the service share. The provider supplies it;
+// this package never imports the AWS SDK. A nil SecretStore means Secrets
+// Manager is not configured. The service keeps the secret name and the bytes.
+type SecretStore interface {
+	Create(ctx context.Context, name string, secretBinary []byte) (arn string, err error)
+	Binary(ctx context.Context, secretID string) ([]byte, error)
 }
 
 type webhookAddressSyncer interface {
@@ -91,7 +90,7 @@ type Deps struct {
 	Registry     *chain.Registry
 	AddressCache AddressCache
 	MPC          mpc.Service
-	Secrets      SecretsManagerAPI
+	Secrets      SecretStore
 	Wallets      WalletStore
 	Addresses    AddressStore
 	WebhookSync  webhookAddressSyncer
@@ -101,7 +100,7 @@ type Service struct {
 	registry       *chain.Registry
 	addresses      AddressCache
 	mpcService     mpc.Service
-	secretsManager SecretsManagerAPI
+	secretsManager SecretStore
 	walletRepo     WalletStore
 	addressRepo    AddressStore
 	webhookSyncSvc webhookAddressSyncer
@@ -192,14 +191,10 @@ func (s *Service) CreateWallet(ctx context.Context, accountID uuid.UUID, chainID
 
 	walletID := uuid.New()
 	secretName := fmt.Sprintf("vault/wallet/%s/share-b", walletID.String())
-	out, err := s.secretsManager.CreateSecret(ctx, &secretsmanager.CreateSecretInput{
-		Name:         aws.String(secretName),
-		SecretBinary: keygenResult.ShareB,
-	})
+	secretARN, err := s.secretsManager.Create(ctx, secretName, keygenResult.ShareB)
 	if err != nil {
 		return nil, fmt.Errorf("store service share: %w", err)
 	}
-	secretARN := aws.ToString(out.ARN)
 
 	onPostSecretErr := func(err error) (*CreateWalletResult, error) {
 		slog.Warn("orphaned secret ARN after wallet creation failure", "arn", secretARN, "error", err)
@@ -416,13 +411,10 @@ func (s *Service) generateEd25519Address(ctx context.Context, w *models.Wallet, 
 		}
 	}()
 
-	secret, err := s.secretsManager.GetSecretValue(ctx, &secretsmanager.GetSecretValueInput{
-		SecretId: &w.MPCSecretARN,
-	})
+	shareB, err := s.secretsManager.Binary(ctx, w.MPCSecretARN)
 	if err != nil {
 		return nil, fmt.Errorf("fetch service share: %w", err)
 	}
-	shareB := secret.SecretBinary
 	defer func() {
 		for i := range shareB {
 			shareB[i] = 0
