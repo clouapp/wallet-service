@@ -27,7 +27,7 @@ func NewFeaturesController(features *featuressvc.Service) *FeaturesController {
 
 // Index godoc
 // @Summary      Account feature flags
-// @Description  Every named flag for one account. A missing row is enabled false. Members with settings.view may read.
+// @Description  Every named flag for one account. A missing row uses the catalog default (withdrawals and sweep on). Members with settings.view may read.
 // @Tags         Account Features
 // @Security     BearerAuth
 // @Produce      json

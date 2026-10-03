@@ -3,9 +3,9 @@ package migrations
 import "github.com/goravel/framework/facades"
 
 // M00000000000300CreateFeaturesTable stores one boolean per (account, key).
-// The catalog in app/services/features names the keys. A missing row is
-// disabled, so this migration does not seed flags. The value is a boolean,
-// never a secret.
+// The catalog in app/services/features names the keys and the default a
+// missing row uses. This migration does not seed flags. The value is a
+// boolean, never a secret.
 type M00000000000300CreateFeaturesTable struct{}
 
 func (r *M00000000000300CreateFeaturesTable) Signature() string {

@@ -4,7 +4,7 @@ import (
 	"testing"
 )
 
-func TestCatalogNamesTheAccountFlagsAndDefaultsThemOff(t *testing.T) {
+func TestCatalogNamesTheAccountFlagsAndTheirDefaults(t *testing.T) {
 	t.Parallel()
 
 	want := []string{
@@ -34,8 +34,9 @@ func TestCatalogNamesTheAccountFlagsAndDefaultsThemOff(t *testing.T) {
 			t.Fatalf("catalog is not sorted: %q before %q", previous, definition.Key)
 		}
 		previous = definition.Key
-		if definition.Default {
-			t.Fatalf("%s default is on; a missing row must stay disabled", definition.Key)
+		wantDefault := definition.Key == FlagSweepEnabled || definition.Key == FlagWithdrawalsEnabled
+		if definition.Default != wantDefault {
+			t.Fatalf("%s default = %v, want %v", definition.Key, definition.Default, wantDefault)
 		}
 		if !definition.AppliesTo(ScopeAccount) {
 			t.Fatalf("%s does not apply to the account scope", definition.Key)

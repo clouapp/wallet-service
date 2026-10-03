@@ -26,7 +26,7 @@ import (
 // before any repository / lock / quota work, so a bad call cannot burn the
 // per-account daily quota.
 func TestConsolidateAll_SweepFlagStopsBeforeWalletLookup(t *testing.T) {
-	paused := errors.New("sweep-enabled")
+	paused := errors.New("sweep_paused")
 	svc := &service{flags: func(context.Context, uuid.UUID) error { return paused }}
 
 	_, err := svc.ConsolidateAll(context.Background(), uuid.New(), "eth", "passphrase12345", uuid.New())

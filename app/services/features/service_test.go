@@ -40,7 +40,7 @@ func (s *memoryStore) written(accountID uuid.UUID, key string) (bool, bool) {
 	return value, ok
 }
 
-func TestListMissingFlagIsDisabledAndWritesNothing(t *testing.T) {
+func TestListMissingRowUsesCatalogDefaultAndWritesNothing(t *testing.T) {
 	t.Parallel()
 
 	store := newMemoryStore()
@@ -55,8 +55,12 @@ func TestListMissingFlagIsDisabledAndWritesNothing(t *testing.T) {
 		t.Fatalf("features = %d, want %d", len(view.Features), len(All()))
 	}
 	for _, flag := range view.Features {
-		if flag.Enabled {
-			t.Fatalf("%s is enabled with no row", flag.Key)
+		definition, ok := Find(flag.Key)
+		if !ok {
+			t.Fatalf("list returned unknown key %s", flag.Key)
+		}
+		if flag.Enabled != definition.Default {
+			t.Fatalf("%s enabled = %v, catalog default %v", flag.Key, flag.Enabled, definition.Default)
 		}
 	}
 	if len(store.rows[accountID]) != 0 {
@@ -88,8 +92,12 @@ func TestSetThenListReadsTheStoredBoolean(t *testing.T) {
 		t.Fatal("enabled flag read back as disabled")
 	}
 	for _, flag := range view.Features {
-		if flag.Key != FlagWithdrawalsEnabled && flag.Enabled {
-			t.Fatalf("%s turned on without a write", flag.Key)
+		if flag.Key == FlagWithdrawalsEnabled {
+			continue
+		}
+		definition, ok := Find(flag.Key)
+		if !ok || flag.Enabled != definition.Default {
+			t.Fatalf("%s changed without a write: %+v", flag.Key, flag)
 		}
 	}
 

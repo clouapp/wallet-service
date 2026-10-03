@@ -339,7 +339,7 @@ func buildVaultContainer(app foundation.Application) (*container.Container, erro
 		c.Registry, c.MPCService, c.SecretsManager, c.Redis, c.WebhookService,
 		c.WalletRepo, c.AddressRepo, c.TransactionRepo, c.AccountRepo, c.ChainRepo,
 		func(ctx context.Context, accountID uuid.UUID) error {
-			return flags.Gate(ctx, accountID, features.FlagSweepEnabled, features.FlagSweepEnabled)
+			return flags.Gate(ctx, accountID, features.FlagSweepEnabled, features.CodeSweepPaused)
 		},
 	)
 	c.WithdrawalService = withdraw.NewService(

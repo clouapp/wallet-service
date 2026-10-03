@@ -1,8 +1,8 @@
 // Package features is the account feature-flag catalog and the service that
 // reads and writes it. A flag is a named switch stored per account. Metadata
 // lives here; the features table stores only the boolean an owner or admin
-// wrote. A missing row is disabled. This slice has no global, user, or chain
-// scope and does not cache the value: the row is the source of truth.
+// wrote. A missing row uses the catalog default and is not inserted. This
+// slice has no global, user, or chain scope and does not cache the value.
 package features
 
 import "slices"
@@ -23,9 +23,10 @@ const (
 	FlagWithdrawalsEnabled          = "withdrawals-enabled"
 )
 
-// Definition is one named flag. Default is false: a missing row stays off,
-// whatever a later platform default might be. This service does not read
-// Default when a row is absent; it returns disabled.
+// Definition is one named flag. Default is what a reader returns when the
+// account has no row. withdrawals-enabled and sweep-enabled default to true,
+// so a missing row leaves withdrawals and consolidate running. The other
+// flags default to false. A write stores the boolean the caller sent.
 type Definition struct {
 	Key         string
 	Label       string
@@ -59,7 +60,7 @@ var catalog = []Definition{
 		Label:       "Sweep",
 		Description: "Records whether sweep is turned on for this account.",
 		Scopes:      []string{ScopeAccount},
-		Default:     false,
+		Default:     true,
 	},
 	{
 		Key:         FlagUser2FARequired,
@@ -87,7 +88,7 @@ var catalog = []Definition{
 		Label:       "Withdrawals",
 		Description: "Records whether withdrawals are turned on for this account.",
 		Scopes:      []string{ScopeAccount},
-		Default:     false,
+		Default:     true,
 	},
 }
 
@@ -126,4 +127,16 @@ func Find(key string) (Definition, bool) {
 		}
 	}
 	return Definition{}, false
+}
+
+// enabledValue is the stored boolean when the account has a row, and the
+// catalog default when it does not. The caller does not insert a row.
+func enabledValue(stored map[string]bool, definition Definition) bool {
+	if stored == nil {
+		return definition.Default
+	}
+	if value, ok := stored[definition.Key]; ok {
+		return value
+	}
+	return definition.Default
 }

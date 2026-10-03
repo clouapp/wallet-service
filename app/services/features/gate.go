@@ -8,12 +8,16 @@ import (
 	"github.com/google/uuid"
 )
 
-// CodeWithdrawalsPaused is the domain code §9.2 names for the withdrawals
-// kill switch. Flags whose plan names no code use the flag key instead.
-const CodeWithdrawalsPaused = "withdrawals_paused"
+// CodeWithdrawalsPaused is the domain code §9.2 names when withdrawals are
+// off. CodeSweepPaused is the same shape for consolidate: the plan names the
+// flag key sweep-enabled, not an error code, so the conflict names the pause.
+const (
+	CodeWithdrawalsPaused = "withdrawals_paused"
+	CodeSweepPaused       = "sweep_paused"
+)
 
 // GateError is the conflict a money-moving action returns when the account
-// flag is stored enabled. Code is the HTTP error code.
+// flag is off. Code is the HTTP error code.
 type GateError struct {
 	Code string
 }
@@ -25,8 +29,10 @@ func (e *GateError) Error() string {
 	return e.Code
 }
 
-// Enabled reads the stored boolean. A missing row is disabled (false). The
-// table is read on every call; nothing is cached and no row is inserted.
+// Enabled reads the effective boolean. A stored row wins. A missing row is
+// the catalog default, and nothing is inserted. The table is read on every
+// call; nothing is cached. A nil account has no row to read and reports the
+// catalog default without a query.
 func (s *Service) Enabled(ctx context.Context, accountID uuid.UUID, key string) (bool, error) {
 	if s == nil {
 		return false, fmt.Errorf("account features: service is required")
@@ -34,30 +40,35 @@ func (s *Service) Enabled(ctx context.Context, accountID uuid.UUID, key string) 
 	if ctx == nil {
 		return false, fmt.Errorf("account features: context is required")
 	}
-	if accountID == uuid.Nil {
-		return false, nil
-	}
 	key = strings.TrimSpace(key)
-	if _, ok := Find(key); !ok {
+	definition, ok := Find(key)
+	if !ok {
 		return false, ErrNotFound
+	}
+	if accountID == uuid.Nil {
+		return definition.Default, nil
 	}
 	stored, err := s.stored(ctx, accountID)
 	if err != nil {
 		return false, err
 	}
-	return stored[key], nil
+	return enabledValue(stored, definition), nil
 }
 
-// Gate blocks the action when the flag is stored enabled. A missing row or
-// an enabled=false row does not block, so the action proceeds. code is the
-// conflict code; an empty code uses the flag key. The next call reads the
-// row again, so turning the flag off applies without a restart.
+// Gate blocks the action when the flag is off. A missing row uses the
+// catalog default, so withdrawals-enabled and sweep-enabled proceed until a
+// row stores enabled=false. code is the conflict code; an empty code uses
+// the flag key. The next call reads the row again, so turning the flag off
+// applies without a restart. A nil account is not paused.
 func (s *Service) Gate(ctx context.Context, accountID uuid.UUID, key, code string) error {
+	if accountID == uuid.Nil {
+		return nil
+	}
 	enabled, err := s.Enabled(ctx, accountID, key)
 	if err != nil {
 		return err
 	}
-	if !enabled {
+	if enabled {
 		return nil
 	}
 	code = strings.TrimSpace(code)

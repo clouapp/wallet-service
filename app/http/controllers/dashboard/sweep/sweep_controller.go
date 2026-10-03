@@ -69,7 +69,7 @@ func NewSweepController(
 // @Router       /v1/wallets/{walletId}/consolidate [post]
 func (ctrl *SweepController) ConsolidateWallet(ctx http.Context) http.Response {
 	wallet, _ := ctx.Value("wallet").(*models.Wallet)
-	if resp := controllers.BlockFlag(ctx, ctrl.flags, controllers.AccountIDForWallet(ctx, wallet), features.FlagSweepEnabled, features.FlagSweepEnabled, "consolidate"); resp != nil {
+	if resp := controllers.BlockFlag(ctx, ctrl.flags, controllers.AccountIDForWallet(ctx, wallet), features.FlagSweepEnabled, features.CodeSweepPaused, "consolidate"); resp != nil {
 		return resp
 	}
 

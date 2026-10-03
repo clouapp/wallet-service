@@ -24,9 +24,9 @@ import (
 
 const featureGatePassword = "correct-horse-battery"
 
-// featureGateSuite is one HTTP test per money-moving flag. Flag off (and a
-// missing row) must not answer that gate's 409. Flag on answers 409 and does
-// not persist or broadcast a withdrawal. Both dashboard and external routes
+// featureGateSuite is one HTTP test per money-moving flag. A missing row and
+// enabled=true must not answer that gate's 409 and must not persist or
+// broadcast. enabled=false answers 409. Both dashboard and external routes
 // use the same check. The body is empty so a request that passes the gate
 // fails validation before any chain call.
 type featureGateSuite struct {
@@ -47,7 +47,7 @@ func (s *featureGateSuite) TestWithdrawalsEnabled() {
 }
 
 func (s *featureGateSuite) TestSweepEnabled() {
-	s.gateBothSurfaces(features.FlagSweepEnabled, features.FlagSweepEnabled, "/consolidate")
+	s.gateBothSurfaces(features.FlagSweepEnabled, features.CodeSweepPaused, "/consolidate")
 }
 
 func (s *featureGateSuite) gateBothSurfaces(key, code, suffix string) {
@@ -60,18 +60,17 @@ func (s *featureGateSuite) gateBothSurfaces(key, code, suffix string) {
 		{name: "external", token: apiToken, prefix: "/api/v1/wallets/", header: false},
 	}
 
-	for _, surface := range surfaces {
-		s.notGate(surface.name+" missing", s.post(surface, accountID, walletID, suffix), code)
-	}
-	s.Equal(int64(0), s.rows(&models.Withdrawal{}, walletID))
-	s.Equal(int64(0), s.rows(&models.Transaction{}, walletID))
+	s.openWithoutBroadcast("missing", surfaces, accountID, walletID, suffix, code)
 
 	s.setFlag(session, accountID, key, true)
+	s.openWithoutBroadcast("enabled", surfaces, accountID, walletID, suffix, code)
+
+	s.setFlag(session, accountID, key, false)
 	for _, surface := range surfaces {
 		beforeWithdrawals := s.rows(&models.Withdrawal{}, walletID)
 		beforeTransactions := s.rows(&models.Transaction{}, walletID)
 		response := s.post(surface, accountID, walletID, suffix)
-		s.Equal(http.StatusConflict, s.status(response), surface.name+" flag on")
+		s.Equal(http.StatusConflict, s.status(response), surface.name+" flag off")
 		body := s.json(response)
 		errorBody, _ := body["error"].(map[string]any)
 		s.Equal(code, errorBody["code"], surface.name)
@@ -79,13 +78,17 @@ func (s *featureGateSuite) gateBothSurfaces(key, code, suffix string) {
 		s.Equal(beforeWithdrawals, s.rows(&models.Withdrawal{}, walletID), surface.name+" persisted a withdrawal")
 		s.Equal(beforeTransactions, s.rows(&models.Transaction{}, walletID), surface.name+" persisted a transaction")
 	}
+}
 
-	s.setFlag(session, accountID, key, false)
+func (s *featureGateSuite) openWithoutBroadcast(label string, surfaces []gateSurface, accountID, walletID uuid.UUID, suffix, code string) {
+	s.T().Helper()
 	for _, surface := range surfaces {
-		s.notGate(surface.name+" toggled off", s.post(surface, accountID, walletID, suffix), code)
+		beforeWithdrawals := s.rows(&models.Withdrawal{}, walletID)
+		beforeTransactions := s.rows(&models.Transaction{}, walletID)
+		s.notGate(surface.name+" "+label, s.post(surface, accountID, walletID, suffix), code)
+		s.Equal(beforeWithdrawals, s.rows(&models.Withdrawal{}, walletID), surface.name+" "+label+" persisted a withdrawal")
+		s.Equal(beforeTransactions, s.rows(&models.Transaction{}, walletID), surface.name+" "+label+" persisted a transaction")
 	}
-	s.Equal(int64(0), s.rows(&models.Withdrawal{}, walletID))
-	s.Equal(int64(0), s.rows(&models.Transaction{}, walletID))
 }
 
 type gateSurface struct {

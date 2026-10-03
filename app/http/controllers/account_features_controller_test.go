@@ -32,15 +32,18 @@ func (s *accountFeaturesSuite) SetupTest() {
 	mocks.TestDB(s.T())
 }
 
-func (s *accountFeaturesSuite) TestGetMissingFlagIsDisabled() {
+func (s *accountFeaturesSuite) TestGetMissingRowUsesCatalogDefault() {
 	accountID, token := s.owner()
 
 	body := s.get(token, accountID, 200)
-	s.False(s.flag(body, features.FlagWithdrawalsEnabled))
 	s.Equal(len(features.All()), len(body.Features))
-	for _, flag := range body.Features {
-		s.False(flag.Enabled, flag.Key)
-	}
+	s.True(s.flag(body, features.FlagWithdrawalsEnabled))
+	s.True(s.flag(body, features.FlagSweepEnabled))
+	s.False(s.flag(body, features.FlagDepositScanEnabled))
+	s.False(s.flag(body, features.FlagWalletCreationEnabled))
+	s.False(s.flag(body, features.FlagWebhookDeliveryEnabled))
+	s.False(s.flag(body, features.FlagAPIRequestSignatureRequired))
+	s.False(s.flag(body, features.FlagUser2FARequired))
 	s.Equal(int64(0), s.rowCount(accountID))
 }
 
@@ -54,11 +57,19 @@ func (s *accountFeaturesSuite) TestOwnerEnablesFlagAndTheNextReadIsEnabled() {
 
 	body := s.get(token, accountID, 200)
 	s.True(s.flag(body, features.FlagWithdrawalsEnabled))
-	s.False(s.flag(body, features.FlagSweepEnabled))
+	s.True(s.flag(body, features.FlagSweepEnabled))
+
+	disabled := s.patch(token, accountID, features.FlagWithdrawalsEnabled, `{"enabled":false}`, 200)
+	s.Equal(false, disabled["enabled"])
+	s.False(s.stored(accountID, features.FlagWithdrawalsEnabled))
+	body = s.get(token, accountID, 200)
+	s.False(s.flag(body, features.FlagWithdrawalsEnabled))
+	s.True(s.flag(body, features.FlagSweepEnabled))
 
 	otherID, otherToken := s.owner()
 	other := s.get(otherToken, otherID, 200)
-	s.False(s.flag(other, features.FlagWithdrawalsEnabled))
+	s.True(s.flag(other, features.FlagWithdrawalsEnabled))
+	s.Equal(int64(0), s.rowCount(otherID))
 }
 
 func (s *accountFeaturesSuite) TestAuditorPatchIsForbidden() {
@@ -66,7 +77,7 @@ func (s *accountFeaturesSuite) TestAuditorPatchIsForbidden() {
 	token := s.member(accountID, "auditor")
 
 	body := s.get(token, accountID, 200)
-	s.False(s.flag(body, features.FlagSweepEnabled))
+	s.True(s.flag(body, features.FlagSweepEnabled))
 
 	response := s.patch(token, accountID, features.FlagSweepEnabled, `{"enabled":true}`, 403)
 	s.Equal("forbidden", response["error"].(map[string]any)["code"])

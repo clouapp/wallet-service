@@ -17,9 +17,9 @@ type Store interface {
 	Upsert(ctx context.Context, accountID uuid.UUID, key string, enabled bool) error
 }
 
-// Service reads and writes account feature flags. A read with no row is
-// disabled. A write is stored and then read back; the response is that row,
-// not the request echoed before the write.
+// Service reads and writes account feature flags. A read with no row is the
+// catalog default. A write is stored and then read back; the response is that
+// row, not the request echoed before the write.
 type Service struct {
 	store Store
 }
@@ -32,8 +32,8 @@ func NewService(store Store) *Service {
 	return &Service{store: store}
 }
 
-// List returns every account flag the role may read. A missing row is disabled.
-// The call does not insert rows.
+// List returns every account flag the role may read. A missing row is the
+// catalog default. The call does not insert rows.
 func (s *Service) List(ctx context.Context, accountID uuid.UUID, role string) (List, error) {
 	if err := requireAccount(ctx, accountID); err != nil {
 		return List{}, err
@@ -49,7 +49,7 @@ func (s *Service) List(ctx context.Context, accountID uuid.UUID, role string) (L
 	for _, definition := range ForAccount() {
 		flags = append(flags, Flag{
 			Key:     definition.Key,
-			Enabled: stored[definition.Key],
+			Enabled: enabledValue(stored, definition),
 		})
 	}
 	return List{Features: flags}, nil
