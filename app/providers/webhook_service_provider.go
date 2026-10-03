@@ -4,6 +4,7 @@ import (
 	"github.com/goravel/framework/contracts/foundation"
 
 	"github.com/macrowallets/waas/app/repositories"
+	"github.com/macrowallets/waas/app/services/ingest"
 	"github.com/macrowallets/waas/app/services/walletrecords"
 )
 
@@ -28,6 +29,13 @@ func (p *WebhookServiceProvider) Register(app foundation.Application) {
 			return nil, err
 		}
 		return walletrecords.NewWebhooks(store), nil
+	})
+	app.Singleton((*ingest.Subscriptions)(nil), func(app foundation.Application) (any, error) {
+		store, err := resolve[*repositories.WebhookSubscriptionRepository](app)
+		if err != nil {
+			return nil, err
+		}
+		return ingest.NewSubscriptions(store), nil
 	})
 }
 

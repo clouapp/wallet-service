@@ -11,7 +11,6 @@ import (
 
 	"github.com/macrowallets/waas/app/http/responses"
 	"github.com/macrowallets/waas/app/models"
-	"github.com/macrowallets/waas/app/repositories"
 	ingestsvc "github.com/macrowallets/waas/app/services/ingest"
 	"github.com/macrowallets/waas/app/services/ingest/providers"
 )
@@ -24,16 +23,16 @@ var ingestProviders = map[string]providers.WebhookProvider{
 
 // IngestController serves inbound provider webhooks.
 type IngestController struct {
-	subscriptions *repositories.WebhookSubscriptionRepository
+	subscriptions *ingestsvc.Subscriptions
 	ingest        *ingestsvc.Service
 }
 
 func NewIngestController(
-	subscriptions *repositories.WebhookSubscriptionRepository,
+	subscriptions *ingestsvc.Subscriptions,
 	ingest *ingestsvc.Service,
 ) *IngestController {
 	if subscriptions == nil {
-		panic("ingest controller: webhook subscriptions repository is required")
+		panic("ingest controller: webhook subscriptions service is required")
 	}
 	if ingest == nil {
 		panic("ingest controller: ingest service is required")

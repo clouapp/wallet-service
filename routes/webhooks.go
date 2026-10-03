@@ -6,13 +6,13 @@ import (
 
 	"github.com/macrowallets/waas/app/container"
 	"github.com/macrowallets/waas/app/http/controllers/ingest"
-	"github.com/macrowallets/waas/app/repositories"
+	ingestsvc "github.com/macrowallets/waas/app/services/ingest"
 )
 
 // RegisterInboundWebhooks registers provider ingest callbacks (no dashboard/API token auth).
 func RegisterInboundWebhooks() {
 	ingestCtrl := ingest.NewIngestController(
-		container.MustMake[*repositories.WebhookSubscriptionRepository](),
+		container.MustMake[*ingestsvc.Subscriptions](),
 		container.Get().IngestService,
 	)
 	facades.Route().Prefix("/v1/webhooks/ingest").Group(func(router route.Router) {
