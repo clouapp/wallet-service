@@ -4,12 +4,27 @@ import (
 	"github.com/google/uuid"
 	"github.com/goravel/framework/contracts/http"
 
-	"github.com/macrowallets/waas/app/container"
 	"github.com/macrowallets/waas/app/http/requests"
 	"github.com/macrowallets/waas/app/http/responses"
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/repositories"
 )
+
+// WebhooksController serves the dashboard wallet webhook routes.
+type WebhooksController struct {
+	configs *repositories.WebhookConfigRepository
+}
+
+func NewWebhooksController(
+	configs *repositories.WebhookConfigRepository,
+) *WebhooksController {
+	if configs == nil {
+		panic("dashboard wallet webhooks controller: webhook configs repository is required")
+	}
+	return &WebhooksController{
+		configs: configs,
+	}
+}
 
 // ListWalletWebhooks godoc
 // @Summary      List webhooks for a wallet
@@ -22,10 +37,10 @@ import (
 // @Failure      403  {object}  ErrorResponse
 // @Failure      404  {object}  ErrorResponse
 // @Router       /wallets/{walletId}/webhooks [get]
-func ListWalletWebhooks(ctx http.Context) http.Response {
+func (ctrl *WebhooksController) ListWalletWebhooks(ctx http.Context) http.Response {
 	wallet := ctx.Value("wallet").(*models.Wallet)
 
-	cfgs, err := container.MustMake[*repositories.WebhookConfigRepository]().FindByWalletID(ctx.Context(), wallet.ID)
+	cfgs, err := ctrl.configs.FindByWalletID(ctx.Context(), wallet.ID)
 	if err != nil {
 		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to fetch wallet webhooks"})
 	}
@@ -45,7 +60,7 @@ func ListWalletWebhooks(ctx http.Context) http.Response {
 // @Failure      400  {object}  ErrorResponse
 // @Failure      403  {object}  ErrorResponse
 // @Router       /wallets/{walletId}/webhooks [post]
-func CreateWalletWebhook(ctx http.Context) http.Response {
+func (ctrl *WebhooksController) CreateWalletWebhook(ctx http.Context) http.Response {
 	wallet := ctx.Value("wallet").(*models.Wallet)
 	if resp := authorize(ctx, "wallet.manage-webhooks", map[string]any{"wallet_id": wallet.ID}); resp != nil {
 		return resp
@@ -64,7 +79,7 @@ func CreateWalletWebhook(ctx http.Context) http.Response {
 		WalletID: &wallet.ID,
 		Type:     "wallet",
 	}
-	if err := container.MustMake[*repositories.WebhookConfigRepository]().Create(ctx.Context(), cfg); err != nil {
+	if err := ctrl.configs.Create(ctx.Context(), cfg); err != nil {
 		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to create webhook"})
 	}
 	return ctx.Response().Json(http.StatusCreated, cfg)
@@ -82,7 +97,7 @@ func CreateWalletWebhook(ctx http.Context) http.Response {
 // @Failure      403  {object}  ErrorResponse
 // @Failure      404  {object}  ErrorResponse
 // @Router       /wallets/{walletId}/webhooks/{webhookId} [delete]
-func DeleteWalletWebhook(ctx http.Context) http.Response {
+func (ctrl *WebhooksController) DeleteWalletWebhook(ctx http.Context) http.Response {
 	wallet := ctx.Value("wallet").(*models.Wallet)
 	if resp := authorize(ctx, "wallet.manage-webhooks", map[string]any{"wallet_id": wallet.ID}); resp != nil {
 		return resp
@@ -94,12 +109,12 @@ func DeleteWalletWebhook(ctx http.Context) http.Response {
 		return responses.Send(ctx, http.StatusBadRequest, http.Json{"error": "invalid webhook id"})
 	}
 
-	cfg, err := container.MustMake[*repositories.WebhookConfigRepository]().FindByIDAndWallet(ctx.Context(), webhookID, wallet.ID)
+	cfg, err := ctrl.configs.FindByIDAndWallet(ctx.Context(), webhookID, wallet.ID)
 	if err != nil || cfg == nil {
 		return responses.Send(ctx, http.StatusNotFound, http.Json{"error": "webhook not found"})
 	}
 
-	if err := container.MustMake[*repositories.WebhookConfigRepository]().Delete(ctx.Context(), cfg); err != nil {
+	if err := ctrl.configs.Delete(ctx.Context(), cfg); err != nil {
 		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to delete webhook"})
 	}
 	return ctx.Response().NoContent()

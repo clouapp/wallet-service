@@ -3,13 +3,28 @@ package wallets
 import (
 	"github.com/goravel/framework/contracts/http"
 
-	"github.com/macrowallets/waas/app/container"
 	"github.com/macrowallets/waas/app/http/controllers"
 	"github.com/macrowallets/waas/app/http/pagination"
 	"github.com/macrowallets/waas/app/http/responses"
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/repositories"
 )
+
+// TransactionsController serves the dashboard wallet transaction routes.
+type TransactionsController struct {
+	transactions *repositories.TransactionRepository
+}
+
+func NewTransactionsController(
+	transactions *repositories.TransactionRepository,
+) *TransactionsController {
+	if transactions == nil {
+		panic("dashboard wallet transactions controller: transactions repository is required")
+	}
+	return &TransactionsController{
+		transactions: transactions,
+	}
+}
 
 // ListWalletTransactions godoc
 // @Summary      List transactions for a wallet
@@ -26,13 +41,13 @@ import (
 // @Failure      403  {object}  ErrorResponse
 // @Failure      404  {object}  ErrorResponse
 // @Router       /wallets/{walletId}/transactions [get]
-func ListWalletTransactions(ctx http.Context) http.Response {
+func (ctrl *TransactionsController) ListWalletTransactions(ctx http.Context) http.Response {
 	wallet := ctx.Value("wallet").(*models.Wallet)
 
 	limit, offset := pagination.ParseParams(ctx, 50)
 	txType := ctx.Request().Query("type", "")
 	status := ctx.Request().Query("status", "")
-	transactions, total, err := container.MustMake[*repositories.TransactionRepository]().FindByWallet(ctx.Context(), wallet.ID, txType, status, limit, offset)
+	transactions, total, err := ctrl.transactions.FindByWallet(ctx.Context(), wallet.ID, txType, status, limit, offset)
 	if err != nil {
 		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to fetch transactions"})
 	}
@@ -53,11 +68,11 @@ func ListWalletTransactions(ctx http.Context) http.Response {
 // @Failure      403  {object}  ErrorResponse
 // @Failure      404  {object}  ErrorResponse
 // @Router       /wallets/{walletId}/transactions/{txId} [get]
-func GetWalletTransaction(ctx http.Context) http.Response {
+func (ctrl *TransactionsController) GetWalletTransaction(ctx http.Context) http.Response {
 	wallet := ctx.Value("wallet").(*models.Wallet)
 
 	txIDStr := ctx.Request().Route("txId")
-	tx, err := container.MustMake[*repositories.TransactionRepository]().FindByIDAndWallet(ctx.Context(), txIDStr, wallet.ID)
+	tx, err := ctrl.transactions.FindByIDAndWallet(ctx.Context(), txIDStr, wallet.ID)
 	if err != nil || tx == nil {
 		return responses.Send(ctx, http.StatusNotFound, http.Json{"error": "transaction not found"})
 	}

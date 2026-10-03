@@ -4,13 +4,28 @@ import (
 	"github.com/google/uuid"
 	"github.com/goravel/framework/contracts/http"
 
-	"github.com/macrowallets/waas/app/container"
 	"github.com/macrowallets/waas/app/http/pagination"
 	"github.com/macrowallets/waas/app/http/requests"
 	"github.com/macrowallets/waas/app/http/responses"
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/repositories"
 )
+
+// WhitelistController serves the dashboard wallet whitelist routes.
+type WhitelistController struct {
+	entries *repositories.WhitelistEntryRepository
+}
+
+func NewWhitelistController(
+	entries *repositories.WhitelistEntryRepository,
+) *WhitelistController {
+	if entries == nil {
+		panic("dashboard whitelist controller: whitelist repository is required")
+	}
+	return &WhitelistController{
+		entries: entries,
+	}
+}
 
 // ListWhitelistEntries godoc
 // @Summary      List whitelist entries for a wallet
@@ -23,11 +38,11 @@ import (
 // @Failure      403  {object}  ErrorResponse
 // @Failure      404  {object}  ErrorResponse
 // @Router       /wallets/{walletId}/whitelist [get]
-func ListWhitelistEntries(ctx http.Context) http.Response {
+func (ctrl *WhitelistController) ListWhitelistEntries(ctx http.Context) http.Response {
 	wallet := ctx.Value("wallet").(*models.Wallet)
 
 	limit, offset := pagination.ParseParams(ctx, 20)
-	entries, total, err := container.MustMake[*repositories.WhitelistEntryRepository]().PaginateByWalletID(ctx.Context(), wallet.ID, limit, offset)
+	entries, total, err := ctrl.entries.PaginateByWalletID(ctx.Context(), wallet.ID, limit, offset)
 	if err != nil {
 		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to fetch whitelist entries"})
 	}
@@ -47,7 +62,7 @@ func ListWhitelistEntries(ctx http.Context) http.Response {
 // @Failure      400  {object}  ErrorResponse
 // @Failure      403  {object}  ErrorResponse
 // @Router       /wallets/{walletId}/whitelist [post]
-func AddWhitelistEntry(ctx http.Context) http.Response {
+func (ctrl *WhitelistController) AddWhitelistEntry(ctx http.Context) http.Response {
 	wallet := ctx.Value("wallet").(*models.Wallet)
 	if resp := authorize(ctx, "wallet.whitelist", map[string]any{"wallet_id": wallet.ID}); resp != nil {
 		return resp
@@ -64,7 +79,7 @@ func AddWhitelistEntry(ctx http.Context) http.Response {
 		Address:  req.Address,
 		Label:    req.Label,
 	}
-	if err := container.MustMake[*repositories.WhitelistEntryRepository]().Create(ctx.Context(), entry); err != nil {
+	if err := ctrl.entries.Create(ctx.Context(), entry); err != nil {
 		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to add whitelist entry"})
 	}
 	return ctx.Response().Json(http.StatusCreated, entry)
@@ -82,7 +97,7 @@ func AddWhitelistEntry(ctx http.Context) http.Response {
 // @Failure      403  {object}  ErrorResponse
 // @Failure      404  {object}  ErrorResponse
 // @Router       /wallets/{walletId}/whitelist/{entryId} [delete]
-func DeleteWhitelistEntry(ctx http.Context) http.Response {
+func (ctrl *WhitelistController) DeleteWhitelistEntry(ctx http.Context) http.Response {
 	wallet := ctx.Value("wallet").(*models.Wallet)
 	if resp := authorize(ctx, "wallet.whitelist", map[string]any{"wallet_id": wallet.ID}); resp != nil {
 		return resp
@@ -94,12 +109,12 @@ func DeleteWhitelistEntry(ctx http.Context) http.Response {
 		return responses.Send(ctx, http.StatusBadRequest, http.Json{"error": "invalid entry id"})
 	}
 
-	entry, err := container.MustMake[*repositories.WhitelistEntryRepository]().FindByIDAndWallet(ctx.Context(), entryID, wallet.ID)
+	entry, err := ctrl.entries.FindByIDAndWallet(ctx.Context(), entryID, wallet.ID)
 	if err != nil || entry == nil {
 		return responses.Send(ctx, http.StatusNotFound, http.Json{"error": "whitelist entry not found"})
 	}
 
-	if err := container.MustMake[*repositories.WhitelistEntryRepository]().Delete(ctx.Context(), entry); err != nil {
+	if err := ctrl.entries.Delete(ctx.Context(), entry); err != nil {
 		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to delete whitelist entry"})
 	}
 	return ctx.Response().NoContent()

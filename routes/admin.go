@@ -19,6 +19,7 @@ import (
 	"github.com/macrowallets/waas/app/repositories"
 	accountsvc "github.com/macrowallets/waas/app/services/account"
 	authsvc "github.com/macrowallets/waas/app/services/auth"
+	walletsvc "github.com/macrowallets/waas/app/services/wallet"
 )
 
 // RegisterAdminRoutes registers dashboard session-auth routes under /v1.
@@ -27,6 +28,14 @@ func RegisterAdminRoutes() {
 	authCtrl := newDashboardAuthController()
 	usersCtrl := newDashboardUsersController()
 	accountsCtrl := newDashboardAccountsController()
+	walletCtrl := newDashboardWalletsController()
+	walletUsersCtrl := newDashboardWalletUsersController()
+	whitelistCtrl := newDashboardWhitelistController()
+	walletWebhooksCtrl := newDashboardWalletWebhooksController()
+	walletSettingsCtrl := newDashboardWalletSettingsController()
+	balancesCtrl := newDashboardBalancesController()
+	walletTxCtrl := newDashboardWalletTransactionsController()
+	unspentsCtrl := newDashboardUnspentsController()
 
 	facades.Route().Prefix("/v1/auth").Middleware(noCache).Group(func(router route.Router) {
 		router.Post("/register", authCtrl.Register)
@@ -91,36 +100,36 @@ func RegisterAdminRoutes() {
 	})
 
 	facades.Route().Prefix("/v1/wallets").Middleware(middleware.SessionAuth(), middleware.AccountHeader(), noCache).Group(func(router route.Router) {
-		router.Get("", dashwallets.ListWallets)
-		router.Post("", dashwallets.CreateWalletAdmin)
-		router.Get("/{walletId}", dashwallets.GetWallet)
+		router.Get("", walletCtrl.ListWallets)
+		router.Post("", walletCtrl.CreateWalletAdmin)
+		router.Get("/{walletId}", walletCtrl.GetWallet)
 		router.Prefix("/{walletId}").Middleware(middleware.WalletContext()).Group(func(r route.Router) {
-			r.Post("/activate", dashwallets.ActivateWallet)
+			r.Post("/activate", walletCtrl.ActivateWallet)
 
 			r.Get("/addresses", dashaddresses.ListWalletAddresses)
 			r.Post("/addresses", dashaddresses.GenerateAddress)
 			r.Patch("/addresses/{addressId}", dashaddresses.UpdateAddress)
 
-			r.Get("/users", dashwallets.ListWalletUsers)
-			r.Post("/users", dashwallets.AddWalletUser)
-			r.Delete("/users/{userId}", dashwallets.RemoveWalletUser)
+			r.Get("/users", walletUsersCtrl.ListWalletUsers)
+			r.Post("/users", walletUsersCtrl.AddWalletUser)
+			r.Delete("/users/{userId}", walletUsersCtrl.RemoveWalletUser)
 
-			r.Get("/whitelist", dashwallets.ListWhitelistEntries)
-			r.Post("/whitelist", dashwallets.AddWhitelistEntry)
-			r.Delete("/whitelist/{entryId}", dashwallets.DeleteWhitelistEntry)
+			r.Get("/whitelist", whitelistCtrl.ListWhitelistEntries)
+			r.Post("/whitelist", whitelistCtrl.AddWhitelistEntry)
+			r.Delete("/whitelist/{entryId}", whitelistCtrl.DeleteWhitelistEntry)
 
-			r.Get("/webhooks", dashwallets.ListWalletWebhooks)
-			r.Post("/webhooks", dashwallets.CreateWalletWebhook)
-			r.Delete("/webhooks/{webhookId}", dashwallets.DeleteWalletWebhook)
+			r.Get("/webhooks", walletWebhooksCtrl.ListWalletWebhooks)
+			r.Post("/webhooks", walletWebhooksCtrl.CreateWalletWebhook)
+			r.Delete("/webhooks/{webhookId}", walletWebhooksCtrl.DeleteWalletWebhook)
 
-			r.Get("/settings", dashwallets.GetWalletSettings)
-			r.Patch("/settings", dashwallets.UpdateWalletSettings)
-			r.Post("/freeze", dashwallets.FreezeWallet)
+			r.Get("/settings", walletSettingsCtrl.GetWalletSettings)
+			r.Patch("/settings", walletSettingsCtrl.UpdateWalletSettings)
+			r.Post("/freeze", walletSettingsCtrl.FreezeWallet)
 
-			r.Get("/balances", dashwallets.ListWalletBalances)
+			r.Get("/balances", balancesCtrl.ListWalletBalances)
 
-			r.Get("/transactions", dashwallets.ListWalletTransactions)
-			r.Get("/transactions/{txId}", dashwallets.GetWalletTransaction)
+			r.Get("/transactions", walletTxCtrl.ListWalletTransactions)
+			r.Get("/transactions/{txId}", walletTxCtrl.GetWalletTransaction)
 
 			r.Get("/withdrawals", dashwithdrawals.ListWalletWithdrawals)
 			r.Post("/withdrawals", dashwithdrawals.CreateWalletWithdrawal)
@@ -134,7 +143,7 @@ func RegisterAdminRoutes() {
 			r.Post("/withdraw/preview", dashsweep.PreviewWithdraw)
 
 			r.Prefix("/unspents").Middleware(middleware.UTXOOnly()).Group(func(ur route.Router) {
-				ur.Get("", dashwallets.ListUnspentOutputs)
+				ur.Get("", unspentsCtrl.ListUnspentOutputs)
 			})
 		})
 	})
@@ -159,6 +168,61 @@ func newDashboardUsersController() *dashusers.UsersController {
 		container.MustMake[*repositories.AccountUserRepository](),
 		container.MustMake[*repositories.TotpRecoveryCodeRepository](),
 		container.MustMake[*authsvc.Service](),
+	)
+}
+
+func currentWalletService() *walletsvc.Service {
+	return container.Get().WalletService
+}
+
+func newDashboardWalletsController() *dashwallets.WalletsController {
+	return dashwallets.NewWalletsController(
+		container.MustMake[*repositories.WalletRepository](),
+		container.MustMake[*repositories.ChainRepository](),
+		currentWalletService,
+	)
+}
+
+func newDashboardWalletUsersController() *dashwallets.UsersController {
+	return dashwallets.NewUsersController(
+		container.MustMake[*repositories.WalletUserRepository](),
+	)
+}
+
+func newDashboardWhitelistController() *dashwallets.WhitelistController {
+	return dashwallets.NewWhitelistController(
+		container.MustMake[*repositories.WhitelistEntryRepository](),
+	)
+}
+
+func newDashboardWalletWebhooksController() *dashwallets.WebhooksController {
+	return dashwallets.NewWebhooksController(
+		container.MustMake[*repositories.WebhookConfigRepository](),
+	)
+}
+
+func newDashboardWalletSettingsController() *dashwallets.SettingsController {
+	return dashwallets.NewSettingsController(
+		container.MustMake[*repositories.WalletRepository](),
+	)
+}
+
+func newDashboardBalancesController() *dashwallets.BalancesController {
+	return dashwallets.NewBalancesController(
+		container.MustMake[*repositories.WalletAssetBalanceRepository](),
+		container.MustMake[*repositories.TokenRepository](),
+	)
+}
+
+func newDashboardWalletTransactionsController() *dashwallets.TransactionsController {
+	return dashwallets.NewTransactionsController(
+		container.MustMake[*repositories.TransactionRepository](),
+	)
+}
+
+func newDashboardUnspentsController() *dashwallets.UnspentsController {
+	return dashwallets.NewUnspentsController(
+		container.MustMake[*repositories.WalletUTXORepository](),
 	)
 }
 

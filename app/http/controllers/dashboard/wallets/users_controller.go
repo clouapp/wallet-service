@@ -7,12 +7,27 @@ import (
 	"github.com/goravel/framework/contracts/http"
 	"github.com/goravel/framework/facades"
 
-	"github.com/macrowallets/waas/app/container"
 	"github.com/macrowallets/waas/app/http/requests"
 	"github.com/macrowallets/waas/app/http/responses"
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/repositories"
 )
+
+// UsersController serves the dashboard wallet membership routes.
+type UsersController struct {
+	members *repositories.WalletUserRepository
+}
+
+func NewUsersController(
+	members *repositories.WalletUserRepository,
+) *UsersController {
+	if members == nil {
+		panic("dashboard wallet users controller: wallet users repository is required")
+	}
+	return &UsersController{
+		members: members,
+	}
+}
 
 // ListWalletUsers godoc
 // @Summary      List wallet users
@@ -25,10 +40,10 @@ import (
 // @Failure      403  {object}  ErrorResponse
 // @Failure      404  {object}  ErrorResponse
 // @Router       /wallets/{walletId}/users [get]
-func ListWalletUsers(ctx http.Context) http.Response {
+func (ctrl *UsersController) ListWalletUsers(ctx http.Context) http.Response {
 	wallet := ctx.Value("wallet").(*models.Wallet)
 
-	members, err := container.MustMake[*repositories.WalletUserRepository]().FindByWalletID(ctx.Context(), wallet.ID)
+	members, err := ctrl.members.FindByWalletID(ctx.Context(), wallet.ID)
 	if err != nil {
 		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to fetch wallet users"})
 	}
@@ -48,7 +63,7 @@ func ListWalletUsers(ctx http.Context) http.Response {
 // @Failure      400  {object}  ErrorResponse
 // @Failure      403  {object}  ErrorResponse
 // @Router       /wallets/{walletId}/users [post]
-func AddWalletUser(ctx http.Context) http.Response {
+func (ctrl *UsersController) AddWalletUser(ctx http.Context) http.Response {
 	wallet := ctx.Value("wallet").(*models.Wallet)
 	if resp := authorize(ctx, "wallet.add-user", map[string]any{"wallet_id": wallet.ID}); resp != nil {
 		return resp
@@ -60,16 +75,16 @@ func AddWalletUser(ctx http.Context) http.Response {
 	}
 	targetID, _ := uuid.Parse(req.UserID)
 
-	existing, existErr := container.MustMake[*repositories.WalletUserRepository]().FindByWalletAndUserIncludeDeleted(ctx.Context(), wallet.ID, targetID)
+	existing, existErr := ctrl.members.FindByWalletAndUserIncludeDeleted(ctx.Context(), wallet.ID, targetID)
 	if existErr != nil && !errors.Is(existErr, models.ErrRepositoryNotFound) {
 		facades.Log().WithContext(ctx).Errorf("wallet-users: lookup existing: %v", existErr)
 	}
 	if existing != nil && existing.DeletedAt != nil {
-		if err := container.MustMake[*repositories.WalletUserRepository]().Restore(ctx.Context(), existing.ID); err != nil {
+		if err := ctrl.members.Restore(ctx.Context(), existing.ID); err != nil {
 			return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to restore wallet user"})
 		}
 		if req.Roles != "" {
-			if err := container.MustMake[*repositories.WalletUserRepository]().SetRoles(ctx.Context(), existing.ID, req.Roles); err != nil {
+			if err := ctrl.members.SetRoles(ctx.Context(), existing.ID, req.Roles); err != nil {
 				facades.Log().WithContext(ctx).Errorf("wallet-users: update roles: %v", err)
 			}
 		}
@@ -83,7 +98,7 @@ func AddWalletUser(ctx http.Context) http.Response {
 		Roles:    req.Roles,
 		Status:   "active",
 	}
-	if err := container.MustMake[*repositories.WalletUserRepository]().Create(ctx.Context(), wu); err != nil {
+	if err := ctrl.members.Create(ctx.Context(), wu); err != nil {
 		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to add wallet user"})
 	}
 	return ctx.Response().Json(http.StatusCreated, wu)
@@ -101,7 +116,7 @@ func AddWalletUser(ctx http.Context) http.Response {
 // @Failure      403  {object}  ErrorResponse
 // @Failure      404  {object}  ErrorResponse
 // @Router       /wallets/{walletId}/users/{userId} [delete]
-func RemoveWalletUser(ctx http.Context) http.Response {
+func (ctrl *UsersController) RemoveWalletUser(ctx http.Context) http.Response {
 	wallet := ctx.Value("wallet").(*models.Wallet)
 	if resp := authorize(ctx, "wallet.remove-user", map[string]any{"wallet_id": wallet.ID}); resp != nil {
 		return resp
@@ -113,7 +128,7 @@ func RemoveWalletUser(ctx http.Context) http.Response {
 		return responses.Send(ctx, http.StatusBadRequest, http.Json{"error": "invalid user id"})
 	}
 
-	if err := container.MustMake[*repositories.WalletUserRepository]().SoftDelete(ctx.Context(), wallet.ID, targetID); err != nil {
+	if err := ctrl.members.SoftDelete(ctx.Context(), wallet.ID, targetID); err != nil {
 		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to remove wallet user"})
 	}
 	return ctx.Response().NoContent()

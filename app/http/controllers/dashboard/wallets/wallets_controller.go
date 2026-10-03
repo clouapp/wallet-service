@@ -8,7 +8,6 @@ import (
 	"github.com/google/uuid"
 	"github.com/goravel/framework/contracts/http"
 
-	"github.com/macrowallets/waas/app/container"
 	"github.com/macrowallets/waas/app/http/controllers"
 	"github.com/macrowallets/waas/app/http/pagination"
 	"github.com/macrowallets/waas/app/http/requests"
@@ -26,6 +25,34 @@ func authorize(ctx http.Context, ability string, arguments map[string]any) http.
 	return controllers.Authorize(ctx, ability, arguments)
 }
 
+// WalletsController serves the dashboard wallet list, create, and activate routes.
+type WalletsController struct {
+	wallets       *repositories.WalletRepository
+	chains        *repositories.ChainRepository
+	walletService func() *wallet.Service
+}
+
+func NewWalletsController(
+	wallets *repositories.WalletRepository,
+	chains *repositories.ChainRepository,
+	walletService func() *wallet.Service,
+) *WalletsController {
+	if wallets == nil {
+		panic("dashboard wallets controller: wallets repository is required")
+	}
+	if chains == nil {
+		panic("dashboard wallets controller: chains repository is required")
+	}
+	if walletService == nil || walletService() == nil {
+		panic("dashboard wallets controller: wallet service is required")
+	}
+	return &WalletsController{
+		wallets:       wallets,
+		chains:        chains,
+		walletService: walletService,
+	}
+}
+
 // ListWallets godoc
 // @Summary      List all wallets
 // @Description  Returns the account wallets with their network (testnet flag) and the native and configured token balances of the last refresh. Testnet wallets carry no USD value.
@@ -36,7 +63,7 @@ func authorize(ctx http.Context, ability string, arguments map[string]any) http.
 // @Success      200  {object}  WalletListResponse
 // @Failure      500  {object}  ErrorResponse
 // @Router       /v1/wallets [get]
-func ListWallets(ctx http.Context) http.Response {
+func (ctrl *WalletsController) ListWallets(ctx http.Context) http.Response {
 	accountID, ok := ctx.Value("account_id").(uuid.UUID)
 	if !ok || accountID == uuid.Nil {
 		return responses.Send(ctx, http.StatusBadRequest, http.Json{
@@ -47,7 +74,7 @@ func ListWallets(ctx http.Context) http.Response {
 	limit, offset := pagination.ParseParams(ctx, 20)
 	chain := ctx.Request().Query("chain", "")
 
-	wallets, total, err := container.MustMake[*repositories.WalletRepository]().PaginateByAccount(ctx.Context(), accountID, chain, limit, offset)
+	wallets, total, err := ctrl.wallets.PaginateByAccount(ctx.Context(), accountID, chain, limit, offset)
 	if err != nil {
 		return responses.Send(ctx, http.StatusInternalServerError, http.Json{
 			"error": "failed to fetch wallets",
@@ -75,7 +102,7 @@ func ListWallets(ctx http.Context) http.Response {
 // @Failure      400  {object}  ErrorResponse  "Invalid UUID"
 // @Failure      404  {object}  ErrorResponse  "Wallet not found"
 // @Router       /v1/wallets/{walletId} [get]
-func GetWallet(ctx http.Context) http.Response {
+func (ctrl *WalletsController) GetWallet(ctx http.Context) http.Response {
 	id, err := uuid.Parse(ctx.Request().Route("walletId"))
 	if err != nil {
 		return responses.Send(ctx, http.StatusBadRequest, http.Json{
@@ -90,7 +117,7 @@ func GetWallet(ctx http.Context) http.Response {
 		})
 	}
 
-	w, err := container.MustMake[*repositories.WalletRepository]().FindByIDAndAccount(ctx.Context(), id, accountID)
+	w, err := ctrl.wallets.FindByIDAndAccount(ctx.Context(), id, accountID)
 	if err != nil || w == nil {
 		return responses.Send(ctx, http.StatusNotFound, http.Json{
 			"error": "wallet not found",
@@ -101,21 +128,21 @@ func GetWallet(ctx http.Context) http.Response {
 
 // CreateWalletAdmin creates a wallet from the admin panel with full MPC keygen.
 // Returns keycard data including activation_code for the two-step setup flow.
-func CreateWalletAdmin(ctx http.Context) http.Response {
+func (ctrl *WalletsController) CreateWalletAdmin(ctx http.Context) http.Response {
 	var req requests.CreateWalletAdminRequest
 	if resp := validateRequest(ctx, &req); resp != nil {
 		return resp
 	}
 
 	if env, ok := ctx.Value("account_environment").(string); ok && env != "" {
-		chainRecord, _ := container.MustMake[*repositories.ChainRepository]().FindByID(ctx.Context(), req.Chain)
+		chainRecord, _ := ctrl.chains.FindByID(ctx.Context(), req.Chain)
 		if chainRecord != nil && chainRecord.IsTestnet != (env == models.EnvironmentTest) {
 			return responses.Send(ctx, http.StatusForbidden, http.Json{"error": "chain not available in current environment"})
 		}
 	}
 
 	accountID, _ := ctx.Value("account_id").(uuid.UUID)
-	result, err := container.Get().WalletService.CreateWallet(ctx.Context(), accountID, req.Chain, req.Label, req.Passphrase)
+	result, err := ctrl.walletService().CreateWallet(ctx.Context(), accountID, req.Chain, req.Label, req.Passphrase)
 	if err != nil {
 		msg := err.Error()
 		if strings.Contains(msg, "unknown chain") {
@@ -134,7 +161,7 @@ func CreateWalletAdmin(ctx http.Context) http.Response {
 }
 
 // ActivateWallet confirms the user has saved their KeyCard by validating the activation code.
-func ActivateWallet(ctx http.Context) http.Response {
+func (ctrl *WalletsController) ActivateWallet(ctx http.Context) http.Response {
 	walletID, err := uuid.Parse(ctx.Request().Route("walletId"))
 	if err != nil {
 		return responses.Send(ctx, http.StatusBadRequest, http.Json{"error": "invalid wallet id"})
@@ -145,7 +172,7 @@ func ActivateWallet(ctx http.Context) http.Response {
 		return resp
 	}
 
-	_, err = container.Get().WalletService.ActivateWallet(ctx.Context(), walletID, req.Code)
+	_, err = ctrl.walletService().ActivateWallet(ctx.Context(), walletID, req.Code)
 	if err != nil {
 		switch {
 		case errors.Is(err, wallet.ErrWalletNotFound):

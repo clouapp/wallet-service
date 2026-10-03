@@ -6,7 +6,6 @@ import (
 	"github.com/google/uuid"
 	"github.com/goravel/framework/contracts/http"
 
-	"github.com/macrowallets/waas/app/container"
 	"github.com/macrowallets/waas/app/http/controllers"
 	"github.com/macrowallets/waas/app/http/pagination"
 	"github.com/macrowallets/waas/app/http/requests"
@@ -39,6 +38,28 @@ func newCreateWalletResponse(result *wallet.CreateWalletResult) CreateWalletResp
 	}
 }
 
+// WalletsController serves the external wallet list, create, and get routes.
+type WalletsController struct {
+	wallets       *repositories.WalletRepository
+	walletService func() *wallet.Service
+}
+
+func NewWalletsController(
+	wallets *repositories.WalletRepository,
+	walletService func() *wallet.Service,
+) *WalletsController {
+	if wallets == nil {
+		panic("external wallets controller: wallets repository is required")
+	}
+	if walletService == nil || walletService() == nil {
+		panic("external wallets controller: wallet service is required")
+	}
+	return &WalletsController{
+		wallets:       wallets,
+		walletService: walletService,
+	}
+}
+
 // CreateWallet godoc
 // @Summary      Create a new wallet
 // @Description  Creates a new HD wallet for the specified blockchain. Only one wallet per chain is allowed.
@@ -56,14 +77,14 @@ func newCreateWalletResponse(result *wallet.CreateWalletResult) CreateWalletResp
 // @Failure      409   {object}  ErrorResponse  "Wallet for this chain already exists or chain is unsupported"
 // @Failure      500   {object}  ErrorResponse  "Wallet service returned no wallet"
 // @Router       /v1/wallets [post]
-func CreateWallet(ctx http.Context) http.Response {
+func (ctrl *WalletsController) CreateWallet(ctx http.Context) http.Response {
 	var req requests.CreateWalletRequest
 	if resp := validateRequest(ctx, &req); resp != nil {
 		return resp
 	}
 
 	accountID, _ := ctx.Value("account_id").(uuid.UUID)
-	result, err := container.Get().WalletService.CreateWallet(ctx.Context(), accountID, req.Chain, req.Label, req.Passphrase)
+	result, err := ctrl.walletService().CreateWallet(ctx.Context(), accountID, req.Chain, req.Label, req.Passphrase)
 	if err != nil {
 		return responses.Send(ctx, http.StatusConflict, http.Json{
 			"error": err.Error(),
@@ -87,7 +108,7 @@ func CreateWallet(ctx http.Context) http.Response {
 // @Success      200  {object}  WalletListResponse
 // @Failure      500  {object}  ErrorResponse
 // @Router       /v1/wallets [get]
-func ListWallets(ctx http.Context) http.Response {
+func (ctrl *WalletsController) ListWallets(ctx http.Context) http.Response {
 	accountID, ok := ctx.Value("account_id").(uuid.UUID)
 	if !ok || accountID == uuid.Nil {
 		return responses.Send(ctx, http.StatusBadRequest, http.Json{
@@ -98,7 +119,7 @@ func ListWallets(ctx http.Context) http.Response {
 	limit, offset := pagination.ParseParams(ctx, 20)
 	chain := ctx.Request().Query("chain", "")
 
-	wallets, total, err := container.MustMake[*repositories.WalletRepository]().PaginateByAccount(ctx.Context(), accountID, chain, limit, offset)
+	wallets, total, err := ctrl.wallets.PaginateByAccount(ctx.Context(), accountID, chain, limit, offset)
 	if err != nil {
 		return responses.Send(ctx, http.StatusInternalServerError, http.Json{
 			"error": "failed to fetch wallets",
@@ -126,7 +147,7 @@ func ListWallets(ctx http.Context) http.Response {
 // @Failure      400  {object}  ErrorResponse  "Invalid UUID"
 // @Failure      404  {object}  ErrorResponse  "Wallet not found"
 // @Router       /v1/wallets/{walletId} [get]
-func GetWallet(ctx http.Context) http.Response {
+func (ctrl *WalletsController) GetWallet(ctx http.Context) http.Response {
 	id, err := uuid.Parse(ctx.Request().Route("walletId"))
 	if err != nil {
 		return responses.Send(ctx, http.StatusBadRequest, http.Json{
@@ -141,7 +162,7 @@ func GetWallet(ctx http.Context) http.Response {
 		})
 	}
 
-	w, err := container.MustMake[*repositories.WalletRepository]().FindByIDAndAccount(ctx.Context(), id, accountID)
+	w, err := ctrl.wallets.FindByIDAndAccount(ctx.Context(), id, accountID)
 	if err != nil || w == nil {
 		return responses.Send(ctx, http.StatusNotFound, http.Json{
 			"error": "wallet not found",

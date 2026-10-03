@@ -7,12 +7,27 @@ import (
 
 	"github.com/goravel/framework/contracts/http"
 
-	"github.com/macrowallets/waas/app/container"
 	"github.com/macrowallets/waas/app/http/requests"
 	"github.com/macrowallets/waas/app/http/responses"
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/repositories"
 )
+
+// SettingsController serves the dashboard wallet settings and freeze routes.
+type SettingsController struct {
+	wallets *repositories.WalletRepository
+}
+
+func NewSettingsController(
+	wallets *repositories.WalletRepository,
+) *SettingsController {
+	if wallets == nil {
+		panic("dashboard wallet settings controller: wallets repository is required")
+	}
+	return &SettingsController{
+		wallets: wallets,
+	}
+}
 
 // GetWalletSettings godoc
 // @Summary      Get wallet settings
@@ -25,7 +40,7 @@ import (
 // @Failure      403  {object}  ErrorResponse
 // @Failure      404  {object}  ErrorResponse
 // @Router       /wallets/{walletId}/settings [get]
-func GetWalletSettings(ctx http.Context) http.Response {
+func (ctrl *SettingsController) GetWalletSettings(ctx http.Context) http.Response {
 	wallet := ctx.Value("wallet").(*models.Wallet)
 
 	return ctx.Response().Json(http.StatusOK, http.Json{
@@ -51,7 +66,7 @@ func GetWalletSettings(ctx http.Context) http.Response {
 // @Failure      400  {object}  ErrorResponse
 // @Failure      403  {object}  ErrorResponse
 // @Router       /wallets/{walletId}/settings [patch]
-func UpdateWalletSettings(ctx http.Context) http.Response {
+func (ctrl *SettingsController) UpdateWalletSettings(ctx http.Context) http.Response {
 	wallet := ctx.Value("wallet").(*models.Wallet)
 	if errResp := authorize(ctx, "wallet.update", map[string]any{"wallet_id": wallet.ID}); errResp != nil {
 		return errResp
@@ -64,35 +79,35 @@ func UpdateWalletSettings(ctx http.Context) http.Response {
 
 	if s := strings.TrimSpace(req.FeeRateMin); s != "" {
 		v, _ := strconv.Atoi(s)
-		if err := container.MustMake[*repositories.WalletRepository]().SetFeeRateMin(ctx.Context(), wallet.ID, v); err != nil {
+		if err := ctrl.wallets.SetFeeRateMin(ctx.Context(), wallet.ID, v); err != nil {
 			return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to update wallet settings"})
 		}
 		wallet.FeeRateMin = &v
 	}
 	if s := strings.TrimSpace(req.FeeRateMax); s != "" {
 		v, _ := strconv.Atoi(s)
-		if err := container.MustMake[*repositories.WalletRepository]().SetFeeRateMax(ctx.Context(), wallet.ID, v); err != nil {
+		if err := ctrl.wallets.SetFeeRateMax(ctx.Context(), wallet.ID, v); err != nil {
 			return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to update wallet settings"})
 		}
 		wallet.FeeRateMax = &v
 	}
 	if s := strings.TrimSpace(req.FeeMultiplier); s != "" {
 		v, _ := strconv.ParseFloat(s, 64)
-		if err := container.MustMake[*repositories.WalletRepository]().SetFeeMultiplier(ctx.Context(), wallet.ID, v); err != nil {
+		if err := ctrl.wallets.SetFeeMultiplier(ctx.Context(), wallet.ID, v); err != nil {
 			return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to update wallet settings"})
 		}
 		wallet.FeeMultiplier = &v
 	}
 	if s := strings.TrimSpace(req.RequiredApprovals); s != "" {
 		v, _ := strconv.Atoi(s)
-		if err := container.MustMake[*repositories.WalletRepository]().SetRequiredApprovals(ctx.Context(), wallet.ID, v); err != nil {
+		if err := ctrl.wallets.SetRequiredApprovals(ctx.Context(), wallet.ID, v); err != nil {
 			return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to update wallet settings"})
 		}
 		wallet.RequiredApprovals = v
 	}
 	if s := strings.TrimSpace(req.FrozenUntil); s != "" {
 		t, _ := time.Parse(time.RFC3339, s)
-		if err := container.MustMake[*repositories.WalletRepository]().SetFrozenUntil(ctx.Context(), wallet.ID, t); err != nil {
+		if err := ctrl.wallets.SetFrozenUntil(ctx.Context(), wallet.ID, t); err != nil {
 			return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to update wallet settings"})
 		}
 		wallet.FrozenUntil = &t
@@ -120,7 +135,7 @@ func UpdateWalletSettings(ctx http.Context) http.Response {
 // @Success      200  {object}  WalletSettingsResponse
 // @Failure      403  {object}  ErrorResponse
 // @Router       /wallets/{walletId}/freeze [post]
-func FreezeWallet(ctx http.Context) http.Response {
+func (ctrl *SettingsController) FreezeWallet(ctx http.Context) http.Response {
 	wallet := ctx.Value("wallet").(*models.Wallet)
 	if errResp := authorize(ctx, "wallet.freeze", map[string]any{"wallet_id": wallet.ID}); errResp != nil {
 		return errResp
@@ -137,10 +152,10 @@ func FreezeWallet(ctx http.Context) http.Response {
 		frozenUntil = t
 	}
 
-	if err := container.MustMake[*repositories.WalletRepository]().SetFrozenUntil(ctx.Context(), wallet.ID, frozenUntil); err != nil {
+	if err := ctrl.wallets.SetFrozenUntil(ctx.Context(), wallet.ID, frozenUntil); err != nil {
 		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to freeze wallet"})
 	}
-	if err := container.MustMake[*repositories.WalletRepository]().SetStatus(ctx.Context(), wallet.ID, "frozen"); err != nil {
+	if err := ctrl.wallets.SetStatus(ctx.Context(), wallet.ID, "frozen"); err != nil {
 		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to freeze wallet"})
 	}
 	wallet.FrozenUntil = &frozenUntil

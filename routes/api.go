@@ -4,6 +4,7 @@ import (
 	"github.com/goravel/framework/contracts/route"
 	"github.com/goravel/framework/facades"
 
+	"github.com/macrowallets/waas/app/container"
 	extaddresses "github.com/macrowallets/waas/app/http/controllers/external/addresses"
 	extchains "github.com/macrowallets/waas/app/http/controllers/external/chains"
 	extsweep "github.com/macrowallets/waas/app/http/controllers/external/sweep"
@@ -12,6 +13,7 @@ import (
 	extwebhooks "github.com/macrowallets/waas/app/http/controllers/external/webhooks"
 	extwithdrawals "github.com/macrowallets/waas/app/http/controllers/external/withdrawals"
 	"github.com/macrowallets/waas/app/http/middleware"
+	"github.com/macrowallets/waas/app/repositories"
 )
 
 // RegisterExternalAPI registers Bearer API-token routes under /api/v1.
@@ -22,18 +24,19 @@ import (
 // valid API token cannot operate on another account's wallets.
 func RegisterExternalAPI() {
 	noCache := middleware.CacheControl(0)
+	walletCtrl := newExternalWalletsController()
 
 	facades.Route().Prefix("/api/v1").Middleware(middleware.APITokenAuth(), noCache).Group(func(router route.Router) {
 		router.Get("/chains", extchains.ListChains)
 
-		router.Post("/wallets", extwallets.CreateWallet)
-		router.Get("/wallets", extwallets.ListWallets)
+		router.Post("/wallets", walletCtrl.CreateWallet)
+		router.Get("/wallets", walletCtrl.ListWallets)
 
 		router.Get("/addresses/{address}", extaddresses.LookupAddress)
 		router.Get("/users/{external_id}/addresses", extaddresses.ListUserAddresses)
 
 		router.Prefix("/wallets/{walletId}").Middleware(middleware.APIWalletContext()).Group(func(r route.Router) {
-			r.Get("", extwallets.GetWallet)
+			r.Get("", walletCtrl.GetWallet)
 
 			r.Post("/addresses", extaddresses.GenerateAddress)
 			r.Get("/addresses", extaddresses.ListWalletAddresses)
@@ -55,4 +58,11 @@ func RegisterExternalAPI() {
 		router.Get("/webhooks", extwebhooks.ListWebhooks)
 		router.Patch("/webhooks/{webhookId}", extwebhooks.UpdateWebhook)
 	})
+}
+
+func newExternalWalletsController() *extwallets.WalletsController {
+	return extwallets.NewWalletsController(
+		container.MustMake[*repositories.WalletRepository](),
+		currentWalletService,
+	)
 }

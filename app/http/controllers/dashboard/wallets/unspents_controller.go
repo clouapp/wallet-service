@@ -5,11 +5,26 @@ import (
 
 	"github.com/goravel/framework/contracts/http"
 
-	"github.com/macrowallets/waas/app/container"
 	"github.com/macrowallets/waas/app/http/responses"
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/repositories"
 )
+
+// UnspentsController serves the dashboard UTXO list route.
+type UnspentsController struct {
+	utxos *repositories.WalletUTXORepository
+}
+
+func NewUnspentsController(
+	utxos *repositories.WalletUTXORepository,
+) *UnspentsController {
+	if utxos == nil {
+		panic("dashboard unspents controller: utxo repository is required")
+	}
+	return &UnspentsController{
+		utxos: utxos,
+	}
+}
 
 // ListUnspentOutputs godoc
 // @Summary      List unspent transaction outputs (UTXOs)
@@ -23,10 +38,10 @@ import (
 // @Failure      404  {object}  ErrorResponse
 // @Failure      422  {object}  ErrorResponse  "Only available for UTXO chains"
 // @Router       /wallets/{walletId}/unspents [get]
-func ListUnspentOutputs(ctx http.Context) http.Response {
+func (ctrl *UnspentsController) ListUnspentOutputs(ctx http.Context) http.Response {
 	wallet := ctx.Value("wallet").(*models.Wallet)
 
-	utxos, err := container.MustMake[*repositories.WalletUTXORepository]().ListSpendable(ctx.Context(), wallet.ID, wallet.Chain)
+	utxos, err := ctrl.utxos.ListSpendable(ctx.Context(), wallet.ID, wallet.Chain)
 	if err != nil {
 		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to list utxos: " + err.Error()})
 	}
