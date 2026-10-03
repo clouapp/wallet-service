@@ -61,6 +61,7 @@ func registerVaultContainer(app foundation.Application) {
 		}
 		return c, nil
 	})
+	registerRuntimeServices(app)
 }
 
 func buildVaultContainer(app foundation.Application) (*container.Container, error) {
