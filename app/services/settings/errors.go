@@ -19,4 +19,7 @@ var (
 	errSealFailed = errors.New("seal setting")
 	// errServiceRequired is a nil settings service.
 	errServiceRequired = errors.New("account settings: service is required")
+	// errSettingsCacheUnavailable is a missing process cache. The read falls
+	// through to the database.
+	errSettingsCacheUnavailable = errors.New("settings cache is not available")
 )

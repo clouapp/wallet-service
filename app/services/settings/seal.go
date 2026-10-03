@@ -59,16 +59,33 @@ func Open(c Cipher, value string) (string, error) {
 	return plaintext, nil
 }
 
-// CryptSealer seals with the process Crypt facade.
+// CryptSealer seals and opens with the process Crypt facade.
 type CryptSealer struct{}
+
+func processCipher() (Cipher, error) {
+	cipher := facades.Crypt()
+	if cipher == nil {
+		return nil, fmt.Errorf("seal setting: crypt is not available")
+	}
+	return cipherAdapter{cipher}, nil
+}
 
 // Seal encrypts plaintext for storage.
 func (CryptSealer) Seal(plaintext string) (string, error) {
-	cipher := facades.Crypt()
-	if cipher == nil {
-		return "", fmt.Errorf("seal setting: crypt is not available")
+	cipher, err := processCipher()
+	if err != nil {
+		return "", err
 	}
-	return Seal(cipherAdapter{cipher}, plaintext)
+	return Seal(cipher, plaintext)
+}
+
+// Open reverses a value sealed by CryptSealer. The plaintext is not logged.
+func (CryptSealer) Open(value string) (string, error) {
+	cipher, err := processCipher()
+	if err != nil {
+		return "", err
+	}
+	return Open(cipher, value)
 }
 
 // cipherAdapter keeps Seal on the methods it needs. Goravel's Crypt is wider.

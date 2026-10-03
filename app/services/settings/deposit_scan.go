@@ -24,10 +24,11 @@ type platformReader interface {
 }
 
 // EffectiveDepositScan reads the platform deposit_scan group at the moment
-// of use. A missing row leaves every field zero so the caller keeps the
-// environment window. One invalid key falls back to zero for that key only.
-// A read failure is returned so the caller can keep the environment window
-// and still run the scan.
+// of use. A sealed cache hit skips the database. A cache miss, a cache
+// failure, or a bad seal reads the database. A missing row leaves every
+// field zero so the caller keeps the environment window. One invalid key
+// falls back to zero for that key only. A database failure is returned so
+// the caller can keep the environment window and still run the scan.
 func (s *Service) EffectiveDepositScan(ctx context.Context) (DepositScanValues, error) {
 	if s == nil {
 		return DepositScanValues{}, errServiceRequired
@@ -35,21 +36,13 @@ func (s *Service) EffectiveDepositScan(ctx context.Context) (DepositScanValues, 
 	if ctx == nil {
 		return DepositScanValues{}, fmt.Errorf("deposit scan settings: context is required")
 	}
-	reader, ok := s.store.(platformReader)
-	if !ok {
-		return DepositScanValues{}, fmt.Errorf("deposit scan settings: platform reader is required")
-	}
 	group, ok := FindGroup(groupDepositScan)
 	if !ok {
 		return DepositScanValues{}, ErrGroupNotFound
 	}
-	rows, err := reader.ListPlatform(ctx, group.Name)
+	stored, err := s.platformValues(ctx, group.Name)
 	if err != nil {
 		return DepositScanValues{}, err
-	}
-	stored := make(map[string]string, len(rows))
-	for _, row := range rows {
-		stored[row.Key] = row.Value
 	}
 	return parseDepositScan(stored), nil
 }

@@ -59,6 +59,9 @@ func (s *accountSettingsSuite) TestStoredSweepLimitIsAppliedWhenSweepLoadsLimits
 		accountID,
 	)
 	s.Require().NoError(err)
+	// The first load cached the empty group. An insert outside the service
+	// stays invisible until that key is forgotten, which is what Flush does.
+	s.True(facades.Cache().Forget(accountSettingsCacheKey(accountID, "account_sweep_limits")))
 
 	after, err := sweepService.LoadLimits(context.Background(), accountID)
 	s.Require().NoError(err)
@@ -372,19 +375,35 @@ func (s *accountSettingsSuite) TestFlushUnknownSectionIsNotFoundBeforeForbidden(
 
 	response := s.flushParsed(token, accountID, "not-a-section", 404)
 	s.Equal("not_found", response["error"].(map[string]any)["code"])
-	s.Equal("stale-security", facades.Cache().GetString(securityKey))
+	s.assertCacheKeySurvived(securityKey, "stale-security")
 
 	auditor := s.member(accountID, "auditor")
 	response = s.flushParsed(auditor, accountID, "scanning", 404)
 	s.Equal("not_found", response["error"].(map[string]any)["code"])
-	s.Equal("stale-security", facades.Cache().GetString(securityKey))
+	s.assertCacheKeySurvived(securityKey, "stale-security")
 
 	user := s.member(accountID, "user")
 	response = s.flushParsed(user, accountID, "not-a-section", 404)
 	s.Equal("not_found", response["error"].(map[string]any)["code"])
 	response = s.flushParsed(user, accountID, "security", 403)
 	s.Equal("forbidden", response["error"].(map[string]any)["code"])
-	s.Equal("stale-security", facades.Cache().GetString(securityKey))
+	s.assertCacheKeySurvived(securityKey, "stale-security")
+}
+
+// assertCacheKeySurvived checks a refused flush left the key. A settings read
+// on the request replaces an unsealed sentinel with a sealed document and
+// does not delete the key. The sealed blob is not written into the failure.
+func (s *accountSettingsSuite) assertCacheKeySurvived(key, sentinel string) {
+	s.T().Helper()
+	if !facades.Cache().Has(key) {
+		s.Fail("refused flush removed the cache key")
+		return
+	}
+	value := facades.Cache().GetString(key)
+	if value == sentinel || settings.IsSealed(value) {
+		return
+	}
+	s.Fail("refused flush left a cache value that is neither the sentinel nor sealed")
 }
 
 func (s *accountSettingsSuite) TestFlushPlatformManagedSectionIsForbidden() {

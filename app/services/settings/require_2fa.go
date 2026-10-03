@@ -9,9 +9,10 @@ import (
 )
 
 // Require2FA reads account_security.require_2fa at the moment of use.
-// A missing row and a blank value use the registry default (false) and
-// nothing is inserted. session_idle_minutes is stored in the same group
-// and is not read here.
+// A sealed cache hit skips the database. A cache miss, a cache failure, or
+// a bad seal reads the database. A missing row and a blank value use the
+// registry default (false) and nothing is inserted. A database failure is
+// returned. session_idle_minutes is stored in the same group and is not read here.
 func (s *Service) Require2FA(ctx context.Context, accountID uuid.UUID) (bool, error) {
 	if s == nil {
 		return false, errServiceRequired

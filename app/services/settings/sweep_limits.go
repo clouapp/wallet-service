@@ -31,9 +31,11 @@ func DefaultSweepLimits() SweepLimitValues {
 }
 
 // EffectiveSweepLimits reads account_sweep_limits at the moment of use.
-// A stored row wins over the registry default. A missing or invalid value
-// for one key falls back to that key's default. The platform group named by
-// Inherits is not read: that group is not in the registry yet.
+// A sealed cache hit skips the database. A cache miss, a cache failure, or
+// a bad seal reads the database. A stored row wins over the registry default.
+// A missing or invalid value for one key falls back to that key's default.
+// A database failure is returned. The platform group named by Inherits is
+// not read: that group is not in the registry yet.
 func (s *Service) EffectiveSweepLimits(ctx context.Context, accountID uuid.UUID) (SweepLimitValues, error) {
 	if s == nil {
 		return SweepLimitValues{}, errServiceRequired

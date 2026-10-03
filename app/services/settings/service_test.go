@@ -5,6 +5,7 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 
@@ -81,6 +82,14 @@ type prefixSealer struct{}
 
 func (prefixSealer) Seal(plaintext string) (string, error) {
 	return "enc:v1:" + plaintext, nil
+}
+
+func (prefixSealer) Open(value string) (string, error) {
+	raw, ok := strings.CutPrefix(value, "enc:v1:")
+	if !ok {
+		return "", errors.New("open setting: value is not sealed")
+	}
+	return raw, nil
 }
 
 type discardActivity struct{}
@@ -283,12 +292,35 @@ func (a *recordingActivity) Append(_ context.Context, row models.AccountActivity
 }
 
 type memoryCache struct {
-	keys []string
+	keys   []string
+	values map[string]string
+	ttls   map[string]time.Duration
+	getErr error
 }
 
 func (c *memoryCache) Forget(key string) bool {
 	c.keys = append(c.keys, key)
+	delete(c.values, key)
+	delete(c.ttls, key)
 	return true
+}
+
+func (c *memoryCache) Get(key string) (string, bool, error) {
+	if c.getErr != nil {
+		return "", false, c.getErr
+	}
+	value, ok := c.values[key]
+	return value, ok, nil
+}
+
+func (c *memoryCache) Put(key, value string, ttl time.Duration) error {
+	if c.values == nil {
+		c.values = map[string]string{}
+		c.ttls = map[string]time.Duration{}
+	}
+	c.values[key] = value
+	c.ttls[key] = ttl
+	return nil
 }
 
 func TestResetSectionClearsStoredRowsAndRecordsFieldNames(t *testing.T) {

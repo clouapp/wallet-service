@@ -1,0 +1,126 @@
+package repositories_test
+
+import (
+	"context"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/google/uuid"
+	"github.com/goravel/framework/facades"
+
+	"github.com/macrowallets/waas/app/repositories"
+	"github.com/macrowallets/waas/app/services/settings"
+	"github.com/macrowallets/waas/tests/mocks"
+	"github.com/macrowallets/waas/tests/testutil"
+)
+
+func TestSettingsReadStoresASealedCacheForTenMinutes(t *testing.T) {
+	mocks.TestDB(t)
+	ctx := context.Background()
+	settingsRepo := repositories.NewSettingRepository(nil)
+	activityRepo := repositories.NewAccountActivityRepository(nil)
+	account := mocks.InsertAccount(t, "settings-cache")
+	actorID := uuid.New()
+	if _, err := facades.Orm().Query().Exec(
+		`INSERT INTO users (id, email, password_hash, status, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, NOW(), NOW())`,
+		actorID, actorID.String()+"@example.com", "hash", "active",
+	); err != nil {
+		t.Fatalf("insert actor: %v", err)
+	}
+
+	service := settings.NewService(settingsRepo, settings.CryptSealer{}, settings.FacadeCache{}, activityRepo)
+	if _, err := service.Save(ctx, account.ID, actorID, "owner", "account_security", map[string]any{
+		"require_2fa": true,
+	}); err != nil {
+		t.Fatalf("save: %v", err)
+	}
+	key := "settings:account:" + account.ID.String() + ":account_security"
+	t.Cleanup(func() { facades.Cache().Forget(key) })
+	if facades.Cache().Has(key) {
+		t.Fatal("save left the cache key in place")
+	}
+
+	enabled, err := service.Require2FA(ctx, account.ID)
+	if err != nil || !enabled {
+		t.Fatalf("read after write = %v, %v", enabled, err)
+	}
+	if !facades.Cache().Has(key) {
+		t.Fatal("read after write missed the cache key")
+	}
+	sealed := facades.Cache().GetString(key)
+	if !settings.IsSealed(sealed) || strings.Contains(sealed, "require_2fa") {
+		t.Fatal("cache payload is not sealed")
+	}
+	opened, err := settings.CryptSealer{}.Open(sealed)
+	if err != nil || !strings.Contains(opened, "require_2fa") {
+		t.Fatal("sealed cache did not open to the stored group")
+	}
+	ttl := settingsCacheTTL(t, key)
+	if ttl < 9*time.Minute || ttl > 10*time.Minute {
+		t.Fatalf("ttl = %s, want 10 minutes", ttl)
+	}
+
+	if err := settingsRepo.UpsertMany(ctx, account.ID, "account_security", map[string]string{
+		"require_2fa": "false",
+	}); err != nil {
+		t.Fatalf("update row: %v", err)
+	}
+	cached, err := service.Require2FA(ctx, account.ID)
+	if err != nil || !cached {
+		t.Fatalf("cached read = %v, %v", cached, err)
+	}
+
+	if err := facades.Cache().Put(key, "not-sealed", 10*time.Minute); err != nil {
+		t.Fatalf("replace cache: %v", err)
+	}
+	fallen, err := service.Require2FA(ctx, account.ID)
+	if err != nil || fallen {
+		t.Fatalf("corrupt seal = %v, %v", fallen, err)
+	}
+	resealed := facades.Cache().GetString(key)
+	if !settings.IsSealed(resealed) || strings.Contains(resealed, "require_2fa") {
+		t.Fatal("fallthrough did not store a sealed payload")
+	}
+
+	if err := service.FlushSection(ctx, account.ID, "owner", "security"); err != nil {
+		t.Fatalf("flush: %v", err)
+	}
+	if facades.Cache().Has(key) {
+		t.Fatal("flush left the cache key")
+	}
+}
+
+func settingsCacheTTL(t *testing.T, logicalKey string) time.Duration {
+	t.Helper()
+	client := testutil.TestRedis(t)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+
+	var matched string
+	iter := client.Scan(ctx, 0, "*"+logicalKey, 20).Iterator()
+	for iter.Next(ctx) {
+		matched = iter.Val()
+		break
+	}
+	if err := iter.Err(); err != nil {
+		t.Fatalf("scan cache key: %v", err)
+	}
+	if matched == "" {
+		t.Fatal("sealed cache key is missing from redis")
+	}
+	ttl, err := client.TTL(ctx, matched).Result()
+	if err != nil {
+		t.Fatalf("read ttl: %v", err)
+	}
+	t.Cleanup(func() {
+		cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), time.Second)
+		defer cleanupCancel()
+		_ = client.Del(cleanupCtx, matched).Err()
+	})
+	if ttl <= 0 {
+		t.Fatal("sealed cache key has no expiry")
+	}
+	return ttl
+}
