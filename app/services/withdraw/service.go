@@ -45,6 +45,11 @@ type Locker interface {
 	Int(ctx context.Context, key string) (int, error)
 	// IncrExpire increments key and sets its TTL in one pipeline.
 	IncrExpire(ctx context.Context, key string, expiration time.Duration) error
+	// IncrBy adds delta and returns the new total. When the key was absent
+	// (the new total equals delta) it sets expiration. delta must be positive.
+	IncrBy(ctx context.Context, key string, delta int64, expiration time.Duration) (int64, error)
+	// DecrBy subtracts delta. A rejected daily spend uses it to return the reserved cents.
+	DecrBy(ctx context.Context, key string, delta int64) error
 }
 
 type Service struct {
@@ -57,6 +62,7 @@ type Service struct {
 	addressRepo     *repositories.AddressRepository
 	sweep           sweep.Service
 	flags           accountGate
+	usdQuote        USDQuote
 }
 
 func NewService(
@@ -102,6 +108,11 @@ type WithdrawRequest struct {
 	Passphrase      string    `json:"passphrase"`
 	IdempotencyKey  string    `json:"idempotency_key"`
 	CallerAccountID uuid.UUID `json:"-"`
+	// AccessTokenID, SpendingLimit and QuoteAmount carry a per-token daily USD
+	// cap. A blank SpendingLimit keeps the withdrawal on today's path.
+	AccessTokenID uuid.UUID `json:"-"`
+	SpendingLimit string    `json:"-"`
+	QuoteAmount   string    `json:"-"`
 }
 
 // Metadata describes the source-selection outcome for a Request. Emitted
@@ -144,6 +155,9 @@ func (s *Service) Request(ctx context.Context, req WithdrawRequest) (*models.Tra
 		return nil, nil, ErrConcurrentWithdraw
 	}
 	defer s.locker.Del(ctx, lockKey)
+	if err := s.enforceTokenSpendingLimit(ctx, req); err != nil {
+		return nil, nil, err
+	}
 
 	walletPtr, err := s.walletRepo.FindByID(ctx, req.WalletID)
 	if err != nil || walletPtr == nil {

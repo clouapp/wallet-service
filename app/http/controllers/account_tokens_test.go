@@ -100,6 +100,43 @@ func (s *accountTokensSuite) TestNameOutsideTheCatalogIsRejected() {
 	s.NotEmpty(parsed.Errors["permissions.*"])
 }
 
+func (s *accountTokensSuite) TestBlankSpendingLimitStaysEmptyObject() {
+	accountID := s.createAccount()
+	owner := s.loginUser("owner", accountID)
+
+	resp := s.createToken(owner.token, accountID, `{"name":"blank-cap","spending_limit":{}}`)
+	s.Equal(http.StatusCreated, s.statusOf(resp))
+	s.Equal("{}", s.storedSpendingLimit(accountID, "blank-cap"))
+}
+
+func (s *accountTokensSuite) TestDailyUSDSpendingLimitIsStored() {
+	accountID := s.createAccount()
+	owner := s.loginUser("owner", accountID)
+
+	resp := s.createToken(owner.token, accountID, `{"name":"capped","spending_limit":{"daily_usd":"12.50"}}`)
+	s.Equal(http.StatusCreated, s.statusOf(resp))
+	s.Equal(`{"daily_usd":"12.50"}`, s.storedSpendingLimit(accountID, "capped"))
+}
+
+func (s *accountTokensSuite) TestNegativeSpendingLimitIsNotStored() {
+	accountID := s.createAccount()
+	owner := s.loginUser("owner", accountID)
+
+	resp := s.createToken(owner.token, accountID, `{"name":"negative","spending_limit":{"daily_usd":"-1"}}`)
+	s.Equal(http.StatusUnprocessableEntity, s.statusOf(resp))
+	s.Equal(int64(0), s.tokenCount(accountID))
+
+	var parsed struct {
+		Error struct {
+			Code string `json:"code"`
+		} `json:"error"`
+		Errors map[string][]string `json:"errors"`
+	}
+	s.Require().NoError(json.Unmarshal([]byte(s.body(resp)), &parsed))
+	s.Equal("validation_failed", parsed.Error.Code)
+	s.NotEmpty(parsed.Errors["spending_limit.daily_usd"])
+}
+
 func (s *accountTokensSuite) TestUserCannotMint() {
 	accountID := s.createAccount()
 	s.loginUser("owner", accountID)
@@ -175,6 +212,14 @@ func (s *accountTokensSuite) metadataHasPermissions(resp contractstesting.Respon
 	s.Require().NoError(json.Unmarshal([]byte(s.body(resp)), &parsed))
 	_, ok := parsed.Metadata["permissions"]
 	return ok
+}
+
+func (s *accountTokensSuite) storedSpendingLimit(accountID uuid.UUID, name string) string {
+	var token models.AccessToken
+	s.Require().NoError(facades.Orm().Query().
+		Where("account_id = ? AND name = ?", accountID, name).
+		First(&token))
+	return token.SpendingLimit
 }
 
 func (s *accountTokensSuite) storedPermissions(accountID uuid.UUID, name string) string {

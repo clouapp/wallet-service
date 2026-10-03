@@ -84,8 +84,9 @@ Known violations include `app/models → app/services/mpc` and `config → app/m
   and checked before the body is read. — guarded by `TestAPITokenAuthHMACSuite`
   (`app/http/middleware/api_token_auth_test.go`) and `criticalEndpointsSuite`
   (`app/http/controllers/critical_api_endpoints_test.go`).
-  **KNOWN VIOLATION** S9: `permissions`, `ip_cidr` and `spending_limit` are stored and
-  never enforced.
+  **KNOWN VIOLATION** S9: `permissions` and `ip_cidr` are stored and never
+  enforced. `spending_limit` is a per-token daily USD cap enforced in
+  `withdraw.Service`; a blank cap leaves withdrawal behavior unchanged.
 
 ### 5. Scope: actor → account → wallet
 

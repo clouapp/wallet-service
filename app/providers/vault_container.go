@@ -416,6 +416,7 @@ func buildVaultContainer(app foundation.Application) (*container.Container, erro
 		priceProviders = append(priceProviders, price.NewCoinAPIProvider(key))
 	}
 	c.PriceService = price.NewService(priceProviders, c.CurrencyRepo, pricecache.New(c.Redis)).WithQuoteDialer(coinapiws.Dialer{})
+	c.WithdrawalService.UseUSDQuote(c.PriceService)
 
 	slog.Info("vault container booted", "chains", c.Registry.ChainIDs())
 	return c, nil

@@ -23,6 +23,9 @@ func TestWithdrawalFailureCodeNeverLeaksRawErrors(t *testing.T) {
 		"short passphrase":            {withdraw.ErrPassphraseTooShort, WithdrawalFailurePassphraseTooShort},
 		"concurrent withdrawal":       {withdraw.ErrConcurrentWithdraw, WithdrawalFailureConcurrentWithdrawal},
 		"too many attempts":           {withdraw.ErrTooManyAttempts, WithdrawalFailureTooManyAttempts},
+		"spending limit exceeded":     {withdraw.ErrSpendingLimitExceeded, WithdrawalFailureSpendingLimit},
+		"spending limit invalid":      {withdraw.ErrSpendingLimitInvalid, WithdrawalFailureSpendingLimitInvalid},
+		"spending quote unavailable":  {withdraw.ErrSpendingQuoteUnavailable, WithdrawalFailureSpendingQuote},
 		"rpc error with url":          {errors.New("dial tcp https://rpc.example/secret-key: timeout"), WithdrawalFailureInternalError},
 		"nil error":                   {nil, WithdrawalFailureInternalError},
 	}

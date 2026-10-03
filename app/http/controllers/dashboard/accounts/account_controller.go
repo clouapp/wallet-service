@@ -19,6 +19,7 @@ import (
 	"github.com/macrowallets/waas/app/policies"
 	accountsvc "github.com/macrowallets/waas/app/services/account"
 	authsvc "github.com/macrowallets/waas/app/services/auth"
+	"github.com/macrowallets/waas/app/services/withdraw"
 )
 
 func validateRequest(ctx http.Context, req http.FormRequest) http.Response {
@@ -385,6 +386,16 @@ func (ctrl *AccountsController) CreateAccountToken(ctx http.Context) http.Respon
 	if err != nil {
 		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to create token"})
 	}
+	storedLimit, err := withdraw.StoreSpendingLimit(req.SpendingLimit)
+	if err != nil {
+		field := "spending_limit"
+		message := "must be an object with an optional daily_usd decimal"
+		if errors.Is(err, withdraw.ErrNegativeSpendingLimit) {
+			field = "spending_limit.daily_usd"
+			message = "must be a decimal string greater than or equal to 0"
+		}
+		return responses.FieldsFailed(ctx, map[string][]string{field: {message}})
+	}
 
 	tokenID := uuid.New()
 	token := &models.AccessToken{
@@ -394,7 +405,7 @@ func (ctrl *AccountsController) CreateAccountToken(ctx http.Context) http.Respon
 		Name:          req.Name,
 		TokenHash:     ctrl.passwords.HashToken(tokenID.String()),
 		Permissions:   storedPermissions,
-		SpendingLimit: "{}",
+		SpendingLimit: storedLimit,
 	}
 	if req.ValidUntil != "" {
 		t, _ := time.Parse(time.RFC3339, req.ValidUntil)

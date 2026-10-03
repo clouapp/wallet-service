@@ -132,6 +132,12 @@ func (r *recordingLocker) IncrExpire(_ context.Context, key string, expiration t
 	return nil
 }
 
+func (r *recordingLocker) IncrBy(context.Context, string, int64, time.Duration) (int64, error) {
+	return 0, nil
+}
+
+func (r *recordingLocker) DecrBy(context.Context, string, int64) error { return nil }
+
 func TestRequest_NilLockerReportsRedisNotConfigured(t *testing.T) {
 	svc := &Service{}
 	_, _, err := svc.Request(context.Background(), WithdrawRequest{

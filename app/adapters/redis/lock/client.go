@@ -11,7 +11,7 @@ import (
 	"github.com/macrowallets/waas/app/services/withdraw"
 )
 
-// Client runs SETNX, DEL, GET, and an INCR+EXPIRE pipeline.
+// Client runs SETNX, DEL, GET, INCR+EXPIRE, and INCRBY for the daily spend counter.
 // The service keeps the keys, the lock value, and the thresholds. Values are not logged.
 type Client struct {
 	client *redis.Client
@@ -65,4 +65,35 @@ func (c *Client) IncrExpire(ctx context.Context, key string, expiration time.Dur
 	pipe.Expire(ctx, key, expiration)
 	_, err := pipe.Exec(ctx)
 	return err
+}
+
+// IncrBy adds delta and returns the new total. The first increment of a key
+// sets expiration. A non-positive delta is refused so a caller cannot store
+// a negative counter.
+func (c *Client) IncrBy(ctx context.Context, key string, delta int64, expiration time.Duration) (int64, error) {
+	if c == nil || c.client == nil {
+		return 0, fmt.Errorf("redis lock: client is nil")
+	}
+	if delta <= 0 {
+		return 0, fmt.Errorf("redis lock: delta must be positive")
+	}
+	total, err := c.client.IncrBy(ctx, key, delta).Result()
+	if err != nil {
+		return 0, err
+	}
+	if total == delta {
+		_ = c.client.Expire(ctx, key, expiration).Err()
+	}
+	return total, nil
+}
+
+// DecrBy subtracts delta. A non-positive delta is refused.
+func (c *Client) DecrBy(ctx context.Context, key string, delta int64) error {
+	if c == nil || c.client == nil {
+		return fmt.Errorf("redis lock: client is nil")
+	}
+	if delta <= 0 {
+		return fmt.Errorf("redis lock: delta must be positive")
+	}
+	return c.client.DecrBy(ctx, key, delta).Err()
 }

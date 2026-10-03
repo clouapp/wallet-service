@@ -8,6 +8,7 @@ import (
 
 	"github.com/macrowallets/waas/app/http/responses"
 	"github.com/macrowallets/waas/app/services/sweep"
+	"github.com/macrowallets/waas/app/services/withdraw"
 )
 
 // MapInternalError logs the real error server-side and returns a generic 500
@@ -70,4 +71,27 @@ func MapSweepError(ctx http.Context, err error) http.Response {
 		})
 	}
 	return nil
+}
+
+// MapSpendingLimitError maps a per-token daily USD cap failure. A blank cap
+// never produces these sentinels. The body uses the same legacy error map as
+// the sweep quota, so the envelope keeps limit_type beside the code.
+func MapSpendingLimitError(ctx http.Context, err error) http.Response {
+	switch {
+	case errors.Is(err, withdraw.ErrSpendingLimitExceeded):
+		return responses.Send(ctx, http.StatusTooManyRequests, http.Json{
+			"error":      "spending_limit_exceeded",
+			"limit_type": "daily_usd",
+		})
+	case errors.Is(err, withdraw.ErrSpendingLimitInvalid):
+		return responses.Send(ctx, http.StatusUnprocessableEntity, http.Json{
+			"error": "spending_limit_invalid",
+		})
+	case errors.Is(err, withdraw.ErrSpendingQuoteUnavailable):
+		return responses.Send(ctx, http.StatusServiceUnavailable, http.Json{
+			"error": "spending_limit_quote_unavailable",
+		})
+	default:
+		return nil
+	}
 }

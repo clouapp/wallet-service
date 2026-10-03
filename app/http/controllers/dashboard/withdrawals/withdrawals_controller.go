@@ -314,7 +314,7 @@ func (ctrl *WithdrawalsController) CreateWalletWithdrawal(ctx http.Context) http
 		w.Status = "broadcasting"
 	}
 
-	tx, _, err := ctrl.withdrawalService.Request(ctx.Context(), withdraw.WithdrawRequest{
+	withdrawal := withdraw.WithdrawRequest{
 		WalletID:        wallet.ID,
 		ToAddress:       req.DestinationAddress,
 		Amount:          resolved.BaseUnits.String(),
@@ -322,7 +322,11 @@ func (ctrl *WithdrawalsController) CreateWalletWithdrawal(ctx http.Context) http
 		Passphrase:      req.Passphrase,
 		IdempotencyKey:  idempotencyKey,
 		CallerAccountID: callerAccountID,
-	})
+	}
+	if token, ok := requestctx.APIToken(ctx); ok {
+		withdrawal = withdrawal.WithAPIToken(token, req.Amount)
+	}
+	tx, _, err := ctrl.withdrawalService.Request(ctx.Context(), withdrawal)
 	if err != nil {
 		failureCode := controllers.WithdrawalFailureCode(err)
 		if updateErr := ctrl.withdrawals.MarkFailed(ctx.Context(), w.ID, failureCode); updateErr != nil {
@@ -338,6 +342,9 @@ func (ctrl *WithdrawalsController) CreateWalletWithdrawal(ctx http.Context) http
 			Asset:     resolved.WalletAsset,
 			BaseUnits: resolved.BaseUnits,
 		})
+		if resp := controllers.MapSpendingLimitError(ctx, err); resp != nil {
+			return resp
+		}
 		if resp := controllers.MapSweepError(ctx, err); resp != nil {
 			return resp
 		}
