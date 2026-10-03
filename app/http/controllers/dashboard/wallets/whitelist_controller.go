@@ -105,8 +105,7 @@ func (ctrl *WhitelistController) DeleteWhitelistEntry(ctx http.Context) http.Res
 		return resp
 	}
 
-	entryIDStr := ctx.Request().Route("entryId")
-	entryID, err := uuid.Parse(entryIDStr)
+	entryID, err := requests.RouteUUID(ctx, "entryId")
 	if err != nil {
 		return responses.Send(ctx, http.StatusBadRequest, http.Json{"error": "invalid entry id"})
 	}

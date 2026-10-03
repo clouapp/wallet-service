@@ -124,8 +124,7 @@ func (ctrl *UsersController) RemoveWalletUser(ctx http.Context) http.Response {
 		return resp
 	}
 
-	targetIDStr := ctx.Request().Route("userId")
-	targetID, err := uuid.Parse(targetIDStr)
+	targetID, err := requests.RouteUUID(ctx, "userId")
 	if err != nil {
 		return responses.Send(ctx, http.StatusBadRequest, http.Json{"error": "invalid user id"})
 	}

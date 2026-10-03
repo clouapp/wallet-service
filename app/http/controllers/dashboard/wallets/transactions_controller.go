@@ -5,6 +5,7 @@ import (
 
 	"github.com/macrowallets/waas/app/http/controllers"
 	"github.com/macrowallets/waas/app/http/pagination"
+	"github.com/macrowallets/waas/app/http/requests"
 	"github.com/macrowallets/waas/app/http/responses"
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/services/walletrecords"
@@ -44,9 +45,11 @@ func NewTransactionsController(
 func (ctrl *TransactionsController) ListWalletTransactions(ctx http.Context) http.Response {
 	wallet := ctx.Value("wallet").(*models.Wallet)
 
+	var query requests.ListWalletTransactionsRequest
+	query.Load(ctx)
 	limit, offset := pagination.ParseParams(ctx, 50)
-	txType := ctx.Request().Query("type", "")
-	status := ctx.Request().Query("status", "")
+	txType := query.Type
+	status := query.Status
 	transactions, total, err := ctrl.transactions.FindByWallet(ctx.Context(), wallet.ID, txType, status, limit, offset)
 	if err != nil {
 		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to fetch transactions"})
@@ -71,7 +74,9 @@ func (ctrl *TransactionsController) ListWalletTransactions(ctx http.Context) htt
 func (ctrl *TransactionsController) GetWalletTransaction(ctx http.Context) http.Response {
 	wallet := ctx.Value("wallet").(*models.Wallet)
 
-	txIDStr := ctx.Request().Route("txId")
+	var path requests.WalletTransactionPathRequest
+	path.Load(ctx)
+	txIDStr := path.TxID
 	tx, err := ctrl.transactions.FindByIDAndWallet(ctx.Context(), txIDStr, wallet.ID)
 	if err != nil || tx == nil {
 		return responses.Send(ctx, http.StatusNotFound, http.Json{"error": "transaction not found"})

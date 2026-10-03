@@ -105,8 +105,7 @@ func (ctrl *WebhooksController) DeleteWalletWebhook(ctx http.Context) http.Respo
 		return resp
 	}
 
-	webhookIDStr := ctx.Request().Route("webhookId")
-	webhookID, err := uuid.Parse(webhookIDStr)
+	webhookID, err := requests.RouteUUID(ctx, "webhookId")
 	if err != nil {
 		return responses.Send(ctx, http.StatusBadRequest, http.Json{"error": "invalid webhook id"})
 	}
