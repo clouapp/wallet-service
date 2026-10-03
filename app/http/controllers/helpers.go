@@ -11,6 +11,12 @@ import (
 )
 
 func validateRequest(ctx http.Context, req http.FormRequest) http.Response {
+	return ValidateRequest(ctx, req)
+}
+
+// ValidateRequest is the form-request check shared with surface packages.
+// The body stays here so dashboard and external handlers keep the same 422 bytes.
+func ValidateRequest(ctx http.Context, req http.FormRequest) http.Response {
 	if len(req.Rules(ctx)) == 0 {
 		return bindRulelessRequest(ctx, req)
 	}
@@ -46,6 +52,11 @@ func bindRulelessRequest(ctx http.Context, req http.FormRequest) http.Response {
 }
 
 func authorize(ctx http.Context, ability string, arguments map[string]any) http.Response {
+	return Authorize(ctx, ability, arguments)
+}
+
+// Authorize is the gate check shared with surface packages.
+func Authorize(ctx http.Context, ability string, arguments map[string]any) http.Response {
 	response := facades.Gate().WithContext(ctx).Inspect(ability, arguments)
 	if response.Allowed() {
 		return nil

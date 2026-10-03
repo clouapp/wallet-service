@@ -1,4 +1,4 @@
-package controllers
+package accounts
 
 import (
 	"time"
@@ -8,6 +8,7 @@ import (
 	"github.com/goravel/framework/facades"
 
 	"github.com/macrowallets/waas/app/container"
+	"github.com/macrowallets/waas/app/http/controllers"
 	"github.com/macrowallets/waas/app/http/middleware"
 	"github.com/macrowallets/waas/app/http/pagination"
 	"github.com/macrowallets/waas/app/http/requests"
@@ -17,6 +18,14 @@ import (
 	accountsvc "github.com/macrowallets/waas/app/services/account"
 	authsvc "github.com/macrowallets/waas/app/services/auth"
 )
+
+func validateRequest(ctx http.Context, req http.FormRequest) http.Response {
+	return controllers.ValidateRequest(ctx, req)
+}
+
+func authorize(ctx http.Context, ability string, arguments map[string]any) http.Response {
+	return controllers.Authorize(ctx, ability, arguments)
+}
 
 func accountSvc() *accountsvc.Service {
 	return accountsvc.NewService(accountsvc.Deps{

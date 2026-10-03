@@ -1,4 +1,4 @@
-package controllers
+package auth
 
 import (
 	"context"
@@ -10,12 +10,17 @@ import (
 	"github.com/goravel/framework/facades"
 
 	"github.com/macrowallets/waas/app/container"
+	"github.com/macrowallets/waas/app/http/controllers"
 	"github.com/macrowallets/waas/app/http/requests"
 	"github.com/macrowallets/waas/app/http/responses"
 	mails "github.com/macrowallets/waas/app/mails"
 	"github.com/macrowallets/waas/app/models"
 	authsvc "github.com/macrowallets/waas/app/services/auth"
 )
+
+func validateRequest(ctx http.Context, req http.FormRequest) http.Response {
+	return controllers.ValidateRequest(ctx, req)
+}
 
 var authService = authsvc.NewService()
 

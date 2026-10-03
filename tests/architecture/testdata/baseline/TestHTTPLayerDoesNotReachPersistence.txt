@@ -1,4 +1,4 @@
 # TestHTTPLayerDoesNotReachPersistence: known violations, rewritten by go test ./tests/architecture -update-baseline
+app/http/controllers/dashboard/users/user_controller.go imports github.com/macrowallets/waas/app/repositories
 app/http/controllers/testutil/auth.go calls facades.Orm() (x2)
-app/http/controllers/user_controller.go imports github.com/macrowallets/waas/app/repositories
 app/http/controllers/zoned_timestamps.go imports github.com/goravel/framework/database/orm
