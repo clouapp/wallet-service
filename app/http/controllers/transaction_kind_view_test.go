@@ -81,8 +81,17 @@ func TestTransactionViewsCarryAnUnsignedAmountWithTypeAndDirection(t *testing.T)
 func TestTransactionViewsListKeepsOrderAndLength(t *testing.T) {
 	t.Parallel()
 
-	if got := transactionViews(nil); got == nil || len(got) != 0 {
-		t.Fatalf("transactionViews(nil) = %#v, want an empty list", got)
+	if got := transactionViews(nil); got != nil {
+		t.Fatal("nil slice became an empty slice")
+	}
+	if got := transactionViews([]models.Transaction{}); got == nil || len(got) != 0 {
+		t.Fatalf("empty slice = %#v", got)
+	}
+	if got := walletTransactionViews(nil, polygonCatalog()); got != nil {
+		t.Fatal("nil wallet page became an empty slice")
+	}
+	if got := walletTransactionViews([]models.Transaction{}, polygonCatalog()); got == nil || len(got) != 0 {
+		t.Fatalf("empty wallet page = %#v", got)
 	}
 	views := transactionViews([]models.Transaction{
 		{Amount: "1", TxType: models.TxTypeDeposit},

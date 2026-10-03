@@ -1,2 +1,0 @@
-# TestModelsCarryNoWireTags: known violations, rewritten by go test ./tests/architecture -update-baseline
-app/models/transaction.go: Transaction has json tags (x30)
