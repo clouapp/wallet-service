@@ -2,7 +2,6 @@ package features
 
 import (
 	"errors"
-	"strings"
 
 	"github.com/google/uuid"
 	"github.com/goravel/framework/contracts/http"
@@ -67,7 +66,9 @@ func (ctrl *FeaturesController) Update(ctx http.Context) http.Response {
 	if errResp != nil {
 		return errResp
 	}
-	key := strings.TrimSpace(ctx.Request().Route("key"))
+	var path requests.FeatureKeyRequest
+	path.Load(ctx)
+	key := path.Key
 	enabled, err := requests.AccountFeatureEnabled(ctx)
 	if err != nil {
 		return mapPlatformFeatureBodyError(ctx, err)
