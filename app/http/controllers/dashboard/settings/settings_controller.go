@@ -2,7 +2,6 @@ package settings
 
 import (
 	"errors"
-	"strings"
 
 	"github.com/google/uuid"
 	"github.com/goravel/framework/contracts/http"
@@ -69,7 +68,9 @@ func (ctrl *SettingsController) Update(ctx http.Context) http.Response {
 	if errResp != nil {
 		return errResp
 	}
-	group := strings.TrimSpace(ctx.Request().Route("group"))
+	var path requests.SettingsGroupRequest
+	path.Load(ctx)
+	group := path.Group
 	actorID := middleware.SessionUserID(ctx)
 	if actorID == uuid.Nil {
 		return responses.Send(ctx, http.StatusUnauthorized, http.Json{"error": "unauthenticated"})
