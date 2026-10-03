@@ -1,4 +1,0 @@
-# TestEveryFormRequestFieldTagsFormAndJSONAlike: known violations, rewritten by go test ./tests/architecture -update-baseline
-app/http/requests/update_webhook_request.go: UpdateWebhookRequest.Events has json "events" but form ""
-app/http/requests/update_webhook_request.go: UpdateWebhookRequest.IsActive has json "is_active" but form ""
-app/http/requests/update_webhook_request.go: UpdateWebhookRequest.Secret has json "secret" but form ""
