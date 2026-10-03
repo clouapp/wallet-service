@@ -185,7 +185,7 @@ func (ctrl *AccountsController) ListAccountUsers(ctx http.Context) http.Response
 	if err != nil {
 		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to fetch members"})
 	}
-	return responses.Send(ctx, http.StatusOK, pagination.Response(members, total, limit, offset))
+	return responses.Send(ctx, http.StatusOK, pagination.Response(accountUserViews(members), total, limit, offset))
 }
 
 // AddAccountUser godoc
@@ -197,7 +197,7 @@ func (ctrl *AccountsController) ListAccountUsers(ctx http.Context) http.Response
 // @Produce      json
 // @Param        accountId  path      string                     true  "Account UUID"
 // @Param        request    body      AddAccountUserSwagger      true  "User and role payload"
-// @Success      201        {object}  models.AccountUser
+// @Success      201        {object}  AccountUserView
 // @Failure      400        {object}  ErrorResponse
 // @Failure      403        {object}  ErrorResponse
 // @Router       /accounts/{accountId}/users [post]
@@ -236,7 +236,7 @@ func (ctrl *AccountsController) AddAccountUser(ctx http.Context) http.Response {
 	if auErr != nil {
 		appfacades.Log().WithContext(ctx).Errorf("account: find membership after add: %v", auErr)
 	}
-	return responses.Send(ctx, http.StatusCreated, au)
+	return responses.Send(ctx, http.StatusCreated, AccountUserViewPtr(au))
 }
 
 // UpdateAccountUser godoc
@@ -249,7 +249,7 @@ func (ctrl *AccountsController) AddAccountUser(ctx http.Context) http.Response {
 // @Param        accountId  path      string                     true  "Account UUID"
 // @Param        userId     path      string                     true  "User UUID"
 // @Param        request    body      UpdateAccountUserSwagger   true  "Role and/or status"
-// @Success      200        {object}  models.AccountUser
+// @Success      200        {object}  AccountUserView
 // @Failure      403        {object}  ErrorResponse
 // @Failure      404        {object}  ErrorResponse
 // @Failure      422        {object}  ErrorResponse
@@ -281,7 +281,7 @@ func (ctrl *AccountsController) UpdateAccountUser(ctx http.Context) http.Respons
 	if errResp := mapMemberError(ctx, err); errResp != nil {
 		return errResp
 	}
-	return responses.Send(ctx, http.StatusOK, member)
+	return responses.Send(ctx, http.StatusOK, AccountUserViewPtr(member))
 }
 
 func memberChange(req requests.UpdateAccountUserRequest) accountsvc.MemberChange {
@@ -467,7 +467,7 @@ type CreateAccountTokenSwagger struct {
 }
 
 type AccountUserListResponse struct {
-	Data []models.AccountUser `json:"data"`
+	Data []AccountUserView `json:"data"`
 }
 
 type AccessTokenListResponse struct {
