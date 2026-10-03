@@ -115,13 +115,13 @@ func (ctrl *WebhooksController) UpdateWebhook(ctx http.Context) http.Response {
 		return responses.Send(ctx, http.StatusUnauthorized, http.Json{"error": "unauthenticated"})
 	}
 
-	webhookID, err := uuid.Parse(ctx.Request().Route("webhookId"))
+	webhookID, err := requests.RouteUUID(ctx, "webhookId")
 	if err != nil {
 		return responses.Send(ctx, http.StatusBadRequest, http.Json{"error": "invalid webhook id"})
 	}
 
 	var req requests.UpdateWebhookRequest
-	if err := ctx.Request().Bind(&req); err != nil {
+	if err := requests.Bind(ctx, &req); err != nil {
 		return responses.Send(ctx, http.StatusBadRequest, http.Json{"error": "invalid request body"})
 	}
 
