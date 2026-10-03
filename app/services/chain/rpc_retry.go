@@ -5,9 +5,10 @@ import (
 	"context"
 	"encoding/json"
 	"math/rand/v2"
-	"net/http"
 	"strconv"
 	"time"
+
+	"github.com/macrowallets/waas/pkg/httpclient"
 )
 
 const (
@@ -57,14 +58,14 @@ func parseRetryAfter(value string, now time.Time) (time.Duration, bool) {
 		}
 		return time.Duration(seconds) * time.Second, true
 	}
-	if at, err := http.ParseTime(value); err == nil {
+	if at, err := httpclient.ParseTime(value); err == nil {
 		return max(at.Sub(now), 0), true
 	}
 	return 0, false
 }
 
 func isRateLimited(status int, body []byte) bool {
-	if status == http.StatusTooManyRequests || status == http.StatusForbidden {
+	if status == httpclient.StatusTooManyRequests || status == httpclient.StatusForbidden {
 		return true
 	}
 	if !bytes.Contains(body, []byte(`"error"`)) {

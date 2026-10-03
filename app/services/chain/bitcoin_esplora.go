@@ -6,13 +6,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"log/slog"
 	"math/big"
-	"net/http"
 	"strings"
 	"time"
 
+	"github.com/macrowallets/waas/pkg/httpclient"
 	"github.com/macrowallets/waas/pkg/types"
 )
 
@@ -68,7 +67,7 @@ func (a *BitcoinLive) esploraGet(ctx context.Context, path string) ([]byte, erro
 		if err != nil {
 			return nil, err
 		}
-		if status >= http.StatusOK && status < http.StatusMultipleChoices {
+		if status >= httpclient.StatusOK && status < httpclient.StatusMultipleChoices {
 			return body, nil
 		}
 		if !isRateLimited(status, body) {
@@ -85,30 +84,30 @@ func (a *BitcoinLive) esploraGet(ctx context.Context, path string) ([]byte, erro
 	}
 }
 
-func (a *BitcoinLive) esploraFetch(ctx context.Context, requestURL, path string) (int, http.Header, []byte, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, requestURL, nil)
+func (a *BitcoinLive) esploraFetch(ctx context.Context, requestURL, path string) (int, httpclient.Header, []byte, error) {
+	resp, err := a.http.Do(ctx, httpclient.Request{
+		Method:   httpclient.MethodGet,
+		URL:      requestURL,
+		MaxBytes: esploraMaxResponseBytes + 1,
+	})
 	if err != nil {
-		return 0, nil, nil, fmt.Errorf("build esplora GET %s: %w", path, withoutURL(err))
-	}
-	resp, err := a.http.Do(req)
-	if err != nil {
+		if httpclient.IsBuild(err) {
+			return 0, nil, nil, fmt.Errorf("build esplora GET %s: %w", path, withoutURL(err))
+		}
+		if httpclient.IsRead(err) {
+			return 0, nil, nil, fmt.Errorf("read esplora GET %s: %w", path, withoutURL(err))
+		}
 		return 0, nil, nil, fmt.Errorf("esplora GET %s: %w", path, withoutURL(err))
 	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(io.LimitReader(resp.Body, esploraMaxResponseBytes+1))
-	if err != nil {
-		return 0, nil, nil, fmt.Errorf("read esplora GET %s: %w", path, withoutURL(err))
-	}
-	if len(body) > esploraMaxResponseBytes {
+	if len(resp.Body) > esploraMaxResponseBytes {
 		return 0, nil, nil, fmt.Errorf("esplora GET %s: response larger than %d bytes", path, esploraMaxResponseBytes)
 	}
-	return resp.StatusCode, resp.Header, body, nil
+	return resp.StatusCode, resp.Header, resp.Body, nil
 }
 
 func isEsploraNotFound(err error) bool {
 	var statusErr *esploraStatusError
-	return errors.As(err, &statusErr) && statusErr.status == http.StatusNotFound
+	return errors.As(err, &statusErr) && statusErr.status == httpclient.StatusNotFound
 }
 
 func isBTCHash(value string) bool {

@@ -8,9 +8,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"io"
 	"math"
-	"net/http"
 	"strings"
 
 	"github.com/btcsuite/btcd/btcec/v2"
@@ -20,6 +18,7 @@ import (
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/wire"
 
+	"github.com/macrowallets/waas/pkg/httpclient"
 	"github.com/macrowallets/waas/pkg/types"
 )
 
@@ -378,23 +377,19 @@ func (a *BitcoinLive) broadcastBitcoin(ctx context.Context, signed *types.Signed
 	if a.restAPI {
 		url := strings.TrimRight(a.cfg.RPCURL, "/") + "/tx"
 		bodyHex := hex.EncodeToString(signed.RawBytes)
-		req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, strings.NewReader(bodyHex))
+		resp, err := a.http.Do(ctx, httpclient.Request{
+			Method:  httpclient.MethodPost,
+			URL:     url,
+			Body:    []byte(bodyHex),
+			HasBody: true,
+		})
 		if err != nil {
 			return "", err
 		}
-		resp, err := a.http.Do(req)
-		if err != nil {
-			return "", err
+		if resp.StatusCode >= httpclient.StatusMultipleChoices {
+			return "", fmt.Errorf("btc broadcast %d: %s", resp.StatusCode, resp.Body)
 		}
-		defer resp.Body.Close()
-		body, err := io.ReadAll(resp.Body)
-		if err != nil {
-			return "", err
-		}
-		if resp.StatusCode >= 300 {
-			return "", fmt.Errorf("btc broadcast %d: %s", resp.StatusCode, body)
-		}
-		return strings.TrimSpace(string(body)), nil
+		return strings.TrimSpace(string(resp.Body)), nil
 	}
 	rawHex := hex.EncodeToString(signed.RawBytes)
 	var txHash string
