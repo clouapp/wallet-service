@@ -4,7 +4,7 @@ app/console/commands imports the framework facades (x7)
 app/container imports the framework facades (x2)
 app/http/controllers/testutil imports the framework facades
 app/listeners imports the framework facades (x3)
-app/providers imports the framework facades (x3)
+app/providers imports the framework facades (x2)
 app/repositories/internal/db imports the framework facades
 app/rules imports the framework facades (x2)
 app/services/chainregistry imports the framework facades

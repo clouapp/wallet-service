@@ -3,8 +3,8 @@ package providers
 import (
 	"github.com/goravel/framework/contracts/foundation"
 	"github.com/goravel/framework/contracts/http"
-	"github.com/goravel/framework/facades"
 
+	"github.com/macrowallets/waas/app/facades"
 	"github.com/macrowallets/waas/app/http/middleware"
 	"github.com/macrowallets/waas/docs"
 	"github.com/macrowallets/waas/routes"
