@@ -18,6 +18,7 @@ import (
 	coinapiws "github.com/macrowallets/waas/app/adapters/price/coinapi"
 	queuesqs "github.com/macrowallets/waas/app/adapters/queue/sqs"
 	"github.com/macrowallets/waas/app/adapters/redis/addressset"
+	redislock "github.com/macrowallets/waas/app/adapters/redis/lock"
 	"github.com/macrowallets/waas/app/container"
 	"github.com/macrowallets/waas/app/facades"
 	"github.com/macrowallets/waas/app/models"
@@ -348,7 +349,7 @@ func buildVaultContainer(app foundation.Application) (*container.Container, erro
 		sweepGasDefaults(),
 	)
 	c.WithdrawalService = withdraw.NewService(
-		c.Registry, c.WebhookService, c.MPCService, c.SecretsManager, c.Redis,
+		c.Registry, c.WebhookService, c.MPCService, c.SecretsManager, redislock.New(c.Redis),
 		c.TransactionRepo, c.WalletRepo, c.AddressRepo, c.SweepService,
 		func(ctx context.Context, accountID uuid.UUID) error {
 			return flags.Gate(ctx, accountID, features.FlagWithdrawalsEnabled, features.CodeWithdrawalsPaused)

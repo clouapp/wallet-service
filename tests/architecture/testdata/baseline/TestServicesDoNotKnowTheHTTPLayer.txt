@@ -19,5 +19,4 @@ app/services/webhooksync imports gorm.io/gorm
 app/services/webhooksync/service.go calls facades.Crypt()
 app/services/withdraw imports app/repositories
 app/services/withdraw imports github.com/aws/aws-sdk-go-v2/service/secretsmanager
-app/services/withdraw imports github.com/redis/go-redis/v9
 app/services/withdraw/service.go calls facades.Event()

@@ -12,7 +12,6 @@ import (
 	"github.com/google/uuid"
 	"github.com/goravel/framework/contracts/event"
 	"github.com/goravel/framework/facades"
-	"github.com/redis/go-redis/v9"
 
 	"github.com/macrowallets/waas/app/dtos"
 	"github.com/macrowallets/waas/app/models"
@@ -37,12 +36,24 @@ var (
 	ErrTooManyAttempts    = errors.New("too many failed attempts, try again later")
 )
 
+// Locker is the withdrawal lock and the passphrase-attempt counter.
+// The provider supplies it; this package never imports the Redis client.
+// A nil Locker means Redis is not configured.
+type Locker interface {
+	SetNX(ctx context.Context, key, value string, expiration time.Duration) (bool, error)
+	Del(ctx context.Context, key string) error
+	// Int reads a counter. A missing key returns 0 and a nil error.
+	Int(ctx context.Context, key string) (int, error)
+	// IncrExpire increments key and sets its TTL in one pipeline.
+	IncrExpire(ctx context.Context, key string, expiration time.Duration) error
+}
+
 type Service struct {
 	registry        *chainpkg.Registry
 	webhookSvc      *webhook.Service
 	mpc             mpcpkg.Service
 	secrets         *secretsmanager.Client
-	rdb             *redis.Client
+	locker          Locker
 	transactionRepo *repositories.TransactionRepository
 	walletRepo      *repositories.WalletRepository
 	addressRepo     *repositories.AddressRepository
@@ -55,7 +66,7 @@ func NewService(
 	webhookSvc *webhook.Service,
 	mpc mpcpkg.Service,
 	secrets *secretsmanager.Client,
-	rdb *redis.Client,
+	locker Locker,
 	transactionRepo *repositories.TransactionRepository,
 	walletRepo *repositories.WalletRepository,
 	addressRepo *repositories.AddressRepository,
@@ -67,7 +78,7 @@ func NewService(
 		webhookSvc:      webhookSvc,
 		mpc:             mpc,
 		secrets:         secrets,
-		rdb:             rdb,
+		locker:          locker,
 		transactionRepo: transactionRepo,
 		walletRepo:      walletRepo,
 		addressRepo:     addressRepo,
@@ -125,18 +136,18 @@ func (s *Service) Request(ctx context.Context, req WithdrawRequest) (*models.Tra
 		}
 	}
 
-	if s.rdb == nil {
+	if s.locker == nil {
 		return nil, nil, fmt.Errorf("redis lock: redis is not configured")
 	}
 	lockKey := fmt.Sprintf("vault:lock:withdrawal:%s", req.WalletID)
-	acquired, err := s.rdb.SetNX(ctx, lockKey, "1", 60*time.Second).Result()
+	acquired, err := s.locker.SetNX(ctx, lockKey, "1", 60*time.Second)
 	if err != nil {
 		return nil, nil, fmt.Errorf("redis lock: %w", err)
 	}
 	if !acquired {
 		return nil, nil, ErrConcurrentWithdraw
 	}
-	defer s.rdb.Del(ctx, lockKey)
+	defer s.locker.Del(ctx, lockKey)
 
 	walletPtr, err := s.walletRepo.FindByID(ctx, req.WalletID)
 	if err != nil || walletPtr == nil {
@@ -289,8 +300,8 @@ func (s *Service) decryptShareA(ctx context.Context, wallet *models.Wallet, pass
 
 func (s *Service) checkRateLimit(ctx context.Context, walletID string) error {
 	key := fmt.Sprintf("vault:ratelimit:passphrase:%s", walletID)
-	count, err := s.rdb.Get(ctx, key).Int()
-	if err != nil && err != redis.Nil {
+	count, err := s.locker.Int(ctx, key)
+	if err != nil {
 		return nil
 	}
 	if count >= 5 {
@@ -301,10 +312,7 @@ func (s *Service) checkRateLimit(ctx context.Context, walletID string) error {
 
 func (s *Service) recordFailedAttempt(ctx context.Context, walletID string) {
 	key := fmt.Sprintf("vault:ratelimit:passphrase:%s", walletID)
-	pipe := s.rdb.Pipeline()
-	pipe.Incr(ctx, key)
-	pipe.Expire(ctx, key, 60*time.Second)
-	_, _ = pipe.Exec(ctx)
+	_ = s.locker.IncrExpire(ctx, key, 60*time.Second)
 }
 
 // zeroShare wipes a byte slice in place so sensitive key material does not
