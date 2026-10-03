@@ -3,6 +3,7 @@ package chains
 import (
 	"github.com/goravel/framework/contracts/http"
 
+	"github.com/macrowallets/waas/app/http/requests"
 	"github.com/macrowallets/waas/app/http/responses"
 	"github.com/macrowallets/waas/app/models"
 	chainsvc "github.com/macrowallets/waas/app/services/chains"
@@ -43,7 +44,9 @@ func (ctrl *ChainsController) ListChains(ctx http.Context) http.Response {
 
 // GetChain returns a single chain by ID with its tokens and resources.
 func (ctrl *ChainsController) GetChain(ctx http.Context) http.Response {
-	chainID := ctx.Request().Input("chainId")
+	var path requests.ChainIDRequest
+	path.Load(ctx)
+	chainID := path.ChainID
 	if chainID == "" {
 		return responses.Send(ctx, http.StatusBadRequest, http.Json{"error": "chainId is required"})
 	}
@@ -73,7 +76,9 @@ func (ctrl *ChainsController) GetChain(ctx http.Context) http.Response {
 
 // ListChainTokens returns tokens for a specific chain.
 func (ctrl *ChainsController) ListChainTokens(ctx http.Context) http.Response {
-	chainID := ctx.Request().Input("chainId")
+	var path requests.ChainIDRequest
+	path.Load(ctx)
+	chainID := path.ChainID
 	if chainID == "" {
 		return responses.Send(ctx, http.StatusBadRequest, http.Json{"error": "chainId is required"})
 	}
@@ -101,7 +106,9 @@ func (ctrl *ChainsController) ListChainTokens(ctx http.Context) http.Response {
 
 // ListChainResources returns resources (explorers, faucets, docs) for a chain.
 func (ctrl *ChainsController) ListChainResources(ctx http.Context) http.Response {
-	chainID := ctx.Request().Input("chainId")
+	var path requests.ChainIDRequest
+	path.Load(ctx)
+	chainID := path.ChainID
 	if chainID == "" {
 		return responses.Send(ctx, http.StatusBadRequest, http.Json{"error": "chainId is required"})
 	}
