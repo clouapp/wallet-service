@@ -351,7 +351,7 @@ func (ctrl *AccountsController) ListAccountTokens(ctx http.Context) http.Respons
 	if err != nil {
 		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to fetch tokens"})
 	}
-	return responses.Send(ctx, http.StatusOK, pagination.Response(tokens, total, limit, offset))
+	return responses.Send(ctx, http.StatusOK, pagination.Response(AccessTokenViews(tokens), total, limit, offset))
 }
 
 // CreateAccountToken godoc
@@ -403,7 +403,7 @@ func (ctrl *AccountsController) CreateAccountToken(ctx http.Context) http.Respon
 
 	return responses.Send(ctx, http.StatusCreated, http.Json{
 		"token":    jwt,
-		"metadata": token,
+		"metadata": AccessTokenViewPtr(token),
 	})
 }
 
@@ -471,10 +471,10 @@ type AccountUserListResponse struct {
 }
 
 type AccessTokenListResponse struct {
-	Data []models.AccessToken `json:"data"`
+	Data []AccessTokenView `json:"data"`
 }
 
 type CreateAccountTokenResponse struct {
-	Token    string             `json:"token"`
-	Metadata models.AccessToken `json:"metadata"`
+	Token    string          `json:"token"`
+	Metadata AccessTokenView `json:"metadata"`
 }
