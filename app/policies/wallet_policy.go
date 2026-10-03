@@ -43,7 +43,7 @@ func accountRoleForWallet(ctx context.Context, walletID uuid.UUID) string {
 	if w.AccountID == nil {
 		return ""
 	}
-	au, err := container.Get().AccountUserRepo.FindByAccountAndUser(ctx, *w.AccountID, userID)
+	au, err := accountUserRepository().FindByAccountAndUser(ctx, *w.AccountID, userID)
 	if err != nil || au == nil {
 		return ""
 	}

@@ -6,8 +6,6 @@ import (
 	"github.com/google/uuid"
 	"github.com/goravel/framework/auth/access"
 	contractsaccess "github.com/goravel/framework/contracts/auth/access"
-
-	"github.com/macrowallets/waas/app/container"
 )
 
 // AccountPolicy defines gate abilities for Account resources.
@@ -22,7 +20,7 @@ func userRole(ctx context.Context, accountID uuid.UUID) string {
 	if !ok {
 		return ""
 	}
-	au, err := container.Get().AccountUserRepo.FindByAccountAndUser(ctx, accountID, userID)
+	au, err := accountUserRepository().FindByAccountAndUser(ctx, accountID, userID)
 	if err != nil || au == nil {
 		return ""
 	}

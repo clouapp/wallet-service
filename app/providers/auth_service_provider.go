@@ -8,7 +8,9 @@ import (
 	"github.com/goravel/framework/contracts/foundation"
 	"github.com/goravel/framework/facades"
 
+	"github.com/macrowallets/waas/app/container"
 	"github.com/macrowallets/waas/app/policies"
+	"github.com/macrowallets/waas/app/repositories"
 )
 
 // AuthServiceProvider registers Gate abilities for Account and Wallet resources.
@@ -21,6 +23,8 @@ func (r *AuthServiceProvider) Boot(app foundation.Application) {
 	if gate == nil {
 		return
 	}
+
+	policies.BindAccountUsers(container.MustMake[*repositories.AccountUserRepository]())
 
 	ap := &policies.AccountPolicy{}
 	wp := &policies.WalletPolicy{}
