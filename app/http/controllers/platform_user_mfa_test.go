@@ -26,7 +26,7 @@ func (s *PlatformUserMFATestSuite) SetupTest() {
 	testutil.SeededTestDB(s.T())
 }
 
-func (s *PlatformUserMFATestSuite) TestAPlatformAdminClearsTotpWithoutSuspendingOrRevokingSessions() {
+func (s *PlatformUserMFATestSuite) TestAPlatformAdminClearsTotpWithoutSuspendingAndRevokesSessions() {
 	admin := s.seedUser(false)
 	s.grantPlatformAdmin(admin.ID)
 	adminSession := s.signIn(admin.Email)
@@ -53,7 +53,7 @@ func (s *PlatformUserMFATestSuite) TestAPlatformAdminClearsTotpWithoutSuspending
 	s.Equal(int64(1), s.count(
 		`SELECT count(*) FROM users
 		 WHERE id = ? AND totp_enabled = FALSE
-		   AND suspended_at IS NULL AND sessions_revoked_at IS NULL`,
+		   AND suspended_at IS NULL AND sessions_revoked_at IS NOT NULL`,
 		victim.ID,
 	))
 	s.Equal(int64(1), s.count(
@@ -65,7 +65,11 @@ func (s *PlatformUserMFATestSuite) TestAPlatformAdminClearsTotpWithoutSuspending
 		`SELECT count(*) FROM mfa_backup_codes WHERE subject_type = 'users' AND subject_id = ?`, victim.ID,
 	))
 	s.Equal(int64(0), s.count(`SELECT count(*) FROM account_activity WHERE action = 'user.suspended'`))
-	s.Equal(int64(0), s.count(`SELECT count(*) FROM account_activity WHERE action = 'user.sessions_revoked'`))
+	s.Equal(int64(1), s.count(
+		`SELECT count(*) FROM account_activity
+		 WHERE action = 'user.sessions_revoked' AND target_id = ? AND account_id IS NULL AND actor_user_id = ?`,
+		victim.ID.String(), admin.ID,
+	))
 	s.Equal(int64(0), s.count(
 		`SELECT count(*) FROM account_activity
 		 WHERE action = 'user.mfa_reset'
@@ -76,7 +80,7 @@ func (s *PlatformUserMFATestSuite) TestAPlatformAdminClearsTotpWithoutSuspending
 		 WHERE properties::text LIKE '%totp_secret%' OR properties::text LIKE '%code_hash%'`,
 	))
 
-	s.assertSessionWorks(session)
+	s.assertSessionRefused(session)
 	login, body := s.loginAs(victim.Email)
 	login.AssertOk()
 	s.False(body.Requires2FA)

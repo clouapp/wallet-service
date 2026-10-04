@@ -18,8 +18,9 @@ import (
 // users.mfa.reset; a platform_admins row is the gate on this branch. An
 // unknown user is ErrNotFound only after the caller is a platform admin,
 // matching Suspend: anyone else is ErrMFAForbidden. The user is not
-// suspended and their sessions stay. A user whose TOTP is already clear
-// succeeds and does not append another user.mfa_reset row.
+// suspended. A reset that clears TOTP also stamps sessions_revoked_at and
+// revokes that user's refresh tokens. A user whose TOTP is already clear
+// succeeds and does not append another user.mfa_reset row or revoke again.
 func (s *Service) ResetMFA(ctx context.Context, actorID, targetID uuid.UUID) error {
 	if ctx == nil {
 		return fmt.Errorf("reset mfa: context is required")
@@ -75,6 +76,9 @@ func (s *Service) resetMFA(ctx context.Context, actorID, targetID uuid.UUID) err
 	if !totpMaterialPresent(user, recoveryCodes) {
 		return nil
 	}
+	if s.sessions == nil {
+		return fmt.Errorf("reset mfa: sessions are required")
+	}
 	named := audit.WithIntent(ctx, audit.Intent{Event: activitylog.ActionUserMFAReset})
 	if err := s.store.DisableTotp(named, targetID); err != nil {
 		return err
@@ -82,7 +86,13 @@ func (s *Service) resetMFA(ctx context.Context, actorID, targetID uuid.UUID) err
 	if err := s.recovery.DeleteByUserID(ctx, targetID); err != nil {
 		return err
 	}
-	return s.appendMFAReset(ctx, actorID, targetID)
+	if err := s.appendMFAReset(ctx, actorID, targetID); err != nil {
+		return err
+	}
+	if _, err := s.sessions.RevokeAllBy(ctx, actorID, targetID); err != nil {
+		return err
+	}
+	return nil
 }
 
 func (s *Service) appendMFAReset(ctx context.Context, actorID, targetID uuid.UUID) error {

@@ -129,7 +129,7 @@ func (ctrl *UsersController) RevokeSessions(ctx http.Context) http.Response {
 
 // ResetMFA godoc
 // @Summary      Reset a platform user's TOTP
-// @Description  Disables TOTP and clears the secret and recovery codes. Permission users.mfa.reset; a platform admin may call it. The activity row is user.mfa_reset with a null account id. The user is not suspended and sessions stay.
+// @Description  Disables TOTP and clears the secret and recovery codes. Permission users.mfa.reset; a platform admin may call it. The activity row is user.mfa_reset with a null account id. The user is not suspended. Their sessions are revoked.
 // @Tags         Platform Users
 // @Security     BearerAuth
 // @Param        id  path  string  true  "User UUID"

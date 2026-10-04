@@ -45,7 +45,8 @@ func TestResetMFAClearsTotpOnceAndLeavesTheUserActive(t *testing.T) {
 	require.Equal(t, 1, recovery.deleted)
 	require.Equal(t, int64(0), recovery.count)
 	require.Empty(t, sessions.revoked)
-	require.Empty(t, sessions.actors)
+	require.Equal(t, []uuid.UUID{actor}, sessions.actors)
+	require.Equal(t, []uuid.UUID{target}, sessions.targets)
 	require.Len(t, activity.rows, 1)
 	require.Nil(t, activity.rows[0].AccountID)
 	require.Equal(t, actor, activity.rows[0].ActorUserID)
@@ -61,6 +62,8 @@ func TestResetMFAClearsTotpOnceAndLeavesTheUserActive(t *testing.T) {
 	require.Len(t, activity.rows, 1)
 	require.Equal(t, 1, store.disabled)
 	require.Equal(t, 1, recovery.deleted)
+	require.Equal(t, []uuid.UUID{actor}, sessions.actors)
+	require.Equal(t, []uuid.UUID{target}, sessions.targets)
 }
 
 func TestResetMFAOfAnAlreadyClearUserWritesNothing(t *testing.T) {
