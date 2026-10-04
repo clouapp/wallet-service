@@ -101,6 +101,9 @@ func TestVisibleOnPlatformIndexKeepsAnUncataloguedViewPermission(t *testing.T) {
 	if !visibleOnPlatformIndex(Group{Name: groupMailSMTP, Scope: ScopePlatform, ViewPermission: "mail.view"}) {
 		t.Fatal("mail.view is not in a platform catalog; the platform_admins row stands in")
 	}
+	if !visibleOnPlatformIndex(Group{Name: groupProviderAlchemy, Scope: ScopePlatform, ViewPermission: "providers.view"}) {
+		t.Fatal("providers.view is not in a platform catalog; the platform_admins row stands in")
+	}
 	if platformAdminCoversViewPermission("  ") {
 		t.Fatal("a blank view permission was treated as a named one")
 	}

@@ -18,6 +18,17 @@ const (
 	PermMailUpdate = "mail.update"
 )
 
+// PermProvidersView and PermProvidersUpdate are the extra pair on a
+// platform group that stores a chain-data or price provider key (S1.4.7).
+// Holding settings.update does not grant that key. No account role holds
+// either name: owner, admin, auditor, and user may neither read nor write
+// it. There is no platform permission catalog, so a platform_admins row
+// stands in.
+const (
+	PermProvidersView   = "providers.view"
+	PermProvidersUpdate = "providers.update"
+)
+
 const (
 	roleOwner   = "owner"
 	roleAdmin   = "admin"

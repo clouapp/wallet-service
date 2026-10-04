@@ -1,5 +1,7 @@
 package settings
 
+import "github.com/macrowallets/waas/app/policies"
+
 const (
 	sectionProviders = "providers"
 
@@ -41,8 +43,13 @@ func webhookProviderGroup(name, label, secretKey, secretLabel string) Group {
 		Scope:   ScopePlatform,
 		Section: sectionProviders,
 		Block:   blockWebhookProviders,
-		// The secret is sealed and omitted. This group names no permission:
-		// a platform_admins row is the gate. enabled is returned.
+		// The secret is sealed and omitted. S1.4.7 names providers.view and
+		// providers.update on this credential so settings.update is not the
+		// grant. No account role holds that pair. There is no platform
+		// permission catalog, so a platform_admins row stands in. enabled
+		// is returned.
+		ViewPermission:   policies.PermProvidersView,
+		UpdatePermission: policies.PermProvidersUpdate,
 		Settings: []Definition{
 			{
 				Key:     keyProviderEnabled,
@@ -80,8 +87,13 @@ func providerEtherscanGroup() Group {
 		Scope:   ScopePlatform,
 		Section: sectionProviders,
 		Block:   blockHeightProvider,
-		// The key is sealed and omitted. This group names no permission:
-		// a platform_admins row is the gate. enabled is returned.
+		// The key is sealed and omitted. S1.4.7 names providers.view and
+		// providers.update on this credential so settings.update is not the
+		// grant. No account role holds that pair. There is no platform
+		// permission catalog, so a platform_admins row stands in. enabled
+		// is returned.
+		ViewPermission:   policies.PermProvidersView,
+		UpdatePermission: policies.PermProvidersUpdate,
 		Settings: []Definition{
 			{
 				Key:     keyProviderEnabled,

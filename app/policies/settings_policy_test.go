@@ -23,6 +23,31 @@ func TestMailCredentialPermissionsAreNotAccountGrants(t *testing.T) {
 	}
 }
 
+func TestProviderCredentialPermissionsAreNotAccountGrants(t *testing.T) {
+	t.Parallel()
+
+	if PermProvidersView == PermSettingsView || PermProvidersUpdate == PermSettingsUpdate ||
+		PermProvidersView == PermSettingsUpdate || PermProvidersUpdate == PermSettingsView {
+		t.Fatal("a provider credential permission reused the settings route pair")
+	}
+	for _, role := range []string{roleOwner, roleAdmin, roleAuditor, roleUser, "viewer", ""} {
+		if MayUpdateSettings(role) && (Can(AccountRoleGrants(role), PermProvidersView) || Can(AccountRoleGrants(role), PermProvidersUpdate)) {
+			t.Fatalf("%s holds settings.update and a provider credential permission", role)
+		}
+		if Can(AccountRoleGrants(role), PermProvidersView) || Can(AccountRoleGrants(role), PermProvidersUpdate) {
+			t.Fatalf("%s account grants hold a provider credential permission", role)
+		}
+		if Can(WalletGrants(role), PermProvidersView) || Can(WalletGrants(role), PermProvidersUpdate) {
+			t.Fatalf("%s wallet grants hold a provider credential permission", role)
+		}
+	}
+	for _, name := range APITokenPermissionCatalog() {
+		if name == PermProvidersView || name == PermProvidersUpdate {
+			t.Fatalf("api token catalog holds %s", name)
+		}
+	}
+}
+
 func TestSettingsPermissionsFollowTheAccountRoles(t *testing.T) {
 	t.Parallel()
 

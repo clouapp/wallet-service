@@ -1,5 +1,7 @@
 package settings
 
+import "github.com/macrowallets/waas/app/policies"
+
 const (
 	sectionPrice = "price"
 
@@ -30,7 +32,9 @@ func priceLookupGroup() Group {
 		Scope:   ScopePlatform,
 		Section: sectionPrice,
 		Block:   blockPriceLookup,
-		// This group names no permission: a platform_admins row is the gate.
+		// provider_order is not a secret. S1.4.7 names providers.view and
+		// providers.update for price provider keys, not this order. A
+		// platform_admins row is the gate.
 		Settings: []Definition{
 			{
 				Key:     keyProviderOrder,
@@ -62,8 +66,13 @@ func priceProviderGroup(name, label string) Group {
 		Scope:   ScopePlatform,
 		Section: sectionPrice,
 		Block:   blockPriceProviders,
-		// api_key is a Secret. This group names no permission: a
-		// platform_admins row is the gate. enabled is returned.
+		// api_key is a Secret. S1.4.7 names providers.view and
+		// providers.update on this price provider key so settings.update is
+		// not the grant. No account role holds that pair. There is no
+		// platform permission catalog, so a platform_admins row stands in.
+		// enabled is returned.
+		ViewPermission:   policies.PermProvidersView,
+		UpdatePermission: policies.PermProvidersUpdate,
 		Settings: []Definition{
 			{
 				Key:     keyPriceEnabled,

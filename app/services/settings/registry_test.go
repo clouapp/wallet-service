@@ -194,7 +194,7 @@ func assertPriceGroups(t *testing.T) {
 	for _, name := range priceProviderGroupNames() {
 		group, found := FindGroup(name)
 		if !found || group.Scope != ScopePlatform || group.SectionName() != sectionPrice ||
-			group.UpdatePermission != "" || group.ViewPermission != "" || len(group.Settings) != 2 ||
+			!providerCredentialPermissions(group) || len(group.Settings) != 2 ||
 			len(group.CredentialGroups) != 0 {
 			t.Fatalf("price group %s = %+v present %v", name, group, found)
 		}
@@ -217,7 +217,7 @@ func assertWebhookProviderGroups(t *testing.T) {
 	for _, name := range webhookProviderGroupNames() {
 		group, found := FindGroup(name)
 		if !found || group.Scope != ScopePlatform || group.SectionName() != sectionProviders ||
-			group.UpdatePermission != "" || group.ViewPermission != "" || len(group.Settings) != 2 ||
+			!providerCredentialPermissions(group) || len(group.Settings) != 2 ||
 			len(group.CredentialGroups) != 0 {
 			t.Fatalf("webhook provider group %s = %+v present %v", name, group, found)
 		}
@@ -248,7 +248,7 @@ func assertEtherscanProviderGroup(t *testing.T) {
 	t.Helper()
 	group, found := FindGroup(groupProviderEtherscan)
 	if !found || group.Scope != ScopePlatform || group.SectionName() != sectionProviders ||
-		group.Block != blockHeightProvider || group.UpdatePermission != "" || group.ViewPermission != "" ||
+		group.Block != blockHeightProvider || !providerCredentialPermissions(group) ||
 		len(group.Settings) != 2 || len(group.CredentialGroups) != 0 {
 		t.Fatalf("etherscan group = %+v present %v", group, found)
 	}
@@ -367,13 +367,17 @@ func mailCredentialPermissions(group Group) bool {
 	return group.ViewPermission == policies.PermMailView && group.UpdatePermission == policies.PermMailUpdate
 }
 
+func providerCredentialPermissions(group Group) bool {
+	return group.ViewPermission == policies.PermProvidersView && group.UpdatePermission == policies.PermProvidersUpdate
+}
+
 func platformSecretGroupGatedByAdmins(group Group) bool {
 	switch group.Name {
 	case groupMailSMTP, groupMailSES, groupMailMailgun, groupMailResend, groupMailPostmark:
 		return mailCredentialPermissions(group) && platformAdminCoversViewPermission(group.ViewPermission)
 	case groupPriceCoinGecko, groupPriceCoinMarketCap, groupPriceCoinAPI,
 		groupProviderAlchemy, groupProviderHelius, groupProviderQuickNode, groupProviderEtherscan:
-		return group.ViewPermission == "" && group.UpdatePermission == ""
+		return providerCredentialPermissions(group) && platformAdminCoversViewPermission(group.ViewPermission)
 	default:
 		return false
 	}

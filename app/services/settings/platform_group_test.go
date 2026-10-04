@@ -80,6 +80,65 @@ func TestPlatformGroup_AdminSeesDefaultsAndHidesASecret(t *testing.T) {
 	}
 }
 
+func TestPlatformGroup_AdminReadsProviderCredentialsWithoutTheSecret(t *testing.T) {
+	t.Parallel()
+
+	actor := uuid.New()
+	store := newMemoryStore()
+	const sealed = "platform-provider-secret-value"
+	for _, group := range providerCredentialGroups() {
+		store.PutPlatform(group.name, map[string]string{
+			group.secretKey: "enc:v1:" + sealed,
+			"enabled":       "true",
+		})
+	}
+	service := NewService(store, prefixSealer{}, &memoryCache{}, &recordingActivity{}).
+		WithPlatformAdmins(allowPlatformAdmins{ids: map[uuid.UUID]bool{actor: true}})
+
+	for _, group := range providerCredentialGroups() {
+		view, err := service.PlatformGroup(context.Background(), actor, group.name)
+		if err != nil {
+			t.Fatalf("%s: %v", group.name, err)
+		}
+		encoded, err := json.Marshal(view)
+		if err != nil {
+			t.Fatalf("%s view: %v", group.name, err)
+		}
+		if strings.Contains(string(encoded), sealed) || strings.Contains(string(encoded), "enc:v1:") {
+			t.Fatalf("%s included a secret", group.name)
+		}
+		secret := fieldByKey(t, view, group.secretKey)
+		if !secret.Secret || !secret.IsSet || secret.Value != nil {
+			t.Fatalf("%s secret field = %+v", group.name, secret)
+		}
+		enabled := fieldByKey(t, view, "enabled")
+		if enabled.Secret || enabled.Value != true {
+			t.Fatalf("%s enabled = %+v", group.name, enabled)
+		}
+	}
+}
+
+type providerCredentialGroup struct {
+	name      string
+	secretKey string
+}
+
+func providerCredentialGroups() []providerCredentialGroup {
+	groups := make([]providerCredentialGroup, 0, len(webhookProviderGroupNames())+1+len(priceProviderGroupNames()))
+	for _, name := range webhookProviderGroupNames() {
+		key := keyProviderAPIKey
+		if name == groupProviderAlchemy {
+			key = keyProviderAuthToken
+		}
+		groups = append(groups, providerCredentialGroup{name: name, secretKey: key})
+	}
+	groups = append(groups, providerCredentialGroup{name: groupProviderEtherscan, secretKey: keyProviderAPIKey})
+	for _, name := range priceProviderGroupNames() {
+		groups = append(groups, providerCredentialGroup{name: name, secretKey: keyPriceAPIKey})
+	}
+	return groups
+}
+
 func TestPlatformGroup_NotFoundComesBeforeForbidden(t *testing.T) {
 	t.Parallel()
 

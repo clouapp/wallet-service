@@ -168,6 +168,85 @@ func (s *PlatformSettingsGroupTestSuite) TestANonAdminOnAnUnknownGroupIsNotFound
 	missing.AssertUnauthorized()
 }
 
+func (s *PlatformSettingsGroupTestSuite) TestAPlatformAdminGetsProviderCredentialGroupsWithoutTheSecret() {
+	admin := s.seedUser(false)
+	s.grantPlatformAdmin(admin.ID)
+	session := s.signIn(admin.Email)
+	const fixture = "provider-credential-http-secret"
+
+	for _, group := range httpProviderCredentialGroups() {
+		settings.FacadeCache{}.Forget("settings:platform:" + group.name)
+		_, err := facades.Orm().Query().Exec(
+			`DELETE FROM settings WHERE account_id IS NULL AND "group" = ?`,
+			group.name,
+		)
+		s.Require().NoError(err)
+
+		empty := s.getRaw(session.AccessToken, "/v1/platform/settings/"+group.name)
+		empty.AssertOk()
+		s.assertProviderSecretOmitted(empty, group.name, group.secretKey, false)
+
+		saved := s.putRaw(session.AccessToken, "/v1/platform/settings/"+group.name, providerJSON(map[string]any{
+			"enabled":       true,
+			group.secretKey: fixture,
+		}))
+		saved.AssertOk()
+
+		shown := s.getRaw(session.AccessToken, "/v1/platform/settings/"+group.name)
+		shown.AssertOk()
+		raw, err := shown.Content()
+		s.Require().NoError(err)
+		if strings.Contains(raw, fixture) || strings.Contains(raw, "enc:v1:") {
+			s.Fail(group.name + " included a secret")
+		}
+		s.assertProviderSecretOmitted(shown, group.name, group.secretKey, true)
+	}
+}
+
+func (s *PlatformSettingsGroupTestSuite) assertProviderSecretOmitted(response contractstesting.Response, groupName, secretKey string, isSet bool) {
+	s.T().Helper()
+	var body struct {
+		Name   string `json:"name"`
+		Fields []struct {
+			Key    string `json:"key"`
+			Secret bool   `json:"secret"`
+			IsSet  bool   `json:"is_set"`
+			Value  any    `json:"value"`
+		} `json:"fields"`
+	}
+	s.decode(response, &body)
+	s.Equal(groupName, body.Name)
+	var seen bool
+	for _, field := range body.Fields {
+		if field.Key != secretKey {
+			continue
+		}
+		seen = true
+		s.True(field.Secret)
+		s.Equal(isSet, field.IsSet)
+		s.Nil(field.Value)
+	}
+	s.True(seen)
+}
+
+func httpProviderCredentialGroups() []struct {
+	name      string
+	secretKey string
+} {
+	return []struct {
+		name      string
+		secretKey string
+	}{
+		{name: "provider_alchemy", secretKey: "auth_token"},
+		{name: "provider_helius", secretKey: "api_key"},
+		{name: "provider_quicknode", secretKey: "api_key"},
+		{name: "provider_etherscan", secretKey: "api_key"},
+		{name: "price_coingecko", secretKey: "api_key"},
+		{name: "price_coinmarketcap", secretKey: "api_key"},
+		{name: "price_coinapi", secretKey: "api_key"},
+	}
+}
+
 func (s *PlatformSettingsGroupTestSuite) grantPlatformAdmin(userID uuid.UUID) {
 	s.T().Helper()
 	_, err := facades.Orm().Query().Exec(
