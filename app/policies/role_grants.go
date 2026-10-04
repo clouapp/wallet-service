@@ -30,6 +30,28 @@ func EffectiveRoleGrants() []RoleGrant {
 	return grants
 }
 
+// AccountPermissionCatalog is every permission the account code catalog
+// assigns to a stored role, sorted. It is the same set GET
+// /v1/accounts/{accountId}/roles reports, flattened. roles.write is absent.
+// There is no permissions table.
+func AccountPermissionCatalog() []string {
+	held := map[string]struct{}{}
+	for _, grant := range EffectiveRoleGrants() {
+		for _, permission := range grant.Permissions {
+			if permission == "" {
+				continue
+			}
+			held[permission] = struct{}{}
+		}
+	}
+	names := make([]string, 0, len(held))
+	for permission := range held {
+		names = append(names, permission)
+	}
+	sort.Strings(names)
+	return names
+}
+
 func rolePermissions(role string) []string {
 	held := map[string]struct{}{}
 	for permission := range AccountRoleGrants(role) {

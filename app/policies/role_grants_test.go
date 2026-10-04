@@ -71,6 +71,51 @@ func TestEffectiveRoleGrantsFollowTheLiveGates(t *testing.T) {
 	}
 }
 
+func TestAccountPermissionCatalogIsTheLiveCodeCatalog(t *testing.T) {
+	catalog := AccountPermissionCatalog()
+	if catalog == nil {
+		t.Fatal("catalog is nil")
+	}
+	if !slices.IsSorted(catalog) {
+		t.Fatalf("catalog is not sorted: %v", catalog)
+	}
+	seen := map[string]struct{}{}
+	for _, permission := range catalog {
+		if permission == "" {
+			t.Fatal("catalog contains an empty permission")
+		}
+		if _, ok := seen[permission]; ok {
+			t.Fatalf("duplicate permission %s", permission)
+		}
+		seen[permission] = struct{}{}
+	}
+	if slices.Contains(catalog, "roles.write") {
+		t.Fatal("catalog contains roles.write")
+	}
+
+	union := map[string]struct{}{}
+	for _, grant := range EffectiveRoleGrants() {
+		for _, permission := range grant.Permissions {
+			union[permission] = struct{}{}
+		}
+	}
+	if len(union) != len(catalog) {
+		t.Fatalf("catalog has %d permissions, role grants have %d", len(catalog), len(union))
+	}
+	for permission := range union {
+		if !slices.Contains(catalog, permission) {
+			t.Fatalf("catalog missing %s", permission)
+		}
+	}
+	for _, permission := range []string{
+		PermRolesRead, PermAddressesCreate, PermWithdrawalsCreate, PermSweepExecute, PermWalletsCreate,
+	} {
+		if !slices.Contains(catalog, permission) {
+			t.Fatalf("catalog missing %s in %v", permission, catalog)
+		}
+	}
+}
+
 func permissionsOf(t *testing.T, grants []RoleGrant, role string) []string {
 	t.Helper()
 	for _, grant := range grants {

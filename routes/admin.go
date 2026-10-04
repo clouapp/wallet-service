@@ -134,6 +134,10 @@ func RegisterAdminRoutes() {
 			// Effective grants are the code catalog. There is no
 			// account_role_permissions row and no write on this path.
 			r.Middleware(middleware.Can(middleware.PermRolesRead)).Get("/roles", accountRolesCtrl.Index)
+			// S3.4.2: GET /v1/accounts/{accountId}/permissions roles.read.
+			// The catalog is the same code. There is no permissions table
+			// and no write on this path.
+			r.Middleware(middleware.Can(middleware.PermRolesRead)).Get("/permissions", accountRolesCtrl.Permissions)
 
 			r.Get("/tokens", accountsCtrl.ListAccountTokens)
 			r.Post("/tokens", accountsCtrl.CreateAccountToken)
