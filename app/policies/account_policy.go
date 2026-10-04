@@ -58,11 +58,16 @@ func (p *AccountPolicy) Update(ctx context.Context, arguments map[string]any) co
 	if !ok {
 		return access.NewDenyResponse("missing account_id")
 	}
-	role := userRole(ctx, accountID, arguments)
-	if role == "owner" || role == "admin" {
+	if mayWriteAccount(userRole(ctx, accountID, arguments)) {
 		return access.NewAllowResponse()
 	}
 	return access.NewDenyResponse("only owners and admins may update account settings")
+}
+
+// mayWriteAccount reports whether role may PATCH the account.
+// Owner and admin may. Auditor and user may not.
+func mayWriteAccount(role string) bool {
+	return role == roleOwner || role == roleAdmin
 }
 
 func (p *AccountPolicy) Delete(ctx context.Context, arguments map[string]any) contractsaccess.Response {
@@ -105,10 +110,16 @@ func (p *AccountPolicy) Freeze(ctx context.Context, arguments map[string]any) co
 	if !ok {
 		return access.NewDenyResponse("missing account_id")
 	}
-	if userRole(ctx, accountID, arguments) == "owner" {
+	if mayChangeAccountLifecycle(userRole(ctx, accountID, arguments)) {
 		return access.NewAllowResponse()
 	}
 	return access.NewDenyResponse("only owners may freeze accounts")
+}
+
+// mayChangeAccountLifecycle reports whether role may freeze or archive the account.
+// Owner may. Admin, auditor and user may not.
+func mayChangeAccountLifecycle(role string) bool {
+	return role == roleOwner
 }
 
 func (p *AccountPolicy) Archive(ctx context.Context, arguments map[string]any) contractsaccess.Response {
@@ -116,7 +127,7 @@ func (p *AccountPolicy) Archive(ctx context.Context, arguments map[string]any) c
 	if !ok {
 		return access.NewDenyResponse("missing account_id")
 	}
-	if userRole(ctx, accountID, arguments) == "owner" {
+	if mayChangeAccountLifecycle(userRole(ctx, accountID, arguments)) {
 		return access.NewAllowResponse()
 	}
 	return access.NewDenyResponse("only owners may archive accounts")
