@@ -56,6 +56,7 @@ func (s *PlatformAccountLifecycleTestSuite) TestPlatformAdminFreezesUnfreezesAnd
 
 	blocked := s.send("PATCH", "/v1/accounts/"+accountID.String(), ownerSession.AccessToken, `{"name":"renamed"}`)
 	blocked.AssertForbidden()
+	s.Equal(responses.CodeAccountFrozen, s.errorCode(blocked))
 	s.Contains(s.errorMessage(blocked), "only reads are allowed")
 	s.Equal("lifecycle-"+accountID.String()[:8], s.accountName(accountID))
 

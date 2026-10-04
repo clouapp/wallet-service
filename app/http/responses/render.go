@@ -21,6 +21,10 @@ const (
 	CodeUnauthorized     = "unauthorized"
 	CodeForbidden        = "forbidden"
 
+	// CodeAccountFrozen is the write refusal for a frozen or archived account.
+	// Reads stay allowed. The HTTP status remains 403.
+	CodeAccountFrozen = "account_frozen"
+
 	// SuspendedUserMessage is the human text for a platform user suspension.
 	// The status is 403 and the code is forbidden: the suspension row of the
 	// error contract. account_suspended is the account, not the user.

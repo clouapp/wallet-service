@@ -3,6 +3,7 @@ package middleware
 import (
 	"github.com/goravel/framework/contracts/http"
 
+	"github.com/macrowallets/waas/app/http/responses"
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/policies"
 )
@@ -19,6 +20,7 @@ func abortUnlessAccountAllows(ctx http.Context, account *models.Account) bool {
 	}
 	abortWithJSON(ctx, http.StatusForbidden, http.Json{
 		"error":  "account is " + account.Status + "; only reads are allowed",
+		"code":   responses.CodeAccountFrozen,
 		"status": account.Status,
 	})
 	return false

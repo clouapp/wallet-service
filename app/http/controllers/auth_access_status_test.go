@@ -9,6 +9,7 @@ import (
 	"github.com/goravel/framework/facades"
 	"github.com/stretchr/testify/suite"
 
+	"github.com/macrowallets/waas/app/http/responses"
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/tests/feature/support"
 	"github.com/macrowallets/waas/tests/testutil"
@@ -82,13 +83,50 @@ func (s *AccessStatusTestSuite) assertReadOnlyRefusal(resp contractstesting.Resp
 	resp.AssertStatus(403)
 	var body struct {
 		Error struct {
+			Code    string `json:"code"`
 			Message string `json:"message"`
 			Status  string `json:"status"`
 		} `json:"error"`
 	}
 	s.decode(resp, &body)
+	s.Equal(responses.CodeAccountFrozen, body.Error.Code)
 	s.Contains(body.Error.Message, "only reads are allowed")
 	s.Equal(status, body.Error.Status)
+}
+
+func (s *AccessStatusTestSuite) assertNotAMember(resp contractstesting.Response) {
+	resp.AssertStatus(403)
+	code, message := s.errorParts(resp)
+	s.Equal(responses.CodeForbidden, code)
+	s.Equal("not a member of this account", message)
+}
+
+func (s *AccessStatusTestSuite) assertAccountMissing(resp contractstesting.Response) {
+	resp.AssertStatus(404)
+	code, message := s.errorParts(resp)
+	s.Equal(responses.CodeNotFound, code)
+	s.Equal("account not found", message)
+}
+
+func (s *AccessStatusTestSuite) errorParts(resp contractstesting.Response) (string, string) {
+	s.T().Helper()
+	var body struct {
+		Error struct {
+			Code    string `json:"code"`
+			Message string `json:"message"`
+		} `json:"error"`
+	}
+	s.decode(resp, &body)
+	return body.Error.Code, body.Error.Message
+}
+
+func (s *AccessStatusTestSuite) accountName(accountID uuid.UUID) string {
+	s.T().Helper()
+	var name string
+	s.Require().NoError(facades.Orm().Query().Raw(
+		`SELECT name FROM accounts WHERE id = ?`, accountID,
+	).Scan(&name))
+	return name
 }
 
 func (s *AccessStatusTestSuite) TestLoginRefusesAUserWhoIsNotActive() {
@@ -147,8 +185,8 @@ func (s *AccessStatusTestSuite) TestAMembershipThatIsNotActiveCountsAsAbsent() {
 	s.Require().NotEmpty(signedIn.AccessToken)
 
 	s.Empty(signedIn.AccountID, "a suspended membership is not offered as the default account")
-	s.send("GET", "/v1/accounts/"+accountID.String(), signedIn.AccessToken, uuid.Nil, "").AssertStatus(403)
-	s.send("GET", "/v1/wallets", signedIn.AccessToken, accountID, "").AssertStatus(403)
+	s.assertNotAMember(s.send("GET", "/v1/accounts/"+accountID.String(), signedIn.AccessToken, uuid.Nil, ""))
+	s.assertNotAMember(s.send("GET", "/v1/wallets", signedIn.AccessToken, accountID, ""))
 }
 
 func (s *AccessStatusTestSuite) TestAnActiveAccountAcceptsMutations() {
@@ -168,11 +206,33 @@ func (s *AccessStatusTestSuite) TestFrozenOrArchivedAccountIsReadOnlyOnAccountRo
 		session := s.signIn(user.Email)
 		s.setStatus("accounts", accountID, status)
 		path := "/v1/accounts/" + accountID.String()
+		originalName := "status-" + accountID.String()[:8]
 
-		s.send("GET", path, session.AccessToken, uuid.Nil, "").AssertOk()
+		read := s.send("GET", path, session.AccessToken, uuid.Nil, "")
+		read.AssertOk()
+		var detail struct {
+			Name   string `json:"name"`
+			Status string `json:"status"`
+			Error  struct {
+				Code string `json:"code"`
+			} `json:"error"`
+		}
+		s.decode(read, &detail)
+		s.Equal(originalName, detail.Name)
+		s.Equal(status, detail.Status)
+		s.Empty(detail.Error.Code)
 		s.send("GET", path+"/users", session.AccessToken, uuid.Nil, "").AssertOk()
 		s.assertReadOnlyRefusal(s.send("PATCH", path, session.AccessToken, uuid.Nil, `{"name":"Renamed"}`), status)
+		s.Equal(originalName, s.accountName(accountID))
 		s.assertReadOnlyRefusal(s.send("POST", path+"/tokens", session.AccessToken, uuid.Nil, `{"name":"t"}`), status)
+
+		if status == models.AccountStatusFrozen {
+			outsider := s.seedUser(false)
+			outsiderSession := s.signIn(outsider.Email)
+			s.assertNotAMember(s.send("PATCH", path, outsiderSession.AccessToken, uuid.Nil, `{"name":"Renamed"}`))
+			s.Equal(originalName, s.accountName(accountID))
+			s.assertAccountMissing(s.send("PATCH", "/v1/accounts/"+uuid.NewString(), session.AccessToken, uuid.Nil, `{"name":"Renamed"}`))
+		}
 	}
 }
 
