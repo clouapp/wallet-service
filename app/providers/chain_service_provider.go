@@ -1,11 +1,16 @@
 package providers
 
 import (
+	"fmt"
+
 	"github.com/goravel/framework/contracts/foundation"
 
+	"github.com/macrowallets/waas/app/facades"
 	"github.com/macrowallets/waas/app/repositories"
+	chainpkg "github.com/macrowallets/waas/app/services/chain"
 	chainsvc "github.com/macrowallets/waas/app/services/chains"
 	"github.com/macrowallets/waas/app/services/currencies"
+	"github.com/macrowallets/waas/pkg/security"
 )
 
 // ChainServiceProvider binds the chain, token, chain-resource, and currency
@@ -48,6 +53,25 @@ func (p *ChainServiceProvider) Register(app foundation.Application) {
 		}
 		return chainsvc.NewThresholds(chains, admins, activityLog), nil
 	})
+	app.Singleton((*chainsvc.RPC)(nil), func(app foundation.Application) (any, error) {
+		chains, err := resolve[*repositories.ChainRepository](app)
+		if err != nil {
+			return nil, err
+		}
+		admins, err := resolve[*repositories.PlatformAdminRepository](app)
+		if err != nil {
+			return nil, err
+		}
+		activityLog, err := resolve[*repositories.AccountActivityRepository](app)
+		if err != nil {
+			return nil, err
+		}
+		registry, err := resolve[*chainpkg.Registry](app)
+		if err != nil {
+			return nil, err
+		}
+		return chainsvc.NewRPC(chains, admins, activityLog, chainRPCSealer{}, registry), nil
+	})
 	app.Singleton((*repositories.TokenRepository)(nil), func(foundation.Application) (any, error) {
 		return repositories.NewTokenRepository(nil), nil
 	})
@@ -67,3 +91,31 @@ func (p *ChainServiceProvider) Register(app foundation.Application) {
 }
 
 func (p *ChainServiceProvider) Boot(foundation.Application) {}
+
+// chainRPCSealer seals chains.rpc_url with the process cipher. Errors do not
+// include the URL.
+type chainRPCSealer struct{}
+
+func (chainRPCSealer) Seal(plaintext string) (string, error) {
+	cipher := facades.Crypt()
+	if cipher == nil {
+		return "", fmt.Errorf("seal chain rpc: crypt is not available")
+	}
+	sealed, err := security.SealSecret(cipher, plaintext)
+	if err != nil || sealed == "" || sealed == plaintext {
+		return "", fmt.Errorf("seal chain rpc")
+	}
+	return sealed, nil
+}
+
+func (chainRPCSealer) Open(stored string) (string, error) {
+	cipher := facades.Crypt()
+	if cipher == nil {
+		return "", fmt.Errorf("open chain rpc: crypt is not available")
+	}
+	opened, err := security.OpenSecret(cipher, stored)
+	if err != nil || opened == "" {
+		return "", fmt.Errorf("open chain rpc")
+	}
+	return opened, nil
+}

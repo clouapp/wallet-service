@@ -236,6 +236,17 @@ func WithdrawalCancelled() (models.ActivityMetadata, error) {
 	return meta, nil
 }
 
+// ChainRPCChange records the chain id and the rpc_url field name. The URL
+// is not accepted. S1.4.4 does not name an event, so the action is
+// chains.updated, the same event as a threshold edit.
+func ChainRPCChange(chainID string) (models.ActivityMetadata, error) {
+	chainID = strings.TrimSpace(chainID)
+	if strings.ContainsAny(chainID, ":/") {
+		return nil, fmt.Errorf("activity: chain id is not a name")
+	}
+	return ChainThresholdsChange(chainID, []string{"rpc_url"})
+}
+
 // ChainThresholdsChange records the chain id and the threshold field names
 // that were written. Amounts are not accepted. S1.4.4 says the edit is
 // audited and does not name an event, so the action is chains.updated.

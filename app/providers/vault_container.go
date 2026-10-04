@@ -50,6 +50,7 @@ import (
 	"github.com/macrowallets/waas/app/services/webhooksync"
 	"github.com/macrowallets/waas/app/services/withdraw"
 	"github.com/macrowallets/waas/app/services/withdrawalevents"
+	"github.com/macrowallets/waas/pkg/security"
 	"github.com/macrowallets/waas/pkg/types"
 )
 
@@ -64,6 +65,24 @@ func (r staticEndpointResolver) ResolveEndpoint(
 		return smithyendpoints.Endpoint{}, err
 	}
 	return smithyendpoints.Endpoint{URI: *u}, nil
+}
+
+// openChainEndpoint opens a sealed rpc_url and returns the URL to dial.
+// A read failure does not include the URL.
+func openChainEndpoint(stored string) (string, error) {
+	cipher := facades.Crypt()
+	if cipher == nil {
+		return "", fmt.Errorf("open chain rpc")
+	}
+	opened, err := security.OpenSecret(cipher, stored)
+	if err != nil {
+		return "", fmt.Errorf("open chain rpc")
+	}
+	endpoint, err := models.DialEndpoint(opened)
+	if err != nil {
+		return "", fmt.Errorf("open chain rpc")
+	}
+	return endpoint, nil
 }
 
 func registerVaultContainer(app foundation.Application) {
@@ -275,18 +294,9 @@ func buildVaultContainer(app foundation.Application) (*container.Container, erro
 		slog.Error("failed to load chains from DB", "error", chainErr)
 	} else {
 		for _, ch := range activeChains {
-			storedURL, decErr := facades.Crypt().DecryptString(ch.RpcURL)
-			if decErr != nil {
-				slog.Warn("failed to decrypt RPC URL, skipping chain", "chain", ch.ID, "error", decErr)
-				continue
-			}
-			rpcURL, resolveErr := models.ResolveRPCURL(storedURL)
-			if resolveErr != nil {
-				slog.Warn("failed to resolve RPC URL, skipping chain", "chain", ch.ID, "error", resolveErr)
-				continue
-			}
-			if rpcURL == "" {
-				slog.Warn("empty RPC URL, skipping chain", "chain", ch.ID)
+			rpcURL, openErr := openChainEndpoint(ch.RpcURL)
+			if openErr != nil {
+				slog.Warn("failed to open chain rpc, skipping chain", "chain", ch.ID)
 				continue
 			}
 			networkByChain[ch.ID] = ch.ResolveNetwork(rpcURL).Name

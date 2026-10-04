@@ -137,6 +137,7 @@ func RegisterAdminRoutes() {
 	facades.Route().Prefix("/v1/platform").Middleware(middleware.SessionAuth(), noCache).Group(func(router route.Router) {
 		router.Get("/features", platformFeaturesCtrl.Index)
 		router.Patch("/features/{key}", platformFeaturesCtrl.Update)
+		router.Patch("/chains/{chainId}/rpc", platformChainsCtrl.UpdateRPC)
 		router.Patch("/chains/{chainId}", platformChainsCtrl.Update)
 		router.Get("/activity", accountActivityCtrl.Platform)
 		router.Get("/users", platformUsersCtrl.Index)
@@ -404,6 +405,7 @@ func newPlatformUsersController() *platformusers.UsersController {
 func newPlatformChainsController() *platformchains.ChainsController {
 	return platformchains.NewChainsController(
 		container.MustMake[*chainsvc.Thresholds](),
+		container.MustMake[*chainsvc.RPC](),
 	)
 }
 

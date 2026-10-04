@@ -33,6 +33,22 @@ func TestResolveRPCURL(t *testing.T) {
 	}
 }
 
+func TestDialEndpointUsesAStoredURLInsteadOfTheEnvironment(t *testing.T) {
+	t.Setenv("ETH_RPC_URL", "https://env-fallback.invalid/secret-env")
+	const stored = "https://dial.example/v2/route-key"
+	got, err := DialEndpoint(stored)
+	if err != nil {
+		t.Fatal("dial endpoint failed")
+	}
+	if got != stored || strings.Contains(got, "env-fallback") {
+		t.Fatal("dial endpoint did not keep the stored url")
+	}
+	_, err = DialEndpoint("not a url")
+	if err == nil || strings.Contains(err.Error(), "not a url") {
+		t.Fatal("unusable endpoint error leaked the value")
+	}
+}
+
 func TestRPCURLEnvReferenceClassifiesBitcoinTestnet4OnceResolved(t *testing.T) {
 	lookup := func(name string) (string, bool) {
 		if name == "BTC_RPC_URL" {

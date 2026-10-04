@@ -48,6 +48,29 @@ func TestChainThresholdsChangeRecordsTheChainAndFieldNames(t *testing.T) {
 	}
 }
 
+func TestChainRPCChangeRecordsTheFieldNameOnly(t *testing.T) {
+	t.Parallel()
+
+	const endpoint = "https://dial.example/v2/secret-path"
+	meta, err := ChainRPCChange("eth")
+	if err != nil {
+		t.Fatal("chain rpc change failed")
+	}
+	encoded, err := meta.Encode()
+	if err != nil {
+		t.Fatal("encode failed")
+	}
+	if strings.Contains(encoded, endpoint) || strings.Contains(encoded, "http") || strings.Contains(encoded, "secret-path") {
+		t.Fatal("metadata stored an endpoint")
+	}
+	if !strings.Contains(encoded, `"key":"eth"`) || !strings.Contains(encoded, `"rpc_url"`) {
+		t.Fatal("metadata missing the chain or the field")
+	}
+	if _, err := ChainRPCChange(endpoint); err == nil {
+		t.Fatal("a url was accepted as a chain id")
+	}
+}
+
 func TestMetadataRejectsSecretKeys(t *testing.T) {
 	t.Parallel()
 

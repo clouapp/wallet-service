@@ -102,6 +102,30 @@ func (r *ChainRepository) UpdateThresholds(ctx context.Context, id string, write
 	return nil
 }
 
+// UpdateRPCURL writes the sealed rpc_url of one chain. An empty sealed value
+// is refused so a bad call cannot wipe the current endpoint. The value is
+// not included in the error.
+func (r *ChainRepository) UpdateRPCURL(ctx context.Context, id, sealed string) error {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return fmt.Errorf("update chain rpc: chain id is required")
+	}
+	if strings.TrimSpace(sealed) == "" {
+		return fmt.Errorf("update chain rpc: sealed endpoint is required")
+	}
+	result, err := r.Query(ctx).Exec(
+		"UPDATE chains SET rpc_url = ?, updated_at = NOW() WHERE id = ?",
+		sealed, id,
+	)
+	if err != nil {
+		return fmt.Errorf("update chain rpc: %w", err)
+	}
+	if err := db.RequireRow(result); err != nil {
+		return err
+	}
+	return nil
+}
+
 // Create inserts a chain.
 func (r *ChainRepository) Create(ctx context.Context, chain *models.Chain) error {
 	if chain == nil {

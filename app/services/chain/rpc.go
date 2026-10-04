@@ -26,7 +26,7 @@ const (
 // ---------------------------------------------------------------------------
 
 type RPCClient struct {
-	url       string
+	endpoint  atomic.Value // string; replaced without logging the URL
 	client    *httpclient.Client
 	requestID atomic.Uint64
 	username  string
@@ -56,13 +56,36 @@ func (e *rpcError) Error() string {
 }
 
 func NewRPCClient(url, user, pass string) *RPCClient {
-	return &RPCClient{
-		url:      url,
+	client := &RPCClient{
 		username: user,
 		password: pass,
 		client:   httpclient.NewClient(rpcHTTPTimeout),
 		retry:    defaultRateLimitRetry(),
 	}
+	client.endpoint.Store(url)
+	return client
+}
+
+// Endpoint is the URL the next call dials. Callers must not log it.
+func (c *RPCClient) Endpoint() string {
+	if c == nil {
+		return ""
+	}
+	value, _ := c.endpoint.Load().(string)
+	return value
+}
+
+// ReplaceEndpoint points later calls at endpoint. An empty value is ignored
+// so a failed read cannot wipe the current endpoint. The URL is not logged.
+func (c *RPCClient) ReplaceEndpoint(endpoint string) {
+	if c == nil {
+		return
+	}
+	endpoint = strings.TrimSpace(endpoint)
+	if endpoint == "" {
+		return
+	}
+	c.endpoint.Store(endpoint)
 }
 
 // Call executes a JSON-RPC method and unmarshals result into `out`. A rate-limited
@@ -106,7 +129,7 @@ func (c *RPCClient) post(ctx context.Context, method string, params []interface{
 
 	resp, err := c.client.Do(ctx, httpclient.Request{
 		Method:   httpclient.MethodPost,
-		URL:      c.url,
+		URL:      c.Endpoint(),
 		Header:   map[string]string{"Content-Type": "application/json", "User-Agent": rpcUserAgent},
 		Body:     body,
 		HasBody:  true,

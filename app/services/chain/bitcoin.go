@@ -44,8 +44,7 @@ type BitcoinLive struct {
 }
 
 func NewBitcoinLive(cfg BitcoinConfig) *BitcoinLive {
-	isREST := strings.Contains(cfg.RPCURL, "blockstream.info") ||
-		strings.Contains(cfg.RPCURL, "mempool.space")
+	isREST := bitcoinRESTEndpoint(cfg.RPCURL)
 	return &BitcoinLive{
 		cfg:          cfg,
 		rpc:          NewRPCClient(cfg.RPCURL, cfg.RPCUser, cfg.RPCPass),
@@ -54,6 +53,37 @@ func NewBitcoinLive(cfg BitcoinConfig) *BitcoinLive {
 		esploraRetry: esploraRetry(),
 		feeRates:     &btcFeeRateCache{},
 	}
+}
+
+func bitcoinRESTEndpoint(endpoint string) bool {
+	return strings.Contains(endpoint, "blockstream.info") || strings.Contains(endpoint, "mempool.space")
+}
+
+// Endpoint is the URL the next dial uses. Callers must not log it.
+func (a *BitcoinLive) Endpoint() string {
+	if a == nil || a.rpc == nil {
+		return ""
+	}
+	return a.rpc.Endpoint()
+}
+
+// ReplaceEndpoint points later dials at endpoint and leaves fee defaults
+// unchanged. An empty value does not wipe the current endpoint.
+func (a *BitcoinLive) ReplaceEndpoint(endpoint string) {
+	if a == nil {
+		return
+	}
+	endpoint = strings.TrimSpace(endpoint)
+	if endpoint == "" {
+		return
+	}
+	a.cfg.RPCURL = endpoint
+	a.restAPI = bitcoinRESTEndpoint(endpoint)
+	if a.rpc == nil {
+		a.rpc = NewRPCClient(endpoint, a.cfg.RPCUser, a.cfg.RPCPass)
+		return
+	}
+	a.rpc.ReplaceEndpoint(endpoint)
 }
 
 // WithFeePolicy is this adapter pricing fee rates with policy; it shares the

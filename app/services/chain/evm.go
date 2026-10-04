@@ -84,6 +84,32 @@ func NewEVMLive(cfg EVMConfig) *EVMLive {
 	}
 }
 
+// Endpoint is the URL the next dial uses. Callers must not log it.
+func (a *EVMLive) Endpoint() string {
+	if a == nil || a.rpc == nil {
+		return ""
+	}
+	return a.rpc.Endpoint()
+}
+
+// ReplaceEndpoint points later dials at endpoint and leaves gas and dust
+// thresholds unchanged. An empty value does not wipe the current endpoint.
+func (a *EVMLive) ReplaceEndpoint(endpoint string) {
+	if a == nil {
+		return
+	}
+	endpoint = strings.TrimSpace(endpoint)
+	if endpoint == "" {
+		return
+	}
+	a.cfg.RPCURL = endpoint
+	if a.rpc == nil {
+		a.rpc = NewRPCClient(endpoint, "", "")
+		return
+	}
+	a.rpc.ReplaceEndpoint(endpoint)
+}
+
 func (a *EVMLive) ID() string                    { return a.cfg.ChainIDStr }
 func (a *EVMLive) Name() string                  { return a.cfg.ChainName }
 func (a *EVMLive) RequiredConfirmations() uint64 { return a.cfg.Confirmations }

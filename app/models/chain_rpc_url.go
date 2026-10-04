@@ -1,11 +1,17 @@
 package models
 
 import (
+	"errors"
 	"fmt"
+	"net/url"
 	"os"
 	"regexp"
 	"strings"
 )
+
+// ErrChainRPCUnusable is a stored endpoint that cannot be dialed. The error
+// text never includes the URL.
+var ErrChainRPCUnusable = errors.New("chain rpc is not usable")
 
 // RPCURLEnvPrefix marks a stored rpc_url that names an environment variable
 // ("env:SOLANA_RPC_URL") instead of holding the URL, so endpoints carrying an API
@@ -40,4 +46,41 @@ func resolveRPCURL(decrypted string, lookupEnv func(string) (string, bool)) (str
 		return "", fmt.Errorf("rpc_url names environment variable %s, which is not set", name)
 	}
 	return value, nil
+}
+
+// DialEndpoint is the URL a chain dialer calls after the seal is open.
+// A stored http(s) URL is returned as itself and does not consult the
+// environment. An env:NAME reference is resolved. The error never includes
+// the URL.
+func DialEndpoint(plaintext string) (string, error) {
+	plaintext = strings.TrimSpace(plaintext)
+	if plaintext == "" {
+		return "", ErrChainRPCUnusable
+	}
+	if strings.HasPrefix(plaintext, RPCURLEnvPrefix) {
+		value, err := ResolveRPCURL(plaintext)
+		if err != nil {
+			return "", ErrChainRPCUnusable
+		}
+		value = strings.TrimSpace(value)
+		if !usableHTTPURL(value) {
+			return "", ErrChainRPCUnusable
+		}
+		return value, nil
+	}
+	if !usableHTTPURL(plaintext) {
+		return "", ErrChainRPCUnusable
+	}
+	return plaintext, nil
+}
+
+func usableHTTPURL(value string) bool {
+	parsed, err := url.Parse(value)
+	if err != nil {
+		return false
+	}
+	if parsed.Scheme != "http" && parsed.Scheme != "https" {
+		return false
+	}
+	return parsed.Host != ""
 }

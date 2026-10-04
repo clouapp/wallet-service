@@ -16,6 +16,7 @@ import (
 	chainsvc "github.com/macrowallets/waas/app/services/chains"
 	"github.com/macrowallets/waas/app/services/walletrecords"
 	"github.com/macrowallets/waas/pkg/numeric"
+	"github.com/macrowallets/waas/pkg/security"
 )
 
 // walletNetwork is the network a wallet's chain record really points at (for
@@ -277,14 +278,19 @@ func networkRPCURL(chainRecord *models.Chain) string {
 	if !networkReadFromRPCURL(chainRecord.AdapterType) {
 		return ""
 	}
-	storedURL, err := facades.Crypt().DecryptString(chainRecord.RpcURL)
-	if err != nil {
-		slog.Warn("decrypt chain rpc for wallet network", "chain", chainRecord.ID, "error", err)
+	cipher := facades.Crypt()
+	if cipher == nil {
+		slog.Warn("open chain rpc for wallet network", "chain", chainRecord.ID)
 		return ""
 	}
-	rpcURL, err := models.ResolveRPCURL(storedURL)
+	storedURL, err := security.OpenSecret(cipher, chainRecord.RpcURL)
 	if err != nil {
-		slog.Warn("resolve chain rpc for wallet network", "chain", chainRecord.ID, "error", err)
+		slog.Warn("open chain rpc for wallet network", "chain", chainRecord.ID)
+		return ""
+	}
+	rpcURL, err := models.DialEndpoint(storedURL)
+	if err != nil {
+		slog.Warn("open chain rpc for wallet network", "chain", chainRecord.ID)
 		return ""
 	}
 	return rpcURL

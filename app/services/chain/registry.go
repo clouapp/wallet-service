@@ -31,6 +31,37 @@ func (r *Registry) RegisterChain(c types.Chain) {
 	r.chains[c.ID()] = c
 }
 
+// endpointReplacer is a live adapter whose next dial can change.
+type endpointReplacer interface {
+	ReplaceEndpoint(endpoint string)
+}
+
+// ReplaceEndpoint points the loaded dialer for chainID at endpoint. A chain
+// that was not loaded returns false. The endpoint is not logged. An empty
+// endpoint is refused and does not wipe the current one.
+func (r *Registry) ReplaceEndpoint(chainID, endpoint string) (bool, error) {
+	if r == nil {
+		return false, fmt.Errorf("replace chain endpoint: registry is required")
+	}
+	chainID = strings.TrimSpace(chainID)
+	endpoint = strings.TrimSpace(endpoint)
+	if chainID == "" || endpoint == "" {
+		return false, fmt.Errorf("replace chain endpoint: chain and endpoint are required")
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	current, ok := r.chains[chainID]
+	if !ok {
+		return false, nil
+	}
+	replacer, ok := current.(endpointReplacer)
+	if !ok {
+		return false, fmt.Errorf("replace chain endpoint: chain cannot be retargeted")
+	}
+	replacer.ReplaceEndpoint(endpoint)
+	return true, nil
+}
+
 func (r *Registry) RegisterToken(t types.Token) {
 	r.mu.Lock()
 	defer r.mu.Unlock()

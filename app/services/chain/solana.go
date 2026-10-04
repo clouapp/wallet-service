@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"math/big"
+	"strings"
 
 	"github.com/macrowallets/waas/pkg/types"
 )
@@ -23,6 +24,32 @@ type SolanaLive struct {
 
 func NewSolanaLive(cfg SolanaConfig) *SolanaLive {
 	return &SolanaLive{cfg: cfg, rpc: NewRPCClient(cfg.RPCURL, "", "")}
+}
+
+// Endpoint is the URL the next dial uses. Callers must not log it.
+func (a *SolanaLive) Endpoint() string {
+	if a == nil || a.rpc == nil {
+		return ""
+	}
+	return a.rpc.Endpoint()
+}
+
+// ReplaceEndpoint points later dials at endpoint. An empty value does not
+// wipe the current endpoint.
+func (a *SolanaLive) ReplaceEndpoint(endpoint string) {
+	if a == nil {
+		return
+	}
+	endpoint = strings.TrimSpace(endpoint)
+	if endpoint == "" {
+		return
+	}
+	a.cfg.RPCURL = endpoint
+	if a.rpc == nil {
+		a.rpc = NewRPCClient(endpoint, "", "")
+		return
+	}
+	a.rpc.ReplaceEndpoint(endpoint)
 }
 
 func (a *SolanaLive) ID() string                    { return a.cfg.ChainIDStr }
