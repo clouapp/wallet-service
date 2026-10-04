@@ -327,9 +327,14 @@ func (s *Service) ResetSection(ctx context.Context, accountID, actorID uuid.UUID
 	if !ok {
 		return SectionView{}, fmt.Errorf("account settings: store cannot delete a group")
 	}
+	id := accountID
+	snapshots, err := s.auditSnapshots(ctx, &id, groups)
+	if err != nil {
+		return SectionView{}, err
+	}
 
 	section = strings.TrimSpace(section)
-	err := s.activity.Within(ctx, func(ctx context.Context) error {
+	err = s.activity.Within(ctx, func(ctx context.Context) error {
 		id := accountID
 		for _, group := range groups {
 			if err := deleter.DeleteGroup(ctx, accountID, group.Name); err != nil {
@@ -357,6 +362,9 @@ func (s *Service) ResetSection(ctx context.Context, accountID, actorID uuid.UUID
 	}
 	for _, group := range groups {
 		s.cache.Forget(cacheKey(accountID, group.Name))
+	}
+	if err := s.recordRemovedSettings(ctx, &id, snapshots); err != nil {
+		return SectionView{}, err
 	}
 	return s.renderSection(ctx, accountID, role, groups)
 }

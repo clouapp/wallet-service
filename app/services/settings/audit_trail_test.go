@@ -28,6 +28,22 @@ func TestSecretPairsNameTheSMTPPasswordAndNotTheHost(t *testing.T) {
 	}
 }
 
+func TestSettingsAuditScopeIsEmptyForPlatformAndAccountOtherwise(t *testing.T) {
+	t.Parallel()
+
+	if settingsAuditScope(nil) != "" {
+		t.Fatal("a platform row was not scope ''")
+	}
+	blank := uuid.Nil
+	if settingsAuditScope(&blank) != "" {
+		t.Fatal("a nil account id was not scope ''")
+	}
+	accountID := uuid.MustParse("11111111-1111-4111-8111-111111111111")
+	if settingsAuditScope(&accountID) != "account:"+accountID.String() {
+		t.Fatalf("account scope = %q", settingsAuditScope(&accountID))
+	}
+}
+
 func TestSettingsAuditImagesRecordValueSetForASecret(t *testing.T) {
 	t.Parallel()
 

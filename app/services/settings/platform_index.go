@@ -239,6 +239,10 @@ func (s *Service) ResetPlatformSection(ctx context.Context, actorID uuid.UUID, s
 	if s.cache == nil {
 		return SectionView{}, fmt.Errorf("platform settings: cache is required")
 	}
+	snapshots, err := s.auditSnapshots(ctx, nil, groups)
+	if err != nil {
+		return SectionView{}, err
+	}
 
 	section = strings.TrimSpace(section)
 	err = s.activity.Within(ctx, func(ctx context.Context) error {
@@ -267,6 +271,9 @@ func (s *Service) ResetPlatformSection(ctx context.Context, actorID uuid.UUID, s
 	}
 	for _, group := range groups {
 		s.cache.Forget(platformCacheKey(group.Name))
+	}
+	if err := s.recordRemovedSettings(ctx, nil, snapshots); err != nil {
+		return SectionView{}, err
 	}
 	return s.renderPlatformSection(ctx, groups)
 }

@@ -201,6 +201,44 @@ func (s *PlatformSettingsSectionResetTestSuite) TestAdminResetDeletesPlatformRow
 		s.NotContains(string(encoded), platformResetStoredHost)
 	}
 	s.GreaterOrEqual(resets, mailGroups)
+
+	var trails []struct {
+		Scope      string `gorm:"column:scope"`
+		Event      string `gorm:"column:event"`
+		Properties string `gorm:"column:properties"`
+	}
+	s.Require().NoError(facades.Orm().Query().Raw(
+		`SELECT scope, event, properties::text AS properties
+		 FROM activity_log
+		 WHERE subject_type = 'setting'
+		   AND properties->'old'->>'group' = 'mail_smtp'`,
+	).Scan(&trails))
+	s.NotEmpty(trails)
+	var sawRemovedPassword, sawRemovedHost bool
+	for _, row := range trails {
+		s.Equal("", row.Scope)
+		s.NotContains(row.Scope, accountID.String())
+		if strings.Contains(row.Properties, platformResetSecret) || strings.Contains(row.Properties, "enc:v1:") {
+			s.Fail("activity log stored a settings secret")
+		}
+		var props struct {
+			Old map[string]any `json:"old"`
+		}
+		s.Require().NoError(json.Unmarshal([]byte(row.Properties), &props))
+		switch props.Old["key"] {
+		case "password":
+			sawRemovedPassword = true
+			s.Equal("deleted", row.Event)
+			s.Equal(true, props.Old["valueSet"])
+			_, hasValue := props.Old["value"]
+			s.False(hasValue)
+		case "host":
+			sawRemovedHost = true
+			s.Equal(platformResetStoredHost, props.Old["value"])
+		}
+	}
+	s.True(sawRemovedPassword)
+	s.True(sawRemovedHost)
 }
 
 func (s *PlatformSettingsSectionResetTestSuite) TestUnknownSectionIsNotFound() {

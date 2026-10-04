@@ -304,6 +304,30 @@ func (s *accountSettingsSuite) TestResetSectionClearsThePageAndRecordsFieldNames
 	s.NotContains(webhookMeta, "reset-me-secret")
 	s.NotContains(webhookMeta, keptSecret)
 	s.NotContains(webhookMeta, "enc:v1:")
+
+	var removed []struct {
+		Scope      string `gorm:"column:scope"`
+		Properties string `gorm:"column:properties"`
+	}
+	s.Require().NoError(facades.Orm().Query().Raw(
+		`SELECT scope, properties::text AS properties
+		 FROM activity_log
+		 WHERE subject_type = 'setting' AND event = 'deleted'
+		   AND properties->'old'->>'group' = 'account_webhooks'
+		   AND properties->'old'->>'key' = 'signing_secret'`,
+	).Scan(&removed))
+	s.Require().Len(removed, 1)
+	s.Equal("account:"+accountID.String(), removed[0].Scope)
+	if strings.Contains(removed[0].Properties, "reset-me-secret") || strings.Contains(removed[0].Properties, "enc:v1:") {
+		s.Fail("activity log stored a settings secret")
+	}
+	var removedProps struct {
+		Old map[string]any `json:"old"`
+	}
+	s.Require().NoError(json.Unmarshal([]byte(removed[0].Properties), &removedProps))
+	s.Equal(true, removedProps.Old["valueSet"])
+	_, hasValue := removedProps.Old["value"]
+	s.False(hasValue)
 }
 
 func (s *accountSettingsSuite) TestFlushSectionLeavesStoredRowsAndDropsOnlyThatPageCache() {
@@ -624,6 +648,89 @@ func (s *accountSettingsSuite) TestPutSharesThePatchBodyRules() {
 	s.Equal("forbidden", response["error"].(map[string]any)["code"])
 	idle = s.getGroup(token, accountID, "account_security", 200)
 	s.Equal(float64(45), s.groupField(idle, "session_idle_minutes")["value"])
+}
+
+func (s *accountSettingsSuite) TestAnAccountSaveRecordsAccountScopeAndValueSet() {
+	accountID, token := s.owner()
+	otherID, otherToken := s.owner()
+	const secret = "account-scope-audit-marker"
+	saved := s.putRaw(token, accountID, "account_webhooks", fmt.Sprintf(`{"signing_secret":%q}`, secret), 200)
+	s.NotContains(saved, secret)
+	s.NotContains(saved, "enc:v1:")
+
+	var trails []struct {
+		Scope      string `gorm:"column:scope"`
+		Event      string `gorm:"column:event"`
+		Properties string `gorm:"column:properties"`
+	}
+	s.Require().NoError(facades.Orm().Query().Raw(
+		`SELECT scope, event, properties::text AS properties
+		 FROM activity_log
+		 WHERE subject_type = 'setting'
+		   AND properties->'new'->>'group' = 'account_webhooks'
+		   AND properties->'new'->>'key' = 'signing_secret'`,
+	).Scan(&trails))
+	s.Require().Len(trails, 1)
+	s.Equal("account:"+accountID.String(), trails[0].Scope)
+	s.Equal("created", trails[0].Event)
+	if strings.Contains(trails[0].Properties, secret) || strings.Contains(trails[0].Properties, "enc:v1:") {
+		s.Fail("activity log stored a settings secret")
+	}
+	var props struct {
+		New map[string]any `json:"new"`
+	}
+	s.Require().NoError(json.Unmarshal([]byte(trails[0].Properties), &props))
+	s.Equal(true, props.New["valueSet"])
+	s.Equal("signing_secret", props.New["key"])
+	_, hasValue := props.New["value"]
+	s.False(hasValue)
+
+	var onAccount int64
+	s.Require().NoError(facades.Orm().Query().Raw(
+		`SELECT count(*) FROM account_activity
+		 WHERE account_id = ? AND action = 'settings.updated' AND target_id = 'account_webhooks'`,
+		accountID,
+	).Scan(&onAccount))
+	s.Equal(int64(1), onAccount)
+	var onPlatform int64
+	s.Require().NoError(facades.Orm().Query().Raw(
+		`SELECT count(*) FROM account_activity
+		 WHERE account_id IS NULL AND action = 'settings.updated' AND target_id = 'account_webhooks'`,
+	).Scan(&onPlatform))
+	s.Equal(int64(0), onPlatform)
+
+	ownList := s.activityPage(token, accountID)
+	s.True(activityHasTarget(ownList, "settings.updated", "account_webhooks"))
+	otherList := s.activityPage(otherToken, otherID)
+	s.False(activityHasTarget(otherList, "settings.updated", "account_webhooks"))
+}
+
+func (s *accountSettingsSuite) activityPage(token string, accountID uuid.UUID) map[string]any {
+	s.T().Helper()
+	resp, err := s.Http(s.T()).
+		WithHeader("Authorization", "Bearer "+token).
+		Get("/v1/accounts/" + accountID.String() + "/activity")
+	s.Require().NoError(err)
+	resp.AssertOk()
+	content, err := resp.Content()
+	s.Require().NoError(err)
+	var page map[string]any
+	s.Require().NoError(json.Unmarshal([]byte(content), &page))
+	if strings.Contains(content, "account-scope-audit-marker") || strings.Contains(content, "enc:v1:") {
+		s.Fail("account activity list stored a settings secret")
+	}
+	return page
+}
+
+func activityHasTarget(page map[string]any, action, target string) bool {
+	rows, _ := page["data"].([]any)
+	for _, item := range rows {
+		row, _ := item.(map[string]any)
+		if row["action"] == action && row["target_id"] == target {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *accountSettingsSuite) owner() (uuid.UUID, string) {
