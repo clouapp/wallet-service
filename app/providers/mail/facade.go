@@ -75,12 +75,10 @@ func (f *Facade) Headers(headers map[string]string) contractsmail.Mail {
 	return f.wrap(f.inner.Headers(headers))
 }
 
-// Queue implements mail.Mail. The SMTP document is published first.
-func (f *Facade) Queue(mailable ...contractsmail.Mailable) error {
-	if f == nil || f.mailer == nil || f.inner == nil {
-		return errMailerRequired
-	}
-	return f.mailer.Deliver(func() error { return f.inner.Queue(mailable...) })
+// Queue refuses. facades.Mail().Queue() must not render a mailable into a
+// payload that sits in a queue or a worker log. Callers send with Send.
+func (f *Facade) Queue(...contractsmail.Mailable) error {
+	return errQueueRefused
 }
 
 // Send implements mail.Mail. The SMTP document is published first. A test

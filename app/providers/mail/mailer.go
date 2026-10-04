@@ -10,6 +10,10 @@ import (
 // errMailerRequired is returned when a send has no mailer or no transport.
 var errMailerRequired = errors.New("mail: mailer is required")
 
+// errQueueRefused is returned by Facade.Queue. A queued mailable is a
+// rendered payload at rest, and credential mail must not sit in a queue.
+var errQueueRefused = errors.New("mail: queue is refused")
+
 // Mailer publishes mailer.Config onto the process mail document and then
 // dials. The transport stays SMTP.
 type Mailer struct {

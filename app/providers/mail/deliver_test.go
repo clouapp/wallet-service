@@ -135,6 +135,27 @@ func TestDeliverKeepsTheEnvDocumentWhenTheReadFails(t *testing.T) {
 	}
 }
 
+func TestQueueRefusesWithoutPublishingOrDialing(t *testing.T) {
+	var written bool
+	cfg := mailer.NewConfig(mailer.Hooks{
+		Baseline: func() map[string]any { return map[string]any{} },
+		Write:    func(map[string]any) { written = true },
+		Restore:  func() {},
+		Observe:  func() {},
+	})
+	transport := &recordingMail{}
+	err := NewFacade(NewMailer(cfg, nil), transport).Queue()
+	if !errors.Is(err, errQueueRefused) {
+		t.Fatalf("queue error = %v", err)
+	}
+	if transport.queued || written {
+		t.Fatal("queue published the mail document or reached the transport")
+	}
+	if err := (*Facade)(nil).Queue(); !errors.Is(err, errQueueRefused) {
+		t.Fatalf("nil facade queue error = %v", err)
+	}
+}
+
 func TestDeliverRefusesAMissingMailer(t *testing.T) {
 	if err := NewFacade(nil, &recordingMail{}).Send(); !errors.Is(err, errMailerRequired) {
 		t.Fatal("a missing mailer was sent")
@@ -145,7 +166,8 @@ func TestDeliverRefusesAMissingMailer(t *testing.T) {
 }
 
 type recordingMail struct {
-	sent bool
+	sent   bool
+	queued bool
 }
 
 func (m *recordingMail) Attach([]string) contractsmail.Mail { return m }
@@ -157,7 +179,7 @@ func (m *recordingMail) Content(contractsmail.Content) contractsmail.Mail {
 func (m *recordingMail) From(contractsmail.Address) contractsmail.Mail { return m }
 func (m *recordingMail) Headers(map[string]string) contractsmail.Mail  { return m }
 func (m *recordingMail) Queue(...contractsmail.Mailable) error {
-	m.sent = true
+	m.queued = true
 	return nil
 }
 func (m *recordingMail) Send(...contractsmail.Mailable) error {
