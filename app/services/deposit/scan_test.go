@@ -18,6 +18,7 @@ import (
 	"github.com/macrowallets/waas/app/services/chain"
 	"github.com/macrowallets/waas/pkg/types"
 	"github.com/macrowallets/waas/tests/mocks"
+	"github.com/macrowallets/waas/tests/testutil"
 )
 
 // scanTestChain has its own checkpoint key, so these tests never touch a real chain's.
@@ -314,6 +315,114 @@ func TestScanLatestBlocks_ReadsTheWindowOnEachInvocation(t *testing.T) {
 	}
 	if calls != 2 || svc.scan.BatchBlocks != 12 {
 		t.Fatalf("second read calls=%d window=%+v", calls, svc.scan)
+	}
+}
+
+func TestScanOptionsForRun(t *testing.T) {
+	env := ScanOptions{BatchBlocks: 50, CatchUpBlocks: 80, Concurrency: 8}
+	cases := []struct {
+		name                        string
+		batch, catchUp, concurrency int
+		readErr                     error
+		want                        ScanOptions
+		wantErr                     string
+	}{
+		{name: "a stored field overrides the environment", batch: 20, want: ScanOptions{BatchBlocks: 20, CatchUpBlocks: 80, Concurrency: 8}},
+		{name: "zeros keep the environment window", want: env},
+		{name: "a larger batch raises an omitted catch-up to the batch", batch: 100, want: ScanOptions{BatchBlocks: 100, CatchUpBlocks: 100, Concurrency: 8}},
+		{name: "an invalid combination keeps the environment window", batch: 100, catchUp: 40, concurrency: 4, want: env},
+		{name: "a failed read keeps the environment window", readErr: errors.New("db down"), want: env},
+		{name: "concurrency above the limit keeps the environment window", concurrency: MaxScanConcurrency + 1, want: env},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := ScanOptionsForRun(50, 80, 8, tc.batch, tc.catchUp, tc.concurrency, tc.readErr)
+			if tc.wantErr != "" {
+				if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
+					t.Fatalf("expected error containing %q, got %v", tc.wantErr, err)
+				}
+				return
+			}
+			if err != nil || got != tc.want {
+				t.Fatalf("got %+v, %v; want %+v", got, err, tc.want)
+			}
+		})
+	}
+
+	_, err := ScanOptionsForRun(-1, 80, 8, 0, 0, 0, nil)
+	if err == nil {
+		t.Fatal("expected an invalid environment window to be rejected")
+	}
+}
+
+func TestScanLatestBlocks_EachScanCallsScanOptionsFromSettings(t *testing.T) {
+	const (
+		envBatch       = 10
+		envCatchUp     = 100
+		envConcurrency = 4
+		head           = uint64(5000)
+		start          = uint64(1000)
+	)
+	f := newScanFixture(t, head, DefaultScanOptions())
+	rdb := testutil.TestRedis(t)
+	key := "vault:checkpoint:" + scanTestChain
+	if err := rdb.Set(context.Background(), key, start, 0).Err(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_ = rdb.Del(context.Background(), key, addressCacheKey(scanTestChain)).Err()
+	})
+	f.svc.store = redisStore{client: rdb}
+	if err := f.svc.RefreshAddressCache(context.Background(), scanTestChain); err != nil {
+		t.Fatal(err)
+	}
+
+	type storedWindow struct {
+		batch, catchUp, concurrency int
+		readErr                     error
+	}
+	current := storedWindow{batch: 20, catchUp: 200, concurrency: 4}
+	f.svc.SetScanOptionSource(func(context.Context) (ScanOptions, error) {
+		return ScanOptionsForRun(envBatch, envCatchUp, envConcurrency, current.batch, current.catchUp, current.concurrency, current.readErr)
+	})
+
+	if err := f.svc.ScanLatestBlocks(context.Background(), scanTestChain); err != nil {
+		t.Fatal(err)
+	}
+	if got := f.checkpoint(t); got != 1200 {
+		t.Fatalf("first scan checkpoint = %d, want 1200 from the stored catch-up", got)
+	}
+
+	current.catchUp = 150
+	if err := f.svc.ScanLatestBlocks(context.Background(), scanTestChain); err != nil {
+		t.Fatal(err)
+	}
+	if got := f.checkpoint(t); got != 1350 {
+		t.Fatalf("second scan checkpoint = %d, want 1350 after the settings change", got)
+	}
+
+	current = storedWindow{}
+	if err := f.svc.ScanLatestBlocks(context.Background(), scanTestChain); err != nil {
+		t.Fatal(err)
+	}
+	if got := f.checkpoint(t); got != 1450 {
+		t.Fatalf("missing row checkpoint = %d, want the environment catch-up of 100", got)
+	}
+
+	current = storedWindow{batch: 100, catchUp: 40, concurrency: 4}
+	if err := f.svc.ScanLatestBlocks(context.Background(), scanTestChain); err != nil {
+		t.Fatal(err)
+	}
+	if got := f.checkpoint(t); got != 1550 {
+		t.Fatalf("invalid row checkpoint = %d, want the environment window to keep the scan moving", got)
+	}
+
+	current = storedWindow{readErr: errors.New("db down")}
+	if err := f.svc.ScanLatestBlocks(context.Background(), scanTestChain); err != nil {
+		t.Fatal(err)
+	}
+	if got := f.checkpoint(t); got != 1650 {
+		t.Fatalf("failed read checkpoint = %d, want the environment window and a completed scan", got)
 	}
 }
 

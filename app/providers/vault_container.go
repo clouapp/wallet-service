@@ -396,24 +396,20 @@ func buildVaultContainer(app foundation.Application) (*container.Container, erro
 	c.DepositService = deposit.NewService(scanner.New(c.Redis), c.Registry, c.WebhookService, c.AddressRepo, c.TransactionRepo, blockHeightProviders)
 	c.DepositService.SetWithdrawalConfirmations(c.WithdrawalEvents)
 	c.DepositService.SetDepositEvents(c.DepositEvents)
-	scanOptions, err := deposit.ScanOptionsFromSettings(
-		facades.Config().GetInt("vault.deposit_scan.batch_blocks"),
-		facades.Config().GetInt("vault.deposit_scan.catch_up_blocks"),
-		facades.Config().GetInt("vault.deposit_scan.concurrency"),
-	)
-	if err != nil {
-		return nil, fmt.Errorf("vault: deposit scan options: %w", err)
-	}
-	if err := c.DepositService.SetScanOptions(scanOptions); err != nil {
-		return nil, fmt.Errorf("vault: deposit scan options: %w", err)
-	}
-	envWindow := scanOptions
+	// Each ScanLatestBlocks call reads deposit_scan and runs
+	// deposit.ScanOptionsFromSettings. A stored value overrides DEPOSIT_SCAN_*.
+	// A missing row, an invalid value, or a failed read keeps the environment
+	// window and the scan continues.
 	c.DepositService.SetScanOptionSource(func(ctx context.Context) (deposit.ScanOptions, error) {
+		envBatch := facades.Config().GetInt("vault.deposit_scan.batch_blocks")
+		envCatchUp := facades.Config().GetInt("vault.deposit_scan.catch_up_blocks")
+		envConcurrency := facades.Config().GetInt("vault.deposit_scan.concurrency")
 		stored, readErr := accountSettings.EffectiveDepositScan(ctx)
-		if readErr != nil {
-			return deposit.ScanOptions{}, readErr
-		}
-		return deposit.ApplyStoredScanOptions(envWindow, stored.BatchBlocks, stored.CatchUpBlocks, stored.Concurrency), nil
+		return deposit.ScanOptionsForRun(
+			envBatch, envCatchUp, envConcurrency,
+			stored.BatchBlocks, stored.CatchUpBlocks, stored.Concurrency,
+			readErr,
+		)
 	})
 	failurePolicy, err := deposit.FailurePolicyFromSettings(
 		facades.Config().GetInt("vault.deposit_scan.retry_attempts"),

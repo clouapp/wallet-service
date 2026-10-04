@@ -94,8 +94,9 @@ func (s *Service) SetScanOptions(opts ScanOptions) error {
 // A non-nil error means the read failed and the service keeps the fallback.
 type scanOptionSource func(ctx context.Context) (ScanOptions, error)
 
-// SetScanOptionSource installs the per-scan reader. Nil keeps the window set
-// at boot.
+// SetScanOptionSource installs the per-scan reader. Nil keeps the window last
+// accepted by SetScanOptions. The production reader calls ScanOptionsForRun,
+// which calls ScanOptionsFromSettings on every scan.
 func (s *Service) SetScanOptionSource(source scanOptionSource) {
 	if s == nil {
 		return
@@ -103,9 +104,43 @@ func (s *Service) SetScanOptionSource(source scanOptionSource) {
 	s.scanSource = source
 }
 
+// ScanOptionsForRun builds the window for one scan invocation.
+// envBatch, envCatchUp and envConcurrency are the DEPOSIT_SCAN_* values.
+// A positive stored field overrides that environment value; zero is a missing
+// or invalid stored field and leaves the environment value. A non-nil readErr,
+// or a combination ScanOptionsFromSettings rejects, keeps the environment
+// window and returns that window with a nil error so the scan still runs.
+// The error is non-nil only when the environment window itself is invalid.
+func ScanOptionsForRun(envBatch, envCatchUp, envConcurrency, storedBatch, storedCatchUp, storedConcurrency int, readErr error) (ScanOptions, error) {
+	if readErr != nil {
+		slog.Warn("deposit scan settings unread; keeping the environment window", "error", readErr)
+		return ScanOptionsFromSettings(envBatch, envCatchUp, envConcurrency)
+	}
+	batch, catchUp, concurrency := envBatch, envCatchUp, envConcurrency
+	if storedBatch > 0 {
+		batch = storedBatch
+	}
+	if storedCatchUp > 0 {
+		catchUp = storedCatchUp
+	}
+	if storedConcurrency > 0 {
+		concurrency = storedConcurrency
+	}
+	if storedCatchUp <= 0 && catchUp > 0 && catchUp < batch {
+		catchUp = batch
+	}
+	opts, err := ScanOptionsFromSettings(batch, catchUp, concurrency)
+	if err != nil {
+		slog.Warn("deposit scan settings invalid; keeping the environment window", "error", err)
+		return ScanOptionsFromSettings(envBatch, envCatchUp, envConcurrency)
+	}
+	return opts, nil
+}
+
 // resolveScanOptions applies a stored deposit_scan row for this invocation.
-// A missing source, a read failure, or an invalid window keeps the fallback
-// captured from the environment so a settings outage does not stop the scan.
+// A missing source keeps the window already on the service. A reader error
+// keeps the fallback so a settings outage does not stop the scan. The
+// production reader returns the environment window instead of an error.
 func (s *Service) resolveScanOptions(ctx context.Context) {
 	if s == nil || s.scanSource == nil {
 		return
