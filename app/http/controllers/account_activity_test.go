@@ -3,6 +3,7 @@ package controllers_test
 import (
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"strings"
 	"testing"
 
@@ -128,28 +129,23 @@ func (s *AccountActivityTestSuite) TestAuditorListsNewestFirstAndUserIsForbidden
 
 	s.patchMember(owner.token, accountID, member.id, `{"role":"auditor"}`).AssertOk()
 	s.patch(owner.token, "/v1/accounts/"+accountID.String()+"/features/"+features.FlagWithdrawalsEnabled,
-		`{"enabled":false}`, 200)
+		`{"enabled":false}`, http.StatusNotFound)
 	s.patch(owner.token, "/v1/accounts/"+accountID.String()+"/settings/account_webhooks",
 		fmt.Sprintf(`{"signing_secret":%q}`, activityPlainSecret), 200)
 
 	role, _ := s.storedRole(accountID, member.id)
 	s.Equal("auditor", role)
+	s.Equal(int64(0), s.countActivity(activitylog.ActionFeaturesUpdated))
+	s.Equal(int64(0), s.countActivity(activitylog.ActionAccountFeaturesUpdated))
 
 	newest := s.list(auditor.token, accountID, "limit=1")
-	s.Equal(int64(3), newest.Total)
+	s.Equal(int64(2), newest.Total)
 	s.Equal(1, newest.Limit)
 	s.Equal(0, newest.Offset)
 	s.Require().Len(newest.Data, 1)
 	s.Equal("settings.updated", newest.Data[0].Action)
 
-	middle := s.list(auditor.token, accountID, "limit=1&offset=1")
-	s.Require().Len(middle.Data, 1)
-	s.Equal("features.updated", middle.Data[0].Action)
-	s.Equal(features.FlagWithdrawalsEnabled, middle.Data[0].Metadata.Key)
-	s.Require().NotNil(middle.Data[0].Metadata.Enabled)
-	s.False(*middle.Data[0].Metadata.Enabled)
-
-	oldest := s.list(auditor.token, accountID, "limit=1&offset=2")
+	oldest := s.list(auditor.token, accountID, "limit=1&offset=1")
 	s.Require().Len(oldest.Data, 1)
 	s.Equal("member.role_changed", oldest.Data[0].Action)
 	s.Equal("auditor", oldest.Data[0].Metadata.Role)

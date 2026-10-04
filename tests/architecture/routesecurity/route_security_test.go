@@ -124,7 +124,6 @@ var routeTable = map[string]routeSecurity{
 	"PATCH /v1/accounts/{accountId}/settings/{group}":                  session(chainAccount),
 	"PUT /v1/accounts/{accountId}/settings/{group}":                    session(chainAccount),
 	"GET|HEAD /v1/accounts/{accountId}/features":                       session(chainAccount),
-	"PATCH /v1/accounts/{accountId}/features/{key}":                    session(chainAccount),
 	"POST /v1/auth/2fa/verify":                                         guest(),
 	"POST /v1/auth/login":                                              guest(),
 	"POST /v1/auth/logout":                                             session(chainSession),

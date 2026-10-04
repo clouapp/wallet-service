@@ -144,8 +144,9 @@ func RegisterAdminRoutes() {
 
 			r.Get("/activity", accountActivityCtrl.Index)
 
+			// S2.4: no account-side write. Reads stay on this route.
+			// Platform PUT /v1/platform/features/account/{id} stores the flag.
 			r.Get("/features", accountFeaturesCtrl.Index)
-			r.Patch("/features/{key}", accountFeaturesCtrl.Update)
 		})
 	})
 

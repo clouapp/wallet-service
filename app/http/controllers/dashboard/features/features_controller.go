@@ -3,12 +3,9 @@ package features
 import (
 	"errors"
 
-	"github.com/google/uuid"
 	"github.com/goravel/framework/contracts/http"
 
-	"github.com/macrowallets/waas/app/http/middleware"
 	"github.com/macrowallets/waas/app/http/middleware/requestctx"
-	"github.com/macrowallets/waas/app/http/requests"
 	"github.com/macrowallets/waas/app/http/responses"
 	"github.com/macrowallets/waas/app/models"
 	featuressvc "github.com/macrowallets/waas/app/services/features"
@@ -50,43 +47,6 @@ func (ctrl *FeaturesController) Index(ctx http.Context) http.Response {
 	return responses.Send(ctx, http.StatusOK, view)
 }
 
-// Update godoc
-// @Summary      Set one account feature flag
-// @Description  Writes one boolean and returns the stored row. An unknown key is 404. Auditor and user receive 403 and the row is unchanged.
-// @Tags         Account Features
-// @Security     BearerAuth
-// @Accept       json
-// @Produce      json
-// @Param        accountId  path  string  true  "Account UUID"
-// @Param        key        path  string  true  "Feature key"
-// @Success      200  {object}  featuressvc.Flag
-// @Failure      403  {object}  responses.ErrorBody
-// @Failure      404  {object}  responses.ErrorBody
-// @Failure      422  {object}  responses.ErrorBody
-// @Router       /accounts/{accountId}/features/{key} [patch]
-func (ctrl *FeaturesController) Update(ctx http.Context) http.Response {
-	account, role, errResp := accountCaller(ctx)
-	if errResp != nil {
-		return errResp
-	}
-	var path requests.FeatureKeyRequest
-	path.Load(ctx)
-	key := path.Key
-	actorID := middleware.SessionUserID(ctx)
-	if actorID == uuid.Nil {
-		return responses.Send(ctx, http.StatusUnauthorized, http.Json{"error": "unauthenticated"})
-	}
-	enabled, err := requests.AccountFeatureEnabled(ctx)
-	if err != nil {
-		return mapFeatureBodyError(ctx, err)
-	}
-	flag, err := ctrl.features.Set(ctx.Context(), account.ID, actorID, role, key, enabled)
-	if errResp := mapFeatureError(ctx, err); errResp != nil {
-		return errResp
-	}
-	return responses.Send(ctx, http.StatusOK, flag)
-}
-
 func accountCaller(ctx http.Context) (*models.Account, string, http.Response) {
 	account, _ := requestctx.Account(ctx)
 	if account == nil {
@@ -94,25 +54,6 @@ func accountCaller(ctx http.Context) (*models.Account, string, http.Response) {
 	}
 	role, _ := requestctx.AccountRole(ctx)
 	return account, role, nil
-}
-
-func mapFeatureBodyError(ctx http.Context, err error) http.Response {
-	switch {
-	case errors.Is(err, requests.ErrAccountFeatureBodyTooLarge):
-		return responses.Send(ctx, http.StatusRequestEntityTooLarge, http.Json{"error": "request body is too large"})
-	case errors.Is(err, requests.ErrAccountFeatureEnabledRequired):
-		return responses.Send(ctx, http.StatusUnprocessableEntity, map[string]any{
-			"error": map[string]any{
-				"code":    responses.CodeValidationFailed,
-				"message": "validation failed",
-			},
-			"errors": map[string][]string{
-				"enabled": {"enabled is required"},
-			},
-		})
-	default:
-		return responses.Send(ctx, http.StatusBadRequest, http.Json{"error": "invalid request body"})
-	}
 }
 
 func mapFeatureError(ctx http.Context, err error) http.Response {

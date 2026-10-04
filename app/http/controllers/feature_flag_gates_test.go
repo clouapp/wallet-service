@@ -142,15 +142,16 @@ func (s *featureGateSuite) json(response contractstestinghttp.Response) map[stri
 	return body
 }
 
-func (s *featureGateSuite) setFlag(token string, accountID uuid.UUID, key string, enabled bool) {
+func (s *featureGateSuite) setFlag(_ string, accountID uuid.UUID, key string, enabled bool) {
 	s.T().Helper()
-	body := fmt.Sprintf(`{"enabled":%t}`, enabled)
-	response, err := s.Http(s.T()).
-		WithHeader("Authorization", "Bearer "+token).
-		WithHeader("Content-Type", "application/json").
-		Patch("/v1/accounts/"+accountID.String()+"/features/"+key, strings.NewReader(body))
+	_, err := facades.Orm().Query().Exec(
+		`INSERT INTO features (account_id, "key", enabled, created_at, updated_at)
+		 VALUES (?, ?, ?, NOW(), NOW())
+		 ON CONFLICT (account_id, "key") DO UPDATE
+		 SET enabled = EXCLUDED.enabled, updated_at = NOW()`,
+		accountID, key, enabled,
+	)
 	s.Require().NoError(err)
-	response.AssertOk()
 }
 
 func (s *featureGateSuite) rows(model any, walletID uuid.UUID) int64 {

@@ -198,12 +198,16 @@ func (s *totpEnrollmentSuite) post(token, path, body string) contractstestinghtt
 	return response
 }
 
-func (s *totpEnrollmentSuite) patchFlag(token string, accountID uuid.UUID, enabled bool) {
+func (s *totpEnrollmentSuite) patchFlag(_ string, accountID uuid.UUID, enabled bool) {
 	s.T().Helper()
-	response := s.patch(token, "/v1/accounts/"+accountID.String()+"/features/"+features.FlagUser2FARequired, fmt.Sprintf(`{"enabled":%t}`, enabled))
-	if status := s.statusOf(response); status != http.StatusOK {
-		s.FailNowf("patch flag", "status %d", status)
-	}
+	_, err := facades.Orm().Query().Exec(
+		`INSERT INTO features (account_id, "key", enabled, created_at, updated_at)
+		 VALUES (?, ?, ?, NOW(), NOW())
+		 ON CONFLICT (account_id, "key") DO UPDATE
+		 SET enabled = EXCLUDED.enabled, updated_at = NOW()`,
+		accountID, features.FlagUser2FARequired, enabled,
+	)
+	s.Require().NoError(err)
 }
 
 func (s *totpEnrollmentSuite) patchSettings(token string, accountID uuid.UUID, body string) {

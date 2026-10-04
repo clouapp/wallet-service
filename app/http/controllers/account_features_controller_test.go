@@ -3,10 +3,12 @@ package controllers_test
 import (
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"strings"
 	"testing"
 
 	"github.com/google/uuid"
+	contractstestinghttp "github.com/goravel/framework/contracts/testing/http"
 	"github.com/goravel/framework/facades"
 	goravelTesting "github.com/goravel/framework/testing"
 	"github.com/stretchr/testify/suite"
@@ -87,63 +89,29 @@ func (s *accountFeaturesSuite) TestGetAccountListsActiveFlagKeys() {
 	s.NotContains(updated, `"features"`)
 }
 
-func (s *accountFeaturesSuite) TestOwnerEnablesFlagAndTheNextReadIsEnabled() {
-	accountID, token := s.owner()
+func (s *accountFeaturesSuite) TestAccountRoutesCannotWriteAFlag() {
+	accountID, owner := s.owner()
+	auditor := s.member(accountID, "auditor")
+	user := s.member(accountID, "user")
 
-	written := s.patch(token, accountID, features.FlagWithdrawalsEnabled, `{"enabled":true}`, 200)
-	s.Equal(features.FlagWithdrawalsEnabled, written["key"])
-	s.Equal(true, written["enabled"])
-	s.True(s.stored(accountID, features.FlagWithdrawalsEnabled))
+	body := s.get(auditor, accountID, 200)
+	s.True(s.flag(body, features.FlagSweepEnabled))
+	s.get(user, accountID, 403)
 
-	body := s.get(token, accountID, 200)
+	callers := []string{owner, auditor, user}
+	keys := []string{features.FlagWithdrawalsEnabled, "not-a-flag", ""}
+	for _, token := range callers {
+		for _, key := range keys {
+			s.refuseWrite(http.MethodPost, token, accountID, key)
+			s.refuseWrite(http.MethodPut, token, accountID, key)
+			s.refuseWrite(http.MethodPatch, token, accountID, key)
+		}
+	}
+
+	s.Equal(int64(0), s.rowCount(accountID))
+	body = s.get(owner, accountID, 200)
 	s.True(s.flag(body, features.FlagWithdrawalsEnabled))
 	s.True(s.flag(body, features.FlagSweepEnabled))
-
-	disabled := s.patch(token, accountID, features.FlagWithdrawalsEnabled, `{"enabled":false}`, 200)
-	s.Equal(false, disabled["enabled"])
-	s.False(s.stored(accountID, features.FlagWithdrawalsEnabled))
-	body = s.get(token, accountID, 200)
-	s.False(s.flag(body, features.FlagWithdrawalsEnabled))
-	s.True(s.flag(body, features.FlagSweepEnabled))
-
-	otherID, otherToken := s.owner()
-	other := s.get(otherToken, otherID, 200)
-	s.True(s.flag(other, features.FlagWithdrawalsEnabled))
-	s.Equal(int64(0), s.rowCount(otherID))
-}
-
-func (s *accountFeaturesSuite) TestAuditorPatchIsForbidden() {
-	accountID, _ := s.owner()
-	token := s.member(accountID, "auditor")
-
-	body := s.get(token, accountID, 200)
-	s.True(s.flag(body, features.FlagSweepEnabled))
-
-	response := s.patch(token, accountID, features.FlagSweepEnabled, `{"enabled":true}`, 403)
-	s.Equal("forbidden", response["error"].(map[string]any)["code"])
-	s.Equal(int64(0), s.rowCount(accountID))
-}
-
-func (s *accountFeaturesSuite) TestUserPatchIsForbidden() {
-	accountID, _ := s.owner()
-	token := s.member(accountID, "user")
-
-	s.get(token, accountID, 403)
-	response := s.patch(token, accountID, features.FlagSweepEnabled, `{"enabled":true}`, 403)
-	s.Equal("forbidden", response["error"].(map[string]any)["code"])
-	s.Equal(int64(0), s.rowCount(accountID))
-}
-
-func (s *accountFeaturesSuite) TestUnknownKeyIsNotFound() {
-	accountID, token := s.owner()
-
-	response := s.patch(token, accountID, "not-a-flag", `{"enabled":true}`, 404)
-	s.Equal("not_found", response["error"].(map[string]any)["code"])
-	s.Equal(int64(0), s.rowCount(accountID))
-
-	auditor := s.member(accountID, "auditor")
-	response = s.patch(auditor, accountID, "not-a-flag", `{"enabled":true}`, 404)
-	s.Equal("not_found", response["error"].(map[string]any)["code"])
 }
 
 func (s *accountFeaturesSuite) owner() (uuid.UUID, string) {
@@ -262,19 +230,33 @@ func (s *accountFeaturesSuite) get(token string, accountID uuid.UUID, status int
 	return parsed
 }
 
-func (s *accountFeaturesSuite) patch(token string, accountID uuid.UUID, key, body string, status int) map[string]any {
+func (s *accountFeaturesSuite) refuseWrite(method, token string, accountID uuid.UUID, key string) {
 	s.T().Helper()
-	resp, err := s.Http(s.T()).
+	path := "/v1/accounts/" + accountID.String() + "/features"
+	if key != "" {
+		path += "/" + key
+	}
+	request := s.Http(s.T()).
 		WithHeader("Authorization", "Bearer "+token).
-		WithHeader("Content-Type", "application/json").
-		Patch("/v1/accounts/"+accountID.String()+"/features/"+key, strings.NewReader(body))
+		WithHeader("Content-Type", "application/json")
+	body := strings.NewReader(`{"enabled":false}`)
+	var (
+		resp contractstestinghttp.Response
+		err  error
+	)
+	switch method {
+	case http.MethodPost:
+		resp, err = request.Post(path, body)
+	case http.MethodPut:
+		resp, err = request.Put(path, body)
+	case http.MethodPatch:
+		resp, err = request.Patch(path, body)
+	default:
+		s.FailNow("unsupported method " + method)
+	}
 	s.Require().NoError(err)
-	resp.AssertStatus(status)
-	content, err := resp.Content()
-	s.Require().NoError(err)
-	var parsed map[string]any
-	s.Require().NoError(json.Unmarshal([]byte(content), &parsed))
-	return parsed
+	resp.AssertNotFound()
+	s.Equal(int64(0), s.rowCount(accountID))
 }
 
 func (s *accountFeaturesSuite) flag(body featureListBody, key string) bool {
@@ -286,19 +268,6 @@ func (s *accountFeaturesSuite) flag(body featureListBody, key string) bool {
 	}
 	s.Failf("missing flag", "%s in %+v", key, body)
 	return false
-}
-
-func (s *accountFeaturesSuite) stored(accountID uuid.UUID, key string) bool {
-	s.T().Helper()
-	var row struct {
-		Enabled bool `gorm:"column:enabled"`
-	}
-	err := facades.Orm().Query().Raw(
-		`SELECT enabled FROM features WHERE account_id = ? AND "key" = ?`,
-		accountID, key,
-	).Scan(&row)
-	s.Require().NoError(err)
-	return row.Enabled
 }
 
 func (s *accountFeaturesSuite) rowCount(accountID uuid.UUID) int64 {
