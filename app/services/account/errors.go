@@ -35,4 +35,8 @@ var (
 	// S3.4.1 names accounts.view. This branch has no platform permission
 	// catalog, so a platform_admins row is the gate.
 	ErrPlatformViewForbidden = errors.New("you do not have permission to view accounts")
+	// ErrPlatformAccountUsersForbidden is a caller who is not a platform admin.
+	// S3.4.1 names GET /{id}/users on /v1/platform/accounts. This branch has no
+	// platform permission catalog, so a platform_admins row is the gate.
+	ErrPlatformAccountUsersForbidden = errors.New("you do not have permission to view account users")
 )

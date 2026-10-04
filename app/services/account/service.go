@@ -32,6 +32,7 @@ type MembershipStore interface {
 	FindByAccountAndUser(ctx context.Context, accountID, userID uuid.UUID) (*models.AccountUser, error)
 	FindByAccountAndUserIncludeDeleted(ctx context.Context, accountID, userID uuid.UUID) (*models.AccountUser, error)
 	PaginateByAccountID(ctx context.Context, accountID uuid.UUID, limit, offset int) ([]models.AccountUser, int64, error)
+	ListForPlatformAccount(ctx context.Context, accountID uuid.UUID, limit, offset int) ([]models.AccountUser, int64, error)
 	Restore(ctx context.Context, id uuid.UUID) error
 	SetRole(ctx context.Context, id uuid.UUID, role string) error
 	SetStatus(ctx context.Context, id uuid.UUID, status string) error

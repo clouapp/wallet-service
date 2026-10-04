@@ -122,6 +122,43 @@ func (r *AccountUserRepository) PaginateByAccountID(ctx context.Context, account
 	return r.paginate(ctx, "account_id = ? AND deleted_at IS NULL", accountID, limit, offset)
 }
 
+// ListForPlatformAccount pages one account's memberships for a platform
+// admin. Soft-deleted rows stay out, matching PaginateByAccountID, and every
+// stored status stays in. The page is newest user created_at first, then
+// user id descending, matching GET /v1/platform/users. The user preload
+// selects only the columns that list returns.
+func (r *AccountUserRepository) ListForPlatformAccount(ctx context.Context, accountID uuid.UUID, limit, offset int) ([]models.AccountUser, int64, error) {
+	if ctx == nil {
+		return nil, 0, fmt.Errorf("list account users: context is required")
+	}
+	if accountID == uuid.Nil {
+		return nil, 0, fmt.Errorf("list account users: account id is required")
+	}
+	if limit <= 0 || offset < 0 {
+		return nil, 0, fmt.Errorf("list account users: limit and offset are invalid")
+	}
+	total, err := r.Query(ctx).Model(&models.AccountUser{}).
+		Where("account_id = ? AND deleted_at IS NULL", accountID).
+		Count()
+	if err != nil {
+		return nil, 0, fmt.Errorf("list account users: %w", err)
+	}
+	rows := []models.AccountUser{}
+	err = r.Query(ctx).
+		With("User", func(query orm.Query) orm.Query {
+			return query.Select("id", "email", "full_name", "status", "suspended_at", "totp_enabled")
+		}).
+		Where("account_id = ? AND deleted_at IS NULL", accountID).
+		OrderByRaw("(SELECT users.created_at FROM users WHERE users.id = account_users.user_id) DESC, (SELECT users.id FROM users WHERE users.id = account_users.user_id) DESC").
+		Offset(offset).
+		Limit(limit).
+		Find(&rows)
+	if err != nil {
+		return nil, 0, fmt.Errorf("list account users: %w", err)
+	}
+	return rows, total, nil
+}
+
 func (r *AccountUserRepository) paginate(ctx context.Context, where string, id uuid.UUID, limit, offset int) ([]models.AccountUser, int64, error) {
 	total, err := r.Query(ctx).Model(&models.AccountUser{}).Where(where, id).Count()
 	if err != nil {

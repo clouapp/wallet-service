@@ -68,6 +68,7 @@ func RegisterAdminRoutes() {
 	platformFeaturesCtrl := newPlatformFeaturesController()
 	platformAccountsCtrl := newPlatformAccountsController()
 	platformAccountListCtrl := newPlatformAccountListController()
+	platformAccountUsersCtrl := newPlatformAccountUsersController()
 	platformChainsCtrl := newPlatformChainsController()
 	platformSettingsCtrl := newPlatformSettingsController()
 	platformUsersCtrl := newPlatformUsersController()
@@ -168,6 +169,11 @@ func RegisterAdminRoutes() {
 		router.Post("/accounts/{accountId}/freeze", platformAccountsCtrl.Freeze)
 		router.Post("/accounts/{accountId}/unfreeze", platformAccountsCtrl.Unfreeze)
 		router.Post("/accounts/{accountId}/archive", platformAccountsCtrl.Archive)
+		// S3.4.1: GET /v1/platform/accounts/{id}/users.
+		// A platform_admins row is the gate. The plan does not name fields,
+		// pagination, or sort, so the page matches GET /v1/platform/users and
+		// each row matches the account member list.
+		router.Get("/accounts/{accountId}/users", platformAccountUsersCtrl.Index)
 		// S1.4.6: GET /v1/platform/accounts/{accountId}/settings/{group} settings.view (platform-managed account groups).
 		router.Get("/accounts/{accountId}/settings/{group}", platformSettingsCtrl.ShowAccount)
 		// S1.4.6: PUT /v1/platform/accounts/{accountId}/settings/{group} settings.update + sweep.update for account_sweep_limits.
@@ -435,6 +441,12 @@ func newDashboardAccountFeaturesController() *dashfeatures.FeaturesController {
 
 func newPlatformAccountsController() *platformaccounts.LifecycleController {
 	return platformaccounts.NewLifecycleController(
+		container.MustMake[*accountsvc.Service](),
+	)
+}
+
+func newPlatformAccountUsersController() *platformaccounts.UsersController {
+	return platformaccounts.NewUsersController(
 		container.MustMake[*accountsvc.Service](),
 	)
 }
