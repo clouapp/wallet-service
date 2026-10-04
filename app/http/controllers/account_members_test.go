@@ -107,6 +107,14 @@ func (s *AccountMembersTestSuite) patchMember(token string, accountID, userID uu
 	return resp
 }
 
+func (s *AccountMembersTestSuite) getUsers(token string, accountID uuid.UUID) contractstesting.Response {
+	resp, err := s.Http(s.T()).
+		WithHeader("Authorization", "Bearer "+token).
+		Get("/v1/accounts/" + accountID.String() + "/users")
+	s.Require().NoError(err)
+	return resp
+}
+
 func (s *AccountMembersTestSuite) getAccount(token string, accountID uuid.UUID) contractstesting.Response {
 	resp, err := s.Http(s.T()).
 		WithHeader("Authorization", "Bearer "+token).
@@ -136,6 +144,31 @@ func (s *AccountMembersTestSuite) storedRole(accountID, userID uuid.UUID) (strin
 		Where("account_id = ? AND user_id = ? AND deleted_at IS NULL", accountID, userID).
 		First(&member))
 	return member.Role, member.Status
+}
+
+func (s *AccountMembersTestSuite) TestUsersReadFollowsTheAccountRole() {
+	accountID := s.createAccount()
+	owner := s.loginUser("owner", models.MembershipStatusActive, accountID)
+	admin := s.loginUser("admin", models.MembershipStatusActive, accountID)
+	auditor := s.loginUser("auditor", models.MembershipStatusActive, accountID)
+	user := s.loginUser("user", models.MembershipStatusActive, accountID)
+
+	s.getUsers(owner.token, accountID).AssertOk()
+	s.getUsers(admin.token, accountID).AssertOk()
+	s.getUsers(auditor.token, accountID).AssertOk()
+	s.assertForbidden(s.getUsers(user.token, accountID), "forbidden")
+}
+
+func (s *AccountMembersTestSuite) TestMissingAccountIsNotFoundBeforeUsersRead() {
+	accountID := s.createAccount()
+	user := s.loginUser("user", models.MembershipStatusActive, accountID)
+
+	resp := s.getUsers(user.token, uuid.New())
+	resp.AssertNotFound()
+	content, err := resp.Content()
+	s.Require().NoError(err)
+	s.Contains(content, `"code":"not_found"`)
+	s.NotContains(content, `"message":"forbidden"`)
 }
 
 func (s *AccountMembersTestSuite) TestAdminCannotGrantOwner() {

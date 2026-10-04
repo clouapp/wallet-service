@@ -42,11 +42,17 @@ no active membership. `APIScope` answers 403 when a token that lists
 permissions does not hold the route's permission. A blank permissions store
 keeps the previous access. A blank `ip_cidr` does the same for the allowlist.
 
-There is no `Can(perm)` / `WalletCan(perm)` middleware on this branch. Where a
-permission is already decided, the service asks `app/policies` (`settings.view`,
-`settings.update`, `activity.read`) or the controller asks it (`tokens.read`,
-`tokens.write`, the wallet Gate abilities). A new route still writes its chain
-down before it merges.
+`Can(perm)` is route middleware after `AccountContext` (and `TOTPEnrollment`,
+which already sits on that group). It asks `policies.Can` with the role the
+account middleware stored. The only route that uses it is
+`GET /v1/accounts/{accountId}/users` (`users.read`: owner, admin, auditor).
+A missing permission is 403 `forbidden`. There is no `WalletCan(perm)` on this
+branch: the wallet routes the plan names already refuse through
+`RequireFundAction`, and the code catalog would let `user` withdraw and sweep.
+Where another permission is already decided, the service asks `app/policies`
+(`settings.view`, `settings.update`, `activity.read`) or the controller asks it
+(`tokens.read`, `tokens.write`, the wallet Gate abilities). A new route still
+writes its chain down before it merges.
 
 `GET /v1/wallets/{walletId}` is registered beside `WalletContext`, not inside
 it. The nested group (`/activate`, addresses, users, and the rest) is the one

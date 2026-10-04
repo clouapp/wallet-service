@@ -34,6 +34,7 @@ const (
 const (
 	chainSession       = "SessionAuth"
 	chainAccount       = "SessionAuth > AccountContext > TOTPEnrollment"
+	chainAccountUsers  = chainAccount + " > Can(users.read)"
 	chainHeader        = "SessionAuth > AccountHeader > TOTPEnrollment"
 	chainCreateWallet  = chainHeader + " > RequireFundAction"
 	chainWallet        = "SessionAuth > AccountHeader > TOTPEnrollment > WalletContext"
@@ -106,7 +107,7 @@ var routeTable = map[string]routeSecurity{
 	"GET|HEAD /v1/accounts/{accountId}/tokens":                         session(chainAccount),
 	"POST /v1/accounts/{accountId}/tokens":                             session(chainAccount),
 	"DELETE /v1/accounts/{accountId}/tokens/{tokenId}":                 session(chainAccount),
-	"GET|HEAD /v1/accounts/{accountId}/users":                          session(chainAccount),
+	"GET|HEAD /v1/accounts/{accountId}/users":                          session(chainAccountUsers),
 	"POST /v1/accounts/{accountId}/users":                              session(chainAccount),
 	"PATCH /v1/accounts/{accountId}/users/{userId}":                    session(chainAccount),
 	"DELETE /v1/accounts/{accountId}/users/{userId}":                   session(chainAccount),

@@ -7,6 +7,23 @@ import (
 	"github.com/macrowallets/waas/app/models"
 )
 
+func TestCanUsersReadFailsClosedAndFollowsTheRoleCatalog(t *testing.T) {
+	for _, role := range []string{models.AccountRoleOwner, models.AccountRoleAdmin, models.AccountRoleAuditor, models.RetiredAccountRoleViewer} {
+		if !Can(AccountRoleGrants(role), PermUsersRead) {
+			t.Fatalf("%s must hold users.read", role)
+		}
+	}
+	for _, role := range []string{models.AccountRoleUser, "", "spender", "owner "} {
+		if Can(AccountRoleGrants(role), PermUsersRead) {
+			t.Fatalf("%q must not hold users.read", role)
+		}
+	}
+	owner := AccountRoleGrants(models.AccountRoleOwner)
+	if Can(owner, "") || Can(owner, "users.write") || Can(nil, PermUsersRead) || Can(Grants{}, PermUsersRead) {
+		t.Fatal("empty permission, a permission outside the set, and an empty grant set are false")
+	}
+}
+
 func TestMayGrantDoesNotAllowARoleAboveTheActor(t *testing.T) {
 	if !MayGrant(models.AccountRoleOwner, models.AccountRoleOwner) {
 		t.Fatal("owner may grant owner")

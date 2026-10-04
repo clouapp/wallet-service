@@ -340,11 +340,11 @@ func guardLabel(expr ast.Expr, bindings map[string]string, perms map[string]stri
 		if skippedGuards[selector.Sel.Name] {
 			return "", true
 		}
-		if selector.Sel.Name == "APIScope" {
+		if selector.Sel.Name == "APIScope" || selector.Sel.Name == "Can" || selector.Sel.Name == "WalletCan" {
 			if len(typed.Args) != 1 {
-				return "APIScope(?)", true
+				return selector.Sel.Name + "(?)", true
 			}
-			return "APIScope(" + permissionArg(typed.Args[0], perms) + ")", true
+			return selector.Sel.Name + "(" + permissionArg(typed.Args[0], perms) + ")", true
 		}
 		return selector.Sel.Name, true
 	default:
