@@ -237,6 +237,13 @@ func (s *AccountMembersTestSuite) insertUser(email string) uuid.UUID {
 	return userID
 }
 
+func (s *AccountMembersTestSuite) countActivity(query string, args ...any) int64 {
+	s.T().Helper()
+	var total int64
+	s.Require().NoError(facades.Orm().Query().Raw(query, args...).Scan(&total))
+	return total
+}
+
 func (s *AccountMembersTestSuite) countRows(model any, query string, args ...any) int64 {
 	total, err := facades.Orm().Query().Model(model).Where(query, args...).Count()
 	s.Require().NoError(err)
@@ -311,6 +318,15 @@ func (s *AccountMembersTestSuite) TestCreateInviteAcceptsNewAndExistingEmailsWit
 		s.Require().NoError(err)
 		s.NotContains(string(encoded), invite.TokenHash)
 		s.NotContains(string(encoded), "token")
+
+		s.Equal(int64(1), s.countActivity(
+			`SELECT count(*) FROM activity_log
+			 WHERE subject_type = 'account_invite' AND subject_id = ?
+			   AND event = 'member.invited' AND scope = ? AND causer_type = 'users'
+			   AND properties::text NOT LIKE '%token_hash%'
+			   AND properties::text NOT LIKE '%' || ? || '%'`,
+			inviteID, "account:"+accountID.String(), invite.TokenHash,
+		))
 	}
 
 	listed := s.getInvites(owner.token, accountID)

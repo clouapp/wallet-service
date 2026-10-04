@@ -23,12 +23,14 @@ func NewAccountInviteRepository(query orm.Query) *AccountInviteRepository {
 	return &AccountInviteRepository{Base: db.NewBase(query)}
 }
 
-// Create inserts an invite.
+// Create inserts an invite. The statement keeps the caller's context so a
+// caller-named event (member.invited) is what the audit plugin records. The
+// token hash is on the row and off the allowlist, so the trail never reads it.
 func (r *AccountInviteRepository) Create(ctx context.Context, invite *models.AccountInvite) error {
 	if invite == nil {
 		return fmt.Errorf("create account invite: invite is nil")
 	}
-	if err := r.Query(ctx).Create(invite); err != nil {
+	if err := r.statement(ctx).Create(invite); err != nil {
 		return fmt.Errorf("create account invite: %w", err)
 	}
 	return nil
@@ -79,6 +81,21 @@ func (r *AccountInviteRepository) Rotate(ctx context.Context, id uuid.UUID, toke
 	return nil
 }
 
+// statement rebinds the open transaction to this call's context. Query returns
+// the transaction as it was begun, which does not carry a WithIntent applied
+// afterwards. The plugin reads that context for the caller-named event.
+func (r *AccountInviteRepository) statement(ctx context.Context) orm.Query {
+	query := r.Query(ctx)
+	if ctx == nil {
+		return query
+	}
+	contextual, ok := query.(orm.QueryWithContext)
+	if !ok {
+		return query
+	}
+	return contextual.WithContext(ctx)
+}
+
 const inviteListColumns = "id, account_id, email, role, invited_by, expires_at, accepted_at, revoked_at, created_at, updated_at"
 
 // PaginateByAccountID pages an account's invites. The select list omits
@@ -115,7 +132,7 @@ func (r *AccountInviteRepository) MarkAccepted(ctx context.Context, id uuid.UUID
 	if id == uuid.Nil {
 		return fmt.Errorf("accept account invite: id is required")
 	}
-	if _, err := r.Query(ctx).Model(&models.AccountInvite{}).Where("id = ?", id).Update("accepted_at", acceptedAt); err != nil {
+	if _, err := r.statement(ctx).Model(&models.AccountInvite{}).Where("id = ?", id).Update("accepted_at", acceptedAt); err != nil {
 		return fmt.Errorf("accept account invite: %w", err)
 	}
 	return nil
