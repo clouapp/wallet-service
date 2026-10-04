@@ -2,7 +2,6 @@ package accounts
 
 import (
 	"errors"
-	"os"
 	"strings"
 	"time"
 
@@ -15,42 +14,40 @@ import (
 	"github.com/macrowallets/waas/app/http/pagination"
 	"github.com/macrowallets/waas/app/http/requests"
 	"github.com/macrowallets/waas/app/http/responses"
-	"github.com/macrowallets/waas/app/mails"
 	"github.com/macrowallets/waas/app/models"
 	accountsvc "github.com/macrowallets/waas/app/services/account"
+	"github.com/macrowallets/waas/app/services/credentialmail"
 	usersvc "github.com/macrowallets/waas/app/services/users"
 )
 
 // InvitesController previews and accepts account invites. The raw token stays
 // in the link; handlers never log it.
 type InvitesController struct {
-	accounts *accountsvc.Service
-	users    *usersvc.Service
+	accounts       *accountsvc.Service
+	users          *usersvc.Service
+	credentialMail *credentialmail.Service
 }
 
 // NewInvitesController wires invite preview and accept.
-func NewInvitesController(accounts *accountsvc.Service, users *usersvc.Service) *InvitesController {
+func NewInvitesController(accounts *accountsvc.Service, users *usersvc.Service, credentialMail *credentialmail.Service) *InvitesController {
 	if accounts == nil {
 		panic("dashboard invites controller: account service is required")
 	}
 	if users == nil {
 		panic("dashboard invites controller: user service is required")
 	}
-	return &InvitesController{accounts: accounts, users: users}
+	if credentialMail == nil {
+		panic("dashboard invites controller: credential mail is required")
+	}
+	return &InvitesController{accounts: accounts, users: users, credentialMail: credentialMail}
 }
 
 const frontendURLEnv = "APP_FRONTEND_URL"
 
-var errFrontendURLRequired = errors.New("APP_FRONTEND_URL is required")
-
 // frontendBaseURL is the invite link base. It is only APP_FRONTEND_URL.
 // A missing value is an error: the host is not taken from app.url or a literal.
 func frontendBaseURL() (string, error) {
-	value := strings.TrimSpace(os.Getenv(frontendURLEnv))
-	if value == "" {
-		return "", errFrontendURLRequired
-	}
-	return value, nil
+	return accountsvc.FrontendBase()
 }
 
 func requireFrontendBase(ctx http.Context, clientError string) (string, http.Response) {
@@ -117,7 +114,7 @@ func (ctrl *InvitesController) Create(ctx http.Context) http.Response {
 		}
 		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to create invite"})
 	}
-	sendInviteMail(ctx, ctrl.accounts, account, callerID, issued)
+	dispatchInviteMail(ctx, ctrl.credentialMail, issued.Invite.ID)
 	return responses.Send(ctx, http.StatusAccepted, inviteCreatedView(issued.Invite))
 }
 
@@ -125,7 +122,6 @@ func (ctrl *InvitesController) Create(ctx http.Context) http.Response {
 // answer matches create: 202 and the list view, with no token, hash, or link.
 func (ctrl *InvitesController) Resend(ctx http.Context) http.Response {
 	account := requestctx.MustAccount(ctx)
-	callerID := requestctx.MustUserID(ctx)
 	inviteID, err := requests.RouteUUID(ctx, "id")
 	if err != nil {
 		return responses.Send(ctx, http.StatusBadRequest, http.Json{"error": "invalid invite id"})
@@ -141,7 +137,7 @@ func (ctrl *InvitesController) Resend(ctx http.Context) http.Response {
 		}
 		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to resend invite"})
 	}
-	sendInviteMail(ctx, ctrl.accounts, account, callerID, issued)
+	dispatchInviteMail(ctx, ctrl.credentialMail, issued.Invite.ID)
 	return responses.Send(ctx, http.StatusAccepted, inviteCreatedView(issued.Invite))
 }
 
@@ -171,51 +167,15 @@ func inviteCreatedView(invite *models.AccountInvite) inviteListItem {
 	return inviteListItems([]models.AccountInvite{view})[0]
 }
 
-// sendInviteMail delivers the link through the existing mail. That mail does
-// not queue, so the token is not placed on a queue. A failure is logged
-// without the token, its hash, or the link.
-func sendInviteMail(ctx http.Context, accounts *accountsvc.Service, account *models.Account, callerID uuid.UUID, issued *accountsvc.IssuedInvite) {
-	if accounts == nil || account == nil || issued == nil || issued.Invite == nil {
+// dispatchInviteMail enqueues the invite id and the purpose. The job mints the
+// token. A failure is logged without the token, its hash, or the link.
+func dispatchInviteMail(ctx http.Context, mailer *credentialmail.Service, inviteID uuid.UUID) {
+	if mailer == nil || inviteID == uuid.Nil {
 		return
 	}
-	inviterName := "your team"
-	if inviter, err := accounts.FindUserByID(ctx.Context(), callerID); err == nil && inviter != nil {
-		if inviter.FullName != "" {
-			inviterName = inviter.FullName
-		} else if inviter.Email != "" {
-			inviterName = inviter.Email
-		}
-	}
-	mailErr := appfacades.Mail().To([]string{issued.Invite.Email}).Send(&mails.UserInviteMail{
-		To:          issued.Invite.Email,
-		InvitedBy:   inviterName,
-		AccountName: account.Name,
-		InviteLink:  issued.InviteLink,
-	})
-	if mailErr == nil {
-		return
-	}
-	if inviteSecretInText(mailErr.Error(), issued) {
+	if err := mailer.Dispatch(inviteID, credentialmail.PurposeAccountInvite); err != nil {
 		appfacades.Log().WithContext(ctx).Errorf("account: send invite mail failed")
-		return
 	}
-	appfacades.Log().WithContext(ctx).Errorf("account: send invite mail failed: %v", mailErr)
-}
-
-func inviteSecretInText(text string, issued *accountsvc.IssuedInvite) bool {
-	if issued == nil || text == "" {
-		return false
-	}
-	if issued.RawToken != "" && strings.Contains(text, issued.RawToken) {
-		return true
-	}
-	if issued.InviteLink != "" && strings.Contains(text, issued.InviteLink) {
-		return true
-	}
-	if issued.Invite != nil && issued.Invite.TokenHash != "" && strings.Contains(text, issued.Invite.TokenHash) {
-		return true
-	}
-	return false
 }
 
 // List returns the account's invites for a caller who holds users.read.

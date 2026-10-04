@@ -28,6 +28,7 @@ import (
 	authsvc "github.com/macrowallets/waas/app/services/auth"
 	chainpkg "github.com/macrowallets/waas/app/services/chain"
 	chainsvc "github.com/macrowallets/waas/app/services/chains"
+	"github.com/macrowallets/waas/app/services/credentialmail"
 	"github.com/macrowallets/waas/app/services/currencies"
 	"github.com/macrowallets/waas/app/services/deposit"
 	featuressvc "github.com/macrowallets/waas/app/services/features"
@@ -258,6 +259,7 @@ func newDashboardAuthController() *dashauth.AuthController {
 		container.MustMake[*authsvc.Service](),
 		container.MustMake[*authsvc.TwoFactorLogin](),
 		container.MustMake[*authsvc.SessionRevoker](),
+		container.MustMake[*credentialmail.Service](),
 	)
 }
 
@@ -449,6 +451,7 @@ func newDashboardAccountsController() *dashaccounts.AccountsController {
 		container.MustMake[*authsvc.Service](),
 		container.MustMake[*settingssvc.Service](),
 		container.MustMake[*featuressvc.Service](),
+		container.MustMake[*credentialmail.Service](),
 	)
 }
 
@@ -456,5 +459,6 @@ func newDashboardInvitesController() *dashaccounts.InvitesController {
 	return dashaccounts.NewInvitesController(
 		container.MustMake[*accountsvc.Service](),
 		container.MustMake[*usersvc.Service](),
+		container.MustMake[*credentialmail.Service](),
 	)
 }

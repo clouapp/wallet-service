@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"sort"
-	"time"
 
 	"github.com/google/uuid"
 	"github.com/goravel/framework/contracts/http"
@@ -19,6 +18,7 @@ import (
 	"github.com/macrowallets/waas/app/policies"
 	accountsvc "github.com/macrowallets/waas/app/services/account"
 	authsvc "github.com/macrowallets/waas/app/services/auth"
+	"github.com/macrowallets/waas/app/services/credentialmail"
 	"github.com/macrowallets/waas/app/services/sessions"
 	usersvc "github.com/macrowallets/waas/app/services/users"
 )
@@ -35,6 +35,7 @@ type AuthController struct {
 	passwords      *authsvc.Service
 	twoFactor      *authsvc.TwoFactorLogin
 	revoker        *authsvc.SessionRevoker
+	credentialMail *credentialmail.Service
 }
 
 // NewAuthController wires the dashboard auth handlers. Every dependency is a
@@ -47,6 +48,7 @@ func NewAuthController(
 	passwords *authsvc.Service,
 	twoFactor *authsvc.TwoFactorLogin,
 	revoker *authsvc.SessionRevoker,
+	credentialMail *credentialmail.Service,
 ) *AuthController {
 	if users == nil {
 		panic("dashboard auth controller: users service is required")
@@ -69,6 +71,9 @@ func NewAuthController(
 	if revoker == nil {
 		panic("dashboard auth controller: session revoker is required")
 	}
+	if credentialMail == nil {
+		panic("dashboard auth controller: credential mail is required")
+	}
 	return &AuthController{
 		users:          users,
 		accounts:       accounts,
@@ -77,6 +82,7 @@ func NewAuthController(
 		passwords:      passwords,
 		twoFactor:      twoFactor,
 		revoker:        revoker,
+		credentialMail: credentialMail,
 	}
 }
 
@@ -406,25 +412,8 @@ func (ctrl *AuthController) ForgotPassword(ctx http.Context) http.Response {
 	}
 	user := *userPtr
 
-	raw, genErr := ctrl.passwords.GenerateRandomToken()
-	if genErr != nil {
-		appfacades.Log().WithContext(ctx).Errorf("auth: generate reset token: %v", genErr)
-		return responses.Send(ctx, http.StatusOK, http.Json{"message": "if that address is registered, you will receive a reset link"})
-	}
-	hash := ctrl.passwords.HashToken(raw)
-	prt := &models.PasswordResetToken{
-		ID:        uuid.New(),
-		UserID:    user.ID,
-		TokenHash: hash,
-		ExpiresAt: time.Now().Add(1 * time.Hour),
-	}
-	if err := ctrl.passwordResets.Create(ctx.Context(), prt); err != nil {
-		appfacades.Log().WithContext(ctx).Errorf("auth: store password reset token: %v", err)
-	}
-
-	resetLink := "https://vault.app/reset-password?token=" + raw
-	if err := appfacades.Mail().To([]string{user.Email}).Send(&mails.PasswordResetMail{To: user.Email, ResetLink: resetLink}); err != nil {
-		appfacades.Log().WithContext(ctx).Errorf("auth: send password reset mail: %v", err)
+	if err := ctrl.credentialMail.Dispatch(user.ID, credentialmail.PurposePasswordReset); err != nil {
+		appfacades.Log().WithContext(ctx).Errorf("auth: send password reset mail failed")
 	}
 
 	return responses.Send(ctx, http.StatusOK, http.Json{"message": "if that address is registered, you will receive a reset link"})

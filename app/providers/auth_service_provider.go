@@ -10,6 +10,7 @@ import (
 
 	"github.com/macrowallets/waas/app/container"
 	"github.com/macrowallets/waas/app/http/middleware/requestctx"
+	"github.com/macrowallets/waas/app/jobs"
 	"github.com/macrowallets/waas/app/policies"
 	"github.com/macrowallets/waas/app/repositories"
 	accountsvc "github.com/macrowallets/waas/app/services/account"
@@ -143,4 +144,14 @@ func withWalletMembership(ctx context.Context, arguments map[string]any) map[str
 	out["wallet_role"] = walletRole
 	out["account_role"] = accountRole
 	return out
+}
+
+// dispatchCredentialMail runs the credential job now. The payload is the
+// subject id and the purpose. DispatchSync does not store that payload.
+func dispatchCredentialMail(subjectID uuid.UUID, purpose string) error {
+	args, err := jobs.CredentialMailArgs(subjectID, purpose)
+	if err != nil {
+		return err
+	}
+	return facades.Queue().Job(&jobs.SendCredentialMailJob{}, args).DispatchSync()
 }

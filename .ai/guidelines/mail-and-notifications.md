@@ -1,7 +1,10 @@
 # Mail & Notifications Guideline
 
-> Status: TARGET. Today three mailables build HTML with `fmt.Sprintf` and are
-> sent synchronously from controllers; `Queue()` returns nil. Migration: §3.10.
+> Status: DECIDED (B2.5). `facades.Mail().Queue()` refuses. A reset or invite
+> mail is `jobs.SendCredentialMailJob` with `(subject_id, purpose)` only. The
+> job mints the token and calls `Mail().Send()`. The add-user response still
+> returns `invite_link`, so that handler calls the same send in process and
+> does not enqueue the link. Welcome and the settings test mail stay on `Send`.
 
 ## The mailables
 

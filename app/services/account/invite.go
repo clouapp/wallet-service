@@ -6,10 +6,25 @@ import (
 	"encoding/hex"
 	"errors"
 	"net/url"
+	"os"
 	"strings"
 )
 
-var ErrInviteTokenRequired = errors.New("invite token is required")
+const frontendURLEnv = "APP_FRONTEND_URL"
+
+var (
+	ErrInviteTokenRequired = errors.New("invite token is required")
+	ErrFrontendURLRequired = errors.New("APP_FRONTEND_URL is required")
+)
+
+// FrontendBase is the invite link base. It is only APP_FRONTEND_URL.
+func FrontendBase() (string, error) {
+	value := strings.TrimSpace(os.Getenv(frontendURLEnv))
+	if value == "" {
+		return "", ErrFrontendURLRequired
+	}
+	return value, nil
+}
 
 // InviteLink builds the accept URL. The raw token is a query parameter on the
 // caller's frontend, never the hard-coded vault.app placeholder.

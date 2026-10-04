@@ -15,11 +15,11 @@ import (
 	"github.com/macrowallets/waas/app/http/pagination"
 	"github.com/macrowallets/waas/app/http/requests"
 	"github.com/macrowallets/waas/app/http/responses"
-	mails "github.com/macrowallets/waas/app/mails"
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/policies"
 	accountsvc "github.com/macrowallets/waas/app/services/account"
 	authsvc "github.com/macrowallets/waas/app/services/auth"
+	"github.com/macrowallets/waas/app/services/credentialmail"
 	featuressvc "github.com/macrowallets/waas/app/services/features"
 	"github.com/macrowallets/waas/app/services/settings"
 	"github.com/macrowallets/waas/app/services/withdraw"
@@ -34,6 +34,7 @@ type AccountsController struct {
 	passwords      *authsvc.Service
 	limits         *settings.Service
 	features       *featuressvc.Service
+	credentialMail *credentialmail.Service
 }
 
 // NewAccountsController wires the dashboard account handlers. Persistence goes
@@ -45,6 +46,7 @@ func NewAccountsController(
 	passwords *authsvc.Service,
 	limits *settings.Service,
 	features *featuressvc.Service,
+	credentialMail *credentialmail.Service,
 ) *AccountsController {
 	if accountService == nil {
 		panic("dashboard accounts controller: account service is required")
@@ -58,11 +60,15 @@ func NewAccountsController(
 	if features == nil {
 		panic("dashboard accounts controller: features service is required")
 	}
+	if credentialMail == nil {
+		panic("dashboard accounts controller: credential mail is required")
+	}
 	return &AccountsController{
 		accountService: accountService,
 		passwords:      passwords,
 		limits:         limits,
 		features:       features,
+		credentialMail: credentialMail,
 	}
 }
 
@@ -291,28 +297,19 @@ func (ctrl *AccountsController) AddAccountUser(ctx http.Context) http.Response {
 			}
 			return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to create invite"})
 		}
-		inviterName := "your team"
-		if inviter, inviterErr := ctrl.accountService.FindUserByID(ctx.Context(), callerID); inviterErr == nil && inviter != nil {
-			if inviter.FullName != "" {
-				inviterName = inviter.FullName
-			} else if inviter.Email != "" {
-				inviterName = inviter.Email
-			}
+		link, mailErr := ctrl.credentialMail.SendAccountInvite(ctx.Context(), issued.Invite.ID)
+		if mailErr != nil {
+			appfacades.Log().WithContext(ctx).Errorf("account: send invite mail failed")
 		}
-		if mailErr := appfacades.Mail().To([]string{issued.Invite.Email}).Send(&mails.UserInviteMail{
-			To:          issued.Invite.Email,
-			InvitedBy:   inviterName,
-			AccountName: account.Name,
-			InviteLink:  issued.InviteLink,
-		}); mailErr != nil {
-			appfacades.Log().WithContext(ctx).Errorf("account: send invite mail: %v", mailErr)
+		if link == "" {
+			link = issued.InviteLink
 		}
 		return responses.Send(ctx, http.StatusAccepted, http.Json{
 			"invite_id":   issued.Invite.ID,
 			"email":       issued.Invite.Email,
 			"role":        issued.Invite.Role,
 			"expires_at":  issued.Invite.ExpiresAt,
-			"invite_link": issued.InviteLink,
+			"invite_link": link,
 		})
 	}
 

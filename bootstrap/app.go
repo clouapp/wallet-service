@@ -36,6 +36,7 @@ func Boot() contractsfoundation.Application {
 				jobs.NewRefreshWalletTokens(balances),
 				&jobs.RefreshWalletUTXOs{},
 				jobs.NewReconcileWalletState(balances),
+				&jobs.SendCredentialMailJob{},
 			}
 		}).
 		WithCommands(func() []console.Command {
