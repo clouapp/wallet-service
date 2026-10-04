@@ -32,26 +32,27 @@ const (
 // Repeated guard chains. Cors and CacheControl are not guards. The ingest
 // signature is checked in the handler, so that route's chain is empty.
 const (
-	chainSession         = "SessionAuth"
-	chainAccount         = "SessionAuth > AccountContext > TOTPEnrollment"
-	chainAccountUsers    = chainAccount + " > Can(users.read)"
-	chainHeader          = "SessionAuth > AccountHeader > TOTPEnrollment"
-	chainCreateWallet    = chainHeader + " > RequireFundAction"
-	chainWallet          = "SessionAuth > AccountHeader > TOTPEnrollment > WalletContext"
-	chainMoveFunds       = chainWallet + " > RequireFundAction"
-	chainGenerateAddress = chainWallet + " > WalletCan(addresses.create)"
-	chainUnspent         = "SessionAuth > AccountHeader > TOTPEnrollment > WalletContext > UTXOOnly"
-	chainAPI             = "APITokenAuth"
-	chainAPIWallet       = "APITokenAuth > APIWalletContext"
-	chainWalletsRead     = "APITokenAuth > APIScope(wallets.read)"
-	chainWalletsCreate   = "APITokenAuth > APIScope(wallets.create)"
-	chainWalletRead      = "APITokenAuth > APIWalletContext > APIScope(wallets.read)"
-	chainAddresses       = "APITokenAuth > APIWalletContext > APIScope(addresses.create)"
-	chainSweep           = "APITokenAuth > APIWalletContext > APIScope(sweep.execute)"
-	chainWithdrawals     = "APITokenAuth > APIWalletContext > APIScope(withdrawals.create)"
-	chainTransactions    = "APITokenAuth > APIScope(transactions.read)"
-	chainWebhooksRead    = "APITokenAuth > APIScope(webhooks.read)"
-	chainWebhooksWrite   = "APITokenAuth > APIScope(webhooks.write)"
+	chainSession           = "SessionAuth"
+	chainAccount           = "SessionAuth > AccountContext > TOTPEnrollment"
+	chainAccountUsers      = chainAccount + " > Can(users.read)"
+	chainAccountUsersWrite = chainAccount + " > Can(users.write)"
+	chainHeader            = "SessionAuth > AccountHeader > TOTPEnrollment"
+	chainCreateWallet      = chainHeader + " > RequireFundAction"
+	chainWallet            = "SessionAuth > AccountHeader > TOTPEnrollment > WalletContext"
+	chainMoveFunds         = chainWallet + " > RequireFundAction"
+	chainGenerateAddress   = chainWallet + " > WalletCan(addresses.create)"
+	chainUnspent           = "SessionAuth > AccountHeader > TOTPEnrollment > WalletContext > UTXOOnly"
+	chainAPI               = "APITokenAuth"
+	chainAPIWallet         = "APITokenAuth > APIWalletContext"
+	chainWalletsRead       = "APITokenAuth > APIScope(wallets.read)"
+	chainWalletsCreate     = "APITokenAuth > APIScope(wallets.create)"
+	chainWalletRead        = "APITokenAuth > APIWalletContext > APIScope(wallets.read)"
+	chainAddresses         = "APITokenAuth > APIWalletContext > APIScope(addresses.create)"
+	chainSweep             = "APITokenAuth > APIWalletContext > APIScope(sweep.execute)"
+	chainWithdrawals       = "APITokenAuth > APIWalletContext > APIScope(withdrawals.create)"
+	chainTransactions      = "APITokenAuth > APIScope(transactions.read)"
+	chainWebhooksRead      = "APITokenAuth > APIScope(webhooks.read)"
+	chainWebhooksWrite     = "APITokenAuth > APIScope(webhooks.write)"
 )
 
 // routeSecurity is one row of the closed table: who may call the route, and
@@ -113,6 +114,7 @@ var routeTable = map[string]routeSecurity{
 	"PATCH /v1/accounts/{accountId}/users/{userId}":                    session(chainAccount),
 	"DELETE /v1/accounts/{accountId}/users/{userId}":                   session(chainAccount),
 	"GET|HEAD /v1/accounts/{accountId}/invites":                        session(chainAccountUsers),
+	"POST /v1/accounts/{accountId}/invites":                            session(chainAccountUsersWrite),
 	"GET|HEAD /v1/accounts/{accountId}/settings":                       session(chainAccount),
 	"POST /v1/accounts/{accountId}/settings/sections/{section}/cache":  session(chainAccount),
 	"POST /v1/accounts/{accountId}/settings/sections/{section}/reset":  session(chainAccount),

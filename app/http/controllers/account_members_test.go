@@ -3,6 +3,7 @@ package controllers_test
 import (
 	"encoding/json"
 	"fmt"
+	"sort"
 	"strings"
 	"testing"
 
@@ -212,6 +213,156 @@ func (s *AccountMembersTestSuite) TestMissingAccountIsNotFoundBeforeInviteList()
 	s.Require().NoError(err)
 	s.Contains(content, `"code":"not_found"`)
 	s.NotContains(content, `"message":"forbidden"`)
+}
+
+func (s *AccountMembersTestSuite) postInvite(token string, accountID uuid.UUID, body string) contractstesting.Response {
+	resp, err := s.Http(s.T()).
+		WithHeader("Authorization", "Bearer "+token).
+		WithHeader("Content-Type", "application/json").
+		Post("/v1/accounts/"+accountID.String()+"/invites", strings.NewReader(body))
+	s.Require().NoError(err)
+	return resp
+}
+
+func (s *AccountMembersTestSuite) insertUser(email string) uuid.UUID {
+	userID := uuid.New()
+	hash, err := authsvc.NewService().HashPassword(membersTestPassword)
+	s.Require().NoError(err)
+	_, err = facades.Orm().Query().Exec(
+		`INSERT INTO users (id, email, password_hash, status, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, NOW(), NOW())`,
+		userID, email, hash, "active",
+	)
+	s.Require().NoError(err)
+	return userID
+}
+
+func (s *AccountMembersTestSuite) countRows(model any, query string, args ...any) int64 {
+	total, err := facades.Orm().Query().Model(model).Where(query, args...).Count()
+	s.Require().NoError(err)
+	return total
+}
+
+func (s *AccountMembersTestSuite) assertInviteAccepted(resp contractstesting.Response, email, role string) (string, string) {
+	resp.AssertStatus(202)
+	content, err := resp.Content()
+	s.Require().NoError(err)
+	var body map[string]any
+	s.Require().NoError(json.Unmarshal([]byte(content), &body))
+	s.Equal(email, body["email"])
+	s.Equal(role, body["role"])
+	for _, key := range []string{"token", "token_hash", "invite_link", "raw_token", "exists", "user_exists", "password", "password_hash"} {
+		_, present := body[key]
+		s.False(present, key)
+	}
+	lowered := strings.ToLower(content)
+	s.NotContains(lowered, "token")
+	s.NotContains(lowered, "invite_link")
+	s.NotContains(lowered, "exists")
+	id, _ := body["id"].(string)
+	s.NotEmpty(id)
+	return content, id
+}
+
+func objectKeys(content string) []string {
+	var body map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(content), &body); err != nil {
+		return nil
+	}
+	keys := make([]string, 0, len(body))
+	for key := range body {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	return keys
+}
+
+func (s *AccountMembersTestSuite) TestCreateInviteAcceptsNewAndExistingEmailsWithoutAToken() {
+	accountID := s.createAccount()
+	owner := s.loginUser("owner", models.MembershipStatusActive, accountID)
+	admin := s.loginUser("admin", models.MembershipStatusActive, accountID)
+	const existingEmail = "invite-existing@example.com"
+	const newEmail = "invite-new@example.com"
+	existingID := s.insertUser(existingEmail)
+
+	existingResp := s.postInvite(admin.token, accountID, `{"email":"invite-existing@example.com","role":"admin"}`)
+	existingBody, existingInviteID := s.assertInviteAccepted(existingResp, existingEmail, "admin")
+	newResp := s.postInvite(owner.token, accountID, `{"email":"invite-new@example.com","role":"user"}`)
+	newBody, newInviteID := s.assertInviteAccepted(newResp, newEmail, "user")
+	s.Equal(objectKeys(existingBody), objectKeys(newBody))
+
+	s.Equal(int64(0), s.countRows(&models.AccountUser{}, "account_id = ? AND user_id = ?", accountID, existingID))
+	s.Equal(int64(0), s.countRows(&models.User{}, "email = ?", newEmail))
+	s.Equal(int64(1), s.countRows(&models.User{}, "email = ?", existingEmail))
+
+	for _, inviteID := range []string{existingInviteID, newInviteID} {
+		var invite models.AccountInvite
+		s.Require().NoError(facades.Orm().Query().Where("id = ?", inviteID).First(&invite))
+		s.NotEmpty(invite.TokenHash)
+		s.NotContains(existingBody, invite.TokenHash)
+		s.NotContains(newBody, invite.TokenHash)
+		var activity models.AccountActivity
+		s.Require().NoError(facades.Orm().Query().
+			Where("account_id = ? AND action = ? AND target_id = ?", accountID, "member.invited", inviteID).
+			First(&activity))
+		s.Len(activity.Metadata, 1)
+		s.Equal(invite.Role, activity.Metadata["role"])
+		encoded, err := json.Marshal(activity.Metadata)
+		s.Require().NoError(err)
+		s.NotContains(string(encoded), invite.TokenHash)
+		s.NotContains(string(encoded), "token")
+	}
+
+	listed := s.getInvites(owner.token, accountID)
+	listed.AssertOk()
+	listedBody, err := listed.Content()
+	s.Require().NoError(err)
+	s.Contains(listedBody, existingEmail)
+	s.Contains(listedBody, newEmail)
+	s.NotContains(listedBody, "token")
+	s.NotContains(listedBody, "invite_link")
+}
+
+func (s *AccountMembersTestSuite) TestCreateInviteRefusesAuditorAndUser() {
+	accountID := s.createAccount()
+	auditor := s.loginUser("auditor", models.MembershipStatusActive, accountID)
+	user := s.loginUser("user", models.MembershipStatusActive, accountID)
+	body := `{"email":"refused@example.com","role":"user"}`
+
+	s.assertForbidden(s.postInvite(auditor.token, accountID, body), "forbidden")
+	s.assertForbidden(s.postInvite(user.token, accountID, body), "forbidden")
+	s.Equal(int64(0), s.countRows(&models.AccountInvite{}, "account_id = ? AND email = ?", accountID, "refused@example.com"))
+}
+
+func (s *AccountMembersTestSuite) TestCreateInviteRefusesARoleAboveTheCaller() {
+	accountID := s.createAccount()
+	admin := s.loginUser("admin", models.MembershipStatusActive, accountID)
+	s.loginUser("owner", models.MembershipStatusActive, accountID)
+
+	resp := s.postInvite(admin.token, accountID, `{"email":"would-be-owner@example.com","role":"owner"}`)
+	s.assertForbidden(resp, "cannot grant a role above your own")
+	s.Equal(int64(0), s.countRows(&models.AccountInvite{}, "account_id = ? AND email = ?", accountID, "would-be-owner@example.com"))
+}
+
+func (s *AccountMembersTestSuite) TestMissingAccountIsNotFoundBeforeInviteCreate() {
+	accountID := s.createAccount()
+	user := s.loginUser("user", models.MembershipStatusActive, accountID)
+
+	resp := s.postInvite(user.token, uuid.New(), `{"email":"missing@example.com","role":"user"}`)
+	resp.AssertNotFound()
+	content, err := resp.Content()
+	s.Require().NoError(err)
+	s.Contains(content, `"code":"not_found"`)
+	s.NotContains(content, `"message":"forbidden"`)
+}
+
+func (s *AccountMembersTestSuite) TestCreateInviteRejectsInvalidEmailAndRole() {
+	accountID := s.createAccount()
+	owner := s.loginUser("owner", models.MembershipStatusActive, accountID)
+
+	s.assertFieldError(s.postInvite(owner.token, accountID, `{"email":"not-an-email","role":"user"}`), "email")
+	s.assertFieldError(s.postInvite(owner.token, accountID, `{"email":"valid@example.com","role":"viewer"}`), "role")
+	s.Equal(int64(0), s.countRows(&models.AccountInvite{}, "account_id = ?", accountID))
 }
 
 func (s *AccountMembersTestSuite) TestMissingAccountIsNotFoundBeforeUsersRead() {

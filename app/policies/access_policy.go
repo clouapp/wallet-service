@@ -12,6 +12,10 @@ import (
 // The user role does not: the S3.4.2 catalog gives that role no users grant.
 const PermUsersRead = "users.read"
 
+// PermUsersWrite is creating an account invite. Owner and admin hold it.
+// Auditor and user do not.
+const PermUsersWrite = "users.write"
+
 // Grants is the permission set for one request. Nil and empty fail closed.
 // This branch keeps the set in code. There is no account_role_permissions row.
 type Grants map[string]struct{}
@@ -26,16 +30,18 @@ func Can(grants Grants, perm string) bool {
 	return ok
 }
 
-// AccountRoleGrants is the code catalog Can reads. The set records users.read
-// for owner, admin and auditor. Other permissions stay on their existing
-// policy functions. The retired viewer label uses the auditor set. Any other
-// role, including user, gets an empty set.
+// AccountRoleGrants is the code catalog Can reads. Owner and admin hold
+// users.read and users.write. Auditor holds users.read. Other permissions
+// stay on their existing policy functions. The retired viewer label uses the
+// auditor set. Any other role, including user, gets an empty set.
 func AccountRoleGrants(role string) Grants {
 	if role == models.RetiredAccountRoleViewer {
 		role = roleAuditor
 	}
 	switch role {
-	case roleOwner, roleAdmin, roleAuditor:
+	case roleOwner, roleAdmin:
+		return Grants{PermUsersRead: {}, PermUsersWrite: {}}
+	case roleAuditor:
 		return Grants{PermUsersRead: {}}
 	default:
 		return nil

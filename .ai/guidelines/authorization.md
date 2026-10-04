@@ -47,7 +47,11 @@ which already sits on that group). It asks `policies.Can` with the role the
 account middleware stored. The routes that use it are
 `GET /v1/accounts/{accountId}/users` and
 `GET /v1/accounts/{accountId}/invites`
-(`users.read`: owner, admin, auditor).
+(`users.read`: owner, admin, auditor), and
+`POST /v1/accounts/{accountId}/invites`
+(`users.write`: owner and admin). Auditor and user do not hold `users.write`.
+The invite role is an argument, so `MayGrant` stays in `app/policies` and the
+service asks it after the body is valid. A role above the caller is 403.
 A missing permission is 403 `forbidden`. There is no `WalletCan(perm)` on this
 branch: the wallet routes the plan names already refuse through
 `RequireFundAction`, and the code catalog would let `user` withdraw and sweep.

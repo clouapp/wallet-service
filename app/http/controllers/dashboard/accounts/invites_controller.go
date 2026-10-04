@@ -15,6 +15,7 @@ import (
 	"github.com/macrowallets/waas/app/http/pagination"
 	"github.com/macrowallets/waas/app/http/requests"
 	"github.com/macrowallets/waas/app/http/responses"
+	"github.com/macrowallets/waas/app/mails"
 	"github.com/macrowallets/waas/app/models"
 	accountsvc "github.com/macrowallets/waas/app/services/account"
 	usersvc "github.com/macrowallets/waas/app/services/users"
@@ -79,6 +80,84 @@ func inviteListItems(invites []models.AccountInvite) []inviteListItem {
 		})
 	}
 	return items
+}
+
+// Create stores an invite and answers 202. A user that already has this email
+// gets the same answer and the same fields. The body is the list view: no
+// token, hash, or link, and nothing that says whether the email has an account.
+// users.write is the route middleware. MayGrant stays in the account service.
+func (ctrl *InvitesController) Create(ctx http.Context) http.Response {
+	account := requestctx.MustAccount(ctx)
+	callerID := requestctx.MustUserID(ctx)
+	var req requests.AddAccountUserRequest
+	if errResp := validateRequest(ctx, &req); errResp != nil {
+		return errResp
+	}
+	issued, err := ctrl.accounts.IssueInvite(ctx.Context(), account.ID, req.Email, req.Role, callerID, frontendBaseURL())
+	if err != nil {
+		if errors.Is(err, accountsvc.ErrGrantRole) {
+			return responses.Send(ctx, http.StatusForbidden, http.Json{"error": err.Error()})
+		}
+		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to create invite"})
+	}
+	sendInviteMail(ctx, ctrl.accounts, account, callerID, issued)
+	return responses.Send(ctx, http.StatusAccepted, inviteCreatedView(issued.Invite))
+}
+
+func inviteCreatedView(invite *models.AccountInvite) inviteListItem {
+	if invite == nil {
+		return inviteListItem{}
+	}
+	view := *invite
+	view.TokenHash = ""
+	return inviteListItems([]models.AccountInvite{view})[0]
+}
+
+// sendInviteMail delivers the link through the existing mail. That mail does
+// not queue, so the token is not placed on a queue. A failure is logged
+// without the token, its hash, or the link.
+func sendInviteMail(ctx http.Context, accounts *accountsvc.Service, account *models.Account, callerID uuid.UUID, issued *accountsvc.IssuedInvite) {
+	if accounts == nil || account == nil || issued == nil || issued.Invite == nil {
+		return
+	}
+	inviterName := "your team"
+	if inviter, err := accounts.FindUserByID(ctx.Context(), callerID); err == nil && inviter != nil {
+		if inviter.FullName != "" {
+			inviterName = inviter.FullName
+		} else if inviter.Email != "" {
+			inviterName = inviter.Email
+		}
+	}
+	mailErr := appfacades.Mail().To([]string{issued.Invite.Email}).Send(&mails.UserInviteMail{
+		To:          issued.Invite.Email,
+		InvitedBy:   inviterName,
+		AccountName: account.Name,
+		InviteLink:  issued.InviteLink,
+	})
+	if mailErr == nil {
+		return
+	}
+	if inviteSecretInText(mailErr.Error(), issued) {
+		appfacades.Log().WithContext(ctx).Errorf("account: send invite mail failed")
+		return
+	}
+	appfacades.Log().WithContext(ctx).Errorf("account: send invite mail failed: %v", mailErr)
+}
+
+func inviteSecretInText(text string, issued *accountsvc.IssuedInvite) bool {
+	if issued == nil || text == "" {
+		return false
+	}
+	if issued.RawToken != "" && strings.Contains(text, issued.RawToken) {
+		return true
+	}
+	if issued.InviteLink != "" && strings.Contains(text, issued.InviteLink) {
+		return true
+	}
+	if issued.Invite != nil && issued.Invite.TokenHash != "" && strings.Contains(text, issued.Invite.TokenHash) {
+		return true
+	}
+	return false
 }
 
 // List returns the account's invites for a caller who holds users.read.

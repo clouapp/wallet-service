@@ -19,8 +19,24 @@ func TestCanUsersReadFailsClosedAndFollowsTheRoleCatalog(t *testing.T) {
 		}
 	}
 	owner := AccountRoleGrants(models.AccountRoleOwner)
-	if Can(owner, "") || Can(owner, "users.write") || Can(nil, PermUsersRead) || Can(Grants{}, PermUsersRead) {
+	if Can(owner, "") || Can(owner, "users.delete") || Can(nil, PermUsersRead) || Can(Grants{}, PermUsersRead) {
 		t.Fatal("empty permission, a permission outside the set, and an empty grant set are false")
+	}
+}
+
+func TestCanUsersWriteIsOwnerAndAdmin(t *testing.T) {
+	for _, role := range []string{models.AccountRoleOwner, models.AccountRoleAdmin} {
+		if !Can(AccountRoleGrants(role), PermUsersWrite) {
+			t.Fatalf("%s must hold users.write", role)
+		}
+		if !Can(AccountRoleGrants(role), PermUsersRead) {
+			t.Fatalf("%s must still hold users.read", role)
+		}
+	}
+	for _, role := range []string{models.AccountRoleAuditor, models.RetiredAccountRoleViewer, models.AccountRoleUser, "", "spender", "owner "} {
+		if Can(AccountRoleGrants(role), PermUsersWrite) {
+			t.Fatalf("%q must not hold users.write", role)
+		}
 	}
 }
 
@@ -36,7 +52,7 @@ func TestWalletGrantsAddressCreateAndRefusesFundMovement(t *testing.T) {
 		}
 	}
 	user := WalletGrants(models.AccountRoleUser)
-	for _, permission := range []string{PermWithdrawalsCreate, PermSweepExecute, PermWalletsCreate, PermUsersRead, ""} {
+	for _, permission := range []string{PermWithdrawalsCreate, PermSweepExecute, PermWalletsCreate, PermUsersRead, PermUsersWrite, ""} {
 		if Can(user, permission) {
 			t.Fatalf("user wallet grants must not hold %q", permission)
 		}
