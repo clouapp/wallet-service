@@ -145,6 +145,86 @@ func TestSavePlatformWebhookProviders_RejectsTheWrongSecretAndANonBoolean(t *tes
 	}
 }
 
+func TestSavePlatformProviders_RefusesEnabledWithoutAKey(t *testing.T) {
+	t.Parallel()
+
+	providers := []struct {
+		group     string
+		secretKey string
+	}{
+		{group: groupProviderAlchemy, secretKey: keyProviderAuthToken},
+		{group: groupProviderHelius, secretKey: keyProviderAPIKey},
+		{group: groupProviderQuickNode, secretKey: keyProviderAPIKey},
+		{group: groupProviderEtherscan, secretKey: keyProviderAPIKey},
+	}
+	for _, provider := range providers {
+		store := newMemoryStore()
+		activity := &recordingActivity{}
+		actor := uuid.New()
+		service := NewService(store, prefixSealer{}, &memoryCache{}, activity).
+			WithPlatformAdmins(allowPlatformAdmins{ids: map[uuid.UUID]bool{actor: true}})
+		ctx := context.Background()
+
+		_, err := service.SavePlatform(ctx, actor, provider.group, map[string]any{
+			keyProviderEnabled: true,
+		})
+		assertProviderKeyRequired(t, err, provider.secretKey)
+		if _, stored := store.rows[platformStoreKey(provider.group)]; stored {
+			t.Fatal("enabling a provider without a key was stored")
+		}
+
+		blank := map[string]any{keyProviderEnabled: true}
+		blank[provider.secretKey] = "   "
+		_, err = service.SavePlatform(ctx, actor, provider.group, blank)
+		assertProviderKeyRequired(t, err, provider.secretKey)
+		if _, stored := store.rows[platformStoreKey(provider.group)]; stored {
+			t.Fatal("enabling a provider with a blank key was stored")
+		}
+		if len(activity.rows) != 0 {
+			t.Fatal("a refused provider write was recorded")
+		}
+
+		if _, err := service.SavePlatform(ctx, actor, provider.group, map[string]any{
+			keyProviderEnabled: false,
+		}); err != nil {
+			t.Fatalf("disable without a key: %v", err)
+		}
+		if store.rows[platformStoreKey(provider.group)][keyProviderEnabled] != "false" {
+			t.Fatal("a disabled provider was not stored")
+		}
+		if _, present := store.rows[platformStoreKey(provider.group)][provider.secretKey]; present {
+			t.Fatal("a disabled provider stored a key")
+		}
+
+		withKey := map[string]any{keyProviderEnabled: false}
+		withKey[provider.secretKey] = "provider-presence-key-fixture"
+		if _, err := service.SavePlatform(ctx, actor, provider.group, withKey); err != nil {
+			t.Fatalf("store a key while disabled: %v", err)
+		}
+		sealed := store.rows[platformStoreKey(provider.group)][provider.secretKey]
+		if sealed == "" || !IsSealed(sealed) {
+			t.Fatal("the key was not sealed while the provider stayed disabled")
+		}
+		if _, err := service.SavePlatform(ctx, actor, provider.group, map[string]any{
+			keyProviderEnabled: true,
+		}); err != nil {
+			t.Fatalf("enable with a stored key: %v", err)
+		}
+		row := store.rows[platformStoreKey(provider.group)]
+		if row[keyProviderEnabled] != "true" || row[provider.secretKey] != sealed {
+			t.Fatal("enabling did not keep the stored key")
+		}
+	}
+}
+
+func assertProviderKeyRequired(t *testing.T, err error, secretKey string) {
+	t.Helper()
+	validation, ok := err.(*ValidationError)
+	if !ok || len(validation.Fields[secretKey]) == 0 || validation.Fields[secretKey][0] != providerKeyRequiredWhenEnabled {
+		t.Fatalf("enabled without a key = %v", err)
+	}
+}
+
 func TestSavePlatformWebhookProviders_ForbidsANonAdmin(t *testing.T) {
 	t.Parallel()
 

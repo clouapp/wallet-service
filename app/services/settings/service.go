@@ -590,6 +590,9 @@ func (s *Service) collectWrites(group Group, stored map[string]string, body map[
 	if incomplete := incompleteCredentialGroups(group, stored, writes); !incomplete.empty() {
 		return nil, incomplete
 	}
+	if missing := enabledProviderWithoutKey(group, stored, writes); !missing.empty() {
+		return nil, missing
+	}
 	if group.Validate != nil {
 		if validateErr := group.Validate(effectiveNonSecrets(group.Settings, stored, writes)); validateErr != nil {
 			return nil, validateErr

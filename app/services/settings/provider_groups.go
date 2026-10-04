@@ -1,6 +1,10 @@
 package settings
 
-import "github.com/macrowallets/waas/app/policies"
+import (
+	"strings"
+
+	"github.com/macrowallets/waas/app/policies"
+)
 
 const (
 	sectionProviders = "providers"
@@ -11,6 +15,8 @@ const (
 	keyProviderEnabled   = "enabled"
 	keyProviderAPIKey    = "api_key"
 	keyProviderAuthToken = "auth_token"
+
+	providerKeyRequiredWhenEnabled = "must be set when enabled"
 )
 
 // S1.4.4 row: ALCHEMY_AUTH_TOKEN, HELIUS_API_KEY, QUICKNODE_API_KEY
@@ -112,4 +118,39 @@ func providerEtherscanGroup() Group {
 			},
 		},
 	}
+}
+
+// enabledProviderWithoutKey applies the S1.4.8 provider_* rule. Enabling a
+// group requires its secret to be present, either already stored or in this
+// write. A blank secret is omitted from writes, so it does not count. A
+// disabled group may omit the key. The check uses the same presence test as
+// CredentialGroups, because the group validator never sees a secret.
+func enabledProviderWithoutKey(group Group, stored, writes map[string]string) *ValidationError {
+	invalid := &ValidationError{}
+	if !strings.HasPrefix(group.Name, "provider_") {
+		return invalid
+	}
+	if settingValue(stored, writes, keyProviderEnabled, "false") != "true" {
+		return invalid
+	}
+	for _, definition := range group.Settings {
+		if !definition.Secret {
+			continue
+		}
+		if credentialKeyPresent(stored, writes, definition.Key) {
+			continue
+		}
+		invalid.add(definition.Key, providerKeyRequiredWhenEnabled)
+	}
+	return invalid
+}
+
+func settingValue(stored, writes map[string]string, key, fallback string) string {
+	if value, ok := writes[key]; ok {
+		return value
+	}
+	if value, ok := stored[key]; ok {
+		return value
+	}
+	return fallback
 }
