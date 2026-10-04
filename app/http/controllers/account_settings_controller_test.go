@@ -488,6 +488,144 @@ func (s *accountSettingsSuite) TestPatchUnknownKeyIsValidation() {
 	s.NotEmpty(body.Errors["not_a_key"])
 }
 
+func (s *accountSettingsSuite) TestGetGroupReadsOneAccountAndHidesTheSecret() {
+	accountID, token := s.owner()
+	otherID, _ := s.owner()
+	secret := "group-read-secret"
+	s.patch(token, accountID, "account_webhooks", fmt.Sprintf(`{"signing_secret":%q}`, secret), 200)
+	_, err := facades.Orm().Query().Exec(
+		`INSERT INTO settings (account_id, "group", "key", value, created_at, updated_at)
+		 VALUES (?, 'account_sweep_limits', 'max_addresses_evm', '17', NOW(), NOW())`,
+		accountID,
+	)
+	s.Require().NoError(err)
+	_, err = facades.Orm().Query().Exec(
+		`INSERT INTO settings (account_id, "group", "key", value, created_at, updated_at)
+		 VALUES (?, 'account_sweep_limits', 'max_addresses_evm', '19', NOW(), NOW())`,
+		otherID,
+	)
+	s.Require().NoError(err)
+	_, err = facades.Orm().Query().Exec(
+		`INSERT INTO settings (account_id, "group", "key", value, created_at, updated_at)
+		 VALUES (?, 'account_sweep_limits', 'daily_withdraw_cap_usd', '8.75', NOW(), NOW())`,
+		otherID,
+	)
+	s.Require().NoError(err)
+	_, err = facades.Orm().Query().Exec(
+		`INSERT INTO settings (account_id, "group", "key", value, created_at, updated_at)
+		 VALUES (?, 'account_webhooks', 'signing_secret', 'enc:v1:other-account', NOW(), NOW())`,
+		otherID,
+	)
+	s.Require().NoError(err)
+
+	var before int64
+	err = facades.Orm().Query().Raw(
+		`SELECT count(*) FROM account_activity WHERE account_id = ?`,
+		accountID,
+	).Scan(&before)
+	s.Require().NoError(err)
+
+	raw := s.getGroup(token, accountID, "account_sweep_limits", 200)
+	s.NotContains(raw, secret)
+	s.NotContains(raw, "enc:v1:")
+	s.NotContains(raw, "8.75")
+	s.NotContains(raw, "other-account")
+	s.Equal(float64(17), s.groupField(raw, "max_addresses_evm")["value"])
+	s.Equal(false, s.groupDocument(raw)["can_update"])
+	s.Equal("platform", s.groupDocument(raw)["managed_by"])
+
+	webhooks := s.getGroup(token, accountID, "account_webhooks", 200)
+	s.NotContains(webhooks, secret)
+	s.NotContains(webhooks, "enc:v1:")
+	field := s.groupField(webhooks, "signing_secret")
+	s.Equal(true, field["secret"])
+	s.Equal(true, field["is_set"])
+	_, returned := field["value"]
+	s.False(returned)
+	s.Equal(true, s.groupDocument(webhooks)["can_update"])
+
+	auditor := s.member(accountID, "auditor")
+	audited := s.getGroup(auditor, accountID, "account_webhooks", 200)
+	s.NotContains(audited, secret)
+	s.Equal(false, s.groupDocument(audited)["can_update"])
+
+	var after int64
+	err = facades.Orm().Query().Raw(
+		`SELECT count(*) FROM account_activity WHERE account_id = ?`,
+		accountID,
+	).Scan(&after)
+	s.Require().NoError(err)
+	s.Equal(before, after)
+}
+
+func (s *accountSettingsSuite) TestGetGroupUnknownIsNotFoundBeforeForbidden() {
+	accountID, token := s.owner()
+	response := s.getGroupParsed(token, accountID, "not-a-group", 404)
+	s.Equal("not_found", response["error"].(map[string]any)["code"])
+	response = s.getGroupParsed(token, accountID, "mail_smtp", 404)
+	s.Equal("not_found", response["error"].(map[string]any)["code"])
+
+	auditor := s.member(accountID, "auditor")
+	response = s.getGroupParsed(auditor, accountID, "sweep_limits", 404)
+	s.Equal("not_found", response["error"].(map[string]any)["code"])
+	limits := s.getGroup(auditor, accountID, "account_sweep_limits", 200)
+	s.Equal(false, s.groupDocument(limits)["can_update"])
+
+	user := s.member(accountID, "user")
+	response = s.getGroupParsed(user, accountID, "not-a-group", 404)
+	s.Equal("not_found", response["error"].(map[string]any)["code"])
+	response = s.getGroupParsed(user, accountID, "deposit_scan", 404)
+	s.Equal("not_found", response["error"].(map[string]any)["code"])
+	response = s.getGroupParsed(user, accountID, "account_security", 403)
+	s.Equal("forbidden", response["error"].(map[string]any)["code"])
+}
+
+func (s *accountSettingsSuite) TestPutSharesThePatchBodyRules() {
+	accountID, token := s.owner()
+	secret := "put-keeps-secret"
+	saved := s.putRaw(token, accountID, "account_webhooks", fmt.Sprintf(`{"signing_secret":%q}`, secret), 200)
+	s.NotContains(saved, secret)
+	before := s.storedSecret(accountID)
+	s.NotEmpty(before)
+	s.NotEqual(secret, before)
+
+	kept := s.putRaw(token, accountID, "account_webhooks", `{"signing_secret":""}`, 200)
+	s.NotContains(kept, secret)
+	s.Equal(before, s.storedSecret(accountID))
+
+	s.put(token, accountID, "account_security", `{"session_idle_minutes":45}`, 200)
+	idle := s.getGroup(token, accountID, "account_security", 200)
+	s.Equal(float64(45), s.groupField(idle, "session_idle_minutes")["value"])
+
+	rejected := s.putRaw(token, accountID, "account_security", `{"session_idle_minutes":-1}`, 422)
+	s.NotContains(rejected, secret)
+	var invalid struct {
+		Error map[string]any `json:"error"`
+	}
+	s.Require().NoError(json.Unmarshal([]byte(rejected), &invalid))
+	s.Equal("validation_failed", invalid.Error["code"])
+	idle = s.getGroup(token, accountID, "account_security", 200)
+	s.Equal(float64(45), s.groupField(idle, "session_idle_minutes")["value"])
+
+	response := s.put(token, accountID, "account_sweep_limits", `{"daily_withdraw_cap_usd":"-1"}`, 403)
+	s.Equal("forbidden", response["error"].(map[string]any)["code"])
+	var caps int64
+	err := facades.Orm().Query().Raw(
+		`SELECT count(*) FROM settings WHERE account_id = ? AND "group" = 'account_sweep_limits' AND "key" = 'daily_withdraw_cap_usd'`,
+		accountID,
+	).Scan(&caps)
+	s.Require().NoError(err)
+	s.Equal(int64(0), caps)
+
+	user := s.member(accountID, "user")
+	response = s.put(user, accountID, "not-a-group", `{}`, 404)
+	s.Equal("not_found", response["error"].(map[string]any)["code"])
+	response = s.put(user, accountID, "account_security", `{"session_idle_minutes":12}`, 403)
+	s.Equal("forbidden", response["error"].(map[string]any)["code"])
+	idle = s.getGroup(token, accountID, "account_security", 200)
+	s.Equal(float64(45), s.groupField(idle, "session_idle_minutes")["value"])
+}
+
 func (s *accountSettingsSuite) owner() (uuid.UUID, string) {
 	s.T().Helper()
 	userID, token := s.user("owner")
@@ -544,6 +682,65 @@ func (s *accountSettingsSuite) login(email string) string {
 	s.Require().NoError(json.Unmarshal([]byte(content), &parsed))
 	s.Require().NotEmpty(parsed.AccessToken)
 	return parsed.AccessToken
+}
+
+func (s *accountSettingsSuite) getGroup(token string, accountID uuid.UUID, group string, status int) string {
+	s.T().Helper()
+	resp, err := s.Http(s.T()).
+		WithHeader("Authorization", "Bearer "+token).
+		Get("/v1/accounts/" + accountID.String() + "/settings/" + group)
+	s.Require().NoError(err)
+	resp.AssertStatus(status)
+	content, err := resp.Content()
+	s.Require().NoError(err)
+	return content
+}
+
+func (s *accountSettingsSuite) getGroupParsed(token string, accountID uuid.UUID, group string, status int) map[string]any {
+	s.T().Helper()
+	var parsed map[string]any
+	s.Require().NoError(json.Unmarshal([]byte(s.getGroup(token, accountID, group, status)), &parsed))
+	return parsed
+}
+
+func (s *accountSettingsSuite) put(token string, accountID uuid.UUID, group, body string, status int) map[string]any {
+	s.T().Helper()
+	var parsed map[string]any
+	s.Require().NoError(json.Unmarshal([]byte(s.putRaw(token, accountID, group, body, status)), &parsed))
+	return parsed
+}
+
+func (s *accountSettingsSuite) putRaw(token string, accountID uuid.UUID, group, body string, status int) string {
+	s.T().Helper()
+	resp, err := s.Http(s.T()).
+		WithHeader("Authorization", "Bearer "+token).
+		WithHeader("Content-Type", "application/json").
+		Put("/v1/accounts/"+accountID.String()+"/settings/"+group, strings.NewReader(body))
+	s.Require().NoError(err)
+	resp.AssertStatus(status)
+	content, err := resp.Content()
+	s.Require().NoError(err)
+	return content
+}
+
+func (s *accountSettingsSuite) groupDocument(body string) map[string]any {
+	s.T().Helper()
+	var parsed map[string]any
+	s.Require().NoError(json.Unmarshal([]byte(body), &parsed))
+	return parsed
+}
+
+func (s *accountSettingsSuite) groupField(body, key string) map[string]any {
+	s.T().Helper()
+	fields, _ := s.groupDocument(body)["fields"].([]any)
+	for _, item := range fields {
+		field, _ := item.(map[string]any)
+		if field["key"] == key {
+			return field
+		}
+	}
+	s.Failf("missing field", "%s in %s", key, body)
+	return nil
 }
 
 func (s *accountSettingsSuite) get(token string, accountID uuid.UUID, status int) string {

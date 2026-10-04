@@ -127,7 +127,11 @@ func RegisterAdminRoutes() {
 			r.Get("/settings", accountSettingsCtrl.Show)
 			r.Post("/settings/sections/{section}/cache", accountSettingsCtrl.Flush)
 			r.Post("/settings/sections/{section}/reset", accountSettingsCtrl.Reset)
+			// S1.4.6: GET /v1/accounts/{accountId}/settings/{group} settings.view (platform-managed groups readable).
+			r.Get("/settings/{group}", accountSettingsCtrl.ShowGroup)
 			r.Patch("/settings/{group}", accountSettingsCtrl.Update)
+			// S1.4.6: PUT /v1/accounts/{accountId}/settings/{group} settings.update. Same handler and body rules as PATCH.
+			r.Put("/settings/{group}", accountSettingsCtrl.Update)
 
 			r.Get("/activity", accountActivityCtrl.Index)
 

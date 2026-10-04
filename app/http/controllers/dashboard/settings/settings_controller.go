@@ -50,9 +50,35 @@ func (ctrl *SettingsController) Show(ctx http.Context) http.Response {
 	return responses.Send(ctx, http.StatusOK, view)
 }
 
+// ShowGroup godoc
+// @Summary      Read one account settings group
+// @Description  GET /v1/accounts/{accountId}/settings/{group} settings.view. An unknown group and a platform-only group are 404 before 403. Owner, admin, and auditor may read, including a platform-managed group. A user may not. A secret is never returned. The read writes no activity and does not return another account's rows.
+// @Tags         Account Settings
+// @Security     BearerAuth
+// @Produce      json
+// @Param        accountId  path  string  true  "Account UUID"
+// @Param        group      path  string  true  "Settings group"
+// @Success      200  {object}  settingssvc.GroupView
+// @Failure      403  {object}  responses.ErrorBody
+// @Failure      404  {object}  responses.ErrorBody
+// @Router       /accounts/{accountId}/settings/{group} [get]
+func (ctrl *SettingsController) ShowGroup(ctx http.Context) http.Response {
+	account, role, errResp := accountCaller(ctx)
+	if errResp != nil {
+		return errResp
+	}
+	var path requests.SettingsGroupRequest
+	path.Load(ctx)
+	view, err := ctrl.settings.AccountGroup(ctx.Context(), account.ID, role, path.Group)
+	if errResp := mapSettingsError(ctx, err); errResp != nil {
+		return errResp
+	}
+	return responses.Send(ctx, http.StatusOK, view)
+}
+
 // Update godoc
 // @Summary      Save one account settings group
-// @Description  One group per request. A blank or omitted secret keeps the stored value. Decimals are strings. An unknown group is 404.
+// @Description  PATCH and PUT share this handler. One group per request. A blank or omitted secret keeps the stored value. Decimals are strings. An unknown group is 404 before 403. A platform-managed group is 403. A negative amount is not stored.
 // @Tags         Account Settings
 // @Security     BearerAuth
 // @Accept       json
@@ -64,6 +90,7 @@ func (ctrl *SettingsController) Show(ctx http.Context) http.Response {
 // @Failure      404  {object}  responses.ErrorBody
 // @Failure      422  {object}  responses.ErrorBody
 // @Router       /accounts/{accountId}/settings/{group} [patch]
+// @Router       /accounts/{accountId}/settings/{group} [put]
 func (ctrl *SettingsController) Update(ctx http.Context) http.Response {
 	account, role, errResp := accountCaller(ctx)
 	if errResp != nil {
