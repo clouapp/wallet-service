@@ -63,5 +63,6 @@ func All() []schema.Migration {
 		&M00000000000550DropLegacyTotpSecret{},
 		&M00000000000560AddAccountInvitesWalletRoles{},
 		&M00000000000570AccessTokensPermissionsJsonb{},
+		&M00000000000580ChainsThresholdsNotNull{},
 	}
 }

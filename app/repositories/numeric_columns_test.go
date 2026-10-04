@@ -48,9 +48,15 @@ func (s *NumericColumnsTestSuite) columnText(table, column, idColumn string, id 
 }
 
 func (s *NumericColumnsTestSuite) insertChain(id string, dustUSD numeric.NullDecimal) {
+	gas := "1"
+	dustNative := "1"
+	if !dustUSD.Valid {
+		dustUSD = numeric.NewNullDecimal(decimal.Zero)
+	}
 	chain := models.Chain{
 		ID: id, Name: id, AdapterType: models.AdapterTypeEVM, NativeSymbol: "ETH", NativeDecimals: 18,
-		RpcURL: "encrypted-rpc", RequiredConfirmations: 12, Status: "active", DustThresholdUSD: dustUSD,
+		RpcURL: "encrypted-rpc", RequiredConfirmations: 12, Status: "active",
+		GasReadinessThresholdRaw: &gas, DustThresholdNativeRaw: &dustNative, DustThresholdUSD: dustUSD,
 	}
 	s.Require().NoError(facades.Orm().Query().Create(&chain))
 }
@@ -152,9 +158,9 @@ func (s *NumericColumnsTestSuite) TestSnapshotBalanceUSDRoundTripsExactly() {
 	s.True(recent[0].BalanceUSD.Decimal.Equal(balanceUSD), "balance_usd = %s", recent[0].BalanceUSD.Decimal)
 }
 
-func (s *NumericColumnsTestSuite) TestChainDustThresholdUSDRoundTripsAndKeepsNull() {
+func (s *NumericColumnsTestSuite) TestChainDustThresholdUSDRoundTrips() {
 	s.insertChain("base", numeric.NewNullDecimal(s.exact("0.10")))
-	s.insertChain("btc", numeric.NullDecimal{})
+	s.insertChain("btc", numeric.NewNullDecimal(decimal.Zero))
 	repo := repositories.NewChainRepository(nil)
 	ctx := context.Background()
 
@@ -166,7 +172,9 @@ func (s *NumericColumnsTestSuite) TestChainDustThresholdUSDRoundTripsAndKeepsNul
 
 	btc, err := repo.FindByID(ctx, "btc")
 	s.Require().NoError(err)
-	s.False(btc.DustThresholdUSD.Valid)
+	s.True(btc.DustThresholdUSD.Valid)
+	s.True(btc.DustThresholdUSD.Decimal.Equal(decimal.Zero))
+	s.Equal("0.0000", *s.columnText("chains", "dust_threshold_usd", "id", "btc"))
 }
 
 func (s *NumericColumnsTestSuite) TestCurrencyPricesRoundTripAndUpdateExactly() {

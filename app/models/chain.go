@@ -4,6 +4,8 @@ import (
 	"math/big"
 
 	"github.com/goravel/framework/database/orm"
+	"github.com/shopspring/decimal"
+	"gorm.io/gorm"
 
 	"github.com/macrowallets/waas/pkg/numeric"
 )
@@ -76,11 +78,30 @@ type Chain struct {
 	IconURL                  *string             `gorm:"type:varchar(500)"`
 	DisplayOrder             int                 `gorm:"default:0"`
 	Status                   string              `gorm:"type:varchar(20);default:active"`
-	GasReadinessThresholdRaw *string             `gorm:"type:text"`
-	DustThresholdNativeRaw   *string             `gorm:"type:text"`
-	DustThresholdUSD         numeric.NullDecimal `gorm:"type:decimal(16,4)"`}
+	GasReadinessThresholdRaw *string             `gorm:"type:text;not null"`
+	DustThresholdNativeRaw   *string             `gorm:"type:text;not null"`
+	DustThresholdUSD         numeric.NullDecimal `gorm:"type:decimal(16,4);not null"`
+}
 
 func (c *Chain) TableName() string { return "chains" }
+
+// BeforeCreate stores an empty raw threshold and a zero USD threshold when the
+// caller left them unset. The columns are NOT NULL. An empty raw value is read
+// as "not set", and zero USD disables token-dust filtering.
+func (c *Chain) BeforeCreate(*gorm.DB) error {
+	if c.GasReadinessThresholdRaw == nil {
+		empty := ""
+		c.GasReadinessThresholdRaw = &empty
+	}
+	if c.DustThresholdNativeRaw == nil {
+		empty := ""
+		c.DustThresholdNativeRaw = &empty
+	}
+	if !c.DustThresholdUSD.Valid {
+		c.DustThresholdUSD = numeric.NewNullDecimal(decimal.Zero)
+	}
+	return nil
+}
 
 func (c *Chain) GasReadinessThreshold() *big.Int {
 	if c.GasReadinessThresholdRaw == nil || *c.GasReadinessThresholdRaw == "" {

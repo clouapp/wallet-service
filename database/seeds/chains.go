@@ -102,7 +102,11 @@ func SeedChains(ctx context.Context) error {
 			continue
 		}
 
-		if err := createSeedChain(c, encRPC, nil); err != nil {
+		thresholds, err := seedThresholdsFor(c.id)
+		if err != nil {
+			return err
+		}
+		if err := createSeedChain(c, encRPC, thresholds); err != nil {
 			return err
 		}
 	}
