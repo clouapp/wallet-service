@@ -53,11 +53,17 @@ func (s *PlatformUserMFATestSuite) TestAPlatformAdminClearsTotpWithoutSuspending
 	s.Equal(int64(1), s.count(
 		`SELECT count(*) FROM users
 		 WHERE id = ? AND totp_enabled = FALSE
-		   AND (totp_secret IS NULL OR totp_secret = '')
 		   AND suspended_at IS NULL AND sessions_revoked_at IS NULL`,
 		victim.ID,
 	))
-	s.Equal(int64(0), s.count(`SELECT count(*) FROM totp_recovery_codes WHERE user_id = ?`, victim.ID))
+	s.Equal(int64(1), s.count(
+		`SELECT count(*) FROM mfa_credentials
+		 WHERE subject_type = 'users' AND subject_id = ? AND secret = ''`,
+		victim.ID,
+	))
+	s.Equal(int64(0), s.count(
+		`SELECT count(*) FROM mfa_backup_codes WHERE subject_type = 'users' AND subject_id = ?`, victim.ID,
+	))
 	s.Equal(int64(0), s.count(`SELECT count(*) FROM account_activity WHERE action = 'user.suspended'`))
 	s.Equal(int64(0), s.count(`SELECT count(*) FROM account_activity WHERE action = 'user.sessions_revoked'`))
 	s.Equal(int64(0), s.count(
@@ -131,7 +137,9 @@ func (s *PlatformUserMFATestSuite) TestAMemberCannotResetPlatformMFA() {
 		`SELECT count(*) FROM users WHERE id = ? AND totp_enabled = TRUE AND suspended_at IS NULL`,
 		victim.ID,
 	))
-	s.Equal(int64(2), s.count(`SELECT count(*) FROM totp_recovery_codes WHERE user_id = ?`, victim.ID))
+	s.Equal(int64(2), s.count(
+		`SELECT count(*) FROM mfa_backup_codes WHERE subject_type = 'users' AND subject_id = ?`, victim.ID,
+	))
 	s.Equal(int64(0), s.count(`SELECT count(*) FROM account_activity WHERE action = 'user.mfa_reset'`))
 	s.assertSessionWorks(victimSession)
 

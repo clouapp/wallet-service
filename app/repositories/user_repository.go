@@ -164,14 +164,11 @@ func (r *UserRepository) EnableTotp(ctx context.Context, id uuid.UUID) error {
 	return nil
 }
 
-// DisableTotp clears totp_enabled, the legacy secret column, and the shared
-// credential secret. The replay counter stays so a later enrollment cannot
-// redeem a step that was already used.
+// DisableTotp clears totp_enabled and the shared credential secret. The
+// replay counter stays so a later enrollment cannot redeem a step that was
+// already used.
 func (r *UserRepository) DisableTotp(ctx context.Context, id uuid.UUID) error {
-	if _, err := r.Query(ctx).Model(&models.User{}).Where("id = ?", id).Update(map[string]any{
-		"totp_enabled": false,
-		"totp_secret":  "",
-	}); err != nil {
+	if _, err := r.Query(ctx).Model(&models.User{}).Where("id = ?", id).Update("totp_enabled", false); err != nil {
 		return fmt.Errorf("disable user totp: %w", err)
 	}
 	if _, err := r.Query(ctx).Exec(`
@@ -184,9 +181,9 @@ func (r *UserRepository) DisableTotp(ctx context.Context, id uuid.UUID) error {
 	return nil
 }
 
-// SealedTotp returns the enc:v1: secret and the replay step. A credential row
-// wins over users.totp_secret. An empty secret means there is nothing to open.
-// The legacy column is still read when the credential has not been copied.
+// SealedTotp returns the enc:v1: secret and the replay step from
+// mfa_credentials. An empty secret means there is nothing to open. An
+// unsealed value is returned as stored so the caller can fail closed.
 func (r *UserRepository) SealedTotp(ctx context.Context, id uuid.UUID) (string, int64, error) {
 	if id == uuid.Nil {
 		return "", 0, fmt.Errorf("load totp secret: user id is required")
@@ -195,37 +192,20 @@ func (r *UserRepository) SealedTotp(ctx context.Context, id uuid.UUID) (string, 
 	if err != nil {
 		return "", 0, err
 	}
+	if present == 0 {
+		return "", 0, nil
+	}
 	var cred struct {
 		Secret  string
 		Counter int64
 	}
-	if present > 0 {
-		if err := r.Query(ctx).Raw(`
-			SELECT secret, last_used_counter AS counter
-			FROM mfa_credentials
-			WHERE subject_type = ? AND subject_id = ?`, models.MFASubjectUsers, id).Scan(&cred); err != nil {
-			return "", 0, fmt.Errorf("load totp secret: %w", err)
-		}
-	}
-	var legacy struct {
-		Secret  string
-		Counter int64
-	}
 	if err := r.Query(ctx).Raw(`
-		SELECT COALESCE(totp_secret, '') AS secret, totp_last_used_counter AS counter
-		FROM users WHERE id = ?`, id).Scan(&legacy); err != nil {
+		SELECT secret, last_used_counter AS counter
+		FROM mfa_credentials
+		WHERE subject_type = ? AND subject_id = ?`, models.MFASubjectUsers, id).Scan(&cred); err != nil {
 		return "", 0, fmt.Errorf("load totp secret: %w", err)
 	}
-	if present > 0 && cred.Secret != "" {
-		return cred.Secret, cred.Counter, nil
-	}
-	if legacy.Secret != "" {
-		return legacy.Secret, legacy.Counter, nil
-	}
-	if present > 0 {
-		return "", cred.Counter, nil
-	}
-	return "", legacy.Counter, nil
+	return cred.Secret, cred.Counter, nil
 }
 
 // AdvanceTotpCounter stores counter as the last redeemed TOTP step only when

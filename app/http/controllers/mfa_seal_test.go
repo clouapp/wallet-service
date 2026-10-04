@@ -40,7 +40,6 @@ func (s *MfaSealTestSuite) TestEnrolledSecretIsSealedAndVerifyStillWorks() {
 	if !strings.HasPrefix(stored, "enc:v1:") || strings.Contains(stored, setupBody.Secret) {
 		s.Fail("enrolled totp secret is not sealed in mfa_credentials")
 	}
-	s.Empty(s.text(`SELECT COALESCE(totp_secret, '') FROM users WHERE id = ?`, user.ID))
 	setupContent, err := setup.Content()
 	s.Require().NoError(err)
 	if strings.Contains(setupContent, stored) || strings.Contains(setupContent, "enc:v1:") {
@@ -52,7 +51,6 @@ func (s *MfaSealTestSuite) TestEnrolledSecretIsSealedAndVerifyStillWorks() {
 	s.refuseSecret(confirm, setupBody.Secret, stored)
 	s.Equal(int64(10), s.rows(`
 		SELECT count(*) FROM mfa_backup_codes WHERE subject_type = 'users' AND subject_id = ?`, user.ID))
-	s.Zero(s.rows(`SELECT count(*) FROM totp_recovery_codes WHERE user_id = ?`, user.ID))
 
 	me := s.getMe(session.AccessToken)
 	me.AssertOk()
@@ -93,15 +91,6 @@ func (s *MfaSealTestSuite) TestUnsealedSecretFailsClosed() {
 	resp, _ := s.verifyTwoFactor(challenge.ChallengeToken, "000000", "")
 	resp.AssertStatus(500)
 	s.refuseSecret(resp, "clear-text-marker", "clear-text-marker")
-
-	legacy := s.seedUser(false)
-	_, err = facades.Orm().Query().Exec(
-		`UPDATE users SET totp_enabled = TRUE, totp_secret = 'clear-text-marker' WHERE id = ?`, legacy.ID)
-	s.Require().NoError(err)
-	_, legacyChallenge := s.loginAs(legacy.Email)
-	legacyResp, _ := s.verifyTwoFactor(legacyChallenge.ChallengeToken, "000000", "")
-	legacyResp.AssertStatus(500)
-	s.refuseSecret(legacyResp, "clear-text-marker", "clear-text-marker")
 }
 
 func (s *MfaSealTestSuite) text(query string, args ...any) string {

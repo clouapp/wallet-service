@@ -60,5 +60,6 @@ func All() []schema.Migration {
 		&M00000000000520MoveAccountSweepLimitsToSettings{},
 		&M00000000000530DropAccountsSweepLimits{},
 		&M00000000000540SealWebhookConfigSecrets{},
+		&M00000000000550DropLegacyTotpSecret{},
 	}
 }

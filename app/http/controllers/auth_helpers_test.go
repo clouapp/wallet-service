@@ -67,7 +67,14 @@ func (s *authSuite) seedUser(withTOTP bool) seededAuthUser {
 	encrypted, err := facades.Crypt().EncryptString(secret)
 	s.Require().NoError(err)
 	_, err = facades.Orm().Query().Exec(
-		`UPDATE users SET totp_secret = ?, totp_enabled = TRUE WHERE id = ?`, "enc:v1:"+encrypted, user.ID,
+		`UPDATE users SET totp_enabled = TRUE WHERE id = ?`, user.ID,
+	)
+	s.Require().NoError(err)
+	_, err = facades.Orm().Query().Exec(`
+		INSERT INTO mfa_credentials (
+			id, subject_type, subject_id, secret, confirmed_at, last_used_counter, created_at, updated_at
+		) VALUES (?, 'users', ?, ?, NOW(), 0, NOW(), NOW())`,
+		uuid.New(), user.ID, "enc:v1:"+encrypted,
 	)
 	s.Require().NoError(err)
 	user.TOTPSecret = secret
@@ -75,8 +82,10 @@ func (s *authSuite) seedUser(withTOTP bool) seededAuthUser {
 	codes, hashes, err := svc.GenerateRecoveryCodes()
 	s.Require().NoError(err)
 	for i, codeHash := range hashes[:2] {
-		_, err = facades.Orm().Query().Exec(
-			`INSERT INTO totp_recovery_codes (id, user_id, code_hash, created_at, updated_at) VALUES (?, ?, ?, NOW(), NOW())`,
+		_, err = facades.Orm().Query().Exec(`
+			INSERT INTO mfa_backup_codes (
+				id, subject_type, subject_id, code_hash, created_at, updated_at
+			) VALUES (?, 'users', ?, ?, NOW(), NOW())`,
 			uuid.New(), user.ID, codeHash,
 		)
 		s.Require().NoError(err)

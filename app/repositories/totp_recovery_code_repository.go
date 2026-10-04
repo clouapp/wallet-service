@@ -23,33 +23,23 @@ func NewTotpRecoveryCodeRepository(query orm.Query) *TotpRecoveryCodeRepository 
 }
 
 // FindUnusedByUserID returns recovery codes that have not been used.
-// Codes live in mfa_backup_codes. Rows still on totp_recovery_codes are
-// included until the copy removes them.
+// Codes live in mfa_backup_codes.
 func (r *TotpRecoveryCodeRepository) FindUnusedByUserID(ctx context.Context, userID uuid.UUID) ([]models.TotpRecoveryCode, error) {
+	if userID == uuid.Nil {
+		return nil, fmt.Errorf("list unused recovery codes: user id is required")
+	}
 	var shared []models.MfaBackupCode
 	if err := r.Query(ctx).Where("subject_type = ? AND subject_id = ? AND used_at IS NULL", models.MFASubjectUsers, userID).Find(&shared); err != nil {
 		return nil, fmt.Errorf("list unused recovery codes: %w", err)
 	}
 	codes := make([]models.TotpRecoveryCode, 0, len(shared))
-	seen := make(map[uuid.UUID]struct{}, len(shared))
 	for _, code := range shared {
-		seen[code.ID] = struct{}{}
 		codes = append(codes, models.TotpRecoveryCode{
 			ID:       code.ID,
 			UserID:   code.SubjectID,
 			CodeHash: code.CodeHash,
 			UsedAt:   code.UsedAt,
 		})
-	}
-	var legacy []models.TotpRecoveryCode
-	if err := r.Query(ctx).Where("user_id = ? AND used_at IS NULL", userID).Find(&legacy); err != nil {
-		return nil, fmt.Errorf("list unused recovery codes: %w", err)
-	}
-	for _, code := range legacy {
-		if _, ok := seen[code.ID]; ok {
-			continue
-		}
-		codes = append(codes, code)
 	}
 	return codes, nil
 }
@@ -60,9 +50,6 @@ func (r *TotpRecoveryCodeRepository) MarkUsed(ctx context.Context, id uuid.UUID)
 	if _, err := r.Query(ctx).Model(&models.MfaBackupCode{}).Where("id = ?", id).Update("used_at", now); err != nil {
 		return fmt.Errorf("mark recovery code used: %w", err)
 	}
-	if _, err := r.Query(ctx).Model(&models.TotpRecoveryCode{}).Where("id = ?", id).Update("used_at", now); err != nil {
-		return fmt.Errorf("mark recovery code used: %w", err)
-	}
 	return nil
 }
 
@@ -71,13 +58,6 @@ func (r *TotpRecoveryCodeRepository) MarkUsed(ctx context.Context, id uuid.UUID)
 func (r *TotpRecoveryCodeRepository) MarkUsedIfUnused(ctx context.Context, id uuid.UUID) (bool, error) {
 	now := time.Now()
 	result, err := r.Query(ctx).Model(&models.MfaBackupCode{}).Where("id = ? AND used_at IS NULL", id).Update("used_at", now)
-	if err != nil {
-		return false, fmt.Errorf("mark recovery code used: %w", err)
-	}
-	if result.RowsAffected == 1 {
-		return true, nil
-	}
-	result, err = r.Query(ctx).Model(&models.TotpRecoveryCode{}).Where("id = ? AND used_at IS NULL", id).Update("used_at", now)
 	if err != nil {
 		return false, fmt.Errorf("mark recovery code used: %w", err)
 	}
@@ -117,23 +97,15 @@ func (r *TotpRecoveryCodeRepository) CountByUserID(ctx context.Context, userID u
 	if err != nil {
 		return 0, fmt.Errorf("count recovery codes: %w", err)
 	}
-	legacy, err := r.Query(ctx).Model(&models.TotpRecoveryCode{}).Where("user_id = ?", userID).Count()
-	if err != nil {
-		return 0, fmt.Errorf("count recovery codes: %w", err)
-	}
-	total := shared + legacy
-	if total < 0 {
+	if shared < 0 {
 		return 0, fmt.Errorf("count recovery codes: count is negative")
 	}
-	return total, nil
+	return shared, nil
 }
 
 // DeleteByUserID removes every recovery code for the user.
 func (r *TotpRecoveryCodeRepository) DeleteByUserID(ctx context.Context, userID uuid.UUID) error {
 	if _, err := r.Query(ctx).Where("subject_type = ? AND subject_id = ?", models.MFASubjectUsers, userID).Delete(&models.MfaBackupCode{}); err != nil {
-		return fmt.Errorf("delete recovery codes: %w", err)
-	}
-	if _, err := r.Query(ctx).Where("user_id = ?", userID).Delete(&models.TotpRecoveryCode{}); err != nil {
 		return fmt.Errorf("delete recovery codes: %w", err)
 	}
 	return nil

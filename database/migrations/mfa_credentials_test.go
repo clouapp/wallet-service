@@ -13,6 +13,7 @@ import (
 
 func TestCopyLegacyTotpSealsTheSecretAndMovesRecoveryCodes(t *testing.T) {
 	mocks.TestDB(t)
+	require.NoError(t, (&migrations.M00000000000550DropLegacyTotpSecret{}).Down())
 
 	userID := uuid.New()
 	_, err := facades.Orm().Query().Exec(`
@@ -73,6 +74,7 @@ func TestCopyLegacyTotpSealsTheSecretAndMovesRecoveryCodes(t *testing.T) {
 
 func TestCopyLegacyTotpLeavesTheColumnWhenTheCopyDoesNotMatch(t *testing.T) {
 	mocks.TestDB(t)
+	require.NoError(t, (&migrations.M00000000000550DropLegacyTotpSecret{}).Down())
 
 	userID := uuid.New()
 	_, err := facades.Orm().Query().Exec(`

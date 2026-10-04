@@ -226,11 +226,13 @@ func (s *UserRepositoryTestSuite) TestUpdateTotpSecretStoresTheSealedCredential(
 	if !settings.IsSealed(stored) || stored != sealed || strings.Contains(stored, "totp-plaintext-marker") {
 		s.Fail("totp secret was not stored sealed on mfa_credentials")
 	}
-	var column string
-	s.Require().NoError(facades.Orm().Query().Raw(
-		`SELECT COALESCE(totp_secret, '') FROM users WHERE id = ?`, userID,
-	).Scan(&column))
-	s.Empty(column)
+	var column int64
+	s.Require().NoError(facades.Orm().Query().Raw(`
+		SELECT count(*) FROM information_schema.columns
+		WHERE table_schema = current_schema()
+		  AND table_name = 'users'
+		  AND column_name = 'totp_secret'`).Scan(&column))
+	s.Zero(column)
 
 	err = s.repo.UpdateTotpSecret(context.Background(), userID, "not-sealed-marker")
 	s.Require().Error(err)

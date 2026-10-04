@@ -143,14 +143,22 @@ func (s *PlatformUserListTestSuite) plantSecrets(id uuid.UUID) {
 	s.T().Helper()
 	_, err := facades.Orm().Query().Exec(
 		`UPDATE users
-		 SET password_hash = ?, totp_secret = ?, suspension_reason = ?, sessions_revoked_at = '2026-10-02 12:00:00+00'
+		 SET password_hash = ?, suspension_reason = ?, sessions_revoked_at = '2026-10-02 12:00:00+00'
 		 WHERE id = ?`,
-		passwordHashMarker, totpSecretMarker, suspensionReasonMarker, id,
+		passwordHashMarker, suspensionReasonMarker, id,
 	)
 	s.Require().NoError(err)
-	_, err = facades.Orm().Query().Exec(
-		`INSERT INTO totp_recovery_codes (id, user_id, code_hash, created_at, updated_at)
-		 VALUES (?, ?, ?, NOW(), NOW())`,
+	_, err = facades.Orm().Query().Exec(`
+		INSERT INTO mfa_credentials (
+			id, subject_type, subject_id, secret, last_used_counter, created_at, updated_at
+		) VALUES (?, 'users', ?, ?, 0, NOW(), NOW())`,
+		uuid.New(), id, totpSecretMarker,
+	)
+	s.Require().NoError(err)
+	_, err = facades.Orm().Query().Exec(`
+		INSERT INTO mfa_backup_codes (
+			id, subject_type, subject_id, code_hash, created_at, updated_at
+		) VALUES (?, 'users', ?, ?, NOW(), NOW())`,
 		uuid.New(), id, recoveryCodeHashMarker,
 	)
 	s.Require().NoError(err)
