@@ -121,7 +121,8 @@ func TestAccountRegistryOmitsDepositScan(t *testing.T) {
 		for _, block := range section.Blocks {
 			for _, group := range block.Groups {
 				if group.Name == groupDepositScan || group.Name == groupWebhookDelivery || group.Name == groupMailSMTP || group.Name == groupMailDelivery ||
-					group.Name == groupMailSES || group.Name == groupMailMailgun || group.Name == groupMailResend || group.Name == groupMailPostmark {
+					group.Name == groupMailSES || group.Name == groupMailMailgun || group.Name == groupMailResend || group.Name == groupMailPostmark ||
+					group.Name == groupPriceLookup || group.Name == groupPriceCoinGecko || group.Name == groupPriceCoinMarketCap || group.Name == groupPriceCoinAPI {
 					t.Fatalf("%s is a platform group and must stay off the account document", group.Name)
 				}
 			}

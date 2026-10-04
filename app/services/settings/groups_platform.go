@@ -9,15 +9,19 @@ import (
 )
 
 const (
-	groupDepositScan     = "deposit_scan"
-	groupWebhookDelivery = "webhook_delivery"
-	groupSweepLimits     = "sweep_limits"
-	groupMailSMTP        = "mail_smtp"
-	groupMailDelivery    = "mail_delivery"
-	groupMailSES         = "mail_ses"
-	groupMailMailgun     = "mail_mailgun"
-	groupMailResend      = "mail_resend"
-	groupMailPostmark    = "mail_postmark"
+	groupDepositScan        = "deposit_scan"
+	groupWebhookDelivery    = "webhook_delivery"
+	groupSweepLimits        = "sweep_limits"
+	groupMailSMTP           = "mail_smtp"
+	groupMailDelivery       = "mail_delivery"
+	groupMailSES            = "mail_ses"
+	groupMailMailgun        = "mail_mailgun"
+	groupMailResend         = "mail_resend"
+	groupMailPostmark       = "mail_postmark"
+	groupPriceLookup        = "price_lookup"
+	groupPriceCoinGecko     = "price_coingecko"
+	groupPriceCoinMarketCap = "price_coinmarketcap"
+	groupPriceCoinAPI       = "price_coinapi"
 
 	sectionScanning = "scanning"
 	sectionDelivery = "delivery"
@@ -117,6 +121,10 @@ func platformGroups() []Group {
 		mailMailgunGroup(),
 		mailResendGroup(),
 		mailPostmarkGroup(),
+		priceLookupGroup(),
+		priceCoinGeckoGroup(),
+		priceCoinMarketCapGroup(),
+		priceCoinAPIGroup(),
 	}
 }
 

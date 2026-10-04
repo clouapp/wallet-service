@@ -1,0 +1,92 @@
+package settings
+
+const (
+	sectionPrice = "price"
+
+	blockPriceLookup    = "Lookup"
+	blockPriceProviders = "Providers"
+
+	keyProviderOrder = "provider_order"
+	keyPriceEnabled  = "enabled"
+	keyPriceAPIKey   = "api_key"
+
+	priceProviderCoinGecko     = "coingecko"
+	priceProviderCoinMarketCap = "coinmarketcap"
+	priceProviderCoinAPI       = "coinapi"
+)
+
+// S1.4.4 registers price_lookup.provider_order and price_coingecko,
+// price_coinmarketcap, and price_coinapi. The row's note is that
+// price.Service already loops an ordered provider list. It does not say
+// quotes go through this order, so these groups are stored and quotes keep
+// the current CoinAPI client and the currency cache. A missing row, an
+// invalid value, or a failed read of these groups cannot replace that path.
+// Base URLs stay adapter constants: these groups have no base_url field.
+
+func priceLookupGroup() Group {
+	return Group{
+		Name:    groupPriceLookup,
+		Scope:   ScopePlatform,
+		Section: sectionPrice,
+		Block:   blockPriceLookup,
+		// This group names no permission: a platform_admins row is the gate.
+		Settings: []Definition{
+			{
+				Key:     keyProviderOrder,
+				Label:   "Provider order",
+				Help:    "Price providers, in order. Each name is coingecko, coinmarketcap, or coinapi.",
+				Type:    TypeStringList,
+				Options: priceProviderNames(),
+				Default: func() any { return []string{} },
+			},
+		},
+	}
+}
+
+func priceCoinGeckoGroup() Group {
+	return priceProviderGroup(groupPriceCoinGecko, "CoinGecko")
+}
+
+func priceCoinMarketCapGroup() Group {
+	return priceProviderGroup(groupPriceCoinMarketCap, "CoinMarketCap")
+}
+
+func priceCoinAPIGroup() Group {
+	return priceProviderGroup(groupPriceCoinAPI, "CoinAPI")
+}
+
+func priceProviderGroup(name, label string) Group {
+	return Group{
+		Name:    name,
+		Scope:   ScopePlatform,
+		Section: sectionPrice,
+		Block:   blockPriceProviders,
+		// api_key is a Secret. This group names no permission: a
+		// platform_admins row is the gate. enabled is returned.
+		Settings: []Definition{
+			{
+				Key:     keyPriceEnabled,
+				Label:   "Enabled",
+				Help:    "Whether " + label + " is marked enabled.",
+				Type:    TypeBool,
+				Default: func() any { return false },
+			},
+			{
+				Key:     keyPriceAPIKey,
+				Label:   "API key",
+				Help:    label + " API key. Write it to replace the stored one; a blank keeps it.",
+				Type:    TypeString,
+				Secret:  true,
+				Default: func() any { return "" },
+			},
+		},
+	}
+}
+
+func priceProviderNames() []string {
+	return []string{priceProviderCoinGecko, priceProviderCoinMarketCap, priceProviderCoinAPI}
+}
+
+func priceProviderGroupNames() []string {
+	return []string{groupPriceCoinGecko, groupPriceCoinMarketCap, groupPriceCoinAPI}
+}

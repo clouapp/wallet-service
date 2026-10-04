@@ -91,12 +91,14 @@ func TestAccountSectionsDoNotShareNamesWithGroups(t *testing.T) {
 		t.Fatalf("mail driver = %+v present %v", driver, ok)
 	}
 	assertMailProviderGroups(t)
+	assertPriceGroups(t)
 }
 
 func knownPlatformGroup(name string) bool {
 	switch name {
 	case groupDepositScan, groupWebhookDelivery, groupSweepLimits, groupMailSMTP, groupMailDelivery,
-		groupMailSES, groupMailMailgun, groupMailResend, groupMailPostmark:
+		groupMailSES, groupMailMailgun, groupMailResend, groupMailPostmark,
+		groupPriceLookup, groupPriceCoinGecko, groupPriceCoinMarketCap, groupPriceCoinAPI:
 		return true
 	default:
 		return false
@@ -160,6 +162,46 @@ func assertMailProviderGroups(t *testing.T) {
 	stream, ok := Find(groupMailPostmark, keyMailMessageStream)
 	if !ok || stream.Secret {
 		t.Fatalf("postmark stream = %+v present %v", stream, ok)
+	}
+}
+
+func assertPriceGroups(t *testing.T) {
+	t.Helper()
+	lookup, ok := FindGroup(groupPriceLookup)
+	if !ok || lookup.Scope != ScopePlatform || lookup.SectionName() != sectionPrice ||
+		lookup.UpdatePermission != "" || lookup.ViewPermission != "" || len(lookup.Settings) != 1 {
+		t.Fatalf("price lookup group = %+v present %v", lookup, ok)
+	}
+	order, ok := Find(groupPriceLookup, keyProviderOrder)
+	if !ok || order.Secret || order.Type != TypeStringList || len(order.Options) != len(priceProviderNames()) {
+		t.Fatalf("provider order = %+v present %v", order, ok)
+	}
+	for i, name := range priceProviderNames() {
+		if order.Options[i] != name {
+			t.Fatalf("provider option %d = %q", i, order.Options[i])
+		}
+	}
+	if _, ok := Find(groupPriceLookup, "base_url"); ok {
+		t.Fatal("price lookup declares a base url")
+	}
+	for _, name := range priceProviderGroupNames() {
+		group, found := FindGroup(name)
+		if !found || group.Scope != ScopePlatform || group.SectionName() != sectionPrice ||
+			group.UpdatePermission != "" || group.ViewPermission != "" || len(group.Settings) != 2 ||
+			len(group.CredentialGroups) != 0 {
+			t.Fatalf("price group %s = %+v present %v", name, group, found)
+		}
+		enabled, enabledOK := Find(name, keyPriceEnabled)
+		if !enabledOK || enabled.Secret || enabled.Type != TypeBool {
+			t.Fatalf("%s enabled = %+v present %v", name, enabled, enabledOK)
+		}
+		apiKey, keyOK := Find(name, keyPriceAPIKey)
+		if !keyOK || !apiKey.Secret || apiKey.Type != TypeString || apiKey.Destination {
+			t.Fatalf("%s api key = %+v present %v", name, apiKey, keyOK)
+		}
+		if _, baseOK := Find(name, "base_url"); baseOK {
+			t.Fatalf("%s declares a base url", name)
+		}
 	}
 }
 
@@ -270,7 +312,8 @@ func TestEverySecretGroupDeclaresAPermission(t *testing.T) {
 
 func platformSecretGroupGatedByAdmins(group Group) bool {
 	switch group.Name {
-	case groupMailSMTP, groupMailSES, groupMailMailgun, groupMailResend, groupMailPostmark:
+	case groupMailSMTP, groupMailSES, groupMailMailgun, groupMailResend, groupMailPostmark,
+		groupPriceCoinGecko, groupPriceCoinMarketCap, groupPriceCoinAPI:
 		return group.ViewPermission == "" && group.UpdatePermission == ""
 	default:
 		return false
