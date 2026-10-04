@@ -54,25 +54,32 @@ type Sender interface {
 // id and the purpose, never the token or the link.
 type DispatchFunc func(subjectID uuid.UUID, purpose string) error
 
+// InviteDispatchFunc enqueues one invite mail and returns the link the job
+// minted. The link is for the caller that already shows it; it is not a
+// queue argument.
+type InviteDispatchFunc func(inviteID uuid.UUID) (string, error)
+
 // Deps is everything credential mail needs. Dispatch enqueues; the job calls
 // SendPasswordReset or SendAccountInvite, which mint the token.
 type Deps struct {
-	Users    UserLookup
-	Tokens   TokenIssuer
-	Resets   ResetWriter
-	Invites  InviteRefresher
-	Sender   Sender
-	Dispatch DispatchFunc
+	Users          UserLookup
+	Tokens         TokenIssuer
+	Resets         ResetWriter
+	Invites        InviteRefresher
+	Sender         Sender
+	Dispatch       DispatchFunc
+	DispatchInvite InviteDispatchFunc
 }
 
 // Service mints credential mail at send time.
 type Service struct {
-	users    UserLookup
-	tokens   TokenIssuer
-	resets   ResetWriter
-	invites  InviteRefresher
-	sender   Sender
-	dispatch DispatchFunc
+	users          UserLookup
+	tokens         TokenIssuer
+	resets         ResetWriter
+	invites        InviteRefresher
+	sender         Sender
+	dispatch       DispatchFunc
+	dispatchInvite InviteDispatchFunc
 }
 
 // NewService fails fast when a dependency is missing.
@@ -95,13 +102,17 @@ func NewService(deps Deps) *Service {
 	if deps.Dispatch == nil {
 		panic("credential mail: dispatcher is required")
 	}
+	if deps.DispatchInvite == nil {
+		panic("credential mail: invite dispatcher is required")
+	}
 	return &Service{
-		users:    deps.Users,
-		tokens:   deps.Tokens,
-		resets:   deps.Resets,
-		invites:  deps.Invites,
-		sender:   deps.Sender,
-		dispatch: deps.Dispatch,
+		users:          deps.Users,
+		tokens:         deps.Tokens,
+		resets:         deps.Resets,
+		invites:        deps.Invites,
+		sender:         deps.Sender,
+		dispatch:       deps.Dispatch,
+		dispatchInvite: deps.DispatchInvite,
 	}
 }
 
@@ -128,6 +139,18 @@ func (s *Service) Dispatch(subjectID uuid.UUID, purpose string) error {
 		return errors.New("credential mail: unknown purpose")
 	}
 	return s.dispatch(subjectID, purpose)
+}
+
+// DispatchAccountInvite enqueues an invite mail. The queue payload is the
+// invite id and the purpose. The returned link is the one the job minted.
+func (s *Service) DispatchAccountInvite(inviteID uuid.UUID) (string, error) {
+	if s == nil || s.dispatchInvite == nil {
+		return "", errors.New("credential mail: invite dispatcher is required")
+	}
+	if inviteID == uuid.Nil {
+		return "", errors.New("invite mail: invite id is required")
+	}
+	return s.dispatchInvite(inviteID)
 }
 
 // SendPasswordReset mints a reset token, stores only its hash, and sends the

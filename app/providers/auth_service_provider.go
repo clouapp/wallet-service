@@ -6,6 +6,7 @@ import (
 	"github.com/google/uuid"
 	contractsaccess "github.com/goravel/framework/contracts/auth/access"
 	"github.com/goravel/framework/contracts/foundation"
+	"github.com/goravel/framework/contracts/queue"
 	"github.com/goravel/framework/facades"
 
 	"github.com/macrowallets/waas/app/container"
@@ -154,4 +155,12 @@ func dispatchCredentialMail(subjectID uuid.UUID, purpose string) error {
 		return err
 	}
 	return facades.Queue().Job(&jobs.SendCredentialMailJob{}, args).DispatchSync()
+}
+
+// dispatchAccountInviteMail runs the same job and returns the minted link for
+// the add-user response. The queue arguments stay the invite id and the purpose.
+func dispatchAccountInviteMail(inviteID uuid.UUID) (string, error) {
+	return jobs.DispatchSyncAccountInvite(func(job queue.Job, args []queue.Arg) error {
+		return facades.Queue().Job(job, args).DispatchSync()
+	}, inviteID, nil)
 }

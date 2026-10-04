@@ -297,7 +297,7 @@ func (ctrl *AccountsController) AddAccountUser(ctx http.Context) http.Response {
 			}
 			return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to create invite"})
 		}
-		link, mailErr := ctrl.credentialMail.SendAccountInvite(ctx.Context(), issued.Invite.ID)
+		link, mailErr := ctrl.credentialMail.DispatchAccountInvite(issued.Invite.ID)
 		if mailErr != nil {
 			appfacades.Log().WithContext(ctx).Errorf("account: send invite mail failed")
 		}

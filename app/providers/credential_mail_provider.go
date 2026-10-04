@@ -38,12 +38,13 @@ func (p *CredentialMailServiceProvider) Register(app foundation.Application) {
 			return nil, err
 		}
 		return credentialmail.NewService(credentialmail.Deps{
-			Users:    users,
-			Tokens:   tokens,
-			Resets:   resets,
-			Invites:  invites,
-			Sender:   credentialMailSender{},
-			Dispatch: dispatchCredentialMail,
+			Users:          users,
+			Tokens:         tokens,
+			Resets:         resets,
+			Invites:        invites,
+			Sender:         credentialMailSender{},
+			Dispatch:       dispatchCredentialMail,
+			DispatchInvite: dispatchAccountInviteMail,
 		}), nil
 	})
 }

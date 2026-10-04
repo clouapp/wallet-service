@@ -16,7 +16,8 @@ import (
 // SendCredentialMailJob mints a reset or invite token at send time and calls
 // Mail().Send. The queue arguments are the subject id and the purpose.
 type SendCredentialMailJob struct {
-	service *credentialmail.Service
+	service    *credentialmail.Service
+	inviteLink *string
 }
 
 // NewSendCredentialMailJob binds the mail service. A nil service is resolved
@@ -57,7 +58,10 @@ func (j *SendCredentialMailJob) Handle(args ...any) error {
 	case credentialmail.PurposePasswordReset:
 		return mailer.SendPasswordReset(context.Background(), subjectID)
 	case credentialmail.PurposeAccountInvite:
-		_, err := mailer.SendAccountInvite(context.Background(), subjectID)
+		link, err := mailer.SendAccountInvite(context.Background(), subjectID)
+		if j.inviteLink != nil {
+			*j.inviteLink = link
+		}
 		return err
 	default:
 		return fmt.Errorf("send_credential_mail: unknown purpose %q", purpose)
@@ -66,6 +70,29 @@ func (j *SendCredentialMailJob) Handle(args ...any) error {
 
 // ShouldRetry refuses another attempt. A second run would mint another
 // credential and invalidate the one already sent.
+// SyncRunner runs one job with its queue arguments. Those arguments are the
+// only values that would be stored on a queue.
+type SyncRunner func(job queue.Job, args []queue.Arg) error
+
+// DispatchSyncAccountInvite enqueues an invite as the invite id and the
+// purpose, then returns the link the job minted. The link is not an argument.
+// A nil mailer is resolved from the container when the job runs.
+func DispatchSyncAccountInvite(run SyncRunner, inviteID uuid.UUID, mailer *credentialmail.Service) (string, error) {
+	if run == nil {
+		return "", errors.New("send_credential_mail: runner is required")
+	}
+	args, err := CredentialMailArgs(inviteID, credentialmail.PurposeAccountInvite)
+	if err != nil {
+		return "", err
+	}
+	var link string
+	job := &SendCredentialMailJob{service: mailer, inviteLink: &link}
+	if err := run(job, args); err != nil {
+		return link, err
+	}
+	return link, nil
+}
+
 func (j *SendCredentialMailJob) ShouldRetry(error, int) (bool, time.Duration) {
 	return false, 0
 }

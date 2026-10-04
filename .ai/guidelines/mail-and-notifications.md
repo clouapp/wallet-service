@@ -3,8 +3,9 @@
 > Status: DECIDED (B2.5). `facades.Mail().Queue()` refuses. A reset or invite
 > mail is `jobs.SendCredentialMailJob` with `(subject_id, purpose)` only. The
 > job mints the token and calls `Mail().Send()`. The add-user response still
-> returns `invite_link`, so that handler calls the same send in process and
-> does not enqueue the link. Welcome and the settings test mail stay on `Send`.
+> returns `invite_link`: that handler dispatches the same job, and the sync
+> run returns the minted link without placing it on the queue. Welcome and
+> the settings test mail stay on `Send`.
 
 ## The mailables
 
