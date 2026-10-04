@@ -22,7 +22,11 @@ const PermRolesRead = policies.PermRolesRead
 // unknown role fail closed. A missing permission is 403 forbidden.
 func Can(permission string) http.Middleware {
 	return func(ctx http.Context) {
-		if !policies.Can(policies.AccountRoleGrants(AccountRole(ctx)), permission) {
+		grants, ok := policies.AccountGrants(ctx)
+		if !ok {
+			grants = policies.AccountRoleGrants(AccountRole(ctx))
+		}
+		if !policies.Can(grants, permission) {
 			abortWithJSON(ctx, http.StatusForbidden, http.Json{"error": responses.CodeForbidden})
 			return
 		}

@@ -132,9 +132,54 @@ func (s *accountRolesSuite) get(token string, accountID uuid.UUID, status int) r
 	if status != 200 {
 		return roleListBody{}
 	}
+	assertRoleListHasNoGrantsField(s.T(), content)
 	var parsed roleListBody
 	s.Require().NoError(json.Unmarshal([]byte(content), &parsed))
 	return parsed
+}
+
+func assertRoleListHasNoGrantsField(t *testing.T, content string) {
+	t.Helper()
+	var body map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(content), &body); err != nil {
+		t.Fatalf("success body: %v", err)
+	}
+	if _, ok := body["grants"]; ok {
+		t.Fatal("success body includes grants")
+	}
+	if len(body) != 1 {
+		t.Fatalf("success body keys = %v", keysOf(body))
+	}
+	rawRoles, ok := body["roles"]
+	if !ok {
+		t.Fatal("success body has no roles")
+	}
+	var roles []map[string]json.RawMessage
+	if err := json.Unmarshal(rawRoles, &roles); err != nil {
+		t.Fatalf("roles: %v", err)
+	}
+	for _, role := range roles {
+		if _, ok := role["grants"]; ok {
+			t.Fatal("a role object includes grants")
+		}
+		if len(role) != 2 {
+			t.Fatalf("role keys = %v", keysOf(role))
+		}
+		if _, ok := role["role"]; !ok {
+			t.Fatal("a role object has no role")
+		}
+		if _, ok := role["permissions"]; !ok {
+			t.Fatal("a role object has no permissions")
+		}
+	}
+}
+
+func keysOf(body map[string]json.RawMessage) []string {
+	names := make([]string, 0, len(body))
+	for key := range body {
+		names = append(names, key)
+	}
+	return names
 }
 
 func (s *accountRolesSuite) write(method, token string, accountID uuid.UUID, status int) {

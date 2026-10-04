@@ -26,6 +26,7 @@ const (
 type AccountPolicy struct{}
 
 // userRole is the caller's role in the account. The caller passes the user id.
+// A request that already stored its grants does not look the membership up again.
 func userRole(ctx context.Context, accountID uuid.UUID, arguments map[string]any) string {
 	if arguments == nil {
 		return ""
@@ -34,6 +35,17 @@ func userRole(ctx context.Context, accountID uuid.UUID, arguments map[string]any
 	if !ok || userID == uuid.Nil {
 		return ""
 	}
+	if load := grantLoad(ctx); load != nil {
+		if role, resolved := load.resolve(accountID, userID, func() string {
+			return lookupAccountRole(ctx, accountID, userID)
+		}); resolved {
+			return role
+		}
+	}
+	return lookupAccountRole(ctx, accountID, userID)
+}
+
+func lookupAccountRole(ctx context.Context, accountID, userID uuid.UUID) string {
 	au, err := accountUserRepository().FindByAccountAndUser(ctx, accountID, userID)
 	if err != nil || au == nil {
 		return ""

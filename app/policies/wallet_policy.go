@@ -26,14 +26,14 @@ func (p *WalletPolicy) View(ctx context.Context, arguments map[string]any) contr
 	if _, ok := arguments["wallet_id"].(uuid.UUID); !ok {
 		return access.NewDenyResponse("missing wallet_id")
 	}
-	return WalletView(membershipFrom(arguments))
+	return WalletView(membershipFor(ctx, arguments))
 }
 
 func (p *WalletPolicy) Update(ctx context.Context, arguments map[string]any) contractsaccess.Response {
 	if _, ok := arguments["wallet_id"].(uuid.UUID); !ok {
 		return access.NewDenyResponse("missing wallet_id")
 	}
-	return WalletUpdate(membershipFrom(arguments))
+	return WalletUpdate(membershipFor(ctx, arguments))
 }
 
 // Archive allows the same wallet or account owner/admin as Update.
@@ -49,14 +49,14 @@ func (p *WalletPolicy) Freeze(ctx context.Context, arguments map[string]any) con
 	if _, ok := arguments["wallet_id"].(uuid.UUID); !ok {
 		return access.NewDenyResponse("missing wallet_id")
 	}
-	return WalletFreeze(membershipFrom(arguments))
+	return WalletFreeze(membershipFor(ctx, arguments))
 }
 
 func (p *WalletPolicy) AddUser(ctx context.Context, arguments map[string]any) contractsaccess.Response {
 	if _, ok := arguments["wallet_id"].(uuid.UUID); !ok {
 		return access.NewDenyResponse("missing wallet_id")
 	}
-	return WalletAddUser(membershipFrom(arguments))
+	return WalletAddUser(membershipFor(ctx, arguments))
 }
 
 func (p *WalletPolicy) RemoveUser(ctx context.Context, arguments map[string]any) contractsaccess.Response {
@@ -67,21 +67,21 @@ func (p *WalletPolicy) Whitelist(ctx context.Context, arguments map[string]any) 
 	if _, ok := arguments["wallet_id"].(uuid.UUID); !ok {
 		return access.NewDenyResponse("missing wallet_id")
 	}
-	return WalletWhitelist(membershipFrom(arguments))
+	return WalletWhitelist(membershipFor(ctx, arguments))
 }
 
 func (p *WalletPolicy) ManageWebhooks(ctx context.Context, arguments map[string]any) contractsaccess.Response {
 	if _, ok := arguments["wallet_id"].(uuid.UUID); !ok {
 		return access.NewDenyResponse("missing wallet_id")
 	}
-	return WalletManageWebhooks(membershipFrom(arguments))
+	return WalletManageWebhooks(membershipFor(ctx, arguments))
 }
 
 func (p *WalletPolicy) CancelWithdrawal(ctx context.Context, arguments map[string]any) contractsaccess.Response {
 	if _, ok := arguments["wallet_id"].(uuid.UUID); !ok {
 		return access.NewDenyResponse("missing wallet_id")
 	}
-	membership := membershipFrom(arguments)
+	membership := membershipFor(ctx, arguments)
 	if mayAdministerWallet(membership) {
 		return access.NewAllowResponse()
 	}
@@ -183,4 +183,32 @@ func membershipFrom(arguments map[string]any) WalletMembership {
 		AccountRole: accountRole,
 		UserID:      userID,
 	}
+}
+
+// membershipFor reads the request grants when the caller did not pass an
+// account role. A key that is present, including an empty role, stays as the
+// caller loaded it.
+func membershipFor(ctx context.Context, arguments map[string]any) WalletMembership {
+	membership := membershipFrom(arguments)
+	if arguments != nil {
+		if _, present := arguments["account_role"]; present {
+			return membership
+		}
+	}
+	load := grantLoad(ctx)
+	if load == nil {
+		return membership
+	}
+	role, userID, ok := load.role()
+	if !ok || role == "" {
+		return membership
+	}
+	if membership.UserID != uuid.Nil && userID != uuid.Nil && membership.UserID != userID {
+		return membership
+	}
+	membership.AccountRole = role
+	if membership.UserID == uuid.Nil {
+		membership.UserID = userID
+	}
+	return membership
 }

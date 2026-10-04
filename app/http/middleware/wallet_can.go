@@ -14,7 +14,11 @@ import (
 // unknown role fail closed. A missing permission is 403 forbidden.
 func WalletCan(permission string) http.Middleware {
 	return func(ctx http.Context) {
-		if !policies.Can(policies.WalletGrants(AccountRole(ctx)), permission) {
+		grants, ok := policies.WalletRequestGrants(ctx)
+		if !ok {
+			grants = policies.WalletGrants(AccountRole(ctx))
+		}
+		if !policies.Can(grants, permission) {
 			abortWithJSON(ctx, http.StatusForbidden, http.Json{"error": responses.CodeForbidden})
 			return
 		}
