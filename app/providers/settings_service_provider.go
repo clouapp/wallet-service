@@ -30,8 +30,13 @@ func (p *SettingsServiceProvider) Register(app foundation.Application) {
 		if err != nil {
 			return nil, err
 		}
+		accounts, err := resolve[*repositories.AccountRepository](app)
+		if err != nil {
+			return nil, err
+		}
 		return settings.NewService(store, settings.CryptSealer{}, settings.FacadeCache{}, activityLog).
-			WithPlatformAdmins(admins), nil
+			WithPlatformAdmins(admins).
+			WithAccounts(accounts), nil
 	})
 	bindMailFacade(app)
 }

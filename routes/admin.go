@@ -146,6 +146,8 @@ func RegisterAdminRoutes() {
 		router.Post("/settings/mail/test", platformSettingsCtrl.TestMail)
 		router.Get("/settings", platformSettingsCtrl.Index)
 		router.Get("/settings/{group}", platformSettingsCtrl.Show)
+		// S1.4.6: GET /v1/platform/accounts/{accountId}/settings/{group} settings.view (platform-managed account groups).
+		router.Get("/accounts/{accountId}/settings/{group}", platformSettingsCtrl.ShowAccount)
 		router.Put("/settings/{group}", platformSettingsCtrl.Update)
 		router.Post("/settings/sections/{section}/cache", platformSettingsCtrl.Flush)
 		router.Post("/settings/sections/{section}/reset", platformSettingsCtrl.Reset)

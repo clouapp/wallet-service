@@ -170,50 +170,5 @@ func (s *Service) platformGroupView(ctx context.Context, group Group) (GroupView
 	if err != nil {
 		return GroupView{}, err
 	}
-	stored := map[string]models.Setting{}
-	var latest models.Setting
-	for _, row := range rows {
-		stored[row.Key] = row
-		if row.UpdatedAt.After(latest.UpdatedAt) {
-			latest = row
-		}
-	}
-	fields := make([]Field, 0, len(group.Settings))
-	for _, definition := range group.Settings {
-		row, present := stored[definition.Key]
-		field := Field{
-			Key:     definition.Key,
-			Label:   definition.Label,
-			Help:    definition.Help,
-			Type:    definition.Type,
-			Secret:  definition.Secret,
-			Options: definition.Options,
-		}
-		if definition.Secret {
-			field.IsSet = present && row.Value != ""
-			fields = append(fields, field)
-			continue
-		}
-		field.IsSet = present
-		if present {
-			field.Value = castOut(row.Value, definition)
-		} else {
-			field.Value = defaultValue(definition)
-		}
-		fields = append(fields, field)
-	}
-	view := GroupView{
-		Name:      group.Name,
-		Section:   group.SectionName(),
-		Block:     group.Block,
-		Scope:     group.Scope,
-		ManagedBy: group.ManagedBy,
-		CanUpdate: true,
-		Fields:    fields,
-	}
-	if !latest.UpdatedAt.IsZero() {
-		updated := latest.UpdatedAt
-		view.UpdatedAt = &updated
-	}
-	return view, nil
+	return renderStoredGroup(group, rows, true), nil
 }

@@ -48,6 +48,22 @@ func (s *AccountRepositoryTestSuite) TestFindByID_Found() {
 	s.Equal(acc.ID, found.ID)
 }
 
+func (s *AccountRepositoryTestSuite) TestExists() {
+	missing, err := s.repo.Exists(context.Background(), uuid.New())
+	s.NoError(err)
+	s.False(missing)
+
+	nilID, err := s.repo.Exists(context.Background(), uuid.Nil)
+	s.NoError(err)
+	s.False(nilID)
+
+	acc := &models.Account{ID: uuid.New(), Name: "Exists", Status: "active"}
+	s.Require().NoError(s.repo.Create(context.Background(), acc))
+	found, err := s.repo.Exists(context.Background(), acc.ID)
+	s.NoError(err)
+	s.True(found)
+}
+
 func (s *AccountRepositoryTestSuite) TestFindByID_NotFound() {
 	found, err := s.repo.FindByID(context.Background(), uuid.New())
 	s.ErrorIs(err, models.ErrRepositoryNotFound)

@@ -140,6 +140,7 @@ var routeTable = map[string]routeSecurity{
 	"GET|HEAD /v1/me/preferences":                                      session(chainSession),
 	"PATCH /v1/platform/chains/{chainId}":                              session(chainSession),
 	"PATCH /v1/platform/chains/{chainId}/rpc":                          session(chainSession),
+	"GET|HEAD /v1/platform/accounts/{accountId}/settings/{group}":      session(chainSession),
 	"GET|HEAD /v1/platform/settings":                                   session(chainSession),
 	"POST /v1/platform/settings/mail/test":                             session(chainSession),
 	"GET|HEAD /v1/platform/settings/{group}":                           session(chainSession),

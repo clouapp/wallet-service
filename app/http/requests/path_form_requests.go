@@ -73,6 +73,26 @@ func (r *SettingsGroupRequest) Load(ctx http.Context) {
 	r.Group = trimmedRoute(ctx, "group")
 }
 
+// PlatformAccountSettingsRequest is the account id and group on
+// GET /v1/platform/accounts/{accountId}/settings/{group}.
+type PlatformAccountSettingsRequest struct {
+	Open
+	AccountID string `form:"accountId" json:"accountId"`
+	Group     string `form:"group" json:"group"`
+}
+
+func (r *PlatformAccountSettingsRequest) Rules(http.Context) map[string]string {
+	return optionalStringRules("accountId", "group")
+}
+
+func (r *PlatformAccountSettingsRequest) Load(ctx http.Context) {
+	if r == nil {
+		return
+	}
+	r.AccountID = trimmedRoute(ctx, "accountId")
+	r.Group = trimmedRoute(ctx, "group")
+}
+
 // SettingsSectionRequest is the settings section path parameter.
 // Reset and the section cache flush take no document.
 type SettingsSectionRequest struct {

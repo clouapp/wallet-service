@@ -2,6 +2,7 @@ package repositories
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -39,6 +40,27 @@ func (r *AccountRepository) Create(ctx context.Context, account *models.Account)
 		return fmt.Errorf("create account: %w", err)
 	}
 	return nil
+}
+
+// Exists reports whether the account id is stored. A nil id is absent.
+func (r *AccountRepository) Exists(ctx context.Context, id uuid.UUID) (bool, error) {
+	if r == nil {
+		return false, fmt.Errorf("account exists: repository is required")
+	}
+	if ctx == nil {
+		return false, fmt.Errorf("account exists: context is required")
+	}
+	if id == uuid.Nil {
+		return false, nil
+	}
+	found, err := r.FindByID(ctx, id)
+	if err != nil {
+		if errors.Is(err, models.ErrRepositoryNotFound) {
+			return false, nil
+		}
+		return false, err
+	}
+	return found != nil && found.ID == id, nil
 }
 
 // FindByID returns the account, or ErrRepositoryNotFound.

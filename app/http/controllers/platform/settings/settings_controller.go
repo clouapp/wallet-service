@@ -85,6 +85,40 @@ func (ctrl *SettingsController) Show(ctx http.Context) http.Response {
 	return responses.Send(ctx, http.StatusOK, view)
 }
 
+// ShowAccount godoc
+// @Summary      Read one platform-managed account settings group
+// @Description  GET /v1/platform/accounts/{accountId}/settings/{group} settings.view (platform-managed account groups). settings.view is not in a platform catalog, so a platform_admins row is the gate. An unknown group, a platform-only group, and an account-managed group are 404 before the account lookup and before that gate. An unknown account is 404 before that gate. A known group with no stored row is 200 with registry defaults and is_set false. A secret is never returned. The read writes no activity and does not read another account's rows.
+// @Tags         Platform Settings
+// @Security     BearerAuth
+// @Produce      json
+// @Param        accountId  path  string  true  "Account UUID"
+// @Param        group      path  string  true  "Settings group"
+// @Success      200  {object}  settingssvc.GroupView
+// @Failure      401  {object}  responses.ErrorBody
+// @Failure      403  {object}  responses.ErrorBody
+// @Failure      404  {object}  responses.ErrorBody
+// @Router       /platform/accounts/{accountId}/settings/{group} [get]
+func (ctrl *SettingsController) ShowAccount(ctx http.Context) http.Response {
+	actorID := middleware.SessionUserID(ctx)
+	if actorID == uuid.Nil {
+		return responses.Send(ctx, http.StatusUnauthorized, http.Json{"error": "unauthorized"})
+	}
+	var path requests.PlatformAccountSettingsRequest
+	path.Load(ctx)
+	if path.Group == "" {
+		return responses.Send(ctx, http.StatusBadRequest, http.Json{"error": "group is required"})
+	}
+	accountID, err := uuid.Parse(path.AccountID)
+	if err != nil {
+		accountID = uuid.Nil
+	}
+	view, err := ctrl.settings.PlatformAccountGroup(ctx.Context(), actorID, accountID, path.Group)
+	if errResp := mapPlatformSettingsError(ctx, err); errResp != nil {
+		return errResp
+	}
+	return responses.Send(ctx, http.StatusOK, view)
+}
+
 // Update godoc
 // @Summary      Save one platform settings group
 // @Description  Writes one platform group. webhook_delivery stores max_attempts and timeout_seconds. sweep_limits stores positive address and consolidate counts; a blank daily_withdraw_cap_usd means unlimited. mail_smtp stores host, port, encryption, and username; the password is sealed and omitted from the response (is_set reports whether one is stored). A blank password keeps the stored one. mail_delivery stores driver, from_address, and from_name in the clear. An invalid address, an empty name, and driver log in production are 422 and are not stored. mail_ses, mail_mailgun, mail_resend, and mail_postmark store their provider fields; each secret is sealed and omitted, a blank secret keeps the stored one, and mail_ses key and secret must be set together. price_lookup stores provider_order. price_coingecko, price_coinmarketcap, and price_coinapi store enabled and a sealed key that is omitted from the response; a blank key keeps the stored one. An unknown provider name is 422 and is not stored. provider_alchemy stores enabled and a sealed auth_token that is omitted from the response; a blank auth_token keeps the stored one. provider_helius and provider_quicknode store enabled and a sealed api_key that is omitted from the response; a blank api_key keeps the stored one. provider_etherscan stores enabled and a sealed api_key that is omitted from the response; a blank api_key keeps the stored one. Zero or negative counts, and a negative cap, are 422 and are not stored. An unknown group is 404 before the platform-admin check. Values are not written to the activity log.
@@ -221,6 +255,8 @@ func mapPlatformSettingsError(ctx http.Context, err error) http.Response {
 	switch {
 	case errors.Is(err, settingssvc.ErrGroupNotFound):
 		return responses.Send(ctx, http.StatusNotFound, http.Json{"error": "settings group not found"})
+	case errors.Is(err, settingssvc.ErrAccountNotFound):
+		return responses.Send(ctx, http.StatusNotFound, http.Json{"error": err.Error()})
 	case errors.Is(err, settingssvc.ErrSectionNotFound):
 		return responses.Send(ctx, http.StatusNotFound, http.Json{"error": "settings section not found"})
 	case errors.Is(err, settingssvc.ErrPlatformForbidden),

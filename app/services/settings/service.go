@@ -51,9 +51,16 @@ type Cache interface {
 }
 
 // platformAdmins is the platform_admins row used when the catalog has no
-// matching permission name. settings.update is that name for a platform group.
+// matching permission name. settings.view and settings.update are those names.
 type platformAdmins interface {
 	Contains(ctx context.Context, userID uuid.UUID) (bool, error)
+}
+
+// accountDirectory reports whether an account id is stored. The platform
+// account settings route answers 404 for a missing id before it checks
+// platform_admins.
+type accountDirectory interface {
+	Exists(ctx context.Context, id uuid.UUID) (bool, error)
 }
 
 // Service reads and writes the account settings registry.
@@ -63,6 +70,7 @@ type Service struct {
 	cache    Cache
 	activity activitylog.Writer
 	admins   platformAdmins
+	accounts accountDirectory
 }
 
 // NewService builds the account settings service.
@@ -89,6 +97,16 @@ func (s *Service) WithPlatformAdmins(admins platformAdmins) *Service {
 		return nil
 	}
 	s.admins = admins
+	return s
+}
+
+// WithAccounts sets the account lookup for platform-managed account groups.
+// A nil reader leaves that route unable to tell a missing account from a stored one.
+func (s *Service) WithAccounts(accounts accountDirectory) *Service {
+	if s == nil {
+		return nil
+	}
+	s.accounts = accounts
 	return s
 }
 
@@ -405,53 +423,8 @@ func (s *Service) groupView(ctx context.Context, accountID uuid.UUID, role strin
 	if err != nil {
 		return GroupView{}, err
 	}
-	stored := map[string]models.Setting{}
-	var updatedAt time.Time
-	for _, row := range rows {
-		stored[row.Key] = row
-		if row.UpdatedAt.After(updatedAt) {
-			updatedAt = row.UpdatedAt
-		}
-	}
-
-	fields := make([]Field, 0, len(group.Settings))
-	for _, definition := range group.Settings {
-		row, present := stored[definition.Key]
-		field := Field{
-			Key:     definition.Key,
-			Label:   definition.Label,
-			Help:    definition.Help,
-			Type:    definition.Type,
-			Secret:  definition.Secret,
-			Options: definition.Options,
-		}
-		if definition.Secret {
-			field.IsSet = present && row.Value != ""
-			fields = append(fields, field)
-			continue
-		}
-		field.IsSet = present
-		if present {
-			field.Value = castOut(row.Value, definition)
-		} else {
-			field.Value = defaultValue(definition)
-		}
-		fields = append(fields, field)
-	}
-
-	view := GroupView{
-		Name:      group.Name,
-		Section:   group.SectionName(),
-		Block:     group.Block,
-		Scope:     group.Scope,
-		ManagedBy: group.ManagedBy,
-		CanUpdate: policies.MayUpdateSettings(role) && group.ManagedBy == ManagedByAccount,
-		Fields:    fields,
-	}
-	if !updatedAt.IsZero() {
-		view.UpdatedAt = &updatedAt
-	}
-	return view, nil
+	canUpdate := policies.MayUpdateSettings(role) && group.ManagedBy == ManagedByAccount
+	return renderStoredGroup(group, rows, canUpdate), nil
 }
 
 // storedValues is the cached read of one account group. A hit returns the
