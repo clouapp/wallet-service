@@ -124,6 +124,23 @@ func (ctrl *InvitesController) Resend(ctx http.Context) http.Response {
 	return responses.Send(ctx, http.StatusAccepted, inviteCreatedView(issued.Invite))
 }
 
+// Delete revokes one open invite. users.write is the route middleware. The
+// answer is empty: no token, hash, or link. Mail is not sent.
+func (ctrl *InvitesController) Delete(ctx http.Context) http.Response {
+	account := requestctx.MustAccount(ctx)
+	inviteID, err := requests.RouteUUID(ctx, "id")
+	if err != nil {
+		return responses.Send(ctx, http.StatusBadRequest, http.Json{"error": "invalid invite id"})
+	}
+	if err := ctrl.accounts.RevokeInvite(ctx.Context(), account.ID, inviteID); err != nil {
+		if errors.Is(err, accountsvc.ErrInviteInvalid) {
+			return responses.Send(ctx, http.StatusNotFound, http.Json{"error": err.Error()})
+		}
+		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to revoke invite"})
+	}
+	return ctx.Response().NoContent()
+}
+
 func inviteCreatedView(invite *models.AccountInvite) inviteListItem {
 	if invite == nil {
 		return inviteListItem{}

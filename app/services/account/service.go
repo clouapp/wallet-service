@@ -73,6 +73,7 @@ type InviteStore interface {
 	FindOpenByAccountAndID(ctx context.Context, accountID, id uuid.UUID) (*models.AccountInvite, error)
 	Rotate(ctx context.Context, id uuid.UUID, tokenHash, role string, expiresAt time.Time) error
 	MarkAccepted(ctx context.Context, id uuid.UUID, acceptedAt time.Time) error
+	MarkRevoked(ctx context.Context, accountID, id uuid.UUID, revokedAt time.Time) error
 	PaginateByAccountID(ctx context.Context, accountID uuid.UUID, limit, offset int) ([]models.AccountInvite, int64, error)
 }
 

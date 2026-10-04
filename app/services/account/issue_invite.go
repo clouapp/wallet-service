@@ -145,6 +145,39 @@ func (s *Service) ResendInvite(ctx context.Context, accountID, inviteID uuid.UUI
 	return &IssuedInvite{Invite: invite, InviteLink: link, RawToken: raw}, nil
 }
 
+// RevokeInvite stamps revoked_at on one open invite. The stored token hash,
+// role and expiry stay. An accepted, revoked, unknown, or other-account
+// invite is ErrInviteInvalid and the row is unchanged. The audit plugin
+// records the allowlisted columns as updated. This does not send mail.
+func (s *Service) RevokeInvite(ctx context.Context, accountID, inviteID uuid.UUID) error {
+	if s == nil || s.invites == nil {
+		return errors.New("account invite stores are required")
+	}
+	if ctx == nil {
+		return errors.New("revoke invite: context is required")
+	}
+	if accountID == uuid.Nil || inviteID == uuid.Nil {
+		return ErrInviteInvalid
+	}
+	invite, err := s.invites.FindOpenByAccountAndID(ctx, accountID, inviteID)
+	if err != nil {
+		if errors.Is(err, models.ErrRepositoryNotFound) {
+			return ErrInviteInvalid
+		}
+		return err
+	}
+	if invite == nil {
+		return ErrInviteInvalid
+	}
+	if err := s.invites.MarkRevoked(ctx, accountID, invite.ID, time.Now()); err != nil {
+		if errors.Is(err, models.ErrRepositoryNotFound) {
+			return ErrInviteInvalid
+		}
+		return err
+	}
+	return nil
+}
+
 // ListInvites pages one account's invites. The store clears the token hash
 // before the rows leave the repository, so this list cannot carry it.
 func (s *Service) ListInvites(ctx context.Context, accountID uuid.UUID, limit, offset int) ([]models.AccountInvite, int64, error) {

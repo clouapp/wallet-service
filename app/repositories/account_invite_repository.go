@@ -157,3 +157,29 @@ func (r *AccountInviteRepository) MarkAccepted(ctx context.Context, id uuid.UUID
 	}
 	return nil
 }
+
+// MarkRevoked stamps revoked_at on one open invite of this account. A row
+// that is already accepted or revoked is left untouched. The statement keeps
+// the caller's context so the audit plugin records the allowlisted columns.
+// token_hash is not assigned.
+func (r *AccountInviteRepository) MarkRevoked(ctx context.Context, accountID, id uuid.UUID, revokedAt time.Time) error {
+	if ctx == nil {
+		return fmt.Errorf("revoke account invite: context is required")
+	}
+	if accountID == uuid.Nil || id == uuid.Nil {
+		return fmt.Errorf("revoke account invite: account id and invite id are required")
+	}
+	if revokedAt.IsZero() {
+		return fmt.Errorf("revoke account invite: revoked_at is required")
+	}
+	result, err := r.statement(ctx).Model(&models.AccountInvite{}).
+		Where("id = ? AND account_id = ? AND accepted_at IS NULL AND revoked_at IS NULL", id, accountID).
+		Update("revoked_at", revokedAt)
+	if err != nil {
+		return fmt.Errorf("revoke account invite: %w", err)
+	}
+	if err := db.RequireRow(result); err != nil {
+		return err
+	}
+	return nil
+}

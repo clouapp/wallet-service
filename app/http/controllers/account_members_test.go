@@ -622,6 +622,119 @@ func (s *AccountMembersTestSuite) TestResendInviteRotatesTheTokenForUsersWrite()
 	s.Equal(acceptedHash, s.inviteTokenHash(inviteID))
 }
 
+func (s *AccountMembersTestSuite) TestDeleteInviteRevokesForUsersWrite() {
+	accountID := s.createAccount()
+	otherID := s.createAccount()
+	owner := s.loginUser("owner", models.MembershipStatusActive, accountID)
+	admin := s.loginUser("admin", models.MembershipStatusActive, accountID)
+	auditor := s.loginUser("auditor", models.MembershipStatusActive, accountID)
+	user := s.loginUser("user", models.MembershipStatusActive, accountID)
+	const rawToken = "delete-plain-secret"
+	storedHash := accountsvc.HashInviteToken(rawToken)
+	inviteID := s.insertOpenInvite(accountID, owner.id, "delete-me@example.com", models.AccountRoleAuditor, storedHash)
+	const otherHash = "other-account-delete-digest"
+	otherInviteID := s.insertOpenInvite(otherID, owner.id, "other-delete@example.com", models.AccountRoleUser, otherHash)
+	adminInviteID := s.insertOpenInvite(accountID, owner.id, "admin-delete@example.com", models.AccountRoleUser, "admin-delete-digest")
+	expiresBefore := s.inviteExpiresEpoch(inviteID)
+
+	s.assertForbidden(s.deleteInvite(auditor.token, accountID, inviteID), "forbidden")
+	s.assertForbidden(s.deleteInvite(user.token, accountID, inviteID), "forbidden")
+	s.Equal(storedHash, s.inviteTokenHash(inviteID))
+	s.Equal(int64(1), s.countActivity(`SELECT count(*) FROM account_invites WHERE id = ? AND revoked_at IS NULL`, inviteID))
+
+	missingAccount := s.deleteInvite(user.token, uuid.New(), inviteID)
+	missingAccount.AssertNotFound()
+	missingBody, err := missingAccount.Content()
+	s.Require().NoError(err)
+	s.Contains(missingBody, `"code":"not_found"`)
+	s.NotContains(missingBody, `"message":"forbidden"`)
+
+	invalidID, err := s.Http(s.T()).
+		WithHeader("Authorization", "Bearer "+owner.token).
+		Delete("/v1/accounts/"+accountID.String()+"/invites/not-a-uuid", nil)
+	s.Require().NoError(err)
+	invalidID.AssertStatus(400)
+
+	unknown := s.deleteInvite(owner.token, accountID, uuid.New())
+	unknown.AssertNotFound()
+	unknownBody, err := unknown.Content()
+	s.Require().NoError(err)
+	s.Contains(unknownBody, "invite is invalid or expired")
+
+	other := s.deleteInvite(owner.token, accountID, otherInviteID)
+	other.AssertNotFound()
+	s.Equal(otherHash, s.inviteTokenHash(otherInviteID))
+	s.Equal(int64(1), s.countActivity(`SELECT count(*) FROM account_invites WHERE id = ? AND revoked_at IS NULL`, otherInviteID))
+
+	deleted := s.deleteInvite(owner.token, accountID, inviteID)
+	deleted.AssertNoContent()
+	deletedBody, err := deleted.Content()
+	s.Require().NoError(err)
+	s.Empty(strings.TrimSpace(deletedBody))
+	s.NotContains(deletedBody, rawToken)
+	s.NotContains(deletedBody, storedHash)
+	s.Equal(storedHash, s.inviteTokenHash(inviteID))
+	s.Equal(expiresBefore, s.inviteExpiresEpoch(inviteID))
+	s.Equal(models.AccountRoleAuditor, s.storedInviteRole(inviteID))
+	s.Equal(int64(0), s.countActivity(`SELECT count(*) FROM account_invites WHERE id = ? AND revoked_at IS NULL`, inviteID))
+	revokedAt := s.countActivity(`SELECT EXTRACT(EPOCH FROM revoked_at)::bigint FROM account_invites WHERE id = ?`, inviteID)
+	s.NotZero(revokedAt)
+
+	preview, err := s.Http(s.T()).Get("/v1/auth/invites/" + rawToken)
+	s.Require().NoError(err)
+	preview.AssertNotFound()
+
+	props := s.activityText(
+		`SELECT properties::text FROM activity_log WHERE subject_type = 'account_invite' AND subject_id = ? AND event = 'updated'`,
+		inviteID.String(),
+	)
+	s.NotContains(props, rawToken)
+	s.NotContains(props, storedHash)
+	s.NotContains(props, "token_hash")
+	s.NotContains(props, "wallet_roles")
+	s.NotContains(props, "invite_link")
+	s.Contains(props, "revoked_at")
+	s.Equal(int64(1), s.countActivity(
+		`SELECT count(*) FROM activity_log WHERE subject_type = 'account_invite' AND subject_id = ? AND event = 'updated' AND scope = ? AND causer_type = 'users'`,
+		inviteID.String(), "account:"+accountID.String(),
+	))
+	s.Equal(int64(0), s.countActivity(`SELECT count(*) FROM account_activity WHERE action = 'member.invited' AND account_id = ?`, accountID))
+
+	again := s.deleteInvite(admin.token, accountID, inviteID)
+	again.AssertNotFound()
+	s.Equal(revokedAt, s.countActivity(`SELECT EXTRACT(EPOCH FROM revoked_at)::bigint FROM account_invites WHERE id = ?`, inviteID))
+	s.Equal(storedHash, s.inviteTokenHash(inviteID))
+	s.Equal(int64(1), s.countActivity(`SELECT count(*) FROM activity_log WHERE subject_type = 'account_invite' AND subject_id = ? AND event = 'updated'`, inviteID.String()))
+
+	adminDeleted := s.deleteInvite(admin.token, accountID, adminInviteID)
+	adminDeleted.AssertNoContent()
+	s.Equal(int64(0), s.countActivity(`SELECT count(*) FROM account_invites WHERE id = ? AND revoked_at IS NULL`, adminInviteID))
+	s.Equal("admin-delete-digest", s.inviteTokenHash(adminInviteID))
+
+	acceptedID := s.insertOpenInvite(accountID, owner.id, "accepted-delete@example.com", models.AccountRoleUser, "accepted-delete-digest")
+	_, err = facades.Orm().Query().Exec(`UPDATE account_invites SET accepted_at = NOW() WHERE id = ?`, acceptedID)
+	s.Require().NoError(err)
+	accepted := s.deleteInvite(owner.token, accountID, acceptedID)
+	accepted.AssertNotFound()
+	s.Equal("accepted-delete-digest", s.inviteTokenHash(acceptedID))
+	s.Equal(int64(1), s.countActivity(`SELECT count(*) FROM account_invites WHERE id = ? AND revoked_at IS NULL`, acceptedID))
+}
+
+func (s *AccountMembersTestSuite) deleteInvite(token string, accountID, inviteID uuid.UUID) contractstesting.Response {
+	resp, err := s.Http(s.T()).
+		WithHeader("Authorization", "Bearer "+token).
+		Delete("/v1/accounts/"+accountID.String()+"/invites/"+inviteID.String(), nil)
+	s.Require().NoError(err)
+	return resp
+}
+
+func (s *AccountMembersTestSuite) activityText(query string, args ...any) string {
+	s.T().Helper()
+	var text string
+	s.Require().NoError(facades.Orm().Query().Raw(query, args...).Scan(&text))
+	return text
+}
+
 func (s *AccountMembersTestSuite) storedInviteRole(id uuid.UUID) string {
 	s.T().Helper()
 	var role string

@@ -156,3 +156,59 @@ func TestResendInviteRotatesTheOpenToken(t *testing.T) {
 	require.ErrorIs(t, err, accountsvc.ErrInviteInvalid)
 	require.Equal(t, hashAfterAccept, scalar[string](t, `SELECT token_hash FROM account_invites WHERE id = ?`, issued.Invite.ID))
 }
+
+func TestRevokeInviteStampsRevokedAtAndLeavesTheToken(t *testing.T) {
+	mocks.TestDB(t)
+	account := mocks.InsertAccount(t, "invite-revoke")
+	other := mocks.InsertAccount(t, "invite-revoke-other")
+	ownerID := uuid.New()
+	exec(t, `INSERT INTO users (id, email, password_hash, full_name, status, created_at, updated_at)
+		VALUES (?, 'owner-revoke@example.com', 'hash', 'Owner', 'active', NOW(), NOW())`, ownerID)
+	exec(t, `INSERT INTO account_users (id, account_id, user_id, role, status, created_at, updated_at)
+		VALUES (?, ?, ?, 'owner', 'active', NOW(), NOW())`, uuid.New(), account.ID, ownerID)
+
+	svc := accountsvc.NewService(accountsvc.Deps{
+		Accounts:    repositories.NewAccountRepository(nil),
+		Memberships: repositories.NewAccountUserRepository(nil),
+		Users:       repositories.NewUserRepository(nil),
+		Invites:     repositories.NewAccountInviteRepository(nil),
+		Activity:    repositories.NewAccountActivityRepository(nil),
+	})
+	const frontend = "http://localhost:2001"
+	issued, err := svc.IssueInvite(context.Background(), account.ID, "revoke-me@example.com", models.AccountRoleAuditor, ownerID, frontend)
+	require.NoError(t, err)
+	invited := scalar[int64](t, `SELECT count(*) FROM account_activity WHERE action = 'member.invited' AND account_id = ?`, account.ID)
+	hashBefore := scalar[string](t, `SELECT token_hash FROM account_invites WHERE id = ?`, issued.Invite.ID)
+	expiresBefore := scalar[int64](t, `SELECT EXTRACT(EPOCH FROM expires_at)::bigint FROM account_invites WHERE id = ?`, issued.Invite.ID)
+
+	require.Error(t, svc.RevokeInvite(nil, account.ID, issued.Invite.ID))
+	require.ErrorIs(t, svc.RevokeInvite(context.Background(), uuid.Nil, issued.Invite.ID), accountsvc.ErrInviteInvalid)
+	require.Equal(t, int64(1), scalar[int64](t, `SELECT count(*) FROM account_invites WHERE id = ? AND revoked_at IS NULL`, issued.Invite.ID))
+
+	require.NoError(t, svc.RevokeInvite(context.Background(), account.ID, issued.Invite.ID))
+	require.Equal(t, hashBefore, scalar[string](t, `SELECT token_hash FROM account_invites WHERE id = ?`, issued.Invite.ID))
+	require.Equal(t, models.AccountRoleAuditor, scalar[string](t, `SELECT role FROM account_invites WHERE id = ?`, issued.Invite.ID))
+	require.Equal(t, expiresBefore, scalar[int64](t, `SELECT EXTRACT(EPOCH FROM expires_at)::bigint FROM account_invites WHERE id = ?`, issued.Invite.ID))
+	require.Equal(t, int64(0), scalar[int64](t, `SELECT count(*) FROM account_invites WHERE id = ? AND revoked_at IS NULL`, issued.Invite.ID))
+	revokedAt := scalar[int64](t, `SELECT EXTRACT(EPOCH FROM revoked_at)::bigint FROM account_invites WHERE id = ?`, issued.Invite.ID)
+	require.NotZero(t, revokedAt)
+	_, _, err = svc.PreviewInvite(context.Background(), issued.RawToken)
+	require.ErrorIs(t, err, accountsvc.ErrInviteInvalid)
+	require.Equal(t, invited, scalar[int64](t, `SELECT count(*) FROM account_activity WHERE action = 'member.invited' AND account_id = ?`, account.ID))
+
+	require.ErrorIs(t, svc.RevokeInvite(context.Background(), account.ID, issued.Invite.ID), accountsvc.ErrInviteInvalid)
+	require.Equal(t, revokedAt, scalar[int64](t, `SELECT EXTRACT(EPOCH FROM revoked_at)::bigint FROM account_invites WHERE id = ?`, issued.Invite.ID))
+	require.Equal(t, hashBefore, scalar[string](t, `SELECT token_hash FROM account_invites WHERE id = ?`, issued.Invite.ID))
+
+	require.ErrorIs(t, svc.RevokeInvite(context.Background(), other.ID, issued.Invite.ID), accountsvc.ErrInviteInvalid)
+	require.Equal(t, hashBefore, scalar[string](t, `SELECT token_hash FROM account_invites WHERE id = ?`, issued.Invite.ID))
+
+	accepted, err := svc.IssueInvite(context.Background(), account.ID, "revoke-accepted@example.com", models.AccountRoleUser, ownerID, frontend)
+	require.NoError(t, err)
+	_, err = svc.AcceptInvite(context.Background(), accepted.RawToken, "long-enough-password", "Accepted Person", nil)
+	require.NoError(t, err)
+	acceptedHash := scalar[string](t, `SELECT token_hash FROM account_invites WHERE id = ?`, accepted.Invite.ID)
+	require.ErrorIs(t, svc.RevokeInvite(context.Background(), account.ID, accepted.Invite.ID), accountsvc.ErrInviteInvalid)
+	require.Equal(t, acceptedHash, scalar[string](t, `SELECT token_hash FROM account_invites WHERE id = ?`, accepted.Invite.ID))
+	require.Equal(t, int64(1), scalar[int64](t, `SELECT count(*) FROM account_invites WHERE id = ? AND revoked_at IS NULL`, accepted.Invite.ID))
+}
