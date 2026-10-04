@@ -12,6 +12,7 @@ const (
 	groupDepositScan     = "deposit_scan"
 	groupWebhookDelivery = "webhook_delivery"
 	groupSweepLimits     = "sweep_limits"
+	groupMailSMTP        = "mail_smtp"
 
 	sectionScanning = "scanning"
 	sectionDelivery = "delivery"
@@ -105,6 +106,7 @@ func platformGroups() []Group {
 			// names no permission: a platform_admins row is the gate.
 			Validate: validateSweepLimits,
 		},
+		mailSMTPGroup(),
 	}
 }
 

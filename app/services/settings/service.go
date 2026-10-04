@@ -591,6 +591,9 @@ func (s *Service) collectWrites(group Group, stored map[string]string, body map[
 	if !invalid.empty() {
 		return nil, invalid
 	}
+	if moved := secretRequiredAfterDestinationMove(group, stored, writes); !moved.empty() {
+		return nil, moved
+	}
 	if group.Validate != nil {
 		if validateErr := group.Validate(effectiveNonSecrets(group.Settings, stored, writes)); validateErr != nil {
 			return nil, validateErr

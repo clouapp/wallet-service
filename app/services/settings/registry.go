@@ -43,13 +43,16 @@ const (
 
 // Definition is one known setting.
 type Definition struct {
-	Key     string
-	Label   string
-	Help    string
-	Type    Type
-	Secret  bool
-	Options []string
-	Default func() any
+	Key    string
+	Label  string
+	Help   string
+	Type   Type
+	Secret bool
+	// Destination is a field the group's secrets are sent to. Changing it
+	// requires the secret again; a blank secret does not keep the old one.
+	Destination bool
+	Options     []string
+	Default     func() any
 }
 
 // Group is one save. Section and Block are navigation only.

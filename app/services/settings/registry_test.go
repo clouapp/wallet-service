@@ -19,7 +19,7 @@ func TestAccountSectionsDoNotShareNamesWithGroups(t *testing.T) {
 		switch group.Scope {
 		case ScopeAccount:
 		case ScopePlatform:
-			if group.Name != groupDepositScan && group.Name != groupWebhookDelivery && group.Name != groupSweepLimits {
+			if group.Name != groupDepositScan && group.Name != groupWebhookDelivery && group.Name != groupSweepLimits && group.Name != groupMailSMTP {
 				t.Fatalf("unexpected platform group %s", group.Name)
 			}
 		default:
@@ -61,6 +61,18 @@ func TestAccountSectionsDoNotShareNamesWithGroups(t *testing.T) {
 	delivery, ok := FindGroup(groupWebhookDelivery)
 	if !ok || delivery.Scope != ScopePlatform || len(delivery.Settings) != 2 || delivery.UpdatePermission != "" {
 		t.Fatalf("webhook delivery group = %+v present %v", delivery, ok)
+	}
+	smtp, ok := FindGroup(groupMailSMTP)
+	if !ok || smtp.Scope != ScopePlatform || smtp.SectionName() != sectionMail || smtp.UpdatePermission != "" || len(smtp.Settings) != 5 {
+		t.Fatalf("mail smtp group = %+v present %v", smtp, ok)
+	}
+	host, ok := Find(groupMailSMTP, keyMailHost)
+	if !ok || !host.Destination || host.Secret {
+		t.Fatalf("mail host = %+v present %v", host, ok)
+	}
+	password, ok := Find(groupMailSMTP, keyMailPassword)
+	if !ok || !password.Secret || password.Type != TypeString || password.Destination {
+		t.Fatalf("mail password = %+v present %v", password, ok)
 	}
 }
 
@@ -148,6 +160,12 @@ func TestEverySecretGroupDeclaresAPermission(t *testing.T) {
 			}
 		}
 		if !secret {
+			continue
+		}
+		if group.Scope == ScopePlatform {
+			if group.Name != groupMailSMTP || group.ViewPermission != "" || group.UpdatePermission != "" {
+				t.Fatalf("platform secret group %s must stay gated by platform_admins", group.Name)
+			}
 			continue
 		}
 		if group.ViewPermission == "" || group.UpdatePermission == "" {
