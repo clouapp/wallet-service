@@ -10,7 +10,7 @@ import (
 
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/repositories"
-	"github.com/macrowallets/waas/pkg/security"
+	"github.com/macrowallets/waas/app/services/settings"
 	"github.com/macrowallets/waas/tests/mocks"
 )
 
@@ -57,7 +57,7 @@ func (s *WebhookConfigRepositoryTestSuite) TestSecretIsSealedAtRestAndOpenedOnRe
 	s.Equal("whsec_plain", cfg.Secret, "the caller keeps the plaintext")
 	stored := s.storedSecret(cfg.ID)
 	s.NotEqual("whsec_plain", stored)
-	s.True(security.IsSealedSecret(stored))
+	s.True(settings.IsSealed(stored), "webhook secret must be stored with the seal prefix")
 
 	byID, err := s.repo.FindByID(context.Background(), cfg.ID)
 	s.Require().NoError(err)
@@ -76,7 +76,7 @@ func (s *WebhookConfigRepositoryTestSuite) TestUpdateFieldsSealsASecret() {
 	s.Require().NoError(s.repo.UpdateFields(context.Background(), cfg.ID, fields))
 
 	s.Equal("rotated", fields["secret"], "the caller's map is not rewritten")
-	s.True(security.IsSealedSecret(s.storedSecret(cfg.ID)))
+	s.True(settings.IsSealed(s.storedSecret(cfg.ID)), "rotated webhook secret must be stored with the seal prefix")
 	loaded, err := s.repo.FindByID(context.Background(), cfg.ID)
 	s.Require().NoError(err)
 	s.Equal("rotated", loaded.Secret)
@@ -89,9 +89,9 @@ func (s *WebhookConfigRepositoryTestSuite) TestFindRefusesASecretStoredInPlainte
 	s.Require().NoError(err)
 
 	_, err = s.repo.FindByID(context.Background(), cfg.ID)
-	s.ErrorIs(err, security.ErrSecretNotSealed)
+	s.ErrorIs(err, settings.ErrNotSealed)
 	_, err = s.repo.FindActive(context.Background())
-	s.ErrorIs(err, security.ErrSecretNotSealed)
+	s.ErrorIs(err, settings.ErrNotSealed)
 }
 
 func (s *WebhookConfigRepositoryTestSuite) TestFindByWalletID() {

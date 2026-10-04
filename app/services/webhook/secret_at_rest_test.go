@@ -12,7 +12,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/goravel/framework/facades"
 
-	"github.com/macrowallets/waas/pkg/security"
+	"github.com/macrowallets/waas/app/services/settings"
 )
 
 func storedSecret(t *testing.T, configID uuid.UUID) string {
@@ -38,15 +38,16 @@ func TestWebhookSecretIsSealedAtRestAndSignaturesUseThePlaintext(t *testing.T) {
 	cfg := insertOwnedConfig(t, server.URL, []string{withdrawalEvents}, &f.accountID, nil)
 
 	stored := storedSecret(t, cfg.ID)
-	if stored == scopedSecret || !security.IsSealedSecret(stored) {
-		t.Fatalf("webhook_configs.secret must be sealed at rest, got %q", stored)
+	if stored == scopedSecret || !settings.IsSealed(stored) {
+		t.Fatal("webhook_configs.secret must be sealed at rest")
 	}
-	if opened, err := facades.Crypt().DecryptString(stored); err != nil || opened != scopedSecret {
-		t.Fatalf("stored secret must open to the plaintext: %q, %v", opened, err)
+	opened, err := settings.Open(facades.Crypt(), stored)
+	if err != nil || opened != scopedSecret {
+		t.Fatal("stored secret must open to the plaintext")
 	}
 	loaded, err := f.svc.webhookConfigRepo.FindByID(context.Background(), cfg.ID)
 	if err != nil || loaded == nil || loaded.Secret != scopedSecret {
-		t.Fatalf("the repository must hand out the plaintext secret: %+v, %v", loaded, err)
+		t.Fatal("the repository must hand out the plaintext secret")
 	}
 
 	if _, err := f.svc.EnqueueScoped(context.Background(), f.event(uuid.NewString())); err != nil {

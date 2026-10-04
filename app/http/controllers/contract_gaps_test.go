@@ -23,7 +23,7 @@ import (
 	appfacades "github.com/macrowallets/waas/app/facades"
 	"github.com/macrowallets/waas/app/models"
 	authsvc "github.com/macrowallets/waas/app/services/auth"
-	"github.com/macrowallets/waas/pkg/security"
+	"github.com/macrowallets/waas/app/services/settings"
 	"github.com/macrowallets/waas/tests/mocks"
 )
 
@@ -114,7 +114,7 @@ func (s *contractGapsSuite) seedWebhook(walletID uuid.UUID, url, secret string) 
 	s.T().Helper()
 
 	webhookID := uuid.New()
-	sealed, err := security.SealSecret(appfacades.Crypt(), secret)
+	sealed, err := settings.Seal(appfacades.Crypt(), secret)
 	s.Require().NoError(err)
 	s.Require().NoError(facades.Orm().Query().Create(&models.WebhookConfig{
 		ID:       webhookID,

@@ -2,11 +2,14 @@ package controllers_test
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 
+	"github.com/goravel/framework/facades"
 	goravelTesting "github.com/goravel/framework/testing"
 	"github.com/stretchr/testify/suite"
 
+	"github.com/macrowallets/waas/app/services/settings"
 	ctltestutil "github.com/macrowallets/waas/tests/feature/support"
 	"github.com/macrowallets/waas/tests/testutil"
 )
@@ -27,7 +30,8 @@ func (s *WebhooksControllerTestSuite) TestCreateWebhook_Success() {
 	testutil.SeededTestDB(s.T())
 	_, bearer, _ := ctltestutil.SetupAPIAuth(s.T(), false)
 
-	body := `{"url":"https://example.com/webhook","secret":"webhook_secret_123","events":["deposit.confirmed","withdrawal.confirmed"]}`
+	const secret = "webhook_secret_123"
+	body := `{"url":"https://example.com/webhook","secret":"` + secret + `","events":["deposit.confirmed","withdrawal.confirmed"]}`
 	resp := ctltestutil.Post(s.T(), &s.TestCase, "/api/v1/webhooks", body, bearer, nil)
 	resp.AssertCreated().AssertJson(map[string]any{
 		"url":       "https://example.com/webhook",
@@ -42,6 +46,17 @@ func (s *WebhooksControllerTestSuite) TestCreateWebhook_Success() {
 	s.NotNil(payload["events"])
 	_, hasSecret := payload["secret"]
 	s.False(hasSecret, "secret MUST NOT appear in webhook response body")
+
+	var stored string
+	s.Require().NoError(facades.Orm().Query().Raw(
+		`SELECT secret FROM webhook_configs WHERE id = ?`, payload["id"],
+	).Scan(&stored))
+	if !settings.IsSealed(stored) || stored == secret {
+		s.T().Fatal("created webhook secret is not sealed")
+	}
+	if strings.Contains(content, secret) || strings.Contains(content, stored) {
+		s.T().Fatal("webhook HTTP JSON contains the signing secret")
+	}
 }
 
 // TestCreateWebhook_MissingURL — validator requires url; returns 422.

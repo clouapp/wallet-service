@@ -78,10 +78,10 @@ func TestSealWebhookConfigSecretsKeepsSignaturesIdentical(t *testing.T) {
 	require.True(t, security.IsSealedSecret(sealed))
 	require.True(t, security.IsSealedSecret(storedWebhookSecret(t, emptySecretID)), "an empty secret is sealed too")
 
-	loaded, err := repositories.NewWebhookConfigRepository(nil, facades.Crypt()).FindByID(context.Background(), configID)
+	opened, err := security.OpenSecret(facades.Crypt(), sealed)
 	require.NoError(t, err)
-	require.Equal(t, legacyWebhookSecret, loaded.Secret)
-	require.Equal(t, signatureBefore, deliveredSignature(t, loaded.Secret), "Markets verifies X-Vault-Signature; it must not change")
+	require.Equal(t, legacyWebhookSecret, opened)
+	require.Equal(t, signatureBefore, deliveredSignature(t, opened), "Markets verifies X-Vault-Signature; it must not change")
 }
 
 func TestSealWebhookConfigSecretsIsIdempotent(t *testing.T) {
@@ -120,7 +120,7 @@ func TestSealWebhookConfigSecretsWidensTheColumnForLongSecrets(t *testing.T) {
 	require.NoError(t, (&migrations.M00000000000440SealWebhookConfigSecrets{}).Up())
 
 	require.Greater(t, len(storedWebhookSecret(t, configID)), 255, "the sealed form outgrows varchar(255)")
-	loaded, err := repositories.NewWebhookConfigRepository(nil, facades.Crypt()).FindByID(context.Background(), configID)
+	opened, err := security.OpenSecret(facades.Crypt(), storedWebhookSecret(t, configID))
 	require.NoError(t, err)
-	require.Equal(t, longSecret, loaded.Secret)
+	require.Equal(t, longSecret, opened)
 }

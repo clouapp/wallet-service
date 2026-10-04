@@ -9,22 +9,23 @@ import (
 
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/repositories/internal/db"
-	"github.com/macrowallets/waas/pkg/security"
+	"github.com/macrowallets/waas/app/services/settings"
 )
 
 const webhookSecretColumn = "secret"
 
 // WebhookConfigRepository persists webhook endpoint configuration.
-// The signing secret is sealed at rest. Create and UpdateFields seal it, and
-// every Find opens it, so callers always see the plaintext.
+// The signing secret is sealed at rest with the enc:v1: prefix. Create and
+// UpdateFields seal it, and every Find opens it, so callers always see the
+// plaintext. An empty secret stays empty. A value without the prefix fails closed.
 type WebhookConfigRepository struct {
 	db.Base
-	cipher security.Cipher
+	cipher settings.Cipher
 }
 
 // NewWebhookConfigRepository wraps an orm.Query. Pass nil for a fresh query per call.
 // cipher seals and opens webhook_configs.secret; it is required.
-func NewWebhookConfigRepository(query orm.Query, cipher security.Cipher) *WebhookConfigRepository {
+func NewWebhookConfigRepository(query orm.Query, cipher settings.Cipher) *WebhookConfigRepository {
 	if cipher == nil {
 		panic("webhook config repository: cipher is required")
 	}
@@ -37,7 +38,7 @@ func (r *WebhookConfigRepository) Create(ctx context.Context, cfg *models.Webhoo
 		return fmt.Errorf("create webhook config: config is nil")
 	}
 	plaintext := cfg.Secret
-	sealed, err := security.SealSecret(r.cipher, plaintext)
+	sealed, err := settings.Seal(r.cipher, plaintext)
 	if err != nil {
 		return fmt.Errorf("create webhook config: %w", err)
 	}
@@ -177,7 +178,7 @@ func (r *WebhookConfigRepository) sealSecretField(fields map[string]any) (map[st
 	if !ok {
 		return nil, fmt.Errorf("webhook config secret must be a string, got %T", raw)
 	}
-	sealed, err := security.SealSecret(r.cipher, plaintext)
+	sealed, err := settings.Seal(r.cipher, plaintext)
 	if err != nil {
 		return nil, err
 	}
@@ -190,7 +191,7 @@ func (r *WebhookConfigRepository) sealSecretField(fields map[string]any) (map[st
 }
 
 func (r *WebhookConfigRepository) openWebhookSecret(cfg *models.WebhookConfig) (*models.WebhookConfig, error) {
-	plaintext, err := security.OpenSecret(r.cipher, cfg.Secret)
+	plaintext, err := settings.Open(r.cipher, cfg.Secret)
 	if err != nil {
 		return nil, fmt.Errorf("webhook config %s secret: %w", cfg.ID, err)
 	}
