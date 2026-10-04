@@ -110,6 +110,25 @@ func (r *AccountActivityRepository) List(ctx context.Context, accountID uuid.UUI
 	return rows, total, nil
 }
 
+// Find returns one row when it belongs to accountID. Another account, a
+// platform row (null account_id), and an unknown id are ErrRepositoryNotFound.
+func (r *AccountActivityRepository) Find(ctx context.Context, accountID, id uuid.UUID) (*models.AccountActivity, error) {
+	if accountID == uuid.Nil {
+		return nil, fmt.Errorf("find activity: account id is required")
+	}
+	if id == uuid.Nil {
+		return nil, models.ErrRepositoryNotFound
+	}
+	var row models.AccountActivity
+	if err := r.Query(ctx).Where("id = ? AND account_id = ?", id, accountID).First(&row); err != nil {
+		return nil, fmt.Errorf("find activity: %w", err)
+	}
+	if row.ID == uuid.Nil || row.AccountID == nil || *row.AccountID != accountID {
+		return nil, models.ErrRepositoryNotFound
+	}
+	return &row, nil
+}
+
 // ListPlatform returns platform rows, newest first. A row with an account id
 // is not included.
 func (r *AccountActivityRepository) ListPlatform(ctx context.Context, limit, offset int) ([]models.AccountActivity, int64, error) {

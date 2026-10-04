@@ -154,6 +154,9 @@ func RegisterAdminRoutes() {
 			r.Put("/settings/{group}", accountSettingsCtrl.Update)
 
 			r.Get("/activity", accountActivityCtrl.Index)
+			// S3.4.2: GET /v1/accounts/{accountId}/activity/{id} activity.read.
+			// The body is one element of the list. There is no write on this path.
+			r.Get("/activity/{id}", accountActivityCtrl.Show)
 
 			// S2.4: no account-side write. Reads stay on this route.
 			// Platform PUT /v1/platform/features/account/{id} stores the flag.

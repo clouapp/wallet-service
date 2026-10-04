@@ -14,15 +14,20 @@ import (
 // ErrReadForbidden is a member who does not hold activity.read.
 var ErrReadForbidden = errors.New("you do not have permission to view account activity")
 
+// ErrNotFound is a row this account cannot see: unknown id, another account,
+// or a platform row (null account id). The three cases are the same error.
+var ErrNotFound = errors.New("activity not found")
+
 // ErrPlatformForbidden is a caller who is not a platform admin. The plan names
 // audit.view; this branch has no platform permission catalog, so the gate is
 // the platform_admins row the other /v1/platform routes use.
 var ErrPlatformForbidden = errors.New("you do not have permission to view platform activity")
 
-// Reader pages activity, newest first.
+// Reader pages activity, newest first, and loads one row of an account.
 type Reader interface {
 	List(ctx context.Context, accountID uuid.UUID, limit, offset int) ([]models.AccountActivity, int64, error)
 	ListPlatform(ctx context.Context, limit, offset int) ([]models.AccountActivity, int64, error)
+	Find(ctx context.Context, accountID, id uuid.UUID) (*models.AccountActivity, error)
 }
 
 // PlatformAdmins reports whether a user may read the platform trail.
@@ -84,6 +89,36 @@ func (s *Service) List(ctx context.Context, accountID uuid.UUID, role string, li
 		rows = []models.AccountActivity{}
 	}
 	return rows, total, nil
+}
+
+// Get returns one row of this account. The gate is the same activity.read
+// check as List: owner, admin and auditor may read, and user is
+// ErrReadForbidden before any lookup. A row from another account, a platform
+// row, or an unknown id is ErrNotFound.
+func (s *Service) Get(ctx context.Context, accountID uuid.UUID, role string, activityID uuid.UUID) (models.AccountActivity, error) {
+	if ctx == nil {
+		return models.AccountActivity{}, fmt.Errorf("account activity: context is required")
+	}
+	if accountID == uuid.Nil {
+		return models.AccountActivity{}, fmt.Errorf("account activity: account id is required")
+	}
+	if !policies.MayReadActivity(role) {
+		return models.AccountActivity{}, ErrReadForbidden
+	}
+	if activityID == uuid.Nil {
+		return models.AccountActivity{}, ErrNotFound
+	}
+	row, err := s.rows.Find(ctx, accountID, activityID)
+	if err != nil {
+		if errors.Is(err, models.ErrRepositoryNotFound) {
+			return models.AccountActivity{}, ErrNotFound
+		}
+		return models.AccountActivity{}, err
+	}
+	if row == nil || row.AccountID == nil || *row.AccountID != accountID {
+		return models.AccountActivity{}, ErrNotFound
+	}
+	return *row, nil
 }
 
 // ListPlatform returns platform rows (null account id), newest first.

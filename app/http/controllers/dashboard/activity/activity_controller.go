@@ -2,6 +2,7 @@ package activity
 
 import (
 	"errors"
+	"strings"
 
 	"github.com/google/uuid"
 	"github.com/goravel/framework/contracts/http"
@@ -55,6 +56,38 @@ func (ctrl *ActivityController) Index(ctx http.Context) http.Response {
 	return responses.Send(ctx, http.StatusOK, pagination.Response(accountActivityViews(rows), total, limit, offset))
 }
 
+// Show godoc
+// @Summary      One account activity row
+// @Description  The same object the account activity list puts in data. Owner, admin and auditor may read. User receives 403. Another account, a platform row, or an unknown id is 404. Metadata never includes a secret value.
+// @Tags         Account Activity
+// @Security     BearerAuth
+// @Produce      json
+// @Param        accountId  path  string  true  "Account UUID"
+// @Param        id         path  string  true  "Activity UUID"
+// @Success      200  {object}  AccountActivityView
+// @Failure      401  {object}  responses.ErrorBody
+// @Failure      403  {object}  responses.ErrorBody
+// @Failure      404  {object}  responses.ErrorBody
+// @Router       /accounts/{accountId}/activity/{id} [get]
+func (ctrl *ActivityController) Show(ctx http.Context) http.Response {
+	account, role, errResp := accountCaller(ctx)
+	if errResp != nil {
+		return errResp
+	}
+	activityID := uuid.Nil
+	if ctx.Request() != nil {
+		parsed, err := uuid.Parse(strings.TrimSpace(ctx.Request().Route("id")))
+		if err == nil {
+			activityID = parsed
+		}
+	}
+	row, err := ctrl.activity.Get(ctx.Context(), account.ID, role, activityID)
+	if errResp := mapActivityError(ctx, err); errResp != nil {
+		return errResp
+	}
+	return responses.Send(ctx, http.StatusOK, newAccountActivityView(row))
+}
+
 // Platform godoc
 // @Summary      Platform activity
 // @Description  Newest first. Only a platform admin may read. Rows have a null account id and never appear on an account activity list. Metadata never includes a secret.
@@ -92,6 +125,9 @@ func accountCaller(ctx http.Context) (*models.Account, string, http.Response) {
 func mapActivityError(ctx http.Context, err error) http.Response {
 	if err == nil {
 		return nil
+	}
+	if errors.Is(err, activitysvc.ErrNotFound) {
+		return responses.Send(ctx, http.StatusNotFound, http.Json{"error": err.Error()})
 	}
 	if errors.Is(err, activitysvc.ErrReadForbidden) || errors.Is(err, activitysvc.ErrPlatformForbidden) {
 		return responses.Send(ctx, http.StatusForbidden, http.Json{"error": err.Error()})

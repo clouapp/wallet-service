@@ -225,6 +225,57 @@ func jsonMarshal(meta models.ActivityMetadata) (string, error) {
 	return string(raw), nil
 }
 
+func (s *AccountActivityRepositoryTestSuite) TestFindReturnsOnlyThatAccountsRow() {
+	ctx := context.Background()
+	accountID := s.account()
+	otherID := s.account()
+	actorID := s.user()
+	rowID := uuid.New()
+	otherRowID := uuid.New()
+	platformID := uuid.New()
+
+	meta, err := activitylog.MemberRemoved("user")
+	s.Require().NoError(err)
+	account := accountID
+	s.Require().NoError(s.activity.Append(ctx, models.AccountActivity{
+		ID: rowID, AccountID: &account, ActorUserID: actorID,
+		Action: activitylog.ActionMemberRemoved, TargetType: activitylog.TargetAccountUser,
+		TargetID: actorID.String(), Metadata: meta,
+	}))
+	other := otherID
+	s.Require().NoError(s.activity.Append(ctx, models.AccountActivity{
+		ID: otherRowID, AccountID: &other, ActorUserID: actorID,
+		Action: activitylog.ActionMemberRemoved, TargetType: activitylog.TargetAccountUser,
+		TargetID: actorID.String(), Metadata: meta,
+	}))
+	platformMeta, err := activitylog.FeatureChange("sweep-enabled", false)
+	s.Require().NoError(err)
+	s.Require().NoError(s.activity.Append(ctx, models.AccountActivity{
+		ID: platformID, ActorUserID: actorID,
+		Action: activitylog.ActionFeaturesUpdated, TargetType: activitylog.TargetFeature,
+		TargetID: "sweep-enabled", Metadata: platformMeta,
+	}))
+
+	found, err := s.activity.Find(ctx, accountID, rowID)
+	s.Require().NoError(err)
+	s.Require().NotNil(found)
+	s.Equal(rowID, found.ID)
+	s.Require().NotNil(found.AccountID)
+	s.Equal(accountID, *found.AccountID)
+
+	for _, id := range []uuid.UUID{otherRowID, platformID, uuid.New(), uuid.Nil} {
+		missing, err := s.activity.Find(ctx, accountID, id)
+		s.Require().ErrorIs(err, models.ErrRepositoryNotFound)
+		s.Nil(missing)
+	}
+
+	listed, total, err := s.activity.List(ctx, accountID, 20, 0)
+	s.Require().NoError(err)
+	s.Equal(int64(1), total)
+	s.Require().Len(listed, 1)
+	s.Equal(rowID, listed[0].ID)
+}
+
 func (s *AccountActivityRepositoryTestSuite) TestPlatformRowUsesANullAccountID() {
 	ctx := context.Background()
 	actorID := s.user()

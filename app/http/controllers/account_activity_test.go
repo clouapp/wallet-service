@@ -211,6 +211,112 @@ func (s *AccountActivityTestSuite) TestPlatformFeatureWriteUsesANullAccount() {
 	denied.AssertForbidden()
 }
 
+func (s *AccountActivityTestSuite) TestShowMatchesTheListItem() {
+	accountID := s.createAccount()
+	otherAccountID := s.createAccount()
+	owner := s.loginUser("owner", accountID)
+	admin := s.loginUser("admin", accountID)
+	auditor := s.loginUser("auditor", accountID)
+	user := s.loginUser("user", accountID)
+	member := s.loginUser("user", accountID)
+	otherOwner := s.loginUser("owner", otherAccountID)
+	otherMember := s.loginUser("user", otherAccountID)
+
+	s.patchMember(owner.token, accountID, member.id, `{"role":"auditor"}`).AssertOk()
+	s.patchMember(otherOwner.token, otherAccountID, otherMember.id, `{"role":"admin"}`).AssertOk()
+
+	items := s.activityData(auditor.token, "/v1/accounts/"+accountID.String()+"/activity")
+	s.Require().Len(items, 1)
+	rowID := s.activityID(items[0])
+
+	for _, reader := range []activitySession{owner, admin, auditor} {
+		shown := s.showActivity(reader.token, accountID, rowID)
+		shown.AssertOk()
+		content, err := shown.Content()
+		s.Require().NoError(err)
+		s.JSONEq(string(items[0]), content)
+		var object map[string]any
+		s.Require().NoError(json.Unmarshal([]byte(content), &object))
+		s.Contains(object, "id")
+		s.NotContains(object, "data")
+		s.NotContains(object, "total")
+		s.NotContains(object, "limit")
+		s.NotContains(object, "offset")
+	}
+
+	forbidden := s.showActivity(user.token, accountID, rowID)
+	forbidden.AssertForbidden()
+	userCode, userMessage := s.errorText(forbidden)
+	s.Equal("forbidden", userCode)
+	s.Equal("you do not have permission to view account activity", userMessage)
+	for _, id := range []string{s.activityID(s.activityData(otherOwner.token, "/v1/accounts/"+otherAccountID.String()+"/activity")[0]), uuid.NewString(), "not-a-uuid"} {
+		again := s.showActivity(user.token, accountID, id)
+		again.AssertForbidden()
+		code, message := s.errorText(again)
+		s.Equal(userCode, code)
+		s.Equal(userMessage, message)
+	}
+
+	missing := s.showActivity(auditor.token, accountID, uuid.NewString())
+	missing.AssertNotFound()
+	missingCode, missingMessage := s.errorText(missing)
+	s.Equal("not_found", missingCode)
+	s.Equal("activity not found", missingMessage)
+	otherItems := s.activityData(otherOwner.token, "/v1/accounts/"+otherAccountID.String()+"/activity")
+	s.Require().Len(otherItems, 1)
+	foreign := s.showActivity(auditor.token, accountID, s.activityID(otherItems[0]))
+	foreign.AssertNotFound()
+	foreignCode, foreignMessage := s.errorText(foreign)
+	s.Equal(missingCode, foreignCode)
+	s.Equal(missingMessage, foreignMessage)
+	garbage := s.showActivity(auditor.token, accountID, "not-a-uuid")
+	garbage.AssertNotFound()
+	garbageCode, garbageMessage := s.errorText(garbage)
+	s.Equal(missingCode, garbageCode)
+	s.Equal(missingMessage, garbageMessage)
+
+	unknownAccount := s.showActivity(user.token, uuid.New(), rowID)
+	unknownAccount.AssertNotFound()
+	accountCode, accountMessage := s.errorText(unknownAccount)
+	s.Equal("not_found", accountCode)
+	s.Equal("account not found", accountMessage)
+
+	s.grantPlatformAdmin(owner.id)
+	s.patch(owner.token, "/v1/platform/features/"+features.FlagSweepEnabled, `{"enabled":false}`, 200)
+	platformItems := s.activityData(owner.token, "/v1/platform/activity")
+	s.Require().NotEmpty(platformItems)
+	platformID := s.activityID(platformItems[0])
+	s.Empty(s.activityField(platformItems[0], "account_id"))
+	for _, item := range s.activityData(auditor.token, "/v1/accounts/"+accountID.String()+"/activity") {
+		s.NotEqual(platformID, s.activityID(item))
+	}
+	platform := s.showActivity(auditor.token, accountID, platformID)
+	platform.AssertNotFound()
+	platformCode, platformMessage := s.errorText(platform)
+	s.Equal(missingCode, platformCode)
+	s.Equal(missingMessage, platformMessage)
+
+	s.patch(owner.token, "/v1/accounts/"+accountID.String()+"/settings/account_webhooks",
+		fmt.Sprintf(`{"signing_secret":%q}`, activityPlainSecret), 200)
+	stored := s.storedSecret(accountID)
+	s.NotEqual(activityPlainSecret, stored)
+	settingsItems := s.activityData(auditor.token, "/v1/accounts/"+accountID.String()+"/activity?limit=1")
+	s.Require().Len(settingsItems, 1)
+	settingsShown := s.showActivity(auditor.token, accountID, s.activityID(settingsItems[0]))
+	settingsShown.AssertOk()
+	settingsBody, err := settingsShown.Content()
+	s.Require().NoError(err)
+	s.JSONEq(string(settingsItems[0]), settingsBody)
+	s.Contains(settingsBody, `"signing_secret"`)
+	s.NotContains(settingsBody, activityPlainSecret)
+	s.NotContains(settingsBody, stored)
+	s.NotContains(settingsBody, "enc:v1:")
+
+	for _, method := range []string{http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete} {
+		s.writeActivity(method, auditor.token, accountID, rowID, http.StatusNotFound)
+	}
+}
+
 func (s *AccountActivityTestSuite) TestMemberRemovedStaysOnTheAccountTrail() {
 	accountID := s.createAccount()
 	owner := s.loginUser("owner", accountID)
@@ -416,6 +522,88 @@ func (s *AccountActivityTestSuite) countActivity(action string) int64 {
 	).Scan(&row)
 	s.Require().NoError(err)
 	return row.Count
+}
+
+func (s *AccountActivityTestSuite) activityData(token, path string) []json.RawMessage {
+	s.T().Helper()
+	resp := s.get(token, path)
+	resp.AssertOk()
+	content, err := resp.Content()
+	s.Require().NoError(err)
+	var page struct {
+		Data []json.RawMessage `json:"data"`
+	}
+	s.Require().NoError(json.Unmarshal([]byte(content), &page))
+	return page.Data
+}
+
+func (s *AccountActivityTestSuite) activityID(raw json.RawMessage) string {
+	s.T().Helper()
+	var row struct {
+		ID string `json:"id"`
+	}
+	s.Require().NoError(json.Unmarshal(raw, &row))
+	s.Require().NotEmpty(row.ID)
+	return row.ID
+}
+
+func (s *AccountActivityTestSuite) activityField(raw json.RawMessage, key string) string {
+	s.T().Helper()
+	var row map[string]any
+	s.Require().NoError(json.Unmarshal(raw, &row))
+	value, ok := row[key]
+	if !ok || value == nil {
+		return ""
+	}
+	text, ok := value.(string)
+	s.Require().True(ok, key)
+	return text
+}
+
+func (s *AccountActivityTestSuite) showActivity(token string, accountID uuid.UUID, id string) contractstesting.Response {
+	s.T().Helper()
+	return s.get(token, "/v1/accounts/"+accountID.String()+"/activity/"+id)
+}
+
+func (s *AccountActivityTestSuite) errorText(resp contractstesting.Response) (string, string) {
+	s.T().Helper()
+	content, err := resp.Content()
+	s.Require().NoError(err)
+	var body struct {
+		Error struct {
+			Code    string `json:"code"`
+			Message string `json:"message"`
+		} `json:"error"`
+	}
+	s.Require().NoError(json.Unmarshal([]byte(content), &body))
+	return body.Error.Code, body.Error.Message
+}
+
+func (s *AccountActivityTestSuite) writeActivity(method, token string, accountID uuid.UUID, id string, status int) {
+	s.T().Helper()
+	path := "/v1/accounts/" + accountID.String() + "/activity/" + id
+	request := s.Http(s.T()).
+		WithHeader("Authorization", "Bearer "+token).
+		WithHeader("Content-Type", "application/json")
+	body := strings.NewReader(`{}`)
+	var (
+		resp contractstesting.Response
+		err  error
+	)
+	switch method {
+	case http.MethodPost:
+		resp, err = request.Post(path, body)
+	case http.MethodPut:
+		resp, err = request.Put(path, body)
+	case http.MethodPatch:
+		resp, err = request.Patch(path, body)
+	case http.MethodDelete:
+		resp, err = request.Delete(path, body)
+	default:
+		s.FailNow("unsupported method " + method)
+	}
+	s.Require().NoError(err)
+	resp.AssertStatus(status)
 }
 
 func (s *AccountActivityTestSuite) pageText(page activityPage) string {
