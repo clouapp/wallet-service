@@ -112,6 +112,7 @@ var routeTable = map[string]routeSecurity{
 	"POST /v1/accounts/{accountId}/users":                              session(chainAccount),
 	"PATCH /v1/accounts/{accountId}/users/{userId}":                    session(chainAccount),
 	"DELETE /v1/accounts/{accountId}/users/{userId}":                   session(chainAccount),
+	"GET|HEAD /v1/accounts/{accountId}/invites":                        session(chainAccountUsers),
 	"GET|HEAD /v1/accounts/{accountId}/settings":                       session(chainAccount),
 	"POST /v1/accounts/{accountId}/settings/sections/{section}/cache":  session(chainAccount),
 	"POST /v1/accounts/{accountId}/settings/sections/{section}/reset":  session(chainAccount),

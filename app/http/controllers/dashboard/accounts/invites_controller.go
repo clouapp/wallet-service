@@ -4,10 +4,15 @@ import (
 	"errors"
 	"os"
 	"strings"
+	"time"
 
+	"github.com/google/uuid"
 	"github.com/goravel/framework/contracts/http"
+	"github.com/goravel/framework/support/carbon"
 
 	appfacades "github.com/macrowallets/waas/app/facades"
+	"github.com/macrowallets/waas/app/http/middleware/requestctx"
+	"github.com/macrowallets/waas/app/http/pagination"
 	"github.com/macrowallets/waas/app/http/requests"
 	"github.com/macrowallets/waas/app/http/responses"
 	"github.com/macrowallets/waas/app/models"
@@ -41,6 +46,50 @@ func frontendBaseURL() string {
 		return value
 	}
 	return "http://localhost:2001"
+}
+
+// inviteListItem is one invite a users.read member may see. The token and its
+// hash are not fields on this view.
+type inviteListItem struct {
+	CreatedAt  *carbon.DateTime `json:"created_at"`
+	ID         uuid.UUID        `json:"id"`
+	AccountID  uuid.UUID        `json:"account_id"`
+	Email      string           `json:"email"`
+	Role       string           `json:"role"`
+	InvitedBy  *uuid.UUID       `json:"invited_by"`
+	ExpiresAt  time.Time        `json:"expires_at"`
+	AcceptedAt *time.Time       `json:"accepted_at"`
+	RevokedAt  *time.Time       `json:"revoked_at"`
+}
+
+func inviteListItems(invites []models.AccountInvite) []inviteListItem {
+	items := make([]inviteListItem, 0, len(invites))
+	for i := range invites {
+		invite := invites[i]
+		items = append(items, inviteListItem{
+			CreatedAt:  invite.CreatedAt,
+			ID:         invite.ID,
+			AccountID:  invite.AccountID,
+			Email:      invite.Email,
+			Role:       invite.Role,
+			InvitedBy:  invite.InvitedBy,
+			ExpiresAt:  invite.ExpiresAt,
+			AcceptedAt: invite.AcceptedAt,
+			RevokedAt:  invite.RevokedAt,
+		})
+	}
+	return items
+}
+
+// List returns the account's invites for a caller who holds users.read.
+func (ctrl *InvitesController) List(ctx http.Context) http.Response {
+	account := requestctx.MustAccount(ctx)
+	limit, offset := pagination.ParseParams(ctx, 20)
+	invites, total, err := ctrl.accounts.ListInvites(ctx.Context(), account.ID, limit, offset)
+	if err != nil {
+		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to fetch invites"})
+	}
+	return responses.Send(ctx, http.StatusOK, pagination.Response(inviteListItems(invites), total, limit, offset))
 }
 
 // Preview reports the public facts of a pending invite.

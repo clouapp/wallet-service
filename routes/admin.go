@@ -113,6 +113,7 @@ func RegisterAdminRoutes() {
 			r.Post("/users", accountsCtrl.AddAccountUser)
 			r.Patch("/users/{userId}", accountsCtrl.UpdateAccountUser)
 			r.Delete("/users/{userId}", accountsCtrl.RemoveAccountUser)
+			r.Middleware(middleware.Can(middleware.PermUsersRead)).Get("/invites", inviteCtrl.List)
 
 			r.Get("/tokens", accountsCtrl.ListAccountTokens)
 			r.Post("/tokens", accountsCtrl.CreateAccountToken)

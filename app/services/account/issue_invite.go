@@ -106,6 +106,24 @@ func (s *Service) IssueInvite(ctx context.Context, accountID uuid.UUID, email, r
 	return issued, nil
 }
 
+// ListInvites pages one account's invites. The store clears the token hash
+// before the rows leave the repository, so this list cannot carry it.
+func (s *Service) ListInvites(ctx context.Context, accountID uuid.UUID, limit, offset int) ([]models.AccountInvite, int64, error) {
+	if s == nil || s.invites == nil {
+		return nil, 0, errors.New("account invite stores are required")
+	}
+	if ctx == nil {
+		return nil, 0, errors.New("list invites: context is required")
+	}
+	if accountID == uuid.Nil {
+		return nil, 0, errors.New("list invites: account id is required")
+	}
+	if limit <= 0 || offset < 0 {
+		return nil, 0, errors.New("list invites: pagination bounds are invalid")
+	}
+	return s.invites.PaginateByAccountID(ctx, accountID, limit, offset)
+}
+
 func newInviteToken() (raw, hash string, err error) {
 	buf := make([]byte, 32)
 	if _, err = rand.Read(buf); err != nil {

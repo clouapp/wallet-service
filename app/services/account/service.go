@@ -72,6 +72,7 @@ type InviteStore interface {
 	FindPendingByTokenHash(ctx context.Context, tokenHash string, now time.Time) (*models.AccountInvite, error)
 	Rotate(ctx context.Context, id uuid.UUID, tokenHash, role string, expiresAt time.Time) error
 	MarkAccepted(ctx context.Context, id uuid.UUID, acceptedAt time.Time) error
+	PaginateByAccountID(ctx context.Context, accountID uuid.UUID, limit, offset int) ([]models.AccountInvite, int64, error)
 }
 
 // Deps is everything Account needs. Users, Tokens and Activity are required

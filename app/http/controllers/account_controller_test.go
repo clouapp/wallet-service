@@ -79,6 +79,14 @@ func (s *AccountControllerTestSuite) TestUpdateAccountUser_Unauthenticated() {
 	resp.AssertStatus(401)
 }
 
+// TestListAccountInvites_Unauthenticated returns 401 without a bearer token.
+func (s *AccountControllerTestSuite) TestListAccountInvites_Unauthenticated() {
+	resp, err := s.Http(s.T()).
+		Get("/v1/accounts/00000000-0000-0000-0000-000000000001/invites")
+	s.Require().NoError(err)
+	resp.AssertStatus(401)
+}
+
 // TestListAccountUsers_Unauthenticated returns 401 without a bearer token.
 func (s *AccountControllerTestSuite) TestListAccountUsers_Unauthenticated() {
 	resp, err := s.Http(s.T()).

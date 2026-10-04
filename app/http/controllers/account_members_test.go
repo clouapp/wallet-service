@@ -159,6 +159,61 @@ func (s *AccountMembersTestSuite) TestUsersReadFollowsTheAccountRole() {
 	s.assertForbidden(s.getUsers(user.token, accountID), "forbidden")
 }
 
+func (s *AccountMembersTestSuite) getInvites(token string, accountID uuid.UUID) contractstesting.Response {
+	resp, err := s.Http(s.T()).
+		WithHeader("Authorization", "Bearer "+token).
+		Get("/v1/accounts/" + accountID.String() + "/invites")
+	s.Require().NoError(err)
+	return resp
+}
+
+func (s *AccountMembersTestSuite) insertInvite(accountID, invitedBy uuid.UUID, email, role, tokenHash string) {
+	_, err := facades.Orm().Query().Exec(`
+		INSERT INTO account_invites (id, account_id, email, role, token_hash, invited_by, expires_at, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, NOW() + INTERVAL '72 hours', NOW(), NOW())`,
+		uuid.New(), accountID, email, role, tokenHash, invitedBy,
+	)
+	s.Require().NoError(err)
+}
+
+func (s *AccountMembersTestSuite) TestListInvitesFollowsUsersReadAndOmitsTheToken() {
+	accountID := s.createAccount()
+	otherID := s.createAccount()
+	owner := s.loginUser("owner", models.MembershipStatusActive, accountID)
+	admin := s.loginUser("admin", models.MembershipStatusActive, accountID)
+	auditor := s.loginUser("auditor", models.MembershipStatusActive, accountID)
+	user := s.loginUser("user", models.MembershipStatusActive, accountID)
+	const storedDigest = "stored-digest"
+	s.insertInvite(accountID, owner.id, "pending-auditor@example.com", models.AccountRoleAuditor, storedDigest)
+	s.insertInvite(otherID, owner.id, "other-account@example.com", models.AccountRoleUser, storedDigest)
+
+	for _, token := range []string{owner.token, admin.token, auditor.token} {
+		resp := s.getInvites(token, accountID)
+		resp.AssertOk()
+		content, err := resp.Content()
+		s.Require().NoError(err)
+		s.Contains(content, `"email":"pending-auditor@example.com"`)
+		s.Contains(content, `"role":"auditor"`)
+		s.NotContains(content, "other-account@example.com")
+		s.NotContains(content, storedDigest)
+		s.NotContains(content, "token_hash")
+		s.NotContains(content, "invite_link")
+	}
+	s.assertForbidden(s.getInvites(user.token, accountID), "forbidden")
+}
+
+func (s *AccountMembersTestSuite) TestMissingAccountIsNotFoundBeforeInviteList() {
+	accountID := s.createAccount()
+	user := s.loginUser("user", models.MembershipStatusActive, accountID)
+
+	resp := s.getInvites(user.token, uuid.New())
+	resp.AssertNotFound()
+	content, err := resp.Content()
+	s.Require().NoError(err)
+	s.Contains(content, `"code":"not_found"`)
+	s.NotContains(content, `"message":"forbidden"`)
+}
+
 func (s *AccountMembersTestSuite) TestMissingAccountIsNotFoundBeforeUsersRead() {
 	accountID := s.createAccount()
 	user := s.loginUser("user", models.MembershipStatusActive, accountID)

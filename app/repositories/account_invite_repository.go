@@ -79,6 +79,37 @@ func (r *AccountInviteRepository) Rotate(ctx context.Context, id uuid.UUID, toke
 	return nil
 }
 
+const inviteListColumns = "id, account_id, email, role, invited_by, expires_at, accepted_at, revoked_at, created_at, updated_at"
+
+// PaginateByAccountID pages an account's invites. The select list omits
+// token_hash, and any value still on the struct is cleared before return.
+func (r *AccountInviteRepository) PaginateByAccountID(ctx context.Context, accountID uuid.UUID, limit, offset int) ([]models.AccountInvite, int64, error) {
+	if accountID == uuid.Nil {
+		return nil, 0, fmt.Errorf("list account invites: account id is required")
+	}
+	if limit <= 0 || offset < 0 {
+		return nil, 0, fmt.Errorf("list account invites: pagination bounds are invalid")
+	}
+	total, err := r.Query(ctx).Model(&models.AccountInvite{}).Where("account_id = ?", accountID).Count()
+	if err != nil {
+		return nil, 0, fmt.Errorf("count account invites: %w", err)
+	}
+	var invites []models.AccountInvite
+	if err := r.Query(ctx).
+		Select(inviteListColumns).
+		Where("account_id = ?", accountID).
+		Order("created_at DESC, id ASC").
+		Offset(offset).
+		Limit(limit).
+		Find(&invites); err != nil {
+		return nil, 0, fmt.Errorf("list account invites: %w", err)
+	}
+	for i := range invites {
+		invites[i].TokenHash = ""
+	}
+	return invites, total, nil
+}
+
 // MarkAccepted stamps accepted_at.
 func (r *AccountInviteRepository) MarkAccepted(ctx context.Context, id uuid.UUID, acceptedAt time.Time) error {
 	if id == uuid.Nil {

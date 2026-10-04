@@ -44,8 +44,10 @@ keeps the previous access. A blank `ip_cidr` does the same for the allowlist.
 
 `Can(perm)` is route middleware after `AccountContext` (and `TOTPEnrollment`,
 which already sits on that group). It asks `policies.Can` with the role the
-account middleware stored. The only route that uses it is
-`GET /v1/accounts/{accountId}/users` (`users.read`: owner, admin, auditor).
+account middleware stored. The routes that use it are
+`GET /v1/accounts/{accountId}/users` and
+`GET /v1/accounts/{accountId}/invites`
+(`users.read`: owner, admin, auditor).
 A missing permission is 403 `forbidden`. There is no `WalletCan(perm)` on this
 branch: the wallet routes the plan names already refuse through
 `RequireFundAction`, and the code catalog would let `user` withdraw and sweep.
