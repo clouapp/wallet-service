@@ -258,7 +258,11 @@ func (ctrl *AccountsController) AddAccountUser(ctx http.Context) http.Response {
 		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to look up user"})
 	}
 	if targetPtr == nil || errors.Is(findErr, models.ErrRepositoryNotFound) {
-		issued, issueErr := ctrl.accountService.IssueInvite(ctx.Context(), account.ID, req.Email, req.Role, callerID, frontendBaseURL())
+		base, errResp := requireFrontendBase(ctx, "failed to create invite")
+		if errResp != nil {
+			return errResp
+		}
+		issued, issueErr := ctrl.accountService.IssueInvite(ctx.Context(), account.ID, req.Email, req.Role, callerID, base)
 		if issueErr != nil {
 			if errors.Is(issueErr, accountsvc.ErrGrantRole) {
 				return responses.Send(ctx, http.StatusForbidden, http.Json{"error": issueErr.Error()})

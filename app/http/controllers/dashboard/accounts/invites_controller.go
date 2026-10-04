@@ -39,14 +39,27 @@ func NewInvitesController(accounts *accountsvc.Service, users *usersvc.Service) 
 	return &InvitesController{accounts: accounts, users: users}
 }
 
-func frontendBaseURL() string {
-	if value := strings.TrimSpace(os.Getenv("APP_FRONTEND_URL")); value != "" {
-		return value
+const frontendURLEnv = "APP_FRONTEND_URL"
+
+var errFrontendURLRequired = errors.New("APP_FRONTEND_URL is required")
+
+// frontendBaseURL is the invite link base. It is only APP_FRONTEND_URL.
+// A missing value is an error: the host is not taken from app.url or a literal.
+func frontendBaseURL() (string, error) {
+	value := strings.TrimSpace(os.Getenv(frontendURLEnv))
+	if value == "" {
+		return "", errFrontendURLRequired
 	}
-	if value := strings.TrimSpace(appfacades.Config().GetString("app.url")); value != "" {
-		return value
+	return value, nil
+}
+
+func requireFrontendBase(ctx http.Context, clientError string) (string, http.Response) {
+	base, err := frontendBaseURL()
+	if err != nil {
+		appfacades.Log().WithContext(ctx).Errorf("account: invite link base is not configured")
+		return "", responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": clientError})
 	}
-	return "http://localhost:2001"
+	return base, nil
 }
 
 // inviteListItem is one invite a users.read member may see. The token and its
@@ -93,7 +106,11 @@ func (ctrl *InvitesController) Create(ctx http.Context) http.Response {
 	if errResp := validateRequest(ctx, &req); errResp != nil {
 		return errResp
 	}
-	issued, err := ctrl.accounts.IssueInvite(ctx.Context(), account.ID, req.Email, req.Role, callerID, frontendBaseURL())
+	base, errResp := requireFrontendBase(ctx, "failed to create invite")
+	if errResp != nil {
+		return errResp
+	}
+	issued, err := ctrl.accounts.IssueInvite(ctx.Context(), account.ID, req.Email, req.Role, callerID, base)
 	if err != nil {
 		if errors.Is(err, accountsvc.ErrGrantRole) {
 			return responses.Send(ctx, http.StatusForbidden, http.Json{"error": err.Error()})
@@ -113,7 +130,11 @@ func (ctrl *InvitesController) Resend(ctx http.Context) http.Response {
 	if err != nil {
 		return responses.Send(ctx, http.StatusBadRequest, http.Json{"error": "invalid invite id"})
 	}
-	issued, err := ctrl.accounts.ResendInvite(ctx.Context(), account.ID, inviteID, frontendBaseURL())
+	base, errResp := requireFrontendBase(ctx, "failed to resend invite")
+	if errResp != nil {
+		return errResp
+	}
+	issued, err := ctrl.accounts.ResendInvite(ctx.Context(), account.ID, inviteID, base)
 	if err != nil {
 		if errors.Is(err, accountsvc.ErrInviteInvalid) {
 			return responses.Send(ctx, http.StatusNotFound, http.Json{"error": err.Error()})

@@ -30,7 +30,10 @@ func TestAccountMembersSuite(t *testing.T) {
 	suite.Run(t, new(AccountMembersTestSuite))
 }
 
+const membersFrontendURL = "https://wallet.example"
+
 func (s *AccountMembersTestSuite) SetupTest() {
+	s.T().Setenv("APP_FRONTEND_URL", membersFrontendURL)
 	mocks.TestDB(s.T())
 }
 
@@ -313,6 +316,80 @@ func objectKeys(content string) []string {
 	}
 	sort.Strings(keys)
 	return keys
+}
+
+func (s *AccountMembersTestSuite) postAccountUser(token string, accountID uuid.UUID, body string) contractstesting.Response {
+	resp, err := s.Http(s.T()).
+		WithHeader("Authorization", "Bearer "+token).
+		WithHeader("Content-Type", "application/json").
+		Post("/v1/accounts/"+accountID.String()+"/users", strings.NewReader(body))
+	s.Require().NoError(err)
+	return resp
+}
+
+func (s *AccountMembersTestSuite) TestInviteLinkUsesTheFrontendURL() {
+	accountID := s.createAccount()
+	owner := s.loginUser("owner", models.MembershipStatusActive, accountID)
+	s.T().Setenv("APP_FRONTEND_URL", "")
+
+	missing := s.postInvite(owner.token, accountID, `{"email":"no-base@example.com","role":"user"}`)
+	missing.AssertStatus(500)
+	missingBody, err := missing.Content()
+	s.Require().NoError(err)
+	s.Contains(missingBody, "failed to create invite")
+	s.NotContains(missingBody, "localhost")
+	s.NotContains(missingBody, "vault.app")
+	s.NotContains(missingBody, "invite_link")
+	s.NotContains(missingBody, "APP_FRONTEND_URL")
+	s.Equal(int64(0), s.countRows(&models.AccountInvite{}, "email = ?", "no-base@example.com"))
+	s.Equal(int64(0), s.countActivity(`SELECT count(*) FROM account_activity WHERE action = 'member.invited' AND account_id = ?`, accountID))
+
+	unknown := s.postAccountUser(owner.token, accountID, `{"email":"no-base-user@example.com","role":"user"}`)
+	unknown.AssertStatus(500)
+	unknownBody, err := unknown.Content()
+	s.Require().NoError(err)
+	s.Contains(unknownBody, "failed to create invite")
+	s.NotContains(unknownBody, "localhost")
+	s.NotContains(unknownBody, "vault.app")
+	s.NotContains(unknownBody, "invite_link")
+	s.Equal(int64(0), s.countRows(&models.User{}, "email = ?", "no-base-user@example.com"))
+	s.Equal(int64(0), s.countRows(&models.AccountInvite{}, "email = ?", "no-base-user@example.com"))
+
+	const storedHash = "resend-without-base-digest"
+	inviteID := s.insertOpenInvite(accountID, owner.id, "held@example.com", models.AccountRoleUser, storedHash)
+	resent := s.postResend(owner.token, accountID, inviteID)
+	resent.AssertStatus(500)
+	resentBody, err := resent.Content()
+	s.Require().NoError(err)
+	s.Contains(resentBody, "failed to resend invite")
+	s.NotContains(resentBody, storedHash)
+	s.NotContains(resentBody, "localhost")
+	s.NotContains(resentBody, "vault.app")
+	s.Equal(storedHash, s.inviteTokenHash(inviteID))
+	s.Equal(int64(0), s.countActivity(`SELECT count(*) FROM account_activity WHERE action = 'member.invited' AND account_id = ?`, accountID))
+
+	s.T().Setenv("APP_FRONTEND_URL", membersFrontendURL)
+	added := s.postAccountUser(owner.token, accountID, `{"email":"linked@example.com","role":"user"}`)
+	added.AssertStatus(202)
+	addedBody, err := added.Content()
+	s.Require().NoError(err)
+	var parsed map[string]any
+	s.Require().NoError(json.Unmarshal([]byte(addedBody), &parsed))
+	link, _ := parsed["invite_link"].(string)
+	prefix := membersFrontendURL + "/accept-invite?token="
+	s.Require().True(
+		strings.HasPrefix(link, prefix) && !strings.Contains(link, "localhost") && !strings.Contains(link, "vault.app"),
+		"invite link must use APP_FRONTEND_URL",
+	)
+	rawToken := strings.TrimPrefix(link, prefix)
+	s.Require().True(rawToken != "" && !strings.Contains(rawToken, "&"), "invite link must carry one token query value")
+	inviteRaw, _ := parsed["invite_id"].(string)
+	parsedID, parseErr := uuid.Parse(inviteRaw)
+	s.Require().NoError(parseErr)
+	s.Equal(accountsvc.HashInviteToken(rawToken), s.inviteTokenHash(parsedID))
+	s.Equal("linked@example.com", parsed["email"])
+	s.Equal("user", parsed["role"])
+	s.Equal(int64(0), s.countRows(&models.User{}, "email = ?", "linked@example.com"))
 }
 
 func (s *AccountMembersTestSuite) TestCreateInviteAcceptsNewAndExistingEmailsWithoutAToken() {
