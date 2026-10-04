@@ -104,6 +104,26 @@ func (ctrl *InvitesController) Create(ctx http.Context) http.Response {
 	return responses.Send(ctx, http.StatusAccepted, inviteCreatedView(issued.Invite))
 }
 
+// Resend rotates the invite token. users.write is the route middleware. The
+// answer matches create: 202 and the list view, with no token, hash, or link.
+func (ctrl *InvitesController) Resend(ctx http.Context) http.Response {
+	account := requestctx.MustAccount(ctx)
+	callerID := requestctx.MustUserID(ctx)
+	inviteID, err := requests.RouteUUID(ctx, "id")
+	if err != nil {
+		return responses.Send(ctx, http.StatusBadRequest, http.Json{"error": "invalid invite id"})
+	}
+	issued, err := ctrl.accounts.ResendInvite(ctx.Context(), account.ID, inviteID, frontendBaseURL())
+	if err != nil {
+		if errors.Is(err, accountsvc.ErrInviteInvalid) {
+			return responses.Send(ctx, http.StatusNotFound, http.Json{"error": err.Error()})
+		}
+		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to resend invite"})
+	}
+	sendInviteMail(ctx, ctrl.accounts, account, callerID, issued)
+	return responses.Send(ctx, http.StatusAccepted, inviteCreatedView(issued.Invite))
+}
+
 func inviteCreatedView(invite *models.AccountInvite) inviteListItem {
 	if invite == nil {
 		return inviteListItem{}

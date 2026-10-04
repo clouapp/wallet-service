@@ -14,6 +14,7 @@ import (
 	"github.com/stretchr/testify/suite"
 
 	"github.com/macrowallets/waas/app/models"
+	accountsvc "github.com/macrowallets/waas/app/services/account"
 	authsvc "github.com/macrowallets/waas/app/services/auth"
 	"github.com/macrowallets/waas/tests/mocks"
 )
@@ -169,12 +170,42 @@ func (s *AccountMembersTestSuite) getInvites(token string, accountID uuid.UUID) 
 }
 
 func (s *AccountMembersTestSuite) insertInvite(accountID, invitedBy uuid.UUID, email, role, tokenHash string) {
+	s.insertOpenInvite(accountID, invitedBy, email, role, tokenHash)
+}
+
+func (s *AccountMembersTestSuite) insertOpenInvite(accountID, invitedBy uuid.UUID, email, role, tokenHash string) uuid.UUID {
+	id := uuid.New()
 	_, err := facades.Orm().Query().Exec(`
 		INSERT INTO account_invites (id, account_id, email, role, token_hash, invited_by, expires_at, created_at, updated_at)
 		VALUES (?, ?, ?, ?, ?, ?, NOW() + INTERVAL '72 hours', NOW(), NOW())`,
-		uuid.New(), accountID, email, role, tokenHash, invitedBy,
+		id, accountID, email, role, tokenHash, invitedBy,
 	)
 	s.Require().NoError(err)
+	return id
+}
+
+func (s *AccountMembersTestSuite) inviteTokenHash(id uuid.UUID) string {
+	s.T().Helper()
+	var hash string
+	s.Require().NoError(facades.Orm().Query().Raw(`SELECT token_hash FROM account_invites WHERE id = ?`, id).Scan(&hash))
+	return hash
+}
+
+func (s *AccountMembersTestSuite) inviteExpiresEpoch(id uuid.UUID) int64 {
+	s.T().Helper()
+	var epoch int64
+	s.Require().NoError(facades.Orm().Query().Raw(
+		`SELECT EXTRACT(EPOCH FROM expires_at)::bigint FROM account_invites WHERE id = ?`, id,
+	).Scan(&epoch))
+	return epoch
+}
+
+func (s *AccountMembersTestSuite) postResend(token string, accountID, inviteID uuid.UUID) contractstesting.Response {
+	resp, err := s.Http(s.T()).
+		WithHeader("Authorization", "Bearer "+token).
+		Post("/v1/accounts/"+accountID.String()+"/invites/"+inviteID.String()+"/resend", strings.NewReader(""))
+	s.Require().NoError(err)
+	return resp
 }
 
 func (s *AccountMembersTestSuite) TestListInvitesFollowsUsersReadAndOmitsTheToken() {
@@ -520,6 +551,82 @@ func (s *AccountMembersTestSuite) TestRemove_RevokesTokensCreatedByTheMember() {
 	s.Equal(int64(0), s.tokenCount(accountID, member.id))
 	s.Equal(int64(1), s.tokenCount(accountID, owner.id))
 	s.getAccount(member.token, accountID).AssertForbidden()
+}
+
+func (s *AccountMembersTestSuite) TestResendInviteRotatesTheTokenForUsersWrite() {
+	accountID := s.createAccount()
+	otherID := s.createAccount()
+	owner := s.loginUser("owner", models.MembershipStatusActive, accountID)
+	admin := s.loginUser("admin", models.MembershipStatusActive, accountID)
+	auditor := s.loginUser("auditor", models.MembershipStatusActive, accountID)
+	user := s.loginUser("user", models.MembershipStatusActive, accountID)
+	const rawToken = "resend-plain-secret"
+	storedHash := accountsvc.HashInviteToken(rawToken)
+	inviteID := s.insertOpenInvite(accountID, owner.id, "held-auditor@example.com", models.AccountRoleAuditor, storedHash)
+	const otherHash = "other-account-digest"
+	otherInviteID := s.insertOpenInvite(otherID, owner.id, "other-held@example.com", models.AccountRoleUser, otherHash)
+	expiresBefore := s.inviteExpiresEpoch(inviteID)
+
+	s.assertForbidden(s.postResend(auditor.token, accountID, inviteID), "forbidden")
+	s.assertForbidden(s.postResend(user.token, accountID, inviteID), "forbidden")
+	s.Equal(storedHash, s.inviteTokenHash(inviteID))
+
+	missingAccount := s.postResend(user.token, uuid.New(), inviteID)
+	missingAccount.AssertNotFound()
+	missingBody, err := missingAccount.Content()
+	s.Require().NoError(err)
+	s.Contains(missingBody, `"code":"not_found"`)
+	s.NotContains(missingBody, `"message":"forbidden"`)
+
+	invalidID, err := s.Http(s.T()).
+		WithHeader("Authorization", "Bearer "+owner.token).
+		Post("/v1/accounts/"+accountID.String()+"/invites/not-a-uuid/resend", strings.NewReader(""))
+	s.Require().NoError(err)
+	invalidID.AssertStatus(400)
+
+	unknown := s.postResend(owner.token, accountID, uuid.New())
+	unknown.AssertNotFound()
+	unknownBody, err := unknown.Content()
+	s.Require().NoError(err)
+	s.Contains(unknownBody, "invite is invalid or expired")
+
+	other := s.postResend(owner.token, accountID, otherInviteID)
+	other.AssertNotFound()
+	s.Equal(otherHash, s.inviteTokenHash(otherInviteID))
+
+	resent := s.postResend(owner.token, accountID, inviteID)
+	content, id := s.assertInviteAccepted(resent, "held-auditor@example.com", models.AccountRoleAuditor)
+	s.Equal(inviteID.String(), id)
+	s.NotContains(content, rawToken)
+	s.NotContains(content, storedHash)
+	rotated := s.inviteTokenHash(inviteID)
+	s.NotEqual(storedHash, rotated)
+	s.Equal(expiresBefore, s.inviteExpiresEpoch(inviteID))
+	s.Equal(models.AccountRoleAuditor, s.storedInviteRole(inviteID))
+	s.Equal(int64(0), s.countActivity(`SELECT count(*) FROM account_activity WHERE action = 'member.invited' AND account_id = ?`, accountID))
+
+	preview, err := s.Http(s.T()).Get("/v1/auth/invites/" + rawToken)
+	s.Require().NoError(err)
+	preview.AssertNotFound()
+
+	again := s.postResend(admin.token, accountID, inviteID)
+	s.assertInviteAccepted(again, "held-auditor@example.com", models.AccountRoleAuditor)
+	s.NotEqual(rotated, s.inviteTokenHash(inviteID))
+	s.Equal(expiresBefore, s.inviteExpiresEpoch(inviteID))
+
+	_, err = facades.Orm().Query().Exec(`UPDATE account_invites SET accepted_at = NOW() WHERE id = ?`, inviteID)
+	s.Require().NoError(err)
+	acceptedHash := s.inviteTokenHash(inviteID)
+	accepted := s.postResend(owner.token, accountID, inviteID)
+	accepted.AssertNotFound()
+	s.Equal(acceptedHash, s.inviteTokenHash(inviteID))
+}
+
+func (s *AccountMembersTestSuite) storedInviteRole(id uuid.UUID) string {
+	s.T().Helper()
+	var role string
+	s.Require().NoError(facades.Orm().Query().Raw(`SELECT role FROM account_invites WHERE id = ?`, id).Scan(&role))
+	return role
 }
 
 func (s *AccountMembersTestSuite) assertFieldError(resp contractstesting.Response, field string) {

@@ -106,6 +106,45 @@ func (s *Service) IssueInvite(ctx context.Context, accountID uuid.UUID, email, r
 	return issued, nil
 }
 
+// ResendInvite rotates the token of one open invite. The stored role and
+// expiry stay. An accepted, revoked, or other-account invite is
+// ErrInviteInvalid. The raw token is only on the returned link. This does
+// not write member.invited: that event is the original invite.
+func (s *Service) ResendInvite(ctx context.Context, accountID, inviteID uuid.UUID, frontendBase string) (*IssuedInvite, error) {
+	if s == nil || s.invites == nil {
+		return nil, errors.New("account invite stores are required")
+	}
+	if ctx == nil {
+		return nil, errors.New("resend invite: context is required")
+	}
+	if accountID == uuid.Nil || inviteID == uuid.Nil {
+		return nil, ErrInviteInvalid
+	}
+	invite, err := s.invites.FindOpenByAccountAndID(ctx, accountID, inviteID)
+	if err != nil {
+		if errors.Is(err, models.ErrRepositoryNotFound) {
+			return nil, ErrInviteInvalid
+		}
+		return nil, err
+	}
+	if invite == nil {
+		return nil, ErrInviteInvalid
+	}
+	raw, hash, err := newInviteToken()
+	if err != nil {
+		return nil, err
+	}
+	link, err := InviteLink(frontendBase, raw)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.invites.Rotate(ctx, invite.ID, hash, invite.Role, invite.ExpiresAt); err != nil {
+		return nil, err
+	}
+	invite.TokenHash = hash
+	return &IssuedInvite{Invite: invite, InviteLink: link, RawToken: raw}, nil
+}
+
 // ListInvites pages one account's invites. The store clears the token hash
 // before the rows leave the repository, so this list cannot carry it.
 func (s *Service) ListInvites(ctx context.Context, accountID uuid.UUID, limit, offset int) ([]models.AccountInvite, int64, error) {

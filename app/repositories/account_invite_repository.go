@@ -51,6 +51,26 @@ func (r *AccountInviteRepository) FindPendingByAccountEmail(ctx context.Context,
 	return &invite, nil
 }
 
+// FindOpenByAccountAndID returns one invite that is not accepted and not
+// revoked, or ErrRepositoryNotFound. An expired invite is still open: resend
+// only replaces the token.
+func (r *AccountInviteRepository) FindOpenByAccountAndID(ctx context.Context, accountID, id uuid.UUID) (*models.AccountInvite, error) {
+	if accountID == uuid.Nil || id == uuid.Nil {
+		return nil, fmt.Errorf("find open invite: account id and invite id are required")
+	}
+	var invite models.AccountInvite
+	err := r.Query(ctx).
+		Where("id = ? AND account_id = ? AND accepted_at IS NULL AND revoked_at IS NULL", id, accountID).
+		First(&invite)
+	if err != nil {
+		return nil, db.NotFound(err, "find open invite")
+	}
+	if invite.ID == uuid.Nil {
+		return nil, models.ErrRepositoryNotFound
+	}
+	return &invite, nil
+}
+
 // FindPendingByTokenHash returns an unexpired open invite, or ErrRepositoryNotFound.
 func (r *AccountInviteRepository) FindPendingByTokenHash(ctx context.Context, tokenHash string, now time.Time) (*models.AccountInvite, error) {
 	var invite models.AccountInvite

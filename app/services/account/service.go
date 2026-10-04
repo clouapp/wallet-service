@@ -70,6 +70,7 @@ type InviteStore interface {
 	Create(ctx context.Context, invite *models.AccountInvite) error
 	FindPendingByAccountEmail(ctx context.Context, accountID uuid.UUID, email string) (*models.AccountInvite, error)
 	FindPendingByTokenHash(ctx context.Context, tokenHash string, now time.Time) (*models.AccountInvite, error)
+	FindOpenByAccountAndID(ctx context.Context, accountID, id uuid.UUID) (*models.AccountInvite, error)
 	Rotate(ctx context.Context, id uuid.UUID, tokenHash, role string, expiresAt time.Time) error
 	MarkAccepted(ctx context.Context, id uuid.UUID, acceptedAt time.Time) error
 	PaginateByAccountID(ctx context.Context, accountID uuid.UUID, limit, offset int) ([]models.AccountInvite, int64, error)
