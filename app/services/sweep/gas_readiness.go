@@ -17,9 +17,10 @@ import (
 // the status transitions. gas_last_checked_at is updated on every call.
 //
 // Bitcoin short-circuits to "seeded" because fees come from the UTXO being
-// spent — there is no separate gas asset to monitor. Chains whose threshold
-// cannot be resolved (row is NULL and the injected fallback has no entry) are
-// also treated as always-seeded so downstream guards do not block them.
+// spent — there is no separate gas asset to monitor. A chain whose
+// gas_readiness_threshold_raw is empty is also treated as always-seeded so
+// downstream guards do not block it. Production does not substitute an
+// environment default.
 func (s *service) RefreshGasStatus(ctx context.Context, walletID uuid.UUID) (*GasStatus, error) {
 	wallet, err := s.walletRepo.FindByID(ctx, walletID)
 	if err != nil {

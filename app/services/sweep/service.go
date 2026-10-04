@@ -113,7 +113,8 @@ type service struct {
 	chainRepo   chainReader
 	flags       accountGate
 	gasDefaults map[string]GasReadinessDefault
-	// dustUSDDefault is the configured USD dust for a chain when the row's column is NULL.
+	// dustUSDDefault is unused in production. An unset dust_threshold_usd filters
+	// nothing; the environment does not fill it. Tests may inject a substitute.
 	dustUSDDefault func(chainID string) decimal.Decimal
 	// tokenPricer converts USD dust thresholds to token amounts; nil disables token dust filtering.
 	tokenPricer TokenPricer

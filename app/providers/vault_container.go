@@ -17,7 +17,6 @@ import (
 	"github.com/google/uuid"
 	"github.com/goravel/framework/contracts/foundation"
 	"github.com/redis/go-redis/v9"
-	"github.com/shopspring/decimal"
 
 	coinapiws "github.com/macrowallets/waas/app/adapters/price/coinapi"
 	queuesqs "github.com/macrowallets/waas/app/adapters/queue/sqs"
@@ -51,7 +50,6 @@ import (
 	"github.com/macrowallets/waas/app/services/webhooksync"
 	"github.com/macrowallets/waas/app/services/withdraw"
 	"github.com/macrowallets/waas/app/services/withdrawalevents"
-	"github.com/macrowallets/waas/config"
 	"github.com/macrowallets/waas/pkg/types"
 )
 
@@ -367,9 +365,9 @@ func buildVaultContainer(app foundation.Application) (*container.Container, erro
 		func(ctx context.Context, accountID uuid.UUID) error {
 			return flags.Gate(ctx, accountID, features.FlagSweepEnabled, features.CodeSweepPaused)
 		},
-		sweepGasDefaults(),
+		nil,
 		c.PriceService,
-		sweepDustUSD,
+		nil,
 	)
 	c.WithdrawalService = withdraw.NewService(
 		c.Registry, c.WebhookService, c.MPCService, redislock.New(c.Redis),
@@ -463,31 +461,6 @@ func buildPriceService(c *container.Container) *price.Service {
 	return price.NewService(priceProviders, c.CurrencyRepo, pricecache.New(c.Redis)).WithQuoteDialer(coinapiws.Dialer{})
 }
 
-// sweepGasDefaults copies the gas-readiness fallbacks SweepDefaults already
-// reads. The sweep service receives the values and does not import config.
-func sweepGasDefaults() map[string]sweep.GasReadinessDefault {
-	return gasReadinessDefaultsFrom(config.SweepDefaults())
-}
-
-func sweepDustUSD(chainID string) decimal.Decimal {
-	thresholds, ok := config.SweepDefaults()[chainID]
-	if !ok || thresholds.DustUSD.IsNegative() {
-		return decimal.Zero
-	}
-	return thresholds.DustUSD
-}
-
-func gasReadinessDefaultsFrom(configured map[string]config.SweepThresholds) map[string]sweep.GasReadinessDefault {
-	if len(configured) == 0 {
-		return nil
-	}
-	out := make(map[string]sweep.GasReadinessDefault, len(configured))
-	for chainID, thresholds := range configured {
-		out[chainID] = sweep.GasReadinessDefault{Raw: thresholds.GasReadinessRaw}
-	}
-	return out
-}
-
 // buildPendingDepositStore keeps failed deposit blocks in Redis and in a local
 // append-only file; either one is enough, and with neither the scanner stops before a
 // failing block instead of skipping it.
@@ -535,33 +508,22 @@ var lenientLogScanChains = map[string]bool{
 	models.ChainTPolygon: true,
 }
 
-// resolveGasReadinessThreshold returns the gas-readiness threshold for a chain,
-// preferring the value seeded on the chains row, falling back to config.SweepDefaults.
-// Returns nil if neither source provides a value (e.g. BTC).
+// resolveGasReadinessThreshold is the chains.gas_readiness_threshold_raw value.
+// An empty column means the chain has no gas threshold. Environment variables
+// do not fill it in.
 func resolveGasReadinessThreshold(ch *models.Chain) *big.Int {
-	if v := ch.GasReadinessThreshold(); v != nil {
-		return v
+	if ch == nil {
+		return nil
 	}
-	defaults := config.SweepDefaults()
-	if d, ok := defaults[ch.ID]; ok && d.GasReadinessRaw != "" {
-		if v, ok := new(big.Int).SetString(d.GasReadinessRaw, 10); ok {
-			return v
-		}
-	}
-	return nil
+	return ch.GasReadinessThreshold()
 }
 
-// resolveDustThresholdNative returns the native dust threshold for a chain,
-// preferring the chains row, falling back to config.SweepDefaults.
+// resolveDustThresholdNative is the chains.dust_threshold_native_raw value.
+// An empty column means no native dust filter. Environment variables do not
+// fill it in.
 func resolveDustThresholdNative(ch *models.Chain) *big.Int {
-	if v := ch.DustThresholdNative(); v != nil {
-		return v
+	if ch == nil {
+		return nil
 	}
-	defaults := config.SweepDefaults()
-	if d, ok := defaults[ch.ID]; ok && d.DustNativeRaw != "" {
-		if v, ok := new(big.Int).SetString(d.DustNativeRaw, 10); ok {
-			return v
-		}
-	}
-	return nil
+	return ch.DustThresholdNative()
 }

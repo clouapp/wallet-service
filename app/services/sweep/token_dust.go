@@ -20,8 +20,8 @@ type TokenPricer interface {
 // childDustThreshold is the smallest balance of asset a child must hold to be
 // swept, in base units; nil means no filtering. The native coin uses the
 // adapter's threshold (chains.dust_threshold_native_raw). Tokens use
-// chains.dust_threshold_usd, or the chain's *_DUST_THRESHOLD_USD default when
-// the column is NULL, converted at the token's quoted USD price.
+// chains.dust_threshold_usd, converted at the token's quoted USD price. An
+// unset column filters nothing.
 func (s *service) childDustThreshold(ctx context.Context, adapter types.Chain, chainEntity *models.Chain, asset string) *big.Int {
 	native := adapter.DustThreshold(asset)
 	if types.SameAssetSymbol(asset, adapter.NativeAsset()) || (native != nil && native.Sign() > 0) {
@@ -50,8 +50,8 @@ func (s *service) tokenDustThreshold(ctx context.Context, chainEntity *models.Ch
 	return dustBaseUnits(dustUSD, price, token.Decimals)
 }
 
-// tokenDustUSD is the chain's USD dust threshold: the chains column when set
-// (0 disables filtering), else the configured default for the chain.
+// tokenDustUSD is chains.dust_threshold_usd. Zero disables filtering. An unset
+// column does not consult the environment.
 func (s *service) tokenDustUSD(chainEntity *models.Chain) decimal.Decimal {
 	if chainEntity.DustThresholdUSD.Valid {
 		return chainEntity.DustThresholdUSD.Decimal

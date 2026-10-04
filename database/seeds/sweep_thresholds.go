@@ -22,7 +22,7 @@ type thresholdDef struct {
 // SeedSweepThresholds populates per-chain sweep + gas readiness thresholds on the `chains` table.
 // An empty gas_readiness_threshold_raw means "not applicable" (BTC) and is stored as an empty
 // string: the column is NOT NULL, and the model reads "" the same way it used to read NULL.
-// Bitcoin dust USD is 0, the value config.SweepDefaults already uses for "no tokens on BTC".
+// Bitcoin dust USD is 0: there are no tokens on BTC.
 func SeedSweepThresholds(_ context.Context) error {
 	defs, err := sweepThresholdDefs()
 	if err != nil {

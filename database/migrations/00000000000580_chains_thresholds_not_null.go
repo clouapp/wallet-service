@@ -5,14 +5,12 @@ package migrations
 // number 460 is 00000000000460_add_sessions_revoked_at_to_users, so this step
 // is 580.
 //
-// The numbers are the seeder literals in database/seeds/sweep_thresholds.go,
-// which match the defaults in config.SweepDefaults. Bitcoin has no gas
-// threshold in either place (the seed stored that as NULL via NULLIF of an
+// The numbers are the seeder literals in database/seeds/sweep_thresholds.go.
+// Bitcoin has no gas threshold (the seed stored that as NULL via NULLIF of an
 // empty string); the column keeps the empty string, which the model already
-// reads as "not set". Bitcoin dust USD is NULL in the seeder and decimal.Zero
-// in SweepDefaults ("N/A: no tokens on BTC"); the backfill stores 0, the only
-// non-null value the code already uses. A chain id that is still NULL and is
-// not in that list fails the migration instead of receiving an invented number.
+// reads as "not set". Bitcoin dust USD is 0 ("no tokens on BTC"). A chain id
+// that is still NULL and is not in that list fails the migration instead of
+// receiving an invented number.
 //
 // Down drops NOT NULL, the defaults, and the non-negative checks. It leaves
 // every backfilled value in place.

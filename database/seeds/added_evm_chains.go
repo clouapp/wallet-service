@@ -7,9 +7,9 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/goravel/framework/facades"
+	"github.com/shopspring/decimal"
 
 	"github.com/macrowallets/waas/app/models"
-	"github.com/macrowallets/waas/config"
 	"github.com/macrowallets/waas/pkg/numeric"
 )
 
@@ -174,21 +174,40 @@ type seedThresholds struct {
 	dustUSD         numeric.NullDecimal
 }
 
-// addedChainThresholds are the sweep thresholds of an added record, from the
-// env-overridable config.SweepDefaults.
+type addedThresholdSpec struct {
+	gasReadinessRaw string
+	dustNativeRaw   string
+	dustUSD         decimal.Decimal
+}
+
+// addedChainThresholds are the sweep thresholds written onto a newly created
+// added-chain row. They are the same literals the seeder uses. The environment
+// does not override them.
 func addedChainThresholds(chainID string) (seedThresholds, error) {
-	defaults, ok := config.SweepDefaults()[chainID]
+	spec, ok := addedChainThresholdSpec(chainID)
 	if !ok {
-		return seedThresholds{}, fmt.Errorf("no sweep defaults for chain %s", chainID)
+		return seedThresholds{}, fmt.Errorf("no sweep thresholds for chain %s", chainID)
 	}
-	if err := models.DustThresholdUSDColumn.Validate(defaults.DustUSD); err != nil {
-		return seedThresholds{}, fmt.Errorf("sweep defaults for chain %s: %w", chainID, err)
+	if err := models.DustThresholdUSDColumn.Validate(spec.dustUSD); err != nil {
+		return seedThresholds{}, fmt.Errorf("sweep thresholds for chain %s: %w", chainID, err)
 	}
 	return seedThresholds{
-		gasReadinessRaw: nonEmptyPtr(defaults.GasReadinessRaw),
-		dustNativeRaw:   nonEmptyPtr(defaults.DustNativeRaw),
-		dustUSD:         numeric.NewNullDecimal(defaults.DustUSD),
+		gasReadinessRaw: nonEmptyPtr(spec.gasReadinessRaw),
+		dustNativeRaw:   nonEmptyPtr(spec.dustNativeRaw),
+		dustUSD:         numeric.NewNullDecimal(spec.dustUSD),
 	}, nil
+}
+
+func addedChainThresholdSpec(chainID string) (addedThresholdSpec, bool) {
+	dustLow := decimal.New(1, -1)
+	switch chainID {
+	case models.ChainBase, models.ChainTBase, models.ChainArbitrum, models.ChainTArbitrum:
+		return addedThresholdSpec{gasReadinessRaw: "200000000000000", dustNativeRaw: "20000000000000", dustUSD: dustLow}, true
+	case models.ChainBSC, models.ChainTBSC:
+		return addedThresholdSpec{gasReadinessRaw: "500000000000000", dustNativeRaw: "50000000000000", dustUSD: dustLow}, true
+	default:
+		return addedThresholdSpec{}, false
+	}
 }
 
 func nonEmptyPtr(s string) *string {
