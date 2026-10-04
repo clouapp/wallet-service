@@ -88,7 +88,7 @@ Plan: `macro-wallets-alignment-prompt.md`. Nineteen decisions.
 
 ## 11. Who may move funds
 
-**Decision.** Owner and admin may withdraw, sweep, and create wallets. Owner, admin, and user may generate addresses. Auditor is read-only. The retired label `viewer` is treated as auditor. An unknown role is refused.
+**Decision.** Owner and admin may withdraw, sweep, and create wallets. Owner, admin, and user may generate addresses. Auditor is read-only. The retired label `viewer` is treated as auditor. An unknown role is refused. Fund routes stay on the account-role fund guard, and the union is not consulted there.
 
 **Plan.** §0.5 and S3: the permission on each fund-moving handler is a product decision. §9.3: auditor only reads; user operates and does not administer.
 
