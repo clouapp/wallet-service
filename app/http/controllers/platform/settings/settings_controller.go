@@ -6,11 +6,17 @@ import (
 	"github.com/google/uuid"
 	"github.com/goravel/framework/contracts/http"
 
+	appfacades "github.com/macrowallets/waas/app/facades"
 	"github.com/macrowallets/waas/app/http/middleware"
 	"github.com/macrowallets/waas/app/http/requests"
 	"github.com/macrowallets/waas/app/http/responses"
+	"github.com/macrowallets/waas/app/mails"
 	settingssvc "github.com/macrowallets/waas/app/services/settings"
 )
+
+// mailTestFailedMessage is the 502 text. It names neither the SMTP password
+// nor the host credentials. The provider error stays off the wire and the log.
+const mailTestFailedMessage = "the test message was not sent"
 
 // SettingsController writes one platform settings group. S1.4.4 names
 // settings.update plus the group's UpdatePermission. webhook_delivery names
@@ -162,6 +168,39 @@ func (ctrl *SettingsController) Reset(ctx http.Context) http.Response {
 		return errResp
 	}
 	return responses.Send(ctx, http.StatusOK, view)
+}
+
+// TestMail godoc
+// @Summary      Send one platform mail test
+// @Description  POST /v1/platform/settings/mail/test. S1.4.6: settings.update + mail.update, declared before {group}. Neither permission is in the platform catalog, so a platform_admins row is the gate. A non-admin is 403 before the body is read. The body field is to. An invalid address is 422 validation_failed and nothing is sent. One message goes through facades.Mail, which reads mail_smtp and mail_delivery at send time. The answer is {"sent": true}. A mailer failure is 502 {"error":{"code","message"}} and the message does not include the password or the SMTP host credentials. The test is not audited.
+// @Tags         Platform Settings
+// @Security     BearerAuth
+// @Accept       json
+// @Produce      json
+// @Success      200  {object}  map[string]bool
+// @Failure      401  {object}  responses.ErrorBody
+// @Failure      403  {object}  responses.ErrorBody
+// @Failure      422  {object}  responses.ErrorBody
+// @Failure      502  {object}  responses.ErrorBody
+// @Router       /platform/settings/mail/test [post]
+func (ctrl *SettingsController) TestMail(ctx http.Context) http.Response {
+	actorID := middleware.SessionUserID(ctx)
+	if actorID == uuid.Nil {
+		return responses.Send(ctx, http.StatusUnauthorized, http.Json{"error": "unauthorized"})
+	}
+	if err := ctrl.settings.AuthorizePlatformMailTest(ctx.Context(), actorID); err != nil {
+		return mapPlatformSettingsError(ctx, err)
+	}
+	var req requests.PlatformMailTestRequest
+	if resp := requests.Validate(ctx, &req); resp != nil {
+		return resp
+	}
+	err := appfacades.Mail().To([]string{req.To}).Send(&mails.SettingsTestMail{To: req.To})
+	if err != nil {
+		appfacades.Log().Error(mailTestFailedMessage)
+		return responses.Send(ctx, http.StatusBadGateway, http.Json{"error": mailTestFailedMessage})
+	}
+	return responses.Send(ctx, http.StatusOK, http.Json{"sent": true})
 }
 
 func mapPlatformSettingsBodyError(ctx http.Context, err error) http.Response {

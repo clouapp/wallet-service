@@ -141,6 +141,9 @@ func RegisterAdminRoutes() {
 		router.Patch("/features/{key}", platformFeaturesCtrl.Update)
 		router.Patch("/chains/{chainId}/rpc", platformChainsCtrl.UpdateRPC)
 		router.Patch("/chains/{chainId}", platformChainsCtrl.Update)
+		// Declared before {group} so the literal path mail/test is not a group name.
+		// S1.4.6: POST /v1/platform/settings/mail/test settings.update + mail.update (declared before {group}).
+		router.Post("/settings/mail/test", platformSettingsCtrl.TestMail)
 		router.Get("/settings", platformSettingsCtrl.Index)
 		router.Get("/settings/{group}", platformSettingsCtrl.Show)
 		router.Put("/settings/{group}", platformSettingsCtrl.Update)
