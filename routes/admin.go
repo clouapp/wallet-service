@@ -142,6 +142,7 @@ func RegisterAdminRoutes() {
 		router.Patch("/chains/{chainId}/rpc", platformChainsCtrl.UpdateRPC)
 		router.Patch("/chains/{chainId}", platformChainsCtrl.Update)
 		router.Get("/settings", platformSettingsCtrl.Index)
+		router.Get("/settings/{group}", platformSettingsCtrl.Show)
 		router.Put("/settings/{group}", platformSettingsCtrl.Update)
 		router.Get("/activity", accountActivityCtrl.Platform)
 		router.Get("/users", platformUsersCtrl.Index)

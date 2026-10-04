@@ -50,6 +50,35 @@ func (ctrl *SettingsController) Index(ctx http.Context) http.Response {
 	return responses.Send(ctx, http.StatusOK, view)
 }
 
+// Show godoc
+// @Summary      Read one platform settings group
+// @Description  One platform group. S1.4.6 names settings.view plus the group's ViewPermission, and 404 before 403. An unknown group, including an account-only group, is 404 before the platform-admin check. This branch has no platform permission catalog, so a platform_admins row is the gate and stands in for a group ViewPermission that is not in that catalog. A group with no stored row is 200 with registry defaults; a secret is never returned and the field carries is_set. The read writes no activity.
+// @Tags         Platform Settings
+// @Security     BearerAuth
+// @Produce      json
+// @Param        group  path  string  true  "Settings group"
+// @Success      200  {object}  settingssvc.GroupView
+// @Failure      401  {object}  responses.ErrorBody
+// @Failure      403  {object}  responses.ErrorBody
+// @Failure      404  {object}  responses.ErrorBody
+// @Router       /platform/settings/{group} [get]
+func (ctrl *SettingsController) Show(ctx http.Context) http.Response {
+	actorID := middleware.SessionUserID(ctx)
+	if actorID == uuid.Nil {
+		return responses.Send(ctx, http.StatusUnauthorized, http.Json{"error": "unauthorized"})
+	}
+	var path requests.SettingsGroupRequest
+	path.Load(ctx)
+	if path.Group == "" {
+		return responses.Send(ctx, http.StatusBadRequest, http.Json{"error": "group is required"})
+	}
+	view, err := ctrl.settings.PlatformGroup(ctx.Context(), actorID, path.Group)
+	if errResp := mapPlatformSettingsError(ctx, err); errResp != nil {
+		return errResp
+	}
+	return responses.Send(ctx, http.StatusOK, view)
+}
+
 // Update godoc
 // @Summary      Save one platform settings group
 // @Description  Writes one platform group. webhook_delivery stores max_attempts and timeout_seconds. sweep_limits stores positive address and consolidate counts; a blank daily_withdraw_cap_usd means unlimited. mail_smtp stores host, port, encryption, and username; the password is sealed and omitted from the response (is_set reports whether one is stored). A blank password keeps the stored one. mail_delivery stores driver, from_address, and from_name in the clear. An invalid address, an empty name, and driver log in production are 422 and are not stored. mail_ses, mail_mailgun, mail_resend, and mail_postmark store their provider fields; each secret is sealed and omitted, a blank secret keeps the stored one, and mail_ses key and secret must be set together. price_lookup stores provider_order. price_coingecko, price_coinmarketcap, and price_coinapi store enabled and a sealed key that is omitted from the response; a blank key keeps the stored one. An unknown provider name is 422 and is not stored. provider_alchemy stores enabled and a sealed auth_token that is omitted from the response; a blank auth_token keeps the stored one. provider_helius and provider_quicknode store enabled and a sealed api_key that is omitted from the response; a blank api_key keeps the stored one. provider_etherscan stores enabled and a sealed api_key that is omitted from the response; a blank api_key keeps the stored one. Zero or negative counts, and a negative cap, are 422 and are not stored. An unknown group is 404 before the platform-admin check. Values are not written to the activity log.

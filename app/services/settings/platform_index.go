@@ -39,6 +39,48 @@ func (s *Service) PlatformIndex(ctx context.Context, actorID uuid.UUID) (Registr
 	return s.platformIndexView(ctx)
 }
 
+// PlatformGroup reads one platform group.
+// S1.4.6: GET /v1/platform/settings/{group} — settings.view + group ViewPermission (404 before 403).
+// An unknown name, including an account-only group, is ErrGroupNotFound before
+// the platform_admins check and before the store is read. A missing stored
+// row is still the registry defaults: 404 is the unknown name, not a missing
+// row. This branch has no platform permission catalog, so the platform_admins
+// row stands in for settings.view and for a ViewPermission that is not in
+// that catalog. A secret is omitted (is_set only). The read writes no activity.
+func (s *Service) PlatformGroup(ctx context.Context, actorID uuid.UUID, groupName string) (GroupView, error) {
+	if ctx == nil {
+		return GroupView{}, fmt.Errorf("platform settings: context is required")
+	}
+	if s == nil {
+		return GroupView{}, errServiceRequired
+	}
+	groupName = strings.TrimSpace(groupName)
+	group, ok := FindGroup(groupName)
+	if !ok || group.Scope != ScopePlatform {
+		return GroupView{}, ErrGroupNotFound
+	}
+	if s.store == nil {
+		return GroupView{}, errServiceRequired
+	}
+	if actorID == uuid.Nil {
+		return GroupView{}, fmt.Errorf("platform settings: actor is required")
+	}
+	if s.admins == nil {
+		return GroupView{}, fmt.Errorf("platform settings: platform admins are required")
+	}
+	admin, err := s.admins.Contains(ctx, actorID)
+	if err != nil {
+		return GroupView{}, err
+	}
+	if !admin {
+		return GroupView{}, ErrPlatformViewForbidden
+	}
+	if !visibleOnPlatformIndex(group) {
+		return GroupView{}, ErrPlatformViewForbidden
+	}
+	return s.platformGroupView(ctx, group)
+}
+
 func (s *Service) platformIndexView(ctx context.Context) (RegistryView, error) {
 	view := RegistryView{
 		Permissions: Permissions{
