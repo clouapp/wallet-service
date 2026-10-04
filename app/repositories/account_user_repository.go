@@ -2,6 +2,7 @@ package repositories
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -242,6 +243,55 @@ func (r *AccountUserRepository) Within(ctx context.Context, fn func(context.Cont
 	return r.Transaction(ctx, func(tx orm.Query) error {
 		return fn(db.WithTx(ctx, tx))
 	})
+}
+
+// FindForOwnerAttach returns the live membership for this account and user,
+// or the newest soft-deleted row when every row is deleted. A missing pair
+// is ErrRepositoryNotFound. The live row wins so a restore cannot clear
+// deleted_at on an old row while another membership is still present.
+func (r *AccountUserRepository) FindForOwnerAttach(ctx context.Context, accountID, userID uuid.UUID) (*models.AccountUser, error) {
+	if ctx == nil {
+		return nil, fmt.Errorf("find account user: context is required")
+	}
+	if accountID == uuid.Nil || userID == uuid.Nil {
+		return nil, fmt.Errorf("find account user: account and user are required")
+	}
+	var au models.AccountUser
+	err := r.Query(ctx).
+		Where("account_id = ? AND user_id = ?", accountID, userID).
+		OrderByRaw("CASE WHEN deleted_at IS NULL THEN 0 ELSE 1 END, created_at DESC").
+		First(&au)
+	if err != nil {
+		if errors.Is(err, models.ErrRepositoryNotFound) {
+			return nil, err
+		}
+		return nil, fmt.Errorf("find account user: %w", err)
+	}
+	if au.ID == uuid.Nil {
+		return nil, models.ErrRepositoryNotFound
+	}
+	return &au, nil
+}
+
+// ActivateOwner makes one membership the active owner. Role, status, and
+// deleted_at change in one statement so the account_users capture writes one
+// activity row. The caller skips this when the row is already that owner.
+func (r *AccountUserRepository) ActivateOwner(ctx context.Context, id uuid.UUID) error {
+	if ctx == nil {
+		return fmt.Errorf("activate account owner: context is required")
+	}
+	if id == uuid.Nil {
+		return fmt.Errorf("activate account owner: id is required")
+	}
+	_, err := r.Query(ctx).Model(&models.AccountUser{}).Where("id = ?", id).Update(map[string]any{
+		"role":       models.AccountRoleOwner,
+		"status":     models.MembershipStatusActive,
+		"deleted_at": nil,
+	})
+	if err != nil {
+		return fmt.Errorf("activate account owner: %w", err)
+	}
+	return nil
 }
 
 // SoftDeleteByAccountAndUser sets deleted_at on the active membership.

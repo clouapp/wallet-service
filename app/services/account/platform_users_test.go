@@ -81,6 +81,14 @@ func (m *platformUserMemberships) RolesForUserAccounts(context.Context, uuid.UUI
 	return nil, fmt.Errorf("roles are not used")
 }
 
+func (m *platformUserMemberships) FindForOwnerAttach(context.Context, uuid.UUID, uuid.UUID) (*models.AccountUser, error) {
+	return nil, fmt.Errorf("find for owner attach is not used")
+}
+
+func (m *platformUserMemberships) ActivateOwner(context.Context, uuid.UUID) error {
+	return fmt.Errorf("activate owner is not used")
+}
+
 func TestListUsersForPlatformRefusesANonAdminBeforeReadingTheAccount(t *testing.T) {
 	t.Parallel()
 	accountID := uuid.New()

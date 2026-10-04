@@ -39,4 +39,12 @@ var (
 	// S3.4.1 names GET /{id}/users on /v1/platform/accounts. This branch has no
 	// platform permission catalog, so a platform_admins row is the gate.
 	ErrPlatformAccountUsersForbidden = errors.New("you do not have permission to view account users")
+	// ErrPlatformOwnersForbidden is a caller who is not a platform admin.
+	// S3.4.1 names POST /{id}/owners (attach owner — recovery) accounts.owners.
+	// This branch has no platform permission catalog, so a platform_admins row
+	// is the gate.
+	ErrPlatformOwnersForbidden = errors.New("you do not have permission to attach an account owner")
+	// ErrPlatformOwnerUserNotFound is an email that is not an existing user.
+	// Attach does not create a user.
+	ErrPlatformOwnerUserNotFound = errors.New("user not found")
 )

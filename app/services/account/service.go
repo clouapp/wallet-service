@@ -41,6 +41,11 @@ type MembershipStore interface {
 	Within(ctx context.Context, fn func(context.Context) error) error
 	FindByUserID(ctx context.Context, userID uuid.UUID) ([]models.AccountUser, error)
 	RolesForUserAccounts(ctx context.Context, userID uuid.UUID, accountIDs []uuid.UUID) (map[uuid.UUID]string, error)
+	// FindForOwnerAttach returns the live membership when one exists, otherwise
+	// the newest soft-deleted row. A missing pair is ErrRepositoryNotFound.
+	FindForOwnerAttach(ctx context.Context, accountID, userID uuid.UUID) (*models.AccountUser, error)
+	// ActivateOwner sets role owner, status active, and clears deleted_at in one write.
+	ActivateOwner(ctx context.Context, id uuid.UUID) error
 }
 
 // UserStore finds a user and inserts one when an invite is accepted.

@@ -69,6 +69,7 @@ func RegisterAdminRoutes() {
 	platformAccountsCtrl := newPlatformAccountsController()
 	platformAccountListCtrl := newPlatformAccountListController()
 	platformAccountUsersCtrl := newPlatformAccountUsersController()
+	platformAccountOwnersCtrl := newPlatformAccountOwnersController()
 	platformChainsCtrl := newPlatformChainsController()
 	platformSettingsCtrl := newPlatformSettingsController()
 	platformUsersCtrl := newPlatformUsersController()
@@ -174,6 +175,10 @@ func RegisterAdminRoutes() {
 		// pagination, or sort, so the page matches GET /v1/platform/users and
 		// each row matches the account member list.
 		router.Get("/accounts/{accountId}/users", platformAccountUsersCtrl.Index)
+		// S3.4.1: POST /v1/platform/accounts/{id}/owners (attach owner — recovery) accounts.owners.
+		// A platform_admins row is the gate. The body is email, matching account member add.
+		// The route is not behind AccountContext, so a frozen account can still be recovered.
+		router.Post("/accounts/{accountId}/owners", platformAccountOwnersCtrl.Attach)
 		// S1.4.6: GET /v1/platform/accounts/{accountId}/settings/{group} settings.view (platform-managed account groups).
 		router.Get("/accounts/{accountId}/settings/{group}", platformSettingsCtrl.ShowAccount)
 		// S1.4.6: PUT /v1/platform/accounts/{accountId}/settings/{group} settings.update + sweep.update for account_sweep_limits.
@@ -447,6 +452,12 @@ func newPlatformAccountsController() *platformaccounts.LifecycleController {
 
 func newPlatformAccountUsersController() *platformaccounts.UsersController {
 	return platformaccounts.NewUsersController(
+		container.MustMake[*accountsvc.Service](),
+	)
+}
+
+func newPlatformAccountOwnersController() *platformaccounts.OwnersController {
+	return platformaccounts.NewOwnersController(
 		container.MustMake[*accountsvc.Service](),
 	)
 }

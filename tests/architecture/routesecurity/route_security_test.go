@@ -146,6 +146,7 @@ var routeTable = map[string]routeSecurity{
 	"PATCH /v1/platform/chains/{chainId}/rpc":                          session(chainSession),
 	"GET|HEAD /v1/platform/accounts":                                   session(chainSession),
 	"GET|HEAD /v1/platform/accounts/{accountId}/users":                 session(chainSession),
+	"POST /v1/platform/accounts/{accountId}/owners":                    session(chainSession),
 	"POST /v1/platform/accounts/{accountId}/archive":                   session(chainSession),
 	"POST /v1/platform/accounts/{accountId}/freeze":                    session(chainSession),
 	"POST /v1/platform/accounts/{accountId}/unfreeze":                  session(chainSession),
