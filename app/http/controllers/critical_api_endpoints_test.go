@@ -55,6 +55,10 @@ func (s *criticalEndpointsSuite) SetupTest() {
 // doesn't expose, so we fall back to raw SQL — matching the pattern used
 // in middleware-level tests.
 func (s *criticalEndpointsSuite) seedAccountWallet(requireSignature bool, label string) (string, string) {
+	return s.seedAccountWalletWithLimit(requireSignature, label, "{}")
+}
+
+func (s *criticalEndpointsSuite) seedAccountWalletWithLimit(requireSignature bool, label, spendingLimit string) (string, string) {
 	s.T().Helper()
 
 	accountID := uuid.New()
@@ -69,7 +73,7 @@ func (s *criticalEndpointsSuite) seedAccountWallet(requireSignature bool, label 
 	_, err := facades.Orm().Query().Exec(
 		`INSERT INTO access_tokens (id, account_id, name, token_hash, permissions, spending_limit, created_at, updated_at)
 		 VALUES (?, ?, ?, ?, ?, ?, NOW(), NOW())`,
-		tokenID, accountID, "critical-token-"+label, "test-hash-critical-"+label, models.AllAPIPermissionGrants(), "{}",
+		tokenID, accountID, "critical-token-"+label, "test-hash-critical-"+label, models.AllAPIPermissionGrants(), spendingLimit,
 	)
 	s.Require().NoError(err)
 
@@ -294,6 +298,24 @@ func (s *criticalEndpointsSuite) TestCreateWithdrawal_UnsignedToken_AcceptsReque
 
 	resp := s.post("/api/v1/wallets/"+walletID+"/withdrawals", jwt, critWithdrawalBody, "")
 	s.assertNoMiddlewareReject(resp)
+}
+
+// A stored daily_usd decimal string is the cap withdraw.Service enforces.
+// The handler must not refuse that JSON before the passphrase check. The
+// seeded share cannot decrypt, so the request stops there as an internal error.
+func (s *criticalEndpointsSuite) TestCreateWithdrawal_StringDailyCapReachesPassphrase() {
+	walletID, jwt := s.seedAccountWalletWithLimit(false, "withdrawal-string-cap", `{"daily_usd":"12.50"}`)
+
+	resp := s.post("/api/v1/wallets/"+walletID+"/withdrawals", jwt, critWithdrawalBody, "")
+	resp.AssertInternalServerError().AssertJson(map[string]any{"error": map[string]any{
+		"code":    "internal",
+		"message": "internal error",
+	}})
+	body, err := resp.Content()
+	s.Require().NoError(err)
+	s.NotContains(body, "cannot unmarshal")
+	s.NotContains(body, "daily_usd")
+	s.NotContains(body, "forbidden")
 }
 
 func (s *criticalEndpointsSuite) TestCreateWithdrawal_SignedToken_AcceptsRequest() {
