@@ -141,6 +141,25 @@ func (r *SettingRepository) upsertPlatform(ctx context.Context, group, key, valu
 	return nil
 }
 
+// DeletePlatform removes every stored row of one platform group (account_id
+// NULL). An account row that happens to use the same group name is left in
+// place. Deleting a group that has no rows is success: the registry default
+// is already in force.
+func (r *SettingRepository) DeletePlatform(ctx context.Context, group string) error {
+	group = strings.TrimSpace(group)
+	if group == "" {
+		return fmt.Errorf("delete platform settings: group is required")
+	}
+	_, err := r.Query(ctx).Exec(
+		`DELETE FROM settings WHERE account_id IS NULL AND "group" = ?`,
+		group,
+	)
+	if err != nil {
+		return fmt.Errorf("delete platform settings: %w", err)
+	}
+	return nil
+}
+
 // DeleteGroup removes every stored row of one account group. A platform row
 // (account_id NULL) and another account's rows are left in place. Deleting a
 // group that has no rows is success: the registry default is already in force.

@@ -7,7 +7,9 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/policies"
+	activitylog "github.com/macrowallets/waas/app/services/activity"
 )
 
 // PlatformIndex lists every platform group a platform admin may view.
@@ -186,6 +188,109 @@ func (s *Service) FlushPlatformSection(ctx context.Context, actorID uuid.UUID, s
 		s.cache.Forget(platformCacheKey(group.Name))
 	}
 	return nil
+}
+
+// platformDeleter removes the stored rows of one platform group. The settings
+// service store is not required to delete until a platform section is reset.
+type platformDeleter interface {
+	DeletePlatform(ctx context.Context, group string) error
+}
+
+// ResetPlatformSection deletes the stored rows of every platform group on one
+// page, then forgets settings:platform:<group> for those groups. The next
+// read uses registry defaults. Account rows and account cache keys stay.
+// S1.4.6: POST /v1/platform/settings/sections/{section}/reset — settings.update.
+// An unknown page, including an account-only page, is ErrSectionNotFound
+// before the platform_admins check. This branch has no platform permission
+// catalog, so a platform_admins row is the gate and stands in for
+// settings.update. The activity row is settings.section_reset with a null
+// account id and names each group and its field names, never the values.
+func (s *Service) ResetPlatformSection(ctx context.Context, actorID uuid.UUID, section string) (SectionView, error) {
+	if ctx == nil {
+		return SectionView{}, fmt.Errorf("platform settings: context is required")
+	}
+	if s == nil {
+		return SectionView{}, errServiceRequired
+	}
+	groups := platformGroupsInSection(section)
+	if len(groups) == 0 {
+		return SectionView{}, ErrSectionNotFound
+	}
+	if actorID == uuid.Nil {
+		return SectionView{}, fmt.Errorf("platform settings: actor is required")
+	}
+	if s.admins == nil {
+		return SectionView{}, fmt.Errorf("platform settings: platform admins are required")
+	}
+	admin, err := s.admins.Contains(ctx, actorID)
+	if err != nil {
+		return SectionView{}, err
+	}
+	if !admin {
+		return SectionView{}, ErrPlatformForbidden
+	}
+	if s.activity == nil {
+		return SectionView{}, fmt.Errorf("platform settings: activity log is required")
+	}
+	deleter, ok := s.store.(platformDeleter)
+	if !ok {
+		return SectionView{}, fmt.Errorf("platform settings: store cannot delete a platform group")
+	}
+	if s.cache == nil {
+		return SectionView{}, fmt.Errorf("platform settings: cache is required")
+	}
+
+	section = strings.TrimSpace(section)
+	err = s.activity.Within(ctx, func(ctx context.Context) error {
+		for _, group := range groups {
+			if err := deleter.DeletePlatform(ctx, group.Name); err != nil {
+				return err
+			}
+			meta, err := activitylog.SettingsChange(group.Name, definitionKeys(group))
+			if err != nil {
+				return err
+			}
+			if err := s.activity.Append(ctx, models.AccountActivity{
+				ActorUserID: actorID,
+				Action:      activitylog.ActionSettingsSectionReset,
+				TargetType:  activitylog.TargetSettings,
+				TargetID:    section,
+				Metadata:    meta,
+			}); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return SectionView{}, err
+	}
+	for _, group := range groups {
+		s.cache.Forget(platformCacheKey(group.Name))
+	}
+	return s.renderPlatformSection(ctx, groups)
+}
+
+func (s *Service) renderPlatformSection(ctx context.Context, groups []Group) (SectionView, error) {
+	if len(groups) == 0 {
+		return SectionView{}, ErrSectionNotFound
+	}
+	view := SectionView{Name: groups[0].SectionName(), Blocks: []BlockView{}}
+	blockAt := map[string]int{}
+	for _, group := range groups {
+		rendered, err := s.platformGroupView(ctx, group)
+		if err != nil {
+			return SectionView{}, err
+		}
+		blockIndex, ok := blockAt[group.Block]
+		if !ok {
+			blockIndex = len(view.Blocks)
+			blockAt[group.Block] = blockIndex
+			view.Blocks = append(view.Blocks, BlockView{Title: group.Block, Groups: []GroupView{}})
+		}
+		view.Blocks[blockIndex].Groups = append(view.Blocks[blockIndex].Groups, rendered)
+	}
+	return view, nil
 }
 
 func platformGroupsInSection(section string) []Group {

@@ -138,6 +138,32 @@ func (ctrl *SettingsController) Flush(ctx http.Context) http.Response {
 	return ctx.Response().NoContent()
 }
 
+// Reset godoc
+// @Summary      Reset one platform settings section
+// @Description  Deletes the stored rows of every platform group on the page and drops their settings:platform cache keys. The next read uses registry defaults. Account rows and account cache keys stay. Activity is settings.section_reset with a null account id and names each group and its field names, never the values. An unknown section, including an account-only page, is 404 before the platform-admin check. S1.4.6 names settings.update. This branch has no platform permission catalog, so a platform_admins row is the gate.
+// @Tags         Platform Settings
+// @Security     BearerAuth
+// @Produce      json
+// @Param        section  path  string  true  "Settings section"
+// @Success      200  {object}  settingssvc.SectionView
+// @Failure      401  {object}  responses.ErrorBody
+// @Failure      403  {object}  responses.ErrorBody
+// @Failure      404  {object}  responses.ErrorBody
+// @Router       /platform/settings/sections/{section}/reset [post]
+func (ctrl *SettingsController) Reset(ctx http.Context) http.Response {
+	actorID := middleware.SessionUserID(ctx)
+	if actorID == uuid.Nil {
+		return responses.Send(ctx, http.StatusUnauthorized, http.Json{"error": "unauthorized"})
+	}
+	var path requests.SettingsSectionRequest
+	path.Load(ctx)
+	view, err := ctrl.settings.ResetPlatformSection(ctx.Context(), actorID, path.Section)
+	if errResp := mapPlatformSettingsError(ctx, err); errResp != nil {
+		return errResp
+	}
+	return responses.Send(ctx, http.StatusOK, view)
+}
+
 func mapPlatformSettingsBodyError(ctx http.Context, err error) http.Response {
 	if errors.Is(err, requests.ErrAccountSettingsBodyTooLarge) {
 		return responses.Send(ctx, http.StatusRequestEntityTooLarge, http.Json{"error": "request body is too large"})

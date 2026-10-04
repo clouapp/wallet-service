@@ -81,6 +81,11 @@ func (s *memoryStore) UpsertPlatform(_ context.Context, group string, values map
 	return nil
 }
 
+func (s *memoryStore) DeletePlatform(_ context.Context, group string) error {
+	delete(s.rows, platformStoreKey(group))
+	return nil
+}
+
 func (s *memoryStore) ListPlatform(_ context.Context, group string) ([]models.Setting, error) {
 	values := s.rows[platformStoreKey(group)]
 	rows := make([]models.Setting, 0, len(values))
