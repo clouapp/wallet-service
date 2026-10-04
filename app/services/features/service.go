@@ -229,6 +229,14 @@ func (s *Service) SetGlobal(ctx context.Context, userID uuid.UUID, key string, e
 	}
 	var flag Flag
 	err := s.activity.Within(ctx, func(ctx context.Context) error {
+		stored, err := s.globalStored(ctx)
+		if err != nil {
+			return err
+		}
+		previous, err := flagValue(stored, key)
+		if err != nil {
+			return err
+		}
 		if err := s.store.UpsertGlobal(ctx, key, enabled); err != nil {
 			return err
 		}
@@ -240,17 +248,7 @@ func (s *Service) SetGlobal(ctx context.Context, userID uuid.UUID, key string, e
 			return ErrNotStored
 		}
 		flag = Flag{Key: key, Enabled: value}
-		meta, err := activitylog.FeatureChange(key, value)
-		if err != nil {
-			return err
-		}
-		return s.activity.Append(ctx, models.AccountActivity{
-			ActorUserID: userID,
-			Action:      activitylog.ActionFeaturesUpdated,
-			TargetType:  activitylog.TargetFeature,
-			TargetID:    key,
-			Metadata:    meta,
-		})
+		return s.appendFeatureAudit(ctx, nil, userID, activitylog.ActionFeaturesGlobalUpdated, map[string]bool{key: previous}, map[string]bool{key: value})
 	})
 	if err != nil {
 		return Flag{}, err
@@ -375,43 +373,72 @@ func (s *Service) SetScopedForPlatform(ctx context.Context, actorID uuid.UUID, s
 	}
 	flags := make([]Flag, 0, len(normalized))
 	err = s.activity.Within(ctx, func(ctx context.Context) error {
-		for _, write := range normalized {
-			if err := s.store.Upsert(ctx, account.ID, write.Key, write.Enabled); err != nil {
-				return err
-			}
-		}
 		stored, err := s.stored(ctx, account.ID)
 		if err != nil {
 			return err
 		}
+		before := make(map[string]bool, len(normalized))
+		for _, write := range normalized {
+			previous, err := flagValue(stored, write.Key)
+			if err != nil {
+				return err
+			}
+			before[write.Key] = previous
+			if err := s.store.Upsert(ctx, account.ID, write.Key, write.Enabled); err != nil {
+				return err
+			}
+		}
+		stored, err = s.stored(ctx, account.ID)
+		if err != nil {
+			return err
+		}
+		after := make(map[string]bool, len(normalized))
 		for _, write := range normalized {
 			value, ok := stored[write.Key]
 			if !ok {
 				return ErrNotStored
 			}
+			after[write.Key] = value
 			flags = append(flags, Flag{Key: write.Key, Enabled: value})
-			meta, err := activitylog.FeatureChange(write.Key, value)
-			if err != nil {
-				return err
-			}
-			id := account.ID
-			if err := s.activity.Append(ctx, models.AccountActivity{
-				AccountID:   &id,
-				ActorUserID: actorID,
-				Action:      activitylog.ActionFeaturesUpdated,
-				TargetType:  activitylog.TargetFeature,
-				TargetID:    write.Key,
-				Metadata:    meta,
-			}); err != nil {
-				return err
-			}
 		}
-		return nil
+		id := account.ID
+		return s.appendFeatureAudit(ctx, &id, actorID, activitylog.ActionAccountFeaturesUpdated, before, after)
 	})
 	if err != nil {
 		return List{}, err
 	}
 	return List{Features: flags}, nil
+}
+
+// appendFeatureAudit stores one account_activity row for the flags whose
+// boolean changed. An unchanged flag is not a change. A write that changes
+// nothing stores the rows and writes no activity. Platform rows pass a nil
+// account id. The old features.updated action is not written here.
+func (s *Service) appendFeatureAudit(ctx context.Context, accountID *uuid.UUID, actorID uuid.UUID, action string, before, after map[string]bool) error {
+	meta, changed, err := activitylog.FeatureAudit(before, after)
+	if err != nil || !changed {
+		return err
+	}
+	targetID, err := activitylog.FeatureAuditTarget(meta)
+	if err != nil {
+		return err
+	}
+	return s.activity.Append(ctx, models.AccountActivity{
+		AccountID:   accountID,
+		ActorUserID: actorID,
+		Action:      action,
+		TargetType:  activitylog.TargetFeature,
+		TargetID:    targetID,
+		Metadata:    meta,
+	})
+}
+
+func flagValue(stored map[string]bool, key string) (bool, error) {
+	definition, ok := Find(key)
+	if !ok {
+		return false, ErrNotFound
+	}
+	return enabledValue(stored, definition), nil
 }
 
 func normalizeScopedWrites(writes []ScopedWrite) ([]ScopedWrite, error) {

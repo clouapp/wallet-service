@@ -10,6 +10,7 @@ import (
 	"github.com/goravel/framework/facades"
 
 	"github.com/macrowallets/waas/app/models"
+	activitylog "github.com/macrowallets/waas/app/services/activity"
 	"github.com/macrowallets/waas/app/services/features"
 )
 
@@ -23,6 +24,8 @@ func (s *featureGateSuite) TestNonAdminCannotReadOrWritePlatformFeatures() {
 	s.Equal("forbidden", errorCode(forbidden))
 	s.Equal(int64(0), s.globalRowCount())
 	s.Equal(int64(0), s.accountFeatureCount(accountID))
+	s.Equal(int64(0), s.activityActionCount(activitylog.ActionFeaturesGlobalUpdated))
+	s.Equal(int64(0), s.activityActionCount(activitylog.ActionFeaturesUpdated))
 }
 
 func (s *featureGateSuite) TestGlobalWithdrawalsFalseBlocksTheNextWithdrawUntilItIsOnAgain() {
@@ -272,6 +275,11 @@ func (s *featureGateSuite) TestPlatformAdminWritesOneAccountFeatureScope() {
 		s.Equal("not_found", errorCode(refused))
 		s.Equal("feature scope not found", errorMessage(refused))
 	}
+	s.Equal(int64(0), s.activityActionCount(activitylog.ActionUserFeaturesUpdated))
+	s.Equal(int64(0), s.activityActionCount(activitylog.ActionChainFeaturesUpdated))
+	s.Equal(int64(0), s.activityActionCount(activitylog.ActionAccountFeaturesUpdated))
+	s.Equal(int64(0), s.activityActionCount(activitylog.ActionFeaturesGlobalUpdated))
+	s.Equal(int64(0), s.featureActivityCount())
 	badID := s.platform(session, http.MethodPut, "/v1/platform/features/account/not-a-uuid/"+features.FlagWithdrawalsEnabled, "not-json", http.StatusBadRequest)
 	s.Equal("invalid_request", errorCode(badID))
 	s.Equal("invalid account id", errorMessage(badID))
@@ -288,13 +296,20 @@ func (s *featureGateSuite) TestPlatformAdminWritesOneAccountFeatureScope() {
 	s.Equal(int64(0), s.accountFeatureCount(accountID))
 
 	s.platform(session, http.MethodPatch, "/v1/platform/features/"+features.FlagWithdrawalsEnabled, `{"enabled":false}`, http.StatusOK)
+	s.Equal(int64(1), s.activityActionCount(activitylog.ActionFeaturesGlobalUpdated))
+	s.Equal(int64(0), s.featureActivityCount())
+	globalAccountID, globalMeta := s.oneActivity(activitylog.ActionFeaturesGlobalUpdated)
+	s.Nil(globalAccountID)
+	s.True(globalMeta.Before[features.FlagWithdrawalsEnabled])
+	s.False(globalMeta.After[features.FlagWithdrawalsEnabled])
+
 	written := s.platform(session, http.MethodPut, oneFlag, body, http.StatusOK)
 	s.Equal(features.FlagWithdrawalsEnabled, written["key"])
 	s.Equal(true, written["enabled"])
 	s.True(s.accountEnabled(accountID, features.FlagWithdrawalsEnabled))
 	s.False(s.globalEnabled(features.FlagWithdrawalsEnabled))
 	s.Equal(int64(1), s.accountFeatureCount(accountID))
-	s.Equal(int64(1), s.accountFeatureActivityCount(accountID))
+	s.Equal(int64(0), s.accountFeatureActivityCount(accountID))
 
 	listed := s.platformListAt(session, accountPath)
 	s.True(s.listed(listed, features.FlagWithdrawalsEnabled))
@@ -305,6 +320,8 @@ func (s *featureGateSuite) TestPlatformAdminWritesOneAccountFeatureScope() {
 	s.Equal("feature not found", errorMessage(rejected))
 	s.Equal(int64(1), s.accountFeatureCount(accountID))
 	s.Equal(int64(0), s.accountFeatureKeyCount(accountID, features.FlagSweepEnabled))
+	s.Equal(int64(0), s.accountFeatureActivityCount(accountID))
+	s.Equal(int64(1), s.activityActionCount(activitylog.ActionFeaturesGlobalUpdated))
 
 	parsed := s.platform(session, http.MethodPut, accountPath, `{"features":[{"key":"`+features.FlagWalletCreationEnabled+`","enabled":false},{"key":"`+features.FlagSweepEnabled+`","enabled":false}]}`, http.StatusOK)
 	raw, err := json.Marshal(parsed)
@@ -319,6 +336,30 @@ func (s *featureGateSuite) TestPlatformAdminWritesOneAccountFeatureScope() {
 	s.Equal(int64(3), s.accountFeatureCount(accountID))
 	s.True(s.accountEnabled(accountID, features.FlagWithdrawalsEnabled))
 	s.False(s.globalEnabled(features.FlagWithdrawalsEnabled))
+	s.Equal(int64(1), s.accountFeatureActivityCount(accountID))
+	s.Equal(int64(0), s.featureActivityCount())
+	auditAccountID, audit := s.oneActivity(activitylog.ActionAccountFeaturesUpdated)
+	s.Require().NotNil(auditAccountID)
+	s.Equal(accountID.String(), *auditAccountID)
+	s.True(audit.Before[features.FlagSweepEnabled])
+	s.True(audit.Before[features.FlagWalletCreationEnabled])
+	s.False(audit.After[features.FlagSweepEnabled])
+	s.False(audit.After[features.FlagWalletCreationEnabled])
+	_, unchanged := audit.Before[features.FlagWithdrawalsEnabled]
+	s.False(unchanged)
+	s.NotContains(s.activityText(activitylog.ActionAccountFeaturesUpdated), "enc:v1:")
+
+	s.platform(session, http.MethodPut, accountPath, `{"features":[{"key":"`+features.FlagWalletCreationEnabled+`","enabled":false},{"key":"`+features.FlagSweepEnabled+`","enabled":false}]}`, http.StatusOK)
+	s.Equal(int64(1), s.accountFeatureActivityCount(accountID))
+
+	for _, scope := range []string{"user", "chain"} {
+		refused := s.platform(session, http.MethodPut, "/v1/platform/features/"+scope+"/"+accountID.String(), `{"features":[{"key":"`+features.FlagSweepEnabled+`","enabled":true}]}`, http.StatusNotFound)
+		s.Equal("not_found", errorCode(refused))
+	}
+	s.Equal(int64(0), s.activityActionCount(activitylog.ActionUserFeaturesUpdated))
+	s.Equal(int64(0), s.activityActionCount(activitylog.ActionChainFeaturesUpdated))
+	s.Equal(int64(1), s.accountFeatureActivityCount(accountID))
+	s.Equal(int64(1), s.activityActionCount(activitylog.ActionFeaturesGlobalUpdated))
 }
 
 func (s *featureGateSuite) accountFeatureActivityCount(accountID uuid.UUID) int64 {
@@ -328,7 +369,54 @@ func (s *featureGateSuite) accountFeatureActivityCount(accountID uuid.UUID) int6
 	}
 	err := facades.Orm().Query().Raw(
 		`SELECT COUNT(*) AS count FROM account_activity WHERE action = ? AND account_id = ?`,
-		"features.updated", accountID,
+		activitylog.ActionAccountFeaturesUpdated, accountID,
+	).Scan(&row)
+	s.Require().NoError(err)
+	return row.Count
+}
+
+type featureAuditMetadata struct {
+	Before map[string]bool `json:"before"`
+	After  map[string]bool `json:"after"`
+}
+
+func (s *featureGateSuite) oneActivity(action string) (*string, featureAuditMetadata) {
+	s.T().Helper()
+	var row struct {
+		AccountID *string `gorm:"column:account_id"`
+		Metadata  string  `gorm:"column:metadata"`
+	}
+	err := facades.Orm().Query().Raw(
+		`SELECT account_id::text AS account_id, metadata::text AS metadata FROM account_activity WHERE action = ?`,
+		action,
+	).Scan(&row)
+	s.Require().NoError(err)
+	var meta featureAuditMetadata
+	s.Require().NoError(json.Unmarshal([]byte(row.Metadata), &meta))
+	return row.AccountID, meta
+}
+
+func (s *featureGateSuite) activityText(action string) string {
+	s.T().Helper()
+	var row struct {
+		Metadata string `gorm:"column:metadata"`
+	}
+	err := facades.Orm().Query().Raw(
+		`SELECT metadata::text AS metadata FROM account_activity WHERE action = ?`,
+		action,
+	).Scan(&row)
+	s.Require().NoError(err)
+	return row.Metadata
+}
+
+func (s *featureGateSuite) activityActionCount(action string) int64 {
+	s.T().Helper()
+	var row struct {
+		Count int64 `gorm:"column:count"`
+	}
+	err := facades.Orm().Query().Raw(
+		`SELECT COUNT(*) AS count FROM account_activity WHERE action = ?`,
+		action,
 	).Scan(&row)
 	s.Require().NoError(err)
 	return row.Count

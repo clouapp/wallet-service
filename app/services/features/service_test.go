@@ -4,11 +4,13 @@ import (
 	"context"
 	"errors"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/google/uuid"
 
 	"github.com/macrowallets/waas/app/models"
+	activitylog "github.com/macrowallets/waas/app/services/activity"
 )
 
 type memoryStore struct {
@@ -676,27 +678,200 @@ func TestSetScopedForPlatformWritesTheAccountRowAndNotTheGlobalVeto(t *testing.T
 	if value, ok := store.globalWritten(FlagWithdrawalsEnabled); !ok || value {
 		t.Fatal("account write changed the closed global row")
 	}
-	if len(activity.rows) != 1 || activity.rows[0].Action != "features.updated" || activity.rows[0].TargetID != FlagWithdrawalsEnabled {
+	if len(activity.rows) != 0 {
+		t.Fatalf("writing the catalog default recorded a change: %+v", activity.rows)
+	}
+
+	turnedOff, err := service.SetScopedForPlatform(ctx, adminID, ScopeAccount, accountID.String(), []ScopedWrite{{Key: FlagWithdrawalsEnabled, Enabled: false}}, accounts)
+	if err != nil {
+		t.Fatalf("turn off: %v", err)
+	}
+	if len(turnedOff.Features) != 1 || turnedOff.Features[0].Enabled {
+		t.Fatalf("turn off response = %+v", turnedOff.Features)
+	}
+	if len(activity.rows) != 1 || activity.rows[0].Action != "account.features_updated" || activity.rows[0].TargetID != FlagWithdrawalsEnabled {
 		t.Fatalf("activity = %+v", activity.rows)
 	}
 	if activity.rows[0].AccountID == nil || *activity.rows[0].AccountID != accountID {
 		t.Fatal("activity row is missing the account id")
 	}
+	assertFlagAudit(t, activity.rows[0].Metadata, map[string]bool{FlagWithdrawalsEnabled: true}, map[string]bool{FlagWithdrawalsEnabled: false})
+	if activityNames(activity.rows, "features.updated", "user.features_updated", "chain.features_updated") != 0 {
+		t.Fatalf("account write emitted another action: %+v", activity.rows)
+	}
+
+	if _, err := service.SetScopedForPlatform(ctx, adminID, ScopeAccount, accountID.String(), []ScopedWrite{{Key: FlagWithdrawalsEnabled, Enabled: false}}, accounts); err != nil {
+		t.Fatalf("repeat: %v", err)
+	}
+	if len(activity.rows) != 1 {
+		t.Fatalf("unchanged flag recorded a change: %+v", activity.rows)
+	}
 
 	bulk, err := service.SetScopedForPlatform(ctx, adminID, ScopeAccount, accountID.String(), []ScopedWrite{
 		{Key: FlagWalletCreationEnabled, Enabled: false},
 		{Key: FlagSweepEnabled, Enabled: false},
+		{Key: FlagWithdrawalsEnabled, Enabled: false},
 	}, accounts)
 	if err != nil {
 		t.Fatalf("bulk: %v", err)
 	}
-	if len(bulk.Features) != 2 || bulk.Features[0].Key != FlagSweepEnabled || bulk.Features[0].Enabled || bulk.Features[1].Key != FlagWalletCreationEnabled || bulk.Features[1].Enabled {
+	if len(bulk.Features) != 3 || bulk.Features[0].Key != FlagSweepEnabled || bulk.Features[0].Enabled || bulk.Features[1].Key != FlagWalletCreationEnabled || bulk.Features[1].Enabled || bulk.Features[2].Key != FlagWithdrawalsEnabled || bulk.Features[2].Enabled {
 		t.Fatalf("bulk response = %+v", bulk.Features)
 	}
 	if len(store.rows[accountID]) != 3 {
 		t.Fatalf("bulk account rows = %d", len(store.rows[accountID]))
 	}
-	if value, ok := store.written(accountID, FlagWithdrawalsEnabled); !ok || !value {
+	if value, ok := store.written(accountID, FlagWithdrawalsEnabled); !ok || value {
 		t.Fatal("bulk rewrite cleared the earlier account row")
 	}
+	if len(activity.rows) != 2 || activity.rows[1].Action != "account.features_updated" || activity.rows[1].TargetID != "features" {
+		t.Fatalf("bulk activity = %+v", activity.rows)
+	}
+	assertFlagAudit(t, activity.rows[1].Metadata,
+		map[string]bool{FlagSweepEnabled: true, FlagWalletCreationEnabled: true},
+		map[string]bool{FlagSweepEnabled: false, FlagWalletCreationEnabled: false},
+	)
+	if _, ok := flagAuditMap(t, activity.rows[1].Metadata, "before")[FlagWithdrawalsEnabled]; ok {
+		t.Fatal("unchanged flag was recorded in the bulk map")
+	}
+}
+
+func TestSetGlobalRecordsBeforeAndAfterAndSkipsAnUnchangedFlag(t *testing.T) {
+	t.Parallel()
+
+	store := newMemoryStore()
+	userID := uuid.New()
+	admins := memoryAdmins{users: map[uuid.UUID]struct{}{userID: {}}}
+	activity := &recordingFeatureActivity{}
+	service := NewService(store, admins, activity)
+	ctx := context.Background()
+
+	if _, err := service.SetGlobal(ctx, uuid.New(), FlagWithdrawalsEnabled, false); !errors.Is(err, ErrPlatformForbidden) {
+		t.Fatalf("non-admin error = %v", err)
+	}
+	if _, err := service.SetGlobal(ctx, userID, "not-a-flag", false); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("unknown key = %v", err)
+	}
+	if len(store.global) != 0 || len(activity.rows) != 0 {
+		t.Fatal("a refused global write stored a row or an activity")
+	}
+
+	written, err := service.SetGlobal(ctx, userID, FlagWithdrawalsEnabled, false)
+	if err != nil {
+		t.Fatalf("set off: %v", err)
+	}
+	if written.Enabled || written.Key != FlagWithdrawalsEnabled {
+		t.Fatalf("write response = %+v", written)
+	}
+	if len(activity.rows) != 1 || activity.rows[0].Action != "features.global_updated" || activity.rows[0].AccountID != nil {
+		t.Fatalf("activity = %+v", activity.rows)
+	}
+	assertFlagAudit(t, activity.rows[0].Metadata, map[string]bool{FlagWithdrawalsEnabled: true}, map[string]bool{FlagWithdrawalsEnabled: false})
+	if activityNames(activity.rows, "features.updated", "user.features_updated", "chain.features_updated", "account.features_updated") != 0 {
+		t.Fatal("global write emitted another action")
+	}
+
+	if _, err := service.SetGlobal(ctx, userID, FlagWithdrawalsEnabled, false); err != nil {
+		t.Fatalf("repeat: %v", err)
+	}
+	if len(activity.rows) != 1 {
+		t.Fatal("unchanged global flag recorded a change")
+	}
+}
+
+func TestSetScopedForPlatformRefusedScopesRecordNothing(t *testing.T) {
+	t.Parallel()
+
+	store := newMemoryStore()
+	adminID := uuid.New()
+	admins := &scopeAdmins{allow: adminID}
+	accountID := uuid.New()
+	accounts := &scopeAccounts{found: map[uuid.UUID]struct{}{accountID: {}}}
+	activity := &recordingFeatureActivity{}
+	service := NewService(store, admins, activity)
+	writes := []ScopedWrite{{Key: FlagWithdrawalsEnabled, Enabled: false}}
+
+	for _, scope := range []string{ScopeGlobal, "user", "chain"} {
+		_, err := service.SetScopedForPlatform(context.Background(), adminID, scope, accountID.String(), writes, accounts)
+		if !errors.Is(err, ErrScopeNotFound) {
+			t.Fatalf("scope %q error = %v", scope, err)
+		}
+	}
+	if len(store.rows) != 0 || len(store.global) != 0 || len(activity.rows) != 0 {
+		t.Fatal("a refused scope stored a flag or an activity row")
+	}
+	if activityNames(activity.rows, "user.features_updated", "chain.features_updated", "account.features_updated", "features.global_updated", "features.updated") != 0 {
+		t.Fatal("a refused scope emitted an activity action")
+	}
+}
+
+func assertFlagAudit(t *testing.T, meta models.ActivityMetadata, before, after map[string]bool) {
+	t.Helper()
+	if !boolMapsEqual(flagAuditMap(t, meta, "before"), before) || !boolMapsEqual(flagAuditMap(t, meta, "after"), after) {
+		t.Fatalf("audit = %#v, want before %#v after %#v", meta, before, after)
+	}
+	for key, previous := range before {
+		if previous == after[key] {
+			t.Fatalf("unchanged flag %s is in the audit", key)
+		}
+	}
+	encoded, err := meta.Encode()
+	if err != nil {
+		t.Fatalf("encode: %v", err)
+	}
+	const secret = "do-not-store-secret"
+	if strings.Contains(encoded, secret) || strings.Contains(encoded, "enc:v1:") {
+		t.Fatalf("metadata stored a secret: %s", encoded)
+	}
+}
+
+func flagAuditMap(t *testing.T, meta models.ActivityMetadata, field string) map[string]bool {
+	t.Helper()
+	flags, ok := meta[field].(map[string]bool)
+	if !ok {
+		t.Fatalf("%s = %T %#v", field, meta[field], meta[field])
+	}
+	return flags
+}
+
+func boolMapsEqual(left, right map[string]bool) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	for key, value := range left {
+		other, ok := right[key]
+		if !ok || other != value {
+			return false
+		}
+	}
+	return true
+}
+
+func TestFeatureAuditNamesEveryCatalogFlag(t *testing.T) {
+	t.Parallel()
+
+	for _, definition := range All() {
+		meta, changed, err := activitylog.FeatureAudit(
+			map[string]bool{definition.Key: !definition.Default},
+			map[string]bool{definition.Key: definition.Default},
+		)
+		if err != nil || !changed {
+			t.Fatalf("%s changed=%v err=%v", definition.Key, changed, err)
+		}
+		if _, err := meta.Encode(); err != nil {
+			t.Fatalf("%s encode: %v", definition.Key, err)
+		}
+	}
+}
+
+func activityNames(rows []models.AccountActivity, names ...string) int {
+	count := 0
+	for _, row := range rows {
+		for _, name := range names {
+			if row.Action == name {
+				count++
+			}
+		}
+	}
+	return count
 }

@@ -20,6 +20,18 @@ var (
 	activityPermission = regexp.MustCompile(`^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)+$`)
 )
 
+// activityFlagKeys are the catalog flag names a before/after map may name.
+// A value is a boolean. A secret is not a key and is not a value.
+var activityFlagKeys = map[string]struct{}{
+	"api-request-signature-required": {},
+	"deposit-scan-enabled":           {},
+	"sweep-enabled":                  {},
+	"user-2fa-required":              {},
+	"wallet-creation-enabled":        {},
+	"webhook-delivery-enabled":       {},
+	"withdrawals-enabled":            {},
+}
+
 // ActivityMetadata is the JSON object stored with one activity row.
 // Encode accepts only the names and booleans the writers are allowed to keep.
 type ActivityMetadata map[string]any
@@ -89,9 +101,18 @@ func (m ActivityMetadata) Encode() (string, error) {
 				return "", fmt.Errorf("activity metadata enabled must be a boolean")
 			}
 			cleaned[key] = flag
+		case "before", "after":
+			flags, err := activityBooleanMap(value)
+			if err != nil {
+				return "", fmt.Errorf("activity metadata %s: %w", key, err)
+			}
+			cleaned[key] = flags
 		default:
 			return "", fmt.Errorf("activity metadata key %q is not allowed", key)
 		}
+	}
+	if err := activityFlagPair(cleaned); err != nil {
+		return "", err
 	}
 	encoded, err := json.Marshal(cleaned)
 	if err != nil {
@@ -219,6 +240,52 @@ func activityPermissionAllowed(name string) bool {
 	default:
 		return false
 	}
+}
+
+func activityBooleanMap(value any) (map[string]bool, error) {
+	flags, ok := value.(map[string]bool)
+	if !ok || len(flags) == 0 {
+		return nil, fmt.Errorf("must be booleans")
+	}
+	out := make(map[string]bool, len(flags))
+	for key, enabled := range flags {
+		if _, allowed := activityFlagKeys[key]; !allowed {
+			return nil, fmt.Errorf("flag is not in the catalog")
+		}
+		out[key] = enabled
+	}
+	return out, nil
+}
+
+func activityFlagPair(cleaned map[string]any) error {
+	before, hasBefore := cleaned["before"]
+	after, hasAfter := cleaned["after"]
+	if !hasBefore && !hasAfter {
+		return nil
+	}
+	if !hasBefore || !hasAfter {
+		return fmt.Errorf("activity metadata before and after are a pair")
+	}
+	for key := range cleaned {
+		if key != "before" && key != "after" {
+			return fmt.Errorf("activity metadata key %q is not allowed beside a flag map", key)
+		}
+	}
+	left, leftOK := before.(map[string]bool)
+	right, rightOK := after.(map[string]bool)
+	if !leftOK || !rightOK || len(left) == 0 || len(left) != len(right) {
+		return fmt.Errorf("activity metadata before and after must be the same flags")
+	}
+	for key, previous := range left {
+		next, ok := right[key]
+		if !ok {
+			return fmt.Errorf("activity metadata before and after must be the same flags")
+		}
+		if previous == next {
+			return fmt.Errorf("activity metadata records an unchanged flag")
+		}
+	}
+	return nil
 }
 
 func activityFields(value any) ([]string, error) {

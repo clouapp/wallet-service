@@ -13,6 +13,7 @@ import (
 	"github.com/stretchr/testify/suite"
 
 	"github.com/macrowallets/waas/app/models"
+	activitylog "github.com/macrowallets/waas/app/services/activity"
 	authsvc "github.com/macrowallets/waas/app/services/auth"
 	"github.com/macrowallets/waas/app/services/features"
 	"github.com/macrowallets/waas/tests/mocks"
@@ -189,15 +190,24 @@ func (s *AccountActivityTestSuite) TestPlatformFeatureWriteUsesANullAccount() {
 	).Scan(&stored)
 	s.Require().NoError(err)
 	s.Nil(stored.AccountID)
-	text := string(stored.Metadata)
-	s.Contains(text, features.FlagSweepEnabled)
-	s.Contains(text, "false")
-	s.NotContains(text, activityPlainSecret)
+	var audit struct {
+		Before map[string]bool `json:"before"`
+		After  map[string]bool `json:"after"`
+		Key    string          `json:"key"`
+	}
+	s.Require().NoError(json.Unmarshal(stored.Metadata, &audit))
+	s.True(audit.Before[features.FlagSweepEnabled])
+	s.False(audit.After[features.FlagSweepEnabled])
+	s.Empty(audit.Key)
+	s.NotContains(string(stored.Metadata), activityPlainSecret)
+	s.Equal(int64(0), s.countActivity(activitylog.ActionFeaturesUpdated))
+	s.Equal(int64(0), s.countActivity(activitylog.ActionUserFeaturesUpdated))
+	s.Equal(int64(0), s.countActivity(activitylog.ActionChainFeaturesUpdated))
 
 	platform := s.listPlatform(owner.token, "")
 	s.Equal(int64(1), platform.Total)
 	s.Require().Len(platform.Data, 1)
-	s.Equal("features.updated", platform.Data[0].Action)
+	s.Equal(activitylog.ActionFeaturesGlobalUpdated, platform.Data[0].Action)
 	s.Empty(platform.Data[0].AccountID)
 
 	outsider := s.loginUser("owner", accountID)
@@ -397,6 +407,19 @@ func (s *AccountActivityTestSuite) list(token string, accountID uuid.UUID, query
 	var page activityPage
 	s.Require().NoError(json.Unmarshal([]byte(content), &page))
 	return page
+}
+
+func (s *AccountActivityTestSuite) countActivity(action string) int64 {
+	s.T().Helper()
+	var row struct {
+		Count int64 `gorm:"column:count"`
+	}
+	err := facades.Orm().Query().Raw(
+		`SELECT COUNT(*) AS count FROM account_activity WHERE action = ?`,
+		action,
+	).Scan(&row)
+	s.Require().NoError(err)
+	return row.Count
 }
 
 func (s *AccountActivityTestSuite) pageText(page activityPage) string {

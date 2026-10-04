@@ -19,15 +19,21 @@ const (
 	ActionSettingsUpdated      = "settings.updated"
 	ActionSettingsSectionReset = "settings.section_reset"
 	ActionFeaturesUpdated      = "features.updated"
-	ActionChainsUpdated        = "chains.updated"
-	ActionTokenCreated         = "token.created"
-	ActionTokenRevoked         = "token.revoked"
-	ActionMemberRemoved        = "member.removed"
-	ActionUserMFAReset         = "user.mfa_reset"
-	ActionUserSessionsRevoked  = "user.sessions_revoked"
-	ActionUserSuspended        = "user.suspended"
-	ActionUserReactivated      = "user.reactivated"
-	ActionWithdrawalCancelled  = "withdrawal.cancelled"
+	// Platform flag writes use these names. User and chain have no write path;
+	// the names are declared so a later write can use them, and nothing emits them.
+	ActionAccountFeaturesUpdated = "account.features_updated"
+	ActionUserFeaturesUpdated    = "user.features_updated"
+	ActionChainFeaturesUpdated   = "chain.features_updated"
+	ActionFeaturesGlobalUpdated  = "features.global_updated"
+	ActionChainsUpdated          = "chains.updated"
+	ActionTokenCreated           = "token.created"
+	ActionTokenRevoked           = "token.revoked"
+	ActionMemberRemoved          = "member.removed"
+	ActionUserMFAReset           = "user.mfa_reset"
+	ActionUserSessionsRevoked    = "user.sessions_revoked"
+	ActionUserSuspended          = "user.suspended"
+	ActionUserReactivated        = "user.reactivated"
+	ActionWithdrawalCancelled    = "withdrawal.cancelled"
 
 	TargetAccountUser   = "account_user"
 	TargetAccountInvite = "account_invite"
@@ -284,4 +290,61 @@ func FeatureChange(key string, enabled bool) (models.ActivityMetadata, error) {
 		return nil, err
 	}
 	return meta, nil
+}
+
+// featureAuditManyTarget is the target id when one write changes several flags.
+const featureAuditManyTarget = "features"
+
+// FeatureAudit records the flags whose boolean changed. An unchanged flag is
+// left out of both maps. Values are booleans. A secret is not accepted.
+// changed is false when every flag kept its boolean; the caller writes no row.
+func FeatureAudit(before, after map[string]bool) (models.ActivityMetadata, bool, error) {
+	if len(before) != len(after) {
+		return nil, false, fmt.Errorf("activity: feature audit maps differ")
+	}
+	if len(before) == 0 {
+		return nil, false, nil
+	}
+	changedBefore := make(map[string]bool, len(before))
+	changedAfter := make(map[string]bool, len(after))
+	for key, previous := range before {
+		next, ok := after[key]
+		if !ok {
+			return nil, false, fmt.Errorf("activity: feature audit maps differ")
+		}
+		if previous == next {
+			continue
+		}
+		changedBefore[key] = previous
+		changedAfter[key] = next
+	}
+	if len(changedBefore) == 0 {
+		return nil, false, nil
+	}
+	meta := models.ActivityMetadata{
+		"before": changedBefore,
+		"after":  changedAfter,
+	}
+	if _, err := meta.Encode(); err != nil {
+		return nil, false, err
+	}
+	return meta, true, nil
+}
+
+// FeatureAuditTarget is the flag key when one flag changed, and "features"
+// when the map holds several.
+func FeatureAuditTarget(meta models.ActivityMetadata) (string, error) {
+	if meta == nil {
+		return "", fmt.Errorf("activity: feature audit map is empty")
+	}
+	flags, ok := meta["before"].(map[string]bool)
+	if !ok || len(flags) == 0 {
+		return "", fmt.Errorf("activity: feature audit map is empty")
+	}
+	if len(flags) == 1 {
+		for key := range flags {
+			return key, nil
+		}
+	}
+	return featureAuditManyTarget, nil
 }

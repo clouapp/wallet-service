@@ -71,6 +71,94 @@ func TestChainRPCChangeRecordsTheFieldNameOnly(t *testing.T) {
 	}
 }
 
+func TestFeatureAuditKeepsChangedBooleansAndDropsAnUnchangedFlag(t *testing.T) {
+	t.Parallel()
+
+	const secret = "do-not-store-secret"
+	meta, changed, err := FeatureAudit(
+		map[string]bool{"sweep-enabled": true, "withdrawals-enabled": true},
+		map[string]bool{"sweep-enabled": false, "withdrawals-enabled": true},
+	)
+	if err != nil || !changed {
+		t.Fatalf("audit changed=%v err=%v", changed, err)
+	}
+	encoded, err := meta.Encode()
+	if err != nil {
+		t.Fatalf("encode: %v", err)
+	}
+	if encoded != `{"after":{"sweep-enabled":false},"before":{"sweep-enabled":true}}` {
+		t.Fatalf("metadata = %s", encoded)
+	}
+	if strings.Contains(encoded, secret) || strings.Contains(encoded, "withdrawals-enabled") {
+		t.Fatalf("metadata recorded an unchanged flag or a secret: %s", encoded)
+	}
+	target, err := FeatureAuditTarget(meta)
+	if err != nil || target != "sweep-enabled" {
+		t.Fatalf("target = %q err=%v", target, err)
+	}
+
+	several, changed, err := FeatureAudit(
+		map[string]bool{"sweep-enabled": true, "wallet-creation-enabled": true},
+		map[string]bool{"sweep-enabled": false, "wallet-creation-enabled": false},
+	)
+	if err != nil || !changed {
+		t.Fatalf("several changed=%v err=%v", changed, err)
+	}
+	target, err = FeatureAuditTarget(several)
+	if err != nil || target != "features" {
+		t.Fatalf("several target = %q err=%v", target, err)
+	}
+
+	if _, changed, err := FeatureAudit(
+		map[string]bool{"sweep-enabled": false},
+		map[string]bool{"sweep-enabled": false},
+	); err != nil || changed {
+		t.Fatalf("unchanged changed=%v err=%v", changed, err)
+	}
+
+	for _, bad := range []models.ActivityMetadata{
+		{"before": map[string]any{"withdrawals-enabled": secret}, "after": map[string]bool{"withdrawals-enabled": false}},
+		{"before": map[string]any{"withdrawals-enabled": 1.0}, "after": map[string]bool{"withdrawals-enabled": false}},
+		{"before": map[string]any{"withdrawals-enabled": "false"}, "after": map[string]bool{"withdrawals-enabled": true}},
+		{"before": map[string]bool{"signing-secret": true}, "after": map[string]bool{"signing-secret": false}},
+		{"before": map[string]bool{"withdrawals-enabled": true}, "after": map[string]bool{"withdrawals-enabled": true}},
+	} {
+		if _, err := bad.Encode(); err == nil {
+			t.Fatalf("accepted %#v", bad)
+		}
+	}
+
+	if ActionUserFeaturesUpdated != "user.features_updated" || ActionChainFeaturesUpdated != "chain.features_updated" {
+		t.Fatal("user and chain audit names are not declared")
+	}
+}
+
+func TestFeatureAuditAcceptsEveryCatalogFlag(t *testing.T) {
+	t.Parallel()
+
+	for key := range map[string]struct{}{
+		"api-request-signature-required": {},
+		"deposit-scan-enabled":           {},
+		"sweep-enabled":                  {},
+		"user-2fa-required":              {},
+		"wallet-creation-enabled":        {},
+		"webhook-delivery-enabled":       {},
+		"withdrawals-enabled":            {},
+	} {
+		meta, changed, err := FeatureAudit(map[string]bool{key: false}, map[string]bool{key: true})
+		if err != nil || !changed {
+			t.Fatalf("%s changed=%v err=%v", key, changed, err)
+		}
+		encoded, err := meta.Encode()
+		if err != nil {
+			t.Fatalf("%s encode: %v", key, err)
+		}
+		if !strings.Contains(encoded, `"`+key+`":false`) || !strings.Contains(encoded, `"`+key+`":true`) {
+			t.Fatalf("%s metadata = %s", key, encoded)
+		}
+	}
+}
+
 func TestMetadataRejectsSecretKeys(t *testing.T) {
 	t.Parallel()
 
