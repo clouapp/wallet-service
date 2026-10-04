@@ -185,10 +185,10 @@ func (s *Service) RemoveUser(ctx context.Context, accountID, userID uuid.UUID) e
 	return s.memberships.SoftDeleteByAccountAndUser(ctx, accountID, userID)
 }
 
-// UpdateMember changes role and/or status. Suspending revokes the API tokens
-// that member created for this account. The caller cannot change themselves,
-// grant a role above their own, act on a higher rank, or leave the account
-// without an owner.
+// UpdateMember changes role and/or status. Suspending a member leaves the
+// API tokens that member minted: they belong to the account. The caller
+// cannot change themselves, grant a role above their own, act on a higher
+// rank, or leave the account without an owner.
 func (s *Service) UpdateMember(ctx context.Context, accountID, actorID, targetID uuid.UUID, change MemberChange) (*models.AccountUser, error) {
 	if err := validateMemberIDs(accountID, actorID, targetID); err != nil {
 		return nil, err
@@ -196,8 +196,8 @@ func (s *Service) UpdateMember(ctx context.Context, accountID, actorID, targetID
 	if err := validateMemberChange(change); err != nil {
 		return nil, err
 	}
-	if err := s.requireTokens(); err != nil {
-		return nil, err
+	if s.memberships == nil {
+		return nil, fmt.Errorf("account service: memberships repository is required")
 	}
 	if s.activity == nil {
 		return nil, fmt.Errorf("account service: activity log is required")
@@ -224,11 +224,6 @@ func (s *Service) UpdateMember(ctx context.Context, accountID, actorID, targetID
 				return err
 			}
 			changedStatus = change.Status
-		}
-		if changedStatus != nil && *changedStatus == models.MembershipStatusSuspended {
-			if err := s.tokens.DeleteByAccountAndCreator(ctx, accountID, targetID); err != nil {
-				return err
-			}
 		}
 		if changedRole != nil || changedStatus != nil {
 			if err := s.recordMemberChange(ctx, accountID, actorID, targetID, changedRole, changedStatus); err != nil {

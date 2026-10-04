@@ -95,6 +95,13 @@ Known violations include `app/models → app/services/mpc` and `config → app/m
   minted token stores `sha256` of the random secret. — guarded by
   `TestAPITokenIP`, `app/http/middleware/api_scope_test.go`, and
   `app/policies/api_token_permissions_test.go`.
+  API tokens are account-owned. Suspending a member leaves the tokens that
+  member minted. The list shows `created_by`. An owner or admin with
+  `tokens.write` revokes one token. Removing the member deletes the tokens
+  that member minted for that account. — guarded by
+  `TestSuspend_KeepsMintedTokensAndBlocksMembership` and
+  `TestRemove_RevokesTokensCreatedByTheMember`
+  (`app/http/controllers/account_members_test.go`).
 
 ### 5. Scope: actor → account → wallet
 

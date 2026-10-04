@@ -412,7 +412,7 @@ func (s *AccountMembersTestSuite) TestAdminCanGrantAdmin() {
 	s.Equal(models.MembershipStatusActive, parsed.Status)
 }
 
-func (s *AccountMembersTestSuite) TestSuspend_RevokesTokensAndBlocksMembership() {
+func (s *AccountMembersTestSuite) TestSuspend_KeepsMintedTokensAndBlocksMembership() {
 	accountID := s.createAccount()
 	owner := s.loginUser("owner", models.MembershipStatusActive, accountID)
 	member := s.loginUser("user", models.MembershipStatusActive, accountID)
@@ -426,7 +426,7 @@ func (s *AccountMembersTestSuite) TestSuspend_RevokesTokensAndBlocksMembership()
 	s.Contains(content, `"status":"suspended"`)
 	s.Contains(content, `"role":"user"`)
 
-	s.Equal(int64(0), s.tokenCount(accountID, member.id))
+	s.Equal(int64(1), s.tokenCount(accountID, member.id))
 	s.Equal(int64(1), s.tokenCount(accountID, owner.id))
 
 	s.getAccount(member.token, accountID).AssertForbidden()

@@ -269,7 +269,7 @@ func (ctrl *AccountsController) AddAccountUser(ctx http.Context) http.Response {
 
 // UpdateAccountUser godoc
 // @Summary      Update an account member
-// @Description  Changes role and/or status. Owner and admin only. Suspending revokes the member's API tokens for this account.
+// @Description  Changes role and/or status. Owner and admin only. Suspending leaves the API tokens that member minted for this account.
 // @Tags         Accounts
 // @Security     BearerAuth
 // @Accept       json
