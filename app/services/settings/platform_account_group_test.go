@@ -216,3 +216,80 @@ func TestRenderStoredGroupOmitsASecret(t *testing.T) {
 		t.Fatal("the secret field was not write-only")
 	}
 }
+
+func TestSettingsService_GetGroup_CarriesUpdatedAtOnlyForStoredValues(t *testing.T) {
+	t.Parallel()
+
+	group, ok := FindGroup(groupAccountSecurity)
+	if !ok {
+		t.Fatal("account_security is not in the registry")
+	}
+	if updated := renderStoredGroup(group, nil, false).UpdatedAt; updated != nil {
+		t.Fatal("a group on its defaults carried a timestamp")
+	}
+	unset := renderStoredGroup(group, []models.Setting{{
+		Key:   keySessionIdleMinutes,
+		Value: "45",
+	}}, false)
+	if unset.UpdatedAt != nil {
+		t.Fatal("a stored row with no timestamp was dated")
+	}
+	idle := fieldByKey(t, unset, keySessionIdleMinutes)
+	if !idle.IsSet || idle.Value != 45 {
+		t.Fatalf("stored idle = %+v", idle)
+	}
+	require2FA := fieldByKey(t, unset, keyRequire2FA)
+	if require2FA.IsSet || require2FA.Value != false {
+		t.Fatalf("default require_2fa = %+v", require2FA)
+	}
+
+	written := time.Date(2026, 10, 4, 12, 0, 0, 0, time.UTC)
+	stored := renderStoredGroup(group, []models.Setting{{
+		Key:       keySessionIdleMinutes,
+		Value:     "45",
+		UpdatedAt: written,
+	}}, false)
+	if stored.UpdatedAt == nil || !stored.UpdatedAt.Equal(written) {
+		t.Fatal("the stored row's timestamp was not returned")
+	}
+}
+
+func TestSettingsService_GetSettings_ServesOnlyTheKeysTheCatalogStillDeclares(t *testing.T) {
+	t.Parallel()
+
+	group, ok := FindGroup(groupAccountWebhooks)
+	if !ok {
+		t.Fatal("account_webhooks is not in the registry")
+	}
+	const retired = "catalog-retired-value"
+	const sealed = "enc:v1:catalog-sealed-value"
+	view := renderStoredGroup(group, []models.Setting{
+		{Key: keySigningSecret, Value: sealed},
+		{Key: keyDefaultEvents, Value: "deposit.confirmed"},
+		{Key: "legacy_token", Value: retired},
+	}, true)
+	if len(view.Fields) != len(group.Settings) {
+		t.Fatalf("fields = %d, catalog = %d", len(view.Fields), len(group.Settings))
+	}
+	for _, field := range view.Fields {
+		if field.Key == "legacy_token" {
+			t.Fatal("a retired key was still served")
+		}
+	}
+	secret := fieldByKey(t, view, keySigningSecret)
+	if !secret.Secret || !secret.IsSet || secret.Value != nil {
+		t.Fatal("the signing secret was not reduced to is_set")
+	}
+	events := fieldByKey(t, view, keyDefaultEvents)
+	items, ok := events.Value.([]string)
+	if !ok || len(items) != 1 || items[0] != "deposit.confirmed" {
+		t.Fatalf("default events = %#v", events.Value)
+	}
+	encoded, err := json.Marshal(view)
+	if err != nil {
+		t.Fatalf("view: %v", err)
+	}
+	if strings.Contains(string(encoded), retired) || strings.Contains(string(encoded), "enc:v1:") || strings.Contains(string(encoded), "catalog-sealed-value") {
+		t.Fatal("the document included a secret or a retired value")
+	}
+}

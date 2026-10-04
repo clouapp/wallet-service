@@ -403,3 +403,15 @@ func TestSigningSecretIsASecretString(t *testing.T) {
 		t.Fatalf("session idle = %+v present %v", idle, ok)
 	}
 }
+
+func TestFind_PortIsInt(t *testing.T) {
+	t.Parallel()
+
+	definition, ok := Find(groupMailSMTP, keyMailPort)
+	if !ok {
+		t.Fatal("mail_smtp port is not in the registry")
+	}
+	if definition.Type != TypeInt || definition.Secret {
+		t.Fatalf("port type = %q secret %v", definition.Type, definition.Secret)
+	}
+}

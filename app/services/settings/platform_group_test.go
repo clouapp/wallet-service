@@ -139,6 +139,49 @@ func providerCredentialGroups() []providerCredentialGroup {
 	return groups
 }
 
+func TestGetGroup_DefaultTakesTheTypeShape(t *testing.T) {
+	t.Parallel()
+
+	actor := uuid.New()
+	service := NewService(newMemoryStore(), prefixSealer{}, &memoryCache{}, &recordingActivity{}).
+		WithPlatformAdmins(allowPlatformAdmins{ids: map[uuid.UUID]bool{actor: true}})
+
+	view, err := service.PlatformGroup(context.Background(), actor, groupPriceLookup)
+	if err != nil {
+		t.Fatalf("unstored price lookup: %v", err)
+	}
+	order := fieldByKey(t, view, keyProviderOrder)
+	items, ok := order.Value.([]string)
+	if !ok || order.IsSet || len(items) != 0 {
+		t.Fatalf("provider order = %#v set %v", order.Value, order.IsSet)
+	}
+	definition, found := Find(groupPriceLookup, keyProviderOrder)
+	if !found || len(order.Options) != len(definition.Options) {
+		t.Fatal("provider order options were not returned with the default")
+	}
+}
+
+func TestSettingsService_Bool_DefaultsToDisabled(t *testing.T) {
+	t.Parallel()
+
+	actor := uuid.New()
+	service := NewService(newMemoryStore(), prefixSealer{}, &memoryCache{}, &recordingActivity{}).
+		WithPlatformAdmins(allowPlatformAdmins{ids: map[uuid.UUID]bool{actor: true}})
+
+	view, err := service.PlatformGroup(context.Background(), actor, groupPriceCoinGecko)
+	if err != nil {
+		t.Fatalf("unstored provider: %v", err)
+	}
+	enabled := fieldByKey(t, view, keyPriceEnabled)
+	if enabled.Value != false || enabled.IsSet || enabled.Secret {
+		t.Fatalf("enabled = %+v", enabled)
+	}
+	secret := fieldByKey(t, view, keyPriceAPIKey)
+	if secret.IsSet || secret.Value != nil || !secret.Secret {
+		t.Fatal("an unstored provider key was treated as set")
+	}
+}
+
 func TestPlatformGroup_NotFoundComesBeforeForbidden(t *testing.T) {
 	t.Parallel()
 

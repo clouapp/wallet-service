@@ -656,6 +656,41 @@ func TestFlushSectionUserCannotFlushAKnownSection(t *testing.T) {
 	}
 }
 
+type failDeleteStore struct {
+	*memoryStore
+}
+
+func (s *failDeleteStore) DeleteGroup(context.Context, uuid.UUID, string) error {
+	return errors.New("db boom")
+}
+
+func TestSettingsService_ResetSection_StopsAtTheFirstRepositoryError(t *testing.T) {
+	t.Parallel()
+
+	store := &failDeleteStore{memoryStore: newMemoryStore()}
+	accountID := uuid.New()
+	store.rows[store.key(accountID, groupAccountSecurity)] = map[string]string{keySessionIdleMinutes: "45"}
+	cache := &memoryCache{values: map[string]string{}, ttls: map[string]time.Duration{}}
+	securityKey := cacheKey(accountID, groupAccountSecurity)
+	cache.values[securityKey] = "sealed-cache"
+	activity := &recordingActivity{}
+	service := NewService(store, prefixSealer{}, cache, activity)
+
+	_, err := service.ResetSection(context.Background(), accountID, uuid.New(), "owner", sectionSecurity)
+	if err == nil || !strings.Contains(err.Error(), "db boom") {
+		t.Fatalf("err = %v", err)
+	}
+	if value, ok := store.get(accountID, groupAccountSecurity, keySessionIdleMinutes); !ok || value != "45" {
+		t.Fatal("a failed reset deleted the stored row")
+	}
+	if _, ok := cache.values[securityKey]; !ok {
+		t.Fatal("a failed reset forgot the cache")
+	}
+	if len(activity.rows) != 0 {
+		t.Fatal("a failed reset recorded a section reset")
+	}
+}
+
 func TestFlushSectionRequiresAccount(t *testing.T) {
 	t.Parallel()
 
