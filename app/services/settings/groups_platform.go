@@ -22,6 +22,9 @@ const (
 	groupPriceCoinGecko     = "price_coingecko"
 	groupPriceCoinMarketCap = "price_coinmarketcap"
 	groupPriceCoinAPI       = "price_coinapi"
+	groupProviderAlchemy    = "provider_alchemy"
+	groupProviderHelius     = "provider_helius"
+	groupProviderQuickNode  = "provider_quicknode"
 
 	sectionScanning = "scanning"
 	sectionDelivery = "delivery"
@@ -125,6 +128,9 @@ func platformGroups() []Group {
 		priceCoinGeckoGroup(),
 		priceCoinMarketCapGroup(),
 		priceCoinAPIGroup(),
+		providerAlchemyGroup(),
+		providerHeliusGroup(),
+		providerQuickNodeGroup(),
 	}
 }
 

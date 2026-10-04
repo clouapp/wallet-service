@@ -92,13 +92,15 @@ func TestAccountSectionsDoNotShareNamesWithGroups(t *testing.T) {
 	}
 	assertMailProviderGroups(t)
 	assertPriceGroups(t)
+	assertWebhookProviderGroups(t)
 }
 
 func knownPlatformGroup(name string) bool {
 	switch name {
 	case groupDepositScan, groupWebhookDelivery, groupSweepLimits, groupMailSMTP, groupMailDelivery,
 		groupMailSES, groupMailMailgun, groupMailResend, groupMailPostmark,
-		groupPriceLookup, groupPriceCoinGecko, groupPriceCoinMarketCap, groupPriceCoinAPI:
+		groupPriceLookup, groupPriceCoinGecko, groupPriceCoinMarketCap, groupPriceCoinAPI,
+		groupProviderAlchemy, groupProviderHelius, groupProviderQuickNode:
 		return true
 	default:
 		return false
@@ -201,6 +203,38 @@ func assertPriceGroups(t *testing.T) {
 		}
 		if _, baseOK := Find(name, "base_url"); baseOK {
 			t.Fatalf("%s declares a base url", name)
+		}
+	}
+}
+
+func assertWebhookProviderGroups(t *testing.T) {
+	t.Helper()
+	for _, name := range webhookProviderGroupNames() {
+		group, found := FindGroup(name)
+		if !found || group.Scope != ScopePlatform || group.SectionName() != sectionProviders ||
+			group.UpdatePermission != "" || group.ViewPermission != "" || len(group.Settings) != 2 ||
+			len(group.CredentialGroups) != 0 {
+			t.Fatalf("webhook provider group %s = %+v present %v", name, group, found)
+		}
+		enabled, enabledOK := Find(name, keyProviderEnabled)
+		if !enabledOK || enabled.Secret || enabled.Type != TypeBool {
+			t.Fatalf("%s enabled = %+v present %v", name, enabled, enabledOK)
+		}
+	}
+	token, tokenOK := Find(groupProviderAlchemy, keyProviderAuthToken)
+	if !tokenOK || !token.Secret || token.Type != TypeString || token.Destination {
+		t.Fatalf("alchemy auth token = %+v present %v", token, tokenOK)
+	}
+	if _, apiOK := Find(groupProviderAlchemy, keyProviderAPIKey); apiOK {
+		t.Fatal("alchemy declares an api key")
+	}
+	for _, name := range []string{groupProviderHelius, groupProviderQuickNode} {
+		apiKey, keyOK := Find(name, keyProviderAPIKey)
+		if !keyOK || !apiKey.Secret || apiKey.Type != TypeString || apiKey.Destination {
+			t.Fatalf("%s api key = %+v present %v", name, apiKey, keyOK)
+		}
+		if _, tokenOK := Find(name, keyProviderAuthToken); tokenOK {
+			t.Fatalf("%s declares an auth token", name)
 		}
 	}
 }
@@ -313,7 +347,8 @@ func TestEverySecretGroupDeclaresAPermission(t *testing.T) {
 func platformSecretGroupGatedByAdmins(group Group) bool {
 	switch group.Name {
 	case groupMailSMTP, groupMailSES, groupMailMailgun, groupMailResend, groupMailPostmark,
-		groupPriceCoinGecko, groupPriceCoinMarketCap, groupPriceCoinAPI:
+		groupPriceCoinGecko, groupPriceCoinMarketCap, groupPriceCoinAPI,
+		groupProviderAlchemy, groupProviderHelius, groupProviderQuickNode:
 		return group.ViewPermission == "" && group.UpdatePermission == ""
 	default:
 		return false
