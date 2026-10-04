@@ -13,6 +13,7 @@ import (
 	dashcurrencies "github.com/macrowallets/waas/app/http/controllers/dashboard/currencies"
 	dashfeatures "github.com/macrowallets/waas/app/http/controllers/dashboard/features"
 	dashpreferences "github.com/macrowallets/waas/app/http/controllers/dashboard/preferences"
+	dashroles "github.com/macrowallets/waas/app/http/controllers/dashboard/roles"
 	dashsettings "github.com/macrowallets/waas/app/http/controllers/dashboard/settings"
 	dashsweep "github.com/macrowallets/waas/app/http/controllers/dashboard/sweep"
 	dashusers "github.com/macrowallets/waas/app/http/controllers/dashboard/users"
@@ -65,6 +66,7 @@ func RegisterAdminRoutes() {
 	accountSettingsCtrl := newDashboardAccountSettingsController()
 	accountActivityCtrl := newDashboardAccountActivityController()
 	accountFeaturesCtrl := newDashboardAccountFeaturesController()
+	accountRolesCtrl := newDashboardAccountRolesController()
 	platformFeaturesCtrl := newPlatformFeaturesController()
 	platformAccountsCtrl := newPlatformAccountsController()
 	platformAccountListCtrl := newPlatformAccountListController()
@@ -127,6 +129,11 @@ func RegisterAdminRoutes() {
 			r.Middleware(middleware.Can(middleware.PermUsersWrite)).Post("/invites", inviteCtrl.Create)
 			r.Middleware(middleware.Can(middleware.PermUsersWrite)).Post("/invites/{id}/resend", inviteCtrl.Resend)
 			r.Middleware(middleware.Can(middleware.PermUsersWrite)).Delete("/invites/{id}", inviteCtrl.Delete)
+
+			// S3.4.2: GET /v1/accounts/{accountId}/roles roles.read.
+			// Effective grants are the code catalog. There is no
+			// account_role_permissions row and no write on this path.
+			r.Middleware(middleware.Can(middleware.PermRolesRead)).Get("/roles", accountRolesCtrl.Index)
 
 			r.Get("/tokens", accountsCtrl.ListAccountTokens)
 			r.Post("/tokens", accountsCtrl.CreateAccountToken)
@@ -450,6 +457,10 @@ func newDashboardAccountSettingsController() *dashsettings.SettingsController {
 	return dashsettings.NewSettingsController(
 		container.MustMake[*settingssvc.Service](),
 	)
+}
+
+func newDashboardAccountRolesController() *dashroles.Controller {
+	return dashroles.NewController()
 }
 
 func newDashboardAccountFeaturesController() *dashfeatures.FeaturesController {

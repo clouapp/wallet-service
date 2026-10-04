@@ -13,6 +13,9 @@ const PermUsersRead = policies.PermUsersRead
 // PermUsersWrite is creating an account invite. Routes cannot import policies.
 const PermUsersWrite = policies.PermUsersWrite
 
+// PermRolesRead is the account role catalog. Routes cannot import policies.
+const PermRolesRead = policies.PermRolesRead
+
 // Can refuses the route unless the account role already stored by
 // AccountContext or AccountHeader holds permission. The decision is
 // policies.Can on that role's code catalog. An empty permission and an

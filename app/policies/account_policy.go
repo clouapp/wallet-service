@@ -125,12 +125,10 @@ func (p *AccountPolicy) ReadTokens(ctx context.Context, arguments map[string]any
 	if !ok {
 		return access.NewDenyResponse("missing account_id")
 	}
-	switch userRole(ctx, accountID, arguments) {
-	case roleOwner, roleAdmin, roleAuditor:
+	if MayReadTokens(userRole(ctx, accountID, arguments)) {
 		return access.NewAllowResponse()
-	default:
-		return access.NewDenyResponse("only owners, admins, and auditors may read tokens")
 	}
+	return access.NewDenyResponse("only owners, admins, and auditors may read tokens")
 }
 
 func (p *AccountPolicy) WriteTokens(ctx context.Context, arguments map[string]any) contractsaccess.Response {
@@ -138,11 +136,31 @@ func (p *AccountPolicy) WriteTokens(ctx context.Context, arguments map[string]an
 	if !ok {
 		return access.NewDenyResponse("missing account_id")
 	}
-	switch userRole(ctx, accountID, arguments) {
-	case roleOwner, roleAdmin:
+	if MayWriteTokens(userRole(ctx, accountID, arguments)) {
 		return access.NewAllowResponse()
+	}
+	return access.NewDenyResponse("only owners and admins may manage tokens")
+}
+
+// MayReadTokens reports whether the account role holds tokens.read.
+// Owner, admin and auditor may. User may not.
+func MayReadTokens(role string) bool {
+	switch role {
+	case roleOwner, roleAdmin, roleAuditor:
+		return true
 	default:
-		return access.NewDenyResponse("only owners and admins may manage tokens")
+		return false
+	}
+}
+
+// MayWriteTokens reports whether the account role holds tokens.write.
+// Owner and admin may. Auditor and user may not.
+func MayWriteTokens(role string) bool {
+	switch role {
+	case roleOwner, roleAdmin:
+		return true
+	default:
+		return false
 	}
 }
 

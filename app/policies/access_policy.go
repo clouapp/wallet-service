@@ -16,6 +16,11 @@ const PermUsersRead = "users.read"
 // Auditor and user do not.
 const PermUsersWrite = "users.write"
 
+// PermRolesRead is the account role catalog. Owner, admin and auditor hold
+// it. The user role does not. There is no roles.write grant: this branch
+// has no per-account permission override.
+const PermRolesRead = "roles.read"
+
 // Grants is the permission set for one request. Nil and empty fail closed.
 // This branch keeps the set in code. There is no account_role_permissions row.
 type Grants map[string]struct{}
@@ -31,10 +36,10 @@ func Can(grants Grants, perm string) bool {
 }
 
 // AccountRoleGrants is the code catalog Can reads. Owner and admin hold
-// users.read, users.write, settings.read and settings.write. Auditor holds
-// users.read and settings.read. The retired viewer label uses the auditor
-// set. Any other role, including user, gets an empty set. The live settings
-// gate still refuses that retired label.
+// users.read, users.write, settings.read, settings.write and roles.read.
+// Auditor holds users.read, settings.read and roles.read. The retired viewer
+// label uses the auditor set. Any other role, including user, gets an empty
+// set. The live settings gate still refuses that retired label.
 func AccountRoleGrants(role string) Grants {
 	if role == models.RetiredAccountRoleViewer {
 		role = roleAuditor
@@ -46,11 +51,13 @@ func AccountRoleGrants(role string) Grants {
 			PermUsersWrite:    {},
 			PermSettingsRead:  {},
 			PermSettingsWrite: {},
+			PermRolesRead:     {},
 		}
 	case roleAuditor:
 		return Grants{
 			PermUsersRead:    {},
 			PermSettingsRead: {},
+			PermRolesRead:    {},
 		}
 	default:
 		return nil
