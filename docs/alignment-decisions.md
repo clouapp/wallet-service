@@ -136,11 +136,11 @@ Plan: `macro-wallets-alignment-prompt.md`. Nineteen decisions.
 
 ## 17. Archive denial for an account user
 
-**Decision.** `TestArchiveWallet_ForbiddenForAccountUser` asserts HTTP 403 (`AssertForbidden`) and the message `only wallet/account owners and admins may archive wallets`. On this tip the test does not expect 404. The caller is an account role `user` on the same account as the wallet.
+**Decision.** `TestArchiveWallet_ForbiddenForAccountUser` expects HTTP 403 (`AssertForbidden`) and the message `only wallet/account owners and admins may archive wallets`. The caller is an account role `user` on the same account as the wallet, with `view_all_wallets` false and no wallet membership. `WalletContext` answers that archive request with HTTP 404 `wallet not found` and stops before `ArchiveWallet`. The test expects 403, the handler returns 404, and that mismatch was left in place.
 
-**Plan.** Appendix A, authorization: resolve the resource, then answer 404 when it is not the caller's, then authorize. This test is the same-account denial, and the source asserts 403.
+**Plan.** Appendix A, authorization: resolve the resource, then answer 404 when it is not the caller's, then authorize. This test is the same-account denial. The test source still asserts 403; the live 404 was left in place.
 
-**Evidence.** `0a496d6391b2f490b966d39b6e3f6726fccf7242` added the assertion. `db6c491854db1424072c020a8e75964d702c4a8c` set the message comparison. `app/http/controllers/contract_gaps_test.go`. `app/http/controllers/dashboard/wallets/settings_controller.go` (`ArchiveWallet`).
+**Evidence.** `0a496d6391b2f490b966d39b6e3f6726fccf7242` added the assertion. `db6c491854db1424072c020a8e75964d702c4a8c` set the message comparison. `app/http/controllers/contract_gaps_test.go`. `app/http/middleware/wallet_context.go` (`WalletContext`). `app/http/controllers/dashboard/wallets/settings_controller.go` (`ArchiveWallet`).
 
 ## 18. Appendix B item 300 is migration 590
 
