@@ -395,8 +395,10 @@ func buildVaultContainer(app foundation.Application) (*container.Container, erro
 	)
 	c.WithdrawalService.UseUSDQuote(c.PriceService)
 
-	etherscanKey := facades.Config().GetString("vault.webhooks.etherscan_api_key")
-	blockHeightProviders := blockheight.NewProviders(etherscanKey, networkByChain)
+	blockHeightProviders := blockheight.NewProviders(func(ctx context.Context) string {
+		envKey := facades.Config().GetString("vault.webhooks.etherscan_api_key")
+		return accountSettings.EtherscanKeyForHeight(ctx, envKey)
+	}, networkByChain)
 	assetDecimals := withdrawalevents.NewRegistryDecimals(c.Registry, c.ChainRepo)
 	c.WithdrawalEvents = withdrawalevents.NewPublisher(
 		c.WebhookService, c.WithdrawalRepo, c.TransactionRepo, c.WalletRepo, assetDecimals,

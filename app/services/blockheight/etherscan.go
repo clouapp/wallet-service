@@ -16,9 +16,10 @@ import (
 const etherscanDefaultBase = "https://api.etherscan.io"
 
 type EtherscanProvider struct {
-	apiKey  string
-	client  *httpclient.Client
-	baseURL string
+	apiKey   string
+	keyAtUse EtherscanKey
+	client   *httpclient.Client
+	baseURL  string
 }
 
 func NewEtherscanProvider(apiKey string) *EtherscanProvider {
@@ -60,12 +61,23 @@ func (p *EtherscanProvider) GetBlockHeight(ctx context.Context, chainID string) 
 		return 0, err
 	}
 
+	apiKey := strings.TrimSpace(p.apiKey)
+	if p.keyAtUse != nil {
+		if ctx == nil {
+			ctx = context.Background()
+		}
+		apiKey = strings.TrimSpace(p.keyAtUse(ctx))
+		if apiKey == "" {
+			return 0, ErrTipFromChainRPC
+		}
+	}
+
 	q := url.Values{}
 	q.Set("chainid", eid)
 	q.Set("module", "proxy")
 	q.Set("action", "eth_blockNumber")
-	if p.apiKey != "" {
-		q.Set("apikey", p.apiKey)
+	if apiKey != "" {
+		q.Set("apikey", apiKey)
 	}
 
 	base := strings.TrimSuffix(p.baseURL, "/")

@@ -69,12 +69,11 @@ func webhookProviderGroupNames() []string {
 
 // S1.4.4 row: ETHERSCAN_API_KEY moves to platform settings. The group is
 // provider_etherscan, with enabled and api_key(Secret). The note is
-// "block-height provider". It does not say the block-height reader loads
-// provider_etherscan, so height checks keep today's source:
-// vault.webhooks.etherscan_api_key passed into blockheight.NewProviders.
-// A missing row, an invalid value, or a failed read of this group is not
-// consulted. api_key is sealed by the settings sealer (enc:v1:) on PUT and
-// omitted from the response and from activity. A blank key keeps the stored one.
+// "block-height provider". Height checks open this group at use time, when
+// it is enabled and the sealed api_key opens. A missing row, enabled false,
+// an invalid seal, or a failed read keeps vault.webhooks.etherscan_api_key.
+// api_key is sealed by the settings sealer (enc:v1:) on PUT and omitted from
+// the response and from activity. A blank key keeps the stored one.
 func providerEtherscanGroup() Group {
 	return Group{
 		Name:    groupProviderEtherscan,
