@@ -24,8 +24,10 @@ var (
 	ErrManagedByPlatform = errors.New("platform staff manage this settings group")
 	// ErrPlatformForbidden is a caller who is not a platform admin. S1.4.4 names
 	// settings.update; this branch has no platform permission catalog, so the
-	// gate is the platform_admins row. webhook_delivery, sweep_limits,
-	// mail_smtp, and mail_delivery declare no permission of their own.
+	// gate is the platform_admins row. sweep_limits names sweep.view and
+	// sweep.update; a platform_admins row still stands in for that pair.
+	// webhook_delivery, mail_smtp, and mail_delivery declare no permission
+	// of their own.
 	ErrPlatformForbidden = errors.New("you do not have permission to update settings")
 	// ErrPlatformViewForbidden is a caller who is not a platform admin. S1.4.6
 	// names settings.view for the platform index, for one platform group, and

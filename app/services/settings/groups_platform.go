@@ -6,6 +6,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/macrowallets/waas/app/policies"
 )
 
 const (
@@ -109,15 +111,20 @@ func platformGroups() []Group {
 			Validate: validateWebhookDelivery,
 		},
 		{
-			Name:     groupSweepLimits,
-			Scope:    ScopePlatform,
-			Section:  sectionSweep,
-			Block:    "Sweep",
-			Settings: sweepLimitDefinitions(),
+			Name:    groupSweepLimits,
+			Scope:   ScopePlatform,
+			Section: sectionSweep,
+			Block:   "Sweep",
 			// S1.4.4 moves the hard-coded LoadLimits defaults here. Counts are
-			// positive integers. A blank daily cap is unlimited. This group
-			// names no permission: a platform_admins row is the gate.
-			Validate: validateSweepLimits,
+			// positive integers. A blank daily cap is unlimited. S1.4.7 names
+			// sweep.view and sweep.update on this group. Holding
+			// settings.update is not that pair. No account role holds it.
+			// There is no platform permission catalog, so a platform_admins
+			// row stands in.
+			ViewPermission:   policies.PermSweepView,
+			UpdatePermission: policies.PermSweepUpdate,
+			Settings:         sweepLimitDefinitions(),
+			Validate:         validateSweepLimits,
 		},
 		mailSMTPGroup(),
 		mailDeliveryGroup(),

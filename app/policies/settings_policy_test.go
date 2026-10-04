@@ -48,6 +48,35 @@ func TestProviderCredentialPermissionsAreNotAccountGrants(t *testing.T) {
 	}
 }
 
+func TestSweepPermissionsAreNotAccountGrants(t *testing.T) {
+	t.Parallel()
+
+	if PermSweepView == PermSettingsView || PermSweepUpdate == PermSettingsUpdate ||
+		PermSweepView == PermSettingsUpdate || PermSweepUpdate == PermSettingsView {
+		t.Fatal("holding settings.update does not by itself become sweep.update")
+	}
+	if PermSweepView == "chains.view" || PermSweepUpdate == "chains.update" ||
+		PermSweepView == "chains.update" || PermSweepUpdate == "chains.view" {
+		t.Fatal("the sweep pair reused the chain pair")
+	}
+	for _, role := range []string{roleOwner, roleAdmin, roleAuditor, roleUser, "viewer", ""} {
+		if MayUpdateSettings(role) && (Can(AccountRoleGrants(role), PermSweepView) || Can(AccountRoleGrants(role), PermSweepUpdate)) {
+			t.Fatalf("%s holds settings.update and a sweep permission", role)
+		}
+		if Can(AccountRoleGrants(role), PermSweepView) || Can(AccountRoleGrants(role), PermSweepUpdate) {
+			t.Fatalf("%s account grants hold a sweep permission", role)
+		}
+		if Can(WalletGrants(role), PermSweepView) || Can(WalletGrants(role), PermSweepUpdate) {
+			t.Fatalf("%s wallet grants hold a sweep permission", role)
+		}
+	}
+	for _, name := range APITokenPermissionCatalog() {
+		if name == PermSweepView || name == PermSweepUpdate {
+			t.Fatalf("api token catalog holds %s", name)
+		}
+	}
+}
+
 func TestSettingsPermissionsFollowTheAccountRoles(t *testing.T) {
 	t.Parallel()
 

@@ -11,10 +11,31 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/macrowallets/waas/app/models"
+	"github.com/macrowallets/waas/app/policies"
 	activitylog "github.com/macrowallets/waas/app/services/activity"
 	chainsvc "github.com/macrowallets/waas/app/services/chains"
 	"github.com/macrowallets/waas/pkg/numeric"
 )
+
+func TestChainThresholdCatalogDeclaresTheSweepPair(t *testing.T) {
+	t.Parallel()
+
+	catalog := chainsvc.ChainThresholdCatalog()
+	require.Equal(t, policies.PermSweepView, catalog.ViewPermission)
+	require.Equal(t, policies.PermSweepUpdate, catalog.UpdatePermission)
+	require.NotEqual(t, policies.PermSettingsUpdate, catalog.UpdatePermission)
+	require.NotEqual(t, policies.PermSettingsView, catalog.ViewPermission)
+	require.NotEqual(t, "chains.view", catalog.ViewPermission)
+	require.NotEqual(t, "chains.update", catalog.UpdatePermission)
+	require.Equal(t, []string{
+		"gas_readiness_threshold_raw",
+		"dust_threshold_native_raw",
+		"dust_threshold_usd",
+	}, catalog.Fields)
+	if policies.PermSettingsUpdate == policies.PermSweepUpdate {
+		t.Fatal("holding settings.update does not by itself become sweep.update")
+	}
+}
 
 func TestUpdateThresholds_UnknownChainIsNotFoundBeforeTheAdminCheck(t *testing.T) {
 	t.Parallel()

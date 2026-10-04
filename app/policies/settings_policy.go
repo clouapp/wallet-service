@@ -29,6 +29,17 @@ const (
 	PermProvidersUpdate = "providers.update"
 )
 
+// PermSweepView and PermSweepUpdate are the pair S1.4.7 names on
+// sweep_limits, account_sweep_limits, and the chain-row sweep threshold
+// columns. Holding settings.update does not grant that pair. No account
+// role holds either name. Owner, admin, and auditor still read
+// account_sweep_limits through settings.view. There is no platform
+// permission catalog, so a platform_admins row stands in for the write.
+const (
+	PermSweepView   = "sweep.view"
+	PermSweepUpdate = "sweep.update"
+)
+
 const (
 	roleOwner   = "owner"
 	roleAdmin   = "admin"

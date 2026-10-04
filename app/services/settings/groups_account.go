@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/macrowallets/waas/app/policies"
 	"github.com/macrowallets/waas/pkg/types"
 )
 
@@ -114,8 +115,14 @@ func accountGroups() []Group {
 			Inherits:  groupSweepLimits,
 			Section:   sectionLimits,
 			Block:     "Sweep",
-			Settings:  sweepLimitDefinitions(),
-			Validate:  validateSweepLimits,
+			// S1.4.7 names sweep.view and sweep.update. No account role holds
+			// that pair. Owner, admin, and auditor still read this group
+			// through settings.view. A platform_admins row stands in for the
+			// write.
+			ViewPermission:   policies.PermSweepView,
+			UpdatePermission: policies.PermSweepUpdate,
+			Settings:         sweepLimitDefinitions(),
+			Validate:         validateSweepLimits,
 		},
 	}
 }

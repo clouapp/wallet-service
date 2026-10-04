@@ -96,6 +96,36 @@ func TestAccountGroup_MemberSeesOneAccountAndHidesASecret(t *testing.T) {
 	}
 }
 
+func TestAccountGroup_OwnerAdminAndAuditorStillReadSweepLimits(t *testing.T) {
+	t.Parallel()
+
+	accountID := uuid.New()
+	store := &recordingAccountStore{memoryStore: newMemoryStore()}
+	if err := store.UpsertMany(context.Background(), accountID, groupAccountSweepLimits, map[string]string{
+		keyMaxAddressesEVM: "11",
+	}); err != nil {
+		t.Fatalf("store: %v", err)
+	}
+	service := NewService(store, refuseOpenSealer{}, nopCache{}, &recordingActivity{})
+	group, ok := FindGroup(groupAccountSweepLimits)
+	if !ok || group.ViewPermission != "sweep.view" || group.UpdatePermission != "sweep.update" {
+		t.Fatalf("account sweep permissions = %q %q present %v", group.ViewPermission, group.UpdatePermission, ok)
+	}
+	for _, role := range []string{"owner", "admin", "auditor"} {
+		view, err := service.AccountGroup(context.Background(), accountID, role, groupAccountSweepLimits)
+		if err != nil {
+			t.Fatalf("%s: %v", role, err)
+		}
+		if view.Name != groupAccountSweepLimits || view.CanUpdate {
+			t.Fatalf("%s group = %+v", role, view)
+		}
+		evm := fieldByKey(t, view, keyMaxAddressesEVM)
+		if evm.Value != 11 || !evm.IsSet {
+			t.Fatalf("%s evm = %+v", role, evm)
+		}
+	}
+}
+
 func TestAccountGroup_NotFoundComesBeforeForbidden(t *testing.T) {
 	t.Parallel()
 

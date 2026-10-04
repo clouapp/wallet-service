@@ -14,6 +14,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/macrowallets/waas/app/models"
+	"github.com/macrowallets/waas/app/policies"
 	activitylog "github.com/macrowallets/waas/app/services/activity"
 	"github.com/macrowallets/waas/pkg/numeric"
 )
@@ -33,6 +34,43 @@ const (
 	kindString
 	kindNumber
 )
+
+// ThresholdCatalog is the chain-row sweep columns
+// PATCH /v1/platform/chains/{chainId} already writes. They are columns on
+// chains, not a settings group. S1.4.7 names sweep.view and sweep.update
+// on this entry. Holding settings.update is not that pair. There is no
+// platform permission catalog, so a platform_admins row stands in.
+type ThresholdCatalog struct {
+	ViewPermission   string
+	UpdatePermission string
+	Fields           []string
+}
+
+// ChainThresholdCatalog is the code catalog entry the chain threshold PATCH uses.
+func ChainThresholdCatalog() ThresholdCatalog {
+	return ThresholdCatalog{
+		ViewPermission:   policies.PermSweepView,
+		UpdatePermission: policies.PermSweepUpdate,
+		Fields:           []string{fieldGasReadiness, fieldDustNative, fieldDustUSD},
+	}
+}
+
+func requireSweepThresholdPair(catalog ThresholdCatalog) error {
+	if catalog.ViewPermission == "" || catalog.UpdatePermission == "" {
+		return fmt.Errorf("chain thresholds: sweep permissions are required")
+	}
+	if catalog.ViewPermission == policies.PermSettingsUpdate || catalog.UpdatePermission == policies.PermSettingsUpdate ||
+		catalog.ViewPermission == policies.PermSettingsView || catalog.UpdatePermission == policies.PermSettingsView {
+		return fmt.Errorf("chain thresholds: settings permissions are not the sweep pair")
+	}
+	if catalog.ViewPermission == catalog.UpdatePermission {
+		return fmt.Errorf("chain thresholds: sweep.view and sweep.update must differ")
+	}
+	if len(catalog.Fields) != 3 {
+		return fmt.Errorf("chain thresholds: sweep columns are required")
+	}
+	return nil
+}
 
 // ThresholdStore reads one chain and writes only the threshold columns a
 // patch names. A nil column pointer leaves that column unchanged.
@@ -81,6 +119,8 @@ func NewThresholds(store ThresholdStore, admins PlatformAdmins, activity activit
 // ErrNotFound before the platform-admin check. A caller who is not a platform
 // admin is ErrPlatformForbidden. S1.4.4 names chains.update; this branch has
 // no platform permission catalog, so the gate is the platform_admins row.
+// The columns declare sweep.view and sweep.update. A platform_admins row
+// stands in for that pair. Holding settings.update is not sweep.update.
 // A negative amount or a negative confirmation count is a ValidationError and
 // is not stored. An omitted field leaves that column unchanged. An empty gas
 // string is stored only for a bitcoin chain, where it is the sentinel.
@@ -120,6 +160,9 @@ func (s *Thresholds) Update(ctx context.Context, actorID uuid.UUID, chainID stri
 	}
 	if !admin {
 		return ThresholdView{}, ErrPlatformForbidden
+	}
+	if err := requireSweepThresholdPair(ChainThresholdCatalog()); err != nil {
+		return ThresholdView{}, err
 	}
 	if body == nil {
 		body = map[string]json.RawMessage{}

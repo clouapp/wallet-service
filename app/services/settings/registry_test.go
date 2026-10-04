@@ -45,13 +45,16 @@ func TestAccountSectionsDoNotShareNamesWithGroups(t *testing.T) {
 		t.Fatal("registry has no decimal")
 	}
 	limits, ok := FindGroup(groupAccountSweepLimits)
-	if !ok || limits.ManagedBy != ManagedByPlatform || limits.Inherits != groupSweepLimits {
+	if !ok || limits.ManagedBy != ManagedByPlatform || limits.Inherits != groupSweepLimits || !sweepLimitPermissions(limits) {
 		t.Fatalf("sweep limits group = %+v present %v", limits, ok)
 	}
 	platformLimits, ok := FindGroup(groupSweepLimits)
-	if !ok || platformLimits.Scope != ScopePlatform || platformLimits.UpdatePermission != "" ||
+	if !ok || platformLimits.Scope != ScopePlatform || !sweepLimitPermissions(platformLimits) ||
 		platformLimits.SectionName() != sectionSweep || len(platformLimits.Settings) != len(limits.Settings) {
 		t.Fatalf("platform sweep limits = %+v present %v", platformLimits, ok)
+	}
+	if limits.UpdatePermission == policies.PermSettingsUpdate || platformLimits.UpdatePermission == policies.PermSettingsUpdate {
+		t.Fatal("holding settings.update does not by itself become sweep.update")
 	}
 	for i, definition := range limits.Settings {
 		if platformLimits.Settings[i].Key != definition.Key {
@@ -369,6 +372,11 @@ func mailCredentialPermissions(group Group) bool {
 
 func providerCredentialPermissions(group Group) bool {
 	return group.ViewPermission == policies.PermProvidersView && group.UpdatePermission == policies.PermProvidersUpdate
+}
+
+func sweepLimitPermissions(group Group) bool {
+	return group.ViewPermission == policies.PermSweepView && group.UpdatePermission == policies.PermSweepUpdate &&
+		group.UpdatePermission != policies.PermSettingsUpdate && group.ViewPermission != policies.PermSettingsUpdate
 }
 
 func platformSecretGroupGatedByAdmins(group Group) bool {
