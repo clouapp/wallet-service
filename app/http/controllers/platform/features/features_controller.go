@@ -16,14 +16,18 @@ import (
 // call it. An account owner who is not in platform_admins receives 403.
 type FeaturesController struct {
 	features *featuressvc.Service
+	accounts featuressvc.Accounts
 }
 
 // NewFeaturesController wires the platform feature-flag handlers.
-func NewFeaturesController(features *featuressvc.Service) *FeaturesController {
+func NewFeaturesController(features *featuressvc.Service, accounts featuressvc.Accounts) *FeaturesController {
 	if features == nil {
 		panic("platform features controller: features service is required")
 	}
-	return &FeaturesController{features: features}
+	if accounts == nil {
+		panic("platform features controller: accounts are required")
+	}
+	return &FeaturesController{features: features, accounts: accounts}
 }
 
 // Index godoc
@@ -80,6 +84,34 @@ func (ctrl *FeaturesController) Update(ctx http.Context) http.Response {
 	return responses.Send(ctx, http.StatusOK, flag)
 }
 
+// ShowScope godoc
+// @Summary      One account's feature flags
+// @Description  S2.4 GET /v1/platform/features/{scope}/{id}. features.view is not a permission row, so a platform_admins row is the gate. Scope account returns that account's stored booleans. A missing row is the catalog default and is not inserted. Global rows are not applied. global, user, and chain are 404 before the admin check. An unknown account is 404 after the admin check.
+// @Tags         Platform Features
+// @Security     BearerAuth
+// @Produce      json
+// @Param        scope  path  string  true  "Feature scope"
+// @Param        id     path  string  true  "Account UUID"
+// @Success      200  {object}  featuressvc.List
+// @Failure      400  {object}  responses.ErrorBody
+// @Failure      401  {object}  responses.ErrorBody
+// @Failure      403  {object}  responses.ErrorBody
+// @Failure      404  {object}  responses.ErrorBody
+// @Router       /platform/features/{scope}/{id} [get]
+func (ctrl *FeaturesController) ShowScope(ctx http.Context) http.Response {
+	userID, errResp := platformCaller(ctx)
+	if errResp != nil {
+		return errResp
+	}
+	var path requests.FeatureScopeRequest
+	path.Load(ctx)
+	view, err := ctrl.features.ListScopedForPlatform(ctx.Context(), userID, path.Scope, path.ID, ctrl.accounts)
+	if errResp := mapPlatformFeatureError(ctx, err); errResp != nil {
+		return errResp
+	}
+	return responses.Send(ctx, http.StatusOK, view)
+}
+
 func platformCaller(ctx http.Context) (uuid.UUID, http.Response) {
 	userID := middleware.SessionUserID(ctx)
 	if userID == uuid.Nil {
@@ -112,8 +144,10 @@ func mapPlatformFeatureError(ctx http.Context, err error) http.Response {
 		return nil
 	}
 	switch {
-	case errors.Is(err, featuressvc.ErrNotFound):
-		return responses.Send(ctx, http.StatusNotFound, http.Json{"error": "feature not found"})
+	case errors.Is(err, featuressvc.ErrNotFound), errors.Is(err, featuressvc.ErrScopeNotFound), errors.Is(err, featuressvc.ErrAccountNotFound):
+		return responses.Send(ctx, http.StatusNotFound, http.Json{"error": err.Error()})
+	case errors.Is(err, featuressvc.ErrInvalidAccountID):
+		return responses.Send(ctx, http.StatusBadRequest, http.Json{"error": err.Error()})
 	case errors.Is(err, featuressvc.ErrPlatformForbidden):
 		return responses.Send(ctx, http.StatusForbidden, http.Json{"error": err.Error()})
 	default:

@@ -214,6 +214,68 @@ func (s *featureGateSuite) accountEnabled(accountID uuid.UUID, key string) bool 
 	return row.Enabled
 }
 
+func (s *featureGateSuite) TestPlatformAdminReadsOneAccountFeatureScope() {
+	userID, accountID, session, _ := s.ownerWallet()
+	accountPath := "/v1/platform/features/account/" + accountID.String()
+
+	forbidden := s.platform(session, http.MethodGet, accountPath, "", http.StatusForbidden)
+	s.Equal("forbidden", errorCode(forbidden))
+	s.Equal(int64(0), s.accountFeatureCount(accountID))
+
+	for _, scope := range []string{"global", "user", "chain"} {
+		refused := s.platform(session, http.MethodGet, "/v1/platform/features/"+scope+"/"+accountID.String(), "", http.StatusNotFound)
+		s.Equal("not_found", errorCode(refused))
+		s.Equal("feature scope not found", errorMessage(refused))
+	}
+	badID := s.platform(session, http.MethodGet, "/v1/platform/features/account/not-a-uuid", "", http.StatusBadRequest)
+	s.Equal("invalid_request", errorCode(badID))
+	s.Equal("invalid account id", errorMessage(badID))
+	s.Equal(int64(0), s.featureActivityCount())
+
+	s.grantPlatformAdmin(userID)
+	unknown := s.platform(session, http.MethodGet, "/v1/platform/features/account/"+uuid.New().String(), "", http.StatusNotFound)
+	s.Equal("not_found", errorCode(unknown))
+	s.Equal("account not found", errorMessage(unknown))
+
+	s.platform(session, http.MethodPatch, "/v1/platform/features/"+features.FlagWithdrawalsEnabled, `{"enabled":false}`, http.StatusOK)
+	beforeRead := s.featureActivityCount()
+	listed := s.platformListAt(session, accountPath)
+	s.Equal(beforeRead, s.featureActivityCount())
+	s.Equal(len(features.ForAccount()), len(listed.Features))
+	s.True(s.listed(listed, features.FlagWithdrawalsEnabled))
+	s.False(s.listed(listed, features.FlagAPIRequestSignatureRequired))
+	s.Equal(int64(0), s.accountFeatureCount(accountID))
+	s.False(s.globalEnabled(features.FlagWithdrawalsEnabled))
+
+	s.setFlag(session, accountID, features.FlagWithdrawalsEnabled, false)
+	listed = s.platformListAt(session, accountPath)
+	s.False(s.listed(listed, features.FlagWithdrawalsEnabled))
+	s.Equal(int64(1), s.accountFeatureCount(accountID))
+}
+
+func (s *featureGateSuite) platformListAt(token, path string) platformListBody {
+	s.T().Helper()
+	parsed := s.platform(token, http.MethodGet, path, "", http.StatusOK)
+	raw, err := json.Marshal(parsed)
+	s.Require().NoError(err)
+	var body platformListBody
+	s.Require().NoError(json.Unmarshal(raw, &body))
+	return body
+}
+
+func (s *featureGateSuite) featureActivityCount() int64 {
+	s.T().Helper()
+	var row struct {
+		Count int64 `gorm:"column:count"`
+	}
+	err := facades.Orm().Query().Raw(
+		`SELECT COUNT(*) AS count FROM account_activity WHERE action = ?`,
+		"features.updated",
+	).Scan(&row)
+	s.Require().NoError(err)
+	return row.Count
+}
+
 func (s *featureGateSuite) accountFeatureCount(accountID uuid.UUID) int64 {
 	s.T().Helper()
 	var row struct {
@@ -231,4 +293,10 @@ func errorCode(body map[string]any) string {
 	errorBody, _ := body["error"].(map[string]any)
 	code, _ := errorBody["code"].(string)
 	return code
+}
+
+func errorMessage(body map[string]any) string {
+	errorBody, _ := body["error"].(map[string]any)
+	message, _ := errorBody["message"].(string)
+	return message
 }

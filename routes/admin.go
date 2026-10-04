@@ -152,6 +152,11 @@ func RegisterAdminRoutes() {
 	facades.Route().Prefix("/v1/platform").Middleware(middleware.SessionAuth(), noCache).Group(func(router route.Router) {
 		router.Get("/features", platformFeaturesCtrl.Index)
 		router.Patch("/features/{key}", platformFeaturesCtrl.Update)
+		// S2.4: GET /v1/platform/features/{scope}/{id} features.view.
+		// Scope account is the only target this catalog stores. global is refused.
+		// user and chain are not scopes on this branch, so they are 404 as well.
+		// A platform_admins row is the gate. There is no features.view permission row.
+		router.Get("/features/{scope}/{id}", platformFeaturesCtrl.ShowScope)
 		// S1.4.7: chains.view and chains.update. A platform_admins row is the gate.
 		router.Patch("/chains/{chainId}/rpc", platformChainsCtrl.UpdateRPC)
 		router.Patch("/chains/{chainId}", platformChainsCtrl.Update)
@@ -490,6 +495,7 @@ func newPlatformChainsController() *platformchains.ChainsController {
 func newPlatformFeaturesController() *platformfeatures.FeaturesController {
 	return platformfeatures.NewFeaturesController(
 		container.MustMake[*featuressvc.Service](),
+		container.MustMake[*accountsvc.Service](),
 	)
 }
 

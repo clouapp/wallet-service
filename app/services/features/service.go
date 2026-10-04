@@ -2,6 +2,7 @@ package features
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -11,6 +12,12 @@ import (
 	"github.com/macrowallets/waas/app/policies"
 	activitylog "github.com/macrowallets/waas/app/services/activity"
 )
+
+// Accounts finds one account. A missing row is models.ErrRepositoryNotFound.
+// The platform scope read uses it after the admin check.
+type Accounts interface {
+	FindByID(ctx context.Context, id uuid.UUID) (*models.Account, error)
+}
 
 // Store reads and writes flag rows. It does not know the catalog.
 type Store interface {
@@ -248,6 +255,61 @@ func (s *Service) SetGlobal(ctx context.Context, userID uuid.UUID, key string, e
 		return Flag{}, err
 	}
 	return flag, nil
+}
+
+// ListScopedForPlatform is GET /v1/platform/features/{scope}/{id}.
+// S2.4 names features.view and scope account|user|chain, and refuses global.
+// This catalog stores account and global rows only, so user, chain, global,
+// and any other scope are ErrScopeNotFound before the admin check and before
+// the account is read. An account id that is not a UUID is
+// ErrInvalidAccountID before the admin check. A caller who is not a platform
+// admin is ErrPlatformForbidden and the account is not read. A missing
+// account is ErrAccountNotFound. A missing flag row is the catalog default
+// and is not inserted. Global rows are not applied, so a closed global veto
+// does not make an account default look saved.
+func (s *Service) ListScopedForPlatform(ctx context.Context, actorID uuid.UUID, scope, rawID string, accounts Accounts) (List, error) {
+	if s == nil {
+		return List{}, fmt.Errorf("platform features: service is required")
+	}
+	if err := requireUser(ctx, actorID); err != nil {
+		return List{}, err
+	}
+	scope = strings.TrimSpace(scope)
+	if scope != ScopeAccount {
+		return List{}, ErrScopeNotFound
+	}
+	accountID, err := uuid.Parse(strings.TrimSpace(rawID))
+	if err != nil || accountID == uuid.Nil {
+		return List{}, ErrInvalidAccountID
+	}
+	if err := s.requirePlatformAdmin(ctx, actorID); err != nil {
+		return List{}, err
+	}
+	if accounts == nil {
+		return List{}, fmt.Errorf("platform features: accounts are required")
+	}
+	account, err := accounts.FindByID(ctx, accountID)
+	if err != nil {
+		if errors.Is(err, models.ErrRepositoryNotFound) {
+			return List{}, ErrAccountNotFound
+		}
+		return List{}, err
+	}
+	if account == nil || account.ID != accountID {
+		return List{}, ErrAccountNotFound
+	}
+	stored, err := s.stored(ctx, account.ID)
+	if err != nil {
+		return List{}, err
+	}
+	flags := make([]Flag, 0, len(catalog))
+	for _, definition := range ForAccount() {
+		flags = append(flags, Flag{
+			Key:     definition.Key,
+			Enabled: enabledValue(stored, definition),
+		})
+	}
+	return List{Features: flags}, nil
 }
 
 func (s *Service) stored(ctx context.Context, accountID uuid.UUID) (map[string]bool, error) {

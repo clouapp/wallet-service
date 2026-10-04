@@ -55,6 +55,26 @@ func (r *FeatureKeyRequest) Load(ctx http.Context) {
 	r.Key = trimmedRoute(ctx, "key")
 }
 
+// FeatureScopeRequest is the scope and target id on
+// GET /v1/platform/features/{scope}/{id}.
+type FeatureScopeRequest struct {
+	Open
+	Scope string `form:"scope" json:"scope"`
+	ID    string `form:"id" json:"id"`
+}
+
+func (r *FeatureScopeRequest) Rules(http.Context) map[string]string {
+	return optionalStringRules("scope", "id")
+}
+
+func (r *FeatureScopeRequest) Load(ctx http.Context) {
+	if r == nil {
+		return
+	}
+	r.Scope = trimmedRoute(ctx, "scope")
+	r.ID = trimmedRoute(ctx, "id")
+}
+
 // SettingsGroupRequest is the settings group path parameter.
 // The document body stays on AccountSettingsDocument.
 type SettingsGroupRequest struct {

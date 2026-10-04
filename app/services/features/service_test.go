@@ -441,3 +441,111 @@ func flagEnabled(t *testing.T, view List, key string) bool {
 	t.Fatalf("missing %s", key)
 	return false
 }
+
+type scopeAdmins struct {
+	allow uuid.UUID
+	calls int
+}
+
+func (a *scopeAdmins) Contains(_ context.Context, userID uuid.UUID) (bool, error) {
+	a.calls++
+	return userID == a.allow && a.allow != uuid.Nil, nil
+}
+
+type scopeAccounts struct {
+	found map[uuid.UUID]struct{}
+	calls int
+}
+
+func (a *scopeAccounts) FindByID(_ context.Context, id uuid.UUID) (*models.Account, error) {
+	a.calls++
+	if _, ok := a.found[id]; !ok {
+		return nil, models.ErrRepositoryNotFound
+	}
+	return &models.Account{ID: id}, nil
+}
+
+func TestListScopedForPlatformRefusesOtherScopesBeforeTheAdminCheck(t *testing.T) {
+	t.Parallel()
+
+	store := newMemoryStore()
+	admins := &scopeAdmins{allow: uuid.New()}
+	accounts := &scopeAccounts{found: map[uuid.UUID]struct{}{}}
+	service := newTestService(store, admins)
+	accountID := uuid.New()
+
+	for _, scope := range []string{"global", "user", "chain", "account-extra", ""} {
+		_, err := service.ListScopedForPlatform(context.Background(), admins.allow, scope, accountID.String(), accounts)
+		if !errors.Is(err, ErrScopeNotFound) {
+			t.Fatalf("scope %q error = %v", scope, err)
+		}
+	}
+	if admins.calls != 0 || accounts.calls != 0 {
+		t.Fatalf("refused scope checked admin %d times and accounts %d times", admins.calls, accounts.calls)
+	}
+	if len(store.rows) != 0 || len(store.global) != 0 {
+		t.Fatal("refused scope wrote a flag row")
+	}
+}
+
+func TestListScopedForPlatformReadsTheAccountRowAndNotTheGlobalVeto(t *testing.T) {
+	t.Parallel()
+
+	store := newMemoryStore()
+	adminID := uuid.New()
+	admins := &scopeAdmins{allow: adminID}
+	accountID := uuid.New()
+	accounts := &scopeAccounts{found: map[uuid.UUID]struct{}{accountID: {}}}
+	service := newTestService(store, admins)
+	ctx := context.Background()
+
+	_, err := service.ListScopedForPlatform(ctx, uuid.New(), ScopeAccount, accountID.String(), accounts)
+	if !errors.Is(err, ErrPlatformForbidden) {
+		t.Fatalf("non-admin error = %v", err)
+	}
+	if accounts.calls != 0 {
+		t.Fatal("non-admin read the account")
+	}
+
+	_, err = service.ListScopedForPlatform(ctx, adminID, ScopeAccount, "not-a-uuid", accounts)
+	if !errors.Is(err, ErrInvalidAccountID) {
+		t.Fatalf("bad id error = %v", err)
+	}
+	if admins.calls != 1 {
+		t.Fatalf("bad id checked admin %d times", admins.calls)
+	}
+
+	missing := uuid.New()
+	_, err = service.ListScopedForPlatform(ctx, adminID, ScopeAccount, missing.String(), accounts)
+	if !errors.Is(err, ErrAccountNotFound) {
+		t.Fatalf("missing account error = %v", err)
+	}
+
+	if err := store.UpsertGlobal(ctx, FlagWithdrawalsEnabled, false); err != nil {
+		t.Fatalf("global: %v", err)
+	}
+	view, err := service.ListScopedForPlatform(ctx, adminID, ScopeAccount, accountID.String(), accounts)
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	if !flagEnabled(t, view, FlagWithdrawalsEnabled) {
+		t.Fatal("a closed global row changed the account default")
+	}
+	if len(store.rows[accountID]) != 0 {
+		t.Fatal("list inserted an account row")
+	}
+
+	if err := store.Upsert(ctx, accountID, FlagWithdrawalsEnabled, false); err != nil {
+		t.Fatalf("account row: %v", err)
+	}
+	view, err = service.ListScopedForPlatform(ctx, adminID, ScopeAccount, accountID.String(), accounts)
+	if err != nil {
+		t.Fatalf("stored list: %v", err)
+	}
+	if flagEnabled(t, view, FlagWithdrawalsEnabled) {
+		t.Fatal("stored false read back as true")
+	}
+	if flagEnabled(t, view, FlagAPIRequestSignatureRequired) {
+		t.Fatal("unset flag is not the catalog default")
+	}
+}
