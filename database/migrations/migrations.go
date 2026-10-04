@@ -64,5 +64,6 @@ func All() []schema.Migration {
 		&M00000000000560AddAccountInvitesWalletRoles{},
 		&M00000000000570AccessTokensPermissionsJsonb{},
 		&M00000000000580ChainsThresholdsNotNull{},
+		&M00000000000590SeedPlatformSettingsFromEnv{},
 	}
 }
