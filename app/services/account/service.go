@@ -41,7 +41,7 @@ type MembershipStore interface {
 	RolesForUserAccounts(ctx context.Context, userID uuid.UUID, accountIDs []uuid.UUID) (map[uuid.UUID]string, error)
 }
 
-// UserStore finds an existing user or inserts one invited onto an account.
+// UserStore finds a user and inserts one when an invite is accepted.
 type UserStore interface {
 	FindByEmail(ctx context.Context, email string) (*models.User, error)
 	FindByID(ctx context.Context, id uuid.UUID) (*models.User, error)

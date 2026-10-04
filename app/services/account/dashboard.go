@@ -75,36 +75,6 @@ func (s *Service) ListMembers(ctx context.Context, accountID uuid.UUID, limit, o
 	return s.memberships.PaginateByAccountID(ctx, accountID, limit, offset)
 }
 
-// FindOrCreateInvitedUser returns the user for email. A missing row, or a
-// lookup error, inserts a user with status invited. invited is true only when
-// this call inserted the row. The caller sends the invite mail after a
-// successful insert; a mail failure must not undo the user.
-func (s *Service) FindOrCreateInvitedUser(ctx context.Context, email string) (user *models.User, invited bool, err error) {
-	if ctx == nil {
-		return nil, false, fmt.Errorf("invite user: context is required")
-	}
-	if email == "" {
-		return nil, false, fmt.Errorf("invite user: email is required")
-	}
-	if s.users == nil {
-		return nil, false, fmt.Errorf("account service: users repository is required")
-	}
-	found, findErr := s.users.FindByEmail(ctx, email)
-	if findErr == nil && found != nil {
-		return found, false, nil
-	}
-	created := &models.User{
-		ID:           uuid.New(),
-		Email:        email,
-		PasswordHash: "",
-		Status:       "invited",
-	}
-	if err := s.users.Create(ctx, created); err != nil {
-		return nil, false, err
-	}
-	return created, true, nil
-}
-
 // FindUserByEmail returns the user, or the store's not-found error.
 func (s *Service) FindUserByEmail(ctx context.Context, email string) (*models.User, error) {
 	if s.users == nil {
