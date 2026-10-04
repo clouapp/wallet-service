@@ -148,6 +148,8 @@ func RegisterAdminRoutes() {
 		router.Get("/settings/{group}", platformSettingsCtrl.Show)
 		// S1.4.6: GET /v1/platform/accounts/{accountId}/settings/{group} settings.view (platform-managed account groups).
 		router.Get("/accounts/{accountId}/settings/{group}", platformSettingsCtrl.ShowAccount)
+		// S1.4.6: PUT /v1/platform/accounts/{accountId}/settings/{group} settings.update + sweep.update for account_sweep_limits.
+		router.Put("/accounts/{accountId}/settings/{group}", platformSettingsCtrl.UpdateAccount)
 		router.Put("/settings/{group}", platformSettingsCtrl.Update)
 		router.Post("/settings/sections/{section}/cache", platformSettingsCtrl.Flush)
 		router.Post("/settings/sections/{section}/reset", platformSettingsCtrl.Reset)
