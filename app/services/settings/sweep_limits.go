@@ -2,6 +2,8 @@ package settings
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 	"log/slog"
 	"math/big"
 	"strconv"
@@ -58,6 +60,71 @@ func (s *Service) EffectiveSweepLimits(ctx context.Context, accountID uuid.UUID)
 		return SweepLimitValues{}, err
 	}
 	return parseSweepLimits(accountID, effectiveNonSecrets(group.Settings, merged, nil)), nil
+}
+
+// sweepLimitsWire is the JSON text stored in the dashboard sweep_limits string.
+// Field order is the registry order. A blank cap is omitted (unlimited).
+type sweepLimitsWire struct {
+	MaxAddressesEVM              int    `json:"max_addresses_evm"`
+	MaxAddressesSolana           int    `json:"max_addresses_solana"`
+	MaxAddressesBitcoin          int    `json:"max_addresses_bitcoin"`
+	MaxConsolidateRequestsPerDay int    `json:"max_consolidate_requests_per_day"`
+	DailyWithdrawCapUSD          string `json:"daily_withdraw_cap_usd,omitempty"`
+}
+
+// AccountSweepLimitsWire is the dashboard sweep_limits string. Nil means the
+// account stored no account_sweep_limits row, so the field stays omitted and
+// the HTTP contract snapshot is unchanged. When the account stored at least
+// one key, the string is the effective document: that key, then the registry
+// default for every key the account did not store. A negative amount is refused.
+func (s *Service) AccountSweepLimitsWire(ctx context.Context, accountID uuid.UUID) (*string, error) {
+	if s == nil {
+		return nil, errServiceRequired
+	}
+	if err := requireAccount(ctx, accountID); err != nil {
+		return nil, err
+	}
+	stored, err := s.storedValues(ctx, accountID, groupAccountSweepLimits)
+	if err != nil {
+		return nil, err
+	}
+	if len(stored) == 0 {
+		return nil, nil
+	}
+	effective, err := s.EffectiveSweepLimits(ctx, accountID)
+	if err != nil {
+		return nil, err
+	}
+	document, err := marshalSweepLimitsWire(effective)
+	if err != nil {
+		return nil, err
+	}
+	return &document, nil
+}
+
+func marshalSweepLimitsWire(values SweepLimitValues) (string, error) {
+	if values.MaxAddressesEVM <= 0 || values.MaxAddressesSolana <= 0 ||
+		values.MaxAddressesBitcoin <= 0 || values.MaxConsolidateRequestsPerDay <= 0 {
+		return "", fmt.Errorf("account sweep limits must be greater than 0")
+	}
+	capUSD := strings.TrimSpace(values.DailyWithdrawCapUSD)
+	if capUSD != "" {
+		parsed, ok := new(big.Rat).SetString(capUSD)
+		if !ok || parsed.Sign() < 0 {
+			return "", fmt.Errorf("daily_withdraw_cap_usd must be greater than or equal to 0")
+		}
+	}
+	raw, err := json.Marshal(sweepLimitsWire{
+		MaxAddressesEVM:              values.MaxAddressesEVM,
+		MaxAddressesSolana:           values.MaxAddressesSolana,
+		MaxAddressesBitcoin:          values.MaxAddressesBitcoin,
+		MaxConsolidateRequestsPerDay: values.MaxConsolidateRequestsPerDay,
+		DailyWithdrawCapUSD:          capUSD,
+	})
+	if err != nil {
+		return "", fmt.Errorf("encode account sweep limits: %w", err)
+	}
+	return string(raw), nil
 }
 
 // withInheritedPlatform copies the platform parent under keys the account did

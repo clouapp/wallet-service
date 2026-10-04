@@ -21,12 +21,14 @@ func TestMyAccountKeepsTheAccountWire(t *testing.T) {
 	limits := `{"max":1}`
 	full := models.Account{
 		ID: id, Name: "Acme", Status: "active", ViewAllWallets: true,
-		Environment: "prod", LinkedAccountID: &other, SweepLimits: &limits,
+		Environment: "prod", LinkedAccountID: &other,
 	}
 	full.CreatedAt = created
 	full.UpdatedAt = updated
+	view := dashboardaccounts.NewAccountView(full)
+	view.SweepLimits = &limits
 
-	raw, err := json.Marshal(myAccount{AccountView: dashboardaccounts.NewAccountView(full), Role: "owner"})
+	raw, err := json.Marshal(myAccount{AccountView: view, Role: "owner"})
 	if err != nil {
 		t.Fatal(err)
 	}

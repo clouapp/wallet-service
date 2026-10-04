@@ -36,6 +36,7 @@ type UsersController struct {
 	secondFactor *authsvc.SecondFactorVerifier
 	revoker      *authsvc.SessionRevoker
 	features     *featuressvc.Service
+	limits       *settings.Service
 }
 
 // NewUsersController wires the dashboard user handlers. Services are the
@@ -48,6 +49,7 @@ func NewUsersController(
 	secondFactor *authsvc.SecondFactorVerifier,
 	revoker *authsvc.SessionRevoker,
 	features *featuressvc.Service,
+	limits *settings.Service,
 ) *UsersController {
 	if users == nil {
 		panic("dashboard users controller: users service is required")
@@ -70,6 +72,9 @@ func NewUsersController(
 	if features == nil {
 		panic("dashboard users controller: feature flags are required")
 	}
+	if limits == nil {
+		panic("dashboard users controller: settings service is required")
+	}
 	return &UsersController{
 		users:        users,
 		accounts:     accounts,
@@ -78,6 +83,7 @@ func NewUsersController(
 		secondFactor: secondFactor,
 		revoker:      revoker,
 		features:     features,
+		limits:       limits,
 	}
 }
 
@@ -265,9 +271,23 @@ func (ctrl *UsersController) accountsWithCallerRole(ctx http.Context, userID uui
 		if !ok || strings.TrimSpace(role) == "" {
 			return nil, fmt.Errorf("account %s has no role for user %s", account.ID, userID)
 		}
-		items = append(items, myAccount{AccountView: dashboardaccounts.NewAccountView(account), Role: role})
+		view, err := ctrl.accountView(ctx, account)
+		if err != nil {
+			return nil, err
+		}
+		items = append(items, myAccount{AccountView: view, Role: role})
 	}
 	return items, nil
+}
+
+func (ctrl *UsersController) accountView(ctx http.Context, account models.Account) (dashboardaccounts.AccountView, error) {
+	view := dashboardaccounts.NewAccountView(account)
+	document, err := ctrl.limits.AccountSweepLimitsWire(ctx.Context(), account.ID)
+	if err != nil {
+		return dashboardaccounts.AccountView{}, err
+	}
+	view.SweepLimits = document
+	return view, nil
 }
 
 func parseMyAccountsFilter(search, environment string) (string, string, string) {
@@ -321,7 +341,14 @@ func (ctrl *UsersController) UpdateDefaultAccount(ctx http.Context) http.Respons
 	}
 
 	account, _ := ctrl.accounts.FindByID(ctx.Context(), accountID)
-	return responses.Send(ctx, http.StatusOK, http.Json{"account": dashboardaccounts.AccountViewPtr(account)})
+	if account == nil {
+		return responses.Send(ctx, http.StatusOK, http.Json{"account": dashboardaccounts.AccountViewPtr(nil)})
+	}
+	view, err := ctrl.accountView(ctx, *account)
+	if err != nil {
+		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to update default account"})
+	}
+	return responses.Send(ctx, http.StatusOK, http.Json{"account": &view})
 }
 
 // SetupTOTP godoc

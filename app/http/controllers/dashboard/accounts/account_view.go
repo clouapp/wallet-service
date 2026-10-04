@@ -10,6 +10,8 @@ import (
 // AccountView is the account row the dashboard reads. Field order and tags
 // match the model wire, including the embedded timestamps. A nil pointer stays
 // nil. Empty omitempty pointers stay omitted; a non-nil empty string stays "".
+// SweepLimits is not an accounts column. It is a JSON string: nil omits the
+// field (the contract snapshot), and a caller fills it from account_sweep_limits.
 type AccountView struct {
 	CreatedAt       *carbon.DateTime `json:"created_at"`
 	UpdatedAt       *carbon.DateTime `json:"updated_at"`
@@ -32,7 +34,6 @@ func NewAccountView(account models.Account) AccountView {
 		ViewAllWallets:  account.ViewAllWallets,
 		Environment:     account.Environment,
 		LinkedAccountID: account.LinkedAccountID,
-		SweepLimits:     account.SweepLimits,
 	}
 }
 

@@ -22,30 +22,34 @@ func TestAccountViewKeepsTheModelWire(t *testing.T) {
 
 	full := models.Account{
 		ID: id, Name: "Acme", Status: "active", ViewAllWallets: true,
-		Environment: "prod", LinkedAccountID: &other, SweepLimits: &limits,
+		Environment: "prod", LinkedAccountID: &other,
 	}
 	full.CreatedAt = created
 	full.UpdatedAt = updated
+	fullView := NewAccountView(full)
+	fullView.SweepLimits = &limits
+	emptyView := NewAccountView(models.Account{LinkedAccountID: &uuid.UUID{}})
+	emptyView.SweepLimits = &empty
 
 	cases := []struct {
-		account models.Account
-		want    string
+		view AccountView
+		want string
 	}{
 		{
-			account: models.Account{},
-			want:    `{"created_at":null,"updated_at":null,"id":"00000000-0000-0000-0000-000000000000","name":"","status":"","view_all_wallets":false,"environment":""}`,
+			view: NewAccountView(models.Account{}),
+			want: `{"created_at":null,"updated_at":null,"id":"00000000-0000-0000-0000-000000000000","name":"","status":"","view_all_wallets":false,"environment":""}`,
 		},
 		{
-			account: models.Account{LinkedAccountID: &uuid.UUID{}, SweepLimits: &empty},
-			want:    `{"created_at":null,"updated_at":null,"id":"00000000-0000-0000-0000-000000000000","name":"","status":"","view_all_wallets":false,"environment":"","linked_account_id":"00000000-0000-0000-0000-000000000000","sweep_limits":""}`,
+			view: emptyView,
+			want: `{"created_at":null,"updated_at":null,"id":"00000000-0000-0000-0000-000000000000","name":"","status":"","view_all_wallets":false,"environment":"","linked_account_id":"00000000-0000-0000-0000-000000000000","sweep_limits":""}`,
 		},
 		{
-			account: full,
-			want:    `{"created_at":"2024-05-06 07:08:09","updated_at":"2024-05-06 07:08:10","id":"11111111-1111-4111-8111-111111111111","name":"Acme","status":"active","view_all_wallets":true,"environment":"prod","linked_account_id":"22222222-2222-4222-8222-222222222222","sweep_limits":"{\"max\":1}"}`,
+			view: fullView,
+			want: `{"created_at":"2024-05-06 07:08:09","updated_at":"2024-05-06 07:08:10","id":"11111111-1111-4111-8111-111111111111","name":"Acme","status":"active","view_all_wallets":true,"environment":"prod","linked_account_id":"22222222-2222-4222-8222-222222222222","sweep_limits":"{\"max\":1}"}`,
 		},
 	}
 	for _, tc := range cases {
-		raw, err := json.Marshal(NewAccountView(tc.account))
+		raw, err := json.Marshal(tc.view)
 		if err != nil {
 			t.Fatal(err)
 		}

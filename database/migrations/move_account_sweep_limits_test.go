@@ -1,6 +1,7 @@
 package migrations_test
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/google/uuid"
@@ -10,8 +11,14 @@ import (
 	"github.com/macrowallets/waas/tests/mocks"
 )
 
+func restoreSweepLimitsColumn(t *testing.T) {
+	t.Helper()
+	require.NoError(t, (&migrations.M00000000000530DropAccountsSweepLimits{}).Down())
+}
+
 func TestMoveAccountSweepLimitsCopiesTheJSONAndLeavesTheColumn(t *testing.T) {
 	mocks.TestDB(t)
+	restoreSweepLimitsColumn(t)
 	account := mocks.InsertAccount(t, "sweep-json")
 	other := mocks.InsertAccount(t, "sweep-other")
 	exec(t, `UPDATE accounts SET sweep_limits = CAST(? AS jsonb) WHERE id = ?`,
@@ -49,6 +56,7 @@ func TestMoveAccountSweepLimitsCopiesTheJSONAndLeavesTheColumn(t *testing.T) {
 
 func TestMoveAccountSweepLimitsRefusesANegativeCap(t *testing.T) {
 	mocks.TestDB(t)
+	restoreSweepLimitsColumn(t)
 	account := mocks.InsertAccount(t, "sweep-negative")
 	kept := mocks.InsertAccount(t, "sweep-kept")
 	exec(t, `UPDATE accounts SET sweep_limits = CAST(? AS jsonb) WHERE id = ?`,
@@ -61,12 +69,13 @@ func TestMoveAccountSweepLimitsRefusesANegativeCap(t *testing.T) {
 	err := (&migrations.M00000000000520MoveAccountSweepLimitsToSettings{}).Up()
 	require.Error(t, err)
 	require.Contains(t, err.Error(), account.ID.String())
-	require.NotContains(t, err.Error(), "-1")
+	require.NotContains(t, strings.ReplaceAll(err.Error(), account.ID.String(), ""), "-1")
 	require.Equal(t, int64(0), scalar[int64](t, `SELECT count(*) FROM settings WHERE "group" = 'account_sweep_limits'`))
 }
 
 func TestMoveAccountSweepLimitsSkipsBlankNullAndEmptyDocuments(t *testing.T) {
 	mocks.TestDB(t)
+	restoreSweepLimitsColumn(t)
 	blank := mocks.InsertAccount(t, "sweep-blank")
 	empty := mocks.InsertAccount(t, "sweep-empty")
 	absent := mocks.InsertAccount(t, "sweep-absent")
@@ -82,6 +91,7 @@ func TestMoveAccountSweepLimitsSkipsBlankNullAndEmptyDocuments(t *testing.T) {
 
 func TestMoveAccountSweepLimitsRejectsANonPositiveCount(t *testing.T) {
 	mocks.TestDB(t)
+	restoreSweepLimitsColumn(t)
 	account := mocks.InsertAccount(t, "sweep-zero")
 	exec(t, `UPDATE accounts SET sweep_limits = CAST(? AS jsonb) WHERE id = ?`,
 		`{"max_consolidate_requests_per_day":0}`,

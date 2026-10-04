@@ -244,6 +244,7 @@ func newDashboardUsersController() *dashusers.UsersController {
 		container.MustMake[*authsvc.SecondFactorVerifier](),
 		container.MustMake[*authsvc.SessionRevoker](),
 		container.MustMake[*featuressvc.Service](),
+		container.MustMake[*settingssvc.Service](),
 	)
 }
 
@@ -407,6 +408,7 @@ func newDashboardAccountsController() *dashaccounts.AccountsController {
 	return dashaccounts.NewAccountsController(
 		container.MustMake[*accountsvc.Service](),
 		container.MustMake[*authsvc.Service](),
+		container.MustMake[*settingssvc.Service](),
 	)
 }
 

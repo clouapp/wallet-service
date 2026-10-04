@@ -580,8 +580,8 @@ func countQuery(tx orm.Query, query string, args ...any) (int64, error) {
 const accountSweepLimitsGroup = "account_sweep_limits"
 
 // M00000000000520MoveAccountSweepLimitsToSettings copies accounts.sweep_limits
-// into account_sweep_limits rows (Appendix B, 310). The column stays: dropping
-// it is the next migration. A row already stored for the same key is left
+// into account_sweep_limits rows (Appendix B, 310). This migration leaves the
+// column in place; 530 drops it. A row already stored for the same key is left
 // alone. A blank cap is unlimited and is not inserted. A negative amount is
 // refused and nothing from that run is kept.
 type M00000000000520MoveAccountSweepLimitsToSettings struct{}
@@ -815,4 +815,35 @@ func scalarText(raw json.RawMessage) (string, bool, error) {
 
 func isJSONNull(raw json.RawMessage) bool {
 	return strings.TrimSpace(string(raw)) == "null" || len(raw) == 0
+}
+
+// M00000000000530DropAccountsSweepLimits drops accounts.sweep_limits
+// (Appendix B, 320) after 520 copied recognized keys into account_sweep_limits.
+// Sweep and the dashboard field read that settings group. Down adds the
+// column back as nullable JSON and leaves every row empty: the copied
+// settings are not written back into the old document.
+type M00000000000530DropAccountsSweepLimits struct{}
+
+func (r *M00000000000530DropAccountsSweepLimits) Signature() string {
+	return "00000000000530_drop_accounts_sweep_limits"
+}
+
+func (r *M00000000000530DropAccountsSweepLimits) Up() error {
+	if _, err := facades.Orm().Query().Exec(`ALTER TABLE accounts DROP COLUMN sweep_limits`); err != nil {
+		return fmt.Errorf("drop accounts.sweep_limits: %w", err)
+	}
+	return nil
+}
+
+func (r *M00000000000530DropAccountsSweepLimits) Down() error {
+	statements := []string{
+		`ALTER TABLE accounts ADD COLUMN sweep_limits JSONB`,
+		`COMMENT ON COLUMN accounts.sweep_limits IS 'Per-account overrides for sweep rate limits and velocity caps'`,
+	}
+	for _, statement := range statements {
+		if _, err := facades.Orm().Query().Exec(statement); err != nil {
+			return fmt.Errorf("restore accounts.sweep_limits: %w", err)
+		}
+	}
+	return nil
 }

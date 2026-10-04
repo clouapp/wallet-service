@@ -20,6 +20,7 @@ import (
 	"github.com/macrowallets/waas/app/policies"
 	accountsvc "github.com/macrowallets/waas/app/services/account"
 	authsvc "github.com/macrowallets/waas/app/services/auth"
+	"github.com/macrowallets/waas/app/services/settings"
 	"github.com/macrowallets/waas/app/services/withdraw"
 )
 
@@ -30,14 +31,16 @@ func validateRequest(ctx http.Context, req http.FormRequest) http.Response {
 type AccountsController struct {
 	accountService *accountsvc.Service
 	passwords      *authsvc.Service
+	limits         *settings.Service
 }
 
 // NewAccountsController wires the dashboard account handlers. Persistence goes
 // through the account service. The auth service only turns a new API token
-// secret into its sha256 digest.
+// secret into its sha256 digest. Limits supplies sweep_limits from settings.
 func NewAccountsController(
 	accountService *accountsvc.Service,
 	passwords *authsvc.Service,
+	limits *settings.Service,
 ) *AccountsController {
 	if accountService == nil {
 		panic("dashboard accounts controller: account service is required")
@@ -45,10 +48,24 @@ func NewAccountsController(
 	if passwords == nil {
 		panic("dashboard accounts controller: auth service is required")
 	}
+	if limits == nil {
+		panic("dashboard accounts controller: settings service is required")
+	}
 	return &AccountsController{
 		accountService: accountService,
 		passwords:      passwords,
+		limits:         limits,
 	}
+}
+
+func (ctrl *AccountsController) accountView(ctx http.Context, account models.Account) (AccountView, error) {
+	view := NewAccountView(account)
+	document, err := ctrl.limits.AccountSweepLimitsWire(ctx.Context(), account.ID)
+	if err != nil {
+		return AccountView{}, err
+	}
+	view.SweepLimits = document
+	return view, nil
 }
 
 // CreateAccount godoc
@@ -75,7 +92,11 @@ func (ctrl *AccountsController) CreateAccount(ctx http.Context) http.Response {
 	if err != nil {
 		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to create account"})
 	}
-	return responses.Send(ctx, http.StatusCreated, NewAccountView(*acc))
+	view, err := ctrl.accountView(ctx, *acc)
+	if err != nil {
+		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to create account"})
+	}
+	return responses.Send(ctx, http.StatusCreated, view)
 }
 
 // GetAccount godoc
@@ -91,7 +112,11 @@ func (ctrl *AccountsController) CreateAccount(ctx http.Context) http.Response {
 // @Router       /accounts/{accountId} [get]
 func (ctrl *AccountsController) GetAccount(ctx http.Context) http.Response {
 	account := requestctx.MustAccount(ctx)
-	return responses.Send(ctx, http.StatusOK, NewAccountView(*account))
+	view, err := ctrl.accountView(ctx, *account)
+	if err != nil {
+		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to fetch account"})
+	}
+	return responses.Send(ctx, http.StatusOK, view)
 }
 
 // UpdateAccount godoc
@@ -122,7 +147,11 @@ func (ctrl *AccountsController) UpdateAccount(ctx http.Context) http.Response {
 		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to update account"})
 	}
 
-	return responses.Send(ctx, http.StatusOK, NewAccountView(*account))
+	view, err := ctrl.accountView(ctx, *account)
+	if err != nil {
+		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to update account"})
+	}
+	return responses.Send(ctx, http.StatusOK, view)
 }
 
 // ArchiveAccount godoc
@@ -145,7 +174,11 @@ func (ctrl *AccountsController) ArchiveAccount(ctx http.Context) http.Response {
 	if err := ctrl.accountService.SetStatus(ctx.Context(), account, "archived"); err != nil {
 		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to archive account"})
 	}
-	return responses.Send(ctx, http.StatusOK, NewAccountView(*account))
+	view, err := ctrl.accountView(ctx, *account)
+	if err != nil {
+		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to archive account"})
+	}
+	return responses.Send(ctx, http.StatusOK, view)
 }
 
 // FreezeAccount godoc
@@ -167,7 +200,11 @@ func (ctrl *AccountsController) FreezeAccount(ctx http.Context) http.Response {
 	if err := ctrl.accountService.SetStatus(ctx.Context(), account, "frozen"); err != nil {
 		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to freeze account"})
 	}
-	return responses.Send(ctx, http.StatusOK, NewAccountView(*account))
+	view, err := ctrl.accountView(ctx, *account)
+	if err != nil {
+		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to freeze account"})
+	}
+	return responses.Send(ctx, http.StatusOK, view)
 }
 
 // ListAccountUsers godoc
