@@ -124,6 +124,48 @@ func TestGateGlobalFalseBlocksEvenWhenTheAccountFlagIsOn(t *testing.T) {
 	}
 }
 
+func TestAccountOverrideSurvivesGlobalCloseAndReopen(t *testing.T) {
+	t.Parallel()
+
+	store := newMemoryStore()
+	adminID := uuid.New()
+	service := newTestService(store, memoryAdmins{users: map[uuid.UUID]struct{}{adminID: {}}})
+	accountID := uuid.New()
+	ctx := context.Background()
+
+	if _, err := service.Set(ctx, accountID, uuid.New(), "owner", FlagWithdrawalsEnabled, false); err != nil {
+		t.Fatalf("account override: %v", err)
+	}
+	if _, err := service.SetGlobal(ctx, adminID, FlagWithdrawalsEnabled, false); err != nil {
+		t.Fatalf("close global: %v", err)
+	}
+	closed, ok := store.written(accountID, FlagWithdrawalsEnabled)
+	if !ok || closed {
+		t.Fatal("closing the global flag changed the account override")
+	}
+	var gate *GateError
+	err := service.Gate(ctx, accountID, FlagWithdrawalsEnabled, CodeWithdrawalsPaused)
+	if !errors.As(err, &gate) || gate.Code != CodeWithdrawalsPaused {
+		t.Fatalf("closed global: %v", err)
+	}
+
+	if _, err := service.SetGlobal(ctx, adminID, FlagWithdrawalsEnabled, true); err != nil {
+		t.Fatalf("reopen global: %v", err)
+	}
+	reopened, ok := store.written(accountID, FlagWithdrawalsEnabled)
+	if !ok || reopened {
+		t.Fatal("reopening the global flag changed the account override")
+	}
+	global, ok := store.globalWritten(FlagWithdrawalsEnabled)
+	if !ok || !global {
+		t.Fatal("global row was not reopened")
+	}
+	err = service.Gate(ctx, accountID, FlagWithdrawalsEnabled, CodeWithdrawalsPaused)
+	if !errors.As(err, &gate) || gate.Code != CodeWithdrawalsPaused {
+		t.Fatalf("account override after reopen: %v", err)
+	}
+}
+
 func TestGateAccountOffStillBlocksWhenGlobalIsOn(t *testing.T) {
 	t.Parallel()
 
