@@ -14,7 +14,7 @@ type AccessToken struct {
 	CreatedBy     *uuid.UUID `gorm:"type:uuid"`
 	Name          string     `gorm:"type:varchar(255);not null"`
 	TokenHash     string     `gorm:"type:text;not null"`
-	Permissions   string     `gorm:"type:text"`
+	Permissions   string     `gorm:"type:jsonb"`
 	IpCidr        string     `gorm:"type:text"`
 	SpendingLimit string     `gorm:"type:jsonb"`
 	ValidUntil    *time.Time `gorm:"type:timestamptz"`

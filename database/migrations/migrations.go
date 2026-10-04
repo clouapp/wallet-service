@@ -62,5 +62,6 @@ func All() []schema.Migration {
 		&M00000000000540SealWebhookConfigSecrets{},
 		&M00000000000550DropLegacyTotpSecret{},
 		&M00000000000560AddAccountInvitesWalletRoles{},
+		&M00000000000570AccessTokensPermissionsJsonb{},
 	}
 }

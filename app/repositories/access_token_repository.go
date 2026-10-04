@@ -30,7 +30,12 @@ func (r *AccessTokenRepository) Create(ctx context.Context, token *models.Access
 	if strings.TrimSpace(token.SpendingLimit) == "" {
 		token.SpendingLimit = "{}"
 	}
-	if err := r.Query(ctx).Create(token); err != nil {
+	query := r.Query(ctx)
+	if strings.TrimSpace(token.Permissions) == "" {
+		// NULL is the omitted grant. An empty string is not valid jsonb.
+		query = query.Omit("Permissions")
+	}
+	if err := query.Create(token); err != nil {
 		return fmt.Errorf("create access token: %w", err)
 	}
 	return nil

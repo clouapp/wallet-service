@@ -84,7 +84,7 @@ func (s *apiScopeSuite) mint(permissions string) string {
 	}
 	_, err := facades.Orm().Query().Exec(
 		`INSERT INTO access_tokens (id, account_id, name, token_hash, permissions, spending_limit, created_at, updated_at)
-		 VALUES (?, ?, ?, ?, ?, ?, NOW(), NOW())`,
+		 VALUES (?, ?, ?, ?, NULLIF(btrim(CAST(? AS text)), '')::jsonb, ?, NOW(), NOW())`,
 		record.ID, record.AccountID, record.Name, "hash-"+record.ID.String(), permissions, "{}",
 	)
 	s.Require().NoError(err)

@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/google/uuid"
+	"github.com/goravel/framework/facades"
 	"github.com/stretchr/testify/suite"
 
 	"github.com/macrowallets/waas/app/models"
@@ -39,6 +40,31 @@ func (s *AccessTokenRepositoryTestSuite) TestCreate_Success() {
 	token := &models.AccessToken{ID: uuid.New(), AccountID: accID, Name: "CI Token"}
 	err := s.repo.Create(context.Background(), token)
 	s.NoError(err)
+
+	var nulls int64
+	s.Require().NoError(facades.Orm().Query().Raw(
+		`SELECT count(*) FROM access_tokens WHERE id = ? AND permissions IS NULL`, token.ID,
+	).Scan(&nulls))
+	s.Equal(int64(1), nulls)
+}
+
+func (s *AccessTokenRepositoryTestSuite) TestCreateStoresAPermissionArrayAsJsonb() {
+	accID := s.createAccount()
+	token := &models.AccessToken{
+		ID: uuid.New(), AccountID: accID, Name: "Scoped", TokenHash: "not-a-secret",
+		Permissions: `["wallets.read","webhooks.write"]`, SpendingLimit: "{}",
+	}
+	s.Require().NoError(s.repo.Create(context.Background(), token))
+
+	found, err := s.repo.FindByIDAndAccount(context.Background(), token.ID, accID)
+	s.Require().NoError(err)
+	s.JSONEq(`["wallets.read","webhooks.write"]`, found.Permissions)
+
+	var kind string
+	s.Require().NoError(facades.Orm().Query().Raw(
+		`SELECT jsonb_typeof(permissions) FROM access_tokens WHERE id = ?`, token.ID,
+	).Scan(&kind))
+	s.Equal("array", kind)
 }
 
 func (s *AccessTokenRepositoryTestSuite) TestFindByAccountID() {

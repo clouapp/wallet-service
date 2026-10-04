@@ -61,7 +61,7 @@ func (s *accountTokensSuite) TestOwnerMintsACatalogSubset() {
 	}
 	s.Equal("ci", parsed.Metadata.Name)
 	s.Equal([]string{"wallets.read", "webhooks.write"}, parsed.Metadata.Permissions)
-	s.Equal(`["wallets.read","webhooks.write"]`, s.storedPermissions(accountID, "ci"))
+	s.JSONEq(`["wallets.read","webhooks.write"]`, s.storedPermissions(accountID, "ci"))
 }
 
 func (s *accountTokensSuite) TestOmittedPermissionsStayEmpty() {

@@ -60,8 +60,9 @@ func AccessTokenViews(tokens []models.AccessToken) []AccessTokenView {
 	return views
 }
 
-// storedAPITokenPermissions keeps an empty grant as the column's empty
-// text. A non-empty grant is the JSON array the plan stores.
+// storedAPITokenPermissions keeps an empty grant as empty text. The
+// repository omits that value so the jsonb column stays NULL. A non-empty
+// grant is the JSON array the plan stores.
 func storedAPITokenPermissions(permissions []string) (string, error) {
 	if len(permissions) == 0 {
 		return "", nil
