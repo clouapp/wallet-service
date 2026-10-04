@@ -3,6 +3,7 @@ package repositories
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/goravel/framework/contracts/database/orm"
 
@@ -60,6 +61,45 @@ func (r *ChainRepository) FindByTestnet(ctx context.Context, isTestnet bool) ([]
 		return nil, fmt.Errorf("list chains by testnet: %w", err)
 	}
 	return chains, nil
+}
+
+// UpdateThresholds writes only the threshold columns whose pointers are set.
+// A nil pointer leaves that column as it is. The statement matches one chain.
+func (r *ChainRepository) UpdateThresholds(ctx context.Context, id string, write models.ChainThresholdWrite) error {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return fmt.Errorf("update chain thresholds: chain id is required")
+	}
+	assignments := make([]string, 0, 4)
+	args := make([]any, 0, 4)
+	if write.GasReadinessThresholdRaw != nil {
+		assignments = append(assignments, "gas_readiness_threshold_raw = ?")
+		args = append(args, *write.GasReadinessThresholdRaw)
+	}
+	if write.DustThresholdNativeRaw != nil {
+		assignments = append(assignments, "dust_threshold_native_raw = ?")
+		args = append(args, *write.DustThresholdNativeRaw)
+	}
+	if write.DustThresholdUSD != nil {
+		assignments = append(assignments, "dust_threshold_usd = ?")
+		args = append(args, *write.DustThresholdUSD)
+	}
+	if len(assignments) == 0 {
+		return nil
+	}
+	assignments = append(assignments, "updated_at = NOW()")
+	args = append(args, id)
+	result, err := r.Query(ctx).Exec(
+		"UPDATE chains SET "+strings.Join(assignments, ", ")+" WHERE id = ?",
+		args...,
+	)
+	if err != nil {
+		return fmt.Errorf("update chain thresholds: %w", err)
+	}
+	if err := db.RequireRow(result); err != nil {
+		return err
+	}
+	return nil
 }
 
 // Create inserts a chain.

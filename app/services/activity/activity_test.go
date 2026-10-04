@@ -28,6 +28,26 @@ func TestSettingsChangeKeepsFieldNamesAndDropsValues(t *testing.T) {
 	}
 }
 
+func TestChainThresholdsChangeRecordsTheChainAndFieldNames(t *testing.T) {
+	t.Parallel()
+
+	const amount = "999000000000000000"
+	meta, err := ChainThresholdsChange("eth", []string{"gas_readiness_threshold_raw"})
+	if err != nil {
+		t.Fatalf("chain thresholds: %v", err)
+	}
+	encoded, err := meta.Encode()
+	if err != nil {
+		t.Fatalf("encode: %v", err)
+	}
+	if strings.Contains(encoded, amount) {
+		t.Fatalf("metadata stored an amount: %s", encoded)
+	}
+	if !strings.Contains(encoded, `"key":"eth"`) || !strings.Contains(encoded, `"gas_readiness_threshold_raw"`) {
+		t.Fatalf("metadata = %s", encoded)
+	}
+}
+
 func TestMetadataRejectsSecretKeys(t *testing.T) {
 	t.Parallel()
 

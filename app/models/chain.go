@@ -83,6 +83,14 @@ type Chain struct {
 	DustThresholdUSD         numeric.NullDecimal `gorm:"type:decimal(16,4);not null"`
 }
 
+// ChainThresholdWrite is the subset of threshold columns a platform patch may
+// store. A nil pointer leaves that column unchanged.
+type ChainThresholdWrite struct {
+	GasReadinessThresholdRaw *string
+	DustThresholdNativeRaw   *string
+	DustThresholdUSD         *string
+}
+
 func (c *Chain) TableName() string { return "chains" }
 
 // BeforeCreate stores an empty raw threshold and a zero USD threshold when the

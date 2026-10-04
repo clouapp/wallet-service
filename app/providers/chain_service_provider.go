@@ -33,6 +33,21 @@ func (p *ChainServiceProvider) Register(app foundation.Application) {
 		}
 		return chainsvc.NewService(chains).WithTokens(tokens).WithResources(resources), nil
 	})
+	app.Singleton((*chainsvc.Thresholds)(nil), func(app foundation.Application) (any, error) {
+		chains, err := resolve[*repositories.ChainRepository](app)
+		if err != nil {
+			return nil, err
+		}
+		admins, err := resolve[*repositories.PlatformAdminRepository](app)
+		if err != nil {
+			return nil, err
+		}
+		activityLog, err := resolve[*repositories.AccountActivityRepository](app)
+		if err != nil {
+			return nil, err
+		}
+		return chainsvc.NewThresholds(chains, admins, activityLog), nil
+	})
 	app.Singleton((*repositories.TokenRepository)(nil), func(foundation.Application) (any, error) {
 		return repositories.NewTokenRepository(nil), nil
 	})

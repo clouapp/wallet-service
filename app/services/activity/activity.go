@@ -19,6 +19,7 @@ const (
 	ActionSettingsUpdated      = "settings.updated"
 	ActionSettingsSectionReset = "settings.section_reset"
 	ActionFeaturesUpdated      = "features.updated"
+	ActionChainsUpdated        = "chains.updated"
 	ActionTokenCreated         = "token.created"
 	ActionTokenRevoked         = "token.revoked"
 	ActionMemberRemoved        = "member.removed"
@@ -32,6 +33,7 @@ const (
 	TargetAccountInvite = "account_invite"
 	TargetSettings      = "settings"
 	TargetFeature       = "feature"
+	TargetChain         = "chain"
 	TargetAccessToken   = "access_token"
 	TargetUser          = "user"
 	TargetWithdrawal    = "withdrawal"
@@ -228,6 +230,29 @@ func MFAReset() (models.ActivityMetadata, error) {
 // WithdrawalCancelled records the cancellation. The amount is not accepted.
 func WithdrawalCancelled() (models.ActivityMetadata, error) {
 	meta := models.ActivityMetadata{"key": "cancelled"}
+	if _, err := meta.Encode(); err != nil {
+		return nil, err
+	}
+	return meta, nil
+}
+
+// ChainThresholdsChange records the chain id and the threshold field names
+// that were written. Amounts are not accepted. S1.4.4 says the edit is
+// audited and does not name an event, so the action is chains.updated.
+func ChainThresholdsChange(chainID string, fields []string) (models.ActivityMetadata, error) {
+	chainID = strings.TrimSpace(chainID)
+	if chainID == "" {
+		return nil, fmt.Errorf("activity: chain id is required")
+	}
+	if len(fields) == 0 {
+		return nil, fmt.Errorf("activity: chain fields are required")
+	}
+	names := append([]string(nil), fields...)
+	slices.Sort(names)
+	meta := models.ActivityMetadata{
+		"key":    chainID,
+		"fields": names,
+	}
 	if _, err := meta.Encode(); err != nil {
 		return nil, err
 	}
