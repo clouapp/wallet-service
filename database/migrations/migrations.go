@@ -57,5 +57,6 @@ func All() []schema.Migration {
 		&M00000000000490AddUsersSuspendedAt{},
 		&M00000000000500CreateMfaCredentialsTable{},
 		&M00000000000510CreateMfaBackupCodesTable{},
+		&M00000000000520MoveAccountSweepLimitsToSettings{},
 	}
 }
