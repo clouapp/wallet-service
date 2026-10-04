@@ -3,6 +3,7 @@ package settings
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/google/uuid"
@@ -170,19 +171,200 @@ func TestEffectiveSweepLimits_FallbackChain(t *testing.T) {
 	}
 
 	store.platformErr = errors.New("db down")
-	if _, err := service.EffectiveSweepLimits(ctx, otherID); err == nil || err.Error() != "db down" {
-		t.Fatalf("platform error = %v", err)
+	if err := store.UpsertMany(ctx, otherID, groupAccountSweepLimits, map[string]string{
+		keyMaxAddressesSolana: "9",
+	}); err != nil {
+		t.Fatalf("store account override during platform outage: %v", err)
+	}
+	duringOutage, err := service.EffectiveSweepLimits(ctx, otherID)
+	if err != nil {
+		t.Fatalf("platform outage = %v", err)
+	}
+	if duringOutage.MaxAddressesSolana != 9 {
+		t.Fatalf("account override during platform outage = %d", duringOutage.MaxAddressesSolana)
+	}
+	if duringOutage.MaxAddressesEVM != defaultMaxAddressesEVM || duringOutage.DailyWithdrawCapUSD != "" {
+		t.Fatalf("platform outage kept platform values: %+v", duringOutage)
 	}
 }
 
-func TestEffectiveSweepLimits_DoesNotReadThePlatformGroup(t *testing.T) {
+func TestEffectiveSweepLimits_ReadsThePlatformGroupUnderTheAccountOverride(t *testing.T) {
 	t.Parallel()
 
-	accountID := uuid.New()
-	store := &groupGuardStore{allow: groupAccountSweepLimits, inner: newMemoryStore()}
+	store := newCountingStore()
 	service := newTestService(store)
-	if _, err := service.EffectiveSweepLimits(context.Background(), accountID); err != nil {
-		t.Fatalf("effective limits: %v", err)
+	accountID := uuid.New()
+	ctx := context.Background()
+
+	missing, err := service.EffectiveSweepLimits(ctx, accountID)
+	if err != nil {
+		t.Fatalf("missing platform row: %v", err)
+	}
+	if missing != DefaultSweepLimits() {
+		t.Fatalf("missing platform row = %+v", missing)
+	}
+	if store.platformReads == 0 {
+		t.Fatal("sweep_limits was not read")
+	}
+
+	store.PutPlatform(groupSweepLimits, map[string]string{
+		keyMaxAddressesEVM:     "0",
+		keyMaxAddressesSolana:  "-3",
+		keyMaxAddressesBitcoin: "30",
+		keyDailyWithdrawCapUSD: "-1",
+	})
+	invalid, err := service.EffectiveSweepLimits(ctx, accountID)
+	if err != nil {
+		t.Fatalf("invalid platform row: %v", err)
+	}
+	if invalid.MaxAddressesEVM != defaultMaxAddressesEVM || invalid.MaxAddressesSolana != defaultMaxAddressesSolana {
+		t.Fatalf("invalid platform counts = %+v", invalid)
+	}
+	if invalid.MaxAddressesBitcoin != 30 || invalid.DailyWithdrawCapUSD != "" {
+		t.Fatalf("invalid platform row = %+v", invalid)
+	}
+
+	store.PutPlatform(groupSweepLimits, map[string]string{
+		keyMaxAddressesEVM:              "200",
+		keyMaxAddressesSolana:           "12",
+		keyMaxConsolidateRequestsPerDay: "8",
+		keyDailyWithdrawCapUSD:          "10.00",
+	})
+	fromPlatform, err := service.EffectiveSweepLimits(ctx, accountID)
+	if err != nil {
+		t.Fatalf("platform row: %v", err)
+	}
+	if fromPlatform.MaxAddressesEVM != 200 || fromPlatform.MaxAddressesSolana != 12 ||
+		fromPlatform.MaxConsolidateRequestsPerDay != 8 || fromPlatform.DailyWithdrawCapUSD != "10.00" {
+		t.Fatalf("platform row = %+v", fromPlatform)
+	}
+	if fromPlatform.MaxAddressesBitcoin != defaultMaxAddressesBitcoin {
+		t.Fatalf("bitcoin = %d, want the registry default", fromPlatform.MaxAddressesBitcoin)
+	}
+
+	if err := store.UpsertMany(ctx, accountID, groupAccountSweepLimits, map[string]string{
+		keyMaxAddressesEVM: "7",
+	}); err != nil {
+		t.Fatalf("store account override: %v", err)
+	}
+	overridden, err := service.EffectiveSweepLimits(ctx, accountID)
+	if err != nil {
+		t.Fatalf("account override: %v", err)
+	}
+	if overridden.MaxAddressesEVM != 7 || overridden.MaxAddressesSolana != 12 || overridden.DailyWithdrawCapUSD != "10.00" {
+		t.Fatalf("account override = %+v", overridden)
+	}
+
+	store.platformErr = errors.New("db down")
+	duringOutage, err := service.EffectiveSweepLimits(ctx, accountID)
+	if err != nil {
+		t.Fatalf("platform outage = %v", err)
+	}
+	if duringOutage.MaxAddressesEVM != 7 || duringOutage.MaxAddressesSolana != defaultMaxAddressesSolana ||
+		duringOutage.DailyWithdrawCapUSD != "" {
+		t.Fatalf("platform outage = %+v", duringOutage)
+	}
+}
+
+func TestSavePlatformSweepLimits_RejectsZeroNegativeAndANegativeCap(t *testing.T) {
+	t.Parallel()
+
+	store := newMemoryStore()
+	activity := &recordingActivity{}
+	actor := uuid.New()
+	service := NewService(store, prefixSealer{}, &memoryCache{}, activity).
+		WithPlatformAdmins(allowPlatformAdmins{ids: map[uuid.UUID]bool{actor: true}})
+	ctx := context.Background()
+
+	for _, body := range []map[string]any{
+		{keyMaxAddressesEVM: 0, keyMaxAddressesSolana: 12, keyMaxAddressesBitcoin: 30, keyMaxConsolidateRequestsPerDay: 8},
+		{keyMaxAddressesEVM: -1, keyMaxAddressesSolana: 12, keyMaxAddressesBitcoin: 30, keyMaxConsolidateRequestsPerDay: 8},
+		{keyMaxAddressesEVM: 40, keyMaxAddressesSolana: 12, keyMaxAddressesBitcoin: 30, keyMaxConsolidateRequestsPerDay: 8, keyDailyWithdrawCapUSD: "-1"},
+	} {
+		_, err := service.SavePlatform(ctx, actor, groupSweepLimits, body)
+		validation, ok := err.(*ValidationError)
+		if !ok {
+			t.Fatalf("body %#v error = %v, want validation", body, err)
+		}
+		if len(validation.Fields) == 0 {
+			t.Fatalf("body %#v stored a rejection with no fields", body)
+		}
+	}
+	rows, err := store.ListPlatform(ctx, groupSweepLimits)
+	if err != nil || len(rows) != 0 {
+		t.Fatalf("stored rows = %+v, %v", rows, err)
+	}
+	if len(activity.rows) != 0 {
+		t.Fatalf("activity rows = %d, want none", len(activity.rows))
+	}
+}
+
+func TestSavePlatformSweepLimits_BlankCapStaysEmptyAndIsWhatTheReaderReturns(t *testing.T) {
+	t.Parallel()
+
+	store := newMemoryStore()
+	activity := &recordingActivity{}
+	actor := uuid.New()
+	service := NewService(store, prefixSealer{}, &memoryCache{}, activity).
+		WithPlatformAdmins(allowPlatformAdmins{ids: map[uuid.UUID]bool{actor: true}})
+	ctx := context.Background()
+	accountID := uuid.New()
+
+	view, err := service.SavePlatform(ctx, actor, groupSweepLimits, map[string]any{
+		keyMaxAddressesEVM:              40,
+		keyMaxAddressesSolana:           12,
+		keyMaxAddressesBitcoin:          30,
+		keyMaxConsolidateRequestsPerDay: 8,
+		keyDailyWithdrawCapUSD:          "",
+	})
+	if err != nil {
+		t.Fatalf("save: %v", err)
+	}
+	if view.Name != groupSweepLimits || !view.CanUpdate {
+		t.Fatalf("view = %+v", view)
+	}
+	capUSD, ok := platformStored(t, store, keyDailyWithdrawCapUSD)
+	if !ok || capUSD != "" {
+		t.Fatalf("stored cap = %q present %v, want a blank unlimited cap", capUSD, ok)
+	}
+	got, err := service.EffectiveSweepLimits(ctx, accountID)
+	if err != nil {
+		t.Fatalf("effective: %v", err)
+	}
+	if got.MaxAddressesEVM != 40 || got.DailyWithdrawCapUSD != "" {
+		t.Fatalf("effective = %+v", got)
+	}
+	if len(activity.rows) != 1 {
+		t.Fatalf("activity rows = %d", len(activity.rows))
+	}
+	row := activity.rows[0]
+	if row.AccountID != nil || row.Action != "settings.updated" || row.TargetType != "settings" || row.TargetID != groupSweepLimits {
+		t.Fatalf("activity = %+v", row)
+	}
+	encoded, err := row.Metadata.Encode()
+	if err != nil {
+		t.Fatalf("metadata: %v", err)
+	}
+	want := `{"fields":["daily_withdraw_cap_usd","max_addresses_bitcoin","max_addresses_evm","max_addresses_solana","max_consolidate_requests_per_day"],"group":"sweep_limits"}`
+	if encoded != want {
+		t.Fatalf("metadata = %s", encoded)
+	}
+	if strings.Contains(encoded, "40") {
+		t.Fatalf("metadata stored a value: %s", encoded)
+	}
+
+	if _, err := service.SavePlatform(ctx, actor, groupSweepLimits, map[string]any{
+		keyDailyWithdrawCapUSD: "0",
+	}); err != nil {
+		t.Fatalf("zero cap: %v", err)
+	}
+	zeroCap, ok := platformStored(t, store, keyDailyWithdrawCapUSD)
+	if !ok || zeroCap != "0" {
+		t.Fatalf("stored zero cap = %q present %v", zeroCap, ok)
+	}
+	withZero, err := service.EffectiveSweepLimits(ctx, accountID)
+	if err != nil || withZero.DailyWithdrawCapUSD != "0" {
+		t.Fatalf("zero cap effective = %+v, %v", withZero, err)
 	}
 }
 
@@ -241,23 +423,18 @@ func TestDefaultSweepLimitsMatchTheRegistry(t *testing.T) {
 	}
 }
 
-type groupGuardStore struct {
-	allow string
-	inner *memoryStore
-}
-
-func (s *groupGuardStore) ListGroup(ctx context.Context, accountID uuid.UUID, group string) ([]models.Setting, error) {
-	if group != s.allow {
-		return nil, errors.New("read " + group)
+func platformStored(t *testing.T, store *memoryStore, key string) (string, bool) {
+	t.Helper()
+	rows, err := store.ListPlatform(context.Background(), groupSweepLimits)
+	if err != nil {
+		t.Fatalf("list platform: %v", err)
 	}
-	return s.inner.ListGroup(ctx, accountID, group)
-}
-
-func (s *groupGuardStore) UpsertMany(ctx context.Context, accountID uuid.UUID, group string, values map[string]string) error {
-	if group != s.allow {
-		return errors.New("write " + group)
+	for _, row := range rows {
+		if row.Key == key {
+			return row.Value, true
+		}
 	}
-	return s.inner.UpsertMany(ctx, accountID, group, values)
+	return "", false
 }
 
 type errStore struct {

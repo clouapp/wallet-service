@@ -58,8 +58,7 @@ type Group struct {
 	Scope     Scope
 	ManagedBy ManagedBy
 	// Inherits names the platform group whose stored value sits between an
-	// account row and this group's default. Resolution waits until that
-	// platform group exists.
+	// account row and this group's default. A missing parent is skipped.
 	Inherits         string
 	Settings         []Definition
 	Section          string

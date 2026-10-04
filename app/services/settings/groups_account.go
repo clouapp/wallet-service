@@ -111,43 +111,11 @@ func accountGroups() []Group {
 			Name:      groupAccountSweepLimits,
 			Scope:     ScopeAccount,
 			ManagedBy: ManagedByPlatform,
-			Inherits:  "sweep_limits",
+			Inherits:  groupSweepLimits,
 			Section:   sectionLimits,
 			Block:     "Sweep",
-			Settings: []Definition{
-				{
-					Key:     keyMaxAddressesEVM,
-					Label:   "Max addresses per EVM sweep",
-					Type:    TypeInt,
-					Default: func() any { return defaultMaxAddressesEVM },
-				},
-				{
-					Key:     keyMaxAddressesSolana,
-					Label:   "Max addresses per Solana sweep",
-					Type:    TypeInt,
-					Default: func() any { return defaultMaxAddressesSolana },
-				},
-				{
-					Key:     keyMaxAddressesBitcoin,
-					Label:   "Max addresses per Bitcoin sweep",
-					Type:    TypeInt,
-					Default: func() any { return defaultMaxAddressesBitcoin },
-				},
-				{
-					Key:     keyMaxConsolidateRequestsPerDay,
-					Label:   "Max consolidate requests per day",
-					Type:    TypeInt,
-					Default: func() any { return defaultMaxConsolidateRequestsPerDay },
-				},
-				{
-					Key:     keyDailyWithdrawCapUSD,
-					Label:   "Daily withdrawal cap (USD)",
-					Help:    "Blank means no cap. Sent and stored as a decimal string.",
-					Type:    TypeDecimal,
-					Default: func() any { return "" },
-				},
-			},
-			Validate: validateSweepLimits,
+			Settings:  sweepLimitDefinitions(),
+			Validate:  validateSweepLimits,
 		},
 	}
 }
@@ -166,6 +134,42 @@ func webhookEventOptions() []string {
 		string(types.EventWithdrawalConfirmed),
 		string(types.EventWithdrawalFailed),
 		string(types.EventWithdrawalSweepRequired),
+	}
+}
+
+func sweepLimitDefinitions() []Definition {
+	return []Definition{
+		{
+			Key:     keyMaxAddressesEVM,
+			Label:   "Max addresses per EVM sweep",
+			Type:    TypeInt,
+			Default: func() any { return defaultMaxAddressesEVM },
+		},
+		{
+			Key:     keyMaxAddressesSolana,
+			Label:   "Max addresses per Solana sweep",
+			Type:    TypeInt,
+			Default: func() any { return defaultMaxAddressesSolana },
+		},
+		{
+			Key:     keyMaxAddressesBitcoin,
+			Label:   "Max addresses per Bitcoin sweep",
+			Type:    TypeInt,
+			Default: func() any { return defaultMaxAddressesBitcoin },
+		},
+		{
+			Key:     keyMaxConsolidateRequestsPerDay,
+			Label:   "Max consolidate requests per day",
+			Type:    TypeInt,
+			Default: func() any { return defaultMaxConsolidateRequestsPerDay },
+		},
+		{
+			Key:     keyDailyWithdrawCapUSD,
+			Label:   "Daily withdrawal cap (USD)",
+			Help:    "Blank means no cap. Sent and stored as a decimal string.",
+			Type:    TypeDecimal,
+			Default: func() any { return "" },
+		},
 	}
 }
 

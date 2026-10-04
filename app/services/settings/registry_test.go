@@ -19,7 +19,7 @@ func TestAccountSectionsDoNotShareNamesWithGroups(t *testing.T) {
 		switch group.Scope {
 		case ScopeAccount:
 		case ScopePlatform:
-			if group.Name != groupDepositScan && group.Name != groupWebhookDelivery {
+			if group.Name != groupDepositScan && group.Name != groupWebhookDelivery && group.Name != groupSweepLimits {
 				t.Fatalf("unexpected platform group %s", group.Name)
 			}
 		default:
@@ -41,8 +41,18 @@ func TestAccountSectionsDoNotShareNamesWithGroups(t *testing.T) {
 		t.Fatal("registry has no decimal")
 	}
 	limits, ok := FindGroup(groupAccountSweepLimits)
-	if !ok || limits.ManagedBy != ManagedByPlatform || limits.Inherits != "sweep_limits" {
+	if !ok || limits.ManagedBy != ManagedByPlatform || limits.Inherits != groupSweepLimits {
 		t.Fatalf("sweep limits group = %+v present %v", limits, ok)
+	}
+	platformLimits, ok := FindGroup(groupSweepLimits)
+	if !ok || platformLimits.Scope != ScopePlatform || platformLimits.UpdatePermission != "" ||
+		platformLimits.SectionName() != sectionSweep || len(platformLimits.Settings) != len(limits.Settings) {
+		t.Fatalf("platform sweep limits = %+v present %v", platformLimits, ok)
+	}
+	for i, definition := range limits.Settings {
+		if platformLimits.Settings[i].Key != definition.Key {
+			t.Fatalf("platform key %s, account key %s", platformLimits.Settings[i].Key, definition.Key)
+		}
 	}
 	scan, ok := FindGroup(groupDepositScan)
 	if !ok || scan.Scope != ScopePlatform || len(scan.Settings) != 3 {

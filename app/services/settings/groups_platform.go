@@ -11,9 +11,11 @@ import (
 const (
 	groupDepositScan     = "deposit_scan"
 	groupWebhookDelivery = "webhook_delivery"
+	groupSweepLimits     = "sweep_limits"
 
 	sectionScanning = "scanning"
 	sectionDelivery = "delivery"
+	sectionSweep    = "sweep"
 
 	keyBatchBlocks     = "batch_blocks"
 	keyCatchUpBlocks   = "catch_up_blocks"
@@ -91,6 +93,17 @@ func platformGroups() []Group {
 				},
 			},
 			Validate: validateWebhookDelivery,
+		},
+		{
+			Name:     groupSweepLimits,
+			Scope:    ScopePlatform,
+			Section:  sectionSweep,
+			Block:    "Sweep",
+			Settings: sweepLimitDefinitions(),
+			// S1.4.4 moves the hard-coded LoadLimits defaults here. Counts are
+			// positive integers. A blank daily cap is unlimited. This group
+			// names no permission: a platform_admins row is the gate.
+			Validate: validateSweepLimits,
 		},
 	}
 }

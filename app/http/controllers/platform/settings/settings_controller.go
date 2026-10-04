@@ -30,7 +30,7 @@ func NewSettingsController(settings *settingssvc.Service) *SettingsController {
 
 // Update godoc
 // @Summary      Save one platform settings group
-// @Description  Writes webhook_delivery max_attempts and timeout_seconds. Zero or negative is 422 and is not stored. An unknown group is 404 before the platform-admin check. Values are not written to the activity log.
+// @Description  Writes one platform group. webhook_delivery stores max_attempts and timeout_seconds. sweep_limits stores positive address and consolidate counts; a blank daily_withdraw_cap_usd means unlimited. Zero or negative counts, and a negative cap, are 422 and are not stored. An unknown group is 404 before the platform-admin check. Values are not written to the activity log.
 // @Tags         Platform Settings
 // @Security     BearerAuth
 // @Accept       json

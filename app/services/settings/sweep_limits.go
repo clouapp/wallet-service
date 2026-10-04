@@ -35,11 +35,12 @@ func DefaultSweepLimits() SweepLimitValues {
 // EffectiveSweepLimits reads account_sweep_limits at the moment of use.
 // A sealed cache hit skips the database. A cache miss, a cache failure, or
 // a bad seal reads the database. Resolution is the fallback chain: a stored
-// account key, then the same key on the platform group named by Inherits,
-// then that key's registry default. A parent that is not in the registry is
-// skipped, so the chain is account then default until sweep_limits exists.
-// An invalid stored value falls back to the registry default for that key.
-// A database failure is returned.
+// account key, then the same key on the platform sweep_limits group, then
+// that key's registry default. The account row wins. A missing platform row,
+// an invalid platform value, or a failed platform read keeps the registry
+// default for that key and does not drop an account override. An invalid
+// account value also keeps the registry default for that key. A failed
+// account read is returned.
 func (s *Service) EffectiveSweepLimits(ctx context.Context, accountID uuid.UUID) (SweepLimitValues, error) {
 	if s == nil {
 		return SweepLimitValues{}, errServiceRequired
@@ -129,6 +130,8 @@ func marshalSweepLimitsWire(values SweepLimitValues) (string, error) {
 
 // withInheritedPlatform copies the platform parent under keys the account did
 // not store. The account map is left unchanged: it may be the sealed cache.
+// A failed platform read is logged and left out, so those keys stay on the
+// registry default. The log names the group, never a stored value.
 func (s *Service) withInheritedPlatform(ctx context.Context, group Group, accountStored map[string]string) (map[string]string, error) {
 	merged := make(map[string]string, len(group.Settings))
 	parentName := strings.TrimSpace(group.Inherits)
@@ -137,11 +140,13 @@ func (s *Service) withInheritedPlatform(ctx context.Context, group Group, accoun
 		if ok && parent.Scope == ScopePlatform {
 			platform, err := s.platformValues(ctx, parent.Name)
 			if err != nil {
-				return nil, err
-			}
-			for _, definition := range group.Settings {
-				if value, present := platform[definition.Key]; present {
-					merged[definition.Key] = value
+				slog.Warn("platform settings fell back to the registry default",
+					"group", parent.Name, "error", err)
+			} else {
+				for _, definition := range group.Settings {
+					if value, present := platform[definition.Key]; present {
+						merged[definition.Key] = value
+					}
 				}
 			}
 		}

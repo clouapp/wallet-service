@@ -14,11 +14,12 @@ import (
 	"github.com/macrowallets/waas/pkg/numeric"
 )
 
-// LoadLimits returns the effective sweep limits for an account. It reads the
-// stored account_sweep_limits group at use time. A missing source, a missing
-// account, or a read error falls back to the registry defaults: limits are
-// best-effort config, and a settings outage must not block a withdrawal.
-// uuid.Nil never queries settings.
+// LoadLimits returns the effective sweep limits for an account. The reader
+// applies a stored account_sweep_limits row over the platform sweep_limits
+// row, and either missing layer keeps the registry default. A missing source,
+// a nil account, or a failed account read also keeps the registry defaults:
+// limits are best-effort config, and a settings outage must not block a
+// withdrawal. uuid.Nil never queries settings. A blank daily cap is unlimited.
 func (s *service) LoadLimits(ctx context.Context, accountID uuid.UUID) (*Limits, error) {
 	values := settings.DefaultSweepLimits()
 	if accountID != uuid.Nil && s.sweepLimits != nil {
