@@ -870,7 +870,7 @@ const docTemplate = `{
         },
         "/auth/login": {
             "post": {
-                "description": "Validates credentials and returns JWT access + refresh tokens. If TOTP is enabled, returns a partial token requiring 2FA.",
+                "description": "Validates credentials and returns JWT access + refresh tokens. If TOTP is enabled, returns a challenge token requiring 2FA.",
                 "consumes": [
                     "application/json"
                 ],
@@ -4111,7 +4111,7 @@ const docTemplate = `{
                     "type": "string",
                     "example": "123456"
                 },
-                "partial_token": {
+                "challenge_token": {
                     "type": "string"
                 },
                 "recovery_code": {

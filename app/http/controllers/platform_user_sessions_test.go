@@ -33,10 +33,10 @@ func (s *PlatformUserSessionsTestSuite) TestAPlatformAdminRevokesSessionsWithout
 
 	victim := s.seedUser(true)
 	_, first := s.loginAs(victim.Email)
-	_, session := s.verifyTwoFactor(first.PartialToken, s.currentCode(victim.TOTPSecret), "")
+	_, session := s.verifyTwoFactor(first.ChallengeToken, s.currentCode(victim.TOTPSecret), "")
 	s.Require().NotEmpty(session.AccessToken)
 	_, challenge := s.loginAs(victim.Email)
-	s.Require().NotEmpty(challenge.PartialToken)
+	s.Require().NotEmpty(challenge.ChallengeToken)
 	s.getMe(session.AccessToken).AssertOk()
 
 	path := "/v1/platform/users/" + victim.ID.String() + "/sessions/revoke"
@@ -61,13 +61,13 @@ func (s *PlatformUserSessionsTestSuite) TestAPlatformAdminRevokesSessionsWithout
 	))
 
 	s.assertSessionRefused(session)
-	verify, body := s.verifyTwoFactor(challenge.PartialToken, "", victim.RecoveryCodes[0])
+	verify, body := s.verifyTwoFactor(challenge.ChallengeToken, "", victim.RecoveryCodes[0])
 	verify.AssertStatus(401)
 	s.Empty(body.AccessToken)
 
 	s.getMe(adminSession.AccessToken).AssertOk()
 	_, login := s.loginAs(victim.Email)
-	_, renewed := s.verifyTwoFactor(login.PartialToken, "", victim.RecoveryCodes[1])
+	_, renewed := s.verifyTwoFactor(login.ChallengeToken, "", victim.RecoveryCodes[1])
 	s.Require().NotEmpty(renewed.AccessToken)
 	s.getMe(renewed.AccessToken).AssertOk()
 

@@ -199,7 +199,7 @@ func (ctrl *AuthController) Register(ctx http.Context) http.Response {
 
 // Login godoc
 // @Summary      Authenticate a user
-// @Description  Validates credentials and returns JWT access + refresh tokens. If TOTP is enabled, returns a partial token requiring 2FA.
+// @Description  Validates credentials and returns JWT access + refresh tokens. If TOTP is enabled, returns a challenge token requiring 2FA.
 // @Tags         Auth
 // @Accept       json
 // @Produce      json
@@ -241,9 +241,9 @@ func (ctrl *AuthController) Login(ctx http.Context) http.Response {
 			return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to create session"})
 		}
 		return responses.Send(ctx, http.StatusOK, http.Json{
-			"requires_2fa":  true,
-			"partial_token": challenge.Token,
-			"expires_in":    int(challenge.ExpiresIn.Seconds()),
+			"requires_2fa":    true,
+			"challenge_token": challenge.Token,
+			"expires_in":      int(challenge.ExpiresIn.Seconds()),
 		})
 	}
 
@@ -276,7 +276,7 @@ func (ctrl *AuthController) VerifyTwoFactor(ctx http.Context) http.Response {
 		return responses.Send(ctx, http.StatusUnprocessableEntity, http.Json{"error": "code or recovery_code is required"})
 	}
 
-	user, err := ctrl.twoFactor.Complete(req.PartialToken, req.Code, req.RecoveryCode)
+	user, err := ctrl.twoFactor.Complete(req.ChallengeToken, req.Code, req.RecoveryCode)
 	if err != nil {
 		return controllers.TwoFactorErrorResponse(ctx, err)
 	}
@@ -563,9 +563,9 @@ type LoginSwagger struct {
 }
 
 type TwoFactorSwagger struct {
-	PartialToken string `json:"partial_token"`
-	Code         string `json:"code" example:"123456"`
-	RecoveryCode string `json:"recovery_code" example:"ABCDEFGH12345678"`
+	ChallengeToken string `json:"challenge_token"`
+	Code           string `json:"code" example:"123456"`
+	RecoveryCode   string `json:"recovery_code" example:"ABCDEFGH12345678"`
 }
 
 type RefreshTokenSwagger struct {

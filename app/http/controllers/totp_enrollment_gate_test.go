@@ -81,7 +81,7 @@ func (s *totpEnrollmentSuite) TestGlobalFlagBlocksLoginStillWorksAndConfirmedTOT
 	partial := s.loginPartial(email)
 	s.Equal(http.StatusUnauthorized, s.statusOf(s.getAccount(partial, accountID)))
 
-	verify := s.post("", "/v1/auth/2fa/verify", fmt.Sprintf(`{"partial_token":%q,"code":"000000"}`, partial))
+	verify := s.post("", "/v1/auth/2fa/verify", fmt.Sprintf(`{"challenge_token":%q,"code":"000000"}`, partial))
 	status, code := s.errorCode(verify)
 	s.Equal(http.StatusUnauthorized, status)
 	s.NotEqual(middleware.CodeTwoFactorEnrollmentRequired, code)
@@ -135,7 +135,7 @@ func (s *totpEnrollmentSuite) memberEmail(totp bool) (uuid.UUID, uuid.UUID, stri
 func (s *totpEnrollmentSuite) loginAccess(email string) string {
 	s.T().Helper()
 	parsed := s.login(email)
-	if parsed.AccessToken == "" || parsed.PartialToken != "" {
+	if parsed.AccessToken == "" || parsed.ChallengeToken != "" {
 		s.FailNow("login did not return a session")
 	}
 	return parsed.AccessToken
@@ -144,10 +144,10 @@ func (s *totpEnrollmentSuite) loginAccess(email string) string {
 func (s *totpEnrollmentSuite) loginPartial(email string) string {
 	s.T().Helper()
 	parsed := s.login(email)
-	if !parsed.Requires2FA || parsed.PartialToken == "" || parsed.AccessToken != "" {
+	if !parsed.Requires2FA || parsed.ChallengeToken == "" || parsed.AccessToken != "" {
 		s.FailNow("login did not return a 2FA challenge")
 	}
-	return parsed.PartialToken
+	return parsed.ChallengeToken
 }
 
 func (s *totpEnrollmentSuite) login(email string) loginBody {

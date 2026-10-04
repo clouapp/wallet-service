@@ -100,7 +100,7 @@ func (s *AccessStatusTestSuite) TestLoginRefusesAUserWhoIsNotActive() {
 
 		resp.AssertStatus(403)
 		s.Empty(body.AccessToken, status)
-		s.Empty(body.PartialToken, status)
+		s.Empty(body.ChallengeToken, status)
 	}
 }
 
@@ -129,10 +129,10 @@ func (s *AccessStatusTestSuite) TestSessionEndsWhenTheUserIsSuspended() {
 func (s *AccessStatusTestSuite) TestTwoFactorCompletionRefusesAUserSuspendedMeanwhile() {
 	user := s.seedUser(true)
 	_, challenge := s.loginAs(user.Email)
-	s.Require().NotEmpty(challenge.PartialToken)
+	s.Require().NotEmpty(challenge.ChallengeToken)
 	s.setStatus("users", user.ID, "suspended")
 
-	resp, body := s.verifyTwoFactor(challenge.PartialToken, s.currentCode(user.TOTPSecret), "")
+	resp, body := s.verifyTwoFactor(challenge.ChallengeToken, s.currentCode(user.TOTPSecret), "")
 
 	resp.AssertStatus(403)
 	s.Empty(body.AccessToken)

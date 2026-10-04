@@ -442,7 +442,7 @@ definitions:
       code:
         example: "123456"
         type: string
-      partial_token:
+      challenge_token:
         type: string
       recovery_code:
         example: ABCDEFGH12345678
@@ -1675,7 +1675,7 @@ paths:
       consumes:
       - application/json
       description: Validates credentials and returns JWT access + refresh tokens.
-        If TOTP is enabled, returns a partial token requiring 2FA.
+        If TOTP is enabled, returns a challenge token requiring 2FA.
       parameters:
       - description: Login credentials
         in: body

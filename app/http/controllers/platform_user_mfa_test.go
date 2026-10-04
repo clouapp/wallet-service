@@ -33,7 +33,7 @@ func (s *PlatformUserMFATestSuite) TestAPlatformAdminClearsTotpWithoutSuspending
 
 	victim := s.seedUser(true)
 	_, first := s.loginAs(victim.Email)
-	_, session := s.verifyTwoFactor(first.PartialToken, s.currentCode(victim.TOTPSecret), "")
+	_, session := s.verifyTwoFactor(first.ChallengeToken, s.currentCode(victim.TOTPSecret), "")
 	s.Require().NotEmpty(session.AccessToken)
 	s.getMe(session.AccessToken).AssertOk()
 
@@ -196,7 +196,7 @@ func (s *PlatformUserMFATestSuite) count(query string, args ...any) int64 {
 func (s *PlatformUserMFATestSuite) signInWithoutUsingTheSecret(user seededAuthUser) loginBody {
 	s.T().Helper()
 	_, first := s.loginAs(user.Email)
-	_, session := s.verifyTwoFactor(first.PartialToken, s.currentCode(user.TOTPSecret), "")
+	_, session := s.verifyTwoFactor(first.ChallengeToken, s.currentCode(user.TOTPSecret), "")
 	s.Require().NotEmpty(session.AccessToken)
 	return session
 }

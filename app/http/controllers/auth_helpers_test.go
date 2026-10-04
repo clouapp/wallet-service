@@ -29,12 +29,12 @@ type seededAuthUser struct {
 }
 
 type loginBody struct {
-	Requires2FA  bool   `json:"requires_2fa"`
-	PartialToken string `json:"partial_token"`
-	ExpiresIn    int    `json:"expires_in"`
-	AccessToken  string `json:"access_token"`
-	RefreshToken string `json:"refresh_token"`
-	AccountID    string `json:"account_id"`
+	Requires2FA    bool   `json:"requires_2fa"`
+	ChallengeToken string `json:"challenge_token"`
+	ExpiresIn      int    `json:"expires_in"`
+	AccessToken    string `json:"access_token"`
+	RefreshToken   string `json:"refresh_token"`
+	AccountID      string `json:"account_id"`
 }
 
 // authSuite carries the helpers shared by the dashboard auth suites.
@@ -108,7 +108,7 @@ func (s *authSuite) loginAs(email string) (contractstesting.Response, loginBody)
 
 func (s *authSuite) verifyTwoFactor(partialToken, code, recoveryCode string) (contractstesting.Response, loginBody) {
 	resp := s.postJSON("/v1/auth/2fa/verify", fmt.Sprintf(
-		`{"partial_token":%q,"code":%q,"recovery_code":%q}`, partialToken, code, recoveryCode,
+		`{"challenge_token":%q,"code":%q,"recovery_code":%q}`, partialToken, code, recoveryCode,
 	))
 	var body loginBody
 	s.decode(resp, &body)

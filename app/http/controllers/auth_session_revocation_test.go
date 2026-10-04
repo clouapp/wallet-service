@@ -125,12 +125,12 @@ func (s *SessionRevocationTestSuite) TestResetPasswordEndsEverySession() {
 func (s *SessionRevocationTestSuite) TestResetPasswordRetiresAPendingTwoFactorChallenge() {
 	user := s.seedUser(true)
 	_, challenge := s.loginAs(user.Email)
-	s.Require().NotEmpty(challenge.PartialToken)
+	s.Require().NotEmpty(challenge.ChallengeToken)
 	resetToken := s.seedResetToken(user.ID)
 
 	s.resetPassword(resetToken).AssertOk()
 
-	resp, body := s.verifyTwoFactor(challenge.PartialToken, s.currentCode(user.TOTPSecret), "")
+	resp, body := s.verifyTwoFactor(challenge.ChallengeToken, s.currentCode(user.TOTPSecret), "")
 	resp.AssertStatus(401)
 	s.Empty(body.AccessToken)
 }
@@ -138,10 +138,10 @@ func (s *SessionRevocationTestSuite) TestResetPasswordRetiresAPendingTwoFactorCh
 func (s *SessionRevocationTestSuite) TestDisableTOTPEndsEverySessionAndRenewsTheCaller() {
 	user := s.seedUser(true)
 	_, first := s.loginAs(user.Email)
-	_, caller := s.verifyTwoFactor(first.PartialToken, s.currentCode(user.TOTPSecret), "")
+	_, caller := s.verifyTwoFactor(first.ChallengeToken, s.currentCode(user.TOTPSecret), "")
 	s.Require().NotEmpty(caller.AccessToken)
 	_, second := s.loginAs(user.Email)
-	_, otherDevice := s.verifyTwoFactor(second.PartialToken, "", user.RecoveryCodes[0])
+	_, otherDevice := s.verifyTwoFactor(second.ChallengeToken, "", user.RecoveryCodes[0])
 	s.Require().NotEmpty(otherDevice.AccessToken)
 
 	resp := s.authedDeleteJSON(caller.AccessToken, "/v1/users/me/totp", fmt.Sprintf(

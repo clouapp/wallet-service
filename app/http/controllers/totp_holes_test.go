@@ -42,8 +42,8 @@ func (s *TotpHolesTestSuite) storedUser(id uuid.UUID) models.User {
 func (s *TotpHolesTestSuite) signedInWithTOTP(user seededAuthUser) loginBody {
 	s.T().Helper()
 	_, challenge := s.loginAs(user.Email)
-	s.Require().NotEmpty(challenge.PartialToken)
-	resp, session := s.verifyTwoFactor(challenge.PartialToken, "", user.RecoveryCodes[0])
+	s.Require().NotEmpty(challenge.ChallengeToken)
+	resp, session := s.verifyTwoFactor(challenge.ChallengeToken, "", user.RecoveryCodes[0])
 	resp.AssertOk()
 	s.Require().NotEmpty(session.AccessToken)
 	return session
@@ -78,7 +78,7 @@ func (s *TotpHolesTestSuite) TestDisableTOTPWithTheCurrentCodeRevokesSessions() 
 	user := s.seedUser(true)
 	caller := s.signedInWithTOTP(user)
 	_, otherChallenge := s.loginAs(user.Email)
-	_, otherDevice := s.verifyTwoFactor(otherChallenge.PartialToken, "", user.RecoveryCodes[1])
+	_, otherDevice := s.verifyTwoFactor(otherChallenge.ChallengeToken, "", user.RecoveryCodes[1])
 	s.Require().NotEmpty(otherDevice.AccessToken)
 
 	resp := s.authedDeleteJSON(caller.AccessToken, "/v1/users/me/totp", fmt.Sprintf(
@@ -118,7 +118,7 @@ func (s *TotpHolesTestSuite) TestCodeConsumedAtLoginIsRejectedForWithdrawal() {
 	user := s.seedUser(true)
 	_, challenge := s.loginAs(user.Email)
 	code := s.currentCode(user.TOTPSecret)
-	resp, session := s.verifyTwoFactor(challenge.PartialToken, code, "")
+	resp, session := s.verifyTwoFactor(challenge.ChallengeToken, code, "")
 	resp.AssertOk()
 	s.Require().NotEmpty(session.AccessToken)
 

@@ -240,7 +240,7 @@ func contractScenario() []step {
 		{name: "refresh", method: "POST", path: "/v1/auth/refresh", body: `{"refresh_token":"{{refresh}}"}`,
 			capture: map[string]string{"session": "access_token"}},
 		{name: "two-factor verify with a bad token", method: "POST", path: "/v1/auth/2fa/verify",
-			body: `{"partial_token":"bad","code":"000000"}`},
+			body: `{"challenge_token":"bad","code":"000000"}`},
 		{name: "recover", method: "POST", path: "/v1/auth/recover", body: fmt.Sprintf(`{"email":%q}`, contractEmail)},
 		{name: "recover confirm with an unknown token", method: "POST", path: "/v1/auth/recover/confirm",
 			body: `{"token":"unknown","password":"another-password-1"}`},
