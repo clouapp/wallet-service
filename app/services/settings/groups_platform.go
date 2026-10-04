@@ -14,6 +14,10 @@ const (
 	groupSweepLimits     = "sweep_limits"
 	groupMailSMTP        = "mail_smtp"
 	groupMailDelivery    = "mail_delivery"
+	groupMailSES         = "mail_ses"
+	groupMailMailgun     = "mail_mailgun"
+	groupMailResend      = "mail_resend"
+	groupMailPostmark    = "mail_postmark"
 
 	sectionScanning = "scanning"
 	sectionDelivery = "delivery"
@@ -109,6 +113,10 @@ func platformGroups() []Group {
 		},
 		mailSMTPGroup(),
 		mailDeliveryGroup(),
+		mailSESGroup(),
+		mailMailgunGroup(),
+		mailResendGroup(),
+		mailPostmarkGroup(),
 	}
 }
 

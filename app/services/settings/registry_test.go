@@ -19,7 +19,7 @@ func TestAccountSectionsDoNotShareNamesWithGroups(t *testing.T) {
 		switch group.Scope {
 		case ScopeAccount:
 		case ScopePlatform:
-			if group.Name != groupDepositScan && group.Name != groupWebhookDelivery && group.Name != groupSweepLimits && group.Name != groupMailSMTP && group.Name != groupMailDelivery {
+			if !knownPlatformGroup(group.Name) {
 				t.Fatalf("unexpected platform group %s", group.Name)
 			}
 		default:
@@ -89,6 +89,77 @@ func TestAccountSectionsDoNotShareNamesWithGroups(t *testing.T) {
 	driver, ok := Find(groupMailDelivery, keyMailDriver)
 	if !ok || driver.Secret || len(driver.Options) == 0 {
 		t.Fatalf("mail driver = %+v present %v", driver, ok)
+	}
+	assertMailProviderGroups(t)
+}
+
+func knownPlatformGroup(name string) bool {
+	switch name {
+	case groupDepositScan, groupWebhookDelivery, groupSweepLimits, groupMailSMTP, groupMailDelivery,
+		groupMailSES, groupMailMailgun, groupMailResend, groupMailPostmark:
+		return true
+	default:
+		return false
+	}
+}
+
+func assertMailProviderGroups(t *testing.T) {
+	t.Helper()
+	ses, ok := FindGroup(groupMailSES)
+	if !ok || ses.Scope != ScopePlatform || ses.SectionName() != sectionMail || ses.UpdatePermission != "" || len(ses.Settings) != 5 {
+		t.Fatalf("mail ses group = %+v present %v", ses, ok)
+	}
+	if len(ses.CredentialGroups) != 1 || len(ses.CredentialGroups[0]) != 2 ||
+		ses.CredentialGroups[0][0] != keyMailProviderKey || ses.CredentialGroups[0][1] != keyMailProviderSecret {
+		t.Fatalf("ses credential groups = %#v", ses.CredentialGroups)
+	}
+	sesKey, ok := Find(groupMailSES, keyMailProviderKey)
+	if !ok || !sesKey.Secret || sesKey.Destination {
+		t.Fatalf("ses key = %+v present %v", sesKey, ok)
+	}
+	sesSecret, ok := Find(groupMailSES, keyMailProviderSecret)
+	if !ok || !sesSecret.Secret {
+		t.Fatalf("ses secret = %+v present %v", sesSecret, ok)
+	}
+	region, ok := Find(groupMailSES, keyMailRegion)
+	if !ok || region.Secret {
+		t.Fatalf("ses region = %+v present %v", region, ok)
+	}
+	mailgun, ok := FindGroup(groupMailMailgun)
+	if !ok || mailgun.UpdatePermission != "" || len(mailgun.Settings) != 5 || len(mailgun.CredentialGroups) != 0 {
+		t.Fatalf("mailgun group = %+v present %v", mailgun, ok)
+	}
+	domain, ok := Find(groupMailMailgun, keyMailDomain)
+	if !ok || domain.Secret {
+		t.Fatalf("mailgun domain = %+v present %v", domain, ok)
+	}
+	endpoint, ok := Find(groupMailMailgun, keyMailEndpoint)
+	if !ok || endpoint.Secret {
+		t.Fatalf("mailgun endpoint = %+v present %v", endpoint, ok)
+	}
+	mailgunSecret, ok := Find(groupMailMailgun, keyMailProviderSecret)
+	if !ok || !mailgunSecret.Secret {
+		t.Fatalf("mailgun secret = %+v present %v", mailgunSecret, ok)
+	}
+	resend, ok := FindGroup(groupMailResend)
+	if !ok || resend.UpdatePermission != "" || len(resend.Settings) != 3 {
+		t.Fatalf("resend group = %+v present %v", resend, ok)
+	}
+	apiKey, ok := Find(groupMailResend, keyMailAPIKey)
+	if !ok || !apiKey.Secret {
+		t.Fatalf("resend api key = %+v present %v", apiKey, ok)
+	}
+	postmark, ok := FindGroup(groupMailPostmark)
+	if !ok || postmark.UpdatePermission != "" || len(postmark.Settings) != 4 {
+		t.Fatalf("postmark group = %+v present %v", postmark, ok)
+	}
+	token, ok := Find(groupMailPostmark, keyMailToken)
+	if !ok || !token.Secret {
+		t.Fatalf("postmark token = %+v present %v", token, ok)
+	}
+	stream, ok := Find(groupMailPostmark, keyMailMessageStream)
+	if !ok || stream.Secret {
+		t.Fatalf("postmark stream = %+v present %v", stream, ok)
 	}
 }
 
@@ -179,7 +250,7 @@ func TestEverySecretGroupDeclaresAPermission(t *testing.T) {
 			continue
 		}
 		if group.Scope == ScopePlatform {
-			if group.Name != groupMailSMTP || group.ViewPermission != "" || group.UpdatePermission != "" {
+			if !platformSecretGroupGatedByAdmins(group) {
 				t.Fatalf("platform secret group %s must stay gated by platform_admins", group.Name)
 			}
 			continue
@@ -194,6 +265,15 @@ func TestEverySecretGroupDeclaresAPermission(t *testing.T) {
 	webhooks, ok := FindGroup(groupAccountWebhooks)
 	if !ok || webhooks.ViewPermission != permAccountWebhooksView || webhooks.UpdatePermission != permAccountWebhooksUpdate {
 		t.Fatalf("webhooks permissions = %q %q present %v", webhooks.ViewPermission, webhooks.UpdatePermission, ok)
+	}
+}
+
+func platformSecretGroupGatedByAdmins(group Group) bool {
+	switch group.Name {
+	case groupMailSMTP, groupMailSES, groupMailMailgun, groupMailResend, groupMailPostmark:
+		return group.ViewPermission == "" && group.UpdatePermission == ""
+	default:
+		return false
 	}
 }
 

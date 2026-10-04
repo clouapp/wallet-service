@@ -68,6 +68,10 @@ type Group struct {
 	Block            string
 	ViewPermission   string
 	UpdatePermission string
+	// CredentialGroups lists keys that must be present together. A pair is
+	// judged by presence in the stored row or this write, because a secret
+	// is left out of the map group validation sees.
+	CredentialGroups [][]string
 	Validate         func(effective map[string]string) error
 }
 
