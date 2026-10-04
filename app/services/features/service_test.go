@@ -349,6 +349,77 @@ func (s failingGlobalStore) ListGlobal(context.Context) ([]models.GlobalFeature,
 	return nil, s.err
 }
 
+func TestActiveForAccountUsesTheCatalogDefaultAndIgnoresGlobalRows(t *testing.T) {
+	t.Parallel()
+
+	store := newMemoryStore()
+	service := newTestService(store, memoryAdmins{})
+	accountID := uuid.New()
+	if err := store.UpsertGlobal(context.Background(), FlagSweepEnabled, false); err != nil {
+		t.Fatalf("global sweep: %v", err)
+	}
+	if err := store.UpsertGlobal(context.Background(), FlagUser2FARequired, true); err != nil {
+		t.Fatalf("global 2fa: %v", err)
+	}
+
+	names, err := service.ActiveForAccount(context.Background(), accountID)
+	if err != nil {
+		t.Fatalf("active: %v", err)
+	}
+	want := []string{FlagDepositScanEnabled, FlagSweepEnabled, FlagWalletCreationEnabled, FlagWebhookDeliveryEnabled, FlagWithdrawalsEnabled}
+	if !slices.Equal(names, want) {
+		t.Fatalf("active = %v, want %v", names, want)
+	}
+	if len(store.rows[accountID]) != 0 {
+		t.Fatal("active inserted an account row")
+	}
+
+	if err := store.Upsert(context.Background(), accountID, FlagWithdrawalsEnabled, false); err != nil {
+		t.Fatalf("account withdrawals: %v", err)
+	}
+	if err := store.Upsert(context.Background(), accountID, FlagUser2FARequired, true); err != nil {
+		t.Fatalf("account 2fa: %v", err)
+	}
+	names, err = service.ActiveForAccount(context.Background(), accountID)
+	if err != nil {
+		t.Fatalf("active after write: %v", err)
+	}
+	want = []string{FlagDepositScanEnabled, FlagSweepEnabled, FlagUser2FARequired, FlagWalletCreationEnabled, FlagWebhookDeliveryEnabled}
+	if !slices.Equal(names, want) {
+		t.Fatalf("active after write = %v, want %v", names, want)
+	}
+
+	if _, err := service.ActiveForAccount(nil, accountID); err == nil {
+		t.Fatal("nil context must fail")
+	}
+	if _, err := service.ActiveForAccount(context.Background(), uuid.Nil); err == nil {
+		t.Fatal("nil account must fail")
+	}
+	if _, err := (*Service)(nil).ActiveForAccount(context.Background(), accountID); err == nil {
+		t.Fatal("nil service must fail")
+	}
+}
+
+type failingAccountStore struct {
+	*memoryStore
+	err error
+}
+
+func (s failingAccountStore) ListAccount(context.Context, uuid.UUID) ([]models.Feature, error) {
+	return nil, s.err
+}
+
+func TestActiveForAccountReportsAStoreError(t *testing.T) {
+	t.Parallel()
+
+	want := errors.New("account features unavailable")
+	service := newTestService(failingAccountStore{memoryStore: newMemoryStore(), err: want}, memoryAdmins{})
+	_, err := service.ActiveForAccount(context.Background(), uuid.New())
+	if !errors.Is(err, want) {
+		t.Fatalf("active error = %v, want %v", err, want)
+	}
+}
+
 func TestActiveGlobalReportsAStoreError(t *testing.T) {
 	t.Parallel()
 

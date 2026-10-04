@@ -20,6 +20,7 @@ import (
 	"github.com/macrowallets/waas/app/policies"
 	accountsvc "github.com/macrowallets/waas/app/services/account"
 	authsvc "github.com/macrowallets/waas/app/services/auth"
+	featuressvc "github.com/macrowallets/waas/app/services/features"
 	"github.com/macrowallets/waas/app/services/settings"
 	"github.com/macrowallets/waas/app/services/withdraw"
 )
@@ -32,15 +33,18 @@ type AccountsController struct {
 	accountService *accountsvc.Service
 	passwords      *authsvc.Service
 	limits         *settings.Service
+	features       *featuressvc.Service
 }
 
 // NewAccountsController wires the dashboard account handlers. Persistence goes
 // through the account service. The auth service only turns a new API token
 // secret into its sha256 digest. Limits supplies sweep_limits from settings.
+// Features supplies the active flag keys on GET.
 func NewAccountsController(
 	accountService *accountsvc.Service,
 	passwords *authsvc.Service,
 	limits *settings.Service,
+	features *featuressvc.Service,
 ) *AccountsController {
 	if accountService == nil {
 		panic("dashboard accounts controller: account service is required")
@@ -51,10 +55,14 @@ func NewAccountsController(
 	if limits == nil {
 		panic("dashboard accounts controller: settings service is required")
 	}
+	if features == nil {
+		panic("dashboard accounts controller: features service is required")
+	}
 	return &AccountsController{
 		accountService: accountService,
 		passwords:      passwords,
 		limits:         limits,
+		features:       features,
 	}
 }
 
@@ -101,12 +109,12 @@ func (ctrl *AccountsController) CreateAccount(ctx http.Context) http.Response {
 
 // GetAccount godoc
 // @Summary      Get an account
-// @Description  Returns account details. Requires account membership (injected by AccountContext middleware).
+// @Description  Returns account details and the account's active feature keys. Requires account membership (injected by AccountContext middleware).
 // @Tags         Accounts
 // @Security     BearerAuth
 // @Produce      json
-// @Param        accountId  path      string  true  "Account UUID"
-// @Success      200        {object}  AccountView
+// @Param        accountId  path      string         true  "Account UUID"
+// @Success      200        {object}  AccountDetail
 // @Failure      403        {object}  ErrorResponse
 // @Failure      404        {object}  ErrorResponse
 // @Router       /accounts/{accountId} [get]
@@ -116,7 +124,21 @@ func (ctrl *AccountsController) GetAccount(ctx http.Context) http.Response {
 	if err != nil {
 		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to fetch account"})
 	}
-	return responses.Send(ctx, http.StatusOK, view)
+	names, err := ctrl.features.ActiveForAccount(ctx.Context(), account.ID)
+	if err != nil {
+		appfacades.Log().WithContext(ctx).Errorf("account: active features: %v", err)
+		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to fetch account"})
+	}
+	return responses.Send(ctx, http.StatusOK, AccountDetail{AccountView: view, Features: names})
+}
+
+// AccountDetail is GET /v1/accounts/{accountId}. Existing account fields stay.
+// Features is the account's active flag keys in catalog order. A missing
+// account row uses the catalog default. Global rows are not included. Create
+// and update do not carry this field.
+type AccountDetail struct {
+	AccountView
+	Features []string `json:"features"`
 }
 
 // UpdateAccount godoc

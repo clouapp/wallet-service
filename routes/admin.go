@@ -448,6 +448,7 @@ func newDashboardAccountsController() *dashaccounts.AccountsController {
 		container.MustMake[*accountsvc.Service](),
 		container.MustMake[*authsvc.Service](),
 		container.MustMake[*settingssvc.Service](),
+		container.MustMake[*featuressvc.Service](),
 	)
 }
 

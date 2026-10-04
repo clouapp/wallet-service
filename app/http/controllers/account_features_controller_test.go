@@ -47,6 +47,46 @@ func (s *accountFeaturesSuite) TestGetMissingRowUsesCatalogDefault() {
 	s.Equal(int64(0), s.rowCount(accountID))
 }
 
+func (s *accountFeaturesSuite) TestGetAccountListsActiveFlagKeys() {
+	accountID, token := s.owner()
+
+	body := s.account(token, accountID)
+	s.Equal([]string{
+		features.FlagDepositScanEnabled,
+		features.FlagSweepEnabled,
+		features.FlagWalletCreationEnabled,
+		features.FlagWebhookDeliveryEnabled,
+		features.FlagWithdrawalsEnabled,
+	}, body.Features)
+	s.Equal(int64(0), s.rowCount(accountID))
+
+	_, err := facades.Orm().Query().Exec(
+		`INSERT INTO features (account_id, "key", enabled, created_at, updated_at)
+		 VALUES (?, ?, false, NOW(), NOW())`,
+		accountID, features.FlagWithdrawalsEnabled,
+	)
+	s.Require().NoError(err)
+	_, err = facades.Orm().Query().Exec(
+		`INSERT INTO global_features ("key", enabled, created_at, updated_at)
+		 VALUES (?, false, NOW(), NOW())`,
+		features.FlagSweepEnabled,
+	)
+	s.Require().NoError(err)
+
+	want := []string{
+		features.FlagDepositScanEnabled,
+		features.FlagSweepEnabled,
+		features.FlagWalletCreationEnabled,
+		features.FlagWebhookDeliveryEnabled,
+	}
+	body = s.account(token, accountID)
+	s.Equal(want, body.Features)
+	s.Equal(want, s.account(s.member(accountID, "auditor"), accountID).Features)
+
+	updated := s.renameAccount(token, accountID)
+	s.NotContains(updated, `"features"`)
+}
+
 func (s *accountFeaturesSuite) TestOwnerEnablesFlagAndTheNextReadIsEnabled() {
 	accountID, token := s.owner()
 
@@ -169,6 +209,40 @@ type featureListBody struct {
 		Key     string `json:"key"`
 		Enabled bool   `json:"enabled"`
 	} `json:"features"`
+}
+
+type accountDetailBody struct {
+	Name     string   `json:"name"`
+	Features []string `json:"features"`
+}
+
+func (s *accountFeaturesSuite) account(token string, accountID uuid.UUID) accountDetailBody {
+	s.T().Helper()
+	resp, err := s.Http(s.T()).
+		WithHeader("Authorization", "Bearer "+token).
+		Get("/v1/accounts/" + accountID.String())
+	s.Require().NoError(err)
+	resp.AssertOk()
+	content, err := resp.Content()
+	s.Require().NoError(err)
+	var parsed accountDetailBody
+	s.Require().NoError(json.Unmarshal([]byte(content), &parsed))
+	s.Require().NotEmpty(parsed.Name)
+	return parsed
+}
+
+func (s *accountFeaturesSuite) renameAccount(token string, accountID uuid.UUID) string {
+	s.T().Helper()
+	resp, err := s.Http(s.T()).
+		WithHeader("Authorization", "Bearer "+token).
+		WithHeader("Content-Type", "application/json").
+		Patch("/v1/accounts/"+accountID.String(), strings.NewReader(`{"name":"Renamed Features"}`))
+	s.Require().NoError(err)
+	resp.AssertOk()
+	content, err := resp.Content()
+	s.Require().NoError(err)
+	s.Contains(content, `"name":"Renamed Features"`)
+	return content
 }
 
 func (s *accountFeaturesSuite) get(token string, accountID uuid.UUID, status int) featureListBody {

@@ -177,6 +177,33 @@ func (s *Service) ActiveGlobal(ctx context.Context) ([]string, error) {
 	return names, nil
 }
 
+// ActiveForAccount returns the flag keys whose account value is on, in
+// catalog order. A missing account row uses the catalog default, so
+// deposit-scan-enabled, sweep-enabled, wallet-creation-enabled,
+// webhook-delivery-enabled, and withdrawals-enabled are included until a
+// row stores false. Global rows are not read: this is the account half of
+// GET /v1/accounts/{accountId}. The call does not insert rows and does not
+// cache.
+func (s *Service) ActiveForAccount(ctx context.Context, accountID uuid.UUID) ([]string, error) {
+	if s == nil {
+		return nil, fmt.Errorf("account features: service is required")
+	}
+	if err := requireAccount(ctx, accountID); err != nil {
+		return nil, err
+	}
+	stored, err := s.stored(ctx, accountID)
+	if err != nil {
+		return nil, err
+	}
+	names := make([]string, 0)
+	for _, definition := range ForAccount() {
+		if enabledValue(stored, definition) {
+			names = append(names, definition.Key)
+		}
+	}
+	return names, nil
+}
+
 // SetGlobal stores one platform flag and returns the row it just wrote.
 // A caller who is not a platform admin is ErrPlatformForbidden and the table
 // is unchanged, including when the key is unknown. An admin's unknown key is
