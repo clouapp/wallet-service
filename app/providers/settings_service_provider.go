@@ -33,6 +33,7 @@ func (p *SettingsServiceProvider) Register(app foundation.Application) {
 		return settings.NewService(store, settings.CryptSealer{}, settings.FacadeCache{}, activityLog).
 			WithPlatformAdmins(admins), nil
 	})
+	bindMailFacade(app)
 }
 
 func (p *SettingsServiceProvider) Boot(app foundation.Application) {

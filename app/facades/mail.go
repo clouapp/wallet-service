@@ -3,7 +3,6 @@ package facades
 import (
 	"context"
 	"errors"
-	"log/slog"
 	"sync"
 
 	"github.com/goravel/framework/contracts/mail"
@@ -91,101 +90,90 @@ func RestoreMailBaseline() {
 	restoreMailBaseline()
 }
 
-// Mail returns the process mailer. Each Send reads mail_smtp and the
-// mail_delivery From header first.
+// Mail returns the process mailer. After boot it is the mail facade over the
+// mailer and mailer.Config. Each Send reads mail_smtp and the mail_delivery
+// From header first. The transport stays SMTP.
 func Mail() mail.Mail {
-	return smtpMail{inner: goravelfacades.Mail()}
+	resolved := goravelfacades.Mail()
+	if resolved == nil {
+		return unavailableMail{}
+	}
+	return resolved
 }
 
-type smtpMail struct {
-	inner mail.Mail
-}
+type unavailableMail struct{}
 
-func (m smtpMail) Attach(files []string) mail.Mail {
-	return smtpMail{inner: m.inner.Attach(files)}
-}
+func (unavailableMail) Attach([]string) mail.Mail           { return unavailableMail{} }
+func (unavailableMail) Bcc([]string) mail.Mail              { return unavailableMail{} }
+func (unavailableMail) Cc([]string) mail.Mail               { return unavailableMail{} }
+func (unavailableMail) Content(mail.Content) mail.Mail      { return unavailableMail{} }
+func (unavailableMail) From(mail.Address) mail.Mail         { return unavailableMail{} }
+func (unavailableMail) Headers(map[string]string) mail.Mail { return unavailableMail{} }
+func (unavailableMail) Queue(...mail.Mailable) error        { return errMailerRequired }
+func (unavailableMail) Send(...mail.Mailable) error         { return errMailerRequired }
+func (unavailableMail) Subject(string) mail.Mail            { return unavailableMail{} }
+func (unavailableMail) To([]string) mail.Mail               { return unavailableMail{} }
 
-func (m smtpMail) Bcc(addresses []string) mail.Mail {
-	return smtpMail{inner: m.inner.Bcc(addresses)}
-}
-
-func (m smtpMail) Cc(addresses []string) mail.Mail {
-	return smtpMail{inner: m.inner.Cc(addresses)}
-}
-
-func (m smtpMail) Content(content mail.Content) mail.Mail {
-	return smtpMail{inner: m.inner.Content(content)}
-}
-
-func (m smtpMail) From(address mail.Address) mail.Mail {
-	return smtpMail{inner: m.inner.From(address)}
-}
-
-func (m smtpMail) Headers(headers map[string]string) mail.Mail {
-	return smtpMail{inner: m.inner.Headers(headers)}
-}
-
-func (m smtpMail) Queue(mailable ...mail.Mailable) error {
-	return m.withSMTP(func() error { return m.inner.Queue(mailable...) })
-}
-
-func (m smtpMail) Send(mailable ...mail.Mailable) error {
-	return m.withSMTP(func() error { return m.inner.Send(mailable...) })
-}
-
-func (m smtpMail) Subject(subject string) mail.Mail {
-	return smtpMail{inner: m.inner.Subject(subject)}
-}
-
-func (m smtpMail) To(addresses []string) mail.Mail {
-	return smtpMail{inner: m.inner.To(addresses)}
-}
-
-func (m smtpMail) withSMTP(send func() error) error {
-	if m.inner == nil {
+// GateMailSend holds the mail lock for one send. The mailer calls it so the
+// readers, the published document, and the dial stay on the same snapshot.
+func GateMailSend(send func() error) error {
+	if send == nil {
 		return errMailerRequired
 	}
 	mailMu.Lock()
 	defer mailMu.Unlock()
-	applyMailDial(context.Background())
-	defer restoreMailBaseline()
-	if mailSendObserver != nil {
-		mailSendObserver()
-	}
 	return send()
 }
 
-func applyMailDial(ctx context.Context) {
-	base := cloneMailBaseline()
-	applySMTPOverlay(ctx, base)
-	applyFromOverlay(ctx, base)
-	writeMail(base)
+// ReadMailDial reads the installed mail_smtp reader. The caller holds the
+// mail lock. installed is false when no reader is set.
+func ReadMailDial(ctx context.Context) (MailDial, bool, error) {
+	if readMailSMTP == nil {
+		return MailDial{}, false, nil
+	}
+	dial, err := readMailSMTP(ctx)
+	if err != nil {
+		return MailDial{}, true, err
+	}
+	return dial, true, nil
 }
 
-func applySMTPOverlay(ctx context.Context, base map[string]any) {
-	reader := readMailSMTP
-	if reader == nil {
-		return
+// ReadMailFrom reads the installed mail_delivery From reader. The caller
+// holds the mail lock. installed is false when no reader is set.
+func ReadMailFrom(ctx context.Context) (MailFrom, bool, error) {
+	if readMailFrom == nil {
+		return MailFrom{}, false, nil
 	}
-	overlay, err := reader(ctx)
+	from, err := readMailFrom(ctx)
 	if err != nil {
-		slog.Warn("mail smtp settings unread; keeping the env mailer")
-		return
+		return MailFrom{}, true, err
 	}
-	mergeMailDial(base, overlay)
+	return from, true, nil
 }
 
-func applyFromOverlay(ctx context.Context, base map[string]any) {
-	reader := readMailFrom
-	if reader == nil {
-		return
+// MailBaseline returns a copy of the env mail document captured on the first
+// send. The caller holds the mail lock.
+func MailBaseline() map[string]any {
+	return cloneMailBaseline()
+}
+
+// WriteMailConfig publishes one send's mail document. The caller holds the
+// mail lock.
+func WriteMailConfig(cfg map[string]any) {
+	writeMail(cfg)
+}
+
+// RestoreMailDocument puts the env mail document back without taking the
+// mail lock. GateMailSend already holds it.
+func RestoreMailDocument() {
+	restoreMailBaseline()
+}
+
+// ObserveMailSend runs the send observer. The caller holds the mail lock.
+func ObserveMailSend() {
+	if mailSendObserver != nil {
+		mailSendObserver()
 	}
-	overlay, err := reader(ctx)
-	if err != nil {
-		slog.Warn("mail delivery settings unread; keeping the env from header")
-		return
-	}
-	mergeMailFrom(base, overlay)
 }
 
 func restoreMailBaseline() {
@@ -208,72 +196,6 @@ func writeMail(cfg map[string]any) {
 		cfg = map[string]any{}
 	}
 	Config().Add("mail", cfg)
-}
-
-// mergeMailDial overlays a stored mail_smtp row on the env mail document.
-// Goravel reads mail.host, mail.port, mail.username, and mail.password at
-// send time and picks the socket from the port. encryption is written on
-// the smtp mailer as well. A field that is not in use stays on the env copy.
-func mergeMailDial(cfg map[string]any, overlay MailDial) {
-	if cfg == nil {
-		return
-	}
-	smtp := ensureSMTP(cfg)
-	if overlay.UseHost {
-		smtp["host"] = overlay.Host
-		cfg["host"] = overlay.Host
-	}
-	if overlay.UsePort {
-		smtp["port"] = overlay.Port
-		cfg["port"] = overlay.Port
-	}
-	if overlay.UseEncryption {
-		smtp["encryption"] = overlay.Encryption
-		cfg["encryption"] = overlay.Encryption
-	}
-	if overlay.UseUsername {
-		smtp["username"] = overlay.Username
-		cfg["username"] = overlay.Username
-	}
-	if overlay.UsePassword {
-		smtp["password"] = overlay.Password
-		cfg["password"] = overlay.Password
-	}
-}
-
-// mergeMailFrom overlays a stored mail_delivery From header on the env mail
-// document. Goravel reads mail.from.address and mail.from.name at send time
-// when the mailable leaves From empty. A field that is not in use stays on
-// the env copy.
-func mergeMailFrom(cfg map[string]any, overlay MailFrom) {
-	if cfg == nil || (!overlay.UseAddress && !overlay.UseName) {
-		return
-	}
-	from, _ := cfg["from"].(map[string]any)
-	if from == nil {
-		from = map[string]any{}
-		cfg["from"] = from
-	}
-	if overlay.UseAddress {
-		from["address"] = overlay.Address
-	}
-	if overlay.UseName {
-		from["name"] = overlay.Name
-	}
-}
-
-func ensureSMTP(cfg map[string]any) map[string]any {
-	mailers, _ := cfg["mailers"].(map[string]any)
-	if mailers == nil {
-		mailers = map[string]any{}
-		cfg["mailers"] = mailers
-	}
-	smtp, _ := mailers["smtp"].(map[string]any)
-	if smtp == nil {
-		smtp = map[string]any{}
-		mailers["smtp"] = smtp
-	}
-	return smtp
 }
 
 func cloneAnyMap(value any) map[string]any {
