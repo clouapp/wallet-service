@@ -26,6 +26,19 @@ func (stubDecryptError) Error() string { return "stub decrypt" }
 
 var errStubDecrypt = stubDecryptError{}
 
+func TestPrefixSealTagsStoredCiphertextOnce(t *testing.T) {
+	t.Parallel()
+
+	const stored = "cipher-blob"
+	tagged := PrefixSeal(stored)
+	if !IsSealed(tagged) || tagged == stored || PrefixSeal(tagged) != tagged {
+		t.Fatal("prefix seal did not tag the stored ciphertext once")
+	}
+	if PrefixSeal("") != "" {
+		t.Fatal("prefix seal changed an empty value")
+	}
+}
+
 func TestSealTagsCiphertextAndOpenRefusesPlaintext(t *testing.T) {
 	t.Parallel()
 

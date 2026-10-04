@@ -2,6 +2,7 @@ package repositories_test
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
@@ -11,6 +12,7 @@ import (
 
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/repositories"
+	"github.com/macrowallets/waas/app/services/settings"
 	"github.com/macrowallets/waas/tests/mocks"
 )
 
@@ -207,6 +209,52 @@ func (s *UserRepositoryTestSuite) TestListOrdersByCreatedAtDescending() {
 	s.EqualError(err, "list users: limit and offset are invalid")
 	_, _, err = s.repo.List(nil, 20, 0)
 	s.EqualError(err, "list users: context is required")
+}
+
+func (s *UserRepositoryTestSuite) TestUpdateTotpSecretStoresTheSealedCredential() {
+	userID := insertActiveUserRow(s.T())
+	sealed, err := settings.Seal(facades.Crypt(), "totp-plaintext-marker")
+	s.Require().NoError(err)
+
+	s.Require().NoError(s.repo.UpdateTotpSecret(context.Background(), userID, sealed))
+
+	var stored string
+	s.Require().NoError(facades.Orm().Query().Raw(
+		`SELECT secret FROM mfa_credentials WHERE subject_type = ? AND subject_id = ?`,
+		models.MFASubjectUsers, userID,
+	).Scan(&stored))
+	if !settings.IsSealed(stored) || stored != sealed || strings.Contains(stored, "totp-plaintext-marker") {
+		s.Fail("totp secret was not stored sealed on mfa_credentials")
+	}
+	var column string
+	s.Require().NoError(facades.Orm().Query().Raw(
+		`SELECT COALESCE(totp_secret, '') FROM users WHERE id = ?`, userID,
+	).Scan(&column))
+	s.Empty(column)
+
+	err = s.repo.UpdateTotpSecret(context.Background(), userID, "not-sealed-marker")
+	s.Require().Error(err)
+	s.NotContains(err.Error(), "not-sealed-marker")
+
+	advanced, err := s.repo.AdvanceTotpCounter(context.Background(), userID, 40)
+	s.Require().NoError(err)
+	s.True(advanced)
+	advanced, err = s.repo.AdvanceTotpCounter(context.Background(), userID, 40)
+	s.Require().NoError(err)
+	s.False(advanced, "login and withdrawal share the credential counter")
+
+	_, err = facades.Orm().Query().Exec(`
+		INSERT INTO mfa_credentials (
+			id, subject_type, subject_id, secret, last_used_counter, created_at, updated_at
+		) VALUES (?, ?, ?, 'enc:v1:platform-marker', 0, NOW(), NOW())`,
+		uuid.New(), models.MFASubjectPlatformAdmins, uuid.New(),
+	)
+	s.Require().NoError(err)
+	var subjects int64
+	s.Require().NoError(facades.Orm().Query().Raw(
+		`SELECT count(DISTINCT subject_type) FROM mfa_credentials`,
+	).Scan(&subjects))
+	s.Equal(int64(2), subjects)
 }
 
 func (s *UserRepositoryTestSuite) stampCreatedAt(id uuid.UUID, at time.Time) {

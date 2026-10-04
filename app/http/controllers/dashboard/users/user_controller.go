@@ -20,6 +20,7 @@ import (
 	authsvc "github.com/macrowallets/waas/app/services/auth"
 	featuressvc "github.com/macrowallets/waas/app/services/features"
 	"github.com/macrowallets/waas/app/services/sessions"
+	"github.com/macrowallets/waas/app/services/settings"
 	usersvc "github.com/macrowallets/waas/app/services/users"
 )
 
@@ -343,12 +344,14 @@ func (ctrl *UsersController) SetupTOTP(ctx http.Context) http.Response {
 		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to generate TOTP secret"})
 	}
 
-	encryptedSecret, err := appfacades.Crypt().EncryptString(secret)
+	sealed, err := settings.Seal(appfacades.Crypt(), secret)
 	if err != nil {
+		appfacades.Log().WithContext(ctx).Errorf("user: setup totp: seal failed")
 		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to encrypt secret"})
 	}
 
-	if err := ctrl.users.UpdateTotpSecret(ctx.Context(), user.ID, encryptedSecret); err != nil {
+	if err := ctrl.users.UpdateTotpSecret(ctx.Context(), user.ID, sealed); err != nil {
+		appfacades.Log().WithContext(ctx).Errorf("user: setup totp: save failed")
 		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to save TOTP secret"})
 	}
 
@@ -379,13 +382,13 @@ func (ctrl *UsersController) ConfirmTOTP(ctx http.Context) http.Response {
 		return errResp
 	}
 
-	if user.TotpSecret == "" {
-		return responses.Send(ctx, http.StatusBadRequest, http.Json{"error": "no TOTP secret found — call setup first"})
-	}
-
-	decryptedSecret, err := appfacades.Crypt().DecryptString(user.TotpSecret)
+	decryptedSecret, err := ctrl.secondFactor.OpenSecret(user.ID)
 	if err != nil {
+		appfacades.Log().WithContext(ctx).Errorf("user: confirm totp: open secret failed")
 		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to decrypt secret"})
+	}
+	if decryptedSecret == "" {
+		return responses.Send(ctx, http.StatusBadRequest, http.Json{"error": "no TOTP secret found — call setup first"})
 	}
 
 	matched, err := ctrl.secondFactor.RecordConfirmedCode(user.ID, decryptedSecret, req.Code)
@@ -419,6 +422,7 @@ func (ctrl *UsersController) ConfirmTOTP(ctx http.Context) http.Response {
 	_ = ctrl.users.CreateRecoveryCodes(ctx.Context(), recoveryCodes)
 
 	user.TotpEnabled = true
+	user.TotpSecret = ""
 	resp := map[string]interface{}{
 		"user":           user,
 		"recovery_codes": codes,

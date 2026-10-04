@@ -27,8 +27,12 @@ type UserFinder interface {
 	FindByID(id uuid.UUID) (*models.User, error)
 }
 
-// TotpCounterStore persists the last redeemed TOTP step per user.
+// TotpCounterStore persists the last redeemed TOTP step per user. Login and
+// withdrawal share that one step.
 type TotpCounterStore interface {
+	// SealedTotp is the enc:v1: secret and the last redeemed step. An empty
+	// secret means there is nothing to open.
+	SealedTotp(userID uuid.UUID) (secret string, counter int64, err error)
 	// AdvanceTotpCounter stores counter only when it is newer than the
 	// stored one and reports whether it did.
 	AdvanceTotpCounter(userID uuid.UUID, counter int64) (bool, error)
@@ -40,7 +44,8 @@ type RecoveryCodeStore interface {
 	MarkUsedIfUnused(id uuid.UUID) (bool, error)
 }
 
-// SecretDecrypter opens the TOTP secret sealed at rest (facades.Crypt).
+// SecretDecrypter opens the TOTP secret. A value without the enc:v1: marker
+// is refused. The plaintext is not returned in the error.
 type SecretDecrypter func(ciphertext string) (string, error)
 
 // SecondFactorVerifier checks a TOTP or recovery code for a user, with replay
@@ -74,7 +79,7 @@ func (v *SecondFactorVerifier) Verify(user *models.User, code, recoveryCode stri
 	if user == nil {
 		return errors.New("auth: verify second factor: user is required")
 	}
-	if !user.TotpEnabled || user.TotpSecret == "" {
+	if !user.TotpEnabled {
 		return ErrSecondFactorNotEnrolled
 	}
 	if code != "" {
@@ -102,13 +107,40 @@ func (v *SecondFactorVerifier) RecordConfirmedCode(userID uuid.UUID, plaintextSe
 	return true, nil
 }
 
+// OpenSecret decrypts the stored TOTP secret. An empty plaintext and a nil
+// error means enrollment has not stored one. An unsealed value fails closed.
+func (v *SecondFactorVerifier) OpenSecret(userID uuid.UUID) (string, error) {
+	if userID == uuid.Nil {
+		return "", errors.New("auth: open totp secret: user is required")
+	}
+	sealed, _, err := v.counters.SealedTotp(userID)
+	if err != nil {
+		return "", fmt.Errorf("auth: load totp secret: %w", err)
+	}
+	if sealed == "" {
+		return "", nil
+	}
+	plaintext, err := v.decrypt(sealed)
+	if err != nil {
+		return "", fmt.Errorf("auth: decrypt totp secret: %w", err)
+	}
+	return plaintext, nil
+}
+
 func (v *SecondFactorVerifier) verifyTOTP(user *models.User, code string) error {
-	secret, err := v.decrypt(user.TotpSecret)
+	sealed, counter, err := v.counters.SealedTotp(user.ID)
+	if err != nil {
+		return fmt.Errorf("auth: load totp secret: %w", err)
+	}
+	if sealed == "" {
+		return ErrSecondFactorNotEnrolled
+	}
+	secret, err := v.decrypt(sealed)
 	if err != nil {
 		return fmt.Errorf("auth: decrypt totp secret: %w", err)
 	}
 	step, ok := v.service.MatchTOTP(secret, code, v.now())
-	if !ok || step <= user.TotpLastUsedCounter {
+	if !ok || step <= counter {
 		return ErrInvalidSecondFactor
 	}
 	advanced, err := v.counters.AdvanceTotpCounter(user.ID, step)

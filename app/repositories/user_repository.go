@@ -11,6 +11,7 @@ import (
 
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/repositories/internal/db"
+	"github.com/macrowallets/waas/app/services/settings"
 )
 
 // UserRepository persists users. Preferences live on the users row, not in a
@@ -33,6 +34,9 @@ func (r *UserRepository) FindByEmail(ctx context.Context, email string) (*models
 	if user.ID == uuid.Nil {
 		return nil, models.ErrRepositoryNotFound
 	}
+	if err := r.attachSealedTotp(ctx, &user); err != nil {
+		return nil, err
+	}
 	return &user, nil
 }
 
@@ -44,6 +48,9 @@ func (r *UserRepository) FindByID(ctx context.Context, id uuid.UUID) (*models.Us
 	}
 	if user.ID == uuid.Nil {
 		return nil, models.ErrRepositoryNotFound
+	}
+	if err := r.attachSealedTotp(ctx, &user); err != nil {
+		return nil, err
 	}
 	return &user, nil
 }
@@ -104,23 +111,62 @@ func (r *UserRepository) UpdatePreferences(ctx context.Context, id uuid.UUID, pr
 	return nil
 }
 
-// UpdateTotpSecret sets users.totp_secret.
+// UpdateTotpSecret stores a sealed TOTP secret on mfa_credentials for the user.
+// The users.totp_secret column is not written. An unsealed value is refused
+// and is not included in the error.
 func (r *UserRepository) UpdateTotpSecret(ctx context.Context, id uuid.UUID, secret string) error {
-	if _, err := r.Query(ctx).Model(&models.User{}).Where("id = ?", id).Update("totp_secret", secret); err != nil {
+	if id == uuid.Nil {
+		return fmt.Errorf("update user totp secret: user id is required")
+	}
+	if !settings.IsSealed(secret) {
+		return fmt.Errorf("update user totp secret: value is not sealed")
+	}
+	present, err := r.countMFA(ctx, id)
+	if err != nil {
+		return err
+	}
+	if present > 0 {
+		if _, err := r.Query(ctx).Exec(`
+			UPDATE mfa_credentials
+			SET secret = ?, confirmed_at = NULL, updated_at = NOW()
+			WHERE subject_type = ? AND subject_id = ?`,
+			secret, models.MFASubjectUsers, id); err != nil {
+			return fmt.Errorf("update user totp secret: %w", err)
+		}
+		return nil
+	}
+	if _, err := r.Query(ctx).Exec(`
+		INSERT INTO mfa_credentials (
+			id, subject_type, subject_id, secret, last_used_counter, created_at, updated_at
+		)
+		SELECT ?, ?, ?, ?, COALESCE(u.totp_last_used_counter, 0), NOW(), NOW()
+		FROM users AS u
+		WHERE u.id = ?`,
+		uuid.New(), models.MFASubjectUsers, id, secret, id); err != nil {
 		return fmt.Errorf("update user totp secret: %w", err)
 	}
 	return nil
 }
 
-// EnableTotp sets users.totp_enabled.
+// EnableTotp sets users.totp_enabled and confirms the shared credential when
+// one exists. The replay counter is left as it is.
 func (r *UserRepository) EnableTotp(ctx context.Context, id uuid.UUID) error {
 	if _, err := r.Query(ctx).Model(&models.User{}).Where("id = ?", id).Update("totp_enabled", true); err != nil {
+		return fmt.Errorf("enable user totp: %w", err)
+	}
+	if _, err := r.Query(ctx).Exec(`
+		UPDATE mfa_credentials
+		SET confirmed_at = COALESCE(confirmed_at, NOW()), updated_at = NOW()
+		WHERE subject_type = ? AND subject_id = ?`,
+		models.MFASubjectUsers, id); err != nil {
 		return fmt.Errorf("enable user totp: %w", err)
 	}
 	return nil
 }
 
-// DisableTotp clears totp_enabled and totp_secret together.
+// DisableTotp clears totp_enabled, the legacy secret column, and the shared
+// credential secret. The replay counter stays so a later enrollment cannot
+// redeem a step that was already used.
 func (r *UserRepository) DisableTotp(ctx context.Context, id uuid.UUID) error {
 	if _, err := r.Query(ctx).Model(&models.User{}).Where("id = ?", id).Update(map[string]any{
 		"totp_enabled": false,
@@ -128,19 +174,115 @@ func (r *UserRepository) DisableTotp(ctx context.Context, id uuid.UUID) error {
 	}); err != nil {
 		return fmt.Errorf("disable user totp: %w", err)
 	}
+	if _, err := r.Query(ctx).Exec(`
+		UPDATE mfa_credentials
+		SET secret = '', confirmed_at = NULL, updated_at = NOW()
+		WHERE subject_type = ? AND subject_id = ?`,
+		models.MFASubjectUsers, id); err != nil {
+		return fmt.Errorf("disable user totp: %w", err)
+	}
 	return nil
 }
 
-// AdvanceTotpCounter stores counter as the user's last redeemed TOTP step only
-// when it is newer than the stored one. It reports false when the step was
-// already redeemed, which is how a replayed code — including one replayed
-// concurrently — is refused.
+// SealedTotp returns the enc:v1: secret and the replay step. A credential row
+// wins over users.totp_secret. An empty secret means there is nothing to open.
+// The legacy column is still read when the credential has not been copied.
+func (r *UserRepository) SealedTotp(ctx context.Context, id uuid.UUID) (string, int64, error) {
+	if id == uuid.Nil {
+		return "", 0, fmt.Errorf("load totp secret: user id is required")
+	}
+	present, err := r.countMFA(ctx, id)
+	if err != nil {
+		return "", 0, err
+	}
+	var cred struct {
+		Secret  string
+		Counter int64
+	}
+	if present > 0 {
+		if err := r.Query(ctx).Raw(`
+			SELECT secret, last_used_counter AS counter
+			FROM mfa_credentials
+			WHERE subject_type = ? AND subject_id = ?`, models.MFASubjectUsers, id).Scan(&cred); err != nil {
+			return "", 0, fmt.Errorf("load totp secret: %w", err)
+		}
+	}
+	var legacy struct {
+		Secret  string
+		Counter int64
+	}
+	if err := r.Query(ctx).Raw(`
+		SELECT COALESCE(totp_secret, '') AS secret, totp_last_used_counter AS counter
+		FROM users WHERE id = ?`, id).Scan(&legacy); err != nil {
+		return "", 0, fmt.Errorf("load totp secret: %w", err)
+	}
+	if present > 0 && cred.Secret != "" {
+		return cred.Secret, cred.Counter, nil
+	}
+	if legacy.Secret != "" {
+		return legacy.Secret, legacy.Counter, nil
+	}
+	if present > 0 {
+		return "", cred.Counter, nil
+	}
+	return "", legacy.Counter, nil
+}
+
+// AdvanceTotpCounter stores counter as the last redeemed TOTP step only when
+// it is newer. A credential row and the legacy users column are one counter:
+// the credential is used when it exists, otherwise the column. A replay,
+// including a concurrent one, reports false.
 func (r *UserRepository) AdvanceTotpCounter(ctx context.Context, id uuid.UUID, counter int64) (bool, error) {
+	if id == uuid.Nil {
+		return false, fmt.Errorf("advance totp counter: user id is required")
+	}
+	present, err := r.countMFA(ctx, id)
+	if err != nil {
+		return false, err
+	}
+	if present > 0 {
+		result, err := r.Query(ctx).Model(&models.MfaCredential{}).
+			Where("subject_type = ? AND subject_id = ? AND last_used_counter < ?", models.MFASubjectUsers, id, counter).
+			Update("last_used_counter", counter)
+		if err != nil {
+			return false, fmt.Errorf("advance totp counter: %w", err)
+		}
+		return result.RowsAffected == 1, nil
+	}
 	result, err := r.Query(ctx).Model(&models.User{}).Where("id = ? AND totp_last_used_counter < ?", id, counter).Update("totp_last_used_counter", counter)
 	if err != nil {
 		return false, fmt.Errorf("advance totp counter: %w", err)
 	}
 	return result.RowsAffected == 1, nil
+}
+
+func (r *UserRepository) countMFA(ctx context.Context, id uuid.UUID) (int64, error) {
+	var n int64
+	if err := r.Query(ctx).Raw(`
+		SELECT count(*) FROM mfa_credentials
+		WHERE subject_type = ? AND subject_id = ?`, models.MFASubjectUsers, id).Scan(&n); err != nil {
+		return 0, fmt.Errorf("load totp secret: %w", err)
+	}
+	if n < 0 {
+		return 0, fmt.Errorf("load totp secret: count is negative")
+	}
+	return n, nil
+}
+
+func (r *UserRepository) attachSealedTotp(ctx context.Context, user *models.User) error {
+	if user == nil || user.ID == uuid.Nil {
+		return nil
+	}
+	secret, counter, err := r.SealedTotp(ctx, user.ID)
+	if err != nil {
+		return err
+	}
+	if secret == "" {
+		return nil
+	}
+	user.TotpSecret = secret
+	user.TotpLastUsedCounter = counter
+	return nil
 }
 
 // SetSuspendedAt sets or clears the platform suspension. A nil instant clears

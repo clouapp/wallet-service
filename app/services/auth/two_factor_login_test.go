@@ -112,6 +112,16 @@ func (f *fakeUsers) FindByID(id uuid.UUID) (*models.User, error) {
 	return &clone, nil
 }
 
+func (f *fakeUsers) SealedTotp(userID uuid.UUID) (string, int64, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	user, ok := f.byID[userID]
+	if !ok {
+		return "", 0, nil
+	}
+	return user.TotpSecret, user.TotpLastUsedCounter, nil
+}
+
 func (f *fakeUsers) AdvanceTotpCounter(userID uuid.UUID, counter int64) (bool, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()

@@ -12,6 +12,7 @@ import (
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/repositories"
 	authsvc "github.com/macrowallets/waas/app/services/auth"
+	"github.com/macrowallets/waas/app/services/settings"
 )
 
 const (
@@ -29,6 +30,10 @@ type authRepoBridge struct {
 
 func (b authRepoBridge) FindByID(id uuid.UUID) (*models.User, error) {
 	return b.users.FindByID(context.Background(), id)
+}
+
+func (b authRepoBridge) SealedTotp(id uuid.UUID) (string, int64, error) {
+	return b.users.SealedTotp(context.Background(), id)
 }
 
 func (b authRepoBridge) AdvanceTotpCounter(id uuid.UUID, counter int64) (bool, error) {
@@ -51,6 +56,10 @@ func (b authRepoBridge) RevokeAllForUser(ctx context.Context, userID uuid.UUID) 
 	return b.refresh.RevokeAllForUser(ctx, userID)
 }
 
+func openSealedTotp(stored string) (string, error) {
+	return settings.Open(appfacades.Crypt(), stored)
+}
+
 func wireAuthServices(c *container.Container) error {
 	cfg := appfacades.Config()
 	challengeTTL := time.Duration(cfg.GetInt("auth.two_factor.challenge_ttl_seconds", defaultTwoFactorChallengeTTLSeconds)) * time.Second
@@ -66,7 +75,7 @@ func wireAuthServices(c *container.Container) error {
 		return fmt.Errorf("vault: two factor login: %w", err)
 	}
 	bridge := authRepoBridge{users: c.UserRepo, recovery: c.TotpRecoveryCodeRepo, refresh: c.RefreshTokenRepo}
-	verifier, err := authsvc.NewSecondFactorVerifier(authsvc.NewService(), bridge, bridge, appfacades.Crypt().DecryptString)
+	verifier, err := authsvc.NewSecondFactorVerifier(authsvc.NewService(), bridge, bridge, openSealedTotp)
 	if err != nil {
 		return fmt.Errorf("vault: two factor login: %w", err)
 	}

@@ -12,11 +12,14 @@ import (
 
 type User struct {
 	orm.Model
-	ID               uuid.UUID        `gorm:"type:uuid;primary_key" json:"id"`
-	Email            string           `gorm:"type:varchar(255);uniqueIndex;not null" json:"email"`
-	PasswordHash     string           `gorm:"type:text;not null" json:"-"`
-	FullName         string           `gorm:"type:varchar(255)" json:"full_name,omitempty"`
-	TotpSecret       string           `gorm:"type:text" json:"-"` // encrypted with facades.Crypt()
+	ID           uuid.UUID `gorm:"type:uuid;primary_key" json:"id"`
+	Email        string    `gorm:"type:varchar(255);uniqueIndex;not null" json:"email"`
+	PasswordHash string    `gorm:"type:text;not null" json:"-"`
+	FullName     string    `gorm:"type:varchar(255)" json:"full_name,omitempty"`
+	// TotpSecret is the sealed TOTP secret when a row has been loaded from
+	// mfa_credentials, or the legacy users.totp_secret column until that copy
+	// exists. It is never part of an HTTP body.
+	TotpSecret       string           `gorm:"type:text" json:"-"`
 	TotpEnabled      bool             `gorm:"default:false" json:"totp_enabled"`
 	Status           string           `gorm:"type:varchar(20);default:active" json:"status"`
 	DefaultAccountID *uuid.UUID       `gorm:"type:uuid" json:"default_account_id,omitempty"`

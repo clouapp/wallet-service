@@ -24,6 +24,17 @@ func IsSealed(value string) bool {
 	return strings.HasPrefix(value, sealedPrefix)
 }
 
+// PrefixSeal tags ciphertext that was encrypted before the marker existed.
+// It does not encrypt. An empty value stays empty. A value that already
+// carries the marker is returned unchanged. Open still refuses a value that
+// never received this marker.
+func PrefixSeal(stored string) string {
+	if stored == "" || IsSealed(stored) {
+		return stored
+	}
+	return sealedPrefix + stored
+}
+
 // ErrNotSealed is an Open of a value that was never sealed. The plaintext
 // is not returned.
 var ErrNotSealed = errors.New("open setting: value is not sealed")

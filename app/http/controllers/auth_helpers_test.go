@@ -64,10 +64,10 @@ func (s *authSuite) seedUser(withTOTP bool) seededAuthUser {
 
 	secret, _, err := svc.GenerateTOTP(user.Email)
 	s.Require().NoError(err)
-	sealed, err := facades.Crypt().EncryptString(secret)
+	encrypted, err := facades.Crypt().EncryptString(secret)
 	s.Require().NoError(err)
 	_, err = facades.Orm().Query().Exec(
-		`UPDATE users SET totp_secret = ?, totp_enabled = TRUE WHERE id = ?`, sealed, user.ID,
+		`UPDATE users SET totp_secret = ?, totp_enabled = TRUE WHERE id = ?`, "enc:v1:"+encrypted, user.ID,
 	)
 	s.Require().NoError(err)
 	user.TOTPSecret = secret

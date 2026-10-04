@@ -486,6 +486,7 @@ func (ctrl *AuthController) ResetPassword(ctx http.Context) http.Response {
 
 func (ctrl *AuthController) signedInResponse(user *models.User, tokens controllers.SessionTokens) http.Json {
 	accounts, defaultAccount := ctrl.loadUserAccounts(user)
+	user.TotpSecret = ""
 	resp := http.Json{
 		"access_token":  tokens.AccessToken,
 		"refresh_token": tokens.RefreshToken,
