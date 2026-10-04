@@ -20,6 +20,10 @@ var (
 	// gate is the platform_admins row. webhook_delivery, sweep_limits,
 	// mail_smtp, and mail_delivery declare no permission of their own.
 	ErrPlatformForbidden = errors.New("you do not have permission to update settings")
+	// ErrPlatformViewForbidden is a caller who is not a platform admin. S1.4.6
+	// names settings.view for the platform index; this branch has no platform
+	// permission catalog, so the gate is the platform_admins row.
+	ErrPlatformViewForbidden = errors.New("you do not have permission to view settings")
 	// errSealFailed is internal. The log names the key, never the plaintext.
 	errSealFailed = errors.New("seal setting")
 	// errServiceRequired is a nil settings service.
