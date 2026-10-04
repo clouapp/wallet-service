@@ -84,6 +84,8 @@ func castIn(value any, definition Definition) (string, error) {
 			}
 		}
 		return strings.Join(items, ","), nil
+	case TypeBigInt:
+		return bigIntString(value)
 	default:
 		return "", fmt.Errorf("unknown type %q", definition.Type)
 	}
@@ -101,6 +103,9 @@ func castOut(raw string, definition Definition) any {
 		return raw == "true"
 	case TypeStringList:
 		return splitList(raw)
+	case TypeBigInt:
+		// Raw units stay strings so a wei-scale value is not rounded.
+		return raw
 	default:
 		// Decimals stay strings: JSON numbers cannot keep a fixed scale.
 		return raw
@@ -162,6 +167,22 @@ func integerString(value any) (string, error) {
 	default:
 		return "", fmt.Errorf("expected integer")
 	}
+}
+
+func bigIntString(value any) (string, error) {
+	text, ok := value.(string)
+	if !ok {
+		return "", fmt.Errorf("raw units must be base-10 strings")
+	}
+	text = strings.TrimSpace(text)
+	if text == "" || strings.ContainsAny(text, "+-.") {
+		return "", fmt.Errorf("expected a non-negative base-10 integer")
+	}
+	parsed, ok := new(big.Int).SetString(text, 10)
+	if !ok || parsed.Sign() < 0 {
+		return "", fmt.Errorf("expected a non-negative base-10 integer")
+	}
+	return text, nil
 }
 
 func stringList(value any) ([]string, error) {

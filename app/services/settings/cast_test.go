@@ -55,6 +55,35 @@ func TestCastIn_Decimal(t *testing.T) {
 	}
 }
 
+func TestCastIn_BigInt(t *testing.T) {
+	t.Parallel()
+
+	definition := Definition{Type: TypeBigInt}
+	got, err := castIn("1000000000000000000", definition)
+	if err != nil || got != "1000000000000000000" {
+		t.Fatalf("castIn(wei) = %q, %v", got, err)
+	}
+	got, err = castIn(" 0 ", definition)
+	if err != nil || got != "0" {
+		t.Fatalf("castIn(0) = %q, %v", got, err)
+	}
+	if _, err := castIn("-1", definition); err == nil {
+		t.Fatal("a negative raw amount was stored")
+	}
+	if _, err := castIn("1.5", definition); err == nil {
+		t.Fatal("a fractional raw amount was stored")
+	}
+	if _, err := castIn(float64(1), definition); err == nil {
+		t.Fatal("a JSON number was stored as a raw amount")
+	}
+	if _, err := castIn("", definition); err == nil {
+		t.Fatal("a blank raw amount was stored")
+	}
+	if castOut("1000000000000000000", definition) != "1000000000000000000" {
+		t.Fatal("a raw amount was not returned as a string")
+	}
+}
+
 func TestCastIn_StringList(t *testing.T) {
 	t.Parallel()
 

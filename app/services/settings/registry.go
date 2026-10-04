@@ -39,6 +39,9 @@ const (
 	TypeBool       Type = "bool"
 	TypeDecimal    Type = "decimal"
 	TypeStringList Type = "string_list"
+	// TypeBigInt is an on-chain raw amount: a base-10 string, never a JSON
+	// number. A negative value is refused.
+	TypeBigInt Type = "bigint"
 )
 
 // Definition is one known setting.
