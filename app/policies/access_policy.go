@@ -10,16 +10,16 @@ import (
 
 // PermUsersRead is the account member list. Owner, admin and auditor hold it.
 // The user role does not: the S3.4.2 catalog gives that role no users grant.
-const PermUsersRead = "users.read"
+const PermUsersRead = models.AccountPermUsersRead
 
 // PermUsersWrite is creating an account invite. Owner and admin hold it.
 // Auditor and user do not.
-const PermUsersWrite = "users.write"
+const PermUsersWrite = models.AccountPermUsersWrite
 
 // PermRolesRead is the account role catalog. Owner, admin and auditor hold
 // it. The user role does not. There is no roles.write grant: this branch
 // has no per-account permission override.
-const PermRolesRead = "roles.read"
+const PermRolesRead = models.AccountPermRolesRead
 
 // Grants is the permission set for one request. Nil and empty fail closed.
 // This branch keeps the set in code. There is no account_role_permissions row.

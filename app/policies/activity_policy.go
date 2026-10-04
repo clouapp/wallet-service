@@ -1,7 +1,9 @@
 package policies
 
+import "github.com/macrowallets/waas/app/models"
+
 // PermActivityRead is the account activity list permission.
-const PermActivityRead = "activity.read"
+const PermActivityRead = models.AccountPermActivityRead
 
 // MayReadActivity reports whether the account role holds activity.read.
 // Owner, admin and auditor may list. User may not. Auditor stays read-only:

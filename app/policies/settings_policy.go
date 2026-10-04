@@ -1,5 +1,7 @@
 package policies
 
+import "github.com/macrowallets/waas/app/models"
+
 // Platform settings permissions. The platform route pair is settings.view
 // and settings.update. The account dashboard uses settings.read and
 // settings.write. A group that stores a secret declares its own pair on
@@ -18,8 +20,8 @@ const (
 // role check, so today's readers and writers stay authorized. Platform
 // names stay settings.view and settings.update.
 const (
-	PermSettingsRead  = "settings.read"
-	PermSettingsWrite = "settings.write"
+	PermSettingsRead  = models.AccountPermSettingsRead
+	PermSettingsWrite = models.AccountPermSettingsWrite
 )
 
 // PermMailView and PermMailUpdate are the extra pair on a platform mail

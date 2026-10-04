@@ -6,14 +6,16 @@ import (
 	"github.com/google/uuid"
 	"github.com/goravel/framework/auth/access"
 	contractsaccess "github.com/goravel/framework/contracts/auth/access"
+
+	"github.com/macrowallets/waas/app/models"
 )
 
 // Dashboard API-token permissions. Routes stay on
 // /v1/accounts/{accountId}/tokens. List is tokens.read; create and revoke
 // are tokens.write.
 const (
-	PermTokensRead  = "tokens.read"
-	PermTokensWrite = "tokens.write"
+	PermTokensRead  = models.AccountPermTokensRead
+	PermTokensWrite = models.AccountPermTokensWrite
 )
 
 // AccountPolicy defines gate abilities for Account resources.

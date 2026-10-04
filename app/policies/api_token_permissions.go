@@ -6,18 +6,20 @@ import (
 
 	"github.com/goravel/framework/auth/access"
 	contractsaccess "github.com/goravel/framework/contracts/auth/access"
+
+	"github.com/macrowallets/waas/app/models"
 )
 
 // API token permissions are the account-catalog names S3.4.6 allows on a
 // minted token. They are not a second vocabulary.
 const (
-	PermWalletsRead       = "wallets.read"
-	PermWalletsCreate     = "wallets.create"
-	PermAddressesCreate   = "addresses.create"
-	PermWithdrawalsCreate = "withdrawals.create"
-	PermSweepExecute      = "sweep.execute"
-	PermWebhooksRead      = "webhooks.read"
-	PermWebhooksWrite     = "webhooks.write"
+	PermWalletsRead       = models.AccountPermWalletsRead
+	PermWalletsCreate     = models.AccountPermWalletsCreate
+	PermAddressesCreate   = models.AccountPermAddressesCreate
+	PermWithdrawalsCreate = models.AccountPermWithdrawalsCreate
+	PermSweepExecute      = models.AccountPermSweepExecute
+	PermWebhooksRead      = models.AccountPermWebhooksRead
+	PermWebhooksWrite     = models.AccountPermWebhooksWrite
 	PermTransactionsRead  = "transactions.read"
 
 	apiTokenPermissionNotHeld = "cannot grant a permission you do not hold"
