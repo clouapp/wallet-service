@@ -90,9 +90,11 @@ func (ctrl *UsersController) AddWalletUser(ctx http.Context) http.Response {
 		return resp
 	}
 	targetID, _ := uuid.Parse(req.UserID)
-	if _, err := models.ParseWalletRoles(req.Roles); err != nil {
+	roles, err := models.ParseWalletRoles(req.Roles)
+	if err != nil {
 		return responses.Send(ctx, http.StatusUnprocessableEntity, http.Json{"error": err.Error()})
 	}
+	roleList := models.FormatWalletRoles(roles)
 	if resp := ctrl.requireActiveAccountMember(ctx, wallet, targetID); resp != nil {
 		return resp
 	}
@@ -105,10 +107,10 @@ func (ctrl *UsersController) AddWalletUser(ctx http.Context) http.Response {
 		if err := ctrl.members.Restore(ctx.Context(), existing.ID); err != nil {
 			return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to restore wallet user"})
 		}
-		if req.Roles != "" {
-			if err := ctrl.members.SetRoles(ctx.Context(), existing.ID, req.Roles); err != nil {
-				facades.Log().WithContext(ctx).Errorf("wallet-users: update roles: %v", err)
-			}
+		if err := ctrl.members.SetRoles(ctx.Context(), existing.ID, roleList); err != nil {
+			facades.Log().WithContext(ctx).Errorf("wallet-users: update roles: %v", err)
+		} else {
+			existing.Roles = roleList
 		}
 		return responses.Send(ctx, http.StatusCreated, walletUserViewPtr(existing))
 	}
@@ -117,7 +119,7 @@ func (ctrl *UsersController) AddWalletUser(ctx http.Context) http.Response {
 		ID:       uuid.New(),
 		WalletID: wallet.ID,
 		UserID:   targetID,
-		Roles:    req.Roles,
+		Roles:    roleList,
 		Status:   "active",
 	}
 	if err := ctrl.members.Create(ctx.Context(), wu); err != nil {
@@ -127,7 +129,7 @@ func (ctrl *UsersController) AddWalletUser(ctx http.Context) http.Response {
 }
 
 // requireActiveAccountMember rejects a user_id that is not an active member of
-// the wallet's account. Role-set validation stays with unmerged S8.
+// the wallet's account. An unknown user gets the same 422.
 func (ctrl *UsersController) requireActiveAccountMember(ctx http.Context, wallet *models.Wallet, userID uuid.UUID) http.Response {
 	if wallet.AccountID == nil {
 		return responses.Send(ctx, http.StatusUnprocessableEntity, http.Json{"error": "user is not an active member of this account"})

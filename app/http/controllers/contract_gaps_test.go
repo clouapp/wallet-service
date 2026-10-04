@@ -348,11 +348,28 @@ func (s *contractGapsSuite) TestAddWalletUser_AddsAnActiveAccountMember() {
 	_, memberID, _ := s.seedSession("user")
 
 	resp := s.call(http.MethodPost, "/v1/wallets/"+walletID.String()+"/users", s.token,
-		fmt.Sprintf(`{"user_id":%q,"roles":"view"}`, memberID.String()))
+		fmt.Sprintf(`{"user_id":%q,"roles":" viewer, spender "}`, memberID.String()))
 	resp.AssertCreated()
 	body := s.jsonBody(resp)
 	s.Equal(memberID.String(), body["user_id"])
-	s.Equal("view", body["roles"])
+	s.Equal("viewer,spender", body["roles"])
+}
+
+func (s *contractGapsSuite) TestAddWalletUser_RejectsAnUnknownRole() {
+	walletID := s.seedWallet("wallet user role")
+	_, memberID, _ := s.seedSession("user")
+
+	for _, roles := range []string{"view", "spend", "owner", "auditor", "viewer,nope"} {
+		resp := s.call(http.MethodPost, "/v1/wallets/"+walletID.String()+"/users", s.token,
+			fmt.Sprintf(`{"user_id":%q,"roles":%q}`, memberID.String(), roles))
+		resp.AssertUnprocessableEntity()
+		s.Equal("roles must be a set of admin, spender, approver, viewer", s.errorText(s.jsonBody(resp)))
+	}
+
+	listed := s.call(http.MethodGet, "/v1/wallets/"+walletID.String()+"/users", s.token, "")
+	listed.AssertOk()
+	data, _ := s.jsonBody(listed)["data"].([]any)
+	s.Empty(data)
 }
 
 func (s *contractGapsSuite) TestAddWalletUser_RejectsUserWhoIsNotAMember() {
@@ -368,7 +385,7 @@ func (s *contractGapsSuite) TestAddWalletUser_RejectsUserWhoIsNotAMember() {
 	s.Require().NoError(err)
 
 	resp := s.call(http.MethodPost, "/v1/wallets/"+walletID.String()+"/users", s.token,
-		fmt.Sprintf(`{"user_id":%q,"roles":"view"}`, outsiderID.String()))
+		fmt.Sprintf(`{"user_id":%q,"roles":"viewer"}`, outsiderID.String()))
 	resp.AssertUnprocessableEntity()
 	s.Equal("user is not an active member of this account", s.errorText(s.jsonBody(resp)))
 }

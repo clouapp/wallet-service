@@ -10,10 +10,9 @@ const (
 	WalletRoleSpender  = "spender"
 	WalletRoleApprover = "approver"
 	WalletRoleViewer   = "viewer"
-	WalletRoleView     = "view"
 )
 
-var ErrInvalidWalletRoles = errors.New("roles must be a set of admin, spender, approver, viewer, view")
+var ErrInvalidWalletRoles = errors.New("roles must be a set of admin, spender, approver, viewer")
 
 // ParseWalletRoles accepts a comma-separated set from the closed wallet-role vocabulary.
 // Duplicates and account roles (owner, auditor, user) are rejected.
@@ -43,7 +42,7 @@ func ParseWalletRoles(raw string) ([]string, error) {
 
 func isWalletRole(role string) bool {
 	switch role {
-	case WalletRoleAdmin, WalletRoleSpender, WalletRoleApprover, WalletRoleViewer, WalletRoleView:
+	case WalletRoleAdmin, WalletRoleSpender, WalletRoleApprover, WalletRoleViewer:
 		return true
 	default:
 		return false
