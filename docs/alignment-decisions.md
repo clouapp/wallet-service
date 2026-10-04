@@ -128,7 +128,7 @@ Plan: `macro-wallets-alignment-prompt.md`. Nineteen decisions.
 
 ## 16. RBAC pivot tables were not created
 
-**Decision.** `model_has_roles`, `role_has_permissions`, and `model_has_permissions` have no migration. Account and wallet roles stay on `account_users.role` and `wallet_users.roles`. The architecture test only names the pivot tables so a later read outside `app/policies` would fail.
+**Decision.** `model_has_roles`, `role_has_permissions`, and `model_has_permissions` have no migration. Account and wallet roles stay on `account_users.role` and `wallet_users.roles`. The architecture test only names the pivot tables so a later read outside `app/policies` would fail. S3.4.2's seed into `permissions`, `roles`, and `role_has_permissions` with `guard='account'` stays code-only: those tables are not created and the account role catalog is not seeded.
 
 **Plan.** §9.3 and Appendix B item 360: Spatie-style `roles`, `permissions`, `role_has_permissions`, and `model_has_roles`.
 
