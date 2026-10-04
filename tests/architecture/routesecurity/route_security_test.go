@@ -161,6 +161,8 @@ var routeTable = map[string]routeSecurity{
 	"GET|HEAD /v1/platform/activity":                                   session(chainSession),
 	"GET|HEAD /v1/platform/features":                                   session(chainSession),
 	"GET|HEAD /v1/platform/features/{scope}/{id}":                      session(chainSession),
+	"PUT /v1/platform/features/{scope}/{id}":                           session(chainSession),
+	"PUT /v1/platform/features/{scope}/{id}/{feature}":                 session(chainSession),
 	"GET|HEAD /v1/platform/users":                                      session(chainSession),
 	"PATCH /v1/platform/features/{key}":                                session(chainSession),
 	"DELETE /v1/platform/users/{id}/mfa":                               session(chainSession),

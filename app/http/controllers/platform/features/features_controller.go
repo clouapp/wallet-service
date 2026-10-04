@@ -2,6 +2,7 @@ package features
 
 import (
 	"errors"
+	"strings"
 
 	"github.com/google/uuid"
 	"github.com/goravel/framework/contracts/http"
@@ -112,12 +113,118 @@ func (ctrl *FeaturesController) ShowScope(ctx http.Context) http.Response {
 	return responses.Send(ctx, http.StatusOK, view)
 }
 
+// UpdateScope godoc
+// @Summary      Set account feature flags
+// @Description  S2.4 PUT /v1/platform/features/{scope}/{id}. FeaturePolicy names features.update for any scope and features.account.update for the account scope. Neither is a permission row, so a platform_admins row is the gate and stands in for both. The pair is not a second gate. The body is {"features":[{"key","enabled"}]}. Every key is checked before the first write. An unknown key stores nothing. global, user, and chain are 404 before the admin check. An unknown account is 404 after the admin check. A closed global row is not applied and is not written. Omitted flags are not inserted.
+// @Tags         Platform Features
+// @Security     BearerAuth
+// @Accept       json
+// @Produce      json
+// @Param        scope  path  string  true  "Feature scope"
+// @Param        id     path  string  true  "Account UUID"
+// @Success      200  {object}  featuressvc.List
+// @Failure      400  {object}  responses.ErrorBody
+// @Failure      401  {object}  responses.ErrorBody
+// @Failure      403  {object}  responses.ErrorBody
+// @Failure      404  {object}  responses.ErrorBody
+// @Failure      422  {object}  responses.ErrorBody
+// @Router       /platform/features/{scope}/{id} [put]
+func (ctrl *FeaturesController) UpdateScope(ctx http.Context) http.Response {
+	var path requests.FeatureScopeRequest
+	path.Load(ctx)
+	return ctrl.writeScope(ctx, path.Scope, path.ID, "", false)
+}
+
+// UpdateScopeFeature godoc
+// @Summary      Set one account feature flag
+// @Description  S2.4 PUT /v1/platform/features/{scope}/{id}/{feature}. FeaturePolicy names features.update for any scope and features.account.update for the account scope. Neither is a permission row, so a platform_admins row is the gate and stands in for both. The pair is not a second gate. The body is {"enabled":bool}. An unknown key stores nothing. global, user, and chain are 404 before the admin check. An unknown account is 404 after the admin check. A closed global row is not applied and is not written.
+// @Tags         Platform Features
+// @Security     BearerAuth
+// @Accept       json
+// @Produce      json
+// @Param        scope    path  string  true  "Feature scope"
+// @Param        id       path  string  true  "Account UUID"
+// @Param        feature  path  string  true  "Feature key"
+// @Success      200  {object}  featuressvc.Flag
+// @Failure      400  {object}  responses.ErrorBody
+// @Failure      401  {object}  responses.ErrorBody
+// @Failure      403  {object}  responses.ErrorBody
+// @Failure      404  {object}  responses.ErrorBody
+// @Failure      422  {object}  responses.ErrorBody
+// @Router       /platform/features/{scope}/{id}/{feature} [put]
+func (ctrl *FeaturesController) UpdateScopeFeature(ctx http.Context) http.Response {
+	var path requests.FeatureScopeFeatureRequest
+	path.Load(ctx)
+	return ctrl.writeScope(ctx, path.Scope, path.ID, path.Feature, true)
+}
+
+func (ctrl *FeaturesController) writeScope(ctx http.Context, scope, id, feature string, single bool) http.Response {
+	userID, errResp := platformCaller(ctx)
+	if errResp != nil {
+		return errResp
+	}
+	if strings.TrimSpace(scope) != featuressvc.ScopeAccount {
+		return mapPlatformFeatureError(ctx, featuressvc.ErrScopeNotFound)
+	}
+	accountID, err := uuid.Parse(strings.TrimSpace(id))
+	if err != nil || accountID == uuid.Nil {
+		return mapPlatformFeatureError(ctx, featuressvc.ErrInvalidAccountID)
+	}
+
+	var writes []featuressvc.ScopedWrite
+	if single {
+		enabled, err := requests.AccountFeatureEnabled(ctx)
+		if err != nil {
+			return mapPlatformFeatureBodyError(ctx, err)
+		}
+		writes = []featuressvc.ScopedWrite{{Key: feature, Enabled: enabled}}
+	} else {
+		parsed, err := requests.PlatformFeatureScopeWrites(ctx)
+		if err != nil {
+			return mapPlatformFeatureScopeBodyError(ctx, err)
+		}
+		writes = make([]featuressvc.ScopedWrite, 0, len(parsed))
+		for _, write := range parsed {
+			writes = append(writes, featuressvc.ScopedWrite{Key: write.Key, Enabled: write.Enabled})
+		}
+	}
+
+	view, err := ctrl.features.SetScopedForPlatform(ctx.Context(), userID, scope, id, writes, ctrl.accounts)
+	if errResp := mapPlatformFeatureError(ctx, err); errResp != nil {
+		return errResp
+	}
+	if single {
+		if len(view.Features) != 1 {
+			return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "internal_error"})
+		}
+		return responses.Send(ctx, http.StatusOK, view.Features[0])
+	}
+	return responses.Send(ctx, http.StatusOK, view)
+}
+
 func platformCaller(ctx http.Context) (uuid.UUID, http.Response) {
 	userID := middleware.SessionUserID(ctx)
 	if userID == uuid.Nil {
 		return uuid.Nil, responses.Send(ctx, http.StatusUnauthorized, http.Json{"error": "unauthorized"})
 	}
 	return userID, nil
+}
+
+func mapPlatformFeatureScopeBodyError(ctx http.Context, err error) http.Response {
+	switch {
+	case errors.Is(err, requests.ErrPlatformFeatureScopeBodyTooLarge):
+		return responses.Send(ctx, http.StatusRequestEntityTooLarge, http.Json{"error": "request body is too large"})
+	case errors.Is(err, requests.ErrPlatformFeatureScopeFeaturesRequired):
+		return responses.FieldsFailed(ctx, map[string][]string{
+			"features": {"features is required"},
+		})
+	case errors.Is(err, requests.ErrPlatformFeatureScopeDuplicate):
+		return responses.FieldsFailed(ctx, map[string][]string{
+			"features": {"feature key is duplicated"},
+		})
+	default:
+		return responses.Send(ctx, http.StatusBadRequest, http.Json{"error": "invalid request body"})
+	}
 }
 
 func mapPlatformFeatureBodyError(ctx http.Context, err error) http.Response {
@@ -148,6 +255,10 @@ func mapPlatformFeatureError(ctx http.Context, err error) http.Response {
 		return responses.Send(ctx, http.StatusNotFound, http.Json{"error": err.Error()})
 	case errors.Is(err, featuressvc.ErrInvalidAccountID):
 		return responses.Send(ctx, http.StatusBadRequest, http.Json{"error": err.Error()})
+	case errors.Is(err, featuressvc.ErrDuplicateWrite):
+		return responses.FieldsFailed(ctx, map[string][]string{
+			"features": {"feature key is duplicated"},
+		})
 	case errors.Is(err, featuressvc.ErrPlatformForbidden):
 		return responses.Send(ctx, http.StatusForbidden, http.Json{"error": err.Error()})
 	default:

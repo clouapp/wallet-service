@@ -157,6 +157,14 @@ func RegisterAdminRoutes() {
 		// user and chain are not scopes on this branch, so they are 404 as well.
 		// A platform_admins row is the gate. There is no features.view permission row.
 		router.Get("/features/{scope}/{id}", platformFeaturesCtrl.ShowScope)
+		// S2.4: PUT /v1/platform/features/{scope}/{id}[/{feature}]
+		// FeaturePolicy: features.update (any) | features.account.update (account scope).
+		// Neither name is a permission row. A platform_admins row is the gate
+		// and stands in for both. The pair is not a second gate.
+		// Scope account is the only target this catalog stores. global is refused.
+		// user and chain are 404 before the admin check.
+		router.Put("/features/{scope}/{id}/{feature}", platformFeaturesCtrl.UpdateScopeFeature)
+		router.Put("/features/{scope}/{id}", platformFeaturesCtrl.UpdateScope)
 		// S1.4.7: chains.view and chains.update. A platform_admins row is the gate.
 		router.Patch("/chains/{chainId}/rpc", platformChainsCtrl.UpdateRPC)
 		router.Patch("/chains/{chainId}", platformChainsCtrl.Update)

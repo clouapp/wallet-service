@@ -15,6 +15,9 @@ var (
 	ErrInvalidAccountID = errors.New("invalid account id")
 	// ErrAccountNotFound is an account id that is not stored.
 	ErrAccountNotFound = errors.New("account not found")
+	// ErrDuplicateWrite is the same catalog key twice in one scoped write.
+	// Nothing is stored.
+	ErrDuplicateWrite = errors.New("feature key is duplicated")
 	// ErrViewForbidden is a member who does not hold settings.view.
 	ErrViewForbidden = errors.New("you do not have permission to view account features")
 	// ErrUpdateForbidden is a member who does not hold settings.update.

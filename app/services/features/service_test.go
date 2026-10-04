@@ -549,3 +549,154 @@ func TestListScopedForPlatformReadsTheAccountRowAndNotTheGlobalVeto(t *testing.T
 		t.Fatal("unset flag is not the catalog default")
 	}
 }
+
+type recordingFeatureActivity struct {
+	rows []models.AccountActivity
+}
+
+func (a *recordingFeatureActivity) Within(ctx context.Context, fn func(context.Context) error) error {
+	if fn == nil {
+		return errors.New("activity callback is required")
+	}
+	return fn(ctx)
+}
+
+func (a *recordingFeatureActivity) Append(_ context.Context, row models.AccountActivity) error {
+	copied := row
+	if row.AccountID != nil {
+		id := *row.AccountID
+		copied.AccountID = &id
+	}
+	a.rows = append(a.rows, copied)
+	return nil
+}
+
+func TestSetScopedForPlatformRefusesOtherScopesBeforeTheAdminCheck(t *testing.T) {
+	t.Parallel()
+
+	store := newMemoryStore()
+	admins := &scopeAdmins{allow: uuid.New()}
+	accounts := &scopeAccounts{found: map[uuid.UUID]struct{}{}}
+	service := newTestService(store, admins)
+	accountID := uuid.New()
+	writes := []ScopedWrite{{Key: FlagWithdrawalsEnabled, Enabled: false}}
+
+	for _, scope := range []string{"global", "user", "chain", "account-extra", ""} {
+		_, err := service.SetScopedForPlatform(context.Background(), admins.allow, scope, accountID.String(), writes, accounts)
+		if !errors.Is(err, ErrScopeNotFound) {
+			t.Fatalf("scope %q error = %v", scope, err)
+		}
+	}
+	if admins.calls != 0 || accounts.calls != 0 {
+		t.Fatalf("refused scope checked admin %d times and accounts %d times", admins.calls, accounts.calls)
+	}
+	if len(store.rows) != 0 || len(store.global) != 0 {
+		t.Fatal("refused scope wrote a flag row")
+	}
+}
+
+func TestSetScopedForPlatformWritesTheAccountRowAndNotTheGlobalVeto(t *testing.T) {
+	t.Parallel()
+
+	store := newMemoryStore()
+	adminID := uuid.New()
+	admins := &scopeAdmins{allow: adminID}
+	accountID := uuid.New()
+	accounts := &scopeAccounts{found: map[uuid.UUID]struct{}{accountID: {}}}
+	activity := &recordingFeatureActivity{}
+	service := NewService(store, admins, activity)
+	ctx := context.Background()
+	one := []ScopedWrite{{Key: FlagWithdrawalsEnabled, Enabled: true}}
+
+	_, err := service.SetScopedForPlatform(ctx, uuid.New(), ScopeAccount, accountID.String(), one, accounts)
+	if !errors.Is(err, ErrPlatformForbidden) {
+		t.Fatalf("non-admin error = %v", err)
+	}
+	if accounts.calls != 0 || len(store.rows) != 0 {
+		t.Fatal("non-admin read the account or wrote a row")
+	}
+
+	_, err = service.SetScopedForPlatform(ctx, adminID, ScopeAccount, "not-a-uuid", one, accounts)
+	if !errors.Is(err, ErrInvalidAccountID) {
+		t.Fatalf("bad id error = %v", err)
+	}
+	if admins.calls != 1 {
+		t.Fatalf("bad id checked admin %d times", admins.calls)
+	}
+
+	_, err = service.SetScopedForPlatform(ctx, uuid.New(), ScopeAccount, accountID.String(), []ScopedWrite{{Key: "not-a-flag", Enabled: false}}, accounts)
+	if !errors.Is(err, ErrPlatformForbidden) {
+		t.Fatalf("non-admin unknown key error = %v", err)
+	}
+	if accounts.calls != 0 {
+		t.Fatal("non-admin unknown key read the account")
+	}
+
+	missing := uuid.New()
+	_, err = service.SetScopedForPlatform(ctx, adminID, ScopeAccount, missing.String(), one, accounts)
+	if !errors.Is(err, ErrAccountNotFound) {
+		t.Fatalf("missing account error = %v", err)
+	}
+	if len(store.rows) != 0 {
+		t.Fatal("missing account wrote a row")
+	}
+
+	_, err = service.SetScopedForPlatform(ctx, adminID, ScopeAccount, accountID.String(), []ScopedWrite{{Key: "not-a-flag", Enabled: false}, {Key: FlagSweepEnabled, Enabled: false}}, accounts)
+	if !errors.Is(err, ErrNotFound) {
+		t.Fatalf("unknown key error = %v", err)
+	}
+	if len(store.rows[accountID]) != 0 {
+		t.Fatal("unknown key wrote a row before the valid one")
+	}
+
+	_, err = service.SetScopedForPlatform(ctx, adminID, ScopeAccount, accountID.String(), []ScopedWrite{{Key: FlagSweepEnabled, Enabled: false}, {Key: FlagSweepEnabled, Enabled: true}}, accounts)
+	if !errors.Is(err, ErrDuplicateWrite) {
+		t.Fatalf("duplicate error = %v", err)
+	}
+	if len(store.rows[accountID]) != 0 {
+		t.Fatal("duplicate key wrote a row")
+	}
+
+	if err := store.UpsertGlobal(ctx, FlagWithdrawalsEnabled, false); err != nil {
+		t.Fatalf("global: %v", err)
+	}
+	written, err := service.SetScopedForPlatform(ctx, adminID, ScopeAccount, accountID.String(), one, accounts)
+	if err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	if len(written.Features) != 1 || written.Features[0].Key != FlagWithdrawalsEnabled || !written.Features[0].Enabled {
+		t.Fatalf("write response = %+v", written.Features)
+	}
+	if value, ok := store.written(accountID, FlagWithdrawalsEnabled); !ok || !value {
+		t.Fatal("account row was not stored true")
+	}
+	if len(store.rows[accountID]) != 1 {
+		t.Fatalf("write inserted %d account rows", len(store.rows[accountID]))
+	}
+	if value, ok := store.globalWritten(FlagWithdrawalsEnabled); !ok || value {
+		t.Fatal("account write changed the closed global row")
+	}
+	if len(activity.rows) != 1 || activity.rows[0].Action != "features.updated" || activity.rows[0].TargetID != FlagWithdrawalsEnabled {
+		t.Fatalf("activity = %+v", activity.rows)
+	}
+	if activity.rows[0].AccountID == nil || *activity.rows[0].AccountID != accountID {
+		t.Fatal("activity row is missing the account id")
+	}
+
+	bulk, err := service.SetScopedForPlatform(ctx, adminID, ScopeAccount, accountID.String(), []ScopedWrite{
+		{Key: FlagWalletCreationEnabled, Enabled: false},
+		{Key: FlagSweepEnabled, Enabled: false},
+	}, accounts)
+	if err != nil {
+		t.Fatalf("bulk: %v", err)
+	}
+	if len(bulk.Features) != 2 || bulk.Features[0].Key != FlagSweepEnabled || bulk.Features[0].Enabled || bulk.Features[1].Key != FlagWalletCreationEnabled || bulk.Features[1].Enabled {
+		t.Fatalf("bulk response = %+v", bulk.Features)
+	}
+	if len(store.rows[accountID]) != 3 {
+		t.Fatalf("bulk account rows = %d", len(store.rows[accountID]))
+	}
+	if value, ok := store.written(accountID, FlagWithdrawalsEnabled); !ok || !value {
+		t.Fatal("bulk rewrite cleared the earlier account row")
+	}
+}

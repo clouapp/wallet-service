@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/google/uuid"
@@ -310,6 +311,127 @@ func (s *Service) ListScopedForPlatform(ctx context.Context, actorID uuid.UUID, 
 		})
 	}
 	return List{Features: flags}, nil
+}
+
+// ScopedWrite is one account flag a platform admin asked to store.
+type ScopedWrite struct {
+	Key     string
+	Enabled bool
+}
+
+// SetScopedForPlatform is PUT /v1/platform/features/{scope}/{id}[/{feature}].
+// S2.4 names FeaturePolicy features.update for any scope and
+// features.account.update for the account scope. Neither name is a
+// permission row, so a platform_admins row is the gate and stands in for
+// both. The pair is not a second gate. This catalog stores account rows
+// on this path, so user, chain, global, and any other scope are
+// ErrScopeNotFound before the admin check and before the account is read.
+// An account id that is not a UUID is ErrInvalidAccountID before the admin
+// check. A caller who is not a platform admin is ErrPlatformForbidden and
+// the account is not read, including when a key is unknown. A missing
+// account is ErrAccountNotFound. Every key is checked before the first
+// upsert: an unknown key, or a key that does not apply to the account
+// scope, is ErrNotFound and nothing is stored. A duplicate key is
+// ErrDuplicateWrite and nothing is stored. The boolean that is stored is
+// the account row. A closed global row is not applied and is not written.
+// A flag omitted from the request is not inserted.
+func (s *Service) SetScopedForPlatform(ctx context.Context, actorID uuid.UUID, scope, rawID string, writes []ScopedWrite, accounts Accounts) (List, error) {
+	if s == nil {
+		return List{}, fmt.Errorf("platform features: service is required")
+	}
+	if err := requireUser(ctx, actorID); err != nil {
+		return List{}, err
+	}
+	scope = strings.TrimSpace(scope)
+	if scope != ScopeAccount {
+		return List{}, ErrScopeNotFound
+	}
+	accountID, err := uuid.Parse(strings.TrimSpace(rawID))
+	if err != nil || accountID == uuid.Nil {
+		return List{}, ErrInvalidAccountID
+	}
+	if len(writes) == 0 {
+		return List{}, fmt.Errorf("platform features: at least one flag is required")
+	}
+	if err := s.requirePlatformAdmin(ctx, actorID); err != nil {
+		return List{}, err
+	}
+	if accounts == nil {
+		return List{}, fmt.Errorf("platform features: accounts are required")
+	}
+	account, err := accounts.FindByID(ctx, accountID)
+	if err != nil {
+		if errors.Is(err, models.ErrRepositoryNotFound) {
+			return List{}, ErrAccountNotFound
+		}
+		return List{}, err
+	}
+	if account == nil || account.ID != accountID {
+		return List{}, ErrAccountNotFound
+	}
+	normalized, err := normalizeScopedWrites(writes)
+	if err != nil {
+		return List{}, err
+	}
+	flags := make([]Flag, 0, len(normalized))
+	err = s.activity.Within(ctx, func(ctx context.Context) error {
+		for _, write := range normalized {
+			if err := s.store.Upsert(ctx, account.ID, write.Key, write.Enabled); err != nil {
+				return err
+			}
+		}
+		stored, err := s.stored(ctx, account.ID)
+		if err != nil {
+			return err
+		}
+		for _, write := range normalized {
+			value, ok := stored[write.Key]
+			if !ok {
+				return ErrNotStored
+			}
+			flags = append(flags, Flag{Key: write.Key, Enabled: value})
+			meta, err := activitylog.FeatureChange(write.Key, value)
+			if err != nil {
+				return err
+			}
+			id := account.ID
+			if err := s.activity.Append(ctx, models.AccountActivity{
+				AccountID:   &id,
+				ActorUserID: actorID,
+				Action:      activitylog.ActionFeaturesUpdated,
+				TargetType:  activitylog.TargetFeature,
+				TargetID:    write.Key,
+				Metadata:    meta,
+			}); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return List{}, err
+	}
+	return List{Features: flags}, nil
+}
+
+func normalizeScopedWrites(writes []ScopedWrite) ([]ScopedWrite, error) {
+	seen := make(map[string]struct{}, len(writes))
+	out := make([]ScopedWrite, 0, len(writes))
+	for _, write := range writes {
+		key := strings.TrimSpace(write.Key)
+		if _, ok := Find(key); !ok || !accountFlag(key) {
+			return nil, ErrNotFound
+		}
+		if _, dup := seen[key]; dup {
+			return nil, ErrDuplicateWrite
+		}
+		seen[key] = struct{}{}
+		out = append(out, ScopedWrite{Key: key, Enabled: write.Enabled})
+	}
+	slices.SortFunc(out, func(a, b ScopedWrite) int {
+		return strings.Compare(a.Key, b.Key)
+	})
+	return out, nil
 }
 
 func (s *Service) stored(ctx context.Context, accountID uuid.UUID) (map[string]bool, error) {
