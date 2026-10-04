@@ -179,7 +179,8 @@ func assertPriceGroups(t *testing.T) {
 	t.Helper()
 	lookup, ok := FindGroup(groupPriceLookup)
 	if !ok || lookup.Scope != ScopePlatform || lookup.SectionName() != sectionPrice ||
-		lookup.UpdatePermission != "" || lookup.ViewPermission != "" || len(lookup.Settings) != 1 {
+		lookup.UpdatePermission != "" || lookup.ViewPermission != "" || len(lookup.Settings) != 1 ||
+		lookup.Validate == nil {
 		t.Fatalf("price lookup group = %+v present %v", lookup, ok)
 	}
 	order, ok := Find(groupPriceLookup, keyProviderOrder)

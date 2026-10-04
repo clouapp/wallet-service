@@ -1,6 +1,11 @@
 package settings
 
-import "github.com/macrowallets/waas/app/policies"
+import (
+	"context"
+	"strings"
+
+	"github.com/macrowallets/waas/app/policies"
+)
 
 const (
 	sectionPrice = "price"
@@ -15,6 +20,9 @@ const (
 	priceProviderCoinGecko     = "coingecko"
 	priceProviderCoinMarketCap = "coinmarketcap"
 	priceProviderCoinAPI       = "coinapi"
+
+	priceOrderEmptyInProduction = "must not be empty in production"
+	priceOrderNotEnabled        = "must list only enabled providers"
 )
 
 // S1.4.4 registers price_lookup.provider_order and price_coingecko,
@@ -45,6 +53,9 @@ func priceLookupGroup() Group {
 				Default: func() any { return []string{} },
 			},
 		},
+		// S1.4.8: the order is non-empty in production. Names must also be
+		// enabled on their own price_* groups; that check reads those rows.
+		Validate: validatePriceLookup,
 	}
 }
 
@@ -99,4 +110,56 @@ func priceProviderNames() []string {
 
 func priceProviderGroupNames() []string {
 	return []string{groupPriceCoinGecko, groupPriceCoinMarketCap, groupPriceCoinAPI}
+}
+
+func validatePriceLookup(effective map[string]string) error {
+	if strings.TrimSpace(effective[keyProviderOrder]) != "" || !productionMailEnv() {
+		return nil
+	}
+	return &ValidationError{Fields: map[string][]string{
+		keyProviderOrder: {priceOrderEmptyInProduction},
+	}}
+}
+
+// rejectDisabledPriceProviders applies the S1.4.8 subset rule. The lookup
+// group does not store the other groups' enabled flags, and those flags are
+// not secrets, so the save reads them. A name with no row is not enabled.
+func (s *Service) rejectDisabledPriceProviders(ctx context.Context, stored, writes map[string]string) error {
+	order, ok := writes[keyProviderOrder]
+	if !ok {
+		order = stored[keyProviderOrder]
+	}
+	for _, name := range splitList(order) {
+		groupName, known := priceProviderGroupName(name)
+		if !known {
+			return priceOrderNotEnabledError()
+		}
+		rows, err := s.listPlatformValues(ctx, groupName)
+		if err != nil {
+			return err
+		}
+		if rows[keyPriceEnabled] != "true" {
+			return priceOrderNotEnabledError()
+		}
+	}
+	return nil
+}
+
+func priceOrderNotEnabledError() error {
+	return &ValidationError{Fields: map[string][]string{
+		keyProviderOrder: {priceOrderNotEnabled},
+	}}
+}
+
+func priceProviderGroupName(provider string) (string, bool) {
+	switch provider {
+	case priceProviderCoinGecko:
+		return groupPriceCoinGecko, true
+	case priceProviderCoinMarketCap:
+		return groupPriceCoinMarketCap, true
+	case priceProviderCoinAPI:
+		return groupPriceCoinAPI, true
+	default:
+		return "", false
+	}
 }

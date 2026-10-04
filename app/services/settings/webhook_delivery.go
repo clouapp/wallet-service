@@ -118,6 +118,11 @@ func (s *Service) SavePlatform(ctx context.Context, actorID uuid.UUID, groupName
 	if err != nil {
 		return GroupView{}, err
 	}
+	if group.Name == groupPriceLookup {
+		if err := s.rejectDisabledPriceProviders(ctx, stored, writes); err != nil {
+			return GroupView{}, err
+		}
+	}
 	if len(writes) == 0 {
 		return s.platformGroupView(ctx, group)
 	}

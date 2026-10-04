@@ -52,27 +52,6 @@ func TestSavePlatformPriceSettings_StoresOrderAndSealsTheKey(t *testing.T) {
 		WithPlatformAdmins(allowPlatformAdmins{ids: map[uuid.UUID]bool{actor: true}})
 	ctx := context.Background()
 
-	view, err := service.SavePlatform(ctx, actor, groupPriceLookup, map[string]any{
-		keyProviderOrder: []any{priceProviderCoinGecko, priceProviderCoinMarketCap, priceProviderCoinAPI},
-	})
-	if err != nil {
-		t.Fatalf("save order: %v", err)
-	}
-	if store.rows[platformStoreKey(groupPriceLookup)][keyProviderOrder] != "coingecko,coinmarketcap,coinapi" {
-		t.Fatal("provider order was not stored")
-	}
-	assertPriceViewHidesKey(t, view, "")
-	if len(activity.rows) != 1 || activity.rows[0].Action != "settings.updated" || activity.rows[0].TargetID != groupPriceLookup {
-		t.Fatal("provider order was not recorded")
-	}
-	meta, err := activity.rows[0].Metadata.Encode()
-	if err != nil {
-		t.Fatalf("metadata: %v", err)
-	}
-	if meta != `{"fields":["provider_order"],"group":"price_lookup"}` {
-		t.Fatal("provider order activity named a value")
-	}
-
 	for _, provider := range priceProviderCases() {
 		saved, saveErr := service.SavePlatform(ctx, actor, provider.group, map[string]any{
 			keyPriceEnabled: true,
@@ -115,6 +94,28 @@ func TestSavePlatformPriceSettings_StoresOrderAndSealsTheKey(t *testing.T) {
 			t.Fatal("a blank key was recorded as a change")
 		}
 	}
+
+	view, err := service.SavePlatform(ctx, actor, groupPriceLookup, map[string]any{
+		keyProviderOrder: []any{priceProviderCoinGecko, priceProviderCoinMarketCap, priceProviderCoinAPI},
+	})
+	if err != nil {
+		t.Fatalf("save order: %v", err)
+	}
+	if store.rows[platformStoreKey(groupPriceLookup)][keyProviderOrder] != "coingecko,coinmarketcap,coinapi" {
+		t.Fatal("provider order was not stored")
+	}
+	assertPriceViewHidesKey(t, view, "")
+	row := activity.rows[len(activity.rows)-1]
+	if row.Action != "settings.updated" || row.TargetID != groupPriceLookup {
+		t.Fatal("provider order was not recorded")
+	}
+	meta, err := row.Metadata.Encode()
+	if err != nil {
+		t.Fatalf("metadata: %v", err)
+	}
+	if meta != `{"fields":["provider_order"],"group":"price_lookup"}` {
+		t.Fatal("provider order activity named a value")
+	}
 }
 
 func TestSavePlatformPriceLookup_RejectsAnUnknownProvider(t *testing.T) {
@@ -146,6 +147,69 @@ func TestSavePlatformPriceLookup_RejectsAnUnknownProvider(t *testing.T) {
 	}
 	if _, stored := store.rows[platformStoreKey(groupPriceCoinAPI)]; stored {
 		t.Fatal("an invalid provider write was stored")
+	}
+}
+
+func TestSavePlatformPriceLookup_RejectsADisabledProvider(t *testing.T) {
+	t.Parallel()
+
+	store := newMemoryStore()
+	actor := uuid.New()
+	service := NewService(store, prefixSealer{}, &memoryCache{}, &recordingActivity{}).
+		WithPlatformAdmins(allowPlatformAdmins{ids: map[uuid.UUID]bool{actor: true}})
+	ctx := context.Background()
+	if _, err := service.SavePlatform(ctx, actor, groupPriceCoinGecko, map[string]any{
+		keyPriceEnabled: true,
+		keyPriceAPIKey:  priceCoinGeckoFixture,
+	}); err != nil {
+		t.Fatalf("enable coingecko: %v", err)
+	}
+
+	_, err := service.SavePlatform(ctx, actor, groupPriceLookup, map[string]any{
+		keyProviderOrder: []any{priceProviderCoinGecko, priceProviderCoinAPI},
+	})
+	validation, ok := err.(*ValidationError)
+	if !ok || len(validation.Fields[keyProviderOrder]) == 0 || validation.Fields[keyProviderOrder][0] != priceOrderNotEnabled {
+		t.Fatalf("disabled provider = %v", err)
+	}
+	if _, stored := store.rows[platformStoreKey(groupPriceLookup)]; stored {
+		t.Fatal("an order naming a disabled provider was stored")
+	}
+}
+
+func TestSavePlatformPriceLookup_RefusesAnEmptyOrderInProduction(t *testing.T) {
+	t.Setenv("APP_ENV", "production")
+
+	store := newMemoryStore()
+	actor := uuid.New()
+	service := NewService(store, prefixSealer{}, &memoryCache{}, &recordingActivity{}).
+		WithPlatformAdmins(allowPlatformAdmins{ids: map[uuid.UUID]bool{actor: true}})
+	_, err := service.SavePlatform(context.Background(), actor, groupPriceLookup, map[string]any{
+		keyProviderOrder: []any{},
+	})
+	validation, ok := err.(*ValidationError)
+	if !ok || len(validation.Fields[keyProviderOrder]) == 0 || validation.Fields[keyProviderOrder][0] != priceOrderEmptyInProduction {
+		t.Fatalf("empty production order = %v", err)
+	}
+	if _, stored := store.rows[platformStoreKey(groupPriceLookup)]; stored {
+		t.Fatal("an empty production order was stored")
+	}
+}
+
+func TestSavePlatformPriceLookup_AllowsAnEmptyOrderOutsideProduction(t *testing.T) {
+	t.Setenv("APP_ENV", "local")
+
+	store := newMemoryStore()
+	actor := uuid.New()
+	service := NewService(store, prefixSealer{}, &memoryCache{}, &recordingActivity{}).
+		WithPlatformAdmins(allowPlatformAdmins{ids: map[uuid.UUID]bool{actor: true}})
+	if _, err := service.SavePlatform(context.Background(), actor, groupPriceLookup, map[string]any{
+		keyProviderOrder: []any{},
+	}); err != nil {
+		t.Fatalf("empty order outside production: %v", err)
+	}
+	if store.rows[platformStoreKey(groupPriceLookup)][keyProviderOrder] != "" {
+		t.Fatal("an empty order outside production was not stored")
 	}
 }
 
