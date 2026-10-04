@@ -13,9 +13,11 @@ import (
 )
 
 // ChainsController edits the sweep thresholds and the RPC endpoint stored on
-// a chain row. S1.4.4 names chains.update. That name is not in the code
-// catalog, so a platform_admins row is the gate, the same gate the other
-// /v1/platform routes use. An unknown chain is 404 before that check.
+// a chain row. S1.4.7 names chains.view and chains.update on the catalog
+// entry these routes already use. There is no platform permission catalog,
+// so a platform_admins row is the gate, the same gate the other /v1/platform
+// routes use. The pair is not a second gate. An unknown chain is 404 before
+// that check. The RPC URL is write-only and is never returned.
 type ChainsController struct {
 	thresholds *chainsvc.Thresholds
 	rpc        *chainsvc.RPC

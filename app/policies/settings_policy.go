@@ -40,6 +40,17 @@ const (
 	PermSweepUpdate = "sweep.update"
 )
 
+// PermChainsView and PermChainsUpdate are the pair S1.4.7 names on
+// PATCH /v1/platform/chains/{chainId} and PATCH /v1/platform/chains/{chainId}/rpc.
+// Holding settings.update does not grant that pair. No account role holds
+// either name. The RPC URL stays write-only and is never returned. There is
+// no platform permission catalog, so a platform_admins row stands in. The
+// pair is not a second gate on those routes.
+const (
+	PermChainsView   = "chains.view"
+	PermChainsUpdate = "chains.update"
+)
+
 const (
 	roleOwner   = "owner"
 	roleAdmin   = "admin"

@@ -6,9 +6,10 @@ var (
 	// ErrNotFound is a chain id that does not exist. The route answers 404
 	// before it answers 403.
 	ErrNotFound = errors.New("chain not found")
-	// ErrPlatformForbidden is a caller who is not a platform admin. S1.4.4
-	// names chains.update; this branch has no platform permission catalog, so
-	// the gate is the platform_admins row the other /v1/platform routes use.
+	// ErrPlatformForbidden is a caller who is not a platform admin. S1.4.7
+	// names chains.view and chains.update; this branch has no platform
+	// permission catalog, so the gate is the platform_admins row the other
+	// /v1/platform routes use. The declared pair is not a second gate.
 	ErrPlatformForbidden = errors.New("you do not have permission to update chains")
 )
 

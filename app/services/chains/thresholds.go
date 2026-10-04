@@ -35,23 +35,31 @@ const (
 	kindNumber
 )
 
-// ThresholdCatalog is the chain-row sweep columns
-// PATCH /v1/platform/chains/{chainId} already writes. They are columns on
-// chains, not a settings group. S1.4.7 names sweep.view and sweep.update
-// on this entry. Holding settings.update is not that pair. There is no
-// platform permission catalog, so a platform_admins row stands in.
+// ThresholdCatalog is the code catalog entry PATCH /v1/platform/chains/{chainId}
+// and PATCH /v1/platform/chains/{chainId}/rpc already use. The three threshold
+// columns stay on chains, not a settings group. S1.4.7 names sweep.view and
+// sweep.update on those columns, and chains.view and chains.update on this
+// entry. Holding settings.update is not either pair. The RPC URL is write-only
+// and is never returned. There is no platform permission catalog, so a
+// platform_admins row stands in. The chains pair is not a second gate.
 type ThresholdCatalog struct {
-	ViewPermission   string
-	UpdatePermission string
-	Fields           []string
+	ViewPermission        string
+	UpdatePermission      string
+	ChainViewPermission   string
+	ChainUpdatePermission string
+	ReturnsRPCURL         bool
+	Fields                []string
 }
 
-// ChainThresholdCatalog is the code catalog entry the chain threshold PATCH uses.
+// ChainThresholdCatalog is the code catalog entry both chain PATCH routes use.
 func ChainThresholdCatalog() ThresholdCatalog {
 	return ThresholdCatalog{
-		ViewPermission:   policies.PermSweepView,
-		UpdatePermission: policies.PermSweepUpdate,
-		Fields:           []string{fieldGasReadiness, fieldDustNative, fieldDustUSD},
+		ViewPermission:        policies.PermSweepView,
+		UpdatePermission:      policies.PermSweepUpdate,
+		ChainViewPermission:   policies.PermChainsView,
+		ChainUpdatePermission: policies.PermChainsUpdate,
+		ReturnsRPCURL:         false,
+		Fields:                []string{fieldGasReadiness, fieldDustNative, fieldDustUSD},
 	}
 }
 
@@ -68,6 +76,25 @@ func requireSweepThresholdPair(catalog ThresholdCatalog) error {
 	}
 	if len(catalog.Fields) != 3 {
 		return fmt.Errorf("chain thresholds: sweep columns are required")
+	}
+	return nil
+}
+
+func requireChainPair(catalog ThresholdCatalog) error {
+	if catalog.ChainViewPermission != policies.PermChainsView || catalog.ChainUpdatePermission != policies.PermChainsUpdate {
+		return fmt.Errorf("chain routes: chains.view and chains.update are required")
+	}
+	if catalog.ChainViewPermission == policies.PermSettingsUpdate || catalog.ChainUpdatePermission == policies.PermSettingsUpdate ||
+		catalog.ChainViewPermission == policies.PermSettingsView || catalog.ChainUpdatePermission == policies.PermSettingsView ||
+		catalog.ChainViewPermission == policies.PermSweepView || catalog.ChainUpdatePermission == policies.PermSweepUpdate ||
+		catalog.ChainViewPermission == policies.PermSweepUpdate || catalog.ChainUpdatePermission == policies.PermSweepView {
+		return fmt.Errorf("chain routes: settings.update is not chains.update")
+	}
+	if catalog.ChainViewPermission == catalog.ChainUpdatePermission {
+		return fmt.Errorf("chain routes: chains.view and chains.update must differ")
+	}
+	if catalog.ReturnsRPCURL {
+		return fmt.Errorf("chain routes: the RPC URL is never returned")
 	}
 	return nil
 }
@@ -117,10 +144,11 @@ func NewThresholds(store ThresholdStore, admins PlatformAdmins, activity activit
 
 // Update writes the threshold fields present in body. An unknown chain is
 // ErrNotFound before the platform-admin check. A caller who is not a platform
-// admin is ErrPlatformForbidden. S1.4.4 names chains.update; this branch has
-// no platform permission catalog, so the gate is the platform_admins row.
-// The columns declare sweep.view and sweep.update. A platform_admins row
-// stands in for that pair. Holding settings.update is not sweep.update.
+// admin is ErrPlatformForbidden. S1.4.7 names chains.view and chains.update
+// on this catalog entry. This branch has no platform permission catalog, so
+// the gate stays the platform_admins row. The pair is not a second gate.
+// The columns still declare sweep.view and sweep.update. Holding
+// settings.update is not chains.update.
 // A negative amount or a negative confirmation count is a ValidationError and
 // is not stored. An omitted field leaves that column unchanged. An empty gas
 // string is stored only for a bitcoin chain, where it is the sentinel.
@@ -161,7 +189,11 @@ func (s *Thresholds) Update(ctx context.Context, actorID uuid.UUID, chainID stri
 	if !admin {
 		return ThresholdView{}, ErrPlatformForbidden
 	}
-	if err := requireSweepThresholdPair(ChainThresholdCatalog()); err != nil {
+	catalog := ChainThresholdCatalog()
+	if err := requireSweepThresholdPair(catalog); err != nil {
+		return ThresholdView{}, err
+	}
+	if err := requireChainPair(catalog); err != nil {
 		return ThresholdView{}, err
 	}
 	if body == nil {

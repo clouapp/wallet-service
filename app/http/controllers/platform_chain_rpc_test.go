@@ -24,8 +24,9 @@ import (
 )
 
 // PlatformChainRPCTestSuite is PATCH /v1/platform/chains/{chainId}/rpc from
-// S1.4.4. chains.update is the named permission; a platform_admins row is the
-// gate because that name is not in the code catalog.
+// S1.4.4. S1.4.7 declares chains.view and chains.update on the catalog entry
+// this route already uses. A platform_admins row remains the gate. The URL
+// is write-only and is never returned.
 type PlatformChainRPCTestSuite struct {
 	authSuite
 }

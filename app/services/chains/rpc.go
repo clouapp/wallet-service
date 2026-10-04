@@ -40,8 +40,11 @@ type RPCView struct {
 	RPCURLSet bool `json:"rpcUrlSet"`
 }
 
-// RPC edits chains.rpc_url. S1.4.4 names chains.update. That name is not in
-// the code catalog, so a platform_admins row is the gate.
+// RPC edits chains.rpc_url. S1.4.7 names chains.view and chains.update on
+// ChainThresholdCatalog, the entry this route shares with the threshold
+// PATCH. The URL is write-only and is never returned. There is no platform
+// permission catalog, so a platform_admins row is the gate. The pair is not
+// a second gate.
 type RPC struct {
 	store    RPCStore
 	admins   PlatformAdmins
@@ -105,6 +108,9 @@ func (s *RPC) Update(ctx context.Context, actorID uuid.UUID, chainID string, bod
 	}
 	if !admin {
 		return RPCView{}, ErrPlatformForbidden
+	}
+	if err := requireChainPair(ChainThresholdCatalog()); err != nil {
+		return RPCView{}, err
 	}
 	if body == nil {
 		body = map[string]json.RawMessage{}

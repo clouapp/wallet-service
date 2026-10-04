@@ -143,6 +143,7 @@ func RegisterAdminRoutes() {
 	facades.Route().Prefix("/v1/platform").Middleware(middleware.SessionAuth(), noCache).Group(func(router route.Router) {
 		router.Get("/features", platformFeaturesCtrl.Index)
 		router.Patch("/features/{key}", platformFeaturesCtrl.Update)
+		// S1.4.7: chains.view and chains.update. A platform_admins row is the gate.
 		router.Patch("/chains/{chainId}/rpc", platformChainsCtrl.UpdateRPC)
 		router.Patch("/chains/{chainId}", platformChainsCtrl.Update)
 		// Declared before {group} so the literal path mail/test is not a group name.

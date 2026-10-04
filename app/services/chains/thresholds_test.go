@@ -25,8 +25,13 @@ func TestChainThresholdCatalogDeclaresTheSweepPair(t *testing.T) {
 	require.Equal(t, policies.PermSweepUpdate, catalog.UpdatePermission)
 	require.NotEqual(t, policies.PermSettingsUpdate, catalog.UpdatePermission)
 	require.NotEqual(t, policies.PermSettingsView, catalog.ViewPermission)
-	require.NotEqual(t, "chains.view", catalog.ViewPermission)
-	require.NotEqual(t, "chains.update", catalog.UpdatePermission)
+	require.NotEqual(t, policies.PermChainsView, catalog.ViewPermission)
+	require.NotEqual(t, policies.PermChainsUpdate, catalog.UpdatePermission)
+	require.Equal(t, policies.PermChainsView, catalog.ChainViewPermission)
+	require.Equal(t, policies.PermChainsUpdate, catalog.ChainUpdatePermission)
+	require.NotEqual(t, policies.PermSettingsUpdate, catalog.ChainUpdatePermission)
+	require.NotEqual(t, policies.PermSweepUpdate, catalog.ChainUpdatePermission)
+	require.False(t, catalog.ReturnsRPCURL)
 	require.Equal(t, []string{
 		"gas_readiness_threshold_raw",
 		"dust_threshold_native_raw",
@@ -34,6 +39,9 @@ func TestChainThresholdCatalogDeclaresTheSweepPair(t *testing.T) {
 	}, catalog.Fields)
 	if policies.PermSettingsUpdate == policies.PermSweepUpdate {
 		t.Fatal("holding settings.update does not by itself become sweep.update")
+	}
+	if policies.PermSettingsUpdate == policies.PermChainsUpdate {
+		t.Fatal("holding settings.update does not by itself become chains.update")
 	}
 }
 
