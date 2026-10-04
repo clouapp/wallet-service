@@ -7,10 +7,10 @@ import (
 
 type WhitelistEntry struct {
 	orm.Model
-	ID       uuid.UUID `gorm:"type:uuid;primary_key" json:"id"`
-	WalletID uuid.UUID `gorm:"type:uuid;not null;index" json:"wallet_id"`
-	Label    string    `gorm:"type:varchar(255)" json:"label,omitempty"`
-	Address  string    `gorm:"type:text;not null" json:"address"`
+	ID       uuid.UUID `gorm:"type:uuid;primary_key"`
+	WalletID uuid.UUID `gorm:"type:uuid;not null;index"`
+	Label    string    `gorm:"type:varchar(255)"`
+	Address  string    `gorm:"type:text;not null"`
 }
 
 func (w *WhitelistEntry) TableName() string { return "whitelist_entries" }

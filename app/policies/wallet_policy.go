@@ -6,97 +6,57 @@ import (
 	"github.com/google/uuid"
 	"github.com/goravel/framework/auth/access"
 	contractsaccess "github.com/goravel/framework/contracts/auth/access"
-
-	"github.com/macrowallets/waas/app/container"
 )
 
 // WalletPolicy defines gate abilities for Wallet resources.
-// Abilities: wallet.view, wallet.update, wallet.freeze,
+// Abilities: wallet.view, wallet.update, wallet.archive, wallet.freeze,
 //
 //	wallet.add-user, wallet.remove-user, wallet.whitelist, wallet.manage-webhooks, wallet.cancel-withdrawal
 type WalletPolicy struct{}
 
-// walletUserRole fetches the caller's role in the given wallet.
-func walletUserRole(ctx context.Context, walletID uuid.UUID) string {
-	userID, ok := ctx.Value("user_id").(uuid.UUID)
-	if !ok {
-		return ""
-	}
-	wu, err := container.Get().WalletUserRepo.FindByWalletAndUser(walletID, userID)
-	if err != nil || wu == nil {
-		return ""
-	}
-	return wu.Roles
-}
-
-// accountRoleForWallet fetches the caller's account-level role for the wallet's account.
-func accountRoleForWallet(ctx context.Context, walletID uuid.UUID) string {
-	userID, ok := ctx.Value("user_id").(uuid.UUID)
-	if !ok {
-		return ""
-	}
-	w, err := container.Get().WalletRepo.FindByID(walletID)
-	if err != nil || w == nil {
-		return ""
-	}
-	if w.AccountID == nil {
-		return ""
-	}
-	au, err := container.Get().AccountUserRepo.FindByAccountAndUser(*w.AccountID, userID)
-	if err != nil || au == nil {
-		return ""
-	}
-	return au.Role
+// WalletMembership is the caller's place on one wallet. The caller loads the
+// wallet role and the account role; the policy only decides.
+type WalletMembership struct {
+	WalletRole  string
+	AccountRole string
+	UserID      uuid.UUID
 }
 
 func (p *WalletPolicy) View(ctx context.Context, arguments map[string]any) contractsaccess.Response {
-	walletID, ok := arguments["wallet_id"].(uuid.UUID)
-	if !ok {
+	if _, ok := arguments["wallet_id"].(uuid.UUID); !ok {
 		return access.NewDenyResponse("missing wallet_id")
 	}
-	if walletUserRole(ctx, walletID) != "" || accountRoleForWallet(ctx, walletID) != "" {
-		return access.NewAllowResponse()
-	}
-	return access.NewDenyResponse("not a member of this wallet or its account")
+	return WalletView(membershipFrom(arguments))
 }
 
 func (p *WalletPolicy) Update(ctx context.Context, arguments map[string]any) contractsaccess.Response {
-	walletID, ok := arguments["wallet_id"].(uuid.UUID)
-	if !ok {
+	if _, ok := arguments["wallet_id"].(uuid.UUID); !ok {
 		return access.NewDenyResponse("missing wallet_id")
 	}
-	role := walletUserRole(ctx, walletID)
-	accRole := accountRoleForWallet(ctx, walletID)
-	if role == "owner" || role == "admin" || accRole == "owner" || accRole == "admin" {
+	return WalletUpdate(membershipFrom(arguments))
+}
+
+// Archive allows the same wallet or account owner/admin as Update.
+// S3 (#12, unmerged) will replace this helper with a per-route permission table.
+func (p *WalletPolicy) Archive(ctx context.Context, arguments map[string]any) contractsaccess.Response {
+	if p.Update(ctx, arguments).Allowed() {
 		return access.NewAllowResponse()
 	}
-	return access.NewDenyResponse("only wallet/account owners and admins may update wallet settings")
+	return access.NewDenyResponse("only wallet/account owners and admins may archive wallets")
 }
 
 func (p *WalletPolicy) Freeze(ctx context.Context, arguments map[string]any) contractsaccess.Response {
-	walletID, ok := arguments["wallet_id"].(uuid.UUID)
-	if !ok {
+	if _, ok := arguments["wallet_id"].(uuid.UUID); !ok {
 		return access.NewDenyResponse("missing wallet_id")
 	}
-	role := walletUserRole(ctx, walletID)
-	accRole := accountRoleForWallet(ctx, walletID)
-	if role == "owner" || accRole == "owner" || accRole == "admin" {
-		return access.NewAllowResponse()
-	}
-	return access.NewDenyResponse("only owners and account admins may freeze wallets")
+	return WalletFreeze(membershipFrom(arguments))
 }
 
 func (p *WalletPolicy) AddUser(ctx context.Context, arguments map[string]any) contractsaccess.Response {
-	walletID, ok := arguments["wallet_id"].(uuid.UUID)
-	if !ok {
+	if _, ok := arguments["wallet_id"].(uuid.UUID); !ok {
 		return access.NewDenyResponse("missing wallet_id")
 	}
-	role := walletUserRole(ctx, walletID)
-	accRole := accountRoleForWallet(ctx, walletID)
-	if role == "owner" || role == "admin" || accRole == "owner" || accRole == "admin" {
-		return access.NewAllowResponse()
-	}
-	return access.NewDenyResponse("only wallet/account owners and admins may add wallet users")
+	return WalletAddUser(membershipFrom(arguments))
 }
 
 func (p *WalletPolicy) RemoveUser(ctx context.Context, arguments map[string]any) contractsaccess.Response {
@@ -104,48 +64,123 @@ func (p *WalletPolicy) RemoveUser(ctx context.Context, arguments map[string]any)
 }
 
 func (p *WalletPolicy) Whitelist(ctx context.Context, arguments map[string]any) contractsaccess.Response {
-	walletID, ok := arguments["wallet_id"].(uuid.UUID)
-	if !ok {
+	if _, ok := arguments["wallet_id"].(uuid.UUID); !ok {
 		return access.NewDenyResponse("missing wallet_id")
 	}
-	role := walletUserRole(ctx, walletID)
-	accRole := accountRoleForWallet(ctx, walletID)
-	if role == "owner" || role == "admin" || accRole == "owner" || accRole == "admin" {
+	return WalletWhitelist(membershipFrom(arguments))
+}
+
+func (p *WalletPolicy) ManageWebhooks(ctx context.Context, arguments map[string]any) contractsaccess.Response {
+	if _, ok := arguments["wallet_id"].(uuid.UUID); !ok {
+		return access.NewDenyResponse("missing wallet_id")
+	}
+	return WalletManageWebhooks(membershipFrom(arguments))
+}
+
+func (p *WalletPolicy) CancelWithdrawal(ctx context.Context, arguments map[string]any) contractsaccess.Response {
+	if _, ok := arguments["wallet_id"].(uuid.UUID); !ok {
+		return access.NewDenyResponse("missing wallet_id")
+	}
+	membership := membershipFrom(arguments)
+	if mayAdministerWallet(membership) {
+		return access.NewAllowResponse()
+	}
+	creatorID, ok := arguments["creator_id"].(uuid.UUID)
+	if ok && creatorID == membership.UserID {
+		return access.NewAllowResponse()
+	}
+	return access.NewDenyResponse("only the creator or an owner/admin may cancel this withdrawal")
+}
+
+// WalletView is the wallet.view decision for a membership the caller loaded.
+func WalletView(membership WalletMembership) contractsaccess.Response {
+	if membership.WalletRole != "" || membership.AccountRole != "" {
+		return access.NewAllowResponse()
+	}
+	return access.NewDenyResponse("not a member of this wallet or its account")
+}
+
+// WalletArchive is the wallet.archive decision. The allow rule matches update;
+// the denial names archive so the route can say what was refused.
+func WalletArchive(membership WalletMembership) contractsaccess.Response {
+	if mayAdministerWallet(membership) {
+		return access.NewAllowResponse()
+	}
+	return access.NewDenyResponse("only wallet/account owners and admins may archive wallets")
+}
+
+// WalletUpdate is the wallet.update decision for a membership the caller loaded.
+func WalletUpdate(membership WalletMembership) contractsaccess.Response {
+	if mayAdministerWallet(membership) {
+		return access.NewAllowResponse()
+	}
+	return access.NewDenyResponse("only wallet/account owners and admins may update wallet settings")
+}
+
+// WalletFreeze is the wallet.freeze decision for a membership the caller loaded.
+func WalletFreeze(membership WalletMembership) contractsaccess.Response {
+	if membership.WalletRole == roleOwner || membership.AccountRole == roleOwner || membership.AccountRole == roleAdmin {
+		return access.NewAllowResponse()
+	}
+	return access.NewDenyResponse("only owners and account admins may freeze wallets")
+}
+
+// WalletAddUser is the wallet.add-user decision for a membership the caller loaded.
+func WalletAddUser(membership WalletMembership) contractsaccess.Response {
+	if mayAdministerWallet(membership) {
+		return access.NewAllowResponse()
+	}
+	return access.NewDenyResponse("only wallet/account owners and admins may add wallet users")
+}
+
+// WalletRemoveUser is the wallet.remove-user decision for a membership the caller loaded.
+func WalletRemoveUser(membership WalletMembership) contractsaccess.Response {
+	return WalletAddUser(membership)
+}
+
+// WalletWhitelist is the wallet.whitelist decision for a membership the caller loaded.
+func WalletWhitelist(membership WalletMembership) contractsaccess.Response {
+	if mayAdministerWallet(membership) {
 		return access.NewAllowResponse()
 	}
 	return access.NewDenyResponse("only wallet/account owners and admins may manage the whitelist")
 }
 
-func (p *WalletPolicy) ManageWebhooks(ctx context.Context, arguments map[string]any) contractsaccess.Response {
-	walletID, ok := arguments["wallet_id"].(uuid.UUID)
-	if !ok {
-		return access.NewDenyResponse("missing wallet_id")
-	}
-	role := walletUserRole(ctx, walletID)
-	accRole := accountRoleForWallet(ctx, walletID)
-	if role == "owner" || role == "admin" || accRole == "owner" || accRole == "admin" {
+// WalletManageWebhooks is the wallet.manage-webhooks decision for a membership the caller loaded.
+func WalletManageWebhooks(membership WalletMembership) contractsaccess.Response {
+	if mayAdministerWallet(membership) {
 		return access.NewAllowResponse()
 	}
 	return access.NewDenyResponse("only wallet/account owners and admins may manage webhooks")
 }
 
-func (p *WalletPolicy) CancelWithdrawal(ctx context.Context, arguments map[string]any) contractsaccess.Response {
-	walletID, ok := arguments["wallet_id"].(uuid.UUID)
-	if !ok {
-		return access.NewDenyResponse("missing wallet_id")
-	}
-
-	role := walletUserRole(ctx, walletID)
-	accRole := accountRoleForWallet(ctx, walletID)
-	if role == "owner" || role == "admin" || accRole == "owner" || accRole == "admin" {
+// WalletCancelWithdrawal is the wallet.cancel-withdrawal decision.
+// The creator may cancel their own withdrawal; owners and admins may cancel any.
+func WalletCancelWithdrawal(membership WalletMembership, creatorID uuid.UUID) contractsaccess.Response {
+	if mayAdministerWallet(membership) {
 		return access.NewAllowResponse()
 	}
-
-	userID, _ := ctx.Value("user_id").(uuid.UUID)
-	creatorID, ok := arguments["creator_id"].(uuid.UUID)
-	if ok && creatorID == userID {
+	if creatorID == membership.UserID {
 		return access.NewAllowResponse()
 	}
-
 	return access.NewDenyResponse("only the creator or an owner/admin may cancel this withdrawal")
+}
+
+func mayAdministerWallet(membership WalletMembership) bool {
+	return membership.WalletRole == roleOwner || membership.WalletRole == roleAdmin ||
+		membership.AccountRole == roleOwner || membership.AccountRole == roleAdmin
+}
+
+func membershipFrom(arguments map[string]any) WalletMembership {
+	if arguments == nil {
+		return WalletMembership{}
+	}
+	walletRole, _ := arguments["wallet_role"].(string)
+	accountRole, _ := arguments["account_role"].(string)
+	userID, _ := arguments["user_id"].(uuid.UUID)
+	return WalletMembership{
+		WalletRole:  walletRole,
+		AccountRole: accountRole,
+		UserID:      userID,
+	}
 }

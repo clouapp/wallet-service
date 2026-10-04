@@ -4,6 +4,8 @@ import (
 	"math/big"
 
 	"github.com/goravel/framework/database/orm"
+	"github.com/shopspring/decimal"
+	"gorm.io/gorm"
 
 	"github.com/macrowallets/waas/pkg/numeric"
 )
@@ -63,25 +65,43 @@ const (
 
 type Chain struct {
 	orm.Model
-	ID                       string              `gorm:"type:varchar(20);primary_key" json:"id"`
-	Name                     string              `gorm:"type:varchar(100);not null" json:"name"`
-	AdapterType              string              `gorm:"type:varchar(20);not null" json:"adapter_type"`
-	NativeSymbol             string              `gorm:"type:varchar(20);not null" json:"native_symbol"`
-	NativeDecimals           int                 `gorm:"not null" json:"native_decimals"`
-	NetworkID                *int64              `gorm:"type:bigint" json:"network_id,omitempty"`
-	RpcURL                   string              `gorm:"type:text;not null" json:"-"`
-	IsTestnet                bool                `gorm:"default:false" json:"is_testnet"`
-	MainnetChainID           *string             `gorm:"type:varchar(20)" json:"mainnet_chain_id,omitempty"`
-	RequiredConfirmations    int                 `gorm:"not null" json:"required_confirmations"`
-	IconURL                  *string             `gorm:"type:varchar(500)" json:"icon_url,omitempty"`
-	DisplayOrder             int                 `gorm:"default:0" json:"display_order"`
-	Status                   string              `gorm:"type:varchar(20);default:active" json:"status"`
-	GasReadinessThresholdRaw *string             `gorm:"type:text" json:"-"`
-	DustThresholdNativeRaw   *string             `gorm:"type:text" json:"-"`
-	DustThresholdUSD         numeric.NullDecimal `gorm:"type:decimal(16,4)" json:"-"`
+	ID                       string              `gorm:"type:varchar(20);primary_key"`
+	Name                     string              `gorm:"type:varchar(100);not null"`
+	AdapterType              string              `gorm:"type:varchar(20);not null"`
+	NativeSymbol             string              `gorm:"type:varchar(20);not null"`
+	NativeDecimals           int                 `gorm:"not null"`
+	NetworkID                *int64              `gorm:"type:bigint"`
+	RpcURL                   string              `gorm:"type:text;not null"`
+	IsTestnet                bool                `gorm:"default:false"`
+	MainnetChainID           *string             `gorm:"type:varchar(20)"`
+	RequiredConfirmations    int                 `gorm:"not null"`
+	IconURL                  *string             `gorm:"type:varchar(500)"`
+	DisplayOrder             int                 `gorm:"default:0"`
+	Status                   string              `gorm:"type:varchar(20);default:active"`
+	GasReadinessThresholdRaw *string             `gorm:"type:text;not null"`
+	DustThresholdNativeRaw   *string             `gorm:"type:text;not null"`
+	DustThresholdUSD         numeric.NullDecimal `gorm:"type:decimal(16,4);not null"`
 }
 
 func (c *Chain) TableName() string { return "chains" }
+
+// BeforeCreate stores an empty raw threshold and a zero USD threshold when the
+// caller left them unset. The columns are NOT NULL. An empty raw value is read
+// as "not set", and zero USD disables token-dust filtering.
+func (c *Chain) BeforeCreate(*gorm.DB) error {
+	if c.GasReadinessThresholdRaw == nil {
+		empty := ""
+		c.GasReadinessThresholdRaw = &empty
+	}
+	if c.DustThresholdNativeRaw == nil {
+		empty := ""
+		c.DustThresholdNativeRaw = &empty
+	}
+	if !c.DustThresholdUSD.Valid {
+		c.DustThresholdUSD = numeric.NewNullDecimal(decimal.Zero)
+	}
+	return nil
+}
 
 func (c *Chain) GasReadinessThreshold() *big.Int {
 	if c.GasReadinessThresholdRaw == nil || *c.GasReadinessThresholdRaw == "" {

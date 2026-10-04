@@ -109,14 +109,14 @@ func (s *service) QuoteWithdrawalFee(ctx context.Context, req FeeQuoteRequest) (
 	if req.Amount == nil || req.Amount.Sign() <= 0 {
 		return nil, fmt.Errorf("sweep: fee quote amount must be greater than zero")
 	}
-	wallet, err := s.walletRepo.FindByID(req.WalletID)
+	wallet, err := s.walletRepo.FindByID(ctx, req.WalletID)
 	if err != nil {
 		return nil, fmt.Errorf("sweep: find wallet: %w", err)
 	}
 	if wallet == nil || wallet.DepositAddress == nil {
 		return nil, fmt.Errorf("sweep: wallet %s not found or has no base address", req.WalletID)
 	}
-	chainEntity, err := s.chainRepo.FindByID(wallet.Chain)
+	chainEntity, err := s.chainRepo.FindByID(ctx, wallet.Chain)
 	if err != nil || chainEntity == nil {
 		return nil, fmt.Errorf("sweep: chain %q not found: %v", wallet.Chain, err)
 	}

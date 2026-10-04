@@ -2,15 +2,29 @@ package jobs
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/macrowallets/waas/app/container"
+	"github.com/macrowallets/waas/app/models"
+	"github.com/macrowallets/waas/app/services/refresh"
+	"github.com/macrowallets/waas/app/services/walletrecords"
 )
 
-type ReconcileWalletState struct{}
+type ReconcileWalletState struct {
+	balances *refresh.BalanceService
+}
+
+// NewReconcileWalletState reconciles one wallet against chain state.
+func NewReconcileWalletState(balances *refresh.BalanceService) *ReconcileWalletState {
+	if balances == nil {
+		panic("reconcile_wallet_state: balance refresh service is required")
+	}
+	return &ReconcileWalletState{balances: balances}
+}
 
 func (j *ReconcileWalletState) Signature() string {
 	return "reconcile_wallet_state"
@@ -34,21 +48,23 @@ func (j *ReconcileWalletState) Handle(args ...any) error {
 		return fmt.Errorf("reconcile_wallet_state: invalid wallet_id: %w", err)
 	}
 
-	c := container.Get()
-	wallet, err := c.WalletRepo.FindByID(walletID)
-	if err != nil {
+	wallet, err := container.MustMake[*walletrecords.Wallets]().FindByID(context.Background(), walletID)
+	if err != nil && !errors.Is(err, models.ErrRepositoryNotFound) {
 		return fmt.Errorf("reconcile_wallet_state: load wallet: %w", err)
 	}
-	if wallet == nil {
+	if wallet == nil || errors.Is(err, models.ErrRepositoryNotFound) {
 		return fmt.Errorf("reconcile_wallet_state: wallet not found: %s", walletIDStr)
 	}
 	if wallet.Chain != chainID {
 		return fmt.Errorf("reconcile_wallet_state: chain_id %q does not match wallet chain %q", chainID, wallet.Chain)
 	}
 
+	if j.balances == nil {
+		return fmt.Errorf("reconcile_wallet_state: balance refresh service is not initialized")
+	}
 	slog.Info("reconcile_wallet_state", "wallet", walletIDStr, "chain", chainID)
 	// Full reconciliation compares chain state vs DB; for now runs a fresh balance sync
-	if err := c.BalanceRefreshService.RefreshWallet(context.Background(), wallet); err != nil {
+	if err := j.balances.RefreshWallet(context.Background(), wallet); err != nil {
 		return fmt.Errorf("reconcile_wallet_state: %w", err)
 	}
 	return nil

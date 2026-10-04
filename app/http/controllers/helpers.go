@@ -1,32 +1,28 @@
 package controllers
 
 import (
+	contractsaccess "github.com/goravel/framework/contracts/auth/access"
 	"github.com/goravel/framework/contracts/http"
-	"github.com/goravel/framework/facades"
+
+	"github.com/macrowallets/waas/app/http/requests"
+	"github.com/macrowallets/waas/app/http/responses"
 )
 
 func validateRequest(ctx http.Context, req http.FormRequest) http.Response {
-	if len(req.Rules(ctx)) == 0 {
-		return nil
-	}
-
-	validationErrors, err := ctx.Request().ValidateRequest(req)
-	if err != nil {
-		if validationErrors != nil {
-			return ctx.Response().Json(http.StatusUnprocessableEntity, validationErrors.All())
-		}
-		return ctx.Response().Json(http.StatusBadRequest, http.Json{"error": "invalid request body"})
-	}
-	if validationErrors != nil {
-		return ctx.Response().Json(http.StatusUnprocessableEntity, validationErrors.All())
-	}
-	return nil
+	return ValidateRequest(ctx, req)
 }
 
-func authorize(ctx http.Context, ability string, arguments map[string]any) http.Response {
-	response := facades.Gate().WithContext(ctx).Inspect(ability, arguments)
-	if response.Allowed() {
+// ValidateRequest is the form-request check shared with surface packages.
+// The body lives in requests.Validate so dashboard and external handlers keep the same 422 bytes.
+func ValidateRequest(ctx http.Context, req http.FormRequest) http.Response {
+	return requests.Validate(ctx, req)
+}
+
+// Deny maps a policy denial to HTTP 403. The body is the policy message, the
+// same bytes the gate helper used to write. An allow returns nil.
+func Deny(ctx http.Context, decision contractsaccess.Response) http.Response {
+	if decision.Allowed() {
 		return nil
 	}
-	return ctx.Response().Json(http.StatusForbidden, http.Json{"error": response.Message()})
+	return responses.Send(ctx, http.StatusForbidden, http.Json{"error": decision.Message()})
 }

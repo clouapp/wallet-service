@@ -17,7 +17,6 @@ import (
 	"github.com/goravel/framework/contracts/console"
 	"github.com/goravel/framework/contracts/console/command"
 
-	"github.com/macrowallets/waas/app/container"
 	"github.com/macrowallets/waas/app/services/evmcall"
 )
 
@@ -33,7 +32,16 @@ var evmCallRPCEnvPattern = regexp.MustCompile(`^[A-Z][A-Z0-9_]*$`)
 // EVMCall simulates, and with --broadcast sends exactly once, an EVM call from a
 // wallet's base address on an allowlisted EVM testnet (e.g. an L1 → L2 bridge
 // deposit). A dev tool: mainnet chain ids are refused.
-type EVMCall struct{}
+type EVMCall struct {
+	wallets evmcall.WalletSource
+	signer  evmcall.Signer
+}
+
+// NewEVMCall wires the wallet lookup and the MPC signer. The signer is used only
+// when --broadcast is set.
+func NewEVMCall(wallets evmcall.WalletSource, signer evmcall.Signer) *EVMCall {
+	return &EVMCall{wallets: wallets, signer: signer}
+}
 
 type evmCallFlags struct {
 	Wallet, ChainID, To, Data, Value, ValueWei, RPCEnv, GasLimit, Tag, ClaimDir string
@@ -86,7 +94,7 @@ func (c *EVMCall) Handle(ctx console.Context) error {
 	background, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	service, err := newEVMCallService(invocation)
+	service, err := c.newEVMCallService(invocation)
 	if err != nil {
 		return failCommand(ctx, err)
 	}
@@ -220,7 +228,10 @@ func parseEVMCallGasLimit(raw string) (uint64, error) {
 	return gasLimit, nil
 }
 
-func newEVMCallService(invocation evmCallInvocation) (*evmcall.Service, error) {
+func (c *EVMCall) newEVMCallService(invocation evmCallInvocation) (*evmcall.Service, error) {
+	if c == nil || c.wallets == nil {
+		return nil, fmt.Errorf("evm call: wallet source is required")
+	}
 	rpcURL := strings.TrimSpace(os.Getenv(invocation.rpcEnv))
 	if rpcURL == "" {
 		return nil, fmt.Errorf("environment variable %s is not set", invocation.rpcEnv)
@@ -229,18 +240,16 @@ func newEVMCallService(invocation evmCallInvocation) (*evmcall.Service, error) {
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", invocation.rpcEnv, err)
 	}
-	ctr := container.Get()
-	deps := evmcall.Dependencies{RPC: rpc, Wallets: ctr.WalletRepo}
+	deps := evmcall.Dependencies{RPC: rpc, Wallets: c.wallets}
 	if invocation.broadcast {
-		signer, ok := ctr.SweepService.(evmcall.Signer)
-		if !ok {
+		if c.signer == nil {
 			return nil, fmt.Errorf("sweep service cannot sign evm calls")
 		}
 		claimDir, err := resolveEVMCallClaimDir(invocation.claimDir)
 		if err != nil {
 			return nil, err
 		}
-		deps.Signer, deps.Claimer = signer, evmcall.FileClaimer{Dir: claimDir}
+		deps.Signer, deps.Claimer = c.signer, evmcall.FileClaimer{Dir: claimDir}
 	}
 	return evmcall.NewService(deps)
 }

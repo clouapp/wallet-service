@@ -1,6 +1,7 @@
 package withdrawalevents
 
 import (
+	"context"
 	"testing"
 
 	"github.com/macrowallets/waas/app/models"
@@ -10,7 +11,7 @@ import (
 
 type chainRows map[string]*models.Chain
 
-func (c chainRows) FindByID(id string) (*models.Chain, error) { return c[id], nil }
+func (c chainRows) FindByID(_ context.Context, id string) (*models.Chain, error) { return c[id], nil }
 
 func addedChainsRegistry() (*chain.Registry, chainRows) {
 	registry := chain.NewRegistry()

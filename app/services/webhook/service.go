@@ -1,7 +1,6 @@
 package webhook
 
 import (
-	"bytes"
 	"context"
 	"crypto/hmac"
 	"crypto/sha256"
@@ -10,17 +9,37 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"net/http"
 	"strings"
 	"time"
 
 	"github.com/google/uuid"
 
 	"github.com/macrowallets/waas/app/models"
-	"github.com/macrowallets/waas/app/repositories"
 	"github.com/macrowallets/waas/app/services/queue"
+	"github.com/macrowallets/waas/pkg/httpclient"
 	"github.com/macrowallets/waas/pkg/types"
 )
+
+// configStore is the webhook endpoint persistence this service uses.
+type configStore interface {
+	FindActive(ctx context.Context) ([]models.WebhookConfig, error)
+	Create(ctx context.Context, cfg *models.WebhookConfig) error
+	FindAll(ctx context.Context) ([]models.WebhookConfig, error)
+	FindVisibleToAccount(ctx context.Context, accountID uuid.UUID) ([]models.WebhookConfig, error)
+	FindByID(ctx context.Context, id uuid.UUID) (*models.WebhookConfig, error)
+	AssignAccount(ctx context.Context, id, accountID uuid.UUID, events *string, isActive *bool) error
+	DeleteByID(ctx context.Context, id uuid.UUID) error
+}
+
+// eventStore is the delivery-queue persistence this service uses.
+type eventStore interface {
+	Create(ctx context.Context, event *models.WebhookEvent) error
+	MarkDelivered(ctx context.Context, eventID string) error
+	IncrementAttempt(ctx context.Context, eventID, errMsg string) error
+	ExistsForSubject(ctx context.Context, configID uuid.UUID, eventType, subjectID string) (bool, error)
+	FindDueForDelivery(ctx context.Context, limit int, baseBackoff, maxBackoff time.Duration) ([]models.WebhookEvent, error)
+	MarkFailed(ctx context.Context, eventID, errMsg string) error
+}
 
 // ---------------------------------------------------------------------------
 // Service — webhook management.
@@ -29,11 +48,11 @@ import (
 
 type Service struct {
 	sqs               queue.Sender
-	webhookConfigRepo repositories.WebhookConfigRepository
-	webhookEventRepo  repositories.WebhookEventRepository
+	webhookConfigRepo configStore
+	webhookEventRepo  eventStore
 }
 
-func NewService(sqs queue.Sender, webhookConfigRepo repositories.WebhookConfigRepository, webhookEventRepo repositories.WebhookEventRepository) *Service {
+func NewService(sqs queue.Sender, webhookConfigRepo configStore, webhookEventRepo eventStore) *Service {
 	return &Service{sqs: sqs, webhookConfigRepo: webhookConfigRepo, webhookEventRepo: webhookEventRepo}
 }
 
@@ -53,7 +72,7 @@ func (s *Service) EnqueueEvent(ctx context.Context, txID uuid.UUID, eventType ty
 		return
 	}
 
-	allConfigs, err := s.webhookConfigRepo.FindActive()
+	allConfigs, err := s.webhookConfigRepo.FindActive(ctx)
 	if err != nil {
 		slog.Error("query webhook configs", "error", err)
 		return
@@ -83,7 +102,7 @@ func (s *Service) EnqueueEvent(ctx context.Context, txID uuid.UUID, eventType ty
 			Attempts:        0,
 			MaxAttempts:     10,
 		}
-		if err := s.webhookEventRepo.Create(webhookEvent); err != nil {
+		if err := s.webhookEventRepo.Create(ctx, webhookEvent); err != nil {
 			slog.Error("insert webhook event", "error", err)
 			continue
 		}
@@ -128,45 +147,91 @@ func legacyEventWallet(data interface{}) *uuid.UUID {
 	return nil
 }
 
+const (
+	webhookDeliveryTimeout = 10 * time.Second
+	// Test deliveries are synchronous dashboard calls, so they fail fast.
+	webhookTestTimeout = 3 * time.Second
+	webhookTestEvent   = "webhook.test"
+)
+
 // Deliver executes the HTTP delivery. Called by the SQS Lambda worker.
 // Returns error to trigger SQS retry → eventually DLQ after 10 failures.
 func (s *Service) Deliver(ctx context.Context, msg types.WebhookMessage) error {
-	mac := hmac.New(sha256.New, []byte(msg.Secret))
-	mac.Write([]byte(msg.Payload))
-	signature := hex.EncodeToString(mac.Sum(nil))
-
-	req, err := http.NewRequestWithContext(ctx, "POST", msg.DeliveryURL, bytes.NewReader([]byte(msg.Payload)))
+	resp, err := postSignedWebhook(ctx, msg.DeliveryURL, msg.Secret, msg.Payload, string(msg.EventType), msg.EventID, webhookDeliveryTimeout)
 	if err != nil {
-		return fmt.Errorf("build request: %w", err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("X-Vault-Signature", signature)
-	req.Header.Set("X-Vault-Event", string(msg.EventType))
-	req.Header.Set("X-Vault-Delivery-Id", msg.EventID)
-	req.Header.Set("X-Vault-Timestamp", fmt.Sprintf("%d", time.Now().Unix()))
-
-	client := &http.Client{Timeout: 10 * time.Second}
-	resp, err := client.Do(req)
-	if err != nil {
+		if httpclient.IsBuild(err) {
+			return fmt.Errorf("build request: %w", err)
+		}
 		s.markAttempt(ctx, msg.EventID, err.Error())
 		return fmt.Errorf("http send: %w", err)
 	}
-	defer resp.Body.Close()
 
-	if resp.StatusCode >= 400 {
+	if resp.StatusCode >= httpclient.StatusBadRequest {
 		errMsg := fmt.Sprintf("HTTP %d", resp.StatusCode)
 		s.markAttempt(ctx, msg.EventID, errMsg)
 		return fmt.Errorf("delivery failed: %s", errMsg)
 	}
 
-	s.webhookEventRepo.MarkDelivered(msg.EventID)
+	s.webhookEventRepo.MarkDelivered(ctx, msg.EventID)
 
 	slog.Info("webhook delivered", "event_id", msg.EventID, "url", msg.DeliveryURL)
 	return nil
 }
 
 func (s *Service) markAttempt(ctx context.Context, eventID, errMsg string) {
-	s.webhookEventRepo.IncrementAttempt(eventID, errMsg)
+	s.webhookEventRepo.IncrementAttempt(ctx, eventID, errMsg)
+}
+
+// SendTest posts one signed webhook.test body to the config URL and does not
+// retry or persist a delivery. The signing secret is never written to logs.
+func (s *Service) SendTest(ctx context.Context, cfg *models.WebhookConfig, walletID uuid.UUID) error {
+	if cfg == nil || strings.TrimSpace(cfg.URL) == "" {
+		return ErrWebhookConfigNotFound
+	}
+	eventID := uuid.New().String()
+	payload, err := json.Marshal(map[string]any{
+		"id":         eventID,
+		"type":       webhookTestEvent,
+		"created_at": time.Now().UTC().Format(time.RFC3339),
+		"data": map[string]string{
+			"wallet_id":  walletID.String(),
+			"webhook_id": cfg.ID.String(),
+		},
+	})
+	if err != nil {
+		return fmt.Errorf("marshal webhook test: %w", err)
+	}
+
+	resp, err := postSignedWebhook(ctx, cfg.URL, cfg.Secret, string(payload), webhookTestEvent, eventID, webhookTestTimeout)
+	if err != nil {
+		slog.Info("webhook test delivery failed", "webhook_id", cfg.ID.String(), "url", cfg.URL)
+		return fmt.Errorf("webhook test delivery failed: %w", err)
+	}
+	if resp.StatusCode >= httpclient.StatusBadRequest {
+		slog.Info("webhook test delivery rejected", "webhook_id", cfg.ID.String(), "url", cfg.URL, "status", resp.StatusCode)
+		return fmt.Errorf("webhook test delivery failed: HTTP %d", resp.StatusCode)
+	}
+	slog.Info("webhook test delivered", "webhook_id", cfg.ID.String(), "url", cfg.URL)
+	return nil
+}
+
+func postSignedWebhook(ctx context.Context, deliveryURL, secret, payload, eventType, eventID string, timeout time.Duration) (httpclient.Response, error) {
+	mac := hmac.New(sha256.New, []byte(secret))
+	mac.Write([]byte(payload))
+	signature := hex.EncodeToString(mac.Sum(nil))
+	return httpclient.NewClient(timeout).Do(ctx, httpclient.Request{
+		Method: httpclient.MethodPost,
+		URL:    deliveryURL,
+		Header: map[string]string{
+			"Content-Type":        "application/json",
+			"X-Vault-Signature":   signature,
+			"X-Vault-Event":       eventType,
+			"X-Vault-Delivery-Id": eventID,
+			"X-Vault-Timestamp":   fmt.Sprintf("%d", time.Now().Unix()),
+		},
+		Body:    []byte(payload),
+		HasBody: true,
+	})
 }
 
 // ---------------------------------------------------------------------------
@@ -184,14 +249,14 @@ func (s *Service) CreateConfig(ctx context.Context, url, secret string, events [
 		IsActive:  true,
 		AccountID: accountID,
 	}
-	if err := s.webhookConfigRepo.Create(cfg); err != nil {
+	if err := s.webhookConfigRepo.Create(ctx, cfg); err != nil {
 		return nil, err
 	}
 	return cfg, nil
 }
 
 func (s *Service) ListConfigs(ctx context.Context) ([]models.WebhookConfig, error) {
-	return s.webhookConfigRepo.FindAll()
+	return s.webhookConfigRepo.FindAll(ctx)
 }
 
 // ListAccountConfigs returns the account-level configs an account may manage: its own
@@ -200,7 +265,7 @@ func (s *Service) ListAccountConfigs(ctx context.Context, accountID uuid.UUID) (
 	if accountID == uuid.Nil {
 		return nil, errors.New("account id is required")
 	}
-	return s.webhookConfigRepo.FindVisibleToAccount(accountID)
+	return s.webhookConfigRepo.FindVisibleToAccount(ctx, accountID)
 }
 
 var (
@@ -229,7 +294,10 @@ func (s *Service) UpdateAccountConfig(ctx context.Context, accountID, configID u
 		return nil, ErrWebhookUpdateEmpty
 	}
 
-	cfg, err := s.webhookConfigRepo.FindByID(configID)
+	cfg, err := s.webhookConfigRepo.FindByID(ctx, configID)
+	if errors.Is(err, models.ErrRepositoryNotFound) {
+		cfg, err = nil, nil
+	}
 	if err != nil {
 		return nil, fmt.Errorf("find webhook config: %w", err)
 	}
@@ -240,20 +308,20 @@ func (s *Service) UpdateAccountConfig(ctx context.Context, accountID, configID u
 		return nil, ErrWebhookOwnershipNotProven
 	}
 
-	fields := map[string]any{"account_id": accountID}
+	var events *string
 	if update.Events != nil {
-		events, err := normalizeSubscribableEvents(update.Events)
+		normalized, err := normalizeSubscribableEvents(update.Events)
 		if err != nil {
 			return nil, err
 		}
-		fields["events"] = pgArray(events)
-		cfg.Events = pgArray(events)
+		encoded := pgArray(normalized)
+		events = &encoded
+		cfg.Events = encoded
 	}
 	if update.IsActive != nil {
-		fields["is_active"] = *update.IsActive
 		cfg.IsActive = *update.IsActive
 	}
-	if err := s.webhookConfigRepo.UpdateFields(cfg.ID, fields); err != nil {
+	if err := s.webhookConfigRepo.AssignAccount(ctx, cfg.ID, accountID, events, update.IsActive); err != nil {
 		return nil, fmt.Errorf("update webhook config: %w", err)
 	}
 	owner := accountID
@@ -282,7 +350,7 @@ func normalizeSubscribableEvents(events []string) ([]string, error) {
 }
 
 func (s *Service) DeleteConfig(ctx context.Context, id uuid.UUID) error {
-	return s.webhookConfigRepo.DeleteByID(id)
+	return s.webhookConfigRepo.DeleteByID(ctx, id)
 }
 
 func pgArray(arr []string) string {

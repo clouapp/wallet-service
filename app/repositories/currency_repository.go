@@ -1,99 +1,109 @@
 package repositories
 
 import (
+	"context"
 	"fmt"
 	"strings"
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/goravel/framework/facades"
+	"github.com/goravel/framework/contracts/database/orm"
 	"github.com/shopspring/decimal"
 
 	"github.com/macrowallets/waas/app/models"
+	"github.com/macrowallets/waas/app/repositories/internal/db"
 	"github.com/macrowallets/waas/pkg/numeric"
 )
 
+// PriceUpdate is one currency's new price and the price it replaces.
 type PriceUpdate struct {
 	CurrentPrice decimal.Decimal
 	LastPrice    decimal.Decimal
 }
 
-type CurrencyRepository interface {
-	Create(currency *models.Currency) error
-	CreateBatch(currencies []models.Currency) error
-	FindByCode(code string) (*models.Currency, error)
-	FindActiveCryptos() ([]models.Currency, error)
-	FindActiveFiats() ([]models.Currency, error)
-	FindAllActive() ([]models.Currency, error)
-	UpdatePrice(code string, currentPrice, lastPrice decimal.Decimal) error
-	UpdatePriceBatch(updates map[string]PriceUpdate) error
-	FindStale(currencyType string, staleDuration time.Duration) ([]models.Currency, error)
+// CurrencyRepository persists fiat and crypto price rows.
+type CurrencyRepository struct {
+	db.Base
 }
 
-type currencyRepository struct{}
-
-func NewCurrencyRepository() CurrencyRepository {
-	return &currencyRepository{}
+// NewCurrencyRepository wraps an orm.Query. Pass nil for a fresh query per call.
+func NewCurrencyRepository(query orm.Query) *CurrencyRepository {
+	return &CurrencyRepository{Base: db.NewBase(query)}
 }
 
-func (r *currencyRepository) Create(currency *models.Currency) error {
+// Create inserts a currency, assigning an id when the caller left it empty.
+func (r *CurrencyRepository) Create(ctx context.Context, currency *models.Currency) error {
+	if currency == nil {
+		return fmt.Errorf("create currency: currency is nil")
+	}
 	if currency.ID == uuid.Nil {
 		currency.ID = uuid.New()
 	}
-	return facades.Orm().Query().Create(currency)
+	if err := r.Query(ctx).Create(currency); err != nil {
+		return fmt.Errorf("create currency: %w", err)
+	}
+	return nil
 }
 
-func (r *currencyRepository) CreateBatch(currencies []models.Currency) error {
+// CreateBatch inserts currencies, assigning an id to any row that lacks one.
+func (r *CurrencyRepository) CreateBatch(ctx context.Context, currencies []models.Currency) error {
+	if len(currencies) == 0 {
+		return nil
+	}
 	for i := range currencies {
 		if currencies[i].ID == uuid.Nil {
 			currencies[i].ID = uuid.New()
 		}
 	}
-	return facades.Orm().Query().Create(&currencies)
+	if err := r.Query(ctx).Create(&currencies); err != nil {
+		return fmt.Errorf("create currencies: %w", err)
+	}
+	return nil
 }
 
-func (r *currencyRepository) FindByCode(code string) (*models.Currency, error) {
+// FindByCode returns the currency with this code, or ErrRepositoryNotFound.
+func (r *CurrencyRepository) FindByCode(ctx context.Context, code string) (*models.Currency, error) {
+	if code == "" {
+		return nil, models.ErrRepositoryNotFound
+	}
 	var currency models.Currency
-	err := facades.Orm().Query().Where("code = ?", code).First(&currency)
-	if err != nil {
-		return nil, err
+	if err := r.Query(ctx).Where("code = ?", code).First(&currency); err != nil {
+		return nil, fmt.Errorf("find currency: %w", err)
 	}
 	if currency.ID == uuid.Nil {
-		return nil, nil
+		return nil, models.ErrRepositoryNotFound
 	}
 	return &currency, nil
 }
 
-func (r *currencyRepository) FindActiveCryptos() ([]models.Currency, error) {
-	var currencies []models.Currency
-	err := facades.Orm().Query().
-		Where("type = ? AND active = ?", models.CurrencyTypeCrypto, true).
-		Order("code").
-		Find(&currencies)
-	return currencies, err
+// FindActiveCryptos returns active crypto currencies ordered by code.
+func (r *CurrencyRepository) FindActiveCryptos(ctx context.Context) ([]models.Currency, error) {
+	return r.findActiveByType(ctx, models.CurrencyTypeCrypto, "code")
 }
 
-func (r *currencyRepository) FindActiveFiats() ([]models.Currency, error) {
-	var currencies []models.Currency
-	err := facades.Orm().Query().
-		Where("type = ? AND active = ?", models.CurrencyTypeFiat, true).
-		Order("code").
-		Find(&currencies)
-	return currencies, err
+// FindActiveFiats returns active fiat currencies ordered by code.
+func (r *CurrencyRepository) FindActiveFiats(ctx context.Context) ([]models.Currency, error) {
+	return r.findActiveByType(ctx, models.CurrencyTypeFiat, "code")
 }
 
-func (r *currencyRepository) FindAllActive() ([]models.Currency, error) {
+// FindAllActive returns every active currency ordered by type then code.
+func (r *CurrencyRepository) FindAllActive(ctx context.Context) ([]models.Currency, error) {
 	var currencies []models.Currency
-	err := facades.Orm().Query().
-		Where("active = ?", true).
-		Order("type, code").
-		Find(&currencies)
-	return currencies, err
+	if err := r.Query(ctx).Where("active = ?", true).Order("type, code").Find(&currencies); err != nil {
+		return nil, fmt.Errorf("list active currencies: %w", err)
+	}
+	return currencies, nil
+}
+
+// SetPrice stores a positive current price and the previous one, both fitted to
+// the price column. A negative last price is refused. UpdatePrice is the same write.
+func (r *CurrencyRepository) SetPrice(ctx context.Context, code string, currentPrice, lastPrice decimal.Decimal) error {
+	return r.UpdatePrice(ctx, code, currentPrice, lastPrice)
 }
 
 // UpdatePrice stores a positive current price and the previous one, both fitted to
 // the price column.
-func (r *currencyRepository) UpdatePrice(code string, currentPrice, lastPrice decimal.Decimal) error {
+func (r *CurrencyRepository) UpdatePrice(ctx context.Context, code string, currentPrice, lastPrice decimal.Decimal) error {
 	if strings.TrimSpace(code) == "" {
 		return fmt.Errorf("currency code is required to update a price")
 	}
@@ -111,32 +121,48 @@ func (r *currencyRepository) UpdatePrice(code string, currentPrice, lastPrice de
 	if last.IsNegative() {
 		return fmt.Errorf("currency %s last price %s: %w", code, last.String(), numeric.ErrNegative)
 	}
-	_, err = facades.Orm().Query().
-		Model(&models.Currency{}).
-		Where("code = ?", code).
-		Update(map[string]interface{}{
-			"current_price":    current,
-			"last_price":       last,
-			"price_updated_at": time.Now(),
-		})
-	return err
+	_, err = r.Query(ctx).Model(&models.Currency{}).Where("code = ?", code).Update(map[string]any{
+		"current_price":    current,
+		"last_price":       last,
+		"price_updated_at": time.Now(),
+	})
+	if err != nil {
+		return fmt.Errorf("set currency price: %w", err)
+	}
+	return nil
 }
 
-func (r *currencyRepository) UpdatePriceBatch(updates map[string]PriceUpdate) error {
+// SetPrices writes each code's price. A failure stops the batch.
+func (r *CurrencyRepository) SetPrices(ctx context.Context, updates map[string]PriceUpdate) error {
 	for code, update := range updates {
-		if err := r.UpdatePrice(code, update.CurrentPrice, update.LastPrice); err != nil {
+		if err := r.SetPrice(ctx, code, update.CurrentPrice, update.LastPrice); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func (r *currencyRepository) FindStale(currencyType string, staleDuration time.Duration) ([]models.Currency, error) {
+// FindStale returns active currencies of currencyType, other than USD, whose price
+// is missing or older than staleDuration.
+func (r *CurrencyRepository) FindStale(ctx context.Context, currencyType string, staleDuration time.Duration) ([]models.Currency, error) {
 	var currencies []models.Currency
 	cutoff := time.Now().Add(-staleDuration)
-	err := facades.Orm().Query().
+	if err := r.Query(ctx).
 		Where("type = ? AND active = ? AND (price_updated_at IS NULL OR price_updated_at < ?)", currencyType, true, cutoff).
 		Where("code != ?", "USD").
-		Find(&currencies)
-	return currencies, err
+		Find(&currencies); err != nil {
+		return nil, fmt.Errorf("list stale currencies: %w", err)
+	}
+	return currencies, nil
+}
+
+func (r *CurrencyRepository) findActiveByType(ctx context.Context, currencyType, order string) ([]models.Currency, error) {
+	var currencies []models.Currency
+	if err := r.Query(ctx).
+		Where("type = ? AND active = ?", currencyType, true).
+		Order(order).
+		Find(&currencies); err != nil {
+		return nil, fmt.Errorf("list active %s currencies: %w", currencyType, err)
+	}
+	return currencies, nil
 }

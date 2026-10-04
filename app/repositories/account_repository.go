@@ -1,13 +1,15 @@
 package repositories
 
 import (
+	"context"
+	"fmt"
 	"strings"
 
 	"github.com/google/uuid"
 	contractsorm "github.com/goravel/framework/contracts/database/orm"
-	"github.com/goravel/framework/facades"
 
 	"github.com/macrowallets/waas/app/models"
+	"github.com/macrowallets/waas/app/repositories/internal/db"
 )
 
 // AccountListFilter narrows PaginateByMember. Empty fields do not filter.
@@ -16,68 +18,75 @@ type AccountListFilter struct {
 	Environment string
 }
 
-type AccountRepository interface {
-	Create(account *models.Account) error
-	FindByID(id uuid.UUID) (*models.Account, error)
-	FindByIDs(ids []uuid.UUID) ([]models.Account, error)
-	PaginateByMember(userID uuid.UUID, filter AccountListFilter, limit, offset int) ([]models.Account, int64, error)
-	UpdateField(id uuid.UUID, field string, value interface{}) error
-}
-
 var likePatternEscaper = strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`)
 
-type accountRepository struct{}
-
-func NewAccountRepository() AccountRepository {
-	return &accountRepository{}
+// AccountRepository persists accounts.
+type AccountRepository struct {
+	db.Base
 }
 
-func (r *accountRepository) Create(account *models.Account) error {
-	return facades.Orm().Query().Create(account)
+// NewAccountRepository wraps an orm.Query. Pass nil for a fresh query per call.
+func NewAccountRepository(query contractsorm.Query) *AccountRepository {
+	return &AccountRepository{Base: db.NewBase(query)}
 }
 
-func (r *accountRepository) FindByID(id uuid.UUID) (*models.Account, error) {
+// Create inserts an account.
+func (r *AccountRepository) Create(ctx context.Context, account *models.Account) error {
+	if account == nil {
+		return fmt.Errorf("create account: account is nil")
+	}
+	if err := r.Query(ctx).Create(account); err != nil {
+		return fmt.Errorf("create account: %w", err)
+	}
+	return nil
+}
+
+// FindByID returns the account, or ErrRepositoryNotFound.
+func (r *AccountRepository) FindByID(ctx context.Context, id uuid.UUID) (*models.Account, error) {
 	var account models.Account
-	err := facades.Orm().Query().Where("id = ?", id).First(&account)
-	if err != nil {
-		return nil, err
+	if err := r.Query(ctx).Where("id = ?", id).First(&account); err != nil {
+		return nil, fmt.Errorf("find account: %w", err)
 	}
 	if account.ID == uuid.Nil {
-		return nil, nil
+		return nil, models.ErrRepositoryNotFound
 	}
 	return &account, nil
 }
 
-func (r *accountRepository) FindByIDs(ids []uuid.UUID) ([]models.Account, error) {
-	var accounts []models.Account
+// FindByIDs returns the accounts whose ids are in the list. An empty list is an empty result.
+func (r *AccountRepository) FindByIDs(ctx context.Context, ids []uuid.UUID) ([]models.Account, error) {
+	accounts := []models.Account{}
 	if len(ids) == 0 {
 		return accounts, nil
 	}
-	err := facades.Orm().Query().Where("id IN ?", ids).Find(&accounts)
-	return accounts, err
+	if err := r.Query(ctx).Where("id IN ?", ids).Find(&accounts); err != nil {
+		return nil, fmt.Errorf("find accounts: %w", err)
+	}
+	return accounts, nil
 }
 
 // PaginateByMember pages through the accounts the user is an active member
-// of, ordered case-insensitively by name (the database collation may be "C")
-// then by id so every page is stable.
-func (r *accountRepository) PaginateByMember(userID uuid.UUID, filter AccountListFilter, limit, offset int) ([]models.Account, int64, error) {
+// of, ordered case-insensitively by name then by id so every page is stable.
+func (r *AccountRepository) PaginateByMember(ctx context.Context, userID uuid.UUID, search, environment string, limit, offset int) ([]models.Account, int64, error) {
 	accounts := []models.Account{}
-	q := memberAccountsQuery(userID, filter)
+	q := r.memberAccountsQuery(ctx, userID, AccountListFilter{Search: search, Environment: environment})
 
 	total, err := q.Count()
 	if err != nil {
-		return nil, 0, err
+		return nil, 0, fmt.Errorf("count member accounts: %w", err)
 	}
 	if total == 0 || int64(offset) >= total {
 		return accounts, total, nil
 	}
 
-	err = q.Order("LOWER(name) ASC, id ASC").Offset(offset).Limit(limit).Find(&accounts)
-	return accounts, total, err
+	if err := q.Order("LOWER(name) ASC, id ASC").Offset(offset).Limit(limit).Find(&accounts); err != nil {
+		return nil, 0, fmt.Errorf("list member accounts: %w", err)
+	}
+	return accounts, total, nil
 }
 
-func memberAccountsQuery(userID uuid.UUID, filter AccountListFilter) contractsorm.Query {
-	q := facades.Orm().Query().Model(&models.Account{}).
+func (r *AccountRepository) memberAccountsQuery(ctx context.Context, userID uuid.UUID, filter AccountListFilter) contractsorm.Query {
+	q := r.Query(ctx).Model(&models.Account{}).
 		Where("id IN (SELECT account_id FROM account_users WHERE user_id = ? AND deleted_at IS NULL)", userID)
 	if filter.Environment != "" {
 		q = q.Where("environment = ?", filter.Environment)
@@ -89,7 +98,29 @@ func memberAccountsQuery(userID uuid.UUID, filter AccountListFilter) contractsor
 	return q
 }
 
-func (r *accountRepository) UpdateField(id uuid.UUID, field string, value interface{}) error {
-	_, err := facades.Orm().Query().Model(&models.Account{}).Where("id = ?", id).Update(field, value)
-	return err
+// SetName sets accounts.name.
+func (r *AccountRepository) SetName(ctx context.Context, id uuid.UUID, name string) error {
+	return r.updateColumn(ctx, id, "name", name, "set account name")
+}
+
+// SetViewAllWallets sets accounts.view_all_wallets.
+func (r *AccountRepository) SetViewAllWallets(ctx context.Context, id uuid.UUID, viewAll bool) error {
+	return r.updateColumn(ctx, id, "view_all_wallets", viewAll, "set account view_all_wallets")
+}
+
+// SetStatus sets accounts.status.
+func (r *AccountRepository) SetStatus(ctx context.Context, id uuid.UUID, status string) error {
+	return r.updateColumn(ctx, id, "status", status, "set account status")
+}
+
+// SetLinkedAccountID sets accounts.linked_account_id.
+func (r *AccountRepository) SetLinkedAccountID(ctx context.Context, id, linkedID uuid.UUID) error {
+	return r.updateColumn(ctx, id, "linked_account_id", linkedID, "set account linked account")
+}
+
+func (r *AccountRepository) updateColumn(ctx context.Context, id uuid.UUID, column string, value any, op string) error {
+	if _, err := r.Query(ctx).Model(&models.Account{}).Where("id = ?", id).Update(column, value); err != nil {
+		return fmt.Errorf("%s: %w", op, err)
+	}
+	return nil
 }

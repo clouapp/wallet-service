@@ -20,6 +20,9 @@ const (
 	WithdrawalFailurePassphraseTooShort   = "passphrase_too_short"
 	WithdrawalFailureConcurrentWithdrawal = "concurrent_withdrawal"
 	WithdrawalFailureTooManyAttempts      = "too_many_attempts"
+	WithdrawalFailureSpendingLimit        = "spending_limit_exceeded"
+	WithdrawalFailureSpendingLimitInvalid = "spending_limit_invalid"
+	WithdrawalFailureSpendingQuote        = "spending_limit_quote_unavailable"
 	WithdrawalFailureInternalError        = "internal_error"
 )
 
@@ -37,6 +40,11 @@ type WithdrawalLookupResponse struct {
 	FailureReason      *string          `json:"failure_reason" example:"insufficient_funds"`
 	CreatedAt          *carbon.DateTime `json:"created_at" swaggertype:"string"`
 	UpdatedAt          *carbon.DateTime `json:"updated_at" swaggertype:"string"`
+}
+
+// WithdrawalFailureCode is the persisted failure_reason both withdrawal surfaces write.
+func WithdrawalFailureCode(err error) string {
+	return withdrawalFailureCode(err)
 }
 
 func withdrawalFailureCode(err error) string {
@@ -61,6 +69,12 @@ func withdrawalFailureCode(err error) string {
 		return WithdrawalFailureConcurrentWithdrawal
 	case errors.Is(err, withdraw.ErrTooManyAttempts):
 		return WithdrawalFailureTooManyAttempts
+	case errors.Is(err, withdraw.ErrSpendingLimitExceeded):
+		return WithdrawalFailureSpendingLimit
+	case errors.Is(err, withdraw.ErrSpendingLimitInvalid):
+		return WithdrawalFailureSpendingLimitInvalid
+	case errors.Is(err, withdraw.ErrSpendingQuoteUnavailable):
+		return WithdrawalFailureSpendingQuote
 	default:
 		return WithdrawalFailureInternalError
 	}

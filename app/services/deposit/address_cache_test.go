@@ -41,7 +41,7 @@ func testRedis(t *testing.T) *redis.Client {
 
 func newCacheTestService(t *testing.T, rdb *redis.Client) *Service {
 	t.Helper()
-	return NewService(rdb, chain.NewRegistry(), newWebhookSvc(), repositories.NewAddressRepository(), repositories.NewTransactionRepository(), nil)
+	return NewService(redisStore{client: rdb}, chain.NewRegistry(), newWebhookSvc(), repositories.NewAddressRepository(nil), repositories.NewTransactionRepository(nil), nil)
 }
 
 func cachedMembers(t *testing.T, rdb *redis.Client, chainID string) []string {
@@ -77,7 +77,7 @@ func TestSyncAddressCache_RebuildsAStaleSet(t *testing.T) {
 	if err != nil || !rebuilt {
 		t.Fatalf("expected a rebuild, got rebuilt=%v err=%v", rebuilt, err)
 	}
-	active, err := repositories.NewAddressRepository().PluckActiveAddresses(chainID)
+	active, err := repositories.NewAddressRepository(nil).PluckActiveAddresses(context.Background(), chainID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -107,7 +107,7 @@ func TestSyncAddressCache_SameSizeDifferentMembersIsStale(t *testing.T) {
 	t.Cleanup(func() { rdb.Del(context.Background(), key) })
 
 	w := mocks.InsertWallet(t, chainID)
-	active, err := repositories.NewAddressRepository().PluckActiveAddresses(chainID)
+	active, err := repositories.NewAddressRepository(nil).PluckActiveAddresses(context.Background(), chainID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -140,7 +140,7 @@ func TestRefreshAddressCache_ClearsTheSetWhenNoAddressIsActive(t *testing.T) {
 	if err := rdb.SAdd(ctx, key, "tb1qstale").Err(); err != nil {
 		t.Fatal(err)
 	}
-	active, err := repositories.NewAddressRepository().PluckActiveAddresses(chainID)
+	active, err := repositories.NewAddressRepository(nil).PluckActiveAddresses(context.Background(), chainID)
 	if err != nil {
 		t.Fatal(err)
 	}

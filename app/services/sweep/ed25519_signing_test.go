@@ -46,14 +46,12 @@ type solanaWalletFixture struct {
 // copyingSecrets hands out a fresh copy per read, like AWS does; callers zero what they get.
 type copyingSecrets struct{ *mocks.MockSecretsManager }
 
-func (c copyingSecrets) GetSecretValue(ctx context.Context, input *secretsmanager.GetSecretValueInput, opts ...func(*secretsmanager.Options)) (*secretsmanager.GetSecretValueOutput, error) {
-	out, err := c.MockSecretsManager.GetSecretValue(ctx, input, opts...)
+func (c copyingSecrets) Binary(ctx context.Context, secretID string) ([]byte, error) {
+	out, err := c.GetSecretValue(ctx, &secretsmanager.GetSecretValueInput{SecretId: &secretID})
 	if err != nil {
 		return nil, err
 	}
-	copied := *out
-	copied.SecretBinary = append([]byte(nil), out.SecretBinary...)
-	return &copied, nil
+	return append([]byte(nil), out.SecretBinary...), nil
 }
 
 type indexedWalletRepo struct {
@@ -61,7 +59,9 @@ type indexedWalletRepo struct {
 	next int
 }
 
-func (r *indexedWalletRepo) IncrementAddressIndex(uuid.UUID) (int, error) { return r.next, nil }
+func (r *indexedWalletRepo) IncrementAddressIndex(context.Context, uuid.UUID) (int, error) {
+	return r.next, nil
+}
 
 func newSolanaWalletFixture(t *testing.T) *solanaWalletFixture {
 	t.Helper()
@@ -107,11 +107,17 @@ func newSolanaWalletFixture(t *testing.T) *solanaWalletFixture {
 
 	walletRepo := &indexedWalletRepo{fakeWalletRepo: &fakeWalletRepo{wallet: wallet}, next: solE2EChildIndex}
 	fixture := &solanaWalletFixture{
-		tss:            tss,
-		wallet:         wallet,
-		shareB:         append([]byte(nil), keys.ShareB...),
-		addressService: walletsvc.NewService(chain.NewRegistry(), nil, tss, copyingSecrets{secrets}, walletRepo, &fakeAddressRepo{}),
-		walletRepo:     walletRepo,
+		tss:    tss,
+		wallet: wallet,
+		shareB: append([]byte(nil), keys.ShareB...),
+		addressService: walletsvc.NewService(walletsvc.Deps{
+			Registry:  chain.NewRegistry(),
+			MPC:       tss,
+			Secrets:   copyingSecrets{secrets},
+			Wallets:   walletRepo,
+			Addresses: &fakeAddressRepo{},
+		}),
+		walletRepo: walletRepo,
 	}
 	fixture.child = fixture.deriveChild(t, solE2EChildIndex)
 	return fixture

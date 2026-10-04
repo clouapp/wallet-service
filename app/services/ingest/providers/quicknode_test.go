@@ -6,7 +6,6 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"math/big"
-	"net/http"
 	"strings"
 	"testing"
 	"time"
@@ -128,7 +127,7 @@ func TestQuickNodeVerifyInbound_ValidSignature(t *testing.T) {
 	secret := "qn_webhook_secret"
 	sig := computeQuickNodeSignature(body, secret)
 
-	h := http.Header{}
+	h := Header{}
 	h.Set("X-QN-Signature", sig)
 
 	ok, err := p.VerifyInbound(h, body, secret)
@@ -141,7 +140,7 @@ func TestQuickNodeVerifyInbound_InvalidSignature(t *testing.T) {
 	body := []byte(`[{"txid":"x"}]`)
 	secret := "qn_webhook_secret"
 
-	h := http.Header{}
+	h := Header{}
 	h.Set("X-QN-Signature", "deadbeef1234567890abcdef1234567890abcdef1234567890abcdef12345678")
 
 	ok, err := p.VerifyInbound(h, body, secret)
@@ -153,7 +152,7 @@ func TestQuickNodeVerifyInbound_MissingHeader(t *testing.T) {
 	p := NewQuickNodeProvider("api-key")
 	body := []byte(`[]`)
 
-	ok, err := p.VerifyInbound(http.Header{}, body, "secret")
+	ok, err := p.VerifyInbound(Header{}, body, "secret")
 	assert.False(t, ok)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "missing")
@@ -166,7 +165,7 @@ func TestQuickNodeVerifyInbound_CustomSignatureHeader(t *testing.T) {
 	secret := "s"
 	sig := computeQuickNodeSignature(body, secret)
 
-	h := http.Header{}
+	h := Header{}
 	h.Set("X-Custom-Sig", sig)
 
 	ok, err := p.VerifyInbound(h, body, secret)

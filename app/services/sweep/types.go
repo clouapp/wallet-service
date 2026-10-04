@@ -94,8 +94,9 @@ type GasStatus struct {
 	LastCheckedAt int64 // unix seconds
 }
 
-// Limits is the per-account rate-limit config resolved from accounts.sweep_limits
-// (with config.SweepDefaults filled in for missing keys).
+// Limits is the per-account rate-limit config resolved from the
+// account_sweep_limits setting at use time. A missing row uses the registry
+// default. A blank daily cap means unlimited.
 type Limits struct {
 	MaxAddressesPerRequest  map[string]int // chain-type → max
 	MaxConsolidateReqPerDay int

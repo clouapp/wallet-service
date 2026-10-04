@@ -6,11 +6,19 @@ import (
 	"github.com/goravel/framework/contracts/console"
 	"github.com/goravel/framework/contracts/console/command"
 
-	"github.com/macrowallets/waas/app/container"
 	"github.com/macrowallets/waas/app/services/price"
 )
 
-type PriceWebSocket struct{}
+type PriceWebSocket struct {
+	prices     *price.Service
+	coinAPIKey string
+	cache      price.PriceCache
+}
+
+// NewPriceWebSocket streams CoinAPI prices. cache may be nil when Redis is not configured.
+func NewPriceWebSocket(prices *price.Service, coinAPIKey string, cache price.PriceCache) *PriceWebSocket {
+	return &PriceWebSocket{prices: prices, coinAPIKey: coinAPIKey, cache: cache}
+}
 
 func (c *PriceWebSocket) Signature() string {
 	return "price:websocket"
@@ -25,27 +33,25 @@ func (c *PriceWebSocket) Extend() command.Extend {
 }
 
 func (c *PriceWebSocket) Handle(ctx console.Context) error {
-	ctr := container.Get()
-
 	ctx.Info("refreshing initial prices...")
 	bgCtx := context.Background()
-	if ctr.PriceService != nil {
-		if err := ctr.PriceService.RefreshCryptoPrices(bgCtx); err != nil {
+	if c.prices != nil {
+		if err := c.prices.RefreshCryptoPrices(bgCtx); err != nil {
 			ctx.Error("initial crypto refresh failed: " + err.Error())
 		}
-		if err := ctr.PriceService.RefreshFiatRates(bgCtx); err != nil {
+		if err := c.prices.RefreshFiatRates(bgCtx); err != nil {
 			ctx.Error("initial fiat refresh failed: " + err.Error())
 		}
 	}
 	ctx.Info("initial prices refreshed")
 
-	apiKey := ctr.PriceConfig.CoinAPIKey
+	apiKey := c.coinAPIKey
 	if apiKey == "" {
 		ctx.Error("COINAPI_API_KEY is not configured")
 		return nil
 	}
 
-	ws := price.NewWebSocketClient(apiKey, ctr.CurrencyRepo, ctr.Redis)
+	ws := c.prices.PriceWebSocket(apiKey, c.cache)
 	ctx.Info("starting CoinAPI WebSocket connection...")
 	return ws.Connect(bgCtx)
 }

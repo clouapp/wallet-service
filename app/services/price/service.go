@@ -8,18 +8,24 @@ import (
 	"strings"
 	"time"
 
-	"github.com/redis/go-redis/v9"
 	"github.com/shopspring/decimal"
 
 	"github.com/macrowallets/waas/app/models"
-	"github.com/macrowallets/waas/app/repositories"
 	"github.com/macrowallets/waas/pkg/numeric"
 )
 
+// currencyStore is the price rows this package reads and updates.
+type currencyStore interface {
+	FindByCode(ctx context.Context, code string) (*models.Currency, error)
+	FindActiveCryptos(ctx context.Context) ([]models.Currency, error)
+	FindActiveFiats(ctx context.Context) ([]models.Currency, error)
+	FindStale(ctx context.Context, currencyType string, staleDuration time.Duration) ([]models.Currency, error)
+	SetPrice(ctx context.Context, code string, currentPrice, lastPrice decimal.Decimal) error
+}
+
 const (
-	redisCurrencyTTL       = 60 * time.Second
-	redisCurrencyKeyPrefix = "currency:"
-	usdCode                = "USD"
+	redisCurrencyTTL = 60 * time.Second
+	usdCode          = "USD"
 )
 
 var usdPrice = decimal.NewFromInt(1)
@@ -27,26 +33,35 @@ var usdPrice = decimal.NewFromInt(1)
 // ErrPriceNotQuoted marks a currency whose stored price no provider ever quoted.
 var ErrPriceNotQuoted = errors.New("price was never quoted by a provider")
 
+// PriceCache reads and writes one currency price.
+// The service keeps the key, the TTL, and the JSON number.
+// A nil PriceCache means Redis is not configured.
+type PriceCache interface {
+	Get(ctx context.Context, key string) (string, error)
+	Set(ctx context.Context, key string, value []byte, expiration time.Duration) error
+}
+
 type Service struct {
 	providers    []PriceProvider
-	currencyRepo repositories.CurrencyRepository
-	redis        *redis.Client
+	currencyRepo currencyStore
+	cache        PriceCache
+	quotes       QuoteDialer
 }
 
 func NewService(
 	providers []PriceProvider,
-	currencyRepo repositories.CurrencyRepository,
-	rdb *redis.Client,
+	currencyRepo currencyStore,
+	cache PriceCache,
 ) *Service {
 	return &Service{
 		providers:    providers,
 		currencyRepo: currencyRepo,
-		redis:        rdb,
+		cache:        cache,
 	}
 }
 
 func (s *Service) RefreshCryptoPrices(ctx context.Context) error {
-	cryptos, err := s.currencyRepo.FindActiveCryptos()
+	cryptos, err := s.currencyRepo.FindActiveCryptos(ctx)
 	if err != nil {
 		return fmt.Errorf("load active cryptos: %w", err)
 	}
@@ -77,7 +92,7 @@ func (s *Service) RefreshCryptoPrices(ctx context.Context) error {
 				continue
 			}
 			oldPrice := priceMap[code]
-			if err := s.currencyRepo.UpdatePrice(code, newPrice, oldPrice); err != nil {
+			if err := s.currencyRepo.SetPrice(ctx, code, newPrice, oldPrice); err != nil {
 				slog.Warn("update crypto price failed", "code", code, "error", err)
 				continue
 			}
@@ -86,13 +101,13 @@ func (s *Service) RefreshCryptoPrices(ctx context.Context) error {
 			slog.Info("crypto price updated", "provider", provider.Name(), "code", code, "price", newPrice.String())
 		}
 
-		cryptos, _ = s.currencyRepo.FindActiveCryptos()
+		cryptos, _ = s.currencyRepo.FindActiveCryptos(ctx)
 	}
 	return nil
 }
 
 func (s *Service) RefreshFiatRates(ctx context.Context) error {
-	fiats, err := s.currencyRepo.FindActiveFiats()
+	fiats, err := s.currencyRepo.FindActiveFiats(ctx)
 	if err != nil {
 		return fmt.Errorf("load active fiats: %w", err)
 	}
@@ -130,7 +145,7 @@ func (s *Service) RefreshFiatRates(ctx context.Context) error {
 					break
 				}
 			}
-			if err := s.currencyRepo.UpdatePrice(code, rate, oldRate); err != nil {
+			if err := s.currencyRepo.SetPrice(ctx, code, rate, oldRate); err != nil {
 				slog.Warn("update fiat rate failed", "code", code, "error", err)
 				continue
 			}
@@ -140,6 +155,30 @@ func (s *Service) RefreshFiatRates(ctx context.Context) error {
 		break
 	}
 	return nil
+}
+
+// FindStale returns the currency store's stale rows for currencyType.
+func (s *Service) FindStale(ctx context.Context, currencyType string, staleDuration time.Duration) ([]models.Currency, error) {
+	return s.currencyRepo.FindStale(ctx, currencyType, staleDuration)
+}
+
+// WithQuoteDialer installs the CoinAPI socket opener. The provider supplies it;
+// this package never imports the websocket library.
+func (s *Service) WithQuoteDialer(dialer QuoteDialer) *Service {
+	if s == nil {
+		return nil
+	}
+	s.quotes = dialer
+	return s
+}
+
+// PriceWebSocket streams CoinAPI quotes through the currency rows this service updates.
+// cache may be nil when Redis is not configured; it is not the service's own cache.
+func (s *Service) PriceWebSocket(apiKey string, cache PriceCache) *WebSocketClient {
+	if s == nil {
+		return nil
+	}
+	return NewWebSocketClient(apiKey, s.currencyRepo, cache, s.quotes)
 }
 
 // GetPrice returns the USD price of code: the cached quote when present, otherwise
@@ -156,7 +195,10 @@ func (s *Service) GetPrice(ctx context.Context, code string) (decimal.Decimal, e
 		return cached, nil
 	}
 
-	cur, err := s.currencyRepo.FindByCode(code)
+	cur, err := s.currencyRepo.FindByCode(ctx, code)
+	if errors.Is(err, models.ErrRepositoryNotFound) {
+		cur, err = nil, nil
+	}
 	if err != nil {
 		return decimal.Decimal{}, err
 	}
@@ -179,7 +221,7 @@ func (s *Service) QuotedUSDPrice(ctx context.Context, code string) (decimal.Deci
 	if cached, ok := s.cachedPrice(ctx, code); ok {
 		return cached, nil
 	}
-	cur, err := s.currencyRepo.FindByCode(code)
+	cur, err := s.currencyRepo.FindByCode(ctx, code)
 	if err != nil {
 		return decimal.Decimal{}, err
 	}
@@ -197,12 +239,12 @@ func (s *Service) UpdateSinglePrice(ctx context.Context, code string, newPrice d
 	if !ok {
 		return fmt.Errorf("currency %s price %s is not a storable positive price", code, newPrice.String())
 	}
-	cur, err := s.currencyRepo.FindByCode(code)
+	cur, err := s.currencyRepo.FindByCode(ctx, code)
 	if err != nil || cur == nil {
 		return fmt.Errorf("currency not found: %s", code)
 	}
 	oldPrice := cur.CurrentPrice.Decimal
-	if err := s.currencyRepo.UpdatePrice(code, fitted, oldPrice); err != nil {
+	if err := s.currencyRepo.SetPrice(ctx, code, fitted, oldPrice); err != nil {
 		return err
 	}
 	s.cachePrice(ctx, code, fitted)
@@ -212,10 +254,10 @@ func (s *Service) UpdateSinglePrice(ctx context.Context, code string, newPrice d
 // cachedPrice reads a cached quote; a missing, unreadable or non-positive entry is
 // a cache miss.
 func (s *Service) cachedPrice(ctx context.Context, code string) (decimal.Decimal, bool) {
-	if s.redis == nil {
+	if s.cache == nil {
 		return decimal.Decimal{}, false
 	}
-	text, err := s.redis.Get(ctx, redisCurrencyKeyPrefix+code).Result()
+	text, err := s.cache.Get(ctx, "currency:"+code)
 	if err != nil {
 		return decimal.Decimal{}, false
 	}
@@ -227,10 +269,10 @@ func (s *Service) cachedPrice(ctx context.Context, code string) (decimal.Decimal
 }
 
 func (s *Service) cachePrice(ctx context.Context, code string, price decimal.Decimal) {
-	if s.redis == nil {
+	if s.cache == nil {
 		return
 	}
-	if err := s.redis.Set(ctx, redisCurrencyKeyPrefix+code, price.String(), redisCurrencyTTL).Err(); err != nil {
+	if err := s.cache.Set(ctx, "currency:"+code, []byte(price.String()), redisCurrencyTTL); err != nil {
 		slog.Warn("redis cache currency failed", "code", code, "error", err)
 	}
 }

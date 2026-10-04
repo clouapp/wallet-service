@@ -1,14 +1,11 @@
 package chain
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"log/slog"
-	"net/http"
 	"net/url"
 	"strings"
 	"sync/atomic"
@@ -30,7 +27,7 @@ const (
 
 type RPCClient struct {
 	url       string
-	client    *http.Client
+	client    *httpclient.Client
 	requestID atomic.Uint64
 	username  string
 	password  string
@@ -63,7 +60,7 @@ func NewRPCClient(url, user, pass string) *RPCClient {
 		url:      url,
 		username: user,
 		password: pass,
-		client:   httpclient.New(rpcHTTPTimeout),
+		client:   httpclient.NewClient(rpcHTTPTimeout),
 		retry:    defaultRateLimitRetry(),
 	}
 }
@@ -96,7 +93,7 @@ func (c *RPCClient) Call(ctx context.Context, method string, out interface{}, pa
 	}
 }
 
-func (c *RPCClient) post(ctx context.Context, method string, params []interface{}) (int, http.Header, []byte, error) {
+func (c *RPCClient) post(ctx context.Context, method string, params []interface{}) (int, httpclient.Header, []byte, error) {
 	body, err := json.Marshal(rpcRequest{
 		JSONRPC: "2.0",
 		Method:  method,
@@ -107,31 +104,30 @@ func (c *RPCClient) post(ctx context.Context, method string, params []interface{
 		return 0, nil, nil, fmt.Errorf("encode %s request: %w", method, err)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, "POST", c.url, bytes.NewReader(body))
+	resp, err := c.client.Do(ctx, httpclient.Request{
+		Method:   httpclient.MethodPost,
+		URL:      c.url,
+		Header:   map[string]string{"Content-Type": "application/json", "User-Agent": rpcUserAgent},
+		Body:     body,
+		HasBody:  true,
+		Username: c.username,
+		Password: c.password,
+		MaxBytes: rpcMaxResponseBytes,
+	})
 	if err != nil {
-		return 0, nil, nil, fmt.Errorf("build %s request: %w", method, withoutURL(err))
-	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("User-Agent", rpcUserAgent)
-	if c.username != "" {
-		req.SetBasicAuth(c.username, c.password)
-	}
-
-	resp, err := c.client.Do(req)
-	if err != nil {
+		if httpclient.IsBuild(err) {
+			return 0, nil, nil, fmt.Errorf("build %s request: %w", method, withoutURL(err))
+		}
+		if httpclient.IsRead(err) {
+			return 0, nil, nil, fmt.Errorf("read %s response: %w", method, withoutURL(err))
+		}
 		return 0, nil, nil, fmt.Errorf("rpc call %s: %w", method, withoutURL(err))
 	}
-	defer resp.Body.Close()
-
-	respBody, err := io.ReadAll(io.LimitReader(resp.Body, rpcMaxResponseBytes))
-	if err != nil {
-		return 0, nil, nil, fmt.Errorf("read %s response: %w", method, withoutURL(err))
-	}
-	return resp.StatusCode, resp.Header, respBody, nil
+	return resp.StatusCode, resp.Header, resp.Body, nil
 }
 
 func decodeRPCResponse(method string, status int, respBody []byte, out interface{}) error {
-	if status < http.StatusOK || status >= http.StatusMultipleChoices {
+	if status < httpclient.StatusOK || status >= httpclient.StatusMultipleChoices {
 		return fmt.Errorf(
 			"rpc call %s: HTTP %d: %s",
 			method,

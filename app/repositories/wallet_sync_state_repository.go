@@ -1,63 +1,74 @@
 package repositories
 
 import (
+	"context"
+	"fmt"
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/goravel/framework/facades"
+	"github.com/goravel/framework/contracts/database/orm"
 
 	"github.com/macrowallets/waas/app/models"
+	"github.com/macrowallets/waas/app/repositories/internal/db"
 	"github.com/macrowallets/waas/pkg/types"
 )
 
-type WalletSyncStateRepository interface {
-	Find(walletID uuid.UUID, chainID string, scope string) (*models.WalletSyncState, error)
-	Upsert(state *models.WalletSyncState) error
-	UpdateFailure(walletID uuid.UUID, chainID, scope, errMsg string) error
+// WalletSyncStateRepository persists read-model sync cursors.
+type WalletSyncStateRepository struct {
+	db.Base
 }
 
-type walletSyncStateRepository struct{}
-
-func NewWalletSyncStateRepository() WalletSyncStateRepository {
-	return &walletSyncStateRepository{}
+// NewWalletSyncStateRepository wraps an orm.Query. Pass nil for a fresh query per call.
+func NewWalletSyncStateRepository(query orm.Query) *WalletSyncStateRepository {
+	return &WalletSyncStateRepository{Base: db.NewBase(query)}
 }
 
-func (r *walletSyncStateRepository) Find(walletID uuid.UUID, chainID string, scope string) (*models.WalletSyncState, error) {
+// Find returns the sync row, or ErrRepositoryNotFound.
+func (r *WalletSyncStateRepository) Find(ctx context.Context, walletID uuid.UUID, chainID, scope string) (*models.WalletSyncState, error) {
 	var state models.WalletSyncState
-	err := facades.Orm().Query().
-		Where("wallet_id = ? AND chain_id = ? AND sync_scope = ?", walletID, chainID, scope).
-		First(&state)
-	if err != nil {
-		return nil, err
+	if err := r.Query(ctx).Where("wallet_id = ? AND chain_id = ? AND sync_scope = ?", walletID, chainID, scope).First(&state); err != nil {
+		return nil, fmt.Errorf("find wallet sync state: %w", err)
 	}
 	if state.ID == uuid.Nil {
-		return nil, nil
+		return nil, models.ErrRepositoryNotFound
 	}
 	return &state, nil
 }
 
-func (r *walletSyncStateRepository) Upsert(state *models.WalletSyncState) error {
+// Upsert inserts a sync row or updates its cursor columns. created_at of an existing row stays.
+func (r *WalletSyncStateRepository) Upsert(ctx context.Context, state *models.WalletSyncState) error {
+	if state == nil {
+		return fmt.Errorf("upsert wallet sync state: state is nil")
+	}
 	var existing models.WalletSyncState
-	err := facades.Orm().Query().
-		Where("wallet_id = ? AND chain_id = ? AND sync_scope = ?", state.WalletID, state.ChainID, state.SyncScope).
-		First(&existing)
-	if err != nil {
-		return err
+	if err := r.Query(ctx).Where("wallet_id = ? AND chain_id = ? AND sync_scope = ?", state.WalletID, state.ChainID, state.SyncScope).First(&existing); err != nil {
+		return fmt.Errorf("upsert wallet sync state: %w", err)
 	}
 	if existing.ID == uuid.Nil {
-		return facades.Orm().Query().Create(state)
+		if err := r.Query(ctx).Create(state); err != nil {
+			return fmt.Errorf("create wallet sync state: %w", err)
+		}
+		return nil
 	}
-	state.ID = existing.ID
-	state.CreatedAt = existing.CreatedAt
-	return facades.Orm().Query().Save(state)
+	if _, err := r.Query(ctx).Model(&models.WalletSyncState{}).Where("id = ?", existing.ID).Update(map[string]any{
+		"status":            state.Status,
+		"cursor":            state.Cursor,
+		"cursor_meta":       state.CursorMeta,
+		"last_synced_at":    state.LastSyncedAt,
+		"last_attempted_at": state.LastAttemptedAt,
+		"last_error":        state.LastError,
+		"next_reconcile_at": state.NextReconcileAt,
+	}); err != nil {
+		return fmt.Errorf("update wallet sync state: %w", err)
+	}
+	return nil
 }
 
 // UpdateFailure marks the scope failed, creating its row on a first sync that fails,
 // so a wallet that never synced still shows why.
-func (r *walletSyncStateRepository) UpdateFailure(walletID uuid.UUID, chainID, scope, errMsg string) error {
+func (r *WalletSyncStateRepository) UpdateFailure(ctx context.Context, walletID uuid.UUID, chainID, scope, errMsg string) error {
 	now := time.Now()
-	result, err := facades.Orm().Query().
-		Model(&models.WalletSyncState{}).
+	result, err := r.Query(ctx).Model(&models.WalletSyncState{}).
 		Where("wallet_id = ? AND chain_id = ? AND sync_scope = ?", walletID, chainID, scope).
 		Update(map[string]any{
 			"status":            string(types.SyncStatusFailed),
@@ -65,12 +76,12 @@ func (r *walletSyncStateRepository) UpdateFailure(walletID uuid.UUID, chainID, s
 			"last_attempted_at": now,
 		})
 	if err != nil {
-		return err
+		return fmt.Errorf("mark wallet sync failed: %w", err)
 	}
 	if result != nil && result.RowsAffected > 0 {
 		return nil
 	}
-	return facades.Orm().Query().Create(&models.WalletSyncState{
+	if err := r.Query(ctx).Create(&models.WalletSyncState{
 		ID:              uuid.New(),
 		WalletID:        walletID,
 		ChainID:         chainID,
@@ -78,5 +89,8 @@ func (r *walletSyncStateRepository) UpdateFailure(walletID uuid.UUID, chainID, s
 		Status:          string(types.SyncStatusFailed),
 		LastAttemptedAt: &now,
 		LastError:       &errMsg,
-	})
+	}); err != nil {
+		return fmt.Errorf("create failed wallet sync state: %w", err)
+	}
+	return nil
 }

@@ -8,11 +8,9 @@ import (
 	"github.com/google/uuid"
 	"github.com/goravel/framework/contracts/event"
 	"github.com/goravel/framework/facades"
-	"github.com/redis/go-redis/v9"
 
-	"github.com/macrowallets/waas/app/events"
+	"github.com/macrowallets/waas/app/dtos"
 	"github.com/macrowallets/waas/app/models"
-	"github.com/macrowallets/waas/app/repositories"
 	"github.com/macrowallets/waas/app/services/chain"
 	"github.com/macrowallets/waas/app/services/ingest/providers"
 	"github.com/macrowallets/waas/app/services/webhook"
@@ -20,12 +18,36 @@ import (
 	"github.com/macrowallets/waas/pkg/types"
 )
 
+// addressReader is the address lookup ingest uses to attribute a transfer.
+type addressReader interface {
+	CountByChainAndAddress(ctx context.Context, chainID, address string) (int64, error)
+	FindByChainAndAddress(ctx context.Context, chainID, address string) (*models.Address, error)
+}
+
+// transactionStore is the deposit row ingest writes after it attributes a transfer.
+type transactionStore interface {
+	CountByChainTxHashAndLogIndex(ctx context.Context, chainID, txHash string, logIndex int, txType string) (int64, error)
+	CountInternalTransfers(ctx context.Context, chainID, txHash string, walletID uuid.UUID) (int64, error)
+	Create(ctx context.Context, tx *models.Transaction) error
+}
+
+// AddressSet is the watched-address set. The provider supplies it; this package
+// never imports the Redis client. A nil AddressSet means Redis is not configured.
+type AddressSet interface {
+	SIsMember(ctx context.Context, key string, member any) Membership
+}
+
+// Membership is one SISMEMBER answer. Result is false with a nil error when the member is absent.
+type Membership interface {
+	Result() (bool, error)
+}
+
 type Service struct {
-	rdb         *redis.Client
+	addresses   AddressSet
 	registry    *chain.Registry
 	webhookSvc  *webhook.Service
-	addressRepo repositories.AddressRepository
-	txRepo      repositories.TransactionRepository
+	addressRepo addressReader
+	txRepo      transactionStore
 	deposits    DepositEvents
 }
 
@@ -40,8 +62,8 @@ func (s *Service) SetDepositEvents(deposits DepositEvents) {
 	s.deposits = deposits
 }
 
-func NewService(rdb *redis.Client, registry *chain.Registry, webhookSvc *webhook.Service, addressRepo repositories.AddressRepository, txRepo repositories.TransactionRepository) *Service {
-	return &Service{rdb: rdb, registry: registry, webhookSvc: webhookSvc, addressRepo: addressRepo, txRepo: txRepo}
+func NewService(addresses AddressSet, registry *chain.Registry, webhookSvc *webhook.Service, addressRepo addressReader, txRepo transactionStore) *Service {
+	return &Service{addresses: addresses, registry: registry, webhookSvc: webhookSvc, addressRepo: addressRepo, txRepo: txRepo}
 }
 
 func (s *Service) ProcessTransfers(ctx context.Context, chainID string, transfers []providers.InboundTransfer) error {
@@ -63,24 +85,24 @@ func (s *Service) processTransfer(ctx context.Context, chainID string, adapter t
 		return fmt.Errorf("missing amount")
 	}
 
-	if s.rdb != nil {
-		isMine, err := s.rdb.SIsMember(ctx, "vault:addresses:"+chainID, transfer.To).Result()
+	if s.addresses != nil {
+		isMine, err := s.addresses.SIsMember(ctx, "vault:addresses:"+chainID, transfer.To).Result()
 		if err != nil || !isMine {
 			return nil
 		}
 	} else {
-		count, err := s.addressRepo.CountByChainAndAddress(chainID, transfer.To)
+		count, err := s.addressRepo.CountByChainAndAddress(ctx, chainID, transfer.To)
 		if err != nil || count == 0 {
 			return nil
 		}
 	}
 
-	addr, err := s.addressRepo.FindByChainAndAddress(chainID, transfer.To)
+	addr, err := s.addressRepo.FindByChainAndAddress(ctx, chainID, transfer.To)
 	if err != nil || addr == nil {
 		return fmt.Errorf("lookup address: %w", err)
 	}
 
-	exists, err := s.txRepo.CountByChainTxHashAndLogIndex(chainID, transfer.TxHash, transfer.LogIndex, models.TxTypeDeposit)
+	exists, err := s.txRepo.CountByChainTxHashAndLogIndex(ctx, chainID, transfer.TxHash, transfer.LogIndex, models.TxTypeDeposit)
 	if err != nil {
 		return err
 	}
@@ -88,7 +110,7 @@ func (s *Service) processTransfer(ctx context.Context, chainID string, adapter t
 		return nil
 	}
 
-	internal, err := s.txRepo.CountInternalTransfers(chainID, transfer.TxHash, addr.WalletID)
+	internal, err := s.txRepo.CountInternalTransfers(ctx, chainID, transfer.TxHash, addr.WalletID)
 	if err != nil {
 		return fmt.Errorf("check internal transfer: %w", err)
 	}
@@ -143,14 +165,14 @@ func (s *Service) processTransfer(ctx context.Context, chainID string, adapter t
 		LogIndex:       transfer.LogIndex,
 	}
 
-	if err := s.txRepo.Create(tx); err != nil {
+	if err := s.txRepo.Create(ctx, tx); err != nil {
 		return fmt.Errorf("insert tx: %w", err)
 	}
 
 	s.publishDepositPending(ctx, *tx)
 
 	if ev := facades.Event(); ev != nil {
-		_ = ev.Job(&events.DepositDetected{}, []event.Arg{
+		_ = ev.Job(&dtos.DepositDetected{}, []event.Arg{
 			{Type: "string", Value: tx.WalletID.String()},
 			{Type: "string", Value: chainID},
 			{Type: "string", Value: transfer.TxHash},

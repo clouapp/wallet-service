@@ -1,12 +1,16 @@
 package jobs
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/macrowallets/waas/app/container"
+	"github.com/macrowallets/waas/app/models"
+	"github.com/macrowallets/waas/app/services/walletrecords"
 )
 
 type RefreshWalletUTXOs struct{}
@@ -33,12 +37,11 @@ func (j *RefreshWalletUTXOs) Handle(args ...any) error {
 		return fmt.Errorf("refresh_wallet_utxos: invalid wallet_id: %w", err)
 	}
 
-	c := container.Get()
-	wallet, err := c.WalletRepo.FindByID(walletID)
-	if err != nil {
+	wallet, err := container.MustMake[*walletrecords.Wallets]().FindByID(context.Background(), walletID)
+	if err != nil && !errors.Is(err, models.ErrRepositoryNotFound) {
 		return fmt.Errorf("refresh_wallet_utxos: load wallet: %w", err)
 	}
-	if wallet == nil {
+	if wallet == nil || errors.Is(err, models.ErrRepositoryNotFound) {
 		return fmt.Errorf("refresh_wallet_utxos: wallet not found: %s", walletIDStr)
 	}
 	if wallet.Chain != chainID {

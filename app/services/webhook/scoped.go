@@ -12,7 +12,6 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/macrowallets/waas/app/models"
-	"github.com/macrowallets/waas/app/repositories"
 	"github.com/macrowallets/waas/pkg/types"
 )
 
@@ -75,7 +74,7 @@ func (s *Service) EnqueueScoped(ctx context.Context, event ScopedEvent) (int, er
 		return 0, fmt.Errorf("enqueue scoped event: %w", err)
 	}
 
-	configs, err := s.webhookConfigRepo.FindActive()
+	configs, err := s.webhookConfigRepo.FindActive(ctx)
 	if err != nil {
 		return 0, fmt.Errorf("query webhook configs: %w", err)
 	}
@@ -98,7 +97,7 @@ func (s *Service) EnqueueScoped(ctx context.Context, event ScopedEvent) (int, er
 }
 
 func (s *Service) enqueueForConfig(ctx context.Context, cfg models.WebhookConfig, event ScopedEvent) (bool, error) {
-	exists, err := s.webhookEventRepo.ExistsForSubject(cfg.ID, string(event.EventType), event.SubjectID)
+	exists, err := s.webhookEventRepo.ExistsForSubject(ctx, cfg.ID, string(event.EventType), event.SubjectID)
 	if err != nil {
 		return false, fmt.Errorf("check duplicate: %w", err)
 	}
@@ -131,8 +130,8 @@ func (s *Service) enqueueForConfig(ctx context.Context, cfg models.WebhookConfig
 		DeliveryStatus:  models.WebhookDeliveryPending,
 		MaxAttempts:     defaultMaxAttempts,
 	}
-	if err := s.webhookEventRepo.Create(webhookEvent); err != nil {
-		if repositories.IsUniqueViolation(err) {
+	if err := s.webhookEventRepo.Create(ctx, webhookEvent); err != nil {
+		if isUniqueViolation(err) {
 			return false, nil
 		}
 		return false, fmt.Errorf("insert webhook event: %w", err)
@@ -157,10 +156,18 @@ func (s *Service) enqueueForConfig(ctx context.Context, cfg models.WebhookConfig
 	return true, nil
 }
 
+func isUniqueViolation(err error) bool {
+	if err == nil {
+		return false
+	}
+	message := strings.ToLower(err.Error())
+	return strings.Contains(message, "duplicate key") || strings.Contains(message, "sqlstate 23505")
+}
+
 // DeliverPending is the local stand-in for the SQS webhook worker: it delivers stored
 // events whose retry backoff has elapsed and gives up after their max attempts.
 func (s *Service) DeliverPending(ctx context.Context, limit int) (delivered int, err error) {
-	events, err := s.webhookEventRepo.FindDueForDelivery(limit, LocalRetryBaseBackoff, LocalRetryMaxBackoff)
+	events, err := s.webhookEventRepo.FindDueForDelivery(ctx, limit, LocalRetryBaseBackoff, LocalRetryMaxBackoff)
 	if err != nil {
 		return 0, fmt.Errorf("find due webhook events: %w", err)
 	}
@@ -180,13 +187,16 @@ func (s *Service) deliverStored(ctx context.Context, event models.WebhookEvent) 
 	if event.WebhookConfigID == nil {
 		return false
 	}
-	cfg, err := s.webhookConfigRepo.FindByID(*event.WebhookConfigID)
+	cfg, err := s.webhookConfigRepo.FindByID(ctx, *event.WebhookConfigID)
+	if errors.Is(err, models.ErrRepositoryNotFound) {
+		cfg, err = nil, nil
+	}
 	if err != nil {
 		slog.Error("load webhook config for delivery", "error", err, "event_id", event.ID)
 		return false
 	}
 	if cfg == nil || !cfg.IsActive {
-		if markErr := s.webhookEventRepo.MarkFailed(event.ID.String(), errConfigInactive); markErr != nil {
+		if markErr := s.webhookEventRepo.MarkFailed(ctx, event.ID.String(), errConfigInactive); markErr != nil {
 			slog.Error("mark webhook event failed", "error", markErr, "event_id", event.ID)
 		}
 		return false
@@ -210,7 +220,7 @@ func (s *Service) deliverStored(ctx context.Context, event models.WebhookEvent) 
 	}
 	slog.Warn("local webhook delivery failed", "error", deliverErr, "event_id", event.ID, "attempt", msg.Attempt)
 	if msg.Attempt >= event.MaxAttempts {
-		if markErr := s.webhookEventRepo.MarkFailed(event.ID.String(), deliverErr.Error()); markErr != nil {
+		if markErr := s.webhookEventRepo.MarkFailed(ctx, event.ID.String(), deliverErr.Error()); markErr != nil {
 			slog.Error("mark webhook event failed", "error", markErr, "event_id", event.ID)
 		}
 	}

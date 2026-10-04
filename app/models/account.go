@@ -7,13 +7,12 @@ import (
 
 type Account struct {
 	orm.Model
-	ID              uuid.UUID  `gorm:"type:uuid;primary_key" json:"id"`
-	Name            string     `gorm:"type:varchar(255);not null" json:"name"`
-	Status          string     `gorm:"type:varchar(20);default:active" json:"status"`
-	ViewAllWallets  bool       `gorm:"default:false" json:"view_all_wallets"`
-	Environment     string     `gorm:"type:varchar(4);default:prod" json:"environment"`
-	LinkedAccountID *uuid.UUID `gorm:"type:uuid" json:"linked_account_id,omitempty"`
-	SweepLimits     *string    `gorm:"type:jsonb" json:"sweep_limits,omitempty"`
+	ID              uuid.UUID  `gorm:"type:uuid;primary_key"`
+	Name            string     `gorm:"type:varchar(255);not null"`
+	Status          string     `gorm:"type:varchar(20);default:active"`
+	ViewAllWallets  bool       `gorm:"default:false"`
+	Environment     string     `gorm:"type:varchar(4);default:prod"`
+	LinkedAccountID *uuid.UUID `gorm:"type:uuid"`
 }
 
 func (a *Account) TableName() string { return "accounts" }

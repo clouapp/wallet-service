@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/macrowallets/waas/app/models"
+	"github.com/macrowallets/waas/pkg/httpclient"
 )
 
 const tipHeightPath = "/blocks/tip/height"
@@ -37,10 +38,10 @@ func newTipServer(t *testing.T, status int, body string) *tipServer {
 // bitcoinProviderAgainst points every Bitcoin tip source at a fake server.
 func bitcoinProviderAgainst(blockstream, testnet4 *tipServer) *BitcoinProvider {
 	p := NewBitcoinProvider()
-	p.blockstream.client = blockstream.Client()
+	p.blockstream.client = httpclient.Wrap(blockstream.Client())
 	p.blockstream.mainnetURL = blockstream.URL + tipHeightPath
 	p.blockstream.testnetURL = blockstream.URL + tipHeightPath
-	p.testnet4.client = testnet4.Client()
+	p.testnet4.client = httpclient.Wrap(testnet4.Client())
 	p.testnet4.url = testnet4.URL + tipHeightPath
 	return p
 }
@@ -48,7 +49,7 @@ func bitcoinProviderAgainst(blockstream, testnet4 *tipServer) *BitcoinProvider {
 func TestMempoolTestnet4Provider_ReadsTheTip(t *testing.T) {
 	srv := newTipServer(t, http.StatusOK, "154745\n")
 	p := NewMempoolTestnet4Provider()
-	p.client = srv.Client()
+	p.client = httpclient.Wrap(srv.Client())
 	p.url = srv.URL + tipHeightPath
 
 	height, err := p.GetBlockHeight(context.Background(), TipSourceBitcoinTestnet4)
@@ -76,7 +77,7 @@ func TestMempoolTestnet4Provider_RejectsChainIDsAndBadResponses(t *testing.T) {
 		"zero":         newTipServer(t, http.StatusOK, "0"),
 	} {
 		p := NewMempoolTestnet4Provider()
-		p.client = srv.Client()
+		p.client = httpclient.Wrap(srv.Client())
 		p.url = srv.URL + tipHeightPath
 		_, err := p.GetBlockHeight(ctx, TipSourceBitcoinTestnet4)
 		assert.Error(t, err, name)

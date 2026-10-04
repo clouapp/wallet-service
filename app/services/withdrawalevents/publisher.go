@@ -25,18 +25,18 @@ type Enqueuer interface {
 }
 
 type WithdrawalStore interface {
-	FindByTransactionID(transactionID uuid.UUID) (*models.Withdrawal, error)
-	FindByIDAndWallet(withdrawalID, walletID uuid.UUID) (*models.Withdrawal, error)
-	FindBroadcastWithConfirmedTransaction(limit int) ([]models.Withdrawal, error)
-	UpdateFields(id uuid.UUID, fields map[string]any) error
+	FindByTransactionID(ctx context.Context, transactionID uuid.UUID) (*models.Withdrawal, error)
+	FindByIDAndWallet(ctx context.Context, withdrawalID, walletID uuid.UUID) (*models.Withdrawal, error)
+	FindBroadcastWithConfirmedTransaction(ctx context.Context, limit int) ([]models.Withdrawal, error)
+	MarkConfirmed(ctx context.Context, id uuid.UUID, transactionID uuid.UUID) error
 }
 
 type TransactionStore interface {
-	FindByID(id uuid.UUID) (*models.Transaction, error)
+	FindByID(ctx context.Context, id uuid.UUID) (*models.Transaction, error)
 }
 
 type WalletStore interface {
-	FindByID(id uuid.UUID) (*models.Wallet, error)
+	FindByID(ctx context.Context, id uuid.UUID) (*models.Wallet, error)
 }
 
 // AssetDecimals resolves how many decimals an asset uses on a chain.
@@ -147,7 +147,7 @@ func (p *Publisher) MarkConfirmed(ctx context.Context, tx *models.Transaction) e
 		return fmt.Errorf("mark withdrawal confirmed: transaction %s is %s", tx.ID, tx.Status)
 	}
 
-	withdrawal, err := p.withdrawalForTransaction(tx)
+	withdrawal, err := p.withdrawalForTransaction(ctx, tx)
 	if err != nil {
 		return err
 	}
@@ -164,10 +164,7 @@ func (p *Publisher) MarkConfirmed(ctx context.Context, tx *models.Transaction) e
 	if withdrawal == nil || withdrawal.Status == models.WithdrawalStatusConfirmed {
 		return nil
 	}
-	if err := p.withdrawals.UpdateFields(withdrawal.ID, map[string]any{
-		"status":         models.WithdrawalStatusConfirmed,
-		"transaction_id": tx.ID,
-	}); err != nil {
+	if err := p.withdrawals.MarkConfirmed(ctx, withdrawal.ID, tx.ID); err != nil {
 		return fmt.Errorf("mark withdrawal %s confirmed: %w", withdrawal.ID, err)
 	}
 	return nil
@@ -179,7 +176,7 @@ func (p *Publisher) Backfill(ctx context.Context, limit int) (int, error) {
 	if limit <= 0 {
 		return 0, errors.New("backfill withdrawal confirmations: limit must be positive")
 	}
-	withdrawals, err := p.withdrawals.FindBroadcastWithConfirmedTransaction(limit)
+	withdrawals, err := p.withdrawals.FindBroadcastWithConfirmedTransaction(ctx, limit)
 	if err != nil {
 		return 0, fmt.Errorf("find withdrawals to backfill: %w", err)
 	}
@@ -192,7 +189,7 @@ func (p *Publisher) Backfill(ctx context.Context, limit int) (int, error) {
 		if withdrawal.TransactionID == nil {
 			continue
 		}
-		tx, err := p.transactions.FindByID(*withdrawal.TransactionID)
+		tx, err := p.transactions.FindByID(ctx, *withdrawal.TransactionID)
 		if err != nil || tx == nil {
 			slog.Error("backfill withdrawal confirmation: load transaction", "withdrawal_id", withdrawal.ID, "error", err)
 			continue
@@ -206,9 +203,9 @@ func (p *Publisher) Backfill(ctx context.Context, limit int) (int, error) {
 	return confirmed, nil
 }
 
-func (p *Publisher) withdrawalForTransaction(tx *models.Transaction) (*models.Withdrawal, error) {
-	withdrawal, err := p.withdrawals.FindByTransactionID(tx.ID)
-	if err != nil {
+func (p *Publisher) withdrawalForTransaction(ctx context.Context, tx *models.Transaction) (*models.Withdrawal, error) {
+	withdrawal, err := p.withdrawals.FindByTransactionID(ctx, tx.ID)
+	if err != nil && !errors.Is(err, models.ErrRepositoryNotFound) {
 		return nil, fmt.Errorf("find withdrawal for transaction %s: %w", tx.ID, err)
 	}
 	if withdrawal != nil || tx.IdempotencyKey == nil {
@@ -219,8 +216,8 @@ func (p *Publisher) withdrawalForTransaction(tx *models.Transaction) (*models.Wi
 	if parseErr != nil {
 		return nil, nil
 	}
-	withdrawal, err = p.withdrawals.FindByIDAndWallet(withdrawalID, tx.WalletID)
-	if err != nil {
+	withdrawal, err = p.withdrawals.FindByIDAndWallet(ctx, withdrawalID, tx.WalletID)
+	if err != nil && !errors.Is(err, models.ErrRepositoryNotFound) {
 		return nil, fmt.Errorf("find withdrawal %s by idempotency key: %w", withdrawalID, err)
 	}
 	return withdrawal, nil
@@ -283,7 +280,7 @@ func (p *Publisher) publish(ctx context.Context, eventType types.EventType, wall
 	if p.enqueuer == nil {
 		return errors.New("publish withdrawal webhook: no enqueuer configured")
 	}
-	scopeAccount := p.walletAccount(walletID, accountID)
+	scopeAccount := p.walletAccount(ctx, walletID, accountID)
 	enqueued, err := p.enqueuer.EnqueueScoped(ctx, webhook.ScopedEvent{
 		EventType:     eventType,
 		SubjectID:     payload.WithdrawalID,
@@ -301,11 +298,11 @@ func (p *Publisher) publish(ctx context.Context, eventType types.EventType, wall
 
 // walletAccount scopes the event to the wallet's owning account; the withdrawal's
 // recorded account is only a fallback when the wallet cannot be read.
-func (p *Publisher) walletAccount(walletID uuid.UUID, fallback *uuid.UUID) *uuid.UUID {
+func (p *Publisher) walletAccount(ctx context.Context, walletID uuid.UUID, fallback *uuid.UUID) *uuid.UUID {
 	if p.wallets == nil {
 		return fallback
 	}
-	wallet, err := p.wallets.FindByID(walletID)
+	wallet, err := p.wallets.FindByID(ctx, walletID)
 	if err != nil || wallet == nil {
 		slog.Warn("withdrawal webhook: wallet lookup failed, using the withdrawal account", "wallet_id", walletID, "error", err)
 		return fallback

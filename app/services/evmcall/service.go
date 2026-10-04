@@ -40,7 +40,7 @@ var (
 
 // WalletSource loads the wallet whose base address pays.
 type WalletSource interface {
-	FindByID(id uuid.UUID) (*models.Wallet, error)
+	FindByID(ctx context.Context, id uuid.UUID) (*models.Wallet, error)
 }
 
 // Signer MPC-signs a built call from the wallet's base address and verifies it
@@ -111,7 +111,7 @@ func (s *Service) Simulate(ctx context.Context, request Request) (*Plan, error) 
 	if err := request.Validate(); err != nil {
 		return nil, err
 	}
-	wallet, err := s.payingWallet(request.WalletID)
+	wallet, err := s.payingWallet(ctx, request.WalletID)
 	if err != nil {
 		return nil, err
 	}
@@ -127,7 +127,7 @@ func (s *Service) Broadcast(ctx context.Context, request Request, passphrase str
 	if s.deps.Signer == nil || s.deps.Claimer == nil {
 		return nil, fmt.Errorf("evm call: signer and claimer are required to broadcast")
 	}
-	wallet, err := s.payingWallet(request.WalletID)
+	wallet, err := s.payingWallet(ctx, request.WalletID)
 	if err != nil {
 		return nil, err
 	}
@@ -169,8 +169,11 @@ func (s *Service) Broadcast(ctx context.Context, request Request, passphrase str
 	return result, nil
 }
 
-func (s *Service) payingWallet(walletID uuid.UUID) (*models.Wallet, error) {
-	wallet, err := s.deps.Wallets.FindByID(walletID)
+func (s *Service) payingWallet(ctx context.Context, walletID uuid.UUID) (*models.Wallet, error) {
+	if ctx == nil {
+		return nil, fmt.Errorf("evm call: context is required")
+	}
+	wallet, err := s.deps.Wallets.FindByID(ctx, walletID)
 	if err != nil || wallet == nil {
 		return nil, fmt.Errorf("wallet %s not found", walletID)
 	}

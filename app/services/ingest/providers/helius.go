@@ -1,16 +1,13 @@
 package providers
 
 import (
-	"bytes"
 	"context"
 	"crypto/rand"
 	"crypto/subtle"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"io"
 	"math/big"
-	"net/http"
 	"net/url"
 	"strings"
 	"time"
@@ -18,6 +15,7 @@ import (
 	"github.com/shopspring/decimal"
 
 	"github.com/macrowallets/waas/app/models"
+	"github.com/macrowallets/waas/pkg/httpclient"
 	"github.com/macrowallets/waas/pkg/numeric"
 	"github.com/macrowallets/waas/pkg/types"
 )
@@ -34,13 +32,13 @@ const (
 
 type HeliusProvider struct {
 	apiKey string
-	client *http.Client
+	client *httpclient.Client
 }
 
 func NewHeliusProvider(apiKey string) *HeliusProvider {
 	return &HeliusProvider{
 		apiKey: apiKey,
-		client: &http.Client{Timeout: heliusHTTPTimeout},
+		client: httpclient.NewClient(heliusHTTPTimeout),
 	}
 }
 
@@ -97,24 +95,19 @@ func (h *HeliusProvider) CreateWebhook(ctx context.Context, cfg ProviderConfig) 
 		return nil, fmt.Errorf("helius: marshal create request: %w", err)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, h.endpointURL("/v0/webhooks"), bytes.NewReader(raw))
+	status, respBody, err := exchange(ctx, h.client, httpclient.MethodPost, h.endpointURL("/v0/webhooks"), heliusJSONHeaders(), raw)
 	if err != nil {
-		return nil, fmt.Errorf("helius: build create request: %w", err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := h.client.Do(req)
-	if err != nil {
+		if httpclient.IsBuild(err) {
+			return nil, fmt.Errorf("helius: build create request: %w", err)
+		}
 		return nil, fmt.Errorf("helius: create webhook call: %w", err)
 	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, h.readError("create webhook", resp)
+	if status != httpclient.StatusOK {
+		return nil, fmt.Errorf("helius create webhook: status %d: %s", status, respBody)
 	}
 
 	var result heliusCreateResp
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+	if err := json.Unmarshal(respBody, &result); err != nil {
 		return nil, fmt.Errorf("helius: decode create response: %w", err)
 	}
 
@@ -141,23 +134,19 @@ func (h *HeliusProvider) SyncAddresses(ctx context.Context, webhookID string, al
 		return fmt.Errorf("helius: webhookID is required")
 	}
 
-	getReq, err := http.NewRequestWithContext(ctx, http.MethodGet, h.endpointURL("/v0/webhooks/"+url.PathEscape(id)), nil)
+	getStatus, getBody, err := exchange(ctx, h.client, httpclient.MethodGet, h.endpointURL("/v0/webhooks/"+url.PathEscape(id)), nil, nil)
 	if err != nil {
-		return fmt.Errorf("helius: build get webhook request: %w", err)
-	}
-
-	getResp, err := h.client.Do(getReq)
-	if err != nil {
+		if httpclient.IsBuild(err) {
+			return fmt.Errorf("helius: build get webhook request: %w", err)
+		}
 		return fmt.Errorf("helius: get webhook call: %w", err)
 	}
-	defer getResp.Body.Close()
-
-	if getResp.StatusCode != http.StatusOK {
-		return h.readError("get webhook", getResp)
+	if getStatus != httpclient.StatusOK {
+		return fmt.Errorf("helius get webhook: status %d: %s", getStatus, getBody)
 	}
 
 	var current heliusCreateResp
-	if err := json.NewDecoder(getResp.Body).Decode(&current); err != nil {
+	if err := json.Unmarshal(getBody, &current); err != nil {
 		return fmt.Errorf("helius: decode get webhook response: %w", err)
 	}
 
@@ -180,20 +169,15 @@ func (h *HeliusProvider) SyncAddresses(ctx context.Context, webhookID string, al
 		return fmt.Errorf("helius: marshal sync request: %w", err)
 	}
 
-	putReq, err := http.NewRequestWithContext(ctx, http.MethodPut, h.endpointURL("/v0/webhooks/"+url.PathEscape(id)), bytes.NewReader(raw))
+	putStatus, putBodyBytes, err := exchange(ctx, h.client, httpclient.MethodPut, h.endpointURL("/v0/webhooks/"+url.PathEscape(id)), heliusJSONHeaders(), raw)
 	if err != nil {
-		return fmt.Errorf("helius: build put webhook request: %w", err)
-	}
-	putReq.Header.Set("Content-Type", "application/json")
-
-	putResp, err := h.client.Do(putReq)
-	if err != nil {
+		if httpclient.IsBuild(err) {
+			return fmt.Errorf("helius: build put webhook request: %w", err)
+		}
 		return fmt.Errorf("helius: put webhook call: %w", err)
 	}
-	defer putResp.Body.Close()
-
-	if putResp.StatusCode != http.StatusOK {
-		return h.readError("put webhook", putResp)
+	if putStatus != httpclient.StatusOK {
+		return fmt.Errorf("helius put webhook: status %d: %s", putStatus, putBodyBytes)
 	}
 	return nil
 }
@@ -211,19 +195,15 @@ func (h *HeliusProvider) DeleteWebhook(ctx context.Context, webhookID string) er
 		return fmt.Errorf("helius: webhookID is required")
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodDelete, h.endpointURL("/v0/webhooks/"+url.PathEscape(id)), nil)
+	status, respBody, err := exchange(ctx, h.client, httpclient.MethodDelete, h.endpointURL("/v0/webhooks/"+url.PathEscape(id)), nil, nil)
 	if err != nil {
-		return fmt.Errorf("helius: build delete request: %w", err)
-	}
-
-	resp, err := h.client.Do(req)
-	if err != nil {
+		if httpclient.IsBuild(err) {
+			return fmt.Errorf("helius: build delete request: %w", err)
+		}
 		return fmt.Errorf("helius: delete webhook call: %w", err)
 	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusNoContent {
-		return h.readError("delete webhook", resp)
+	if status != httpclient.StatusOK && status != httpclient.StatusNoContent {
+		return fmt.Errorf("helius delete webhook: status %d: %s", status, respBody)
 	}
 	return nil
 }
@@ -232,7 +212,7 @@ func (h *HeliusProvider) DeleteWebhook(ctx context.Context, webhookID string) er
 // VerifyInbound — Authorization header matches stored authHeader (constant time)
 // ---------------------------------------------------------------------------
 
-func (h *HeliusProvider) VerifyInbound(headers http.Header, body []byte, secret string) (bool, error) {
+func (h *HeliusProvider) VerifyInbound(headers Header, body []byte, secret string) (bool, error) {
 	_ = body
 	got := headers.Get("Authorization")
 	if got == "" {
@@ -350,9 +330,8 @@ func (h *HeliusProvider) endpointURL(path string) string {
 	return u + sep + "api-key=" + url.QueryEscape(h.apiKey)
 }
 
-func (h *HeliusProvider) readError(label string, resp *http.Response) error {
-	b, _ := io.ReadAll(resp.Body)
-	return fmt.Errorf("helius %s: status %d: %s", label, resp.StatusCode, string(b))
+func heliusJSONHeaders() map[string]string {
+	return map[string]string{"Content-Type": "application/json"}
 }
 
 func heliusWebhookTypeForNetwork(network string) string {

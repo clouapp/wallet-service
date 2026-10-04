@@ -75,7 +75,7 @@ func TestDustBaseUnitsRoundsUpToWholeBaseUnits(t *testing.T) {
 	}
 }
 
-func TestTokenDustPrefersTheChainColumnOverTheGlobalDefault(t *testing.T) {
+func TestTokenDustUsesTheChainColumnAndIgnoresEnv(t *testing.T) {
 	t.Setenv("BASE_DUST_THRESHOLD_USD", "3")
 	svc, adapter := dustService(usdcPricer("1"))
 
@@ -83,9 +83,9 @@ func TestTokenDustPrefersTheChainColumnOverTheGlobalDefault(t *testing.T) {
 	if fromColumn == nil || fromColumn.Cmp(big.NewInt(500_000)) != 0 {
 		t.Fatalf("column 0.5 USD → %v, want 500000", fromColumn)
 	}
-	fromDefault := svc.childDustThreshold(context.Background(), adapter, dustChainEntity(""), models.SymbolUSDC)
-	if fromDefault == nil || fromDefault.Cmp(big.NewInt(3_000_000)) != 0 {
-		t.Fatalf("NULL column → BASE_DUST_THRESHOLD_USD 3 USD → %v, want 3000000", fromDefault)
+	fromUnset := svc.childDustThreshold(context.Background(), adapter, dustChainEntity(""), models.SymbolUSDC)
+	if fromUnset != nil {
+		t.Fatalf("unset column must not use BASE_DUST_THRESHOLD_USD, got %v", fromUnset)
 	}
 	if disabled := svc.childDustThreshold(context.Background(), adapter, dustChainEntity("0"), models.SymbolUSDC); disabled != nil {
 		t.Fatalf("a zero column disables token dust, got %v", disabled)

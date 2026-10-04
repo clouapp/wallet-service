@@ -1,0 +1,120 @@
+package policies
+
+import (
+	"testing"
+
+	"github.com/google/uuid"
+	"github.com/macrowallets/waas/app/models"
+)
+
+func TestCanUsersReadFailsClosedAndFollowsTheRoleCatalog(t *testing.T) {
+	for _, role := range []string{models.AccountRoleOwner, models.AccountRoleAdmin, models.AccountRoleAuditor, models.RetiredAccountRoleViewer} {
+		if !Can(AccountRoleGrants(role), PermUsersRead) {
+			t.Fatalf("%s must hold users.read", role)
+		}
+	}
+	for _, role := range []string{models.AccountRoleUser, "", "spender", "owner "} {
+		if Can(AccountRoleGrants(role), PermUsersRead) {
+			t.Fatalf("%q must not hold users.read", role)
+		}
+	}
+	owner := AccountRoleGrants(models.AccountRoleOwner)
+	if Can(owner, "") || Can(owner, "users.delete") || Can(nil, PermUsersRead) || Can(Grants{}, PermUsersRead) {
+		t.Fatal("empty permission, a permission outside the set, and an empty grant set are false")
+	}
+}
+
+func TestCanUsersWriteIsOwnerAndAdmin(t *testing.T) {
+	for _, role := range []string{models.AccountRoleOwner, models.AccountRoleAdmin} {
+		if !Can(AccountRoleGrants(role), PermUsersWrite) {
+			t.Fatalf("%s must hold users.write", role)
+		}
+		if !Can(AccountRoleGrants(role), PermUsersRead) {
+			t.Fatalf("%s must still hold users.read", role)
+		}
+	}
+	for _, role := range []string{models.AccountRoleAuditor, models.RetiredAccountRoleViewer, models.AccountRoleUser, "", "spender", "owner "} {
+		if Can(AccountRoleGrants(role), PermUsersWrite) {
+			t.Fatalf("%q must not hold users.write", role)
+		}
+	}
+}
+
+func TestWalletGrantsAddressCreateAndRefusesFundMovement(t *testing.T) {
+	for _, role := range []string{models.AccountRoleOwner, models.AccountRoleAdmin, models.AccountRoleUser} {
+		if !Can(WalletGrants(role), PermAddressesCreate) {
+			t.Fatalf("%s must hold addresses.create", role)
+		}
+	}
+	for _, role := range []string{models.AccountRoleAuditor, models.RetiredAccountRoleViewer, "", "spender", "owner "} {
+		if Can(WalletGrants(role), PermAddressesCreate) {
+			t.Fatalf("%q must not hold addresses.create", role)
+		}
+	}
+	user := WalletGrants(models.AccountRoleUser)
+	for _, permission := range []string{PermWithdrawalsCreate, PermSweepExecute, PermWalletsCreate, PermUsersRead, PermUsersWrite, ""} {
+		if Can(user, permission) {
+			t.Fatalf("user wallet grants must not hold %q", permission)
+		}
+	}
+	if Can(nil, PermAddressesCreate) || Can(Grants{}, PermAddressesCreate) {
+		t.Fatal("an empty grant set does not hold addresses.create")
+	}
+	if Can(AccountRoleGrants(models.AccountRoleUser), PermAddressesCreate) || Can(AccountRoleGrants(models.AccountRoleOwner), PermWithdrawalsCreate) {
+		t.Fatal("the users.read catalog does not grant address creation or fund movement")
+	}
+}
+
+func TestMayGrantDoesNotAllowARoleAboveTheActor(t *testing.T) {
+	if !MayGrant(models.AccountRoleOwner, models.AccountRoleOwner) {
+		t.Fatal("owner may grant owner")
+	}
+	if !MayGrant(models.AccountRoleAdmin, models.AccountRoleAdmin) {
+		t.Fatal("admin may grant an equal role")
+	}
+	if !MayGrant(models.AccountRoleAdmin, models.AccountRoleUser) || !MayGrant(models.AccountRoleAdmin, models.AccountRoleAuditor) {
+		t.Fatal("admin may grant user and auditor")
+	}
+	if MayGrant(models.AccountRoleAdmin, models.AccountRoleOwner) {
+		t.Fatal("admin must not grant owner")
+	}
+	if !MayGrant(models.AccountRoleUser, models.AccountRoleAuditor) || !MayGrant(models.AccountRoleAuditor, models.AccountRoleUser) {
+		t.Fatal("user and auditor are the same rank")
+	}
+	if MayGrant(models.AccountRoleUser, models.AccountRoleAdmin) || MayGrant(models.AccountRoleAuditor, models.AccountRoleOwner) {
+		t.Fatal("a lower role must not grant above itself")
+	}
+	if MayGrant("", models.AccountRoleUser) || MayGrant(models.AccountRoleOwner, "viewer") || MayGrant(models.AccountRoleOwner, "") {
+		t.Fatal("unknown roles are not grantable")
+	}
+}
+
+func TestMayActOnUsesTheSameRankAndRemovalRefusesSelfAndLastOwner(t *testing.T) {
+	if !MayActOn(models.AccountRoleAdmin, models.AccountRoleAdmin) {
+		t.Fatal("admin may act on another admin")
+	}
+	if MayActOn(models.AccountRoleAdmin, models.AccountRoleOwner) {
+		t.Fatal("admin must not act on an owner")
+	}
+	if !MayActOn(models.AccountRoleOwner, models.AccountRoleOwner) {
+		t.Fatal("an owner may act on another owner")
+	}
+
+	actor := uuid.New()
+	other := uuid.New()
+	if err := RefuseMemberRemoval(actor, actor, models.AccountRoleOwner, models.AccountRoleOwner, 2); err != ErrCannotRemoveSelf {
+		t.Fatalf("self removal = %v", err)
+	}
+	if err := RefuseMemberRemoval(actor, other, models.AccountRoleAdmin, models.AccountRoleOwner, 1); err != ErrCannotActOnMember {
+		t.Fatalf("admin removing owner = %v", err)
+	}
+	if err := RefuseMemberRemoval(actor, other, models.AccountRoleOwner, models.AccountRoleOwner, 1); err != ErrLastOwner {
+		t.Fatalf("last owner = %v", err)
+	}
+	if err := RefuseMemberRemoval(actor, other, models.AccountRoleOwner, models.AccountRoleOwner, 2); err != nil {
+		t.Fatalf("second owner = %v", err)
+	}
+	if err := RefuseMemberRemoval(actor, other, models.AccountRoleAdmin, models.AccountRoleAdmin, 1); err != nil {
+		t.Fatalf("admin removing admin = %v", err)
+	}
+}

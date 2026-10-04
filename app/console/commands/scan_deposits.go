@@ -10,11 +10,20 @@ import (
 	"github.com/goravel/framework/contracts/console"
 	"github.com/goravel/framework/contracts/console/command"
 
-	"github.com/macrowallets/waas/app/container"
 	"github.com/macrowallets/waas/app/services/deposit"
 )
 
-type ScanDeposits struct{}
+type ScanDeposits struct {
+	deposits *deposit.Service
+}
+
+// NewScanDeposits scans deposits for one chain.
+func NewScanDeposits(deposits *deposit.Service) *ScanDeposits {
+	if deposits == nil {
+		panic("scan:deposits: deposit service is required")
+	}
+	return &ScanDeposits{deposits: deposits}
+}
 
 func (c *ScanDeposits) Signature() string {
 	return "scan:deposits"
@@ -73,7 +82,7 @@ func (c *ScanDeposits) Handle(ctx console.Context) error {
 		return fmt.Errorf("use only one of --block, --tx, --pending and --retry-pending")
 	}
 
-	service := container.Get().DepositService
+	service := c.deposits
 	if service == nil {
 		return fmt.Errorf("deposit service is not initialized")
 	}

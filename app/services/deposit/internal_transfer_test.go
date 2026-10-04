@@ -9,7 +9,6 @@ import (
 	"github.com/goravel/framework/facades"
 
 	"github.com/macrowallets/waas/app/models"
-	"github.com/macrowallets/waas/app/repositories"
 	"github.com/macrowallets/waas/pkg/types"
 	"github.com/macrowallets/waas/tests/mocks"
 )
@@ -42,8 +41,9 @@ func recordOutbound(t *testing.T, walletID uuid.UUID, txType, txHash, to string)
 
 func walletOfAddress(t *testing.T, address string) uuid.UUID {
 	t.Helper()
-	addr, err := repositories.NewAddressRepository().FindByChainAndAddress(scanTestChain, address)
-	if err != nil || addr == nil {
+	var addr models.Address
+	err := facades.Orm().Query().Where("chain", scanTestChain).Where("address", address).First(&addr)
+	if err != nil || addr.WalletID == uuid.Nil {
 		t.Fatalf("watched address %s not found: %v", address, err)
 	}
 	return addr.WalletID

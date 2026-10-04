@@ -429,13 +429,3 @@ func TestNewService_RequiresItsCollaborators(t *testing.T) {
 		t.Fatal("expected an error without a quoter")
 	}
 }
-
-func TestRedisCache_NilClientIsANoOp(t *testing.T) {
-	cache := NewRedisCache(nil)
-	if _, ok, err := cache.Get(context.Background(), "k"); ok || err != nil {
-		t.Fatalf("ok %t err %v", ok, err)
-	}
-	if err := cache.Set(context.Background(), "k", []byte("v"), time.Second); err != nil {
-		t.Fatal(err)
-	}
-}

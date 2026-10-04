@@ -3,6 +3,7 @@ package mpc
 import (
 	"bytes"
 	"context"
+	"errors"
 	"testing"
 )
 
@@ -30,8 +31,8 @@ func TestDecryptWrongPassphrase(t *testing.T) {
 	encrypted, _ := EncryptShare(plaintext, "correct-passphrase-here")
 
 	_, err := DecryptShare(encrypted, "wrong-passphrase-here!")
-	if err == nil {
-		t.Fatal("expected error on wrong passphrase, got nil")
+	if !errors.Is(err, ErrInvalidPassphrase) {
+		t.Fatalf("expected ErrInvalidPassphrase, got %v", err)
 	}
 }
 

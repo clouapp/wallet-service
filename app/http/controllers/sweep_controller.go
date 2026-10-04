@@ -2,165 +2,11 @@ package controllers
 
 import (
 	"math/big"
-	"time"
 
-	"github.com/google/uuid"
 	"github.com/goravel/framework/contracts/http"
 
-	"github.com/macrowallets/waas/app/container"
-	"github.com/macrowallets/waas/app/http/requests"
 	"github.com/macrowallets/waas/app/services/sweep"
 )
-
-// gasCheckRateLimitWindow caps ForceGasCheck to one on-chain read per wallet
-// per minute. The limit is enforced via Redis SETNX so it is shared across all
-// API nodes and Lambda handlers. When Redis is unavailable we fall through to
-// the underlying handler — availability of the endpoint is more important than
-// a perfect rate limit, and the chain adapter itself has short-term caching.
-const gasCheckRateLimitWindow = 60 * time.Second
-
-// ConsolidateWallet godoc
-// @Summary      Consolidate wallet balances
-// @Description  Sweep all eligible child addresses' balance into the wallet's base deposit address.
-// @Tags         Wallets
-// @Accept       json
-// @Produce      json
-// @Security     ApiKeyAuth
-// @Security     BearerAuth
-// @Param        walletId  path      string                       true  "Wallet UUID"  format(uuid)
-// @Param        body      body      ConsolidateRequestSwagger    true  "Consolidation request"
-// @Success      200       {object}  ConsolidateResponse
-// @Failure      400       {object}  ErrorResponse
-// @Failure      422       {object}  ErrorResponse
-// @Failure      429       {object}  ErrorResponse
-// @Router       /v1/wallets/{walletId}/consolidate [post]
-func ConsolidateWallet(ctx http.Context) http.Response {
-	walletID, err := uuid.Parse(ctx.Request().Route("walletId"))
-	if err != nil {
-		return ctx.Response().Json(http.StatusBadRequest, http.Json{"error": "invalid wallet id"})
-	}
-
-	var req requests.ConsolidateRequest
-	if errResp := validateRequest(ctx, &req); errResp != nil {
-		return errResp
-	}
-
-	callerAccountID, _ := ctx.Value("account_id").(uuid.UUID)
-
-	result, err := container.Get().SweepService.ConsolidateAll(ctx.Context(), walletID, req.Asset, req.Passphrase, callerAccountID)
-	if err != nil {
-		if resp := MapSweepError(ctx, err); resp != nil {
-			return resp
-		}
-		return MapInternalError(ctx, err, "consolidate")
-	}
-	return ctx.Response().Success().Json(mapConsolidateResponse(result))
-}
-
-// GetGasStatus godoc
-// @Summary      Get wallet gas readiness
-// @Description  Returns the gas readiness status, native balance, and configured threshold for a wallet's base address.
-// @Tags         Wallets
-// @Produce      json
-// @Security     ApiKeyAuth
-// @Security     BearerAuth
-// @Param        walletId  path      string  true  "Wallet UUID"  format(uuid)
-// @Success      200       {object}  GasStatusResponse
-// @Failure      400       {object}  ErrorResponse
-// @Failure      422       {object}  ErrorResponse
-// @Router       /v1/wallets/{walletId}/gas-status [get]
-func GetGasStatus(ctx http.Context) http.Response {
-	walletID, err := uuid.Parse(ctx.Request().Route("walletId"))
-	if err != nil {
-		return ctx.Response().Json(http.StatusBadRequest, http.Json{"error": "invalid wallet id"})
-	}
-
-	status, err := container.Get().SweepService.RefreshGasStatus(ctx.Context(), walletID)
-	if err != nil {
-		if resp := MapSweepError(ctx, err); resp != nil {
-			return resp
-		}
-		return MapInternalError(ctx, err, "gas_status")
-	}
-	return ctx.Response().Success().Json(gasStatusResponse(status))
-}
-
-// ForceGasCheck godoc
-// @Summary      Force refresh of wallet gas status
-// @Description  Action variant of gas-status. Forces an on-chain read. Rate-limited per wallet.
-// @Tags         Wallets
-// @Produce      json
-// @Security     ApiKeyAuth
-// @Security     BearerAuth
-// @Param        walletId  path      string  true  "Wallet UUID"  format(uuid)
-// @Success      200       {object}  GasStatusResponse
-// @Failure      400       {object}  ErrorResponse
-// @Failure      422       {object}  ErrorResponse
-// @Failure      429       {object}  ErrorResponse
-// @Router       /v1/wallets/{walletId}/gas-check [post]
-func ForceGasCheck(ctx http.Context) http.Response {
-	walletID, err := uuid.Parse(ctx.Request().Route("walletId"))
-	if err != nil {
-		return ctx.Response().Json(http.StatusBadRequest, http.Json{"error": "invalid wallet id"})
-	}
-
-	if rdb := container.Get().Redis; rdb != nil {
-		key := "vault:ratelimit:gas-check:" + walletID.String()
-		ok, setErr := rdb.SetNX(ctx.Context(), key, "1", gasCheckRateLimitWindow).Result()
-		if setErr == nil && !ok {
-			return ctx.Response().Json(http.StatusTooManyRequests, http.Json{
-				"error":               "rate_limited",
-				"limit_type":          "gas_check",
-				"retry_after_seconds": int(gasCheckRateLimitWindow / time.Second),
-			})
-		}
-	}
-
-	return GetGasStatus(ctx)
-}
-
-// PreviewWithdraw godoc
-// @Summary      Preview a withdrawal
-// @Description  Returns the planned sweep strategy without executing any transaction.
-// @Tags         Wallets
-// @Accept       json
-// @Produce      json
-// @Security     ApiKeyAuth
-// @Security     BearerAuth
-// @Param        walletId  path      string                            true  "Wallet UUID"  format(uuid)
-// @Param        body      body      WithdrawPreviewRequestSwagger     true  "Preview request"
-// @Success      200       {object}  WithdrawPreviewResponse
-// @Failure      400       {object}  ErrorResponse
-// @Failure      422       {object}  ErrorResponse
-// @Router       /v1/wallets/{walletId}/withdraw/preview [post]
-func PreviewWithdraw(ctx http.Context) http.Response {
-	walletID, err := uuid.Parse(ctx.Request().Route("walletId"))
-	if err != nil {
-		return ctx.Response().Json(http.StatusBadRequest, http.Json{"error": "invalid wallet id"})
-	}
-
-	var req requests.WithdrawPreviewRequest
-	if errResp := validateRequest(ctx, &req); errResp != nil {
-		return errResp
-	}
-
-	amount, ok := new(big.Int).SetString(req.Amount, 10)
-	if !ok {
-		return ctx.Response().Json(http.StatusBadRequest, http.Json{"error": "invalid amount"})
-	}
-
-	callerAccountID, _ := ctx.Value("account_id").(uuid.UUID)
-
-	const previewHasNoDestination = ""
-	plan, err := container.Get().SweepService.PlanForWithdrawal(ctx.Context(), walletID, req.Asset, amount, previewHasNoDestination, callerAccountID)
-	if err != nil {
-		if resp := MapSweepError(ctx, err); resp != nil {
-			return resp
-		}
-		return MapInternalError(ctx, err, "preview_withdraw")
-	}
-	return ctx.Response().Success().Json(previewResponse(plan))
-}
 
 // mapConsolidateResponse shapes a sweep.Result into the JSON payload the
 // dashboard expects. CompletedSweep carries no amount today, so the
@@ -255,6 +101,20 @@ func bigIntString(v *big.Int) string {
 		return "0"
 	}
 	return v.String()
+}
+
+// MapConsolidateResponse, GasStatusBody and WithdrawPreviewBody are the sweep JSON
+// both HTTP surfaces return.
+func MapConsolidateResponse(result *sweep.Result) http.Json {
+	return mapConsolidateResponse(result)
+}
+
+func GasStatusBody(st *sweep.GasStatus) http.Json {
+	return gasStatusResponse(st)
+}
+
+func WithdrawPreviewBody(plan *sweep.Plan) http.Json {
+	return previewResponse(plan)
 }
 
 // ---- Swagger request/response types (doc-only) ----

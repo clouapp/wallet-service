@@ -1,6 +1,7 @@
 package withdrawalevents
 
 import (
+	"context"
 	"strings"
 
 	"github.com/macrowallets/waas/app/models"
@@ -13,7 +14,7 @@ type TokenRegistry interface {
 }
 
 type ChainStore interface {
-	FindByID(id string) (*models.Chain, error)
+	FindByID(ctx context.Context, id string) (*models.Chain, error)
 }
 
 // RegistryDecimals resolves decimals from the seeded tokens and the chain's native decimals.
@@ -40,7 +41,7 @@ func (r RegistryDecimals) Decimals(chainID, asset string) (int, bool) {
 	if err != nil || adapter == nil || !types.SameAssetSymbol(adapter.NativeAsset(), asset) || r.chains == nil {
 		return 0, false
 	}
-	chain, err := r.chains.FindByID(chainID)
+	chain, err := r.chains.FindByID(context.Background(), chainID)
 	if err != nil || chain == nil {
 		return 0, false
 	}

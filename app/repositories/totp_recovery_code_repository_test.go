@@ -1,6 +1,7 @@
 package repositories_test
 
 import (
+	"context"
 	"testing"
 	"time"
 
@@ -15,8 +16,8 @@ import (
 
 type TotpRecoveryCodeRepositoryTestSuite struct {
 	suite.Suite
-	repo     repositories.TotpRecoveryCodeRepository
-	userRepo repositories.UserRepository
+	repo     *repositories.TotpRecoveryCodeRepository
+	userRepo *repositories.UserRepository
 }
 
 func TestTotpRecoveryCodeRepositorySuite(t *testing.T) {
@@ -25,43 +26,59 @@ func TestTotpRecoveryCodeRepositorySuite(t *testing.T) {
 
 func (s *TotpRecoveryCodeRepositoryTestSuite) SetupTest() {
 	mocks.TestDB(s.T())
-	s.repo = repositories.NewTotpRecoveryCodeRepository()
-	s.userRepo = repositories.NewUserRepository()
+	s.repo = repositories.NewTotpRecoveryCodeRepository(nil)
+	s.userRepo = repositories.NewUserRepository(nil)
 }
 
 func (s *TotpRecoveryCodeRepositoryTestSuite) createUser() uuid.UUID {
 	u := &models.User{ID: uuid.New(), Email: uuid.NewString() + "@test.com", PasswordHash: "h", Status: "active"}
-	s.Require().NoError(s.userRepo.Create(u))
+	s.Require().NoError(s.userRepo.Create(context.Background(), u))
 	return u.ID
 }
 
 func (s *TotpRecoveryCodeRepositoryTestSuite) TestFindUnusedByUserID() {
 	userID := s.createUser()
 
-	unused := &models.TotpRecoveryCode{ID: uuid.New(), UserID: userID, CodeHash: "unused_hash"}
-	facades.Orm().Query().Create(unused)
+	unused := &models.MfaBackupCode{ID: uuid.New(), SubjectType: models.MFASubjectUsers, SubjectID: userID, CodeHash: "unused_hash"}
+	s.Require().NoError(facades.Orm().Query().Create(unused))
 
-	used := &models.TotpRecoveryCode{ID: uuid.New(), UserID: userID, CodeHash: "used_hash"}
-	facades.Orm().Query().Create(used)
+	used := &models.MfaBackupCode{ID: uuid.New(), SubjectType: models.MFASubjectUsers, SubjectID: userID, CodeHash: "used_hash"}
+	s.Require().NoError(facades.Orm().Query().Create(used))
 	now := time.Now()
 	facades.Orm().Query().Model(used).Where("id = ?", used.ID).Update("used_at", now)
 
-	codes, err := s.repo.FindUnusedByUserID(userID)
+	codes, err := s.repo.FindUnusedByUserID(context.Background(), userID)
 	s.NoError(err)
 	s.Len(codes, 1)
 	s.Equal(unused.ID, codes[0].ID)
 }
 
-func (s *TotpRecoveryCodeRepositoryTestSuite) TestMarkUsed() {
-	userID := s.createUser()
+func (s *TotpRecoveryCodeRepositoryTestSuite) TestMarkUsedIfUnused() {
+	userID := insertActiveUserRow(s.T())
 
-	code := &models.TotpRecoveryCode{ID: uuid.New(), UserID: userID, CodeHash: "hash"}
-	facades.Orm().Query().Create(code)
+	code := &models.MfaBackupCode{ID: uuid.New(), SubjectType: models.MFASubjectUsers, SubjectID: userID, CodeHash: "hash"}
+	s.Require().NoError(facades.Orm().Query().Create(code))
 
-	err := s.repo.MarkUsed(code.ID)
+	spent, err := s.repo.MarkUsedIfUnused(context.Background(), code.ID)
 	s.NoError(err)
+	s.True(spent)
 
-	var check models.TotpRecoveryCode
-	facades.Orm().Query().Where("id = ?", code.ID).First(&check)
+	var check models.MfaBackupCode
+	s.Require().NoError(facades.Orm().Query().Where("id = ?", code.ID).First(&check))
 	s.NotNil(check.UsedAt)
+}
+
+func (s *TotpRecoveryCodeRepositoryTestSuite) TestMarkUsedIfUnused_SecondSpendIsRefused() {
+	userID := insertActiveUserRow(s.T())
+
+	code := &models.MfaBackupCode{ID: uuid.New(), SubjectType: models.MFASubjectUsers, SubjectID: userID, CodeHash: "hash"}
+	s.Require().NoError(facades.Orm().Query().Create(code))
+
+	first, err := s.repo.MarkUsedIfUnused(context.Background(), code.ID)
+	s.Require().NoError(err)
+	s.Require().True(first)
+
+	second, err := s.repo.MarkUsedIfUnused(context.Background(), code.ID)
+	s.NoError(err)
+	s.False(second, "a spent recovery code must not be spendable again")
 }

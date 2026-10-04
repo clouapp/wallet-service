@@ -4,8 +4,9 @@ import (
 	"strings"
 
 	"github.com/goravel/framework/contracts/http"
-	"github.com/goravel/framework/facades"
 	"github.com/spf13/cast"
+
+	"github.com/macrowallets/waas/app/facades"
 )
 
 // Cors handles Cross-Origin Resource Sharing headers.

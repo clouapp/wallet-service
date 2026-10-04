@@ -20,7 +20,7 @@ type fakeWalletStore struct {
 	listErr error
 }
 
-func (s *fakeWalletStore) FindByID(id uuid.UUID) (*models.Wallet, error) {
+func (s *fakeWalletStore) FindByID(_ context.Context, id uuid.UUID) (*models.Wallet, error) {
 	for i := range s.wallets {
 		if s.wallets[i].ID == id {
 			return &s.wallets[i], nil
@@ -29,7 +29,7 @@ func (s *fakeWalletStore) FindByID(id uuid.UUID) (*models.Wallet, error) {
 	return nil, nil
 }
 
-func (s *fakeWalletStore) FindAll() ([]models.Wallet, error) {
+func (s *fakeWalletStore) FindAll(context.Context) ([]models.Wallet, error) {
 	return append([]models.Wallet(nil), s.wallets...), s.listErr
 }
 

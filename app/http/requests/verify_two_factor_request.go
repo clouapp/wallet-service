@@ -5,9 +5,9 @@ import (
 )
 
 type VerifyTwoFactorRequest struct {
-	PartialToken string `form:"partial_token" json:"partial_token"`
-	Code         string `form:"code"          json:"code"`
-	RecoveryCode string `form:"recovery_code" json:"recovery_code"`
+	ChallengeToken string `form:"challenge_token" json:"challenge_token"`
+	Code           string `form:"code"            json:"code"`
+	RecoveryCode   string `form:"recovery_code"   json:"recovery_code"`
 }
 
 func (r *VerifyTwoFactorRequest) Authorize(ctx http.Context) error {
@@ -16,6 +16,6 @@ func (r *VerifyTwoFactorRequest) Authorize(ctx http.Context) error {
 
 func (r *VerifyTwoFactorRequest) Rules(ctx http.Context) map[string]string {
 	return map[string]string{
-		"partial_token": "required",
+		"challenge_token": "required",
 	}
 }

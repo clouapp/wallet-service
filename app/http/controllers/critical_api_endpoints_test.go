@@ -20,7 +20,7 @@ import (
 )
 
 // criticalEndpointsSuite exercises the high-value external API endpoints
-// (GenerateAddress, Consolidate, and — when registered — CreateWithdrawal)
+// (GenerateAddress, Consolidate)
 // under both the legacy unsigned Bearer JWT scheme and the HMAC-required
 // signed scheme introduced by the `require_signature` claim.
 //
@@ -55,6 +55,10 @@ func (s *criticalEndpointsSuite) SetupTest() {
 // doesn't expose, so we fall back to raw SQL — matching the pattern used
 // in middleware-level tests.
 func (s *criticalEndpointsSuite) seedAccountWallet(requireSignature bool, label string) (string, string) {
+	return s.seedAccountWalletWithLimit(requireSignature, label, "{}")
+}
+
+func (s *criticalEndpointsSuite) seedAccountWalletWithLimit(requireSignature bool, label, spendingLimit string) (string, string) {
 	s.T().Helper()
 
 	accountID := uuid.New()
@@ -67,9 +71,9 @@ func (s *criticalEndpointsSuite) seedAccountWallet(requireSignature bool, label 
 
 	tokenID := uuid.New()
 	_, err := facades.Orm().Query().Exec(
-		`INSERT INTO access_tokens (id, account_id, name, token_hash, spending_limit, created_at, updated_at)
-		 VALUES (?, ?, ?, ?, ?, NOW(), NOW())`,
-		tokenID, accountID, "critical-token-"+label, "test-hash-critical-"+label, "{}",
+		`INSERT INTO access_tokens (id, account_id, name, token_hash, permissions, spending_limit, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, NOW(), NOW())`,
+		tokenID, accountID, "critical-token-"+label, "test-hash-critical-"+label, models.AllAPIPermissionGrants(), spendingLimit,
 	)
 	s.Require().NoError(err)
 
@@ -119,9 +123,9 @@ func (s *criticalEndpointsSuite) mintSignedToken(label string) string {
 
 	tokenID := uuid.New()
 	_, err := facades.Orm().Query().Exec(
-		`INSERT INTO access_tokens (id, account_id, name, token_hash, spending_limit, created_at, updated_at)
-		 VALUES (?, ?, ?, ?, ?, NOW(), NOW())`,
-		tokenID, accountID, "critical-token-"+label, "test-hash-critical-"+label, "{}",
+		`INSERT INTO access_tokens (id, account_id, name, token_hash, permissions, spending_limit, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, NOW(), NOW())`,
+		tokenID, accountID, "critical-token-"+label, "test-hash-critical-"+label, models.AllAPIPermissionGrants(), "{}",
 	)
 	s.Require().NoError(err)
 
@@ -171,12 +175,12 @@ func (s *criticalEndpointsSuite) assertNoMiddlewareReject(resp contractstestingh
 	s.Require().NoError(err)
 
 	rejects := []string{
-		`"error":"missing bearer token"`,
-		`"error":"invalid or expired api token"`,
-		`"error":"token not found or revoked"`,
-		`"error":"missing request signature"`,
-		`"error":"invalid request signature"`,
-		`"error":"wallet not found"`,
+		`"message":"missing bearer token"`,
+		`"message":"invalid or expired api token"`,
+		`"message":"token not found or revoked"`,
+		`"message":"missing request signature"`,
+		`"message":"invalid request signature"`,
+		`"message":"wallet not found"`,
 	}
 	for _, rej := range rejects {
 		s.NotContains(body, rej,
@@ -225,7 +229,10 @@ func (s *criticalEndpointsSuite) TestGenerateAddress_SignedTokenMissingSig_401()
 	body := `{"external_user_id":"user_missing_sig"}`
 	s.post("/api/v1/wallets/"+uuid.NewString()+"/addresses", jwt, body, "").
 		AssertStatus(401).
-		AssertJson(map[string]any{"error": "missing request signature"})
+		AssertJson(map[string]any{"error": map[string]any{
+			"code":    "invalid_signature",
+			"message": "missing request signature",
+		}})
 }
 
 // ---------------------------------------------------------------------------
@@ -262,7 +269,10 @@ func (s *criticalEndpointsSuite) TestConsolidate_SignedTokenMissingSig_401() {
 	body := `{"asset":"eth","passphrase":"test-pass-phrase-12345"}`
 	s.post("/api/v1/wallets/"+uuid.NewString()+"/consolidate", jwt, body, "").
 		AssertStatus(401).
-		AssertJson(map[string]any{"error": "missing request signature"})
+		AssertJson(map[string]any{"error": map[string]any{
+			"code":    "invalid_signature",
+			"message": "missing request signature",
+		}})
 }
 
 // ---------------------------------------------------------------------------
@@ -290,6 +300,24 @@ func (s *criticalEndpointsSuite) TestCreateWithdrawal_UnsignedToken_AcceptsReque
 	s.assertNoMiddlewareReject(resp)
 }
 
+// A stored daily_usd decimal string is the cap withdraw.Service enforces.
+// The handler must not refuse that JSON before the passphrase check. The
+// seeded share cannot decrypt, so the request stops there as an internal error.
+func (s *criticalEndpointsSuite) TestCreateWithdrawal_StringDailyCapReachesPassphrase() {
+	walletID, jwt := s.seedAccountWalletWithLimit(false, "withdrawal-string-cap", `{"daily_usd":"12.50"}`)
+
+	resp := s.post("/api/v1/wallets/"+walletID+"/withdrawals", jwt, critWithdrawalBody, "")
+	resp.AssertInternalServerError().AssertJson(map[string]any{"error": map[string]any{
+		"code":    "internal",
+		"message": "internal error",
+	}})
+	body, err := resp.Content()
+	s.Require().NoError(err)
+	s.NotContains(body, "cannot unmarshal")
+	s.NotContains(body, "daily_usd")
+	s.NotContains(body, "forbidden")
+}
+
 func (s *criticalEndpointsSuite) TestCreateWithdrawal_SignedToken_AcceptsRequest() {
 	walletID, jwt := s.seedAccountWallet(true, "withdrawal-signed")
 
@@ -303,5 +331,8 @@ func (s *criticalEndpointsSuite) TestCreateWithdrawal_SignedTokenMissingSig_401(
 
 	s.post("/api/v1/wallets/"+uuid.NewString()+"/withdrawals", jwt, critWithdrawalBody, "").
 		AssertStatus(401).
-		AssertJson(map[string]any{"error": "missing request signature"})
+		AssertJson(map[string]any{"error": map[string]any{
+			"code":    "invalid_signature",
+			"message": "missing request signature",
+		}})
 }

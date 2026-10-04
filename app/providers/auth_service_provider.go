@@ -8,7 +8,12 @@ import (
 	"github.com/goravel/framework/contracts/foundation"
 	"github.com/goravel/framework/facades"
 
+	"github.com/macrowallets/waas/app/container"
+	"github.com/macrowallets/waas/app/http/middleware/requestctx"
 	"github.com/macrowallets/waas/app/policies"
+	"github.com/macrowallets/waas/app/repositories"
+	accountsvc "github.com/macrowallets/waas/app/services/account"
+	"github.com/macrowallets/waas/app/services/walletrecords"
 )
 
 // AuthServiceProvider registers Gate abilities for Account and Wallet resources.
@@ -21,6 +26,8 @@ func (r *AuthServiceProvider) Boot(app foundation.Application) {
 	if gate == nil {
 		return
 	}
+
+	policies.BindAccountUsers(container.MustMake[*repositories.AccountUserRepository]())
 
 	ap := &policies.AccountPolicy{}
 	wp := &policies.WalletPolicy{}
@@ -35,54 +42,105 @@ func (r *AuthServiceProvider) Boot(app foundation.Application) {
 	}
 
 	gate.Define("account.view", func(ctx context.Context, arguments map[string]any) contractsaccess.Response {
-		return ap.View(ctx, arguments)
+		return ap.View(ctx, withAccountUser(ctx, arguments))
 	})
 	gate.Define("account.update", func(ctx context.Context, arguments map[string]any) contractsaccess.Response {
-		return ap.Update(ctx, arguments)
+		return ap.Update(ctx, withAccountUser(ctx, arguments))
 	})
 	gate.Define("account.delete", func(ctx context.Context, arguments map[string]any) contractsaccess.Response {
-		return ap.Delete(ctx, arguments)
+		return ap.Delete(ctx, withAccountUser(ctx, arguments))
 	})
 	gate.Define("account.add-user", func(ctx context.Context, arguments map[string]any) contractsaccess.Response {
-		return ap.AddUser(ctx, arguments)
+		return ap.AddUser(ctx, withAccountUser(ctx, arguments))
 	})
 	gate.Define("account.remove-user", func(ctx context.Context, arguments map[string]any) contractsaccess.Response {
-		return ap.RemoveUser(ctx, arguments)
+		return ap.RemoveUser(ctx, withAccountUser(ctx, arguments))
 	})
 	gate.Define("account.freeze", func(ctx context.Context, arguments map[string]any) contractsaccess.Response {
-		return ap.Freeze(ctx, arguments)
+		return ap.Freeze(ctx, withAccountUser(ctx, arguments))
 	})
 	gate.Define("account.archive", func(ctx context.Context, arguments map[string]any) contractsaccess.Response {
-		return ap.Archive(ctx, arguments)
+		return ap.Archive(ctx, withAccountUser(ctx, arguments))
 	})
-	gate.Define("account.manage-tokens", func(ctx context.Context, arguments map[string]any) contractsaccess.Response {
-		return ap.ManageTokens(ctx, arguments)
+	gate.Define(policies.PermTokensRead, func(ctx context.Context, arguments map[string]any) contractsaccess.Response {
+		return ap.ReadTokens(ctx, withAccountUser(ctx, arguments))
+	})
+	gate.Define(policies.PermTokensWrite, func(ctx context.Context, arguments map[string]any) contractsaccess.Response {
+		return ap.WriteTokens(ctx, withAccountUser(ctx, arguments))
 	})
 
 	gate.Define("wallet.view", func(ctx context.Context, arguments map[string]any) contractsaccess.Response {
-		return wp.View(ctx, arguments)
+		return wp.View(ctx, withWalletMembership(ctx, arguments))
 	})
 	gate.Define("wallet.update", func(ctx context.Context, arguments map[string]any) contractsaccess.Response {
-		return wp.Update(ctx, arguments)
+		return wp.Update(ctx, withWalletMembership(ctx, arguments))
+	})
+	gate.Define("wallet.archive", func(ctx context.Context, arguments map[string]any) contractsaccess.Response {
+		return wp.Archive(ctx, arguments)
 	})
 	gate.Define("wallet.freeze", func(ctx context.Context, arguments map[string]any) contractsaccess.Response {
-		return wp.Freeze(ctx, arguments)
+		return wp.Freeze(ctx, withWalletMembership(ctx, arguments))
 	})
 	gate.Define("wallet.add-user", func(ctx context.Context, arguments map[string]any) contractsaccess.Response {
-		return wp.AddUser(ctx, arguments)
+		return wp.AddUser(ctx, withWalletMembership(ctx, arguments))
 	})
 	gate.Define("wallet.remove-user", func(ctx context.Context, arguments map[string]any) contractsaccess.Response {
-		return wp.RemoveUser(ctx, arguments)
+		return wp.RemoveUser(ctx, withWalletMembership(ctx, arguments))
 	})
 	gate.Define("wallet.whitelist", func(ctx context.Context, arguments map[string]any) contractsaccess.Response {
-		return wp.Whitelist(ctx, arguments)
+		return wp.Whitelist(ctx, withWalletMembership(ctx, arguments))
 	})
 	gate.Define("wallet.manage-webhooks", func(ctx context.Context, arguments map[string]any) contractsaccess.Response {
-		return wp.ManageWebhooks(ctx, arguments)
+		return wp.ManageWebhooks(ctx, withWalletMembership(ctx, arguments))
 	})
 	gate.Define("wallet.cancel-withdrawal", func(ctx context.Context, arguments map[string]any) contractsaccess.Response {
-		return wp.CancelWithdrawal(ctx, arguments)
+		return wp.CancelWithdrawal(ctx, withWalletMembership(ctx, arguments))
 	})
 
 	_ = toUUID // helper available for future extensions
+}
+
+// withAccountUser copies the gate arguments and attaches the user id the
+// session already stored. An id already present is left alone. A missing id
+// leaves the key unset, which the policy treats as no membership.
+func withAccountUser(ctx context.Context, arguments map[string]any) map[string]any {
+	out := make(map[string]any, len(arguments)+1)
+	for key, value := range arguments {
+		out[key] = value
+	}
+	if _, ok := out["user_id"].(uuid.UUID); ok {
+		return out
+	}
+	userID, ok := requestctx.UserID(ctx)
+	if !ok || userID == uuid.Nil {
+		return out
+	}
+	out["user_id"] = userID
+	return out
+}
+
+// withWalletMembership copies the gate arguments and attaches the roles the
+// wallet policy used to load itself. A missing user id leaves the roles empty.
+func withWalletMembership(ctx context.Context, arguments map[string]any) map[string]any {
+	out := make(map[string]any, len(arguments)+3)
+	for key, value := range arguments {
+		out[key] = value
+	}
+	walletID, ok := out["wallet_id"].(uuid.UUID)
+	if !ok {
+		return out
+	}
+	userID, userOK := requestctx.UserID(ctx)
+	out["user_id"] = userID
+	if !userOK {
+		return out
+	}
+	walletRole, accountRole := walletrecords.NewMemberships(
+		container.MustMake[*walletrecords.Wallets](),
+		container.MustMake[*walletrecords.Members](),
+		container.MustMake[*accountsvc.Service](),
+	).ForWallet(ctx, walletID, userID)
+	out["wallet_role"] = walletRole
+	out["account_role"] = accountRole
+	return out
 }

@@ -10,30 +10,35 @@ import (
 	"github.com/shopspring/decimal"
 
 	"github.com/macrowallets/waas/app/models"
-	"github.com/macrowallets/waas/app/repositories"
 	"github.com/macrowallets/waas/pkg/numeric"
 )
 
 type mockCurrencyRepo struct {
 	currencies map[string]*models.Currency
+	active     []models.Currency
+	stale      []models.Currency
+	staleErr   error
+	staleType  string
+	staleFor   time.Duration
 }
 
-func (m *mockCurrencyRepo) Create(_ *models.Currency) error { return nil }
-func (m *mockCurrencyRepo) CreateBatch(_ []models.Currency) error {
-	return nil
+func (m *mockCurrencyRepo) FindActiveCryptos(context.Context) ([]models.Currency, error) {
+	return m.active, nil
 }
-func (m *mockCurrencyRepo) FindActiveCryptos() ([]models.Currency, error)    { return nil, nil }
-func (m *mockCurrencyRepo) FindActiveFiats() ([]models.Currency, error)      { return nil, nil }
-func (m *mockCurrencyRepo) FindAllActive() ([]models.Currency, error)        { return nil, nil }
-func (m *mockCurrencyRepo) UpdatePrice(_ string, _, _ decimal.Decimal) error { return nil }
-func (m *mockCurrencyRepo) UpdatePriceBatch(_ map[string]repositories.PriceUpdate) error {
-	return nil
-}
-func (m *mockCurrencyRepo) FindStale(_ string, _ time.Duration) ([]models.Currency, error) {
+func (m *mockCurrencyRepo) FindActiveFiats(context.Context) ([]models.Currency, error) {
 	return nil, nil
 }
+func (m *mockCurrencyRepo) SetPrice(context.Context, string, decimal.Decimal, decimal.Decimal) error {
+	return nil
+}
 
-func (m *mockCurrencyRepo) FindByCode(code string) (*models.Currency, error) {
+func (m *mockCurrencyRepo) FindStale(_ context.Context, currencyType string, staleDuration time.Duration) ([]models.Currency, error) {
+	m.staleType = currencyType
+	m.staleFor = staleDuration
+	return m.stale, m.staleErr
+}
+
+func (m *mockCurrencyRepo) FindByCode(_ context.Context, code string) (*models.Currency, error) {
 	if c, ok := m.currencies[code]; ok {
 		return c, nil
 	}
@@ -123,6 +128,44 @@ func TestConvertUnknownCurrency(t *testing.T) {
 		t.Error("expected error for unknown currency")
 	}
 }
+
+func TestFindStaleReturnsTheStoreRows(t *testing.T) {
+	want := []models.Currency{{Code: "BTC"}}
+	repo := &mockCurrencyRepo{stale: want, staleErr: errStale}
+	svc := NewService(nil, repo, nil)
+	got, err := svc.FindStale(context.Background(), models.CurrencyTypeCrypto, time.Minute)
+	if err != errStale {
+		t.Fatalf("error = %v", err)
+	}
+	if len(got) != 1 || got[0].Code != "BTC" {
+		t.Fatalf("rows = %+v", got)
+	}
+	if repo.staleType != models.CurrencyTypeCrypto || repo.staleFor != time.Minute {
+		t.Fatalf("query = %s %s", repo.staleType, repo.staleFor)
+	}
+}
+
+func TestPriceWebSocketUsesTheServiceCurrencyStore(t *testing.T) {
+	repo := &mockCurrencyRepo{}
+	dialer := stubDialer{}
+	svc := NewService(nil, repo, nil).WithQuoteDialer(dialer)
+	client := svc.PriceWebSocket("key", nil)
+	if client == nil || client.currencyRepo != repo || client.apiKey != "key" || client.dialer != dialer {
+		t.Fatal("websocket client did not keep the service currency store")
+	}
+}
+
+type stubDialer struct{}
+
+func (stubDialer) Dial(context.Context, string) (QuoteConn, error) {
+	return nil, errStale
+}
+
+var errStale = errorString("stale")
+
+type errorString string
+
+func (e errorString) Error() string { return string(e) }
 
 func TestConvertRejectsAZeroTargetPrice(t *testing.T) {
 	_, err := newTestService(t).Convert(context.Background(), "BTC", "FREE", mustDecimal(t, "1"))

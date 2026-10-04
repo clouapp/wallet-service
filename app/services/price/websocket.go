@@ -4,15 +4,23 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/shopspring/decimal"
 	"log/slog"
 	"strings"
 	"time"
-
-	"github.com/gorilla/websocket"
-	"github.com/macrowallets/waas/app/repositories"
-	"github.com/redis/go-redis/v9"
-	"github.com/shopspring/decimal"
 )
+
+// QuoteConn is one live CoinAPI quote socket.
+type QuoteConn interface {
+	WriteJSON(v any) error
+	ReadMessage() (messageType int, payload []byte, err error)
+	Close() error
+}
+
+// QuoteDialer opens a CoinAPI quote socket. The service keeps the URL and the reconnect loop.
+type QuoteDialer interface {
+	Dial(ctx context.Context, url string) (QuoteConn, error)
+}
 
 const (
 	wsURL            = "wss://api-ncsa.coinapi.io/v1/"
@@ -33,21 +41,29 @@ func init() {
 
 type WebSocketClient struct {
 	apiKey       string
-	currencyRepo repositories.CurrencyRepository
-	redis        *redis.Client
+	currencyRepo currencyStore
+	cache        PriceCache
+	dialer       QuoteDialer
 	activeCodes  []string
 }
 
-func NewWebSocketClient(apiKey string, currencyRepo repositories.CurrencyRepository, rdb *redis.Client) *WebSocketClient {
+func NewWebSocketClient(apiKey string, currencyRepo currencyStore, cache PriceCache, dialer QuoteDialer) *WebSocketClient {
 	return &WebSocketClient{
 		apiKey:       apiKey,
 		currencyRepo: currencyRepo,
-		redis:        rdb,
+		cache:        cache,
+		dialer:       dialer,
 	}
 }
 
 func (w *WebSocketClient) Connect(ctx context.Context) error {
-	if err := w.refreshActiveCodes(); err != nil {
+	if w == nil {
+		return fmt.Errorf("coinapi websocket client is nil")
+	}
+	if w.dialer == nil {
+		return fmt.Errorf("coinapi quote dialer is not configured")
+	}
+	if err := w.refreshActiveCodes(ctx); err != nil {
 		return fmt.Errorf("load active codes: %w", err)
 	}
 	if len(w.activeCodes) == 0 {
@@ -65,7 +81,7 @@ func (w *WebSocketClient) Connect(ctx context.Context) error {
 		}
 
 		slog.Info("connecting to CoinAPI WebSocket", "url", wsURL)
-		conn, _, err := websocket.DefaultDialer.DialContext(ctx, wsURL, nil)
+		conn, err := w.dialer.Dial(ctx, wsURL)
 		if err != nil {
 			slog.Error("websocket dial failed", "error", err)
 			time.Sleep(backoff)
@@ -108,7 +124,7 @@ func (w *WebSocketClient) Connect(ctx context.Context) error {
 			conn.Close()
 			return ctx.Err()
 		case <-refreshTicker.C:
-			_ = w.refreshActiveCodes()
+			_ = w.refreshActiveCodes(ctx)
 		}
 	}
 }
@@ -163,19 +179,19 @@ func (w *WebSocketClient) processMessage(ctx context.Context, data []byte) {
 		return
 	}
 
-	cur, err := w.currencyRepo.FindByCode(code)
+	cur, err := w.currencyRepo.FindByCode(ctx, code)
 	if err != nil || cur == nil {
 		return
 	}
 
 	oldPrice := cur.CurrentPrice.Decimal
-	if err := w.currencyRepo.UpdatePrice(code, rate, oldPrice); err != nil {
+	if err := w.currencyRepo.SetPrice(ctx, code, rate, oldPrice); err != nil {
 		slog.Warn("ws update price failed", "code", code, "error", err)
 		return
 	}
 
-	if w.redis != nil {
-		if err := w.redis.Set(ctx, redisCurrencyKeyPrefix+code, rate.String(), redisCurrencyTTL).Err(); err != nil {
+	if w.cache != nil {
+		if err := w.cache.Set(ctx, "currency:"+code, []byte(rate.String()), redisCurrencyTTL); err != nil {
 			slog.Warn("ws redis cache currency failed", "code", code, "error", err)
 		}
 	}
@@ -183,8 +199,8 @@ func (w *WebSocketClient) processMessage(ctx context.Context, data []byte) {
 	slog.Info("ws price updated", "code", code, "price", rate.String())
 }
 
-func (w *WebSocketClient) refreshActiveCodes() error {
-	cryptos, err := w.currencyRepo.FindActiveCryptos()
+func (w *WebSocketClient) refreshActiveCodes(ctx context.Context) error {
+	cryptos, err := w.currencyRepo.FindActiveCryptos(ctx)
 	if err != nil {
 		return err
 	}

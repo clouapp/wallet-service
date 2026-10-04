@@ -1,13 +1,13 @@
 package price
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
-	"io"
-	"net/http"
 	"strings"
 	"time"
 
+	"github.com/macrowallets/waas/pkg/httpclient"
 	"github.com/shopspring/decimal"
 )
 
@@ -25,14 +25,14 @@ func init() {
 type CoinAPIProvider struct {
 	apiKey  string
 	baseURL string
-	client  *http.Client
+	client  *httpclient.Client
 }
 
 func NewCoinAPIProvider(apiKey string) *CoinAPIProvider {
 	return &CoinAPIProvider{
 		apiKey:  apiKey,
 		baseURL: "https://rest.coinapi.io/v1",
-		client:  &http.Client{Timeout: 15 * time.Second},
+		client:  httpclient.NewClient(15 * time.Second),
 	}
 }
 
@@ -54,19 +54,7 @@ func (p *CoinAPIProvider) FetchCryptoPrices(codes []string) (map[string]decimal.
 	}
 
 	url := fmt.Sprintf("%s/exchangerate/USD?invert=true&filter_asset_id=%s", p.baseURL, strings.Join(apiCodes, ","))
-	req, err := http.NewRequest("GET", url, nil)
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("X-CoinAPI-Key", p.apiKey)
-
-	resp, err := p.client.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("coinapi: %w", err)
-	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
+	body, err := p.get(url, "coinapi")
 	if err != nil {
 		return nil, err
 	}
@@ -100,19 +88,7 @@ func (p *CoinAPIProvider) FetchFiatRates(codes []string) (map[string]decimal.Dec
 	}
 
 	url := fmt.Sprintf("%s/exchangerate/USD?invert=true&filter_asset_id=%s", p.baseURL, strings.Join(codes, ","))
-	req, err := http.NewRequest("GET", url, nil)
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("X-CoinAPI-Key", p.apiKey)
-
-	resp, err := p.client.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("coinapi fiat: %w", err)
-	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
+	body, err := p.get(url, "coinapi fiat")
 	if err != nil {
 		return nil, err
 	}
@@ -134,4 +110,19 @@ func (p *CoinAPIProvider) FetchFiatRates(codes []string) (map[string]decimal.Dec
 		}
 	}
 	return rates, nil
+}
+
+func (p *CoinAPIProvider) get(url, label string) ([]byte, error) {
+	resp, err := p.client.Do(context.Background(), httpclient.Request{
+		Method: httpclient.MethodGet,
+		URL:    url,
+		Header: map[string]string{"X-CoinAPI-Key": p.apiKey},
+	})
+	if err != nil {
+		if httpclient.IsBuild(err) || httpclient.IsRead(err) {
+			return nil, err
+		}
+		return nil, fmt.Errorf("%s: %w", label, err)
+	}
+	return resp.Body, nil
 }

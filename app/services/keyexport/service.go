@@ -15,18 +15,18 @@ import (
 
 // WalletSource loads wallets with their deposit address.
 type WalletSource interface {
-	FindAll() ([]models.Wallet, error)
-	FindByID(id uuid.UUID) (*models.Wallet, error)
+	FindAll(ctx context.Context) ([]models.Wallet, error)
+	FindByID(ctx context.Context, id uuid.UUID) (*models.Wallet, error)
 }
 
 // AddressSource lists every address row of a wallet, active or retired.
 type AddressSource interface {
-	FindByWalletID(walletID uuid.UUID) ([]models.Address, error)
+	FindByWalletID(ctx context.Context, walletID uuid.UUID) ([]models.Address, error)
 }
 
 // NetworkResolver says where a chain record points.
 type NetworkResolver interface {
-	ResolveNetwork(chainID string) (Network, error)
+	ResolveNetwork(ctx context.Context, chainID string) (Network, error)
 }
 
 // ShareBSource fetches the service share (Secrets Manager). The caller zeroes it.
@@ -77,9 +77,12 @@ func NewService(deps Dependencies) (*Service, error) {
 
 // SelectWallets returns every wallet when ids is empty, otherwise exactly the given
 // wallets in the given order; an unknown id fails the whole selection.
-func (s *Service) SelectWallets(ids []uuid.UUID) ([]models.Wallet, error) {
+func (s *Service) SelectWallets(ctx context.Context, ids []uuid.UUID) ([]models.Wallet, error) {
+	if ctx == nil {
+		return nil, errors.New("key export: context is required")
+	}
 	if len(ids) == 0 {
-		wallets, err := s.deps.Wallets.FindAll()
+		wallets, err := s.deps.Wallets.FindAll(ctx)
 		if err != nil {
 			return nil, fmt.Errorf("load wallets: %w", err)
 		}
@@ -98,7 +101,7 @@ func (s *Service) SelectWallets(ids []uuid.UUID) ([]models.Wallet, error) {
 			continue
 		}
 		seen[id] = true
-		wallet, err := s.deps.Wallets.FindByID(id)
+		wallet, err := s.deps.Wallets.FindByID(ctx, id)
 		if err != nil || wallet == nil || wallet.ID != id {
 			return nil, fmt.Errorf("wallet %s not found", id)
 		}
@@ -110,16 +113,19 @@ func (s *Service) SelectWallets(ids []uuid.UUID) ([]models.Wallet, error) {
 // Plan loads, for each wallet, its network and address rows. Wallets that cannot be
 // exported for public reasons (unknown network, no addresses, curve and chain that
 // disagree) are refused here, before any secret is touched.
-func (s *Service) Plan(wallets []models.Wallet) ([]WalletPlan, []Refusal, error) {
+func (s *Service) Plan(ctx context.Context, wallets []models.Wallet) ([]WalletPlan, []Refusal, error) {
+	if ctx == nil {
+		return nil, nil, errors.New("key export: context is required")
+	}
 	plans := make([]WalletPlan, 0, len(wallets))
 	var refused []Refusal
 	for _, wallet := range wallets {
-		addresses, err := s.deps.Addresses.FindByWalletID(wallet.ID)
+		addresses, err := s.deps.Addresses.FindByWalletID(ctx, wallet.ID)
 		if err != nil {
 			return nil, nil, fmt.Errorf("load addresses of wallet %s: %w", wallet.ID, err)
 		}
 		plan := WalletPlan{Wallet: wallet, Addresses: addresses}
-		if err := s.completePlan(&plan); err != nil {
+		if err := s.completePlan(ctx, &plan); err != nil {
 			refused = append(refused, newRefusal(wallet, err))
 			continue
 		}
@@ -128,11 +134,11 @@ func (s *Service) Plan(wallets []models.Wallet) ([]WalletPlan, []Refusal, error)
 	return plans, refused, nil
 }
 
-func (s *Service) completePlan(plan *WalletPlan) error {
+func (s *Service) completePlan(ctx context.Context, plan *WalletPlan) error {
 	if len(plan.Addresses) == 0 {
 		return refuse("wallet has no address rows")
 	}
-	network, err := s.deps.Networks.ResolveNetwork(plan.Wallet.Chain)
+	network, err := s.deps.Networks.ResolveNetwork(ctx, plan.Wallet.Chain)
 	if err != nil {
 		return refuse("network of chain %s could not be resolved: %v", plan.Wallet.Chain, err)
 	}

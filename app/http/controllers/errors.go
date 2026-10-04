@@ -6,7 +6,9 @@ import (
 
 	"github.com/goravel/framework/contracts/http"
 
+	"github.com/macrowallets/waas/app/http/responses"
 	"github.com/macrowallets/waas/app/services/sweep"
+	"github.com/macrowallets/waas/app/services/withdraw"
 )
 
 // MapInternalError logs the real error server-side and returns a generic 500
@@ -20,7 +22,7 @@ func MapInternalError(ctx http.Context, err error, endpoint string) http.Respons
 		"endpoint", endpoint,
 		"error", err,
 	)
-	return ctx.Response().Json(http.StatusInternalServerError, http.Json{
+	return responses.Send(ctx, http.StatusInternalServerError, http.Json{
 		"error": "internal_error",
 	})
 }
@@ -35,38 +37,61 @@ func MapSweepError(ctx http.Context, err error) http.Response {
 	}
 	switch {
 	case errors.Is(err, sweep.ErrInFlightConsolidation):
-		return ctx.Response().Json(http.StatusTooManyRequests, http.Json{
+		return responses.Send(ctx, http.StatusTooManyRequests, http.Json{
 			"error":               "sweep_limit_exceeded",
 			"limit_type":          "in_flight_consolidation",
 			"retry_after_seconds": 60,
 		})
 	case errors.Is(err, sweep.ErrDailyQuotaExceeded):
-		return ctx.Response().Json(http.StatusTooManyRequests, http.Json{
+		return responses.Send(ctx, http.StatusTooManyRequests, http.Json{
 			"error":      "sweep_limit_exceeded",
 			"limit_type": "daily_quota",
 		})
 	case errors.Is(err, sweep.ErrTooManyAddresses):
-		return ctx.Response().Json(http.StatusTooManyRequests, http.Json{
+		return responses.Send(ctx, http.StatusTooManyRequests, http.Json{
 			"error":      "sweep_limit_exceeded",
 			"limit_type": "addresses_per_request",
 		})
 	case errors.Is(err, sweep.ErrWalletNotGasReady):
-		return ctx.Response().Json(http.StatusUnprocessableEntity, http.Json{
+		return responses.Send(ctx, http.StatusUnprocessableEntity, http.Json{
 			"error":  "wallet_not_gas_ready",
 			"action": "fund_base_address",
 		})
 	case errors.Is(err, sweep.ErrInsufficientFunds):
-		return ctx.Response().Json(http.StatusUnprocessableEntity, http.Json{
+		return responses.Send(ctx, http.StatusUnprocessableEntity, http.Json{
 			"error": "insufficient_funds",
 		})
 	case errors.Is(err, sweep.ErrUnsupportedChain):
-		return ctx.Response().Json(http.StatusUnprocessableEntity, http.Json{
+		return responses.Send(ctx, http.StatusUnprocessableEntity, http.Json{
 			"error": "unsupported_chain",
 		})
 	case errors.Is(err, sweep.ErrGasEstimateFailed):
-		return ctx.Response().Json(http.StatusUnprocessableEntity, http.Json{
+		return responses.Send(ctx, http.StatusUnprocessableEntity, http.Json{
 			"error": "gas_estimate_failed",
 		})
 	}
 	return nil
+}
+
+// MapSpendingLimitError maps a per-token daily USD cap failure. A blank cap
+// never produces these sentinels. The body uses the same legacy error map as
+// the sweep quota, so the envelope keeps limit_type beside the code.
+func MapSpendingLimitError(ctx http.Context, err error) http.Response {
+	switch {
+	case errors.Is(err, withdraw.ErrSpendingLimitExceeded):
+		return responses.Send(ctx, http.StatusTooManyRequests, http.Json{
+			"error":      "spending_limit_exceeded",
+			"limit_type": "daily_usd",
+		})
+	case errors.Is(err, withdraw.ErrSpendingLimitInvalid):
+		return responses.Send(ctx, http.StatusUnprocessableEntity, http.Json{
+			"error": "spending_limit_invalid",
+		})
+	case errors.Is(err, withdraw.ErrSpendingQuoteUnavailable):
+		return responses.Send(ctx, http.StatusServiceUnavailable, http.Json{
+			"error": "spending_limit_quote_unavailable",
+		})
+	default:
+		return nil
+	}
 }

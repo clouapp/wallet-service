@@ -15,19 +15,28 @@ import (
 	"github.com/goravel/framework/facades"
 	"gorm.io/gorm"
 
+	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/repositories"
 	"github.com/macrowallets/waas/app/services/ingest/providers"
 	"github.com/macrowallets/waas/pkg/types"
 )
 
+// subscriptionStore is the provider-subscription persistence this service uses.
+type subscriptionStore interface {
+	FindByChainID(ctx context.Context, chainID string) (*models.WebhookSubscription, error)
+	FindAllActive(ctx context.Context) ([]models.WebhookSubscription, error)
+	SetSyncStatus(ctx context.Context, id uuid.UUID, status string) error
+	RecordSync(ctx context.Context, id uuid.UUID, status, hash string, syncedAt time.Time) error
+}
+
 type Service struct {
-	subscriptionRepo repositories.WebhookSubscriptionRepository
-	addressRepo      repositories.AddressRepository
+	subscriptionRepo subscriptionStore
+	addressRepo      *repositories.AddressRepository
 	providers        map[string]providers.WebhookProvider
 	mu               sync.Map // subscription id -> *sync.Mutex
 }
 
-func NewService(subRepo repositories.WebhookSubscriptionRepository, addrRepo repositories.AddressRepository, provs map[string]providers.WebhookProvider) *Service {
+func NewService(subRepo subscriptionStore, addrRepo *repositories.AddressRepository, provs map[string]providers.WebhookProvider) *Service {
 	return &Service{subscriptionRepo: subRepo, addressRepo: addrRepo, providers: provs}
 }
 
@@ -43,12 +52,12 @@ func (s *Service) SyncChainAddresses(ctx context.Context, chainID string) error 
 		return fmt.Errorf("chainID is required")
 	}
 
-	sub, err := s.subscriptionRepo.FindByChainID(chainID)
+	sub, err := s.subscriptionRepo.FindByChainID(ctx, chainID)
+	if errors.Is(err, models.ErrRepositoryNotFound) || errors.Is(err, gorm.ErrRecordNotFound) {
+		slog.Warn("webhook sync: no active subscription for chain", "chain_id", chainID)
+		return nil
+	}
 	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			slog.Warn("webhook sync: no active subscription for chain", "chain_id", chainID)
-			return nil
-		}
 		return fmt.Errorf("find webhook subscription: %w", err)
 	}
 	if sub == nil {
@@ -60,51 +69,45 @@ func (s *Service) SyncChainAddresses(ctx context.Context, chainID string) error 
 	mtx.Lock()
 	defer mtx.Unlock()
 
-	if err := s.subscriptionRepo.UpdateFields(sub.ID, map[string]interface{}{
-		"sync_status": string(types.SyncStatusSyncing),
-	}); err != nil {
+	if err := s.subscriptionRepo.SetSyncStatus(ctx, sub.ID, string(types.SyncStatusSyncing)); err != nil {
 		return fmt.Errorf("set sync_status pending: %w", err)
 	}
 
-	addresses, err := s.addressRepo.PluckActiveAddresses(chainID)
+	addresses, err := s.addressRepo.PluckActiveAddresses(ctx, chainID)
 	if err != nil {
-		s.markFailed(sub.ID)
+		s.markFailed(ctx, sub.ID)
 		return fmt.Errorf("pluck active addresses: %w", err)
 	}
 
 	providerName := strings.ToLower(strings.TrimSpace(sub.Provider))
 	provider, ok := s.providers[providerName]
 	if !ok {
-		s.markFailed(sub.ID)
+		s.markFailed(ctx, sub.ID)
 		return fmt.Errorf("unknown webhook provider %q", sub.Provider)
 	}
 
 	if _, err := facades.Crypt().DecryptString(sub.SigningSecret); err != nil {
 		slog.Error("webhook sync: decrypt signing secret", "subscription_id", sub.ID, "error", err)
-		s.markFailed(sub.ID)
+		s.markFailed(ctx, sub.ID)
 		return fmt.Errorf("decrypt signing secret: %w", err)
 	}
 
 	if err := provider.SyncAddresses(ctx, sub.ProviderWebhookID, addresses); err != nil {
-		s.markFailed(sub.ID)
+		s.markFailed(ctx, sub.ID)
 		return fmt.Errorf("provider sync addresses: %w", err)
 	}
 
 	now := time.Now().UTC()
 	hash := hashAddresses(addresses)
-	if err := s.subscriptionRepo.UpdateFields(sub.ID, map[string]interface{}{
-		"sync_status":           string(types.SyncStatusSynced),
-		"synced_addresses_hash": hash,
-		"last_synced_at":        now,
-	}); err != nil {
+	if err := s.subscriptionRepo.RecordSync(ctx, sub.ID, string(types.SyncStatusSynced), hash, now); err != nil {
 		return fmt.Errorf("update sync success fields: %w", err)
 	}
 
 	return nil
 }
 
-func (s *Service) markFailed(id uuid.UUID) {
-	if err := s.subscriptionRepo.UpdateFields(id, map[string]interface{}{"sync_status": string(types.SyncStatusFailed)}); err != nil {
+func (s *Service) markFailed(ctx context.Context, id uuid.UUID) {
+	if err := s.subscriptionRepo.SetSyncStatus(ctx, id, string(types.SyncStatusFailed)); err != nil {
 		slog.Error("webhook sync: failed to mark subscription as failed", "subscription_id", id, "error", err)
 	}
 }

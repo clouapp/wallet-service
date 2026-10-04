@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math/big"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 
@@ -26,80 +27,62 @@ type fakeWalletRepo struct {
 	updateCalls int
 }
 
-func (f *fakeWalletRepo) Create(wallet *models.Wallet) error { return nil }
-func (f *fakeWalletRepo) FindByID(id uuid.UUID) (*models.Wallet, error) {
-	if f.wallet == nil {
-		return nil, nil
-	}
-	if f.wallet.ID != id {
+func (f *fakeWalletRepo) Create(context.Context, *models.Wallet) error { return nil }
+func (f *fakeWalletRepo) FindByID(_ context.Context, id uuid.UUID) (*models.Wallet, error) {
+	if f.wallet == nil || f.wallet.ID != id {
 		return nil, nil
 	}
 	return f.wallet, nil
 }
-func (f *fakeWalletRepo) FindByIDAndAccount(id, accountID uuid.UUID) (*models.Wallet, error) {
-	return nil, nil
+func (f *fakeWalletRepo) FindAll(context.Context) ([]models.Wallet, error) { return nil, nil }
+func (f *fakeWalletRepo) IncrementAddressIndex(context.Context, uuid.UUID) (int, error) {
+	return 0, nil
 }
-func (f *fakeWalletRepo) FindAll() ([]models.Wallet, error) { return nil, nil }
-func (f *fakeWalletRepo) PaginateAll(limit, offset int) ([]models.Wallet, int64, error) {
-	return nil, 0, nil
-}
-func (f *fakeWalletRepo) PaginateByAccount(accountID uuid.UUID, chain string, limit, offset int) ([]models.Wallet, int64, error) {
-	return nil, 0, nil
-}
-func (f *fakeWalletRepo) UpdateField(id uuid.UUID, field string, value interface{}) error {
-	return nil
-}
-func (f *fakeWalletRepo) UpdateFields(id uuid.UUID, fields map[string]interface{}) error {
+func (f *fakeWalletRepo) SetDepositAddressID(context.Context, uuid.UUID, uuid.UUID) error { return nil }
+func (f *fakeWalletRepo) SetMPCChainCode(context.Context, uuid.UUID, string) error        { return nil }
+func (f *fakeWalletRepo) Activate(context.Context, uuid.UUID, string) error               { return nil }
+func (f *fakeWalletRepo) RecordGasCheck(_ context.Context, _ uuid.UUID, checkedAt time.Time, status string, updateStatus bool) error {
 	f.updateCalls++
-	f.lastUpdates = fields
+	f.lastUpdates = map[string]interface{}{"gas_last_checked_at": checkedAt}
+	if updateStatus {
+		f.lastUpdates["gas_status"] = status
+	}
 	return nil
 }
-func (f *fakeWalletRepo) IncrementAddressIndex(id uuid.UUID) (int, error) { return 0, nil }
 
 type fakeAddressRepo struct {
 	children []models.Address
 }
 
-func (f *fakeAddressRepo) Create(addr *models.Address) error { return nil }
-func (f *fakeAddressRepo) UpdateFields(id uuid.UUID, fields map[string]interface{}) error {
+func (f *fakeAddressRepo) Create(context.Context, *models.Address) error { return nil }
+func (f *fakeAddressRepo) FindByID(context.Context, uuid.UUID) (*models.Address, error) {
+	return nil, nil
+}
+func (f *fakeAddressRepo) SetLabel(context.Context, uuid.UUID, string) error { return nil }
+func (f *fakeAddressRepo) SetExternalUserID(context.Context, uuid.UUID, string) error {
 	return nil
 }
-func (f *fakeAddressRepo) CountByChainAndAddress(chainID, address string) (int64, error) {
-	return 0, nil
-}
-func (f *fakeAddressRepo) FindByChainAndAddress(chainID, address string) (*models.Address, error) {
+func (f *fakeAddressRepo) FindByChainAndAddress(context.Context, string, string) (*models.Address, error) {
 	return nil, nil
 }
-func (f *fakeAddressRepo) FindByChainAndAddressAndAccount(chainID, address string, accountID uuid.UUID) (*models.Address, error) {
+func (f *fakeAddressRepo) FindByChainAndAddressAndAccount(context.Context, string, string, uuid.UUID) (*models.Address, error) {
 	return nil, nil
 }
-func (f *fakeAddressRepo) FindByExternalUserID(externalUserID string) ([]models.Address, error) {
+func (f *fakeAddressRepo) FindByExternalUserID(context.Context, string) ([]models.Address, error) {
 	return nil, nil
 }
-func (f *fakeAddressRepo) FindByExternalUserIDAndAccount(externalUserID string, accountID uuid.UUID) ([]models.Address, error) {
+func (f *fakeAddressRepo) FindByExternalUserIDAndAccount(context.Context, string, uuid.UUID) ([]models.Address, error) {
 	return nil, nil
 }
-func (f *fakeAddressRepo) FindByID(id uuid.UUID) (*models.Address, error) { return nil, nil }
-func (f *fakeAddressRepo) FindByWalletID(walletID uuid.UUID) ([]models.Address, error) {
+func (f *fakeAddressRepo) FindByWalletID(context.Context, uuid.UUID) ([]models.Address, error) {
 	return f.children, nil
-}
-func (f *fakeAddressRepo) MaxDerivationIndex(walletID uuid.UUID) (int, error) { return 0, nil }
-func (f *fakeAddressRepo) PaginateByWalletID(walletID uuid.UUID, limit, offset int) ([]models.Address, int64, error) {
-	return nil, 0, nil
-}
-func (f *fakeAddressRepo) PluckActiveAddresses(chainID string) ([]string, error) {
-	return nil, nil
 }
 
 type fakeChainRepo struct {
 	chain *models.Chain
 }
 
-func (f *fakeChainRepo) FindAll() ([]models.Chain, error)                     { return nil, nil }
-func (f *fakeChainRepo) FindActive() ([]models.Chain, error)                  { return nil, nil }
-func (f *fakeChainRepo) FindByTestnet(isTestnet bool) ([]models.Chain, error) { return nil, nil }
-func (f *fakeChainRepo) Create(chain *models.Chain) error                     { return nil }
-func (f *fakeChainRepo) FindByID(id string) (*models.Chain, error) {
+func (f *fakeChainRepo) FindByID(_ context.Context, id string) (*models.Chain, error) {
 	if f.chain == nil || f.chain.ID != id {
 		return nil, nil
 	}

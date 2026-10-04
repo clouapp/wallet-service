@@ -2,16 +2,18 @@ package commands
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
 	"github.com/goravel/framework/contracts/console"
 	"github.com/goravel/framework/contracts/console/command"
-	"github.com/goravel/framework/contracts/queue"
-	"github.com/goravel/framework/facades"
 
 	"github.com/macrowallets/waas/app/container"
-	"github.com/macrowallets/waas/app/jobs"
+	"github.com/macrowallets/waas/app/models"
+	chainpkg "github.com/macrowallets/waas/app/services/chain"
+	"github.com/macrowallets/waas/app/services/refresh"
+	"github.com/macrowallets/waas/app/services/walletrecords"
 	"github.com/macrowallets/waas/pkg/types"
 )
 
@@ -23,7 +25,25 @@ var ambiguousCurrencies = map[string]bool{
 	"weth": true,
 }
 
-type RefreshCurrency struct{}
+type RefreshCurrency struct {
+	registry   *chainpkg.Registry
+	balances   *refresh.BalanceService
+	dispatcher refresh.Dispatcher
+}
+
+// NewRefreshCurrency refreshes wallets that hold one currency.
+func NewRefreshCurrency(registry *chainpkg.Registry, balances *refresh.BalanceService, dispatcher refresh.Dispatcher) *RefreshCurrency {
+	if registry == nil {
+		panic("refresh:currency: chain registry is required")
+	}
+	if balances == nil {
+		panic("refresh:currency: balance refresh service is required")
+	}
+	if dispatcher == nil {
+		panic("refresh:currency: refresh dispatcher is required")
+	}
+	return &RefreshCurrency{registry: registry, balances: balances, dispatcher: dispatcher}
+}
 
 func (c *RefreshCurrency) Signature() string {
 	return "refresh:currency"
@@ -75,8 +95,7 @@ func (c *RefreshCurrency) Handle(ctx console.Context) error {
 		return fmt.Errorf("ambiguous currency %q requires --chain flag", currency)
 	}
 
-	ctr := container.Get()
-	chain, err := resolveCurrencyToChain(ctr, currency, chainFlag)
+	chain, err := resolveCurrencyToChain(c.registry, currency, chainFlag)
 	if err != nil {
 		ctx.Error(err.Error())
 		return err
@@ -85,36 +104,32 @@ func (c *RefreshCurrency) Handle(ctx console.Context) error {
 	useQueue := ctx.OptionBool("queue")
 
 	for _, addr := range addresses {
-		addrRecord, err := ctr.AddressRepo.FindByChainAndAddress(chain, addr)
-		if err != nil {
+		addrRecord, err := container.MustMake[*walletrecords.Addresses]().FindByChainAndAddress(context.Background(), chain, addr)
+		if err != nil && !errors.Is(err, models.ErrRepositoryNotFound) {
 			ctx.Error("failed to look up address " + addr + ": " + err.Error())
 			return fmt.Errorf("look up address %s: %w", addr, err)
 		}
-		if addrRecord == nil {
+		if err != nil || addrRecord == nil {
 			ctx.Error("address not found: chain=" + chain + " address=" + addr)
 			continue
 		}
 
-		wallet, err := ctr.WalletRepo.FindByID(addrRecord.WalletID)
-		if err != nil {
+		wallet, err := container.MustMake[*walletrecords.Wallets]().FindByID(context.Background(), addrRecord.WalletID)
+		if err != nil && !errors.Is(err, models.ErrRepositoryNotFound) {
 			ctx.Error("failed to load wallet for address " + addr + ": " + err.Error())
 			return fmt.Errorf("load wallet for address %s: %w", addr, err)
 		}
-		if wallet == nil {
+		if wallet == nil || errors.Is(err, models.ErrRepositoryNotFound) {
 			ctx.Error("wallet not found for address " + addr)
 			continue
 		}
 
 		if useQueue {
 			ctx.Info("dispatching refresh for currency=" + currency + " address=" + addr + " wallet=" + wallet.ID.String() + " reason=" + reason)
-			if err := facades.Queue().
-				Job(&jobs.RefreshWalletBalances{}, []queue.Arg{
-					{Type: "string", Value: wallet.ID.String()},
-					{Type: "string", Value: wallet.Chain},
-				}).
-				OnConnection("database").
-				OnQueue("blockchain").
-				Dispatch(); err != nil {
+			if c.dispatcher == nil {
+				return fmt.Errorf("refresh:currency: refresh dispatcher is not initialized")
+			}
+			if err := c.dispatcher.DispatchBalances(wallet.ID.String(), wallet.Chain); err != nil {
 				ctx.Error("dispatch failed for address " + addr + ": " + err.Error())
 				return fmt.Errorf("dispatch for address %s: %w", addr, err)
 			}
@@ -122,7 +137,10 @@ func (c *RefreshCurrency) Handle(ctx console.Context) error {
 		}
 
 		ctx.Info("sync mode: refreshing currency=" + currency + " address=" + addr + " wallet=" + wallet.ID.String())
-		if err := ctr.BalanceRefreshService.RefreshWallet(context.Background(), wallet); err != nil {
+		if c.balances == nil {
+			return fmt.Errorf("refresh:currency: balance refresh service is not initialized")
+		}
+		if err := c.balances.RefreshWallet(context.Background(), wallet); err != nil {
 			ctx.Error("refresh failed for address " + addr + ": " + err.Error())
 			return fmt.Errorf("refresh address %s: %w", addr, err)
 		}
@@ -133,19 +151,22 @@ func (c *RefreshCurrency) Handle(ctx console.Context) error {
 	return nil
 }
 
-func resolveCurrencyToChain(ctr *container.Container, currency, chainFlag string) (string, error) {
+func resolveCurrencyToChain(registry *chainpkg.Registry, currency, chainFlag string) (string, error) {
+	if registry == nil {
+		return "", fmt.Errorf("refresh:currency: chain registry is not initialized")
+	}
 	if chainFlag != "" {
 		return chainFlag, nil
 	}
 
-	for _, id := range ctr.Registry.ChainIDs() {
+	for _, id := range registry.ChainIDs() {
 		if id == currency {
 			return id, nil
 		}
 	}
 
-	for _, id := range ctr.Registry.ChainIDs() {
-		adapter, err := ctr.Registry.Chain(id)
+	for _, id := range registry.ChainIDs() {
+		adapter, err := registry.Chain(id)
 		if err != nil {
 			continue
 		}

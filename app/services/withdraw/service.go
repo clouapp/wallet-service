@@ -8,13 +8,11 @@ import (
 	"math/big"
 	"time"
 
-	"github.com/aws/aws-sdk-go-v2/service/secretsmanager"
 	"github.com/google/uuid"
 	"github.com/goravel/framework/contracts/event"
 	"github.com/goravel/framework/facades"
-	"github.com/redis/go-redis/v9"
 
-	"github.com/macrowallets/waas/app/events"
+	"github.com/macrowallets/waas/app/dtos"
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/repositories"
 	chainpkg "github.com/macrowallets/waas/app/services/chain"
@@ -22,6 +20,11 @@ import (
 	"github.com/macrowallets/waas/app/services/sweep"
 	"github.com/macrowallets/waas/app/services/webhook"
 )
+
+// accountGate reports a block for one account. Nil means the caller has no
+// flag reader wired, so the action proceeds. The concrete reader lives outside
+// this package: importing it would cycle through the container.
+type accountGate func(ctx context.Context, accountID uuid.UUID) error
 
 // Sentinel errors for HTTP response mapping in controller.
 var (
@@ -33,39 +36,57 @@ var (
 	ErrTransactionNotFound = errors.New("transaction not found")
 )
 
+// Locker is the withdrawal lock and the passphrase-attempt counter.
+// The provider supplies it; this package never imports the Redis client.
+// A nil Locker means Redis is not configured.
+type Locker interface {
+	SetNX(ctx context.Context, key, value string, expiration time.Duration) (bool, error)
+	Del(ctx context.Context, key string) error
+	// Int reads a counter. A missing key returns 0 and a nil error.
+	Int(ctx context.Context, key string) (int, error)
+	// IncrExpire increments key and sets its TTL in one pipeline.
+	IncrExpire(ctx context.Context, key string, expiration time.Duration) error
+	// IncrBy adds delta and returns the new total. When the key was absent
+	// (the new total equals delta) it sets expiration. delta must be positive.
+	IncrBy(ctx context.Context, key string, delta int64, expiration time.Duration) (int64, error)
+	// DecrBy subtracts delta. A rejected daily spend uses it to return the reserved cents.
+	DecrBy(ctx context.Context, key string, delta int64) error
+}
+
 type Service struct {
 	registry        *chainpkg.Registry
 	webhookSvc      *webhook.Service
 	mpc             mpcpkg.Service
-	secrets         *secretsmanager.Client
-	rdb             *redis.Client
-	transactionRepo repositories.TransactionRepository
-	walletRepo      repositories.WalletRepository
-	addressRepo     repositories.AddressRepository
+	locker          Locker
+	transactionRepo *repositories.TransactionRepository
+	walletRepo      *repositories.WalletRepository
+	addressRepo     *repositories.AddressRepository
 	sweep           sweep.Service
+	flags           accountGate
+	usdQuote        USDQuote
 }
 
 func NewService(
 	registry *chainpkg.Registry,
 	webhookSvc *webhook.Service,
 	mpc mpcpkg.Service,
-	secrets *secretsmanager.Client,
-	rdb *redis.Client,
-	transactionRepo repositories.TransactionRepository,
-	walletRepo repositories.WalletRepository,
-	addressRepo repositories.AddressRepository,
+	locker Locker,
+	transactionRepo *repositories.TransactionRepository,
+	walletRepo *repositories.WalletRepository,
+	addressRepo *repositories.AddressRepository,
 	sweepSvc sweep.Service,
+	flags accountGate,
 ) *Service {
 	return &Service{
 		registry:        registry,
 		webhookSvc:      webhookSvc,
 		mpc:             mpc,
-		secrets:         secrets,
-		rdb:             rdb,
+		locker:          locker,
 		transactionRepo: transactionRepo,
 		walletRepo:      walletRepo,
 		addressRepo:     addressRepo,
 		sweep:           sweepSvc,
+		flags:           flags,
 	}
 }
 
@@ -88,6 +109,11 @@ type WithdrawRequest struct {
 	Passphrase      string    `json:"passphrase"`
 	IdempotencyKey  string    `json:"idempotency_key"`
 	CallerAccountID uuid.UUID `json:"-"`
+	// AccessTokenID, SpendingLimit and QuoteAmount carry a per-token daily USD
+	// cap. A blank SpendingLimit keeps the withdrawal on today's path.
+	AccessTokenID uuid.UUID `json:"-"`
+	SpendingLimit string    `json:"-"`
+	QuoteAmount   string    `json:"-"`
 }
 
 // Metadata describes the source-selection outcome for a Request. Emitted
@@ -107,32 +133,47 @@ func (s *Service) Request(ctx context.Context, req WithdrawRequest) (*models.Tra
 	if len(req.Passphrase) < 12 {
 		return nil, nil, ErrPassphraseTooShort
 	}
+	if err := s.gate(ctx, req.CallerAccountID); err != nil {
+		return nil, nil, err
+	}
 
 	if req.IdempotencyKey != "" {
-		existing, err := s.transactionRepo.FindByIdempotencyKey(req.IdempotencyKey)
+		existing, err := s.transactionRepo.FindByIdempotencyKey(ctx, req.IdempotencyKey)
 		if err == nil && existing != nil {
 			return existing, &Metadata{}, nil
 		}
 	}
 
-	if s.rdb == nil {
+	if s.locker == nil {
 		return nil, nil, fmt.Errorf("redis lock: redis is not configured")
 	}
 	lockKey := fmt.Sprintf("vault:lock:withdrawal:%s", req.WalletID)
-	acquired, err := s.rdb.SetNX(ctx, lockKey, "1", 60*time.Second).Result()
+	acquired, err := s.locker.SetNX(ctx, lockKey, "1", 60*time.Second)
 	if err != nil {
 		return nil, nil, fmt.Errorf("redis lock: %w", err)
 	}
 	if !acquired {
 		return nil, nil, ErrConcurrentWithdraw
 	}
-	defer s.rdb.Del(ctx, lockKey)
+	defer s.locker.Del(ctx, lockKey)
+	if err := s.enforceTokenSpendingLimit(ctx, req); err != nil {
+		return nil, nil, err
+	}
 
-	walletPtr, err := s.walletRepo.FindByID(req.WalletID)
+	walletPtr, err := s.walletRepo.FindByID(ctx, req.WalletID)
 	if err != nil || walletPtr == nil {
 		return nil, nil, fmt.Errorf("wallet not found")
 	}
 	wallet := *walletPtr
+	walletAccount := uuid.Nil
+	if wallet.AccountID != nil {
+		walletAccount = *wallet.AccountID
+	}
+	if walletAccount != req.CallerAccountID {
+		if err := s.gate(ctx, walletAccount); err != nil {
+			return nil, nil, err
+		}
+	}
 
 	adapter, err := s.registry.Chain(wallet.Chain)
 	if err != nil {
@@ -219,9 +260,7 @@ func (s *Service) Request(ctx context.Context, req WithdrawRequest) (*models.Tra
 	if req.IdempotencyKey != "" {
 		idemKey := req.IdempotencyKey
 		finalTx.IdempotencyKey = &idemKey
-		if err := s.transactionRepo.UpdateFields(finalTx.ID, map[string]interface{}{
-			"idempotency_key": req.IdempotencyKey,
-		}); err != nil {
+		if err := s.transactionRepo.SetIdempotencyKey(ctx, finalTx.ID, req.IdempotencyKey); err != nil {
 			slog.Warn("failed to set idempotency_key on final withdrawal tx",
 				"tx_id", finalTx.ID, "error", err)
 		}
@@ -232,7 +271,7 @@ func (s *Service) Request(ctx context.Context, req WithdrawRequest) (*models.Tra
 	// published by withdrawalevents.Publisher once the withdrawal row is
 	// marked broadcast. We still dispatch the Goravel domain
 	// event so wallet-refresh listeners fire.
-	_ = facades.Event().Job(&events.WithdrawalBroadcasted{}, []event.Arg{
+	_ = facades.Event().Job(&dtos.WithdrawalBroadcasted{}, []event.Arg{
 		{Type: "string", Value: finalTx.WalletID.String()},
 		{Type: "string", Value: wallet.Chain},
 	}).Dispatch()
@@ -251,6 +290,13 @@ func (s *Service) Request(ctx context.Context, req WithdrawRequest) (*models.Tra
 // passphrase. On bad passphrase it records a failed attempt for rate-limiting
 // and returns ErrInvalidPassphrase. Callers are responsible for zeroing the
 // returned slice once they are done signing.
+func (s *Service) gate(ctx context.Context, accountID uuid.UUID) error {
+	if s.flags == nil || accountID == uuid.Nil {
+		return nil
+	}
+	return s.flags(ctx, accountID)
+}
+
 func (s *Service) decryptShareA(ctx context.Context, wallet *models.Wallet, passphrase string) ([]byte, error) {
 	shareA, err := wallet.DecryptShareA(passphrase)
 	if err != nil {
@@ -265,8 +311,8 @@ func (s *Service) decryptShareA(ctx context.Context, wallet *models.Wallet, pass
 
 func (s *Service) checkRateLimit(ctx context.Context, walletID string) error {
 	key := fmt.Sprintf("vault:ratelimit:passphrase:%s", walletID)
-	count, err := s.rdb.Get(ctx, key).Int()
-	if err != nil && err != redis.Nil {
+	count, err := s.locker.Int(ctx, key)
+	if err != nil {
 		return nil
 	}
 	if count >= 5 {
@@ -277,10 +323,7 @@ func (s *Service) checkRateLimit(ctx context.Context, walletID string) error {
 
 func (s *Service) recordFailedAttempt(ctx context.Context, walletID string) {
 	key := fmt.Sprintf("vault:ratelimit:passphrase:%s", walletID)
-	pipe := s.rdb.Pipeline()
-	pipe.Incr(ctx, key)
-	pipe.Expire(ctx, key, 60*time.Second)
-	_, _ = pipe.Exec(ctx)
+	_ = s.locker.IncrExpire(ctx, key, 60*time.Second)
 }
 
 // zeroShare wipes a byte slice in place so sensitive key material does not
@@ -296,7 +339,7 @@ func zeroShare(b []byte) {
 // ---------------------------------------------------------------------------
 
 func (s *Service) GetTransaction(ctx context.Context, id uuid.UUID) (*models.Transaction, error) {
-	tx, err := s.transactionRepo.FindByID(id)
+	tx, err := s.transactionRepo.FindByID(ctx, id)
 	if err != nil {
 		return nil, err
 	}
@@ -307,7 +350,7 @@ func (s *Service) GetTransaction(ctx context.Context, id uuid.UUID) (*models.Tra
 }
 
 func (s *Service) ListTransactions(ctx context.Context, chainID, txType, status, userID string, limit, offset int) ([]models.Transaction, int64, error) {
-	return s.transactionRepo.List(chainID, txType, status, userID, limit, offset)
+	return s.transactionRepo.List(ctx, chainID, txType, status, userID, limit, offset)
 }
 
 // ListTransactionsForAccount is the account-scoped variant used by external API
@@ -315,5 +358,5 @@ func (s *Service) ListTransactions(ctx context.Context, chainID, txType, status,
 // Without this scoping, any API token could retrieve transactions for another
 // account by guessing or enumerating external_ids.
 func (s *Service) ListTransactionsForAccount(ctx context.Context, accountID uuid.UUID, chainID, txType, status, userID string, limit, offset int) ([]models.Transaction, int64, error) {
-	return s.transactionRepo.ListForAccount(accountID, chainID, txType, status, userID, limit, offset)
+	return s.transactionRepo.ListForAccount(ctx, accountID, chainID, txType, status, userID, limit, offset)
 }

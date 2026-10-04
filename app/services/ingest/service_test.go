@@ -1,6 +1,7 @@
 package ingest
 
 import (
+	"context"
 	"math/big"
 	"testing"
 	"time"
@@ -116,6 +117,86 @@ func TestProcessTransfers_HumanUSDTUsesSeedDecimals(t *testing.T) {
 	assert.Equal(t, "1500000", txs.created[0].Amount)
 }
 
+func TestProcessTransfers_AddressSetKeepsTheMembershipDecision(t *testing.T) {
+	const to = "0xReceiver"
+	reg, addrs, txs := ingestFixture(to)
+	member := &stubAddressSet{member: true}
+	svc := NewService(member, reg, nil, addrs, txs)
+
+	err := svc.ProcessTransfers(t.Context(), models.ChainETH, []providers.InboundTransfer{{
+		TxHash: "0xnative",
+		To:     to,
+		From:   "0xfrom",
+		Amount: big.NewInt(42),
+	}})
+	require.NoError(t, err)
+	require.Len(t, txs.created, 1)
+	assert.Equal(t, "42", txs.created[0].Amount)
+	assert.Equal(t, "vault:addresses:"+models.ChainETH, member.key)
+	assert.Equal(t, to, member.value)
+
+	skipped := &ingestTxRepo{}
+	absent := &stubAddressSet{}
+	absentSvc := NewService(absent, reg, nil, addrs, skipped)
+	err = absentSvc.ProcessTransfers(t.Context(), models.ChainETH, []providers.InboundTransfer{{
+		TxHash: "0xskip",
+		To:     to,
+		From:   "0xfrom",
+		Amount: big.NewInt(1),
+	}})
+	require.NoError(t, err)
+	assert.Empty(t, skipped.created)
+
+	failed := &ingestTxRepo{}
+	broken := &stubAddressSet{err: assert.AnError}
+	brokenSvc := NewService(broken, reg, nil, addrs, failed)
+	err = brokenSvc.ProcessTransfers(t.Context(), models.ChainETH, []providers.InboundTransfer{{
+		TxHash: "0xerr",
+		To:     to,
+		From:   "0xfrom",
+		Amount: big.NewInt(1),
+	}})
+	require.NoError(t, err)
+	assert.Empty(t, failed.created)
+}
+
+func ingestFixture(to string) (*chain.Registry, *ingestAddressRepo, *ingestTxRepo) {
+	reg := chain.NewRegistry()
+	mockChain := mocks.NewMockChain(models.ChainETH)
+	mockChain.NativeAssetVal = models.NativeETH
+	reg.RegisterChain(mockChain)
+	addrs := &ingestAddressRepo{addr: &models.Address{
+		ID:             uuid.New(),
+		WalletID:       uuid.New(),
+		ExternalUserID: "user-1",
+		Chain:          models.ChainETH,
+		Address:        to,
+	}}
+	return reg, addrs, &ingestTxRepo{}
+}
+
+type stubAddressSet struct {
+	member bool
+	err    error
+	key    string
+	value  any
+}
+
+func (s *stubAddressSet) SIsMember(_ context.Context, key string, member any) Membership {
+	s.key = key
+	s.value = member
+	return stubMembership{member: s.member, err: s.err}
+}
+
+type stubMembership struct {
+	member bool
+	err    error
+}
+
+func (s stubMembership) Result() (bool, error) {
+	return s.member, s.err
+}
+
 // A provider webhook for the sweep that moved funds into the base address is not a
 // deposit of the base owner; a transfer from anywhere else to that address still is.
 func TestProcessTransfers_SkipsSweepOfTheSameWallet(t *testing.T) {
@@ -159,13 +240,13 @@ func (f *ingestAddressRepo) Create(addr *models.Address) error { return nil }
 func (f *ingestAddressRepo) UpdateFields(id uuid.UUID, fields map[string]interface{}) error {
 	return nil
 }
-func (f *ingestAddressRepo) CountByChainAndAddress(chainID, address string) (int64, error) {
+func (f *ingestAddressRepo) CountByChainAndAddress(_ context.Context, chainID, address string) (int64, error) {
 	if f.addr != nil && f.addr.Chain == chainID && f.addr.Address == address {
 		return 1, nil
 	}
 	return 0, nil
 }
-func (f *ingestAddressRepo) FindByChainAndAddress(chainID, address string) (*models.Address, error) {
+func (f *ingestAddressRepo) FindByChainAndAddress(_ context.Context, chainID, address string) (*models.Address, error) {
 	if f.addr != nil && f.addr.Chain == chainID && f.addr.Address == address {
 		return f.addr, nil
 	}
@@ -198,7 +279,7 @@ type ingestTxRepo struct {
 	internalHashes map[string]uuid.UUID
 }
 
-func (f *ingestTxRepo) Create(tx *models.Transaction) error {
+func (f *ingestTxRepo) Create(_ context.Context, tx *models.Transaction) error {
 	f.created = append(f.created, tx)
 	return nil
 }
@@ -218,10 +299,10 @@ func (f *ingestTxRepo) FindByChainAndTxHash(chainID, txHash string) (*models.Tra
 func (f *ingestTxRepo) CountByChainAndTxHash(chainID, txHash, txType string) (int64, error) {
 	return 0, nil
 }
-func (f *ingestTxRepo) CountByChainTxHashAndLogIndex(chainID, txHash string, logIndex int, txType string) (int64, error) {
+func (f *ingestTxRepo) CountByChainTxHashAndLogIndex(_ context.Context, chainID, txHash string, logIndex int, txType string) (int64, error) {
 	return 0, nil
 }
-func (f *ingestTxRepo) CountInternalTransfers(chainID, txHash string, walletID uuid.UUID) (int64, error) {
+func (f *ingestTxRepo) CountInternalTransfers(_ context.Context, chainID, txHash string, walletID uuid.UUID) (int64, error) {
 	if owner, ok := f.internalHashes[txHash]; ok && owner == walletID {
 		return 1, nil
 	}
@@ -243,36 +324,41 @@ func (f *ingestTxRepo) ListByWalletAndChain(walletID uuid.UUID, chainID string, 
 
 type ingestWebhookConfigRepo struct{}
 
-func (f *ingestWebhookConfigRepo) Create(cfg *models.WebhookConfig) error { return nil }
-func (f *ingestWebhookConfigRepo) FindByWalletID(walletID uuid.UUID) ([]models.WebhookConfig, error) {
+func (f *ingestWebhookConfigRepo) Create(_ context.Context, cfg *models.WebhookConfig) error {
+	return nil
+}
+func (f *ingestWebhookConfigRepo) FindActive(_ context.Context) ([]models.WebhookConfig, error) {
 	return nil, nil
 }
-func (f *ingestWebhookConfigRepo) FindByIDAndWallet(id, walletID uuid.UUID) (*models.WebhookConfig, error) {
+func (f *ingestWebhookConfigRepo) FindAll(_ context.Context) ([]models.WebhookConfig, error) {
 	return nil, nil
 }
-func (f *ingestWebhookConfigRepo) FindActive() ([]models.WebhookConfig, error) { return nil, nil }
-func (f *ingestWebhookConfigRepo) FindAll() ([]models.WebhookConfig, error)    { return nil, nil }
-func (f *ingestWebhookConfigRepo) Delete(cfg *models.WebhookConfig) error      { return nil }
-func (f *ingestWebhookConfigRepo) DeleteByID(id uuid.UUID) error               { return nil }
-func (f *ingestWebhookConfigRepo) FindByID(id uuid.UUID) (*models.WebhookConfig, error) {
+func (f *ingestWebhookConfigRepo) FindVisibleToAccount(_ context.Context, accountID uuid.UUID) ([]models.WebhookConfig, error) {
 	return nil, nil
 }
-func (f *ingestWebhookConfigRepo) FindVisibleToAccount(accountID uuid.UUID) ([]models.WebhookConfig, error) {
+func (f *ingestWebhookConfigRepo) FindByID(_ context.Context, id uuid.UUID) (*models.WebhookConfig, error) {
 	return nil, nil
 }
-func (f *ingestWebhookConfigRepo) UpdateFields(id uuid.UUID, fields map[string]any) error { return nil }
+func (f *ingestWebhookConfigRepo) AssignAccount(_ context.Context, id, accountID uuid.UUID, events *string, isActive *bool) error {
+	return nil
+}
+func (f *ingestWebhookConfigRepo) DeleteByID(_ context.Context, id uuid.UUID) error { return nil }
 
 type ingestWebhookEventRepo struct{}
 
-func (f *ingestWebhookEventRepo) Create(event *models.WebhookEvent) error { return nil }
-func (f *ingestWebhookEventRepo) MarkDelivered(eventID string) error      { return nil }
-func (f *ingestWebhookEventRepo) IncrementAttempt(eventID string, errMsg string) error {
+func (f *ingestWebhookEventRepo) Create(_ context.Context, event *models.WebhookEvent) error {
 	return nil
 }
-func (f *ingestWebhookEventRepo) ExistsForSubject(configID uuid.UUID, eventType, subjectID string) (bool, error) {
+func (f *ingestWebhookEventRepo) MarkDelivered(_ context.Context, eventID string) error { return nil }
+func (f *ingestWebhookEventRepo) IncrementAttempt(_ context.Context, eventID, errMsg string) error {
+	return nil
+}
+func (f *ingestWebhookEventRepo) ExistsForSubject(_ context.Context, configID uuid.UUID, eventType, subjectID string) (bool, error) {
 	return false, nil
 }
-func (f *ingestWebhookEventRepo) FindDueForDelivery(limit int, baseBackoff, maxBackoff time.Duration) ([]models.WebhookEvent, error) {
+func (f *ingestWebhookEventRepo) FindDueForDelivery(_ context.Context, limit int, baseBackoff, maxBackoff time.Duration) ([]models.WebhookEvent, error) {
 	return nil, nil
 }
-func (f *ingestWebhookEventRepo) MarkFailed(eventID string, errMsg string) error { return nil }
+func (f *ingestWebhookEventRepo) MarkFailed(_ context.Context, eventID, errMsg string) error {
+	return nil
+}

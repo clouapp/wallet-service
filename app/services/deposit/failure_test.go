@@ -40,14 +40,14 @@ const (
 
 // flakyTxRepo fails Create for chosen transactions: N times, or always with alwaysFail.
 type flakyTxRepo struct {
-	repositories.TransactionRepository
+	*repositories.TransactionRepository
 	mu       sync.Mutex
 	failures map[string]int
 	creates  map[string]int
 }
 
 func newFlakyTxRepo() *flakyTxRepo {
-	return &flakyTxRepo{TransactionRepository: repositories.NewTransactionRepository(), failures: map[string]int{}, creates: map[string]int{}}
+	return &flakyTxRepo{TransactionRepository: repositories.NewTransactionRepository(nil), failures: map[string]int{}, creates: map[string]int{}}
 }
 
 func (r *flakyTxRepo) failCreate(txHash string, times int) {
@@ -62,7 +62,7 @@ func (r *flakyTxRepo) heal() {
 	r.failures = map[string]int{}
 }
 
-func (r *flakyTxRepo) Create(tx *models.Transaction) error {
+func (r *flakyTxRepo) Create(ctx context.Context, tx *models.Transaction) error {
 	r.mu.Lock()
 	r.creates[tx.TxHash]++
 	remaining := r.failures[tx.TxHash]
@@ -73,16 +73,18 @@ func (r *flakyTxRepo) Create(tx *models.Transaction) error {
 	if remaining != 0 {
 		return errors.New(dbDownMessage)
 	}
-	return r.TransactionRepository.Create(tx)
+	return r.TransactionRepository.Create(ctx, tx)
 }
 
 // racingTxRepo reports no recorded deposit, as a process that checked just before
 // another one inserted the same transaction would see.
 type racingTxRepo struct {
-	repositories.TransactionRepository
+	*repositories.TransactionRepository
 }
 
-func (racingTxRepo) CountByChainAndTxHash(string, string, string) (int64, error) { return 0, nil }
+func (racingTxRepo) CountByChainAndTxHash(context.Context, string, string, string) (int64, error) {
+	return 0, nil
+}
 
 type testClock struct {
 	mu  sync.Mutex
@@ -527,7 +529,7 @@ func TestProcessingABlockTwiceSendsEachDepositWebhookOnce(t *testing.T) {
 		t.Fatal(err)
 	}
 	webhookSvc := newWebhookSvc()
-	publisher := depositevents.NewPublisher(webhookSvc, repositories.NewWalletRepository(), chainAssetDecimals{scanTestChain + "/" + scanTestChain: etherDecimals})
+	publisher := depositevents.NewPublisher(webhookSvc, repositories.NewWalletRepository(nil), chainAssetDecimals{scanTestChain + "/" + scanTestChain: etherDecimals})
 	f.svc.webhookSvc = webhookSvc
 	f.svc.SetDepositEvents(publisher)
 	mocks.InsertScopedWebhookConfig(t, "https://owner.test/hook", depositHookSecret, []string{string(types.EventDepositPending), depositConfirmedEvent}, &account.ID, nil)
@@ -540,11 +542,11 @@ func TestProcessingABlockTwiceSendsEachDepositWebhookOnce(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	f.svc.txRepo = racingTxRepo{TransactionRepository: repositories.NewTransactionRepository()}
+	f.svc.txRepo = racingTxRepo{TransactionRepository: repositories.NewTransactionRepository(nil)}
 	if recorded, err := f.svc.ScanBlock(context.Background(), scanTestChain, failingBlock); err != nil || recorded != 0 {
 		t.Fatalf("an insert racing a recorded deposit must be absorbed by the unique index, got %d, %v", recorded, err)
 	}
-	f.svc.txRepo = repositories.NewTransactionRepository()
+	f.svc.txRepo = repositories.NewTransactionRepository(nil)
 	for pass := 0; pass < 2; pass++ {
 		if err := f.svc.updateConfirmations(context.Background(), scanTestChain, f.adapter, scanHead+10); err != nil {
 			t.Fatal(err)
@@ -568,7 +570,7 @@ func TestProcessingABlockTwiceSendsEachDepositWebhookOnce(t *testing.T) {
 func TestUniqueDepositIndexRejectsASecondRowForTheSameTransaction(t *testing.T) {
 	mocks.TestDB(t)
 	wallet := mocks.InsertWallet(t, scanTestChain)
-	repo := repositories.NewTransactionRepository()
+	repo := repositories.NewTransactionRepository(nil)
 	newDeposit := func(txType string) *models.Transaction {
 		return &models.Transaction{
 			ID: uuid.New(), WalletID: wallet.ID, ExternalUserID: "user", Chain: scanTestChain, TxType: txType,
@@ -576,14 +578,14 @@ func TestUniqueDepositIndexRejectsASecondRowForTheSameTransaction(t *testing.T) 
 			Status: "pending", Direction: models.TxDirectionInbound, Source: models.TxSourceChain, RawPayload: "{}",
 		}
 	}
-	if err := repo.Create(newDeposit(models.TxTypeDeposit)); err != nil {
+	if err := repo.Create(context.Background(), newDeposit(models.TxTypeDeposit)); err != nil {
 		t.Fatal(err)
 	}
-	err := repo.Create(newDeposit(models.TxTypeDeposit))
+	err := repo.Create(context.Background(), newDeposit(models.TxTypeDeposit))
 	if !repositories.IsUniqueViolation(err) {
 		t.Fatalf("expected a unique violation for a second deposit row, got %v", err)
 	}
-	if err := repo.Create(newDeposit(models.TxTypeWithdrawal)); err != nil {
+	if err := repo.Create(context.Background(), newDeposit(models.TxTypeWithdrawal)); err != nil {
 		t.Fatalf("other transaction types share hashes with deposits and must not be blocked: %v", err)
 	}
 }

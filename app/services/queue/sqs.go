@@ -6,21 +6,28 @@ import (
 	"fmt"
 	"log/slog"
 
-	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/service/sqs"
-	sqstypes "github.com/aws/aws-sdk-go-v2/service/sqs/types"
-
 	"github.com/macrowallets/waas/pkg/types"
 )
 
-// ---------------------------------------------------------------------------
-// SQSClient — thin wrapper over AWS SQS.
-// Knows the queue URLs, handles JSON marshal, that's it.
-// ---------------------------------------------------------------------------
+// maxBatchEntries is the SQS SendMessageBatch limit.
+const maxBatchEntries = 10
 
-// Sender defines the interface for sending messages to queues
+// Sender defines the interface for sending messages to queues.
 type Sender interface {
 	SendWebhook(ctx context.Context, msg types.WebhookMessage) error
+}
+
+// Transport sends already-encoded bodies. The provider supplies it.
+// A nil Transport means the AWS client was not configured.
+type Transport interface {
+	Send(ctx context.Context, queueURL, body string, attributes map[string]string) error
+	SendBatch(ctx context.Context, queueURL string, entries []BatchEntry) error
+}
+
+// BatchEntry is one already-encoded message. ID is the SQS batch entry id.
+type BatchEntry struct {
+	ID   string
+	Body string
 }
 
 type QueueURLs struct {
@@ -28,12 +35,12 @@ type QueueURLs struct {
 }
 
 type SQSClient struct {
-	client *sqs.Client
-	urls   QueueURLs
+	transport Transport
+	urls      QueueURLs
 }
 
-func NewSQSClient(client *sqs.Client, urls QueueURLs) *SQSClient {
-	return &SQSClient{client: client, urls: urls}
+func NewSQSClient(transport Transport, urls QueueURLs) *SQSClient {
+	return &SQSClient{transport: transport, urls: urls}
 }
 
 // SendWebhook enqueues a webhook delivery job.
@@ -54,22 +61,7 @@ func (q *SQSClient) send(ctx context.Context, queueURL string, payload interface
 		return fmt.Errorf("marshal message: %w", err)
 	}
 
-	msgAttrs := make(map[string]sqstypes.MessageAttributeValue, len(attrs))
-	for k, v := range attrs {
-		msgAttrs[k] = sqstypes.MessageAttributeValue{
-			DataType:    aws.String("String"),
-			StringValue: aws.String(v),
-		}
-	}
-
-	input := &sqs.SendMessageInput{
-		QueueUrl:          aws.String(queueURL),
-		MessageBody:       aws.String(string(body)),
-		MessageAttributes: msgAttrs,
-	}
-
-	_, err = q.client.SendMessage(ctx, input)
-	if err != nil {
+	if err := q.transport.Send(ctx, queueURL, string(body), attrs); err != nil {
 		return fmt.Errorf("sqs send: %w", err)
 	}
 
@@ -83,31 +75,24 @@ func (q *SQSClient) SendBatch(ctx context.Context, queueURL string, messages []i
 		return nil
 	}
 
-	entries := make([]sqstypes.SendMessageBatchRequestEntry, 0, len(messages))
+	entries := make([]BatchEntry, 0, len(messages))
 	for i, msg := range messages {
 		body, err := json.Marshal(msg)
 		if err != nil {
 			continue
 		}
-		entries = append(entries, sqstypes.SendMessageBatchRequestEntry{
-			Id:          aws.String(fmt.Sprintf("msg-%d", i)),
-			MessageBody: aws.String(string(body)),
+		entries = append(entries, BatchEntry{
+			ID:   fmt.Sprintf("msg-%d", i),
+			Body: string(body),
 		})
 	}
 
-	// SQS batch max is 10
-	for i := 0; i < len(entries); i += 10 {
-		end := i + 10
+	for start := 0; start < len(entries); start += maxBatchEntries {
+		end := start + maxBatchEntries
 		if end > len(entries) {
 			end = len(entries)
 		}
-		batch := entries[i:end]
-
-		_, err := q.client.SendMessageBatch(ctx, &sqs.SendMessageBatchInput{
-			QueueUrl: aws.String(queueURL),
-			Entries:  batch,
-		})
-		if err != nil {
+		if err := q.transport.SendBatch(ctx, queueURL, entries[start:end]); err != nil {
 			return fmt.Errorf("sqs batch send: %w", err)
 		}
 	}

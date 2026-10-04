@@ -28,7 +28,7 @@ type fakeTxRepo struct {
 	createErr error
 }
 
-func (f *fakeTxRepo) Create(tx *models.Transaction) error {
+func (f *fakeTxRepo) Create(_ context.Context, tx *models.Transaction) error {
 	if f.createErr != nil {
 		return f.createErr
 	}
@@ -610,42 +610,47 @@ type fakeWebhookConfigRepo struct {
 	configs []models.WebhookConfig
 }
 
-func (f *fakeWebhookConfigRepo) Create(cfg *models.WebhookConfig) error { return nil }
-func (f *fakeWebhookConfigRepo) FindByWalletID(walletID uuid.UUID) ([]models.WebhookConfig, error) {
-	return nil, nil
+func (f *fakeWebhookConfigRepo) Create(_ context.Context, cfg *models.WebhookConfig) error {
+	return nil
 }
-func (f *fakeWebhookConfigRepo) FindByIDAndWallet(id, walletID uuid.UUID) (*models.WebhookConfig, error) {
-	return nil, nil
-}
-func (f *fakeWebhookConfigRepo) FindActive() ([]models.WebhookConfig, error) { return f.configs, nil }
-func (f *fakeWebhookConfigRepo) FindAll() ([]models.WebhookConfig, error)    { return f.configs, nil }
-func (f *fakeWebhookConfigRepo) Delete(cfg *models.WebhookConfig) error      { return nil }
-func (f *fakeWebhookConfigRepo) DeleteByID(id uuid.UUID) error               { return nil }
-func (f *fakeWebhookConfigRepo) FindByID(id uuid.UUID) (*models.WebhookConfig, error) {
-	return nil, nil
-}
-func (f *fakeWebhookConfigRepo) FindVisibleToAccount(accountID uuid.UUID) ([]models.WebhookConfig, error) {
+func (f *fakeWebhookConfigRepo) FindActive(_ context.Context) ([]models.WebhookConfig, error) {
 	return f.configs, nil
 }
-func (f *fakeWebhookConfigRepo) UpdateFields(id uuid.UUID, fields map[string]any) error { return nil }
+func (f *fakeWebhookConfigRepo) FindAll(_ context.Context) ([]models.WebhookConfig, error) {
+	return f.configs, nil
+}
+func (f *fakeWebhookConfigRepo) FindVisibleToAccount(_ context.Context, accountID uuid.UUID) ([]models.WebhookConfig, error) {
+	return f.configs, nil
+}
+func (f *fakeWebhookConfigRepo) FindByID(_ context.Context, id uuid.UUID) (*models.WebhookConfig, error) {
+	return nil, nil
+}
+func (f *fakeWebhookConfigRepo) AssignAccount(_ context.Context, id, accountID uuid.UUID, events *string, isActive *bool) error {
+	return nil
+}
+func (f *fakeWebhookConfigRepo) DeleteByID(_ context.Context, id uuid.UUID) error { return nil }
 
 type fakeWebhookEventRepo struct {
 	created []*models.WebhookEvent
 }
 
-func (f *fakeWebhookEventRepo) Create(event *models.WebhookEvent) error {
+func (f *fakeWebhookEventRepo) Create(_ context.Context, event *models.WebhookEvent) error {
 	f.created = append(f.created, event)
 	return nil
 }
-func (f *fakeWebhookEventRepo) MarkDelivered(eventID string) error                   { return nil }
-func (f *fakeWebhookEventRepo) IncrementAttempt(eventID string, errMsg string) error { return nil }
-func (f *fakeWebhookEventRepo) ExistsForSubject(configID uuid.UUID, eventType, subjectID string) (bool, error) {
+func (f *fakeWebhookEventRepo) MarkDelivered(_ context.Context, eventID string) error { return nil }
+func (f *fakeWebhookEventRepo) IncrementAttempt(_ context.Context, eventID, errMsg string) error {
+	return nil
+}
+func (f *fakeWebhookEventRepo) ExistsForSubject(_ context.Context, configID uuid.UUID, eventType, subjectID string) (bool, error) {
 	return false, nil
 }
-func (f *fakeWebhookEventRepo) FindDueForDelivery(limit int, baseBackoff, maxBackoff time.Duration) ([]models.WebhookEvent, error) {
+func (f *fakeWebhookEventRepo) FindDueForDelivery(_ context.Context, limit int, baseBackoff, maxBackoff time.Duration) ([]models.WebhookEvent, error) {
 	return nil, nil
 }
-func (f *fakeWebhookEventRepo) MarkFailed(eventID string, errMsg string) error { return nil }
+func (f *fakeWebhookEventRepo) MarkFailed(_ context.Context, eventID, errMsg string) error {
+	return nil
+}
 
 // TestExecute_MultiSweep_WebhookEmittedPerSweep verifies that for a multi-leg
 // plan the executor emits exactly one sweep.broadcast event per leg (never per

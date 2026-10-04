@@ -27,11 +27,11 @@ import (
 func exportAndOpen(t *testing.T, store *fakeStore, passphrases PassphraseSource) (*Result, map[string][]byte) {
 	t.Helper()
 	service := store.service(t)
-	wallets, err := service.SelectWallets(nil)
+	wallets, err := service.SelectWallets(context.Background(), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	plans, refused, err := service.Plan(wallets)
+	plans, refused, err := service.Plan(context.Background(), wallets)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -288,7 +288,7 @@ func TestExport_PromptRetriesAWrongPassphraseAndAbortStopsTheExport(t *testing.T
 
 	store := newFakeStore(sol)
 	service := store.service(t)
-	plans, _, err := service.Plan(store.wallets)
+	plans, _, err := service.Plan(context.Background(), store.wallets)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -303,15 +303,15 @@ func TestSelectWallets_FiltersByIDAndFailsOnUnknownIDs(t *testing.T) {
 	second := newWalletFixture(t, keys, mpcpkg.CurveEd25519, solanaDevnet, "b", 0)
 	service := newFakeStore(first, second).service(t)
 
-	selected, err := service.SelectWallets([]uuid.UUID{second.wallet.ID, second.wallet.ID})
+	selected, err := service.SelectWallets(context.Background(), []uuid.UUID{second.wallet.ID, second.wallet.ID})
 	if err != nil || len(selected) != 1 || selected[0].ID != second.wallet.ID {
 		t.Fatalf("selected %+v err %v", selected, err)
 	}
 	unknown := uuid.New()
-	if _, err := service.SelectWallets([]uuid.UUID{first.wallet.ID, unknown}); err == nil || !strings.Contains(err.Error(), unknown.String()) {
+	if _, err := service.SelectWallets(context.Background(), []uuid.UUID{first.wallet.ID, unknown}); err == nil || !strings.Contains(err.Error(), unknown.String()) {
 		t.Fatalf("unknown id must fail fast, got %v", err)
 	}
-	if _, err := service.SelectWallets([]uuid.UUID{uuid.Nil}); err == nil {
+	if _, err := service.SelectWallets(context.Background(), []uuid.UUID{uuid.Nil}); err == nil {
 		t.Fatal("the nil UUID must be refused")
 	}
 }
@@ -327,7 +327,7 @@ func TestPlan_RefusesPublicInconsistenciesBeforeTouchingSecrets(t *testing.T) {
 
 	store := newFakeStore(noAddresses, wrongCurve, unknownChain)
 	delete(store.byChain, unknownChain.wallet.Chain)
-	plans, refused, err := store.service(t).Plan(store.wallets)
+	plans, refused, err := store.service(t).Plan(context.Background(), store.wallets)
 	if err != nil {
 		t.Fatal(err)
 	}

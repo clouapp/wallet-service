@@ -29,16 +29,14 @@ func newTestService(t *testing.T, registry *chain.Registry) *Service {
 	return newTestServiceWithRepos(t, registry, nil, nil)
 }
 
-func newTestServiceWithRepos(t *testing.T, registry *chain.Registry, walletRepo repositories.WalletRepository, addressRepo repositories.AddressRepository) *Service {
+func newTestServiceWithRepos(t *testing.T, registry *chain.Registry, walletRepo WalletStore, addressRepo AddressStore) *Service {
 	t.Helper()
-	svc := NewService(
-		registry,
-		nil, // no redis in tests
-		mocks.NewMockMPCService(),
-		nil, // secretsManager concrete type replaced by mock interface below
-		walletRepo,
-		addressRepo,
-	)
+	svc := NewService(Deps{
+		Registry:  registry,
+		MPC:       mocks.NewMockMPCService(),
+		Wallets:   walletRepo,
+		Addresses: addressRepo,
+	})
 	svc.secretsManager = mocks.NewMockSecretsManager()
 	return svc
 }
@@ -106,7 +104,7 @@ func (s *WalletServiceTestSuite) SetupTest() {
 	s.registry.RegisterChain(mocks.NewMockChain("eth"))
 	s.registry.RegisterChain(mocks.NewMockChain("btc"))
 	s.registry.RegisterChain(mocks.NewMockChain("sol"))
-	s.service = newTestServiceWithRepos(s.T(), s.registry, repositories.NewWalletRepository(), repositories.NewAddressRepository())
+	s.service = newTestServiceWithRepos(s.T(), s.registry, repositories.NewWalletRepository(nil), repositories.NewAddressRepository(nil))
 }
 
 func (s *WalletServiceTestSuite) TestCreateWallet_Success() {

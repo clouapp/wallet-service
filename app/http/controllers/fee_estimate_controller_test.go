@@ -15,7 +15,7 @@ import (
 	"github.com/stretchr/testify/suite"
 
 	"github.com/macrowallets/waas/app/container"
-	ctltestutil "github.com/macrowallets/waas/app/http/controllers/testutil"
+	ctltestutil "github.com/macrowallets/waas/tests/feature/support"
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/pkg/types"
 	"github.com/macrowallets/waas/tests/mocks"
@@ -120,7 +120,7 @@ func (s *feeEstimateSuite) TestOtherAccountsWalletIsNotFound() {
 	_, intruderBearer, _ := ctltestutil.SetupAPIAuth(s.T(), false)
 
 	body := s.get(feeEstimatePath(walletID, url.Values{"amount": {"0.001"}}), intruderBearer, 404)
-	s.Equal("wallet not found", body["error"])
+	s.Equal("wallet not found", feeEstimateErrorMessage(body))
 }
 
 func (s *feeEstimateSuite) TestQuotesTheNativeTransferThroughThePlanner() {
@@ -159,7 +159,7 @@ func (s *feeEstimateSuite) TestNodeFailureIs503WithoutAFee() {
 
 	body := s.get(feeEstimatePath(walletID, url.Values{"amount": {"0.0000000000001"}, "to": {feeEstimateRecipient}}), bearer, 503)
 
-	s.Equal("fee_estimate_unavailable", body["code"])
+	s.Equal("fee_estimate_unavailable", feeEstimateErrorCode(body))
 	s.Nil(body["fee"])
 }
 
@@ -181,7 +181,22 @@ func (s *feeEstimateSuite) TestInvalidInputsAreRejectedBeforeQuoting() {
 	}
 	for _, tc := range cases {
 		body := s.get(feeEstimatePath(walletID, tc.query), bearer, tc.status)
-		s.Equal(tc.code, body["code"], tc.query.Encode())
-		s.NotEmpty(body["error"], tc.query.Encode())
+		s.Equal(tc.code, feeEstimateErrorCode(body), tc.query.Encode())
+		s.NotEmpty(feeEstimateErrorMessage(body), tc.query.Encode())
 	}
+}
+
+func feeEstimateErrorBody(body map[string]any) map[string]any {
+	errBody, _ := body["error"].(map[string]any)
+	return errBody
+}
+
+func feeEstimateErrorCode(body map[string]any) string {
+	code, _ := feeEstimateErrorBody(body)["code"].(string)
+	return code
+}
+
+func feeEstimateErrorMessage(body map[string]any) string {
+	message, _ := feeEstimateErrorBody(body)["message"].(string)
+	return message
 }

@@ -1,4 +1,4 @@
-.PHONY: help build localstack-hooks e2e-tools clean run dev dev-back dev-front stop deploy deploy-guided delete validate local test test-coverage test-race test-verbose lint fmt vet security migrate migrate-rollback migrate-status migrate-fresh migrate-fresh-seed migrate-fresh-hard db-reset db-seed key-generate jwt-secret docker-up docker-down docker-logs docker-build docker-test docker-status ecr-login ecr-push logs-api logs-scanner logs-webhook logs-withdrawal dlq-check dlq-replay-webhooks dlq-replay-withdrawals ping env-info swagger-install swagger-generate swagger-fmt deps-install deps-update
+.PHONY: help build localstack-hooks e2e-tools clean run dev dev-back dev-front stop deploy deploy-guided delete validate local test arch arch-baseline contract contract-update test-coverage test-race test-verbose lint fmt vet security migrate migrate-rollback migrate-status migrate-fresh migrate-fresh-seed migrate-fresh-hard db-reset db-seed key-generate jwt-secret docker-up docker-down docker-logs docker-build docker-test docker-status ecr-login ecr-push logs-api logs-scanner logs-webhook logs-withdrawal dlq-check dlq-replay-webhooks dlq-replay-withdrawals ping env-info swagger-install swagger-generate swagger-fmt deps-install deps-update
 
 # =============================================================================
 # Configuration
@@ -26,6 +26,9 @@ FRONT_DIR = ../front
 # vault (dev) and vault_test (local e2e stack) are refused by tests/testenv.
 TEST_DB_DATABASE ?= vault_unit_test
 export TEST_DB_DATABASE
+
+# golangci-lint v2 reads .golangci.yml; v1 cannot
+GOLANGCI_LINT_VERSION ?= v2.5.0
 
 # Docker configuration
 # The running containers were created from .env.dev (ports 4567/5433/6380); composing without it
@@ -337,11 +340,31 @@ invoke-scanner-remote: ## Invoke deposit scanner on AWS
 # Testing Commands
 # =============================================================================
 
-test: ## Run all tests
+test: ## Run all tests (architecture checks in ratchet mode)
 	@echo "🧪 Running tests..."
 	$(call ensure_test_database)
 	@set -a; [ ! -f .env.dev ] || . ./.env.dev; . ./.env.testing; set +a; \
-		DB_DATABASE=$(TEST_DB_DATABASE) TEST_DB_REQUIRED=1 go test -p 1 ./... -v -count=1
+		DB_DATABASE=$(TEST_DB_DATABASE) TEST_DB_REQUIRED=1 ARCH_MODE=ratchet go test -p 1 ./... -v -count=1
+
+arch: ## Architecture checks, every finding listed (ARCH_MODE=ratchet|enforce to fail)
+	$(call ensure_test_database)
+	@set -a; [ ! -f .env.dev ] || . ./.env.dev; . ./.env.testing; set +a; \
+		DB_DATABASE=$(TEST_DB_DATABASE) ARCH_VERBOSE=1 go test ./tests/architecture/... -v -count=1
+
+arch-baseline: ## Rewrite tests/architecture/testdata/baseline from the current findings
+	$(call ensure_test_database)
+	@set -a; [ ! -f .env.dev ] || . ./.env.dev; . ./.env.testing; set +a; \
+		DB_DATABASE=$(TEST_DB_DATABASE) go test ./tests/architecture/... -count=1 -args -update-baseline
+
+contract: ## Compare the HTTP contract snapshot (tests/contract/testdata/http_contract.txt)
+	$(call ensure_test_database)
+	@set -a; [ ! -f .env.dev ] || . ./.env.dev; . ./.env.testing; set +a; \
+		DB_DATABASE=$(TEST_DB_DATABASE) TEST_DB_REQUIRED=1 go test ./tests/contract/ -run TestHTTPContract -v -count=1
+
+contract-update: ## Rewrite the HTTP contract snapshot (only for a decided contract change)
+	$(call ensure_test_database)
+	@set -a; [ ! -f .env.dev ] || . ./.env.dev; . ./.env.testing; set +a; \
+		DB_DATABASE=$(TEST_DB_DATABASE) TEST_DB_REQUIRED=1 go test ./tests/contract/ -run TestHTTPContract -count=1 -args -update-contract
 
 test-coverage: ## Run tests with coverage report
 	@echo "📊 Running tests with coverage..."
@@ -379,12 +402,12 @@ test-integration: ## Run integration tests only
 # Code Quality Commands
 # =============================================================================
 
-lint: ## Run golangci-lint
+lint: ## Run golangci-lint (.golangci.yml, report mode)
 	@echo "🔍 Running linter..."
 	@if command -v golangci-lint >/dev/null 2>&1; then \
 		golangci-lint run ./...; \
 	else \
-		echo "⚠️  golangci-lint not installed. Install with: go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest"; \
+		echo "⚠️  golangci-lint not installed. Install with: go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@$(GOLANGCI_LINT_VERSION)"; \
 	fi
 
 fmt: ## Format Go code

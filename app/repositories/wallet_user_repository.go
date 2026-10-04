@@ -1,82 +1,96 @@
 package repositories
 
 import (
+	"context"
+	"fmt"
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/goravel/framework/facades"
+	"github.com/goravel/framework/contracts/database/orm"
 
 	"github.com/macrowallets/waas/app/models"
+	"github.com/macrowallets/waas/app/repositories/internal/db"
 )
 
-type WalletUserRepository interface {
-	Create(wu *models.WalletUser) error
-	FindByWalletID(walletID uuid.UUID) ([]models.WalletUser, error)
-	FindByWalletAndUser(walletID, userID uuid.UUID) (*models.WalletUser, error)
-	FindByWalletAndUserIncludeDeleted(walletID, userID uuid.UUID) (*models.WalletUser, error)
-	UpdateField(id uuid.UUID, field string, value interface{}) error
-	SoftDelete(walletID, userID uuid.UUID) error
+// WalletUserRepository persists wallet memberships.
+// FindByWalletAndUser returns an active membership only. FindByWalletID and
+// IncludeDeleted return every status for membership management.
+type WalletUserRepository struct {
+	db.Base
 }
 
-type walletUserRepository struct{}
-
-func NewWalletUserRepository() WalletUserRepository {
-	return &walletUserRepository{}
+// NewWalletUserRepository wraps an orm.Query. Pass nil for a fresh query per call.
+func NewWalletUserRepository(query orm.Query) *WalletUserRepository {
+	return &WalletUserRepository{Base: db.NewBase(query)}
 }
 
-func (r *walletUserRepository) Create(wu *models.WalletUser) error {
-	return facades.Orm().Query().Create(wu)
+// Create inserts a wallet membership.
+func (r *WalletUserRepository) Create(ctx context.Context, wu *models.WalletUser) error {
+	if wu == nil {
+		return fmt.Errorf("create wallet user: membership is nil")
+	}
+	if err := r.Query(ctx).Create(wu); err != nil {
+		return fmt.Errorf("create wallet user: %w", err)
+	}
+	return nil
 }
 
-func (r *walletUserRepository) FindByWalletID(walletID uuid.UUID) ([]models.WalletUser, error) {
+// FindByWalletID returns active memberships for a wallet.
+func (r *WalletUserRepository) FindByWalletID(ctx context.Context, walletID uuid.UUID) ([]models.WalletUser, error) {
 	var members []models.WalletUser
-	err := facades.Orm().Query().
-		Where("wallet_id = ? AND deleted_at IS NULL", walletID).
-		Find(&members)
-	return members, err
+	if err := r.Query(ctx).Where("wallet_id = ? AND deleted_at IS NULL", walletID).Find(&members); err != nil {
+		return nil, fmt.Errorf("list wallet users: %w", err)
+	}
+	return members, nil
 }
 
-func (r *walletUserRepository) FindByWalletAndUser(walletID, userID uuid.UUID) (*models.WalletUser, error) {
+// FindByWalletAndUser returns the active membership, or ErrRepositoryNotFound.
+func (r *WalletUserRepository) FindByWalletAndUser(ctx context.Context, walletID, userID uuid.UUID) (*models.WalletUser, error) {
 	var wu models.WalletUser
-	err := facades.Orm().Query().
-		Where("wallet_id = ? AND user_id = ? AND deleted_at IS NULL", walletID, userID).
-		First(&wu)
-	if err != nil {
-		return nil, err
+	if err := r.Query(ctx).Where("wallet_id = ? AND user_id = ? AND deleted_at IS NULL AND status = ?", walletID, userID, models.StatusActive).First(&wu); err != nil {
+		return nil, fmt.Errorf("find wallet user: %w", err)
 	}
 	if wu.ID == uuid.Nil {
-		return nil, nil
+		return nil, models.ErrRepositoryNotFound
 	}
 	return &wu, nil
 }
 
-func (r *walletUserRepository) FindByWalletAndUserIncludeDeleted(walletID, userID uuid.UUID) (*models.WalletUser, error) {
+// FindByWalletAndUserIncludeDeleted returns the membership including a soft-deleted row, or ErrRepositoryNotFound.
+func (r *WalletUserRepository) FindByWalletAndUserIncludeDeleted(ctx context.Context, walletID, userID uuid.UUID) (*models.WalletUser, error) {
 	var wu models.WalletUser
-	err := facades.Orm().Query().
-		Where("wallet_id = ? AND user_id = ?", walletID, userID).
-		First(&wu)
-	if err != nil {
-		return nil, err
+	if err := r.Query(ctx).Where("wallet_id = ? AND user_id = ?", walletID, userID).First(&wu); err != nil {
+		return nil, fmt.Errorf("find wallet user including deleted: %w", err)
 	}
 	if wu.ID == uuid.Nil {
-		return nil, nil
+		return nil, models.ErrRepositoryNotFound
 	}
 	return &wu, nil
 }
 
-func (r *walletUserRepository) UpdateField(id uuid.UUID, field string, value interface{}) error {
-	_, err := facades.Orm().Query().
-		Model(&models.WalletUser{}).
-		Where("id = ?", id).
-		Update(field, value)
-	return err
+// Restore clears deleted_at on a wallet membership.
+func (r *WalletUserRepository) Restore(ctx context.Context, id uuid.UUID) error {
+	if _, err := r.Query(ctx).Model(&models.WalletUser{}).Where("id = ?", id).Update("deleted_at", nil); err != nil {
+		return fmt.Errorf("restore wallet user: %w", err)
+	}
+	return nil
 }
 
-func (r *walletUserRepository) SoftDelete(walletID, userID uuid.UUID) error {
+// SetRoles sets wallet_users.roles.
+func (r *WalletUserRepository) SetRoles(ctx context.Context, id uuid.UUID, roles string) error {
+	if _, err := r.Query(ctx).Model(&models.WalletUser{}).Where("id = ?", id).Update("roles", roles); err != nil {
+		return fmt.Errorf("set wallet user roles: %w", err)
+	}
+	return nil
+}
+
+// SoftDelete sets deleted_at on the active membership.
+func (r *WalletUserRepository) SoftDelete(ctx context.Context, walletID, userID uuid.UUID) error {
 	now := time.Now()
-	_, err := facades.Orm().Query().
-		Model(&models.WalletUser{}).
+	if _, err := r.Query(ctx).Model(&models.WalletUser{}).
 		Where("wallet_id = ? AND user_id = ? AND deleted_at IS NULL", walletID, userID).
-		Update("deleted_at", now)
-	return err
+		Update("deleted_at", now); err != nil {
+		return fmt.Errorf("soft delete wallet user: %w", err)
+	}
+	return nil
 }

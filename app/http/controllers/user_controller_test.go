@@ -15,6 +15,7 @@ import (
 
 	"github.com/macrowallets/waas/app/models"
 	authsvc "github.com/macrowallets/waas/app/services/auth"
+	"github.com/macrowallets/waas/app/services/features"
 	"github.com/macrowallets/waas/tests/mocks"
 )
 
@@ -26,11 +27,19 @@ const (
 	maxAccountsLimit       = 100
 )
 
+type listedAccount struct {
+	ID          uuid.UUID `json:"id"`
+	Name        string    `json:"name"`
+	Status      string    `json:"status"`
+	Environment string    `json:"environment"`
+	Role        string    `json:"role"`
+}
+
 type accountListBody struct {
-	Data   []models.Account `json:"data"`
-	Total  int64            `json:"total"`
-	Limit  int              `json:"limit"`
-	Offset int              `json:"offset"`
+	Data   []listedAccount `json:"data"`
+	Total  int64           `json:"total"`
+	Limit  int             `json:"limit"`
+	Offset int             `json:"offset"`
 }
 
 // UserControllerTestSuite exercises GET /v1/users/me/accounts with a real
@@ -84,19 +93,113 @@ func (s *UserControllerTestSuite) login(email string) string {
 func (s *UserControllerTestSuite) seedAccounts(count int, environment string) []models.Account {
 	accounts := make([]models.Account, 0, count)
 	for i := 1; i <= count; i++ {
-		acc := models.Account{
-			ID:          uuid.New(),
-			Name:        fmt.Sprintf("Account %02d", i),
-			Status:      "active",
-			Environment: environment,
-		}
-		s.Require().NoError(facades.Orm().Query().Create(&acc))
-		s.Require().NoError(facades.Orm().Query().Create(&models.AccountUser{
-			ID: uuid.New(), AccountID: acc.ID, UserID: s.userID, Role: "owner",
-		}))
-		accounts = append(accounts, acc)
+		accounts = append(accounts, s.seedAccount(fmt.Sprintf("Account %02d", i), environment, "owner"))
 	}
 	return accounts
+}
+
+func (s *UserControllerTestSuite) seedAccount(name, environment, role string) models.Account {
+	acc := models.Account{
+		ID:          uuid.New(),
+		Name:        name,
+		Status:      "active",
+		Environment: environment,
+	}
+	s.Require().NoError(facades.Orm().Query().Create(&acc))
+	s.Require().NoError(facades.Orm().Query().Create(&models.AccountUser{
+		ID: uuid.New(), AccountID: acc.ID, UserID: s.userID, Role: role,
+	}))
+	return acc
+}
+
+func (s *UserControllerTestSuite) TestGetMeListsGloballyActiveFeatureKeys() {
+	body := s.getMe()
+	s.Equal([]string{features.FlagSweepEnabled, features.FlagWithdrawalsEnabled}, body.Features)
+
+	account := s.seedAccount("Flags", "prod", "owner")
+	_, err := facades.Orm().Query().Exec(
+		`INSERT INTO features (account_id, "key", enabled, created_at, updated_at)
+		 VALUES (?, ?, false, NOW(), NOW()), (?, ?, true, NOW(), NOW())`,
+		account.ID, features.FlagWithdrawalsEnabled,
+		account.ID, features.FlagWalletCreationEnabled,
+	)
+	s.Require().NoError(err)
+	body = s.getMe()
+	s.Equal([]string{features.FlagSweepEnabled, features.FlagWithdrawalsEnabled}, body.Features)
+
+	_, err = facades.Orm().Query().Exec(
+		`INSERT INTO global_features ("key", enabled, created_at, updated_at)
+		 VALUES (?, false, NOW(), NOW()), (?, true, NOW(), NOW())`,
+		features.FlagWithdrawalsEnabled, features.FlagUser2FARequired,
+	)
+	s.Require().NoError(err)
+	body = s.getMe()
+	s.Equal([]string{features.FlagSweepEnabled, features.FlagUser2FARequired}, body.Features)
+
+	patch, err := s.Http(s.T()).
+		WithHeader("Authorization", "Bearer "+s.token).
+		WithHeader("Content-Type", "application/json").
+		Patch("/v1/users/me", strings.NewReader(`{"full_name":"Renamed User"}`))
+	s.Require().NoError(err)
+	patch.AssertOk()
+	content, err := patch.Content()
+	s.Require().NoError(err)
+	s.NotContains(content, `"features"`)
+}
+
+func (s *UserControllerTestSuite) getMe() struct {
+	Features []string `json:"features"`
+} {
+	s.T().Helper()
+	resp, err := s.Http(s.T()).
+		WithHeader("Authorization", "Bearer "+s.token).
+		Get("/v1/users/me")
+	s.Require().NoError(err)
+	resp.AssertOk()
+	content, err := resp.Content()
+	s.Require().NoError(err)
+	var body struct {
+		Features []string `json:"features"`
+	}
+	s.Require().NoError(json.Unmarshal([]byte(content), &body))
+	return body
+}
+
+func (s *UserControllerTestSuite) TestUpdateMe_AppliesFullName() {
+	body := `{"full_name":"Renamed User"}`
+	resp, err := s.Http(s.T()).
+		WithHeader("Authorization", "Bearer "+s.token).
+		WithHeader("Content-Type", "application/json").
+		Patch("/v1/users/me", strings.NewReader(body))
+	s.Require().NoError(err)
+	resp.AssertOk()
+
+	content, err := resp.Content()
+	s.Require().NoError(err)
+	var parsed struct {
+		FullName string `json:"full_name"`
+	}
+	s.Require().NoError(json.Unmarshal([]byte(content), &parsed))
+	s.Equal("Renamed User", parsed.FullName)
+}
+
+func (s *UserControllerTestSuite) TestUpdateAccount_AppliesName() {
+	account := s.seedAccounts(1, "prod")[0]
+	body := `{"name":"Renamed Account"}`
+	resp, err := s.Http(s.T()).
+		WithHeader("Authorization", "Bearer "+s.token).
+		WithHeader("Content-Type", "application/json").
+		Patch("/v1/accounts/"+account.ID.String(), strings.NewReader(body))
+	s.Require().NoError(err)
+	resp.AssertOk()
+
+	content, err := resp.Content()
+	s.Require().NoError(err)
+	var parsed struct {
+		Name string `json:"name"`
+	}
+	s.Require().NoError(json.Unmarshal([]byte(content), &parsed))
+	s.Equal("Renamed Account", parsed.Name)
 }
 
 func (s *UserControllerTestSuite) listAccounts(query url.Values) contractstesting.Response {
@@ -143,6 +246,32 @@ func (s *UserControllerTestSuite) TestListMyAccounts_SinglePage() {
 
 	s.Len(body.Data, 3)
 	s.Equal(int64(3), body.Total)
+	for _, account := range body.Data {
+		s.Equal("owner", account.Role)
+		s.NotEmpty(account.Name)
+		s.Equal("active", account.Status)
+	}
+}
+
+func (s *UserControllerTestSuite) TestListMyAccounts_IncludesCallerRole() {
+	owner := s.seedAccount("Owner Desk", models.EnvironmentProd, "owner")
+	auditor := s.seedAccount("Audit Desk", models.EnvironmentProd, "auditor")
+
+	resp := s.listAccounts(nil)
+	content, err := resp.Content()
+	s.Require().NoError(err)
+	s.Contains(content, `"role":"owner"`)
+	s.Contains(content, `"role":"auditor"`)
+	s.Contains(content, `"name":"Owner Desk"`)
+	s.Contains(content, `"view_all_wallets"`)
+
+	body := s.decodeList(resp)
+	roles := map[uuid.UUID]string{}
+	for _, account := range body.Data {
+		roles[account.ID] = account.Role
+	}
+	s.Equal("owner", roles[owner.ID])
+	s.Equal("auditor", roles[auditor.ID])
 }
 
 func (s *UserControllerTestSuite) TestListMyAccounts_ManyPagesReachEveryAccount() {

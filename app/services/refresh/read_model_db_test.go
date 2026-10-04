@@ -38,9 +38,9 @@ func nativeBalanceChain(chainID string, decimals uint8, human string, byAddress 
 
 func newDBRefresher(t *testing.T, registry *chain.Registry) *WalletRefresher {
 	t.Helper()
-	balances := NewBalanceService(registry, repositories.NewWalletRepository(), repositories.NewWalletAssetBalanceRepository(),
-		repositories.NewWalletBalanceSnapshotRepository(), repositories.NewWalletSyncStateRepository())
-	refresher, err := NewWalletRefresher(balances, repositories.NewWalletRepository(), registry, 0)
+	balances := NewBalanceService(registry, repositories.NewWalletRepository(nil), repositories.NewWalletAssetBalanceRepository(nil),
+		repositories.NewWalletBalanceSnapshotRepository(nil), repositories.NewWalletSyncStateRepository(nil))
+	refresher, err := NewWalletRefresher(balances, repositories.NewWalletRepository(nil), registry, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -104,7 +104,7 @@ func TestRefreshAll_FillsTheReadModelForEthBtcAndSolFromTheBaseAddress(t *testin
 		if stored.ReadModelStatus != string(types.ReadModelSynced) || stored.BalanceRaw == nil || *stored.BalanceRaw != want {
 			t.Fatalf("%s: expected a synced base-address balance %s, got status %s raw %v", wallet.Chain, want, stored.ReadModelStatus, stored.BalanceRaw)
 		}
-		rows, err := repositories.NewWalletAssetBalanceRepository().ListByWallet(wallet.ID)
+		rows, err := repositories.NewWalletAssetBalanceRepository(nil).ListByWallet(context.Background(), wallet.ID)
 		if err != nil || len(rows) != 1 || rows[0].AmountRaw != want || rows[0].AssetType != string(types.AssetTypeNative) {
 			t.Fatalf("%s: expected one native asset row of %s, got %+v, %v", wallet.Chain, want, rows, err)
 		}
@@ -126,7 +126,7 @@ func TestRefreshWallet_NegativeChainAmountIsRejectedAndRecordedAsAFailure(t *tes
 	if !errors.Is(err, amount.ErrNegativeAmount) {
 		t.Fatalf("expected the amount guard to reject a negative balance, got %v", err)
 	}
-	if rows, _ := repositories.NewWalletAssetBalanceRepository().ListByWallet(wallet.ID); len(rows) != 0 {
+	if rows, _ := repositories.NewWalletAssetBalanceRepository(nil).ListByWallet(context.Background(), wallet.ID); len(rows) != 0 {
 		t.Fatalf("no negative row may be stored, got %+v", rows)
 	}
 	if stored := reloadWallet(t, wallet); stored.BalanceRaw != nil && *stored.BalanceRaw != "" {
@@ -143,7 +143,7 @@ func TestRefreshWallet_NegativeChainAmountIsRejectedAndRecordedAsAFailure(t *tes
 
 func reloadWithAddress(t *testing.T, wallet models.Wallet) *models.Wallet {
 	t.Helper()
-	stored, err := repositories.NewWalletRepository().FindByID(wallet.ID)
+	stored, err := repositories.NewWalletRepository(nil).FindByID(context.Background(), wallet.ID)
 	if err != nil || stored == nil || stored.DepositAddress == nil {
 		t.Fatalf("load wallet with its base address: %v", err)
 	}

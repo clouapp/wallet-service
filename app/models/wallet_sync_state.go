@@ -9,19 +9,19 @@ import (
 
 type WalletSyncState struct {
 	orm.Model
-	ID              uuid.UUID  `gorm:"type:uuid;primary_key" json:"id"`
-	WalletID        uuid.UUID  `gorm:"type:uuid;not null;index" json:"wallet_id"`
-	ChainID         string     `gorm:"type:varchar(32);not null" json:"chain_id"`
-	SyncScope       string     `gorm:"type:wallet_sync_scope;not null" json:"sync_scope"`
-	Status          string     `gorm:"type:wallet_sync_status;not null" json:"status"`
-	Cursor          *string    `gorm:"type:text" json:"cursor,omitempty"`
-	CursorMeta      *string    `gorm:"type:jsonb" json:"cursor_meta,omitempty"`
-	LastSyncedAt    *time.Time `gorm:"type:timestamptz" json:"last_synced_at,omitempty"`
-	LastAttemptedAt *time.Time `gorm:"type:timestamptz" json:"last_attempted_at,omitempty"`
-	LastError       *string    `gorm:"type:text" json:"last_error,omitempty"`
-	NextReconcileAt *time.Time `gorm:"type:timestamptz" json:"next_reconcile_at,omitempty"`
+	ID              uuid.UUID  `gorm:"type:uuid;primary_key"`
+	WalletID        uuid.UUID  `gorm:"type:uuid;not null;index"`
+	ChainID         string     `gorm:"type:varchar(32);not null"`
+	SyncScope       string     `gorm:"type:wallet_sync_scope;not null"`
+	Status          string     `gorm:"type:wallet_sync_status;not null"`
+	Cursor          *string    `gorm:"type:text"`
+	CursorMeta      *string    `gorm:"type:jsonb"`
+	LastSyncedAt    *time.Time `gorm:"type:timestamptz"`
+	LastAttemptedAt *time.Time `gorm:"type:timestamptz"`
+	LastError       *string    `gorm:"type:text"`
+	NextReconcileAt *time.Time `gorm:"type:timestamptz"`
 
-	Wallet *Wallet `gorm:"foreignKey:WalletID" json:"wallet,omitempty"`
+	Wallet *Wallet `gorm:"foreignKey:WalletID"`
 }
 
 func (w *WalletSyncState) TableName() string {

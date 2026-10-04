@@ -1,13 +1,13 @@
 package price
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
-	"io"
-	"net/http"
 	"strings"
 	"time"
 
+	"github.com/macrowallets/waas/pkg/httpclient"
 	"github.com/shopspring/decimal"
 )
 
@@ -31,7 +31,7 @@ func init() {
 type CoinGeckoProvider struct {
 	apiKey  string
 	baseURL string
-	client  *http.Client
+	client  *httpclient.Client
 }
 
 func NewCoinGeckoProvider(apiKey string) *CoinGeckoProvider {
@@ -42,7 +42,7 @@ func NewCoinGeckoProvider(apiKey string) *CoinGeckoProvider {
 	return &CoinGeckoProvider{
 		apiKey:  apiKey,
 		baseURL: baseURL,
-		client:  &http.Client{Timeout: 15 * time.Second},
+		client:  httpclient.NewClient(15 * time.Second),
 	}
 }
 
@@ -111,24 +111,20 @@ func (p *CoinGeckoProvider) FetchFiatRates(codes []string) (map[string]decimal.D
 }
 
 func (p *CoinGeckoProvider) doGet(url string) ([]byte, error) {
-	req, err := http.NewRequest("GET", url, nil)
-	if err != nil {
-		return nil, err
-	}
+	header := map[string]string{"Accept": "application/json"}
 	if p.apiKey != "" {
-		req.Header.Set("x-cg-pro-api-key", p.apiKey)
+		header["x-cg-pro-api-key"] = p.apiKey
 	}
-	req.Header.Set("Accept", "application/json")
-
-	resp, err := p.client.Do(req)
+	resp, err := p.client.Do(context.Background(), httpclient.Request{
+		Method: httpclient.MethodGet,
+		URL:    url,
+		Header: header,
+	})
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("status %d: %s", resp.StatusCode, string(body))
+	if resp.StatusCode != httpclient.StatusOK {
+		return nil, fmt.Errorf("status %d: %s", resp.StatusCode, string(resp.Body))
 	}
-	return io.ReadAll(resp.Body)
+	return resp.Body, nil
 }

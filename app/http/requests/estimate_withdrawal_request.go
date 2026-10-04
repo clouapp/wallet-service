@@ -6,6 +6,7 @@ import (
 	"github.com/goravel/framework/contracts/validation"
 
 	"github.com/macrowallets/waas/app/container"
+	"github.com/macrowallets/waas/app/services/walletrecords"
 )
 
 type EstimateWithdrawalRequest struct {
@@ -30,7 +31,7 @@ func (r *EstimateWithdrawalRequest) PrepareForValidation(ctx http.Context, data 
 	if err != nil {
 		return nil
 	}
-	w, err := container.Get().WalletRepo.FindByID(walletID)
+	w, err := container.MustMake[*walletrecords.Wallets]().FindByID(ctx.Context(), walletID)
 	if err != nil || w == nil {
 		return nil
 	}

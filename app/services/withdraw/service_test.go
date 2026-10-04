@@ -3,11 +3,14 @@ package withdraw
 import (
 	"bytes"
 	"context"
+	"errors"
 	"math/big"
 	"os"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
+	"github.com/goravel/framework/facades"
 
 	"github.com/macrowallets/waas/app/repositories"
 	"github.com/macrowallets/waas/app/services/chain"
@@ -86,15 +89,135 @@ func setupWithdrawService(t *testing.T) (*Service, *mocks.MockChain) {
 	registry.RegisterChain(mockChain)
 	registry.RegisterToken(types.Token{Symbol: "usdt", ChainID: "eth", Decimals: 6, Contract: "0xdAC17F"})
 
-	webhookConfigRepo := repositories.NewWebhookConfigRepository()
-	webhookEventRepo := repositories.NewWebhookEventRepository()
+	webhookConfigRepo := repositories.NewWebhookConfigRepository(nil, facades.Crypt())
+	webhookEventRepo := repositories.NewWebhookEventRepository(nil)
 	webhookSvc := webhook.NewService(nil, webhookConfigRepo, webhookEventRepo)
 	mpcSvc := &mockMPC{}
-	txRepo := repositories.NewTransactionRepository()
-	walletRepo := repositories.NewWalletRepository()
-	addressRepo := repositories.NewAddressRepository()
-	svc := NewService(registry, webhookSvc, mpcSvc, nil, nil, txRepo, walletRepo, addressRepo, &mockSweepSvc{})
+	txRepo := repositories.NewTransactionRepository(nil)
+	walletRepo := repositories.NewWalletRepository(nil)
+	addressRepo := repositories.NewAddressRepository(nil)
+	svc := NewService(registry, webhookSvc, mpcSvc, nil, txRepo, walletRepo, addressRepo, &mockSweepSvc{}, nil)
 	return svc, mockChain
+}
+
+type recordingLocker struct {
+	key        string
+	value      string
+	expiration time.Duration
+	acquired   bool
+	setErr     error
+	count      int
+	readKey    string
+	readErr    error
+	incrKey    string
+	incrTTL    time.Duration
+}
+
+func (r *recordingLocker) SetNX(_ context.Context, key, value string, expiration time.Duration) (bool, error) {
+	r.key = key
+	r.value = value
+	r.expiration = expiration
+	return r.acquired, r.setErr
+}
+
+func (r *recordingLocker) Del(context.Context, string) error { return nil }
+
+func (r *recordingLocker) Int(_ context.Context, key string) (int, error) {
+	r.readKey = key
+	return r.count, r.readErr
+}
+
+func (r *recordingLocker) IncrExpire(_ context.Context, key string, expiration time.Duration) error {
+	r.incrKey = key
+	r.incrTTL = expiration
+	return nil
+}
+
+func (r *recordingLocker) IncrBy(context.Context, string, int64, time.Duration) (int64, error) {
+	return 0, nil
+}
+
+func (r *recordingLocker) DecrBy(context.Context, string, int64) error { return nil }
+
+func TestRequest_NilLockerReportsRedisNotConfigured(t *testing.T) {
+	svc := &Service{}
+	_, _, err := svc.Request(context.Background(), WithdrawRequest{
+		Passphrase: "validpassphrase123",
+		WalletID:   uuid.New(),
+	})
+	if err == nil || err.Error() != "redis lock: redis is not configured" {
+		t.Fatalf("got %v", err)
+	}
+}
+
+func TestRequest_LockUsesTheSameKeyValueAndTTL(t *testing.T) {
+	walletID := uuid.New()
+	locker := &recordingLocker{}
+	svc := &Service{locker: locker}
+	_, _, err := svc.Request(context.Background(), WithdrawRequest{
+		Passphrase: "validpassphrase123",
+		WalletID:   walletID,
+	})
+	if !errors.Is(err, ErrConcurrentWithdraw) {
+		t.Fatalf("got %v", err)
+	}
+	if locker.key != "vault:lock:withdrawal:"+walletID.String() || locker.value != "1" || locker.expiration != 60*time.Second {
+		t.Fatal("withdrawal lock command changed")
+	}
+}
+
+func TestRequest_LockErrorIsWrapped(t *testing.T) {
+	svc := &Service{locker: &recordingLocker{setErr: errors.New("boom")}}
+	_, _, err := svc.Request(context.Background(), WithdrawRequest{
+		Passphrase: "validpassphrase123",
+		WalletID:   uuid.New(),
+	})
+	if err == nil || err.Error() != "redis lock: boom" {
+		t.Fatalf("got %v", err)
+	}
+}
+
+func TestCheckRateLimitKeepsTheThresholdAndFailOpen(t *testing.T) {
+	walletID := "wallet-1"
+	open := &recordingLocker{}
+	if err := (&Service{locker: open}).checkRateLimit(context.Background(), walletID); err != nil {
+		t.Fatalf("missing count: %v", err)
+	}
+	if open.readKey != "vault:ratelimit:passphrase:"+walletID {
+		t.Fatal("passphrase counter key changed")
+	}
+	below := &recordingLocker{count: 4}
+	if err := (&Service{locker: below}).checkRateLimit(context.Background(), walletID); err != nil {
+		t.Fatalf("below threshold: %v", err)
+	}
+	blocked := &recordingLocker{count: 5}
+	if err := (&Service{locker: blocked}).checkRateLimit(context.Background(), walletID); !errors.Is(err, ErrTooManyAttempts) {
+		t.Fatalf("threshold: %v", err)
+	}
+	down := &recordingLocker{readErr: errors.New("down")}
+	if err := (&Service{locker: down}).checkRateLimit(context.Background(), walletID); err != nil {
+		t.Fatalf("redis error: %v", err)
+	}
+}
+
+func TestRecordFailedAttemptUsesTheSameCounterCommand(t *testing.T) {
+	locker := &recordingLocker{}
+	(&Service{locker: locker}).recordFailedAttempt(context.Background(), "wallet-1")
+	if locker.incrKey != "vault:ratelimit:passphrase:wallet-1" || locker.incrTTL != 60*time.Second {
+		t.Fatal("passphrase counter command changed")
+	}
+}
+
+func TestRequest_WithdrawalsFlagStopsBeforeRedis(t *testing.T) {
+	paused := errors.New("withdrawals_paused")
+	svc := &Service{flags: func(context.Context, uuid.UUID) error { return paused }}
+	_, _, err := svc.Request(context.Background(), WithdrawRequest{
+		Passphrase:      "validpassphrase123",
+		CallerAccountID: uuid.New(),
+	})
+	if !errors.Is(err, paused) {
+		t.Fatalf("got %v", err)
+	}
 }
 
 // TestRequest_PassphraseTooShort verifies step-1 guard fires before any I/O.

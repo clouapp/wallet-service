@@ -4,8 +4,30 @@ import (
 	"github.com/goravel/framework/contracts/route"
 	"github.com/goravel/framework/facades"
 
+	"github.com/macrowallets/waas/app/container"
 	"github.com/macrowallets/waas/app/http/controllers"
+	extaddresses "github.com/macrowallets/waas/app/http/controllers/external/addresses"
+	extchains "github.com/macrowallets/waas/app/http/controllers/external/chains"
+	extsweep "github.com/macrowallets/waas/app/http/controllers/external/sweep"
+	exttransactions "github.com/macrowallets/waas/app/http/controllers/external/transactions"
+	extwallets "github.com/macrowallets/waas/app/http/controllers/external/wallets"
+	extwebhooks "github.com/macrowallets/waas/app/http/controllers/external/webhooks"
+	extwithdrawals "github.com/macrowallets/waas/app/http/controllers/external/withdrawals"
 	"github.com/macrowallets/waas/app/http/middleware"
+	accountsvc "github.com/macrowallets/waas/app/services/account"
+	authsvc "github.com/macrowallets/waas/app/services/auth"
+	chainpkg "github.com/macrowallets/waas/app/services/chain"
+	chainsvc "github.com/macrowallets/waas/app/services/chains"
+	"github.com/macrowallets/waas/app/services/deposit"
+	featuressvc "github.com/macrowallets/waas/app/services/features"
+	"github.com/macrowallets/waas/app/services/feeestimate"
+	"github.com/macrowallets/waas/app/services/sweep"
+	usersvc "github.com/macrowallets/waas/app/services/users"
+	"github.com/macrowallets/waas/app/services/walletrecords"
+	"github.com/macrowallets/waas/app/services/webhook"
+	"github.com/macrowallets/waas/app/services/withdraw"
+	"github.com/macrowallets/waas/app/services/withdrawalevents"
+	"github.com/macrowallets/waas/app/services/withdrawalrecords"
 )
 
 // RegisterExternalAPI registers Bearer API-token routes under /api/v1.
@@ -16,38 +38,113 @@ import (
 // valid API token cannot operate on another account's wallets.
 func RegisterExternalAPI() {
 	noCache := middleware.CacheControl(0)
+	chainCtrl := newExternalChainsController()
+	transactionCtrl := newExternalTransactionsController()
+	webhookCtrl := newExternalWebhooksController()
+	walletCtrl := newExternalWalletsController()
+	addressCtrl := newExternalAddressesController()
+	sweepCtrl := newExternalSweepController()
+	withdrawalCtrl := newExternalWithdrawalsController()
+	feeEstimateCtrl := newFeeEstimateController()
 
-	facades.Route().Prefix("/api/v1").Middleware(middleware.APITokenAuth(), noCache).Group(func(router route.Router) {
-		router.Get("/chains", controllers.ListChains)
+	facades.Route().Prefix("/api/v1").Middleware(middleware.APITokenAuth(
+		container.MustMake[*accountsvc.Service](),
+	), noCache).Group(func(router route.Router) {
+		// APIScope follows the S3.4.6 catalog and the S3.4.2 verbs:
+		// wallets.read/create, addresses.create, withdrawals.create,
+		// sweep.execute, webhooks.read/write, transactions.read.
+		// A route the plan does not name stays behind APITokenAuth only.
+		// Wallet routes resolve the wallet (404) before the scope check (403).
+		router.Get("/chains", chainCtrl.ListChains)
 
-		router.Post("/wallets", controllers.CreateWallet)
-		router.Get("/wallets", controllers.ListWallets)
+		router.Middleware(middleware.APIScope(middleware.PermWalletsCreate)).Post("/wallets", walletCtrl.CreateWallet)
+		router.Middleware(middleware.APIScope(middleware.PermWalletsRead)).Get("/wallets", walletCtrl.ListWallets)
 
-		router.Get("/addresses/{address}", controllers.LookupAddress)
-		router.Get("/users/{external_id}/addresses", controllers.ListUserAddresses)
+		router.Get("/addresses/{address}", addressCtrl.LookupAddress)
+		router.Get("/users/{external_id}/addresses", addressCtrl.ListUserAddresses)
 
 		router.Prefix("/wallets/{walletId}").Middleware(middleware.APIWalletContext()).Group(func(r route.Router) {
-			r.Get("", controllers.GetWallet)
+			r.Middleware(middleware.APIScope(middleware.PermWalletsRead)).Get("", walletCtrl.GetWallet)
 
-			r.Post("/addresses", controllers.GenerateAddress)
-			r.Get("/addresses", controllers.ListWalletAddresses)
-			r.Patch("/addresses/{addressId}", controllers.UpdateAddress)
+			r.Middleware(middleware.APIScope(middleware.PermAddressesCreate)).Post("/addresses", addressCtrl.GenerateAddress)
+			r.Get("/addresses", addressCtrl.ListWalletAddresses)
+			r.Patch("/addresses/{addressId}", addressCtrl.UpdateAddress)
 
-			r.Post("/consolidate", controllers.ConsolidateWallet)
-			r.Get("/gas-status", controllers.GetGasStatus)
-			r.Post("/gas-check", controllers.ForceGasCheck)
-			r.Post("/withdraw/preview", controllers.PreviewWithdraw)
-			r.Get("/fee-estimate", controllers.GetWalletFeeEstimate)
-			r.Post("/withdrawals", controllers.CreateWalletWithdrawal)
-			r.Get("/withdrawals/{idempotencyKey}", controllers.GetWalletWithdrawalByIdempotencyKey)
+			r.Middleware(middleware.APIScope(middleware.PermSweepExecute)).Post("/consolidate", sweepCtrl.ConsolidateWallet)
+			r.Get("/gas-status", sweepCtrl.GetGasStatus)
+			r.Post("/gas-check", sweepCtrl.ForceGasCheck)
+			r.Post("/withdraw/preview", sweepCtrl.PreviewWithdraw)
+			r.Get("/fee-estimate", feeEstimateCtrl.GetWalletFeeEstimate)
+			r.Middleware(middleware.APIScope(middleware.PermWithdrawalsCreate)).Post("/withdrawals", withdrawalCtrl.CreateWalletWithdrawal)
+			r.Get("/withdrawals/{idempotencyKey}", withdrawalCtrl.GetWalletWithdrawalByIdempotencyKey)
 		})
 
-		router.Get("/transactions", controllers.ListTransactions)
-		router.Get("/transactions/{id}", controllers.GetTransaction)
-		router.Get("/users/{external_id}/transactions", controllers.ListUserTransactions)
+		router.Middleware(middleware.APIScope(middleware.PermTransactionsRead)).Group(func(r route.Router) {
+			r.Get("/transactions", transactionCtrl.ListTransactions)
+			r.Get("/transactions/{id}", transactionCtrl.GetTransaction)
+			r.Get("/users/{external_id}/transactions", transactionCtrl.ListUserTransactions)
+		})
 
-		router.Post("/webhooks", controllers.CreateWebhook)
-		router.Get("/webhooks", controllers.ListWebhooks)
-		router.Patch("/webhooks/{webhookId}", controllers.UpdateWebhook)
+		router.Middleware(middleware.APIScope(middleware.PermWebhooksWrite)).Post("/webhooks", webhookCtrl.CreateWebhook)
+		router.Middleware(middleware.APIScope(middleware.PermWebhooksRead)).Get("/webhooks", webhookCtrl.ListWebhooks)
+		router.Middleware(middleware.APIScope(middleware.PermWebhooksWrite)).Patch("/webhooks/{webhookId}", webhookCtrl.UpdateWebhook)
 	})
+}
+
+func newFeeEstimateController() *controllers.FeeEstimateController {
+	return controllers.NewFeeEstimateController(container.MustMake[*feeestimate.Service]())
+}
+
+func newExternalTransactionsController() *exttransactions.TransactionsController {
+	return exttransactions.NewTransactionsController(container.MustMake[*withdraw.Service]())
+}
+
+func newExternalWebhooksController() *extwebhooks.WebhooksController {
+	return extwebhooks.NewWebhooksController(container.MustMake[*webhook.Service]())
+}
+
+func newExternalChainsController() *extchains.ChainsController {
+	return extchains.NewChainsController(
+		container.MustMake[*chainsvc.Service](),
+	)
+}
+
+func newExternalAddressesController() *extaddresses.AddressesController {
+	return extaddresses.NewAddressesController(
+		container.MustMake[*walletrecords.Addresses](),
+		currentWalletService,
+		container.MustMake[*deposit.Service](),
+		container.MustMake[*chainpkg.Registry](),
+	)
+}
+
+func newExternalSweepController() *extsweep.SweepController {
+	return extsweep.NewSweepController(
+		container.MustMake[*sweep.Box]().Service,
+		container.MustMake[*container.SharedRedis]().Client,
+		container.MustMake[*featuressvc.Service](),
+	)
+}
+
+func newExternalWithdrawalsController() *extwithdrawals.WithdrawalsController {
+	return extwithdrawals.NewWithdrawalsController(
+		container.MustMake[*withdrawalrecords.Records](),
+		container.MustMake[*chainsvc.Service](),
+		container.MustMake[*usersvc.Service](),
+		container.MustMake[*walletrecords.Transactions](),
+		container.MustMake[*chainpkg.Registry](),
+		container.MustMake[*withdraw.Service](),
+		container.MustMake[*authsvc.Service](),
+		container.MustMake[*featuressvc.Service](),
+		container.MustMake[*withdrawalevents.Publisher](),
+		container.MustMake[*container.SharedRedis]().Client,
+		container.MustMake[*authsvc.SecondFactorVerifier](),
+	)
+}
+
+func newExternalWalletsController() *extwallets.WalletsController {
+	return extwallets.NewWalletsController(
+		container.MustMake[*walletrecords.Wallets](),
+		currentWalletService,
+	)
 }

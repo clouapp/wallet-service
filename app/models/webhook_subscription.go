@@ -9,16 +9,16 @@ import (
 
 type WebhookSubscription struct {
 	orm.Model
-	ID                  uuid.UUID  `gorm:"type:uuid;primary_key" json:"id"`
-	ChainID             string     `gorm:"type:varchar(20);not null" json:"chain_id"`
-	Provider            string     `gorm:"type:varchar(20);not null" json:"provider"`
-	ProviderWebhookID   string     `gorm:"type:varchar(255);not null" json:"provider_webhook_id"`
-	WebhookURL          string     `gorm:"type:text;not null" json:"webhook_url"`
-	SigningSecret       string     `gorm:"type:text;not null" json:"-"`
-	Status              string     `gorm:"type:varchar(20);default:active" json:"status"`
-	SyncStatus          string     `gorm:"type:varchar(20);default:synced" json:"sync_status"`
-	SyncedAddressesHash *string    `gorm:"type:varchar(64)" json:"-"`
-	LastSyncedAt        *time.Time `gorm:"type:timestamptz" json:"last_synced_at,omitempty"`
+	ID                  uuid.UUID  `gorm:"type:uuid;primary_key"`
+	ChainID             string     `gorm:"type:varchar(20);not null"`
+	Provider            string     `gorm:"type:varchar(20);not null"`
+	ProviderWebhookID   string     `gorm:"type:varchar(255);not null"`
+	WebhookURL          string     `gorm:"type:text;not null"`
+	SigningSecret       string     `gorm:"type:text;not null"`
+	Status              string     `gorm:"type:varchar(20);default:active"`
+	SyncStatus          string     `gorm:"type:varchar(20);default:synced"`
+	SyncedAddressesHash *string    `gorm:"type:varchar(64)"`
+	LastSyncedAt        *time.Time `gorm:"type:timestamptz"`
 }
 
 func (w *WebhookSubscription) TableName() string { return "webhook_subscriptions" }

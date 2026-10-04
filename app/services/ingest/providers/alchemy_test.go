@@ -5,7 +5,6 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"math/big"
-	"net/http"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -28,7 +27,7 @@ func TestVerifyInbound_ValidSignature(t *testing.T) {
 	secret := "whsec_test_secret"
 	sig := computeAlchemySignature(body, secret)
 
-	headers := http.Header{}
+	headers := Header{}
 	headers.Set("X-Alchemy-Signature", sig)
 
 	valid, err := provider.VerifyInbound(headers, body, secret)
@@ -41,7 +40,7 @@ func TestVerifyInbound_InvalidSignature(t *testing.T) {
 	body := []byte(`{"event":"test"}`)
 	secret := "whsec_test_secret"
 
-	headers := http.Header{}
+	headers := Header{}
 	headers.Set("X-Alchemy-Signature", "deadbeef1234567890abcdef1234567890abcdef1234567890abcdef12345678")
 
 	valid, err := provider.VerifyInbound(headers, body, secret)
@@ -53,7 +52,7 @@ func TestVerifyInbound_MissingHeader(t *testing.T) {
 	provider := NewAlchemyProvider("test-key")
 	body := []byte(`{"event":"test"}`)
 
-	headers := http.Header{}
+	headers := Header{}
 
 	valid, err := provider.VerifyInbound(headers, body, "some-secret")
 	assert.Error(t, err)

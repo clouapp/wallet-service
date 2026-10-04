@@ -36,8 +36,13 @@ func TestWalletSettingsSuite(t *testing.T) {
 func (s *WalletSettingsTestSuite) SetupTest() {
 	mocks.TestDB(s.T())
 	s.account = mocks.InsertAccount(s.T(), "settings")
-	s.ownerToken = s.memberToken("owner")
-	s.viewerToken = s.memberToken("viewer")
+	// The auditor still has to reach the settings policy. With the flag off,
+	// a user or auditor who is not a wallet member never sees the wallet.
+	_, err := facades.Orm().Query().Exec(`UPDATE accounts SET view_all_wallets = TRUE WHERE id = ?`, s.account.ID)
+	s.Require().NoError(err)
+	s.account.ViewAllWallets = true
+	s.ownerToken = s.memberToken(models.AccountRoleOwner)
+	s.viewerToken = s.memberToken(models.AccountRoleAuditor)
 	for _, chain := range []struct{ id, adapter string }{
 		{models.ChainBase, models.AdapterTypeEVM},
 		{models.ChainBTC, models.AdapterTypeBitcoin},
@@ -132,7 +137,8 @@ func (s *WalletSettingsTestSuite) TestInvalidFieldsAreRefusedWithoutWriting() {
 		resp.AssertStatus(422)
 		content, err := resp.Content()
 		s.Require().NoError(err)
-		s.Contains(content, `"field"`, body)
+		s.Contains(content, `"errors"`, body)
+		s.Contains(content, `"validation_failed"`, body)
 	}
 	s.patch(s.ownerToken, wallet.ID, `{}`).AssertStatus(400)
 	s.False(s.stored(wallet.ID).FeeMultiplier.Valid)

@@ -2,19 +2,34 @@ package commands
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
 	"github.com/goravel/framework/contracts/console"
 	"github.com/goravel/framework/contracts/console/command"
-	"github.com/goravel/framework/contracts/queue"
-	"github.com/goravel/framework/facades"
 
 	"github.com/macrowallets/waas/app/container"
-	"github.com/macrowallets/waas/app/jobs"
+	"github.com/macrowallets/waas/app/models"
+	"github.com/macrowallets/waas/app/services/refresh"
+	"github.com/macrowallets/waas/app/services/walletrecords"
 )
 
-type RefreshAddress struct{}
+type RefreshAddress struct {
+	balances   *refresh.BalanceService
+	dispatcher refresh.Dispatcher
+}
+
+// NewRefreshAddress refreshes the wallets that own the given addresses.
+func NewRefreshAddress(balances *refresh.BalanceService, dispatcher refresh.Dispatcher) *RefreshAddress {
+	if balances == nil {
+		panic("refresh:address: balance refresh service is required")
+	}
+	if dispatcher == nil {
+		panic("refresh:address: refresh dispatcher is required")
+	}
+	return &RefreshAddress{balances: balances, dispatcher: dispatcher}
+}
 
 func (c *RefreshAddress) Signature() string {
 	return "refresh:address"
@@ -59,40 +74,35 @@ func (c *RefreshAddress) Handle(ctx console.Context) error {
 		return fmt.Errorf("at least one address is required")
 	}
 
-	ctr := container.Get()
 	useQueue := ctx.OptionBool("queue")
 
 	for _, addr := range addresses {
-		addrRecord, err := ctr.AddressRepo.FindByChainAndAddress(chain, addr)
-		if err != nil {
+		addrRecord, err := container.MustMake[*walletrecords.Addresses]().FindByChainAndAddress(context.Background(), chain, addr)
+		if err != nil && !errors.Is(err, models.ErrRepositoryNotFound) {
 			ctx.Error("failed to look up address " + addr + ": " + err.Error())
 			return fmt.Errorf("look up address %s: %w", addr, err)
 		}
-		if addrRecord == nil {
+		if err != nil || addrRecord == nil {
 			ctx.Error("address not found: chain=" + chain + " address=" + addr)
 			continue
 		}
 
-		wallet, err := ctr.WalletRepo.FindByID(addrRecord.WalletID)
-		if err != nil {
+		wallet, err := container.MustMake[*walletrecords.Wallets]().FindByID(context.Background(), addrRecord.WalletID)
+		if err != nil && !errors.Is(err, models.ErrRepositoryNotFound) {
 			ctx.Error("failed to load wallet for address " + addr + ": " + err.Error())
 			return fmt.Errorf("load wallet for address %s: %w", addr, err)
 		}
-		if wallet == nil {
+		if wallet == nil || errors.Is(err, models.ErrRepositoryNotFound) {
 			ctx.Error("wallet not found for address " + addr)
 			continue
 		}
 
 		if useQueue {
 			ctx.Info("dispatching refresh for address " + addr + " wallet=" + wallet.ID.String() + " reason=" + reason)
-			if err := facades.Queue().
-				Job(&jobs.RefreshWalletBalances{}, []queue.Arg{
-					{Type: "string", Value: wallet.ID.String()},
-					{Type: "string", Value: wallet.Chain},
-				}).
-				OnConnection("database").
-				OnQueue("blockchain").
-				Dispatch(); err != nil {
+			if c.dispatcher == nil {
+				return fmt.Errorf("refresh:address: refresh dispatcher is not initialized")
+			}
+			if err := c.dispatcher.DispatchBalances(wallet.ID.String(), wallet.Chain); err != nil {
 				ctx.Error("dispatch failed for address " + addr + ": " + err.Error())
 				return fmt.Errorf("dispatch for address %s: %w", addr, err)
 			}
@@ -100,7 +110,10 @@ func (c *RefreshAddress) Handle(ctx console.Context) error {
 		}
 
 		ctx.Info("sync mode: refreshing address " + addr + " wallet=" + wallet.ID.String())
-		if err := ctr.BalanceRefreshService.RefreshWallet(context.Background(), wallet); err != nil {
+		if c.balances == nil {
+			return fmt.Errorf("refresh:address: balance refresh service is not initialized")
+		}
+		if err := c.balances.RefreshWallet(context.Background(), wallet); err != nil {
 			ctx.Error("refresh failed for address " + addr + ": " + err.Error())
 			return fmt.Errorf("refresh address %s: %w", addr, err)
 		}

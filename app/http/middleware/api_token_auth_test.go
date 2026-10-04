@@ -14,6 +14,7 @@ import (
 
 	"github.com/macrowallets/waas/app/http/middleware"
 	"github.com/macrowallets/waas/app/models"
+	authsvc "github.com/macrowallets/waas/app/services/auth"
 	"github.com/macrowallets/waas/tests/mocks"
 )
 
@@ -51,9 +52,9 @@ func (s *APITokenAuthHMACTestSuite) SetupTest() {
 	s.Require().NoError(facades.Orm().Query().Create(&s.account))
 }
 
-// mintToken inserts an access_tokens row (token_hash is required by the
-// schema but unused by APITokenAuth) and returns a signed JWT with the
-// given require_signature claim.
+// mintToken inserts an access_tokens row whose token_hash is the pre-secret
+// stored form (not a sha256 digest) and returns a signed JWT with the given
+// require_signature claim and no secret claim.
 func (s *APITokenAuthHMACTestSuite) mintToken(requireSignature bool, name string) string {
 	record := &models.AccessToken{
 		ID:        uuid.New(),
@@ -61,9 +62,9 @@ func (s *APITokenAuthHMACTestSuite) mintToken(requireSignature bool, name string
 		Name:      name,
 	}
 	_, err := facades.Orm().Query().Exec(
-		`INSERT INTO access_tokens (id, account_id, name, token_hash, spending_limit, created_at, updated_at)
-		 VALUES (?, ?, ?, ?, ?, NOW(), NOW())`,
-		record.ID, record.AccountID, record.Name, "test-hash-"+name, "{}",
+		`INSERT INTO access_tokens (id, account_id, name, token_hash, permissions, spending_limit, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, NOW(), NOW())`,
+		record.ID, record.AccountID, record.Name, "test-hash-"+name, models.AllAPIPermissionGrants(), "{}",
 	)
 	s.Require().NoError(err)
 
@@ -82,8 +83,8 @@ func hmacHex(key, body string) string {
 // its signature-related 401 bodies. Whatever the downstream controller
 // returns is acceptable — the middleware is what we're testing.
 func (s *APITokenAuthHMACTestSuite) assertNotSignatureReject(body string) {
-	s.NotContains(body, `"error":"missing request signature"`)
-	s.NotContains(body, `"error":"invalid request signature"`)
+	s.NotContains(body, `"message":"missing request signature"`)
+	s.NotContains(body, `"message":"invalid request signature"`)
 }
 
 // TestAPITokenAuth_NoSignatureOK_WhenClaimFalse: legacy/internal tokens
@@ -112,7 +113,10 @@ func (s *APITokenAuthHMACTestSuite) TestAPITokenAuth_Missing401_WhenClaimTrue() 
 		Get("/api/v1/chains")
 	s.Require().NoError(err)
 
-	resp.AssertStatus(401).AssertJson(map[string]any{"error": "missing request signature"})
+	resp.AssertStatus(401).AssertJson(map[string]any{"error": map[string]any{
+		"code":    "invalid_signature",
+		"message": "missing request signature",
+	}})
 }
 
 // TestAPITokenAuth_Invalid401: any token that presents an X-Signature header
@@ -127,7 +131,10 @@ func (s *APITokenAuthHMACTestSuite) TestAPITokenAuth_Invalid401() {
 		Get("/api/v1/chains")
 	s.Require().NoError(err)
 
-	resp.AssertStatus(401).AssertJson(map[string]any{"error": "invalid request signature"})
+	resp.AssertStatus(401).AssertJson(map[string]any{"error": map[string]any{
+		"code":    "invalid_signature",
+		"message": "invalid request signature",
+	}})
 }
 
 // TestAPITokenAuth_ValidOK_WhenClaimTrue: a token with require_signature=true
@@ -149,4 +156,107 @@ func (s *APITokenAuthHMACTestSuite) TestAPITokenAuth_ValidOK_WhenClaimTrue() {
 	content, err := resp.Content()
 	s.Require().NoError(err)
 	s.assertNotSignatureReject(content)
+}
+
+func (s *APITokenAuthHMACTestSuite) TestSuccessfulCallStampsLastUsedWithoutChangingBody() {
+	jwt := s.mintToken(false, "usage-stamp")
+
+	first, err := s.Http(s.T()).
+		WithHeader("Authorization", "Bearer "+jwt).
+		Get("/api/v1/chains")
+	s.Require().NoError(err)
+	first.AssertStatus(200)
+	firstBody, err := first.Content()
+	s.Require().NoError(err)
+
+	second, err := s.Http(s.T()).
+		WithHeader("Authorization", "Bearer "+jwt).
+		Get("/api/v1/chains")
+	s.Require().NoError(err)
+	second.AssertStatus(200)
+	secondBody, err := second.Content()
+	s.Require().NoError(err)
+
+	s.Equal(firstBody, secondBody)
+	s.NotContains(firstBody, "last_used_at")
+
+	var stored models.AccessToken
+	s.Require().NoError(facades.Orm().Query().Where("name = ?", "usage-stamp").First(&stored))
+	s.NotNil(stored.LastUsedAt)
+	s.Nil(stored.RevokedAt)
+}
+
+func (s *APITokenAuthHMACTestSuite) TestRevokedTokenIsUnauthorized() {
+	jwt := s.mintToken(false, "revoked-stamp")
+	_, err := facades.Orm().Query().Exec(
+		`UPDATE access_tokens SET revoked_at = NOW() WHERE account_id = ? AND name = ?`,
+		s.account.ID, "revoked-stamp",
+	)
+	s.Require().NoError(err)
+
+	resp, err := s.Http(s.T()).
+		WithHeader("Authorization", "Bearer "+jwt).
+		Get("/api/v1/chains")
+	s.Require().NoError(err)
+	resp.AssertStatus(401).AssertJson(map[string]any{"error": map[string]any{
+		"code":    "unauthorized",
+		"message": "token not found or revoked",
+	}})
+
+	var stored models.AccessToken
+	s.Require().NoError(facades.Orm().Query().Where("name = ?", "revoked-stamp").First(&stored))
+	s.Nil(stored.LastUsedAt)
+	s.NotNil(stored.RevokedAt)
+}
+
+// TestAPITokenAuth_LegacyStoredHashStillAuthenticates: a row written as the
+// previous hash-of-the-id form, and a JWT with no secret claim, still passes.
+func (s *APITokenAuthHMACTestSuite) TestAPITokenAuth_LegacyStoredHashStillAuthenticates() {
+	record := &models.AccessToken{
+		ID:        uuid.New(),
+		AccountID: s.account.ID,
+		Name:      "legacy-id-hash",
+	}
+	stored := authsvc.NewService().HashToken(record.ID.String())
+	_, err := facades.Orm().Query().Exec(
+		`INSERT INTO access_tokens (id, account_id, name, token_hash, spending_limit, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, NOW(), NOW())`,
+		record.ID, record.AccountID, record.Name, stored, "{}",
+	)
+	s.Require().NoError(err)
+	signed, err := middleware.MintAPIToken(record, false)
+	s.Require().NoError(err)
+
+	resp, err := s.Http(s.T()).
+		WithHeader("Authorization", "Bearer "+signed).
+		Get("/api/v1/chains")
+	s.Require().NoError(err)
+	resp.AssertStatus(200)
+}
+
+// TestAPITokenAuth_SecretDigestRejectsAMissingClaim: a sha256 row is not the
+// legacy form. A JWT without the secret claim is rejected.
+func (s *APITokenAuthHMACTestSuite) TestAPITokenAuth_SecretDigestRejectsAMissingClaim() {
+	record := &models.AccessToken{
+		ID:        uuid.New(),
+		AccountID: s.account.ID,
+		Name:      "digest-without-claim",
+	}
+	passwords := authsvc.NewService()
+	secret, err := passwords.GenerateAPITokenSecret()
+	s.Require().NoError(err)
+	_, err = facades.Orm().Query().Exec(
+		`INSERT INTO access_tokens (id, account_id, name, token_hash, spending_limit, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, NOW(), NOW())`,
+		record.ID, record.AccountID, record.Name, passwords.HashAPITokenSecret(secret), "{}",
+	)
+	s.Require().NoError(err)
+	signed, err := middleware.MintAPIToken(record, false)
+	s.Require().NoError(err)
+
+	resp, err := s.Http(s.T()).
+		WithHeader("Authorization", "Bearer "+signed).
+		Get("/api/v1/chains")
+	s.Require().NoError(err)
+	resp.AssertStatus(401)
 }

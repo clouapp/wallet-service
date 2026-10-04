@@ -99,7 +99,7 @@ func (f *fakeRPC) Receipt(context.Context, string) (*Receipt, error) {
 
 type fakeWallets struct{ wallet *models.Wallet }
 
-func (f fakeWallets) FindByID(id uuid.UUID) (*models.Wallet, error) {
+func (f fakeWallets) FindByID(_ context.Context, id uuid.UUID) (*models.Wallet, error) {
 	if f.wallet == nil || f.wallet.ID != id {
 		return nil, errors.New("not found")
 	}

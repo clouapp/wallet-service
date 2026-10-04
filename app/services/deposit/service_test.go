@@ -24,11 +24,11 @@ func TestMain(m *testing.M) {
 }
 
 func newWebhookSvc() *webhook.Service {
-	return webhook.NewService(nil, repositories.NewWebhookConfigRepository(), repositories.NewWebhookEventRepository())
+	return webhook.NewService(nil, repositories.NewWebhookConfigRepository(nil, facades.Crypt()), repositories.NewWebhookEventRepository(nil))
 }
 
 func newDepositSvc(registry *chain.Registry, webhookSvc *webhook.Service) *Service {
-	return NewService(nil, registry, webhookSvc, repositories.NewAddressRepository(), repositories.NewTransactionRepository(), nil)
+	return NewService(nil, registry, webhookSvc, repositories.NewAddressRepository(nil), repositories.NewTransactionRepository(nil), nil)
 }
 
 func setupDepositService(t *testing.T) (*Service, *mocks.MockChain, *mocks.MockSQS) {

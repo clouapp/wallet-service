@@ -27,7 +27,6 @@ func TestMain(m *testing.M) {
 		panic(err)
 	}
 	_ = os.Setenv("JWT_SECRET", testJWTSecret)
-	_ = os.Setenv("API_KEY_SECRET", "test-api-secret")
 	if os.Getenv("AWS_DEFAULT_REGION") == "" {
 		_ = os.Setenv("AWS_DEFAULT_REGION", "us-east-1")
 	}
@@ -131,9 +130,9 @@ func (s *APIWalletContextTestSuite) createAccessTokenJWT(accountID uuid.UUID, na
 		Name:      name,
 	}
 	_, err := facades.Orm().Query().Exec(
-		`INSERT INTO access_tokens (id, account_id, name, token_hash, spending_limit, created_at, updated_at)
-		 VALUES (?, ?, ?, ?, ?, NOW(), NOW())`,
-		record.ID, record.AccountID, record.Name, "test-hash-"+name, "{}",
+		`INSERT INTO access_tokens (id, account_id, name, token_hash, permissions, spending_limit, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, NOW(), NOW())`,
+		record.ID, record.AccountID, record.Name, "test-hash-"+name, models.AllAPIPermissionGrants(), "{}",
 	)
 	s.Require().NoError(err)
 
@@ -155,7 +154,10 @@ func (s *APIWalletContextTestSuite) authedGet(path, jwt string) contractstesting
 // message — never 403 or anything that leaks the wallet's existence.
 func (s *APIWalletContextTestSuite) TestWalletBelongsToAnotherAccount() {
 	resp := s.authedGet("/api/v1/wallets/"+s.walletA.ID.String()+"/gas-status", s.tokenB)
-	resp.AssertStatus(404).AssertJson(map[string]any{"error": "wallet not found"})
+	resp.AssertStatus(404).AssertJson(map[string]any{"error": map[string]any{
+		"code":    "not_found",
+		"message": "wallet not found",
+	}})
 }
 
 // TestWalletNotFound returns 404 with the same body as the cross-account
@@ -164,7 +166,10 @@ func (s *APIWalletContextTestSuite) TestWalletBelongsToAnotherAccount() {
 func (s *APIWalletContextTestSuite) TestWalletNotFound() {
 	missing := uuid.New().String()
 	resp := s.authedGet("/api/v1/wallets/"+missing+"/gas-status", s.tokenA)
-	resp.AssertStatus(404).AssertJson(map[string]any{"error": "wallet not found"})
+	resp.AssertStatus(404).AssertJson(map[string]any{"error": map[string]any{
+		"code":    "not_found",
+		"message": "wallet not found",
+	}})
 }
 
 // TestValidOwnership confirms the middleware allows the request through when
@@ -179,12 +184,15 @@ func (s *APIWalletContextTestSuite) TestValidOwnership() {
 	s.T().Logf("valid ownership response: %s", body)
 	// The middleware must let the request reach the controller, so we must
 	// NOT see the middleware's 404 body.
-	s.NotContains(body, `"error":"wallet not found"`)
+	s.NotContains(body, `"message":"wallet not found"`)
 }
 
 // TestInvalidWalletIDFormat is a sanity case: non-UUID walletId must 404
 // through the middleware, not bubble up as a 500.
 func (s *APIWalletContextTestSuite) TestInvalidWalletIDFormat() {
 	resp := s.authedGet("/api/v1/wallets/not-a-uuid/gas-status", s.tokenA)
-	resp.AssertStatus(404).AssertJson(map[string]any{"error": "wallet not found"})
+	resp.AssertStatus(404).AssertJson(map[string]any{"error": map[string]any{
+		"code":    "not_found",
+		"message": "wallet not found",
+	}})
 }

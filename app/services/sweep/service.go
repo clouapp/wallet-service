@@ -4,15 +4,15 @@ import (
 	"context"
 	"errors"
 	"math/big"
+	"time"
 
-	"github.com/aws/aws-sdk-go-v2/service/secretsmanager"
 	"github.com/google/uuid"
-	"github.com/redis/go-redis/v9"
+	"github.com/shopspring/decimal"
 
 	"github.com/macrowallets/waas/app/models"
-	"github.com/macrowallets/waas/app/repositories"
 	"github.com/macrowallets/waas/app/services/chain"
 	mpcpkg "github.com/macrowallets/waas/app/services/mpc"
+	"github.com/macrowallets/waas/app/services/settings"
 	"github.com/macrowallets/waas/app/services/webhook"
 )
 
@@ -45,24 +45,82 @@ type Service interface {
 	LoadLimits(ctx context.Context, accountID uuid.UUID) (*Limits, error)
 }
 
+// accountSweepLimitSource reads the effective account_sweep_limits document
+// at the moment of use. A nil source means the registry defaults. The source
+// is injected so this package does not query the settings table itself.
+type accountSweepLimitSource func(ctx context.Context, accountID uuid.UUID) (settings.SweepLimitValues, error)
+
+// walletReader is the wallet lookup and gas-status write sweep uses.
+type walletReader interface {
+	FindByID(ctx context.Context, id uuid.UUID) (*models.Wallet, error)
+	RecordGasCheck(ctx context.Context, id uuid.UUID, checkedAt time.Time, status string, updateStatus bool) error
+}
+
+// addressReader is the child-address lookup sweep uses.
+type addressReader interface {
+	FindByWalletID(ctx context.Context, walletID uuid.UUID) ([]models.Address, error)
+}
+
+// transactionWriter is the row sweep persists after a broadcast. Signing does not go through it.
+type transactionWriter interface {
+	Create(ctx context.Context, tx *models.Transaction) error
+}
+
+// chainReader loads the chain record sweep needs for adapter and decimals.
+type chainReader interface {
+	FindByID(ctx context.Context, id string) (*models.Chain, error)
+}
+
+// SecretReader loads one secret's binary value. The provider supplies it;
+// this package never imports the AWS SDK. A nil SecretReader means Secrets
+// Manager is not configured. The service keeps the secret id. Bytes are not logged.
+type SecretReader interface {
+	Binary(ctx context.Context, secretID string) ([]byte, error)
+}
+
+// RedisStore runs the wallet-ops lock and the daily consolidate counter.
+// The service keeps the keys, the lock value, and the TTLs. A nil RedisStore
+// means Redis is not configured.
+type RedisStore interface {
+	SetNX(ctx context.Context, key, value string, expiration time.Duration) (bool, error)
+	Del(ctx context.Context, key string) error
+	Incr(ctx context.Context, key string) (int64, error)
+	Expire(ctx context.Context, key string, expiration time.Duration) error
+}
+
+// accountGate reports a block for one account. Nil means no reader is wired,
+// so the action proceeds. The reader is injected: this package cannot import
+// the feature-flag service without an import cycle.
+type accountGate func(ctx context.Context, accountID uuid.UUID) error
+
+// GasReadinessDefault is the fallback native balance, in raw units, for one
+// chain when the chains row has none. An empty Raw means the chain has no
+// separate gas asset to monitor.
+type GasReadinessDefault struct {
+	Raw string
+}
+
 type service struct {
 	registry    *chain.Registry
 	mpc         mpcpkg.Service
-	secrets     *secretsmanager.Client
-	rdb         *redis.Client
+	secrets     SecretReader
+	rdb         RedisStore
 	webhookSvc  *webhook.Service
-	walletRepo  repositories.WalletRepository
-	addressRepo repositories.AddressRepository
-	txRepo      repositories.TransactionRepository
-	accountRepo repositories.AccountRepository
-	chainRepo   repositories.ChainRepository
-	// tokenPricer converts the chains' USD dust thresholds to token amounts; nil
-	// disables token dust filtering.
+	walletRepo  walletReader
+	addressRepo addressReader
+	txRepo      transactionWriter
+	sweepLimits accountSweepLimitSource
+	chainRepo   chainReader
+	flags       accountGate
+	gasDefaults map[string]GasReadinessDefault
+	// dustUSDDefault is unused in production. An unset dust_threshold_usd filters
+	// nothing; the environment does not fill it. Tests may inject a substitute.
+	dustUSDDefault func(chainID string) decimal.Decimal
+	// tokenPricer converts USD dust thresholds to token amounts; nil disables token dust filtering.
 	tokenPricer TokenPricer
 
-	// fetchShareBFn is the function used to retrieve the service's MPC share for
-	// a wallet. In production it targets AWS Secrets Manager; tests override it
-	// with a pure in-memory stub to avoid mocking the secretsmanager SDK.
+	// fetchShareBFn retrieves the service share for a wallet. Tests set it to an
+	// in-memory stub. Production uses secrets.
 	fetchShareBFn func(ctx context.Context, wallet *models.Wallet) ([]byte, error)
 }
 
@@ -71,29 +129,56 @@ type service struct {
 func NewService(
 	registry *chain.Registry,
 	mpc mpcpkg.Service,
-	secrets *secretsmanager.Client,
-	rdb *redis.Client,
+	secrets SecretReader,
+	rdb RedisStore,
 	webhookSvc *webhook.Service,
-	walletRepo repositories.WalletRepository,
-	addressRepo repositories.AddressRepository,
-	txRepo repositories.TransactionRepository,
-	accountRepo repositories.AccountRepository,
-	chainRepo repositories.ChainRepository,
+	walletRepo walletReader,
+	addressRepo addressReader,
+	txRepo transactionWriter,
+	sweepLimits accountSweepLimitSource,
+	chainRepo chainReader,
+	flags accountGate,
+	gasDefaults map[string]GasReadinessDefault,
 	tokenPricer TokenPricer,
+	dustUSDDefault func(chainID string) decimal.Decimal,
 ) Service {
 	return &service{
-		registry:    registry,
-		mpc:         mpc,
-		secrets:     secrets,
-		rdb:         rdb,
-		webhookSvc:  webhookSvc,
-		walletRepo:  walletRepo,
-		addressRepo: addressRepo,
-		txRepo:      txRepo,
-		accountRepo: accountRepo,
-		chainRepo:   chainRepo,
-		tokenPricer: tokenPricer,
+		registry:       registry,
+		mpc:            mpc,
+		secrets:        secrets,
+		rdb:            rdb,
+		webhookSvc:     webhookSvc,
+		walletRepo:     walletRepo,
+		addressRepo:    addressRepo,
+		txRepo:         txRepo,
+		sweepLimits:    sweepLimits,
+		chainRepo:      chainRepo,
+		flags:          flags,
+		gasDefaults:    cloneGasDefaults(gasDefaults),
+		dustUSDDefault: dustUSDDefault,
+		tokenPricer:    tokenPricer,
 	}
+}
+
+func cloneGasDefaults(in map[string]GasReadinessDefault) map[string]GasReadinessDefault {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make(map[string]GasReadinessDefault, len(in))
+	for chainID, value := range in {
+		out[chainID] = value
+	}
+	return out
+}
+
+// loadChain returns the chain, or (nil, nil) when the row is missing, matching
+// the previous repository miss. A database error is returned as-is.
+func (s *service) loadChain(ctx context.Context, chainID string) (*models.Chain, error) {
+	chainEntity, err := s.chainRepo.FindByID(ctx, chainID)
+	if errors.Is(err, models.ErrRepositoryNotFound) {
+		return nil, nil
+	}
+	return chainEntity, err
 }
 
 // Concrete method implementations live alongside their domain:

@@ -5,6 +5,9 @@ import (
 	"github.com/goravel/framework/contracts/http"
 
 	"github.com/macrowallets/waas/app/container"
+	"github.com/macrowallets/waas/app/http/middleware/requestctx"
+	"github.com/macrowallets/waas/app/http/responses"
+	"github.com/macrowallets/waas/app/services/walletrecords"
 )
 
 // APIWalletContext verifies that the {walletId} route parameter belongs to the
@@ -24,20 +27,20 @@ func APIWalletContext() http.Middleware {
 			return
 		}
 
-		accountID, ok := ctx.Value("account_id").(uuid.UUID)
+		accountID, ok := requestctx.AccountID(ctx)
 		if !ok || accountID == uuid.Nil {
 			abortWithJSON(ctx, http.StatusUnauthorized, http.Json{"error": "unauthenticated"})
 			return
 		}
 
-		wallet, err := container.Get().WalletRepo.FindByIDAndAccount(walletID, accountID)
+		wallet, err := container.MustMake[*walletrecords.Wallets]().FindByIDAndAccount(ctx.Context(), walletID, accountID)
 		if err != nil || wallet == nil {
 			abortWithJSON(ctx, http.StatusNotFound, http.Json{"error": "wallet not found"})
 			return
 		}
 
-		ctx.WithValue("wallet", wallet)
-		ctx.WithValue("wallet_id", wallet.ID)
+		ctx.WithValue(requestctx.KeyWallet, wallet)
+		ctx.WithValue(requestctx.KeyWalletID, wallet.ID)
 		ctx.Request().Next()
 	}
 }
@@ -46,5 +49,5 @@ func APIWalletContext() http.Middleware {
 // Response().Json(...).Abort() is the non-deprecated pattern in Goravel v1.17
 // and ensures the body is actually written before the abort takes effect.
 func abortWithJSON(ctx http.Context, code int, body http.Json) {
-	_ = ctx.Response().Json(code, body).Abort()
+	_ = responses.Send(ctx, code, body).Abort()
 }

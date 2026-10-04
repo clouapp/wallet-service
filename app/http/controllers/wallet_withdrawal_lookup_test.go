@@ -12,8 +12,8 @@ import (
 	goravelTesting "github.com/goravel/framework/testing"
 	"github.com/stretchr/testify/suite"
 
-	"github.com/macrowallets/waas/app/http/controllers/testutil"
 	"github.com/macrowallets/waas/app/models"
+	testutil "github.com/macrowallets/waas/tests/feature/support"
 	"github.com/macrowallets/waas/tests/mocks"
 )
 
@@ -109,6 +109,10 @@ func (s *walletWithdrawalLookupSuite) get(path, bearer string, expectedStatus in
 	return body
 }
 
+func errorObject(code, message string) map[string]any {
+	return map[string]any{"code": code, "message": message}
+}
+
 func lookupPath(walletID uuid.UUID, idempotencyKey string) string {
 	return "/api/v1/wallets/" + walletID.String() + "/withdrawals/" + idempotencyKey
 }
@@ -148,7 +152,7 @@ func (s *walletWithdrawalLookupSuite) TestUnknownIdempotencyKeyIsNotFound() {
 	walletID := s.seedWallet(accountID)
 
 	body := s.get(lookupPath(walletID, uuid.NewString()), bearer, 404)
-	s.Equal("withdrawal not found", body["error"])
+	s.Equal(errorObject("not_found", "withdrawal not found"), body["error"])
 }
 
 func (s *walletWithdrawalLookupSuite) TestWithdrawalOfAnotherWalletInSameAccountIsNotFound() {
@@ -158,7 +162,7 @@ func (s *walletWithdrawalLookupSuite) TestWithdrawalOfAnotherWalletInSameAccount
 	withdrawalID := s.seedWithdrawal(walletWithWithdrawal, accountID, "failed", nil, nil)
 
 	body := s.get(lookupPath(otherWallet, withdrawalID.String()), bearer, 404)
-	s.Equal("withdrawal not found", body["error"])
+	s.Equal(errorObject("not_found", "withdrawal not found"), body["error"])
 }
 
 func (s *walletWithdrawalLookupSuite) TestOtherAccountsWalletIsNotFound() {
@@ -168,7 +172,7 @@ func (s *walletWithdrawalLookupSuite) TestOtherAccountsWalletIsNotFound() {
 	_, intruderBearer, _ := testutil.SetupAPIAuth(s.T(), false)
 
 	body := s.get(lookupPath(walletID, withdrawalID.String()), intruderBearer, 404)
-	s.Equal("wallet not found", body["error"])
+	s.Equal(errorObject("not_found", "wallet not found"), body["error"])
 }
 
 func (s *walletWithdrawalLookupSuite) TestRequiresBearerToken() {
@@ -184,5 +188,5 @@ func (s *walletWithdrawalLookupSuite) TestRejectsNonUUIDIdempotencyKey() {
 	walletID := s.seedWallet(accountID)
 
 	body := s.get(lookupPath(walletID, "not-a-uuid"), bearer, 400)
-	s.Equal("idempotency_key must be a UUID", body["error"])
+	s.Equal(errorObject("invalid_request", "idempotency_key must be a UUID"), body["error"])
 }

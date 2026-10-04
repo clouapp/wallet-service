@@ -1,10 +1,18 @@
 package middleware
 
 import (
+	"errors"
+
 	"github.com/google/uuid"
 	"github.com/goravel/framework/contracts/http"
 
 	"github.com/macrowallets/waas/app/container"
+	"github.com/macrowallets/waas/app/http/middleware/requestctx"
+	"github.com/macrowallets/waas/app/http/responses"
+	"github.com/macrowallets/waas/app/models"
+	"github.com/macrowallets/waas/app/policies"
+	accountsvc "github.com/macrowallets/waas/app/services/account"
+	"github.com/macrowallets/waas/app/services/walletrecords"
 )
 
 // WalletContext resolves the {walletId} route parameter, loads the wallet,
@@ -15,42 +23,54 @@ func WalletContext() http.Middleware {
 		rawID := ctx.Request().Route("walletId")
 		walletID, err := uuid.Parse(rawID)
 		if err != nil {
-			ctx.Request().AbortWithStatus(http.StatusNotFound)
-			ctx.Response().Json(http.StatusNotFound, http.Json{"error": "invalid wallet id"})
+			_ = responses.Send(ctx, http.StatusNotFound, http.Json{"error": "invalid wallet id"}).Abort()
 			return
 		}
 
-		wallet, err := container.Get().WalletRepo.FindByID(walletID)
+		wallet, err := container.MustMake[*walletrecords.Wallets]().FindByID(ctx.Context(), walletID)
 		if err != nil || wallet == nil {
-			ctx.Request().AbortWithStatus(http.StatusNotFound)
-			ctx.Response().Json(http.StatusNotFound, http.Json{"error": "wallet not found"})
+			_ = responses.Send(ctx, http.StatusNotFound, http.Json{"error": "wallet not found"}).Abort()
 			return
 		}
 
 		userID := contextUserID(ctx)
-		isMember := false
-
+		accounts := container.MustMake[*accountsvc.Service]()
+		var accountMember *models.AccountUser
+		var account *models.Account
 		if wallet.AccountID != nil {
-			au, err2 := container.Get().AccountUserRepo.FindByAccountAndUser(*wallet.AccountID, userID)
-			if err2 == nil && au != nil {
-				isMember = true
+			member, memberErr := accounts.FindMember(ctx.Context(), *wallet.AccountID, userID)
+			if memberErr == nil && member != nil {
+				accountMember = member
+			}
+			loaded, accountErr := accounts.FindByID(ctx.Context(), *wallet.AccountID)
+			if accountErr == nil {
+				account = loaded
 			}
 		}
-		if !isMember {
-			wu, err3 := container.Get().WalletUserRepo.FindByWalletAndUser(walletID, userID)
-			if err3 == nil && wu != nil {
-				isMember = true
-			}
+		_, walletErr := container.MustMake[*walletrecords.Members]().FindByWalletAndUser(ctx.Context(), walletID, userID)
+		if walletErr != nil && !errors.Is(walletErr, models.ErrRepositoryNotFound) {
+			_ = responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to fetch wallet"}).Abort()
+			return
 		}
+		hasWalletMembership := walletErr == nil
 
-		if !isMember {
-			ctx.Request().AbortWithStatus(http.StatusForbidden)
-			ctx.Response().Json(http.StatusForbidden, http.Json{"error": "not a member of this wallet or its account"})
+		if accountMember != nil {
+			viewAll := account != nil && account.ViewAllWallets
+			if !policies.SeesEveryAccountWallet(accountMember.Role, viewAll) && !hasWalletMembership {
+				_ = responses.Send(ctx, http.StatusNotFound, http.Json{"error": "wallet not found"}).Abort()
+				return
+			}
+		} else if !hasWalletMembership {
+			_ = responses.Send(ctx, http.StatusForbidden, http.Json{"error": "not a member of this wallet or its account"}).Abort()
 			return
 		}
 
-		ctx.WithValue("wallet", wallet)
-		ctx.WithValue("wallet_id", wallet.ID)
+		if wallet.AccountID != nil && !abortUnlessAccountAllows(ctx, account) {
+			return
+		}
+
+		ctx.WithValue(requestctx.KeyWallet, wallet)
+		ctx.WithValue(requestctx.KeyWalletID, wallet.ID)
 		ctx.Request().Next()
 	}
 }

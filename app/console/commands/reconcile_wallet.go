@@ -2,19 +2,34 @@ package commands
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/google/uuid"
 	"github.com/goravel/framework/contracts/console"
 	"github.com/goravel/framework/contracts/console/command"
-	"github.com/goravel/framework/contracts/queue"
-	"github.com/goravel/framework/facades"
 
 	"github.com/macrowallets/waas/app/container"
-	"github.com/macrowallets/waas/app/jobs"
+	"github.com/macrowallets/waas/app/models"
+	"github.com/macrowallets/waas/app/services/refresh"
+	"github.com/macrowallets/waas/app/services/walletrecords"
 )
 
-type ReconcileWallet struct{}
+type ReconcileWallet struct {
+	balances   *refresh.BalanceService
+	dispatcher refresh.Dispatcher
+}
+
+// NewReconcileWallet reconciles one wallet in process or on the queue.
+func NewReconcileWallet(balances *refresh.BalanceService, dispatcher refresh.Dispatcher) *ReconcileWallet {
+	if balances == nil {
+		panic("reconcile:wallet: balance refresh service is required")
+	}
+	if dispatcher == nil {
+		panic("reconcile:wallet: refresh dispatcher is required")
+	}
+	return &ReconcileWallet{balances: balances, dispatcher: dispatcher}
+}
 
 func (c *ReconcileWallet) Signature() string {
 	return "reconcile:wallet"
@@ -52,31 +67,29 @@ func (c *ReconcileWallet) Handle(ctx console.Context) error {
 		return fmt.Errorf("invalid wallet_id: %w", err)
 	}
 
-	ctr := container.Get()
-	wallet, err := ctr.WalletRepo.FindByID(id)
-	if err != nil {
+	wallet, err := container.MustMake[*walletrecords.Wallets]().FindByID(context.Background(), id)
+	if err != nil && !errors.Is(err, models.ErrRepositoryNotFound) {
 		ctx.Error("failed to load wallet: " + err.Error())
 		return fmt.Errorf("load wallet: %w", err)
 	}
-	if wallet == nil {
+	if wallet == nil || errors.Is(err, models.ErrRepositoryNotFound) {
 		ctx.Error("wallet not found: " + walletID)
 		return fmt.Errorf("wallet not found: %s", walletID)
 	}
 
 	if ctx.OptionBool("queue") {
 		ctx.Info("dispatching wallet reconciliation to blockchain queue: wallet=" + walletID + " reason=" + reason)
-		return facades.Queue().
-			Job(&jobs.ReconcileWalletState{}, []queue.Arg{
-				{Type: "string", Value: walletID},
-				{Type: "string", Value: wallet.Chain},
-			}).
-			OnConnection("database").
-			OnQueue("blockchain").
-			Dispatch()
+		if c.dispatcher == nil {
+			return fmt.Errorf("reconcile:wallet: refresh dispatcher is not initialized")
+		}
+		return c.dispatcher.DispatchReconcile(walletID, wallet.Chain)
 	}
 
 	ctx.Info("sync mode: reconciling wallet=" + walletID + " reason=" + reason)
-	if err := ctr.BalanceRefreshService.RefreshWallet(context.Background(), wallet); err != nil {
+	if c.balances == nil {
+		return fmt.Errorf("reconcile:wallet: balance refresh service is not initialized")
+	}
+	if err := c.balances.RefreshWallet(context.Background(), wallet); err != nil {
 		ctx.Error("reconciliation failed: " + err.Error())
 		return fmt.Errorf("reconcile wallet: %w", err)
 	}

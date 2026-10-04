@@ -1,101 +1,114 @@
 package repositories
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/google/uuid"
-	"github.com/goravel/framework/facades"
+	"github.com/goravel/framework/contracts/database/orm"
 
 	"github.com/macrowallets/waas/app/models"
+	"github.com/macrowallets/waas/app/repositories/internal/db"
 	"github.com/macrowallets/waas/pkg/amount"
 	"github.com/macrowallets/waas/pkg/types"
 )
 
-type WithdrawalRepository interface {
-	Create(w *models.Withdrawal) error
-	FindByWallet(walletID uuid.UUID, status string, limit, offset int) ([]models.Withdrawal, int64, error)
-	FindByIDAndWallet(withdrawalID, walletID uuid.UUID) (*models.Withdrawal, error)
-	FindByTransactionID(transactionID uuid.UUID) (*models.Withdrawal, error)
-	FindBroadcastWithConfirmedTransaction(limit int) ([]models.Withdrawal, error)
-	UpdateStatus(id uuid.UUID, status string) error
-	UpdateFields(id uuid.UUID, fields map[string]any) error
+// WithdrawalRepository loads and updates withdrawal rows.
+type WithdrawalRepository struct {
+	db.Base
 }
 
-type withdrawalRepository struct{}
-
-func NewWithdrawalRepository() WithdrawalRepository {
-	return &withdrawalRepository{}
+// NewWithdrawalRepository builds a repository. Nil uses a fresh query per call.
+func NewWithdrawalRepository(query orm.Query) *WithdrawalRepository {
+	return &WithdrawalRepository{Base: db.NewBase(query)}
 }
 
-func (r *withdrawalRepository) Create(w *models.Withdrawal) error {
+// Create inserts a withdrawal after rejecting a negative amount or fee estimate.
+func (r *WithdrawalRepository) Create(ctx context.Context, w *models.Withdrawal) error {
 	if w == nil {
 		return fmt.Errorf("withdrawal is required")
 	}
 	if err := w.ValidateAmounts(); err != nil {
 		return err
 	}
-	return facades.Orm().Query().Create(w)
+	if err := r.Query(ctx).Create(w); err != nil {
+		return fmt.Errorf("create withdrawal: %w", err)
+	}
+	return nil
 }
 
-func (r *withdrawalRepository) FindByWallet(walletID uuid.UUID, status string, limit, offset int) ([]models.Withdrawal, int64, error) {
-	countQuery := facades.Orm().Query().
-		Model(&models.Withdrawal{}).
-		Where("wallet_id = ?", walletID)
+// FindByWallet lists withdrawals for a wallet, optionally filtered by status.
+func (r *WithdrawalRepository) FindByWallet(ctx context.Context, walletID uuid.UUID, status string, limit, offset int) ([]models.Withdrawal, int64, error) {
+	countQuery := r.Query(ctx).Model(&models.Withdrawal{}).Where("wallet_id = ?", walletID)
 	if status != "" {
 		countQuery = countQuery.Where("status = ?", status)
 	}
 	total, err := countQuery.Count()
 	if err != nil {
-		return nil, 0, err
+		return nil, 0, fmt.Errorf("count withdrawals: %w", err)
 	}
 
-	dataQuery := facades.Orm().Query().
-		Where("wallet_id = ?", walletID)
+	dataQuery := r.Query(ctx).Where("wallet_id = ?", walletID)
 	if status != "" {
 		dataQuery = dataQuery.Where("status = ?", status)
 	}
-
 	var withdrawals []models.Withdrawal
-	err = dataQuery.Offset(offset).Limit(limit).Find(&withdrawals)
-	return withdrawals, total, err
+	if err := dataQuery.Offset(offset).Limit(limit).Find(&withdrawals); err != nil {
+		return nil, 0, fmt.Errorf("list withdrawals: %w", err)
+	}
+	return withdrawals, total, nil
 }
 
-func (r *withdrawalRepository) FindByIDAndWallet(withdrawalID, walletID uuid.UUID) (*models.Withdrawal, error) {
+// FindByID returns the withdrawal, or ErrRepositoryNotFound.
+func (r *WithdrawalRepository) FindByID(ctx context.Context, id uuid.UUID) (*models.Withdrawal, error) {
+	if id == uuid.Nil {
+		return nil, fmt.Errorf("withdrawal id is required")
+	}
 	var w models.Withdrawal
-	err := facades.Orm().Query().
-		Where("id = ? AND wallet_id = ?", withdrawalID, walletID).
-		First(&w)
-	if err != nil {
-		return nil, err
+	if err := r.Query(ctx).Where("id = ?", id).First(&w); err != nil {
+		return nil, fmt.Errorf("find withdrawal: %w", err)
 	}
 	if w.ID == uuid.Nil {
-		return nil, nil
+		return nil, models.ErrRepositoryNotFound
 	}
 	return &w, nil
 }
 
-func (r *withdrawalRepository) FindByTransactionID(transactionID uuid.UUID) (*models.Withdrawal, error) {
+// FindByIDAndWallet returns the withdrawal when it belongs to walletID.
+func (r *WithdrawalRepository) FindByIDAndWallet(ctx context.Context, withdrawalID, walletID uuid.UUID) (*models.Withdrawal, error) {
+	var w models.Withdrawal
+	if err := r.Query(ctx).Where("id = ? AND wallet_id = ?", withdrawalID, walletID).First(&w); err != nil {
+		return nil, fmt.Errorf("find withdrawal: %w", err)
+	}
+	if w.ID == uuid.Nil {
+		return nil, models.ErrRepositoryNotFound
+	}
+	return &w, nil
+}
+
+// FindByTransactionID returns the withdrawal linked to a transaction.
+func (r *WithdrawalRepository) FindByTransactionID(ctx context.Context, transactionID uuid.UUID) (*models.Withdrawal, error) {
 	if transactionID == uuid.Nil {
 		return nil, fmt.Errorf("transaction id is required")
 	}
 	var w models.Withdrawal
-	if err := facades.Orm().Query().Where("transaction_id = ?", transactionID).First(&w); err != nil {
-		return nil, err
+	if err := r.Query(ctx).Where("transaction_id = ?", transactionID).First(&w); err != nil {
+		return nil, fmt.Errorf("find withdrawal by transaction: %w", err)
 	}
 	if w.ID == uuid.Nil {
-		return nil, nil
+		return nil, models.ErrRepositoryNotFound
 	}
 	return &w, nil
 }
 
-// FindBroadcastWithConfirmedTransaction returns withdrawals still marked broadcast whose
-// on-chain transaction the confirmation tracker already confirmed, oldest first.
-func (r *withdrawalRepository) FindBroadcastWithConfirmedTransaction(limit int) ([]models.Withdrawal, error) {
+// FindBroadcastWithConfirmedTransaction returns withdrawals still marked broadcast
+// whose on-chain transaction the confirmation tracker already confirmed, oldest first.
+func (r *WithdrawalRepository) FindBroadcastWithConfirmedTransaction(ctx context.Context, limit int) ([]models.Withdrawal, error) {
 	if limit <= 0 {
 		return nil, fmt.Errorf("limit must be positive")
 	}
 	var withdrawals []models.Withdrawal
-	err := facades.Orm().Query().
+	err := r.Query(ctx).
 		Where(
 			"status = ? AND transaction_id IN (SELECT id FROM transactions WHERE tx_type = ? AND status = ?)",
 			models.WithdrawalStatusBroadcast, models.TxTypeWithdrawal, string(types.TxStatusConfirmed),
@@ -103,30 +116,70 @@ func (r *withdrawalRepository) FindBroadcastWithConfirmedTransaction(limit int) 
 		Order("created_at").
 		Limit(limit).
 		Find(&withdrawals)
-	return withdrawals, err
+	if err != nil {
+		return nil, fmt.Errorf("find broadcast withdrawals: %w", err)
+	}
+	return withdrawals, nil
 }
 
-func (r *withdrawalRepository) UpdateStatus(id uuid.UUID, status string) error {
-	_, err := facades.Orm().Query().
-		Model(&models.Withdrawal{}).
-		Where("id = ?", id).
-		Update("status", status)
-	return err
+// SetStatus sets withdrawals.status.
+func (r *WithdrawalRepository) SetStatus(ctx context.Context, id uuid.UUID, status string) error {
+	return r.updateColumns(ctx, id, map[string]any{"status": status}, "set withdrawal status")
 }
 
-func (r *withdrawalRepository) UpdateFields(id uuid.UUID, fields map[string]any) error {
+// RetryBroadcast moves a failed withdrawal back to broadcasting and clears the failure.
+func (r *WithdrawalRepository) RetryBroadcast(ctx context.Context, id uuid.UUID, amount, destination, feeEstimate, note string) error {
+	return r.updateColumns(ctx, id, map[string]any{
+		"status":              "broadcasting",
+		"failure_reason":      nil,
+		"amount":              amount,
+		"destination_address": destination,
+		"fee_estimate":        feeEstimate,
+		"note":                note,
+	}, "retry withdrawal broadcast")
+}
+
+// MarkFailed records a terminal failure and its reason.
+func (r *WithdrawalRepository) MarkFailed(ctx context.Context, id uuid.UUID, failureReason string) error {
+	return r.updateColumns(ctx, id, map[string]any{
+		"status":         models.WithdrawalStatusFailed,
+		"failure_reason": failureReason,
+	}, "mark withdrawal failed")
+}
+
+// MarkBroadcast stores the broadcast status and the transaction that carries it.
+func (r *WithdrawalRepository) MarkBroadcast(ctx context.Context, id uuid.UUID, transactionID *uuid.UUID) error {
+	return r.updateColumns(ctx, id, map[string]any{
+		"status":         "broadcast",
+		"transaction_id": transactionID,
+	}, "mark withdrawal broadcast")
+}
+
+// MarkConfirmed stores the confirmed status and the transaction that settled it.
+func (r *WithdrawalRepository) MarkConfirmed(ctx context.Context, id uuid.UUID, transactionID uuid.UUID) error {
+	return r.updateColumns(ctx, id, map[string]any{
+		"status":         models.WithdrawalStatusConfirmed,
+		"transaction_id": transactionID,
+	}, "mark withdrawal confirmed")
+}
+
+// SetFeeEstimate sets withdrawals.fee_estimate.
+func (r *WithdrawalRepository) SetFeeEstimate(ctx context.Context, id uuid.UUID, feeEstimate string) error {
+	return r.updateColumns(ctx, id, map[string]any{"fee_estimate": feeEstimate}, "set withdrawal fee estimate")
+}
+
+func (r *WithdrawalRepository) updateColumns(ctx context.Context, id uuid.UUID, columns map[string]any, op string) error {
 	if id == uuid.Nil {
 		return fmt.Errorf("withdrawal id is required")
 	}
-	if len(fields) == 0 {
-		return fmt.Errorf("withdrawal update fields are required")
+	if len(columns) == 0 {
+		return fmt.Errorf("withdrawal update columns are required")
 	}
-	if err := amount.RequireNonNegativeColumns(fields, models.WithdrawalAmountColumns...); err != nil {
+	if err := amount.RequireNonNegativeColumns(columns, models.WithdrawalAmountColumns...); err != nil {
 		return err
 	}
-	_, err := facades.Orm().Query().
-		Model(&models.Withdrawal{}).
-		Where("id = ?", id).
-		Update(fields)
-	return err
+	if _, err := r.Query(ctx).Model(&models.Withdrawal{}).Where("id = ?", id).Update(columns); err != nil {
+		return fmt.Errorf("%s: %w", op, err)
+	}
+	return nil
 }

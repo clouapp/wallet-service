@@ -1,6 +1,7 @@
 package httpclient
 
 import (
+	"context"
 	"errors"
 	"io"
 	"net"
@@ -177,6 +178,56 @@ func TestNew_SharesTheHealthCheckedTransport(t *testing.T) {
 	config := sharedTransport.HTTP2
 	if config == nil || config.SendPingTimeout != pingAfterIdleRead || config.PingTimeout != pingTimeout {
 		t.Fatalf("unexpected HTTP/2 health check config %+v", config)
+	}
+}
+
+func TestClientDo_ReturnsStatusHeaderAndLimitedBody(t *testing.T) {
+	const maxBytes = 4
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		user, pass, ok := r.BasicAuth()
+		if !ok || user != "rpc" || pass != "secret" {
+			t.Errorf("basic auth = %q %q ok=%v", user, pass, ok)
+		}
+		if r.Header.Get("Content-Type") != "application/json" {
+			t.Errorf("content-type %q", r.Header.Get("Content-Type"))
+		}
+		if r.Method != http.MethodPost {
+			t.Errorf("method %s", r.Method)
+		}
+		w.Header().Set("Retry-After", "3")
+		w.WriteHeader(http.StatusTooManyRequests)
+		_, _ = io.WriteString(w, "slow-down-please")
+	}))
+	t.Cleanup(srv.Close)
+
+	resp, err := Wrap(srv.Client()).Do(context.Background(), Request{
+		Method:   MethodPost,
+		URL:      srv.URL,
+		Header:   map[string]string{"Content-Type": "application/json"},
+		Body:     []byte(`{"ping":true}`),
+		HasBody:  true,
+		Username: "rpc",
+		Password: "secret",
+		MaxBytes: maxBytes,
+	})
+	if err != nil {
+		t.Fatalf("Do: %v", err)
+	}
+	if resp.StatusCode != StatusTooManyRequests {
+		t.Fatalf("status %d", resp.StatusCode)
+	}
+	if resp.Header.Get("retry-after") != "3" {
+		t.Fatalf("retry-after %q", resp.Header.Get("retry-after"))
+	}
+	if string(resp.Body) != "slow" {
+		t.Fatalf("body %q", resp.Body)
+	}
+}
+
+func TestClientDo_RejectsAMissingURLBeforeDialing(t *testing.T) {
+	_, err := NewClient(time.Second).Do(context.Background(), Request{Method: MethodGet})
+	if !IsBuild(err) {
+		t.Fatalf("expected a build error, got %v", err)
 	}
 }
 

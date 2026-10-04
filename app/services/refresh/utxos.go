@@ -13,13 +13,13 @@ import (
 )
 
 type UTXOService struct {
-	utxoRepo      repositories.WalletUTXORepository
-	syncStateRepo repositories.WalletSyncStateRepository
+	utxoRepo      *repositories.WalletUTXORepository
+	syncStateRepo *repositories.WalletSyncStateRepository
 }
 
 func NewUTXOService(
-	utxoRepo repositories.WalletUTXORepository,
-	syncStateRepo repositories.WalletSyncStateRepository,
+	utxoRepo *repositories.WalletUTXORepository,
+	syncStateRepo *repositories.WalletSyncStateRepository,
 ) *UTXOService {
 	return &UTXOService{
 		utxoRepo:      utxoRepo,
@@ -27,9 +27,9 @@ func NewUTXOService(
 	}
 }
 
-func (s *UTXOService) ReplaceWalletUTXOs(_ context.Context, wallet *models.Wallet, rows []models.WalletUTXO) error {
-	if err := s.utxoRepo.ReplaceForWallet(wallet.ID, wallet.Chain, rows); err != nil {
-		_ = s.syncStateRepo.UpdateFailure(wallet.ID, wallet.Chain, string(RefreshScopeUtxos), err.Error())
+func (s *UTXOService) ReplaceWalletUTXOs(ctx context.Context, wallet *models.Wallet, rows []models.WalletUTXO) error {
+	if err := s.utxoRepo.ReplaceForWallet(ctx, wallet.ID, wallet.Chain, rows); err != nil {
+		_ = s.syncStateRepo.UpdateFailure(ctx, wallet.ID, wallet.Chain, string(RefreshScopeUtxos), err.Error())
 		return fmt.Errorf("utxo refresh: replace utxos: %w", err)
 	}
 
@@ -42,7 +42,7 @@ func (s *UTXOService) ReplaceWalletUTXOs(_ context.Context, wallet *models.Walle
 		Status:       string(types.SyncStatusSynced),
 		LastSyncedAt: &now,
 	}
-	if err := s.syncStateRepo.Upsert(syncState); err != nil {
+	if err := s.syncStateRepo.Upsert(ctx, syncState); err != nil {
 		return fmt.Errorf("utxo refresh: upsert sync state: %w", err)
 	}
 

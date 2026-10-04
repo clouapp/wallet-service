@@ -555,91 +555,6 @@ const docTemplate = `{
                 }
             }
         },
-        "/api/v1/wallets/{walletId}/fee-estimate": {
-            "get": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "description": "Prices the withdrawal POST /withdrawals would send, with the same planner and chain adapters, without signing or broadcasting. The fee is always in the chain's native coin (ETH, POL, BTC, SOL), also for tokens. EVM transfers are legacy transactions paying gas_price_wei for every unit of gas (plus the L1 data fee on OP-stack networks); Bitcoin uses the 3–6 block fee rate and the coin selection the builder runs; Solana pays 5000 lamports per signature plus the recipient's token account when it must be created. When the wallet cannot cover the amount, the fee of the transfer from the base address is returned with insufficient_funds=true. Answers are cached for FEE_ESTIMATE_CACHE_TTL_SECONDS (default 15). Node failures answer 503; no value is guessed.",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Wallet Withdrawals"
-                ],
-                "summary": "Estimate a withdrawal's network fee",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "format": "uuid",
-                        "description": "Wallet UUID",
-                        "name": "walletId",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "type": "string",
-                        "example": "USDC",
-                        "description": "Asset symbol; the chain's native coin when omitted",
-                        "name": "asset",
-                        "in": "query"
-                    },
-                    {
-                        "type": "string",
-                        "example": "0.001",
-                        "description": "Decimal amount, as sent to POST /withdrawals; the smallest transfer when omitted",
-                        "name": "amount",
-                        "in": "query"
-                    },
-                    {
-                        "type": "string",
-                        "description": "Destination address; a probe recipient when omitted",
-                        "name": "to",
-                        "in": "query"
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/feeestimate.Estimate"
-                        }
-                    },
-                    "400": {
-                        "description": "invalid_amount",
-                        "schema": {
-                            "$ref": "#/definitions/controllers.FeeEstimateErrorResponse"
-                        }
-                    },
-                    "404": {
-                        "description": "wallet not found (or owned by another account)",
-                        "schema": {
-                            "$ref": "#/definitions/controllers.ErrorResponse"
-                        }
-                    },
-                    "422": {
-                        "description": "unknown_asset, invalid_address, amount_below_minimum, token_balance_required, unsupported_chain",
-                        "schema": {
-                            "$ref": "#/definitions/controllers.FeeEstimateErrorResponse"
-                        }
-                    },
-                    "429": {
-                        "description": "sweep_limit_exceeded",
-                        "schema": {
-                            "$ref": "#/definitions/controllers.FeeEstimateErrorResponse"
-                        }
-                    },
-                    "503": {
-                        "description": "fee_estimate_unavailable, gas_estimate_failed",
-                        "schema": {
-                            "$ref": "#/definitions/controllers.FeeEstimateErrorResponse"
-                        }
-                    }
-                }
-            }
-        },
         "/api/v1/wallets/{walletId}/withdrawals/{idempotencyKey}": {
             "get": {
                 "security": [
@@ -955,7 +870,7 @@ const docTemplate = `{
         },
         "/auth/login": {
             "post": {
-                "description": "Validates credentials and returns JWT access + refresh tokens. If TOTP is enabled, returns a partial token requiring 2FA.",
+                "description": "Validates credentials and returns JWT access + refresh tokens. If TOTP is enabled, returns a challenge token requiring 2FA.",
                 "consumes": [
                     "application/json"
                 ],
@@ -1776,7 +1691,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/controllers.TransactionView"
+                            "$ref": "#/definitions/models.Transaction"
                         }
                     },
                     "400": {
@@ -1906,7 +1821,7 @@ const docTemplate = `{
                         "SignatureAuth": []
                     }
                 ],
-                "description": "Returns the account wallets with their network (testnet flag) and the native and configured token balances of the last refresh. Testnet wallets carry no USD value.",
+                "description": "Returns all wallets across all supported chains",
                 "produces": [
                     "application/json"
                 ],
@@ -2104,86 +2019,6 @@ const docTemplate = `{
                 }
             }
         },
-        "/v1/wallets/{id}/withdrawals": {
-            "post": {
-                "security": [
-                    {
-                        "ApiKeyAuth": []
-                    },
-                    {
-                        "SignatureAuth": []
-                    }
-                ],
-                "description": "Signs and broadcasts a withdrawal synchronously using MPC co-signing. Passphrase is required to decrypt the customer's key share. When the sweep planner must consolidate child addresses to fund the withdrawal, the response surfaces the ` + "`" + `strategy` + "`" + ` chosen and the ` + "`" + `sweeps` + "`" + ` legs executed before the final transaction.",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Withdrawals"
-                ],
-                "summary": "Create a withdrawal",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "format": "uuid",
-                        "description": "Wallet UUID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "description": "Withdrawal request",
-                        "name": "body",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/controllers.CreateWithdrawalRequest"
-                        }
-                    }
-                ],
-                "responses": {
-                    "201": {
-                        "description": "Created",
-                        "schema": {
-                            "$ref": "#/definitions/controllers.WithdrawalResponse"
-                        }
-                    },
-                    "400": {
-                        "description": "Missing fields or invalid amount",
-                        "schema": {
-                            "$ref": "#/definitions/controllers.ErrorResponse"
-                        }
-                    },
-                    "401": {
-                        "description": "Invalid passphrase",
-                        "schema": {
-                            "$ref": "#/definitions/controllers.ErrorResponse"
-                        }
-                    },
-                    "409": {
-                        "description": "Concurrent withdrawal in progress",
-                        "schema": {
-                            "$ref": "#/definitions/controllers.ErrorResponse"
-                        }
-                    },
-                    "422": {
-                        "description": "Insufficient funds or wallet not gas-ready",
-                        "schema": {
-                            "$ref": "#/definitions/controllers.ErrorResponse"
-                        }
-                    },
-                    "429": {
-                        "description": "Too many failed passphrase attempts",
-                        "schema": {
-                            "$ref": "#/definitions/controllers.ErrorResponse"
-                        }
-                    }
-                }
-            }
-        },
         "/v1/wallets/{walletId}": {
             "get": {
                 "security": [
@@ -2216,7 +2051,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/controllers.WalletView"
+                            "$ref": "#/definitions/models.Wallet"
                         }
                     },
                     "400": {
@@ -2481,114 +2316,6 @@ const docTemplate = `{
                 }
             }
         },
-        "/v1/wallets/{walletId}/settings": {
-            "get": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "description": "Returns fee, approval, and freeze settings for a wallet",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Wallet Settings"
-                ],
-                "summary": "Get wallet settings",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "Wallet UUID",
-                        "name": "walletId",
-                        "in": "path",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/controllers.WalletSettingsResponse"
-                        }
-                    },
-                    "403": {
-                        "description": "Forbidden",
-                        "schema": {
-                            "$ref": "#/definitions/controllers.ErrorResponse"
-                        }
-                    },
-                    "404": {
-                        "description": "Not Found",
-                        "schema": {
-                            "$ref": "#/definitions/controllers.ErrorResponse"
-                        }
-                    }
-                }
-            },
-            "patch": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "description": "Updates the wallet's name and fee settings. Requires wallet or account owner/admin. Only the listed fields are accepted; each may be omitted (unchanged) or null (reset to the network default). fee_multiplier (1.0000–5.0000, up to 4 decimals) scales the gas price on EVM chains and the fee rate on Bitcoin, in fee estimates and in the withdrawals themselves; it does not apply to Solana. fee_rate_min/fee_rate_max (1–10000 sat/vB, min ≤ max) clamp the Bitcoin fee rate. Freezing uses POST /freeze.",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Wallet Settings"
-                ],
-                "summary": "Update wallet settings",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "Wallet UUID",
-                        "name": "walletId",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "description": "Settings payload",
-                        "name": "request",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/controllers.UpdateWalletSettingsSwagger"
-                        }
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/controllers.WalletSettingsResponse"
-                        }
-                    },
-                    "400": {
-                        "description": "no settings to update",
-                        "schema": {
-                            "$ref": "#/definitions/controllers.ErrorResponse"
-                        }
-                    },
-                    "403": {
-                        "description": "Forbidden",
-                        "schema": {
-                            "$ref": "#/definitions/controllers.ErrorResponse"
-                        }
-                    },
-                    "422": {
-                        "description": "invalid or unknown field",
-                        "schema": {
-                            "$ref": "#/definitions/controllers.WalletSettingsFieldError"
-                        }
-                    }
-                }
-            }
-        },
         "/v1/wallets/{walletId}/withdraw/preview": {
             "post": {
                 "security": [
@@ -2658,7 +2385,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Returns the native balance and the balances of the tokens the wallet chain configures, as of the last balance refresh. Amounts come raw (base units) and for display, with the asset decimals. Testnet wallets carry no USD price or value.",
+                "description": "Returns the native balance and the balances of the tokens the wallet chain configures, as of the last balance refresh. Amounts come raw (base units) and for display, with the asset decimals.",
                 "produces": [
                     "application/json"
                 ],
@@ -2755,6 +2482,108 @@ const docTemplate = `{
                 }
             }
         },
+        "/wallets/{walletId}/settings": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns fee, approval, and freeze settings for a wallet",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Wallet Settings"
+                ],
+                "summary": "Get wallet settings",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Wallet UUID",
+                        "name": "walletId",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/controllers.WalletSettingsResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/controllers.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/controllers.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "patch": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Updates fee rates, approval thresholds, and other wallet settings. Requires wallet or account owner/admin.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Wallet Settings"
+                ],
+                "summary": "Update wallet settings",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Wallet UUID",
+                        "name": "walletId",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Settings payload",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/controllers.UpdateWalletSettingsSwagger"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/controllers.WalletSettingsResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/controllers.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/controllers.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/wallets/{walletId}/transactions": {
             "get": {
                 "security": [
@@ -2818,7 +2647,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/controllers.WalletTransactionListResponse"
+                            "$ref": "#/definitions/controllers.TransactionListResponse"
                         }
                     },
                     "403": {
@@ -3930,8 +3759,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "balance_usd": {
-                    "type": "number",
-                    "example": 1250.5
+                    "type": "number"
                 },
                 "chain": {
                     "type": "string"
@@ -3951,8 +3779,7 @@ const docTemplate = `{
                     "example": "{\"iv\":\"...\",\"salt\":\"...\",\"ct\":\"...\",\"cipher\":\"aes-256-gcm\",\"kdf\":\"argon2id\"}"
                 },
                 "fee_multiplier": {
-                    "type": "number",
-                    "example": 1.25
+                    "type": "number"
                 },
                 "fee_rate_max": {
                     "type": "integer"
@@ -4085,76 +3912,12 @@ const docTemplate = `{
                 }
             }
         },
-        "controllers.CreateWithdrawalRequest": {
-            "type": "object",
-            "properties": {
-                "amount": {
-                    "type": "string",
-                    "example": "0.5"
-                },
-                "asset": {
-                    "type": "string",
-                    "example": "eth"
-                },
-                "external_user_id": {
-                    "type": "string",
-                    "example": "user_123"
-                },
-                "idempotency_key": {
-                    "type": "string",
-                    "example": "wdl_20260317_001"
-                },
-                "passphrase": {
-                    "type": "string",
-                    "example": "strong-passphrase-min-12"
-                },
-                "to_address": {
-                    "type": "string",
-                    "example": "0xABCDEF1234567890"
-                }
-            }
-        },
-        "controllers.DepositScannerHealth": {
-            "type": "object",
-            "properties": {
-                "error": {
-                    "type": "string"
-                },
-                "pending": {
-                    "type": "object",
-                    "additionalProperties": {
-                        "type": "integer"
-                    }
-                },
-                "pending_total": {
-                    "type": "integer",
-                    "example": 0
-                },
-                "status": {
-                    "type": "string",
-                    "example": "ok"
-                }
-            }
-        },
         "controllers.ErrorResponse": {
             "type": "object",
             "properties": {
                 "error": {
                     "type": "string",
                     "example": "something went wrong"
-                }
-            }
-        },
-        "controllers.FeeEstimateErrorResponse": {
-            "type": "object",
-            "properties": {
-                "code": {
-                    "type": "string",
-                    "example": "fee_estimate_unavailable"
-                },
-                "error": {
-                    "type": "string",
-                    "example": "the chain node could not price this withdrawal; try again later"
                 }
             }
         },
@@ -4222,6 +3985,28 @@ const docTemplate = `{
                 "metadata": {
                     "type": "string",
                     "example": "{\"tier\":\"premium\"}"
+                }
+            }
+        },
+        "controllers.DepositScannerHealth": {
+            "type": "object",
+            "properties": {
+                "error": {
+                    "type": "string"
+                },
+                "pending": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "integer"
+                    }
+                },
+                "pending_total": {
+                    "type": "integer",
+                    "example": 0
+                },
+                "status": {
+                    "type": "string",
+                    "example": "ok"
                 }
             }
         },
@@ -4314,139 +4099,8 @@ const docTemplate = `{
                 "data": {
                     "type": "array",
                     "items": {
-                        "$ref": "#/definitions/controllers.TransactionView"
+                        "$ref": "#/definitions/models.Transaction"
                     }
-                }
-            }
-        },
-        "controllers.TransactionView": {
-            "type": "object",
-            "properties": {
-                "address": {
-                    "description": "Relationships",
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/models.Address"
-                        }
-                    ]
-                },
-                "address_id": {
-                    "type": "string"
-                },
-                "amount": {
-                    "type": "string"
-                },
-                "asset": {
-                    "type": "string"
-                },
-                "block_hash": {
-                    "type": "string"
-                },
-                "block_number": {
-                    "type": "integer"
-                },
-                "chain": {
-                    "type": "string"
-                },
-                "chain_direction": {
-                    "type": "string",
-                    "enum": [
-                        "inbound",
-                        "outbound",
-                        "self",
-                        "unknown"
-                    ]
-                },
-                "confirmations": {
-                    "type": "integer"
-                },
-                "confirmed_at": {
-                    "type": "string"
-                },
-                "created_at": {
-                    "$ref": "#/definitions/github_com_goravel_framework_support_carbon.DateTime"
-                },
-                "direction": {
-                    "type": "string",
-                    "enum": [
-                        "incoming",
-                        "outgoing",
-                        "internal",
-                        "unknown"
-                    ]
-                },
-                "error_message": {
-                    "type": "string"
-                },
-                "external_user_id": {
-                    "type": "string"
-                },
-                "fee": {
-                    "type": "string"
-                },
-                "from_address": {
-                    "type": "string"
-                },
-                "id": {
-                    "type": "string"
-                },
-                "idempotency_key": {
-                    "type": "string"
-                },
-                "log_index": {
-                    "type": "integer"
-                },
-                "origin": {
-                    "type": "string"
-                },
-                "parent_transaction_id": {
-                    "type": "string"
-                },
-                "required_confs": {
-                    "type": "integer"
-                },
-                "source": {
-                    "type": "string"
-                },
-                "status": {
-                    "type": "string"
-                },
-                "synced_at": {
-                    "type": "string"
-                },
-                "to_address": {
-                    "type": "string"
-                },
-                "token_contract": {
-                    "type": "string"
-                },
-                "tx_hash": {
-                    "type": "string"
-                },
-                "tx_type": {
-                    "type": "string"
-                },
-                "type": {
-                    "type": "string",
-                    "enum": [
-                        "deposit",
-                        "withdrawal",
-                        "sweep",
-                        "consolidation",
-                        "gas_funding",
-                        "transfer",
-                        "fee",
-                        "unknown"
-                    ]
-                },
-                "updated_at": {
-                    "$ref": "#/definitions/github_com_goravel_framework_support_carbon.DateTime"
-                },
-                "wallet": {
-                    "$ref": "#/definitions/models.Wallet"
-                },
-                "wallet_id": {
-                    "type": "string"
                 }
             }
         },
@@ -4457,7 +4111,7 @@ const docTemplate = `{
                     "type": "string",
                     "example": "123456"
                 },
-                "partial_token": {
+                "challenge_token": {
                     "type": "string"
                 },
                 "recovery_code": {
@@ -4533,31 +4187,22 @@ const docTemplate = `{
             "properties": {
                 "fee_multiplier": {
                     "type": "number",
-                    "maximum": 5,
-                    "minimum": 1,
                     "example": 1.25
                 },
                 "fee_rate_max": {
                     "type": "integer",
-                    "maximum": 10000,
-                    "minimum": 1,
-                    "example": 50
+                    "example": 100
                 },
                 "fee_rate_min": {
                     "type": "integer",
-                    "maximum": 10000,
-                    "minimum": 1,
-                    "example": 2
+                    "example": 1
                 },
-                "label": {
-                    "type": "string",
-                    "example": "Treasury"
+                "frozen_until": {
+                    "type": "string"
                 },
                 "required_approvals": {
                     "type": "integer",
-                    "maximum": 10,
-                    "minimum": 1,
-                    "example": 1
+                    "example": 2
                 }
             }
         },
@@ -4586,121 +4231,14 @@ const docTemplate = `{
                 }
             }
         },
-        "controllers.WalletListItem": {
-            "type": "object",
-            "properties": {
-                "account_id": {
-                    "description": "Account and admin fields",
-                    "type": "string"
-                },
-                "address_index": {
-                    "type": "integer"
-                },
-                "assets": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/models.WalletAssetBalance"
-                    }
-                },
-                "balance": {
-                    "type": "string"
-                },
-                "balance_asset": {
-                    "type": "string"
-                },
-                "balance_last_synced_at": {
-                    "type": "string"
-                },
-                "balance_raw": {
-                    "type": "string"
-                },
-                "balance_usd": {
-                    "type": "number",
-                    "example": 1250.5
-                },
-                "chain": {
-                    "type": "string"
-                },
-                "created_at": {
-                    "$ref": "#/definitions/github_com_goravel_framework_support_carbon.DateTime"
-                },
-                "deposit_address": {
-                    "$ref": "#/definitions/models.Address"
-                },
-                "deposit_address_id": {
-                    "type": "string"
-                },
-                "fee_multiplier": {
-                    "type": "number",
-                    "example": 1.25
-                },
-                "fee_rate_max": {
-                    "type": "integer"
-                },
-                "fee_rate_min": {
-                    "type": "integer"
-                },
-                "frozen_until": {
-                    "type": "string"
-                },
-                "gas_last_checked_at": {
-                    "type": "string"
-                },
-                "gas_status": {
-                    "type": "string"
-                },
-                "id": {
-                    "type": "string"
-                },
-                "label": {
-                    "type": "string"
-                },
-                "network": {
-                    "type": "string",
-                    "example": "polygon-amoy"
-                },
-                "read_model_status": {
-                    "type": "string"
-                },
-                "required_approvals": {
-                    "type": "integer"
-                },
-                "status": {
-                    "type": "string"
-                },
-                "sweep_policy_version": {
-                    "type": "integer"
-                },
-                "testnet": {
-                    "type": "boolean",
-                    "example": true
-                },
-                "updated_at": {
-                    "$ref": "#/definitions/github_com_goravel_framework_support_carbon.DateTime"
-                }
-            }
-        },
         "controllers.WalletListResponse": {
             "type": "object",
             "properties": {
                 "data": {
                     "type": "array",
                     "items": {
-                        "$ref": "#/definitions/controllers.WalletListItem"
+                        "$ref": "#/definitions/models.Wallet"
                     }
-                }
-            }
-        },
-        "controllers.WalletSettingsFieldError": {
-            "type": "object",
-            "properties": {
-                "error": {
-                    "type": "string",
-                    "example": "fee_multiplier: must be between 1.00 and 5.00 with at most 4 decimal places"
-                },
-                "field": {
-                    "type": "string",
-                    "example": "fee_multiplier"
                 }
             }
         },
@@ -4708,8 +4246,7 @@ const docTemplate = `{
             "type": "object",
             "properties": {
                 "fee_multiplier": {
-                    "type": "number",
-                    "example": 1.25
+                    "type": "number"
                 },
                 "fee_rate_max": {
                     "type": "integer"
@@ -4720,25 +4257,11 @@ const docTemplate = `{
                 "frozen_until": {
                     "type": "string"
                 },
-                "label": {
-                    "type": "string"
-                },
                 "required_approvals": {
                     "type": "integer"
                 },
                 "status": {
                     "type": "string"
-                }
-            }
-        },
-        "controllers.WalletTransactionListResponse": {
-            "type": "object",
-            "properties": {
-                "data": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/controllers.WalletTransactionView"
-                    }
                 }
             }
         },
@@ -4771,15 +4294,6 @@ const docTemplate = `{
                 "chain": {
                     "type": "string"
                 },
-                "chain_direction": {
-                    "type": "string",
-                    "enum": [
-                        "inbound",
-                        "outbound",
-                        "self",
-                        "unknown"
-                    ]
-                },
                 "confirmations": {
                     "type": "integer"
                 },
@@ -4787,20 +4301,13 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "created_at": {
-                    "type": "string",
-                    "format": "date-time"
+                    "$ref": "#/definitions/github_com_goravel_framework_support_carbon.DateTime"
                 },
                 "decimals": {
                     "type": "integer"
                 },
                 "direction": {
-                    "type": "string",
-                    "enum": [
-                        "incoming",
-                        "outgoing",
-                        "internal",
-                        "unknown"
-                    ]
+                    "type": "string"
                 },
                 "error_message": {
                     "type": "string"
@@ -4853,22 +4360,8 @@ const docTemplate = `{
                 "tx_type": {
                     "type": "string"
                 },
-                "type": {
-                    "type": "string",
-                    "enum": [
-                        "deposit",
-                        "withdrawal",
-                        "sweep",
-                        "consolidation",
-                        "gas_funding",
-                        "transfer",
-                        "fee",
-                        "unknown"
-                    ]
-                },
                 "updated_at": {
-                    "type": "string",
-                    "format": "date-time"
+                    "$ref": "#/definitions/github_com_goravel_framework_support_carbon.DateTime"
                 },
                 "wallet": {
                     "$ref": "#/definitions/models.Wallet"
@@ -4886,96 +4379,6 @@ const docTemplate = `{
                     "items": {
                         "$ref": "#/definitions/models.WalletUser"
                     }
-                }
-            }
-        },
-        "controllers.WalletView": {
-            "type": "object",
-            "properties": {
-                "account_id": {
-                    "description": "Account and admin fields",
-                    "type": "string"
-                },
-                "address_index": {
-                    "type": "integer"
-                },
-                "balance": {
-                    "type": "string"
-                },
-                "balance_asset": {
-                    "type": "string"
-                },
-                "balance_last_synced_at": {
-                    "type": "string"
-                },
-                "balance_raw": {
-                    "type": "string"
-                },
-                "balance_usd": {
-                    "type": "number",
-                    "example": 1250.5
-                },
-                "chain": {
-                    "type": "string"
-                },
-                "created_at": {
-                    "type": "string",
-                    "format": "date-time"
-                },
-                "deposit_address": {
-                    "$ref": "#/definitions/models.Address"
-                },
-                "deposit_address_id": {
-                    "type": "string"
-                },
-                "fee_multiplier": {
-                    "type": "number",
-                    "example": 1.25
-                },
-                "fee_rate_max": {
-                    "type": "integer"
-                },
-                "fee_rate_min": {
-                    "type": "integer"
-                },
-                "frozen_until": {
-                    "type": "string"
-                },
-                "gas_last_checked_at": {
-                    "type": "string"
-                },
-                "gas_status": {
-                    "type": "string"
-                },
-                "id": {
-                    "type": "string"
-                },
-                "label": {
-                    "type": "string"
-                },
-                "network": {
-                    "type": "string",
-                    "example": "polygon-amoy"
-                },
-                "read_model_status": {
-                    "type": "string"
-                },
-                "required_approvals": {
-                    "type": "integer"
-                },
-                "status": {
-                    "type": "string"
-                },
-                "sweep_policy_version": {
-                    "type": "integer"
-                },
-                "testnet": {
-                    "type": "boolean",
-                    "example": true
-                },
-                "updated_at": {
-                    "type": "string",
-                    "format": "date-time"
                 }
             }
         },
@@ -5059,23 +4462,6 @@ const docTemplate = `{
                 }
             }
         },
-        "controllers.WithdrawalFailedStep": {
-            "type": "object",
-            "properties": {
-                "index": {
-                    "type": "integer",
-                    "example": 1
-                },
-                "last_error": {
-                    "type": "string",
-                    "example": "insufficient gas"
-                },
-                "retry_ready": {
-                    "type": "boolean",
-                    "example": true
-                }
-            }
-        },
         "controllers.WithdrawalListResponse": {
             "type": "object",
             "properties": {
@@ -5128,236 +4514,6 @@ const docTemplate = `{
                 },
                 "wallet_id": {
                     "type": "string"
-                }
-            }
-        },
-        "controllers.WithdrawalResponse": {
-            "type": "object",
-            "properties": {
-                "failed_step": {
-                    "$ref": "#/definitions/controllers.WithdrawalFailedStep"
-                },
-                "origin": {
-                    "type": "string",
-                    "example": "user_request"
-                },
-                "status": {
-                    "type": "string",
-                    "example": "confirming"
-                },
-                "strategy": {
-                    "type": "string",
-                    "example": "direct_from_base"
-                },
-                "sweeps": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/controllers.WithdrawalSweepItem"
-                    }
-                },
-                "transaction_id": {
-                    "type": "string",
-                    "example": "8c5e3b3a-4a8f-4c0b-9e8a-2d1e8f0b7c4d"
-                },
-                "tx_hash": {
-                    "type": "string",
-                    "example": "0xaaa..."
-                }
-            }
-        },
-        "controllers.WithdrawalSweepItem": {
-            "type": "object",
-            "properties": {
-                "from": {
-                    "type": "string",
-                    "example": "0xChildAddress"
-                },
-                "origin": {
-                    "type": "string",
-                    "example": "sweep"
-                },
-                "tx_hash": {
-                    "type": "string",
-                    "example": "0xbbb..."
-                },
-                "tx_id": {
-                    "type": "string",
-                    "example": "1f2d3c4b-5a6b-7c8d-9e0f-112233445566"
-                }
-            }
-        },
-        "feeestimate.BitcoinDetails": {
-            "type": "object",
-            "properties": {
-                "fee_rate_sat_per_vbyte": {
-                    "type": "string",
-                    "example": "1"
-                },
-                "fee_rate_source": {
-                    "type": "string",
-                    "example": "estimator"
-                },
-                "inputs": {
-                    "type": "integer",
-                    "example": 1
-                },
-                "outputs": {
-                    "type": "integer",
-                    "example": 2
-                },
-                "vsize": {
-                    "type": "integer",
-                    "example": 141
-                }
-            }
-        },
-        "feeestimate.Details": {
-            "type": "object",
-            "properties": {
-                "bitcoin": {
-                    "$ref": "#/definitions/feeestimate.BitcoinDetails"
-                },
-                "evm": {
-                    "$ref": "#/definitions/feeestimate.EVMDetails"
-                },
-                "solana": {
-                    "$ref": "#/definitions/feeestimate.SolanaDetails"
-                }
-            }
-        },
-        "feeestimate.EVMDetails": {
-            "type": "object",
-            "properties": {
-                "gas_limit": {
-                    "type": "integer",
-                    "example": 21000
-                },
-                "gas_price_gwei": {
-                    "type": "string",
-                    "example": "1.994918016"
-                },
-                "gas_price_wei": {
-                    "type": "string",
-                    "example": "1994918016"
-                },
-                "l1_data_fee_wei": {
-                    "type": "string",
-                    "example": "0"
-                },
-                "tx_type": {
-                    "type": "string",
-                    "example": "legacy"
-                }
-            }
-        },
-        "feeestimate.Estimate": {
-            "type": "object",
-            "properties": {
-                "amount": {
-                    "type": "string",
-                    "example": "0.001"
-                },
-                "amount_base_units": {
-                    "type": "string",
-                    "example": "1000000000000000"
-                },
-                "amount_is_reference": {
-                    "type": "boolean",
-                    "example": false
-                },
-                "amount_spendable": {
-                    "type": "boolean",
-                    "example": true
-                },
-                "asset": {
-                    "type": "string",
-                    "example": "ETH"
-                },
-                "base_balance_base_units": {
-                    "type": "string",
-                    "example": "1958106721664000"
-                },
-                "basis": {
-                    "type": "string",
-                    "example": "plan"
-                },
-                "cached": {
-                    "type": "boolean",
-                    "example": false
-                },
-                "chain": {
-                    "type": "string",
-                    "example": "eth"
-                },
-                "details": {
-                    "$ref": "#/definitions/feeestimate.Details"
-                },
-                "estimated_at": {
-                    "type": "string"
-                },
-                "expires_at": {
-                    "type": "string"
-                },
-                "fee": {
-                    "type": "string",
-                    "example": "0.000041893278336"
-                },
-                "fee_asset": {
-                    "type": "string",
-                    "example": "ETH"
-                },
-                "fee_base_units": {
-                    "type": "string",
-                    "example": "41893278336000"
-                },
-                "fee_decimals": {
-                    "type": "integer",
-                    "example": 18
-                },
-                "fee_multiplier": {
-                    "type": "string",
-                    "example": "1"
-                },
-                "insufficient_funds": {
-                    "type": "boolean",
-                    "example": false
-                },
-                "minimum_remaining_base_units": {
-                    "type": "string",
-                    "example": "0"
-                },
-                "recipient": {
-                    "type": "string",
-                    "example": "provided"
-                },
-                "strategy": {
-                    "type": "string",
-                    "example": "direct_from_base"
-                },
-                "transfers": {
-                    "type": "integer",
-                    "example": 1
-                },
-                "wallet_id": {
-                    "type": "string",
-                    "example": "d6a8ce92-b637-44c2-a9f1-774344802e1a"
-                }
-            }
-        },
-        "feeestimate.SolanaDetails": {
-            "type": "object",
-            "properties": {
-                "lamports_per_signature": {
-                    "type": "integer",
-                    "example": 5000
-                },
-                "signatures": {
-                    "type": "integer",
-                    "example": 1
-                },
-                "token_account_creation_lamports": {
-                    "type": "string",
-                    "example": "0"
                 }
             }
         },
@@ -5522,6 +4678,109 @@ const docTemplate = `{
                 }
             }
         },
+        "models.Transaction": {
+            "type": "object",
+            "properties": {
+                "address": {
+                    "description": "Relationships",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/models.Address"
+                        }
+                    ]
+                },
+                "address_id": {
+                    "type": "string"
+                },
+                "amount": {
+                    "type": "string"
+                },
+                "asset": {
+                    "type": "string"
+                },
+                "block_hash": {
+                    "type": "string"
+                },
+                "block_number": {
+                    "type": "integer"
+                },
+                "chain": {
+                    "type": "string"
+                },
+                "confirmations": {
+                    "type": "integer"
+                },
+                "confirmed_at": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "$ref": "#/definitions/github_com_goravel_framework_support_carbon.DateTime"
+                },
+                "direction": {
+                    "type": "string"
+                },
+                "error_message": {
+                    "type": "string"
+                },
+                "external_user_id": {
+                    "type": "string"
+                },
+                "fee": {
+                    "type": "string"
+                },
+                "from_address": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "idempotency_key": {
+                    "type": "string"
+                },
+                "log_index": {
+                    "type": "integer"
+                },
+                "origin": {
+                    "type": "string"
+                },
+                "parent_transaction_id": {
+                    "type": "string"
+                },
+                "required_confs": {
+                    "type": "integer"
+                },
+                "source": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "synced_at": {
+                    "type": "string"
+                },
+                "to_address": {
+                    "type": "string"
+                },
+                "token_contract": {
+                    "type": "string"
+                },
+                "tx_hash": {
+                    "type": "string"
+                },
+                "tx_type": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "$ref": "#/definitions/github_com_goravel_framework_support_carbon.DateTime"
+                },
+                "wallet": {
+                    "$ref": "#/definitions/models.Wallet"
+                },
+                "wallet_id": {
+                    "type": "string"
+                }
+            }
+        },
         "models.User": {
             "type": "object",
             "properties": {
@@ -5588,8 +4847,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "balance_usd": {
-                    "type": "number",
-                    "example": 1250.5
+                    "type": "number"
                 },
                 "chain": {
                     "type": "string"
@@ -5604,8 +4862,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "fee_multiplier": {
-                    "type": "number",
-                    "example": 1.25
+                    "type": "number"
                 },
                 "fee_rate_max": {
                     "type": "integer"
@@ -5685,8 +4942,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "price_usd": {
-                    "type": "number",
-                    "example": 1
+                    "type": "number"
                 },
                 "source_address": {
                     "type": "string"
@@ -5695,8 +4951,7 @@ const docTemplate = `{
                     "$ref": "#/definitions/github_com_goravel_framework_support_carbon.DateTime"
                 },
                 "value_usd": {
-                    "type": "number",
-                    "example": 6
+                    "type": "number"
                 },
                 "wallet": {
                     "$ref": "#/definitions/models.Wallet"

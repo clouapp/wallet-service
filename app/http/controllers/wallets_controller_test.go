@@ -8,7 +8,7 @@ import (
 	goravelTesting "github.com/goravel/framework/testing"
 	"github.com/stretchr/testify/suite"
 
-	ctltestutil "github.com/macrowallets/waas/app/http/controllers/testutil"
+	ctltestutil "github.com/macrowallets/waas/tests/feature/support"
 	"github.com/macrowallets/waas/tests/testutil"
 )
 

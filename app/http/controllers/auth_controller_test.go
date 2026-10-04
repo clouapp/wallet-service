@@ -1,11 +1,14 @@
 package controllers_test
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 
 	goravelTesting "github.com/goravel/framework/testing"
 	"github.com/stretchr/testify/suite"
+
+	"github.com/macrowallets/waas/tests/mocks"
 )
 
 // AuthControllerTestSuite exercises the /v1/auth/* pre-authentication routes.
@@ -80,6 +83,30 @@ func (s *AuthControllerTestSuite) TestLogout_NoAuth() {
 		Post("/v1/auth/logout", nil)
 	s.Require().NoError(err)
 	resp.AssertStatus(401)
+}
+
+// TestRegister_PersistsUser proves POST /v1/auth/register creates the user.
+// It used to answer 500 because a nil preferences pointer was written as NULL
+// into the NOT NULL column.
+func (s *AuthControllerTestSuite) TestRegister_PersistsUser() {
+	mocks.TestDB(s.T())
+	body := `{"email":"register-ok@example.com","password":"secret123","full_name":"Reg User","organization_name":"Reg Org"}`
+	resp, err := s.Http(s.T()).
+		WithHeader("Content-Type", "application/json").
+		Post("/v1/auth/register", strings.NewReader(body))
+	s.Require().NoError(err)
+	content, err := resp.Content()
+	s.Require().NoError(err)
+	s.Require().Contains(content, `"access_token"`, content)
+	var parsed struct {
+		AccessToken string `json:"access_token"`
+		User        struct {
+			Email string `json:"email"`
+		} `json:"user"`
+	}
+	s.Require().NoError(json.Unmarshal([]byte(content), &parsed))
+	s.Equal("register-ok@example.com", parsed.User.Email)
+	s.NotEmpty(parsed.AccessToken)
 }
 
 // TestRefreshToken_InvalidToken returns 401 for a bad refresh token.

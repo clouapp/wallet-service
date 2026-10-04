@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/google/uuid"
+	"github.com/goravel/framework/facades"
 	goravelTesting "github.com/goravel/framework/testing"
 	"github.com/stretchr/testify/suite"
 
@@ -26,11 +27,25 @@ func (s *AccountServiceTestSuite) SetupTest() {
 	mocks.TestDB(s.T())
 }
 
+func (s *AccountServiceTestSuite) createUser() uuid.UUID {
+	userID := uuid.New()
+	_, err := facades.Orm().Query().Exec(
+		`INSERT INTO users (id, email, password_hash, status, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, NOW(), NOW())`,
+		userID, "member-"+userID.String()[:8]+"@example.com", "unused", "active",
+	)
+	s.Require().NoError(err)
+	return userID
+}
+
 // TestCreate_Success verifies that Create returns an account with "active" status
 // and creates an owner membership. Requires a live database connection.
 func (s *AccountServiceTestSuite) TestCreate_Success() {
-	svc := accountsvc.NewService(repositories.NewAccountRepository(), repositories.NewAccountUserRepository())
-	ownerID := uuid.New()
+	svc := accountsvc.NewService(accountsvc.Deps{
+		Accounts:    repositories.NewAccountRepository(nil),
+		Memberships: repositories.NewAccountUserRepository(nil),
+	})
+	ownerID := s.createUser()
 	ctx := context.Background()
 
 	acc, err := svc.Create(ctx, "Test Account", ownerID)
@@ -46,14 +61,17 @@ func (s *AccountServiceTestSuite) TestCreate_Success() {
 
 // TestAddUser_Success verifies that AddUser adds a new member to an account.
 func (s *AccountServiceTestSuite) TestAddUser_Success() {
-	svc := accountsvc.NewService(repositories.NewAccountRepository(), repositories.NewAccountUserRepository())
+	svc := accountsvc.NewService(accountsvc.Deps{
+		Accounts:    repositories.NewAccountRepository(nil),
+		Memberships: repositories.NewAccountUserRepository(nil),
+	})
 	ctx := context.Background()
-	ownerID := uuid.New()
+	ownerID := s.createUser()
 
 	acc, err := svc.Create(ctx, "Membership Test Account", ownerID)
 	s.Require().NoError(err)
 
-	newUserID := uuid.New()
+	newUserID := s.createUser()
 	err = svc.AddUser(ctx, acc.ID, newUserID, "admin", ownerID)
 	s.NoError(err)
 
@@ -64,14 +82,17 @@ func (s *AccountServiceTestSuite) TestAddUser_Success() {
 
 // TestAddUser_ReAdd_ClearsDeletedAt verifies that a soft-deleted member can be re-added.
 func (s *AccountServiceTestSuite) TestAddUser_ReAdd_ClearsDeletedAt() {
-	svc := accountsvc.NewService(repositories.NewAccountRepository(), repositories.NewAccountUserRepository())
+	svc := accountsvc.NewService(accountsvc.Deps{
+		Accounts:    repositories.NewAccountRepository(nil),
+		Memberships: repositories.NewAccountUserRepository(nil),
+	})
 	ctx := context.Background()
-	ownerID := uuid.New()
+	ownerID := s.createUser()
 
 	acc, err := svc.Create(ctx, "ReAdd Test Account", ownerID)
 	s.Require().NoError(err)
 
-	userID := uuid.New()
+	userID := s.createUser()
 	err = svc.AddUser(ctx, acc.ID, userID, "auditor", ownerID)
 	s.Require().NoError(err)
 
@@ -92,10 +113,13 @@ func (s *AccountServiceTestSuite) TestAddUser_ReAdd_ClearsDeletedAt() {
 // TestIsolation_UserCannotAccessOtherAccount verifies that GetUserRole returns empty
 // string when a user has no membership in the queried account.
 func (s *AccountServiceTestSuite) TestIsolation_UserCannotAccessOtherAccount() {
-	svc := accountsvc.NewService(repositories.NewAccountRepository(), repositories.NewAccountUserRepository())
+	svc := accountsvc.NewService(accountsvc.Deps{
+		Accounts:    repositories.NewAccountRepository(nil),
+		Memberships: repositories.NewAccountUserRepository(nil),
+	})
 	ctx := context.Background()
-	ownerA := uuid.New()
-	ownerB := uuid.New()
+	ownerA := s.createUser()
+	ownerB := s.createUser()
 
 	accA, err := svc.Create(ctx, "Account A", ownerA)
 	s.Require().NoError(err)

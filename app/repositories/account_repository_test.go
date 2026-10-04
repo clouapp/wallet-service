@@ -1,6 +1,7 @@
 package repositories_test
 
 import (
+	"context"
 	"testing"
 
 	"github.com/google/uuid"
@@ -14,7 +15,7 @@ import (
 
 type AccountRepositoryTestSuite struct {
 	suite.Suite
-	repo repositories.AccountRepository
+	repo *repositories.AccountRepository
 }
 
 func TestAccountRepositorySuite(t *testing.T) {
@@ -23,15 +24,15 @@ func TestAccountRepositorySuite(t *testing.T) {
 
 func (s *AccountRepositoryTestSuite) SetupTest() {
 	mocks.TestDB(s.T())
-	s.repo = repositories.NewAccountRepository()
+	s.repo = repositories.NewAccountRepository(nil)
 }
 
 func (s *AccountRepositoryTestSuite) TestCreate_Success() {
 	acc := &models.Account{ID: uuid.New(), Name: "Test Account", Status: "active"}
-	err := s.repo.Create(acc)
+	err := s.repo.Create(context.Background(), acc)
 	s.NoError(err)
 
-	found, err := s.repo.FindByID(acc.ID)
+	found, err := s.repo.FindByID(context.Background(), acc.ID)
 	s.NoError(err)
 	s.NotNil(found)
 	s.Equal("Test Account", found.Name)
@@ -39,17 +40,17 @@ func (s *AccountRepositoryTestSuite) TestCreate_Success() {
 
 func (s *AccountRepositoryTestSuite) TestFindByID_Found() {
 	acc := &models.Account{ID: uuid.New(), Name: "Find Me", Status: "active"}
-	s.Require().NoError(s.repo.Create(acc))
+	s.Require().NoError(s.repo.Create(context.Background(), acc))
 
-	found, err := s.repo.FindByID(acc.ID)
+	found, err := s.repo.FindByID(context.Background(), acc.ID)
 	s.NoError(err)
 	s.NotNil(found)
 	s.Equal(acc.ID, found.ID)
 }
 
 func (s *AccountRepositoryTestSuite) TestFindByID_NotFound() {
-	found, err := s.repo.FindByID(uuid.New())
-	s.NoError(err)
+	found, err := s.repo.FindByID(context.Background(), uuid.New())
+	s.ErrorIs(err, models.ErrRepositoryNotFound)
 	s.Nil(found)
 }
 
@@ -57,17 +58,17 @@ func (s *AccountRepositoryTestSuite) TestFindByIDs() {
 	a1 := &models.Account{ID: uuid.New(), Name: "A1", Status: "active"}
 	a2 := &models.Account{ID: uuid.New(), Name: "A2", Status: "active"}
 	a3 := &models.Account{ID: uuid.New(), Name: "A3", Status: "active"}
-	s.Require().NoError(s.repo.Create(a1))
-	s.Require().NoError(s.repo.Create(a2))
-	s.Require().NoError(s.repo.Create(a3))
+	s.Require().NoError(s.repo.Create(context.Background(), a1))
+	s.Require().NoError(s.repo.Create(context.Background(), a2))
+	s.Require().NoError(s.repo.Create(context.Background(), a3))
 
-	results, err := s.repo.FindByIDs([]uuid.UUID{a1.ID, a3.ID})
+	results, err := s.repo.FindByIDs(context.Background(), []uuid.UUID{a1.ID, a3.ID})
 	s.NoError(err)
 	s.Len(results, 2)
 }
 
 func (s *AccountRepositoryTestSuite) TestFindByIDs_Empty() {
-	results, err := s.repo.FindByIDs([]uuid.UUID{})
+	results, err := s.repo.FindByIDs(context.Background(), []uuid.UUID{})
 	s.NoError(err)
 	s.Len(results, 0)
 }
@@ -87,8 +88,8 @@ func (s *AccountRepositoryTestSuite) createUser() uuid.UUID {
 
 func (s *AccountRepositoryTestSuite) createMemberAccount(userID uuid.UUID, name, environment string) models.Account {
 	acc := models.Account{ID: uuid.New(), Name: name, Status: "active", Environment: environment}
-	s.Require().NoError(s.repo.Create(&acc))
-	s.Require().NoError(repositories.NewAccountUserRepository().Create(&models.AccountUser{
+	s.Require().NoError(s.repo.Create(context.Background(), &acc))
+	s.Require().NoError(repositories.NewAccountUserRepository(nil).Create(context.Background(), &models.AccountUser{
 		ID: uuid.New(), AccountID: acc.ID, UserID: userID, Role: "owner",
 	}))
 	return acc
@@ -108,12 +109,12 @@ func (s *AccountRepositoryTestSuite) TestPaginateByMember_OrdersByNameAcrossPage
 		s.createMemberAccount(userID, name, models.EnvironmentProd)
 	}
 
-	first, total, err := s.repo.PaginateByMember(userID, repositories.AccountListFilter{}, 2, 0)
+	first, total, err := s.repo.PaginateByMember(context.Background(), userID, "", "", 2, 0)
 	s.Require().NoError(err)
 	s.Equal(int64(5), total)
 	s.Equal([]string{"alpha", "Bravo"}, accountNames(first))
 
-	last, total, err := s.repo.PaginateByMember(userID, repositories.AccountListFilter{}, 2, 4)
+	last, total, err := s.repo.PaginateByMember(context.Background(), userID, "", "", 2, 4)
 	s.Require().NoError(err)
 	s.Equal(int64(5), total)
 	s.Equal([]string{"Echo"}, accountNames(last))
@@ -123,7 +124,7 @@ func (s *AccountRepositoryTestSuite) TestPaginateByMember_OutOfRangeOffsetReturn
 	userID := s.createUser()
 	s.createMemberAccount(userID, "Only", models.EnvironmentProd)
 
-	accounts, total, err := s.repo.PaginateByMember(userID, repositories.AccountListFilter{}, 20, 40)
+	accounts, total, err := s.repo.PaginateByMember(context.Background(), userID, "", "", 20, 40)
 	s.Require().NoError(err)
 	s.Equal(int64(1), total)
 	s.NotNil(accounts)
@@ -131,7 +132,7 @@ func (s *AccountRepositoryTestSuite) TestPaginateByMember_OutOfRangeOffsetReturn
 }
 
 func (s *AccountRepositoryTestSuite) TestPaginateByMember_NoMemberships() {
-	accounts, total, err := s.repo.PaginateByMember(uuid.New(), repositories.AccountListFilter{}, 20, 0)
+	accounts, total, err := s.repo.PaginateByMember(context.Background(), uuid.New(), "", "", 20, 0)
 	s.Require().NoError(err)
 	s.Equal(int64(0), total)
 	s.NotNil(accounts)
@@ -143,9 +144,9 @@ func (s *AccountRepositoryTestSuite) TestPaginateByMember_ExcludesOtherUsersAndR
 	kept := s.createMemberAccount(userID, "Kept", models.EnvironmentProd)
 	removed := s.createMemberAccount(userID, "Removed", models.EnvironmentProd)
 	s.createMemberAccount(s.createUser(), "Someone else", models.EnvironmentProd)
-	s.Require().NoError(repositories.NewAccountUserRepository().SoftDeleteByAccountAndUser(removed.ID, userID))
+	s.Require().NoError(repositories.NewAccountUserRepository(nil).SoftDeleteByAccountAndUser(context.Background(), removed.ID, userID))
 
-	accounts, total, err := s.repo.PaginateByMember(userID, repositories.AccountListFilter{}, 20, 0)
+	accounts, total, err := s.repo.PaginateByMember(context.Background(), userID, "", "", 20, 0)
 	s.Require().NoError(err)
 	s.Equal(int64(1), total)
 	s.Require().Len(accounts, 1)
@@ -157,7 +158,7 @@ func (s *AccountRepositoryTestSuite) TestPaginateByMember_FiltersByEnvironment()
 	s.createMemberAccount(userID, "Acme Corp", models.EnvironmentProd)
 	s.createMemberAccount(userID, "Acme Corp (Test)", models.EnvironmentTest)
 
-	accounts, total, err := s.repo.PaginateByMember(userID, repositories.AccountListFilter{Environment: models.EnvironmentTest}, 20, 0)
+	accounts, total, err := s.repo.PaginateByMember(context.Background(), userID, "", models.EnvironmentTest, 20, 0)
 	s.Require().NoError(err)
 	s.Equal(int64(1), total)
 	s.Equal([]string{"Acme Corp (Test)"}, accountNames(accounts))
@@ -168,12 +169,12 @@ func (s *AccountRepositoryTestSuite) TestPaginateByMember_SearchesNameCaseInsens
 	custody := s.createMemberAccount(userID, "Custody Desk", models.EnvironmentProd)
 	s.createMemberAccount(userID, "Treasury", models.EnvironmentProd)
 
-	byName, total, err := s.repo.PaginateByMember(userID, repositories.AccountListFilter{Search: "cUsToDy"}, 20, 0)
+	byName, total, err := s.repo.PaginateByMember(context.Background(), userID, "cUsToDy", "", 20, 0)
 	s.Require().NoError(err)
 	s.Equal(int64(1), total)
 	s.Equal([]string{"Custody Desk"}, accountNames(byName))
 
-	byID, total, err := s.repo.PaginateByMember(userID, repositories.AccountListFilter{Search: custody.ID.String()[:8]}, 20, 0)
+	byID, total, err := s.repo.PaginateByMember(context.Background(), userID, custody.ID.String()[:8], "", 20, 0)
 	s.Require().NoError(err)
 	s.Equal(int64(1), total)
 	s.Equal(custody.ID, byID[0].ID)
@@ -186,23 +187,23 @@ func (s *AccountRepositoryTestSuite) TestPaginateByMember_TreatsLikeWildcardsLit
 	s.createMemberAccount(userID, "snake_case", models.EnvironmentProd)
 	s.createMemberAccount(userID, "snakeXcase", models.EnvironmentProd)
 
-	percent, _, err := s.repo.PaginateByMember(userID, repositories.AccountListFilter{Search: "100%"}, 20, 0)
+	percent, _, err := s.repo.PaginateByMember(context.Background(), userID, "100%", "", 20, 0)
 	s.Require().NoError(err)
 	s.Equal([]string{"100% Reserve"}, accountNames(percent))
 
-	underscore, _, err := s.repo.PaginateByMember(userID, repositories.AccountListFilter{Search: "e_c"}, 20, 0)
+	underscore, _, err := s.repo.PaginateByMember(context.Background(), userID, "e_c", "", 20, 0)
 	s.Require().NoError(err)
 	s.Equal([]string{"snake_case"}, accountNames(underscore))
 }
 
-func (s *AccountRepositoryTestSuite) TestUpdateField() {
+func (s *AccountRepositoryTestSuite) TestSetName() {
 	acc := &models.Account{ID: uuid.New(), Name: "Old Name", Status: "active"}
-	s.Require().NoError(s.repo.Create(acc))
+	s.Require().NoError(s.repo.Create(context.Background(), acc))
 
-	err := s.repo.UpdateField(acc.ID, "name", "New Name")
+	err := s.repo.SetName(context.Background(), acc.ID, "New Name")
 	s.NoError(err)
 
-	found, err := s.repo.FindByID(acc.ID)
+	found, err := s.repo.FindByID(context.Background(), acc.ID)
 	s.NoError(err)
 	s.Equal("New Name", found.Name)
 }

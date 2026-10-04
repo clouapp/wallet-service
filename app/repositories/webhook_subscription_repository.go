@@ -1,67 +1,92 @@
 package repositories
 
 import (
-	"errors"
+	"context"
+	"fmt"
+	"time"
 
 	"github.com/google/uuid"
-	"github.com/goravel/framework/facades"
-	"gorm.io/gorm"
+	"github.com/goravel/framework/contracts/database/orm"
 
 	"github.com/macrowallets/waas/app/models"
+	"github.com/macrowallets/waas/app/repositories/internal/db"
 )
 
-type WebhookSubscriptionRepository interface {
-	FindByChainID(chainID string) (*models.WebhookSubscription, error)
-	FindByProviderAndChain(provider, chainID string) (*models.WebhookSubscription, error)
-	FindAllActive() ([]models.WebhookSubscription, error)
-	Create(sub *models.WebhookSubscription) error
-	UpdateFields(id uuid.UUID, fields map[string]interface{}) error
+// WebhookSubscriptionRepository persists provider webhook subscriptions.
+// signing_secret stays in the column as this branch stores it.
+type WebhookSubscriptionRepository struct {
+	db.Base
 }
 
-type webhookSubscriptionRepository struct{}
-
-func NewWebhookSubscriptionRepository() WebhookSubscriptionRepository {
-	return &webhookSubscriptionRepository{}
+// NewWebhookSubscriptionRepository wraps an orm.Query. Pass nil for a fresh query per call.
+func NewWebhookSubscriptionRepository(query orm.Query) *WebhookSubscriptionRepository {
+	return &WebhookSubscriptionRepository{Base: db.NewBase(query)}
 }
 
-func (r *webhookSubscriptionRepository) FindByChainID(chainID string) (*models.WebhookSubscription, error) {
-	var sub models.WebhookSubscription
-	err := facades.Orm().Query().Where("chain_id = ? AND status = ?", chainID, "active").First(&sub)
-	if err != nil {
-		return nil, err
+// FindByChainID returns the active subscription for a chain, or ErrRepositoryNotFound.
+func (r *WebhookSubscriptionRepository) FindByChainID(ctx context.Context, chainID string) (*models.WebhookSubscription, error) {
+	if chainID == "" {
+		return nil, models.ErrRepositoryNotFound
 	}
-	return &sub, nil
-}
-
-func (r *webhookSubscriptionRepository) FindByProviderAndChain(provider, chainID string) (*models.WebhookSubscription, error) {
 	var sub models.WebhookSubscription
-	err := facades.Orm().Query().Where("provider = ? AND chain_id = ?", provider, chainID).First(&sub)
-	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, nil
-		}
-		return nil, err
+	if err := r.Query(ctx).Where("chain_id = ? AND status = ?", chainID, "active").First(&sub); err != nil {
+		return nil, fmt.Errorf("find webhook subscription: %w", err)
 	}
 	if sub.ID == uuid.Nil {
-		return nil, nil
+		return nil, models.ErrRepositoryNotFound
 	}
 	return &sub, nil
 }
 
-func (r *webhookSubscriptionRepository) FindAllActive() ([]models.WebhookSubscription, error) {
+// FindByProviderAndChain returns the subscription for a provider and chain, or ErrRepositoryNotFound.
+func (r *WebhookSubscriptionRepository) FindByProviderAndChain(ctx context.Context, provider, chainID string) (*models.WebhookSubscription, error) {
+	var sub models.WebhookSubscription
+	if err := r.Query(ctx).Where("provider = ? AND chain_id = ?", provider, chainID).First(&sub); err != nil {
+		return nil, fmt.Errorf("find webhook subscription: %w", err)
+	}
+	if sub.ID == uuid.Nil {
+		return nil, models.ErrRepositoryNotFound
+	}
+	return &sub, nil
+}
+
+// FindAllActive returns every active subscription.
+func (r *WebhookSubscriptionRepository) FindAllActive(ctx context.Context) ([]models.WebhookSubscription, error) {
 	var subs []models.WebhookSubscription
-	err := facades.Orm().Query().Where("status = ?", "active").Find(&subs)
-	return subs, err
+	if err := r.Query(ctx).Where("status = ?", "active").Find(&subs); err != nil {
+		return nil, fmt.Errorf("list webhook subscriptions: %w", err)
+	}
+	return subs, nil
 }
 
-func (r *webhookSubscriptionRepository) Create(sub *models.WebhookSubscription) error {
-	return facades.Orm().Query().Create(sub)
+// Create inserts a subscription, including signing_secret as given.
+func (r *WebhookSubscriptionRepository) Create(ctx context.Context, sub *models.WebhookSubscription) error {
+	if sub == nil {
+		return fmt.Errorf("create webhook subscription: subscription is nil")
+	}
+	if err := r.Query(ctx).Create(sub); err != nil {
+		return fmt.Errorf("create webhook subscription: %w", err)
+	}
+	return nil
 }
 
-func (r *webhookSubscriptionRepository) UpdateFields(id uuid.UUID, fields map[string]interface{}) error {
-	_, err := facades.Orm().Query().
-		Model(&models.WebhookSubscription{}).
-		Where("id", id).
-		Update(fields)
-	return err
+// SetSyncStatus sets webhook_subscriptions.sync_status.
+func (r *WebhookSubscriptionRepository) SetSyncStatus(ctx context.Context, id uuid.UUID, status string) error {
+	if _, err := r.Query(ctx).Model(&models.WebhookSubscription{}).Where("id", id).Update("sync_status", status); err != nil {
+		return fmt.Errorf("set webhook subscription sync status: %w", err)
+	}
+	return nil
+}
+
+// RecordSync writes sync_status, synced_addresses_hash, and last_synced_at together.
+func (r *WebhookSubscriptionRepository) RecordSync(ctx context.Context, id uuid.UUID, status, hash string, syncedAt time.Time) error {
+	_, err := r.Query(ctx).Model(&models.WebhookSubscription{}).Where("id", id).Update(map[string]any{
+		"sync_status":           status,
+		"synced_addresses_hash": hash,
+		"last_synced_at":        syncedAt,
+	})
+	if err != nil {
+		return fmt.Errorf("record webhook subscription sync: %w", err)
+	}
+	return nil
 }

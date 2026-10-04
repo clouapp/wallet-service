@@ -4,9 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"math/big"
-	"net/http"
 	"strings"
 	"time"
 
@@ -39,7 +37,7 @@ type BitcoinLive struct {
 	cfg          BitcoinConfig
 	rpc          *RPCClient
 	restAPI      bool
-	http         *http.Client
+	http         *httpclient.Client
 	esploraRetry rateLimitRetry
 	feeRates     *btcFeeRateCache
 	fee          FeePolicy
@@ -52,7 +50,7 @@ func NewBitcoinLive(cfg BitcoinConfig) *BitcoinLive {
 		cfg:          cfg,
 		rpc:          NewRPCClient(cfg.RPCURL, cfg.RPCUser, cfg.RPCPass),
 		restAPI:      isREST,
-		http:         httpclient.New(bitcoinRESTTimeout),
+		http:         httpclient.NewClient(bitcoinRESTTimeout),
 		esploraRetry: esploraRetry(),
 		feeRates:     &btcFeeRateCache{},
 	}
@@ -137,28 +135,24 @@ func (a *BitcoinLive) getBalanceRPC(ctx context.Context, address string) (*types
 // (GET /api/address/:address/utxo) and sums the satoshi values.
 func (a *BitcoinLive) getBalanceREST(ctx context.Context, address string) (*types.Balance, error) {
 	url := strings.TrimRight(a.cfg.RPCURL, "/") + "/address/" + address + "/utxo"
-	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	resp, err := a.http.Do(ctx, httpclient.Request{Method: httpclient.MethodGet, URL: url})
 	if err != nil {
-		return nil, fmt.Errorf("build utxo request: %w", err)
-	}
-	resp, err := a.http.Do(req)
-	if err != nil {
+		if httpclient.IsBuild(err) {
+			return nil, fmt.Errorf("build utxo request: %w", err)
+		}
+		if httpclient.IsRead(err) {
+			return nil, fmt.Errorf("read utxo response: %w", err)
+		}
 		return nil, fmt.Errorf("fetch utxos for %s: %w", address, err)
 	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("read utxo response: %w", err)
-	}
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("utxo API returned %d: %s", resp.StatusCode, string(body))
+	if resp.StatusCode != httpclient.StatusOK {
+		return nil, fmt.Errorf("utxo API returned %d: %s", resp.StatusCode, string(resp.Body))
 	}
 
 	var utxos []struct {
 		Value int64 `json:"value"`
 	}
-	if err := json.Unmarshal(body, &utxos); err != nil {
+	if err := json.Unmarshal(resp.Body, &utxos); err != nil {
 		return nil, fmt.Errorf("parse utxo response: %w", err)
 	}
 
@@ -198,26 +192,22 @@ func (a *BitcoinLive) GetLatestBlock(ctx context.Context) (uint64, error) {
 
 func (a *BitcoinLive) getLatestBlockREST(ctx context.Context) (uint64, error) {
 	url := strings.TrimRight(a.cfg.RPCURL, "/") + "/blocks/tip/height"
-	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	resp, err := a.http.Do(ctx, httpclient.Request{Method: httpclient.MethodGet, URL: url})
 	if err != nil {
-		return 0, fmt.Errorf("build block height request: %w", err)
-	}
-	resp, err := a.http.Do(req)
-	if err != nil {
+		if httpclient.IsBuild(err) {
+			return 0, fmt.Errorf("build block height request: %w", err)
+		}
+		if httpclient.IsRead(err) {
+			return 0, fmt.Errorf("read block height response: %w", err)
+		}
 		return 0, fmt.Errorf("fetch block height: %w", err)
 	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return 0, fmt.Errorf("read block height response: %w", err)
-	}
-	if resp.StatusCode != http.StatusOK {
-		return 0, fmt.Errorf("block height API returned %d: %s", resp.StatusCode, string(body))
+	if resp.StatusCode != httpclient.StatusOK {
+		return 0, fmt.Errorf("block height API returned %d: %s", resp.StatusCode, string(resp.Body))
 	}
 
 	var height uint64
-	if err := json.Unmarshal(body, &height); err != nil {
+	if err := json.Unmarshal(resp.Body, &height); err != nil {
 		return 0, fmt.Errorf("parse block height: %w", err)
 	}
 	return height, nil

@@ -9,6 +9,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/macrowallets/waas/pkg/httpclient"
 )
 
 func TestEtherscanProvider_GetBlockHeight_ValidHex(t *testing.T) {
@@ -24,7 +26,7 @@ func TestEtherscanProvider_GetBlockHeight_ValidHex(t *testing.T) {
 	defer srv.Close()
 
 	p := NewEtherscanProvider("")
-	p.client = srv.Client()
+	p.client = httpclient.Wrap(srv.Client())
 	p.baseURL = srv.URL
 
 	height, err := p.GetBlockHeight(context.Background(), "eth")
@@ -39,7 +41,7 @@ func TestEtherscanProvider_GetBlockHeight_ErrorResponse(t *testing.T) {
 	defer srv.Close()
 
 	p := NewEtherscanProvider("")
-	p.client = srv.Client()
+	p.client = httpclient.Wrap(srv.Client())
 	p.baseURL = srv.URL
 
 	_, err := p.GetBlockHeight(context.Background(), "eth")
@@ -63,7 +65,7 @@ func TestBlockstreamProvider_GetBlockHeight_ValidInteger(t *testing.T) {
 	defer srv.Close()
 
 	p := NewBlockstreamProvider()
-	p.client = srv.Client()
+	p.client = httpclient.Wrap(srv.Client())
 	p.mainnetURL = srv.URL + "/api/blocks/tip/height"
 
 	height, err := p.GetBlockHeight(context.Background(), "btc")
@@ -87,7 +89,7 @@ func TestSolanaPublicProvider_GetBlockHeight_ValidJSONRPC(t *testing.T) {
 	defer srv.Close()
 
 	p := NewSolanaPublicProvider()
-	p.client = srv.Client()
+	p.client = httpclient.Wrap(srv.Client())
 	p.mainnetRPC = srv.URL
 
 	height, err := p.GetBlockHeight(context.Background(), "sol")

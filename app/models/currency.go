@@ -18,18 +18,17 @@ const (
 
 type Currency struct {
 	orm.Model
-	ID             uuid.UUID           `gorm:"type:uuid;primary_key" json:"id"`
-	Name           string              `gorm:"type:varchar(100);not null" json:"name"`
-	Code           string              `gorm:"type:varchar(20);uniqueIndex;not null" json:"code"`
-	Symbol         string              `gorm:"type:varchar(10)" json:"symbol"`
-	Type           string              `gorm:"type:currency_type;not null" json:"type"`
-	Logo           *string             `gorm:"type:varchar(500)" json:"logo,omitempty"`
-	Subunits       int                 `gorm:"type:int;default:2" json:"subunits"`
-	CurrentPrice   numeric.Decimal     `gorm:"type:decimal(28,10);default:1" json:"current_price" swaggertype:"number" example:"65000.5"`
-	LastPrice      numeric.NullDecimal `gorm:"type:decimal(28,10)" json:"last_price,omitzero" swaggertype:"number" example:"64990.25"`
-	PriceUpdatedAt *time.Time          `gorm:"type:timestamptz" json:"price_updated_at,omitempty"`
-	Active         bool                `gorm:"default:false" json:"active"`
-}
+	ID             uuid.UUID           `gorm:"type:uuid;primary_key"`
+	Name           string              `gorm:"type:varchar(100);not null"`
+	Code           string              `gorm:"type:varchar(20);uniqueIndex;not null"`
+	Symbol         string              `gorm:"type:varchar(10)"`
+	Type           string              `gorm:"type:currency_type;not null"`
+	Logo           *string             `gorm:"type:varchar(500)"`
+	Subunits       int                 `gorm:"type:int;default:2"`
+	CurrentPrice   numeric.Decimal     `gorm:"type:decimal(28,10);default:1"`
+	LastPrice      numeric.NullDecimal `gorm:"type:decimal(28,10)"`
+	PriceUpdatedAt *time.Time          `gorm:"type:timestamptz"`
+	Active         bool                `gorm:"default:false"`}
 
 func (c *Currency) TableName() string { return "currencies" }
 

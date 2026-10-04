@@ -19,8 +19,8 @@ import (
 const DefaultWalletSpacing = 500 * time.Millisecond
 
 type WalletStore interface {
-	FindByID(id uuid.UUID) (*models.Wallet, error)
-	FindAll() ([]models.Wallet, error)
+	FindByID(ctx context.Context, id uuid.UUID) (*models.Wallet, error)
+	FindAll(ctx context.Context) ([]models.Wallet, error)
 }
 
 type walletBalanceRefresh interface {
@@ -65,7 +65,7 @@ func (r *WalletRefresher) RefreshWalletByID(ctx context.Context, walletID uuid.U
 	if walletID == uuid.Nil {
 		return errors.New("wallet id is required")
 	}
-	wallet, err := r.wallets.FindByID(walletID)
+	wallet, err := r.wallets.FindByID(ctx, walletID)
 	if err != nil {
 		return fmt.Errorf("load wallet %s: %w", walletID, err)
 	}
@@ -81,7 +81,7 @@ func (r *WalletRefresher) RefreshWalletByID(ctx context.Context, walletID uuid.U
 // When a provider stays rate limited after the RPC client's own backoff, the rest of
 // that chain's wallets wait for the next pass instead of hammering it.
 func (r *WalletRefresher) RefreshAll(ctx context.Context) (PassSummary, error) {
-	wallets, err := r.wallets.FindAll()
+	wallets, err := r.wallets.FindAll(ctx)
 	if err != nil {
 		return PassSummary{}, fmt.Errorf("list wallets: %w", err)
 	}

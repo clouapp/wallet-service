@@ -1,0 +1,70 @@
+version: "2"
+
+# REPORT MODE: `make lint` lists every finding and exits 0 while the existing
+# backlog is fixed. Remove `issues-exit-code: 0` once the count reaches zero.
+run:
+  go: "1.25"
+  tests: true
+  issues-exit-code: 0
+
+linters:
+  default: standard # errcheck, govet, ineffassign, staticcheck, unused
+  enable:
+    - bodyclose
+    - errorlint
+    - forbidigo
+    - gosec
+    - misspell
+    - nilerr
+    - nolintlint
+    - rowserrcheck
+    - sqlclosecheck
+    - unconvert
+  settings:
+    govet:
+      enable:
+        - shadow
+      settings:
+        shadow:
+          strict: false
+    errorlint:
+      errorf: true
+      asserts: true
+      comparison: true
+    forbidigo:
+      forbid:
+        - pattern: ^fmt\.Print(f|ln)?$
+          msg: log through the logger, never fmt.Print (.ai/guidelines/errors-and-logging.md)
+    gosec:
+      excludes:
+        - G104 # unhandled errors: errcheck owns this
+    nolintlint:
+      require-explanation: true
+      require-specific: true
+  exclusions:
+    generated: strict
+    presets:
+      - std-error-handling
+    paths:
+      - docs/docs.go
+    rules:
+      - path: _test\.go
+        linters:
+          - gosec
+        text: "G101|G404" # fixture credentials and math/rand are fine in tests
+      - path: ^(scripts|tools)/
+        linters:
+          - forbidigo # CLI tools print to stdout on purpose
+
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
+  settings:
+    goimports:
+      local-prefixes:
+        - github.com/macrowallets/waas

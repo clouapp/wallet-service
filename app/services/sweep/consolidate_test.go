@@ -25,6 +25,16 @@ import (
 // TestConsolidateAll_ShortPassphraseRejected verifies the input guard fires
 // before any repository / lock / quota work, so a bad call cannot burn the
 // per-account daily quota.
+func TestConsolidateAll_SweepFlagStopsBeforeWalletLookup(t *testing.T) {
+	paused := errors.New("sweep_paused")
+	svc := &service{flags: func(context.Context, uuid.UUID) error { return paused }}
+
+	_, err := svc.ConsolidateAll(context.Background(), uuid.New(), "eth", "passphrase12345", uuid.New())
+	if !errors.Is(err, paused) {
+		t.Fatalf("got %v", err)
+	}
+}
+
 func TestConsolidateAll_ShortPassphraseRejected(t *testing.T) {
 	svc := &service{}
 	_, err := svc.ConsolidateAll(context.Background(), uuid.New(), "usdt", "short", uuid.Nil)
@@ -113,7 +123,6 @@ func TestConsolidateAll_NoEligibleChildren_Noop(t *testing.T) {
 		walletRepo:  &fakeWalletRepo{wallet: wallet},
 		addressRepo: &fakeAddressRepo{children: []models.Address{baseAddr}},
 		chainRepo:   &fakeChainRepo{chain: chainEntity},
-		accountRepo: &fakeAccountRepo{},
 		txRepo:      txRepo,
 	}
 
@@ -198,11 +207,10 @@ func TestConsolidateAll_QuotaNotBurnedOnInvalidPassphrase(t *testing.T) {
 
 	svc := &service{
 		registry:    registry,
-		rdb:         client,
+		rdb:         redisStore{client: client},
 		walletRepo:  &fakeWalletRepo{wallet: wallet},
 		addressRepo: &fakeAddressRepo{children: []models.Address{baseAddr, childA}},
 		chainRepo:   &fakeChainRepo{chain: chainEntity},
-		accountRepo: &fakeAccountRepo{},
 		txRepo:      &fakeTxRepo{},
 	}
 

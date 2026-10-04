@@ -15,7 +15,12 @@ import (
 	"github.com/goravel/framework/facades"
 
 	"github.com/macrowallets/waas/app/container"
+	chainpkg "github.com/macrowallets/waas/app/services/chain"
+	"github.com/macrowallets/waas/app/services/deposit"
 	"github.com/macrowallets/waas/app/services/localworkers"
+	"github.com/macrowallets/waas/app/services/refresh"
+	"github.com/macrowallets/waas/app/services/webhook"
+	"github.com/macrowallets/waas/app/services/webhooksync"
 	"github.com/macrowallets/waas/bootstrap"
 	_ "github.com/macrowallets/waas/docs" // Import generated swagger docs
 	"github.com/macrowallets/waas/pkg/lifecycle"
@@ -63,14 +68,20 @@ import (
 // @tag.description Webhook configuration for event notifications
 
 var (
-	c *container.Container
+	deposits    *deposit.Service
+	webhooks    *webhook.Service
+	webhookSync *webhooksync.Service
+	registry    *chainpkg.Registry
 )
 
 func init() {
 	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo})))
 
 	bootstrap.Boot()
-	c = container.Get()
+	deposits = container.MustMake[*deposit.Service]()
+	webhooks = container.MustMake[*webhook.Service]()
+	webhookSync = container.MustMake[*webhooksync.Service]()
+	registry = container.MustMake[*chainpkg.Registry]()
 
 	mode := facades.Config().GetString("vault.lambda_mode")
 	envName := facades.Config().GetString("app.env")
@@ -112,8 +123,8 @@ func handleAPIGateway(ctx context.Context, req events.APIGatewayV2HTTPRequest) (
 // backoff elapsed, in the same invocation, as the local scan loop does.
 func handleDepositScan(ctx context.Context, event types.DepositScanEvent) error {
 	slog.Info("deposit scan triggered", "chain", event.Chain)
-	scanErr := c.DepositService.ScanLatestBlocks(ctx, event.Chain)
-	resolved, pendingErr := c.DepositService.ReprocessDuePending(ctx, event.Chain)
+	scanErr := deposits.ScanLatestBlocks(ctx, event.Chain)
+	resolved, pendingErr := deposits.ReprocessDuePending(ctx, event.Chain)
 	if resolved > 0 {
 		slog.Info("pending deposit blocks recovered", "chain", event.Chain, "count", resolved)
 	}
@@ -122,12 +133,12 @@ func handleDepositScan(ctx context.Context, event types.DepositScanEvent) error 
 
 func handleConfirmationTracker(ctx context.Context) error {
 	slog.Info("confirmation tracker triggered")
-	return c.DepositService.RunConfirmationCheck(ctx)
+	return deposits.RunConfirmationCheck(ctx)
 }
 
 func handleWebhookReconciler(ctx context.Context) error {
 	slog.Info("webhook reconciler triggered")
-	return c.WebhookSyncService.RunReconciliation(ctx)
+	return webhookSync.RunReconciliation(ctx)
 }
 
 func handleWebhookWorker(ctx context.Context, sqsEvent events.SQSEvent) (events.SQSEventResponse, error) {
@@ -143,7 +154,7 @@ func handleWebhookWorker(ctx context.Context, sqsEvent events.SQSEvent) (events.
 			continue
 		}
 
-		if err := c.WebhookService.Deliver(ctx, msg); err != nil {
+		if err := webhooks.Deliver(ctx, msg); err != nil {
 			slog.Error("webhook delivery failed", "error", err, "event_id", msg.EventID)
 			failures = append(failures, events.SQSBatchItemFailure{
 				ItemIdentifier: record.MessageId,
@@ -171,18 +182,17 @@ func startLocalWorkers(ctx context.Context) lifecycle.Workers {
 		BalanceRefreshInterval: time.Duration(facades.Config().GetInt("vault.local_workers.balance_refresh_interval_seconds")) * time.Second,
 	}
 	for _, chainID := range cfg.DepositScanChains {
-		if _, err := c.Registry.Chain(chainID); err != nil {
+		if _, err := registry.Chain(chainID); err != nil {
 			slog.Error("local workers not started: unknown deposit scan chain", "chain", chainID, "error", err)
 			return nil
 		}
 	}
-	workers := localworkers.Workers{
-		Checker:   c.DepositService,
-		Deliverer: c.WebhookService,
-		Scanner:   c.DepositService,
-		Balances:  c.WalletRefresher,
-	}
-	loops, err := localworkers.Start(ctx, cfg, workers)
+	loops, err := localworkers.Start(ctx, cfg, localworkers.Workers{
+		Checker:   deposits,
+		Deliverer: webhooks,
+		Scanner:   deposits,
+		Balances:  container.MustMake[*refresh.WalletRefresher](),
+	})
 	if err != nil {
 		slog.Error("local workers not started", "error", err)
 		return nil

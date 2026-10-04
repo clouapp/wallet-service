@@ -8,11 +8,9 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/aws/aws-sdk-go-v2/service/secretsmanager"
 	"github.com/google/uuid"
 
 	"github.com/macrowallets/waas/app/models"
-	"github.com/macrowallets/waas/app/repositories"
 	"github.com/macrowallets/waas/app/services/addressing"
 	"github.com/macrowallets/waas/app/services/chain"
 	mpcpkg "github.com/macrowallets/waas/app/services/mpc"
@@ -60,36 +58,103 @@ type walletFixture struct {
 }
 
 type fixtureWalletRepo struct {
-	repositories.WalletRepository
 	wallet *models.Wallet
 	next   int
 }
 
-func (r *fixtureWalletRepo) FindByID(uuid.UUID) (*models.Wallet, error) { return r.wallet, nil }
+func (r *fixtureWalletRepo) Create(context.Context, *models.Wallet) error {
+	return fmt.Errorf("fixture wallet repository: create is not used")
+}
 
-func (r *fixtureWalletRepo) IncrementAddressIndex(uuid.UUID) (int, error) {
+func (r *fixtureWalletRepo) FindByID(context.Context, uuid.UUID) (*models.Wallet, error) {
+	return r.wallet, nil
+}
+
+func (r *fixtureWalletRepo) FindAll(context.Context) ([]models.Wallet, error) {
+	if r.wallet == nil {
+		return nil, nil
+	}
+	return []models.Wallet{*r.wallet}, nil
+}
+
+func (r *fixtureWalletRepo) IncrementAddressIndex(context.Context, uuid.UUID) (int, error) {
 	r.next++
 	return r.next, nil
 }
 
+func (r *fixtureWalletRepo) SetDepositAddressID(context.Context, uuid.UUID, uuid.UUID) error {
+	return fmt.Errorf("fixture wallet repository: set deposit address is not used")
+}
+
+func (r *fixtureWalletRepo) SetMPCChainCode(_ context.Context, id uuid.UUID, chainCode string) error {
+	if r.wallet != nil && r.wallet.ID == id {
+		r.wallet.MPCChainCode = chainCode
+	}
+	return nil
+}
+
+func (r *fixtureWalletRepo) Activate(context.Context, uuid.UUID, string) error {
+	return fmt.Errorf("fixture wallet repository: activate is not used")
+}
+
 type fixtureAddressRepo struct {
-	repositories.AddressRepository
 	created []models.Address
 }
 
-func (r *fixtureAddressRepo) Create(address *models.Address) error {
+func (r *fixtureAddressRepo) Create(_ context.Context, address *models.Address) error {
+	if address == nil {
+		return fmt.Errorf("fixture address repository: address is required")
+	}
 	r.created = append(r.created, *address)
 	return nil
 }
 
-type fixtureSecrets struct{ shareB []byte }
-
-func (f fixtureSecrets) CreateSecret(context.Context, *secretsmanager.CreateSecretInput, ...func(*secretsmanager.Options)) (*secretsmanager.CreateSecretOutput, error) {
-	return nil, fmt.Errorf("not used")
+func (r *fixtureAddressRepo) FindByID(_ context.Context, id uuid.UUID) (*models.Address, error) {
+	for i := range r.created {
+		if r.created[i].ID == id {
+			address := r.created[i]
+			return &address, nil
+		}
+	}
+	return nil, fmt.Errorf("fixture address repository: %s not found", id)
 }
 
-func (f fixtureSecrets) GetSecretValue(context.Context, *secretsmanager.GetSecretValueInput, ...func(*secretsmanager.Options)) (*secretsmanager.GetSecretValueOutput, error) {
-	return &secretsmanager.GetSecretValueOutput{SecretBinary: bytes.Clone(f.shareB)}, nil
+func (r *fixtureAddressRepo) SetLabel(context.Context, uuid.UUID, string) error {
+	return fmt.Errorf("fixture address repository: set label is not used")
+}
+
+func (r *fixtureAddressRepo) SetExternalUserID(context.Context, uuid.UUID, string) error {
+	return fmt.Errorf("fixture address repository: set external user is not used")
+}
+
+func (r *fixtureAddressRepo) FindByChainAndAddress(context.Context, string, string) (*models.Address, error) {
+	return nil, fmt.Errorf("fixture address repository: find by chain is not used")
+}
+
+func (r *fixtureAddressRepo) FindByChainAndAddressAndAccount(context.Context, string, string, uuid.UUID) (*models.Address, error) {
+	return nil, fmt.Errorf("fixture address repository: find by account is not used")
+}
+
+func (r *fixtureAddressRepo) FindByExternalUserID(context.Context, string) ([]models.Address, error) {
+	return nil, fmt.Errorf("fixture address repository: find by user is not used")
+}
+
+func (r *fixtureAddressRepo) FindByExternalUserIDAndAccount(context.Context, string, uuid.UUID) ([]models.Address, error) {
+	return nil, fmt.Errorf("fixture address repository: find by user and account is not used")
+}
+
+func (r *fixtureAddressRepo) FindByWalletID(context.Context, uuid.UUID) ([]models.Address, error) {
+	return append([]models.Address{}, r.created...), nil
+}
+
+type fixtureSecretStore struct{ shareB []byte }
+
+func (f fixtureSecretStore) Create(context.Context, string, []byte) (string, error) {
+	return testSecretARN, nil
+}
+
+func (f fixtureSecretStore) Binary(context.Context, string) ([]byte, error) {
+	return bytes.Clone(f.shareB), nil
 }
 
 func newWalletFixture(t *testing.T, keys *mpcpkg.KeygenResult, curve mpcpkg.Curve, network Network, label string, children int) walletFixture {
@@ -118,7 +183,13 @@ func newWalletFixture(t *testing.T, keys *mpcpkg.KeygenResult, curve mpcpkg.Curv
 
 	walletRepo := &fixtureWalletRepo{wallet: &wallet}
 	addressRepo := &fixtureAddressRepo{}
-	issuer := walletsvc.NewService(registryFor(network), nil, mpcpkg.NewTSSService(), fixtureSecrets{shareB: keys.ShareB}, walletRepo, addressRepo)
+	issuer := walletsvc.NewService(walletsvc.Deps{
+		Registry:  registryFor(network),
+		MPC:       mpcpkg.NewTSSService(),
+		Secrets:   fixtureSecretStore{shareB: keys.ShareB},
+		Wallets:   walletRepo,
+		Addresses: addressRepo,
+	})
 	for i := 0; i < children; i++ {
 		if _, err := issuer.GenerateAddress(context.Background(), walletID, fmt.Sprintf("user-%d", i), "", "{}", testWalletPassphrase); err != nil {
 			t.Fatal(err)
@@ -170,9 +241,9 @@ func newFakeStore(fixtures ...walletFixture) *fakeStore {
 	return store
 }
 
-func (s *fakeStore) FindAll() ([]models.Wallet, error) { return s.wallets, nil }
+func (s *fakeStore) FindAll(context.Context) ([]models.Wallet, error) { return s.wallets, nil }
 
-func (s *fakeStore) FindByID(id uuid.UUID) (*models.Wallet, error) {
+func (s *fakeStore) FindByID(_ context.Context, id uuid.UUID) (*models.Wallet, error) {
 	for i := range s.wallets {
 		if s.wallets[i].ID == id {
 			wallet := s.wallets[i]
@@ -182,11 +253,11 @@ func (s *fakeStore) FindByID(id uuid.UUID) (*models.Wallet, error) {
 	return nil, nil
 }
 
-func (s *fakeStore) FindByWalletID(walletID uuid.UUID) ([]models.Address, error) {
+func (s *fakeStore) FindByWalletID(_ context.Context, walletID uuid.UUID) ([]models.Address, error) {
 	return append([]models.Address{}, s.addresses[walletID]...), nil
 }
 
-func (s *fakeStore) ResolveNetwork(chainID string) (Network, error) {
+func (s *fakeStore) ResolveNetwork(_ context.Context, chainID string) (Network, error) {
 	network, ok := s.byChain[chainID]
 	if !ok {
 		return Network{}, fmt.Errorf("chain %s not registered", chainID)

@@ -55,9 +55,9 @@ func (s *WithdrawalsControllerTestSuite) TestCreateWithdrawal_WalletNotFound() {
 
 	tokenID := uuid.New()
 	_, err := facades.Orm().Query().Exec(
-		`INSERT INTO access_tokens (id, account_id, name, token_hash, spending_limit, created_at, updated_at)
-		 VALUES (?, ?, ?, ?, ?, NOW(), NOW())`,
-		tokenID, accountID, "withdraw-not-found-token", "test-hash-withdraw-not-found", "{}",
+		`INSERT INTO access_tokens (id, account_id, name, token_hash, permissions, spending_limit, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, NOW(), NOW())`,
+		tokenID, accountID, "withdraw-not-found-token", "test-hash-withdraw-not-found", models.AllAPIPermissionGrants(), "{}",
 	)
 	s.Require().NoError(err)
 
@@ -76,5 +76,8 @@ func (s *WithdrawalsControllerTestSuite) TestCreateWithdrawal_WalletNotFound() {
 		Post("/api/v1/wallets/"+unknownWallet+"/withdraw/preview", strings.NewReader(body))
 	s.Require().NoError(err)
 
-	resp.AssertStatus(404).AssertJson(map[string]any{"error": "wallet not found"})
+	resp.AssertStatus(404).AssertJson(map[string]any{"error": map[string]any{
+		"code":    "not_found",
+		"message": "wallet not found",
+	}})
 }

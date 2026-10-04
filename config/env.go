@@ -1,14 +1,8 @@
 package config
 
 import (
-	"fmt"
-	"strings"
-
 	"github.com/goravel/framework/facades"
-	"github.com/shopspring/decimal"
 	"github.com/spf13/cast"
-
-	"github.com/macrowallets/waas/pkg/numeric"
 )
 
 // envString reads an environment-backed value via Goravel config (viper + OS env).
@@ -35,18 +29,4 @@ func envBool(key string, defaultValue bool) bool {
 		return defaultValue
 	}
 	return cast.ToBool(v)
-}
-
-// envNonNegativeDecimal reads an exact decimal (no float rounding). A malformed or
-// negative value is a configuration error and stops the process with the key name.
-func envNonNegativeDecimal(key, defaultValue string) decimal.Decimal {
-	text := strings.TrimSpace(cast.ToString(facades.Config().Env(key)))
-	if text == "" {
-		text = defaultValue
-	}
-	value, err := numeric.ParseNonNegative(key, text)
-	if err != nil {
-		panic(fmt.Sprintf("invalid configuration: %v", err))
-	}
-	return value
 }

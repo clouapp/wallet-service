@@ -15,19 +15,18 @@ func TestResolveGasReadinessThreshold_FromChainRow(t *testing.T) {
 	}
 }
 
-func TestResolveGasReadinessThreshold_FallbackToDefaults(t *testing.T) {
-	ch := &models.Chain{ID: "eth"}
-	got := resolveGasReadinessThreshold(ch)
-	if got == nil || got.String() != "5000000000000000" {
-		t.Fatalf("expected defaults fallback 5000000000000000, got %v", got)
+func TestResolveGasReadinessThreshold_IgnoresEnvWhenColumnIsEmpty(t *testing.T) {
+	t.Setenv("ETH_GAS_READINESS_THRESHOLD_WEI", "1")
+	empty := ""
+	ch := &models.Chain{ID: "eth", GasReadinessThresholdRaw: &empty}
+	if got := resolveGasReadinessThreshold(ch); got != nil {
+		t.Fatalf("empty column must not fall back to the environment, got %v", got)
 	}
-}
-
-func TestResolveGasReadinessThreshold_NilForBTC(t *testing.T) {
-	ch := &models.Chain{ID: "btc"}
-	got := resolveGasReadinessThreshold(ch)
-	if got != nil {
-		t.Fatalf("expected nil for btc, got %v", got)
+	if got := resolveGasReadinessThreshold(&models.Chain{ID: "btc"}); got != nil {
+		t.Fatalf("missing column must not fall back to the environment, got %v", got)
+	}
+	if got := resolveGasReadinessThreshold(nil); got != nil {
+		t.Fatalf("nil chain must not fall back to the environment, got %v", got)
 	}
 }
 
@@ -40,10 +39,17 @@ func TestResolveDustThresholdNative_FromChainRow(t *testing.T) {
 	}
 }
 
-func TestResolveDustThresholdNative_FallbackToDefaults(t *testing.T) {
-	ch := &models.Chain{ID: "polygon"}
-	got := resolveDustThresholdNative(ch)
-	if got == nil || got.String() != "100000000000000000" {
-		t.Fatalf("expected polygon default 100000000000000000, got %v", got)
+func TestResolveDustThresholdNative_IgnoresEnvWhenColumnIsEmpty(t *testing.T) {
+	t.Setenv("POLYGON_DUST_THRESHOLD_NATIVE_WEI", "1")
+	empty := ""
+	ch := &models.Chain{ID: "polygon", DustThresholdNativeRaw: &empty}
+	if got := resolveDustThresholdNative(ch); got != nil {
+		t.Fatalf("empty column must not fall back to the environment, got %v", got)
+	}
+	if got := resolveDustThresholdNative(&models.Chain{ID: "polygon"}); got != nil {
+		t.Fatalf("missing column must not fall back to the environment, got %v", got)
+	}
+	if got := resolveDustThresholdNative(nil); got != nil {
+		t.Fatalf("nil chain must not fall back to the environment, got %v", got)
 	}
 }

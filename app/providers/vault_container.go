@@ -14,11 +14,21 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/secretsmanager"
 	"github.com/aws/aws-sdk-go-v2/service/sqs"
 	smithyendpoints "github.com/aws/smithy-go/endpoints"
+	"github.com/google/uuid"
 	"github.com/goravel/framework/contracts/foundation"
-	"github.com/goravel/framework/facades"
 	"github.com/redis/go-redis/v9"
 
+	coinapiws "github.com/macrowallets/waas/app/adapters/price/coinapi"
+	queuesqs "github.com/macrowallets/waas/app/adapters/queue/sqs"
+	"github.com/macrowallets/waas/app/adapters/redis/addresscache"
+	"github.com/macrowallets/waas/app/adapters/redis/addressset"
+	redislock "github.com/macrowallets/waas/app/adapters/redis/lock"
+	"github.com/macrowallets/waas/app/adapters/redis/pricecache"
+	"github.com/macrowallets/waas/app/adapters/redis/scanner"
+	sweepredis "github.com/macrowallets/waas/app/adapters/redis/sweep"
+	sweepsecrets "github.com/macrowallets/waas/app/adapters/secretsmanager"
 	"github.com/macrowallets/waas/app/container"
+	"github.com/macrowallets/waas/app/facades"
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/repositories"
 	"github.com/macrowallets/waas/app/services/blockheight"
@@ -26,19 +36,20 @@ import (
 	"github.com/macrowallets/waas/app/services/deposit"
 	"github.com/macrowallets/waas/app/services/deposit/pending"
 	"github.com/macrowallets/waas/app/services/depositevents"
+	"github.com/macrowallets/waas/app/services/features"
 	"github.com/macrowallets/waas/app/services/ingest"
 	"github.com/macrowallets/waas/app/services/ingest/providers"
 	mpc "github.com/macrowallets/waas/app/services/mpc"
 	"github.com/macrowallets/waas/app/services/price"
 	"github.com/macrowallets/waas/app/services/queue"
 	"github.com/macrowallets/waas/app/services/refresh"
+	"github.com/macrowallets/waas/app/services/settings"
 	"github.com/macrowallets/waas/app/services/sweep"
 	"github.com/macrowallets/waas/app/services/wallet"
 	"github.com/macrowallets/waas/app/services/webhook"
 	"github.com/macrowallets/waas/app/services/webhooksync"
 	"github.com/macrowallets/waas/app/services/withdraw"
 	"github.com/macrowallets/waas/app/services/withdrawalevents"
-	"github.com/macrowallets/waas/config"
 	"github.com/macrowallets/waas/pkg/types"
 )
 
@@ -56,16 +67,17 @@ func (r staticEndpointResolver) ResolveEndpoint(
 }
 
 func registerVaultContainer(app foundation.Application) {
-	app.Singleton(container.ContainerKey, func(_ foundation.Application) (any, error) {
-		c, err := buildVaultContainer()
+	app.Singleton(container.ContainerKey, func(app foundation.Application) (any, error) {
+		c, err := buildVaultContainer(app)
 		if err != nil {
 			return nil, err
 		}
 		return c, nil
 	})
+	registerRuntimeServices(app)
 }
 
-func buildVaultContainer() (*container.Container, error) {
+func buildVaultContainer(app foundation.Application) (*container.Container, error) {
 	c := &container.Container{}
 
 	redisURL := facades.Config().GetString("vault.redis_url")
@@ -83,7 +95,7 @@ func buildVaultContainer() (*container.Container, error) {
 		return nil, fmt.Errorf("vault: aws config: %w", err)
 	}
 	sqsClient := sqs.NewFromConfig(awsCfg)
-	c.SQS = queue.NewSQSClient(sqsClient, queue.QueueURLs{
+	c.SQS = queue.NewSQSClient(queuesqs.New(sqsClient), queue.QueueURLs{
 		Webhook: facades.Config().GetString("vault.queues.webhook"),
 	})
 
@@ -95,30 +107,130 @@ func buildVaultContainer() (*container.Container, error) {
 	c.SecretsManager = smClient
 	c.MPCService = mpc.NewTSSService()
 
-	c.UserRepo = repositories.NewUserRepository()
-	c.RefreshTokenRepo = repositories.NewRefreshTokenRepository()
-	c.PasswordResetTokenRepo = repositories.NewPasswordResetTokenRepository()
-	c.TotpRecoveryCodeRepo = repositories.NewTotpRecoveryCodeRepository()
-	c.AccountRepo = repositories.NewAccountRepository()
-	c.AccountUserRepo = repositories.NewAccountUserRepository()
-	c.AccessTokenRepo = repositories.NewAccessTokenRepository()
-	c.WalletRepo = repositories.NewWalletRepository()
-	c.WalletUserRepo = repositories.NewWalletUserRepository()
-	c.AddressRepo = repositories.NewAddressRepository()
-	c.TransactionRepo = repositories.NewTransactionRepository()
-	c.WithdrawalRepo = repositories.NewWithdrawalRepository()
-	c.WebhookConfigRepo = repositories.NewWebhookConfigRepository()
-	c.WebhookEventRepo = repositories.NewWebhookEventRepository()
-	c.WhitelistEntryRepo = repositories.NewWhitelistEntryRepository()
-	c.ChainRepo = repositories.NewChainRepository()
-	c.TokenRepo = repositories.NewTokenRepository()
-	c.ChainResourceRepo = repositories.NewChainResourceRepository()
-	c.WebhookSubscriptionRepo = repositories.NewWebhookSubscriptionRepository()
-	c.WalletAssetBalanceRepo = repositories.NewWalletAssetBalanceRepository()
-	c.WalletBalanceSnapshotRepo = repositories.NewWalletBalanceSnapshotRepository()
-	c.WalletUTXORepo = repositories.NewWalletUTXORepository()
-	c.WalletSyncStateRepo = repositories.NewWalletSyncStateRepository()
-	c.CurrencyRepo = repositories.NewCurrencyRepository()
+	users, err := resolve[*repositories.UserRepository](app)
+	if err != nil {
+		return nil, err
+	}
+	refreshTokens, err := resolve[*repositories.RefreshTokenRepository](app)
+	if err != nil {
+		return nil, err
+	}
+	passwordResets, err := resolve[*repositories.PasswordResetTokenRepository](app)
+	if err != nil {
+		return nil, err
+	}
+	recoveryCodes, err := resolve[*repositories.TotpRecoveryCodeRepository](app)
+	if err != nil {
+		return nil, err
+	}
+	accounts, err := resolve[*repositories.AccountRepository](app)
+	if err != nil {
+		return nil, err
+	}
+	memberships, err := resolve[*repositories.AccountUserRepository](app)
+	if err != nil {
+		return nil, err
+	}
+	accessTokens, err := resolve[*repositories.AccessTokenRepository](app)
+	if err != nil {
+		return nil, err
+	}
+	c.UserRepo = users
+	c.RefreshTokenRepo = refreshTokens
+	c.PasswordResetTokenRepo = passwordResets
+	c.TotpRecoveryCodeRepo = recoveryCodes
+	c.AccountRepo = accounts
+	c.AccountUserRepo = memberships
+	c.AccessTokenRepo = accessTokens
+	wallets, err := resolve[*repositories.WalletRepository](app)
+	if err != nil {
+		return nil, err
+	}
+	walletUsers, err := resolve[*repositories.WalletUserRepository](app)
+	if err != nil {
+		return nil, err
+	}
+	addresses, err := resolve[*repositories.AddressRepository](app)
+	if err != nil {
+		return nil, err
+	}
+	whitelist, err := resolve[*repositories.WhitelistEntryRepository](app)
+	if err != nil {
+		return nil, err
+	}
+	assetBalances, err := resolve[*repositories.WalletAssetBalanceRepository](app)
+	if err != nil {
+		return nil, err
+	}
+	balanceSnapshots, err := resolve[*repositories.WalletBalanceSnapshotRepository](app)
+	if err != nil {
+		return nil, err
+	}
+	utxos, err := resolve[*repositories.WalletUTXORepository](app)
+	if err != nil {
+		return nil, err
+	}
+	syncStates, err := resolve[*repositories.WalletSyncStateRepository](app)
+	if err != nil {
+		return nil, err
+	}
+	c.WalletRepo = wallets
+	c.WalletUserRepo = walletUsers
+	c.AddressRepo = addresses
+	transactions, err := resolve[*repositories.TransactionRepository](app)
+	if err != nil {
+		return nil, err
+	}
+	withdrawals, err := resolve[*repositories.WithdrawalRepository](app)
+	if err != nil {
+		return nil, err
+	}
+	c.TransactionRepo = transactions
+	c.WithdrawalRepo = withdrawals
+	chains, err := resolve[*repositories.ChainRepository](app)
+	if err != nil {
+		return nil, err
+	}
+	tokens, err := resolve[*repositories.TokenRepository](app)
+	if err != nil {
+		return nil, err
+	}
+	chainResources, err := resolve[*repositories.ChainResourceRepository](app)
+	if err != nil {
+		return nil, err
+	}
+	currencies, err := resolve[*repositories.CurrencyRepository](app)
+	if err != nil {
+		return nil, err
+	}
+	webhookConfigs, err := resolve[*repositories.WebhookConfigRepository](app)
+	if err != nil {
+		return nil, err
+	}
+	webhookEvents, err := resolve[*repositories.WebhookEventRepository](app)
+	if err != nil {
+		return nil, err
+	}
+	c.WebhookConfigRepo = webhookConfigs
+	c.WebhookEventRepo = webhookEvents
+	c.WhitelistEntryRepo = whitelist
+	c.ChainRepo = chains
+	c.TokenRepo = tokens
+	c.ChainResourceRepo = chainResources
+	webhookSubscriptions, err := resolve[*repositories.WebhookSubscriptionRepository](app)
+	if err != nil {
+		return nil, err
+	}
+	c.WebhookSubscriptionRepo = webhookSubscriptions
+	c.WalletAssetBalanceRepo = assetBalances
+	c.WalletBalanceSnapshotRepo = balanceSnapshots
+	c.WalletUTXORepo = utxos
+	c.WalletSyncStateRepo = syncStates
+	c.CurrencyRepo = currencies
+
+	if err := wireAuthServices(c); err != nil {
+		return nil, err
+	}
 
 	c.PriceConfig.CoinGeckoAPIKey = facades.Config().GetString("vault.price.coingecko_api_key")
 	c.PriceConfig.CoinMarketCapAPIKey = facades.Config().GetString("vault.price.coinmarketcap_api_key")
@@ -140,7 +252,7 @@ func buildVaultContainer() (*container.Container, error) {
 	c.Registry = chainpkg.NewRegistry()
 
 	tokensByChain := make(map[string][]types.Token)
-	activeTokens, tokenErr := c.TokenRepo.FindActive()
+	activeTokens, tokenErr := c.TokenRepo.FindActive(context.Background())
 	if tokenErr != nil {
 		slog.Error("failed to load tokens from DB", "error", tokenErr)
 	} else {
@@ -158,7 +270,7 @@ func buildVaultContainer() (*container.Container, error) {
 	}
 
 	networkByChain := make(map[string]string)
-	activeChains, chainErr := c.ChainRepo.FindActive()
+	activeChains, chainErr := c.ChainRepo.FindActive(context.Background())
 	if chainErr != nil {
 		slog.Error("failed to load chains from DB", "error", chainErr)
 	} else {
@@ -229,18 +341,42 @@ func buildVaultContainer() (*container.Container, error) {
 	}
 
 	c.WebhookService = webhook.NewService(c.SQS, c.WebhookConfigRepo, c.WebhookEventRepo)
-	c.WalletService = wallet.NewService(c.Registry, c.Redis, c.MPCService, c.SecretsManager, c.WalletRepo, c.AddressRepo)
-	c.WalletService.SetWebhookSync(c.WebhookSyncService)
+	c.WalletService = wallet.NewService(wallet.Deps{
+		Registry:     c.Registry,
+		AddressCache: addresscache.New(c.Redis),
+		MPC:          c.MPCService,
+		Secrets:      sweepsecrets.NewWalletStore(c.SecretsManager),
+		Wallets:      c.WalletRepo,
+		Addresses:    c.AddressRepo,
+		WebhookSync:  c.WebhookSyncService,
+	})
+	flags, err := container.Make[*features.Service]()
+	if err != nil {
+		return nil, fmt.Errorf("vault: feature flags: %w", err)
+	}
+	accountSettings, err := container.Make[*settings.Service]()
+	if err != nil {
+		return nil, fmt.Errorf("vault: account settings: %w", err)
+	}
 	c.PriceService = buildPriceService(c)
 	c.SweepService = sweep.NewService(
-		c.Registry, c.MPCService, c.SecretsManager, c.Redis, c.WebhookService,
-		c.WalletRepo, c.AddressRepo, c.TransactionRepo, c.AccountRepo, c.ChainRepo,
+		c.Registry, c.MPCService, sweepsecrets.New(c.SecretsManager), sweepredis.New(c.Redis), c.WebhookService,
+		c.WalletRepo, c.AddressRepo, c.TransactionRepo, accountSettings.EffectiveSweepLimits, c.ChainRepo,
+		func(ctx context.Context, accountID uuid.UUID) error {
+			return flags.Gate(ctx, accountID, features.FlagSweepEnabled, features.CodeSweepPaused)
+		},
+		nil,
 		c.PriceService,
+		nil,
 	)
 	c.WithdrawalService = withdraw.NewService(
-		c.Registry, c.WebhookService, c.MPCService, c.SecretsManager, c.Redis,
+		c.Registry, c.WebhookService, c.MPCService, redislock.New(c.Redis),
 		c.TransactionRepo, c.WalletRepo, c.AddressRepo, c.SweepService,
+		func(ctx context.Context, accountID uuid.UUID) error {
+			return flags.Gate(ctx, accountID, features.FlagWithdrawalsEnabled, features.CodeWithdrawalsPaused)
+		},
 	)
+	c.WithdrawalService.UseUSDQuote(c.PriceService)
 
 	etherscanKey := facades.Config().GetString("vault.webhooks.etherscan_api_key")
 	blockHeightProviders := blockheight.NewProviders(etherscanKey, networkByChain)
@@ -249,7 +385,7 @@ func buildVaultContainer() (*container.Container, error) {
 		c.WebhookService, c.WithdrawalRepo, c.TransactionRepo, c.WalletRepo, assetDecimals,
 	)
 	c.DepositEvents = depositevents.NewPublisher(c.WebhookService, c.WalletRepo, assetDecimals)
-	c.DepositService = deposit.NewService(c.Redis, c.Registry, c.WebhookService, c.AddressRepo, c.TransactionRepo, blockHeightProviders)
+	c.DepositService = deposit.NewService(scanner.New(c.Redis), c.Registry, c.WebhookService, c.AddressRepo, c.TransactionRepo, blockHeightProviders)
 	c.DepositService.SetWithdrawalConfirmations(c.WithdrawalEvents)
 	c.DepositService.SetDepositEvents(c.DepositEvents)
 	scanOptions, err := deposit.ScanOptionsFromSettings(
@@ -263,6 +399,14 @@ func buildVaultContainer() (*container.Container, error) {
 	if err := c.DepositService.SetScanOptions(scanOptions); err != nil {
 		return nil, fmt.Errorf("vault: deposit scan options: %w", err)
 	}
+	envWindow := scanOptions
+	c.DepositService.SetScanOptionSource(func(ctx context.Context) (deposit.ScanOptions, error) {
+		stored, readErr := accountSettings.EffectiveDepositScan(ctx)
+		if readErr != nil {
+			return deposit.ScanOptions{}, readErr
+		}
+		return deposit.ApplyStoredScanOptions(envWindow, stored.BatchBlocks, stored.CatchUpBlocks, stored.Concurrency), nil
+	})
 	failurePolicy, err := deposit.FailurePolicyFromSettings(
 		facades.Config().GetInt("vault.deposit_scan.retry_attempts"),
 		facades.Config().GetInt("vault.deposit_scan.retry_delay_ms"),
@@ -276,11 +420,10 @@ func buildVaultContainer() (*container.Container, error) {
 	if err := c.DepositService.SetFailurePolicy(failurePolicy); err != nil {
 		return nil, fmt.Errorf("vault: deposit failure policy: %w", err)
 	}
-	c.PendingDeposits = buildPendingDepositStore(c.Redis, facades.Config().GetString("vault.deposit_scan.pending_dir"))
-	if c.PendingDeposits != nil {
-		c.DepositService.SetPendingStore(c.PendingDeposits)
+	if pendingDeposits := buildPendingDepositStore(c.Redis, facades.Config().GetString("vault.deposit_scan.pending_dir")); pendingDeposits != nil {
+		c.DepositService.SetPendingStore(pendingDeposits)
 	}
-	c.IngestService = ingest.NewService(c.Redis, c.Registry, c.WebhookService, c.AddressRepo, c.TransactionRepo)
+	c.IngestService = ingest.NewService(addressset.New(c.Redis), c.Registry, c.WebhookService, c.AddressRepo, c.TransactionRepo)
 	c.IngestService.SetDepositEvents(c.DepositEvents)
 	c.BalanceRefreshService = refresh.NewBalanceService(
 		c.Registry,
@@ -315,7 +458,7 @@ func buildPriceService(c *container.Container) *price.Service {
 	if key := c.PriceConfig.CoinAPIKey; key != "" {
 		priceProviders = append(priceProviders, price.NewCoinAPIProvider(key))
 	}
-	return price.NewService(priceProviders, c.CurrencyRepo, c.Redis)
+	return price.NewService(priceProviders, c.CurrencyRepo, pricecache.New(c.Redis)).WithQuoteDialer(coinapiws.Dialer{})
 }
 
 // buildPendingDepositStore keeps failed deposit blocks in Redis and in a local
@@ -365,33 +508,22 @@ var lenientLogScanChains = map[string]bool{
 	models.ChainTPolygon: true,
 }
 
-// resolveGasReadinessThreshold returns the gas-readiness threshold for a chain,
-// preferring the value seeded on the chains row, falling back to config.SweepDefaults.
-// Returns nil if neither source provides a value (e.g. BTC).
+// resolveGasReadinessThreshold is the chains.gas_readiness_threshold_raw value.
+// An empty column means the chain has no gas threshold. Environment variables
+// do not fill it in.
 func resolveGasReadinessThreshold(ch *models.Chain) *big.Int {
-	if v := ch.GasReadinessThreshold(); v != nil {
-		return v
+	if ch == nil {
+		return nil
 	}
-	defaults := config.SweepDefaults()
-	if d, ok := defaults[ch.ID]; ok && d.GasReadinessRaw != "" {
-		if v, ok := new(big.Int).SetString(d.GasReadinessRaw, 10); ok {
-			return v
-		}
-	}
-	return nil
+	return ch.GasReadinessThreshold()
 }
 
-// resolveDustThresholdNative returns the native dust threshold for a chain,
-// preferring the chains row, falling back to config.SweepDefaults.
+// resolveDustThresholdNative is the chains.dust_threshold_native_raw value.
+// An empty column means no native dust filter. Environment variables do not
+// fill it in.
 func resolveDustThresholdNative(ch *models.Chain) *big.Int {
-	if v := ch.DustThresholdNative(); v != nil {
-		return v
+	if ch == nil {
+		return nil
 	}
-	defaults := config.SweepDefaults()
-	if d, ok := defaults[ch.ID]; ok && d.DustNativeRaw != "" {
-		if v, ok := new(big.Int).SetString(d.DustNativeRaw, 10); ok {
-			return v
-		}
-	}
-	return nil
+	return ch.DustThresholdNative()
 }

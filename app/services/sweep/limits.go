@@ -2,74 +2,57 @@ package sweep
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
 
 	"github.com/macrowallets/waas/app/models"
+	"github.com/macrowallets/waas/app/services/settings"
 	"github.com/macrowallets/waas/pkg/numeric"
 )
 
-// LoadLimits returns the effective sweep limits for an account: hard-coded
-// defaults overlaid with any per-account overrides stored in
-// accounts.sweep_limits (JSONB). Missing, empty, or invalid overrides fall
-// back silently to defaults — limits are best-effort config, not a hard
-// dependency, and a malformed row must never break withdrawals.
+// LoadLimits returns the effective sweep limits for an account. It reads the
+// stored account_sweep_limits group at use time. A missing source, a missing
+// account, or a read error falls back to the registry defaults: limits are
+// best-effort config, and a settings outage must not block a withdrawal.
+// uuid.Nil never queries settings.
 func (s *service) LoadLimits(ctx context.Context, accountID uuid.UUID) (*Limits, error) {
-	defaults := &Limits{
-		MaxAddressesPerRequest: map[string]int{
-			models.AdapterTypeEVM:     100,
-			models.AdapterTypeSolana:  25,
-			models.AdapterTypeBitcoin: 100,
-		},
-		MaxConsolidateReqPerDay: 50,
-	}
-	if accountID == uuid.Nil {
-		return defaults, nil
-	}
-	account, err := s.accountRepo.FindByID(accountID)
-	if err != nil || account == nil {
-		return defaults, nil
-	}
-	if account.SweepLimits == nil || *account.SweepLimits == "" {
-		return defaults, nil
-	}
-
-	var override struct {
-		MaxAddressesPerRequest  map[string]int `json:"max_addresses_per_request"`
-		MaxConsolidateReqPerDay *int           `json:"max_consolidate_requests_per_day"`
-		DailyWithdrawCapUSD     *string        `json:"daily_withdraw_cap_usd"`
-	}
-	if err := json.Unmarshal([]byte(*account.SweepLimits), &override); err != nil {
-		slog.Warn("parse account sweep_limits", "account_id", accountID, "error", err)
-		return defaults, nil
-	}
-
-	merged := &Limits{
-		MaxAddressesPerRequest:  map[string]int{},
-		MaxConsolidateReqPerDay: defaults.MaxConsolidateReqPerDay,
-	}
-	for k, v := range defaults.MaxAddressesPerRequest {
-		merged.MaxAddressesPerRequest[k] = v
-	}
-	for k, v := range override.MaxAddressesPerRequest {
-		merged.MaxAddressesPerRequest[k] = v
-	}
-	if override.MaxConsolidateReqPerDay != nil {
-		merged.MaxConsolidateReqPerDay = *override.MaxConsolidateReqPerDay
-	}
-	if override.DailyWithdrawCapUSD != nil {
-		if capUSD, err := numeric.ParseNonNegative("daily_withdraw_cap_usd", *override.DailyWithdrawCapUSD); err == nil {
-			merged.DailyWithdrawCapUSD = &capUSD
+	values := settings.DefaultSweepLimits()
+	if accountID != uuid.Nil && s.sweepLimits != nil {
+		loaded, err := s.sweepLimits(ctx, accountID)
+		if err != nil {
+			slog.Warn("load account sweep limits", "account_id", accountID, "error", err)
 		} else {
-			slog.Warn("parse account sweep_limits.daily_withdraw_cap_usd",
-				"account_id", accountID, "value", *override.DailyWithdrawCapUSD, "error", err)
+			values = loaded
 		}
 	}
-	return merged, nil
+	return limitsFromSettings(accountID, values), nil
+}
+
+func limitsFromSettings(accountID uuid.UUID, values settings.SweepLimitValues) *Limits {
+	limits := &Limits{
+		MaxAddressesPerRequest: map[string]int{
+			models.AdapterTypeEVM:     values.MaxAddressesEVM,
+			models.AdapterTypeSolana:  values.MaxAddressesSolana,
+			models.AdapterTypeBitcoin: values.MaxAddressesBitcoin,
+		},
+		MaxConsolidateReqPerDay: values.MaxConsolidateRequestsPerDay,
+	}
+	capUSD := strings.TrimSpace(values.DailyWithdrawCapUSD)
+	if capUSD == "" {
+		return limits
+	}
+	parsed, err := numeric.ParseNonNegative("daily_withdraw_cap_usd", capUSD)
+	if err != nil {
+		slog.Warn("parse account sweep limit daily_withdraw_cap_usd",
+			"account_id", accountID, "error", err)
+		return limits
+	}
+	limits.DailyWithdrawCapUSD = &parsed
+	return limits
 }
 
 // acquireWalletOpsLock takes a short-lived Redis mutex keyed by walletID so
@@ -81,7 +64,7 @@ func (s *service) acquireWalletOpsLock(ctx context.Context, walletID uuid.UUID) 
 		return func() {}, nil
 	}
 	key := "vault:lock:wallet_ops:" + walletID.String()
-	ok, err := s.rdb.SetNX(ctx, key, "1", 60*time.Second).Result()
+	ok, err := s.rdb.SetNX(ctx, key, "1", 60*time.Second)
 	if err != nil {
 		return nil, fmt.Errorf("acquire wallet ops lock: %w", err)
 	}
@@ -91,7 +74,7 @@ func (s *service) acquireWalletOpsLock(ctx context.Context, walletID uuid.UUID) 
 	return func() {
 		// Use a background context for release so an already-cancelled
 		// request context cannot leak the lock until its 60s TTL.
-		s.rdb.Del(context.Background(), key)
+		_ = s.rdb.Del(context.Background(), key)
 	}, nil
 }
 
@@ -105,12 +88,12 @@ func (s *service) incrDailyQuota(ctx context.Context, accountID uuid.UUID, limit
 	}
 	key := fmt.Sprintf("vault:quota:consolidate:%s:%s",
 		accountID.String(), time.Now().UTC().Format("2006-01-02"))
-	n, err := s.rdb.Incr(ctx, key).Result()
+	n, err := s.rdb.Incr(ctx, key)
 	if err != nil {
 		return fmt.Errorf("incr daily quota: %w", err)
 	}
 	if n == 1 {
-		s.rdb.Expire(ctx, key, 24*time.Hour)
+		_ = s.rdb.Expire(ctx, key, 24*time.Hour)
 	}
 	if int(n) > limits.MaxConsolidateReqPerDay {
 		return ErrDailyQuotaExceeded
