@@ -144,6 +144,7 @@ func RegisterAdminRoutes() {
 		router.Get("/settings", platformSettingsCtrl.Index)
 		router.Get("/settings/{group}", platformSettingsCtrl.Show)
 		router.Put("/settings/{group}", platformSettingsCtrl.Update)
+		router.Post("/settings/sections/{section}/cache", platformSettingsCtrl.Flush)
 		router.Get("/activity", accountActivityCtrl.Platform)
 		router.Get("/users", platformUsersCtrl.Index)
 		router.Post("/users/{id}/suspend", platformUsersCtrl.Suspend)

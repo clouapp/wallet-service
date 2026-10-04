@@ -114,6 +114,30 @@ func (ctrl *SettingsController) Update(ctx http.Context) http.Response {
 	return responses.Send(ctx, http.StatusOK, view)
 }
 
+// Flush godoc
+// @Summary      Flush one platform settings section cache
+// @Description  Drops the settings:platform cache key of every platform group on the page. Stored rows stay. No activity row. An unknown section, including an account-only page, is 404 before the platform-admin check. S1.4.6 names settings.update for every group on the page. This branch has no platform permission catalog, so a platform_admins row is the gate.
+// @Tags         Platform Settings
+// @Security     BearerAuth
+// @Param        section  path  string  true  "Settings section"
+// @Success      204  "No content"
+// @Failure      401  {object}  responses.ErrorBody
+// @Failure      403  {object}  responses.ErrorBody
+// @Failure      404  {object}  responses.ErrorBody
+// @Router       /platform/settings/sections/{section}/cache [post]
+func (ctrl *SettingsController) Flush(ctx http.Context) http.Response {
+	actorID := middleware.SessionUserID(ctx)
+	if actorID == uuid.Nil {
+		return responses.Send(ctx, http.StatusUnauthorized, http.Json{"error": "unauthorized"})
+	}
+	var path requests.SettingsSectionRequest
+	path.Load(ctx)
+	if err := ctrl.settings.FlushPlatformSection(ctx.Context(), actorID, path.Section); err != nil {
+		return mapPlatformSettingsError(ctx, err)
+	}
+	return ctx.Response().NoContent()
+}
+
 func mapPlatformSettingsBodyError(ctx http.Context, err error) http.Response {
 	if errors.Is(err, requests.ErrAccountSettingsBodyTooLarge) {
 		return responses.Send(ctx, http.StatusRequestEntityTooLarge, http.Json{"error": "request body is too large"})
@@ -132,6 +156,8 @@ func mapPlatformSettingsError(ctx http.Context, err error) http.Response {
 	switch {
 	case errors.Is(err, settingssvc.ErrGroupNotFound):
 		return responses.Send(ctx, http.StatusNotFound, http.Json{"error": "settings group not found"})
+	case errors.Is(err, settingssvc.ErrSectionNotFound):
+		return responses.Send(ctx, http.StatusNotFound, http.Json{"error": "settings section not found"})
 	case errors.Is(err, settingssvc.ErrPlatformForbidden),
 		errors.Is(err, settingssvc.ErrPlatformViewForbidden):
 		return responses.Send(ctx, http.StatusForbidden, http.Json{"error": err.Error()})

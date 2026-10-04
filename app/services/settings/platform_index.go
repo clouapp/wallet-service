@@ -145,3 +145,56 @@ func visibleOnPlatformIndex(group Group) bool {
 func platformAdminCoversViewPermission(permission string) bool {
 	return strings.TrimSpace(permission) != ""
 }
+
+// FlushPlatformSection drops the cached rows of every platform group on one
+// page, so the next read sees an edit made outside this service. Stored rows
+// stay. Account cache keys stay.
+// S1.4.6: POST /v1/platform/settings/sections/{section}/cache — settings.update (all groups on page updatable).
+// An unknown page, including an account-only page, is ErrSectionNotFound
+// before the platform_admins check. This branch has no platform permission
+// catalog, so a platform_admins row is the gate and stands in for
+// settings.update. The activity vocabulary has no flush event, so this
+// writes nothing.
+func (s *Service) FlushPlatformSection(ctx context.Context, actorID uuid.UUID, section string) error {
+	if ctx == nil {
+		return fmt.Errorf("platform settings: context is required")
+	}
+	if s == nil {
+		return errServiceRequired
+	}
+	groups := platformGroupsInSection(section)
+	if len(groups) == 0 {
+		return ErrSectionNotFound
+	}
+	if actorID == uuid.Nil {
+		return fmt.Errorf("platform settings: actor is required")
+	}
+	if s.admins == nil {
+		return fmt.Errorf("platform settings: platform admins are required")
+	}
+	admin, err := s.admins.Contains(ctx, actorID)
+	if err != nil {
+		return err
+	}
+	if !admin {
+		return ErrPlatformForbidden
+	}
+	if s.cache == nil {
+		return fmt.Errorf("platform settings: cache is required")
+	}
+	for _, group := range groups {
+		s.cache.Forget(platformCacheKey(group.Name))
+	}
+	return nil
+}
+
+func platformGroupsInSection(section string) []Group {
+	var groups []Group
+	for _, group := range GroupsInSection(section) {
+		if group.Scope != ScopePlatform {
+			continue
+		}
+		groups = append(groups, group)
+	}
+	return groups
+}
