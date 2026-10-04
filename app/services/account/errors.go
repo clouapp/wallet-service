@@ -23,4 +23,12 @@ var (
 	ErrMemberChangeEmpty = errors.New("role or status is required")
 	// ErrAccessTokenNotFound is a token that is missing or belongs to another account.
 	ErrAccessTokenNotFound = errors.New("token not found")
+	// ErrPlatformLifecycleForbidden is a caller who is not a platform admin.
+	// S3.4.1 names accounts.lifecycle. This branch has no platform permission
+	// catalog, so a platform_admins row is the gate.
+	ErrPlatformLifecycleForbidden = errors.New("you do not have permission to change account status")
+	// ErrAccountNotFound is an account id that does not exist.
+	ErrAccountNotFound = errors.New("account not found")
+	// ErrAccountStatus is a lifecycle status outside active, frozen, and archived.
+	ErrAccountStatus = errors.New("invalid account status")
 )

@@ -109,6 +109,10 @@ func (p *IdentityServiceProvider) Register(app foundation.Application) {
 		if err != nil {
 			return nil, err
 		}
+		admins, err := resolve[*repositories.PlatformAdminRepository](app)
+		if err != nil {
+			return nil, err
+		}
 		return account.NewService(account.Deps{
 			Accounts:    accounts,
 			Memberships: memberships,
@@ -116,7 +120,7 @@ func (p *IdentityServiceProvider) Register(app foundation.Application) {
 			Tokens:      tokens,
 			Activity:    activityLog,
 			Invites:     invites,
-		}), nil
+		}).WithPlatformAdmins(admins), nil
 	})
 }
 

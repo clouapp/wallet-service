@@ -18,6 +18,7 @@ import (
 	dashusers "github.com/macrowallets/waas/app/http/controllers/dashboard/users"
 	dashwallets "github.com/macrowallets/waas/app/http/controllers/dashboard/wallets"
 	dashwithdrawals "github.com/macrowallets/waas/app/http/controllers/dashboard/withdrawals"
+	platformaccounts "github.com/macrowallets/waas/app/http/controllers/platform/accounts"
 	platformchains "github.com/macrowallets/waas/app/http/controllers/platform/chains"
 	platformfeatures "github.com/macrowallets/waas/app/http/controllers/platform/features"
 	platformsettings "github.com/macrowallets/waas/app/http/controllers/platform/settings"
@@ -65,6 +66,7 @@ func RegisterAdminRoutes() {
 	accountActivityCtrl := newDashboardAccountActivityController()
 	accountFeaturesCtrl := newDashboardAccountFeaturesController()
 	platformFeaturesCtrl := newPlatformFeaturesController()
+	platformAccountsCtrl := newPlatformAccountsController()
 	platformChainsCtrl := newPlatformChainsController()
 	platformSettingsCtrl := newPlatformSettingsController()
 	platformUsersCtrl := newPlatformUsersController()
@@ -155,6 +157,12 @@ func RegisterAdminRoutes() {
 		router.Post("/settings/mail/test", platformSettingsCtrl.TestMail)
 		router.Get("/settings", platformSettingsCtrl.Index)
 		router.Get("/settings/{group}", platformSettingsCtrl.Show)
+		// S3.4.1: POST /v1/platform/accounts/{id}/freeze|unfreeze|archive accounts.lifecycle.
+		// A platform_admins row is the gate. These posts are not behind AccountContext,
+		// so a frozen or archived account can still be changed.
+		router.Post("/accounts/{accountId}/freeze", platformAccountsCtrl.Freeze)
+		router.Post("/accounts/{accountId}/unfreeze", platformAccountsCtrl.Unfreeze)
+		router.Post("/accounts/{accountId}/archive", platformAccountsCtrl.Archive)
 		// S1.4.6: GET /v1/platform/accounts/{accountId}/settings/{group} settings.view (platform-managed account groups).
 		router.Get("/accounts/{accountId}/settings/{group}", platformSettingsCtrl.ShowAccount)
 		// S1.4.6: PUT /v1/platform/accounts/{accountId}/settings/{group} settings.update + sweep.update for account_sweep_limits.
@@ -417,6 +425,12 @@ func newDashboardAccountSettingsController() *dashsettings.SettingsController {
 func newDashboardAccountFeaturesController() *dashfeatures.FeaturesController {
 	return dashfeatures.NewFeaturesController(
 		container.MustMake[*featuressvc.Service](),
+	)
+}
+
+func newPlatformAccountsController() *platformaccounts.LifecycleController {
+	return platformaccounts.NewLifecycleController(
+		container.MustMake[*accountsvc.Service](),
 	)
 }
 

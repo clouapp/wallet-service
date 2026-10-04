@@ -104,6 +104,7 @@ type Service struct {
 	tokens      TokenStore
 	activity    ActivityLog
 	invites     InviteStore
+	admins      PlatformAdmins
 }
 
 // NewService builds an account service from Deps.
