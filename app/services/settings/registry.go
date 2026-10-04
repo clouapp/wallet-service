@@ -130,6 +130,33 @@ func FindGroup(name string) (Group, bool) {
 	return Group{}, false
 }
 
+// SecretPairs lists (group, key) whose stored text is a secret. The activity
+// log records valueSet for these pairs and never the value.
+func SecretPairs() [][]string {
+	seen := map[string]struct{}{}
+	var pairs [][]string
+	for _, group := range Registry() {
+		for _, definition := range group.Settings {
+			if !definition.Secret {
+				continue
+			}
+			token := group.Name + "\x00" + definition.Key
+			if _, ok := seen[token]; ok {
+				continue
+			}
+			seen[token] = struct{}{}
+			pairs = append(pairs, []string{group.Name, definition.Key})
+		}
+	}
+	slices.SortFunc(pairs, func(a, b []string) int {
+		if c := strings.Compare(a[0], b[0]); c != 0 {
+			return c
+		}
+		return strings.Compare(a[1], b[1])
+	})
+	return pairs
+}
+
 // Find resolves one definition inside a group.
 func Find(group, key string) (Definition, bool) {
 	declared, ok := FindGroup(group)

@@ -56,6 +56,9 @@ type Table struct {
 	// JSONPaths redacts inside a jsonb column, which a column allowlist cannot
 	// reach into.
 	JSONPaths map[string]JSONRule
+	// TextRedaction replaces one text column with "<column>Set" for matching
+	// rows. The before-image SELECT does not return that text for those rows.
+	TextRedaction TextRedaction
 	// KeyColumns identifies a row, overriding the model's primary key.
 	//
 	// It exists because a primary key is not always one column and is not always
@@ -90,6 +93,9 @@ func Register(t Table) error {
 	}
 	if t.Name == trailTable {
 		return fmt.Errorf("activitylog: register: %s is the trail itself and cannot be audited", trailTable)
+	}
+	if err := t.TextRedaction.validate(); err != nil {
+		return err
 	}
 
 	reg.mu.Lock()
@@ -180,6 +186,12 @@ func (t Table) image(row map[string]any) (map[string]any, map[string]any) {
 		}
 
 		img[column] = rule.apply(doc, row, flags)
+	}
+
+	if t.TextRedaction.matches(row) {
+		setKey := t.TextRedaction.Column + defaultSetKeySuffix
+		img[setKey] = textIsSet(row, t.TextRedaction.Column, setKey)
+		delete(img, t.TextRedaction.Column)
 	}
 
 	return img, flags

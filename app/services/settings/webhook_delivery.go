@@ -145,7 +145,11 @@ func (s *Service) SavePlatform(ctx context.Context, actorID uuid.UUID, groupName
 	if err != nil {
 		return GroupView{}, err
 	}
+	auditErr := s.recordSettingsAudit(ctx, nil, group, stored, writes)
 	s.cache.Forget(platformCacheKey(group.Name))
+	if auditErr != nil {
+		return GroupView{}, auditErr
+	}
 	return s.platformGroupView(ctx, group)
 }
 

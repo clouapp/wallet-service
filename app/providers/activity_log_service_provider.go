@@ -5,6 +5,7 @@ import (
 
 	"github.com/goravel/framework/contracts/foundation"
 
+	"github.com/macrowallets/waas/app/services/settings"
 	"github.com/macrowallets/waas/packages/activitylog"
 )
 
@@ -19,7 +20,8 @@ const activityLogName = "audit"
 // allowlist. suspension_reason is not: a free-text reason can carry a secret.
 type ActivityLogServiceProvider struct{}
 
-func (p *ActivityLogServiceProvider) Register(foundation.Application) {
+func (p *ActivityLogServiceProvider) Register(app foundation.Application) {
+	activitylog.App = app
 	for _, table := range auditedTables() {
 		if err := activitylog.Register(table); err != nil {
 			panic(fmt.Errorf("activitylog: %w", err))
@@ -87,10 +89,15 @@ func auditedTables() []activitylog.Table {
 			Columns: []string{"account_id", "name", "permissions", "ip_cidr"},
 		},
 		{
-			Name:       "settings",
-			LogName:    activityLogName,
-			Subject:    "setting",
-			Columns:    []string{"account_id", "group", "key"},
+			Name:    "settings",
+			LogName: activityLogName,
+			Subject: "setting",
+			Columns: []string{"account_id", "group", "key", "value"},
+			TextRedaction: activitylog.TextRedaction{
+				Column:       "value",
+				MatchColumns: []string{"group", "key"},
+				Pairs:        settings.SecretPairs(),
+			},
 			KeyColumns: []string{"id"},
 		},
 		{

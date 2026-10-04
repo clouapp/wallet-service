@@ -2,7 +2,6 @@ package activitylog
 
 import (
 	"fmt"
-	"strings"
 
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -209,24 +208,20 @@ func selectBeforeImage(db *gorm.DB, tbl Table, where clause.Clause, keys []strin
 	}
 	stmt.Build("WHERE")
 
-	// Built from selectColumns() plus the key columns, and nothing else: the
-	// guarantee "a credential column is never READ" lives in this list, not in
-	// what the entry happens to omit afterwards.
-	//
-	// The key columns are read even when they are not recordable, because a row
-	// that cannot be identified produces an entry nobody can act on.
+	// Built from selectColumns() plus the key columns. A text redaction
+	// replaces its column with a boolean expression, so that text is not
+	// returned. Key columns are read even when they are not recordable,
+	// because a row that cannot be identified produces an entry nobody can
+	// act on.
 	wanted := append(tbl.selectColumns(), keys...)
-	columns := make([]string, 0, len(wanted))
-	seen := map[string]bool{}
-	for _, c := range wanted {
-		if seen[c] {
-			continue
-		}
-		seen[c] = true
-		columns = append(columns, stmt.Quote(c))
+	projected, err := tbl.projectedSelect(wanted, func(name string) string {
+		return stmt.Quote(name)
+	})
+	if err != nil {
+		return nil, err
 	}
 
-	query := "SELECT " + strings.Join(columns, ", ") +
+	query := "SELECT " + projected +
 		" FROM " + stmt.Quote(db.Statement.Table) + " " + stmt.SQL.String()
 
 	rows, err := db.Statement.ConnPool.QueryContext(db.Statement.Context, query, stmt.Vars...)

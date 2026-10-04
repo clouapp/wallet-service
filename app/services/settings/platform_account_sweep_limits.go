@@ -81,8 +81,12 @@ func (s *Service) SavePlatformAccountSweepLimits(ctx context.Context, actorID, a
 	if err != nil {
 		return GroupView{}, err
 	}
+	auditErr := s.recordSettingsAudit(ctx, &accountID, group, stored, writes)
 	if s.cache != nil {
 		s.cache.Forget(cacheKey(accountID, group.Name))
+	}
+	if auditErr != nil {
+		return GroupView{}, auditErr
 	}
 	return s.accountSweepLimitsView(ctx, accountID, group)
 }

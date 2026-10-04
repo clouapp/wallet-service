@@ -1,6 +1,7 @@
 package controllers_test
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 
@@ -137,6 +138,63 @@ func (s *PlatformSettingsGroupTestSuite) TestAPlatformAdminSeesAKnownGroupWithou
 	s.decode(accountOnly, &notFound)
 	s.Equal(responses.CodeNotFound, notFound.Error.Code)
 	s.Equal("settings group not found", notFound.Error.Message)
+}
+
+func (s *PlatformSettingsGroupTestSuite) TestASecretSettingRecordsKeyAndValueSet() {
+	admin := s.seedUser(false)
+	s.grantPlatformAdmin(admin.ID)
+	session := s.signIn(admin.Email)
+	const secret = "activity-log-must-not-store-this"
+	settings.FacadeCache{}.Forget("settings:platform:mail_smtp")
+
+	saved := s.putRaw(session.AccessToken, "/v1/platform/settings/mail_smtp",
+		`{"host":"smtp.example","port":2525,"encryption":"starttls","username":"mailer","password":"`+secret+`"}`)
+	saved.AssertOk()
+
+	s.Equal(int64(0), s.count(
+		`SELECT count(*) FROM activity_log
+		 WHERE subject_type = 'setting'
+		   AND (properties::text LIKE '%' || ? || '%' OR properties::text LIKE '%enc:v1:%')`,
+		secret,
+	))
+
+	var rows []struct {
+		Scope      string `gorm:"column:scope"`
+		Event      string `gorm:"column:event"`
+		Properties string `gorm:"column:properties"`
+	}
+	s.Require().NoError(facades.Orm().Query().Raw(
+		`SELECT scope, event, properties::text AS properties
+		 FROM activity_log
+		 WHERE subject_type = 'setting' AND properties->'new'->>'group' = 'mail_smtp'`,
+	).Scan(&rows))
+	s.NotEmpty(rows)
+
+	var sawPassword, sawHost bool
+	for _, row := range rows {
+		s.Equal("", row.Scope)
+		if strings.Contains(row.Properties, secret) || strings.Contains(row.Properties, "enc:v1:") {
+			s.Fail("activity log stored a settings secret")
+		}
+		var props struct {
+			New map[string]any `json:"new"`
+		}
+		s.Require().NoError(json.Unmarshal([]byte(row.Properties), &props))
+		switch props.New["key"] {
+		case "password":
+			sawPassword = true
+			s.Equal(true, props.New["valueSet"])
+			_, hasValue := props.New["value"]
+			s.False(hasValue)
+			s.Equal("created", row.Event)
+			s.Equal("password", props.New["key"])
+		case "host":
+			sawHost = true
+			s.Equal("smtp.example", props.New["value"])
+		}
+	}
+	s.True(sawPassword)
+	s.True(sawHost)
 }
 
 func (s *PlatformSettingsGroupTestSuite) TestANonAdminOnAnUnknownGroupIsNotFoundBeforeForbidden() {

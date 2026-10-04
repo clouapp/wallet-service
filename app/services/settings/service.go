@@ -285,7 +285,11 @@ func (s *Service) Save(ctx context.Context, accountID, actorID uuid.UUID, role, 
 	if err != nil {
 		return GroupView{}, err
 	}
+	auditErr := s.recordSettingsAudit(ctx, &accountID, group, stored, writes)
 	s.cache.Forget(cacheKey(accountID, group.Name))
+	if auditErr != nil {
+		return GroupView{}, auditErr
+	}
 	return s.groupView(ctx, accountID, role, group)
 }
 
