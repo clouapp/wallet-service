@@ -33,8 +33,10 @@ const (
 // Definition is one named flag. Default is what a reader returns when the
 // account has no row. withdrawals-enabled, sweep-enabled, and
 // deposit-scan-enabled default to true, so a missing row leaves withdrawals
-// and consolidate running and allows scans. The other flags default to
-// false. A write stores the boolean the caller sent.
+// and consolidate running and allows scans. wallet-creation-enabled and
+// webhook-delivery-enabled also default to true. api-request-signature-required
+// and user-2fa-required default to false. A write stores the boolean the
+// caller sent.
 type Definition struct {
 	Key         string
 	Label       string
@@ -82,14 +84,14 @@ var catalog = []Definition{
 		Label:       "Wallet creation",
 		Description: "Records whether this account can create wallets.",
 		Scopes:      []string{ScopeGlobal, ScopeAccount},
-		Default:     false,
+		Default:     true,
 	},
 	{
 		Key:         FlagWebhookDeliveryEnabled,
 		Label:       "Webhook delivery",
 		Description: "Records whether webhook delivery is turned on for this account.",
 		Scopes:      []string{ScopeGlobal, ScopeAccount},
-		Default:     false,
+		Default:     true,
 	},
 	{
 		Key:         FlagWithdrawalsEnabled,

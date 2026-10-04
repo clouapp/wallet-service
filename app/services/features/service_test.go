@@ -228,8 +228,12 @@ func TestListHidesFlagsFromAUserAndFromAnotherAccount(t *testing.T) {
 	if err != nil {
 		t.Fatalf("other account: %v", err)
 	}
-	if flagEnabled(t, other, FlagWalletCreationEnabled) {
+	if _, stored := store.written(otherID, FlagWalletCreationEnabled); stored {
 		t.Fatal("another account inherited the flag")
+	}
+	definition, ok := Find(FlagWalletCreationEnabled)
+	if !ok || flagEnabled(t, other, FlagWalletCreationEnabled) != definition.Default {
+		t.Fatal("another account must use the catalog default")
 	}
 
 	if _, err := service.List(nil, accountID, "owner"); err == nil {
@@ -308,7 +312,7 @@ func TestActiveGlobalUsesTheCatalogDefaultAndIgnoresAccountRows(t *testing.T) {
 	if err != nil {
 		t.Fatalf("active: %v", err)
 	}
-	want := []string{FlagDepositScanEnabled, FlagSweepEnabled, FlagWithdrawalsEnabled}
+	want := []string{FlagDepositScanEnabled, FlagSweepEnabled, FlagWalletCreationEnabled, FlagWebhookDeliveryEnabled, FlagWithdrawalsEnabled}
 	if !slices.Equal(names, want) {
 		t.Fatalf("active = %v, want %v", names, want)
 	}
@@ -326,7 +330,7 @@ func TestActiveGlobalUsesTheCatalogDefaultAndIgnoresAccountRows(t *testing.T) {
 	if err != nil {
 		t.Fatalf("active after write: %v", err)
 	}
-	want = []string{FlagDepositScanEnabled, FlagSweepEnabled, FlagUser2FARequired}
+	want = []string{FlagDepositScanEnabled, FlagSweepEnabled, FlagUser2FARequired, FlagWalletCreationEnabled, FlagWebhookDeliveryEnabled}
 	if !slices.Equal(names, want) {
 		t.Fatalf("active after write = %v, want %v", names, want)
 	}
