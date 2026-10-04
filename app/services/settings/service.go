@@ -169,7 +169,8 @@ func (nopCache) Get(string) (string, bool, error) { return "", false, nil }
 func (nopCache) Put(string, string, time.Duration) error { return nil }
 
 // Registry returns every account group the role may read, with secrets replaced
-// by is_set.
+// by is_set. S1.4.7 names settings.read and settings.write on this catalog.
+// The pair is not a second gate.
 func (s *Service) Registry(ctx context.Context, accountID uuid.UUID, role string) (RegistryView, error) {
 	if err := requireAccount(ctx, accountID); err != nil {
 		return RegistryView{}, err
@@ -177,9 +178,13 @@ func (s *Service) Registry(ctx context.Context, accountID uuid.UUID, role string
 	if !policies.MayViewSettings(role) {
 		return RegistryView{}, ErrViewForbidden
 	}
+	catalog := AccountSettingsCatalog()
+	if err := requireAccountGuard(catalog); err != nil {
+		return RegistryView{}, err
+	}
 
 	view := RegistryView{
-		Permissions: Permissions{View: policies.PermSettingsView, Update: policies.PermSettingsUpdate},
+		Permissions: Permissions{View: catalog.Read, Update: catalog.Write},
 		Sections:    []SectionView{},
 	}
 	sectionAt := map[string]int{}
@@ -235,6 +240,9 @@ func (s *Service) Save(ctx context.Context, accountID, actorID uuid.UUID, role, 
 	}
 	if group.ManagedBy != ManagedByAccount {
 		return GroupView{}, ErrManagedByPlatform
+	}
+	if err := requireAccountGuard(AccountSettingsCatalog()); err != nil {
+		return GroupView{}, err
 	}
 	if body == nil {
 		body = map[string]any{}

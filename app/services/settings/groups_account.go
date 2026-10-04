@@ -33,7 +33,7 @@ const (
 	signingAlgorithmHMACSHA256 = "hmac-sha256"
 
 	// A secret group names its own pair. The account route still gates on
-	// settings.view and settings.update; this pair is what a later check
+	// settings.read and settings.write; this pair is what a later check
 	// requires on top of that, so the route permission is not the credential.
 	permAccountWebhooksView   = "settings.webhooks.view"
 	permAccountWebhooksUpdate = "settings.webhooks.update"
@@ -55,6 +55,9 @@ func accountGroups() []Group {
 			ManagedBy: ManagedByAccount,
 			Section:   sectionSecurity,
 			Block:     "Session",
+			// S1.4.7 marks settings.security.write on this group as optional.
+			// It is not required, so the group does not declare it. Owner and
+			// admin still write through settings.write. Auditor still reads.
 			Settings: []Definition{
 				{
 					Key:     keyRequire2FA,
@@ -117,7 +120,7 @@ func accountGroups() []Group {
 			Block:     "Sweep",
 			// S1.4.7 names sweep.view and sweep.update. No account role holds
 			// that pair. Owner, admin, and auditor still read this group
-			// through settings.view. A platform_admins row stands in for the
+			// through settings.read. A platform_admins row stands in for the
 			// write.
 			ViewPermission:   policies.PermSweepView,
 			UpdatePermission: policies.PermSweepUpdate,

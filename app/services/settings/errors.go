@@ -16,9 +16,9 @@ var (
 	// platform groups. The platform cache and reset routes answer 404 before 403
 	// for an unknown page, including a page that only holds account groups.
 	ErrSectionNotFound = errors.New("settings section not found")
-	// ErrViewForbidden is a member who does not hold settings.view.
+	// ErrViewForbidden is a member who does not hold settings.read.
 	ErrViewForbidden = errors.New("you do not have permission to view account settings")
-	// ErrUpdateForbidden is a member who does not hold settings.update.
+	// ErrUpdateForbidden is a member who does not hold settings.write.
 	ErrUpdateForbidden = errors.New("you do not have permission to update account settings")
 	// ErrManagedByPlatform is an account-scoped group only platform staff may write.
 	ErrManagedByPlatform = errors.New("platform staff manage this settings group")

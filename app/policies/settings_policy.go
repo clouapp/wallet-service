@@ -1,11 +1,25 @@
 package policies
 
-// Account settings permissions. The dashboard route pair is settings.view
-// and settings.update (the names the settings registry and the front share).
-// A group that stores a secret declares its own pair on top of this one.
+// Platform settings permissions. The platform route pair is settings.view
+// and settings.update. The account dashboard uses settings.read and
+// settings.write. A group that stores a secret declares its own pair on
+// top of the route pair.
 const (
 	PermSettingsView   = "settings.view"
 	PermSettingsUpdate = "settings.update"
+)
+
+// PermSettingsRead and PermSettingsWrite are the account guard S1.4.7
+// names on the dashboard settings routes. Owner, admin, and auditor hold
+// settings.read. Owner and admin hold settings.write. Auditor does not
+// write. The user role holds neither. settings.security.write on
+// account_security is optional and is not required, so it is not declared
+// and it is not a gate. MayViewSettings and MayUpdateSettings stay the
+// role check, so today's readers and writers stay authorized. Platform
+// names stay settings.view and settings.update.
+const (
+	PermSettingsRead  = "settings.read"
+	PermSettingsWrite = "settings.write"
 )
 
 // PermMailView and PermMailUpdate are the extra pair on a platform mail
@@ -33,7 +47,7 @@ const (
 // sweep_limits, account_sweep_limits, and the chain-row sweep threshold
 // columns. Holding settings.update does not grant that pair. No account
 // role holds either name. Owner, admin, and auditor still read
-// account_sweep_limits through settings.view. There is no platform
+// account_sweep_limits through settings.read. There is no platform
 // permission catalog, so a platform_admins row stands in for the write.
 const (
 	PermSweepView   = "sweep.view"
@@ -58,23 +72,29 @@ const (
 	roleUser    = "user"
 )
 
-// MayViewSettings reports whether the account role holds settings.view.
+// MayViewSettings reports whether the account role holds settings.read.
 //
 // The plan's read set for account settings is owner, admin and auditor.
 // Auditor is read-only on every mutating ability. The user role operates
 // wallets and does not administer the account, so it holds neither
-// settings.view nor settings.update.
+// settings.read nor settings.write. The retired viewer label is not this
+// set: it stays refused here so today's 403 remains.
 func MayViewSettings(role string) bool {
 	switch role {
 	case roleOwner, roleAdmin, roleAuditor:
-		return true
+		return Can(AccountRoleGrants(role), PermSettingsRead)
 	default:
 		return false
 	}
 }
 
-// MayUpdateSettings reports whether the account role holds settings.update.
+// MayUpdateSettings reports whether the account role holds settings.write.
 // Owner and admin may write account-managed groups. Auditor and user may not.
 func MayUpdateSettings(role string) bool {
-	return role == roleOwner || role == roleAdmin
+	switch role {
+	case roleOwner, roleAdmin:
+		return Can(AccountRoleGrants(role), PermSettingsWrite)
+	default:
+		return false
+	}
 }

@@ -10,11 +10,12 @@ import (
 )
 
 // AccountGroup reads one account settings group for the dashboard.
-// S1.4.6: GET /v1/accounts/{accountId}/settings/{group} settings.view
+// S1.4.7: GET /v1/accounts/{accountId}/settings/{group} settings.read
 // (platform-managed groups readable). An unknown name and a platform-only
 // group are ErrGroupNotFound before the role check. Owner, admin, and
-// auditor may read. A user may not. A secret is omitted (is_set only).
-// The read writes no activity and lists only this account's rows.
+// auditor may read. A user may not. The account guard is not a second
+// gate. A secret is omitted (is_set only). The read writes no activity
+// and lists only this account's rows.
 func (s *Service) AccountGroup(ctx context.Context, accountID uuid.UUID, role, groupName string) (GroupView, error) {
 	if err := requireAccount(ctx, accountID); err != nil {
 		return GroupView{}, err
@@ -25,6 +26,9 @@ func (s *Service) AccountGroup(ctx context.Context, accountID uuid.UUID, role, g
 	}
 	if !policies.MayViewSettings(role) {
 		return GroupView{}, ErrViewForbidden
+	}
+	if err := requireAccountGuard(AccountSettingsCatalog()); err != nil {
+		return GroupView{}, err
 	}
 	if s == nil || s.store == nil {
 		return GroupView{}, errServiceRequired

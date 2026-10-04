@@ -52,7 +52,7 @@ func (ctrl *SettingsController) Show(ctx http.Context) http.Response {
 
 // ShowGroup godoc
 // @Summary      Read one account settings group
-// @Description  GET /v1/accounts/{accountId}/settings/{group} settings.view. An unknown group and a platform-only group are 404 before 403. Owner, admin, and auditor may read, including a platform-managed group. A user may not. A secret is never returned. The read writes no activity and does not return another account's rows.
+// @Description  GET /v1/accounts/{accountId}/settings/{group} settings.read. An unknown group and a platform-only group are 404 before 403. Owner, admin, and auditor may read, including a platform-managed group. A user may not. The account guard is not a second gate. A secret is never returned. The read writes no activity and does not return another account's rows.
 // @Tags         Account Settings
 // @Security     BearerAuth
 // @Produce      json
@@ -78,7 +78,7 @@ func (ctrl *SettingsController) ShowGroup(ctx http.Context) http.Response {
 
 // Update godoc
 // @Summary      Save one account settings group
-// @Description  PATCH and PUT share this handler. One group per request. A blank or omitted secret keeps the stored value. Decimals are strings. An unknown group is 404 before 403. A platform-managed group is 403. A negative amount is not stored.
+// @Description  PATCH and PUT share this handler. S1.4.7 names settings.write. One group per request. A blank or omitted secret keeps the stored value. Decimals are strings. An unknown group is 404 before 403. A platform-managed group is 403. Owner and admin may write an account-managed group. Auditor and user may not. A negative amount is not stored. The account guard is not a second gate.
 // @Tags         Account Settings
 // @Security     BearerAuth
 // @Accept       json

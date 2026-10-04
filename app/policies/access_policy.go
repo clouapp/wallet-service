@@ -31,18 +31,27 @@ func Can(grants Grants, perm string) bool {
 }
 
 // AccountRoleGrants is the code catalog Can reads. Owner and admin hold
-// users.read and users.write. Auditor holds users.read. Other permissions
-// stay on their existing policy functions. The retired viewer label uses the
-// auditor set. Any other role, including user, gets an empty set.
+// users.read, users.write, settings.read and settings.write. Auditor holds
+// users.read and settings.read. The retired viewer label uses the auditor
+// set. Any other role, including user, gets an empty set. The live settings
+// gate still refuses that retired label.
 func AccountRoleGrants(role string) Grants {
 	if role == models.RetiredAccountRoleViewer {
 		role = roleAuditor
 	}
 	switch role {
 	case roleOwner, roleAdmin:
-		return Grants{PermUsersRead: {}, PermUsersWrite: {}}
+		return Grants{
+			PermUsersRead:     {},
+			PermUsersWrite:    {},
+			PermSettingsRead:  {},
+			PermSettingsWrite: {},
+		}
 	case roleAuditor:
-		return Grants{PermUsersRead: {}}
+		return Grants{
+			PermUsersRead:    {},
+			PermSettingsRead: {},
+		}
 	default:
 		return nil
 	}

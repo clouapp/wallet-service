@@ -109,6 +109,52 @@ func TestChainPermissionsAreNotAccountGrants(t *testing.T) {
 	}
 }
 
+func TestAccountSettingsGuardFollowsTheRoles(t *testing.T) {
+	t.Parallel()
+
+	if PermSettingsRead == PermSettingsView || PermSettingsWrite == PermSettingsUpdate ||
+		PermSettingsRead == PermSettingsUpdate || PermSettingsWrite == PermSettingsView ||
+		PermSettingsRead == "" || PermSettingsWrite == "" || PermSettingsRead == PermSettingsWrite {
+		t.Fatal("settings.read and settings.write must be declared apart from the platform pair")
+	}
+	for _, role := range []string{roleOwner, roleAdmin} {
+		if !Can(AccountRoleGrants(role), PermSettingsRead) || !Can(AccountRoleGrants(role), PermSettingsWrite) {
+			t.Fatalf("%s must hold settings.read and settings.write", role)
+		}
+		if !MayViewSettings(role) || !MayUpdateSettings(role) {
+			t.Fatalf("%s must still read and write account settings", role)
+		}
+	}
+	if !Can(AccountRoleGrants(roleAuditor), PermSettingsRead) || Can(AccountRoleGrants(roleAuditor), PermSettingsWrite) {
+		t.Fatal("auditor holds settings.read and must not hold settings.write")
+	}
+	if !MayViewSettings(roleAuditor) || MayUpdateSettings(roleAuditor) {
+		t.Fatal("auditor must still read and must not write")
+	}
+	for _, role := range []string{roleUser, "", "spender", "owner "} {
+		if Can(AccountRoleGrants(role), PermSettingsRead) || Can(AccountRoleGrants(role), PermSettingsWrite) {
+			t.Fatalf("%q must not hold the account settings guard", role)
+		}
+		if MayViewSettings(role) || MayUpdateSettings(role) {
+			t.Fatalf("%q must not read or write account settings", role)
+		}
+	}
+	if MayViewSettings("viewer") || MayUpdateSettings("viewer") {
+		t.Fatal("the retired viewer label stays refused by the live settings gate")
+	}
+	const optionalSecurityWrite = "settings.security.write"
+	for _, role := range []string{roleOwner, roleAdmin, roleAuditor, roleUser, "viewer", ""} {
+		if Can(AccountRoleGrants(role), optionalSecurityWrite) {
+			t.Fatalf("%s holds settings.security.write", role)
+		}
+	}
+	for _, name := range APITokenPermissionCatalog() {
+		if name == PermSettingsRead || name == PermSettingsWrite || name == optionalSecurityWrite {
+			t.Fatalf("api token catalog holds %s", name)
+		}
+	}
+}
+
 func TestSettingsPermissionsFollowTheAccountRoles(t *testing.T) {
 	t.Parallel()
 
