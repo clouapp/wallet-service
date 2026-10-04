@@ -24,6 +24,31 @@ func TestCanUsersReadFailsClosedAndFollowsTheRoleCatalog(t *testing.T) {
 	}
 }
 
+func TestWalletGrantsAddressCreateAndRefusesFundMovement(t *testing.T) {
+	for _, role := range []string{models.AccountRoleOwner, models.AccountRoleAdmin, models.AccountRoleUser} {
+		if !Can(WalletGrants(role), PermAddressesCreate) {
+			t.Fatalf("%s must hold addresses.create", role)
+		}
+	}
+	for _, role := range []string{models.AccountRoleAuditor, models.RetiredAccountRoleViewer, "", "spender", "owner "} {
+		if Can(WalletGrants(role), PermAddressesCreate) {
+			t.Fatalf("%q must not hold addresses.create", role)
+		}
+	}
+	user := WalletGrants(models.AccountRoleUser)
+	for _, permission := range []string{PermWithdrawalsCreate, PermSweepExecute, PermWalletsCreate, PermUsersRead, ""} {
+		if Can(user, permission) {
+			t.Fatalf("user wallet grants must not hold %q", permission)
+		}
+	}
+	if Can(nil, PermAddressesCreate) || Can(Grants{}, PermAddressesCreate) {
+		t.Fatal("an empty grant set does not hold addresses.create")
+	}
+	if Can(AccountRoleGrants(models.AccountRoleUser), PermAddressesCreate) || Can(AccountRoleGrants(models.AccountRoleOwner), PermWithdrawalsCreate) {
+		t.Fatal("the users.read catalog does not grant address creation or fund movement")
+	}
+}
+
 func TestMayGrantDoesNotAllowARoleAboveTheActor(t *testing.T) {
 	if !MayGrant(models.AccountRoleOwner, models.AccountRoleOwner) {
 		t.Fatal("owner may grant owner")

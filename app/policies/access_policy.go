@@ -42,6 +42,22 @@ func AccountRoleGrants(role string) Grants {
 	}
 }
 
+// WalletGrants is the code catalog WalletCan reads. Owner, admin and user may
+// generate an address. Auditor is read-only, and a stored viewer follows the
+// auditor. Withdraw, sweep and wallet create stay out of this set so the user
+// role cannot move funds; those routes keep MayPerformFundAction.
+func WalletGrants(role string) Grants {
+	if role == models.RetiredAccountRoleViewer {
+		role = roleAuditor
+	}
+	switch role {
+	case roleOwner, roleAdmin, roleUser:
+		return Grants{PermAddressesCreate: {}}
+	default:
+		return nil
+	}
+}
+
 var (
 	ErrRoleAbove         = errors.New("cannot grant a role above your own")
 	ErrCannotActOnMember = errors.New("cannot act on a member above your role")
