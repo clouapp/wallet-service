@@ -13,6 +13,7 @@ const (
 	groupWebhookDelivery = "webhook_delivery"
 	groupSweepLimits     = "sweep_limits"
 	groupMailSMTP        = "mail_smtp"
+	groupMailDelivery    = "mail_delivery"
 
 	sectionScanning = "scanning"
 	sectionDelivery = "delivery"
@@ -107,6 +108,7 @@ func platformGroups() []Group {
 			Validate: validateSweepLimits,
 		},
 		mailSMTPGroup(),
+		mailDeliveryGroup(),
 	}
 }
 

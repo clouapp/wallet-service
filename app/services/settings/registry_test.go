@@ -19,7 +19,7 @@ func TestAccountSectionsDoNotShareNamesWithGroups(t *testing.T) {
 		switch group.Scope {
 		case ScopeAccount:
 		case ScopePlatform:
-			if group.Name != groupDepositScan && group.Name != groupWebhookDelivery && group.Name != groupSweepLimits && group.Name != groupMailSMTP {
+			if group.Name != groupDepositScan && group.Name != groupWebhookDelivery && group.Name != groupSweepLimits && group.Name != groupMailSMTP && group.Name != groupMailDelivery {
 				t.Fatalf("unexpected platform group %s", group.Name)
 			}
 		default:
@@ -73,6 +73,22 @@ func TestAccountSectionsDoNotShareNamesWithGroups(t *testing.T) {
 	password, ok := Find(groupMailSMTP, keyMailPassword)
 	if !ok || !password.Secret || password.Type != TypeString || password.Destination {
 		t.Fatalf("mail password = %+v present %v", password, ok)
+	}
+	mailFrom, ok := FindGroup(groupMailDelivery)
+	if !ok || mailFrom.Scope != ScopePlatform || mailFrom.SectionName() != sectionMail || mailFrom.UpdatePermission != "" || len(mailFrom.Settings) != 3 {
+		t.Fatalf("mail delivery group = %+v present %v", mailFrom, ok)
+	}
+	fromAddress, ok := Find(groupMailDelivery, keyMailFromAddress)
+	if !ok || fromAddress.Secret || fromAddress.Type != TypeString {
+		t.Fatalf("from address = %+v present %v", fromAddress, ok)
+	}
+	fromName, ok := Find(groupMailDelivery, keyMailFromName)
+	if !ok || fromName.Secret || fromName.Type != TypeString {
+		t.Fatalf("from name = %+v present %v", fromName, ok)
+	}
+	driver, ok := Find(groupMailDelivery, keyMailDriver)
+	if !ok || driver.Secret || len(driver.Options) == 0 {
+		t.Fatalf("mail driver = %+v present %v", driver, ok)
 	}
 }
 

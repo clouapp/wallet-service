@@ -41,6 +41,7 @@ func (p *SettingsServiceProvider) Boot(app foundation.Application) {
 		panic("settings: mail smtp reader: " + err.Error())
 	}
 	appfacades.SetMailSMTPReader(mailSMTPReader(svc))
+	appfacades.SetMailFromReader(mailFromReader(svc))
 }
 
 func mailSMTPReader(svc *settings.Service) appfacades.MailDialReader {
@@ -60,6 +61,21 @@ func mailSMTPReader(svc *settings.Service) appfacades.MailDialReader {
 			UseEncryption: got.UseEncryption,
 			UseUsername:   got.UseUsername,
 			UsePassword:   got.UsePassword,
+		}, nil
+	}
+}
+
+func mailFromReader(svc *settings.Service) appfacades.MailFromReader {
+	return func(ctx context.Context) (appfacades.MailFrom, error) {
+		got, err := svc.EffectiveMailDelivery(ctx)
+		if err != nil {
+			return appfacades.MailFrom{}, err
+		}
+		return appfacades.MailFrom{
+			Address:    got.Address,
+			Name:       got.Name,
+			UseAddress: got.UseAddress,
+			UseName:    got.UseName,
 		}, nil
 	}
 }

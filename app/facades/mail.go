@@ -32,9 +32,23 @@ type MailDial struct {
 // read failed and the env mailer stays.
 type MailDialReader func(ctx context.Context) (MailDial, error)
 
+// MailFrom is the From header one send may use. A false Use field leaves
+// that env value in place. Address and name are not secrets.
+type MailFrom struct {
+	Address    string
+	Name       string
+	UseAddress bool
+	UseName    bool
+}
+
+// MailFromReader reads mail_delivery at send time. A non-nil error means the
+// read failed and the env From header stays.
+type MailFromReader func(ctx context.Context) (MailFrom, error)
+
 var (
 	mailMu           sync.Mutex
 	readMailSMTP     MailDialReader
+	readMailFrom     MailFromReader
 	mailSendObserver func()
 	mailBaselineOnce sync.Once
 	mailBaseline     map[string]any
@@ -51,8 +65,18 @@ func SetMailSMTPReader(reader MailDialReader) MailDialReader {
 	return previous
 }
 
-// SetMailSendObserver runs after mail_smtp is applied and before the dial.
-// The observer must not send mail. Nil clears it.
+// SetMailFromReader installs the per-send From reader. It returns the
+// previous reader so a test can put it back. Nil keeps the env From header.
+func SetMailFromReader(reader MailFromReader) MailFromReader {
+	mailMu.Lock()
+	defer mailMu.Unlock()
+	previous := readMailFrom
+	readMailFrom = reader
+	return previous
+}
+
+// SetMailSendObserver runs after the per-send settings are applied and before
+// the dial. The observer must not send mail. Nil clears it.
 func SetMailSendObserver(observer func()) {
 	mailMu.Lock()
 	mailSendObserver = observer
@@ -67,7 +91,8 @@ func RestoreMailBaseline() {
 	restoreMailBaseline()
 }
 
-// Mail returns the process mailer. Each Send reads mail_smtp first.
+// Mail returns the process mailer. Each Send reads mail_smtp and the
+// mail_delivery From header first.
 func Mail() mail.Mail {
 	return smtpMail{inner: goravelfacades.Mail()}
 }
@@ -132,19 +157,35 @@ func (m smtpMail) withSMTP(send func() error) error {
 
 func applyMailDial(ctx context.Context) {
 	base := cloneMailBaseline()
+	applySMTPOverlay(ctx, base)
+	applyFromOverlay(ctx, base)
+	writeMail(base)
+}
+
+func applySMTPOverlay(ctx context.Context, base map[string]any) {
 	reader := readMailSMTP
 	if reader == nil {
-		writeMail(base)
 		return
 	}
 	overlay, err := reader(ctx)
 	if err != nil {
 		slog.Warn("mail smtp settings unread; keeping the env mailer")
-		writeMail(base)
 		return
 	}
 	mergeMailDial(base, overlay)
-	writeMail(base)
+}
+
+func applyFromOverlay(ctx context.Context, base map[string]any) {
+	reader := readMailFrom
+	if reader == nil {
+		return
+	}
+	overlay, err := reader(ctx)
+	if err != nil {
+		slog.Warn("mail delivery settings unread; keeping the env from header")
+		return
+	}
+	mergeMailFrom(base, overlay)
 }
 
 func restoreMailBaseline() {
@@ -197,6 +238,27 @@ func mergeMailDial(cfg map[string]any, overlay MailDial) {
 	if overlay.UsePassword {
 		smtp["password"] = overlay.Password
 		cfg["password"] = overlay.Password
+	}
+}
+
+// mergeMailFrom overlays a stored mail_delivery From header on the env mail
+// document. Goravel reads mail.from.address and mail.from.name at send time
+// when the mailable leaves From empty. A field that is not in use stays on
+// the env copy.
+func mergeMailFrom(cfg map[string]any, overlay MailFrom) {
+	if cfg == nil || (!overlay.UseAddress && !overlay.UseName) {
+		return
+	}
+	from, _ := cfg["from"].(map[string]any)
+	if from == nil {
+		from = map[string]any{}
+		cfg["from"] = from
+	}
+	if overlay.UseAddress {
+		from["address"] = overlay.Address
+	}
+	if overlay.UseName {
+		from["name"] = overlay.Name
 	}
 }
 

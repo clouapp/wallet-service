@@ -30,7 +30,7 @@ func NewSettingsController(settings *settingssvc.Service) *SettingsController {
 
 // Update godoc
 // @Summary      Save one platform settings group
-// @Description  Writes one platform group. webhook_delivery stores max_attempts and timeout_seconds. sweep_limits stores positive address and consolidate counts; a blank daily_withdraw_cap_usd means unlimited. mail_smtp stores host, port, encryption, and username; the password is sealed and omitted from the response (is_set reports whether one is stored). A blank password keeps the stored one. Zero or negative counts, and a negative cap, are 422 and are not stored. An unknown group is 404 before the platform-admin check. Values are not written to the activity log.
+// @Description  Writes one platform group. webhook_delivery stores max_attempts and timeout_seconds. sweep_limits stores positive address and consolidate counts; a blank daily_withdraw_cap_usd means unlimited. mail_smtp stores host, port, encryption, and username; the password is sealed and omitted from the response (is_set reports whether one is stored). A blank password keeps the stored one. mail_delivery stores driver, from_address, and from_name in the clear. An invalid address, an empty name, and driver log in production are 422 and are not stored. Zero or negative counts, and a negative cap, are 422 and are not stored. An unknown group is 404 before the platform-admin check. Values are not written to the activity log.
 // @Tags         Platform Settings
 // @Security     BearerAuth
 // @Accept       json

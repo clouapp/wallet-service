@@ -42,6 +42,34 @@ func TestMergeMailDialKeepsEnvFieldsThatAreNotInUse(t *testing.T) {
 	}
 }
 
+func TestMergeMailFromKeepsEnvFieldsThatAreNotInUse(t *testing.T) {
+	t.Parallel()
+
+	cfg := map[string]any{
+		"from": map[string]any{"address": "noreply@vault.dev", "name": "Vault"},
+		"mailers": map[string]any{
+			"smtp": map[string]any{"password": "env-mailbox-secret"},
+		},
+	}
+	mergeMailFrom(cfg, MailFrom{Address: "from-header@example.test", UseAddress: true})
+	from := cfg["from"].(map[string]any)
+	if from["address"] != "from-header@example.test" {
+		t.Fatal("the from address was not applied for the send")
+	}
+	if from["name"] != "Vault" {
+		t.Fatal("an unused from name replaced the env header")
+	}
+	smtp := cfg["mailers"].(map[string]any)["smtp"].(map[string]any)
+	if smtp["password"] != "env-mailbox-secret" {
+		t.Fatal("the from header replaced the env mail password")
+	}
+
+	mergeMailFrom(cfg, MailFrom{Name: "Macro", UseName: true})
+	if from["address"] != "from-header@example.test" || from["name"] != "Macro" {
+		t.Fatal("the from name was not applied on its own")
+	}
+}
+
 func TestMergeMailDialAppliesAPasswordOnlyWhenAsked(t *testing.T) {
 	t.Parallel()
 
