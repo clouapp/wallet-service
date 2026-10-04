@@ -67,6 +67,7 @@ func RegisterAdminRoutes() {
 	accountFeaturesCtrl := newDashboardAccountFeaturesController()
 	platformFeaturesCtrl := newPlatformFeaturesController()
 	platformAccountsCtrl := newPlatformAccountsController()
+	platformAccountListCtrl := newPlatformAccountListController()
 	platformChainsCtrl := newPlatformChainsController()
 	platformSettingsCtrl := newPlatformSettingsController()
 	platformUsersCtrl := newPlatformUsersController()
@@ -157,6 +158,10 @@ func RegisterAdminRoutes() {
 		router.Post("/settings/mail/test", platformSettingsCtrl.TestMail)
 		router.Get("/settings", platformSettingsCtrl.Index)
 		router.Get("/settings/{group}", platformSettingsCtrl.Show)
+		// S3.4.1: GET /v1/platform/accounts accounts.view.
+		// A platform_admins row is the gate. The plan does not name fields,
+		// pagination, or sort, so this list matches GET /v1/platform/users.
+		router.Get("/accounts", platformAccountListCtrl.Index)
 		// S3.4.1: POST /v1/platform/accounts/{id}/freeze|unfreeze|archive accounts.lifecycle.
 		// A platform_admins row is the gate. These posts are not behind AccountContext,
 		// so a frozen or archived account can still be changed.
@@ -430,6 +435,12 @@ func newDashboardAccountFeaturesController() *dashfeatures.FeaturesController {
 
 func newPlatformAccountsController() *platformaccounts.LifecycleController {
 	return platformaccounts.NewLifecycleController(
+		container.MustMake[*accountsvc.Service](),
+	)
+}
+
+func newPlatformAccountListController() *platformaccounts.ListController {
+	return platformaccounts.NewListController(
 		container.MustMake[*accountsvc.Service](),
 	)
 }

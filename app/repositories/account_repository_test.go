@@ -3,6 +3,7 @@ package repositories_test
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/goravel/framework/facades"
@@ -210,6 +211,54 @@ func (s *AccountRepositoryTestSuite) TestPaginateByMember_TreatsLikeWildcardsLit
 	underscore, _, err := s.repo.PaginateByMember(context.Background(), userID, "e_c", "", 20, 0)
 	s.Require().NoError(err)
 	s.Equal([]string{"snake_case"}, accountNames(underscore))
+}
+
+func (s *AccountRepositoryTestSuite) TestListOrdersByCreatedAtDescending() {
+	olderID := uuid.MustParse("00000000-0000-4000-8000-000000000001")
+	sameTimeHigherID := uuid.MustParse("00000000-0000-4000-8000-000000000002")
+	newerID := uuid.MustParse("00000000-0000-4000-8000-000000000003")
+	sameTime := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
+	newerAt := time.Date(2024, 6, 1, 0, 0, 0, 0, time.UTC)
+
+	s.Require().NoError(s.repo.Create(context.Background(), &models.Account{ID: olderID, Name: "Older", Status: models.StatusActive}))
+	s.Require().NoError(s.repo.Create(context.Background(), &models.Account{ID: sameTimeHigherID, Name: "Tied", Status: models.AccountStatusFrozen}))
+	s.Require().NoError(s.repo.Create(context.Background(), &models.Account{ID: newerID, Name: "Newer", Status: models.AccountStatusArchived}))
+	s.stampAccountCreatedAt(olderID, sameTime)
+	s.stampAccountCreatedAt(sameTimeHigherID, sameTime)
+	s.stampAccountCreatedAt(newerID, newerAt)
+
+	first, total, err := s.repo.List(context.Background(), 1, 0)
+	s.Require().NoError(err)
+	s.Equal(int64(3), total)
+	s.Require().Len(first, 1)
+	s.Equal(newerID, first[0].ID)
+	s.Equal(models.AccountStatusArchived, first[0].Status)
+
+	second, total, err := s.repo.List(context.Background(), 1, 1)
+	s.Require().NoError(err)
+	s.Equal(int64(3), total)
+	s.Require().Len(second, 1)
+	s.Equal(sameTimeHigherID, second[0].ID)
+
+	third, total, err := s.repo.List(context.Background(), 1, 2)
+	s.Require().NoError(err)
+	s.Equal(olderID, third[0].ID)
+
+	past, total, err := s.repo.List(context.Background(), 20, 3)
+	s.Require().NoError(err)
+	s.Equal(int64(3), total)
+	s.Empty(past)
+
+	_, _, err = s.repo.List(context.Background(), 0, 0)
+	s.EqualError(err, "list accounts: limit and offset are invalid")
+	_, _, err = s.repo.List(nil, 20, 0)
+	s.EqualError(err, "list accounts: context is required")
+}
+
+func (s *AccountRepositoryTestSuite) stampAccountCreatedAt(id uuid.UUID, at time.Time) {
+	s.T().Helper()
+	_, err := facades.Orm().Query().Exec(`UPDATE accounts SET created_at = ? WHERE id = ?`, at, id)
+	s.Require().NoError(err)
 }
 
 func (s *AccountRepositoryTestSuite) TestSetName() {

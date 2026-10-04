@@ -67,6 +67,10 @@ func (a *lifecycleAccounts) PaginateByMember(context.Context, uuid.UUID, string,
 	return nil, 0, fmt.Errorf("paginate is not used")
 }
 
+func (a *lifecycleAccounts) List(context.Context, int, int) ([]models.Account, int64, error) {
+	return nil, 0, fmt.Errorf("list is not used")
+}
+
 func TestSetPlatformLifecycle(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()

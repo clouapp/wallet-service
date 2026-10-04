@@ -23,6 +23,7 @@ type AccountStore interface {
 	SetStatus(ctx context.Context, id uuid.UUID, status string) error
 	SetLinkedAccountID(ctx context.Context, id, linkedID uuid.UUID) error
 	PaginateByMember(ctx context.Context, userID uuid.UUID, search, environment string, limit, offset int) ([]models.Account, int64, error)
+	List(ctx context.Context, limit, offset int) ([]models.Account, int64, error)
 }
 
 // MembershipStore is the membership reads and writes this service performs.

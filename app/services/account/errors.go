@@ -31,4 +31,8 @@ var (
 	ErrAccountNotFound = errors.New("account not found")
 	// ErrAccountStatus is a lifecycle status outside active, frozen, and archived.
 	ErrAccountStatus = errors.New("invalid account status")
+	// ErrPlatformViewForbidden is a caller who is not a platform admin.
+	// S3.4.1 names accounts.view. This branch has no platform permission
+	// catalog, so a platform_admins row is the gate.
+	ErrPlatformViewForbidden = errors.New("you do not have permission to view accounts")
 )

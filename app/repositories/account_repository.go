@@ -87,6 +87,32 @@ func (r *AccountRepository) FindByIDs(ctx context.Context, ids []uuid.UUID) ([]m
 	return accounts, nil
 }
 
+// List pages every account, newest created_at first. Equal timestamps break
+// on id descending so a page is stable. limit must be positive and offset
+// must not be negative. Soft-deleted rows are not a column on accounts.
+func (r *AccountRepository) List(ctx context.Context, limit, offset int) ([]models.Account, int64, error) {
+	if ctx == nil {
+		return nil, 0, fmt.Errorf("list accounts: context is required")
+	}
+	if limit <= 0 || offset < 0 {
+		return nil, 0, fmt.Errorf("list accounts: limit and offset are invalid")
+	}
+	total, err := r.Query(ctx).Model(&models.Account{}).Count()
+	if err != nil {
+		return nil, 0, fmt.Errorf("list accounts: %w", err)
+	}
+	rows := []models.Account{}
+	err = r.Query(ctx).
+		Order("created_at DESC, id DESC").
+		Offset(offset).
+		Limit(limit).
+		Find(&rows)
+	if err != nil {
+		return nil, 0, fmt.Errorf("list accounts: %w", err)
+	}
+	return rows, total, nil
+}
+
 // PaginateByMember pages through the accounts the user is an active member
 // of, ordered case-insensitively by name then by id so every page is stable.
 func (r *AccountRepository) PaginateByMember(ctx context.Context, userID uuid.UUID, search, environment string, limit, offset int) ([]models.Account, int64, error) {
