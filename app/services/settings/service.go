@@ -50,12 +50,19 @@ type Cache interface {
 	Put(key string, value string, ttl time.Duration) error
 }
 
+// platformAdmins is the platform_admins row used when the catalog has no
+// matching permission name. settings.update is that name for a platform group.
+type platformAdmins interface {
+	Contains(ctx context.Context, userID uuid.UUID) (bool, error)
+}
+
 // Service reads and writes the account settings registry.
 type Service struct {
 	store    Store
 	sealer   Sealer
 	cache    Cache
 	activity activitylog.Writer
+	admins   platformAdmins
 }
 
 // NewService builds the account settings service.
@@ -73,6 +80,16 @@ func NewService(store Store, sealer Sealer, cache Cache, activity activitylog.Wr
 		cache = nopCache{}
 	}
 	return &Service{store: store, sealer: sealer, cache: cache, activity: activity}
+}
+
+// WithPlatformAdmins sets the gate for platform groups. A nil reader leaves
+// SavePlatform unable to tell a platform admin from anyone else.
+func (s *Service) WithPlatformAdmins(admins platformAdmins) *Service {
+	if s == nil {
+		return nil
+	}
+	s.admins = admins
+	return s
 }
 
 // FacadeCache stores and forgets keys through the process cache.
@@ -210,34 +227,9 @@ func (s *Service) Save(ctx context.Context, accountID, actorID uuid.UUID, role, 
 		return GroupView{}, err
 	}
 
-	writes := map[string]string{}
-	invalid := &ValidationError{}
-	for _, key := range slices.Sorted(maps.Keys(body)) {
-		definition, known := Find(group.Name, key)
-		if !known {
-			invalid.add(key, "unknown settings key")
-			continue
-		}
-		value, skip, prepareErr := s.prepareValue(definition, body[key])
-		if errors.Is(prepareErr, errSealFailed) {
-			return GroupView{}, prepareErr
-		}
-		if prepareErr != nil {
-			invalid.add(key, prepareErr.Error())
-			continue
-		}
-		if skip {
-			continue
-		}
-		writes[key] = value
-	}
-	if !invalid.empty() {
-		return GroupView{}, invalid
-	}
-	if group.Validate != nil {
-		if validateErr := group.Validate(effectiveNonSecrets(group.Settings, stored, writes)); validateErr != nil {
-			return GroupView{}, validateErr
-		}
+	writes, err := s.collectWrites(group, stored, body)
+	if err != nil {
+		return GroupView{}, err
 	}
 	if len(writes) == 0 {
 		return s.groupView(ctx, accountID, role, group)
@@ -569,6 +561,42 @@ func (s *Service) remember(key string, values map[string]string) {
 	if err := s.cache.Put(key, sealed, settingsCacheTTL); err != nil {
 		slog.Warn("settings cache was not stored", "cache_key", key)
 	}
+}
+
+// collectWrites casts a partial document. An unknown key, a bad cast, or a
+// group validator failure is returned and nothing is stored. A blank secret
+// is omitted so the stored ciphertext stays.
+func (s *Service) collectWrites(group Group, stored map[string]string, body map[string]any) (map[string]string, error) {
+	writes := map[string]string{}
+	invalid := &ValidationError{}
+	for _, key := range slices.Sorted(maps.Keys(body)) {
+		definition, known := Find(group.Name, key)
+		if !known {
+			invalid.add(key, "unknown settings key")
+			continue
+		}
+		value, skip, prepareErr := s.prepareValue(definition, body[key])
+		if errors.Is(prepareErr, errSealFailed) {
+			return nil, prepareErr
+		}
+		if prepareErr != nil {
+			invalid.add(key, prepareErr.Error())
+			continue
+		}
+		if skip {
+			continue
+		}
+		writes[key] = value
+	}
+	if !invalid.empty() {
+		return nil, invalid
+	}
+	if group.Validate != nil {
+		if validateErr := group.Validate(effectiveNonSecrets(group.Settings, stored, writes)); validateErr != nil {
+			return nil, validateErr
+		}
+	}
+	return writes, nil
 }
 
 // prepareValue casts one incoming value. skip is true when a secret is blank:

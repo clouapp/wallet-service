@@ -2,22 +2,39 @@ package settings
 
 import (
 	"fmt"
+	"math"
 	"strconv"
 	"strings"
+	"time"
 )
 
 const (
-	groupDepositScan = "deposit_scan"
+	groupDepositScan     = "deposit_scan"
+	groupWebhookDelivery = "webhook_delivery"
 
 	sectionScanning = "scanning"
+	sectionDelivery = "delivery"
 
 	keyBatchBlocks     = "batch_blocks"
 	keyCatchUpBlocks   = "catch_up_blocks"
 	keyScanConcurrency = "concurrency"
+	keyMaxAttempts     = "max_attempts"
+	keyTimeoutSeconds  = "timeout_seconds"
 
 	// maxDepositScanConcurrency matches deposit.MaxScanConcurrency. A stored
 	// value above it is invalid and the scanner keeps the environment window.
 	maxDepositScanConcurrency = 32
+
+	// S1.4.4 moves the webhook retry constants (MaxAttempts: 10, 10 s timeout)
+	// into webhook_delivery. S1.4.8 validates attempts as 1..20.
+	defaultWebhookMaxAttempts    = 10
+	defaultWebhookTimeoutSeconds = 10
+	minWebhookAttempts           = 1
+	maxWebhookAttempts           = 20
+	// maxWebhookTimeoutSeconds is the largest int that still fits in a
+	// time.Duration of whole seconds. A larger stored value is not a timeout
+	// delivery can wait, so it is rejected and a later read keeps the default.
+	maxWebhookTimeoutSeconds = int(math.MaxInt64 / int64(time.Second))
 )
 
 func platformGroups() []Group {
@@ -52,6 +69,29 @@ func platformGroups() []Group {
 			},
 			Validate: validateDepositScan,
 		},
+		{
+			Name:    groupWebhookDelivery,
+			Scope:   ScopePlatform,
+			Section: sectionDelivery,
+			Block:   "Retries",
+			Settings: []Definition{
+				{
+					Key:     keyMaxAttempts,
+					Label:   "Max attempts",
+					Help:    "How many times a webhook is sent before delivery stops. From 1 to 20.",
+					Type:    TypeInt,
+					Default: func() any { return defaultWebhookMaxAttempts },
+				},
+				{
+					Key:     keyTimeoutSeconds,
+					Label:   "Timeout",
+					Help:    "Seconds one delivery waits for the receiver.",
+					Type:    TypeInt,
+					Default: func() any { return defaultWebhookTimeoutSeconds },
+				},
+			},
+			Validate: validateWebhookDelivery,
+		},
 	}
 }
 
@@ -76,6 +116,39 @@ func validateDepositScan(effective map[string]string) error {
 		return nil
 	}
 	return &ValidationError{Fields: fields}
+}
+
+func validateWebhookDelivery(effective map[string]string) error {
+	fields := map[string][]string{}
+	if _, ok := boundedSetting(effective[keyMaxAttempts], minWebhookAttempts, maxWebhookAttempts); !ok {
+		fields[keyMaxAttempts] = []string{fmt.Sprintf("must be between %d and %d", minWebhookAttempts, maxWebhookAttempts)}
+	}
+	if message := timeoutSettingMessage(effective[keyTimeoutSeconds]); message != "" {
+		fields[keyTimeoutSeconds] = []string{message}
+	}
+	if len(fields) == 0 {
+		return nil
+	}
+	return &ValidationError{Fields: fields}
+}
+
+func timeoutSettingMessage(raw string) string {
+	parsed, err := strconv.Atoi(strings.TrimSpace(raw))
+	if err != nil || parsed <= 0 {
+		return "must be greater than 0"
+	}
+	if parsed > maxWebhookTimeoutSeconds {
+		return "is too large"
+	}
+	return ""
+}
+
+func boundedSetting(raw string, floor, ceiling int) (int, bool) {
+	parsed, err := strconv.Atoi(strings.TrimSpace(raw))
+	if err != nil || parsed < floor || parsed > ceiling {
+		return 0, false
+	}
+	return parsed, true
 }
 
 func nonNegativeSetting(raw string) (int, bool) {

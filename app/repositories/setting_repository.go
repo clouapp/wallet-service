@@ -96,6 +96,51 @@ func (r *SettingRepository) UpsertMany(ctx context.Context, accountID uuid.UUID,
 	return nil
 }
 
+// UpsertPlatform writes every value of one platform group (account_id NULL)
+// in a single transaction. An empty map writes nothing. Callers do not pass
+// secrets here: webhook_delivery stores attempts and a timeout only.
+func (r *SettingRepository) UpsertPlatform(ctx context.Context, group string, values map[string]string) error {
+	group = strings.TrimSpace(group)
+	if group == "" {
+		return fmt.Errorf("upsert platform settings: group is required")
+	}
+	if len(values) == 0 {
+		return nil
+	}
+
+	err := r.Transaction(ctx, func(tx contractsorm.Query) error {
+		writer := NewSettingRepository(tx)
+		for key, value := range values {
+			if err := writer.upsertPlatform(ctx, group, key, value); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return fmt.Errorf("upsert platform settings: %w", err)
+	}
+	return nil
+}
+
+func (r *SettingRepository) upsertPlatform(ctx context.Context, group, key, value string) error {
+	key = strings.TrimSpace(key)
+	if key == "" {
+		return fmt.Errorf("upsert platform settings: key is required")
+	}
+	_, err := r.Query(ctx).Exec(
+		`INSERT INTO settings (account_id, "group", "key", value, created_at, updated_at)
+		 VALUES (NULL, ?, ?, ?, NOW(), NOW())
+		 ON CONFLICT ("group", "key") WHERE account_id IS NULL
+		 DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()`,
+		group, key, value,
+	)
+	if err != nil {
+		return fmt.Errorf("upsert platform settings key %q: %w", key, err)
+	}
+	return nil
+}
+
 // DeleteGroup removes every stored row of one account group. A platform row
 // (account_id NULL) and another account's rows are left in place. Deleting a
 // group that has no rows is success: the registry default is already in force.

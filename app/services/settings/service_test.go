@@ -69,6 +69,18 @@ func (s *memoryStore) PutPlatform(group string, values map[string]string) {
 	s.rows[platformStoreKey(group)] = copied
 }
 
+func (s *memoryStore) UpsertPlatform(_ context.Context, group string, values map[string]string) error {
+	bucket := s.rows[platformStoreKey(group)]
+	if bucket == nil {
+		bucket = map[string]string{}
+		s.rows[platformStoreKey(group)] = bucket
+	}
+	for key, value := range values {
+		bucket[key] = value
+	}
+	return nil
+}
+
 func (s *memoryStore) ListPlatform(_ context.Context, group string) ([]models.Setting, error) {
 	values := s.rows[platformStoreKey(group)]
 	rows := make([]models.Setting, 0, len(values))

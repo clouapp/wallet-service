@@ -15,6 +15,11 @@ var (
 	ErrUpdateForbidden = errors.New("you do not have permission to update account settings")
 	// ErrManagedByPlatform is an account-scoped group only platform staff may write.
 	ErrManagedByPlatform = errors.New("platform staff manage this settings group")
+	// ErrPlatformForbidden is a caller who is not a platform admin. S1.4.4 names
+	// settings.update; this branch has no platform permission catalog, so the
+	// gate is the platform_admins row. webhook_delivery declares no permission
+	// of its own.
+	ErrPlatformForbidden = errors.New("you do not have permission to update settings")
 	// errSealFailed is internal. The log names the key, never the plaintext.
 	errSealFailed = errors.New("seal setting")
 	// errServiceRequired is a nil settings service.

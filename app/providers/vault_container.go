@@ -368,6 +368,13 @@ func buildVaultContainer(app foundation.Application) (*container.Container, erro
 	if err != nil {
 		return nil, fmt.Errorf("vault: account settings: %w", err)
 	}
+	c.WebhookService.SetDeliverySettingsSource(func(ctx context.Context) (webhook.DeliverySettings, error) {
+		stored, readErr := accountSettings.EffectiveWebhookDelivery(ctx)
+		if readErr != nil {
+			return webhook.DeliverySettings{}, readErr
+		}
+		return webhook.DeliverySettingsFromStored(stored.MaxAttempts, stored.TimeoutSeconds), nil
+	})
 	c.PriceService = buildPriceService(c)
 	c.SweepService = sweep.NewService(
 		c.Registry, c.MPCService, sweepsecrets.New(c.SecretsManager), sweepredis.New(c.Redis), c.WebhookService,

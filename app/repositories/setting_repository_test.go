@@ -248,3 +248,36 @@ func TestResetSectionCommitsWithActivityAndRollsBackTogether(t *testing.T) {
 		t.Fatalf("activity total after rollback = %d, %v", total, err)
 	}
 }
+
+func TestUpsertPlatformReplacesTheSameKey(t *testing.T) {
+	mocks.TestDB(t)
+	ctx := context.Background()
+	repo := repositories.NewSettingRepository(nil)
+
+	if err := repo.UpsertPlatform(ctx, "webhook_delivery", map[string]string{
+		"max_attempts":    "4",
+		"timeout_seconds": "7",
+	}); err != nil {
+		t.Fatalf("insert: %v", err)
+	}
+	if err := repo.UpsertPlatform(ctx, "webhook_delivery", map[string]string{
+		"max_attempts": "6",
+	}); err != nil {
+		t.Fatalf("replace: %v", err)
+	}
+
+	rows, err := repo.ListPlatform(ctx, "webhook_delivery")
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	got := map[string]string{}
+	for _, row := range rows {
+		if row.AccountID != nil {
+			t.Fatalf("platform row has an account: %+v", row)
+		}
+		got[row.Key] = row.Value
+	}
+	if got["max_attempts"] != "6" || got["timeout_seconds"] != "7" || len(got) != 2 {
+		t.Fatalf("stored = %#v", got)
+	}
+}

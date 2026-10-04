@@ -128,7 +128,7 @@ func (s *Service) enqueueForConfig(ctx context.Context, cfg models.WebhookConfig
 		Payload:         string(payload),
 		DeliveryURL:     cfg.URL,
 		DeliveryStatus:  models.WebhookDeliveryPending,
-		MaxAttempts:     defaultMaxAttempts,
+		MaxAttempts:     s.resolveDeliverySettings(ctx).MaxAttempts,
 	}
 	if err := s.webhookEventRepo.Create(ctx, webhookEvent); err != nil {
 		if isUniqueViolation(err) {
@@ -219,7 +219,7 @@ func (s *Service) deliverStored(ctx context.Context, event models.WebhookEvent) 
 		return true
 	}
 	slog.Warn("local webhook delivery failed", "error", deliverErr, "event_id", event.ID, "attempt", msg.Attempt)
-	if msg.Attempt >= event.MaxAttempts {
+	if msg.Attempt >= s.resolveDeliverySettings(ctx).MaxAttempts {
 		if markErr := s.webhookEventRepo.MarkFailed(ctx, event.ID.String(), deliverErr.Error()); markErr != nil {
 			slog.Error("mark webhook event failed", "error", markErr, "event_id", event.ID)
 		}

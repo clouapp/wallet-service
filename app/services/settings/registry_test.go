@@ -19,7 +19,7 @@ func TestAccountSectionsDoNotShareNamesWithGroups(t *testing.T) {
 		switch group.Scope {
 		case ScopeAccount:
 		case ScopePlatform:
-			if group.Name != groupDepositScan {
+			if group.Name != groupDepositScan && group.Name != groupWebhookDelivery {
 				t.Fatalf("unexpected platform group %s", group.Name)
 			}
 		default:
@@ -47,6 +47,10 @@ func TestAccountSectionsDoNotShareNamesWithGroups(t *testing.T) {
 	scan, ok := FindGroup(groupDepositScan)
 	if !ok || scan.Scope != ScopePlatform || len(scan.Settings) != 3 {
 		t.Fatalf("deposit scan group = %+v present %v", scan, ok)
+	}
+	delivery, ok := FindGroup(groupWebhookDelivery)
+	if !ok || delivery.Scope != ScopePlatform || len(delivery.Settings) != 2 || delivery.UpdatePermission != "" {
+		t.Fatalf("webhook delivery group = %+v present %v", delivery, ok)
 	}
 }
 

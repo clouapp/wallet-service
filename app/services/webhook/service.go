@@ -50,6 +50,7 @@ type Service struct {
 	sqs               queue.Sender
 	webhookConfigRepo configStore
 	webhookEventRepo  eventStore
+	deliverySettings  deliverySettingsSource
 }
 
 func NewService(sqs queue.Sender, webhookConfigRepo configStore, webhookEventRepo eventStore) *Service {
@@ -100,7 +101,7 @@ func (s *Service) EnqueueEvent(ctx context.Context, txID uuid.UUID, eventType ty
 			DeliveryURL:     cfg.URL,
 			DeliveryStatus:  "pending",
 			Attempts:        0,
-			MaxAttempts:     10,
+			MaxAttempts:     s.resolveDeliverySettings(ctx).MaxAttempts,
 		}
 		if err := s.webhookEventRepo.Create(ctx, webhookEvent); err != nil {
 			slog.Error("insert webhook event", "error", err)
@@ -157,7 +158,7 @@ const (
 // Deliver executes the HTTP delivery. Called by the SQS Lambda worker.
 // Returns error to trigger SQS retry → eventually DLQ after 10 failures.
 func (s *Service) Deliver(ctx context.Context, msg types.WebhookMessage) error {
-	resp, err := postSignedWebhook(ctx, msg.DeliveryURL, msg.Secret, msg.Payload, string(msg.EventType), msg.EventID, webhookDeliveryTimeout)
+	resp, err := postSignedWebhook(ctx, msg.DeliveryURL, msg.Secret, msg.Payload, string(msg.EventType), msg.EventID, s.resolveDeliverySettings(ctx).Timeout)
 	if err != nil {
 		if httpclient.IsBuild(err) {
 			return fmt.Errorf("build request: %w", err)

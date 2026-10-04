@@ -23,7 +23,12 @@ func (p *SettingsServiceProvider) Register(app foundation.Application) {
 		if err != nil {
 			return nil, err
 		}
-		return settings.NewService(store, settings.CryptSealer{}, settings.FacadeCache{}, activityLog), nil
+		admins, err := resolve[*repositories.PlatformAdminRepository](app)
+		if err != nil {
+			return nil, err
+		}
+		return settings.NewService(store, settings.CryptSealer{}, settings.FacadeCache{}, activityLog).
+			WithPlatformAdmins(admins), nil
 	})
 }
 
