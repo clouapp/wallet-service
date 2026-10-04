@@ -1,6 +1,10 @@
 package settings
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/macrowallets/waas/app/policies"
+)
 
 func TestAccountSectionsDoNotShareNamesWithGroups(t *testing.T) {
 	t.Parallel()
@@ -63,7 +67,7 @@ func TestAccountSectionsDoNotShareNamesWithGroups(t *testing.T) {
 		t.Fatalf("webhook delivery group = %+v present %v", delivery, ok)
 	}
 	smtp, ok := FindGroup(groupMailSMTP)
-	if !ok || smtp.Scope != ScopePlatform || smtp.SectionName() != sectionMail || smtp.UpdatePermission != "" || len(smtp.Settings) != 5 {
+	if !ok || smtp.Scope != ScopePlatform || smtp.SectionName() != sectionMail || !mailCredentialPermissions(smtp) || len(smtp.Settings) != 5 {
 		t.Fatalf("mail smtp group = %+v present %v", smtp, ok)
 	}
 	host, ok := Find(groupMailSMTP, keyMailHost)
@@ -75,7 +79,7 @@ func TestAccountSectionsDoNotShareNamesWithGroups(t *testing.T) {
 		t.Fatalf("mail password = %+v present %v", password, ok)
 	}
 	mailFrom, ok := FindGroup(groupMailDelivery)
-	if !ok || mailFrom.Scope != ScopePlatform || mailFrom.SectionName() != sectionMail || mailFrom.UpdatePermission != "" || len(mailFrom.Settings) != 3 {
+	if !ok || mailFrom.Scope != ScopePlatform || mailFrom.SectionName() != sectionMail || mailFrom.ViewPermission != "" || mailFrom.UpdatePermission != "" || len(mailFrom.Settings) != 3 {
 		t.Fatalf("mail delivery group = %+v present %v", mailFrom, ok)
 	}
 	fromAddress, ok := Find(groupMailDelivery, keyMailFromAddress)
@@ -111,7 +115,7 @@ func knownPlatformGroup(name string) bool {
 func assertMailProviderGroups(t *testing.T) {
 	t.Helper()
 	ses, ok := FindGroup(groupMailSES)
-	if !ok || ses.Scope != ScopePlatform || ses.SectionName() != sectionMail || ses.UpdatePermission != "" || len(ses.Settings) != 5 {
+	if !ok || ses.Scope != ScopePlatform || ses.SectionName() != sectionMail || !mailCredentialPermissions(ses) || len(ses.Settings) != 5 {
 		t.Fatalf("mail ses group = %+v present %v", ses, ok)
 	}
 	if len(ses.CredentialGroups) != 1 || len(ses.CredentialGroups[0]) != 2 ||
@@ -131,7 +135,7 @@ func assertMailProviderGroups(t *testing.T) {
 		t.Fatalf("ses region = %+v present %v", region, ok)
 	}
 	mailgun, ok := FindGroup(groupMailMailgun)
-	if !ok || mailgun.UpdatePermission != "" || len(mailgun.Settings) != 5 || len(mailgun.CredentialGroups) != 0 {
+	if !ok || !mailCredentialPermissions(mailgun) || len(mailgun.Settings) != 5 || len(mailgun.CredentialGroups) != 0 {
 		t.Fatalf("mailgun group = %+v present %v", mailgun, ok)
 	}
 	domain, ok := Find(groupMailMailgun, keyMailDomain)
@@ -147,7 +151,7 @@ func assertMailProviderGroups(t *testing.T) {
 		t.Fatalf("mailgun secret = %+v present %v", mailgunSecret, ok)
 	}
 	resend, ok := FindGroup(groupMailResend)
-	if !ok || resend.UpdatePermission != "" || len(resend.Settings) != 3 {
+	if !ok || !mailCredentialPermissions(resend) || len(resend.Settings) != 3 {
 		t.Fatalf("resend group = %+v present %v", resend, ok)
 	}
 	apiKey, ok := Find(groupMailResend, keyMailAPIKey)
@@ -155,7 +159,7 @@ func assertMailProviderGroups(t *testing.T) {
 		t.Fatalf("resend api key = %+v present %v", apiKey, ok)
 	}
 	postmark, ok := FindGroup(groupMailPostmark)
-	if !ok || postmark.UpdatePermission != "" || len(postmark.Settings) != 4 {
+	if !ok || !mailCredentialPermissions(postmark) || len(postmark.Settings) != 4 {
 		t.Fatalf("postmark group = %+v present %v", postmark, ok)
 	}
 	token, ok := Find(groupMailPostmark, keyMailToken)
@@ -359,10 +363,15 @@ func TestEverySecretGroupDeclaresAPermission(t *testing.T) {
 	}
 }
 
+func mailCredentialPermissions(group Group) bool {
+	return group.ViewPermission == policies.PermMailView && group.UpdatePermission == policies.PermMailUpdate
+}
+
 func platformSecretGroupGatedByAdmins(group Group) bool {
 	switch group.Name {
-	case groupMailSMTP, groupMailSES, groupMailMailgun, groupMailResend, groupMailPostmark,
-		groupPriceCoinGecko, groupPriceCoinMarketCap, groupPriceCoinAPI,
+	case groupMailSMTP, groupMailSES, groupMailMailgun, groupMailResend, groupMailPostmark:
+		return mailCredentialPermissions(group) && platformAdminCoversViewPermission(group.ViewPermission)
+	case groupPriceCoinGecko, groupPriceCoinMarketCap, groupPriceCoinAPI,
 		groupProviderAlchemy, groupProviderHelius, groupProviderQuickNode, groupProviderEtherscan:
 		return group.ViewPermission == "" && group.UpdatePermission == ""
 	default:

@@ -2,6 +2,27 @@ package policies
 
 import "testing"
 
+func TestMailCredentialPermissionsAreNotAccountGrants(t *testing.T) {
+	t.Parallel()
+
+	if PermMailView == PermSettingsView || PermMailUpdate == PermSettingsUpdate {
+		t.Fatal("a mail credential permission reused the settings route pair")
+	}
+	for _, role := range []string{roleOwner, roleAdmin, roleAuditor, roleUser, "viewer", ""} {
+		if Can(AccountRoleGrants(role), PermMailView) || Can(AccountRoleGrants(role), PermMailUpdate) {
+			t.Fatalf("%s account grants hold a mail credential permission", role)
+		}
+		if Can(WalletGrants(role), PermMailView) || Can(WalletGrants(role), PermMailUpdate) {
+			t.Fatalf("%s wallet grants hold a mail credential permission", role)
+		}
+	}
+	for _, name := range APITokenPermissionCatalog() {
+		if name == PermMailView || name == PermMailUpdate {
+			t.Fatalf("api token catalog holds %s", name)
+		}
+	}
+}
+
 func TestSettingsPermissionsFollowTheAccountRoles(t *testing.T) {
 	t.Parallel()
 

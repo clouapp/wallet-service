@@ -8,6 +8,16 @@ const (
 	PermSettingsUpdate = "settings.update"
 )
 
+// PermMailView and PermMailUpdate are the extra pair on a platform mail
+// group that stores a live credential (S1.4.7). Holding settings.update
+// does not grant that credential. No account role holds either name:
+// owner, admin, auditor, and user may neither read nor write it. There is
+// no platform permission catalog, so a platform_admins row stands in.
+const (
+	PermMailView   = "mail.view"
+	PermMailUpdate = "mail.update"
+)
+
 const (
 	roleOwner   = "owner"
 	roleAdmin   = "admin"

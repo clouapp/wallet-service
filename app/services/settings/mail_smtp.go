@@ -6,6 +6,8 @@ import (
 	"log/slog"
 	"strconv"
 	"strings"
+
+	"github.com/macrowallets/waas/app/policies"
 )
 
 const (
@@ -55,8 +57,12 @@ func mailSMTPGroup() Group {
 		Section: sectionMail,
 		Block:   "SMTP",
 		// S1.4.4 moves MAIL_HOST/PORT/ENCRYPTION/USERNAME/PASSWORD here.
-		// password is a Secret. This group names no permission: a
-		// platform_admins row is the gate. host is the Destination.
+		// password is a Secret. S1.4.7 names mail.view and mail.update on
+		// this credential so settings.update is not the grant. No account
+		// role holds that pair. There is no platform permission catalog, so
+		// a platform_admins row stands in. host is the Destination.
+		ViewPermission:   policies.PermMailView,
+		UpdatePermission: policies.PermMailUpdate,
 		Settings: []Definition{
 			{
 				Key:         keyMailHost,

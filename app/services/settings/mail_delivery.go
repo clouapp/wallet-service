@@ -48,8 +48,9 @@ func mailDeliveryGroup() Group {
 		Section: sectionMail,
 		Block:   "From",
 		// S1.4.4 moves MAIL_FROM_ADDRESS/NAME here, with the driver selector.
-		// from_address and from_name are not secrets. This group names no
-		// permission: a platform_admins row is the gate.
+		// from_address and from_name are not secrets. S1.4.7 leaves this
+		// group without mail.view and mail.update: it stores no credential.
+		// A platform_admins row is the gate.
 		Settings: []Definition{
 			{
 				Key:     keyMailDriver,

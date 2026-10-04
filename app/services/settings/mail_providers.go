@@ -1,6 +1,10 @@
 package settings
 
-import "strings"
+import (
+	"strings"
+
+	"github.com/macrowallets/waas/app/policies"
+)
 
 const (
 	keyMailProviderKey    = "key"
@@ -30,8 +34,12 @@ func mailSESGroup() Group {
 		Section: sectionMail,
 		Block:   blockMailProviders,
 		// key and secret are the SES key pair. Both are secrets. region,
-		// from_address, and from_name are returned. This group names no
-		// permission: a platform_admins row is the gate.
+		// from_address, and from_name are returned. S1.4.7 names mail.view
+		// and mail.update on this credential so settings.update is not the
+		// grant. No account role holds that pair. There is no platform
+		// permission catalog, so a platform_admins row stands in.
+		ViewPermission:   policies.PermMailView,
+		UpdatePermission: policies.PermMailUpdate,
 		CredentialGroups: [][]string{{keyMailProviderKey, keyMailProviderSecret}},
 		Settings: append([]Definition{
 			{
@@ -63,11 +71,16 @@ func mailSESGroup() Group {
 
 func mailMailgunGroup() Group {
 	return Group{
-		Name:    groupMailMailgun,
-		Scope:   ScopePlatform,
-		Section: sectionMail,
-		Block:   blockMailProviders,
+		Name:             groupMailMailgun,
+		Scope:            ScopePlatform,
+		Section:          sectionMail,
+		Block:            blockMailProviders,
+		ViewPermission:   policies.PermMailView,
+		UpdatePermission: policies.PermMailUpdate,
 		// secret is the API key. domain and endpoint are returned.
+		// S1.4.7 names mail.view and mail.update so settings.update is not
+		// the grant. No account role holds that pair. A platform_admins row
+		// stands in: there is no platform permission catalog.
 		Settings: append([]Definition{
 			{
 				Key:     keyMailDomain,
@@ -97,10 +110,12 @@ func mailMailgunGroup() Group {
 
 func mailResendGroup() Group {
 	return Group{
-		Name:    groupMailResend,
-		Scope:   ScopePlatform,
-		Section: sectionMail,
-		Block:   blockMailProviders,
+		Name:             groupMailResend,
+		Scope:            ScopePlatform,
+		Section:          sectionMail,
+		Block:            blockMailProviders,
+		ViewPermission:   policies.PermMailView,
+		UpdatePermission: policies.PermMailUpdate,
 		Settings: append([]Definition{
 			{
 				Key:     keyMailAPIKey,
@@ -116,10 +131,12 @@ func mailResendGroup() Group {
 
 func mailPostmarkGroup() Group {
 	return Group{
-		Name:    groupMailPostmark,
-		Scope:   ScopePlatform,
-		Section: sectionMail,
-		Block:   blockMailProviders,
+		Name:             groupMailPostmark,
+		Scope:            ScopePlatform,
+		Section:          sectionMail,
+		Block:            blockMailProviders,
+		ViewPermission:   policies.PermMailView,
+		UpdatePermission: policies.PermMailUpdate,
 		Settings: append([]Definition{
 			{
 				Key:     keyMailToken,
