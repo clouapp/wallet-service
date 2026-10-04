@@ -16,12 +16,13 @@ const (
 )
 
 // S1.4.4 registers price_lookup.provider_order and price_coingecko,
-// price_coinmarketcap, and price_coinapi. The row's note is that
-// price.Service already loops an ordered provider list. It does not say
-// quotes go through this order, so these groups are stored and quotes keep
-// the current CoinAPI client and the currency cache. A missing row, an
-// invalid value, or a failed read of these groups cannot replace that path.
-// Base URLs stay adapter constants: these groups have no base_url field.
+// price_coinmarketcap, and price_coinapi. Quotes read them through
+// price.SettingsSource on each refresh: key, enabled, and order are resolved
+// then, and each sealed api_key is opened at that moment. A missing group,
+// enabled false, an invalid seal, an unknown name, or a failed read skips
+// that provider. When none are usable, the quote keeps the environment
+// CoinAPI key. Base URLs stay adapter constants: these groups have no
+// base_url field.
 
 func priceLookupGroup() Group {
 	return Group{

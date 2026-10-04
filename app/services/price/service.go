@@ -46,6 +46,9 @@ type Service struct {
 	currencyRepo currencyStore
 	cache        PriceCache
 	quotes       QuoteDialer
+	settings     SettingsSource
+	envCoinAPI   string
+	newProvider  quoteProviderFactory
 }
 
 func NewService(
@@ -74,7 +77,7 @@ func (s *Service) RefreshCryptoPrices(ctx context.Context) error {
 		priceMap[c.Code] = c.CurrentPrice.Decimal
 	}
 
-	for _, provider := range s.providers {
+	for _, provider := range s.providersForQuote(ctx) {
 		staleCodes := findStaleCodes(cryptos)
 		if len(staleCodes) == 0 {
 			break
@@ -123,7 +126,7 @@ func (s *Service) RefreshFiatRates(ctx context.Context) error {
 		return nil
 	}
 
-	for _, provider := range s.providers {
+	for _, provider := range s.providersForQuote(ctx) {
 		rates, err := provider.FetchFiatRates(codes)
 		if err != nil {
 			slog.Warn("fiat rate fetch failed", "provider", provider.Name(), "error", err)

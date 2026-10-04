@@ -375,7 +375,7 @@ func buildVaultContainer(app foundation.Application) (*container.Container, erro
 		}
 		return webhook.DeliverySettingsFromStored(stored.MaxAttempts, stored.TimeoutSeconds), nil
 	})
-	c.PriceService = buildPriceService(c)
+	c.PriceService = buildPriceService(c, accountSettings)
 	c.SweepService = sweep.NewService(
 		c.Registry, c.MPCService, sweepsecrets.New(c.SecretsManager), sweepredis.New(c.Redis), c.WebhookService,
 		c.WalletRepo, c.AddressRepo, c.TransactionRepo, accountSettings.EffectiveSweepLimits, c.ChainRepo,
@@ -465,19 +465,27 @@ func buildVaultContainer(app foundation.Application) (*container.Container, erro
 	return c, nil
 }
 
-// buildPriceService quotes prices with every provider that has an API key.
-func buildPriceService(c *container.Container) *price.Service {
-	var priceProviders []price.PriceProvider
-	if key := c.PriceConfig.CoinGeckoAPIKey; key != "" {
-		priceProviders = append(priceProviders, price.NewCoinGeckoProvider(key))
+// buildPriceService quotes through price.SettingsSource on each refresh.
+// Provider keys are opened then, not copied into clients at boot. When no
+// settings provider is usable, the quote keeps the environment CoinAPI key.
+func buildPriceService(c *container.Container, accountSettings *settings.Service) *price.Service {
+	service := price.NewService(nil, c.CurrencyRepo, pricecache.New(c.Redis)).
+		WithQuoteDialer(coinapiws.Dialer{}).
+		WithEnvCoinAPIKey(c.PriceConfig.CoinAPIKey)
+	if accountSettings == nil {
+		return service
 	}
-	if key := c.PriceConfig.CoinMarketCapAPIKey; key != "" {
-		priceProviders = append(priceProviders, price.NewCoinMarketCapProvider(key))
-	}
-	if key := c.PriceConfig.CoinAPIKey; key != "" {
-		priceProviders = append(priceProviders, price.NewCoinAPIProvider(key))
-	}
-	return price.NewService(priceProviders, c.CurrencyRepo, pricecache.New(c.Redis)).WithQuoteDialer(coinapiws.Dialer{})
+	return service.WithSettingsSource(func(ctx context.Context) ([]price.Credential, error) {
+		opened, err := accountSettings.PriceProvidersForQuote(ctx)
+		if err != nil {
+			return nil, err
+		}
+		credentials := make([]price.Credential, 0, len(opened))
+		for _, item := range opened {
+			credentials = append(credentials, price.Credential{Name: item.Name, Key: item.Key})
+		}
+		return credentials, nil
+	})
 }
 
 // buildPendingDepositStore keeps failed deposit blocks in Redis and in a local

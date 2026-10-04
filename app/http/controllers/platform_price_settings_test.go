@@ -18,8 +18,8 @@ const priceCoinAPIKeyFixture = "price-coinapi-key-fixture"
 
 // PlatformPriceSettingsTestSuite is PUT /v1/platform/settings for the S1.4.4
 // price groups. A platform_admins row is the gate. The API key is sealed and
-// stays out of the response and the activity row. Quotes stay on the current
-// CoinAPI client.
+// stays out of the response and the activity row. Quotes read the sealed key
+// through price.SettingsSource at request time.
 type PlatformPriceSettingsTestSuite struct {
 	authSuite
 }
