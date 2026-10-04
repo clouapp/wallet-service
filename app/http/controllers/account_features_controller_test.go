@@ -39,7 +39,7 @@ func (s *accountFeaturesSuite) TestGetMissingRowUsesCatalogDefault() {
 	s.Equal(len(features.All()), len(body.Features))
 	s.True(s.flag(body, features.FlagWithdrawalsEnabled))
 	s.True(s.flag(body, features.FlagSweepEnabled))
-	s.False(s.flag(body, features.FlagDepositScanEnabled))
+	s.True(s.flag(body, features.FlagDepositScanEnabled))
 	s.False(s.flag(body, features.FlagWalletCreationEnabled))
 	s.False(s.flag(body, features.FlagWebhookDeliveryEnabled))
 	s.False(s.flag(body, features.FlagAPIRequestSignatureRequired))

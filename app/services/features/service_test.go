@@ -308,7 +308,7 @@ func TestActiveGlobalUsesTheCatalogDefaultAndIgnoresAccountRows(t *testing.T) {
 	if err != nil {
 		t.Fatalf("active: %v", err)
 	}
-	want := []string{FlagSweepEnabled, FlagWithdrawalsEnabled}
+	want := []string{FlagDepositScanEnabled, FlagSweepEnabled, FlagWithdrawalsEnabled}
 	if !slices.Equal(names, want) {
 		t.Fatalf("active = %v, want %v", names, want)
 	}
@@ -326,7 +326,7 @@ func TestActiveGlobalUsesTheCatalogDefaultAndIgnoresAccountRows(t *testing.T) {
 	if err != nil {
 		t.Fatalf("active after write: %v", err)
 	}
-	want = []string{FlagSweepEnabled, FlagUser2FARequired}
+	want = []string{FlagDepositScanEnabled, FlagSweepEnabled, FlagUser2FARequired}
 	if !slices.Equal(names, want) {
 		t.Fatalf("active after write = %v, want %v", names, want)
 	}

@@ -34,7 +34,7 @@ func (s *featureGateSuite) TestGlobalWithdrawalsFalseBlocksTheNextWithdrawUntilI
 	s.Equal(len(features.ForGlobal()), len(body.Features))
 	s.True(s.listed(body, features.FlagWithdrawalsEnabled))
 	s.True(s.listed(body, features.FlagSweepEnabled))
-	s.False(s.listed(body, features.FlagDepositScanEnabled))
+	s.True(s.listed(body, features.FlagDepositScanEnabled))
 	s.False(s.listed(body, features.FlagWalletCreationEnabled))
 	s.False(s.listed(body, features.FlagWebhookDeliveryEnabled))
 	s.False(s.listed(body, features.FlagAPIRequestSignatureRequired))

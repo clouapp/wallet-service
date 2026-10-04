@@ -114,7 +114,7 @@ func (s *UserControllerTestSuite) seedAccount(name, environment, role string) mo
 
 func (s *UserControllerTestSuite) TestGetMeListsGloballyActiveFeatureKeys() {
 	body := s.getMe()
-	s.Equal([]string{features.FlagSweepEnabled, features.FlagWithdrawalsEnabled}, body.Features)
+	s.Equal([]string{features.FlagDepositScanEnabled, features.FlagSweepEnabled, features.FlagWithdrawalsEnabled}, body.Features)
 
 	account := s.seedAccount("Flags", "prod", "owner")
 	_, err := facades.Orm().Query().Exec(
@@ -125,7 +125,7 @@ func (s *UserControllerTestSuite) TestGetMeListsGloballyActiveFeatureKeys() {
 	)
 	s.Require().NoError(err)
 	body = s.getMe()
-	s.Equal([]string{features.FlagSweepEnabled, features.FlagWithdrawalsEnabled}, body.Features)
+	s.Equal([]string{features.FlagDepositScanEnabled, features.FlagSweepEnabled, features.FlagWithdrawalsEnabled}, body.Features)
 
 	_, err = facades.Orm().Query().Exec(
 		`INSERT INTO global_features ("key", enabled, created_at, updated_at)
@@ -134,7 +134,7 @@ func (s *UserControllerTestSuite) TestGetMeListsGloballyActiveFeatureKeys() {
 	)
 	s.Require().NoError(err)
 	body = s.getMe()
-	s.Equal([]string{features.FlagSweepEnabled, features.FlagUser2FARequired}, body.Features)
+	s.Equal([]string{features.FlagDepositScanEnabled, features.FlagSweepEnabled, features.FlagUser2FARequired}, body.Features)
 
 	patch, err := s.Http(s.T()).
 		WithHeader("Authorization", "Bearer "+s.token).

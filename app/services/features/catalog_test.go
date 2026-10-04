@@ -34,7 +34,7 @@ func TestCatalogNamesTheAccountFlagsAndTheirDefaults(t *testing.T) {
 			t.Fatalf("catalog is not sorted: %q before %q", previous, definition.Key)
 		}
 		previous = definition.Key
-		wantDefault := definition.Key == FlagSweepEnabled || definition.Key == FlagWithdrawalsEnabled
+		wantDefault := definition.Key == FlagDepositScanEnabled || definition.Key == FlagSweepEnabled || definition.Key == FlagWithdrawalsEnabled
 		if definition.Default != wantDefault {
 			t.Fatalf("%s default = %v, want %v", definition.Key, definition.Default, wantDefault)
 		}

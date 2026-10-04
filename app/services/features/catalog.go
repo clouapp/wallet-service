@@ -31,9 +31,10 @@ const (
 )
 
 // Definition is one named flag. Default is what a reader returns when the
-// account has no row. withdrawals-enabled and sweep-enabled default to true,
-// so a missing row leaves withdrawals and consolidate running. The other
-// flags default to false. A write stores the boolean the caller sent.
+// account has no row. withdrawals-enabled, sweep-enabled, and
+// deposit-scan-enabled default to true, so a missing row leaves withdrawals
+// and consolidate running and allows scans. The other flags default to
+// false. A write stores the boolean the caller sent.
 type Definition struct {
 	Key         string
 	Label       string
@@ -60,7 +61,7 @@ var catalog = []Definition{
 		Label:       "Deposit scan",
 		Description: "Records whether deposit scanning is turned on for this account.",
 		Scopes:      []string{ScopeGlobal, ScopeAccount},
-		Default:     false,
+		Default:     true,
 	},
 	{
 		Key:         FlagSweepEnabled,

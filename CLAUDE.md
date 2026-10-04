@@ -210,7 +210,8 @@ Known violations include `app/models → app/services/mpc` and `config → app/m
   check. `GET|PATCH /v1/platform/features` is a platform admin
   (`platform_admins`), not an account owner. — guarded by
   `app/services/features/service_test.go` and `gate_test.go`.
-- `withdrawals-enabled` and `sweep-enabled` default to on. `Gate` pauses the
+- `withdrawals-enabled`, `sweep-enabled`, and `deposit-scan-enabled` default
+  to on. A missing `deposit-scan-enabled` row allows scans. `Gate` pauses the
   action when the account flag is off, and when the global row is an explicit
   false. A missing global row does not pause. The conflict codes are
   `withdrawals_paused` and `sweep_paused`.
@@ -218,8 +219,9 @@ Known violations include `app/models → app/services/mpc` and `config → app/m
   `TOTPEnrollment` reads on account and wallet routes.
 - `GET /v1/users/me` adds `features`: the globally active flag keys, in
   catalog order. A missing global row uses the catalog default, so
-  `sweep-enabled` and `withdrawals-enabled` are present until a platform row
-  stores false. Account rows are not included. Login and `PATCH /v1/users/me`
+  `deposit-scan-enabled`, `sweep-enabled`, and `withdrawals-enabled` are
+  present until a platform row stores false. Account rows are not included.
+  Login and `PATCH /v1/users/me`
   do not carry the field.
 
 ### 12. RBAC

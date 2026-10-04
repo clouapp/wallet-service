@@ -150,8 +150,9 @@ func (s *Service) ListGlobal(ctx context.Context, userID uuid.UUID) (List, error
 }
 
 // ActiveGlobal returns the flag keys whose platform value is on, in catalog
-// order. A missing global row uses the catalog default, so sweep-enabled and
-// withdrawals-enabled are included until a row stores false. Account rows
+// order. A missing global row uses the catalog default, so
+// deposit-scan-enabled, sweep-enabled, and withdrawals-enabled are included
+// until a row stores false. Account rows
 // are not read: this is the global half of GET /v1/users/me. The catalog has
 // no user scope, so there is nothing further to add. The call does not
 // insert rows and does not cache.
