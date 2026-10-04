@@ -13,9 +13,9 @@ import (
 	"time"
 
 	"github.com/macrowallets/waas/pkg/httpclient"
-	"github.com/shopspring/decimal"
 	"github.com/macrowallets/waas/pkg/numeric"
 	"github.com/macrowallets/waas/pkg/types"
+	"github.com/shopspring/decimal"
 )
 
 const (
@@ -29,8 +29,9 @@ const (
 )
 
 type AlchemyProvider struct {
-	apiKey string
-	client *httpclient.Client
+	apiKey   string
+	keyAtUse KeySource
+	client   *httpclient.Client
 }
 
 func NewAlchemyProvider(apiKey string) *AlchemyProvider {
@@ -38,6 +39,16 @@ func NewAlchemyProvider(apiKey string) *AlchemyProvider {
 		apiKey: apiKey,
 		client: httpclient.NewClient(alchemyHTTPTimeout),
 	}
+}
+
+// UseKeySource reads the credential on each call. The constructor key is
+// not the one used after this is set, so boot does not capture it.
+func (a *AlchemyProvider) UseKeySource(source KeySource) *AlchemyProvider {
+	if a == nil {
+		return nil
+	}
+	a.keyAtUse = source
+	return a
 }
 
 func (a *AlchemyProvider) ProviderName() string {
@@ -75,7 +86,12 @@ func (a *AlchemyProvider) CreateWebhook(ctx context.Context, cfg ProviderConfig)
 		return nil, fmt.Errorf("alchemy: marshal create request: %w", err)
 	}
 
-	status, respBody, err := exchange(ctx, a.client, httpclient.MethodPost, alchemyAPIBase+"/create-webhook", a.apiHeaders(), body)
+	headers, headerErr := a.apiHeaders(ctx)
+	if headerErr != nil {
+		return nil, headerErr
+	}
+
+	status, respBody, err := exchange(ctx, a.client, httpclient.MethodPost, alchemyAPIBase+"/create-webhook", headers, body)
 	if err != nil {
 		if httpclient.IsBuild(err) {
 			return nil, fmt.Errorf("alchemy: build create request: %w", err)
@@ -138,7 +154,12 @@ func (a *AlchemyProvider) SyncAddresses(ctx context.Context, webhookID string, a
 		return fmt.Errorf("alchemy: marshal patch request: %w", err)
 	}
 
-	status, respBody, err := exchange(ctx, a.client, httpclient.MethodPatch, alchemyAPIBase+"/update-webhook-addresses", a.apiHeaders(), body)
+	headers, headerErr := a.apiHeaders(ctx)
+	if headerErr != nil {
+		return headerErr
+	}
+
+	status, respBody, err := exchange(ctx, a.client, httpclient.MethodPatch, alchemyAPIBase+"/update-webhook-addresses", headers, body)
 	if err != nil {
 		if httpclient.IsBuild(err) {
 			return fmt.Errorf("alchemy: build patch request: %w", err)
@@ -161,7 +182,12 @@ func (a *AlchemyProvider) fetchAllAddresses(ctx context.Context, webhookID strin
 			u += "&after=" + cursor
 		}
 
-		status, respBody, err := exchange(ctx, a.client, httpclient.MethodGet, u, a.apiHeaders(), nil)
+		headers, headerErr := a.apiHeaders(ctx)
+		if headerErr != nil {
+			return nil, headerErr
+		}
+
+		status, respBody, err := exchange(ctx, a.client, httpclient.MethodGet, u, headers, nil)
 		if err != nil {
 			return nil, err
 		}
@@ -199,7 +225,12 @@ func (a *AlchemyProvider) DeleteWebhook(ctx context.Context, webhookID string) e
 		return fmt.Errorf("alchemy: marshal delete request: %w", err)
 	}
 
-	status, respBody, err := exchange(ctx, a.client, httpclient.MethodDelete, alchemyAPIBase+"/delete-webhook", a.apiHeaders(), body)
+	headers, headerErr := a.apiHeaders(ctx)
+	if headerErr != nil {
+		return headerErr
+	}
+
+	status, respBody, err := exchange(ctx, a.client, httpclient.MethodDelete, alchemyAPIBase+"/delete-webhook", headers, body)
 	if err != nil {
 		if httpclient.IsBuild(err) {
 			return fmt.Errorf("alchemy: build delete request: %w", err)
@@ -217,6 +248,13 @@ func (a *AlchemyProvider) DeleteWebhook(ctx context.Context, webhookID string) e
 // ---------------------------------------------------------------------------
 
 func (a *AlchemyProvider) VerifyInbound(headers Header, body []byte, secret string) (bool, error) {
+	if err := gateInboundKey(context.Background(), a.keyAtUse); err != nil {
+		return false, err
+	}
+	if err := rejectBlankSigningKey(secret); err != nil {
+		return false, err
+	}
+
 	sig := headers.Get(alchemySignatureHdr)
 	if sig == "" {
 		return false, fmt.Errorf("alchemy: missing %s header", alchemySignatureHdr)
@@ -358,11 +396,15 @@ func parseHexInt(s string) (int, error) {
 // Helpers
 // ---------------------------------------------------------------------------
 
-func (a *AlchemyProvider) apiHeaders() map[string]string {
+func (a *AlchemyProvider) apiHeaders(ctx context.Context) (map[string]string, error) {
+	key, err := requireCredential(ctx, a.keyAtUse, a.apiKey)
+	if err != nil {
+		return nil, err
+	}
 	return map[string]string{
 		"Content-Type":      "application/json",
-		alchemyAuthTokenHdr: a.apiKey,
-	}
+		alchemyAuthTokenHdr: key,
+	}, nil
 }
 
 func diffAddresses(current, desired []string) (toAdd, toRemove []string) {

@@ -16,10 +16,26 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/macrowallets/waas/app/models"
-	"github.com/macrowallets/waas/app/repositories"
 	"github.com/macrowallets/waas/app/services/ingest/providers"
 	"github.com/macrowallets/waas/pkg/types"
 )
+
+const sealedProviderKeyPrefix = "enc:v1:"
+
+// ProviderKey returns the credential for one provider on this sync.
+// Implementations open sealed settings on each call. An empty result fails
+// the sync. The key must not be logged.
+type ProviderKey func(ctx context.Context, provider string) string
+
+// activeAddresses is the address list a sync pushes to the provider.
+type activeAddresses interface {
+	PluckActiveAddresses(ctx context.Context, chainID string) ([]string, error)
+}
+
+// signingSecretOpener opens the subscription signing secret. The default
+// uses the process cipher. A test supplies its own so the suite does not
+// boot the cipher. The plaintext is not logged.
+type signingSecretOpener func(sealed string) (string, error)
 
 // subscriptionStore is the provider-subscription persistence this service uses.
 type subscriptionStore interface {
@@ -31,13 +47,25 @@ type subscriptionStore interface {
 
 type Service struct {
 	subscriptionRepo subscriptionStore
-	addressRepo      *repositories.AddressRepository
+	addressRepo      activeAddresses
 	providers        map[string]providers.WebhookProvider
+	providerKey      ProviderKey
+	openSecret       signingSecretOpener
 	mu               sync.Map // subscription id -> *sync.Mutex
 }
 
-func NewService(subRepo subscriptionStore, addrRepo *repositories.AddressRepository, provs map[string]providers.WebhookProvider) *Service {
+func NewService(subRepo subscriptionStore, addrRepo activeAddresses, provs map[string]providers.WebhookProvider) *Service {
 	return &Service{subscriptionRepo: subRepo, addressRepo: addrRepo, providers: provs}
+}
+
+// WithProviderKey re-reads the provider credential on every sync. Nil keeps
+// the providers passed to NewService and does not consult settings.
+func (s *Service) WithProviderKey(key ProviderKey) *Service {
+	if s == nil {
+		return nil
+	}
+	s.providerKey = key
+	return s
 }
 
 func (s *Service) lockForSubscription(id uuid.UUID) *sync.Mutex {
@@ -86,7 +114,16 @@ func (s *Service) SyncChainAddresses(ctx context.Context, chainID string) error 
 		return fmt.Errorf("unknown webhook provider %q", sub.Provider)
 	}
 
-	if _, err := facades.Crypt().DecryptString(sub.SigningSecret); err != nil {
+	if s.providerKey != nil {
+		resolved := strings.TrimSpace(s.providerKey(ctx, providerName))
+		if resolved == "" || strings.HasPrefix(resolved, sealedProviderKeyPrefix) {
+			slog.Error("webhook sync: provider key unavailable", "provider", providerName)
+			s.markFailed(ctx, sub.ID)
+			return fmt.Errorf("webhook provider key is empty")
+		}
+	}
+
+	if _, err := s.decryptSigningSecret(sub.SigningSecret); err != nil {
 		slog.Error("webhook sync: decrypt signing secret", "subscription_id", sub.ID, "error", err)
 		s.markFailed(ctx, sub.ID)
 		return fmt.Errorf("decrypt signing secret: %w", err)
@@ -104,6 +141,13 @@ func (s *Service) SyncChainAddresses(ctx context.Context, chainID string) error 
 	}
 
 	return nil
+}
+
+func (s *Service) decryptSigningSecret(sealed string) (string, error) {
+	if s != nil && s.openSecret != nil {
+		return s.openSecret(sealed)
+	}
+	return facades.Crypt().DecryptString(sealed)
 }
 
 func (s *Service) markFailed(ctx context.Context, id uuid.UUID) {

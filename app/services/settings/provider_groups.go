@@ -19,9 +19,9 @@ const (
 // ALCHEMY_AUTH_TOKEN is auth_token. HELIUS_API_KEY and QUICKNODE_API_KEY are
 // api_key. Both secret fields are sealed by the settings sealer (enc:v1:)
 // on PUT and omitted from the response. A blank secret keeps the stored one.
-// The row's note is only the section name. It does not say the scanner or
-// the RPC client reads these groups, so chain dialing stays on chains.rpc_url.
-// A missing row is not consulted by scanning or by withdrawals.
+// Webhook ingest and webhooksync read the opened credential at use time.
+// Chain dialing stays on chains.rpc_url. A missing row is not consulted by
+// scanning or by withdrawals.
 
 func providerAlchemyGroup() Group {
 	return webhookProviderGroup(groupProviderAlchemy, "Alchemy", keyProviderAuthToken, "Auth token")

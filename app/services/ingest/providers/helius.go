@@ -31,8 +31,9 @@ const (
 )
 
 type HeliusProvider struct {
-	apiKey string
-	client *httpclient.Client
+	apiKey   string
+	keyAtUse KeySource
+	client   *httpclient.Client
 }
 
 func NewHeliusProvider(apiKey string) *HeliusProvider {
@@ -40,6 +41,16 @@ func NewHeliusProvider(apiKey string) *HeliusProvider {
 		apiKey: apiKey,
 		client: httpclient.NewClient(heliusHTTPTimeout),
 	}
+}
+
+// UseKeySource reads the credential on each call. The constructor key is
+// not the one used after this is set, so boot does not capture it.
+func (h *HeliusProvider) UseKeySource(source KeySource) *HeliusProvider {
+	if h == nil {
+		return nil
+	}
+	h.keyAtUse = source
+	return h
 }
 
 func (h *HeliusProvider) ProviderName() string {
@@ -69,8 +80,9 @@ type heliusCreateResp struct {
 }
 
 func (h *HeliusProvider) CreateWebhook(ctx context.Context, cfg ProviderConfig) (*ProviderWebhook, error) {
-	if strings.TrimSpace(h.apiKey) == "" {
-		return nil, fmt.Errorf("helius: API key is required")
+	key, err := h.apiKeyFor(ctx)
+	if err != nil {
+		return nil, err
 	}
 	webhookURL := strings.TrimSpace(cfg.WebhookURL)
 	if webhookURL == "" {
@@ -95,7 +107,7 @@ func (h *HeliusProvider) CreateWebhook(ctx context.Context, cfg ProviderConfig) 
 		return nil, fmt.Errorf("helius: marshal create request: %w", err)
 	}
 
-	status, respBody, err := exchange(ctx, h.client, httpclient.MethodPost, h.endpointURL("/v0/webhooks"), heliusJSONHeaders(), raw)
+	status, respBody, err := exchange(ctx, h.client, httpclient.MethodPost, h.endpointURL("/v0/webhooks", key), heliusJSONHeaders(), raw)
 	if err != nil {
 		if httpclient.IsBuild(err) {
 			return nil, fmt.Errorf("helius: build create request: %w", err)
@@ -126,15 +138,16 @@ func (h *HeliusProvider) CreateWebhook(ctx context.Context, cfg ProviderConfig) 
 // ---------------------------------------------------------------------------
 
 func (h *HeliusProvider) SyncAddresses(ctx context.Context, webhookID string, allAddresses []string) error {
-	if strings.TrimSpace(h.apiKey) == "" {
-		return fmt.Errorf("helius: API key is required")
+	key, err := h.apiKeyFor(ctx)
+	if err != nil {
+		return err
 	}
 	id := strings.TrimSpace(webhookID)
 	if id == "" {
 		return fmt.Errorf("helius: webhookID is required")
 	}
 
-	getStatus, getBody, err := exchange(ctx, h.client, httpclient.MethodGet, h.endpointURL("/v0/webhooks/"+url.PathEscape(id)), nil, nil)
+	getStatus, getBody, err := exchange(ctx, h.client, httpclient.MethodGet, h.endpointURL("/v0/webhooks/"+url.PathEscape(id), key), nil, nil)
 	if err != nil {
 		if httpclient.IsBuild(err) {
 			return fmt.Errorf("helius: build get webhook request: %w", err)
@@ -169,7 +182,7 @@ func (h *HeliusProvider) SyncAddresses(ctx context.Context, webhookID string, al
 		return fmt.Errorf("helius: marshal sync request: %w", err)
 	}
 
-	putStatus, putBodyBytes, err := exchange(ctx, h.client, httpclient.MethodPut, h.endpointURL("/v0/webhooks/"+url.PathEscape(id)), heliusJSONHeaders(), raw)
+	putStatus, putBodyBytes, err := exchange(ctx, h.client, httpclient.MethodPut, h.endpointURL("/v0/webhooks/"+url.PathEscape(id), key), heliusJSONHeaders(), raw)
 	if err != nil {
 		if httpclient.IsBuild(err) {
 			return fmt.Errorf("helius: build put webhook request: %w", err)
@@ -187,15 +200,16 @@ func (h *HeliusProvider) SyncAddresses(ctx context.Context, webhookID string, al
 // ---------------------------------------------------------------------------
 
 func (h *HeliusProvider) DeleteWebhook(ctx context.Context, webhookID string) error {
-	if strings.TrimSpace(h.apiKey) == "" {
-		return fmt.Errorf("helius: API key is required")
+	key, err := h.apiKeyFor(ctx)
+	if err != nil {
+		return err
 	}
 	id := strings.TrimSpace(webhookID)
 	if id == "" {
 		return fmt.Errorf("helius: webhookID is required")
 	}
 
-	status, respBody, err := exchange(ctx, h.client, httpclient.MethodDelete, h.endpointURL("/v0/webhooks/"+url.PathEscape(id)), nil, nil)
+	status, respBody, err := exchange(ctx, h.client, httpclient.MethodDelete, h.endpointURL("/v0/webhooks/"+url.PathEscape(id), key), nil, nil)
 	if err != nil {
 		if httpclient.IsBuild(err) {
 			return fmt.Errorf("helius: build delete request: %w", err)
@@ -214,6 +228,12 @@ func (h *HeliusProvider) DeleteWebhook(ctx context.Context, webhookID string) er
 
 func (h *HeliusProvider) VerifyInbound(headers Header, body []byte, secret string) (bool, error) {
 	_ = body
+	if err := gateInboundKey(context.Background(), h.keyAtUse); err != nil {
+		return false, err
+	}
+	if err := rejectBlankSigningKey(secret); err != nil {
+		return false, err
+	}
 	got := headers.Get("Authorization")
 	if got == "" {
 		return false, fmt.Errorf("helius: missing Authorization header")
@@ -321,13 +341,21 @@ func (h *HeliusProvider) ParsePayload(body []byte) ([]InboundTransfer, error) {
 // Helpers
 // ---------------------------------------------------------------------------
 
-func (h *HeliusProvider) endpointURL(path string) string {
+func (h *HeliusProvider) apiKeyFor(ctx context.Context) (string, error) {
+	key, err := requireCredential(ctx, h.keyAtUse, h.apiKey)
+	if err != nil {
+		return "", fmt.Errorf("helius: API key is required")
+	}
+	return key, nil
+}
+
+func (h *HeliusProvider) endpointURL(path, key string) string {
 	u := heliusAPIBase + path
 	sep := "?"
 	if strings.Contains(u, "?") {
 		sep = "&"
 	}
-	return u + sep + "api-key=" + url.QueryEscape(h.apiKey)
+	return u + sep + "api-key=" + url.QueryEscape(key)
 }
 
 func heliusJSONHeaders() map[string]string {

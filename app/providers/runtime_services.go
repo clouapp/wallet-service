@@ -42,6 +42,7 @@ func registerRuntimeServices(app foundation.Application) {
 	bindRuntime(app, func(c *container.Container) *withdraw.Service { return c.WithdrawalService }, "withdrawal service")
 	bindRuntime(app, func(c *container.Container) *withdrawalevents.Publisher { return c.WithdrawalEvents }, "withdrawal events")
 	bindRuntime(app, func(c *container.Container) *webhooksync.Service { return c.WebhookSyncService }, "webhook sync service")
+	bindRuntime(app, func(c *container.Container) *ingest.Catalog { return ingest.NewCatalog(c.WebhookProviders) }, "ingest provider catalog")
 	bindRuntime(app, func(c *container.Container) *authsvc.SecondFactorVerifier {
 		verifier, _ := c.SecondFactor.(*authsvc.SecondFactorVerifier)
 		return verifier

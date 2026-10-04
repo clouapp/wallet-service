@@ -255,18 +255,11 @@ func buildVaultContainer(app foundation.Application) (*container.Container, erro
 	c.PriceConfig.CoinMarketCapAPIKey = facades.Config().GetString("vault.price.coinmarketcap_api_key")
 	c.PriceConfig.CoinAPIKey = facades.Config().GetString("vault.price.coinapi_key")
 
-	providerMap := make(map[string]providers.WebhookProvider)
-	if token := facades.Config().GetString("vault.webhooks.alchemy_auth_token"); token != "" {
-		providerMap["alchemy"] = providers.NewAlchemyProvider(token)
+	accountSettings, err := container.Make[*settings.Service]()
+	if err != nil {
+		return nil, fmt.Errorf("vault: account settings: %w", err)
 	}
-	if key := facades.Config().GetString("vault.webhooks.helius_api_key"); key != "" {
-		providerMap["helius"] = providers.NewHeliusProvider(key)
-	}
-	if key := facades.Config().GetString("vault.webhooks.quicknode_api_key"); key != "" {
-		providerMap["quicknode"] = providers.NewQuickNodeProvider(key)
-	}
-	c.WebhookProviders = providerMap
-	c.WebhookSyncService = webhooksync.NewService(c.WebhookSubscriptionRepo, c.AddressRepo, providerMap)
+	buildWebhookIngest(c, accountSettings)
 
 	c.Registry = chainpkg.NewRegistry()
 
@@ -364,10 +357,6 @@ func buildVaultContainer(app foundation.Application) (*container.Container, erro
 	if err != nil {
 		return nil, fmt.Errorf("vault: feature flags: %w", err)
 	}
-	accountSettings, err := container.Make[*settings.Service]()
-	if err != nil {
-		return nil, fmt.Errorf("vault: account settings: %w", err)
-	}
 	c.WebhookService.SetDeliverySettingsSource(func(ctx context.Context) (webhook.DeliverySettings, error) {
 		stored, readErr := accountSettings.EffectiveWebhookDelivery(ctx)
 		if readErr != nil {
@@ -463,6 +452,40 @@ func buildVaultContainer(app foundation.Application) (*container.Container, erro
 
 	slog.Info("vault container booted", "chains", c.Registry.ChainIDs())
 	return c, nil
+}
+
+// buildWebhookIngest keeps provider credentials out of the boot snapshot.
+// Each provider reads its KeySource when it calls the vendor or verifies a
+// webhook. webhooksync asks again on every sync. A missing or unusable
+// settings row falls back to vault.webhooks.*; an empty result fails closed.
+func buildWebhookIngest(c *container.Container, accountSettings *settings.Service) {
+	keyFor := func(ctx context.Context, provider string) string {
+		envKey := facades.Config().GetString(ingestEnvConfigKey(provider))
+		if accountSettings == nil {
+			return envKey
+		}
+		return accountSettings.IngestProviderKey(ctx, provider, envKey)
+	}
+	providerMap := map[string]providers.WebhookProvider{
+		"alchemy":   providers.NewAlchemyProvider("").UseKeySource(func(ctx context.Context) string { return keyFor(ctx, "alchemy") }),
+		"helius":    providers.NewHeliusProvider("").UseKeySource(func(ctx context.Context) string { return keyFor(ctx, "helius") }),
+		"quicknode": providers.NewQuickNodeProvider("").UseKeySource(func(ctx context.Context) string { return keyFor(ctx, "quicknode") }),
+	}
+	c.WebhookProviders = providerMap
+	c.WebhookSyncService = webhooksync.NewService(c.WebhookSubscriptionRepo, c.AddressRepo, providerMap).WithProviderKey(keyFor)
+}
+
+func ingestEnvConfigKey(provider string) string {
+	switch provider {
+	case "alchemy":
+		return "vault.webhooks.alchemy_auth_token"
+	case "helius":
+		return "vault.webhooks.helius_api_key"
+	case "quicknode":
+		return "vault.webhooks.quicknode_api_key"
+	default:
+		return ""
+	}
 }
 
 // buildPriceService quotes through price.SettingsSource on each refresh.

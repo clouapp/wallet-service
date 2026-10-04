@@ -21,10 +21,15 @@ var ingestProviders = map[string]providers.WebhookProvider{
 	"quicknode": providers.NewQuickNodeProvider(""),
 }
 
+// providerLookup returns the ingest providers for this request. The map is
+// built with a KeySource, so the credential is read at verify time.
+type providerLookup func() map[string]providers.WebhookProvider
+
 // IngestController serves inbound provider webhooks.
 type IngestController struct {
 	subscriptions *ingestsvc.Subscriptions
 	ingest        *ingestsvc.Service
+	lookup        providerLookup
 }
 
 func NewIngestController(
@@ -41,6 +46,26 @@ func NewIngestController(
 		subscriptions: subscriptions,
 		ingest:        ingest,
 	}
+}
+
+// UseProviderLookup installs the providers whose KeySource is read when a
+// webhook is verified. Nil keeps the package map, which has no credential.
+func (ctrl *IngestController) UseProviderLookup(lookup providerLookup) *IngestController {
+	if ctrl == nil {
+		return nil
+	}
+	ctrl.lookup = lookup
+	return ctrl
+}
+
+func (ctrl *IngestController) provider(name string) (providers.WebhookProvider, bool) {
+	if ctrl != nil && ctrl.lookup != nil {
+		if found, ok := ctrl.lookup()[name]; ok && found != nil {
+			return found, true
+		}
+	}
+	found, ok := ingestProviders[name]
+	return found, ok
 }
 
 func (ctrl *IngestController) HandleWebhookIngest(ctx http.Context) http.Response {
@@ -75,7 +100,7 @@ func (ctrl *IngestController) HandleWebhookIngest(ctx http.Context) http.Respons
 		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "configuration error"})
 	}
 
-	provider, found := ingestProviders[providerName]
+	provider, found := ctrl.provider(providerName)
 	if !found {
 		return responses.Send(ctx, http.StatusBadRequest, http.Json{"error": "unknown provider"})
 	}

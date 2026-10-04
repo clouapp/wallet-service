@@ -29,6 +29,7 @@ const (
 // QuickNodeProvider manages QuickNode Streams webhooks for Bitcoin block filtering.
 type QuickNodeProvider struct {
 	apiKey          string
+	keyAtUse        KeySource
 	client          *httpclient.Client
 	signatureHeader string
 }
@@ -40,6 +41,16 @@ func NewQuickNodeProvider(apiKey string) *QuickNodeProvider {
 		client:          httpclient.NewClient(quicknodeHTTPTimeout),
 		signatureHeader: quicknodeDefaultSignatureHeader,
 	}
+}
+
+// UseKeySource reads the credential on each call. The constructor key is
+// not the one used after this is set, so boot does not capture it.
+func (q *QuickNodeProvider) UseKeySource(source KeySource) *QuickNodeProvider {
+	if q == nil {
+		return nil
+	}
+	q.keyAtUse = source
+	return q
 }
 
 // SignatureHeader returns the HTTP header name used for inbound HMAC verification.
@@ -85,7 +96,8 @@ type quicknodeCreateStreamResp struct {
 }
 
 func (q *QuickNodeProvider) CreateWebhook(ctx context.Context, cfg ProviderConfig) (*ProviderWebhook, error) {
-	if strings.TrimSpace(q.apiKey) == "" {
+	headers, headerErr := q.apiHeaders(ctx)
+	if headerErr != nil {
 		return nil, fmt.Errorf("quicknode: empty API key")
 	}
 	if strings.TrimSpace(cfg.WebhookURL) == "" {
@@ -122,7 +134,7 @@ func (q *QuickNodeProvider) CreateWebhook(ctx context.Context, cfg ProviderConfi
 		return nil, fmt.Errorf("quicknode: marshal create request: %w", err)
 	}
 
-	status, respBody, err := exchange(ctx, q.client, httpclient.MethodPost, quicknodeAPIBase+"/streams", q.apiHeaders(), body)
+	status, respBody, err := exchange(ctx, q.client, httpclient.MethodPost, quicknodeAPIBase+"/streams", headers, body)
 	if err != nil {
 		if httpclient.IsBuild(err) {
 			return nil, fmt.Errorf("quicknode: build create request: %w", err)
@@ -164,7 +176,8 @@ type quicknodePatchStreamReq struct {
 }
 
 func (q *QuickNodeProvider) SyncAddresses(ctx context.Context, webhookID string, allAddresses []string) error {
-	if strings.TrimSpace(q.apiKey) == "" {
+	headers, headerErr := q.apiHeaders(ctx)
+	if headerErr != nil {
 		return fmt.Errorf("quicknode: empty API key")
 	}
 	id := strings.TrimSpace(webhookID)
@@ -183,7 +196,7 @@ func (q *QuickNodeProvider) SyncAddresses(ctx context.Context, webhookID string,
 	}
 
 	u := fmt.Sprintf("%s/streams/%s", quicknodeAPIBase, id)
-	status, respBody, err := exchange(ctx, q.client, httpclient.MethodPatch, u, q.apiHeaders(), body)
+	status, respBody, err := exchange(ctx, q.client, httpclient.MethodPatch, u, headers, body)
 	if err != nil {
 		if httpclient.IsBuild(err) {
 			return fmt.Errorf("quicknode: build patch request: %w", err)
@@ -201,7 +214,8 @@ func (q *QuickNodeProvider) SyncAddresses(ctx context.Context, webhookID string,
 // ---------------------------------------------------------------------------
 
 func (q *QuickNodeProvider) DeleteWebhook(ctx context.Context, webhookID string) error {
-	if strings.TrimSpace(q.apiKey) == "" {
+	headers, headerErr := q.apiHeaders(ctx)
+	if headerErr != nil {
 		return fmt.Errorf("quicknode: empty API key")
 	}
 	id := strings.TrimSpace(webhookID)
@@ -210,7 +224,7 @@ func (q *QuickNodeProvider) DeleteWebhook(ctx context.Context, webhookID string)
 	}
 
 	u := fmt.Sprintf("%s/streams/%s", quicknodeAPIBase, id)
-	status, respBody, err := exchange(ctx, q.client, httpclient.MethodDelete, u, q.apiHeaders(), nil)
+	status, respBody, err := exchange(ctx, q.client, httpclient.MethodDelete, u, headers, nil)
 	if err != nil {
 		if httpclient.IsBuild(err) {
 			return fmt.Errorf("quicknode: build delete request: %w", err)
@@ -228,6 +242,12 @@ func (q *QuickNodeProvider) DeleteWebhook(ctx context.Context, webhookID string)
 // ---------------------------------------------------------------------------
 
 func (q *QuickNodeProvider) VerifyInbound(headers Header, body []byte, secret string) (bool, error) {
+	if err := gateInboundKey(context.Background(), q.keyAtUse); err != nil {
+		return false, err
+	}
+	if err := rejectBlankSigningKey(secret); err != nil {
+		return false, err
+	}
 	hdr := q.SignatureHeader()
 	sig := headers.Get(hdr)
 	if sig == "" {
@@ -355,11 +375,15 @@ func buildFilterFunctionBase64(addresses []string) (string, error) {
 	return base64.StdEncoding.EncodeToString([]byte(js)), nil
 }
 
-func (q *QuickNodeProvider) apiHeaders() map[string]string {
+func (q *QuickNodeProvider) apiHeaders(ctx context.Context) (map[string]string, error) {
+	key, err := requireCredential(ctx, q.keyAtUse, q.apiKey)
+	if err != nil {
+		return nil, err
+	}
 	return map[string]string{
 		"Content-Type": "application/json",
-		"x-api-key":    q.apiKey,
-	}
+		"x-api-key":    key,
+	}, nil
 }
 
 var _ WebhookProvider = (*QuickNodeProvider)(nil)
