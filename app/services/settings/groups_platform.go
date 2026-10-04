@@ -25,6 +25,7 @@ const (
 	groupProviderAlchemy    = "provider_alchemy"
 	groupProviderHelius     = "provider_helius"
 	groupProviderQuickNode  = "provider_quicknode"
+	groupProviderEtherscan  = "provider_etherscan"
 
 	sectionScanning = "scanning"
 	sectionDelivery = "delivery"
@@ -131,6 +132,7 @@ func platformGroups() []Group {
 		providerAlchemyGroup(),
 		providerHeliusGroup(),
 		providerQuickNodeGroup(),
+		providerEtherscanGroup(),
 	}
 }
 

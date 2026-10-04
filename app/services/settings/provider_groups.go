@@ -4,6 +4,7 @@ const (
 	sectionProviders = "providers"
 
 	blockWebhookProviders = "Webhooks"
+	blockHeightProvider   = "Block height"
 
 	keyProviderEnabled   = "enabled"
 	keyProviderAPIKey    = "api_key"
@@ -64,4 +65,40 @@ func webhookProviderGroup(name, label, secretKey, secretLabel string) Group {
 
 func webhookProviderGroupNames() []string {
 	return []string{groupProviderAlchemy, groupProviderHelius, groupProviderQuickNode}
+}
+
+// S1.4.4 row: ETHERSCAN_API_KEY moves to platform settings. The group is
+// provider_etherscan, with enabled and api_key(Secret). The note is
+// "block-height provider". It does not say the block-height reader loads
+// provider_etherscan, so height checks keep today's source:
+// vault.webhooks.etherscan_api_key passed into blockheight.NewProviders.
+// A missing row, an invalid value, or a failed read of this group is not
+// consulted. api_key is sealed by the settings sealer (enc:v1:) on PUT and
+// omitted from the response and from activity. A blank key keeps the stored one.
+func providerEtherscanGroup() Group {
+	return Group{
+		Name:    groupProviderEtherscan,
+		Scope:   ScopePlatform,
+		Section: sectionProviders,
+		Block:   blockHeightProvider,
+		// The key is sealed and omitted. This group names no permission:
+		// a platform_admins row is the gate. enabled is returned.
+		Settings: []Definition{
+			{
+				Key:     keyProviderEnabled,
+				Label:   "Enabled",
+				Help:    "Whether Etherscan is marked enabled.",
+				Type:    TypeBool,
+				Default: func() any { return false },
+			},
+			{
+				Key:     keyProviderAPIKey,
+				Label:   "API key",
+				Help:    "Etherscan API key. Write it to replace the stored one; a blank keeps it.",
+				Type:    TypeString,
+				Secret:  true,
+				Default: func() any { return "" },
+			},
+		},
+	}
 }

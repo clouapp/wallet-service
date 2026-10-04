@@ -93,6 +93,7 @@ func TestAccountSectionsDoNotShareNamesWithGroups(t *testing.T) {
 	assertMailProviderGroups(t)
 	assertPriceGroups(t)
 	assertWebhookProviderGroups(t)
+	assertEtherscanProviderGroup(t)
 }
 
 func knownPlatformGroup(name string) bool {
@@ -100,7 +101,7 @@ func knownPlatformGroup(name string) bool {
 	case groupDepositScan, groupWebhookDelivery, groupSweepLimits, groupMailSMTP, groupMailDelivery,
 		groupMailSES, groupMailMailgun, groupMailResend, groupMailPostmark,
 		groupPriceLookup, groupPriceCoinGecko, groupPriceCoinMarketCap, groupPriceCoinAPI,
-		groupProviderAlchemy, groupProviderHelius, groupProviderQuickNode:
+		groupProviderAlchemy, groupProviderHelius, groupProviderQuickNode, groupProviderEtherscan:
 		return true
 	default:
 		return false
@@ -228,7 +229,7 @@ func assertWebhookProviderGroups(t *testing.T) {
 	if _, apiOK := Find(groupProviderAlchemy, keyProviderAPIKey); apiOK {
 		t.Fatal("alchemy declares an api key")
 	}
-	for _, name := range []string{groupProviderHelius, groupProviderQuickNode} {
+	for _, name := range []string{groupProviderHelius, groupProviderQuickNode, groupProviderEtherscan} {
 		apiKey, keyOK := Find(name, keyProviderAPIKey)
 		if !keyOK || !apiKey.Secret || apiKey.Type != TypeString || apiKey.Destination {
 			t.Fatalf("%s api key = %+v present %v", name, apiKey, keyOK)
@@ -236,6 +237,20 @@ func assertWebhookProviderGroups(t *testing.T) {
 		if _, tokenOK := Find(name, keyProviderAuthToken); tokenOK {
 			t.Fatalf("%s declares an auth token", name)
 		}
+	}
+}
+
+func assertEtherscanProviderGroup(t *testing.T) {
+	t.Helper()
+	group, found := FindGroup(groupProviderEtherscan)
+	if !found || group.Scope != ScopePlatform || group.SectionName() != sectionProviders ||
+		group.Block != blockHeightProvider || group.UpdatePermission != "" || group.ViewPermission != "" ||
+		len(group.Settings) != 2 || len(group.CredentialGroups) != 0 {
+		t.Fatalf("etherscan group = %+v present %v", group, found)
+	}
+	enabled, enabledOK := Find(groupProviderEtherscan, keyProviderEnabled)
+	if !enabledOK || enabled.Secret || enabled.Type != TypeBool {
+		t.Fatalf("etherscan enabled = %+v present %v", enabled, enabledOK)
 	}
 }
 
@@ -348,7 +363,7 @@ func platformSecretGroupGatedByAdmins(group Group) bool {
 	switch group.Name {
 	case groupMailSMTP, groupMailSES, groupMailMailgun, groupMailResend, groupMailPostmark,
 		groupPriceCoinGecko, groupPriceCoinMarketCap, groupPriceCoinAPI,
-		groupProviderAlchemy, groupProviderHelius, groupProviderQuickNode:
+		groupProviderAlchemy, groupProviderHelius, groupProviderQuickNode, groupProviderEtherscan:
 		return group.ViewPermission == "" && group.UpdatePermission == ""
 	default:
 		return false
