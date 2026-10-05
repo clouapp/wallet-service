@@ -127,19 +127,19 @@ func newExternalSweepController() *extsweep.SweepController {
 }
 
 func newExternalWithdrawalsController() *extwithdrawals.WithdrawalsController {
-	return extwithdrawals.NewWithdrawalsController(
-		container.MustMake[*withdrawalrecords.Records](),
-		container.MustMake[*chainsvc.Service](),
-		container.MustMake[*usersvc.Service](),
-		container.MustMake[*walletrecords.Transactions](),
-		container.MustMake[*chainpkg.Registry](),
-		container.MustMake[*withdraw.Service](),
-		container.MustMake[*authsvc.Service](),
-		container.MustMake[*featuressvc.Service](),
-		container.MustMake[*withdrawalevents.Publisher](),
-		container.MustMake[*container.SharedRedis]().Client,
-		container.MustMake[*authsvc.SecondFactorVerifier](),
-	)
+	return extwithdrawals.NewWithdrawalsController(extwithdrawals.WithdrawalsControllerDeps{
+		Withdrawals:       container.MustMake[*withdrawalrecords.Records](),
+		Chains:            container.MustMake[*chainsvc.Service](),
+		Users:             container.MustMake[*usersvc.Service](),
+		Transactions:      container.MustMake[*walletrecords.Transactions](),
+		Registry:          container.MustMake[*chainpkg.Registry](),
+		WithdrawalService: container.MustMake[*withdraw.Service](),
+		Passwords:         container.MustMake[*authsvc.Service](),
+		Flags:             container.MustMake[*featuressvc.Service](),
+		Events:            container.MustMake[*withdrawalevents.Publisher](),
+		Redis:             container.MustMake[*container.SharedRedis]().Client,
+		SecondFactor:      container.MustMake[*authsvc.SecondFactorVerifier](),
+	})
 }
 
 func newExternalWalletsController() *extwallets.WalletsController {

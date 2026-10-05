@@ -46,58 +46,63 @@ type WithdrawalsController struct {
 	secondFactor      *authsvc.SecondFactorVerifier
 }
 
-func NewWithdrawalsController(
-	withdrawals *withdrawalrecords.Records,
-	chains *chainsvc.Service,
-	users *usersvc.Service,
-	transactions *walletrecords.Transactions,
-	registry *chain.Registry,
-	withdrawalService *withdraw.Service,
-	passwords *authsvc.Service,
-	flags *features.Service,
-	events *withdrawalevents.Publisher,
-	redis *redis.Client,
-	secondFactor *authsvc.SecondFactorVerifier,
-) *WithdrawalsController {
-	if withdrawals == nil {
+// WithdrawalsControllerDeps is everything the external withdrawals controller needs.
+// Events and Redis may be nil.
+type WithdrawalsControllerDeps struct {
+	Withdrawals       *withdrawalrecords.Records
+	Chains            *chainsvc.Service
+	Users             *usersvc.Service
+	Transactions      *walletrecords.Transactions
+	Registry          *chain.Registry
+	WithdrawalService *withdraw.Service
+	Passwords         *authsvc.Service
+	Flags             *features.Service
+	Events            *withdrawalevents.Publisher
+	Redis             *redis.Client
+	SecondFactor      *authsvc.SecondFactorVerifier
+}
+
+// NewWithdrawalsController wires the external withdrawal handlers from WithdrawalsControllerDeps.
+func NewWithdrawalsController(deps WithdrawalsControllerDeps) *WithdrawalsController {
+	if deps.Withdrawals == nil {
 		panic("external withdrawals controller: withdrawals service is required")
 	}
-	if chains == nil {
+	if deps.Chains == nil {
 		panic("external withdrawals controller: chains service is required")
 	}
-	if users == nil {
+	if deps.Users == nil {
 		panic("external withdrawals controller: users service is required")
 	}
-	if transactions == nil {
+	if deps.Transactions == nil {
 		panic("external withdrawals controller: transactions service is required")
 	}
-	if registry == nil {
+	if deps.Registry == nil {
 		panic("external withdrawals controller: chain registry is required")
 	}
-	if withdrawalService == nil {
+	if deps.WithdrawalService == nil {
 		panic("external withdrawals controller: withdrawal service is required")
 	}
-	if passwords == nil {
+	if deps.Passwords == nil {
 		panic("external withdrawals controller: auth service is required")
 	}
-	if flags == nil {
+	if deps.Flags == nil {
 		panic("external withdrawals controller: feature flags are required")
 	}
-	if secondFactor == nil {
+	if deps.SecondFactor == nil {
 		panic("external withdrawals controller: second factor verifier is required")
 	}
 	return &WithdrawalsController{
-		withdrawals:       withdrawals,
-		chains:            chains,
-		users:             users,
-		transactions:      transactions,
-		registry:          registry,
-		withdrawalService: withdrawalService,
-		passwords:         passwords,
-		flags:             flags,
-		events:            events,
-		redis:             redis,
-		secondFactor:      secondFactor,
+		withdrawals:       deps.Withdrawals,
+		chains:            deps.Chains,
+		users:             deps.Users,
+		transactions:      deps.Transactions,
+		registry:          deps.Registry,
+		withdrawalService: deps.WithdrawalService,
+		passwords:         deps.Passwords,
+		flags:             deps.Flags,
+		events:            deps.Events,
+		redis:             deps.Redis,
+		secondFactor:      deps.SecondFactor,
 	}
 }
 
