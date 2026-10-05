@@ -513,10 +513,10 @@ func newPlatformSettingsController() *platformsettings.SettingsController {
 }
 
 func newPlatformChainsController() *platformchains.ChainsController {
-	return platformchains.NewChainsController(
-		container.MustMake[*chainsvc.Thresholds](),
-		container.MustMake[*chainsvc.RPC](),
-	)
+	return platformchains.NewChainsController(platformchains.ChainsControllerDeps{
+		Thresholds: container.MustMake[*chainsvc.Thresholds](),
+		RPC:        container.MustMake[*chainsvc.RPC](),
+	})
 }
 
 func newPlatformFeaturesController() *platformfeatures.FeaturesController {

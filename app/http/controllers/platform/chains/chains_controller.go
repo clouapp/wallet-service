@@ -23,15 +23,21 @@ type ChainsController struct {
 	rpc        *chainsvc.RPC
 }
 
-// NewChainsController wires the platform chain handlers.
-func NewChainsController(thresholds *chainsvc.Thresholds, rpc *chainsvc.RPC) *ChainsController {
-	if thresholds == nil {
+// ChainsControllerDeps is everything the platform chains controller needs.
+type ChainsControllerDeps struct {
+	Thresholds *chainsvc.Thresholds
+	RPC        *chainsvc.RPC
+}
+
+// NewChainsController wires the platform chain handlers from ChainsControllerDeps.
+func NewChainsController(deps ChainsControllerDeps) *ChainsController {
+	if deps.Thresholds == nil {
 		panic("platform chains controller: thresholds service is required")
 	}
-	if rpc == nil {
+	if deps.RPC == nil {
 		panic("platform chains controller: rpc service is required")
 	}
-	return &ChainsController{thresholds: thresholds, rpc: rpc}
+	return &ChainsController{thresholds: deps.Thresholds, rpc: deps.RPC}
 }
 
 // Update godoc
