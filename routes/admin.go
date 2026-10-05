@@ -402,10 +402,10 @@ func newDashboardChainsController() *dashchains.ChainsController {
 }
 
 func newDashboardCurrenciesController() *dashcurrencies.CurrenciesController {
-	return dashcurrencies.NewCurrenciesController(
-		container.MustMake[*currencies.Service](),
-		container.MustMake[*price.Service](),
-	)
+	return dashcurrencies.NewCurrenciesController(dashcurrencies.CurrenciesControllerDeps{
+		Currencies: container.MustMake[*currencies.Service](),
+		Prices:     container.MustMake[*price.Service](),
+	})
 }
 
 func newDashboardPreferencesController() *dashpreferences.PreferencesController {

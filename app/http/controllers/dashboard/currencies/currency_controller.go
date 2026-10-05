@@ -20,19 +20,24 @@ type CurrenciesController struct {
 	prices     *price.Service
 }
 
-func NewCurrenciesController(
-	currencies *currencies.Service,
-	prices *price.Service,
-) *CurrenciesController {
-	if currencies == nil {
+// CurrenciesControllerDeps is everything the dashboard currencies controller needs.
+// Every field is required.
+type CurrenciesControllerDeps struct {
+	Currencies *currencies.Service
+	Prices     *price.Service
+}
+
+// NewCurrenciesController wires the dashboard currency handlers from CurrenciesControllerDeps.
+func NewCurrenciesController(deps CurrenciesControllerDeps) *CurrenciesController {
+	if deps.Currencies == nil {
 		panic("dashboard currencies controller: currencies service is required")
 	}
-	if prices == nil {
+	if deps.Prices == nil {
 		panic("dashboard currencies controller: price service is required")
 	}
 	return &CurrenciesController{
-		currencies: currencies,
-		prices:     prices,
+		currencies: deps.Currencies,
+		prices:     deps.Prices,
 	}
 }
 
