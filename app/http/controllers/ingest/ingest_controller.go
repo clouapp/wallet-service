@@ -32,30 +32,27 @@ type IngestController struct {
 	lookup        providerLookup
 }
 
-func NewIngestController(
-	subscriptions *ingestsvc.Subscriptions,
-	ingest *ingestsvc.Service,
-) *IngestController {
-	if subscriptions == nil {
+// IngestControllerDeps is everything the ingest controller needs.
+// Lookup may be nil; a nil lookup keeps the package provider map.
+type IngestControllerDeps struct {
+	Subscriptions *ingestsvc.Subscriptions
+	Ingest        *ingestsvc.Service
+	Lookup        providerLookup
+}
+
+// NewIngestController wires the inbound webhook handlers from IngestControllerDeps.
+func NewIngestController(deps IngestControllerDeps) *IngestController {
+	if deps.Subscriptions == nil {
 		panic("ingest controller: webhook subscriptions service is required")
 	}
-	if ingest == nil {
+	if deps.Ingest == nil {
 		panic("ingest controller: ingest service is required")
 	}
 	return &IngestController{
-		subscriptions: subscriptions,
-		ingest:        ingest,
+		subscriptions: deps.Subscriptions,
+		ingest:        deps.Ingest,
+		lookup:        deps.Lookup,
 	}
-}
-
-// UseProviderLookup installs the providers whose KeySource is read when a
-// webhook is verified. Nil keeps the package map, which has no credential.
-func (ctrl *IngestController) UseProviderLookup(lookup providerLookup) *IngestController {
-	if ctrl == nil {
-		return nil
-	}
-	ctrl.lookup = lookup
-	return ctrl
 }
 
 func (ctrl *IngestController) provider(name string) (providers.WebhookProvider, bool) {

@@ -11,10 +11,11 @@ import (
 
 // RegisterInboundWebhooks registers provider ingest callbacks (no dashboard/API token auth).
 func RegisterInboundWebhooks() {
-	ingestCtrl := ingest.NewIngestController(
-		container.MustMake[*ingestsvc.Subscriptions](),
-		container.MustMake[*ingestsvc.Service](),
-	).UseProviderLookup(container.MustMake[*ingestsvc.Catalog]().Lookup)
+	ingestCtrl := ingest.NewIngestController(ingest.IngestControllerDeps{
+		Subscriptions: container.MustMake[*ingestsvc.Subscriptions](),
+		Ingest:        container.MustMake[*ingestsvc.Service](),
+		Lookup:        container.MustMake[*ingestsvc.Catalog]().Lookup,
+	})
 	facades.Route().Prefix("/v1/webhooks/ingest").Group(func(router route.Router) {
 		router.Post("/{provider}/{chainID}", ingestCtrl.HandleWebhookIngest)
 	})
