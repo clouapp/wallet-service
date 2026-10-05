@@ -146,7 +146,7 @@ func (ctrl *WalletsController) ListWallets(ctx http.Context) http.Response {
 // @Security     ApiKeyAuth
 // @Security     SignatureAuth
 // @Param        walletId   path      string  true  "Wallet UUID"  format(uuid)
-// @Success      200  {object}  WalletView
+// @Success      200  {object}  walletresource.WithNetwork
 // @Failure      400  {object}  ErrorResponse  "Invalid UUID"
 // @Failure      404  {object}  ErrorResponse  "Wallet not found"
 // @Router       /v1/wallets/{walletId} [get]
@@ -171,7 +171,7 @@ func (ctrl *WalletsController) GetWallet(ctx http.Context) http.Response {
 			"error": "wallet not found",
 		})
 	}
-	return ctx.Response().Success().Json(controllers.NewWalletView(w, controllers.ResolveWalletChainNetwork(ctx.Context(), w.Chain)))
+	return ctx.Response().Success().Json(walletresource.WithNetworkFrom(w, controllers.ResolveWalletChainNetwork(ctx.Context(), w.Chain)))
 }
 
 // CreateWalletSwagger is the request body for creating a wallet.

@@ -81,3 +81,86 @@ func WalletPtr(wallet *models.Wallet) *Wallet {
 	view := WalletFrom(*wallet)
 	return &view
 }
+
+// detailNetwork is the network a wallet's chain record really points at (for
+// example polygon-amoy) and whether it is a test network. Network is omitted
+// when the chain cannot be resolved.
+type detailNetwork struct {
+	Network string `json:"network,omitempty" example:"polygon-amoy"`
+	Testnet bool   `json:"testnet" example:"true"`
+}
+
+func newDetailNetwork(resolved models.ResolvedNetwork) detailNetwork {
+	return detailNetwork{Network: resolved.Name, Testnet: resolved.Testnet}
+}
+
+// WithNetwork is a wallet plus its network. Field order matches the previous
+// detail response: wallet fields, then RFC 3339 created_at and updated_at in
+// UTC, then network and testnet. Testnet wallets carry no USD value.
+type WithNetwork struct {
+	ID                  uuid.UUID                `json:"id"`
+	Chain               string                   `json:"chain"`
+	Label               string                   `json:"label,omitempty"`
+	AddressIndex        int                      `json:"address_index"`
+	DepositAddressID    *uuid.UUID               `json:"deposit_address_id,omitempty"`
+	AccountID           *uuid.UUID               `json:"account_id,omitempty"`
+	Status              string                   `json:"status"`
+	FeeRateMin          *int                     `json:"fee_rate_min,omitempty"`
+	FeeRateMax          *int                     `json:"fee_rate_max,omitempty"`
+	FeeMultiplier       numeric.NullDecimal      `json:"fee_multiplier,omitzero"`
+	RequiredApprovals   int                      `json:"required_approvals"`
+	FrozenUntil         *time.Time               `json:"frozen_until,omitempty"`
+	BalanceAsset        *string                  `json:"balance_asset,omitempty"`
+	BalanceRaw          *string                  `json:"balance_raw,omitempty"`
+	BalanceDisplay      *string                  `json:"balance,omitempty"`
+	BalanceUSD          numeric.NullDecimal      `json:"balance_usd,omitzero"`
+	BalanceLastSyncedAt *time.Time               `json:"balance_last_synced_at,omitempty"`
+	ReadModelStatus     string                   `json:"read_model_status"`
+	GasStatus           string                   `json:"gas_status"`
+	GasLastCheckedAt    *time.Time               `json:"gas_last_checked_at,omitempty"`
+	SweepPolicyVersion  int                      `json:"sweep_policy_version"`
+	DepositAddress      *addressresource.Address `json:"deposit_address,omitempty"`
+	zonedTimestamps
+	detailNetwork
+}
+
+// WithNetworkFrom projects one wallet the way the wallet GET and archive
+// responses do. It does not change the stored wallet.
+func WithNetworkFrom(wallet *models.Wallet, resolved models.ResolvedNetwork) WithNetwork {
+	priced := walletPricedFor(wallet, resolved)
+	return WithNetwork{
+		ID:                  priced.ID,
+		Chain:               priced.Chain,
+		Label:               priced.Label,
+		AddressIndex:        priced.AddressIndex,
+		DepositAddressID:    priced.DepositAddressID,
+		AccountID:           priced.AccountID,
+		Status:              priced.Status,
+		FeeRateMin:          priced.FeeRateMin,
+		FeeRateMax:          priced.FeeRateMax,
+		FeeMultiplier:       priced.FeeMultiplier,
+		RequiredApprovals:   priced.RequiredApprovals,
+		FrozenUntil:         priced.FrozenUntil,
+		BalanceAsset:        priced.BalanceAsset,
+		BalanceRaw:          priced.BalanceRaw,
+		BalanceDisplay:      priced.BalanceDisplay,
+		BalanceUSD:          priced.BalanceUSD,
+		BalanceLastSyncedAt: priced.BalanceLastSyncedAt,
+		ReadModelStatus:     priced.ReadModelStatus,
+		GasStatus:           priced.GasStatus,
+		GasLastCheckedAt:    priced.GasLastCheckedAt,
+		SweepPolicyVersion:  priced.SweepPolicyVersion,
+		DepositAddress:      addressresource.AddressPtr(priced.DepositAddress, WalletPtr),
+		zonedTimestamps:     newZonedTimestamps(wallet.CreatedAt, wallet.UpdatedAt),
+		detailNetwork:       newDetailNetwork(resolved),
+	}
+}
+
+func walletPricedFor(wallet *models.Wallet, resolved models.ResolvedNetwork) *models.Wallet {
+	if wallet == nil || !resolved.Testnet {
+		return wallet
+	}
+	unpriced := *wallet
+	unpriced.BalanceUSD = numeric.NullDecimal{}
+	return &unpriced
+}
