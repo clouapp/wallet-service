@@ -55,7 +55,11 @@ func (p *ChainServiceProvider) Register(app foundation.Application) {
 		if err != nil {
 			return nil, err
 		}
-		return chainsvc.NewThresholds(chains, admins, activityLog), nil
+		return chainsvc.NewThresholds(chainsvc.ThresholdDeps{
+			Store:    chains,
+			Admins:   admins,
+			Activity: activityLog,
+		}), nil
 	})
 	app.Singleton((*chainsvc.RPC)(nil), func(app foundation.Application) (any, error) {
 		chains, err := resolve[*repositories.ChainRepository](app)

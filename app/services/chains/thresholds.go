@@ -127,19 +127,27 @@ type Thresholds struct {
 	activity activitylog.Writer
 }
 
+// ThresholdDeps is everything the platform chain-threshold editor needs.
+// Store, Admins and Activity are required.
+type ThresholdDeps struct {
+	Store    ThresholdStore
+	Admins   PlatformAdmins
+	Activity activitylog.Writer
+}
+
 // NewThresholds builds the platform chain-threshold editor. The store, the
 // platform-admin lookup and the activity log are required.
-func NewThresholds(store ThresholdStore, admins PlatformAdmins, activity activitylog.Writer) *Thresholds {
-	if store == nil {
+func NewThresholds(deps ThresholdDeps) *Thresholds {
+	if deps.Store == nil {
 		panic("chain thresholds: store is required")
 	}
-	if admins == nil {
+	if deps.Admins == nil {
 		panic("chain thresholds: platform admins are required")
 	}
-	if activity == nil {
+	if deps.Activity == nil {
 		panic("chain thresholds: activity log is required")
 	}
-	return &Thresholds{store: store, admins: admins, activity: activity}
+	return &Thresholds{store: deps.Store, admins: deps.Admins, activity: deps.Activity}
 }
 
 // Update writes the threshold fields present in body. An unknown chain is

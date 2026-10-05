@@ -50,7 +50,9 @@ func TestUpdateThresholds_UnknownChainIsNotFoundBeforeTheAdminCheck(t *testing.T
 
 	store := &thresholdStore{}
 	admins := &thresholdAdmins{err: errors.New("admin lookup must not run")}
-	service := chainsvc.NewThresholds(store, admins, &thresholdActivity{})
+	service := chainsvc.NewThresholds(chainsvc.ThresholdDeps{
+		Store: store, Admins: admins, Activity: &thresholdActivity{},
+	})
 
 	_, err := service.Update(context.Background(), uuid.New(), "missing", thresholdObject(t, `{"dust_threshold_usd":"-1"}`))
 	require.ErrorIs(t, err, chainsvc.ErrNotFound)
@@ -61,7 +63,9 @@ func TestUpdateThresholds_NonAdminLeavesTheRowUnchanged(t *testing.T) {
 	t.Parallel()
 
 	store := &thresholdStore{chain: ethChain("5000000000000000", "500000000000000", "1")}
-	service := chainsvc.NewThresholds(store, &thresholdAdmins{}, &thresholdActivity{})
+	service := chainsvc.NewThresholds(chainsvc.ThresholdDeps{
+		Store: store, Admins: &thresholdAdmins{}, Activity: &thresholdActivity{},
+	})
 
 	_, err := service.Update(context.Background(), uuid.New(), "eth", map[string]json.RawMessage{
 		"gas_readiness_threshold_raw": json.RawMessage(`"-1"`),
@@ -75,7 +79,9 @@ func TestUpdateThresholds_NegativeAmountAndConfirmationAreNotStored(t *testing.T
 
 	store := &thresholdStore{chain: ethChain("5000000000000000", "500000000000000", "1")}
 	activity := &thresholdActivity{}
-	service := chainsvc.NewThresholds(store, &thresholdAdmins{allow: true}, activity)
+	service := chainsvc.NewThresholds(chainsvc.ThresholdDeps{
+		Store: store, Admins: &thresholdAdmins{allow: true}, Activity: activity,
+	})
 	actor := uuid.New()
 
 	_, err := service.Update(context.Background(), actor, "eth", map[string]json.RawMessage{
@@ -98,7 +104,9 @@ func TestUpdateThresholds_OneFieldLeavesTheOthersAndAuditsTheName(t *testing.T) 
 	store := &thresholdStore{chain: ethChain("5000000000000000", "500000000000000", "1")}
 	activity := &thresholdActivity{}
 	actor := uuid.New()
-	service := chainsvc.NewThresholds(store, &thresholdAdmins{allow: true}, activity)
+	service := chainsvc.NewThresholds(chainsvc.ThresholdDeps{
+		Store: store, Admins: &thresholdAdmins{allow: true}, Activity: activity,
+	})
 
 	view, err := service.Update(context.Background(), actor, "eth", map[string]json.RawMessage{
 		"gas_readiness_threshold_raw": json.RawMessage(`"77"`),
@@ -131,7 +139,9 @@ func TestUpdateThresholds_EmptyGasIsTheBitcoinSentinelOnly(t *testing.T) {
 
 	btc := btcChain("", "10000", "0")
 	store := &thresholdStore{chain: btc}
-	service := chainsvc.NewThresholds(store, &thresholdAdmins{allow: true}, &thresholdActivity{})
+	service := chainsvc.NewThresholds(chainsvc.ThresholdDeps{
+		Store: store, Admins: &thresholdAdmins{allow: true}, Activity: &thresholdActivity{},
+	})
 
 	view, err := service.Update(context.Background(), uuid.New(), "btc", map[string]json.RawMessage{
 		"gas_readiness_threshold_raw": json.RawMessage(`""`),
@@ -142,7 +152,9 @@ func TestUpdateThresholds_EmptyGasIsTheBitcoinSentinelOnly(t *testing.T) {
 	require.Equal(t, "10000", *store.chain.DustThresholdNativeRaw)
 
 	eth := &thresholdStore{chain: ethChain("5", "1", "1")}
-	service = chainsvc.NewThresholds(eth, &thresholdAdmins{allow: true}, &thresholdActivity{})
+	service = chainsvc.NewThresholds(chainsvc.ThresholdDeps{
+		Store: eth, Admins: &thresholdAdmins{allow: true}, Activity: &thresholdActivity{},
+	})
 	_, err = service.Update(context.Background(), uuid.New(), "eth", map[string]json.RawMessage{
 		"gas_readiness_threshold_raw": json.RawMessage(`""`),
 	})
