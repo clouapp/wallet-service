@@ -15,9 +15,17 @@ type PriceWebSocket struct {
 	cache      price.PriceCache
 }
 
-// NewPriceWebSocket streams CoinAPI prices. cache may be nil when Redis is not configured.
-func NewPriceWebSocket(prices *price.Service, coinAPIKey string, cache price.PriceCache) *PriceWebSocket {
-	return &PriceWebSocket{prices: prices, coinAPIKey: coinAPIKey, cache: cache}
+// PriceWebSocketDeps is everything the price:websocket command needs. Cache may
+// be nil when Redis is not configured.
+type PriceWebSocketDeps struct {
+	Prices     *price.Service
+	CoinAPIKey string
+	Cache      price.PriceCache
+}
+
+// NewPriceWebSocket streams CoinAPI prices.
+func NewPriceWebSocket(deps PriceWebSocketDeps) *PriceWebSocket {
+	return &PriceWebSocket{prices: deps.Prices, coinAPIKey: deps.CoinAPIKey, cache: deps.Cache}
 }
 
 func (c *PriceWebSocket) Signature() string {
