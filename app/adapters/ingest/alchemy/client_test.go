@@ -1,11 +1,17 @@
-package providers
+package alchemy
 
 import (
+	"bytes"
+	"context"
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
+	"log/slog"
 	"math/big"
+	"strings"
 	"testing"
+
+	"github.com/macrowallets/waas/app/services/ingest/providers"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -27,7 +33,7 @@ func TestVerifyInbound_ValidSignature(t *testing.T) {
 	secret := "whsec_test_secret"
 	sig := computeAlchemySignature(body, secret)
 
-	headers := Header{}
+	headers := providers.Header{}
 	headers.Set("X-Alchemy-Signature", sig)
 
 	valid, err := provider.VerifyInbound(headers, body, secret)
@@ -40,7 +46,7 @@ func TestVerifyInbound_InvalidSignature(t *testing.T) {
 	body := []byte(`{"event":"test"}`)
 	secret := "whsec_test_secret"
 
-	headers := Header{}
+	headers := providers.Header{}
 	headers.Set("X-Alchemy-Signature", "deadbeef1234567890abcdef1234567890abcdef1234567890abcdef12345678")
 
 	valid, err := provider.VerifyInbound(headers, body, secret)
@@ -52,7 +58,7 @@ func TestVerifyInbound_MissingHeader(t *testing.T) {
 	provider := NewAlchemyProvider("test-key")
 	body := []byte(`{"event":"test"}`)
 
-	headers := Header{}
+	headers := providers.Header{}
 
 	valid, err := provider.VerifyInbound(headers, body, "some-secret")
 	assert.Error(t, err)
@@ -218,4 +224,49 @@ func TestDiffAddresses_NoChanges(t *testing.T) {
 	toAdd, toRemove := diffAddresses(addrs, addrs)
 	assert.Empty(t, toAdd)
 	assert.Empty(t, toRemove)
+}
+
+func TestAlchemyHeaders_ReadTheKeySourceOnEveryCall(t *testing.T) {
+	const (
+		opened = "ing-opened-a91c"
+		env    = "ing-env-44d0"
+		boot   = "ing-boot-must-not-stick"
+	)
+	logs := captureAlchemyLogs(t)
+	n := 0
+	provider := NewAlchemyProvider(boot).UseKeySource(func(context.Context) string {
+		n++
+		if n == 1 {
+			return opened
+		}
+		return env
+	})
+
+	first, err := provider.apiHeaders(context.Background())
+	if err != nil || first[alchemyAuthTokenHdr] != opened {
+		t.Fatal("the first call did not use the key source")
+	}
+	second, err := provider.apiHeaders(context.Background())
+	if err != nil || second[alchemyAuthTokenHdr] != env || n != 2 {
+		t.Fatal("the second call reused the first key")
+	}
+	requireAlchemyLogsOmit(t, logs.String(), opened, env, boot, "enc:v1:")
+}
+
+func captureAlchemyLogs(t *testing.T) *bytes.Buffer {
+	t.Helper()
+	previous := slog.Default()
+	var buf bytes.Buffer
+	slog.SetDefault(slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug})))
+	t.Cleanup(func() { slog.SetDefault(previous) })
+	return &buf
+}
+
+func requireAlchemyLogsOmit(t *testing.T, logs string, secrets ...string) {
+	t.Helper()
+	for _, secret := range secrets {
+		if secret != "" && strings.Contains(logs, secret) {
+			t.Fatal("a credential appeared in a log line")
+		}
+	}
 }

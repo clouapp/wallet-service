@@ -3,6 +3,7 @@ package ingest
 import (
 	"testing"
 
+	_ "github.com/macrowallets/waas/app/adapters/ingest/alchemy"
 	ingestsvc "github.com/macrowallets/waas/app/services/ingest"
 	"github.com/macrowallets/waas/app/services/ingest/providers"
 )

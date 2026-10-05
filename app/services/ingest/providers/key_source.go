@@ -66,3 +66,22 @@ func rejectBlankSigningKey(secret string) error {
 	}
 	return nil
 }
+
+// CredentialForCall is the outbound-call gate the Alchemy adapter uses.
+// The returned error never includes the credential.
+func CredentialForCall(ctx context.Context, source KeySource, captured string) (string, error) {
+	return requireCredential(ctx, source, captured)
+}
+
+// GateInboundCredential fails closed when a KeySource is installed and this
+// call resolves no usable credential. A provider constructed with a literal
+// key and no source keeps verifying with the subscription signing secret only.
+func GateInboundCredential(ctx context.Context, source KeySource) error {
+	return gateInboundKey(ctx, source)
+}
+
+// RejectBlankSigningSecret rejects a blank or still-sealed signing secret.
+// The error does not include the secret.
+func RejectBlankSigningSecret(secret string) error {
+	return rejectBlankSigningKey(secret)
+}

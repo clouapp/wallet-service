@@ -1,4 +1,4 @@
-package providers
+package alchemy
 
 import (
 	"context"
@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/macrowallets/waas/app/services/ingest/providers"
 	"github.com/macrowallets/waas/pkg/httpclient"
 	"github.com/macrowallets/waas/pkg/numeric"
 	"github.com/macrowallets/waas/pkg/types"
@@ -30,7 +31,7 @@ const (
 
 type AlchemyProvider struct {
 	apiKey   string
-	keyAtUse KeySource
+	keyAtUse providers.KeySource
 	client   *httpclient.Client
 }
 
@@ -43,7 +44,7 @@ func NewAlchemyProvider(apiKey string) *AlchemyProvider {
 
 // UseKeySource reads the credential on each call. The constructor key is
 // not the one used after this is set, so boot does not capture it.
-func (a *AlchemyProvider) UseKeySource(source KeySource) *AlchemyProvider {
+func (a *AlchemyProvider) UseKeySource(source providers.KeySource) *AlchemyProvider {
 	if a == nil {
 		return nil
 	}
@@ -73,7 +74,7 @@ type alchemyCreateResp struct {
 	} `json:"data"`
 }
 
-func (a *AlchemyProvider) CreateWebhook(ctx context.Context, cfg ProviderConfig) (*ProviderWebhook, error) {
+func (a *AlchemyProvider) CreateWebhook(ctx context.Context, cfg providers.ProviderConfig) (*providers.ProviderWebhook, error) {
 	payload := alchemyCreateReq{
 		Network:     cfg.Network,
 		WebhookType: "ADDRESS_ACTIVITY",
@@ -107,7 +108,7 @@ func (a *AlchemyProvider) CreateWebhook(ctx context.Context, cfg ProviderConfig)
 		return nil, fmt.Errorf("alchemy: decode create response: %w", err)
 	}
 
-	return &ProviderWebhook{
+	return &providers.ProviderWebhook{
 		ProviderWebhookID: result.Data.ID,
 		SigningSecret:     result.Data.SigningKey,
 	}, nil
@@ -247,11 +248,11 @@ func (a *AlchemyProvider) DeleteWebhook(ctx context.Context, webhookID string) e
 // VerifyInbound — HMAC-SHA256 signature verification
 // ---------------------------------------------------------------------------
 
-func (a *AlchemyProvider) VerifyInbound(headers Header, body []byte, secret string) (bool, error) {
-	if err := gateInboundKey(context.Background(), a.keyAtUse); err != nil {
+func (a *AlchemyProvider) VerifyInbound(headers providers.Header, body []byte, secret string) (bool, error) {
+	if err := providers.GateInboundCredential(context.Background(), a.keyAtUse); err != nil {
 		return false, err
 	}
-	if err := rejectBlankSigningKey(secret); err != nil {
+	if err := providers.RejectBlankSigningSecret(secret); err != nil {
 		return false, err
 	}
 
@@ -296,13 +297,13 @@ type alchemyActivity struct {
 	} `json:"log"`
 }
 
-func (a *AlchemyProvider) ParsePayload(body []byte) ([]InboundTransfer, error) {
+func (a *AlchemyProvider) ParsePayload(body []byte) ([]providers.InboundTransfer, error) {
 	var event alchemyEvent
 	if err := json.Unmarshal(body, &event); err != nil {
 		return nil, fmt.Errorf("alchemy: unmarshal payload: %w", err)
 	}
 
-	transfers := make([]InboundTransfer, 0, len(event.Event.Activity))
+	transfers := make([]providers.InboundTransfer, 0, len(event.Event.Activity))
 	for _, act := range event.Event.Activity {
 		t, err := activityToTransfer(act)
 		if err != nil {
@@ -313,10 +314,10 @@ func (a *AlchemyProvider) ParsePayload(body []byte) ([]InboundTransfer, error) {
 	return transfers, nil
 }
 
-func activityToTransfer(act alchemyActivity) (InboundTransfer, error) {
+func activityToTransfer(act alchemyActivity) (providers.InboundTransfer, error) {
 	blockNum, err := parseHexUint64(act.BlockNum)
 	if err != nil {
-		return InboundTransfer{}, fmt.Errorf("parse blockNum %q: %w", act.BlockNum, err)
+		return providers.InboundTransfer{}, fmt.Errorf("parse blockNum %q: %w", act.BlockNum, err)
 	}
 
 	amountIsHuman := false
@@ -328,7 +329,7 @@ func activityToTransfer(act alchemyActivity) (InboundTransfer, error) {
 	} else {
 		amount, err = parseAmount(act)
 		if err != nil {
-			return InboundTransfer{}, err
+			return providers.InboundTransfer{}, err
 		}
 	}
 
@@ -336,12 +337,12 @@ func activityToTransfer(act alchemyActivity) (InboundTransfer, error) {
 	if act.Log.LogIndex != "" {
 		parsed, err := parseHexInt(act.Log.LogIndex)
 		if err != nil {
-			return InboundTransfer{}, fmt.Errorf("parse logIndex %q: %w", act.Log.LogIndex, err)
+			return providers.InboundTransfer{}, fmt.Errorf("parse logIndex %q: %w", act.Log.LogIndex, err)
 		}
 		logIndex = parsed
 	}
 
-	t := InboundTransfer{
+	t := providers.InboundTransfer{
 		TxHash:        act.Hash,
 		BlockNumber:   blockNum,
 		BlockHash:     act.Log.BlockHash,
@@ -397,7 +398,7 @@ func parseHexInt(s string) (int, error) {
 // ---------------------------------------------------------------------------
 
 func (a *AlchemyProvider) apiHeaders(ctx context.Context) (map[string]string, error) {
-	key, err := requireCredential(ctx, a.keyAtUse, a.apiKey)
+	key, err := providers.CredentialForCall(ctx, a.keyAtUse, a.apiKey)
 	if err != nil {
 		return nil, err
 	}
@@ -433,5 +434,19 @@ func diffAddresses(current, desired []string) (toAdd, toRemove []string) {
 	return toAdd, toRemove
 }
 
+func exchange(ctx context.Context, client *httpclient.Client, method, rawURL string, header map[string]string, body []byte) (int, []byte, error) {
+	resp, err := client.Do(ctx, httpclient.Request{
+		Method:  method,
+		URL:     rawURL,
+		Header:  header,
+		Body:    body,
+		HasBody: body != nil,
+	})
+	if err != nil {
+		return 0, nil, err
+	}
+	return resp.StatusCode, resp.Body, nil
+}
+
 // compile-time interface check
-var _ WebhookProvider = (*AlchemyProvider)(nil)
+var _ providers.WebhookProvider = (*AlchemyProvider)(nil)
