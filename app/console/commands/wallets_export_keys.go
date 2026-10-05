@@ -47,10 +47,19 @@ type WalletsExportKeys struct {
 	chains    chainRecordSource
 }
 
-// NewWalletsExportKeys wires the export command. Secrets Manager is resolved when
-// the command runs, so a process without it can still serve the other commands.
-func NewWalletsExportKeys(wallets keyexport.WalletSource, addresses keyexport.AddressSource, chains chainRecordSource) *WalletsExportKeys {
-	return &WalletsExportKeys{wallets: wallets, addresses: addresses, chains: chains}
+// WalletsExportKeysDeps is everything wallets:export-keys needs at construction.
+// Wallets, Addresses, and Chains may be nil here; the command refuses a missing
+// one when it runs, before any secret is read. Secrets Manager is resolved then,
+// so a process without it can still serve the other commands.
+type WalletsExportKeysDeps struct {
+	Wallets   keyexport.WalletSource
+	Addresses keyexport.AddressSource
+	Chains    chainRecordSource
+}
+
+// NewWalletsExportKeys wires the export command from WalletsExportKeysDeps.
+func NewWalletsExportKeys(deps WalletsExportKeysDeps) *WalletsExportKeys {
+	return &WalletsExportKeys{wallets: deps.Wallets, addresses: deps.Addresses, chains: deps.Chains}
 }
 
 type walletsExportKeysFlags struct {

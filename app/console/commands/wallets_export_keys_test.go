@@ -18,6 +18,55 @@ const (
 	exportKeysTestWalletB = "536e5579-bb17-4e45-aa97-13a1dd60af1f"
 )
 
+type exportKeysWalletStub struct{}
+
+func (exportKeysWalletStub) FindAll(context.Context) ([]models.Wallet, error) { return nil, nil }
+func (exportKeysWalletStub) FindByID(context.Context, uuid.UUID) (*models.Wallet, error) {
+	return nil, nil
+}
+
+type exportKeysAddressStub struct{}
+
+func (exportKeysAddressStub) FindByWalletID(context.Context, uuid.UUID) ([]models.Address, error) {
+	return nil, nil
+}
+
+type exportKeysChainStub struct{}
+
+func (exportKeysChainStub) FindByID(context.Context, string) (*models.Chain, error) { return nil, nil }
+
+func TestNewWalletsExportKeysKeepsItsDependencies(t *testing.T) {
+	wallets := exportKeysWalletStub{}
+	addresses := exportKeysAddressStub{}
+	chains := exportKeysChainStub{}
+	cmd := NewWalletsExportKeys(WalletsExportKeysDeps{Wallets: wallets, Addresses: addresses, Chains: chains})
+	if cmd == nil {
+		t.Fatal("NewWalletsExportKeys returned nil")
+	}
+	if cmd.wallets != wallets {
+		t.Fatal("export keys did not keep the wallet source")
+	}
+	if cmd.addresses != addresses {
+		t.Fatal("export keys did not keep the address source")
+	}
+	if cmd.chains != chains {
+		t.Fatal("export keys did not keep the chain source")
+	}
+}
+
+func TestNewWalletsExportKeysStoresNilDependencies(t *testing.T) {
+	cmd := NewWalletsExportKeys(WalletsExportKeysDeps{})
+	if cmd == nil {
+		t.Fatal("NewWalletsExportKeys returned nil")
+	}
+	if cmd.wallets != nil || cmd.addresses != nil || cmd.chains != nil {
+		t.Fatal("omitted dependencies should stay nil")
+	}
+	if _, err := cmd.newWalletsExportService(); err == nil || !strings.Contains(err.Error(), "wallets, addresses and chains are required") {
+		t.Fatalf("nil dependencies must be refused before secrets are touched: %v", err)
+	}
+}
+
 func TestWalletsExportKeys_SignatureAndFlags(t *testing.T) {
 	cmd := &WalletsExportKeys{}
 	if cmd.Signature() != "wallets:export-keys" {

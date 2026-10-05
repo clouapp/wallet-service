@@ -89,11 +89,11 @@ func Boot() contractsfoundation.Application {
 					Wallets: container.MustMake[*repositories.WalletRepository](),
 					Signer:  evmCallSigner(),
 				}),
-				commands.NewWalletsExportKeys(
-					container.MustMake[*repositories.WalletRepository](),
-					container.MustMake[*repositories.AddressRepository](),
-					container.MustMake[*repositories.ChainRepository](),
-				),
+				commands.NewWalletsExportKeys(commands.WalletsExportKeysDeps{
+					Wallets:   container.MustMake[*repositories.WalletRepository](),
+					Addresses: container.MustMake[*repositories.AddressRepository](),
+					Chains:    container.MustMake[*repositories.ChainRepository](),
+				}),
 			}
 		}).
 		WithEvents(func() map[contractsevent.Event][]contractsevent.Listener {
