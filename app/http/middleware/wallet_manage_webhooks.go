@@ -8,13 +8,14 @@ import (
 	"github.com/macrowallets/waas/app/services/walletrecords"
 )
 
-// WalletManageWebhooks refuses POST /v1/wallets/{walletId}/webhooks and
+// WalletManageWebhooks refuses POST /v1/wallets/{walletId}/webhooks,
+// POST /v1/wallets/{walletId}/webhooks/{webhookId}/test, and
 // DELETE /v1/wallets/{walletId}/webhooks/{webhookId} unless
 // policies.WalletManageWebhooks allows the caller's loaded membership. Wallet
 // role owner or admin passes, and so does account role owner or admin.
 // WalletContext has already loaded the wallet, so a missing wallet is 404
 // before this check. A denial is 403 with the policy message. Create writes
-// nothing, and delete leaves the webhook in place.
+// nothing, delete leaves the webhook in place, and a refused test is not sent.
 func WalletManageWebhooks(memberships *walletrecords.Memberships) http.Middleware {
 	if memberships == nil {
 		panic("wallet manage webhooks: wallet memberships are required")

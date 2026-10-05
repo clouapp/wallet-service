@@ -4,13 +4,11 @@ import (
 	"github.com/google/uuid"
 	"github.com/goravel/framework/contracts/http"
 
-	"github.com/macrowallets/waas/app/http/controllers"
 	"github.com/macrowallets/waas/app/http/middleware/requestctx"
 	"github.com/macrowallets/waas/app/http/requests"
 	"github.com/macrowallets/waas/app/http/resources/webhooks"
 	"github.com/macrowallets/waas/app/http/responses"
 	"github.com/macrowallets/waas/app/models"
-	"github.com/macrowallets/waas/app/policies"
 	"github.com/macrowallets/waas/app/services/walletrecords"
 	"github.com/macrowallets/waas/app/services/webhook"
 )
@@ -150,9 +148,6 @@ func (ctrl *WebhooksController) DeleteWalletWebhook(ctx http.Context) http.Respo
 // @Router       /wallets/{walletId}/webhooks/{webhookId}/test [post]
 func (ctrl *WebhooksController) TestWalletWebhook(ctx http.Context) http.Response {
 	wallet := requestctx.MustWallet(ctx)
-	if resp := controllers.Deny(ctx, policies.WalletManageWebhooks(controllers.WalletMembership(ctx, ctrl.memberships, wallet.ID))); resp != nil {
-		return resp
-	}
 
 	webhookID, err := requests.RouteUUID(ctx, "webhookId")
 	if err != nil {

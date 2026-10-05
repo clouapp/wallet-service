@@ -3,7 +3,11 @@ package controllers_test
 import (
 	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
+	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/google/uuid"
@@ -19,11 +23,12 @@ import (
 
 const walletWebhookCreateGatePassword = "correct-horse-battery"
 
-// WalletWebhookCreateGateTestSuite drives POST /v1/wallets/{walletId}/webhooks
-// and DELETE /v1/wallets/{walletId}/webhooks/{webhookId} through
-// WalletManageWebhooks. Wallet role owner or admin may create or delete a
-// webhook, and so may account role owner or admin. Auditor, user, and the
-// other wallet roles are refused before a webhook is written or removed.
+// WalletWebhookCreateGateTestSuite drives POST /v1/wallets/{walletId}/webhooks,
+// POST /v1/wallets/{walletId}/webhooks/{webhookId}/test, and
+// DELETE /v1/wallets/{walletId}/webhooks/{webhookId} through
+// WalletManageWebhooks. Wallet role owner or admin may create, test, or delete
+// a webhook, and so may account role owner or admin. Auditor, user, and the
+// other wallet roles are refused before a webhook is written, tested, or removed.
 type WalletWebhookCreateGateTestSuite struct {
 	suite.Suite
 	goravelTesting.TestCase
@@ -134,6 +139,67 @@ func (s *WalletWebhookCreateGateTestSuite) TestWalletWebhookDeleteFollowsTheLoad
 	}
 }
 
+func (s *WalletWebhookCreateGateTestSuite) TestWalletWebhookTestFollowsTheLoadedRoles() {
+	account := mocks.InsertAccount(s.T(), "wallet webhook test")
+	s.seedChain()
+	wallet := mocks.InsertWalletWithAccount(s.T(), models.ChainETH, &account.ID)
+	owner := s.member(models.AccountRoleOwner, account.ID)
+
+	var deliveries atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.Copy(io.Discard, r.Body)
+		deliveries.Add(1)
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	s.T().Cleanup(server.Close)
+
+	hookURL := server.URL + "/hooks/" + uuid.NewString()[:8]
+	created := s.createWebhook(owner.token, account.ID, wallet.ID, hookURL)
+	created.AssertStatus(201)
+	webhookID := s.createdWebhookID(created)
+
+	denied := []struct {
+		accountRole string
+		walletRole  string
+	}{
+		{models.AccountRoleUser, models.WalletRoleViewer},
+		{models.AccountRoleAuditor, models.WalletRoleViewer},
+		{models.AccountRoleUser, models.WalletRoleSpender},
+		{models.AccountRoleUser, models.WalletRoleApprover},
+	}
+	for _, caller := range denied {
+		actor := s.member(caller.accountRole, account.ID)
+		s.assign(actor.id, wallet.ID, caller.walletRole)
+		before := deliveries.Load()
+		resp := s.testWebhook(actor.token, account.ID, wallet.ID, webhookID)
+		s.assertWebhookForbidden(resp)
+		s.Equal(before, deliveries.Load())
+		s.Equal(int64(1), s.webhookCount(wallet.ID, hookURL))
+	}
+
+	allowed := []struct {
+		accountRole string
+		walletRole  string
+	}{
+		{accountRole: models.AccountRoleOwner},
+		{accountRole: models.AccountRoleAdmin},
+		{accountRole: models.AccountRoleUser, walletRole: models.WalletRoleAdmin},
+		{accountRole: models.AccountRoleUser, walletRole: "owner"},
+	}
+	for _, caller := range allowed {
+		actor := s.member(caller.accountRole, account.ID)
+		if caller.walletRole != "" {
+			s.assign(actor.id, wallet.ID, caller.walletRole)
+		}
+		before := deliveries.Load()
+		resp := s.testWebhook(actor.token, account.ID, wallet.ID, webhookID)
+		resp.AssertOk()
+		s.assertWebhookTestDelivered(resp)
+		s.Equal(before+1, deliveries.Load())
+		s.Equal(int64(1), s.webhookCount(wallet.ID, hookURL))
+	}
+}
+
 func (s *WalletWebhookCreateGateTestSuite) TestCreateWalletWebhookValidationStaysUnprocessable() {
 	account := mocks.InsertAccount(s.T(), "wallet webhook validation")
 	s.seedChain()
@@ -226,6 +292,15 @@ func (s *WalletWebhookCreateGateTestSuite) createdWebhookID(resp contractstestin
 	return id
 }
 
+func (s *WalletWebhookCreateGateTestSuite) testWebhook(token string, accountID, walletID, webhookID uuid.UUID) contractstesting.Response {
+	resp, err := s.Http(s.T()).
+		WithHeader("Authorization", "Bearer "+token).
+		WithHeader("X-Account-Id", accountID.String()).
+		Post("/v1/wallets/"+walletID.String()+"/webhooks/"+webhookID.String()+"/test", nil)
+	s.Require().NoError(err)
+	return resp
+}
+
 func (s *WalletWebhookCreateGateTestSuite) deleteWebhook(token string, accountID, walletID, webhookID uuid.UUID) contractstesting.Response {
 	resp, err := s.Http(s.T()).
 		WithHeader("Authorization", "Bearer "+token).
@@ -243,6 +318,16 @@ func (s *WalletWebhookCreateGateTestSuite) postWebhook(token string, accountID, 
 		Post("/v1/wallets/"+walletID.String()+"/webhooks", strings.NewReader(body))
 	s.Require().NoError(err)
 	return resp
+}
+
+func (s *WalletWebhookCreateGateTestSuite) assertWebhookTestDelivered(resp contractstesting.Response) {
+	content := s.body(resp)
+	s.NotContains(content, "secret")
+	var parsed struct {
+		Delivered bool `json:"delivered"`
+	}
+	s.Require().NoError(json.Unmarshal([]byte(content), &parsed))
+	s.True(parsed.Delivered)
 }
 
 func (s *WalletWebhookCreateGateTestSuite) assertWebhookForbidden(resp contractstesting.Response) {
