@@ -51,6 +51,7 @@ const (
 	chainWalletWhitelist      = chainWallet + " > WalletWhitelist"
 	chainWalletManageWebhooks = chainWallet + " > WalletManageWebhooks"
 	chainWalletArchive        = chainWallet + " > WalletArchive"
+	chainWalletFreeze         = chainWallet + " > WalletFreeze"
 	chainUnspent              = "SessionAuth > AccountHeader > TOTPEnrollment > WalletContext > UTXOOnly"
 	chainAPI                  = "APITokenAuth"
 	chainAPIWallet            = "APITokenAuth > APIWalletContext"
@@ -201,7 +202,7 @@ var routeTable = map[string]routeSecurity{
 	"GET|HEAD /v1/wallets/{walletId}/balances":                         session(chainWallet),
 	"POST /v1/wallets/{walletId}/consolidate":                          session(chainMoveFunds),
 	"GET|HEAD /v1/wallets/{walletId}/fee-estimate":                     session(chainWallet),
-	"POST /v1/wallets/{walletId}/freeze":                               session(chainWallet),
+	"POST /v1/wallets/{walletId}/freeze":                               session(chainWalletFreeze),
 	"POST /v1/wallets/{walletId}/gas-check":                            session(chainWallet),
 	"GET|HEAD /v1/wallets/{walletId}/gas-status":                       session(chainWallet),
 	"GET|HEAD /v1/wallets/{walletId}/settings":                         session(chainWallet),

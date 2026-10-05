@@ -244,9 +244,6 @@ func (ctrl *SettingsController) ArchiveWallet(ctx http.Context) http.Response {
 // @Router       /wallets/{walletId}/freeze [post]
 func (ctrl *SettingsController) FreezeWallet(ctx http.Context) http.Response {
 	wallet := requestctx.MustWallet(ctx)
-	if errResp := controllers.Deny(ctx, policies.WalletFreeze(controllers.WalletMembership(ctx, ctrl.memberships, wallet.ID))); errResp != nil {
-		return errResp
-	}
 
 	var req requests.FreezeWalletRequest
 	if errResp := validateRequest(ctx, &req); errResp != nil {
