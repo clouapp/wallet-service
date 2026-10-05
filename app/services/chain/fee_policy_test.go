@@ -85,7 +85,7 @@ func TestFeePolicyForWalletChecksTheFeeRateBounds(t *testing.T) {
 }
 
 func TestScaleGasPriceRoundsUpExactly(t *testing.T) {
-	policy, err := NewFeePolicy(decimal.RequireFromString("1.25"))
+	policy, err := NewFeePolicy(FeePolicyDeps{Multiplier: decimal.RequireFromString("1.25")})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -138,7 +138,7 @@ func TestAdjustMilliSatRateScalesAndClamps(t *testing.T) {
 func TestEVMGasPriceAndBuiltTransfersFollowTheWalletMultiplier(t *testing.T) {
 	node := mocks.NewFakeEVMNode(t)
 	shared := newNetworkAdapter(node, models.ChainETH, models.NativeETH, models.EVMNetworkIDEthereumSepolia)
-	policy, err := NewFeePolicy(decimal.RequireFromString("1.5"))
+	policy, err := NewFeePolicy(FeePolicyDeps{Multiplier: decimal.RequireFromString("1.5")})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -183,7 +183,7 @@ func TestEVMTokenSweepSeedsGasAtTheScaledPrice(t *testing.T) {
 	adapter, node := newBaseSepoliaAdapter(t)
 	node.EstimateGasHex = "0xc350"
 	node.TokenBalanceHex = "0x" + big.NewInt(5_000_000).Text(16)
-	policy, err := NewFeePolicy(decimal.NewFromInt(2))
+	policy, err := NewFeePolicy(FeePolicyDeps{Multiplier: decimal.NewFromInt(2)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -217,7 +217,7 @@ func TestBitcoinRateFollowsTheWalletPolicyAndKeepsTheNetworkRateCached(t *testin
 	esplora := newFakeEsplora(t)
 	esplora.ok(esploraTestPrefix+"/fee-estimates", `{"3":4.2}`)
 	shared := feeTestAdapter(esplora)
-	policy, err := NewFeePolicy(decimal.RequireFromString("1.5"))
+	policy, err := NewFeePolicy(FeePolicyDeps{Multiplier: decimal.RequireFromString("1.5")})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -251,7 +251,7 @@ func TestBitcoinRateFollowsTheWalletPolicyAndKeepsTheNetworkRateCached(t *testin
 func TestBitcoinFlatFallbackFollowsTheWalletPolicy(t *testing.T) {
 	esplora := newFakeEsplora(t)
 	esplora.on(esploraTestPrefix+"/fee-estimates", esploraAnswer{http.StatusInternalServerError, "boom"})
-	policy, err := NewFeePolicy(decimal.NewFromInt(2))
+	policy, err := NewFeePolicy(FeePolicyDeps{Multiplier: decimal.NewFromInt(2)})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -53,15 +53,21 @@ func FeePolicyForWallet(wallet *models.Wallet) (FeePolicy, error) {
 	return policy, nil
 }
 
+// FeePolicyDeps is the multiplier NewFeePolicy validates. The minimum
+// multiplier is the zero policy.
+type FeePolicyDeps struct {
+	Multiplier decimal.Decimal
+}
+
 // NewFeePolicy builds a policy with only a multiplier, validated like a stored one.
-func NewFeePolicy(multiplier decimal.Decimal) (FeePolicy, error) {
-	if err := models.ValidateFeeMultiplier(multiplier); err != nil {
+func NewFeePolicy(deps FeePolicyDeps) (FeePolicy, error) {
+	if err := models.ValidateFeeMultiplier(deps.Multiplier); err != nil {
 		return FeePolicy{}, err
 	}
-	if multiplier.Equal(models.FeeMultiplierMin) {
+	if deps.Multiplier.Equal(models.FeeMultiplierMin) {
 		return FeePolicy{}, nil
 	}
-	return FeePolicy{multiplier: multiplier}, nil
+	return FeePolicy{multiplier: deps.Multiplier}, nil
 }
 
 // IsDefault reports whether the policy leaves every network fee unchanged.
