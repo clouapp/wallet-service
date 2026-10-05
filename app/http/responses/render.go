@@ -1,47 +1,58 @@
-// Package responses is the only writer of error bodies. Every non-2xx answer
-// on /v1 and /api/v1 is the envelope {"error":{"code","message"}}, with any
-// extra fields inside that object. Success bodies stay on ctx.Response().Json
-// so their bytes do not move.
+// Package responses is the single place a JSON body leaves this service.
+// Every non-2xx answer is the envelope {"error":{"code","message"}}, with any
+// extra fields inside that object. A failed form request stays HTTP 422 with
+// an "errors" map. Success bodies stay on Send, which uses
+// ctx.Response().Json, so their bytes do not move.
 package responses
 
 import (
+	"bytes"
 	"encoding/json"
+	"log/slog"
 	"net/http"
 	"regexp"
 	"sort"
 
 	contractshttp "github.com/goravel/framework/contracts/http"
 	contractsvalidation "github.com/goravel/framework/contracts/validation"
+
+	"github.com/macrowallets/waas/app/http/resources"
 )
 
 const (
-	CodeInvalidRequest   = "invalid_request"
-	CodeInvalidJSON      = "invalid_json"
-	CodeInvalidSignature = "invalid_signature"
-	CodeUnauthorized     = "unauthorized"
-	CodeForbidden        = "forbidden"
+	CodeInvalidRequest   = resources.CodeInvalidRequest
+	CodeInvalidJSON      = resources.CodeInvalidJSON
+	CodeInvalidSignature = resources.CodeInvalidSignature
+	CodeUnauthorized     = resources.CodeUnauthorized
+	CodeForbidden        = resources.CodeForbidden
 
 	// CodeAccountFrozen is the write refusal for a frozen or archived account.
 	// Reads stay allowed. The HTTP status remains 403.
-	CodeAccountFrozen = "account_frozen"
+	CodeAccountFrozen = resources.CodeAccountFrozen
 
 	// SuspendedUserMessage is the human text for a platform user suspension.
 	// The status is 403 and the code is forbidden: the suspension row of the
 	// error contract. account_suspended is the account, not the user.
 	SuspendedUserMessage    = "user is suspended"
-	CodeNotFound            = "not_found"
-	CodeConflict            = "conflict"
-	CodeValidationFailed    = "validation_failed"
-	CodeUnprocessable       = "unprocessable"
-	CodeTooManyRequests     = "too_many_requests"
-	CodeRequestTooLarge     = "request_too_large"
-	CodeInternal            = "internal"
-	CodeProviderUnavailable = "provider_unavailable"
-	CodeUnavailable         = "unavailable"
-	CodeTimeout             = "timeout"
-
-	validationMessage = "validation failed"
+	CodeNotFound            = resources.CodeNotFound
+	CodeConflict            = resources.CodeConflict
+	CodeValidationFailed    = resources.CodeValidationFailed
+	CodeUnprocessable       = resources.CodeUnprocessable
+	CodeTooManyRequests     = resources.CodeTooManyRequests
+	CodeRequestTooLarge     = resources.CodeRequestTooLarge
+	CodeInternal            = resources.CodeInternal
+	CodeProviderUnavailable = resources.CodeProviderUnavailable
+	CodeUnavailable         = resources.CodeUnavailable
+	CodeTimeout             = resources.CodeTimeout
 )
+
+const contentTypeJSON = "application/json"
+
+// internalMessage is the body of InternalError. The cause is logged, never rendered.
+const internalMessage = "internal error"
+
+// providerMessage is the body of ProviderError. The upstream text stays in the log.
+const providerMessage = "provider unavailable"
 
 // machineCode matches the front parser: a token the client may translate,
 // rather than a sentence it should show as written.
@@ -64,12 +75,48 @@ func SuspendedUser(ctx contractshttp.Context) contractshttp.AbortableResponse {
 }
 
 // Send writes body, wrapping a legacy {"error":"text"} map into the envelope.
-// A body that is not that legacy shape is written unchanged.
+// A body that is not that legacy shape is written unchanged, through
+// ctx.Response().Json so success bytes stay where they are.
 func Send(ctx contractshttp.Context, status int, body any) contractshttp.AbortableResponse {
 	if wrapped, ok := WrapLegacy(status, body); ok {
 		return ctx.Response().Json(status, wrapped)
 	}
 	return ctx.Response().Json(status, body)
+}
+
+// JSON encodes v with encoding/json and writes it with the given status.
+// It is ctx.Response().Data over an explicit json.Encoder, never
+// ctx.Response().Json(), so the codec does not depend on a gin build tag.
+// An encoding failure answers 500 with the envelope rather than a truncated body.
+func JSON(ctx contractshttp.Context, status int, v any) contractshttp.AbortableResponse {
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(v); err != nil {
+		return encodeFailure(ctx)
+	}
+	return ctx.Response().Data(status, contentTypeJSON, buf.Bytes())
+}
+
+// Error writes the strict error envelope. A middleware ends the chain with
+// responses.Error(...).Abort().
+func Error(ctx contractshttp.Context, status int, code, message string) contractshttp.AbortableResponse {
+	return JSON(ctx, status, resources.NewError(code, message))
+}
+
+// InternalError logs err and answers 500 without it.
+func InternalError(ctx contractshttp.Context, err error) contractshttp.AbortableResponse {
+	if err != nil {
+		slog.Error("http internal error", "error", err)
+	}
+	return Error(ctx, http.StatusInternalServerError, resources.CodeInternal, internalMessage)
+}
+
+// ProviderError logs err and answers 502. The upstream's own message never
+// reaches the body.
+func ProviderError(ctx contractshttp.Context, err error) contractshttp.AbortableResponse {
+	if err != nil {
+		slog.Error("http provider error", "error", err)
+	}
+	return Error(ctx, http.StatusBadGateway, resources.CodeProviderUnavailable, providerMessage)
 }
 
 // ValidationFailed answers a form-request failure with HTTP 422. The per-field
@@ -82,28 +129,29 @@ func ValidationFailed(ctx contractshttp.Context, errs contractsvalidation.Errors
 // FieldsFailed answers HTTP 422 with the same envelope as ValidationFailed
 // when the messages were built outside a form request.
 func FieldsFailed(ctx contractshttp.Context, fields map[string][]string) contractshttp.AbortableResponse {
-	if fields == nil {
-		fields = map[string][]string{}
+	return ctx.Response().Json(http.StatusUnprocessableEntity, resources.NewValidation(fields))
+}
+
+// FieldError answers one field a handler checked after its form request
+// passed, in the same HTTP 422 shape as ValidationFailed. An empty message
+// still names the field.
+func FieldError(ctx contractshttp.Context, field, message string) contractshttp.AbortableResponse {
+	if message == "" {
+		message = field + " is invalid"
 	}
-	return ctx.Response().Json(http.StatusUnprocessableEntity, validationEnvelope{
-		Error: errorBody{
-			Code:    CodeValidationFailed,
-			Message: validationMessage,
-		},
-		Errors: fields,
-	})
+	return FieldsFailed(ctx, map[string][]string{field: {message}})
 }
 
 // WrapLegacy converts a legacy error map into the envelope. The bool is false
 // when body is not a map whose "error" value is a string.
-func WrapLegacy(status int, body any) (envelope, bool) {
+func WrapLegacy(status int, body any) (resources.ErrorEnvelope, bool) {
 	fields, ok := asMap(body)
 	if !ok {
-		return envelope{}, false
+		return resources.ErrorEnvelope{}, false
 	}
 	message, ok := fields["error"].(string)
 	if !ok {
-		return envelope{}, false
+		return resources.ErrorEnvelope{}, false
 	}
 	explicit, _ := fields["code"].(string)
 	extra := map[string]any{}
@@ -113,11 +161,7 @@ func WrapLegacy(status int, body any) (envelope, bool) {
 		}
 		extra[key] = value
 	}
-	return envelope{Error: errorBody{
-		Code:    codeFor(status, message, explicit),
-		Message: message,
-		extra:   extra,
-	}}, true
+	return resources.NewError(codeFor(status, message, explicit), message).With(extra), true
 }
 
 // FieldMessages flattens Goravel's {field: {rule: message}} bag into
@@ -189,32 +233,11 @@ func codeFor(status int, message, explicit string) string {
 	}
 }
 
-type envelope struct {
-	Error errorBody `json:"error"`
-}
-
-type validationEnvelope struct {
-	Error  errorBody           `json:"error"`
-	Errors map[string][]string `json:"errors"`
-}
-
-type errorBody struct {
-	Code    string
-	Message string
-	extra   map[string]any
-}
-
-func (b errorBody) MarshalJSON() ([]byte, error) {
-	payload := make(map[string]any, 2+len(b.extra))
-	payload["code"] = b.Code
-	payload["message"] = b.Message
-	for key, value := range b.extra {
-		if key == "code" || key == "message" {
-			continue
-		}
-		payload[key] = value
-	}
-	return json.Marshal(payload)
+// encodeFailure is the one body written without going through JSON, because
+// JSON is what just failed. The envelope is two strings and cannot fail to encode.
+func encodeFailure(ctx contractshttp.Context) contractshttp.AbortableResponse {
+	body := []byte(`{"error":{"code":"` + resources.CodeInternal + `","message":"` + internalMessage + `"}}` + "\n")
+	return ctx.Response().Data(http.StatusInternalServerError, contentTypeJSON, body)
 }
 
 func asMap(body any) (map[string]any, bool) {
