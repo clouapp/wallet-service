@@ -303,16 +303,16 @@ func RegisterAdminRoutes() {
 }
 
 func newDashboardAuthController() *dashauth.AuthController {
-	return dashauth.NewAuthController(
-		container.MustMake[*usersvc.Service](),
-		container.MustMake[*accountsvc.Service](),
-		container.MustMake[*sessions.RefreshTokens](),
-		container.MustMake[*sessions.PasswordResets](),
-		container.MustMake[*authsvc.Service](),
-		container.MustMake[*authsvc.TwoFactorLogin](),
-		container.MustMake[*authsvc.SessionRevoker](),
-		container.MustMake[*credentialmail.Service](),
-	)
+	return dashauth.NewAuthController(dashauth.AuthControllerDeps{
+		Users:          container.MustMake[*usersvc.Service](),
+		Accounts:       container.MustMake[*accountsvc.Service](),
+		RefreshTokens:  container.MustMake[*sessions.RefreshTokens](),
+		PasswordResets: container.MustMake[*sessions.PasswordResets](),
+		Passwords:      container.MustMake[*authsvc.Service](),
+		TwoFactor:      container.MustMake[*authsvc.TwoFactorLogin](),
+		Revoker:        container.MustMake[*authsvc.SessionRevoker](),
+		CredentialMail: container.MustMake[*credentialmail.Service](),
+	})
 }
 
 func newDashboardUsersController() *dashusers.UsersController {

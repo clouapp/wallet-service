@@ -38,51 +38,55 @@ type AuthController struct {
 	credentialMail *credentialmail.Service
 }
 
-// NewAuthController wires the dashboard auth handlers. Every dependency is a
-// provider singleton, resolved once when the route table is built.
-func NewAuthController(
-	users *usersvc.Service,
-	accounts *accountsvc.Service,
-	refreshTokens *sessions.RefreshTokens,
-	passwordResets *sessions.PasswordResets,
-	passwords *authsvc.Service,
-	twoFactor *authsvc.TwoFactorLogin,
-	revoker *authsvc.SessionRevoker,
-	credentialMail *credentialmail.Service,
-) *AuthController {
-	if users == nil {
+// AuthControllerDeps is everything the dashboard auth controller needs.
+// Every field is required.
+type AuthControllerDeps struct {
+	Users          *usersvc.Service
+	Accounts       *accountsvc.Service
+	RefreshTokens  *sessions.RefreshTokens
+	PasswordResets *sessions.PasswordResets
+	Passwords      *authsvc.Service
+	TwoFactor      *authsvc.TwoFactorLogin
+	Revoker        *authsvc.SessionRevoker
+	CredentialMail *credentialmail.Service
+}
+
+// NewAuthController wires the dashboard auth handlers from AuthControllerDeps.
+// Every dependency is a provider singleton, resolved once when the route table is built.
+func NewAuthController(deps AuthControllerDeps) *AuthController {
+	if deps.Users == nil {
 		panic("dashboard auth controller: users service is required")
 	}
-	if accounts == nil {
+	if deps.Accounts == nil {
 		panic("dashboard auth controller: account service is required")
 	}
-	if refreshTokens == nil {
+	if deps.RefreshTokens == nil {
 		panic("dashboard auth controller: refresh token service is required")
 	}
-	if passwordResets == nil {
+	if deps.PasswordResets == nil {
 		panic("dashboard auth controller: password reset service is required")
 	}
-	if passwords == nil {
+	if deps.Passwords == nil {
 		panic("dashboard auth controller: auth service is required")
 	}
-	if twoFactor == nil {
+	if deps.TwoFactor == nil {
 		panic("dashboard auth controller: two factor login is required")
 	}
-	if revoker == nil {
+	if deps.Revoker == nil {
 		panic("dashboard auth controller: session revoker is required")
 	}
-	if credentialMail == nil {
+	if deps.CredentialMail == nil {
 		panic("dashboard auth controller: credential mail is required")
 	}
 	return &AuthController{
-		users:          users,
-		accounts:       accounts,
-		refreshTokens:  refreshTokens,
-		passwordResets: passwordResets,
-		passwords:      passwords,
-		twoFactor:      twoFactor,
-		revoker:        revoker,
-		credentialMail: credentialMail,
+		users:          deps.Users,
+		accounts:       deps.Accounts,
+		refreshTokens:  deps.RefreshTokens,
+		passwordResets: deps.PasswordResets,
+		passwords:      deps.Passwords,
+		twoFactor:      deps.TwoFactor,
+		revoker:        deps.Revoker,
+		credentialMail: deps.CredentialMail,
 	}
 }
 
