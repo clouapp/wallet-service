@@ -40,25 +40,25 @@ func (r *AuthServiceProvider) Boot(app foundation.Application) {
 		return id, ok
 	}
 
-	gate.Define("account.view", func(ctx context.Context, arguments map[string]any) contractsaccess.Response {
+	gate.Define(policies.AbilityAccountView, func(ctx context.Context, arguments map[string]any) contractsaccess.Response {
 		return ap.View(ctx, withAccountUser(ctx, arguments))
 	})
-	gate.Define("account.update", func(ctx context.Context, arguments map[string]any) contractsaccess.Response {
+	gate.Define(policies.AbilityAccountUpdate, func(ctx context.Context, arguments map[string]any) contractsaccess.Response {
 		return ap.Update(ctx, withAccountUser(ctx, arguments))
 	})
-	gate.Define("account.delete", func(ctx context.Context, arguments map[string]any) contractsaccess.Response {
+	gate.Define(policies.AbilityAccountDelete, func(ctx context.Context, arguments map[string]any) contractsaccess.Response {
 		return ap.Delete(ctx, withAccountUser(ctx, arguments))
 	})
-	gate.Define("account.add-user", func(ctx context.Context, arguments map[string]any) contractsaccess.Response {
+	gate.Define(policies.AbilityAccountAddUser, func(ctx context.Context, arguments map[string]any) contractsaccess.Response {
 		return ap.AddUser(ctx, withAccountUser(ctx, arguments))
 	})
-	gate.Define("account.remove-user", func(ctx context.Context, arguments map[string]any) contractsaccess.Response {
+	gate.Define(policies.AbilityAccountRemoveUser, func(ctx context.Context, arguments map[string]any) contractsaccess.Response {
 		return ap.RemoveUser(ctx, withAccountUser(ctx, arguments))
 	})
-	gate.Define("account.freeze", func(ctx context.Context, arguments map[string]any) contractsaccess.Response {
+	gate.Define(policies.AbilityAccountFreeze, func(ctx context.Context, arguments map[string]any) contractsaccess.Response {
 		return ap.Freeze(ctx, withAccountUser(ctx, arguments))
 	})
-	gate.Define("account.archive", func(ctx context.Context, arguments map[string]any) contractsaccess.Response {
+	gate.Define(policies.AbilityAccountArchive, func(ctx context.Context, arguments map[string]any) contractsaccess.Response {
 		return ap.Archive(ctx, withAccountUser(ctx, arguments))
 	})
 	gate.Define(policies.PermTokensRead, func(ctx context.Context, arguments map[string]any) contractsaccess.Response {
@@ -68,31 +68,31 @@ func (r *AuthServiceProvider) Boot(app foundation.Application) {
 		return ap.WriteTokens(ctx, withAccountUser(ctx, arguments))
 	})
 
-	gate.Define("wallet.view", func(ctx context.Context, arguments map[string]any) contractsaccess.Response {
+	gate.Define(policies.AbilityWalletView, func(ctx context.Context, arguments map[string]any) contractsaccess.Response {
 		return wp.View(ctx, withWalletMembership(ctx, arguments))
 	})
-	gate.Define("wallet.update", func(ctx context.Context, arguments map[string]any) contractsaccess.Response {
+	gate.Define(policies.AbilityWalletUpdate, func(ctx context.Context, arguments map[string]any) contractsaccess.Response {
 		return wp.Update(ctx, withWalletMembership(ctx, arguments))
 	})
-	gate.Define("wallet.archive", func(ctx context.Context, arguments map[string]any) contractsaccess.Response {
+	gate.Define(policies.AbilityWalletArchive, func(ctx context.Context, arguments map[string]any) contractsaccess.Response {
 		return wp.Archive(ctx, arguments)
 	})
-	gate.Define("wallet.freeze", func(ctx context.Context, arguments map[string]any) contractsaccess.Response {
+	gate.Define(policies.AbilityWalletFreeze, func(ctx context.Context, arguments map[string]any) contractsaccess.Response {
 		return wp.Freeze(ctx, withWalletMembership(ctx, arguments))
 	})
-	gate.Define("wallet.add-user", func(ctx context.Context, arguments map[string]any) contractsaccess.Response {
+	gate.Define(policies.AbilityWalletAddUser, func(ctx context.Context, arguments map[string]any) contractsaccess.Response {
 		return wp.AddUser(ctx, withWalletMembership(ctx, arguments))
 	})
-	gate.Define("wallet.remove-user", func(ctx context.Context, arguments map[string]any) contractsaccess.Response {
+	gate.Define(policies.AbilityWalletRemoveUser, func(ctx context.Context, arguments map[string]any) contractsaccess.Response {
 		return wp.RemoveUser(ctx, withWalletMembership(ctx, arguments))
 	})
-	gate.Define("wallet.whitelist", func(ctx context.Context, arguments map[string]any) contractsaccess.Response {
+	gate.Define(policies.AbilityWalletWhitelist, func(ctx context.Context, arguments map[string]any) contractsaccess.Response {
 		return wp.Whitelist(ctx, withWalletMembership(ctx, arguments))
 	})
-	gate.Define("wallet.manage-webhooks", func(ctx context.Context, arguments map[string]any) contractsaccess.Response {
+	gate.Define(policies.AbilityWalletManageWebhooks, func(ctx context.Context, arguments map[string]any) contractsaccess.Response {
 		return wp.ManageWebhooks(ctx, withWalletMembership(ctx, arguments))
 	})
-	gate.Define("wallet.cancel-withdrawal", func(ctx context.Context, arguments map[string]any) contractsaccess.Response {
+	gate.Define(policies.AbilityWalletCancelWithdrawal, func(ctx context.Context, arguments map[string]any) contractsaccess.Response {
 		return wp.CancelWithdrawal(ctx, withWalletMembership(ctx, arguments))
 	})
 
@@ -108,19 +108,19 @@ func withAccountUser(ctx context.Context, arguments map[string]any) map[string]a
 	for key, value := range arguments {
 		out[key] = value
 	}
-	if _, present := out["account_role"]; !present {
+	if _, present := out[policies.ArgAccountRole]; !present {
 		if role, ok := requestctx.AccountRole(ctx); ok {
-			out["account_role"] = role
+			out[policies.ArgAccountRole] = role
 		}
 	}
-	if _, ok := out["user_id"].(uuid.UUID); ok {
+	if _, ok := out[policies.ArgUserID].(uuid.UUID); ok {
 		return out
 	}
 	userID, ok := requestctx.UserID(ctx)
 	if !ok || userID == uuid.Nil {
 		return out
 	}
-	out["user_id"] = userID
+	out[policies.ArgUserID] = userID
 	return out
 }
 
@@ -131,12 +131,12 @@ func withWalletMembership(ctx context.Context, arguments map[string]any) map[str
 	for key, value := range arguments {
 		out[key] = value
 	}
-	walletID, ok := out["wallet_id"].(uuid.UUID)
+	walletID, ok := out[policies.ArgWalletID].(uuid.UUID)
 	if !ok {
 		return out
 	}
 	userID, userOK := requestctx.UserID(ctx)
-	out["user_id"] = userID
+	out[policies.ArgUserID] = userID
 	if !userOK {
 		return out
 	}
@@ -145,8 +145,8 @@ func withWalletMembership(ctx context.Context, arguments map[string]any) map[str
 		Members:  container.MustMake[*walletrecords.Members](),
 		Accounts: container.MustMake[*accountsvc.Service](),
 	}).ForWallet(ctx, walletID, userID)
-	out["wallet_role"] = walletRole
-	out["account_role"] = accountRole
+	out[policies.ArgWalletRole] = walletRole
+	out[policies.ArgAccountRole] = accountRole
 	return out
 }
 

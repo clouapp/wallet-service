@@ -8,6 +8,26 @@ import (
 	contractsaccess "github.com/goravel/framework/contracts/auth/access"
 )
 
+// Wallet gate abilities. The values are the live catalog.
+const (
+	AbilityWalletView             = "wallet.view"
+	AbilityWalletUpdate           = "wallet.update"
+	AbilityWalletArchive          = "wallet.archive"
+	AbilityWalletFreeze           = "wallet.freeze"
+	AbilityWalletAddUser          = "wallet.add-user"
+	AbilityWalletRemoveUser       = "wallet.remove-user"
+	AbilityWalletWhitelist        = "wallet.whitelist"
+	AbilityWalletManageWebhooks   = "wallet.manage-webhooks"
+	AbilityWalletCancelWithdrawal = "wallet.cancel-withdrawal"
+)
+
+// Wallet gate argument keys. user_id and account_role are ArgUserID and ArgAccountRole.
+const (
+	ArgWalletID   = "wallet_id"
+	ArgWalletRole = "wallet_role"
+	ArgCreatorID  = "creator_id"
+)
+
 // WalletPolicy defines gate abilities for Wallet resources.
 // Abilities: wallet.view, wallet.update, wallet.archive, wallet.freeze,
 //
@@ -23,14 +43,14 @@ type WalletMembership struct {
 }
 
 func (p *WalletPolicy) View(ctx context.Context, arguments map[string]any) contractsaccess.Response {
-	if _, ok := arguments["wallet_id"].(uuid.UUID); !ok {
+	if _, ok := arguments[ArgWalletID].(uuid.UUID); !ok {
 		return access.NewDenyResponse("missing wallet_id")
 	}
 	return WalletView(membershipFor(ctx, arguments))
 }
 
 func (p *WalletPolicy) Update(ctx context.Context, arguments map[string]any) contractsaccess.Response {
-	if _, ok := arguments["wallet_id"].(uuid.UUID); !ok {
+	if _, ok := arguments[ArgWalletID].(uuid.UUID); !ok {
 		return access.NewDenyResponse("missing wallet_id")
 	}
 	return WalletUpdate(membershipFor(ctx, arguments))
@@ -46,14 +66,14 @@ func (p *WalletPolicy) Archive(ctx context.Context, arguments map[string]any) co
 }
 
 func (p *WalletPolicy) Freeze(ctx context.Context, arguments map[string]any) contractsaccess.Response {
-	if _, ok := arguments["wallet_id"].(uuid.UUID); !ok {
+	if _, ok := arguments[ArgWalletID].(uuid.UUID); !ok {
 		return access.NewDenyResponse("missing wallet_id")
 	}
 	return WalletFreeze(membershipFor(ctx, arguments))
 }
 
 func (p *WalletPolicy) AddUser(ctx context.Context, arguments map[string]any) contractsaccess.Response {
-	if _, ok := arguments["wallet_id"].(uuid.UUID); !ok {
+	if _, ok := arguments[ArgWalletID].(uuid.UUID); !ok {
 		return access.NewDenyResponse("missing wallet_id")
 	}
 	return WalletAddUser(membershipFor(ctx, arguments))
@@ -64,21 +84,21 @@ func (p *WalletPolicy) RemoveUser(ctx context.Context, arguments map[string]any)
 }
 
 func (p *WalletPolicy) Whitelist(ctx context.Context, arguments map[string]any) contractsaccess.Response {
-	if _, ok := arguments["wallet_id"].(uuid.UUID); !ok {
+	if _, ok := arguments[ArgWalletID].(uuid.UUID); !ok {
 		return access.NewDenyResponse("missing wallet_id")
 	}
 	return WalletWhitelist(membershipFor(ctx, arguments))
 }
 
 func (p *WalletPolicy) ManageWebhooks(ctx context.Context, arguments map[string]any) contractsaccess.Response {
-	if _, ok := arguments["wallet_id"].(uuid.UUID); !ok {
+	if _, ok := arguments[ArgWalletID].(uuid.UUID); !ok {
 		return access.NewDenyResponse("missing wallet_id")
 	}
 	return WalletManageWebhooks(membershipFor(ctx, arguments))
 }
 
 func (p *WalletPolicy) CancelWithdrawal(ctx context.Context, arguments map[string]any) contractsaccess.Response {
-	if _, ok := arguments["wallet_id"].(uuid.UUID); !ok {
+	if _, ok := arguments[ArgWalletID].(uuid.UUID); !ok {
 		return access.NewDenyResponse("missing wallet_id")
 	}
 	membership := membershipFor(ctx, arguments)
@@ -91,7 +111,7 @@ func (p *WalletPolicy) CancelWithdrawal(ctx context.Context, arguments map[strin
 	if membership.AccountRole == roleAuditor {
 		return access.NewDenyResponse("only the creator or an owner/admin may cancel this withdrawal")
 	}
-	creatorID, ok := arguments["creator_id"].(uuid.UUID)
+	creatorID, ok := arguments[ArgCreatorID].(uuid.UUID)
 	if ok && creatorID == membership.UserID {
 		return access.NewAllowResponse()
 	}
@@ -187,9 +207,9 @@ func membershipFrom(arguments map[string]any) WalletMembership {
 	if arguments == nil {
 		return WalletMembership{}
 	}
-	walletRole, _ := arguments["wallet_role"].(string)
-	accountRole, _ := arguments["account_role"].(string)
-	userID, _ := arguments["user_id"].(uuid.UUID)
+	walletRole, _ := arguments[ArgWalletRole].(string)
+	accountRole, _ := arguments[ArgAccountRole].(string)
+	userID, _ := arguments[ArgUserID].(uuid.UUID)
 	return WalletMembership{
 		WalletRole:  walletRole,
 		AccountRole: accountRole,
@@ -203,7 +223,7 @@ func membershipFrom(arguments map[string]any) WalletMembership {
 func membershipFor(ctx context.Context, arguments map[string]any) WalletMembership {
 	membership := membershipFrom(arguments)
 	if arguments != nil {
-		if _, present := arguments["account_role"]; present {
+		if _, present := arguments[ArgAccountRole]; present {
 			return membership
 		}
 	}

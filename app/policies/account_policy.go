@@ -27,6 +27,24 @@ const PermAccountWrite = models.AccountPermAccountWrite
 // Admin, auditor and user do not.
 const PermAccountLifecycle = models.AccountPermAccountLifecycle
 
+// Account gate abilities. The values are the live catalog.
+const (
+	AbilityAccountView       = "account.view"
+	AbilityAccountUpdate     = "account.update"
+	AbilityAccountDelete     = "account.delete"
+	AbilityAccountAddUser    = "account.add-user"
+	AbilityAccountRemoveUser = "account.remove-user"
+	AbilityAccountFreeze     = "account.freeze"
+	AbilityAccountArchive    = "account.archive"
+)
+
+// Account gate argument keys. Wallet abilities share user_id and account_role.
+const (
+	ArgAccountID   = "account_id"
+	ArgUserID      = "user_id"
+	ArgAccountRole = "account_role"
+)
+
 // AccountPolicy defines gate abilities for Account resources.
 // Abilities: account.view, account.update, account.delete,
 //
@@ -41,11 +59,11 @@ func userRole(ctx context.Context, accountID uuid.UUID, arguments map[string]any
 	if arguments == nil {
 		return ""
 	}
-	if _, present := arguments["account_role"]; present {
-		role, _ := arguments["account_role"].(string)
+	if _, present := arguments[ArgAccountRole]; present {
+		role, _ := arguments[ArgAccountRole].(string)
 		return role
 	}
-	userID, ok := arguments["user_id"].(uuid.UUID)
+	userID, ok := arguments[ArgUserID].(uuid.UUID)
 	if !ok || userID == uuid.Nil {
 		return ""
 	}
@@ -67,7 +85,7 @@ func lookupAccountRole(ctx context.Context, accountID, userID uuid.UUID) string 
 }
 
 func (p *AccountPolicy) View(ctx context.Context, arguments map[string]any) contractsaccess.Response {
-	accountID, ok := arguments["account_id"].(uuid.UUID)
+	accountID, ok := arguments[ArgAccountID].(uuid.UUID)
 	if !ok {
 		return access.NewDenyResponse("missing account_id")
 	}
@@ -79,7 +97,7 @@ func (p *AccountPolicy) View(ctx context.Context, arguments map[string]any) cont
 }
 
 func (p *AccountPolicy) Update(ctx context.Context, arguments map[string]any) contractsaccess.Response {
-	accountID, ok := arguments["account_id"].(uuid.UUID)
+	accountID, ok := arguments[ArgAccountID].(uuid.UUID)
 	if !ok {
 		return access.NewDenyResponse("missing account_id")
 	}
@@ -96,7 +114,7 @@ func mayWriteAccount(role string) bool {
 }
 
 func (p *AccountPolicy) Delete(ctx context.Context, arguments map[string]any) contractsaccess.Response {
-	accountID, ok := arguments["account_id"].(uuid.UUID)
+	accountID, ok := arguments[ArgAccountID].(uuid.UUID)
 	if !ok {
 		return access.NewDenyResponse("missing account_id")
 	}
@@ -107,7 +125,7 @@ func (p *AccountPolicy) Delete(ctx context.Context, arguments map[string]any) co
 }
 
 func (p *AccountPolicy) AddUser(ctx context.Context, arguments map[string]any) contractsaccess.Response {
-	accountID, ok := arguments["account_id"].(uuid.UUID)
+	accountID, ok := arguments[ArgAccountID].(uuid.UUID)
 	if !ok {
 		return access.NewDenyResponse("missing account_id")
 	}
@@ -119,7 +137,7 @@ func (p *AccountPolicy) AddUser(ctx context.Context, arguments map[string]any) c
 }
 
 func (p *AccountPolicy) RemoveUser(ctx context.Context, arguments map[string]any) contractsaccess.Response {
-	accountID, ok := arguments["account_id"].(uuid.UUID)
+	accountID, ok := arguments[ArgAccountID].(uuid.UUID)
 	if !ok {
 		return access.NewDenyResponse("missing account_id")
 	}
@@ -131,7 +149,7 @@ func (p *AccountPolicy) RemoveUser(ctx context.Context, arguments map[string]any
 }
 
 func (p *AccountPolicy) Freeze(ctx context.Context, arguments map[string]any) contractsaccess.Response {
-	accountID, ok := arguments["account_id"].(uuid.UUID)
+	accountID, ok := arguments[ArgAccountID].(uuid.UUID)
 	if !ok {
 		return access.NewDenyResponse("missing account_id")
 	}
@@ -148,7 +166,7 @@ func mayChangeAccountLifecycle(role string) bool {
 }
 
 func (p *AccountPolicy) Archive(ctx context.Context, arguments map[string]any) contractsaccess.Response {
-	accountID, ok := arguments["account_id"].(uuid.UUID)
+	accountID, ok := arguments[ArgAccountID].(uuid.UUID)
 	if !ok {
 		return access.NewDenyResponse("missing account_id")
 	}
@@ -159,7 +177,7 @@ func (p *AccountPolicy) Archive(ctx context.Context, arguments map[string]any) c
 }
 
 func (p *AccountPolicy) ReadTokens(ctx context.Context, arguments map[string]any) contractsaccess.Response {
-	accountID, ok := arguments["account_id"].(uuid.UUID)
+	accountID, ok := arguments[ArgAccountID].(uuid.UUID)
 	if !ok {
 		return access.NewDenyResponse("missing account_id")
 	}
@@ -170,7 +188,7 @@ func (p *AccountPolicy) ReadTokens(ctx context.Context, arguments map[string]any
 }
 
 func (p *AccountPolicy) WriteTokens(ctx context.Context, arguments map[string]any) contractsaccess.Response {
-	accountID, ok := arguments["account_id"].(uuid.UUID)
+	accountID, ok := arguments[ArgAccountID].(uuid.UUID)
 	if !ok {
 		return access.NewDenyResponse("missing account_id")
 	}
@@ -203,9 +221,9 @@ func MayWriteTokens(role string) bool {
 }
 
 func accountDecisionArguments(accountID, userID uuid.UUID) map[string]any {
-	arguments := map[string]any{"account_id": accountID}
+	arguments := map[string]any{ArgAccountID: accountID}
 	if userID != uuid.Nil {
-		arguments["user_id"] = userID
+		arguments[ArgUserID] = userID
 	}
 	return arguments
 }
