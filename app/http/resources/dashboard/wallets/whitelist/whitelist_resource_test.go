@@ -1,4 +1,4 @@
-package wallets
+package whitelist_test
 
 import (
 	"encoding/json"
@@ -8,10 +8,11 @@ import (
 	"github.com/goravel/framework/support/carbon"
 
 	"github.com/macrowallets/waas/app/http/pagination"
+	"github.com/macrowallets/waas/app/http/resources/dashboard/wallets/whitelist"
 	"github.com/macrowallets/waas/app/models"
 )
 
-func TestWhitelistEntryViewKeepsTheModelWire(t *testing.T) {
+func TestWhitelistEntryKeepsTheModelWire(t *testing.T) {
 	t.Parallel()
 
 	id := uuid.MustParse("11111111-1111-4111-8111-111111111111")
@@ -48,7 +49,7 @@ func TestWhitelistEntryViewKeepsTheModelWire(t *testing.T) {
 		},
 	}
 	for _, tc := range cases {
-		raw, err := json.Marshal(newWhitelistEntryView(tc.entry))
+		raw, err := json.Marshal(whitelist.WhitelistEntryFrom(tc.entry))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -58,13 +59,13 @@ func TestWhitelistEntryViewKeepsTheModelWire(t *testing.T) {
 	}
 }
 
-func TestWhitelistEntryViewsPreserveSliceNilness(t *testing.T) {
+func TestWhitelistEntriesPreserveSliceNilness(t *testing.T) {
 	t.Parallel()
 
-	if whitelistEntryViews(nil) != nil {
+	if whitelist.WhitelistEntriesFrom(nil) != nil {
 		t.Fatal("nil slice became an empty slice")
 	}
-	empty := whitelistEntryViews([]models.WhitelistEntry{})
+	empty := whitelist.WhitelistEntriesFrom([]models.WhitelistEntry{})
 	if empty == nil {
 		t.Fatal("empty slice became nil")
 	}
@@ -72,7 +73,7 @@ func TestWhitelistEntryViewsPreserveSliceNilness(t *testing.T) {
 		t.Fatalf("empty slice length = %d", len(empty))
 	}
 
-	nilPage, err := json.Marshal(pagination.Response(whitelistEntryViews(nil), 0, 20, 0))
+	nilPage, err := json.Marshal(pagination.Response(whitelist.WhitelistEntriesFrom(nil), 0, 20, 0))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -80,7 +81,7 @@ func TestWhitelistEntryViewsPreserveSliceNilness(t *testing.T) {
 		t.Fatalf("nil page = %s", nilPage)
 	}
 
-	emptyPage, err := json.Marshal(pagination.Response(whitelistEntryViews([]models.WhitelistEntry{}), 0, 20, 0))
+	emptyPage, err := json.Marshal(pagination.Response(whitelist.WhitelistEntriesFrom([]models.WhitelistEntry{}), 0, 20, 0))
 	if err != nil {
 		t.Fatal(err)
 	}
