@@ -95,6 +95,49 @@ func (s *accountSettingsSuite) TestGetHidesSecretAndShowsIsSet() {
 	s.NotContains(body, "enc:v1:")
 }
 
+func (s *accountSettingsSuite) TestGetRegistryFollowsSettingsRead() {
+	accountID, ownerToken := s.owner()
+	const sentinel = "view-gate-sentinel"
+	s.patch(ownerToken, accountID, "account_webhooks", `{"signing_secret":"`+sentinel+`"}`, 200)
+
+	admin := s.member(accountID, models.AccountRoleAdmin)
+	auditor := s.member(accountID, models.AccountRoleAuditor)
+	user := s.member(accountID, models.AccountRoleUser)
+
+	for _, token := range []string{ownerToken, admin, auditor} {
+		body := s.get(token, accountID, 200)
+		s.NotContains(body, sentinel)
+		s.NotContains(body, "enc:v1:")
+		var parsed struct {
+			Permissions struct {
+				View   string `json:"view"`
+				Update string `json:"update"`
+			} `json:"permissions"`
+			Sections []any `json:"sections"`
+		}
+		s.Require().NoError(json.Unmarshal([]byte(body), &parsed))
+		s.Equal("settings.read", parsed.Permissions.View)
+		s.Equal("settings.write", parsed.Permissions.Update)
+		s.NotEmpty(parsed.Sections)
+	}
+
+	denied := s.get(user, accountID, 403)
+	s.NotContains(denied, sentinel)
+	s.NotContains(denied, "enc:v1:")
+	s.NotContains(denied, `"sections"`)
+	var parsed struct {
+		Error struct {
+			Code    string `json:"code"`
+			Message string `json:"message"`
+		} `json:"error"`
+		Sections []any `json:"sections"`
+	}
+	s.Require().NoError(json.Unmarshal([]byte(denied), &parsed))
+	s.Equal("forbidden", parsed.Error.Code)
+	s.Equal(settings.ErrViewForbidden.Error(), parsed.Error.Message)
+	s.Empty(parsed.Sections)
+}
+
 func (s *accountSettingsSuite) TestPatchBlankSecretKeepsTheStoredValue() {
 	accountID, token := s.owner()
 	s.patch(token, accountID, "account_webhooks", `{"signing_secret":"first-secret"}`, 200)

@@ -329,9 +329,6 @@ func TestRegistryHidesSecrets(t *testing.T) {
 	if !found || !secret.IsSet || secret.Value != nil {
 		t.Fatalf("secret field found=%v %+v", found, secret)
 	}
-	if _, err := service.Registry(ctx, accountID, "user"); !errors.Is(err, ErrViewForbidden) {
-		t.Fatalf("user registry err = %v", err)
-	}
 }
 
 func TestDecimalStaysAString(t *testing.T) {

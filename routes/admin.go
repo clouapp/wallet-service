@@ -143,8 +143,8 @@ func RegisterAdminRoutes() {
 			r.Middleware(middleware.Can(middleware.PermTokensWrite), middleware.MintAPITokenPermissions()).Post("/tokens", accountsCtrl.CreateAccountToken)
 			r.Middleware(middleware.Can(middleware.PermTokensWrite)).Delete("/tokens/{tokenId}", accountsCtrl.RevokeAccountToken)
 
-			// S1.4.7: GET /v1/accounts/{accountId}/settings settings.read.
-			r.Get("/settings", accountSettingsCtrl.Show)
+			// S1.4.7: GET /v1/accounts/{accountId}/settings settings.read (policies.MayViewSettings).
+			r.Middleware(middleware.MayViewSettings()).Get("/settings", accountSettingsCtrl.Show)
 			r.Post("/settings/sections/{section}/cache", accountSettingsCtrl.Flush)
 			r.Post("/settings/sections/{section}/reset", accountSettingsCtrl.Reset)
 			// S1.4.7: GET /v1/accounts/{accountId}/settings/{group} settings.read (platform-managed groups readable).

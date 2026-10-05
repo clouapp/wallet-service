@@ -178,15 +178,14 @@ func (nopCache) Get(string) (string, bool, error) { return "", false, nil }
 
 func (nopCache) Put(string, string, time.Duration) error { return nil }
 
-// Registry returns every account group the role may read, with secrets replaced
-// by is_set. S1.4.7 names settings.read and settings.write on this catalog.
+// Registry returns every account group, with secrets replaced by is_set.
+// GET /v1/accounts/{accountId}/settings applies policies.MayViewSettings
+// (settings.read) before the handler. This method does not repeat that
+// check. S1.4.7 names settings.read and settings.write on this catalog.
 // The pair is not a second gate.
 func (s *Service) Registry(ctx context.Context, accountID uuid.UUID, role string) (RegistryView, error) {
 	if err := requireAccount(ctx, accountID); err != nil {
 		return RegistryView{}, err
-	}
-	if !policies.MayViewSettings(role) {
-		return RegistryView{}, ErrViewForbidden
 	}
 	catalog := AccountSettingsCatalog()
 	if err := requireAccountGuard(catalog); err != nil {
