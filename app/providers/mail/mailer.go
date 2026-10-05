@@ -21,10 +21,17 @@ type Mailer struct {
 	gate   func(func() error) error
 }
 
-// NewMailer wires the mailer. gate holds the process mail lock for the send.
-// A nil gate still sends.
-func NewMailer(config *mailer.Config, gate func(func() error) error) *Mailer {
-	return &Mailer{config: config, gate: gate}
+// MailerDeps is the settings reader and the process mail lock.
+// Either field may be nil. A nil Gate still sends.
+type MailerDeps struct {
+	Config *mailer.Config
+	Gate   func(func() error) error
+}
+
+// NewMailer wires the mailer. Gate holds the process mail lock for the send.
+// A nil Gate still sends.
+func NewMailer(deps MailerDeps) *Mailer {
+	return &Mailer{config: deps.Config, gate: deps.Gate}
 }
 
 // Config returns the settings reader this mailer uses at send time.
