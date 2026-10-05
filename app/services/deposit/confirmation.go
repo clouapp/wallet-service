@@ -3,6 +3,7 @@ package deposit
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"math/big"
 	"time"
@@ -154,12 +155,21 @@ func (s *Service) applyConfirmations(ctx context.Context, adapter types.Chain, c
 			confirmedAt = &now
 		}
 
+		confirmedNow := newStatus == string(types.TxStatusConfirmed) && tx.Status != string(types.TxStatusConfirmed)
+		if tx.TxType == models.TxTypeSweep && confirmedNow {
+			if err := s.persistSweepConfirmed(ctx, tx, confs, newStatus, confirmedAt); err != nil {
+				slog.Error("confirm sweep", "tx_id", tx.ID, "error", err)
+				continue
+			}
+			confirmedWallets.add(tx.WalletID)
+			continue
+		}
+
 		if err := s.txRepo.RecordConfirmations(ctx, tx.ID, confs, newStatus, confirmedAt); err != nil {
 			slog.Error("update confs", "tx_id", tx.ID, "error", err)
 			continue
 		}
 
-		confirmedNow := newStatus == string(types.TxStatusConfirmed) && tx.Status != string(types.TxStatusConfirmed)
 		confirmingNow := tx.Status == string(types.TxStatusPending) && newStatus == string(types.TxStatusConfirming)
 		if confirmedNow && movesWalletBalance(tx.TxType) {
 			confirmedWallets.add(tx.WalletID)
@@ -172,16 +182,51 @@ func (s *Service) applyConfirmations(ctx context.Context, adapter types.Chain, c
 			} else if confirmingNow {
 				s.publishDeposit(ctx, types.EventDepositConfirming, withConfirmationState(tx, confs, newStatus, confirmedAt))
 			}
-		case models.TxTypeSweep:
-			if confirmedNow {
-				s.webhookSvc.EnqueueEvent(ctx, tx.ID, types.EventSweepConfirmed, tx)
-			}
 		case models.TxTypeWithdrawal:
 			if confirmedNow {
 				s.publishWithdrawalConfirmed(ctx, tx, confs, newStatus, confirmedAt)
 			}
 		case models.TxTypeGasSeed:
 		}
+	}
+	return nil
+}
+
+// confirmationTx opens one transaction. Queries that use the callback context
+// join it, including the sweep.confirmed webhook row.
+type confirmationTx interface {
+	Within(ctx context.Context, fn func(context.Context) error) error
+}
+
+// persistSweepConfirmed writes the confirmation and the sweep.confirmed webhook
+// row in one transaction. A failed webhook insert rolls the confirmation back.
+// The queue send runs only after that commit. With no webhook writer, only the
+// transaction row is written.
+func (s *Service) persistSweepConfirmed(ctx context.Context, tx models.Transaction, confs int, status string, confirmedAt *time.Time) error {
+	if s.webhookSvc == nil {
+		return s.txRepo.RecordConfirmations(ctx, tx.ID, confs, status, confirmedAt)
+	}
+	joiner, ok := s.txRepo.(confirmationTx)
+	if !ok {
+		return fmt.Errorf("confirm sweep: transaction writer cannot open a transaction")
+	}
+	var send func(context.Context)
+	err := joiner.Within(ctx, func(txCtx context.Context) error {
+		if err := s.txRepo.RecordConfirmations(txCtx, tx.ID, confs, status, confirmedAt); err != nil {
+			return fmt.Errorf("confirm sweep: %w", err)
+		}
+		staged, stageErr := s.webhookSvc.StageSweepConfirmed(txCtx, &tx)
+		if stageErr != nil {
+			return fmt.Errorf("confirm sweep webhook: %w", stageErr)
+		}
+		send = staged
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+	if send != nil {
+		send(ctx)
 	}
 	return nil
 }

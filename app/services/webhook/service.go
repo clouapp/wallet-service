@@ -193,6 +193,33 @@ func (s *Service) StageSweepBroadcast(ctx context.Context, tx *models.Transactio
 	}, nil
 }
 
+// StageSweepConfirmed inserts sweep.confirmed webhook rows using ctx, so they
+// join the caller's transaction. The returned send delivers those rows and runs
+// only after that transaction commits. A nil send means no config matched. The
+// signing secret stays inside the send closure and is not logged.
+func (s *Service) StageSweepConfirmed(ctx context.Context, tx *models.Transaction) (func(context.Context), error) {
+	if s == nil {
+		return nil, fmt.Errorf("stage sweep confirmed: webhook service is required")
+	}
+	if tx == nil {
+		return nil, fmt.Errorf("stage sweep confirmed: transaction is required")
+	}
+	if s.webhookConfigRepo == nil || s.webhookEventRepo == nil {
+		return nil, fmt.Errorf("stage sweep confirmed: webhook store is required")
+	}
+	msgs, err := s.stageLegacyEvent(ctx, &tx.ID, types.EventSweepConfirmed, tx)
+	if err != nil {
+		return nil, err
+	}
+	if len(msgs) == 0 {
+		return nil, nil
+	}
+	staged := append([]types.WebhookMessage(nil), msgs...)
+	return func(sendCtx context.Context) {
+		s.dispatchWebhooks(sendCtx, staged)
+	}, nil
+}
+
 // StageWalletGasStatusChanged inserts wallet.gas_status.changed webhook rows
 // using ctx, so they join the caller's transaction. The returned send delivers
 // those rows and runs only after that transaction commits. A nil send means no

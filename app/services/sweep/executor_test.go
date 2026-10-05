@@ -810,6 +810,36 @@ func TestStageSweepBroadcastInsertsTheRowBeforeSending(t *testing.T) {
 	}
 }
 
+func TestStageSweepConfirmedInsertsTheRowBeforeSending(t *testing.T) {
+	walletID := uuid.New()
+	tx := &models.Transaction{ID: uuid.New(), WalletID: walletID, TxType: models.TxTypeSweep}
+	events := &fakeWebhookEventRepo{}
+	var sentBeforeInsert bool
+	sender := &orderQueueSender{events: events, sentBeforeInsert: &sentBeforeInsert}
+	svc := webhook.NewService(webhook.Deps{
+		SQS: sender,
+		Configs: &fakeWebhookConfigRepo{configs: []models.WebhookConfig{{
+			ID: uuid.New(), URL: "https://example.test/hooks", Secret: "s",
+			Events: `{"sweep.confirmed"}`, IsActive: true,
+		}}},
+		Events: events,
+	})
+	send, err := svc.StageSweepConfirmed(context.Background(), tx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(events.created) != 1 || sender.sent != 0 {
+		t.Fatalf("created=%d sent=%d before the closure", len(events.created), sender.sent)
+	}
+	if events.created[0].TransactionID == nil || *events.created[0].TransactionID != tx.ID || events.created[0].EventType != string(types.EventSweepConfirmed) {
+		t.Fatalf("transaction=%v type=%s", events.created[0].TransactionID, events.created[0].EventType)
+	}
+	send(context.Background())
+	if sentBeforeInsert || sender.sent != 1 {
+		t.Fatalf("sentBeforeInsert=%v sent=%d", sentBeforeInsert, sender.sent)
+	}
+}
+
 type orderQueueSender struct {
 	events           *fakeWebhookEventRepo
 	sent             int
