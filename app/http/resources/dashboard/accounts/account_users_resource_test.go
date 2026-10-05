@@ -1,4 +1,4 @@
-package accounts
+package accounts_test
 
 import (
 	"encoding/json"
@@ -9,10 +9,11 @@ import (
 	"github.com/goravel/framework/support/carbon"
 
 	"github.com/macrowallets/waas/app/http/pagination"
+	"github.com/macrowallets/waas/app/http/resources/dashboard/accounts"
 	"github.com/macrowallets/waas/app/models"
 )
 
-func TestAccountUserViewKeepsTheModelWire(t *testing.T) {
+func TestAccountUserKeepsTheModelWire(t *testing.T) {
 	t.Parallel()
 
 	id := uuid.MustParse("11111111-1111-4111-8111-111111111111")
@@ -45,7 +46,7 @@ func TestAccountUserViewKeepsTheModelWire(t *testing.T) {
 		},
 	}
 	for _, tc := range cases {
-		raw, err := json.Marshal(newAccountUserView(tc.member))
+		raw, err := json.Marshal(accounts.AccountUserFrom(tc.member))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -54,7 +55,7 @@ func TestAccountUserViewKeepsTheModelWire(t *testing.T) {
 		}
 	}
 
-	nilRaw, err := json.Marshal(AccountUserViewPtr(nil))
+	nilRaw, err := json.Marshal(accounts.AccountUserPtr(nil))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -63,18 +64,18 @@ func TestAccountUserViewKeepsTheModelWire(t *testing.T) {
 	}
 }
 
-func TestAccountUserViewsPreserveSliceNilness(t *testing.T) {
+func TestAccountUsersPreserveSliceNilness(t *testing.T) {
 	t.Parallel()
 
-	if accountUserViews(nil) != nil {
+	if accounts.AccountUsersFrom(nil) != nil {
 		t.Fatal("nil slice became an empty slice")
 	}
-	empty := accountUserViews([]models.AccountUser{})
+	empty := accounts.AccountUsersFrom([]models.AccountUser{})
 	if empty == nil || len(empty) != 0 {
 		t.Fatalf("empty slice = %#v", empty)
 	}
 
-	nilPage, err := json.Marshal(pagination.Response(accountUserViews(nil), 0, 20, 0))
+	nilPage, err := json.Marshal(pagination.Response(accounts.AccountUsersFrom(nil), 0, 20, 0))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -82,7 +83,7 @@ func TestAccountUserViewsPreserveSliceNilness(t *testing.T) {
 		t.Fatalf("nil page = %s", nilPage)
 	}
 
-	emptyPage, err := json.Marshal(pagination.Response(accountUserViews([]models.AccountUser{}), 0, 20, 0))
+	emptyPage, err := json.Marshal(pagination.Response(accounts.AccountUsersFrom([]models.AccountUser{}), 0, 20, 0))
 	if err != nil {
 		t.Fatal(err)
 	}
