@@ -526,7 +526,10 @@ func ingestEnvConfigKey(provider string) string {
 // Provider keys are opened then, not copied into clients at boot. When no
 // settings provider is usable, the quote keeps the environment CoinAPI key.
 func buildPriceService(c *container.Container, accountSettings *settings.Service) *price.Service {
-	service := price.NewService(nil, c.CurrencyRepo, pricecache.New(c.Redis)).
+	service := price.NewService(price.Deps{
+		Currencies: c.CurrencyRepo,
+		Cache:      pricecache.New(c.Redis),
+	}).
 		WithQuoteDialer(coinapiws.Dialer{}).
 		WithEnvCoinAPIKey(c.PriceConfig.CoinAPIKey)
 	if accountSettings == nil {

@@ -86,7 +86,7 @@ func mustPrice(text string) decimal.Decimal {
 
 func TestGetPriceUSDSkipsTheCache(t *testing.T) {
 	cache := &recordingPriceCache{value: "9"}
-	svc := NewService(nil, &cacheCurrencyStore{}, cache)
+	svc := NewService(Deps{Currencies: &cacheCurrencyStore{}, Cache: cache})
 
 	got, err := svc.GetPrice(context.Background(), "USD")
 	if err != nil {
@@ -103,7 +103,7 @@ func TestGetPriceUSDSkipsTheCache(t *testing.T) {
 func TestGetPriceUsesTheCurrencyKey(t *testing.T) {
 	cache := &recordingPriceCache{value: "42.5"}
 	store := &cacheCurrencyStore{currency: &models.Currency{Code: "BTC", CurrentPrice: priceOf("1")}}
-	svc := NewService(nil, store, cache)
+	svc := NewService(Deps{Currencies: store, Cache: cache})
 
 	got, err := svc.GetPrice(context.Background(), "BTC")
 	if err != nil {
@@ -122,7 +122,7 @@ func TestGetPriceUsesTheCurrencyKey(t *testing.T) {
 
 func TestGetPriceNilCacheReadsTheStore(t *testing.T) {
 	store := &cacheCurrencyStore{currency: &models.Currency{Code: "ETH", CurrentPrice: priceOf("3200")}}
-	svc := NewService(nil, store, nil)
+	svc := NewService(Deps{Currencies: store})
 
 	got, err := svc.GetPrice(context.Background(), "ETH")
 	if err != nil {
@@ -144,7 +144,7 @@ func TestGetPriceFallsThroughWhenTheCacheMisses(t *testing.T) {
 	}
 	for _, cache := range cases {
 		store := &cacheCurrencyStore{currency: &models.Currency{Code: "BTC", CurrentPrice: priceOf("7")}}
-		svc := NewService(nil, store, &cache)
+		svc := NewService(Deps{Currencies: store, Cache: &cache})
 
 		got, err := svc.GetPrice(context.Background(), "BTC")
 		if err != nil {
@@ -160,13 +160,13 @@ func TestGetPriceFallsThroughWhenTheCacheMisses(t *testing.T) {
 }
 
 func TestCachePriceNilCacheDoesNothing(t *testing.T) {
-	svc := NewService(nil, &cacheCurrencyStore{}, nil)
+	svc := NewService(Deps{Currencies: &cacheCurrencyStore{}})
 	svc.cachePrice(context.Background(), "BTC", mustPrice("42.5"))
 }
 
 func TestCachePriceKeepsTheKeyTTLAndJSONNumber(t *testing.T) {
 	cache := &recordingPriceCache{}
-	svc := NewService(nil, &cacheCurrencyStore{}, cache)
+	svc := NewService(Deps{Currencies: &cacheCurrencyStore{}, Cache: cache})
 
 	svc.cachePrice(context.Background(), "BTC", mustPrice("42.5"))
 
@@ -186,7 +186,7 @@ func TestCachePriceKeepsTheKeyTTLAndJSONNumber(t *testing.T) {
 
 func TestCachePriceContinuesWhenRedisFails(t *testing.T) {
 	cache := &recordingPriceCache{setErr: errors.New("boom")}
-	svc := NewService(nil, &cacheCurrencyStore{}, cache)
+	svc := NewService(Deps{Currencies: &cacheCurrencyStore{}, Cache: cache})
 
 	svc.cachePrice(context.Background(), "ETH", mustPrice("1"))
 

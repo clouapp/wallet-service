@@ -51,15 +51,20 @@ type Service struct {
 	newProvider  quoteProviderFactory
 }
 
-func NewService(
-	providers []PriceProvider,
-	currencyRepo currencyStore,
-	cache PriceCache,
-) *Service {
+// Deps is everything the price service needs. A nil field means that
+// dependency is absent.
+type Deps struct {
+	Providers  []PriceProvider
+	Currencies currencyStore
+	Cache      PriceCache
+}
+
+// NewService wires the price service from Deps.
+func NewService(deps Deps) *Service {
 	return &Service{
-		providers:    providers,
-		currencyRepo: currencyRepo,
-		cache:        cache,
+		providers:    deps.Providers,
+		currencyRepo: deps.Currencies,
+		cache:        deps.Cache,
 	}
 }
 

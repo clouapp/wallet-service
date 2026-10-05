@@ -72,7 +72,7 @@ func newTestService(t *testing.T) *Service {
 			"FREE": priced(t, "FREE", "0"),
 		},
 	}
-	return NewService(nil, repo, nil)
+	return NewService(Deps{Currencies: repo})
 }
 
 func requireDecimal(t *testing.T, got decimal.Decimal, want string) {
@@ -132,7 +132,7 @@ func TestConvertUnknownCurrency(t *testing.T) {
 func TestFindStaleReturnsTheStoreRows(t *testing.T) {
 	want := []models.Currency{{Code: "BTC"}}
 	repo := &mockCurrencyRepo{stale: want, staleErr: errStale}
-	svc := NewService(nil, repo, nil)
+	svc := NewService(Deps{Currencies: repo})
 	got, err := svc.FindStale(context.Background(), models.CurrencyTypeCrypto, time.Minute)
 	if err != errStale {
 		t.Fatalf("error = %v", err)
@@ -148,7 +148,7 @@ func TestFindStaleReturnsTheStoreRows(t *testing.T) {
 func TestPriceWebSocketUsesTheServiceCurrencyStore(t *testing.T) {
 	repo := &mockCurrencyRepo{}
 	dialer := stubDialer{}
-	svc := NewService(nil, repo, nil).WithQuoteDialer(dialer)
+	svc := NewService(Deps{Currencies: repo}).WithQuoteDialer(dialer)
 	client := svc.PriceWebSocket("key", nil)
 	if client == nil || client.currencyRepo != repo || client.apiKey != "key" || client.dialer != dialer {
 		t.Fatal("websocket client did not keep the service currency store")

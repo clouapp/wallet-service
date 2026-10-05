@@ -118,7 +118,7 @@ func TestRefreshFiatRates_ResolvesProvidersPerQuote(t *testing.T) {
 	var asked []*askedQuoteProvider
 	accountSettings := settings.NewService(rows, quotePrefixSealer{}, nil, quoteDiscardActivity{})
 	currencies := &quoteCurrencyStore{fiats: []models.Currency{{Code: "EUR", Type: models.CurrencyTypeFiat}}}
-	svc := NewService(nil, currencies, nil).
+	svc := NewService(Deps{Currencies: currencies}).
 		WithSettingsSource(func(ctx context.Context) ([]Credential, error) {
 			reads++
 			return credentialsFrom(accountSettings.PriceProvidersForQuote(ctx))
@@ -141,9 +141,12 @@ func TestRefreshFiatRates_ResolvesProvidersPerQuote(t *testing.T) {
 
 func TestRefreshCryptoPrices_WithoutASourceKeepsTheInjectedProviders(t *testing.T) {
 	asked := &askedQuoteProvider{name: providerCoinAPI}
-	svc := NewService([]PriceProvider{asked}, &quoteCurrencyStore{
-		cryptos: []models.Currency{{Code: "BTC", Type: models.CurrencyTypeCrypto}},
-	}, nil).WithEnvCoinAPIKey(quoteEnvKey)
+	svc := NewService(Deps{
+		Providers: []PriceProvider{asked},
+		Currencies: &quoteCurrencyStore{
+			cryptos: []models.Currency{{Code: "BTC", Type: models.CurrencyTypeCrypto}},
+		},
+	}).WithEnvCoinAPIKey(quoteEnvKey)
 
 	if err := svc.RefreshCryptoPrices(context.Background()); err != nil {
 		t.Fatal("an injected provider quote failed")
@@ -161,7 +164,7 @@ type quoteService struct {
 func newQuoteService(rows *quoteSettingsRows, envKey string, factory quoteProviderFactory) *quoteService {
 	accountSettings := settings.NewService(rows, quotePrefixSealer{}, nil, quoteDiscardActivity{})
 	currencies := &quoteCurrencyStore{cryptos: []models.Currency{{Code: "BTC", Type: models.CurrencyTypeCrypto}}}
-	svc := NewService(nil, currencies, nil).
+	svc := NewService(Deps{Currencies: currencies}).
 		WithSettingsSource(func(ctx context.Context) ([]Credential, error) {
 			return credentialsFrom(accountSettings.PriceProvidersForQuote(ctx))
 		}).
