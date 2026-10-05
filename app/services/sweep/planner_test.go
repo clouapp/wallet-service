@@ -22,9 +22,12 @@ import (
 // ---------------------------------------------------------------------------
 
 type fakeWalletRepo struct {
-	wallet      *models.Wallet
-	lastUpdates map[string]interface{}
-	updateCalls int
+	wallet         *models.Wallet
+	lastUpdates    map[string]interface{}
+	updateCalls    int
+	withins        int
+	inside         bool
+	gasCheckInside bool
 }
 
 func (f *fakeWalletRepo) Create(context.Context, *models.Wallet) error { return nil }
@@ -41,8 +44,31 @@ func (f *fakeWalletRepo) IncrementAddressIndex(context.Context, uuid.UUID) (int,
 func (f *fakeWalletRepo) SetDepositAddressID(context.Context, uuid.UUID, uuid.UUID) error { return nil }
 func (f *fakeWalletRepo) SetMPCChainCode(context.Context, uuid.UUID, string) error        { return nil }
 func (f *fakeWalletRepo) Activate(context.Context, uuid.UUID, string) error               { return nil }
+func (f *fakeWalletRepo) Within(ctx context.Context, fn func(context.Context) error) error {
+	if fn == nil {
+		return errors.New("callback is required")
+	}
+	f.withins++
+	f.inside = true
+	calls := f.updateCalls
+	updates := f.lastUpdates
+	checkedInside := f.gasCheckInside
+	err := fn(ctx)
+	f.inside = false
+	if err != nil {
+		f.updateCalls = calls
+		f.lastUpdates = updates
+		f.gasCheckInside = checkedInside
+		return err
+	}
+	return nil
+}
+
 func (f *fakeWalletRepo) RecordGasCheck(_ context.Context, _ uuid.UUID, checkedAt time.Time, status string, updateStatus bool) error {
 	f.updateCalls++
+	if f.inside {
+		f.gasCheckInside = true
+	}
 	f.lastUpdates = map[string]interface{}{"gas_last_checked_at": checkedAt}
 	if updateStatus {
 		f.lastUpdates["gas_status"] = status

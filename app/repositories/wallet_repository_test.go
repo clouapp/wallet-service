@@ -2,9 +2,12 @@ package repositories_test
 
 import (
 	"context"
+	"errors"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
+	"github.com/goravel/framework/facades"
 	"github.com/stretchr/testify/suite"
 
 	"github.com/macrowallets/waas/app/models"
@@ -141,6 +144,69 @@ func (s *WalletRepositoryTestSuite) membership(members *repositories.WalletUserR
 	s.Require().NoError(members.Create(context.Background(), &models.WalletUser{
 		ID: uuid.New(), WalletID: walletID, UserID: userID, Roles: "viewer", Status: status,
 	}))
+}
+
+func (s *WalletRepositoryTestSuite) TestWithinCommitsAGasCheckAndItsWebhook() {
+	wallet := s.makeWallet("eth")
+	s.Require().NoError(s.repo.Create(context.Background(), wallet))
+	eventID := uuid.New()
+	checkedAt := time.Date(2026, 10, 5, 12, 0, 0, 0, time.UTC)
+
+	err := s.repo.Within(context.Background(), func(ctx context.Context) error {
+		if checkErr := s.repo.RecordGasCheck(ctx, wallet.ID, checkedAt, models.GasStatusSeeded, true); checkErr != nil {
+			return checkErr
+		}
+		return repositories.NewWebhookEventRepository(nil).Create(ctx, gasStatusEvent(eventID))
+	})
+	s.NoError(err)
+
+	found, findErr := s.repo.FindByID(context.Background(), wallet.ID)
+	s.NoError(findErr)
+	s.Equal(models.GasStatusSeeded, found.GasStatus)
+	s.NotNil(found.GasLastCheckedAt)
+	s.True(found.GasLastCheckedAt.Equal(checkedAt))
+	s.Equal(int64(1), s.countWebhookEvents(eventID))
+}
+
+func (s *WalletRepositoryTestSuite) TestWithinRollsBackAGasCheckAndItsWebhook() {
+	wallet := s.makeWallet("eth")
+	s.Require().NoError(s.repo.Create(context.Background(), wallet))
+	eventID := uuid.New()
+	checkedAt := time.Date(2026, 10, 5, 12, 0, 0, 0, time.UTC)
+
+	err := s.repo.Within(context.Background(), func(ctx context.Context) error {
+		if checkErr := s.repo.RecordGasCheck(ctx, wallet.ID, checkedAt, models.GasStatusSeeded, true); checkErr != nil {
+			return checkErr
+		}
+		if createErr := repositories.NewWebhookEventRepository(nil).Create(ctx, gasStatusEvent(eventID)); createErr != nil {
+			return createErr
+		}
+		return errors.New("fail the gas-status update")
+	})
+	s.Error(err)
+
+	found, findErr := s.repo.FindByID(context.Background(), wallet.ID)
+	s.NoError(findErr)
+	s.Equal(models.GasStatusUnseeded, found.GasStatus)
+	s.Nil(found.GasLastCheckedAt)
+	s.Equal(int64(0), s.countWebhookEvents(eventID))
+}
+
+func gasStatusEvent(eventID uuid.UUID) *models.WebhookEvent {
+	return &models.WebhookEvent{
+		ID:             eventID,
+		EventType:      "wallet.gas_status.changed",
+		Payload:        "{}",
+		DeliveryURL:    "https://example.test/hooks",
+		DeliveryStatus: "pending",
+	}
+}
+
+func (s *WalletRepositoryTestSuite) countWebhookEvents(eventID uuid.UUID) int64 {
+	s.T().Helper()
+	count, err := facades.Orm().Query().Model(&models.WebhookEvent{}).Where("id = ?", eventID).Count()
+	s.Require().NoError(err)
+	return count
 }
 
 func walletIDs(wallets []models.Wallet) []uuid.UUID {

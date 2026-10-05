@@ -51,9 +51,12 @@ type Service interface {
 type accountSweepLimitSource func(ctx context.Context, accountID uuid.UUID) (settings.SweepLimitValues, error)
 
 // walletReader is the wallet lookup and gas-status write sweep uses.
+// Within commits a gas-status change together with its webhook. A failed
+// webhook insert rolls the wallet update back. The queue send stays outside.
 type walletReader interface {
 	FindByID(ctx context.Context, id uuid.UUID) (*models.Wallet, error)
 	RecordGasCheck(ctx context.Context, id uuid.UUID, checkedAt time.Time, status string, updateStatus bool) error
+	Within(ctx context.Context, fn func(context.Context) error) error
 }
 
 // addressReader is the child-address lookup sweep uses.
@@ -64,7 +67,7 @@ type addressReader interface {
 // transactionWriter is the row sweep persists after a broadcast. Signing does not go through it.
 // Within commits one sweep leg (gas seed, sweep row, and webhook event) for a withdrawal-driven
 // leg and for manual consolidation. A separate Within commits the final withdrawal row with its
-// webhook. Gas-status updates stay outside both.
+// webhook. Gas-status updates use the wallet repository's Within.
 type transactionWriter interface {
 	Within(ctx context.Context, fn func(context.Context) error) error
 	Create(ctx context.Context, tx *models.Transaction) error

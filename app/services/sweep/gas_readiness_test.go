@@ -11,6 +11,7 @@ import (
 
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/services/chain"
+	"github.com/macrowallets/waas/app/services/webhook"
 	"github.com/macrowallets/waas/pkg/types"
 	"github.com/macrowallets/waas/tests/mocks"
 )
@@ -367,6 +368,180 @@ func TestNewService_CopiesGasDefaults(t *testing.T) {
 	}
 	if svc.gasDefaults == nil {
 		t.Fatal("expected copied gas defaults")
+	}
+}
+
+type recordingGasEvents struct {
+	inside     *bool
+	stagedIn   bool
+	sent       int
+	sentInside bool
+	fail       bool
+	walletID   uuid.UUID
+	payload    interface{}
+}
+
+func (r *recordingGasEvents) EnqueueEvent(context.Context, uuid.UUID, types.EventType, interface{}) {
+}
+
+func (r *recordingGasEvents) StageWalletGasStatusChanged(_ context.Context, walletID uuid.UUID, data interface{}) (func(context.Context), error) {
+	if r.inside != nil {
+		r.stagedIn = *r.inside
+	}
+	r.walletID = walletID
+	r.payload = data
+	if r.fail {
+		return nil, errors.New("insert webhook event")
+	}
+	return func(context.Context) {
+		if r.inside != nil && *r.inside {
+			r.sentInside = true
+		}
+		r.sent++
+	}, nil
+}
+
+type enqueueOnlyEvents struct{}
+
+func (enqueueOnlyEvents) EnqueueEvent(context.Context, uuid.UUID, types.EventType, interface{}) {
+}
+
+func TestRefreshGasStatus_CommitsTheWalletAndGasStatusWebhookTogether(t *testing.T) {
+	walletID := uuid.New()
+	baseAddr := models.Address{ID: uuid.New(), WalletID: walletID, Address: "0xBASE"}
+	wallet := &models.Wallet{
+		ID:             walletID,
+		Chain:          "eth",
+		DepositAddress: &baseAddr,
+		GasStatus:      models.GasStatusUnseeded,
+	}
+	mockChain := gasMockChain("eth", big.NewInt(10_000_000_000_000_000))
+	chainEntity := evmChainWithThreshold("eth", "5000000000000000")
+	svc, walletRepo := newGasReadinessService(t, wallet, mockChain, chainEntity)
+	events := &recordingGasEvents{inside: &walletRepo.inside}
+	svc.webhookSvc = events
+
+	status, err := svc.RefreshGasStatus(context.Background(), walletID)
+	if err != nil || status == nil || status.Status != models.GasStatusSeeded {
+		t.Fatalf("status %+v err %v", status, err)
+	}
+	if walletRepo.withins != 1 || !walletRepo.gasCheckInside || walletRepo.updateCalls != 1 {
+		t.Fatalf("withins=%d inside=%v updates=%d", walletRepo.withins, walletRepo.gasCheckInside, walletRepo.updateCalls)
+	}
+	if got := walletRepo.lastUpdates["gas_status"]; got != models.GasStatusSeeded {
+		t.Fatalf("gas_status %v", got)
+	}
+	if !events.stagedIn || events.sent != 1 || events.sentInside || events.walletID != walletID {
+		t.Fatalf("stagedIn=%v sent=%d sentInside=%v wallet=%s", events.stagedIn, events.sent, events.sentInside, events.walletID)
+	}
+	payload, ok := events.payload.(map[string]interface{})
+	if !ok || payload["wallet_id"] != walletID.String() || payload["new_status"] != models.GasStatusSeeded {
+		t.Fatalf("payload %+v", events.payload)
+	}
+}
+
+func TestRefreshGasStatus_RollsBackTheWalletWhenTheGasStatusWebhookFails(t *testing.T) {
+	walletID := uuid.New()
+	baseAddr := models.Address{ID: uuid.New(), WalletID: walletID, Address: "0xBASE"}
+	wallet := &models.Wallet{
+		ID:             walletID,
+		Chain:          "eth",
+		DepositAddress: &baseAddr,
+		GasStatus:      models.GasStatusUnseeded,
+	}
+	mockChain := gasMockChain("eth", big.NewInt(10_000_000_000_000_000))
+	chainEntity := evmChainWithThreshold("eth", "5000000000000000")
+	svc, walletRepo := newGasReadinessService(t, wallet, mockChain, chainEntity)
+	events := &recordingGasEvents{inside: &walletRepo.inside, fail: true}
+	svc.webhookSvc = events
+
+	_, err := svc.RefreshGasStatus(context.Background(), walletID)
+	if err == nil {
+		t.Fatal("want the webhook insert to fail the gas-status update")
+	}
+	if !events.stagedIn || events.sent != 0 || walletRepo.withins != 1 || walletRepo.updateCalls != 0 {
+		t.Fatalf("stagedIn=%v sent=%d withins=%d updates=%d", events.stagedIn, events.sent, walletRepo.withins, walletRepo.updateCalls)
+	}
+}
+
+func TestRefreshGasStatus_RejectsAnEventWriterThatCannotJoinTheTransaction(t *testing.T) {
+	walletID := uuid.New()
+	baseAddr := models.Address{ID: uuid.New(), WalletID: walletID, Address: "0xBASE"}
+	wallet := &models.Wallet{
+		ID:             walletID,
+		Chain:          "eth",
+		DepositAddress: &baseAddr,
+		GasStatus:      models.GasStatusUnseeded,
+	}
+	mockChain := gasMockChain("eth", big.NewInt(10_000_000_000_000_000))
+	chainEntity := evmChainWithThreshold("eth", "5000000000000000")
+	svc, walletRepo := newGasReadinessService(t, wallet, mockChain, chainEntity)
+	svc.webhookSvc = enqueueOnlyEvents{}
+
+	_, err := svc.RefreshGasStatus(context.Background(), walletID)
+	if err == nil {
+		t.Fatal("want a writer that cannot join the transaction to fail the update")
+	}
+	if walletRepo.withins != 1 || walletRepo.updateCalls != 0 {
+		t.Fatalf("withins=%d updates=%d", walletRepo.withins, walletRepo.updateCalls)
+	}
+}
+
+func TestRefreshGasStatus_NoTransitionDoesNotWriteAWebhook(t *testing.T) {
+	walletID := uuid.New()
+	baseAddr := models.Address{ID: uuid.New(), WalletID: walletID, Address: "0xBASE"}
+	wallet := &models.Wallet{
+		ID:             walletID,
+		Chain:          "eth",
+		DepositAddress: &baseAddr,
+		GasStatus:      models.GasStatusSeeded,
+	}
+	mockChain := gasMockChain("eth", big.NewInt(100_000_000_000_000_000))
+	chainEntity := evmChainWithThreshold("eth", "5000000000000000")
+	svc, walletRepo := newGasReadinessService(t, wallet, mockChain, chainEntity)
+	events := &recordingGasEvents{inside: &walletRepo.inside}
+	svc.webhookSvc = events
+
+	status, err := svc.RefreshGasStatus(context.Background(), walletID)
+	if err != nil || status.Status != models.GasStatusSeeded {
+		t.Fatalf("status %+v err %v", status, err)
+	}
+	if walletRepo.withins != 0 || walletRepo.updateCalls != 1 || events.sent != 0 || events.stagedIn {
+		t.Fatalf("withins=%d updates=%d sent=%d staged=%v", walletRepo.withins, walletRepo.updateCalls, events.sent, events.stagedIn)
+	}
+	if _, ok := walletRepo.lastUpdates["gas_status"]; ok {
+		t.Fatalf("expected no gas_status write, got %+v", walletRepo.lastUpdates)
+	}
+}
+
+func TestStageWalletGasStatusChangedInsertsTheRowBeforeSending(t *testing.T) {
+	walletID := uuid.New()
+	events := &fakeWebhookEventRepo{}
+	var sentBeforeInsert bool
+	sender := &orderQueueSender{events: events, sentBeforeInsert: &sentBeforeInsert}
+	svc := webhook.NewService(webhook.Deps{
+		SQS: sender,
+		Configs: &fakeWebhookConfigRepo{configs: []models.WebhookConfig{{
+			ID: uuid.New(), URL: "https://example.test/hooks", Secret: "s",
+			Events: `{"wallet.gas_status.changed"}`, IsActive: true,
+		}}},
+		Events: events,
+	})
+	send, err := svc.StageWalletGasStatusChanged(context.Background(), walletID, map[string]interface{}{
+		"wallet_id": walletID.String(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(events.created) != 1 || sender.sent != 0 {
+		t.Fatalf("created=%d sent=%d before the closure", len(events.created), sender.sent)
+	}
+	if events.created[0].TransactionID != nil || events.created[0].EventType != string(types.EventWalletGasStatusChanged) {
+		t.Fatalf("transaction=%v type=%s", events.created[0].TransactionID, events.created[0].EventType)
+	}
+	send(context.Background())
+	if sentBeforeInsert || sender.sent != 1 {
+		t.Fatalf("sentBeforeInsert=%v sent=%d", sentBeforeInsert, sender.sent)
 	}
 }
 

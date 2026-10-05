@@ -153,7 +153,7 @@ func (s *Service) StageWithdrawalBroadcasting(ctx context.Context, tx *models.Tr
 	if s.webhookConfigRepo == nil || s.webhookEventRepo == nil {
 		return nil, fmt.Errorf("stage withdrawal broadcasting: webhook store is required")
 	}
-	msgs, err := s.stageLegacyEvent(ctx, tx.ID, types.EventWithdrawalBroadcasting, tx)
+	msgs, err := s.stageLegacyEvent(ctx, &tx.ID, types.EventWithdrawalBroadcasting, tx)
 	if err != nil {
 		return nil, err
 	}
@@ -180,7 +180,7 @@ func (s *Service) StageSweepBroadcast(ctx context.Context, tx *models.Transactio
 	if s.webhookConfigRepo == nil || s.webhookEventRepo == nil {
 		return nil, fmt.Errorf("stage sweep broadcast: webhook store is required")
 	}
-	msgs, err := s.stageLegacyEvent(ctx, tx.ID, types.EventSweepBroadcast, tx)
+	msgs, err := s.stageLegacyEvent(ctx, &tx.ID, types.EventSweepBroadcast, tx)
 	if err != nil {
 		return nil, err
 	}
@@ -193,7 +193,35 @@ func (s *Service) StageSweepBroadcast(ctx context.Context, tx *models.Transactio
 	}, nil
 }
 
-func (s *Service) stageLegacyEvent(ctx context.Context, txID uuid.UUID, eventType types.EventType, data interface{}) ([]types.WebhookMessage, error) {
+// StageWalletGasStatusChanged inserts wallet.gas_status.changed webhook rows
+// using ctx, so they join the caller's transaction. The returned send delivers
+// those rows and runs only after that transaction commits. A nil send means no
+// config matched. This event has no transaction row, so transaction_id stays
+// empty. The signing secret stays inside the send closure and is not logged.
+func (s *Service) StageWalletGasStatusChanged(ctx context.Context, walletID uuid.UUID, data interface{}) (func(context.Context), error) {
+	if s == nil {
+		return nil, fmt.Errorf("stage wallet gas status: webhook service is required")
+	}
+	if walletID == uuid.Nil {
+		return nil, fmt.Errorf("stage wallet gas status: wallet is required")
+	}
+	if s.webhookConfigRepo == nil || s.webhookEventRepo == nil {
+		return nil, fmt.Errorf("stage wallet gas status: webhook store is required")
+	}
+	msgs, err := s.stageLegacyEvent(ctx, nil, types.EventWalletGasStatusChanged, data)
+	if err != nil {
+		return nil, err
+	}
+	if len(msgs) == 0 {
+		return nil, nil
+	}
+	staged := append([]types.WebhookMessage(nil), msgs...)
+	return func(sendCtx context.Context) {
+		s.dispatchWebhooks(sendCtx, staged)
+	}, nil
+}
+
+func (s *Service) stageLegacyEvent(ctx context.Context, txID *uuid.UUID, eventType types.EventType, data interface{}) ([]types.WebhookMessage, error) {
 	payload, err := json.Marshal(map[string]interface{}{
 		"id":         uuid.New().String(),
 		"type":       string(eventType),
@@ -222,9 +250,13 @@ func (s *Service) stageLegacyEvent(ctx context.Context, txID uuid.UUID, eventTyp
 	for _, cfg := range configs {
 		eventID := uuid.New().String()
 		configID := cfg.ID
+		messageTxID := ""
+		if txID != nil {
+			messageTxID = txID.String()
+		}
 		webhookEvent := &models.WebhookEvent{
 			ID:              uuid.MustParse(eventID),
-			TransactionID:   &txID,
+			TransactionID:   txID,
 			WebhookConfigID: &configID,
 			EventType:       string(eventType),
 			Payload:         string(payload),
@@ -238,7 +270,7 @@ func (s *Service) stageLegacyEvent(ctx context.Context, txID uuid.UUID, eventTyp
 		}
 		msgs = append(msgs, types.WebhookMessage{
 			EventID:       eventID,
-			TransactionID: txID.String(),
+			TransactionID: messageTxID,
 			EventType:     eventType,
 			Payload:       string(payload),
 			DeliveryURL:   cfg.URL,

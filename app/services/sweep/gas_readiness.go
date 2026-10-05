@@ -9,12 +9,11 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/macrowallets/waas/app/models"
-	"github.com/macrowallets/waas/pkg/types"
 )
 
 // RefreshGasStatus computes the on-chain gas-readiness status for walletID and
-// persists it on the wallet row. Emits types.EventWalletGasStatusChanged when
-// the status transitions. gas_last_checked_at is updated on every call.
+// persists it on the wallet row. Emits wallet.gas_status.changed when the
+// status transitions. gas_last_checked_at is updated on every call.
 //
 // Bitcoin short-circuits to "seeded" because fees come from the UTXO being
 // spent — there is no separate gas asset to monitor. A chain whose
@@ -86,9 +85,18 @@ func (s *service) RefreshGasStatus(ctx context.Context, walletID uuid.UUID) (*Ga
 	return s.persistGasStatus(ctx, wallet, chainEntity, newStatus, balance, threshold, baseAddr)
 }
 
+// gasStatusStager inserts wallet.gas_status.changed webhook rows on the caller's
+// transaction. The returned send runs only after that transaction commits.
+type gasStatusStager interface {
+	StageWalletGasStatusChanged(ctx context.Context, walletID uuid.UUID, data interface{}) (func(context.Context), error)
+}
+
 // persistGasStatus writes gas_last_checked_at on every call and gas_status only
-// on transition. Emits EventWalletGasStatusChanged on transition when a webhook
-// service is wired.
+// on transition. A transition with a webhook service commits the wallet update
+// and the wallet.gas_status.changed row together. A failed webhook insert rolls
+// the wallet update back. The queue send runs only after that commit. A check
+// that does not transition, or a service with no webhook writer, writes the
+// wallet row alone.
 func (s *service) persistGasStatus(
 	ctx context.Context,
 	wallet *models.Wallet,
@@ -101,26 +109,35 @@ func (s *service) persistGasStatus(
 	oldStatus := wallet.GasStatus
 	transitioned := oldStatus != newStatus
 
-	if err := s.walletRepo.RecordGasCheck(ctx, wallet.ID, now, newStatus, transitioned); err != nil {
-		return nil, fmt.Errorf("sweep: update wallet gas status: %w", err)
+	var send func(context.Context)
+	write := func(writeCtx context.Context) error {
+		if err := s.walletRepo.RecordGasCheck(writeCtx, wallet.ID, now, newStatus, transitioned); err != nil {
+			return fmt.Errorf("sweep: update wallet gas status: %w", err)
+		}
+		if !transitioned || s.webhookSvc == nil {
+			return nil
+		}
+		stager, ok := s.webhookSvc.(gasStatusStager)
+		if !ok {
+			return fmt.Errorf("persist gas status webhook: event writer cannot join the transaction")
+		}
+		staged, stageErr := stager.StageWalletGasStatusChanged(writeCtx, wallet.ID, gasStatusPayload(wallet, chainEntity, oldStatus, newStatus, balance, threshold, baseAddr))
+		if stageErr != nil {
+			return fmt.Errorf("persist gas status webhook: %w", stageErr)
+		}
+		send = staged
+		return nil
 	}
 
 	if transitioned && s.webhookSvc != nil {
-		payload := map[string]interface{}{
-			"wallet_id":    wallet.ID.String(),
-			"chain":        wallet.Chain,
-			"old_status":   oldStatus,
-			"new_status":   newStatus,
-			"base_address": baseAddr,
-			"native_asset": chainEntity.NativeSymbol,
+		if err := s.walletRepo.Within(ctx, write); err != nil {
+			return nil, err
 		}
-		if balance != nil {
-			payload["native_balance"] = balance.String()
+		if send != nil {
+			send(ctx)
 		}
-		if threshold != nil {
-			payload["threshold"] = threshold.String()
-		}
-		s.webhookSvc.EnqueueEvent(ctx, wallet.ID, types.EventWalletGasStatusChanged, payload)
+	} else if err := write(ctx); err != nil {
+		return nil, err
 	}
 
 	return &GasStatus{
@@ -131,6 +148,30 @@ func (s *service) persistGasStatus(
 		Threshold:     threshold,
 		LastCheckedAt: now.Unix(),
 	}, nil
+}
+
+func gasStatusPayload(
+	wallet *models.Wallet,
+	chainEntity *models.Chain,
+	oldStatus, newStatus string,
+	balance, threshold *big.Int,
+	baseAddr string,
+) map[string]interface{} {
+	payload := map[string]interface{}{
+		"wallet_id":    wallet.ID.String(),
+		"chain":        wallet.Chain,
+		"old_status":   oldStatus,
+		"new_status":   newStatus,
+		"base_address": baseAddr,
+		"native_asset": chainEntity.NativeSymbol,
+	}
+	if balance != nil {
+		payload["native_balance"] = balance.String()
+	}
+	if threshold != nil {
+		payload["threshold"] = threshold.String()
+	}
+	return payload
 }
 
 // fallbackGasThreshold returns the injected default threshold for a chain when

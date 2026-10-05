@@ -26,6 +26,17 @@ func NewWalletRepository(query orm.Query) *WalletRepository {
 	return &WalletRepository{Base: db.NewBase(query)}
 }
 
+// Within runs fn inside one transaction. Queries made with the callback
+// context join that transaction, including a gas-status webhook for the same wallet.
+func (r *WalletRepository) Within(ctx context.Context, fn func(context.Context) error) error {
+	if fn == nil {
+		return fmt.Errorf("wallet transaction: callback is required")
+	}
+	return r.Transaction(ctx, func(tx orm.Query) error {
+		return fn(db.WithTx(ctx, tx))
+	})
+}
+
 // Create inserts a wallet.
 func (r *WalletRepository) Create(ctx context.Context, wallet *models.Wallet) error {
 	if wallet == nil {
