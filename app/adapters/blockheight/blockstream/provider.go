@@ -1,4 +1,4 @@
-package blockheight
+package blockstream
 
 import (
 	"context"
@@ -8,31 +8,37 @@ import (
 	"time"
 
 	"github.com/macrowallets/waas/app/models"
+	"github.com/macrowallets/waas/app/services/blockheight"
 	"github.com/macrowallets/waas/pkg/httpclient"
 )
 
 const (
-	esploraHTTPTimeout      = 5 * time.Second
-	esploraMaxResponseBytes = 1 << 10
+	httpTimeout      = 5 * time.Second
+	maxResponseBytes = 1 << 10
+	mainnetTipURL    = "https://blockstream.info/api/blocks/tip/height"
+	testnetTipURL    = "https://blockstream.info/testnet/api/blocks/tip/height"
 )
 
-// BlockstreamProvider reads Bitcoin mainnet and testnet3 tips from Blockstream. It
-// does not serve testnet4: see BitcoinProvider.
-type BlockstreamProvider struct {
+// Provider reads Bitcoin mainnet and testnet3 tips from Blockstream. It does
+// not serve testnet4. The service keeps the Provider port.
+type Provider struct {
 	client     *httpclient.Client
 	mainnetURL string
 	testnetURL string
 }
 
-func NewBlockstreamProvider() *BlockstreamProvider {
-	return &BlockstreamProvider{
-		client:     httpclient.NewClient(esploraHTTPTimeout),
-		mainnetURL: "https://blockstream.info/api/blocks/tip/height",
-		testnetURL: "https://blockstream.info/testnet/api/blocks/tip/height",
+var _ blockheight.Provider = (*Provider)(nil)
+
+// New returns the Blockstream mainnet and testnet3 tip reader.
+func New() *Provider {
+	return &Provider{
+		client:     httpclient.NewClient(httpTimeout),
+		mainnetURL: mainnetTipURL,
+		testnetURL: testnetTipURL,
 	}
 }
 
-func (p *BlockstreamProvider) heightURL(chainID string) (string, error) {
+func (p *Provider) heightURL(chainID string) (string, error) {
 	switch chainID {
 	case models.ChainBTC:
 		return p.mainnetURL, nil
@@ -43,7 +49,7 @@ func (p *BlockstreamProvider) heightURL(chainID string) (string, error) {
 	}
 }
 
-func (p *BlockstreamProvider) GetBlockHeight(ctx context.Context, chainID string) (uint64, error) {
+func (p *Provider) GetBlockHeight(ctx context.Context, chainID string) (uint64, error) {
 	u, err := p.heightURL(chainID)
 	if err != nil {
 		return 0, err
@@ -56,7 +62,7 @@ func fetchEsploraTipHeight(ctx context.Context, client *httpclient.Client, heigh
 	resp, err := client.Do(ctx, httpclient.Request{
 		Method:   httpclient.MethodGet,
 		URL:      heightURL,
-		MaxBytes: esploraMaxResponseBytes,
+		MaxBytes: maxResponseBytes,
 	})
 	if err != nil {
 		if httpclient.IsBuild(err) {

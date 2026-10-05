@@ -18,6 +18,7 @@ import (
 	"github.com/goravel/framework/contracts/foundation"
 	"github.com/redis/go-redis/v9"
 
+	blockstreamtip "github.com/macrowallets/waas/app/adapters/blockheight/blockstream"
 	mempooltip "github.com/macrowallets/waas/app/adapters/blockheight/mempool"
 	coinapiws "github.com/macrowallets/waas/app/adapters/price/coinapi"
 	queuesqs "github.com/macrowallets/waas/app/adapters/queue/sqs"
@@ -424,6 +425,7 @@ func buildVaultContainer(app foundation.Application) (*container.Container, erro
 			return accountSettings.EtherscanKeyForHeight(ctx, envKey)
 		},
 		NetworkByChain: networkByChain,
+		Blockstream:    blockstreamtip.New(),
 		Testnet4:       mempooltip.New(),
 	})
 	assetDecimals := withdrawalevents.NewRegistryDecimals(withdrawalevents.RegistryDecimalsDeps{

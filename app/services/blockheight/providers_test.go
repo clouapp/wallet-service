@@ -143,6 +143,18 @@ func TestNewProviders_DisabledUnsealedAndFailedReadUseTheEnvKey(t *testing.T) {
 	requireLogsOmit(t, logs.String(), heightSettingsKey, heightEnvKey, heightCiphertext)
 }
 
+func TestNewProviders_ForwardsTheBlockstreamPort(t *testing.T) {
+	blockstream := &tipSource{height: 850000}
+	providers := NewProviders(ProvidersDeps{Blockstream: blockstream})
+
+	height, err := providers[models.AdapterTypeBitcoin].GetBlockHeight(context.Background(), models.ChainBTC)
+
+	require.NoError(t, err)
+	assert.Equal(t, uint64(850000), height)
+	assert.Equal(t, int32(1), blockstream.hits.Load())
+	assert.Equal(t, []string{models.ChainBTC}, blockstream.keys)
+}
+
 func TestNewProviders_BitcoinUsesTheTestnet4AwareProvider(t *testing.T) {
 	providers := NewProviders(ProvidersDeps{NetworkByChain: map[string]string{models.ChainBTC: models.NetworkBitcoinTestnet4}})
 

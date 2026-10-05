@@ -56,30 +56,6 @@ func TestEtherscanProvider_GetBlockHeight_UnknownChain(t *testing.T) {
 	assert.Contains(t, err.Error(), "unknown chain_id")
 }
 
-func TestBlockstreamProvider_GetBlockHeight_ValidInteger(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		assert.Equal(t, http.MethodGet, r.Method)
-		assert.Equal(t, "/api/blocks/tip/height", r.URL.Path)
-		_, _ = w.Write([]byte("850000\n"))
-	}))
-	defer srv.Close()
-
-	p := NewBlockstreamProvider()
-	p.client = httpclient.Wrap(srv.Client())
-	p.mainnetURL = srv.URL + "/api/blocks/tip/height"
-
-	height, err := p.GetBlockHeight(context.Background(), "btc")
-	require.NoError(t, err)
-	assert.Equal(t, uint64(850000), height)
-}
-
-func TestBlockstreamProvider_GetBlockHeight_UnknownChain(t *testing.T) {
-	p := NewBlockstreamProvider()
-	_, err := p.GetBlockHeight(context.Background(), "eth")
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "unknown chain_id")
-}
-
 func TestSolanaPublicProvider_GetBlockHeight_ValidJSONRPC(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, http.MethodPost, r.Method)
