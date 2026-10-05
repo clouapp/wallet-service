@@ -154,11 +154,18 @@ type recordingResponse struct {
 	http.ContextResponse
 	status int
 	body   any
+	raw    []byte
 }
 
 func (r *recordingResponse) Json(code int, obj any) http.AbortableResponse {
 	r.status = code
 	r.body = obj
+	return recordingAbort{}
+}
+
+func (r *recordingResponse) Data(code int, _ string, data []byte) http.AbortableResponse {
+	r.status = code
+	r.raw = append([]byte(nil), data...)
 	return recordingAbort{}
 }
 

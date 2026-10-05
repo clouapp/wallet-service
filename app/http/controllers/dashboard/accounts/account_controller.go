@@ -2,6 +2,8 @@ package accounts
 
 import (
 	"errors"
+	"fmt"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -284,7 +286,7 @@ func (ctrl *AccountsController) AddAccountUser(ctx http.Context) http.Response {
 		issued, issueErr := ctrl.accountService.IssueInvite(ctx.Context(), account.ID, req.Email, req.Role, callerID, base)
 		if issueErr != nil {
 			if errors.Is(issueErr, accountsvc.ErrGrantRole) {
-				return responses.Send(ctx, http.StatusForbidden, http.Json{"error": issueErr.Error()})
+				return inviteGrantForbidden(ctx, issueErr)
 			}
 			return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to create invite"})
 		}
@@ -317,6 +319,14 @@ func (ctrl *AccountsController) AddAccountUser(ctx http.Context) http.Response {
 		return responses.Send(ctx, http.StatusForbidden, http.Json{"error": "not a member of this account"})
 	}
 	return responses.Send(ctx, http.StatusCreated, tokenresource.AccountUserPtr(au))
+}
+
+// inviteGrantForbidden answers a role the caller cannot grant. ErrGrantRole may
+// be wrapped, and that wrap can carry a query or the address the customer
+// typed, so the body stays the fixed envelope and the log keeps the type.
+func inviteGrantForbidden(ctx http.Context, err error) http.Response {
+	slog.Error("account invite grant refused", "error_type", fmt.Sprintf("%T", err))
+	return responses.Error(ctx, http.StatusForbidden, responses.CodeForbidden, "forbidden")
 }
 
 // UpdateAccountUser godoc
