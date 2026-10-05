@@ -267,10 +267,6 @@ func (ctrl *AccountsController) ListAccountUsers(ctx http.Context) http.Response
 func (ctrl *AccountsController) AddAccountUser(ctx http.Context) http.Response {
 	account := requestctx.MustAccount(ctx)
 	callerID := requestctx.MustUserID(ctx)
-	if errResp := controllers.Deny(ctx, policies.AccountAddUser(ctx, account.ID, middleware.SessionUserID(ctx))); errResp != nil {
-		return errResp
-	}
-
 	var req requests.AddAccountUserRequest
 	if errResp := validateRequest(ctx, &req); errResp != nil {
 		return errResp

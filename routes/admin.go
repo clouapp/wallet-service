@@ -122,7 +122,7 @@ func RegisterAdminRoutes() {
 			r.Middleware(middleware.Can(middleware.PermAccountLifecycle)).Post("/freeze", accountsCtrl.FreezeAccount)
 
 			r.Middleware(middleware.Can(middleware.PermUsersRead)).Get("/users", accountsCtrl.ListAccountUsers)
-			r.Post("/users", accountsCtrl.AddAccountUser)
+			r.Middleware(middleware.Can(middleware.PermUsersWrite)).Post("/users", accountsCtrl.AddAccountUser)
 			r.Patch("/users/{userId}", accountsCtrl.UpdateAccountUser)
 			r.Delete("/users/{userId}", accountsCtrl.RemoveAccountUser)
 			r.Middleware(middleware.Can(middleware.PermUsersRead)).Get("/invites", inviteCtrl.List)

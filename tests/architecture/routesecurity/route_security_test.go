@@ -116,7 +116,7 @@ var routeTable = map[string]routeSecurity{
 	"GET|HEAD /v1/accounts/{accountId}/roles":                          session(chainAccountRoles),
 	"GET|HEAD /v1/accounts/{accountId}/permissions":                    session(chainAccountRoles),
 	"GET|HEAD /v1/accounts/{accountId}/users":                          session(chainAccountUsers),
-	"POST /v1/accounts/{accountId}/users":                              session(chainAccount),
+	"POST /v1/accounts/{accountId}/users":                              session(chainAccountUsersWrite),
 	"PATCH /v1/accounts/{accountId}/users/{userId}":                    session(chainAccount),
 	"DELETE /v1/accounts/{accountId}/users/{userId}":                   session(chainAccount),
 	"GET|HEAD /v1/accounts/{accountId}/invites":                        session(chainAccountUsers),
