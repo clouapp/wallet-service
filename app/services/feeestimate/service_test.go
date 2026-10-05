@@ -140,7 +140,14 @@ func newFixture(t *testing.T, ttl time.Duration) *fixture {
 	}
 	quoter := &fakeQuoter{quote: sepoliaQuote()}
 	cache := newMemoryCache()
-	service, err := NewService(quoter, registry, catalog, cache, ttl, func() time.Time { return testNow })
+	service, err := NewService(Deps{
+		Quoter:   quoter,
+		Registry: registry,
+		Chains:   catalog,
+		Cache:    cache,
+		CacheTTL: ttl,
+		Now:      func() time.Time { return testNow },
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -425,7 +432,7 @@ func TestEstimate_JSONShape(t *testing.T) {
 }
 
 func TestNewService_RequiresItsCollaborators(t *testing.T) {
-	if _, err := NewService(nil, &fakeRegistry{}, fakeCatalog{}, nil, DefaultCacheTTL, nil); err == nil {
+	if _, err := NewService(Deps{Registry: &fakeRegistry{}, Chains: fakeCatalog{}, CacheTTL: DefaultCacheTTL}); err == nil {
 		t.Fatal("expected an error without a quoter")
 	}
 }

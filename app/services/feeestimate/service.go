@@ -78,15 +78,28 @@ type Service struct {
 	now      func() time.Time
 }
 
-// NewService wires an estimator. cache may be nil; cacheTTL ≤ 0 disables caching.
-func NewService(quoter sweep.FeeQuoter, registry AdapterRegistry, chains ChainCatalog, cache Cache, cacheTTL time.Duration, now func() time.Time) (*Service, error) {
-	if quoter == nil || registry == nil || chains == nil {
+// Deps is everything the fee estimator needs. A nil field means that
+// dependency is absent. Cache may be nil; CacheTTL ≤ 0 disables caching.
+// A nil Now uses time.Now.
+type Deps struct {
+	Quoter   sweep.FeeQuoter
+	Registry AdapterRegistry
+	Chains   ChainCatalog
+	Cache    Cache
+	CacheTTL time.Duration
+	Now      func() time.Time
+}
+
+// NewService wires an estimator from Deps.
+func NewService(deps Deps) (*Service, error) {
+	if deps.Quoter == nil || deps.Registry == nil || deps.Chains == nil {
 		return nil, fmt.Errorf("feeestimate: quoter, registry and chain catalog are required")
 	}
+	now := deps.Now
 	if now == nil {
 		now = time.Now
 	}
-	return &Service{quoter: quoter, registry: registry, chains: chains, cache: cache, cacheTTL: cacheTTL, now: now}, nil
+	return &Service{quoter: deps.Quoter, registry: deps.Registry, chains: deps.Chains, cache: deps.Cache, cacheTTL: deps.CacheTTL, now: now}, nil
 }
 
 // resolvedRequest is a validated Request in base units.

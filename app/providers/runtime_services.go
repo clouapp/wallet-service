@@ -86,14 +86,14 @@ func registerRuntimeServices(app foundation.Application) {
 		if seconds < 0 {
 			seconds = int(feeestimate.DefaultCacheTTL / time.Second)
 		}
-		return feeestimate.NewService(
-			quoter,
-			c.Registry,
-			feeEstimateChains{repo: c.ChainRepo},
-			feecache.New(c.Redis),
-			time.Duration(seconds)*time.Second,
-			time.Now,
-		)
+		return feeestimate.NewService(feeestimate.Deps{
+			Quoter:   quoter,
+			Registry: c.Registry,
+			Chains:   feeEstimateChains{repo: c.ChainRepo},
+			Cache:    feecache.New(c.Redis),
+			CacheTTL: time.Duration(seconds) * time.Second,
+			Now:      time.Now,
+		})
 	})
 }
 
