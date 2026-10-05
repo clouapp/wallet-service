@@ -270,7 +270,7 @@ func RegisterAdminRoutes() {
 			r.Get("/settings", walletSettingsCtrl.GetWalletSettings)
 			r.Patch("/settings", walletSettingsCtrl.UpdateWalletSettings)
 			r.Post("/freeze", walletSettingsCtrl.FreezeWallet)
-			r.Post("/archive", walletSettingsCtrl.ArchiveWallet)
+			r.Middleware(middleware.WalletArchive(walletPolicyMemberships())).Post("/archive", walletSettingsCtrl.ArchiveWallet)
 
 			r.Get("/balances", balancesCtrl.ListWalletBalances)
 

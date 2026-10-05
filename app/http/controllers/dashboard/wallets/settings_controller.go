@@ -220,9 +220,6 @@ var _ walletresource.Wallet
 // @Router       /wallets/{walletId}/archive [post]
 func (ctrl *SettingsController) ArchiveWallet(ctx http.Context) http.Response {
 	wallet := requestctx.MustWallet(ctx)
-	if errResp := controllers.Deny(ctx, policies.WalletArchive(controllers.WalletMembership(ctx, ctrl.memberships, wallet.ID))); errResp != nil {
-		return errResp
-	}
 	if wallet.Status == models.WalletStatusArchived {
 		return responses.Send(ctx, http.StatusConflict, http.Json{"error": "wallet already archived"})
 	}
