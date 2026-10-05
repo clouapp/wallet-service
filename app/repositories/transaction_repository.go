@@ -24,6 +24,17 @@ func NewTransactionRepository(query orm.Query) *TransactionRepository {
 	return &TransactionRepository{Base: db.NewBase(query)}
 }
 
+// Within runs fn inside one transaction. Queries made with the callback
+// context join that transaction, including a webhook event for the same sweep leg.
+func (r *TransactionRepository) Within(ctx context.Context, fn func(context.Context) error) error {
+	if fn == nil {
+		return fmt.Errorf("transaction: callback is required")
+	}
+	return r.Transaction(ctx, func(tx orm.Query) error {
+		return fn(db.WithTx(ctx, tx))
+	})
+}
+
 // Create inserts a transaction after rejecting a negative amount or fee.
 func (r *TransactionRepository) Create(ctx context.Context, tx *models.Transaction) error {
 	if tx == nil {

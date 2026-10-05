@@ -139,6 +139,100 @@ func (s *Service) EnqueueEvent(ctx context.Context, txID uuid.UUID, eventType ty
 	}
 }
 
+// StageSweepBroadcast inserts sweep.broadcast webhook rows using ctx, so they join
+// the caller's transaction. The returned send delivers those rows and runs only
+// after that transaction commits. A nil send means no config matched. The signing
+// secret stays inside the send closure and is not logged.
+func (s *Service) StageSweepBroadcast(ctx context.Context, tx *models.Transaction) (func(context.Context), error) {
+	if s == nil {
+		return nil, fmt.Errorf("stage sweep broadcast: webhook service is required")
+	}
+	if tx == nil {
+		return nil, fmt.Errorf("stage sweep broadcast: transaction is required")
+	}
+	if s.webhookConfigRepo == nil || s.webhookEventRepo == nil {
+		return nil, fmt.Errorf("stage sweep broadcast: webhook store is required")
+	}
+	msgs, err := s.stageLegacyEvent(ctx, tx.ID, types.EventSweepBroadcast, tx)
+	if err != nil {
+		return nil, err
+	}
+	if len(msgs) == 0 {
+		return nil, nil
+	}
+	staged := append([]types.WebhookMessage(nil), msgs...)
+	return func(sendCtx context.Context) {
+		s.dispatchWebhooks(sendCtx, staged)
+	}, nil
+}
+
+func (s *Service) stageLegacyEvent(ctx context.Context, txID uuid.UUID, eventType types.EventType, data interface{}) ([]types.WebhookMessage, error) {
+	payload, err := json.Marshal(map[string]interface{}{
+		"id":         uuid.New().String(),
+		"type":       string(eventType),
+		"created_at": time.Now().UTC().Format(time.RFC3339),
+		"data":       data,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("marshal webhook payload: %w", err)
+	}
+
+	allConfigs, err := s.webhookConfigRepo.FindActive(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("query webhook configs: %w", err)
+	}
+
+	var configs []models.WebhookConfig
+	eventTypeStr := string(eventType)
+	subjectWallet := legacyEventWallet(data)
+	for _, cfg := range allConfigs {
+		if containsEvent(cfg.Events, eventTypeStr) && legacyConfigCanSee(cfg, subjectWallet) {
+			configs = append(configs, cfg)
+		}
+	}
+
+	msgs := make([]types.WebhookMessage, 0, len(configs))
+	for _, cfg := range configs {
+		eventID := uuid.New().String()
+		configID := cfg.ID
+		webhookEvent := &models.WebhookEvent{
+			ID:              uuid.MustParse(eventID),
+			TransactionID:   &txID,
+			WebhookConfigID: &configID,
+			EventType:       string(eventType),
+			Payload:         string(payload),
+			DeliveryURL:     cfg.URL,
+			DeliveryStatus:  "pending",
+			Attempts:        0,
+			MaxAttempts:     s.resolveDeliverySettings(ctx).MaxAttempts,
+		}
+		if err := s.webhookEventRepo.Create(ctx, webhookEvent); err != nil {
+			return nil, fmt.Errorf("insert webhook event: %w", err)
+		}
+		msgs = append(msgs, types.WebhookMessage{
+			EventID:       eventID,
+			TransactionID: txID.String(),
+			EventType:     eventType,
+			Payload:       string(payload),
+			DeliveryURL:   cfg.URL,
+			Secret:        cfg.Secret,
+			Attempt:       1,
+		})
+	}
+	return msgs, nil
+}
+
+func (s *Service) dispatchWebhooks(ctx context.Context, msgs []types.WebhookMessage) {
+	if s == nil || s.sqs == nil {
+		return
+	}
+	for _, msg := range msgs {
+		if err := s.sqs.SendWebhook(ctx, msg); err != nil {
+			slog.Error("sqs send webhook", "error", err, "event_id", msg.EventID)
+		}
+	}
+}
+
 func legacyConfigCanSee(cfg models.WebhookConfig, subjectWallet *uuid.UUID) bool {
 	if cfg.AccountID != nil {
 		return false

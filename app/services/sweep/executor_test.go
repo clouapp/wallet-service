@@ -24,15 +24,43 @@ import (
 // ---------------------------------------------------------------------------
 
 type fakeTxRepo struct {
-	created   []*models.Transaction
-	createErr error
+	created       []*models.Transaction
+	createErr     error
+	failAt        int
+	attempts      int
+	withins       int
+	inside        bool
+	createdInside bool
+}
+
+func (f *fakeTxRepo) Within(ctx context.Context, fn func(context.Context) error) error {
+	if fn == nil {
+		return errors.New("callback is required")
+	}
+	f.withins++
+	f.inside = true
+	mark := len(f.created)
+	err := fn(ctx)
+	f.inside = false
+	if err != nil {
+		f.created = f.created[:mark]
+		return err
+	}
+	return nil
 }
 
 func (f *fakeTxRepo) Create(_ context.Context, tx *models.Transaction) error {
+	f.attempts++
+	if f.failAt > 0 && f.attempts == f.failAt {
+		return errors.New("insert sweep row")
+	}
 	if f.createErr != nil {
 		return f.createErr
 	}
 	f.created = append(f.created, tx)
+	if f.inside {
+		f.createdInside = true
+	}
 	return nil
 }
 func (f *fakeTxRepo) FindByID(id uuid.UUID) (*models.Transaction, error) { return nil, nil }
@@ -429,6 +457,179 @@ func TestExecute_GasSeedRowRecordsNativeGas(t *testing.T) {
 	if sweepRow.Asset != "usdt" || sweepRow.TokenContract != "0xTETHER" || sweepRow.Amount != tokenAmount.String() {
 		t.Fatalf("sweep row %s %s (contract %q), want %s usdt 0xTETHER", sweepRow.Amount, sweepRow.Asset, sweepRow.TokenContract, tokenAmount)
 	}
+}
+
+type linkedLegFixture struct {
+	svc    *service
+	txRepo *fakeTxRepo
+	chain  *mocks.MockChain
+	plan   *Plan
+}
+
+func newLinkedTokenLeg(t *testing.T) linkedLegFixture {
+	t.Helper()
+	walletID := uuid.New()
+	baseAddr := models.Address{ID: uuid.New(), WalletID: walletID, Address: "0xBASE", ExternalUserID: "user-1"}
+	child := models.Address{ID: uuid.New(), WalletID: walletID, Address: "0xCHILD", ExternalUserID: "user-1"}
+	wallet := &models.Wallet{ID: walletID, Chain: "eth", DepositAddress: &baseAddr, MPCCurve: "secp256k1"}
+	assignDerivedEVMAddresses(t, wallet, &baseAddr, &child)
+	mockChain := sweepMockChain("eth", "eth")
+	svc, txRepo := newExecutorService(t, wallet, mockChain)
+	svc.registry.(*chain.Registry).RegisterToken(types.Token{
+		Symbol: "usdt", Name: "Tether", Contract: "0xTETHER", Decimals: 6, ChainID: "eth",
+	})
+	plan := &Plan{
+		WalletID: walletID, Chain: "eth", Asset: "usdt", Amount: big.NewInt(600), Strategy: StrategyMultiSweep,
+		Sweeps: []PlannedSweep{{From: child, Amount: big.NewInt(600), NeedsGas: true}},
+	}
+	return linkedLegFixture{svc: svc, txRepo: txRepo, chain: mockChain, plan: plan}
+}
+
+func runLinkedLeg(t *testing.T, fixture linkedLegFixture) *Result {
+	t.Helper()
+	res, err := fixture.svc.ExecutePlan(
+		context.Background(), fixture.plan, SigningCredentials{ShareA: []byte("fake-share-a")},
+		uuid.New(), "0xDEST", "user-1",
+	)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	return res
+}
+
+func TestExecute_LinkedLegCommitsGasSeedAndSweepTogether(t *testing.T) {
+	fixture := newLinkedTokenLeg(t)
+	res := runLinkedLeg(t, fixture)
+	if res.FailedStep != nil || res.FinalWithdrawTx == nil {
+		t.Fatalf("leg failed: %+v", res)
+	}
+	if fixture.txRepo.withins != 1 || !fixture.txRepo.createdInside {
+		t.Fatalf("withins=%d inside=%v", fixture.txRepo.withins, fixture.txRepo.createdInside)
+	}
+	if len(fixture.txRepo.created) != 3 {
+		t.Fatalf("rows %d, want gas_seed, sweep, withdrawal", len(fixture.txRepo.created))
+	}
+	if fixture.txRepo.created[0].TxType != models.TxTypeGasSeed || fixture.txRepo.created[1].TxType != models.TxTypeSweep {
+		t.Fatalf("order %s then %s", fixture.txRepo.created[0].TxType, fixture.txRepo.created[1].TxType)
+	}
+}
+
+func TestExecute_LinkedLegRollsBackWhenTheSweepRowFails(t *testing.T) {
+	fixture := newLinkedTokenLeg(t)
+	fixture.txRepo.failAt = 2
+	res := runLinkedLeg(t, fixture)
+	if res == nil || res.FailedStep == nil || res.FinalWithdrawTx != nil {
+		t.Fatalf("want a failed leg and no withdrawal, got %+v", res)
+	}
+	if len(fixture.txRepo.created) != 0 || fixture.txRepo.withins != 1 {
+		t.Fatalf("created=%d withins=%d, want the gas seed rolled back with the sweep row", len(fixture.txRepo.created), fixture.txRepo.withins)
+	}
+}
+
+func TestExecute_LinkedLegKeepsGasSeedWhenSweepBroadcastFails(t *testing.T) {
+	fixture := newLinkedTokenLeg(t)
+	var broadcasts int
+	fixture.chain.BroadcastTransactionFn = func(ctx context.Context, signed *types.SignedTx) (string, error) {
+		broadcasts++
+		if broadcasts == 2 {
+			return "", errors.New("rpc: sweep broadcast failed")
+		}
+		return "0xhash_" + string(signed.RawBytes[:1]), nil
+	}
+	res := runLinkedLeg(t, fixture)
+	if res == nil || res.FailedStep == nil || len(res.Sweeps) != 0 {
+		t.Fatalf("want the leg failed before it counts as swept, got %+v", res)
+	}
+	if len(fixture.txRepo.created) != 1 || fixture.txRepo.created[0].TxType != models.TxTypeGasSeed {
+		t.Fatalf("rows %+v, want only the broadcast gas seed", fixture.txRepo.created)
+	}
+}
+
+type recordingSweepEvents struct {
+	inside    *bool
+	stagedIn  bool
+	sent      int
+	failStage bool
+}
+
+func (r *recordingSweepEvents) EnqueueEvent(context.Context, uuid.UUID, types.EventType, interface{}) {
+}
+
+func (r *recordingSweepEvents) StageSweepBroadcast(context.Context, *models.Transaction) (func(context.Context), error) {
+	if r.inside != nil {
+		r.stagedIn = *r.inside
+	}
+	if r.failStage {
+		return nil, errors.New("insert webhook event")
+	}
+	return func(context.Context) { r.sent++ }, nil
+}
+
+func TestExecute_LinkedLegRollsBackWhenTheWebhookInsertFails(t *testing.T) {
+	fixture := newLinkedTokenLeg(t)
+	events := &recordingSweepEvents{inside: &fixture.txRepo.inside, failStage: true}
+	fixture.svc.webhookSvc = events
+	res := runLinkedLeg(t, fixture)
+	if res == nil || res.FailedStep == nil {
+		t.Fatalf("want the leg failed, got %+v", res)
+	}
+	if !events.stagedIn || events.sent != 0 || len(fixture.txRepo.created) != 0 {
+		t.Fatalf("stagedIn=%v sent=%d rows=%d", events.stagedIn, events.sent, len(fixture.txRepo.created))
+	}
+}
+
+func TestExecute_LinkedLegSendsTheWebhookAfterCommit(t *testing.T) {
+	fixture := newLinkedTokenLeg(t)
+	events := &recordingSweepEvents{inside: &fixture.txRepo.inside}
+	fixture.svc.webhookSvc = events
+	res := runLinkedLeg(t, fixture)
+	if res == nil || res.FailedStep != nil {
+		t.Fatalf("want the leg committed, got %+v", res)
+	}
+	if !events.stagedIn || events.sent != 1 || len(fixture.txRepo.created) != 3 {
+		t.Fatalf("stagedIn=%v sent=%d rows=%d", events.stagedIn, events.sent, len(fixture.txRepo.created))
+	}
+}
+
+func TestStageSweepBroadcastInsertsTheRowBeforeSending(t *testing.T) {
+	walletID := uuid.New()
+	tx := &models.Transaction{ID: uuid.New(), WalletID: walletID, TxType: models.TxTypeSweep}
+	events := &fakeWebhookEventRepo{}
+	var sentBeforeInsert bool
+	sender := &orderQueueSender{events: events, sentBeforeInsert: &sentBeforeInsert}
+	svc := webhook.NewService(webhook.Deps{
+		SQS: sender,
+		Configs: &fakeWebhookConfigRepo{configs: []models.WebhookConfig{{
+			ID: uuid.New(), URL: "https://example.test/hooks", Secret: "s",
+			Events: `{"sweep.broadcast"}`, IsActive: true,
+		}}},
+		Events: events,
+	})
+	send, err := svc.StageSweepBroadcast(context.Background(), tx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(events.created) != 1 || sender.sent != 0 {
+		t.Fatalf("created=%d sent=%d before the closure", len(events.created), sender.sent)
+	}
+	send(context.Background())
+	if sentBeforeInsert || sender.sent != 1 || events.created[0].EventType != string(types.EventSweepBroadcast) {
+		t.Fatalf("sentBeforeInsert=%v sent=%d type=%s", sentBeforeInsert, sender.sent, events.created[0].EventType)
+	}
+}
+
+type orderQueueSender struct {
+	events           *fakeWebhookEventRepo
+	sent             int
+	sentBeforeInsert *bool
+}
+
+func (o *orderQueueSender) SendWebhook(context.Context, types.WebhookMessage) error {
+	if len(o.events.created) == 0 && o.sentBeforeInsert != nil {
+		*o.sentBeforeInsert = true
+	}
+	o.sent++
+	return nil
 }
 
 // TestExecute_MultiSweep_RetryAfterPartialFailure simulates the end-to-end

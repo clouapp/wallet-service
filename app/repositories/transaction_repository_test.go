@@ -2,10 +2,12 @@ package repositories_test
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/goravel/framework/facades"
 	"github.com/stretchr/testify/suite"
 
 	"github.com/macrowallets/waas/app/models"
@@ -358,4 +360,68 @@ func (s *TransactionRepositoryTestSuite) TestListForAccount_AppliesSecondaryFilt
 	pendingWithdrawals, _, err := s.repo.ListForAccount(context.Background(), account.ID, "eth", "withdrawal", "pending", "u", 50, 0)
 	s.NoError(err)
 	s.Len(pendingWithdrawals, 1)
+}
+
+func (s *TransactionRepositoryTestSuite) TestWithinCommitsASweepLegAndItsWebhook() {
+	walletID := s.insertWallet()
+	txID := uuid.New()
+	eventID := uuid.New()
+
+	err := s.repo.Within(context.Background(), func(ctx context.Context) error {
+		tx := s.makeTx(walletID, models.TxTypeSweep, "confirming")
+		tx.ID = txID
+		if createErr := s.repo.Create(ctx, tx); createErr != nil {
+			return createErr
+		}
+		return repositories.NewWebhookEventRepository(nil).Create(ctx, sweepBroadcastEvent(eventID, txID))
+	})
+	s.NoError(err)
+
+	found, findErr := s.repo.FindByID(context.Background(), txID)
+	s.NoError(findErr)
+	s.NotNil(found)
+	s.Equal(txID, found.ID)
+	s.Equal(int64(1), s.countWebhookEvents(eventID))
+}
+
+func (s *TransactionRepositoryTestSuite) TestWithinRollsBackASweepLegAndItsWebhook() {
+	walletID := s.insertWallet()
+	txID := uuid.New()
+	eventID := uuid.New()
+
+	err := s.repo.Within(context.Background(), func(ctx context.Context) error {
+		tx := s.makeTx(walletID, models.TxTypeSweep, "confirming")
+		tx.ID = txID
+		if createErr := s.repo.Create(ctx, tx); createErr != nil {
+			return createErr
+		}
+		if createErr := repositories.NewWebhookEventRepository(nil).Create(ctx, sweepBroadcastEvent(eventID, txID)); createErr != nil {
+			return createErr
+		}
+		return errors.New("fail the sweep leg")
+	})
+	s.Error(err)
+
+	found, findErr := s.repo.FindByID(context.Background(), txID)
+	s.Nil(found)
+	s.Error(findErr)
+	s.Equal(int64(0), s.countWebhookEvents(eventID))
+}
+
+func sweepBroadcastEvent(eventID, txID uuid.UUID) *models.WebhookEvent {
+	return &models.WebhookEvent{
+		ID:             eventID,
+		TransactionID:  &txID,
+		EventType:      "sweep.broadcast",
+		Payload:        "{}",
+		DeliveryURL:    "https://example.test/hooks",
+		DeliveryStatus: "pending",
+	}
+}
+
+func (s *TransactionRepositoryTestSuite) countWebhookEvents(eventID uuid.UUID) int64 {
+	s.T().Helper()
+	count, err := facades.Orm().Query().Model(&models.WebhookEvent{}).Where("id = ?", eventID).Count()
+	s.Require().NoError(err)
+	return count
 }

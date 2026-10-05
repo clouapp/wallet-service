@@ -163,6 +163,12 @@ type legBroadcastOpts struct {
 // webhook event.
 //
 // Returns the on-chain hash of the sweep (not the gas_seed).
+//
+// A withdrawal-driven leg (ParentTransactionID set) commits its gas seed, its
+// sweep row, and the sweep.broadcast webhook event in one transaction after the
+// broadcasts. A failed later insert rolls the earlier rows back. SQS runs only
+// after that commit. Manual consolidation (no parent) still writes each row on
+// its own and is not part of this transaction.
 func (s *service) broadcastLeg(
 	ctx context.Context,
 	adapter types.Chain,
@@ -174,6 +180,9 @@ func (s *service) broadcastLeg(
 	sweepTxID uuid.UUID,
 	opts legBroadcastOpts,
 ) (string, error) {
+	if opts.ParentTransactionID != nil {
+		return s.broadcastLinkedLeg(ctx, adapter, curve, keys, wallet, plan, leg, sweepTxID, opts)
+	}
 	unsigneds, token, err := s.buildSweepLeg(ctx, adapter, wallet, plan, leg)
 	if err != nil {
 		return "", err
@@ -255,6 +264,180 @@ func (s *service) broadcastLeg(
 	}
 
 	return finalSweepHash, nil
+}
+
+// sweepBroadcastStager inserts sweep.broadcast webhook rows on the caller's
+// transaction. The returned send runs only after that transaction commits.
+type sweepBroadcastStager interface {
+	StageSweepBroadcast(ctx context.Context, tx *models.Transaction) (func(context.Context), error)
+}
+
+type linkedLegRow struct {
+	tx      *models.Transaction
+	gasSeed bool
+}
+
+// broadcastLinkedLeg is the withdrawal-driven sweep leg. Chain broadcasts stay
+// outside the database transaction. Rows whose broadcasts already succeeded are
+// committed together, so a failed sweep insert or webhook insert rolls back the
+// gas seed from that same commit. A later broadcast failure still keeps the
+// earlier broadcast's row: that row is committed on its own before the error
+// returns, because the sweep row was never written.
+func (s *service) broadcastLinkedLeg(
+	ctx context.Context,
+	adapter types.Chain,
+	curve mpcpkg.Curve,
+	keys walletKeys,
+	wallet *models.Wallet,
+	plan *Plan,
+	leg PlannedSweep,
+	sweepTxID uuid.UUID,
+	opts legBroadcastOpts,
+) (string, error) {
+	unsigneds, token, err := s.buildSweepLeg(ctx, adapter, wallet, plan, leg)
+	if err != nil {
+		return "", err
+	}
+
+	var finalSweepHash string
+	pending := make([]linkedLegRow, 0, len(unsigneds))
+	for idx := range unsigneds {
+		unsigned := unsigneds[idx]
+		signer, isGasSeed := sweepLegSigner(wallet, leg, len(unsigneds), idx)
+		signed, signErr := s.signUnsigned(ctx, adapter, curve, keys, wallet, signer, &unsigned)
+		if signErr != nil {
+			if commitErr := s.commitLinkedLeg(ctx, pending); commitErr != nil {
+				return "", commitErr
+			}
+			return "", fmt.Errorf("sign transaction: %w", signErr)
+		}
+		hash, bcErr := adapter.BroadcastTransaction(ctx, signed)
+		if bcErr != nil {
+			if commitErr := s.commitLinkedLeg(ctx, pending); commitErr != nil {
+				return "", commitErr
+			}
+			return "", fmt.Errorf("broadcast: %w", bcErr)
+		}
+		pending = append(pending, linkedLegRow{
+			tx:      sweepLegTransaction(wallet, plan, leg, sweepTxID, opts, &unsigned, hash, token, isGasSeed, adapter),
+			gasSeed: isGasSeed,
+		})
+		if !isGasSeed {
+			finalSweepHash = hash
+		}
+	}
+	if err := s.commitLinkedLeg(ctx, pending); err != nil {
+		return "", err
+	}
+	return finalSweepHash, nil
+}
+
+func (s *service) commitLinkedLeg(ctx context.Context, rows []linkedLegRow) error {
+	if len(rows) == 0 {
+		return nil
+	}
+	if s.txRepo == nil {
+		return fmt.Errorf("persist sweep tx: transaction writer is required")
+	}
+	var sends []func(context.Context)
+	err := s.txRepo.Within(ctx, func(txCtx context.Context) error {
+		for _, row := range rows {
+			if err := s.txRepo.Create(txCtx, row.tx); err != nil {
+				return fmt.Errorf("persist %s tx: %w", row.tx.TxType, err)
+			}
+		}
+		if s.webhookSvc == nil {
+			return nil
+		}
+		var stager sweepBroadcastStager
+		for _, row := range rows {
+			if row.gasSeed {
+				continue
+			}
+			if stager == nil {
+				var ok bool
+				stager, ok = s.webhookSvc.(sweepBroadcastStager)
+				if !ok {
+					return fmt.Errorf("persist sweep webhook: event writer cannot join the transaction")
+				}
+			}
+			send, stageErr := stager.StageSweepBroadcast(txCtx, row.tx)
+			if stageErr != nil {
+				return fmt.Errorf("persist sweep webhook: %w", stageErr)
+			}
+			if send != nil {
+				sends = append(sends, send)
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+	for _, send := range sends {
+		send(ctx)
+	}
+	return nil
+}
+
+func sweepLegTransaction(
+	wallet *models.Wallet,
+	plan *Plan,
+	leg PlannedSweep,
+	sweepTxID uuid.UUID,
+	opts legBroadcastOpts,
+	unsigned *types.UnsignedTx,
+	hash string,
+	token *types.Token,
+	isGasSeed bool,
+	adapter types.Chain,
+) *models.Transaction {
+	origin := opts.Origin
+	txType := models.TxTypeSweep
+	txID := sweepTxID
+	fromAddr := leg.From.Address
+	toAddr := wallet.DepositAddress.Address
+	childID := leg.From.ID
+	addressID := &childID
+	asset := plan.Asset
+	amount := builtAmount(unsigned, leg.Amount)
+	rowToken := token
+	if isGasSeed {
+		origin = models.TxOriginGasSeed
+		txType = models.TxTypeGasSeed
+		txID = uuid.New()
+		fromAddr = wallet.DepositAddress.Address
+		toAddr = leg.From.Address
+		baseID := wallet.DepositAddress.ID
+		addressID = &baseID
+		asset = adapter.NativeAsset()
+		amount = builtAmount(unsigned, nil)
+		rowToken = nil
+	}
+	tx := &models.Transaction{
+		ID:                  txID,
+		WalletID:            wallet.ID,
+		AddressID:           addressID,
+		ExternalUserID:      leg.From.ExternalUserID,
+		Chain:               plan.Chain,
+		TxType:              txType,
+		TxHash:              hash,
+		FromAddress:         fromAddr,
+		ToAddress:           toAddr,
+		Amount:              amount,
+		Asset:               asset,
+		Status:              string(types.TxStatusConfirming),
+		RequiredConfs:       int(adapter.RequiredConfirmations()),
+		Direction:           models.TxDirectionSelf,
+		Source:              models.TxSourceWithdrawalFlow,
+		Origin:              origin,
+		RawPayload:          "{}",
+		ParentTransactionID: opts.ParentTransactionID,
+	}
+	if rowToken != nil {
+		tx.TokenContract = rowToken.Contract
+	}
+	return tx
 }
 
 // broadcastWithdrawal executes the single "final" transfer of a plan: sending

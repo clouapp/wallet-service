@@ -137,6 +137,13 @@ type countingTxRepo struct {
 	creates int
 }
 
+func (c *countingTxRepo) Within(ctx context.Context, fn func(context.Context) error) error {
+	if fn == nil {
+		return errors.New("callback is required")
+	}
+	return fn(ctx)
+}
+
 func (c *countingTxRepo) Create(context.Context, *models.Transaction) error {
 	c.creates++
 	return errors.New("plan must not persist")
