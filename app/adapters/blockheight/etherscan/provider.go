@@ -1,4 +1,4 @@
-package blockheight
+package etherscan
 
 import (
 	"context"
@@ -10,30 +10,32 @@ import (
 	"time"
 
 	"github.com/macrowallets/waas/app/models"
+	"github.com/macrowallets/waas/app/services/blockheight"
 	"github.com/macrowallets/waas/pkg/httpclient"
 )
 
-const etherscanDefaultBase = "https://api.etherscan.io"
+const (
+	httpTimeout          = 5 * time.Second
+	etherscanDefaultBase = "https://api.etherscan.io"
+)
 
-type EtherscanProvider struct {
+// Provider reads EVM tips from Etherscan. The service keeps the Provider port.
+type Provider struct {
 	apiKey   string
-	keyAtUse EtherscanKey
+	keyAtUse blockheight.EtherscanKey
 	client   *httpclient.Client
 	baseURL  string
 }
 
-// EtherscanDeps is everything the Etherscan block-height provider uses.
-// A nil KeyAtUse keeps APIKey on every height read.
-type EtherscanDeps struct {
-	APIKey   string
-	KeyAtUse EtherscanKey
-}
+var _ blockheight.Provider = (*Provider)(nil)
 
-func NewEtherscanProvider(deps EtherscanDeps) *EtherscanProvider {
-	return &EtherscanProvider{
+// New returns the Etherscan tip reader. A nil KeyAtUse keeps APIKey on every
+// height read. A blank key from KeyAtUse sends that call to the chain RPC.
+func New(deps blockheight.EtherscanDeps) *Provider {
+	return &Provider{
 		apiKey:   deps.APIKey,
 		keyAtUse: deps.KeyAtUse,
-		client:   httpclient.NewClient(5 * time.Second),
+		client:   httpclient.NewClient(httpTimeout),
 		baseURL:  etherscanDefaultBase,
 	}
 }
@@ -63,7 +65,7 @@ type etherscanBlockNumberResp struct {
 	} `json:"error"`
 }
 
-func (p *EtherscanProvider) GetBlockHeight(ctx context.Context, chainID string) (uint64, error) {
+func (p *Provider) GetBlockHeight(ctx context.Context, chainID string) (uint64, error) {
 	eid, err := etherscanChainID(chainID)
 	if err != nil {
 		return 0, err
@@ -76,7 +78,7 @@ func (p *EtherscanProvider) GetBlockHeight(ctx context.Context, chainID string) 
 		}
 		apiKey = strings.TrimSpace(p.keyAtUse(ctx))
 		if apiKey == "" {
-			return 0, ErrTipFromChainRPC
+			return 0, blockheight.ErrTipFromChainRPC
 		}
 	}
 

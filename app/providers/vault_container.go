@@ -19,6 +19,7 @@ import (
 	"github.com/redis/go-redis/v9"
 
 	blockstreamtip "github.com/macrowallets/waas/app/adapters/blockheight/blockstream"
+	etherscantip "github.com/macrowallets/waas/app/adapters/blockheight/etherscan"
 	mempooltip "github.com/macrowallets/waas/app/adapters/blockheight/mempool"
 	coinapiws "github.com/macrowallets/waas/app/adapters/price/coinapi"
 	queuesqs "github.com/macrowallets/waas/app/adapters/queue/sqs"
@@ -419,12 +420,14 @@ func buildVaultContainer(app foundation.Application) (*container.Container, erro
 	}
 	c.WithdrawalService.UseCreate(c.UserRepo, verifier, withdrawalRows, c.ChainRepo)
 
+	etherscanKey := func(ctx context.Context) string {
+		envKey := facades.Config().GetString("vault.webhooks.etherscan_api_key")
+		return accountSettings.EtherscanKeyForHeight(ctx, envKey)
+	}
 	blockHeightProviders := blockheight.NewProviders(blockheight.ProvidersDeps{
-		Key: func(ctx context.Context) string {
-			envKey := facades.Config().GetString("vault.webhooks.etherscan_api_key")
-			return accountSettings.EtherscanKeyForHeight(ctx, envKey)
-		},
+		Key:            etherscanKey,
 		NetworkByChain: networkByChain,
+		Etherscan:      etherscantip.New(blockheight.EtherscanDeps{KeyAtUse: etherscanKey}),
 		Blockstream:    blockstreamtip.New(),
 		Testnet4:       mempooltip.New(),
 	})
