@@ -39,6 +39,10 @@ func WalletContext() http.Middleware {
 		var account *models.Account
 		if wallet.AccountID != nil {
 			member, memberErr := accounts.FindMember(ctx.Context(), *wallet.AccountID, userID)
+			if memberErr != nil && !errors.Is(memberErr, models.ErrRepositoryNotFound) {
+				_ = responses.Send(ctx, http.StatusServiceUnavailable, http.Json{"error": "failed to load membership"}).Abort()
+				return
+			}
 			if memberErr == nil && member != nil {
 				accountMember = member
 			}
