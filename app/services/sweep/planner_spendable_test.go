@@ -14,6 +14,7 @@ import (
 
 	"github.com/google/uuid"
 
+	bitcoinchain "github.com/macrowallets/waas/app/adapters/chain/bitcoin"
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/services/chain"
 	"github.com/macrowallets/waas/pkg/types"
@@ -129,7 +130,7 @@ func btcPlannerFee(inputs int) int64 {
 
 // fakeBitcoindChain is a real BitcoinLive over a fake bitcoind that answers
 // listunspent by address and minconf, and estimatesmartfee at 2 sat/vB.
-func fakeBitcoindChain(t *testing.T, utxos map[string][]fakeUTXO) *chain.BitcoinLive {
+func fakeBitcoindChain(t *testing.T, utxos map[string][]fakeUTXO) *bitcoinchain.BitcoinLive {
 	t.Helper()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var req struct {
@@ -168,10 +169,10 @@ func fakeBitcoindChain(t *testing.T, utxos map[string][]fakeUTXO) *chain.Bitcoin
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{"jsonrpc": "2.0", "id": req.ID, "result": result})
 	}))
 	t.Cleanup(srv.Close)
-	return chain.NewBitcoinLive(chain.BitcoinConfig{ChainIDStr: models.ChainBTC, NativeSymbol: models.NativeBTC, RPCURL: srv.URL, IsTestnet: true})
+	return bitcoinchain.NewBitcoinLive(bitcoinchain.BitcoinConfig{ChainIDStr: models.ChainBTC, NativeSymbol: models.NativeBTC, RPCURL: srv.URL, IsTestnet: true})
 }
 
-func btcPlanner(t *testing.T, utxos map[string][]fakeUTXO, children ...string) (*service, uuid.UUID, *chain.BitcoinLive) {
+func btcPlanner(t *testing.T, utxos map[string][]fakeUTXO, children ...string) (*service, uuid.UUID, *bitcoinchain.BitcoinLive) {
 	t.Helper()
 	walletID := uuid.New()
 	base := models.Address{ID: uuid.New(), WalletID: walletID, Address: "tb1qbase"}

@@ -51,6 +51,9 @@ type rpcError struct {
 	Message string `json:"message"`
 }
 
+// RPCError is the JSON-RPC error Call returns. The live Bitcoin adapter matches it.
+type RPCError = rpcError
+
 func (e *rpcError) Error() string {
 	return fmt.Sprintf("RPC error %d: %s", e.Code, e.Message)
 }

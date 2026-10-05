@@ -10,6 +10,7 @@ import (
 
 	"github.com/google/uuid"
 
+	bitcoinchain "github.com/macrowallets/waas/app/adapters/chain/bitcoin"
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/services/addressing"
 	"github.com/macrowallets/waas/app/services/chain"
@@ -205,7 +206,7 @@ func newWalletFixture(t *testing.T, keys *mpcpkg.KeygenResult, curve mpcpkg.Curv
 func registryFor(network Network) *chain.Registry {
 	registry := chain.NewRegistry()
 	if network.AdapterType == models.AdapterTypeBitcoin {
-		registry.RegisterChain(chain.NewBitcoinLive(chain.BitcoinConfig{
+		registry.RegisterChain(bitcoinchain.NewBitcoinLive(bitcoinchain.BitcoinConfig{
 			ChainIDStr: network.ChainID, RPCURL: "http://127.0.0.1:9", IsTestnet: network.Testnet,
 		}))
 	}

@@ -1,4 +1,4 @@
-package chain
+package bitcoin
 
 import (
 	"context"
@@ -10,6 +10,7 @@ import (
 
 	"github.com/shopspring/decimal"
 
+	"github.com/macrowallets/waas/app/services/chain"
 	"github.com/macrowallets/waas/pkg/httpclient"
 	"github.com/macrowallets/waas/pkg/numeric"
 	"github.com/macrowallets/waas/pkg/types"
@@ -33,21 +34,29 @@ type BitcoinConfig struct {
 	FeeRateDefault int
 }
 
+// BitcoinLive talks to a Bitcoin node or an Esplora REST indexer.
+// The chain service keeps the types.Chain port this client already satisfies.
 type BitcoinLive struct {
 	cfg          BitcoinConfig
-	rpc          *RPCClient
+	rpc          *chain.RPCClient
 	restAPI      bool
 	http         *httpclient.Client
 	esploraRetry rateLimitRetry
 	feeRates     *btcFeeRateCache
-	fee          FeePolicy
+	fee          chain.FeePolicy
 }
+
+var (
+	_ types.Chain             = (*BitcoinLive)(nil)
+	_ chain.FeePolicyScoped   = (*BitcoinLive)(nil)
+	_ chain.FeePolicyReporter = (*BitcoinLive)(nil)
+)
 
 func NewBitcoinLive(cfg BitcoinConfig) *BitcoinLive {
 	isREST := bitcoinRESTEndpoint(cfg.RPCURL)
 	return &BitcoinLive{
 		cfg:          cfg,
-		rpc:          NewRPCClient(RPCClientDeps{URL: cfg.RPCURL, User: cfg.RPCUser, Password: cfg.RPCPass}),
+		rpc:          chain.NewRPCClient(chain.RPCClientDeps{URL: cfg.RPCURL, User: cfg.RPCUser, Password: cfg.RPCPass}),
 		restAPI:      isREST,
 		http:         httpclient.NewClient(bitcoinRESTTimeout),
 		esploraRetry: esploraRetry(),
@@ -80,7 +89,7 @@ func (a *BitcoinLive) ReplaceEndpoint(endpoint string) {
 	a.cfg.RPCURL = endpoint
 	a.restAPI = bitcoinRESTEndpoint(endpoint)
 	if a.rpc == nil {
-		a.rpc = NewRPCClient(RPCClientDeps{URL: endpoint, User: a.cfg.RPCUser, Password: a.cfg.RPCPass})
+		a.rpc = chain.NewRPCClient(chain.RPCClientDeps{URL: endpoint, User: a.cfg.RPCUser, Password: a.cfg.RPCPass})
 		return
 	}
 	a.rpc.ReplaceEndpoint(endpoint)
@@ -88,14 +97,14 @@ func (a *BitcoinLive) ReplaceEndpoint(endpoint string) {
 
 // WithFeePolicy is this adapter pricing fee rates with policy; it shares the
 // clients and the network fee-rate cache.
-func (a *BitcoinLive) WithFeePolicy(policy FeePolicy) types.Chain {
+func (a *BitcoinLive) WithFeePolicy(policy chain.FeePolicy) types.Chain {
 	scoped := *a
 	scoped.fee = policy
 	return &scoped
 }
 
 // FeePolicy is the wallet fee policy this adapter prices with.
-func (a *BitcoinLive) FeePolicy() FeePolicy { return a.fee }
+func (a *BitcoinLive) FeePolicy() chain.FeePolicy { return a.fee }
 
 func (a *BitcoinLive) ID() string                    { return a.cfg.ChainIDStr }
 func (a *BitcoinLive) Name() string                  { return a.cfg.ChainName }

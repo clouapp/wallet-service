@@ -25,6 +25,7 @@ import (
 	gethtypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/google/uuid"
 
+	bitcoinchain "github.com/macrowallets/waas/app/adapters/chain/bitcoin"
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/services/addressing"
 	"github.com/macrowallets/waas/app/services/chain"
@@ -412,7 +413,7 @@ func TestExecutePlan_BaseRowOfAnotherWalletIsNotSigned(t *testing.T) {
 // bitcoinSigningChain is the production testnet Bitcoin adapter backed by a fake
 // Esplora that knows one confirmed UTXO; broadcasts are recorded, never sent.
 type bitcoinSigningChain struct {
-	*chain.BitcoinLive
+	*bitcoinchain.BitcoinLive
 	broadcasts *[]*types.SignedTx
 }
 
@@ -460,7 +461,7 @@ func newBitcoinSigningChain(t *testing.T, broadcasts *[]*types.SignedTx) (*bitco
 	esplora := &fakeEsplora{funded: map[string]int64{}}
 	server := httptest.NewServer(esplora)
 	t.Cleanup(server.Close)
-	live := chain.NewBitcoinLive(chain.BitcoinConfig{
+	live := bitcoinchain.NewBitcoinLive(bitcoinchain.BitcoinConfig{
 		ChainIDStr:   models.ChainBTC,
 		NativeSymbol: models.NativeBTC,
 		// The path keeps the adapter on its Esplora REST client.

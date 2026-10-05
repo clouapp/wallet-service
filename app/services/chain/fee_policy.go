@@ -117,6 +117,12 @@ func (p FeePolicy) adjustMilliSatRate(milliSatPerVByte int64) int64 {
 	return max(rate, btcMinRelayMilliSatPerVByte)
 }
 
+// AdjustMilliSatRate is the Bitcoin rate after this policy. The live Bitcoin
+// adapter prices with it.
+func (p FeePolicy) AdjustMilliSatRate(milliSatPerVByte int64) int64 {
+	return p.adjustMilliSatRate(milliSatPerVByte)
+}
+
 // ChainForWallet is the wallet's adapter, pricing fees with the wallet's
 // FeePolicy. Adapters without per-unit fees (Solana, test doubles) and wallets
 // with default settings get the shared adapter.

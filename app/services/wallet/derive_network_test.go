@@ -7,6 +7,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	bitcoinchain "github.com/macrowallets/waas/app/adapters/chain/bitcoin"
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/services/chain"
 	"github.com/macrowallets/waas/tests/mocks"
@@ -19,9 +20,9 @@ func TestBtcRecordOnTestnetDerivesTb1Addresses(t *testing.T) {
 	require.NoError(t, err)
 
 	testnetRegistry := chain.NewRegistry()
-	testnetRegistry.RegisterChain(chain.NewBitcoinLive(chain.BitcoinConfig{ChainIDStr: models.ChainBTC, IsTestnet: true}))
+	testnetRegistry.RegisterChain(bitcoinchain.NewBitcoinLive(bitcoinchain.BitcoinConfig{ChainIDStr: models.ChainBTC, IsTestnet: true}))
 	mainnetRegistry := chain.NewRegistry()
-	mainnetRegistry.RegisterChain(chain.NewBitcoinLive(chain.BitcoinConfig{ChainIDStr: models.ChainBTC}))
+	mainnetRegistry.RegisterChain(bitcoinchain.NewBitcoinLive(bitcoinchain.BitcoinConfig{ChainIDStr: models.ChainBTC}))
 
 	onTestnet, err := newTestService(t, testnetRegistry).deriveChainAddress(models.ChainBTC, pub)
 	require.NoError(t, err)

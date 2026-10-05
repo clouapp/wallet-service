@@ -22,6 +22,7 @@ import (
 	etherscantip "github.com/macrowallets/waas/app/adapters/blockheight/etherscan"
 	mempooltip "github.com/macrowallets/waas/app/adapters/blockheight/mempool"
 	solanatip "github.com/macrowallets/waas/app/adapters/blockheight/solana"
+	bitcoinchain "github.com/macrowallets/waas/app/adapters/chain/bitcoin"
 	coinapiws "github.com/macrowallets/waas/app/adapters/price/coinapi"
 	queuesqs "github.com/macrowallets/waas/app/adapters/queue/sqs"
 	"github.com/macrowallets/waas/app/adapters/redis/addresscache"
@@ -328,7 +329,7 @@ func buildVaultContainer(app foundation.Application) (*container.Container, erro
 				if ch.IsTestnet {
 					network = "testnet"
 				}
-				adapter = chainpkg.NewBitcoinLive(chainpkg.BitcoinConfig{
+				adapter = bitcoinchain.NewBitcoinLive(bitcoinchain.BitcoinConfig{
 					ChainIDStr:    ch.ID,
 					ChainName:     ch.Name,
 					NativeSymbol:  ch.NativeSymbol,

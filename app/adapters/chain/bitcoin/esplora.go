@@ -1,4 +1,4 @@
-package chain
+package bitcoin
 
 import (
 	"context"
@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/macrowallets/waas/app/services/chain"
 	"github.com/macrowallets/waas/pkg/httpclient"
 	"github.com/macrowallets/waas/pkg/types"
 )
@@ -74,7 +75,7 @@ func (a *BitcoinLive) esploraGet(ctx context.Context, path string) ([]byte, erro
 			return nil, &esploraStatusError{path: path, status: status, body: strings.TrimSpace(string(body))}
 		}
 		if attempt >= a.esploraRetry.maxAttempts {
-			return nil, fmt.Errorf("esplora GET %s: %w (HTTP %d) after %d attempts", path, ErrRateLimited, status, attempt)
+			return nil, fmt.Errorf("esplora GET %s: %w (HTTP %d) after %d attempts", path, chain.ErrRateLimited, status, attempt)
 		}
 		delay := a.esploraRetry.delay(attempt, header.Get("Retry-After"), time.Now())
 		slog.Warn("esplora rate limited, backing off", "chain", a.cfg.ChainIDStr, "path", path, "status", status, "attempt", attempt, "delay", delay.String())
@@ -177,7 +178,7 @@ func (a *BitcoinLive) getTransactionBlockRPC(ctx context.Context, txHash string)
 		BlockHash string `json:"blockhash"`
 	}
 	if err := a.rpc.Call(ctx, "getrawtransaction", &tx, txID, true); err != nil {
-		var rpcErr *rpcError
+		var rpcErr *chain.RPCError
 		if errors.As(err, &rpcErr) && rpcErr.Code == bitcoindTxNotFoundCode {
 			return 0, nil
 		}

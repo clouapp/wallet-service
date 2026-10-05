@@ -22,13 +22,19 @@ func adapterBlockHeightKind(adapter types.Chain) string {
 	switch adapter.(type) {
 	case *chain.EVMLive:
 		return models.AdapterTypeEVM
-	case *chain.BitcoinLive:
-		return models.AdapterTypeBitcoin
 	case *chain.SolanaLive:
 		return models.AdapterTypeSolana
 	default:
+		if _, ok := adapter.(bitcoinNetwork); ok {
+			return models.AdapterTypeBitcoin
+		}
 		return ""
 	}
+}
+
+// bitcoinNetwork is the port the live Bitcoin client already satisfies.
+type bitcoinNetwork interface {
+	IsTestnet() bool
 }
 
 func (s *Service) providerForAdapter(adapter types.Chain) blockheight.Provider {

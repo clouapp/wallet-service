@@ -1,4 +1,4 @@
-package chain
+package bitcoin
 
 import (
 	"context"
@@ -13,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/macrowallets/waas/app/services/chain"
 	"github.com/macrowallets/waas/pkg/types"
 )
 
@@ -113,7 +114,7 @@ func (a *BitcoinLive) flatBTCFee() int64 {
 	if a.cfg.FeeRateDefault > 0 {
 		rate = a.cfg.FeeRateDefault
 	}
-	milliSatPerVByte := a.fee.adjustMilliSatRate(int64(rate) * milliSatsPerSat)
+	milliSatPerVByte := a.fee.AdjustMilliSatRate(int64(rate) * milliSatsPerSat)
 	return ceilDiv(int64(btcFeeVBytes)*milliSatPerVByte, milliSatsPerSat)
 }
 
@@ -124,7 +125,7 @@ func (a *BitcoinLive) feePolicy(ctx context.Context) btcFeePolicy {
 	policy := btcFeePolicy{flatFee: a.flatBTCFee()}
 	now := time.Now()
 	if rate, ok := a.feeRates.get(now); ok {
-		policy.milliSatPerVByte = a.fee.adjustMilliSatRate(rate)
+		policy.milliSatPerVByte = a.fee.AdjustMilliSatRate(rate)
 		return policy
 	}
 	rate, err := a.fetchFeeRate(ctx)
@@ -133,7 +134,7 @@ func (a *BitcoinLive) feePolicy(ctx context.Context) btcFeePolicy {
 		return policy
 	}
 	a.feeRates.put(rate, now)
-	policy.milliSatPerVByte = a.fee.adjustMilliSatRate(rate)
+	policy.milliSatPerVByte = a.fee.AdjustMilliSatRate(rate)
 	return policy
 }
 
@@ -289,36 +290,24 @@ func (a *BitcoinLive) estimateTransferFeeSats(ctx context.Context, req types.Tra
 	return quote.Fee
 }
 
-// BitcoinFeeQuote prices one transfer. Covered is false when the inputs cannot pay
-// the amount; the quote is then for a typical one-input transfer with change.
-type BitcoinFeeQuote struct {
-	Fee              int64
-	Inputs           int
-	Outputs          int
-	VSize            int64
-	MilliSatPerVByte int64
-	FlatFallback     bool
-	Covered          bool
-}
-
 // QuoteTransferFee is the fee BuildTransfer would pay sending amount from `from`:
 // the same confirmed UTXOs, fee policy and largest-first selection. pendingInputs
 // are outputs the transfer will also be able to spend (sweep legs into `from`).
 // A failed UTXO listing is returned as an error, never replaced by a typical fee.
-func (a *BitcoinLive) QuoteTransferFee(ctx context.Context, from string, amount *big.Int, pendingInputs []*big.Int) (BitcoinFeeQuote, error) {
+func (a *BitcoinLive) QuoteTransferFee(ctx context.Context, from string, amount *big.Int, pendingInputs []*big.Int) (chain.BitcoinFeeQuote, error) {
 	if strings.TrimSpace(from) == "" {
-		return BitcoinFeeQuote{}, fmt.Errorf("btc fee quote: from address is required")
+		return chain.BitcoinFeeQuote{}, fmt.Errorf("btc fee quote: from address is required")
 	}
 	if amount == nil || !amount.IsInt64() || amount.Sign() <= 0 {
-		return BitcoinFeeQuote{}, fmt.Errorf("btc fee quote: amount must be a positive number of sats")
+		return chain.BitcoinFeeQuote{}, fmt.Errorf("btc fee quote: amount must be a positive number of sats")
 	}
 	utxos, err := a.listConfirmedUTXOs(ctx, from)
 	if err != nil {
-		return BitcoinFeeQuote{}, fmt.Errorf("btc fee quote: utxos of %s: %w", from, err)
+		return chain.BitcoinFeeQuote{}, fmt.Errorf("btc fee quote: utxos of %s: %w", from, err)
 	}
 	for index, pending := range pendingInputs {
 		if pending == nil || !pending.IsInt64() || pending.Sign() <= 0 {
-			return BitcoinFeeQuote{}, fmt.Errorf("btc fee quote: pending input %d is not a positive number of sats", index)
+			return chain.BitcoinFeeQuote{}, fmt.Errorf("btc fee quote: pending input %d is not a positive number of sats", index)
 		}
 		utxos = append(utxos, btcInput{Value: pending.Int64(), Address: from})
 	}
@@ -336,13 +325,13 @@ func (a *BitcoinLive) QuoteTransferFee(ctx context.Context, from string, amount 
 
 // QuoteSweepFee is the fee BuildSweep pays emptying every confirmed UTXO of `from`
 // into one output. Covered is false when nothing above dust can be swept.
-func (a *BitcoinLive) QuoteSweepFee(ctx context.Context, from string) (BitcoinFeeQuote, error) {
+func (a *BitcoinLive) QuoteSweepFee(ctx context.Context, from string) (chain.BitcoinFeeQuote, error) {
 	if strings.TrimSpace(from) == "" {
-		return BitcoinFeeQuote{}, fmt.Errorf("btc fee quote: from address is required")
+		return chain.BitcoinFeeQuote{}, fmt.Errorf("btc fee quote: from address is required")
 	}
 	utxos, err := a.listConfirmedUTXOs(ctx, from)
 	if err != nil {
-		return BitcoinFeeQuote{}, fmt.Errorf("btc fee quote: utxos of %s: %w", from, err)
+		return chain.BitcoinFeeQuote{}, fmt.Errorf("btc fee quote: utxos of %s: %w", from, err)
 	}
 	policy := a.feePolicy(ctx)
 	inputs := spendableBTCInputs(utxos)
@@ -352,8 +341,8 @@ func (a *BitcoinLive) QuoteSweepFee(ctx context.Context, from string) (BitcoinFe
 	return policy.quote(len(inputs), btcOutputsPaymentOnly, policy.fee(len(inputs), btcOutputsPaymentOnly), true), nil
 }
 
-func (p btcFeePolicy) quote(inputs, outputs int, fee int64, covered bool) BitcoinFeeQuote {
-	return BitcoinFeeQuote{
+func (p btcFeePolicy) quote(inputs, outputs int, fee int64, covered bool) chain.BitcoinFeeQuote {
+	return chain.BitcoinFeeQuote{
 		Fee:              fee,
 		Inputs:           inputs,
 		Outputs:          outputs,
@@ -369,35 +358,21 @@ func (a *BitcoinLive) MinimumTransferAmount() *big.Int {
 	return big.NewInt(btcDustSats)
 }
 
-// ---------------------------------------------------------------------------
-// Spendable funds (sweep planner)
-// ---------------------------------------------------------------------------
-
-// SpendableFunds is what an address can put toward a native transfer. Balance is
-// what the transaction builder will spend (Bitcoin: confirmed UTXOs only);
-// MaxTransferFee is the fee of one transfer spending all of it to a single
-// recipient, so Balance − MaxTransferFee is the most one transfer can pay. When that
-// is below dust, MaxTransferFee is the whole Balance: nothing can be sent.
-type SpendableFunds struct {
-	Balance        *big.Int
-	MaxTransferFee *big.Int
-}
-
 // SpendableFunds reads address's confirmed UTXOs and prices spending them with the
 // same fee policy and selection BuildTransfer / BuildSweep use. Displayed balances
 // (GetBalance) still include unconfirmed UTXOs.
-func (a *BitcoinLive) SpendableFunds(ctx context.Context, address string) (SpendableFunds, error) {
+func (a *BitcoinLive) SpendableFunds(ctx context.Context, address string) (chain.SpendableFunds, error) {
 	if strings.TrimSpace(address) == "" {
-		return SpendableFunds{}, fmt.Errorf("btc spendable funds: address is required")
+		return chain.SpendableFunds{}, fmt.Errorf("btc spendable funds: address is required")
 	}
 	utxos, err := a.listConfirmedUTXOs(ctx, address)
 	if err != nil {
-		return SpendableFunds{}, fmt.Errorf("btc spendable funds of %s: %w", address, err)
+		return chain.SpendableFunds{}, fmt.Errorf("btc spendable funds of %s: %w", address, err)
 	}
 	balance := sumBTCInputs(spendableBTCInputs(utxos))
 	if balance == 0 {
-		return SpendableFunds{Balance: new(big.Int), MaxTransferFee: new(big.Int)}, nil
+		return chain.SpendableFunds{Balance: new(big.Int), MaxTransferFee: new(big.Int)}, nil
 	}
 	fee := balance - maxSendableSats(utxos, a.feePolicy(ctx))
-	return SpendableFunds{Balance: big.NewInt(balance), MaxTransferFee: big.NewInt(fee)}, nil
+	return chain.SpendableFunds{Balance: big.NewInt(balance), MaxTransferFee: big.NewInt(fee)}, nil
 }
