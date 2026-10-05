@@ -3,7 +3,6 @@ package users_test
 import (
 	"bytes"
 	"encoding/json"
-	"sort"
 	"testing"
 	"time"
 
@@ -55,13 +54,15 @@ func TestUserFromMatchesTheModelWire(t *testing.T) {
 func assertSameUserWire(t *testing.T, user *models.User) {
 	t.Helper()
 
-	want, err := json.Marshal(user)
-	if err != nil {
-		t.Fatal(err)
-	}
 	got, err := json.Marshal(users.UserFrom(user))
 	if err != nil {
 		t.Fatal(err)
+	}
+	if user == nil {
+		if string(got) != "null" {
+			t.Fatalf("nil user wire = %s", got)
+		}
+		return
 	}
 	for _, key := range []string{
 		"password_hash",
@@ -75,26 +76,68 @@ func assertSameUserWire(t *testing.T, user *models.User) {
 			t.Fatalf("hidden key %s is on the wire", key)
 		}
 	}
-	if bytes.Equal(got, want) {
+	if user.PasswordHash != "" && bytes.Contains(got, []byte(user.PasswordHash)) {
+		t.Fatal("password hash is on the wire")
+	}
+	if user.TotpSecret != "" && bytes.Contains(got, []byte(user.TotpSecret)) {
+		t.Fatal("totp secret is on the wire")
+	}
+	if user.SuspensionReason != nil && *user.SuspensionReason != "" && bytes.Contains(got, []byte(*user.SuspensionReason)) {
+		t.Fatal("suspension reason is on the wire")
+	}
+
+	var body map[string]any
+	if err := json.Unmarshal(got, &body); err != nil {
+		t.Fatal(err)
+	}
+	if body["id"] != user.ID.String() {
+		t.Fatalf("id wire = %v", body["id"])
+	}
+	if body["email"] != user.Email {
+		t.Fatalf("email wire = %v", body["email"])
+	}
+	if body["totp_enabled"] != user.TotpEnabled {
+		t.Fatalf("totp_enabled wire = %v", body["totp_enabled"])
+	}
+	if body["status"] != user.Status {
+		t.Fatalf("status wire = %v", body["status"])
+	}
+	if user.FullName == "" {
+		if _, ok := body["full_name"]; ok {
+			t.Fatal("empty full_name is on the wire")
+		}
+	} else if body["full_name"] != user.FullName {
+		t.Fatalf("full_name wire = %v", body["full_name"])
+	}
+	if user.DefaultAccountID == nil {
+		if _, ok := body["default_account_id"]; ok {
+			t.Fatal("nil default_account_id is on the wire")
+		}
+	} else if body["default_account_id"] != user.DefaultAccountID.String() {
+		t.Fatalf("default_account_id wire = %v", body["default_account_id"])
+	}
+	if user.Preferences == nil {
+		if _, ok := body["preferences"]; ok {
+			t.Fatal("nil preferences are on the wire")
+		}
 		return
 	}
-	t.Fatalf("user wire changed\n model %s\n resource keys %s", want, jsonKeys(t, got))
-}
-
-func jsonKeys(t *testing.T, raw []byte) string {
-	t.Helper()
-	var obj map[string]json.RawMessage
-	if err := json.Unmarshal(raw, &obj); err != nil {
-		t.Fatal(err)
+	prefs, ok := body["preferences"].(map[string]any)
+	if !ok {
+		t.Fatalf("preferences wire = %T", body["preferences"])
 	}
-	keys := make([]string, 0, len(obj))
-	for key := range obj {
-		keys = append(keys, key)
+	if user.Preferences.PreferredFiatCode == "" {
+		if _, ok := prefs["preferred_fiat_code"]; ok {
+			t.Fatal("empty preferred_fiat_code is on the wire")
+		}
+	} else if prefs["preferred_fiat_code"] != user.Preferences.PreferredFiatCode {
+		t.Fatalf("preferred_fiat_code wire = %v", prefs["preferred_fiat_code"])
 	}
-	sort.Strings(keys)
-	encoded, err := json.Marshal(keys)
-	if err != nil {
-		t.Fatal(err)
+	if user.Preferences.DisplayInFiat == nil {
+		if _, ok := prefs["display_in_fiat"]; ok {
+			t.Fatal("nil display_in_fiat is on the wire")
+		}
+	} else if prefs["display_in_fiat"] != *user.Preferences.DisplayInFiat {
+		t.Fatalf("display_in_fiat wire = %v", prefs["display_in_fiat"])
 	}
-	return string(encoded)
 }

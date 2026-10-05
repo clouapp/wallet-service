@@ -10,8 +10,9 @@ import (
 )
 
 // User is the profile register, login, 2FA verify, GET and PATCH /v1/users/me,
-// and the TOTP confirm and disable bodies return. Field order and tags match
-// models.User, including json:"-" and omitempty. A nil user stays null.
+// and the TOTP confirm and disable bodies return. These tags are the wire.
+// Secret fields stay json:"-" so marshaling this resource cannot reveal them.
+// A nil user stays null.
 type User struct {
 	CreatedAt           *carbon.DateTime `json:"created_at"`
 	UpdatedAt           *carbon.DateTime `json:"updated_at"`
@@ -30,8 +31,8 @@ type User struct {
 	SuspensionReason    *string          `json:"-"`
 }
 
-// Preferences is the nested preferences object on User. Tags match
-// models.UserPreferences.
+// Preferences is the nested preferences object on User. The names match the
+// users.preferences jsonb document.
 type Preferences struct {
 	PreferredFiatCode string `json:"preferred_fiat_code,omitempty"`
 	DisplayInFiat     *bool  `json:"display_in_fiat,omitempty"`

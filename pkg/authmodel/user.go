@@ -1,6 +1,8 @@
 // Package authmodel is the user row the auth config and app/models share.
-// Config may not import app/models; both may import pkg. Field tags, the
-// users table name, and the preferences JSON encoding are unchanged.
+// Config may not import app/models; both may import pkg. The users table
+// name is unchanged. User carries no HTTP json names. Fields that must stay
+// out of any encoding/json of the row keep json:"-". UserPreferences keeps
+// its json names because they are the users.preferences jsonb document.
 package authmodel
 
 import (
@@ -12,17 +14,17 @@ import (
 
 type User struct {
 	orm.Model
-	ID           uuid.UUID `gorm:"type:uuid;primary_key" json:"id"`
-	Email        string    `gorm:"type:varchar(255);uniqueIndex;not null" json:"email"`
+	ID           uuid.UUID `gorm:"type:uuid;primary_key"`
+	Email        string    `gorm:"type:varchar(255);uniqueIndex;not null"`
 	PasswordHash string    `gorm:"type:text;not null" json:"-"`
-	FullName     string    `gorm:"type:varchar(255)" json:"full_name,omitempty"`
+	FullName     string    `gorm:"type:varchar(255)"`
 	// TotpSecret is the sealed TOTP secret loaded from mfa_credentials. It is
 	// not a users column and it is never part of an HTTP body.
 	TotpSecret       string           `gorm:"-" json:"-"`
-	TotpEnabled      bool             `gorm:"default:false" json:"totp_enabled"`
-	Status           string           `gorm:"type:varchar(20);default:active" json:"status"`
-	DefaultAccountID *uuid.UUID       `gorm:"type:uuid" json:"default_account_id,omitempty"`
-	Preferences      *UserPreferences `gorm:"type:jsonb" json:"preferences,omitempty"`
+	TotpEnabled      bool             `gorm:"default:false"`
+	Status           string           `gorm:"type:varchar(20);default:active"`
+	DefaultAccountID *uuid.UUID       `gorm:"type:uuid"`
+	Preferences      *UserPreferences `gorm:"type:jsonb"`
 
 	// TotpLastUsedCounter is the last TOTP time-step this user redeemed; a code
 	// whose step is not newer is a replay.

@@ -3,25 +3,35 @@ package architecture
 import (
 	"go/ast"
 	"go/token"
+	"reflect"
 	"strconv"
 	"strings"
 	"testing"
 )
 
-// TestModelsCarryNoWireTags reports a json tag on a model field: the wire
-// shape lives only in app/http/resources (.ai/guidelines/http-layer.md).
-// One entry per model type.
+// TestModelsCarryNoWireTags fails when a model field carries an HTTP json
+// name. The wire shape lives only in app/http/resources. json:"-" stays on
+// fields that must not become visible. UserPreferences keeps the two names
+// of the users.preferences jsonb document.
 func TestModelsCarryNoWireTags(t *testing.T) {
 	module := sharedModule(t)
-	var violations Violations
-	for _, file := range module.ProductionFiles("app/models") {
-		structTags(file, func(typeName, _, tag string) {
-			if tagName(tag, "json") != "" {
-				violations.Add("%s: %s has json tags", file.Path, typeName)
+	for _, file := range module.ProductionFiles("app/models", "pkg/authmodel") {
+		structTags(file, func(typeName, fieldName, tag string) {
+			value, ok := reflect.StructTag(tag).Lookup("json")
+			if !ok {
+				return
 			}
+			name, _, _ := strings.Cut(value, ",")
+			if name == "-" {
+				return
+			}
+			if file.Path == "pkg/authmodel/preferences.go" && typeName == "UserPreferences" &&
+				(name == "preferred_fiat_code" || name == "display_in_fiat") {
+				return
+			}
+			t.Errorf("%s: %s.%s has json tag %q", file.Path, typeName, fieldName, value)
 		})
 	}
-	Report(t, &violations)
 }
 
 // ioLibraries are I/O clients a service reaches through a port implemented in
