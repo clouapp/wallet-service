@@ -131,13 +131,16 @@ func (ctrl *AuthController) Register(ctx http.Context) http.Response {
 		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to create user"})
 	}
 
+	accounts, defaultAccount, accountsErr := ctrl.loadUserAccounts(user)
+	if accountsErr != nil {
+		return membershipReadUnavailable(ctx)
+	}
+
 	accessToken, err := appfacades.Auth(ctx).LoginUsingID(user.ID.String())
 	if err != nil {
 		appfacades.Log().WithContext(ctx).Errorf("auth: login after register: %v", err)
 		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to create session"})
 	}
-
-	accounts, defaultAccount := ctrl.loadUserAccounts(user)
 
 	resp := http.Json{
 		"access_token": accessToken,
@@ -201,12 +204,17 @@ func (ctrl *AuthController) Login(ctx http.Context) http.Response {
 		})
 	}
 
+	accounts, defaultAccount, accountsErr := ctrl.loadUserAccounts(&user)
+	if accountsErr != nil {
+		return membershipReadUnavailable(ctx)
+	}
+
 	tokens, err := ctrl.sessions().IssueSession(ctx, user.ID, user.SessionsRevokedAt)
 	if err != nil {
 		appfacades.Log().WithContext(ctx).Errorf("auth: login: %v", err)
 		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to create session"})
 	}
-	return responses.Send(ctx, http.StatusOK, ctrl.signedInResponse(&user, tokens))
+	return responses.Send(ctx, http.StatusOK, ctrl.signedInResponse(&user, tokens, accounts, defaultAccount))
 }
 
 // VerifyTwoFactor godoc
@@ -241,12 +249,17 @@ func (ctrl *AuthController) VerifyTwoFactor(ctx http.Context) http.Response {
 		return responses.SuspendedUser(ctx)
 	}
 
+	accounts, defaultAccount, accountsErr := ctrl.loadUserAccounts(user)
+	if accountsErr != nil {
+		return membershipReadUnavailable(ctx)
+	}
+
 	tokens, err := ctrl.sessions().IssueSession(ctx, user.ID, user.SessionsRevokedAt)
 	if err != nil {
 		appfacades.Log().WithContext(ctx).Errorf("auth: 2fa login: %v", err)
 		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to create session"})
 	}
-	return responses.Send(ctx, http.StatusOK, ctrl.signedInResponse(user, tokens))
+	return responses.Send(ctx, http.StatusOK, ctrl.signedInResponse(user, tokens, accounts, defaultAccount))
 }
 
 // RefreshToken godoc
@@ -421,8 +434,7 @@ func (ctrl *AuthController) ResetPassword(ctx http.Context) http.Response {
 	return responses.Send(ctx, http.StatusOK, http.Json{"message": "password reset successfully"})
 }
 
-func (ctrl *AuthController) signedInResponse(user *models.User, tokens controllers.SessionTokens) http.Json {
-	accounts, defaultAccount := ctrl.loadUserAccounts(user)
+func (ctrl *AuthController) signedInResponse(user *models.User, tokens controllers.SessionTokens, accounts []map[string]interface{}, defaultAccount map[string]interface{}) http.Json {
 	user.TotpSecret = ""
 	resp := http.Json{
 		"access_token":  tokens.AccessToken,
@@ -437,11 +449,15 @@ func (ctrl *AuthController) signedInResponse(user *models.User, tokens controlle
 	return resp
 }
 
-func (ctrl *AuthController) loadUserAccounts(user *models.User) ([]map[string]interface{}, map[string]interface{}) {
+func membershipReadUnavailable(ctx http.Context) http.Response {
+	return responses.Send(ctx, http.StatusServiceUnavailable, http.Json{"error": "failed to load accounts"})
+}
+
+func (ctrl *AuthController) loadUserAccounts(user *models.User) ([]map[string]interface{}, map[string]interface{}, error) {
 	memberships, err := ctrl.accounts.ListMemberships(context.Background(), user.ID)
 	if err != nil {
 		appfacades.Log().Errorf("auth: load memberships: %v", err)
-		return nil, nil
+		return nil, nil, err
 	}
 
 	var accounts []map[string]interface{}
@@ -483,7 +499,7 @@ func (ctrl *AuthController) loadUserAccounts(user *models.User) ([]map[string]in
 	if defaultAccount == nil && len(accounts) > 0 {
 		defaultAccount = accounts[0]
 	}
-	return accounts, defaultAccount
+	return accounts, defaultAccount, nil
 }
 
 // ---- Swagger-only types ----
