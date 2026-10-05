@@ -444,9 +444,6 @@ func (ctrl *AccountsController) CreateAccountToken(ctx http.Context) http.Respon
 	if errResp := validateRequest(ctx, &req); errResp != nil {
 		return errResp
 	}
-	if errResp := controllers.Deny(ctx, policies.MintAPITokenPermissions(middleware.AccountRole(ctx), req.Permissions)); errResp != nil {
-		return errResp
-	}
 	if !policies.ValidAPITokenIPCIDR(req.IpCidr) {
 		return responses.FieldsFailed(ctx, map[string][]string{
 			"ip_cidr": {"The ip_cidr must be a valid CIDR."},

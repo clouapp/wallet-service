@@ -315,6 +315,35 @@ func (s *accountTokensSuite) TestUserCannotMint() {
 	s.Equal(int64(0), s.tokenCount(accountID))
 }
 
+func (s *accountTokensSuite) TestMintScopesStayWithTheRole() {
+	accountID := s.createAccount()
+	owner := s.loginUser("owner", accountID)
+	admin := s.loginUser("admin", accountID)
+	auditor := s.loginUser("auditor", accountID)
+	user := s.loginUser("user", accountID)
+
+	ownerResp := s.createToken(owner.token, accountID, `{"name":"owner-scope","permissions":["sweep.execute","transactions.read"]}`)
+	s.Equal(http.StatusCreated, s.statusOf(ownerResp))
+	s.JSONEq(`["sweep.execute","transactions.read"]`, s.storedPermissions(accountID, "owner-scope"))
+
+	adminResp := s.createToken(admin.token, accountID, `{"name":"admin-scope","permissions":["wallets.create","webhooks.write"]}`)
+	s.Equal(http.StatusCreated, s.statusOf(adminResp))
+	s.JSONEq(`["wallets.create","webhooks.write"]`, s.storedPermissions(accountID, "admin-scope"))
+
+	// The mint policy allows these scopes. tokens.write still refuses the create.
+	userHeld := s.createToken(user.token, accountID, `{"name":"user-held","permissions":["wallets.read","addresses.create"]}`)
+	s.assertCreateForbidden(userHeld)
+	userDenied := s.createToken(user.token, accountID, `{"name":"user-denied","permissions":["wallets.create"]}`)
+	s.assertCreateForbidden(userDenied)
+
+	auditorHeld := s.createToken(auditor.token, accountID, `{"name":"auditor-held","permissions":["transactions.read","webhooks.read"]}`)
+	s.assertCreateForbidden(auditorHeld)
+	auditorDenied := s.createToken(auditor.token, accountID, `{"name":"auditor-denied","permissions":["sweep.execute"]}`)
+	s.assertCreateForbidden(auditorDenied)
+
+	s.Equal(int64(2), s.tokenCount(accountID))
+}
+
 func (s *accountTokensSuite) TestAdminCanMint() {
 	accountID := s.createAccount()
 	admin := s.loginUser("admin", accountID)

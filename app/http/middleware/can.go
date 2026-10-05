@@ -27,7 +27,8 @@ const PermAccountLifecycle = policies.PermAccountLifecycle
 // PermTokensRead is GET /v1/accounts/{accountId}/tokens. Routes cannot import policies.
 const PermTokensRead = policies.PermTokensRead
 
-// PermTokensWrite is POST /v1/accounts/{accountId}/tokens and DELETE /v1/accounts/{accountId}/tokens/{tokenId}. Routes cannot import policies.
+// PermTokensWrite is POST /v1/accounts/{accountId}/tokens and DELETE /v1/accounts/{accountId}/tokens/{tokenId}.
+// POST also runs MintAPITokenPermissions before the handler. Routes cannot import policies.
 const PermTokensWrite = policies.PermTokensWrite
 
 // Can refuses the route unless the account role already stored by
