@@ -21,8 +21,7 @@ func NewProviders(key EtherscanKey, networkByChain map[string]string) map[string
 		models.AdapterTypeSolana:  RouteByNetwork(NewSolanaPublicProvider(), networkByChain),
 	}
 	if key != nil {
-		provider := NewEtherscanProvider("")
-		provider.keyAtUse = key
+		provider := NewEtherscanProvider(EtherscanDeps{KeyAtUse: key})
 		providers[models.AdapterTypeEVM] = RouteByNetwork(provider, networkByChain)
 	}
 	return providers

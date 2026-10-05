@@ -25,7 +25,7 @@ func TestEtherscanProvider_GetBlockHeight_ValidHex(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	p := NewEtherscanProvider("")
+	p := NewEtherscanProvider(EtherscanDeps{})
 	p.client = httpclient.Wrap(srv.Client())
 	p.baseURL = srv.URL
 
@@ -40,7 +40,7 @@ func TestEtherscanProvider_GetBlockHeight_ErrorResponse(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	p := NewEtherscanProvider("")
+	p := NewEtherscanProvider(EtherscanDeps{})
 	p.client = httpclient.Wrap(srv.Client())
 	p.baseURL = srv.URL
 
@@ -50,7 +50,7 @@ func TestEtherscanProvider_GetBlockHeight_ErrorResponse(t *testing.T) {
 }
 
 func TestEtherscanProvider_GetBlockHeight_UnknownChain(t *testing.T) {
-	p := NewEtherscanProvider("")
+	p := NewEtherscanProvider(EtherscanDeps{})
 	_, err := p.GetBlockHeight(context.Background(), "unknown")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "unknown chain_id")

@@ -22,11 +22,19 @@ type EtherscanProvider struct {
 	baseURL  string
 }
 
-func NewEtherscanProvider(apiKey string) *EtherscanProvider {
+// EtherscanDeps is everything the Etherscan block-height provider uses.
+// A nil KeyAtUse keeps APIKey on every height read.
+type EtherscanDeps struct {
+	APIKey   string
+	KeyAtUse EtherscanKey
+}
+
+func NewEtherscanProvider(deps EtherscanDeps) *EtherscanProvider {
 	return &EtherscanProvider{
-		apiKey:  apiKey,
-		client:  httpclient.NewClient(5 * time.Second),
-		baseURL: etherscanDefaultBase,
+		apiKey:   deps.APIKey,
+		keyAtUse: deps.KeyAtUse,
+		client:   httpclient.NewClient(5 * time.Second),
+		baseURL:  etherscanDefaultBase,
 	}
 }
 
