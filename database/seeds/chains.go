@@ -2,6 +2,7 @@ package seeds
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 
@@ -78,6 +79,7 @@ func SeedChains(ctx context.Context) error {
 		return err
 	}
 
+	chains := repositories.NewChainRepository(nil)
 	for _, c := range chainSeeds() {
 		c, err = withProfileNetwork(c, profile)
 		if err != nil {
@@ -89,14 +91,15 @@ func SeedChains(ctx context.Context) error {
 			return fmt.Errorf("encrypt RPC for chain %s: %w", c.id, err)
 		}
 
-		var existing models.Chain
-		if err := facades.Orm().Query().Where("id", c.id).First(&existing); err == nil && existing.ID != "" {
+		existing, err := chains.FindByID(ctx, c.id)
+		if err != nil && !errors.Is(err, models.ErrRepositoryNotFound) {
+			return fmt.Errorf("find chain %s: %w", c.id, err)
+		}
+		if existing != nil && existing.ID != "" {
 			// Re-encrypt rpc_url under the current APP_KEY so a rotated key self-heals
 			// on re-seed instead of leaving the registry unable to decrypt (which shows
-			// up as "unknown chain" for every API call).
-			if _, err := facades.Orm().Query().Model(&models.Chain{}).
-				Where("id = ?", c.id).
-				Update("rpc_url", encRPC); err != nil {
+			// up as "unknown chain" for every API call). Other columns stay as they are.
+			if err := chains.UpdateRPCURL(ctx, c.id, encRPC); err != nil {
 				return fmt.Errorf("refresh rpc_url for chain %s: %w", c.id, err)
 			}
 			slog.Info("chain exists, refreshed rpc_url", "id", c.id)
@@ -107,7 +110,7 @@ func SeedChains(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
-		if err := createSeedChain(c, encRPC, thresholds); err != nil {
+		if err := insertSeedChain(ctx, chains, c, encRPC, thresholds); err != nil {
 			return err
 		}
 	}
@@ -142,6 +145,10 @@ func encryptSeedRPC(c chainSeed) (string, error) {
 }
 
 func createSeedChain(c chainSeed, encRPC string, thresholds *seedThresholds) error {
+	return insertSeedChain(context.Background(), repositories.NewChainRepository(nil), c, encRPC, thresholds)
+}
+
+func insertSeedChain(ctx context.Context, chains *repositories.ChainRepository, c chainSeed, encRPC string, thresholds *seedThresholds) error {
 	if c.requiredConfirmations <= 0 {
 		return fmt.Errorf("create chain %s: required confirmations must be positive, got %d", c.id, c.requiredConfirmations)
 	}
@@ -166,7 +173,7 @@ func createSeedChain(c chainSeed, encRPC string, thresholds *seedThresholds) err
 		ch.DustThresholdNativeRaw = thresholds.dustNativeRaw
 		ch.DustThresholdUSD = thresholds.dustUSD
 	}
-	if err := facades.Orm().Query().Create(&ch); err != nil {
+	if err := chains.Create(ctx, &ch); err != nil {
 		return fmt.Errorf("create chain %s: %w", c.id, err)
 	}
 	slog.Info("created chain", "id", c.id)
