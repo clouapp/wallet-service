@@ -459,7 +459,13 @@ func buildVaultContainer(app foundation.Application) (*container.Container, erro
 	if pendingDeposits := buildPendingDepositStore(c.Redis, facades.Config().GetString("vault.deposit_scan.pending_dir")); pendingDeposits != nil {
 		c.DepositService.SetPendingStore(pendingDeposits)
 	}
-	c.IngestService = ingest.NewService(addressset.New(c.Redis), c.Registry, c.WebhookService, c.AddressRepo, c.TransactionRepo)
+	c.IngestService = ingest.NewService(ingest.Deps{
+		Addresses:    addressset.New(c.Redis),
+		Registry:     c.Registry,
+		Webhook:      c.WebhookService,
+		AddressRepo:  c.AddressRepo,
+		Transactions: c.TransactionRepo,
+	})
 	c.IngestService.SetDepositEvents(c.DepositEvents)
 	c.BalanceRefreshService = refresh.NewBalanceService(
 		c.Registry,

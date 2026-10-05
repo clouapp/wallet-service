@@ -27,7 +27,7 @@ func TestProcessTransfers_UnknownChain(t *testing.T) {
 }
 
 func TestNewService_NilDeps(t *testing.T) {
-	svc := NewService(nil, nil, nil, nil, nil)
+	svc := NewService(Deps{})
 	assert.NotNil(t, svc)
 }
 
@@ -97,7 +97,12 @@ func TestProcessTransfers_HumanUSDTUsesSeedDecimals(t *testing.T) {
 		Address:        to,
 	}}
 	txs := &ingestTxRepo{}
-	svc := NewService(nil, reg, webhook.NewService(nil, &ingestWebhookConfigRepo{}, &ingestWebhookEventRepo{}), addrs, txs)
+	svc := NewService(Deps{
+		Registry:     reg,
+		Webhook:      webhook.NewService(nil, &ingestWebhookConfigRepo{}, &ingestWebhookEventRepo{}),
+		AddressRepo:  addrs,
+		Transactions: txs,
+	})
 
 	err := svc.ProcessTransfers(t.Context(), models.ChainETH, []providers.InboundTransfer{{
 		TxHash:        "0xtoken",
@@ -121,7 +126,7 @@ func TestProcessTransfers_AddressSetKeepsTheMembershipDecision(t *testing.T) {
 	const to = "0xReceiver"
 	reg, addrs, txs := ingestFixture(to)
 	member := &stubAddressSet{member: true}
-	svc := NewService(member, reg, nil, addrs, txs)
+	svc := NewService(Deps{Addresses: member, Registry: reg, AddressRepo: addrs, Transactions: txs})
 
 	err := svc.ProcessTransfers(t.Context(), models.ChainETH, []providers.InboundTransfer{{
 		TxHash: "0xnative",
@@ -137,7 +142,7 @@ func TestProcessTransfers_AddressSetKeepsTheMembershipDecision(t *testing.T) {
 
 	skipped := &ingestTxRepo{}
 	absent := &stubAddressSet{}
-	absentSvc := NewService(absent, reg, nil, addrs, skipped)
+	absentSvc := NewService(Deps{Addresses: absent, Registry: reg, AddressRepo: addrs, Transactions: skipped})
 	err = absentSvc.ProcessTransfers(t.Context(), models.ChainETH, []providers.InboundTransfer{{
 		TxHash: "0xskip",
 		To:     to,
@@ -149,7 +154,7 @@ func TestProcessTransfers_AddressSetKeepsTheMembershipDecision(t *testing.T) {
 
 	failed := &ingestTxRepo{}
 	broken := &stubAddressSet{err: assert.AnError}
-	brokenSvc := NewService(broken, reg, nil, addrs, failed)
+	brokenSvc := NewService(Deps{Addresses: broken, Registry: reg, AddressRepo: addrs, Transactions: failed})
 	err = brokenSvc.ProcessTransfers(t.Context(), models.ChainETH, []providers.InboundTransfer{{
 		TxHash: "0xerr",
 		To:     to,
@@ -220,7 +225,12 @@ func TestProcessTransfers_SkipsSweepOfTheSameWallet(t *testing.T) {
 		Address:        baseAddress,
 	}}
 	txs := &ingestTxRepo{internalHashes: map[string]uuid.UUID{sweepHash: walletID}}
-	svc := NewService(nil, reg, webhook.NewService(nil, &ingestWebhookConfigRepo{}, &ingestWebhookEventRepo{}), addrs, txs)
+	svc := NewService(Deps{
+		Registry:     reg,
+		Webhook:      webhook.NewService(nil, &ingestWebhookConfigRepo{}, &ingestWebhookEventRepo{}),
+		AddressRepo:  addrs,
+		Transactions: txs,
+	})
 
 	err := svc.ProcessTransfers(t.Context(), models.ChainBase, []providers.InboundTransfer{
 		{TxHash: sweepHash, To: baseAddress, From: "0xchild", Amount: big.NewInt(304736467038418)},

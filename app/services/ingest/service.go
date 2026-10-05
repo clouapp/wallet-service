@@ -62,8 +62,25 @@ func (s *Service) SetDepositEvents(deposits DepositEvents) {
 	s.deposits = deposits
 }
 
-func NewService(addresses AddressSet, registry *chain.Registry, webhookSvc *webhook.Service, addressRepo addressReader, txRepo transactionStore) *Service {
-	return &Service{addresses: addresses, registry: registry, webhookSvc: webhookSvc, addressRepo: addressRepo, txRepo: txRepo}
+// Deps is everything the ingest service needs. A nil field means that
+// dependency is absent.
+type Deps struct {
+	Addresses    AddressSet
+	Registry     *chain.Registry
+	Webhook      *webhook.Service
+	AddressRepo  addressReader
+	Transactions transactionStore
+}
+
+// NewService wires the ingest service from Deps.
+func NewService(deps Deps) *Service {
+	return &Service{
+		addresses:   deps.Addresses,
+		registry:    deps.Registry,
+		webhookSvc:  deps.Webhook,
+		addressRepo: deps.AddressRepo,
+		txRepo:      deps.Transactions,
+	}
 }
 
 func (s *Service) ProcessTransfers(ctx context.Context, chainID string, transfers []providers.InboundTransfer) error {
