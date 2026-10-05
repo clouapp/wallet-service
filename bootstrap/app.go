@@ -62,7 +62,10 @@ func Boot() contractsfoundation.Application {
 					Balances:   balances,
 					Dispatcher: dispatcher,
 				}),
-				commands.NewRefreshTx(balances, dispatcher),
+				commands.NewRefreshTx(commands.RefreshTxDeps{
+					Balances:   balances,
+					Dispatcher: dispatcher,
+				}),
 				commands.NewScanDeposits(deposits),
 				commands.NewReconcileWallet(commands.ReconcileWalletDeps{
 					Balances:   balances,

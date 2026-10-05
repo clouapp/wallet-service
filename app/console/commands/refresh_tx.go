@@ -19,15 +19,22 @@ type RefreshTx struct {
 	dispatcher refresh.Dispatcher
 }
 
+// RefreshTxDeps is everything the refresh:tx command needs.
+// Balances and Dispatcher are required.
+type RefreshTxDeps struct {
+	Balances   *refresh.BalanceService
+	Dispatcher refresh.Dispatcher
+}
+
 // NewRefreshTx refreshes the wallet that owns one transaction.
-func NewRefreshTx(balances *refresh.BalanceService, dispatcher refresh.Dispatcher) *RefreshTx {
-	if balances == nil {
+func NewRefreshTx(deps RefreshTxDeps) *RefreshTx {
+	if deps.Balances == nil {
 		panic("refresh:tx: balance refresh service is required")
 	}
-	if dispatcher == nil {
+	if deps.Dispatcher == nil {
 		panic("refresh:tx: refresh dispatcher is required")
 	}
-	return &RefreshTx{balances: balances, dispatcher: dispatcher}
+	return &RefreshTx{balances: deps.Balances, dispatcher: deps.Dispatcher}
 }
 
 func (c *RefreshTx) Signature() string {
