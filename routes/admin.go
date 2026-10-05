@@ -167,9 +167,11 @@ func RegisterAdminRoutes() {
 			// The body is one element of the list. There is no write on this path.
 			r.Middleware(middleware.MayReadActivity()).Get("/activity/{id}", accountActivityCtrl.Show)
 
-			// S2.4: no account-side write. Reads stay on this route.
+			// S2.4: GET /v1/accounts/{accountId}/features settings.read (policies.MayViewSettings).
+			// Owner, admin, and auditor may list. User may not.
+			// There is no account-side write.
 			// Platform PUT /v1/platform/features/account/{id} stores the flag.
-			r.Get("/features", accountFeaturesCtrl.Index)
+			r.Middleware(middleware.MayViewAccountFeatures()).Get("/features", accountFeaturesCtrl.Index)
 		})
 	})
 

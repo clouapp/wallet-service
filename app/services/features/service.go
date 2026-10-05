@@ -67,8 +67,11 @@ func NewService(deps Deps) *Service {
 	return &Service{store: deps.Store, admins: deps.Admins, activity: deps.Activity}
 }
 
-// List returns every account flag the role may read. A missing row is the
-// catalog default. The call does not insert rows.
+// List returns every account flag the role may read.
+// GET /v1/accounts/{accountId}/features applies policies.MayViewSettings
+// (settings.read) before the handler. This method still checks: owner, admin
+// and auditor may read, and user is ErrViewForbidden before any lookup. A
+// missing row is the catalog default. The call does not insert rows.
 func (s *Service) List(ctx context.Context, accountID uuid.UUID, role string) (List, error) {
 	if err := requireAccount(ctx, accountID); err != nil {
 		return List{}, err

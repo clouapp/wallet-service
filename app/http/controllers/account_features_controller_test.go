@@ -91,14 +91,17 @@ func (s *accountFeaturesSuite) TestGetAccountListsActiveFlagKeys() {
 
 func (s *accountFeaturesSuite) TestAccountRoutesCannotWriteAFlag() {
 	accountID, owner := s.owner()
+	admin := s.member(accountID, "admin")
 	auditor := s.member(accountID, "auditor")
 	user := s.member(accountID, "user")
 
-	body := s.get(auditor, accountID, 200)
+	body := s.get(admin, accountID, 200)
+	s.True(s.flag(body, features.FlagSweepEnabled))
+	body = s.get(auditor, accountID, 200)
 	s.True(s.flag(body, features.FlagSweepEnabled))
 	s.get(user, accountID, 403)
 
-	callers := []string{owner, auditor, user}
+	callers := []string{owner, admin, auditor, user}
 	keys := []string{features.FlagWithdrawalsEnabled, "not-a-flag", ""}
 	for _, token := range callers {
 		for _, key := range keys {
@@ -222,7 +225,21 @@ func (s *accountFeaturesSuite) get(token string, accountID uuid.UUID, status int
 	resp.AssertStatus(status)
 	content, err := resp.Content()
 	s.Require().NoError(err)
-	if status != 200 {
+	if status != http.StatusOK {
+		s.NotContains(content, features.FlagWithdrawalsEnabled)
+		s.NotContains(content, features.FlagSweepEnabled)
+		s.NotContains(content, features.FlagDepositScanEnabled)
+		var denied struct {
+			Error struct {
+				Code    string `json:"code"`
+				Message string `json:"message"`
+			} `json:"error"`
+			Features json.RawMessage `json:"features"`
+		}
+		s.Require().NoError(json.Unmarshal([]byte(content), &denied))
+		s.Equal("forbidden", denied.Error.Code)
+		s.Equal(features.ErrViewForbidden.Error(), denied.Error.Message)
+		s.Empty(denied.Features)
 		return featureListBody{}
 	}
 	var parsed featureListBody

@@ -143,7 +143,7 @@ var routeTable = map[string]routeSecurity{
 	"POST /v1/accounts/{accountId}/settings/sections/{section}/reset":  session(chainAccountSettingsWrite),
 	"PATCH /v1/accounts/{accountId}/settings/{group}":                  session(chainAccountSettingsWrite),
 	"PUT /v1/accounts/{accountId}/settings/{group}":                    session(chainAccountSettingsWrite),
-	"GET|HEAD /v1/accounts/{accountId}/features":                       session(chainAccount),
+	"GET|HEAD /v1/accounts/{accountId}/features":                       session(chainAccount + " > MayViewAccountFeatures"),
 	"POST /v1/auth/2fa/verify":                                         guest(),
 	"POST /v1/auth/login":                                              guest(),
 	"POST /v1/auth/logout":                                             session(chainSession),
