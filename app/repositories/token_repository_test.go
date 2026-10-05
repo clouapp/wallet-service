@@ -59,3 +59,24 @@ func (s *TokenRepositoryTestSuite) TestFindByID_NotFound() {
 	s.ErrorIs(err, models.ErrRepositoryNotFound)
 	s.Nil(found)
 }
+
+func (s *TokenRepositoryTestSuite) TestFindByChainAndContractIgnoresStatus() {
+	disabled := &models.Token{
+		ID: uuid.New(), ChainID: "eth", Symbol: "USDC", Name: "USD Coin",
+		ContractAddress: "0xabc", Decimals: 6, Status: "disabled",
+	}
+	s.Require().NoError(s.repo.Create(context.Background(), disabled))
+
+	found, err := s.repo.FindByChainAndContract(context.Background(), "eth", "0xabc")
+	s.NoError(err)
+	s.Equal(disabled.ID, found.ID)
+	s.Equal("disabled", found.Status)
+
+	missing, err := s.repo.FindByChainAndContract(context.Background(), "eth", "0xother")
+	s.ErrorIs(err, models.ErrRepositoryNotFound)
+	s.Nil(missing)
+
+	blank, err := s.repo.FindByChainAndContract(context.Background(), "", "0xabc")
+	s.ErrorIs(err, models.ErrRepositoryNotFound)
+	s.Nil(blank)
+}

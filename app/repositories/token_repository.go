@@ -51,6 +51,22 @@ func (r *TokenRepository) FindByID(ctx context.Context, id uuid.UUID) (*models.T
 	return &token, nil
 }
 
+// FindByChainAndContract returns the token for a chain and contract, or
+// ErrRepositoryNotFound. Status is not filtered: a disabled row is still present.
+func (r *TokenRepository) FindByChainAndContract(ctx context.Context, chainID, contractAddress string) (*models.Token, error) {
+	if chainID == "" || contractAddress == "" {
+		return nil, models.ErrRepositoryNotFound
+	}
+	var token models.Token
+	if err := r.Query(ctx).Where("chain_id", chainID).Where("contract_address", contractAddress).First(&token); err != nil {
+		return nil, fmt.Errorf("find token by contract: %w", err)
+	}
+	if token.ID == uuid.Nil {
+		return nil, models.ErrRepositoryNotFound
+	}
+	return &token, nil
+}
+
 // Create inserts a token.
 func (r *TokenRepository) Create(ctx context.Context, token *models.Token) error {
 	if token == nil {

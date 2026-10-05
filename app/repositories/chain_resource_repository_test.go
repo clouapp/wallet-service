@@ -51,3 +51,24 @@ func (s *ChainResourceRepositoryTestSuite) TestFindByChainAndType() {
 	s.Len(explorers, 1)
 	s.Equal("Etherscan", explorers[0].Name)
 }
+
+func (s *ChainResourceRepositoryTestSuite) TestFindByChainTypeAndNameIgnoresStatus() {
+	disabled := &models.ChainResource{
+		ID: uuid.New(), ChainID: "eth", Type: "explorer", Name: "Old explorer",
+		URL: "https://example.invalid/explorer", Status: "disabled",
+	}
+	s.Require().NoError(s.repo.Create(context.Background(), disabled))
+
+	found, err := s.repo.FindByChainTypeAndName(context.Background(), "eth", "explorer", "Old explorer")
+	s.NoError(err)
+	s.Equal(disabled.ID, found.ID)
+	s.Equal("disabled", found.Status)
+
+	missing, err := s.repo.FindByChainTypeAndName(context.Background(), "eth", "explorer", "missing")
+	s.ErrorIs(err, models.ErrRepositoryNotFound)
+	s.Nil(missing)
+
+	blank, err := s.repo.FindByChainTypeAndName(context.Background(), "eth", "", "Old explorer")
+	s.ErrorIs(err, models.ErrRepositoryNotFound)
+	s.Nil(blank)
+}

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/google/uuid"
 	"github.com/goravel/framework/contracts/database/orm"
 
 	"github.com/macrowallets/waas/app/models"
@@ -36,6 +37,22 @@ func (r *ChainResourceRepository) FindByChainAndType(ctx context.Context, chainI
 		return nil, fmt.Errorf("list chain resources by type: %w", err)
 	}
 	return resources, nil
+}
+
+// FindByChainTypeAndName returns the resource for a chain, type, and name, or
+// ErrRepositoryNotFound. Status is not filtered: a disabled row is still present.
+func (r *ChainResourceRepository) FindByChainTypeAndName(ctx context.Context, chainID, resourceType, name string) (*models.ChainResource, error) {
+	if chainID == "" || resourceType == "" || name == "" {
+		return nil, models.ErrRepositoryNotFound
+	}
+	var resource models.ChainResource
+	if err := r.Query(ctx).Where("chain_id", chainID).Where("type", resourceType).Where("name", name).First(&resource); err != nil {
+		return nil, fmt.Errorf("find chain resource: %w", err)
+	}
+	if resource.ID == uuid.Nil {
+		return nil, models.ErrRepositoryNotFound
+	}
+	return &resource, nil
 }
 
 // Create inserts a chain resource.

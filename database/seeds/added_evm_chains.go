@@ -2,6 +2,7 @@ package seeds
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 
@@ -10,6 +11,7 @@ import (
 	"github.com/shopspring/decimal"
 
 	"github.com/macrowallets/waas/app/models"
+	"github.com/macrowallets/waas/app/repositories"
 	"github.com/macrowallets/waas/pkg/numeric"
 )
 
@@ -246,7 +248,7 @@ type AddedChain struct {
 // yet, with their thresholds, tokens and resources. It never updates an existing row
 // (unlike SeedChains, which re-encrypts every rpc_url), so it is safe on a live
 // database. With apply false it only reports what it would create.
-func SeedMissingAddedChains(_ context.Context, apply bool) (AddedChainsResult, error) {
+func SeedMissingAddedChains(ctx context.Context, apply bool) (AddedChainsResult, error) {
 	var result AddedChainsResult
 	profile, err := configuredChainNetworkProfile()
 	if err != nil {
@@ -264,6 +266,10 @@ func SeedMissingAddedChains(_ context.Context, apply bool) (AddedChainsResult, e
 		return result, err
 	}
 
+	chains := repositories.NewChainRepository(nil)
+	tokenRepo := repositories.NewTokenRepository(nil)
+	resourceRepo := repositories.NewChainResourceRepository(nil)
+
 	ordered := make([]chainSeed, 0)
 	for _, c := range chainSeeds() {
 		if isAddedEVMChain(c.id) {
@@ -271,11 +277,11 @@ func SeedMissingAddedChains(_ context.Context, apply bool) (AddedChainsResult, e
 		}
 	}
 	for _, c := range ordered {
-		exists, err := chainExists(c.id)
-		if err != nil {
-			return result, err
+		existing, err := chains.FindByID(ctx, c.id)
+		if err != nil && !errors.Is(err, models.ErrRepositoryNotFound) {
+			return result, fmt.Errorf("look up chain %s: %w", c.id, err)
 		}
-		if exists {
+		if existing != nil && existing.ID != "" {
 			result.Skipped = append(result.Skipped, c.id)
 			continue
 		}
@@ -300,7 +306,7 @@ func SeedMissingAddedChains(_ context.Context, apply bool) (AddedChainsResult, e
 		if err != nil {
 			return result, fmt.Errorf("encrypt RPC for chain %s: %w", c.id, err)
 		}
-		if err := createSeedChain(c, encRPC, &thresholds); err != nil {
+		if err := insertSeedChain(ctx, chains, c, encRPC, &thresholds); err != nil {
 			return result, err
 		}
 	}
@@ -315,7 +321,7 @@ func SeedMissingAddedChains(_ context.Context, apply bool) (AddedChainsResult, e
 		}
 		result.Tokens = append(result.Tokens, t.chainID+":"+t.symbol+":"+t.contractAddress)
 		if apply {
-			if _, err := createTokenUnlessPresent(t); err != nil {
+			if _, err := insertTokenUnlessPresent(ctx, tokenRepo, t); err != nil {
 				return result, err
 			}
 		}
@@ -326,7 +332,7 @@ func SeedMissingAddedChains(_ context.Context, apply bool) (AddedChainsResult, e
 		}
 		result.Resources = append(result.Resources, r.chainID+":"+r.resourceType+":"+r.url)
 		if apply {
-			if _, err := createResourceUnlessPresent(r); err != nil {
+			if _, err := insertResourceUnlessPresent(ctx, resourceRepo, r); err != nil {
 				return result, err
 			}
 		}
@@ -343,21 +349,17 @@ func isAddedEVMChain(chainID string) bool {
 	return false
 }
 
-func chainExists(chainID string) (bool, error) {
-	count, err := facades.Orm().Query().Model(&models.Chain{}).Where("id = ?", chainID).Count()
-	if err != nil {
-		return false, fmt.Errorf("look up chain %s: %w", chainID, err)
-	}
-	return count > 0, nil
-}
-
 // createTokenUnlessPresent inserts t unless the chain already lists its contract.
 func createTokenUnlessPresent(t tokenSeed) (bool, error) {
-	var existing models.Token
-	q := facades.Orm().Query().
-		Where("chain_id", t.chainID).
-		Where("contract_address", t.contractAddress)
-	if err := q.First(&existing); err == nil && existing.ID != uuid.Nil {
+	return insertTokenUnlessPresent(context.Background(), repositories.NewTokenRepository(nil), t)
+}
+
+func insertTokenUnlessPresent(ctx context.Context, tokens *repositories.TokenRepository, t tokenSeed) (bool, error) {
+	existing, err := tokens.FindByChainAndContract(ctx, t.chainID, t.contractAddress)
+	if err != nil && !errors.Is(err, models.ErrRepositoryNotFound) {
+		return false, fmt.Errorf("look up token %s %s: %w", t.chainID, t.symbol, err)
+	}
+	if existing != nil && existing.ID != uuid.Nil {
 		return false, nil
 	}
 	iconURL := t.iconURL
@@ -371,7 +373,7 @@ func createTokenUnlessPresent(t tokenSeed) (bool, error) {
 		IconURL:         &iconURL,
 		Status:          "active",
 	}
-	if err := facades.Orm().Query().Create(&tok); err != nil {
+	if err := tokens.Create(ctx, &tok); err != nil {
 		return false, fmt.Errorf("create token %s %s: %w", t.chainID, t.symbol, err)
 	}
 	slog.Info("created token", "chain_id", t.chainID, "symbol", t.symbol)
@@ -381,13 +383,15 @@ func createTokenUnlessPresent(t tokenSeed) (bool, error) {
 // createResourceUnlessPresent inserts r unless the chain has a resource of that
 // type and name.
 func createResourceUnlessPresent(r resourceSeed) (bool, error) {
-	var existing models.ChainResource
-	err := facades.Orm().Query().
-		Where("chain_id", r.chainID).
-		Where("type", r.resourceType).
-		Where("name", r.name).
-		First(&existing)
-	if err == nil && existing.ID != uuid.Nil {
+	return insertResourceUnlessPresent(context.Background(), repositories.NewChainResourceRepository(nil), r)
+}
+
+func insertResourceUnlessPresent(ctx context.Context, resources *repositories.ChainResourceRepository, r resourceSeed) (bool, error) {
+	existing, err := resources.FindByChainTypeAndName(ctx, r.chainID, r.resourceType, r.name)
+	if err != nil && !errors.Is(err, models.ErrRepositoryNotFound) {
+		return false, fmt.Errorf("look up chain resource %s %s: %w", r.chainID, r.name, err)
+	}
+	if existing != nil && existing.ID != uuid.Nil {
 		return false, nil
 	}
 	cr := models.ChainResource{
@@ -398,7 +402,7 @@ func createResourceUnlessPresent(r resourceSeed) (bool, error) {
 		URL:     r.url,
 		Status:  "active",
 	}
-	if err := facades.Orm().Query().Create(&cr); err != nil {
+	if err := resources.Create(ctx, &cr); err != nil {
 		return false, fmt.Errorf("create chain resource %s %s: %w", r.chainID, r.name, err)
 	}
 	slog.Info("created chain resource", "chain_id", r.chainID, "name", r.name)
