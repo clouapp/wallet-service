@@ -58,8 +58,8 @@ func TestCreateStoresTheFeeAndDoesNotBroadcast(t *testing.T) {
 	if feeChain.requests != 1 || feeChain.last.From != "0xfrom" || feeChain.last.To != "0xdest" || feeChain.last.Asset != "ETH" || feeChain.last.Amount.String() != "1000000000000000000" {
 		t.Fatalf("fee request = %+v calls=%d", feeChain.last, feeChain.requests)
 	}
-	if rows.creates != 1 {
-		t.Fatalf("creates = %d", rows.creates)
+	if rows.creates != 1 || rows.withins != 1 || !rows.createdInside {
+		t.Fatalf("creates = %d withins = %d inside = %v", rows.creates, rows.withins, rows.createdInside)
 	}
 }
 
@@ -303,8 +303,8 @@ func TestCreateRetriesAFailedRowAndKeepsTheOldViewFields(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.Replayed || rows.creates != 0 || rows.retries != 1 || broadcaster.calls != 0 {
-		t.Fatalf("replayed=%v creates=%d retries=%d broadcasts=%d", result.Replayed, rows.creates, rows.retries, broadcaster.calls)
+	if result.Replayed || rows.creates != 0 || rows.retries != 1 || rows.withins != 0 || broadcaster.calls != 0 {
+		t.Fatalf("replayed=%v creates=%d retries=%d withins=%d broadcasts=%d", result.Replayed, rows.creates, rows.retries, rows.withins, broadcaster.calls)
 	}
 	if rows.retryAmount != "2" || rows.retryDestination != "0xnew" || rows.retryFee != "9" || rows.retryNote != "again" {
 		t.Fatalf("retry args = %s %s %s %s", rows.retryAmount, rows.retryDestination, rows.retryFee, rows.retryNote)
@@ -465,11 +465,24 @@ type memWithdrawalRows struct {
 	byID             map[uuid.UUID]*models.Withdrawal
 	created          []*models.Withdrawal
 	creates          int
+	withins          int
+	createdInside    bool
+	inside           bool
 	retries          int
 	retryAmount      string
 	retryDestination string
 	retryFee         string
 	retryNote        string
+}
+
+func (m *memWithdrawalRows) Within(ctx context.Context, fn func(context.Context) error) error {
+	if fn == nil {
+		return errors.New("callback is required")
+	}
+	m.withins++
+	m.inside = true
+	defer func() { m.inside = false }()
+	return fn(ctx)
 }
 
 func (m *memWithdrawalRows) FindByIDAndWallet(_ context.Context, withdrawalID, walletID uuid.UUID) (*models.Withdrawal, error) {
@@ -485,6 +498,9 @@ func (m *memWithdrawalRows) FindByIDAndWallet(_ context.Context, withdrawalID, w
 
 func (m *memWithdrawalRows) Create(_ context.Context, withdrawal *models.Withdrawal) error {
 	m.creates++
+	if m.inside {
+		m.createdInside = true
+	}
 	m.created = append(m.created, withdrawal)
 	if m.byID == nil {
 		m.byID = map[uuid.UUID]*models.Withdrawal{}

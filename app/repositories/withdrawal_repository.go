@@ -23,6 +23,17 @@ func NewWithdrawalRepository(query orm.Query) *WithdrawalRepository {
 	return &WithdrawalRepository{Base: db.NewBase(query)}
 }
 
+// Within runs fn inside one transaction. Queries made with the callback
+// context join that transaction.
+func (r *WithdrawalRepository) Within(ctx context.Context, fn func(context.Context) error) error {
+	if fn == nil {
+		return fmt.Errorf("withdrawal transaction: callback is required")
+	}
+	return r.Transaction(ctx, func(tx orm.Query) error {
+		return fn(db.WithTx(ctx, tx))
+	})
+}
+
 // Create inserts a withdrawal after rejecting a negative amount or fee estimate.
 func (r *WithdrawalRepository) Create(ctx context.Context, w *models.Withdrawal) error {
 	if w == nil {

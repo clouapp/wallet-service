@@ -2,6 +2,7 @@ package repositories_test
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/google/uuid"
@@ -121,4 +122,24 @@ func (s *WithdrawalRepositoryTestSuite) TestUpdateFieldsStoresBroadcastResult() 
 	s.Equal("broadcast", found.Status)
 	s.Require().NotNil(found.TransactionID)
 	s.Equal(transactionID, *found.TransactionID)
+}
+
+func (s *WithdrawalRepositoryTestSuite) TestWithinRollsBackACreate() {
+	walletID := s.insertWallet()
+	id := uuid.New()
+	err := s.repo.Within(context.Background(), func(ctx context.Context) error {
+		createErr := s.repo.Create(ctx, &models.Withdrawal{
+			ID: id, WalletID: walletID, Status: "pending",
+			Amount: "0.001", FeeEstimate: "0", DestinationAddress: "0xdest",
+		})
+		if createErr != nil {
+			return createErr
+		}
+		return errors.New("fail the withdrawal insert")
+	})
+	s.Error(err)
+
+	found, findErr := s.repo.FindByID(context.Background(), id)
+	s.Nil(found)
+	s.Error(findErr)
 }

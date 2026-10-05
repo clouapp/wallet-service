@@ -12,7 +12,8 @@ import (
 )
 
 type cancelStore struct {
-	status string
+	status  string
+	withins int
 }
 
 func (s *cancelStore) FindByWallet(context.Context, uuid.UUID, string, int, int) ([]models.Withdrawal, int64, error) {
@@ -23,6 +24,13 @@ func (s *cancelStore) FindByID(context.Context, uuid.UUID) (*models.Withdrawal, 
 }
 func (s *cancelStore) FindByIDAndWallet(context.Context, uuid.UUID, uuid.UUID) (*models.Withdrawal, error) {
 	return nil, nil
+}
+func (s *cancelStore) Within(ctx context.Context, fn func(context.Context) error) error {
+	s.withins++
+	if fn == nil {
+		return nil
+	}
+	return fn(ctx)
 }
 func (s *cancelStore) Create(context.Context, *models.Withdrawal) error { return nil }
 func (s *cancelStore) RetryBroadcast(context.Context, uuid.UUID, string, string, string, string) error {
@@ -47,6 +55,22 @@ func (a *cancelActivity) Within(ctx context.Context, fn func(context.Context) er
 func (a *cancelActivity) Append(_ context.Context, row models.AccountActivity) error {
 	a.row = row
 	return nil
+}
+
+func TestWithinOpensTheStoreTransaction(t *testing.T) {
+	store := &cancelStore{}
+	records := NewRecords(Deps{Store: store})
+	called := false
+	err := records.Within(context.Background(), func(context.Context) error {
+		called = true
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("within: %v", err)
+	}
+	if !called || store.withins != 1 {
+		t.Fatalf("called=%v withins=%d", called, store.withins)
+	}
 }
 
 func TestCancelRecordsTheEventWithoutAnAmount(t *testing.T) {
