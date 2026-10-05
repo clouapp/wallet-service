@@ -45,19 +45,24 @@ type WalletsController struct {
 	walletService func() *wallet.Service
 }
 
-func NewWalletsController(
-	wallets *walletrecords.Wallets,
-	walletService func() *wallet.Service,
-) *WalletsController {
-	if wallets == nil {
+// WalletsControllerDeps is everything the external wallets controller needs.
+// Every field is required. WalletService is stored and read on each call.
+type WalletsControllerDeps struct {
+	Wallets       *walletrecords.Wallets
+	WalletService func() *wallet.Service
+}
+
+// NewWalletsController wires the external wallet handlers from WalletsControllerDeps.
+func NewWalletsController(deps WalletsControllerDeps) *WalletsController {
+	if deps.Wallets == nil {
 		panic("external wallets controller: wallets service is required")
 	}
-	if walletService == nil || walletService() == nil {
+	if deps.WalletService == nil || deps.WalletService() == nil {
 		panic("external wallets controller: wallet service is required")
 	}
 	return &WalletsController{
-		wallets:       wallets,
-		walletService: walletService,
+		wallets:       deps.Wallets,
+		walletService: deps.WalletService,
 	}
 }
 
