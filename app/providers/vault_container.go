@@ -29,6 +29,8 @@ import (
 	heliusingest "github.com/macrowallets/waas/app/adapters/ingest/helius"
 	quicknodeingest "github.com/macrowallets/waas/app/adapters/ingest/quicknode"
 	coinapiws "github.com/macrowallets/waas/app/adapters/price/coinapi"
+	// Link the CoinGecko HTTP client. Quotes still call price.NewCoinGeckoProvider.
+	_ "github.com/macrowallets/waas/app/adapters/price/coingecko"
 	queuesqs "github.com/macrowallets/waas/app/adapters/queue/sqs"
 	"github.com/macrowallets/waas/app/adapters/redis/addresscache"
 	"github.com/macrowallets/waas/app/adapters/redis/addressset"

@@ -115,7 +115,11 @@ func (s *Service) quoteProvider(name, apiKey string) (PriceProvider, bool) {
 	}
 	switch name {
 	case providerCoinGecko:
-		return NewCoinGeckoProvider(apiKey), true
+		provider := NewCoinGeckoProvider(apiKey)
+		if provider == nil {
+			return nil, false
+		}
+		return provider, true
 	case providerCoinMarketCap:
 		return NewCoinMarketCapProvider(apiKey), true
 	case providerCoinAPI:

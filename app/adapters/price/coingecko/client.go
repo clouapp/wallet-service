@@ -1,4 +1,4 @@
-package price
+package coingecko
 
 import (
 	"context"
@@ -7,8 +7,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/macrowallets/waas/pkg/httpclient"
 	"github.com/shopspring/decimal"
+
+	"github.com/macrowallets/waas/app/services/price"
+	"github.com/macrowallets/waas/pkg/httpclient"
 )
 
 var geckoIDMap = map[string]string{
@@ -28,26 +30,38 @@ func init() {
 	}
 }
 
+const (
+	publicBaseURL = "https://api.coingecko.com/api/v3"
+	proBaseURL    = "https://pro-api.coingecko.com/api/v3"
+	httpTimeout   = 15 * time.Second
+)
+
+// CoinGeckoProvider calls the CoinGecko simple/price API.
 type CoinGeckoProvider struct {
 	apiKey  string
 	baseURL string
 	client  *httpclient.Client
 }
 
+// NewCoinGeckoProvider returns a provider. An empty apiKey uses the public host.
+// A non-empty key uses the pro host and is sent as x-cg-pro-api-key.
 func NewCoinGeckoProvider(apiKey string) *CoinGeckoProvider {
-	baseURL := "https://api.coingecko.com/api/v3"
+	baseURL := publicBaseURL
 	if apiKey != "" {
-		baseURL = "https://pro-api.coingecko.com/api/v3"
+		baseURL = proBaseURL
 	}
 	return &CoinGeckoProvider{
 		apiKey:  apiKey,
 		baseURL: baseURL,
-		client:  httpclient.NewClient(15 * time.Second),
+		client:  httpclient.NewClient(httpTimeout),
 	}
 }
 
+// Name is the provider id stored with a quote.
 func (p *CoinGeckoProvider) Name() string { return "coingecko" }
 
+// FetchCryptoPrices returns USD prices for the codes CoinGecko knows.
+// Unknown codes are skipped. A non-positive price is skipped.
 func (p *CoinGeckoProvider) FetchCryptoPrices(codes []string) (map[string]decimal.Decimal, error) {
 	ids := make([]string, 0, len(codes))
 	for _, code := range codes {
@@ -81,6 +95,8 @@ func (p *CoinGeckoProvider) FetchCryptoPrices(codes []string) (map[string]decima
 	return prices, nil
 }
 
+// FetchFiatRates returns USD per fiat unit. CoinGecko quotes fiat per USDC,
+// and the price column stores the inverted USD rate.
 func (p *CoinGeckoProvider) FetchFiatRates(codes []string) (map[string]decimal.Decimal, error) {
 	lowerCodes := make([]string, len(codes))
 	for i, c := range codes {
@@ -103,7 +119,7 @@ func (p *CoinGeckoProvider) FetchFiatRates(codes []string) (map[string]decimal.D
 		for _, code := range codes {
 			lower := strings.ToLower(code)
 			if fiatVal, exists := usdcData[lower]; exists && fiatVal.IsPositive() {
-				rates[code] = invertRate(fiatVal)
+				rates[code] = price.InvertRate(fiatVal)
 			}
 		}
 	}
@@ -128,3 +144,5 @@ func (p *CoinGeckoProvider) doGet(url string) ([]byte, error) {
 	}
 	return resp.Body, nil
 }
+
+var _ price.PriceProvider = (*CoinGeckoProvider)(nil)
