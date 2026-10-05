@@ -7,6 +7,7 @@ import (
 	"github.com/macrowallets/waas/app/http/controllers"
 	"github.com/macrowallets/waas/app/http/middleware/requestctx"
 	"github.com/macrowallets/waas/app/http/requests"
+	"github.com/macrowallets/waas/app/http/resources/webhooks"
 	"github.com/macrowallets/waas/app/http/responses"
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/policies"
@@ -60,7 +61,7 @@ func (ctrl *WebhooksController) ListWalletWebhooks(ctx http.Context) http.Respon
 	if err != nil {
 		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to fetch wallet webhooks"})
 	}
-	return responses.Send(ctx, http.StatusOK, http.Json{"data": controllers.WebhookConfigViews(cfgs)})
+	return responses.Send(ctx, http.StatusOK, http.Json{"data": webhooks.WebhookConfigsFrom(cfgs)})
 }
 
 // CreateWalletWebhook godoc
@@ -72,7 +73,7 @@ func (ctrl *WebhooksController) ListWalletWebhooks(ctx http.Context) http.Respon
 // @Produce      json
 // @Param        walletId  path      string                    true  "Wallet UUID"
 // @Param        request   body      CreateWalletWebhookSwagger  true  "Webhook configuration"
-// @Success      201  {object}  controllers.WebhookConfigView
+// @Success      201  {object}  webhooks.WebhookConfig
 // @Failure      400  {object}  ErrorResponse
 // @Failure      403  {object}  ErrorResponse
 // @Router       /wallets/{walletId}/webhooks [post]
@@ -98,7 +99,7 @@ func (ctrl *WebhooksController) CreateWalletWebhook(ctx http.Context) http.Respo
 	if err := ctrl.configs.Create(ctx.Context(), cfg); err != nil {
 		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to create webhook"})
 	}
-	return responses.Send(ctx, http.StatusCreated, controllers.WebhookConfigViewPtr(cfg))
+	return responses.Send(ctx, http.StatusCreated, webhooks.WebhookConfigPtr(cfg))
 }
 
 // DeleteWalletWebhook godoc

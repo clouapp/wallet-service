@@ -9,6 +9,7 @@ import (
 	"github.com/macrowallets/waas/app/http/controllers"
 	"github.com/macrowallets/waas/app/http/middleware/requestctx"
 	"github.com/macrowallets/waas/app/http/requests"
+	webhookresource "github.com/macrowallets/waas/app/http/resources/webhooks"
 	"github.com/macrowallets/waas/app/http/responses"
 	"github.com/macrowallets/waas/app/services/webhook"
 )
@@ -42,7 +43,7 @@ func NewWebhooksController(
 // @Security     ApiKeyAuth
 // @Security     SignatureAuth
 // @Param        body  body      CreateWebhookRequest  true  "Webhook configuration"
-// @Success      201   {object}  controllers.WebhookConfigView
+// @Success      201   {object}  webhookresource.WebhookConfig
 // @Failure      400   {object}  ErrorResponse  "Missing required fields"
 // @Failure      500   {object}  ErrorResponse
 // @Router       /api/v1/webhooks [post]
@@ -63,7 +64,7 @@ func (ctrl *WebhooksController) CreateWebhook(ctx http.Context) http.Response {
 			"error": err.Error(),
 		})
 	}
-	return responses.Send(ctx, http.StatusCreated, controllers.WebhookConfigViewPtr(cfg))
+	return responses.Send(ctx, http.StatusCreated, webhookresource.WebhookConfigPtr(cfg))
 }
 
 // ListWebhooks godoc
@@ -90,7 +91,7 @@ func (ctrl *WebhooksController) ListWebhooks(ctx http.Context) http.Response {
 		})
 	}
 	return ctx.Response().Success().Json(http.Json{
-		"data": controllers.WebhookConfigViews(configs),
+		"data": webhookresource.WebhookConfigsFrom(configs),
 	})
 }
 
@@ -104,7 +105,7 @@ func (ctrl *WebhooksController) ListWebhooks(ctx http.Context) http.Response {
 // @Security     SignatureAuth
 // @Param        webhookId  path      string                true  "Webhook UUID"
 // @Param        body       body      UpdateWebhookRequest  true  "Fields to change"
-// @Success      200        {object}  controllers.WebhookConfigView
+// @Success      200        {object}  webhookresource.WebhookConfig
 // @Failure      400        {object}  ErrorResponse  "Invalid id, empty update or unknown event"
 // @Failure      401        {object}  ErrorResponse
 // @Failure      403        {object}  ErrorResponse  "Secret does not match a legacy webhook"
@@ -133,7 +134,7 @@ func (ctrl *WebhooksController) UpdateWebhook(ctx http.Context) http.Response {
 	})
 	switch {
 	case err == nil:
-		return responses.Send(ctx, http.StatusOK, controllers.WebhookConfigViewPtr(cfg))
+		return responses.Send(ctx, http.StatusOK, webhookresource.WebhookConfigPtr(cfg))
 	case errors.Is(err, webhook.ErrWebhookConfigNotFound):
 		return responses.Send(ctx, http.StatusNotFound, http.Json{"error": err.Error()})
 	case errors.Is(err, webhook.ErrWebhookOwnershipNotProven):

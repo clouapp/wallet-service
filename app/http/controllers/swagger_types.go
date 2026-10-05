@@ -2,6 +2,7 @@ package controllers
 
 import (
 	addressresource "github.com/macrowallets/waas/app/http/resources/addresses"
+	webhookresource "github.com/macrowallets/waas/app/http/resources/webhooks"
 )
 
 // Shared response envelope types used only for Swagger doc generation.
@@ -45,5 +46,5 @@ type AddressListResponse struct {
 }
 
 type WebhookConfigListResponse struct {
-	Data []WebhookConfigView `json:"data"`
+	Data []webhookresource.WebhookConfig `json:"data"`
 }

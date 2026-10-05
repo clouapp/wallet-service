@@ -1,4 +1,4 @@
-package controllers
+package webhooks_test
 
 import (
 	"encoding/json"
@@ -8,10 +8,11 @@ import (
 	"github.com/google/uuid"
 	"github.com/goravel/framework/support/carbon"
 
+	"github.com/macrowallets/waas/app/http/resources/webhooks"
 	"github.com/macrowallets/waas/app/models"
 )
 
-func TestWebhookConfigViewKeepsTheModelWire(t *testing.T) {
+func TestWebhookConfigKeepsTheModelWire(t *testing.T) {
 	t.Parallel()
 
 	id := uuid.MustParse("11111111-1111-4111-8111-111111111111")
@@ -43,7 +44,7 @@ func TestWebhookConfigViewKeepsTheModelWire(t *testing.T) {
 		},
 	}
 	for _, tc := range cases {
-		raw, err := json.Marshal(newWebhookConfigView(tc.cfg))
+		raw, err := json.Marshal(webhooks.WebhookConfigFrom(tc.cfg))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -55,7 +56,7 @@ func TestWebhookConfigViewKeepsTheModelWire(t *testing.T) {
 		}
 	}
 
-	nilRaw, err := json.Marshal(WebhookConfigViewPtr(nil))
+	nilRaw, err := json.Marshal(webhooks.WebhookConfigPtr(nil))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -64,18 +65,18 @@ func TestWebhookConfigViewKeepsTheModelWire(t *testing.T) {
 	}
 }
 
-func TestWebhookConfigViewsPreserveSliceNilness(t *testing.T) {
+func TestWebhookConfigsPreserveSliceNilness(t *testing.T) {
 	t.Parallel()
 
-	if WebhookConfigViews(nil) != nil {
+	if webhooks.WebhookConfigsFrom(nil) != nil {
 		t.Fatal("nil slice became an empty slice")
 	}
-	empty := WebhookConfigViews([]models.WebhookConfig{})
+	empty := webhooks.WebhookConfigsFrom([]models.WebhookConfig{})
 	if empty == nil || len(empty) != 0 {
 		t.Fatalf("empty slice = %#v", empty)
 	}
 
-	nilPage, err := json.Marshal(map[string]any{"data": WebhookConfigViews(nil)})
+	nilPage, err := json.Marshal(map[string]any{"data": webhooks.WebhookConfigsFrom(nil)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -83,7 +84,7 @@ func TestWebhookConfigViewsPreserveSliceNilness(t *testing.T) {
 		t.Fatalf("nil page = %s", nilPage)
 	}
 
-	emptyPage, err := json.Marshal(map[string]any{"data": WebhookConfigViews([]models.WebhookConfig{})})
+	emptyPage, err := json.Marshal(map[string]any{"data": webhooks.WebhookConfigsFrom([]models.WebhookConfig{})})
 	if err != nil {
 		t.Fatal(err)
 	}

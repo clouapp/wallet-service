@@ -1,4 +1,4 @@
-package controllers
+package webhooks
 
 import (
 	"github.com/google/uuid"
@@ -7,11 +7,11 @@ import (
 	"github.com/macrowallets/waas/app/models"
 )
 
-// WebhookConfigView is the webhook row HTTP clients read. Field order and tags
+// WebhookConfig is the webhook row HTTP clients read. Field order and tags
 // match the model wire, including embedded timestamps. The signing secret stays
 // off the wire. A nil page stays nil; an empty page stays empty. A nil config
 // stays null.
-type WebhookConfigView struct {
+type WebhookConfig struct {
 	CreatedAt *carbon.DateTime `json:"created_at"`
 	UpdatedAt *carbon.DateTime `json:"updated_at"`
 	ID        uuid.UUID        `json:"id"`
@@ -23,8 +23,9 @@ type WebhookConfigView struct {
 	Type      string           `json:"type,omitempty"`
 }
 
-func newWebhookConfigView(cfg models.WebhookConfig) WebhookConfigView {
-	return WebhookConfigView{
+// WebhookConfigFrom projects one webhook config. The signing secret stays off the wire.
+func WebhookConfigFrom(cfg models.WebhookConfig) WebhookConfig {
+	return WebhookConfig{
 		CreatedAt: cfg.CreatedAt,
 		UpdatedAt: cfg.UpdatedAt,
 		ID:        cfg.ID,
@@ -37,23 +38,23 @@ func newWebhookConfigView(cfg models.WebhookConfig) WebhookConfigView {
 	}
 }
 
-// WebhookConfigViews copies a page. A nil slice stays nil; an empty slice stays empty.
-func WebhookConfigViews(configs []models.WebhookConfig) []WebhookConfigView {
+// WebhookConfigsFrom copies a page. A nil slice stays nil; an empty slice stays empty.
+func WebhookConfigsFrom(configs []models.WebhookConfig) []WebhookConfig {
 	if configs == nil {
 		return nil
 	}
-	views := make([]WebhookConfigView, len(configs))
+	views := make([]WebhookConfig, len(configs))
 	for i := range configs {
-		views[i] = newWebhookConfigView(configs[i])
+		views[i] = WebhookConfigFrom(configs[i])
 	}
 	return views
 }
 
-// WebhookConfigViewPtr keeps a nil config as JSON null.
-func WebhookConfigViewPtr(cfg *models.WebhookConfig) *WebhookConfigView {
+// WebhookConfigPtr keeps a nil config as JSON null.
+func WebhookConfigPtr(cfg *models.WebhookConfig) *WebhookConfig {
 	if cfg == nil {
 		return nil
 	}
-	view := newWebhookConfigView(*cfg)
+	view := WebhookConfigFrom(*cfg)
 	return &view
 }
