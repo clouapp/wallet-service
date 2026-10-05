@@ -14,9 +14,16 @@ type Facade struct {
 	inner  contractsmail.Mail
 }
 
+// FacadeDeps is the mailer and the SMTP transport this facade wraps.
+// Either field may be nil.
+type FacadeDeps struct {
+	Mailer *Mailer
+	Inner  contractsmail.Mail
+}
+
 // NewFacade wraps a mailer and the SMTP transport.
-func NewFacade(m *Mailer, inner contractsmail.Mail) *Facade {
-	return &Facade{mailer: m, inner: inner}
+func NewFacade(deps FacadeDeps) *Facade {
+	return &Facade{mailer: deps.Mailer, inner: deps.Inner}
 }
 
 // Mailer returns the mailer this facade sends through.
@@ -119,7 +126,7 @@ func (f *Facade) wrap(next contractsmail.Mail) contractsmail.Mail {
 	if next == nil {
 		return f
 	}
-	return &Facade{mailer: f.mailer, inner: next}
+	return NewFacade(FacadeDeps{Mailer: f.mailer, Inner: next})
 }
 
 var _ contractsmail.Mail = (*Facade)(nil)

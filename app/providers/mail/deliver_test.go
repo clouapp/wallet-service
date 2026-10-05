@@ -40,7 +40,7 @@ func TestDeliverUsesSMTPAndFromWhenTheRowsExist(t *testing.T) {
 		},
 	})
 	transport := &recordingMail{}
-	facade := NewFacade(NewMailer(cfg, nil), transport)
+	facade := NewFacade(FacadeDeps{Mailer: NewMailer(cfg, nil), Inner: transport})
 	if err := facade.To([]string{"nobody@example.test"}).Send(); err != nil {
 		t.Fatalf("send: %v", err)
 	}
@@ -85,7 +85,7 @@ func TestDeliverKeepsTheEnvDocumentWhenTheRowsAreMissing(t *testing.T) {
 		},
 	})
 	transport := &recordingMail{}
-	if err := NewFacade(NewMailer(cfg, nil), transport).Send(); err != nil {
+	if err := NewFacade(FacadeDeps{Mailer: NewMailer(cfg, nil), Inner: transport}).Send(); err != nil {
 		t.Fatalf("send: %v", err)
 	}
 	if !transport.sent {
@@ -122,7 +122,7 @@ func TestDeliverKeepsTheEnvDocumentWhenTheReadFails(t *testing.T) {
 			return mailer.From{Address: "replaced@example.test", Name: "Replaced", UseAddress: true, UseName: true}, true, errors.New("db down")
 		},
 	})
-	if err := NewFacade(NewMailer(cfg, nil), &recordingMail{}).Send(); err != nil {
+	if err := NewFacade(FacadeDeps{Mailer: NewMailer(cfg, nil), Inner: &recordingMail{}}).Send(); err != nil {
 		t.Fatalf("send: %v", err)
 	}
 	smtp := written["mailers"].(map[string]any)["smtp"].(map[string]any)
@@ -144,7 +144,7 @@ func TestQueueRefusesWithoutPublishingOrDialing(t *testing.T) {
 		Observe:  func() {},
 	})
 	transport := &recordingMail{}
-	err := NewFacade(NewMailer(cfg, nil), transport).Queue()
+	err := NewFacade(FacadeDeps{Mailer: NewMailer(cfg, nil), Inner: transport}).Queue()
 	if !errors.Is(err, errQueueRefused) {
 		t.Fatalf("queue error = %v", err)
 	}
@@ -156,8 +156,21 @@ func TestQueueRefusesWithoutPublishingOrDialing(t *testing.T) {
 	}
 }
 
+func TestNewFacadeKeepsNilDependencies(t *testing.T) {
+	mailer := &Mailer{}
+	transport := &recordingMail{}
+	got := NewFacade(FacadeDeps{Mailer: mailer, Inner: transport})
+	if got == nil || got.Mailer() != mailer || got.inner != transport {
+		t.Fatal("the facade dropped a dependency")
+	}
+	empty := NewFacade(FacadeDeps{})
+	if empty == nil || empty.Mailer() != nil || empty.inner != nil {
+		t.Fatal("a missing dependency was filled in")
+	}
+}
+
 func TestDeliverRefusesAMissingMailer(t *testing.T) {
-	if err := NewFacade(nil, &recordingMail{}).Send(); !errors.Is(err, errMailerRequired) {
+	if err := NewFacade(FacadeDeps{Inner: &recordingMail{}}).Send(); !errors.Is(err, errMailerRequired) {
 		t.Fatal("a missing mailer was sent")
 	}
 	if err := (*Facade)(nil).Send(); !errors.Is(err, errMailerRequired) {

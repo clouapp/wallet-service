@@ -46,7 +46,10 @@ func bindMailFacade(app foundation.Application) {
 			SMTP:     readMailSMTP,
 			From:     readMailFrom,
 		})
-		return appmail.NewFacade(appmail.NewMailer(config, appfacades.GateMailSend), transport), nil
+		return appmail.NewFacade(appmail.FacadeDeps{
+			Mailer: appmail.NewMailer(config, appfacades.GateMailSend),
+			Inner:  transport,
+		}), nil
 	})
 }
 
