@@ -441,11 +441,11 @@ func newDashboardWithdrawalsController() *dashwithdrawals.WithdrawalsController 
 }
 
 func newDashboardSweepController() *dashsweep.SweepController {
-	return dashsweep.NewSweepController(
-		container.MustMake[*sweep.Box]().Service,
-		container.MustMake[*container.SharedRedis]().Client,
-		container.MustMake[*featuressvc.Service](),
-	)
+	return dashsweep.NewSweepController(dashsweep.SweepControllerDeps{
+		Sweeps: container.MustMake[*sweep.Box]().Service,
+		Redis:  container.MustMake[*container.SharedRedis]().Client,
+		Flags:  container.MustMake[*featuressvc.Service](),
+	})
 }
 
 func newDashboardUnspentsController() *dashwallets.UnspentsController {

@@ -33,21 +33,26 @@ type SweepController struct {
 	flags  *features.Service
 }
 
-func NewSweepController(
-	sweeps sweep.Service,
-	redis *redis.Client,
-	flags *features.Service,
-) *SweepController {
-	if sweeps == nil {
+// SweepControllerDeps is everything the dashboard sweep controller needs.
+// Sweeps and Flags are required. Redis may be nil; ForceGasCheck then skips the shared rate limit.
+type SweepControllerDeps struct {
+	Sweeps sweep.Service
+	Redis  *redis.Client
+	Flags  *features.Service
+}
+
+// NewSweepController wires the dashboard consolidate and gas handlers from SweepControllerDeps.
+func NewSweepController(deps SweepControllerDeps) *SweepController {
+	if deps.Sweeps == nil {
 		panic("dashboard sweep controller: sweep service is required")
 	}
-	if flags == nil {
+	if deps.Flags == nil {
 		panic("dashboard sweep controller: feature flags are required")
 	}
 	return &SweepController{
-		sweeps: sweeps,
-		redis:  redis,
-		flags:  flags,
+		sweeps: deps.Sweeps,
+		redis:  deps.Redis,
+		flags:  deps.Flags,
 	}
 }
 
