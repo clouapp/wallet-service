@@ -119,11 +119,11 @@ func newExternalAddressesController() *extaddresses.AddressesController {
 }
 
 func newExternalSweepController() *extsweep.SweepController {
-	return extsweep.NewSweepController(
-		container.MustMake[*sweep.Box]().Service,
-		container.MustMake[*container.SharedRedis]().Client,
-		container.MustMake[*featuressvc.Service](),
-	)
+	return extsweep.NewSweepController(extsweep.SweepControllerDeps{
+		Sweeps: container.MustMake[*sweep.Box]().Service,
+		Redis:  container.MustMake[*container.SharedRedis]().Client,
+		Flags:  container.MustMake[*featuressvc.Service](),
+	})
 }
 
 func newExternalWithdrawalsController() *extwithdrawals.WithdrawalsController {
