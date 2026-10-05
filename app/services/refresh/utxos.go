@@ -8,20 +8,24 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/macrowallets/waas/app/models"
-	"github.com/macrowallets/waas/app/repositories"
 	"github.com/macrowallets/waas/pkg/types"
 )
 
+// UTXOStore replaces the unspent outputs of one wallet on one chain.
+type UTXOStore interface {
+	ReplaceForWallet(ctx context.Context, walletID uuid.UUID, chainID string, rows []models.WalletUTXO) error
+}
+
 type UTXOService struct {
-	utxoRepo      *repositories.WalletUTXORepository
-	syncStateRepo *repositories.WalletSyncStateRepository
+	utxoRepo      UTXOStore
+	syncStateRepo SyncStateStore
 }
 
 // UTXODeps is everything the UTXO refresh service needs. A nil field means that
 // dependency is absent.
 type UTXODeps struct {
-	UTXOs      *repositories.WalletUTXORepository
-	SyncStates *repositories.WalletSyncStateRepository
+	UTXOs      UTXOStore
+	SyncStates SyncStateStore
 }
 
 // NewUTXOService wires the UTXO refresh service from UTXODeps.

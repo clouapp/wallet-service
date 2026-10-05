@@ -9,27 +9,53 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/macrowallets/waas/app/models"
-	"github.com/macrowallets/waas/app/repositories"
-	"github.com/macrowallets/waas/app/services/chain"
 	"github.com/macrowallets/waas/pkg/types"
 )
 
+// BalanceChains is the registered adapter and token list a balance refresh reads.
+type BalanceChains interface {
+	Chain(id string) (types.Chain, error)
+	TokensForChain(chainID string) []types.Token
+}
+
+// WalletSummaryStore writes the native balance columns a balance refresh updates.
+type WalletSummaryStore interface {
+	SetBalanceSummary(ctx context.Context, id uuid.UUID, asset, raw, display string, syncedAt time.Time, readModelStatus string) error
+}
+
+// AssetBalanceStore replaces the asset rows of one wallet on one chain.
+type AssetBalanceStore interface {
+	ReplaceForWallet(ctx context.Context, walletID uuid.UUID, chainID string, rows []models.WalletAssetBalance) error
+}
+
+// SnapshotStore records a balance snapshot and keeps the latest rows.
+type SnapshotStore interface {
+	Create(ctx context.Context, snapshot *models.WalletBalanceSnapshot) error
+	TrimToLatest(ctx context.Context, walletID uuid.UUID, chainID string, keep int) error
+}
+
+// SyncStateStore records a successful refresh and a failed one.
+type SyncStateStore interface {
+	Upsert(ctx context.Context, state *models.WalletSyncState) error
+	UpdateFailure(ctx context.Context, walletID uuid.UUID, chainID, scope, errMsg string) error
+}
+
 type BalanceService struct {
-	registry         *chain.Registry
-	walletRepo       *repositories.WalletRepository
-	assetBalanceRepo *repositories.WalletAssetBalanceRepository
-	snapshotRepo     *repositories.WalletBalanceSnapshotRepository
-	syncStateRepo    *repositories.WalletSyncStateRepository
+	registry         BalanceChains
+	walletRepo       WalletSummaryStore
+	assetBalanceRepo AssetBalanceStore
+	snapshotRepo     SnapshotStore
+	syncStateRepo    SyncStateStore
 }
 
 // Deps is everything the balance refresh service needs. A nil field means that
 // dependency is absent.
 type Deps struct {
-	Registry      *chain.Registry
-	Wallets       *repositories.WalletRepository
-	AssetBalances *repositories.WalletAssetBalanceRepository
-	Snapshots     *repositories.WalletBalanceSnapshotRepository
-	SyncStates    *repositories.WalletSyncStateRepository
+	Registry      BalanceChains
+	Wallets       WalletSummaryStore
+	AssetBalances AssetBalanceStore
+	Snapshots     SnapshotStore
+	SyncStates    SyncStateStore
 }
 
 // NewBalanceService wires the balance refresh service from Deps.
