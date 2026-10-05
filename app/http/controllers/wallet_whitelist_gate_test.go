@@ -22,10 +22,10 @@ const (
 	walletWhitelistAddress      = "0x0000000000000000000000000000000000000001"
 )
 
-// WalletWhitelistGateTestSuite drives POST /v1/wallets/{walletId}/whitelist
-// through the route gate. Wallet role owner or admin may add an entry, and
+// WalletWhitelistGateTestSuite drives the wallet whitelist routes through
+// WalletWhitelist. Wallet role owner or admin may add or delete an entry, and
 // so may account role owner or admin. Auditor, user, and the other wallet
-// roles are refused before an entry is written.
+// roles are refused before an entry is written or removed.
 type WalletWhitelistGateTestSuite struct {
 	suite.Suite
 	goravelTesting.TestCase
@@ -81,6 +81,58 @@ func (s *WalletWhitelistGateTestSuite) TestWalletWhitelistCreateFollowsTheLoaded
 		resp.AssertStatus(201)
 		s.assertCreatedEntry(resp, wallet.ID, walletWhitelistAddress, label)
 		s.Equal(int64(1), s.whitelistCount(wallet.ID, label))
+	}
+}
+
+func (s *WalletWhitelistGateTestSuite) TestWalletWhitelistDeleteFollowsTheLoadedRoles() {
+	account := mocks.InsertAccount(s.T(), "wallet whitelist delete")
+	s.seedChain()
+	wallet := mocks.InsertWalletWithAccount(s.T(), models.ChainETH, &account.ID)
+	owner := s.member(models.AccountRoleOwner, account.ID)
+
+	denied := []struct {
+		accountRole string
+		walletRole  string
+	}{
+		{models.AccountRoleUser, models.WalletRoleViewer},
+		{models.AccountRoleAuditor, models.WalletRoleViewer},
+		{models.AccountRoleUser, models.WalletRoleSpender},
+		{models.AccountRoleUser, models.WalletRoleApprover},
+	}
+	for _, caller := range denied {
+		actor := s.member(caller.accountRole, account.ID)
+		s.assign(actor.id, wallet.ID, caller.walletRole)
+		label := caller.accountRole + "-" + caller.walletRole + "-" + uuid.NewString()[:8]
+		created := s.addEntry(owner.token, account.ID, wallet.ID, walletWhitelistAddress, label)
+		created.AssertStatus(201)
+		entryID := s.createdEntryID(created)
+		resp := s.deleteEntry(actor.token, account.ID, wallet.ID, entryID)
+		s.assertWhitelistForbidden(resp)
+		s.Equal(int64(1), s.whitelistCount(wallet.ID, label))
+	}
+
+	allowed := []struct {
+		accountRole string
+		walletRole  string
+	}{
+		{accountRole: models.AccountRoleOwner},
+		{accountRole: models.AccountRoleAdmin},
+		{accountRole: models.AccountRoleUser, walletRole: models.WalletRoleAdmin},
+		{accountRole: models.AccountRoleUser, walletRole: "owner"},
+	}
+	for _, caller := range allowed {
+		actor := s.member(caller.accountRole, account.ID)
+		if caller.walletRole != "" {
+			s.assign(actor.id, wallet.ID, caller.walletRole)
+		}
+		label := caller.accountRole + "-" + caller.walletRole + "-" + uuid.NewString()[:8]
+		created := s.addEntry(owner.token, account.ID, wallet.ID, walletWhitelistAddress, label)
+		created.AssertStatus(201)
+		entryID := s.createdEntryID(created)
+		resp := s.deleteEntry(actor.token, account.ID, wallet.ID, entryID)
+		resp.AssertStatus(204)
+		s.Empty(strings.TrimSpace(s.body(resp)))
+		s.Equal(int64(0), s.whitelistCount(wallet.ID, label))
 	}
 }
 
@@ -168,6 +220,25 @@ func (s *WalletWhitelistGateTestSuite) addEntry(token string, accountID, walletI
 		Post("/v1/wallets/"+walletID.String()+"/whitelist", strings.NewReader(body))
 	s.Require().NoError(err)
 	return resp
+}
+
+func (s *WalletWhitelistGateTestSuite) deleteEntry(token string, accountID, walletID, entryID uuid.UUID) contractstesting.Response {
+	resp, err := s.Http(s.T()).
+		WithHeader("Authorization", "Bearer "+token).
+		WithHeader("X-Account-Id", accountID.String()).
+		Delete("/v1/wallets/"+walletID.String()+"/whitelist/"+entryID.String(), nil)
+	s.Require().NoError(err)
+	return resp
+}
+
+func (s *WalletWhitelistGateTestSuite) createdEntryID(resp contractstesting.Response) uuid.UUID {
+	var parsed struct {
+		ID string `json:"id"`
+	}
+	s.Require().NoError(json.Unmarshal([]byte(s.body(resp)), &parsed))
+	id, err := uuid.Parse(parsed.ID)
+	s.Require().NoError(err)
+	return id
 }
 
 func (s *WalletWhitelistGateTestSuite) assertWhitelistForbidden(resp contractstesting.Response) {

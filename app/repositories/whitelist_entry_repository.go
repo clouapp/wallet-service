@@ -71,7 +71,9 @@ func (r *WhitelistEntryRepository) Delete(ctx context.Context, entry *models.Whi
 	if entry == nil {
 		return fmt.Errorf("delete whitelist entry: entry is nil")
 	}
-	if _, err := r.Query(ctx).Delete(entry); err != nil {
+	// Where is required: Delete(entry) has no WHERE when the activity log
+	// reads the before-image, so a session causer refuses the write.
+	if _, err := r.Query(ctx).Where("id = ?", entry.ID).Delete(&models.WhitelistEntry{}); err != nil {
 		return fmt.Errorf("delete whitelist entry: %w", err)
 	}
 	return nil

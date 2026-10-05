@@ -8,12 +8,13 @@ import (
 	"github.com/macrowallets/waas/app/services/walletrecords"
 )
 
-// WalletWhitelist refuses POST /v1/wallets/{walletId}/whitelist unless
+// WalletWhitelist refuses POST /v1/wallets/{walletId}/whitelist and
+// DELETE /v1/wallets/{walletId}/whitelist/{entryId} unless
 // policies.WalletWhitelist allows the caller's loaded membership. Wallet role
 // owner or admin passes, and so does account role owner or admin.
 // WalletContext has already loaded the wallet, so a missing wallet is 404
-// before this check. A denial is 403 with the policy message, and no
-// whitelist entry is written.
+// before this check. A denial is 403 with the policy message. Create writes
+// nothing, and delete leaves the entry in place.
 func WalletWhitelist(memberships *walletrecords.Memberships) http.Middleware {
 	if memberships == nil {
 		panic("wallet whitelist: wallet memberships are required")

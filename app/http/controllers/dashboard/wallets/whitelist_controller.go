@@ -4,14 +4,12 @@ import (
 	"github.com/google/uuid"
 	"github.com/goravel/framework/contracts/http"
 
-	"github.com/macrowallets/waas/app/http/controllers"
 	"github.com/macrowallets/waas/app/http/middleware/requestctx"
 	"github.com/macrowallets/waas/app/http/pagination"
 	"github.com/macrowallets/waas/app/http/requests"
 	"github.com/macrowallets/waas/app/http/resources/dashboard/wallets/whitelist"
 	"github.com/macrowallets/waas/app/http/responses"
 	"github.com/macrowallets/waas/app/models"
-	"github.com/macrowallets/waas/app/policies"
 	"github.com/macrowallets/waas/app/services/walletrecords"
 )
 
@@ -111,9 +109,6 @@ func (ctrl *WhitelistController) AddWhitelistEntry(ctx http.Context) http.Respon
 // @Router       /wallets/{walletId}/whitelist/{entryId} [delete]
 func (ctrl *WhitelistController) DeleteWhitelistEntry(ctx http.Context) http.Response {
 	wallet := requestctx.MustWallet(ctx)
-	if resp := controllers.Deny(ctx, policies.WalletWhitelist(controllers.WalletMembership(ctx, ctrl.memberships, wallet.ID))); resp != nil {
-		return resp
-	}
 
 	entryID, err := requests.RouteUUID(ctx, "entryId")
 	if err != nil {
