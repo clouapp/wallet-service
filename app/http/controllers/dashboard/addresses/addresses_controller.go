@@ -6,6 +6,7 @@ import (
 	"github.com/macrowallets/waas/app/http/controllers"
 	"github.com/macrowallets/waas/app/http/pagination"
 	"github.com/macrowallets/waas/app/http/requests"
+	addressresource "github.com/macrowallets/waas/app/http/resources/addresses"
 	"github.com/macrowallets/waas/app/http/responses"
 	deposit "github.com/macrowallets/waas/app/services/deposit"
 	wallet "github.com/macrowallets/waas/app/services/wallet"
@@ -54,7 +55,7 @@ func NewAddressesController(
 // @Security     SignatureAuth
 // @Param        id    path      string                  true  "Wallet UUID"  format(uuid)
 // @Param        body  body      GenerateAddressRequest  true  "Address generation request"
-// @Success      201   {object}  controllers.AddressView
+// @Success      201   {object}  addressresource.Address
 // @Failure      400   {object}  ErrorResponse  "Invalid wallet ID or missing fields"
 // @Failure      422   {object}  ErrorResponse  "Address generation not supported for MPC wallets"
 // @Failure      500   {object}  ErrorResponse
@@ -84,7 +85,7 @@ func (ctrl *AddressesController) GenerateAddress(ctx http.Context) http.Response
 		ctrl.deposits.RefreshAddressCache(ctx.Context(), w.Chain)
 	}
 
-	return responses.Send(ctx, http.StatusCreated, controllers.AddressViewPtr(addr))
+	return responses.Send(ctx, http.StatusCreated, addressresource.AddressPtr(addr, controllers.WalletBodyViewPtr))
 }
 
 // UpdateAddress godoc
@@ -97,7 +98,7 @@ func (ctrl *AddressesController) GenerateAddress(ctx http.Context) http.Response
 // @Param        walletId   path      string                  true  "Wallet UUID"  format(uuid)
 // @Param        addressId  path      string                  true  "Address UUID" format(uuid)
 // @Param        body       body      requests.UpdateAddressRequest    true  "Fields to update"
-// @Success      200        {object}  controllers.AddressView
+// @Success      200        {object}  addressresource.Address
 // @Failure      400        {object}  ErrorResponse
 // @Failure      404        {object}  ErrorResponse
 // @Failure      500        {object}  ErrorResponse
@@ -136,7 +137,7 @@ func (ctrl *AddressesController) UpdateAddress(ctx http.Context) http.Response {
 		})
 	}
 
-	return ctx.Response().Success().Json(controllers.AddressViewPtr(addr))
+	return ctx.Response().Success().Json(addressresource.AddressPtr(addr, controllers.WalletBodyViewPtr))
 }
 
 // ListWalletAddresses godoc
@@ -165,5 +166,5 @@ func (ctrl *AddressesController) ListWalletAddresses(ctx http.Context) http.Resp
 			"error": "failed to fetch addresses",
 		})
 	}
-	return responses.Send(ctx, http.StatusOK, pagination.Response(controllers.AddressViews(addrs), total, limit, offset))
+	return responses.Send(ctx, http.StatusOK, pagination.Response(addressresource.AddressesFrom(addrs, controllers.WalletBodyViewPtr), total, limit, offset))
 }

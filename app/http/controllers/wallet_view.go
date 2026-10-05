@@ -12,6 +12,7 @@ import (
 
 	"github.com/macrowallets/waas/app/container"
 	"github.com/macrowallets/waas/app/facades"
+	addressresource "github.com/macrowallets/waas/app/http/resources/addresses"
 	walletbalances "github.com/macrowallets/waas/app/http/resources/dashboard/wallets/balances"
 	"github.com/macrowallets/waas/app/models"
 	chainsvc "github.com/macrowallets/waas/app/services/chains"
@@ -38,30 +39,30 @@ func newWalletNetwork(resolved models.ResolvedNetwork) walletNetwork {
 // an address view. MPC share material and the activation code stay off the wire.
 // A nil wallet stays null.
 type WalletBodyView struct {
-	CreatedAt           *carbon.DateTime    `json:"created_at"`
-	UpdatedAt           *carbon.DateTime    `json:"updated_at"`
-	ID                  uuid.UUID           `json:"id"`
-	Chain               string              `json:"chain"`
-	Label               string              `json:"label,omitempty"`
-	AddressIndex        int                 `json:"address_index"`
-	DepositAddressID    *uuid.UUID          `json:"deposit_address_id,omitempty"`
-	AccountID           *uuid.UUID          `json:"account_id,omitempty"`
-	Status              string              `json:"status"`
-	FeeRateMin          *int                `json:"fee_rate_min,omitempty"`
-	FeeRateMax          *int                `json:"fee_rate_max,omitempty"`
-	FeeMultiplier       numeric.NullDecimal `json:"fee_multiplier,omitzero"`
-	RequiredApprovals   int                 `json:"required_approvals"`
-	FrozenUntil         *time.Time          `json:"frozen_until,omitempty"`
-	BalanceAsset        *string             `json:"balance_asset,omitempty"`
-	BalanceRaw          *string             `json:"balance_raw,omitempty"`
-	BalanceDisplay      *string             `json:"balance,omitempty"`
-	BalanceUSD          numeric.NullDecimal `json:"balance_usd,omitzero"`
-	BalanceLastSyncedAt *time.Time          `json:"balance_last_synced_at,omitempty"`
-	ReadModelStatus     string              `json:"read_model_status"`
-	GasStatus           string              `json:"gas_status"`
-	GasLastCheckedAt    *time.Time          `json:"gas_last_checked_at,omitempty"`
-	SweepPolicyVersion  int                 `json:"sweep_policy_version"`
-	DepositAddress      *AddressView        `json:"deposit_address,omitempty"`
+	CreatedAt           *carbon.DateTime         `json:"created_at"`
+	UpdatedAt           *carbon.DateTime         `json:"updated_at"`
+	ID                  uuid.UUID                `json:"id"`
+	Chain               string                   `json:"chain"`
+	Label               string                   `json:"label,omitempty"`
+	AddressIndex        int                      `json:"address_index"`
+	DepositAddressID    *uuid.UUID               `json:"deposit_address_id,omitempty"`
+	AccountID           *uuid.UUID               `json:"account_id,omitempty"`
+	Status              string                   `json:"status"`
+	FeeRateMin          *int                     `json:"fee_rate_min,omitempty"`
+	FeeRateMax          *int                     `json:"fee_rate_max,omitempty"`
+	FeeMultiplier       numeric.NullDecimal      `json:"fee_multiplier,omitzero"`
+	RequiredApprovals   int                      `json:"required_approvals"`
+	FrozenUntil         *time.Time               `json:"frozen_until,omitempty"`
+	BalanceAsset        *string                  `json:"balance_asset,omitempty"`
+	BalanceRaw          *string                  `json:"balance_raw,omitempty"`
+	BalanceDisplay      *string                  `json:"balance,omitempty"`
+	BalanceUSD          numeric.NullDecimal      `json:"balance_usd,omitzero"`
+	BalanceLastSyncedAt *time.Time               `json:"balance_last_synced_at,omitempty"`
+	ReadModelStatus     string                   `json:"read_model_status"`
+	GasStatus           string                   `json:"gas_status"`
+	GasLastCheckedAt    *time.Time               `json:"gas_last_checked_at,omitempty"`
+	SweepPolicyVersion  int                      `json:"sweep_policy_version"`
+	DepositAddress      *addressresource.Address `json:"deposit_address,omitempty"`
 }
 
 func newWalletBodyView(wallet models.Wallet) WalletBodyView {
@@ -89,7 +90,7 @@ func newWalletBodyView(wallet models.Wallet) WalletBodyView {
 		GasStatus:           wallet.GasStatus,
 		GasLastCheckedAt:    wallet.GasLastCheckedAt,
 		SweepPolicyVersion:  wallet.SweepPolicyVersion,
-		DepositAddress:      addressViewPtr(wallet.DepositAddress),
+		DepositAddress:      addressresource.AddressPtr(wallet.DepositAddress, walletBodyViewPtr),
 	}
 }
 
@@ -116,28 +117,28 @@ func WalletBodyViewPtr(wallet *models.Wallet) *WalletBodyView {
 // embedded response: wallet fields, then RFC 3339 created_at and updated_at in
 // UTC, then network and testnet. Testnet wallets carry no USD value.
 type WalletView struct {
-	ID                  uuid.UUID           `json:"id"`
-	Chain               string              `json:"chain"`
-	Label               string              `json:"label,omitempty"`
-	AddressIndex        int                 `json:"address_index"`
-	DepositAddressID    *uuid.UUID          `json:"deposit_address_id,omitempty"`
-	AccountID           *uuid.UUID          `json:"account_id,omitempty"`
-	Status              string              `json:"status"`
-	FeeRateMin          *int                `json:"fee_rate_min,omitempty"`
-	FeeRateMax          *int                `json:"fee_rate_max,omitempty"`
-	FeeMultiplier       numeric.NullDecimal `json:"fee_multiplier,omitzero"`
-	RequiredApprovals   int                 `json:"required_approvals"`
-	FrozenUntil         *time.Time          `json:"frozen_until,omitempty"`
-	BalanceAsset        *string             `json:"balance_asset,omitempty"`
-	BalanceRaw          *string             `json:"balance_raw,omitempty"`
-	BalanceDisplay      *string             `json:"balance,omitempty"`
-	BalanceUSD          numeric.NullDecimal `json:"balance_usd,omitzero"`
-	BalanceLastSyncedAt *time.Time          `json:"balance_last_synced_at,omitempty"`
-	ReadModelStatus     string              `json:"read_model_status"`
-	GasStatus           string              `json:"gas_status"`
-	GasLastCheckedAt    *time.Time          `json:"gas_last_checked_at,omitempty"`
-	SweepPolicyVersion  int                 `json:"sweep_policy_version"`
-	DepositAddress      *AddressView        `json:"deposit_address,omitempty"`
+	ID                  uuid.UUID                `json:"id"`
+	Chain               string                   `json:"chain"`
+	Label               string                   `json:"label,omitempty"`
+	AddressIndex        int                      `json:"address_index"`
+	DepositAddressID    *uuid.UUID               `json:"deposit_address_id,omitempty"`
+	AccountID           *uuid.UUID               `json:"account_id,omitempty"`
+	Status              string                   `json:"status"`
+	FeeRateMin          *int                     `json:"fee_rate_min,omitempty"`
+	FeeRateMax          *int                     `json:"fee_rate_max,omitempty"`
+	FeeMultiplier       numeric.NullDecimal      `json:"fee_multiplier,omitzero"`
+	RequiredApprovals   int                      `json:"required_approvals"`
+	FrozenUntil         *time.Time               `json:"frozen_until,omitempty"`
+	BalanceAsset        *string                  `json:"balance_asset,omitempty"`
+	BalanceRaw          *string                  `json:"balance_raw,omitempty"`
+	BalanceDisplay      *string                  `json:"balance,omitempty"`
+	BalanceUSD          numeric.NullDecimal      `json:"balance_usd,omitzero"`
+	BalanceLastSyncedAt *time.Time               `json:"balance_last_synced_at,omitempty"`
+	ReadModelStatus     string                   `json:"read_model_status"`
+	GasStatus           string                   `json:"gas_status"`
+	GasLastCheckedAt    *time.Time               `json:"gas_last_checked_at,omitempty"`
+	SweepPolicyVersion  int                      `json:"sweep_policy_version"`
+	DepositAddress      *addressresource.Address `json:"deposit_address,omitempty"`
 	zonedTimestamps
 	walletNetwork
 }
@@ -166,7 +167,7 @@ func newWalletView(wallet *models.Wallet, resolved models.ResolvedNetwork) Walle
 		GasStatus:           priced.GasStatus,
 		GasLastCheckedAt:    priced.GasLastCheckedAt,
 		SweepPolicyVersion:  priced.SweepPolicyVersion,
-		DepositAddress:      addressViewPtr(priced.DepositAddress),
+		DepositAddress:      addressresource.AddressPtr(priced.DepositAddress, walletBodyViewPtr),
 		zonedTimestamps:     newZonedTimestamps(wallet.CreatedAt, wallet.UpdatedAt),
 		walletNetwork:       newWalletNetwork(resolved),
 	}

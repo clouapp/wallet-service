@@ -7,6 +7,7 @@ import (
 	"github.com/goravel/framework/support/carbon"
 
 	"github.com/macrowallets/waas/app/http/controllers"
+	addressresource "github.com/macrowallets/waas/app/http/resources/addresses"
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/services/txkind"
 )
@@ -51,7 +52,7 @@ type transactionRecord struct {
 	ParentTransactionID *uuid.UUID                  `json:"parent_transaction_id,omitempty"`
 	Origin              string                      `json:"origin,omitempty"`
 	SyncedAt            *time.Time                  `json:"synced_at,omitempty"`
-	Address             *controllers.AddressView    `json:"address,omitempty"`
+	Address             *addressresource.Address    `json:"address,omitempty"`
 	Wallet              *controllers.WalletBodyView `json:"wallet,omitempty"`
 }
 
@@ -97,7 +98,7 @@ func TransactionFrom(tx models.Transaction) Transaction {
 			ParentTransactionID:   tx.ParentTransactionID,
 			Origin:                tx.Origin,
 			SyncedAt:              tx.SyncedAt,
-			Address:               controllers.AddressViewPtr(tx.Address),
+			Address:               addressresource.AddressPtr(tx.Address, controllers.WalletBodyViewPtr),
 			Wallet:                controllers.WalletBodyViewPtr(tx.Wallet),
 		},
 		Type:           kind.Type,
