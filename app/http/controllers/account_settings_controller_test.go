@@ -501,22 +501,38 @@ func (s *accountSettingsSuite) TestFlushUnknownSectionIsNotFoundBeforeForbidden(
 	s.Equal("not_found", response["error"].(map[string]any)["code"])
 	s.assertCacheKeySurvived(securityKey, "stale-security")
 
+	admin := s.member(accountID, models.AccountRoleAdmin)
+	s.Require().NoError(facades.Cache().Put(securityKey, "stale-security", 10*time.Minute))
+	body := s.flush(admin, accountID, "security", 204)
+	s.Empty(strings.TrimSpace(body))
+	s.False(facades.Cache().Has(securityKey))
+
+	s.Require().NoError(facades.Cache().Put(securityKey, "stale-security", 10*time.Minute))
 	auditor := s.member(accountID, "auditor")
-	response = s.flushParsed(auditor, accountID, "scanning", 404)
-	s.Equal("not_found", response["error"].(map[string]any)["code"])
-	s.assertCacheKeySurvived(securityKey, "stale-security")
+	s.assertFlushWriteDenied(auditor, accountID, "scanning", securityKey)
+	s.assertFlushWriteDenied(auditor, accountID, "security", securityKey)
 
 	user := s.member(accountID, "user")
-	response = s.flushParsed(user, accountID, "not-a-section", 404)
-	s.Equal("not_found", response["error"].(map[string]any)["code"])
-	response = s.flushParsed(user, accountID, "security", 403)
-	s.Equal("forbidden", response["error"].(map[string]any)["code"])
+	s.assertFlushWriteDenied(user, accountID, "not-a-section", securityKey)
+	s.assertFlushWriteDenied(user, accountID, "security", securityKey)
+}
+
+func (s *accountSettingsSuite) assertFlushWriteDenied(token string, accountID uuid.UUID, section, securityKey string) {
+	s.T().Helper()
+	raw := s.flush(token, accountID, section, 403)
+	s.NotContains(raw, "enc:v1:")
+	s.NotContains(raw, "stale-security")
+	var parsed map[string]any
+	s.Require().NoError(json.Unmarshal([]byte(raw), &parsed))
+	errBody, _ := parsed["error"].(map[string]any)
+	s.Equal("forbidden", errBody["code"])
+	s.Equal(settings.ErrUpdateForbidden.Error(), errBody["message"])
 	s.assertCacheKeySurvived(securityKey, "stale-security")
 }
 
 // assertCacheKeySurvived checks a refused flush left the key. A settings read
-// on the request replaces an unsealed sentinel with a sealed document and
-// does not delete the key. The sealed blob is not written into the failure.
+// on the request replaces an unsealed sentinel with the stored JSON document
+// and does not delete the key. The document is not written into the failure.
 func (s *accountSettingsSuite) assertCacheKeySurvived(key, sentinel string) {
 	s.T().Helper()
 	if !facades.Cache().Has(key) {
@@ -524,10 +540,10 @@ func (s *accountSettingsSuite) assertCacheKeySurvived(key, sentinel string) {
 		return
 	}
 	value := facades.Cache().GetString(key)
-	if value == sentinel || settings.IsSealed(value) {
+	if value == sentinel || settings.IsSealed(value) || json.Valid([]byte(value)) {
 		return
 	}
-	s.Fail("refused flush left a cache value that is neither the sentinel nor sealed")
+	s.Fail("refused flush left a cache value that is neither the sentinel nor a settings document")
 }
 
 func (s *accountSettingsSuite) TestFlushPlatformManagedSectionIsForbidden() {

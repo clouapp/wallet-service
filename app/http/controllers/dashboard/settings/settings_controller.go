@@ -116,7 +116,7 @@ func (ctrl *SettingsController) Update(ctx http.Context) http.Response {
 
 // Flush godoc
 // @Summary      Flush one account settings section cache
-// @Description  Drops the cached rows of every account-managed group on the page. Stored values stay. An unknown section is 404. A platform-managed group is 403 and the cache is left in place.
+// @Description  POST /v1/accounts/{accountId}/settings/sections/{section}/cache applies policies.MayUpdateSettings (settings.write) before the handler. Owner and admin may flush an account-managed section. Auditor and user may not, and that refusal does not flush the section. The refusal is 403 with the same message this handler returns. Drops the cached rows of every account-managed group on the page. Stored values stay. An unknown section is 404 for a role that may flush. A platform-managed group is 403 and the cache is left in place.
 // @Tags         Account Settings
 // @Security     BearerAuth
 // @Param        accountId  path  string  true  "Account UUID"

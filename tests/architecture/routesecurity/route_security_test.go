@@ -138,7 +138,7 @@ var routeTable = map[string]routeSecurity{
 	"DELETE /v1/accounts/{accountId}/invites/{id}":                     session(chainAccountUsersWrite),
 	"GET|HEAD /v1/accounts/{accountId}/settings":                       session(chainAccountSettingsRead),
 	"GET|HEAD /v1/accounts/{accountId}/settings/{group}":               session(chainAccountSettingsRead),
-	"POST /v1/accounts/{accountId}/settings/sections/{section}/cache":  session(chainAccount),
+	"POST /v1/accounts/{accountId}/settings/sections/{section}/cache":  session(chainAccountSettingsWrite),
 	"POST /v1/accounts/{accountId}/settings/sections/{section}/reset":  session(chainAccount),
 	"PATCH /v1/accounts/{accountId}/settings/{group}":                  session(chainAccountSettingsWrite),
 	"PUT /v1/accounts/{accountId}/settings/{group}":                    session(chainAccountSettingsWrite),
