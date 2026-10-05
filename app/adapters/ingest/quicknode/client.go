@@ -1,4 +1,4 @@
-package providers
+package quicknode
 
 import (
 	"context"
@@ -13,6 +13,7 @@ import (
 
 	"github.com/shopspring/decimal"
 
+	"github.com/macrowallets/waas/app/services/ingest/providers"
 	"github.com/macrowallets/waas/pkg/httpclient"
 	"github.com/macrowallets/waas/pkg/numeric"
 )
@@ -29,7 +30,7 @@ const (
 // QuickNodeProvider manages QuickNode Streams webhooks for Bitcoin block filtering.
 type QuickNodeProvider struct {
 	apiKey          string
-	keyAtUse        KeySource
+	keyAtUse        providers.KeySource
 	client          *httpclient.Client
 	signatureHeader string
 }
@@ -45,7 +46,7 @@ func NewQuickNodeProvider(apiKey string) *QuickNodeProvider {
 
 // UseKeySource reads the credential on each call. The constructor key is
 // not the one used after this is set, so boot does not capture it.
-func (q *QuickNodeProvider) UseKeySource(source KeySource) *QuickNodeProvider {
+func (q *QuickNodeProvider) UseKeySource(source providers.KeySource) *QuickNodeProvider {
 	if q == nil {
 		return nil
 	}
@@ -95,7 +96,7 @@ type quicknodeCreateStreamResp struct {
 	ID string `json:"id"`
 }
 
-func (q *QuickNodeProvider) CreateWebhook(ctx context.Context, cfg ProviderConfig) (*ProviderWebhook, error) {
+func (q *QuickNodeProvider) CreateWebhook(ctx context.Context, cfg providers.ProviderConfig) (*providers.ProviderWebhook, error) {
 	headers, headerErr := q.apiHeaders(ctx)
 	if headerErr != nil {
 		return nil, fmt.Errorf("quicknode: empty API key")
@@ -153,13 +154,13 @@ func (q *QuickNodeProvider) CreateWebhook(ctx context.Context, cfg ProviderConfi
 		return nil, fmt.Errorf("quicknode: create stream: empty id in response")
 	}
 
-	return &ProviderWebhook{
+	return &providers.ProviderWebhook{
 		ProviderWebhookID: result.ID,
 		SigningSecret:     cfg.AuthSecret,
 	}, nil
 }
 
-func streamDisplayName(cfg ProviderConfig) string {
+func streamDisplayName(cfg providers.ProviderConfig) string {
 	chain := strings.TrimSpace(cfg.ChainID)
 	if chain == "" {
 		return "BTC Deposit Monitor"
@@ -241,11 +242,11 @@ func (q *QuickNodeProvider) DeleteWebhook(ctx context.Context, webhookID string)
 // VerifyInbound — HMAC-SHA256 over raw body, hex digest (same pattern as Alchemy)
 // ---------------------------------------------------------------------------
 
-func (q *QuickNodeProvider) VerifyInbound(headers Header, body []byte, secret string) (bool, error) {
-	if err := gateInboundKey(context.Background(), q.keyAtUse); err != nil {
+func (q *QuickNodeProvider) VerifyInbound(headers providers.Header, body []byte, secret string) (bool, error) {
+	if err := providers.GateInboundCredential(context.Background(), q.keyAtUse); err != nil {
 		return false, err
 	}
-	if err := rejectBlankSigningKey(secret); err != nil {
+	if err := providers.RejectBlankSigningSecret(secret); err != nil {
 		return false, err
 	}
 	hdr := q.SignatureHeader()
@@ -274,13 +275,13 @@ type quicknodeTransferItem struct {
 	Timestamp   int64           `json:"timestamp"`
 }
 
-func (q *QuickNodeProvider) ParsePayload(body []byte) ([]InboundTransfer, error) {
+func (q *QuickNodeProvider) ParsePayload(body []byte) ([]providers.InboundTransfer, error) {
 	var items []quicknodeTransferItem
 	if err := json.Unmarshal(body, &items); err != nil {
 		return nil, fmt.Errorf("quicknode: unmarshal payload: %w", err)
 	}
 
-	out := make([]InboundTransfer, 0, len(items))
+	out := make([]providers.InboundTransfer, 0, len(items))
 	for i, item := range items {
 		t, err := quicknodeItemToTransfer(item)
 		if err != nil {
@@ -291,28 +292,28 @@ func (q *QuickNodeProvider) ParsePayload(body []byte) ([]InboundTransfer, error)
 	return out, nil
 }
 
-func quicknodeItemToTransfer(item quicknodeTransferItem) (InboundTransfer, error) {
+func quicknodeItemToTransfer(item quicknodeTransferItem) (providers.InboundTransfer, error) {
 	if strings.TrimSpace(item.Txid) == "" {
-		return InboundTransfer{}, fmt.Errorf("empty txid")
+		return providers.InboundTransfer{}, fmt.Errorf("empty txid")
 	}
 	if strings.TrimSpace(item.ToAddress) == "" {
-		return InboundTransfer{}, fmt.Errorf("empty toAddress")
+		return providers.InboundTransfer{}, fmt.Errorf("empty toAddress")
 	}
 
 	if item.Amount.IsNegative() {
-		return InboundTransfer{}, fmt.Errorf("negative amount")
+		return providers.InboundTransfer{}, fmt.Errorf("negative amount")
 	}
 	amount, err := numeric.ToBaseUnits(item.Amount, quicknodeBTCDecimals)
 	if err != nil {
-		return InboundTransfer{}, fmt.Errorf("amount %s: %w", item.Amount.String(), err)
+		return providers.InboundTransfer{}, fmt.Errorf("amount %s: %w", item.Amount.String(), err)
 	}
 
 	ts := time.Unix(item.Timestamp, 0)
 	if item.Timestamp < 0 {
-		return InboundTransfer{}, fmt.Errorf("invalid timestamp %d", item.Timestamp)
+		return providers.InboundTransfer{}, fmt.Errorf("invalid timestamp %d", item.Timestamp)
 	}
 
-	return InboundTransfer{
+	return providers.InboundTransfer{
 		TxHash:      item.Txid,
 		BlockNumber: item.BlockNumber,
 		BlockHash:   item.BlockHash,
@@ -376,7 +377,7 @@ func buildFilterFunctionBase64(addresses []string) (string, error) {
 }
 
 func (q *QuickNodeProvider) apiHeaders(ctx context.Context) (map[string]string, error) {
-	key, err := requireCredential(ctx, q.keyAtUse, q.apiKey)
+	key, err := providers.CredentialForCall(ctx, q.keyAtUse, q.apiKey)
 	if err != nil {
 		return nil, err
 	}
@@ -386,4 +387,19 @@ func (q *QuickNodeProvider) apiHeaders(ctx context.Context) (map[string]string, 
 	}, nil
 }
 
-var _ WebhookProvider = (*QuickNodeProvider)(nil)
+func exchange(ctx context.Context, client *httpclient.Client, method, rawURL string, header map[string]string, body []byte) (int, []byte, error) {
+	resp, err := client.Do(ctx, httpclient.Request{
+		Method:  method,
+		URL:     rawURL,
+		Header:  header,
+		Body:    body,
+		HasBody: body != nil,
+	})
+	if err != nil {
+		return 0, nil, err
+	}
+	return resp.StatusCode, resp.Body, nil
+}
+
+// compile-time interface check
+var _ providers.WebhookProvider = (*QuickNodeProvider)(nil)

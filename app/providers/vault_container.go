@@ -27,6 +27,7 @@ import (
 	solanachain "github.com/macrowallets/waas/app/adapters/chain/solana"
 	alchemyingest "github.com/macrowallets/waas/app/adapters/ingest/alchemy"
 	heliusingest "github.com/macrowallets/waas/app/adapters/ingest/helius"
+	quicknodeingest "github.com/macrowallets/waas/app/adapters/ingest/quicknode"
 	coinapiws "github.com/macrowallets/waas/app/adapters/price/coinapi"
 	queuesqs "github.com/macrowallets/waas/app/adapters/queue/sqs"
 	"github.com/macrowallets/waas/app/adapters/redis/addresscache"
@@ -541,7 +542,7 @@ func buildWebhookIngest(c *container.Container, accountSettings *settings.Servic
 	providerMap := map[string]providers.WebhookProvider{
 		"alchemy":   alchemyingest.NewAlchemyProvider("").UseKeySource(func(ctx context.Context) string { return keyFor(ctx, "alchemy") }),
 		"helius":    heliusingest.NewHeliusProvider("").UseKeySource(func(ctx context.Context) string { return keyFor(ctx, "helius") }),
-		"quicknode": providers.NewQuickNodeProvider("").UseKeySource(func(ctx context.Context) string { return keyFor(ctx, "quicknode") }),
+		"quicknode": quicknodeingest.NewQuickNodeProvider("").UseKeySource(func(ctx context.Context) string { return keyFor(ctx, "quicknode") }),
 	}
 	c.WebhookProviders = providerMap
 	syncers := make(map[string]webhooksync.AddressSyncer, len(providerMap))

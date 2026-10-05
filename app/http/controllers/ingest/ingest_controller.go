@@ -15,10 +15,6 @@ import (
 	"github.com/macrowallets/waas/app/services/ingest/providers"
 )
 
-var ingestProviders = map[string]providers.WebhookProvider{
-	"quicknode": providers.NewQuickNodeProvider(""),
-}
-
 // providerLookup returns the ingest providers for this request. The map is
 // built with a KeySource, so the credential is read at verify time.
 type providerLookup func() map[string]providers.WebhookProvider
@@ -31,7 +27,7 @@ type IngestController struct {
 }
 
 // IngestControllerDeps is everything the ingest controller needs.
-// Lookup may be nil; a nil lookup keeps the package provider map.
+// Lookup may be nil; a nil lookup resolves the adapter registered for the provider.
 type IngestControllerDeps struct {
 	Subscriptions *ingestsvc.Subscriptions
 	Ingest        *ingestsvc.Service
@@ -59,19 +55,21 @@ func (ctrl *IngestController) provider(name string) (providers.WebhookProvider, 
 			return found, true
 		}
 	}
-	// Alchemy and Helius clients are registered by their adapters during init,
-	// so these fallbacks are resolved on the request rather than in the package map.
-	if name == "alchemy" || name == "helius" {
-		var found providers.WebhookProvider
-		if name == "alchemy" {
-			found = providers.NewAlchemyProvider("")
-		} else {
-			found = providers.NewHeliusProvider("")
-		}
-		return found, found != nil
+	// Alchemy, Helius, and QuickNode clients are registered by their adapters
+	// during init, so these fallbacks are resolved on the request rather than
+	// in a package map.
+	var found providers.WebhookProvider
+	switch name {
+	case "alchemy":
+		found = providers.NewAlchemyProvider("")
+	case "helius":
+		found = providers.NewHeliusProvider("")
+	case "quicknode":
+		found = providers.NewQuickNodeProvider("")
+	default:
+		return nil, false
 	}
-	found, ok := ingestProviders[name]
-	return found, ok
+	return found, found != nil
 }
 
 func (ctrl *IngestController) HandleWebhookIngest(ctx http.Context) http.Response {
