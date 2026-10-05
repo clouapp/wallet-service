@@ -38,38 +38,41 @@ type AccountsController struct {
 	credentialMail *credentialmail.Service
 }
 
-// NewAccountsController wires the dashboard account handlers. Persistence goes
-// through the account service. The auth service only turns a new API token
+// AccountsControllerDeps is everything the dashboard accounts controller needs.
+// Persistence goes through AccountService. Passwords only turns a new API token
 // secret into its sha256 digest. Limits supplies sweep_limits from settings.
-// Features supplies the active flag keys on GET.
-func NewAccountsController(
-	accountService *accountsvc.Service,
-	passwords *authsvc.Service,
-	limits *settings.Service,
-	features *featuressvc.Service,
-	credentialMail *credentialmail.Service,
-) *AccountsController {
-	if accountService == nil {
+// Features supplies the active flag keys on GET. Every field is required.
+type AccountsControllerDeps struct {
+	AccountService *accountsvc.Service
+	Passwords      *authsvc.Service
+	Limits         *settings.Service
+	Features       *featuressvc.Service
+	CredentialMail *credentialmail.Service
+}
+
+// NewAccountsController wires the dashboard account handlers from AccountsControllerDeps.
+func NewAccountsController(deps AccountsControllerDeps) *AccountsController {
+	if deps.AccountService == nil {
 		panic("dashboard accounts controller: account service is required")
 	}
-	if passwords == nil {
+	if deps.Passwords == nil {
 		panic("dashboard accounts controller: auth service is required")
 	}
-	if limits == nil {
+	if deps.Limits == nil {
 		panic("dashboard accounts controller: settings service is required")
 	}
-	if features == nil {
+	if deps.Features == nil {
 		panic("dashboard accounts controller: features service is required")
 	}
-	if credentialMail == nil {
+	if deps.CredentialMail == nil {
 		panic("dashboard accounts controller: credential mail is required")
 	}
 	return &AccountsController{
-		accountService: accountService,
-		passwords:      passwords,
-		limits:         limits,
-		features:       features,
-		credentialMail: credentialMail,
+		accountService: deps.AccountService,
+		passwords:      deps.Passwords,
+		limits:         deps.Limits,
+		features:       deps.Features,
+		credentialMail: deps.CredentialMail,
 	}
 }
 

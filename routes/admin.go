@@ -527,13 +527,13 @@ func newPlatformFeaturesController() *platformfeatures.FeaturesController {
 }
 
 func newDashboardAccountsController() *dashaccounts.AccountsController {
-	return dashaccounts.NewAccountsController(
-		container.MustMake[*accountsvc.Service](),
-		container.MustMake[*authsvc.Service](),
-		container.MustMake[*settingssvc.Service](),
-		container.MustMake[*featuressvc.Service](),
-		container.MustMake[*credentialmail.Service](),
-	)
+	return dashaccounts.NewAccountsController(dashaccounts.AccountsControllerDeps{
+		AccountService: container.MustMake[*accountsvc.Service](),
+		Passwords:      container.MustMake[*authsvc.Service](),
+		Limits:         container.MustMake[*settingssvc.Service](),
+		Features:       container.MustMake[*featuressvc.Service](),
+		CredentialMail: container.MustMake[*credentialmail.Service](),
+	})
 }
 
 func newDashboardInvitesController() *dashaccounts.InvitesController {
