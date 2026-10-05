@@ -568,7 +568,7 @@ func buildPriceService(c *container.Container, accountSettings *settings.Service
 func buildPendingDepositStore(rdb *redis.Client, dir string) pending.Store {
 	var redisStore *pending.RedisStore
 	if rdb != nil {
-		store, err := pending.NewRedisStore(rdb, pending.DefaultRedisKeyPrefix)
+		store, err := pending.NewRedisStore(pending.RedisStoreDeps{Redis: rdb, KeyPrefix: pending.DefaultRedisKeyPrefix})
 		if err != nil {
 			slog.Error("vault: pending deposit redis store unavailable", "error", err)
 		} else {

@@ -19,14 +19,21 @@ type RedisStore struct {
 	prefix string
 }
 
-func NewRedisStore(rdb *redis.Client, keyPrefix string) (*RedisStore, error) {
-	if rdb == nil {
+// RedisStoreDeps is the client and key prefix NewRedisStore stores.
+// Redis must be set; an empty KeyPrefix is rejected.
+type RedisStoreDeps struct {
+	Redis     *redis.Client
+	KeyPrefix string
+}
+
+func NewRedisStore(deps RedisStoreDeps) (*RedisStore, error) {
+	if deps.Redis == nil {
 		return nil, errors.New("pending redis store: client is required")
 	}
-	if keyPrefix == "" {
+	if deps.KeyPrefix == "" {
 		return nil, errors.New("pending redis store: key prefix is required")
 	}
-	return &RedisStore{rdb: rdb, prefix: keyPrefix}, nil
+	return &RedisStore{rdb: deps.Redis, prefix: deps.KeyPrefix}, nil
 }
 
 func (s *RedisStore) scheduleKey(chain string) string { return s.prefix + chain }

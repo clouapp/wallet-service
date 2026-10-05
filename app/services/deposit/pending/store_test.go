@@ -221,7 +221,7 @@ func TestRedisStore_PutListDeleteWithIsolatedKeys(t *testing.T) {
 	ctx := context.Background()
 	client := testutil.TestRedis(t)
 	prefix := testutil.TestRedisPrefix(t, client)
-	store, err := NewRedisStore(client, prefix)
+	store, err := NewRedisStore(RedisStoreDeps{Redis: client, KeyPrefix: prefix})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -252,17 +252,17 @@ func TestRedisStore_PutListDeleteWithIsolatedKeys(t *testing.T) {
 }
 
 func TestNewRedisStore_RequiresClientAndPrefix(t *testing.T) {
-	if _, err := NewRedisStore(nil, DefaultRedisKeyPrefix); err == nil {
+	if _, err := NewRedisStore(RedisStoreDeps{KeyPrefix: DefaultRedisKeyPrefix}); err == nil {
 		t.Fatal("expected a nil client to be rejected")
 	}
-	if _, err := NewRedisStore(unreachableRedis(t), ""); err == nil {
+	if _, err := NewRedisStore(RedisStoreDeps{Redis: unreachableRedis(t)}); err == nil {
 		t.Fatal("expected an empty prefix to be rejected")
 	}
 }
 
 func TestDurableStore_RedisDownFallsBackToTheFile(t *testing.T) {
 	ctx := context.Background()
-	redisStore, err := NewRedisStore(unreachableRedis(t), "test:unreachable:")
+	redisStore, err := NewRedisStore(RedisStoreDeps{Redis: unreachableRedis(t), KeyPrefix: "test:unreachable:"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -289,7 +289,7 @@ func TestDurableStore_RedisDownFallsBackToTheFile(t *testing.T) {
 
 func TestDurableStore_FailsWhenEveryBackendIsDown(t *testing.T) {
 	ctx := context.Background()
-	redisStore, err := NewRedisStore(unreachableRedis(t), "test:unreachable:")
+	redisStore, err := NewRedisStore(RedisStoreDeps{Redis: unreachableRedis(t), KeyPrefix: "test:unreachable:"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -308,7 +308,7 @@ func TestDurableStore_FailsWhenEveryBackendIsDown(t *testing.T) {
 func TestDurableStore_MergesBothBackendsKeepingTheNewestEntry(t *testing.T) {
 	ctx := context.Background()
 	client := testutil.TestRedis(t)
-	redisStore, err := NewRedisStore(client, testutil.TestRedisPrefix(t, client))
+	redisStore, err := NewRedisStore(RedisStoreDeps{Redis: client, KeyPrefix: testutil.TestRedisPrefix(t, client)})
 	if err != nil {
 		t.Fatal(err)
 	}

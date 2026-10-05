@@ -146,7 +146,7 @@ func openPendingStore(t *testing.T, rdb *redis.Client, prefix, dir string) *pend
 	var redisStore *pending.RedisStore
 	if rdb != nil {
 		var err error
-		if redisStore, err = pending.NewRedisStore(rdb, prefix); err != nil {
+		if redisStore, err = pending.NewRedisStore(pending.RedisStoreDeps{Redis: rdb, KeyPrefix: prefix}); err != nil {
 			t.Fatal(err)
 		}
 	}
