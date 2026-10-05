@@ -20,14 +20,21 @@ type namedStore struct {
 	store Store
 }
 
+// DurableStoreDeps is the Redis and file backends NewDurableStore writes through.
+// A nil field is an unavailable backend; at least one must be set.
+type DurableStoreDeps struct {
+	Redis *RedisStore
+	File  *FileStore
+}
+
 // NewDurableStore accepts nil for an unavailable backend but needs at least one.
-func NewDurableStore(redisStore *RedisStore, fileStore *FileStore) (*DurableStore, error) {
+func NewDurableStore(deps DurableStoreDeps) (*DurableStore, error) {
 	var backends []namedStore
-	if redisStore != nil {
-		backends = append(backends, namedStore{name: "redis", store: redisStore})
+	if deps.Redis != nil {
+		backends = append(backends, namedStore{name: "redis", store: deps.Redis})
 	}
-	if fileStore != nil {
-		backends = append(backends, namedStore{name: "file", store: fileStore})
+	if deps.File != nil {
+		backends = append(backends, namedStore{name: "file", store: deps.File})
 	}
 	if len(backends) == 0 {
 		return nil, errors.New("pending store: at least one of redis or file is required")

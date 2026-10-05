@@ -271,7 +271,7 @@ func TestDurableStore_RedisDownFallsBackToTheFile(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	store, err := NewDurableStore(redisStore, fileStore)
+	store, err := NewDurableStore(DurableStoreDeps{Redis: redisStore, File: fileStore})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -293,7 +293,7 @@ func TestDurableStore_FailsWhenEveryBackendIsDown(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	store, err := NewDurableStore(redisStore, brokenFileStore(t))
+	store, err := NewDurableStore(DurableStoreDeps{Redis: redisStore, File: brokenFileStore(t)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -326,7 +326,7 @@ func TestDurableStore_MergesBothBackendsKeepingTheNewestEntry(t *testing.T) {
 	if err := fileStore.Put(ctx, sampleEntry(71, 1, now)); err != nil {
 		t.Fatal(err)
 	}
-	store, err := NewDurableStore(redisStore, fileStore)
+	store, err := NewDurableStore(DurableStoreDeps{Redis: redisStore, File: fileStore})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -337,7 +337,7 @@ func TestDurableStore_MergesBothBackendsKeepingTheNewestEntry(t *testing.T) {
 }
 
 func TestNewDurableStore_NeedsABackend(t *testing.T) {
-	if _, err := NewDurableStore(nil, nil); err == nil {
+	if _, err := NewDurableStore(DurableStoreDeps{}); err == nil {
 		t.Fatal("expected an error without any backend")
 	}
 }

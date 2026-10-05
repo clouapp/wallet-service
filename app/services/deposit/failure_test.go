@@ -154,7 +154,7 @@ func openPendingStore(t *testing.T, rdb *redis.Client, prefix, dir string) *pend
 	if err != nil {
 		t.Fatal(err)
 	}
-	store, err := pending.NewDurableStore(redisStore, fileStore)
+	store, err := pending.NewDurableStore(pending.DurableStoreDeps{Redis: redisStore, File: fileStore})
 	if err != nil {
 		t.Fatal(err)
 	}

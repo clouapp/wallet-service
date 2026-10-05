@@ -583,7 +583,7 @@ func buildPendingDepositStore(rdb *redis.Client, dir string) pending.Store {
 		slog.Error("vault: pending deposit file store unavailable", "dir", dir, "error", err)
 		fileStore = nil
 	}
-	store, err := pending.NewDurableStore(redisStore, fileStore)
+	store, err := pending.NewDurableStore(pending.DurableStoreDeps{Redis: redisStore, File: fileStore})
 	if err != nil {
 		slog.Error("vault: no pending deposit store; a block that keeps failing stops the scan", "error", err)
 		return nil
