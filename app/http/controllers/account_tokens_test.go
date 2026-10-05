@@ -324,6 +324,43 @@ func (s *accountTokensSuite) TestAdminCanMint() {
 	s.Equal(int64(1), s.tokenCount(accountID))
 }
 
+func (s *accountTokensSuite) TestAdminCanRevoke() {
+	accountID := s.createAccount()
+	admin := s.loginUser("admin", accountID)
+
+	resp := s.createToken(admin.token, accountID, `{"name":"admin-revoke"}`)
+	s.Equal(http.StatusCreated, s.statusOf(resp))
+	revoked := s.revokeToken(admin.token, accountID, s.createdTokenID(resp))
+	s.Equal(http.StatusNoContent, s.statusOf(revoked))
+	s.True(s.tokenRevoked(accountID, "admin-revoke"))
+}
+
+func (s *accountTokensSuite) TestAuditorCannotRevoke() {
+	accountID := s.createAccount()
+	owner := s.loginUser("owner", accountID)
+	auditor := s.loginUser("auditor", accountID)
+
+	resp := s.createToken(owner.token, accountID, `{"name":"keep-auditor"}`)
+	s.Equal(http.StatusCreated, s.statusOf(resp))
+	denied := s.revokeToken(auditor.token, accountID, s.createdTokenID(resp))
+	s.assertCreateForbidden(denied)
+	s.False(s.tokenRevoked(accountID, "keep-auditor"))
+	s.Equal(int64(0), s.activityCount(accountID, activitylog.ActionTokenRevoked))
+}
+
+func (s *accountTokensSuite) TestUserCannotRevoke() {
+	accountID := s.createAccount()
+	owner := s.loginUser("owner", accountID)
+	user := s.loginUser("user", accountID)
+
+	resp := s.createToken(owner.token, accountID, `{"name":"keep-user"}`)
+	s.Equal(http.StatusCreated, s.statusOf(resp))
+	denied := s.revokeToken(user.token, accountID, s.createdTokenID(resp))
+	s.assertCreateForbidden(denied)
+	s.False(s.tokenRevoked(accountID, "keep-user"))
+	s.Equal(int64(0), s.activityCount(accountID, activitylog.ActionTokenRevoked))
+}
+
 func (s *accountTokensSuite) createAccount() uuid.UUID {
 	accountID := uuid.New()
 	s.Require().NoError(facades.Orm().Query().Create(&models.Account{
@@ -468,6 +505,25 @@ func (s *accountTokensSuite) tokenCount(accountID uuid.UUID) int64 {
 		Count()
 	s.Require().NoError(err)
 	return total
+}
+
+func (s *accountTokensSuite) createdTokenID(resp contractstesting.Response) string {
+	var parsed struct {
+		Metadata struct {
+			ID string `json:"id"`
+		} `json:"metadata"`
+	}
+	s.Require().NoError(json.Unmarshal([]byte(s.body(resp)), &parsed))
+	s.Require().NotEmpty(parsed.Metadata.ID)
+	return parsed.Metadata.ID
+}
+
+func (s *accountTokensSuite) tokenRevoked(accountID uuid.UUID, name string) bool {
+	var token models.AccessToken
+	s.Require().NoError(facades.Orm().Query().
+		Where("account_id = ? AND name = ?", accountID, name).
+		First(&token))
+	return token.RevokedAt != nil
 }
 
 func (s *accountTokensSuite) assertCreateForbidden(resp contractstesting.Response) {

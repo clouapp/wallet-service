@@ -518,9 +518,6 @@ func (ctrl *AccountsController) CreateAccountToken(ctx http.Context) http.Respon
 // @Router       /accounts/{accountId}/tokens/{tokenId} [delete]
 func (ctrl *AccountsController) RevokeAccountToken(ctx http.Context) http.Response {
 	account := requestctx.MustAccount(ctx)
-	if errResp := controllers.Deny(ctx, policies.AccountWriteTokens(ctx, account.ID, middleware.SessionUserID(ctx))); errResp != nil {
-		return errResp
-	}
 
 	tokenID, err := requests.RouteUUID(ctx, "tokenId")
 	if err != nil {
