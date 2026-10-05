@@ -7,6 +7,7 @@ import (
 	"github.com/macrowallets/waas/app/http/middleware/requestctx"
 	"github.com/macrowallets/waas/app/http/pagination"
 	"github.com/macrowallets/waas/app/http/requests"
+	exttransactions "github.com/macrowallets/waas/app/http/resources/external/transactions"
 	"github.com/macrowallets/waas/app/http/responses"
 	withdraw "github.com/macrowallets/waas/app/services/withdraw"
 )
@@ -69,7 +70,7 @@ func (ctrl *TransactionsController) ListTransactions(ctx http.Context) http.Resp
 	if err != nil {
 		return controllers.MapInternalError(ctx, err, "list_transactions")
 	}
-	return responses.Send(ctx, http.StatusOK, pagination.Response(controllers.TransactionViews(txs), total, limit, offset))
+	return responses.Send(ctx, http.StatusOK, pagination.Response(exttransactions.TransactionsFrom(txs), total, limit, offset))
 }
 
 // GetTransaction godoc
@@ -80,7 +81,7 @@ func (ctrl *TransactionsController) ListTransactions(ctx http.Context) http.Resp
 // @Security     ApiKeyAuth
 // @Security     SignatureAuth
 // @Param        id   path      string  true  "Transaction UUID"  format(uuid)
-// @Success      200  {object}  TransactionView
+// @Success      200  {object}  exttransactions.Transaction
 // @Failure      400  {object}  ErrorResponse  "Invalid UUID"
 // @Failure      404  {object}  ErrorResponse  "Transaction not found"
 // @Router       /v1/transactions/{id} [get]
@@ -97,7 +98,7 @@ func (ctrl *TransactionsController) GetTransaction(ctx http.Context) http.Respon
 			"error": "transaction not found",
 		})
 	}
-	return ctx.Response().Success().Json(controllers.NewTransactionView(*tx))
+	return ctx.Response().Success().Json(exttransactions.TransactionFrom(*tx))
 }
 
 // ListUserTransactions godoc
@@ -138,5 +139,10 @@ func (ctrl *TransactionsController) ListUserTransactions(ctx http.Context) http.
 	}
 	// Empty result when external_id belongs to another account — same body
 	// as the legitimate "no transactions yet" case (IDOR mitigation).
-	return responses.Send(ctx, http.StatusOK, pagination.Response(controllers.TransactionViews(txs), total, limit, offset))
+	return responses.Send(ctx, http.StatusOK, pagination.Response(exttransactions.TransactionsFrom(txs), total, limit, offset))
+}
+
+// TransactionListResponse documents the paginated account transaction list.
+type TransactionListResponse struct {
+	Data []exttransactions.Transaction `json:"data"`
 }

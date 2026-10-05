@@ -27,11 +27,12 @@ type transactionTimestamps struct {
 	UpdatedAt *carbon.DateTime `json:"updated_at"`
 }
 
-// transactionRecord is the stored transaction row both HTTP views emit. Field
-// order and tags match the model wire, including embedded timestamps. The
-// stored direction is chain_direction on the views; direction is the display
-// sign. RawPayload stays off the wire. A nil address or wallet is omitted. A
-// nested address is an address view and a nested wallet is a wallet body view.
+// transactionRecord is the stored transaction row the wallet transaction view
+// emits. Field order and tags match the model wire, including embedded
+// timestamps. The stored direction is chain_direction on the view; direction
+// is the display sign. RawPayload stays off the wire. A nil address or wallet
+// is omitted. A nested address is an address view and a nested wallet is a
+// wallet body view.
 type transactionRecord struct {
 	transactionTimestamps
 	ID                  uuid.UUID       `json:"id"`
@@ -111,49 +112,8 @@ type WalletTransactionView struct {
 	ChainDirection string `json:"chain_direction,omitempty" enums:"inbound,outbound,self,unknown"`
 }
 
-// TransactionView is the account-level transaction response: the stored row plus its
-// display type and direction. Timestamps keep the stored carbon format.
-type TransactionView struct {
-	transactionRecord
-	Type           string `json:"type" enums:"deposit,withdrawal,sweep,consolidation,gas_funding,transfer,fee,unknown"`
-	Direction      string `json:"direction" enums:"incoming,outgoing,internal,unknown"`
-	ChainDirection string `json:"chain_direction,omitempty" enums:"inbound,outbound,self,unknown"`
-}
-
 func classifyTransaction(tx models.Transaction) txkind.Kind {
 	return txkind.Classify(tx.TxType, tx.Origin, tx.Direction)
-}
-
-func newTransactionView(tx models.Transaction) TransactionView {
-	kind := classifyTransaction(tx)
-	return TransactionView{
-		transactionRecord: newTransactionRecord(tx),
-		Type:              kind.Type,
-		Direction:         kind.Direction,
-		ChainDirection:    tx.Direction,
-	}
-}
-
-// transactionViews copies a page. A nil slice stays nil; an empty slice stays empty.
-func transactionViews(transactions []models.Transaction) []TransactionView {
-	if transactions == nil {
-		return nil
-	}
-	views := make([]TransactionView, len(transactions))
-	for i := range transactions {
-		views[i] = newTransactionView(transactions[i])
-	}
-	return views
-}
-
-// TransactionViews and NewTransactionView are the account-level transaction
-// JSON. The external transaction handlers call them so the body stays the same.
-func TransactionViews(transactions []models.Transaction) []TransactionView {
-	return transactionViews(transactions)
-}
-
-func NewTransactionView(tx models.Transaction) TransactionView {
-	return newTransactionView(tx)
 }
 
 // WalletTransactionViewsForChain is the wallet transaction JSON, including

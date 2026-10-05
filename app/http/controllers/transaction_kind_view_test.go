@@ -55,8 +55,7 @@ func TestTransactionViewsCarryAnUnsignedAmountWithTypeAndDirection(t *testing.T)
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 			bodies := map[string]map[string]any{
-				"wallet view":  decodeJSON(t, walletTransactionViews([]models.Transaction{tc.tx}, polygonCatalog())[0]),
-				"account view": decodeJSON(t, newTransactionView(tc.tx)),
+				"wallet view": decodeJSON(t, walletTransactionViews([]models.Transaction{tc.tx}, polygonCatalog())[0]),
 			}
 			for view, body := range bodies {
 				if body["amount"] != tc.tx.Amount {
@@ -81,23 +80,10 @@ func TestTransactionViewsCarryAnUnsignedAmountWithTypeAndDirection(t *testing.T)
 func TestTransactionViewsListKeepsOrderAndLength(t *testing.T) {
 	t.Parallel()
 
-	if got := transactionViews(nil); got != nil {
-		t.Fatal("nil slice became an empty slice")
-	}
-	if got := transactionViews([]models.Transaction{}); got == nil || len(got) != 0 {
-		t.Fatalf("empty slice = %#v", got)
-	}
 	if got := walletTransactionViews(nil, polygonCatalog()); got != nil {
 		t.Fatal("nil wallet page became an empty slice")
 	}
 	if got := walletTransactionViews([]models.Transaction{}, polygonCatalog()); got == nil || len(got) != 0 {
 		t.Fatalf("empty wallet page = %#v", got)
-	}
-	views := transactionViews([]models.Transaction{
-		{Amount: "1", TxType: models.TxTypeDeposit},
-		{Amount: "2", TxType: models.TxTypeWithdrawal},
-	})
-	if len(views) != 2 || views[0].Type != txkind.TypeDeposit || views[1].Direction != txkind.DirectionOutgoing {
-		t.Fatalf("views = %+v", views)
 	}
 }

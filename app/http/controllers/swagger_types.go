@@ -40,10 +40,6 @@ type AddressListResponse struct {
 	Data []AddressView `json:"data"`
 }
 
-type TransactionListResponse struct {
-	Data []TransactionView `json:"data"`
-}
-
 type WalletTransactionListResponse struct {
 	Data []WalletTransactionView `json:"data"`
 }
