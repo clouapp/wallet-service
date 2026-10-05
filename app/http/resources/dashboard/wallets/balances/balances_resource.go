@@ -1,4 +1,4 @@
-package controllers
+package balances
 
 import (
 	"time"
@@ -10,11 +10,11 @@ import (
 	"github.com/macrowallets/waas/pkg/numeric"
 )
 
-// WalletAssetBalanceView is a wallet asset balance HTTP clients read. Field
-// order and tags match the model wire, including embedded timestamps. A nil
-// page stays nil; an empty page stays empty. A nil related wallet stays omitted.
-// A related wallet is the wallet body view, so share material stays off the wire.
-type WalletAssetBalanceView struct {
+// Balance is a wallet asset balance HTTP clients read. Field order and tags
+// match the model wire, including embedded timestamps. A nil page stays nil;
+// an empty page stays empty. A nil related wallet stays omitted. Callers pass
+// the wallet body view, so share material stays off the wire.
+type Balance struct {
 	CreatedAt     *carbon.DateTime    `json:"created_at"`
 	UpdatedAt     *carbon.DateTime    `json:"updated_at"`
 	ID            uuid.UUID           `json:"id"`
@@ -32,11 +32,16 @@ type WalletAssetBalanceView struct {
 	ValueUSD      numeric.NullDecimal `json:"value_usd,omitzero"`
 	SourceAddress *string             `json:"source_address,omitempty"`
 	LastSyncedAt  time.Time           `json:"last_synced_at"`
-	Wallet        *WalletBodyView     `json:"wallet,omitempty"`
+	Wallet        any                 `json:"wallet,omitempty"`
 }
 
-func newWalletAssetBalanceView(row models.WalletAssetBalance) WalletAssetBalanceView {
-	return WalletAssetBalanceView{
+// BalanceFrom projects one balance. A nil wallet stays omitted.
+func BalanceFrom[W any](row models.WalletAssetBalance, wallet *W) Balance {
+	var related any
+	if wallet != nil {
+		related = wallet
+	}
+	return Balance{
 		CreatedAt:     row.CreatedAt,
 		UpdatedAt:     row.UpdatedAt,
 		ID:            row.ID,
@@ -54,18 +59,18 @@ func newWalletAssetBalanceView(row models.WalletAssetBalance) WalletAssetBalance
 		ValueUSD:      row.ValueUSD,
 		SourceAddress: row.SourceAddress,
 		LastSyncedAt:  row.LastSyncedAt,
-		Wallet:        walletBodyViewPtr(row.Wallet),
+		Wallet:        related,
 	}
 }
 
-// WalletAssetBalanceViews copies a page. A nil slice stays nil; an empty slice stays empty.
-func WalletAssetBalanceViews(rows []models.WalletAssetBalance) []WalletAssetBalanceView {
+// BalancesFrom copies a page. A nil slice stays nil; an empty slice stays empty.
+func BalancesFrom[W any](rows []models.WalletAssetBalance, walletOf func(*models.Wallet) *W) []Balance {
 	if rows == nil {
 		return nil
 	}
-	views := make([]WalletAssetBalanceView, len(rows))
+	views := make([]Balance, len(rows))
 	for i := range rows {
-		views[i] = newWalletAssetBalanceView(rows[i])
+		views[i] = BalanceFrom(rows[i], walletOf(rows[i].Wallet))
 	}
 	return views
 }

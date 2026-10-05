@@ -12,6 +12,7 @@ import (
 
 	"github.com/macrowallets/waas/app/container"
 	"github.com/macrowallets/waas/app/facades"
+	walletbalances "github.com/macrowallets/waas/app/http/resources/dashboard/wallets/balances"
 	"github.com/macrowallets/waas/app/models"
 	chainsvc "github.com/macrowallets/waas/app/services/chains"
 	"github.com/macrowallets/waas/app/services/walletrecords"
@@ -178,7 +179,7 @@ func newWalletView(wallet *models.Wallet, resolved models.ResolvedNetwork) Walle
 type WalletListItem struct {
 	WalletBodyView
 	walletNetwork
-	Assets []WalletAssetBalanceView `json:"assets"`
+	Assets []walletbalances.Balance `json:"assets"`
 }
 
 func newWalletListItem(wallet models.Wallet, resolved models.ResolvedNetwork, assets []models.WalletAssetBalance) WalletListItem {
@@ -186,7 +187,7 @@ func newWalletListItem(wallet models.Wallet, resolved models.ResolvedNetwork, as
 	return WalletListItem{
 		WalletBodyView: newWalletBodyView(*priced),
 		walletNetwork:  newWalletNetwork(resolved),
-		Assets:         WalletAssetBalanceViews(assetBalancesPricedFor(assets, resolved)),
+		Assets:         walletbalances.BalancesFrom(assetBalancesPricedFor(assets, resolved), walletBodyViewPtr),
 	}
 }
 

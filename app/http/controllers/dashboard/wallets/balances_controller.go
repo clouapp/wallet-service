@@ -5,6 +5,7 @@ import (
 
 	"github.com/macrowallets/waas/app/http/controllers"
 	"github.com/macrowallets/waas/app/http/middleware/requestctx"
+	walletbalances "github.com/macrowallets/waas/app/http/resources/dashboard/wallets/balances"
 	"github.com/macrowallets/waas/app/http/responses"
 	chainsvc "github.com/macrowallets/waas/app/services/chains"
 	"github.com/macrowallets/waas/app/services/walletrecords"
@@ -39,7 +40,7 @@ func NewBalancesController(
 // @Security     BearerAuth
 // @Produce      json
 // @Param        walletId  path  string  true  "Wallet UUID"
-// @Success      200  {object}  map[string][]controllers.WalletAssetBalanceView
+// @Success      200  {object}  map[string][]walletbalances.Balance
 // @Failure      403  {object}  ErrorResponse
 // @Failure      404  {object}  ErrorResponse
 // @Router       /wallets/{walletId}/balances [get]
@@ -55,6 +56,6 @@ func (ctrl *BalancesController) ListWalletBalances(ctx http.Context) http.Respon
 		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to fetch chain tokens"})
 	}
 
-	assets := controllers.WalletAssetBalanceViews(controllers.PricedConfiguredBalances(ctx.Context(), wallet.Chain, rows, tokens))
+	assets := walletbalances.BalancesFrom(controllers.PricedConfiguredBalances(ctx.Context(), wallet.Chain, rows, tokens), controllers.WalletBodyViewPtr)
 	return responses.Send(ctx, http.StatusOK, http.Json{"data": assets})
 }

@@ -1,4 +1,4 @@
-package controllers
+package balances_test
 
 import (
 	"encoding/json"
@@ -10,11 +10,13 @@ import (
 	"github.com/goravel/framework/support/carbon"
 	"github.com/shopspring/decimal"
 
+	"github.com/macrowallets/waas/app/http/controllers"
+	"github.com/macrowallets/waas/app/http/resources/dashboard/wallets/balances"
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/pkg/numeric"
 )
 
-func TestWalletAssetBalanceViewKeepsTheModelWire(t *testing.T) {
+func TestBalanceKeepsTheModelWire(t *testing.T) {
 	t.Parallel()
 
 	id := uuid.MustParse("11111111-1111-4111-8111-111111111111")
@@ -55,7 +57,7 @@ func TestWalletAssetBalanceViewKeepsTheModelWire(t *testing.T) {
 		},
 	}
 	for _, tc := range cases {
-		raw, err := json.Marshal(newWalletAssetBalanceView(tc.row))
+		raw, err := json.Marshal(balances.BalanceFrom[struct{}](tc.row, nil))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -65,20 +67,20 @@ func TestWalletAssetBalanceViewKeepsTheModelWire(t *testing.T) {
 	}
 }
 
-func TestWalletAssetBalanceViewKeepsARelatedWallet(t *testing.T) {
+func TestBalanceKeepsARelatedWallet(t *testing.T) {
 	t.Parallel()
 
 	id := uuid.MustParse("11111111-1111-4111-8111-111111111111")
 	const share = "share-secret"
 	wallet := &models.Wallet{ID: id, Chain: "eth", Label: "hot", MPCCustomerShare: share}
-	raw, err := json.Marshal(newWalletAssetBalanceView(models.WalletAssetBalance{Wallet: wallet}))
+	raw, err := json.Marshal(balances.BalanceFrom(models.WalletAssetBalance{Wallet: wallet}, controllers.WalletBodyViewPtr(wallet)))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if strings.Contains(string(raw), share) {
 		t.Fatal("wallet share is on the wire")
 	}
-	walletRaw, err := json.Marshal(newWalletBodyView(*wallet))
+	walletRaw, err := json.Marshal(controllers.NewWalletBodyView(*wallet))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -87,18 +89,18 @@ func TestWalletAssetBalanceViewKeepsARelatedWallet(t *testing.T) {
 	}
 }
 
-func TestWalletAssetBalanceViewsPreserveSliceNilness(t *testing.T) {
+func TestBalancesFromPreserveSliceNilness(t *testing.T) {
 	t.Parallel()
 
-	if WalletAssetBalanceViews(nil) != nil {
+	if balances.BalancesFrom(nil, controllers.WalletBodyViewPtr) != nil {
 		t.Fatal("nil slice became an empty slice")
 	}
-	empty := WalletAssetBalanceViews([]models.WalletAssetBalance{})
+	empty := balances.BalancesFrom([]models.WalletAssetBalance{}, controllers.WalletBodyViewPtr)
 	if empty == nil || len(empty) != 0 {
 		t.Fatalf("empty slice = %#v", empty)
 	}
 
-	nilPage, err := json.Marshal(map[string]any{"data": WalletAssetBalanceViews(nil)})
+	nilPage, err := json.Marshal(map[string]any{"data": balances.BalancesFrom(nil, controllers.WalletBodyViewPtr)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -106,7 +108,7 @@ func TestWalletAssetBalanceViewsPreserveSliceNilness(t *testing.T) {
 		t.Fatalf("nil page = %s", nilPage)
 	}
 
-	emptyPage, err := json.Marshal(map[string]any{"data": WalletAssetBalanceViews([]models.WalletAssetBalance{})})
+	emptyPage, err := json.Marshal(map[string]any{"data": balances.BalancesFrom([]models.WalletAssetBalance{}, controllers.WalletBodyViewPtr)})
 	if err != nil {
 		t.Fatal(err)
 	}
