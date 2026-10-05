@@ -2,6 +2,7 @@ package wallets
 
 import (
 	"log/slog"
+	"strings"
 
 	"github.com/google/uuid"
 	"github.com/goravel/framework/contracts/http"
@@ -79,9 +80,10 @@ func NewWalletsController(deps WalletsControllerDeps) *WalletsController {
 // @Security     SignatureAuth
 // @Param        body  body      CreateWalletSwagger  true  "Wallet creation request"
 // @Success      201   {object}  CreateWalletResponse
-// @Failure      400   {object}  ErrorResponse  "Missing or invalid fields"
-// @Failure      409   {object}  ErrorResponse  "Wallet for this chain already exists or chain is unsupported"
-// @Failure      500   {object}  ErrorResponse  "Wallet service returned no wallet"
+// @Failure      400   {object}  ErrorResponse  "Missing account"
+// @Failure      409   {object}  ErrorResponse  "Chain is unsupported"
+// @Failure      422   {object}  ErrorResponse  "Passphrase is too short"
+// @Failure      500   {object}  ErrorResponse  "Wallet creation failed"
 // @Router       /v1/wallets [post]
 func (ctrl *WalletsController) CreateWallet(ctx http.Context) http.Response {
 	var req requests.CreateWalletRequest
@@ -92,9 +94,7 @@ func (ctrl *WalletsController) CreateWallet(ctx http.Context) http.Response {
 	accountID, _ := requestctx.AccountID(ctx)
 	result, err := ctrl.walletService().CreateWallet(ctx.Context(), accountID, req.Chain, req.Label, req.Passphrase)
 	if err != nil {
-		return responses.Send(ctx, http.StatusConflict, http.Json{
-			"error": err.Error(),
-		})
+		return mapCreateWalletError(ctx, err)
 	}
 	if result == nil || result.Wallet == nil {
 		return responses.Send(ctx, http.StatusInternalServerError, http.Json{
@@ -102,6 +102,23 @@ func (ctrl *WalletsController) CreateWallet(ctx http.Context) http.Response {
 		})
 	}
 	return responses.Send(ctx, http.StatusCreated, newCreateWalletResponse(result))
+}
+
+// mapCreateWalletError answers a CreateWallet failure. A 4xx is a failure the
+// caller can fix. Anything else is an outage: 500, with the cause logged and
+// kept out of the body. One 409 for every error hid that outage behind a
+// message about the caller.
+func mapCreateWalletError(ctx http.Context, err error) http.Response {
+	switch {
+	case strings.HasPrefix(err.Error(), "unknown chain"):
+		return responses.Send(ctx, http.StatusConflict, http.Json{"error": "unknown chain"})
+	case err.Error() == "passphrase must be at least 12 characters":
+		return responses.Send(ctx, http.StatusUnprocessableEntity, http.Json{"error": "passphrase must be at least 12 characters"})
+	case err.Error() == "account_id is required":
+		return responses.Send(ctx, http.StatusBadRequest, http.Json{"error": "account_id is required"})
+	default:
+		return responses.InternalError(ctx, err)
+	}
 }
 
 // ListWallets godoc
