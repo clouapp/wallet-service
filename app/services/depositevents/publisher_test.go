@@ -50,15 +50,19 @@ func newFixture() fixture {
 	accountID := uuid.New()
 	walletID := uuid.New()
 	enqueuer := &recordingEnqueuer{}
-	publisher := NewPublisher(enqueuer, walletStore{walletID: {ID: walletID, AccountID: &accountID}}, fixedDecimals{
-		"polygon/USDC":  6,
-		"eth/ETH":       18,
-		"btc/BTC":       8,
-		"sol/SOL":       9,
-		"bsc/USDT":      18,
-		"bsc/bnb":       18,
-		"base/eth":      18,
-		"arbitrum/USDC": 6,
+	publisher := NewPublisher(PublisherDeps{
+		Enqueuer: enqueuer,
+		Wallets:  walletStore{walletID: {ID: walletID, AccountID: &accountID}},
+		Decimals: fixedDecimals{
+			"polygon/USDC":  6,
+			"eth/ETH":       18,
+			"btc/BTC":       8,
+			"sol/SOL":       9,
+			"bsc/USDT":      18,
+			"bsc/bnb":       18,
+			"base/eth":      18,
+			"arbitrum/USDC": 6,
+		},
 	})
 	publisher.now = func() time.Time { return time.Date(2026, 10, 1, 12, 0, 0, 0, time.UTC) }
 	return fixture{enqueuer: enqueuer, publisher: publisher, accountID: accountID, walletID: walletID}

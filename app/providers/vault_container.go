@@ -424,7 +424,11 @@ func buildVaultContainer(app foundation.Application) (*container.Container, erro
 	c.WithdrawalEvents = withdrawalevents.NewPublisher(
 		c.WebhookService, c.WithdrawalRepo, c.TransactionRepo, c.WalletRepo, assetDecimals,
 	)
-	c.DepositEvents = depositevents.NewPublisher(c.WebhookService, c.WalletRepo, assetDecimals)
+	c.DepositEvents = depositevents.NewPublisher(depositevents.PublisherDeps{
+		Enqueuer: c.WebhookService,
+		Wallets:  c.WalletRepo,
+		Decimals: assetDecimals,
+	})
 	c.DepositService = deposit.NewService(deposit.Deps{
 		Store:                scanner.New(c.Redis),
 		Registry:             c.Registry,

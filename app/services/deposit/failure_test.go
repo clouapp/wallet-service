@@ -529,7 +529,11 @@ func TestProcessingABlockTwiceSendsEachDepositWebhookOnce(t *testing.T) {
 		t.Fatal(err)
 	}
 	webhookSvc := newWebhookSvc()
-	publisher := depositevents.NewPublisher(webhookSvc, repositories.NewWalletRepository(nil), chainAssetDecimals{scanTestChain + "/" + scanTestChain: etherDecimals})
+	publisher := depositevents.NewPublisher(depositevents.PublisherDeps{
+		Enqueuer: webhookSvc,
+		Wallets:  repositories.NewWalletRepository(nil),
+		Decimals: chainAssetDecimals{scanTestChain + "/" + scanTestChain: etherDecimals},
+	})
 	f.svc.webhookSvc = webhookSvc
 	f.svc.SetDepositEvents(publisher)
 	mocks.InsertScopedWebhookConfig(t, "https://owner.test/hook", depositHookSecret, []string{string(types.EventDepositPending), depositConfirmedEvent}, &account.ID, nil)
