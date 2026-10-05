@@ -11,14 +11,14 @@ import (
 )
 
 func TestNewUTXOServiceNotNil(t *testing.T) {
-	svc := NewUTXOService(nil, nil)
+	svc := NewUTXOService(UTXODeps{})
 	if svc == nil {
 		t.Fatal("expected non-nil UTXOService")
 	}
 }
 
 func TestNewUTXOServiceFields(t *testing.T) {
-	svc := NewUTXOService(nil, nil)
+	svc := NewUTXOService(UTXODeps{})
 	if svc.utxoRepo != nil {
 		t.Fatal("expected nil utxoRepo")
 	}
@@ -28,7 +28,7 @@ func TestNewUTXOServiceFields(t *testing.T) {
 }
 
 func TestReplaceWalletUTXOsWithNilRepoReturnsError(t *testing.T) {
-	svc := NewUTXOService(nil, nil)
+	svc := NewUTXOService(UTXODeps{})
 	wallet := &models.Wallet{
 		ID:    uuid.New(),
 		Chain: "btc",

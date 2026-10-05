@@ -17,13 +17,18 @@ type UTXOService struct {
 	syncStateRepo *repositories.WalletSyncStateRepository
 }
 
-func NewUTXOService(
-	utxoRepo *repositories.WalletUTXORepository,
-	syncStateRepo *repositories.WalletSyncStateRepository,
-) *UTXOService {
+// UTXODeps is everything the UTXO refresh service needs. A nil field means that
+// dependency is absent.
+type UTXODeps struct {
+	UTXOs      *repositories.WalletUTXORepository
+	SyncStates *repositories.WalletSyncStateRepository
+}
+
+// NewUTXOService wires the UTXO refresh service from UTXODeps.
+func NewUTXOService(deps UTXODeps) *UTXOService {
 	return &UTXOService{
-		utxoRepo:      utxoRepo,
-		syncStateRepo: syncStateRepo,
+		utxoRepo:      deps.UTXOs,
+		syncStateRepo: deps.SyncStates,
 	}
 }
 
