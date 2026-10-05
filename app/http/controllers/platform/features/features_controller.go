@@ -20,15 +20,21 @@ type FeaturesController struct {
 	accounts featuressvc.Accounts
 }
 
-// NewFeaturesController wires the platform feature-flag handlers.
-func NewFeaturesController(features *featuressvc.Service, accounts featuressvc.Accounts) *FeaturesController {
-	if features == nil {
+// FeaturesControllerDeps is everything the platform features controller needs.
+type FeaturesControllerDeps struct {
+	Features *featuressvc.Service
+	Accounts featuressvc.Accounts
+}
+
+// NewFeaturesController wires the platform feature-flag handlers from FeaturesControllerDeps.
+func NewFeaturesController(deps FeaturesControllerDeps) *FeaturesController {
+	if deps.Features == nil {
 		panic("platform features controller: features service is required")
 	}
-	if accounts == nil {
+	if deps.Accounts == nil {
 		panic("platform features controller: accounts are required")
 	}
-	return &FeaturesController{features: features, accounts: accounts}
+	return &FeaturesController{features: deps.Features, accounts: deps.Accounts}
 }
 
 // Index godoc

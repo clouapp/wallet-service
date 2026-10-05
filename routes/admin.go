@@ -520,10 +520,10 @@ func newPlatformChainsController() *platformchains.ChainsController {
 }
 
 func newPlatformFeaturesController() *platformfeatures.FeaturesController {
-	return platformfeatures.NewFeaturesController(
-		container.MustMake[*featuressvc.Service](),
-		container.MustMake[*accountsvc.Service](),
-	)
+	return platformfeatures.NewFeaturesController(platformfeatures.FeaturesControllerDeps{
+		Features: container.MustMake[*featuressvc.Service](),
+		Accounts: container.MustMake[*accountsvc.Service](),
+	})
 }
 
 func newDashboardAccountsController() *dashaccounts.AccountsController {
