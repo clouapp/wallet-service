@@ -16,7 +16,6 @@ import (
 	withdrawalresource "github.com/macrowallets/waas/app/http/resources/withdrawals"
 	"github.com/macrowallets/waas/app/http/responses"
 	"github.com/macrowallets/waas/app/models"
-	"github.com/macrowallets/waas/app/policies"
 	authsvc "github.com/macrowallets/waas/app/services/auth"
 	chain "github.com/macrowallets/waas/app/services/chain"
 	chainsvc "github.com/macrowallets/waas/app/services/chains"
@@ -46,7 +45,6 @@ type WithdrawalsController struct {
 	flags             *features.Service
 	events            *withdrawalevents.Publisher
 	redis             *redis.Client
-	memberships       *walletrecords.Memberships
 	wallets           *walletrecords.Wallets
 	secondFactor      *authsvc.SecondFactorVerifier
 }
@@ -63,7 +61,6 @@ type WithdrawalsControllerDeps struct {
 	Flags             *features.Service
 	Events            *withdrawalevents.Publisher
 	Redis             *redis.Client
-	Memberships       *walletrecords.Memberships
 	Wallets           *walletrecords.Wallets
 	SecondFactor      *authsvc.SecondFactorVerifier
 }
@@ -91,9 +88,6 @@ func NewWithdrawalsController(deps WithdrawalsControllerDeps) *WithdrawalsContro
 	if deps.Flags == nil {
 		panic("dashboard withdrawals controller: feature flags are required")
 	}
-	if deps.Memberships == nil {
-		panic("dashboard withdrawals controller: wallet memberships are required")
-	}
 	if deps.Wallets == nil {
 		panic("dashboard withdrawals controller: wallets service is required")
 	}
@@ -110,7 +104,6 @@ func NewWithdrawalsController(deps WithdrawalsControllerDeps) *WithdrawalsContro
 		flags:             deps.Flags,
 		events:            deps.Events,
 		redis:             deps.Redis,
-		memberships:       deps.Memberships,
 		wallets:           deps.Wallets,
 		secondFactor:      deps.SecondFactor,
 	}
@@ -405,14 +398,6 @@ func (ctrl *WithdrawalsController) CancelWalletWithdrawal(ctx http.Context) http
 		return responses.Send(ctx, http.StatusUnprocessableEntity, http.Json{
 			"error": "only pending withdrawals can be cancelled",
 		})
-	}
-
-	creatorID := uuid.Nil
-	if w.CreatedBy != nil {
-		creatorID = *w.CreatedBy
-	}
-	if resp := controllers.Deny(ctx, policies.WalletCancelWithdrawal(controllers.WalletMembership(ctx, ctrl.memberships, wallet.ID), creatorID)); resp != nil {
-		return resp
 	}
 
 	actorID := middleware.SessionUserID(ctx)

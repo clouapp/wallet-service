@@ -27,7 +27,6 @@ func withdrawalsControllerDeps() WithdrawalsControllerDeps {
 		Flags:             &features.Service{},
 		Events:            &withdrawalevents.Publisher{},
 		Redis:             &redis.Client{},
-		Memberships:       &walletrecords.Memberships{},
 		Wallets:           &walletrecords.Wallets{},
 		SecondFactor:      &authsvc.SecondFactorVerifier{},
 	}
@@ -65,9 +64,6 @@ func TestNewWithdrawalsControllerKeepsItsDependencies(t *testing.T) {
 	}
 	if ctrl.redis != deps.Redis {
 		t.Fatal("withdrawals controller did not keep the redis client")
-	}
-	if ctrl.memberships != deps.Memberships {
-		t.Fatal("withdrawals controller did not keep the wallet memberships")
 	}
 	if ctrl.wallets != deps.Wallets {
 		t.Fatal("withdrawals controller did not keep the wallets service")
@@ -133,11 +129,6 @@ func TestNewWithdrawalsControllerRequiresEveryDependency(t *testing.T) {
 			name:  "feature flags",
 			clear: func(deps *WithdrawalsControllerDeps) { deps.Flags = nil },
 			panic: "dashboard withdrawals controller: feature flags are required",
-		},
-		{
-			name:  "wallet memberships",
-			clear: func(deps *WithdrawalsControllerDeps) { deps.Memberships = nil },
-			panic: "dashboard withdrawals controller: wallet memberships are required",
 		},
 		{
 			name:  "wallets service",

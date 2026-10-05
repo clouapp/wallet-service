@@ -32,38 +32,39 @@ const (
 // Repeated guard chains. Cors and CacheControl are not guards. The ingest
 // signature is checked in the handler, so that route's chain is empty.
 const (
-	chainSession              = "SessionAuth"
-	chainAccount              = "SessionAuth > AccountContext > TOTPEnrollment"
-	chainAccountWrite         = chainAccount + " > Can(account.write)"
-	chainAccountLifecycle     = chainAccount + " > Can(account.lifecycle)"
-	chainAccountUsers         = chainAccount + " > Can(users.read)"
-	chainAccountUsersWrite    = chainAccount + " > Can(users.write)"
-	chainAccountRoles         = chainAccount + " > Can(roles.read)"
-	chainAccountTokensRead    = chainAccount + " > Can(tokens.read)"
-	chainAccountTokensWrite   = chainAccount + " > Can(tokens.write)"
-	chainHeader               = "SessionAuth > AccountHeader > TOTPEnrollment"
-	chainCreateWallet         = chainHeader + " > RequireFundAction"
-	chainWallet               = "SessionAuth > AccountHeader > TOTPEnrollment > WalletContext"
-	chainMoveFunds            = chainWallet + " > RequireFundAction"
-	chainGenerateAddress      = chainWallet + " > Can(addresses.create)"
-	chainWalletAddUser        = chainWallet + " > WalletAddUser"
-	chainWalletRemoveUser     = chainWallet + " > WalletRemoveUser"
-	chainWalletWhitelist      = chainWallet + " > WalletWhitelist"
-	chainWalletManageWebhooks = chainWallet + " > WalletManageWebhooks"
-	chainWalletArchive        = chainWallet + " > WalletArchive"
-	chainWalletFreeze         = chainWallet + " > WalletFreeze"
-	chainUnspent              = "SessionAuth > AccountHeader > TOTPEnrollment > WalletContext > UTXOOnly"
-	chainAPI                  = "APITokenAuth"
-	chainAPIWallet            = "APITokenAuth > APIWalletContext"
-	chainWalletsRead          = "APITokenAuth > APIScope(wallets.read)"
-	chainWalletsCreate        = "APITokenAuth > APIScope(wallets.create)"
-	chainWalletRead           = "APITokenAuth > APIWalletContext > APIScope(wallets.read)"
-	chainAddresses            = "APITokenAuth > APIWalletContext > APIScope(addresses.create)"
-	chainSweep                = "APITokenAuth > APIWalletContext > APIScope(sweep.execute)"
-	chainWithdrawals          = "APITokenAuth > APIWalletContext > APIScope(withdrawals.create)"
-	chainTransactions         = "APITokenAuth > APIScope(transactions.read)"
-	chainWebhooksRead         = "APITokenAuth > APIScope(webhooks.read)"
-	chainWebhooksWrite        = "APITokenAuth > APIScope(webhooks.write)"
+	chainSession                = "SessionAuth"
+	chainAccount                = "SessionAuth > AccountContext > TOTPEnrollment"
+	chainAccountWrite           = chainAccount + " > Can(account.write)"
+	chainAccountLifecycle       = chainAccount + " > Can(account.lifecycle)"
+	chainAccountUsers           = chainAccount + " > Can(users.read)"
+	chainAccountUsersWrite      = chainAccount + " > Can(users.write)"
+	chainAccountRoles           = chainAccount + " > Can(roles.read)"
+	chainAccountTokensRead      = chainAccount + " > Can(tokens.read)"
+	chainAccountTokensWrite     = chainAccount + " > Can(tokens.write)"
+	chainHeader                 = "SessionAuth > AccountHeader > TOTPEnrollment"
+	chainCreateWallet           = chainHeader + " > RequireFundAction"
+	chainWallet                 = "SessionAuth > AccountHeader > TOTPEnrollment > WalletContext"
+	chainMoveFunds              = chainWallet + " > RequireFundAction"
+	chainGenerateAddress        = chainWallet + " > Can(addresses.create)"
+	chainWalletAddUser          = chainWallet + " > WalletAddUser"
+	chainWalletRemoveUser       = chainWallet + " > WalletRemoveUser"
+	chainWalletWhitelist        = chainWallet + " > WalletWhitelist"
+	chainWalletManageWebhooks   = chainWallet + " > WalletManageWebhooks"
+	chainWalletArchive          = chainWallet + " > WalletArchive"
+	chainWalletFreeze           = chainWallet + " > WalletFreeze"
+	chainWalletCancelWithdrawal = chainWallet + " > WalletCancelWithdrawal"
+	chainUnspent                = "SessionAuth > AccountHeader > TOTPEnrollment > WalletContext > UTXOOnly"
+	chainAPI                    = "APITokenAuth"
+	chainAPIWallet              = "APITokenAuth > APIWalletContext"
+	chainWalletsRead            = "APITokenAuth > APIScope(wallets.read)"
+	chainWalletsCreate          = "APITokenAuth > APIScope(wallets.create)"
+	chainWalletRead             = "APITokenAuth > APIWalletContext > APIScope(wallets.read)"
+	chainAddresses              = "APITokenAuth > APIWalletContext > APIScope(addresses.create)"
+	chainSweep                  = "APITokenAuth > APIWalletContext > APIScope(sweep.execute)"
+	chainWithdrawals            = "APITokenAuth > APIWalletContext > APIScope(withdrawals.create)"
+	chainTransactions           = "APITokenAuth > APIScope(transactions.read)"
+	chainWebhooksRead           = "APITokenAuth > APIScope(webhooks.read)"
+	chainWebhooksWrite          = "APITokenAuth > APIScope(webhooks.write)"
 )
 
 // routeSecurity is one row of the closed table: who may call the route, and
@@ -225,7 +226,7 @@ var routeTable = map[string]routeSecurity{
 	"POST /v1/wallets/{walletId}/withdrawals":                          session(chainMoveFunds),
 	"POST /v1/wallets/{walletId}/withdrawals/estimate":                 session(chainWallet),
 	"GET|HEAD /v1/wallets/{walletId}/withdrawals/{withdrawalId}":       session(chainWallet),
-	"POST /v1/wallets/{walletId}/withdrawals/{withdrawalId}/cancel":    session(chainWallet),
+	"POST /v1/wallets/{walletId}/withdrawals/{withdrawalId}/cancel":    session(chainWalletCancelWithdrawal),
 	"GET|HEAD /v1/withdrawals/{withdrawalId}":                          session(chainHeader),
 	"POST /v1/webhooks/ingest/{provider}/{chainID}":                    provider(),
 }

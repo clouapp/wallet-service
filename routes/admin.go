@@ -282,7 +282,7 @@ func RegisterAdminRoutes() {
 			r.Post("/withdrawals/estimate", withdrawalCtrl.EstimateWithdrawalFee)
 			r.Get("/fee-estimate", feeEstimateCtrl.GetWalletFeeEstimate)
 			r.Get("/withdrawals/{withdrawalId}", withdrawalCtrl.GetWalletWithdrawal)
-			r.Post("/withdrawals/{withdrawalId}/cancel", withdrawalCtrl.CancelWalletWithdrawal)
+			r.Middleware(middleware.WalletCancelWithdrawal(walletPolicyMemberships(), container.MustMake[*withdrawalrecords.Records]())).Post("/withdrawals/{withdrawalId}/cancel", withdrawalCtrl.CancelWalletWithdrawal)
 
 			r.Middleware(middleware.RequireFundAction(middleware.FundSweep)).Post("/consolidate", sweepCtrl.ConsolidateWallet)
 			r.Get("/gas-status", sweepCtrl.GetGasStatus)
@@ -434,7 +434,6 @@ func newDashboardWithdrawalsController() *dashwithdrawals.WithdrawalsController 
 		Flags:             container.MustMake[*featuressvc.Service](),
 		Events:            container.MustMake[*withdrawalevents.Publisher](),
 		Redis:             container.MustMake[*container.SharedRedis]().Client,
-		Memberships:       walletPolicyMemberships(),
 		Wallets:           container.MustMake[*walletrecords.Wallets](),
 		SecondFactor:      container.MustMake[*authsvc.SecondFactorVerifier](),
 	})
