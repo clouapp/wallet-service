@@ -28,9 +28,10 @@ func (s *Service) WithPlatformAdmins(admins PlatformAdmins) *Service {
 
 // SetPlatformLifecycle stores one account status for a platform admin.
 // freeze stores frozen, unfreeze stores active, and archive stores archived.
-// The same status again does not write. A caller who is not a platform admin
-// is ErrPlatformLifecycleForbidden before the account is read. A missing
-// account is ErrAccountNotFound and is not written.
+// The same status again does not write. A missing account is
+// ErrAccountNotFound before the platform-admin check. A caller who is not
+// a platform admin is ErrPlatformLifecycleForbidden after that read, and
+// the account is not written.
 func (s *Service) SetPlatformLifecycle(ctx context.Context, actorID, accountID uuid.UUID, status string) (*models.Account, error) {
 	if ctx == nil {
 		return nil, fmt.Errorf("platform account lifecycle: context is required")
@@ -55,13 +56,6 @@ func (s *Service) SetPlatformLifecycle(ctx context.Context, actorID, accountID u
 	if s.admins == nil {
 		return nil, fmt.Errorf("platform account lifecycle: platform admins are required")
 	}
-	admin, err := s.admins.Contains(ctx, actorID)
-	if err != nil {
-		return nil, err
-	}
-	if !admin {
-		return nil, ErrPlatformLifecycleForbidden
-	}
 	account, err := s.accounts.FindByID(ctx, accountID)
 	if err != nil {
 		if errors.Is(err, models.ErrRepositoryNotFound) {
@@ -71,6 +65,13 @@ func (s *Service) SetPlatformLifecycle(ctx context.Context, actorID, accountID u
 	}
 	if account == nil || account.ID == uuid.Nil {
 		return nil, ErrAccountNotFound
+	}
+	admin, err := s.admins.Contains(ctx, actorID)
+	if err != nil {
+		return nil, err
+	}
+	if !admin {
+		return nil, ErrPlatformLifecycleForbidden
 	}
 	if account.Status == status {
 		return account, nil

@@ -34,7 +34,7 @@ func NewUsersController(accounts *accountsvc.Service) *UsersController {
 
 // Index godoc
 // @Summary      List an account's users
-// @Description  Newest user created_at first, then user id descending. A platform admin may call it. The row is the account member list plus the platform user fields id, email, full_name, status, suspended_at, and totp_enabled. Password hashes, TOTP secrets, recovery codes, and token material are omitted. An unknown account is 404 after the admin check.
+// @Description  Newest user created_at first, then user id descending. A platform admin may call it. The row is the account member list plus the platform user fields id, email, full_name, status, suspended_at, and totp_enabled. Password hashes, TOTP secrets, recovery codes, and token material are omitted. An unknown account is 404 before the admin check.
 // @Tags         Platform Accounts
 // @Security     BearerAuth
 // @Produce      json

@@ -269,10 +269,10 @@ func (s *AccountActivityTestSuite) TestShowMatchesTheListItem() {
 	s.Equal("you do not have permission to view account activity", userMessage)
 	for _, id := range []string{s.activityID(s.activityData(otherOwner.token, "/v1/accounts/"+otherAccountID.String()+"/activity")[0]), uuid.NewString(), "not-a-uuid"} {
 		again := s.showActivity(user.token, accountID, id)
-		again.AssertForbidden()
+		again.AssertNotFound()
 		code, message := s.errorText(again)
-		s.Equal(userCode, code)
-		s.Equal(userMessage, message)
+		s.Equal("not_found", code)
+		s.Equal("activity not found", message)
 	}
 
 	missing := s.showActivity(auditor.token, accountID, uuid.NewString())

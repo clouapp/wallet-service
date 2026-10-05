@@ -13,9 +13,10 @@ import (
 
 // AttachOwnerForPlatform links an existing user to an account as an active
 // owner. S3.4.1 names POST /{id}/owners (attach owner — recovery)
-// accounts.owners. A caller who is not a platform admin is
-// ErrPlatformOwnersForbidden before the account is read. A missing account
-// is ErrAccountNotFound. A missing user is ErrPlatformOwnerUserNotFound;
+// accounts.owners. A missing account is ErrAccountNotFound before the
+// platform-admin check. A caller who is not a platform admin is
+// ErrPlatformOwnersForbidden after that read, and the user is not read.
+// A missing user is ErrPlatformOwnerUserNotFound;
 // this path does not create a user, send mail, or mint a token.
 //
 // The body field is email because account member add names email.
@@ -53,6 +54,16 @@ func (s *Service) AttachOwnerForPlatform(ctx context.Context, actorID, accountID
 	if s.admins == nil {
 		return nil, false, fmt.Errorf("attach account owner: platform admins are required")
 	}
+	account, err := s.accounts.FindByID(ctx, accountID)
+	if err != nil {
+		if errors.Is(err, models.ErrRepositoryNotFound) {
+			return nil, false, ErrAccountNotFound
+		}
+		return nil, false, err
+	}
+	if account == nil || account.ID == uuid.Nil {
+		return nil, false, ErrAccountNotFound
+	}
 	admin, err := s.admins.Contains(ctx, actorID)
 	if err != nil {
 		return nil, false, err
@@ -63,16 +74,6 @@ func (s *Service) AttachOwnerForPlatform(ctx context.Context, actorID, accountID
 	email = strings.TrimSpace(email)
 	if email == "" {
 		return nil, false, fmt.Errorf("attach account owner: email is required")
-	}
-	account, err := s.accounts.FindByID(ctx, accountID)
-	if err != nil {
-		if errors.Is(err, models.ErrRepositoryNotFound) {
-			return nil, false, ErrAccountNotFound
-		}
-		return nil, false, err
-	}
-	if account == nil || account.ID == uuid.Nil {
-		return nil, false, ErrAccountNotFound
 	}
 	user, err := s.users.FindByEmail(ctx, email)
 	if err != nil {

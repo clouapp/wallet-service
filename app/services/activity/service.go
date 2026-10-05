@@ -67,7 +67,7 @@ func NewService(deps Deps) *Service {
 // List returns one page, newest first. GET /v1/accounts/{accountId}/activity
 // applies policies.MayReadActivity (activity.read) before the handler. This
 // method still checks: owner, admin and auditor may read, and user is
-// ErrReadForbidden. Get keeps the same check for the show route.
+// ErrReadForbidden. Get resolves the row before that check.
 func (s *Service) List(ctx context.Context, accountID uuid.UUID, role string, limit, offset int) ([]models.AccountActivity, int64, error) {
 	if ctx == nil {
 		return nil, 0, fmt.Errorf("account activity: context is required")
@@ -91,20 +91,16 @@ func (s *Service) List(ctx context.Context, accountID uuid.UUID, role string, li
 	return rows, total, nil
 }
 
-// Get returns one row of this account. GET /v1/accounts/{accountId}/activity/{id}
-// applies policies.MayReadActivity (activity.read) before the handler. This
-// method still checks: owner, admin and auditor may read, and user is
-// ErrReadForbidden before any lookup. A row from another account, a platform
-// row, or an unknown id is ErrNotFound.
+// Get returns one row of this account. A row from another account, a platform
+// row, or an unknown id is ErrNotFound before the activity.read check. Owner,
+// admin and auditor may read a row that is there. User is ErrReadForbidden
+// only after that row is found.
 func (s *Service) Get(ctx context.Context, accountID uuid.UUID, role string, activityID uuid.UUID) (models.AccountActivity, error) {
 	if ctx == nil {
 		return models.AccountActivity{}, fmt.Errorf("account activity: context is required")
 	}
 	if accountID == uuid.Nil {
 		return models.AccountActivity{}, fmt.Errorf("account activity: account id is required")
-	}
-	if !policies.MayReadActivity(role) {
-		return models.AccountActivity{}, ErrReadForbidden
 	}
 	if activityID == uuid.Nil {
 		return models.AccountActivity{}, ErrNotFound
@@ -118,6 +114,9 @@ func (s *Service) Get(ctx context.Context, accountID uuid.UUID, role string, act
 	}
 	if row == nil || row.AccountID == nil || *row.AccountID != accountID {
 		return models.AccountActivity{}, ErrNotFound
+	}
+	if !policies.MayReadActivity(role) {
+		return models.AccountActivity{}, ErrReadForbidden
 	}
 	return *row, nil
 }

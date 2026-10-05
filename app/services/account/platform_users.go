@@ -14,9 +14,9 @@ import (
 // S3.4.1 names GET /{id}/users on /v1/platform/accounts and does not name
 // fields, pagination, or sort. The page matches GET /v1/platform/users:
 // newest user created_at first, then user id descending. Each row is the
-// account member list. A caller who is not a platform admin is
-// ErrPlatformAccountUsersForbidden before the account is read. A missing
-// account is ErrAccountNotFound and its memberships are not read.
+// account member list. A missing account is ErrAccountNotFound before the
+// platform-admin check, and its memberships are not read. A caller who is
+// not a platform admin is ErrPlatformAccountUsersForbidden after that read.
 func (s *Service) ListUsersForPlatform(ctx context.Context, actorID, accountID uuid.UUID, limit, offset int) ([]models.AccountUser, int64, error) {
 	if ctx == nil {
 		return nil, 0, fmt.Errorf("list account users: context is required")
@@ -42,13 +42,6 @@ func (s *Service) ListUsersForPlatform(ctx context.Context, actorID, accountID u
 	if s.admins == nil {
 		return nil, 0, fmt.Errorf("list account users: platform admins are required")
 	}
-	admin, err := s.admins.Contains(ctx, actorID)
-	if err != nil {
-		return nil, 0, err
-	}
-	if !admin {
-		return nil, 0, ErrPlatformAccountUsersForbidden
-	}
 	account, err := s.accounts.FindByID(ctx, accountID)
 	if err != nil {
 		if errors.Is(err, models.ErrRepositoryNotFound) {
@@ -58,6 +51,13 @@ func (s *Service) ListUsersForPlatform(ctx context.Context, actorID, accountID u
 	}
 	if account == nil || account.ID == uuid.Nil {
 		return nil, 0, ErrAccountNotFound
+	}
+	admin, err := s.admins.Contains(ctx, actorID)
+	if err != nil {
+		return nil, 0, err
+	}
+	if !admin {
+		return nil, 0, ErrPlatformAccountUsersForbidden
 	}
 	rows, total, err := s.memberships.ListForPlatformAccount(ctx, account.ID, limit, offset)
 	if err != nil {

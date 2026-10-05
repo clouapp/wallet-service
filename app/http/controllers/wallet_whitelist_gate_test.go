@@ -84,6 +84,18 @@ func (s *WalletWhitelistGateTestSuite) TestWalletWhitelistCreateFollowsTheLoaded
 	}
 }
 
+func (s *WalletWhitelistGateTestSuite) TestMissingWhitelistEntryIs404BeforeTheRoleCheck() {
+	account := mocks.InsertAccount(s.T(), "wallet whitelist missing")
+	s.seedChain()
+	wallet := mocks.InsertWalletWithAccount(s.T(), models.ChainETH, &account.ID)
+	actor := s.member(models.AccountRoleUser, account.ID)
+	s.assign(actor.id, wallet.ID, models.WalletRoleViewer)
+
+	resp := s.deleteEntry(actor.token, account.ID, wallet.ID, uuid.New())
+	resp.AssertNotFound()
+	s.Contains(s.body(resp), "whitelist entry not found")
+}
+
 func (s *WalletWhitelistGateTestSuite) TestWalletWhitelistDeleteFollowsTheLoadedRoles() {
 	account := mocks.InsertAccount(s.T(), "wallet whitelist delete")
 	s.seedChain()

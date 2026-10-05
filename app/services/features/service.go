@@ -224,19 +224,19 @@ func (s *Service) ActiveForAccount(ctx context.Context, accountID uuid.UUID) ([]
 }
 
 // SetGlobal stores one platform flag and returns the row it just wrote.
-// A caller who is not a platform admin is ErrPlatformForbidden and the table
-// is unchanged, including when the key is unknown. An admin's unknown key is
-// ErrNotFound.
+// An unknown key is ErrNotFound before the platform-admin check, and the
+// table is unchanged. A caller who is not a platform admin is
+// ErrPlatformForbidden after the key is known.
 func (s *Service) SetGlobal(ctx context.Context, userID uuid.UUID, key string, enabled bool) (Flag, error) {
 	if err := requireUser(ctx, userID); err != nil {
-		return Flag{}, err
-	}
-	if err := s.requirePlatformAdmin(ctx, userID); err != nil {
 		return Flag{}, err
 	}
 	key = strings.TrimSpace(key)
 	if _, ok := Find(key); !ok || !globalFlag(key) {
 		return Flag{}, ErrNotFound
+	}
+	if err := s.requirePlatformAdmin(ctx, userID); err != nil {
+		return Flag{}, err
 	}
 	var flag Flag
 	err := s.activity.Within(ctx, func(ctx context.Context) error {
@@ -272,9 +272,10 @@ func (s *Service) SetGlobal(ctx context.Context, userID uuid.UUID, key string, e
 // This catalog stores account and global rows only, so user, chain, global,
 // and any other scope are ErrScopeNotFound before the admin check and before
 // the account is read. An account id that is not a UUID is
-// ErrInvalidAccountID before the admin check. A caller who is not a platform
-// admin is ErrPlatformForbidden and the account is not read. A missing
-// account is ErrAccountNotFound. A missing flag row is the catalog default
+// ErrInvalidAccountID before the admin check. A missing account is
+// ErrAccountNotFound before the admin check. A caller who is not a platform
+// admin is ErrPlatformForbidden after that account is read. A missing flag
+// row is the catalog default
 // and is not inserted. Global rows are not applied, so a closed global veto
 // does not make an account default look saved.
 func (s *Service) ListScopedForPlatform(ctx context.Context, actorID uuid.UUID, scope, rawID string, accounts Accounts) (List, error) {
@@ -292,9 +293,6 @@ func (s *Service) ListScopedForPlatform(ctx context.Context, actorID uuid.UUID, 
 	if err != nil || accountID == uuid.Nil {
 		return List{}, ErrInvalidAccountID
 	}
-	if err := s.requirePlatformAdmin(ctx, actorID); err != nil {
-		return List{}, err
-	}
 	if accounts == nil {
 		return List{}, fmt.Errorf("platform features: accounts are required")
 	}
@@ -307,6 +305,9 @@ func (s *Service) ListScopedForPlatform(ctx context.Context, actorID uuid.UUID, 
 	}
 	if account == nil || account.ID != accountID {
 		return List{}, ErrAccountNotFound
+	}
+	if err := s.requirePlatformAdmin(ctx, actorID); err != nil {
+		return List{}, err
 	}
 	stored, err := s.stored(ctx, account.ID)
 	if err != nil {
@@ -336,9 +337,10 @@ type ScopedWrite struct {
 // on this path, so user, chain, global, and any other scope are
 // ErrScopeNotFound before the admin check and before the account is read.
 // An account id that is not a UUID is ErrInvalidAccountID before the admin
-// check. A caller who is not a platform admin is ErrPlatformForbidden and
-// the account is not read, including when a key is unknown. A missing
-// account is ErrAccountNotFound. Every key is checked before the first
+// check. A missing account is ErrAccountNotFound before the admin check.
+// An unknown key is ErrNotFound before the admin check. A caller who is
+// not a platform admin is ErrPlatformForbidden after the account and the
+// keys are known. Every key is checked before the first
 // upsert: an unknown key, or a key that does not apply to the account
 // scope, is ErrNotFound and nothing is stored. A duplicate key is
 // ErrDuplicateWrite and nothing is stored. The boolean that is stored is
@@ -362,9 +364,6 @@ func (s *Service) SetScopedForPlatform(ctx context.Context, actorID uuid.UUID, s
 	if len(writes) == 0 {
 		return List{}, fmt.Errorf("platform features: at least one flag is required")
 	}
-	if err := s.requirePlatformAdmin(ctx, actorID); err != nil {
-		return List{}, err
-	}
 	if accounts == nil {
 		return List{}, fmt.Errorf("platform features: accounts are required")
 	}
@@ -380,6 +379,9 @@ func (s *Service) SetScopedForPlatform(ctx context.Context, actorID uuid.UUID, s
 	}
 	normalized, err := normalizeScopedWrites(writes)
 	if err != nil {
+		return List{}, err
+	}
+	if err := s.requirePlatformAdmin(ctx, actorID); err != nil {
 		return List{}, err
 	}
 	flags := make([]Flag, 0, len(normalized))

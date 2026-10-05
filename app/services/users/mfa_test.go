@@ -107,7 +107,7 @@ func TestResetMFARefusesACallerWhoIsNotAPlatformAdmin(t *testing.T) {
 
 	err := service.ResetMFA(context.Background(), uuid.New(), target)
 	require.ErrorIs(t, err, users.ErrMFAForbidden)
-	require.Zero(t, store.finds)
+	require.Equal(t, 1, store.finds)
 	require.True(t, store.user.TotpEnabled)
 	require.Equal(t, "sealed-marker", store.user.TotpSecret)
 	require.Equal(t, int64(1), recovery.count)
@@ -120,8 +120,8 @@ func TestResetMFARefusesACallerWhoIsNotAPlatformAdmin(t *testing.T) {
 		Admins:   allowAdmins{},
 		Recovery: recovery,
 	}).ResetMFA(context.Background(), uuid.New(), uuid.New())
-	require.ErrorIs(t, err, users.ErrMFAForbidden)
-	require.Zero(t, missing.finds)
+	require.ErrorIs(t, err, users.ErrNotFound)
+	require.Equal(t, 1, missing.finds)
 }
 
 func TestResetMFAReportsAMissingUserToAPlatformAdmin(t *testing.T) {

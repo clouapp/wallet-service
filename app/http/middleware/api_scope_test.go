@@ -74,6 +74,29 @@ func (s *apiScopeSuite) TestMissingWalletIs404BeforeTheScopeCheck() {
 	s.get(token, "/api/v1/wallets/"+uuid.NewString()).AssertNotFound()
 }
 
+func (s *apiScopeSuite) TestMissingTransactionAndWebhookAre404BeforeTheScopeCheck() {
+	denied := s.mint(`["wallets.read"]`)
+	allowedTx := s.mint(`["transactions.read"]`)
+	allowedHook := s.mint(`["webhooks.write"]`)
+	missing := uuid.NewString()
+
+	for _, token := range []string{denied, allowedTx} {
+		resp := s.get(token, "/api/v1/transactions/"+missing)
+		resp.AssertNotFound().AssertJson(map[string]any{
+			"error": map[string]any{"code": "not_found", "message": "transaction not found"},
+		})
+	}
+	s.get(denied, "/api/v1/transactions/not-a-uuid").AssertBadRequest()
+
+	for _, token := range []string{denied, allowedHook} {
+		resp := s.patch(token, "/api/v1/webhooks/"+missing)
+		resp.AssertNotFound().AssertJson(map[string]any{
+			"error": map[string]any{"code": "not_found", "message": "webhook not found"},
+		})
+	}
+	s.patch(denied, "/api/v1/webhooks/not-a-uuid").AssertBadRequest()
+}
+
 func (s *apiScopeSuite) mint(permissions string) string {
 	s.T().Helper()
 	record := &models.AccessToken{
@@ -96,6 +119,16 @@ func (s *apiScopeSuite) mint(permissions string) string {
 func (s *apiScopeSuite) get(token, path string) contractstestinghttp.Response {
 	s.T().Helper()
 	resp, err := s.Http(s.T()).WithHeader("Authorization", "Bearer "+token).Get(path)
+	s.Require().NoError(err)
+	return resp
+}
+
+func (s *apiScopeSuite) patch(token, path string) contractstestinghttp.Response {
+	s.T().Helper()
+	resp, err := s.Http(s.T()).
+		WithHeader("Authorization", "Bearer "+token).
+		WithHeader("Content-Type", "application/json").
+		Patch(path, strings.NewReader(`{"is_active":true}`))
 	s.Require().NoError(err)
 	return resp
 }

@@ -797,6 +797,42 @@ func (s *AccountMembersTestSuite) TestDeleteInviteRevokesForUsersWrite() {
 	s.Equal(int64(1), s.countActivity(`SELECT count(*) FROM account_invites WHERE id = ? AND revoked_at IS NULL`, acceptedID))
 }
 
+func (s *AccountMembersTestSuite) TestMissingAccountChildIs404BeforeUsersWrite() {
+	accountID := s.createAccount()
+	user := s.loginUser("user", models.MembershipStatusActive, accountID)
+	missing := uuid.New()
+
+	deleted, err := s.Http(s.T()).
+		WithHeader("Authorization", "Bearer "+user.token).
+		Delete("/v1/accounts/"+accountID.String()+"/users/"+missing.String(), nil)
+	s.Require().NoError(err)
+	deleted.AssertNotFound()
+	deletedBody, err := deleted.Content()
+	s.Require().NoError(err)
+	s.Contains(deletedBody, "member not found")
+
+	revoked, err := s.Http(s.T()).
+		WithHeader("Authorization", "Bearer "+user.token).
+		Delete("/v1/accounts/"+accountID.String()+"/tokens/"+missing.String(), nil)
+	s.Require().NoError(err)
+	revoked.AssertNotFound()
+	revokedBody, err := revoked.Content()
+	s.Require().NoError(err)
+	s.Contains(revokedBody, "token not found")
+
+	resent := s.postResend(user.token, accountID, missing)
+	resent.AssertNotFound()
+	resentBody, err := resent.Content()
+	s.Require().NoError(err)
+	s.Contains(resentBody, "invite is invalid or expired")
+
+	patched := s.patchMember(user.token, accountID, missing, `{"role":"admin"}`)
+	patched.AssertNotFound()
+	patchedBody, err := patched.Content()
+	s.Require().NoError(err)
+	s.Contains(patchedBody, "member not found")
+}
+
 func (s *AccountMembersTestSuite) deleteInvite(token string, accountID, inviteID uuid.UUID) contractstesting.Response {
 	resp, err := s.Http(s.T()).
 		WithHeader("Authorization", "Bearer "+token).

@@ -212,7 +212,7 @@ func (s *accountSettingsSuite) TestPatchUnknownGroupIsNotFound() {
 	s.Equal("not_found", response["error"].(map[string]any)["code"])
 
 	auditor := s.member(accountID, "auditor")
-	denied := s.patchRaw(auditor, accountID, "not-a-group", `{}`, 403)
+	denied := s.patchRaw(auditor, accountID, "not-a-group", `{}`, 404)
 	s.NotContains(denied, `"fields"`)
 	s.NotContains(denied, "enc:v1:")
 	var parsed struct {
@@ -223,8 +223,8 @@ func (s *accountSettingsSuite) TestPatchUnknownGroupIsNotFound() {
 		Fields []any `json:"fields"`
 	}
 	s.Require().NoError(json.Unmarshal([]byte(denied), &parsed))
-	s.Equal("forbidden", parsed.Error.Code)
-	s.Equal(settings.ErrUpdateForbidden.Error(), parsed.Error.Message)
+	s.Equal("not_found", parsed.Error.Code)
+	s.Equal("settings group not found", parsed.Error.Message)
 	s.Empty(parsed.Fields)
 	s.Empty(s.storedSecret(accountID))
 }
@@ -509,12 +509,20 @@ func (s *accountSettingsSuite) TestFlushUnknownSectionIsNotFoundBeforeForbidden(
 
 	s.Require().NoError(facades.Cache().Put(securityKey, "stale-security", 10*time.Minute))
 	auditor := s.member(accountID, "auditor")
-	s.assertFlushWriteDenied(auditor, accountID, "scanning", securityKey)
+	s.assertFlushMissing(auditor, accountID, "scanning", securityKey)
 	s.assertFlushWriteDenied(auditor, accountID, "security", securityKey)
 
 	user := s.member(accountID, "user")
-	s.assertFlushWriteDenied(user, accountID, "not-a-section", securityKey)
+	s.assertFlushMissing(user, accountID, "not-a-section", securityKey)
 	s.assertFlushWriteDenied(user, accountID, "security", securityKey)
+}
+
+func (s *accountSettingsSuite) assertFlushMissing(token string, accountID uuid.UUID, section, securityKey string) {
+	s.T().Helper()
+	parsed := s.flushParsed(token, accountID, section, 404)
+	s.Equal("not_found", parsed["error"].(map[string]any)["code"])
+	s.Equal("settings section not found", parsed["error"].(map[string]any)["message"])
+	s.assertCacheKeySurvived(securityKey, "stale-security")
 }
 
 func (s *accountSettingsSuite) assertFlushWriteDenied(token string, accountID uuid.UUID, section, securityKey string) {
@@ -593,11 +601,11 @@ func (s *accountSettingsSuite) TestResetUnknownSectionIsNotFoundBeforeForbidden(
 	s.Require().NoError(err)
 
 	auditor := s.member(accountID, "auditor")
-	s.assertResetWriteDenied(auditor, accountID, "scanning")
+	s.assertResetMissing(auditor, accountID, "scanning")
 	s.assertResetWriteDenied(auditor, accountID, "security")
 
 	user := s.member(accountID, "user")
-	s.assertResetWriteDenied(user, accountID, "not-a-section")
+	s.assertResetMissing(user, accountID, "not-a-section")
 	s.assertResetWriteDenied(user, accountID, "security")
 	s.assertSecurityIdle(accountID, "45")
 
@@ -608,6 +616,14 @@ func (s *accountSettingsSuite) TestResetUnknownSectionIsNotFoundBeforeForbidden(
 	).Scan(&after)
 	s.Require().NoError(err)
 	s.Equal(resets, after)
+}
+
+func (s *accountSettingsSuite) assertResetMissing(token string, accountID uuid.UUID, section string) {
+	s.T().Helper()
+	parsed := s.resetParsed(token, accountID, section, 404)
+	s.Equal("not_found", parsed["error"].(map[string]any)["code"])
+	s.Equal("settings section not found", parsed["error"].(map[string]any)["message"])
+	s.assertSecurityIdle(accountID, "45")
 }
 
 func (s *accountSettingsSuite) assertResetWriteDenied(token string, accountID uuid.UUID, section string) {
@@ -803,7 +819,12 @@ func (s *accountSettingsSuite) TestGetGroupUnknownIsNotFoundBeforeForbidden() {
 	s.Equal(false, s.groupDocument(limits)["can_update"])
 
 	user := s.member(accountID, "user")
-	for _, group := range []string{"not-a-group", "deposit_scan", "account_security"} {
+	for _, group := range []string{"not-a-group", "deposit_scan"} {
+		missing := s.getGroupParsed(user, accountID, group, 404)
+		s.Equal("not_found", missing["error"].(map[string]any)["code"])
+		s.Equal("settings group not found", missing["error"].(map[string]any)["message"])
+	}
+	for _, group := range []string{"account_security"} {
 		denied := s.getGroup(user, accountID, group, 403)
 		s.NotContains(denied, `"fields"`)
 		s.NotContains(denied, "enc:v1:")
@@ -859,9 +880,9 @@ func (s *accountSettingsSuite) TestPutSharesThePatchBodyRules() {
 	s.Equal(int64(0), caps)
 
 	user := s.member(accountID, "user")
-	response = s.put(user, accountID, "not-a-group", `{}`, 403)
-	s.Equal("forbidden", response["error"].(map[string]any)["code"])
-	s.Equal(settings.ErrUpdateForbidden.Error(), response["error"].(map[string]any)["message"])
+	response = s.put(user, accountID, "not-a-group", `{}`, 404)
+	s.Equal("not_found", response["error"].(map[string]any)["code"])
+	s.Equal("settings group not found", response["error"].(map[string]any)["message"])
 	response = s.put(user, accountID, "account_security", `{"session_idle_minutes":12}`, 403)
 	s.Equal("forbidden", response["error"].(map[string]any)["code"])
 	s.Equal(settings.ErrUpdateForbidden.Error(), response["error"].(map[string]any)["message"])

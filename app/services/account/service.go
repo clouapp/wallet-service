@@ -335,6 +335,10 @@ func (s *Service) recordMemberChange(ctx context.Context, accountID, actorID, ta
 }
 
 func (s *Service) loadActorAndTarget(ctx context.Context, accountID, actorID, targetID uuid.UUID) (*models.AccountUser, *models.AccountUser, error) {
+	target, err := s.membership(ctx, accountID, targetID)
+	if err != nil {
+		return nil, nil, err
+	}
 	actor, err := s.membership(ctx, accountID, actorID)
 	if err != nil {
 		if errors.Is(err, ErrMemberNotFound) {
@@ -344,10 +348,6 @@ func (s *Service) loadActorAndTarget(ctx context.Context, accountID, actorID, ta
 	}
 	if !policies.ManagesMembers(actor.Role) {
 		return nil, nil, ErrManageMembers
-	}
-	target, err := s.membership(ctx, accountID, targetID)
-	if err != nil {
-		return nil, nil, err
 	}
 	return actor, target, nil
 }

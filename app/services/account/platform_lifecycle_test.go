@@ -116,7 +116,7 @@ func TestSetPlatformLifecycle(t *testing.T) {
 	}
 }
 
-func TestSetPlatformLifecycleRefusesANonAdminBeforeReading(t *testing.T) {
+func TestSetPlatformLifecycleRefusesANonAdminAfterTheAccountExists(t *testing.T) {
 	t.Parallel()
 	store := &lifecycleAccounts{row: &models.Account{ID: uuid.New(), Status: models.StatusActive}}
 	service := NewService(Deps{Accounts: store}).WithPlatformAdmins(lifecycleAdmins{allowed: uuid.New()})
@@ -124,8 +124,21 @@ func TestSetPlatformLifecycleRefusesANonAdminBeforeReading(t *testing.T) {
 	if !errors.Is(err, ErrPlatformLifecycleForbidden) {
 		t.Fatalf("err = %v", err)
 	}
-	if store.reads != 0 || len(store.writes) != 0 || store.row.Status != models.StatusActive {
+	if store.reads != 1 || len(store.writes) != 0 || store.row.Status != models.StatusActive {
 		t.Fatalf("reads %d writes %v status %s", store.reads, store.writes, store.row.Status)
+	}
+}
+
+func TestSetPlatformLifecycleMissingAccountIsNotFoundBeforeTheAdminCheck(t *testing.T) {
+	t.Parallel()
+	store := &lifecycleAccounts{}
+	service := NewService(Deps{Accounts: store}).WithPlatformAdmins(lifecycleAdmins{})
+	_, err := service.SetPlatformLifecycle(context.Background(), uuid.New(), uuid.New(), models.AccountStatusFrozen)
+	if !errors.Is(err, ErrAccountNotFound) {
+		t.Fatalf("err = %v", err)
+	}
+	if store.reads != 1 || len(store.writes) != 0 {
+		t.Fatalf("reads %d writes %v", store.reads, store.writes)
 	}
 }
 
@@ -177,7 +190,7 @@ func TestSetPlatformLifecycleRejectsBadInput(t *testing.T) {
 	if !errors.Is(err, lookup) {
 		t.Fatalf("lookup err = %v", err)
 	}
-	if store.reads != 0 {
+	if store.reads != 1 {
 		t.Fatalf("reads = %d", store.reads)
 	}
 }

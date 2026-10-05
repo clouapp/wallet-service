@@ -261,8 +261,8 @@ func TestPlatformListAndSetRequireAnAdminAndUseTheCatalogDefault(t *testing.T) {
 	if _, err := service.SetGlobal(ctx, uuid.New(), FlagWithdrawalsEnabled, false); !errors.Is(err, ErrPlatformForbidden) {
 		t.Fatalf("non-admin set error = %v", err)
 	}
-	if _, err := service.SetGlobal(ctx, uuid.New(), "not-a-flag", false); !errors.Is(err, ErrPlatformForbidden) {
-		t.Fatalf("non-admin unknown key = %v, want forbidden before not found", err)
+	if _, err := service.SetGlobal(ctx, uuid.New(), "not-a-flag", false); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("non-admin unknown key = %v, want not found before forbidden", err)
 	}
 	if _, ok := store.globalWritten(FlagWithdrawalsEnabled); ok {
 		t.Fatal("a non-admin write was stored")
@@ -505,8 +505,8 @@ func TestListScopedForPlatformReadsTheAccountRowAndNotTheGlobalVeto(t *testing.T
 	if !errors.Is(err, ErrPlatformForbidden) {
 		t.Fatalf("non-admin error = %v", err)
 	}
-	if accounts.calls != 0 {
-		t.Fatal("non-admin read the account")
+	if accounts.calls != 1 {
+		t.Fatalf("non-admin account reads = %d", accounts.calls)
 	}
 
 	_, err = service.ListScopedForPlatform(ctx, adminID, ScopeAccount, "not-a-uuid", accounts)
@@ -614,8 +614,8 @@ func TestSetScopedForPlatformWritesTheAccountRowAndNotTheGlobalVeto(t *testing.T
 	if !errors.Is(err, ErrPlatformForbidden) {
 		t.Fatalf("non-admin error = %v", err)
 	}
-	if accounts.calls != 0 || len(store.rows) != 0 {
-		t.Fatal("non-admin read the account or wrote a row")
+	if accounts.calls != 1 || len(store.rows) != 0 {
+		t.Fatalf("non-admin reads %d rows %d", accounts.calls, len(store.rows))
 	}
 
 	_, err = service.SetScopedForPlatform(ctx, adminID, ScopeAccount, "not-a-uuid", one, accounts)
@@ -627,11 +627,11 @@ func TestSetScopedForPlatformWritesTheAccountRowAndNotTheGlobalVeto(t *testing.T
 	}
 
 	_, err = service.SetScopedForPlatform(ctx, uuid.New(), ScopeAccount, accountID.String(), []ScopedWrite{{Key: "not-a-flag", Enabled: false}}, accounts)
-	if !errors.Is(err, ErrPlatformForbidden) {
+	if !errors.Is(err, ErrNotFound) {
 		t.Fatalf("non-admin unknown key error = %v", err)
 	}
-	if accounts.calls != 0 {
-		t.Fatal("non-admin unknown key read the account")
+	if len(store.rows) != 0 {
+		t.Fatal("non-admin unknown key wrote a row")
 	}
 
 	missing := uuid.New()

@@ -87,6 +87,18 @@ func (s *WalletWebhookCreateGateTestSuite) TestWalletWebhookCreateFollowsTheLoad
 	}
 }
 
+func (s *WalletWebhookCreateGateTestSuite) TestMissingWalletWebhookIs404BeforeTheRoleCheck() {
+	account := mocks.InsertAccount(s.T(), "wallet webhook missing")
+	s.seedChain()
+	wallet := mocks.InsertWalletWithAccount(s.T(), models.ChainETH, &account.ID)
+	actor := s.member(models.AccountRoleUser, account.ID)
+	s.assign(actor.id, wallet.ID, models.WalletRoleViewer)
+
+	resp := s.deleteWebhook(actor.token, account.ID, wallet.ID, uuid.New())
+	resp.AssertNotFound()
+	s.Contains(s.body(resp), "webhook not found")
+}
+
 func (s *WalletWebhookCreateGateTestSuite) TestWalletWebhookDeleteFollowsTheLoadedRoles() {
 	account := mocks.InsertAccount(s.T(), "wallet webhook delete")
 	s.seedChain()

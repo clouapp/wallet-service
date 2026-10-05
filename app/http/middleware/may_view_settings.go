@@ -1,6 +1,8 @@
 package middleware
 
 import (
+	"strings"
+
 	"github.com/goravel/framework/contracts/http"
 
 	"github.com/macrowallets/waas/app/policies"
@@ -14,9 +16,16 @@ import (
 // GET /v1/accounts/{accountId}/settings/{group}. Owner, admin, and auditor
 // hold it. User does not, and the retired viewer label stays refused. A denial
 // is 403 with the message the handler returned, and the settings body is
-// not written. Flush and reset keep their own checks.
+// not written. An unknown group, including a platform-only name, is left
+// to the handler so the answer is 404 before this 403. Flush and reset
+// keep their own checks.
 func MayViewSettings() http.Middleware {
 	return func(ctx http.Context) {
+		group := strings.TrimSpace(ctx.Request().Route("group"))
+		if group != "" && !settingssvc.AccountGroupExists(group) {
+			ctx.Request().Next()
+			return
+		}
 		if !policies.MayViewSettings(AccountRole(ctx)) {
 			abortWithJSON(ctx, http.StatusForbidden, http.Json{"error": settingssvc.ErrViewForbidden.Error()})
 			return

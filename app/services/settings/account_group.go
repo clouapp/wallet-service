@@ -37,6 +37,13 @@ func (s *Service) AccountGroup(ctx context.Context, accountID uuid.UUID, role, g
 	return renderStoredGroup(group, rowsOwnedBy(accountID, group.Name, rows), canUpdate), nil
 }
 
+// AccountGroupExists reports a catalog group the account routes address.
+// A platform-only name does not exist on those routes.
+func AccountGroupExists(name string) bool {
+	_, ok := accountScopedGroup(name)
+	return ok
+}
+
 func accountScopedGroup(name string) (Group, bool) {
 	group, ok := FindGroup(strings.TrimSpace(name))
 	if !ok || group.Scope != ScopeAccount {

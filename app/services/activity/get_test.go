@@ -32,7 +32,7 @@ func (r *getReader) Find(context.Context, uuid.UUID, uuid.UUID) (*models.Account
 	return r.row, nil
 }
 
-func TestGetUsesActivityReadBeforeLookup(t *testing.T) {
+func TestGetResolvesTheRowBeforeActivityRead(t *testing.T) {
 	t.Parallel()
 
 	accountID := uuid.New()
@@ -55,11 +55,16 @@ func TestGetUsesActivityReadBeforeLookup(t *testing.T) {
 	}
 
 	reader.findCalls = 0
-	if _, err := service.Get(context.Background(), accountID, "user", activityID); !errors.Is(err, ErrReadForbidden) || reader.findCalls != 0 {
+	if _, err := service.Get(context.Background(), accountID, "user", activityID); !errors.Is(err, ErrReadForbidden) || reader.findCalls != 1 {
 		t.Fatalf("user err=%v calls=%d", err, reader.findCalls)
 	}
-	if _, err := service.Get(context.Background(), accountID, "user", uuid.Nil); !errors.Is(err, ErrReadForbidden) || reader.findCalls != 0 {
+	reader.findCalls = 0
+	if _, err := service.Get(context.Background(), accountID, "user", uuid.Nil); !errors.Is(err, ErrNotFound) || reader.findCalls != 0 {
 		t.Fatalf("user with an empty id err=%v calls=%d", err, reader.findCalls)
+	}
+	missing := &getReader{err: models.ErrRepositoryNotFound}
+	if _, err := NewService(Deps{Rows: missing}).Get(context.Background(), accountID, "user", uuid.New()); !errors.Is(err, ErrNotFound) || missing.findCalls != 1 {
+		t.Fatalf("user missing row err=%v calls=%d", err, missing.findCalls)
 	}
 }
 

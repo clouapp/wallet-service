@@ -86,6 +86,14 @@ func TestSuspendRefusesACallerWhoIsNotAPlatformAdmin(t *testing.T) {
 
 	_, err = service.Reactivate(context.Background(), actor, target)
 	require.ErrorIs(t, err, users.ErrPlatformForbidden)
+
+	_, err = users.NewService(users.Deps{
+		Store:    &suspensionStore{err: models.ErrRepositoryNotFound},
+		Activity: activity,
+		Admins:   allowAdmins{},
+		Sessions: &suspensionSessions{},
+	}).Suspend(context.Background(), actor, uuid.New())
+	require.ErrorIs(t, err, users.ErrNotFound)
 }
 
 func TestRevokeSessionsRecordsTheAdminAndRefusesEveryoneElse(t *testing.T) {
@@ -121,6 +129,14 @@ func TestRevokeSessionsRecordsTheAdminAndRefusesEveryoneElse(t *testing.T) {
 	}).RevokeSessions(context.Background(), uuid.New(), target)
 	require.ErrorIs(t, err, users.ErrSessionsForbidden)
 	require.Len(t, sessions.targets, 2)
+
+	err = users.NewService(users.Deps{
+		Store:    &suspensionStore{err: models.ErrRepositoryNotFound},
+		Activity: activity,
+		Admins:   allowAdmins{},
+		Sessions: sessions,
+	}).RevokeSessions(context.Background(), uuid.New(), uuid.New())
+	require.ErrorIs(t, err, users.ErrNotFound)
 
 	missing := users.NewService(users.Deps{
 		Store:    &suspensionStore{err: models.ErrRepositoryNotFound},

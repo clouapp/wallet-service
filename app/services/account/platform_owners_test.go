@@ -147,7 +147,7 @@ func TestAttachOwnerForPlatformRefusesANonAdminBeforeReadingTheAccount(t *testin
 	if !errors.Is(err, ErrPlatformOwnersForbidden) || changed || member != nil {
 		t.Fatalf("member %v changed %v err %v", member, changed, err)
 	}
-	if store.reads != 0 || users.lookups != 0 || users.creates != 0 || members.attachFinds != 0 || len(members.creates) != 0 || members.activations != 0 || len(store.writes) != 0 {
+	if store.reads != 1 || users.lookups != 0 || users.creates != 0 || members.attachFinds != 0 || len(members.creates) != 0 || members.activations != 0 || len(store.writes) != 0 {
 		t.Fatalf("reads %d lookups %d creates %d attach %d memberships %d activations %d writes %v", store.reads, users.lookups, users.creates, members.attachFinds, len(members.creates), members.activations, store.writes)
 	}
 }

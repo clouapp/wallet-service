@@ -30,7 +30,7 @@ func NewOwnersController(accounts *accountsvc.Service) *OwnersController {
 
 // Attach godoc
 // @Summary      Attach an account owner
-// @Description  Links an existing user as an active owner. The body is email, matching account member add. Only a platform admin may call it. An unknown account or an unknown user is 404 after the admin check. The same active owner again does not write and answers 204. A new or restored membership answers 201 with the membership row. The route is not behind AccountContext, so a frozen account can still be recovered. Password hashes, TOTP secrets, recovery codes, and token material are omitted.
+// @Description  Links an existing user as an active owner. The body is email, matching account member add. Only a platform admin may call it. An unknown account is 404 before the admin check. An unknown user is 404 after that check. The same active owner again does not write and answers 204. A new or restored membership answers 201 with the membership row. The route is not behind AccountContext, so a frozen account can still be recovered. Password hashes, TOTP secrets, recovery codes, and token material are omitted.
 // @Tags         Platform Accounts
 // @Security     BearerAuth
 // @Accept       json

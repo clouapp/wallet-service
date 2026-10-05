@@ -59,7 +59,7 @@ func (ctrl *ActivityController) Index(ctx http.Context) http.Response {
 
 // Show godoc
 // @Summary      One account activity row
-// @Description  GET /v1/accounts/{accountId}/activity/{id} applies policies.MayReadActivity (activity.read) before the handler. Owner, admin, and auditor may read one event. A user may not, and that refusal does not return the event. The refusal is 403 with the same message the list route returns. The body is one element of the list. Another account, a platform row, or an unknown id is 404. Metadata never includes a secret value.
+// @Description  GET /v1/accounts/{accountId}/activity/{id} resolves the row before activity.read. Another account, a platform row, or an unknown id is 404, including for a user. Owner, admin, and auditor may read a row that is there. A user may not, and that refusal is 403 with the same message the list route returns. The body is one element of the list. Metadata never includes a secret value.
 // @Tags         Account Activity
 // @Security     BearerAuth
 // @Produce      json

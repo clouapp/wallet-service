@@ -61,6 +61,26 @@ func (r *TransactionRepository) FindByID(ctx context.Context, id uuid.UUID) (*mo
 	return &tx, nil
 }
 
+// FindByIDForAccount returns the transaction when it belongs to a wallet of
+// accountID. A missing row and a transaction on another account are both
+// ErrRepositoryNotFound.
+func (r *TransactionRepository) FindByIDForAccount(ctx context.Context, id, accountID uuid.UUID) (*models.Transaction, error) {
+	if id == uuid.Nil || accountID == uuid.Nil {
+		return nil, models.ErrRepositoryNotFound
+	}
+	var tx models.Transaction
+	err := r.Query(ctx).
+		Where("id = ? AND wallet_id IN (SELECT id FROM wallets WHERE account_id = ?)", id, accountID).
+		First(&tx)
+	if err != nil {
+		return nil, db.NotFound(err, "find transaction")
+	}
+	if tx.ID == uuid.Nil {
+		return nil, models.ErrRepositoryNotFound
+	}
+	return &tx, nil
+}
+
 // FindByIDAndWallet returns the transaction when it belongs to walletID.
 func (r *TransactionRepository) FindByIDAndWallet(ctx context.Context, txID string, walletID uuid.UUID) (*models.Transaction, error) {
 	var tx models.Transaction

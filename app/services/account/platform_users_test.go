@@ -101,8 +101,16 @@ func TestListUsersForPlatformRefusesANonAdminBeforeReadingTheAccount(t *testing.
 	if !errors.Is(err, ErrPlatformAccountUsersForbidden) {
 		t.Fatalf("err = %v", err)
 	}
-	if rows != nil || total != 0 || store.reads != 0 || members.called {
+	if rows != nil || total != 0 || store.reads != 1 || members.called {
 		t.Fatalf("rows %v total %d reads %d called %v", rows, total, store.reads, members.called)
+	}
+
+	missing := &lifecycleAccounts{}
+	rows, total, err = NewService(Deps{Accounts: missing, Memberships: &platformUserMemberships{}}).
+		WithPlatformAdmins(lifecycleAdmins{}).
+		ListUsersForPlatform(context.Background(), uuid.New(), uuid.New(), 20, 0)
+	if !errors.Is(err, ErrAccountNotFound) || rows != nil || total != 0 || missing.reads != 1 {
+		t.Fatalf("missing account rows %v total %d reads %d err %v", rows, total, missing.reads, err)
 	}
 }
 
@@ -200,7 +208,7 @@ func TestListUsersForPlatformRejectsBadInputBeforeReading(t *testing.T) {
 
 	lookup := errors.New("lookup failed")
 	failing := NewService(Deps{Accounts: store, Memberships: members}).WithPlatformAdmins(lifecycleAdmins{err: lookup})
-	if _, _, err := failing.ListUsersForPlatform(ctx, actor, accountID, 20, 0); !errors.Is(err, lookup) || store.reads != 0 || members.called {
+	if _, _, err := failing.ListUsersForPlatform(ctx, actor, accountID, 20, 0); !errors.Is(err, lookup) || store.reads != 1 || members.called {
 		t.Fatalf("lookup err = %v reads %d called %v", err, store.reads, members.called)
 	}
 }
