@@ -23,11 +23,13 @@ func TestSuspendWritesOnePlatformRowAndReactivateClearsIt(t *testing.T) {
 	activity := &suspensionActivity{}
 	sessions := &suspensionSessions{}
 	when := time.Date(2026, 10, 3, 18, 0, 0, 0, time.UTC)
-	service := users.NewService(store).
-		WithActivity(activity).
-		WithPlatformAdmins(allowAdmins{actor}).
-		WithSessions(sessions).
-		WithClock(func() time.Time { return when })
+	service := users.NewService(users.Deps{
+		Store:    store,
+		Activity: activity,
+		Admins:   allowAdmins{actor},
+		Sessions: sessions,
+		Clock:    func() time.Time { return when },
+	})
 
 	suspended, err := service.Suspend(context.Background(), actor, target)
 	require.NoError(t, err)
@@ -70,10 +72,12 @@ func TestSuspendRefusesACallerWhoIsNotAPlatformAdmin(t *testing.T) {
 	target := uuid.New()
 	store := &suspensionStore{user: &models.User{ID: target, Status: models.StatusActive}}
 	activity := &suspensionActivity{}
-	service := users.NewService(store).
-		WithActivity(activity).
-		WithPlatformAdmins(allowAdmins{}).
-		WithSessions(&suspensionSessions{})
+	service := users.NewService(users.Deps{
+		Store:    store,
+		Activity: activity,
+		Admins:   allowAdmins{},
+		Sessions: &suspensionSessions{},
+	})
 
 	_, err := service.Suspend(context.Background(), actor, target)
 	require.ErrorIs(t, err, users.ErrPlatformForbidden)
@@ -92,10 +96,12 @@ func TestRevokeSessionsRecordsTheAdminAndRefusesEveryoneElse(t *testing.T) {
 	store := &suspensionStore{user: &models.User{ID: target, Status: models.StatusActive}}
 	activity := &suspensionActivity{}
 	sessions := &suspensionSessions{}
-	service := users.NewService(store).
-		WithActivity(activity).
-		WithPlatformAdmins(allowAdmins{actor}).
-		WithSessions(sessions)
+	service := users.NewService(users.Deps{
+		Store:    store,
+		Activity: activity,
+		Admins:   allowAdmins{actor},
+		Sessions: sessions,
+	})
 
 	require.NoError(t, service.RevokeSessions(context.Background(), actor, target))
 	require.Equal(t, []uuid.UUID{actor}, sessions.actors)
@@ -107,18 +113,21 @@ func TestRevokeSessionsRecordsTheAdminAndRefusesEveryoneElse(t *testing.T) {
 	require.NoError(t, service.RevokeSessions(context.Background(), actor, target))
 	require.Len(t, sessions.targets, 2)
 
-	err := users.NewService(store).
-		WithActivity(activity).
-		WithPlatformAdmins(allowAdmins{}).
-		WithSessions(sessions).
-		RevokeSessions(context.Background(), uuid.New(), target)
+	err := users.NewService(users.Deps{
+		Store:    store,
+		Activity: activity,
+		Admins:   allowAdmins{},
+		Sessions: sessions,
+	}).RevokeSessions(context.Background(), uuid.New(), target)
 	require.ErrorIs(t, err, users.ErrSessionsForbidden)
 	require.Len(t, sessions.targets, 2)
 
-	missing := users.NewService(&suspensionStore{err: models.ErrRepositoryNotFound}).
-		WithActivity(activity).
-		WithPlatformAdmins(allowAdmins{actor}).
-		WithSessions(sessions)
+	missing := users.NewService(users.Deps{
+		Store:    &suspensionStore{err: models.ErrRepositoryNotFound},
+		Activity: activity,
+		Admins:   allowAdmins{actor},
+		Sessions: sessions,
+	})
 	require.ErrorIs(t, missing.RevokeSessions(context.Background(), actor, uuid.New()), users.ErrNotFound)
 }
 
@@ -127,10 +136,12 @@ func TestSuspendReportsAMissingUser(t *testing.T) {
 
 	actor := uuid.New()
 	store := &suspensionStore{err: models.ErrRepositoryNotFound}
-	service := users.NewService(store).
-		WithActivity(&suspensionActivity{}).
-		WithPlatformAdmins(allowAdmins{actor}).
-		WithSessions(&suspensionSessions{})
+	service := users.NewService(users.Deps{
+		Store:    store,
+		Activity: &suspensionActivity{},
+		Admins:   allowAdmins{actor},
+		Sessions: &suspensionSessions{},
+	})
 
 	_, err := service.Suspend(context.Background(), actor, uuid.New())
 	require.ErrorIs(t, err, users.ErrNotFound)

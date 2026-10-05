@@ -57,28 +57,29 @@ type Service struct {
 	clock    func() time.Time
 }
 
+// Deps is everything the user service uses. A nil Store is reported when a
+// method runs, as the missing-repository error. Recovery, Activity, Admins,
+// Sessions, and Clock may be nil. A nil Activity leaves DisableTotp as a
+// status change with no audit row.
+type Deps struct {
+	Store    Store
+	Recovery RecoveryStore
+	Activity ActivityLog
+	Admins   PlatformAdmins
+	Sessions Sessions
+	Clock    func() time.Time
+}
+
 // NewService builds a user service.
-func NewService(store Store) *Service {
-	return &Service{store: store}
-}
-
-// WithRecovery attaches recovery-code persistence. It returns the same service.
-func (s *Service) WithRecovery(recovery RecoveryStore) *Service {
-	if s == nil {
-		return nil
+func NewService(deps Deps) *Service {
+	return &Service{
+		store:    deps.Store,
+		recovery: deps.Recovery,
+		activity: deps.Activity,
+		admins:   deps.Admins,
+		sessions: deps.Sessions,
+		clock:    deps.Clock,
 	}
-	s.recovery = recovery
-	return s
-}
-
-// WithActivity attaches the account activity writer. A nil writer leaves
-// DisableTotp as a status change with no audit row.
-func (s *Service) WithActivity(activity ActivityLog) *Service {
-	if s == nil {
-		return nil
-	}
-	s.activity = activity
-	return s
 }
 
 func (s *Service) require(ctx context.Context, op string) error {

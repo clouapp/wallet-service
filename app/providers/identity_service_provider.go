@@ -64,11 +64,13 @@ func (p *IdentityServiceProvider) Register(app foundation.Application) {
 		if err != nil {
 			return nil, err
 		}
-		return usersvc.NewService(store).
-			WithRecovery(recovery).
-			WithActivity(activityLog).
-			WithPlatformAdmins(admins).
-			WithSessions(revoker), nil
+		return usersvc.NewService(usersvc.Deps{
+			Store:    store,
+			Recovery: recovery,
+			Activity: activityLog,
+			Admins:   admins,
+			Sessions: revoker,
+		}), nil
 	})
 	app.Singleton((*sessions.RefreshTokens)(nil), func(app foundation.Application) (any, error) {
 		store, err := resolve[*repositories.RefreshTokenRepository](app)

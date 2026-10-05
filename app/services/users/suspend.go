@@ -34,34 +34,6 @@ type Sessions interface {
 	RevokeAllBy(ctx context.Context, actorID, userID uuid.UUID) (time.Time, error)
 }
 
-// WithPlatformAdmins attaches the platform-admin lookup Suspend and
-// Reactivate use.
-func (s *Service) WithPlatformAdmins(admins PlatformAdmins) *Service {
-	if s == nil {
-		return nil
-	}
-	s.admins = admins
-	return s
-}
-
-// WithSessions attaches the session revoker Suspend uses.
-func (s *Service) WithSessions(sessions Sessions) *Service {
-	if s == nil {
-		return nil
-	}
-	s.sessions = sessions
-	return s
-}
-
-// WithClock pins the suspension instant. Tests use it.
-func (s *Service) WithClock(now func() time.Time) *Service {
-	if s == nil {
-		return nil
-	}
-	s.clock = now
-	return s
-}
-
 // Suspend sets users.suspended_at, revokes the user's sessions, and writes
 // user.suspended with a null account id. A platform admin is the only caller.
 // Suspending a user who is already suspended does not write a second row.

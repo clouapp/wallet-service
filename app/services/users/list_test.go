@@ -15,7 +15,7 @@ import (
 
 func TestListRefusesACallerWhoIsNotAPlatformAdmin(t *testing.T) {
 	store := &listStore{rows: []models.User{{ID: uuid.New(), Email: "hidden@example.com", PasswordHash: "hash"}}}
-	service := users.NewService(store).WithPlatformAdmins(allowAdmins{})
+	service := users.NewService(users.Deps{Store: store, Admins: allowAdmins{}})
 
 	rows, total, err := service.List(context.Background(), uuid.New(), 20, 0)
 
@@ -29,7 +29,7 @@ func TestListReturnsThePageForAPlatformAdmin(t *testing.T) {
 	actor := uuid.New()
 	newer := models.User{ID: uuid.New(), Email: "newer@example.com", Status: models.StatusActive}
 	store := &listStore{rows: []models.User{newer}, total: 4}
-	service := users.NewService(store).WithPlatformAdmins(allowAdmins{actor})
+	service := users.NewService(users.Deps{Store: store, Admins: allowAdmins{actor}})
 
 	rows, total, err := service.List(context.Background(), actor, 1, 2)
 
@@ -43,7 +43,7 @@ func TestListReturnsThePageForAPlatformAdmin(t *testing.T) {
 func TestListRejectsAMissingActorAndABadPage(t *testing.T) {
 	actor := uuid.New()
 	store := &listStore{}
-	service := users.NewService(store).WithPlatformAdmins(allowAdmins{actor})
+	service := users.NewService(users.Deps{Store: store, Admins: allowAdmins{actor}})
 
 	_, _, err := service.List(nil, actor, 20, 0)
 	require.ErrorContains(t, err, "context is required")
@@ -58,7 +58,7 @@ func TestListRejectsAMissingActorAndABadPage(t *testing.T) {
 	require.ErrorContains(t, err, "limit and offset are invalid")
 	require.False(t, store.called)
 
-	_, _, err = users.NewService(store).List(context.Background(), actor, 20, 0)
+	_, _, err = users.NewService(users.Deps{Store: store}).List(context.Background(), actor, 20, 0)
 	require.ErrorContains(t, err, "platform admins are required")
 }
 

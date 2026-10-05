@@ -30,12 +30,14 @@ func TestResetMFAClearsTotpOnceAndLeavesTheUserActive(t *testing.T) {
 	activity := &suspensionActivity{}
 	sessions := &suspensionSessions{}
 	recovery := &mfaRecovery{count: 2}
-	service := users.NewService(store).
-		WithActivity(activity).
-		WithPlatformAdmins(allowAdmins{actor}).
-		WithSessions(sessions).
-		WithRecovery(recovery).
-		WithClock(func() time.Time { return when })
+	service := users.NewService(users.Deps{
+		Store:    store,
+		Activity: activity,
+		Admins:   allowAdmins{actor},
+		Sessions: sessions,
+		Recovery: recovery,
+		Clock:    func() time.Time { return when },
+	})
 
 	require.NoError(t, service.ResetMFA(context.Background(), actor, target))
 	require.False(t, store.user.TotpEnabled)
@@ -73,10 +75,12 @@ func TestResetMFAOfAnAlreadyClearUserWritesNothing(t *testing.T) {
 	target := uuid.New()
 	store := &mfaStore{user: &models.User{ID: target, Status: models.StatusActive}}
 	activity := &suspensionActivity{}
-	service := users.NewService(store).
-		WithActivity(activity).
-		WithPlatformAdmins(allowAdmins{actor}).
-		WithRecovery(&mfaRecovery{})
+	service := users.NewService(users.Deps{
+		Store:    store,
+		Activity: activity,
+		Admins:   allowAdmins{actor},
+		Recovery: &mfaRecovery{},
+	})
 
 	require.NoError(t, service.ResetMFA(context.Background(), actor, target))
 	require.Empty(t, activity.rows)
@@ -94,10 +98,12 @@ func TestResetMFARefusesACallerWhoIsNotAPlatformAdmin(t *testing.T) {
 	}}
 	activity := &suspensionActivity{}
 	recovery := &mfaRecovery{count: 1}
-	service := users.NewService(store).
-		WithActivity(activity).
-		WithPlatformAdmins(allowAdmins{}).
-		WithRecovery(recovery)
+	service := users.NewService(users.Deps{
+		Store:    store,
+		Activity: activity,
+		Admins:   allowAdmins{},
+		Recovery: recovery,
+	})
 
 	err := service.ResetMFA(context.Background(), uuid.New(), target)
 	require.ErrorIs(t, err, users.ErrMFAForbidden)
@@ -108,11 +114,12 @@ func TestResetMFARefusesACallerWhoIsNotAPlatformAdmin(t *testing.T) {
 	require.Empty(t, activity.rows)
 
 	missing := &mfaStore{err: models.ErrRepositoryNotFound}
-	err = users.NewService(missing).
-		WithActivity(activity).
-		WithPlatformAdmins(allowAdmins{}).
-		WithRecovery(recovery).
-		ResetMFA(context.Background(), uuid.New(), uuid.New())
+	err = users.NewService(users.Deps{
+		Store:    missing,
+		Activity: activity,
+		Admins:   allowAdmins{},
+		Recovery: recovery,
+	}).ResetMFA(context.Background(), uuid.New(), uuid.New())
 	require.ErrorIs(t, err, users.ErrMFAForbidden)
 	require.Zero(t, missing.finds)
 }
@@ -122,10 +129,12 @@ func TestResetMFAReportsAMissingUserToAPlatformAdmin(t *testing.T) {
 
 	actor := uuid.New()
 	store := &mfaStore{err: models.ErrRepositoryNotFound}
-	service := users.NewService(store).
-		WithActivity(&suspensionActivity{}).
-		WithPlatformAdmins(allowAdmins{actor}).
-		WithRecovery(&mfaRecovery{})
+	service := users.NewService(users.Deps{
+		Store:    store,
+		Activity: &suspensionActivity{},
+		Admins:   allowAdmins{actor},
+		Recovery: &mfaRecovery{},
+	})
 
 	err := service.ResetMFA(context.Background(), actor, uuid.New())
 	require.ErrorIs(t, err, users.ErrNotFound)

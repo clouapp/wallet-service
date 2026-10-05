@@ -19,23 +19,23 @@ func TestUpdatePreferencesForwardsToTheStore(t *testing.T) {
 	store := &fakeStore{}
 	id := uuid.New()
 	prefs := &models.UserPreferences{}
-	err := users.NewService(store).UpdatePreferences(context.Background(), id, prefs)
+	err := users.NewService(users.Deps{Store: store}).UpdatePreferences(context.Background(), id, prefs)
 	require.NoError(t, err)
 	require.Equal(t, id, store.id)
 	require.Same(t, prefs, store.prefs)
 
 	store.err = errors.New("store down")
-	err = users.NewService(store).UpdatePreferences(context.Background(), id, prefs)
+	err = users.NewService(users.Deps{Store: store}).UpdatePreferences(context.Background(), id, prefs)
 	require.ErrorIs(t, err, store.err)
 }
 
 func TestUserWritesRequireContextAndStore(t *testing.T) {
 	t.Parallel()
 
-	err := users.NewService(&fakeStore{}).UpdatePreferences(nil, uuid.New(), &models.UserPreferences{})
+	err := users.NewService(users.Deps{Store: &fakeStore{}}).UpdatePreferences(nil, uuid.New(), &models.UserPreferences{})
 	require.EqualError(t, err, "update preferences: context is required")
 
-	err = users.NewService(nil).UpdateFullName(context.Background(), uuid.New(), "Ada")
+	err = users.NewService(users.Deps{}).UpdateFullName(context.Background(), uuid.New(), "Ada")
 	require.EqualError(t, err, "users service: users repository is required")
 }
 
