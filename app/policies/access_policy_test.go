@@ -40,14 +40,31 @@ func TestCanTokensReadIsOwnerAdminAndAuditor(t *testing.T) {
 		if !Can(AccountRoleGrants(role), PermTokensRead) {
 			t.Fatalf("%s must hold tokens.read", role)
 		}
-		if Can(AccountRoleGrants(role), PermTokensWrite) {
-			t.Fatalf("%s account catalog must not hold tokens.write", role)
-		}
+	}
+	if Can(AccountRoleGrants(models.AccountRoleAuditor), PermTokensWrite) {
+		t.Fatal("auditor account catalog must not hold tokens.write")
 	}
 	for _, role := range []string{models.RetiredAccountRoleViewer, models.AccountRoleUser, "", "spender", "owner "} {
 		if Can(AccountRoleGrants(role), PermTokensRead) || Can(AccountRoleGrants(role), PermTokensWrite) {
 			t.Fatalf("%q must not hold tokens.read or tokens.write", role)
 		}
+	}
+}
+
+func TestCanTokensWriteIsOwnerAndAdmin(t *testing.T) {
+	for _, role := range []string{models.AccountRoleOwner, models.AccountRoleAdmin} {
+		if !Can(AccountRoleGrants(role), PermTokensWrite) {
+			t.Fatalf("%s must hold tokens.write", role)
+		}
+	}
+	for _, role := range []string{models.AccountRoleAuditor, models.RetiredAccountRoleViewer, models.AccountRoleUser, "", "spender", "owner "} {
+		if Can(AccountRoleGrants(role), PermTokensWrite) {
+			t.Fatalf("%q must not hold tokens.write", role)
+		}
+	}
+	user := AccountRoleGrants(models.AccountRoleUser)
+	if len(user) != 1 || !Can(user, PermAddressesCreate) {
+		t.Fatal("user account catalog must stay addresses.create only")
 	}
 }
 

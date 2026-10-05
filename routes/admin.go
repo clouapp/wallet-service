@@ -140,7 +140,7 @@ func RegisterAdminRoutes() {
 			r.Middleware(middleware.Can(middleware.PermRolesRead)).Get("/permissions", accountRolesCtrl.Permissions)
 
 			r.Middleware(middleware.Can(middleware.PermTokensRead)).Get("/tokens", accountsCtrl.ListAccountTokens)
-			r.Post("/tokens", accountsCtrl.CreateAccountToken)
+			r.Middleware(middleware.Can(middleware.PermTokensWrite)).Post("/tokens", accountsCtrl.CreateAccountToken)
 			r.Delete("/tokens/{tokenId}", accountsCtrl.RevokeAccountToken)
 
 			// S1.4.7: GET /v1/accounts/{accountId}/settings settings.read.

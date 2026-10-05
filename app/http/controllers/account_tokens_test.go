@@ -153,8 +153,7 @@ func (s *accountTokensSuite) TestAuditorCanListAndCannotMint() {
 	s.Equal(http.StatusOK, s.statusOf(list))
 
 	resp := s.createToken(auditor.token, accountID, `{"name":"nope"}`)
-	s.Equal(http.StatusForbidden, s.statusOf(resp))
-	s.Contains(s.body(resp), "only owners and admins may manage tokens")
+	s.assertCreateForbidden(resp)
 	s.Equal(int64(0), s.tokenCount(accountID))
 }
 
@@ -312,9 +311,17 @@ func (s *accountTokensSuite) TestUserCannotMint() {
 	user := s.loginUser("user", accountID)
 
 	resp := s.createToken(user.token, accountID, `{"name":"nope","permissions":["wallets.create"]}`)
-	s.Equal(http.StatusForbidden, s.statusOf(resp))
-	s.Contains(s.body(resp), "only owners and admins may manage tokens")
+	s.assertCreateForbidden(resp)
 	s.Equal(int64(0), s.tokenCount(accountID))
+}
+
+func (s *accountTokensSuite) TestAdminCanMint() {
+	accountID := s.createAccount()
+	admin := s.loginUser("admin", accountID)
+
+	resp := s.createToken(admin.token, accountID, `{"name":"admin-mint"}`)
+	s.Equal(http.StatusCreated, s.statusOf(resp))
+	s.Equal(int64(1), s.tokenCount(accountID))
 }
 
 func (s *accountTokensSuite) createAccount() uuid.UUID {
@@ -461,6 +468,21 @@ func (s *accountTokensSuite) tokenCount(accountID uuid.UUID) int64 {
 		Count()
 	s.Require().NoError(err)
 	return total
+}
+
+func (s *accountTokensSuite) assertCreateForbidden(resp contractstesting.Response) {
+	s.Equal(http.StatusForbidden, s.statusOf(resp))
+	var parsed struct {
+		Error struct {
+			Code    string `json:"code"`
+			Message string `json:"message"`
+		} `json:"error"`
+		Data json.RawMessage `json:"data"`
+	}
+	s.Require().NoError(json.Unmarshal([]byte(s.body(resp)), &parsed))
+	s.Equal("forbidden", parsed.Error.Code)
+	s.Equal("forbidden", parsed.Error.Message)
+	s.Empty(parsed.Data)
 }
 
 func (s *accountTokensSuite) body(response contractstesting.Response) string {

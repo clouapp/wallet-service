@@ -441,9 +441,6 @@ func (ctrl *AccountsController) ListAccountTokens(ctx http.Context) http.Respons
 // @Router       /accounts/{accountId}/tokens [post]
 func (ctrl *AccountsController) CreateAccountToken(ctx http.Context) http.Response {
 	account := requestctx.MustAccount(ctx)
-	if errResp := controllers.Deny(ctx, policies.AccountWriteTokens(ctx, account.ID, middleware.SessionUserID(ctx))); errResp != nil {
-		return errResp
-	}
 	callerID, _ := requestctx.UserID(ctx)
 
 	var req requests.CreateAccountTokenRequest

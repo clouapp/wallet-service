@@ -37,13 +37,14 @@ func Can(grants Grants, perm string) bool {
 
 // AccountRoleGrants is the code catalog Can reads. Owner and admin hold
 // users.read, users.write, settings.read, settings.write, roles.read,
-// addresses.create, account.write, and tokens.read. Owner also holds
-// account.lifecycle, the freeze and archive grant. Admin does not. The user
-// role holds only addresses.create. Auditor holds users.read, settings.read,
-// roles.read, and tokens.read. tokens.read is the same set MayReadTokens
-// already allows, so the retired viewer label keeps the auditor set and does
-// not gain it. Any other role gets an empty set. Withdraw, sweep, wallet
-// create, and tokens.write stay out of this set.
+// addresses.create, account.write, tokens.read, and tokens.write. Owner also
+// holds account.lifecycle, the freeze and archive grant. Admin does not. The
+// user role holds only addresses.create. Auditor holds users.read,
+// settings.read, roles.read, and tokens.read. tokens.read is the same set
+// MayReadTokens already allows, and tokens.write is the same set
+// MayWriteTokens already allows, so the retired viewer label keeps the
+// auditor set and does not gain either. Any other role gets an empty set.
+// Withdraw, sweep, and wallet create stay out of this set.
 func AccountRoleGrants(role string) Grants {
 	stored := role
 	if role == models.RetiredAccountRoleViewer {
@@ -71,6 +72,9 @@ func AccountRoleGrants(role string) Grants {
 	}
 	if MayReadTokens(stored) {
 		grants[PermTokensRead] = struct{}{}
+	}
+	if MayWriteTokens(stored) {
+		grants[PermTokensWrite] = struct{}{}
 	}
 	return grants
 }
