@@ -1,4 +1,4 @@
-package controllers
+package chains
 
 import (
 	"github.com/goravel/framework/support/carbon"
@@ -6,11 +6,11 @@ import (
 	"github.com/macrowallets/waas/app/models"
 )
 
-// ChainView is the chain row HTTP clients read. Field order and tags match the
+// Chain is the chain row HTTP clients read. Field order and tags match the
 // model wire, including embedded timestamps. The RPC URL and threshold fields
 // stay off the wire. A nil page stays nil; an empty page stays empty. A nil
 // chain stays null. A non-nil empty icon URL stays "".
-type ChainView struct {
+type Chain struct {
 	CreatedAt             *carbon.DateTime `json:"created_at"`
 	UpdatedAt             *carbon.DateTime `json:"updated_at"`
 	ID                    string           `json:"id"`
@@ -27,8 +27,9 @@ type ChainView struct {
 	Status                string           `json:"status"`
 }
 
-func newChainView(chain models.Chain) ChainView {
-	return ChainView{
+// ChainFrom projects one chain.
+func ChainFrom(chain models.Chain) Chain {
+	return Chain{
 		CreatedAt:             chain.CreatedAt,
 		UpdatedAt:             chain.UpdatedAt,
 		ID:                    chain.ID,
@@ -46,23 +47,23 @@ func newChainView(chain models.Chain) ChainView {
 	}
 }
 
-// ChainViews copies a page. A nil slice stays nil; an empty slice stays empty.
-func ChainViews(chains []models.Chain) []ChainView {
+// ChainsFrom copies a page. A nil slice stays nil; an empty slice stays empty.
+func ChainsFrom(chains []models.Chain) []Chain {
 	if chains == nil {
 		return nil
 	}
-	views := make([]ChainView, len(chains))
+	views := make([]Chain, len(chains))
 	for i := range chains {
-		views[i] = newChainView(chains[i])
+		views[i] = ChainFrom(chains[i])
 	}
 	return views
 }
 
-// ChainViewPtr keeps a nil chain as JSON null.
-func ChainViewPtr(chain *models.Chain) *ChainView {
+// ChainPtr keeps a nil chain as JSON null.
+func ChainPtr(chain *models.Chain) *Chain {
 	if chain == nil {
 		return nil
 	}
-	view := newChainView(*chain)
+	view := ChainFrom(*chain)
 	return &view
 }

@@ -1,4 +1,4 @@
-package controllers
+package chains_test
 
 import (
 	"encoding/json"
@@ -8,11 +8,12 @@ import (
 	"github.com/goravel/framework/support/carbon"
 	"github.com/shopspring/decimal"
 
+	"github.com/macrowallets/waas/app/http/resources/chains"
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/pkg/numeric"
 )
 
-func TestChainViewKeepsTheModelWire(t *testing.T) {
+func TestChainKeepsTheModelWire(t *testing.T) {
 	t.Parallel()
 
 	created := carbon.NewDateTime(carbon.Parse("2024-05-06 07:08:09"))
@@ -52,7 +53,7 @@ func TestChainViewKeepsTheModelWire(t *testing.T) {
 		},
 	}
 	for _, tc := range cases {
-		raw, err := json.Marshal(newChainView(tc.chain))
+		raw, err := json.Marshal(chains.ChainFrom(tc.chain))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -69,7 +70,7 @@ func TestChainViewKeepsTheModelWire(t *testing.T) {
 		}
 	}
 
-	nilRaw, err := json.Marshal(ChainViewPtr(nil))
+	nilRaw, err := json.Marshal(chains.ChainPtr(nil))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -78,18 +79,18 @@ func TestChainViewKeepsTheModelWire(t *testing.T) {
 	}
 }
 
-func TestChainViewsPreserveSliceNilness(t *testing.T) {
+func TestChainsFromPreserveSliceNilness(t *testing.T) {
 	t.Parallel()
 
-	if ChainViews(nil) != nil {
+	if chains.ChainsFrom(nil) != nil {
 		t.Fatal("nil slice became an empty slice")
 	}
-	empty := ChainViews([]models.Chain{})
+	empty := chains.ChainsFrom([]models.Chain{})
 	if empty == nil || len(empty) != 0 {
 		t.Fatalf("empty slice = %#v", empty)
 	}
 
-	nilPage, err := json.Marshal(map[string]any{"data": ChainViews(nil)})
+	nilPage, err := json.Marshal(map[string]any{"data": chains.ChainsFrom(nil)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -97,7 +98,7 @@ func TestChainViewsPreserveSliceNilness(t *testing.T) {
 		t.Fatalf("nil page = %s", nilPage)
 	}
 
-	emptyPage, err := json.Marshal(map[string]any{"data": ChainViews([]models.Chain{})})
+	emptyPage, err := json.Marshal(map[string]any{"data": chains.ChainsFrom([]models.Chain{})})
 	if err != nil {
 		t.Fatal(err)
 	}
