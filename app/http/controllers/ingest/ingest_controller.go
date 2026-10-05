@@ -16,7 +16,6 @@ import (
 )
 
 var ingestProviders = map[string]providers.WebhookProvider{
-	"helius":    providers.NewHeliusProvider(""),
 	"quicknode": providers.NewQuickNodeProvider(""),
 }
 
@@ -60,10 +59,15 @@ func (ctrl *IngestController) provider(name string) (providers.WebhookProvider, 
 			return found, true
 		}
 	}
-	// The Alchemy client is registered by its adapter during init, so this
-	// fallback is resolved on the request rather than in the package map.
-	if name == "alchemy" {
-		found := providers.NewAlchemyProvider("")
+	// Alchemy and Helius clients are registered by their adapters during init,
+	// so these fallbacks are resolved on the request rather than in the package map.
+	if name == "alchemy" || name == "helius" {
+		var found providers.WebhookProvider
+		if name == "alchemy" {
+			found = providers.NewAlchemyProvider("")
+		} else {
+			found = providers.NewHeliusProvider("")
+		}
 		return found, found != nil
 	}
 	found, ok := ingestProviders[name]

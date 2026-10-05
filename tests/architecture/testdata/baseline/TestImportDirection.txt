@@ -32,6 +32,7 @@ app/http/controllers/external/chains → app/repositories (http → repositories
 app/http/controllers/external/wallets → app/repositories (http → repositories)
 app/http/controllers/external/withdrawals → app/repositories (http → repositories)
 app/http/controllers/ingest → app/adapters/ingest/alchemy (http → adapters) [test]
+app/http/controllers/ingest → app/adapters/ingest/helius (http → adapters) [test]
 app/http/controllers/ingest → app/repositories (http → repositories)
 app/http/middleware → app/repositories (http → repositories) (x3)
 app/http/requests → app/repositories (http → repositories) (x3)
@@ -46,6 +47,7 @@ app/services/deposit → app/repositories (services → repositories) [test] (x5
 app/services/evmcall → app/adapters/chain/evm (services → adapters) [test]
 app/services/evmcall → app/adapters/chain/rpc (services → adapters) [test]
 app/services/ingest/providers → app/adapters/ingest/alchemy (services → adapters) [test]
+app/services/ingest/providers → app/adapters/ingest/helius (services → adapters) [test]
 app/services/keyexport → app/adapters/chain/bitcoin (services → adapters) [test]
 app/services/refresh → app/repositories (services → repositories) (x2)
 app/services/refresh → app/repositories (services → repositories) [test]

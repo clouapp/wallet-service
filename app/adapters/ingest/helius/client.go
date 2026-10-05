@@ -1,4 +1,4 @@
-package providers
+package helius
 
 import (
 	"context"
@@ -15,6 +15,7 @@ import (
 	"github.com/shopspring/decimal"
 
 	"github.com/macrowallets/waas/app/models"
+	"github.com/macrowallets/waas/app/services/ingest/providers"
 	"github.com/macrowallets/waas/pkg/httpclient"
 	"github.com/macrowallets/waas/pkg/numeric"
 	"github.com/macrowallets/waas/pkg/types"
@@ -32,7 +33,7 @@ const (
 
 type HeliusProvider struct {
 	apiKey   string
-	keyAtUse KeySource
+	keyAtUse providers.KeySource
 	client   *httpclient.Client
 }
 
@@ -45,7 +46,7 @@ func NewHeliusProvider(apiKey string) *HeliusProvider {
 
 // UseKeySource reads the credential on each call. The constructor key is
 // not the one used after this is set, so boot does not capture it.
-func (h *HeliusProvider) UseKeySource(source KeySource) *HeliusProvider {
+func (h *HeliusProvider) UseKeySource(source providers.KeySource) *HeliusProvider {
 	if h == nil {
 		return nil
 	}
@@ -79,7 +80,7 @@ type heliusCreateResp struct {
 	Active           bool     `json:"active"`
 }
 
-func (h *HeliusProvider) CreateWebhook(ctx context.Context, cfg ProviderConfig) (*ProviderWebhook, error) {
+func (h *HeliusProvider) CreateWebhook(ctx context.Context, cfg providers.ProviderConfig) (*providers.ProviderWebhook, error) {
 	key, err := h.apiKeyFor(ctx)
 	if err != nil {
 		return nil, err
@@ -127,7 +128,7 @@ func (h *HeliusProvider) CreateWebhook(ctx context.Context, cfg ProviderConfig) 
 		return nil, fmt.Errorf("helius: create response missing webhookID")
 	}
 
-	return &ProviderWebhook{
+	return &providers.ProviderWebhook{
 		ProviderWebhookID: result.WebhookID,
 		SigningSecret:     authHeader,
 	}, nil
@@ -226,12 +227,12 @@ func (h *HeliusProvider) DeleteWebhook(ctx context.Context, webhookID string) er
 // VerifyInbound — Authorization header matches stored authHeader (constant time)
 // ---------------------------------------------------------------------------
 
-func (h *HeliusProvider) VerifyInbound(headers Header, body []byte, secret string) (bool, error) {
+func (h *HeliusProvider) VerifyInbound(headers providers.Header, body []byte, secret string) (bool, error) {
 	_ = body
-	if err := gateInboundKey(context.Background(), h.keyAtUse); err != nil {
+	if err := providers.GateInboundCredential(context.Background(), h.keyAtUse); err != nil {
 		return false, err
 	}
-	if err := rejectBlankSigningKey(secret); err != nil {
+	if err := providers.RejectBlankSigningSecret(secret); err != nil {
 		return false, err
 	}
 	got := headers.Get("Authorization")
@@ -271,13 +272,13 @@ type heliusTokenTransfer struct {
 	Decimals        *uint8          `json:"decimals,omitempty"`
 }
 
-func (h *HeliusProvider) ParsePayload(body []byte) ([]InboundTransfer, error) {
+func (h *HeliusProvider) ParsePayload(body []byte) ([]providers.InboundTransfer, error) {
 	var txs []heliusEnhancedTx
 	if err := json.Unmarshal(body, &txs); err != nil {
 		return nil, fmt.Errorf("helius: unmarshal payload: %w", err)
 	}
 
-	out := make([]InboundTransfer, 0)
+	out := make([]providers.InboundTransfer, 0)
 	for _, tx := range txs {
 		ts := time.Time{}
 		if tx.Timestamp != nil && *tx.Timestamp > 0 {
@@ -288,7 +289,7 @@ func (h *HeliusProvider) ParsePayload(body []byte) ([]InboundTransfer, error) {
 			if nt.ToUserAccount == "" && nt.FromUserAccount == "" {
 				continue
 			}
-			out = append(out, InboundTransfer{
+			out = append(out, providers.InboundTransfer{
 				TxHash:      tx.Signature,
 				BlockNumber: tx.Slot,
 				BlockHash:   "",
@@ -306,7 +307,7 @@ func (h *HeliusProvider) ParsePayload(body []byte) ([]InboundTransfer, error) {
 			if strings.TrimSpace(tt.Mint) == "" {
 				continue
 			}
-			transfer := InboundTransfer{
+			transfer := providers.InboundTransfer{
 				TxHash:      tx.Signature,
 				BlockNumber: tx.Slot,
 				BlockHash:   "",
@@ -342,7 +343,7 @@ func (h *HeliusProvider) ParsePayload(body []byte) ([]InboundTransfer, error) {
 // ---------------------------------------------------------------------------
 
 func (h *HeliusProvider) apiKeyFor(ctx context.Context) (string, error) {
-	key, err := requireCredential(ctx, h.keyAtUse, h.apiKey)
+	key, err := providers.CredentialForCall(ctx, h.keyAtUse, h.apiKey)
 	if err != nil {
 		return "", fmt.Errorf("helius: API key is required")
 	}
@@ -392,4 +393,19 @@ func humanToRawBigInt(human decimal.Decimal, decimals uint8) (*big.Int, error) {
 	return numeric.ToBaseUnits(human, int32(decimals))
 }
 
-var _ WebhookProvider = (*HeliusProvider)(nil)
+func exchange(ctx context.Context, client *httpclient.Client, method, rawURL string, header map[string]string, body []byte) (int, []byte, error) {
+	resp, err := client.Do(ctx, httpclient.Request{
+		Method:  method,
+		URL:     rawURL,
+		Header:  header,
+		Body:    body,
+		HasBody: body != nil,
+	})
+	if err != nil {
+		return 0, nil, err
+	}
+	return resp.StatusCode, resp.Body, nil
+}
+
+// compile-time interface check
+var _ providers.WebhookProvider = (*HeliusProvider)(nil)

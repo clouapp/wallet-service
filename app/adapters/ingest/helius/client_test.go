@@ -1,10 +1,12 @@
-package providers
+package helius
 
 import (
 	"encoding/json"
 	"math/big"
 	"testing"
 	"time"
+
+	"github.com/macrowallets/waas/app/services/ingest/providers"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -19,7 +21,7 @@ func TestHeliusVerifyInbound_ValidAuthorization(t *testing.T) {
 	body := []byte(`[{"signature":"abc"}]`)
 	secret := "Bearer test-secret-value"
 
-	headers := Header{}
+	headers := providers.Header{}
 	headers.Set("Authorization", secret)
 
 	valid, err := provider.VerifyInbound(headers, body, secret)
@@ -32,7 +34,7 @@ func TestHeliusVerifyInbound_InvalidAuthorization(t *testing.T) {
 	body := []byte(`[]`)
 	secret := "Bearer correct"
 
-	headers := Header{}
+	headers := providers.Header{}
 	headers.Set("Authorization", "Bearer wrong")
 
 	valid, err := provider.VerifyInbound(headers, body, secret)
@@ -44,7 +46,7 @@ func TestHeliusVerifyInbound_MissingAuthorization(t *testing.T) {
 	provider := NewHeliusProvider("test-key")
 	body := []byte(`[]`)
 
-	headers := Header{}
+	headers := providers.Header{}
 
 	valid, err := provider.VerifyInbound(headers, body, "Bearer x")
 	assert.Error(t, err)

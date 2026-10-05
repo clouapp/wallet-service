@@ -34,15 +34,6 @@ func TestVerifyInbound_EmptyResolvedKeyRejectsTheSignature(t *testing.T) {
 		sign    func(Header)
 	}{
 		{
-			name: "helius",
-			provide: func(source KeySource) WebhookProvider {
-				return NewHeliusProvider(verifyBootKey).UseKeySource(source)
-			},
-			sign: func(headers Header) {
-				headers.Set("Authorization", verifySigning)
-			},
-		},
-		{
 			name: "quicknode",
 			provide: func(source KeySource) WebhookProvider {
 				return NewQuickNodeProvider(verifyBootKey).UseKeySource(source)

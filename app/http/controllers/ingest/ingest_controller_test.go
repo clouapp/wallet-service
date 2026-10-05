@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	_ "github.com/macrowallets/waas/app/adapters/ingest/alchemy"
+	_ "github.com/macrowallets/waas/app/adapters/ingest/helius"
 	ingestsvc "github.com/macrowallets/waas/app/services/ingest"
 	"github.com/macrowallets/waas/app/services/ingest/providers"
 )
@@ -15,6 +16,7 @@ func ingestControllerDeps() IngestControllerDeps {
 		Lookup: func() map[string]providers.WebhookProvider {
 			return map[string]providers.WebhookProvider{
 				"alchemy": providers.NewAlchemyProvider(""),
+				"helius":  providers.NewHeliusProvider(""),
 			}
 		},
 	}
@@ -38,6 +40,10 @@ func TestNewIngestControllerKeepsItsDependencies(t *testing.T) {
 	found, ok := ctrl.lookup()["alchemy"]
 	if !ok || found == nil {
 		t.Fatal("ingest controller did not keep the provider lookup")
+	}
+	helius, ok := ctrl.lookup()["helius"]
+	if !ok || helius == nil {
+		t.Fatal("ingest controller did not keep the helius provider")
 	}
 }
 
