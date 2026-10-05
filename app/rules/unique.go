@@ -4,31 +4,36 @@ import (
 	"context"
 
 	"github.com/goravel/framework/contracts/validation"
-	"github.com/goravel/framework/facades"
 )
 
-type Unique struct{}
+// Unique reports whether no row stores this value yet. A missing option or a
+// failed read passes. The table's unique constraint still rejects the write.
+type Unique struct {
+	rows RowCount
+}
+
+// NewUnique checks uniqueness through rows.
+func NewUnique(rows RowCount) *Unique {
+	if rows == nil {
+		panic("unique rule: row count is required")
+	}
+	return &Unique{rows: rows}
+}
 
 func (r *Unique) Signature() string {
 	return "unique"
 }
 
-func (r *Unique) Passes(_ context.Context, _ validation.Data, val any, options ...any) bool {
-	if len(options) < 2 {
+func (r *Unique) Passes(ctx context.Context, _ validation.Data, val any, options ...any) bool {
+	table, column, ok := ruleColumn(options)
+	if !ok {
 		return true
 	}
-	table, _ := options[0].(string)
-	column, _ := options[1].(string)
-	if table == "" || column == "" {
+	value, ok := ruleString(val)
+	if !ok {
 		return true
 	}
-
-	s, ok := val.(string)
-	if !ok || s == "" {
-		return true
-	}
-
-	count, err := facades.Orm().Query().Table(table).Where(column+" = ?", s).Count()
+	count, err := r.rows.CountEquals(ctx, table, column, value)
 	if err != nil {
 		return true
 	}
