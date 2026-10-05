@@ -478,10 +478,12 @@ func buildVaultContainer(app foundation.Application) (*container.Container, erro
 		Snapshots:     c.WalletBalanceSnapshotRepo,
 		SyncStates:    c.WalletSyncStateRepo,
 	})
-	walletRefresher, err := refresh.NewWalletRefresher(
-		c.BalanceRefreshService, c.WalletRepo, c.Registry,
-		time.Duration(facades.Config().GetInt("vault.local_workers.balance_refresh_spacing_ms"))*time.Millisecond,
-	)
+	walletRefresher, err := refresh.NewWalletRefresher(refresh.WalletRefresherDeps{
+		Balances: c.BalanceRefreshService,
+		Wallets:  c.WalletRepo,
+		Chains:   c.Registry,
+		Spacing:  time.Duration(facades.Config().GetInt("vault.local_workers.balance_refresh_spacing_ms")) * time.Millisecond,
+	})
 	if err != nil {
 		return nil, fmt.Errorf("vault: wallet refresher: %w", err)
 	}

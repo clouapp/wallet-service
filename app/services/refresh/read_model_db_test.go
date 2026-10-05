@@ -45,7 +45,11 @@ func newDBRefresher(t *testing.T, registry *chain.Registry) *WalletRefresher {
 		Snapshots:     repositories.NewWalletBalanceSnapshotRepository(nil),
 		SyncStates:    repositories.NewWalletSyncStateRepository(nil),
 	})
-	refresher, err := NewWalletRefresher(balances, repositories.NewWalletRepository(nil), registry, 0)
+	refresher, err := NewWalletRefresher(WalletRefresherDeps{
+		Balances: balances,
+		Wallets:  repositories.NewWalletRepository(nil),
+		Chains:   registry,
+	})
 	if err != nil {
 		t.Fatal(err)
 	}

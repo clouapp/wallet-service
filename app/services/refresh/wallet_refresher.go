@@ -51,14 +51,25 @@ type WalletRefresher struct {
 	mu       sync.Mutex
 }
 
-func NewWalletRefresher(balances walletBalanceRefresh, wallets WalletStore, chains ChainSet, spacing time.Duration) (*WalletRefresher, error) {
-	if balances == nil || wallets == nil || chains == nil {
+// WalletRefresherDeps is everything the wallet refresher needs. A nil field
+// means that dependency is absent. Spacing is the pause between wallets; zero
+// is a valid pause and a negative value is rejected.
+type WalletRefresherDeps struct {
+	Balances walletBalanceRefresh
+	Wallets  WalletStore
+	Chains   ChainSet
+	Spacing  time.Duration
+}
+
+// NewWalletRefresher wires the wallet refresher from WalletRefresherDeps.
+func NewWalletRefresher(deps WalletRefresherDeps) (*WalletRefresher, error) {
+	if deps.Balances == nil || deps.Wallets == nil || deps.Chains == nil {
 		return nil, errors.New("wallet refresher: balance service, wallet store and chain set are required")
 	}
-	if spacing < 0 {
-		return nil, fmt.Errorf("wallet refresher: spacing must not be negative, got %s", spacing)
+	if deps.Spacing < 0 {
+		return nil, fmt.Errorf("wallet refresher: spacing must not be negative, got %s", deps.Spacing)
 	}
-	return &WalletRefresher{balances: balances, wallets: wallets, chains: chains, spacing: spacing, sleep: sleepContext}, nil
+	return &WalletRefresher{balances: deps.Balances, wallets: deps.Wallets, chains: deps.Chains, spacing: deps.Spacing, sleep: sleepContext}, nil
 }
 
 func (r *WalletRefresher) RefreshWalletByID(ctx context.Context, walletID uuid.UUID) error {

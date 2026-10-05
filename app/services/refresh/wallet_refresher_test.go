@@ -75,7 +75,12 @@ func (p *recordedPauses) sleep(_ context.Context, d time.Duration) error {
 
 func newTestRefresher(t *testing.T, balances *recordingBalances, wallets *fakeWalletStore, chains fakeChains) (*WalletRefresher, *recordedPauses) {
 	t.Helper()
-	refresher, err := NewWalletRefresher(balances, wallets, chains, 250*time.Millisecond)
+	refresher, err := NewWalletRefresher(WalletRefresherDeps{
+		Balances: balances,
+		Wallets:  wallets,
+		Chains:   chains,
+		Spacing:  250 * time.Millisecond,
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -85,10 +90,15 @@ func newTestRefresher(t *testing.T, balances *recordingBalances, wallets *fakeWa
 }
 
 func TestNewWalletRefresher_ValidatesDependencies(t *testing.T) {
-	if _, err := NewWalletRefresher(nil, &fakeWalletStore{}, fakeChains{}, 0); err == nil {
+	if _, err := NewWalletRefresher(WalletRefresherDeps{Wallets: &fakeWalletStore{}, Chains: fakeChains{}}); err == nil {
 		t.Fatal("expected a missing balance service to be rejected")
 	}
-	if _, err := NewWalletRefresher(&recordingBalances{}, &fakeWalletStore{}, fakeChains{}, -time.Second); err == nil {
+	if _, err := NewWalletRefresher(WalletRefresherDeps{
+		Balances: &recordingBalances{},
+		Wallets:  &fakeWalletStore{},
+		Chains:   fakeChains{},
+		Spacing:  -time.Second,
+	}); err == nil {
 		t.Fatal("expected a negative spacing to be rejected")
 	}
 }
