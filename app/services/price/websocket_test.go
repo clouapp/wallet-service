@@ -10,8 +10,29 @@ import (
 	"github.com/macrowallets/waas/app/models"
 )
 
+func TestNewWebSocketClientKeepsItsDependencies(t *testing.T) {
+	repo := &mockCurrencyRepo{}
+	dialer := &recordingDialer{}
+	client := NewWebSocketClient(WebSocketClientDeps{
+		APIKey:     "key",
+		Currencies: repo,
+		Dialer:     dialer,
+	})
+	if client == nil || client.apiKey != "key" || client.currencyRepo != repo || client.cache != nil || client.dialer != dialer {
+		t.Fatal("websocket client did not keep its dependencies")
+	}
+
+	bare := NewWebSocketClient(WebSocketClientDeps{})
+	if bare == nil || bare.apiKey != "" || bare.currencyRepo != nil || bare.cache != nil || bare.dialer != nil {
+		t.Fatal("missing dependencies were not left unset")
+	}
+}
+
 func TestConnectRefusesAMissingDialer(t *testing.T) {
-	client := NewWebSocketClient("key", &mockCurrencyRepo{}, nil, nil)
+	client := NewWebSocketClient(WebSocketClientDeps{
+		APIKey:     "key",
+		Currencies: &mockCurrencyRepo{},
+	})
 	err := client.Connect(context.Background())
 	if err == nil || err.Error() != "coinapi quote dialer is not configured" {
 		t.Fatalf("error = %v", err)
@@ -25,7 +46,11 @@ func TestConnectDialsCoinAPIAndSendsHello(t *testing.T) {
 		closed: make(chan struct{}),
 	}
 	dialer := &recordingDialer{conn: conn}
-	client := NewWebSocketClient("test-key", repo, nil, dialer)
+	client := NewWebSocketClient(WebSocketClientDeps{
+		APIKey:     "test-key",
+		Currencies: repo,
+		Dialer:     dialer,
+	})
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

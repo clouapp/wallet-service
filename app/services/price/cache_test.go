@@ -198,7 +198,11 @@ func TestCachePriceContinuesWhenRedisFails(t *testing.T) {
 func TestProcessMessageWritesTheCurrencyKey(t *testing.T) {
 	cache := &recordingPriceCache{}
 	store := &cacheCurrencyStore{currency: &models.Currency{Code: "BTC", CurrentPrice: priceOf("1")}}
-	client := NewWebSocketClient("key", store, cache, nil)
+	client := NewWebSocketClient(WebSocketClientDeps{
+		APIKey:     "key",
+		Currencies: store,
+		Cache:      cache,
+	})
 	client.activeCodes = []string{"BTC"}
 
 	client.processMessage(context.Background(), []byte(`{"asset_id_base":"BTC","rate":42.5}`))
@@ -219,7 +223,10 @@ func TestProcessMessageWritesTheCurrencyKey(t *testing.T) {
 
 func TestProcessMessageSkipsANilCache(t *testing.T) {
 	store := &cacheCurrencyStore{currency: &models.Currency{Code: "BTC", CurrentPrice: priceOf("1")}}
-	client := NewWebSocketClient("key", store, nil, nil)
+	client := NewWebSocketClient(WebSocketClientDeps{
+		APIKey:     "key",
+		Currencies: store,
+	})
 	client.activeCodes = []string{"BTC"}
 
 	client.processMessage(context.Background(), []byte(`{"asset_id_base":"BTC","rate":42.5}`))
@@ -228,7 +235,11 @@ func TestProcessMessageSkipsANilCache(t *testing.T) {
 func TestProcessMessageIgnoresACacheError(t *testing.T) {
 	cache := &recordingPriceCache{setErr: errors.New("boom")}
 	store := &cacheCurrencyStore{currency: &models.Currency{Code: "BTC", CurrentPrice: priceOf("1")}}
-	client := NewWebSocketClient("key", store, cache, nil)
+	client := NewWebSocketClient(WebSocketClientDeps{
+		APIKey:     "key",
+		Currencies: store,
+		Cache:      cache,
+	})
 	client.activeCodes = []string{"BTC"}
 
 	client.processMessage(context.Background(), []byte(`{"asset_id_base":"BTC","rate":42.5}`))

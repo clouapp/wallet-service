@@ -186,7 +186,12 @@ func (s *Service) PriceWebSocket(apiKey string, cache PriceCache) *WebSocketClie
 	if s == nil {
 		return nil
 	}
-	return NewWebSocketClient(apiKey, s.currencyRepo, cache, s.quotes)
+	return NewWebSocketClient(WebSocketClientDeps{
+		APIKey:     apiKey,
+		Currencies: s.currencyRepo,
+		Cache:      cache,
+		Dialer:     s.quotes,
+	})
 }
 
 // GetPrice returns the USD price of code: the cached quote when present, otherwise

@@ -47,12 +47,22 @@ type WebSocketClient struct {
 	activeCodes  []string
 }
 
-func NewWebSocketClient(apiKey string, currencyRepo currencyStore, cache PriceCache, dialer QuoteDialer) *WebSocketClient {
+// WebSocketClientDeps is everything the CoinAPI quote socket needs. A nil field means that
+// dependency is absent.
+type WebSocketClientDeps struct {
+	APIKey     string
+	Currencies currencyStore
+	Cache      PriceCache
+	Dialer     QuoteDialer
+}
+
+// NewWebSocketClient wires the CoinAPI quote socket from WebSocketClientDeps.
+func NewWebSocketClient(deps WebSocketClientDeps) *WebSocketClient {
 	return &WebSocketClient{
-		apiKey:       apiKey,
-		currencyRepo: currencyRepo,
-		cache:        cache,
-		dialer:       dialer,
+		apiKey:       deps.APIKey,
+		currencyRepo: deps.Currencies,
+		cache:        deps.Cache,
+		dialer:       deps.Dialer,
 	}
 }
 
