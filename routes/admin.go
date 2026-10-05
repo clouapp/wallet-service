@@ -344,11 +344,11 @@ func newDashboardWalletsController() *dashwallets.WalletsController {
 }
 
 func walletPolicyMemberships() *walletrecords.Memberships {
-	return walletrecords.NewMemberships(
-		container.MustMake[*walletrecords.Wallets](),
-		container.MustMake[*walletrecords.Members](),
-		container.MustMake[*accountsvc.Service](),
-	)
+	return walletrecords.NewMemberships(walletrecords.MembershipsDeps{
+		Wallets:  container.MustMake[*walletrecords.Wallets](),
+		Members:  container.MustMake[*walletrecords.Members](),
+		Accounts: container.MustMake[*accountsvc.Service](),
+	})
 }
 
 func newDashboardWalletUsersController() *dashwallets.UsersController {

@@ -137,11 +137,11 @@ func withWalletMembership(ctx context.Context, arguments map[string]any) map[str
 	if !userOK {
 		return out
 	}
-	walletRole, accountRole := walletrecords.NewMemberships(
-		container.MustMake[*walletrecords.Wallets](),
-		container.MustMake[*walletrecords.Members](),
-		container.MustMake[*accountsvc.Service](),
-	).ForWallet(ctx, walletID, userID)
+	walletRole, accountRole := walletrecords.NewMemberships(walletrecords.MembershipsDeps{
+		Wallets:  container.MustMake[*walletrecords.Wallets](),
+		Members:  container.MustMake[*walletrecords.Members](),
+		Accounts: container.MustMake[*accountsvc.Service](),
+	}).ForWallet(ctx, walletID, userID)
 	out["wallet_role"] = walletRole
 	out["account_role"] = accountRole
 	return out

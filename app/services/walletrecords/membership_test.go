@@ -23,7 +23,11 @@ func TestMembershipsForWalletReturnsTheStoredRoles(t *testing.T) {
 	wallets := &roleWallets{wallet: &models.Wallet{ID: walletID, AccountID: &accountID}}
 	members := &roleMembers{member: &models.WalletUser{Roles: "admin"}}
 	accounts := &roleAccounts{member: &models.AccountUser{Role: "owner"}}
-	loader := walletrecords.NewMemberships(walletrecords.NewWallets(wallets), walletrecords.NewMembers(members), accounts)
+	loader := walletrecords.NewMemberships(walletrecords.MembershipsDeps{
+		Wallets:  walletrecords.NewWallets(wallets),
+		Members:  walletrecords.NewMembers(members),
+		Accounts: accounts,
+	})
 
 	walletRole, accountRole := loader.ForWallet(context.Background(), walletID, userID)
 	require.Equal(t, "admin", walletRole)
@@ -41,27 +45,27 @@ func TestMembershipsForWalletTreatsAMissAsAnEmptyRole(t *testing.T) {
 	walletID := uuid.New()
 	lookupErr := errors.New("missing")
 
-	walletRole, accountRole := walletrecords.NewMemberships(
-		walletrecords.NewWallets(&roleWallets{err: lookupErr}),
-		walletrecords.NewMembers(&roleMembers{member: &models.WalletUser{Roles: "owner"}}),
-		&roleAccounts{},
-	).ForWallet(context.Background(), walletID, userID)
+	walletRole, accountRole := walletrecords.NewMemberships(walletrecords.MembershipsDeps{
+		Wallets:  walletrecords.NewWallets(&roleWallets{err: lookupErr}),
+		Members:  walletrecords.NewMembers(&roleMembers{member: &models.WalletUser{Roles: "owner"}}),
+		Accounts: &roleAccounts{},
+	}).ForWallet(context.Background(), walletID, userID)
 	require.Equal(t, "owner", walletRole)
 	require.Equal(t, "", accountRole)
 
-	walletRole, accountRole = walletrecords.NewMemberships(
-		walletrecords.NewWallets(&roleWallets{wallet: &models.Wallet{ID: walletID}}),
-		walletrecords.NewMembers(&roleMembers{err: lookupErr}),
-		&roleAccounts{member: &models.AccountUser{Role: "admin"}},
-	).ForWallet(context.Background(), walletID, userID)
+	walletRole, accountRole = walletrecords.NewMemberships(walletrecords.MembershipsDeps{
+		Wallets:  walletrecords.NewWallets(&roleWallets{wallet: &models.Wallet{ID: walletID}}),
+		Members:  walletrecords.NewMembers(&roleMembers{err: lookupErr}),
+		Accounts: &roleAccounts{member: &models.AccountUser{Role: "admin"}},
+	}).ForWallet(context.Background(), walletID, userID)
 	require.Equal(t, "", walletRole)
 	require.Equal(t, "", accountRole)
 
-	walletRole, accountRole = walletrecords.NewMemberships(
-		walletrecords.NewWallets(&roleWallets{wallet: &models.Wallet{ID: walletID, AccountID: &accountID}}),
-		walletrecords.NewMembers(&roleMembers{member: &models.WalletUser{Roles: "viewer"}}),
-		&roleAccounts{err: lookupErr},
-	).ForWallet(context.Background(), walletID, userID)
+	walletRole, accountRole = walletrecords.NewMemberships(walletrecords.MembershipsDeps{
+		Wallets:  walletrecords.NewWallets(&roleWallets{wallet: &models.Wallet{ID: walletID, AccountID: &accountID}}),
+		Members:  walletrecords.NewMembers(&roleMembers{member: &models.WalletUser{Roles: "viewer"}}),
+		Accounts: &roleAccounts{err: lookupErr},
+	}).ForWallet(context.Background(), walletID, userID)
 	require.Equal(t, "viewer", walletRole)
 	require.Equal(t, "", accountRole)
 }
@@ -69,8 +73,17 @@ func TestMembershipsForWalletTreatsAMissAsAnEmptyRole(t *testing.T) {
 func TestNewMembershipsRejectsAMissingDependency(t *testing.T) {
 	t.Parallel()
 
+	wallets := walletrecords.NewWallets(&roleWallets{})
+	members := walletrecords.NewMembers(&roleMembers{})
+	accounts := &roleAccounts{}
 	require.Panics(t, func() {
-		walletrecords.NewMemberships(nil, walletrecords.NewMembers(&roleMembers{}), &roleAccounts{})
+		walletrecords.NewMemberships(walletrecords.MembershipsDeps{Members: members, Accounts: accounts})
+	})
+	require.Panics(t, func() {
+		walletrecords.NewMemberships(walletrecords.MembershipsDeps{Wallets: wallets, Accounts: accounts})
+	})
+	require.Panics(t, func() {
+		walletrecords.NewMemberships(walletrecords.MembershipsDeps{Wallets: wallets, Members: members})
 	})
 }
 

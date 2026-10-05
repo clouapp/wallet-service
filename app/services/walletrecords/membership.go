@@ -21,12 +21,20 @@ type Memberships struct {
 	accounts AccountMemberLookup
 }
 
+// MembershipsDeps is everything the wallet-role loader needs. Wallets, members,
+// and the account membership lookup are required.
+type MembershipsDeps struct {
+	Wallets  *Wallets
+	Members  *Members
+	Accounts AccountMemberLookup
+}
+
 // NewMemberships builds the loader the wallet policy's callers use.
-func NewMemberships(wallets *Wallets, members *Members, accounts AccountMemberLookup) *Memberships {
-	if wallets == nil || members == nil || accounts == nil {
+func NewMemberships(deps MembershipsDeps) *Memberships {
+	if deps.Wallets == nil || deps.Members == nil || deps.Accounts == nil {
 		panic("wallet memberships: wallets, members, and account memberships are required")
 	}
-	return &Memberships{wallets: wallets, members: members, accounts: accounts}
+	return &Memberships{wallets: deps.Wallets, members: deps.Members, accounts: deps.Accounts}
 }
 
 // ForWallet returns the caller's wallet role and account role.
