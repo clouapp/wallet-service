@@ -74,7 +74,7 @@ type TotpCheck interface {
 }
 
 // WithdrawalRows is the idempotent withdrawal row. Signing stays in Request.
-// Within opens the transaction for a new row. RetryBroadcast stays outside it.
+// Within opens one transaction for a new row and a separate one for a retry.
 type WithdrawalRows interface {
 	Within(ctx context.Context, fn func(context.Context) error) error
 	FindByIDAndWallet(ctx context.Context, withdrawalID, walletID uuid.UUID) (*models.Withdrawal, error)
@@ -304,7 +304,9 @@ func (s *Service) persistCreate(ctx context.Context, in CreateInput, withdrawalI
 		}); createErr != nil {
 			return nil, &CreateRowError{Endpoint: "create_broadcasting_withdrawal", Err: createErr}
 		}
-	} else if updateErr := s.createRows.RetryBroadcast(ctx, w.ID, in.Amount, in.DestinationAddress, feeEstimate, in.Note); updateErr != nil {
+	} else if updateErr := s.createRows.Within(ctx, func(txCtx context.Context) error {
+		return s.createRows.RetryBroadcast(txCtx, w.ID, in.Amount, in.DestinationAddress, feeEstimate, in.Note)
+	}); updateErr != nil {
 		return nil, &CreateRowError{Endpoint: "retry_broadcasting_withdrawal", Err: updateErr}
 	} else {
 		w.Status = models.WithdrawalStatusBroadcasting

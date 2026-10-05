@@ -303,14 +303,47 @@ func TestCreateRetriesAFailedRowAndKeepsTheOldViewFields(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.Replayed || rows.creates != 0 || rows.retries != 1 || rows.withins != 0 || broadcaster.calls != 0 {
-		t.Fatalf("replayed=%v creates=%d retries=%d withins=%d broadcasts=%d", result.Replayed, rows.creates, rows.retries, rows.withins, broadcaster.calls)
+	if result.Replayed || rows.creates != 0 || rows.retries != 1 || rows.withins != 1 || !rows.retriedInside || broadcaster.calls != 0 {
+		t.Fatalf("replayed=%v creates=%d retries=%d withins=%d inside=%v broadcasts=%d", result.Replayed, rows.creates, rows.retries, rows.withins, rows.retriedInside, broadcaster.calls)
 	}
 	if rows.retryAmount != "2" || rows.retryDestination != "0xnew" || rows.retryFee != "9" || rows.retryNote != "again" {
 		t.Fatalf("retry args = %s %s %s %s", rows.retryAmount, rows.retryDestination, rows.retryFee, rows.retryNote)
 	}
 	if result.Withdrawal.Status != models.WithdrawalStatusBroadcasting || result.Withdrawal.Amount != "1" || result.Withdrawal.FeeEstimate != "3" {
 		t.Fatalf("in-memory row = %+v", result.Withdrawal)
+	}
+}
+
+func TestCreateLeavesTheFailedRowWhenTheRetryTransactionFails(t *testing.T) {
+	broadcaster := &fakeBroadcaster{}
+	feeChain := newCreateChain(t, broadcaster, "9", nil)
+	existingID := uuid.New()
+	wallet := sealedCreateWallet(t, "eth", nil)
+	existing := &models.Withdrawal{
+		ID: existingID, WalletID: wallet.ID, Status: models.WithdrawalStatusFailed,
+		Amount: "1", DestinationAddress: "0xold", FeeEstimate: "3",
+	}
+	rows := &memWithdrawalRows{
+		byID:     map[uuid.UUID]*models.Withdrawal{existingID: existing},
+		retryErr: errors.New("fail the withdrawal retry"),
+	}
+	svc := newCreateService(t, feeChain.chain, rows, acceptTotp{}, &memChains{decimals: 18})
+
+	_, err := svc.Create(context.Background(), CreateInput{
+		Wallet:             wallet,
+		DashboardUserID:    uuid.New(),
+		TotpCode:           "000000",
+		Passphrase:         createTestPassphrase,
+		Amount:             "2",
+		DestinationAddress: "0xnew",
+		IdempotencyKey:     existingID.String(),
+	})
+	rowErr, ok := err.(*CreateRowError)
+	if !ok || rowErr.Endpoint != "retry_broadcasting_withdrawal" || rowErr.Err.Error() != "fail the withdrawal retry" {
+		t.Fatalf("got %v", err)
+	}
+	if existing.Status != models.WithdrawalStatusFailed || existing.Amount != "1" || rows.creates != 0 || rows.withins != 1 || !rows.retriedInside || broadcaster.calls != 0 {
+		t.Fatalf("status=%s amount=%s creates=%d withins=%d inside=%v broadcasts=%d", existing.Status, existing.Amount, rows.creates, rows.withins, rows.retriedInside, broadcaster.calls)
 	}
 }
 
@@ -469,6 +502,8 @@ type memWithdrawalRows struct {
 	createdInside    bool
 	inside           bool
 	retries          int
+	retriedInside    bool
+	retryErr         error
 	retryAmount      string
 	retryDestination string
 	retryFee         string
@@ -511,9 +546,15 @@ func (m *memWithdrawalRows) Create(_ context.Context, withdrawal *models.Withdra
 
 func (m *memWithdrawalRows) RetryBroadcast(_ context.Context, _ uuid.UUID, amount, destination, feeEstimate, note string) error {
 	m.retries++
+	if m.inside {
+		m.retriedInside = true
+	}
 	m.retryAmount = amount
 	m.retryDestination = destination
 	m.retryFee = feeEstimate
 	m.retryNote = note
+	if m.retryErr != nil {
+		return m.retryErr
+	}
 	return nil
 }

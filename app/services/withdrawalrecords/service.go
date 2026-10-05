@@ -83,8 +83,8 @@ func (s *Records) FindByIDAndWallet(ctx context.Context, withdrawalID, walletID 
 	return s.store.FindByIDAndWallet(ctx, withdrawalID, walletID)
 }
 
-// Within runs fn inside one transaction on the withdrawal table. The insert
-// of a new row uses it. Status updates stay on their own calls.
+// Within runs fn inside one transaction on the withdrawal table. A new row
+// and a broadcast retry each open their own call.
 func (s *Records) Within(ctx context.Context, fn func(context.Context) error) error {
 	if err := s.ready(ctx, "create withdrawal"); err != nil {
 		return err

@@ -143,3 +143,30 @@ func (s *WithdrawalRepositoryTestSuite) TestWithinRollsBackACreate() {
 	s.Nil(found)
 	s.Error(findErr)
 }
+
+func (s *WithdrawalRepositoryTestSuite) TestWithinRollsBackARetry() {
+	walletID := s.insertWallet()
+	id := uuid.New()
+	s.Require().NoError(s.repo.Create(context.Background(), &models.Withdrawal{
+		ID: id, WalletID: walletID, Status: models.WithdrawalStatusFailed,
+		Amount: "1", FeeEstimate: "3", DestinationAddress: "0xold", Note: "first",
+	}))
+
+	err := s.repo.Within(context.Background(), func(ctx context.Context) error {
+		updateErr := s.repo.RetryBroadcast(ctx, id, "2", "0xnew", "9", "again")
+		if updateErr != nil {
+			return updateErr
+		}
+		return errors.New("fail the withdrawal retry")
+	})
+	s.Error(err)
+
+	found, findErr := s.repo.FindByID(context.Background(), id)
+	s.Require().NoError(findErr)
+	s.Require().NotNil(found)
+	s.Equal(models.WithdrawalStatusFailed, found.Status)
+	s.Equal("1.000000000000000000", found.Amount)
+	s.Equal("3.000000000000000000", found.FeeEstimate)
+	s.Equal("0xold", found.DestinationAddress)
+	s.Equal("first", found.Note)
+}
