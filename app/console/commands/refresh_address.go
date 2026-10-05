@@ -20,15 +20,22 @@ type RefreshAddress struct {
 	dispatcher refresh.Dispatcher
 }
 
+// RefreshAddressDeps is everything the refresh:address command needs.
+// Balances and Dispatcher are required.
+type RefreshAddressDeps struct {
+	Balances   *refresh.BalanceService
+	Dispatcher refresh.Dispatcher
+}
+
 // NewRefreshAddress refreshes the wallets that own the given addresses.
-func NewRefreshAddress(balances *refresh.BalanceService, dispatcher refresh.Dispatcher) *RefreshAddress {
-	if balances == nil {
+func NewRefreshAddress(deps RefreshAddressDeps) *RefreshAddress {
+	if deps.Balances == nil {
 		panic("refresh:address: balance refresh service is required")
 	}
-	if dispatcher == nil {
+	if deps.Dispatcher == nil {
 		panic("refresh:address: refresh dispatcher is required")
 	}
-	return &RefreshAddress{balances: balances, dispatcher: dispatcher}
+	return &RefreshAddress{balances: deps.Balances, dispatcher: deps.Dispatcher}
 }
 
 func (c *RefreshAddress) Signature() string {

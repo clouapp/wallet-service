@@ -53,7 +53,10 @@ func Boot() contractsfoundation.Application {
 			prices := container.MustMake[*price.Service]()
 			return []console.Command{
 				commands.NewRefreshWallet(balances, dispatcher),
-				commands.NewRefreshAddress(balances, dispatcher),
+				commands.NewRefreshAddress(commands.RefreshAddressDeps{
+					Balances:   balances,
+					Dispatcher: dispatcher,
+				}),
 				commands.NewRefreshCurrency(registry, balances, dispatcher),
 				commands.NewRefreshTx(balances, dispatcher),
 				commands.NewScanDeposits(deposits),
