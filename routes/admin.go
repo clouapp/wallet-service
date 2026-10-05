@@ -335,12 +335,12 @@ func currentWalletService() *walletsvc.Service {
 }
 
 func newDashboardWalletsController() *dashwallets.WalletsController {
-	return dashwallets.NewWalletsController(
-		container.MustMake[*walletrecords.Wallets](),
-		container.MustMake[*chainsvc.Service](),
-		currentWalletService,
-		container.MustMake[*walletrecords.Members](),
-	)
+	return dashwallets.NewWalletsController(dashwallets.WalletsControllerDeps{
+		Wallets:       container.MustMake[*walletrecords.Wallets](),
+		Members:       container.MustMake[*walletrecords.Members](),
+		Chains:        container.MustMake[*chainsvc.Service](),
+		WalletService: currentWalletService,
+	})
 }
 
 func walletPolicyMemberships() *walletrecords.Memberships {

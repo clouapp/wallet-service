@@ -33,29 +33,34 @@ type WalletsController struct {
 	walletService func() *wallet.Service
 }
 
-func NewWalletsController(
-	wallets *walletrecords.Wallets,
-	chains *chainsvc.Service,
-	walletService func() *wallet.Service,
-	members *walletrecords.Members,
-) *WalletsController {
-	if wallets == nil {
+// WalletsControllerDeps is everything the dashboard wallets controller needs.
+// Every field is required. WalletService is stored and read on each call.
+type WalletsControllerDeps struct {
+	Wallets       *walletrecords.Wallets
+	Members       *walletrecords.Members
+	Chains        *chainsvc.Service
+	WalletService func() *wallet.Service
+}
+
+// NewWalletsController wires the dashboard wallet handlers from WalletsControllerDeps.
+func NewWalletsController(deps WalletsControllerDeps) *WalletsController {
+	if deps.Wallets == nil {
 		panic("dashboard wallets controller: wallets service is required")
 	}
-	if members == nil {
+	if deps.Members == nil {
 		panic("dashboard wallets controller: wallet members service is required")
 	}
-	if chains == nil {
+	if deps.Chains == nil {
 		panic("dashboard wallets controller: chains service is required")
 	}
-	if walletService == nil || walletService() == nil {
+	if deps.WalletService == nil || deps.WalletService() == nil {
 		panic("dashboard wallets controller: wallet service is required")
 	}
 	return &WalletsController{
-		wallets:       wallets,
-		members:       members,
-		chains:        chains,
-		walletService: walletService,
+		wallets:       deps.Wallets,
+		members:       deps.Members,
+		chains:        deps.Chains,
+		walletService: deps.WalletService,
 	}
 }
 
