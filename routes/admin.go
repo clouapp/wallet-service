@@ -256,7 +256,7 @@ func RegisterAdminRoutes() {
 
 			r.Get("/users", walletUsersCtrl.ListWalletUsers)
 			r.Middleware(middleware.WalletAddUser(walletPolicyMemberships())).Post("/users", walletUsersCtrl.AddWalletUser)
-			r.Delete("/users/{userId}", walletUsersCtrl.RemoveWalletUser)
+			r.Middleware(middleware.WalletRemoveUser(walletPolicyMemberships())).Delete("/users/{userId}", walletUsersCtrl.RemoveWalletUser)
 
 			r.Get("/whitelist", whitelistCtrl.ListWhitelistEntries)
 			r.Post("/whitelist", whitelistCtrl.AddWhitelistEntry)

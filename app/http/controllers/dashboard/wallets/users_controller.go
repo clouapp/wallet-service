@@ -7,13 +7,11 @@ import (
 	"github.com/goravel/framework/contracts/http"
 
 	"github.com/macrowallets/waas/app/facades"
-	"github.com/macrowallets/waas/app/http/controllers"
 	"github.com/macrowallets/waas/app/http/middleware/requestctx"
 	"github.com/macrowallets/waas/app/http/requests"
 	walletusers "github.com/macrowallets/waas/app/http/resources/dashboard/wallets/users"
 	"github.com/macrowallets/waas/app/http/responses"
 	"github.com/macrowallets/waas/app/models"
-	"github.com/macrowallets/waas/app/policies"
 	accountsvc "github.com/macrowallets/waas/app/services/account"
 	"github.com/macrowallets/waas/app/services/walletrecords"
 )
@@ -164,9 +162,6 @@ func (ctrl *UsersController) requireActiveAccountMember(ctx http.Context, wallet
 // @Router       /wallets/{walletId}/users/{userId} [delete]
 func (ctrl *UsersController) RemoveWalletUser(ctx http.Context) http.Response {
 	wallet := requestctx.MustWallet(ctx)
-	if resp := controllers.Deny(ctx, policies.WalletRemoveUser(controllers.WalletMembership(ctx, ctrl.memberships, wallet.ID))); resp != nil {
-		return resp
-	}
 
 	targetID, err := requests.RouteUUID(ctx, "userId")
 	if err != nil {
