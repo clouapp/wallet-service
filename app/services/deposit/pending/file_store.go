@@ -39,14 +39,20 @@ type FileStore struct {
 	mu           sync.Mutex
 }
 
-func NewFileStore(dir string) (*FileStore, error) {
-	if dir == "" {
+// FileStoreDeps is the directory NewFileStore writes.
+// Dir must be set; an empty Dir is rejected.
+type FileStoreDeps struct {
+	Dir string
+}
+
+func NewFileStore(deps FileStoreDeps) (*FileStore, error) {
+	if deps.Dir == "" {
 		return nil, errors.New("pending file store: directory is required")
 	}
-	if err := os.MkdirAll(dir, dirPermissions); err != nil {
-		return nil, fmt.Errorf("pending file store: create %s: %w", dir, err)
+	if err := os.MkdirAll(deps.Dir, dirPermissions); err != nil {
+		return nil, fmt.Errorf("pending file store: create %s: %w", deps.Dir, err)
 	}
-	return &FileStore{dir: dir, compactAfter: compactAfterRecords}, nil
+	return &FileStore{dir: deps.Dir, compactAfter: compactAfterRecords}, nil
 }
 
 func (s *FileStore) logPath(chain string) string  { return filepath.Join(s.dir, chain+".jsonl") }

@@ -150,7 +150,7 @@ func openPendingStore(t *testing.T, rdb *redis.Client, prefix, dir string) *pend
 			t.Fatal(err)
 		}
 	}
-	fileStore, err := pending.NewFileStore(dir)
+	fileStore, err := pending.NewFileStore(pending.FileStoreDeps{Dir: dir})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -425,7 +425,7 @@ func TestScanLatestBlocks_RedisDownRecordsThePendingBlockInTheFile(t *testing.T)
 	if got := f.checkpoint(t); got != scanHead {
 		t.Fatalf("expected the checkpoint past the pending block, got %d", got)
 	}
-	fileOnly, err := pending.NewFileStore(dir)
+	fileOnly, err := pending.NewFileStore(pending.FileStoreDeps{Dir: dir})
 	if err != nil {
 		t.Fatal(err)
 	}

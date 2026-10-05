@@ -37,7 +37,7 @@ func unreachableRedis(t *testing.T) *redis.Client {
 func brokenFileStore(t *testing.T) *FileStore {
 	t.Helper()
 	dir := filepath.Join(t.TempDir(), "pending")
-	store, err := NewFileStore(dir)
+	store, err := NewFileStore(FileStoreDeps{Dir: dir})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -100,7 +100,7 @@ func TestFileStore_PutReplaceDeleteSurvivesReopen(t *testing.T) {
 	ctx := context.Background()
 	dir := t.TempDir()
 	now := time.Now().UTC().Truncate(time.Millisecond)
-	store, err := NewFileStore(dir)
+	store, err := NewFileStore(FileStoreDeps{Dir: dir})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -113,7 +113,7 @@ func TestFileStore_PutReplaceDeleteSurvivesReopen(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	reopened, err := NewFileStore(dir)
+	reopened, err := NewFileStore(FileStoreDeps{Dir: dir})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -137,7 +137,7 @@ func TestFileStore_IgnoresATornLastRecordAndKeepsAppending(t *testing.T) {
 	ctx := context.Background()
 	dir := t.TempDir()
 	now := time.Now().UTC()
-	store, err := NewFileStore(dir)
+	store, err := NewFileStore(FileStoreDeps{Dir: dir})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -172,7 +172,7 @@ func TestFileStore_RejectsACorruptRecordInTheMiddle(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, testChain+".jsonl"), []byte("garbage\n{\"op\":\"delete\",\"block\":1}\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	store, err := NewFileStore(dir)
+	store, err := NewFileStore(FileStoreDeps{Dir: dir})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -185,7 +185,7 @@ func TestFileStore_CompactsResolvedEntries(t *testing.T) {
 	ctx := context.Background()
 	dir := t.TempDir()
 	now := time.Now().UTC()
-	store, err := NewFileStore(dir)
+	store, err := NewFileStore(FileStoreDeps{Dir: dir})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -267,7 +267,7 @@ func TestDurableStore_RedisDownFallsBackToTheFile(t *testing.T) {
 		t.Fatal(err)
 	}
 	dir := t.TempDir()
-	fileStore, err := NewFileStore(dir)
+	fileStore, err := NewFileStore(FileStoreDeps{Dir: dir})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -312,7 +312,7 @@ func TestDurableStore_MergesBothBackendsKeepingTheNewestEntry(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	fileStore, err := NewFileStore(t.TempDir())
+	fileStore, err := NewFileStore(FileStoreDeps{Dir: t.TempDir()})
 	if err != nil {
 		t.Fatal(err)
 	}

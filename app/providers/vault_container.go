@@ -578,7 +578,7 @@ func buildPendingDepositStore(rdb *redis.Client, dir string) pending.Store {
 	if dir == "" {
 		dir = defaultPendingDepositDir()
 	}
-	fileStore, err := pending.NewFileStore(dir)
+	fileStore, err := pending.NewFileStore(pending.FileStoreDeps{Dir: dir})
 	if err != nil {
 		slog.Error("vault: pending deposit file store unavailable", "dir", dir, "error", err)
 		fileStore = nil
