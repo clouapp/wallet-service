@@ -102,31 +102,73 @@ func registrationFiles(module *architecture.Module) []*architecture.SourceFile {
 }
 
 func permissionConstants(module *architecture.Module) map[string]string {
-	names := map[string]string{}
-	for _, file := range module.ProductionFiles("app/policies") {
-		for _, decl := range file.AST.Decls {
-			gen, ok := decl.(*ast.GenDecl)
-			if !ok || gen.Tok != token.CONST {
-				continue
+	decls := map[string]map[string]ast.Expr{}
+	for _, dir := range []string{"app/policies", "app/models"} {
+		for _, file := range module.ProductionFiles(dir) {
+			pkg := file.AST.Name.Name
+			if decls[pkg] == nil {
+				decls[pkg] = map[string]ast.Expr{}
 			}
-			for _, spec := range gen.Specs {
-				value, ok := spec.(*ast.ValueSpec)
-				if !ok || len(value.Names) != 1 || len(value.Values) != 1 {
+			for _, decl := range file.AST.Decls {
+				gen, ok := decl.(*ast.GenDecl)
+				if !ok || gen.Tok != token.CONST {
 					continue
 				}
-				literal, ok := value.Values[0].(*ast.BasicLit)
-				if !ok || literal.Kind != token.STRING {
-					continue
+				for _, spec := range gen.Specs {
+					value, ok := spec.(*ast.ValueSpec)
+					if !ok || len(value.Names) != 1 || len(value.Values) != 1 {
+						continue
+					}
+					decls[pkg][value.Names[0].Name] = value.Values[0]
 				}
-				text, err := strconv.Unquote(literal.Value)
-				if err != nil {
-					continue
-				}
-				names[value.Names[0].Name] = text
 			}
 		}
 	}
+	names := map[string]string{}
+	for name := range decls["policies"] {
+		text, ok := resolvePermissionConst(decls, "policies", name, map[string]bool{})
+		if ok {
+			names[name] = text
+		}
+	}
 	return names
+}
+
+func resolvePermissionConst(decls map[string]map[string]ast.Expr, pkg, name string, seen map[string]bool) (string, bool) {
+	key := pkg + "." + name
+	if seen[key] {
+		return "", false
+	}
+	seen[key] = true
+	pkgDecls := decls[pkg]
+	if pkgDecls == nil {
+		return "", false
+	}
+	expr, ok := pkgDecls[name]
+	if !ok {
+		return "", false
+	}
+	switch typed := expr.(type) {
+	case *ast.BasicLit:
+		if typed.Kind != token.STRING {
+			return "", false
+		}
+		text, err := strconv.Unquote(typed.Value)
+		if err != nil {
+			return "", false
+		}
+		return text, true
+	case *ast.Ident:
+		return resolvePermissionConst(decls, pkg, typed.Name, seen)
+	case *ast.SelectorExpr:
+		pkgIdent, ok := typed.X.(*ast.Ident)
+		if !ok {
+			return "", false
+		}
+		return resolvePermissionConst(decls, pkgIdent.Name, typed.Sel.Name, seen)
+	default:
+		return "", false
+	}
 }
 
 func collectGlobalGuards(file *ast.File, perms map[string]string, global *[]string) {
