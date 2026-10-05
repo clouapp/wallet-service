@@ -1,6 +1,8 @@
 package addresses
 
 import (
+	"errors"
+
 	"github.com/goravel/framework/contracts/http"
 
 	"github.com/macrowallets/waas/app/http/controllers"
@@ -81,9 +83,7 @@ func (ctrl *AddressesController) GenerateAddress(ctx http.Context) http.Response
 
 	addr, err := ctrl.walletService().GenerateAddress(ctx.Context(), walletID, req.ExternalUserID, req.Label, req.Metadata, req.Passphrase)
 	if err != nil {
-		return responses.Send(ctx, http.StatusUnprocessableEntity, http.Json{
-			"error": err.Error(),
-		})
+		return generateAddressError(ctx, err)
 	}
 
 	// Refresh Redis address cache for the chain
@@ -92,6 +92,30 @@ func (ctrl *AddressesController) GenerateAddress(ctx http.Context) http.Response
 	}
 
 	return responses.Send(ctx, http.StatusCreated, addressresource.AddressPtr(addr, walletresource.WalletPtr))
+}
+
+// generateAddressError answers a failed derivation. An upstream provider
+// message — a secrets-manager failure names the secret — stays in the log.
+// The client gets this endpoint's 502. A message the handler already owns
+// stays 422.
+func generateAddressError(ctx http.Context, err error) http.Response {
+	if upstreamProvider(err) {
+		return responses.ProviderError(ctx, err)
+	}
+	return responses.Send(ctx, http.StatusUnprocessableEntity, http.Json{
+		"error": err.Error(),
+	})
+}
+
+// upstreamProviderError is the method AWS API exceptions share. Handlers
+// use it so the provider's own text is recognized without importing the SDK.
+type upstreamProviderError interface {
+	ErrorCode() string
+}
+
+func upstreamProvider(err error) bool {
+	var api upstreamProviderError
+	return errors.As(err, &api)
 }
 
 // UpdateAddress godoc
