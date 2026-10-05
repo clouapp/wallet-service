@@ -14,7 +14,8 @@ import (
 )
 
 // SendCredentialMailJob mints a reset or invite token at send time and calls
-// Mail().Send. The queue arguments are the subject id and the purpose.
+// Mail().Send. Welcome loads the user and sends no credential. The queue
+// arguments are the subject id and the purpose.
 type SendCredentialMailJob struct {
 	service    *credentialmail.Service
 	inviteLink *string
@@ -57,6 +58,8 @@ func (j *SendCredentialMailJob) Handle(args ...any) error {
 	switch purpose {
 	case credentialmail.PurposePasswordReset:
 		return mailer.SendPasswordReset(context.Background(), subjectID)
+	case credentialmail.PurposeWelcome:
+		return mailer.SendWelcome(context.Background(), subjectID)
 	case credentialmail.PurposeAccountInvite:
 		link, err := mailer.SendAccountInvite(context.Background(), subjectID)
 		if j.inviteLink != nil {

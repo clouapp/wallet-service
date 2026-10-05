@@ -118,3 +118,4 @@ type queueSender struct{}
 
 func (queueSender) SendInvite(context.Context, account.InviteMail) error { return nil }
 func (queueSender) SendReset(context.Context, string, string) error      { return nil }
+func (queueSender) SendWelcome(context.Context, string, string) error    { return nil }

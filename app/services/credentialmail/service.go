@@ -17,6 +17,9 @@ const (
 	PurposePasswordReset = "password_reset"
 	// PurposeAccountInvite is the queue purpose for an invite link.
 	PurposeAccountInvite = "account_invite"
+	// PurposeWelcome is the queue purpose for the post-register welcome.
+	// The message has no credential. The payload is still the user id and this purpose.
+	PurposeWelcome = "welcome"
 
 	passwordResetLifetime  = time.Hour
 	passwordResetURLPrefix = "https://vault.app/reset-password?token="
@@ -48,6 +51,7 @@ type InviteRefresher interface {
 type Sender interface {
 	SendInvite(ctx context.Context, message account.InviteMail) error
 	SendReset(ctx context.Context, to, resetLink string) error
+	SendWelcome(ctx context.Context, to, fullName string) error
 }
 
 // DispatchFunc enqueues one credential mail. The arguments are the subject
@@ -119,7 +123,7 @@ func NewService(deps Deps) *Service {
 // KnownPurpose reports whether purpose may be placed on the queue.
 func KnownPurpose(purpose string) bool {
 	switch purpose {
-	case PurposePasswordReset, PurposeAccountInvite:
+	case PurposePasswordReset, PurposeAccountInvite, PurposeWelcome:
 		return true
 	default:
 		return false
@@ -151,6 +155,31 @@ func (s *Service) DispatchAccountInvite(inviteID uuid.UUID) (string, error) {
 		return "", errors.New("invite mail: invite id is required")
 	}
 	return s.dispatchInvite(inviteID)
+}
+
+// SendWelcome loads the user and sends the welcome message. The address and
+// name come from the row. They are not queue arguments.
+func (s *Service) SendWelcome(ctx context.Context, userID uuid.UUID) error {
+	if s == nil || s.users == nil || s.sender == nil {
+		return errors.New("credential mail: welcome dependencies are required")
+	}
+	if ctx == nil {
+		return errors.New("welcome mail: context is required")
+	}
+	if userID == uuid.Nil {
+		return errors.New("welcome mail: user id is required")
+	}
+	user, err := s.users.FindByID(ctx, userID)
+	if err != nil {
+		return fmt.Errorf("welcome mail: load user: %w", err)
+	}
+	if user == nil || user.Email == "" {
+		return errors.New("welcome mail: user not found")
+	}
+	if err := s.sender.SendWelcome(ctx, user.Email, user.FullName); err != nil {
+		return errors.New("welcome mail: send failed")
+	}
+	return nil
 }
 
 // SendPasswordReset mints a reset token, stores only its hash, and sends the

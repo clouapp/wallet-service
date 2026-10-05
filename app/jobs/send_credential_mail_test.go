@@ -11,7 +11,7 @@ import (
 
 func TestCredentialMailArgsCarryNoCredential(t *testing.T) {
 	subjectID := uuid.MustParse("11111111-1111-1111-1111-111111111111")
-	for _, purpose := range []string{credentialmail.PurposePasswordReset, credentialmail.PurposeAccountInvite} {
+	for _, purpose := range []string{credentialmail.PurposePasswordReset, credentialmail.PurposeAccountInvite, credentialmail.PurposeWelcome} {
 		args, err := CredentialMailArgs(subjectID, purpose)
 		if err != nil {
 			t.Fatal(err)

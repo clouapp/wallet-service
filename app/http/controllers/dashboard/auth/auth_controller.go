@@ -13,7 +13,6 @@ import (
 	"github.com/macrowallets/waas/app/http/middleware/requestctx"
 	"github.com/macrowallets/waas/app/http/requests"
 	"github.com/macrowallets/waas/app/http/responses"
-	mails "github.com/macrowallets/waas/app/mails"
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/policies"
 	accountsvc "github.com/macrowallets/waas/app/services/account"
@@ -112,75 +111,19 @@ func (ctrl *AuthController) Register(ctx http.Context) http.Response {
 		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to hash password"})
 	}
 
-	user := &models.User{
-		ID:           uuid.New(),
-		Email:        req.Email,
-		PasswordHash: hash,
-		FullName:     req.FullName,
-		Status:       "active",
-	}
-	if err := ctrl.users.Create(ctx.Context(), user); err != nil {
+	user, err := ctrl.accounts.Onboard(ctx.Context(), accountsvc.OnboardInput{
+		Email:            req.Email,
+		PasswordHash:     hash,
+		FullName:         req.FullName,
+		OrganizationName: req.OrganizationName,
+	}, func(userID uuid.UUID) error {
+		if mailErr := ctrl.credentialMail.Dispatch(userID, credentialmail.PurposeWelcome); mailErr != nil {
+			appfacades.Log().WithContext(ctx).Errorf("auth: send welcome mail: %v", mailErr)
+		}
+		return nil
+	})
+	if err != nil {
 		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to create user"})
-	}
-
-	prodAccountID := uuid.New()
-	testAccountID := uuid.New()
-
-	// The link is a foreign key, so the production row cannot point at the
-	// test row until that row exists. Create production first, then test,
-	// then point production back.
-	prodAccount := &models.Account{
-		ID:          prodAccountID,
-		Name:        req.OrganizationName,
-		Status:      "active",
-		Environment: models.EnvironmentProd,
-	}
-	testAccount := &models.Account{
-		ID:              testAccountID,
-		Name:            req.OrganizationName + " [test]",
-		Status:          "active",
-		Environment:     models.EnvironmentTest,
-		LinkedAccountID: &prodAccountID,
-	}
-	if err := ctrl.accounts.InsertAccount(ctx.Context(), prodAccount); err != nil {
-		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to create production account"})
-	}
-	if err := ctrl.accounts.InsertAccount(ctx.Context(), testAccount); err != nil {
-		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to create test account"})
-	}
-	if err := ctrl.accounts.LinkAccount(ctx.Context(), prodAccountID, testAccountID); err != nil {
-		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to link accounts"})
-	}
-	prodAccount.LinkedAccountID = &testAccountID
-
-	prodMembership := &models.AccountUser{
-		ID:        uuid.New(),
-		AccountID: prodAccountID,
-		UserID:    user.ID,
-		Role:      "owner",
-		Status:    "active",
-	}
-	testMembership := &models.AccountUser{
-		ID:        uuid.New(),
-		AccountID: testAccountID,
-		UserID:    user.ID,
-		Role:      "owner",
-		Status:    "active",
-	}
-	if err := ctrl.accounts.InsertMembership(ctx.Context(), prodMembership); err != nil {
-		appfacades.Log().WithContext(ctx).Errorf("auth: create prod membership: %v", err)
-	}
-	if err := ctrl.accounts.InsertMembership(ctx.Context(), testMembership); err != nil {
-		appfacades.Log().WithContext(ctx).Errorf("auth: create test membership: %v", err)
-	}
-
-	user.DefaultAccountID = &prodAccountID
-	if err := ctrl.users.UpdateDefaultAccountID(ctx.Context(), user.ID, &prodAccountID); err != nil {
-		appfacades.Log().WithContext(ctx).Errorf("auth: set default account: %v", err)
-	}
-
-	if err := appfacades.Mail().To([]string{user.Email}).Send(&mails.WelcomeMail{To: user.Email, FullName: user.FullName}); err != nil {
-		appfacades.Log().WithContext(ctx).Errorf("auth: send welcome mail: %v", err)
 	}
 
 	accessToken, err := appfacades.Auth(ctx).LoginUsingID(user.ID.String())

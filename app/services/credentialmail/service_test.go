@@ -88,6 +88,33 @@ func TestSendAccountInviteDoesNotEnqueueTheLink(t *testing.T) {
 	}
 }
 
+func TestSendWelcomeUsesTheLoadedUser(t *testing.T) {
+	userID := uuid.New()
+	const hash = "stored-password-hash"
+	var sentTo, sentName string
+	svc := NewService(Deps{
+		Users: userLookupFunc(func(_ context.Context, id uuid.UUID) (*models.User, error) {
+			if id != userID {
+				t.Fatalf("lookup id = %s", id)
+			}
+			return &models.User{ID: userID, Email: "person@example.com", FullName: "Ada", PasswordHash: hash}, nil
+		}),
+		Tokens:         tokenIssuerFunc{mint: func() (string, error) { return "raw", nil }, hash: func(string) string { return hash }},
+		Resets:         resetWriterFunc(func(context.Context, *models.PasswordResetToken) error { return nil }),
+		Invites:        inviteRefresherFunc(func(context.Context, uuid.UUID, string) (account.InviteMail, error) { return account.InviteMail{}, nil }),
+		Sender:         senderFunc{welcome: func(to, fullName string) { sentTo, sentName = to, fullName }},
+		Dispatch:       func(uuid.UUID, string) error { t.Fatal("welcome send must not enqueue"); return nil },
+		DispatchInvite: func(uuid.UUID) (string, error) { t.Fatal("welcome send must not dispatch an invite"); return "", nil },
+	})
+
+	if err := svc.SendWelcome(context.Background(), userID); err != nil {
+		t.Fatal(err)
+	}
+	if sentTo != "person@example.com" || sentName != "Ada" || strings.Contains(sentName, hash) || strings.Contains(sentTo, hash) {
+		t.Fatalf("sent to %q name %q", sentTo, sentName)
+	}
+}
+
 func TestDispatchPayloadIsSubjectAndPurpose(t *testing.T) {
 	subjectID := uuid.New()
 	var gotID uuid.UUID
@@ -178,8 +205,9 @@ func (f inviteRefresherFunc) RefreshInviteForMail(ctx context.Context, inviteID 
 }
 
 type senderFunc struct {
-	invite func(account.InviteMail)
-	reset  func(to, link string)
+	invite  func(account.InviteMail)
+	reset   func(to, link string)
+	welcome func(to, fullName string)
 }
 
 func (f senderFunc) SendInvite(ctx context.Context, message account.InviteMail) error {
@@ -192,6 +220,13 @@ func (f senderFunc) SendInvite(ctx context.Context, message account.InviteMail) 
 func (f senderFunc) SendReset(ctx context.Context, to, resetLink string) error {
 	if f.reset != nil {
 		f.reset(to, resetLink)
+	}
+	return nil
+}
+
+func (f senderFunc) SendWelcome(_ context.Context, to, fullName string) error {
+	if f.welcome != nil {
+		f.welcome(to, fullName)
 	}
 	return nil
 }

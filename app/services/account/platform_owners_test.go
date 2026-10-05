@@ -36,6 +36,10 @@ func (u *ownerUsers) Create(context.Context, *models.User) error {
 	return fmt.Errorf("create user is not used")
 }
 
+func (u *ownerUsers) UpdateDefaultAccountID(context.Context, uuid.UUID, *uuid.UUID) error {
+	return fmt.Errorf("update default account is not used")
+}
+
 type ownerMemberships struct {
 	row         *models.AccountUser
 	creates     []*models.AccountUser

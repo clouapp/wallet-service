@@ -49,10 +49,12 @@ type MembershipStore interface {
 }
 
 // UserStore finds a user and inserts one when an invite is accepted.
+// UpdateDefaultAccountID is the same users.default_account_id write register uses.
 type UserStore interface {
 	FindByEmail(ctx context.Context, email string) (*models.User, error)
 	FindByID(ctx context.Context, id uuid.UUID) (*models.User, error)
 	Create(ctx context.Context, user *models.User) error
+	UpdateDefaultAccountID(ctx context.Context, id uuid.UUID, defaultAccountID *uuid.UUID) error
 }
 
 // TokenStore reads and writes API tokens for one account.

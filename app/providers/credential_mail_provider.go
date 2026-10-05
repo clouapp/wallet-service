@@ -68,6 +68,19 @@ func (credentialMailSender) SendInvite(ctx context.Context, message account.Invi
 	})
 }
 
+func (credentialMailSender) SendWelcome(ctx context.Context, to, fullName string) error {
+	if ctx == nil {
+		return errors.New("welcome mail: context is required")
+	}
+	if to == "" {
+		return errors.New("welcome mail: recipient is required")
+	}
+	return appfacades.Mail().To([]string{to}).Send(&mails.WelcomeMail{
+		To:       to,
+		FullName: fullName,
+	})
+}
+
 func (credentialMailSender) SendReset(ctx context.Context, to, resetLink string) error {
 	if ctx == nil {
 		return errors.New("password reset mail: context is required")
