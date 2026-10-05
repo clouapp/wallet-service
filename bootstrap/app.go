@@ -1,9 +1,12 @@
 package bootstrap
 
 import (
+	"time"
+
 	"github.com/goravel/framework/contracts/console"
 	contractsevent "github.com/goravel/framework/contracts/event"
 	contractsfoundation "github.com/goravel/framework/contracts/foundation"
+	contractsconfiguration "github.com/goravel/framework/contracts/foundation/configuration"
 	"github.com/goravel/framework/contracts/queue"
 	"github.com/goravel/framework/foundation"
 
@@ -11,8 +14,11 @@ import (
 	"github.com/macrowallets/waas/app/console/commands"
 	"github.com/macrowallets/waas/app/container"
 	"github.com/macrowallets/waas/app/dtos"
+	appfacades "github.com/macrowallets/waas/app/facades"
+	"github.com/macrowallets/waas/app/http/middleware"
 	"github.com/macrowallets/waas/app/jobs"
 	"github.com/macrowallets/waas/app/listeners"
+	"github.com/macrowallets/waas/app/providers"
 	"github.com/macrowallets/waas/app/repositories"
 	chainpkg "github.com/macrowallets/waas/app/services/chain"
 	"github.com/macrowallets/waas/app/services/deposit"
@@ -78,5 +84,24 @@ func Boot() contractsfoundation.Application {
 		}).
 		WithRules(Rules).
 		WithConfig(config.Boot).
+		WithMiddleware(func(h contractsconfiguration.Middleware) {
+			h.Use(middleware.GlobalChain(requestTimeout())...).
+				Recover(middleware.RecoverPanic)
+		}).
+		WithRouting(providers.RegisterRoutes).
 		Create()
+}
+
+// requestTimeout is http.request_timeout, the same key the gin driver used.
+// Zero or a missing config leaves the chain without a deadline.
+func requestTimeout() time.Duration {
+	const defaultRequestTimeoutSeconds = 30
+	seconds := defaultRequestTimeoutSeconds
+	if cfg := appfacades.Config(); cfg != nil {
+		seconds = cfg.GetInt("http.request_timeout", defaultRequestTimeoutSeconds)
+	}
+	if seconds <= 0 {
+		return 0
+	}
+	return time.Duration(seconds) * time.Second
 }

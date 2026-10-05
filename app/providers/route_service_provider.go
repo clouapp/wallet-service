@@ -5,7 +5,6 @@ import (
 	"github.com/goravel/framework/contracts/http"
 
 	"github.com/macrowallets/waas/app/facades"
-	"github.com/macrowallets/waas/app/http/middleware"
 	"github.com/macrowallets/waas/docs"
 	"github.com/macrowallets/waas/routes"
 )
@@ -14,8 +13,12 @@ type RouteServiceProvider struct{}
 
 func (receiver *RouteServiceProvider) Register(app foundation.Application) {}
 
-func (receiver *RouteServiceProvider) Boot(app foundation.Application) {
-	facades.Route().GlobalMiddleware(middleware.Cors())
+func (receiver *RouteServiceProvider) Boot(app foundation.Application) {}
+
+// RegisterRoutes attaches every HTTP route after WithMiddleware has replaced
+// the driver chain. Registration during Boot lands on the engine that
+// replacement discards.
+func RegisterRoutes() {
 	registerSwaggerDocument()
 	routes.RegisterHTTP()
 }
