@@ -164,11 +164,11 @@ type legBroadcastOpts struct {
 //
 // Returns the on-chain hash of the sweep (not the gas_seed).
 //
-// A withdrawal-driven leg (ParentTransactionID set) commits its gas seed, its
-// sweep row, and the sweep.broadcast webhook event in one transaction after the
-// broadcasts. A failed later insert rolls the earlier rows back. SQS runs only
-// after that commit. Manual consolidation (no parent) still writes each row on
-// its own and is not part of this transaction.
+// A withdrawal-driven leg (ParentTransactionID set) and a manual consolidation
+// (no parent) both commit the gas seed, the sweep row, and the sweep.broadcast
+// webhook event in one transaction after the broadcasts. A failed later insert
+// rolls the earlier rows back. SQS runs only after that commit. The final
+// withdrawal row and gas-status updates stay outside this commit.
 func (s *service) broadcastLeg(
 	ctx context.Context,
 	adapter types.Chain,
@@ -180,90 +180,7 @@ func (s *service) broadcastLeg(
 	sweepTxID uuid.UUID,
 	opts legBroadcastOpts,
 ) (string, error) {
-	if opts.ParentTransactionID != nil {
-		return s.broadcastLinkedLeg(ctx, adapter, curve, keys, wallet, plan, leg, sweepTxID, opts)
-	}
-	unsigneds, token, err := s.buildSweepLeg(ctx, adapter, wallet, plan, leg)
-	if err != nil {
-		return "", err
-	}
-
-	var finalSweepHash string
-
-	for idx := range unsigneds {
-		unsigned := unsigneds[idx]
-		signer, isGasSeed := sweepLegSigner(wallet, leg, len(unsigneds), idx)
-
-		signed, signErr := s.signUnsigned(ctx, adapter, curve, keys, wallet, signer, &unsigned)
-		if signErr != nil {
-			return "", fmt.Errorf("sign transaction: %w", signErr)
-		}
-		hash, bcErr := adapter.BroadcastTransaction(ctx, signed)
-		if bcErr != nil {
-			return "", fmt.Errorf("broadcast: %w", bcErr)
-		}
-
-		origin := opts.Origin
-		txType := models.TxTypeSweep
-		txID := sweepTxID
-		fromAddrStr := leg.From.Address
-		toAddrStr := wallet.DepositAddress.Address
-		childID := leg.From.ID
-		addressID := &childID
-		asset := plan.Asset
-		amount := builtAmount(&unsigned, leg.Amount)
-		rowToken := token
-
-		if isGasSeed {
-			origin = models.TxOriginGasSeed
-			txType = models.TxTypeGasSeed
-			txID = uuid.New()
-			fromAddrStr = wallet.DepositAddress.Address
-			toAddrStr = leg.From.Address
-			baseID := wallet.DepositAddress.ID
-			addressID = &baseID
-			asset = adapter.NativeAsset()
-			amount = builtAmount(&unsigned, nil)
-			rowToken = nil
-		}
-
-		tx := &models.Transaction{
-			ID:                  txID,
-			WalletID:            wallet.ID,
-			AddressID:           addressID,
-			ExternalUserID:      leg.From.ExternalUserID,
-			Chain:               plan.Chain,
-			TxType:              txType,
-			TxHash:              hash,
-			FromAddress:         fromAddrStr,
-			ToAddress:           toAddrStr,
-			Amount:              amount,
-			Asset:               asset,
-			Status:              string(types.TxStatusConfirming),
-			RequiredConfs:       int(adapter.RequiredConfirmations()),
-			Direction:           models.TxDirectionSelf,
-			Source:              models.TxSourceWithdrawalFlow,
-			Origin:              origin,
-			RawPayload:          "{}",
-			ParentTransactionID: opts.ParentTransactionID,
-		}
-		if rowToken != nil {
-			tx.TokenContract = rowToken.Contract
-		}
-
-		if err := s.txRepo.Create(ctx, tx); err != nil {
-			return "", fmt.Errorf("persist %s tx: %w", txType, err)
-		}
-
-		if !isGasSeed {
-			finalSweepHash = hash
-			if s.webhookSvc != nil {
-				s.webhookSvc.EnqueueEvent(ctx, tx.ID, types.EventSweepBroadcast, tx)
-			}
-		}
-	}
-
-	return finalSweepHash, nil
+	return s.broadcastLinkedLeg(ctx, adapter, curve, keys, wallet, plan, leg, sweepTxID, opts)
 }
 
 // sweepBroadcastStager inserts sweep.broadcast webhook rows on the caller's

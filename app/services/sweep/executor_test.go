@@ -12,6 +12,7 @@ import (
 
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/services/chain"
+	mpcpkg "github.com/macrowallets/waas/app/services/mpc"
 	"github.com/macrowallets/waas/app/services/webhook"
 	"github.com/macrowallets/waas/pkg/types"
 	"github.com/macrowallets/waas/tests/mocks"
@@ -587,6 +588,92 @@ func TestExecute_LinkedLegSendsTheWebhookAfterCommit(t *testing.T) {
 		t.Fatalf("want the leg committed, got %+v", res)
 	}
 	if !events.stagedIn || events.sent != 1 || len(fixture.txRepo.created) != 3 {
+		t.Fatalf("stagedIn=%v sent=%d rows=%d", events.stagedIn, events.sent, len(fixture.txRepo.created))
+	}
+}
+
+func runManualLeg(t *testing.T, fixture linkedLegFixture) (string, error) {
+	t.Helper()
+	wallet := fixture.svc.walletRepo.(*fakeWalletRepo).wallet
+	return fixture.svc.broadcastLeg(
+		context.Background(),
+		fixture.chain,
+		mpcpkg.CurveSecp256k1,
+		walletKeys{shareA: []byte("fake-share-a"), shareB: []byte("fake-share-b")},
+		wallet,
+		fixture.plan,
+		fixture.plan.Sweeps[0],
+		uuid.New(),
+		legBroadcastOpts{Origin: models.TxOriginManualConsolidation},
+	)
+}
+
+func TestConsolidate_ManualLegCommitsGasSeedSweepAndWebhookTogether(t *testing.T) {
+	fixture := newLinkedTokenLeg(t)
+	events := &recordingSweepEvents{inside: &fixture.txRepo.inside}
+	fixture.svc.webhookSvc = events
+	hash, err := runManualLeg(t, fixture)
+	if err != nil || hash == "" {
+		t.Fatalf("hash %q err %v", hash, err)
+	}
+	if fixture.txRepo.withins != 1 || !fixture.txRepo.createdInside {
+		t.Fatalf("withins=%d inside=%v", fixture.txRepo.withins, fixture.txRepo.createdInside)
+	}
+	if len(fixture.txRepo.created) != 2 {
+		t.Fatalf("rows %d, want gas_seed and sweep", len(fixture.txRepo.created))
+	}
+	seed, sweepRow := fixture.txRepo.created[0], fixture.txRepo.created[1]
+	if seed.TxType != models.TxTypeGasSeed || seed.Origin != models.TxOriginGasSeed || seed.ParentTransactionID != nil {
+		t.Fatalf("gas seed %+v", seed)
+	}
+	if sweepRow.TxType != models.TxTypeSweep || sweepRow.Origin != models.TxOriginManualConsolidation || sweepRow.ParentTransactionID != nil {
+		t.Fatalf("sweep %+v", sweepRow)
+	}
+	if !events.stagedIn || events.sent != 1 {
+		t.Fatalf("stagedIn=%v sent=%d", events.stagedIn, events.sent)
+	}
+	if fixture.svc.walletRepo.(*fakeWalletRepo).updateCalls != 0 {
+		t.Fatal("gas status must stay outside this commit")
+	}
+}
+
+func TestConsolidate_ManualLegRollsBackWhenTheSweepRowFails(t *testing.T) {
+	fixture := newLinkedTokenLeg(t)
+	fixture.txRepo.failAt = 2
+	if _, err := runManualLeg(t, fixture); err == nil {
+		t.Fatal("want the sweep insert to fail the leg")
+	}
+	if len(fixture.txRepo.created) != 0 || fixture.txRepo.withins != 1 {
+		t.Fatalf("created=%d withins=%d, want the gas seed rolled back with the sweep row", len(fixture.txRepo.created), fixture.txRepo.withins)
+	}
+}
+
+func TestConsolidate_ManualLegKeepsGasSeedWhenSweepBroadcastFails(t *testing.T) {
+	fixture := newLinkedTokenLeg(t)
+	var broadcasts int
+	fixture.chain.BroadcastTransactionFn = func(ctx context.Context, signed *types.SignedTx) (string, error) {
+		broadcasts++
+		if broadcasts == 2 {
+			return "", errors.New("rpc: sweep broadcast failed")
+		}
+		return "0xhash_" + string(signed.RawBytes[:1]), nil
+	}
+	if _, err := runManualLeg(t, fixture); err == nil {
+		t.Fatal("want the sweep broadcast to fail the leg")
+	}
+	if len(fixture.txRepo.created) != 1 || fixture.txRepo.created[0].TxType != models.TxTypeGasSeed {
+		t.Fatalf("rows %+v, want only the broadcast gas seed", fixture.txRepo.created)
+	}
+}
+
+func TestConsolidate_ManualLegRollsBackWhenTheWebhookInsertFails(t *testing.T) {
+	fixture := newLinkedTokenLeg(t)
+	events := &recordingSweepEvents{inside: &fixture.txRepo.inside, failStage: true}
+	fixture.svc.webhookSvc = events
+	if _, err := runManualLeg(t, fixture); err == nil {
+		t.Fatal("want the webhook insert to fail the leg")
+	}
+	if !events.stagedIn || events.sent != 0 || len(fixture.txRepo.created) != 0 {
 		t.Fatalf("stagedIn=%v sent=%d rows=%d", events.stagedIn, events.sent, len(fixture.txRepo.created))
 	}
 }
