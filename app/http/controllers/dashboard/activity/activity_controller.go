@@ -10,6 +10,7 @@ import (
 	"github.com/macrowallets/waas/app/http/middleware"
 	"github.com/macrowallets/waas/app/http/middleware/requestctx"
 	"github.com/macrowallets/waas/app/http/pagination"
+	activityresource "github.com/macrowallets/waas/app/http/resources/dashboard/activity"
 	"github.com/macrowallets/waas/app/http/responses"
 	"github.com/macrowallets/waas/app/models"
 	activitysvc "github.com/macrowallets/waas/app/services/activity"
@@ -53,7 +54,7 @@ func (ctrl *ActivityController) Index(ctx http.Context) http.Response {
 	if errResp := mapActivityError(ctx, err); errResp != nil {
 		return errResp
 	}
-	return responses.Send(ctx, http.StatusOK, pagination.Response(accountActivityViews(rows), total, limit, offset))
+	return responses.Send(ctx, http.StatusOK, pagination.Response(activityresource.AccountActivitiesFrom(rows), total, limit, offset))
 }
 
 // Show godoc
@@ -64,7 +65,7 @@ func (ctrl *ActivityController) Index(ctx http.Context) http.Response {
 // @Produce      json
 // @Param        accountId  path  string  true  "Account UUID"
 // @Param        id         path  string  true  "Activity UUID"
-// @Success      200  {object}  AccountActivityView
+// @Success      200  {object}  activityresource.AccountActivity
 // @Failure      401  {object}  responses.ErrorBody
 // @Failure      403  {object}  responses.ErrorBody
 // @Failure      404  {object}  responses.ErrorBody
@@ -85,7 +86,7 @@ func (ctrl *ActivityController) Show(ctx http.Context) http.Response {
 	if errResp := mapActivityError(ctx, err); errResp != nil {
 		return errResp
 	}
-	return responses.Send(ctx, http.StatusOK, newAccountActivityView(row))
+	return responses.Send(ctx, http.StatusOK, activityresource.AccountActivityFrom(row))
 }
 
 // Platform godoc
@@ -110,7 +111,7 @@ func (ctrl *ActivityController) Platform(ctx http.Context) http.Response {
 	if errResp := mapActivityError(ctx, err); errResp != nil {
 		return errResp
 	}
-	return responses.Send(ctx, http.StatusOK, pagination.Response(accountActivityViews(rows), total, limit, offset))
+	return responses.Send(ctx, http.StatusOK, pagination.Response(activityresource.AccountActivitiesFrom(rows), total, limit, offset))
 }
 
 func accountCaller(ctx http.Context) (*models.Account, string, http.Response) {

@@ -1,4 +1,4 @@
-package activity
+package activity_test
 
 import (
 	"encoding/json"
@@ -8,10 +8,11 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/macrowallets/waas/app/http/pagination"
+	"github.com/macrowallets/waas/app/http/resources/dashboard/activity"
 	"github.com/macrowallets/waas/app/models"
 )
 
-func TestAccountActivityViewKeepsTheModelWire(t *testing.T) {
+func TestAccountActivityKeepsTheModelWire(t *testing.T) {
 	t.Parallel()
 
 	id := uuid.MustParse("11111111-1111-4111-8111-111111111111")
@@ -49,7 +50,7 @@ func TestAccountActivityViewKeepsTheModelWire(t *testing.T) {
 		},
 	}
 	for _, tc := range cases {
-		raw, err := json.Marshal(newAccountActivityView(tc.row))
+		raw, err := json.Marshal(activity.AccountActivityFrom(tc.row))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -59,18 +60,18 @@ func TestAccountActivityViewKeepsTheModelWire(t *testing.T) {
 	}
 }
 
-func TestAccountActivityViewsPreserveSliceNilness(t *testing.T) {
+func TestAccountActivitiesPreserveSliceNilness(t *testing.T) {
 	t.Parallel()
 
-	if accountActivityViews(nil) != nil {
+	if activity.AccountActivitiesFrom(nil) != nil {
 		t.Fatal("nil slice became an empty slice")
 	}
-	empty := accountActivityViews([]models.AccountActivity{})
+	empty := activity.AccountActivitiesFrom([]models.AccountActivity{})
 	if empty == nil || len(empty) != 0 {
 		t.Fatalf("empty slice = %#v", empty)
 	}
 
-	nilPage, err := json.Marshal(pagination.Response(accountActivityViews(nil), 0, 20, 0))
+	nilPage, err := json.Marshal(pagination.Response(activity.AccountActivitiesFrom(nil), 0, 20, 0))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -78,7 +79,7 @@ func TestAccountActivityViewsPreserveSliceNilness(t *testing.T) {
 		t.Fatalf("nil page = %s", nilPage)
 	}
 
-	emptyPage, err := json.Marshal(pagination.Response(accountActivityViews([]models.AccountActivity{}), 0, 20, 0))
+	emptyPage, err := json.Marshal(pagination.Response(activity.AccountActivitiesFrom([]models.AccountActivity{}), 0, 20, 0))
 	if err != nil {
 		t.Fatal(err)
 	}
