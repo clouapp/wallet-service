@@ -8,6 +8,7 @@ import (
 
 	"github.com/macrowallets/waas/app/http/middleware"
 	"github.com/macrowallets/waas/app/http/pagination"
+	platformaccounts "github.com/macrowallets/waas/app/http/resources/platform/accounts"
 	"github.com/macrowallets/waas/app/http/responses"
 	accountsvc "github.com/macrowallets/waas/app/services/account"
 )
@@ -52,7 +53,7 @@ func (ctrl *ListController) Index(ctx http.Context) http.Response {
 	if errResp := mapListError(ctx, err); errResp != nil {
 		return errResp
 	}
-	return responses.Send(ctx, http.StatusOK, pagination.Response(platformAccountViews(rows), total, limit, offset))
+	return responses.Send(ctx, http.StatusOK, pagination.Response(platformaccounts.AccountsFrom(rows), total, limit, offset))
 }
 
 func mapListError(ctx http.Context, err error) http.Response {
