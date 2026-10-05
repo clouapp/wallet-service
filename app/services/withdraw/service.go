@@ -15,10 +15,10 @@ import (
 	"github.com/macrowallets/waas/app/dtos"
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/repositories"
-	chainpkg "github.com/macrowallets/waas/app/services/chain"
 	mpcpkg "github.com/macrowallets/waas/app/services/mpc"
 	"github.com/macrowallets/waas/app/services/sweep"
 	"github.com/macrowallets/waas/app/services/webhook"
+	"github.com/macrowallets/waas/pkg/types"
 )
 
 // accountGate reports a block for one account. Nil means the caller has no
@@ -53,15 +53,42 @@ type Locker interface {
 	DecrBy(ctx context.Context, key string, delta int64) error
 }
 
+// chainLookup is the registered adapter and token list a withdrawal reads.
+type chainLookup interface {
+	Chain(id string) (types.Chain, error)
+	TokensForChain(chainID string) []types.Token
+}
+
+// walletReader loads the wallet a withdrawal spends from.
+type walletReader interface {
+	FindByID(ctx context.Context, id uuid.UUID) (*models.Wallet, error)
+}
+
+// transactionStore reads withdrawal rows and writes the idempotency key.
+type transactionStore interface {
+	FindByIdempotencyKey(ctx context.Context, key string) (*models.Transaction, error)
+	SetIdempotencyKey(ctx context.Context, id uuid.UUID, key string) error
+	FindByID(ctx context.Context, id uuid.UUID) (*models.Transaction, error)
+	List(ctx context.Context, chainID, txType, status, userID string, limit, offset int) ([]models.Transaction, int64, error)
+	ListForAccount(ctx context.Context, accountID uuid.UUID, chainID, txType, status, userID string, limit, offset int) ([]models.Transaction, int64, error)
+}
+
+// sweepRunner plans and executes a withdrawal. Consolidation, gas refresh,
+// and limit reads stay on the sweep service.
+type sweepRunner interface {
+	PlanForWithdrawal(ctx context.Context, walletID uuid.UUID, asset string, amount *big.Int, toAddress string, callerAccountID uuid.UUID) (*sweep.Plan, error)
+	ExecutePlan(ctx context.Context, plan *sweep.Plan, creds sweep.SigningCredentials, withdrawalTxID uuid.UUID, toAddress string, externalUserID string) (*sweep.Result, error)
+}
+
 type Service struct {
-	registry        *chainpkg.Registry
+	registry        chainLookup
 	webhookSvc      *webhook.Service
 	mpc             mpcpkg.Service
 	locker          Locker
-	transactionRepo *repositories.TransactionRepository
-	walletRepo      *repositories.WalletRepository
+	transactionRepo transactionStore
+	walletRepo      walletReader
 	addressRepo     *repositories.AddressRepository
-	sweep           sweep.Service
+	sweep           sweepRunner
 	flags           accountGate
 	usdQuote        USDQuote
 	// createUsers, createTotp, createRows and createChains serve Create.
@@ -75,14 +102,14 @@ type Service struct {
 // Deps is everything the withdrawal service needs. A nil field means that
 // dependency is absent.
 type Deps struct {
-	Registry     *chainpkg.Registry
+	Registry     chainLookup
 	Webhook      *webhook.Service
 	MPC          mpcpkg.Service
 	Locker       Locker
-	Transactions *repositories.TransactionRepository
-	Wallets      *repositories.WalletRepository
+	Transactions transactionStore
+	Wallets      walletReader
 	Addresses    *repositories.AddressRepository
-	Sweep        sweep.Service
+	Sweep        sweepRunner
 	Flags        accountGate
 }
 
