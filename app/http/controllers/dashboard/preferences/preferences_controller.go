@@ -22,19 +22,24 @@ type PreferencesController struct {
 	currencies *currencies.Service
 }
 
-func NewPreferencesController(
-	users *usersvc.Service,
-	currencies *currencies.Service,
-) *PreferencesController {
-	if users == nil {
+// PreferencesControllerDeps is everything the dashboard preferences controller needs.
+// Every field is required.
+type PreferencesControllerDeps struct {
+	Users      *usersvc.Service
+	Currencies *currencies.Service
+}
+
+// NewPreferencesController wires the dashboard preference handlers from PreferencesControllerDeps.
+func NewPreferencesController(deps PreferencesControllerDeps) *PreferencesController {
+	if deps.Users == nil {
 		panic("dashboard preferences controller: users service is required")
 	}
-	if currencies == nil {
+	if deps.Currencies == nil {
 		panic("dashboard preferences controller: currencies service is required")
 	}
 	return &PreferencesController{
-		users:      users,
-		currencies: currencies,
+		users:      deps.Users,
+		currencies: deps.Currencies,
 	}
 }
 

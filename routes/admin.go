@@ -409,10 +409,10 @@ func newDashboardCurrenciesController() *dashcurrencies.CurrenciesController {
 }
 
 func newDashboardPreferencesController() *dashpreferences.PreferencesController {
-	return dashpreferences.NewPreferencesController(
-		container.MustMake[*usersvc.Service](),
-		container.MustMake[*currencies.Service](),
-	)
+	return dashpreferences.NewPreferencesController(dashpreferences.PreferencesControllerDeps{
+		Users:      container.MustMake[*usersvc.Service](),
+		Currencies: container.MustMake[*currencies.Service](),
+	})
 }
 
 func newDashboardAddressesController() *dashaddresses.AddressesController {
