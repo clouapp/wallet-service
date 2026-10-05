@@ -5,9 +5,7 @@ import (
 	"github.com/goravel/framework/contracts/http"
 	"github.com/goravel/framework/contracts/validation"
 
-	"github.com/macrowallets/waas/app/container"
 	"github.com/macrowallets/waas/app/http/middleware/requestctx"
-	"github.com/macrowallets/waas/app/services/walletrecords"
 )
 
 type CreateWalletWithdrawalRequest struct {
@@ -47,14 +45,5 @@ func (r *CreateWalletWithdrawalRequest) Rules(ctx http.Context) map[string]strin
 }
 
 func (r *CreateWalletWithdrawalRequest) PrepareForValidation(ctx http.Context, data validation.Data) error {
-	walletIDStr := ctx.Request().Route("walletId")
-	walletID, err := uuid.Parse(walletIDStr)
-	if err != nil {
-		return nil
-	}
-	w, err := container.MustMake[*walletrecords.Wallets]().FindByID(ctx.Context(), walletID)
-	if err != nil || w == nil {
-		return nil
-	}
-	return data.Set("_chain", w.Chain)
+	return prepareWalletChain(ctx, data)
 }
