@@ -6,8 +6,8 @@ import (
 	"github.com/google/uuid"
 	"github.com/goravel/framework/support/carbon"
 
-	"github.com/macrowallets/waas/app/http/controllers"
 	addressresource "github.com/macrowallets/waas/app/http/resources/addresses"
+	walletresource "github.com/macrowallets/waas/app/http/resources/dashboard/wallets"
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/services/txkind"
 )
@@ -26,34 +26,34 @@ type transactionTimestamps struct {
 // address is an address view and a nested wallet is a wallet body view.
 type transactionRecord struct {
 	transactionTimestamps
-	ID                  uuid.UUID                   `json:"id"`
-	AddressID           *uuid.UUID                  `json:"address_id"`
-	WalletID            uuid.UUID                   `json:"wallet_id"`
-	ExternalUserID      string                      `json:"external_user_id"`
-	Chain               string                      `json:"chain"`
-	TxType              string                      `json:"tx_type"`
-	TxHash              string                      `json:"tx_hash"`
-	LogIndex            int                         `json:"log_index"`
-	FromAddress         string                      `json:"from_address"`
-	ToAddress           string                      `json:"to_address"`
-	Amount              string                      `json:"amount"`
-	Asset               string                      `json:"asset"`
-	TokenContract       string                      `json:"token_contract"`
-	Confirmations       int                         `json:"confirmations"`
-	RequiredConfs       int                         `json:"required_confs"`
-	Status              string                      `json:"status"`
-	Fee                 string                      `json:"fee"`
-	BlockNumber         int64                       `json:"block_number"`
-	BlockHash           string                      `json:"block_hash"`
-	ErrorMessage        string                      `json:"error_message"`
-	IdempotencyKey      *string                     `json:"idempotency_key,omitempty"`
-	ConfirmedAt         *time.Time                  `json:"confirmed_at"`
-	Source              string                      `json:"source,omitempty"`
-	ParentTransactionID *uuid.UUID                  `json:"parent_transaction_id,omitempty"`
-	Origin              string                      `json:"origin,omitempty"`
-	SyncedAt            *time.Time                  `json:"synced_at,omitempty"`
-	Address             *addressresource.Address    `json:"address,omitempty"`
-	Wallet              *controllers.WalletBodyView `json:"wallet,omitempty"`
+	ID                  uuid.UUID                `json:"id"`
+	AddressID           *uuid.UUID               `json:"address_id"`
+	WalletID            uuid.UUID                `json:"wallet_id"`
+	ExternalUserID      string                   `json:"external_user_id"`
+	Chain               string                   `json:"chain"`
+	TxType              string                   `json:"tx_type"`
+	TxHash              string                   `json:"tx_hash"`
+	LogIndex            int                      `json:"log_index"`
+	FromAddress         string                   `json:"from_address"`
+	ToAddress           string                   `json:"to_address"`
+	Amount              string                   `json:"amount"`
+	Asset               string                   `json:"asset"`
+	TokenContract       string                   `json:"token_contract"`
+	Confirmations       int                      `json:"confirmations"`
+	RequiredConfs       int                      `json:"required_confs"`
+	Status              string                   `json:"status"`
+	Fee                 string                   `json:"fee"`
+	BlockNumber         int64                    `json:"block_number"`
+	BlockHash           string                   `json:"block_hash"`
+	ErrorMessage        string                   `json:"error_message"`
+	IdempotencyKey      *string                  `json:"idempotency_key,omitempty"`
+	ConfirmedAt         *time.Time               `json:"confirmed_at"`
+	Source              string                   `json:"source,omitempty"`
+	ParentTransactionID *uuid.UUID               `json:"parent_transaction_id,omitempty"`
+	Origin              string                   `json:"origin,omitempty"`
+	SyncedAt            *time.Time               `json:"synced_at,omitempty"`
+	Address             *addressresource.Address `json:"address,omitempty"`
+	Wallet              *walletresource.Wallet   `json:"wallet,omitempty"`
 }
 
 // Transaction is the account-level transaction response: the stored row plus its
@@ -98,8 +98,8 @@ func TransactionFrom(tx models.Transaction) Transaction {
 			ParentTransactionID:   tx.ParentTransactionID,
 			Origin:                tx.Origin,
 			SyncedAt:              tx.SyncedAt,
-			Address:               addressresource.AddressPtr(tx.Address, controllers.WalletBodyViewPtr),
-			Wallet:                controllers.WalletBodyViewPtr(tx.Wallet),
+			Address:               addressresource.AddressPtr(tx.Address, walletresource.WalletPtr),
+			Wallet:                walletresource.WalletPtr(tx.Wallet),
 		},
 		Type:           kind.Type,
 		Direction:      kind.Direction,

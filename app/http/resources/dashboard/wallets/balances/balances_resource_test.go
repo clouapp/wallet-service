@@ -10,7 +10,7 @@ import (
 	"github.com/goravel/framework/support/carbon"
 	"github.com/shopspring/decimal"
 
-	"github.com/macrowallets/waas/app/http/controllers"
+	walletresource "github.com/macrowallets/waas/app/http/resources/dashboard/wallets"
 	"github.com/macrowallets/waas/app/http/resources/dashboard/wallets/balances"
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/pkg/numeric"
@@ -73,14 +73,14 @@ func TestBalanceKeepsARelatedWallet(t *testing.T) {
 	id := uuid.MustParse("11111111-1111-4111-8111-111111111111")
 	const share = "share-secret"
 	wallet := &models.Wallet{ID: id, Chain: "eth", Label: "hot", MPCCustomerShare: share}
-	raw, err := json.Marshal(balances.BalanceFrom(models.WalletAssetBalance{Wallet: wallet}, controllers.WalletBodyViewPtr(wallet)))
+	raw, err := json.Marshal(balances.BalanceFrom(models.WalletAssetBalance{Wallet: wallet}, walletresource.WalletPtr(wallet)))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if strings.Contains(string(raw), share) {
 		t.Fatal("wallet share is on the wire")
 	}
-	walletRaw, err := json.Marshal(controllers.NewWalletBodyView(*wallet))
+	walletRaw, err := json.Marshal(walletresource.WalletFrom(*wallet))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -92,15 +92,15 @@ func TestBalanceKeepsARelatedWallet(t *testing.T) {
 func TestBalancesFromPreserveSliceNilness(t *testing.T) {
 	t.Parallel()
 
-	if balances.BalancesFrom(nil, controllers.WalletBodyViewPtr) != nil {
+	if balances.BalancesFrom(nil, walletresource.WalletPtr) != nil {
 		t.Fatal("nil slice became an empty slice")
 	}
-	empty := balances.BalancesFrom([]models.WalletAssetBalance{}, controllers.WalletBodyViewPtr)
+	empty := balances.BalancesFrom([]models.WalletAssetBalance{}, walletresource.WalletPtr)
 	if empty == nil || len(empty) != 0 {
 		t.Fatalf("empty slice = %#v", empty)
 	}
 
-	nilPage, err := json.Marshal(map[string]any{"data": balances.BalancesFrom(nil, controllers.WalletBodyViewPtr)})
+	nilPage, err := json.Marshal(map[string]any{"data": balances.BalancesFrom(nil, walletresource.WalletPtr)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -108,7 +108,7 @@ func TestBalancesFromPreserveSliceNilness(t *testing.T) {
 		t.Fatalf("nil page = %s", nilPage)
 	}
 
-	emptyPage, err := json.Marshal(map[string]any{"data": balances.BalancesFrom([]models.WalletAssetBalance{}, controllers.WalletBodyViewPtr)})
+	emptyPage, err := json.Marshal(map[string]any{"data": balances.BalancesFrom([]models.WalletAssetBalance{}, walletresource.WalletPtr)})
 	if err != nil {
 		t.Fatal(err)
 	}

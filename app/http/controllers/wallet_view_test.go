@@ -185,7 +185,7 @@ func TestWalletListItemCarriesTokenBalancesUnpricedOnATestnet(t *testing.T) {
 	}
 }
 
-func TestWalletBodyAndDetailViewsKeepTheModelWire(t *testing.T) {
+func TestWalletDetailAndListViewsKeepTheModelWire(t *testing.T) {
 	t.Parallel()
 
 	id := uuid.MustParse("11111111-1111-4111-8111-111111111111")
@@ -201,7 +201,6 @@ func TestWalletBodyAndDetailViewsKeepTheModelWire(t *testing.T) {
 	rawBal := "1"
 	display := "1"
 	usd := usdValue(t, "4.97")
-	zeroUSD := numeric.NewNullDecimal(decimal.Zero)
 	activation := "123456"
 	const share = "share-secret"
 	const cipher = "cipher-secret"
@@ -240,11 +239,6 @@ func TestWalletBodyAndDetailViewsKeepTheModelWire(t *testing.T) {
 		want  string
 	}{
 		{
-			name:  "body",
-			value: newWalletBodyView(wallet),
-			want:  `{"created_at":"2024-05-06 07:08:09","updated_at":"2024-05-06 07:08:10",` + bodyFields + `}`,
-		},
-		{
 			name:  "detail",
 			value: newWalletView(&wallet, models.ResolvedNetwork{Name: "ethereum-mainnet", Testnet: false}),
 			want:  `{` + bodyFields + `,"created_at":"2024-05-06T07:08:09Z","updated_at":"2024-05-06T07:08:10Z","network":"ethereum-mainnet","testnet":false}`,
@@ -253,11 +247,6 @@ func TestWalletBodyAndDetailViewsKeepTheModelWire(t *testing.T) {
 			name:  "list",
 			value: newWalletListItem(wallet, models.ResolvedNetwork{Name: "ethereum-mainnet", Testnet: false}, nil),
 			want:  `{"created_at":"2024-05-06 07:08:09","updated_at":"2024-05-06 07:08:10",` + bodyFields + `,"network":"ethereum-mainnet","testnet":false,"assets":[]}`,
-		},
-		{
-			name:  "empty label keeps a zero usd pointer",
-			value: newWalletBodyView(models.Wallet{Label: "", BalanceUSD: zeroUSD, Status: "active"}),
-			want:  `{"created_at":null,"updated_at":null,"id":"00000000-0000-0000-0000-000000000000","chain":"","address_index":0,"status":"active","required_approvals":0,"balance_usd":0,"read_model_status":"","gas_status":"","sweep_policy_version":0}`,
 		},
 	}
 	for _, tc := range cases {

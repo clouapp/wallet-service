@@ -7,6 +7,7 @@ import (
 	"github.com/macrowallets/waas/app/http/pagination"
 	"github.com/macrowallets/waas/app/http/requests"
 	addressresource "github.com/macrowallets/waas/app/http/resources/addresses"
+	walletresource "github.com/macrowallets/waas/app/http/resources/dashboard/wallets"
 	"github.com/macrowallets/waas/app/http/responses"
 	deposit "github.com/macrowallets/waas/app/services/deposit"
 	wallet "github.com/macrowallets/waas/app/services/wallet"
@@ -85,7 +86,7 @@ func (ctrl *AddressesController) GenerateAddress(ctx http.Context) http.Response
 		ctrl.deposits.RefreshAddressCache(ctx.Context(), w.Chain)
 	}
 
-	return responses.Send(ctx, http.StatusCreated, addressresource.AddressPtr(addr, controllers.WalletBodyViewPtr))
+	return responses.Send(ctx, http.StatusCreated, addressresource.AddressPtr(addr, walletresource.WalletPtr))
 }
 
 // UpdateAddress godoc
@@ -137,7 +138,7 @@ func (ctrl *AddressesController) UpdateAddress(ctx http.Context) http.Response {
 		})
 	}
 
-	return ctx.Response().Success().Json(addressresource.AddressPtr(addr, controllers.WalletBodyViewPtr))
+	return ctx.Response().Success().Json(addressresource.AddressPtr(addr, walletresource.WalletPtr))
 }
 
 // ListWalletAddresses godoc
@@ -166,5 +167,5 @@ func (ctrl *AddressesController) ListWalletAddresses(ctx http.Context) http.Resp
 			"error": "failed to fetch addresses",
 		})
 	}
-	return responses.Send(ctx, http.StatusOK, pagination.Response(addressresource.AddressesFrom(addrs, controllers.WalletBodyViewPtr), total, limit, offset))
+	return responses.Send(ctx, http.StatusOK, pagination.Response(addressresource.AddressesFrom(addrs, walletresource.WalletPtr), total, limit, offset))
 }

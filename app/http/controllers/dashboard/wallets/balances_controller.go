@@ -5,6 +5,7 @@ import (
 
 	"github.com/macrowallets/waas/app/http/controllers"
 	"github.com/macrowallets/waas/app/http/middleware/requestctx"
+	walletresource "github.com/macrowallets/waas/app/http/resources/dashboard/wallets"
 	walletbalances "github.com/macrowallets/waas/app/http/resources/dashboard/wallets/balances"
 	"github.com/macrowallets/waas/app/http/responses"
 	chainsvc "github.com/macrowallets/waas/app/services/chains"
@@ -56,6 +57,6 @@ func (ctrl *BalancesController) ListWalletBalances(ctx http.Context) http.Respon
 		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to fetch chain tokens"})
 	}
 
-	assets := walletbalances.BalancesFrom(controllers.PricedConfiguredBalances(ctx.Context(), wallet.Chain, rows, tokens), controllers.WalletBodyViewPtr)
+	assets := walletbalances.BalancesFrom(controllers.PricedConfiguredBalances(ctx.Context(), wallet.Chain, rows, tokens), walletresource.WalletPtr)
 	return responses.Send(ctx, http.StatusOK, http.Json{"data": assets})
 }

@@ -8,8 +8,8 @@ import (
 	"github.com/google/uuid"
 	"github.com/goravel/framework/support/carbon"
 
-	"github.com/macrowallets/waas/app/http/controllers"
 	"github.com/macrowallets/waas/app/http/resources/addresses"
+	walletresource "github.com/macrowallets/waas/app/http/resources/dashboard/wallets"
 	"github.com/macrowallets/waas/app/models"
 )
 
@@ -51,7 +51,7 @@ func TestAddressKeepsTheModelWire(t *testing.T) {
 		},
 	}
 	for _, tc := range cases {
-		raw, err := json.Marshal(addresses.AddressFrom(tc.addr, (*controllers.WalletBodyView)(nil)))
+		raw, err := json.Marshal(addresses.AddressFrom(tc.addr, (*walletresource.Wallet)(nil)))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -65,7 +65,7 @@ func TestAddressKeepsTheModelWire(t *testing.T) {
 		}
 	}
 
-	nilRaw, err := json.Marshal(addresses.AddressPtr(nil, controllers.WalletBodyViewPtr))
+	nilRaw, err := json.Marshal(addresses.AddressPtr(nil, walletresource.WalletPtr))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -84,7 +84,7 @@ func TestAddressKeepsARelatedWalletOffTheKeyMaterial(t *testing.T) {
 		EncryptedPrivateKey: "cipher-secret", EncryptionIV: "iv-secret", EncryptionSalt: "salt-secret",
 		Wallet: &models.Wallet{ID: id, Chain: "eth", Label: "hot", MPCCustomerShare: share},
 	}
-	raw, err := json.Marshal(addresses.AddressFrom(addr, controllers.WalletBodyViewPtr(addr.Wallet)))
+	raw, err := json.Marshal(addresses.AddressFrom(addr, walletresource.WalletPtr(addr.Wallet)))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -101,15 +101,15 @@ func TestAddressKeepsARelatedWalletOffTheKeyMaterial(t *testing.T) {
 func TestAddressesFromPreserveSliceNilness(t *testing.T) {
 	t.Parallel()
 
-	if addresses.AddressesFrom(nil, controllers.WalletBodyViewPtr) != nil {
+	if addresses.AddressesFrom(nil, walletresource.WalletPtr) != nil {
 		t.Fatal("nil slice became an empty slice")
 	}
-	empty := addresses.AddressesFrom([]models.Address{}, controllers.WalletBodyViewPtr)
+	empty := addresses.AddressesFrom([]models.Address{}, walletresource.WalletPtr)
 	if empty == nil || len(empty) != 0 {
 		t.Fatalf("empty slice = %#v", empty)
 	}
 
-	nilPage, err := json.Marshal(map[string]any{"data": addresses.AddressesFrom(nil, controllers.WalletBodyViewPtr)})
+	nilPage, err := json.Marshal(map[string]any{"data": addresses.AddressesFrom(nil, walletresource.WalletPtr)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -117,7 +117,7 @@ func TestAddressesFromPreserveSliceNilness(t *testing.T) {
 		t.Fatalf("nil page = %s", nilPage)
 	}
 
-	emptyPage, err := json.Marshal(map[string]any{"data": addresses.AddressesFrom([]models.Address{}, controllers.WalletBodyViewPtr)})
+	emptyPage, err := json.Marshal(map[string]any{"data": addresses.AddressesFrom([]models.Address{}, walletresource.WalletPtr)})
 	if err != nil {
 		t.Fatal(err)
 	}

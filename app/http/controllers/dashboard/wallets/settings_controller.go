@@ -15,6 +15,7 @@ import (
 	"github.com/macrowallets/waas/app/http/controllers"
 	"github.com/macrowallets/waas/app/http/middleware/requestctx"
 	"github.com/macrowallets/waas/app/http/requests"
+	walletresource "github.com/macrowallets/waas/app/http/resources/dashboard/wallets"
 	"github.com/macrowallets/waas/app/http/responses"
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/policies"
@@ -198,6 +199,9 @@ func walletSettingsJSON(ctx http.Context, wallet *models.Wallet) http.Response {
 	})
 }
 
+// The archive route documents the wallet body resource.
+var _ walletresource.Wallet
+
 // ArchiveWallet godoc
 // @Summary      Archive a wallet
 // @Description  Sets wallet status to archived. Requires a wallet or account owner/admin. Archiving an archived wallet is rejected.
@@ -205,7 +209,7 @@ func walletSettingsJSON(ctx http.Context, wallet *models.Wallet) http.Response {
 // @Security     BearerAuth
 // @Produce      json
 // @Param        walletId  path  string  true  "Wallet UUID"
-// @Success      200  {object}  controllers.WalletBodyView
+// @Success      200  {object}  walletresource.Wallet
 // @Failure      403  {object}  controllers.ErrorResponse
 // @Failure      409  {object}  controllers.ErrorResponse
 // @Router       /wallets/{walletId}/archive [post]

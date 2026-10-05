@@ -8,6 +8,7 @@ import (
 	"github.com/macrowallets/waas/app/http/pagination"
 	"github.com/macrowallets/waas/app/http/requests"
 	addressresource "github.com/macrowallets/waas/app/http/resources/addresses"
+	walletresource "github.com/macrowallets/waas/app/http/resources/dashboard/wallets"
 	"github.com/macrowallets/waas/app/http/responses"
 	chain "github.com/macrowallets/waas/app/services/chain"
 	deposit "github.com/macrowallets/waas/app/services/deposit"
@@ -93,7 +94,7 @@ func (ctrl *AddressesController) GenerateAddress(ctx http.Context) http.Response
 		ctrl.deposits.RefreshAddressCache(ctx.Context(), w.Chain)
 	}
 
-	return responses.Send(ctx, http.StatusCreated, addressresource.AddressPtr(addr, controllers.WalletBodyViewPtr))
+	return responses.Send(ctx, http.StatusCreated, addressresource.AddressPtr(addr, walletresource.WalletPtr))
 }
 
 // UpdateAddress godoc
@@ -145,7 +146,7 @@ func (ctrl *AddressesController) UpdateAddress(ctx http.Context) http.Response {
 		})
 	}
 
-	return ctx.Response().Success().Json(addressresource.AddressPtr(addr, controllers.WalletBodyViewPtr))
+	return ctx.Response().Success().Json(addressresource.AddressPtr(addr, walletresource.WalletPtr))
 }
 
 // ListWalletAddresses godoc
@@ -174,7 +175,7 @@ func (ctrl *AddressesController) ListWalletAddresses(ctx http.Context) http.Resp
 			"error": "failed to fetch addresses",
 		})
 	}
-	return responses.Send(ctx, http.StatusOK, pagination.Response(addressresource.AddressesFrom(addrs, controllers.WalletBodyViewPtr), total, limit, offset))
+	return responses.Send(ctx, http.StatusOK, pagination.Response(addressresource.AddressesFrom(addrs, walletresource.WalletPtr), total, limit, offset))
 }
 
 // LookupAddress godoc
@@ -210,7 +211,7 @@ func (ctrl *AddressesController) LookupAddress(ctx http.Context) http.Response {
 				"error": "address not found",
 			})
 		}
-		return ctx.Response().Success().Json(addressresource.AddressPtr(addr, controllers.WalletBodyViewPtr))
+		return ctx.Response().Success().Json(addressresource.AddressPtr(addr, walletresource.WalletPtr))
 	}
 
 	// Try all chains — still scoped to the caller's account so a hit on any
@@ -218,7 +219,7 @@ func (ctrl *AddressesController) LookupAddress(ctx http.Context) http.Response {
 	for _, id := range ctrl.registry.ChainIDs() {
 		addr, err := ctrl.walletService().LookupAddressForAccount(ctx.Context(), id, address, accountID)
 		if err == nil && addr != nil {
-			return ctx.Response().Success().Json(addressresource.AddressPtr(addr, controllers.WalletBodyViewPtr))
+			return ctx.Response().Success().Json(addressresource.AddressPtr(addr, walletresource.WalletPtr))
 		}
 	}
 	return responses.Send(ctx, http.StatusNotFound, http.Json{
@@ -258,6 +259,6 @@ func (ctrl *AddressesController) ListUserAddresses(ctx http.Context) http.Respon
 	// An empty slice is the honest response for both "no such external_id"
 	// and "external_id exists under another account". Do not distinguish.
 	return ctx.Response().Success().Json(http.Json{
-		"data": addressresource.AddressesFrom(addrs, controllers.WalletBodyViewPtr),
+		"data": addressresource.AddressesFrom(addrs, walletresource.WalletPtr),
 	})
 }

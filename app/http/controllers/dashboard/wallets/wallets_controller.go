@@ -12,6 +12,7 @@ import (
 	"github.com/macrowallets/waas/app/http/middleware/requestctx"
 	"github.com/macrowallets/waas/app/http/pagination"
 	"github.com/macrowallets/waas/app/http/requests"
+	walletresource "github.com/macrowallets/waas/app/http/resources/dashboard/wallets"
 	"github.com/macrowallets/waas/app/http/responses"
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/policies"
@@ -209,7 +210,7 @@ func (ctrl *WalletsController) CreateWalletAdmin(ctx http.Context) http.Response
 	}
 
 	return responses.Send(ctx, http.StatusCreated, http.Json{
-		"wallet":             controllers.WalletBodyViewPtr(result.Wallet),
+		"wallet":             walletresource.WalletPtr(result.Wallet),
 		"encrypted_user_key": result.EncryptedUserKey,
 		"service_public_key": result.ServicePublicKey,
 		"encrypted_passcode": result.EncryptedPasscode,
