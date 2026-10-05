@@ -357,10 +357,20 @@ func sweepLegTransaction(
 	return tx
 }
 
+// withdrawalBroadcastStager inserts withdrawal.broadcasting webhook rows on the
+// caller's transaction. The returned send runs only after that transaction commits.
+type withdrawalBroadcastStager interface {
+	StageWithdrawalBroadcasting(ctx context.Context, tx *models.Transaction) (func(context.Context), error)
+}
+
 // broadcastWithdrawal executes the single "final" transfer of a plan: sending
 // `plan.Amount` of `plan.Asset` from `source` to `toAddress`. It is used for
 // direct_from_base, direct_from_child, and the closing leg of multi_sweep
 // (where source == wallet base deposit address).
+//
+// The chain broadcast stays outside the database transaction. The withdrawal
+// row and its withdrawal.broadcasting webhook commit together. A failed webhook
+// insert rolls the withdrawal row back. SQS runs only after that commit.
 func (s *service) broadcastWithdrawal(
 	ctx context.Context,
 	adapter types.Chain,
@@ -405,11 +415,29 @@ func (s *service) broadcastWithdrawal(
 		tx.TokenContract = token.Contract
 	}
 
-	if err := s.txRepo.Create(ctx, tx); err != nil {
-		return nil, fmt.Errorf("persist withdrawal: %w", err)
+	var send func(context.Context)
+	if err := s.txRepo.Within(ctx, func(txCtx context.Context) error {
+		if err := s.txRepo.Create(txCtx, tx); err != nil {
+			return fmt.Errorf("persist withdrawal: %w", err)
+		}
+		if s.webhookSvc == nil {
+			return nil
+		}
+		stager, ok := s.webhookSvc.(withdrawalBroadcastStager)
+		if !ok {
+			return fmt.Errorf("persist withdrawal webhook: event writer cannot join the transaction")
+		}
+		staged, stageErr := stager.StageWithdrawalBroadcasting(txCtx, tx)
+		if stageErr != nil {
+			return fmt.Errorf("persist withdrawal webhook: %w", stageErr)
+		}
+		send = staged
+		return nil
+	}); err != nil {
+		return nil, err
 	}
-	if s.webhookSvc != nil {
-		s.webhookSvc.EnqueueEvent(ctx, tx.ID, types.EventWithdrawalBroadcasting, tx)
+	if send != nil {
+		send(ctx)
 	}
 	return tx, nil
 }

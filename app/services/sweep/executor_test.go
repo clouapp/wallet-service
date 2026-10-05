@@ -504,8 +504,8 @@ func TestExecute_LinkedLegCommitsGasSeedAndSweepTogether(t *testing.T) {
 	if res.FailedStep != nil || res.FinalWithdrawTx == nil {
 		t.Fatalf("leg failed: %+v", res)
 	}
-	if fixture.txRepo.withins != 1 || !fixture.txRepo.createdInside {
-		t.Fatalf("withins=%d inside=%v", fixture.txRepo.withins, fixture.txRepo.createdInside)
+	if fixture.txRepo.withins != 2 || !fixture.txRepo.createdInside {
+		t.Fatalf("withins=%d inside=%v, want the leg and the withdrawal", fixture.txRepo.withins, fixture.txRepo.createdInside)
 	}
 	if len(fixture.txRepo.created) != 3 {
 		t.Fatalf("rows %d, want gas_seed, sweep, withdrawal", len(fixture.txRepo.created))
@@ -547,10 +547,13 @@ func TestExecute_LinkedLegKeepsGasSeedWhenSweepBroadcastFails(t *testing.T) {
 }
 
 type recordingSweepEvents struct {
-	inside    *bool
-	stagedIn  bool
-	sent      int
-	failStage bool
+	inside             *bool
+	stagedIn           bool
+	sent               int
+	failStage          bool
+	withdrawalStagedIn bool
+	withdrawalSent     int
+	failWithdrawal     bool
 }
 
 func (r *recordingSweepEvents) EnqueueEvent(context.Context, uuid.UUID, types.EventType, interface{}) {
@@ -564,6 +567,16 @@ func (r *recordingSweepEvents) StageSweepBroadcast(context.Context, *models.Tran
 		return nil, errors.New("insert webhook event")
 	}
 	return func(context.Context) { r.sent++ }, nil
+}
+
+func (r *recordingSweepEvents) StageWithdrawalBroadcasting(context.Context, *models.Transaction) (func(context.Context), error) {
+	if r.inside != nil {
+		r.withdrawalStagedIn = *r.inside
+	}
+	if r.failWithdrawal {
+		return nil, errors.New("insert webhook event")
+	}
+	return func(context.Context) { r.withdrawalSent++ }, nil
 }
 
 func TestExecute_LinkedLegRollsBackWhenTheWebhookInsertFails(t *testing.T) {
@@ -675,6 +688,98 @@ func TestConsolidate_ManualLegRollsBackWhenTheWebhookInsertFails(t *testing.T) {
 	}
 	if !events.stagedIn || events.sent != 0 || len(fixture.txRepo.created) != 0 {
 		t.Fatalf("stagedIn=%v sent=%d rows=%d", events.stagedIn, events.sent, len(fixture.txRepo.created))
+	}
+}
+
+func directWithdrawalPlan(walletID uuid.UUID, base models.Address) *Plan {
+	baseCopy := base
+	return &Plan{
+		WalletID:      walletID,
+		Chain:         "eth",
+		Asset:         "eth",
+		Amount:        big.NewInt(1000),
+		Strategy:      StrategyDirectFromBase,
+		SourceAddress: &baseCopy,
+	}
+}
+
+func TestExecute_WithdrawalCommitsRowAndWebhookTogether(t *testing.T) {
+	walletID := uuid.New()
+	baseAddr := models.Address{ID: uuid.New(), WalletID: walletID, Address: "0xBASE", ExternalUserID: "user-1"}
+	wallet := &models.Wallet{ID: walletID, Chain: "eth", DepositAddress: &baseAddr, MPCCurve: "secp256k1"}
+	assignDerivedEVMAddresses(t, wallet, &baseAddr)
+	mockChain := sweepMockChain("eth", "eth")
+	svc, txRepo := newExecutorService(t, wallet, mockChain)
+	events := &recordingSweepEvents{inside: &txRepo.inside}
+	svc.webhookSvc = events
+
+	res, err := svc.ExecutePlan(
+		context.Background(), directWithdrawalPlan(walletID, baseAddr),
+		SigningCredentials{ShareA: []byte("fake-share-a")}, uuid.New(), "0xDEST", "user-1",
+	)
+	if err != nil || res == nil || res.FinalWithdrawTx == nil {
+		t.Fatalf("res %+v err %v", res, err)
+	}
+	if txRepo.withins != 1 || !txRepo.createdInside || len(txRepo.created) != 1 {
+		t.Fatalf("withins=%d inside=%v rows=%d", txRepo.withins, txRepo.createdInside, len(txRepo.created))
+	}
+	if txRepo.created[0].TxType != models.TxTypeWithdrawal {
+		t.Fatalf("row %s", txRepo.created[0].TxType)
+	}
+	if !events.withdrawalStagedIn || events.withdrawalSent != 1 || events.sent != 0 {
+		t.Fatalf("stagedIn=%v sent=%d sweepSent=%d", events.withdrawalStagedIn, events.withdrawalSent, events.sent)
+	}
+	if svc.walletRepo.(*fakeWalletRepo).updateCalls != 0 {
+		t.Fatal("gas status must stay outside this commit")
+	}
+}
+
+func TestExecute_WithdrawalRollsBackWhenTheWebhookInsertFails(t *testing.T) {
+	walletID := uuid.New()
+	baseAddr := models.Address{ID: uuid.New(), WalletID: walletID, Address: "0xBASE", ExternalUserID: "user-1"}
+	wallet := &models.Wallet{ID: walletID, Chain: "eth", DepositAddress: &baseAddr, MPCCurve: "secp256k1"}
+	assignDerivedEVMAddresses(t, wallet, &baseAddr)
+	mockChain := sweepMockChain("eth", "eth")
+	svc, txRepo := newExecutorService(t, wallet, mockChain)
+	events := &recordingSweepEvents{inside: &txRepo.inside, failWithdrawal: true}
+	svc.webhookSvc = events
+
+	_, err := svc.ExecutePlan(
+		context.Background(), directWithdrawalPlan(walletID, baseAddr),
+		SigningCredentials{ShareA: []byte("fake-share-a")}, uuid.New(), "0xDEST", "user-1",
+	)
+	if err == nil {
+		t.Fatal("want the webhook insert to fail the withdrawal")
+	}
+	if !events.withdrawalStagedIn || events.withdrawalSent != 0 || len(txRepo.created) != 0 || txRepo.withins != 1 {
+		t.Fatalf("stagedIn=%v sent=%d rows=%d withins=%d", events.withdrawalStagedIn, events.withdrawalSent, len(txRepo.created), txRepo.withins)
+	}
+}
+
+func TestStageWithdrawalBroadcastingInsertsTheRowBeforeSending(t *testing.T) {
+	walletID := uuid.New()
+	tx := &models.Transaction{ID: uuid.New(), WalletID: walletID, TxType: models.TxTypeWithdrawal}
+	events := &fakeWebhookEventRepo{}
+	var sentBeforeInsert bool
+	sender := &orderQueueSender{events: events, sentBeforeInsert: &sentBeforeInsert}
+	svc := webhook.NewService(webhook.Deps{
+		SQS: sender,
+		Configs: &fakeWebhookConfigRepo{configs: []models.WebhookConfig{{
+			ID: uuid.New(), URL: "https://example.test/hooks", Secret: "s",
+			Events: `{"withdrawal.broadcasting"}`, IsActive: true,
+		}}},
+		Events: events,
+	})
+	send, err := svc.StageWithdrawalBroadcasting(context.Background(), tx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(events.created) != 1 || sender.sent != 0 {
+		t.Fatalf("created=%d sent=%d before the closure", len(events.created), sender.sent)
+	}
+	send(context.Background())
+	if sentBeforeInsert || sender.sent != 1 || events.created[0].EventType != string(types.EventWithdrawalBroadcasting) {
+		t.Fatalf("sentBeforeInsert=%v sent=%d type=%s", sentBeforeInsert, sender.sent, events.created[0].EventType)
 	}
 }
 

@@ -63,7 +63,8 @@ type addressReader interface {
 
 // transactionWriter is the row sweep persists after a broadcast. Signing does not go through it.
 // Within commits one sweep leg (gas seed, sweep row, and webhook event) for a withdrawal-driven
-// leg and for manual consolidation. The final withdrawal row stays on Create.
+// leg and for manual consolidation. A separate Within commits the final withdrawal row with its
+// webhook. Gas-status updates stay outside both.
 type transactionWriter interface {
 	Within(ctx context.Context, fn func(context.Context) error) error
 	Create(ctx context.Context, tx *models.Transaction) error

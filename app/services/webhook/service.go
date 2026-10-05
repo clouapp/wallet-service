@@ -139,6 +139,33 @@ func (s *Service) EnqueueEvent(ctx context.Context, txID uuid.UUID, eventType ty
 	}
 }
 
+// StageWithdrawalBroadcasting inserts withdrawal.broadcasting webhook rows using
+// ctx, so they join the caller's transaction. The returned send delivers those
+// rows and runs only after that transaction commits. A nil send means no config
+// matched. The signing secret stays inside the send closure and is not logged.
+func (s *Service) StageWithdrawalBroadcasting(ctx context.Context, tx *models.Transaction) (func(context.Context), error) {
+	if s == nil {
+		return nil, fmt.Errorf("stage withdrawal broadcasting: webhook service is required")
+	}
+	if tx == nil {
+		return nil, fmt.Errorf("stage withdrawal broadcasting: transaction is required")
+	}
+	if s.webhookConfigRepo == nil || s.webhookEventRepo == nil {
+		return nil, fmt.Errorf("stage withdrawal broadcasting: webhook store is required")
+	}
+	msgs, err := s.stageLegacyEvent(ctx, tx.ID, types.EventWithdrawalBroadcasting, tx)
+	if err != nil {
+		return nil, err
+	}
+	if len(msgs) == 0 {
+		return nil, nil
+	}
+	staged := append([]types.WebhookMessage(nil), msgs...)
+	return func(sendCtx context.Context) {
+		s.dispatchWebhooks(sendCtx, staged)
+	}, nil
+}
+
 // StageSweepBroadcast inserts sweep.broadcast webhook rows using ctx, so they join
 // the caller's transaction. The returned send delivers those rows and runs only
 // after that transaction commits. A nil send means no config matched. The signing
