@@ -23,6 +23,7 @@ import (
 	"github.com/macrowallets/waas/app/adapters/redis/addresscache"
 	"github.com/macrowallets/waas/app/adapters/redis/addressset"
 	redislock "github.com/macrowallets/waas/app/adapters/redis/lock"
+	redispending "github.com/macrowallets/waas/app/adapters/redis/pending"
 	"github.com/macrowallets/waas/app/adapters/redis/pricecache"
 	"github.com/macrowallets/waas/app/adapters/redis/scanner"
 	sweepredis "github.com/macrowallets/waas/app/adapters/redis/sweep"
@@ -584,9 +585,9 @@ func buildPriceService(c *container.Container, accountSettings *settings.Service
 // append-only file; either one is enough, and with neither the scanner stops before a
 // failing block instead of skipping it.
 func buildPendingDepositStore(rdb *redis.Client, dir string) pending.Store {
-	var redisStore *pending.RedisStore
+	var redisStore pending.Store
 	if rdb != nil {
-		store, err := pending.NewRedisStore(pending.RedisStoreDeps{Redis: rdb, KeyPrefix: pending.DefaultRedisKeyPrefix})
+		store, err := redispending.NewRedisStore(redispending.RedisStoreDeps{Redis: rdb, KeyPrefix: redispending.DefaultRedisKeyPrefix})
 		if err != nil {
 			slog.Error("vault: pending deposit redis store unavailable", "error", err)
 		} else {

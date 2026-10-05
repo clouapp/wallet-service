@@ -6,7 +6,6 @@ app/services/settings/seal.go calls facades.Crypt()
 app/services/settings/service.go calls facades.Cache()
 app/services/wallet/service.go calls facades.Config()
 app/services/wallet/service.go calls facades.Event()
-app/services/deposit/pending imports github.com/redis/go-redis/v9
 app/services/webhooksync imports app/repositories
 app/services/webhooksync imports gorm.io/gorm
 app/services/webhooksync/service.go calls facades.Crypt()

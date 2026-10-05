@@ -21,9 +21,10 @@ type namedStore struct {
 }
 
 // DurableStoreDeps is the Redis and file backends NewDurableStore writes through.
-// A nil field is an unavailable backend; at least one must be set.
+// A nil Redis or File is an unavailable backend; at least one must be set.
+// Redis is the Store port; pass a nil interface when Redis is not configured.
 type DurableStoreDeps struct {
-	Redis *RedisStore
+	Redis Store
 	File  *FileStore
 }
 

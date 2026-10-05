@@ -5,19 +5,25 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sort"
 	"strconv"
 
 	"github.com/redis/go-redis/v9"
+
+	depositpending "github.com/macrowallets/waas/app/services/deposit/pending"
 )
 
 // DefaultRedisKeyPrefix namespaces the live keys: <prefix><chain> is a sorted set of
 // blocks scored by next retry time (unix ms), <prefix><chain>:entries the entry JSON.
 const DefaultRedisKeyPrefix = "vault:deposit_pending:"
 
+// RedisStore persists pending deposit entries. The service keeps the Store port.
 type RedisStore struct {
 	rdb    *redis.Client
 	prefix string
 }
+
+var _ depositpending.Store = (*RedisStore)(nil)
 
 // RedisStoreDeps is the client and key prefix NewRedisStore stores.
 // Redis must be set; an empty KeyPrefix is rejected.
@@ -39,7 +45,7 @@ func NewRedisStore(deps RedisStoreDeps) (*RedisStore, error) {
 func (s *RedisStore) scheduleKey(chain string) string { return s.prefix + chain }
 func (s *RedisStore) entriesKey(chain string) string  { return s.prefix + chain + ":entries" }
 
-func (s *RedisStore) Put(ctx context.Context, entry Entry) error {
+func (s *RedisStore) Put(ctx context.Context, entry depositpending.Entry) error {
 	if err := entry.Validate(); err != nil {
 		return err
 	}
@@ -68,14 +74,14 @@ func (s *RedisStore) Delete(ctx context.Context, chain string, block uint64) err
 	return nil
 }
 
-func (s *RedisStore) List(ctx context.Context, chain string) ([]Entry, error) {
+func (s *RedisStore) List(ctx context.Context, chain string) ([]depositpending.Entry, error) {
 	raw, err := s.rdb.HGetAll(ctx, s.entriesKey(chain)).Result()
 	if err != nil {
 		return nil, fmt.Errorf("redis list pending %s: %w", chain, err)
 	}
-	entries := make([]Entry, 0, len(raw))
+	entries := make([]depositpending.Entry, 0, len(raw))
 	for member, value := range raw {
-		var entry Entry
+		var entry depositpending.Entry
 		if err := json.Unmarshal([]byte(value), &entry); err != nil {
 			return nil, fmt.Errorf("redis pending %s block %s is corrupt: %w", chain, member, err)
 		}
@@ -83,4 +89,8 @@ func (s *RedisStore) List(ctx context.Context, chain string) ([]Entry, error) {
 	}
 	sortByBlock(entries)
 	return entries, nil
+}
+
+func sortByBlock(entries []depositpending.Entry) {
+	sort.Slice(entries, func(i, j int) bool { return entries[i].Block < entries[j].Block })
 }

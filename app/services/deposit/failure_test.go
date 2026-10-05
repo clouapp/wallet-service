@@ -24,6 +24,7 @@ import (
 	"github.com/macrowallets/waas/app/services/depositevents"
 	"github.com/macrowallets/waas/pkg/types"
 	"github.com/macrowallets/waas/tests/mocks"
+	"github.com/macrowallets/waas/tests/pendingredis"
 	"github.com/macrowallets/waas/tests/testutil"
 )
 
@@ -143,10 +144,10 @@ func newPendingBackends(t *testing.T) pendingBackends {
 // and directory, so a second call stands in for an API restart.
 func openPendingStore(t *testing.T, rdb *redis.Client, prefix, dir string) *pending.DurableStore {
 	t.Helper()
-	var redisStore *pending.RedisStore
+	var redisStore pending.Store
 	if rdb != nil {
 		var err error
-		if redisStore, err = pending.NewRedisStore(pending.RedisStoreDeps{Redis: rdb, KeyPrefix: prefix}); err != nil {
+		if redisStore, err = pendingredis.Open(rdb, prefix); err != nil {
 			t.Fatal(err)
 		}
 	}
