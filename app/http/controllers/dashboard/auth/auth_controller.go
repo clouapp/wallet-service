@@ -12,6 +12,7 @@ import (
 	"github.com/macrowallets/waas/app/http/controllers"
 	"github.com/macrowallets/waas/app/http/middleware/requestctx"
 	"github.com/macrowallets/waas/app/http/requests"
+	userresource "github.com/macrowallets/waas/app/http/resources/dashboard/users"
 	"github.com/macrowallets/waas/app/http/responses"
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/policies"
@@ -136,7 +137,7 @@ func (ctrl *AuthController) Register(ctx http.Context) http.Response {
 
 	resp := http.Json{
 		"access_token": accessToken,
-		"user":         user,
+		"user":         userresource.UserFrom(user),
 		"accounts":     accounts,
 	}
 	if defaultAccount != nil {
@@ -422,7 +423,7 @@ func (ctrl *AuthController) signedInResponse(user *models.User, tokens controlle
 	resp := http.Json{
 		"access_token":  tokens.AccessToken,
 		"refresh_token": tokens.RefreshToken,
-		"user":          user,
+		"user":          userresource.UserFrom(user),
 		"accounts":      accounts,
 	}
 	if defaultAccount != nil {
@@ -515,7 +516,7 @@ type ResetPasswordSwagger struct {
 }
 
 type AuthResponse struct {
-	AccessToken  string      `json:"access_token"`
-	RefreshToken string      `json:"refresh_token,omitempty"`
-	User         models.User `json:"user,omitempty"`
+	AccessToken  string            `json:"access_token"`
+	RefreshToken string            `json:"refresh_token,omitempty"`
+	User         userresource.User `json:"user,omitempty"`
 }

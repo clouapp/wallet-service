@@ -14,6 +14,7 @@ import (
 	"github.com/macrowallets/waas/app/http/pagination"
 	"github.com/macrowallets/waas/app/http/requests"
 	accountresource "github.com/macrowallets/waas/app/http/resources/dashboard/accounts"
+	userresource "github.com/macrowallets/waas/app/http/resources/dashboard/users"
 	"github.com/macrowallets/waas/app/http/responses"
 	"github.com/macrowallets/waas/app/models"
 	accountsvc "github.com/macrowallets/waas/app/services/account"
@@ -110,7 +111,7 @@ func (ctrl *UsersController) GetMe(ctx http.Context) http.Response {
 		appfacades.Log().WithContext(ctx).Errorf("user: active features: %v", err)
 		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "internal_error"})
 	}
-	return responses.Send(ctx, http.StatusOK, MeProfile{User: *user, Features: names})
+	return responses.Send(ctx, http.StatusOK, MeProfile{User: *userresource.UserFrom(user), Features: names})
 }
 
 // MeProfile is GET /v1/users/me. User fields stay as they are. Features is
@@ -118,7 +119,7 @@ func (ctrl *UsersController) GetMe(ctx http.Context) http.Response {
 // the catalog default. Account rows are not included. Login and PATCH
 // /v1/users/me do not carry this field.
 type MeProfile struct {
-	models.User
+	userresource.User
 	Features []string `json:"features"`
 }
 
@@ -130,7 +131,7 @@ type MeProfile struct {
 // @Accept       json
 // @Produce      json
 // @Param        request  body      UpdateMeSwagger  true  "Update payload"
-// @Success      200      {object}  models.User
+// @Success      200      {object}  userresource.User
 // @Failure      400      {object}  ErrorResponse
 // @Failure      401      {object}  ErrorResponse
 // @Router       /users/me [patch]
@@ -149,7 +150,7 @@ func (ctrl *UsersController) UpdateMe(ctx http.Context) http.Response {
 		user.FullName = req.FullName
 	}
 
-	return responses.Send(ctx, http.StatusOK, user)
+	return responses.Send(ctx, http.StatusOK, userresource.UserFrom(user))
 }
 
 // ChangePassword godoc
@@ -451,7 +452,7 @@ func (ctrl *UsersController) ConfirmTOTP(ctx http.Context) http.Response {
 	user.TotpEnabled = true
 	user.TotpSecret = ""
 	resp := map[string]interface{}{
-		"user":           user,
+		"user":           userresource.UserFrom(user),
 		"recovery_codes": codes,
 	}
 	return responses.Send(ctx, http.StatusOK, resp)
@@ -463,7 +464,7 @@ func (ctrl *UsersController) ConfirmTOTP(ctx http.Context) http.Response {
 // @Tags         User
 // @Security     BearerAuth
 // @Produce      json
-// @Success      200  {object}  models.User
+// @Success      200  {object}  map[string]interface{}
 // @Failure      500  {object}  ErrorResponse
 // @Router       /users/me/totp [delete]
 func (ctrl *UsersController) DisableTOTP(ctx http.Context) http.Response {
@@ -491,7 +492,7 @@ func (ctrl *UsersController) DisableTOTP(ctx http.Context) http.Response {
 	user.TotpEnabled = false
 	user.TotpSecret = ""
 	return responses.Send(ctx, http.StatusOK, http.Json{
-		"user":          user,
+		"user":          userresource.UserFrom(user),
 		"access_token":  session.AccessToken,
 		"refresh_token": session.RefreshToken,
 	})
