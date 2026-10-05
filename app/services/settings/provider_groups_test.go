@@ -52,7 +52,7 @@ func TestSavePlatformWebhookProviders_StoresEnabledAndSealsTheSecret(t *testing.
 	store := newMemoryStore()
 	activity := &recordingActivity{}
 	actor := uuid.New()
-	service := NewService(store, prefixSealer{}, &memoryCache{}, activity).
+	service := NewService(Deps{Store: store, Sealer: prefixSealer{}, Cache: &memoryCache{}, Activity: activity}).
 		WithPlatformAdmins(allowPlatformAdmins{ids: map[uuid.UUID]bool{actor: true}})
 	ctx := context.Background()
 
@@ -104,7 +104,7 @@ func TestSavePlatformWebhookProviders_RejectsTheWrongSecretAndANonBoolean(t *tes
 
 	store := newMemoryStore()
 	actor := uuid.New()
-	service := NewService(store, prefixSealer{}, &memoryCache{}, &recordingActivity{}).
+	service := NewService(Deps{Store: store, Sealer: prefixSealer{}, Cache: &memoryCache{}, Activity: &recordingActivity{}}).
 		WithPlatformAdmins(allowPlatformAdmins{ids: map[uuid.UUID]bool{actor: true}})
 	ctx := context.Background()
 
@@ -161,7 +161,7 @@ func TestSavePlatformProviders_RefusesEnabledWithoutAKey(t *testing.T) {
 		store := newMemoryStore()
 		activity := &recordingActivity{}
 		actor := uuid.New()
-		service := NewService(store, prefixSealer{}, &memoryCache{}, activity).
+		service := NewService(Deps{Store: store, Sealer: prefixSealer{}, Cache: &memoryCache{}, Activity: activity}).
 			WithPlatformAdmins(allowPlatformAdmins{ids: map[uuid.UUID]bool{actor: true}})
 		ctx := context.Background()
 
@@ -230,7 +230,7 @@ func TestSavePlatformWebhookProviders_ForbidsANonAdmin(t *testing.T) {
 
 	store := newMemoryStore()
 	activity := &recordingActivity{}
-	service := NewService(store, prefixSealer{}, &memoryCache{}, activity).
+	service := NewService(Deps{Store: store, Sealer: prefixSealer{}, Cache: &memoryCache{}, Activity: activity}).
 		WithPlatformAdmins(allowPlatformAdmins{})
 
 	for _, provider := range webhookProviderCases() {

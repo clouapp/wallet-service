@@ -48,7 +48,7 @@ func TestSavePlatformPriceSettings_StoresOrderAndSealsTheKey(t *testing.T) {
 	store := newMemoryStore()
 	activity := &recordingActivity{}
 	actor := uuid.New()
-	service := NewService(store, prefixSealer{}, &memoryCache{}, activity).
+	service := NewService(Deps{Store: store, Sealer: prefixSealer{}, Cache: &memoryCache{}, Activity: activity}).
 		WithPlatformAdmins(allowPlatformAdmins{ids: map[uuid.UUID]bool{actor: true}})
 	ctx := context.Background()
 
@@ -123,7 +123,7 @@ func TestSavePlatformPriceLookup_RejectsAnUnknownProvider(t *testing.T) {
 
 	store := newMemoryStore()
 	actor := uuid.New()
-	service := NewService(store, prefixSealer{}, &memoryCache{}, &recordingActivity{}).
+	service := NewService(Deps{Store: store, Sealer: prefixSealer{}, Cache: &memoryCache{}, Activity: &recordingActivity{}}).
 		WithPlatformAdmins(allowPlatformAdmins{ids: map[uuid.UUID]bool{actor: true}})
 
 	_, err := service.SavePlatform(context.Background(), actor, groupPriceLookup, map[string]any{
@@ -155,7 +155,7 @@ func TestSavePlatformPriceLookup_RejectsADisabledProvider(t *testing.T) {
 
 	store := newMemoryStore()
 	actor := uuid.New()
-	service := NewService(store, prefixSealer{}, &memoryCache{}, &recordingActivity{}).
+	service := NewService(Deps{Store: store, Sealer: prefixSealer{}, Cache: &memoryCache{}, Activity: &recordingActivity{}}).
 		WithPlatformAdmins(allowPlatformAdmins{ids: map[uuid.UUID]bool{actor: true}})
 	ctx := context.Background()
 	if _, err := service.SavePlatform(ctx, actor, groupPriceCoinGecko, map[string]any{
@@ -182,7 +182,7 @@ func TestSavePlatformPriceLookup_RefusesAnEmptyOrderInProduction(t *testing.T) {
 
 	store := newMemoryStore()
 	actor := uuid.New()
-	service := NewService(store, prefixSealer{}, &memoryCache{}, &recordingActivity{}).
+	service := NewService(Deps{Store: store, Sealer: prefixSealer{}, Cache: &memoryCache{}, Activity: &recordingActivity{}}).
 		WithPlatformAdmins(allowPlatformAdmins{ids: map[uuid.UUID]bool{actor: true}})
 	_, err := service.SavePlatform(context.Background(), actor, groupPriceLookup, map[string]any{
 		keyProviderOrder: []any{},
@@ -201,7 +201,7 @@ func TestSavePlatformPriceLookup_AllowsAnEmptyOrderOutsideProduction(t *testing.
 
 	store := newMemoryStore()
 	actor := uuid.New()
-	service := NewService(store, prefixSealer{}, &memoryCache{}, &recordingActivity{}).
+	service := NewService(Deps{Store: store, Sealer: prefixSealer{}, Cache: &memoryCache{}, Activity: &recordingActivity{}}).
 		WithPlatformAdmins(allowPlatformAdmins{ids: map[uuid.UUID]bool{actor: true}})
 	if _, err := service.SavePlatform(context.Background(), actor, groupPriceLookup, map[string]any{
 		keyProviderOrder: []any{},
@@ -218,7 +218,7 @@ func TestSavePlatformPriceSettings_ForbidsANonAdmin(t *testing.T) {
 
 	store := newMemoryStore()
 	activity := &recordingActivity{}
-	service := NewService(store, prefixSealer{}, &memoryCache{}, activity).
+	service := NewService(Deps{Store: store, Sealer: prefixSealer{}, Cache: &memoryCache{}, Activity: activity}).
 		WithPlatformAdmins(allowPlatformAdmins{})
 	_, err := service.SavePlatform(context.Background(), uuid.New(), groupPriceCoinAPI, map[string]any{
 		keyPriceEnabled: true,

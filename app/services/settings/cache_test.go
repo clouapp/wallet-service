@@ -86,7 +86,7 @@ func TestReadAfterWriteHitsTheJSONMapCache(t *testing.T) {
 	store := newCountingStore()
 	cache := &memoryCache{}
 	sealer := shiftSealer{}
-	service := NewService(store, sealer, cache, discardActivity{})
+	service := NewService(Deps{Store: store, Sealer: sealer, Cache: cache, Activity: discardActivity{}})
 	accountID := uuid.New()
 	actorID := uuid.New()
 	ctx := context.Background()
@@ -138,7 +138,7 @@ func TestRequire2FAUsesTheCacheUntilFlushResetOrSaveForgetsIt(t *testing.T) {
 
 	store := newCountingStore()
 	cache := &memoryCache{}
-	service := NewService(store, shiftSealer{}, cache, discardActivity{})
+	service := NewService(Deps{Store: store, Sealer: shiftSealer{}, Cache: cache, Activity: discardActivity{}})
 	accountID := uuid.New()
 	actorID := uuid.New()
 	ctx := context.Background()
@@ -206,7 +206,7 @@ func TestCorruptSealAndCacheFailureFallThroughToTheDatabase(t *testing.T) {
 
 	store := newCountingStore()
 	cache := &memoryCache{}
-	service := NewService(store, shiftSealer{}, cache, discardActivity{})
+	service := NewService(Deps{Store: store, Sealer: shiftSealer{}, Cache: cache, Activity: discardActivity{}})
 	accountID := uuid.New()
 	ctx := context.Background()
 	store.rows[store.key(accountID, groupAccountSweepLimits)] = map[string]string{
@@ -254,7 +254,7 @@ func TestPlatformReadHitsTheJSONMapUntilItIsForgotten(t *testing.T) {
 
 	store := newCountingStore()
 	cache := &memoryCache{}
-	service := NewService(store, shiftSealer{}, cache, discardActivity{})
+	service := NewService(Deps{Store: store, Sealer: shiftSealer{}, Cache: cache, Activity: discardActivity{}})
 	ctx := context.Background()
 	store.PutPlatform(groupDepositScan, map[string]string{keyBatchBlocks: "80"})
 
@@ -312,7 +312,7 @@ func TestCacheReadFailureKeepsTheDatabaseError(t *testing.T) {
 	store := newCountingStore()
 	store.accountErr = errors.New("db down")
 	cache := &memoryCache{getErr: errors.New("redis down")}
-	service := NewService(store, shiftSealer{}, cache, discardActivity{})
+	service := NewService(Deps{Store: store, Sealer: shiftSealer{}, Cache: cache, Activity: discardActivity{}})
 
 	_, err := service.Require2FA(context.Background(), uuid.New())
 	if err == nil || err.Error() != "db down" {

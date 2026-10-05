@@ -12,7 +12,7 @@ func TestReaderWithoutACacheReadsTheTable(t *testing.T) {
 	t.Parallel()
 
 	store := newCountingStore()
-	service := NewService(store, prefixSealer{}, nil, discardActivity{})
+	service := NewService(Deps{Store: store, Sealer: prefixSealer{}, Cache: nil, Activity: discardActivity{}})
 	accountID := uuid.New()
 	ctx := context.Background()
 	store.rows[store.key(accountID, groupAccountSecurity)] = map[string]string{keyRequire2FA: "true"}
@@ -43,7 +43,7 @@ func TestConsumersRereadAfterForget(t *testing.T) {
 
 	store := newCountingStore()
 	cache := &memoryCache{}
-	service := NewService(store, shiftSealer{}, cache, discardActivity{})
+	service := NewService(Deps{Store: store, Sealer: shiftSealer{}, Cache: cache, Activity: discardActivity{}})
 	accountID := uuid.New()
 	ctx := context.Background()
 	store.rows[store.key(accountID, groupAccountSecurity)] = map[string]string{keyRequire2FA: "true"}

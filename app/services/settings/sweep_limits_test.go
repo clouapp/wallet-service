@@ -272,7 +272,7 @@ func TestSavePlatformSweepLimits_RejectsZeroNegativeAndANegativeCap(t *testing.T
 	store := newMemoryStore()
 	activity := &recordingActivity{}
 	actor := uuid.New()
-	service := NewService(store, prefixSealer{}, &memoryCache{}, activity).
+	service := NewService(Deps{Store: store, Sealer: prefixSealer{}, Cache: &memoryCache{}, Activity: activity}).
 		WithPlatformAdmins(allowPlatformAdmins{ids: map[uuid.UUID]bool{actor: true}})
 	ctx := context.Background()
 
@@ -305,7 +305,7 @@ func TestSavePlatformSweepLimits_BlankCapStaysEmptyAndIsWhatTheReaderReturns(t *
 	store := newMemoryStore()
 	activity := &recordingActivity{}
 	actor := uuid.New()
-	service := NewService(store, prefixSealer{}, &memoryCache{}, activity).
+	service := NewService(Deps{Store: store, Sealer: prefixSealer{}, Cache: &memoryCache{}, Activity: activity}).
 		WithPlatformAdmins(allowPlatformAdmins{ids: map[uuid.UUID]bool{actor: true}})
 	ctx := context.Background()
 	accountID := uuid.New()

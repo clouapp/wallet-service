@@ -22,7 +22,7 @@ func TestPlatformIndex_ListsPlatformGroupsAndHidesSecrets(t *testing.T) {
 	})
 	activity := &recordingActivity{}
 	actor := uuid.New()
-	service := NewService(store, prefixSealer{}, &memoryCache{}, activity).
+	service := NewService(Deps{Store: store, Sealer: prefixSealer{}, Cache: &memoryCache{}, Activity: activity}).
 		WithPlatformAdmins(allowPlatformAdmins{ids: map[uuid.UUID]bool{actor: true}})
 
 	view, err := service.PlatformIndex(context.Background(), actor)
@@ -75,14 +75,14 @@ func TestPlatformIndex_ForbidsANonAdminBeforeReading(t *testing.T) {
 	t.Parallel()
 
 	actor := uuid.New()
-	service := NewService(platformErrStore{err: errors.New("db down")}, prefixSealer{}, nopCache{}, discardActivity{}).
+	service := NewService(Deps{Store: platformErrStore{err: errors.New("db down")}, Sealer: prefixSealer{}, Cache: nopCache{}, Activity: discardActivity{}}).
 		WithPlatformAdmins(allowPlatformAdmins{})
 	_, err := service.PlatformIndex(context.Background(), actor)
 	if !errors.Is(err, ErrPlatformViewForbidden) {
 		t.Fatalf("non-admin = %v", err)
 	}
 
-	service = NewService(platformErrStore{err: errors.New("db down")}, prefixSealer{}, nopCache{}, discardActivity{}).
+	service = NewService(Deps{Store: platformErrStore{err: errors.New("db down")}, Sealer: prefixSealer{}, Cache: nopCache{}, Activity: discardActivity{}}).
 		WithPlatformAdmins(allowPlatformAdmins{ids: map[uuid.UUID]bool{actor: true}})
 	if _, err := service.PlatformIndex(context.Background(), actor); err == nil || err.Error() != "db down" {
 		t.Fatalf("admin read = %v, want db down", err)

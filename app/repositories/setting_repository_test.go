@@ -177,7 +177,7 @@ func TestResetSectionCommitsWithActivityAndRollsBackTogether(t *testing.T) {
 		t.Fatalf("store scan: %v", err)
 	}
 
-	service := settings.NewService(settingsRepo, settings.CryptSealer{}, settings.FacadeCache{}, activityRepo)
+	service := settings.NewService(settings.Deps{Store: settingsRepo, Sealer: settings.CryptSealer{}, Cache: settings.FacadeCache{}, Activity: activityRepo})
 	if _, err := service.ResetSection(ctx, account.ID, actorID, "owner", "security"); err != nil {
 		t.Fatalf("reset: %v", err)
 	}
@@ -236,7 +236,7 @@ func TestResetSectionCommitsWithActivityAndRollsBackTogether(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("store secret: %v", err)
 	}
-	rolling := settings.NewService(settingsRepo, settings.CryptSealer{}, settings.FacadeCache{}, rollbackActivity{inner: activityRepo})
+	rolling := settings.NewService(settings.Deps{Store: settingsRepo, Sealer: settings.CryptSealer{}, Cache: settings.FacadeCache{}, Activity: rollbackActivity{inner: activityRepo}})
 	if _, err := rolling.ResetSection(ctx, account.ID, actorID, "owner", "webhooks"); err == nil {
 		t.Fatal("reset committed after the activity write failed")
 	}
@@ -364,7 +364,7 @@ func TestResetPlatformSectionCommitsWithActivityAndRollsBackTogether(t *testing.
 		t.Fatalf("store scan: %v", err)
 	}
 
-	service := settings.NewService(settingsRepo, settings.CryptSealer{}, settings.FacadeCache{}, activityRepo).
+	service := settings.NewService(settings.Deps{Store: settingsRepo, Sealer: settings.CryptSealer{}, Cache: settings.FacadeCache{}, Activity: activityRepo}).
 		WithPlatformAdmins(repositories.NewPlatformAdminRepository(nil))
 	view, err := service.ResetPlatformSection(ctx, actorID, "mail")
 	if err != nil {
@@ -456,7 +456,7 @@ func TestResetPlatformSectionCommitsWithActivityAndRollsBackTogether(t *testing.
 	}); err != nil {
 		t.Fatalf("store delivery: %v", err)
 	}
-	rolling := settings.NewService(settingsRepo, settings.CryptSealer{}, settings.FacadeCache{}, rollbackActivity{inner: activityRepo}).
+	rolling := settings.NewService(settings.Deps{Store: settingsRepo, Sealer: settings.CryptSealer{}, Cache: settings.FacadeCache{}, Activity: rollbackActivity{inner: activityRepo}}).
 		WithPlatformAdmins(repositories.NewPlatformAdminRepository(nil))
 	if _, err := rolling.ResetPlatformSection(ctx, actorID, "delivery"); err == nil {
 		t.Fatal("reset committed after the activity write failed")

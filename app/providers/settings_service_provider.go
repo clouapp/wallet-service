@@ -34,7 +34,7 @@ func (p *SettingsServiceProvider) Register(app foundation.Application) {
 		if err != nil {
 			return nil, err
 		}
-		return settings.NewService(store, settings.CryptSealer{}, settings.FacadeCache{}, activityLog).
+		return settings.NewService(settings.Deps{Store: store, Sealer: settings.CryptSealer{}, Cache: settings.FacadeCache{}, Activity: activityLog}).
 			WithPlatformAdmins(admins).
 			WithAccounts(accounts), nil
 	})

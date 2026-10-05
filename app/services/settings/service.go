@@ -73,21 +73,31 @@ type Service struct {
 	accounts accountDirectory
 }
 
+// Deps is everything the account settings service needs. Store, Sealer, and
+// Activity are required. A nil Cache uses a no-op cache.
+type Deps struct {
+	Store    Store
+	Sealer   Sealer
+	Cache    Cache
+	Activity activitylog.Writer
+}
+
 // NewService builds the account settings service.
-func NewService(store Store, sealer Sealer, cache Cache, activity activitylog.Writer) *Service {
-	if store == nil {
+func NewService(deps Deps) *Service {
+	if deps.Store == nil {
 		panic("account settings service: store is required")
 	}
-	if sealer == nil {
+	if deps.Sealer == nil {
 		panic("account settings service: sealer is required")
 	}
-	if activity == nil {
+	if deps.Activity == nil {
 		panic("account settings service: activity log is required")
 	}
+	cache := deps.Cache
 	if cache == nil {
 		cache = nopCache{}
 	}
-	return &Service{store: store, sealer: sealer, cache: cache, activity: activity}
+	return &Service{store: deps.Store, sealer: deps.Sealer, cache: cache, activity: deps.Activity}
 }
 
 // WithPlatformAdmins sets the gate for platform groups. A nil reader leaves

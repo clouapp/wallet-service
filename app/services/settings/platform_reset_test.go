@@ -56,7 +56,7 @@ func TestResetPlatformSectionDeletesRowsForgetsCacheAndRecordsFieldNames(t *test
 		t.Fatal("mail page has no platform groups")
 	}
 
-	service := NewService(store, prefixSealer{}, cache, activity).
+	service := NewService(Deps{Store: store, Sealer: prefixSealer{}, Cache: cache, Activity: activity}).
 		WithPlatformAdmins(allowPlatformAdmins{ids: map[uuid.UUID]bool{actor: true}})
 
 	view, err := service.ResetPlatformSection(context.Background(), actor, "  "+sectionMail+"  ")
@@ -180,7 +180,7 @@ func TestResetPlatformSectionNotFoundComesBeforeForbidden(t *testing.T) {
 		platformCacheKey(groupMailSMTP):           "stale-mail",
 		cacheKey(accountID, groupAccountSecurity): "stale-account",
 	}}
-	service := NewService(store, prefixSealer{}, cache, activity).WithPlatformAdmins(admins)
+	service := NewService(Deps{Store: store, Sealer: prefixSealer{}, Cache: cache, Activity: activity}).WithPlatformAdmins(admins)
 
 	for _, section := range []string{"not-a-section", sectionSecurity, sectionLimits, "  "} {
 		if _, err := service.ResetPlatformSection(context.Background(), actor, section); !errors.Is(err, ErrSectionNotFound) {
@@ -230,7 +230,7 @@ func TestResetPlatformSectionRequiresActorAdminCacheAndStore(t *testing.T) {
 	if _, err := (*Service)(nil).ResetPlatformSection(context.Background(), actor, sectionMail); !errors.Is(err, errServiceRequired) {
 		t.Fatalf("nil service = %v", err)
 	}
-	service := NewService(store, prefixSealer{}, &memoryCache{}, activity).
+	service := NewService(Deps{Store: store, Sealer: prefixSealer{}, Cache: &memoryCache{}, Activity: activity}).
 		WithPlatformAdmins(allowPlatformAdmins{ids: map[uuid.UUID]bool{actor: true}})
 	if _, err := service.ResetPlatformSection(nil, actor, sectionMail); err == nil {
 		t.Fatal("nil context was accepted")
@@ -241,7 +241,7 @@ func TestResetPlatformSectionRequiresActorAdminCacheAndStore(t *testing.T) {
 	if _, err := service.ResetPlatformSection(context.Background(), uuid.Nil, sectionMail); err == nil {
 		t.Fatal("nil actor on a known section was accepted")
 	}
-	unwired := NewService(store, prefixSealer{}, &memoryCache{}, activity)
+	unwired := NewService(Deps{Store: store, Sealer: prefixSealer{}, Cache: &memoryCache{}, Activity: activity})
 	if _, err := unwired.ResetPlatformSection(context.Background(), actor, sectionMail); err == nil {
 		t.Fatal("missing platform admins was accepted")
 	}
@@ -277,7 +277,7 @@ func TestResetPlatformSectionLeavesTheCacheWhenActivityFails(t *testing.T) {
 	cache := &memoryCache{values: map[string]string{
 		platformCacheKey(groupWebhookDelivery): "stale-delivery",
 	}}
-	service := NewService(store, prefixSealer{}, cache, activity).
+	service := NewService(Deps{Store: store, Sealer: prefixSealer{}, Cache: cache, Activity: activity}).
 		WithPlatformAdmins(allowPlatformAdmins{ids: map[uuid.UUID]bool{actor: true}})
 
 	if _, err := service.ResetPlatformSection(context.Background(), actor, sectionDelivery); err == nil {

@@ -30,7 +30,7 @@ func TestSettingsReadStoresAJSONMapForTenMinutes(t *testing.T) {
 		t.Fatalf("insert actor: %v", err)
 	}
 
-	service := settings.NewService(settingsRepo, settings.CryptSealer{}, settings.FacadeCache{}, activityRepo)
+	service := settings.NewService(settings.Deps{Store: settingsRepo, Sealer: settings.CryptSealer{}, Cache: settings.FacadeCache{}, Activity: activityRepo})
 	if _, err := service.Save(ctx, account.ID, actorID, "owner", "account_security", map[string]any{
 		"require_2fa": true,
 	}); err != nil {

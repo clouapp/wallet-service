@@ -65,7 +65,7 @@ func TestEtherscanKeyForHeight_MissingDisabledUnsealedAndFailedReadUseTheEnvKey(
 			keyProviderEnabled: "true",
 			keyProviderAPIKey:  "enc:v1:" + etherscanSettingsKey,
 		})
-		service := NewService(store, refuseEtherscanSealer{}, nopCache{}, discardActivity{})
+		service := NewService(Deps{Store: store, Sealer: refuseEtherscanSealer{}, Cache: nopCache{}, Activity: discardActivity{}})
 		got := service.EtherscanKeyForHeight(context.Background(), etherscanEnvKey)
 		if got != etherscanEnvKey {
 			t.Fatal("an api key whose seal did not open was used")
@@ -73,7 +73,7 @@ func TestEtherscanKeyForHeight_MissingDisabledUnsealedAndFailedReadUseTheEnvKey(
 	})
 
 	t.Run("read failed", func(t *testing.T) {
-		service := NewService(platformErrStore{err: errors.New(etherscanSettingsKey)}, prefixSealer{}, nopCache{}, discardActivity{})
+		service := NewService(Deps{Store: platformErrStore{err: errors.New(etherscanSettingsKey)}, Sealer: prefixSealer{}, Cache: nopCache{}, Activity: discardActivity{}})
 		got := service.EtherscanKeyForHeight(context.Background(), etherscanEnvKey)
 		if got != etherscanEnvKey {
 			t.Fatal("a failed provider_etherscan read did not keep the environment key")

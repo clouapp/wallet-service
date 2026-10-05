@@ -101,7 +101,7 @@ func TestSavePlatform_ZeroOrNegativeIsNotStored(t *testing.T) {
 	store := newMemoryStore()
 	activity := &recordingActivity{}
 	actor := uuid.New()
-	service := NewService(store, prefixSealer{}, &memoryCache{}, activity).
+	service := NewService(Deps{Store: store, Sealer: prefixSealer{}, Cache: &memoryCache{}, Activity: activity}).
 		WithPlatformAdmins(allowPlatformAdmins{ids: map[uuid.UUID]bool{actor: true}})
 	ctx := context.Background()
 
@@ -137,7 +137,7 @@ func TestSavePlatform_RecordsNamesAndDeliveryReadsThem(t *testing.T) {
 	activity := &recordingActivity{}
 	cache := &memoryCache{}
 	actor := uuid.New()
-	service := NewService(store, prefixSealer{}, cache, activity).
+	service := NewService(Deps{Store: store, Sealer: prefixSealer{}, Cache: cache, Activity: activity}).
 		WithPlatformAdmins(allowPlatformAdmins{ids: map[uuid.UUID]bool{actor: true}})
 	ctx := context.Background()
 
@@ -185,7 +185,7 @@ func TestSavePlatform_UnknownGroupIsNotFoundBeforeTheAdminCheck(t *testing.T) {
 
 	store := newMemoryStore()
 	stranger := uuid.New()
-	service := NewService(store, prefixSealer{}, &memoryCache{}, &recordingActivity{}).
+	service := NewService(Deps{Store: store, Sealer: prefixSealer{}, Cache: &memoryCache{}, Activity: &recordingActivity{}}).
 		WithPlatformAdmins(allowPlatformAdmins{})
 	ctx := context.Background()
 

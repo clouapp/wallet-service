@@ -23,12 +23,12 @@ const (
 
 func TestVerifyInbound_EnabledGroupSuppliesTheOpenedKey(t *testing.T) {
 	logs := captureIngestLogs(t)
-	rows := settings.NewService(&ingestSettingsRows{groups: map[string]map[string]string{
+	rows := settings.NewService(settings.Deps{Store: &ingestSettingsRows{groups: map[string]map[string]string{
 		"provider_alchemy": {
 			"enabled":    "true",
 			"auth_token": "enc:v1:" + verifyOpenedKey,
 		},
-	}}, ingestPrefixSealer{}, nil, ingestDiscardActivity{})
+	}}, Sealer: ingestPrefixSealer{}, Cache: nil, Activity: ingestDiscardActivity{}})
 	var seen string
 	provider := NewAlchemyProvider(verifyBootKey).UseKeySource(func(ctx context.Context) string {
 		seen = rows.IngestProviderKey(ctx, "alchemy", verifyEnvKey)

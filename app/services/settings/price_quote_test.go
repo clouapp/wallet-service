@@ -106,7 +106,7 @@ func TestPriceProvidersForQuote_SkipsDisabledUnsealedUnknownAndFailedReads(t *te
 				keyPriceAPIKey:  "enc:v1:" + priceCoinGeckoFixture,
 			},
 		})
-		service := NewService(store, refuseQuoteSealer{}, nopCache{}, discardActivity{})
+		service := NewService(Deps{Store: store, Sealer: refuseQuoteSealer{}, Cache: nopCache{}, Activity: discardActivity{}})
 		got, err := service.PriceProvidersForQuote(context.Background())
 		if err != nil || len(got) != 0 {
 			t.Fatal("an api key whose seal did not open was used")
@@ -136,7 +136,7 @@ func TestPriceProvidersForQuote_SkipsDisabledUnsealedUnknownAndFailedReads(t *te
 	t.Run("lookup read failed", func(t *testing.T) {
 		t.Parallel()
 		secret := priceCoinGeckoFixture + " enc:v1:price-blob"
-		service := NewService(platformErrStore{err: errors.New(secret)}, prefixSealer{}, nopCache{}, discardActivity{})
+		service := NewService(Deps{Store: platformErrStore{err: errors.New(secret)}, Sealer: prefixSealer{}, Cache: nopCache{}, Activity: discardActivity{}})
 		_, err := service.PriceProvidersForQuote(context.Background())
 		if err == nil || strings.Contains(err.Error(), priceCoinGeckoFixture) || strings.Contains(err.Error(), "enc:v1:") {
 			t.Fatal("a failed price_lookup read exposed a key or was ignored")

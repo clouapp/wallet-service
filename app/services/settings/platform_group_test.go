@@ -27,7 +27,7 @@ func TestPlatformGroup_AdminSeesDefaultsAndHidesASecret(t *testing.T) {
 
 	actor := uuid.New()
 	activity := &recordingActivity{}
-	service := NewService(newMemoryStore(), prefixSealer{}, &memoryCache{}, activity).
+	service := NewService(Deps{Store: newMemoryStore(), Sealer: prefixSealer{}, Cache: &memoryCache{}, Activity: activity}).
 		WithPlatformAdmins(allowPlatformAdmins{ids: map[uuid.UUID]bool{actor: true}})
 
 	empty, err := service.PlatformGroup(context.Background(), actor, groupMailSMTP)
@@ -51,7 +51,7 @@ func TestPlatformGroup_AdminSeesDefaultsAndHidesASecret(t *testing.T) {
 		keyMailHost:     "127.0.0.1",
 		keyMailPassword: "enc:v1:" + platformGroupSecret,
 	})
-	service = NewService(store, prefixSealer{}, &memoryCache{}, activity).
+	service = NewService(Deps{Store: store, Sealer: prefixSealer{}, Cache: &memoryCache{}, Activity: activity}).
 		WithPlatformAdmins(allowPlatformAdmins{ids: map[uuid.UUID]bool{actor: true}})
 	view, err := service.PlatformGroup(context.Background(), actor, "  "+groupMailSMTP+"  ")
 	if err != nil {
@@ -92,7 +92,7 @@ func TestPlatformGroup_AdminReadsProviderCredentialsWithoutTheSecret(t *testing.
 			"enabled":       "true",
 		})
 	}
-	service := NewService(store, prefixSealer{}, &memoryCache{}, &recordingActivity{}).
+	service := NewService(Deps{Store: store, Sealer: prefixSealer{}, Cache: &memoryCache{}, Activity: &recordingActivity{}}).
 		WithPlatformAdmins(allowPlatformAdmins{ids: map[uuid.UUID]bool{actor: true}})
 
 	for _, group := range providerCredentialGroups() {
@@ -143,7 +143,7 @@ func TestGetGroup_DefaultTakesTheTypeShape(t *testing.T) {
 	t.Parallel()
 
 	actor := uuid.New()
-	service := NewService(newMemoryStore(), prefixSealer{}, &memoryCache{}, &recordingActivity{}).
+	service := NewService(Deps{Store: newMemoryStore(), Sealer: prefixSealer{}, Cache: &memoryCache{}, Activity: &recordingActivity{}}).
 		WithPlatformAdmins(allowPlatformAdmins{ids: map[uuid.UUID]bool{actor: true}})
 
 	view, err := service.PlatformGroup(context.Background(), actor, groupPriceLookup)
@@ -165,7 +165,7 @@ func TestSettingsService_Bool_DefaultsToDisabled(t *testing.T) {
 	t.Parallel()
 
 	actor := uuid.New()
-	service := NewService(newMemoryStore(), prefixSealer{}, &memoryCache{}, &recordingActivity{}).
+	service := NewService(Deps{Store: newMemoryStore(), Sealer: prefixSealer{}, Cache: &memoryCache{}, Activity: &recordingActivity{}}).
 		WithPlatformAdmins(allowPlatformAdmins{ids: map[uuid.UUID]bool{actor: true}})
 
 	view, err := service.PlatformGroup(context.Background(), actor, groupPriceCoinGecko)
@@ -187,7 +187,7 @@ func TestPlatformGroup_NotFoundComesBeforeForbidden(t *testing.T) {
 
 	actor := uuid.New()
 	admins := &countingPlatformAdmins{}
-	service := NewService(platformErrStore{err: errors.New("db down")}, prefixSealer{}, nopCache{}, discardActivity{}).
+	service := NewService(Deps{Store: platformErrStore{err: errors.New("db down")}, Sealer: prefixSealer{}, Cache: nopCache{}, Activity: discardActivity{}}).
 		WithPlatformAdmins(admins)
 
 	for _, name := range []string{"no-such-group", groupAccountSecurity} {

@@ -21,7 +21,7 @@ func TestPrepareValueSkipsABlankSecretBeforeSealing(t *testing.T) {
 	t.Parallel()
 
 	sealer := &countingSealer{}
-	service := NewService(newMemoryStore(), sealer, nopCache{}, discardActivity{})
+	service := NewService(Deps{Store: newMemoryStore(), Sealer: sealer, Cache: nopCache{}, Activity: discardActivity{}})
 	definition, ok := Find(groupAccountWebhooks, keySigningSecret)
 	if !ok {
 		t.Fatal("signing secret is not in the registry")
@@ -57,7 +57,7 @@ func TestPrepareValueCastsASecretBeforeSealing(t *testing.T) {
 	t.Parallel()
 
 	sealer := &countingSealer{}
-	service := NewService(newMemoryStore(), sealer, nopCache{}, discardActivity{})
+	service := NewService(Deps{Store: newMemoryStore(), Sealer: sealer, Cache: nopCache{}, Activity: discardActivity{}})
 
 	units := Definition{Key: "units", Type: TypeInt, Secret: true}
 	if _, _, err := service.prepareValue(units, "nope"); err == nil {

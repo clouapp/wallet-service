@@ -85,7 +85,7 @@ func TestPlatformAccountGroup_AdminSeesOneAccountAndHidesASecret(t *testing.T) {
 	activity := &recordingActivity{}
 	cache := &memoryCache{}
 	emptyAccount := uuid.New()
-	service := NewService(store, refuseOpenSealer{}, cache, activity).
+	service := NewService(Deps{Store: store, Sealer: refuseOpenSealer{}, Cache: cache, Activity: activity}).
 		WithPlatformAdmins(allowPlatformAdmins{ids: map[uuid.UUID]bool{actor: true}}).
 		WithAccounts(&setAccounts{ids: map[uuid.UUID]bool{
 			accountA: true, accountB: true, emptyAccount: true,
@@ -146,7 +146,7 @@ func TestPlatformAccountGroup_NotFoundComesBeforeForbidden(t *testing.T) {
 	admins := &countingPlatformAdmins{}
 	accounts := &setAccounts{ids: map[uuid.UUID]bool{accountID: true}}
 	store := &recordingAccountStore{memoryStore: newMemoryStore()}
-	service := NewService(store, refuseOpenSealer{}, nopCache{}, &recordingActivity{}).
+	service := NewService(Deps{Store: store, Sealer: refuseOpenSealer{}, Cache: nopCache{}, Activity: &recordingActivity{}}).
 		WithPlatformAdmins(admins).
 		WithAccounts(accounts)
 

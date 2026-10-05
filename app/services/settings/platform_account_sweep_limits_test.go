@@ -28,7 +28,7 @@ func TestSavePlatformAccountSweepLimits_AccountRowOverridesThePlatformRow(t *tes
 	}
 	activity := &recordingActivity{}
 	cache := &memoryCache{}
-	service := NewService(store, prefixSealer{}, cache, activity).
+	service := NewService(Deps{Store: store, Sealer: prefixSealer{}, Cache: cache, Activity: activity}).
 		WithPlatformAdmins(allowPlatformAdmins{ids: map[uuid.UUID]bool{actor: true}}).
 		WithAccounts(&setAccounts{ids: map[uuid.UUID]bool{accountID: true, otherID: true}})
 	ctx := context.Background()
@@ -134,7 +134,7 @@ func TestSavePlatformAccountSweepLimits_NotFoundComesBeforeForbidden(t *testing.
 	}); err != nil {
 		t.Fatalf("seed: %v", err)
 	}
-	service := NewService(store, prefixSealer{}, &memoryCache{}, &recordingActivity{}).
+	service := NewService(Deps{Store: store, Sealer: prefixSealer{}, Cache: &memoryCache{}, Activity: &recordingActivity{}}).
 		WithPlatformAdmins(admins).
 		WithAccounts(accounts)
 	ctx := context.Background()
@@ -193,7 +193,7 @@ func TestSavePlatformAccountSweepLimits_ZeroNegativeAndANegativeCapAreNotStored(
 	}
 	activity := &recordingActivity{}
 	cache := &memoryCache{}
-	service := NewService(store, prefixSealer{}, cache, activity).
+	service := NewService(Deps{Store: store, Sealer: prefixSealer{}, Cache: cache, Activity: activity}).
 		WithPlatformAdmins(allowPlatformAdmins{ids: map[uuid.UUID]bool{actor: true}}).
 		WithAccounts(&setAccounts{ids: map[uuid.UUID]bool{accountID: true}})
 	ctx := context.Background()

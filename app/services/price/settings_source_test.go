@@ -116,7 +116,7 @@ func TestRefreshFiatRates_ResolvesProvidersPerQuote(t *testing.T) {
 	}}
 	reads := 0
 	var asked []*askedQuoteProvider
-	accountSettings := settings.NewService(rows, quotePrefixSealer{}, nil, quoteDiscardActivity{})
+	accountSettings := settings.NewService(settings.Deps{Store: rows, Sealer: quotePrefixSealer{}, Cache: nil, Activity: quoteDiscardActivity{}})
 	currencies := &quoteCurrencyStore{fiats: []models.Currency{{Code: "EUR", Type: models.CurrencyTypeFiat}}}
 	svc := NewService(Deps{Currencies: currencies}).
 		WithSettingsSource(func(ctx context.Context) ([]Credential, error) {
@@ -162,7 +162,7 @@ type quoteService struct {
 }
 
 func newQuoteService(rows *quoteSettingsRows, envKey string, factory quoteProviderFactory) *quoteService {
-	accountSettings := settings.NewService(rows, quotePrefixSealer{}, nil, quoteDiscardActivity{})
+	accountSettings := settings.NewService(settings.Deps{Store: rows, Sealer: quotePrefixSealer{}, Cache: nil, Activity: quoteDiscardActivity{}})
 	currencies := &quoteCurrencyStore{cryptos: []models.Currency{{Code: "BTC", Type: models.CurrencyTypeCrypto}}}
 	svc := NewService(Deps{Currencies: currencies}).
 		WithSettingsSource(func(ctx context.Context) ([]Credential, error) {

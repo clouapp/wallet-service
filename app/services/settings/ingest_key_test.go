@@ -80,7 +80,7 @@ func TestIngestProviderKey_MissingDisabledUnsealedAndFailedReadUseTheEnvKey(t *t
 			keyProviderEnabled: "true",
 			keyProviderAPIKey:  "enc:v1:" + ingestOpenedKey,
 		})
-		service := NewService(store, refuseIngestSealer{}, nopCache{}, discardActivity{})
+		service := NewService(Deps{Store: store, Sealer: refuseIngestSealer{}, Cache: nopCache{}, Activity: discardActivity{}})
 		got := service.IngestProviderKey(context.Background(), ingestProviderQuickNode, ingestEnvKey)
 		if got != ingestEnvKey {
 			t.Fatal("an api key whose seal did not open was used")
@@ -88,7 +88,7 @@ func TestIngestProviderKey_MissingDisabledUnsealedAndFailedReadUseTheEnvKey(t *t
 	})
 
 	t.Run("read failed", func(t *testing.T) {
-		service := NewService(platformErrStore{err: errors.New(ingestOpenedKey)}, prefixSealer{}, nopCache{}, discardActivity{})
+		service := NewService(Deps{Store: platformErrStore{err: errors.New(ingestOpenedKey)}, Sealer: prefixSealer{}, Cache: nopCache{}, Activity: discardActivity{}})
 		got := service.IngestProviderKey(context.Background(), ingestProviderAlchemy, ingestEnvKey)
 		if got != ingestEnvKey {
 			t.Fatal("a failed provider_alchemy read did not keep the environment key")

@@ -59,12 +59,7 @@ func sweepLimitsColumnCount(t *testing.T) int64 {
 
 func loadSweepLimits(t *testing.T, account models.Account) *sweepsvc.Limits {
 	t.Helper()
-	service := settings.NewService(
-		repositories.NewSettingRepository(nil),
-		settings.CryptSealer{},
-		settings.FacadeCache{},
-		repositories.NewAccountActivityRepository(nil),
-	)
+	service := settings.NewService(settings.Deps{Store: repositories.NewSettingRepository(nil), Sealer: settings.CryptSealer{}, Cache: settings.FacadeCache{}, Activity: repositories.NewAccountActivityRepository(nil)})
 	sweep := sweepsvc.NewService(sweepsvc.Deps{
 		SweepLimits: service.EffectiveSweepLimits,
 	})

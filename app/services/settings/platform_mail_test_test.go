@@ -16,7 +16,7 @@ func TestAuthorizePlatformMailTestAllowsAnAdminAndWritesNothing(t *testing.T) {
 	actor := uuid.New()
 	activity := &countingMailTestActivity{}
 	store := newMemoryStore()
-	service := NewService(store, prefixSealer{}, nopCache{}, activity).
+	service := NewService(Deps{Store: store, Sealer: prefixSealer{}, Cache: nopCache{}, Activity: activity}).
 		WithPlatformAdmins(allowPlatformAdmins{ids: map[uuid.UUID]bool{actor: true}})
 
 	if err := service.AuthorizePlatformMailTest(context.Background(), actor); err != nil {
@@ -34,7 +34,7 @@ func TestAuthorizePlatformMailTestRefusesANonAdmin(t *testing.T) {
 	t.Parallel()
 
 	activity := &countingMailTestActivity{}
-	service := NewService(newMemoryStore(), prefixSealer{}, nopCache{}, activity).
+	service := NewService(Deps{Store: newMemoryStore(), Sealer: prefixSealer{}, Cache: nopCache{}, Activity: activity}).
 		WithPlatformAdmins(allowPlatformAdmins{})
 
 	err := service.AuthorizePlatformMailTest(context.Background(), uuid.New())

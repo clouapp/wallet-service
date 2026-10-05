@@ -31,7 +31,7 @@ func TestSyncChainAddresses_ReadsTheProviderKeyOnEverySync(t *testing.T) {
 			"auth_token": "enc:v1:" + syncOpenedKey,
 		},
 	}}
-	accountSettings := settings.NewService(rows, syncPrefixSealer{}, nil, syncDiscardActivity{})
+	accountSettings := settings.NewService(settings.Deps{Store: rows, Sealer: syncPrefixSealer{}, Cache: nil, Activity: syncDiscardActivity{}})
 	stub := &syncStub{}
 	var seen []string
 	service := NewService(Deps{

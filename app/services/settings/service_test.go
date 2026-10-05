@@ -121,7 +121,7 @@ func (discardActivity) Within(ctx context.Context, fn func(context.Context) erro
 func (discardActivity) Append(context.Context, models.AccountActivity) error { return nil }
 
 func newTestService(store Store) *Service {
-	return NewService(store, prefixSealer{}, nopCache{}, discardActivity{})
+	return NewService(Deps{Store: store, Sealer: prefixSealer{}, Cache: nopCache{}, Activity: discardActivity{}})
 }
 
 func TestSaveBlankSecretKeepsTheStoredCiphertext(t *testing.T) {
@@ -225,7 +225,7 @@ func TestAccountCannotReadAnotherAccountsSettings(t *testing.T) {
 
 	store := newMemoryStore()
 	cache := &memoryCache{}
-	service := NewService(store, prefixSealer{}, cache, discardActivity{})
+	service := NewService(Deps{Store: store, Sealer: prefixSealer{}, Cache: cache, Activity: discardActivity{}})
 	accountA := uuid.New()
 	accountB := uuid.New()
 	ctx := context.Background()
@@ -411,7 +411,7 @@ func TestResetSectionClearsStoredRowsAndRecordsFieldNames(t *testing.T) {
 	store := newMemoryStore()
 	activity := &recordingActivity{}
 	cache := &memoryCache{}
-	service := NewService(store, prefixSealer{}, cache, activity)
+	service := NewService(Deps{Store: store, Sealer: prefixSealer{}, Cache: cache, Activity: activity})
 	accountID := uuid.New()
 	actorID := uuid.New()
 	ctx := context.Background()
@@ -547,7 +547,7 @@ func TestFlushSectionForgetsThePageAndLeavesStoredRows(t *testing.T) {
 	store := newMemoryStore()
 	activity := &recordingActivity{}
 	cache := &memoryCache{}
-	service := NewService(store, prefixSealer{}, cache, activity)
+	service := NewService(Deps{Store: store, Sealer: prefixSealer{}, Cache: cache, Activity: activity})
 	accountID := uuid.New()
 	ctx := context.Background()
 	store.rows[store.key(accountID, groupAccountSecurity)] = map[string]string{keyRequire2FA: "true"}
@@ -588,7 +588,7 @@ func TestFlushSectionUnknownForgetsNothing(t *testing.T) {
 	t.Parallel()
 
 	cache := &memoryCache{}
-	service := NewService(newMemoryStore(), prefixSealer{}, cache, &recordingActivity{})
+	service := NewService(Deps{Store: newMemoryStore(), Sealer: prefixSealer{}, Cache: cache, Activity: &recordingActivity{}})
 	ctx := context.Background()
 	accountID := uuid.New()
 	for _, role := range []string{"owner", "auditor", "user"} {
@@ -609,7 +609,7 @@ func TestFlushSectionRefusesAPlatformManagedGroup(t *testing.T) {
 
 	store := newMemoryStore()
 	cache := &memoryCache{}
-	service := NewService(store, prefixSealer{}, cache, &recordingActivity{})
+	service := NewService(Deps{Store: store, Sealer: prefixSealer{}, Cache: cache, Activity: &recordingActivity{}})
 	accountID := uuid.New()
 	store.rows[store.key(accountID, groupAccountSweepLimits)] = map[string]string{
 		keyDailyWithdrawCapUSD: "12.50",
@@ -640,7 +640,7 @@ func TestFlushSectionUserCannotFlushAKnownSection(t *testing.T) {
 
 	store := newMemoryStore()
 	cache := &memoryCache{}
-	service := NewService(store, prefixSealer{}, cache, &recordingActivity{})
+	service := NewService(Deps{Store: store, Sealer: prefixSealer{}, Cache: cache, Activity: &recordingActivity{}})
 	accountID := uuid.New()
 	store.rows[store.key(accountID, groupAccountSecurity)] = map[string]string{keyRequire2FA: "true"}
 
@@ -674,7 +674,7 @@ func TestSettingsService_ResetSection_StopsAtTheFirstRepositoryError(t *testing.
 	securityKey := cacheKey(accountID, groupAccountSecurity)
 	cache.values[securityKey] = "sealed-cache"
 	activity := &recordingActivity{}
-	service := NewService(store, prefixSealer{}, cache, activity)
+	service := NewService(Deps{Store: store, Sealer: prefixSealer{}, Cache: cache, Activity: activity})
 
 	_, err := service.ResetSection(context.Background(), accountID, uuid.New(), "owner", sectionSecurity)
 	if err == nil || !strings.Contains(err.Error(), "db boom") {

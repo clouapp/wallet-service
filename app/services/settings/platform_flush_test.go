@@ -39,7 +39,7 @@ func TestFlushPlatformSectionForgetsThePageAndLeavesStoredRows(t *testing.T) {
 	if len(pageKeys) == 0 {
 		t.Fatal("mail page has no platform groups")
 	}
-	service := NewService(store, prefixSealer{}, cache, activity).
+	service := NewService(Deps{Store: store, Sealer: prefixSealer{}, Cache: cache, Activity: activity}).
 		WithPlatformAdmins(allowPlatformAdmins{ids: map[uuid.UUID]bool{actor: true}})
 
 	if err := service.FlushPlatformSection(context.Background(), actor, "  "+sectionMail+"  "); err != nil {
@@ -84,7 +84,7 @@ func TestFlushPlatformSectionNotFoundComesBeforeForbidden(t *testing.T) {
 		platformCacheKey(groupMailSMTP):            "stale-mail",
 		cacheKey(uuid.New(), groupAccountSecurity): "stale-account",
 	}}
-	service := NewService(newMemoryStore(), prefixSealer{}, cache, &recordingActivity{}).
+	service := NewService(Deps{Store: newMemoryStore(), Sealer: prefixSealer{}, Cache: cache, Activity: &recordingActivity{}}).
 		WithPlatformAdmins(admins)
 
 	for _, section := range []string{"not-a-section", sectionSecurity, sectionLimits, "  "} {
@@ -127,7 +127,7 @@ func TestFlushPlatformSectionRequiresActorAdminAndCache(t *testing.T) {
 	if err := (*Service)(nil).FlushPlatformSection(context.Background(), actor, sectionMail); !errors.Is(err, errServiceRequired) {
 		t.Fatalf("nil service = %v", err)
 	}
-	service := NewService(store, prefixSealer{}, &memoryCache{}, activity).
+	service := NewService(Deps{Store: store, Sealer: prefixSealer{}, Cache: &memoryCache{}, Activity: activity}).
 		WithPlatformAdmins(allowPlatformAdmins{ids: map[uuid.UUID]bool{actor: true}})
 	if err := service.FlushPlatformSection(nil, actor, sectionMail); err == nil {
 		t.Fatal("nil context was accepted")
@@ -138,7 +138,7 @@ func TestFlushPlatformSectionRequiresActorAdminAndCache(t *testing.T) {
 	if err := service.FlushPlatformSection(context.Background(), uuid.Nil, sectionMail); err == nil {
 		t.Fatal("nil actor on a known section was accepted")
 	}
-	unwired := NewService(store, prefixSealer{}, &memoryCache{}, activity)
+	unwired := NewService(Deps{Store: store, Sealer: prefixSealer{}, Cache: &memoryCache{}, Activity: activity})
 	if err := unwired.FlushPlatformSection(context.Background(), actor, sectionMail); err == nil {
 		t.Fatal("missing platform admins was accepted")
 	}

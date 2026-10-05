@@ -110,7 +110,7 @@ func TestSavePlatformMailProviders_SealsSecretsAndHidesThem(t *testing.T) {
 			store := newMemoryStore()
 			activity := &recordingActivity{}
 			actor := uuid.New()
-			service := NewService(store, prefixSealer{}, &memoryCache{}, activity).
+			service := NewService(Deps{Store: store, Sealer: prefixSealer{}, Cache: &memoryCache{}, Activity: activity}).
 				WithPlatformAdmins(allowPlatformAdmins{ids: map[uuid.UUID]bool{actor: true}})
 			ctx := context.Background()
 
@@ -174,7 +174,7 @@ func TestSavePlatformMailSES_RequiresTheKeyPairTogether(t *testing.T) {
 
 	store := newMemoryStore()
 	actor := uuid.New()
-	service := NewService(store, prefixSealer{}, &memoryCache{}, &recordingActivity{}).
+	service := NewService(Deps{Store: store, Sealer: prefixSealer{}, Cache: &memoryCache{}, Activity: &recordingActivity{}}).
 		WithPlatformAdmins(allowPlatformAdmins{ids: map[uuid.UUID]bool{actor: true}})
 
 	_, err := service.SavePlatform(context.Background(), actor, groupMailSES, map[string]any{

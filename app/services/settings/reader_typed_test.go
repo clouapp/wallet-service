@@ -83,7 +83,7 @@ func TestSecretBadSealFailsClosed(t *testing.T) {
 	store.PutPlatform(groupMailSMTP, map[string]string{
 		keyMailPassword: sealedPrefix + "sealed-blob",
 	})
-	service := NewService(store, refuseOpenSealer{}, nopCache{}, discardActivity{})
+	service := NewService(Deps{Store: store, Sealer: refuseOpenSealer{}, Cache: nopCache{}, Activity: discardActivity{}})
 
 	got, err := service.Secret(context.Background(), nil, groupMailSMTP, keyMailPassword)
 	if !errors.Is(err, ErrSecretSeal) || got != "" {

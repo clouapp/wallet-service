@@ -152,7 +152,7 @@ func TestNewProviders_BitcoinUsesTheTestnet4AwareProvider(t *testing.T) {
 
 func heightProviders(t *testing.T, store etherscanHeightStore, seen *string) (map[string]Provider, *httptest.Server) {
 	t.Helper()
-	service := settings.NewService(store, heightPrefixSealer{}, nil, heightDiscardActivity{})
+	service := settings.NewService(settings.Deps{Store: store, Sealer: heightPrefixSealer{}, Cache: nil, Activity: heightDiscardActivity{}})
 	providers := NewProviders(func(ctx context.Context) string {
 		return service.EtherscanKeyForHeight(ctx, heightEnvKey)
 	}, map[string]string{})

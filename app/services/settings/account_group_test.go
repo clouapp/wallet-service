@@ -43,7 +43,7 @@ func TestAccountGroup_MemberSeesOneAccountAndHidesASecret(t *testing.T) {
 		Value:     "19",
 	}}
 	activity := &recordingActivity{}
-	service := NewService(store, refuseOpenSealer{}, &memoryCache{}, activity)
+	service := NewService(Deps{Store: store, Sealer: refuseOpenSealer{}, Cache: &memoryCache{}, Activity: activity})
 
 	view, err := service.AccountGroup(context.Background(), accountA, "auditor", "  "+groupAccountSweepLimits+"  ")
 	if err != nil {
@@ -106,7 +106,7 @@ func TestAccountGroup_OwnerAdminAndAuditorStillReadSweepLimits(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("store: %v", err)
 	}
-	service := NewService(store, refuseOpenSealer{}, nopCache{}, &recordingActivity{})
+	service := NewService(Deps{Store: store, Sealer: refuseOpenSealer{}, Cache: nopCache{}, Activity: &recordingActivity{}})
 	group, ok := FindGroup(groupAccountSweepLimits)
 	if !ok || group.ViewPermission != "sweep.view" || group.UpdatePermission != "sweep.update" {
 		t.Fatalf("account sweep permissions = %q %q present %v", group.ViewPermission, group.UpdatePermission, ok)
@@ -131,7 +131,7 @@ func TestAccountGroup_NotFoundComesBeforeForbidden(t *testing.T) {
 
 	accountID := uuid.New()
 	store := &recordingAccountStore{memoryStore: newMemoryStore()}
-	service := NewService(store, refuseOpenSealer{}, nopCache{}, &recordingActivity{})
+	service := NewService(Deps{Store: store, Sealer: refuseOpenSealer{}, Cache: nopCache{}, Activity: &recordingActivity{}})
 
 	for _, name := range []string{"no-such-group", groupMailSMTP, groupSweepLimits, groupDepositScan} {
 		_, err := service.AccountGroup(context.Background(), accountID, "user", name)

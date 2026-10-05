@@ -18,7 +18,7 @@ func TestSavePlatformEtherscan_StoresEnabledAndSealsTheAPIKey(t *testing.T) {
 	store := newMemoryStore()
 	activity := &recordingActivity{}
 	actor := uuid.New()
-	service := NewService(store, prefixSealer{}, &memoryCache{}, activity).
+	service := NewService(Deps{Store: store, Sealer: prefixSealer{}, Cache: &memoryCache{}, Activity: activity}).
 		WithPlatformAdmins(allowPlatformAdmins{ids: map[uuid.UUID]bool{actor: true}})
 	ctx := context.Background()
 
@@ -69,7 +69,7 @@ func TestSavePlatformEtherscan_RejectsAnAuthTokenAndANonBoolean(t *testing.T) {
 
 	store := newMemoryStore()
 	actor := uuid.New()
-	service := NewService(store, prefixSealer{}, &memoryCache{}, &recordingActivity{}).
+	service := NewService(Deps{Store: store, Sealer: prefixSealer{}, Cache: &memoryCache{}, Activity: &recordingActivity{}}).
 		WithPlatformAdmins(allowPlatformAdmins{ids: map[uuid.UUID]bool{actor: true}})
 	ctx := context.Background()
 
@@ -103,7 +103,7 @@ func TestSavePlatformEtherscan_ForbidsANonAdmin(t *testing.T) {
 
 	store := newMemoryStore()
 	activity := &recordingActivity{}
-	service := NewService(store, prefixSealer{}, &memoryCache{}, activity).
+	service := NewService(Deps{Store: store, Sealer: prefixSealer{}, Cache: &memoryCache{}, Activity: activity}).
 		WithPlatformAdmins(allowPlatformAdmins{})
 
 	_, err := service.SavePlatform(context.Background(), uuid.New(), groupProviderEtherscan, map[string]any{
