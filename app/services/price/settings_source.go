@@ -123,7 +123,11 @@ func (s *Service) quoteProvider(name, apiKey string) (PriceProvider, bool) {
 	case providerCoinMarketCap:
 		return NewCoinMarketCapProvider(apiKey), true
 	case providerCoinAPI:
-		return NewCoinAPIProvider(apiKey), true
+		provider := NewCoinAPIProvider(apiKey)
+		if provider == nil {
+			return nil, false
+		}
+		return provider, true
 	default:
 		return nil, false
 	}

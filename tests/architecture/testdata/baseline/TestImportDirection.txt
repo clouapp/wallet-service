@@ -51,6 +51,7 @@ app/services/ingest/providers → app/adapters/ingest/alchemy (services → adap
 app/services/ingest/providers → app/adapters/ingest/helius (services → adapters) [test]
 app/services/ingest/providers → app/adapters/ingest/quicknode (services → adapters) [test]
 app/services/keyexport → app/adapters/chain/bitcoin (services → adapters) [test]
+app/services/price → app/adapters/price/coinapi (services → adapters) [test]
 app/services/price → app/adapters/price/coingecko (services → adapters) [test]
 app/services/refresh → app/repositories (services → repositories) (x2)
 app/services/refresh → app/repositories (services → repositories) [test]

@@ -1,4 +1,4 @@
-package price
+package coinapi
 
 import (
 	"context"
@@ -7,8 +7,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/macrowallets/waas/pkg/httpclient"
 	"github.com/shopspring/decimal"
+
+	"github.com/macrowallets/waas/app/services/price"
+	"github.com/macrowallets/waas/pkg/httpclient"
 )
 
 var coinAPIAssetMapping = map[string]string{}
@@ -22,22 +24,33 @@ func init() {
 	}
 }
 
+const (
+	restBaseURL = "https://rest.coinapi.io/v1"
+	httpTimeout = 15 * time.Second
+)
+
+// CoinAPIProvider calls the CoinAPI REST exchangerate API.
 type CoinAPIProvider struct {
 	apiKey  string
 	baseURL string
 	client  *httpclient.Client
 }
 
+// NewCoinAPIProvider returns a REST quote client. An empty apiKey still builds
+// the client; each fetch reports that the key is not configured.
 func NewCoinAPIProvider(apiKey string) *CoinAPIProvider {
 	return &CoinAPIProvider{
 		apiKey:  apiKey,
-		baseURL: "https://rest.coinapi.io/v1",
-		client:  httpclient.NewClient(15 * time.Second),
+		baseURL: restBaseURL,
+		client:  httpclient.NewClient(httpTimeout),
 	}
 }
 
+// Name is the provider id stored with a quote.
 func (p *CoinAPIProvider) Name() string { return "coinapi" }
 
+// FetchCryptoPrices returns USD prices. Codes are uppercased unless the asset
+// map renames them. A non-positive rate is skipped.
 func (p *CoinAPIProvider) FetchCryptoPrices(codes []string) (map[string]decimal.Decimal, error) {
 	if p.apiKey == "" {
 		return nil, fmt.Errorf("coinapi: api key not configured")
@@ -82,6 +95,8 @@ func (p *CoinAPIProvider) FetchCryptoPrices(codes []string) (map[string]decimal.
 	return prices, nil
 }
 
+// FetchFiatRates returns USD per fiat unit. The exchangerate payload is units
+// per USD, and the price column stores the inverted USD rate.
 func (p *CoinAPIProvider) FetchFiatRates(codes []string) (map[string]decimal.Decimal, error) {
 	if p.apiKey == "" {
 		return nil, fmt.Errorf("coinapi: api key not configured")
@@ -106,7 +121,7 @@ func (p *CoinAPIProvider) FetchFiatRates(codes []string) (map[string]decimal.Dec
 	rates := make(map[string]decimal.Decimal, len(result.Rates))
 	for _, rate := range result.Rates {
 		if rate.Rate.IsPositive() {
-			rates[rate.AssetIDQuote] = invertRate(rate.Rate)
+			rates[rate.AssetIDQuote] = price.InvertRate(rate.Rate)
 		}
 	}
 	return rates, nil
@@ -126,3 +141,5 @@ func (p *CoinAPIProvider) get(url, label string) ([]byte, error) {
 	}
 	return resp.Body, nil
 }
+
+var _ price.PriceProvider = (*CoinAPIProvider)(nil)
