@@ -142,13 +142,13 @@ func newFixture() *fixture {
 	withdrawals.byID[withdrawal.ID] = withdrawal
 
 	enqueuer := &fakeEnqueuer{}
-	publisher := NewPublisher(
-		enqueuer,
-		withdrawals,
-		fakeTransactions{tx.ID: tx},
-		fakeWallets{wallet.ID: wallet},
-		fakeDecimals{polygonChain + "/" + usdcAsset: usdcDecimals},
-	)
+	publisher := NewPublisher(PublisherDeps{
+		Enqueuer:     enqueuer,
+		Withdrawals:  withdrawals,
+		Transactions: fakeTransactions{tx.ID: tx},
+		Wallets:      fakeWallets{wallet.ID: wallet},
+		Decimals:     fakeDecimals{polygonChain + "/" + usdcAsset: usdcDecimals},
+	})
 	publisher.now = func() time.Time { return time.Date(2026, 10, 1, 2, 0, 0, 0, time.UTC) }
 
 	return &fixture{publisher, enqueuer, withdrawals, accountID, wallet, withdrawal, tx}

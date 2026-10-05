@@ -83,13 +83,24 @@ type Publisher struct {
 	now          func() time.Time
 }
 
-func NewPublisher(enqueuer Enqueuer, withdrawals WithdrawalStore, transactions TransactionStore, wallets WalletStore, decimals AssetDecimals) *Publisher {
+// PublisherDeps is everything the withdrawal event publisher needs. A nil field means that
+// dependency is absent.
+type PublisherDeps struct {
+	Enqueuer     Enqueuer
+	Withdrawals  WithdrawalStore
+	Transactions TransactionStore
+	Wallets      WalletStore
+	Decimals     AssetDecimals
+}
+
+// NewPublisher wires the withdrawal event publisher from PublisherDeps.
+func NewPublisher(deps PublisherDeps) *Publisher {
 	return &Publisher{
-		enqueuer:     enqueuer,
-		withdrawals:  withdrawals,
-		transactions: transactions,
-		wallets:      wallets,
-		decimals:     decimals,
+		enqueuer:     deps.Enqueuer,
+		withdrawals:  deps.Withdrawals,
+		transactions: deps.Transactions,
+		wallets:      deps.Wallets,
+		decimals:     deps.Decimals,
 		now:          func() time.Time { return time.Now().UTC() },
 	}
 }

@@ -421,9 +421,13 @@ func buildVaultContainer(app foundation.Application) (*container.Container, erro
 		NetworkByChain: networkByChain,
 	})
 	assetDecimals := withdrawalevents.NewRegistryDecimals(c.Registry, c.ChainRepo)
-	c.WithdrawalEvents = withdrawalevents.NewPublisher(
-		c.WebhookService, c.WithdrawalRepo, c.TransactionRepo, c.WalletRepo, assetDecimals,
-	)
+	c.WithdrawalEvents = withdrawalevents.NewPublisher(withdrawalevents.PublisherDeps{
+		Enqueuer:     c.WebhookService,
+		Withdrawals:  c.WithdrawalRepo,
+		Transactions: c.TransactionRepo,
+		Wallets:      c.WalletRepo,
+		Decimals:     assetDecimals,
+	})
 	c.DepositEvents = depositevents.NewPublisher(depositevents.PublisherDeps{
 		Enqueuer: c.WebhookService,
 		Wallets:  c.WalletRepo,
