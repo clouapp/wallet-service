@@ -28,18 +28,31 @@ type InvitesController struct {
 	credentialMail *credentialmail.Service
 }
 
-// NewInvitesController wires invite preview and accept.
-func NewInvitesController(accounts *accountsvc.Service, users *usersvc.Service, credentialMail *credentialmail.Service) *InvitesController {
-	if accounts == nil {
+// InvitesControllerDeps is everything the dashboard invites controller needs.
+// Accounts issues and revokes invites. Users accepts an invite. CredentialMail
+// sends the invite message. Every field is required.
+type InvitesControllerDeps struct {
+	Accounts       *accountsvc.Service
+	Users          *usersvc.Service
+	CredentialMail *credentialmail.Service
+}
+
+// NewInvitesController wires invite preview and accept from InvitesControllerDeps.
+func NewInvitesController(deps InvitesControllerDeps) *InvitesController {
+	if deps.Accounts == nil {
 		panic("dashboard invites controller: account service is required")
 	}
-	if users == nil {
+	if deps.Users == nil {
 		panic("dashboard invites controller: user service is required")
 	}
-	if credentialMail == nil {
+	if deps.CredentialMail == nil {
 		panic("dashboard invites controller: credential mail is required")
 	}
-	return &InvitesController{accounts: accounts, users: users, credentialMail: credentialMail}
+	return &InvitesController{
+		accounts:       deps.Accounts,
+		users:          deps.Users,
+		credentialMail: deps.CredentialMail,
+	}
 }
 
 const frontendURLEnv = "APP_FRONTEND_URL"

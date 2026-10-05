@@ -537,9 +537,9 @@ func newDashboardAccountsController() *dashaccounts.AccountsController {
 }
 
 func newDashboardInvitesController() *dashaccounts.InvitesController {
-	return dashaccounts.NewInvitesController(
-		container.MustMake[*accountsvc.Service](),
-		container.MustMake[*usersvc.Service](),
-		container.MustMake[*credentialmail.Service](),
-	)
+	return dashaccounts.NewInvitesController(dashaccounts.InvitesControllerDeps{
+		Accounts:       container.MustMake[*accountsvc.Service](),
+		Users:          container.MustMake[*usersvc.Service](),
+		CredentialMail: container.MustMake[*credentialmail.Service](),
+	})
 }
