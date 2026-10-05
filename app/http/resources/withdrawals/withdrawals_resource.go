@@ -1,4 +1,4 @@
-package controllers
+package withdrawals
 
 import (
 	"github.com/google/uuid"
@@ -7,10 +7,10 @@ import (
 	"github.com/macrowallets/waas/app/models"
 )
 
-// WithdrawalView is the withdrawal row HTTP clients read. Field order and tags
+// Withdrawal is the withdrawal row HTTP clients read. Field order and tags
 // match the model wire, including embedded timestamps and the computed tx hash.
 // A nil page stays nil; an empty page stays empty. A nil withdrawal stays null.
-type WithdrawalView struct {
+type Withdrawal struct {
 	CreatedAt          *carbon.DateTime `json:"created_at"`
 	UpdatedAt          *carbon.DateTime `json:"updated_at"`
 	ID                 uuid.UUID        `json:"id"`
@@ -27,8 +27,9 @@ type WithdrawalView struct {
 	TxHash             string           `json:"tx_hash,omitempty"`
 }
 
-func newWithdrawalView(withdrawal models.Withdrawal) WithdrawalView {
-	return WithdrawalView{
+// WithdrawalFrom projects one withdrawal.
+func WithdrawalFrom(withdrawal models.Withdrawal) Withdrawal {
+	return Withdrawal{
 		CreatedAt:          withdrawal.CreatedAt,
 		UpdatedAt:          withdrawal.UpdatedAt,
 		ID:                 withdrawal.ID,
@@ -46,23 +47,23 @@ func newWithdrawalView(withdrawal models.Withdrawal) WithdrawalView {
 	}
 }
 
-// WithdrawalViews copies a page. A nil slice stays nil; an empty slice stays empty.
-func WithdrawalViews(withdrawals []models.Withdrawal) []WithdrawalView {
+// WithdrawalsFrom copies a page. A nil slice stays nil; an empty slice stays empty.
+func WithdrawalsFrom(withdrawals []models.Withdrawal) []Withdrawal {
 	if withdrawals == nil {
 		return nil
 	}
-	views := make([]WithdrawalView, len(withdrawals))
+	views := make([]Withdrawal, len(withdrawals))
 	for i := range withdrawals {
-		views[i] = newWithdrawalView(withdrawals[i])
+		views[i] = WithdrawalFrom(withdrawals[i])
 	}
 	return views
 }
 
-// WithdrawalViewPtr keeps a nil withdrawal as JSON null.
-func WithdrawalViewPtr(withdrawal *models.Withdrawal) *WithdrawalView {
+// WithdrawalPtr keeps a nil withdrawal as JSON null.
+func WithdrawalPtr(withdrawal *models.Withdrawal) *Withdrawal {
 	if withdrawal == nil {
 		return nil
 	}
-	view := newWithdrawalView(*withdrawal)
+	view := WithdrawalFrom(*withdrawal)
 	return &view
 }

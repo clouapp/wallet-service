@@ -13,6 +13,7 @@ import (
 	"github.com/macrowallets/waas/app/http/middleware/requestctx"
 	"github.com/macrowallets/waas/app/http/pagination"
 	"github.com/macrowallets/waas/app/http/requests"
+	withdrawalresource "github.com/macrowallets/waas/app/http/resources/withdrawals"
 	"github.com/macrowallets/waas/app/http/responses"
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/policies"
@@ -135,7 +136,7 @@ func (ctrl *WithdrawalsController) ListWalletWithdrawals(ctx http.Context) http.
 	if err != nil {
 		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to fetch withdrawals"})
 	}
-	return responses.Send(ctx, http.StatusOK, pagination.Response(controllers.WithdrawalViews(withdrawals), total, limit, offset))
+	return responses.Send(ctx, http.StatusOK, pagination.Response(withdrawalresource.WithdrawalsFrom(withdrawals), total, limit, offset))
 }
 
 func (ctrl *WithdrawalsController) EstimateWithdrawalFee(ctx http.Context) http.Response {
@@ -178,7 +179,7 @@ func (ctrl *WithdrawalsController) EstimateWithdrawalFee(ctx http.Context) http.
 // @Produce      json
 // @Param        walletId  path      string                    true  "Wallet UUID"
 // @Param        request   body      CreateWalletWithdrawalSwagger  true  "Withdrawal payload"
-// @Success      201  {object}  controllers.WithdrawalView
+// @Success      201  {object}  withdrawalresource.Withdrawal
 // @Failure      400  {object}  ErrorResponse
 // @Failure      403  {object}  ErrorResponse
 // @Router       /wallets/{walletId}/withdrawals [post]
@@ -239,7 +240,7 @@ func (ctrl *WithdrawalsController) CreateWalletWithdrawal(ctx http.Context) http
 		return controllers.MapInternalError(ctx, fmt.Errorf("create withdrawal: empty result"), "create_wallet_withdrawal")
 	}
 	if created.Replayed {
-		return responses.Send(ctx, http.StatusOK, controllers.WithdrawalViewPtr(created.Withdrawal))
+		return responses.Send(ctx, http.StatusOK, withdrawalresource.WithdrawalPtr(created.Withdrawal))
 	}
 	resolved := created.Resolved
 	idempotencyKey := created.IdempotencyKey
@@ -304,7 +305,7 @@ func (ctrl *WithdrawalsController) CreateWalletWithdrawal(ctx http.Context) http
 		return controllers.MapInternalError(ctx, updateErr, "persist_broadcast_withdrawal")
 	}
 	controllers.PublishWithdrawalBroadcast(ctx, ctrl.events, w, tx)
-	return responses.Send(ctx, http.StatusCreated, controllers.WithdrawalViewPtr(w))
+	return responses.Send(ctx, http.StatusCreated, withdrawalresource.WithdrawalPtr(w))
 }
 
 // GetWalletWithdrawal godoc
@@ -315,7 +316,7 @@ func (ctrl *WithdrawalsController) CreateWalletWithdrawal(ctx http.Context) http
 // @Produce      json
 // @Param        walletId      path  string  true  "Wallet UUID"
 // @Param        withdrawalId  path  string  true  "Withdrawal UUID"
-// @Success      200  {object}  controllers.WithdrawalView
+// @Success      200  {object}  withdrawalresource.Withdrawal
 // @Failure      403  {object}  ErrorResponse
 // @Failure      404  {object}  ErrorResponse
 // @Router       /wallets/{walletId}/withdrawals/{withdrawalId} [get]
@@ -331,7 +332,7 @@ func (ctrl *WithdrawalsController) GetWalletWithdrawal(ctx http.Context) http.Re
 	if err != nil || w == nil {
 		return responses.Send(ctx, http.StatusNotFound, http.Json{"error": "withdrawal not found"})
 	}
-	return responses.Send(ctx, http.StatusOK, controllers.WithdrawalViewPtr(w))
+	return responses.Send(ctx, http.StatusOK, withdrawalresource.WithdrawalPtr(w))
 }
 
 // GetDashboardWithdrawal godoc
@@ -342,7 +343,7 @@ func (ctrl *WithdrawalsController) GetWalletWithdrawal(ctx http.Context) http.Re
 // @Produce      json
 // @Param        withdrawalId  path  string  true  "Withdrawal UUID"
 // @Param        X-Account-Id  header  string  true  "Account UUID"
-// @Success      200  {object}  controllers.WithdrawalView
+// @Success      200  {object}  withdrawalresource.Withdrawal
 // @Failure      401  {object}  ErrorResponse
 // @Failure      404  {object}  ErrorResponse
 // @Router       /withdrawals/{withdrawalId} [get]
@@ -366,7 +367,7 @@ func (ctrl *WithdrawalsController) GetDashboardWithdrawal(ctx http.Context) http
 	if err != nil || wallet == nil || wallet.AccountID == nil || *wallet.AccountID != accountID {
 		return responses.Send(ctx, http.StatusNotFound, http.Json{"error": "withdrawal not found"})
 	}
-	return responses.Send(ctx, http.StatusOK, controllers.WithdrawalViewPtr(withdrawal))
+	return responses.Send(ctx, http.StatusOK, withdrawalresource.WithdrawalPtr(withdrawal))
 }
 
 // CancelWalletWithdrawal godoc
@@ -377,7 +378,7 @@ func (ctrl *WithdrawalsController) GetDashboardWithdrawal(ctx http.Context) http
 // @Produce      json
 // @Param        walletId      path  string  true  "Wallet UUID"
 // @Param        withdrawalId  path  string  true  "Withdrawal UUID"
-// @Success      200  {object}  controllers.WithdrawalView
+// @Success      200  {object}  withdrawalresource.Withdrawal
 // @Failure      403  {object}  ErrorResponse
 // @Failure      404  {object}  ErrorResponse
 // @Failure      422  {object}  ErrorResponse  "Withdrawal cannot be cancelled in current state"
@@ -417,5 +418,5 @@ func (ctrl *WithdrawalsController) CancelWalletWithdrawal(ctx http.Context) http
 		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to cancel withdrawal"})
 	}
 	w.Status = "cancelled"
-	return responses.Send(ctx, http.StatusOK, controllers.WithdrawalViewPtr(w))
+	return responses.Send(ctx, http.StatusOK, withdrawalresource.WithdrawalPtr(w))
 }

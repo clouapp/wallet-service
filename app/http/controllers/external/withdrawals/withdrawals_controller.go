@@ -11,6 +11,7 @@ import (
 	"github.com/macrowallets/waas/app/http/controllers"
 	"github.com/macrowallets/waas/app/http/middleware/requestctx"
 	"github.com/macrowallets/waas/app/http/requests"
+	withdrawalresource "github.com/macrowallets/waas/app/http/resources/withdrawals"
 	"github.com/macrowallets/waas/app/http/responses"
 	"github.com/macrowallets/waas/app/models"
 	authsvc "github.com/macrowallets/waas/app/services/auth"
@@ -109,7 +110,7 @@ func NewWithdrawalsController(
 // @Produce      json
 // @Param        walletId  path      string                    true  "Wallet UUID"
 // @Param        request   body      CreateWalletWithdrawalSwagger  true  "Withdrawal payload"
-// @Success      201  {object}  controllers.WithdrawalView
+// @Success      201  {object}  withdrawalresource.Withdrawal
 // @Failure      400  {object}  ErrorResponse
 // @Failure      403  {object}  ErrorResponse
 // @Router       /wallets/{walletId}/withdrawals [post]
@@ -172,7 +173,7 @@ func (ctrl *WithdrawalsController) CreateWalletWithdrawal(ctx http.Context) http
 		return controllers.MapInternalError(ctx, fmt.Errorf("create withdrawal: empty result"), "create_wallet_withdrawal")
 	}
 	if created.Replayed {
-		return responses.Send(ctx, http.StatusOK, controllers.WithdrawalViewPtr(created.Withdrawal))
+		return responses.Send(ctx, http.StatusOK, withdrawalresource.WithdrawalPtr(created.Withdrawal))
 	}
 	resolved := created.Resolved
 	idempotencyKey := created.IdempotencyKey
@@ -237,7 +238,7 @@ func (ctrl *WithdrawalsController) CreateWalletWithdrawal(ctx http.Context) http
 		return controllers.MapInternalError(ctx, updateErr, "persist_broadcast_withdrawal")
 	}
 	controllers.PublishWithdrawalBroadcast(ctx, ctrl.events, w, tx)
-	return responses.Send(ctx, http.StatusCreated, controllers.WithdrawalViewPtr(w))
+	return responses.Send(ctx, http.StatusCreated, withdrawalresource.WithdrawalPtr(w))
 }
 
 // GetWalletWithdrawalByIdempotencyKey godoc

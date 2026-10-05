@@ -1,4 +1,4 @@
-package controllers
+package withdrawals_test
 
 import (
 	"encoding/json"
@@ -8,10 +8,11 @@ import (
 	"github.com/goravel/framework/support/carbon"
 
 	"github.com/macrowallets/waas/app/http/pagination"
+	"github.com/macrowallets/waas/app/http/resources/withdrawals"
 	"github.com/macrowallets/waas/app/models"
 )
 
-func TestWithdrawalViewKeepsTheModelWire(t *testing.T) {
+func TestWithdrawalKeepsTheModelWire(t *testing.T) {
 	t.Parallel()
 
 	id := uuid.MustParse("11111111-1111-4111-8111-111111111111")
@@ -45,7 +46,7 @@ func TestWithdrawalViewKeepsTheModelWire(t *testing.T) {
 		},
 	}
 	for _, tc := range cases {
-		raw, err := json.Marshal(newWithdrawalView(tc.withdrawal))
+		raw, err := json.Marshal(withdrawals.WithdrawalFrom(tc.withdrawal))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -54,7 +55,7 @@ func TestWithdrawalViewKeepsTheModelWire(t *testing.T) {
 		}
 	}
 
-	nilRaw, err := json.Marshal(WithdrawalViewPtr(nil))
+	nilRaw, err := json.Marshal(withdrawals.WithdrawalPtr(nil))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -63,18 +64,18 @@ func TestWithdrawalViewKeepsTheModelWire(t *testing.T) {
 	}
 }
 
-func TestWithdrawalViewsPreserveSliceNilness(t *testing.T) {
+func TestWithdrawalsPreserveSliceNilness(t *testing.T) {
 	t.Parallel()
 
-	if WithdrawalViews(nil) != nil {
+	if withdrawals.WithdrawalsFrom(nil) != nil {
 		t.Fatal("nil slice became an empty slice")
 	}
-	empty := WithdrawalViews([]models.Withdrawal{})
+	empty := withdrawals.WithdrawalsFrom([]models.Withdrawal{})
 	if empty == nil || len(empty) != 0 {
 		t.Fatalf("empty slice = %#v", empty)
 	}
 
-	nilPage, err := json.Marshal(pagination.Response(WithdrawalViews(nil), 0, 50, 0))
+	nilPage, err := json.Marshal(pagination.Response(withdrawals.WithdrawalsFrom(nil), 0, 50, 0))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -82,7 +83,7 @@ func TestWithdrawalViewsPreserveSliceNilness(t *testing.T) {
 		t.Fatalf("nil page = %s", nilPage)
 	}
 
-	emptyPage, err := json.Marshal(pagination.Response(WithdrawalViews([]models.Withdrawal{}), 0, 50, 0))
+	emptyPage, err := json.Marshal(pagination.Response(withdrawals.WithdrawalsFrom([]models.Withdrawal{}), 0, 50, 0))
 	if err != nil {
 		t.Fatal(err)
 	}

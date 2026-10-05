@@ -6,6 +6,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/goravel/framework/contracts/http"
 
+	withdrawalresource "github.com/macrowallets/waas/app/http/resources/withdrawals"
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/services/withdraw"
 	"github.com/macrowallets/waas/app/services/withdrawalevents"
@@ -67,5 +68,5 @@ type EstimateWithdrawalSwagger struct {
 }
 
 type WithdrawalListResponse struct {
-	Data []WithdrawalView `json:"data"`
+	Data []withdrawalresource.Withdrawal `json:"data"`
 }
