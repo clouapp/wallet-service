@@ -72,7 +72,7 @@ func TestListForEnvironment(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
-			got, err := chainsvc.NewService(test.store).ListForEnvironment(context.Background(), test.environment)
+			got, err := chainsvc.NewService(chainsvc.Deps{Chains: test.store}).ListForEnvironment(context.Background(), test.environment)
 			if test.wantErr != nil {
 				require.ErrorIs(t, err, test.wantErr)
 				require.Nil(t, got)
@@ -95,7 +95,7 @@ func TestFindByIDTokensAndResources(t *testing.T) {
 	store := &fakeCatalog{active: []models.Chain{{ID: "eth"}}}
 	tokens := &fakeTokens{rows: []models.Token{{ChainID: "eth"}}}
 	resources := &fakeResources{rows: []models.ChainResource{{ChainID: "eth"}}}
-	svc := chainsvc.NewService(store).WithTokens(tokens).WithResources(resources)
+	svc := chainsvc.NewService(chainsvc.Deps{Chains: store, Tokens: tokens, Resources: resources})
 
 	chain, err := svc.FindByID(context.Background(), "eth")
 	require.NoError(t, err)
@@ -115,19 +115,19 @@ func TestFindByIDTokensAndResources(t *testing.T) {
 
 	_, err = svc.FindTokens(nil, "eth")
 	require.EqualError(t, err, "list chain tokens: context is required")
-	_, err = chainsvc.NewService(store).FindTokens(context.Background(), "eth")
+	_, err = chainsvc.NewService(chainsvc.Deps{Chains: store}).FindTokens(context.Background(), "eth")
 	require.EqualError(t, err, "chains service: tokens repository is required")
-	_, err = chainsvc.NewService(store).FindResources(context.Background(), "eth")
+	_, err = chainsvc.NewService(chainsvc.Deps{Chains: store}).FindResources(context.Background(), "eth")
 	require.EqualError(t, err, "chains service: chain resources repository is required")
 }
 
 func TestListForEnvironmentRequiresContextAndCatalog(t *testing.T) {
 	t.Parallel()
 
-	_, err := chainsvc.NewService(&fakeCatalog{}).ListForEnvironment(nil, models.EnvironmentProd)
+	_, err := chainsvc.NewService(chainsvc.Deps{Chains: &fakeCatalog{}}).ListForEnvironment(nil, models.EnvironmentProd)
 	require.EqualError(t, err, "list chains: context is required")
 
-	_, err = chainsvc.NewService(nil).ListForEnvironment(context.Background(), models.EnvironmentProd)
+	_, err = chainsvc.NewService(chainsvc.Deps{}).ListForEnvironment(context.Background(), models.EnvironmentProd)
 	require.EqualError(t, err, "chains service: chains repository is required")
 
 	var service *chainsvc.Service

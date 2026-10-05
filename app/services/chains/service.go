@@ -33,28 +33,22 @@ type Service struct {
 	resources ResourceCatalog
 }
 
-// NewService builds a chain catalogue service. Tokens and resources are
-// attached with WithTokens and WithResources when a handler reads them.
-func NewService(chains Catalog) *Service {
-	return &Service{chains: chains}
+// Deps is everything the chain catalogue service needs. Chains, Tokens, and
+// Resources stay nil when a caller does not use that read. A nil field is the
+// same missing-repository error the matching method already returns.
+type Deps struct {
+	Chains    Catalog
+	Tokens    TokenCatalog
+	Resources ResourceCatalog
 }
 
-// WithTokens attaches the token catalogue. It returns the same service.
-func (s *Service) WithTokens(tokens TokenCatalog) *Service {
-	if s == nil {
-		return nil
+// NewService builds a chain catalogue service.
+func NewService(deps Deps) *Service {
+	return &Service{
+		chains:    deps.Chains,
+		tokens:    deps.Tokens,
+		resources: deps.Resources,
 	}
-	s.tokens = tokens
-	return s
-}
-
-// WithResources attaches the chain-resource catalogue. It returns the same service.
-func (s *Service) WithResources(resources ResourceCatalog) *Service {
-	if s == nil {
-		return nil
-	}
-	s.resources = resources
-	return s
 }
 
 // FindByID returns one chain. A missing row is the store's not-found error.
