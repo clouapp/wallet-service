@@ -5,6 +5,39 @@ import (
 	"testing"
 )
 
+func TestWithdrawalFailureCodesAreOnTheList(t *testing.T) {
+	codes := map[string]string{
+		CodeInsufficientFunds:             "insufficient_funds",
+		CodeWalletNotGasReady:             "wallet_not_gas_ready",
+		CodeUnsupportedChain:              "unsupported_chain",
+		CodeSweepLimitExceeded:            "sweep_limit_exceeded",
+		CodeInvalidPassphrase:             "invalid_passphrase",
+		CodePassphraseTooShort:            "passphrase_too_short",
+		CodeConcurrentWithdrawal:          "concurrent_withdrawal",
+		CodeTooManyAttempts:               "too_many_attempts",
+		CodeSpendingLimitExceeded:         "spending_limit_exceeded",
+		CodeSpendingLimitInvalid:          "spending_limit_invalid",
+		CodeSpendingLimitQuoteUnavailable: "spending_limit_quote_unavailable",
+		CodeInternalError:                 "internal_error",
+	}
+	if codes[CodeInternal] == "internal_error" || CodeInternal == CodeInternalError {
+		t.Fatal("internal_error collapsed into the HTTP 500 code")
+	}
+	for got, want := range codes {
+		if got != want {
+			t.Fatalf("code %q, want %q", got, want)
+		}
+		encoded, err := json.Marshal(NewError(got, want))
+		if err != nil {
+			t.Fatal(err)
+		}
+		const prefix = `{"error":{"code":"`
+		if len(encoded) < len(prefix) || string(encoded[:len(prefix)]) != prefix {
+			t.Fatalf("envelope changed: %s", encoded)
+		}
+	}
+}
+
 func TestNewError_IsTheEnvelope(t *testing.T) {
 	encoded, err := json.Marshal(NewError(CodeNotFound, "wallet not found"))
 	if err != nil {

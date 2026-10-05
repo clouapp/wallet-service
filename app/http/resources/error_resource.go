@@ -27,6 +27,23 @@ const (
 	CodeUnavailable         = "unavailable"
 	CodeTimeout             = "timeout"
 
+	// Public withdrawal failure codes. The withdrawal resource carries one of
+	// these in failure_reason, and omits that field when the withdrawal has
+	// not failed. CodeInternalError is the persisted failure ("internal_error");
+	// CodeInternal ("internal") stays the HTTP 500 envelope.
+	CodeInsufficientFunds             = "insufficient_funds"
+	CodeWalletNotGasReady             = "wallet_not_gas_ready"
+	CodeUnsupportedChain              = "unsupported_chain"
+	CodeSweepLimitExceeded            = "sweep_limit_exceeded"
+	CodeInvalidPassphrase             = "invalid_passphrase"
+	CodePassphraseTooShort            = "passphrase_too_short"
+	CodeConcurrentWithdrawal          = "concurrent_withdrawal"
+	CodeTooManyAttempts               = "too_many_attempts"
+	CodeSpendingLimitExceeded         = "spending_limit_exceeded"
+	CodeSpendingLimitInvalid          = "spending_limit_invalid"
+	CodeSpendingLimitQuoteUnavailable = "spending_limit_quote_unavailable"
+	CodeInternalError                 = "internal_error"
+
 	// ValidationMessage is the human text on every HTTP 422 validation body.
 	ValidationMessage = "validation failed"
 )

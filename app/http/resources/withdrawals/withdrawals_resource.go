@@ -4,7 +4,25 @@ import (
 	"github.com/google/uuid"
 	"github.com/goravel/framework/support/carbon"
 
+	"github.com/macrowallets/waas/app/http/resources"
 	"github.com/macrowallets/waas/app/models"
+)
+
+// Public failure codes this resource carries in failure_reason. The strings
+// are the closed code list. An empty reason stays omitted.
+const (
+	FailureInsufficientFunds    = resources.CodeInsufficientFunds
+	FailureWalletNotGasReady    = resources.CodeWalletNotGasReady
+	FailureUnsupportedChain     = resources.CodeUnsupportedChain
+	FailureSweepLimitExceeded   = resources.CodeSweepLimitExceeded
+	FailureInvalidPassphrase    = resources.CodeInvalidPassphrase
+	FailurePassphraseTooShort   = resources.CodePassphraseTooShort
+	FailureConcurrentWithdrawal = resources.CodeConcurrentWithdrawal
+	FailureTooManyAttempts      = resources.CodeTooManyAttempts
+	FailureSpendingLimit        = resources.CodeSpendingLimitExceeded
+	FailureSpendingLimitInvalid = resources.CodeSpendingLimitInvalid
+	FailureSpendingQuote        = resources.CodeSpendingLimitQuoteUnavailable
+	FailureInternalError        = resources.CodeInternalError
 )
 
 // Withdrawal is the withdrawal row HTTP clients read. Field order and tags

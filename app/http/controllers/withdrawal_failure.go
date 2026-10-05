@@ -5,25 +5,27 @@ import (
 
 	"github.com/goravel/framework/support/carbon"
 
+	withdrawalresource "github.com/macrowallets/waas/app/http/resources/withdrawals"
 	"github.com/macrowallets/waas/app/services/sweep"
 	"github.com/macrowallets/waas/app/services/withdraw"
 )
 
-// Public failure codes persisted on withdrawals.failure_reason. They are safe to
-// expose to API clients: raw error strings (RPC URLs, DB messages) never are.
+// Public failure codes persisted on withdrawals.failure_reason. They are the
+// withdrawal resource's failure codes (the public code list). Raw error
+// strings (RPC URLs, DB messages) never are.
 const (
-	WithdrawalFailureInsufficientFunds    = "insufficient_funds"
-	WithdrawalFailureWalletNotGasReady    = "wallet_not_gas_ready"
-	WithdrawalFailureUnsupportedChain     = "unsupported_chain"
-	WithdrawalFailureSweepLimitExceeded   = "sweep_limit_exceeded"
-	WithdrawalFailureInvalidPassphrase    = "invalid_passphrase"
-	WithdrawalFailurePassphraseTooShort   = "passphrase_too_short"
-	WithdrawalFailureConcurrentWithdrawal = "concurrent_withdrawal"
-	WithdrawalFailureTooManyAttempts      = "too_many_attempts"
-	WithdrawalFailureSpendingLimit        = "spending_limit_exceeded"
-	WithdrawalFailureSpendingLimitInvalid = "spending_limit_invalid"
-	WithdrawalFailureSpendingQuote        = "spending_limit_quote_unavailable"
-	WithdrawalFailureInternalError        = "internal_error"
+	WithdrawalFailureInsufficientFunds    = withdrawalresource.FailureInsufficientFunds
+	WithdrawalFailureWalletNotGasReady    = withdrawalresource.FailureWalletNotGasReady
+	WithdrawalFailureUnsupportedChain     = withdrawalresource.FailureUnsupportedChain
+	WithdrawalFailureSweepLimitExceeded   = withdrawalresource.FailureSweepLimitExceeded
+	WithdrawalFailureInvalidPassphrase    = withdrawalresource.FailureInvalidPassphrase
+	WithdrawalFailurePassphraseTooShort   = withdrawalresource.FailurePassphraseTooShort
+	WithdrawalFailureConcurrentWithdrawal = withdrawalresource.FailureConcurrentWithdrawal
+	WithdrawalFailureTooManyAttempts      = withdrawalresource.FailureTooManyAttempts
+	WithdrawalFailureSpendingLimit        = withdrawalresource.FailureSpendingLimit
+	WithdrawalFailureSpendingLimitInvalid = withdrawalresource.FailureSpendingLimitInvalid
+	WithdrawalFailureSpendingQuote        = withdrawalresource.FailureSpendingQuote
+	WithdrawalFailureInternalError        = withdrawalresource.FailureInternalError
 )
 
 // WithdrawalLookupResponse is the external view of a withdrawal's outcome.

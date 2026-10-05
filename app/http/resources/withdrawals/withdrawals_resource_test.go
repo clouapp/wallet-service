@@ -8,9 +8,39 @@ import (
 	"github.com/goravel/framework/support/carbon"
 
 	"github.com/macrowallets/waas/app/http/pagination"
+	"github.com/macrowallets/waas/app/http/resources"
 	"github.com/macrowallets/waas/app/http/resources/withdrawals"
 	"github.com/macrowallets/waas/app/models"
 )
+
+func TestFailureCodesAreThePublicList(t *testing.T) {
+	t.Parallel()
+
+	codes := []struct{ got, want string }{
+		{withdrawals.FailureInsufficientFunds, resources.CodeInsufficientFunds},
+		{withdrawals.FailureWalletNotGasReady, resources.CodeWalletNotGasReady},
+		{withdrawals.FailureUnsupportedChain, resources.CodeUnsupportedChain},
+		{withdrawals.FailureSweepLimitExceeded, resources.CodeSweepLimitExceeded},
+		{withdrawals.FailureInvalidPassphrase, resources.CodeInvalidPassphrase},
+		{withdrawals.FailurePassphraseTooShort, resources.CodePassphraseTooShort},
+		{withdrawals.FailureConcurrentWithdrawal, resources.CodeConcurrentWithdrawal},
+		{withdrawals.FailureTooManyAttempts, resources.CodeTooManyAttempts},
+		{withdrawals.FailureSpendingLimit, resources.CodeSpendingLimitExceeded},
+		{withdrawals.FailureSpendingLimitInvalid, resources.CodeSpendingLimitInvalid},
+		{withdrawals.FailureSpendingQuote, resources.CodeSpendingLimitQuoteUnavailable},
+		{withdrawals.FailureInternalError, resources.CodeInternalError},
+	}
+	seen := map[string]struct{}{}
+	for _, code := range codes {
+		if code.got != code.want || code.got == "" {
+			t.Fatalf("failure code %q is not the public list value %q", code.got, code.want)
+		}
+		seen[code.got] = struct{}{}
+	}
+	if len(seen) != len(codes) {
+		t.Fatalf("duplicate failure codes: %d unique, %d declared", len(seen), len(codes))
+	}
+}
 
 func TestWithdrawalKeepsTheModelWire(t *testing.T) {
 	t.Parallel()

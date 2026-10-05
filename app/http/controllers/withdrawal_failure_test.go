@@ -10,6 +10,26 @@ import (
 )
 
 func TestWithdrawalFailureCodeNeverLeaksRawErrors(t *testing.T) {
+	published := map[string]string{
+		WithdrawalFailureInsufficientFunds:    "insufficient_funds",
+		WithdrawalFailureWalletNotGasReady:    "wallet_not_gas_ready",
+		WithdrawalFailureUnsupportedChain:     "unsupported_chain",
+		WithdrawalFailureSweepLimitExceeded:   "sweep_limit_exceeded",
+		WithdrawalFailureInvalidPassphrase:    "invalid_passphrase",
+		WithdrawalFailurePassphraseTooShort:   "passphrase_too_short",
+		WithdrawalFailureConcurrentWithdrawal: "concurrent_withdrawal",
+		WithdrawalFailureTooManyAttempts:      "too_many_attempts",
+		WithdrawalFailureSpendingLimit:        "spending_limit_exceeded",
+		WithdrawalFailureSpendingLimitInvalid: "spending_limit_invalid",
+		WithdrawalFailureSpendingQuote:        "spending_limit_quote_unavailable",
+		WithdrawalFailureInternalError:        "internal_error",
+	}
+	for got, want := range published {
+		if got != want {
+			t.Fatalf("published code %q, want %q", got, want)
+		}
+	}
+
 	cases := map[string]struct {
 		err  error
 		want string
