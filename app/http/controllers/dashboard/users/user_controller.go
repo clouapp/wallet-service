@@ -40,51 +40,55 @@ type UsersController struct {
 	limits       *settings.Service
 }
 
-// NewUsersController wires the dashboard user handlers. Services are the
-// provider singletons, resolved once at boot.
-func NewUsersController(
-	users *usersvc.Service,
-	accounts *accountsvc.Service,
-	passwords *authsvc.Service,
-	refresh *sessions.RefreshTokens,
-	secondFactor *authsvc.SecondFactorVerifier,
-	revoker *authsvc.SessionRevoker,
-	features *featuressvc.Service,
-	limits *settings.Service,
-) *UsersController {
-	if users == nil {
+// UsersControllerDeps is everything the dashboard users controller needs.
+// Every field is required.
+type UsersControllerDeps struct {
+	Users        *usersvc.Service
+	Accounts     *accountsvc.Service
+	Passwords    *authsvc.Service
+	Refresh      *sessions.RefreshTokens
+	SecondFactor *authsvc.SecondFactorVerifier
+	Revoker      *authsvc.SessionRevoker
+	Features     *featuressvc.Service
+	Limits       *settings.Service
+}
+
+// NewUsersController wires the dashboard user handlers from UsersControllerDeps.
+// Services are the provider singletons, resolved once at boot.
+func NewUsersController(deps UsersControllerDeps) *UsersController {
+	if deps.Users == nil {
 		panic("dashboard users controller: users service is required")
 	}
-	if accounts == nil {
+	if deps.Accounts == nil {
 		panic("dashboard users controller: account service is required")
 	}
-	if passwords == nil {
+	if deps.Passwords == nil {
 		panic("dashboard users controller: auth service is required")
 	}
-	if refresh == nil {
+	if deps.Refresh == nil {
 		panic("dashboard users controller: refresh tokens are required")
 	}
-	if secondFactor == nil {
+	if deps.SecondFactor == nil {
 		panic("dashboard users controller: second factor verifier is required")
 	}
-	if revoker == nil {
+	if deps.Revoker == nil {
 		panic("dashboard users controller: session revoker is required")
 	}
-	if features == nil {
+	if deps.Features == nil {
 		panic("dashboard users controller: feature flags are required")
 	}
-	if limits == nil {
+	if deps.Limits == nil {
 		panic("dashboard users controller: settings service is required")
 	}
 	return &UsersController{
-		users:        users,
-		accounts:     accounts,
-		passwords:    passwords,
-		refresh:      refresh,
-		secondFactor: secondFactor,
-		revoker:      revoker,
-		features:     features,
-		limits:       limits,
+		users:        deps.Users,
+		accounts:     deps.Accounts,
+		passwords:    deps.Passwords,
+		refresh:      deps.Refresh,
+		secondFactor: deps.SecondFactor,
+		revoker:      deps.Revoker,
+		features:     deps.Features,
+		limits:       deps.Limits,
 	}
 }
 

@@ -316,16 +316,16 @@ func newDashboardAuthController() *dashauth.AuthController {
 }
 
 func newDashboardUsersController() *dashusers.UsersController {
-	return dashusers.NewUsersController(
-		container.MustMake[*usersvc.Service](),
-		container.MustMake[*accountsvc.Service](),
-		container.MustMake[*authsvc.Service](),
-		container.MustMake[*sessions.RefreshTokens](),
-		container.MustMake[*authsvc.SecondFactorVerifier](),
-		container.MustMake[*authsvc.SessionRevoker](),
-		container.MustMake[*featuressvc.Service](),
-		container.MustMake[*settingssvc.Service](),
-	)
+	return dashusers.NewUsersController(dashusers.UsersControllerDeps{
+		Users:        container.MustMake[*usersvc.Service](),
+		Accounts:     container.MustMake[*accountsvc.Service](),
+		Passwords:    container.MustMake[*authsvc.Service](),
+		Refresh:      container.MustMake[*sessions.RefreshTokens](),
+		SecondFactor: container.MustMake[*authsvc.SecondFactorVerifier](),
+		Revoker:      container.MustMake[*authsvc.SessionRevoker](),
+		Features:     container.MustMake[*featuressvc.Service](),
+		Limits:       container.MustMake[*settingssvc.Service](),
+	})
 }
 
 // currentWalletService reads the wallet service on each call. Recovery tests
