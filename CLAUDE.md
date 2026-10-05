@@ -205,6 +205,10 @@ Known violations include `app/models → app/services/mpc` and `config → app/m
   `wallet-creation-enabled`, `webhook-delivery-enabled`, `withdrawals-enabled`.
   Each flag has an account row and a global row. A missing row is the catalog
   default and is not inserted. Nothing is cached, so the next read sees a write.
+- Flags are platform-controlled rollout and kill switches. Customer-controlled
+  toggles are account settings. "Require 2FA for my members" is
+  `account_security.require_2fa`. "2FA enforcement rolled out to this account"
+  is the `user-2fa-required` flag.
 - Account flags reuse the settings permissions: list is `settings.view`, write
   is `settings.update`. An unknown key on write is 404 before the permission
   check. `GET|PATCH /v1/platform/features` is a platform admin
