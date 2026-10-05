@@ -661,7 +661,12 @@ func TestScanTransaction_SolanaSignatureFromRecordedDevnetBlock(t *testing.T) {
 	registry.RegisterChain(adapter)
 	wallet := mocks.InsertWallet(t, models.ChainSOL)
 	mocks.InsertAddress(t, wallet.ID, models.ChainSOL, solFixtureRecipient, "", 1)
-	svc := NewService(nil, registry, newWebhookSvc(), repositories.NewAddressRepository(nil), repositories.NewTransactionRepository(nil), nil)
+	svc := NewService(Deps{
+		Registry:     registry,
+		Webhook:      newWebhookSvc(),
+		Addresses:    repositories.NewAddressRepository(nil),
+		Transactions: repositories.NewTransactionRepository(nil),
+	})
 
 	for pass, wantRecorded := range []int{1, 0} {
 		recorded, err := svc.ScanTransaction(context.Background(), models.ChainSOL, solFixtureSignature)

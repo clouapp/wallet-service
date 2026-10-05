@@ -418,7 +418,14 @@ func buildVaultContainer(app foundation.Application) (*container.Container, erro
 		c.WebhookService, c.WithdrawalRepo, c.TransactionRepo, c.WalletRepo, assetDecimals,
 	)
 	c.DepositEvents = depositevents.NewPublisher(c.WebhookService, c.WalletRepo, assetDecimals)
-	c.DepositService = deposit.NewService(scanner.New(c.Redis), c.Registry, c.WebhookService, c.AddressRepo, c.TransactionRepo, blockHeightProviders)
+	c.DepositService = deposit.NewService(deposit.Deps{
+		Store:                scanner.New(c.Redis),
+		Registry:             c.Registry,
+		Webhook:              c.WebhookService,
+		Addresses:            c.AddressRepo,
+		Transactions:         c.TransactionRepo,
+		BlockHeightProviders: blockHeightProviders,
+	})
 	c.DepositService.SetWithdrawalConfirmations(c.WithdrawalEvents)
 	c.DepositService.SetDepositEvents(c.DepositEvents)
 	// Each ScanLatestBlocks call reads deposit_scan and runs

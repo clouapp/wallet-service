@@ -101,14 +101,26 @@ func (s *Service) SetWithdrawalConfirmations(withdrawals WithdrawalConfirmations
 	s.withdrawals = withdrawals
 }
 
-func NewService(store RedisStore, registry *chain.Registry, webhookSvc *webhook.Service, addressRepo *repositories.AddressRepository, txRepo *repositories.TransactionRepository, blockHeightProviders map[string]blockheight.Provider) *Service {
+// Deps is everything the deposit service needs. A nil field means that
+// dependency is absent.
+type Deps struct {
+	Store                RedisStore
+	Registry             *chain.Registry
+	Webhook              *webhook.Service
+	Addresses            *repositories.AddressRepository
+	Transactions         *repositories.TransactionRepository
+	BlockHeightProviders map[string]blockheight.Provider
+}
+
+// NewService wires the deposit service from Deps.
+func NewService(deps Deps) *Service {
 	return &Service{
-		store:                store,
-		registry:             registry,
-		webhookSvc:           webhookSvc,
-		addressRepo:          addressRepo,
-		txRepo:               txRepo,
-		blockHeightProviders: blockHeightProviders,
+		store:                deps.Store,
+		registry:             deps.Registry,
+		webhookSvc:           deps.Webhook,
+		addressRepo:          deps.Addresses,
+		txRepo:               deps.Transactions,
+		blockHeightProviders: deps.BlockHeightProviders,
 		heightFailures:       make(map[string]int),
 		scan:                 DefaultScanOptions(),
 		scanFallback:         DefaultScanOptions(),

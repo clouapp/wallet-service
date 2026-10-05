@@ -28,7 +28,12 @@ func newWebhookSvc() *webhook.Service {
 }
 
 func newDepositSvc(registry *chain.Registry, webhookSvc *webhook.Service) *Service {
-	return NewService(nil, registry, webhookSvc, repositories.NewAddressRepository(nil), repositories.NewTransactionRepository(nil), nil)
+	return NewService(Deps{
+		Registry:     registry,
+		Webhook:      webhookSvc,
+		Addresses:    repositories.NewAddressRepository(nil),
+		Transactions: repositories.NewTransactionRepository(nil),
+	})
 }
 
 func setupDepositService(t *testing.T) (*Service, *mocks.MockChain, *mocks.MockSQS) {
