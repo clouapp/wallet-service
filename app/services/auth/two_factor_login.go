@@ -58,18 +58,31 @@ type SecondFactorVerifier struct {
 	now      func() time.Time
 }
 
-func NewSecondFactorVerifier(service *Service, counters TotpCounterStore, recovery RecoveryCodeStore, decrypt SecretDecrypter) (*SecondFactorVerifier, error) {
-	if service == nil || counters == nil || recovery == nil || decrypt == nil {
-		return nil, errors.New("auth: second factor verifier: all dependencies are required")
-	}
-	return &SecondFactorVerifier{service: service, counters: counters, recovery: recovery, decrypt: decrypt, now: time.Now}, nil
+// VerifierDeps is everything the second-factor verifier uses. Service,
+// Counters, Recovery and Decrypt are required. A nil Now uses time.Now.
+type VerifierDeps struct {
+	Service  *Service
+	Counters TotpCounterStore
+	Recovery RecoveryCodeStore
+	Decrypt  SecretDecrypter
+	Now      func() time.Time
 }
 
-// WithClock replaces the time source; tests use it to land on a known step.
-func (v *SecondFactorVerifier) WithClock(now func() time.Time) *SecondFactorVerifier {
-	clone := *v
-	clone.now = now
-	return &clone
+func NewSecondFactorVerifier(deps VerifierDeps) (*SecondFactorVerifier, error) {
+	if deps.Service == nil || deps.Counters == nil || deps.Recovery == nil || deps.Decrypt == nil {
+		return nil, errors.New("auth: second factor verifier: all dependencies are required")
+	}
+	now := deps.Now
+	if now == nil {
+		now = time.Now
+	}
+	return &SecondFactorVerifier{
+		service:  deps.Service,
+		counters: deps.Counters,
+		recovery: deps.Recovery,
+		decrypt:  deps.Decrypt,
+		now:      now,
+	}, nil
 }
 
 // Verify accepts a TOTP code, falling back to a recovery code when the TOTP

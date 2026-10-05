@@ -75,7 +75,12 @@ func wireAuthServices(c *container.Container) error {
 		return fmt.Errorf("vault: two factor login: %w", err)
 	}
 	bridge := authRepoBridge{users: c.UserRepo, recovery: c.TotpRecoveryCodeRepo, refresh: c.RefreshTokenRepo}
-	verifier, err := authsvc.NewSecondFactorVerifier(authsvc.NewService(), bridge, bridge, openSealedTotp)
+	verifier, err := authsvc.NewSecondFactorVerifier(authsvc.VerifierDeps{
+		Service:  authsvc.NewService(),
+		Counters: bridge,
+		Recovery: bridge,
+		Decrypt:  openSealedTotp,
+	})
 	if err != nil {
 		return fmt.Errorf("vault: two factor login: %w", err)
 	}

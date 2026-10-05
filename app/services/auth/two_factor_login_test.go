@@ -201,9 +201,14 @@ func newTwoFactorFixture(t *testing.T) *twoFactorFixture {
 		users.recovery[user.ID] = append(users.recovery[user.ID], models.TotpRecoveryCode{ID: uuid.New(), UserID: user.ID, CodeHash: hash})
 	}
 
-	verifier, err := authsvc.NewSecondFactorVerifier(svc, users, users, fakeDecrypt)
+	verifier, err := authsvc.NewSecondFactorVerifier(authsvc.VerifierDeps{
+		Service:  svc,
+		Counters: users,
+		Recovery: users,
+		Decrypt:  fakeDecrypt,
+		Now:      func() time.Time { return now },
+	})
 	require.NoError(t, err)
-	verifier = verifier.WithClock(func() time.Time { return now })
 
 	challenges := newFakeChallengeStore(now)
 	attempts := newFakeAttemptLimiter()
@@ -427,9 +432,14 @@ func TestTwoFactorLogin_NoCodeAtAllIsInvalid(t *testing.T) {
 
 func TestSecondFactorVerifier_ConfirmedCodeCannotCompleteALogin(t *testing.T) {
 	f := newTwoFactorFixture(t)
-	verifier, err := authsvc.NewSecondFactorVerifier(authsvc.NewService(), f.users, f.users, fakeDecrypt)
+	verifier, err := authsvc.NewSecondFactorVerifier(authsvc.VerifierDeps{
+		Service:  authsvc.NewService(),
+		Counters: f.users,
+		Recovery: f.users,
+		Decrypt:  fakeDecrypt,
+		Now:      func() time.Time { return f.now },
+	})
 	require.NoError(t, err)
-	verifier = verifier.WithClock(func() time.Time { return f.now })
 
 	matched, err := verifier.RecordConfirmedCode(f.user.ID, f.secret, f.validCode())
 	require.NoError(t, err)
@@ -440,7 +450,12 @@ func TestSecondFactorVerifier_ConfirmedCodeCannotCompleteALogin(t *testing.T) {
 }
 
 func TestSecondFactorVerifier_RefusesNotEnrolledUsers(t *testing.T) {
-	verifier, err := authsvc.NewSecondFactorVerifier(authsvc.NewService(), newFakeUsers(), newFakeUsers(), fakeDecrypt)
+	verifier, err := authsvc.NewSecondFactorVerifier(authsvc.VerifierDeps{
+		Service:  authsvc.NewService(),
+		Counters: newFakeUsers(),
+		Recovery: newFakeUsers(),
+		Decrypt:  fakeDecrypt,
+	})
 	require.NoError(t, err)
 
 	err = verifier.Verify(&models.User{ID: uuid.New()}, "123456", "")
@@ -452,13 +467,22 @@ func TestSecondFactorVerifier_RefusesNotEnrolledUsers(t *testing.T) {
 
 func TestNewTwoFactorLogin_ValidatesDependencies(t *testing.T) {
 	f := newTwoFactorFixture(t)
-	verifier, err := authsvc.NewSecondFactorVerifier(authsvc.NewService(), f.users, f.users, fakeDecrypt)
+	verifier, err := authsvc.NewSecondFactorVerifier(authsvc.VerifierDeps{
+		Service:  authsvc.NewService(),
+		Counters: f.users,
+		Recovery: f.users,
+		Decrypt:  fakeDecrypt,
+	})
 	require.NoError(t, err)
 
 	_, err = authsvc.NewTwoFactorLogin(nil, f.attempts, verifier, f.users, 1)
 	require.Error(t, err)
 	_, err = authsvc.NewTwoFactorLogin(f.challenges, f.attempts, verifier, f.users, 0)
 	require.Error(t, err)
-	_, err = authsvc.NewSecondFactorVerifier(authsvc.NewService(), f.users, f.users, nil)
+	_, err = authsvc.NewSecondFactorVerifier(authsvc.VerifierDeps{
+		Service:  authsvc.NewService(),
+		Counters: f.users,
+		Recovery: f.users,
+	})
 	require.Error(t, err)
 }
