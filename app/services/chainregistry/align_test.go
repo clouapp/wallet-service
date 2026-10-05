@@ -38,7 +38,7 @@ type fakeStore struct {
 	chainWrite int
 }
 
-func (f *fakeStore) Chains() ([]models.Chain, error) {
+func (f *fakeStore) Chains(context.Context) ([]models.Chain, error) {
 	out := make([]models.Chain, 0, len(f.chains))
 	for _, id := range append(append([]string{}, models.PrimaryChainIDs...), models.ChainTPolygon) {
 		if ch, ok := f.chains[id]; ok {
@@ -48,9 +48,11 @@ func (f *fakeStore) Chains() ([]models.Chain, error) {
 	return out, nil
 }
 
-func (f *fakeStore) ChainHoldsBalance(chainID string) (bool, error) { return f.funded[chainID], nil }
+func (f *fakeStore) ChainHoldsBalance(_ context.Context, chainID string) (bool, error) {
+	return f.funded[chainID], nil
+}
 
-func (f *fakeStore) UpdateChainNetwork(chainID string, networkID *int64, isTestnet bool) error {
+func (f *fakeStore) UpdateChainNetwork(_ context.Context, chainID string, networkID *int64, isTestnet bool) error {
 	ch := f.chains[chainID]
 	ch.NetworkID, ch.IsTestnet = networkID, isTestnet
 	f.chains[chainID] = ch
@@ -58,26 +60,26 @@ func (f *fakeStore) UpdateChainNetwork(chainID string, networkID *int64, isTestn
 	return nil
 }
 
-func (f *fakeStore) FindAccount(id uuid.UUID) (*models.Account, error) {
+func (f *fakeStore) FindAccount(_ context.Context, id uuid.UUID) (*models.Account, error) {
 	account, ok := f.accounts[id]
 	if !ok {
-		return nil, nil
+		return nil, models.ErrRepositoryNotFound
 	}
 	return &account, nil
 }
 
-func (f *fakeStore) UpdateAccountEnvironment(id uuid.UUID, environment string) error {
+func (f *fakeStore) UpdateAccountEnvironment(_ context.Context, id uuid.UUID, environment string) error {
 	account := f.accounts[id]
 	account.Environment = environment
 	f.accounts[id] = account
 	return nil
 }
 
-func (f *fakeStore) WalletsOnChain(chainID string) ([]models.Wallet, error) {
+func (f *fakeStore) WalletsOnChain(_ context.Context, chainID string) ([]models.Wallet, error) {
 	return f.wallets[chainID], nil
 }
 
-func (f *fakeStore) ActiveAddressesOfWallet(walletID uuid.UUID) ([]models.Address, error) {
+func (f *fakeStore) ActiveAddressesOfWallet(_ context.Context, walletID uuid.UUID) ([]models.Address, error) {
 	var active []models.Address
 	for _, a := range f.addresses[walletID] {
 		if a.IsActive {
@@ -87,7 +89,7 @@ func (f *fakeStore) ActiveAddressesOfWallet(walletID uuid.UUID) ([]models.Addres
 	return active, nil
 }
 
-func (f *fakeStore) ReissueGenesis(walletID uuid.UUID, genesis models.Address, retire []uuid.UUID) error {
+func (f *fakeStore) ReissueGenesis(_ context.Context, walletID uuid.UUID, genesis models.Address, retire []uuid.UUID) error {
 	retired := make(map[uuid.UUID]bool, len(retire))
 	for _, id := range retire {
 		retired[id] = true
@@ -170,13 +172,13 @@ func TestAppliedPlanIsIdempotent(t *testing.T) {
 
 	plan, err := BuildPlan(ctx, models.ChainNetworkProfileTestnet, store, plainDecrypt, nil)
 	require.NoError(t, err)
-	require.NoError(t, ApplyPlan(store, plan))
+	require.NoError(t, ApplyPlan(ctx, store, plan))
 	writes := store.chainWrite
 
 	again, err := BuildPlan(ctx, models.ChainNetworkProfileTestnet, store, plainDecrypt, nil)
 	require.NoError(t, err)
 	assert.Empty(t, again.Changes)
-	require.NoError(t, ApplyPlan(store, again))
+	require.NoError(t, ApplyPlan(ctx, store, again))
 	assert.Equal(t, writes, store.chainWrite)
 }
 
@@ -320,13 +322,13 @@ func TestAccountMovesToTheProfileEnvironment(t *testing.T) {
 	accountID := uuid.New()
 	store.accounts[accountID] = models.Account{ID: accountID, Environment: models.EnvironmentProd}
 
-	change, err := PlanAccountEnvironment(store, accountID, models.ChainNetworkProfileTestnet)
+	change, err := PlanAccountEnvironment(context.Background(), store, accountID, models.ChainNetworkProfileTestnet)
 	require.NoError(t, err)
 	require.NotNil(t, change)
 	assert.Equal(t, models.EnvironmentTest, change.To)
 
-	require.NoError(t, ApplyAccountChange(store, change))
-	again, err := PlanAccountEnvironment(store, accountID, models.ChainNetworkProfileTestnet)
+	require.NoError(t, ApplyAccountChange(context.Background(), store, change))
+	again, err := PlanAccountEnvironment(context.Background(), store, accountID, models.ChainNetworkProfileTestnet)
 	require.NoError(t, err)
 	assert.Nil(t, again)
 }
@@ -337,7 +339,7 @@ func TestAccountPairedWithATestAccountIsNotMovedToTest(t *testing.T) {
 	store.accounts[prodID] = models.Account{ID: prodID, Environment: models.EnvironmentProd, LinkedAccountID: &testID}
 	store.accounts[testID] = models.Account{ID: testID, Environment: models.EnvironmentTest, LinkedAccountID: &prodID}
 
-	_, err := PlanAccountEnvironment(store, prodID, models.ChainNetworkProfileTestnet)
+	_, err := PlanAccountEnvironment(context.Background(), store, prodID, models.ChainNetworkProfileTestnet)
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "paired")
@@ -345,11 +347,12 @@ func TestAccountPairedWithATestAccountIsNotMovedToTest(t *testing.T) {
 
 func TestAccountPlanRejectsMissingAccounts(t *testing.T) {
 	store := vaultTestRegistry()
-	_, err := PlanAccountEnvironment(store, uuid.Nil, models.ChainNetworkProfileTestnet)
+	_, err := PlanAccountEnvironment(context.Background(), store, uuid.Nil, models.ChainNetworkProfileTestnet)
 	assert.Error(t, err)
-	_, err = PlanAccountEnvironment(store, uuid.New(), models.ChainNetworkProfileTestnet)
+	_, err = PlanAccountEnvironment(context.Background(), store, uuid.New(), models.ChainNetworkProfileTestnet)
 	assert.Error(t, err)
-	assert.NoError(t, ApplyAccountChange(store, nil))
+	assert.Contains(t, err.Error(), "not found")
+	assert.NoError(t, ApplyAccountChange(context.Background(), store, nil))
 }
 
 func btcWalletWithMainnetAddresses(store *fakeStore) (models.Wallet, models.Address, models.Address) {
@@ -381,8 +384,8 @@ func TestBitcoinMovedToTestnetRetiresBc1AndReissuesTheGenesisAsTb1(t *testing.T)
 	assert.Equal(t, GenesisDerivationIndex, reissues[0].Genesis.DerivationIndex)
 	assert.Equal(t, wallet.ID, reissues[0].Genesis.WalletID)
 
-	require.NoError(t, ApplyAlignment(store, alignment))
-	active, _ := store.ActiveAddressesOfWallet(wallet.ID)
+	require.NoError(t, ApplyAlignment(ctx, store, alignment))
+	active, _ := store.ActiveAddressesOfWallet(ctx, wallet.ID)
 	require.Len(t, active, 1)
 	assert.Equal(t, wantGenesis, active[0].Address)
 
@@ -397,7 +400,7 @@ func TestRepeatedRunReissuesAddressesLeftBehindByAStoppedRun(t *testing.T) {
 	ctx := context.Background()
 	plan, err := BuildPlan(ctx, models.ChainNetworkProfileTestnet, store, plainDecrypt, nil)
 	require.NoError(t, err)
-	require.NoError(t, ApplyPlan(store, plan))
+	require.NoError(t, ApplyPlan(ctx, store, plan))
 
 	alignment, err := PlanAlignment(ctx, models.ChainNetworkProfileTestnet, store, plainDecrypt, nil, uuid.Nil)
 	require.NoError(t, err)
@@ -413,11 +416,11 @@ func TestReissueLeavesEVMAndSolanaAddressesAlone(t *testing.T) {
 		{ChainID: models.ChainETH, AdapterType: models.AdapterTypeEVM, Testnet: true},
 		{ChainID: models.ChainSOL, AdapterType: models.AdapterTypeSolana, Testnet: true},
 	} {
-		reissues, err := PlanAddressReissue(store, target)
+		reissues, err := PlanAddressReissue(context.Background(), store, target)
 		require.NoError(t, err)
 		assert.Empty(t, reissues, target.ChainID)
 	}
-	_, err := PlanAddressReissue(nil, ReissueTarget{})
+	_, err := PlanAddressReissue(context.Background(), nil, ReissueTarget{})
 	assert.Error(t, err)
 }
 
@@ -427,7 +430,7 @@ func TestReissueRejectsAWalletWithAnUnreadablePublicKey(t *testing.T) {
 	wallet.MPCPublicKey = "not-hex"
 	store.wallets[models.ChainBTC] = []models.Wallet{wallet}
 
-	_, err := PlanAddressReissue(store, ReissueTarget{ChainID: models.ChainBTC, AdapterType: models.AdapterTypeBitcoin, Testnet: true})
+	_, err := PlanAddressReissue(context.Background(), store, ReissueTarget{ChainID: models.ChainBTC, AdapterType: models.AdapterTypeBitcoin, Testnet: true})
 
 	assert.Error(t, err)
 }

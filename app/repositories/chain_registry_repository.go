@@ -1,35 +1,41 @@
 package repositories
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/google/uuid"
-	contractsorm "github.com/goravel/framework/contracts/database/orm"
-	"github.com/goravel/framework/facades"
+	"github.com/goravel/framework/contracts/database/orm"
 
 	"github.com/macrowallets/waas/app/models"
+	"github.com/macrowallets/waas/app/repositories/internal/db"
 )
 
 const zeroBalanceRaw = "0"
 
 // ChainRegistryRepository is the chain-registry store backed by the application database.
-type ChainRegistryRepository struct{}
-
-// NewChainRegistryRepository returns the store the chain-registry alignment reads and writes.
-func NewChainRegistryRepository() *ChainRegistryRepository {
-	return &ChainRegistryRepository{}
+type ChainRegistryRepository struct {
+	db.Base
 }
 
-func (s *ChainRegistryRepository) Chains() ([]models.Chain, error) {
+// NewChainRegistryRepository wraps an orm.Query. Pass nil for a fresh query per call.
+func NewChainRegistryRepository(query orm.Query) *ChainRegistryRepository {
+	return &ChainRegistryRepository{Base: db.NewBase(query)}
+}
+
+// Chains returns every chain ordered by display_order.
+func (r *ChainRegistryRepository) Chains(ctx context.Context) ([]models.Chain, error) {
 	var chains []models.Chain
-	err := facades.Orm().Query().Order("display_order ASC").Find(&chains)
-	return chains, err
+	if err := r.Query(ctx).Order("display_order ASC").Find(&chains); err != nil {
+		return nil, fmt.Errorf("list chains: %w", err)
+	}
+	return chains, nil
 }
 
 // ChainHoldsBalance looks at the cached per-asset balances and the wallet-level
 // native balance; both are written by the balance refresh.
-func (s *ChainRegistryRepository) ChainHoldsBalance(chainID string) (bool, error) {
-	assetRows, err := facades.Orm().Query().Table("wallet_asset_balances").
+func (r *ChainRegistryRepository) ChainHoldsBalance(ctx context.Context, chainID string) (bool, error) {
+	assetRows, err := r.Query(ctx).Table("wallet_asset_balances").
 		Where("chain_id = ?", chainID).
 		Where("amount_raw <> ?", zeroBalanceRaw).
 		Count()
@@ -39,7 +45,7 @@ func (s *ChainRegistryRepository) ChainHoldsBalance(chainID string) (bool, error
 	if assetRows > 0 {
 		return true, nil
 	}
-	walletRows, err := facades.Orm().Query().Table("wallets").
+	walletRows, err := r.Query(ctx).Table("wallets").
 		Where("chain = ?", chainID).
 		Where("COALESCE(balance_raw, ?) NOT IN (?, '')", zeroBalanceRaw, zeroBalanceRaw).
 		Count()
@@ -49,61 +55,66 @@ func (s *ChainRegistryRepository) ChainHoldsBalance(chainID string) (bool, error
 	return walletRows > 0, nil
 }
 
-func (s *ChainRegistryRepository) UpdateChainNetwork(chainID string, networkID *int64, isTestnet bool) error {
-	result, err := facades.Orm().Query().Model(&models.Chain{}).
+// UpdateChainNetwork writes network_id and is_testnet. A missing chain is ErrRepositoryNotFound.
+func (r *ChainRegistryRepository) UpdateChainNetwork(ctx context.Context, chainID string, networkID *int64, isTestnet bool) error {
+	result, err := r.Query(ctx).Model(&models.Chain{}).
 		Where("id = ?", chainID).
 		Update(map[string]any{"network_id": networkID, "is_testnet": isTestnet})
 	if err != nil {
-		return err
+		return fmt.Errorf("update chain network: %w", err)
 	}
-	if result.RowsAffected == 0 {
-		return fmt.Errorf("chain %s not found", chainID)
-	}
-	return nil
+	return db.RequireRow(result)
 }
 
-func (s *ChainRegistryRepository) FindAccount(id uuid.UUID) (*models.Account, error) {
+// FindAccount returns the account, or ErrRepositoryNotFound.
+func (r *ChainRegistryRepository) FindAccount(ctx context.Context, id uuid.UUID) (*models.Account, error) {
 	var account models.Account
-	if err := facades.Orm().Query().Where("id = ?", id).First(&account); err != nil {
-		return nil, err
+	if err := r.Query(ctx).Where("id = ?", id).First(&account); err != nil {
+		return nil, fmt.Errorf("find account: %w", err)
 	}
 	if account.ID == uuid.Nil {
-		return nil, nil
+		return nil, models.ErrRepositoryNotFound
 	}
 	return &account, nil
 }
 
-func (s *ChainRegistryRepository) UpdateAccountEnvironment(id uuid.UUID, environment string) error {
-	result, err := facades.Orm().Query().Model(&models.Account{}).
+// UpdateAccountEnvironment writes accounts.environment. A missing account is ErrRepositoryNotFound.
+func (r *ChainRegistryRepository) UpdateAccountEnvironment(ctx context.Context, id uuid.UUID, environment string) error {
+	result, err := r.Query(ctx).Model(&models.Account{}).
 		Where("id = ?", id).
 		Update("environment", environment)
 	if err != nil {
-		return err
+		return fmt.Errorf("update account environment: %w", err)
 	}
-	if result.RowsAffected == 0 {
-		return fmt.Errorf("account %s not found", id)
-	}
-	return nil
+	return db.RequireRow(result)
 }
 
-func (s *ChainRegistryRepository) WalletsOnChain(chainID string) ([]models.Wallet, error) {
+// WalletsOnChain returns the wallets on a chain, oldest first.
+func (r *ChainRegistryRepository) WalletsOnChain(ctx context.Context, chainID string) ([]models.Wallet, error) {
 	var wallets []models.Wallet
-	err := facades.Orm().Query().Where("chain = ?", chainID).Order("created_at ASC").Find(&wallets)
-	return wallets, err
+	if err := r.Query(ctx).Where("chain = ?", chainID).Order("created_at ASC").Find(&wallets); err != nil {
+		return nil, fmt.Errorf("list wallets on chain: %w", err)
+	}
+	return wallets, nil
 }
 
-func (s *ChainRegistryRepository) ActiveAddressesOfWallet(walletID uuid.UUID) ([]models.Address, error) {
+// ActiveAddressesOfWallet returns the wallet's active addresses, by derivation index.
+func (r *ChainRegistryRepository) ActiveAddressesOfWallet(ctx context.Context, walletID uuid.UUID) ([]models.Address, error) {
 	var addresses []models.Address
-	err := facades.Orm().Query().
+	err := r.Query(ctx).
 		Where("wallet_id = ?", walletID).
 		Where("is_active = ?", true).
 		Order("derivation_index ASC").
 		Find(&addresses)
-	return addresses, err
+	if err != nil {
+		return nil, fmt.Errorf("list active addresses: %w", err)
+	}
+	return addresses, nil
 }
 
-func (s *ChainRegistryRepository) ReissueGenesis(walletID uuid.UUID, genesis models.Address, retire []uuid.UUID) error {
-	return facades.Orm().Transaction(func(tx contractsorm.Query) error {
+// ReissueGenesis retires the given addresses, inserts genesis, and points the wallet at it.
+func (r *ChainRegistryRepository) ReissueGenesis(ctx context.Context, walletID uuid.UUID, genesis models.Address, retire []uuid.UUID) error {
+	return r.Transaction(ctx, func(tx orm.Query) error {
 		if len(retire) > 0 {
 			if _, err := tx.Model(&models.Address{}).
 				Where("wallet_id = ?", walletID).
@@ -127,9 +138,6 @@ func (s *ChainRegistryRepository) ReissueGenesis(walletID uuid.UUID, genesis mod
 		if err != nil {
 			return fmt.Errorf("link genesis address: %w", err)
 		}
-		if result.RowsAffected == 0 {
-			return fmt.Errorf("wallet %s not found", walletID)
-		}
-		return nil
+		return db.RequireRow(result)
 	})
 }

@@ -15,12 +15,12 @@ import (
 
 // Store is the persistence the alignment needs.
 type Store interface {
-	Chains() ([]models.Chain, error)
+	Chains(ctx context.Context) ([]models.Chain, error)
 	// ChainHoldsBalance reports whether any wallet on the chain has a non-zero cached balance.
-	ChainHoldsBalance(chainID string) (bool, error)
-	UpdateChainNetwork(chainID string, networkID *int64, isTestnet bool) error
-	FindAccount(id uuid.UUID) (*models.Account, error)
-	UpdateAccountEnvironment(id uuid.UUID, environment string) error
+	ChainHoldsBalance(ctx context.Context, chainID string) (bool, error)
+	UpdateChainNetwork(ctx context.Context, chainID string, networkID *int64, isTestnet bool) error
+	FindAccount(ctx context.Context, id uuid.UUID) (*models.Account, error)
+	UpdateAccountEnvironment(ctx context.Context, id uuid.UUID, environment string) error
 }
 
 // RPCDecrypter turns a stored rpc_url into the plaintext URL.
@@ -73,7 +73,7 @@ func BuildPlan(ctx context.Context, profile string, store Store, decrypt RPCDecr
 		return nil, errors.New("chainregistry: store and decrypter are required")
 	}
 
-	chains, err := store.Chains()
+	chains, err := store.Chains(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("load chains: %w", err)
 	}
@@ -143,7 +143,7 @@ func planChain(ctx context.Context, profile string, current models.Chain, store 
 		ToTestnet:     spec.IsTestnet,
 	}
 	if change.NetworkChanges() {
-		funded, err := store.ChainHoldsBalance(current.ID)
+		funded, err := store.ChainHoldsBalance(ctx, current.ID)
 		if err != nil {
 			return nil, "", fmt.Errorf("check balances on %s: %w", current.ID, err)
 		}
@@ -174,12 +174,12 @@ func checkRPCServes(ctx context.Context, current models.Chain, rpcURL string, sp
 
 // ApplyPlan writes every change of plan. It is idempotent: an applied plan rebuilt
 // against the same profile has no changes.
-func ApplyPlan(store Store, plan *Plan) error {
+func ApplyPlan(ctx context.Context, store Store, plan *Plan) error {
 	if store == nil || plan == nil {
 		return errors.New("chainregistry: store and plan are required")
 	}
 	for _, change := range plan.Changes {
-		if err := store.UpdateChainNetwork(change.ChainID, change.ToNetworkID, change.ToTestnet); err != nil {
+		if err := store.UpdateChainNetwork(ctx, change.ChainID, change.ToNetworkID, change.ToTestnet); err != nil {
 			return fmt.Errorf("update chain %s: %w", change.ChainID, err)
 		}
 	}
@@ -197,7 +197,7 @@ type AccountChange struct {
 // whose chain list holds the primary records under profile, or nil when it already is.
 // A paired account must stay in the other environment, so a pair that would end up
 // with both sides in the same environment is refused.
-func PlanAccountEnvironment(store Store, accountID uuid.UUID, profile string) (*AccountChange, error) {
+func PlanAccountEnvironment(ctx context.Context, store Store, accountID uuid.UUID, profile string) (*AccountChange, error) {
 	if accountID == uuid.Nil {
 		return nil, errors.New("account id is required")
 	}
@@ -208,19 +208,21 @@ func PlanAccountEnvironment(store Store, accountID uuid.UUID, profile string) (*
 	if err != nil {
 		return nil, err
 	}
-	account, err := store.FindAccount(accountID)
+	account, err := store.FindAccount(ctx, accountID)
+	if errors.Is(err, models.ErrRepositoryNotFound) {
+		return nil, fmt.Errorf("account %s not found", accountID)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("load account %s: %w", accountID, err)
-	}
-	if account == nil {
-		return nil, fmt.Errorf("account %s not found", accountID)
 	}
 	if account.Environment == want {
 		return nil, nil
 	}
 	if account.LinkedAccountID != nil {
-		linked, err := store.FindAccount(*account.LinkedAccountID)
-		if err != nil {
+		linked, err := store.FindAccount(ctx, *account.LinkedAccountID)
+		if errors.Is(err, models.ErrRepositoryNotFound) {
+			linked = nil
+		} else if err != nil {
 			return nil, fmt.Errorf("load linked account %s: %w", *account.LinkedAccountID, err)
 		}
 		if linked != nil && linked.Environment == want {
@@ -231,14 +233,14 @@ func PlanAccountEnvironment(store Store, accountID uuid.UUID, profile string) (*
 }
 
 // ApplyAccountChange writes change; a nil change is a no-op.
-func ApplyAccountChange(store Store, change *AccountChange) error {
+func ApplyAccountChange(ctx context.Context, store Store, change *AccountChange) error {
 	if change == nil {
 		return nil
 	}
 	if store == nil {
 		return errors.New("chainregistry: store is required")
 	}
-	return store.UpdateAccountEnvironment(change.AccountID, change.To)
+	return store.UpdateAccountEnvironment(ctx, change.AccountID, change.To)
 }
 
 func sameNetworkID(a, b *int64) bool {

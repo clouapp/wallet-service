@@ -64,7 +64,7 @@ func (c *ChainsAlignNetwork) Handle(ctx console.Context) error {
 		accountID = parsed
 	}
 
-	store := repositories.NewChainRegistryRepository()
+	store := repositories.NewChainRegistryRepository(nil)
 	background := context.Background()
 	alignment, err := chainregistry.PlanAlignment(background, profile, store,
 		decryptAndResolveRPCURL, chainregistry.ProbeRPCNetwork, accountID)
@@ -80,7 +80,7 @@ func (c *ChainsAlignNetwork) Handle(ctx console.Context) error {
 		ctx.Info("dry run: nothing written (pass --apply)")
 		return nil
 	}
-	if err := chainregistry.ApplyAlignment(store, alignment); err != nil {
+	if err := chainregistry.ApplyAlignment(background, store, alignment); err != nil {
 		return failCommand(ctx, err)
 	}
 	for chainID := range alignment.Reissues {

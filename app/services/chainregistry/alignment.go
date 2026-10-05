@@ -41,12 +41,12 @@ func PlanAlignment(ctx context.Context, profile string, store FullStore, decrypt
 		return nil, err
 	}
 	alignment := &Alignment{Plan: plan, Reissues: make(map[string][]AddressReissue)}
-	targets, err := reissueTargets(profile, store)
+	targets, err := reissueTargets(ctx, profile, store)
 	if err != nil {
 		return nil, err
 	}
 	for _, target := range targets {
-		planned, err := PlanAddressReissue(store, target)
+		planned, err := PlanAddressReissue(ctx, store, target)
 		if err != nil {
 			return nil, err
 		}
@@ -55,7 +55,7 @@ func PlanAlignment(ctx context.Context, profile string, store FullStore, decrypt
 		}
 	}
 	if accountID != uuid.Nil {
-		if alignment.AccountChange, err = PlanAccountEnvironment(store, accountID, profile); err != nil {
+		if alignment.AccountChange, err = PlanAccountEnvironment(ctx, store, accountID, profile); err != nil {
 			return nil, err
 		}
 	}
@@ -64,28 +64,28 @@ func PlanAlignment(ctx context.Context, profile string, store FullStore, decrypt
 
 // ApplyAlignment writes the chain changes first, then the address reissues, then
 // the account. Each step is idempotent, so a failed run can be repeated.
-func ApplyAlignment(store FullStore, alignment *Alignment) error {
+func ApplyAlignment(ctx context.Context, store FullStore, alignment *Alignment) error {
 	if store == nil || alignment == nil || alignment.Plan == nil {
 		return errors.New("chainregistry: store and alignment are required")
 	}
-	if err := ApplyPlan(store, alignment.Plan); err != nil {
+	if err := ApplyPlan(ctx, store, alignment.Plan); err != nil {
 		return err
 	}
 	for _, planned := range alignment.Reissues {
 		for _, reissue := range planned {
-			if err := ApplyAddressReissue(store, reissue); err != nil {
+			if err := ApplyAddressReissue(ctx, store, reissue); err != nil {
 				return fmt.Errorf("reissue addresses of wallet %s: %w", reissue.WalletID, err)
 			}
 		}
 	}
-	return ApplyAccountChange(store, alignment.AccountChange)
+	return ApplyAccountChange(ctx, store, alignment.AccountChange)
 }
 
 // reissueTargets are the primary records as the profile wants them. Built from the
 // profile, not from the chain changes, so a run that stopped after flipping a chain
 // still reissues its addresses when repeated.
-func reissueTargets(profile string, store Store) ([]ReissueTarget, error) {
-	chains, err := store.Chains()
+func reissueTargets(ctx context.Context, profile string, store Store) ([]ReissueTarget, error) {
+	chains, err := store.Chains(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("load chains: %w", err)
 	}

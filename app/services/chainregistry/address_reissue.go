@@ -1,6 +1,7 @@
 package chainregistry
 
 import (
+	"context"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -23,11 +24,11 @@ const (
 
 // AddressStore is the persistence the address reissue needs.
 type AddressStore interface {
-	WalletsOnChain(chainID string) ([]models.Wallet, error)
-	ActiveAddressesOfWallet(walletID uuid.UUID) ([]models.Address, error)
+	WalletsOnChain(ctx context.Context, chainID string) ([]models.Wallet, error)
+	ActiveAddressesOfWallet(ctx context.Context, walletID uuid.UUID) ([]models.Address, error)
 	// ReissueGenesis retires the retire ids, inserts genesis and points the wallet's
 	// deposit address at it, all or nothing.
-	ReissueGenesis(walletID uuid.UUID, genesis models.Address, retire []uuid.UUID) error
+	ReissueGenesis(ctx context.Context, walletID uuid.UUID, genesis models.Address, retire []uuid.UUID) error
 }
 
 // AddressReissue is what one wallet gets when its chain moves to a network with
@@ -53,7 +54,7 @@ type ReissueTarget struct {
 // the target network's bech32 prefix). Per-user addresses are only retired: their
 // owners ask for new ones. EVM and Solana addresses do not depend on the network,
 // so other chains need nothing.
-func PlanAddressReissue(store AddressStore, target ReissueTarget) ([]AddressReissue, error) {
+func PlanAddressReissue(ctx context.Context, store AddressStore, target ReissueTarget) ([]AddressReissue, error) {
 	if store == nil {
 		return nil, errors.New("chainregistry: address store is required")
 	}
@@ -62,13 +63,13 @@ func PlanAddressReissue(store AddressStore, target ReissueTarget) ([]AddressReis
 	}
 	validPrefix := addressing.BtcHRP(target.Testnet) + bech32Separator
 
-	wallets, err := store.WalletsOnChain(target.ChainID)
+	wallets, err := store.WalletsOnChain(ctx, target.ChainID)
 	if err != nil {
 		return nil, fmt.Errorf("load wallets on %s: %w", target.ChainID, err)
 	}
 	var reissues []AddressReissue
 	for _, wallet := range wallets {
-		reissue, err := planWalletReissue(store, wallet, target, validPrefix)
+		reissue, err := planWalletReissue(ctx, store, wallet, target, validPrefix)
 		if err != nil {
 			return nil, err
 		}
@@ -79,8 +80,8 @@ func PlanAddressReissue(store AddressStore, target ReissueTarget) ([]AddressReis
 	return reissues, nil
 }
 
-func planWalletReissue(store AddressStore, wallet models.Wallet, target ReissueTarget, validPrefix string) (*AddressReissue, error) {
-	active, err := store.ActiveAddressesOfWallet(wallet.ID)
+func planWalletReissue(ctx context.Context, store AddressStore, wallet models.Wallet, target ReissueTarget, validPrefix string) (*AddressReissue, error) {
+	active, err := store.ActiveAddressesOfWallet(ctx, wallet.ID)
 	if err != nil {
 		return nil, fmt.Errorf("load addresses of wallet %s: %w", wallet.ID, err)
 	}
@@ -129,7 +130,7 @@ func genesisAddress(wallet models.Wallet, target ReissueTarget) (models.Address,
 }
 
 // ApplyAddressReissue writes one wallet's reissue.
-func ApplyAddressReissue(store AddressStore, reissue AddressReissue) error {
+func ApplyAddressReissue(ctx context.Context, store AddressStore, reissue AddressReissue) error {
 	if store == nil {
 		return errors.New("chainregistry: address store is required")
 	}
@@ -137,5 +138,5 @@ func ApplyAddressReissue(store AddressStore, reissue AddressReissue) error {
 	for _, address := range reissue.Retired {
 		retire = append(retire, address.ID)
 	}
-	return store.ReissueGenesis(reissue.WalletID, reissue.Genesis, retire)
+	return store.ReissueGenesis(ctx, reissue.WalletID, reissue.Genesis, retire)
 }

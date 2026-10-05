@@ -176,12 +176,12 @@ func createSeedChain(c chainSeed, encRPC string, thresholds *seedThresholds) err
 // alignSeededChains realigns rows that existed before the seed. No RPC probe: the
 // seed runs offline; chains:align-network checks the RPCs.
 func alignSeededChains(ctx context.Context, profile string) error {
-	store := repositories.NewChainRegistryRepository()
+	store := repositories.NewChainRegistryRepository(nil)
 	alignment, err := chainregistry.PlanAlignment(ctx, profile, store, facades.Crypt().DecryptString, nil, uuid.Nil)
 	if err != nil {
 		return fmt.Errorf("align chains to the %s profile: %w", profile, err)
 	}
-	if err := chainregistry.ApplyAlignment(store, alignment); err != nil {
+	if err := chainregistry.ApplyAlignment(ctx, store, alignment); err != nil {
 		return fmt.Errorf("align chains to the %s profile: %w", profile, err)
 	}
 	for _, change := range alignment.Plan.Changes {
