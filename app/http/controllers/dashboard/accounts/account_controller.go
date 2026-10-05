@@ -312,8 +312,9 @@ func (ctrl *AccountsController) AddAccountUser(ctx http.Context) http.Response {
 	}
 
 	au, auErr := ctrl.accountService.FindMember(ctx.Context(), account.ID, targetPtr.ID)
-	if auErr != nil {
+	if auErr != nil && !errors.Is(auErr, models.ErrRepositoryNotFound) {
 		appfacades.Log().WithContext(ctx).Errorf("account: find membership after add: %v", auErr)
+		return responses.Send(ctx, http.StatusForbidden, http.Json{"error": "not a member of this account"})
 	}
 	return responses.Send(ctx, http.StatusCreated, tokenresource.AccountUserPtr(au))
 }
