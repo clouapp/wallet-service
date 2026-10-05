@@ -98,8 +98,11 @@ func TestProcessTransfers_HumanUSDTUsesSeedDecimals(t *testing.T) {
 	}}
 	txs := &ingestTxRepo{}
 	svc := NewService(Deps{
-		Registry:     reg,
-		Webhook:      webhook.NewService(nil, &ingestWebhookConfigRepo{}, &ingestWebhookEventRepo{}),
+		Registry: reg,
+		Webhook: webhook.NewService(webhook.Deps{
+			Configs: &ingestWebhookConfigRepo{},
+			Events:  &ingestWebhookEventRepo{},
+		}),
 		AddressRepo:  addrs,
 		Transactions: txs,
 	})
@@ -226,8 +229,11 @@ func TestProcessTransfers_SkipsSweepOfTheSameWallet(t *testing.T) {
 	}}
 	txs := &ingestTxRepo{internalHashes: map[string]uuid.UUID{sweepHash: walletID}}
 	svc := NewService(Deps{
-		Registry:     reg,
-		Webhook:      webhook.NewService(nil, &ingestWebhookConfigRepo{}, &ingestWebhookEventRepo{}),
+		Registry: reg,
+		Webhook: webhook.NewService(webhook.Deps{
+			Configs: &ingestWebhookConfigRepo{},
+			Events:  &ingestWebhookEventRepo{},
+		}),
 		AddressRepo:  addrs,
 		Transactions: txs,
 	})

@@ -51,7 +51,10 @@ func deliveredSignature(t *testing.T, secret string) string {
 	}))
 	defer server.Close()
 
-	svc := webhook.NewService(nil, repositories.NewWebhookConfigRepository(nil, facades.Crypt()), repositories.NewWebhookEventRepository(nil))
+	svc := webhook.NewService(webhook.Deps{
+		Configs: repositories.NewWebhookConfigRepository(nil, facades.Crypt()),
+		Events:  repositories.NewWebhookEventRepository(nil),
+	})
 	require.NoError(t, svc.Deliver(context.Background(), types.WebhookMessage{
 		EventID:     uuid.NewString(),
 		EventType:   types.EventDepositConfirmed,

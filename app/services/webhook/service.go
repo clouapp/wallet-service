@@ -53,8 +53,21 @@ type Service struct {
 	deliverySettings  deliverySettingsSource
 }
 
-func NewService(sqs queue.Sender, webhookConfigRepo configStore, webhookEventRepo eventStore) *Service {
-	return &Service{sqs: sqs, webhookConfigRepo: webhookConfigRepo, webhookEventRepo: webhookEventRepo}
+// Deps is everything the webhook service needs. A nil field means that
+// dependency is absent.
+type Deps struct {
+	SQS     queue.Sender
+	Configs configStore
+	Events  eventStore
+}
+
+// NewService wires the webhook service from Deps.
+func NewService(deps Deps) *Service {
+	return &Service{
+		sqs:               deps.SQS,
+		webhookConfigRepo: deps.Configs,
+		webhookEventRepo:  deps.Events,
+	}
 }
 
 // EnqueueEvent creates webhook events for the matching configs and sends them to SQS.

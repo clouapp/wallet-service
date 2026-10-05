@@ -91,7 +91,10 @@ func setupWithdrawService(t *testing.T) (*Service, *mocks.MockChain) {
 
 	webhookConfigRepo := repositories.NewWebhookConfigRepository(nil, facades.Crypt())
 	webhookEventRepo := repositories.NewWebhookEventRepository(nil)
-	webhookSvc := webhook.NewService(nil, webhookConfigRepo, webhookEventRepo)
+	webhookSvc := webhook.NewService(webhook.Deps{
+		Configs: webhookConfigRepo,
+		Events:  webhookEventRepo,
+	})
 	mpcSvc := &mockMPC{}
 	txRepo := repositories.NewTransactionRepository(nil)
 	walletRepo := repositories.NewWalletRepository(nil)

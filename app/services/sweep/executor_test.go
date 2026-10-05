@@ -695,7 +695,11 @@ func TestExecute_MultiSweep_WebhookEmittedPerSweep(t *testing.T) {
 		}},
 	}
 	eventRepo := &fakeWebhookEventRepo{}
-	svc.webhookSvc = webhook.NewService(sender, cfgRepo, eventRepo)
+	svc.webhookSvc = webhook.NewService(webhook.Deps{
+		SQS:     sender,
+		Configs: cfgRepo,
+		Events:  eventRepo,
+	})
 
 	plan := &Plan{
 		WalletID: walletID,

@@ -100,7 +100,7 @@ func TestDeliverySettingsFromStored_ZeroKeepsTheDefault(t *testing.T) {
 func TestResolveDeliverySettings_NilSourceKeepsTheDefault(t *testing.T) {
 	t.Parallel()
 
-	got := NewService(nil, nil, nil).resolveDeliverySettings(context.Background())
+	got := NewService(Deps{}).resolveDeliverySettings(context.Background())
 	if got != DefaultDeliverySettings() {
 		t.Fatalf("resolved = %+v", got)
 	}

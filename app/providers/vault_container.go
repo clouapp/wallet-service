@@ -345,7 +345,11 @@ func buildVaultContainer(app foundation.Application) (*container.Container, erro
 		}
 	}
 
-	c.WebhookService = webhook.NewService(c.SQS, c.WebhookConfigRepo, c.WebhookEventRepo)
+	c.WebhookService = webhook.NewService(webhook.Deps{
+		SQS:     c.SQS,
+		Configs: c.WebhookConfigRepo,
+		Events:  c.WebhookEventRepo,
+	})
 	c.WalletService = wallet.NewService(wallet.Deps{
 		Registry:     c.Registry,
 		AddressCache: addresscache.New(c.Redis),
