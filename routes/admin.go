@@ -375,11 +375,11 @@ func newDashboardWalletWebhooksController() *dashwallets.WebhooksController {
 }
 
 func newDashboardWalletSettingsController() *dashwallets.SettingsController {
-	return dashwallets.NewSettingsController(
-		container.MustMake[*walletrecords.Wallets](),
-		walletPolicyMemberships(),
-		container.MustMake[*chainsvc.Service](),
-	)
+	return dashwallets.NewSettingsController(dashwallets.WalletSettingsControllerDeps{
+		Wallets:     container.MustMake[*walletrecords.Wallets](),
+		Memberships: walletPolicyMemberships(),
+		Chains:      container.MustMake[*chainsvc.Service](),
+	})
 }
 
 func newDashboardBalancesController() *dashwallets.BalancesController {

@@ -32,24 +32,29 @@ type SettingsController struct {
 	chains      *chainsvc.Service
 }
 
-func NewSettingsController(
-	wallets *walletrecords.Wallets,
-	memberships *walletrecords.Memberships,
-	chains *chainsvc.Service,
-) *SettingsController {
-	if wallets == nil {
+// WalletSettingsControllerDeps is everything the dashboard wallet settings controller needs.
+// Every field is required.
+type WalletSettingsControllerDeps struct {
+	Wallets     *walletrecords.Wallets
+	Memberships *walletrecords.Memberships
+	Chains      *chainsvc.Service
+}
+
+// NewSettingsController wires the dashboard wallet settings handlers from WalletSettingsControllerDeps.
+func NewSettingsController(deps WalletSettingsControllerDeps) *SettingsController {
+	if deps.Wallets == nil {
 		panic("dashboard wallet settings controller: wallets service is required")
 	}
-	if memberships == nil {
+	if deps.Memberships == nil {
 		panic("dashboard wallet settings controller: wallet memberships are required")
 	}
-	if chains == nil {
+	if deps.Chains == nil {
 		panic("dashboard wallet settings controller: chains service is required")
 	}
 	return &SettingsController{
-		wallets:     wallets,
-		memberships: memberships,
-		chains:      chains,
+		wallets:     deps.Wallets,
+		memberships: deps.Memberships,
+		chains:      deps.Chains,
 	}
 }
 
