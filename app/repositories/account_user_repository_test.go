@@ -53,6 +53,30 @@ func (s *AccountUserRepositoryTestSuite) TestCreate_Success() {
 	s.NoError(err)
 }
 
+func (s *AccountUserRepositoryTestSuite) TestFindByID() {
+	accID := s.createAccount()
+	userID := s.createUser()
+	au := &models.AccountUser{
+		ID:        uuid.New(),
+		AccountID: accID,
+		UserID:    userID,
+		Role:      "auditor",
+		Status:    models.MembershipStatusSuspended,
+	}
+	s.Require().NoError(s.repo.Create(context.Background(), au))
+
+	found, err := s.repo.FindByID(context.Background(), au.ID)
+	s.NoError(err)
+	s.Require().NotNil(found)
+	s.Equal(au.ID, found.ID)
+	s.Equal("auditor", found.Role)
+	s.Equal(models.MembershipStatusSuspended, found.Status)
+
+	missing, err := s.repo.FindByID(context.Background(), uuid.New())
+	s.ErrorIs(err, models.ErrRepositoryNotFound)
+	s.Nil(missing)
+}
+
 func (s *AccountUserRepositoryTestSuite) TestFindByAccountID() {
 	accID := s.createAccount()
 	s.Require().NoError(s.repo.Create(context.Background(), &models.AccountUser{ID: uuid.New(), AccountID: accID, UserID: s.createUser(), Role: "owner"}))

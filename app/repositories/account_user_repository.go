@@ -38,6 +38,19 @@ func (r *AccountUserRepository) Create(ctx context.Context, au *models.AccountUs
 	return nil
 }
 
+// FindByID returns the membership, or ErrRepositoryNotFound.
+// Status is not filtered, so a suspended row is still found.
+func (r *AccountUserRepository) FindByID(ctx context.Context, id uuid.UUID) (*models.AccountUser, error) {
+	var au models.AccountUser
+	if err := r.Query(ctx).Where("id = ?", id).First(&au); err != nil {
+		return nil, fmt.Errorf("find account user by id: %w", err)
+	}
+	if au.ID == uuid.Nil {
+		return nil, models.ErrRepositoryNotFound
+	}
+	return &au, nil
+}
+
 // FindByAccountID returns active memberships of an account.
 func (r *AccountUserRepository) FindByAccountID(ctx context.Context, accountID uuid.UUID) ([]models.AccountUser, error) {
 	var members []models.AccountUser
