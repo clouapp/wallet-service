@@ -1,4 +1,4 @@
-package chains
+package chains_test
 
 import (
 	"encoding/json"
@@ -7,10 +7,11 @@ import (
 	"github.com/google/uuid"
 	"github.com/goravel/framework/support/carbon"
 
+	"github.com/macrowallets/waas/app/http/resources/dashboard/chains"
 	"github.com/macrowallets/waas/app/models"
 )
 
-func TestTokenViewKeepsTheModelWire(t *testing.T) {
+func TestTokenKeepsTheModelWire(t *testing.T) {
 	t.Parallel()
 
 	id := uuid.MustParse("11111111-1111-4111-8111-111111111111")
@@ -43,7 +44,7 @@ func TestTokenViewKeepsTheModelWire(t *testing.T) {
 		},
 	}
 	for _, tc := range cases {
-		raw, err := json.Marshal(newTokenView(tc.token))
+		raw, err := json.Marshal(chains.TokenFrom(tc.token))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -53,18 +54,18 @@ func TestTokenViewKeepsTheModelWire(t *testing.T) {
 	}
 }
 
-func TestTokenViewsPreserveSliceNilness(t *testing.T) {
+func TestTokensPreserveSliceNilness(t *testing.T) {
 	t.Parallel()
 
-	if tokenViews(nil) != nil {
+	if chains.TokensFrom(nil) != nil {
 		t.Fatal("nil slice became an empty slice")
 	}
-	empty := tokenViews([]models.Token{})
+	empty := chains.TokensFrom([]models.Token{})
 	if empty == nil || len(empty) != 0 {
 		t.Fatalf("empty slice = %#v", empty)
 	}
 
-	nilPage, err := json.Marshal(map[string]any{"chain": "eth", "data": tokenViews(nil)})
+	nilPage, err := json.Marshal(map[string]any{"chain": "eth", "data": chains.TokensFrom(nil)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -72,7 +73,7 @@ func TestTokenViewsPreserveSliceNilness(t *testing.T) {
 		t.Fatalf("nil page = %s", nilPage)
 	}
 
-	emptyPage, err := json.Marshal(map[string]any{"data": tokenViews([]models.Token{})})
+	emptyPage, err := json.Marshal(map[string]any{"data": chains.TokensFrom([]models.Token{})})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -7,10 +7,10 @@ import (
 	"github.com/macrowallets/waas/app/models"
 )
 
-// TokenView is the chain token the dashboard reads. Field order and tags
+// Token is the chain token the dashboard reads. Field order and tags
 // match the model wire, including embedded timestamps. A nil page stays nil;
 // an empty page stays empty. A non-nil empty icon URL stays "".
-type TokenView struct {
+type Token struct {
 	CreatedAt       *carbon.DateTime `json:"created_at"`
 	UpdatedAt       *carbon.DateTime `json:"updated_at"`
 	ID              uuid.UUID        `json:"id"`
@@ -23,8 +23,9 @@ type TokenView struct {
 	Status          string           `json:"status"`
 }
 
-func newTokenView(token models.Token) TokenView {
-	return TokenView{
+// TokenFrom projects one chain token.
+func TokenFrom(token models.Token) Token {
+	return Token{
 		CreatedAt:       token.CreatedAt,
 		UpdatedAt:       token.UpdatedAt,
 		ID:              token.ID,
@@ -38,13 +39,14 @@ func newTokenView(token models.Token) TokenView {
 	}
 }
 
-func tokenViews(tokens []models.Token) []TokenView {
+// TokensFrom copies a page. A nil slice stays nil; an empty slice stays empty.
+func TokensFrom(tokens []models.Token) []Token {
 	if tokens == nil {
 		return nil
 	}
-	views := make([]TokenView, len(tokens))
+	views := make([]Token, len(tokens))
 	for i := range tokens {
-		views[i] = newTokenView(tokens[i])
+		views[i] = TokenFrom(tokens[i])
 	}
 	return views
 }
