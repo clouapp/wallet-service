@@ -352,11 +352,11 @@ func walletPolicyMemberships() *walletrecords.Memberships {
 }
 
 func newDashboardWalletUsersController() *dashwallets.UsersController {
-	return dashwallets.NewUsersController(
-		container.MustMake[*walletrecords.Members](),
-		container.MustMake[*accountsvc.Service](),
-		walletPolicyMemberships(),
-	)
+	return dashwallets.NewUsersController(dashwallets.WalletUsersControllerDeps{
+		Members:     container.MustMake[*walletrecords.Members](),
+		Accounts:    container.MustMake[*accountsvc.Service](),
+		Memberships: walletPolicyMemberships(),
+	})
 }
 
 func newDashboardWhitelistController() *dashwallets.WhitelistController {

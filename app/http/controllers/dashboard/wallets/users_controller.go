@@ -25,24 +25,29 @@ type UsersController struct {
 	memberships *walletrecords.Memberships
 }
 
-func NewUsersController(
-	members *walletrecords.Members,
-	accounts *accountsvc.Service,
-	memberships *walletrecords.Memberships,
-) *UsersController {
-	if members == nil {
+// WalletUsersControllerDeps is everything the dashboard wallet users controller needs.
+// Every field is required.
+type WalletUsersControllerDeps struct {
+	Members     *walletrecords.Members
+	Accounts    *accountsvc.Service
+	Memberships *walletrecords.Memberships
+}
+
+// NewUsersController wires the dashboard wallet user handlers from WalletUsersControllerDeps.
+func NewUsersController(deps WalletUsersControllerDeps) *UsersController {
+	if deps.Members == nil {
 		panic("dashboard wallet users controller: wallet users service is required")
 	}
-	if accounts == nil {
+	if deps.Accounts == nil {
 		panic("dashboard wallet users controller: account service is required")
 	}
-	if memberships == nil {
+	if deps.Memberships == nil {
 		panic("dashboard wallet users controller: wallet memberships are required")
 	}
 	return &UsersController{
-		members:     members,
-		accounts:    accounts,
-		memberships: memberships,
+		members:     deps.Members,
+		accounts:    deps.Accounts,
+		memberships: deps.Memberships,
 	}
 }
 
