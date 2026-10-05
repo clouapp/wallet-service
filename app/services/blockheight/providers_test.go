@@ -59,6 +59,18 @@ func TestNewProviders_ForwardsTheBlockstreamPort(t *testing.T) {
 	assert.Equal(t, []string{models.ChainBTC}, blockstream.keys)
 }
 
+func TestNewProviders_ForwardsTheSolanaPort(t *testing.T) {
+	solana := &tipSource{height: 123456789}
+	providers := NewProviders(ProvidersDeps{Solana: solana})
+
+	height, err := providers[models.AdapterTypeSolana].GetBlockHeight(context.Background(), models.ChainSOL)
+
+	require.NoError(t, err)
+	assert.Equal(t, uint64(123456789), height)
+	assert.Equal(t, int32(1), solana.hits.Load())
+	assert.Equal(t, []string{models.ChainSOL}, solana.keys)
+}
+
 func TestNewProviders_BitcoinUsesTheTestnet4AwareProvider(t *testing.T) {
 	providers := NewProviders(ProvidersDeps{NetworkByChain: map[string]string{models.ChainBTC: models.NetworkBitcoinTestnet4}})
 

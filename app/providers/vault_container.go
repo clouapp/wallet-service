@@ -21,6 +21,7 @@ import (
 	blockstreamtip "github.com/macrowallets/waas/app/adapters/blockheight/blockstream"
 	etherscantip "github.com/macrowallets/waas/app/adapters/blockheight/etherscan"
 	mempooltip "github.com/macrowallets/waas/app/adapters/blockheight/mempool"
+	solanatip "github.com/macrowallets/waas/app/adapters/blockheight/solana"
 	coinapiws "github.com/macrowallets/waas/app/adapters/price/coinapi"
 	queuesqs "github.com/macrowallets/waas/app/adapters/queue/sqs"
 	"github.com/macrowallets/waas/app/adapters/redis/addresscache"
@@ -430,6 +431,7 @@ func buildVaultContainer(app foundation.Application) (*container.Container, erro
 		Etherscan:      etherscantip.New(blockheight.EtherscanDeps{KeyAtUse: etherscanKey}),
 		Blockstream:    blockstreamtip.New(),
 		Testnet4:       mempooltip.New(),
+		Solana:         solanatip.New(),
 	})
 	assetDecimals := withdrawalevents.NewRegistryDecimals(withdrawalevents.RegistryDecimalsDeps{
 		Registry: c.Registry,

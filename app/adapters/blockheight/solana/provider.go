@@ -1,4 +1,4 @@
-package blockheight
+package solana
 
 import (
 	"context"
@@ -7,26 +7,37 @@ import (
 	"time"
 
 	"github.com/macrowallets/waas/app/models"
+	"github.com/macrowallets/waas/app/services/blockheight"
 	"github.com/macrowallets/waas/pkg/httpclient"
 )
 
-const solanaGetSlotBody = `{"jsonrpc":"2.0","id":1,"method":"getSlot","params":[{"commitment":"finalized"}]}`
+const (
+	httpTimeout = 5 * time.Second
+	mainnetRPC  = "https://api.mainnet-beta.solana.com"
+	devnetRPC   = "https://api.devnet.solana.com"
+	getSlotBody = `{"jsonrpc":"2.0","id":1,"method":"getSlot","params":[{"commitment":"finalized"}]}`
+)
 
-type SolanaPublicProvider struct {
+// Provider reads Solana mainnet and devnet tips from the public RPC.
+// The service keeps the Provider port.
+type Provider struct {
 	client     *httpclient.Client
 	mainnetRPC string
 	devnetRPC  string
 }
 
-func NewSolanaPublicProvider() *SolanaPublicProvider {
-	return &SolanaPublicProvider{
-		client:     httpclient.NewClient(5 * time.Second),
-		mainnetRPC: "https://api.mainnet-beta.solana.com",
-		devnetRPC:  "https://api.devnet.solana.com",
+var _ blockheight.Provider = (*Provider)(nil)
+
+// New returns the Solana public RPC tip reader.
+func New() *Provider {
+	return &Provider{
+		client:     httpclient.NewClient(httpTimeout),
+		mainnetRPC: mainnetRPC,
+		devnetRPC:  devnetRPC,
 	}
 }
 
-func (p *SolanaPublicProvider) rpcURL(chainID string) (string, error) {
+func (p *Provider) rpcURL(chainID string) (string, error) {
 	switch chainID {
 	case models.ChainSOL:
 		return p.mainnetRPC, nil
@@ -37,7 +48,7 @@ func (p *SolanaPublicProvider) rpcURL(chainID string) (string, error) {
 	}
 }
 
-type solanaSlotResp struct {
+type slotResp struct {
 	JSONRPC string      `json:"jsonrpc"`
 	ID      int         `json:"id"`
 	Result  json.Number `json:"result"`
@@ -47,7 +58,7 @@ type solanaSlotResp struct {
 	} `json:"error"`
 }
 
-func (p *SolanaPublicProvider) GetBlockHeight(ctx context.Context, chainID string) (uint64, error) {
+func (p *Provider) GetBlockHeight(ctx context.Context, chainID string) (uint64, error) {
 	u, err := p.rpcURL(chainID)
 	if err != nil {
 		return 0, err
@@ -57,7 +68,7 @@ func (p *SolanaPublicProvider) GetBlockHeight(ctx context.Context, chainID strin
 		Method:  httpclient.MethodPost,
 		URL:     u,
 		Header:  map[string]string{"Content-Type": "application/json"},
-		Body:    []byte(solanaGetSlotBody),
+		Body:    []byte(getSlotBody),
 		HasBody: true,
 	})
 	if err != nil {
@@ -74,7 +85,7 @@ func (p *SolanaPublicProvider) GetBlockHeight(ctx context.Context, chainID strin
 		return 0, fmt.Errorf("solana: unexpected status %d: %s", resp.StatusCode, string(resp.Body))
 	}
 
-	var out solanaSlotResp
+	var out slotResp
 	if err := json.Unmarshal(resp.Body, &out); err != nil {
 		return 0, fmt.Errorf("solana: decode json: %w", err)
 	}

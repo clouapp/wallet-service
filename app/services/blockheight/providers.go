@@ -21,13 +21,15 @@ type EtherscanDeps struct {
 // NetworkByChain maps a chain id to the network each chain record resolves to.
 // Etherscan reads EVM tips; a nil leaves that key unconfigured. Blockstream reads
 // Bitcoin mainnet and testnet3; a nil leaves those keys unconfigured. Testnet4
-// reads the Bitcoin testnet4 tip; a nil leaves that key unconfigured.
+// reads the Bitcoin testnet4 tip; a nil leaves that key unconfigured. Solana reads
+// Solana mainnet and devnet tips; a nil leaves that key unconfigured.
 type ProvidersDeps struct {
 	Key            EtherscanKey
 	NetworkByChain map[string]string
 	Etherscan      Provider
 	Blockstream    Provider
 	Testnet4       Provider
+	Solana         Provider
 }
 
 // NewProviders builds the tip provider of each adapter type, routed by the network
@@ -41,7 +43,7 @@ func NewProviders(deps ProvidersDeps) map[string]Provider {
 			Blockstream: deps.Blockstream,
 			Testnet4:    deps.Testnet4,
 		}), deps.NetworkByChain),
-		models.AdapterTypeSolana: RouteByNetwork(NewSolanaPublicProvider(), deps.NetworkByChain),
+		models.AdapterTypeSolana: RouteByNetwork(deps.Solana, deps.NetworkByChain),
 	}
 	if deps.Key != nil {
 		providers[models.AdapterTypeEVM] = RouteByNetwork(deps.Etherscan, deps.NetworkByChain)
