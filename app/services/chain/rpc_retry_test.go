@@ -19,7 +19,7 @@ func (r *recordedSleeps) sleep(ctx context.Context, d time.Duration) error {
 }
 
 func testRetryClient(url string, sleeps *recordedSleeps, maxAttempts int) *RPCClient {
-	c := NewRPCClient(url, "", "")
+	c := NewRPCClient(RPCClientDeps{URL: url})
 	c.retry = rateLimitRetry{
 		maxAttempts: maxAttempts,
 		baseDelay:   100 * time.Millisecond,
@@ -139,7 +139,7 @@ func TestRPCCallDoesNotRetryOtherFailures(t *testing.T) {
 }
 
 func TestRPCCallTransportErrorOmitsURL(t *testing.T) {
-	c := NewRPCClient("http://127.0.0.1:1/v2/secret-api-key", "", "")
+	c := NewRPCClient(RPCClientDeps{URL: "http://127.0.0.1:1/v2/secret-api-key"})
 	err := c.Call(context.Background(), "getSlot", nil)
 	if err == nil || strings.Contains(err.Error(), "secret-api-key") {
 		t.Fatalf("err = %v", err)

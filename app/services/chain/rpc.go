@@ -55,14 +55,22 @@ func (e *rpcError) Error() string {
 	return fmt.Sprintf("RPC error %d: %s", e.Code, e.Message)
 }
 
-func NewRPCClient(url, user, pass string) *RPCClient {
+// RPCClientDeps is the endpoint and optional basic-auth pair NewRPCClient stores.
+// Empty User and Password send no basic auth. The URL is not logged.
+type RPCClientDeps struct {
+	URL      string
+	User     string
+	Password string
+}
+
+func NewRPCClient(deps RPCClientDeps) *RPCClient {
 	client := &RPCClient{
-		username: user,
-		password: pass,
+		username: deps.User,
+		password: deps.Password,
 		client:   httpclient.NewClient(rpcHTTPTimeout),
 		retry:    defaultRateLimitRetry(),
 	}
-	client.endpoint.Store(url)
+	client.endpoint.Store(deps.URL)
 	return client
 }
 

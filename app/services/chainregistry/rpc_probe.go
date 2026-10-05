@@ -46,7 +46,7 @@ func ProbeRPCNetwork(ctx context.Context, record models.Chain, rpcURL string) (s
 
 func probeEVM(ctx context.Context, rpcURL string) (string, error) {
 	var chainIDHex string
-	if err := chain.NewRPCClient(rpcURL, "", "").Call(ctx, evmChainIDMethod, &chainIDHex); err != nil {
+	if err := chain.NewRPCClient(chain.RPCClientDeps{URL: rpcURL}).Call(ctx, evmChainIDMethod, &chainIDHex); err != nil {
 		return "", fmt.Errorf("%s: %w", evmChainIDMethod, err)
 	}
 	networkID, err := strconv.ParseInt(strings.TrimPrefix(strings.ToLower(chainIDHex), hexPrefix), 16, 64)

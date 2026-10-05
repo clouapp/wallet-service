@@ -23,7 +23,7 @@ type SolanaLive struct {
 }
 
 func NewSolanaLive(cfg SolanaConfig) *SolanaLive {
-	return &SolanaLive{cfg: cfg, rpc: NewRPCClient(cfg.RPCURL, "", "")}
+	return &SolanaLive{cfg: cfg, rpc: NewRPCClient(RPCClientDeps{URL: cfg.RPCURL})}
 }
 
 // Endpoint is the URL the next dial uses. Callers must not log it.
@@ -46,7 +46,7 @@ func (a *SolanaLive) ReplaceEndpoint(endpoint string) {
 	}
 	a.cfg.RPCURL = endpoint
 	if a.rpc == nil {
-		a.rpc = NewRPCClient(endpoint, "", "")
+		a.rpc = NewRPCClient(RPCClientDeps{URL: endpoint})
 		return
 	}
 	a.rpc.ReplaceEndpoint(endpoint)

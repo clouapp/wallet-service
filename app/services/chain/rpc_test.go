@@ -25,7 +25,7 @@ func TestRPCClient_Call_Success(t *testing.T) {
 	}))
 	defer server.Close()
 
-	rpc := NewRPCClient(server.URL, "", "")
+	rpc := NewRPCClient(RPCClientDeps{URL: server.URL})
 	var result string
 	err := rpc.Call(context.Background(), "eth_blockNumber", &result)
 	if err != nil {
@@ -49,7 +49,7 @@ func TestRPCClient_Call_SendsExplicitUserAgent(t *testing.T) {
 	}))
 	defer server.Close()
 
-	rpc := NewRPCClient(server.URL, "", "")
+	rpc := NewRPCClient(RPCClientDeps{URL: server.URL})
 	var result string
 	if err := rpc.Call(context.Background(), "eth_blockNumber", &result); err != nil {
 		t.Fatal(err)
@@ -75,7 +75,7 @@ func TestRPCClient_Call_WithParams(t *testing.T) {
 	}))
 	defer server.Close()
 
-	rpc := NewRPCClient(server.URL, "", "")
+	rpc := NewRPCClient(RPCClientDeps{URL: server.URL})
 	var result string
 	err := rpc.Call(context.Background(), "eth_getBalance", &result, "0xaddr", "latest")
 	if err != nil {
@@ -97,7 +97,7 @@ func TestRPCClient_Call_RPCError(t *testing.T) {
 	}))
 	defer server.Close()
 
-	rpc := NewRPCClient(server.URL, "", "")
+	rpc := NewRPCClient(RPCClientDeps{URL: server.URL})
 	var result string
 	err := rpc.Call(context.Background(), "nonexistent_method", &result)
 	if err == nil {
@@ -114,7 +114,7 @@ func TestRPCClient_Call_HTTPErrorIncludesStatus(t *testing.T) {
 	}))
 	defer server.Close()
 
-	rpc := NewRPCClient(server.URL, "", "")
+	rpc := NewRPCClient(RPCClientDeps{URL: server.URL})
 	var result string
 	err := rpc.Call(context.Background(), "eth_blockNumber", &result)
 	if err == nil || !strings.Contains(err.Error(), "HTTP 429") {
@@ -137,7 +137,7 @@ func TestRPCClient_Call_BasicAuth(t *testing.T) {
 	}))
 	defer server.Close()
 
-	rpc := NewRPCClient(server.URL, "btcuser", "btcpass")
+	rpc := NewRPCClient(RPCClientDeps{URL: server.URL, User: "btcuser", Password: "btcpass"})
 	var result int
 	err := rpc.Call(context.Background(), "getblockcount", &result)
 	if err != nil {
@@ -149,7 +149,7 @@ func TestRPCClient_Call_BasicAuth(t *testing.T) {
 }
 
 func TestRPCClient_Call_ConnectionRefused(t *testing.T) {
-	rpc := NewRPCClient("http://localhost:1/invalid", "", "")
+	rpc := NewRPCClient(RPCClientDeps{URL: "http://localhost:1/invalid"})
 	var result string
 	err := rpc.Call(context.Background(), "test", &result)
 	if err == nil {
@@ -163,7 +163,7 @@ func TestRPCClient_Call_InvalidJSON(t *testing.T) {
 	}))
 	defer server.Close()
 
-	rpc := NewRPCClient(server.URL, "", "")
+	rpc := NewRPCClient(RPCClientDeps{URL: server.URL})
 	var result string
 	err := rpc.Call(context.Background(), "test", &result)
 	if err == nil {
@@ -181,7 +181,7 @@ func TestRPCClient_Call_NilOutput(t *testing.T) {
 	}))
 	defer server.Close()
 
-	rpc := NewRPCClient(server.URL, "", "")
+	rpc := NewRPCClient(RPCClientDeps{URL: server.URL})
 	// Pass nil output — should not panic
 	err := rpc.Call(context.Background(), "test", nil)
 	if err != nil {
@@ -201,7 +201,7 @@ func TestRPCClient_IncrementingIDs(t *testing.T) {
 	}))
 	defer server.Close()
 
-	rpc := NewRPCClient(server.URL, "", "")
+	rpc := NewRPCClient(RPCClientDeps{URL: server.URL})
 	rpc.Call(context.Background(), "a", nil)
 	rpc.Call(context.Background(), "b", nil)
 	rpc.Call(context.Background(), "c", nil)

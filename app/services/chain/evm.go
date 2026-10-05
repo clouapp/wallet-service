@@ -80,7 +80,7 @@ func (a *EVMLive) FeePolicy() FeePolicy { return a.fee }
 func NewEVMLive(cfg EVMConfig) *EVMLive {
 	return &EVMLive{
 		cfg: cfg,
-		rpc: NewRPCClient(cfg.RPCURL, "", ""),
+		rpc: NewRPCClient(RPCClientDeps{URL: cfg.RPCURL}),
 	}
 }
 
@@ -104,7 +104,7 @@ func (a *EVMLive) ReplaceEndpoint(endpoint string) {
 	}
 	a.cfg.RPCURL = endpoint
 	if a.rpc == nil {
-		a.rpc = NewRPCClient(endpoint, "", "")
+		a.rpc = NewRPCClient(RPCClientDeps{URL: endpoint})
 		return
 	}
 	a.rpc.ReplaceEndpoint(endpoint)

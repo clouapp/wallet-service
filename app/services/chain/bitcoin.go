@@ -47,7 +47,7 @@ func NewBitcoinLive(cfg BitcoinConfig) *BitcoinLive {
 	isREST := bitcoinRESTEndpoint(cfg.RPCURL)
 	return &BitcoinLive{
 		cfg:          cfg,
-		rpc:          NewRPCClient(cfg.RPCURL, cfg.RPCUser, cfg.RPCPass),
+		rpc:          NewRPCClient(RPCClientDeps{URL: cfg.RPCURL, User: cfg.RPCUser, Password: cfg.RPCPass}),
 		restAPI:      isREST,
 		http:         httpclient.NewClient(bitcoinRESTTimeout),
 		esploraRetry: esploraRetry(),
@@ -80,7 +80,7 @@ func (a *BitcoinLive) ReplaceEndpoint(endpoint string) {
 	a.cfg.RPCURL = endpoint
 	a.restAPI = bitcoinRESTEndpoint(endpoint)
 	if a.rpc == nil {
-		a.rpc = NewRPCClient(endpoint, a.cfg.RPCUser, a.cfg.RPCPass)
+		a.rpc = NewRPCClient(RPCClientDeps{URL: endpoint, User: a.cfg.RPCUser, Password: a.cfg.RPCPass})
 		return
 	}
 	a.rpc.ReplaceEndpoint(endpoint)

@@ -62,7 +62,7 @@ func NewJSONRPC(url string) (*JSONRPC, error) {
 	if !strings.HasPrefix(url, "http://") && !strings.HasPrefix(url, "https://") {
 		return nil, fmt.Errorf("rpc url must be http(s)")
 	}
-	return &JSONRPC{client: chain.NewRPCClient(url, "", "")}, nil
+	return &JSONRPC{client: chain.NewRPCClient(chain.RPCClientDeps{URL: url})}, nil
 }
 
 func (r *JSONRPC) quantity(ctx context.Context, method string, params ...interface{}) (*big.Int, error) {
