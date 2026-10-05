@@ -1,4 +1,4 @@
-package price
+package coinmarketcap
 
 import (
 	"context"
@@ -7,30 +7,43 @@ import (
 	"strings"
 	"time"
 
-	"github.com/macrowallets/waas/pkg/httpclient"
 	"github.com/shopspring/decimal"
+
+	"github.com/macrowallets/waas/app/services/price"
+	"github.com/macrowallets/waas/pkg/httpclient"
 )
 
 var cmcAssetMapping = map[string]string{
 	"MATIC": "MATIC",
 }
 
+const (
+	restBaseURL = "https://pro-api.coinmarketcap.com"
+	httpTimeout = 15 * time.Second
+)
+
+// CoinMarketCapProvider calls the CoinMarketCap quotes/latest API.
 type CoinMarketCapProvider struct {
 	apiKey  string
 	baseURL string
 	client  *httpclient.Client
 }
 
+// NewCoinMarketCapProvider returns a REST quote client. An empty apiKey still builds
+// the client; each crypto fetch reports that the key is not configured.
 func NewCoinMarketCapProvider(apiKey string) *CoinMarketCapProvider {
 	return &CoinMarketCapProvider{
 		apiKey:  apiKey,
-		baseURL: "https://pro-api.coinmarketcap.com",
-		client:  httpclient.NewClient(15 * time.Second),
+		baseURL: restBaseURL,
+		client:  httpclient.NewClient(httpTimeout),
 	}
 }
 
+// Name is the provider id stored with a quote.
 func (p *CoinMarketCapProvider) Name() string { return "coinmarketcap" }
 
+// FetchCryptoPrices returns USD prices. Codes are uppercased unless the asset
+// map renames them. A non-positive price, or a symbol that was not requested, is skipped.
 func (p *CoinMarketCapProvider) FetchCryptoPrices(codes []string) (map[string]decimal.Decimal, error) {
 	if p.apiKey == "" {
 		return nil, fmt.Errorf("coinmarketcap: api key not configured")
@@ -49,24 +62,10 @@ func (p *CoinMarketCapProvider) FetchCryptoPrices(codes []string) (map[string]de
 	}
 
 	url := fmt.Sprintf("%s/v1/cryptocurrency/quotes/latest?symbol=%s&convert=USD", p.baseURL, strings.Join(apiSymbols, ","))
-	resp, err := p.client.Do(context.Background(), httpclient.Request{
-		Method: httpclient.MethodGet,
-		URL:    url,
-		Header: map[string]string{
-			"X-CMC_PRO_API_KEY": p.apiKey,
-			"Accept":            "application/json",
-		},
-	})
+	body, err := p.get(url)
 	if err != nil {
-		if httpclient.IsBuild(err) {
-			return nil, err
-		}
-		if httpclient.IsRead(err) {
-			return nil, err
-		}
-		return nil, fmt.Errorf("coinmarketcap: %w", err)
+		return nil, err
 	}
-	body := resp.Body
 
 	var result struct {
 		Data map[string]struct {
@@ -90,6 +89,27 @@ func (p *CoinMarketCapProvider) FetchCryptoPrices(codes []string) (map[string]de
 	return prices, nil
 }
 
+// FetchFiatRates reports that CoinMarketCap fiat quotes are not used.
 func (p *CoinMarketCapProvider) FetchFiatRates(codes []string) (map[string]decimal.Decimal, error) {
 	return nil, fmt.Errorf("coinmarketcap: fiat rates not supported")
 }
+
+func (p *CoinMarketCapProvider) get(url string) ([]byte, error) {
+	resp, err := p.client.Do(context.Background(), httpclient.Request{
+		Method: httpclient.MethodGet,
+		URL:    url,
+		Header: map[string]string{
+			"X-CMC_PRO_API_KEY": p.apiKey,
+			"Accept":            "application/json",
+		},
+	})
+	if err != nil {
+		if httpclient.IsBuild(err) || httpclient.IsRead(err) {
+			return nil, err
+		}
+		return nil, fmt.Errorf("coinmarketcap: %w", err)
+	}
+	return resp.Body, nil
+}
+
+var _ price.PriceProvider = (*CoinMarketCapProvider)(nil)

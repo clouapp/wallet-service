@@ -53,6 +53,7 @@ app/services/ingest/providers → app/adapters/ingest/quicknode (services → ad
 app/services/keyexport → app/adapters/chain/bitcoin (services → adapters) [test]
 app/services/price → app/adapters/price/coinapi (services → adapters) [test]
 app/services/price → app/adapters/price/coingecko (services → adapters) [test]
+app/services/price → app/adapters/price/coinmarketcap (services → adapters) [test]
 app/services/refresh → app/repositories (services → repositories) (x2)
 app/services/refresh → app/repositories (services → repositories) [test]
 app/services/sweep → app/adapters/chain/bitcoin (services → adapters) [test] (x2)
