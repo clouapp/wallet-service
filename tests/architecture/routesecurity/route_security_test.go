@@ -41,7 +41,7 @@ const (
 	chainCreateWallet      = chainHeader + " > RequireFundAction"
 	chainWallet            = "SessionAuth > AccountHeader > TOTPEnrollment > WalletContext"
 	chainMoveFunds         = chainWallet + " > RequireFundAction"
-	chainGenerateAddress   = chainWallet + " > WalletCan(addresses.create)"
+	chainGenerateAddress   = chainWallet + " > Can(addresses.create)"
 	chainUnspent           = "SessionAuth > AccountHeader > TOTPEnrollment > WalletContext > UTXOOnly"
 	chainAPI               = "APITokenAuth"
 	chainAPIWallet         = "APITokenAuth > APIWalletContext"

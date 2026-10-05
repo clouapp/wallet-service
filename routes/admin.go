@@ -251,7 +251,7 @@ func RegisterAdminRoutes() {
 			r.Post("/activate", walletCtrl.ActivateWallet)
 
 			r.Get("/addresses", addressCtrl.ListWalletAddresses)
-			r.Middleware(middleware.WalletCan(middleware.PermAddressesCreate)).Post("/addresses", addressCtrl.GenerateAddress)
+			r.Middleware(middleware.Can(middleware.PermAddressesCreate)).Post("/addresses", addressCtrl.GenerateAddress)
 			r.Patch("/addresses/{addressId}", addressCtrl.UpdateAddress)
 
 			r.Get("/users", walletUsersCtrl.ListWalletUsers)

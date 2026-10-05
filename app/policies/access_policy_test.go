@@ -60,8 +60,24 @@ func TestWalletGrantsAddressCreateAndRefusesFundMovement(t *testing.T) {
 	if Can(nil, PermAddressesCreate) || Can(Grants{}, PermAddressesCreate) {
 		t.Fatal("an empty grant set does not hold addresses.create")
 	}
-	if Can(AccountRoleGrants(models.AccountRoleUser), PermAddressesCreate) || Can(AccountRoleGrants(models.AccountRoleOwner), PermWithdrawalsCreate) {
-		t.Fatal("the users.read catalog does not grant address creation or fund movement")
+	for _, role := range []string{models.AccountRoleOwner, models.AccountRoleAdmin, models.AccountRoleUser} {
+		if !Can(AccountRoleGrants(role), PermAddressesCreate) {
+			t.Fatalf("%s account grants must hold addresses.create", role)
+		}
+	}
+	for _, role := range []string{models.AccountRoleAuditor, models.RetiredAccountRoleViewer, "", "spender"} {
+		if Can(AccountRoleGrants(role), PermAddressesCreate) {
+			t.Fatalf("%q account grants must not hold addresses.create", role)
+		}
+	}
+	userAccount := AccountRoleGrants(models.AccountRoleUser)
+	for _, permission := range []string{PermUsersRead, PermUsersWrite, PermSettingsRead, PermSettingsWrite, PermRolesRead, PermWithdrawalsCreate, PermSweepExecute, PermWalletsCreate, ""} {
+		if Can(userAccount, permission) {
+			t.Fatalf("user account grants must not hold %q", permission)
+		}
+	}
+	if Can(AccountRoleGrants(models.AccountRoleOwner), PermWithdrawalsCreate) {
+		t.Fatal("the account catalog does not grant fund movement")
 	}
 }
 
