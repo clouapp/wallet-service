@@ -2,7 +2,6 @@ package settings
 
 import (
 	"context"
-	"errors"
 	"testing"
 
 	"github.com/google/uuid"
@@ -77,25 +76,6 @@ func TestOwnerAndAdminStillWriteAnAccountGroup(t *testing.T) {
 	if idle.Value != 60 {
 		t.Fatalf("auditor idle = %+v", idle)
 	}
-	if _, err := service.Save(ctx, accountID, uuid.New(), "auditor", groupAccountSecurity, map[string]any{
-		keySessionIdleMinutes: 12,
-	}); !errors.Is(err, ErrUpdateForbidden) {
-		t.Fatalf("auditor save = %v", err)
-	}
-	kept, err := service.AccountGroup(ctx, accountID, "owner", groupAccountSecurity)
-	if err != nil {
-		t.Fatalf("owner reread: %v", err)
-	}
-	if fieldByKey(t, kept, keySessionIdleMinutes).Value != 60 {
-		t.Fatal("auditor write changed the stored minutes")
-	}
-
-	if _, err := service.Save(ctx, accountID, uuid.New(), "user", groupAccountSecurity, map[string]any{
-		keySessionIdleMinutes: 12,
-	}); !errors.Is(err, ErrUpdateForbidden) {
-		t.Fatalf("user save = %v", err)
-	}
-
 	registry, err := service.Registry(ctx, accountID, "auditor")
 	if err != nil {
 		t.Fatalf("registry: %v", err)

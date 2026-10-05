@@ -150,9 +150,10 @@ func RegisterAdminRoutes() {
 			// S1.4.7: GET /v1/accounts/{accountId}/settings/{group} settings.read (policies.MayViewSettings).
 			// Platform-managed groups stay readable for owner, admin, and auditor.
 			r.Middleware(middleware.MayViewSettings()).Get("/settings/{group}", accountSettingsCtrl.ShowGroup)
-			r.Patch("/settings/{group}", accountSettingsCtrl.Update)
-			// S1.4.7: PUT /v1/accounts/{accountId}/settings/{group} settings.write. Same handler and body rules as PATCH.
-			r.Put("/settings/{group}", accountSettingsCtrl.Update)
+			// S1.4.7: PATCH and PUT /v1/accounts/{accountId}/settings/{group} settings.write (policies.MayUpdateSettings).
+			// Owner and admin may write an account-managed group. Auditor and user may not.
+			r.Middleware(middleware.MayUpdateSettings()).Patch("/settings/{group}", accountSettingsCtrl.Update)
+			r.Middleware(middleware.MayUpdateSettings()).Put("/settings/{group}", accountSettingsCtrl.Update)
 
 			r.Get("/activity", accountActivityCtrl.Index)
 			// S3.4.2: GET /v1/accounts/{accountId}/activity/{id} activity.read.

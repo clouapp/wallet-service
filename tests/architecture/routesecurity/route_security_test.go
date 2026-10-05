@@ -44,6 +44,7 @@ const (
 	chainAccountTokensWrite     = chainAccount + " > Can(tokens.write)"
 	chainAccountTokensMint      = chainAccountTokensWrite + " > MintAPITokenPermissions"
 	chainAccountSettingsRead    = chainAccount + " > MayViewSettings"
+	chainAccountSettingsWrite   = chainAccount + " > MayUpdateSettings"
 	chainHeader                 = "SessionAuth > AccountHeader > TOTPEnrollment"
 	chainCreateWallet           = chainHeader + " > RequireFundAction"
 	chainWallet                 = "SessionAuth > AccountHeader > TOTPEnrollment > WalletContext"
@@ -139,8 +140,8 @@ var routeTable = map[string]routeSecurity{
 	"GET|HEAD /v1/accounts/{accountId}/settings/{group}":               session(chainAccountSettingsRead),
 	"POST /v1/accounts/{accountId}/settings/sections/{section}/cache":  session(chainAccount),
 	"POST /v1/accounts/{accountId}/settings/sections/{section}/reset":  session(chainAccount),
-	"PATCH /v1/accounts/{accountId}/settings/{group}":                  session(chainAccount),
-	"PUT /v1/accounts/{accountId}/settings/{group}":                    session(chainAccount),
+	"PATCH /v1/accounts/{accountId}/settings/{group}":                  session(chainAccountSettingsWrite),
+	"PUT /v1/accounts/{accountId}/settings/{group}":                    session(chainAccountSettingsWrite),
 	"GET|HEAD /v1/accounts/{accountId}/features":                       session(chainAccount),
 	"POST /v1/auth/2fa/verify":                                         guest(),
 	"POST /v1/auth/login":                                              guest(),

@@ -231,10 +231,13 @@ func (s *Service) Registry(ctx context.Context, accountID uuid.UUID, role string
 	return view, nil
 }
 
-// Save writes one group. An unknown group is ErrGroupNotFound before the
-// permission check. A blank or omitted secret keeps the stored ciphertext.
-// A real write and its activity row commit together. Metadata stores the
-// group and the field names, never the values.
+// Save writes one group. PATCH and PUT
+// /v1/accounts/{accountId}/settings/{group} apply policies.MayUpdateSettings
+// (settings.write) before the handler. This method does not repeat that
+// check. An unknown group is ErrGroupNotFound. A platform-managed group is
+// ErrManagedByPlatform and is not stored. A blank or omitted secret keeps
+// the stored ciphertext. A real write and its activity row commit together.
+// Metadata stores the group and the field names, never the values.
 func (s *Service) Save(ctx context.Context, accountID, actorID uuid.UUID, role, groupName string, body map[string]any) (GroupView, error) {
 	if err := requireAccount(ctx, accountID); err != nil {
 		return GroupView{}, err
@@ -243,9 +246,6 @@ func (s *Service) Save(ctx context.Context, accountID, actorID uuid.UUID, role, 
 	group, ok := FindGroup(groupName)
 	if !ok || group.Scope != ScopeAccount {
 		return GroupView{}, ErrGroupNotFound
-	}
-	if !policies.MayUpdateSettings(role) {
-		return GroupView{}, ErrUpdateForbidden
 	}
 	if group.ManagedBy != ManagedByAccount {
 		return GroupView{}, ErrManagedByPlatform

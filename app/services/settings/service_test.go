@@ -215,8 +215,11 @@ func TestSaveRefusesAPlatformManagedGroup(t *testing.T) {
 	_, err = service.Save(ctx, accountID, uuid.New(), "auditor", groupAccountSweepLimits, map[string]any{
 		keyDailyWithdrawCapUSD: "9.00",
 	})
-	if !errors.Is(err, ErrUpdateForbidden) {
+	if !errors.Is(err, ErrManagedByPlatform) {
 		t.Fatalf("auditor err = %v", err)
+	}
+	if value, ok := store.get(accountID, groupAccountSweepLimits, keyDailyWithdrawCapUSD); !ok || value != "12.50" {
+		t.Fatalf("auditor cap = %q present %v", value, ok)
 	}
 }
 
@@ -261,18 +264,6 @@ func TestSaveRejectsAnUnknownGroupBeforeTheRoleCheck(t *testing.T) {
 	service := newTestService(newMemoryStore())
 	_, err := service.Save(context.Background(), uuid.New(), uuid.New(), "auditor", "not-a-group", map[string]any{})
 	if !errors.Is(err, ErrGroupNotFound) {
-		t.Fatalf("err = %v", err)
-	}
-}
-
-func TestSaveAuditorCannotUpdate(t *testing.T) {
-	t.Parallel()
-
-	service := newTestService(newMemoryStore())
-	_, err := service.Save(context.Background(), uuid.New(), uuid.New(), "auditor", groupAccountWebhooks, map[string]any{
-		keySigningSecret: "nope",
-	})
-	if !errors.Is(err, ErrUpdateForbidden) {
 		t.Fatalf("err = %v", err)
 	}
 }

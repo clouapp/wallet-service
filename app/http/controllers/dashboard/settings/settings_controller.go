@@ -78,7 +78,7 @@ func (ctrl *SettingsController) ShowGroup(ctx http.Context) http.Response {
 
 // Update godoc
 // @Summary      Save one account settings group
-// @Description  PATCH and PUT share this handler. S1.4.7 names settings.write. One group per request. A blank or omitted secret keeps the stored value. Decimals are strings. An unknown group is 404 before 403. A platform-managed group is 403. Owner and admin may write an account-managed group. Auditor and user may not. A negative amount is not stored. The account guard is not a second gate.
+// @Description  PATCH and PUT share this handler. Both routes apply policies.MayUpdateSettings (settings.write) before the handler. Owner and admin may write an account-managed group. Auditor and user may not, and that refusal does not save the group. A member who may write still gets 404 for an unknown group and 403 for a platform-managed group. One group per request. A blank or omitted secret keeps the stored value. Decimals are strings. A negative amount is not stored. Validation is HTTP 422. The account guard is not a second gate.
 // @Tags         Account Settings
 // @Security     BearerAuth
 // @Accept       json

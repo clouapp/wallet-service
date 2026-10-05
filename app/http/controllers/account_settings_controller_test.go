@@ -184,7 +184,26 @@ func (s *accountSettingsSuite) TestPatchAuditorCannotUpdate() {
 
 	response := s.patch(token, accountID, "account_webhooks", `{"signing_secret":"nope"}`, 403)
 	s.Equal("forbidden", response["error"].(map[string]any)["code"])
+	s.Equal(settings.ErrUpdateForbidden.Error(), response["error"].(map[string]any)["message"])
 	s.Empty(s.storedSecret(accountID))
+
+	response = s.put(token, accountID, "account_webhooks", `{"signing_secret":"nope"}`, 403)
+	s.Equal("forbidden", response["error"].(map[string]any)["code"])
+	s.Equal(settings.ErrUpdateForbidden.Error(), response["error"].(map[string]any)["message"])
+	s.Empty(s.storedSecret(accountID))
+}
+
+func (s *accountSettingsSuite) TestAdminCanUpdateAnAccountGroup() {
+	accountID, _ := s.owner()
+	admin := s.member(accountID, models.AccountRoleAdmin)
+
+	saved := s.patchRaw(admin, accountID, "account_security", `{"session_idle_minutes":45}`, 200)
+	s.NotContains(saved, "enc:v1:")
+	s.Equal(float64(45), s.groupField(saved, "session_idle_minutes")["value"])
+
+	saved = s.putRaw(admin, accountID, "account_security", `{"session_idle_minutes":50}`, 200)
+	s.NotContains(saved, "enc:v1:")
+	s.Equal(float64(50), s.groupField(saved, "session_idle_minutes")["value"])
 }
 
 func (s *accountSettingsSuite) TestPatchUnknownGroupIsNotFound() {
@@ -193,15 +212,53 @@ func (s *accountSettingsSuite) TestPatchUnknownGroupIsNotFound() {
 	s.Equal("not_found", response["error"].(map[string]any)["code"])
 
 	auditor := s.member(accountID, "auditor")
-	response = s.patch(auditor, accountID, "not-a-group", `{}`, 404)
-	s.Equal("not_found", response["error"].(map[string]any)["code"])
+	denied := s.patchRaw(auditor, accountID, "not-a-group", `{}`, 403)
+	s.NotContains(denied, `"fields"`)
+	s.NotContains(denied, "enc:v1:")
+	var parsed struct {
+		Error struct {
+			Code    string `json:"code"`
+			Message string `json:"message"`
+		} `json:"error"`
+		Fields []any `json:"fields"`
+	}
+	s.Require().NoError(json.Unmarshal([]byte(denied), &parsed))
+	s.Equal("forbidden", parsed.Error.Code)
+	s.Equal(settings.ErrUpdateForbidden.Error(), parsed.Error.Message)
+	s.Empty(parsed.Fields)
+	s.Empty(s.storedSecret(accountID))
 }
 
 func (s *accountSettingsSuite) TestPatchUserCannotViewOrUpdate() {
 	accountID, _ := s.owner()
 	token := s.member(accountID, "user")
 	s.get(token, accountID, 403)
-	s.patch(token, accountID, "account_webhooks", `{"signing_secret":"nope"}`, 403)
+	denied := s.patchRaw(token, accountID, "account_webhooks", `{"signing_secret":"nope"}`, 403)
+	s.NotContains(denied, "nope")
+	s.NotContains(denied, `"fields"`)
+	s.NotContains(denied, "enc:v1:")
+	var parsed struct {
+		Error struct {
+			Code    string `json:"code"`
+			Message string `json:"message"`
+		} `json:"error"`
+		Fields []any `json:"fields"`
+	}
+	s.Require().NoError(json.Unmarshal([]byte(denied), &parsed))
+	s.Equal("forbidden", parsed.Error.Code)
+	s.Equal(settings.ErrUpdateForbidden.Error(), parsed.Error.Message)
+	s.Empty(parsed.Fields)
+	s.Empty(s.storedSecret(accountID))
+
+	denied = s.putRaw(token, accountID, "account_webhooks", `{"signing_secret":"nope"}`, 403)
+	s.NotContains(denied, "nope")
+	s.NotContains(denied, `"fields"`)
+	s.NotContains(denied, "enc:v1:")
+	s.Require().NoError(json.Unmarshal([]byte(denied), &parsed))
+	s.Equal("forbidden", parsed.Error.Code)
+	s.Equal(settings.ErrUpdateForbidden.Error(), parsed.Error.Message)
+	s.Empty(parsed.Fields)
+	s.Empty(s.storedSecret(accountID))
 }
 
 func (s *accountSettingsSuite) TestGetDecimalTravelsAsString() {
@@ -719,10 +776,12 @@ func (s *accountSettingsSuite) TestPutSharesThePatchBodyRules() {
 	s.Equal(int64(0), caps)
 
 	user := s.member(accountID, "user")
-	response = s.put(user, accountID, "not-a-group", `{}`, 404)
-	s.Equal("not_found", response["error"].(map[string]any)["code"])
+	response = s.put(user, accountID, "not-a-group", `{}`, 403)
+	s.Equal("forbidden", response["error"].(map[string]any)["code"])
+	s.Equal(settings.ErrUpdateForbidden.Error(), response["error"].(map[string]any)["message"])
 	response = s.put(user, accountID, "account_security", `{"session_idle_minutes":12}`, 403)
 	s.Equal("forbidden", response["error"].(map[string]any)["code"])
+	s.Equal(settings.ErrUpdateForbidden.Error(), response["error"].(map[string]any)["message"])
 	idle = s.getGroup(token, accountID, "account_security", 200)
 	s.Equal(float64(45), s.groupField(idle, "session_idle_minutes")["value"])
 }

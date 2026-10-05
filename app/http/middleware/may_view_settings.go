@@ -14,7 +14,7 @@ import (
 // GET /v1/accounts/{accountId}/settings/{group}. Owner, admin, and auditor
 // hold it. User does not, and the retired viewer label stays refused. A denial
 // is 403 with the message the handler returned, and the settings body is
-// not written. Update, flush, and reset keep their own checks.
+// not written. Flush and reset keep their own checks.
 func MayViewSettings() http.Middleware {
 	return func(ctx http.Context) {
 		if !policies.MayViewSettings(AccountRole(ctx)) {
