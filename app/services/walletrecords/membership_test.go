@@ -66,6 +66,55 @@ func TestMembershipsForWalletTreatsAMissAsAnEmptyRole(t *testing.T) {
 		Members:  walletrecords.NewMembers(&roleMembers{member: &models.WalletUser{Roles: "viewer"}}),
 		Accounts: &roleAccounts{err: lookupErr},
 	}).ForWallet(context.Background(), walletID, userID)
+	require.Equal(t, "", walletRole)
+	require.Equal(t, "", accountRole)
+}
+
+func TestMembershipsForWalletDeniesWhenAMembershipReadFails(t *testing.T) {
+	t.Parallel()
+
+	accountID := uuid.New()
+	userID := uuid.New()
+	walletID := uuid.New()
+	storeErr := errors.New("membership store unavailable")
+
+	walletRole, accountRole := walletrecords.NewMemberships(walletrecords.MembershipsDeps{
+		Wallets:  walletrecords.NewWallets(&roleWallets{wallet: &models.Wallet{ID: walletID, AccountID: &accountID}}),
+		Members:  walletrecords.NewMembers(&roleMembers{err: storeErr}),
+		Accounts: &roleAccounts{member: &models.AccountUser{Role: "admin"}},
+	}).ForWallet(context.Background(), walletID, userID)
+	require.Equal(t, "", walletRole)
+	require.Equal(t, "", accountRole)
+
+	walletRole, accountRole = walletrecords.NewMemberships(walletrecords.MembershipsDeps{
+		Wallets:  walletrecords.NewWallets(&roleWallets{wallet: &models.Wallet{ID: walletID, AccountID: &accountID}}),
+		Members:  walletrecords.NewMembers(&roleMembers{member: &models.WalletUser{Roles: "admin"}}),
+		Accounts: &roleAccounts{err: storeErr},
+	}).ForWallet(context.Background(), walletID, userID)
+	require.Equal(t, "", walletRole)
+	require.Equal(t, "", accountRole)
+}
+
+func TestMembershipsForWalletKeepsTheOtherRoleWhenAMembershipIsMissing(t *testing.T) {
+	t.Parallel()
+
+	accountID := uuid.New()
+	userID := uuid.New()
+	walletID := uuid.New()
+
+	walletRole, accountRole := walletrecords.NewMemberships(walletrecords.MembershipsDeps{
+		Wallets:  walletrecords.NewWallets(&roleWallets{wallet: &models.Wallet{ID: walletID, AccountID: &accountID}}),
+		Members:  walletrecords.NewMembers(&roleMembers{err: models.ErrRepositoryNotFound}),
+		Accounts: &roleAccounts{member: &models.AccountUser{Role: "admin"}},
+	}).ForWallet(context.Background(), walletID, userID)
+	require.Equal(t, "", walletRole)
+	require.Equal(t, "admin", accountRole)
+
+	walletRole, accountRole = walletrecords.NewMemberships(walletrecords.MembershipsDeps{
+		Wallets:  walletrecords.NewWallets(&roleWallets{wallet: &models.Wallet{ID: walletID, AccountID: &accountID}}),
+		Members:  walletrecords.NewMembers(&roleMembers{member: &models.WalletUser{Roles: "viewer"}}),
+		Accounts: &roleAccounts{err: models.ErrRepositoryNotFound},
+	}).ForWallet(context.Background(), walletID, userID)
 	require.Equal(t, "viewer", walletRole)
 	require.Equal(t, "", accountRole)
 }

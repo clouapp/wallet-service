@@ -147,9 +147,16 @@ func (s *Service) Create(ctx context.Context, name string, ownerID uuid.UUID) (*
 }
 
 // GetUserRole returns the caller's role, or an empty string when they are not an active member.
+// A failed membership read is returned; it is not reported as no role.
 func (s *Service) GetUserRole(ctx context.Context, accountID, userID uuid.UUID) (string, error) {
 	au, err := s.memberships.FindByAccountAndUser(ctx, accountID, userID)
-	if err != nil || au == nil {
+	if err != nil {
+		if errors.Is(err, models.ErrRepositoryNotFound) {
+			return "", nil
+		}
+		return "", err
+	}
+	if au == nil {
 		return "", nil
 	}
 	return au.Role, nil
@@ -171,6 +178,9 @@ func (s *Service) AddUser(ctx context.Context, accountID, userID uuid.UUID, role
 		return ErrGrantRole
 	}
 	existing, err := s.memberships.FindByAccountAndUserIncludeDeleted(ctx, accountID, userID)
+	if err != nil && !errors.Is(err, models.ErrRepositoryNotFound) {
+		return err
+	}
 	if err == nil && existing != nil && existing.DeletedAt != nil {
 		if err := s.memberships.Restore(ctx, existing.ID); err != nil {
 			return err

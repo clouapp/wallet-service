@@ -103,6 +103,7 @@ func (ctrl *UsersController) AddWalletUser(ctx http.Context) http.Response {
 	existing, existErr := ctrl.members.FindByWalletAndUserIncludeDeleted(ctx.Context(), wallet.ID, targetID)
 	if existErr != nil && !errors.Is(existErr, models.ErrRepositoryNotFound) {
 		facades.Log().WithContext(ctx).Errorf("wallet-users: lookup existing: %v", existErr)
+		return responses.Send(ctx, http.StatusServiceUnavailable, http.Json{"error": "failed to load membership"})
 	}
 	if existing != nil && existing.DeletedAt != nil {
 		if err := ctrl.members.Restore(ctx.Context(), existing.ID); err != nil {

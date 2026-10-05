@@ -2,6 +2,7 @@ package walletrecords
 
 import (
 	"context"
+	"errors"
 
 	"github.com/google/uuid"
 
@@ -38,13 +39,16 @@ func NewMemberships(deps MembershipsDeps) *Memberships {
 }
 
 // ForWallet returns the caller's wallet role and account role.
-// A missing row or a lookup error is an empty role, the same answer the
-// wallet policy used when it queried the repositories itself.
+// A missing membership row is an empty role. A failed membership read returns
+// no roles, so a caller that allows either role cannot admit on that failure.
 func (m *Memberships) ForWallet(ctx context.Context, walletID, userID uuid.UUID) (walletRole, accountRole string) {
 	if m == nil || m.members == nil || m.wallets == nil || m.accounts == nil {
 		return "", ""
 	}
 	member, err := m.members.FindByWalletAndUser(ctx, walletID, userID)
+	if err != nil && !errors.Is(err, models.ErrRepositoryNotFound) {
+		return "", ""
+	}
 	if err == nil && member != nil {
 		walletRole = member.Roles
 	}
@@ -53,6 +57,9 @@ func (m *Memberships) ForWallet(ctx context.Context, walletID, userID uuid.UUID)
 		return walletRole, ""
 	}
 	accountMember, err := m.accounts.FindMember(ctx, *wallet.AccountID, userID)
+	if err != nil && !errors.Is(err, models.ErrRepositoryNotFound) {
+		return "", ""
+	}
 	if err != nil || accountMember == nil {
 		return walletRole, ""
 	}
