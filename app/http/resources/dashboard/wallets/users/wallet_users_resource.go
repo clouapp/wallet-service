@@ -1,4 +1,4 @@
-package wallets
+package users
 
 import (
 	"time"
@@ -9,11 +9,11 @@ import (
 	"github.com/macrowallets/waas/app/models"
 )
 
-// WalletUserView is the wallet membership the dashboard reads. Field order and
+// WalletUser is the wallet membership the dashboard reads. Field order and
 // tags match the model wire, including embedded timestamps and the nested user
 // pointer. A nil page stays nil; an empty page stays empty. A nil membership
 // stays null.
-type WalletUserView struct {
+type WalletUser struct {
 	CreatedAt *carbon.DateTime `json:"created_at"`
 	UpdatedAt *carbon.DateTime `json:"updated_at"`
 	ID        uuid.UUID        `json:"id"`
@@ -25,8 +25,9 @@ type WalletUserView struct {
 	User      *models.User     `json:"user,omitempty"`
 }
 
-func newWalletUserView(member models.WalletUser) WalletUserView {
-	return WalletUserView{
+// WalletUserFrom projects one membership.
+func WalletUserFrom(member models.WalletUser) WalletUser {
+	return WalletUser{
 		CreatedAt: member.CreatedAt,
 		UpdatedAt: member.UpdatedAt,
 		ID:        member.ID,
@@ -39,21 +40,23 @@ func newWalletUserView(member models.WalletUser) WalletUserView {
 	}
 }
 
-func walletUserViews(members []models.WalletUser) []WalletUserView {
+// WalletUsersFrom copies a page. A nil slice stays nil; an empty slice stays empty.
+func WalletUsersFrom(members []models.WalletUser) []WalletUser {
 	if members == nil {
 		return nil
 	}
-	views := make([]WalletUserView, len(members))
+	views := make([]WalletUser, len(members))
 	for i := range members {
-		views[i] = newWalletUserView(members[i])
+		views[i] = WalletUserFrom(members[i])
 	}
 	return views
 }
 
-func walletUserViewPtr(member *models.WalletUser) *WalletUserView {
+// WalletUserPtr keeps a nil membership as JSON null.
+func WalletUserPtr(member *models.WalletUser) *WalletUser {
 	if member == nil {
 		return nil
 	}
-	view := newWalletUserView(*member)
+	view := WalletUserFrom(*member)
 	return &view
 }

@@ -1,4 +1,4 @@
-package wallets
+package users_test
 
 import (
 	"encoding/json"
@@ -8,10 +8,11 @@ import (
 	"github.com/google/uuid"
 	"github.com/goravel/framework/support/carbon"
 
+	"github.com/macrowallets/waas/app/http/resources/dashboard/wallets/users"
 	"github.com/macrowallets/waas/app/models"
 )
 
-func TestWalletUserViewKeepsTheModelWire(t *testing.T) {
+func TestWalletUserKeepsTheModelWire(t *testing.T) {
 	t.Parallel()
 
 	id := uuid.MustParse("11111111-1111-4111-8111-111111111111")
@@ -48,7 +49,7 @@ func TestWalletUserViewKeepsTheModelWire(t *testing.T) {
 		},
 	}
 	for _, tc := range cases {
-		raw, err := json.Marshal(newWalletUserView(tc.member))
+		raw, err := json.Marshal(users.WalletUserFrom(tc.member))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -57,7 +58,7 @@ func TestWalletUserViewKeepsTheModelWire(t *testing.T) {
 		}
 	}
 
-	nilRaw, err := json.Marshal(walletUserViewPtr(nil))
+	nilRaw, err := json.Marshal(users.WalletUserPtr(nil))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -66,18 +67,18 @@ func TestWalletUserViewKeepsTheModelWire(t *testing.T) {
 	}
 }
 
-func TestWalletUserViewsPreserveSliceNilness(t *testing.T) {
+func TestWalletUsersPreserveSliceNilness(t *testing.T) {
 	t.Parallel()
 
-	if walletUserViews(nil) != nil {
+	if users.WalletUsersFrom(nil) != nil {
 		t.Fatal("nil slice became an empty slice")
 	}
-	empty := walletUserViews([]models.WalletUser{})
+	empty := users.WalletUsersFrom([]models.WalletUser{})
 	if empty == nil || len(empty) != 0 {
 		t.Fatalf("empty slice = %#v", empty)
 	}
 
-	nilPage, err := json.Marshal(map[string]any{"data": walletUserViews(nil)})
+	nilPage, err := json.Marshal(map[string]any{"data": users.WalletUsersFrom(nil)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -85,7 +86,7 @@ func TestWalletUserViewsPreserveSliceNilness(t *testing.T) {
 		t.Fatalf("nil page = %s", nilPage)
 	}
 
-	emptyPage, err := json.Marshal(map[string]any{"data": walletUserViews([]models.WalletUser{})})
+	emptyPage, err := json.Marshal(map[string]any{"data": users.WalletUsersFrom([]models.WalletUser{})})
 	if err != nil {
 		t.Fatal(err)
 	}

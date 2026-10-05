@@ -10,6 +10,7 @@ import (
 	"github.com/macrowallets/waas/app/http/controllers"
 	"github.com/macrowallets/waas/app/http/middleware/requestctx"
 	"github.com/macrowallets/waas/app/http/requests"
+	walletusers "github.com/macrowallets/waas/app/http/resources/dashboard/wallets/users"
 	"github.com/macrowallets/waas/app/http/responses"
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/policies"
@@ -63,7 +64,7 @@ func (ctrl *UsersController) ListWalletUsers(ctx http.Context) http.Response {
 	if err != nil {
 		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to fetch wallet users"})
 	}
-	return responses.Send(ctx, http.StatusOK, http.Json{"data": walletUserViews(members)})
+	return responses.Send(ctx, http.StatusOK, http.Json{"data": walletusers.WalletUsersFrom(members)})
 }
 
 // AddWalletUser godoc
@@ -75,7 +76,7 @@ func (ctrl *UsersController) ListWalletUsers(ctx http.Context) http.Response {
 // @Produce      json
 // @Param        walletId  path      string              true  "Wallet UUID"
 // @Param        request   body      AddWalletUserSwagger  true  "User and role payload"
-// @Success      201  {object}  WalletUserView
+// @Success      201  {object}  walletusers.WalletUser
 // @Failure      400  {object}  ErrorResponse
 // @Failure      403  {object}  ErrorResponse
 // @Router       /wallets/{walletId}/users [post]
@@ -112,7 +113,7 @@ func (ctrl *UsersController) AddWalletUser(ctx http.Context) http.Response {
 		} else {
 			existing.Roles = roleList
 		}
-		return responses.Send(ctx, http.StatusCreated, walletUserViewPtr(existing))
+		return responses.Send(ctx, http.StatusCreated, walletusers.WalletUserPtr(existing))
 	}
 
 	wu := &models.WalletUser{
@@ -125,7 +126,7 @@ func (ctrl *UsersController) AddWalletUser(ctx http.Context) http.Response {
 	if err := ctrl.members.Create(ctx.Context(), wu); err != nil {
 		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to add wallet user"})
 	}
-	return responses.Send(ctx, http.StatusCreated, walletUserViewPtr(wu))
+	return responses.Send(ctx, http.StatusCreated, walletusers.WalletUserPtr(wu))
 }
 
 // requireActiveAccountMember rejects a user_id that is not an active member of
@@ -184,5 +185,5 @@ type AddWalletUserSwagger struct {
 }
 
 type WalletUserListResponse struct {
-	Data []WalletUserView `json:"data"`
+	Data []walletusers.WalletUser `json:"data"`
 }
