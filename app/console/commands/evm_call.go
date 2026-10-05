@@ -37,10 +37,16 @@ type EVMCall struct {
 	signer  evmcall.Signer
 }
 
-// NewEVMCall wires the wallet lookup and the MPC signer. The signer is used only
-// when --broadcast is set.
-func NewEVMCall(wallets evmcall.WalletSource, signer evmcall.Signer) *EVMCall {
-	return &EVMCall{wallets: wallets, signer: signer}
+// EVMCallDeps is everything the evm:call command needs. Signer may be nil; it is
+// used only when --broadcast is set.
+type EVMCallDeps struct {
+	Wallets evmcall.WalletSource
+	Signer  evmcall.Signer
+}
+
+// NewEVMCall wires the command from EVMCallDeps.
+func NewEVMCall(deps EVMCallDeps) *EVMCall {
+	return &EVMCall{wallets: deps.Wallets, signer: deps.Signer}
 }
 
 type evmCallFlags struct {

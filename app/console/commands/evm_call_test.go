@@ -1,15 +1,61 @@
 package commands
 
 import (
+	"context"
 	"errors"
 	"strings"
 	"testing"
 
+	"github.com/google/uuid"
+
+	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/services/evmcall"
 	"github.com/macrowallets/waas/app/services/sweep"
+	"github.com/macrowallets/waas/pkg/types"
 )
 
 var _ evmcall.Signer = sweep.EVMCallPreflighter(nil)
+
+type evmCallWalletStub struct{}
+
+func (evmCallWalletStub) FindByID(context.Context, uuid.UUID) (*models.Wallet, error) {
+	return nil, nil
+}
+
+type evmCallSignerStub struct{}
+
+func (evmCallSignerStub) PreflightEVMCall(context.Context, uuid.UUID, string, types.Chain, *types.UnsignedTx) (*types.SignedTx, error) {
+	return nil, nil
+}
+
+func TestNewEVMCallKeepsItsDependencies(t *testing.T) {
+	wallets := evmCallWalletStub{}
+	signer := evmCallSignerStub{}
+	cmd := NewEVMCall(EVMCallDeps{Wallets: wallets, Signer: signer})
+	if cmd == nil {
+		t.Fatal("NewEVMCall returned nil")
+	}
+	if cmd.wallets != wallets {
+		t.Fatal("evm call did not keep the wallet source")
+	}
+	if cmd.signer != signer {
+		t.Fatal("evm call did not keep the signer")
+	}
+}
+
+func TestNewEVMCallAllowsANilSigner(t *testing.T) {
+	wallets := evmCallWalletStub{}
+	cmd := NewEVMCall(EVMCallDeps{Wallets: wallets})
+	if cmd == nil {
+		t.Fatal("NewEVMCall returned nil")
+	}
+	if cmd.wallets != wallets {
+		t.Fatal("evm call did not keep the wallet source")
+	}
+	if cmd.signer != nil {
+		t.Fatal("signer should stay nil when omitted")
+	}
+}
 
 const evmCallTestWallet = "c61f1974-5720-4eeb-9bd6-7f80ce217dd4"
 

@@ -65,7 +65,10 @@ func Boot() contractsfoundation.Application {
 				commands.NewChainsAddMissing(seedMissingAddedChains),
 				&commands.WithdrawPreflight{},
 				commands.NewPruneActivity(),
-				commands.NewEVMCall(container.MustMake[*repositories.WalletRepository](), evmCallSigner()),
+				commands.NewEVMCall(commands.EVMCallDeps{
+					Wallets: container.MustMake[*repositories.WalletRepository](),
+					Signer:  evmCallSigner(),
+				}),
 				commands.NewWalletsExportKeys(
 					container.MustMake[*repositories.WalletRepository](),
 					container.MustMake[*repositories.AddressRepository](),
