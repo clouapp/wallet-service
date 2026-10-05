@@ -21,14 +21,22 @@ type ListenerServer struct {
 	listener net.Listener
 }
 
-func NewListenerServer(router ListenRouter, listener net.Listener) (*ListenerServer, error) {
-	if router == nil {
+// ListenerServerDeps is everything the listener server needs. Both fields are
+// required; a nil field is rejected.
+type ListenerServerDeps struct {
+	Router   ListenRouter
+	Listener net.Listener
+}
+
+// NewListenerServer wires the listener server from ListenerServerDeps.
+func NewListenerServer(deps ListenerServerDeps) (*ListenerServer, error) {
+	if deps.Router == nil {
 		return nil, errors.New("lifecycle: router is required")
 	}
-	if listener == nil {
+	if deps.Listener == nil {
 		return nil, errors.New("lifecycle: listener is required")
 	}
-	return &ListenerServer{router: router, listener: listener}, nil
+	return &ListenerServer{router: deps.Router, listener: deps.Listener}, nil
 }
 
 func (s *ListenerServer) Serve() error {

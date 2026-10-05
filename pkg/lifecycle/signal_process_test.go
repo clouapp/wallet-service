@@ -63,7 +63,7 @@ func runSignalHelper(mode string) int {
 		fmt.Fprintln(os.Stderr, "listen:", err)
 		return helperExitFailure
 	}
-	server, err := NewListenerServer(&httpRouter{}, listener)
+	server, err := NewListenerServer(ListenerServerDeps{Router: &httpRouter{}, Listener: listener})
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "server:", err)
 		return helperExitFailure

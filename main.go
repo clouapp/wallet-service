@@ -220,7 +220,10 @@ func runLocal() {
 		slog.Error("server error", "error", err)
 		os.Exit(exitCodeFailure)
 	}
-	server, err := lifecycle.NewListenerServer(facades.Route(), listener)
+	server, err := lifecycle.NewListenerServer(lifecycle.ListenerServerDeps{
+		Router:   facades.Route(),
+		Listener: listener,
+	})
 	if err != nil {
 		slog.Error("server error", "error", err)
 		os.Exit(exitCodeFailure)

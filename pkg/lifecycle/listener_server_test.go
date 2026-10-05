@@ -56,17 +56,32 @@ func listenLocal(t *testing.T) net.Listener {
 }
 
 func TestNewListenerServer_RejectsMissingParts(t *testing.T) {
-	if _, err := NewListenerServer(nil, listenLocal(t)); err == nil {
+	if _, err := NewListenerServer(ListenerServerDeps{Listener: listenLocal(t)}); err == nil {
 		t.Fatal("expected an error without a router")
 	}
-	if _, err := NewListenerServer(&httpRouter{}, nil); err == nil {
+	if _, err := NewListenerServer(ListenerServerDeps{Router: &httpRouter{}}); err == nil {
 		t.Fatal("expected an error without a listener")
+	}
+}
+
+func TestNewListenerServerKeepsItsDependencies(t *testing.T) {
+	router := &httpRouter{}
+	listener := listenLocal(t)
+	server, err := NewListenerServer(ListenerServerDeps{Router: router, Listener: listener})
+	if err != nil {
+		t.Fatalf("NewListenerServer: %v", err)
+	}
+	if server.router != router {
+		t.Fatal("listener server did not keep the router")
+	}
+	if server.listener != listener {
+		t.Fatal("listener server did not keep the listener")
 	}
 }
 
 func TestListenerServer_ServesUntilShutdown(t *testing.T) {
 	listener := listenLocal(t)
-	server, err := NewListenerServer(&httpRouter{}, listener)
+	server, err := NewListenerServer(ListenerServerDeps{Router: &httpRouter{}, Listener: listener})
 	if err != nil {
 		t.Fatalf("NewListenerServer: %v", err)
 	}
@@ -98,7 +113,7 @@ func TestListenerServer_ServesUntilShutdown(t *testing.T) {
 }
 
 func TestListenerServer_ShutdownBeforeServeClosesTheListener(t *testing.T) {
-	server, err := NewListenerServer(&httpRouter{}, listenLocal(t))
+	server, err := NewListenerServer(ListenerServerDeps{Router: &httpRouter{}, Listener: listenLocal(t)})
 	if err != nil {
 		t.Fatalf("NewListenerServer: %v", err)
 	}
