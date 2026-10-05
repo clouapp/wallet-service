@@ -117,7 +117,7 @@ func RegisterAdminRoutes() {
 		router.Post("", accountsCtrl.CreateAccount)
 		router.Prefix("/{accountId}").Middleware(middleware.AccountContext(accounts), totpEnrollment).Group(func(r route.Router) {
 			r.Get("", accountsCtrl.GetAccount)
-			r.Patch("", accountsCtrl.UpdateAccount)
+			r.Middleware(middleware.Can(middleware.PermAccountWrite)).Patch("", accountsCtrl.UpdateAccount)
 			r.Post("/archive", accountsCtrl.ArchiveAccount)
 			r.Post("/freeze", accountsCtrl.FreezeAccount)
 

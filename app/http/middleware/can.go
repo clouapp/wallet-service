@@ -16,6 +16,9 @@ const PermUsersWrite = policies.PermUsersWrite
 // PermRolesRead is the account role catalog. Routes cannot import policies.
 const PermRolesRead = policies.PermRolesRead
 
+// PermAccountWrite is PATCH /v1/accounts/{accountId}. Routes cannot import policies.
+const PermAccountWrite = policies.PermAccountWrite
+
 // Can refuses the route unless the account role already stored by
 // AccountContext or AccountHeader holds permission. The decision is
 // policies.Can on that role's code catalog. An empty permission and an

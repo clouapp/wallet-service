@@ -166,9 +166,6 @@ type AccountDetail struct {
 // @Router       /accounts/{accountId} [patch]
 func (ctrl *AccountsController) UpdateAccount(ctx http.Context) http.Response {
 	account := requestctx.MustAccount(ctx)
-	if errResp := controllers.Deny(ctx, policies.AccountUpdate(ctx, account.ID, middleware.SessionUserID(ctx))); errResp != nil {
-		return errResp
-	}
 
 	var req requests.UpdateAccountRequest
 	if errResp := validateRequest(ctx, &req); errResp != nil {

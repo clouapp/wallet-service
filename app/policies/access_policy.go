@@ -36,11 +36,12 @@ func Can(grants Grants, perm string) bool {
 }
 
 // AccountRoleGrants is the code catalog Can reads. Owner and admin hold
-// users.read, users.write, settings.read, settings.write, roles.read, and
-// addresses.create. The user role holds only addresses.create. Auditor holds
-// users.read, settings.read and roles.read. The retired viewer label uses the
-// auditor set. Any other role gets an empty set. Withdraw, sweep, and wallet
-// create stay out of this set; those routes keep MayPerformFundAction.
+// users.read, users.write, settings.read, settings.write, roles.read,
+// addresses.create, and account.write. The user role holds only
+// addresses.create. Auditor holds users.read, settings.read and roles.read.
+// The retired viewer label uses the auditor set. Any other role gets an
+// empty set. Withdraw, sweep, and wallet create stay out of this set; those
+// routes keep MayPerformFundAction.
 func AccountRoleGrants(role string) Grants {
 	if role == models.RetiredAccountRoleViewer {
 		role = roleAuditor
@@ -54,6 +55,7 @@ func AccountRoleGrants(role string) Grants {
 			PermSettingsWrite:   {},
 			PermRolesRead:       {},
 			PermAddressesCreate: {},
+			PermAccountWrite:    {},
 		}
 	case roleUser:
 		return Grants{

@@ -18,6 +18,10 @@ const (
 	PermTokensWrite = models.AccountPermTokensWrite
 )
 
+// PermAccountWrite is PATCH /v1/accounts/{accountId}. Owner and admin hold
+// it, the same roles mayWriteAccount already allows. Auditor and user do not.
+const PermAccountWrite = models.AccountPermAccountWrite
+
 // AccountPolicy defines gate abilities for Account resources.
 // Abilities: account.view, account.update, account.delete,
 //

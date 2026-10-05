@@ -24,6 +24,19 @@ func TestCanUsersReadFailsClosedAndFollowsTheRoleCatalog(t *testing.T) {
 	}
 }
 
+func TestCanAccountWriteIsOwnerAndAdmin(t *testing.T) {
+	for _, role := range []string{models.AccountRoleOwner, models.AccountRoleAdmin} {
+		if !Can(AccountRoleGrants(role), PermAccountWrite) {
+			t.Fatalf("%s must hold account.write", role)
+		}
+	}
+	for _, role := range []string{models.AccountRoleAuditor, models.RetiredAccountRoleViewer, models.AccountRoleUser, "", "spender", "owner "} {
+		if Can(AccountRoleGrants(role), PermAccountWrite) {
+			t.Fatalf("%q must not hold account.write", role)
+		}
+	}
+}
+
 func TestCanUsersWriteIsOwnerAndAdmin(t *testing.T) {
 	for _, role := range []string{models.AccountRoleOwner, models.AccountRoleAdmin} {
 		if !Can(AccountRoleGrants(role), PermUsersWrite) {

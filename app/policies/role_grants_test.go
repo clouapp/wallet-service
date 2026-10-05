@@ -40,7 +40,7 @@ func TestEffectiveRoleGrantsFollowTheLiveGates(t *testing.T) {
 	owner := permissionsOf(t, grants, models.AccountRoleOwner)
 	for _, permission := range []string{
 		PermRolesRead, PermUsersRead, PermUsersWrite, PermSettingsRead, PermSettingsWrite,
-		PermActivityRead, PermTokensRead, PermTokensWrite, PermAddressesCreate,
+		PermActivityRead, PermTokensRead, PermTokensWrite, PermAddressesCreate, PermAccountWrite,
 		PermWithdrawalsCreate, PermSweepExecute, PermWalletsCreate, PermWalletsRead, PermWebhooksWrite,
 	} {
 		if !slices.Contains(owner, permission) {
@@ -64,7 +64,7 @@ func TestEffectiveRoleGrantsFollowTheLiveGates(t *testing.T) {
 			t.Fatalf("auditor missing %s in %v", permission, auditor)
 		}
 	}
-	for _, permission := range []string{PermUsersWrite, PermSettingsWrite, PermTokensWrite, PermAddressesCreate, PermWithdrawalsCreate, PermSweepExecute, PermWalletsCreate, PermWalletsRead, PermWebhooksWrite} {
+	for _, permission := range []string{PermUsersWrite, PermSettingsWrite, PermTokensWrite, PermAddressesCreate, PermAccountWrite, PermWithdrawalsCreate, PermSweepExecute, PermWalletsCreate, PermWalletsRead, PermWebhooksWrite} {
 		if slices.Contains(auditor, permission) {
 			t.Fatalf("auditor holds %s", permission)
 		}
