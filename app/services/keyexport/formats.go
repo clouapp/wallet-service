@@ -128,9 +128,16 @@ func SolanaKeypair(seed []byte) ([]byte, error) {
 	return ed25519.NewKeyFromSeed(seed), nil
 }
 
+// SolanaKeyDeps is the 32-byte RFC 8032 seed and the solana-keygen JSON file name.
+// Phantom and solana-keygen import this seed. A missing or short seed is refused.
+type SolanaKeyDeps struct {
+	Seed        []byte
+	KeypairFile string
+}
+
 // NewSolanaKey renders the Phantom and solana-keygen forms of an RFC 8032 seed.
-func NewSolanaKey(seed []byte, keypairFile string) (*SolanaKey, error) {
-	keypair, err := SolanaKeypair(seed)
+func NewSolanaKey(deps SolanaKeyDeps) (*SolanaKey, error) {
+	keypair, err := SolanaKeypair(deps.Seed)
 	if err != nil {
 		return nil, err
 	}
@@ -140,10 +147,10 @@ func NewSolanaKey(seed []byte, keypairFile string) (*SolanaKey, error) {
 		asJSON[i] = int(b)
 	}
 	return &SolanaKey{
-		SeedHex:       hex.EncodeToString(seed),
+		SeedHex:       hex.EncodeToString(deps.Seed),
 		KeypairBase58: base58.Encode(keypair),
 		KeypairJSON:   asJSON,
-		KeypairFile:   keypairFile,
+		KeypairFile:   deps.KeypairFile,
 	}, nil
 }
 

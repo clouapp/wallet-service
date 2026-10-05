@@ -121,7 +121,7 @@ func TestSolanaKeypair_Base58AndJSONImportToTheSeedAddress(t *testing.T) {
 	publicKey := ed25519.NewKeyFromSeed(seed).Public().(ed25519.PublicKey)
 	want := base58.Encode(publicKey)
 
-	key, err := NewSolanaKey(seed, "solana-keygen/index-1.json")
+	key, err := NewSolanaKey(SolanaKeyDeps{Seed: seed, KeypairFile: "solana-keygen/index-1.json"})
 	if err != nil {
 		t.Fatal(err)
 	}

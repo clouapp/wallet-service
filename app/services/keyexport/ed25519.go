@@ -117,7 +117,7 @@ func (c *ed25519ChildSeeds) addressKey(plan WalletPlan, address models.Address, 
 	}
 	defer zeroBytes(seed)
 	fileName := keypairFileName(address, usedFiles)
-	solanaKey, err := NewSolanaKey(seed, fileName)
+	solanaKey, err := NewSolanaKey(SolanaKeyDeps{Seed: seed, KeypairFile: fileName})
 	if err != nil {
 		return AddressKey{}, ArchiveFile{}, refuse("address %s: seed could not be encoded", address.Address)
 	}
