@@ -19,7 +19,7 @@ const (
 // routes do not carry an account role; their scopes are checked separately.
 func RequireFundAction(action string) http.Middleware {
 	return func(ctx http.Context) {
-		role, _ := ctx.Value("account_role").(string)
+		role := AccountRole(ctx)
 		if !policies.MayPerformFundAction(role, action) {
 			abortWithJSON(ctx, http.StatusForbidden, http.Json{"error": "insufficient role"})
 			return
