@@ -413,10 +413,13 @@ func buildVaultContainer(app foundation.Application) (*container.Container, erro
 	}
 	c.WithdrawalService.UseCreate(c.UserRepo, verifier, withdrawalRows, c.ChainRepo)
 
-	blockHeightProviders := blockheight.NewProviders(func(ctx context.Context) string {
-		envKey := facades.Config().GetString("vault.webhooks.etherscan_api_key")
-		return accountSettings.EtherscanKeyForHeight(ctx, envKey)
-	}, networkByChain)
+	blockHeightProviders := blockheight.NewProviders(blockheight.ProvidersDeps{
+		Key: func(ctx context.Context) string {
+			envKey := facades.Config().GetString("vault.webhooks.etherscan_api_key")
+			return accountSettings.EtherscanKeyForHeight(ctx, envKey)
+		},
+		NetworkByChain: networkByChain,
+	})
 	assetDecimals := withdrawalevents.NewRegistryDecimals(c.Registry, c.ChainRepo)
 	c.WithdrawalEvents = withdrawalevents.NewPublisher(
 		c.WebhookService, c.WithdrawalRepo, c.TransactionRepo, c.WalletRepo, assetDecimals,

@@ -27,7 +27,7 @@ const (
 )
 
 func TestNewProviders_WithoutAKeyFunctionLeavesEVMOnItsRPC(t *testing.T) {
-	providers := NewProviders(nil, map[string]string{})
+	providers := NewProviders(ProvidersDeps{})
 
 	_, hasEVM := providers[models.AdapterTypeEVM]
 	assert.False(t, hasEVM)
@@ -38,10 +38,13 @@ func TestNewProviders_WithoutAKeyFunctionLeavesEVMOnItsRPC(t *testing.T) {
 func TestNewProviders_AsksForTheKeyAtUseTimeAndUsesIt(t *testing.T) {
 	var calls int
 	keys := []string{" " + heightSettingsKey + " ", heightEnvKey}
-	providers := NewProviders(func(context.Context) string {
-		calls++
-		return keys[0]
-	}, map[string]string{models.ChainETH: models.NetworkEthereumSepolia})
+	providers := NewProviders(ProvidersDeps{
+		Key: func(context.Context) string {
+			calls++
+			return keys[0]
+		},
+		NetworkByChain: map[string]string{models.ChainETH: models.NetworkEthereumSepolia},
+	})
 	if calls != 0 {
 		t.Fatal("the etherscan key was read when the providers were built")
 	}
@@ -82,7 +85,7 @@ func TestNewProviders_BlankKeySkipsEtherscan(t *testing.T) {
 	}))
 	t.Cleanup(srv.Close)
 
-	providers := NewProviders(func(context.Context) string { return " \t " }, map[string]string{})
+	providers := NewProviders(ProvidersDeps{Key: func(context.Context) string { return " \t " }})
 	pointEtherscanAt(t, providers, srv)
 
 	_, err := providers[models.AdapterTypeEVM].GetBlockHeight(context.Background(), models.ChainETH)
@@ -141,7 +144,7 @@ func TestNewProviders_DisabledUnsealedAndFailedReadUseTheEnvKey(t *testing.T) {
 }
 
 func TestNewProviders_BitcoinUsesTheTestnet4AwareProvider(t *testing.T) {
-	providers := NewProviders(nil, map[string]string{models.ChainBTC: models.NetworkBitcoinTestnet4})
+	providers := NewProviders(ProvidersDeps{NetworkByChain: map[string]string{models.ChainBTC: models.NetworkBitcoinTestnet4}})
 
 	routed, ok := providers[models.AdapterTypeBitcoin].(*NetworkRouted)
 	require.True(t, ok)
@@ -153,9 +156,9 @@ func TestNewProviders_BitcoinUsesTheTestnet4AwareProvider(t *testing.T) {
 func heightProviders(t *testing.T, store etherscanHeightStore, seen *string) (map[string]Provider, *httptest.Server) {
 	t.Helper()
 	service := settings.NewService(settings.Deps{Store: store, Sealer: heightPrefixSealer{}, Cache: nil, Activity: heightDiscardActivity{}})
-	providers := NewProviders(func(ctx context.Context) string {
+	providers := NewProviders(ProvidersDeps{Key: func(ctx context.Context) string {
 		return service.EtherscanKeyForHeight(ctx, heightEnvKey)
-	}, map[string]string{})
+	}})
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		*seen = r.URL.Query().Get("apikey")
 		_, _ = w.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":"0x11"}`))
