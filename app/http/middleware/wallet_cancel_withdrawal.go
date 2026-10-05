@@ -14,8 +14,10 @@ import (
 // WalletCancelWithdrawal refuses POST
 // /v1/wallets/{walletId}/withdrawals/{withdrawalId}/cancel unless
 // policies.WalletCancelWithdrawal allows the caller's loaded membership.
-// The creator may cancel their own withdrawal. Wallet role owner or admin
-// may cancel any, and so may account role owner or admin. WalletContext has
+// A non-auditor creator may cancel their own withdrawal. Wallet role owner
+// or admin may cancel any, and so may account role owner or admin. An
+// account auditor is denied even when they created the withdrawal.
+// WalletContext has
 // already loaded the wallet, so a caller who cannot see it — including an
 // account user with view_all_wallets false and no wallet membership — is 404
 // before this check. A missing withdrawal is left to the handler, which

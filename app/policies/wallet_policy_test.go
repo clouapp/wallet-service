@@ -67,6 +67,10 @@ func TestWalletCancelWithdrawalKeepsTheCreatorRule(t *testing.T) {
 	if !WalletCancelWithdrawal(viewer, creator).Allowed() {
 		t.Fatal("the creator may cancel without an admin role")
 	}
+	auditor := WalletMembership{AccountRole: roleAuditor, UserID: creator}
+	if decision := WalletCancelWithdrawal(auditor, creator); decision.Allowed() || decision.Message() != "only the creator or an owner/admin may cancel this withdrawal" {
+		t.Fatal("an auditor may not cancel a withdrawal they created")
+	}
 	if WalletCancelWithdrawal(viewer, other).Allowed() || WalletCancelWithdrawal(viewer, other).Message() != "only the creator or an owner/admin may cancel this withdrawal" {
 		t.Fatal("another user may not cancel")
 	}

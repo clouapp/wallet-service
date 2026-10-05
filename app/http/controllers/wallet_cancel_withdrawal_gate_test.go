@@ -21,12 +21,13 @@ const walletCancelWithdrawalGatePassword = "correct-horse-battery"
 
 // WalletCancelWithdrawalGateTestSuite drives
 // POST /v1/wallets/{walletId}/withdrawals/{withdrawalId}/cancel through
-// WalletCancelWithdrawal, which runs after WalletContext. The creator may
-// cancel their own pending withdrawal. Wallet role owner or admin may cancel
-// any, and so may account role owner or admin. A caller who can see the
-// wallet but may not cancel is 403, and the withdrawal stays pending. An
-// account user with view_all_wallets false and no wallet membership is 404
-// from WalletContext.
+// WalletCancelWithdrawal, which runs after WalletContext. A non-auditor
+// creator may cancel their own pending withdrawal. Wallet role owner or
+// admin may cancel any, and so may account role owner or admin. An account
+// auditor is denied even when they created the withdrawal. A caller who can
+// see the wallet but may not cancel is 403, and the withdrawal stays
+// pending. An account user with view_all_wallets false and no wallet
+// membership is 404 from WalletContext.
 type WalletCancelWithdrawalGateTestSuite struct {
 	suite.Suite
 	goravelTesting.TestCase
@@ -85,16 +86,12 @@ func (s *WalletCancelWithdrawalGateTestSuite) TestWalletCancelWithdrawalFollowsT
 		{accountRole: models.AccountRoleUser, walletRole: models.WalletRoleAdmin},
 		{accountRole: models.AccountRoleUser, walletRole: models.WalletRoleViewer, creator: true},
 		{accountRole: models.AccountRoleUser, walletRole: models.WalletRoleSpender, creator: true},
-		{accountRole: models.AccountRoleAuditor, creator: true},
 	}
 	for _, caller := range allowed {
 		ownWallet := mocks.InsertWalletWithAccount(s.T(), models.ChainETH, &account.ID)
 		actor := s.member(caller.accountRole, account.ID)
 		if caller.walletRole != "" {
 			s.assign(actor.id, ownWallet.ID, caller.walletRole)
-		}
-		if caller.accountRole == models.AccountRoleAuditor && caller.walletRole == "" {
-			s.setViewAll(account.ID, true)
 		}
 		creatorID := someoneElse
 		if caller.creator {
@@ -114,6 +111,30 @@ func (s *WalletCancelWithdrawalGateTestSuite) TestWalletCancelWithdrawalFollowsT
 		s.Equal(withdrawalID.String(), body["id"])
 		s.Equal("cancelled", s.withdrawalStatus(withdrawalID))
 	}
+}
+
+func (s *WalletCancelWithdrawalGateTestSuite) TestWalletCancelWithdrawalDeniesTheAuditorWhoCreatedIt() {
+	account := mocks.InsertAccount(s.T(), "wallet cancel auditor creator")
+	s.setViewAll(account.ID, true)
+	wallet := mocks.InsertWalletWithAccount(s.T(), models.ChainETH, &account.ID)
+
+	auditor := s.member(models.AccountRoleAuditor, account.ID)
+	createdByAuditor := s.pending(wallet.ID, account.ID, &auditor.id)
+	denied := s.cancel(auditor.token, account.ID, wallet.ID, createdByAuditor)
+	s.assertCancelForbidden(denied)
+	s.Equal("pending", s.withdrawalStatus(createdByAuditor))
+
+	creator := s.member(models.AccountRoleUser, account.ID)
+	s.assign(creator.id, wallet.ID, models.WalletRoleViewer)
+	own := s.pending(wallet.ID, account.ID, &creator.id)
+	cancelled := s.cancel(creator.token, account.ID, wallet.ID, own)
+	cancelled.AssertOk()
+	s.Equal("cancelled", s.withdrawalStatus(own))
+
+	owner := s.member(models.AccountRoleOwner, account.ID)
+	ownerCancel := s.cancel(owner.token, account.ID, wallet.ID, createdByAuditor)
+	ownerCancel.AssertOk()
+	s.Equal("cancelled", s.withdrawalStatus(createdByAuditor))
 }
 
 func (s *WalletCancelWithdrawalGateTestSuite) TestWalletCancelWithdrawalStaysHiddenFromAnAccountUser() {
