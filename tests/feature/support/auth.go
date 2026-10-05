@@ -13,16 +13,17 @@
 package support
 
 import (
+	"context"
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
 	"testing"
 
 	"github.com/google/uuid"
-	"github.com/goravel/framework/facades"
 
 	"github.com/macrowallets/waas/app/http/middleware"
 	"github.com/macrowallets/waas/app/models"
+	"github.com/macrowallets/waas/app/repositories"
 )
 
 // SignFunc returns the hex-encoded HMAC-SHA256 of `body`, keyed by the raw JWT
@@ -37,9 +38,9 @@ type SignFunc func(body []byte) string
 // scheme APITokenAuth enforces when the token's `require_signature` claim is
 // set. The SignFunc is nil when requireSignature is false.
 //
-// The access_tokens table carries NOT NULL columns (token_hash, spending_limit)
-// that the ORM model doesn't expose, so the row is inserted via raw SQL — the
-// same pattern used in the middleware-level tests.
+// The account and the access token are written through their repositories.
+// The token stores the full API grant list and an empty spending limit so
+// callers can exercise every external route this helper is used for.
 //
 // Requires an active Goravel ORM + a migrated `accounts` and `access_tokens`
 // schema. Call tests/testutil.SeededTestDB(t) or mocks.TestDB(t) first.
@@ -48,7 +49,7 @@ func SetupAPIAuth(t *testing.T, requireSignature bool) (accountID uuid.UUID, bea
 
 	accountID = uuid.New()
 	shortID := accountID.String()[:8]
-	if err := facades.Orm().Query().Create(&models.Account{
+	if err := repositories.NewAccountRepository(nil).Create(context.Background(), &models.Account{
 		ID:          accountID,
 		Name:        "test-account-" + shortID,
 		Status:      "active",
@@ -59,11 +60,14 @@ func SetupAPIAuth(t *testing.T, requireSignature bool) (accountID uuid.UUID, bea
 
 	tokenID := uuid.New()
 	tokenName := "test-token-" + shortID
-	if _, err := facades.Orm().Query().Exec(
-		`INSERT INTO access_tokens (id, account_id, name, token_hash, permissions, spending_limit, created_at, updated_at)
-		 VALUES (?, ?, ?, ?, ?, ?, NOW(), NOW())`,
-		tokenID, accountID, tokenName, "test-hash-"+shortID, models.AllAPIPermissionGrants(), "{}",
-	); err != nil {
+	if err := repositories.NewAccessTokenRepository(nil).Create(context.Background(), &models.AccessToken{
+		ID:            tokenID,
+		AccountID:     accountID,
+		Name:          tokenName,
+		TokenHash:     "test-hash-" + shortID,
+		Permissions:   models.AllAPIPermissionGrants(),
+		SpendingLimit: "{}",
+	}); err != nil {
 		t.Fatalf("insert access_token: %v", err)
 	}
 
