@@ -13,7 +13,7 @@ import (
 	"github.com/macrowallets/waas/app/services/chain"
 	mpcpkg "github.com/macrowallets/waas/app/services/mpc"
 	"github.com/macrowallets/waas/app/services/settings"
-	"github.com/macrowallets/waas/app/services/webhook"
+	"github.com/macrowallets/waas/pkg/types"
 )
 
 // Sentinel errors exposed by the sweep service.
@@ -88,6 +88,26 @@ type RedisStore interface {
 	Expire(ctx context.Context, key string, expiration time.Duration) error
 }
 
+// chainLookup is the adapter and token catalog sweep reads.
+type chainLookup interface {
+	Chain(id string) (types.Chain, error)
+	ChainForWallet(wallet *models.Wallet) (types.Chain, error)
+	FindToken(chainID, symbol string) (*types.Token, error)
+}
+
+// mpcSigner signs a sweep and reconstructs the keys that signature needs.
+type mpcSigner interface {
+	Sign(ctx context.Context, curve mpcpkg.Curve, shareA, shareB []byte, inputs mpcpkg.SignInputs) ([]byte, error)
+	ReconstructEd25519Scalar(shareA, shareB []byte) ([]byte, error)
+	ReconstructSecp256k1PrivateKey(shareA, shareB []byte) ([]byte, error)
+}
+
+// eventEnqueuer publishes one sweep, withdrawal, or gas-status event.
+// A nil enqueuer publishes nothing.
+type eventEnqueuer interface {
+	EnqueueEvent(ctx context.Context, txID uuid.UUID, eventType types.EventType, data interface{})
+}
+
 // accountGate reports a block for one account. Nil means no reader is wired,
 // so the action proceeds. The reader is injected: this package cannot import
 // the feature-flag service without an import cycle.
@@ -101,11 +121,11 @@ type GasReadinessDefault struct {
 }
 
 type service struct {
-	registry    *chain.Registry
-	mpc         mpcpkg.Service
+	registry    chainLookup
+	mpc         mpcSigner
 	secrets     SecretReader
 	rdb         RedisStore
-	webhookSvc  *webhook.Service
+	webhookSvc  eventEnqueuer
 	walletRepo  walletReader
 	addressRepo addressReader
 	txRepo      transactionWriter
@@ -127,11 +147,11 @@ type service struct {
 // Deps is everything the sweep service needs. A nil field means that
 // dependency is absent.
 type Deps struct {
-	Registry       *chain.Registry
-	MPC            mpcpkg.Service
+	Registry       chainLookup
+	MPC            mpcSigner
 	Secrets        SecretReader
 	Redis          RedisStore
-	Webhook        *webhook.Service
+	Webhook        eventEnqueuer
 	Wallets        walletReader
 	Addresses      addressReader
 	Transactions   transactionWriter

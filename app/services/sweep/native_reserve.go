@@ -79,7 +79,7 @@ type sourceFunds struct {
 // chain-wide reserve. Displayed balances are not affected.
 func loadSourceFunds(
 	ctx context.Context,
-	registry *chain.Registry,
+	registry chainLookup,
 	chainID string,
 	adapter types.Chain,
 	addr models.Address,

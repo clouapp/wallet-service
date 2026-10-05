@@ -262,7 +262,7 @@ func TestExecute_MultiSweep_LinksParent(t *testing.T) {
 	mockChain := sweepMockChain("eth", "eth")
 	svc, txRepo := newExecutorService(t, wallet, mockChain)
 	// Register a token so `plan.Asset != native` path resolves.
-	svc.registry.RegisterToken(types.Token{
+	svc.registry.(*chain.Registry).RegisterToken(types.Token{
 		Symbol: "usdt", Name: "Tether", Contract: "0xTETHER", Decimals: 6, ChainID: "eth",
 	})
 
@@ -370,7 +370,7 @@ func executeSingleLegSweep(t *testing.T, mockChain *mocks.MockChain, asset strin
 	assignDerivedEVMAddresses(t, wallet, &baseAddr, &child)
 
 	svc, txRepo := newExecutorService(t, wallet, mockChain)
-	svc.registry.RegisterToken(types.Token{Symbol: "usdt", Name: "Tether", Contract: "0xTETHER", Decimals: 6, ChainID: "eth"})
+	svc.registry.(*chain.Registry).RegisterToken(types.Token{Symbol: "usdt", Name: "Tether", Contract: "0xTETHER", Decimals: 6, ChainID: "eth"})
 	plan := &Plan{
 		WalletID: walletID, Chain: "eth", Asset: asset, Amount: legAmount, Strategy: StrategyMultiSweep,
 		Sweeps: []PlannedSweep{{From: child, Amount: legAmount, NeedsGas: asset != "eth"}},
@@ -470,7 +470,7 @@ func TestExecute_MultiSweep_RetryAfterPartialFailure(t *testing.T) {
 
 	mockChain := sweepMockChain("eth", "eth")
 	svc, txRepo := newExecutorService(t, wallet, mockChain)
-	svc.registry.RegisterToken(types.Token{
+	svc.registry.(*chain.Registry).RegisterToken(types.Token{
 		Symbol: "usdt", Name: "Tether", Contract: "0xTETHER", Decimals: 6, ChainID: "eth",
 	})
 
@@ -677,7 +677,7 @@ func TestExecute_MultiSweep_WebhookEmittedPerSweep(t *testing.T) {
 
 	mockChain := sweepMockChain("eth", "eth")
 	svc, _ := newExecutorService(t, wallet, mockChain)
-	svc.registry.RegisterToken(types.Token{
+	svc.registry.(*chain.Registry).RegisterToken(types.Token{
 		Symbol: "usdt", Name: "Tether", Contract: "0xTETHER", Decimals: 6, ChainID: "eth",
 	})
 

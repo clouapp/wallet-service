@@ -9,7 +9,6 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/macrowallets/waas/app/models"
-	"github.com/macrowallets/waas/app/services/chain"
 	"github.com/macrowallets/waas/pkg/types"
 )
 
@@ -485,7 +484,7 @@ func estimateGasTotal(gasPrice *big.Int, plan *Plan, isTokenSweep bool) *big.Int
 // otherwise it resolves the token via the registry and calls GetTokenBalance.
 func fetchBalance(
 	ctx context.Context,
-	registry *chain.Registry,
+	registry chainLookup,
 	chainID string,
 	adapter types.Chain,
 	addr models.Address,

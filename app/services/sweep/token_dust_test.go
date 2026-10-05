@@ -136,7 +136,7 @@ func TestPlannerIgnoresTokenChildrenBelowTheUSDDust(t *testing.T) {
 		return &types.Balance{Address: address, Asset: token.Symbol, Amount: big.NewInt(tokenBalances[address])}, nil
 	}
 	svc := newPlannerService(t, wallet, []models.Address{base, dusty, funded}, adapter, dustChainEntity("0.1"))
-	svc.registry.RegisterToken(dustTestUSDC)
+	svc.registry.(*chain.Registry).RegisterToken(dustTestUSDC)
 	svc.tokenPricer = usdcPricer("1")
 
 	plan, err := svc.PlanForWithdrawal(context.Background(), walletID, models.SymbolUSDC, big.NewInt(300_000), "", uuid.Nil)

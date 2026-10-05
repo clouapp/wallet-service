@@ -336,7 +336,7 @@ func TestPlanSpendableFunds_OnlyAppliesToTheNativeAsset(t *testing.T) {
 		return &types.Balance{Amount: big.NewInt(1_000)}, nil
 	}
 	svc, walletID := spendableMockPlanner(t, adapter)
-	svc.registry.RegisterToken(types.Token{Symbol: "TOKEN", ChainID: models.ChainBTC})
+	svc.registry.(*chain.Registry).RegisterToken(types.Token{Symbol: "TOKEN", ChainID: models.ChainBTC})
 
 	plan, err := svc.PlanForWithdrawal(context.Background(), walletID, "TOKEN", big.NewInt(500), "", uuid.Nil)
 	if err != nil || plan.Strategy != StrategyDirectFromBase {
