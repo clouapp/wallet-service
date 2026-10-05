@@ -161,6 +161,11 @@ func (r *AccountRepository) SetStatus(ctx context.Context, id uuid.UUID, status 
 	return r.updateColumn(ctx, id, "status", status, "set account status")
 }
 
+// SetEnvironment sets accounts.environment.
+func (r *AccountRepository) SetEnvironment(ctx context.Context, id uuid.UUID, environment string) error {
+	return r.updateColumn(ctx, id, "environment", environment, "set account environment")
+}
+
 // SetLinkedAccountID sets accounts.linked_account_id.
 func (r *AccountRepository) SetLinkedAccountID(ctx context.Context, id, linkedID uuid.UUID) error {
 	return r.updateColumn(ctx, id, "linked_account_id", linkedID, "set account linked account")

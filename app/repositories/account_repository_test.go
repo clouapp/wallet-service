@@ -272,3 +272,17 @@ func (s *AccountRepositoryTestSuite) TestSetName() {
 	s.NoError(err)
 	s.Equal("New Name", found.Name)
 }
+
+func (s *AccountRepositoryTestSuite) TestSetEnvironment() {
+	acc := &models.Account{ID: uuid.New(), Name: "Acme", Status: "active", Environment: models.EnvironmentProd}
+	s.Require().NoError(s.repo.Create(context.Background(), acc))
+
+	err := s.repo.SetEnvironment(context.Background(), acc.ID, models.EnvironmentTest)
+	s.NoError(err)
+
+	found, err := s.repo.FindByID(context.Background(), acc.ID)
+	s.NoError(err)
+	s.Equal(models.EnvironmentTest, found.Environment)
+	s.Equal("Acme", found.Name)
+	s.Equal("active", found.Status)
+}
