@@ -20,15 +20,22 @@ type ReconcileWallet struct {
 	dispatcher refresh.Dispatcher
 }
 
+// ReconcileWalletDeps is everything the reconcile:wallet command needs.
+// Balances and Dispatcher are required.
+type ReconcileWalletDeps struct {
+	Balances   *refresh.BalanceService
+	Dispatcher refresh.Dispatcher
+}
+
 // NewReconcileWallet reconciles one wallet in process or on the queue.
-func NewReconcileWallet(balances *refresh.BalanceService, dispatcher refresh.Dispatcher) *ReconcileWallet {
-	if balances == nil {
+func NewReconcileWallet(deps ReconcileWalletDeps) *ReconcileWallet {
+	if deps.Balances == nil {
 		panic("reconcile:wallet: balance refresh service is required")
 	}
-	if dispatcher == nil {
+	if deps.Dispatcher == nil {
 		panic("reconcile:wallet: refresh dispatcher is required")
 	}
-	return &ReconcileWallet{balances: balances, dispatcher: dispatcher}
+	return &ReconcileWallet{balances: deps.Balances, dispatcher: deps.Dispatcher}
 }
 
 func (c *ReconcileWallet) Signature() string {

@@ -57,7 +57,10 @@ func Boot() contractsfoundation.Application {
 				commands.NewRefreshCurrency(registry, balances, dispatcher),
 				commands.NewRefreshTx(balances, dispatcher),
 				commands.NewScanDeposits(deposits),
-				commands.NewReconcileWallet(balances, dispatcher),
+				commands.NewReconcileWallet(commands.ReconcileWalletDeps{
+					Balances:   balances,
+					Dispatcher: dispatcher,
+				}),
 				commands.NewPriceWebSocket(commands.PriceWebSocketDeps{
 					Prices:     prices,
 					CoinAPIKey: container.MustMake[*price.CoinAPICredential]().Key,
