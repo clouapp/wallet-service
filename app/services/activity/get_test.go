@@ -41,7 +41,7 @@ func TestGetUsesActivityReadBeforeLookup(t *testing.T) {
 	reader := &getReader{row: &models.AccountActivity{
 		ID: activityID, AccountID: &stored, ActorUserID: uuid.New(), Action: "member.removed",
 	}}
-	service := NewService(reader)
+	service := NewService(Deps{Rows: reader})
 
 	for _, role := range []string{"owner", "admin", "auditor"} {
 		reader.findCalls = 0
@@ -68,7 +68,7 @@ func TestGetHidesForeignPlatformAndUnknownRows(t *testing.T) {
 
 	accountID := uuid.New()
 	otherID := uuid.New()
-	service := NewService(&getReader{err: models.ErrRepositoryNotFound})
+	service := NewService(Deps{Rows: &getReader{err: models.ErrRepositoryNotFound}})
 
 	for _, id := range []uuid.UUID{uuid.New(), uuid.Nil} {
 		if _, err := service.Get(context.Background(), accountID, "auditor", id); !errors.Is(err, ErrNotFound) {
@@ -77,12 +77,12 @@ func TestGetHidesForeignPlatformAndUnknownRows(t *testing.T) {
 	}
 
 	foreign := &getReader{row: &models.AccountActivity{ID: uuid.New(), AccountID: &otherID}}
-	if _, err := NewService(foreign).Get(context.Background(), accountID, "owner", foreign.row.ID); !errors.Is(err, ErrNotFound) {
+	if _, err := NewService(Deps{Rows: foreign}).Get(context.Background(), accountID, "owner", foreign.row.ID); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("other account: %v", err)
 	}
 
 	platform := &getReader{row: &models.AccountActivity{ID: uuid.New()}}
-	if _, err := NewService(platform).Get(context.Background(), accountID, "admin", platform.row.ID); !errors.Is(err, ErrNotFound) {
+	if _, err := NewService(Deps{Rows: platform}).Get(context.Background(), accountID, "admin", platform.row.ID); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("platform row: %v", err)
 	}
 }

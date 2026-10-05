@@ -48,22 +48,20 @@ type Service struct {
 	admins PlatformAdmins
 }
 
-// NewService builds the account activity reader. The writer is the same
-// repository, injected into the services that change members, settings and flags.
-func NewService(rows Reader) *Service {
-	if rows == nil {
-		panic("account activity service: reader is required")
-	}
-	return &Service{rows: rows}
+// Deps is everything the account activity reader needs. Rows is required.
+// A nil Admins leaves ListPlatform unable to tell a platform admin from anyone else.
+type Deps struct {
+	Rows   Reader
+	Admins PlatformAdmins
 }
 
-// WithPlatformAdmins attaches the platform-admin lookup ListPlatform uses.
-func (s *Service) WithPlatformAdmins(admins PlatformAdmins) *Service {
-	if s == nil {
-		return nil
+// NewService builds the account activity reader. The writer is the same
+// repository, injected into the services that change members, settings and flags.
+func NewService(deps Deps) *Service {
+	if deps.Rows == nil {
+		panic("account activity service: reader is required")
 	}
-	s.admins = admins
-	return s
+	return &Service{rows: deps.Rows, admins: deps.Admins}
 }
 
 // List returns one page, newest first. Owner, admin and auditor may read.
