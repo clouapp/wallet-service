@@ -14,6 +14,7 @@ import (
 	"github.com/macrowallets/waas/app/http/middleware/requestctx"
 	"github.com/macrowallets/waas/app/http/pagination"
 	"github.com/macrowallets/waas/app/http/requests"
+	tokenresource "github.com/macrowallets/waas/app/http/resources/dashboard/accounts"
 	"github.com/macrowallets/waas/app/http/responses"
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/policies"
@@ -439,7 +440,7 @@ func (ctrl *AccountsController) ListAccountTokens(ctx http.Context) http.Respons
 	if err != nil {
 		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to fetch tokens"})
 	}
-	return responses.Send(ctx, http.StatusOK, pagination.Response(AccessTokenViews(tokens), total, limit, offset))
+	return responses.Send(ctx, http.StatusOK, pagination.Response(tokenresource.AccessTokensFrom(tokens), total, limit, offset))
 }
 
 // CreateAccountToken godoc
@@ -519,7 +520,7 @@ func (ctrl *AccountsController) CreateAccountToken(ctx http.Context) http.Respon
 
 	return responses.Send(ctx, http.StatusCreated, http.Json{
 		"token":    jwt,
-		"metadata": AccessTokenViewPtr(token),
+		"metadata": tokenresource.AccessTokenPtr(token),
 	})
 }
 
@@ -590,10 +591,10 @@ type AccountUserListResponse struct {
 }
 
 type AccessTokenListResponse struct {
-	Data []AccessTokenView `json:"data"`
+	Data []tokenresource.AccessToken `json:"data"`
 }
 
 type CreateAccountTokenResponse struct {
-	Token    string          `json:"token"`
-	Metadata AccessTokenView `json:"metadata"`
+	Token    string                    `json:"token"`
+	Metadata tokenresource.AccessToken `json:"metadata"`
 }

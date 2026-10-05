@@ -2,7 +2,6 @@ package accounts
 
 import (
 	"encoding/json"
-	"fmt"
 	"strings"
 	"time"
 
@@ -12,11 +11,11 @@ import (
 	"github.com/macrowallets/waas/app/models"
 )
 
-// AccessTokenView is the access-token row the dashboard reads. Field order and
+// AccessToken is the access-token row the dashboard reads. Field order and
 // tags match the model wire, including embedded timestamps. The token hash stays
 // off the wire. A nil page stays nil; an empty page stays empty. A nil token
 // stays null.
-type AccessTokenView struct {
+type AccessToken struct {
 	CreatedAt     *carbon.DateTime `json:"created_at"`
 	UpdatedAt     *carbon.DateTime `json:"updated_at"`
 	ID            uuid.UUID        `json:"id"`
@@ -31,8 +30,9 @@ type AccessTokenView struct {
 	RevokedAt     *time.Time       `json:"revoked_at,omitempty"`
 }
 
-func newAccessTokenView(token models.AccessToken) AccessTokenView {
-	return AccessTokenView{
+// AccessTokenFrom projects one access token.
+func AccessTokenFrom(token models.AccessToken) AccessToken {
+	return AccessToken{
 		CreatedAt:     token.CreatedAt,
 		UpdatedAt:     token.UpdatedAt,
 		ID:            token.ID,
@@ -48,30 +48,16 @@ func newAccessTokenView(token models.AccessToken) AccessTokenView {
 	}
 }
 
-// AccessTokenViews copies a page. A nil slice stays nil; an empty slice stays empty.
-func AccessTokenViews(tokens []models.AccessToken) []AccessTokenView {
+// AccessTokensFrom copies a page. A nil slice stays nil; an empty slice stays empty.
+func AccessTokensFrom(tokens []models.AccessToken) []AccessToken {
 	if tokens == nil {
 		return nil
 	}
-	views := make([]AccessTokenView, len(tokens))
+	views := make([]AccessToken, len(tokens))
 	for i := range tokens {
-		views[i] = newAccessTokenView(tokens[i])
+		views[i] = AccessTokenFrom(tokens[i])
 	}
 	return views
-}
-
-// storedAPITokenPermissions keeps an empty grant as empty text. The
-// repository omits that value so the jsonb column stays NULL. A non-empty
-// grant is the JSON array the plan stores.
-func storedAPITokenPermissions(permissions []string) (string, error) {
-	if len(permissions) == 0 {
-		return "", nil
-	}
-	raw, err := json.Marshal(permissions)
-	if err != nil {
-		return "", fmt.Errorf("encode api token permissions: %w", err)
-	}
-	return string(raw), nil
 }
 
 // apiTokenPermissionsOnWire reads the stored JSON array. Empty text and a
@@ -88,11 +74,11 @@ func apiTokenPermissionsOnWire(stored string) []string {
 	return permissions
 }
 
-// AccessTokenViewPtr keeps a nil token as JSON null.
-func AccessTokenViewPtr(token *models.AccessToken) *AccessTokenView {
+// AccessTokenPtr keeps a nil token as JSON null.
+func AccessTokenPtr(token *models.AccessToken) *AccessToken {
 	if token == nil {
 		return nil
 	}
-	view := newAccessTokenView(*token)
+	view := AccessTokenFrom(*token)
 	return &view
 }
