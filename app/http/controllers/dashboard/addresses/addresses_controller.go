@@ -25,24 +25,29 @@ type AddressesController struct {
 	deposits      *deposit.Service
 }
 
-func NewAddressesController(
-	addresses *walletrecords.Addresses,
-	walletService func() *wallet.Service,
-	deposits *deposit.Service,
-) *AddressesController {
-	if addresses == nil {
+// AddressesControllerDeps is everything the dashboard addresses controller needs.
+// Every field is required.
+type AddressesControllerDeps struct {
+	Addresses     *walletrecords.Addresses
+	WalletService func() *wallet.Service
+	Deposits      *deposit.Service
+}
+
+// NewAddressesController wires the dashboard address handlers from AddressesControllerDeps.
+func NewAddressesController(deps AddressesControllerDeps) *AddressesController {
+	if deps.Addresses == nil {
 		panic("dashboard addresses controller: addresses service is required")
 	}
-	if walletService == nil || walletService() == nil {
+	if deps.WalletService == nil || deps.WalletService() == nil {
 		panic("dashboard addresses controller: wallet service is required")
 	}
-	if deposits == nil {
+	if deps.Deposits == nil {
 		panic("dashboard addresses controller: deposit service is required")
 	}
 	return &AddressesController{
-		addresses:     addresses,
-		walletService: walletService,
-		deposits:      deposits,
+		addresses:     deps.Addresses,
+		walletService: deps.WalletService,
+		deposits:      deps.Deposits,
 	}
 }
 

@@ -416,11 +416,11 @@ func newDashboardPreferencesController() *dashpreferences.PreferencesController 
 }
 
 func newDashboardAddressesController() *dashaddresses.AddressesController {
-	return dashaddresses.NewAddressesController(
-		container.MustMake[*walletrecords.Addresses](),
-		currentWalletService,
-		container.MustMake[*deposit.Service](),
-	)
+	return dashaddresses.NewAddressesController(dashaddresses.AddressesControllerDeps{
+		Addresses:     container.MustMake[*walletrecords.Addresses](),
+		WalletService: currentWalletService,
+		Deposits:      container.MustMake[*deposit.Service](),
+	})
 }
 
 func newDashboardWithdrawalsController() *dashwithdrawals.WithdrawalsController {
