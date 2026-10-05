@@ -87,13 +87,16 @@ func (r refuseSessionActivity) Append(context.Context, models.AccountActivity) e
 
 func sessionRevoker(t *testing.T, activity authsvc.SessionActivity) *authsvc.SessionRevoker {
 	t.Helper()
-	revoker, err := authsvc.NewSessionRevoker(
-		repositories.NewUserRepository(nil),
-		repositories.NewRefreshTokenRepository(nil),
-	)
-	require.NoError(t, err)
 	now := time.Date(2026, 10, 3, 15, 0, 0, 0, time.UTC)
-	return revoker.WithClock(func() time.Time { return now }, func(time.Duration) {}).WithActivity(activity)
+	revoker, err := authsvc.NewSessionRevoker(authsvc.RevokerDeps{
+		Watermarks: repositories.NewUserRepository(nil),
+		Refresh:    repositories.NewRefreshTokenRepository(nil),
+		Activity:   activity,
+		Now:        func() time.Time { return now },
+		Sleep:      func(time.Duration) {},
+	})
+	require.NoError(t, err)
+	return revoker
 }
 
 func insertSessionUser(t *testing.T) uuid.UUID {

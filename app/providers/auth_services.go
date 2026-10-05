@@ -83,13 +83,17 @@ func wireAuthServices(c *container.Container) error {
 	if err != nil {
 		return fmt.Errorf("vault: two factor login: %w", err)
 	}
-	revoker, err := authsvc.NewSessionRevoker(bridge, bridge)
+	revoker, err := authsvc.NewSessionRevoker(authsvc.RevokerDeps{
+		Watermarks: bridge,
+		Refresh:    bridge,
+		Activity:   repositories.NewAccountActivityRepository(nil),
+	})
 	if err != nil {
 		return fmt.Errorf("vault: session revoker: %w", err)
 	}
 
 	c.SecondFactor = verifier
 	c.TwoFactorLogin = login
-	c.SessionRevoker = revoker.WithActivity(repositories.NewAccountActivityRepository(nil))
+	c.SessionRevoker = revoker
 	return nil
 }

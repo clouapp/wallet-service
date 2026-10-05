@@ -46,34 +46,37 @@ type SessionRevoker struct {
 	sleep      func(time.Duration)
 }
 
-func NewSessionRevoker(watermarks SessionWatermarkStore, refresh RefreshTokenRevoker) (*SessionRevoker, error) {
-	if watermarks == nil || refresh == nil {
+// RevokerDeps is everything the session revoker uses. Watermarks and Refresh
+// are required. A nil Activity leaves RevokeAll as a watermark and
+// refresh-token revoke with no audit row. A nil Now or Sleep uses time.Now
+// and time.Sleep.
+type RevokerDeps struct {
+	Watermarks SessionWatermarkStore
+	Refresh    RefreshTokenRevoker
+	Activity   SessionActivity
+	Now        func() time.Time
+	Sleep      func(time.Duration)
+}
+
+func NewSessionRevoker(deps RevokerDeps) (*SessionRevoker, error) {
+	if deps.Watermarks == nil || deps.Refresh == nil {
 		return nil, errors.New("auth: session revoker: all dependencies are required")
 	}
-	return &SessionRevoker{watermarks: watermarks, refresh: refresh, now: time.Now, sleep: time.Sleep}, nil
-}
-
-// WithClock replaces the time source and the sleeper; tests use it to pin
-// the watermark and observe waits.
-func (r *SessionRevoker) WithClock(now func() time.Time, sleep func(time.Duration)) *SessionRevoker {
-	if r == nil {
-		return nil
+	now := deps.Now
+	if now == nil {
+		now = time.Now
 	}
-	clone := *r
-	clone.now = now
-	clone.sleep = sleep
-	return &clone
-}
-
-// WithActivity attaches the platform activity writer. A nil writer leaves
-// RevokeAll as a watermark and refresh-token revoke with no audit row.
-func (r *SessionRevoker) WithActivity(activity SessionActivity) *SessionRevoker {
-	if r == nil {
-		return nil
+	sleep := deps.Sleep
+	if sleep == nil {
+		sleep = time.Sleep
 	}
-	clone := *r
-	clone.activity = activity
-	return &clone
+	return &SessionRevoker{
+		watermarks: deps.Watermarks,
+		refresh:    deps.Refresh,
+		activity:   deps.Activity,
+		now:        now,
+		sleep:      sleep,
+	}, nil
 }
 
 // RevokeAll revokes the refresh tokens and moves the watermark to the start

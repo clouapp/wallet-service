@@ -87,9 +87,14 @@ func newObservedRevoker(t *testing.T, now time.Time) (*authsvc.SessionRevoker, *
 	watermarks := &fakeWatermarks{at: map[uuid.UUID]time.Time{}}
 	refresh := &fakeRefreshRevoker{}
 	sleeps := &recordedSleeps{}
-	revoker, err := authsvc.NewSessionRevoker(watermarks, refresh)
+	revoker, err := authsvc.NewSessionRevoker(authsvc.RevokerDeps{
+		Watermarks: watermarks,
+		Refresh:    refresh,
+		Now:        func() time.Time { return now },
+		Sleep:      sleeps.sleep,
+	})
 	require.NoError(t, err)
-	return revoker.WithClock(func() time.Time { return now }, sleeps.sleep), watermarks, refresh, sleeps
+	return revoker, watermarks, refresh, sleeps
 }
 
 func TestSessionRevoker_MovesTheWatermarkAndRevokesRefreshTokens(t *testing.T) {
@@ -152,22 +157,28 @@ func TestSessionRevoker_AwaitIssuableRefusesAWatermarkFarAhead(t *testing.T) {
 
 func TestSessionRevoker_PropagatesStoreFailures(t *testing.T) {
 	watermarkFailure := errors.New("db down")
-	revoker, err := authsvc.NewSessionRevoker(&fakeWatermarks{err: watermarkFailure}, &fakeRefreshRevoker{})
+	revoker, err := authsvc.NewSessionRevoker(authsvc.RevokerDeps{
+		Watermarks: &fakeWatermarks{err: watermarkFailure},
+		Refresh:    &fakeRefreshRevoker{},
+	})
 	require.NoError(t, err)
 	_, err = revoker.RevokeAll(context.Background(), uuid.New())
 	require.ErrorIs(t, err, watermarkFailure)
 
 	refreshFailure := errors.New("refresh down")
-	revoker, err = authsvc.NewSessionRevoker(&fakeWatermarks{at: map[uuid.UUID]time.Time{}}, &fakeRefreshRevoker{err: refreshFailure})
+	revoker, err = authsvc.NewSessionRevoker(authsvc.RevokerDeps{
+		Watermarks: &fakeWatermarks{at: map[uuid.UUID]time.Time{}},
+		Refresh:    &fakeRefreshRevoker{err: refreshFailure},
+	})
 	require.NoError(t, err)
 	_, err = revoker.RevokeAll(context.Background(), uuid.New())
 	require.ErrorIs(t, err, refreshFailure)
 }
 
 func TestSessionRevoker_RejectsInvalidInput(t *testing.T) {
-	_, err := authsvc.NewSessionRevoker(nil, &fakeRefreshRevoker{})
+	_, err := authsvc.NewSessionRevoker(authsvc.RevokerDeps{Refresh: &fakeRefreshRevoker{}})
 	require.Error(t, err)
-	_, err = authsvc.NewSessionRevoker(&fakeWatermarks{}, nil)
+	_, err = authsvc.NewSessionRevoker(authsvc.RevokerDeps{Watermarks: &fakeWatermarks{}})
 	require.Error(t, err)
 
 	revoker, _, _ := newTestRevoker(t, time.Now())
@@ -182,9 +193,14 @@ func TestSessionRevoker_AttributesAPlatformRevokeToTheActor(t *testing.T) {
 	watermarks := &fakeWatermarks{at: map[uuid.UUID]time.Time{}}
 	refresh := &fakeRefreshRevoker{}
 	activity := &recordingSessionActivity{}
-	revoker, err := authsvc.NewSessionRevoker(watermarks, refresh)
+	revoker, err := authsvc.NewSessionRevoker(authsvc.RevokerDeps{
+		Watermarks: watermarks,
+		Refresh:    refresh,
+		Activity:   activity,
+		Now:        func() time.Time { return now },
+		Sleep:      func(time.Duration) {},
+	})
 	require.NoError(t, err)
-	revoker = revoker.WithClock(func() time.Time { return now }, func(time.Duration) {}).WithActivity(activity)
 	actorID := uuid.New()
 	userID := uuid.New()
 
@@ -207,9 +223,14 @@ func TestSessionRevoker_WritesAPlatformRowInsideTheTransaction(t *testing.T) {
 	watermarks := &fakeWatermarks{at: map[uuid.UUID]time.Time{}}
 	refresh := &fakeRefreshRevoker{}
 	activity := &recordingSessionActivity{}
-	revoker, err := authsvc.NewSessionRevoker(watermarks, refresh)
+	revoker, err := authsvc.NewSessionRevoker(authsvc.RevokerDeps{
+		Watermarks: watermarks,
+		Refresh:    refresh,
+		Activity:   activity,
+		Now:        func() time.Time { return now },
+		Sleep:      func(time.Duration) {},
+	})
 	require.NoError(t, err)
-	revoker = revoker.WithClock(func() time.Time { return now }, func(time.Duration) {}).WithActivity(activity)
 	userID := uuid.New()
 	const tokenHash = "session-token-hash-must-not-be-stored"
 
@@ -239,9 +260,12 @@ func TestSessionRevoker_ActivityFailureFailsTheRevocation(t *testing.T) {
 	watermarks := &fakeWatermarks{at: map[uuid.UUID]time.Time{}}
 	refresh := &fakeRefreshRevoker{}
 	activity := &recordingSessionActivity{fail: errors.New("activity refused")}
-	revoker, err := authsvc.NewSessionRevoker(watermarks, refresh)
+	revoker, err := authsvc.NewSessionRevoker(authsvc.RevokerDeps{
+		Watermarks: watermarks,
+		Refresh:    refresh,
+		Activity:   activity,
+	})
 	require.NoError(t, err)
-	revoker = revoker.WithActivity(activity)
 
 	_, err = revoker.RevokeAll(context.Background(), uuid.New())
 
