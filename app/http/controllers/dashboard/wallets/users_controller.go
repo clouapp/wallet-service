@@ -87,9 +87,6 @@ func (ctrl *UsersController) ListWalletUsers(ctx http.Context) http.Response {
 // @Router       /wallets/{walletId}/users [post]
 func (ctrl *UsersController) AddWalletUser(ctx http.Context) http.Response {
 	wallet := requestctx.MustWallet(ctx)
-	if resp := controllers.Deny(ctx, policies.WalletAddUser(controllers.WalletMembership(ctx, ctrl.memberships, wallet.ID))); resp != nil {
-		return resp
-	}
 
 	var req requests.AddWalletUserRequest
 	if resp := validateRequest(ctx, &req); resp != nil {

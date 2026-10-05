@@ -46,6 +46,7 @@ const (
 	chainWallet             = "SessionAuth > AccountHeader > TOTPEnrollment > WalletContext"
 	chainMoveFunds          = chainWallet + " > RequireFundAction"
 	chainGenerateAddress    = chainWallet + " > Can(addresses.create)"
+	chainWalletAddUser      = chainWallet + " > WalletAddUser"
 	chainUnspent            = "SessionAuth > AccountHeader > TOTPEnrollment > WalletContext > UTXOOnly"
 	chainAPI                = "APITokenAuth"
 	chainAPIWallet          = "APITokenAuth > APIWalletContext"
@@ -205,7 +206,7 @@ var routeTable = map[string]routeSecurity{
 	"GET|HEAD /v1/wallets/{walletId}/transactions/{txId}":              session(chainWallet),
 	"GET|HEAD /v1/wallets/{walletId}/unspents":                         session(chainUnspent),
 	"GET|HEAD /v1/wallets/{walletId}/users":                            session(chainWallet),
-	"POST /v1/wallets/{walletId}/users":                                session(chainWallet),
+	"POST /v1/wallets/{walletId}/users":                                session(chainWalletAddUser),
 	"DELETE /v1/wallets/{walletId}/users/{userId}":                     session(chainWallet),
 	"GET|HEAD /v1/wallets/{walletId}/webhooks":                         session(chainWallet),
 	"POST /v1/wallets/{walletId}/webhooks":                             session(chainWallet),
