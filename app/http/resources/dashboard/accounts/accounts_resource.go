@@ -7,12 +7,12 @@ import (
 	"github.com/macrowallets/waas/app/models"
 )
 
-// AccountView is the account row the dashboard reads. Field order and tags
+// Account is the account row the dashboard reads. Field order and tags
 // match the model wire, including the embedded timestamps. A nil pointer stays
 // nil. Empty omitempty pointers stay omitted; a non-nil empty string stays "".
 // SweepLimits is not an accounts column. It is a JSON string: nil omits the
 // field (the contract snapshot), and a caller fills it from account_sweep_limits.
-type AccountView struct {
+type Account struct {
 	CreatedAt       *carbon.DateTime `json:"created_at"`
 	UpdatedAt       *carbon.DateTime `json:"updated_at"`
 	ID              uuid.UUID        `json:"id"`
@@ -24,8 +24,9 @@ type AccountView struct {
 	SweepLimits     *string          `json:"sweep_limits,omitempty"`
 }
 
-func NewAccountView(account models.Account) AccountView {
-	return AccountView{
+// AccountFrom projects one account.
+func AccountFrom(account models.Account) Account {
+	return Account{
 		CreatedAt:       account.CreatedAt,
 		UpdatedAt:       account.UpdatedAt,
 		ID:              account.ID,
@@ -37,11 +38,11 @@ func NewAccountView(account models.Account) AccountView {
 	}
 }
 
-// AccountViewPtr keeps a nil account as JSON null.
-func AccountViewPtr(account *models.Account) *AccountView {
+// AccountPtr keeps a nil account as JSON null.
+func AccountPtr(account *models.Account) *Account {
 	if account == nil {
 		return nil
 	}
-	view := NewAccountView(*account)
+	view := AccountFrom(*account)
 	return &view
 }

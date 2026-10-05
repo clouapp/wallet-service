@@ -1,4 +1,4 @@
-package accounts
+package accounts_test
 
 import (
 	"encoding/json"
@@ -7,10 +7,11 @@ import (
 	"github.com/google/uuid"
 	"github.com/goravel/framework/support/carbon"
 
+	"github.com/macrowallets/waas/app/http/resources/dashboard/accounts"
 	"github.com/macrowallets/waas/app/models"
 )
 
-func TestAccountViewKeepsTheModelWire(t *testing.T) {
+func TestAccountKeepsTheModelWire(t *testing.T) {
 	t.Parallel()
 
 	id := uuid.MustParse("11111111-1111-4111-8111-111111111111")
@@ -26,17 +27,17 @@ func TestAccountViewKeepsTheModelWire(t *testing.T) {
 	}
 	full.CreatedAt = created
 	full.UpdatedAt = updated
-	fullView := NewAccountView(full)
+	fullView := accounts.AccountFrom(full)
 	fullView.SweepLimits = &limits
-	emptyView := NewAccountView(models.Account{LinkedAccountID: &uuid.UUID{}})
+	emptyView := accounts.AccountFrom(models.Account{LinkedAccountID: &uuid.UUID{}})
 	emptyView.SweepLimits = &empty
 
 	cases := []struct {
-		view AccountView
+		view accounts.Account
 		want string
 	}{
 		{
-			view: NewAccountView(models.Account{}),
+			view: accounts.AccountFrom(models.Account{}),
 			want: `{"created_at":null,"updated_at":null,"id":"00000000-0000-0000-0000-000000000000","name":"","status":"","view_all_wallets":false,"environment":""}`,
 		},
 		{
@@ -59,10 +60,10 @@ func TestAccountViewKeepsTheModelWire(t *testing.T) {
 	}
 }
 
-func TestAccountViewPtrKeepsNil(t *testing.T) {
+func TestAccountPtrKeepsNil(t *testing.T) {
 	t.Parallel()
 
-	raw, err := json.Marshal(AccountViewPtr(nil))
+	raw, err := json.Marshal(accounts.AccountPtr(nil))
 	if err != nil {
 		t.Fatal(err)
 	}

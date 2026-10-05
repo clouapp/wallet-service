@@ -73,11 +73,11 @@ func NewAccountsController(
 	}
 }
 
-func (ctrl *AccountsController) accountView(ctx http.Context, account models.Account) (AccountView, error) {
-	view := NewAccountView(account)
+func (ctrl *AccountsController) accountView(ctx http.Context, account models.Account) (tokenresource.Account, error) {
+	view := tokenresource.AccountFrom(account)
 	document, err := ctrl.limits.AccountSweepLimitsWire(ctx.Context(), account.ID)
 	if err != nil {
-		return AccountView{}, err
+		return tokenresource.Account{}, err
 	}
 	view.SweepLimits = document
 	return view, nil
@@ -91,7 +91,7 @@ func (ctrl *AccountsController) accountView(ctx http.Context, account models.Acc
 // @Accept       json
 // @Produce      json
 // @Param        request  body      CreateAccountSwagger  true  "Account payload"
-// @Success      201      {object}  AccountView
+// @Success      201      {object}  tokenresource.Account
 // @Failure      400      {object}  ErrorResponse
 // @Failure      401      {object}  ErrorResponse
 // @Router       /accounts [post]
@@ -136,7 +136,7 @@ func (ctrl *AccountsController) GetAccount(ctx http.Context) http.Response {
 		appfacades.Log().WithContext(ctx).Errorf("account: active features: %v", err)
 		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to fetch account"})
 	}
-	return responses.Send(ctx, http.StatusOK, AccountDetail{AccountView: view, Features: names})
+	return responses.Send(ctx, http.StatusOK, AccountDetail{Account: view, Features: names})
 }
 
 // AccountDetail is GET /v1/accounts/{accountId}. Existing account fields stay.
@@ -144,7 +144,7 @@ func (ctrl *AccountsController) GetAccount(ctx http.Context) http.Response {
 // account row uses the catalog default. Global rows are not included. Create
 // and update do not carry this field.
 type AccountDetail struct {
-	AccountView
+	tokenresource.Account
 	Features []string `json:"features"`
 }
 
@@ -157,7 +157,7 @@ type AccountDetail struct {
 // @Produce      json
 // @Param        accountId  path      string                      true  "Account UUID"
 // @Param        request    body      UpdateAccountSwagger        true  "Update payload"
-// @Success      200        {object}  AccountView
+// @Success      200        {object}  tokenresource.Account
 // @Failure      400        {object}  ErrorResponse
 // @Failure      403        {object}  ErrorResponse
 // @Router       /accounts/{accountId} [patch]
@@ -190,7 +190,7 @@ func (ctrl *AccountsController) UpdateAccount(ctx http.Context) http.Response {
 // @Security     BearerAuth
 // @Produce      json
 // @Param        accountId  path  string  true  "Account UUID"
-// @Success      200        {object}  AccountView
+// @Success      200        {object}  tokenresource.Account
 // @Failure      403        {object}  ErrorResponse
 // @Failure      404        {object}  ErrorResponse
 // @Router       /accounts/{accountId}/archive [post]
@@ -217,7 +217,7 @@ func (ctrl *AccountsController) ArchiveAccount(ctx http.Context) http.Response {
 // @Security     BearerAuth
 // @Produce      json
 // @Param        accountId  path  string  true  "Account UUID"
-// @Success      200        {object}  AccountView
+// @Success      200        {object}  tokenresource.Account
 // @Failure      403        {object}  ErrorResponse
 // @Router       /accounts/{accountId}/freeze [post]
 func (ctrl *AccountsController) FreezeAccount(ctx http.Context) http.Response {

@@ -7,7 +7,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/goravel/framework/support/carbon"
 
-	dashboardaccounts "github.com/macrowallets/waas/app/http/controllers/dashboard/accounts"
+	accountresource "github.com/macrowallets/waas/app/http/resources/dashboard/accounts"
 	"github.com/macrowallets/waas/app/models"
 )
 
@@ -25,10 +25,10 @@ func TestMyAccountKeepsTheAccountWire(t *testing.T) {
 	}
 	full.CreatedAt = created
 	full.UpdatedAt = updated
-	view := dashboardaccounts.NewAccountView(full)
+	view := accountresource.AccountFrom(full)
 	view.SweepLimits = &limits
 
-	raw, err := json.Marshal(myAccount{AccountView: view, Role: "owner"})
+	raw, err := json.Marshal(myAccount{Account: view, Role: "owner"})
 	if err != nil {
 		t.Fatal(err)
 	}

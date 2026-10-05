@@ -10,10 +10,10 @@ import (
 
 	appfacades "github.com/macrowallets/waas/app/facades"
 	"github.com/macrowallets/waas/app/http/controllers"
-	dashboardaccounts "github.com/macrowallets/waas/app/http/controllers/dashboard/accounts"
 	"github.com/macrowallets/waas/app/http/middleware/requestctx"
 	"github.com/macrowallets/waas/app/http/pagination"
 	"github.com/macrowallets/waas/app/http/requests"
+	accountresource "github.com/macrowallets/waas/app/http/resources/dashboard/accounts"
 	"github.com/macrowallets/waas/app/http/responses"
 	"github.com/macrowallets/waas/app/models"
 	accountsvc "github.com/macrowallets/waas/app/services/account"
@@ -275,16 +275,16 @@ func (ctrl *UsersController) accountsWithCallerRole(ctx http.Context, userID uui
 		if err != nil {
 			return nil, err
 		}
-		items = append(items, myAccount{AccountView: view, Role: role})
+		items = append(items, myAccount{Account: view, Role: role})
 	}
 	return items, nil
 }
 
-func (ctrl *UsersController) accountView(ctx http.Context, account models.Account) (dashboardaccounts.AccountView, error) {
-	view := dashboardaccounts.NewAccountView(account)
+func (ctrl *UsersController) accountView(ctx http.Context, account models.Account) (accountresource.Account, error) {
+	view := accountresource.AccountFrom(account)
 	document, err := ctrl.limits.AccountSweepLimitsWire(ctx.Context(), account.ID)
 	if err != nil {
-		return dashboardaccounts.AccountView{}, err
+		return accountresource.Account{}, err
 	}
 	view.SweepLimits = document
 	return view, nil
@@ -342,7 +342,7 @@ func (ctrl *UsersController) UpdateDefaultAccount(ctx http.Context) http.Respons
 
 	account, _ := ctrl.accounts.FindByID(ctx.Context(), accountID)
 	if account == nil {
-		return responses.Send(ctx, http.StatusOK, http.Json{"account": dashboardaccounts.AccountViewPtr(nil)})
+		return responses.Send(ctx, http.StatusOK, http.Json{"account": accountresource.AccountPtr(nil)})
 	}
 	view, err := ctrl.accountView(ctx, *account)
 	if err != nil {
@@ -530,7 +530,7 @@ type UpdateDefaultAccountSwagger struct {
 // stay; role is the caller's account_users.role, returned as stored
 // (owner, admin, auditor, or user).
 type myAccount struct {
-	dashboardaccounts.AccountView
+	accountresource.Account
 	Role string `json:"role" example:"owner"`
 }
 
