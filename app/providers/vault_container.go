@@ -385,13 +385,19 @@ func buildVaultContainer(app foundation.Application) (*container.Container, erro
 		TokenPricer:    c.PriceService,
 		DustUSDDefault: nil,
 	})
-	c.WithdrawalService = withdraw.NewService(
-		c.Registry, c.WebhookService, c.MPCService, redislock.New(c.Redis),
-		c.TransactionRepo, c.WalletRepo, c.AddressRepo, c.SweepService,
-		func(ctx context.Context, accountID uuid.UUID) error {
+	c.WithdrawalService = withdraw.NewService(withdraw.Deps{
+		Registry:     c.Registry,
+		Webhook:      c.WebhookService,
+		MPC:          c.MPCService,
+		Locker:       redislock.New(c.Redis),
+		Transactions: c.TransactionRepo,
+		Wallets:      c.WalletRepo,
+		Addresses:    c.AddressRepo,
+		Sweep:        c.SweepService,
+		Flags: func(ctx context.Context, accountID uuid.UUID) error {
 			return flags.Gate(ctx, accountID, features.FlagWithdrawalsEnabled, features.CodeWithdrawalsPaused)
 		},
-	)
+	})
 	c.WithdrawalService.UseUSDQuote(c.PriceService)
 	verifier, ok := c.SecondFactor.(*authsvc.SecondFactorVerifier)
 	if !ok || verifier == nil {

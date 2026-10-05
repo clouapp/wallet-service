@@ -27,8 +27,10 @@ func TestWithdrawalRequestHonoursAClosedGlobalFlag(t *testing.T) {
 		t.Fatalf("close global: %v", err)
 	}
 
-	worker := withdraw.NewService(nil, nil, nil, nil, nil, nil, nil, nil, func(ctx context.Context, id uuid.UUID) error {
-		return flags.Gate(ctx, id, FlagWithdrawalsEnabled, CodeWithdrawalsPaused)
+	worker := withdraw.NewService(withdraw.Deps{
+		Flags: func(ctx context.Context, id uuid.UUID) error {
+			return flags.Gate(ctx, id, FlagWithdrawalsEnabled, CodeWithdrawalsPaused)
+		},
 	})
 	_, _, err := worker.Request(ctx, withdraw.WithdrawRequest{
 		Passphrase:      "validpassphrase123",

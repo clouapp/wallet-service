@@ -72,27 +72,32 @@ type Service struct {
 	createChains ChainCatalog
 }
 
-func NewService(
-	registry *chainpkg.Registry,
-	webhookSvc *webhook.Service,
-	mpc mpcpkg.Service,
-	locker Locker,
-	transactionRepo *repositories.TransactionRepository,
-	walletRepo *repositories.WalletRepository,
-	addressRepo *repositories.AddressRepository,
-	sweepSvc sweep.Service,
-	flags accountGate,
-) *Service {
+// Deps is everything the withdrawal service needs. A nil field means that
+// dependency is absent.
+type Deps struct {
+	Registry     *chainpkg.Registry
+	Webhook      *webhook.Service
+	MPC          mpcpkg.Service
+	Locker       Locker
+	Transactions *repositories.TransactionRepository
+	Wallets      *repositories.WalletRepository
+	Addresses    *repositories.AddressRepository
+	Sweep        sweep.Service
+	Flags        accountGate
+}
+
+// NewService wires the withdrawal service from Deps.
+func NewService(deps Deps) *Service {
 	return &Service{
-		registry:        registry,
-		webhookSvc:      webhookSvc,
-		mpc:             mpc,
-		locker:          locker,
-		transactionRepo: transactionRepo,
-		walletRepo:      walletRepo,
-		addressRepo:     addressRepo,
-		sweep:           sweepSvc,
-		flags:           flags,
+		registry:        deps.Registry,
+		webhookSvc:      deps.Webhook,
+		mpc:             deps.MPC,
+		locker:          deps.Locker,
+		transactionRepo: deps.Transactions,
+		walletRepo:      deps.Wallets,
+		addressRepo:     deps.Addresses,
+		sweep:           deps.Sweep,
+		flags:           deps.Flags,
 	}
 }
 
