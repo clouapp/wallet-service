@@ -529,10 +529,14 @@ func buildWebhookIngest(c *container.Container, accountSettings *settings.Servic
 		"quicknode": providers.NewQuickNodeProvider("").UseKeySource(func(ctx context.Context) string { return keyFor(ctx, "quicknode") }),
 	}
 	c.WebhookProviders = providerMap
+	syncers := make(map[string]webhooksync.AddressSyncer, len(providerMap))
+	for name, provider := range providerMap {
+		syncers[name] = provider
+	}
 	c.WebhookSyncService = webhooksync.NewService(webhooksync.Deps{
 		Subscriptions: c.WebhookSubscriptionRepo,
 		Addresses:     c.AddressRepo,
-		Providers:     providerMap,
+		Providers:     syncers,
 		ProviderKey:   keyFor,
 	})
 }

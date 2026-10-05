@@ -16,7 +16,6 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/macrowallets/waas/app/models"
-	"github.com/macrowallets/waas/app/services/ingest/providers"
 	"github.com/macrowallets/waas/pkg/types"
 )
 
@@ -45,10 +44,15 @@ type subscriptionStore interface {
 	RecordSync(ctx context.Context, id uuid.UUID, status, hash string, syncedAt time.Time) error
 }
 
+// AddressSyncer pushes the full active address list to one provider webhook.
+type AddressSyncer interface {
+	SyncAddresses(ctx context.Context, webhookID string, allAddresses []string) error
+}
+
 type Service struct {
 	subscriptionRepo subscriptionStore
 	addressRepo      activeAddresses
-	providers        map[string]providers.WebhookProvider
+	providers        map[string]AddressSyncer
 	providerKey      ProviderKey
 	openSecret       signingSecretOpener
 	mu               sync.Map // subscription id -> *sync.Mutex
@@ -59,7 +63,7 @@ type Service struct {
 type Deps struct {
 	Subscriptions subscriptionStore
 	Addresses     activeAddresses
-	Providers     map[string]providers.WebhookProvider
+	Providers     map[string]AddressSyncer
 	// ProviderKey re-reads the provider credential on every sync. Nil keeps
 	// the providers in Providers and does not consult settings.
 	ProviderKey ProviderKey

@@ -12,7 +12,6 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/macrowallets/waas/app/models"
-	"github.com/macrowallets/waas/app/services/ingest/providers"
 	"github.com/macrowallets/waas/app/services/settings"
 )
 
@@ -37,7 +36,7 @@ func TestSyncChainAddresses_ReadsTheProviderKeyOnEverySync(t *testing.T) {
 	service := NewService(Deps{
 		Subscriptions: syncSubs{},
 		Addresses:     syncAddresses{},
-		Providers: map[string]providers.WebhookProvider{
+		Providers: map[string]AddressSyncer{
 			"alchemy": stub,
 		},
 		ProviderKey: func(ctx context.Context, provider string) string {
@@ -67,7 +66,7 @@ func TestSyncChainAddresses_EmptyKeyDoesNotCallTheProvider(t *testing.T) {
 	service := NewService(Deps{
 		Subscriptions: syncSubs{},
 		Addresses:     syncAddresses{},
-		Providers: map[string]providers.WebhookProvider{
+		Providers: map[string]AddressSyncer{
 			"alchemy": stub,
 		},
 		ProviderKey: func(context.Context, string) string { return "" },
@@ -116,25 +115,9 @@ type syncStub struct {
 	calls int
 }
 
-func (s *syncStub) ProviderName() string { return "alchemy" }
-
-func (s *syncStub) CreateWebhook(context.Context, providers.ProviderConfig) (*providers.ProviderWebhook, error) {
-	return nil, errors.New("create is not used")
-}
-
 func (s *syncStub) SyncAddresses(context.Context, string, []string) error {
 	s.calls++
 	return nil
-}
-
-func (s *syncStub) DeleteWebhook(context.Context, string) error { return nil }
-
-func (s *syncStub) VerifyInbound(providers.Header, []byte, string) (bool, error) {
-	return false, errors.New("verify is not used")
-}
-
-func (s *syncStub) ParsePayload([]byte) ([]providers.InboundTransfer, error) {
-	return nil, errors.New("parse is not used")
 }
 
 type syncSettingsRows struct {
