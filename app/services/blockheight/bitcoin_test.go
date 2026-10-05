@@ -2,6 +2,7 @@ package blockheight
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"sync/atomic"
@@ -35,70 +36,46 @@ func newTipServer(t *testing.T, status int, body string) *tipServer {
 	return srv
 }
 
-// bitcoinProviderAgainst points every Bitcoin tip source at a fake server.
-func bitcoinProviderAgainst(blockstream, testnet4 *tipServer) *BitcoinProvider {
-	p := NewBitcoinProvider()
+// tipSource is the testnet4 port. The HTTP reader lives in the mempool adapter.
+type tipSource struct {
+	height uint64
+	err    error
+	hits   atomic.Int32
+}
+
+func (s *tipSource) GetBlockHeight(context.Context, string) (uint64, error) {
+	s.hits.Add(1)
+	if s.err != nil {
+		return 0, s.err
+	}
+	return s.height, nil
+}
+
+// bitcoinProviderAgainst points Blockstream at a fake server and testnet4 at source.
+func bitcoinProviderAgainst(blockstream *tipServer, testnet4 Provider) *BitcoinProvider {
+	p := NewBitcoinProvider(BitcoinDeps{Testnet4: testnet4})
 	p.blockstream.client = httpclient.Wrap(blockstream.Client())
 	p.blockstream.mainnetURL = blockstream.URL + tipHeightPath
 	p.blockstream.testnetURL = blockstream.URL + tipHeightPath
-	p.testnet4.client = httpclient.Wrap(testnet4.Client())
-	p.testnet4.url = testnet4.URL + tipHeightPath
 	return p
-}
-
-func TestMempoolTestnet4Provider_ReadsTheTip(t *testing.T) {
-	srv := newTipServer(t, http.StatusOK, "154745\n")
-	p := NewMempoolTestnet4Provider()
-	p.client = httpclient.Wrap(srv.Client())
-	p.url = srv.URL + tipHeightPath
-
-	height, err := p.GetBlockHeight(context.Background(), TipSourceBitcoinTestnet4)
-
-	require.NoError(t, err)
-	assert.Equal(t, uint64(154745), height)
-}
-
-func TestMempoolTestnet4Provider_DefaultsToMempoolSpaceTestnet4(t *testing.T) {
-	assert.Equal(t, "https://mempool.space/testnet4/api/blocks/tip/height", NewMempoolTestnet4Provider().url)
-}
-
-func TestMempoolTestnet4Provider_RejectsChainIDsAndBadResponses(t *testing.T) {
-	ctx := context.Background()
-	for _, key := range []string{models.ChainTBTC, models.ChainBTC, ""} {
-		_, err := NewMempoolTestnet4Provider().GetBlockHeight(ctx, key)
-		assert.Error(t, err, key)
-	}
-
-	for name, srv := range map[string]*tipServer{
-		"http 429":     newTipServer(t, http.StatusTooManyRequests, "slow down"),
-		"http 500":     newTipServer(t, http.StatusInternalServerError, "boom"),
-		"not a number": newTipServer(t, http.StatusOK, "<html>"),
-		"negative":     newTipServer(t, http.StatusOK, "-1"),
-		"zero":         newTipServer(t, http.StatusOK, "0"),
-	} {
-		p := NewMempoolTestnet4Provider()
-		p.client = httpclient.Wrap(srv.Client())
-		p.url = srv.URL + tipHeightPath
-		_, err := p.GetBlockHeight(ctx, TipSourceBitcoinTestnet4)
-		assert.Error(t, err, name)
-	}
 }
 
 func TestBitcoinProvider_Testnet4NeverReachesBlockstream(t *testing.T) {
 	blockstream := newTipServer(t, http.StatusOK, "4800000")
-	testnet4 := newTipServer(t, http.StatusOK, "154745")
+	testnet4 := &tipSource{height: 154745}
 	p := bitcoinProviderAgainst(blockstream, testnet4)
 
 	height, err := p.GetBlockHeight(context.Background(), TipSourceBitcoinTestnet4)
 
 	require.NoError(t, err)
 	assert.Equal(t, uint64(154745), height)
+	assert.Equal(t, int32(1), testnet4.hits.Load())
 	assert.Zero(t, blockstream.hits.Load())
 }
 
 func TestBitcoinProvider_Testnet4FailureDoesNotFallBackToTestnet3(t *testing.T) {
 	blockstream := newTipServer(t, http.StatusOK, "4800000")
-	testnet4 := newTipServer(t, http.StatusServiceUnavailable, "down")
+	testnet4 := &tipSource{err: errors.New("down")}
 	p := bitcoinProviderAgainst(blockstream, testnet4)
 
 	_, err := p.GetBlockHeight(context.Background(), TipSourceBitcoinTestnet4)
@@ -107,9 +84,14 @@ func TestBitcoinProvider_Testnet4FailureDoesNotFallBackToTestnet3(t *testing.T) 
 	assert.Zero(t, blockstream.hits.Load())
 }
 
+func TestBitcoinProvider_MissingTestnet4IsAnError(t *testing.T) {
+	_, err := NewBitcoinProvider(BitcoinDeps{}).GetBlockHeight(context.Background(), TipSourceBitcoinTestnet4)
+	require.Error(t, err)
+}
+
 func TestBitcoinProvider_MainnetAndTestnet3StayOnBlockstream(t *testing.T) {
 	blockstream := newTipServer(t, http.StatusOK, "4800000")
-	testnet4 := newTipServer(t, http.StatusOK, "154745")
+	testnet4 := &tipSource{height: 154745}
 	p := bitcoinProviderAgainst(blockstream, testnet4)
 
 	for _, chainID := range []string{models.ChainBTC, models.ChainTBTC} {
@@ -123,7 +105,7 @@ func TestBitcoinProvider_MainnetAndTestnet3StayOnBlockstream(t *testing.T) {
 
 func TestRoutedBitcoinProvider_ARecordOnTestnet4ReadsTheTestnet4Tip(t *testing.T) {
 	blockstream := newTipServer(t, http.StatusOK, "4800000")
-	testnet4 := newTipServer(t, http.StatusOK, "154745")
+	testnet4 := &tipSource{height: 154745}
 	routed := RouteByNetwork(bitcoinProviderAgainst(blockstream, testnet4), map[string]string{
 		models.ChainBTC:  models.NetworkBitcoinTestnet4,
 		models.ChainTBTC: models.NetworkBitcoinTestnet,
