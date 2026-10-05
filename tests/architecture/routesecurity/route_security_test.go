@@ -54,7 +54,9 @@ const (
 	chainWalletAddUser          = chainWallet + " > WalletAddUser"
 	chainWalletRemoveUser       = chainWallet + " > WalletRemoveUser"
 	chainWalletWhitelist        = chainWallet + " > WalletWhitelist"
+	chainWalletWhitelistTOTP    = chainWalletWhitelist + " > RequireEnabledTOTP"
 	chainWalletManageWebhooks   = chainWallet + " > WalletManageWebhooks"
+	chainWalletWebhooksTOTP     = chainWalletManageWebhooks + " > RequireEnabledTOTP"
 	chainWalletArchive          = chainWallet + " > WalletArchive"
 	chainWalletFreeze           = chainWallet + " > WalletFreeze"
 	chainWalletCancelWithdrawal = chainWallet + " > WalletCancelWithdrawal"
@@ -220,12 +222,12 @@ var routeTable = map[string]routeSecurity{
 	"POST /v1/wallets/{walletId}/users":                                session(chainWalletAddUser),
 	"DELETE /v1/wallets/{walletId}/users/{userId}":                     session(chainWalletRemoveUser),
 	"GET|HEAD /v1/wallets/{walletId}/webhooks":                         session(chainWallet),
-	"POST /v1/wallets/{walletId}/webhooks":                             session(chainWalletManageWebhooks),
+	"POST /v1/wallets/{walletId}/webhooks":                             session(chainWalletWebhooksTOTP),
 	"POST /v1/wallets/{walletId}/webhooks/{webhookId}/test":            session(chainWalletManageWebhooks),
-	"DELETE /v1/wallets/{walletId}/webhooks/{webhookId}":               session(chainWalletManageWebhooks),
+	"DELETE /v1/wallets/{walletId}/webhooks/{webhookId}":               session(chainWalletWebhooksTOTP),
 	"GET|HEAD /v1/wallets/{walletId}/whitelist":                        session(chainWallet),
-	"POST /v1/wallets/{walletId}/whitelist":                            session(chainWalletWhitelist),
-	"DELETE /v1/wallets/{walletId}/whitelist/{entryId}":                session(chainWalletWhitelist),
+	"POST /v1/wallets/{walletId}/whitelist":                            session(chainWalletWhitelistTOTP),
+	"DELETE /v1/wallets/{walletId}/whitelist/{entryId}":                session(chainWalletWhitelistTOTP),
 	"POST /v1/wallets/{walletId}/withdraw/preview":                     session(chainWallet),
 	"GET|HEAD /v1/wallets/{walletId}/withdrawals":                      session(chainWallet),
 	"POST /v1/wallets/{walletId}/withdrawals":                          session(chainMoveFunds),

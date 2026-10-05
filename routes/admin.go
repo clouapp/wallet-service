@@ -270,13 +270,13 @@ func RegisterAdminRoutes() {
 			r.Middleware(middleware.WalletRemoveUser(walletPolicyMemberships())).Delete("/users/{userId}", walletUsersCtrl.RemoveWalletUser)
 
 			r.Get("/whitelist", whitelistCtrl.ListWhitelistEntries)
-			r.Middleware(middleware.WalletWhitelist(walletPolicyMemberships())).Post("/whitelist", whitelistCtrl.AddWhitelistEntry)
-			r.Middleware(middleware.WalletWhitelist(walletPolicyMemberships())).Delete("/whitelist/{entryId}", whitelistCtrl.DeleteWhitelistEntry)
+			r.Middleware(middleware.WalletWhitelist(walletPolicyMemberships()), middleware.RequireEnabledTOTP()).Post("/whitelist", whitelistCtrl.AddWhitelistEntry)
+			r.Middleware(middleware.WalletWhitelist(walletPolicyMemberships()), middleware.RequireEnabledTOTP()).Delete("/whitelist/{entryId}", whitelistCtrl.DeleteWhitelistEntry)
 
 			r.Get("/webhooks", walletWebhooksCtrl.ListWalletWebhooks)
-			r.Middleware(middleware.WalletManageWebhooks(walletPolicyMemberships())).Post("/webhooks", walletWebhooksCtrl.CreateWalletWebhook)
+			r.Middleware(middleware.WalletManageWebhooks(walletPolicyMemberships()), middleware.RequireEnabledTOTP()).Post("/webhooks", walletWebhooksCtrl.CreateWalletWebhook)
 			r.Middleware(middleware.WalletManageWebhooks(walletPolicyMemberships())).Post("/webhooks/{webhookId}/test", walletWebhooksCtrl.TestWalletWebhook)
-			r.Middleware(middleware.WalletManageWebhooks(walletPolicyMemberships())).Delete("/webhooks/{webhookId}", walletWebhooksCtrl.DeleteWalletWebhook)
+			r.Middleware(middleware.WalletManageWebhooks(walletPolicyMemberships()), middleware.RequireEnabledTOTP()).Delete("/webhooks/{webhookId}", walletWebhooksCtrl.DeleteWalletWebhook)
 
 			r.Get("/settings", walletSettingsCtrl.GetWalletSettings)
 			r.Patch("/settings", walletSettingsCtrl.UpdateWalletSettings)
