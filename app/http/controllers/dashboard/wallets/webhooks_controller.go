@@ -84,9 +84,6 @@ func (ctrl *WebhooksController) ListWalletWebhooks(ctx http.Context) http.Respon
 // @Router       /wallets/{walletId}/webhooks [post]
 func (ctrl *WebhooksController) CreateWalletWebhook(ctx http.Context) http.Response {
 	wallet := requestctx.MustWallet(ctx)
-	if resp := controllers.Deny(ctx, policies.WalletManageWebhooks(controllers.WalletMembership(ctx, ctrl.memberships, wallet.ID))); resp != nil {
-		return resp
-	}
 
 	var req requests.CreateWalletWebhookRequest
 	if resp := validateRequest(ctx, &req); resp != nil {

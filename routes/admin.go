@@ -263,7 +263,7 @@ func RegisterAdminRoutes() {
 			r.Middleware(middleware.WalletWhitelist(walletPolicyMemberships())).Delete("/whitelist/{entryId}", whitelistCtrl.DeleteWhitelistEntry)
 
 			r.Get("/webhooks", walletWebhooksCtrl.ListWalletWebhooks)
-			r.Post("/webhooks", walletWebhooksCtrl.CreateWalletWebhook)
+			r.Middleware(middleware.WalletManageWebhooks(walletPolicyMemberships())).Post("/webhooks", walletWebhooksCtrl.CreateWalletWebhook)
 			r.Post("/webhooks/{webhookId}/test", walletWebhooksCtrl.TestWalletWebhook)
 			r.Delete("/webhooks/{webhookId}", walletWebhooksCtrl.DeleteWalletWebhook)
 
