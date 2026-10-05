@@ -38,6 +38,7 @@ const (
 	chainAccountLifecycle       = chainAccount + " > Can(account.lifecycle)"
 	chainAccountUsers           = chainAccount + " > Can(users.read)"
 	chainAccountUsersWrite      = chainAccount + " > Can(users.write)"
+	chainAccountUpdateMember    = chainAccount + " > AccountUpdateMember"
 	chainAccountRoles           = chainAccount + " > Can(roles.read)"
 	chainAccountTokensRead      = chainAccount + " > Can(tokens.read)"
 	chainAccountTokensWrite     = chainAccount + " > Can(tokens.write)"
@@ -126,7 +127,7 @@ var routeTable = map[string]routeSecurity{
 	"GET|HEAD /v1/accounts/{accountId}/permissions":                    session(chainAccountRoles),
 	"GET|HEAD /v1/accounts/{accountId}/users":                          session(chainAccountUsers),
 	"POST /v1/accounts/{accountId}/users":                              session(chainAccountUsersWrite),
-	"PATCH /v1/accounts/{accountId}/users/{userId}":                    session(chainAccount),
+	"PATCH /v1/accounts/{accountId}/users/{userId}":                    session(chainAccountUpdateMember),
 	"DELETE /v1/accounts/{accountId}/users/{userId}":                   session(chainAccountUsersWrite),
 	"GET|HEAD /v1/accounts/{accountId}/invites":                        session(chainAccountUsers),
 	"POST /v1/accounts/{accountId}/invites":                            session(chainAccountUsersWrite),

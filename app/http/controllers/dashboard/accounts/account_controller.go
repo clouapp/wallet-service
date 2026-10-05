@@ -342,9 +342,6 @@ func (ctrl *AccountsController) UpdateAccountUser(ctx http.Context) http.Respons
 	if callerID == uuid.Nil {
 		return responses.Send(ctx, http.StatusUnauthorized, http.Json{"error": "unauthenticated"})
 	}
-	if !policies.ManagesMembers(middleware.AccountRole(ctx)) {
-		return responses.Send(ctx, http.StatusForbidden, http.Json{"error": accountsvc.ErrManageMembers.Error()})
-	}
 
 	targetID, err := requests.RouteUUID(ctx, "userId")
 	if err != nil {

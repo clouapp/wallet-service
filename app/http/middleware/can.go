@@ -10,7 +10,9 @@ import (
 // PermUsersRead is the account member list. Routes cannot import policies.
 const PermUsersRead = policies.PermUsersRead
 
-// PermUsersWrite is POST and DELETE /v1/accounts/{accountId}/users[/{userId}] and creating an account invite. Routes cannot import policies.
+// PermUsersWrite is POST and DELETE /v1/accounts/{accountId}/users[/{userId}],
+// PATCH /v1/accounts/{accountId}/users/{userId} (AccountUpdateMember), and
+// creating an account invite. Routes cannot import policies.
 const PermUsersWrite = policies.PermUsersWrite
 
 // PermRolesRead is the account role catalog. Routes cannot import policies.
@@ -34,14 +36,20 @@ const PermTokensWrite = policies.PermTokensWrite
 // unknown role fail closed. A missing permission is 403 forbidden.
 func Can(permission string) http.Middleware {
 	return func(ctx http.Context) {
-		grants, ok := policies.AccountGrants(ctx)
-		if !ok {
-			grants = policies.AccountRoleGrants(AccountRole(ctx))
-		}
-		if !policies.Can(grants, permission) {
+		if !accountPermissionHeld(ctx, permission) {
 			abortWithJSON(ctx, http.StatusForbidden, http.Json{"error": responses.CodeForbidden})
 			return
 		}
 		ctx.Request().Next()
 	}
+}
+
+// accountPermissionHeld asks policies.Can with the role AccountContext or
+// AccountHeader already stored. An empty permission and an unknown role fail closed.
+func accountPermissionHeld(ctx http.Context, permission string) bool {
+	grants, ok := policies.AccountGrants(ctx)
+	if !ok {
+		grants = policies.AccountRoleGrants(AccountRole(ctx))
+	}
+	return policies.Can(grants, permission)
 }
