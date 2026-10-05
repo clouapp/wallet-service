@@ -54,18 +54,25 @@ type Service struct {
 	mu               sync.Map // subscription id -> *sync.Mutex
 }
 
-func NewService(subRepo subscriptionStore, addrRepo activeAddresses, provs map[string]providers.WebhookProvider) *Service {
-	return &Service{subscriptionRepo: subRepo, addressRepo: addrRepo, providers: provs}
+// Deps is everything the webhook sync service needs. A nil field means that
+// dependency is absent.
+type Deps struct {
+	Subscriptions subscriptionStore
+	Addresses     activeAddresses
+	Providers     map[string]providers.WebhookProvider
+	// ProviderKey re-reads the provider credential on every sync. Nil keeps
+	// the providers in Providers and does not consult settings.
+	ProviderKey ProviderKey
 }
 
-// WithProviderKey re-reads the provider credential on every sync. Nil keeps
-// the providers passed to NewService and does not consult settings.
-func (s *Service) WithProviderKey(key ProviderKey) *Service {
-	if s == nil {
-		return nil
+// NewService wires the webhook sync service from Deps.
+func NewService(deps Deps) *Service {
+	return &Service{
+		subscriptionRepo: deps.Subscriptions,
+		addressRepo:      deps.Addresses,
+		providers:        deps.Providers,
+		providerKey:      deps.ProviderKey,
 	}
-	s.providerKey = key
-	return s
 }
 
 func (s *Service) lockForSubscription(id uuid.UUID) *sync.Mutex {

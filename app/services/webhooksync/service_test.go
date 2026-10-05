@@ -34,12 +34,17 @@ func TestSyncChainAddresses_ReadsTheProviderKeyOnEverySync(t *testing.T) {
 	accountSettings := settings.NewService(rows, syncPrefixSealer{}, nil, syncDiscardActivity{})
 	stub := &syncStub{}
 	var seen []string
-	service := NewService(syncSubs{}, syncAddresses{}, map[string]providers.WebhookProvider{
-		"alchemy": stub,
-	}).WithProviderKey(func(ctx context.Context, provider string) string {
-		opened := accountSettings.IngestProviderKey(ctx, provider, syncEnvKey)
-		seen = append(seen, opened)
-		return opened
+	service := NewService(Deps{
+		Subscriptions: syncSubs{},
+		Addresses:     syncAddresses{},
+		Providers: map[string]providers.WebhookProvider{
+			"alchemy": stub,
+		},
+		ProviderKey: func(ctx context.Context, provider string) string {
+			opened := accountSettings.IngestProviderKey(ctx, provider, syncEnvKey)
+			seen = append(seen, opened)
+			return opened
+		},
 	})
 	service.openSecret = func(string) (string, error) { return syncSigning, nil }
 
@@ -59,9 +64,14 @@ func TestSyncChainAddresses_ReadsTheProviderKeyOnEverySync(t *testing.T) {
 func TestSyncChainAddresses_EmptyKeyDoesNotCallTheProvider(t *testing.T) {
 	logs := captureSyncLogs(t)
 	stub := &syncStub{}
-	service := NewService(syncSubs{}, syncAddresses{}, map[string]providers.WebhookProvider{
-		"alchemy": stub,
-	}).WithProviderKey(func(context.Context, string) string { return "" })
+	service := NewService(Deps{
+		Subscriptions: syncSubs{},
+		Addresses:     syncAddresses{},
+		Providers: map[string]providers.WebhookProvider{
+			"alchemy": stub,
+		},
+		ProviderKey: func(context.Context, string) string { return "" },
+	})
 	service.openSecret = func(string) (string, error) { return syncSigning, nil }
 
 	err := service.SyncChainAddresses(context.Background(), "eth")

@@ -65,11 +65,9 @@ func loadSweepLimits(t *testing.T, account models.Account) *sweepsvc.Limits {
 		settings.FacadeCache{},
 		repositories.NewAccountActivityRepository(nil),
 	)
-	sweep := sweepsvc.NewService(
-		nil, nil, nil, nil, nil, nil, nil, nil,
-		service.EffectiveSweepLimits,
-		nil, nil, nil, nil, nil,
-	)
+	sweep := sweepsvc.NewService(sweepsvc.Deps{
+		SweepLimits: service.EffectiveSweepLimits,
+	})
 	limits, err := sweep.LoadLimits(context.Background(), account.ID)
 	require.NoError(t, err)
 	require.NotNil(t, limits)
