@@ -66,7 +66,10 @@ func wireAuthServices(c *container.Container) error {
 	attemptWindow := time.Duration(cfg.GetInt("auth.two_factor.attempt_window_seconds", defaultTwoFactorAttemptWindowSeconds)) * time.Second
 	maxAttempts := cfg.GetInt("auth.two_factor.max_attempts", defaultTwoFactorMaxAttempts)
 
-	challenges, err := authsvc.NewCacheTOTPChallengeStore(appfacades.Cache(), challengeTTL)
+	challenges, err := authsvc.NewCacheTOTPChallengeStore(authsvc.ChallengeStoreDeps{
+		Cache: appfacades.Cache(),
+		TTL:   challengeTTL,
+	})
 	if err != nil {
 		return fmt.Errorf("vault: two factor login: %w", err)
 	}

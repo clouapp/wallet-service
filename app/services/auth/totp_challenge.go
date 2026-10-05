@@ -70,14 +70,21 @@ type CacheTOTPChallengeStore struct {
 	ttl   time.Duration
 }
 
-func NewCacheTOTPChallengeStore(cache contractscache.Driver, ttl time.Duration) (*CacheTOTPChallengeStore, error) {
-	if cache == nil {
+// ChallengeStoreDeps is everything the cache TOTP challenge store uses.
+// Cache and TTL are required.
+type ChallengeStoreDeps struct {
+	Cache contractscache.Driver
+	TTL   time.Duration
+}
+
+func NewCacheTOTPChallengeStore(deps ChallengeStoreDeps) (*CacheTOTPChallengeStore, error) {
+	if deps.Cache == nil {
 		return nil, errors.New("auth: totp challenge store needs a cache driver")
 	}
-	if ttl <= 0 {
-		return nil, fmt.Errorf("auth: totp challenge ttl must be positive, got %s", ttl)
+	if deps.TTL <= 0 {
+		return nil, fmt.Errorf("auth: totp challenge ttl must be positive, got %s", deps.TTL)
 	}
-	return &CacheTOTPChallengeStore{cache: cache, ttl: ttl}, nil
+	return &CacheTOTPChallengeStore{cache: deps.Cache, ttl: deps.TTL}, nil
 }
 
 func (s *CacheTOTPChallengeStore) TTL() time.Duration { return s.ttl }

@@ -17,7 +17,10 @@ import (
 func redisChallengeStore(t *testing.T, ttl time.Duration) *authsvc.CacheTOTPChallengeStore {
 	t.Helper()
 	testutil.TestRedis(t)
-	store, err := authsvc.NewCacheTOTPChallengeStore(facades.Cache(), ttl)
+	store, err := authsvc.NewCacheTOTPChallengeStore(authsvc.ChallengeStoreDeps{
+		Cache: facades.Cache(),
+		TTL:   ttl,
+	})
 	require.NoError(t, err)
 	return store
 }
@@ -133,9 +136,12 @@ func TestCacheTOTPChallengeStore_RevokeAndUnknownTokens(t *testing.T) {
 }
 
 func TestCacheTOTPChallengeStore_ValidatesInput(t *testing.T) {
-	_, err := authsvc.NewCacheTOTPChallengeStore(nil, time.Minute)
+	_, err := authsvc.NewCacheTOTPChallengeStore(authsvc.ChallengeStoreDeps{TTL: time.Minute})
 	require.Error(t, err)
-	_, err = authsvc.NewCacheTOTPChallengeStore(facades.Cache(), 0)
+	_, err = authsvc.NewCacheTOTPChallengeStore(authsvc.ChallengeStoreDeps{
+		Cache: facades.Cache(),
+		TTL:   0,
+	})
 	require.Error(t, err)
 
 	store := redisChallengeStore(t, time.Minute)
