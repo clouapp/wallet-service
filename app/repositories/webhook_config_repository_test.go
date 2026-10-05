@@ -25,7 +25,9 @@ func TestWebhookConfigRepositorySuite(t *testing.T) {
 
 func (s *WebhookConfigRepositoryTestSuite) SetupTest() {
 	mocks.TestDB(s.T())
-	s.repo = repositories.NewWebhookConfigRepository(nil, facades.Crypt())
+	s.repo = repositories.NewWebhookConfigRepository(repositories.WebhookConfigRepositoryDeps{
+		Cipher: facades.Crypt(),
+	})
 }
 
 func (s *WebhookConfigRepositoryTestSuite) insertWallet() uuid.UUID {

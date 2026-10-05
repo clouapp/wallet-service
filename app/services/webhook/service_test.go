@@ -30,8 +30,10 @@ func TestMain(m *testing.M) {
 
 func newTestWebhookSvc() *Service {
 	return NewService(Deps{
-		Configs: repositories.NewWebhookConfigRepository(nil, facades.Crypt()),
-		Events:  repositories.NewWebhookEventRepository(nil),
+		Configs: repositories.NewWebhookConfigRepository(repositories.WebhookConfigRepositoryDeps{
+			Cipher: facades.Crypt(),
+		}),
+		Events: repositories.NewWebhookEventRepository(nil),
 	})
 }
 
