@@ -90,9 +90,6 @@ func TestOwnerAndAdminStillWriteAnAccountGroup(t *testing.T) {
 		t.Fatal("auditor write changed the stored minutes")
 	}
 
-	if _, err := service.AccountGroup(ctx, accountID, "user", groupAccountSecurity); !errors.Is(err, ErrViewForbidden) {
-		t.Fatalf("user read = %v", err)
-	}
 	if _, err := service.Save(ctx, accountID, uuid.New(), "user", groupAccountSecurity, map[string]any{
 		keySessionIdleMinutes: 12,
 	}); !errors.Is(err, ErrUpdateForbidden) {

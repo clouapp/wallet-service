@@ -614,7 +614,31 @@ func (s *accountSettingsSuite) TestGetGroupReadsOneAccountAndHidesTheSecret() {
 	auditor := s.member(accountID, "auditor")
 	audited := s.getGroup(auditor, accountID, "account_webhooks", 200)
 	s.NotContains(audited, secret)
+	s.NotContains(audited, "enc:v1:")
 	s.Equal(false, s.groupDocument(audited)["can_update"])
+
+	admin := s.member(accountID, models.AccountRoleAdmin)
+	adminView := s.getGroup(admin, accountID, "account_webhooks", 200)
+	s.NotContains(adminView, secret)
+	s.NotContains(adminView, "enc:v1:")
+	s.Equal(true, s.groupDocument(adminView)["can_update"])
+
+	user := s.member(accountID, models.AccountRoleUser)
+	denied := s.getGroup(user, accountID, "account_webhooks", 403)
+	s.NotContains(denied, secret)
+	s.NotContains(denied, "enc:v1:")
+	s.NotContains(denied, `"fields"`)
+	var deniedBody struct {
+		Error struct {
+			Code    string `json:"code"`
+			Message string `json:"message"`
+		} `json:"error"`
+		Fields []any `json:"fields"`
+	}
+	s.Require().NoError(json.Unmarshal([]byte(denied), &deniedBody))
+	s.Equal("forbidden", deniedBody.Error.Code)
+	s.Equal(settings.ErrViewForbidden.Error(), deniedBody.Error.Message)
+	s.Empty(deniedBody.Fields)
 
 	var after int64
 	err = facades.Orm().Query().Raw(
@@ -639,12 +663,22 @@ func (s *accountSettingsSuite) TestGetGroupUnknownIsNotFoundBeforeForbidden() {
 	s.Equal(false, s.groupDocument(limits)["can_update"])
 
 	user := s.member(accountID, "user")
-	response = s.getGroupParsed(user, accountID, "not-a-group", 404)
-	s.Equal("not_found", response["error"].(map[string]any)["code"])
-	response = s.getGroupParsed(user, accountID, "deposit_scan", 404)
-	s.Equal("not_found", response["error"].(map[string]any)["code"])
-	response = s.getGroupParsed(user, accountID, "account_security", 403)
-	s.Equal("forbidden", response["error"].(map[string]any)["code"])
+	for _, group := range []string{"not-a-group", "deposit_scan", "account_security"} {
+		denied := s.getGroup(user, accountID, group, 403)
+		s.NotContains(denied, `"fields"`)
+		s.NotContains(denied, "enc:v1:")
+		var parsed struct {
+			Error struct {
+				Code    string `json:"code"`
+				Message string `json:"message"`
+			} `json:"error"`
+			Fields []any `json:"fields"`
+		}
+		s.Require().NoError(json.Unmarshal([]byte(denied), &parsed))
+		s.Equal("forbidden", parsed.Error.Code)
+		s.Equal(settings.ErrViewForbidden.Error(), parsed.Error.Message)
+		s.Empty(parsed.Fields)
+	}
 }
 
 func (s *accountSettingsSuite) TestPutSharesThePatchBodyRules() {

@@ -7,12 +7,14 @@ import (
 	settingssvc "github.com/macrowallets/waas/app/services/settings"
 )
 
-// MayViewSettings refuses GET /v1/accounts/{accountId}/settings unless
+// MayViewSettings refuses a dashboard settings read unless
 // policies.MayViewSettings allows the account role AccountContext already
-// stored. That permission is settings.read. Owner, admin, and auditor hold
-// it. User does not, and the retired viewer label stays refused. A denial
+// stored. That permission is settings.read. The routes are
+// GET /v1/accounts/{accountId}/settings and
+// GET /v1/accounts/{accountId}/settings/{group}. Owner, admin, and auditor
+// hold it. User does not, and the retired viewer label stays refused. A denial
 // is 403 with the message the handler returned, and the settings body is
-// not written. ShowGroup, update, flush, and reset keep their own checks.
+// not written. Update, flush, and reset keep their own checks.
 func MayViewSettings() http.Middleware {
 	return func(ctx http.Context) {
 		if !policies.MayViewSettings(AccountRole(ctx)) {

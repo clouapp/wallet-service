@@ -143,14 +143,6 @@ func TestAccountGroup_NotFoundComesBeforeForbidden(t *testing.T) {
 		t.Fatalf("unknown group listed %d", len(store.listed))
 	}
 
-	_, err := service.AccountGroup(context.Background(), accountID, "user", groupAccountSecurity)
-	if !errors.Is(err, ErrViewForbidden) {
-		t.Fatalf("user = %v", err)
-	}
-	if len(store.listed) != 0 {
-		t.Fatalf("user listed %d", len(store.listed))
-	}
-
 	view, err := service.AccountGroup(context.Background(), accountID, "admin", groupAccountSecurity)
 	if err != nil {
 		t.Fatalf("admin: %v", err)

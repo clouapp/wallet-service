@@ -147,8 +147,9 @@ func RegisterAdminRoutes() {
 			r.Middleware(middleware.MayViewSettings()).Get("/settings", accountSettingsCtrl.Show)
 			r.Post("/settings/sections/{section}/cache", accountSettingsCtrl.Flush)
 			r.Post("/settings/sections/{section}/reset", accountSettingsCtrl.Reset)
-			// S1.4.7: GET /v1/accounts/{accountId}/settings/{group} settings.read (platform-managed groups readable).
-			r.Get("/settings/{group}", accountSettingsCtrl.ShowGroup)
+			// S1.4.7: GET /v1/accounts/{accountId}/settings/{group} settings.read (policies.MayViewSettings).
+			// Platform-managed groups stay readable for owner, admin, and auditor.
+			r.Middleware(middleware.MayViewSettings()).Get("/settings/{group}", accountSettingsCtrl.ShowGroup)
 			r.Patch("/settings/{group}", accountSettingsCtrl.Update)
 			// S1.4.7: PUT /v1/accounts/{accountId}/settings/{group} settings.write. Same handler and body rules as PATCH.
 			r.Put("/settings/{group}", accountSettingsCtrl.Update)
