@@ -107,7 +107,7 @@ var routeTable = map[string]routeSecurity{
 	"GET|HEAD /v1/accounts/{accountId}":                                session(chainAccount),
 	"PATCH /v1/accounts/{accountId}":                                   session(chainAccountWrite),
 	"POST /v1/accounts/{accountId}/archive":                            session(chainAccountLifecycle),
-	"POST /v1/accounts/{accountId}/freeze":                             session(chainAccount),
+	"POST /v1/accounts/{accountId}/freeze":                             session(chainAccountLifecycle),
 	"GET|HEAD /v1/accounts/{accountId}/activity":                       session(chainAccount),
 	"GET|HEAD /v1/accounts/{accountId}/activity/{id}":                  session(chainAccount),
 	"GET|HEAD /v1/accounts/{accountId}/tokens":                         session(chainAccount),

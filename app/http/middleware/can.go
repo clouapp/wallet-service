@@ -19,7 +19,7 @@ const PermRolesRead = policies.PermRolesRead
 // PermAccountWrite is PATCH /v1/accounts/{accountId}. Routes cannot import policies.
 const PermAccountWrite = policies.PermAccountWrite
 
-// PermAccountLifecycle is POST /v1/accounts/{accountId}/archive. Routes cannot import policies.
+// PermAccountLifecycle is POST /v1/accounts/{accountId}/freeze and /archive. Routes cannot import policies.
 const PermAccountLifecycle = policies.PermAccountLifecycle
 
 // Can refuses the route unless the account role already stored by

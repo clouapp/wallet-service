@@ -119,7 +119,7 @@ func RegisterAdminRoutes() {
 			r.Get("", accountsCtrl.GetAccount)
 			r.Middleware(middleware.Can(middleware.PermAccountWrite)).Patch("", accountsCtrl.UpdateAccount)
 			r.Middleware(middleware.Can(middleware.PermAccountLifecycle)).Post("/archive", accountsCtrl.ArchiveAccount)
-			r.Post("/freeze", accountsCtrl.FreezeAccount)
+			r.Middleware(middleware.Can(middleware.PermAccountLifecycle)).Post("/freeze", accountsCtrl.FreezeAccount)
 
 			r.Middleware(middleware.Can(middleware.PermUsersRead)).Get("/users", accountsCtrl.ListAccountUsers)
 			r.Post("/users", accountsCtrl.AddAccountUser)

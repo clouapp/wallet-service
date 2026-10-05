@@ -38,7 +38,7 @@ func Can(grants Grants, perm string) bool {
 // AccountRoleGrants is the code catalog Can reads. Owner and admin hold
 // users.read, users.write, settings.read, settings.write, roles.read,
 // addresses.create, and account.write. Owner also holds account.lifecycle,
-// the archive grant. Admin does not. The user role holds only
+// the freeze and archive grant. Admin does not. The user role holds only
 // addresses.create. Auditor holds users.read, settings.read and roles.read.
 // The retired viewer label uses the auditor set. Any other role gets an
 // empty set. Withdraw, sweep, and wallet create stay out of this set; those
@@ -70,7 +70,7 @@ func AccountRoleGrants(role string) Grants {
 }
 
 // ownerAdminAccountGrants is the shared account catalog for owner and admin.
-// Archive is not in this set: only the owner grant adds account.lifecycle.
+// Freeze and archive are not in this set: only the owner grant adds account.lifecycle.
 func ownerAdminAccountGrants() Grants {
 	return Grants{
 		PermUsersRead:       {},
