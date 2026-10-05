@@ -52,7 +52,10 @@ func Boot() contractsfoundation.Application {
 			registry := container.MustMake[*chainpkg.Registry]()
 			prices := container.MustMake[*price.Service]()
 			return []console.Command{
-				commands.NewRefreshWallet(balances, dispatcher),
+				commands.NewRefreshWallet(commands.RefreshWalletDeps{
+					Balances:   balances,
+					Dispatcher: dispatcher,
+				}),
 				commands.NewRefreshAddress(commands.RefreshAddressDeps{
 					Balances:   balances,
 					Dispatcher: dispatcher,

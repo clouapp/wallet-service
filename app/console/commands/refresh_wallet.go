@@ -20,15 +20,22 @@ type RefreshWallet struct {
 	dispatcher refresh.Dispatcher
 }
 
+// RefreshWalletDeps is everything the refresh:wallet command needs.
+// Balances and Dispatcher are required.
+type RefreshWalletDeps struct {
+	Balances   *refresh.BalanceService
+	Dispatcher refresh.Dispatcher
+}
+
 // NewRefreshWallet refreshes one wallet's read model.
-func NewRefreshWallet(balances *refresh.BalanceService, dispatcher refresh.Dispatcher) *RefreshWallet {
-	if balances == nil {
+func NewRefreshWallet(deps RefreshWalletDeps) *RefreshWallet {
+	if deps.Balances == nil {
 		panic("refresh:wallet: balance refresh service is required")
 	}
-	if dispatcher == nil {
+	if deps.Dispatcher == nil {
 		panic("refresh:wallet: refresh dispatcher is required")
 	}
-	return &RefreshWallet{balances: balances, dispatcher: dispatcher}
+	return &RefreshWallet{balances: deps.Balances, dispatcher: deps.Dispatcher}
 }
 
 func (c *RefreshWallet) Signature() string {
