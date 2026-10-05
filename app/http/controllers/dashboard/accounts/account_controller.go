@@ -417,9 +417,6 @@ func (ctrl *AccountsController) RemoveAccountUser(ctx http.Context) http.Respons
 // @Router       /accounts/{accountId}/tokens [get]
 func (ctrl *AccountsController) ListAccountTokens(ctx http.Context) http.Response {
 	account := requestctx.MustAccount(ctx)
-	if errResp := controllers.Deny(ctx, policies.AccountReadTokens(ctx, account.ID, middleware.SessionUserID(ctx))); errResp != nil {
-		return errResp
-	}
 
 	limit, offset := pagination.ParseParams(ctx, 20)
 	tokens, total, err := ctrl.accountService.ListAccessTokens(ctx.Context(), account.ID, limit, offset)

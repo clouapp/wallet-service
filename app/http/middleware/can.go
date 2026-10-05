@@ -22,6 +22,9 @@ const PermAccountWrite = policies.PermAccountWrite
 // PermAccountLifecycle is POST /v1/accounts/{accountId}/freeze and /archive. Routes cannot import policies.
 const PermAccountLifecycle = policies.PermAccountLifecycle
 
+// PermTokensRead is GET /v1/accounts/{accountId}/tokens. Routes cannot import policies.
+const PermTokensRead = policies.PermTokensRead
+
 // Can refuses the route unless the account role already stored by
 // AccountContext or AccountHeader holds permission. The decision is
 // policies.Can on that role's code catalog. An empty permission and an

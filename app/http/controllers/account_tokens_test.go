@@ -168,7 +168,17 @@ func (s *accountTokensSuite) TestUserCannotListTokens() {
 		Get("/v1/accounts/" + accountID.String() + "/tokens")
 	s.Require().NoError(err)
 	s.Equal(http.StatusForbidden, s.statusOf(list))
-	s.Contains(s.body(list), "only owners, admins, and auditors may read tokens")
+	var parsed struct {
+		Error struct {
+			Code    string `json:"code"`
+			Message string `json:"message"`
+		} `json:"error"`
+		Data json.RawMessage `json:"data"`
+	}
+	s.Require().NoError(json.Unmarshal([]byte(s.body(list)), &parsed))
+	s.Equal("forbidden", parsed.Error.Code)
+	s.Equal("forbidden", parsed.Error.Message)
+	s.Empty(parsed.Data)
 }
 
 func (s *accountTokensSuite) TestBlankIPCidrIsStoredEmpty() {

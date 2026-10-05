@@ -37,29 +37,31 @@ func Can(grants Grants, perm string) bool {
 
 // AccountRoleGrants is the code catalog Can reads. Owner and admin hold
 // users.read, users.write, settings.read, settings.write, roles.read,
-// addresses.create, and account.write. Owner also holds account.lifecycle,
-// the freeze and archive grant. Admin does not. The user role holds only
-// addresses.create. Auditor holds users.read, settings.read and roles.read.
-// The retired viewer label uses the auditor set. Any other role gets an
-// empty set. Withdraw, sweep, and wallet create stay out of this set; those
-// routes keep MayPerformFundAction.
+// addresses.create, account.write, and tokens.read. Owner also holds
+// account.lifecycle, the freeze and archive grant. Admin does not. The user
+// role holds only addresses.create. Auditor holds users.read, settings.read,
+// roles.read, and tokens.read. tokens.read is the same set MayReadTokens
+// already allows, so the retired viewer label keeps the auditor set and does
+// not gain it. Any other role gets an empty set. Withdraw, sweep, wallet
+// create, and tokens.write stay out of this set.
 func AccountRoleGrants(role string) Grants {
+	stored := role
 	if role == models.RetiredAccountRoleViewer {
 		role = roleAuditor
 	}
+	var grants Grants
 	switch role {
 	case roleOwner:
-		grants := ownerAdminAccountGrants()
+		grants = ownerAdminAccountGrants()
 		grants[PermAccountLifecycle] = struct{}{}
-		return grants
 	case roleAdmin:
-		return ownerAdminAccountGrants()
+		grants = ownerAdminAccountGrants()
 	case roleUser:
-		return Grants{
+		grants = Grants{
 			PermAddressesCreate: {},
 		}
 	case roleAuditor:
-		return Grants{
+		grants = Grants{
 			PermUsersRead:    {},
 			PermSettingsRead: {},
 			PermRolesRead:    {},
@@ -67,6 +69,10 @@ func AccountRoleGrants(role string) Grants {
 	default:
 		return nil
 	}
+	if MayReadTokens(stored) {
+		grants[PermTokensRead] = struct{}{}
+	}
+	return grants
 }
 
 // ownerAdminAccountGrants is the shared account catalog for owner and admin.

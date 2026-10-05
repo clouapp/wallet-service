@@ -35,6 +35,22 @@ func TestCanAccountLifecycleIsOwnerOnly(t *testing.T) {
 	}
 }
 
+func TestCanTokensReadIsOwnerAdminAndAuditor(t *testing.T) {
+	for _, role := range []string{models.AccountRoleOwner, models.AccountRoleAdmin, models.AccountRoleAuditor} {
+		if !Can(AccountRoleGrants(role), PermTokensRead) {
+			t.Fatalf("%s must hold tokens.read", role)
+		}
+		if Can(AccountRoleGrants(role), PermTokensWrite) {
+			t.Fatalf("%s account catalog must not hold tokens.write", role)
+		}
+	}
+	for _, role := range []string{models.RetiredAccountRoleViewer, models.AccountRoleUser, "", "spender", "owner "} {
+		if Can(AccountRoleGrants(role), PermTokensRead) || Can(AccountRoleGrants(role), PermTokensWrite) {
+			t.Fatalf("%q must not hold tokens.read or tokens.write", role)
+		}
+	}
+}
+
 func TestCanAccountWriteIsOwnerAndAdmin(t *testing.T) {
 	for _, role := range []string{models.AccountRoleOwner, models.AccountRoleAdmin} {
 		if !Can(AccountRoleGrants(role), PermAccountWrite) {
