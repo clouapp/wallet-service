@@ -69,9 +69,15 @@ type ValidationFailure struct {
 	Errors map[string][]string `json:"errors"`
 }
 
+// ErrorDeps is the code and the human message of one failure envelope.
+type ErrorDeps struct {
+	Code    string
+	Message string
+}
+
 // NewError builds the envelope for one failure.
-func NewError(code, message string) ErrorEnvelope {
-	return ErrorEnvelope{Error: ErrorBody{Code: code, Message: message}}
+func NewError(deps ErrorDeps) ErrorEnvelope {
+	return ErrorEnvelope{Error: ErrorBody{Code: deps.Code, Message: deps.Message}}
 }
 
 // With adds contract fields that travel inside the error object. code and

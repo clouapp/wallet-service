@@ -99,7 +99,7 @@ func JSON(ctx contractshttp.Context, status int, v any) contractshttp.AbortableR
 // Error writes the strict error envelope. A middleware ends the chain with
 // responses.Error(...).Abort().
 func Error(ctx contractshttp.Context, status int, code, message string) contractshttp.AbortableResponse {
-	return JSON(ctx, status, resources.NewError(code, message))
+	return JSON(ctx, status, resources.NewError(resources.ErrorDeps{Code: code, Message: message}))
 }
 
 // InternalError logs err and answers 500 without it.
@@ -161,7 +161,10 @@ func WrapLegacy(status int, body any) (resources.ErrorEnvelope, bool) {
 		}
 		extra[key] = value
 	}
-	return resources.NewError(codeFor(status, message, explicit), message).With(extra), true
+	return resources.NewError(resources.ErrorDeps{
+		Code:    codeFor(status, message, explicit),
+		Message: message,
+	}).With(extra), true
 }
 
 // FieldMessages flattens Goravel's {field: {rule: message}} bag into

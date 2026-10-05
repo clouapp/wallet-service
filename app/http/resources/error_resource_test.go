@@ -27,7 +27,7 @@ func TestWithdrawalFailureCodesAreOnTheList(t *testing.T) {
 		if got != want {
 			t.Fatalf("code %q, want %q", got, want)
 		}
-		encoded, err := json.Marshal(NewError(got, want))
+		encoded, err := json.Marshal(NewError(ErrorDeps{Code: got, Message: want}))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -39,7 +39,7 @@ func TestWithdrawalFailureCodesAreOnTheList(t *testing.T) {
 }
 
 func TestNewError_IsTheEnvelope(t *testing.T) {
-	encoded, err := json.Marshal(NewError(CodeNotFound, "wallet not found"))
+	encoded, err := json.Marshal(NewError(ErrorDeps{Code: CodeNotFound, Message: "wallet not found"}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -50,7 +50,7 @@ func TestNewError_IsTheEnvelope(t *testing.T) {
 }
 
 func TestNewError_ExtraFieldsStayInsideError(t *testing.T) {
-	encoded, err := json.Marshal(NewError("wallet_not_gas_ready", "wallet_not_gas_ready").With(map[string]any{
+	encoded, err := json.Marshal(NewError(ErrorDeps{Code: "wallet_not_gas_ready", Message: "wallet_not_gas_ready"}).With(map[string]any{
 		"action": "fund_base_address",
 	}))
 	if err != nil {
