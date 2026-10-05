@@ -5,10 +5,10 @@ import (
 	"fmt"
 	"log/slog"
 
-	"github.com/goravel/framework/facades"
 	"github.com/shopspring/decimal"
 
 	"github.com/macrowallets/waas/app/models"
+	"github.com/macrowallets/waas/app/repositories"
 	"github.com/macrowallets/waas/pkg/numeric"
 )
 
@@ -23,25 +23,27 @@ type thresholdDef struct {
 // An empty gas_readiness_threshold_raw means "not applicable" (BTC) and is stored as an empty
 // string: the column is NOT NULL, and the model reads "" the same way it used to read NULL.
 // Bitcoin dust USD is 0: there are no tokens on BTC.
-func SeedSweepThresholds(_ context.Context) error {
+func SeedSweepThresholds(ctx context.Context) error {
 	defs, err := sweepThresholdDefs()
 	if err != nil {
 		return err
 	}
 
-	const sql = `UPDATE chains SET
-		gas_readiness_threshold_raw = ?,
-		dust_threshold_native_raw   = ?,
-		dust_threshold_usd          = ?
-		WHERE id = ?`
-
+	chains := repositories.NewChainRepository(nil)
 	for _, d := range defs {
 		if err := validateThresholdDef(d); err != nil {
 			return err
 		}
-		if _, err := facades.Orm().Query().Exec(sql, d.gasReadinessRaw, d.dustNativeRaw, d.dustUSD, d.chainID); err != nil {
+		gas := d.gasReadinessRaw
+		dust := d.dustNativeRaw
+		usd := d.dustUSD.Decimal.String()
+		if err := chains.UpdateThresholds(ctx, d.chainID, models.ChainThresholdWrite{
+			GasReadinessThresholdRaw: &gas,
+			DustThresholdNativeRaw:   &dust,
+			DustThresholdUSD:         &usd,
+		}); err != nil {
 			slog.Error("seed sweep thresholds failed", "chain", d.chainID, "error", err)
-			return err
+			return fmt.Errorf("seed sweep thresholds for chain %s: %w", d.chainID, err)
 		}
 	}
 	slog.Info("sweep thresholds seeded", "chains", len(defs))
