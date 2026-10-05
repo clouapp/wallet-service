@@ -69,7 +69,7 @@ func TestPlatformAccountUserViewMatchesTheMemberListAndThePlatformUser(t *testin
 		},
 	}
 	for _, tc := range cases {
-		raw, err := json.Marshal(newPlatformAccountUserView(tc.member))
+		raw, err := json.Marshal(AccountUserFrom(tc.member))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -87,7 +87,7 @@ func TestPlatformAccountUserViewMatchesTheMemberListAndThePlatformUser(t *testin
 		}
 	}
 
-	page, err := json.Marshal(platformAccountUserViews(nil))
+	page, err := json.Marshal(AccountUsersFrom(nil))
 	if err != nil {
 		t.Fatal(err)
 	}

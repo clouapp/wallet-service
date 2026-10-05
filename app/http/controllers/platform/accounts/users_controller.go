@@ -9,6 +9,7 @@ import (
 	"github.com/macrowallets/waas/app/http/middleware"
 	"github.com/macrowallets/waas/app/http/pagination"
 	"github.com/macrowallets/waas/app/http/requests"
+	platformaccounts "github.com/macrowallets/waas/app/http/resources/platform/accounts"
 	"github.com/macrowallets/waas/app/http/responses"
 	accountsvc "github.com/macrowallets/waas/app/services/account"
 )
@@ -60,7 +61,7 @@ func (ctrl *UsersController) Index(ctx http.Context) http.Response {
 	if errResp := mapAccountUsersError(ctx, err); errResp != nil {
 		return errResp
 	}
-	return responses.Send(ctx, http.StatusOK, pagination.Response(platformAccountUserViews(rows), total, limit, offset))
+	return responses.Send(ctx, http.StatusOK, pagination.Response(platformaccounts.AccountUsersFrom(rows), total, limit, offset))
 }
 
 func mapAccountUsersError(ctx http.Context, err error) http.Response {

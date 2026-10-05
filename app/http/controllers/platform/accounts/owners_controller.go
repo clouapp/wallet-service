@@ -8,6 +8,7 @@ import (
 
 	"github.com/macrowallets/waas/app/http/middleware"
 	"github.com/macrowallets/waas/app/http/requests"
+	platformaccounts "github.com/macrowallets/waas/app/http/resources/platform/accounts"
 	"github.com/macrowallets/waas/app/http/responses"
 	accountsvc "github.com/macrowallets/waas/app/services/account"
 )
@@ -36,7 +37,7 @@ func NewOwnersController(accounts *accountsvc.Service) *OwnersController {
 // @Produce      json
 // @Param        accountId  path  string  true  "Account UUID"
 // @Param        request    body  requests.AttachPlatformOwnerRequest  true  "Existing user email"
-// @Success      201  {object}  platformAccountUserView
+// @Success      201  {object}  platformaccounts.AccountUser
 // @Success      204  "Already the active owner"
 // @Failure      400  {object}  responses.ErrorBody
 // @Failure      401  {object}  responses.ErrorBody
@@ -67,7 +68,7 @@ func (ctrl *OwnersController) Attach(ctx http.Context) http.Response {
 	if !changed {
 		return ctx.Response().NoContent()
 	}
-	return responses.Send(ctx, http.StatusCreated, newPlatformAccountUserView(*member))
+	return responses.Send(ctx, http.StatusCreated, platformaccounts.AccountUserFrom(*member))
 }
 
 func mapAttachOwnerError(ctx http.Context, err error) http.Response {
