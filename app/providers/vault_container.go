@@ -285,23 +285,11 @@ func buildVaultContainer(app foundation.Application) (*container.Container, erro
 
 	c.Registry = chainpkg.NewRegistry()
 
-	tokensByChain := make(map[string][]types.Token)
-	activeTokens, tokenErr := c.TokenRepo.FindActive(context.Background())
-	if tokenErr != nil {
-		slog.Error("failed to load tokens from DB", "error", tokenErr)
-	} else {
-		for _, t := range activeTokens {
-			tok := types.Token{
-				Symbol:   t.Symbol,
-				Name:     t.Name,
-				Contract: t.ContractAddress,
-				Decimals: uint8(t.Decimals),
-				ChainID:  t.ChainID,
-			}
-			tokensByChain[t.ChainID] = append(tokensByChain[t.ChainID], tok)
-			c.Registry.RegisterToken(tok)
-		}
+	activeTokens, loaded := bootedActiveTokens()
+	if !loaded {
+		slog.Error("failed to load tokens from DB", "error", errActiveTokensNotLoaded)
 	}
+	tokensByChain := registerActiveTokens(c.Registry, activeTokens)
 
 	networkByChain := make(map[string]string)
 	activeChains, chainErr := c.ChainRepo.FindActive(context.Background())

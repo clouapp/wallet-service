@@ -10,4 +10,6 @@ func (receiver *AppServiceProvider) Register(app foundation.Application) {
 	registerVaultContainer(app)
 }
 
-func (receiver *AppServiceProvider) Boot(app foundation.Application) {}
+func (receiver *AppServiceProvider) Boot(app foundation.Application) {
+	loadActiveTokens(app)
+}
