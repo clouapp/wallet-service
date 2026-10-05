@@ -205,19 +205,29 @@ type TwoFactorLogin struct {
 	maxAttempts int64
 }
 
-func NewTwoFactorLogin(challenges TOTPChallengeStore, attempts AttemptLimiter, verifier *SecondFactorVerifier, users UserFinder, maxAttempts int) (*TwoFactorLogin, error) {
-	if challenges == nil || attempts == nil || verifier == nil || users == nil {
+// LoginDeps is everything two-factor login uses. Challenges, Attempts,
+// Verifier, Users and MaxAttempts are required.
+type LoginDeps struct {
+	Challenges  TOTPChallengeStore
+	Attempts    AttemptLimiter
+	Verifier    *SecondFactorVerifier
+	Users       UserFinder
+	MaxAttempts int
+}
+
+func NewTwoFactorLogin(deps LoginDeps) (*TwoFactorLogin, error) {
+	if deps.Challenges == nil || deps.Attempts == nil || deps.Verifier == nil || deps.Users == nil {
 		return nil, errors.New("auth: two factor login: all dependencies are required")
 	}
-	if maxAttempts < 1 {
-		return nil, fmt.Errorf("auth: two factor login: max attempts must be at least 1, got %d", maxAttempts)
+	if deps.MaxAttempts < 1 {
+		return nil, fmt.Errorf("auth: two factor login: max attempts must be at least 1, got %d", deps.MaxAttempts)
 	}
 	return &TwoFactorLogin{
-		challenges:  challenges,
-		attempts:    attempts,
-		verifier:    verifier,
-		users:       users,
-		maxAttempts: int64(maxAttempts),
+		challenges:  deps.Challenges,
+		attempts:    deps.Attempts,
+		verifier:    deps.Verifier,
+		users:       deps.Users,
+		maxAttempts: int64(deps.MaxAttempts),
 	}, nil
 }
 

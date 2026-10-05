@@ -84,7 +84,13 @@ func wireAuthServices(c *container.Container) error {
 	if err != nil {
 		return fmt.Errorf("vault: two factor login: %w", err)
 	}
-	login, err := authsvc.NewTwoFactorLogin(challenges, attempts, verifier, bridge, maxAttempts)
+	login, err := authsvc.NewTwoFactorLogin(authsvc.LoginDeps{
+		Challenges:  challenges,
+		Attempts:    attempts,
+		Verifier:    verifier,
+		Users:       bridge,
+		MaxAttempts: maxAttempts,
+	})
 	if err != nil {
 		return fmt.Errorf("vault: two factor login: %w", err)
 	}

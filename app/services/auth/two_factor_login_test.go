@@ -212,7 +212,13 @@ func newTwoFactorFixture(t *testing.T) *twoFactorFixture {
 
 	challenges := newFakeChallengeStore(now)
 	attempts := newFakeAttemptLimiter()
-	login, err := authsvc.NewTwoFactorLogin(challenges, attempts, verifier, users, testMaxAttempts)
+	login, err := authsvc.NewTwoFactorLogin(authsvc.LoginDeps{
+		Challenges:  challenges,
+		Attempts:    attempts,
+		Verifier:    verifier,
+		Users:       users,
+		MaxAttempts: testMaxAttempts,
+	})
 	require.NoError(t, err)
 
 	return &twoFactorFixture{
@@ -475,9 +481,20 @@ func TestNewTwoFactorLogin_ValidatesDependencies(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	_, err = authsvc.NewTwoFactorLogin(nil, f.attempts, verifier, f.users, 1)
+	_, err = authsvc.NewTwoFactorLogin(authsvc.LoginDeps{
+		Attempts:    f.attempts,
+		Verifier:    verifier,
+		Users:       f.users,
+		MaxAttempts: 1,
+	})
 	require.Error(t, err)
-	_, err = authsvc.NewTwoFactorLogin(f.challenges, f.attempts, verifier, f.users, 0)
+	_, err = authsvc.NewTwoFactorLogin(authsvc.LoginDeps{
+		Challenges:  f.challenges,
+		Attempts:    f.attempts,
+		Verifier:    verifier,
+		Users:       f.users,
+		MaxAttempts: 0,
+	})
 	require.Error(t, err)
 	_, err = authsvc.NewSecondFactorVerifier(authsvc.VerifierDeps{
 		Service:  authsvc.NewService(),
