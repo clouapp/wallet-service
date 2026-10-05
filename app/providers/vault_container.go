@@ -31,6 +31,7 @@ import (
 	"github.com/macrowallets/waas/app/facades"
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/repositories"
+	authsvc "github.com/macrowallets/waas/app/services/auth"
 	"github.com/macrowallets/waas/app/services/blockheight"
 	chainpkg "github.com/macrowallets/waas/app/services/chain"
 	"github.com/macrowallets/waas/app/services/deposit"
@@ -50,6 +51,7 @@ import (
 	"github.com/macrowallets/waas/app/services/webhooksync"
 	"github.com/macrowallets/waas/app/services/withdraw"
 	"github.com/macrowallets/waas/app/services/withdrawalevents"
+	"github.com/macrowallets/waas/app/services/withdrawalrecords"
 	"github.com/macrowallets/waas/pkg/security"
 	"github.com/macrowallets/waas/pkg/types"
 )
@@ -383,6 +385,15 @@ func buildVaultContainer(app foundation.Application) (*container.Container, erro
 		},
 	)
 	c.WithdrawalService.UseUSDQuote(c.PriceService)
+	verifier, ok := c.SecondFactor.(*authsvc.SecondFactorVerifier)
+	if !ok || verifier == nil {
+		return nil, fmt.Errorf("vault: withdrawal create: second factor verifier is required")
+	}
+	withdrawalRows, err := resolve[*withdrawalrecords.Records](app)
+	if err != nil {
+		return nil, fmt.Errorf("vault: withdrawal create: %w", err)
+	}
+	c.WithdrawalService.UseCreate(c.UserRepo, verifier, withdrawalRows, c.ChainRepo)
 
 	blockHeightProviders := blockheight.NewProviders(func(ctx context.Context) string {
 		envKey := facades.Config().GetString("vault.webhooks.etherscan_api_key")

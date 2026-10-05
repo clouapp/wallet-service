@@ -1,21 +1,13 @@
 package controllers
 
 import (
-	"errors"
-	"fmt"
 	"log/slog"
-	"strings"
-	"time"
 
 	"github.com/google/uuid"
 	"github.com/goravel/framework/contracts/http"
-	"github.com/redis/go-redis/v9"
 
-	appfacades "github.com/macrowallets/waas/app/facades"
-	"github.com/macrowallets/waas/app/http/responses"
 	"github.com/macrowallets/waas/app/models"
-	authsvc "github.com/macrowallets/waas/app/services/auth"
-	mpcpkg "github.com/macrowallets/waas/app/services/mpc"
+	"github.com/macrowallets/waas/app/services/withdraw"
 	"github.com/macrowallets/waas/app/services/withdrawalevents"
 )
 
@@ -40,71 +32,12 @@ func publishWithdrawalFailed(ctx http.Context, publisher *withdrawalevents.Publi
 }
 
 func withdrawalIDFromIdempotencyKey(idempotencyKey string) (uuid.UUID, error) {
-	if strings.TrimSpace(idempotencyKey) == "" {
-		return uuid.New(), nil
-	}
-	id, err := uuid.Parse(idempotencyKey)
-	if err != nil {
-		return uuid.Nil, fmt.Errorf("idempotency_key must be a UUID")
-	}
-	return id, nil
+	return withdraw.WithdrawalIDFromIdempotencyKey(idempotencyKey)
 }
 
-// RejectReplayedWithdrawalCode spends the same persisted TOTP step login uses,
-// so a code accepted at sign-in cannot authorize a withdrawal and a code
-// accepted here cannot sign in.
-func RejectReplayedWithdrawalCode(ctx http.Context, verifier *authsvc.SecondFactorVerifier, user *models.User, code string) http.Response {
-	if verifier == nil {
-		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "internal error"})
-	}
-	err := verifier.Verify(user, code, "")
-	if err == nil {
-		return nil
-	}
-	if errors.Is(err, authsvc.ErrInvalidSecondFactor) {
-		return responses.Send(ctx, http.StatusUnauthorized, http.Json{"error": "invalid 2FA code"})
-	}
-	appfacades.Log().WithContext(ctx).Errorf("withdraw: totp: %v", err)
-	return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "internal error"})
-}
-
-func verifyWalletPassphrase(ctx http.Context, rdb *redis.Client, wallet *models.Wallet, passphrase string) http.Response {
-	key := fmt.Sprintf("vault:ratelimit:passphrase:%s", wallet.ID)
-
-	if rdb != nil {
-		count, err := rdb.Get(ctx.Context(), key).Int()
-		if err == nil && count >= 5 {
-			return responses.Send(ctx, http.StatusTooManyRequests, http.Json{"error": "too many failed attempts, try again later"})
-		}
-	}
-
-	shareA, decErr := wallet.DecryptShareA(passphrase)
-	if decErr != nil {
-		if errors.Is(decErr, mpcpkg.ErrInvalidPassphrase) {
-			if rdb != nil {
-				pipe := rdb.Pipeline()
-				pipe.Incr(ctx.Context(), key)
-				pipe.Expire(ctx.Context(), key, 60*time.Second)
-				_, _ = pipe.Exec(ctx.Context())
-			}
-			return responses.Send(ctx, http.StatusUnauthorized, http.Json{"error": "invalid passphrase"})
-		}
-		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "internal error"})
-	}
-	for i := range shareA {
-		shareA[i] = 0
-	}
-
-	return nil
-}
-
-// VerifyWalletPassphrase, PublishWithdrawalBroadcast, PublishWithdrawalFailed
-// and WithdrawalIDFromIdempotencyKey are shared by the dashboard and external
+// PublishWithdrawalBroadcast, PublishWithdrawalFailed and
+// WithdrawalIDFromIdempotencyKey are shared by the dashboard and external
 // withdrawal handlers so both surfaces keep the same bytes.
-func VerifyWalletPassphrase(ctx http.Context, rdb *redis.Client, wallet *models.Wallet, passphrase string) http.Response {
-	return verifyWalletPassphrase(ctx, rdb, wallet, passphrase)
-}
-
 func PublishWithdrawalBroadcast(ctx http.Context, publisher *withdrawalevents.Publisher, w *models.Withdrawal, tx *models.Transaction) {
 	publishWithdrawalBroadcast(ctx, publisher, w, tx)
 }
@@ -114,7 +47,7 @@ func PublishWithdrawalFailed(ctx http.Context, publisher *withdrawalevents.Publi
 }
 
 func WithdrawalIDFromIdempotencyKey(idempotencyKey string) (uuid.UUID, error) {
-	return withdrawalIDFromIdempotencyKey(idempotencyKey)
+	return withdraw.WithdrawalIDFromIdempotencyKey(idempotencyKey)
 }
 
 // ---- Request/Response types ----

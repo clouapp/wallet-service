@@ -73,6 +73,46 @@ func MapSweepError(ctx http.Context, err error) http.Response {
 	return nil
 }
 
+// MapWithdrawalCreateError maps a refusal from withdraw.Service.Create.
+// The body stays the legacy {"error": message} map, which the writer wraps
+// into {"error":{"code","message"}}. A row failure is a generic 500.
+func MapWithdrawalCreateError(ctx http.Context, err error) http.Response {
+	var refusal *withdraw.CreateRefusal
+	if errors.As(err, &refusal) && refusal != nil {
+		return responses.Send(ctx, createRefusalStatus(refusal.Status), http.Json{"error": refusal.Message})
+	}
+	var row *withdraw.CreateRowError
+	if errors.As(err, &row) && row != nil {
+		cause := row.Err
+		if cause == nil {
+			cause = err
+		}
+		endpoint := row.Endpoint
+		if endpoint == "" {
+			endpoint = "create_wallet_withdrawal"
+		}
+		return MapInternalError(ctx, cause, endpoint)
+	}
+	return MapInternalError(ctx, err, "create_wallet_withdrawal")
+}
+
+func createRefusalStatus(status withdraw.CreateStatus) int {
+	switch status {
+	case withdraw.CreateStatusUnauthorized:
+		return http.StatusUnauthorized
+	case withdraw.CreateStatusForbidden:
+		return http.StatusForbidden
+	case withdraw.CreateStatusBadRequest:
+		return http.StatusBadRequest
+	case withdraw.CreateStatusUnprocessable:
+		return http.StatusUnprocessableEntity
+	case withdraw.CreateStatusTooManyRequests:
+		return http.StatusTooManyRequests
+	default:
+		return http.StatusInternalServerError
+	}
+}
+
 // MapSpendingLimitError maps a per-token daily USD cap failure. A blank cap
 // never produces these sentinels. The body uses the same legacy error map as
 // the sweep quota, so the envelope keeps limit_type beside the code.

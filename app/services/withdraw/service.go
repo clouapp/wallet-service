@@ -64,6 +64,12 @@ type Service struct {
 	sweep           sweep.Service
 	flags           accountGate
 	usdQuote        USDQuote
+	// createUsers, createTotp, createRows and createChains serve Create.
+	// Request does not read them. A nil value fails Create before it persists.
+	createUsers  UserLookup
+	createTotp   TotpCheck
+	createRows   WithdrawalRows
+	createChains ChainCatalog
 }
 
 func NewService(

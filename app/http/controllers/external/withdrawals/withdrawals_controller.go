@@ -22,7 +22,6 @@ import (
 	"github.com/macrowallets/waas/app/services/withdraw"
 	"github.com/macrowallets/waas/app/services/withdrawalevents"
 	"github.com/macrowallets/waas/app/services/withdrawalrecords"
-	"github.com/macrowallets/waas/pkg/types"
 )
 
 func validateRequest(ctx http.Context, req http.FormRequest) http.Response {
@@ -138,21 +137,9 @@ func (ctrl *WithdrawalsController) CreateWalletWithdrawal(ctx http.Context) http
 	}
 
 	callerUserID, hasUser := requestctx.UserID(ctx)
-	isDashboardCaller := hasUser && callerUserID != uuid.Nil
-
-	if isDashboardCaller {
-		user, err := ctrl.users.FindByID(ctx.Context(), callerUserID)
-		if err != nil || user == nil {
-			return responses.Send(ctx, http.StatusUnauthorized, http.Json{"error": "user not found"})
-		}
-
-		if !user.TotpEnabled {
-			return responses.Send(ctx, http.StatusForbidden, http.Json{"error": "2FA must be enabled before withdrawing"})
-		}
-
-		if resp := controllers.RejectReplayedWithdrawalCode(ctx, ctrl.secondFactor, user, req.TotpCode); resp != nil {
-			return resp
-		}
+	dashboardUserID := uuid.Nil
+	if hasUser && callerUserID != uuid.Nil {
+		dashboardUserID = callerUserID
 	} else {
 		accountID, hasAccount := requestctx.AccountID(ctx)
 		if !hasAccount || accountID == uuid.Nil {
@@ -162,98 +149,34 @@ func (ctrl *WithdrawalsController) CreateWalletWithdrawal(ctx http.Context) http
 		// after the passphrase check. This handler does not reserve the cap.
 	}
 
-	if errResp := controllers.VerifyWalletPassphrase(ctx, ctrl.redis, wallet, req.Passphrase); errResp != nil {
-		return errResp
-	}
-
-	adapter, err := ctrl.registry.Chain(wallet.Chain)
-	if err != nil {
-		return responses.Send(ctx, http.StatusUnprocessableEntity, http.Json{"error": err.Error()})
-	}
-
-	chainEntity, chainErr := ctrl.chains.FindByID(ctx.Context(), wallet.Chain)
-	if chainErr != nil || chainEntity == nil {
-		return responses.Send(ctx, http.StatusUnprocessableEntity, http.Json{"error": "chain not found"})
-	}
-	resolved, resolveErr := withdraw.ResolveWithdrawalAmount(
-		wallet.Chain,
-		adapter.NativeAsset(),
-		chainEntity.NativeDecimals,
-		req.Asset,
-		req.Amount,
-		ctrl.registry.TokensForChain(wallet.Chain),
-	)
-	if resolveErr != nil {
-		return responses.Send(ctx, http.StatusUnprocessableEntity, http.Json{"error": resolveErr.Error()})
-	}
-
 	callerAccountID, _ := requestctx.AccountID(ctx)
 	if callerAccountID == uuid.Nil && wallet.AccountID != nil {
 		callerAccountID = *wallet.AccountID
 	}
 
-	withdrawalID, err := controllers.WithdrawalIDFromIdempotencyKey(req.IdempotencyKey)
+	created, err := ctrl.withdrawalService.Create(ctx.Context(), withdraw.CreateInput{
+		Wallet:             wallet,
+		DashboardUserID:    dashboardUserID,
+		TotpCode:           req.TotpCode,
+		Passphrase:         req.Passphrase,
+		Asset:              req.Asset,
+		Amount:             req.Amount,
+		DestinationAddress: req.DestinationAddress,
+		Note:               req.Note,
+		IdempotencyKey:     req.IdempotencyKey,
+	})
 	if err != nil {
-		return responses.Send(ctx, http.StatusBadRequest, http.Json{"error": err.Error()})
+		return controllers.MapWithdrawalCreateError(ctx, err)
 	}
-	idempotencyKey := req.IdempotencyKey
-	if idempotencyKey == "" {
-		idempotencyKey = withdrawalID.String()
+	if created == nil || created.Withdrawal == nil || created.Resolved == nil || created.Resolved.BaseUnits == nil {
+		return controllers.MapInternalError(ctx, fmt.Errorf("create withdrawal: empty result"), "create_wallet_withdrawal")
 	}
-	if wallet.DepositAddress == nil {
-		return responses.Send(ctx, http.StatusUnprocessableEntity, http.Json{
-			"error": "wallet has no deposit address",
-		})
+	if created.Replayed {
+		return responses.Send(ctx, http.StatusOK, controllers.WithdrawalViewPtr(created.Withdrawal))
 	}
-	feeEstimate := "0"
-	feeReq := types.TransferRequest{
-		From:   wallet.DepositAddress.Address,
-		To:     req.DestinationAddress,
-		Amount: resolved.BaseUnits,
-		Asset:  resolved.WalletAsset,
-	}
-	if resolved.Token != nil {
-		feeReq.Token = resolved.Token
-		feeReq.Asset = resolved.WalletAsset
-	}
-	if estimate, estimateErr := adapter.EstimateFee(ctx.Context(), feeReq); estimateErr == nil && estimate != nil && estimate.Fee != "" {
-		feeEstimate = estimate.Fee
-	}
-
-	existing, findErr := ctrl.withdrawals.FindByIDAndWallet(ctx.Context(), withdrawalID, wallet.ID)
-	if findErr != nil && !errors.Is(findErr, models.ErrRepositoryNotFound) {
-		return controllers.MapInternalError(ctx, findErr, "find_idempotent_withdrawal")
-	}
-	if existing != nil && (existing.Status == "broadcast" || existing.Status == "confirmed") {
-		return responses.Send(ctx, http.StatusOK, controllers.WithdrawalViewPtr(existing))
-	}
-
-	w := existing
-	if w == nil {
-		w = &models.Withdrawal{
-			ID:                 withdrawalID,
-			WalletID:           wallet.ID,
-			Status:             "broadcasting",
-			Amount:             req.Amount,
-			DestinationAddress: req.DestinationAddress,
-			FeeEstimate:        feeEstimate,
-			Note:               req.Note,
-		}
-		if isDashboardCaller {
-			w.CreatedBy = &callerUserID
-		}
-		if wallet.AccountID != nil {
-			w.AccountID = wallet.AccountID
-		}
-		if createErr := ctrl.withdrawals.Create(ctx.Context(), w); createErr != nil {
-			return controllers.MapInternalError(ctx, createErr, "create_broadcasting_withdrawal")
-		}
-	} else {
-		if updateErr := ctrl.withdrawals.RetryBroadcast(ctx.Context(), w.ID, req.Amount, req.DestinationAddress, feeEstimate, req.Note); updateErr != nil {
-			return controllers.MapInternalError(ctx, updateErr, "retry_broadcasting_withdrawal")
-		}
-		w.Status = "broadcasting"
-	}
+	resolved := created.Resolved
+	idempotencyKey := created.IdempotencyKey
+	w := created.Withdrawal
 
 	withdrawal := withdraw.WithdrawRequest{
 		WalletID:        wallet.ID,
