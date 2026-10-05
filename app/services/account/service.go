@@ -62,7 +62,6 @@ type TokenStore interface {
 	Create(ctx context.Context, token *models.AccessToken) error
 	PaginateByAccountID(ctx context.Context, accountID uuid.UUID, limit, offset int) ([]models.AccessToken, int64, error)
 	FindByIDAndAccount(ctx context.Context, tokenID, accountID uuid.UUID) (*models.AccessToken, error)
-	Delete(ctx context.Context, token *models.AccessToken) error
 	DeleteByAccountAndCreator(ctx context.Context, accountID, createdBy uuid.UUID) error
 	RecordUse(ctx context.Context, tokenID, accountID uuid.UUID) error
 	MarkRevoked(ctx context.Context, tokenID, accountID uuid.UUID) (bool, error)
