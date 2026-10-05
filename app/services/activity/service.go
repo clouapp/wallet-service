@@ -64,8 +64,10 @@ func NewService(deps Deps) *Service {
 	return &Service{rows: deps.Rows, admins: deps.Admins}
 }
 
-// List returns one page, newest first. Owner, admin and auditor may read.
-// User is ErrReadForbidden.
+// List returns one page, newest first. GET /v1/accounts/{accountId}/activity
+// applies policies.MayReadActivity (activity.read) before the handler. This
+// method still checks: owner, admin and auditor may read, and user is
+// ErrReadForbidden. Get keeps the same check for the show route.
 func (s *Service) List(ctx context.Context, accountID uuid.UUID, role string, limit, offset int) ([]models.AccountActivity, int64, error) {
 	if ctx == nil {
 		return nil, 0, fmt.Errorf("account activity: context is required")

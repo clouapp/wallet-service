@@ -123,6 +123,7 @@ func (s *AccountActivityTestSuite) TestSettingsSecretPatchDoesNotStoreTheSecret(
 func (s *AccountActivityTestSuite) TestAuditorListsNewestFirstAndUserIsForbidden() {
 	accountID := s.createAccount()
 	owner := s.loginUser("owner", accountID)
+	admin := s.loginUser("admin", accountID)
 	member := s.loginUser("user", accountID)
 	auditor := s.loginUser("auditor", accountID)
 	user := s.loginUser("user", accountID)
@@ -150,10 +151,23 @@ func (s *AccountActivityTestSuite) TestAuditorListsNewestFirstAndUserIsForbidden
 	s.Equal("member.role_changed", oldest.Data[0].Action)
 	s.Equal("auditor", oldest.Data[0].Metadata.Role)
 
+	for _, reader := range []activitySession{owner, admin} {
+		page := s.list(reader.token, accountID, "limit=1")
+		s.Equal(int64(2), page.Total)
+		s.Equal(1, page.Limit)
+		s.Equal(0, page.Offset)
+		s.Require().Len(page.Data, 1)
+		s.Equal("settings.updated", page.Data[0].Action)
+	}
+
 	forbidden := s.get(user.token, "/v1/accounts/"+accountID.String()+"/activity")
 	forbidden.AssertForbidden()
 	content, err := forbidden.Content()
 	s.Require().NoError(err)
+	s.NotContains(content, "settings.updated")
+	s.NotContains(content, "member.role_changed")
+	s.NotContains(content, `"data"`)
+	s.NotContains(content, `"total"`)
 	var body struct {
 		Error struct {
 			Code    string `json:"code"`

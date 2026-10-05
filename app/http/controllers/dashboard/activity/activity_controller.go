@@ -33,7 +33,7 @@ func NewActivityController(activity *activitysvc.Service) *ActivityController {
 
 // Index godoc
 // @Summary      Account activity
-// @Description  Newest first. Owner, admin and auditor may read. User receives 403. Metadata never includes a secret value.
+// @Description  GET /v1/accounts/{accountId}/activity applies policies.MayReadActivity (activity.read) before the handler. Owner, admin, and auditor may list. A user may not, and that refusal does not return the activity list. The refusal is 403 with the same message the service returns. Newest first. Page JSON is data, total, limit, and offset. Metadata never includes a secret value.
 // @Tags         Account Activity
 // @Security     BearerAuth
 // @Produce      json

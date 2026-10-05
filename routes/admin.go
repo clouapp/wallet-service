@@ -159,7 +159,9 @@ func RegisterAdminRoutes() {
 			r.Middleware(middleware.MayUpdateSettings()).Patch("/settings/{group}", accountSettingsCtrl.Update)
 			r.Middleware(middleware.MayUpdateSettings()).Put("/settings/{group}", accountSettingsCtrl.Update)
 
-			r.Get("/activity", accountActivityCtrl.Index)
+			// S3.4.2: GET /v1/accounts/{accountId}/activity activity.read (policies.MayReadActivity).
+			// Owner, admin, and auditor may list. User may not.
+			r.Middleware(middleware.MayReadActivity()).Get("/activity", accountActivityCtrl.Index)
 			// S3.4.2: GET /v1/accounts/{accountId}/activity/{id} activity.read.
 			// The body is one element of the list. There is no write on this path.
 			r.Get("/activity/{id}", accountActivityCtrl.Show)
