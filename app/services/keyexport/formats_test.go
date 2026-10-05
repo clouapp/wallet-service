@@ -62,7 +62,7 @@ func TestBitcoinWIF_EncodesTestnetAndMainnetCompressed(t *testing.T) {
 		{testnet: false, params: &chaincfg.MainNetParams, prefixes: "KL"},
 	}
 	for _, tc := range cases {
-		key, err := NewBitcoinKey(privateKey, tc.testnet)
+		key, err := NewBitcoinKey(BitcoinKeyDeps{PrivateKey: privateKey, Testnet: tc.testnet})
 		if err != nil {
 			t.Fatal(err)
 		}

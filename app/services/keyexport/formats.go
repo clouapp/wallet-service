@@ -91,10 +91,17 @@ func BitcoinP2WPKHAddressOfWIF(wifString string, testnet bool) (string, error) {
 	return addressing.DeriveBtcAddress(addressing.BtcHRP(testnet), wif.SerializePubKey())
 }
 
+// BitcoinKeyDeps is the 32-byte secp256k1 scalar and the network the WIF is for.
+// Testnet false is mainnet. Every Bitcoin test network shares the testnet WIF prefix.
+type BitcoinKeyDeps struct {
+	PrivateKey []byte
+	Testnet    bool
+}
+
 // NewBitcoinKey renders every Bitcoin form of a key: WIF, Electrum import line and
 // the Bitcoin Core / Sparrow wpkh descriptor with its checksum.
-func NewBitcoinKey(privateKey []byte, testnet bool) (*BitcoinKey, error) {
-	wif, err := BitcoinWIF(privateKey, testnet)
+func NewBitcoinKey(deps BitcoinKeyDeps) (*BitcoinKey, error) {
+	wif, err := BitcoinWIF(deps.PrivateKey, deps.Testnet)
 	if err != nil {
 		return nil, err
 	}
@@ -108,7 +115,7 @@ func NewBitcoinKey(privateKey []byte, testnet bool) (*BitcoinKey, error) {
 		ElectrumImport:         electrumP2WPKHPrefix + wif,
 		Descriptor:             descriptor,
 		DescriptorWithChecksum: descriptor + "#" + checksum,
-		PrivateKeyHex:          hex.EncodeToString(privateKey),
+		PrivateKeyHex:          hex.EncodeToString(deps.PrivateKey),
 	}, nil
 }
 

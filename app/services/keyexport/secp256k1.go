@@ -66,7 +66,10 @@ func secp256k1AddressKey(network Network, address models.Address, walletKey, wal
 		}
 		key.EVM, key.VerifiedAddress = &EVMKey{PrivateKeyHex: privateKeyHex}, verified
 	case models.AdapterTypeBitcoin:
-		bitcoinKey, err := NewBitcoinKey(privateKey, addressNet.testnet)
+		bitcoinKey, err := NewBitcoinKey(BitcoinKeyDeps{
+			PrivateKey: privateKey,
+			Testnet:    addressNet.testnet,
+		})
 		if err != nil {
 			return AddressKey{}, refuse("address %s: key could not be encoded as WIF", address.Address)
 		}
