@@ -148,7 +148,9 @@ func RegisterAdminRoutes() {
 			// S1.4.7: POST /v1/accounts/{accountId}/settings/sections/{section}/cache settings.write (policies.MayUpdateSettings).
 			// Owner and admin may flush an account-managed section. Auditor and user may not.
 			r.Middleware(middleware.MayUpdateSettings()).Post("/settings/sections/{section}/cache", accountSettingsCtrl.Flush)
-			r.Post("/settings/sections/{section}/reset", accountSettingsCtrl.Reset)
+			// S1.4.7: POST /v1/accounts/{accountId}/settings/sections/{section}/reset settings.write (policies.MayUpdateSettings).
+			// Owner and admin may reset an account-managed section. Auditor and user may not.
+			r.Middleware(middleware.MayUpdateSettings()).Post("/settings/sections/{section}/reset", accountSettingsCtrl.Reset)
 			// S1.4.7: GET /v1/accounts/{accountId}/settings/{group} settings.read (policies.MayViewSettings).
 			// Platform-managed groups stay readable for owner, admin, and auditor.
 			r.Middleware(middleware.MayViewSettings()).Get("/settings/{group}", accountSettingsCtrl.ShowGroup)

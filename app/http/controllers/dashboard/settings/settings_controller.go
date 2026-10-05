@@ -140,7 +140,7 @@ func (ctrl *SettingsController) Flush(ctx http.Context) http.Response {
 
 // Reset godoc
 // @Summary      Reset one account settings section
-// @Description  Deletes stored rows of every account-managed group on the page. Secrets are not returned. An unknown section is 404. A platform-managed group is 403 and is left unchanged.
+// @Description  POST /v1/accounts/{accountId}/settings/sections/{section}/reset applies policies.MayUpdateSettings (settings.write) before the handler. Owner and admin may reset an account-managed section. Auditor and user may not, and that refusal does not reset the section. The refusal is 403 with the same message the flush route returns. Deletes stored rows of every account-managed group on the page. Secrets are not returned. An unknown section is 404 for a role that may reset. A platform-managed group is 403 and is left unchanged.
 // @Tags         Account Settings
 // @Security     BearerAuth
 // @Produce      json

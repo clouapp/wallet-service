@@ -573,18 +573,85 @@ func (s *accountSettingsSuite) TestFlushPlatformManagedSectionIsForbidden() {
 
 func (s *accountSettingsSuite) TestResetUnknownSectionIsNotFoundBeforeForbidden() {
 	accountID, token := s.owner()
+	s.insertSecurityIdle(accountID, "45")
+
 	response := s.resetParsed(token, accountID, "not-a-section", 404)
 	s.Equal("not_found", response["error"].(map[string]any)["code"])
+	s.assertSecurityIdle(accountID, "45")
+
+	admin := s.member(accountID, models.AccountRoleAdmin)
+	raw := s.reset(admin, accountID, "security", 200)
+	s.NotContains(raw, "enc:v1:")
+	s.assertSecurityIdleAbsent(accountID)
+
+	s.insertSecurityIdle(accountID, "45")
+	var resets int64
+	err := facades.Orm().Query().Raw(
+		`SELECT count(*) FROM account_activity WHERE account_id = ? AND action = 'settings.section_reset'`,
+		accountID,
+	).Scan(&resets)
+	s.Require().NoError(err)
 
 	auditor := s.member(accountID, "auditor")
-	response = s.resetParsed(auditor, accountID, "scanning", 404)
-	s.Equal("not_found", response["error"].(map[string]any)["code"])
+	s.assertResetWriteDenied(auditor, accountID, "scanning")
+	s.assertResetWriteDenied(auditor, accountID, "security")
 
 	user := s.member(accountID, "user")
-	response = s.resetParsed(user, accountID, "not-a-section", 404)
-	s.Equal("not_found", response["error"].(map[string]any)["code"])
-	response = s.resetParsed(user, accountID, "security", 403)
-	s.Equal("forbidden", response["error"].(map[string]any)["code"])
+	s.assertResetWriteDenied(user, accountID, "not-a-section")
+	s.assertResetWriteDenied(user, accountID, "security")
+	s.assertSecurityIdle(accountID, "45")
+
+	var after int64
+	err = facades.Orm().Query().Raw(
+		`SELECT count(*) FROM account_activity WHERE account_id = ? AND action = 'settings.section_reset'`,
+		accountID,
+	).Scan(&after)
+	s.Require().NoError(err)
+	s.Equal(resets, after)
+}
+
+func (s *accountSettingsSuite) assertResetWriteDenied(token string, accountID uuid.UUID, section string) {
+	s.T().Helper()
+	raw := s.reset(token, accountID, section, 403)
+	s.NotContains(raw, "enc:v1:")
+	var parsed map[string]any
+	s.Require().NoError(json.Unmarshal([]byte(raw), &parsed))
+	errBody, _ := parsed["error"].(map[string]any)
+	s.Equal("forbidden", errBody["code"])
+	s.Equal(settings.ErrUpdateForbidden.Error(), errBody["message"])
+	s.assertSecurityIdle(accountID, "45")
+}
+
+func (s *accountSettingsSuite) insertSecurityIdle(accountID uuid.UUID, value string) {
+	s.T().Helper()
+	_, err := facades.Orm().Query().Exec(
+		`INSERT INTO settings (account_id, "group", "key", value, created_at, updated_at)
+		 VALUES (?, 'account_security', 'session_idle_minutes', ?, NOW(), NOW())`,
+		accountID, value,
+	)
+	s.Require().NoError(err)
+}
+
+func (s *accountSettingsSuite) assertSecurityIdle(accountID uuid.UUID, value string) {
+	s.T().Helper()
+	var stored string
+	err := facades.Orm().Query().Raw(
+		`SELECT value FROM settings WHERE account_id = ? AND "group" = 'account_security' AND "key" = 'session_idle_minutes'`,
+		accountID,
+	).Scan(&stored)
+	s.Require().NoError(err)
+	s.Equal(value, stored)
+}
+
+func (s *accountSettingsSuite) assertSecurityIdleAbsent(accountID uuid.UUID) {
+	s.T().Helper()
+	var rows int64
+	err := facades.Orm().Query().Raw(
+		`SELECT count(*) FROM settings WHERE account_id = ? AND "group" = 'account_security'`,
+		accountID,
+	).Scan(&rows)
+	s.Require().NoError(err)
+	s.Equal(int64(0), rows)
 }
 
 func (s *accountSettingsSuite) TestResetPlatformManagedSectionIsForbidden() {
