@@ -118,9 +118,6 @@ func (ctrl *WebhooksController) CreateWalletWebhook(ctx http.Context) http.Respo
 // @Router       /wallets/{walletId}/webhooks/{webhookId} [delete]
 func (ctrl *WebhooksController) DeleteWalletWebhook(ctx http.Context) http.Response {
 	wallet := requestctx.MustWallet(ctx)
-	if resp := controllers.Deny(ctx, policies.WalletManageWebhooks(controllers.WalletMembership(ctx, ctrl.memberships, wallet.ID))); resp != nil {
-		return resp
-	}
 
 	webhookID, err := requests.RouteUUID(ctx, "webhookId")
 	if err != nil {

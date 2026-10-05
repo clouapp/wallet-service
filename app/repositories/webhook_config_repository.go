@@ -162,7 +162,9 @@ func (r *WebhookConfigRepository) Delete(ctx context.Context, cfg *models.Webhoo
 	if cfg == nil {
 		return fmt.Errorf("delete webhook config: config is nil")
 	}
-	if _, err := r.Query(ctx).Delete(cfg); err != nil {
+	// Where is required: Delete(cfg) has no WHERE when the activity log
+	// reads the before-image, so a session causer refuses the write.
+	if _, err := r.Query(ctx).Where("id = ?", cfg.ID).Delete(&models.WebhookConfig{}); err != nil {
 		return fmt.Errorf("delete webhook config: %w", err)
 	}
 	return nil

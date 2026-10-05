@@ -214,7 +214,7 @@ var routeTable = map[string]routeSecurity{
 	"GET|HEAD /v1/wallets/{walletId}/webhooks":                         session(chainWallet),
 	"POST /v1/wallets/{walletId}/webhooks":                             session(chainWalletManageWebhooks),
 	"POST /v1/wallets/{walletId}/webhooks/{webhookId}/test":            session(chainWallet),
-	"DELETE /v1/wallets/{walletId}/webhooks/{webhookId}":               session(chainWallet),
+	"DELETE /v1/wallets/{walletId}/webhooks/{webhookId}":               session(chainWalletManageWebhooks),
 	"GET|HEAD /v1/wallets/{walletId}/whitelist":                        session(chainWallet),
 	"POST /v1/wallets/{walletId}/whitelist":                            session(chainWalletWhitelist),
 	"DELETE /v1/wallets/{walletId}/whitelist/{entryId}":                session(chainWalletWhitelist),
