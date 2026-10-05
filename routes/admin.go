@@ -424,20 +424,20 @@ func newDashboardAddressesController() *dashaddresses.AddressesController {
 }
 
 func newDashboardWithdrawalsController() *dashwithdrawals.WithdrawalsController {
-	return dashwithdrawals.NewWithdrawalsController(
-		container.MustMake[*withdrawalrecords.Records](),
-		container.MustMake[*chainsvc.Service](),
-		container.MustMake[*usersvc.Service](),
-		container.MustMake[*chainpkg.Registry](),
-		container.MustMake[*withdraw.Service](),
-		container.MustMake[*authsvc.Service](),
-		container.MustMake[*featuressvc.Service](),
-		container.MustMake[*withdrawalevents.Publisher](),
-		container.MustMake[*container.SharedRedis]().Client,
-		walletPolicyMemberships(),
-		container.MustMake[*walletrecords.Wallets](),
-		container.MustMake[*authsvc.SecondFactorVerifier](),
-	)
+	return dashwithdrawals.NewWithdrawalsController(dashwithdrawals.WithdrawalsControllerDeps{
+		Withdrawals:       container.MustMake[*withdrawalrecords.Records](),
+		Chains:            container.MustMake[*chainsvc.Service](),
+		Users:             container.MustMake[*usersvc.Service](),
+		Registry:          container.MustMake[*chainpkg.Registry](),
+		WithdrawalService: container.MustMake[*withdraw.Service](),
+		Passwords:         container.MustMake[*authsvc.Service](),
+		Flags:             container.MustMake[*featuressvc.Service](),
+		Events:            container.MustMake[*withdrawalevents.Publisher](),
+		Redis:             container.MustMake[*container.SharedRedis]().Client,
+		Memberships:       walletPolicyMemberships(),
+		Wallets:           container.MustMake[*walletrecords.Wallets](),
+		SecondFactor:      container.MustMake[*authsvc.SecondFactorVerifier](),
+	})
 }
 
 func newDashboardSweepController() *dashsweep.SweepController {
