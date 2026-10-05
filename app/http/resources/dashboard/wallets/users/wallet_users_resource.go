@@ -6,6 +6,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/goravel/framework/support/carbon"
 
+	userresource "github.com/macrowallets/waas/app/http/resources/dashboard/users"
 	"github.com/macrowallets/waas/app/models"
 )
 
@@ -14,15 +15,15 @@ import (
 // pointer. A nil page stays nil; an empty page stays empty. A nil membership
 // stays null.
 type WalletUser struct {
-	CreatedAt *carbon.DateTime `json:"created_at"`
-	UpdatedAt *carbon.DateTime `json:"updated_at"`
-	ID        uuid.UUID        `json:"id"`
-	WalletID  uuid.UUID        `json:"wallet_id"`
-	UserID    uuid.UUID        `json:"user_id"`
-	Roles     string           `json:"roles,omitempty"`
-	Status    string           `json:"status"`
-	DeletedAt *time.Time       `json:"deleted_at,omitempty"`
-	User      *models.User     `json:"user,omitempty"`
+	CreatedAt *carbon.DateTime   `json:"created_at"`
+	UpdatedAt *carbon.DateTime   `json:"updated_at"`
+	ID        uuid.UUID          `json:"id"`
+	WalletID  uuid.UUID          `json:"wallet_id"`
+	UserID    uuid.UUID          `json:"user_id"`
+	Roles     string             `json:"roles,omitempty"`
+	Status    string             `json:"status"`
+	DeletedAt *time.Time         `json:"deleted_at,omitempty"`
+	User      *userresource.User `json:"user,omitempty"`
 }
 
 // WalletUserFrom projects one membership.
@@ -36,7 +37,7 @@ func WalletUserFrom(member models.WalletUser) WalletUser {
 		Roles:     member.Roles,
 		Status:    member.Status,
 		DeletedAt: member.DeletedAt,
-		User:      member.User,
+		User:      userresource.UserFrom(member.User),
 	}
 }
 
