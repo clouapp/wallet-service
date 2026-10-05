@@ -2,13 +2,15 @@ package seeds
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"log/slog"
 
 	"github.com/google/uuid"
-	"github.com/goravel/framework/facades"
 	"github.com/shopspring/decimal"
 
 	"github.com/macrowallets/waas/app/models"
+	"github.com/macrowallets/waas/app/repositories"
 	"github.com/macrowallets/waas/pkg/numeric"
 )
 
@@ -31,14 +33,15 @@ var activeFiatCodes = map[string]bool{
 	"TRY": true, "ARS": true, "NGN": true,
 }
 
-func SeedCurrencies(_ context.Context) error {
-	if err := seedCryptos(); err != nil {
+func SeedCurrencies(ctx context.Context) error {
+	currencies := repositories.NewCurrencyRepository(nil)
+	if err := seedCryptos(ctx, currencies); err != nil {
 		return err
 	}
-	return seedFiats()
+	return seedFiats(ctx, currencies)
 }
 
-func seedCryptos() error {
+func seedCryptos(ctx context.Context, currencies *repositories.CurrencyRepository) error {
 	const cmcBase = "https://s2.coinmarketcap.com/static/img/coins/64x64"
 
 	cryptos := []currencySeed{
@@ -64,13 +67,8 @@ func seedCryptos() error {
 	}
 
 	for _, c := range cryptos {
-		var existing models.Currency
-		if err := facades.Orm().Query().Where("code", c.Code).First(&existing); err == nil && existing.ID != uuid.Nil {
-			slog.Info("currency already exists, skipping", "code", c.Code)
-			continue
-		}
 		logo := c.Logo
-		cur := models.Currency{
+		if err := insertCurrencyIfMissing(ctx, currencies, models.Currency{
 			ID:       uuid.New(),
 			Name:     c.Name,
 			Code:     c.Code,
@@ -79,16 +77,14 @@ func seedCryptos() error {
 			Logo:     &logo,
 			Subunits: c.Subunits,
 			Active:   c.Active,
-		}
-		if err := facades.Orm().Query().Create(&cur); err != nil {
+		}, "created crypto currency"); err != nil {
 			return err
 		}
-		slog.Info("created crypto currency", "code", c.Code)
 	}
 	return nil
 }
 
-func seedFiats() error {
+func seedFiats(ctx context.Context, currencies *repositories.CurrencyRepository) error {
 	fiats := []currencySeed{
 		{"US Dollar", "USD", "$", 2, true, ""},
 		{"Euro", "EUR", "€", 2, true, ""},
@@ -237,17 +233,12 @@ func seedFiats() error {
 	}
 
 	for _, f := range fiats {
-		var existing models.Currency
-		if err := facades.Orm().Query().Where("code", f.Code).First(&existing); err == nil && existing.ID != uuid.Nil {
-			slog.Info("currency already exists, skipping", "code", f.Code)
-			continue
-		}
 		// The zero value is omitted on insert, so the column default (1) applies.
 		var price numeric.Decimal
 		if f.Code == usdFiatCode {
 			price = numeric.NewDecimal(decimal.NewFromInt(1))
 		}
-		cur := models.Currency{
+		if err := insertCurrencyIfMissing(ctx, currencies, models.Currency{
 			ID:           uuid.New(),
 			Name:         f.Name,
 			Code:         f.Code,
@@ -256,11 +247,27 @@ func seedFiats() error {
 			Subunits:     f.Subunits,
 			CurrentPrice: price,
 			Active:       activeFiatCodes[f.Code],
-		}
-		if err := facades.Orm().Query().Create(&cur); err != nil {
+		}, "created fiat currency"); err != nil {
 			return err
 		}
-		slog.Info("created fiat currency", "code", f.Code)
 	}
+	return nil
+}
+
+// insertCurrencyIfMissing writes cur when its code is absent. An existing row,
+// including a disabled one, is left as it is.
+func insertCurrencyIfMissing(ctx context.Context, currencies *repositories.CurrencyRepository, cur models.Currency, createdLog string) error {
+	existing, err := currencies.FindByCode(ctx, cur.Code)
+	if err != nil && !errors.Is(err, models.ErrRepositoryNotFound) {
+		return fmt.Errorf("find currency %s: %w", cur.Code, err)
+	}
+	if existing != nil && existing.ID != uuid.Nil {
+		slog.Info("currency already exists, skipping", "code", cur.Code)
+		return nil
+	}
+	if err := currencies.Create(ctx, &cur); err != nil {
+		return fmt.Errorf("create currency %s: %w", cur.Code, err)
+	}
+	slog.Info(createdLog, "code", cur.Code)
 	return nil
 }
