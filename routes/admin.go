@@ -360,10 +360,10 @@ func newDashboardWalletUsersController() *dashwallets.UsersController {
 }
 
 func newDashboardWhitelistController() *dashwallets.WhitelistController {
-	return dashwallets.NewWhitelistController(
-		container.MustMake[*walletrecords.Whitelist](),
-		walletPolicyMemberships(),
-	)
+	return dashwallets.NewWhitelistController(dashwallets.WhitelistControllerDeps{
+		Entries:     container.MustMake[*walletrecords.Whitelist](),
+		Memberships: walletPolicyMemberships(),
+	})
 }
 
 func newDashboardWalletWebhooksController() *dashwallets.WebhooksController {

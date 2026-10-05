@@ -21,19 +21,24 @@ type WhitelistController struct {
 	memberships *walletrecords.Memberships
 }
 
-func NewWhitelistController(
-	entries *walletrecords.Whitelist,
-	memberships *walletrecords.Memberships,
-) *WhitelistController {
-	if entries == nil {
+// WhitelistControllerDeps is everything the dashboard whitelist controller needs.
+// Every field is required.
+type WhitelistControllerDeps struct {
+	Entries     *walletrecords.Whitelist
+	Memberships *walletrecords.Memberships
+}
+
+// NewWhitelistController wires the dashboard whitelist handlers from WhitelistControllerDeps.
+func NewWhitelistController(deps WhitelistControllerDeps) *WhitelistController {
+	if deps.Entries == nil {
 		panic("dashboard whitelist controller: whitelist service is required")
 	}
-	if memberships == nil {
+	if deps.Memberships == nil {
 		panic("dashboard whitelist controller: wallet memberships are required")
 	}
 	return &WhitelistController{
-		entries:     entries,
-		memberships: memberships,
+		entries:     deps.Entries,
+		memberships: deps.Memberships,
 	}
 }
 
