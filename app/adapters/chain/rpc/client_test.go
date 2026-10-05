@@ -1,4 +1,4 @@
-package chain
+package rpc
 
 import (
 	"context"
@@ -119,6 +119,24 @@ func TestRPCClient_Call_HTTPErrorIncludesStatus(t *testing.T) {
 	err := rpc.Call(context.Background(), "eth_blockNumber", &result)
 	if err == nil || !strings.Contains(err.Error(), "HTTP 429") {
 		t.Fatalf("expected HTTP status error, got %v", err)
+	}
+}
+
+func TestRPCClient_Call_EmptyUserAndPasswordSendNoBasicAuth(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if _, _, ok := r.BasicAuth(); ok || r.Header.Get("Authorization") != "" {
+			t.Fatal("authorization was sent")
+		}
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"jsonrpc": "2.0", "id": 1, "result": "ok",
+		})
+	}))
+	defer server.Close()
+
+	rpc := NewRPCClient(RPCClientDeps{URL: server.URL})
+	var result string
+	if err := rpc.Call(context.Background(), "ping", &result); err != nil {
+		t.Fatal(err)
 	}
 }
 

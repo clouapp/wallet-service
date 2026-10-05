@@ -53,16 +53,20 @@ type RPC interface {
 	Receipt(ctx context.Context, hash string) (*Receipt, error)
 }
 
-// JSONRPC implements RPC over chain.RPCClient, whose errors never carry the URL.
+// JSONRPC implements RPC over the registered JSON-RPC client, whose errors never carry the URL.
 type JSONRPC struct {
-	client *chain.RPCClient
+	client chain.JSONRPCCaller
 }
 
 func NewJSONRPC(url string) (*JSONRPC, error) {
 	if !strings.HasPrefix(url, "http://") && !strings.HasPrefix(url, "https://") {
 		return nil, fmt.Errorf("rpc url must be http(s)")
 	}
-	return &JSONRPC{client: chain.NewRPCClient(chain.RPCClientDeps{URL: url})}, nil
+	client := chain.NewJSONRPCCaller(chain.JSONRPCDeps{URL: url})
+	if client == nil {
+		return nil, fmt.Errorf("json-rpc client is not linked")
+	}
+	return &JSONRPC{client: client}, nil
 }
 
 func (r *JSONRPC) quantity(ctx context.Context, method string, params ...interface{}) (*big.Int, error) {

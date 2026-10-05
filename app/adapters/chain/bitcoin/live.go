@@ -10,6 +10,7 @@ import (
 
 	"github.com/shopspring/decimal"
 
+	"github.com/macrowallets/waas/app/adapters/chain/rpc"
 	"github.com/macrowallets/waas/app/services/chain"
 	"github.com/macrowallets/waas/pkg/httpclient"
 	"github.com/macrowallets/waas/pkg/numeric"
@@ -38,7 +39,7 @@ type BitcoinConfig struct {
 // The chain service keeps the types.Chain port this client already satisfies.
 type BitcoinLive struct {
 	cfg          BitcoinConfig
-	rpc          *chain.RPCClient
+	rpc          *rpc.RPCClient
 	restAPI      bool
 	http         *httpclient.Client
 	esploraRetry rateLimitRetry
@@ -56,7 +57,7 @@ func NewBitcoinLive(cfg BitcoinConfig) *BitcoinLive {
 	isREST := bitcoinRESTEndpoint(cfg.RPCURL)
 	return &BitcoinLive{
 		cfg:          cfg,
-		rpc:          chain.NewRPCClient(chain.RPCClientDeps{URL: cfg.RPCURL, User: cfg.RPCUser, Password: cfg.RPCPass}),
+		rpc:          rpc.NewRPCClient(rpc.RPCClientDeps{URL: cfg.RPCURL, User: cfg.RPCUser, Password: cfg.RPCPass}),
 		restAPI:      isREST,
 		http:         httpclient.NewClient(bitcoinRESTTimeout),
 		esploraRetry: esploraRetry(),
@@ -89,7 +90,7 @@ func (a *BitcoinLive) ReplaceEndpoint(endpoint string) {
 	a.cfg.RPCURL = endpoint
 	a.restAPI = bitcoinRESTEndpoint(endpoint)
 	if a.rpc == nil {
-		a.rpc = chain.NewRPCClient(chain.RPCClientDeps{URL: endpoint, User: a.cfg.RPCUser, Password: a.cfg.RPCPass})
+		a.rpc = rpc.NewRPCClient(rpc.RPCClientDeps{URL: endpoint, User: a.cfg.RPCUser, Password: a.cfg.RPCPass})
 		return
 	}
 	a.rpc.ReplaceEndpoint(endpoint)

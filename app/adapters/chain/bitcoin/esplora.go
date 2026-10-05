@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/macrowallets/waas/app/adapters/chain/rpc"
 	"github.com/macrowallets/waas/app/services/chain"
 	"github.com/macrowallets/waas/pkg/httpclient"
 	"github.com/macrowallets/waas/pkg/types"
@@ -178,7 +179,7 @@ func (a *BitcoinLive) getTransactionBlockRPC(ctx context.Context, txHash string)
 		BlockHash string `json:"blockhash"`
 	}
 	if err := a.rpc.Call(ctx, "getrawtransaction", &tx, txID, true); err != nil {
-		var rpcErr *chain.RPCError
+		var rpcErr *rpc.RPCError
 		if errors.As(err, &rpcErr) && rpcErr.Code == bitcoindTxNotFoundCode {
 			return 0, nil
 		}

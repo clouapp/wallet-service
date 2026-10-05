@@ -8,7 +8,7 @@ import (
 	"math/big"
 	"time"
 
-	"github.com/macrowallets/waas/app/services/chain"
+	"github.com/macrowallets/waas/app/adapters/chain/rpc"
 	"github.com/macrowallets/waas/pkg/types"
 )
 
@@ -68,7 +68,7 @@ func (a *SolanaLive) ScanBlock(ctx context.Context, slot uint64) ([]types.Detect
 }
 
 func isSolanaSkippedSlot(err error) bool {
-	var rpcErr *chain.RPCError
+	var rpcErr *rpc.RPCError
 	if !errors.As(err, &rpcErr) {
 		return false
 	}

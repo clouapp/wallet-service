@@ -6,7 +6,7 @@ import (
 	"math/big"
 	"strings"
 
-	"github.com/macrowallets/waas/app/services/chain"
+	"github.com/macrowallets/waas/app/adapters/chain/rpc"
 	"github.com/macrowallets/waas/pkg/types"
 )
 
@@ -22,13 +22,13 @@ type SolanaConfig struct {
 // The chain service keeps the types.Chain port this client already satisfies.
 type SolanaLive struct {
 	cfg SolanaConfig
-	rpc *chain.RPCClient
+	rpc *rpc.RPCClient
 }
 
 var _ types.Chain = (*SolanaLive)(nil)
 
 func NewSolanaLive(cfg SolanaConfig) *SolanaLive {
-	return &SolanaLive{cfg: cfg, rpc: chain.NewRPCClient(chain.RPCClientDeps{URL: cfg.RPCURL})}
+	return &SolanaLive{cfg: cfg, rpc: rpc.NewRPCClient(rpc.RPCClientDeps{URL: cfg.RPCURL})}
 }
 
 // Endpoint is the URL the next dial uses. Callers must not log it.
@@ -51,7 +51,7 @@ func (a *SolanaLive) ReplaceEndpoint(endpoint string) {
 	}
 	a.cfg.RPCURL = endpoint
 	if a.rpc == nil {
-		a.rpc = chain.NewRPCClient(chain.RPCClientDeps{URL: endpoint})
+		a.rpc = rpc.NewRPCClient(rpc.RPCClientDeps{URL: endpoint})
 		return
 	}
 	a.rpc.ReplaceEndpoint(endpoint)

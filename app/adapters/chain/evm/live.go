@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/hex"
 	"fmt"
+	"github.com/macrowallets/waas/app/adapters/chain/rpc"
 	"github.com/macrowallets/waas/app/services/chain"
 	"math/big"
 	"strings"
@@ -63,7 +64,7 @@ type EVMConfig struct {
 // The chain service keeps the types.Chain port this client already satisfies.
 type EVMLive struct {
 	cfg EVMConfig
-	rpc *chain.RPCClient
+	rpc *rpc.RPCClient
 	fee chain.FeePolicy
 }
 
@@ -86,7 +87,7 @@ func (a *EVMLive) FeePolicy() chain.FeePolicy { return a.fee }
 func NewEVMLive(cfg EVMConfig) *EVMLive {
 	return &EVMLive{
 		cfg: cfg,
-		rpc: chain.NewRPCClient(chain.RPCClientDeps{URL: cfg.RPCURL}),
+		rpc: rpc.NewRPCClient(rpc.RPCClientDeps{URL: cfg.RPCURL}),
 	}
 }
 
@@ -110,7 +111,7 @@ func (a *EVMLive) ReplaceEndpoint(endpoint string) {
 	}
 	a.cfg.RPCURL = endpoint
 	if a.rpc == nil {
-		a.rpc = chain.NewRPCClient(chain.RPCClientDeps{URL: endpoint})
+		a.rpc = rpc.NewRPCClient(rpc.RPCClientDeps{URL: endpoint})
 		return
 	}
 	a.rpc.ReplaceEndpoint(endpoint)

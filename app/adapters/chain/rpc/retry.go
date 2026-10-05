@@ -1,4 +1,4 @@
-package chain
+package rpc
 
 import (
 	"bytes"

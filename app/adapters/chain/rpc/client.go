@@ -1,4 +1,4 @@
-package chain
+package rpc
 
 import (
 	"context"
@@ -11,6 +11,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/macrowallets/waas/app/services/chain"
 	"github.com/macrowallets/waas/pkg/httpclient"
 )
 
@@ -20,11 +21,8 @@ const (
 	rpcHTTPTimeout      = 30 * time.Second
 )
 
-// ---------------------------------------------------------------------------
-// RPCClient — generic JSON-RPC 2.0 client.
-// BTC, ETH, SOL all speak JSON-RPC — only method names differ.
-// ---------------------------------------------------------------------------
-
+// RPCClient is a generic JSON-RPC 2.0 client.
+// BTC, ETH, and SOL all speak JSON-RPC — only method names differ.
 type RPCClient struct {
 	endpoint  atomic.Value // string; replaced without logging the URL
 	client    *httpclient.Client
@@ -114,7 +112,7 @@ func (c *RPCClient) Call(ctx context.Context, method string, out interface{}, pa
 		}
 		if isRateLimited(status, respBody) {
 			if attempt >= c.retry.maxAttempts {
-				return fmt.Errorf("rpc call %s: %w (HTTP %d) after %d attempts", method, ErrRateLimited, status, attempt)
+				return fmt.Errorf("rpc call %s: %w (HTTP %d) after %d attempts", method, chain.ErrRateLimited, status, attempt)
 			}
 			delay := c.retry.delay(attempt, header.Get("Retry-After"), time.Now())
 			slog.Warn("rpc rate limited, backing off", "method", method, "status", status, "attempt", attempt, "delay", delay.String())

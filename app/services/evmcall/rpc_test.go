@@ -7,6 +7,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
+	_ "github.com/macrowallets/waas/app/adapters/chain/rpc"
 )
 
 func newRPCServer(t *testing.T, results map[string]string) *JSONRPC {
