@@ -603,19 +603,23 @@ func (s *Service) collectWrites(group Group, stored map[string]string, body map[
 
 // prepareValue casts one incoming value. skip is true when a secret is blank:
 // the form never received the stored secret, so a blank field means keep it.
+// A non-blank secret is cast through its type before it is sealed.
 func (s *Service) prepareValue(definition Definition, incoming any) (value string, skip bool, err error) {
 	if definition.Secret {
 		if incoming == nil {
 			return "", true, nil
 		}
-		text, ok := incoming.(string)
-		if !ok {
-			return "", false, fmt.Errorf("expected string")
-		}
-		if strings.TrimSpace(text) == "" {
+		if text, ok := incoming.(string); ok && strings.TrimSpace(text) == "" {
 			return "", true, nil
 		}
-		sealed, sealErr := s.sealer.Seal(text)
+		cast, castErr := castIn(incoming, definition)
+		if castErr != nil {
+			return "", false, castErr
+		}
+		if cast == "" {
+			return "", true, nil
+		}
+		sealed, sealErr := s.sealer.Seal(cast)
 		if sealErr != nil {
 			slog.Error("account settings seal failed", "key", definition.Key)
 			return "", false, errSealFailed

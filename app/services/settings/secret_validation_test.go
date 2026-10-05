@@ -53,6 +53,53 @@ func TestPrepareValueSkipsABlankSecretBeforeSealing(t *testing.T) {
 	}
 }
 
+func TestPrepareValueCastsASecretBeforeSealing(t *testing.T) {
+	t.Parallel()
+
+	sealer := &countingSealer{}
+	service := NewService(newMemoryStore(), sealer, nopCache{}, discardActivity{})
+
+	units := Definition{Key: "units", Type: TypeInt, Secret: true}
+	if _, _, err := service.prepareValue(units, "nope"); err == nil {
+		t.Fatal("a secret of the wrong type was accepted")
+	}
+	if sealer.calls != 0 {
+		t.Fatal("a rejected secret was sealed")
+	}
+
+	stored, skip, err := service.prepareValue(units, " 7 ")
+	if err != nil || skip || stored != sealedPrefix+"7" {
+		t.Fatalf("stored = %q skip=%v err=%v", stored, skip, err)
+	}
+	if sealer.calls != 1 {
+		t.Fatalf("seal calls = %d", sealer.calls)
+	}
+
+	_, skip, err = service.prepareValue(units, "")
+	if err != nil || !skip {
+		t.Fatalf("blank integer secret skip=%v err=%v", skip, err)
+	}
+	if sealer.calls != 1 {
+		t.Fatal("a blank secret was sealed")
+	}
+
+	choice := Definition{Key: "mode", Type: TypeString, Secret: true, Options: []string{"tls"}}
+	if _, _, err := service.prepareValue(choice, "plain"); err == nil {
+		t.Fatal("a secret outside its options was accepted")
+	}
+	if sealer.calls != 1 {
+		t.Fatal("a rejected option was sealed")
+	}
+
+	stored, skip, err = service.prepareValue(choice, " tls ")
+	if err != nil || skip || stored != sealedPrefix+"tls" {
+		t.Fatalf("stored = %q skip=%v err=%v", stored, skip, err)
+	}
+	if sealer.calls != 2 {
+		t.Fatalf("seal calls = %d", sealer.calls)
+	}
+}
+
 func TestEffectiveNonSecretsOmitTheSecret(t *testing.T) {
 	t.Parallel()
 
