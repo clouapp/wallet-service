@@ -9,6 +9,7 @@ import (
 	"github.com/goravel/framework/facades"
 
 	"github.com/macrowallets/waas/app/models"
+	"github.com/macrowallets/waas/app/repositories"
 	"github.com/macrowallets/waas/app/services/chainregistry"
 	"github.com/macrowallets/waas/pkg/types"
 )
@@ -175,7 +176,7 @@ func createSeedChain(c chainSeed, encRPC string, thresholds *seedThresholds) err
 // alignSeededChains realigns rows that existed before the seed. No RPC probe: the
 // seed runs offline; chains:align-network checks the RPCs.
 func alignSeededChains(ctx context.Context, profile string) error {
-	store := chainregistry.NewORMStore()
+	store := repositories.NewChainRegistryRepository()
 	alignment, err := chainregistry.PlanAlignment(ctx, profile, store, facades.Crypt().DecryptString, nil, uuid.Nil)
 	if err != nil {
 		return fmt.Errorf("align chains to the %s profile: %w", profile, err)

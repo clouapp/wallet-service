@@ -1,4 +1,4 @@
-package chainregistry
+package repositories
 
 import (
 	"fmt"
@@ -12,12 +12,15 @@ import (
 
 const zeroBalanceRaw = "0"
 
-// ORMStore is the Store backed by the application database.
-type ORMStore struct{}
+// ChainRegistryRepository is the chain-registry store backed by the application database.
+type ChainRegistryRepository struct{}
 
-func NewORMStore() *ORMStore { return &ORMStore{} }
+// NewChainRegistryRepository returns the store the chain-registry alignment reads and writes.
+func NewChainRegistryRepository() *ChainRegistryRepository {
+	return &ChainRegistryRepository{}
+}
 
-func (s *ORMStore) Chains() ([]models.Chain, error) {
+func (s *ChainRegistryRepository) Chains() ([]models.Chain, error) {
 	var chains []models.Chain
 	err := facades.Orm().Query().Order("display_order ASC").Find(&chains)
 	return chains, err
@@ -25,7 +28,7 @@ func (s *ORMStore) Chains() ([]models.Chain, error) {
 
 // ChainHoldsBalance looks at the cached per-asset balances and the wallet-level
 // native balance; both are written by the balance refresh.
-func (s *ORMStore) ChainHoldsBalance(chainID string) (bool, error) {
+func (s *ChainRegistryRepository) ChainHoldsBalance(chainID string) (bool, error) {
 	assetRows, err := facades.Orm().Query().Table("wallet_asset_balances").
 		Where("chain_id = ?", chainID).
 		Where("amount_raw <> ?", zeroBalanceRaw).
@@ -46,7 +49,7 @@ func (s *ORMStore) ChainHoldsBalance(chainID string) (bool, error) {
 	return walletRows > 0, nil
 }
 
-func (s *ORMStore) UpdateChainNetwork(chainID string, networkID *int64, isTestnet bool) error {
+func (s *ChainRegistryRepository) UpdateChainNetwork(chainID string, networkID *int64, isTestnet bool) error {
 	result, err := facades.Orm().Query().Model(&models.Chain{}).
 		Where("id = ?", chainID).
 		Update(map[string]any{"network_id": networkID, "is_testnet": isTestnet})
@@ -59,7 +62,7 @@ func (s *ORMStore) UpdateChainNetwork(chainID string, networkID *int64, isTestne
 	return nil
 }
 
-func (s *ORMStore) FindAccount(id uuid.UUID) (*models.Account, error) {
+func (s *ChainRegistryRepository) FindAccount(id uuid.UUID) (*models.Account, error) {
 	var account models.Account
 	if err := facades.Orm().Query().Where("id = ?", id).First(&account); err != nil {
 		return nil, err
@@ -70,7 +73,7 @@ func (s *ORMStore) FindAccount(id uuid.UUID) (*models.Account, error) {
 	return &account, nil
 }
 
-func (s *ORMStore) UpdateAccountEnvironment(id uuid.UUID, environment string) error {
+func (s *ChainRegistryRepository) UpdateAccountEnvironment(id uuid.UUID, environment string) error {
 	result, err := facades.Orm().Query().Model(&models.Account{}).
 		Where("id = ?", id).
 		Update("environment", environment)
@@ -83,13 +86,13 @@ func (s *ORMStore) UpdateAccountEnvironment(id uuid.UUID, environment string) er
 	return nil
 }
 
-func (s *ORMStore) WalletsOnChain(chainID string) ([]models.Wallet, error) {
+func (s *ChainRegistryRepository) WalletsOnChain(chainID string) ([]models.Wallet, error) {
 	var wallets []models.Wallet
 	err := facades.Orm().Query().Where("chain = ?", chainID).Order("created_at ASC").Find(&wallets)
 	return wallets, err
 }
 
-func (s *ORMStore) ActiveAddressesOfWallet(walletID uuid.UUID) ([]models.Address, error) {
+func (s *ChainRegistryRepository) ActiveAddressesOfWallet(walletID uuid.UUID) ([]models.Address, error) {
 	var addresses []models.Address
 	err := facades.Orm().Query().
 		Where("wallet_id = ?", walletID).
@@ -99,7 +102,7 @@ func (s *ORMStore) ActiveAddressesOfWallet(walletID uuid.UUID) ([]models.Address
 	return addresses, err
 }
 
-func (s *ORMStore) ReissueGenesis(walletID uuid.UUID, genesis models.Address, retire []uuid.UUID) error {
+func (s *ChainRegistryRepository) ReissueGenesis(walletID uuid.UUID, genesis models.Address, retire []uuid.UUID) error {
 	return facades.Orm().Transaction(func(tx contractsorm.Query) error {
 		if len(retire) > 0 {
 			if _, err := tx.Model(&models.Address{}).

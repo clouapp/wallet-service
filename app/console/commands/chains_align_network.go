@@ -11,6 +11,7 @@ import (
 	"github.com/goravel/framework/facades"
 
 	"github.com/macrowallets/waas/app/models"
+	"github.com/macrowallets/waas/app/repositories"
 	"github.com/macrowallets/waas/app/services/chainregistry"
 	"github.com/macrowallets/waas/app/services/deposit"
 )
@@ -63,7 +64,7 @@ func (c *ChainsAlignNetwork) Handle(ctx console.Context) error {
 		accountID = parsed
 	}
 
-	store := chainregistry.NewORMStore()
+	store := repositories.NewChainRegistryRepository()
 	background := context.Background()
 	alignment, err := chainregistry.PlanAlignment(background, profile, store,
 		decryptAndResolveRPCURL, chainregistry.ProbeRPCNetwork, accountID)

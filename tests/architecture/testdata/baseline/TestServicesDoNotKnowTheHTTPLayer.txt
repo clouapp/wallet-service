@@ -1,5 +1,4 @@
 # TestServicesDoNotKnowTheHTTPLayer: known violations, rewritten by go test ./tests/architecture -update-baseline
-app/services/chainregistry/orm_store.go calls facades.Orm() (x9)
 app/services/deposit imports app/repositories
 app/services/ingest/service.go calls facades.Event()
 app/services/refresh imports app/repositories (x2)
