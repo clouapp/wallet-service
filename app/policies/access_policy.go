@@ -12,7 +12,7 @@ import (
 // The user role does not: the S3.4.2 catalog gives that role no users grant.
 const PermUsersRead = models.AccountPermUsersRead
 
-// PermUsersWrite is adding an account member and creating an account invite.
+// PermUsersWrite is adding or removing an account member and creating an account invite.
 // Owner and admin hold it. Auditor and user do not.
 const PermUsersWrite = models.AccountPermUsersWrite
 

@@ -10,7 +10,7 @@ import (
 // PermUsersRead is the account member list. Routes cannot import policies.
 const PermUsersRead = policies.PermUsersRead
 
-// PermUsersWrite is POST /v1/accounts/{accountId}/users and creating an account invite. Routes cannot import policies.
+// PermUsersWrite is POST and DELETE /v1/accounts/{accountId}/users[/{userId}] and creating an account invite. Routes cannot import policies.
 const PermUsersWrite = policies.PermUsersWrite
 
 // PermRolesRead is the account role catalog. Routes cannot import policies.

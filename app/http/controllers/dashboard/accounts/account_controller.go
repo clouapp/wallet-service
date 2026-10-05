@@ -390,10 +390,6 @@ func memberChange(req requests.UpdateAccountUserRequest) accountsvc.MemberChange
 // @Router       /accounts/{accountId}/users/{userId} [delete]
 func (ctrl *AccountsController) RemoveAccountUser(ctx http.Context) http.Response {
 	account := requestctx.MustAccount(ctx)
-	if errResp := controllers.Deny(ctx, policies.AccountRemoveUser(ctx, account.ID, middleware.SessionUserID(ctx))); errResp != nil {
-		return errResp
-	}
-
 	callerID := middleware.SessionUserID(ctx)
 	if callerID == uuid.Nil {
 		return responses.Send(ctx, http.StatusUnauthorized, http.Json{"error": "unauthenticated"})
