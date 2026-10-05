@@ -4,7 +4,9 @@ import "github.com/goravel/framework/contracts/http"
 
 // UpdateWebhookRequest changes the subscribed events or the active flag of an
 // account-level webhook. Secret is only needed to claim a legacy unowned webhook.
-// Field checks stay in the webhook service so its 400 messages stay put.
+// Rules type-check those fields. A blank secret is not required and keeps the
+// stored value. Empty updates and unknown events stay in the webhook service
+// so its 400 messages stay put.
 type UpdateWebhookRequest struct {
 	Open
 	Events   []string `form:"events" json:"events,omitempty"`
@@ -13,5 +15,9 @@ type UpdateWebhookRequest struct {
 }
 
 func (r *UpdateWebhookRequest) Rules(http.Context) map[string]string {
-	return map[string]string{}
+	return map[string]string{
+		"events":    "array",
+		"is_active": "bool",
+		"secret":    optionalString,
+	}
 }
