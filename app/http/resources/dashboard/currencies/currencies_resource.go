@@ -10,11 +10,11 @@ import (
 	"github.com/macrowallets/waas/pkg/numeric"
 )
 
-// CurrencyView is the currency row the dashboard reads. Field order and tags
+// Currency is the currency row the dashboard reads. Field order and tags
 // match the model wire, including embedded timestamps. A nil page stays nil;
 // an empty page stays empty. A nil currency stays null. A non-nil empty logo
 // stays "".
-type CurrencyView struct {
+type Currency struct {
 	CreatedAt      *carbon.DateTime    `json:"created_at"`
 	UpdatedAt      *carbon.DateTime    `json:"updated_at"`
 	ID             uuid.UUID           `json:"id"`
@@ -30,8 +30,9 @@ type CurrencyView struct {
 	Active         bool                `json:"active"`
 }
 
-func newCurrencyView(currency models.Currency) CurrencyView {
-	return CurrencyView{
+// CurrencyFrom projects one currency.
+func CurrencyFrom(currency models.Currency) Currency {
+	return Currency{
 		CreatedAt:      currency.CreatedAt,
 		UpdatedAt:      currency.UpdatedAt,
 		ID:             currency.ID,
@@ -48,23 +49,23 @@ func newCurrencyView(currency models.Currency) CurrencyView {
 	}
 }
 
-// CurrencyViews copies a page. A nil slice stays nil; an empty slice stays empty.
-func CurrencyViews(currencies []models.Currency) []CurrencyView {
+// CurrenciesFrom copies a page. A nil slice stays nil; an empty slice stays empty.
+func CurrenciesFrom(currencies []models.Currency) []Currency {
 	if currencies == nil {
 		return nil
 	}
-	views := make([]CurrencyView, len(currencies))
+	views := make([]Currency, len(currencies))
 	for i := range currencies {
-		views[i] = newCurrencyView(currencies[i])
+		views[i] = CurrencyFrom(currencies[i])
 	}
 	return views
 }
 
-// CurrencyViewPtr keeps a nil currency as JSON null.
-func CurrencyViewPtr(currency *models.Currency) *CurrencyView {
+// CurrencyPtr keeps a nil currency as JSON null.
+func CurrencyPtr(currency *models.Currency) *Currency {
 	if currency == nil {
 		return nil
 	}
-	view := newCurrencyView(*currency)
+	view := CurrencyFrom(*currency)
 	return &view
 }

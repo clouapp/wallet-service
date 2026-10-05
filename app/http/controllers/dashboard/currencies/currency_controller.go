@@ -6,6 +6,7 @@ import (
 	"github.com/goravel/framework/contracts/http"
 
 	"github.com/macrowallets/waas/app/http/requests"
+	currencyresources "github.com/macrowallets/waas/app/http/resources/dashboard/currencies"
 	"github.com/macrowallets/waas/app/http/responses"
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/services/currencies"
@@ -40,7 +41,7 @@ func (ctrl *CurrenciesController) ListCurrencies(ctx http.Context) http.Response
 	if err != nil {
 		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to fetch currencies"})
 	}
-	return responses.Send(ctx, http.StatusOK, http.Json{"data": CurrencyViews(currencies)})
+	return responses.Send(ctx, http.StatusOK, http.Json{"data": currencyresources.CurrenciesFrom(currencies)})
 }
 
 func (ctrl *CurrenciesController) GetCurrency(ctx http.Context) http.Response {
@@ -61,7 +62,7 @@ func (ctrl *CurrenciesController) GetCurrency(ctx http.Context) http.Response {
 	if currency == nil {
 		return responses.Send(ctx, http.StatusNotFound, http.Json{"error": "currency not found"})
 	}
-	return responses.Send(ctx, http.StatusOK, CurrencyViewPtr(currency))
+	return responses.Send(ctx, http.StatusOK, currencyresources.CurrencyPtr(currency))
 }
 
 func (ctrl *CurrenciesController) ConvertCurrency(ctx http.Context) http.Response {
