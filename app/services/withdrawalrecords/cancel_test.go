@@ -52,7 +52,7 @@ func (a *cancelActivity) Append(_ context.Context, row models.AccountActivity) e
 func TestCancelRecordsTheEventWithoutAnAmount(t *testing.T) {
 	store := &cancelStore{}
 	activity := &cancelActivity{}
-	records := NewRecords(store).WithActivity(activity)
+	records := NewRecords(Deps{Store: store, Activity: activity})
 	accountID := uuid.New()
 	actorID := uuid.New()
 	withdrawalID := uuid.New()

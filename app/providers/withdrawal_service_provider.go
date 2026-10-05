@@ -36,7 +36,10 @@ func (p *WithdrawalServiceProvider) Register(app foundation.Application) {
 		if err != nil {
 			return nil, err
 		}
-		return withdrawalrecords.NewRecords(store).WithActivity(activityLog), nil
+		return withdrawalrecords.NewRecords(withdrawalrecords.Deps{
+			Store:    store,
+			Activity: activityLog,
+		}), nil
 	})
 }
 

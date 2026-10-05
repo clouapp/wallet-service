@@ -35,16 +35,20 @@ type Records struct {
 	activity ActivityLog
 }
 
-// NewRecords builds the withdrawal record service.
-func NewRecords(store Store) *Records { return &Records{store: store} }
+// Deps is everything the withdrawal record service uses. A nil Store is
+// reported when a method runs, as the missing-repository error. Activity may
+// be nil; Cancel then reports that the activity log is required.
+type Deps struct {
+	Store    Store
+	Activity ActivityLog
+}
 
-// WithActivity attaches the audit writer Cancel uses.
-func (s *Records) WithActivity(activity ActivityLog) *Records {
-	if s == nil {
-		return nil
+// NewRecords builds the withdrawal record service.
+func NewRecords(deps Deps) *Records {
+	return &Records{
+		store:    deps.Store,
+		activity: deps.Activity,
 	}
-	s.activity = activity
-	return s
 }
 
 func (s *Records) ready(ctx context.Context, op string) error {
