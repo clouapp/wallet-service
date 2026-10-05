@@ -260,6 +260,10 @@ func (s *AccountActivityTestSuite) TestShowMatchesTheListItem() {
 
 	forbidden := s.showActivity(user.token, accountID, rowID)
 	forbidden.AssertForbidden()
+	forbiddenContent, err := forbidden.Content()
+	s.Require().NoError(err)
+	s.NotContains(forbiddenContent, rowID)
+	s.NotContains(forbiddenContent, "member.role_changed")
 	userCode, userMessage := s.errorText(forbidden)
 	s.Equal("forbidden", userCode)
 	s.Equal("you do not have permission to view account activity", userMessage)

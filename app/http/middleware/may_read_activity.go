@@ -8,12 +8,13 @@ import (
 	activitysvc "github.com/macrowallets/waas/app/services/activity"
 )
 
-// MayReadActivity refuses GET /v1/accounts/{accountId}/activity unless
-// policies.MayReadActivity allows the account role AccountContext already
-// stored. That permission is activity.read. Owner, admin, and auditor hold
-// it. User does not, and the retired viewer label stays refused. A denial
-// is 403 with the message the handler returned, and the activity list is
-// not written. Get keeps its own check for the show route.
+// MayReadActivity refuses GET /v1/accounts/{accountId}/activity and
+// GET /v1/accounts/{accountId}/activity/{id} unless policies.MayReadActivity
+// allows the account role AccountContext already stored. That permission is
+// activity.read. Owner, admin, and auditor hold it. User does not, and the
+// retired viewer label stays refused. A denial is 403 with the message the
+// handler returned, and neither the activity list nor the event is written.
+// List and Get keep their own checks.
 func MayReadActivity() http.Middleware {
 	return func(ctx http.Context) {
 		if !policies.MayReadActivity(AccountRole(ctx)) {

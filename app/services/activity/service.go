@@ -91,8 +91,9 @@ func (s *Service) List(ctx context.Context, accountID uuid.UUID, role string, li
 	return rows, total, nil
 }
 
-// Get returns one row of this account. The gate is the same activity.read
-// check as List: owner, admin and auditor may read, and user is
+// Get returns one row of this account. GET /v1/accounts/{accountId}/activity/{id}
+// applies policies.MayReadActivity (activity.read) before the handler. This
+// method still checks: owner, admin and auditor may read, and user is
 // ErrReadForbidden before any lookup. A row from another account, a platform
 // row, or an unknown id is ErrNotFound.
 func (s *Service) Get(ctx context.Context, accountID uuid.UUID, role string, activityID uuid.UUID) (models.AccountActivity, error) {

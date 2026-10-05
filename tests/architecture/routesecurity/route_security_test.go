@@ -123,7 +123,7 @@ var routeTable = map[string]routeSecurity{
 	"POST /v1/accounts/{accountId}/archive":                            session(chainAccountLifecycle),
 	"POST /v1/accounts/{accountId}/freeze":                             session(chainAccountLifecycle),
 	"GET|HEAD /v1/accounts/{accountId}/activity":                       session(chainAccountActivityRead),
-	"GET|HEAD /v1/accounts/{accountId}/activity/{id}":                  session(chainAccount),
+	"GET|HEAD /v1/accounts/{accountId}/activity/{id}":                  session(chainAccountActivityRead),
 	"GET|HEAD /v1/accounts/{accountId}/tokens":                         session(chainAccountTokensRead),
 	"POST /v1/accounts/{accountId}/tokens":                             session(chainAccountTokensMint),
 	"DELETE /v1/accounts/{accountId}/tokens/{tokenId}":                 session(chainAccountTokensWrite),
