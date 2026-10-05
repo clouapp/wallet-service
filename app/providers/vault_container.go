@@ -23,6 +23,7 @@ import (
 	mempooltip "github.com/macrowallets/waas/app/adapters/blockheight/mempool"
 	solanatip "github.com/macrowallets/waas/app/adapters/blockheight/solana"
 	bitcoinchain "github.com/macrowallets/waas/app/adapters/chain/bitcoin"
+	evmchain "github.com/macrowallets/waas/app/adapters/chain/evm"
 	solanachain "github.com/macrowallets/waas/app/adapters/chain/solana"
 	coinapiws "github.com/macrowallets/waas/app/adapters/price/coinapi"
 	queuesqs "github.com/macrowallets/waas/app/adapters/queue/sqs"
@@ -312,7 +313,7 @@ func buildVaultContainer(app foundation.Application) (*container.Container, erro
 				if ch.NetworkID != nil {
 					networkID = *ch.NetworkID
 				}
-				adapter = chainpkg.NewEVMLive(chainpkg.EVMConfig{
+				adapter = evmchain.NewEVMLive(evmchain.EVMConfig{
 					ChainIDStr:            ch.ID,
 					ChainName:             ch.Name,
 					NativeSymbol:          ch.NativeSymbol,
@@ -631,7 +632,7 @@ func defaultPendingDepositDir() string {
 
 // lenientLogScanChains keep their deployed deposit scan: a block whose eth_getLogs
 // fails is scanned for native transfers only. Every other EVM record fails the block
-// so the scanner retries it (chain.EVMConfig.StrictLogScan).
+// so the scanner retries it (evmchain.EVMConfig.StrictLogScan).
 var lenientLogScanChains = map[string]bool{
 	models.ChainETH:      true,
 	models.ChainTETH:     true,

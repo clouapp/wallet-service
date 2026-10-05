@@ -26,6 +26,7 @@ import (
 	"github.com/google/uuid"
 
 	bitcoinchain "github.com/macrowallets/waas/app/adapters/chain/bitcoin"
+	evmchain "github.com/macrowallets/waas/app/adapters/chain/evm"
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/services/addressing"
 	"github.com/macrowallets/waas/app/services/chain"
@@ -185,7 +186,7 @@ func (f *secp256k1WalletFixture) credentials() SigningCredentials {
 // records broadcasts instead of sending them.
 type evmSigningChain struct {
 	*mocks.MockChain
-	live *chain.EVMLive
+	live *evmchain.EVMLive
 }
 
 func (c *evmSigningChain) FinalizeMPCSignature(unsigned *types.UnsignedTx, signature, publicKey []byte) (*types.SignedTx, error) {
@@ -231,7 +232,7 @@ func newEVMSigningChain(t *testing.T, broadcasts *[]*types.SignedTx) *evmSigning
 		*broadcasts = append(*broadcasts, signed)
 		return signed.TxHash, nil
 	}
-	live := chain.NewEVMLive(chain.EVMConfig{ChainIDStr: models.ChainETH, NativeSymbol: models.NativeETH, NetworkID: sepoliaNetworkID})
+	live := evmchain.NewEVMLive(evmchain.EVMConfig{ChainIDStr: models.ChainETH, NativeSymbol: models.NativeETH, NetworkID: sepoliaNetworkID})
 	return &evmSigningChain{MockChain: mockChain, live: live}
 }
 

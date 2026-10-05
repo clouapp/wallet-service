@@ -303,7 +303,10 @@ func chooseGasLimit(requested, estimate uint64) (uint64, error) {
 }
 
 func (s *Service) sign(ctx context.Context, wallet *models.Wallet, request Request, plan *Plan, passphrase string) (*types.SignedTx, error) {
-	adapter := chain.NewEVMLive(chain.EVMConfig{ChainIDStr: wallet.Chain, ChainName: plan.Network, NetworkID: request.ChainID})
+	adapter := chain.NewEVMCallBuilder(wallet.Chain, plan.Network, request.ChainID)
+	if adapter == nil {
+		return nil, fmt.Errorf("sign: evm call builder is not registered")
+	}
 	unsigned, err := adapter.BuildCall(chain.EVMCall{
 		Nonce: plan.Nonce, To: request.To, Value: request.Value, Data: request.Data,
 		GasLimit: plan.GasLimit, GasPrice: plan.gasPrice,

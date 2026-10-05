@@ -8,6 +8,7 @@ import (
 
 	"github.com/google/uuid"
 
+	evmchain "github.com/macrowallets/waas/app/adapters/chain/evm"
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/services/chain"
 	"github.com/macrowallets/waas/pkg/types"
@@ -44,7 +45,7 @@ func (m *estimatingMockChain) EstimateTransferGasLimit(_ context.Context, req ty
 
 type evmGasFixture struct {
 	node     *mocks.FakeEVMNode
-	adapter  *chain.EVMLive
+	adapter  *evmchain.EVMLive
 	registry *chain.Registry
 	wallet   *models.Wallet
 	base     models.Address
@@ -55,7 +56,7 @@ func newEVMGasFixture(t *testing.T) *evmGasFixture {
 	node := mocks.NewFakeEVMNode(t)
 	node.EstimateGasHex = "0x134a4"                               // 79_012
 	node.TokenBalanceHex = "0x" + big.NewInt(20_000_000).Text(16) // 20 USDC on base
-	adapter := chain.NewEVMLive(chain.EVMConfig{
+	adapter := evmchain.NewEVMLive(evmchain.EVMConfig{
 		ChainIDStr:    gasPlanChain,
 		NativeSymbol:  gasPlanNative,
 		NativeDecimal: 18,

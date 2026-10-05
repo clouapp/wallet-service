@@ -87,6 +87,13 @@ func (p FeePolicy) hasMultiplier() bool {
 	return !p.multiplier.IsZero()
 }
 
+// ScaleGasPrice is ceil(gasPrice × multiplier) in wei. The live EVM adapter
+// prices with it. Nil and non-positive prices pass through so callers keep
+// their own "no usable price" checks.
+func (p FeePolicy) ScaleGasPrice(gasPrice *big.Int) *big.Int {
+	return p.scaleGasPrice(gasPrice)
+}
+
 // scaleGasPrice is ceil(gasPrice × multiplier) in wei; nil and non-positive
 // prices pass through so callers keep their own "no usable price" checks.
 func (p FeePolicy) scaleGasPrice(gasPrice *big.Int) *big.Int {

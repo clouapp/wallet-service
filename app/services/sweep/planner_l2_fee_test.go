@@ -7,6 +7,7 @@ import (
 
 	"github.com/google/uuid"
 
+	evmchain "github.com/macrowallets/waas/app/adapters/chain/evm"
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/services/chain"
 	"github.com/macrowallets/waas/pkg/types"
@@ -27,7 +28,7 @@ func baseSepoliaPlanner(t *testing.T, baseBalance *big.Int) (*service, uuid.UUID
 	node := mocks.NewFakeEVMNode(t)
 	node.L1FeeHex = l2FeeTestL1FeeHex
 	node.NativeBalanceHex = "0x" + baseBalance.Text(16)
-	adapter := chain.NewEVMLive(chain.EVMConfig{
+	adapter := evmchain.NewEVMLive(evmchain.EVMConfig{
 		ChainIDStr: models.ChainBase, NativeSymbol: models.NativeETH, NativeDecimal: 18,
 		NetworkID: models.EVMNetworkIDBaseSepolia, RPCURL: node.URL(),
 	})

@@ -9,6 +9,7 @@ import (
 	gethtypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/google/uuid"
 
+	evmchain "github.com/macrowallets/waas/app/adapters/chain/evm"
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/services/chain"
 	"github.com/macrowallets/waas/pkg/types"
@@ -21,9 +22,9 @@ const (
 	evmCallTestInbox          = "0xaAe29B0366299461418F5324a79Afc425BE5ae21"
 )
 
-func evmCallTestUnsigned(t *testing.T, chainID string, networkID int64) (*chain.EVMLive, *types.UnsignedTx) {
+func evmCallTestUnsigned(t *testing.T, chainID string, networkID int64) (*evmchain.EVMLive, *types.UnsignedTx) {
 	t.Helper()
-	adapter := chain.NewEVMLive(chain.EVMConfig{ChainIDStr: chainID, NetworkID: networkID})
+	adapter := evmchain.NewEVMLive(evmchain.EVMConfig{ChainIDStr: chainID, NetworkID: networkID})
 	unsigned, err := adapter.BuildCall(chain.EVMCall{
 		Nonce: 0, To: evmCallTestInbox, Value: big.NewInt(30_000_000_000_000_000),
 		Data: []byte{0x43, 0x93, 0x70, 0xb1}, GasLimit: 120_000, GasPrice: big.NewInt(2_000_000_000),

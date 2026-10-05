@@ -4,6 +4,7 @@ import (
 	"context"
 	"testing"
 
+	evmchain "github.com/macrowallets/waas/app/adapters/chain/evm"
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/services/chain"
 	"github.com/macrowallets/waas/pkg/types"
@@ -21,7 +22,7 @@ func addedChainsRegistry() (*chain.Registry, chainRows) {
 		{models.ChainArbitrum, models.NativeETH},
 		{models.ChainBSC, models.NativeBNB},
 	} {
-		registry.RegisterChain(chain.NewEVMLive(chain.EVMConfig{ChainIDStr: c.id, NativeSymbol: c.native, NativeDecimal: 18}))
+		registry.RegisterChain(evmchain.NewEVMLive(evmchain.EVMConfig{ChainIDStr: c.id, NativeSymbol: c.native, NativeDecimal: 18}))
 		rows[c.id] = &models.Chain{ID: c.id, NativeSymbol: c.native, NativeDecimals: 18}
 	}
 	registry.RegisterToken(types.Token{Symbol: models.SymbolUSDC, Contract: models.USDCContractBaseSepolia, Decimals: 6, ChainID: models.ChainBase})

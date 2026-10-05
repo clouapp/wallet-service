@@ -7,9 +7,9 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	evmchain "github.com/macrowallets/waas/app/adapters/chain/evm"
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/services/blockheight"
-	"github.com/macrowallets/waas/app/services/chain"
 )
 
 type failingTipProvider struct{ asked int }
@@ -33,7 +33,7 @@ func headNode(t *testing.T, headHex string) *httptest.Server {
 }
 
 func TestChainRPCNetworksReadTheTipFromTheAdapterOnTheFirstTick(t *testing.T) {
-	adapter := chain.NewEVMLive(chain.EVMConfig{ChainIDStr: models.ChainBase, NetworkID: models.EVMNetworkIDBaseSepolia, RPCURL: headNode(t, "0x2d6f3c7").URL})
+	adapter := evmchain.NewEVMLive(evmchain.EVMConfig{ChainIDStr: models.ChainBase, NetworkID: models.EVMNetworkIDBaseSepolia, RPCURL: headNode(t, "0x2d6f3c7").URL})
 	inner := &failingTipProvider{}
 	svc := &Service{
 		blockHeightProviders: map[string]blockheight.Provider{
@@ -52,7 +52,7 @@ func TestChainRPCNetworksReadTheTipFromTheAdapterOnTheFirstTick(t *testing.T) {
 }
 
 func TestProviderNetworksStillWaitForRepeatedFailuresBeforeFallingBack(t *testing.T) {
-	adapter := chain.NewEVMLive(chain.EVMConfig{ChainIDStr: models.ChainETH, NetworkID: models.EVMNetworkIDEthereumSepolia, RPCURL: headNode(t, "0x10").URL})
+	adapter := evmchain.NewEVMLive(evmchain.EVMConfig{ChainIDStr: models.ChainETH, NetworkID: models.EVMNetworkIDEthereumSepolia, RPCURL: headNode(t, "0x10").URL})
 	inner := &failingTipProvider{}
 	svc := &Service{
 		blockHeightProviders: map[string]blockheight.Provider{

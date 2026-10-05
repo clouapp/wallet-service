@@ -16,6 +16,7 @@ app/container → app/services/webhook (container → services)
 app/container → app/services/webhooksync (container → services)
 app/container → app/services/withdraw (container → services)
 app/container → app/services/withdrawalevents (container → services)
+app/http/controllers → app/adapters/chain/evm (http → adapters) [test]
 app/http/controllers → app/repositories (http → repositories) (x2)
 app/http/controllers/dashboard/accounts → app/repositories (http → repositories)
 app/http/controllers/dashboard/addresses → app/repositories (http → repositories)
@@ -36,13 +37,16 @@ app/http/requests → app/repositories (http → repositories) (x3)
 app/policies → app/container (policies → container) (x2)
 app/rules → app/container (rules → container)
 app/services/account → app/repositories (services → repositories) [test]
+app/services/deposit → app/adapters/chain/evm (services → adapters) [test]
 app/services/deposit → app/adapters/chain/solana (services → adapters) [test]
 app/services/deposit → app/repositories (services → repositories)
 app/services/deposit → app/repositories (services → repositories) [test] (x5)
+app/services/evmcall → app/adapters/chain/evm (services → adapters) [test]
 app/services/keyexport → app/adapters/chain/bitcoin (services → adapters) [test]
 app/services/refresh → app/repositories (services → repositories) (x2)
 app/services/refresh → app/repositories (services → repositories) [test]
 app/services/sweep → app/adapters/chain/bitcoin (services → adapters) [test] (x2)
+app/services/sweep → app/adapters/chain/evm (services → adapters) [test] (x4)
 app/services/sweep → app/adapters/chain/solana (services → adapters) [test] (x2)
 app/services/wallet → app/adapters/chain/bitcoin (services → adapters) [test]
 app/services/wallet → app/repositories (services → repositories) [test]
@@ -50,4 +54,5 @@ app/services/webhook → app/repositories (services → repositories) [test]
 app/services/webhooksync → app/repositories (services → repositories)
 app/services/withdraw → app/repositories (services → repositories)
 app/services/withdraw → app/repositories (services → repositories) [test]
+app/services/withdrawalevents → app/adapters/chain/evm (services → adapters) [test]
 routes → app/repositories (routes → repositories) (x3)

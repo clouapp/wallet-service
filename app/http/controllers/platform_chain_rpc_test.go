@@ -15,6 +15,7 @@ import (
 	"github.com/goravel/framework/facades"
 	"github.com/stretchr/testify/suite"
 
+	evmchain "github.com/macrowallets/waas/app/adapters/chain/evm"
 	"github.com/macrowallets/waas/app/container"
 	"github.com/macrowallets/waas/app/http/responses"
 	"github.com/macrowallets/waas/app/models"
@@ -186,7 +187,7 @@ func (s *PlatformChainRPCTestSuite) installEthDialer() func() {
 	s.T().Helper()
 	registry := container.MustMake[*chainpkg.Registry]()
 	previous, err := registry.Chain(models.ChainETH)
-	registry.RegisterChain(chainpkg.NewEVMLive(chainpkg.EVMConfig{
+	registry.RegisterChain(evmchain.NewEVMLive(evmchain.EVMConfig{
 		ChainIDStr:   models.ChainETH,
 		NativeSymbol: models.NativeETH,
 		RPCURL:       "http://127.0.0.1:1",
@@ -196,7 +197,7 @@ func (s *PlatformChainRPCTestSuite) installEthDialer() func() {
 			registry.RegisterChain(previous)
 			return
 		}
-		registry.RegisterChain(chainpkg.NewEVMLive(chainpkg.EVMConfig{
+		registry.RegisterChain(evmchain.NewEVMLive(evmchain.EVMConfig{
 			ChainIDStr:   models.ChainETH,
 			NativeSymbol: models.NativeETH,
 			RPCURL:       "http://127.0.0.1:1",

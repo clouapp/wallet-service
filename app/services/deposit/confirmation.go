@@ -4,11 +4,11 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"math/big"
 	"time"
 
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/services/blockheight"
-	"github.com/macrowallets/waas/app/services/chain"
 	"github.com/macrowallets/waas/pkg/types"
 )
 
@@ -19,18 +19,21 @@ const (
 )
 
 func adapterBlockHeightKind(adapter types.Chain) string {
-	switch adapter.(type) {
-	case *chain.EVMLive:
+	if _, ok := adapter.(evmNetwork); ok {
 		return models.AdapterTypeEVM
-	default:
-		if _, ok := adapter.(solanaNetwork); ok {
-			return models.AdapterTypeSolana
-		}
-		if _, ok := adapter.(bitcoinNetwork); ok {
-			return models.AdapterTypeBitcoin
-		}
-		return ""
 	}
+	if _, ok := adapter.(solanaNetwork); ok {
+		return models.AdapterTypeSolana
+	}
+	if _, ok := adapter.(bitcoinNetwork); ok {
+		return models.AdapterTypeBitcoin
+	}
+	return ""
+}
+
+// evmNetwork is the port the live EVM client already satisfies.
+type evmNetwork interface {
+	EstimateL1DataFee(ctx context.Context, req types.TransferRequest) (*big.Int, error)
 }
 
 // solanaNetwork is the port the live Solana client already satisfies.
