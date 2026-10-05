@@ -23,8 +23,16 @@ type RegistryDecimals struct {
 	chains   ChainStore
 }
 
-func NewRegistryDecimals(registry TokenRegistry, chains ChainStore) RegistryDecimals {
-	return RegistryDecimals{registry: registry, chains: chains}
+// RegistryDecimalsDeps is everything the decimal lookup needs. A nil field means that
+// dependency is absent.
+type RegistryDecimalsDeps struct {
+	Registry TokenRegistry
+	Chains   ChainStore
+}
+
+// NewRegistryDecimals wires the decimal lookup from RegistryDecimalsDeps.
+func NewRegistryDecimals(deps RegistryDecimalsDeps) RegistryDecimals {
+	return RegistryDecimals{registry: deps.Registry, chains: deps.Chains}
 }
 
 func (r RegistryDecimals) Decimals(chainID, asset string) (int, bool) {

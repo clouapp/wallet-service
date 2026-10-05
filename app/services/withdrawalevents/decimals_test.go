@@ -33,7 +33,7 @@ func addedChainsRegistry() (*chain.Registry, chainRows) {
 
 func TestRegistryDecimalsOfBaseArbitrumAndBSCAssets(t *testing.T) {
 	registry, rows := addedChainsRegistry()
-	decimals := NewRegistryDecimals(registry, rows)
+	decimals := NewRegistryDecimals(RegistryDecimalsDeps{Registry: registry, Chains: rows})
 
 	cases := []struct {
 		chainID, asset string
@@ -59,7 +59,7 @@ func TestRegistryDecimalsOfBaseArbitrumAndBSCAssets(t *testing.T) {
 
 func TestRegistryDecimalsRefusesAssetsForeignToTheChain(t *testing.T) {
 	registry, rows := addedChainsRegistry()
-	decimals := NewRegistryDecimals(registry, rows)
+	decimals := NewRegistryDecimals(RegistryDecimalsDeps{Registry: registry, Chains: rows})
 
 	for _, c := range []struct{ chainID, asset string }{
 		{models.ChainBSC, "ETH"},
