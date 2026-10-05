@@ -87,11 +87,49 @@ func TestNewValidation_NilFieldsAreAnEmptyObject(t *testing.T) {
 }
 
 func TestNewPage_KeepsTheListEnvelope(t *testing.T) {
-	encoded, err := json.Marshal(NewPage([]string{"a"}, 3, 20, 0))
+	encoded, err := json.Marshal(NewPage(PageDeps[[]string]{
+		Data:   []string{"a"},
+		Total:  3,
+		Limit:  20,
+		Offset: 0,
+	}))
 	if err != nil {
 		t.Fatal(err)
 	}
 	const want = `{"data":["a"],"total":3,"limit":20,"offset":0}`
+	if string(encoded) != want {
+		t.Fatalf("got %s", encoded)
+	}
+}
+
+func TestNewPage_EmptySliceEncodesAsArray(t *testing.T) {
+	encoded, err := json.Marshal(NewPage(PageDeps[[]string]{
+		Data:   []string{},
+		Total:  0,
+		Limit:  20,
+		Offset: 0,
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	const want = `{"data":[],"total":0,"limit":20,"offset":0}`
+	if string(encoded) != want {
+		t.Fatalf("got %s", encoded)
+	}
+}
+
+func TestNewPage_NilSliceStaysNull(t *testing.T) {
+	var rows []string
+	encoded, err := json.Marshal(NewPage(PageDeps[[]string]{
+		Data:   rows,
+		Total:  0,
+		Limit:  20,
+		Offset: 0,
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	const want = `{"data":null,"total":0,"limit":20,"offset":0}`
 	if string(encoded) != want {
 		t.Fatalf("got %s", encoded)
 	}
