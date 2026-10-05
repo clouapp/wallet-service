@@ -383,10 +383,10 @@ func newDashboardWalletSettingsController() *dashwallets.SettingsController {
 }
 
 func newDashboardBalancesController() *dashwallets.BalancesController {
-	return dashwallets.NewBalancesController(
-		container.MustMake[*walletrecords.Balances](),
-		container.MustMake[*chainsvc.Service](),
-	)
+	return dashwallets.NewBalancesController(dashwallets.BalancesControllerDeps{
+		Balances: container.MustMake[*walletrecords.Balances](),
+		Tokens:   container.MustMake[*chainsvc.Service](),
+	})
 }
 
 func newDashboardWalletTransactionsController() *dashwallets.TransactionsController {

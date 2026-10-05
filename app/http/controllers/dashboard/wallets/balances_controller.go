@@ -18,19 +18,24 @@ type BalancesController struct {
 	tokens   *chainsvc.Service
 }
 
-func NewBalancesController(
-	balances *walletrecords.Balances,
-	tokens *chainsvc.Service,
-) *BalancesController {
-	if balances == nil {
+// BalancesControllerDeps is everything the dashboard wallet balances controller needs.
+// Every field is required.
+type BalancesControllerDeps struct {
+	Balances *walletrecords.Balances
+	Tokens   *chainsvc.Service
+}
+
+// NewBalancesController wires the dashboard wallet balance handlers from BalancesControllerDeps.
+func NewBalancesController(deps BalancesControllerDeps) *BalancesController {
+	if deps.Balances == nil {
 		panic("dashboard balances controller: balances service is required")
 	}
-	if tokens == nil {
+	if deps.Tokens == nil {
 		panic("dashboard balances controller: chains service is required")
 	}
 	return &BalancesController{
-		balances: balances,
-		tokens:   tokens,
+		balances: deps.Balances,
+		tokens:   deps.Tokens,
 	}
 }
 
