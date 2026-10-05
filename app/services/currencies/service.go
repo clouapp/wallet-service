@@ -18,9 +18,15 @@ type Service struct {
 	store Store
 }
 
+// Deps is everything the currency catalogue service reads. A nil Store is
+// reported when a method runs, as the missing-repository error.
+type Deps struct {
+	Store Store
+}
+
 // NewService builds a currency catalogue service.
-func NewService(store Store) *Service {
-	return &Service{store: store}
+func NewService(deps Deps) *Service {
+	return &Service{store: deps.Store}
 }
 
 // FindAllActive returns every active currency, in the store's order.

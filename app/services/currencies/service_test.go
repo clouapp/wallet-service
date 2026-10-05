@@ -16,7 +16,7 @@ func TestFindAllActiveAndByCode(t *testing.T) {
 
 	usd := &models.Currency{Code: "USD", Active: true}
 	store := &fakeStore{active: []models.Currency{*usd}, byCode: map[string]*models.Currency{"USD": usd}}
-	svc := currencies.NewService(store)
+	svc := currencies.NewService(currencies.Deps{Store: store})
 
 	got, err := svc.FindAllActive(context.Background())
 	require.NoError(t, err)
@@ -36,10 +36,10 @@ func TestFindAllActiveAndByCode(t *testing.T) {
 func TestCurrencyReadsRequireContextAndStore(t *testing.T) {
 	t.Parallel()
 
-	_, err := currencies.NewService(&fakeStore{}).FindAllActive(nil)
+	_, err := currencies.NewService(currencies.Deps{Store: &fakeStore{}}).FindAllActive(nil)
 	require.EqualError(t, err, "list currencies: context is required")
 
-	_, err = currencies.NewService(nil).FindByCode(context.Background(), "USD")
+	_, err = currencies.NewService(currencies.Deps{}).FindByCode(context.Background(), "USD")
 	require.EqualError(t, err, "currencies service: currencies repository is required")
 
 	var svc *currencies.Service

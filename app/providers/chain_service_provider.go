@@ -100,7 +100,7 @@ func (p *ChainServiceProvider) Register(app foundation.Application) {
 		if err != nil {
 			return nil, err
 		}
-		return currencies.NewService(store), nil
+		return currencies.NewService(currencies.Deps{Store: store}), nil
 	})
 }
 
