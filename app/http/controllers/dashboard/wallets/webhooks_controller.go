@@ -22,24 +22,29 @@ type WebhooksController struct {
 	memberships *walletrecords.Memberships
 }
 
-func NewWebhooksController(
-	configs *walletrecords.Webhooks,
-	delivery *webhook.Service,
-	memberships *walletrecords.Memberships,
-) *WebhooksController {
-	if configs == nil {
+// WebhooksControllerDeps is everything the dashboard wallet webhooks controller needs.
+// Every field is required.
+type WebhooksControllerDeps struct {
+	Configs     *walletrecords.Webhooks
+	Delivery    *webhook.Service
+	Memberships *walletrecords.Memberships
+}
+
+// NewWebhooksController wires the dashboard wallet webhook handlers from WebhooksControllerDeps.
+func NewWebhooksController(deps WebhooksControllerDeps) *WebhooksController {
+	if deps.Configs == nil {
 		panic("dashboard wallet webhooks controller: webhook configs service is required")
 	}
-	if delivery == nil {
+	if deps.Delivery == nil {
 		panic("dashboard wallet webhooks controller: webhook delivery service is required")
 	}
-	if memberships == nil {
+	if deps.Memberships == nil {
 		panic("dashboard wallet webhooks controller: wallet memberships are required")
 	}
 	return &WebhooksController{
-		configs:     configs,
-		delivery:    delivery,
-		memberships: memberships,
+		configs:     deps.Configs,
+		delivery:    deps.Delivery,
+		memberships: deps.Memberships,
 	}
 }
 

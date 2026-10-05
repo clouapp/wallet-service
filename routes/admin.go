@@ -367,11 +367,11 @@ func newDashboardWhitelistController() *dashwallets.WhitelistController {
 }
 
 func newDashboardWalletWebhooksController() *dashwallets.WebhooksController {
-	return dashwallets.NewWebhooksController(
-		container.MustMake[*walletrecords.Webhooks](),
-		container.MustMake[*webhook.Service](),
-		walletPolicyMemberships(),
-	)
+	return dashwallets.NewWebhooksController(dashwallets.WebhooksControllerDeps{
+		Configs:     container.MustMake[*walletrecords.Webhooks](),
+		Delivery:    container.MustMake[*webhook.Service](),
+		Memberships: walletPolicyMemberships(),
+	})
 }
 
 func newDashboardWalletSettingsController() *dashwallets.SettingsController {
