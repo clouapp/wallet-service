@@ -82,6 +82,9 @@ func (p *WalletPolicy) CancelWithdrawal(ctx context.Context, arguments map[strin
 		return access.NewDenyResponse("missing wallet_id")
 	}
 	membership := membershipFor(ctx, arguments)
+	if membership.WalletRole == "" && membership.AccountRole == "" {
+		return access.NewDenyResponse("only the creator or an owner/admin may cancel this withdrawal")
+	}
 	if mayAdministerWallet(membership) {
 		return access.NewAllowResponse()
 	}
@@ -158,10 +161,14 @@ func WalletManageWebhooks(membership WalletMembership) contractsaccess.Response 
 }
 
 // WalletCancelWithdrawal is the wallet.cancel-withdrawal decision.
-// A non-auditor creator may cancel their own withdrawal. Wallet or account
-// owners and admins may cancel any. An account auditor is denied even when
-// they created the withdrawal.
+// A non-auditor creator who holds a wallet or account role may cancel their
+// own withdrawal. Wallet or account owners and admins may cancel any. An
+// account auditor is denied even when they created the withdrawal. A nil or
+// empty role set is denied.
 func WalletCancelWithdrawal(membership WalletMembership, creatorID uuid.UUID) contractsaccess.Response {
+	if membership.WalletRole == "" && membership.AccountRole == "" {
+		return access.NewDenyResponse("only the creator or an owner/admin may cancel this withdrawal")
+	}
 	if mayAdministerWallet(membership) {
 		return access.NewAllowResponse()
 	}

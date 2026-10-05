@@ -80,8 +80,22 @@ func TestWalletCancelWithdrawalKeepsTheCreatorRule(t *testing.T) {
 	if !WalletCancelWithdrawal(WalletMembership{AccountRole: roleOwner, UserID: other}, creator).Allowed() {
 		t.Fatal("an account owner may cancel someone else's withdrawal")
 	}
-	if !WalletCancelWithdrawal(WalletMembership{}, uuid.Nil).Allowed() {
-		t.Fatal("a missing user matches a withdrawal with no creator, as before")
+}
+
+func TestWalletCancelWithdrawalDeniesNilAndEmptyRoleSets(t *testing.T) {
+	t.Parallel()
+
+	const denied = "only the creator or an owner/admin may cancel this withdrawal"
+	if decision := WalletCancelWithdrawal(WalletMembership{}, uuid.Nil); decision.Allowed() || decision.Message() != denied {
+		t.Fatal("a nil role set may not cancel")
+	}
+	creator := uuid.New()
+	empty := WalletMembership{WalletRole: "", AccountRole: "", UserID: creator}
+	if decision := WalletCancelWithdrawal(empty, creator); decision.Allowed() || decision.Message() != denied {
+		t.Fatal("an empty role set may not cancel")
+	}
+	if !WalletCancelWithdrawal(WalletMembership{WalletRole: "viewer", UserID: creator}, creator).Allowed() {
+		t.Fatal("a viewer who created the withdrawal may still cancel")
 	}
 }
 
@@ -124,12 +138,22 @@ func TestWalletGateStillRequiresTheWalletID(t *testing.T) {
 	if denied.Allowed() {
 		t.Fatal("a missing creator id must not match the caller")
 	}
-	matched := policy.CancelWithdrawal(ctx, map[string]any{
+	nilRoles := policy.CancelWithdrawal(ctx, map[string]any{
 		"wallet_id":  walletID,
 		"user_id":    uuid.Nil,
 		"creator_id": uuid.Nil,
 	})
-	if !matched.Allowed() {
-		t.Fatal("gate cancel still allows a nil creator for a missing user")
+	if nilRoles.Allowed() || nilRoles.Message() != "only the creator or an owner/admin may cancel this withdrawal" {
+		t.Fatal("gate cancel allows a nil role set")
+	}
+	emptyRoles := policy.CancelWithdrawal(ctx, map[string]any{
+		"wallet_id":    walletID,
+		"wallet_role":  "",
+		"account_role": "",
+		"user_id":      userID,
+		"creator_id":   userID,
+	})
+	if emptyRoles.Allowed() || emptyRoles.Message() != "only the creator or an owner/admin may cancel this withdrawal" {
+		t.Fatal("gate cancel allows an empty role set")
 	}
 }
