@@ -367,16 +367,24 @@ func buildVaultContainer(app foundation.Application) (*container.Container, erro
 		return webhook.DeliverySettingsFromStored(stored.MaxAttempts, stored.TimeoutSeconds), nil
 	})
 	c.PriceService = buildPriceService(c, accountSettings)
-	c.SweepService = sweep.NewService(
-		c.Registry, c.MPCService, sweepsecrets.New(c.SecretsManager), sweepredis.New(c.Redis), c.WebhookService,
-		c.WalletRepo, c.AddressRepo, c.TransactionRepo, accountSettings.EffectiveSweepLimits, c.ChainRepo,
-		func(ctx context.Context, accountID uuid.UUID) error {
+	c.SweepService = sweep.NewService(sweep.Deps{
+		Registry:     c.Registry,
+		MPC:          c.MPCService,
+		Secrets:      sweepsecrets.New(c.SecretsManager),
+		Redis:        sweepredis.New(c.Redis),
+		Webhook:      c.WebhookService,
+		Wallets:      c.WalletRepo,
+		Addresses:    c.AddressRepo,
+		Transactions: c.TransactionRepo,
+		SweepLimits:  accountSettings.EffectiveSweepLimits,
+		Chains:       c.ChainRepo,
+		Flags: func(ctx context.Context, accountID uuid.UUID) error {
 			return flags.Gate(ctx, accountID, features.FlagSweepEnabled, features.CodeSweepPaused)
 		},
-		nil,
-		c.PriceService,
-		nil,
-	)
+		GasDefaults:    nil,
+		TokenPricer:    c.PriceService,
+		DustUSDDefault: nil,
+	})
 	c.WithdrawalService = withdraw.NewService(
 		c.Registry, c.WebhookService, c.MPCService, redislock.New(c.Redis),
 		c.TransactionRepo, c.WalletRepo, c.AddressRepo, c.SweepService,

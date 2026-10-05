@@ -124,39 +124,43 @@ type service struct {
 	fetchShareBFn func(ctx context.Context, wallet *models.Wallet) ([]byte, error)
 }
 
-// NewService wires the sweep service. All concrete methods are implemented in
-// planner.go / executor.go / gas_readiness.go / limits.go (Tasks 15-19).
-func NewService(
-	registry *chain.Registry,
-	mpc mpcpkg.Service,
-	secrets SecretReader,
-	rdb RedisStore,
-	webhookSvc *webhook.Service,
-	walletRepo walletReader,
-	addressRepo addressReader,
-	txRepo transactionWriter,
-	sweepLimits accountSweepLimitSource,
-	chainRepo chainReader,
-	flags accountGate,
-	gasDefaults map[string]GasReadinessDefault,
-	tokenPricer TokenPricer,
-	dustUSDDefault func(chainID string) decimal.Decimal,
-) Service {
+// Deps is everything the sweep service needs. A nil field means that
+// dependency is absent.
+type Deps struct {
+	Registry       *chain.Registry
+	MPC            mpcpkg.Service
+	Secrets        SecretReader
+	Redis          RedisStore
+	Webhook        *webhook.Service
+	Wallets        walletReader
+	Addresses      addressReader
+	Transactions   transactionWriter
+	SweepLimits    accountSweepLimitSource
+	Chains         chainReader
+	Flags          accountGate
+	GasDefaults    map[string]GasReadinessDefault
+	TokenPricer    TokenPricer
+	DustUSDDefault func(chainID string) decimal.Decimal
+}
+
+// NewService wires the sweep service from Deps. All concrete methods are
+// implemented in planner.go / executor.go / gas_readiness.go / limits.go.
+func NewService(deps Deps) Service {
 	return &service{
-		registry:       registry,
-		mpc:            mpc,
-		secrets:        secrets,
-		rdb:            rdb,
-		webhookSvc:     webhookSvc,
-		walletRepo:     walletRepo,
-		addressRepo:    addressRepo,
-		txRepo:         txRepo,
-		sweepLimits:    sweepLimits,
-		chainRepo:      chainRepo,
-		flags:          flags,
-		gasDefaults:    cloneGasDefaults(gasDefaults),
-		dustUSDDefault: dustUSDDefault,
-		tokenPricer:    tokenPricer,
+		registry:       deps.Registry,
+		mpc:            deps.MPC,
+		secrets:        deps.Secrets,
+		rdb:            deps.Redis,
+		webhookSvc:     deps.Webhook,
+		walletRepo:     deps.Wallets,
+		addressRepo:    deps.Addresses,
+		txRepo:         deps.Transactions,
+		sweepLimits:    deps.SweepLimits,
+		chainRepo:      deps.Chains,
+		flags:          deps.Flags,
+		gasDefaults:    cloneGasDefaults(deps.GasDefaults),
+		dustUSDDefault: deps.DustUSDDefault,
+		tokenPricer:    deps.TokenPricer,
 	}
 }
 

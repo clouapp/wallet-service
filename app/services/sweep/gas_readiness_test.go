@@ -357,7 +357,7 @@ func TestRefreshGasStatus_MissingOrInvalidFallbackIsAlwaysSeeded(t *testing.T) {
 
 func TestNewService_CopiesGasDefaults(t *testing.T) {
 	defaults := map[string]GasReadinessDefault{"eth": {Raw: "1"}}
-	svc, ok := NewService(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, defaults, nil, nil).(*service)
+	svc, ok := NewService(Deps{GasDefaults: defaults}).(*service)
 	if !ok {
 		t.Fatal("expected *service")
 	}
