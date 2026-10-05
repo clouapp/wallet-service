@@ -13,7 +13,7 @@ import (
 )
 
 func TestNewBalanceServiceNotNil(t *testing.T) {
-	svc := NewBalanceService(nil, nil, nil, nil, nil)
+	svc := NewBalanceService(Deps{})
 	if svc == nil {
 		t.Fatal("expected non-nil BalanceService")
 	}
@@ -21,7 +21,7 @@ func TestNewBalanceServiceNotNil(t *testing.T) {
 
 func TestNewBalanceServiceStoresAllDependencies(t *testing.T) {
 	reg := chain.NewRegistry()
-	svc := NewBalanceService(reg, nil, nil, nil, nil)
+	svc := NewBalanceService(Deps{Registry: reg})
 	if svc.registry != reg {
 		t.Fatal("expected registry to be stored")
 	}
@@ -44,7 +44,7 @@ func TestBalanceServiceRefreshWalletRejectsNilDepositAddress(t *testing.T) {
 	mock := mocks.NewMockChain("eth")
 	reg.RegisterChain(mock)
 
-	svc := NewBalanceService(reg, nil, nil, nil, nil)
+	svc := NewBalanceService(Deps{Registry: reg})
 	wallet := &models.Wallet{
 		ID:    uuid.New(),
 		Chain: "eth",
@@ -60,7 +60,7 @@ func TestBalanceServiceRefreshWalletRejectsNilDepositAddress(t *testing.T) {
 
 func TestBalanceServiceRefreshWalletRejectsUnknownChain(t *testing.T) {
 	reg := chain.NewRegistry()
-	svc := NewBalanceService(reg, nil, nil, nil, nil)
+	svc := NewBalanceService(Deps{Registry: reg})
 	wallet := &models.Wallet{
 		ID:    uuid.New(),
 		Chain: "nonexistent",

@@ -22,19 +22,24 @@ type BalanceService struct {
 	syncStateRepo    *repositories.WalletSyncStateRepository
 }
 
-func NewBalanceService(
-	registry *chain.Registry,
-	walletRepo *repositories.WalletRepository,
-	assetBalanceRepo *repositories.WalletAssetBalanceRepository,
-	snapshotRepo *repositories.WalletBalanceSnapshotRepository,
-	syncStateRepo *repositories.WalletSyncStateRepository,
-) *BalanceService {
+// Deps is everything the balance refresh service needs. A nil field means that
+// dependency is absent.
+type Deps struct {
+	Registry      *chain.Registry
+	Wallets       *repositories.WalletRepository
+	AssetBalances *repositories.WalletAssetBalanceRepository
+	Snapshots     *repositories.WalletBalanceSnapshotRepository
+	SyncStates    *repositories.WalletSyncStateRepository
+}
+
+// NewBalanceService wires the balance refresh service from Deps.
+func NewBalanceService(deps Deps) *BalanceService {
 	return &BalanceService{
-		registry:         registry,
-		walletRepo:       walletRepo,
-		assetBalanceRepo: assetBalanceRepo,
-		snapshotRepo:     snapshotRepo,
-		syncStateRepo:    syncStateRepo,
+		registry:         deps.Registry,
+		walletRepo:       deps.Wallets,
+		assetBalanceRepo: deps.AssetBalances,
+		snapshotRepo:     deps.Snapshots,
+		syncStateRepo:    deps.SyncStates,
 	}
 }
 

@@ -471,13 +471,13 @@ func buildVaultContainer(app foundation.Application) (*container.Container, erro
 		Transactions: c.TransactionRepo,
 	})
 	c.IngestService.SetDepositEvents(c.DepositEvents)
-	c.BalanceRefreshService = refresh.NewBalanceService(
-		c.Registry,
-		c.WalletRepo,
-		c.WalletAssetBalanceRepo,
-		c.WalletBalanceSnapshotRepo,
-		c.WalletSyncStateRepo,
-	)
+	c.BalanceRefreshService = refresh.NewBalanceService(refresh.Deps{
+		Registry:      c.Registry,
+		Wallets:       c.WalletRepo,
+		AssetBalances: c.WalletAssetBalanceRepo,
+		Snapshots:     c.WalletBalanceSnapshotRepo,
+		SyncStates:    c.WalletSyncStateRepo,
+	})
 	walletRefresher, err := refresh.NewWalletRefresher(
 		c.BalanceRefreshService, c.WalletRepo, c.Registry,
 		time.Duration(facades.Config().GetInt("vault.local_workers.balance_refresh_spacing_ms"))*time.Millisecond,

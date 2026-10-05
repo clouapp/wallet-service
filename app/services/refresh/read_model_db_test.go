@@ -38,8 +38,13 @@ func nativeBalanceChain(chainID string, decimals uint8, human string, byAddress 
 
 func newDBRefresher(t *testing.T, registry *chain.Registry) *WalletRefresher {
 	t.Helper()
-	balances := NewBalanceService(registry, repositories.NewWalletRepository(nil), repositories.NewWalletAssetBalanceRepository(nil),
-		repositories.NewWalletBalanceSnapshotRepository(nil), repositories.NewWalletSyncStateRepository(nil))
+	balances := NewBalanceService(Deps{
+		Registry:      registry,
+		Wallets:       repositories.NewWalletRepository(nil),
+		AssetBalances: repositories.NewWalletAssetBalanceRepository(nil),
+		Snapshots:     repositories.NewWalletBalanceSnapshotRepository(nil),
+		SyncStates:    repositories.NewWalletSyncStateRepository(nil),
+	})
 	refresher, err := NewWalletRefresher(balances, repositories.NewWalletRepository(nil), registry, 0)
 	if err != nil {
 		t.Fatal(err)
