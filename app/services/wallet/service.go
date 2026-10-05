@@ -22,7 +22,6 @@ import (
 
 	"github.com/macrowallets/waas/app/dtos"
 	"github.com/macrowallets/waas/app/models"
-	"github.com/macrowallets/waas/app/services/chain"
 	mpc "github.com/macrowallets/waas/app/services/mpc"
 	"github.com/macrowallets/waas/pkg/types"
 )
@@ -85,11 +84,22 @@ type AddressStore interface {
 	FindByWalletID(ctx context.Context, walletID uuid.UUID) ([]models.Address, error)
 }
 
+// chainLookup is the registered adapter wallet creation and address derivation read.
+type chainLookup interface {
+	Chain(id string) (types.Chain, error)
+}
+
+// mpcKeygen creates a wallet key and reconstructs the ed25519 master key child addresses derive from.
+type mpcKeygen interface {
+	Keygen(ctx context.Context, curve mpc.Curve) (*mpc.KeygenResult, error)
+	ReconstructEd25519PrivateKey(shareA, shareB []byte) ([]byte, error)
+}
+
 // Deps is everything the wallet service needs. WebhookSync stays nil when unused.
 type Deps struct {
-	Registry     *chain.Registry
+	Registry     chainLookup
 	AddressCache AddressCache
-	MPC          mpc.Service
+	MPC          mpcKeygen
 	Secrets      SecretStore
 	Wallets      WalletStore
 	Addresses    AddressStore
@@ -97,9 +107,9 @@ type Deps struct {
 }
 
 type Service struct {
-	registry       *chain.Registry
+	registry       chainLookup
 	addresses      AddressCache
-	mpcService     mpc.Service
+	mpcService     mpcKeygen
 	secretsManager SecretStore
 	walletRepo     WalletStore
 	addressRepo    AddressStore
