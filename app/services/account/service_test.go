@@ -4,7 +4,6 @@ import (
 	"context"
 	"testing"
 
-	"github.com/google/uuid"
 	goravelTesting "github.com/goravel/framework/testing"
 	"github.com/stretchr/testify/suite"
 
@@ -30,7 +29,7 @@ func (s *AccountServiceTestSuite) SetupTest() {
 // and creates an owner membership. Requires a live database connection.
 func (s *AccountServiceTestSuite) TestCreate_Success() {
 	svc := accountsvc.NewService(repositories.NewAccountRepository(), repositories.NewAccountUserRepository())
-	ownerID := uuid.New()
+	ownerID := mocks.InsertUser(s.T()).ID
 	ctx := context.Background()
 
 	acc, err := svc.Create(ctx, "Test Account", ownerID)
@@ -48,12 +47,12 @@ func (s *AccountServiceTestSuite) TestCreate_Success() {
 func (s *AccountServiceTestSuite) TestAddUser_Success() {
 	svc := accountsvc.NewService(repositories.NewAccountRepository(), repositories.NewAccountUserRepository())
 	ctx := context.Background()
-	ownerID := uuid.New()
+	ownerID := mocks.InsertUser(s.T()).ID
 
 	acc, err := svc.Create(ctx, "Membership Test Account", ownerID)
 	s.Require().NoError(err)
 
-	newUserID := uuid.New()
+	newUserID := mocks.InsertUser(s.T()).ID
 	err = svc.AddUser(ctx, acc.ID, newUserID, "admin", ownerID)
 	s.NoError(err)
 
@@ -66,12 +65,12 @@ func (s *AccountServiceTestSuite) TestAddUser_Success() {
 func (s *AccountServiceTestSuite) TestAddUser_ReAdd_ClearsDeletedAt() {
 	svc := accountsvc.NewService(repositories.NewAccountRepository(), repositories.NewAccountUserRepository())
 	ctx := context.Background()
-	ownerID := uuid.New()
+	ownerID := mocks.InsertUser(s.T()).ID
 
 	acc, err := svc.Create(ctx, "ReAdd Test Account", ownerID)
 	s.Require().NoError(err)
 
-	userID := uuid.New()
+	userID := mocks.InsertUser(s.T()).ID
 	err = svc.AddUser(ctx, acc.ID, userID, "auditor", ownerID)
 	s.Require().NoError(err)
 
@@ -94,8 +93,8 @@ func (s *AccountServiceTestSuite) TestAddUser_ReAdd_ClearsDeletedAt() {
 func (s *AccountServiceTestSuite) TestIsolation_UserCannotAccessOtherAccount() {
 	svc := accountsvc.NewService(repositories.NewAccountRepository(), repositories.NewAccountUserRepository())
 	ctx := context.Background()
-	ownerA := uuid.New()
-	ownerB := uuid.New()
+	ownerA := mocks.InsertUser(s.T()).ID
+	ownerB := mocks.InsertUser(s.T()).ID
 
 	accA, err := svc.Create(ctx, "Account A", ownerA)
 	s.Require().NoError(err)

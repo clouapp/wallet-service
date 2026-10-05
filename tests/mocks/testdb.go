@@ -142,6 +142,24 @@ func InsertAccount(t *testing.T, name string) models.Account {
 	return acc
 }
 
+// InsertUser creates an active User row, for rows that reference users
+// (account_users, tokens, recovery codes).
+func InsertUser(t *testing.T) models.User {
+	t.Helper()
+	id := uuid.New()
+	user := models.User{
+		ID:           id,
+		Email:        id.String() + "@example.com",
+		PasswordHash: "hash",
+		Status:       "active",
+		Preferences:  &models.UserPreferences{},
+	}
+	if err := facades.Orm().Query().Create(&user); err != nil {
+		t.Fatalf("insert user: %v", err)
+	}
+	return user
+}
+
 func InsertAddress(t *testing.T, walletID uuid.UUID, chainID, address, userID string, index int) models.Address {
 	t.Helper()
 	a := models.Address{

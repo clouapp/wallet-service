@@ -35,15 +35,15 @@ func (s *AccessTokenRepositoryTestSuite) createAccount() uuid.UUID {
 
 func (s *AccessTokenRepositoryTestSuite) TestCreate_Success() {
 	accID := s.createAccount()
-	token := &models.AccessToken{ID: uuid.New(), AccountID: accID, Name: "CI Token"}
+	token := &models.AccessToken{ID: uuid.New(), AccountID: accID, Name: "CI Token", SpendingLimit: models.NoSpendingLimit}
 	err := s.repo.Create(token)
 	s.NoError(err)
 }
 
 func (s *AccessTokenRepositoryTestSuite) TestFindByAccountID() {
 	accID := s.createAccount()
-	s.Require().NoError(s.repo.Create(&models.AccessToken{ID: uuid.New(), AccountID: accID, Name: "T1"}))
-	s.Require().NoError(s.repo.Create(&models.AccessToken{ID: uuid.New(), AccountID: accID, Name: "T2"}))
+	s.Require().NoError(s.repo.Create(&models.AccessToken{ID: uuid.New(), AccountID: accID, Name: "T1", SpendingLimit: models.NoSpendingLimit}))
+	s.Require().NoError(s.repo.Create(&models.AccessToken{ID: uuid.New(), AccountID: accID, Name: "T2", SpendingLimit: models.NoSpendingLimit}))
 
 	tokens, err := s.repo.FindByAccountID(accID)
 	s.NoError(err)
@@ -52,7 +52,7 @@ func (s *AccessTokenRepositoryTestSuite) TestFindByAccountID() {
 
 func (s *AccessTokenRepositoryTestSuite) TestFindByIDAndAccount_Found() {
 	accID := s.createAccount()
-	token := &models.AccessToken{ID: uuid.New(), AccountID: accID, Name: "Find Me"}
+	token := &models.AccessToken{ID: uuid.New(), AccountID: accID, Name: "Find Me", SpendingLimit: models.NoSpendingLimit}
 	s.Require().NoError(s.repo.Create(token))
 
 	found, err := s.repo.FindByIDAndAccount(token.ID, accID)
@@ -70,7 +70,7 @@ func (s *AccessTokenRepositoryTestSuite) TestFindByIDAndAccount_NotFound() {
 func (s *AccessTokenRepositoryTestSuite) TestFindByIDAndAccount_WrongAccount() {
 	accID := s.createAccount()
 	otherAccID := s.createAccount()
-	token := &models.AccessToken{ID: uuid.New(), AccountID: accID, Name: "Mine"}
+	token := &models.AccessToken{ID: uuid.New(), AccountID: accID, Name: "Mine", SpendingLimit: models.NoSpendingLimit}
 	s.Require().NoError(s.repo.Create(token))
 
 	found, err := s.repo.FindByIDAndAccount(token.ID, otherAccID)
@@ -80,7 +80,7 @@ func (s *AccessTokenRepositoryTestSuite) TestFindByIDAndAccount_WrongAccount() {
 
 func (s *AccessTokenRepositoryTestSuite) TestDelete() {
 	accID := s.createAccount()
-	token := &models.AccessToken{ID: uuid.New(), AccountID: accID, Name: "To Delete"}
+	token := &models.AccessToken{ID: uuid.New(), AccountID: accID, Name: "To Delete", SpendingLimit: models.NoSpendingLimit}
 	s.Require().NoError(s.repo.Create(token))
 
 	err := s.repo.Delete(token)

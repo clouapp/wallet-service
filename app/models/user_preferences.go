@@ -11,8 +11,14 @@ type UserPreferences struct {
 	DisplayInFiat     *bool  `json:"display_in_fiat,omitempty"`
 }
 
+// Value is a string: the Postgres driver sends a []byte value in binary form,
+// which a jsonb column rejects as invalid json.
 func (p UserPreferences) Value() (driver.Value, error) {
-	return json.Marshal(p)
+	encoded, err := json.Marshal(p)
+	if err != nil {
+		return nil, err
+	}
+	return string(encoded), nil
 }
 
 func (p *UserPreferences) Scan(src interface{}) error {

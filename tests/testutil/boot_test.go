@@ -17,7 +17,7 @@ func TestBootTestLoadsDedicatedTestingEnvironment(t *testing.T) {
 	if got := os.Getenv("APP_ENV"); got != "testing" {
 		t.Fatalf("APP_ENV = %q, want testing", got)
 	}
-	expectedDatabase := "vault_test"
+	expectedDatabase := testenv.DefaultTestDatabaseName
 	if override := strings.TrimSpace(os.Getenv(testenv.DatabaseOverrideVariable)); override != "" {
 		expectedDatabase = override
 	}

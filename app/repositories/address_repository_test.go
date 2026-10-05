@@ -7,6 +7,7 @@ import (
 	"github.com/goravel/framework/facades"
 	"github.com/stretchr/testify/suite"
 
+	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/repositories"
 	"github.com/macrowallets/waas/tests/mocks"
 )
@@ -69,16 +70,27 @@ func (s *AddressRepositoryTestSuite) TestFindByExternalUserID() {
 	s.Len(addrs, 2)
 }
 
-func (s *AddressRepositoryTestSuite) TestFindByWalletID() {
-	wA := s.insertWallet("eth")
-	wB := s.insertWallet("btc")
-	mocks.InsertAddress(s.T(), wA, "eth", "0xW1A", "u1", 0)
-	mocks.InsertAddress(s.T(), wA, "eth", "0xW1B", "u2", 1)
-	mocks.InsertAddress(s.T(), wB, "btc", "bc1q1", "u3", 0)
+// addressTexts lists the address strings of rows, for order-free comparisons.
+func addressTexts(addrs []models.Address) []string {
+	texts := make([]string, 0, len(addrs))
+	for _, addr := range addrs {
+		texts = append(texts, addr.Address)
+	}
+	return texts
+}
 
-	addrs, err := s.repo.FindByWalletID(wA)
+// Every wallet holds its deposit address (InsertWallet creates it, like wallet
+// creation does), so it is listed next to the addresses derived for users.
+func (s *AddressRepositoryTestSuite) TestFindByWalletID() {
+	wA := mocks.InsertWallet(s.T(), "eth")
+	wB := s.insertWallet("btc")
+	mocks.InsertAddress(s.T(), wA.ID, "eth", "0xW1A", "u1", 1)
+	mocks.InsertAddress(s.T(), wA.ID, "eth", "0xW1B", "u2", 2)
+	mocks.InsertAddress(s.T(), wB, "btc", "bc1q1", "u3", 1)
+
+	addrs, err := s.repo.FindByWalletID(wA.ID)
 	s.NoError(err)
-	s.Len(addrs, 2)
+	s.ElementsMatch([]string{wA.DepositAddress.Address, "0xW1A", "0xW1B"}, addressTexts(addrs))
 }
 
 // TestFindByExternalUserIDAndAccount_FiltersByAccount guards the IDOR fix on
@@ -150,16 +162,14 @@ func (s *AddressRepositoryTestSuite) TestFindByChainAndAddressAndAccount_Filters
 }
 
 func (s *AddressRepositoryTestSuite) TestPluckActiveAddresses() {
-	walletID := s.insertWallet("eth")
-	mocks.InsertAddress(s.T(), walletID, "eth", "0xACTIVE1", "u1", 0)
-	mocks.InsertAddress(s.T(), walletID, "eth", "0xACTIVE2", "u2", 1)
+	wallet := mocks.InsertWallet(s.T(), "eth")
+	mocks.InsertAddress(s.T(), wallet.ID, "eth", "0xACTIVE1", "u1", 1)
+	mocks.InsertAddress(s.T(), wallet.ID, "eth", "0xACTIVE2", "u2", 2)
 
-	inactive := mocks.InsertAddress(s.T(), walletID, "eth", "0xINACTIVE", "u3", 2)
+	inactive := mocks.InsertAddress(s.T(), wallet.ID, "eth", "0xINACTIVE", "u3", 3)
 	facades.Orm().Query().Model(&inactive).Where("id = ?", inactive.ID).Update("is_active", false)
 
 	addrs, err := s.repo.PluckActiveAddresses("eth")
 	s.NoError(err)
-	s.Len(addrs, 2)
-	s.Contains(addrs, "0xACTIVE1")
-	s.Contains(addrs, "0xACTIVE2")
+	s.ElementsMatch([]string{wallet.DepositAddress.Address, "0xACTIVE1", "0xACTIVE2"}, addrs)
 }

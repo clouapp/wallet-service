@@ -52,7 +52,13 @@ func (r *userRepository) FindByID(id uuid.UUID) (*models.User, error) {
 	return &user, nil
 }
 
+// Create inserts the user. users.preferences is NOT NULL and the ORM writes an
+// explicit NULL for nil Preferences (bypassing the column's '{}' default), so a
+// user registered or invited without preferences starts with empty ones.
 func (r *userRepository) Create(user *models.User) error {
+	if user.Preferences == nil {
+		user.Preferences = &models.UserPreferences{}
+	}
 	return facades.Orm().Query().Create(user)
 }
 

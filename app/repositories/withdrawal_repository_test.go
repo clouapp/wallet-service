@@ -25,6 +25,10 @@ func (s *WithdrawalRepositoryTestSuite) SetupTest() {
 	s.repo = repositories.NewWithdrawalRepository()
 }
 
+// fixtureFeeEstimate is the fee_estimate the withdrawal controller stores when
+// no estimate is available; fee_estimate is NUMERIC, so "" is not storable.
+const fixtureFeeEstimate = "0"
+
 func (s *WithdrawalRepositoryTestSuite) insertWallet() uuid.UUID {
 	w := mocks.InsertWallet(s.T(), "eth")
 	return w.ID
@@ -34,7 +38,7 @@ func (s *WithdrawalRepositoryTestSuite) TestCreate_Success() {
 	walletID := s.insertWallet()
 	w := &models.Withdrawal{
 		ID: uuid.New(), WalletID: walletID, Status: "pending",
-		Amount: "0.001", DestinationAddress: "0xdest",
+		Amount: "0.001", DestinationAddress: "0xdest", FeeEstimate: fixtureFeeEstimate,
 	}
 	err := s.repo.Create(w)
 	s.NoError(err)
@@ -45,7 +49,7 @@ func (s *WithdrawalRepositoryTestSuite) TestFindByWallet_Pagination() {
 	for i := 0; i < 5; i++ {
 		s.Require().NoError(s.repo.Create(&models.Withdrawal{
 			ID: uuid.New(), WalletID: walletID, Status: "pending",
-			Amount: "0.001", DestinationAddress: "0xdest",
+			Amount: "0.001", DestinationAddress: "0xdest", FeeEstimate: fixtureFeeEstimate,
 		}))
 	}
 
@@ -57,8 +61,8 @@ func (s *WithdrawalRepositoryTestSuite) TestFindByWallet_Pagination() {
 
 func (s *WithdrawalRepositoryTestSuite) TestFindByWallet_FilterByStatus() {
 	walletID := s.insertWallet()
-	s.Require().NoError(s.repo.Create(&models.Withdrawal{ID: uuid.New(), WalletID: walletID, Status: "pending", Amount: "0.001", DestinationAddress: "0x1"}))
-	s.Require().NoError(s.repo.Create(&models.Withdrawal{ID: uuid.New(), WalletID: walletID, Status: "cancelled", Amount: "0.002", DestinationAddress: "0x2"}))
+	s.Require().NoError(s.repo.Create(&models.Withdrawal{ID: uuid.New(), WalletID: walletID, Status: "pending", Amount: "0.001", DestinationAddress: "0x1", FeeEstimate: fixtureFeeEstimate}))
+	s.Require().NoError(s.repo.Create(&models.Withdrawal{ID: uuid.New(), WalletID: walletID, Status: "cancelled", Amount: "0.002", DestinationAddress: "0x2", FeeEstimate: fixtureFeeEstimate}))
 
 	pending, _, err := s.repo.FindByWallet(walletID, "pending", 50, 0)
 	s.NoError(err)
@@ -67,7 +71,7 @@ func (s *WithdrawalRepositoryTestSuite) TestFindByWallet_FilterByStatus() {
 
 func (s *WithdrawalRepositoryTestSuite) TestFindByIDAndWallet_Found() {
 	walletID := s.insertWallet()
-	w := &models.Withdrawal{ID: uuid.New(), WalletID: walletID, Status: "pending", Amount: "0.001", DestinationAddress: "0x1"}
+	w := &models.Withdrawal{ID: uuid.New(), WalletID: walletID, Status: "pending", Amount: "0.001", DestinationAddress: "0x1", FeeEstimate: fixtureFeeEstimate}
 	s.Require().NoError(s.repo.Create(w))
 
 	found, err := s.repo.FindByIDAndWallet(w.ID, walletID)
@@ -77,7 +81,7 @@ func (s *WithdrawalRepositoryTestSuite) TestFindByIDAndWallet_Found() {
 
 func (s *WithdrawalRepositoryTestSuite) TestFindByIDAndWallet_WrongWallet() {
 	walletID := s.insertWallet()
-	w := &models.Withdrawal{ID: uuid.New(), WalletID: walletID, Status: "pending", Amount: "0.001", DestinationAddress: "0x1"}
+	w := &models.Withdrawal{ID: uuid.New(), WalletID: walletID, Status: "pending", Amount: "0.001", DestinationAddress: "0x1", FeeEstimate: fixtureFeeEstimate}
 	s.Require().NoError(s.repo.Create(w))
 
 	otherWallet := s.insertWallet()
@@ -88,7 +92,7 @@ func (s *WithdrawalRepositoryTestSuite) TestFindByIDAndWallet_WrongWallet() {
 
 func (s *WithdrawalRepositoryTestSuite) TestUpdateStatus() {
 	walletID := s.insertWallet()
-	w := &models.Withdrawal{ID: uuid.New(), WalletID: walletID, Status: "pending", Amount: "0.001", DestinationAddress: "0x1"}
+	w := &models.Withdrawal{ID: uuid.New(), WalletID: walletID, Status: "pending", Amount: "0.001", DestinationAddress: "0x1", FeeEstimate: fixtureFeeEstimate}
 	s.Require().NoError(s.repo.Create(w))
 
 	err := s.repo.UpdateStatus(w.ID, "cancelled")
@@ -107,6 +111,7 @@ func (s *WithdrawalRepositoryTestSuite) TestUpdateFieldsStoresBroadcastResult() 
 		Status:             "broadcasting",
 		Amount:             "0.001",
 		DestinationAddress: "0x1",
+		FeeEstimate:        fixtureFeeEstimate,
 	}
 	s.Require().NoError(s.repo.Create(withdrawal))
 

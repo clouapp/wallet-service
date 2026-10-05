@@ -318,7 +318,7 @@ func CreateAccountToken(ctx http.Context) http.Response {
 		CreatedBy:     &callerID,
 		Name:          req.Name,
 		TokenHash:     accountAuthService.HashToken(tokenID.String()),
-		SpendingLimit: "{}",
+		SpendingLimit: models.NoSpendingLimit,
 	}
 	if req.ValidUntil != "" {
 		t, _ := time.Parse(time.RFC3339, req.ValidUntil)
