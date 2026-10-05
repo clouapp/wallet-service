@@ -42,4 +42,12 @@ var (
 	// errSettingsCacheUnavailable is a missing process cache. The read falls
 	// through to the database.
 	errSettingsCacheUnavailable = errors.New("settings cache is not available")
+	// ErrSecretField is a String, Int, or Bool read of a secret. The plaintext
+	// is not returned.
+	ErrSecretField = errors.New("settings field is a secret")
+	// ErrNotASecret is a Secret read of a field that is not a secret.
+	ErrNotASecret = errors.New("settings field is not a secret")
+	// ErrSecretSeal is a stored secret whose seal did not open. The ciphertext
+	// is not returned and the env fallback is not used.
+	ErrSecretSeal = errors.New("settings secret could not be opened")
 )
