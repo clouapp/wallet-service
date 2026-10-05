@@ -30,7 +30,7 @@ func TestPlatformUserViewOmitsSecretFields(t *testing.T) {
 		Preferences:       &models.UserPreferences{},
 	}
 
-	raw, err := json.Marshal(newPlatformUserView(user))
+	raw, err := json.Marshal(UserFrom(user))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -44,7 +44,7 @@ func TestPlatformUserViewOmitsSecretFields(t *testing.T) {
 		}
 	}
 
-	page, err := json.Marshal(platformUserViews(nil))
+	page, err := json.Marshal(UsersFrom(nil))
 	if err != nil {
 		t.Fatal(err)
 	}
