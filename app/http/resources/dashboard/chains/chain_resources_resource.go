@@ -7,10 +7,10 @@ import (
 	"github.com/macrowallets/waas/app/models"
 )
 
-// ChainResourceView is the chain resource the dashboard reads. Field order and
+// ChainResource is the chain resource the dashboard reads. Field order and
 // tags match the model wire, including embedded timestamps. A nil page stays
 // nil; an empty page stays empty. A non-nil empty description stays "".
-type ChainResourceView struct {
+type ChainResource struct {
 	CreatedAt    *carbon.DateTime `json:"created_at"`
 	UpdatedAt    *carbon.DateTime `json:"updated_at"`
 	ID           uuid.UUID        `json:"id"`
@@ -23,8 +23,9 @@ type ChainResourceView struct {
 	Status       string           `json:"status"`
 }
 
-func newChainResourceView(resource models.ChainResource) ChainResourceView {
-	return ChainResourceView{
+// ChainResourceFrom projects one chain resource.
+func ChainResourceFrom(resource models.ChainResource) ChainResource {
+	return ChainResource{
 		CreatedAt:    resource.CreatedAt,
 		UpdatedAt:    resource.UpdatedAt,
 		ID:           resource.ID,
@@ -38,13 +39,14 @@ func newChainResourceView(resource models.ChainResource) ChainResourceView {
 	}
 }
 
-func chainResourceViews(resources []models.ChainResource) []ChainResourceView {
+// ChainResourcesFrom copies a page. A nil slice stays nil; an empty slice stays empty.
+func ChainResourcesFrom(resources []models.ChainResource) []ChainResource {
 	if resources == nil {
 		return nil
 	}
-	views := make([]ChainResourceView, len(resources))
+	views := make([]ChainResource, len(resources))
 	for i := range resources {
-		views[i] = newChainResourceView(resources[i])
+		views[i] = ChainResourceFrom(resources[i])
 	}
 	return views
 }

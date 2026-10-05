@@ -6,6 +6,7 @@ import (
 	"github.com/macrowallets/waas/app/http/middleware/requestctx"
 	"github.com/macrowallets/waas/app/http/requests"
 	chainresource "github.com/macrowallets/waas/app/http/resources/chains"
+	chainresources "github.com/macrowallets/waas/app/http/resources/dashboard/chains"
 	"github.com/macrowallets/waas/app/http/responses"
 	"github.com/macrowallets/waas/app/models"
 	chainsvc "github.com/macrowallets/waas/app/services/chains"
@@ -72,7 +73,7 @@ func (ctrl *ChainsController) GetChain(ctx http.Context) http.Response {
 	return ctx.Response().Success().Json(http.Json{
 		"chain":     chainresource.ChainPtr(chain),
 		"tokens":    tokenViews(tokens),
-		"resources": chainResourceViews(resources),
+		"resources": chainresources.ChainResourcesFrom(resources),
 	})
 }
 
@@ -133,5 +134,5 @@ func (ctrl *ChainsController) ListChainResources(ctx http.Context) http.Response
 		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to fetch resources"})
 	}
 
-	return ctx.Response().Success().Json(http.Json{"data": chainResourceViews(resources)})
+	return ctx.Response().Success().Json(http.Json{"data": chainresources.ChainResourcesFrom(resources)})
 }
