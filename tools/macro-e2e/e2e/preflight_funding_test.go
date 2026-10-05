@@ -170,6 +170,10 @@ type fundingFixture struct {
 	matchQueries [][]string
 	preflight    pyjson.Object
 	preflights   int
+	// sweepRows is what vault_test returns from the sweepRowsAfter-th lookup on (1-based).
+	sweepRows      []SweepRow
+	sweepRowsAfter int
+	sweepQueries   []SweepQuery
 }
 
 func newFundingFixture(t *testing.T) *fundingFixture {
@@ -179,6 +183,8 @@ func newFundingFixture(t *testing.T) *fundingFixture {
 		t.Fatal(err)
 	}
 	fixture := &fundingFixture{paths: paths, api: &fakeAPI{postCode: http.StatusCreated, postBody: `{"data": {"status": "pending"}}`, hashAfter: 2}, out: &bytes.Buffer{}, err: &bytes.Buffer{}}
+	fixture.sweepRows = []SweepRow{{ID: "row-1", Chain: "bsc", TxType: "sweep", Status: "confirming", TxHash: testTxHash, From: testFrom, To: testTo, Amount: "5"}}
+	fixture.sweepRowsAfter = 1
 	fixture.preflight, _ = decodeObject([]byte(`{"strategy": "direct", "signature_verified": true, "broadcast": false, "transactions": [{"role": "withdrawal", "from": "` + testFrom + `", "to": "` + testTo + `", "amount": "5"}]}`))
 	server := httptest.NewServer(fixture.api.handler(t))
 	t.Cleanup(server.Close)
@@ -194,17 +200,26 @@ func newFundingFixture(t *testing.T) *fundingFixture {
 				fixture.matchQueries = append(fixture.matchQueries, []string{walletID, to, asset, baseUnits})
 				return fixture.matches, nil
 			},
+			SweepRows: func(_ context.Context, query SweepQuery) ([]SweepRow, error) {
+				fixture.sweepQueries = append(fixture.sweepQueries, query)
+				if len(fixture.sweepQueries) < fixture.sweepRowsAfter {
+					return nil, nil
+				}
+				return fixture.sweepRows, nil
+			},
 			MarketsToken: func(context.Context) (string, error) { return testToken, nil },
 			API:          APIClient{BaseURL: server.URL, HTTP: server.Client()},
 		},
-		Ledger:    FundingLedger{Path: paths.FundingLedger, Now: clock(fixedNow)},
-		Recording: RecordingLock{Path: paths.RecordingLock, PID: 7, Hostname: "host", Now: clock(fixedNow)},
-		Now:       time.Now,
-		Sleep:     func(context.Context, time.Duration) error { return nil },
-		PollEvery: time.Millisecond,
-		PollFor:   5 * time.Second,
-		Out:       fixture.out,
-		Err:       fixture.err,
+		Ledger:         FundingLedger{Path: paths.FundingLedger, Now: clock(fixedNow)},
+		Recording:      RecordingLock{Path: paths.RecordingLock, PID: 7, Hostname: "host", Now: clock(fixedNow)},
+		Now:            time.Now,
+		Sleep:          func(context.Context, time.Duration) error { return nil },
+		PollEvery:      time.Millisecond,
+		PollFor:        5 * time.Second,
+		SweepPollEvery: time.Millisecond,
+		SweepPollFor:   5 * time.Second,
+		Out:            fixture.out,
+		Err:            fixture.err,
 	}
 	return fixture
 }
@@ -421,6 +436,27 @@ func TestConsolidateDryRunAndApplyOnce(t *testing.T) {
 	empty.preflight = empty.preflight.Set("transactions", []any{})
 	if _, err := empty.funding.Consolidate(context.Background(), request); err == nil || !strings.Contains(err.Error(), "planned no sweep") {
 		t.Fatalf("empty sweep: %v", err)
+	}
+}
+
+func TestConsolidateLedgerChainOverride(t *testing.T) {
+	fixture := newFundingFixture(t)
+	request := ConsolidateRequest{Tag: "tron-usdt-child-sweep-01", WalletID: testWalletID, Asset: "USDT", Chain: "tron", Apply: true}
+	if code, err := fixture.funding.Consolidate(context.Background(), request); err != nil || code != ExitOK {
+		t.Fatalf("apply %d %v", code, err)
+	}
+	ledger, _ := os.ReadFile(fixture.paths.FundingLedger)
+	if !strings.Contains(string(ledger), `"chain": "tron"`) || strings.Contains(string(ledger), `"chain": "usdt"`) {
+		t.Fatalf("ledger %s", ledger)
+	}
+
+	invalid := newFundingFixture(t)
+	bad := ConsolidateRequest{Tag: "tron-usdt-child-sweep-02", WalletID: testWalletID, Asset: "USDT", Chain: "Tron Nile", Apply: true}
+	if _, err := invalid.funding.Consolidate(context.Background(), bad); err == nil || !strings.Contains(err.Error(), "chain") {
+		t.Fatalf("invalid chain: %v", err)
+	}
+	if len(invalid.api.posts) != 0 {
+		t.Fatalf("invalid chain posted %v", invalid.api.posts)
 	}
 }
 

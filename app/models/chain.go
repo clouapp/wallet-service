@@ -12,6 +12,7 @@ const (
 	AdapterTypeEVM     = "evm"
 	AdapterTypeBitcoin = "bitcoin"
 	AdapterTypeSolana  = "solana"
+	AdapterTypeTron    = "tron"
 
 	ChainETH      = "eth"
 	ChainBTC      = "btc"
@@ -20,6 +21,8 @@ const (
 	ChainBase     = "base"
 	ChainArbitrum = "arbitrum"
 	ChainBSC      = "bsc"
+	ChainTron     = "tron"
+	ChainLTC      = "ltc"
 
 	ChainTETH      = "teth"
 	ChainTBTC      = "tbtc"
@@ -28,6 +31,8 @@ const (
 	ChainTBase     = "tbase"
 	ChainTArbitrum = "tarbitrum"
 	ChainTBSC      = "tbsc"
+	ChainTTron     = "ttron"
+	ChainTLTC      = "tltc"
 
 	ChainMatic = "matic"
 
@@ -36,6 +41,8 @@ const (
 	NativeBTC = "btc"
 	NativeSOL = "sol"
 	NativeBNB = "bnb"
+	NativeTRX = "trx"
+	NativeLTC = "ltc"
 
 	SymbolUSDT = "USDT"
 	SymbolUSDC = "USDC"
@@ -56,6 +63,12 @@ const (
 	USDCContractArbSepolia  = "0x75faf114eafb1BDbe2F0316DF893fd58CE46AA4d"
 	USDTContractBSC         = "0x55d398326f99059fF775485246999027B3197955"
 	USDCContractBSC         = "0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d"
+
+	// Tether's TRC-20 USDT on TRON mainnet and the test USDT the Nile faucet
+	// (nileex.io) hands out; both checked on-chain with symbol() and decimals() = 6.
+	// Circle stopped issuing USDC on TRON, so TRON lists USDT only.
+	USDTContractTron     = "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t"
+	USDTContractTronNile = "TXYZopYRdj2D9XRtbG411XZZ3kM5VkAeBf"
 
 	EnvironmentProd = "prod"
 	EnvironmentTest = "test"

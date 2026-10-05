@@ -277,6 +277,37 @@ func TestPlanBitcoin_MultiSweepLegsAreNetOfTheirFee(t *testing.T) {
 	}
 }
 
+func TestPlanConsolidationBitcoin_LegsAreNetOfTheirFee(t *testing.T) {
+	svc, walletID, adapter := btcPlanner(t, map[string][]fakeUTXO{
+		"tb1qbase":  {{sats: 50_000, confirmations: 1}},
+		"tb1qchild": {{sats: 1_000_000, confirmations: 6}, {sats: 100_000, confirmations: 6}, {sats: 70_000, confirmations: 0}},
+	}, "tb1qchild")
+	wallet, err := svc.walletRepo.FindByID(walletID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	chainEntity, err := svc.chainRepo.FindByID(models.ChainBTC)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	plan, err := svc.planConsolidation(context.Background(), adapter, wallet, chainEntity, models.NativeBTC, &Limits{})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	want := int64(1_100_000) - btcPlannerFee(2)
+	if plan == nil || len(plan.Sweeps) != 1 || plan.Sweeps[0].Amount.Int64() != want {
+		t.Fatalf("plan %+v, want one leg of the confirmed balance minus its fee (%d)", plan, want)
+	}
+	if plan.Amount.Int64() != want {
+		t.Fatalf("plan amount %s, want %d", plan.Amount, want)
+	}
+	if _, err := adapter.BuildSweep(context.Background(), types.SweepRequest{From: "tb1qchild", To: "tb1qbase", Amount: plan.Sweeps[0].Amount}); err != nil {
+		t.Fatalf("the planned consolidation leg must build: %v", err)
+	}
+}
+
 type spendableMockChain struct {
 	*mocks.MockChain
 	funds chain.SpendableFunds

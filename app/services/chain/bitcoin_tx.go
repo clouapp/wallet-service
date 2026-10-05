@@ -5,17 +5,13 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/binary"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"io"
 	"math/big"
-	"net/http"
 	"strings"
 
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcec/v2/ecdsa"
-	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/wire"
@@ -31,6 +27,12 @@ const (
 )
 
 const btcSigHashAll byte = 0x01
+
+// UnsignedTx metadata keys naming the network a transaction was built for.
+const (
+	btcMetadataTestnet = "testnet"
+	btcMetadataNetwork = "network"
+)
 
 type btcInput struct {
 	TxID    string
@@ -49,7 +51,7 @@ func signBitcoinP2WPKH(unsigned *types.UnsignedTx, privateKey []byte, net *chain
 		return nil, fmt.Errorf("btc private key must be 32 bytes")
 	}
 	if net == nil {
-		net = netParams(unsigned)
+		return nil, fmt.Errorf("btc sign: network parameters are required")
 	}
 	priv, _ := btcec.PrivKeyFromBytes(privateKey)
 	msg, err := unsignedToMsgTx(unsigned, net)
@@ -95,7 +97,7 @@ func outputsFrom(unsigned *types.UnsignedTx) ([]btcOutput, error) {
 
 func unsignedToMsgTx(unsigned *types.UnsignedTx, net *chaincfg.Params) (*wire.MsgTx, error) {
 	if net == nil {
-		net = netParams(unsigned)
+		return nil, fmt.Errorf("btc transaction: network parameters are required")
 	}
 	msg := wire.NewMsgTx(wire.TxVersion)
 	for _, in := range inputsFrom(unsigned) {
@@ -120,25 +122,23 @@ func unsignedToMsgTx(unsigned *types.UnsignedTx, net *chaincfg.Params) (*wire.Ms
 	return msg, nil
 }
 
-func netParams(unsigned *types.UnsignedTx) *chaincfg.Params {
-	if unsigned != nil && unsigned.Metadata != nil {
-		if testnet, ok := unsigned.Metadata["testnet"].(bool); ok && testnet {
-			return &chaincfg.TestNet3Params
-		}
+// requireBuiltOnThisNetwork refuses a transaction built for another chain record or
+// network: it is signed and verified with this adapter's parameters, and its
+// "testnet" / "network" metadata (written by unsignedBitcoinTx) must agree with them.
+func (a *BitcoinLive) requireBuiltOnThisNetwork(unsigned *types.UnsignedTx) error {
+	if unsigned == nil {
+		return fmt.Errorf("btc transaction is required")
 	}
-	return &chaincfg.MainNetParams
-}
-
-func witnessProgram(address string, net *chaincfg.Params) ([]byte, error) {
-	addr, err := btcutil.DecodeAddress(address, net)
-	if err != nil {
-		return nil, err
+	if unsigned.ChainID != "" && unsigned.ChainID != a.cfg.ChainIDStr {
+		return fmt.Errorf("btc transaction was built for chain %s, this adapter is %s", unsigned.ChainID, a.cfg.ChainIDStr)
 	}
-	wpkh, ok := addr.(*btcutil.AddressWitnessPubKeyHash)
-	if !ok {
-		return nil, fmt.Errorf("btc address %s is not p2wpkh", address)
+	if testnet, ok := unsigned.Metadata[btcMetadataTestnet].(bool); ok && testnet != a.network.testnet {
+		return fmt.Errorf("btc transaction was built for testnet=%t, this adapter is on %s", testnet, a.network.name)
 	}
-	return wpkh.WitnessProgram(), nil
+	if network, ok := unsigned.Metadata[btcMetadataNetwork].(string); ok && network != a.network.name {
+		return fmt.Errorf("btc transaction was built for %s, this adapter is on %s", network, a.network.name)
+	}
+	return nil
 }
 
 func p2wpkhPkScript(program []byte) []byte {
@@ -261,9 +261,9 @@ func (a *BitcoinLive) buildBitcoinSweep(ctx context.Context, req types.SweepRequ
 	if req.Amount != nil {
 		amount = req.Amount.Int64()
 	}
-	if amount < btcDustSats {
+	if amount < policy.dust() {
 		return nil, fmt.Errorf("insufficient funds: %d confirmed sats leave %d sats after fees, below the %d sat dust limit",
-			sumBTCInputs(inputs), amount, btcDustSats)
+			sumBTCInputs(inputs), amount, policy.dust())
 	}
 	spend, ok := spendFromInputs(inputs, amount, policy)
 	if !ok {
@@ -292,10 +292,11 @@ func (a *BitcoinLive) unsignedBitcoinTx(from, to string, amount int64, spend btc
 	return &types.UnsignedTx{
 		ChainID: a.cfg.ChainIDStr,
 		Metadata: map[string]interface{}{
-			"inputs":  spend.inputs,
-			"outputs": spend.outputs(from, to, amount),
-			"fee":     spend.fee,
-			"testnet": a.cfg.IsTestnet,
+			"inputs":           spend.inputs,
+			"outputs":          spend.outputs(from, to, amount),
+			"fee":              spend.fee,
+			btcMetadataTestnet: a.network.testnet,
+			btcMetadataNetwork: a.network.name,
 		},
 		TransferAmount: big.NewInt(amount),
 	}
@@ -321,10 +322,7 @@ func btcPaymentOutputs(from, to string, amount, change int64) []btcOutput {
 }
 
 func (a *BitcoinLive) listConfirmedUTXOs(ctx context.Context, address string) ([]btcInput, error) {
-	if a.restAPI {
-		return a.listUTXOsREST(ctx, address)
-	}
-	return a.listUTXOsRPC(ctx, address)
+	return a.chainProviders().confirmedUTXOs(ctx, address)
 }
 
 func (a *BitcoinLive) listUTXOsREST(ctx context.Context, address string) ([]btcInput, error) {
@@ -379,37 +377,18 @@ func (a *BitcoinLive) listUTXOsRPC(ctx context.Context, address string) ([]btcIn
 	return out, nil
 }
 
+// broadcastBitcoin sends the signed bytes through the failover; the txid computed
+// from them (or the signer's, when they do not decode) is what every provider must
+// answer.
 func (a *BitcoinLive) broadcastBitcoin(ctx context.Context, signed *types.SignedTx) (string, error) {
 	if signed == nil || len(signed.RawBytes) == 0 {
 		return "", fmt.Errorf("btc broadcast: empty signed transaction")
 	}
-	if a.restAPI {
-		url := strings.TrimRight(a.cfg.RPCURL, "/") + "/tx"
-		bodyHex := hex.EncodeToString(signed.RawBytes)
-		req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, strings.NewReader(bodyHex))
-		if err != nil {
-			return "", err
-		}
-		resp, err := a.http.Do(req)
-		if err != nil {
-			return "", err
-		}
-		defer resp.Body.Close()
-		body, err := io.ReadAll(resp.Body)
-		if err != nil {
-			return "", err
-		}
-		if resp.StatusCode >= 300 {
-			return "", fmt.Errorf("btc broadcast %d: %s", resp.StatusCode, body)
-		}
-		return strings.TrimSpace(string(body)), nil
+	wantTxID := btcTxID(signed.RawBytes)
+	if wantTxID == "" {
+		wantTxID = strings.ToLower(strings.TrimSpace(signed.TxHash))
 	}
-	rawHex := hex.EncodeToString(signed.RawBytes)
-	var txHash string
-	if err := a.rpc.Call(ctx, "sendrawtransaction", &txHash, rawHex); err != nil {
-		return "", err
-	}
-	return txHash, nil
+	return a.chainProviders().broadcast(ctx, signed.RawBytes, wantTxID)
 }
 
 func hash256(b []byte) []byte {

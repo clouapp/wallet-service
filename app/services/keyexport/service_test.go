@@ -19,6 +19,9 @@ import (
 	"github.com/google/uuid"
 	"github.com/mr-tron/base58"
 
+	"github.com/macrowallets/waas/app/models"
+	"github.com/macrowallets/waas/app/services/addressing"
+	"github.com/macrowallets/waas/app/services/chain"
 	mpcpkg "github.com/macrowallets/waas/app/services/mpc"
 )
 
@@ -179,6 +182,112 @@ func TestExport_BitcoinRowOfTheOtherNetworkGetsThatNetworksWIF(t *testing.T) {
 	wif, err := btcutil.DecodeWIF(key.Bitcoin.WIF)
 	if err != nil || !wif.IsForNet(&chaincfg.MainNetParams) || key.Testnet || len(key.Notes) == 0 {
 		t.Fatalf("a retired bc1 row must get a mainnet WIF and a note: %+v", key.Notes)
+	}
+}
+
+func TestExport_LitecoinKeysAreLitecoinWIFsOfEveryAddress(t *testing.T) {
+	keys := mustSecp256k1Keys(t)
+	testnet := newWalletFixture(t, keys, mpcpkg.CurveSecp256k1, litecoinTest, "ltc_deposit", 2)
+	mainnet := newWalletFixture(t, keys, mpcpkg.CurveSecp256k1, litecoinMain, "ltc_main", 1)
+	if !strings.HasPrefix(testnet.addresses[1].Address, "tltc1q") || testnet.addresses[1].DerivationType != DerivationBIP32 {
+		t.Fatalf("fixture child %+v", testnet.addresses[1])
+	}
+
+	result, contents := exportAndOpen(t, newFakeStore(testnet, mainnet), fixedPassphrase(testWalletPassphrase))
+	if len(result.Wallets) != 2 || len(result.Refused) != 0 {
+		t.Fatalf("exported %d refused %+v", len(result.Wallets), result.Refused)
+	}
+	for _, fixture := range []walletFixture{testnet, mainnet} {
+		document := walletDocument(t, contents, fixture.wallet.ID)
+		requireAllAddressesExported(t, document, fixture)
+		requireSharesInArchive(t, contents, fixture)
+		params := chain.BitcoinFamilyParams(models.ChainLTC, fixture.network.Testnet)
+		for _, key := range document.Addresses {
+			if key.Litecoin == nil || key.Bitcoin != nil || key.Network != fixture.network.Name {
+				t.Fatalf("%s: want only a litecoin key on %s, got %+v", key.Address, fixture.network.Name, key)
+			}
+			wif, err := btcutil.DecodeWIF(key.Litecoin.WIF)
+			if err != nil || !wif.IsForNet(params) || !wif.CompressPubKey {
+				t.Fatalf("%s: WIF must be compressed for %s (%v)", key.Address, params.Name, err)
+			}
+			witness, err := btcutil.NewAddressWitnessPubKeyHash(btcutil.Hash160(wif.SerializePubKey()), params)
+			if err != nil || witness.EncodeAddress() != key.Address {
+				t.Fatalf("WIF derives %v, row is %s", witness, key.Address)
+			}
+			if key.Litecoin.ElectrumImport != "p2wpkh:"+key.Litecoin.WIF {
+				t.Fatalf("%s: electrum-ltc form is wrong", key.Address)
+			}
+		}
+	}
+	if mainnetKey := walletDocument(t, contents, mainnet.wallet.ID).Addresses[0]; !strings.HasPrefix(mainnetKey.Address, "ltc1q") || !strings.HasPrefix(mainnetKey.Litecoin.WIF, "T") {
+		t.Fatalf("mainnet litecoin row %s must get a T... WIF", mainnetKey.Address)
+	}
+	instructions := string(contents[instructionsFileName])
+	if !strings.Contains(instructions, "## Litecoin") || !strings.Contains(instructions, "importprivkey") || !strings.Contains(instructions, "electrum-ltc --testnet") {
+		t.Fatal("INSTRUCOES.md must explain how to import Litecoin keys")
+	}
+}
+
+func TestExport_LitecoinRowOfTheOtherNetworkGetsThatNetworksWIF(t *testing.T) {
+	keys := mustSecp256k1Keys(t)
+	ltc := newWalletFixture(t, keys, mpcpkg.CurveSecp256k1, litecoinMain, "ltc_switched", 0)
+	ltc.network = litecoinTest
+	_, contents := exportAndOpen(t, newFakeStore(ltc), fixedPassphrase(testWalletPassphrase))
+	key := walletDocument(t, contents, ltc.wallet.ID).Addresses[0]
+	wif, err := btcutil.DecodeWIF(key.Litecoin.WIF)
+	if err != nil || !wif.IsForNet(chain.BitcoinFamilyParams(models.ChainLTC, false)) || key.Testnet || key.Network != models.NetworkLitecoinMainnet || len(key.Notes) == 0 {
+		t.Fatalf("a retired ltc1 row must get a mainnet litecoin WIF and a note: %+v %+v", key.Network, key.Notes)
+	}
+}
+
+func TestExport_TronKeysImportIntoTronLinkForEveryAddress(t *testing.T) {
+	keys := mustSecp256k1Keys(t)
+	tron := newWalletFixture(t, keys, mpcpkg.CurveSecp256k1, tronNile, "tron_deposit", 2)
+	if !addressing.IsTronAddress(tron.addresses[2].Address) || tron.addresses[2].DerivationType != DerivationBIP32 {
+		t.Fatalf("fixture child %+v", tron.addresses[2])
+	}
+
+	result, contents := exportAndOpen(t, newFakeStore(tron), fixedPassphrase(testWalletPassphrase))
+	if len(result.Wallets) != 1 || len(result.Refused) != 0 {
+		t.Fatalf("exported %d refused %+v", len(result.Wallets), result.Refused)
+	}
+	document := walletDocument(t, contents, tron.wallet.ID)
+	requireAllAddressesExported(t, document, tron)
+	requireSharesInArchive(t, contents, tron)
+	for _, key := range document.Addresses {
+		if key.Tron == nil || key.EVM != nil || key.Bitcoin != nil || len(key.Tron.PrivateKeyHex) != 64 || strings.HasPrefix(key.Tron.PrivateKeyHex, "0x") {
+			t.Fatalf("%s: want only a 64-hex TRON key", key.Address)
+		}
+		ecdsaKey, err := crypto.HexToECDSA(key.Tron.PrivateKeyHex)
+		if err != nil {
+			t.Fatal(err)
+		}
+		derived, err := addressing.DeriveTronAddress(crypto.CompressPubkey(&ecdsaKey.PublicKey))
+		if err != nil || derived != key.Address {
+			t.Fatalf("TRON key derives %s, row is %s", derived, key.Address)
+		}
+		if addressHex, err := addressing.TronAddressToHex(key.Address); err != nil || addressHex != key.Tron.AddressHex {
+			t.Fatalf("%s: address hex %s, want %s", key.Address, key.Tron.AddressHex, addressHex)
+		}
+	}
+	if document.Addresses[1].KeySource != KeySourceBIP32Child || len(document.Warnings) == 0 || !strings.Contains(strings.Join(document.Warnings, " "), "TRON") {
+		t.Fatalf("children must carry the bip32 source and the wallet a TRON warning: %+v", document.Warnings)
+	}
+	var manifest Manifest
+	if err := json.Unmarshal(contents[manifestFileName], &manifest); err != nil || len(manifest.Wallets) != 1 || !manifest.Wallets[0].AllTronChains || manifest.Wallets[0].AllEVMChains {
+		t.Fatalf("manifest %+v err %v", manifest, err)
+	}
+	if instructions := string(contents[instructionsFileName]); !strings.Contains(instructions, "## TRON") || !strings.Contains(instructions, "Import private key") {
+		t.Fatal("INSTRUCOES.md must explain how to import TRON keys")
+	}
+}
+
+func TestPlan_AcceptsTronOnlyOnSecp256k1(t *testing.T) {
+	if err := requireCurveMatchesAdapter(mpcpkg.CurveSecp256k1, models.AdapterTypeTron); err != nil {
+		t.Fatalf("secp256k1 TRON wallets must be exportable: %v", err)
+	}
+	if err := requireCurveMatchesAdapter(mpcpkg.CurveEd25519, models.AdapterTypeTron); err == nil {
+		t.Fatal("an ed25519 TRON wallet must be refused")
 	}
 }
 

@@ -39,8 +39,16 @@ var AddedEVMChainIDs = []string{
 	models.ChainTBase, models.ChainTArbitrum, models.ChainTBSC,
 }
 
+// AddedChainIDs are every record chains:add-missing may create.
+var AddedChainIDs = append(append([]string(nil), AddedEVMChainIDs...), AddedTronLitecoinChainIDs...)
+
 func addedEVMChainSeeds() []chainSeed {
 	return buildAddedEVMChainSeeds(configuredConfirmations)
+}
+
+// addedChainSeeds are the EVM, TRON and Litecoin records added after eth/btc/polygon/sol.
+func addedChainSeeds() []chainSeed {
+	return append(addedEVMChainSeeds(), addedTronLitecoinChainSeeds()...)
 }
 
 // buildAddedEVMChainSeeds lists the added records; confirmations returns the
@@ -114,24 +122,40 @@ var networkResources = map[string][]resourceSeed{
 	models.NetworkBSCTestnet:      {{resourceType: resourceTypeExplorer, name: "BscTrace Testnet", url: "https://testnet.bsctrace.com"}, {resourceType: resourceTypeFaucet, name: "BNB Smart Chain Testnet Faucet", url: "https://www.bnbchain.org/en/testnet-faucet"}},
 }
 
-// addedChainNetwork is the network an added record points at under profile.
+// addedChainNetwork is the network an added record points at under profile: EVM by
+// network id, TRON and Litecoin by is_testnet.
 func addedChainNetwork(c chainSeed, profile string) (string, error) {
 	c, err := withProfileNetwork(c, profile)
 	if err != nil {
 		return "", err
 	}
-	if c.networkID == nil {
+	if c.adapterType == models.AdapterTypeEVM && c.networkID == nil {
 		return "", fmt.Errorf("chain %s has no network id", c.id)
 	}
-	network := models.EVMNetworkName(*c.networkID)
+	record := models.Chain{ID: c.id, AdapterType: c.adapterType, NetworkID: c.networkID, IsTestnet: c.isTestnet}
+	network := record.Network()
 	if network == "" {
-		return "", fmt.Errorf("chain %s: unknown EVM network id %d", c.id, *c.networkID)
+		return "", fmt.Errorf("chain %s: no known %s network for %+v", c.id, c.adapterType, c)
 	}
 	return network, nil
 }
 
 func addedChainTokens(profile string) ([]tokenSeed, error) {
-	return tokensForChains(addedEVMChainSeeds(), profile)
+	return tokensForChains(addedChainSeeds(), profile)
+}
+
+func tokensOfNetwork(network string) []tokenSeed {
+	if tokens, ok := networkTokens[network]; ok {
+		return tokens
+	}
+	return tronLitecoinTokens[network]
+}
+
+func resourcesOfNetwork(network string) []resourceSeed {
+	if resources, ok := networkResources[network]; ok {
+		return resources
+	}
+	return tronLitecoinResources[network]
 }
 
 func tokensForChains(chains []chainSeed, profile string) ([]tokenSeed, error) {
@@ -141,7 +165,7 @@ func tokensForChains(chains []chainSeed, profile string) ([]tokenSeed, error) {
 		if err != nil {
 			return nil, err
 		}
-		for _, t := range networkTokens[network] {
+		for _, t := range tokensOfNetwork(network) {
 			t.chainID = c.id
 			tokens = append(tokens, t)
 		}
@@ -150,7 +174,7 @@ func tokensForChains(chains []chainSeed, profile string) ([]tokenSeed, error) {
 }
 
 func addedChainResources(profile string) ([]resourceSeed, error) {
-	return resourcesForChains(addedEVMChainSeeds(), profile)
+	return resourcesForChains(addedChainSeeds(), profile)
 }
 
 func resourcesForChains(chains []chainSeed, profile string) ([]resourceSeed, error) {
@@ -160,7 +184,7 @@ func resourcesForChains(chains []chainSeed, profile string) ([]resourceSeed, err
 		if err != nil {
 			return nil, err
 		}
-		for _, r := range networkResources[network] {
+		for _, r := range resourcesOfNetwork(network) {
 			r.chainID = c.id
 			resources = append(resources, r)
 		}
@@ -214,16 +238,17 @@ type AddedChainsResult struct {
 }
 
 // AddedChain is a record SeedMissingAddedChains creates: its rpc_url is
-// "env:<EnvVar>" and it signs for Network.
+// "env:<EnvVar>" and it signs for Network. NetworkID is nil outside EVM.
 type AddedChain struct {
-	ID        string
-	EnvVar    string
-	Network   string
-	NetworkID int64
-	IsTestnet bool
+	ID          string
+	AdapterType string
+	EnvVar      string
+	Network     string
+	NetworkID   *int64
+	IsTestnet   bool
 }
 
-// SeedMissingAddedChains creates the added EVM records that are not in the registry
+// SeedMissingAddedChains creates the added EVM, TRON and Litecoin records that are not in the registry
 // yet, with their thresholds, tokens and resources. It never updates an existing row
 // (unlike SeedChains, which re-encrypts every rpc_url), so it is safe on a live
 // database. With apply false it only reports what it would create.
@@ -234,7 +259,7 @@ func SeedMissingAddedChains(_ context.Context, apply bool) (AddedChainsResult, e
 		return result, err
 	}
 	if profile == "" {
-		return result, fmt.Errorf("CHAIN_NETWORK_PROFILE is required: it decides which network base/arbitrum/bsc point at")
+		return result, fmt.Errorf("CHAIN_NETWORK_PROFILE is required: it decides which network base/arbitrum/bsc/tron/ltc point at")
 	}
 	tokens, err := addedChainTokens(profile)
 	if err != nil {
@@ -247,7 +272,7 @@ func SeedMissingAddedChains(_ context.Context, apply bool) (AddedChainsResult, e
 
 	ordered := make([]chainSeed, 0)
 	for _, c := range chainSeeds() {
-		if isAddedEVMChain(c.id) {
+		if isAddedChain(c.id) {
 			ordered = append(ordered, c)
 		}
 	}
@@ -268,7 +293,7 @@ func SeedMissingAddedChains(_ context.Context, apply bool) (AddedChainsResult, e
 			return result, err
 		}
 		result.Chains = append(result.Chains, AddedChain{
-			ID: c.id, EnvVar: c.envVar, Network: network, NetworkID: *c.networkID, IsTestnet: c.isTestnet,
+			ID: c.id, AdapterType: c.adapterType, EnvVar: c.envVar, Network: network, NetworkID: c.networkID, IsTestnet: c.isTestnet,
 		})
 		if !apply {
 			continue
@@ -315,8 +340,8 @@ func SeedMissingAddedChains(_ context.Context, apply bool) (AddedChainsResult, e
 	return result, nil
 }
 
-func isAddedEVMChain(chainID string) bool {
-	for _, id := range AddedEVMChainIDs {
+func isAddedChain(chainID string) bool {
+	for _, id := range AddedChainIDs {
 		if id == chainID {
 			return true
 		}

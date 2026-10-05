@@ -7,6 +7,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/macrowallets/waas/app/container"
+	"github.com/macrowallets/waas/app/models"
 )
 
 type RefreshWalletUTXOs struct{}
@@ -46,8 +47,8 @@ func (j *RefreshWalletUTXOs) Handle(args ...any) error {
 	}
 
 	// Chain-level UTXO fetching will be added per-provider; infrastructure is ready
-	if chainID != "btc" && chainID != "tbtc" {
-		slog.Warn("refresh_wallet_utxos: skipping non-Bitcoin chain", "wallet", walletIDStr, "chain", chainID)
+	if !models.IsBitcoinFamilyChainID(chainID) {
+		slog.Warn("refresh_wallet_utxos: skipping non-UTXO chain", "wallet", walletIDStr, "chain", chainID)
 		return nil
 	}
 

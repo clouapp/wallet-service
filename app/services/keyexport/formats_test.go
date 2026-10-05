@@ -14,6 +14,9 @@ import (
 	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/mr-tron/base58"
+
+	"github.com/macrowallets/waas/app/models"
+	"github.com/macrowallets/waas/app/services/chain"
 )
 
 func randomSecp256k1Key(t *testing.T) []byte {
@@ -94,6 +97,135 @@ func TestBitcoinWIF_EncodesTestnetAndMainnetCompressed(t *testing.T) {
 		if key.DescriptorWithChecksum != key.Descriptor+"#"+checksum {
 			t.Fatalf("descriptor checksum missing")
 		}
+	}
+}
+
+// WIF vectors from litecoin-project/litecoin src/test/data/key_io_valid.json at commit
+// ec1b6489a900d09cf5991e220dce089c77a232a2 (compressed keys, chain main / test).
+const (
+	litecoinMainnetWIF    = "T5MZ5z9WqJxzVxYyVPecTJUSDkzDWrUYe1JuSX2AqJ9jKmLJrvTE"
+	litecoinMainnetWIFKey = "44b78d45adc801a65949661d5df1c4a44f532cd422be413a505d776784ddbe25"
+	litecoinTestnetWIF    = "cQaeKQwuakynYD9iebyxsKiBKF8RT3G6zoqRNUDybMsAimANRypo"
+	litecoinTestnetWIFKey = "597b8f070b98ee1f997fa3cb976466fa0e931256246b8c7177d2b067eed06ad7"
+
+	keyOneLitecoinTestnetAddress = "tltc1qw508d6qejxtdg4y5r3zarvary0c5xw7klfsuq0"
+	keyOneTronAddress            = "TMVQGm1qAQYVdetCeGRRkTWYYrLXuHK2HC"
+	// 0x41 + the Ethereum address of private key 1 (0x7E5F4552091A69125d5DfCb7b8C2659029395Bdf).
+	keyOneTronAddressHex = "417e5f4552091a69125d5dfcb7b8c2659029395bdf"
+)
+
+func privateKeyOne() []byte {
+	key := make([]byte, 32)
+	key[31] = 1
+	return key
+}
+
+func mustDecodeHex(t *testing.T, value string) []byte {
+	t.Helper()
+	decoded, err := hex.DecodeString(value)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return decoded
+}
+
+func TestUTXOWIF_EncodesLitecoinCoreVectors(t *testing.T) {
+	cases := []struct {
+		name    string
+		key     string
+		testnet bool
+		wif     string
+		hrp     string
+	}{
+		{"mainnet", litecoinMainnetWIFKey, false, litecoinMainnetWIF, "ltc1q"},
+		{"testnet", litecoinTestnetWIFKey, true, litecoinTestnetWIF, "tltc1q"},
+	}
+	for _, tc := range cases {
+		key, err := NewUTXOKey(mustDecodeHex(t, tc.key), models.ChainLTC, tc.testnet)
+		if err != nil || key.WIF != tc.wif {
+			t.Fatalf("%s: WIF %v err %v, want %s", tc.name, key, err, tc.wif)
+		}
+		decoded, err := btcutil.DecodeWIF(tc.wif)
+		if err != nil {
+			t.Fatal(err)
+		}
+		want, err := btcutil.NewAddressWitnessPubKeyHash(btcutil.Hash160(decoded.SerializePubKey()), chain.BitcoinFamilyParams(models.ChainLTC, tc.testnet))
+		if err != nil {
+			t.Fatal(err)
+		}
+		got, err := UTXOP2WPKHAddressOfWIF(tc.wif, models.ChainLTC, tc.testnet)
+		if err != nil || got != want.EncodeAddress() || !strings.HasPrefix(got, tc.hrp) {
+			t.Fatalf("%s: address %s err %v, want %s", tc.name, got, err, want.EncodeAddress())
+		}
+		if key.ElectrumImport != "p2wpkh:"+tc.wif || !strings.HasPrefix(key.DescriptorWithChecksum, "wpkh("+tc.wif+")#") {
+			t.Fatalf("%s: electrum %q descriptor %q", tc.name, key.ElectrumImport, key.DescriptorWithChecksum)
+		}
+		if _, err := UTXOP2WPKHAddressOfWIF(tc.wif, models.ChainLTC, !tc.testnet); err == nil {
+			t.Fatalf("%s: a litecoin WIF of one network must not verify on the other", tc.name)
+		}
+	}
+	if _, err := UTXOP2WPKHAddressOfWIF(litecoinMainnetWIF, models.ChainBTC, false); err == nil {
+		t.Fatal("a litecoin mainnet WIF (0xb0) must not verify as bitcoin mainnet (0x80)")
+	}
+	tb1, err := UTXOP2WPKHAddressOfWIF(litecoinTestnetWIF, models.ChainBTC, true)
+	if err != nil || !strings.HasPrefix(tb1, "tb1") {
+		t.Fatalf("testnet WIFs share 0xef; on bitcoin the key controls a tb1 address: %s %v", tb1, err)
+	}
+	if _, err := UTXOWIF(privateKeyOne(), models.ChainETH, false); err == nil {
+		t.Fatal("non Bitcoin-family chains have no WIF")
+	}
+}
+
+func TestUTXOWIF_PrivateKeyOneControlsTheLitecoinTestnetVector(t *testing.T) {
+	wif, err := UTXOWIF(privateKeyOne(), models.ChainLTC, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	address, err := UTXOP2WPKHAddressOfWIF(wif, models.ChainLTC, true)
+	if err != nil || address != keyOneLitecoinTestnetAddress {
+		t.Fatalf("address %s err %v, want %s", address, err, keyOneLitecoinTestnetAddress)
+	}
+}
+
+func TestTronKey_PrivateKeyOneIsTheKnownAddress(t *testing.T) {
+	key, err := NewTronKey(privateKeyOne())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if key.PrivateKeyHex != strings.Repeat("0", 63)+"1" || key.AddressHex != keyOneTronAddressHex {
+		t.Fatalf("key %s address hex %s", key.PrivateKeyHex, key.AddressHex)
+	}
+	address, err := TronAddressOfPrivateKeyHex(key.PrivateKeyHex)
+	if err != nil || address != keyOneTronAddress {
+		t.Fatalf("address %s err %v, want %s", address, err, keyOneTronAddress)
+	}
+}
+
+func TestTronKey_MatchesGoEthereumAndRefusesOtherForms(t *testing.T) {
+	privateKey := randomSecp256k1Key(t)
+	key, err := NewTronKey(privateKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ecdsaKey, err := crypto.HexToECDSA(key.PrivateKeyHex)
+	if err != nil {
+		t.Fatal(err)
+	}
+	evmBody := strings.ToLower(strings.TrimPrefix(crypto.PubkeyToAddress(ecdsaKey.PublicKey).Hex(), "0x"))
+	if key.AddressHex != "41"+evmBody {
+		t.Fatalf("address hex %s, want 41%s", key.AddressHex, evmBody)
+	}
+	malformed := map[string]string{
+		"0x prefix": "0x" + key.PrivateKeyHex, "63 chars": key.PrivateKeyHex[:63], "65 chars": key.PrivateKeyHex + "0",
+		"not hex": strings.Repeat("g", 64), "empty": "",
+	}
+	for name, bad := range malformed {
+		if _, err := TronAddressOfPrivateKeyHex(bad); err == nil {
+			t.Fatalf("%s: malformed key must be refused", name)
+		}
+	}
+	if _, err := NewTronKey(privateKey[:31]); err == nil {
+		t.Fatal("a 31-byte key must be refused")
 	}
 }
 

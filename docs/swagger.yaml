@@ -1093,6 +1093,8 @@ definitions:
         $ref: '#/definitions/feeestimate.EVMDetails'
       solana:
         $ref: '#/definitions/feeestimate.SolanaDetails'
+      tron:
+        $ref: '#/definitions/feeestimate.TronDetails'
     type: object
   feeestimate.EVMDetails:
     properties:
@@ -1192,6 +1194,33 @@ definitions:
       token_account_creation_lamports:
         example: "0"
         type: string
+    type: object
+  feeestimate.TronDetails:
+    properties:
+      account_activation_fee_sun:
+        example: "0"
+        type: string
+      bandwidth_bytes:
+        example: 345
+        type: integer
+      bandwidth_fee_sun:
+        example: "345000"
+        type: string
+      energy:
+        example: 21975
+        type: integer
+      energy_fee_limit_sun:
+        example: "2637000"
+        type: string
+      energy_is_reference:
+        example: false
+        type: boolean
+      sun_per_bandwidth_byte:
+        example: 1000
+        type: integer
+      sun_per_energy:
+        example: 100
+        type: integer
     type: object
   github_com_goravel_framework_support_carbon.DateTime:
     properties:
@@ -1879,11 +1908,14 @@ paths:
     get:
       description: Prices the withdrawal POST /withdrawals would send, with the same
         planner and chain adapters, without signing or broadcasting. The fee is always
-        in the chain's native coin (ETH, POL, BTC, SOL), also for tokens. EVM transfers
-        are legacy transactions paying gas_price_wei for every unit of gas (plus the
-        L1 data fee on OP-stack networks); Bitcoin uses the 3–6 block fee rate and
-        the coin selection the builder runs; Solana pays 5000 lamports per signature
-        plus the recipient's token account when it must be created. When the wallet
+        in the chain's native coin (ETH, POL, BTC, LTC, SOL, TRX), also for tokens.
+        EVM transfers are legacy transactions paying gas_price_wei for every unit
+        of gas (plus the L1 data fee on OP-stack networks); Bitcoin and Litecoin use
+        the node's fee rate and the coin selection the builder runs; Solana pays 5000
+        lamports per signature plus the recipient's token account when it must be
+        created; TRON is priced as burned TRX with no free or staked resources (bandwidth
+        per signed byte, 1.1 TRX to activate a new recipient, TRC-20 energy from estimateenergy
+        at the chain's energy price), broken down in details.tron. When the wallet
         cannot cover the amount, the fee of the transfer from the base address is
         returned with insufficient_funds=true. Answers are cached for FEE_ESTIMATE_CACHE_TTL_SECONDS
         (default 15). Node failures answer 503; no value is guessed.

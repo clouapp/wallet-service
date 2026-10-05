@@ -60,7 +60,7 @@ func PlanAddressReissue(store AddressStore, target ReissueTarget) ([]AddressReis
 	if target.AdapterType != models.AdapterTypeBitcoin {
 		return nil, nil
 	}
-	validPrefix := addressing.BtcHRP(target.Testnet) + bech32Separator
+	validPrefix := addressing.UTXOHRP(target.ChainID, target.Testnet) + bech32Separator
 
 	wallets, err := store.WalletsOnChain(target.ChainID)
 	if err != nil {

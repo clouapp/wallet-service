@@ -27,6 +27,7 @@ const (
 	restartLockName    = "wallets-api-restart.lock"
 	recordingLockName  = "custody-e2e-recording.lock"
 	fundingLedgerName  = "ledger.json"
+	ledgerLockName     = "funding-ledger.lock"
 	apiEnvironName     = "wallets-api.environ"
 	apiPIDName         = "wallets-api.pid"
 	apiLogName         = "wallets-api.log"
@@ -50,6 +51,7 @@ type Paths struct {
 	RestartLock   string
 	FundingDir    string
 	FundingLedger string
+	LedgerLock    string
 	RecordingLock string
 }
 
@@ -68,6 +70,7 @@ func NewPaths(stateDir, backDir string) Paths {
 		RestartLock:   filepath.Join(locks, restartLockName),
 		FundingDir:    funding,
 		FundingLedger: filepath.Join(funding, fundingLedgerName),
+		LedgerLock:    filepath.Join(locks, ledgerLockName),
 		RecordingLock: filepath.Join(stateDir, recordingLockName),
 	}
 }

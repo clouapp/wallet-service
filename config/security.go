@@ -153,5 +153,27 @@ func SweepDefaults() map[string]SweepThresholds {
 			DustNativeRaw:   envString("TBTC_DUST_THRESHOLD_SATS", "10000"),
 			DustUSD:         decimal.Zero,
 		},
+		// TRON: base must fund USDT sweep gas seeds (~65k energy × 100 sun ≈ 6.5 TRX,
+		// plus 1.1 TRX to activate a child that only ever received TRC-20).
+		"tron": {
+			GasReadinessRaw: envString("TRON_GAS_READINESS_THRESHOLD_SUN", "20000000"),
+			DustNativeRaw:   envString("TRON_DUST_THRESHOLD_NATIVE_SUN", "1000000"),
+			DustUSD:         envNonNegativeDecimal("TRON_DUST_THRESHOLD_USD", defaultDustUSDHigh),
+		},
+		"ttron": {
+			GasReadinessRaw: envString("TTRON_GAS_READINESS_THRESHOLD_SUN", "20000000"),
+			DustNativeRaw:   envString("TTRON_DUST_THRESHOLD_NATIVE_SUN", "1000000"),
+			DustUSD:         envNonNegativeDecimal("TTRON_DUST_THRESHOLD_USD", defaultDustUSDHigh),
+		},
+		"ltc": {
+			GasReadinessRaw: "",
+			DustNativeRaw:   envString("LTC_DUST_THRESHOLD_LITOSHIS", "10000"),
+			DustUSD:         decimal.Zero,
+		},
+		"tltc": {
+			GasReadinessRaw: "",
+			DustNativeRaw:   envString("TLTC_DUST_THRESHOLD_LITOSHIS", "10000"),
+			DustUSD:         decimal.Zero,
+		},
 	}
 }

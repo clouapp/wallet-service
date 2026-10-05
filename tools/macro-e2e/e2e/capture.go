@@ -27,6 +27,14 @@ const (
 	printedDigestLength     = 16
 )
 
+// litecoinTestnetFallbacks back litecoinspace up, in order: two ElectrumX servers
+// pinned to their self-signed certificates (UTXOs, balance, tip, fee, status,
+// broadcast; no block listing) and the keyless Tatum gateway (bitcoind JSON-RPC,
+// 5 requests/min; block scans, tip, status, fee, broadcast; no UTXO lookup).
+const litecoinTestnetFallbacks = "electrum+ssl://electrum-ltc.bysh.me:51002?cert_sha256=fdf3c121181c14100d8740007ed546de388099c7090315ca2cf995bb4620c41d," +
+	"electrum+ssl://electrum.ltc.xurious.com:51002?cert_sha256=e3aedd3093856098e2efe66d96fb7cd97adae8eeda1d070d460e84dc5134cf26," +
+	"https://litecoin-testnet.gateway.tatum.io"
+
 // e2eOverride is applied in order on top of .env.dev.
 type e2eOverride struct{ Key, Value string }
 
@@ -34,8 +42,14 @@ var (
 	e2eOverrides = []e2eOverride{
 		{"DB_DATABASE", E2EDatabase},
 		{"CHAIN_NETWORK_PROFILE", "testnet"},
-		{"LOCAL_DEPOSIT_SCAN_CHAINS", "sol,eth,btc,polygon,base,arbitrum,bsc"},
+		{"LOCAL_DEPOSIT_SCAN_CHAINS", "sol,eth,btc,polygon,base,arbitrum,bsc,tron,ltc"},
 		{"BTC_RPC_URL", "https://mempool.space/testnet4/api"},
+		{"TRON_RPC_URL", "https://nile.trongrid.io"},
+		{"TTRON_RPC_URL", "https://nile.trongrid.io"},
+		{"LTC_RPC_URL", "https://litecoinspace.org/testnet/api"},
+		{"TLTC_RPC_URL", "https://litecoinspace.org/testnet/api"},
+		{"LTC_FALLBACK_RPC_URL", litecoinTestnetFallbacks},
+		{"TLTC_FALLBACK_RPC_URL", litecoinTestnetFallbacks},
 	}
 	refusedDatabases   = map[string]bool{"vault": true, "vault_unit_test": true}
 	processPassthrough = []string{"HOME", "PATH", "USER", "LANG", "TZ"}

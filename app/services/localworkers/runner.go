@@ -22,11 +22,13 @@ const (
 )
 
 // dedicatedScanChains produce blocks too fast (Arbitrum about every 0.25 s, BSC 0.75 s,
-// Base 2 s) to wait for the other chains' scans; each one runs in a loop of its own.
+// Base 2 s, TRON 3 s) to wait for the other chains' scans; each one runs in a loop of
+// its own.
 var dedicatedScanChains = map[string]bool{
 	models.ChainBase: true, models.ChainTBase: true,
 	models.ChainArbitrum: true, models.ChainTArbitrum: true,
 	models.ChainBSC: true, models.ChainTBSC: true,
+	models.ChainTron: true, models.ChainTTron: true,
 }
 
 // splitScanChains keeps the configured order: shared chains are scanned one after the

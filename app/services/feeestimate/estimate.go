@@ -44,6 +44,7 @@ type Details struct {
 	EVM     *EVMDetails     `json:"evm,omitempty"`
 	Bitcoin *BitcoinDetails `json:"bitcoin,omitempty"`
 	Solana  *SolanaDetails  `json:"solana,omitempty"`
+	Tron    *TronDetails    `json:"tron,omitempty"`
 }
 
 // EVMDetails: legacy transactions pay GasPriceWei for every unit of gas used, so
@@ -70,6 +71,21 @@ type SolanaDetails struct {
 	Signatures                   int    `json:"signatures" example:"1"`
 	LamportsPerSignature         int64  `json:"lamports_per_signature" example:"5000"`
 	TokenAccountCreationLamports string `json:"token_account_creation_lamports" example:"0"`
+}
+
+// TronDetails: fee = bandwidth_fee_sun + account_activation_fee_sun + energy_fee_limit_sun,
+// all burned TRX with no staked or free resources assumed. A TRX transfer to a new
+// account pays the activation instead of bandwidth; energy_fee_limit_sun is the
+// fee_limit of the TRC-20 calls, the most their energy can burn.
+type TronDetails struct {
+	BandwidthBytes          int64  `json:"bandwidth_bytes" example:"345"`
+	SunPerBandwidthByte     int64  `json:"sun_per_bandwidth_byte" example:"1000"`
+	BandwidthFeeSun         string `json:"bandwidth_fee_sun" example:"345000"`
+	AccountActivationFeeSun string `json:"account_activation_fee_sun" example:"0"`
+	Energy                  int64  `json:"energy" example:"21975"`
+	SunPerEnergy            int64  `json:"sun_per_energy" example:"100"`
+	EnergyFeeLimitSun       string `json:"energy_fee_limit_sun" example:"2637000"`
+	EnergyIsReference       bool   `json:"energy_is_reference" example:"false"`
 }
 
 func buildEstimate(req *resolvedRequest, quote *sweep.FeeQuote, estimatedAt, expiresAt time.Time) *Estimate {
@@ -140,6 +156,18 @@ func buildDetails(quote *sweep.FeeQuote) Details {
 			Signatures:                   quote.Solana.Signatures,
 			LamportsPerSignature:         quote.Solana.LamportsPerSignature,
 			TokenAccountCreationLamports: nonNegativeString(quote.Solana.AccountCreationLamports),
+		}
+	}
+	if quote.Tron != nil {
+		details.Tron = &TronDetails{
+			BandwidthBytes:          quote.Tron.BandwidthBytes,
+			SunPerBandwidthByte:     quote.Tron.SunPerBandwidthByte,
+			BandwidthFeeSun:         nonNegativeString(quote.Tron.BandwidthFee),
+			AccountActivationFeeSun: nonNegativeString(quote.Tron.ActivationFee),
+			Energy:                  quote.Tron.Energy,
+			SunPerEnergy:            quote.Tron.SunPerEnergy,
+			EnergyFeeLimitSun:       nonNegativeString(quote.Tron.EnergyFeeLimit),
+			EnergyIsReference:       quote.Tron.EnergyIsReference,
 		}
 	}
 	return details

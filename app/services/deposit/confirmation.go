@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/macrowallets/waas/app/models"
@@ -26,6 +27,8 @@ func adapterBlockHeightKind(adapter types.Chain) string {
 		return models.AdapterTypeBitcoin
 	case *chain.SolanaLive:
 		return models.AdapterTypeSolana
+	case *chain.TronLive:
+		return models.AdapterTypeTron
 	default:
 		return ""
 	}
@@ -139,16 +142,23 @@ func (s *Service) applyConfirmations(ctx context.Context, adapter types.Chain, c
 			confirmedAt = &now
 		}
 
-		if err := s.txRepo.UpdateFields(tx.ID, map[string]interface{}{
+		confirmedNow := newStatus == string(types.TxStatusConfirmed) && tx.Status != string(types.TxStatusConfirmed)
+		fields := map[string]interface{}{
 			"confirmations": confs,
 			"status":        newStatus,
 			"confirmed_at":  confirmedAt,
-		}); err != nil {
+		}
+		if confirmedNow && needsPaidFee(tx) {
+			if fee, ok := paidFee(ctx, adapter, tx); ok {
+				fields["fee"] = fee
+				tx.Fee = fee
+			}
+		}
+		if err := s.txRepo.UpdateFields(tx.ID, fields); err != nil {
 			slog.Error("update confs", "tx_id", tx.ID, "error", err)
 			continue
 		}
 
-		confirmedNow := newStatus == string(types.TxStatusConfirmed) && tx.Status != string(types.TxStatusConfirmed)
 		confirmingNow := tx.Status == string(types.TxStatusPending) && newStatus == string(types.TxStatusConfirming)
 		if confirmedNow && movesWalletBalance(tx.TxType) {
 			confirmedWallets.add(tx.WalletID)
@@ -173,6 +183,28 @@ func (s *Service) applyConfirmations(ctx context.Context, adapter types.Chain, c
 		}
 	}
 	return nil
+}
+
+// needsPaidFee: outbound rows (withdrawal, sweep, gas_seed) record the fee they paid
+// when they confirm; deposits were paid for by their sender.
+func needsPaidFee(tx models.Transaction) bool {
+	return isOutboundTxType(tx.TxType) && strings.TrimSpace(tx.Fee) == "" && tx.TxHash != ""
+}
+
+// paidFee reads the fee tx paid from the chain, in native base units. A chain that
+// cannot tell, or a failed lookup, leaves the fee empty: confirmation never waits on
+// it, and transactions:backfill-fees fills it later.
+func paidFee(ctx context.Context, adapter types.Chain, tx models.Transaction) (string, bool) {
+	reader, ok := adapter.(chain.TransactionFeeReader)
+	if !ok {
+		return "", false
+	}
+	fee, err := reader.TransactionFee(ctx, tx.TxHash)
+	if err != nil {
+		slog.Warn("read paid fee", "tx_id", tx.ID, "tx_hash", tx.TxHash, "chain", tx.Chain, "error", err)
+		return "", false
+	}
+	return fee.String(), true
 }
 
 // confirmationsAt counts the block that includes the transaction as its first

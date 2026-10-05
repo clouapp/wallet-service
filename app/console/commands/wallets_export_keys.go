@@ -338,6 +338,9 @@ func reportWalletsExportPlan(ctx console.Context, plans []keyexport.WalletPlan, 
 		if plan.SpansEVMNetworks() {
 			ctx.Warning(fmt.Sprintf("EVM: wallet %s (%s) — the same addresses exist on every EVM network, mainnets included; the exported keys spend funds there too", plan.Wallet.ID, plan.Wallet.Label))
 		}
+		if plan.SpansTronNetworks() {
+			ctx.Warning(fmt.Sprintf("TRON: wallet %s (%s) — the same T... addresses exist on TRON mainnet and every TRON testnet, and the keys also control the matching 0x address on every EVM network", plan.Wallet.ID, plan.Wallet.Label))
+		}
 	}
 	reportWalletsExportRefusals(ctx, refused)
 }

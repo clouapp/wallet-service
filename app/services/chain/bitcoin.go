@@ -4,7 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
+	"log/slog"
 	"math/big"
 	"net/http"
 	"strings"
@@ -33,29 +33,101 @@ type BitcoinConfig struct {
 	IsTestnet      bool
 	Confirmations  uint64
 	FeeRateDefault int
+	// Fallbacks are tried in order when the provider at RPCURL fails (see
+	// bitcoinFailover); empty keeps RPCURL as the only provider.
+	Fallbacks []BitcoinFallback
 }
 
+// BitcoinFallback is a secondary provider: an Esplora or bitcoind JSON-RPC URL, or an
+// Electrum server (electrum+ssl://host:port?cert_sha256=HEX). APIKey, optional, is
+// sent as the x-api-key header to HTTP providers (Tatum's gateway, for one).
+type BitcoinFallback struct {
+	URL    string
+	APIKey string
+}
+
+// BitcoinLive is the adapter of every Bitcoin-family chain record: Bitcoin and
+// Litecoin share the transaction format, P2WPKH and BIP-143 signing, and differ only
+// in the network parameters picked from the record (bitcoinNetworkOf).
 type BitcoinLive struct {
 	cfg          BitcoinConfig
+	network      bitcoinNetwork
 	rpc          *RPCClient
 	restAPI      bool
 	http         *http.Client
 	esploraRetry rateLimitRetry
 	feeRates     *btcFeeRateCache
-	fee          FeePolicy
+	// feeRateTimeout bounds one fee-rate fetch; zero means btcFeeRateFetchTimeout.
+	feeRateTimeout time.Duration
+	fee            FeePolicy
+	// apiKey, when set, goes out as the x-api-key header (fallback HTTP providers).
+	apiKey    string
+	providers *bitcoinFailover
 }
 
 func NewBitcoinLive(cfg BitcoinConfig) *BitcoinLive {
-	isREST := strings.Contains(cfg.RPCURL, "blockstream.info") ||
-		strings.Contains(cfg.RPCURL, "mempool.space")
-	return &BitcoinLive{
+	live := &BitcoinLive{
 		cfg:          cfg,
+		network:      bitcoinNetworkOf(cfg),
 		rpc:          NewRPCClient(cfg.RPCURL, cfg.RPCUser, cfg.RPCPass),
-		restAPI:      isREST,
+		restAPI:      isEsploraURL(cfg.RPCURL),
 		http:         httpclient.New(bitcoinRESTTimeout),
 		esploraRetry: esploraRetry(),
 		feeRates:     &btcFeeRateCache{},
 	}
+	providers := []bitcoinProvider{newDirectProvider(live, btcPrimaryProviderName, false)}
+	for i, fallback := range cfg.Fallbacks {
+		provider, err := live.fallbackProvider(i+1, fallback)
+		if err != nil {
+			slog.Warn("btc fallback provider ignored", "chain", cfg.ChainIDStr, "fallback", i+1, "error", err)
+			continue
+		}
+		providers = append(providers, provider)
+	}
+	live.providers = newBitcoinFailover(cfg.ChainIDStr, providers...)
+	return live
+}
+
+const btcPrimaryProviderName = "primary"
+
+// fallbackProvider builds the n-th fallback: an Electrum server, or a copy of this
+// adapter pointed at another Esplora/JSON-RPC URL that must prove its network first.
+func (a *BitcoinLive) fallbackProvider(n int, fallback BitcoinFallback) (bitcoinProvider, error) {
+	rawURL := strings.TrimSpace(fallback.URL)
+	name := fmt.Sprintf("fallback-%d", n)
+	if rawURL == "" {
+		return nil, fmt.Errorf("empty URL")
+	}
+	if isElectrumURL(rawURL) {
+		return newElectrumProvider(name, rawURL, a.network, a.cfg.NativeSymbol)
+	}
+	if !strings.HasPrefix(rawURL, "https://") && !strings.HasPrefix(rawURL, "http://") {
+		return nil, fmt.Errorf("unsupported scheme: want https://, http:// or %s", electrumSSLScheme)
+	}
+	copyCfg := a.cfg
+	copyCfg.RPCURL = rawURL
+	copyCfg.RPCUser, copyCfg.RPCPass = "", ""
+	copyCfg.Fallbacks = nil
+	secondary := &BitcoinLive{
+		cfg:          copyCfg,
+		network:      a.network,
+		rpc:          NewRPCClient(rawURL, "", "").WithHeader(apiKeyHeader, fallback.APIKey),
+		restAPI:      isEsploraURL(rawURL),
+		http:         a.http,
+		esploraRetry: esploraRetry(),
+		feeRates:     a.feeRates,
+		apiKey:       fallback.APIKey,
+	}
+	return newDirectProvider(secondary, name, true), nil
+}
+
+// chainProviders is the failover of this adapter; a zero-value adapter talks to
+// RPCURL only.
+func (a *BitcoinLive) chainProviders() *bitcoinFailover {
+	if a.providers == nil {
+		return newBitcoinFailover(a.cfg.ChainIDStr, newDirectProvider(a, btcPrimaryProviderName, false))
+	}
+	return a.providers
 }
 
 // WithFeePolicy is this adapter pricing fee rates with policy; it shares the
@@ -74,21 +146,20 @@ func (a *BitcoinLive) Name() string                  { return a.cfg.ChainName }
 func (a *BitcoinLive) RequiredConfirmations() uint64 { return a.cfg.Confirmations }
 func (a *BitcoinLive) NativeAsset() string           { return a.cfg.NativeSymbol }
 
-// IsTestnet reports whether the chain record points at Bitcoin testnet (tb1 addresses).
-func (a *BitcoinLive) IsTestnet() bool { return a.cfg.IsTestnet }
+// IsTestnet reports whether the chain record points at a test network (tb1 / tltc1
+// addresses).
+func (a *BitcoinLive) IsTestnet() bool { return a.network.testnet }
 
 func (a *BitcoinLive) DeriveAddress(masterKey []byte, index uint32) (string, error) {
 	return "", fmt.Errorf("BTC key derivation not implemented — use BIP-84 + hdkeychain")
 }
 
+// ValidateAddress accepts exactly what the builder can pay: a P2WPKH address of this
+// adapter's network. Legacy, P2SH, P2WSH and taproot destinations are refused here
+// rather than failing later, when the withdrawal is signed.
 func (a *BitcoinLive) ValidateAddress(address string) bool {
-	if len(address) < 26 || len(address) > 62 {
-		return false
-	}
-	if a.cfg.IsTestnet {
-		return (len(address) >= 3 && address[:3] == "tb1") || address[0] == 'm' || address[0] == 'n' || address[0] == '2'
-	}
-	return address[:3] == "bc1" || address[0] == '1' || address[0] == '3'
+	_, err := witnessProgram(address, a.network.params)
+	return err == nil
 }
 
 // EstimateFee prices a transfer with the same fee policy and coin selection as
@@ -96,23 +167,14 @@ func (a *BitcoinLive) ValidateAddress(address string) bool {
 // a typical one-input, payment-plus-change transaction at the current rate.
 func (a *BitcoinLive) EstimateFee(ctx context.Context, req types.TransferRequest) (*types.FeeEstimate, error) {
 	fee := big.NewInt(a.estimateTransferFeeSats(ctx, req))
-
-	symbol := "BTC"
-	if a.cfg.IsTestnet {
-		symbol = "TBTC"
-	}
-
 	return &types.FeeEstimate{
-		Fee:      fmtUnits(fee, 8),
-		FeeAsset: symbol,
+		Fee:      fmtUnits(fee, btcDecimals),
+		FeeAsset: a.network.feeAsset,
 	}, nil
 }
 
 func (a *BitcoinLive) GetBalance(ctx context.Context, address string) (*types.Balance, error) {
-	if a.restAPI {
-		return a.getBalanceREST(ctx, address)
-	}
-	return a.getBalanceRPC(ctx, address)
+	return a.chainProviders().balance(ctx, address)
 }
 
 func (a *BitcoinLive) getBalanceRPC(ctx context.Context, address string) (*types.Balance, error) {
@@ -130,31 +192,19 @@ func (a *BitcoinLive) getBalanceRPC(ctx context.Context, address string) (*types
 		}
 		total.Add(total, sats)
 	}
-	return &types.Balance{Address: address, Asset: a.cfg.NativeSymbol, Amount: total, Decimals: 8, Human: fmtUnits(total, 8)}, nil
+	return &types.Balance{Address: address, Asset: a.cfg.NativeSymbol, Amount: total, Decimals: btcDecimals, Human: fmtUnits(total, btcDecimals)}, nil
 }
 
-// getBalanceREST fetches UTXOs via the Blockstream/mempool.space REST API
-// (GET /api/address/:address/utxo) and sums the satoshi values.
+// getBalanceREST sums the UTXOs of GET /address/:address/utxo (Esplora), confirmed
+// or not.
 func (a *BitcoinLive) getBalanceREST(ctx context.Context, address string) (*types.Balance, error) {
-	url := strings.TrimRight(a.cfg.RPCURL, "/") + "/address/" + address + "/utxo"
-	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
-	if err != nil {
-		return nil, fmt.Errorf("build utxo request: %w", err)
+	if strings.TrimSpace(address) == "" || strings.ContainsAny(address, "/?#") {
+		return nil, fmt.Errorf("btc balance: invalid address %q", address)
 	}
-	resp, err := a.http.Do(req)
+	body, err := a.esploraGet(ctx, "/address/"+address+"/utxo")
 	if err != nil {
 		return nil, fmt.Errorf("fetch utxos for %s: %w", address, err)
 	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("read utxo response: %w", err)
-	}
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("utxo API returned %d: %s", resp.StatusCode, string(body))
-	}
-
 	var utxos []struct {
 		Value int64 `json:"value"`
 	}
@@ -166,7 +216,7 @@ func (a *BitcoinLive) getBalanceREST(ctx context.Context, address string) (*type
 	for _, u := range utxos {
 		total.Add(total, big.NewInt(u.Value))
 	}
-	return &types.Balance{Address: address, Asset: a.cfg.NativeSymbol, Amount: total, Decimals: 8, Human: fmtUnits(total, 8)}, nil
+	return &types.Balance{Address: address, Asset: a.cfg.NativeSymbol, Amount: total, Decimals: btcDecimals, Human: fmtUnits(total, btcDecimals)}, nil
 }
 
 func (a *BitcoinLive) GetTokenBalance(ctx context.Context, address string, token types.Token) (*types.Balance, error) {
@@ -178,7 +228,10 @@ func (a *BitcoinLive) BuildTransfer(ctx context.Context, req types.TransferReque
 }
 
 func (a *BitcoinLive) SignTransaction(ctx context.Context, unsigned *types.UnsignedTx, privateKey []byte) (*types.SignedTx, error) {
-	return signBitcoinP2WPKH(unsigned, privateKey, netParams(unsigned))
+	if err := a.requireBuiltOnThisNetwork(unsigned); err != nil {
+		return nil, err
+	}
+	return signBitcoinP2WPKH(unsigned, privateKey, a.network.params)
 }
 
 func (a *BitcoinLive) BroadcastTransaction(ctx context.Context, signed *types.SignedTx) (string, error) {
@@ -186,36 +239,14 @@ func (a *BitcoinLive) BroadcastTransaction(ctx context.Context, signed *types.Si
 }
 
 func (a *BitcoinLive) GetLatestBlock(ctx context.Context) (uint64, error) {
-	if a.restAPI {
-		return a.getLatestBlockREST(ctx)
-	}
-	var count uint64
-	if err := a.rpc.Call(ctx, "getblockcount", &count); err != nil {
-		return 0, err
-	}
-	return count, nil
+	return a.chainProviders().latestBlock(ctx)
 }
 
 func (a *BitcoinLive) getLatestBlockREST(ctx context.Context) (uint64, error) {
-	url := strings.TrimRight(a.cfg.RPCURL, "/") + "/blocks/tip/height"
-	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
-	if err != nil {
-		return 0, fmt.Errorf("build block height request: %w", err)
-	}
-	resp, err := a.http.Do(req)
+	body, err := a.esploraGet(ctx, "/blocks/tip/height")
 	if err != nil {
 		return 0, fmt.Errorf("fetch block height: %w", err)
 	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return 0, fmt.Errorf("read block height response: %w", err)
-	}
-	if resp.StatusCode != http.StatusOK {
-		return 0, fmt.Errorf("block height API returned %d: %s", resp.StatusCode, string(body))
-	}
-
 	var height uint64
 	if err := json.Unmarshal(body, &height); err != nil {
 		return 0, fmt.Errorf("parse block height: %w", err)
@@ -224,10 +255,7 @@ func (a *BitcoinLive) getLatestBlockREST(ctx context.Context) (uint64, error) {
 }
 
 func (a *BitcoinLive) ScanBlock(ctx context.Context, blockNum uint64) ([]types.DetectedTransfer, error) {
-	if a.restAPI {
-		return a.scanBlockREST(ctx, blockNum)
-	}
-	return a.scanBlockRPC(ctx, blockNum)
+	return a.chainProviders().scanBlock(ctx, blockNum)
 }
 
 func (a *BitcoinLive) scanBlockRPC(ctx context.Context, blockNum uint64) ([]types.DetectedTransfer, error) {
@@ -297,10 +325,11 @@ func (a *BitcoinLive) BuildSweep(ctx context.Context, req types.SweepRequest) ([
 // while it is unconfirmed (or not yet known to the node/indexer), which the
 // confirmation loop treats as still pending. Errors are failed lookups.
 func (a *BitcoinLive) GetTransactionBlock(ctx context.Context, txHash string) (uint64, error) {
-	if a.restAPI {
-		return a.getTransactionBlockREST(ctx, txHash)
+	txID, err := normalizeBTCHash(txHash, "txid")
+	if err != nil {
+		return 0, err
 	}
-	return a.getTransactionBlockRPC(ctx, txHash)
+	return a.chainProviders().transactionBlock(ctx, txID)
 }
 
 func (a *BitcoinLive) GasReadinessThreshold() *big.Int { return nil }

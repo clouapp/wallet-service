@@ -19,7 +19,7 @@ const (
 
 func polygonCatalog() assetDecimalsCatalog {
 	return newAssetDecimalsCatalog(
-		&models.Chain{ID: "polygon", NativeDecimals: 18},
+		&models.Chain{ID: "polygon", NativeSymbol: "pol", NativeDecimals: 18},
 		[]models.Token{{ChainID: "polygon", Symbol: "USDC", ContractAddress: amoyUSDCContract, Decimals: 6}},
 	)
 }
@@ -178,5 +178,25 @@ func TestBalancesKeepNativeAndConfiguredTokensOnly(t *testing.T) {
 
 	if len(got) != 2 || got[0].AssetSymbol != "matic" || got[1].AssetSymbol != "USDC" {
 		t.Fatalf("balances = %+v, want matic and USDC", got)
+	}
+}
+
+func TestTransactionViewDescribesTheFeeInTheNativeAsset(t *testing.T) {
+	t.Parallel()
+
+	withFee := marshalTransactionView(t, models.Transaction{
+		Chain: "polygon", Asset: "USDC", Amount: "3000000", TokenContract: amoyUSDCContract,
+		TxType: models.TxTypeWithdrawal, Fee: "52500000000000",
+	})
+	if withFee["fee"] != "52500000000000" || withFee["fee_asset"] != "POL" || withFee["fee_decimals"] != float64(18) {
+		t.Fatalf("fee fields = %v %v %v, want the fee in POL with 18 decimals", withFee["fee"], withFee["fee_asset"], withFee["fee_decimals"])
+	}
+
+	withoutFee := marshalTransactionView(t, models.Transaction{Chain: "polygon", Asset: "POL", Amount: "1", TxType: models.TxTypeDeposit})
+	if _, ok := withoutFee["fee_asset"]; ok {
+		t.Fatalf("fee_asset present without a fee: %v", withoutFee)
+	}
+	if _, ok := withoutFee["fee_decimals"]; ok {
+		t.Fatalf("fee_decimals present without a fee: %v", withoutFee)
 	}
 }

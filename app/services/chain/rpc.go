@@ -34,8 +34,12 @@ type RPCClient struct {
 	requestID atomic.Uint64
 	username  string
 	password  string
+	headers   map[string]string
 	retry     rateLimitRetry
 }
+
+// apiKeyHeader carries the optional API key of a hosted provider (Tatum gateways).
+const apiKeyHeader = "x-api-key"
 
 type rpcRequest struct {
 	JSONRPC string        `json:"jsonrpc"`
@@ -66,6 +70,18 @@ func NewRPCClient(url, user, pass string) *RPCClient {
 		client:   httpclient.New(rpcHTTPTimeout),
 		retry:    defaultRateLimitRetry(),
 	}
+}
+
+// WithHeader sends name: value on every request; an empty value is ignored.
+func (c *RPCClient) WithHeader(name, value string) *RPCClient {
+	if value == "" {
+		return c
+	}
+	if c.headers == nil {
+		c.headers = make(map[string]string)
+	}
+	c.headers[name] = value
+	return c
 }
 
 // Call executes a JSON-RPC method and unmarshals result into `out`. A rate-limited
@@ -115,6 +131,9 @@ func (c *RPCClient) post(ctx context.Context, method string, params []interface{
 	req.Header.Set("User-Agent", rpcUserAgent)
 	if c.username != "" {
 		req.SetBasicAuth(c.username, c.password)
+	}
+	for name, value := range c.headers {
+		req.Header.Set(name, value)
 	}
 
 	resp, err := c.client.Do(req)

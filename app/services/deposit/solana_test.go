@@ -46,6 +46,8 @@ func solanaFixtureRPC(t *testing.T) *chain.SolanaLive {
 			_, _ = io.WriteString(w, `{"jsonrpc":"2.0","id":1,"result":506367988}`)
 		case "getSignatureStatuses":
 			_, _ = io.WriteString(w, `{"jsonrpc":"2.0","id":1,"result":{"context":{"slot":506367988},"value":[{"slot":506367800,"err":null,"confirmationStatus":"finalized","confirmations":null}]}}`)
+		case "getTransaction":
+			_, _ = io.WriteString(w, `{"jsonrpc":"2.0","id":1,"result":{"slot":506367800,"meta":{"err":null,"fee":5000}}}`)
 		default:
 			t.Errorf("unexpected rpc method %s", req.Method)
 		}
@@ -125,6 +127,9 @@ func TestSolanaWithdrawal_SlotReconciledFromSignatureStatus(t *testing.T) {
 	}
 	if reloaded.BlockNumber != solFixtureSlot || reloaded.Status != "confirmed" {
 		t.Fatalf("expected slot %d and confirmed, got %d / %s", solFixtureSlot, reloaded.BlockNumber, reloaded.Status)
+	}
+	if reloaded.Fee != "5000" {
+		t.Fatalf("paid fee %q, want the 5000 lamports of meta.fee", reloaded.Fee)
 	}
 	if len(confirmations.confirmed) != 1 || confirmations.confirmed[0].ID != withdrawal.ID {
 		t.Fatalf("withdrawal.confirmed must be published once, got %d", len(confirmations.confirmed))

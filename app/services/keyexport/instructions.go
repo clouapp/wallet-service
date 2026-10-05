@@ -27,6 +27,9 @@ func writeWalletTable(doc *strings.Builder, manifest Manifest) {
 		if wallet.AllEVMChains {
 			kind += " (chave EVM: vale em todas as redes EVM, inclusive mainnets)"
 		}
+		if wallet.AllTronChains {
+			kind += " (chave TRON: o mesmo endereço vale na mainnet TRON e nas testnets)"
+		}
 		fmt.Fprintf(doc, "| %s | `%s` | %s | %s | %s | %d | `%s` |\n",
 			markdownCell(wallet.Label), wallet.WalletID, wallet.Chain, wallet.Network, kind, wallet.AddressCount, wallet.Directory)
 	}
@@ -59,6 +62,10 @@ const instructionsHeader = `# Exportação de chaves privadas — Macro Wallets
 > - Chaves **EVM** valem para o mesmo endereço em **todas** as redes EVM (Ethereum, Polygon,
 >   BSC, Base, Arbitrum…), **inclusive mainnet**, mesmo que a chain esteja configurada para
 >   testnet aqui.
+> - Chaves **TRON** valem para o mesmo endereço ` + "`T…`" + ` na **mainnet** TRON e nas testnets
+>   (Nile, Shasta) e também controlam o endereço EVM ` + "`0x`" + ` com os mesmos 20 bytes.
+> - Uma WIF de **testnet Litecoin** é idêntica à WIF de testnet Bitcoin da mesma chave (prefixo
+>   ` + "`c`" + `): importe-a sempre numa carteira Litecoin de testnet.
 > - Depois de usar, destrua as cópias (` + "`shred -u arquivo.zip`" + ` e dos arquivos extraídos) e,
 >   se a exportação vazou, mova os fundos para novas wallets imediatamente.
 `
@@ -125,6 +132,50 @@ bitcoin-cli -testnet -rpcwallet=recuperacao getbalances
   Cuidado: o comando fica no histórico do shell — rode com ` + "`HISTCONTROL=ignorespace`" + ` e um espaço
   inicial, ou use o console do bitcoin-qt.
 
+## Litecoin
+
+Campos ` + "`addresses[].litecoin`" + `: os mesmos da seção Bitcoin, com os prefixos do Litecoin:
+` + "`wif_compressed`" + ` (prefixo ` + "`T`" + ` em mainnet; ` + "`c`" + ` em testnet, o mesmo byte do Bitcoin
+testnet), ` + "`electrum_import`" + ` (` + "`p2wpkh:<WIF>`" + `), ` + "`descriptor`" + ` (` + "`wpkh(<WIF>)`" + `) e
+` + "`descriptor_with_checksum`" + `. Endereços são P2WPKH (bech32, ` + "`tltc1q…`" + ` em testnet,
+` + "`ltc1q…`" + ` em mainnet); o campo ` + "`network`" + ` diz para qual rede a WIF foi gerada
+(` + "`litecoin-testnet`" + ` / ` + "`litecoin-mainnet`" + `). Endereços MWEB (` + "`ltcmweb1…`" + `) não são usados.
+
+- **Electrum-LTC**: *Arquivo → Novo/Restaurar* → nome → *Importar endereços Litecoin ou chaves
+  privadas* → cole uma linha ` + "`p2wpkh:<WIF>`" + ` por endereço. O prefixo ` + "`p2wpkh:`" + ` é
+  obrigatório (sem ele o Electrum-LTC gera o endereço legado ` + "`L…`/`m…`" + ` errado). Para testnet
+  inicie com ` + "`electrum-ltc --testnet`" + `. Confira que o endereço mostrado é o ` + "`address`" + ` do JSON.
+- **Litecoin Core** (wallet legada, ` + "`importprivkey`" + `), remova ` + "`-testnet`" + ` para mainnet:
+
+` + "```" + `
+litecoin-cli -testnet -named createwallet wallet_name=recuperacao descriptors=false
+litecoin-cli -testnet -rpcwallet=recuperacao importprivkey "<wif_compressed>" "recuperacao" true
+litecoin-cli -testnet -rpcwallet=recuperacao getbalances
+` + "```" + `
+
+  ` + "`importprivkey`" + ` também passa a vigiar o endereço SegWit (` + "`ltc1q…`/`tltc1q…`" + `) da chave;
+  o ` + "`true`" + ` final faz rescan completo (lento). Numa wallet descriptor (` + "`descriptors=true`" + `)
+  use ` + "`importdescriptors`" + ` com ` + "`descriptor_with_checksum`" + `, como na seção Bitcoin. O mesmo
+  cuidado com o histórico do shell vale aqui (ou use o console do litecoin-qt).
+
+## TRON
+
+Campos ` + "`addresses[].tron`" + `: ` + "`private_key_hex`" + ` (64 hex, **sem** ` + "`0x`" + `) e
+` + "`address_hex`" + ` (o endereço em hex, ` + "`41…`" + `, como a API HTTP da TRON usa com
+` + "`visible=false`" + `); ` + "`address`" + ` é o base58 ` + "`T…`" + `. Endereço base (` + "`genesis`" + `) = chave da
+wallet; filhos (` + "`bip32`" + `) = chave da wallet + tweak BIP-32 não-hardened do índice (como EVM).
+
+- **TronLink** (extensão ou app): *Adicionar carteira* → *Importar carteira* → *Chave privada*
+  (*Import private key*) → cole ` + "`private_key_hex`" + `. Confira que o endereço mostrado é o
+  ` + "`address`" + ` do JSON. Para testnet, troque a rede do TronLink para *Nile Testnet* (ou Shasta): o
+  endereço é o mesmo em todas as redes TRON.
+- **TronWeb** (conferência offline): ` + "`tronWeb.address.fromPrivateKey('<private_key_hex>')`" + `
+  devolve o ` + "`address`" + `.
+- Tokens TRC-20 (ex.: USDT) ficam no mesmo endereço; adicione o contrato do token na carteira para
+  vê-los. Transferir exige TRX para energia/banda.
+- A mesma chave controla o endereço EVM ` + "`0x`" + ` + os 40 hex que seguem o ` + "`41`" + ` de
+  ` + "`address_hex`" + `, em todas as redes EVM.
+
 ## Solana
 
 ### Endereços filhos (` + "`derivation_type: slip0010`" + `) — importáveis
@@ -172,7 +223,7 @@ Como recuperar fundos do endereço genesis:
 As shares são ` + "`LocalPartySaveData`" + ` do tss-lib v2 em JSON (campos ` + "`Xi`" + ` = share
 secreta, ` + "`ShareID`" + ` = abscissa, ` + "`ECDSAPub`/`EDDSAPub`" + ` = chave pública da wallet).
 
-- **secp256k1**: chave da wallet = interpolação de Lagrange em 0 das duas shares
+- **secp256k1** (EVM, Bitcoin, Litecoin, TRON): chave da wallet = interpolação de Lagrange em 0 das duas shares
   (` + "`(Xi_A·id_B − Xi_B·id_A)/(id_B − id_A) mod n`" + `, ` + "`vss.Shares.ReConstruct`" + ` no
   tss-lib). Filho de índice i (` + "`bip32`" + `): BIP-32 não-hardened a partir da chave pública
   comprimida da wallet e do ` + "`chain_code_hex`" + `: ` + "`IL = HMAC-SHA512(chain_code, pubkey ‖ ser32(i))[0..32]`" + `,

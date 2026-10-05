@@ -46,6 +46,7 @@ func Boot() contractsfoundation.Application {
 				&commands.WithdrawPreflight{},
 				&commands.EVMCall{},
 				&commands.WalletsExportKeys{},
+				&commands.TransactionsBackfillFees{},
 			}
 		}).
 		WithEvents(func() map[contractsevent.Event][]contractsevent.Listener {

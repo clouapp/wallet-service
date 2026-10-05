@@ -6,14 +6,14 @@ import (
 	"github.com/macrowallets/waas/app/models"
 )
 
-var bitcoinChains = map[string]bool{
-	"btc":  true,
-	"tbtc": true,
-}
-
 var solanaChains = map[string]bool{
 	"sol":  true,
 	"tsol": true,
+}
+
+var tronChains = map[string]bool{
+	models.ChainTron:  true,
+	models.ChainTTron: true,
 }
 
 func ExpandScopes(req RefreshRequest) ([]RefreshScope, error) {
@@ -22,9 +22,9 @@ func ExpandScopes(req RefreshRequest) ([]RefreshScope, error) {
 	}
 
 	switch {
-	case bitcoinChains[req.ChainID]:
+	case models.IsBitcoinFamilyChainID(req.ChainID):
 		return []RefreshScope{RefreshScopeBalances, RefreshScopeTransactions, RefreshScopeUtxos}, nil
-	case solanaChains[req.ChainID]:
+	case solanaChains[req.ChainID], tronChains[req.ChainID]:
 		return []RefreshScope{RefreshScopeBalances, RefreshScopeTransactions, RefreshScopeTokens}, nil
 	case models.IsEVMChainID(req.ChainID):
 		return []RefreshScope{RefreshScopeBalances, RefreshScopeTransactions, RefreshScopeTokens}, nil

@@ -25,6 +25,29 @@ type ParsedArgs struct {
 // ParseArgs accepts flags anywhere (argparse style): switches take no value, value flags
 // take the next argument or `--flag=value`. `--` ends flag parsing.
 func ParseArgs(args []string, switches, valueFlags []string, positionalCount int) (ParsedArgs, error) {
+	parsed, err := parseFlags(args, switches, valueFlags)
+	if err != nil {
+		return ParsedArgs{}, err
+	}
+	if len(parsed.Positional) != positionalCount {
+		return ParsedArgs{}, fmt.Errorf("%w: expected %d arguments, got %d", ErrUsage, positionalCount, len(parsed.Positional))
+	}
+	return parsed, nil
+}
+
+// ParseArgsAtLeast is ParseArgs for a variadic positional list of at least minPositional.
+func ParseArgsAtLeast(args []string, switches, valueFlags []string, minPositional int) (ParsedArgs, error) {
+	parsed, err := parseFlags(args, switches, valueFlags)
+	if err != nil {
+		return ParsedArgs{}, err
+	}
+	if len(parsed.Positional) < minPositional {
+		return ParsedArgs{}, fmt.Errorf("%w: expected at least %d arguments, got %d", ErrUsage, minPositional, len(parsed.Positional))
+	}
+	return parsed, nil
+}
+
+func parseFlags(args []string, switches, valueFlags []string) (ParsedArgs, error) {
 	parsed := ParsedArgs{Values: map[string]string{}, Switches: map[string]bool{}}
 	isSwitch, isValueFlag := toSet(switches), toSet(valueFlags)
 	for index := 0; index < len(args); index++ {
@@ -56,9 +79,6 @@ func ParseArgs(args []string, switches, valueFlags []string, positionalCount int
 		default:
 			return ParsedArgs{}, fmt.Errorf("%w: unknown option --%s", ErrUsage, name)
 		}
-	}
-	if len(parsed.Positional) != positionalCount {
-		return ParsedArgs{}, fmt.Errorf("%w: expected %d arguments, got %d", ErrUsage, positionalCount, len(parsed.Positional))
 	}
 	return parsed, nil
 }

@@ -163,25 +163,32 @@ func PreviewWithdraw(ctx http.Context) http.Response {
 }
 
 // mapConsolidateResponse shapes a sweep.Result into the JSON payload the
-// dashboard expects. CompletedSweep carries no amount today, so the
-// aggregate total_amount is reported as "0" — the sweep legs themselves
-// are the source of truth.
+// dashboard expects. total_amount is the sum, in base units, of what the
+// broadcast legs moved.
 func mapConsolidateResponse(result *sweep.Result) http.Json {
 	txs := make([]http.Json, 0, len(result.Sweeps))
+	total := new(big.Int)
 	for _, sw := range result.Sweeps {
 		txs = append(txs, http.Json{
 			"tx_hash": sw.TxHash,
 			"from":    sw.From.Address,
+			"amount":  bigIntString(sw.Amount),
 			"origin":  "manual_consolidation",
 			"status":  "confirming",
 		})
+		if sw.Amount != nil {
+			total.Add(total, sw.Amount)
+		}
 	}
 
 	summary := http.Json{
 		"children_swept":     len(result.Sweeps),
-		"dust_ignored":       0,   // TODO: ConsolidateAll currently drops dust silently; surface when Plan is returned alongside Result.
-		"total_amount":       "0", // TODO: CompletedSweep has no Amount field; aggregate when types expose it.
+		"dust_ignored":       0, // TODO: ConsolidateAll currently drops dust silently; surface when Plan is returned alongside Result.
+		"total_amount":       total.String(),
 		"estimated_gas_cost": bigIntString(result.EstimatedGas),
+	}
+	if result.AssetDecimals != nil {
+		summary["decimals"] = *result.AssetDecimals
 	}
 
 	body := http.Json{
@@ -273,6 +280,7 @@ type WithdrawPreviewRequestSwagger struct {
 type ConsolidateTransaction struct {
 	TxHash string `json:"tx_hash"`
 	From   string `json:"from"`
+	Amount string `json:"amount" example:"7000000"`
 	Origin string `json:"origin" example:"manual_consolidation"`
 	Status string `json:"status" example:"confirming"`
 }
@@ -280,7 +288,8 @@ type ConsolidateTransaction struct {
 type ConsolidatePlanSummary struct {
 	ChildrenSwept    int    `json:"children_swept"    example:"3"`
 	DustIgnored      int    `json:"dust_ignored"      example:"0"`
-	TotalAmount      string `json:"total_amount"      example:"0"`
+	TotalAmount      string `json:"total_amount"      example:"7000000"`
+	Decimals         int    `json:"decimals,omitempty" example:"6"`
 	EstimatedGasCost string `json:"estimated_gas_cost" example:"0"`
 }
 

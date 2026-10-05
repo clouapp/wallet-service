@@ -40,6 +40,7 @@ const (
 // Services are the external calls of the funding flows, injectable for tests.
 type Services struct {
 	OutboundMatches func(ctx context.Context, walletID, to, asset, baseUnits string) ([]string, error)
+	SweepRows       func(ctx context.Context, query SweepQuery) ([]SweepRow, error)
 	MarketsToken    func(ctx context.Context) (string, error)
 	API             APIClient
 }
@@ -80,22 +81,7 @@ func (docker DockerServices) OutboundMatches(ctx context.Context, walletID, to, 
 	sql := "select id || ' ' || status || ' ' || coalesce(tx_hash,'') from transactions " +
 		"where wallet_id = '" + walletID + "' and direction = 'outbound' and lower(to_address) = lower('" + to + "') " +
 		"and upper(asset) = '" + asset + "' and amount = '" + baseUnits + "'"
-	queryContext, cancel := context.WithTimeout(ctx, vaultQueryTimeout)
-	defer cancel()
-	result, err := docker.Run(queryContext, dockerBinary, []string{"exec", docker.WalletsDBContainer, "psql", "-U", walletsDBUser, "-d", E2EDatabase, "-At", "-c", sql}, "", os.Environ(), nil)
-	if err != nil {
-		return nil, fmt.Errorf("vault_test query failed: %w", err)
-	}
-	if result.ExitCode != 0 {
-		return nil, fmt.Errorf("vault_test query failed: %s", lastRunes(strings.TrimSpace(string(result.Stderr)), queryErrorTailRunes))
-	}
-	var matches []string
-	for _, line := range splitPythonLines(string(result.Stdout)) {
-		if strings.TrimSpace(line) != "" {
-			matches = append(matches, line)
-		}
-	}
-	return matches, nil
+	return docker.queryVaultTest(ctx, sql)
 }
 
 // MarketsToken reads the Macro Wallets API token from the Markets crypto custody settings.

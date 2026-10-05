@@ -24,6 +24,8 @@ func (s *service) LoadLimits(ctx context.Context, accountID uuid.UUID) (*Limits,
 			models.AdapterTypeEVM:     100,
 			models.AdapterTypeSolana:  25,
 			models.AdapterTypeBitcoin: 100,
+			// Each TRON leg can wait a block for its gas_seed.
+			models.AdapterTypeTron: 50,
 		},
 		MaxConsolidateReqPerDay: 50,
 	}

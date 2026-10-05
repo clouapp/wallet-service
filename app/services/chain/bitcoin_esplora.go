@@ -86,22 +86,40 @@ func (a *BitcoinLive) esploraGet(ctx context.Context, path string) ([]byte, erro
 }
 
 func (a *BitcoinLive) esploraFetch(ctx context.Context, requestURL, path string) (int, http.Header, []byte, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, requestURL, nil)
+	return a.esploraDo(ctx, http.MethodGet, requestURL, path, nil)
+}
+
+// esploraPost posts body (text/plain) to {rpc_url}{path} once and returns the status
+// and body of whatever answered; only transport failures are errors.
+func (a *BitcoinLive) esploraPost(ctx context.Context, path, body string) (int, []byte, error) {
+	requestURL := strings.TrimRight(a.cfg.RPCURL, "/") + path
+	status, _, respBody, err := a.esploraDo(ctx, http.MethodPost, requestURL, path, strings.NewReader(body))
+	return status, respBody, err
+}
+
+func (a *BitcoinLive) esploraDo(ctx context.Context, method, requestURL, path string, reqBody io.Reader) (int, http.Header, []byte, error) {
+	req, err := http.NewRequestWithContext(ctx, method, requestURL, reqBody)
 	if err != nil {
-		return 0, nil, nil, fmt.Errorf("build esplora GET %s: %w", path, withoutURL(err))
+		return 0, nil, nil, fmt.Errorf("build esplora %s %s: %w", method, path, withoutURL(err))
+	}
+	if reqBody != nil {
+		req.Header.Set("Content-Type", "text/plain")
+	}
+	if a.apiKey != "" {
+		req.Header.Set(apiKeyHeader, a.apiKey)
 	}
 	resp, err := a.http.Do(req)
 	if err != nil {
-		return 0, nil, nil, fmt.Errorf("esplora GET %s: %w", path, withoutURL(err))
+		return 0, nil, nil, fmt.Errorf("esplora %s %s: %w", method, path, withoutURL(err))
 	}
 	defer resp.Body.Close()
 
 	body, err := io.ReadAll(io.LimitReader(resp.Body, esploraMaxResponseBytes+1))
 	if err != nil {
-		return 0, nil, nil, fmt.Errorf("read esplora GET %s: %w", path, withoutURL(err))
+		return 0, nil, nil, fmt.Errorf("read esplora %s %s: %w", method, path, withoutURL(err))
 	}
 	if len(body) > esploraMaxResponseBytes {
-		return 0, nil, nil, fmt.Errorf("esplora GET %s: response larger than %d bytes", path, esploraMaxResponseBytes)
+		return 0, nil, nil, fmt.Errorf("esplora %s %s: response larger than %d bytes", method, path, esploraMaxResponseBytes)
 	}
 	return resp.StatusCode, resp.Header, body, nil
 }

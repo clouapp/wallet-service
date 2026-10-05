@@ -36,7 +36,7 @@ func SeedSweepThresholds(_ context.Context) error {
 		{models.ChainBTC, "", "10000", noDust},
 		{models.ChainTBTC, "", "10000", noDust},
 	}
-	for _, chainID := range AddedEVMChainIDs {
+	for _, chainID := range AddedChainIDs {
 		thresholds, err := addedChainThresholds(chainID)
 		if err != nil {
 			return err

@@ -8,6 +8,7 @@ func TestEveryProfileDecidesEveryPrimaryChainAndResolvesToItsNetwork(t *testing.
 	adapterByChain := map[string]string{
 		ChainETH: AdapterTypeEVM, ChainPolygon: AdapterTypeEVM, ChainBTC: AdapterTypeBitcoin, ChainSOL: AdapterTypeSolana,
 		ChainBase: AdapterTypeEVM, ChainArbitrum: AdapterTypeEVM, ChainBSC: AdapterTypeEVM,
+		ChainTron: AdapterTypeTron, ChainLTC: AdapterTypeBitcoin,
 	}
 	for _, profile := range []string{ChainNetworkProfileMainnet, ChainNetworkProfileTestnet} {
 		for _, chainID := range PrimaryChainIDs {
@@ -96,6 +97,75 @@ func TestAddedTestRecordsAreAlwaysTestnetsAndEVM(t *testing.T) {
 		if IsEVMChainID(chainID) {
 			t.Errorf("%q must not be an EVM chain", chainID)
 		}
+	}
+}
+
+func TestProfilesPointTronAndLitecoinAtTheirMainnetsOrTestnets(t *testing.T) {
+	t.Parallel()
+
+	want := map[string]map[string]string{
+		ChainNetworkProfileMainnet: {ChainTron: NetworkTronMainnet, ChainLTC: NetworkLitecoinMainnet},
+		ChainNetworkProfileTestnet: {ChainTron: NetworkTronNile, ChainLTC: NetworkLitecoinTestnet},
+	}
+	for profile, chains := range want {
+		for chainID, network := range chains {
+			spec, decided, err := PrimaryChainNetwork(profile, chainID)
+			if err != nil || !decided {
+				t.Fatalf("%s/%s: decided=%t err=%v", profile, chainID, decided, err)
+			}
+			wantTestnet := profile == ChainNetworkProfileTestnet
+			if spec.Network != network || spec.IsTestnet != wantTestnet || spec.NetworkID != nil {
+				t.Errorf("%s/%s: got %+v, want %s (testnet %t, no network id)", profile, chainID, spec, network, wantTestnet)
+			}
+		}
+	}
+	for _, chainID := range []string{ChainTTron, ChainTLTC} {
+		if !IsTestChainID(chainID) {
+			t.Errorf("%s must be a test record", chainID)
+		}
+	}
+}
+
+func TestBitcoinFamilyCoversBitcoinAndLitecoinOnly(t *testing.T) {
+	t.Parallel()
+
+	for chainID, want := range map[string]bool{
+		ChainBTC: true, ChainTBTC: true, ChainLTC: true, ChainTLTC: true,
+		ChainTron: false, ChainTTron: false, ChainETH: false, ChainSOL: false, "": false,
+	} {
+		if got := IsBitcoinFamilyChainID(chainID); got != want {
+			t.Errorf("IsBitcoinFamilyChainID(%q) = %t, want %t", chainID, got, want)
+		}
+	}
+	for chainID, want := range map[string]bool{ChainLTC: true, ChainTLTC: true, ChainBTC: false, ChainTBTC: false} {
+		if got := IsLitecoinChainID(chainID); got != want {
+			t.Errorf("IsLitecoinChainID(%q) = %t, want %t", chainID, got, want)
+		}
+	}
+}
+
+func TestLitecoinAndTronRecordsResolveToTheirOwnNetworks(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		record Chain
+		want   string
+	}{
+		{Chain{ID: ChainLTC, AdapterType: AdapterTypeBitcoin, IsTestnet: true}, NetworkLitecoinTestnet},
+		{Chain{ID: ChainTLTC, AdapterType: AdapterTypeBitcoin, IsTestnet: true}, NetworkLitecoinTestnet},
+		{Chain{ID: ChainLTC, AdapterType: AdapterTypeBitcoin}, NetworkLitecoinMainnet},
+		{Chain{ID: ChainTron, AdapterType: AdapterTypeTron, IsTestnet: true}, NetworkTronNile},
+		{Chain{ID: ChainTron, AdapterType: AdapterTypeTron}, NetworkTronMainnet},
+		{Chain{ID: ChainBTC, AdapterType: AdapterTypeBitcoin, IsTestnet: true}, NetworkBitcoinTestnet},
+	}
+	for _, tc := range cases {
+		if got := tc.record.Network(); got != tc.want {
+			t.Errorf("%s (testnet %t) resolves to %q, want %q", tc.record.ID, tc.record.IsTestnet, got, tc.want)
+		}
+	}
+	litecoin := Chain{ID: ChainLTC, AdapterType: AdapterTypeBitcoin, IsTestnet: true}
+	if got := litecoin.ResolveNetwork("https://litecoinspace.org/testnet/api").Name; got != NetworkLitecoinTestnet {
+		t.Errorf("a testnet ltc record must not become bitcoin testnet4, got %q", got)
 	}
 }
 

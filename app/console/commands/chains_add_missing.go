@@ -13,8 +13,8 @@ import (
 	"github.com/macrowallets/waas/database/seeds"
 )
 
-// ChainsAddMissing creates the base/arbitrum/bsc records (and their t-prefixed
-// test records) that a live registry lacks, without touching any existing row.
+// ChainsAddMissing creates the base/arbitrum/bsc/tron/ltc records (and their
+// t-prefixed test records) that a live registry lacks, without touching any existing row.
 type ChainsAddMissing struct{}
 
 func (c *ChainsAddMissing) Signature() string {
@@ -22,7 +22,7 @@ func (c *ChainsAddMissing) Signature() string {
 }
 
 func (c *ChainsAddMissing) Description() string {
-	return "Create missing base/arbitrum/bsc chain records with tokens, explorers and thresholds; dry run unless --apply"
+	return "Create missing base/arbitrum/bsc/tron/ltc chain records with tokens, explorers and thresholds; dry run unless --apply"
 }
 
 func (c *ChainsAddMissing) Extend() command.Extend {
@@ -51,8 +51,8 @@ func (c *ChainsAddMissing) Handle(ctx console.Context) error {
 		if err := checkAddedChainRPC(background, added); err != nil {
 			return failCommand(ctx, err)
 		}
-		ctx.Info(fmt.Sprintf("%s: create on %s (network_id %d, is_testnet %t), rpc_url env:%s",
-			added.ID, added.Network, added.NetworkID, added.IsTestnet, added.EnvVar))
+		ctx.Info(fmt.Sprintf("%s: create %s on %s (network_id %s, is_testnet %t), rpc_url env:%s",
+			added.ID, added.AdapterType, added.Network, formatNetworkID(added.NetworkID), added.IsTestnet, added.EnvVar))
 	}
 	for _, token := range plan.Tokens {
 		ctx.Info("token " + token)
@@ -78,7 +78,7 @@ func checkAddedChainRPC(ctx context.Context, added seeds.AddedChain) error {
 	if err != nil {
 		return fmt.Errorf("%s: %w", added.ID, err)
 	}
-	record := models.Chain{ID: added.ID, AdapterType: models.AdapterTypeEVM}
+	record := models.Chain{ID: added.ID, AdapterType: added.AdapterType}
 	served, err := chainregistry.ProbeRPCNetwork(ctx, record, rpcURL)
 	if err != nil {
 		return fmt.Errorf("%s: probe %s: %w", added.ID, added.EnvVar, err)

@@ -1,6 +1,8 @@
 package e2e
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"os"
 	"time"
@@ -15,13 +17,25 @@ const (
 	ledgerTagKey        = "tag"
 	jsonIndent          = 2
 	pythonNone          = "None"
+	LedgerLockWait      = 30 * time.Second
+	ledgerBackupInfix   = ".pre-reconcile-"
 )
 
 // FundingLedger is <state dir>/funding/ledger.json, shared with the Markets e2e. Its
 // key order and layout (json.dumps(indent=2) + "\n") are preserved on every write.
+// With LockPath set, every write holds that flock (<locks>/funding-ledger.lock).
 type FundingLedger struct {
-	Path string
-	Now  func() time.Time
+	Path     string
+	LockPath string
+	Now      func() time.Time
+}
+
+// Lock takes the ledger flock (a no-op lock without LockPath).
+func (ledger FundingLedger) Lock(ctx context.Context) (*FileLock, error) {
+	if ledger.LockPath == "" {
+		return nil, nil
+	}
+	return AcquireFileLock(ctx, ledger.LockPath, LedgerLockWait)
 }
 
 // Load reads the ledger; it must exist and hold an "entries" list.
@@ -58,6 +72,11 @@ func (ledger FundingLedger) HasTag(tag string) (bool, error) {
 
 // Upsert drops the entries with tag, appends entry, and stamps the ledger recordedAt.
 func (ledger FundingLedger) Upsert(tag string, entry pyjson.Object) error {
+	lock, err := ledger.Lock(context.Background())
+	if err != nil {
+		return err
+	}
+	defer lock.Release()
 	document, entries, err := ledger.Load()
 	if err != nil {
 		return err
@@ -72,6 +91,53 @@ func (ledger FundingLedger) Upsert(tag string, entry pyjson.Object) error {
 	kept = append(kept, entry)
 	updated := document.Set(ledgerEntriesKey, kept).Set(ledgerRecordedAtKey, NowISO(ledger.Now()))
 	return writeIndentedJSON(ledger.Path, updated)
+}
+
+// ReplaceEntries rewrites the entries whose tag is a key of replacements in place (order
+// kept) and stamps the ledger recordedAt. The caller holds Lock; every tag must exist.
+func (ledger FundingLedger) ReplaceEntries(replacements map[string]pyjson.Object) error {
+	document, entries, err := ledger.Load()
+	if err != nil {
+		return err
+	}
+	replaced := map[string]bool{}
+	updated := make([]any, len(entries))
+	for index, existing := range entries {
+		updated[index] = existing
+		object, isObject := existing.(pyjson.Object)
+		if !isObject {
+			continue
+		}
+		if replacement, found := replacements[object.String(ledgerTagKey)]; found {
+			updated[index] = replacement
+			replaced[object.String(ledgerTagKey)] = true
+		}
+	}
+	for _, tag := range sortedKeys(replacements) {
+		if !replaced[tag] {
+			return fmt.Errorf("funding ledger has no entry %s", tag)
+		}
+	}
+	return writeIndentedJSON(ledger.Path, document.Set(ledgerEntriesKey, updated).Set(ledgerRecordedAtKey, NowISO(ledger.Now())))
+}
+
+// Backup copies the ledger byte for byte to <ledger>.pre-reconcile-<UTC stamp> (0600)
+// and returns that path; an existing backup is never overwritten.
+func (ledger FundingLedger) Backup(now time.Time) (string, error) {
+	raw, err := os.ReadFile(ledger.Path)
+	if err != nil {
+		return "", fmt.Errorf("missing funding ledger %s", ledger.Path)
+	}
+	backup := ledger.Path + ledgerBackupInfix + now.UTC().Format(environBackupStamp)
+	handle, err := os.OpenFile(backup, os.O_WRONLY|os.O_CREATE|os.O_EXCL, PrivateFileMode)
+	if err != nil {
+		return "", fmt.Errorf("create %s: %w", backup, err)
+	}
+	_, writeErr := handle.Write(raw)
+	if err := errors.Join(writeErr, handle.Close()); err != nil {
+		return "", fmt.Errorf("write %s: %w", backup, err)
+	}
+	return backup, nil
 }
 
 func writeIndentedJSON(path string, value any) error {

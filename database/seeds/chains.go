@@ -35,7 +35,7 @@ type chainSeed struct {
 
 // chainSeeds lists every chain record, mainnets before testnets (FK targets first).
 func chainSeeds() []chainSeed {
-	return chainSeedsWith(addedEVMChainSeeds())
+	return chainSeedsWith(addedChainSeeds())
 }
 
 func chainSeedsWith(added []chainSeed) []chainSeed {

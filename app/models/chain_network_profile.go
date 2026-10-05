@@ -3,8 +3,8 @@ package models
 import "fmt"
 
 // Chain network profiles: which networks the primary chain records (eth, btc,
-// polygon, sol, base, arbitrum, bsc) point at. The t-prefixed records are always
-// test networks.
+// polygon, sol, base, arbitrum, bsc, tron, ltc) point at. The t-prefixed records
+// are always test networks.
 const (
 	ChainNetworkProfileMainnet = "mainnet"
 	ChainNetworkProfileTestnet = "testnet"
@@ -47,6 +47,8 @@ var primaryChainNetworks = map[string]map[string]ChainNetworkSpec{
 		ChainBase:     {Network: NetworkBaseMainnet, NetworkID: int64Ptr(EVMNetworkIDBaseMainnet)},
 		ChainArbitrum: {Network: NetworkArbitrumMainnet, NetworkID: int64Ptr(EVMNetworkIDArbitrumMainnet)},
 		ChainBSC:      {Network: NetworkBSCMainnet, NetworkID: int64Ptr(EVMNetworkIDBSCMainnet)},
+		ChainTron:     {Network: NetworkTronMainnet},
+		ChainLTC:      {Network: NetworkLitecoinMainnet},
 	},
 	ChainNetworkProfileTestnet: {
 		ChainETH:      {Network: NetworkEthereumSepolia, NetworkID: int64Ptr(EVMNetworkIDEthereumSepolia), IsTestnet: true},
@@ -56,11 +58,13 @@ var primaryChainNetworks = map[string]map[string]ChainNetworkSpec{
 		ChainBase:     {Network: NetworkBaseSepolia, NetworkID: int64Ptr(EVMNetworkIDBaseSepolia), IsTestnet: true},
 		ChainArbitrum: {Network: NetworkArbitrumSepolia, NetworkID: int64Ptr(EVMNetworkIDArbitrumSepolia), IsTestnet: true},
 		ChainBSC:      {Network: NetworkBSCTestnet, NetworkID: int64Ptr(EVMNetworkIDBSCTestnet), IsTestnet: true},
+		ChainTron:     {Network: NetworkTronNile, IsTestnet: true},
+		ChainLTC:      {Network: NetworkLitecoinTestnet, IsTestnet: true},
 	},
 }
 
 // PrimaryChainIDs lists the records a profile decides, in display order.
-var PrimaryChainIDs = []string{ChainETH, ChainBTC, ChainPolygon, ChainSOL, ChainBase, ChainArbitrum, ChainBSC}
+var PrimaryChainIDs = []string{ChainETH, ChainBTC, ChainPolygon, ChainSOL, ChainBase, ChainArbitrum, ChainBSC, ChainTron, ChainLTC}
 
 var testChainIDs = map[string]struct{}{
 	ChainTETH:      {},
@@ -70,6 +74,8 @@ var testChainIDs = map[string]struct{}{
 	ChainTBase:     {},
 	ChainTArbitrum: {},
 	ChainTBSC:      {},
+	ChainTTron:     {},
+	ChainTLTC:      {},
 }
 
 var evmChainIDs = map[string]struct{}{

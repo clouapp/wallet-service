@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
@@ -211,6 +212,7 @@ func buildVaultContainer() (*container.Container, error) {
 					Network:       network,
 					IsTestnet:     ch.IsTestnet,
 					Confirmations: uint64(ch.RequiredConfirmations),
+					Fallbacks:     bitcoinFallbacks(ch.ID),
 				})
 			case models.AdapterTypeSolana:
 				adapter = chainpkg.NewSolanaLive(chainpkg.SolanaConfig{
@@ -219,6 +221,19 @@ func buildVaultContainer() (*container.Container, error) {
 					NativeSymbol:  ch.NativeSymbol,
 					RPCURL:        rpcURL,
 					Confirmations: uint64(ch.RequiredConfirmations),
+				})
+			case models.AdapterTypeTron:
+				adapter = chainpkg.NewTronLive(chainpkg.TronConfig{
+					ChainIDStr:            ch.ID,
+					ChainName:             ch.Name,
+					NativeSymbol:          ch.NativeSymbol,
+					RPCURL:                rpcURL,
+					APIKey:                facades.Config().GetString("vault.tron.api_key"),
+					IsTestnet:             ch.IsTestnet,
+					Confirmations:         uint64(ch.RequiredConfirmations),
+					Tokens:                tokensByChain[ch.ID],
+					GasReadinessThreshold: resolveGasReadinessThreshold(&ch),
+					DustThresholdNative:   resolveDustThresholdNative(&ch),
 				})
 			default:
 				slog.Warn("unknown adapter type, skipping", "chain", ch.ID, "adapter", ch.AdapterType)
@@ -379,6 +394,20 @@ func resolveGasReadinessThreshold(ch *models.Chain) *big.Int {
 		}
 	}
 	return nil
+}
+
+// bitcoinFallbacks are the secondary providers configured for a Bitcoin-family chain
+// (vault.utxo_fallbacks.<id>); chains without an entry get none.
+func bitcoinFallbacks(chainID string) []chainpkg.BitcoinFallback {
+	prefix := "vault.utxo_fallbacks." + chainID
+	apiKey := facades.Config().GetString(prefix + ".api_key")
+	var fallbacks []chainpkg.BitcoinFallback
+	for _, rawURL := range strings.Split(facades.Config().GetString(prefix+".rpc_urls"), ",") {
+		if rawURL = strings.TrimSpace(rawURL); rawURL != "" {
+			fallbacks = append(fallbacks, chainpkg.BitcoinFallback{URL: rawURL, APIKey: apiKey})
+		}
+	}
+	return fallbacks
 }
 
 // resolveDustThresholdNative returns the native dust threshold for a chain,

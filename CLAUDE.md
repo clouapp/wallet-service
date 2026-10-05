@@ -72,12 +72,13 @@ Standalone binary (no Goravel boot: it targets `vault_test` through `~/.local/st
 
 | Command | What it does |
 |---------|--------------|
-| `capture-env [--dry-run]` | Rebuild `wallets-api.environ` (0600, NUL-separated) from `.env.dev` + e2e overrides (vault_test, testnet, scan chains `sol,eth,btc,polygon,base,arbitrum,bsc`, BTC testnet4); prints key names only. `--dry-run` writes nothing and compares with the current environ (differing key names + sha256 digest, never values) |
+| `capture-env [--dry-run]` | Rebuild `wallets-api.environ` (0600, NUL-separated) from `.env.dev` + e2e overrides (vault_test, testnet, scan chains `sol,eth,btc,polygon,base,arbitrum,bsc,tron,ltc`, BTC testnet4, TRON Nile, Litecoin testnet); prints key names only. `--dry-run` writes nothing and compares with the current environ (differing key names + sha256 digest, never values) |
 | `fee-estimate WALLET ASSET TO [--amount DECIMAL]` | Read-only `GET /api/v1/wallets/{id}/fee-estimate` with the Markets token (kept in memory); exit 1 unless HTTP 200 |
 | `api [--build] [--status] [--no-start]` | Build/stop/start the e2e API binary; takes `locks/wallets-api-restart.lock` itself (do not wrap it in `flock`), refuses during a recording; stop = SIGTERM, 20 s grace, then SIGKILL |
 | `preflight withdrawal WALLET ASSET BASE_UNITS TO` / `preflight consolidation WALLET ASSET` | Off-chain plan + MPC sign + verify; nothing broadcast |
 | `send-from-base TAG WALLET ASSET BASE_UNITS DECIMALS TO EXT_USER [--chain C] [--recording-lock-held-by OWNER] [--apply]` | One guarded funding transfer (ledger, vault_test, claim, recording lock, pre-flight, UUIDv5 idempotency); dry run without `--apply` |
-| `consolidate TAG WALLET ASSET [--apply]` | One guarded child-address sweep, same guards |
+| `consolidate TAG WALLET ASSET [--chain C] [--apply]` | One guarded child-address sweep, same guards (`--chain` names the ledger chain of a token, e.g. USDT on `tron`) |
+| `ledger-reconcile TAG... [--apply]` | Read-only: per-leg sweep tx hashes from vault_test (SELECT) checked on chain (TRON Nile, litecoinspace testnet, EVM receipt via the environ RPC); `--apply` (recording lock + `locks/funding-ledger.lock`) backs up `ledger.json.pre-reconcile-<UTC>` (0600) and writes `hash`, `sweeps[].tx_hash`, `status: confirmed`, `confirmedAt`; `consolidate --apply` now polls vault_test for the same hashes |
 
 ## Architecture
 
@@ -209,6 +210,28 @@ SOLANA_RPC_URL=https://api.devnet.solana.com
 BTC_RPC_URL=https://blockstream.info/testnet/api
 API_KEY_SECRET=dev-secret-key-not-for-production
 ```
+
+### Bitcoin-family provider failover
+
+BTC, TBTC, LTC and TLTC take optional fallback providers after `<PREFIX>_RPC_URL`:
+
+```bash
+TLTC_FALLBACK_RPC_URL=electrum+ssl://host:port?cert_sha256=<HEX>,https://litecoin-testnet.gateway.tatum.io
+TLTC_FALLBACK_RPC_API_KEY=            # optional, sent as x-api-key to the http(s) fallbacks
+```
+
+- Comma-separated, tried in order: an Esplora REST API, a bitcoind JSON-RPC node (`https://`), or ElectrumX 1.4 (`electrum+ssl://`, pinned with `cert_sha256` when self-signed; `electrum+tcp://` loopback only). Each fallback's genesis block is checked once; a wrong network is refused.
+- Reads (UTXOs, balance, tip, block scan, tx status, fee rate, paid fee) move to the next provider on transport errors, 5xx or rate limits; a provider failing 3 times in a row is skipped for 30 s, doubling up to 5 min.
+- Broadcast sends the same signed bytes (never re-signed) to the primary, then to the next provider only when it was not accepted (transport error, 5xx, rate limit). A definite rejection stops there; "already known" counts as success with the locally computed txid.
+- ElectrumX cannot list a block's transactions (block scans skip it); the keyless Tatum gateway allows 5 requests/min and cannot list UTXOs. The e2e environ (`macro-e2e capture-env`) sets both LTC testnet vars to two pinned ElectrumX servers + Tatum; update the pins if those certificates rotate. LTC mainnet has no fallback configured.
+
+### Paid fees
+
+The confirmation tracker stores the fee actually paid (native base units) in `transactions.fee` when a withdrawal, sweep or gas_seed confirms: EVM gasUsed × effectiveGasPrice + L1 fee, BTC/LTC inputs − outputs, Solana `meta.fee`, TRON `fee` (energy + bandwidth burned). Older rows: `go run . artisan transactions:backfill-fees [--chain a,b] [--apply]` (dry run by default, idempotent, reads only).
+
+### TRON gas_seed
+
+A TRC-20 sweep's gas_seed gives the child what it lacks to pay the estimated bandwidth plus the energy the child pays itself (the contract deployer's share, `consume_user_resource_percent` and its staked energy, is subtracted) + 20 % (`tronGasSeedMarginPercent`), capped at the transaction's fee_limit ceiling. Right before the sweep the executor re-prices it and sends a delta gas_seed (at most 2) when the child is still short; otherwise the sweep is not broadcast.
 
 ## Deploy
 

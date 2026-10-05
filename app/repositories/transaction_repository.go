@@ -22,6 +22,7 @@ type TransactionRepository interface {
 	CountByChainTxHashAndLogIndex(chainID, txHash string, logIndex int, txType string) (int64, error)
 	CountInternalTransfers(chainID, txHash string, walletID uuid.UUID) (int64, error)
 	FindPendingByChain(chainID string) ([]models.Transaction, error)
+	FindConfirmedOutboundWithoutFee(chainID string, limit int) ([]models.Transaction, error)
 	UpdateFields(id uuid.UUID, fields map[string]interface{}) error
 	List(chainID, txType, status, userID string, limit, offset int) ([]models.Transaction, int64, error)
 	ListForAccount(accountID uuid.UUID, chainID, txType, status, userID string, limit, offset int) ([]models.Transaction, int64, error)
@@ -182,6 +183,22 @@ func (r *transactionRepository) FindPendingByChain(chainID string) ([]models.Tra
 		WhereIn("status", []interface{}{string(types.TxStatusPending), string(types.TxStatusConfirming)}).
 		Find(&pending)
 	return pending, err
+}
+
+// FindConfirmedOutboundWithoutFee lists confirmed withdrawals, sweeps and gas seeds
+// of chainID whose paid fee was never recorded, oldest first.
+func (r *transactionRepository) FindConfirmedOutboundWithoutFee(chainID string, limit int) ([]models.Transaction, error) {
+	var rows []models.Transaction
+	err := facades.Orm().Query().
+		Where("chain", chainID).
+		WhereIn("tx_type", []interface{}{models.TxTypeWithdrawal, models.TxTypeSweep, models.TxTypeGasSeed}).
+		Where("status", string(types.TxStatusConfirmed)).
+		Where("tx_hash <> ''").
+		Where("(fee IS NULL OR fee = '')").
+		OrderBy("created_at").
+		Limit(limit).
+		Find(&rows)
+	return rows, err
 }
 
 func (r *transactionRepository) UpdateFields(id uuid.UUID, fields map[string]interface{}) error {

@@ -150,7 +150,7 @@ func (s *Service) completePlan(plan *WalletPlan) error {
 
 func requireCurveMatchesAdapter(curve mpcpkg.Curve, adapterType string) error {
 	switch {
-	case curve == mpcpkg.CurveSecp256k1 && (adapterType == models.AdapterTypeEVM || adapterType == models.AdapterTypeBitcoin):
+	case curve == mpcpkg.CurveSecp256k1 && (adapterType == models.AdapterTypeEVM || adapterType == models.AdapterTypeBitcoin || adapterType == models.AdapterTypeTron):
 		return nil
 	case curve == mpcpkg.CurveEd25519 && adapterType == models.AdapterTypeSolana:
 		return nil

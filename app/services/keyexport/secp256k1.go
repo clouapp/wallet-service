@@ -66,15 +66,30 @@ func secp256k1AddressKey(network Network, address models.Address, walletKey, wal
 		}
 		key.EVM, key.VerifiedAddress = &EVMKey{PrivateKeyHex: privateKeyHex}, verified
 	case models.AdapterTypeBitcoin:
-		bitcoinKey, err := NewBitcoinKey(privateKey, addressNet.testnet)
+		utxoKey, err := NewUTXOKey(privateKey, network.ChainID, addressNet.testnet)
 		if err != nil {
 			return AddressKey{}, refuse("address %s: key could not be encoded as WIF", address.Address)
 		}
-		verified, err := BitcoinP2WPKHAddressOfWIF(bitcoinKey.WIF, addressNet.testnet)
+		verified, err := UTXOP2WPKHAddressOfWIF(utxoKey.WIF, network.ChainID, addressNet.testnet)
 		if err != nil || verified != address.Address {
 			return AddressKey{}, refuse("address %s: exported WIF does not re-derive the address", address.Address)
 		}
-		key.Bitcoin, key.VerifiedAddress = bitcoinKey, verified
+		if models.IsLitecoinChainID(network.ChainID) {
+			key.Litecoin = utxoKey
+		} else {
+			key.Bitcoin = utxoKey
+		}
+		key.VerifiedAddress = verified
+	case models.AdapterTypeTron:
+		tronKey, err := NewTronKey(privateKey)
+		if err != nil {
+			return AddressKey{}, refuse("address %s: key could not be encoded", address.Address)
+		}
+		verified, err := TronAddressOfPrivateKeyHex(tronKey.PrivateKeyHex)
+		if err != nil || verified != address.Address {
+			return AddressKey{}, refuse("address %s: exported TRON key does not re-derive the address", address.Address)
+		}
+		key.Tron, key.VerifiedAddress = tronKey, verified
 	default:
 		return AddressKey{}, refuse("adapter %q has no secp256k1 export format", network.AdapterType)
 	}
@@ -119,9 +134,12 @@ type addressNetwork struct {
 	notes   []string
 }
 
-// matchSecp256k1Address checks that publicKey owns the row's address. A Bitcoin row
-// may predate a network switch (bc1 retired for tb1, or the reverse): its key is
-// exported for the network its address belongs to, with a note.
+const otherUTXONetworkNote = "endereço pertence a outra rede (mainnet/testnet) que a configurada para a chain (provavelmente retirado após troca de rede); a WIF foi gerada para a rede do endereço"
+
+// matchSecp256k1Address checks that publicKey owns the row's address. A Bitcoin or
+// Litecoin row may predate a network switch (bc1 retired for tb1, ltc1 for tltc1, or
+// the reverse): its key is exported for the network its address belongs to, with a
+// note. TRON addresses are the same on every TRON network.
 func matchSecp256k1Address(network Network, publicKey []byte, address models.Address) (addressNetwork, error) {
 	primary := addressNetwork{name: networkLabel(network.Name), testnet: network.Testnet}
 	switch network.AdapterType {
@@ -130,9 +148,14 @@ func matchSecp256k1Address(network Network, publicKey []byte, address models.Add
 		if err == nil && strings.EqualFold(derived, address.Address) {
 			return primary, nil
 		}
+	case models.AdapterTypeTron:
+		derived, err := addressing.DeriveTronAddress(publicKey)
+		if err == nil && derived == address.Address {
+			return primary, nil
+		}
 	case models.AdapterTypeBitcoin:
 		for _, testnet := range []bool{network.Testnet, !network.Testnet} {
-			derived, err := addressing.DeriveBtcAddress(addressing.BtcHRP(testnet), publicKey)
+			derived, err := addressing.DeriveBtcAddress(addressing.UTXOHRP(network.ChainID, testnet), publicKey)
 			if err != nil || derived != address.Address {
 				continue
 			}
@@ -140,20 +163,13 @@ func matchSecp256k1Address(network Network, publicKey []byte, address models.Add
 				return primary, nil
 			}
 			return addressNetwork{
-				name:    bitcoinNetworkName(testnet),
+				name:    utxoNetworkName(network.ChainID, testnet),
 				testnet: testnet,
-				notes:   []string{"endereço pertence a outra rede Bitcoin que a configurada para a chain (provavelmente retirado após troca de rede); a WIF foi gerada para a rede do endereço"},
+				notes:   []string{otherUTXONetworkNote},
 			}, nil
 		}
 	}
 	return addressNetwork{}, refuse("address %s (%s, index %d) is not controlled by the reconstructed key", address.Address, address.DerivationType, address.DerivationIndex)
-}
-
-func bitcoinNetworkName(testnet bool) string {
-	if testnet {
-		return models.NetworkBitcoinTestnet
-	}
-	return models.NetworkBitcoinMainnet
 }
 
 const unknownNetworkLabel = "unknown"
