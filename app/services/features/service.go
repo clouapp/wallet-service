@@ -44,19 +44,27 @@ type Service struct {
 	activity activitylog.Writer
 }
 
+// Deps is everything the feature-flag service needs. Store, Admins, and
+// Activity are required.
+type Deps struct {
+	Store    Store
+	Admins   PlatformAdmins
+	Activity activitylog.Writer
+}
+
 // NewService builds the feature-flag service. Store, admins and the activity
 // log are required.
-func NewService(store Store, admins PlatformAdmins, activity activitylog.Writer) *Service {
-	if store == nil {
+func NewService(deps Deps) *Service {
+	if deps.Store == nil {
 		panic("account features service: store is required")
 	}
-	if admins == nil {
+	if deps.Admins == nil {
 		panic("account features service: platform admins are required")
 	}
-	if activity == nil {
+	if deps.Activity == nil {
 		panic("account features service: activity log is required")
 	}
-	return &Service{store: store, admins: admins, activity: activity}
+	return &Service{store: deps.Store, admins: deps.Admins, activity: deps.Activity}
 }
 
 // List returns every account flag the role may read. A missing row is the

@@ -31,7 +31,11 @@ func (p *FeaturesServiceProvider) Register(app foundation.Application) {
 		if err != nil {
 			return nil, err
 		}
-		return features.NewService(store, admins, activityLog), nil
+		return features.NewService(features.Deps{
+			Store:    store,
+			Admins:   admins,
+			Activity: activityLog,
+		}), nil
 	})
 }
 

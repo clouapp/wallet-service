@@ -44,7 +44,7 @@ func TestPlanForWithdrawal_SweepEnabled(t *testing.T) {
 
 			accountID := uuid.New()
 			store := newPlanFlagStore()
-			flags := features.NewService(store, planFlagAdmins{}, planFlagActivity{})
+			flags := features.NewService(features.Deps{Store: store, Admins: planFlagAdmins{}, Activity: planFlagActivity{}})
 			ctx := context.Background()
 			if tc.global != nil {
 				if err := store.UpsertGlobal(ctx, features.FlagSweepEnabled, *tc.global); err != nil {
@@ -92,7 +92,7 @@ func TestPlanForWithdrawal_WalletAccountOffPausesBeforePersist(t *testing.T) {
 	callerID := uuid.New()
 	walletAccountID := uuid.New()
 	store := newPlanFlagStore()
-	flags := features.NewService(store, planFlagAdmins{}, planFlagActivity{})
+	flags := features.NewService(features.Deps{Store: store, Admins: planFlagAdmins{}, Activity: planFlagActivity{}})
 	ctx := context.Background()
 	if _, err := flags.Set(ctx, callerID, uuid.New(), "owner", features.FlagSweepEnabled, true); err != nil {
 		t.Fatalf("caller on: %v", err)

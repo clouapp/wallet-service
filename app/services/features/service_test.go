@@ -97,7 +97,7 @@ func (discardActivity) Within(ctx context.Context, fn func(context.Context) erro
 func (discardActivity) Append(context.Context, models.AccountActivity) error { return nil }
 
 func newTestService(store Store, admins PlatformAdmins) *Service {
-	return NewService(store, admins, discardActivity{})
+	return NewService(Deps{Store: store, Admins: admins, Activity: discardActivity{}})
 }
 
 func TestListMissingRowUsesCatalogDefaultAndWritesNothing(t *testing.T) {
@@ -606,7 +606,7 @@ func TestSetScopedForPlatformWritesTheAccountRowAndNotTheGlobalVeto(t *testing.T
 	accountID := uuid.New()
 	accounts := &scopeAccounts{found: map[uuid.UUID]struct{}{accountID: {}}}
 	activity := &recordingFeatureActivity{}
-	service := NewService(store, admins, activity)
+	service := NewService(Deps{Store: store, Admins: admins, Activity: activity})
 	ctx := context.Background()
 	one := []ScopedWrite{{Key: FlagWithdrawalsEnabled, Enabled: true}}
 
@@ -743,7 +743,7 @@ func TestSetGlobalRecordsBeforeAndAfterAndSkipsAnUnchangedFlag(t *testing.T) {
 	userID := uuid.New()
 	admins := memoryAdmins{users: map[uuid.UUID]struct{}{userID: {}}}
 	activity := &recordingFeatureActivity{}
-	service := NewService(store, admins, activity)
+	service := NewService(Deps{Store: store, Admins: admins, Activity: activity})
 	ctx := context.Background()
 
 	if _, err := service.SetGlobal(ctx, uuid.New(), FlagWithdrawalsEnabled, false); !errors.Is(err, ErrPlatformForbidden) {
@@ -788,7 +788,7 @@ func TestSetScopedForPlatformRefusedScopesRecordNothing(t *testing.T) {
 	accountID := uuid.New()
 	accounts := &scopeAccounts{found: map[uuid.UUID]struct{}{accountID: {}}}
 	activity := &recordingFeatureActivity{}
-	service := NewService(store, admins, activity)
+	service := NewService(Deps{Store: store, Admins: admins, Activity: activity})
 	writes := []ScopedWrite{{Key: FlagWithdrawalsEnabled, Enabled: false}}
 
 	for _, scope := range []string{ScopeGlobal, "user", "chain"} {
