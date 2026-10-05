@@ -16,3 +16,7 @@ type Account struct {
 }
 
 func (a *Account) TableName() string { return "accounts" }
+
+func (a *Account) FlagScopeIdentifier() string {
+	return "account:" + a.ID.String()
+}

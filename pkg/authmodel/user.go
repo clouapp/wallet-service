@@ -39,3 +39,7 @@ type User struct {
 }
 
 func (u *User) TableName() string { return "users" }
+
+func (u *User) FlagScopeIdentifier() string {
+	return "user:" + u.ID.String()
+}

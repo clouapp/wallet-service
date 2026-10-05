@@ -93,6 +93,10 @@ type ChainThresholdWrite struct {
 
 func (c *Chain) TableName() string { return "chains" }
 
+func (c *Chain) FlagScopeIdentifier() string {
+	return "chain:" + c.ID
+}
+
 // BeforeCreate stores an empty raw threshold and a zero USD threshold when the
 // caller left them unset. The columns are NOT NULL. An empty raw value is read
 // as "not set", and zero USD disables token-dust filtering.
