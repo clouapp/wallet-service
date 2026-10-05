@@ -79,9 +79,6 @@ func (ctrl *WhitelistController) ListWhitelistEntries(ctx http.Context) http.Res
 // @Router       /wallets/{walletId}/whitelist [post]
 func (ctrl *WhitelistController) AddWhitelistEntry(ctx http.Context) http.Response {
 	wallet := requestctx.MustWallet(ctx)
-	if resp := controllers.Deny(ctx, policies.WalletWhitelist(controllers.WalletMembership(ctx, ctrl.memberships, wallet.ID))); resp != nil {
-		return resp
-	}
 
 	var req requests.AddWhitelistEntryRequest
 	if resp := validateRequest(ctx, &req); resp != nil {
