@@ -53,24 +53,40 @@ type RPC struct {
 	dialer   EndpointDialer
 }
 
+// RPCDeps is everything the platform chain-RPC editor needs. Store, Admins,
+// Activity, Sealer and Dialer are required.
+type RPCDeps struct {
+	Store    RPCStore
+	Admins   PlatformAdmins
+	Activity activitylog.Writer
+	Sealer   RPCSealer
+	Dialer   EndpointDialer
+}
+
 // NewRPC builds the platform chain-RPC editor.
-func NewRPC(store RPCStore, admins PlatformAdmins, activity activitylog.Writer, sealer RPCSealer, dialer EndpointDialer) *RPC {
-	if store == nil {
+func NewRPC(deps RPCDeps) *RPC {
+	if deps.Store == nil {
 		panic("chain rpc: store is required")
 	}
-	if admins == nil {
+	if deps.Admins == nil {
 		panic("chain rpc: platform admins are required")
 	}
-	if activity == nil {
+	if deps.Activity == nil {
 		panic("chain rpc: activity log is required")
 	}
-	if sealer == nil {
+	if deps.Sealer == nil {
 		panic("chain rpc: sealer is required")
 	}
-	if dialer == nil {
+	if deps.Dialer == nil {
 		panic("chain rpc: dialer is required")
 	}
-	return &RPC{store: store, admins: admins, activity: activity, sealer: sealer, dialer: dialer}
+	return &RPC{
+		store:    deps.Store,
+		admins:   deps.Admins,
+		activity: deps.Activity,
+		sealer:   deps.Sealer,
+		dialer:   deps.Dialer,
+	}
 }
 
 // Update seals one endpoint onto the chain row. An unknown chain is

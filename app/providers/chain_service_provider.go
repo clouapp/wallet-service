@@ -74,7 +74,13 @@ func (p *ChainServiceProvider) Register(app foundation.Application) {
 		if err != nil {
 			return nil, err
 		}
-		return chainsvc.NewRPC(chains, admins, activityLog, chainRPCSealer{}, registry), nil
+		return chainsvc.NewRPC(chainsvc.RPCDeps{
+			Store:    chains,
+			Admins:   admins,
+			Activity: activityLog,
+			Sealer:   chainRPCSealer{},
+			Dialer:   registry,
+		}), nil
 	})
 	app.Singleton((*repositories.TokenRepository)(nil), func(foundation.Application) (any, error) {
 		return repositories.NewTokenRepository(nil), nil
