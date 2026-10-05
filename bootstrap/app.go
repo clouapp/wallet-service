@@ -80,7 +80,7 @@ func Boot() contractsfoundation.Application {
 					Cache:      pricecache.New(container.MustMake[*container.SharedRedis]().Client),
 				}),
 				commands.NewPriceCheckUpdate(prices),
-				&commands.ChainsSetRPC{},
+				commands.NewChainsSetRPC(container.MustMake[*repositories.ChainRepository]()),
 				commands.NewChainsAlignNetwork(deposits),
 				commands.NewChainsAddMissing(seedMissingAddedChains),
 				&commands.WithdrawPreflight{},

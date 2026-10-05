@@ -1,6 +1,8 @@
 package commands
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -11,7 +13,31 @@ import (
 	"github.com/macrowallets/waas/app/models"
 )
 
-type ChainsSetRPC struct{}
+// chainRPCStore is the chain repository chains:set-rpc writes through.
+// Bootstrap passes the bound repository; this file does not import it.
+type chainRPCStore interface {
+	FindByID(ctx context.Context, id string) (*models.Chain, error)
+	UpdateRPCURL(ctx context.Context, id, sealed string) error
+}
+
+// chainRPCConsole is the slice of the artisan context this command prints to.
+type chainRPCConsole interface {
+	Error(message string)
+	Info(message string)
+}
+
+// ChainsSetRPC replaces the sealed rpc_url of one chain. The endpoint is
+// encrypted before it is stored and is never printed.
+type ChainsSetRPC struct {
+	chains chainRPCStore
+	// encrypt seals the endpoint. Nil uses the process cipher.
+	encrypt func(plaintext string) (string, error)
+}
+
+// NewChainsSetRPC wires the command to the chain repository.
+func NewChainsSetRPC(chains chainRPCStore) *ChainsSetRPC {
+	return &ChainsSetRPC{chains: chains}
+}
 
 func (c *ChainsSetRPC) Signature() string {
 	return "chains:set-rpc"
@@ -40,8 +66,12 @@ func (c *ChainsSetRPC) Extend() command.Extend {
 }
 
 func (c *ChainsSetRPC) Handle(ctx console.Context) error {
-	chainID := strings.TrimSpace(ctx.ArgumentString("chain_id"))
-	rawURL := strings.TrimSpace(ctx.ArgumentString("url"))
+	return c.setRPC(ctx, ctx.ArgumentString("chain_id"), ctx.ArgumentString("url"))
+}
+
+func (c *ChainsSetRPC) setRPC(ctx chainRPCConsole, chainID, rawURL string) error {
+	chainID = strings.TrimSpace(chainID)
+	rawURL = strings.TrimSpace(rawURL)
 
 	if chainID == "" {
 		ctx.Error("chain_id is required")
@@ -60,36 +90,63 @@ func (c *ChainsSetRPC) Handle(ctx console.Context) error {
 		ctx.Error("url must start with http:// or https:// (or be env:NAME)")
 		return fmt.Errorf("invalid url scheme")
 	}
-
-	var existing models.Chain
-	if err := facades.Orm().Query().Where("id", chainID).First(&existing); err != nil {
-		ctx.Error(fmt.Sprintf("failed to load chain %s: %s", chainID, err.Error()))
-		return fmt.Errorf("load chain %s: %w", chainID, err)
+	if c == nil || c.chains == nil {
+		ctx.Error("chain repository is not configured")
+		return fmt.Errorf("chain repository is not configured")
 	}
-	if existing.ID == "" {
+
+	chain, err := c.chains.FindByID(context.Background(), chainID)
+	if err != nil {
+		if errors.Is(err, models.ErrRepositoryNotFound) {
+			ctx.Error(fmt.Sprintf("chain not found: %s", chainID))
+			return fmt.Errorf("chain not found: %s", chainID)
+		}
+		cause := chainRPCCause(err)
+		ctx.Error(fmt.Sprintf("failed to load chain %s: %s", chainID, cause))
+		return fmt.Errorf("load chain %s: %w", chainID, cause)
+	}
+	if chain == nil || chain.ID == "" {
 		ctx.Error(fmt.Sprintf("chain not found: %s", chainID))
 		return fmt.Errorf("chain not found: %s", chainID)
 	}
 
-	encURL, err := facades.Crypt().EncryptString(rawURL)
+	encURL, err := c.seal(rawURL)
 	if err != nil {
 		ctx.Error("failed to encrypt url: " + err.Error())
 		return fmt.Errorf("encrypt url: %w", err)
 	}
 
-	result, err := facades.Orm().Query().
-		Model(&models.Chain{}).
-		Where("id = ?", chainID).
-		Update("rpc_url", encURL)
-	if err != nil {
-		ctx.Error(fmt.Sprintf("failed to update chain %s: %s", chainID, err.Error()))
-		return fmt.Errorf("update chain %s: %w", chainID, err)
-	}
-	if result.RowsAffected == 0 {
-		ctx.Error(fmt.Sprintf("no rows updated for chain %s", chainID))
-		return fmt.Errorf("no rows updated for chain %s", chainID)
+	if err := c.chains.UpdateRPCURL(context.Background(), chainID, encURL); err != nil {
+		if errors.Is(err, models.ErrRepositoryNotFound) {
+			ctx.Error(fmt.Sprintf("no rows updated for chain %s", chainID))
+			return fmt.Errorf("no rows updated for chain %s", chainID)
+		}
+		cause := chainRPCCause(err)
+		ctx.Error(fmt.Sprintf("failed to update chain %s: %s", chainID, cause))
+		return fmt.Errorf("update chain %s: %w", chainID, cause)
 	}
 
 	ctx.Info(fmt.Sprintf("chain %s rpc_url updated (restart running processes to pick it up)", chainID))
+	return nil
+}
+
+func (c *ChainsSetRPC) seal(plaintext string) (string, error) {
+	if c != nil && c.encrypt != nil {
+		return c.encrypt(plaintext)
+	}
+	return facades.Crypt().EncryptString(plaintext)
+}
+
+// chainRPCCause is the innermost error. The repository wraps the query name
+// around a database failure; the command keeps the text it printed before
+// that wrap existed. The endpoint is not part of either text.
+func chainRPCCause(err error) error {
+	for err != nil {
+		next := errors.Unwrap(err)
+		if next == nil {
+			return err
+		}
+		err = next
+	}
 	return nil
 }
