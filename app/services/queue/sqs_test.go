@@ -20,11 +20,17 @@ func TestSQSClient_SendWebhook_NoURL(t *testing.T) {
 	}
 }
 
-func TestSQSClient_NilClient(t *testing.T) {
-	// Verify constructor works
-	client := NewSQSClient(nil, QueueURLs{Webhook: "test"})
-	if client == nil {
-		t.Fatal("expected non-nil client")
+func TestNewSQSClientKeepsItsDependencies(t *testing.T) {
+	transport := &stubTransport{}
+	urls := QueueURLs{Webhook: "https://sqs.example/webhook"}
+	client := NewSQSClient(SQSClientDeps{Transport: transport, URLs: urls})
+	if client == nil || client.transport != transport || client.urls != urls {
+		t.Fatal("sqs client did not keep its dependencies")
+	}
+
+	bare := NewSQSClient(SQSClientDeps{})
+	if bare == nil || bare.transport != nil || bare.urls != (QueueURLs{}) {
+		t.Fatal("missing dependencies were not left unset")
 	}
 }
 
@@ -70,7 +76,7 @@ func TestSendWebhook_KeepsTheEncodedBodyAndAttribute(t *testing.T) {
 		Attempt:       1,
 	}
 	transport := &stubTransport{}
-	client := NewSQSClient(transport, QueueURLs{Webhook: "https://sqs.example/webhook"})
+	client := NewSQSClient(SQSClientDeps{Transport: transport, URLs: QueueURLs{Webhook: "https://sqs.example/webhook"}})
 
 	if err := client.SendWebhook(context.Background(), msg); err != nil {
 		t.Fatalf("send: %v", err)
@@ -93,7 +99,7 @@ func TestSendWebhook_KeepsTheEncodedBodyAndAttribute(t *testing.T) {
 
 func TestSendWebhook_EmptyURLSkipsTheTransport(t *testing.T) {
 	transport := &stubTransport{err: errors.New("should not be called")}
-	client := NewSQSClient(transport, QueueURLs{})
+	client := NewSQSClient(SQSClientDeps{Transport: transport})
 
 	err := client.SendWebhook(context.Background(), types.WebhookMessage{EventType: types.EventDepositConfirmed})
 	if err != nil {
@@ -106,7 +112,7 @@ func TestSendWebhook_EmptyURLSkipsTheTransport(t *testing.T) {
 
 func TestSendWebhook_WrapsTheTransportError(t *testing.T) {
 	transport := &stubTransport{err: errors.New("boom")}
-	client := NewSQSClient(transport, QueueURLs{Webhook: "https://sqs.example/webhook"})
+	client := NewSQSClient(SQSClientDeps{Transport: transport, URLs: QueueURLs{Webhook: "https://sqs.example/webhook"}})
 
 	err := client.SendWebhook(context.Background(), types.WebhookMessage{EventType: types.EventDepositConfirmed})
 	if err == nil || err.Error() != "sqs send: boom" {
@@ -120,7 +126,7 @@ func TestSendBatch_KeepsEntryIDsAndChunkSize(t *testing.T) {
 		messages[i] = batchItem{N: i}
 	}
 	transport := &stubTransport{}
-	client := NewSQSClient(transport, QueueURLs{})
+	client := NewSQSClient(SQSClientDeps{Transport: transport})
 
 	if err := client.SendBatch(context.Background(), "https://sqs.example/batch", messages); err != nil {
 		t.Fatalf("batch: %v", err)
@@ -141,7 +147,7 @@ func TestSendBatch_KeepsEntryIDsAndChunkSize(t *testing.T) {
 
 func TestSendBatch_SkipsAnEntryThatCannotBeEncoded(t *testing.T) {
 	transport := &stubTransport{}
-	client := NewSQSClient(transport, QueueURLs{})
+	client := NewSQSClient(SQSClientDeps{Transport: transport})
 	messages := []interface{}{make(chan int), batchItem{N: 2}}
 
 	if err := client.SendBatch(context.Background(), "https://sqs.example/batch", messages); err != nil {
@@ -157,7 +163,7 @@ func TestSendBatch_SkipsAnEntryThatCannotBeEncoded(t *testing.T) {
 
 func TestSendBatch_EmptyMessagesSkipTheTransport(t *testing.T) {
 	transport := &stubTransport{err: errors.New("should not be called")}
-	client := NewSQSClient(transport, QueueURLs{})
+	client := NewSQSClient(SQSClientDeps{Transport: transport})
 
 	if err := client.SendBatch(context.Background(), "https://sqs.example/batch", nil); err != nil {
 		t.Fatalf("empty batch: %v", err)
@@ -169,7 +175,7 @@ func TestSendBatch_EmptyMessagesSkipTheTransport(t *testing.T) {
 
 func TestSendBatch_WrapsTheTransportError(t *testing.T) {
 	transport := &stubTransport{err: errors.New("boom")}
-	client := NewSQSClient(transport, QueueURLs{})
+	client := NewSQSClient(SQSClientDeps{Transport: transport})
 
 	err := client.SendBatch(context.Background(), "https://sqs.example/batch", []interface{}{batchItem{N: 1}})
 	if err == nil || err.Error() != "sqs batch send: boom" {

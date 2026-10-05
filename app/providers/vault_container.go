@@ -116,8 +116,11 @@ func buildVaultContainer(app foundation.Application) (*container.Container, erro
 		return nil, fmt.Errorf("vault: aws config: %w", err)
 	}
 	sqsClient := sqs.NewFromConfig(awsCfg)
-	c.SQS = queue.NewSQSClient(queuesqs.New(sqsClient), queue.QueueURLs{
-		Webhook: facades.Config().GetString("vault.queues.webhook"),
+	c.SQS = queue.NewSQSClient(queue.SQSClientDeps{
+		Transport: queuesqs.New(sqsClient),
+		URLs: queue.QueueURLs{
+			Webhook: facades.Config().GetString("vault.queues.webhook"),
+		},
 	})
 
 	smClient := secretsmanager.NewFromConfig(awsCfg)

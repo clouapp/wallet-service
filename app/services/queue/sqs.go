@@ -39,8 +39,16 @@ type SQSClient struct {
 	urls      QueueURLs
 }
 
-func NewSQSClient(transport Transport, urls QueueURLs) *SQSClient {
-	return &SQSClient{transport: transport, urls: urls}
+// SQSClientDeps is everything the SQS client needs. A nil Transport means the
+// AWS client was not configured.
+type SQSClientDeps struct {
+	Transport Transport
+	URLs      QueueURLs
+}
+
+// NewSQSClient wires the SQS client from SQSClientDeps.
+func NewSQSClient(deps SQSClientDeps) *SQSClient {
+	return &SQSClient{transport: deps.Transport, urls: deps.URLs}
 }
 
 // SendWebhook enqueues a webhook delivery job.
