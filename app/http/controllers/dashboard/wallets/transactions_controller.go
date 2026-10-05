@@ -3,10 +3,10 @@ package wallets
 import (
 	"github.com/goravel/framework/contracts/http"
 
-	"github.com/macrowallets/waas/app/http/controllers"
 	"github.com/macrowallets/waas/app/http/middleware/requestctx"
 	"github.com/macrowallets/waas/app/http/pagination"
 	"github.com/macrowallets/waas/app/http/requests"
+	walletresources "github.com/macrowallets/waas/app/http/resources/dashboard/wallets"
 	"github.com/macrowallets/waas/app/http/responses"
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/services/walletrecords"
@@ -56,7 +56,7 @@ func (ctrl *TransactionsController) ListWalletTransactions(ctx http.Context) htt
 		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to fetch transactions"})
 	}
 
-	views := controllers.WalletTransactionViewsForChain(ctx.Context(), wallet.Chain, transactions)
+	views := walletresources.TransactionsForChain(ctx.Context(), wallet.Chain, transactions)
 	return responses.Send(ctx, http.StatusOK, pagination.Response(views, total, limit, offset))
 }
 
@@ -68,7 +68,7 @@ func (ctrl *TransactionsController) ListWalletTransactions(ctx http.Context) htt
 // @Produce      json
 // @Param        walletId  path  string  true  "Wallet UUID"
 // @Param        txId      path  string  true  "Transaction UUID"
-// @Success      200  {object}  WalletTransactionView
+// @Success      200  {object}  walletresources.Transaction
 // @Failure      403  {object}  ErrorResponse
 // @Failure      404  {object}  ErrorResponse
 // @Router       /wallets/{walletId}/transactions/{txId} [get]
@@ -83,6 +83,11 @@ func (ctrl *TransactionsController) GetWalletTransaction(ctx http.Context) http.
 		return responses.Send(ctx, http.StatusNotFound, http.Json{"error": "transaction not found"})
 	}
 
-	views := controllers.WalletTransactionViewsForChain(ctx.Context(), wallet.Chain, []models.Transaction{*tx})
+	views := walletresources.TransactionsForChain(ctx.Context(), wallet.Chain, []models.Transaction{*tx})
 	return responses.Send(ctx, http.StatusOK, views[0])
+}
+
+// WalletTransactionListResponse documents the paginated wallet transaction list.
+type WalletTransactionListResponse struct {
+	Data []walletresources.Transaction `json:"data"`
 }

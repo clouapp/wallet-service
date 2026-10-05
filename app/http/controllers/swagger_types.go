@@ -40,10 +40,6 @@ type AddressListResponse struct {
 	Data []AddressView `json:"data"`
 }
 
-type WalletTransactionListResponse struct {
-	Data []WalletTransactionView `json:"data"`
-}
-
 type WebhookConfigListResponse struct {
 	Data []WebhookConfigView `json:"data"`
 }
