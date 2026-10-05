@@ -28,29 +28,34 @@ type AddressesController struct {
 	registry      *chain.Registry
 }
 
-func NewAddressesController(
-	addresses *walletrecords.Addresses,
-	walletService func() *wallet.Service,
-	deposits *deposit.Service,
-	registry *chain.Registry,
-) *AddressesController {
-	if addresses == nil {
+// AddressesControllerDeps is everything the external addresses controller needs.
+// Every field is required.
+type AddressesControllerDeps struct {
+	Addresses     *walletrecords.Addresses
+	WalletService func() *wallet.Service
+	Deposits      *deposit.Service
+	Registry      *chain.Registry
+}
+
+// NewAddressesController wires the external address handlers from AddressesControllerDeps.
+func NewAddressesController(deps AddressesControllerDeps) *AddressesController {
+	if deps.Addresses == nil {
 		panic("external addresses controller: addresses service is required")
 	}
-	if walletService == nil || walletService() == nil {
+	if deps.WalletService == nil || deps.WalletService() == nil {
 		panic("external addresses controller: wallet service is required")
 	}
-	if deposits == nil {
+	if deps.Deposits == nil {
 		panic("external addresses controller: deposit service is required")
 	}
-	if registry == nil {
+	if deps.Registry == nil {
 		panic("external addresses controller: chain registry is required")
 	}
 	return &AddressesController{
-		addresses:     addresses,
-		walletService: walletService,
-		deposits:      deposits,
-		registry:      registry,
+		addresses:     deps.Addresses,
+		walletService: deps.WalletService,
+		deposits:      deps.Deposits,
+		registry:      deps.Registry,
 	}
 }
 

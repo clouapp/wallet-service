@@ -110,12 +110,12 @@ func newExternalChainsController() *extchains.ChainsController {
 }
 
 func newExternalAddressesController() *extaddresses.AddressesController {
-	return extaddresses.NewAddressesController(
-		container.MustMake[*walletrecords.Addresses](),
-		currentWalletService,
-		container.MustMake[*deposit.Service](),
-		container.MustMake[*chainpkg.Registry](),
-	)
+	return extaddresses.NewAddressesController(extaddresses.AddressesControllerDeps{
+		Addresses:     container.MustMake[*walletrecords.Addresses](),
+		WalletService: currentWalletService,
+		Deposits:      container.MustMake[*deposit.Service](),
+		Registry:      container.MustMake[*chainpkg.Registry](),
+	})
 }
 
 func newExternalSweepController() *extsweep.SweepController {
