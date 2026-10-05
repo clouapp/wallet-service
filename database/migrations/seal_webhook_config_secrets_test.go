@@ -12,6 +12,7 @@ import (
 	"github.com/goravel/framework/facades"
 	"github.com/stretchr/testify/require"
 
+	_ "github.com/macrowallets/waas/app/adapters/webhook/delivery"
 	"github.com/macrowallets/waas/app/repositories"
 	"github.com/macrowallets/waas/app/services/webhook"
 	"github.com/macrowallets/waas/database/migrations"

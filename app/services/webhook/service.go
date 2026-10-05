@@ -233,18 +233,17 @@ func postSignedWebhook(ctx context.Context, deliveryURL, secret, payload, eventT
 	mac := hmac.New(sha256.New, []byte(secret))
 	mac.Write([]byte(payload))
 	signature := hex.EncodeToString(mac.Sum(nil))
-	return httpclient.NewClient(timeout).Do(ctx, httpclient.Request{
-		Method: httpclient.MethodPost,
-		URL:    deliveryURL,
-		Header: map[string]string{
-			"Content-Type":        "application/json",
-			"X-Vault-Signature":   signature,
-			"X-Vault-Event":       eventType,
-			"X-Vault-Delivery-Id": eventID,
-			"X-Vault-Timestamp":   fmt.Sprintf("%d", time.Now().Unix()),
-		},
-		Body:    []byte(payload),
-		HasBody: true,
+	client := NewDeliveryClient()
+	if client == nil {
+		return httpclient.Response{}, fmt.Errorf("webhook delivery client is not configured")
+	}
+	return client.Post(ctx, SignedDelivery{
+		URL:        deliveryURL,
+		Body:       []byte(payload),
+		Signature:  signature,
+		EventType:  eventType,
+		DeliveryID: eventID,
+		Timeout:    timeout,
 	})
 }
 

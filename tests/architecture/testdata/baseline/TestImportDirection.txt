@@ -61,6 +61,7 @@ app/services/sweep → app/adapters/chain/evm (services → adapters) [test] (x4
 app/services/sweep → app/adapters/chain/solana (services → adapters) [test] (x2)
 app/services/wallet → app/adapters/chain/bitcoin (services → adapters) [test]
 app/services/wallet → app/repositories (services → repositories) [test]
+app/services/webhook → app/adapters/webhook/delivery (services → adapters) [test]
 app/services/webhook → app/repositories (services → repositories) [test]
 app/services/webhooksync → app/repositories (services → repositories)
 app/services/withdraw → app/repositories (services → repositories)

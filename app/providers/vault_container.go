@@ -42,6 +42,8 @@ import (
 	"github.com/macrowallets/waas/app/adapters/redis/scanner"
 	sweepredis "github.com/macrowallets/waas/app/adapters/redis/sweep"
 	sweepsecrets "github.com/macrowallets/waas/app/adapters/secretsmanager"
+	// Link the webhook delivery HTTP client. The service still signs each post.
+	_ "github.com/macrowallets/waas/app/adapters/webhook/delivery"
 	"github.com/macrowallets/waas/app/container"
 	"github.com/macrowallets/waas/app/facades"
 	"github.com/macrowallets/waas/app/models"
