@@ -16,6 +16,7 @@ import (
 	"github.com/gagliardetto/solana-go"
 	"github.com/gagliardetto/solana-go/programs/system"
 
+	solanachain "github.com/macrowallets/waas/app/adapters/chain/solana"
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/services/addressing"
 	"github.com/macrowallets/waas/app/services/chain"
@@ -149,7 +150,7 @@ func (f *solanaWalletFixture) credentials(t *testing.T, passphrase string) Signi
 // solanaSigningChain signs with the production Solana code but never touches RPC.
 type solanaSigningChain struct {
 	*mocks.MockChain
-	live *chain.SolanaLive
+	live *solanachain.SolanaLive
 }
 
 func (c *solanaSigningChain) SignTransactionWithScalar(ctx context.Context, unsigned *types.UnsignedTx, scalar, publicKey []byte) (*types.SignedTx, error) {
@@ -179,7 +180,7 @@ func solanaTransferMessage(from, to string, amount *big.Int) (*types.UnsignedTx,
 
 func newSolanaSigningChain(broadcasts *[]*types.SignedTx) *solanaSigningChain {
 	mockChain := sweepMockChain(models.ChainSOL, models.NativeSOL)
-	live := &chain.SolanaLive{}
+	live := &solanachain.SolanaLive{}
 	mockChain.BuildTransferFn = func(ctx context.Context, req types.TransferRequest) (*types.UnsignedTx, error) {
 		return solanaTransferMessage(req.From, req.To, req.Amount)
 	}

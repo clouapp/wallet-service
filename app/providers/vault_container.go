@@ -23,6 +23,7 @@ import (
 	mempooltip "github.com/macrowallets/waas/app/adapters/blockheight/mempool"
 	solanatip "github.com/macrowallets/waas/app/adapters/blockheight/solana"
 	bitcoinchain "github.com/macrowallets/waas/app/adapters/chain/bitcoin"
+	solanachain "github.com/macrowallets/waas/app/adapters/chain/solana"
 	coinapiws "github.com/macrowallets/waas/app/adapters/price/coinapi"
 	queuesqs "github.com/macrowallets/waas/app/adapters/queue/sqs"
 	"github.com/macrowallets/waas/app/adapters/redis/addresscache"
@@ -339,7 +340,7 @@ func buildVaultContainer(app foundation.Application) (*container.Container, erro
 					Confirmations: uint64(ch.RequiredConfirmations),
 				})
 			case models.AdapterTypeSolana:
-				adapter = chainpkg.NewSolanaLive(chainpkg.SolanaConfig{
+				adapter = solanachain.NewSolanaLive(solanachain.SolanaConfig{
 					ChainIDStr:    ch.ID,
 					ChainName:     ch.Name,
 					NativeSymbol:  ch.NativeSymbol,

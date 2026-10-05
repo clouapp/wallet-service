@@ -36,12 +36,14 @@ app/http/requests → app/repositories (http → repositories) (x3)
 app/policies → app/container (policies → container) (x2)
 app/rules → app/container (rules → container)
 app/services/account → app/repositories (services → repositories) [test]
+app/services/deposit → app/adapters/chain/solana (services → adapters) [test]
 app/services/deposit → app/repositories (services → repositories)
 app/services/deposit → app/repositories (services → repositories) [test] (x5)
 app/services/keyexport → app/adapters/chain/bitcoin (services → adapters) [test]
 app/services/refresh → app/repositories (services → repositories) (x2)
 app/services/refresh → app/repositories (services → repositories) [test]
 app/services/sweep → app/adapters/chain/bitcoin (services → adapters) [test] (x2)
+app/services/sweep → app/adapters/chain/solana (services → adapters) [test] (x2)
 app/services/wallet → app/adapters/chain/bitcoin (services → adapters) [test]
 app/services/wallet → app/repositories (services → repositories) [test]
 app/services/webhook → app/repositories (services → repositories) [test]

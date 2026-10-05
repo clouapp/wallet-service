@@ -1,4 +1,4 @@
-package chain
+package solana
 
 import (
 	"context"
@@ -7,6 +7,7 @@ import (
 
 	"github.com/gagliardetto/solana-go"
 
+	"github.com/macrowallets/waas/app/services/chain"
 	"github.com/macrowallets/waas/pkg/types"
 )
 
@@ -18,29 +19,12 @@ const splTokenAccountBytes = 165
 // associated token accounts do not exist, so a token quote includes their creation.
 const solanaFeeProbeRecipient = "11111111111111111111111111111111"
 
-// SolanaFeeQuote prices one transfer as buildSolanaTransfer encodes it: one
-// signature, plus the recipient's associated token account when it must be created.
-type SolanaFeeQuote struct {
-	Signatures              int
-	LamportsPerSignature    int64
-	AccountCreationLamports *big.Int
-}
-
-// Fee is the lamports the transfer costs its fee payer besides the amount.
-func (q SolanaFeeQuote) Fee() *big.Int {
-	fee := new(big.Int).Mul(big.NewInt(q.LamportsPerSignature), big.NewInt(int64(q.Signatures)))
-	if q.AccountCreationLamports != nil {
-		fee.Add(fee, q.AccountCreationLamports)
-	}
-	return fee
-}
-
 // QuoteTransferFee prices req with the same decisions buildSolanaTransfer makes: a
 // native transfer pays one signature; a token transfer also funds the recipient's
 // associated token account when destATAMissing says it must be created. An empty
 // recipient uses a probe whose token accounts do not exist.
-func (a *SolanaLive) QuoteTransferFee(ctx context.Context, req types.TransferRequest) (SolanaFeeQuote, error) {
-	quote := SolanaFeeQuote{Signatures: 1, LamportsPerSignature: solanaNativeFeeLamports, AccountCreationLamports: new(big.Int)}
+func (a *SolanaLive) QuoteTransferFee(ctx context.Context, req types.TransferRequest) (chain.SolanaFeeQuote, error) {
+	quote := chain.SolanaFeeQuote{Signatures: 1, LamportsPerSignature: solanaNativeFeeLamports, AccountCreationLamports: new(big.Int)}
 	if req.Token == nil {
 		return quote, nil
 	}
@@ -50,26 +34,26 @@ func (a *SolanaLive) QuoteTransferFee(ctx context.Context, req types.TransferReq
 	}
 	owner, err := solana.PublicKeyFromBase58(recipient)
 	if err != nil {
-		return SolanaFeeQuote{}, fmt.Errorf("sol fee quote: recipient: %w", err)
+		return chain.SolanaFeeQuote{}, fmt.Errorf("sol fee quote: recipient: %w", err)
 	}
 	mint, err := solana.PublicKeyFromBase58(req.Token.Contract)
 	if err != nil {
-		return SolanaFeeQuote{}, fmt.Errorf("sol fee quote: mint: %w", err)
+		return chain.SolanaFeeQuote{}, fmt.Errorf("sol fee quote: mint: %w", err)
 	}
 	destATA, _, err := solana.FindAssociatedTokenAddress(owner, mint)
 	if err != nil {
-		return SolanaFeeQuote{}, fmt.Errorf("sol fee quote: recipient token account: %w", err)
+		return chain.SolanaFeeQuote{}, fmt.Errorf("sol fee quote: recipient token account: %w", err)
 	}
 	create, _, err := a.destATAMissing(ctx, destATA.String())
 	if err != nil {
-		return SolanaFeeQuote{}, fmt.Errorf("sol fee quote: recipient token account: %w", err)
+		return chain.SolanaFeeQuote{}, fmt.Errorf("sol fee quote: recipient token account: %w", err)
 	}
 	if !create {
 		return quote, nil
 	}
 	rent, err := a.rentExemptMinimum(ctx, splTokenAccountBytes)
 	if err != nil {
-		return SolanaFeeQuote{}, err
+		return chain.SolanaFeeQuote{}, err
 	}
 	quote.AccountCreationLamports = rent
 	return quote, nil

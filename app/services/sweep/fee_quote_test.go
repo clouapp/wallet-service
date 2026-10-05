@@ -13,6 +13,7 @@ import (
 
 	"github.com/google/uuid"
 
+	solanachain "github.com/macrowallets/waas/app/adapters/chain/solana"
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/services/chain"
 	"github.com/macrowallets/waas/pkg/types"
@@ -324,7 +325,7 @@ func solanaQuotePlanner(t *testing.T, results map[string]string) (*service, uuid
 		_, _ = io.WriteString(w, `{"jsonrpc":"2.0","id":1,`+result+`}`)
 	}))
 	t.Cleanup(srv.Close)
-	adapter := chain.NewSolanaLive(chain.SolanaConfig{ChainIDStr: models.ChainSOL, NativeSymbol: models.NativeSOL, RPCURL: srv.URL})
+	adapter := solanachain.NewSolanaLive(solanachain.SolanaConfig{ChainIDStr: models.ChainSOL, NativeSymbol: models.NativeSOL, RPCURL: srv.URL})
 	registry := chain.NewRegistry()
 	registry.RegisterChain(adapter)
 	registry.RegisterToken(quoteSOLUSDC)

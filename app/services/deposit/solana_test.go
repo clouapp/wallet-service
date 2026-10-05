@@ -12,6 +12,7 @@ import (
 
 	"github.com/goravel/framework/facades"
 
+	solanachain "github.com/macrowallets/waas/app/adapters/chain/solana"
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/services/chain"
 	"github.com/macrowallets/waas/tests/mocks"
@@ -23,10 +24,10 @@ const (
 	solFixtureSignature = "41iqE5xg9ttZAk1uZkirZsQz3GG1DJ3kcU33YUFJAyraS3MFG2BWMxweU7KUXqhDZuUmzW2bqs5L3PPE1RRQEK9r"
 )
 
-// solanaFixtureRPC serves devnet responses recorded in the chain package testdata.
-func solanaFixtureRPC(t *testing.T) *chain.SolanaLive {
+// solanaFixtureRPC serves devnet responses recorded beside the Solana adapter.
+func solanaFixtureRPC(t *testing.T) *solanachain.SolanaLive {
 	t.Helper()
-	block, err := os.ReadFile(filepath.Join("..", "chain", "testdata", "solana", "getBlock_transfers.json"))
+	block, err := os.ReadFile(filepath.Join("..", "..", "adapters", "chain", "solana", "testdata", "solana", "getBlock_transfers.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -51,7 +52,7 @@ func solanaFixtureRPC(t *testing.T) *chain.SolanaLive {
 		}
 	}))
 	t.Cleanup(srv.Close)
-	return chain.NewSolanaLive(chain.SolanaConfig{
+	return solanachain.NewSolanaLive(solanachain.SolanaConfig{
 		ChainIDStr: models.ChainSOL, NativeSymbol: models.NativeSOL, RPCURL: srv.URL, Confirmations: 1,
 	})
 }

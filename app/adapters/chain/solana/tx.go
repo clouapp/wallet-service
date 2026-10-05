@@ -1,4 +1,4 @@
-package chain
+package solana
 
 import (
 	"bytes"
@@ -16,6 +16,7 @@ import (
 	"github.com/gagliardetto/solana-go/programs/system"
 	"github.com/gagliardetto/solana-go/programs/token"
 
+	"github.com/macrowallets/waas/app/services/chain"
 	"github.com/macrowallets/waas/pkg/types"
 )
 
@@ -121,7 +122,7 @@ func signSolanaTxWithScalar(unsigned *types.UnsignedTx, scalar, publicKey []byte
 	if err != nil {
 		return nil, fmt.Errorf("sol message: %w", err)
 	}
-	signature, err := signEd25519WithScalar(scalar, publicKey, content)
+	signature, err := chain.SignEd25519WithScalar(scalar, publicKey, content)
 	if err != nil {
 		return nil, fmt.Errorf("sol sign: %w", err)
 	}

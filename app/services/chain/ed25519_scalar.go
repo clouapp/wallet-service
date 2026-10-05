@@ -95,3 +95,15 @@ func signEd25519WithScalar(scalarBigEndian, publicKey, message []byte) ([]byte, 
 	}
 	return signature, nil
 }
+
+// SignEd25519WithScalar signs with a raw scalar. The live Solana adapter uses it
+// for genesis keys, which stay raw scalars.
+func SignEd25519WithScalar(scalarBigEndian, publicKey, message []byte) ([]byte, error) {
+	return signEd25519WithScalar(scalarBigEndian, publicKey, message)
+}
+
+func zeroBytes(b []byte) {
+	for i := range b {
+		b[i] = 0
+	}
+}

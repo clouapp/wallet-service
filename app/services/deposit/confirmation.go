@@ -22,14 +22,20 @@ func adapterBlockHeightKind(adapter types.Chain) string {
 	switch adapter.(type) {
 	case *chain.EVMLive:
 		return models.AdapterTypeEVM
-	case *chain.SolanaLive:
-		return models.AdapterTypeSolana
 	default:
+		if _, ok := adapter.(solanaNetwork); ok {
+			return models.AdapterTypeSolana
+		}
 		if _, ok := adapter.(bitcoinNetwork); ok {
 			return models.AdapterTypeBitcoin
 		}
 		return ""
 	}
+}
+
+// solanaNetwork is the port the live Solana client already satisfies.
+type solanaNetwork interface {
+	SignTransactionWithScalar(ctx context.Context, unsigned *types.UnsignedTx, scalar, publicKey []byte) (*types.SignedTx, error)
 }
 
 // bitcoinNetwork is the port the live Bitcoin client already satisfies.
