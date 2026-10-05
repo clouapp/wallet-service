@@ -31,18 +31,26 @@ type RefreshCurrency struct {
 	dispatcher refresh.Dispatcher
 }
 
+// RefreshCurrencyDeps is everything the refresh:currency command needs.
+// Registry, Balances, and Dispatcher are required.
+type RefreshCurrencyDeps struct {
+	Registry   *chainpkg.Registry
+	Balances   *refresh.BalanceService
+	Dispatcher refresh.Dispatcher
+}
+
 // NewRefreshCurrency refreshes wallets that hold one currency.
-func NewRefreshCurrency(registry *chainpkg.Registry, balances *refresh.BalanceService, dispatcher refresh.Dispatcher) *RefreshCurrency {
-	if registry == nil {
+func NewRefreshCurrency(deps RefreshCurrencyDeps) *RefreshCurrency {
+	if deps.Registry == nil {
 		panic("refresh:currency: chain registry is required")
 	}
-	if balances == nil {
+	if deps.Balances == nil {
 		panic("refresh:currency: balance refresh service is required")
 	}
-	if dispatcher == nil {
+	if deps.Dispatcher == nil {
 		panic("refresh:currency: refresh dispatcher is required")
 	}
-	return &RefreshCurrency{registry: registry, balances: balances, dispatcher: dispatcher}
+	return &RefreshCurrency{registry: deps.Registry, balances: deps.Balances, dispatcher: deps.Dispatcher}
 }
 
 func (c *RefreshCurrency) Signature() string {
