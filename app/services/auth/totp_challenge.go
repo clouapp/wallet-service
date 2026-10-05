@@ -161,14 +161,21 @@ type CacheAttemptLimiter struct {
 	window time.Duration
 }
 
-func NewCacheAttemptLimiter(cache contractscache.Driver, window time.Duration) (*CacheAttemptLimiter, error) {
-	if cache == nil {
+// AttemptLimiterDeps is everything the cache attempt limiter uses.
+// Cache and Window are required.
+type AttemptLimiterDeps struct {
+	Cache  contractscache.Driver
+	Window time.Duration
+}
+
+func NewCacheAttemptLimiter(deps AttemptLimiterDeps) (*CacheAttemptLimiter, error) {
+	if deps.Cache == nil {
 		return nil, errors.New("auth: attempt limiter needs a cache driver")
 	}
-	if window <= 0 {
-		return nil, fmt.Errorf("auth: attempt window must be positive, got %s", window)
+	if deps.Window <= 0 {
+		return nil, fmt.Errorf("auth: attempt window must be positive, got %s", deps.Window)
 	}
-	return &CacheAttemptLimiter{cache: cache, window: window}, nil
+	return &CacheAttemptLimiter{cache: deps.Cache, window: deps.Window}, nil
 }
 
 func (l *CacheAttemptLimiter) Claim(userID uuid.UUID) (int64, error) {

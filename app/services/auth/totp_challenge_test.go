@@ -28,7 +28,10 @@ func redisChallengeStore(t *testing.T, ttl time.Duration) *authsvc.CacheTOTPChal
 func redisAttemptLimiter(t *testing.T, window time.Duration) *authsvc.CacheAttemptLimiter {
 	t.Helper()
 	testutil.TestRedis(t)
-	limiter, err := authsvc.NewCacheAttemptLimiter(facades.Cache(), window)
+	limiter, err := authsvc.NewCacheAttemptLimiter(authsvc.AttemptLimiterDeps{
+		Cache:  facades.Cache(),
+		Window: window,
+	})
 	require.NoError(t, err)
 	return limiter
 }
