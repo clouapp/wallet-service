@@ -18,7 +18,7 @@ func RequestGrantsKey() any {
 
 // requestGrantLoad is the role and its catalog grants for one request.
 // There is no permission-override store, so the sets are the code catalog.
-// The first resolution fills it. Later checks in the same request read it.
+// Scope middleware fills it before a policy decides.
 type requestGrantLoad struct {
 	mu        sync.Mutex
 	loaded    bool
@@ -84,29 +84,15 @@ func (g *requestGrantLoad) remember(accountID, userID uuid.UUID, role string) {
 	g.wallet = WalletGrants(role)
 }
 
-// resolve returns the role for this account and user.
-// The first call for the request runs lookup. A later call for the same
-// pair does not. A different pair is not this request's membership.
-func (g *requestGrantLoad) resolve(accountID, userID uuid.UUID, lookup func() string) (string, bool) {
+// storedRole is the role middleware stored for this account and user.
+// A grant that is still empty, or that belongs to another pair, is not a membership.
+func (g *requestGrantLoad) storedRole(accountID, userID uuid.UUID) (string, bool) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
-	if g.loaded {
-		if g.accountID == accountID && g.userID == userID {
-			return g.roleName, true
-		}
+	if !g.loaded || g.accountID != accountID || g.userID != userID {
 		return "", false
 	}
-	role := ""
-	if lookup != nil {
-		role = lookup()
-	}
-	g.loaded = true
-	g.accountID = accountID
-	g.userID = userID
-	g.roleName = role
-	g.account = AccountRoleGrants(role)
-	g.wallet = WalletGrants(role)
-	return role, true
+	return g.roleName, true
 }
 
 func (g *requestGrantLoad) role() (string, uuid.UUID, bool) {

@@ -13,7 +13,6 @@ import (
 	"github.com/macrowallets/waas/app/http/middleware/requestctx"
 	"github.com/macrowallets/waas/app/jobs"
 	"github.com/macrowallets/waas/app/policies"
-	"github.com/macrowallets/waas/app/repositories"
 	accountsvc "github.com/macrowallets/waas/app/services/account"
 	"github.com/macrowallets/waas/app/services/walletrecords"
 )
@@ -28,8 +27,6 @@ func (r *AuthServiceProvider) Boot(app foundation.Application) {
 	if gate == nil {
 		return
 	}
-
-	policies.BindAccountUsers(container.MustMake[*repositories.AccountUserRepository]())
 
 	ap := &policies.AccountPolicy{}
 	wp := &policies.WalletPolicy{}
@@ -102,13 +99,19 @@ func (r *AuthServiceProvider) Boot(app foundation.Application) {
 	_ = toUUID // helper available for future extensions
 }
 
-// withAccountUser copies the gate arguments and attaches the user id the
-// session already stored. An id already present is left alone. A missing id
-// leaves the key unset, which the policy treats as no membership.
+// withAccountUser copies the gate arguments and attaches the user id and
+// account role scope middleware already stored. A value already present is
+// left alone. A missing user id leaves that key unset, which the policy
+// treats as no membership.
 func withAccountUser(ctx context.Context, arguments map[string]any) map[string]any {
-	out := make(map[string]any, len(arguments)+1)
+	out := make(map[string]any, len(arguments)+2)
 	for key, value := range arguments {
 		out[key] = value
+	}
+	if _, present := out["account_role"]; !present {
+		if role, ok := requestctx.AccountRole(ctx); ok {
+			out["account_role"] = role
+		}
 	}
 	if _, ok := out["user_id"].(uuid.UUID); ok {
 		return out

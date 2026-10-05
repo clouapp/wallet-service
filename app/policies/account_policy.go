@@ -34,32 +34,36 @@ const PermAccountLifecycle = models.AccountPermAccountLifecycle
 //	tokens.read, tokens.write
 type AccountPolicy struct{}
 
-// userRole is the caller's role in the account. The caller passes the user id.
-// A request that already stored its grants does not look the membership up again.
+// userRole is the caller's role in the account. An account_role argument is
+// the role the caller already loaded. Otherwise the role is the one scope
+// middleware stored for this account and user.
 func userRole(ctx context.Context, accountID uuid.UUID, arguments map[string]any) string {
 	if arguments == nil {
 		return ""
+	}
+	if _, present := arguments["account_role"]; present {
+		role, _ := arguments["account_role"].(string)
+		return role
 	}
 	userID, ok := arguments["user_id"].(uuid.UUID)
 	if !ok || userID == uuid.Nil {
 		return ""
 	}
-	if load := grantLoad(ctx); load != nil {
-		if role, resolved := load.resolve(accountID, userID, func() string {
-			return lookupAccountRole(ctx, accountID, userID)
-		}); resolved {
-			return role
-		}
-	}
 	return lookupAccountRole(ctx, accountID, userID)
 }
 
+// lookupAccountRole is the account role scope middleware stored for this
+// account and user. A missing grant is no membership.
 func lookupAccountRole(ctx context.Context, accountID, userID uuid.UUID) string {
-	au, err := accountUserRepository().FindByAccountAndUser(ctx, accountID, userID)
-	if err != nil || au == nil {
+	load := grantLoad(ctx)
+	if load == nil {
 		return ""
 	}
-	return au.Role
+	role, ok := load.storedRole(accountID, userID)
+	if !ok {
+		return ""
+	}
+	return role
 }
 
 func (p *AccountPolicy) View(ctx context.Context, arguments map[string]any) contractsaccess.Response {

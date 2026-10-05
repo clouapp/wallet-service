@@ -2,44 +2,19 @@ package policies
 
 import (
 	"context"
-	"errors"
 	"testing"
 
 	"github.com/google/uuid"
 	contractsaccess "github.com/goravel/framework/contracts/auth/access"
-
-	"github.com/macrowallets/waas/app/models"
 )
 
-type stubAccountUsers struct {
-	t         *testing.T
-	accountID uuid.UUID
-	userID    uuid.UUID
-	found     *models.AccountUser
-	err       error
-}
-
-func (s stubAccountUsers) FindByAccountAndUser(_ context.Context, accountID, userID uuid.UUID) (*models.AccountUser, error) {
-	if s.t != nil && (accountID != s.accountID || userID != s.userID) {
-		s.t.Errorf("lookup account %s user %s, want account %s user %s", accountID, userID, s.accountID, s.userID)
-	}
-	if s.err != nil {
-		return nil, s.err
-	}
-	return s.found, nil
-}
-
-func bindAccountUsers(t *testing.T, repo accountMemberships) {
-	t.Helper()
-	previous := accountUsers
-	accountUsers = repo
-	t.Cleanup(func() { accountUsers = previous })
+func withStoredAccountRole(accountID, userID uuid.UUID, role string) context.Context {
+	return context.WithValue(context.Background(), RequestGrantsKey(), AttachRequestGrants(accountID, userID, role))
 }
 
 func TestAccountDecisionsFollowTheLoadedMembership(t *testing.T) {
 	accountID := uuid.New()
 	userID := uuid.New()
-	ctx := context.Background()
 
 	cases := []struct {
 		role   string
@@ -71,8 +46,7 @@ func TestAccountDecisionsFollowTheLoadedMembership(t *testing.T) {
 	}
 
 	for _, tc := range cases {
-		bindAccountUsers(t, stubAccountUsers{t: t, accountID: accountID, userID: userID, found: &models.AccountUser{Role: tc.role}})
-		decision := tc.decide(ctx, accountID, userID)
+		decision := tc.decide(withStoredAccountRole(accountID, userID, tc.role), accountID, userID)
 		if decision.Allowed() != tc.allow {
 			t.Fatalf("role %s allowed=%v, want %v", tc.role, decision.Allowed(), tc.allow)
 		}
@@ -86,18 +60,15 @@ func TestAccountViewAllowsAnyStoredRole(t *testing.T) {
 	accountID := uuid.New()
 	userID := uuid.New()
 	policy := &AccountPolicy{}
-	ctx := context.Background()
 
 	for _, role := range []string{roleOwner, roleAdmin, roleAuditor, roleUser} {
-		bindAccountUsers(t, stubAccountUsers{t: t, accountID: accountID, userID: userID, found: &models.AccountUser{Role: role}})
-		decision := policy.View(ctx, map[string]any{"account_id": accountID, "user_id": userID})
+		decision := policy.View(withStoredAccountRole(accountID, userID, role), map[string]any{"account_id": accountID, "user_id": userID})
 		if !decision.Allowed() {
 			t.Fatalf("role %s must be allowed to view", role)
 		}
 	}
 
-	bindAccountUsers(t, stubAccountUsers{t: t, accountID: accountID, userID: userID})
-	missing := policy.View(ctx, map[string]any{"account_id": accountID, "user_id": userID})
+	missing := policy.View(context.Background(), map[string]any{"account_id": accountID, "user_id": userID})
 	if missing.Allowed() || missing.Message() != "not a member of this account" {
 		t.Fatalf("a missing membership must deny view, got allowed=%v message=%q", missing.Allowed(), missing.Message())
 	}
@@ -132,10 +103,49 @@ func TestAccountPolicyKeepsTheMissingCallerDeny(t *testing.T) {
 	}
 }
 
-func TestAccountPolicyTreatsALookupErrorAsNoMembership(t *testing.T) {
+func TestAccountPolicyUsesThePassedAccountRole(t *testing.T) {
 	accountID := uuid.New()
 	userID := uuid.New()
-	bindAccountUsers(t, stubAccountUsers{t: t, accountID: accountID, userID: userID, err: errors.New("store down")})
+	policy := &AccountPolicy{}
+
+	owner := policy.Update(context.Background(), map[string]any{
+		"account_id":   accountID,
+		"user_id":      userID,
+		"account_role": roleOwner,
+	})
+	if !owner.Allowed() {
+		t.Fatal("a passed owner role may update the account")
+	}
+
+	user := policy.Update(context.Background(), map[string]any{
+		"account_id":   accountID,
+		"user_id":      userID,
+		"account_role": roleUser,
+	})
+	if user.Allowed() || user.Message() != "only owners and admins may update account settings" {
+		t.Fatalf("a passed user role allowed=%v message=%q", user.Allowed(), user.Message())
+	}
+
+	storedOwner := withStoredAccountRole(accountID, userID, roleOwner)
+	explicitEmpty := policy.Update(storedOwner, map[string]any{
+		"account_id":   accountID,
+		"user_id":      userID,
+		"account_role": "",
+	})
+	if explicitEmpty.Allowed() {
+		t.Fatal("an explicit empty account role stays empty")
+	}
+
+	otherUser := uuid.New()
+	mismatch := AccountUpdate(withStoredAccountRole(accountID, otherUser, roleOwner), accountID, userID)
+	if mismatch.Allowed() || mismatch.Message() != "only owners and admins may update account settings" {
+		t.Fatalf("another user's stored role allowed=%v message=%q", mismatch.Allowed(), mismatch.Message())
+	}
+}
+
+func TestAccountPolicyTreatsAMissingStoredRoleAsNoMembership(t *testing.T) {
+	accountID := uuid.New()
+	userID := uuid.New()
 
 	decision := (&AccountPolicy{}).Delete(context.Background(), accountDecisionArguments(accountID, userID))
 	if decision.Allowed() || decision.Message() != "only owners may delete accounts" {
