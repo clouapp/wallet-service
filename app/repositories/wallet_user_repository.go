@@ -35,6 +35,18 @@ func (r *WalletUserRepository) Create(ctx context.Context, wu *models.WalletUser
 	return nil
 }
 
+// FindByID returns the membership row, including one that is not active, or ErrRepositoryNotFound.
+func (r *WalletUserRepository) FindByID(ctx context.Context, id uuid.UUID) (*models.WalletUser, error) {
+	var wu models.WalletUser
+	if err := r.Query(ctx).Where("id = ?", id).First(&wu); err != nil {
+		return nil, fmt.Errorf("find wallet user by id: %w", err)
+	}
+	if wu.ID == uuid.Nil {
+		return nil, models.ErrRepositoryNotFound
+	}
+	return &wu, nil
+}
+
 // FindByWalletID returns active memberships for a wallet.
 func (r *WalletUserRepository) FindByWalletID(ctx context.Context, walletID uuid.UUID) ([]models.WalletUser, error) {
 	var members []models.WalletUser

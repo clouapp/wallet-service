@@ -19,6 +19,7 @@ import (
 	"github.com/goravel/framework/facades"
 
 	"github.com/macrowallets/waas/app/models"
+	"github.com/macrowallets/waas/app/repositories"
 	"github.com/macrowallets/waas/app/services/addressing"
 	mpc "github.com/macrowallets/waas/app/services/mpc"
 )
@@ -66,16 +67,7 @@ func (r seedEndpointResolver) ResolveEndpoint(
 // The shared seed passphrase is SeedPassphrase. Idempotent: existing rows are
 // skipped so the command is safe to re-run.
 func SeedWallets(ctx context.Context) error {
-	specs := []seedWalletSpec{
-		{ethWalletID, uuid.MustParse("00000000-0000-0000-0000-0000000000a0"), acmeAccountID, models.ChainETH, "Primary ETH Wallet", mpc.CurveSecp256k1},
-		{btcWalletID, uuid.MustParse("00000000-0000-0000-0000-0000000000a1"), acmeAccountID, models.ChainBTC, "Primary BTC Wallet", mpc.CurveSecp256k1},
-		{polyWalletID, uuid.MustParse("00000000-0000-0000-0000-0000000000a2"), acmeAccountID, models.ChainPolygon, "Polygon Wallet", mpc.CurveSecp256k1},
-		{solWalletID, uuid.MustParse("00000000-0000-0000-0000-0000000000a6"), acmeAccountID, models.ChainSOL, "Primary SOL Wallet", mpc.CurveEd25519},
-		{tethWalletID, uuid.MustParse("00000000-0000-0000-0000-0000000000a3"), acmeTestAccountID, models.ChainTETH, "Sepolia ETH Wallet", mpc.CurveSecp256k1},
-		{tbtcWalletID, uuid.MustParse("00000000-0000-0000-0000-0000000000a4"), acmeTestAccountID, models.ChainTBTC, "Bitcoin Testnet Wallet", mpc.CurveSecp256k1},
-		{tpolyWalletID, uuid.MustParse("00000000-0000-0000-0000-0000000000a5"), acmeTestAccountID, models.ChainTPolygon, "Polygon Amoy Wallet", mpc.CurveSecp256k1},
-		{tsolWalletID, uuid.MustParse("00000000-0000-0000-0000-0000000000a7"), acmeTestAccountID, models.ChainTSOL, "Solana Devnet Wallet", mpc.CurveEd25519},
-	}
+	specs := seedWalletSpecs()
 
 	var smClient *secretsmanager.Client
 	loadSecretsManager := func() (*secretsmanager.Client, error) {
@@ -90,15 +82,19 @@ func SeedWallets(ctx context.Context) error {
 		return smClient, nil
 	}
 
+	wallets := repositories.NewWalletRepository(nil)
 	pending := make([]seedWalletSpec, 0, len(specs))
 	for _, spec := range specs {
-		var existing models.Wallet
-		if err := facades.Orm().Query().Where("id", spec.id).First(&existing); err == nil && existing.ID != uuid.Nil {
+		existing, err := wallets.FindByID(ctx, spec.id)
+		if err != nil && !errors.Is(err, models.ErrRepositoryNotFound) {
+			return fmt.Errorf("seed wallet %s: %w", spec.label, err)
+		}
+		if existing != nil && existing.ID != uuid.Nil {
 			manager, managerErr := loadSecretsManager()
 			if managerErr != nil {
 				return fmt.Errorf("seed wallet %s: build secrets manager: %w", spec.label, managerErr)
 			}
-			if secretErr := validateExistingSeedWalletSecret(ctx, manager, &existing); secretErr != nil {
+			if secretErr := validateExistingSeedWalletSecret(ctx, manager, existing); secretErr != nil {
 				return fmt.Errorf("seed wallet %s: %w", spec.label, secretErr)
 			}
 			slog.Info("wallet already exists, skipping", "label", spec.label)
@@ -127,7 +123,7 @@ func SeedWallets(ctx context.Context) error {
 		}
 	}
 
-	return seedWalletUsers()
+	return seedWalletUsers(ctx)
 }
 
 func validateExistingSeedWalletSecret(
@@ -247,6 +243,24 @@ func persistSeedWallet(ctx context.Context, sm *secretsmanager.Client, spec seed
 		return fmt.Errorf("store share_B: %w", err)
 	}
 
+	return insertSeedWallet(ctx, spec, mat, arn)
+}
+
+func seedWalletSpecs() []seedWalletSpec {
+	return []seedWalletSpec{
+		{ethWalletID, uuid.MustParse("00000000-0000-0000-0000-0000000000a0"), acmeAccountID, models.ChainETH, "Primary ETH Wallet", mpc.CurveSecp256k1},
+		{btcWalletID, uuid.MustParse("00000000-0000-0000-0000-0000000000a1"), acmeAccountID, models.ChainBTC, "Primary BTC Wallet", mpc.CurveSecp256k1},
+		{polyWalletID, uuid.MustParse("00000000-0000-0000-0000-0000000000a2"), acmeAccountID, models.ChainPolygon, "Polygon Wallet", mpc.CurveSecp256k1},
+		{solWalletID, uuid.MustParse("00000000-0000-0000-0000-0000000000a6"), acmeAccountID, models.ChainSOL, "Primary SOL Wallet", mpc.CurveEd25519},
+		{tethWalletID, uuid.MustParse("00000000-0000-0000-0000-0000000000a3"), acmeTestAccountID, models.ChainTETH, "Sepolia ETH Wallet", mpc.CurveSecp256k1},
+		{tbtcWalletID, uuid.MustParse("00000000-0000-0000-0000-0000000000a4"), acmeTestAccountID, models.ChainTBTC, "Bitcoin Testnet Wallet", mpc.CurveSecp256k1},
+		{tpolyWalletID, uuid.MustParse("00000000-0000-0000-0000-0000000000a5"), acmeTestAccountID, models.ChainTPolygon, "Polygon Amoy Wallet", mpc.CurveSecp256k1},
+		{tsolWalletID, uuid.MustParse("00000000-0000-0000-0000-0000000000a7"), acmeTestAccountID, models.ChainTSOL, "Solana Devnet Wallet", mpc.CurveEd25519},
+	}
+}
+
+func insertSeedWallet(ctx context.Context, spec seedWalletSpec, mat seedMaterial, arn string) error {
+	wallets := repositories.NewWalletRepository(nil)
 	aid := spec.accountID
 	w := models.Wallet{
 		ID:                spec.id,
@@ -263,7 +277,7 @@ func persistSeedWallet(ctx context.Context, sm *secretsmanager.Client, spec seed
 		Status:            "active",
 		RequiredApprovals: 1,
 	}
-	if err := facades.Orm().Query().Create(&w); err != nil {
+	if err := wallets.Create(ctx, &w); err != nil {
 		return fmt.Errorf("insert wallet: %w", err)
 	}
 
@@ -278,14 +292,11 @@ func persistSeedWallet(ctx context.Context, sm *secretsmanager.Client, spec seed
 		Label:           "Deposit Address",
 		DerivationType:  "genesis",
 	}
-	if err := facades.Orm().Query().Create(&addr); err != nil {
+	if err := repositories.NewAddressRepository(nil).Create(ctx, &addr); err != nil {
 		return fmt.Errorf("insert deposit address: %w", err)
 	}
 
-	addrID := spec.addressID
-	if _, err := facades.Orm().Query().Model(&models.Wallet{}).
-		Where("id = ?", spec.id).
-		Update("deposit_address_id", addrID); err != nil {
+	if err := wallets.SetDepositAddressID(ctx, spec.id, spec.addressID); err != nil {
 		return fmt.Errorf("link deposit address: %w", err)
 	}
 
@@ -332,7 +343,7 @@ func buildSeedSecretsManager(ctx context.Context) (*secretsmanager.Client, error
 		secretsmanager.WithEndpointResolverV2(seedEndpointResolver{url: endpoint})), nil
 }
 
-func seedWalletUsers() error {
+func seedWalletUsers(ctx context.Context) error {
 	walletUserSeeds := []struct {
 		id       uuid.UUID
 		walletID uuid.UUID
@@ -352,9 +363,13 @@ func seedWalletUsers() error {
 		{uuid.MustParse("00000000-0000-0000-0000-000000000054"), tpolyWalletID, aliceUserID, "viewer"},
 		{uuid.MustParse("00000000-0000-0000-0000-000000000055"), tsolWalletID, aliceUserID, "viewer,spender"},
 	}
+	members := repositories.NewWalletUserRepository(nil)
 	for _, wu := range walletUserSeeds {
-		var existing models.WalletUser
-		if err := facades.Orm().Query().Where("id", wu.id).First(&existing); err == nil && existing.ID != uuid.Nil {
+		existing, err := members.FindByID(ctx, wu.id)
+		if err != nil && !errors.Is(err, models.ErrRepositoryNotFound) {
+			return fmt.Errorf("find wallet user: %w", err)
+		}
+		if existing != nil && existing.ID != uuid.Nil {
 			continue
 		}
 		row := models.WalletUser{
@@ -364,7 +379,7 @@ func seedWalletUsers() error {
 			Roles:    wu.roles,
 			Status:   "active",
 		}
-		if err := facades.Orm().Query().Create(&row); err != nil {
+		if err := members.Create(ctx, &row); err != nil {
 			return fmt.Errorf("create wallet_user: %w", err)
 		}
 	}

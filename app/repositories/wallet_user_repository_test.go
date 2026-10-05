@@ -38,6 +38,23 @@ func (s *WalletUserRepositoryTestSuite) createWallet() uuid.UUID {
 	return w.ID
 }
 
+func (s *WalletUserRepositoryTestSuite) TestFindByID_IncludesAMembershipThatIsNotActive() {
+	walletID := s.createWallet()
+	id := uuid.New()
+	s.Require().NoError(s.repo.Create(context.Background(), &models.WalletUser{
+		ID: id, WalletID: walletID, UserID: uuid.New(), Roles: "viewer", Status: "suspended",
+	}))
+
+	found, err := s.repo.FindByID(context.Background(), id)
+	s.Require().NoError(err)
+	s.Equal(id, found.ID)
+	s.Equal("suspended", found.Status)
+
+	missing, err := s.repo.FindByID(context.Background(), uuid.New())
+	s.ErrorIs(err, models.ErrRepositoryNotFound)
+	s.Nil(missing)
+}
+
 func (s *WalletUserRepositoryTestSuite) TestCreate_Success() {
 	walletID := s.createWallet()
 	wu := &models.WalletUser{ID: uuid.New(), WalletID: walletID, UserID: uuid.New(), Roles: "owner", Status: "active"}
