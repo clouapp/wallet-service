@@ -22,7 +22,7 @@ import (
 const (
 	cacheKeyPrefix         = "settings:account:"
 	platformCacheKeyPrefix = "settings:platform:"
-	// settingsCacheTTL is the sealed group cache lifetime from S1.4.8.
+	// settingsCacheTTL is the group cache lifetime from S1.4.8.
 	settingsCacheTTL = 10 * time.Minute
 )
 
@@ -32,21 +32,21 @@ type Store interface {
 	UpsertMany(ctx context.Context, accountID uuid.UUID, group string, values map[string]string) error
 }
 
-// Sealer encrypts a secret before it is stored and opens a sealed cache payload.
-// It never logs the plaintext or the sealed blob.
+// Sealer encrypts a secret before it is stored and opens it on the secret read path.
+// It never logs the plaintext or the sealed blob. The cache keeps that ciphertext.
 type Sealer interface {
 	Seal(plaintext string) (string, error)
 	Open(value string) (string, error)
 }
 
-// Cache stores one sealed group for settingsCacheTTL and forgets it after a write.
-// A miss, a read failure, or a bad seal only costs a database query.
+// Cache stores one group as a JSON map for settingsCacheTTL and forgets it after a write.
+// A miss, a read failure, or a value that is not a JSON object only costs a database query.
 type Cache interface {
 	Forget(key string) bool
-	// Get returns the sealed payload. found is false when the key is absent.
+	// Get returns the JSON map. found is false when the key is absent.
 	// A non-nil error is a read failure; the caller reads the database.
 	Get(key string) (value string, found bool, err error)
-	// Put stores a sealed payload. The caller treats a store failure as a miss.
+	// Put stores a JSON map. The caller treats a store failure as a miss.
 	Put(key string, value string, ttl time.Duration) error
 }
 
@@ -134,7 +134,7 @@ func (FacadeCache) Forget(key string) bool {
 	return cache.Forget(key)
 }
 
-// Get returns a sealed payload. An empty value is a miss: Goravel answers a
+// Get returns a JSON map. An empty value is a miss: Goravel answers a
 // missing key and a failed read the same way, and both fall through to the database.
 func (FacadeCache) Get(key string) (string, bool, error) {
 	cache := processCache()
@@ -148,7 +148,7 @@ func (FacadeCache) Get(key string) (string, bool, error) {
 	return value, true, nil
 }
 
-// Put stores a sealed payload for ttl.
+// Put stores a JSON map for ttl.
 func (FacadeCache) Put(key, value string, ttl time.Duration) error {
 	if value == "" {
 		return errSettingsCacheUnavailable
@@ -448,8 +448,8 @@ func (s *Service) groupView(ctx context.Context, accountID uuid.UUID, role strin
 }
 
 // storedValues is the cached read of one account group. A hit returns the
-// sealed payload. A miss, a cache failure, or a bad seal reads the database
-// and stores a new seal. The database error is returned unchanged.
+// JSON map. A miss, a cache failure, or a value that is not a JSON object
+// reads the database and stores that map. The database error is returned unchanged.
 func (s *Service) storedValues(ctx context.Context, accountID uuid.UUID, group string) (map[string]string, error) {
 	key := cacheKey(accountID, group)
 	if values, ok := s.recall(key); ok {
@@ -474,7 +474,7 @@ func (s *Service) listAccountValues(ctx context.Context, accountID uuid.UUID, gr
 }
 
 // platformValues is the cached read of one platform group. The same miss and
-// bad-seal rules as storedValues apply. A store without a platform reader
+// invalid-document rules as storedValues apply. A store without a platform reader
 // still fails before the cache is consulted.
 func (s *Service) platformValues(ctx context.Context, group string) (map[string]string, error) {
 	reader, ok := s.store.(platformReader)
@@ -502,40 +502,33 @@ func valuesFromRows(rows []models.Setting) map[string]string {
 	return out
 }
 
-// recall opens a sealed group. A miss or a read failure returns false without
-// logging the payload. A bad seal also returns false so the caller reads the database.
+// recall returns the cached JSON map. A miss or a read failure returns false
+// without logging the payload. A value that is not a JSON object also returns
+// false so the caller reads the database. Secret fields stay ciphertext.
 func (s *Service) recall(key string) (map[string]string, bool) {
-	if s == nil || s.cache == nil || s.sealer == nil || key == "" {
+	if s == nil || s.cache == nil || key == "" {
 		return nil, false
 	}
-	sealed, found, err := s.cache.Get(key)
-	if err != nil || !found || sealed == "" {
+	raw, found, err := s.cache.Get(key)
+	if err != nil || !found || raw == "" {
 		if err != nil {
 			slog.Warn("settings cache read failed", "cache_key", key)
 		}
 		return nil, false
 	}
-	if !IsSealed(sealed) {
-		slog.Warn("settings cache fell through to the database", "cache_key", key)
-		return nil, false
-	}
-	opened, err := s.sealer.Open(sealed)
-	if err != nil {
-		slog.Warn("settings cache fell through to the database", "cache_key", key)
-		return nil, false
-	}
 	var values map[string]string
-	if unmarshalErr := json.Unmarshal([]byte(opened), &values); unmarshalErr != nil || values == nil {
+	if unmarshalErr := json.Unmarshal([]byte(raw), &values); unmarshalErr != nil || values == nil {
 		slog.Warn("settings cache fell through to the database", "cache_key", key)
 		return nil, false
 	}
 	return values, true
 }
 
-// remember seals the group document and stores it. A seal or store failure
-// leaves the read result in place and does not log the plaintext or the blob.
+// remember stores the group as a JSON map for settingsCacheTTL. Secret values
+// stay the stored ciphertext and are not opened. A marshal or store failure
+// leaves the read result in place and does not log the payload.
 func (s *Service) remember(key string, values map[string]string) {
-	if s == nil || s.cache == nil || s.sealer == nil || key == "" {
+	if s == nil || s.cache == nil || key == "" {
 		return
 	}
 	if values == nil {
@@ -546,12 +539,7 @@ func (s *Service) remember(key string, values map[string]string) {
 		slog.Warn("settings cache was not stored", "cache_key", key)
 		return
 	}
-	sealed, err := s.sealer.Seal(string(payload))
-	if err != nil || !IsSealed(sealed) {
-		slog.Warn("settings cache was not stored", "cache_key", key)
-		return
-	}
-	if err := s.cache.Put(key, sealed, settingsCacheTTL); err != nil {
+	if err := s.cache.Put(key, string(payload), settingsCacheTTL); err != nil {
 		slog.Warn("settings cache was not stored", "cache_key", key)
 	}
 }

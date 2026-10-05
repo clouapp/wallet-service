@@ -33,8 +33,8 @@ func DefaultSweepLimits() SweepLimitValues {
 }
 
 // EffectiveSweepLimits reads account_sweep_limits at the moment of use.
-// A sealed cache hit skips the database. A cache miss, a cache failure, or
-// a bad seal reads the database. Resolution is the fallback chain: a stored
+// A cache hit skips the database. A cache miss, a cache failure, or a value
+// that is not a JSON object reads the database. Resolution is the fallback chain: a stored
 // account key, then the same key on the platform sweep_limits group, then
 // that key's registry default. The account row wins. A missing platform row,
 // an invalid platform value, or a failed platform read keeps the registry
@@ -129,7 +129,7 @@ func marshalSweepLimitsWire(values SweepLimitValues) (string, error) {
 }
 
 // withInheritedPlatform copies the platform parent under keys the account did
-// not store. The account map is left unchanged: it may be the sealed cache.
+// not store. The account map is left unchanged: it may be the cached map.
 // A failed platform read is logged and left out, so those keys stay on the
 // registry default. The log names the group, never a stored value.
 func (s *Service) withInheritedPlatform(ctx context.Context, group Group, accountStored map[string]string) (map[string]string, error) {

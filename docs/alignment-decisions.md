@@ -157,3 +157,5 @@ Plan: `macro-wallets-alignment-prompt.md`. Nineteen decisions.
 **Plan.** §0.2: one group becomes one pull request, and groups from different areas stay apart.
 
 **Evidence.** The two open pull requests above. This branch carries the groups listed in `git log` through `1b030d8aa83a9c81cb0506a13d8f3296a18cc1f0`.
+
+The settings cache key includes the scope (`settings:platform:<group>` and `settings:account:<uuid>:<group>`) so a platform document and an account document that share a group name stay apart.

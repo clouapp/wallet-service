@@ -28,8 +28,8 @@ type platformWriter interface {
 }
 
 // EffectiveWebhookDelivery reads the platform webhook_delivery group at the
-// moment of use. A sealed cache hit skips the database. A cache miss, a cache
-// failure, or a bad seal reads the database. A missing row leaves every field
+// moment of use. A cache hit skips the database. A cache miss, a cache
+// failure, or a value that is not a JSON object reads the database. A missing row leaves every field
 // zero so the caller keeps the code default. One invalid key falls back to
 // zero for that key only. A database failure is returned so the caller can
 // keep the default and still deliver.

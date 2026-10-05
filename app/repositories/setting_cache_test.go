@@ -2,7 +2,7 @@ package repositories_test
 
 import (
 	"context"
-	"strings"
+	"encoding/json"
 	"testing"
 	"time"
 
@@ -15,7 +15,7 @@ import (
 	"github.com/macrowallets/waas/tests/testutil"
 )
 
-func TestSettingsReadStoresASealedCacheForTenMinutes(t *testing.T) {
+func TestSettingsReadStoresAJSONMapForTenMinutes(t *testing.T) {
 	mocks.TestDB(t)
 	ctx := context.Background()
 	settingsRepo := repositories.NewSettingRepository(nil)
@@ -49,13 +49,9 @@ func TestSettingsReadStoresASealedCacheForTenMinutes(t *testing.T) {
 	if !facades.Cache().Has(key) {
 		t.Fatal("read after write missed the cache key")
 	}
-	sealed := facades.Cache().GetString(key)
-	if !settings.IsSealed(sealed) || strings.Contains(sealed, "require_2fa") {
-		t.Fatal("cache payload is not sealed")
-	}
-	opened, err := settings.CryptSealer{}.Open(sealed)
-	if err != nil || !strings.Contains(opened, "require_2fa") {
-		t.Fatal("sealed cache did not open to the stored group")
+	decoded := settingsCacheJSON(t, facades.Cache().GetString(key))
+	if decoded["require_2fa"] != "true" {
+		t.Fatal("cache payload is not the stored JSON map")
 	}
 	ttl := settingsCacheTTL(t, key)
 	if ttl < 9*time.Minute || ttl > 10*time.Minute {
@@ -79,9 +75,9 @@ func TestSettingsReadStoresASealedCacheForTenMinutes(t *testing.T) {
 	if err != nil || fallen {
 		t.Fatalf("corrupt seal = %v, %v", fallen, err)
 	}
-	resealed := facades.Cache().GetString(key)
-	if !settings.IsSealed(resealed) || strings.Contains(resealed, "require_2fa") {
-		t.Fatal("fallthrough did not store a sealed payload")
+	replaced := settingsCacheJSON(t, facades.Cache().GetString(key))
+	if replaced["require_2fa"] != "false" {
+		t.Fatal("fallthrough did not store a JSON map")
 	}
 
 	if err := service.FlushSection(ctx, account.ID, "owner", "security"); err != nil {
@@ -108,7 +104,7 @@ func settingsCacheTTL(t *testing.T, logicalKey string) time.Duration {
 		t.Fatalf("scan cache key: %v", err)
 	}
 	if matched == "" {
-		t.Fatal("sealed cache key is missing from redis")
+		t.Fatal("cache key is missing from redis")
 	}
 	ttl, err := client.TTL(ctx, matched).Result()
 	if err != nil {
@@ -120,7 +116,16 @@ func settingsCacheTTL(t *testing.T, logicalKey string) time.Duration {
 		_ = client.Del(cleanupCtx, matched).Err()
 	})
 	if ttl <= 0 {
-		t.Fatal("sealed cache key has no expiry")
+		t.Fatal("cache key has no expiry")
 	}
 	return ttl
+}
+
+func settingsCacheJSON(t *testing.T, raw string) map[string]string {
+	t.Helper()
+	var decoded map[string]string
+	if err := json.Unmarshal([]byte(raw), &decoded); err != nil || decoded == nil {
+		t.Fatalf("cache payload is not a JSON map: %q", raw)
+	}
+	return decoded
 }

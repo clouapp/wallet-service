@@ -2,6 +2,7 @@ package settings
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"strings"
 	"testing"
@@ -12,8 +13,8 @@ import (
 	"github.com/macrowallets/waas/app/models"
 )
 
-// shiftCipher hides a payload. A second seal does not restore the plaintext,
-// so the cache blob cannot contain the original secret.
+// shiftCipher hides a payload. A sealed secret in the cached JSON map is not
+// the original plaintext.
 type shiftCipher struct{}
 
 func (shiftCipher) EncryptString(value string) (string, error) {
@@ -78,7 +79,7 @@ func TestSettingsCacheTTLIsTenMinutes(t *testing.T) {
 	}
 }
 
-func TestReadAfterWriteHitsTheSealedAccountCache(t *testing.T) {
+func TestReadAfterWriteHitsTheJSONMapCache(t *testing.T) {
 	t.Parallel()
 
 	const secret = "super-secret-value"
@@ -107,19 +108,17 @@ func TestReadAfterWriteHitsTheSealedAccountCache(t *testing.T) {
 	if first[keySigningSecret] == "" {
 		t.Fatal("read after write missed the stored secret")
 	}
-	sealed, ok := cache.values[webhookKey]
+	raw, ok := cache.values[webhookKey]
 	if !ok {
 		t.Fatal("read after write missed the cache key")
 	}
 	if cache.ttls[webhookKey] != 10*time.Minute {
 		t.Fatalf("ttl = %s", cache.ttls[webhookKey])
 	}
-	if !IsSealed(sealed) || strings.Contains(sealed, secret) || strings.Contains(sealed, keySigningSecret) {
-		t.Fatal("cache payload is not a sealed document")
-	}
-	opened, err := sealer.Open(sealed)
-	if err != nil || !strings.Contains(opened, keySigningSecret) {
-		t.Fatal("sealed cache did not open to the stored group")
+	decoded := cachedJSONMap(t, raw)
+	storedSecret := decoded[keySigningSecret]
+	if storedSecret != first[keySigningSecret] || !IsSealed(storedSecret) || !strings.HasPrefix(storedSecret, "enc:v1:") || strings.Contains(raw, secret) {
+		t.Fatal("cached secret is not ciphertext")
 	}
 	reads := store.accountReads
 	second, err := service.storedValues(ctx, accountID, groupAccountWebhooks)
@@ -229,7 +228,8 @@ func TestCorruptSealAndCacheFailureFallThroughToTheDatabase(t *testing.T) {
 	if store.accountReads != reads+1 {
 		t.Fatal("corrupt seal did not read the database")
 	}
-	if !IsSealed(cache.values[limitsKey]) {
+	replaced := cachedJSONMap(t, cache.values[limitsKey])
+	if replaced[keyMaxAddressesEVM] != "9" {
 		t.Fatal("fallthrough did not replace the corrupt cache")
 	}
 
@@ -249,7 +249,7 @@ func TestCorruptSealAndCacheFailureFallThroughToTheDatabase(t *testing.T) {
 	}
 }
 
-func TestPlatformReadHitsTheSealedCacheUntilItIsForgotten(t *testing.T) {
+func TestPlatformReadHitsTheJSONMapUntilItIsForgotten(t *testing.T) {
 	t.Parallel()
 
 	store := newCountingStore()
@@ -266,8 +266,8 @@ func TestPlatformReadHitsTheSealedCacheUntilItIsForgotten(t *testing.T) {
 	if key != "settings:platform:"+groupDepositScan {
 		t.Fatalf("platform key = %s", key)
 	}
-	if cache.ttls[key] != 10*time.Minute || !IsSealed(cache.values[key]) {
-		t.Fatal("platform cache was not sealed for 10 minutes")
+	if cache.ttls[key] != 10*time.Minute || cachedJSONMap(t, cache.values[key])[keyBatchBlocks] != "80" {
+		t.Fatal("platform cache was not a JSON map for 10 minutes")
 	}
 	store.rows[platformStoreKey(groupDepositScan)][keyBatchBlocks] = "40"
 	reads := store.platformReads
@@ -295,6 +295,15 @@ func TestPlatformReadHitsTheSealedCacheUntilItIsForgotten(t *testing.T) {
 	if err != nil || afterForget.BatchBlocks != 15 {
 		t.Fatalf("read after forget = %+v, %v", afterForget, err)
 	}
+}
+
+func cachedJSONMap(t *testing.T, raw string) map[string]string {
+	t.Helper()
+	var decoded map[string]string
+	if err := json.Unmarshal([]byte(raw), &decoded); err != nil || decoded == nil {
+		t.Fatalf("cache payload is not a JSON map: %q", raw)
+	}
+	return decoded
 }
 
 func TestCacheReadFailureKeepsTheDatabaseError(t *testing.T) {
