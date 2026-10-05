@@ -196,9 +196,6 @@ func (ctrl *AccountsController) UpdateAccount(ctx http.Context) http.Response {
 // @Router       /accounts/{accountId}/archive [post]
 func (ctrl *AccountsController) ArchiveAccount(ctx http.Context) http.Response {
 	account := requestctx.MustAccount(ctx)
-	if errResp := controllers.Deny(ctx, policies.AccountArchive(ctx, account.ID, middleware.SessionUserID(ctx))); errResp != nil {
-		return errResp
-	}
 
 	if err := ctrl.accountService.SetStatus(ctx.Context(), account, "archived"); err != nil {
 		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to archive account"})

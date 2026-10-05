@@ -22,6 +22,11 @@ const (
 // it, the same roles mayWriteAccount already allows. Auditor and user do not.
 const PermAccountWrite = models.AccountPermAccountWrite
 
+// PermAccountLifecycle is POST /v1/accounts/{accountId}/archive. Owner holds
+// it, the same role mayChangeAccountLifecycle already allows. Admin, auditor
+// and user do not.
+const PermAccountLifecycle = models.AccountPermAccountLifecycle
+
 // AccountPolicy defines gate abilities for Account resources.
 // Abilities: account.view, account.update, account.delete,
 //

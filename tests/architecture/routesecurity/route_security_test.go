@@ -35,6 +35,7 @@ const (
 	chainSession           = "SessionAuth"
 	chainAccount           = "SessionAuth > AccountContext > TOTPEnrollment"
 	chainAccountWrite      = chainAccount + " > Can(account.write)"
+	chainAccountLifecycle  = chainAccount + " > Can(account.lifecycle)"
 	chainAccountUsers      = chainAccount + " > Can(users.read)"
 	chainAccountUsersWrite = chainAccount + " > Can(users.write)"
 	chainAccountRoles      = chainAccount + " > Can(roles.read)"
@@ -105,7 +106,7 @@ var routeTable = map[string]routeSecurity{
 	"POST /v1/accounts":                                                session(chainSession),
 	"GET|HEAD /v1/accounts/{accountId}":                                session(chainAccount),
 	"PATCH /v1/accounts/{accountId}":                                   session(chainAccountWrite),
-	"POST /v1/accounts/{accountId}/archive":                            session(chainAccount),
+	"POST /v1/accounts/{accountId}/archive":                            session(chainAccountLifecycle),
 	"POST /v1/accounts/{accountId}/freeze":                             session(chainAccount),
 	"GET|HEAD /v1/accounts/{accountId}/activity":                       session(chainAccount),
 	"GET|HEAD /v1/accounts/{accountId}/activity/{id}":                  session(chainAccount),
