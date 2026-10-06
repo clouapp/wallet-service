@@ -11,7 +11,6 @@ import (
 
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/pkg/types"
-	"github.com/macrowallets/waas/tests/feature/support/fixtures"
 )
 
 func TestIntegration_Deliver_DepositConfirmed(t *testing.T) {
@@ -27,7 +26,6 @@ func TestIntegration_Deliver_DepositConfirmed(t *testing.T) {
 		t.Fatal("MARKETS_WEBHOOK_URL is set but MARKETS_WEBHOOK_SECRET, MARKETS_MACRO_ADDRESS, or MARKETS_BITGO_ADDRESS is empty")
 	}
 
-	fixtures.TestDB(t)
 	svc := newTestWebhookSvc()
 	ctx := context.Background()
 

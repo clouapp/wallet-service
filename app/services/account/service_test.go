@@ -5,18 +5,14 @@ import (
 	"testing"
 
 	"github.com/google/uuid"
-	"github.com/goravel/framework/facades"
-	goravelTesting "github.com/goravel/framework/testing"
 	"github.com/stretchr/testify/suite"
 
-	"github.com/macrowallets/waas/app/repositories"
 	accountsvc "github.com/macrowallets/waas/app/services/account"
-	"github.com/macrowallets/waas/tests/feature/support/fixtures"
 )
 
 type AccountServiceTestSuite struct {
 	suite.Suite
-	goravelTesting.TestCase
+	state *memState
 }
 
 func TestService_Account_Service(t *testing.T) {
@@ -24,28 +20,21 @@ func TestService_Account_Service(t *testing.T) {
 }
 
 func (s *AccountServiceTestSuite) SetupTest() {
-	fixtures.TestDB(s.T())
+	s.state = newMemState()
 }
 
-func (s *AccountServiceTestSuite) createUser() uuid.UUID {
-	userID := uuid.New()
-	_, err := facades.Orm().Query().Exec(
-		`INSERT INTO users (id, email, password_hash, status, created_at, updated_at)
-		 VALUES (?, ?, ?, ?, NOW(), NOW())`,
-		userID, "member-"+userID.String()[:8]+"@example.com", "unused", "active",
-	)
-	s.Require().NoError(err)
-	return userID
+func (s *AccountServiceTestSuite) service() *accountsvc.Service {
+	return accountsvc.NewService(accountsvc.Deps{
+		Accounts:    memAccounts{state: s.state},
+		Memberships: memMemberships{state: s.state},
+	})
 }
 
 // TestCreate_Success verifies that Create returns an account with "active" status
-// and creates an owner membership. Requires a live database connection.
+// and creates an owner membership.
 func (s *AccountServiceTestSuite) TestAccountService_Create_Success() {
-	svc := accountsvc.NewService(accountsvc.Deps{
-		Accounts:    repositories.NewAccountRepository(nil),
-		Memberships: repositories.NewAccountUserRepository(nil),
-	})
-	ownerID := s.createUser()
+	svc := s.service()
+	ownerID := uuid.New()
 	ctx := context.Background()
 
 	acc, err := svc.Create(ctx, "Test Account", ownerID)
@@ -61,17 +50,14 @@ func (s *AccountServiceTestSuite) TestAccountService_Create_Success() {
 
 // TestAddUser_Success verifies that AddUser adds a new member to an account.
 func (s *AccountServiceTestSuite) TestAdd_User_Success() {
-	svc := accountsvc.NewService(accountsvc.Deps{
-		Accounts:    repositories.NewAccountRepository(nil),
-		Memberships: repositories.NewAccountUserRepository(nil),
-	})
+	svc := s.service()
 	ctx := context.Background()
-	ownerID := s.createUser()
+	ownerID := uuid.New()
 
 	acc, err := svc.Create(ctx, "Membership Test Account", ownerID)
 	s.Require().NoError(err)
 
-	newUserID := s.createUser()
+	newUserID := uuid.New()
 	err = svc.AddUser(ctx, acc.ID, newUserID, "admin", ownerID)
 	s.Require().NoError(err)
 
@@ -82,17 +68,14 @@ func (s *AccountServiceTestSuite) TestAdd_User_Success() {
 
 // TestAddUser_ReAdd_ClearsDeletedAt verifies that a soft-deleted member can be re-added.
 func (s *AccountServiceTestSuite) TestAddUser_ReAdd_ClearsDeletedAt() {
-	svc := accountsvc.NewService(accountsvc.Deps{
-		Accounts:    repositories.NewAccountRepository(nil),
-		Memberships: repositories.NewAccountUserRepository(nil),
-	})
+	svc := s.service()
 	ctx := context.Background()
-	ownerID := s.createUser()
+	ownerID := uuid.New()
 
 	acc, err := svc.Create(ctx, "ReAdd Test Account", ownerID)
 	s.Require().NoError(err)
 
-	userID := s.createUser()
+	userID := uuid.New()
 	err = svc.AddUser(ctx, acc.ID, userID, "auditor", ownerID)
 	s.Require().NoError(err)
 
@@ -113,13 +96,10 @@ func (s *AccountServiceTestSuite) TestAddUser_ReAdd_ClearsDeletedAt() {
 // TestIsolation_UserCannotAccessOtherAccount verifies that GetUserRole returns empty
 // string when a user has no membership in the queried account.
 func (s *AccountServiceTestSuite) TestIsolation_User_CannotAccessOtherAccount() {
-	svc := accountsvc.NewService(accountsvc.Deps{
-		Accounts:    repositories.NewAccountRepository(nil),
-		Memberships: repositories.NewAccountUserRepository(nil),
-	})
+	svc := s.service()
 	ctx := context.Background()
-	ownerA := s.createUser()
-	ownerB := s.createUser()
+	ownerA := uuid.New()
+	ownerB := uuid.New()
 
 	accA, err := svc.Create(ctx, "Account A", ownerA)
 	s.Require().NoError(err)
@@ -127,7 +107,6 @@ func (s *AccountServiceTestSuite) TestIsolation_User_CannotAccessOtherAccount() 
 	_, err = svc.Create(ctx, "Account B", ownerB)
 	s.Require().NoError(err)
 
-	// ownerB should have no role in accA
 	role, err := svc.GetUserRole(ctx, accA.ID, ownerB)
 	s.Require().NoError(err)
 	s.Equal("", role)

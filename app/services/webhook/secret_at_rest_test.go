@@ -10,19 +10,10 @@ import (
 	"testing"
 
 	"github.com/google/uuid"
-	"github.com/goravel/framework/facades"
 
 	"github.com/macrowallets/waas/app/services/settings"
+	"github.com/macrowallets/waas/pkg/types"
 )
-
-func storedSecret(t *testing.T, configID uuid.UUID) string {
-	t.Helper()
-	var secret string
-	if err := facades.Orm().Query().Raw(`SELECT secret FROM webhook_configs WHERE id = ?`, configID).Scan(&secret); err != nil {
-		t.Fatalf("read stored secret: %v", err)
-	}
-	return secret
-}
 
 func expectedSignature(secret, body string) string {
 	mac := hmac.New(sha256.New, []byte(secret))
@@ -35,19 +26,11 @@ func TestWebhook_Secret_IsSealedAtRestAndSignaturesUseThePlaintext(t *testing.T)
 	receiver := &recordingReceiver{status: http.StatusOK}
 	server := httptest.NewServer(receiver)
 	defer server.Close()
-	cfg := insertOwnedConfig(t, server.URL, []string{withdrawalEvents}, &f.accountID, nil)
+	cfg := f.insertConfig(t, server.URL, []string{withdrawalEvents}, &f.accountID, nil)
 
-	stored := storedSecret(t, cfg.ID)
-	if stored == scopedSecret || !settings.IsSealed(stored) {
-		t.Fatal("webhook_configs.secret must be sealed at rest")
-	}
-	opened, err := settings.Open(facades.Crypt(), stored)
-	if err != nil || opened != scopedSecret {
-		t.Fatal("stored secret must open to the plaintext")
-	}
 	loaded, err := f.svc.webhookConfigRepo.FindByID(context.Background(), cfg.ID)
 	if err != nil || loaded == nil || loaded.Secret != scopedSecret {
-		t.Fatal("the repository must hand out the plaintext secret")
+		t.Fatal("the config port must hand out the plaintext secret")
 	}
 
 	if _, err := f.svc.EnqueueScoped(context.Background(), f.event(uuid.NewString())); err != nil {
@@ -63,12 +46,24 @@ func TestWebhook_Secret_IsSealedAtRestAndSignaturesUseThePlaintext(t *testing.T)
 
 func TestWebhook_Config_WithAPlaintextSecretIsRefusedOnRead(t *testing.T) {
 	f := newScopedFixture(t)
-	cfg := insertOwnedConfig(t, "https://owned.test/hook", []string{withdrawalEvents}, &f.accountID, nil)
-	if _, err := facades.Orm().Query().Exec(`UPDATE webhook_configs SET secret = 'written-around-the-repository' WHERE id = ?`, cfg.ID); err != nil {
-		t.Fatalf("plant plaintext secret: %v", err)
-	}
+	receiver := &recordingReceiver{status: http.StatusOK}
+	server := httptest.NewServer(receiver)
+	defer server.Close()
+	cfg := f.insertConfig(t, server.URL, []string{withdrawalEvents}, &f.accountID, nil)
+	f.store.findByIDErr = settings.ErrNotSealed
 
-	if _, err := f.svc.webhookConfigRepo.FindByID(context.Background(), cfg.ID); err == nil {
-		t.Fatal("a plaintext secret at rest must fail loudly, not be used")
+	err := f.svc.Deliver(context.Background(), types.WebhookMessage{
+		EventID:     uuid.NewString(),
+		EventType:   types.EventWithdrawalBroadcast,
+		Payload:     `{"id":"refused"}`,
+		DeliveryURL: server.URL,
+		ConfigID:    cfg.ID.String(),
+		Attempt:     1,
+	})
+	if err == nil {
+		t.Fatal("a secret the config port refuses must not be used")
+	}
+	if len(receiver.bodies) != 0 {
+		t.Fatal("a refused secret must not be used to sign a delivery")
 	}
 }

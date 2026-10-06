@@ -2,32 +2,35 @@ package apitoken_test
 
 import (
 	"context"
+	"sync"
 	"testing"
 	"time"
 
-	"github.com/redis/go-redis/v9"
-
 	"github.com/macrowallets/waas/app/services/apitoken"
-	"github.com/macrowallets/waas/tests/feature/support/testutil"
 )
 
-type redisDailyCounter struct{ client *redis.Client }
-
-func (c redisDailyCounter) IncrByFloat(ctx context.Context, key string, value float64) (float64, error) {
-	return c.client.IncrByFloat(ctx, key, value).Result()
+type memDailyCounter struct {
+	mu   sync.Mutex
+	vals map[string]float64
 }
 
-func (c redisDailyCounter) Expire(ctx context.Context, key string, ttl time.Duration) error {
-	return c.client.Expire(ctx, key, ttl).Err()
+func (c *memDailyCounter) IncrByFloat(_ context.Context, key string, value float64) (float64, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.vals == nil {
+		c.vals = map[string]float64{}
+	}
+	c.vals[key] += value
+	return c.vals[key], nil
 }
+
+func (c *memDailyCounter) Expire(context.Context, string, time.Duration) error { return nil }
 
 func TestReserve_Daily_USDUsesANamespacedCounter(t *testing.T) {
-	client := testutil.TestRedis(t)
-	prefix := testutil.TestRedisPrefix(t, client)
-	key := prefix + time.Now().UTC().Format("2006-01-02")
+	key := "apitoken:" + time.Now().UTC().Format("2006-01-02")
 	ctx := context.Background()
 
-	counter := redisDailyCounter{client: client}
+	counter := &memDailyCounter{}
 	if err := apitoken.ReserveDailyUSD(ctx, counter, key, `{"daily_usd":10}`, "usdt", "4"); err != nil {
 		t.Fatal(err)
 	}

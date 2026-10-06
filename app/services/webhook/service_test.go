@@ -10,21 +10,16 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/goravel/framework/facades"
 	"github.com/stretchr/testify/mock"
 
 	"github.com/macrowallets/waas/app/models"
-	"github.com/macrowallets/waas/app/repositories"
 	"github.com/macrowallets/waas/pkg/httpclient"
 	"github.com/macrowallets/waas/pkg/types"
-	"github.com/macrowallets/waas/tests/feature/support/fixtures"
-	"github.com/macrowallets/waas/tests/feature/support/testutil"
 	"github.com/macrowallets/waas/tests/mocks"
 )
 
@@ -58,24 +53,8 @@ func (testHTTPDelivery) Post(ctx context.Context, call SignedDelivery) (httpclie
 	})
 }
 
-func TestMain(m *testing.M) {
-	// Boot Goravel once for all tests in this package
-	testutil.BootTest()
-	os.Exit(m.Run())
-}
-
-func newTestWebhookSvc() *Service {
-	return NewService(Deps{
-		Configs: repositories.NewWebhookConfigRepository(repositories.WebhookConfigRepositoryDeps{
-			Cipher: facades.Crypt(),
-		}),
-		Events: repositories.NewWebhookEventRepository(nil),
-	})
-}
-
 func TestService_Create_Config(t *testing.T) {
-	fixtures.TestDB(t)
-	svc := newTestWebhookSvc()
+	svc, _ := newMemoryWebhookService()
 	ctx := context.Background()
 
 	cfg, err := svc.CreateConfig(ctx, "https://example.com/webhook", "secret123", []string{"deposit.confirmed", "withdrawal.confirmed"}, nil)
@@ -91,8 +70,7 @@ func TestService_Create_Config(t *testing.T) {
 }
 
 func TestService_List_Configs(t *testing.T) {
-	fixtures.TestDB(t)
-	svc := newTestWebhookSvc()
+	svc, _ := newMemoryWebhookService()
 	ctx := context.Background()
 
 	svc.CreateConfig(ctx, "https://a.com/wh", "s1", []string{"deposit.confirmed"}, nil)
@@ -108,8 +86,7 @@ func TestService_List_Configs(t *testing.T) {
 }
 
 func TestService_Delete_Config(t *testing.T) {
-	fixtures.TestDB(t)
-	svc := newTestWebhookSvc()
+	svc, _ := newMemoryWebhookService()
 	ctx := context.Background()
 
 	cfg, _ := svc.CreateConfig(ctx, "https://del.com/wh", "s", []string{"deposit.confirmed"}, nil)
@@ -124,11 +101,9 @@ func TestService_Delete_Config(t *testing.T) {
 }
 
 func TestService_Deliver_Success(t *testing.T) {
-	fixtures.TestDB(t)
-	svc := newTestWebhookSvc()
+	svc, store := newMemoryWebhookService()
 	ctx := context.Background()
 
-	// Setup test HTTP server
 	var receivedBody string
 	var receivedSig string
 	var receivedEvent string
@@ -141,16 +116,15 @@ func TestService_Deliver_Success(t *testing.T) {
 	}))
 	defer server.Close()
 
-	// Create webhook config + dummy transaction
-	w := fixtures.InsertWallet(t, "eth")
-	tx := fixtures.InsertTransaction(t, w.ID, nil, "eth", "deposit", "confirmed", "eth", "100", 50)
-
-	// Insert webhook event manually
 	payload := `{"type":"deposit.confirmed","data":{"amount":"100"}}`
-	eventID := uuid.NewString()
-	facades.Orm().Query().Exec(`INSERT INTO webhook_events (id, transaction_id, event_type, payload, delivery_url, delivery_status, attempts, max_attempts, created_at)
-		VALUES ($1, $2, 'deposit.confirmed', $3, $4, 'pending', 0, 10, NOW())`,
-		eventID, tx.ID, payload, server.URL)
+	eventID := uuid.New()
+	txID := uuid.New()
+	if err := store.addEvent(&models.WebhookEvent{
+		ID: eventID, TransactionID: &txID, EventType: "deposit.confirmed", Payload: payload,
+		DeliveryURL: server.URL, DeliveryStatus: "pending", MaxAttempts: 10,
+	}); err != nil {
+		t.Fatal(err)
+	}
 
 	secret := "test-secret"
 	cfg, err := svc.CreateConfig(ctx, server.URL, secret, []string{"deposit.confirmed"}, nil)
@@ -158,7 +132,7 @@ func TestService_Deliver_Success(t *testing.T) {
 		t.Fatalf("CreateConfig: %v", err)
 	}
 	msg := types.WebhookMessage{
-		EventID:     eventID,
+		EventID:     eventID.String(),
 		EventType:   types.EventDepositConfirmed,
 		Payload:     payload,
 		DeliveryURL: server.URL,
@@ -171,17 +145,13 @@ func TestService_Deliver_Success(t *testing.T) {
 		t.Fatalf("Deliver: %v", err)
 	}
 
-	// Verify payload received
 	if receivedBody != payload {
 		t.Errorf("payload mismatch: %s", receivedBody)
 	}
-
-	// Verify event header
 	if receivedEvent != "deposit.confirmed" {
 		t.Errorf("expected deposit.confirmed, got %s", receivedEvent)
 	}
 
-	// Verify HMAC signature
 	mac := hmac.New(sha256.New, []byte(secret))
 	mac.Write([]byte(payload))
 	expectedSig := hex.EncodeToString(mac.Sum(nil))
@@ -189,19 +159,14 @@ func TestService_Deliver_Success(t *testing.T) {
 		t.Errorf("HMAC mismatch: got %s, want %s", receivedSig, expectedSig)
 	}
 
-	// Verify status updated in DB
-	var event models.WebhookEvent
-	if err := facades.Orm().Query().Where("id", eventID).First(&event); err != nil {
-		t.Fatalf("find webhook event: %v", err)
-	}
+	event := store.listEvents()[0]
 	if event.DeliveryStatus != "delivered" {
 		t.Errorf("expected delivered status, got %s", event.DeliveryStatus)
 	}
 }
 
 func TestDeliver_Redelivery_DoesNotSend(t *testing.T) {
-	fixtures.TestDB(t)
-	svc := newTestWebhookSvc()
+	svc, store := newMemoryWebhookService()
 	ctx := context.Background()
 
 	var posts int
@@ -211,20 +176,22 @@ func TestDeliver_Redelivery_DoesNotSend(t *testing.T) {
 	}))
 	defer server.Close()
 
-	w := fixtures.InsertWallet(t, "eth")
-	tx := fixtures.InsertTransaction(t, w.ID, nil, "eth", "deposit", "confirmed", "eth", "100", 50)
 	payload := `{"type":"deposit.confirmed","data":{"amount":"100"}}`
-	eventID := uuid.NewString()
-	facades.Orm().Query().Exec(`INSERT INTO webhook_events (id, transaction_id, event_type, payload, delivery_url, delivery_status, attempts, max_attempts, created_at)
-		VALUES ($1, $2, 'deposit.confirmed', $3, $4, 'pending', 0, 10, NOW())`,
-		eventID, tx.ID, payload, server.URL)
+	eventID := uuid.New()
+	txID := uuid.New()
+	if err := store.addEvent(&models.WebhookEvent{
+		ID: eventID, TransactionID: &txID, EventType: "deposit.confirmed", Payload: payload,
+		DeliveryURL: server.URL, DeliveryStatus: "pending", MaxAttempts: 10,
+	}); err != nil {
+		t.Fatal(err)
+	}
 
 	cfg, err := svc.CreateConfig(ctx, server.URL, "redelivery-secret", []string{"deposit.confirmed"}, nil)
 	if err != nil {
 		t.Fatalf("CreateConfig: %v", err)
 	}
 	msg := types.WebhookMessage{
-		EventID:     eventID,
+		EventID:     eventID.String(),
 		EventType:   types.EventDepositConfirmed,
 		Payload:     payload,
 		DeliveryURL: server.URL,
@@ -242,10 +209,7 @@ func TestDeliver_Redelivery_DoesNotSend(t *testing.T) {
 		t.Fatalf("redelivery posted %d times, want 1", posts)
 	}
 
-	var event models.WebhookEvent
-	if err := facades.Orm().Query().Where("id", eventID).First(&event); err != nil {
-		t.Fatalf("find webhook event: %v", err)
-	}
+	event := store.listEvents()[0]
 	if event.DeliveryStatus != models.WebhookDeliveryDelivered {
 		t.Fatalf("status = %s, want delivered", event.DeliveryStatus)
 	}
@@ -255,30 +219,29 @@ func TestDeliver_Redelivery_DoesNotSend(t *testing.T) {
 }
 
 func TestService_Deliver_Failure(t *testing.T) {
-	fixtures.TestDB(t)
-	svc := newTestWebhookSvc()
+	svc, store := newMemoryWebhookService()
 	ctx := context.Background()
 
-	// Server that returns 500
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
 	}))
 	defer server.Close()
 
-	w := fixtures.InsertWallet(t, "eth")
-	tx := fixtures.InsertTransaction(t, w.ID, nil, "eth", "deposit", "confirmed", "eth", "100", 50)
-
-	eventID := uuid.NewString()
-	facades.Orm().Query().Exec(`INSERT INTO webhook_events (id, transaction_id, event_type, payload, delivery_url, delivery_status, attempts, max_attempts, created_at)
-		VALUES ($1, $2, 'deposit.confirmed', '{}', $3, 'pending', 0, 10, NOW())`,
-		eventID, tx.ID, server.URL)
+	eventID := uuid.New()
+	txID := uuid.New()
+	if err := store.addEvent(&models.WebhookEvent{
+		ID: eventID, TransactionID: &txID, EventType: "deposit.confirmed", Payload: "{}",
+		DeliveryURL: server.URL, DeliveryStatus: "pending", MaxAttempts: 10,
+	}); err != nil {
+		t.Fatal(err)
+	}
 
 	cfg, err := svc.CreateConfig(ctx, server.URL, "s", []string{"deposit.confirmed"}, nil)
 	if err != nil {
 		t.Fatalf("CreateConfig: %v", err)
 	}
 	msg := types.WebhookMessage{
-		EventID: eventID, Payload: "{}", DeliveryURL: server.URL, ConfigID: cfg.ID.String(), Attempt: 1,
+		EventID: eventID.String(), Payload: "{}", DeliveryURL: server.URL, ConfigID: cfg.ID.String(), Attempt: 1,
 	}
 
 	err = svc.Deliver(ctx, msg)
@@ -286,35 +249,22 @@ func TestService_Deliver_Failure(t *testing.T) {
 		t.Fatal("expected error for 500 response")
 	}
 
-	// Verify attempt incremented
-	var event models.WebhookEvent
-	if err := facades.Orm().Query().Where("id", eventID).First(&event); err != nil {
-		t.Fatalf("find webhook event: %v", err)
-	}
+	event := store.listEvents()[0]
 	if event.Attempts != 1 {
 		t.Errorf("expected attempts=1, got %d", event.Attempts)
 	}
 }
 
 func TestService_Deliver_Unreachable(t *testing.T) {
-	fixtures.TestDB(t)
-	svc := newTestWebhookSvc()
+	svc, _ := newMemoryWebhookService()
 	ctx := context.Background()
-
-	w := fixtures.InsertWallet(t, "eth")
-	tx := fixtures.InsertTransaction(t, w.ID, nil, "eth", "deposit", "confirmed", "eth", "100", 50)
-
-	eventID := "evt-unreach-123"
-	facades.Orm().Query().Exec(`INSERT INTO webhook_events (id, transaction_id, event_type, payload, delivery_url, delivery_status, attempts, max_attempts, created_at)
-		VALUES ($1, $2, 'deposit.confirmed', '{}', 'http://localhost:1/nope', 'pending', 0, 10, NOW())`,
-		eventID, tx.ID)
 
 	cfg, err := svc.CreateConfig(ctx, "http://localhost:1/nope", "s", []string{"deposit.confirmed"}, nil)
 	if err != nil {
 		t.Fatalf("CreateConfig: %v", err)
 	}
 	msg := types.WebhookMessage{
-		EventID: eventID, Payload: "{}", DeliveryURL: "http://localhost:1/nope", ConfigID: cfg.ID.String(),
+		EventID: uuid.NewString(), Payload: "{}", DeliveryURL: "http://localhost:1/nope", ConfigID: cfg.ID.String(),
 	}
 
 	err = svc.Deliver(ctx, msg)
@@ -324,7 +274,6 @@ func TestService_Deliver_Unreachable(t *testing.T) {
 }
 
 func TestEnqueue_Event_QueuePayloadCarriesNoSecret(t *testing.T) {
-	fixtures.TestDB(t)
 	ctx := context.Background()
 	const secret = "queue-payload-must-not-carry-this-secret"
 	var messages []types.WebhookMessage
@@ -332,26 +281,24 @@ func TestEnqueue_Event_QueuePayloadCarriesNoSecret(t *testing.T) {
 	sender.EXPECT().SendWebhook(mock.Anything, mock.Anything).Run(func(_ context.Context, msg types.WebhookMessage) {
 		messages = append(messages, msg)
 	}).Return(nil).Maybe()
+	store := newMemoryWebhook()
 	svc := NewService(Deps{
-		SQS: sender,
-		Configs: repositories.NewWebhookConfigRepository(repositories.WebhookConfigRepositoryDeps{
-			Cipher: facades.Crypt(),
-		}),
-		Events: repositories.NewWebhookEventRepository(nil),
+		SQS:     sender,
+		Configs: store,
+		Events:  memoryEvents{store: store},
 	})
 	events := []string{string(types.EventDepositPending), string(types.EventWithdrawalBroadcasting)}
 	cfg, err := svc.CreateConfig(ctx, "https://example.com/hook", secret, events, nil)
 	if err != nil {
 		t.Fatalf("CreateConfig: %v", err)
 	}
-	w := fixtures.InsertWallet(t, "eth")
-	tx := fixtures.InsertTransaction(t, w.ID, nil, "eth", "deposit", "pending", "eth", "100", 50)
+	tx := models.Transaction{ID: uuid.New(), WalletID: uuid.New(), Chain: "eth", TxType: "deposit", Status: "pending", Asset: "eth", Amount: "100"}
 
 	svc.EnqueueEvent(ctx, tx.ID, types.EventDepositPending, map[string]string{"test": "data"})
 	if _, err := svc.EnqueueScoped(ctx, ScopedEvent{
 		EventType: types.EventDepositPending,
 		SubjectID: uuid.NewString(),
-		WalletID:  w.ID,
+		WalletID:  tx.WalletID,
 		Data:      map[string]string{"test": "data"},
 	}); err != nil {
 		t.Fatalf("EnqueueScoped: %v", err)
@@ -400,21 +347,12 @@ func TestService_Pg_Array(t *testing.T) {
 }
 
 func TestEnqueue_Event_NoConfigs(t *testing.T) {
-	fixtures.TestDB(t)
-	svc := newTestWebhookSvc()
+	svc, store := newMemoryWebhookService()
+	txID := uuid.New()
 
-	// Insert a wallet + transaction for FK
-	w := fixtures.InsertWallet(t, "eth")
-	tx := fixtures.InsertTransaction(t, w.ID, nil, "eth", "deposit", "pending", "eth", "100", 50)
+	svc.EnqueueEvent(context.Background(), txID, types.EventDepositPending, map[string]string{"test": "data"})
 
-	// Should not panic with no webhook configs
-	svc.EnqueueEvent(context.Background(), tx.ID, types.EventDepositPending, map[string]string{"test": "data"})
-
-	count, err := facades.Orm().Query().Model(&models.WebhookEvent{}).Count()
-	if err != nil {
-		t.Fatalf("count query: %v", err)
-	}
-	if count != 0 {
+	if count := len(store.listEvents()); count != 0 {
 		t.Errorf("expected 0 events with no configs, got %d", count)
 	}
 }

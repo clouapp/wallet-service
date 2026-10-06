@@ -12,13 +12,12 @@ import (
 	"net/http/httptest"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
-	"github.com/goravel/framework/facades"
 
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/pkg/types"
-	"github.com/macrowallets/waas/tests/feature/support/fixtures"
 )
 
 const (
@@ -29,16 +28,20 @@ const (
 
 type scopedFixture struct {
 	svc       *Service
+	store     *memoryWebhook
 	accountID uuid.UUID
 	wallet    models.Wallet
 }
 
 func newScopedFixture(t *testing.T) scopedFixture {
 	t.Helper()
-	fixtures.TestDB(t)
-	account := fixtures.InsertAccount(t, "scoped account")
-	wallet := fixtures.InsertWalletWithAccount(t, "eth", &account.ID)
-	return scopedFixture{svc: newTestWebhookSvc(), accountID: account.ID, wallet: wallet}
+	svc, store := newMemoryWebhookService()
+	return scopedFixture{
+		svc:       svc,
+		store:     store,
+		accountID: uuid.New(),
+		wallet:    models.Wallet{ID: uuid.New(), Chain: "eth"},
+	}
 }
 
 func (f scopedFixture) event(subjectID string) ScopedEvent {
@@ -52,31 +55,38 @@ func (f scopedFixture) event(subjectID string) ScopedEvent {
 	}
 }
 
-func insertOwnedConfig(t *testing.T, url string, events []string, accountID, walletID *uuid.UUID) models.WebhookConfig {
+func (f scopedFixture) insertConfig(t *testing.T, url string, events []string, accountID, walletID *uuid.UUID) models.WebhookConfig {
 	t.Helper()
-	return fixtures.InsertScopedWebhookConfig(t, url, scopedSecret, events, accountID, walletID)
+	cfg := &models.WebhookConfig{
+		ID:        uuid.New(),
+		URL:       url,
+		Secret:    scopedSecret,
+		Events:    pgArray(events),
+		IsActive:  true,
+		AccountID: accountID,
+		WalletID:  walletID,
+	}
+	if err := f.store.Create(context.Background(), cfg); err != nil {
+		t.Fatal(err)
+	}
+	return *cfg
 }
 
-func storedEvents(t *testing.T) []models.WebhookEvent {
-	t.Helper()
-	var events []models.WebhookEvent
-	if err := facades.Orm().Query().Order("created_at").Find(&events); err != nil {
-		t.Fatalf("load webhook events: %v", err)
-	}
-	return events
+func (f scopedFixture) storedEvents() []models.WebhookEvent {
+	return f.store.listEvents()
 }
 
 func TestEnqueue_Scoped_DeliversOnlyToConfigsThatCanSeeTheWallet(t *testing.T) {
 	f := newScopedFixture(t)
-	otherAccount := fixtures.InsertAccount(t, "other account")
-	otherWallet := fixtures.InsertWallet(t, "eth")
+	otherAccountID := uuid.New()
+	otherWallet := models.Wallet{ID: uuid.New(), Chain: "eth"}
 
-	legacy := insertOwnedConfig(t, "https://legacy.test/hook", []string{withdrawalEvents}, nil, nil)
-	owned := insertOwnedConfig(t, "https://owned.test/hook", []string{withdrawalEvents}, &f.accountID, nil)
-	walletScoped := insertOwnedConfig(t, "https://wallet.test/hook", []string{withdrawalEvents}, nil, &f.wallet.ID)
-	insertOwnedConfig(t, "https://other-account.test/hook", []string{withdrawalEvents}, &otherAccount.ID, nil)
-	insertOwnedConfig(t, "https://other-wallet.test/hook", []string{withdrawalEvents}, nil, &otherWallet.ID)
-	insertOwnedConfig(t, "https://deposits-only.test/hook", []string{"deposit.confirmed"}, &f.accountID, nil)
+	legacy := f.insertConfig(t, "https://legacy.test/hook", []string{withdrawalEvents}, nil, nil)
+	owned := f.insertConfig(t, "https://owned.test/hook", []string{withdrawalEvents}, &f.accountID, nil)
+	walletScoped := f.insertConfig(t, "https://wallet.test/hook", []string{withdrawalEvents}, nil, &f.wallet.ID)
+	f.insertConfig(t, "https://other-account.test/hook", []string{withdrawalEvents}, &otherAccountID, nil)
+	f.insertConfig(t, "https://other-wallet.test/hook", []string{withdrawalEvents}, nil, &otherWallet.ID)
+	f.insertConfig(t, "https://deposits-only.test/hook", []string{"deposit.confirmed"}, &f.accountID, nil)
 
 	enqueued, err := f.svc.EnqueueScoped(context.Background(), f.event(uuid.NewString()))
 	if err != nil {
@@ -87,7 +97,7 @@ func TestEnqueue_Scoped_DeliversOnlyToConfigsThatCanSeeTheWallet(t *testing.T) {
 	}
 
 	got := map[uuid.UUID]bool{}
-	for _, event := range storedEvents(t) {
+	for _, event := range f.storedEvents() {
 		if event.WebhookConfigID == nil || event.SubjectID == nil {
 			t.Fatalf("event %s must record its config and subject", event.ID)
 		}
@@ -102,7 +112,7 @@ func TestEnqueue_Scoped_DeliversOnlyToConfigsThatCanSeeTheWallet(t *testing.T) {
 
 func TestEnqueue_Scoped_SameSubjectIsEnqueuedOncePerConfig(t *testing.T) {
 	f := newScopedFixture(t)
-	insertOwnedConfig(t, "https://owned.test/hook", []string{withdrawalEvents}, &f.accountID, nil)
+	f.insertConfig(t, "https://owned.test/hook", []string{withdrawalEvents}, &f.accountID, nil)
 	subject := uuid.NewString()
 
 	first, err := f.svc.EnqueueScoped(context.Background(), f.event(subject))
@@ -113,15 +123,15 @@ func TestEnqueue_Scoped_SameSubjectIsEnqueuedOncePerConfig(t *testing.T) {
 	if err != nil || second != 0 {
 		t.Fatalf("second enqueue = %d, %v; want 0 (deduplicated)", second, err)
 	}
-	if n := len(storedEvents(t)); n != 1 {
+	if n := len(f.storedEvents()); n != 1 {
 		t.Fatalf("stored events = %d, want 1", n)
 	}
 
 	var payload map[string]any
-	if err := json.Unmarshal([]byte(storedEvents(t)[0].Payload), &payload); err != nil {
+	if err := json.Unmarshal([]byte(f.storedEvents()[0].Payload), &payload); err != nil {
 		t.Fatalf("payload json: %v", err)
 	}
-	if payload["id"] != storedEvents(t)[0].ID.String() || payload["type"] != withdrawalEvents {
+	if payload["id"] != f.storedEvents()[0].ID.String() || payload["type"] != withdrawalEvents {
 		t.Fatalf("payload envelope = %+v", payload)
 	}
 }
@@ -162,7 +172,7 @@ func TestDeliver_Pending_SignsAndMarksDelivered(t *testing.T) {
 	receiver := &recordingReceiver{status: http.StatusOK}
 	server := httptest.NewServer(receiver)
 	defer server.Close()
-	insertOwnedConfig(t, server.URL, []string{withdrawalEvents}, &f.accountID, nil)
+	f.insertConfig(t, server.URL, []string{withdrawalEvents}, &f.accountID, nil)
 
 	if _, err := f.svc.EnqueueScoped(context.Background(), f.event(uuid.NewString())); err != nil {
 		t.Fatalf("EnqueueScoped: %v", err)
@@ -180,7 +190,7 @@ func TestDeliver_Pending_SignsAndMarksDelivered(t *testing.T) {
 	if receiver.eventTypes[0] != withdrawalEvents {
 		t.Fatalf("X-Vault-Event = %s", receiver.eventTypes[0])
 	}
-	if stored := storedEvents(t)[0]; stored.DeliveryStatus != models.WebhookDeliveryDelivered {
+	if stored := f.storedEvents()[0]; stored.DeliveryStatus != models.WebhookDeliveryDelivered {
 		t.Fatalf("delivery status = %s", stored.DeliveryStatus)
 	}
 
@@ -195,7 +205,7 @@ func TestDeliver_Pending_BacksOffAfterAFailureAndGivesUpAtMaxAttempts(t *testing
 	receiver := &recordingReceiver{status: http.StatusServiceUnavailable}
 	server := httptest.NewServer(receiver)
 	defer server.Close()
-	insertOwnedConfig(t, server.URL, []string{withdrawalEvents}, &f.accountID, nil)
+	f.insertConfig(t, server.URL, []string{withdrawalEvents}, &f.accountID, nil)
 
 	if _, err := f.svc.EnqueueScoped(context.Background(), f.event(uuid.NewString())); err != nil {
 		t.Fatalf("EnqueueScoped: %v", err)
@@ -207,21 +217,16 @@ func TestDeliver_Pending_BacksOffAfterAFailureAndGivesUpAtMaxAttempts(t *testing
 		t.Fatalf("the retry must wait for the backoff, got %d sends", len(receiver.bodies))
 	}
 
-	stored := storedEvents(t)[0]
+	stored := f.storedEvents()[0]
 	if stored.Attempts != 1 || stored.DeliveryStatus != models.WebhookDeliveryPending || stored.LastError == "" {
 		t.Fatalf("after one failure: attempts=%d status=%s error=%q", stored.Attempts, stored.DeliveryStatus, stored.LastError)
 	}
 
-	if _, err := facades.Orm().Query().Exec(
-		"UPDATE webhook_events SET attempts = max_attempts - 1, updated_at = (NOW() AT TIME ZONE 'UTC') - interval '1 day' WHERE id = ?",
-		stored.ID,
-	); err != nil {
-		t.Fatalf("age event: %v", err)
-	}
+	f.store.age(stored.ID, stored.MaxAttempts-1, time.Now().UTC().Add(-24*time.Hour))
 	if _, err := f.svc.DeliverPending(context.Background(), deliveryBatchSize); err != nil {
 		t.Fatalf("DeliverPending: %v", err)
 	}
-	stored = storedEvents(t)[0]
+	stored = f.storedEvents()[0]
 	if stored.DeliveryStatus != models.WebhookDeliveryFailed || stored.Attempts != stored.MaxAttempts {
 		t.Fatalf("after the last attempt: attempts=%d/%d status=%s", stored.Attempts, stored.MaxAttempts, stored.DeliveryStatus)
 	}
@@ -232,18 +237,16 @@ func TestDeliver_Pending_FailsEventsOfInactiveConfigs(t *testing.T) {
 	receiver := &recordingReceiver{status: http.StatusOK}
 	server := httptest.NewServer(receiver)
 	defer server.Close()
-	cfg := insertOwnedConfig(t, server.URL, []string{withdrawalEvents}, &f.accountID, nil)
+	cfg := f.insertConfig(t, server.URL, []string{withdrawalEvents}, &f.accountID, nil)
 
 	if _, err := f.svc.EnqueueScoped(context.Background(), f.event(uuid.NewString())); err != nil {
 		t.Fatalf("EnqueueScoped: %v", err)
 	}
-	if _, err := facades.Orm().Query().Model(&models.WebhookConfig{}).Where("id = ?", cfg.ID).Update("is_active", false); err != nil {
-		t.Fatalf("deactivate config: %v", err)
-	}
+	f.store.setActive(cfg.ID, false)
 	if _, err := f.svc.DeliverPending(context.Background(), deliveryBatchSize); err != nil {
 		t.Fatalf("DeliverPending: %v", err)
 	}
-	if len(receiver.bodies) != 0 || storedEvents(t)[0].DeliveryStatus != models.WebhookDeliveryFailed {
+	if len(receiver.bodies) != 0 || f.storedEvents()[0].DeliveryStatus != models.WebhookDeliveryFailed {
 		t.Fatal("events of an inactive config must fail without being sent")
 	}
 }
@@ -251,10 +254,10 @@ func TestDeliver_Pending_FailsEventsOfInactiveConfigs(t *testing.T) {
 func TestUpdate_AccountConfig_OwnershipAndClaim(t *testing.T) {
 	f := newScopedFixture(t)
 	ctx := context.Background()
-	otherAccount := fixtures.InsertAccount(t, "other account")
+	otherAccountID := uuid.New()
 	newEvents := []string{"deposit.confirmed", "withdrawal.broadcast", "withdrawal.confirmed", "withdrawal.failed"}
 
-	owned := insertOwnedConfig(t, "https://owned.test/hook", []string{"deposit.confirmed"}, &f.accountID, nil)
+	owned := f.insertConfig(t, "https://owned.test/hook", []string{"deposit.confirmed"}, &f.accountID, nil)
 	updated, err := f.svc.UpdateAccountConfig(ctx, f.accountID, owned.ID, ConfigUpdate{Events: newEvents})
 	if err != nil {
 		t.Fatalf("update owned config: %v", err)
@@ -265,11 +268,11 @@ func TestUpdate_AccountConfig_OwnershipAndClaim(t *testing.T) {
 		}
 	}
 
-	if _, err := f.svc.UpdateAccountConfig(ctx, otherAccount.ID, owned.ID, ConfigUpdate{Events: newEvents}); !errors.Is(err, ErrWebhookConfigNotFound) {
+	if _, err := f.svc.UpdateAccountConfig(ctx, otherAccountID, owned.ID, ConfigUpdate{Events: newEvents}); !errors.Is(err, ErrWebhookConfigNotFound) {
 		t.Fatalf("another account must not see the config, got %v", err)
 	}
 
-	legacy := insertOwnedConfig(t, "https://legacy.test/hook", []string{"deposit.confirmed"}, nil, nil)
+	legacy := f.insertConfig(t, "https://legacy.test/hook", []string{"deposit.confirmed"}, nil, nil)
 	if _, err := f.svc.UpdateAccountConfig(ctx, f.accountID, legacy.ID, ConfigUpdate{Events: newEvents, Secret: "wrong"}); !errors.Is(err, ErrWebhookOwnershipNotProven) {
 		t.Fatalf("a legacy config needs its secret, got %v", err)
 	}
@@ -280,11 +283,11 @@ func TestUpdate_AccountConfig_OwnershipAndClaim(t *testing.T) {
 	if claimed.AccountID == nil || *claimed.AccountID != f.accountID {
 		t.Fatalf("legacy config must now belong to the account, got %v", claimed.AccountID)
 	}
-	if _, err := f.svc.UpdateAccountConfig(ctx, otherAccount.ID, legacy.ID, ConfigUpdate{Events: newEvents, Secret: scopedSecret}); !errors.Is(err, ErrWebhookConfigNotFound) {
+	if _, err := f.svc.UpdateAccountConfig(ctx, otherAccountID, legacy.ID, ConfigUpdate{Events: newEvents, Secret: scopedSecret}); !errors.Is(err, ErrWebhookConfigNotFound) {
 		t.Fatalf("a claimed config is no longer claimable, got %v", err)
 	}
 
-	walletConfig := insertOwnedConfig(t, "https://wallet.test/hook", []string{"deposit.confirmed"}, nil, &f.wallet.ID)
+	walletConfig := f.insertConfig(t, "https://wallet.test/hook", []string{"deposit.confirmed"}, nil, &f.wallet.ID)
 	if _, err := f.svc.UpdateAccountConfig(ctx, f.accountID, walletConfig.ID, ConfigUpdate{Events: newEvents, Secret: scopedSecret}); !errors.Is(err, ErrWebhookConfigNotFound) {
 		t.Fatalf("wallet configs are managed by the wallet endpoints, got %v", err)
 	}
@@ -293,7 +296,7 @@ func TestUpdate_AccountConfig_OwnershipAndClaim(t *testing.T) {
 func TestUpdate_AccountConfig_ValidatesTheUpdate(t *testing.T) {
 	f := newScopedFixture(t)
 	ctx := context.Background()
-	owned := insertOwnedConfig(t, "https://owned.test/hook", []string{"deposit.confirmed"}, &f.accountID, nil)
+	owned := f.insertConfig(t, "https://owned.test/hook", []string{"deposit.confirmed"}, &f.accountID, nil)
 
 	if _, err := f.svc.UpdateAccountConfig(ctx, f.accountID, owned.ID, ConfigUpdate{}); !errors.Is(err, ErrWebhookUpdateEmpty) {
 		t.Fatalf("empty update: %v", err)
@@ -318,19 +321,19 @@ func TestUpdate_AccountConfig_ValidatesTheUpdate(t *testing.T) {
 
 func TestEnqueue_Event_LegacyPathNeverReachesAccountOwnedConfigs(t *testing.T) {
 	f := newScopedFixture(t)
-	otherWallet := fixtures.InsertWallet(t, "eth")
+	otherWallet := models.Wallet{ID: uuid.New(), Chain: "eth"}
 	const sweepEvent = "sweep.confirmed"
 
-	legacy := insertOwnedConfig(t, "https://legacy.test/hook", []string{sweepEvent}, nil, nil)
-	walletScoped := insertOwnedConfig(t, "https://wallet.test/hook", []string{sweepEvent}, nil, &f.wallet.ID)
-	insertOwnedConfig(t, "https://owned.test/hook", []string{sweepEvent}, &f.accountID, nil)
-	insertOwnedConfig(t, "https://other-wallet.test/hook", []string{sweepEvent}, nil, &otherWallet.ID)
+	legacy := f.insertConfig(t, "https://legacy.test/hook", []string{sweepEvent}, nil, nil)
+	walletScoped := f.insertConfig(t, "https://wallet.test/hook", []string{sweepEvent}, nil, &f.wallet.ID)
+	f.insertConfig(t, "https://owned.test/hook", []string{sweepEvent}, &f.accountID, nil)
+	f.insertConfig(t, "https://other-wallet.test/hook", []string{sweepEvent}, nil, &otherWallet.ID)
 
-	tx := fixtures.InsertTransaction(t, f.wallet.ID, nil, "eth", models.TxTypeSweep, "confirmed", "ETH", "1000", 1)
+	tx := models.Transaction{ID: uuid.New(), WalletID: f.wallet.ID, Chain: "eth", TxType: models.TxTypeSweep, Status: "confirmed", Asset: "ETH", Amount: "1000", TxHash: "sweep-tx"}
 	f.svc.EnqueueEvent(context.Background(), tx.ID, types.EventType(sweepEvent), tx)
 
 	got := map[uuid.UUID]bool{}
-	for _, event := range storedEvents(t) {
+	for _, event := range f.storedEvents() {
 		got[*event.WebhookConfigID] = true
 	}
 	if len(got) != 2 || !got[legacy.ID] || !got[walletScoped.ID] {
@@ -342,13 +345,13 @@ func TestEnqueue_Event_WalletConfigsSkipEventsWithoutAKnownWallet(t *testing.T) 
 	f := newScopedFixture(t)
 	const sweepEvent = "sweep.confirmed"
 
-	legacy := insertOwnedConfig(t, "https://legacy.test/hook", []string{sweepEvent}, nil, nil)
-	insertOwnedConfig(t, "https://wallet.test/hook", []string{sweepEvent}, nil, &f.wallet.ID)
+	legacy := f.insertConfig(t, "https://legacy.test/hook", []string{sweepEvent}, nil, nil)
+	f.insertConfig(t, "https://wallet.test/hook", []string{sweepEvent}, nil, &f.wallet.ID)
 
-	tx := fixtures.InsertTransaction(t, f.wallet.ID, nil, "eth", models.TxTypeSweep, "confirmed", "ETH", "1000", 1)
+	tx := models.Transaction{ID: uuid.New(), WalletID: f.wallet.ID, Chain: "eth", TxType: models.TxTypeSweep, Status: "confirmed", Asset: "ETH", Amount: "1000", TxHash: "sweep-tx"}
 	f.svc.EnqueueEvent(context.Background(), tx.ID, types.EventType(sweepEvent), map[string]string{"tx_hash": tx.TxHash})
 
-	events := storedEvents(t)
+	events := f.storedEvents()
 	if len(events) != 1 || *events[0].WebhookConfigID != legacy.ID {
 		t.Fatalf("got %d events, want exactly one for the ownerless config", len(events))
 	}

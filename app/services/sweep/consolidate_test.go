@@ -9,12 +9,10 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/redis/go-redis/v9"
 
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/services/chain"
 	"github.com/macrowallets/waas/pkg/types"
-	"github.com/macrowallets/waas/tests/feature/support/testutil"
 	"github.com/macrowallets/waas/tests/mocks"
 )
 
@@ -158,7 +156,7 @@ func TestConsolidateAll_NoEligibleChildren_Noop(t *testing.T) {
 // ErrInvalidPassphrase from mpcpkg.DecryptShare; after the failed call, the
 // Redis quota key for the caller must be absent (count 0).
 func TestConsolidate_All_QuotaNotBurnedOnInvalidPassphrase(t *testing.T) {
-	client := testutil.TestRedis(t)
+	store := newRedisStore()
 
 	walletID := uuid.New()
 	baseAddr := models.Address{ID: uuid.New(), WalletID: walletID, Address: "BASE"}
@@ -198,16 +196,10 @@ func TestConsolidate_All_QuotaNotBurnedOnInvalidPassphrase(t *testing.T) {
 		callerAccountID.String(),
 		time.Now().UTC().Format("2006-01-02"),
 	)
-	lockKey := "vault:lock:wallet_ops:" + walletID.String()
-	t.Cleanup(func() {
-		ctx := context.Background()
-		_ = client.Del(ctx, quotaKey).Err()
-		_ = client.Del(ctx, lockKey).Err()
-	})
 
 	svc := &service{
 		registry:    registry,
-		rdb:         redisStore{client: client},
+		rdb:         store,
 		walletRepo:  &fakeWalletRepo{wallet: wallet},
 		addressRepo: &fakeAddressRepo{children: []models.Address{baseAddr, childA}},
 		chainRepo:   &fakeChainRepo{chain: chainEntity},
@@ -222,11 +214,7 @@ func TestConsolidate_All_QuotaNotBurnedOnInvalidPassphrase(t *testing.T) {
 		t.Fatalf("expected \"invalid passphrase\", got %q", err.Error())
 	}
 
-	count, getErr := client.Get(context.Background(), quotaKey).Int()
-	if getErr != nil && !errors.Is(getErr, redis.Nil) {
-		t.Fatalf("reading quota counter: %v", getErr)
-	}
-	if getErr == nil && count != 0 {
+	if count, ok := store.Int(quotaKey); ok && count != 0 {
 		t.Fatalf("expected quota counter to remain 0 after invalid passphrase, got %d", count)
 	}
 }

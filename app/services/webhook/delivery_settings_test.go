@@ -30,12 +30,12 @@ func TestDeliver_Pending_StoredLimitAndTimeoutOverrideTheEventRow(t *testing.T) 
 		close(release)
 		server.Close()
 	}()
-	insertOwnedConfig(t, server.URL, []string{withdrawalEvents}, &f.accountID, nil)
+	f.insertConfig(t, server.URL, []string{withdrawalEvents}, &f.accountID, nil)
 
 	if _, err := f.svc.EnqueueScoped(context.Background(), f.event(uuid.NewString())); err != nil {
 		t.Fatalf("EnqueueScoped: %v", err)
 	}
-	if stored := storedEvents(t)[0]; stored.MaxAttempts != defaultMaxAttempts {
+	if stored := f.storedEvents()[0]; stored.MaxAttempts != defaultMaxAttempts {
 		t.Fatalf("enqueued max attempts = %d, want the default %d", stored.MaxAttempts, defaultMaxAttempts)
 	}
 
@@ -49,7 +49,7 @@ func TestDeliver_Pending_StoredLimitAndTimeoutOverrideTheEventRow(t *testing.T) 
 	if !hit.Load() {
 		t.Fatal("delivery did not call the receiver")
 	}
-	stored := storedEvents(t)[0]
+	stored := f.storedEvents()[0]
 	if stored.DeliveryStatus != models.WebhookDeliveryFailed || stored.Attempts != 1 {
 		t.Fatalf("after the settings limit: attempts=%d status=%s max_column=%d", stored.Attempts, stored.DeliveryStatus, stored.MaxAttempts)
 	}
@@ -66,19 +66,19 @@ func TestDeliver_Pending_SettingsOutageKeepsTheDefaultAndStillDelivers(t *testin
 	receiver := &recordingReceiver{status: http.StatusOK}
 	server := httptest.NewServer(receiver)
 	defer server.Close()
-	insertOwnedConfig(t, server.URL, []string{withdrawalEvents}, &f.accountID, nil)
+	f.insertConfig(t, server.URL, []string{withdrawalEvents}, &f.accountID, nil)
 
 	if _, err := f.svc.EnqueueScoped(context.Background(), f.event(uuid.NewString())); err != nil {
 		t.Fatalf("EnqueueScoped: %v", err)
 	}
-	if stored := storedEvents(t)[0]; stored.MaxAttempts != defaultMaxAttempts {
+	if stored := f.storedEvents()[0]; stored.MaxAttempts != defaultMaxAttempts {
 		t.Fatalf("outage stamped max attempts %d", stored.MaxAttempts)
 	}
 	delivered, err := f.svc.DeliverPending(context.Background(), deliveryBatchSize)
 	if err != nil || delivered != 1 || len(receiver.bodies) != 1 {
 		t.Fatalf("DeliverPending = %d, %v, bodies %d", delivered, err, len(receiver.bodies))
 	}
-	if stored := storedEvents(t)[0]; stored.DeliveryStatus != models.WebhookDeliveryDelivered {
+	if stored := f.storedEvents()[0]; stored.DeliveryStatus != models.WebhookDeliveryDelivered {
 		t.Fatalf("status = %s", stored.DeliveryStatus)
 	}
 }

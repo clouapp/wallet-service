@@ -2,29 +2,52 @@ package sweep
 
 import (
 	"context"
+	"sync"
 	"time"
-
-	"github.com/redis/go-redis/v9"
 )
 
-// redisStore is the test stand-in for the sweep Redis adapter. This package's
-// tests cannot import app/adapters, and the commands stay the same as production.
+// redisStore is an in-memory RedisStore. Sweep tests talk to the port the
+// service already takes and do not open Redis.
 type redisStore struct {
-	client *redis.Client
+	mu sync.Mutex
+	nx map[string]string
+	n  map[string]int64
 }
 
-func (s redisStore) SetNX(ctx context.Context, key, value string, expiration time.Duration) (bool, error) {
-	return s.client.SetNX(ctx, key, value, expiration).Result()
+func newRedisStore() *redisStore {
+	return &redisStore{nx: map[string]string{}, n: map[string]int64{}}
 }
 
-func (s redisStore) Del(ctx context.Context, key string) error {
-	return s.client.Del(ctx, key).Err()
+func (s *redisStore) SetNX(_ context.Context, key, value string, _ time.Duration) (bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, ok := s.nx[key]; ok {
+		return false, nil
+	}
+	s.nx[key] = value
+	return true, nil
 }
 
-func (s redisStore) Incr(ctx context.Context, key string) (int64, error) {
-	return s.client.Incr(ctx, key).Result()
+func (s *redisStore) Del(_ context.Context, key string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	delete(s.nx, key)
+	delete(s.n, key)
+	return nil
 }
 
-func (s redisStore) Expire(ctx context.Context, key string, expiration time.Duration) error {
-	return s.client.Expire(ctx, key, expiration).Err()
+func (s *redisStore) Incr(_ context.Context, key string) (int64, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.n[key]++
+	return s.n[key], nil
+}
+
+func (s *redisStore) Expire(context.Context, string, time.Duration) error { return nil }
+
+func (s *redisStore) Int(key string) (int64, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	n, ok := s.n[key]
+	return n, ok
 }

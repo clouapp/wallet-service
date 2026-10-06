@@ -7,19 +7,16 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/goravel/framework/facades"
 	"github.com/stretchr/testify/require"
 
 	authsvc "github.com/macrowallets/waas/app/services/auth"
-	"github.com/macrowallets/waas/tests/feature/support/testutil"
 	"github.com/stretchr/testify/assert"
 )
 
 func redisChallengeStore(t *testing.T, ttl time.Duration) *authsvc.CacheTOTPChallengeStore {
 	t.Helper()
-	testutil.TestRedis(t)
 	store, err := authsvc.NewCacheTOTPChallengeStore(authsvc.ChallengeStoreDeps{
-		Cache: facades.Cache(),
+		Cache: newMemCache(),
 		TTL:   ttl,
 	})
 	require.NoError(t, err)
@@ -28,9 +25,8 @@ func redisChallengeStore(t *testing.T, ttl time.Duration) *authsvc.CacheTOTPChal
 
 func redisAttemptLimiter(t *testing.T, window time.Duration) *authsvc.CacheAttemptLimiter {
 	t.Helper()
-	testutil.TestRedis(t)
 	limiter, err := authsvc.NewCacheAttemptLimiter(authsvc.AttemptLimiterDeps{
-		Cache:  facades.Cache(),
+		Cache:  newMemCache(),
 		Window: window,
 	})
 	require.NoError(t, err)
@@ -60,16 +56,20 @@ func TestCache_TOTPChallengeStore_IssueAndResolve(t *testing.T) {
 }
 
 func TestCache_TOTPChallengeStore_KeysDoNotContainTheToken(t *testing.T) {
-	client := testutil.TestRedis(t)
-	store := redisChallengeStore(t, time.Minute)
+	cache := newMemCache()
+	store, err := authsvc.NewCacheTOTPChallengeStore(authsvc.ChallengeStoreDeps{
+		Cache: cache,
+		TTL:   time.Minute,
+	})
+	require.NoError(t, err)
 
 	token, err := store.Issue(uuid.New())
 	require.NoError(t, err)
 	t.Cleanup(func() { store.Revoke(token) })
 
-	keys, err := client.Keys(t.Context(), "*"+token+"*").Result()
-	require.NoError(t, err)
-	assert.Empty(t, keys)
+	for _, key := range cache.keys() {
+		assert.NotContains(t, key, token)
+	}
 }
 
 func TestCache_TOTPChallengeStore_ConsumeIsSingleUse(t *testing.T) {
@@ -143,7 +143,7 @@ func TestCache_TOTPChallengeStore_ValidatesInput(t *testing.T) {
 	_, err := authsvc.NewCacheTOTPChallengeStore(authsvc.ChallengeStoreDeps{TTL: time.Minute})
 	assert.Error(t, err)
 	_, err = authsvc.NewCacheTOTPChallengeStore(authsvc.ChallengeStoreDeps{
-		Cache: facades.Cache(),
+		Cache: newMemCache(),
 		TTL:   0,
 	})
 	assert.Error(t, err)

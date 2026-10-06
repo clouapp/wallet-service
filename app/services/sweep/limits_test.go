@@ -3,16 +3,13 @@ package sweep
 import (
 	"context"
 	"errors"
-	"fmt"
 	"testing"
-	"time"
 
 	"github.com/google/uuid"
 	"github.com/shopspring/decimal"
 
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/services/settings"
-	"github.com/macrowallets/waas/tests/feature/support/testutil"
 )
 
 // ---------------------------------------------------------------------------
@@ -195,14 +192,10 @@ func TestIncr_DailyQuota_NilAccountIsNoop(t *testing.T) {
 // ErrInFlightConsolidation until the first release runs, after which a fresh
 // acquire succeeds.
 func TestAcquireWalletOpsLock_RealRedis_Contention(t *testing.T) {
-	client := testutil.TestRedis(t)
-	svc := &service{rdb: redisStore{client: client}}
+	svc := &service{rdb: newRedisStore()}
 	ctx := context.Background()
 
-	// Unique wallet ID isolates this test's keys from any concurrent runs.
 	walletID := uuid.New()
-	lockKey := "vault:lock:wallet_ops:" + walletID.String()
-	t.Cleanup(func() { _ = client.Del(context.Background(), lockKey).Err() })
 
 	release1, err := svc.acquireWalletOpsLock(ctx, walletID)
 	if err != nil {
@@ -230,16 +223,11 @@ func TestAcquireWalletOpsLock_RealRedis_Contention(t *testing.T) {
 // returns ErrDailyQuotaExceeded. Uses a fresh accountID per run so the daily
 // counter starts at zero.
 func TestIncrDailyQuota_RealRedis_Exceeds(t *testing.T) {
-	client := testutil.TestRedis(t)
-	svc := &service{rdb: redisStore{client: client}}
+	svc := &service{rdb: newRedisStore()}
 	ctx := context.Background()
 
 	accountID := uuid.New()
 	limits := &Limits{MaxConsolidateReqPerDay: 3}
-
-	quotaKey := fmt.Sprintf("vault:quota:consolidate:%s:%s",
-		accountID.String(), time.Now().UTC().Format("2006-01-02"))
-	t.Cleanup(func() { _ = client.Del(context.Background(), quotaKey).Err() })
 
 	for i := 1; i <= limits.MaxConsolidateReqPerDay; i++ {
 		if err := svc.incrDailyQuota(ctx, accountID, limits); err != nil {

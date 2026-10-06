@@ -5,29 +5,18 @@ import (
 	"context"
 	"errors"
 	"math/big"
-	"os"
 	"testing"
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/goravel/framework/facades"
 
-	"github.com/macrowallets/waas/app/repositories"
+	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/services/chain"
 	mpcpkg "github.com/macrowallets/waas/app/services/mpc"
 	"github.com/macrowallets/waas/app/services/sweep"
-	"github.com/macrowallets/waas/app/services/webhook"
 	"github.com/macrowallets/waas/pkg/types"
-	"github.com/macrowallets/waas/tests/feature/support/fixtures"
-	"github.com/macrowallets/waas/tests/feature/support/testutil"
 	"github.com/macrowallets/waas/tests/mocks"
 )
-
-func TestMain(m *testing.M) {
-	// Boot Goravel once for all tests in this package
-	testutil.BootTest()
-	os.Exit(m.Run())
-}
 
 // mockMPC is a no-op MPC service for unit tests.
 type mockMPC struct {
@@ -81,37 +70,23 @@ func (m *mockSweepSvc) LoadLimits(context.Context, uuid.UUID) (*sweep.Limits, er
 	panic("mockSweepSvc.LoadLimits must not be called in these tests")
 }
 
-func setupWithdrawService(t *testing.T) (*Service, *mocks.MockChain) {
+func setupWithdrawService(t *testing.T) (*Service, *mocks.MockChain, *memTransactions) {
 	t.Helper()
-	fixtures.TestDB(t)
 	registry := chain.NewRegistry()
 	mockChain := mocks.NewMockChain("eth")
 	mockChain.RequiredConfirmationsVal = 12
 	registry.RegisterChain(mockChain)
 	registry.RegisterToken(types.Token{Symbol: "usdt", ChainID: "eth", Decimals: 6, Contract: "0xdAC17F"})
 
-	webhookConfigRepo := repositories.NewWebhookConfigRepository(repositories.WebhookConfigRepositoryDeps{
-		Cipher: facades.Crypt(),
-	})
-	webhookEventRepo := repositories.NewWebhookEventRepository(nil)
-	webhookSvc := webhook.NewService(webhook.Deps{
-		Configs: webhookConfigRepo,
-		Events:  webhookEventRepo,
-	})
-	mpcSvc := &mockMPC{}
-	txRepo := repositories.NewTransactionRepository(nil)
-	walletRepo := repositories.NewWalletRepository(nil)
-	addressRepo := repositories.NewAddressRepository(nil)
+	txs := newMemTransactions()
 	svc := NewService(Deps{
 		Registry:     registry,
-		Webhook:      webhookSvc,
-		MPC:          mpcSvc,
-		Transactions: txRepo,
-		Wallets:      walletRepo,
-		Addresses:    addressRepo,
+		MPC:          &mockMPC{},
+		Transactions: txs,
+		Wallets:      memWalletReader{},
 		Sweep:        &mockSweepSvc{},
 	})
-	return svc, mockChain
+	return svc, mockChain, txs
 }
 
 type recordingLocker struct {
@@ -236,7 +211,7 @@ func TestRequest_Withdrawals_FlagStopsBeforeRedis(t *testing.T) {
 
 // TestRequest_PassphraseTooShort verifies step-1 guard fires before any I/O.
 func TestRequest_Passphrase_TooShort(t *testing.T) {
-	svc, _ := setupWithdrawService(t)
+	svc, _, _ := setupWithdrawService(t)
 	ctx := context.Background()
 
 	_, _, err := svc.Request(ctx, WithdrawRequest{
@@ -254,7 +229,7 @@ func TestRequest_Passphrase_TooShort(t *testing.T) {
 
 // TestRequest_InvalidAddress verifies address validation.
 func TestRequest_Invalid_Address(t *testing.T) {
-	_, mockChain := setupWithdrawService(t)
+	_, mockChain, _ := setupWithdrawService(t)
 	mockChain.ValidateAddressFn = func(address string) bool { return false }
 
 	// We can't call Request here because it requires Redis for the lock.
@@ -269,7 +244,7 @@ func TestRequest_Wallet_NotFound(t *testing.T) {
 	// Passphrase too short guard fires before wallet lookup — use 12+ char passphrase
 	// but Redis is nil so we expect a redis error, not wallet-not-found.
 	// This test confirms the guard order: passphrase -> idempotency -> redis lock -> wallet
-	svc, _ := setupWithdrawService(t)
+	svc, _, _ := setupWithdrawService(t)
 	ctx := context.Background()
 
 	_, _, err := svc.Request(ctx, WithdrawRequest{
@@ -287,11 +262,11 @@ func TestRequest_Wallet_NotFound(t *testing.T) {
 }
 
 func TestService_Get_Transaction(t *testing.T) {
-	svc, _ := setupWithdrawService(t)
+	svc, _, txs := setupWithdrawService(t)
 	ctx := context.Background()
 
-	w := fixtures.InsertWallet(t, "eth")
-	inserted := fixtures.InsertTransaction(t, w.ID, nil, "eth", "withdrawal", "pending", "eth", "100", 0)
+	inserted := &models.Transaction{ID: uuid.New(), WalletID: uuid.New(), Chain: "eth", TxType: "withdrawal", Status: "pending", Asset: "eth", Amount: "100"}
+	txs.add(inserted)
 
 	got, err := svc.GetTransaction(ctx, inserted.ID)
 	if err != nil {
@@ -303,7 +278,7 @@ func TestService_Get_Transaction(t *testing.T) {
 }
 
 func TestGet_Transaction_NotFound(t *testing.T) {
-	svc, _ := setupWithdrawService(t)
+	svc, _, _ := setupWithdrawService(t)
 	_, err := svc.GetTransaction(context.Background(), uuid.New())
 	if err == nil {
 		t.Fatal("expected error")
@@ -311,13 +286,13 @@ func TestGet_Transaction_NotFound(t *testing.T) {
 }
 
 func TestList_Transactions_Filters(t *testing.T) {
-	svc, _ := setupWithdrawService(t)
+	svc, _, txs := setupWithdrawService(t)
 	ctx := context.Background()
 
-	w := fixtures.InsertWallet(t, "eth")
-	fixtures.InsertTransaction(t, w.ID, nil, "eth", "deposit", "confirmed", "eth", "100", 50)
-	fixtures.InsertTransaction(t, w.ID, nil, "eth", "withdrawal", "pending", "usdt", "200", 0)
-	fixtures.InsertTransaction(t, w.ID, nil, "eth", "deposit", "pending", "eth", "300", 60)
+	walletID := uuid.New()
+	txs.add(&models.Transaction{ID: uuid.New(), WalletID: walletID, Chain: "eth", TxType: "deposit", Status: "confirmed", Asset: "eth", Amount: "100"})
+	txs.add(&models.Transaction{ID: uuid.New(), WalletID: walletID, Chain: "eth", TxType: "withdrawal", Status: "pending", Asset: "usdt", Amount: "200"})
+	txs.add(&models.Transaction{ID: uuid.New(), WalletID: walletID, Chain: "eth", TxType: "deposit", Status: "pending", Asset: "eth", Amount: "300"})
 
 	// All
 	all, _, _ := svc.ListTransactions(ctx, "", "", "", "", 50, 0)

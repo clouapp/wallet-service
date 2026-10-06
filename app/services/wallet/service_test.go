@@ -8,19 +8,10 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/suite"
 
-	"github.com/macrowallets/waas/app/repositories"
 	"github.com/macrowallets/waas/app/services/chain"
 	"github.com/macrowallets/waas/app/services/chainregistry"
-	"github.com/macrowallets/waas/tests/feature/support/fixtures"
-	"github.com/macrowallets/waas/tests/feature/support/testutil"
 	"github.com/macrowallets/waas/tests/mocks"
 )
-
-func TestMain(m *testing.M) {
-	// Boot Goravel once for all tests
-	testutil.BootTest()
-	os.Exit(m.Run())
-}
 
 const testPassphrase = "test-passphrase-long-enough"
 
@@ -100,12 +91,11 @@ func TestWallet_Service_Suite(t *testing.T) {
 }
 
 func (s *WalletServiceTestSuite) SetupTest() {
-	fixtures.TestDB(s.T())
 	s.registry = chain.NewRegistry()
 	s.registry.RegisterChain(mocks.NewMockChain("eth"))
 	s.registry.RegisterChain(mocks.NewMockChain("btc"))
 	s.registry.RegisterChain(mocks.NewMockChain("sol"))
-	s.service = newTestServiceWithRepos(s.T(), s.registry, repositories.NewWalletRepository(nil), repositories.NewAddressRepository(nil))
+	s.service = newTestServiceWithRepos(s.T(), s.registry, newMemWallets(), newMemAddresses())
 }
 
 func (s *WalletServiceTestSuite) TestCreate_Wallet_Success() {
