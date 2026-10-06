@@ -75,6 +75,7 @@ func (ctrl *AddressesController) GenerateAddress(ctx http.Context) http.Response
 	}
 
 	var req requests.GenerateAddressRequest
+	defer controllers.DiscardPassphrase(&req.Passphrase)
 	if errResp := validateRequest(ctx, &req); errResp != nil {
 		return errResp
 	}

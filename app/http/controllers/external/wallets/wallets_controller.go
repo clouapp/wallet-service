@@ -82,6 +82,7 @@ func NewWalletsController(deps WalletsControllerDeps) *WalletsController {
 // @Router       /v1/wallets [post]
 func (ctrl *WalletsController) CreateWallet(ctx http.Context) http.Response {
 	var req requests.CreateWalletRequest
+	defer controllers.DiscardPassphrase(&req.Passphrase)
 	if resp := validateRequest(ctx, &req); resp != nil {
 		return resp
 	}

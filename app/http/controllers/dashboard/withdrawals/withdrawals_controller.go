@@ -200,6 +200,7 @@ func (ctrl *WithdrawalsController) CreateWalletWithdrawal(ctx http.Context) http
 	}
 
 	var req requests.CreateWalletWithdrawalRequest
+	defer controllers.DiscardPassphrase(&req.Passphrase)
 	if resp := validateRequest(ctx, &req); resp != nil {
 		return resp
 	}
@@ -220,7 +221,7 @@ func (ctrl *WithdrawalsController) CreateWalletWithdrawal(ctx http.Context) http
 		callerAccountID = *wallet.AccountID
 	}
 
-	created, err := ctrl.withdrawalService.Create(ctx.Context(), withdraw.CreateInput{
+	input := withdraw.CreateInput{
 		Wallet:             wallet,
 		DashboardUserID:    dashboardUserID,
 		TotpCode:           req.TotpCode,
@@ -230,7 +231,9 @@ func (ctrl *WithdrawalsController) CreateWalletWithdrawal(ctx http.Context) http
 		DestinationAddress: req.DestinationAddress,
 		Note:               req.Note,
 		IdempotencyKey:     req.IdempotencyKey,
-	})
+	}
+	created, err := ctrl.withdrawalService.Create(ctx.Context(), input)
+	controllers.DiscardPassphrase(&input.Passphrase)
 	if err != nil {
 		return controllers.MapWithdrawalCreateError(ctx, err)
 	}
@@ -256,6 +259,7 @@ func (ctrl *WithdrawalsController) CreateWalletWithdrawal(ctx http.Context) http
 	if token, ok := requestctx.APIToken(ctx); ok {
 		withdrawal = withdrawal.WithAPIToken(token, req.Amount)
 	}
+	defer controllers.DiscardPassphrase(&withdrawal.Passphrase)
 	tx, _, err := ctrl.withdrawalService.Request(ctx.Context(), withdrawal)
 	if err != nil {
 		failureCode := controllers.WithdrawalFailureCode(err)

@@ -199,7 +199,7 @@ content-type: application/json; charset=utf-8
 ### 40 create wallet with an invalid body: POST /v1/wallets
 status: 422
 content-type: application/json; charset=utf-8
-{"error":{"code":"validation_failed","message":"validation failed"},"errors":{"chain":["Blockchain chain is required"],"confirm_passphrase":["Passphrase confirmation is required"],"label":["Wallet label is required"],"passphrase":["Passphrase is required"]}}
+{"error":{"code":"validation_failed","message":"validation failed"},"errors":{"chain":["Blockchain chain is required"],"label":["Wallet label is required"],"passphrase":["Passphrase is required"]}}
 
 ### 41 unknown wallet: GET /v1/wallets/00000000-0000-4000-8000-000000000000
 status: 404

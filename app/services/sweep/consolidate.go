@@ -12,6 +12,7 @@ import (
 
 	"github.com/macrowallets/waas/app/models"
 	mpcpkg "github.com/macrowallets/waas/app/services/mpc"
+	"github.com/macrowallets/waas/pkg/mpcshare"
 	"github.com/macrowallets/waas/pkg/types"
 )
 
@@ -50,6 +51,7 @@ func (s *service) ConsolidateAll(
 	passphrase string,
 	callerAccountID uuid.UUID,
 ) (*Result, error) {
+	defer mpcshare.DiscardPassphrase(&passphrase)
 	if len(passphrase) < 12 {
 		return nil, fmt.Errorf("passphrase must be at least 12 characters")
 	}
@@ -134,6 +136,7 @@ func (s *service) ConsolidateAll(
 
 	curve := mpcpkg.Curve(wallet.MPCCurve)
 	keys := walletKeys{shareA: shareA, shareB: shareB, passphrase: passphrase}
+	defer mpcshare.DiscardPassphrase(&keys.passphrase)
 	result := &Result{EstimatedGas: copyBigInt(plan.EstimatedGas)}
 
 	for i, leg := range plan.Sweeps {
@@ -266,6 +269,7 @@ func (s *service) planConsolidation(
 // mpcpkg.ErrInvalidPassphrase to a plain "invalid passphrase" error;
 // rate-limiting of retries is not applied here (manual flow).
 func (s *service) decryptShareA(wallet *models.Wallet, passphrase string) ([]byte, error) {
+	defer mpcshare.DiscardPassphrase(&passphrase)
 	shareA, err := wallet.DecryptShareA(passphrase)
 	if err != nil {
 		if errors.Is(err, mpcpkg.ErrInvalidPassphrase) {

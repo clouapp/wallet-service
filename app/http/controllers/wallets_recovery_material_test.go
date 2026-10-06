@@ -199,8 +199,8 @@ func (s *WalletRecoveryMaterialTestSuite) TestExternalCreate_MaterialIsNotReturn
 func (s *WalletRecoveryMaterialTestSuite) TestAdminCreate_ResponseShapeUnchanged() {
 	accountID, token := s.setupAdminSession()
 
-	body := fmt.Sprintf(`{"chain":%q,"label":"Admin","passphrase":%q,"confirm_passphrase":%q}`,
-		recoveryTestChain, recoveryTestPassphrase, recoveryTestPassphrase)
+	body := fmt.Sprintf(`{"chain":%q,"label":"Admin","passphrase":%q}`,
+		recoveryTestChain, recoveryTestPassphrase)
 	resp, err := s.Http(s.T()).
 		WithHeader("Content-Type", "application/json").
 		WithHeader("Authorization", "Bearer "+token).

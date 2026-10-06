@@ -18,6 +18,7 @@ import (
 	mpcpkg "github.com/macrowallets/waas/app/services/mpc"
 	"github.com/macrowallets/waas/app/services/sweep"
 	"github.com/macrowallets/waas/app/services/webhook"
+	"github.com/macrowallets/waas/pkg/mpcshare"
 	"github.com/macrowallets/waas/pkg/types"
 )
 
@@ -144,7 +145,7 @@ type WithdrawRequest struct {
 	ToAddress       string    `json:"to_address"`
 	Amount          string    `json:"amount"`
 	Asset           string    `json:"asset"`
-	Passphrase      string    `json:"passphrase"`
+	Passphrase      string    `json:"-"`
 	IdempotencyKey  string    `json:"idempotency_key"`
 	CallerAccountID uuid.UUID `json:"-"`
 	// AccessTokenID, SpendingLimit and QuoteAmount carry a per-token daily USD
@@ -168,6 +169,7 @@ type Metadata struct {
 // EVM multi-sweep still requires a seeded gas balance. SOL and BTC adapters
 // report no gas threshold, so that check does not apply to them.
 func (s *Service) Request(ctx context.Context, req WithdrawRequest) (*models.Transaction, *Metadata, error) {
+	defer mpcshare.DiscardPassphrase(&req.Passphrase)
 	if len(req.Passphrase) < 12 {
 		return nil, nil, ErrPassphraseTooShort
 	}
@@ -264,6 +266,7 @@ func (s *Service) Request(ctx context.Context, req WithdrawRequest) (*models.Tra
 
 	withdrawalTxID := uuid.New()
 	creds := sweep.SigningCredentials{ShareA: shareA, Passphrase: req.Passphrase}
+	defer mpcshare.DiscardPassphrase(&creds.Passphrase)
 	result, err := s.sweep.ExecutePlan(ctx, plan, creds, withdrawalTxID, req.ToAddress, req.ExternalUserID)
 	if err != nil {
 		return nil, nil, fmt.Errorf("execute plan: %w", err)
@@ -336,6 +339,7 @@ func (s *Service) gate(ctx context.Context, accountID uuid.UUID) error {
 }
 
 func (s *Service) decryptShareA(ctx context.Context, wallet *models.Wallet, passphrase string) ([]byte, error) {
+	defer mpcshare.DiscardPassphrase(&passphrase)
 	shareA, err := wallet.DecryptShareA(passphrase)
 	if err != nil {
 		if errors.Is(err, mpcpkg.ErrInvalidPassphrase) {

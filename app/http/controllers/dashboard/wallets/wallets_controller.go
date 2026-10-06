@@ -195,6 +195,7 @@ func (ctrl *WalletsController) hideUnlessVisible(ctx http.Context, walletID uuid
 // code. The customer share, the passphrase, and the service share are not on it.
 func (ctrl *WalletsController) CreateWalletAdmin(ctx http.Context) http.Response {
 	var req requests.CreateWalletAdminRequest
+	defer controllers.DiscardPassphrase(&req.Passphrase)
 	if resp := validateRequest(ctx, &req); resp != nil {
 		return resp
 	}

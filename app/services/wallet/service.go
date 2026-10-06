@@ -21,6 +21,7 @@ import (
 	"github.com/macrowallets/waas/app/dtos"
 	"github.com/macrowallets/waas/app/models"
 	mpc "github.com/macrowallets/waas/app/services/mpc"
+	"github.com/macrowallets/waas/pkg/mpcshare"
 	"github.com/macrowallets/waas/pkg/types"
 )
 
@@ -139,6 +140,7 @@ func (s *Service) cacheAddress(ctx context.Context, chainID, address string) {
 }
 
 func (s *Service) CreateWallet(ctx context.Context, accountID uuid.UUID, chainID, label, passphrase string) (*CreateWalletResult, error) {
+	defer mpcshare.DiscardPassphrase(&passphrase)
 	if accountID == uuid.Nil {
 		return nil, fmt.Errorf("account_id is required")
 	}
@@ -299,6 +301,7 @@ func (s *Service) ListWallets(ctx context.Context) ([]models.Wallet, error) {
 }
 
 func (s *Service) GenerateAddress(ctx context.Context, walletID uuid.UUID, externalUserID, label, metadata, passphrase string) (*models.Address, error) {
+	defer mpcshare.DiscardPassphrase(&passphrase)
 	if s.walletRepo == nil {
 		return nil, fmt.Errorf("wallet not found")
 	}
@@ -380,6 +383,7 @@ func (s *Service) generateSecp256k1Address(ctx context.Context, w *models.Wallet
 }
 
 func (s *Service) generateEd25519Address(ctx context.Context, w *models.Wallet, index uint32, externalUserID, label, metadata, passphrase string) (*models.Address, error) {
+	defer mpcshare.DiscardPassphrase(&passphrase)
 	shareA, err := w.DecryptShareA(passphrase)
 	if err != nil {
 		if errors.Is(err, mpc.ErrInvalidPassphrase) {

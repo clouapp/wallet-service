@@ -12,6 +12,7 @@ import (
 	"github.com/macrowallets/waas/app/models"
 	authsvc "github.com/macrowallets/waas/app/services/auth"
 	mpcpkg "github.com/macrowallets/waas/app/services/mpc"
+	"github.com/macrowallets/waas/pkg/mpcshare"
 	"github.com/macrowallets/waas/pkg/types"
 )
 
@@ -129,6 +130,7 @@ func (s *Service) UseCreate(users UserLookup, totp TotpCheck, rows WithdrawalRow
 // withdrawals-enabled stays on the handler, before this method, and again
 // inside Request before the Redis lock.
 func (s *Service) Create(ctx context.Context, in CreateInput) (*CreateResult, error) {
+	defer mpcshare.DiscardPassphrase(&in.Passphrase)
 	if s == nil {
 		return nil, fmt.Errorf("create withdrawal: service is required")
 	}
@@ -192,6 +194,7 @@ func (s *Service) verifyDashboardTOTP(ctx context.Context, userID uuid.UUID, cod
 }
 
 func (s *Service) verifyPassphraseBeforePersist(ctx context.Context, wallet *models.Wallet, passphrase string) error {
+	defer mpcshare.DiscardPassphrase(&passphrase)
 	if s.locker != nil {
 		if err := s.checkRateLimit(ctx, wallet.ID.String()); err != nil {
 			return &CreateRefusal{Status: CreateStatusTooManyRequests, Message: err.Error()}

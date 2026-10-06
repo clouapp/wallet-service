@@ -10,6 +10,7 @@ import (
 
 	"github.com/macrowallets/waas/app/models"
 	mpcpkg "github.com/macrowallets/waas/app/services/mpc"
+	"github.com/macrowallets/waas/pkg/mpcshare"
 	"github.com/macrowallets/waas/pkg/types"
 )
 
@@ -34,6 +35,7 @@ func (s *service) ExecutePlan(
 	toAddress string,
 	externalUserID string,
 ) (*Result, error) {
+	defer mpcshare.DiscardPassphrase(&creds.Passphrase)
 	if plan == nil {
 		return nil, fmt.Errorf("sweep: plan must not be nil")
 	}
@@ -71,6 +73,7 @@ func (s *service) ExecutePlan(
 
 	curve := mpcpkg.Curve(wallet.MPCCurve)
 	keys := walletKeys{shareA: creds.ShareA, shareB: shareB, passphrase: creds.Passphrase}
+	defer mpcshare.DiscardPassphrase(&keys.passphrase)
 	result := &Result{WithdrawalTxID: withdrawalTxID, EstimatedGas: copyBigInt(plan.EstimatedGas)}
 
 	switch plan.Strategy {

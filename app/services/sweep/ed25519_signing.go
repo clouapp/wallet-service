@@ -10,6 +10,7 @@ import (
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/services/addressing"
 	mpcpkg "github.com/macrowallets/waas/app/services/mpc"
+	"github.com/macrowallets/waas/pkg/mpcshare"
 	"github.com/macrowallets/waas/pkg/types"
 )
 
@@ -97,6 +98,7 @@ func isGenesisSigner(wallet *models.Wallet, signer models.Address) bool {
 // decryptChildSeed opens the SLIP-0010 seed stored on a derived address row. The
 // caller must zero the returned seed.
 func decryptChildSeed(address models.Address, passphrase string) ([]byte, error) {
+	defer mpcshare.DiscardPassphrase(&passphrase)
 	if address.EncryptedPrivateKey == "" || address.EncryptionIV == "" || address.EncryptionSalt == "" {
 		return nil, fmt.Errorf("address %s has no stored signing key", address.Address)
 	}
