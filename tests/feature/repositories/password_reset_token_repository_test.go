@@ -63,8 +63,8 @@ func (s *PasswordResetTokenRepositoryTestSuite) TestFind_Valid_Tokens() {
 	facades.Orm().Query().Model(used).Where("id = ?", used.ID).Update("used_at", now)
 
 	tokens, err := s.repo.FindValidTokens(context.Background())
-	s.NoError(err)
-	s.Len(tokens, 1)
+	s.Require().NoError(err)
+	s.Require().Len(tokens, 1)
 	s.Equal(valid.ID, tokens[0].ID)
 }
 
@@ -74,7 +74,7 @@ func (s *PasswordResetTokenRepositoryTestSuite) TestPasswordResetTokenRepository
 	s.Require().NoError(s.repo.Create(context.Background(), prt))
 
 	err := s.repo.MarkUsed(context.Background(), prt.ID)
-	s.NoError(err)
+	s.Require().NoError(err)
 
 	var check models.PasswordResetToken
 	facades.Orm().Query().Where("id = ?", prt.ID).First(&check)

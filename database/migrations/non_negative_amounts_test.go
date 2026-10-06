@@ -12,6 +12,7 @@ import (
 	"github.com/macrowallets/waas/database/migrations"
 	"github.com/macrowallets/waas/tests/feature/support/fixtures"
 	"github.com/macrowallets/waas/tests/feature/support/testutil"
+	"github.com/stretchr/testify/assert"
 )
 
 func TestMain(m *testing.M) {
@@ -60,39 +61,39 @@ func legacySignedRows(t *testing.T) (txID, withdrawalID uuid.UUID) {
 func TestEnforce_Non_NegativeAmountsNormalizesBacksUpAndConstrains(t *testing.T) {
 	fixtures.TestDB(t)
 	migration := &migrations.M00000000000280EnforceNonNegativeAmounts{}
-	require.Equal(t, int64(1), constraintCount(t, transactionAmountConstraint), "migrate:fresh applies the constraint")
+	assert.Equal(t, int64(1), constraintCount(t, transactionAmountConstraint), "migrate:fresh applies the constraint")
 
 	txID, withdrawalID := legacySignedRows(t)
-	require.Zero(t, constraintCount(t, transactionAmountConstraint))
+	assert.Zero(t, constraintCount(t, transactionAmountConstraint))
 
 	require.NoError(t, migration.Up())
 
 	var tx models.Transaction
 	require.NoError(t, facades.Orm().Query().Where("id = ?", txID).First(&tx))
-	require.Equal(t, "20000000", tx.Amount)
-	require.Equal(t, "5000", tx.Fee)
-	require.Equal(t, models.TxTypeWithdrawal, tx.TxType, "the type is untouched")
-	require.Equal(t, models.TxDirectionOutbound, tx.Direction, "the dropped sign becomes an explicit direction")
-	require.Equal(t, "0.02", scalar[string](t, `SELECT amount::float8::text FROM withdrawals WHERE id = ?`, withdrawalID))
+	assert.Equal(t, "20000000", tx.Amount)
+	assert.Equal(t, "5000", tx.Fee)
+	assert.Equal(t, models.TxTypeWithdrawal, tx.TxType, "the type is untouched")
+	assert.Equal(t, models.TxDirectionOutbound, tx.Direction, "the dropped sign becomes an explicit direction")
+	assert.Equal(t, "0.02", scalar[string](t, `SELECT amount::float8::text FROM withdrawals WHERE id = ?`, withdrawalID))
 
 	backups := `SELECT count(*) FROM amount_sign_backups`
-	require.Equal(t, int64(3), scalar[int64](t, backups), "transactions.amount, transactions.fee and withdrawals.amount")
-	require.Equal(t, "-20000000", scalar[string](t,
+	assert.Equal(t, int64(3), scalar[int64](t, backups), "transactions.amount, transactions.fee and withdrawals.amount")
+	assert.Equal(t, "-20000000", scalar[string](t,
 		`SELECT original_value FROM amount_sign_backups WHERE table_name = 'transactions' AND column_name = 'amount' AND row_id = ?`, txID))
-	require.Equal(t, "-20000000", scalar[string](t,
+	assert.Equal(t, "-20000000", scalar[string](t,
 		`SELECT row_snapshot->>'amount' FROM amount_sign_backups WHERE table_name = 'transactions' AND column_name = 'amount' AND row_id = ?`, txID))
-	require.Equal(t, int64(1), constraintCount(t, transactionAmountConstraint))
-	require.Equal(t, int64(1), constraintCount(t, withdrawalAmountConstraint))
+	assert.Equal(t, int64(1), constraintCount(t, transactionAmountConstraint))
+	assert.Equal(t, int64(1), constraintCount(t, withdrawalAmountConstraint))
 
 	require.NoError(t, migration.Up(), "re-running is a no-op")
-	require.Equal(t, int64(3), scalar[int64](t, backups))
-	require.Equal(t, int64(1), constraintCount(t, transactionAmountConstraint))
+	assert.Equal(t, int64(3), scalar[int64](t, backups))
+	assert.Equal(t, int64(1), constraintCount(t, transactionAmountConstraint))
 
 	require.NoError(t, migration.Down())
-	require.Zero(t, constraintCount(t, transactionAmountConstraint))
-	require.Zero(t, constraintCount(t, withdrawalAmountConstraint))
-	require.Equal(t, int64(3), scalar[int64](t, backups), "Down keeps a backup that holds rows")
-	require.Equal(t, "20000000", scalar[string](t, `SELECT amount FROM transactions WHERE id = ?`, txID), "Down never restores a sign")
+	assert.Zero(t, constraintCount(t, transactionAmountConstraint))
+	assert.Zero(t, constraintCount(t, withdrawalAmountConstraint))
+	assert.Equal(t, int64(3), scalar[int64](t, backups), "Down keeps a backup that holds rows")
+	assert.Equal(t, "20000000", scalar[string](t, `SELECT amount FROM transactions WHERE id = ?`, txID), "Down never restores a sign")
 }
 
 func TestEnforce_Non_NegativeAmountsDownDropsAnEmptyBackup(t *testing.T) {
@@ -100,9 +101,9 @@ func TestEnforce_Non_NegativeAmountsDownDropsAnEmptyBackup(t *testing.T) {
 	migration := &migrations.M00000000000280EnforceNonNegativeAmounts{}
 
 	require.NoError(t, migration.Down())
-	require.False(t, scalar[bool](t, `SELECT to_regclass('amount_sign_backups') IS NOT NULL`))
+	assert.False(t, scalar[bool](t, `SELECT to_regclass('amount_sign_backups') IS NOT NULL`))
 	require.NoError(t, migration.Down(), "Down without the backup table")
 
 	require.NoError(t, migration.Up())
-	require.Zero(t, scalar[int64](t, `SELECT count(*) FROM amount_sign_backups`))
+	assert.Zero(t, scalar[int64](t, `SELECT count(*) FROM amount_sign_backups`))
 }

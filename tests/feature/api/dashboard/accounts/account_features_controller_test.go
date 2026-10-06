@@ -198,7 +198,7 @@ func (s *accountFeaturesSuite) account(token string, accountID uuid.UUID) accoun
 	s.Require().NoError(err)
 	var parsed accountDetailBody
 	s.Require().NoError(json.Unmarshal([]byte(content), &parsed))
-	s.Require().NotEmpty(parsed.Name)
+	s.NotEmpty(parsed.Name)
 	return parsed
 }
 

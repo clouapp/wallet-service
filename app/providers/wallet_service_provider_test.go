@@ -8,6 +8,7 @@ import (
 
 	"github.com/macrowallets/waas/app/container"
 	"github.com/macrowallets/waas/app/repositories"
+	"github.com/stretchr/testify/assert"
 )
 
 func TestWallet_Provider_RegistersTheWalletGraph(t *testing.T) {
@@ -24,28 +25,28 @@ func TestWallet_Provider_RegistersTheWalletGraph(t *testing.T) {
 
 	members, err := container.Make[*repositories.WalletUserRepository]()
 	require.NoError(t, err)
-	require.NotNil(t, members)
+	assert.NotNil(t, members)
 
 	whitelist, err := container.Make[*repositories.WhitelistEntryRepository]()
 	require.NoError(t, err)
-	require.NotNil(t, whitelist)
+	assert.NotNil(t, whitelist)
 
 	balances, err := container.Make[*repositories.WalletAssetBalanceRepository]()
 	require.NoError(t, err)
-	require.NotNil(t, balances)
+	assert.NotNil(t, balances)
 
 	snapshots, err := container.Make[*repositories.WalletBalanceSnapshotRepository]()
 	require.NoError(t, err)
-	require.NotNil(t, snapshots)
+	assert.NotNil(t, snapshots)
 
 	utxos, err := container.Make[*repositories.WalletUTXORepository]()
 	require.NoError(t, err)
-	require.NotNil(t, utxos)
+	assert.NotNil(t, utxos)
 
 	syncState, err := container.Make[*repositories.WalletSyncStateRepository]()
 	require.NoError(t, err)
-	require.NotNil(t, syncState)
+	assert.NotNil(t, syncState)
 
-	require.Same(t, wallets, container.MustMake[*repositories.WalletRepository]())
-	require.Same(t, addresses, container.MustMake[*repositories.AddressRepository]())
+	assert.Same(t, wallets, container.MustMake[*repositories.WalletRepository]())
+	assert.Same(t, addresses, container.MustMake[*repositories.AddressRepository]())
 }

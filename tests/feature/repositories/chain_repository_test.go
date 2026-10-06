@@ -38,7 +38,7 @@ func (s *ChainRepositoryTestSuite) TestCreate_And_FindByID() {
 	s.Require().NoError(s.repo.Create(context.Background(), chain))
 
 	found, err := s.repo.FindByID(context.Background(), "teth")
-	s.NoError(err)
+	s.Require().NoError(err)
 	s.Equal("teth", found.ID)
 	s.True(found.IsTestnet)
 }
@@ -61,11 +61,11 @@ func (s *ChainRepositoryTestSuite) TestFind_Active_AndByTestnet() {
 	s.Require().NoError(s.repo.Create(context.Background(), s.chain("gone", false, "disabled")))
 
 	active, err := s.repo.FindActive(context.Background())
-	s.NoError(err)
+	s.Require().NoError(err)
 	s.Len(active, 2)
 
 	testnets, err := s.repo.FindByTestnet(context.Background(), true)
-	s.NoError(err)
-	s.Len(testnets, 1)
+	s.Require().NoError(err)
+	s.Require().Len(testnets, 1)
 	s.Equal("teth", testnets[0].ID)
 }

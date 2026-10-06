@@ -168,7 +168,7 @@ func (s *PlatformSettingsGroupTestSuite) TestA_Secret_SettingRecordsKeyAndValueS
 		 FROM activity_log
 		 WHERE subject_type = 'setting' AND properties->'new'->>'group' = 'mail_smtp'`,
 	).Scan(&rows))
-	s.NotEmpty(rows)
+	s.Require().NotEmpty(rows)
 
 	var sawPassword, sawHost bool
 	for _, row := range rows {

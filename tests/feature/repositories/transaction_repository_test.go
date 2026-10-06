@@ -71,8 +71,8 @@ func (s *TransactionRepositoryTestSuite) TestFind_ByID_Found() {
 	s.Require().NoError(s.repo.Create(context.Background(), tx))
 
 	found, err := s.repo.FindByID(context.Background(), tx.ID)
-	s.NoError(err)
-	s.NotNil(found)
+	s.Require().NoError(err)
+	s.Require().NotNil(found)
 	s.Equal(tx.ID, found.ID)
 }
 
@@ -88,7 +88,7 @@ func (s *TransactionRepositoryTestSuite) TestFind_ByIDAndWallet_Found() {
 	s.Require().NoError(s.repo.Create(context.Background(), tx))
 
 	found, err := s.repo.FindByIDAndWallet(context.Background(), tx.ID.String(), walletID)
-	s.NoError(err)
+	s.Require().NoError(err)
 	s.NotNil(found)
 }
 
@@ -111,8 +111,8 @@ func (s *TransactionRepositoryTestSuite) TestFind_ByIdempotencyKey_Found() {
 	s.Require().NoError(s.repo.Create(context.Background(), tx))
 
 	found, err := s.repo.FindByIdempotencyKey(context.Background(), "idem-key-123")
-	s.NoError(err)
-	s.NotNil(found)
+	s.Require().NoError(err)
+	s.Require().NotNil(found)
 	s.Equal(tx.ID, found.ID)
 }
 
@@ -129,12 +129,12 @@ func (s *TransactionRepositoryTestSuite) TestFind_ByWallet_Pagination() {
 	}
 
 	page1, total, err := s.repo.FindByWallet(context.Background(), walletID, "", "", 2, 0)
-	s.NoError(err)
+	s.Require().NoError(err)
 	s.Len(page1, 2)
 	s.Equal(int64(5), total)
 
 	page2, _, err := s.repo.FindByWallet(context.Background(), walletID, "", "", 2, 2)
-	s.NoError(err)
+	s.Require().NoError(err)
 	s.Len(page2, 2)
 }
 
@@ -144,8 +144,8 @@ func (s *TransactionRepositoryTestSuite) TestFind_ByWallet_FilterByType() {
 	s.Require().NoError(s.repo.Create(context.Background(), s.makeTx(walletID, "withdrawal", "confirmed")))
 
 	deposits, _, err := s.repo.FindByWallet(context.Background(), walletID, "deposit", "", 50, 0)
-	s.NoError(err)
-	s.Len(deposits, 1)
+	s.Require().NoError(err)
+	s.Require().Len(deposits, 1)
 	s.Equal("deposit", deposits[0].TxType)
 }
 
@@ -155,7 +155,7 @@ func (s *TransactionRepositoryTestSuite) TestFind_ByWallet_FilterByStatus() {
 	s.Require().NoError(s.repo.Create(context.Background(), s.makeTx(walletID, "deposit", "confirmed")))
 
 	pending, _, err := s.repo.FindByWallet(context.Background(), walletID, "", "pending", 50, 0)
-	s.NoError(err)
+	s.Require().NoError(err)
 	s.Len(pending, 1)
 }
 
@@ -166,11 +166,11 @@ func (s *TransactionRepositoryTestSuite) TestCount_By_ChainAndTxHash() {
 	s.Require().NoError(s.repo.Create(context.Background(), tx))
 
 	count, err := s.repo.CountByChainAndTxHash(context.Background(), "eth", "0xuniquehash", "deposit")
-	s.NoError(err)
+	s.Require().NoError(err)
 	s.Equal(int64(1), count)
 
 	count, err = s.repo.CountByChainAndTxHash(context.Background(), "eth", "0xuniquehash", "withdrawal")
-	s.NoError(err)
+	s.Require().NoError(err)
 	s.Equal(int64(0), count)
 }
 
@@ -201,7 +201,7 @@ func (s *TransactionRepositoryTestSuite) TestCount_InternalTransfers_OnlySweepsA
 	for name, tc := range cases {
 		s.Run(name, func() {
 			count, err := s.repo.CountInternalTransfers(context.Background(), tc.chain, tc.hash, walletID)
-			s.NoError(err)
+			s.Require().NoError(err)
 			s.Equal(tc.want, count)
 		})
 	}
@@ -231,7 +231,7 @@ func (s *TransactionRepositoryTestSuite) TestFind_Pending_ByChain() {
 	s.Require().NoError(s.repo.Create(context.Background(), s.makeTx(walletID, "deposit", "confirmed")))
 
 	pending, err := s.repo.FindPendingByChain(context.Background(), "eth")
-	s.NoError(err)
+	s.Require().NoError(err)
 	s.Len(pending, 2)
 }
 
@@ -249,7 +249,7 @@ func (s *TransactionRepositoryTestSuite) TestFind_PendingByChain_IncludesOutboun
 	s.Require().NoError(s.repo.Create(context.Background(), s.makeTx(walletID, "sweep", "confirmed")))
 
 	pending, err := s.repo.FindPendingByChain(context.Background(), "eth")
-	s.NoError(err)
+	s.Require().NoError(err)
 	s.Len(pending, 4)
 
 	byType := map[string]int{}
@@ -269,10 +269,10 @@ func (s *TransactionRepositoryTestSuite) TestTransactionRepository_Update_Fields
 
 	confirmedAt := (*time.Time)(nil)
 	err := s.repo.RecordConfirmations(context.Background(), tx.ID, 5, "confirming", confirmedAt)
-	s.NoError(err)
+	s.Require().NoError(err)
 
 	found, err := s.repo.FindByID(context.Background(), tx.ID)
-	s.NoError(err)
+	s.Require().NoError(err)
 	s.Equal(5, found.Confirmations)
 	s.Equal("confirming", found.Status)
 }
@@ -283,11 +283,11 @@ func (s *TransactionRepositoryTestSuite) TestList_Global_Filters() {
 	s.Require().NoError(s.repo.Create(context.Background(), s.makeTx(walletID, "withdrawal", "pending")))
 
 	all, _, err := s.repo.List(context.Background(), "eth", "", "", "", 50, 0)
-	s.NoError(err)
+	s.Require().NoError(err)
 	s.Len(all, 2)
 
 	deposits, _, err := s.repo.List(context.Background(), "eth", "deposit", "", "", 50, 0)
-	s.NoError(err)
+	s.Require().NoError(err)
 	s.Len(deposits, 1)
 }
 
@@ -315,7 +315,7 @@ func (s *TransactionRepositoryTestSuite) TestList_ForAccount_FiltersByAccount() 
 	s.Require().NoError(s.repo.Create(context.Background(), s.makeTxForUser(walletB.ID, "shared_user", "deposit", "confirmed")))
 
 	txsA, totalA, err := s.repo.ListForAccount(context.Background(), accountA.ID, "", "", "", "shared_user", 50, 0)
-	s.NoError(err)
+	s.Require().NoError(err)
 	s.Equal(int64(2), totalA)
 	s.Len(txsA, 2)
 	for _, tx := range txsA {
@@ -323,9 +323,9 @@ func (s *TransactionRepositoryTestSuite) TestList_ForAccount_FiltersByAccount() 
 	}
 
 	txsB, totalB, err := s.repo.ListForAccount(context.Background(), accountB.ID, "", "", "", "shared_user", 50, 0)
-	s.NoError(err)
+	s.Require().NoError(err)
 	s.Equal(int64(1), totalB)
-	s.Len(txsB, 1)
+	s.Require().Len(txsB, 1)
 	s.Equal(walletB.ID, txsB[0].WalletID)
 }
 
@@ -338,7 +338,7 @@ func (s *TransactionRepositoryTestSuite) TestList_ForAccount_ExcludesUnassignedW
 	s.Require().NoError(s.repo.Create(context.Background(), s.makeTxForUser(unassigned.ID, "user_x", "deposit", "confirmed")))
 
 	txs, total, err := s.repo.ListForAccount(context.Background(), account.ID, "", "", "", "user_x", 50, 0)
-	s.NoError(err)
+	s.Require().NoError(err)
 	s.Equal(int64(0), total)
 	s.Empty(txs)
 }
@@ -354,11 +354,11 @@ func (s *TransactionRepositoryTestSuite) TestList_ForAccount_AppliesSecondaryFil
 	s.Require().NoError(s.repo.Create(context.Background(), s.makeTxForUser(wallet.ID, "u", "deposit", "pending")))
 
 	deposits, _, err := s.repo.ListForAccount(context.Background(), account.ID, "eth", "deposit", "", "u", 50, 0)
-	s.NoError(err)
+	s.Require().NoError(err)
 	s.Len(deposits, 2)
 
 	pendingWithdrawals, _, err := s.repo.ListForAccount(context.Background(), account.ID, "eth", "withdrawal", "pending", "u", 50, 0)
-	s.NoError(err)
+	s.Require().NoError(err)
 	s.Len(pendingWithdrawals, 1)
 }
 
@@ -375,11 +375,11 @@ func (s *TransactionRepositoryTestSuite) TestWithin_Commits_ASweepLegAndItsWebho
 		}
 		return repositories.NewWebhookEventRepository(nil).Create(ctx, sweepBroadcastEvent(eventID, txID))
 	})
-	s.NoError(err)
+	s.Require().NoError(err)
 
 	found, findErr := s.repo.FindByID(context.Background(), txID)
-	s.NoError(findErr)
-	s.NotNil(found)
+	s.Require().NoError(findErr)
+	s.Require().NotNil(found)
 	s.Equal(txID, found.ID)
 	s.Equal(int64(1), s.countWebhookEvents(eventID))
 }

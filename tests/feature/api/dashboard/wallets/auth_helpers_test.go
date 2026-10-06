@@ -173,7 +173,7 @@ func (s *authSuite) refresh(refreshToken string) (contractstesting.Response, log
 func (s *authSuite) signIn(email string) loginBody {
 	resp, body := s.loginAs(email)
 	resp.AssertOk()
-	s.Require().NotEmpty(body.AccessToken)
+	s.NotEmpty(body.AccessToken)
 	return body
 }
 

@@ -19,6 +19,7 @@ import (
 	"github.com/macrowallets/waas/pkg/security"
 	"github.com/macrowallets/waas/pkg/types"
 	"github.com/macrowallets/waas/tests/feature/support/fixtures"
+	"github.com/stretchr/testify/assert"
 )
 
 const (
@@ -82,14 +83,14 @@ func TestSeal_Webhook_ConfigSecretsKeepsSignaturesIdentical(t *testing.T) {
 	require.NoError(t, migration.Up())
 
 	sealed := storedWebhookSecret(t, configID)
-	require.NotEqual(t, legacyWebhookSecret, sealed)
-	require.True(t, security.IsSealedSecret(sealed))
-	require.True(t, security.IsSealedSecret(storedWebhookSecret(t, emptySecretID)), "an empty secret is sealed too")
+	assert.NotEqual(t, legacyWebhookSecret, sealed)
+	assert.True(t, security.IsSealedSecret(sealed))
+	assert.True(t, security.IsSealedSecret(storedWebhookSecret(t, emptySecretID)), "an empty secret is sealed too")
 
 	opened, err := security.OpenSecret(facades.Crypt(), sealed)
 	require.NoError(t, err)
-	require.Equal(t, legacyWebhookSecret, opened)
-	require.Equal(t, signatureBefore, deliveredSignature(t, opened), "Markets verifies X-Vault-Signature; it must not change")
+	assert.Equal(t, legacyWebhookSecret, opened)
+	assert.Equal(t, signatureBefore, deliveredSignature(t, opened), "Markets verifies X-Vault-Signature; it must not change")
 }
 
 func TestSeal_Webhook_ConfigSecretsIsIdempotent(t *testing.T) {
@@ -101,7 +102,7 @@ func TestSeal_Webhook_ConfigSecretsIsIdempotent(t *testing.T) {
 	sealedOnce := storedWebhookSecret(t, configID)
 	require.NoError(t, migration.Up())
 
-	require.Equal(t, sealedOnce, storedWebhookSecret(t, configID), "a sealed row is not sealed twice")
+	assert.Equal(t, sealedOnce, storedWebhookSecret(t, configID), "a sealed row is not sealed twice")
 }
 
 func TestSeal_Webhook_ConfigSecretsDownRestoresPlaintext(t *testing.T) {
@@ -111,12 +112,12 @@ func TestSeal_Webhook_ConfigSecretsDownRestoresPlaintext(t *testing.T) {
 	require.NoError(t, migration.Up())
 
 	require.NoError(t, migration.Down())
-	require.Equal(t, legacyWebhookSecret, storedWebhookSecret(t, configID))
+	assert.Equal(t, legacyWebhookSecret, storedWebhookSecret(t, configID))
 	require.NoError(t, migration.Down(), "down is idempotent too")
-	require.Equal(t, legacyWebhookSecret, storedWebhookSecret(t, configID))
+	assert.Equal(t, legacyWebhookSecret, storedWebhookSecret(t, configID))
 
 	require.NoError(t, migration.Up())
-	require.True(t, security.IsSealedSecret(storedWebhookSecret(t, configID)))
+	assert.True(t, security.IsSealedSecret(storedWebhookSecret(t, configID)))
 }
 
 func TestSeal_Webhook_ConfigSecretsWidensTheColumnForLongSecrets(t *testing.T) {
@@ -127,8 +128,8 @@ func TestSeal_Webhook_ConfigSecretsWidensTheColumnForLongSecrets(t *testing.T) {
 
 	require.NoError(t, (&migrations.M00000000000440SealWebhookConfigSecrets{}).Up())
 
-	require.Greater(t, len(storedWebhookSecret(t, configID)), 255, "the sealed form outgrows varchar(255)")
+	assert.Greater(t, len(storedWebhookSecret(t, configID)), 255, "the sealed form outgrows varchar(255)")
 	opened, err := security.OpenSecret(facades.Crypt(), storedWebhookSecret(t, configID))
 	require.NoError(t, err)
-	require.Equal(t, longSecret, opened)
+	assert.Equal(t, longSecret, opened)
 }

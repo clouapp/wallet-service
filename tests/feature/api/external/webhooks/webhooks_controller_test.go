@@ -42,7 +42,7 @@ func (s *WebhooksControllerTestSuite) TestCreate_Webhook_Success() {
 	s.Require().NoError(err)
 	var payload map[string]any
 	s.Require().NoError(json.Unmarshal([]byte(content), &payload))
-	s.NotEmpty(payload["id"])
+	s.Require().NotEmpty(payload["id"])
 	s.NotNil(payload["events"])
 	_, hasSecret := payload["secret"]
 	s.False(hasSecret, "secret MUST NOT appear in webhook response body")
@@ -126,7 +126,7 @@ func (s *WebhooksControllerTestSuite) TestList_Webhooks_WithData() {
 		Data []map[string]any `json:"data"`
 	}
 	s.Require().NoError(json.Unmarshal([]byte(content), &payload))
-	s.Len(payload.Data, 1)
+	s.Require().Len(payload.Data, 1)
 	s.Equal("https://a.com/webhook", payload.Data[0]["url"])
 	s.Equal(true, payload.Data[0]["is_active"])
 	_, hasSecret := payload.Data[0]["secret"]

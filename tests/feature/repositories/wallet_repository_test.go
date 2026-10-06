@@ -48,8 +48,8 @@ func (s *WalletRepositoryTestSuite) TestFind_ByID_Found() {
 	s.Require().NoError(s.repo.Create(context.Background(), w))
 
 	found, err := s.repo.FindByID(context.Background(), w.ID)
-	s.NoError(err)
-	s.NotNil(found)
+	s.Require().NoError(err)
+	s.Require().NotNil(found)
 	s.Equal("eth", found.Chain)
 }
 
@@ -64,7 +64,7 @@ func (s *WalletRepositoryTestSuite) TestWalletRepository_Find_All() {
 	s.Require().NoError(s.repo.Create(context.Background(), s.makeWallet("btc")))
 
 	wallets, err := s.repo.FindAll(context.Background())
-	s.NoError(err)
+	s.Require().NoError(err)
 	s.Len(wallets, 2)
 }
 
@@ -73,10 +73,10 @@ func (s *WalletRepositoryTestSuite) TestWalletRepository_Set_Status() {
 	s.Require().NoError(s.repo.Create(context.Background(), w))
 
 	err := s.repo.SetStatus(context.Background(), w.ID, "frozen")
-	s.NoError(err)
+	s.Require().NoError(err)
 
 	found, err := s.repo.FindByID(context.Background(), w.ID)
-	s.NoError(err)
+	s.Require().NoError(err)
 	s.Equal("frozen", found.Status)
 }
 
@@ -88,10 +88,10 @@ func (s *WalletRepositoryTestSuite) TestActivate_Clears_TheCode() {
 	s.Require().NoError(s.repo.Create(context.Background(), w))
 
 	err := s.repo.Activate(context.Background(), w.ID, "active")
-	s.NoError(err)
+	s.Require().NoError(err)
 
 	found, err := s.repo.FindByID(context.Background(), w.ID)
-	s.NoError(err)
+	s.Require().NoError(err)
 	s.Equal("active", found.Status)
 	s.Nil(found.ActivationCode)
 }
@@ -158,12 +158,12 @@ func (s *WalletRepositoryTestSuite) TestWithin_Commits_AGasCheckAndItsWebhook() 
 		}
 		return repositories.NewWebhookEventRepository(nil).Create(ctx, gasStatusEvent(eventID))
 	})
-	s.NoError(err)
+	s.Require().NoError(err)
 
 	found, findErr := s.repo.FindByID(context.Background(), wallet.ID)
-	s.NoError(findErr)
+	s.Require().NoError(findErr)
 	s.Equal(models.GasStatusSeeded, found.GasStatus)
-	s.NotNil(found.GasLastCheckedAt)
+	s.Require().NotNil(found.GasLastCheckedAt)
 	s.True(found.GasLastCheckedAt.Equal(checkedAt))
 	s.Equal(int64(1), s.countWebhookEvents(eventID))
 }
@@ -186,7 +186,7 @@ func (s *WalletRepositoryTestSuite) TestWithin_Rolls_BackAGasCheckAndItsWebhook(
 	s.Error(err)
 
 	found, findErr := s.repo.FindByID(context.Background(), wallet.ID)
-	s.NoError(findErr)
+	s.Require().NoError(findErr)
 	s.Equal(models.GasStatusUnseeded, found.GasStatus)
 	s.Nil(found.GasLastCheckedAt)
 	s.Equal(int64(0), s.countWebhookEvents(eventID))

@@ -127,7 +127,7 @@ func (s *SessionRevocationTestSuite) TestDisable_TOTP_EndsEverySessionAndRenewsT
 	s.Require().NotEmpty(caller.AccessToken)
 	_, second := s.loginAs(user.Email)
 	_, otherDevice := s.verifyTwoFactor(second.ChallengeToken, "", user.RecoveryCodes[0])
-	s.Require().NotEmpty(otherDevice.AccessToken)
+	s.NotEmpty(otherDevice.AccessToken)
 
 	resp := s.authedDeleteJSON(caller.AccessToken, "/v1/users/me/totp", fmt.Sprintf(
 		`{"recovery_code":%q}`, user.RecoveryCodes[1],

@@ -65,12 +65,12 @@ func (s *WebhookSubscriptionRepositoryTestSuite) TestCreate_Find_AndRecordSync()
 	s.Require().NoError(s.repo.Create(context.Background(), inactive))
 
 	found, err := s.repo.FindByChainID(context.Background(), "eth")
-	s.NoError(err)
+	s.Require().NoError(err)
 	s.Equal(active.ID, found.ID)
 	s.Equal("sec", found.SigningSecret)
 
 	byProvider, err := s.repo.FindByProviderAndChain(context.Background(), "helius", "eth")
-	s.NoError(err)
+	s.Require().NoError(err)
 	s.Equal(inactive.ID, byProvider.ID)
 
 	missing, err := s.repo.FindByProviderAndChain(context.Background(), "quicknode", "eth")
@@ -78,7 +78,7 @@ func (s *WebhookSubscriptionRepositoryTestSuite) TestCreate_Find_AndRecordSync()
 	s.Nil(missing)
 
 	activeOnly, err := s.repo.FindAllActive(context.Background())
-	s.NoError(err)
+	s.Require().NoError(err)
 	s.Len(activeOnly, 1)
 
 	s.Require().NoError(s.repo.SetSyncStatus(context.Background(), active.ID, "syncing"))
@@ -86,8 +86,8 @@ func (s *WebhookSubscriptionRepositoryTestSuite) TestCreate_Find_AndRecordSync()
 	s.Require().NoError(s.repo.RecordSync(context.Background(), active.ID, "synced", "abc", syncedAt))
 
 	again, err := s.repo.FindByChainID(context.Background(), "eth")
-	s.NoError(err)
+	s.Require().NoError(err)
 	s.Equal("synced", again.SyncStatus)
-	s.NotNil(again.SyncedAddressesHash)
+	s.Require().NotNil(again.SyncedAddressesHash)
 	s.Equal("abc", *again.SyncedAddressesHash)
 }

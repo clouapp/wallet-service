@@ -12,6 +12,7 @@ import (
 
 	"github.com/macrowallets/waas/app/models"
 	authsvc "github.com/macrowallets/waas/app/services/auth"
+	"github.com/stretchr/testify/assert"
 )
 
 const (
@@ -247,11 +248,11 @@ func TestTwo_FactorLogin_BeginIssuesAChallengeNotASession(t *testing.T) {
 	challenge, err := f.login.Begin(f.user)
 
 	require.NoError(t, err)
-	require.Equal(t, 5*time.Minute, challenge.ExpiresIn)
+	assert.Equal(t, 5*time.Minute, challenge.ExpiresIn)
 	resolved, ok, err := f.challenges.Resolve(challenge.Token)
 	require.NoError(t, err)
-	require.True(t, ok)
-	require.Equal(t, f.user.ID, resolved.UserID)
+	assert.True(t, ok)
+	assert.Equal(t, f.user.ID, resolved.UserID)
 }
 
 func TestTwo_FactorLogin_ChallengeIssuedBeforeASessionRevocationIsRefused(t *testing.T) {
@@ -262,9 +263,9 @@ func TestTwo_FactorLogin_ChallengeIssuedBeforeASessionRevocationIsRefused(t *tes
 
 	_, err := f.login.Complete(token, f.validCode(), "")
 
-	require.ErrorIs(t, err, authsvc.ErrChallengeInvalid)
+	assert.ErrorIs(t, err, authsvc.ErrChallengeInvalid)
 	_, ok, _ := f.challenges.Resolve(token)
-	require.False(t, ok, "the stale challenge is retired")
+	assert.False(t, ok, "the stale challenge is retired")
 }
 
 func TestTwo_FactorLogin_ChallengeIssuedAfterTheWatermarkStillWorks(t *testing.T) {
@@ -274,7 +275,7 @@ func TestTwo_FactorLogin_ChallengeIssuedAfterTheWatermarkStillWorks(t *testing.T
 
 	_, err := f.login.Complete(f.begin(), f.validCode(), "")
 
-	require.NoError(t, err)
+	assert.NoError(t, err)
 }
 
 func TestTwo_FactorLogin_ValidTOTPCompletesAndSpendsTheChallenge(t *testing.T) {
@@ -284,9 +285,9 @@ func TestTwo_FactorLogin_ValidTOTPCompletesAndSpendsTheChallenge(t *testing.T) {
 	user, err := f.login.Complete(token, f.validCode(), "")
 
 	require.NoError(t, err)
-	require.Equal(t, f.user.ID, user.ID)
+	assert.Equal(t, f.user.ID, user.ID)
 	_, err = f.login.Complete(token, f.validCode(), "")
-	require.ErrorIs(t, err, authsvc.ErrChallengeInvalid, "a challenge yields one session at most")
+	assert.ErrorIs(t, err, authsvc.ErrChallengeInvalid, "a challenge yields one session at most")
 }
 
 func TestTwo_FactorLogin_DecryptsTheSecretBeforeValidating(t *testing.T) {
@@ -296,8 +297,8 @@ func TestTwo_FactorLogin_DecryptsTheSecretBeforeValidating(t *testing.T) {
 
 	_, err := f.login.Complete(token, f.validCode(), "")
 
-	require.Error(t, err)
-	require.NotErrorIs(t, err, authsvc.ErrInvalidSecondFactor, "a secret that cannot be opened is a server error, not a wrong code")
+	assert.Error(t, err)
+	assert.NotErrorIs(t, err, authsvc.ErrInvalidSecondFactor, "a secret that cannot be opened is a server error, not a wrong code")
 }
 
 func TestTwo_FactorLogin_ReplayedCodeIsRefused(t *testing.T) {
@@ -308,7 +309,7 @@ func TestTwo_FactorLogin_ReplayedCodeIsRefused(t *testing.T) {
 	require.NoError(t, err)
 
 	_, err = f.login.Complete(f.begin(), code, "")
-	require.ErrorIs(t, err, authsvc.ErrInvalidSecondFactor)
+	assert.ErrorIs(t, err, authsvc.ErrInvalidSecondFactor)
 }
 
 func TestTwo_FactorLogin_ConcurrentRedemptionsOfOneCodeYieldOneSuccess(t *testing.T) {
@@ -336,7 +337,7 @@ func TestTwo_FactorLogin_ConcurrentRedemptionsOfOneCodeYieldOneSuccess(t *testin
 	}
 	wg.Wait()
 
-	require.Equal(t, 1, successes)
+	assert.Equal(t, 1, successes)
 }
 
 func TestTwo_FactorLogin_WrongCodeKeepsTheChallengeUsable(t *testing.T) {
@@ -344,12 +345,12 @@ func TestTwo_FactorLogin_WrongCodeKeepsTheChallengeUsable(t *testing.T) {
 	token := f.begin()
 
 	_, err := f.login.Complete(token, "000000", "")
-	require.ErrorIs(t, err, authsvc.ErrInvalidSecondFactor)
+	assert.ErrorIs(t, err, authsvc.ErrInvalidSecondFactor)
 
 	user, err := f.login.Complete(token, f.validCode(), "")
 	require.NoError(t, err)
-	require.Equal(t, f.user.ID, user.ID)
-	require.Zero(t, f.attempts.attempts[f.user.ID], "a success clears the attempt counter")
+	assert.Equal(t, f.user.ID, user.ID)
+	assert.Zero(t, f.attempts.attempts[f.user.ID], "a success clears the attempt counter")
 }
 
 func TestTwo_FactorLogin_AttemptCapRevokesTheChallenge(t *testing.T) {
@@ -358,25 +359,25 @@ func TestTwo_FactorLogin_AttemptCapRevokesTheChallenge(t *testing.T) {
 
 	for i := 0; i < testMaxAttempts; i++ {
 		_, err := f.login.Complete(token, "000000", "")
-		require.ErrorIs(t, err, authsvc.ErrInvalidSecondFactor)
+		assert.ErrorIs(t, err, authsvc.ErrInvalidSecondFactor)
 	}
 	_, err := f.login.Complete(token, f.validCode(), "")
-	require.ErrorIs(t, err, authsvc.ErrSecondFactorLocked, "the right code after the cap is still refused")
+	assert.ErrorIs(t, err, authsvc.ErrSecondFactorLocked, "the right code after the cap is still refused")
 
 	_, err = f.login.Complete(token, f.validCode(), "")
-	require.ErrorIs(t, err, authsvc.ErrChallengeInvalid, "the capped challenge is gone")
+	assert.ErrorIs(t, err, authsvc.ErrChallengeInvalid, "the capped challenge is gone")
 }
 
 func TestTwo_FactorLogin_CapSpansNewChallengesForTheSameUser(t *testing.T) {
 	f := newTwoFactorFixture(t)
 	for i := 0; i < testMaxAttempts; i++ {
 		_, err := f.login.Complete(f.begin(), "000000", "")
-		require.ErrorIs(t, err, authsvc.ErrInvalidSecondFactor)
+		assert.ErrorIs(t, err, authsvc.ErrInvalidSecondFactor)
 	}
 
 	_, err := f.login.Complete(f.begin(), f.validCode(), "")
 
-	require.ErrorIs(t, err, authsvc.ErrSecondFactorLocked, "logging in again does not reset the guess budget")
+	assert.ErrorIs(t, err, authsvc.ErrSecondFactorLocked, "logging in again does not reset the guess budget")
 }
 
 func TestTwo_FactorLogin_ExpiredOrUnknownChallengeIsRefused(t *testing.T) {
@@ -385,13 +386,13 @@ func TestTwo_FactorLogin_ExpiredOrUnknownChallengeIsRefused(t *testing.T) {
 	f.challenges.expire(token)
 
 	_, err := f.login.Complete(token, f.validCode(), "")
-	require.ErrorIs(t, err, authsvc.ErrChallengeInvalid)
+	assert.ErrorIs(t, err, authsvc.ErrChallengeInvalid)
 
 	_, err = f.login.Complete("", f.validCode(), "")
-	require.ErrorIs(t, err, authsvc.ErrChallengeInvalid)
+	assert.ErrorIs(t, err, authsvc.ErrChallengeInvalid)
 
 	_, err = f.login.Complete("not-a-challenge", f.validCode(), "")
-	require.ErrorIs(t, err, authsvc.ErrChallengeInvalid)
+	assert.ErrorIs(t, err, authsvc.ErrChallengeInvalid)
 }
 
 func TestTwo_FactorLogin_ChallengeDiesWhenTOTPWasDisabledMeanwhile(t *testing.T) {
@@ -401,9 +402,9 @@ func TestTwo_FactorLogin_ChallengeDiesWhenTOTPWasDisabledMeanwhile(t *testing.T)
 
 	_, err := f.login.Complete(token, f.validCode(), "")
 
-	require.ErrorIs(t, err, authsvc.ErrChallengeInvalid)
+	assert.ErrorIs(t, err, authsvc.ErrChallengeInvalid)
 	_, ok, _ := f.challenges.Resolve(token)
-	require.False(t, ok)
+	assert.False(t, ok)
 }
 
 func TestTwo_FactorLogin_RecoveryCodeCompletesOnce(t *testing.T) {
@@ -411,13 +412,13 @@ func TestTwo_FactorLogin_RecoveryCodeCompletesOnce(t *testing.T) {
 
 	user, err := f.login.Complete(f.begin(), "", f.recovery[0])
 	require.NoError(t, err)
-	require.Equal(t, f.user.ID, user.ID)
+	assert.Equal(t, f.user.ID, user.ID)
 
 	_, err = f.login.Complete(f.begin(), "", f.recovery[0])
-	require.ErrorIs(t, err, authsvc.ErrInvalidSecondFactor, "a recovery code is single use")
+	assert.ErrorIs(t, err, authsvc.ErrInvalidSecondFactor, "a recovery code is single use")
 
 	_, err = f.login.Complete(f.begin(), "", f.recovery[1])
-	require.NoError(t, err, "the other recovery codes still work")
+	assert.NoError(t, err, "the other recovery codes still work")
 }
 
 func TestTwo_FactorLogin_RecoveryCodeIsTheFallbackForAWrongTOTP(t *testing.T) {
@@ -425,7 +426,7 @@ func TestTwo_FactorLogin_RecoveryCodeIsTheFallbackForAWrongTOTP(t *testing.T) {
 
 	_, err := f.login.Complete(f.begin(), "000000", f.recovery[0])
 
-	require.NoError(t, err)
+	assert.NoError(t, err)
 }
 
 func TestTwo_FactorLogin_NoCodeAtAllIsInvalid(t *testing.T) {
@@ -433,7 +434,7 @@ func TestTwo_FactorLogin_NoCodeAtAllIsInvalid(t *testing.T) {
 
 	_, err := f.login.Complete(f.begin(), "", "")
 
-	require.ErrorIs(t, err, authsvc.ErrInvalidSecondFactor)
+	assert.ErrorIs(t, err, authsvc.ErrInvalidSecondFactor)
 }
 
 func TestSecond_FactorVerifier_ConfirmedCodeCannotCompleteALogin(t *testing.T) {
@@ -449,10 +450,10 @@ func TestSecond_FactorVerifier_ConfirmedCodeCannotCompleteALogin(t *testing.T) {
 
 	matched, err := verifier.RecordConfirmedCode(f.user.ID, f.secret, f.validCode())
 	require.NoError(t, err)
-	require.True(t, matched)
+	assert.True(t, matched)
 
 	_, err = f.login.Complete(f.begin(), f.validCode(), "")
-	require.ErrorIs(t, err, authsvc.ErrInvalidSecondFactor)
+	assert.ErrorIs(t, err, authsvc.ErrInvalidSecondFactor)
 }
 
 func TestSecond_FactorVerifier_RefusesNotEnrolledUsers(t *testing.T) {
@@ -465,10 +466,10 @@ func TestSecond_FactorVerifier_RefusesNotEnrolledUsers(t *testing.T) {
 	require.NoError(t, err)
 
 	err = verifier.Verify(&models.User{ID: uuid.New()}, "123456", "")
-	require.ErrorIs(t, err, authsvc.ErrSecondFactorNotEnrolled)
+	assert.ErrorIs(t, err, authsvc.ErrSecondFactorNotEnrolled)
 
 	err = verifier.Verify(nil, "123456", "")
-	require.Error(t, err)
+	assert.Error(t, err)
 }
 
 func TestNew_TwoFactorLogin_ValidatesDependencies(t *testing.T) {
@@ -487,7 +488,7 @@ func TestNew_TwoFactorLogin_ValidatesDependencies(t *testing.T) {
 		Users:       f.users,
 		MaxAttempts: 1,
 	})
-	require.Error(t, err)
+	assert.Error(t, err)
 	_, err = authsvc.NewTwoFactorLogin(authsvc.LoginDeps{
 		Challenges:  f.challenges,
 		Attempts:    f.attempts,
@@ -495,11 +496,11 @@ func TestNew_TwoFactorLogin_ValidatesDependencies(t *testing.T) {
 		Users:       f.users,
 		MaxAttempts: 0,
 	})
-	require.Error(t, err)
+	assert.Error(t, err)
 	_, err = authsvc.NewSecondFactorVerifier(authsvc.VerifierDeps{
 		Service:  authsvc.NewService(),
 		Counters: f.users,
 		Recovery: f.users,
 	})
-	require.Error(t, err)
+	assert.Error(t, err)
 }

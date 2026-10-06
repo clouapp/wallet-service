@@ -68,7 +68,7 @@ func (s *WalletUnitTestSuite) SetupTest() {
 func (s *WalletUnitTestSuite) TestCreate_Wallet_PassphraseTooShort() {
 	ctx := context.Background()
 	_, err := s.service.CreateWallet(ctx, testAccountID, "eth", "Test", "short")
-	s.Error(err)
+	s.Require().Error(err)
 	s.Contains(err.Error(), "passphrase must be at least 12 characters")
 }
 
@@ -81,7 +81,7 @@ func (s *WalletUnitTestSuite) TestCreate_Wallet_UnknownChain() {
 func (s *WalletUnitTestSuite) TestGenerate_Address_WalletNotFound() {
 	ctx := context.Background()
 	_, err := s.service.GenerateAddress(ctx, [16]byte{}, "user_123", "test-label", `{}`, "")
-	s.Error(err)
+	s.Require().Error(err)
 	s.Contains(err.Error(), "wallet not found")
 }
 
@@ -151,11 +151,11 @@ func (s *WalletServiceTestSuite) TestCreateWallet_Success_ReturnsKeycardData() {
 	s.NotEmpty(result.Wallet.MPCCustomerShare)
 	s.NotEmpty(result.Wallet.MPCSecretARN)
 	s.Equal("secp256k1", result.Wallet.MPCCurve)
-	s.NotNil(result.Wallet.ActivationCode)
+	s.Require().NotNil(result.Wallet.ActivationCode)
 	s.Len(*result.Wallet.ActivationCode, 6)
 
 	s.NotEmpty(result.ServicePublicKey)
-	s.NotEmpty(result.ActivationCode)
+	s.Require().NotEmpty(result.ActivationCode)
 	s.Len(result.ActivationCode, 6)
 	s.Regexp(`^\d{6}$`, result.ActivationCode)
 }

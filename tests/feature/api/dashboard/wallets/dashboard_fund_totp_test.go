@@ -347,7 +347,7 @@ func (s *DashboardFundTOTPSuite) session(caller fundCaller) string {
 	}
 	login.AssertStatus(200)
 	s.Require().NotEmpty(body.ChallengeToken)
-	s.Require().Empty(body.AccessToken)
+	s.Empty(body.AccessToken)
 	verified := s.postJSON("/v1/auth/2fa/verify", fmt.Sprintf(
 		`{"challenge_token":%q,"recovery_code":%q}`, body.ChallengeToken, caller.recovery,
 	))

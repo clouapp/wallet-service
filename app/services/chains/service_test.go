@@ -9,6 +9,7 @@ import (
 
 	"github.com/macrowallets/waas/app/models"
 	chainsvc "github.com/macrowallets/waas/app/services/chains"
+	"github.com/stretchr/testify/assert"
 )
 
 func TestList_For_Environment(t *testing.T) {
@@ -74,16 +75,16 @@ func TestList_For_Environment(t *testing.T) {
 			t.Parallel()
 			got, err := chainsvc.NewService(chainsvc.Deps{Chains: test.store}).ListForEnvironment(context.Background(), test.environment)
 			if test.wantErr != nil {
-				require.ErrorIs(t, err, test.wantErr)
-				require.Nil(t, got)
+				assert.ErrorIs(t, err, test.wantErr)
+				assert.Nil(t, got)
 			} else {
 				require.NoError(t, err)
-				require.Equal(t, test.want, got)
+				assert.Equal(t, test.want, got)
 			}
-			require.Equal(t, test.wantActive, test.store.activeCalls)
-			require.Equal(t, test.wantTestnet, test.store.testnetCalls)
+			assert.Equal(t, test.wantActive, test.store.activeCalls)
+			assert.Equal(t, test.wantTestnet, test.store.testnetCalls)
 			if test.wantTestnet > 0 {
-				require.Equal(t, test.isTestnet, test.store.lastTestnet)
+				assert.Equal(t, test.isTestnet, test.store.lastTestnet)
 			}
 		})
 	}
@@ -99,40 +100,40 @@ func TestFind_By_IDTokensAndResources(t *testing.T) {
 
 	chain, err := svc.FindByID(context.Background(), "eth")
 	require.NoError(t, err)
-	require.Equal(t, "eth", chain.ID)
+	assert.Equal(t, "eth", chain.ID)
 
 	missing, err := svc.FindByID(context.Background(), "nope")
 	require.NoError(t, err)
-	require.Nil(t, missing)
+	assert.Nil(t, missing)
 
 	gotTokens, err := svc.FindTokens(context.Background(), "eth")
 	require.NoError(t, err)
-	require.Equal(t, tokens.rows, gotTokens)
+	assert.Equal(t, tokens.rows, gotTokens)
 
 	gotResources, err := svc.FindResources(context.Background(), "eth")
 	require.NoError(t, err)
-	require.Equal(t, resources.rows, gotResources)
+	assert.Equal(t, resources.rows, gotResources)
 
 	_, err = svc.FindTokens(nil, "eth")
-	require.EqualError(t, err, "list chain tokens: context is required")
+	assert.EqualError(t, err, "list chain tokens: context is required")
 	_, err = chainsvc.NewService(chainsvc.Deps{Chains: store}).FindTokens(context.Background(), "eth")
-	require.EqualError(t, err, "chains service: tokens repository is required")
+	assert.EqualError(t, err, "chains service: tokens repository is required")
 	_, err = chainsvc.NewService(chainsvc.Deps{Chains: store}).FindResources(context.Background(), "eth")
-	require.EqualError(t, err, "chains service: chain resources repository is required")
+	assert.EqualError(t, err, "chains service: chain resources repository is required")
 }
 
 func TestList_For_EnvironmentRequiresContextAndCatalog(t *testing.T) {
 	t.Parallel()
 
 	_, err := chainsvc.NewService(chainsvc.Deps{Chains: &fakeCatalog{}}).ListForEnvironment(nil, models.EnvironmentProd)
-	require.EqualError(t, err, "list chains: context is required")
+	assert.EqualError(t, err, "list chains: context is required")
 
 	_, err = chainsvc.NewService(chainsvc.Deps{}).ListForEnvironment(context.Background(), models.EnvironmentProd)
-	require.EqualError(t, err, "chains service: chains repository is required")
+	assert.EqualError(t, err, "chains service: chains repository is required")
 
 	var service *chainsvc.Service
 	_, err = service.ListForEnvironment(context.Background(), "")
-	require.EqualError(t, err, "chains service: chains repository is required")
+	assert.EqualError(t, err, "chains service: chains repository is required")
 }
 
 type fakeCatalog struct {

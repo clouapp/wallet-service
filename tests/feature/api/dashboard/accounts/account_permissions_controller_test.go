@@ -68,7 +68,7 @@ func (s *accountRolesSuite) catalog(token string, accountID uuid.UUID, status in
 		Permissions []string `json:"permissions"`
 	}
 	s.Require().NoError(json.Unmarshal([]byte(content), &parsed))
-	s.NotNil(parsed.Permissions)
+	s.Require().NotNil(parsed.Permissions)
 	return parsed.Permissions
 }
 

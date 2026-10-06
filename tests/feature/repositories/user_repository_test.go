@@ -38,12 +38,12 @@ func (s *UserRepositoryTestSuite) TestUserRepository_Create_Success() {
 		Status:       "active",
 	}
 	err := s.repo.Create(context.Background(), user)
-	s.NoError(err)
+	s.Require().NoError(err)
 	s.NotNil(user.Preferences)
 
 	found, err := s.repo.FindByEmail(context.Background(), "test@example.com")
-	s.NoError(err)
-	s.NotNil(found)
+	s.Require().NoError(err)
+	s.Require().NotNil(found)
 	s.Equal(user.ID, found.ID)
 	s.Equal("test@example.com", found.Email)
 	s.NotNil(found.Preferences)
@@ -59,8 +59,8 @@ func (s *UserRepositoryTestSuite) TestFind_ByEmail_Found() {
 	s.Require().NoError(s.repo.Create(context.Background(), user))
 
 	found, err := s.repo.FindByEmail(context.Background(), "found@example.com")
-	s.NoError(err)
-	s.NotNil(found)
+	s.Require().NoError(err)
+	s.Require().NotNil(found)
 	s.Equal(user.ID, found.ID)
 }
 
@@ -80,8 +80,8 @@ func (s *UserRepositoryTestSuite) TestFind_ByID_Found() {
 	s.Require().NoError(s.repo.Create(context.Background(), user))
 
 	found, err := s.repo.FindByID(context.Background(), user.ID)
-	s.NoError(err)
-	s.NotNil(found)
+	s.Require().NoError(err)
+	s.Require().NotNil(found)
 	s.Equal("byid@example.com", found.Email)
 }
 
@@ -102,10 +102,10 @@ func (s *UserRepositoryTestSuite) TestUpdate_Full_Name() {
 	s.Require().NoError(s.repo.Create(context.Background(), user))
 
 	err := s.repo.UpdateFullName(context.Background(), user.ID, "New Name")
-	s.NoError(err)
+	s.Require().NoError(err)
 
 	found, err := s.repo.FindByID(context.Background(), user.ID)
-	s.NoError(err)
+	s.Require().NoError(err)
 	s.Equal("New Name", found.FullName)
 }
 
@@ -119,10 +119,10 @@ func (s *UserRepositoryTestSuite) TestUpdate_Password_Hash() {
 	s.Require().NoError(s.repo.Create(context.Background(), user))
 
 	err := s.repo.UpdatePasswordHash(context.Background(), user.ID, "new_hash")
-	s.NoError(err)
+	s.Require().NoError(err)
 
 	found, err := s.repo.FindByID(context.Background(), user.ID)
-	s.NoError(err)
+	s.Require().NoError(err)
 	s.Equal("new_hash", found.PasswordHash)
 }
 

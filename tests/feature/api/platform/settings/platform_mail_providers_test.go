@@ -95,7 +95,7 @@ func (s *PlatformMailProvidersTestSuite) TestA_Platform_AdminStoresEachProvider(
 		}
 		for _, key := range provider.secrets {
 			field, ok := seen[key]
-			s.True(ok)
+			s.Require().True(ok)
 			s.True(field.Secret)
 			s.True(field.IsSet)
 			s.Nil(field.Value)

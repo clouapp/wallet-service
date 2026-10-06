@@ -53,18 +53,18 @@ func TestBitcoin_Provider_Testnet4FailureDoesNotFallBackToTestnet3(t *testing.T)
 
 	_, err := p.GetBlockHeight(context.Background(), TipSourceBitcoinTestnet4)
 
-	require.Error(t, err)
+	assert.Error(t, err)
 	assert.Zero(t, blockstream.hits.Load())
 }
 
 func TestBitcoin_Provider_MissingTestnet4IsAnError(t *testing.T) {
 	_, err := NewBitcoinProvider(BitcoinDeps{}).GetBlockHeight(context.Background(), TipSourceBitcoinTestnet4)
-	require.Error(t, err)
+	assert.Error(t, err)
 }
 
 func TestBitcoin_Provider_MissingBlockstreamIsAnError(t *testing.T) {
 	_, err := NewBitcoinProvider(BitcoinDeps{}).GetBlockHeight(context.Background(), models.ChainBTC)
-	require.Error(t, err)
+	assert.Error(t, err)
 }
 
 func TestBitcoin_Provider_MainnetAndTestnet3StayOnBlockstream(t *testing.T) {

@@ -47,7 +47,7 @@ func (s *WhitelistEntryRepositoryTestSuite) TestFind_By_WalletID() {
 	s.Require().NoError(s.repo.Create(context.Background(), &models.WhitelistEntry{ID: uuid.New(), WalletID: walletID, Address: "0x2"}))
 
 	entries, err := s.repo.FindByWalletID(context.Background(), walletID)
-	s.NoError(err)
+	s.Require().NoError(err)
 	s.Len(entries, 2)
 }
 
@@ -57,8 +57,8 @@ func (s *WhitelistEntryRepositoryTestSuite) TestFind_ByIDAndWallet_Found() {
 	s.Require().NoError(s.repo.Create(context.Background(), entry))
 
 	found, err := s.repo.FindByIDAndWallet(context.Background(), entry.ID, walletID)
-	s.NoError(err)
-	s.NotNil(found)
+	s.Require().NoError(err)
+	s.Require().NotNil(found)
 	s.Equal("0xfind", found.Address)
 }
 
@@ -79,9 +79,9 @@ func (s *WhitelistEntryRepositoryTestSuite) TestWhitelistEntryRepository_Delete_
 	s.Require().NoError(s.repo.Create(context.Background(), entry))
 
 	err := s.repo.Delete(context.Background(), entry)
-	s.NoError(err)
+	s.Require().NoError(err)
 
 	entries, err := s.repo.FindByWalletID(context.Background(), walletID)
-	s.NoError(err)
+	s.Require().NoError(err)
 	s.Len(entries, 0)
 }

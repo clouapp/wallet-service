@@ -14,6 +14,7 @@ import (
 	activitylog "github.com/macrowallets/waas/app/services/activity"
 	authsvc "github.com/macrowallets/waas/app/services/auth"
 	"github.com/macrowallets/waas/tests/feature/support/fixtures"
+	"github.com/stretchr/testify/assert"
 )
 
 func TestSession_Revocation_AndActivityCommitTogether(t *testing.T) {
@@ -32,24 +33,24 @@ func TestSession_Revocation_AndActivityCommitTogether(t *testing.T) {
 
 	watermark, err := revoker.RevokeAll(context.Background(), userID)
 	require.NoError(t, err)
-	require.False(t, watermark.IsZero())
+	assert.False(t, watermark.IsZero())
 
-	require.Equal(t, int64(1), scalar[int64](t, `SELECT count(*) FROM users WHERE id = ? AND sessions_revoked_at IS NOT NULL`, userID))
-	require.Equal(t, int64(1), scalar[int64](t, `SELECT count(*) FROM refresh_tokens WHERE id = ? AND revoked_at IS NOT NULL`, tokenID))
+	assert.Equal(t, int64(1), scalar[int64](t, `SELECT count(*) FROM users WHERE id = ? AND sessions_revoked_at IS NOT NULL`, userID))
+	assert.Equal(t, int64(1), scalar[int64](t, `SELECT count(*) FROM refresh_tokens WHERE id = ? AND revoked_at IS NOT NULL`, tokenID))
 
 	rows, total, err := activity.ListPlatform(context.Background(), 20, 0)
 	require.NoError(t, err)
-	require.Equal(t, int64(1), total)
-	require.Equal(t, activitylog.ActionUserSessionsRevoked, rows[0].Action)
-	require.Nil(t, rows[0].AccountID)
+	assert.Equal(t, int64(1), total)
+	assert.Equal(t, activitylog.ActionUserSessionsRevoked, rows[0].Action)
+	assert.Nil(t, rows[0].AccountID)
 	encoded, err := rows[0].Metadata.Encode()
 	require.NoError(t, err)
-	require.NotContains(t, encoded, "refresh-hash-must-not-be-stored")
+	assert.NotContains(t, encoded, "refresh-hash-must-not-be-stored")
 
 	listed, listedTotal, err := activity.List(context.Background(), uuid.New(), 20, 0)
 	require.NoError(t, err)
-	require.Equal(t, int64(0), listedTotal)
-	require.Empty(t, listed)
+	assert.Equal(t, int64(0), listedTotal)
+	assert.Empty(t, listed)
 }
 
 func TestSession_Revocation_RollsBackWhenActivityRefusesTheRow(t *testing.T) {
@@ -66,11 +67,11 @@ func TestSession_Revocation_RollsBackWhenActivityRefusesTheRow(t *testing.T) {
 	revoker := sessionRevoker(t, refuseSessionActivity{inner: repositories.NewAccountActivityRepository(nil)})
 
 	_, err := revoker.RevokeAll(context.Background(), userID)
-	require.Error(t, err)
+	assert.Error(t, err)
 
-	require.Equal(t, int64(1), scalar[int64](t, `SELECT count(*) FROM users WHERE id = ? AND sessions_revoked_at IS NULL`, userID))
-	require.Equal(t, int64(1), scalar[int64](t, `SELECT count(*) FROM refresh_tokens WHERE id = ? AND revoked_at IS NULL`, tokenID))
-	require.Equal(t, int64(0), scalar[int64](t, `SELECT count(*) FROM account_activity WHERE actor_user_id = ?`, userID))
+	assert.Equal(t, int64(1), scalar[int64](t, `SELECT count(*) FROM users WHERE id = ? AND sessions_revoked_at IS NULL`, userID))
+	assert.Equal(t, int64(1), scalar[int64](t, `SELECT count(*) FROM refresh_tokens WHERE id = ? AND revoked_at IS NULL`, tokenID))
+	assert.Equal(t, int64(0), scalar[int64](t, `SELECT count(*) FROM account_activity WHERE actor_user_id = ?`, userID))
 }
 
 type refuseSessionActivity struct {

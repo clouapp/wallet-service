@@ -190,7 +190,7 @@ func (s *PlatformAccountListTestSuite) assertAccountListKeys(node any, keys ...s
 	s.T().Helper()
 	object, ok := node.(map[string]any)
 	s.Require().True(ok)
-	s.Len(object, len(keys))
+	s.Require().Len(object, len(keys))
 	for _, key := range keys {
 		_, present := object[key]
 		s.True(present, key)

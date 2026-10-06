@@ -217,7 +217,7 @@ func (s *WalletRecoveryMaterialTestSuite) TestAdmin_Create_ResponseShapeUnchange
 	s.Require().True(ok)
 	walletID, ok := createdWallet["id"].(string)
 	s.Require().True(ok)
-	s.NotEmpty(walletID)
+	s.Require().NotEmpty(walletID)
 	for _, field := range omittedSecretFields {
 		s.NotContains(createdWallet, field)
 		s.NotContains(payload, field)

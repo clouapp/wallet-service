@@ -52,7 +52,7 @@ func (s *WithdrawalRepositoryTestSuite) TestFind_ByWallet_Pagination() {
 	}
 
 	page1, total, err := s.repo.FindByWallet(context.Background(), walletID, "", 2, 0)
-	s.NoError(err)
+	s.Require().NoError(err)
 	s.Len(page1, 2)
 	s.Equal(int64(5), total)
 }
@@ -63,7 +63,7 @@ func (s *WithdrawalRepositoryTestSuite) TestFind_ByWallet_FilterByStatus() {
 	s.Require().NoError(s.repo.Create(context.Background(), &models.Withdrawal{ID: uuid.New(), WalletID: walletID, Status: "cancelled", Amount: "0.002", FeeEstimate: "0", DestinationAddress: "0x2"}))
 
 	pending, _, err := s.repo.FindByWallet(context.Background(), walletID, "pending", 50, 0)
-	s.NoError(err)
+	s.Require().NoError(err)
 	s.Len(pending, 1)
 }
 
@@ -73,7 +73,7 @@ func (s *WithdrawalRepositoryTestSuite) TestFind_ByIDAndWallet_Found() {
 	s.Require().NoError(s.repo.Create(context.Background(), w))
 
 	found, err := s.repo.FindByIDAndWallet(context.Background(), w.ID, walletID)
-	s.NoError(err)
+	s.Require().NoError(err)
 	s.NotNil(found)
 }
 
@@ -94,10 +94,10 @@ func (s *WithdrawalRepositoryTestSuite) TestWithdrawalRepository_Update_Status()
 	s.Require().NoError(s.repo.Create(context.Background(), w))
 
 	err := s.repo.SetStatus(context.Background(), w.ID, "cancelled")
-	s.NoError(err)
+	s.Require().NoError(err)
 
 	found, err := s.repo.FindByIDAndWallet(context.Background(), w.ID, walletID)
-	s.NoError(err)
+	s.Require().NoError(err)
 	s.Equal("cancelled", found.Status)
 }
 

@@ -21,8 +21,8 @@ func TestService_Auth_Service(t *testing.T) {
 func (s *AuthServiceTestSuite) TestHash_Password_ReturnsBcryptHash() {
 	svc := authsvc.NewService()
 	hash, err := svc.HashPassword("mysecret")
-	s.NoError(err)
-	s.NotEmpty(hash)
+	s.Require().NoError(err)
+	s.Require().NotEmpty(hash)
 	s.True(svc.CheckPassword("mysecret", hash))
 }
 
@@ -35,7 +35,7 @@ func (s *AuthServiceTestSuite) TestCheckPassword_WrongPassword_ReturnsFalse() {
 func (s *AuthServiceTestSuite) TestGenerate_TOTP_ReturnsKeyAndQR() {
 	svc := authsvc.NewService()
 	key, qr, err := svc.GenerateTOTP("user@example.com")
-	s.NoError(err)
+	s.Require().NoError(err)
 	s.NotEmpty(key)
 	s.NotEmpty(qr)
 }
@@ -44,14 +44,14 @@ func (s *AuthServiceTestSuite) TestVerifyTOTP_ValidCode_ReturnsTrue() {
 	svc := authsvc.NewService()
 	key, _, _ := svc.GenerateTOTP("user@example.com")
 	code, err := totp.GenerateCode(key, time.Now())
-	s.NoError(err)
+	s.Require().NoError(err)
 	s.True(svc.VerifyTOTP(key, code))
 }
 
 func (s *AuthServiceTestSuite) TestGenerate_RecoveryCodes_Returns10Codes() {
 	svc := authsvc.NewService()
 	codes, hashes, err := svc.GenerateRecoveryCodes()
-	s.NoError(err)
+	s.Require().NoError(err)
 	s.Len(codes, 10)
 	s.Len(hashes, 10)
 }

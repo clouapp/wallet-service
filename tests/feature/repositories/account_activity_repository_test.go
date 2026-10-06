@@ -51,7 +51,7 @@ func (s *AccountActivityRepositoryTestSuite) TestMembership_And_ActivityRollBack
 		}
 		return errors.New("rollback")
 	})
-	s.Require().Error(err)
+	s.Error(err)
 
 	role, status := s.storedMembership(accountID, targetID)
 	s.Equal("user", role)
@@ -117,7 +117,7 @@ func (s *AccountActivityRepositoryTestSuite) TestSettings_Write_AndActivityRollB
 		}
 		return errors.New("rollback")
 	})
-	s.Require().Error(err)
+	s.Error(err)
 
 	stored, err := s.settings.ListGroup(ctx, accountID, "account_webhooks")
 	s.Require().NoError(err)
@@ -159,7 +159,7 @@ func (s *AccountActivityRepositoryTestSuite) TestToken_And_ActivityRollBackToget
 		}
 		return errors.New("rollback")
 	})
-	s.Require().Error(err)
+	s.Error(err)
 
 	total, err := facades.Orm().Query().Model(&models.AccessToken{}).Where("id = ?", tokenID).Count()
 	s.Require().NoError(err)
@@ -265,7 +265,7 @@ func (s *AccountActivityRepositoryTestSuite) TestFind_Returns_OnlyThatAccountsRo
 
 	for _, id := range []uuid.UUID{otherRowID, platformID, uuid.New(), uuid.Nil} {
 		missing, err := s.activity.Find(ctx, accountID, id)
-		s.Require().ErrorIs(err, models.ErrRepositoryNotFound)
+		s.ErrorIs(err, models.ErrRepositoryNotFound)
 		s.Nil(missing)
 	}
 

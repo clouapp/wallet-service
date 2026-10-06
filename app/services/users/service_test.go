@@ -11,6 +11,7 @@ import (
 
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/services/users"
+	"github.com/stretchr/testify/assert"
 )
 
 func TestUpdate_Preferences_ForwardsToTheStore(t *testing.T) {
@@ -21,22 +22,22 @@ func TestUpdate_Preferences_ForwardsToTheStore(t *testing.T) {
 	prefs := &models.UserPreferences{}
 	err := users.NewService(users.Deps{Store: store}).UpdatePreferences(context.Background(), id, prefs)
 	require.NoError(t, err)
-	require.Equal(t, id, store.id)
-	require.Same(t, prefs, store.prefs)
+	assert.Equal(t, id, store.id)
+	assert.Same(t, prefs, store.prefs)
 
 	store.err = errors.New("store down")
 	err = users.NewService(users.Deps{Store: store}).UpdatePreferences(context.Background(), id, prefs)
-	require.ErrorIs(t, err, store.err)
+	assert.ErrorIs(t, err, store.err)
 }
 
 func TestUser_Writes_RequireContextAndStore(t *testing.T) {
 	t.Parallel()
 
 	err := users.NewService(users.Deps{Store: &fakeStore{}}).UpdatePreferences(nil, uuid.New(), &models.UserPreferences{})
-	require.EqualError(t, err, "update preferences: context is required")
+	assert.EqualError(t, err, "update preferences: context is required")
 
 	err = users.NewService(users.Deps{}).UpdateFullName(context.Background(), uuid.New(), "Ada")
-	require.EqualError(t, err, "users service: users repository is required")
+	assert.EqualError(t, err, "users service: users repository is required")
 }
 
 type fakeStore struct {

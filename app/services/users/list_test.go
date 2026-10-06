@@ -11,6 +11,7 @@ import (
 
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/services/users"
+	"github.com/stretchr/testify/assert"
 )
 
 func TestList_Refuses_ACallerWhoIsNotAPlatformAdmin(t *testing.T) {
@@ -19,10 +20,10 @@ func TestList_Refuses_ACallerWhoIsNotAPlatformAdmin(t *testing.T) {
 
 	rows, total, err := service.List(context.Background(), uuid.New(), 20, 0)
 
-	require.ErrorIs(t, err, users.ErrViewForbidden)
-	require.Nil(t, rows)
-	require.Zero(t, total)
-	require.False(t, store.called)
+	assert.ErrorIs(t, err, users.ErrViewForbidden)
+	assert.Nil(t, rows)
+	assert.Zero(t, total)
+	assert.False(t, store.called)
 }
 
 func TestList_Returns_ThePageForAPlatformAdmin(t *testing.T) {
@@ -34,10 +35,10 @@ func TestList_Returns_ThePageForAPlatformAdmin(t *testing.T) {
 	rows, total, err := service.List(context.Background(), actor, 1, 2)
 
 	require.NoError(t, err)
-	require.Equal(t, int64(4), total)
-	require.Equal(t, []models.User{newer}, rows)
-	require.Equal(t, 1, store.limit)
-	require.Equal(t, 2, store.offset)
+	assert.Equal(t, int64(4), total)
+	assert.Equal(t, []models.User{newer}, rows)
+	assert.Equal(t, 1, store.limit)
+	assert.Equal(t, 2, store.offset)
 }
 
 func TestList_Rejects_AMissingActorAndABadPage(t *testing.T) {
@@ -46,20 +47,20 @@ func TestList_Rejects_AMissingActorAndABadPage(t *testing.T) {
 	service := users.NewService(users.Deps{Store: store, Admins: allowAdmins{actor}})
 
 	_, _, err := service.List(nil, actor, 20, 0)
-	require.ErrorContains(t, err, "context is required")
+	assert.ErrorContains(t, err, "context is required")
 
 	_, _, err = service.List(context.Background(), uuid.Nil, 20, 0)
-	require.ErrorContains(t, err, "actor is required")
+	assert.ErrorContains(t, err, "actor is required")
 
 	_, _, err = service.List(context.Background(), actor, 0, 0)
-	require.ErrorContains(t, err, "limit and offset are invalid")
+	assert.ErrorContains(t, err, "limit and offset are invalid")
 
 	_, _, err = service.List(context.Background(), actor, 20, -1)
-	require.ErrorContains(t, err, "limit and offset are invalid")
-	require.False(t, store.called)
+	assert.ErrorContains(t, err, "limit and offset are invalid")
+	assert.False(t, store.called)
 
 	_, _, err = users.NewService(users.Deps{Store: store}).List(context.Background(), actor, 20, 0)
-	require.ErrorContains(t, err, "platform admins are required")
+	assert.ErrorContains(t, err, "platform admins are required")
 }
 
 type listStore struct {

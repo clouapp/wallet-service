@@ -68,7 +68,7 @@ func (s *WalletUserRepositoryTestSuite) TestFind_By_WalletID() {
 	s.Require().NoError(s.repo.Create(context.Background(), &models.WalletUser{ID: uuid.New(), WalletID: walletID, UserID: uuid.New(), Roles: "viewer", Status: "active"}))
 
 	members, err := s.repo.FindByWalletID(context.Background(), walletID)
-	s.NoError(err)
+	s.Require().NoError(err)
 	s.Len(members, 2)
 }
 
@@ -79,7 +79,7 @@ func (s *WalletUserRepositoryTestSuite) TestFind_ByWalletID_ExcludesSoftDeleted(
 	s.Require().NoError(s.repo.SoftDelete(context.Background(), walletID, userID))
 
 	members, err := s.repo.FindByWalletID(context.Background(), walletID)
-	s.NoError(err)
+	s.Require().NoError(err)
 	s.Len(members, 0)
 }
 
@@ -89,8 +89,8 @@ func (s *WalletUserRepositoryTestSuite) TestFind_ByWalletAndUser_Found() {
 	s.Require().NoError(s.repo.Create(context.Background(), &models.WalletUser{ID: uuid.New(), WalletID: walletID, UserID: userID, Roles: "admin", Status: "active"}))
 
 	wu, err := s.repo.FindByWalletAndUser(context.Background(), walletID, userID)
-	s.NoError(err)
-	s.NotNil(wu)
+	s.Require().NoError(err)
+	s.Require().NotNil(wu)
 	s.Equal("admin", wu.Roles)
 }
 
@@ -110,7 +110,7 @@ func (s *WalletUserRepositoryTestSuite) TestFind_ByWalletAndUser_IgnoresAMembers
 	s.Nil(wu)
 
 	members, err := s.repo.FindByWalletID(context.Background(), walletID)
-	s.NoError(err)
+	s.Require().NoError(err)
 	s.Len(members, 1, "membership management still sees every status")
 }
 
@@ -125,8 +125,8 @@ func (s *WalletUserRepositoryTestSuite) TestFind_By_WalletAndUserIncludeDeleted(
 	s.Nil(active)
 
 	withDeleted, err := s.repo.FindByWalletAndUserIncludeDeleted(context.Background(), walletID, userID)
-	s.NoError(err)
-	s.NotNil(withDeleted)
+	s.Require().NoError(err)
+	s.Require().NotNil(withDeleted)
 	s.NotNil(withDeleted.DeletedAt)
 }
 
@@ -137,10 +137,10 @@ func (s *WalletUserRepositoryTestSuite) TestWalletUserRepository_Update_Field() 
 	s.Require().NoError(s.repo.Create(context.Background(), wu))
 
 	err := s.repo.SetRoles(context.Background(), wu.ID, "admin")
-	s.NoError(err)
+	s.Require().NoError(err)
 
 	found, err := s.repo.FindByWalletAndUser(context.Background(), walletID, userID)
-	s.NoError(err)
+	s.Require().NoError(err)
 	s.Equal("admin", found.Roles)
 }
 
@@ -150,7 +150,7 @@ func (s *WalletUserRepositoryTestSuite) TestWalletUserRepository_Soft_Delete() {
 	s.Require().NoError(s.repo.Create(context.Background(), &models.WalletUser{ID: uuid.New(), WalletID: walletID, UserID: userID, Roles: "viewer", Status: "active"}))
 
 	err := s.repo.SoftDelete(context.Background(), walletID, userID)
-	s.NoError(err)
+	s.Require().NoError(err)
 
 	found, err := s.repo.FindByWalletAndUser(context.Background(), walletID, userID)
 	s.ErrorIs(err, models.ErrRepositoryNotFound)

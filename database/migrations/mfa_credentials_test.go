@@ -9,6 +9,7 @@ import (
 
 	"github.com/macrowallets/waas/database/migrations"
 	"github.com/macrowallets/waas/tests/feature/support/fixtures"
+	"github.com/stretchr/testify/assert"
 )
 
 func TestCopy_Legacy_TotpSealsTheSecretAndMovesRecoveryCodes(t *testing.T) {
@@ -38,25 +39,25 @@ func TestCopy_Legacy_TotpSealsTheSecretAndMovesRecoveryCodes(t *testing.T) {
 	var column string
 	require.NoError(t, facades.Orm().Query().Raw(`
 		SELECT COALESCE(totp_secret, '') FROM users WHERE id = ?`, userID).Scan(&column))
-	require.Empty(t, column)
+	assert.Empty(t, column)
 	var counter int64
 	require.NoError(t, facades.Orm().Query().Raw(`
 		SELECT last_used_counter FROM mfa_credentials WHERE subject_type = 'users' AND subject_id = ?`, userID).Scan(&counter))
-	require.Equal(t, int64(9), counter)
+	assert.Equal(t, int64(9), counter)
 	var confirmed int64
 	require.NoError(t, facades.Orm().Query().Raw(`
 		SELECT count(*) FROM mfa_credentials
 		WHERE subject_type = 'users' AND subject_id = ? AND confirmed_at IS NOT NULL`, userID).Scan(&confirmed))
-	require.Equal(t, int64(1), confirmed)
+	assert.Equal(t, int64(1), confirmed)
 	var backups int64
 	require.NoError(t, facades.Orm().Query().Raw(`
 		SELECT count(*) FROM mfa_backup_codes
 		WHERE subject_type = 'users' AND subject_id = ? AND code_hash = 'recovery-hash-marker'`, userID).Scan(&backups))
-	require.Equal(t, int64(1), backups)
+	assert.Equal(t, int64(1), backups)
 	var left int64
 	require.NoError(t, facades.Orm().Query().Raw(`
 		SELECT count(*) FROM totp_recovery_codes WHERE user_id = ?`, userID).Scan(&left))
-	require.Zero(t, left)
+	assert.Zero(t, left)
 
 	_, err = facades.Orm().Query().Exec(`
 		INSERT INTO mfa_credentials (
@@ -67,9 +68,9 @@ func TestCopy_Legacy_TotpSealsTheSecretAndMovesRecoveryCodes(t *testing.T) {
 	var subjects int64
 	require.NoError(t, facades.Orm().Query().Raw(`
 		SELECT count(DISTINCT subject_type) FROM mfa_credentials`).Scan(&subjects))
-	require.Equal(t, int64(2), subjects)
+	assert.Equal(t, int64(2), subjects)
 
-	require.NoError(t, (&migrations.M00000000000510CreateMfaBackupCodesTable{}).Up())
+	assert.NoError(t, (&migrations.M00000000000510CreateMfaBackupCodesTable{}).Up())
 }
 
 func TestCopy_Legacy_TotpLeavesTheColumnWhenTheCopyDoesNotMatch(t *testing.T) {
@@ -90,7 +91,7 @@ func TestCopy_Legacy_TotpLeavesTheColumnWhenTheCopyDoesNotMatch(t *testing.T) {
 	require.NoError(t, err)
 
 	err = (&migrations.M00000000000510CreateMfaBackupCodesTable{}).Up()
-	require.Error(t, err)
+	assert.Error(t, err)
 
 	var column string
 	require.NoError(t, facades.Orm().Query().Raw(`

@@ -9,6 +9,7 @@ import (
 
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/services/currencies"
+	"github.com/stretchr/testify/assert"
 )
 
 func TestFind_All_ActiveAndByCode(t *testing.T) {
@@ -20,31 +21,31 @@ func TestFind_All_ActiveAndByCode(t *testing.T) {
 
 	got, err := svc.FindAllActive(context.Background())
 	require.NoError(t, err)
-	require.Equal(t, []models.Currency{*usd}, got)
-	require.Equal(t, 1, store.activeCalls)
+	assert.Equal(t, []models.Currency{*usd}, got)
+	assert.Equal(t, 1, store.activeCalls)
 
 	found, err := svc.FindByCode(context.Background(), "USD")
 	require.NoError(t, err)
-	require.Equal(t, usd, found)
-	require.Equal(t, "USD", store.lastCode)
+	assert.Equal(t, usd, found)
+	assert.Equal(t, "USD", store.lastCode)
 
 	store.err = errors.New("store down")
 	_, err = svc.FindByCode(context.Background(), "EUR")
-	require.ErrorIs(t, err, store.err)
+	assert.ErrorIs(t, err, store.err)
 }
 
 func TestCurrency_Reads_RequireContextAndStore(t *testing.T) {
 	t.Parallel()
 
 	_, err := currencies.NewService(currencies.Deps{Store: &fakeStore{}}).FindAllActive(nil)
-	require.EqualError(t, err, "list currencies: context is required")
+	assert.EqualError(t, err, "list currencies: context is required")
 
 	_, err = currencies.NewService(currencies.Deps{}).FindByCode(context.Background(), "USD")
-	require.EqualError(t, err, "currencies service: currencies repository is required")
+	assert.EqualError(t, err, "currencies service: currencies repository is required")
 
 	var svc *currencies.Service
 	_, err = svc.FindAllActive(context.Background())
-	require.EqualError(t, err, "currencies service: currencies repository is required")
+	assert.EqualError(t, err, "currencies service: currencies repository is required")
 }
 
 type fakeStore struct {

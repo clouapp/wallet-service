@@ -48,8 +48,8 @@ func (s *TotpRecoveryCodeRepositoryTestSuite) TestFind_Unused_ByUserID() {
 	facades.Orm().Query().Model(used).Where("id = ?", used.ID).Update("used_at", now)
 
 	codes, err := s.repo.FindUnusedByUserID(context.Background(), userID)
-	s.NoError(err)
-	s.Len(codes, 1)
+	s.Require().NoError(err)
+	s.Require().Len(codes, 1)
 	s.Equal(unused.ID, codes[0].ID)
 }
 
@@ -60,7 +60,7 @@ func (s *TotpRecoveryCodeRepositoryTestSuite) TestMark_Used_IfUnused() {
 	s.Require().NoError(facades.Orm().Query().Create(code))
 
 	spent, err := s.repo.MarkUsedIfUnused(context.Background(), code.ID)
-	s.NoError(err)
+	s.Require().NoError(err)
 	s.True(spent)
 
 	var check models.MfaBackupCode
@@ -76,9 +76,9 @@ func (s *TotpRecoveryCodeRepositoryTestSuite) TestMark_UsedIfUnused_SecondSpendI
 
 	first, err := s.repo.MarkUsedIfUnused(context.Background(), code.ID)
 	s.Require().NoError(err)
-	s.Require().True(first)
+	s.True(first)
 
 	second, err := s.repo.MarkUsedIfUnused(context.Background(), code.ID)
-	s.NoError(err)
+	s.Require().NoError(err)
 	s.False(second, "a spent recovery code must not be spendable again")
 }

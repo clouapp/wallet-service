@@ -209,6 +209,6 @@ func (s *PlatformUserMFATestSuite) signInWithoutUsingTheSecret(user seededAuthUs
 	s.T().Helper()
 	_, first := s.loginAs(user.Email)
 	_, session := s.verifyTwoFactor(first.ChallengeToken, s.currentCode(user.TOTPSecret), "")
-	s.Require().NotEmpty(session.AccessToken)
+	s.NotEmpty(session.AccessToken)
 	return session
 }

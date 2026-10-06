@@ -31,11 +31,11 @@ func (s *AccountRepositoryTestSuite) SetupTest() {
 func (s *AccountRepositoryTestSuite) TestAccountRepository_Create_Success() {
 	acc := &models.Account{ID: uuid.New(), Name: "Test Account", Status: "active"}
 	err := s.repo.Create(context.Background(), acc)
-	s.NoError(err)
+	s.Require().NoError(err)
 
 	found, err := s.repo.FindByID(context.Background(), acc.ID)
-	s.NoError(err)
-	s.NotNil(found)
+	s.Require().NoError(err)
+	s.Require().NotNil(found)
 	s.Equal("Test Account", found.Name)
 }
 
@@ -44,24 +44,24 @@ func (s *AccountRepositoryTestSuite) TestFind_ByID_Found() {
 	s.Require().NoError(s.repo.Create(context.Background(), acc))
 
 	found, err := s.repo.FindByID(context.Background(), acc.ID)
-	s.NoError(err)
-	s.NotNil(found)
+	s.Require().NoError(err)
+	s.Require().NotNil(found)
 	s.Equal(acc.ID, found.ID)
 }
 
 func (s *AccountRepositoryTestSuite) TestAccountRepository_Exists_Succeeds() {
 	missing, err := s.repo.Exists(context.Background(), uuid.New())
-	s.NoError(err)
+	s.Require().NoError(err)
 	s.False(missing)
 
 	nilID, err := s.repo.Exists(context.Background(), uuid.Nil)
-	s.NoError(err)
+	s.Require().NoError(err)
 	s.False(nilID)
 
 	acc := &models.Account{ID: uuid.New(), Name: "Exists", Status: "active"}
 	s.Require().NoError(s.repo.Create(context.Background(), acc))
 	found, err := s.repo.Exists(context.Background(), acc.ID)
-	s.NoError(err)
+	s.Require().NoError(err)
 	s.True(found)
 }
 
@@ -80,13 +80,13 @@ func (s *AccountRepositoryTestSuite) TestFind_By_IDs() {
 	s.Require().NoError(s.repo.Create(context.Background(), a3))
 
 	results, err := s.repo.FindByIDs(context.Background(), []uuid.UUID{a1.ID, a3.ID})
-	s.NoError(err)
+	s.Require().NoError(err)
 	s.Len(results, 2)
 }
 
 func (s *AccountRepositoryTestSuite) TestFind_ByIDs_Empty() {
 	results, err := s.repo.FindByIDs(context.Background(), []uuid.UUID{})
-	s.NoError(err)
+	s.Require().NoError(err)
 	s.Len(results, 0)
 }
 
@@ -144,7 +144,7 @@ func (s *AccountRepositoryTestSuite) TestPaginate_ByMember_OutOfRangeOffsetRetur
 	accounts, total, err := s.repo.PaginateByMember(context.Background(), userID, "", "", 20, 40)
 	s.Require().NoError(err)
 	s.Equal(int64(1), total)
-	s.NotNil(accounts)
+	s.Require().NotNil(accounts)
 	s.Empty(accounts)
 }
 
@@ -152,7 +152,7 @@ func (s *AccountRepositoryTestSuite) TestPaginate_ByMember_NoMemberships() {
 	accounts, total, err := s.repo.PaginateByMember(context.Background(), uuid.New(), "", "", 20, 0)
 	s.Require().NoError(err)
 	s.Equal(int64(0), total)
-	s.NotNil(accounts)
+	s.Require().NotNil(accounts)
 	s.Empty(accounts)
 }
 
@@ -266,10 +266,10 @@ func (s *AccountRepositoryTestSuite) TestAccountRepository_Set_Name() {
 	s.Require().NoError(s.repo.Create(context.Background(), acc))
 
 	err := s.repo.SetName(context.Background(), acc.ID, "New Name")
-	s.NoError(err)
+	s.Require().NoError(err)
 
 	found, err := s.repo.FindByID(context.Background(), acc.ID)
-	s.NoError(err)
+	s.Require().NoError(err)
 	s.Equal("New Name", found.Name)
 }
 
@@ -278,10 +278,10 @@ func (s *AccountRepositoryTestSuite) TestAccountRepository_Set_Environment() {
 	s.Require().NoError(s.repo.Create(context.Background(), acc))
 
 	err := s.repo.SetEnvironment(context.Background(), acc.ID, models.EnvironmentTest)
-	s.NoError(err)
+	s.Require().NoError(err)
 
 	found, err := s.repo.FindByID(context.Background(), acc.ID)
-	s.NoError(err)
+	s.Require().NoError(err)
 	s.Equal(models.EnvironmentTest, found.Environment)
 	s.Equal("Acme", found.Name)
 	s.Equal("active", found.Status)

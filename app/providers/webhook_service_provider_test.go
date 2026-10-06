@@ -10,6 +10,7 @@ import (
 
 	"github.com/macrowallets/waas/app/container"
 	"github.com/macrowallets/waas/app/repositories"
+	"github.com/stretchr/testify/assert"
 )
 
 // stubCipher satisfies the crypt binding this provider resolves while sealing
@@ -37,8 +38,8 @@ func TestWebhook_Provider_RegistersTheWebhookGraph(t *testing.T) {
 
 	subscriptions, err := container.Make[*repositories.WebhookSubscriptionRepository]()
 	require.NoError(t, err)
-	require.NotNil(t, subscriptions)
+	assert.NotNil(t, subscriptions)
 
-	require.Same(t, configs, container.MustMake[*repositories.WebhookConfigRepository]())
-	require.Same(t, events, container.MustMake[*repositories.WebhookEventRepository]())
+	assert.Same(t, configs, container.MustMake[*repositories.WebhookConfigRepository]())
+	assert.Same(t, events, container.MustMake[*repositories.WebhookEventRepository]())
 }

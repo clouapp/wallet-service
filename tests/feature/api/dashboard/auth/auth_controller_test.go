@@ -97,7 +97,7 @@ func (s *AuthControllerTestSuite) TestRegister_Persists_User() {
 	s.Require().NoError(err)
 	content, err := resp.Content()
 	s.Require().NoError(err)
-	s.Require().Contains(content, `"access_token"`, content)
+	s.Contains(content, `"access_token"`, content)
 	var parsed struct {
 		AccessToken string `json:"access_token"`
 		User        struct {

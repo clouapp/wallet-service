@@ -12,6 +12,7 @@ import (
 
 	authsvc "github.com/macrowallets/waas/app/services/auth"
 	"github.com/macrowallets/waas/tests/feature/support/testutil"
+	"github.com/stretchr/testify/assert"
 )
 
 func redisChallengeStore(t *testing.T, ttl time.Duration) *authsvc.CacheTOTPChallengeStore {
@@ -45,17 +46,17 @@ func TestCache_TOTPChallengeStore_IssueAndResolve(t *testing.T) {
 	t.Cleanup(func() { store.Revoke(token) })
 
 	require.NotEmpty(t, token)
-	require.NotEqual(t, 2, strings.Count(token, "."), "the challenge must not look like a JWT")
+	assert.NotEqual(t, 2, strings.Count(token, "."), "the challenge must not look like a JWT")
 	resolved, ok, err := store.Resolve(token)
 	require.NoError(t, err)
-	require.True(t, ok)
-	require.Equal(t, userID, resolved.UserID)
-	require.WithinDuration(t, time.Now(), resolved.IssuedAt, 2*time.Second)
+	assert.True(t, ok)
+	assert.Equal(t, userID, resolved.UserID)
+	assert.WithinDuration(t, time.Now(), resolved.IssuedAt, 2*time.Second)
 
 	again, ok, err := store.Resolve(token)
 	require.NoError(t, err)
-	require.True(t, ok, "resolving does not spend the challenge")
-	require.Equal(t, userID, again.UserID)
+	assert.True(t, ok, "resolving does not spend the challenge")
+	assert.Equal(t, userID, again.UserID)
 }
 
 func TestCache_TOTPChallengeStore_KeysDoNotContainTheToken(t *testing.T) {
@@ -68,7 +69,7 @@ func TestCache_TOTPChallengeStore_KeysDoNotContainTheToken(t *testing.T) {
 
 	keys, err := client.Keys(t.Context(), "*"+token+"*").Result()
 	require.NoError(t, err)
-	require.Empty(t, keys)
+	assert.Empty(t, keys)
 }
 
 func TestCache_TOTPChallengeStore_ConsumeIsSingleUse(t *testing.T) {
@@ -76,11 +77,11 @@ func TestCache_TOTPChallengeStore_ConsumeIsSingleUse(t *testing.T) {
 	token, err := store.Issue(uuid.New())
 	require.NoError(t, err)
 
-	require.True(t, store.Consume(token))
-	require.False(t, store.Consume(token))
+	assert.True(t, store.Consume(token))
+	assert.False(t, store.Consume(token))
 	_, ok, err := store.Resolve(token)
 	require.NoError(t, err)
-	require.False(t, ok, "a consumed challenge no longer resolves")
+	assert.False(t, ok, "a consumed challenge no longer resolves")
 }
 
 func TestCache_TOTPChallengeStore_ConcurrentConsumeHasOneWinner(t *testing.T) {
@@ -105,7 +106,7 @@ func TestCache_TOTPChallengeStore_ConcurrentConsumeHasOneWinner(t *testing.T) {
 	}
 	wg.Wait()
 
-	require.Equal(t, 1, winners)
+	assert.Equal(t, 1, winners)
 }
 
 func TestCache_TOTPChallengeStore_Expires(t *testing.T) {
@@ -117,7 +118,7 @@ func TestCache_TOTPChallengeStore_Expires(t *testing.T) {
 
 	_, ok, err := store.Resolve(token)
 	require.NoError(t, err)
-	require.False(t, ok)
+	assert.False(t, ok)
 }
 
 func TestCache_TOTPChallengeStore_RevokeAndUnknownTokens(t *testing.T) {
@@ -131,25 +132,25 @@ func TestCache_TOTPChallengeStore_RevokeAndUnknownTokens(t *testing.T) {
 
 	_, ok, err := store.Resolve(token)
 	require.NoError(t, err)
-	require.False(t, ok)
+	assert.False(t, ok)
 	_, ok, err = store.Resolve("")
 	require.NoError(t, err)
-	require.False(t, ok)
-	require.False(t, store.Consume(""))
+	assert.False(t, ok)
+	assert.False(t, store.Consume(""))
 }
 
 func TestCache_TOTPChallengeStore_ValidatesInput(t *testing.T) {
 	_, err := authsvc.NewCacheTOTPChallengeStore(authsvc.ChallengeStoreDeps{TTL: time.Minute})
-	require.Error(t, err)
+	assert.Error(t, err)
 	_, err = authsvc.NewCacheTOTPChallengeStore(authsvc.ChallengeStoreDeps{
 		Cache: facades.Cache(),
 		TTL:   0,
 	})
-	require.Error(t, err)
+	assert.Error(t, err)
 
 	store := redisChallengeStore(t, time.Minute)
 	_, err = store.Issue(uuid.Nil)
-	require.Error(t, err)
+	assert.Error(t, err)
 }
 
 func TestCache_AttemptLimiter_CountsAndResets(t *testing.T) {
@@ -160,13 +161,13 @@ func TestCache_AttemptLimiter_CountsAndResets(t *testing.T) {
 	for want := int64(1); want <= 3; want++ {
 		got, err := limiter.Claim(userID)
 		require.NoError(t, err)
-		require.Equal(t, want, got)
+		assert.Equal(t, want, got)
 	}
 
 	limiter.Reset(userID)
 	got, err := limiter.Claim(userID)
 	require.NoError(t, err)
-	require.Equal(t, int64(1), got)
+	assert.Equal(t, int64(1), got)
 }
 
 func TestCache_AttemptLimiter_ConcurrentClaimsAreAllCounted(t *testing.T) {
@@ -188,7 +189,7 @@ func TestCache_AttemptLimiter_ConcurrentClaimsAreAllCounted(t *testing.T) {
 
 	got, err := limiter.Claim(userID)
 	require.NoError(t, err)
-	require.Equal(t, int64(racers+1), got)
+	assert.Equal(t, int64(racers+1), got)
 }
 
 func TestCache_AttemptLimiter_WindowLapses(t *testing.T) {
@@ -205,5 +206,5 @@ func TestCache_AttemptLimiter_WindowLapses(t *testing.T) {
 
 	got, err := limiter.Claim(userID)
 	require.NoError(t, err)
-	require.Equal(t, int64(1), got)
+	assert.Equal(t, int64(1), got)
 }

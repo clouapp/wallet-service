@@ -45,12 +45,12 @@ func (s *TokenRepositoryTestSuite) TestFind_ByChainID_OnlyActive() {
 	s.Require().NoError(s.repo.Create(context.Background(), disabled))
 
 	found, err := s.repo.FindByChainID(context.Background(), "eth")
-	s.NoError(err)
-	s.Len(found, 1)
+	s.Require().NoError(err)
+	s.Require().Len(found, 1)
 	s.Equal("USDC", found[0].Symbol)
 
 	all, err := s.repo.FindActive(context.Background())
-	s.NoError(err)
+	s.Require().NoError(err)
 	s.Len(all, 1)
 }
 
@@ -68,7 +68,7 @@ func (s *TokenRepositoryTestSuite) TestFind_By_ChainAndContractIgnoresStatus() {
 	s.Require().NoError(s.repo.Create(context.Background(), disabled))
 
 	found, err := s.repo.FindByChainAndContract(context.Background(), "eth", "0xabc")
-	s.NoError(err)
+	s.Require().NoError(err)
 	s.Equal(disabled.ID, found.ID)
 	s.Equal("disabled", found.Status)
 

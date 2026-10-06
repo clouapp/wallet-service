@@ -43,7 +43,7 @@ func (s *FeatureRepositoryTestSuite) TestGlobal_Upsert_IsReadBackAndAMissingKeyI
 	s.Require().NoError(s.repo.UpsertGlobal(ctx, features.FlagWithdrawalsEnabled, true))
 	rows, err := s.repo.ListGlobal(ctx)
 	s.Require().NoError(err)
-	s.Len(rows, 1)
+	s.Require().Len(rows, 1)
 	s.Equal(features.FlagWithdrawalsEnabled, rows[0].Key)
 	s.True(rows[0].Enabled)
 

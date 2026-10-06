@@ -43,12 +43,12 @@ func (s *ChainResourceRepositoryTestSuite) TestFind_By_ChainAndType() {
 	s.Require().NoError(s.repo.Create(context.Background(), faucet))
 
 	all, err := s.repo.FindByChainID(context.Background(), "eth")
-	s.NoError(err)
+	s.Require().NoError(err)
 	s.Len(all, 2)
 
 	explorers, err := s.repo.FindByChainAndType(context.Background(), "eth", "explorer")
-	s.NoError(err)
-	s.Len(explorers, 1)
+	s.Require().NoError(err)
+	s.Require().Len(explorers, 1)
 	s.Equal("Etherscan", explorers[0].Name)
 }
 
@@ -60,7 +60,7 @@ func (s *ChainResourceRepositoryTestSuite) TestFind_By_ChainTypeAndNameIgnoresSt
 	s.Require().NoError(s.repo.Create(context.Background(), disabled))
 
 	found, err := s.repo.FindByChainTypeAndName(context.Background(), "eth", "explorer", "Old explorer")
-	s.NoError(err)
+	s.Require().NoError(err)
 	s.Equal(disabled.ID, found.ID)
 	s.Equal("disabled", found.Status)
 

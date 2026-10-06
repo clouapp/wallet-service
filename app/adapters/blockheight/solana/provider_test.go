@@ -17,7 +17,7 @@ import (
 func TestProvider_Reads_TheMainnetSlot(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, err := io.ReadAll(r.Body)
-		assert.NoError(t, err)
+		require.NoError(t, err)
 		assert.Equal(t, http.MethodPost, r.Method)
 		assert.Equal(t, "application/json", r.Header.Get("Content-Type"))
 		assert.Equal(t, getSlotBody, string(body))

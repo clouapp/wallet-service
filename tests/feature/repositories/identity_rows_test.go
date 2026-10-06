@@ -74,7 +74,7 @@ func (s *IdentityRowsSuite) TestUser_Account_QueriesReturnTheStoredRow() {
 
 	members, err := s.memberships.FindByUserID(ctx, user.ID)
 	s.Require().NoError(err)
-	s.Len(members, 1)
+	s.Require().Len(members, 1)
 	s.Equal(account.ID, members[0].AccountID)
 	s.Equal("owner", members[0].Role)
 

@@ -142,7 +142,7 @@ func TestProvider_Blank_KeySkipsTheRequest(t *testing.T) {
 	p.baseURL = srv.URL
 
 	_, err := p.GetBlockHeight(context.Background(), models.ChainETH)
-	require.ErrorIs(t, err, blockheight.ErrTipFromChainRPC)
+	assert.ErrorIs(t, err, blockheight.ErrTipFromChainRPC)
 	if hits != 0 {
 		t.Fatal("a blank etherscan key called the provider")
 	}
@@ -325,6 +325,6 @@ func TestProvider_Nil_ContextDoesNotCallHTTP(t *testing.T) {
 	p.baseURL = srv.URL
 
 	_, err := p.GetBlockHeight(nil, models.ChainETH)
-	require.Error(t, err)
+	assert.Error(t, err)
 	assert.False(t, called)
 }

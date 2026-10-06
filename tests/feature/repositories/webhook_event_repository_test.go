@@ -54,7 +54,7 @@ func (s *WebhookEventRepositoryTestSuite) TestWebhookEventRepository_Mark_Delive
 	s.Require().NoError(s.repo.Create(context.Background(), event))
 
 	err := s.repo.MarkDelivered(context.Background(), event.ID.String())
-	s.NoError(err)
+	s.Require().NoError(err)
 
 	var check models.WebhookEvent
 	facades.Orm().Query().Where("id = ?", event.ID).First(&check)

@@ -12,6 +12,7 @@ import (
 	"github.com/macrowallets/waas/app/models"
 	activitylog "github.com/macrowallets/waas/app/services/activity"
 	"github.com/macrowallets/waas/app/services/users"
+	"github.com/stretchr/testify/assert"
 )
 
 func TestSuspend_Writes_OnePlatformRowAndReactivateClearsIt(t *testing.T) {
@@ -33,36 +34,36 @@ func TestSuspend_Writes_OnePlatformRowAndReactivateClearsIt(t *testing.T) {
 
 	suspended, err := service.Suspend(context.Background(), actor, target)
 	require.NoError(t, err)
-	require.Equal(t, target, suspended.ID)
+	assert.Equal(t, target, suspended.ID)
 	require.NotNil(t, suspended.SuspendedAt)
-	require.True(t, when.Equal(*suspended.SuspendedAt))
-	require.Equal(t, []uuid.UUID{target}, sessions.revoked)
+	assert.True(t, when.Equal(*suspended.SuspendedAt))
+	assert.Equal(t, []uuid.UUID{target}, sessions.revoked)
 	require.Len(t, activity.rows, 1)
-	require.Nil(t, activity.rows[0].AccountID)
-	require.Equal(t, activitylog.ActionUserSuspended, activity.rows[0].Action)
-	require.Equal(t, actor, activity.rows[0].ActorUserID)
-	require.NotEqual(t, activitylog.ActionMemberSuspended, activity.rows[0].Action)
+	assert.Nil(t, activity.rows[0].AccountID)
+	assert.Equal(t, activitylog.ActionUserSuspended, activity.rows[0].Action)
+	assert.Equal(t, actor, activity.rows[0].ActorUserID)
+	assert.NotEqual(t, activitylog.ActionMemberSuspended, activity.rows[0].Action)
 	encoded, err := activity.rows[0].Metadata.Encode()
 	require.NoError(t, err)
-	require.NotContains(t, encoded, "password")
-	require.NotContains(t, encoded, "secret")
+	assert.NotContains(t, encoded, "password")
+	assert.NotContains(t, encoded, "secret")
 
 	again, err := service.Suspend(context.Background(), actor, target)
 	require.NoError(t, err)
-	require.True(t, when.Equal(*again.SuspendedAt))
+	assert.True(t, when.Equal(*again.SuspendedAt))
 	require.Len(t, activity.rows, 1)
-	require.Len(t, sessions.revoked, 1)
+	assert.Len(t, sessions.revoked, 1)
 
 	cleared, err := service.Reactivate(context.Background(), actor, target)
 	require.NoError(t, err)
-	require.Nil(t, cleared.SuspendedAt)
-	require.Nil(t, store.user.SuspendedAt)
-	require.Equal(t, activitylog.ActionUserReactivated, activity.rows[1].Action)
-	require.Nil(t, activity.rows[1].AccountID)
+	assert.Nil(t, cleared.SuspendedAt)
+	assert.Nil(t, store.user.SuspendedAt)
+	assert.Equal(t, activitylog.ActionUserReactivated, activity.rows[1].Action)
+	assert.Nil(t, activity.rows[1].AccountID)
 
 	_, err = service.Reactivate(context.Background(), actor, target)
 	require.NoError(t, err)
-	require.Len(t, activity.rows, 2)
+	assert.Len(t, activity.rows, 2)
 }
 
 func TestSuspend_Refuses_ACallerWhoIsNotAPlatformAdmin(t *testing.T) {
@@ -80,9 +81,9 @@ func TestSuspend_Refuses_ACallerWhoIsNotAPlatformAdmin(t *testing.T) {
 	})
 
 	_, err := service.Suspend(context.Background(), actor, target)
-	require.ErrorIs(t, err, users.ErrPlatformForbidden)
-	require.Nil(t, store.user.SuspendedAt)
-	require.Empty(t, activity.rows)
+	assert.ErrorIs(t, err, users.ErrPlatformForbidden)
+	assert.Nil(t, store.user.SuspendedAt)
+	assert.Empty(t, activity.rows)
 
 	_, err = service.Reactivate(context.Background(), actor, target)
 	require.ErrorIs(t, err, users.ErrPlatformForbidden)
@@ -93,7 +94,7 @@ func TestSuspend_Refuses_ACallerWhoIsNotAPlatformAdmin(t *testing.T) {
 		Admins:   allowAdmins{},
 		Sessions: &suspensionSessions{},
 	}).Suspend(context.Background(), actor, uuid.New())
-	require.ErrorIs(t, err, users.ErrNotFound)
+	assert.ErrorIs(t, err, users.ErrNotFound)
 }
 
 func TestRevoke_Sessions_RecordsTheAdminAndRefusesEveryoneElse(t *testing.T) {
@@ -112,14 +113,14 @@ func TestRevoke_Sessions_RecordsTheAdminAndRefusesEveryoneElse(t *testing.T) {
 	})
 
 	require.NoError(t, service.RevokeSessions(context.Background(), actor, target))
-	require.Equal(t, []uuid.UUID{actor}, sessions.actors)
-	require.Equal(t, []uuid.UUID{target}, sessions.targets)
-	require.Empty(t, activity.rows)
-	require.Nil(t, store.user.SuspendedAt)
-	require.Empty(t, sessions.revoked)
+	assert.Equal(t, []uuid.UUID{actor}, sessions.actors)
+	assert.Equal(t, []uuid.UUID{target}, sessions.targets)
+	assert.Empty(t, activity.rows)
+	assert.Nil(t, store.user.SuspendedAt)
+	assert.Empty(t, sessions.revoked)
 
 	require.NoError(t, service.RevokeSessions(context.Background(), actor, target))
-	require.Len(t, sessions.targets, 2)
+	assert.Len(t, sessions.targets, 2)
 
 	err := users.NewService(users.Deps{
 		Store:    store,
@@ -128,7 +129,7 @@ func TestRevoke_Sessions_RecordsTheAdminAndRefusesEveryoneElse(t *testing.T) {
 		Sessions: sessions,
 	}).RevokeSessions(context.Background(), uuid.New(), target)
 	require.ErrorIs(t, err, users.ErrSessionsForbidden)
-	require.Len(t, sessions.targets, 2)
+	assert.Len(t, sessions.targets, 2)
 
 	err = users.NewService(users.Deps{
 		Store:    &suspensionStore{err: models.ErrRepositoryNotFound},
@@ -136,7 +137,7 @@ func TestRevoke_Sessions_RecordsTheAdminAndRefusesEveryoneElse(t *testing.T) {
 		Admins:   allowAdmins{},
 		Sessions: sessions,
 	}).RevokeSessions(context.Background(), uuid.New(), uuid.New())
-	require.ErrorIs(t, err, users.ErrNotFound)
+	assert.ErrorIs(t, err, users.ErrNotFound)
 
 	missing := users.NewService(users.Deps{
 		Store:    &suspensionStore{err: models.ErrRepositoryNotFound},
@@ -144,7 +145,7 @@ func TestRevoke_Sessions_RecordsTheAdminAndRefusesEveryoneElse(t *testing.T) {
 		Admins:   allowAdmins{actor},
 		Sessions: sessions,
 	})
-	require.ErrorIs(t, missing.RevokeSessions(context.Background(), actor, uuid.New()), users.ErrNotFound)
+	assert.ErrorIs(t, missing.RevokeSessions(context.Background(), actor, uuid.New()), users.ErrNotFound)
 }
 
 func TestSuspend_Reports_AMissingUser(t *testing.T) {
@@ -160,7 +161,7 @@ func TestSuspend_Reports_AMissingUser(t *testing.T) {
 	})
 
 	_, err := service.Suspend(context.Background(), actor, uuid.New())
-	require.ErrorIs(t, err, users.ErrNotFound)
+	assert.ErrorIs(t, err, users.ErrNotFound)
 }
 
 type allowAdmins []uuid.UUID

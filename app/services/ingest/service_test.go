@@ -168,7 +168,7 @@ func TestProcess_Transfers_NativeHumanUsesChainDecimals(t *testing.T) {
 	skipped := &ingestTxRepo{}
 	svc.txRepo = skipped
 	err = svc.processTransfer(t.Context(), models.ChainBTC, mockChain, transfer)
-	require.Error(t, err)
+	assert.Error(t, err)
 	assert.Empty(t, skipped.created)
 }
 
@@ -234,7 +234,7 @@ func TestProcess_Transfers_DispatchesTheTransactionRefresh(t *testing.T) {
 		Amount: big.NewInt(42),
 	}})
 	require.NoError(t, err)
-	require.Equal(t, []recordedRefresh{{
+	assert.Equal(t, []recordedRefresh{{
 		method:   "transactions",
 		walletID: addrs.addr.WalletID.String(),
 		chainID:  models.ChainETH,

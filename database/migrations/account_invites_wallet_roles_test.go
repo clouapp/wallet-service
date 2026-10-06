@@ -8,13 +8,14 @@ import (
 
 	"github.com/macrowallets/waas/database/migrations"
 	"github.com/macrowallets/waas/tests/feature/support/fixtures"
+	"github.com/stretchr/testify/assert"
 )
 
 func TestAccount_Invites_WalletRolesIsNullableJsonb(t *testing.T) {
 	fixtures.TestDB(t)
 
-	require.Equal(t, "jsonb", walletRolesType(t))
-	require.Equal(t, "YES", walletRolesNullable(t))
+	assert.Equal(t, "jsonb", walletRolesType(t))
+	assert.Equal(t, "YES", walletRolesNullable(t))
 
 	account := fixtures.InsertAccount(t, "invite-wallet-roles")
 	ownerID := uuid.New()
@@ -24,23 +25,23 @@ func TestAccount_Invites_WalletRolesIsNullableJsonb(t *testing.T) {
 	exec(t, `INSERT INTO account_invites (id, account_id, email, role, token_hash, invited_by, expires_at, created_at, updated_at)
 		VALUES (?, ?, 'wallet-roles@example.com', 'user', 'hash', ?, NOW() + INTERVAL '72 hours', NOW(), NOW())`,
 		inviteID, account.ID, ownerID)
-	require.Equal(t, int64(1), scalar[int64](t, `SELECT count(*) FROM account_invites WHERE id = ? AND wallet_roles IS NULL`, inviteID))
+	assert.Equal(t, int64(1), scalar[int64](t, `SELECT count(*) FROM account_invites WHERE id = ? AND wallet_roles IS NULL`, inviteID))
 
 	exec(t, `UPDATE account_invites SET wallet_roles = CAST(? AS jsonb) WHERE id = ?`, `{"wallet":"user"}`, inviteID)
-	require.Equal(t, int64(1), scalar[int64](t, `SELECT count(*) FROM account_invites WHERE id = ? AND wallet_roles = CAST(? AS jsonb)`, inviteID, `{"wallet":"user"}`))
+	assert.Equal(t, int64(1), scalar[int64](t, `SELECT count(*) FROM account_invites WHERE id = ? AND wallet_roles = CAST(? AS jsonb)`, inviteID, `{"wallet":"user"}`))
 
 	migration := &migrations.M00000000000560AddAccountInvitesWalletRoles{}
 	require.NoError(t, migration.Down())
-	require.Equal(t, int64(0), walletRolesColumnCount(t))
-	require.Equal(t, "wallet-roles@example.com", scalar[string](t, `SELECT email FROM account_invites WHERE id = ?`, inviteID))
-	require.Equal(t, int64(1), scalar[int64](t, `SELECT count(*) FROM pg_indexes WHERE indexname = 'account_invites_pending_email'`))
+	assert.Equal(t, int64(0), walletRolesColumnCount(t))
+	assert.Equal(t, "wallet-roles@example.com", scalar[string](t, `SELECT email FROM account_invites WHERE id = ?`, inviteID))
+	assert.Equal(t, int64(1), scalar[int64](t, `SELECT count(*) FROM pg_indexes WHERE indexname = 'account_invites_pending_email'`))
 
 	require.NoError(t, migration.Up())
-	require.Equal(t, "jsonb", walletRolesType(t))
-	require.Equal(t, "YES", walletRolesNullable(t))
-	require.Equal(t, int64(1), scalar[int64](t, `SELECT count(*) FROM account_invites WHERE id = ? AND wallet_roles IS NULL`, inviteID))
+	assert.Equal(t, "jsonb", walletRolesType(t))
+	assert.Equal(t, "YES", walletRolesNullable(t))
+	assert.Equal(t, int64(1), scalar[int64](t, `SELECT count(*) FROM account_invites WHERE id = ? AND wallet_roles IS NULL`, inviteID))
 	require.NoError(t, migration.Up())
-	require.Equal(t, int64(1), walletRolesColumnCount(t))
+	assert.Equal(t, int64(1), walletRolesColumnCount(t))
 }
 
 func walletRolesColumnCount(t *testing.T) int64 {

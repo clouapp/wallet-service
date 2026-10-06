@@ -15,24 +15,25 @@ import (
 	activitylog "github.com/macrowallets/waas/app/services/activity"
 	chainsvc "github.com/macrowallets/waas/app/services/chains"
 	"github.com/macrowallets/waas/pkg/numeric"
+	"github.com/stretchr/testify/assert"
 )
 
 func TestChain_Threshold_CatalogDeclaresTheSweepPair(t *testing.T) {
 	t.Parallel()
 
 	catalog := chainsvc.ChainThresholdCatalog()
-	require.Equal(t, policies.PermSweepView, catalog.ViewPermission)
-	require.Equal(t, policies.PermSweepUpdate, catalog.UpdatePermission)
-	require.NotEqual(t, policies.PermSettingsUpdate, catalog.UpdatePermission)
-	require.NotEqual(t, policies.PermSettingsView, catalog.ViewPermission)
-	require.NotEqual(t, policies.PermChainsView, catalog.ViewPermission)
-	require.NotEqual(t, policies.PermChainsUpdate, catalog.UpdatePermission)
-	require.Equal(t, policies.PermChainsView, catalog.ChainViewPermission)
-	require.Equal(t, policies.PermChainsUpdate, catalog.ChainUpdatePermission)
-	require.NotEqual(t, policies.PermSettingsUpdate, catalog.ChainUpdatePermission)
-	require.NotEqual(t, policies.PermSweepUpdate, catalog.ChainUpdatePermission)
-	require.False(t, catalog.ReturnsRPCURL)
-	require.Equal(t, []string{
+	assert.Equal(t, policies.PermSweepView, catalog.ViewPermission)
+	assert.Equal(t, policies.PermSweepUpdate, catalog.UpdatePermission)
+	assert.NotEqual(t, policies.PermSettingsUpdate, catalog.UpdatePermission)
+	assert.NotEqual(t, policies.PermSettingsView, catalog.ViewPermission)
+	assert.NotEqual(t, policies.PermChainsView, catalog.ViewPermission)
+	assert.NotEqual(t, policies.PermChainsUpdate, catalog.UpdatePermission)
+	assert.Equal(t, policies.PermChainsView, catalog.ChainViewPermission)
+	assert.Equal(t, policies.PermChainsUpdate, catalog.ChainUpdatePermission)
+	assert.NotEqual(t, policies.PermSettingsUpdate, catalog.ChainUpdatePermission)
+	assert.NotEqual(t, policies.PermSweepUpdate, catalog.ChainUpdatePermission)
+	assert.False(t, catalog.ReturnsRPCURL)
+	assert.Equal(t, []string{
 		"gas_readiness_threshold_raw",
 		"dust_threshold_native_raw",
 		"dust_threshold_usd",
@@ -55,8 +56,8 @@ func TestUpdate_Thresholds_UnknownChainIsNotFoundBeforeTheAdminCheck(t *testing.
 	})
 
 	_, err := service.Update(context.Background(), uuid.New(), "missing", thresholdObject(t, `{"dust_threshold_usd":"-1"}`))
-	require.ErrorIs(t, err, chainsvc.ErrNotFound)
-	require.Nil(t, store.write)
+	assert.ErrorIs(t, err, chainsvc.ErrNotFound)
+	assert.Nil(t, store.write)
 }
 
 func TestUpdate_Thresholds_NonAdminLeavesTheRowUnchanged(t *testing.T) {
@@ -70,8 +71,8 @@ func TestUpdate_Thresholds_NonAdminLeavesTheRowUnchanged(t *testing.T) {
 	_, err := service.Update(context.Background(), uuid.New(), "eth", map[string]json.RawMessage{
 		"gas_readiness_threshold_raw": json.RawMessage(`"-1"`),
 	})
-	require.ErrorIs(t, err, chainsvc.ErrPlatformForbidden)
-	require.Nil(t, store.write)
+	assert.ErrorIs(t, err, chainsvc.ErrPlatformForbidden)
+	assert.Nil(t, store.write)
 }
 
 func TestUpdate_Thresholds_NegativeAmountAndConfirmationAreNotStored(t *testing.T) {
@@ -91,11 +92,11 @@ func TestUpdate_Thresholds_NegativeAmountAndConfirmationAreNotStored(t *testing.
 	})
 	var invalid *chainsvc.ValidationError
 	require.ErrorAs(t, err, &invalid)
-	require.Equal(t, []string{"must not be negative"}, invalid.Fields["dust_threshold_usd"])
-	require.Equal(t, []string{"must not be negative"}, invalid.Fields["required_confirmations"])
-	require.Nil(t, store.write)
-	require.Empty(t, activity.rows)
-	require.Equal(t, "5000000000000000", *store.chain.GasReadinessThresholdRaw)
+	assert.Equal(t, []string{"must not be negative"}, invalid.Fields["dust_threshold_usd"])
+	assert.Equal(t, []string{"must not be negative"}, invalid.Fields["required_confirmations"])
+	assert.Nil(t, store.write)
+	assert.Empty(t, activity.rows)
+	assert.Equal(t, "5000000000000000", *store.chain.GasReadinessThresholdRaw)
 }
 
 func TestUpdate_Thresholds_OneFieldLeavesTheOthersAndAuditsTheName(t *testing.T) {
@@ -112,26 +113,26 @@ func TestUpdate_Thresholds_OneFieldLeavesTheOthersAndAuditsTheName(t *testing.T)
 		"gas_readiness_threshold_raw": json.RawMessage(`"77"`),
 	})
 	require.NoError(t, err)
-	require.Equal(t, "77", view.GasReadinessThresholdRaw)
-	require.Equal(t, "500000000000000", view.DustThresholdNativeRaw)
-	require.Equal(t, "1", view.DustThresholdUSD)
+	assert.Equal(t, "77", view.GasReadinessThresholdRaw)
+	assert.Equal(t, "500000000000000", view.DustThresholdNativeRaw)
+	assert.Equal(t, "1", view.DustThresholdUSD)
 	require.NotNil(t, store.write)
-	require.NotNil(t, store.write.GasReadinessThresholdRaw)
-	require.Nil(t, store.write.DustThresholdNativeRaw)
-	require.Nil(t, store.write.DustThresholdUSD)
-	require.Equal(t, "77", store.chain.GasReadinessThreshold().String())
+	assert.NotNil(t, store.write.GasReadinessThresholdRaw)
+	assert.Nil(t, store.write.DustThresholdNativeRaw)
+	assert.Nil(t, store.write.DustThresholdUSD)
+	assert.Equal(t, "77", store.chain.GasReadinessThreshold().String())
 
 	require.Len(t, activity.rows, 1)
-	require.Nil(t, activity.rows[0].AccountID)
-	require.Equal(t, actor, activity.rows[0].ActorUserID)
-	require.Equal(t, activitylog.ActionChainsUpdated, activity.rows[0].Action)
-	require.Equal(t, "eth", activity.rows[0].TargetID)
+	assert.Nil(t, activity.rows[0].AccountID)
+	assert.Equal(t, actor, activity.rows[0].ActorUserID)
+	assert.Equal(t, activitylog.ActionChainsUpdated, activity.rows[0].Action)
+	assert.Equal(t, "eth", activity.rows[0].TargetID)
 	encoded, err := activity.rows[0].Metadata.Encode()
 	require.NoError(t, err)
-	require.Contains(t, encoded, `"key":"eth"`)
-	require.Contains(t, encoded, `"gas_readiness_threshold_raw"`)
-	require.NotContains(t, encoded, "77")
-	require.NotContains(t, encoded, "platform.secret_viewed")
+	assert.Contains(t, encoded, `"key":"eth"`)
+	assert.Contains(t, encoded, `"gas_readiness_threshold_raw"`)
+	assert.NotContains(t, encoded, "77")
+	assert.NotContains(t, encoded, "platform.secret_viewed")
 }
 
 func TestUpdate_Thresholds_EmptyGasIsTheBitcoinSentinelOnly(t *testing.T) {
@@ -147,9 +148,9 @@ func TestUpdate_Thresholds_EmptyGasIsTheBitcoinSentinelOnly(t *testing.T) {
 		"gas_readiness_threshold_raw": json.RawMessage(`""`),
 	})
 	require.NoError(t, err)
-	require.Empty(t, view.GasReadinessThresholdRaw)
-	require.Nil(t, store.chain.GasReadinessThreshold())
-	require.Equal(t, "10000", *store.chain.DustThresholdNativeRaw)
+	assert.Empty(t, view.GasReadinessThresholdRaw)
+	assert.Nil(t, store.chain.GasReadinessThreshold())
+	assert.Equal(t, "10000", *store.chain.DustThresholdNativeRaw)
 
 	eth := &thresholdStore{chain: ethChain("5", "1", "1")}
 	service = chainsvc.NewThresholds(chainsvc.ThresholdDeps{
@@ -160,9 +161,9 @@ func TestUpdate_Thresholds_EmptyGasIsTheBitcoinSentinelOnly(t *testing.T) {
 	})
 	var invalid *chainsvc.ValidationError
 	require.ErrorAs(t, err, &invalid)
-	require.Equal(t, []string{"must not be empty"}, invalid.Fields["gas_readiness_threshold_raw"])
-	require.Nil(t, eth.write)
-	require.Equal(t, "5", eth.chain.GasReadinessThreshold().String())
+	assert.Equal(t, []string{"must not be empty"}, invalid.Fields["gas_readiness_threshold_raw"])
+	assert.Nil(t, eth.write)
+	assert.Equal(t, "5", eth.chain.GasReadinessThreshold().String())
 }
 
 type thresholdStore struct {

@@ -66,7 +66,7 @@ func (s *AccountUserRepositoryTestSuite) TestFind_By_ID() {
 	s.Require().NoError(s.repo.Create(context.Background(), au))
 
 	found, err := s.repo.FindByID(context.Background(), au.ID)
-	s.NoError(err)
+	s.Require().NoError(err)
 	s.Require().NotNil(found)
 	s.Equal(au.ID, found.ID)
 	s.Equal("auditor", found.Role)
@@ -83,7 +83,7 @@ func (s *AccountUserRepositoryTestSuite) TestFind_By_AccountID() {
 	s.Require().NoError(s.repo.Create(context.Background(), &models.AccountUser{ID: uuid.New(), AccountID: accID, UserID: s.createUser(), Role: "admin"}))
 
 	members, err := s.repo.FindByAccountID(context.Background(), accID)
-	s.NoError(err)
+	s.Require().NoError(err)
 	s.Len(members, 2)
 }
 
@@ -93,8 +93,8 @@ func (s *AccountUserRepositoryTestSuite) TestFind_ByAccountAndUser_Found() {
 	s.Require().NoError(s.repo.Create(context.Background(), &models.AccountUser{ID: uuid.New(), AccountID: accID, UserID: userID, Role: "admin"}))
 
 	au, err := s.repo.FindByAccountAndUser(context.Background(), accID, userID)
-	s.NoError(err)
-	s.NotNil(au)
+	s.Require().NoError(err)
+	s.Require().NotNil(au)
 	s.Equal("admin", au.Role)
 }
 
@@ -117,8 +117,8 @@ func (s *AccountUserRepositoryTestSuite) TestFind_By_AccountAndUserIncludeDelete
 	s.Nil(active)
 
 	withDeleted, err := s.repo.FindByAccountAndUserIncludeDeleted(context.Background(), accID, userID)
-	s.NoError(err)
-	s.NotNil(withDeleted)
+	s.Require().NoError(err)
+	s.Require().NotNil(withDeleted)
 	s.NotNil(withDeleted.DeletedAt)
 }
 
@@ -163,7 +163,7 @@ func (s *AccountUserRepositoryTestSuite) TestFind_By_UserID() {
 	s.Require().NoError(s.repo.Create(context.Background(), &models.AccountUser{ID: uuid.New(), AccountID: acc2, UserID: userID, Role: "admin"}))
 
 	memberships, err := s.repo.FindByUserID(context.Background(), userID)
-	s.NoError(err)
+	s.Require().NoError(err)
 	s.Len(memberships, 2)
 }
 
@@ -175,24 +175,24 @@ func (s *AccountUserRepositoryTestSuite) TestAccess_Lookups_IgnoreMembershipsTha
 	s.Require().NoError(s.repo.Create(context.Background(), &models.AccountUser{ID: uuid.New(), AccountID: suspendedAccount, UserID: userID, Role: "owner", Status: "suspended"}))
 
 	active, err := s.repo.FindByAccountAndUser(context.Background(), activeAccount, userID)
-	s.NoError(err)
+	s.Require().NoError(err)
 	s.NotNil(active)
 	suspended, err := s.repo.FindByAccountAndUser(context.Background(), suspendedAccount, userID)
 	s.ErrorIs(err, models.ErrRepositoryNotFound)
 	s.Nil(suspended)
 
 	memberships, err := s.repo.FindByUserID(context.Background(), userID)
-	s.NoError(err)
+	s.Require().NoError(err)
 	s.Require().Len(memberships, 1)
 	s.Equal(activeAccount, memberships[0].AccountID)
 
 	page, total, err := s.repo.PaginateByUserID(context.Background(), userID, 10, 0)
-	s.NoError(err)
+	s.Require().NoError(err)
 	s.EqualValues(1, total)
 	s.Len(page, 1)
 
 	managed, err := s.repo.FindByAccountAndUserIncludeDeleted(context.Background(), suspendedAccount, userID)
-	s.NoError(err)
+	s.Require().NoError(err)
 	s.Require().NotNil(managed)
 	s.Equal("suspended", managed.Status)
 }
@@ -204,10 +204,10 @@ func (s *AccountUserRepositoryTestSuite) TestAccountUserRepository_Set_Role() {
 	s.Require().NoError(s.repo.Create(context.Background(), au))
 
 	err := s.repo.SetRole(context.Background(), au.ID, "admin")
-	s.NoError(err)
+	s.Require().NoError(err)
 
 	found, err := s.repo.FindByAccountAndUser(context.Background(), accID, userID)
-	s.NoError(err)
+	s.Require().NoError(err)
 	s.Equal("admin", found.Role)
 }
 
@@ -247,7 +247,7 @@ func (s *AccountUserRepositoryTestSuite) TestSoft_Delete_ByAccountAndUser() {
 	s.Require().NoError(s.repo.Create(context.Background(), &models.AccountUser{ID: uuid.New(), AccountID: accID, UserID: userID, Role: "user"}))
 
 	err := s.repo.SoftDeleteByAccountAndUser(context.Background(), accID, userID)
-	s.NoError(err)
+	s.Require().NoError(err)
 
 	found, err := s.repo.FindByAccountAndUser(context.Background(), accID, userID)
 	s.ErrorIs(err, models.ErrRepositoryNotFound)

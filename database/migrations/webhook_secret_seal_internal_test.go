@@ -10,6 +10,7 @@ import (
 
 	"github.com/macrowallets/waas/app/services/settings"
 	"github.com/macrowallets/waas/tests/feature/support/fixtures"
+	"github.com/stretchr/testify/assert"
 )
 
 type mismatchCipher struct{}
@@ -43,7 +44,7 @@ func TestWebhook_Secret_RewriteRollsBackWhenALaterRowFails(t *testing.T) {
 		}
 		return "", false, errors.New("seal mismatch")
 	})
-	require.Error(t, err)
+	assert.Error(t, err)
 	if readWebhookSecret(t, firstID) != first || readWebhookSecret(t, secondID) != second {
 		t.Fatal("aborted seal cleared a stored webhook secret")
 	}

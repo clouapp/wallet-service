@@ -12,6 +12,7 @@ import (
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/services/walletrecords"
 	"github.com/macrowallets/waas/pkg/numeric"
+	"github.com/stretchr/testify/assert"
 )
 
 func TestWallets_Paginate_ByAccountForwards(t *testing.T) {
@@ -22,17 +23,17 @@ func TestWallets_Paginate_ByAccountForwards(t *testing.T) {
 	store := &fakeWallets{rows: want, total: 3}
 	got, total, err := walletrecords.NewWallets(store).PaginateByAccount(context.Background(), accountID, "eth", 20, 0)
 	require.NoError(t, err)
-	require.Equal(t, want, got)
-	require.Equal(t, int64(3), total)
-	require.Equal(t, accountID, store.accountID)
-	require.Equal(t, "eth", store.chain)
+	assert.Equal(t, want, got)
+	assert.Equal(t, int64(3), total)
+	assert.Equal(t, accountID, store.accountID)
+	assert.Equal(t, "eth", store.chain)
 
 	store.err = errors.New("store down")
 	_, err = walletrecords.NewWallets(store).FindByID(context.Background(), uuid.New())
-	require.ErrorIs(t, err, store.err)
+	assert.ErrorIs(t, err, store.err)
 
 	_, _, err = walletrecords.NewWallets(store).PaginateByAccount(nil, accountID, "", 1, 0)
-	require.EqualError(t, err, "list wallets: context is required")
+	assert.EqualError(t, err, "list wallets: context is required")
 }
 
 type fakeWallets struct {
@@ -86,16 +87,16 @@ func TestTransactions_Find_ByChainAndTxHashForwards(t *testing.T) {
 	store := &fakeTransactions{row: want}
 	got, err := walletrecords.NewTransactions(store).FindByChainAndTxHash(context.Background(), "eth", "0xabc")
 	require.NoError(t, err)
-	require.Equal(t, want, got)
-	require.Equal(t, "eth", store.chainID)
-	require.Equal(t, "0xabc", store.txHash)
+	assert.Equal(t, want, got)
+	assert.Equal(t, "eth", store.chainID)
+	assert.Equal(t, "0xabc", store.txHash)
 
 	store.err = errors.New("store down")
 	_, err = walletrecords.NewTransactions(store).FindByChainAndTxHash(context.Background(), "eth", "0xabc")
-	require.ErrorIs(t, err, store.err)
+	assert.ErrorIs(t, err, store.err)
 
 	_, err = walletrecords.NewTransactions(store).FindByChainAndTxHash(nil, "eth", "0xabc")
-	require.EqualError(t, err, "find transaction: context is required")
+	assert.EqualError(t, err, "find transaction: context is required")
 }
 
 type fakeTransactions struct {
@@ -130,16 +131,16 @@ func TestAddresses_Find_ByChainAndAddressForwards(t *testing.T) {
 	store := &fakeAddresses{row: want}
 	got, err := walletrecords.NewAddresses(store).FindByChainAndAddress(context.Background(), "eth", "0xabc")
 	require.NoError(t, err)
-	require.Equal(t, want, got)
-	require.Equal(t, "eth", store.chainID)
-	require.Equal(t, "0xabc", store.address)
+	assert.Equal(t, want, got)
+	assert.Equal(t, "eth", store.chainID)
+	assert.Equal(t, "0xabc", store.address)
 
 	store.err = errors.New("store down")
 	_, err = walletrecords.NewAddresses(store).FindByChainAndAddress(context.Background(), "eth", "0xabc")
-	require.ErrorIs(t, err, store.err)
+	assert.ErrorIs(t, err, store.err)
 
 	_, err = walletrecords.NewAddresses(store).FindByChainAndAddress(nil, "eth", "0xabc")
-	require.EqualError(t, err, "find address: context is required")
+	assert.EqualError(t, err, "find address: context is required")
 }
 
 type fakeAddresses struct {

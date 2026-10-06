@@ -63,8 +63,8 @@ func (s *RefreshTokenRepositoryTestSuite) TestFind_Valid_Tokens() {
 	facades.Orm().Query().Model(revoked).Where("id = ?", revoked.ID).Update("revoked_at", now)
 
 	tokens, err := s.repo.FindValidTokens(context.Background())
-	s.NoError(err)
-	s.Len(tokens, 1)
+	s.Require().NoError(err)
+	s.Require().Len(tokens, 1)
 	s.Equal(valid.ID, tokens[0].ID)
 }
 
@@ -74,7 +74,7 @@ func (s *RefreshTokenRepositoryTestSuite) TestRevoke_If_Active() {
 	s.Require().NoError(s.repo.Create(context.Background(), rt))
 
 	revoked, err := s.repo.RevokeIfActive(context.Background(), rt.ID)
-	s.NoError(err)
+	s.Require().NoError(err)
 	s.True(revoked)
 
 	var check models.RefreshToken
@@ -104,9 +104,9 @@ func (s *RefreshTokenRepositoryTestSuite) TestRevoke_All_ForUser() {
 	s.Require().NoError(s.repo.Create(context.Background(), rt2))
 
 	err := s.repo.RevokeAllForUser(context.Background(), userID)
-	s.NoError(err)
+	s.Require().NoError(err)
 
 	tokens, err := s.repo.FindValidTokens(context.Background())
-	s.NoError(err)
+	s.Require().NoError(err)
 	s.Len(tokens, 0)
 }

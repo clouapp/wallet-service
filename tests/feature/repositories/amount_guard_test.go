@@ -83,7 +83,7 @@ func (s *AmountGuardTestSuite) TestUpdate_Fields_RejectsNegativeAmount() {
 	s.Require().NoError(s.transactions.Create(context.Background(), tx))
 
 	s.ErrorIs(s.transactions.SetAmount(context.Background(), tx.ID, "-5000000000"), amount.ErrNegativeAmount)
-	s.NoError(s.transactions.SetConfirmations(context.Background(), tx.ID, 3))
+	s.Require().NoError(s.transactions.SetConfirmations(context.Background(), tx.ID, 3))
 
 	stored, err := s.transactions.FindByID(context.Background(), tx.ID)
 	s.Require().NoError(err)

@@ -118,7 +118,7 @@ func (s *accountSettingsSuite) TestGet_Registry_FollowsSettingsRead() {
 		s.Require().NoError(json.Unmarshal([]byte(body), &parsed))
 		s.Equal("settings.read", parsed.Permissions.View)
 		s.Equal("settings.write", parsed.Permissions.Update)
-		s.NotEmpty(parsed.Sections)
+		s.Require().NotEmpty(parsed.Sections)
 	}
 
 	denied := s.get(user, accountID, 403)
@@ -379,7 +379,7 @@ func (s *accountSettingsSuite) TestReset_Section_ClearsThePageAndRecordsFieldNam
 	s.NotContains(meta, "45")
 
 	keptSecret := s.storedSecret(accountID)
-	s.NotEmpty(keptSecret)
+	s.Require().NotEmpty(keptSecret)
 	s.NotEqual("reset-me-secret", keptSecret)
 
 	webhooks := s.reset(token, accountID, "webhooks", 200)
@@ -848,7 +848,7 @@ func (s *accountSettingsSuite) TestPut_Shares_ThePatchBodyRules() {
 	saved := s.putRaw(token, accountID, "account_webhooks", fmt.Sprintf(`{"signing_secret":%q}`, secret), 200)
 	s.NotContains(saved, secret)
 	before := s.storedSecret(accountID)
-	s.NotEmpty(before)
+	s.Require().NotEmpty(before)
 	s.NotEqual(secret, before)
 
 	kept := s.putRaw(token, accountID, "account_webhooks", `{"signing_secret":""}`, 200)

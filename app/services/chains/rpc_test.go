@@ -14,6 +14,7 @@ import (
 	"github.com/macrowallets/waas/app/models"
 	activitylog "github.com/macrowallets/waas/app/services/activity"
 	chainsvc "github.com/macrowallets/waas/app/services/chains"
+	"github.com/stretchr/testify/assert"
 )
 
 func TestUpdate_RPC_UnknownChainIsNotFoundBeforeTheAdminCheck(t *testing.T) {
@@ -26,8 +27,8 @@ func TestUpdate_RPC_UnknownChainIsNotFoundBeforeTheAdminCheck(t *testing.T) {
 	})
 
 	_, err := service.Update(context.Background(), uuid.New(), "missing", thresholdObject(t, `{"rpcUrl":""}`))
-	require.ErrorIs(t, err, chainsvc.ErrNotFound)
-	require.Empty(t, store.sealed)
+	assert.ErrorIs(t, err, chainsvc.ErrNotFound)
+	assert.Empty(t, store.sealed)
 }
 
 func TestUpdate_RPC_NonAdminLeavesTheEndpointUnchanged(t *testing.T) {
@@ -40,8 +41,8 @@ func TestUpdate_RPC_NonAdminLeavesTheEndpointUnchanged(t *testing.T) {
 	})
 
 	_, err := service.Update(context.Background(), uuid.New(), "eth", thresholdObject(t, `{"rpcUrl":"https://dial.example/v2/token"}`))
-	require.ErrorIs(t, err, chainsvc.ErrPlatformForbidden)
-	require.Equal(t, "kept", store.sealed)
+	assert.ErrorIs(t, err, chainsvc.ErrPlatformForbidden)
+	assert.Equal(t, "kept", store.sealed)
 }
 
 func TestUpdate_RPC_EmptyURLIsNotStored(t *testing.T) {
@@ -57,9 +58,9 @@ func TestUpdate_RPC_EmptyURLIsNotStored(t *testing.T) {
 	_, err := service.Update(context.Background(), uuid.New(), "eth", thresholdObject(t, `{"rpcUrl":"  "}`))
 	var invalid *chainsvc.ValidationError
 	require.ErrorAs(t, err, &invalid)
-	require.Equal(t, []string{"must not be empty"}, invalid.Fields["rpcUrl"])
-	require.Equal(t, "kept", store.sealed)
-	require.Empty(t, activity.rows)
+	assert.Equal(t, []string{"must not be empty"}, invalid.Fields["rpcUrl"])
+	assert.Equal(t, "kept", store.sealed)
+	assert.Empty(t, activity.rows)
 }
 
 func TestUpdate_RPC_AdminSealsTheURLAndTheDialerSeesTheHost(t *testing.T) {
@@ -77,35 +78,35 @@ func TestUpdate_RPC_AdminSealsTheURLAndTheDialerSeesTheHost(t *testing.T) {
 
 	view, err := service.Update(context.Background(), actor, "eth", thresholdObject(t, `{"rpcUrl":"`+endpoint+`"}`))
 	require.NoError(t, err)
-	require.True(t, view.RPCURLSet)
+	assert.True(t, view.RPCURLSet)
 	encodedView, err := json.Marshal(view)
 	require.NoError(t, err)
-	require.NotContains(t, string(encodedView), "dial.example")
-	require.NotContains(t, string(encodedView), "route-key")
-	require.NotContains(t, string(encodedView), "://")
+	assert.NotContains(t, string(encodedView), "dial.example")
+	assert.NotContains(t, string(encodedView), "route-key")
+	assert.NotContains(t, string(encodedView), "://")
 
-	require.True(t, strings.HasPrefix(store.sealed, "sealed:"))
+	assert.True(t, strings.HasPrefix(store.sealed, "sealed:"))
 	opened := strings.TrimPrefix(store.sealed, "sealed:")
-	require.Equal(t, endpoint, opened)
-	require.NotContains(t, opened, "env-fallback")
+	assert.Equal(t, endpoint, opened)
+	assert.NotContains(t, opened, "env-fallback")
 
-	require.Equal(t, "dial.example", dialer.host)
-	require.NotContains(t, dialer.host, "route-key")
+	assert.Equal(t, "dial.example", dialer.host)
+	assert.NotContains(t, dialer.host, "route-key")
 
 	require.Len(t, activity.rows, 1)
-	require.Nil(t, activity.rows[0].AccountID)
-	require.Equal(t, actor, activity.rows[0].ActorUserID)
-	require.Equal(t, activitylog.ActionChainsUpdated, activity.rows[0].Action)
-	require.Equal(t, "eth", activity.rows[0].TargetID)
+	assert.Nil(t, activity.rows[0].AccountID)
+	assert.Equal(t, actor, activity.rows[0].ActorUserID)
+	assert.Equal(t, activitylog.ActionChainsUpdated, activity.rows[0].Action)
+	assert.Equal(t, "eth", activity.rows[0].TargetID)
 	meta, err := activity.rows[0].Metadata.Encode()
 	require.NoError(t, err)
-	require.Contains(t, meta, `"key":"eth"`)
-	require.Contains(t, meta, `"rpc_url"`)
-	require.NotContains(t, meta, "dial.example")
-	require.NotContains(t, meta, "route-key")
-	require.NotContains(t, meta, "http")
-	require.NotContains(t, meta, "platform.secret_viewed")
-	require.Equal(t, "5", store.chain.GasReadinessThreshold().String())
+	assert.Contains(t, meta, `"key":"eth"`)
+	assert.Contains(t, meta, `"rpc_url"`)
+	assert.NotContains(t, meta, "dial.example")
+	assert.NotContains(t, meta, "route-key")
+	assert.NotContains(t, meta, "http")
+	assert.NotContains(t, meta, "platform.secret_viewed")
+	assert.Equal(t, "5", store.chain.GasReadinessThreshold().String())
 }
 
 func TestUpdate_RPC_OpenFailureDoesNotIncludeTheURL(t *testing.T) {
@@ -118,9 +119,9 @@ func TestUpdate_RPC_OpenFailureDoesNotIncludeTheURL(t *testing.T) {
 	})
 
 	_, err := service.Update(context.Background(), uuid.New(), "eth", thresholdObject(t, `{"rpcUrl":"`+endpoint+`"}`))
-	require.EqualError(t, err, "open chain rpc")
-	require.NotContains(t, err.Error(), "dial.example")
-	require.NotContains(t, err.Error(), "route-key")
+	assert.EqualError(t, err, "open chain rpc")
+	assert.NotContains(t, err.Error(), "dial.example")
+	assert.NotContains(t, err.Error(), "route-key")
 }
 
 type rpcStore struct {

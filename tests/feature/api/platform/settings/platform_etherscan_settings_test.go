@@ -72,7 +72,7 @@ func (s *PlatformEtherscanSettingsTestSuite) TestA_Platform_AdminStoresEnabledAn
 		seen[field.Key] = field
 	}
 	secretField, ok := seen["api_key"]
-	s.True(ok)
+	s.Require().True(ok)
 	s.True(secretField.Secret)
 	s.True(secretField.IsSet)
 	if secretField.Value != nil {

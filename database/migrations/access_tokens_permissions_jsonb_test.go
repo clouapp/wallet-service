@@ -9,21 +9,22 @@ import (
 
 	"github.com/macrowallets/waas/database/migrations"
 	"github.com/macrowallets/waas/tests/feature/support/fixtures"
+	"github.com/stretchr/testify/assert"
 )
 
 func TestAccess_Token_PermissionsBecomeNullableJsonb(t *testing.T) {
 	fixtures.TestDB(t)
 	migration := &migrations.M00000000000570AccessTokensPermissionsJsonb{}
 
-	require.Equal(t, "jsonb", permissionsColumnType(t))
-	require.Equal(t, "YES", permissionsNullable(t))
-	require.Equal(t, int64(1), constraintCount(t, "access_tokens_permissions_array"))
+	assert.Equal(t, "jsonb", permissionsColumnType(t))
+	assert.Equal(t, "YES", permissionsNullable(t))
+	assert.Equal(t, int64(1), constraintCount(t, "access_tokens_permissions_array"))
 	require.NoError(t, migration.Up())
-	require.Equal(t, int64(1), permissionsColumnCount(t))
+	assert.Equal(t, int64(1), permissionsColumnCount(t))
 
 	require.NoError(t, migration.Down())
-	require.Equal(t, "text", permissionsColumnType(t))
-	require.Zero(t, constraintCount(t, "access_tokens_permissions_array"))
+	assert.Equal(t, "text", permissionsColumnType(t))
+	assert.Zero(t, constraintCount(t, "access_tokens_permissions_array"))
 	require.NoError(t, migration.Down())
 
 	account := fixtures.InsertAccount(t, "token-permissions")
@@ -36,22 +37,22 @@ func TestAccess_Token_PermissionsBecomeNullableJsonb(t *testing.T) {
 	exec(t, `UPDATE access_tokens SET permissions = NULL WHERE id = ?`, nullID)
 
 	require.NoError(t, migration.Up())
-	require.Equal(t, "jsonb", permissionsColumnType(t))
-	require.Equal(t, int64(1), constraintCount(t, "access_tokens_permissions_array"))
-	require.Equal(t, int64(1), permissionsColumnCount(t))
+	assert.Equal(t, "jsonb", permissionsColumnType(t))
+	assert.Equal(t, int64(1), constraintCount(t, "access_tokens_permissions_array"))
+	assert.Equal(t, int64(1), permissionsColumnCount(t))
 	requireNullPermissions(t, blankID)
 	requireNullPermissions(t, spaceID)
 	requireNullPermissions(t, nullID)
-	require.Equal(t, `["webhooks.read"]`, permissionText(t, arrayID))
-	require.Equal(t, "[]", permissionText(t, legacyID))
-	require.Equal(t, "[]", permissionText(t, objectID))
+	assert.Equal(t, `["webhooks.read"]`, permissionText(t, arrayID))
+	assert.Equal(t, "[]", permissionText(t, legacyID))
+	assert.Equal(t, "[]", permissionText(t, objectID))
 
 	_, err := facades.Orm().Query().Exec(
 		`INSERT INTO access_tokens (id, account_id, name, token_hash, permissions, spending_limit, created_at, updated_at)
 		 VALUES (?, ?, 'object', 'not-a-secret', '{"a":1}'::jsonb, '{}', NOW(), NOW())`,
 		uuid.New(), account.ID,
 	)
-	require.Error(t, err)
+	assert.Error(t, err)
 
 	kept := uuid.New()
 	exec(t, `INSERT INTO access_tokens (id, account_id, name, token_hash, permissions, spending_limit, created_at, updated_at)
@@ -60,11 +61,11 @@ func TestAccess_Token_PermissionsBecomeNullableJsonb(t *testing.T) {
 	exec(t, `INSERT INTO access_tokens (id, account_id, name, token_hash, spending_limit, created_at, updated_at)
 		VALUES (?, ?, 'omitted', 'not-a-secret', '{}', NOW(), NOW())`,
 		uuid.New(), account.ID)
-	require.Equal(t, `["wallets.read"]`, permissionText(t, kept))
+	assert.Equal(t, `["wallets.read"]`, permissionText(t, kept))
 
 	require.NoError(t, migration.Up())
-	require.Equal(t, `["wallets.read"]`, permissionText(t, kept))
-	require.Equal(t, int64(1), permissionsColumnCount(t))
+	assert.Equal(t, `["wallets.read"]`, permissionText(t, kept))
+	assert.Equal(t, int64(1), permissionsColumnCount(t))
 }
 
 func insertLegacyPermission(t *testing.T, accountID uuid.UUID, permissions string) uuid.UUID {
@@ -78,7 +79,7 @@ func insertLegacyPermission(t *testing.T, accountID uuid.UUID, permissions strin
 
 func requireNullPermissions(t *testing.T, id uuid.UUID) {
 	t.Helper()
-	require.Equal(t, int64(1), scalar[int64](t, `SELECT count(*) FROM access_tokens WHERE id = ? AND permissions IS NULL`, id))
+	assert.Equal(t, int64(1), scalar[int64](t, `SELECT count(*) FROM access_tokens WHERE id = ? AND permissions IS NULL`, id))
 }
 
 func permissionText(t *testing.T, id uuid.UUID) string {

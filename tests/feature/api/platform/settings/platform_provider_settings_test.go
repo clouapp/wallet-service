@@ -75,7 +75,7 @@ func (s *PlatformProviderSettingsTestSuite) TestA_Platform_AdminStoresEachProvid
 			seen[field.Key] = field
 		}
 		secretField, ok := seen[provider.secretKey]
-		s.True(ok)
+		s.Require().True(ok)
 		s.True(secretField.Secret)
 		s.True(secretField.IsSet)
 		if secretField.Value != nil {

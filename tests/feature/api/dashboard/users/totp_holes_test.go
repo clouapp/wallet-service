@@ -45,7 +45,7 @@ func (s *TotpHolesTestSuite) signedInWithTOTP(user seededAuthUser) loginBody {
 	s.Require().NotEmpty(challenge.ChallengeToken)
 	resp, session := s.verifyTwoFactor(challenge.ChallengeToken, "", user.RecoveryCodes[0])
 	resp.AssertOk()
-	s.Require().NotEmpty(session.AccessToken)
+	s.NotEmpty(session.AccessToken)
 	return session
 }
 
@@ -79,7 +79,7 @@ func (s *TotpHolesTestSuite) TestDisable_TOTP_WithTheCurrentCodeRevokesSessions(
 	caller := s.signedInWithTOTP(user)
 	_, otherChallenge := s.loginAs(user.Email)
 	_, otherDevice := s.verifyTwoFactor(otherChallenge.ChallengeToken, "", user.RecoveryCodes[1])
-	s.Require().NotEmpty(otherDevice.AccessToken)
+	s.NotEmpty(otherDevice.AccessToken)
 
 	resp := s.authedDeleteJSON(caller.AccessToken, "/v1/users/me/totp", fmt.Sprintf(
 		`{"code":%q}`, s.currentCode(user.TOTPSecret),

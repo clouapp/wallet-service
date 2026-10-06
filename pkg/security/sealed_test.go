@@ -9,6 +9,7 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -63,12 +64,12 @@ func TestSeal_AndOpenSecret_RoundTrip(t *testing.T) {
 	for _, secret := range []string{"whsec_markets", "", "a secret with spaces and ünïcode", string(make([]byte, 255))} {
 		sealed, err := SealSecret(c, secret)
 		require.NoError(t, err)
-		require.NotEqual(t, secret, sealed)
-		require.True(t, IsSealedSecret(sealed))
+		assert.NotEqual(t, secret, sealed)
+		assert.True(t, IsSealedSecret(sealed))
 
 		opened, err := OpenSecret(c, sealed)
 		require.NoError(t, err)
-		require.Equal(t, secret, opened)
+		assert.Equal(t, secret, opened)
 	}
 }
 
@@ -78,21 +79,21 @@ func TestSeal_Secret_IsRandomised(t *testing.T) {
 	require.NoError(t, err)
 	second, err := SealSecret(c, "same")
 	require.NoError(t, err)
-	require.NotEqual(t, first, second, "a fresh nonce per seal")
+	assert.NotEqual(t, first, second, "a fresh nonce per seal")
 }
 
 func TestOpen_Secret_RefusesPlaintextAndForeignKeys(t *testing.T) {
 	c := newGCMCipher(t)
 
 	_, err := OpenSecret(c, "plaintext-secret")
-	require.ErrorIs(t, err, ErrSecretNotSealed)
+	assert.ErrorIs(t, err, ErrSecretNotSealed)
 	_, err = OpenSecret(c, "")
-	require.ErrorIs(t, err, ErrSecretNotSealed)
+	assert.ErrorIs(t, err, ErrSecretNotSealed)
 
 	sealedElsewhere, err := SealSecret(newGCMCipher(t), "secret")
 	require.NoError(t, err)
 	_, err = OpenSecret(c, sealedElsewhere)
-	require.Error(t, err, "a value sealed under another key does not open")
+	assert.Error(t, err, "a value sealed under another key does not open")
 }
 
 func TestIs_SealedSecret_RejectsLookalikes(t *testing.T) {
@@ -111,20 +112,20 @@ func TestIs_SealedSecret_RejectsLookalikes(t *testing.T) {
 		"not an envelope": encode([]string{"iv", "value"}),
 	}
 	for name, value := range cases {
-		require.False(t, IsSealedSecret(value), name)
+		assert.False(t, IsSealedSecret(value), name)
 	}
 }
 
 func TestSeal_AndOpenSecret_ReportCipherFailures(t *testing.T) {
 	_, err := SealSecret(failingCipher{}, "secret")
-	require.Error(t, err)
+	assert.Error(t, err)
 	_, err = SealSecret(nil, "secret")
-	require.Error(t, err)
+	assert.Error(t, err)
 
 	sealed, err := SealSecret(newGCMCipher(t), "secret")
 	require.NoError(t, err)
 	_, err = OpenSecret(failingCipher{}, sealed)
-	require.Error(t, err)
+	assert.Error(t, err)
 	_, err = OpenSecret(nil, sealed)
-	require.Error(t, err)
+	assert.Error(t, err)
 }

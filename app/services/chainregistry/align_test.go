@@ -251,7 +251,7 @@ func TestPlan_Refuses_ASolanaRecordWhoseRPCIsMainnet(t *testing.T) {
 
 	_, err := BuildPlan(context.Background(), models.ChainNetworkProfileTestnet, store, plainDecrypt, nil)
 
-	require.Error(t, err)
+	assert.Error(t, err)
 	assert.True(t, errors.Is(err, ErrRPCNetworkMismatch), err)
 }
 
@@ -350,7 +350,7 @@ func TestAccount_Plan_RejectsMissingAccounts(t *testing.T) {
 	_, err := PlanAccountEnvironment(context.Background(), store, uuid.Nil, models.ChainNetworkProfileTestnet)
 	assert.Error(t, err)
 	_, err = PlanAccountEnvironment(context.Background(), store, uuid.New(), models.ChainNetworkProfileTestnet)
-	assert.Error(t, err)
+	require.Error(t, err)
 	assert.Contains(t, err.Error(), "not found")
 	assert.NoError(t, ApplyAccountChange(context.Background(), store, nil))
 }

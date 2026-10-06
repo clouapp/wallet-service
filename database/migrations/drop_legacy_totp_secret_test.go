@@ -9,19 +9,20 @@ import (
 
 	"github.com/macrowallets/waas/database/migrations"
 	"github.com/macrowallets/waas/tests/feature/support/fixtures"
+	"github.com/stretchr/testify/assert"
 )
 
 func TestDrop_Legacy_TotpSecretRemovesEmptyStores(t *testing.T) {
 	fixtures.TestDB(t)
 
-	require.False(t, legacyTotpSecretColumnPresent(t))
-	require.False(t, legacyRecoveryTablePresent(t))
+	assert.False(t, legacyTotpSecretColumnPresent(t))
+	assert.False(t, legacyRecoveryTablePresent(t))
 
 	migration := &migrations.M00000000000550DropLegacyTotpSecret{}
 	require.NoError(t, migration.Down())
-	require.True(t, legacyTotpSecretColumnPresent(t))
-	require.True(t, legacyRecoveryTablePresent(t))
-	require.Zero(t, countRows(t, `SELECT count(*) FROM totp_recovery_codes`))
+	assert.True(t, legacyTotpSecretColumnPresent(t))
+	assert.True(t, legacyRecoveryTablePresent(t))
+	assert.Zero(t, countRows(t, `SELECT count(*) FROM totp_recovery_codes`))
 
 	userID := uuid.New()
 	_, err := facades.Orm().Query().Exec(`
@@ -42,15 +43,15 @@ func TestDrop_Legacy_TotpSecretRemovesEmptyStores(t *testing.T) {
 	require.NoError(t, err)
 
 	require.NoError(t, migration.Down())
-	require.Empty(t, textColumn(t, `SELECT COALESCE(totp_secret, '') FROM users WHERE id = ?`, userID))
-	require.Zero(t, countRows(t, `SELECT count(*) FROM totp_recovery_codes`))
+	assert.Empty(t, textColumn(t, `SELECT COALESCE(totp_secret, '') FROM users WHERE id = ?`, userID))
+	assert.Zero(t, countRows(t, `SELECT count(*) FROM totp_recovery_codes`))
 
 	require.NoError(t, migration.Up())
-	require.False(t, legacyTotpSecretColumnPresent(t))
-	require.False(t, legacyRecoveryTablePresent(t))
-	require.Equal(t, "enc:v1:sealed-marker", textColumn(t, `
+	assert.False(t, legacyTotpSecretColumnPresent(t))
+	assert.False(t, legacyRecoveryTablePresent(t))
+	assert.Equal(t, "enc:v1:sealed-marker", textColumn(t, `
 		SELECT secret FROM mfa_credentials WHERE subject_type = 'users' AND subject_id = ?`, userID))
-	require.Equal(t, int64(1), countRows(t, `
+	assert.Equal(t, int64(1), countRows(t, `
 		SELECT count(*) FROM mfa_backup_codes
 		WHERE subject_type = 'users' AND subject_id = ? AND code_hash = 'backup-hash-marker'`, userID))
 }
@@ -75,24 +76,24 @@ func TestDrop_Legacy_TotpSecretRefusesAValueThatWasNotCleared(t *testing.T) {
 
 	err = migration.Up()
 	require.Error(t, err)
-	require.NotContains(t, err.Error(), "leftover-marker")
-	require.NotContains(t, err.Error(), "leftover-code-marker")
-	require.Equal(t, "leftover-marker", textColumn(t, `SELECT COALESCE(totp_secret, '') FROM users WHERE id = ?`, userID))
-	require.Equal(t, int64(1), countRows(t, `SELECT count(*) FROM totp_recovery_codes WHERE user_id = ?`, userID))
+	assert.NotContains(t, err.Error(), "leftover-marker")
+	assert.NotContains(t, err.Error(), "leftover-code-marker")
+	assert.Equal(t, "leftover-marker", textColumn(t, `SELECT COALESCE(totp_secret, '') FROM users WHERE id = ?`, userID))
+	assert.Equal(t, int64(1), countRows(t, `SELECT count(*) FROM totp_recovery_codes WHERE user_id = ?`, userID))
 
 	_, err = facades.Orm().Query().Exec(`UPDATE users SET totp_secret = NULL WHERE id = ?`, userID)
 	require.NoError(t, err)
 	err = migration.Up()
 	require.Error(t, err)
-	require.NotContains(t, err.Error(), "leftover-code-marker")
-	require.True(t, legacyTotpSecretColumnPresent(t))
-	require.True(t, legacyRecoveryTablePresent(t))
+	assert.NotContains(t, err.Error(), "leftover-code-marker")
+	assert.True(t, legacyTotpSecretColumnPresent(t))
+	assert.True(t, legacyRecoveryTablePresent(t))
 
 	_, err = facades.Orm().Query().Exec(`DELETE FROM totp_recovery_codes WHERE user_id = ?`, userID)
 	require.NoError(t, err)
 	require.NoError(t, migration.Up())
-	require.False(t, legacyTotpSecretColumnPresent(t))
-	require.False(t, legacyRecoveryTablePresent(t))
+	assert.False(t, legacyTotpSecretColumnPresent(t))
+	assert.False(t, legacyRecoveryTablePresent(t))
 }
 
 func legacyTotpSecretColumnPresent(t *testing.T) bool {

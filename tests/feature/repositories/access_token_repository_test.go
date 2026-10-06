@@ -39,7 +39,7 @@ func (s *AccessTokenRepositoryTestSuite) TestAccessTokenRepository_Create_Succes
 	accID := s.createAccount()
 	token := &models.AccessToken{ID: uuid.New(), AccountID: accID, Name: "CI Token"}
 	err := s.repo.Create(context.Background(), token)
-	s.NoError(err)
+	s.Require().NoError(err)
 
 	var nulls int64
 	s.Require().NoError(facades.Orm().Query().Raw(
@@ -73,7 +73,7 @@ func (s *AccessTokenRepositoryTestSuite) TestFind_By_AccountID() {
 	s.Require().NoError(s.repo.Create(context.Background(), &models.AccessToken{ID: uuid.New(), AccountID: accID, Name: "T2"}))
 
 	tokens, err := s.repo.FindByAccountID(context.Background(), accID)
-	s.NoError(err)
+	s.Require().NoError(err)
 	s.Len(tokens, 2)
 }
 
@@ -83,8 +83,8 @@ func (s *AccessTokenRepositoryTestSuite) TestFind_ByIDAndAccount_Found() {
 	s.Require().NoError(s.repo.Create(context.Background(), token))
 
 	found, err := s.repo.FindByIDAndAccount(context.Background(), token.ID, accID)
-	s.NoError(err)
-	s.NotNil(found)
+	s.Require().NoError(err)
+	s.Require().NotNil(found)
 	s.Equal("Find Me", found.Name)
 }
 
@@ -144,7 +144,7 @@ func (s *AccessTokenRepositoryTestSuite) TestRecord_Use_SetsLastUsedAtAndSkipsRe
 
 	found, err := s.repo.FindByIDAndAccount(context.Background(), active.ID, accID)
 	s.Require().NoError(err)
-	s.NotNil(found.LastUsedAt)
+	s.Require().NotNil(found.LastUsedAt)
 	s.Nil(found.RevokedAt)
 
 	found, err = s.repo.FindByIDAndAccount(context.Background(), revoked.ID, accID)
@@ -179,7 +179,7 @@ func (s *AccessTokenRepositoryTestSuite) TestAccessTokenRepository_Delete_Succee
 	s.Require().NoError(s.repo.Create(context.Background(), token))
 
 	err := s.repo.Delete(context.Background(), token)
-	s.NoError(err)
+	s.Require().NoError(err)
 
 	found, err := s.repo.FindByIDAndAccount(context.Background(), token.ID, accID)
 	s.ErrorIs(err, models.ErrRepositoryNotFound)

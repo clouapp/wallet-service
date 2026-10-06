@@ -218,7 +218,7 @@ func (s *UserControllerTestSuite) decodeList(resp contractstesting.Response) acc
 	resp.AssertStatus(200)
 	content, err := resp.Content()
 	s.Require().NoError(err)
-	s.Require().NotContains(content, `"data":null`)
+	s.NotContains(content, `"data":null`)
 	var body accountListBody
 	s.Require().NoError(json.Unmarshal([]byte(content), &body))
 	return body
@@ -278,7 +278,7 @@ func (s *UserControllerTestSuite) TestList_MyAccounts_ManyPagesReachEveryAccount
 	seeded := s.seedAccounts(manyAccountsCount, models.EnvironmentProd)
 
 	first := s.decodeList(s.listAccounts(nil))
-	s.Len(first.Data, defaultAccountsLimit)
+	s.Require().Len(first.Data, defaultAccountsLimit)
 	s.Equal(int64(manyAccountsCount), first.Total)
 	s.Equal("Account 01", first.Data[0].Name)
 
@@ -299,7 +299,7 @@ func (s *UserControllerTestSuite) TestList_MyAccounts_LastPageIsPartial() {
 
 	body := s.decodeList(s.listAccounts(url.Values{"limit": {"20"}, "offset": {"60"}}))
 
-	s.Len(body.Data, manyAccountsCount-60)
+	s.Require().Len(body.Data, manyAccountsCount-60)
 	s.Equal("Account 61", body.Data[0].Name)
 	s.Equal("Account 64", body.Data[len(body.Data)-1].Name)
 }

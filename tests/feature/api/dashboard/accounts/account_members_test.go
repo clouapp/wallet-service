@@ -301,7 +301,7 @@ func (s *AccountMembersTestSuite) assertInviteAccepted(resp contractstesting.Res
 	s.NotContains(lowered, "invite_link")
 	s.NotContains(lowered, "exists")
 	id, _ := body["id"].(string)
-	s.NotEmpty(id)
+	s.Require().NotEmpty(id)
 	return content, id
 }
 
@@ -377,12 +377,12 @@ func (s *AccountMembersTestSuite) TestInvite_Link_UsesTheFrontendURL() {
 	s.Require().NoError(json.Unmarshal([]byte(addedBody), &parsed))
 	link, _ := parsed["invite_link"].(string)
 	prefix := membersFrontendURL + "/accept-invite?token="
-	s.Require().True(
+	s.True(
 		strings.HasPrefix(link, prefix) && !strings.Contains(link, "localhost") && !strings.Contains(link, "vault.app"),
 		"invite link must use APP_FRONTEND_URL",
 	)
 	rawToken := strings.TrimPrefix(link, prefix)
-	s.Require().True(rawToken != "" && !strings.Contains(rawToken, "&"), "invite link must carry one token query value")
+	s.True(rawToken != "" && !strings.Contains(rawToken, "&"), "invite link must carry one token query value")
 	inviteRaw, _ := parsed["invite_id"].(string)
 	parsedID, parseErr := uuid.Parse(inviteRaw)
 	s.Require().NoError(parseErr)
@@ -413,14 +413,14 @@ func (s *AccountMembersTestSuite) TestCreate_Invite_AcceptsNewAndExistingEmailsW
 	for _, inviteID := range []string{existingInviteID, newInviteID} {
 		var invite models.AccountInvite
 		s.Require().NoError(facades.Orm().Query().Where("id = ?", inviteID).First(&invite))
-		s.NotEmpty(invite.TokenHash)
+		s.Require().NotEmpty(invite.TokenHash)
 		s.NotContains(existingBody, invite.TokenHash)
 		s.NotContains(newBody, invite.TokenHash)
 		var activity models.AccountActivity
 		s.Require().NoError(facades.Orm().Query().
 			Where("account_id = ? AND action = ? AND target_id = ?", accountID, "member.invited", inviteID).
 			First(&activity))
-		s.Len(activity.Metadata, 1)
+		s.Require().Len(activity.Metadata, 1)
 		s.Equal(invite.Role, activity.Metadata["role"])
 		encoded, err := json.Marshal(activity.Metadata)
 		s.Require().NoError(err)

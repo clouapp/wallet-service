@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/stretchr/testify/require"
+	"github.com/stretchr/testify/assert"
 
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/services/walletrecords"
@@ -30,11 +30,11 @@ func TestMemberships_For_WalletReturnsTheStoredRoles(t *testing.T) {
 	})
 
 	walletRole, accountRole := loader.ForWallet(context.Background(), walletID, userID)
-	require.Equal(t, "admin", walletRole)
-	require.Equal(t, "owner", accountRole)
-	require.Equal(t, walletID, members.walletID)
-	require.Equal(t, userID, members.userID)
-	require.Equal(t, accountID, accounts.accountID)
+	assert.Equal(t, "admin", walletRole)
+	assert.Equal(t, "owner", accountRole)
+	assert.Equal(t, walletID, members.walletID)
+	assert.Equal(t, userID, members.userID)
+	assert.Equal(t, accountID, accounts.accountID)
 }
 
 func TestMemberships_For_WalletTreatsAMissAsAnEmptyRole(t *testing.T) {
@@ -50,24 +50,24 @@ func TestMemberships_For_WalletTreatsAMissAsAnEmptyRole(t *testing.T) {
 		Members:  walletrecords.NewMembers(&roleMembers{member: &models.WalletUser{Roles: "owner"}}),
 		Accounts: &roleAccounts{},
 	}).ForWallet(context.Background(), walletID, userID)
-	require.Equal(t, "owner", walletRole)
-	require.Equal(t, "", accountRole)
+	assert.Equal(t, "owner", walletRole)
+	assert.Equal(t, "", accountRole)
 
 	walletRole, accountRole = walletrecords.NewMemberships(walletrecords.MembershipsDeps{
 		Wallets:  walletrecords.NewWallets(&roleWallets{wallet: &models.Wallet{ID: walletID}}),
 		Members:  walletrecords.NewMembers(&roleMembers{err: lookupErr}),
 		Accounts: &roleAccounts{member: &models.AccountUser{Role: "admin"}},
 	}).ForWallet(context.Background(), walletID, userID)
-	require.Equal(t, "", walletRole)
-	require.Equal(t, "", accountRole)
+	assert.Equal(t, "", walletRole)
+	assert.Equal(t, "", accountRole)
 
 	walletRole, accountRole = walletrecords.NewMemberships(walletrecords.MembershipsDeps{
 		Wallets:  walletrecords.NewWallets(&roleWallets{wallet: &models.Wallet{ID: walletID, AccountID: &accountID}}),
 		Members:  walletrecords.NewMembers(&roleMembers{member: &models.WalletUser{Roles: "viewer"}}),
 		Accounts: &roleAccounts{err: lookupErr},
 	}).ForWallet(context.Background(), walletID, userID)
-	require.Equal(t, "", walletRole)
-	require.Equal(t, "", accountRole)
+	assert.Equal(t, "", walletRole)
+	assert.Equal(t, "", accountRole)
 }
 
 func TestMemberships_For_WalletDeniesWhenAMembershipReadFails(t *testing.T) {
@@ -83,16 +83,16 @@ func TestMemberships_For_WalletDeniesWhenAMembershipReadFails(t *testing.T) {
 		Members:  walletrecords.NewMembers(&roleMembers{err: storeErr}),
 		Accounts: &roleAccounts{member: &models.AccountUser{Role: "admin"}},
 	}).ForWallet(context.Background(), walletID, userID)
-	require.Equal(t, "", walletRole)
-	require.Equal(t, "", accountRole)
+	assert.Equal(t, "", walletRole)
+	assert.Equal(t, "", accountRole)
 
 	walletRole, accountRole = walletrecords.NewMemberships(walletrecords.MembershipsDeps{
 		Wallets:  walletrecords.NewWallets(&roleWallets{wallet: &models.Wallet{ID: walletID, AccountID: &accountID}}),
 		Members:  walletrecords.NewMembers(&roleMembers{member: &models.WalletUser{Roles: "admin"}}),
 		Accounts: &roleAccounts{err: storeErr},
 	}).ForWallet(context.Background(), walletID, userID)
-	require.Equal(t, "", walletRole)
-	require.Equal(t, "", accountRole)
+	assert.Equal(t, "", walletRole)
+	assert.Equal(t, "", accountRole)
 }
 
 func TestMemberships_For_WalletKeepsTheOtherRoleWhenAMembershipIsMissing(t *testing.T) {
@@ -107,16 +107,16 @@ func TestMemberships_For_WalletKeepsTheOtherRoleWhenAMembershipIsMissing(t *test
 		Members:  walletrecords.NewMembers(&roleMembers{err: models.ErrRepositoryNotFound}),
 		Accounts: &roleAccounts{member: &models.AccountUser{Role: "admin"}},
 	}).ForWallet(context.Background(), walletID, userID)
-	require.Equal(t, "", walletRole)
-	require.Equal(t, "admin", accountRole)
+	assert.Equal(t, "", walletRole)
+	assert.Equal(t, "admin", accountRole)
 
 	walletRole, accountRole = walletrecords.NewMemberships(walletrecords.MembershipsDeps{
 		Wallets:  walletrecords.NewWallets(&roleWallets{wallet: &models.Wallet{ID: walletID, AccountID: &accountID}}),
 		Members:  walletrecords.NewMembers(&roleMembers{member: &models.WalletUser{Roles: "viewer"}}),
 		Accounts: &roleAccounts{err: models.ErrRepositoryNotFound},
 	}).ForWallet(context.Background(), walletID, userID)
-	require.Equal(t, "viewer", walletRole)
-	require.Equal(t, "", accountRole)
+	assert.Equal(t, "viewer", walletRole)
+	assert.Equal(t, "", accountRole)
 }
 
 func TestNew_Memberships_RejectsAMissingDependency(t *testing.T) {
@@ -125,13 +125,13 @@ func TestNew_Memberships_RejectsAMissingDependency(t *testing.T) {
 	wallets := walletrecords.NewWallets(&roleWallets{})
 	members := walletrecords.NewMembers(&roleMembers{})
 	accounts := &roleAccounts{}
-	require.Panics(t, func() {
+	assert.Panics(t, func() {
 		walletrecords.NewMemberships(walletrecords.MembershipsDeps{Members: members, Accounts: accounts})
 	})
-	require.Panics(t, func() {
+	assert.Panics(t, func() {
 		walletrecords.NewMemberships(walletrecords.MembershipsDeps{Wallets: wallets, Accounts: accounts})
 	})
-	require.Panics(t, func() {
+	assert.Panics(t, func() {
 		walletrecords.NewMemberships(walletrecords.MembershipsDeps{Wallets: wallets, Members: members})
 	})
 }

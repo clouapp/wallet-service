@@ -8,6 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	authsvc "github.com/macrowallets/waas/app/services/auth"
+	"github.com/stretchr/testify/assert"
 )
 
 const totpPeriod = 30
@@ -33,7 +34,7 @@ func TestMatch_TOTP_ReturnsTheStepOfTheCode(t *testing.T) {
 	step, ok := authsvc.NewService().MatchTOTP(secret, codeAt(t, secret, now), now)
 
 	require.True(t, ok)
-	require.Equal(t, now.Unix()/totpPeriod, step)
+	assert.Equal(t, now.Unix()/totpPeriod, step)
 }
 
 func TestMatch_TOTP_AcceptsTheAdjacentStepsAndReportsWhichOne(t *testing.T) {
@@ -44,11 +45,11 @@ func TestMatch_TOTP_AcceptsTheAdjacentStepsAndReportsWhichOne(t *testing.T) {
 
 	step, ok := authsvc.NewService().MatchTOTP(secret, codeAt(t, secret, previous), now)
 	require.True(t, ok)
-	require.Equal(t, previous.Unix()/totpPeriod, step)
+	assert.Equal(t, previous.Unix()/totpPeriod, step)
 
 	step, ok = authsvc.NewService().MatchTOTP(secret, codeAt(t, secret, next), now)
 	require.True(t, ok)
-	require.Equal(t, next.Unix()/totpPeriod, step)
+	assert.Equal(t, next.Unix()/totpPeriod, step)
 }
 
 func TestMatch_TOTP_RefusesCodesOutsideTheSkew(t *testing.T) {
@@ -58,7 +59,7 @@ func TestMatch_TOTP_RefusesCodesOutsideTheSkew(t *testing.T) {
 
 	_, ok := authsvc.NewService().MatchTOTP(secret, codeAt(t, secret, stale), now)
 
-	require.False(t, ok)
+	assert.False(t, ok)
 }
 
 func TestMatch_TOTP_RefusesEmptyInputAndTheSealedSecret(t *testing.T) {
@@ -68,9 +69,9 @@ func TestMatch_TOTP_RefusesEmptyInputAndTheSealedSecret(t *testing.T) {
 	svc := authsvc.NewService()
 
 	_, ok := svc.MatchTOTP("", code, now)
-	require.False(t, ok)
+	assert.False(t, ok)
 	_, ok = svc.MatchTOTP(secret, "", now)
-	require.False(t, ok)
+	assert.False(t, ok)
 	_, ok = svc.MatchTOTP("sealed:"+secret, code, now)
-	require.False(t, ok, "a code never matches the ciphertext of the secret")
+	assert.False(t, ok, "a code never matches the ciphertext of the secret")
 }

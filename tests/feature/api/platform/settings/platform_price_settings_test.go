@@ -90,7 +90,7 @@ func (s *PlatformPriceSettingsTestSuite) TestA_Platform_AdminStoresTheOrderAndOn
 		seen[field.Key] = field
 	}
 	keyField, ok := seen["api_key"]
-	s.True(ok)
+	s.Require().True(ok)
 	s.True(keyField.Secret)
 	s.True(keyField.IsSet)
 	s.Nil(keyField.Value)

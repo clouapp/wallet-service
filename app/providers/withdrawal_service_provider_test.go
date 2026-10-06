@@ -8,6 +8,7 @@ import (
 
 	"github.com/macrowallets/waas/app/container"
 	"github.com/macrowallets/waas/app/repositories"
+	"github.com/stretchr/testify/assert"
 )
 
 func TestWithdrawal_Provider_RegistersTheWithdrawalGraph(t *testing.T) {
@@ -22,6 +23,6 @@ func TestWithdrawal_Provider_RegistersTheWithdrawalGraph(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, withdrawals)
 
-	require.Same(t, transactions, container.MustMake[*repositories.TransactionRepository]())
-	require.Same(t, withdrawals, container.MustMake[*repositories.WithdrawalRepository]())
+	assert.Same(t, transactions, container.MustMake[*repositories.TransactionRepository]())
+	assert.Same(t, withdrawals, container.MustMake[*repositories.WithdrawalRepository]())
 }

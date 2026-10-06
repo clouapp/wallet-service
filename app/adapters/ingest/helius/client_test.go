@@ -49,7 +49,7 @@ func TestHelius_VerifyInbound_MissingAuthorization(t *testing.T) {
 	headers := providers.Header{}
 
 	valid, err := provider.VerifyInbound(headers, body, "Bearer x")
-	assert.Error(t, err)
+	require.Error(t, err)
 	assert.False(t, valid)
 	assert.Contains(t, err.Error(), "missing Authorization")
 }

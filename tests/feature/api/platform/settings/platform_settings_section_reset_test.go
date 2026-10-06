@@ -168,8 +168,8 @@ func (s *PlatformSettingsSectionResetTestSuite) TestAdmin_Reset_DeletesPlatformR
 		var rawMeta map[string]json.RawMessage
 		s.Require().NoError(json.Unmarshal([]byte(meta), &rawMeta))
 		s.Len(rawMeta, 2)
-		s.NotEmpty(decoded.Group)
-		s.NotEmpty(decoded.Fields)
+		s.Require().NotEmpty(decoded.Group)
+		s.Require().NotEmpty(decoded.Fields)
 		if decoded.Group == "mail_smtp" {
 			sawSMTP = true
 			s.Contains(decoded.Fields, "host")
@@ -213,7 +213,7 @@ func (s *PlatformSettingsSectionResetTestSuite) TestAdmin_Reset_DeletesPlatformR
 		 WHERE subject_type = 'setting'
 		   AND properties->'old'->>'group' = 'mail_smtp'`,
 	).Scan(&trails))
-	s.NotEmpty(trails)
+	s.Require().NotEmpty(trails)
 	var sawRemovedPassword, sawRemovedHost bool
 	for _, row := range trails {
 		s.Equal("", row.Scope)

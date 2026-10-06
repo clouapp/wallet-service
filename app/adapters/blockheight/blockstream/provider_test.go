@@ -74,7 +74,7 @@ func TestProvider_Rejects_ChainIDsAndBadResponses(t *testing.T) {
 	ctx := context.Background()
 	for _, key := range []string{models.ChainETH, blockheight.TipSourceBitcoinTestnet4, ""} {
 		_, err := New().GetBlockHeight(ctx, key)
-		assert.Error(t, err, key)
+		require.Error(t, err, key)
 		assert.Contains(t, err.Error(), "unknown chain_id")
 	}
 

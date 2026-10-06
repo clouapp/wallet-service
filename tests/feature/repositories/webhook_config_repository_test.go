@@ -102,7 +102,7 @@ func (s *WebhookConfigRepositoryTestSuite) TestFind_By_WalletID() {
 	s.Require().NoError(s.repo.Create(context.Background(), &models.WebhookConfig{ID: uuid.New(), URL: "https://b.com", Secret: "s", Events: `{"b"}`, IsActive: true, WalletID: &walletID, Type: "wallet"}))
 
 	cfgs, err := s.repo.FindByWalletID(context.Background(), walletID)
-	s.NoError(err)
+	s.Require().NoError(err)
 	s.Len(cfgs, 2)
 }
 
@@ -112,7 +112,7 @@ func (s *WebhookConfigRepositoryTestSuite) TestFind_ByIDAndWallet_Found() {
 	s.Require().NoError(s.repo.Create(context.Background(), cfg))
 
 	found, err := s.repo.FindByIDAndWallet(context.Background(), cfg.ID, walletID)
-	s.NoError(err)
+	s.Require().NoError(err)
 	s.NotNil(found)
 }
 
@@ -136,7 +136,7 @@ func (s *WebhookConfigRepositoryTestSuite) TestWebhookConfigRepository_Find_Acti
 	facades.Orm().Query().Model(inactiveCfg).Where("id = ?", inactiveCfg.ID).Update("is_active", false)
 
 	active, err := s.repo.FindActive(context.Background())
-	s.NoError(err)
+	s.Require().NoError(err)
 	s.Len(active, 2)
 }
 
@@ -145,7 +145,7 @@ func (s *WebhookConfigRepositoryTestSuite) TestWebhookConfigRepository_Find_All(
 	s.Require().NoError(s.repo.Create(context.Background(), &models.WebhookConfig{ID: uuid.New(), URL: "https://b.com", Secret: "s", Events: `{"b"}`, IsActive: false}))
 
 	all, err := s.repo.FindAll(context.Background())
-	s.NoError(err)
+	s.Require().NoError(err)
 	s.Len(all, 2)
 }
 
@@ -154,10 +154,10 @@ func (s *WebhookConfigRepositoryTestSuite) TestWebhookConfigRepository_Delete_Su
 	s.Require().NoError(s.repo.Create(context.Background(), cfg))
 
 	err := s.repo.Delete(context.Background(), cfg)
-	s.NoError(err)
+	s.Require().NoError(err)
 
 	all, err := s.repo.FindAll(context.Background())
-	s.NoError(err)
+	s.Require().NoError(err)
 	s.Len(all, 0)
 }
 
@@ -166,9 +166,9 @@ func (s *WebhookConfigRepositoryTestSuite) TestDelete_By_ID() {
 	s.Require().NoError(s.repo.Create(context.Background(), cfg))
 
 	err := s.repo.DeleteByID(context.Background(), cfg.ID)
-	s.NoError(err)
+	s.Require().NoError(err)
 
 	all, err := s.repo.FindAll(context.Background())
-	s.NoError(err)
+	s.Require().NoError(err)
 	s.Len(all, 0)
 }

@@ -73,7 +73,7 @@ func (s *TwoFactorLoginTestSuite) TestValid_TOTP_CompletesTheLogin() {
 	resp, body := s.verifyTwoFactor(challenge.ChallengeToken, s.currentCode(user.TOTPSecret), "")
 
 	resp.AssertStatus(200)
-	s.NotEmpty(body.AccessToken)
+	s.Require().NotEmpty(body.AccessToken)
 	s.NotEmpty(body.RefreshToken)
 	s.getMe(body.AccessToken).AssertOk()
 }
@@ -151,7 +151,7 @@ func (s *TwoFactorLoginTestSuite) TestLogin_Without_TOTPStillReturnsASession() {
 	resp.AssertStatus(200)
 	s.False(body.Requires2FA)
 	s.Empty(body.ChallengeToken)
-	s.NotEmpty(body.AccessToken)
+	s.Require().NotEmpty(body.AccessToken)
 	s.NotEmpty(body.RefreshToken)
 	s.getMe(body.AccessToken).AssertOk()
 }

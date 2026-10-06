@@ -129,7 +129,7 @@ func (s *NumericColumnsTestSuite) TestAsset_Balance_PriceAndValueRoundTripExactl
 
 	listed, err := repo.ListByWallet(ctx, wallet.ID)
 	s.Require().NoError(err)
-	s.Require().Len(listed, 2)
+	s.Len(listed, 2)
 	bySymbol := map[string]models.WalletAssetBalance{}
 	for _, row := range listed {
 		bySymbol[row.AssetSymbol] = row

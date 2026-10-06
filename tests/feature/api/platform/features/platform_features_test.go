@@ -328,7 +328,7 @@ func (s *featureGateSuite) TestPlatform_Admin_WritesOneAccountFeatureScope() {
 	s.Require().NoError(err)
 	var saved platformListBody
 	s.Require().NoError(json.Unmarshal(raw, &saved))
-	s.Equal(2, len(saved.Features))
+	s.Require().Equal(2, len(saved.Features))
 	s.Equal(features.FlagSweepEnabled, saved.Features[0].Key)
 	s.False(saved.Features[0].Enabled)
 	s.Equal(features.FlagWalletCreationEnabled, saved.Features[1].Key)

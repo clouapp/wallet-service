@@ -12,6 +12,7 @@ import (
 	"github.com/macrowallets/waas/app/models"
 	activitylog "github.com/macrowallets/waas/app/services/activity"
 	"github.com/macrowallets/waas/app/services/users"
+	"github.com/stretchr/testify/assert"
 )
 
 func TestReset_MFA_ClearsTotpOnceAndLeavesTheUserActive(t *testing.T) {
@@ -40,32 +41,32 @@ func TestReset_MFA_ClearsTotpOnceAndLeavesTheUserActive(t *testing.T) {
 	})
 
 	require.NoError(t, service.ResetMFA(context.Background(), actor, target))
-	require.False(t, store.user.TotpEnabled)
-	require.Empty(t, store.user.TotpSecret)
-	require.Nil(t, store.user.SuspendedAt)
-	require.Equal(t, 1, store.disabled)
-	require.Equal(t, 1, recovery.deleted)
-	require.Equal(t, int64(0), recovery.count)
-	require.Empty(t, sessions.revoked)
-	require.Equal(t, []uuid.UUID{actor}, sessions.actors)
-	require.Equal(t, []uuid.UUID{target}, sessions.targets)
+	assert.False(t, store.user.TotpEnabled)
+	assert.Empty(t, store.user.TotpSecret)
+	assert.Nil(t, store.user.SuspendedAt)
+	assert.Equal(t, 1, store.disabled)
+	assert.Equal(t, 1, recovery.deleted)
+	assert.Equal(t, int64(0), recovery.count)
+	assert.Empty(t, sessions.revoked)
+	assert.Equal(t, []uuid.UUID{actor}, sessions.actors)
+	assert.Equal(t, []uuid.UUID{target}, sessions.targets)
 	require.Len(t, activity.rows, 1)
-	require.Nil(t, activity.rows[0].AccountID)
-	require.Equal(t, actor, activity.rows[0].ActorUserID)
-	require.Equal(t, activitylog.ActionUserMFAReset, activity.rows[0].Action)
-	require.Equal(t, activitylog.TargetUser, activity.rows[0].TargetType)
-	require.Equal(t, target.String(), activity.rows[0].TargetID)
+	assert.Nil(t, activity.rows[0].AccountID)
+	assert.Equal(t, actor, activity.rows[0].ActorUserID)
+	assert.Equal(t, activitylog.ActionUserMFAReset, activity.rows[0].Action)
+	assert.Equal(t, activitylog.TargetUser, activity.rows[0].TargetType)
+	assert.Equal(t, target.String(), activity.rows[0].TargetID)
 	encoded, err := activity.rows[0].Metadata.Encode()
 	require.NoError(t, err)
-	require.JSONEq(t, `{"enabled":false,"key":"totp"}`, encoded)
-	require.NotContains(t, encoded, "sealed-marker")
+	assert.JSONEq(t, `{"enabled":false,"key":"totp"}`, encoded)
+	assert.NotContains(t, encoded, "sealed-marker")
 
 	require.NoError(t, service.ResetMFA(context.Background(), actor, target))
-	require.Len(t, activity.rows, 1)
-	require.Equal(t, 1, store.disabled)
-	require.Equal(t, 1, recovery.deleted)
-	require.Equal(t, []uuid.UUID{actor}, sessions.actors)
-	require.Equal(t, []uuid.UUID{target}, sessions.targets)
+	assert.Len(t, activity.rows, 1)
+	assert.Equal(t, 1, store.disabled)
+	assert.Equal(t, 1, recovery.deleted)
+	assert.Equal(t, []uuid.UUID{actor}, sessions.actors)
+	assert.Equal(t, []uuid.UUID{target}, sessions.targets)
 }
 
 func TestReset_MFA_OfAnAlreadyClearUserWritesNothing(t *testing.T) {
@@ -83,8 +84,8 @@ func TestReset_MFA_OfAnAlreadyClearUserWritesNothing(t *testing.T) {
 	})
 
 	require.NoError(t, service.ResetMFA(context.Background(), actor, target))
-	require.Empty(t, activity.rows)
-	require.Zero(t, store.disabled)
+	assert.Empty(t, activity.rows)
+	assert.Zero(t, store.disabled)
 }
 
 func TestReset_MFA_RefusesACallerWhoIsNotAPlatformAdmin(t *testing.T) {
@@ -106,12 +107,12 @@ func TestReset_MFA_RefusesACallerWhoIsNotAPlatformAdmin(t *testing.T) {
 	})
 
 	err := service.ResetMFA(context.Background(), uuid.New(), target)
-	require.ErrorIs(t, err, users.ErrMFAForbidden)
-	require.Equal(t, 1, store.finds)
-	require.True(t, store.user.TotpEnabled)
-	require.Equal(t, "sealed-marker", store.user.TotpSecret)
-	require.Equal(t, int64(1), recovery.count)
-	require.Empty(t, activity.rows)
+	assert.ErrorIs(t, err, users.ErrMFAForbidden)
+	assert.Equal(t, 1, store.finds)
+	assert.True(t, store.user.TotpEnabled)
+	assert.Equal(t, "sealed-marker", store.user.TotpSecret)
+	assert.Equal(t, int64(1), recovery.count)
+	assert.Empty(t, activity.rows)
 
 	missing := &mfaStore{err: models.ErrRepositoryNotFound}
 	err = users.NewService(users.Deps{
@@ -120,8 +121,8 @@ func TestReset_MFA_RefusesACallerWhoIsNotAPlatformAdmin(t *testing.T) {
 		Admins:   allowAdmins{},
 		Recovery: recovery,
 	}).ResetMFA(context.Background(), uuid.New(), uuid.New())
-	require.ErrorIs(t, err, users.ErrNotFound)
-	require.Equal(t, 1, missing.finds)
+	assert.ErrorIs(t, err, users.ErrNotFound)
+	assert.Equal(t, 1, missing.finds)
 }
 
 func TestReset_MFA_ReportsAMissingUserToAPlatformAdmin(t *testing.T) {
@@ -137,8 +138,8 @@ func TestReset_MFA_ReportsAMissingUserToAPlatformAdmin(t *testing.T) {
 	})
 
 	err := service.ResetMFA(context.Background(), actor, uuid.New())
-	require.ErrorIs(t, err, users.ErrNotFound)
-	require.Equal(t, 1, store.finds)
+	assert.ErrorIs(t, err, users.ErrNotFound)
+	assert.Equal(t, 1, store.finds)
 }
 
 type mfaStore struct {

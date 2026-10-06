@@ -49,13 +49,13 @@ func (s *AccountServiceTestSuite) TestAccountService_Create_Success() {
 	ctx := context.Background()
 
 	acc, err := svc.Create(ctx, "Test Account", ownerID)
-	s.NoError(err)
-	s.NotNil(acc)
+	s.Require().NoError(err)
+	s.Require().NotNil(acc)
 	s.Equal("Test Account", acc.Name)
 	s.Equal("active", acc.Status)
 
 	role, err := svc.GetUserRole(ctx, acc.ID, ownerID)
-	s.NoError(err)
+	s.Require().NoError(err)
 	s.Equal("owner", role)
 }
 
@@ -73,10 +73,10 @@ func (s *AccountServiceTestSuite) TestAdd_User_Success() {
 
 	newUserID := s.createUser()
 	err = svc.AddUser(ctx, acc.ID, newUserID, "admin", ownerID)
-	s.NoError(err)
+	s.Require().NoError(err)
 
 	role, err := svc.GetUserRole(ctx, acc.ID, newUserID)
-	s.NoError(err)
+	s.Require().NoError(err)
 	s.Equal("admin", role)
 }
 
@@ -103,10 +103,10 @@ func (s *AccountServiceTestSuite) TestAddUser_ReAdd_ClearsDeletedAt() {
 	s.Equal("", role, "role should be empty after removal")
 
 	err = svc.AddUser(ctx, acc.ID, userID, "user", ownerID)
-	s.NoError(err)
+	s.Require().NoError(err)
 
 	role, err = svc.GetUserRole(ctx, acc.ID, userID)
-	s.NoError(err)
+	s.Require().NoError(err)
 	s.Equal("user", role)
 }
 
@@ -129,6 +129,6 @@ func (s *AccountServiceTestSuite) TestIsolation_User_CannotAccessOtherAccount() 
 
 	// ownerB should have no role in accA
 	role, err := svc.GetUserRole(ctx, accA.ID, ownerB)
-	s.NoError(err)
+	s.Require().NoError(err)
 	s.Equal("", role)
 }

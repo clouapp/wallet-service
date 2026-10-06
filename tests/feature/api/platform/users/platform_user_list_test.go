@@ -240,7 +240,7 @@ func (s *PlatformUserListTestSuite) assertExactKeys(node any, keys ...string) {
 	s.T().Helper()
 	object, ok := node.(map[string]any)
 	s.Require().True(ok)
-	s.Len(object, len(keys))
+	s.Require().Len(object, len(keys))
 	for _, key := range keys {
 		_, present := object[key]
 		s.True(present, key)

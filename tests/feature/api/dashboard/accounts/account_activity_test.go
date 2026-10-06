@@ -104,7 +104,7 @@ func (s *AccountActivityTestSuite) TestSettings_Secret_PatchDoesNotStoreTheSecre
 
 	stored := s.storedSecret(accountID)
 	s.NotEqual(activityPlainSecret, stored)
-	s.NotEmpty(stored)
+	s.Require().NotEmpty(stored)
 
 	page := s.list(auditor.token, accountID, "")
 	s.Require().Len(page.Data, 1)
@@ -373,7 +373,7 @@ func (s *AccountActivityTestSuite) TestMFA_Reset_IsAPlatformRow() {
 
 	platform := s.listPlatform(owner.token, "")
 	s.Equal(int64(2), platform.Total)
-	s.Require().Len(platform.Data, 2)
+	s.Len(platform.Data, 2)
 	seen := map[string]bool{}
 	for _, row := range platform.Data {
 		s.Empty(row.AccountID)
