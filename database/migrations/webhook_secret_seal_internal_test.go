@@ -22,14 +22,14 @@ func (mismatchCipher) DecryptString(string) (string, error) {
 	return "different", nil
 }
 
-func TestSealWebhookSecretAbortsWhenTheCopyDoesNotMatch(t *testing.T) {
+func TestSeal_Webhook_SecretAbortsWhenTheCopyDoesNotMatch(t *testing.T) {
 	_, changed, err := sealWebhookSecret(mismatchCipher{}, "plaintext-value")
 	if err == nil || changed {
 		t.Fatal("a seal that does not open to the stored secret must abort")
 	}
 }
 
-func TestWebhookSecretRewriteRollsBackWhenALaterRowFails(t *testing.T) {
+func TestWebhook_Secret_RewriteRollsBackWhenALaterRowFails(t *testing.T) {
 	fixtures.TestDB(t)
 	const first = "rollback-webhook-secret-a"
 	const second = "rollback-webhook-secret-b"

@@ -11,7 +11,7 @@ const (
 	ingestEnvKey    = "ing-env-44d0"
 )
 
-func TestIngestProviderKey_EnabledGroupOpensTheSealedCredential(t *testing.T) {
+func TestIngest_ProviderKey_EnabledGroupOpensTheSealedCredential(t *testing.T) {
 	store := newMemoryStore()
 	store.PutPlatform(groupProviderAlchemy, map[string]string{
 		keyProviderEnabled:   "true",
@@ -24,7 +24,7 @@ func TestIngestProviderKey_EnabledGroupOpensTheSealedCredential(t *testing.T) {
 	}
 }
 
-func TestIngestProviderKey_HeliusAndQuickNodeOpenAPIKey(t *testing.T) {
+func TestIngest_ProviderKey_HeliusAndQuickNodeOpenAPIKey(t *testing.T) {
 	for _, provider := range []string{ingestProviderHelius, ingestProviderQuickNode} {
 		group, secretKey, ok := ingestProviderGroup(provider)
 		if !ok {
@@ -42,7 +42,7 @@ func TestIngestProviderKey_HeliusAndQuickNodeOpenAPIKey(t *testing.T) {
 	}
 }
 
-func TestIngestProviderKey_MissingDisabledUnsealedAndFailedReadUseTheEnvKey(t *testing.T) {
+func TestIngest_ProviderKey_MissingDisabledUnsealedAndFailedReadUseTheEnvKey(t *testing.T) {
 	t.Run("missing", func(t *testing.T) {
 		got := newTestService(newMemoryStore()).IngestProviderKey(context.Background(), ingestProviderAlchemy, "  "+ingestEnvKey+"  ")
 		if got != ingestEnvKey {
@@ -96,7 +96,7 @@ func TestIngestProviderKey_MissingDisabledUnsealedAndFailedReadUseTheEnvKey(t *t
 	})
 }
 
-func TestIngestProviderKey_NilServiceOrContextKeepsTheEnvKey(t *testing.T) {
+func TestIngest_ProviderKey_NilServiceOrContextKeepsTheEnvKey(t *testing.T) {
 	var service *Service
 	if got := service.IngestProviderKey(context.Background(), ingestProviderAlchemy, ingestEnvKey); got != ingestEnvKey {
 		t.Fatal("a nil settings service did not keep the environment key")

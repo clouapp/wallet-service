@@ -17,7 +17,7 @@ func (p *recordingProvider) GetBlockHeight(_ context.Context, chainID string) (u
 	return 42, nil
 }
 
-func TestRoutedProviderReadsTheTipOfTheNetworkTheRecordPointsAt(t *testing.T) {
+func TestRouted_Provider_ReadsTheTipOfTheNetworkTheRecordPointsAt(t *testing.T) {
 	inner := &recordingProvider{}
 	routed := RouteByNetwork(inner, map[string]string{
 		models.ChainETH:     models.NetworkEthereumSepolia,
@@ -37,7 +37,7 @@ func TestRoutedProviderReadsTheTipOfTheNetworkTheRecordPointsAt(t *testing.T) {
 	assert.Equal(t, []string{models.ChainTETH, models.ChainTPolygon, models.ChainTBTC, models.ChainTSOL, models.ChainTETH}, inner.asked)
 }
 
-func TestRoutedProviderKeepsTheChainIDWhenTheNetworkIsUnknown(t *testing.T) {
+func TestRouted_Provider_KeepsTheChainIDWhenTheNetworkIsUnknown(t *testing.T) {
 	inner := &recordingProvider{}
 	routed := RouteByNetwork(inner, map[string]string{models.ChainETH: ""})
 
@@ -49,7 +49,7 @@ func TestRoutedProviderKeepsTheChainIDWhenTheNetworkIsUnknown(t *testing.T) {
 	assert.Equal(t, []string{models.ChainETH, models.ChainTBTC}, inner.asked)
 }
 
-func TestRoutedProviderFailsForANetworkWithoutATipSource(t *testing.T) {
+func TestRouted_Provider_FailsForANetworkWithoutATipSource(t *testing.T) {
 	inner := &recordingProvider{}
 	routed := RouteByNetwork(inner, map[string]string{models.ChainSOL: models.NetworkSolanaTestnet})
 
@@ -59,7 +59,7 @@ func TestRoutedProviderFailsForANetworkWithoutATipSource(t *testing.T) {
 	assert.Empty(t, inner.asked)
 }
 
-func TestRoutedProviderCopiesItsMapAndRejectsANilInner(t *testing.T) {
+func TestRouted_Provider_CopiesItsMapAndRejectsANilInner(t *testing.T) {
 	networks := map[string]string{models.ChainBTC: models.NetworkBitcoinTestnet}
 	inner := &recordingProvider{}
 	routed := RouteByNetwork(inner, networks)
@@ -73,7 +73,7 @@ func TestRoutedProviderCopiesItsMapAndRejectsANilInner(t *testing.T) {
 	assert.Error(t, err)
 }
 
-func TestRoutedProviderSendsBaseArbitrumAndBSCToTheChainRPC(t *testing.T) {
+func TestRouted_Provider_SendsBaseArbitrumAndBSCToTheChainRPC(t *testing.T) {
 	inner := &recordingProvider{}
 	routed := RouteByNetwork(inner, map[string]string{
 		models.ChainBase:      models.NetworkBaseSepolia,

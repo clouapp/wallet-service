@@ -29,7 +29,7 @@ type WalletSettingsTestSuite struct {
 	viewerToken string
 }
 
-func TestWalletSettingsSuite(t *testing.T) {
+func TestWallet_Settings_Suite(t *testing.T) {
 	suite.Run(t, new(WalletSettingsTestSuite))
 }
 
@@ -103,7 +103,7 @@ func (s *WalletSettingsTestSuite) stored(walletID uuid.UUID) models.Wallet {
 	return wallet
 }
 
-func (s *WalletSettingsTestSuite) TestOwnerSetsAndResetsTheFeeMultiplier() {
+func (s *WalletSettingsTestSuite) TestOwner_Sets_AndResetsTheFeeMultiplier() {
 	wallet := s.wallet(models.ChainBase)
 
 	resp := s.patch(s.ownerToken, wallet.ID, `{"fee_multiplier": 1.25, "label": "Treasury"}`)
@@ -122,7 +122,7 @@ func (s *WalletSettingsTestSuite) TestOwnerSetsAndResetsTheFeeMultiplier() {
 	s.Equal("Treasury", s.stored(wallet.ID).Label, "omitted fields stay unchanged")
 }
 
-func (s *WalletSettingsTestSuite) TestInvalidFieldsAreRefusedWithoutWriting() {
+func (s *WalletSettingsTestSuite) TestInvalid_Fields_AreRefusedWithoutWriting() {
 	wallet := s.wallet(models.ChainBase)
 	for _, body := range []string{
 		`{"fee_multiplier": 0.5}`,
@@ -144,7 +144,7 @@ func (s *WalletSettingsTestSuite) TestInvalidFieldsAreRefusedWithoutWriting() {
 	s.False(s.stored(wallet.ID).FeeMultiplier.Valid)
 }
 
-func (s *WalletSettingsTestSuite) TestChainRulesForFeeSettings() {
+func (s *WalletSettingsTestSuite) TestChain_Rules_ForFeeSettings() {
 	btc := s.wallet(models.ChainBTC)
 	s.patch(s.ownerToken, btc.ID, `{"fee_multiplier": "1.5", "fee_rate_min": 2, "fee_rate_max": 40}`).AssertStatus(200)
 	stored := s.stored(btc.ID)
@@ -158,13 +158,13 @@ func (s *WalletSettingsTestSuite) TestChainRulesForFeeSettings() {
 	s.patch(s.ownerToken, sol.ID, `{"fee_multiplier": 2}`).AssertStatus(422)
 }
 
-func (s *WalletSettingsTestSuite) TestViewersCannotChangeSettings() {
+func (s *WalletSettingsTestSuite) TestViewers_Cannot_ChangeSettings() {
 	wallet := s.wallet(models.ChainBase)
 	s.patch(s.viewerToken, wallet.ID, `{"fee_multiplier": 2}`).AssertStatus(403)
 	s.False(s.stored(wallet.ID).FeeMultiplier.Valid)
 }
 
-func (s *WalletSettingsTestSuite) TestOtherAccountsWalletsAreNotReachable() {
+func (s *WalletSettingsTestSuite) TestOther_Accounts_WalletsAreNotReachable() {
 	other := fixtures.InsertAccount(s.T(), "other")
 	foreign := fixtures.InsertWalletWithAccount(s.T(), models.ChainBase, &other.ID)
 	s.patch(s.ownerToken, foreign.ID, `{"fee_multiplier": 2}`).AssertStatus(403)

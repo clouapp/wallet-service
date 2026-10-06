@@ -27,7 +27,7 @@ type PlatformMailSMTPTestSuite struct {
 	authSuite
 }
 
-func TestPlatformMailSMTPSuite(t *testing.T) {
+func TestPlatform_Mail_SMTPSuite(t *testing.T) {
 	suite.Run(t, new(PlatformMailSMTPTestSuite))
 }
 
@@ -44,7 +44,7 @@ func (s *PlatformMailSMTPTestSuite) TearDownTest() {
 	appfacades.RestoreMailBaseline()
 }
 
-func (s *PlatformMailSMTPTestSuite) TestAPlatformAdminStoresASealedPasswordTheMailerReads() {
+func (s *PlatformMailSMTPTestSuite) TestA_Platform_AdminStoresASealedPasswordTheMailerReads() {
 	admin := s.seedUser(false)
 	s.grantPlatformAdmin(admin.ID)
 	session := s.signIn(admin.Email)
@@ -146,7 +146,7 @@ func (s *PlatformMailSMTPTestSuite) TestAPlatformAdminStoresASealedPasswordTheMa
 	}
 }
 
-func (s *PlatformMailSMTPTestSuite) TestAMissingRowKeepsTheEnvMailer() {
+func (s *PlatformMailSMTPTestSuite) TestA_Missing_RowKeepsTheEnvMailer() {
 	envHost := appfacades.Config().GetString("mail.mailers.smtp.host")
 	envPort := appfacades.Config().GetInt("mail.mailers.smtp.port")
 	envEncryption := appfacades.Config().GetString("mail.mailers.smtp.encryption")
@@ -170,7 +170,7 @@ func (s *PlatformMailSMTPTestSuite) TestAMissingRowKeepsTheEnvMailer() {
 	s.Equal(int64(0), s.count(`SELECT count(*) FROM settings WHERE account_id IS NULL AND "group" = 'mail_smtp'`))
 }
 
-func (s *PlatformMailSMTPTestSuite) TestAFailedReadKeepsTheEnvMailer() {
+func (s *PlatformMailSMTPTestSuite) TestA_Failed_ReadKeepsTheEnvMailer() {
 	envHost := appfacades.Config().GetString("mail.mailers.smtp.host")
 	previous := appfacades.SetMailSMTPReader(func(context.Context) (appfacades.MailDial, error) {
 		return appfacades.MailDial{}, errMailReadFailed
@@ -187,7 +187,7 @@ func (s *PlatformMailSMTPTestSuite) TestAFailedReadKeepsTheEnvMailer() {
 	}
 }
 
-func (s *PlatformMailSMTPTestSuite) TestANonAdminIsForbidden() {
+func (s *PlatformMailSMTPTestSuite) TestA_Non_AdminIsForbidden() {
 	member := s.seedUser(false)
 	session := s.signIn(member.Email)
 	forbidden := s.putRaw(session.AccessToken, "/v1/platform/settings/mail_smtp",

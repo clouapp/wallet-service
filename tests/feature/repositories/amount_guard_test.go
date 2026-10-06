@@ -23,7 +23,7 @@ type AmountGuardTestSuite struct {
 	wallets      *repositories.WalletRepository
 }
 
-func TestAmountGuardSuite(t *testing.T) {
+func TestAmount_Guard_Suite(t *testing.T) {
 	suite.Run(t, new(AmountGuardTestSuite))
 }
 
@@ -51,7 +51,7 @@ func (s *AmountGuardTestSuite) countTransactions(walletID uuid.UUID) int64 {
 	return count
 }
 
-func (s *AmountGuardTestSuite) TestCreateRejectsNegativeAmountAndFee() {
+func (s *AmountGuardTestSuite) TestCreate_Rejects_NegativeAmountAndFee() {
 	wallet := fixtures.InsertWallet(s.T(), "sol")
 
 	negativeAmount := s.solDeposit(wallet.ID, "-5000000000")
@@ -65,7 +65,7 @@ func (s *AmountGuardTestSuite) TestCreateRejectsNegativeAmountAndFee() {
 	s.Error(s.transactions.Create(context.Background(), nil))
 }
 
-func (s *AmountGuardTestSuite) TestCreateStoresTheAbsoluteAmount() {
+func (s *AmountGuardTestSuite) TestCreate_Stores_TheAbsoluteAmount() {
 	wallet := fixtures.InsertWallet(s.T(), "sol")
 	tx := s.solDeposit(wallet.ID, "5000000000")
 
@@ -77,7 +77,7 @@ func (s *AmountGuardTestSuite) TestCreateStoresTheAbsoluteAmount() {
 	s.Equal(models.TxDirectionInbound, stored.Direction)
 }
 
-func (s *AmountGuardTestSuite) TestUpdateFieldsRejectsNegativeAmount() {
+func (s *AmountGuardTestSuite) TestUpdate_Fields_RejectsNegativeAmount() {
 	wallet := fixtures.InsertWallet(s.T(), "sol")
 	tx := s.solDeposit(wallet.ID, "5000000000")
 	s.Require().NoError(s.transactions.Create(context.Background(), tx))
@@ -90,7 +90,7 @@ func (s *AmountGuardTestSuite) TestUpdateFieldsRejectsNegativeAmount() {
 	s.Equal("5000000000", stored.Amount)
 }
 
-func (s *AmountGuardTestSuite) TestWithdrawalRejectsNegativeAmounts() {
+func (s *AmountGuardTestSuite) TestWithdrawal_Rejects_NegativeAmounts() {
 	wallet := fixtures.InsertWallet(s.T(), "sol")
 	withdrawal := &models.Withdrawal{ID: uuid.New(), WalletID: wallet.ID, Status: models.WithdrawalStatusBroadcasting, Amount: "-0.02", FeeEstimate: "0", DestinationAddress: "So1Dest"}
 	s.ErrorIs(s.withdrawals.Create(context.Background(), withdrawal), amount.ErrNegativeAmount)
@@ -100,7 +100,7 @@ func (s *AmountGuardTestSuite) TestWithdrawalRejectsNegativeAmounts() {
 	s.ErrorIs(s.withdrawals.SetFeeEstimate(context.Background(), withdrawal.ID, "-0.000005"), amount.ErrNegativeAmount)
 }
 
-func (s *AmountGuardTestSuite) TestBalanceWritesRejectNegativeAmounts() {
+func (s *AmountGuardTestSuite) TestBalance_Writes_RejectNegativeAmounts() {
 	wallet := fixtures.InsertWallet(s.T(), "sol")
 
 	row := models.WalletAssetBalance{ID: uuid.New(), WalletID: wallet.ID, ChainID: "sol", AssetType: "native", AssetSymbol: "SOL", AssetKey: "SOL", Decimals: 9, AmountRaw: "-1", AmountDisplay: "-0.000000001"}
@@ -113,7 +113,7 @@ func (s *AmountGuardTestSuite) TestBalanceWritesRejectNegativeAmounts() {
 }
 
 // The CHECK constraints reject a signed amount even from writes that skip the repositories.
-func (s *AmountGuardTestSuite) TestDatabaseRejectsSignedAmountsOutsideTheRepositories() {
+func (s *AmountGuardTestSuite) TestDatabase_Rejects_SignedAmountsOutsideTheRepositories() {
 	wallet := fixtures.InsertWallet(s.T(), "sol")
 	tx := s.solDeposit(wallet.ID, "5000000000")
 	s.Require().NoError(s.transactions.Create(context.Background(), tx))

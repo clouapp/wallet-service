@@ -18,7 +18,7 @@ type PlatformUserSessionsTestSuite struct {
 	authSuite
 }
 
-func TestPlatformUserSessionsSuite(t *testing.T) {
+func TestPlatform_User_SessionsSuite(t *testing.T) {
 	suite.Run(t, new(PlatformUserSessionsTestSuite))
 }
 
@@ -26,7 +26,7 @@ func (s *PlatformUserSessionsTestSuite) SetupTest() {
 	testutil.SeededTestDB(s.T())
 }
 
-func (s *PlatformUserSessionsTestSuite) TestAPlatformAdminRevokesSessionsWithoutSuspending() {
+func (s *PlatformUserSessionsTestSuite) TestA_Platform_AdminRevokesSessionsWithoutSuspending() {
 	admin := s.seedUser(false)
 	s.grantPlatformAdmin(admin.ID)
 	adminSession := s.signIn(admin.Email)
@@ -91,7 +91,7 @@ func (s *PlatformUserSessionsTestSuite) TestAPlatformAdminRevokesSessionsWithout
 	s.Equal(2, seen)
 }
 
-func (s *PlatformUserSessionsTestSuite) TestAMemberCannotRevokePlatformSessions() {
+func (s *PlatformUserSessionsTestSuite) TestA_Member_CannotRevokePlatformSessions() {
 	member := s.seedUser(false)
 	victim := s.seedUser(false)
 	session := s.signIn(member.Email)
@@ -116,7 +116,7 @@ func (s *PlatformUserSessionsTestSuite) TestAMemberCannotRevokePlatformSessions(
 	missing.AssertForbidden()
 }
 
-func (s *PlatformUserSessionsTestSuite) TestAnUnknownUserIsNotFound() {
+func (s *PlatformUserSessionsTestSuite) TestAn_Unknown_UserIsNotFound() {
 	admin := s.seedUser(false)
 	s.grantPlatformAdmin(admin.ID)
 	session := s.signIn(admin.Email)

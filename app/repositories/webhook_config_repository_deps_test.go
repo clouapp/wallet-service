@@ -16,7 +16,7 @@ type webhookConfigQueryStub struct {
 	orm.Query
 }
 
-func TestNewWebhookConfigRepositoryKeepsDependencies(t *testing.T) {
+func TestNew_Webhook_ConfigRepositoryKeepsDependencies(t *testing.T) {
 	cipher := webhookConfigCipherStub{}
 	query := &webhookConfigQueryStub{}
 	got := NewWebhookConfigRepository(WebhookConfigRepositoryDeps{

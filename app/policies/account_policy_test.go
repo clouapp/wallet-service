@@ -12,7 +12,7 @@ func withStoredAccountRole(accountID, userID uuid.UUID, role string) context.Con
 	return context.WithValue(context.Background(), RequestGrantsKey(), AttachRequestGrants(accountID, userID, role))
 }
 
-func TestAccountDecisionsFollowTheLoadedMembership(t *testing.T) {
+func TestAccount_Decisions_FollowTheLoadedMembership(t *testing.T) {
 	accountID := uuid.New()
 	userID := uuid.New()
 
@@ -56,7 +56,7 @@ func TestAccountDecisionsFollowTheLoadedMembership(t *testing.T) {
 	}
 }
 
-func TestAccountViewAllowsAnyStoredRole(t *testing.T) {
+func TestAccount_View_AllowsAnyStoredRole(t *testing.T) {
 	accountID := uuid.New()
 	userID := uuid.New()
 	policy := &AccountPolicy{}
@@ -74,7 +74,7 @@ func TestAccountViewAllowsAnyStoredRole(t *testing.T) {
 	}
 }
 
-func TestAccountPolicyKeepsTheMissingCallerDeny(t *testing.T) {
+func TestAccount_Policy_KeepsTheMissingCallerDeny(t *testing.T) {
 	t.Parallel()
 
 	accountID := uuid.New()
@@ -103,7 +103,7 @@ func TestAccountPolicyKeepsTheMissingCallerDeny(t *testing.T) {
 	}
 }
 
-func TestAccountPolicyUsesThePassedAccountRole(t *testing.T) {
+func TestAccount_Policy_UsesThePassedAccountRole(t *testing.T) {
 	accountID := uuid.New()
 	userID := uuid.New()
 	policy := &AccountPolicy{}
@@ -143,7 +143,7 @@ func TestAccountPolicyUsesThePassedAccountRole(t *testing.T) {
 	}
 }
 
-func TestAccountPolicyTreatsAMissingStoredRoleAsNoMembership(t *testing.T) {
+func TestAccount_Policy_TreatsAMissingStoredRoleAsNoMembership(t *testing.T) {
 	accountID := uuid.New()
 	userID := uuid.New()
 

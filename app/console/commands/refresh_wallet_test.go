@@ -6,7 +6,7 @@ import (
 	"github.com/macrowallets/waas/app/services/refresh"
 )
 
-func TestNewRefreshWalletKeepsItsDependencies(t *testing.T) {
+func TestNew_Refresh_WalletKeepsItsDependencies(t *testing.T) {
 	balances := refresh.NewBalanceService(refresh.Deps{})
 	dispatcher := &refreshAddressDispatcherStub{}
 	cmd := NewRefreshWallet(RefreshWalletDeps{
@@ -24,7 +24,7 @@ func TestNewRefreshWalletKeepsItsDependencies(t *testing.T) {
 	}
 }
 
-func TestNewRefreshWalletRequiresBalances(t *testing.T) {
+func TestNew_Refresh_WalletRequiresBalances(t *testing.T) {
 	defer func() {
 		got := recover()
 		if got != "refresh:wallet: balance refresh service is required" {
@@ -34,7 +34,7 @@ func TestNewRefreshWalletRequiresBalances(t *testing.T) {
 	NewRefreshWallet(RefreshWalletDeps{Dispatcher: &refreshAddressDispatcherStub{}})
 }
 
-func TestNewRefreshWalletRequiresADispatcher(t *testing.T) {
+func TestNew_Refresh_WalletRequiresADispatcher(t *testing.T) {
 	defer func() {
 		got := recover()
 		if got != "refresh:wallet: refresh dispatcher is required" {

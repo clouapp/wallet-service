@@ -11,7 +11,7 @@ import (
 	"github.com/macrowallets/waas/tests/feature/support/fixtures"
 )
 
-func TestDropLegacyTotpSecretRemovesEmptyStores(t *testing.T) {
+func TestDrop_Legacy_TotpSecretRemovesEmptyStores(t *testing.T) {
 	fixtures.TestDB(t)
 
 	require.False(t, legacyTotpSecretColumnPresent(t))
@@ -55,7 +55,7 @@ func TestDropLegacyTotpSecretRemovesEmptyStores(t *testing.T) {
 		WHERE subject_type = 'users' AND subject_id = ? AND code_hash = 'backup-hash-marker'`, userID))
 }
 
-func TestDropLegacyTotpSecretRefusesAValueThatWasNotCleared(t *testing.T) {
+func TestDrop_Legacy_TotpSecretRefusesAValueThatWasNotCleared(t *testing.T) {
 	fixtures.TestDB(t)
 
 	migration := &migrations.M00000000000550DropLegacyTotpSecret{}

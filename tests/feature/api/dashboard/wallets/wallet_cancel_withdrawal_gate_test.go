@@ -33,7 +33,7 @@ type WalletCancelWithdrawalGateTestSuite struct {
 	goravelTesting.TestCase
 }
 
-func TestWalletCancelWithdrawalGateSuite(t *testing.T) {
+func TestWallet_Cancel_WithdrawalGateSuite(t *testing.T) {
 	suite.Run(t, new(WalletCancelWithdrawalGateTestSuite))
 }
 
@@ -41,7 +41,7 @@ func (s *WalletCancelWithdrawalGateTestSuite) SetupTest() {
 	fixtures.TestDB(s.T())
 }
 
-func (s *WalletCancelWithdrawalGateTestSuite) TestWalletCancelWithdrawalFollowsTheLoadedRoles() {
+func (s *WalletCancelWithdrawalGateTestSuite) TestWallet_Cancel_WithdrawalFollowsTheLoadedRoles() {
 	account := fixtures.InsertAccount(s.T(), "wallet cancel")
 	wallet := fixtures.InsertWalletWithAccount(s.T(), models.ChainETH, &account.ID)
 	someoneElse := uuid.New()
@@ -113,7 +113,7 @@ func (s *WalletCancelWithdrawalGateTestSuite) TestWalletCancelWithdrawalFollowsT
 	}
 }
 
-func (s *WalletCancelWithdrawalGateTestSuite) TestWalletCancelWithdrawalDeniesTheAuditorWhoCreatedIt() {
+func (s *WalletCancelWithdrawalGateTestSuite) TestWallet_Cancel_WithdrawalDeniesTheAuditorWhoCreatedIt() {
 	account := fixtures.InsertAccount(s.T(), "wallet cancel auditor creator")
 	s.setViewAll(account.ID, true)
 	wallet := fixtures.InsertWalletWithAccount(s.T(), models.ChainETH, &account.ID)
@@ -137,7 +137,7 @@ func (s *WalletCancelWithdrawalGateTestSuite) TestWalletCancelWithdrawalDeniesTh
 	s.Equal("cancelled", s.withdrawalStatus(createdByAuditor))
 }
 
-func (s *WalletCancelWithdrawalGateTestSuite) TestWalletCancelWithdrawalStaysHiddenFromAnAccountUser() {
+func (s *WalletCancelWithdrawalGateTestSuite) TestWallet_Cancel_WithdrawalStaysHiddenFromAnAccountUser() {
 	account := fixtures.InsertAccount(s.T(), "wallet cancel hidden")
 	wallet := fixtures.InsertWalletWithAccount(s.T(), models.ChainETH, &account.ID)
 	creator := uuid.New()
@@ -151,7 +151,7 @@ func (s *WalletCancelWithdrawalGateTestSuite) TestWalletCancelWithdrawalStaysHid
 	s.Equal("pending", s.withdrawalStatus(withdrawalID))
 }
 
-func (s *WalletCancelWithdrawalGateTestSuite) TestMissingWithdrawalStaysNotFoundForAViewer() {
+func (s *WalletCancelWithdrawalGateTestSuite) TestMissing_Withdrawal_StaysNotFoundForAViewer() {
 	account := fixtures.InsertAccount(s.T(), "wallet cancel missing")
 	wallet := fixtures.InsertWalletWithAccount(s.T(), models.ChainETH, &account.ID)
 	actor := s.member(models.AccountRoleUser, account.ID)

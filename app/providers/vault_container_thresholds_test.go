@@ -6,7 +6,7 @@ import (
 	"github.com/macrowallets/waas/app/models"
 )
 
-func TestResolveGasReadinessThreshold_FromChainRow(t *testing.T) {
+func TestResolve_GasReadinessThreshold_FromChainRow(t *testing.T) {
 	raw := "5000000000000000"
 	ch := &models.Chain{ID: "eth", GasReadinessThresholdRaw: &raw}
 	got := resolveGasReadinessThreshold(ch)
@@ -15,7 +15,7 @@ func TestResolveGasReadinessThreshold_FromChainRow(t *testing.T) {
 	}
 }
 
-func TestResolveGasReadinessThreshold_IgnoresEnvWhenColumnIsEmpty(t *testing.T) {
+func TestResolve_GasReadinessThreshold_IgnoresEnvWhenColumnIsEmpty(t *testing.T) {
 	t.Setenv("ETH_GAS_READINESS_THRESHOLD_WEI", "1")
 	empty := ""
 	ch := &models.Chain{ID: "eth", GasReadinessThresholdRaw: &empty}
@@ -30,7 +30,7 @@ func TestResolveGasReadinessThreshold_IgnoresEnvWhenColumnIsEmpty(t *testing.T) 
 	}
 }
 
-func TestResolveDustThresholdNative_FromChainRow(t *testing.T) {
+func TestResolve_DustThresholdNative_FromChainRow(t *testing.T) {
 	raw := "500000000000000"
 	ch := &models.Chain{ID: "eth", DustThresholdNativeRaw: &raw}
 	got := resolveDustThresholdNative(ch)
@@ -39,7 +39,7 @@ func TestResolveDustThresholdNative_FromChainRow(t *testing.T) {
 	}
 }
 
-func TestResolveDustThresholdNative_IgnoresEnvWhenColumnIsEmpty(t *testing.T) {
+func TestResolve_DustThresholdNative_IgnoresEnvWhenColumnIsEmpty(t *testing.T) {
 	t.Setenv("POLYGON_DUST_THRESHOLD_NATIVE_WEI", "1")
 	empty := ""
 	ch := &models.Chain{ID: "polygon", DustThresholdNativeRaw: &empty}

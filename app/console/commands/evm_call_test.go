@@ -28,7 +28,7 @@ func (evmCallSignerStub) PreflightEVMCall(context.Context, uuid.UUID, string, ty
 	return nil, nil
 }
 
-func TestNewEVMCallKeepsItsDependencies(t *testing.T) {
+func TestNew_EVM_CallKeepsItsDependencies(t *testing.T) {
 	wallets := evmCallWalletStub{}
 	signer := evmCallSignerStub{}
 	cmd := NewEVMCall(EVMCallDeps{Wallets: wallets, Signer: signer})
@@ -43,7 +43,7 @@ func TestNewEVMCallKeepsItsDependencies(t *testing.T) {
 	}
 }
 
-func TestNewEVMCallAllowsANilSigner(t *testing.T) {
+func TestNew_EVM_CallAllowsANilSigner(t *testing.T) {
 	wallets := evmCallWalletStub{}
 	cmd := NewEVMCall(EVMCallDeps{Wallets: wallets})
 	if cmd == nil {
@@ -72,7 +72,7 @@ func validEVMCallBroadcast() evmCallFlags {
 	return flags
 }
 
-func TestParseEVMCallFlags_AcceptsADryRunAndABroadcast(t *testing.T) {
+func TestParse_EVMCallFlags_AcceptsADryRunAndABroadcast(t *testing.T) {
 	dryRun, err := parseEVMCallFlags(validEVMCallDryRun())
 	if err != nil {
 		t.Fatal(err)
@@ -89,7 +89,7 @@ func TestParseEVMCallFlags_AcceptsADryRunAndABroadcast(t *testing.T) {
 	}
 }
 
-func TestParseEVMCallFlags_ValueInWeiOrDefaultZero(t *testing.T) {
+func TestParse_EVMCallFlags_ValueInWeiOrDefaultZero(t *testing.T) {
 	flags := validEVMCallDryRun()
 	flags.Value, flags.ValueWei, flags.Data = "", "12345", ""
 	invocation, err := parseEVMCallFlags(flags)
@@ -107,7 +107,7 @@ func TestParseEVMCallFlags_ValueInWeiOrDefaultZero(t *testing.T) {
 	}
 }
 
-func TestParseEVMCallFlags_RefusesMainnets(t *testing.T) {
+func TestParse_EVMCallFlags_RefusesMainnets(t *testing.T) {
 	for _, chainID := range []string{"1", "56", "42161", "8453", "137", "10"} {
 		flags := validEVMCallDryRun()
 		flags.ChainID = chainID
@@ -117,7 +117,7 @@ func TestParseEVMCallFlags_RefusesMainnets(t *testing.T) {
 	}
 }
 
-func TestParseEVMCallFlags_RejectsBadFlags(t *testing.T) {
+func TestParse_EVMCallFlags_RejectsBadFlags(t *testing.T) {
 	cases := map[string]func(f *evmCallFlags){
 		"no mode":                 func(f *evmCallFlags) { f.DryRun = false },
 		"both modes":              func(f *evmCallFlags) { f.Broadcast = true },
@@ -148,7 +148,7 @@ func TestParseEVMCallFlags_RejectsBadFlags(t *testing.T) {
 	}
 }
 
-func TestParseEVMCallFlags_BroadcastNeedsATagAndOnePassphraseSource(t *testing.T) {
+func TestParse_EVMCallFlags_BroadcastNeedsATagAndOnePassphraseSource(t *testing.T) {
 	cases := map[string]func(f *evmCallFlags){
 		"no tag":                func(f *evmCallFlags) { f.Tag = "" },
 		"no passphrase source":  func(f *evmCallFlags) { f.PassphraseVault = false },
@@ -163,7 +163,7 @@ func TestParseEVMCallFlags_BroadcastNeedsATagAndOnePassphraseSource(t *testing.T
 	}
 }
 
-func TestParseEVMCallFlags_ErrorsNeverEchoTheRPCURL(t *testing.T) {
+func TestParse_EVMCallFlags_ErrorsNeverEchoTheRPCURL(t *testing.T) {
 	flags := validEVMCallDryRun()
 	flags.RPCEnv = "https://eth-sepolia.g.alchemy.com/v2/secret-key"
 	_, err := parseEVMCallFlags(flags)
@@ -172,7 +172,7 @@ func TestParseEVMCallFlags_ErrorsNeverEchoTheRPCURL(t *testing.T) {
 	}
 }
 
-func TestResolveEVMCallClaimDir(t *testing.T) {
+func TestResolve_EVM_CallClaimDir(t *testing.T) {
 	if dir, err := evmcall.ResolveClaimDir("/tmp/claims"); err != nil || dir != "/tmp/claims" {
 		t.Fatalf("flag: %s %v", dir, err)
 	}

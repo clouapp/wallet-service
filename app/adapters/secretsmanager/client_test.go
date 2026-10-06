@@ -10,20 +10,20 @@ import (
 	awssm "github.com/aws/aws-sdk-go-v2/service/secretsmanager"
 )
 
-func TestNewReturnsNilForANilClient(t *testing.T) {
+func TestNew_Returns_NilForANilClient(t *testing.T) {
 	if New(nil) != nil {
 		t.Fatal("expected a nil reader when Secrets Manager is not configured")
 	}
 }
 
-func TestNilClientReportsAMissingClient(t *testing.T) {
+func TestNil_Client_ReportsAMissingClient(t *testing.T) {
 	var client *Client
 	if _, err := client.Binary(context.Background(), "vault/wallet/x/share-b"); err == nil {
 		t.Fatal("expected error for a nil client")
 	}
 }
 
-func TestBinaryRejectsMissingContextAndSecretID(t *testing.T) {
+func TestBinary_Rejects_MissingContextAndSecretID(t *testing.T) {
 	client := &Client{api: &fakeAPI{binary: []byte{0x01}}}
 	if _, err := client.Binary(nil, "vault/wallet/x/share-b"); err == nil {
 		t.Fatal("expected error for a nil context")
@@ -33,7 +33,7 @@ func TestBinaryRejectsMissingContextAndSecretID(t *testing.T) {
 	}
 }
 
-func TestBinaryReadsTheGivenSecretAndReturnsItsBytes(t *testing.T) {
+func TestBinary_Reads_TheGivenSecretAndReturnsItsBytes(t *testing.T) {
 	want := []byte{0x01, 0x02, 0x03, 0x04}
 	fake := &fakeAPI{binary: want}
 	client := &Client{api: fake}
@@ -53,7 +53,7 @@ func TestBinaryReadsTheGivenSecretAndReturnsItsBytes(t *testing.T) {
 	}
 }
 
-func TestBinaryForwardsTheAPIError(t *testing.T) {
+func TestBinary_Forwards_TheAPIError(t *testing.T) {
 	fake := &fakeAPI{err: errors.New("boom")}
 	_, err := (&Client{api: fake}).Binary(context.Background(), "vault/wallet/x/share-b")
 	if err == nil || err.Error() != "boom" {
@@ -61,14 +61,14 @@ func TestBinaryForwardsTheAPIError(t *testing.T) {
 	}
 }
 
-func TestBinaryRejectsAnEmptyResponse(t *testing.T) {
+func TestBinary_Rejects_AnEmptyResponse(t *testing.T) {
 	_, err := (&Client{api: &fakeAPI{}}).Binary(context.Background(), "vault/wallet/x/share-b")
 	if err == nil {
 		t.Fatal("expected error for an empty response")
 	}
 }
 
-func TestBinaryForwardsTheSecretIDUnchanged(t *testing.T) {
+func TestBinary_Forwards_TheSecretIDUnchanged(t *testing.T) {
 	fake := &fakeAPI{binary: []byte{0x01}}
 	if _, err := (&Client{api: fake}).Binary(context.Background(), "  vault/wallet/x/share-b  "); err != nil {
 		t.Fatal("read failed")

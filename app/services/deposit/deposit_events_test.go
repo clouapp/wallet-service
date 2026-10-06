@@ -72,7 +72,7 @@ func depositWebhookRows(t *testing.T) []models.WebhookEvent {
 	return events
 }
 
-func TestUpdateConfirmations_DepositConfirmedNeverLeaksToAnotherAccount(t *testing.T) {
+func TestUpdate_Confirmations_DepositConfirmedNeverLeaksToAnotherAccount(t *testing.T) {
 	f := newDepositEventsFixture(t)
 	otherAccount := fixtures.InsertAccount(t, "other tenant")
 	otherWallet := fixtures.InsertWalletWithAccount(t, "eth", &otherAccount.ID)
@@ -108,7 +108,7 @@ func TestUpdateConfirmations_DepositConfirmedNeverLeaksToAnotherAccount(t *testi
 	}
 }
 
-func TestUpdateConfirmations_DepositConfirmedCarriesDecimalAmountAndBaseUnits(t *testing.T) {
+func TestUpdate_Confirmations_DepositConfirmedCarriesDecimalAmountAndBaseUnits(t *testing.T) {
 	f := newDepositEventsFixture(t)
 	fixtures.InsertScopedWebhookConfig(t, "https://owner.test/hook", depositHookSecret, []string{depositConfirmedEvent}, &f.accountID, nil)
 	tx := fixtures.InsertTransaction(t, f.wallet.ID, nil, "eth", models.TxTypeDeposit, "pending", "eth", halfEtherBaseUnits, depositBlock)
@@ -143,7 +143,7 @@ func TestUpdateConfirmations_DepositConfirmedCarriesDecimalAmountAndBaseUnits(t 
 	}
 }
 
-func TestDepositConfirmed_RedeliveryIsDeduplicatedPerConfig(t *testing.T) {
+func TestDeposit_Confirmed_RedeliveryIsDeduplicatedPerConfig(t *testing.T) {
 	f := newDepositEventsFixture(t)
 	fixtures.InsertScopedWebhookConfig(t, "https://owner.test/hook", depositHookSecret, []string{depositConfirmedEvent}, &f.accountID, nil)
 	fixtures.InsertTransaction(t, f.wallet.ID, nil, "eth", models.TxTypeDeposit, "pending", "eth", halfEtherBaseUnits, depositBlock)

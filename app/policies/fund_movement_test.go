@@ -2,7 +2,7 @@ package policies
 
 import "testing"
 
-func TestFundMovementFollowsAccountRole(t *testing.T) {
+func TestFund_Movement_FollowsAccountRole(t *testing.T) {
 	moves := []string{FundWithdraw, FundSweep, FundCreateWallet}
 	for _, role := range []string{"owner", "admin"} {
 		for _, action := range append(moves, FundGenerateAddress) {

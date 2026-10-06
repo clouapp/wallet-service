@@ -5,7 +5,7 @@ import (
 	"testing"
 )
 
-func TestCastIn_Int(t *testing.T) {
+func TestCast_In_Int(t *testing.T) {
 	t.Parallel()
 
 	got, err := castIn(float64(587), Definition{Type: TypeInt})
@@ -17,7 +17,7 @@ func TestCastIn_Int(t *testing.T) {
 	}
 }
 
-func TestCastIn_Bool(t *testing.T) {
+func TestCast_In_Bool(t *testing.T) {
 	t.Parallel()
 
 	got, err := castIn(true, Definition{Type: TypeBool})
@@ -29,7 +29,7 @@ func TestCastIn_Bool(t *testing.T) {
 	}
 }
 
-func TestCastOut_Typed(t *testing.T) {
+func TestCast_Out_Typed(t *testing.T) {
 	t.Parallel()
 
 	if castOut("587", Definition{Type: TypeInt}) != 587 {
@@ -43,7 +43,7 @@ func TestCastOut_Typed(t *testing.T) {
 	}
 }
 
-func TestCastIn_Decimal(t *testing.T) {
+func TestCast_In_Decimal(t *testing.T) {
 	t.Parallel()
 
 	got, err := castIn("", Definition{Type: TypeDecimal})
@@ -55,7 +55,7 @@ func TestCastIn_Decimal(t *testing.T) {
 	}
 }
 
-func TestCastIn_BigInt(t *testing.T) {
+func TestCast_In_BigInt(t *testing.T) {
 	t.Parallel()
 
 	definition := Definition{Type: TypeBigInt}
@@ -84,7 +84,7 @@ func TestCastIn_BigInt(t *testing.T) {
 	}
 }
 
-func TestCastIn_StringList(t *testing.T) {
+func TestCast_In_StringList(t *testing.T) {
 	t.Parallel()
 
 	definition, ok := Find(groupPriceLookup, keyProviderOrder)
@@ -109,7 +109,7 @@ func TestCastIn_StringList(t *testing.T) {
 	}
 }
 
-func TestCastOut_StringList(t *testing.T) {
+func TestCast_Out_StringList(t *testing.T) {
 	t.Parallel()
 
 	definition := Definition{Type: TypeStringList}

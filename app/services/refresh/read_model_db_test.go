@@ -84,7 +84,7 @@ func reloadWallet(t *testing.T, wallet models.Wallet) models.Wallet {
 	return stored
 }
 
-func TestRefreshAll_FillsTheReadModelForEthBtcAndSolFromTheBaseAddress(t *testing.T) {
+func TestRefresh_All_FillsTheReadModelForEthBtcAndSolFromTheBaseAddress(t *testing.T) {
 	fixtures.TestDB(t)
 	insertChain(t, "sol", models.AdapterTypeSolana, "sol", 9)
 	insertChain(t, "btc", models.AdapterTypeBitcoin, "btc", 8)
@@ -121,7 +121,7 @@ func TestRefreshAll_FillsTheReadModelForEthBtcAndSolFromTheBaseAddress(t *testin
 	}
 }
 
-func TestRefreshWallet_NegativeChainAmountIsRejectedAndRecordedAsAFailure(t *testing.T) {
+func TestRefresh_Wallet_NegativeChainAmountIsRejectedAndRecordedAsAFailure(t *testing.T) {
 	fixtures.TestDB(t)
 	insertChain(t, "sol", models.AdapterTypeSolana, "sol", 9)
 	wallet := fixtures.InsertWallet(t, "sol")

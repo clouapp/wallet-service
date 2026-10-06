@@ -11,7 +11,7 @@ import (
 	"github.com/macrowallets/waas/app/models"
 )
 
-func TestAccountKeepsTheModelWire(t *testing.T) {
+func TestAccount_Keeps_TheModelWire(t *testing.T) {
 	t.Parallel()
 
 	id := uuid.MustParse("11111111-1111-4111-8111-111111111111")
@@ -60,7 +60,7 @@ func TestAccountKeepsTheModelWire(t *testing.T) {
 	}
 }
 
-func TestAccountPtrKeepsNil(t *testing.T) {
+func TestAccount_Ptr_KeepsNil(t *testing.T) {
 	t.Parallel()
 
 	raw, err := json.Marshal(accounts.AccountPtr(nil))

@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-func TestParsePlatformFeatureScopeWrites(t *testing.T) {
+func TestParse_Platform_FeatureScopeWrites(t *testing.T) {
 	t.Parallel()
 
 	got, err := ParsePlatformFeatureScopeWrites([]byte(`{"features":[{"key":" sweep-enabled ","enabled":false},{"key":"withdrawals-enabled","enabled":true}]}`))

@@ -13,7 +13,7 @@ const (
 	seedSealedMarker    = "enc:v1:sealed-marker"
 )
 
-func TestPlatformSettingsSeedSkipsBlankEnv(t *testing.T) {
+func TestPlatform_Settings_SeedSkipsBlankEnv(t *testing.T) {
 	rows, err := PlatformSettingsSeed(func(string) string { return "" }, nil)
 	if err != nil {
 		t.Fatalf("blank env: %v", err)
@@ -36,7 +36,7 @@ func TestPlatformSettingsSeedSkipsBlankEnv(t *testing.T) {
 	}
 }
 
-func TestPlatformSettingsSeedInsertsANonSecret(t *testing.T) {
+func TestPlatform_Settings_SeedInsertsANonSecret(t *testing.T) {
 	rows, err := PlatformSettingsSeed(func(name string) string {
 		if name == envMailHost {
 			return "  " + seedHostFixture + "  "
@@ -51,7 +51,7 @@ func TestPlatformSettingsSeedInsertsANonSecret(t *testing.T) {
 	}
 }
 
-func TestPlatformSettingsSeedSealsASecretWithoutLoggingIt(t *testing.T) {
+func TestPlatform_Settings_SeedSealsASecretWithoutLoggingIt(t *testing.T) {
 	var logs bytes.Buffer
 	previous := slog.Default()
 	slog.SetDefault(slog.New(slog.NewTextHandler(&logs, nil)))
@@ -82,7 +82,7 @@ func TestPlatformSettingsSeedSealsASecretWithoutLoggingIt(t *testing.T) {
 	}
 }
 
-func TestPlatformSettingsSeedSkipsFieldsWithoutAnEnvFallback(t *testing.T) {
+func TestPlatform_Settings_SeedSkipsFieldsWithoutAnEnvFallback(t *testing.T) {
 	rows, err := PlatformSettingsSeed(func(name string) string {
 		switch name {
 		case envMailFromAddress:
@@ -133,7 +133,7 @@ func TestPlatformSettingsSeedSkipsFieldsWithoutAnEnvFallback(t *testing.T) {
 	}
 }
 
-func TestPlatformSettingsSeedRefusesAnUnstorableValueWithoutEchoingIt(t *testing.T) {
+func TestPlatform_Settings_SeedRefusesAnUnstorableValueWithoutEchoingIt(t *testing.T) {
 	const invalid = "not-an-encryption-mode"
 	_, err := PlatformSettingsSeed(func(name string) string {
 		if name == envMailEncryption {
@@ -149,7 +149,7 @@ func TestPlatformSettingsSeedRefusesAnUnstorableValueWithoutEchoingIt(t *testing
 	}
 }
 
-func TestPlatformSeedEnvMatchesTheRegistry(t *testing.T) {
+func TestPlatform_Seed_EnvMatchesTheRegistry(t *testing.T) {
 	if len(platformSeedEnv) == 0 {
 		t.Fatal("platform seed env map is empty")
 	}

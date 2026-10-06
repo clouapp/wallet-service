@@ -18,7 +18,7 @@ import (
 	"github.com/macrowallets/waas/tests/feature/support/fixtures"
 )
 
-func TestChainsSeedDoesNotQueryOutsideTheRepository(t *testing.T) {
+func TestChains_Seed_DoesNotQueryOutsideTheRepository(t *testing.T) {
 	source, err := os.ReadFile("chains.go")
 	if err != nil {
 		t.Fatalf("read chains seed: %v", err)
@@ -31,7 +31,7 @@ func TestChainsSeedDoesNotQueryOutsideTheRepository(t *testing.T) {
 	}
 }
 
-func TestSeedChainsInsertsChainsAndRefreshesOnlyTheSealedEndpointOnRerun(t *testing.T) {
+func TestSeed_Chains_InsertsChainsAndRefreshesOnlyTheSealedEndpointOnRerun(t *testing.T) {
 	fixtures.TestDB(t)
 	ctx := context.Background()
 	if profile := strings.TrimSpace(facades.Config().GetString("vault.chains.network_profile")); profile != "" {

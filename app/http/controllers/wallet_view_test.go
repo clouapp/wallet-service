@@ -42,7 +42,7 @@ func usdValue(t *testing.T, text string) numeric.NullDecimal {
 	return numeric.NewNullDecimal(value)
 }
 
-func TestWalletListItemCarriesTokenBalancesUnpricedOnATestnet(t *testing.T) {
+func TestWallet_List_ItemCarriesTokenBalancesUnpricedOnATestnet(t *testing.T) {
 	t.Parallel()
 
 	walletID := uuid.New()
@@ -74,7 +74,7 @@ func TestWalletListItemCarriesTokenBalancesUnpricedOnATestnet(t *testing.T) {
 	}
 }
 
-func TestWalletListItemKeepsTheModelWire(t *testing.T) {
+func TestWallet_List_ItemKeepsTheModelWire(t *testing.T) {
 	t.Parallel()
 
 	id := uuid.MustParse("11111111-1111-4111-8111-111111111111")
@@ -149,7 +149,7 @@ func TestWalletListItemKeepsTheModelWire(t *testing.T) {
 	}
 }
 
-func TestWalletListItemListsNoAssetsAsAnEmptyArray(t *testing.T) {
+func TestWallet_List_ItemListsNoAssetsAsAnEmptyArray(t *testing.T) {
 	t.Parallel()
 
 	body := marshalToMap(t, newWalletListItem(models.Wallet{ID: uuid.New(), Chain: models.ChainBTC}, models.ResolvedNetwork{Name: models.NetworkBitcoinMainnet}, nil))

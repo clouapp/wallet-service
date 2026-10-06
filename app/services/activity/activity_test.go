@@ -8,7 +8,7 @@ import (
 	"github.com/macrowallets/waas/app/policies"
 )
 
-func TestSettingsChangeKeepsFieldNamesAndDropsValues(t *testing.T) {
+func TestSettings_Change_KeepsFieldNamesAndDropsValues(t *testing.T) {
 	t.Parallel()
 
 	const secret = "activity-signing-secret-do-not-store"
@@ -28,7 +28,7 @@ func TestSettingsChangeKeepsFieldNamesAndDropsValues(t *testing.T) {
 	}
 }
 
-func TestChainThresholdsChangeRecordsTheChainAndFieldNames(t *testing.T) {
+func TestChain_Thresholds_ChangeRecordsTheChainAndFieldNames(t *testing.T) {
 	t.Parallel()
 
 	const amount = "999000000000000000"
@@ -48,7 +48,7 @@ func TestChainThresholdsChangeRecordsTheChainAndFieldNames(t *testing.T) {
 	}
 }
 
-func TestChainRPCChangeRecordsTheFieldNameOnly(t *testing.T) {
+func TestChain_RPC_ChangeRecordsTheFieldNameOnly(t *testing.T) {
 	t.Parallel()
 
 	const endpoint = "https://dial.example/v2/secret-path"
@@ -71,7 +71,7 @@ func TestChainRPCChangeRecordsTheFieldNameOnly(t *testing.T) {
 	}
 }
 
-func TestFeatureAuditKeepsChangedBooleansAndDropsAnUnchangedFlag(t *testing.T) {
+func TestFeature_Audit_KeepsChangedBooleansAndDropsAnUnchangedFlag(t *testing.T) {
 	t.Parallel()
 
 	const secret = "do-not-store-secret"
@@ -133,7 +133,7 @@ func TestFeatureAuditKeepsChangedBooleansAndDropsAnUnchangedFlag(t *testing.T) {
 	}
 }
 
-func TestFeatureAuditAcceptsEveryCatalogFlag(t *testing.T) {
+func TestFeature_Audit_AcceptsEveryCatalogFlag(t *testing.T) {
 	t.Parallel()
 
 	for key := range map[string]struct{}{
@@ -159,7 +159,7 @@ func TestFeatureAuditAcceptsEveryCatalogFlag(t *testing.T) {
 	}
 }
 
-func TestMetadataRejectsSecretKeys(t *testing.T) {
+func TestMetadata_Rejects_SecretKeys(t *testing.T) {
 	t.Parallel()
 
 	for _, key := range []string{"value", "secret", "token", "password", "signing_secret"} {
@@ -170,7 +170,7 @@ func TestMetadataRejectsSecretKeys(t *testing.T) {
 	}
 }
 
-func TestTokenCreatedKeepsNameAndPermissionsAndDropsTheSecret(t *testing.T) {
+func TestToken_Created_KeepsNameAndPermissionsAndDropsTheSecret(t *testing.T) {
 	t.Parallel()
 
 	const secret = "activity-token-secret-do-not-store"
@@ -191,7 +191,7 @@ func TestTokenCreatedKeepsNameAndPermissionsAndDropsTheSecret(t *testing.T) {
 	}
 }
 
-func TestTokenCreatedRejectsAPermissionOutsideTheCatalog(t *testing.T) {
+func TestToken_Created_RejectsAPermissionOutsideTheCatalog(t *testing.T) {
 	t.Parallel()
 
 	if _, err := TokenCreated("ci", `["wallets:read"]`); err == nil {
@@ -202,7 +202,7 @@ func TestTokenCreatedRejectsAPermissionOutsideTheCatalog(t *testing.T) {
 	}
 }
 
-func TestTokenRevokedOmitsALegacyPermissionValue(t *testing.T) {
+func TestToken_Revoked_OmitsALegacyPermissionValue(t *testing.T) {
 	t.Parallel()
 
 	meta, err := TokenRevoked("legacy", "read")
@@ -221,7 +221,7 @@ func TestTokenRevokedOmitsALegacyPermissionValue(t *testing.T) {
 	}
 }
 
-func TestTokenPermissionAllowlistMatchesTheAPICatalog(t *testing.T) {
+func TestToken_Permission_AllowlistMatchesTheAPICatalog(t *testing.T) {
 	t.Parallel()
 
 	for _, name := range policies.APITokenPermissionCatalog() {
@@ -235,7 +235,7 @@ func TestTokenPermissionAllowlistMatchesTheAPICatalog(t *testing.T) {
 	}
 }
 
-func TestMemberChangeNamesTheStatusAndKeepsTheNewRole(t *testing.T) {
+func TestMember_Change_NamesTheStatusAndKeepsTheNewRole(t *testing.T) {
 	t.Parallel()
 
 	role := "admin"
@@ -256,7 +256,7 @@ func TestMemberChangeNamesTheStatusAndKeepsTheNewRole(t *testing.T) {
 	}
 }
 
-func TestNamedEventsOmitSecretsHashesLimitsAndAmounts(t *testing.T) {
+func TestNamed_Events_OmitSecretsHashesLimitsAndAmounts(t *testing.T) {
 	t.Parallel()
 
 	const secret = "do-not-store-secret"

@@ -16,7 +16,7 @@ import (
 	authsvc "github.com/macrowallets/waas/app/services/auth"
 )
 
-func TestSendPasswordResetStoresOnlyTheHash(t *testing.T) {
+func TestSend_Password_ResetStoresOnlyTheHash(t *testing.T) {
 	userID := uuid.New()
 	const raw = "reset-raw-token"
 	var stored string
@@ -62,7 +62,7 @@ func TestSendPasswordResetStoresOnlyTheHash(t *testing.T) {
 	}
 }
 
-func TestSendAccountInviteDoesNotEnqueueTheLink(t *testing.T) {
+func TestSend_Account_InviteDoesNotEnqueueTheLink(t *testing.T) {
 	inviteID := uuid.New()
 	const link = "https://app.example/accept-invite?token=invite-raw"
 	var sent account.InviteMail
@@ -91,7 +91,7 @@ func TestSendAccountInviteDoesNotEnqueueTheLink(t *testing.T) {
 	}
 }
 
-func TestSendRunsTheDecodedPurpose(t *testing.T) {
+func TestSend_Runs_TheDecodedPurpose(t *testing.T) {
 	userID := uuid.New()
 	var welcome int
 	svc := NewService(Deps{
@@ -117,7 +117,7 @@ func TestSendRunsTheDecodedPurpose(t *testing.T) {
 	}
 }
 
-func TestSendWelcomeUsesTheLoadedUser(t *testing.T) {
+func TestSend_Welcome_UsesTheLoadedUser(t *testing.T) {
 	userID := uuid.New()
 	const hash = "stored-password-hash"
 	var sentTo, sentName string
@@ -144,7 +144,7 @@ func TestSendWelcomeUsesTheLoadedUser(t *testing.T) {
 	}
 }
 
-func TestDeadlineMidSendLogsWarnWithoutTheCredential(t *testing.T) {
+func TestDeadline_Mid_SendLogsWarnWithoutTheCredential(t *testing.T) {
 	const raw = "super-secret-reset-token"
 	const inviteLink = "https://app.example/accept-invite?token=invite-secret"
 	userID := uuid.New()
@@ -201,7 +201,7 @@ func TestDeadlineMidSendLogsWarnWithoutTheCredential(t *testing.T) {
 	assertUnknownSendWarn(t, logs.String(), PurposeAccountInvite, "invite-secret", inviteLink)
 }
 
-func TestKnownSendFailureDoesNotLogUnknownOutcome(t *testing.T) {
+func TestKnown_Send_FailureDoesNotLogUnknownOutcome(t *testing.T) {
 	userID := uuid.New()
 	logs := captureCredentialMailLogs(t)
 	svc := credentialService(t, userID, func() (string, error) { return "raw-token", nil }, senderFunc{
@@ -224,7 +224,7 @@ func TestKnownSendFailureDoesNotLogUnknownOutcome(t *testing.T) {
 	}
 }
 
-func TestCompletedSendDoesNotLogUnknownOutcome(t *testing.T) {
+func TestCompleted_Send_DoesNotLogUnknownOutcome(t *testing.T) {
 	userID := uuid.New()
 	logs := captureCredentialMailLogs(t)
 	ctx := newMidSendDeadline()
@@ -309,7 +309,7 @@ func assertUnknownSendWarn(t *testing.T, logs, purpose string, forbidden ...stri
 	}
 }
 
-func TestDispatchPayloadIsSubjectAndPurpose(t *testing.T) {
+func TestDispatch_Payload_IsSubjectAndPurpose(t *testing.T) {
 	subjectID := uuid.New()
 	var gotID uuid.UUID
 	var gotPurpose string
@@ -346,7 +346,7 @@ func TestDispatchPayloadIsSubjectAndPurpose(t *testing.T) {
 	}
 }
 
-func TestDispatchAccountInvitePassesOnlyTheInviteID(t *testing.T) {
+func TestDispatch_Account_InvitePassesOnlyTheInviteID(t *testing.T) {
 	inviteID := uuid.New()
 	const link = "https://app.example/accept-invite?token=kept-off-queue"
 	var gotID uuid.UUID

@@ -15,7 +15,7 @@ import (
 	"github.com/macrowallets/waas/tests/feature/support/fixtures"
 )
 
-func TestDropAccountsSweepLimitsRemovesTheColumnAndSweepReadsSettings(t *testing.T) {
+func TestDrop_Accounts_SweepLimitsRemovesTheColumnAndSweepReadsSettings(t *testing.T) {
 	fixtures.TestDB(t)
 	require.Equal(t, int64(0), sweepLimitsColumnCount(t), "migrate leaves accounts.sweep_limits dropped")
 

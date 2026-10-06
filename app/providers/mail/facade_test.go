@@ -22,7 +22,7 @@ func TestMain(m *testing.M) {
 	os.Exit(m.Run())
 }
 
-func TestMailResolvesToTheFacadeOverTheMailerConfig(t *testing.T) {
+func TestMail_Resolves_ToTheFacadeOverTheMailerConfig(t *testing.T) {
 	resolved := appfacades.Mail()
 	facade, ok := resolved.(*appmail.Facade)
 	if !ok || facade == nil {

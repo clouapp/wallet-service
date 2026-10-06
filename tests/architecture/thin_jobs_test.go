@@ -11,7 +11,7 @@ import (
 
 // TestJobsAreThin refuses a job handler that does more than decode a typed
 // payload and call one service method (.ai/guidelines/queues-and-workers.md).
-func TestJobsAreThin(t *testing.T) {
+func TestJobs_Are_Thin(t *testing.T) {
 	module := sharedModule(t)
 	var violations []string
 	var handlers int
@@ -37,7 +37,7 @@ func TestJobsAreThin(t *testing.T) {
 
 // TestJobPayloadIsDecodedNotPositional refuses a job that checks args by
 // position (.ai/guidelines/queues-and-workers.md).
-func TestJobPayloadIsDecodedNotPositional(t *testing.T) {
+func TestJob_Payload_IsDecodedNotPositional(t *testing.T) {
 	module := sharedModule(t)
 	var violations []string
 	for _, file := range module.ProductionFiles("app/jobs") {
@@ -78,7 +78,7 @@ func indexesArgs(expr ast.Expr) bool {
 	return ok && ident.Name == "args"
 }
 
-func TestJobHandleProblems_RefusesASwitchAndASecondCall(t *testing.T) {
+func TestJob_HandleProblems_RefusesASwitchAndASecondCall(t *testing.T) {
 	fn := parseHandle(t, `package jobs
 func (j *Job) Handle(args ...any) error {
 	payload, err := decodeWalletPayload(args)

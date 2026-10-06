@@ -8,7 +8,7 @@ import (
 	"testing"
 )
 
-func TestFileClaimer_ClaimsATagOnlyOnce(t *testing.T) {
+func TestFile_Claimer_ClaimsATagOnlyOnce(t *testing.T) {
 	claimer := FileClaimer{Dir: filepath.Join(t.TempDir(), "locks")}
 	path, err := claimer.Claim(testTag, []byte(`{"n":1}`))
 	if err != nil {
@@ -33,7 +33,7 @@ func TestFileClaimer_ClaimsATagOnlyOnce(t *testing.T) {
 	}
 }
 
-func TestReadPassphraseLine(t *testing.T) {
+func TestRead_Passphrase_Line(t *testing.T) {
 	if got, err := ReadPassphraseLine(strings.NewReader(testPassphrase + "\r\nrest")); err != nil || got != testPassphrase {
 		t.Fatalf("got %q err %v", got, err)
 	}

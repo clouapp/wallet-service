@@ -14,7 +14,7 @@ import (
 	"github.com/macrowallets/waas/tests/feature/support/fixtures"
 )
 
-func TestIntegrationDeliverDepositConfirmed(t *testing.T) {
+func TestIntegration_Deliver_DepositConfirmed(t *testing.T) {
 	webhookURL := os.Getenv("MARKETS_WEBHOOK_URL")
 	if webhookURL == "" {
 		t.Skip("MARKETS_WEBHOOK_URL is empty")

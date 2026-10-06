@@ -24,7 +24,7 @@ type PlatformPriceSettingsTestSuite struct {
 	authSuite
 }
 
-func TestPlatformPriceSettingsSuite(t *testing.T) {
+func TestPlatform_Price_SettingsSuite(t *testing.T) {
 	suite.Run(t, new(PlatformPriceSettingsTestSuite))
 }
 
@@ -40,7 +40,7 @@ func (s *PlatformPriceSettingsTestSuite) SetupTest() {
 	}
 }
 
-func (s *PlatformPriceSettingsTestSuite) TestAPlatformAdminStoresTheOrderAndOneProvider() {
+func (s *PlatformPriceSettingsTestSuite) TestA_Platform_AdminStoresTheOrderAndOneProvider() {
 	admin := s.seedUser(false)
 	s.grantPlatformAdmin(admin.ID)
 	session := s.signIn(admin.Email)
@@ -126,7 +126,7 @@ func (s *PlatformPriceSettingsTestSuite) TestAPlatformAdminStoresTheOrderAndOneP
 	))
 }
 
-func (s *PlatformPriceSettingsTestSuite) TestAnUnknownProviderIsNotStored() {
+func (s *PlatformPriceSettingsTestSuite) TestAn_Unknown_ProviderIsNotStored() {
 	admin := s.seedUser(false)
 	s.grantPlatformAdmin(admin.ID)
 	session := s.signIn(admin.Email)
@@ -157,7 +157,7 @@ func (s *PlatformPriceSettingsTestSuite) TestAnUnknownProviderIsNotStored() {
 	))
 }
 
-func (s *PlatformPriceSettingsTestSuite) TestANonAdminIsForbidden() {
+func (s *PlatformPriceSettingsTestSuite) TestA_Non_AdminIsForbidden() {
 	member := s.seedUser(false)
 	session := s.signIn(member.Email)
 	for _, path := range []string{"/v1/platform/settings/price_lookup", "/v1/platform/settings/price_coinapi"} {

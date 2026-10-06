@@ -8,7 +8,7 @@ import (
 	"github.com/google/uuid"
 )
 
-func TestUser2FARequiredMissingRowIsDefaultFalseAndWritesNothing(t *testing.T) {
+func TestUser2_FA_RequiredMissingRowIsDefaultFalseAndWritesNothing(t *testing.T) {
 	t.Parallel()
 
 	store := newMemoryStore()
@@ -34,7 +34,7 @@ func TestUser2FARequiredMissingRowIsDefaultFalseAndWritesNothing(t *testing.T) {
 	}
 }
 
-func TestUser2FARequiredAccountOrGlobalTrue(t *testing.T) {
+func TestUser2_FA_RequiredAccountOrGlobalTrue(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
@@ -87,7 +87,7 @@ func TestUser2FARequiredAccountOrGlobalTrue(t *testing.T) {
 	}
 }
 
-func TestUser2FARequiredDoesNotUseTheOffGate(t *testing.T) {
+func TestUser2_FA_RequiredDoesNotUseTheOffGate(t *testing.T) {
 	t.Parallel()
 
 	store := newMemoryStore()
@@ -109,7 +109,7 @@ func TestUser2FARequiredDoesNotUseTheOffGate(t *testing.T) {
 	}
 }
 
-func TestUser2FARequiredRejectsNilAccount(t *testing.T) {
+func TestUser2_FA_RequiredRejectsNilAccount(t *testing.T) {
 	t.Parallel()
 
 	service := newTestService(newMemoryStore(), memoryAdmins{})

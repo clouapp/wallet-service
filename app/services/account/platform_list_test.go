@@ -59,7 +59,7 @@ func (a *listAccounts) List(_ context.Context, limit, offset int) ([]models.Acco
 	return a.rows, a.total, nil
 }
 
-func TestListForPlatformRefusesACallerWhoIsNotAPlatformAdmin(t *testing.T) {
+func TestList_For_PlatformRefusesACallerWhoIsNotAPlatformAdmin(t *testing.T) {
 	t.Parallel()
 	store := &listAccounts{rows: []models.Account{{ID: uuid.New(), Name: "Hidden"}}}
 	service := NewService(Deps{Accounts: store}).WithPlatformAdmins(lifecycleAdmins{})
@@ -74,7 +74,7 @@ func TestListForPlatformRefusesACallerWhoIsNotAPlatformAdmin(t *testing.T) {
 	}
 }
 
-func TestListForPlatformReturnsThePageForAPlatformAdmin(t *testing.T) {
+func TestList_For_PlatformReturnsThePageForAPlatformAdmin(t *testing.T) {
 	t.Parallel()
 	actor := uuid.New()
 	newer := models.Account{ID: uuid.New(), Name: "Newer", Status: models.StatusActive}
@@ -90,7 +90,7 @@ func TestListForPlatformReturnsThePageForAPlatformAdmin(t *testing.T) {
 	}
 }
 
-func TestListForPlatformRejectsAMissingActorAndABadPage(t *testing.T) {
+func TestList_For_PlatformRejectsAMissingActorAndABadPage(t *testing.T) {
 	t.Parallel()
 	actor := uuid.New()
 	store := &listAccounts{}

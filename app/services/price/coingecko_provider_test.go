@@ -21,7 +21,7 @@ func (namedProvider) FetchFiatRates(context.Context, []string) (map[string]decim
 	return nil, nil
 }
 
-func TestNewCoinGeckoProviderIsTheRegisteredAdapter(t *testing.T) {
+func TestNew_Coin_GeckoProviderIsTheRegisteredAdapter(t *testing.T) {
 	stub := namedProvider{name: "coingecko"}
 	price.SetCoinGeckoProvider(func(string) price.PriceProvider { return stub })
 	provider := price.NewCoinGeckoProvider("registered-only")

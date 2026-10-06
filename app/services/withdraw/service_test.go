@@ -153,7 +153,7 @@ func (r *recordingLocker) IncrBy(context.Context, string, int64, time.Duration) 
 
 func (r *recordingLocker) DecrBy(context.Context, string, int64) error { return nil }
 
-func TestRequest_NilLockerReportsRedisNotConfigured(t *testing.T) {
+func TestRequest_Nil_LockerReportsRedisNotConfigured(t *testing.T) {
 	svc := &Service{}
 	_, _, err := svc.Request(context.Background(), WithdrawRequest{
 		Passphrase: "validpassphrase123",
@@ -164,7 +164,7 @@ func TestRequest_NilLockerReportsRedisNotConfigured(t *testing.T) {
 	}
 }
 
-func TestRequest_LockUsesTheSameKeyValueAndTTL(t *testing.T) {
+func TestRequest_Lock_UsesTheSameKeyValueAndTTL(t *testing.T) {
 	walletID := uuid.New()
 	locker := &recordingLocker{}
 	svc := &Service{locker: locker}
@@ -180,7 +180,7 @@ func TestRequest_LockUsesTheSameKeyValueAndTTL(t *testing.T) {
 	}
 }
 
-func TestRequest_LockErrorIsWrapped(t *testing.T) {
+func TestRequest_Lock_ErrorIsWrapped(t *testing.T) {
 	svc := &Service{locker: &recordingLocker{setErr: errors.New("boom")}}
 	_, _, err := svc.Request(context.Background(), WithdrawRequest{
 		Passphrase: "validpassphrase123",
@@ -191,7 +191,7 @@ func TestRequest_LockErrorIsWrapped(t *testing.T) {
 	}
 }
 
-func TestCheckRateLimitKeepsTheThresholdAndFailOpen(t *testing.T) {
+func TestCheck_Rate_LimitKeepsTheThresholdAndFailOpen(t *testing.T) {
 	walletID := "wallet-1"
 	open := &recordingLocker{}
 	if err := (&Service{locker: open}).checkRateLimit(context.Background(), walletID); err != nil {
@@ -214,7 +214,7 @@ func TestCheckRateLimitKeepsTheThresholdAndFailOpen(t *testing.T) {
 	}
 }
 
-func TestRecordFailedAttemptUsesTheSameCounterCommand(t *testing.T) {
+func TestRecord_Failed_AttemptUsesTheSameCounterCommand(t *testing.T) {
 	locker := &recordingLocker{}
 	(&Service{locker: locker}).recordFailedAttempt(context.Background(), "wallet-1")
 	if locker.incrKey != "vault:ratelimit:passphrase:wallet-1" || locker.incrTTL != 60*time.Second {
@@ -222,7 +222,7 @@ func TestRecordFailedAttemptUsesTheSameCounterCommand(t *testing.T) {
 	}
 }
 
-func TestRequest_WithdrawalsFlagStopsBeforeRedis(t *testing.T) {
+func TestRequest_Withdrawals_FlagStopsBeforeRedis(t *testing.T) {
 	paused := errors.New("withdrawals_paused")
 	svc := &Service{flags: func(context.Context, uuid.UUID) error { return paused }}
 	_, _, err := svc.Request(context.Background(), WithdrawRequest{
@@ -235,7 +235,7 @@ func TestRequest_WithdrawalsFlagStopsBeforeRedis(t *testing.T) {
 }
 
 // TestRequest_PassphraseTooShort verifies step-1 guard fires before any I/O.
-func TestRequest_PassphraseTooShort(t *testing.T) {
+func TestRequest_Passphrase_TooShort(t *testing.T) {
 	svc, _ := setupWithdrawService(t)
 	ctx := context.Background()
 
@@ -253,7 +253,7 @@ func TestRequest_PassphraseTooShort(t *testing.T) {
 }
 
 // TestRequest_InvalidAddress verifies address validation.
-func TestRequest_InvalidAddress(t *testing.T) {
+func TestRequest_Invalid_Address(t *testing.T) {
 	_, mockChain := setupWithdrawService(t)
 	mockChain.ValidateAddressFn = func(address string) bool { return false }
 
@@ -265,7 +265,7 @@ func TestRequest_InvalidAddress(t *testing.T) {
 	}
 }
 
-func TestRequest_WalletNotFound(t *testing.T) {
+func TestRequest_Wallet_NotFound(t *testing.T) {
 	// Passphrase too short guard fires before wallet lookup — use 12+ char passphrase
 	// but Redis is nil so we expect a redis error, not wallet-not-found.
 	// This test confirms the guard order: passphrase -> idempotency -> redis lock -> wallet
@@ -286,7 +286,7 @@ func TestRequest_WalletNotFound(t *testing.T) {
 	}
 }
 
-func TestGetTransaction(t *testing.T) {
+func TestService_Get_Transaction(t *testing.T) {
 	svc, _ := setupWithdrawService(t)
 	ctx := context.Background()
 
@@ -302,7 +302,7 @@ func TestGetTransaction(t *testing.T) {
 	}
 }
 
-func TestGetTransaction_NotFound(t *testing.T) {
+func TestGet_Transaction_NotFound(t *testing.T) {
 	svc, _ := setupWithdrawService(t)
 	_, err := svc.GetTransaction(context.Background(), uuid.New())
 	if err == nil {
@@ -310,7 +310,7 @@ func TestGetTransaction_NotFound(t *testing.T) {
 	}
 }
 
-func TestListTransactions_Filters(t *testing.T) {
+func TestList_Transactions_Filters(t *testing.T) {
 	svc, _ := setupWithdrawService(t)
 	ctx := context.Background()
 

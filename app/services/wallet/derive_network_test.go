@@ -23,7 +23,7 @@ func (c *networkFlagChain) IsTestnet() bool { return c.testnet }
 
 const derivePubKeyHex = "0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798"
 
-func TestBtcRecordOnTestnetDerivesTb1Addresses(t *testing.T) {
+func TestBtc_Record_OnTestnetDerivesTb1Addresses(t *testing.T) {
 	pub, err := hex.DecodeString(derivePubKeyHex)
 	require.NoError(t, err)
 
@@ -41,7 +41,7 @@ func TestBtcRecordOnTestnetDerivesTb1Addresses(t *testing.T) {
 	assert.Equal(t, "bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4", onMainnet)
 }
 
-func TestAdaptersWithoutANetworkFlagKeepTheChainIDDerivation(t *testing.T) {
+func TestAdapters_Without_ANetworkFlagKeepTheChainIDDerivation(t *testing.T) {
 	pub, err := hex.DecodeString(derivePubKeyHex)
 	require.NoError(t, err)
 	registry := chain.NewRegistry()

@@ -26,7 +26,7 @@ type AccountMembersTestSuite struct {
 	goravelTesting.TestCase
 }
 
-func TestAccountMembersSuite(t *testing.T) {
+func TestAccount_Members_Suite(t *testing.T) {
 	suite.Run(t, new(AccountMembersTestSuite))
 }
 
@@ -151,7 +151,7 @@ func (s *AccountMembersTestSuite) storedRole(accountID, userID uuid.UUID) (strin
 	return member.Role, member.Status
 }
 
-func (s *AccountMembersTestSuite) TestUsersReadFollowsTheAccountRole() {
+func (s *AccountMembersTestSuite) TestUsers_Read_FollowsTheAccountRole() {
 	accountID := s.createAccount()
 	owner := s.loginUser("owner", models.MembershipStatusActive, accountID)
 	admin := s.loginUser("admin", models.MembershipStatusActive, accountID)
@@ -211,7 +211,7 @@ func (s *AccountMembersTestSuite) postResend(token string, accountID, inviteID u
 	return resp
 }
 
-func (s *AccountMembersTestSuite) TestListInvitesFollowsUsersReadAndOmitsTheToken() {
+func (s *AccountMembersTestSuite) TestList_Invites_FollowsUsersReadAndOmitsTheToken() {
 	accountID := s.createAccount()
 	otherID := s.createAccount()
 	owner := s.loginUser("owner", models.MembershipStatusActive, accountID)
@@ -237,7 +237,7 @@ func (s *AccountMembersTestSuite) TestListInvitesFollowsUsersReadAndOmitsTheToke
 	s.assertForbidden(s.getInvites(user.token, accountID), "forbidden")
 }
 
-func (s *AccountMembersTestSuite) TestMissingAccountIsNotFoundBeforeInviteList() {
+func (s *AccountMembersTestSuite) TestMissing_Account_IsNotFoundBeforeInviteList() {
 	accountID := s.createAccount()
 	user := s.loginUser("user", models.MembershipStatusActive, accountID)
 
@@ -327,7 +327,7 @@ func (s *AccountMembersTestSuite) postAccountUser(token string, accountID uuid.U
 	return resp
 }
 
-func (s *AccountMembersTestSuite) TestInviteLinkUsesTheFrontendURL() {
+func (s *AccountMembersTestSuite) TestInvite_Link_UsesTheFrontendURL() {
 	accountID := s.createAccount()
 	owner := s.loginUser("owner", models.MembershipStatusActive, accountID)
 	s.T().Setenv("APP_FRONTEND_URL", "")
@@ -392,7 +392,7 @@ func (s *AccountMembersTestSuite) TestInviteLinkUsesTheFrontendURL() {
 	s.Equal(int64(0), s.countRows(&models.User{}, "email = ?", "linked@example.com"))
 }
 
-func (s *AccountMembersTestSuite) TestCreateInviteAcceptsNewAndExistingEmailsWithoutAToken() {
+func (s *AccountMembersTestSuite) TestCreate_Invite_AcceptsNewAndExistingEmailsWithoutAToken() {
 	accountID := s.createAccount()
 	owner := s.loginUser("owner", models.MembershipStatusActive, accountID)
 	admin := s.loginUser("admin", models.MembershipStatusActive, accountID)
@@ -447,7 +447,7 @@ func (s *AccountMembersTestSuite) TestCreateInviteAcceptsNewAndExistingEmailsWit
 	s.NotContains(listedBody, "invite_link")
 }
 
-func (s *AccountMembersTestSuite) TestCreateInviteRefusesAuditorAndUser() {
+func (s *AccountMembersTestSuite) TestCreate_Invite_RefusesAuditorAndUser() {
 	accountID := s.createAccount()
 	auditor := s.loginUser("auditor", models.MembershipStatusActive, accountID)
 	user := s.loginUser("user", models.MembershipStatusActive, accountID)
@@ -458,7 +458,7 @@ func (s *AccountMembersTestSuite) TestCreateInviteRefusesAuditorAndUser() {
 	s.Equal(int64(0), s.countRows(&models.AccountInvite{}, "account_id = ? AND email = ?", accountID, "refused@example.com"))
 }
 
-func (s *AccountMembersTestSuite) TestCreateInviteRefusesARoleAboveTheCaller() {
+func (s *AccountMembersTestSuite) TestCreate_Invite_RefusesARoleAboveTheCaller() {
 	accountID := s.createAccount()
 	admin := s.loginUser("admin", models.MembershipStatusActive, accountID)
 	s.loginUser("owner", models.MembershipStatusActive, accountID)
@@ -468,7 +468,7 @@ func (s *AccountMembersTestSuite) TestCreateInviteRefusesARoleAboveTheCaller() {
 	s.Equal(int64(0), s.countRows(&models.AccountInvite{}, "account_id = ? AND email = ?", accountID, "would-be-owner@example.com"))
 }
 
-func (s *AccountMembersTestSuite) TestMissingAccountIsNotFoundBeforeInviteCreate() {
+func (s *AccountMembersTestSuite) TestMissing_Account_IsNotFoundBeforeInviteCreate() {
 	accountID := s.createAccount()
 	user := s.loginUser("user", models.MembershipStatusActive, accountID)
 
@@ -480,7 +480,7 @@ func (s *AccountMembersTestSuite) TestMissingAccountIsNotFoundBeforeInviteCreate
 	s.NotContains(content, `"message":"forbidden"`)
 }
 
-func (s *AccountMembersTestSuite) TestCreateInviteRejectsInvalidEmailAndRole() {
+func (s *AccountMembersTestSuite) TestCreate_Invite_RejectsInvalidEmailAndRole() {
 	accountID := s.createAccount()
 	owner := s.loginUser("owner", models.MembershipStatusActive, accountID)
 
@@ -489,7 +489,7 @@ func (s *AccountMembersTestSuite) TestCreateInviteRejectsInvalidEmailAndRole() {
 	s.Equal(int64(0), s.countRows(&models.AccountInvite{}, "account_id = ?", accountID))
 }
 
-func (s *AccountMembersTestSuite) TestMissingAccountIsNotFoundBeforeUsersRead() {
+func (s *AccountMembersTestSuite) TestMissing_Account_IsNotFoundBeforeUsersRead() {
 	accountID := s.createAccount()
 	user := s.loginUser("user", models.MembershipStatusActive, accountID)
 
@@ -501,7 +501,7 @@ func (s *AccountMembersTestSuite) TestMissingAccountIsNotFoundBeforeUsersRead() 
 	s.NotContains(content, `"message":"forbidden"`)
 }
 
-func (s *AccountMembersTestSuite) TestAdminCannotGrantOwner() {
+func (s *AccountMembersTestSuite) TestAdmin_Cannot_GrantOwner() {
 	accountID := s.createAccount()
 	admin := s.loginUser("admin", models.MembershipStatusActive, accountID)
 	member := s.loginUser("user", models.MembershipStatusActive, accountID)
@@ -515,7 +515,7 @@ func (s *AccountMembersTestSuite) TestAdminCannotGrantOwner() {
 	s.Equal(models.MembershipStatusActive, status)
 }
 
-func (s *AccountMembersTestSuite) TestAdminCanGrantAdmin() {
+func (s *AccountMembersTestSuite) TestAdmin_Can_GrantAdmin() {
 	accountID := s.createAccount()
 	admin := s.loginUser("admin", models.MembershipStatusActive, accountID)
 	member := s.loginUser("user", models.MembershipStatusActive, accountID)
@@ -536,7 +536,7 @@ func (s *AccountMembersTestSuite) TestAdminCanGrantAdmin() {
 	s.Equal(models.MembershipStatusActive, parsed.Status)
 }
 
-func (s *AccountMembersTestSuite) TestSuspend_KeepsMintedTokensAndBlocksMembership() {
+func (s *AccountMembersTestSuite) TestSuspend_Keeps_MintedTokensAndBlocksMembership() {
 	accountID := s.createAccount()
 	owner := s.loginUser("owner", models.MembershipStatusActive, accountID)
 	member := s.loginUser("user", models.MembershipStatusActive, accountID)
@@ -557,7 +557,7 @@ func (s *AccountMembersTestSuite) TestSuspend_KeepsMintedTokensAndBlocksMembersh
 	s.getAccount(owner.token, accountID).AssertOk()
 }
 
-func (s *AccountMembersTestSuite) TestLastOwnerCannotBeSuspended() {
+func (s *AccountMembersTestSuite) TestLast_Owner_CannotBeSuspended() {
 	accountID := s.createAccount()
 	owner := s.loginUser("owner", models.MembershipStatusActive, accountID)
 
@@ -570,7 +570,7 @@ func (s *AccountMembersTestSuite) TestLastOwnerCannotBeSuspended() {
 	s.Equal(models.MembershipStatusActive, status)
 }
 
-func (s *AccountMembersTestSuite) TestSelfChangeIsForbidden() {
+func (s *AccountMembersTestSuite) TestSelf_Change_IsForbidden() {
 	accountID := s.createAccount()
 	s.loginUser("owner", models.MembershipStatusActive, accountID)
 	admin := s.loginUser("admin", models.MembershipStatusActive, accountID)
@@ -582,7 +582,7 @@ func (s *AccountMembersTestSuite) TestSelfChangeIsForbidden() {
 	s.Equal("admin", role)
 }
 
-func (s *AccountMembersTestSuite) TestAuditorPatchIsForbidden() {
+func (s *AccountMembersTestSuite) TestAuditor_Patch_IsForbidden() {
 	accountID := s.createAccount()
 	s.loginUser("owner", models.MembershipStatusActive, accountID)
 	auditor := s.loginUser("auditor", models.MembershipStatusActive, accountID)
@@ -595,7 +595,7 @@ func (s *AccountMembersTestSuite) TestAuditorPatchIsForbidden() {
 	s.Equal(models.MembershipStatusActive, status)
 }
 
-func (s *AccountMembersTestSuite) TestUnknownRoleOrStatusIs422() {
+func (s *AccountMembersTestSuite) TestUnknown_Role_OrStatusIs422() {
 	accountID := s.createAccount()
 	admin := s.loginUser("admin", models.MembershipStatusActive, accountID)
 	member := s.loginUser("user", models.MembershipStatusActive, accountID)
@@ -612,7 +612,7 @@ func (s *AccountMembersTestSuite) TestUnknownRoleOrStatusIs422() {
 	s.Equal(models.MembershipStatusActive, status)
 }
 
-func (s *AccountMembersTestSuite) TestRemove_RevokesTokensCreatedByTheMember() {
+func (s *AccountMembersTestSuite) TestRemove_Revokes_TokensCreatedByTheMember() {
 	accountID := s.createAccount()
 	owner := s.loginUser("owner", models.MembershipStatusActive, accountID)
 	member := s.loginUser("user", models.MembershipStatusActive, accountID)
@@ -630,7 +630,7 @@ func (s *AccountMembersTestSuite) TestRemove_RevokesTokensCreatedByTheMember() {
 	s.getAccount(member.token, accountID).AssertForbidden()
 }
 
-func (s *AccountMembersTestSuite) TestResendInviteRotatesTheTokenForUsersWrite() {
+func (s *AccountMembersTestSuite) TestResend_Invite_RotatesTheTokenForUsersWrite() {
 	accountID := s.createAccount()
 	otherID := s.createAccount()
 	owner := s.loginUser("owner", models.MembershipStatusActive, accountID)
@@ -699,7 +699,7 @@ func (s *AccountMembersTestSuite) TestResendInviteRotatesTheTokenForUsersWrite()
 	s.Equal(acceptedHash, s.inviteTokenHash(inviteID))
 }
 
-func (s *AccountMembersTestSuite) TestDeleteInviteRevokesForUsersWrite() {
+func (s *AccountMembersTestSuite) TestDelete_Invite_RevokesForUsersWrite() {
 	accountID := s.createAccount()
 	otherID := s.createAccount()
 	owner := s.loginUser("owner", models.MembershipStatusActive, accountID)
@@ -797,7 +797,7 @@ func (s *AccountMembersTestSuite) TestDeleteInviteRevokesForUsersWrite() {
 	s.Equal(int64(1), s.countActivity(`SELECT count(*) FROM account_invites WHERE id = ? AND revoked_at IS NULL`, acceptedID))
 }
 
-func (s *AccountMembersTestSuite) TestMissingAccountChildIs404BeforeUsersWrite() {
+func (s *AccountMembersTestSuite) TestMissing_Account_ChildIs404BeforeUsersWrite() {
 	accountID := s.createAccount()
 	user := s.loginUser("user", models.MembershipStatusActive, accountID)
 	missing := uuid.New()

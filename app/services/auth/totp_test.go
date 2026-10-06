@@ -26,7 +26,7 @@ func codeAt(t *testing.T, secret string, at time.Time) string {
 	return code
 }
 
-func TestMatchTOTP_ReturnsTheStepOfTheCode(t *testing.T) {
+func TestMatch_TOTP_ReturnsTheStepOfTheCode(t *testing.T) {
 	secret := newTOTPSecret(t)
 	now := time.Unix(1_700_000_010, 0)
 
@@ -36,7 +36,7 @@ func TestMatchTOTP_ReturnsTheStepOfTheCode(t *testing.T) {
 	require.Equal(t, now.Unix()/totpPeriod, step)
 }
 
-func TestMatchTOTP_AcceptsTheAdjacentStepsAndReportsWhichOne(t *testing.T) {
+func TestMatch_TOTP_AcceptsTheAdjacentStepsAndReportsWhichOne(t *testing.T) {
 	secret := newTOTPSecret(t)
 	now := time.Unix(1_700_000_010, 0)
 	previous := now.Add(-totpPeriod * time.Second)
@@ -51,7 +51,7 @@ func TestMatchTOTP_AcceptsTheAdjacentStepsAndReportsWhichOne(t *testing.T) {
 	require.Equal(t, next.Unix()/totpPeriod, step)
 }
 
-func TestMatchTOTP_RefusesCodesOutsideTheSkew(t *testing.T) {
+func TestMatch_TOTP_RefusesCodesOutsideTheSkew(t *testing.T) {
 	secret := newTOTPSecret(t)
 	now := time.Unix(1_700_000_010, 0)
 	stale := now.Add(-3 * totpPeriod * time.Second)
@@ -61,7 +61,7 @@ func TestMatchTOTP_RefusesCodesOutsideTheSkew(t *testing.T) {
 	require.False(t, ok)
 }
 
-func TestMatchTOTP_RefusesEmptyInputAndTheSealedSecret(t *testing.T) {
+func TestMatch_TOTP_RefusesEmptyInputAndTheSealedSecret(t *testing.T) {
 	secret := newTOTPSecret(t)
 	now := time.Unix(1_700_000_010, 0)
 	code := codeAt(t, secret, now)

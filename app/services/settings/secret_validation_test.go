@@ -17,7 +17,7 @@ func (c *countingSealer) Open(value string) (string, error) {
 	return prefixSealer{}.Open(value)
 }
 
-func TestPrepareValueSkipsABlankSecretBeforeSealing(t *testing.T) {
+func TestPrepare_Value_SkipsABlankSecretBeforeSealing(t *testing.T) {
 	t.Parallel()
 
 	sealer := &countingSealer{}
@@ -53,7 +53,7 @@ func TestPrepareValueSkipsABlankSecretBeforeSealing(t *testing.T) {
 	}
 }
 
-func TestPrepareValueCastsASecretBeforeSealing(t *testing.T) {
+func TestPrepare_Value_CastsASecretBeforeSealing(t *testing.T) {
 	t.Parallel()
 
 	sealer := &countingSealer{}
@@ -100,7 +100,7 @@ func TestPrepareValueCastsASecretBeforeSealing(t *testing.T) {
 	}
 }
 
-func TestEffectiveNonSecretsOmitTheSecret(t *testing.T) {
+func TestEffective_Non_SecretsOmitTheSecret(t *testing.T) {
 	t.Parallel()
 
 	group, ok := FindGroup(groupAccountWebhooks)

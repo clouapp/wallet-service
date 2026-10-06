@@ -7,7 +7,7 @@ import (
 	"github.com/macrowallets/waas/app/models"
 )
 
-func TestWalletRoleCatalogNamesEachRoleGrant(t *testing.T) {
+func TestWallet_Role_CatalogNamesEachRoleGrant(t *testing.T) {
 	catalog := WalletRoleCatalog()
 	if len(catalog) != 4 {
 		t.Fatalf("roles = %d, want 4", len(catalog))

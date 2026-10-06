@@ -16,7 +16,7 @@ import (
 // VerifyInbound
 // ---------------------------------------------------------------------------
 
-func TestHeliusVerifyInbound_ValidAuthorization(t *testing.T) {
+func TestHelius_VerifyInbound_ValidAuthorization(t *testing.T) {
 	provider := NewHeliusProvider("test-key")
 	body := []byte(`[{"signature":"abc"}]`)
 	secret := "Bearer test-secret-value"
@@ -29,7 +29,7 @@ func TestHeliusVerifyInbound_ValidAuthorization(t *testing.T) {
 	assert.True(t, valid)
 }
 
-func TestHeliusVerifyInbound_InvalidAuthorization(t *testing.T) {
+func TestHelius_VerifyInbound_InvalidAuthorization(t *testing.T) {
 	provider := NewHeliusProvider("test-key")
 	body := []byte(`[]`)
 	secret := "Bearer correct"
@@ -42,7 +42,7 @@ func TestHeliusVerifyInbound_InvalidAuthorization(t *testing.T) {
 	assert.False(t, valid)
 }
 
-func TestHeliusVerifyInbound_MissingAuthorization(t *testing.T) {
+func TestHelius_VerifyInbound_MissingAuthorization(t *testing.T) {
 	provider := NewHeliusProvider("test-key")
 	body := []byte(`[]`)
 
@@ -58,7 +58,7 @@ func TestHeliusVerifyInbound_MissingAuthorization(t *testing.T) {
 // ParsePayload — native SOL (lamports)
 // ---------------------------------------------------------------------------
 
-func TestHeliusParsePayload_NativeSOLTransfer(t *testing.T) {
+func TestHelius_ParsePayload_NativeSOLTransfer(t *testing.T) {
 	ts := int64(1679000000)
 	payload, err := json.Marshal([]map[string]interface{}{
 		{
@@ -98,7 +98,7 @@ func TestHeliusParsePayload_NativeSOLTransfer(t *testing.T) {
 // ParsePayload — SPL token transfer
 // ---------------------------------------------------------------------------
 
-func TestHeliusParsePayload_SPLTokenTransfer(t *testing.T) {
+func TestHelius_ParsePayload_SPLTokenTransfer(t *testing.T) {
 	dec := uint8(6)
 	payload, err := json.Marshal([]map[string]interface{}{
 		{
@@ -138,7 +138,7 @@ func TestHeliusParsePayload_SPLTokenTransfer(t *testing.T) {
 	assert.Nil(t, tx.Amount)
 }
 
-func TestHeliusParsePayload_SPLOmitsDecimalsKeepsHumanAmount(t *testing.T) {
+func TestHelius_ParsePayload_SPLOmitsDecimalsKeepsHumanAmount(t *testing.T) {
 	payload := []byte(`[{
 		"signature": "sig",
 		"slot": 1,

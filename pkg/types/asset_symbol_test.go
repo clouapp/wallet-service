@@ -2,7 +2,7 @@ package types
 
 import "testing"
 
-func TestCanonicalAssetSymbolMapsLegacyMaticToPol(t *testing.T) {
+func TestCanonical_Asset_SymbolMapsLegacyMaticToPol(t *testing.T) {
 	t.Parallel()
 
 	cases := map[string]string{
@@ -24,7 +24,7 @@ func TestCanonicalAssetSymbolMapsLegacyMaticToPol(t *testing.T) {
 	}
 }
 
-func TestSameAssetSymbolTreatsMaticAsPol(t *testing.T) {
+func TestSame_Asset_SymbolTreatsMaticAsPol(t *testing.T) {
 	t.Parallel()
 
 	same := [][2]string{{"matic", "pol"}, {"MATIC", "POL"}, {"pol", "POL"}, {"usdc", "USDC"}}

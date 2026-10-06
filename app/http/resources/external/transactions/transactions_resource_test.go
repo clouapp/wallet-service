@@ -13,7 +13,7 @@ import (
 	"github.com/macrowallets/waas/app/services/txkind"
 )
 
-func TestTransactionFromKeepsTheModelWire(t *testing.T) {
+func TestTransaction_From_KeepsTheModelWire(t *testing.T) {
 	t.Parallel()
 
 	id := uuid.MustParse("11111111-1111-4111-8111-111111111111")
@@ -85,7 +85,7 @@ func TestTransactionFromKeepsTheModelWire(t *testing.T) {
 	}
 }
 
-func TestTransactionFromKeepsRelatedRowsOnTheirViews(t *testing.T) {
+func TestTransaction_From_KeepsRelatedRowsOnTheirViews(t *testing.T) {
 	t.Parallel()
 
 	id := uuid.MustParse("11111111-1111-4111-8111-111111111111")
@@ -122,7 +122,7 @@ func TestTransactionFromKeepsRelatedRowsOnTheirViews(t *testing.T) {
 	}
 }
 
-func TestTransactionFromCarriesAnUnsignedAmountWithTypeAndDirection(t *testing.T) {
+func TestTransaction_From_CarriesAnUnsignedAmountWithTypeAndDirection(t *testing.T) {
 	t.Parallel()
 
 	cases := map[string]struct {
@@ -177,7 +177,7 @@ func TestTransactionFromCarriesAnUnsignedAmountWithTypeAndDirection(t *testing.T
 	}
 }
 
-func TestTransactionsFromKeepsNilEmptyAndOrder(t *testing.T) {
+func TestTransactions_From_KeepsNilEmptyAndOrder(t *testing.T) {
 	t.Parallel()
 
 	if got := TransactionsFrom(nil); got != nil {

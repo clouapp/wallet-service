@@ -20,7 +20,7 @@ type TransactionRepositoryTestSuite struct {
 	repo *repositories.TransactionRepository
 }
 
-func TestTransactionRepositorySuite(t *testing.T) {
+func TestTransaction_Repository_Suite(t *testing.T) {
 	suite.Run(t, new(TransactionRepositoryTestSuite))
 }
 
@@ -58,14 +58,14 @@ func testTxDirection(txType string) string {
 	}
 }
 
-func (s *TransactionRepositoryTestSuite) TestCreate_Success() {
+func (s *TransactionRepositoryTestSuite) TestTransactionRepository_Create_Success() {
 	walletID := s.insertWallet()
 	tx := s.makeTx(walletID, "deposit", "pending")
 	err := s.repo.Create(context.Background(), tx)
 	s.NoError(err)
 }
 
-func (s *TransactionRepositoryTestSuite) TestFindByID_Found() {
+func (s *TransactionRepositoryTestSuite) TestFind_ByID_Found() {
 	walletID := s.insertWallet()
 	tx := s.makeTx(walletID, "deposit", "pending")
 	s.Require().NoError(s.repo.Create(context.Background(), tx))
@@ -76,13 +76,13 @@ func (s *TransactionRepositoryTestSuite) TestFindByID_Found() {
 	s.Equal(tx.ID, found.ID)
 }
 
-func (s *TransactionRepositoryTestSuite) TestFindByID_NotFound() {
+func (s *TransactionRepositoryTestSuite) TestFind_ByID_NotFound() {
 	found, err := s.repo.FindByID(context.Background(), uuid.New())
 	s.ErrorIs(err, models.ErrRepositoryNotFound)
 	s.Nil(found)
 }
 
-func (s *TransactionRepositoryTestSuite) TestFindByIDAndWallet_Found() {
+func (s *TransactionRepositoryTestSuite) TestFind_ByIDAndWallet_Found() {
 	walletID := s.insertWallet()
 	tx := s.makeTx(walletID, "deposit", "confirmed")
 	s.Require().NoError(s.repo.Create(context.Background(), tx))
@@ -92,7 +92,7 @@ func (s *TransactionRepositoryTestSuite) TestFindByIDAndWallet_Found() {
 	s.NotNil(found)
 }
 
-func (s *TransactionRepositoryTestSuite) TestFindByIDAndWallet_WrongWallet() {
+func (s *TransactionRepositoryTestSuite) TestFind_ByIDAndWallet_WrongWallet() {
 	walletID := s.insertWallet()
 	tx := s.makeTx(walletID, "deposit", "confirmed")
 	s.Require().NoError(s.repo.Create(context.Background(), tx))
@@ -103,7 +103,7 @@ func (s *TransactionRepositoryTestSuite) TestFindByIDAndWallet_WrongWallet() {
 	s.Nil(found)
 }
 
-func (s *TransactionRepositoryTestSuite) TestFindByIdempotencyKey_Found() {
+func (s *TransactionRepositoryTestSuite) TestFind_ByIdempotencyKey_Found() {
 	walletID := s.insertWallet()
 	tx := s.makeTx(walletID, "withdrawal", "pending")
 	idemKey := "idem-key-123"
@@ -116,13 +116,13 @@ func (s *TransactionRepositoryTestSuite) TestFindByIdempotencyKey_Found() {
 	s.Equal(tx.ID, found.ID)
 }
 
-func (s *TransactionRepositoryTestSuite) TestFindByIdempotencyKey_NotFound() {
+func (s *TransactionRepositoryTestSuite) TestFind_ByIdempotencyKey_NotFound() {
 	found, err := s.repo.FindByIdempotencyKey(context.Background(), "nonexistent")
 	s.ErrorIs(err, models.ErrRepositoryNotFound)
 	s.Nil(found)
 }
 
-func (s *TransactionRepositoryTestSuite) TestFindByWallet_Pagination() {
+func (s *TransactionRepositoryTestSuite) TestFind_ByWallet_Pagination() {
 	walletID := s.insertWallet()
 	for i := 0; i < 5; i++ {
 		s.Require().NoError(s.repo.Create(context.Background(), s.makeTx(walletID, "deposit", "confirmed")))
@@ -138,7 +138,7 @@ func (s *TransactionRepositoryTestSuite) TestFindByWallet_Pagination() {
 	s.Len(page2, 2)
 }
 
-func (s *TransactionRepositoryTestSuite) TestFindByWallet_FilterByType() {
+func (s *TransactionRepositoryTestSuite) TestFind_ByWallet_FilterByType() {
 	walletID := s.insertWallet()
 	s.Require().NoError(s.repo.Create(context.Background(), s.makeTx(walletID, "deposit", "confirmed")))
 	s.Require().NoError(s.repo.Create(context.Background(), s.makeTx(walletID, "withdrawal", "confirmed")))
@@ -149,7 +149,7 @@ func (s *TransactionRepositoryTestSuite) TestFindByWallet_FilterByType() {
 	s.Equal("deposit", deposits[0].TxType)
 }
 
-func (s *TransactionRepositoryTestSuite) TestFindByWallet_FilterByStatus() {
+func (s *TransactionRepositoryTestSuite) TestFind_ByWallet_FilterByStatus() {
 	walletID := s.insertWallet()
 	s.Require().NoError(s.repo.Create(context.Background(), s.makeTx(walletID, "deposit", "pending")))
 	s.Require().NoError(s.repo.Create(context.Background(), s.makeTx(walletID, "deposit", "confirmed")))
@@ -159,7 +159,7 @@ func (s *TransactionRepositoryTestSuite) TestFindByWallet_FilterByStatus() {
 	s.Len(pending, 1)
 }
 
-func (s *TransactionRepositoryTestSuite) TestCountByChainAndTxHash() {
+func (s *TransactionRepositoryTestSuite) TestCount_By_ChainAndTxHash() {
 	walletID := s.insertWallet()
 	tx := s.makeTx(walletID, "deposit", "confirmed")
 	tx.TxHash = "0xuniquehash"
@@ -174,7 +174,7 @@ func (s *TransactionRepositoryTestSuite) TestCountByChainAndTxHash() {
 	s.Equal(int64(0), count)
 }
 
-func (s *TransactionRepositoryTestSuite) TestCountInternalTransfers_OnlySweepsAndGasSeedsOfTheWallet() {
+func (s *TransactionRepositoryTestSuite) TestCount_InternalTransfers_OnlySweepsAndGasSeedsOfTheWallet() {
 	walletID := s.insertWallet()
 	otherWalletID := s.insertWallet()
 	record := func(wallet uuid.UUID, txType, hash string) {
@@ -207,7 +207,7 @@ func (s *TransactionRepositoryTestSuite) TestCountInternalTransfers_OnlySweepsAn
 	}
 }
 
-func (s *TransactionRepositoryTestSuite) TestCountInternalTransfers_RejectsMissingKeys() {
+func (s *TransactionRepositoryTestSuite) TestCount_InternalTransfers_RejectsMissingKeys() {
 	walletID := s.insertWallet()
 	for name, args := range map[string]struct {
 		chain, hash string
@@ -224,7 +224,7 @@ func (s *TransactionRepositoryTestSuite) TestCountInternalTransfers_RejectsMissi
 	}
 }
 
-func (s *TransactionRepositoryTestSuite) TestFindPendingByChain() {
+func (s *TransactionRepositoryTestSuite) TestFind_Pending_ByChain() {
 	walletID := s.insertWallet()
 	s.Require().NoError(s.repo.Create(context.Background(), s.makeTx(walletID, "deposit", "pending")))
 	s.Require().NoError(s.repo.Create(context.Background(), s.makeTx(walletID, "deposit", "confirming")))
@@ -240,7 +240,7 @@ func (s *TransactionRepositoryTestSuite) TestFindPendingByChain() {
 // reconciled and they can reach `confirmed`. Before the fix this query was
 // hard-coded to tx_type=deposit and outbound rows stayed at `confirming`
 // forever.
-func (s *TransactionRepositoryTestSuite) TestFindPendingByChain_IncludesOutbound() {
+func (s *TransactionRepositoryTestSuite) TestFind_PendingByChain_IncludesOutbound() {
 	walletID := s.insertWallet()
 	s.Require().NoError(s.repo.Create(context.Background(), s.makeTx(walletID, "deposit", "pending")))
 	s.Require().NoError(s.repo.Create(context.Background(), s.makeTx(walletID, "withdrawal", "confirming")))
@@ -262,7 +262,7 @@ func (s *TransactionRepositoryTestSuite) TestFindPendingByChain_IncludesOutbound
 	s.Equal(1, byType["gas_seed"])
 }
 
-func (s *TransactionRepositoryTestSuite) TestUpdateFields() {
+func (s *TransactionRepositoryTestSuite) TestTransactionRepository_Update_Fields() {
 	walletID := s.insertWallet()
 	tx := s.makeTx(walletID, "deposit", "pending")
 	s.Require().NoError(s.repo.Create(context.Background(), tx))
@@ -277,7 +277,7 @@ func (s *TransactionRepositoryTestSuite) TestUpdateFields() {
 	s.Equal("confirming", found.Status)
 }
 
-func (s *TransactionRepositoryTestSuite) TestList_GlobalFilters() {
+func (s *TransactionRepositoryTestSuite) TestList_Global_Filters() {
 	walletID := s.insertWallet()
 	s.Require().NoError(s.repo.Create(context.Background(), s.makeTx(walletID, "deposit", "confirmed")))
 	s.Require().NoError(s.repo.Create(context.Background(), s.makeTx(walletID, "withdrawal", "pending")))
@@ -303,7 +303,7 @@ func (s *TransactionRepositoryTestSuite) makeTxForUser(walletID uuid.UUID, userI
 // GET /api/v1/users/{external_id}/transactions. Two accounts each have a
 // transaction tagged external_user_id="shared_user"; a query issued with
 // accountA.ID must never see accountB's row.
-func (s *TransactionRepositoryTestSuite) TestListForAccount_FiltersByAccount() {
+func (s *TransactionRepositoryTestSuite) TestList_ForAccount_FiltersByAccount() {
 	accountA := fixtures.InsertAccount(s.T(), "acc-A")
 	accountB := fixtures.InsertAccount(s.T(), "acc-B")
 
@@ -332,7 +332,7 @@ func (s *TransactionRepositoryTestSuite) TestListForAccount_FiltersByAccount() {
 // TestListForAccount_ExcludesUnassignedWallets mirrors the address case:
 // transactions on wallets with NULL account_id (legacy data) must never leak
 // into any account's scoped view.
-func (s *TransactionRepositoryTestSuite) TestListForAccount_ExcludesUnassignedWallets() {
+func (s *TransactionRepositoryTestSuite) TestList_ForAccount_ExcludesUnassignedWallets() {
 	account := fixtures.InsertAccount(s.T(), "acc-scoped")
 	unassigned := fixtures.InsertWallet(s.T(), "eth") // account_id = NULL
 	s.Require().NoError(s.repo.Create(context.Background(), s.makeTxForUser(unassigned.ID, "user_x", "deposit", "confirmed")))
@@ -345,7 +345,7 @@ func (s *TransactionRepositoryTestSuite) TestListForAccount_ExcludesUnassignedWa
 
 // TestListForAccount_AppliesSecondaryFilters confirms chain/type/status filters
 // are still honored in addition to the account-level filter.
-func (s *TransactionRepositoryTestSuite) TestListForAccount_AppliesSecondaryFilters() {
+func (s *TransactionRepositoryTestSuite) TestList_ForAccount_AppliesSecondaryFilters() {
 	account := fixtures.InsertAccount(s.T(), "acc")
 	wallet := fixtures.InsertWalletWithAccount(s.T(), "eth", &account.ID)
 
@@ -362,7 +362,7 @@ func (s *TransactionRepositoryTestSuite) TestListForAccount_AppliesSecondaryFilt
 	s.Len(pendingWithdrawals, 1)
 }
 
-func (s *TransactionRepositoryTestSuite) TestWithinCommitsASweepLegAndItsWebhook() {
+func (s *TransactionRepositoryTestSuite) TestWithin_Commits_ASweepLegAndItsWebhook() {
 	walletID := s.insertWallet()
 	txID := uuid.New()
 	eventID := uuid.New()
@@ -384,7 +384,7 @@ func (s *TransactionRepositoryTestSuite) TestWithinCommitsASweepLegAndItsWebhook
 	s.Equal(int64(1), s.countWebhookEvents(eventID))
 }
 
-func (s *TransactionRepositoryTestSuite) TestWithinRollsBackASweepLegAndItsWebhook() {
+func (s *TransactionRepositoryTestSuite) TestWithin_Rolls_BackASweepLegAndItsWebhook() {
 	walletID := s.insertWallet()
 	txID := uuid.New()
 	eventID := uuid.New()

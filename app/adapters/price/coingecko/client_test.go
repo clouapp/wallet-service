@@ -15,7 +15,7 @@ import (
 	"github.com/macrowallets/waas/pkg/httpclient"
 )
 
-func TestNewCoinGeckoProviderSelectsTheHost(t *testing.T) {
+func TestNew_Coin_GeckoProviderSelectsTheHost(t *testing.T) {
 	free := NewCoinGeckoProvider("")
 	if free.baseURL != publicBaseURL || free.apiKey != "" || free.client == nil {
 		t.Fatal("an empty key did not select the public CoinGecko host")
@@ -29,7 +29,7 @@ func TestNewCoinGeckoProviderSelectsTheHost(t *testing.T) {
 	}
 }
 
-func TestFetchCryptoPricesSkipsUnknownCodesWithoutHTTP(t *testing.T) {
+func TestFetch_Crypto_PricesSkipsUnknownCodesWithoutHTTP(t *testing.T) {
 	called := false
 	server := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
 		called = true
@@ -49,7 +49,7 @@ func TestFetchCryptoPricesSkipsUnknownCodesWithoutHTTP(t *testing.T) {
 	}
 }
 
-func TestFetchCryptoPricesReadsTheUSDQuote(t *testing.T) {
+func TestFetch_Crypto_PricesReadsTheUSDQuote(t *testing.T) {
 	const proKey = "cg-pro-not-logged"
 	var sawKey bool
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -91,7 +91,7 @@ func TestFetchCryptoPricesReadsTheUSDQuote(t *testing.T) {
 	}
 }
 
-func TestFetchFiatRatesInvertsTheUSDCQuote(t *testing.T) {
+func TestFetch_Fiat_RatesInvertsTheUSDCQuote(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("x-cg-pro-api-key") != "" {
 			t.Error("public request sent a pro key")
@@ -122,7 +122,7 @@ func TestFetchFiatRatesInvertsTheUSDCQuote(t *testing.T) {
 	}
 }
 
-func TestDoGetOmitsTheKeyFromAStatusError(t *testing.T) {
+func TestDo_Get_OmitsTheKeyFromAStatusError(t *testing.T) {
 	const proKey = "cg-pro-not-logged"
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusTooManyRequests)
@@ -143,7 +143,7 @@ func TestDoGetOmitsTheKeyFromAStatusError(t *testing.T) {
 	}
 }
 
-func TestFetchCryptoPricesStopsWhenTheContextIsCanceled(t *testing.T) {
+func TestFetch_Crypto_PricesStopsWhenTheContextIsCanceled(t *testing.T) {
 	called := false
 	server := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
 		called = true

@@ -2,7 +2,7 @@ package policies
 
 import "testing"
 
-func TestFeatureUpdatePermissionsAreNotAccountGrants(t *testing.T) {
+func TestFeature_Update_PermissionsAreNotAccountGrants(t *testing.T) {
 	t.Parallel()
 
 	if PermFeaturesUpdate == "" || PermFeaturesAccountUpdate == "" || PermFeaturesUpdate == PermFeaturesAccountUpdate {

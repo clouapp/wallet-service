@@ -20,7 +20,7 @@ type PlatformUserSuspendTestSuite struct {
 	authSuite
 }
 
-func TestPlatformUserSuspendSuite(t *testing.T) {
+func TestPlatform_User_SuspendSuite(t *testing.T) {
 	suite.Run(t, new(PlatformUserSuspendTestSuite))
 }
 
@@ -28,7 +28,7 @@ func (s *PlatformUserSuspendTestSuite) SetupTest() {
 	testutil.SeededTestDB(s.T())
 }
 
-func (s *PlatformUserSuspendTestSuite) TestAPlatformAdminSuspendsAndTheNextRequestIsForbidden() {
+func (s *PlatformUserSuspendTestSuite) TestA_Platform_AdminSuspendsAndTheNextRequestIsForbidden() {
 	admin := s.seedUser(false)
 	s.grantPlatformAdmin(admin.ID)
 	adminSession := s.signIn(admin.Email)
@@ -119,7 +119,7 @@ func (s *PlatformUserSuspendTestSuite) TestAPlatformAdminSuspendsAndTheNextReque
 	))
 }
 
-func (s *PlatformUserSuspendTestSuite) TestAMemberCannotSuspendAPlatformUser() {
+func (s *PlatformUserSuspendTestSuite) TestA_Member_CannotSuspendAPlatformUser() {
 	member := s.seedUser(false)
 	victim := s.seedUser(false)
 	session := s.signIn(member.Email)
@@ -140,7 +140,7 @@ func (s *PlatformUserSuspendTestSuite) TestAMemberCannotSuspendAPlatformUser() {
 	missing.AssertForbidden()
 }
 
-func (s *PlatformUserSuspendTestSuite) TestAnUnknownUserIsNotFoundForAPlatformAdmin() {
+func (s *PlatformUserSuspendTestSuite) TestAn_Unknown_UserIsNotFoundForAPlatformAdmin() {
 	admin := s.seedUser(false)
 	s.grantPlatformAdmin(admin.ID)
 	session := s.signIn(admin.Email)

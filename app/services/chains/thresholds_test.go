@@ -17,7 +17,7 @@ import (
 	"github.com/macrowallets/waas/pkg/numeric"
 )
 
-func TestChainThresholdCatalogDeclaresTheSweepPair(t *testing.T) {
+func TestChain_Threshold_CatalogDeclaresTheSweepPair(t *testing.T) {
 	t.Parallel()
 
 	catalog := chainsvc.ChainThresholdCatalog()
@@ -45,7 +45,7 @@ func TestChainThresholdCatalogDeclaresTheSweepPair(t *testing.T) {
 	}
 }
 
-func TestUpdateThresholds_UnknownChainIsNotFoundBeforeTheAdminCheck(t *testing.T) {
+func TestUpdate_Thresholds_UnknownChainIsNotFoundBeforeTheAdminCheck(t *testing.T) {
 	t.Parallel()
 
 	store := &thresholdStore{}
@@ -59,7 +59,7 @@ func TestUpdateThresholds_UnknownChainIsNotFoundBeforeTheAdminCheck(t *testing.T
 	require.Nil(t, store.write)
 }
 
-func TestUpdateThresholds_NonAdminLeavesTheRowUnchanged(t *testing.T) {
+func TestUpdate_Thresholds_NonAdminLeavesTheRowUnchanged(t *testing.T) {
 	t.Parallel()
 
 	store := &thresholdStore{chain: ethChain("5000000000000000", "500000000000000", "1")}
@@ -74,7 +74,7 @@ func TestUpdateThresholds_NonAdminLeavesTheRowUnchanged(t *testing.T) {
 	require.Nil(t, store.write)
 }
 
-func TestUpdateThresholds_NegativeAmountAndConfirmationAreNotStored(t *testing.T) {
+func TestUpdate_Thresholds_NegativeAmountAndConfirmationAreNotStored(t *testing.T) {
 	t.Parallel()
 
 	store := &thresholdStore{chain: ethChain("5000000000000000", "500000000000000", "1")}
@@ -98,7 +98,7 @@ func TestUpdateThresholds_NegativeAmountAndConfirmationAreNotStored(t *testing.T
 	require.Equal(t, "5000000000000000", *store.chain.GasReadinessThresholdRaw)
 }
 
-func TestUpdateThresholds_OneFieldLeavesTheOthersAndAuditsTheName(t *testing.T) {
+func TestUpdate_Thresholds_OneFieldLeavesTheOthersAndAuditsTheName(t *testing.T) {
 	t.Parallel()
 
 	store := &thresholdStore{chain: ethChain("5000000000000000", "500000000000000", "1")}
@@ -134,7 +134,7 @@ func TestUpdateThresholds_OneFieldLeavesTheOthersAndAuditsTheName(t *testing.T) 
 	require.NotContains(t, encoded, "platform.secret_viewed")
 }
 
-func TestUpdateThresholds_EmptyGasIsTheBitcoinSentinelOnly(t *testing.T) {
+func TestUpdate_Thresholds_EmptyGasIsTheBitcoinSentinelOnly(t *testing.T) {
 	t.Parallel()
 
 	btc := btcChain("", "10000", "0")

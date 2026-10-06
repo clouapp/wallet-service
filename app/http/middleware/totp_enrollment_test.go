@@ -2,7 +2,7 @@ package middleware
 
 import "testing"
 
-func TestIsTOTPEnrollmentPath(t *testing.T) {
+func TestIs_TOTP_EnrollmentPath(t *testing.T) {
 	t.Parallel()
 
 	open := []string{

@@ -46,7 +46,7 @@ func webhookProviderCases() []webhookProviderCase {
 	}
 }
 
-func TestSavePlatformWebhookProviders_StoresEnabledAndSealsTheSecret(t *testing.T) {
+func TestSave_PlatformWebhookProviders_StoresEnabledAndSealsTheSecret(t *testing.T) {
 	t.Parallel()
 
 	store := newMemoryStore()
@@ -99,7 +99,7 @@ func TestSavePlatformWebhookProviders_StoresEnabledAndSealsTheSecret(t *testing.
 	}
 }
 
-func TestSavePlatformWebhookProviders_RejectsTheWrongSecretAndANonBoolean(t *testing.T) {
+func TestSave_PlatformWebhookProviders_RejectsTheWrongSecretAndANonBoolean(t *testing.T) {
 	t.Parallel()
 
 	store := newMemoryStore()
@@ -145,7 +145,7 @@ func TestSavePlatformWebhookProviders_RejectsTheWrongSecretAndANonBoolean(t *tes
 	}
 }
 
-func TestSavePlatformProviders_RefusesEnabledWithoutAKey(t *testing.T) {
+func TestSave_PlatformProviders_RefusesEnabledWithoutAKey(t *testing.T) {
 	t.Parallel()
 
 	providers := []struct {
@@ -225,7 +225,7 @@ func assertProviderKeyRequired(t *testing.T, err error, secretKey string) {
 	}
 }
 
-func TestSavePlatformWebhookProviders_ForbidsANonAdmin(t *testing.T) {
+func TestSave_PlatformWebhookProviders_ForbidsANonAdmin(t *testing.T) {
 	t.Parallel()
 
 	store := newMemoryStore()
@@ -249,7 +249,7 @@ func TestSavePlatformWebhookProviders_ForbidsANonAdmin(t *testing.T) {
 	}
 }
 
-func TestSaveWebhookProvidersIsNotAnAccountGroup(t *testing.T) {
+func TestSave_Webhook_ProvidersIsNotAnAccountGroup(t *testing.T) {
 	t.Parallel()
 
 	for _, name := range webhookProviderGroupNames() {

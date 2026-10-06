@@ -9,7 +9,7 @@ import (
 	"github.com/google/uuid"
 )
 
-func TestEmailAccountWalletLabelAndClientIPShareTheRunNonce(t *testing.T) {
+func TestEmail_Account_WalletLabelAndClientIPShareTheRunNonce(t *testing.T) {
 	n := sequence.Load()
 
 	email := Email()

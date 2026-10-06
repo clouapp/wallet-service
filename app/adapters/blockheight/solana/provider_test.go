@@ -14,7 +14,7 @@ import (
 	"github.com/macrowallets/waas/pkg/httpclient"
 )
 
-func TestProvider_ReadsTheMainnetSlot(t *testing.T) {
+func TestProvider_Reads_TheMainnetSlot(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, err := io.ReadAll(r.Body)
 		assert.NoError(t, err)
@@ -35,7 +35,7 @@ func TestProvider_ReadsTheMainnetSlot(t *testing.T) {
 	assert.Equal(t, uint64(123456789), height)
 }
 
-func TestProvider_ReadsTheDevnetSlot(t *testing.T) {
+func TestProvider_Reads_TheDevnetSlot(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, http.MethodPost, r.Method)
 		_, _ = w.Write([]byte(`{"jsonrpc":"2.0","result":42,"id":1}`))
@@ -51,13 +51,13 @@ func TestProvider_ReadsTheDevnetSlot(t *testing.T) {
 	assert.Equal(t, uint64(42), height)
 }
 
-func TestProvider_DefaultsToThePublicRPC(t *testing.T) {
+func TestProvider_Defaults_ToThePublicRPC(t *testing.T) {
 	p := New()
 	assert.Equal(t, mainnetRPC, p.mainnetRPC)
 	assert.Equal(t, devnetRPC, p.devnetRPC)
 }
 
-func TestProvider_ErrorOmitsTheRPCURL(t *testing.T) {
+func TestProvider_Error_OmitsTheRPCURL(t *testing.T) {
 	const secret = "secret-api-key"
 	var endpoint string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -76,7 +76,7 @@ func TestProvider_ErrorOmitsTheRPCURL(t *testing.T) {
 	assert.NotContains(t, err.Error(), secret)
 }
 
-func TestProvider_RejectsAnUnknownChain(t *testing.T) {
+func TestProvider_Rejects_AnUnknownChain(t *testing.T) {
 	_, err := New().GetBlockHeight(context.Background(), models.ChainBTC)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "unknown chain_id")

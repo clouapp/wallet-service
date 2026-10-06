@@ -2,7 +2,7 @@ package policies
 
 import "testing"
 
-func TestAccountRoleRank(t *testing.T) {
+func TestAccount_Role_Rank(t *testing.T) {
 	owner, ok := AccountRoleRank(roleOwner)
 	if !ok || owner != 3 {
 		t.Fatalf("owner rank = %d ok=%v", owner, ok)
@@ -24,7 +24,7 @@ func TestAccountRoleRank(t *testing.T) {
 	}
 }
 
-func TestMayGrant_AdminCannotGrantOwner(t *testing.T) {
+func TestMay_Grant_AdminCannotGrantOwner(t *testing.T) {
 	if MayGrant(roleAdmin, roleOwner) {
 		t.Fatal("admin must not grant owner")
 	}
@@ -42,7 +42,7 @@ func TestMayGrant_AdminCannotGrantOwner(t *testing.T) {
 	}
 }
 
-func TestMayActOn_CannotTouchAHigherRank(t *testing.T) {
+func TestMay_ActOn_CannotTouchAHigherRank(t *testing.T) {
 	if MayActOn(roleAdmin, roleOwner) {
 		t.Fatal("admin must not act on an owner")
 	}
@@ -54,7 +54,7 @@ func TestMayActOn_CannotTouchAHigherRank(t *testing.T) {
 	}
 }
 
-func TestManagesMembers(t *testing.T) {
+func TestMemberRank_Manages_Members(t *testing.T) {
 	if !ManagesMembers(roleOwner) || !ManagesMembers(roleAdmin) {
 		t.Fatal("owner and admin manage members")
 	}

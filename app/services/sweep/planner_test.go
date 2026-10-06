@@ -161,7 +161,7 @@ func evmChainEntity(id string) *models.Chain {
 // Tests
 // ---------------------------------------------------------------------------
 
-func TestPlan_DirectFromBase(t *testing.T) {
+func TestPlan_Direct_FromBase(t *testing.T) {
 	walletID := uuid.New()
 	baseAddr := models.Address{ID: uuid.New(), WalletID: walletID, Address: "BASE"}
 	wallet := &models.Wallet{ID: walletID, Chain: "eth", DepositAddress: &baseAddr}
@@ -218,7 +218,7 @@ func TestPlan_DirectFromChild_SingleCovers(t *testing.T) {
 	}
 }
 
-func TestPlan_MultiSweepGreedy(t *testing.T) {
+func TestPlan_Multi_SweepGreedy(t *testing.T) {
 	walletID := uuid.New()
 	baseAddr := models.Address{ID: uuid.New(), WalletID: walletID, Address: "BASE"}
 	cA := models.Address{ID: uuid.New(), WalletID: walletID, Address: "CHILD_A"}
@@ -262,7 +262,7 @@ func TestPlan_MultiSweepGreedy(t *testing.T) {
 	}
 }
 
-func TestPlan_Insufficient(t *testing.T) {
+func TestPlanner_Plan_Insufficient(t *testing.T) {
 	walletID := uuid.New()
 	baseAddr := models.Address{ID: uuid.New(), WalletID: walletID, Address: "BASE"}
 	cA := models.Address{ID: uuid.New(), WalletID: walletID, Address: "CHILD_A"}
@@ -286,7 +286,7 @@ func TestPlan_Insufficient(t *testing.T) {
 	}
 }
 
-func TestPlanForWithdrawal_Solana(t *testing.T) {
+func TestPlan_ForWithdrawal_Solana(t *testing.T) {
 	plan, err := planNativeDirect(t, models.ChainSOL, models.NativeSOL, models.AdapterTypeSolana)
 	if err != nil {
 		t.Fatal(err)
@@ -296,7 +296,7 @@ func TestPlanForWithdrawal_Solana(t *testing.T) {
 	}
 }
 
-func TestPlanForWithdrawal_Bitcoin(t *testing.T) {
+func TestPlan_ForWithdrawal_Bitcoin(t *testing.T) {
 	plan, err := planNativeDirect(t, models.ChainBTC, models.NativeBTC, models.AdapterTypeBitcoin)
 	if err != nil {
 		t.Fatal(err)
@@ -306,7 +306,7 @@ func TestPlanForWithdrawal_Bitcoin(t *testing.T) {
 	}
 }
 
-func TestPlanForWithdrawal_UnknownAdapter(t *testing.T) {
+func TestPlan_ForWithdrawal_UnknownAdapter(t *testing.T) {
 	walletID := uuid.New()
 	baseAddr := models.Address{ID: uuid.New(), WalletID: walletID, Address: "BASE"}
 	wallet := &models.Wallet{ID: walletID, Chain: models.ChainETH, DepositAddress: &baseAddr}
@@ -319,7 +319,7 @@ func TestPlanForWithdrawal_UnknownAdapter(t *testing.T) {
 	}
 }
 
-func TestChainNeedsGasSeed(t *testing.T) {
+func TestChain_Needs_GasSeed(t *testing.T) {
 	if chainNeedsGasSeed(models.ChainSOL) || chainNeedsGasSeed(models.ChainTSOL) || chainNeedsGasSeed(models.ChainBTC) || chainNeedsGasSeed(models.ChainTBTC) {
 		t.Fatal("sol and btc do not need a gas seed")
 	}
@@ -350,7 +350,7 @@ func planNativeDirect(t *testing.T, chainID, native, adapterType string) (*Plan,
 // strategy / asset-type permutation has a locked-in expected number. This is
 // the contract the controllers depend on when populating
 // `estimated_gas_total_native` in responses.
-func TestEstimateGasTotal_PureHelper(t *testing.T) {
+func TestEstimate_GasTotal_PureHelper(t *testing.T) {
 	gasPrice := big.NewInt(20_000_000_000) // 20 gwei
 
 	tests := []struct {
@@ -454,7 +454,7 @@ func TestEstimateGasTotal_PureHelper(t *testing.T) {
 // TestPlan_MultiSweep_EstimatedGas_Populated verifies that the planner wires
 // the gas-price fetch into plan.EstimatedGas for the multi_sweep branch. The
 // mock chain returns a fixed 10 gwei so the expected total is deterministic.
-func TestPlan_MultiSweep_EstimatedGas_Populated(t *testing.T) {
+func TestPlan_MultiSweep_EstimatedGasPopulated(t *testing.T) {
 	walletID := uuid.New()
 	baseAddr := models.Address{ID: uuid.New(), WalletID: walletID, Address: "BASE"}
 	cA := models.Address{ID: uuid.New(), WalletID: walletID, Address: "CHILD_A"}
@@ -492,7 +492,7 @@ func TestPlan_MultiSweep_EstimatedGas_Populated(t *testing.T) {
 // TestPlan_DirectFromBase_EstimatedGas_Populated proves the estimate also flows
 // through the single-source strategies, so PreviewWithdraw reports a real
 // number even when no sweeps are needed.
-func TestPlan_DirectFromBase_EstimatedGas_Populated(t *testing.T) {
+func TestPlan_DirectFromBase_EstimatedGasPopulated(t *testing.T) {
 	walletID := uuid.New()
 	baseAddr := models.Address{ID: uuid.New(), WalletID: walletID, Address: "BASE"}
 	wallet := &models.Wallet{ID: walletID, Chain: "eth", DepositAddress: &baseAddr}
@@ -549,7 +549,7 @@ func TestPlan_EstimatedGas_NilWhenPriceUnavailable(t *testing.T) {
 // N sequential GetBalance RPCs. The default EVM cap is 100, so we seed
 // 1 base + 101 children = 102 rows (> 100 children cap by at least one).
 // This protects /withdraw/preview from N-RPC blowups on pathological wallets.
-func TestPlan_ErrTooManyAddresses(t *testing.T) {
+func TestPlan_Err_TooManyAddresses(t *testing.T) {
 	walletID := uuid.New()
 	baseAddr := models.Address{ID: uuid.New(), WalletID: walletID, Address: "BASE"}
 	wallet := &models.Wallet{ID: walletID, Chain: "eth", DepositAddress: &baseAddr}
@@ -579,7 +579,7 @@ func TestPlan_ErrTooManyAddresses(t *testing.T) {
 	}
 }
 
-func TestPlan_DustIgnored(t *testing.T) {
+func TestPlan_Dust_Ignored(t *testing.T) {
 	walletID := uuid.New()
 	baseAddr := models.Address{ID: uuid.New(), WalletID: walletID, Address: "BASE"}
 	cA := models.Address{ID: uuid.New(), WalletID: walletID, Address: "CHILD_A"}

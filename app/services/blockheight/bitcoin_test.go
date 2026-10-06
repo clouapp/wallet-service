@@ -33,7 +33,7 @@ func bitcoinProviderAgainst(blockstream, testnet4 Provider) *BitcoinProvider {
 	return NewBitcoinProvider(BitcoinDeps{Blockstream: blockstream, Testnet4: testnet4})
 }
 
-func TestBitcoinProvider_Testnet4NeverReachesBlockstream(t *testing.T) {
+func TestBitcoin_Provider_Testnet4NeverReachesBlockstream(t *testing.T) {
 	blockstream := &tipSource{height: 4800000}
 	testnet4 := &tipSource{height: 154745}
 	p := bitcoinProviderAgainst(blockstream, testnet4)
@@ -46,7 +46,7 @@ func TestBitcoinProvider_Testnet4NeverReachesBlockstream(t *testing.T) {
 	assert.Zero(t, blockstream.hits.Load())
 }
 
-func TestBitcoinProvider_Testnet4FailureDoesNotFallBackToTestnet3(t *testing.T) {
+func TestBitcoin_Provider_Testnet4FailureDoesNotFallBackToTestnet3(t *testing.T) {
 	blockstream := &tipSource{height: 4800000}
 	testnet4 := &tipSource{err: errors.New("down")}
 	p := bitcoinProviderAgainst(blockstream, testnet4)
@@ -57,17 +57,17 @@ func TestBitcoinProvider_Testnet4FailureDoesNotFallBackToTestnet3(t *testing.T) 
 	assert.Zero(t, blockstream.hits.Load())
 }
 
-func TestBitcoinProvider_MissingTestnet4IsAnError(t *testing.T) {
+func TestBitcoin_Provider_MissingTestnet4IsAnError(t *testing.T) {
 	_, err := NewBitcoinProvider(BitcoinDeps{}).GetBlockHeight(context.Background(), TipSourceBitcoinTestnet4)
 	require.Error(t, err)
 }
 
-func TestBitcoinProvider_MissingBlockstreamIsAnError(t *testing.T) {
+func TestBitcoin_Provider_MissingBlockstreamIsAnError(t *testing.T) {
 	_, err := NewBitcoinProvider(BitcoinDeps{}).GetBlockHeight(context.Background(), models.ChainBTC)
 	require.Error(t, err)
 }
 
-func TestBitcoinProvider_MainnetAndTestnet3StayOnBlockstream(t *testing.T) {
+func TestBitcoin_Provider_MainnetAndTestnet3StayOnBlockstream(t *testing.T) {
 	blockstream := &tipSource{height: 4800000}
 	testnet4 := &tipSource{height: 154745}
 	p := bitcoinProviderAgainst(blockstream, testnet4)
@@ -82,7 +82,7 @@ func TestBitcoinProvider_MainnetAndTestnet3StayOnBlockstream(t *testing.T) {
 	assert.Zero(t, testnet4.hits.Load())
 }
 
-func TestRoutedBitcoinProvider_ARecordOnTestnet4ReadsTheTestnet4Tip(t *testing.T) {
+func TestRouted_BitcoinProvider_ARecordOnTestnet4ReadsTheTestnet4Tip(t *testing.T) {
 	blockstream := &tipSource{height: 4800000}
 	testnet4 := &tipSource{height: 154745}
 	routed := RouteByNetwork(bitcoinProviderAgainst(blockstream, testnet4), map[string]string{

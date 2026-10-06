@@ -93,7 +93,7 @@ func newTestRefresher(t *testing.T, balances *recordingBalances, wallets *fakeWa
 	return refresher, pauses
 }
 
-func TestNewWalletRefresher_ValidatesDependencies(t *testing.T) {
+func TestNew_WalletRefresher_ValidatesDependencies(t *testing.T) {
 	if _, err := NewWalletRefresher(WalletRefresherDeps{Wallets: &fakeWalletStore{}, Chains: fakeChains{}}); err == nil {
 		t.Fatal("expected a missing balance service to be rejected")
 	}
@@ -107,7 +107,7 @@ func TestNewWalletRefresher_ValidatesDependencies(t *testing.T) {
 	}
 }
 
-func TestRefreshAll_RefreshesEveryRegisteredChainAndPacesTheCalls(t *testing.T) {
+func TestRefresh_All_RefreshesEveryRegisteredChainAndPacesTheCalls(t *testing.T) {
 	archived := walletOn("eth", "eth_archived")
 	archived.Status = models.WalletStatusArchived
 	noAddress := walletOn("sol", "sol_no_address")
@@ -134,7 +134,7 @@ func TestRefreshAll_RefreshesEveryRegisteredChainAndPacesTheCalls(t *testing.T) 
 	}
 }
 
-func TestRefreshAll_RateLimitedChainWaitsForTheNextPass(t *testing.T) {
+func TestRefresh_All_RateLimitedChainWaitsForTheNextPass(t *testing.T) {
 	wallets := &fakeWalletStore{wallets: []models.Wallet{
 		walletOn("sol", "sol_deposit"), walletOn("sol", "sol_withdraw"), walletOn("eth", "eth_deposit"),
 	}}
@@ -154,14 +154,14 @@ func TestRefreshAll_RateLimitedChainWaitsForTheNextPass(t *testing.T) {
 	}
 }
 
-func TestRefreshAll_ReportsAWalletListFailure(t *testing.T) {
+func TestRefresh_All_ReportsAWalletListFailure(t *testing.T) {
 	refresher, _ := newTestRefresher(t, &recordingBalances{}, &fakeWalletStore{listErr: errors.New("db down")}, fakeChains{"eth"})
 	if _, err := refresher.RefreshAll(context.Background()); err == nil {
 		t.Fatal("expected the wallet list failure")
 	}
 }
 
-func TestRefreshWalletByID(t *testing.T) {
+func TestRefresh_Wallet_ByID(t *testing.T) {
 	target := walletOn("eth", "eth_withdraw")
 	balances := &recordingBalances{}
 	refresher, _ := newTestRefresher(t, balances, &fakeWalletStore{wallets: []models.Wallet{target}}, fakeChains{"eth"})
@@ -180,7 +180,7 @@ func TestRefreshWalletByID(t *testing.T) {
 	}
 }
 
-func TestQueuedRefreshLoadsTheWalletAndMatchesTheChain(t *testing.T) {
+func TestQueued_Refresh_LoadsTheWalletAndMatchesTheChain(t *testing.T) {
 	target := walletOn("eth", "eth_job")
 	balances := &recordingBalances{}
 	refresher, _ := newTestRefresher(t, balances, &fakeWalletStore{wallets: []models.Wallet{target}}, fakeChains{"eth"})
@@ -221,7 +221,7 @@ func TestQueuedRefreshLoadsTheWalletAndMatchesTheChain(t *testing.T) {
 	}
 }
 
-func TestRefreshUTXOsKeepsTheChainRuleInTheService(t *testing.T) {
+func TestRefresh_UTX_OsKeepsTheChainRuleInTheService(t *testing.T) {
 	eth := walletOn("eth", "eth_job")
 	btc := walletOn("btc", "btc_job")
 	balances := &recordingBalances{}
@@ -241,7 +241,7 @@ func TestRefreshUTXOsKeepsTheChainRuleInTheService(t *testing.T) {
 	}
 }
 
-func TestWalletRefresher_SerializesRefreshes(t *testing.T) {
+func TestWallet_Refresher_SerializesRefreshes(t *testing.T) {
 	wallets := &fakeWalletStore{wallets: []models.Wallet{walletOn("eth", "a"), walletOn("eth", "b"), walletOn("eth", "c")}}
 	balances := &recordingBalances{}
 	refresher, _ := newTestRefresher(t, balances, wallets, fakeChains{"eth"})

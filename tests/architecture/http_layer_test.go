@@ -17,7 +17,7 @@ var persistenceImports = map[string]bool{
 // TestHTTPLayerDoesNotReachPersistence reports app/http code that imports a
 // repository or a database library, or calls facades.Orm() / facades.DB() /
 // facades.App().
-func TestHTTPLayerDoesNotReachPersistence(t *testing.T) {
+func TestHTTP_Layer_DoesNotReachPersistence(t *testing.T) {
 	module := sharedModule(t)
 	var violations Violations
 	for _, file := range module.ProductionFiles("app/http") {
@@ -39,7 +39,7 @@ func TestHTTPLayerDoesNotReachPersistence(t *testing.T) {
 
 // TestControllersTakeTheirDependenciesByConstructor reports controllers that
 // look their dependencies up through the container instead of receiving them.
-func TestControllersTakeTheirDependenciesByConstructor(t *testing.T) {
+func TestControllers_Take_TheirDependenciesByConstructor(t *testing.T) {
 	module := sharedModule(t)
 	containerPath := module.ImportPathOf("app/container")
 	var violations Violations
@@ -65,7 +65,7 @@ var requestReaders = map[string]bool{
 
 // TestHandlersReadTheirInputThroughAFormRequest reports controllers reading
 // the request directly.
-func TestHandlersReadTheirInputThroughAFormRequest(t *testing.T) {
+func TestHandlers_Read_TheirInputThroughAFormRequest(t *testing.T) {
 	module := sharedModule(t)
 	var violations Violations
 	for _, file := range module.ProductionFiles("app/http/controllers") {
@@ -86,7 +86,7 @@ func TestHandlersReadTheirInputThroughAFormRequest(t *testing.T) {
 // writer (responses.JSON) rendering resources; which shape it writes is
 // decision B2.1/B2.3 of the alignment plan, so this check only counts the
 // inline writes (the measurable part of Test2xxResponsesAreResources).
-func TestControllersDoNotWriteJSONInline(t *testing.T) {
+func TestControllers_Do_NotWriteJSONInline(t *testing.T) {
 	module := sharedModule(t)
 	var violations Violations
 	for _, file := range module.ProductionFiles("app/http/controllers", "app/http/middleware") {
@@ -100,7 +100,7 @@ func TestControllersDoNotWriteJSONInline(t *testing.T) {
 // TestEveryFormRequestFieldTagsFormAndJSONAlike reports a form request field
 // whose form tag is missing or differs from its json tag: the binder reads
 // form, so a mismatch binds nothing, silently.
-func TestEveryFormRequestFieldTagsFormAndJSONAlike(t *testing.T) {
+func TestEvery_Form_RequestFieldTagsFormAndJSONAlike(t *testing.T) {
 	module := sharedModule(t)
 	var violations Violations
 	for _, file := range module.ProductionFiles("app/http/requests") {
@@ -121,7 +121,7 @@ func TestEveryFormRequestFieldTagsFormAndJSONAlike(t *testing.T) {
 // TestContextValuesAreReadOnlyInMiddleware reports string-keyed context reads
 // and writes outside app/http/middleware: the actor and the scope are read
 // through typed accessors (.ai/guidelines/identity-and-scope.md).
-func TestContextValuesAreReadOnlyInMiddleware(t *testing.T) {
+func TestContext_Values_AreReadOnlyInMiddleware(t *testing.T) {
 	module := sharedModule(t)
 	var violations Violations
 	for _, file := range module.ProductionFiles("app") {

@@ -30,7 +30,7 @@ type WithdrawalsControllerTestSuite struct {
 	goravelTesting.TestCase
 }
 
-func TestWithdrawalsControllerSuite(t *testing.T) {
+func TestWithdrawals_Controller_Suite(t *testing.T) {
 	suite.Run(t, new(WithdrawalsControllerTestSuite))
 }
 
@@ -44,7 +44,7 @@ func (s *WithdrawalsControllerTestSuite) SetupTest() {
 // the APIWalletContext middleware. The route is a valid POST under the
 // /api/v1/wallets/{walletId} group so the middleware runs before any
 // controller, matching the v2 auth model introduced in commit a7ddf1a.
-func (s *WithdrawalsControllerTestSuite) TestCreateWithdrawal_WalletNotFound() {
+func (s *WithdrawalsControllerTestSuite) TestCreate_Withdrawal_WalletNotFound() {
 	accountID := uuid.New()
 	s.Require().NoError(facades.Orm().Query().Create(&models.Account{
 		ID:          accountID,

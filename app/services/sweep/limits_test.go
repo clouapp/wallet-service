@@ -19,7 +19,7 @@ import (
 // LoadLimits
 // ---------------------------------------------------------------------------
 
-func TestLoadLimits_NilAccountReturnsDefaultsWithoutReading(t *testing.T) {
+func TestLoad_Limits_NilAccountReturnsDefaultsWithoutReading(t *testing.T) {
 	svc := &service{sweepLimits: func(context.Context, uuid.UUID) (settings.SweepLimitValues, error) {
 		t.Fatal("nil account must not read settings")
 		return settings.SweepLimitValues{}, nil
@@ -31,7 +31,7 @@ func TestLoadLimits_NilAccountReturnsDefaultsWithoutReading(t *testing.T) {
 	assertDefaultLimits(t, limits)
 }
 
-func TestLoadLimits_NilSourceReturnsDefaults(t *testing.T) {
+func TestLoad_Limits_NilSourceReturnsDefaults(t *testing.T) {
 	limits, err := (&service{}).LoadLimits(context.Background(), uuid.New())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -39,7 +39,7 @@ func TestLoadLimits_NilSourceReturnsDefaults(t *testing.T) {
 	assertDefaultLimits(t, limits)
 }
 
-func TestLoadLimits_AppliesStoredSweepLimits(t *testing.T) {
+func TestLoad_Limits_AppliesStoredSweepLimits(t *testing.T) {
 	accountID := uuid.New()
 	svc := &service{sweepLimits: func(_ context.Context, id uuid.UUID) (settings.SweepLimitValues, error) {
 		if id != accountID {
@@ -75,7 +75,7 @@ func TestLoadLimits_AppliesStoredSweepLimits(t *testing.T) {
 	}
 }
 
-func TestLoadLimits_ReadErrorReturnsDefaults(t *testing.T) {
+func TestLoad_Limits_ReadErrorReturnsDefaults(t *testing.T) {
 	svc := &service{sweepLimits: func(context.Context, uuid.UUID) (settings.SweepLimitValues, error) {
 		return settings.SweepLimitValues{}, errors.New("settings unavailable")
 	}}
@@ -87,7 +87,7 @@ func TestLoadLimits_ReadErrorReturnsDefaults(t *testing.T) {
 	assertDefaultLimits(t, limits)
 }
 
-func TestLoadLimits_BlankCapStaysUnlimited(t *testing.T) {
+func TestLoad_Limits_BlankCapStaysUnlimited(t *testing.T) {
 	svc := &service{sweepLimits: func(context.Context, uuid.UUID) (settings.SweepLimitValues, error) {
 		values := settings.DefaultSweepLimits()
 		values.DailyWithdrawCapUSD = "   "
@@ -125,14 +125,14 @@ func assertDefaultLimits(t *testing.T, limits *Limits) {
 // checkAddressesPerRequest
 // ---------------------------------------------------------------------------
 
-func TestCheckAddressesPerRequest_AtLimitIsOK(t *testing.T) {
+func TestCheck_AddressesPerRequest_AtLimitIsOK(t *testing.T) {
 	limits := &Limits{MaxAddressesPerRequest: map[string]int{models.AdapterTypeEVM: 100}}
 	if err := checkAddressesPerRequest(models.AdapterTypeEVM, 100, limits); err != nil {
 		t.Fatalf("at-limit request should pass, got %v", err)
 	}
 }
 
-func TestCheckAddressesPerRequest_AboveLimitReturnsErrTooManyAddresses(t *testing.T) {
+func TestCheck_AddressesPerRequest_AboveLimitReturnsErrTooManyAddresses(t *testing.T) {
 	limits := &Limits{MaxAddressesPerRequest: map[string]int{models.AdapterTypeEVM: 100}}
 	err := checkAddressesPerRequest(models.AdapterTypeEVM, 101, limits)
 	if err == nil {
@@ -143,7 +143,7 @@ func TestCheckAddressesPerRequest_AboveLimitReturnsErrTooManyAddresses(t *testin
 	}
 }
 
-func TestCheckAddressesPerRequest_UnknownAdapterHasNoCap(t *testing.T) {
+func TestCheck_AddressesPerRequest_UnknownAdapterHasNoCap(t *testing.T) {
 	limits := &Limits{MaxAddressesPerRequest: map[string]int{models.AdapterTypeEVM: 100}}
 	if err := checkAddressesPerRequest("cosmos", 10_000, limits); err != nil {
 		t.Fatalf("unknown adapter should have no cap, got %v", err)
@@ -174,7 +174,7 @@ func TestIncrDailyQuota_NilRdb_IsNoop(t *testing.T) {
 	}
 }
 
-func TestIncrDailyQuota_NilAccountIsNoop(t *testing.T) {
+func TestIncr_DailyQuota_NilAccountIsNoop(t *testing.T) {
 	// Even with a non-nil Redis client placeholder, a nil accountID must
 	// short-circuit before any Redis call. We assert by passing nil rdb as
 	// well (any call would panic) — proving the accountID guard runs first.

@@ -19,7 +19,7 @@ type AccountServiceTestSuite struct {
 	goravelTesting.TestCase
 }
 
-func TestAccountService(t *testing.T) {
+func TestService_Account_Service(t *testing.T) {
 	suite.Run(t, new(AccountServiceTestSuite))
 }
 
@@ -40,7 +40,7 @@ func (s *AccountServiceTestSuite) createUser() uuid.UUID {
 
 // TestCreate_Success verifies that Create returns an account with "active" status
 // and creates an owner membership. Requires a live database connection.
-func (s *AccountServiceTestSuite) TestCreate_Success() {
+func (s *AccountServiceTestSuite) TestAccountService_Create_Success() {
 	svc := accountsvc.NewService(accountsvc.Deps{
 		Accounts:    repositories.NewAccountRepository(nil),
 		Memberships: repositories.NewAccountUserRepository(nil),
@@ -60,7 +60,7 @@ func (s *AccountServiceTestSuite) TestCreate_Success() {
 }
 
 // TestAddUser_Success verifies that AddUser adds a new member to an account.
-func (s *AccountServiceTestSuite) TestAddUser_Success() {
+func (s *AccountServiceTestSuite) TestAdd_User_Success() {
 	svc := accountsvc.NewService(accountsvc.Deps{
 		Accounts:    repositories.NewAccountRepository(nil),
 		Memberships: repositories.NewAccountUserRepository(nil),
@@ -112,7 +112,7 @@ func (s *AccountServiceTestSuite) TestAddUser_ReAdd_ClearsDeletedAt() {
 
 // TestIsolation_UserCannotAccessOtherAccount verifies that GetUserRole returns empty
 // string when a user has no membership in the queried account.
-func (s *AccountServiceTestSuite) TestIsolation_UserCannotAccessOtherAccount() {
+func (s *AccountServiceTestSuite) TestIsolation_User_CannotAccessOtherAccount() {
 	svc := accountsvc.NewService(accountsvc.Deps{
 		Accounts:    repositories.NewAccountRepository(nil),
 		Memberships: repositories.NewAccountUserRepository(nil),

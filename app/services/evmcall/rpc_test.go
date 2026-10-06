@@ -34,7 +34,7 @@ func newRPCServer(t *testing.T, results map[string]string) *JSONRPC {
 	return rpc
 }
 
-func TestJSONRPC_DecodesNodeAnswers(t *testing.T) {
+func TestJSONRPC_Decodes_NodeAnswers(t *testing.T) {
 	rpc := newRPCServer(t, map[string]string{
 		"eth_chainId":               `"0xaa36a7"`,
 		"eth_getCode":               `"0x"`,
@@ -69,14 +69,14 @@ func TestJSONRPC_DecodesNodeAnswers(t *testing.T) {
 	}
 }
 
-func TestJSONRPC_AnUnminedTransactionHasNoReceipt(t *testing.T) {
+func TestJSONRPC_An_UnminedTransactionHasNoReceipt(t *testing.T) {
 	rpc := newRPCServer(t, map[string]string{"eth_getTransactionReceipt": `null`})
 	if receipt, err := rpc.Receipt(context.Background(), testSignedHash); err != nil || receipt != nil {
 		t.Fatalf("receipt %+v %v", receipt, err)
 	}
 }
 
-func TestNewJSONRPC_RequiresHTTP(t *testing.T) {
+func TestNew_JSONRPC_RequiresHTTP(t *testing.T) {
 	for _, url := range []string{"", "ws://node", "SEPOLIA_RPC_URL"} {
 		if _, err := NewJSONRPC(url); err == nil {
 			t.Errorf("%q: expected an error", url)

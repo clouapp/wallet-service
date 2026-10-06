@@ -12,7 +12,7 @@ import (
 	"github.com/macrowallets/waas/pkg/types"
 )
 
-func TestBitcoinRateFollowsTheWalletPolicyAndKeepsTheNetworkRateCached(t *testing.T) {
+func TestBitcoin_Rate_FollowsTheWalletPolicyAndKeepsTheNetworkRateCached(t *testing.T) {
 	esplora := newFakeEsplora(t)
 	esplora.ok(esploraTestPrefix+"/fee-estimates", `{"3":4.2}`)
 	shared := feeTestAdapter(esplora)
@@ -47,7 +47,7 @@ func TestBitcoinRateFollowsTheWalletPolicyAndKeepsTheNetworkRateCached(t *testin
 	}
 }
 
-func TestBitcoinFlatFallbackFollowsTheWalletPolicy(t *testing.T) {
+func TestBitcoin_Flat_FallbackFollowsTheWalletPolicy(t *testing.T) {
 	esplora := newFakeEsplora(t)
 	esplora.on(esploraTestPrefix+"/fee-estimates", esploraAnswer{http.StatusInternalServerError, "boom"})
 	policy, err := chain.NewFeePolicy(chain.FeePolicyDeps{Multiplier: decimal.NewFromInt(2)})

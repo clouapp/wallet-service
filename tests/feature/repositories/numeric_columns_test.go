@@ -24,7 +24,7 @@ type NumericColumnsTestSuite struct {
 	suite.Suite
 }
 
-func TestNumericColumnsSuite(t *testing.T) {
+func TestNumeric_Columns_Suite(t *testing.T) {
 	suite.Run(t, new(NumericColumnsTestSuite))
 }
 
@@ -61,7 +61,7 @@ func (s *NumericColumnsTestSuite) insertChain(id string, dustUSD numeric.NullDec
 	s.Require().NoError(facades.Orm().Query().Create(&chain))
 }
 
-func (s *NumericColumnsTestSuite) TestWalletFeeMultiplierAndBalanceUSDRoundTripExactly() {
+func (s *NumericColumnsTestSuite) TestWallet_Fee_MultiplierAndBalanceUSDRoundTripExactly() {
 	repo := repositories.NewWalletRepository(nil)
 	wallet := fixtures.InsertWallet(s.T(), "eth")
 	ctx := context.Background()
@@ -89,7 +89,7 @@ func (s *NumericColumnsTestSuite) TestWalletFeeMultiplierAndBalanceUSDRoundTripE
 	s.Equal("12345678901234567.0123456789", string(balanceJSON))
 }
 
-func (s *NumericColumnsTestSuite) TestWalletDecimalUpdatedThroughUpdateFieldAndClearedToNull() {
+func (s *NumericColumnsTestSuite) TestWallet_Decimal_UpdatedThroughUpdateFieldAndClearedToNull() {
 	repo := repositories.NewWalletRepository(nil)
 	wallet := fixtures.InsertWallet(s.T(), "eth")
 	ctx := context.Background()
@@ -113,7 +113,7 @@ func (s *NumericColumnsTestSuite) TestWalletDecimalUpdatedThroughUpdateFieldAndC
 	s.Equal("null", string(raw))
 }
 
-func (s *NumericColumnsTestSuite) TestAssetBalancePriceAndValueRoundTripExactly() {
+func (s *NumericColumnsTestSuite) TestAsset_Balance_PriceAndValueRoundTripExactly() {
 	s.insertChain("eth", numeric.NewNullDecimal(s.exact("1.0000")))
 	wallet := fixtures.InsertWallet(s.T(), "eth")
 	repo := repositories.NewWalletAssetBalanceRepository(nil)
@@ -140,7 +140,7 @@ func (s *NumericColumnsTestSuite) TestAssetBalancePriceAndValueRoundTripExactly(
 	s.False(bySymbol["USDC"].ValueUSD.Valid)
 }
 
-func (s *NumericColumnsTestSuite) TestSnapshotBalanceUSDRoundTripsExactly() {
+func (s *NumericColumnsTestSuite) TestSnapshot_Balance_USDRoundTripsExactly() {
 	s.insertChain("eth", numeric.NullDecimal{})
 	wallet := fixtures.InsertWallet(s.T(), "eth")
 	repo := repositories.NewWalletBalanceSnapshotRepository(nil)
@@ -158,7 +158,7 @@ func (s *NumericColumnsTestSuite) TestSnapshotBalanceUSDRoundTripsExactly() {
 	s.True(recent[0].BalanceUSD.Decimal.Equal(balanceUSD), "balance_usd = %s", recent[0].BalanceUSD.Decimal)
 }
 
-func (s *NumericColumnsTestSuite) TestChainDustThresholdUSDRoundTrips() {
+func (s *NumericColumnsTestSuite) TestChain_Dust_ThresholdUSDRoundTrips() {
 	s.insertChain("base", numeric.NewNullDecimal(s.exact("0.10")))
 	s.insertChain("btc", numeric.NewNullDecimal(decimal.Zero))
 	repo := repositories.NewChainRepository(nil)
@@ -177,7 +177,7 @@ func (s *NumericColumnsTestSuite) TestChainDustThresholdUSDRoundTrips() {
 	s.Equal("0.0000", *s.columnText("chains", "dust_threshold_usd", "id", "btc"))
 }
 
-func (s *NumericColumnsTestSuite) TestCurrencyPricesRoundTripAndUpdateExactly() {
+func (s *NumericColumnsTestSuite) TestCurrency_Prices_RoundTripAndUpdateExactly() {
 	repo := repositories.NewCurrencyRepository(nil)
 	s.Require().NoError(repo.Create(context.Background(), &models.Currency{
 		Name: "Bitcoin", Code: "BTC", Symbol: "₿", Type: models.CurrencyTypeCrypto, Subunits: 8,
@@ -204,7 +204,7 @@ func (s *NumericColumnsTestSuite) TestCurrencyPricesRoundTripAndUpdateExactly() 
 	s.Equal("65000.1234567891", string(lastJSON))
 }
 
-func (s *NumericColumnsTestSuite) TestCurrencyZeroPriceLeavesTheColumnDefault() {
+func (s *NumericColumnsTestSuite) TestCurrency_Zero_PriceLeavesTheColumnDefault() {
 	repo := repositories.NewCurrencyRepository(nil)
 	s.Require().NoError(repo.Create(context.Background(), &models.Currency{Name: "Euro", Code: "EUR", Symbol: "€", Type: models.CurrencyTypeFiat, Subunits: 2}))
 
@@ -213,7 +213,7 @@ func (s *NumericColumnsTestSuite) TestCurrencyZeroPriceLeavesTheColumnDefault() 
 	s.True(created.CurrentPrice.Equal(decimal.NewFromInt(1)), "current_price = %s", created.CurrentPrice)
 }
 
-func (s *NumericColumnsTestSuite) TestCurrencyUpdatePriceRejectsUnstorablePrices() {
+func (s *NumericColumnsTestSuite) TestCurrency_Update_PriceRejectsUnstorablePrices() {
 	repo := repositories.NewCurrencyRepository(nil)
 	s.Require().NoError(repo.Create(context.Background(), &models.Currency{Name: "Bitcoin", Code: "BTC", Symbol: "₿", Type: models.CurrencyTypeCrypto, Subunits: 8, CurrentPrice: numeric.NewDecimal(s.exact("65000"))}))
 

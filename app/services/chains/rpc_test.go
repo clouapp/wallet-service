@@ -16,7 +16,7 @@ import (
 	chainsvc "github.com/macrowallets/waas/app/services/chains"
 )
 
-func TestUpdateRPC_UnknownChainIsNotFoundBeforeTheAdminCheck(t *testing.T) {
+func TestUpdate_RPC_UnknownChainIsNotFoundBeforeTheAdminCheck(t *testing.T) {
 	t.Parallel()
 
 	store := &rpcStore{}
@@ -30,7 +30,7 @@ func TestUpdateRPC_UnknownChainIsNotFoundBeforeTheAdminCheck(t *testing.T) {
 	require.Empty(t, store.sealed)
 }
 
-func TestUpdateRPC_NonAdminLeavesTheEndpointUnchanged(t *testing.T) {
+func TestUpdate_RPC_NonAdminLeavesTheEndpointUnchanged(t *testing.T) {
 	t.Parallel()
 
 	store := &rpcStore{chain: ethChain("1", "1", "1"), sealed: "kept"}
@@ -44,7 +44,7 @@ func TestUpdateRPC_NonAdminLeavesTheEndpointUnchanged(t *testing.T) {
 	require.Equal(t, "kept", store.sealed)
 }
 
-func TestUpdateRPC_EmptyURLIsNotStored(t *testing.T) {
+func TestUpdate_RPC_EmptyURLIsNotStored(t *testing.T) {
 	t.Parallel()
 
 	store := &rpcStore{chain: ethChain("1", "1", "1"), sealed: "kept"}
@@ -62,7 +62,7 @@ func TestUpdateRPC_EmptyURLIsNotStored(t *testing.T) {
 	require.Empty(t, activity.rows)
 }
 
-func TestUpdateRPC_AdminSealsTheURLAndTheDialerSeesTheHost(t *testing.T) {
+func TestUpdate_RPC_AdminSealsTheURLAndTheDialerSeesTheHost(t *testing.T) {
 	t.Parallel()
 
 	const endpoint = "https://dial.example/v2/route-key"
@@ -108,7 +108,7 @@ func TestUpdateRPC_AdminSealsTheURLAndTheDialerSeesTheHost(t *testing.T) {
 	require.Equal(t, "5", store.chain.GasReadinessThreshold().String())
 }
 
-func TestUpdateRPC_OpenFailureDoesNotIncludeTheURL(t *testing.T) {
+func TestUpdate_RPC_OpenFailureDoesNotIncludeTheURL(t *testing.T) {
 	t.Parallel()
 
 	const endpoint = "https://dial.example/v2/route-key"

@@ -19,7 +19,7 @@ type AccessTokenRepositoryTestSuite struct {
 	accRepo *repositories.AccountRepository
 }
 
-func TestAccessTokenRepositorySuite(t *testing.T) {
+func TestAccess_Token_RepositorySuite(t *testing.T) {
 	suite.Run(t, new(AccessTokenRepositoryTestSuite))
 }
 
@@ -35,7 +35,7 @@ func (s *AccessTokenRepositoryTestSuite) createAccount() uuid.UUID {
 	return acc.ID
 }
 
-func (s *AccessTokenRepositoryTestSuite) TestCreate_Success() {
+func (s *AccessTokenRepositoryTestSuite) TestAccessTokenRepository_Create_Success() {
 	accID := s.createAccount()
 	token := &models.AccessToken{ID: uuid.New(), AccountID: accID, Name: "CI Token"}
 	err := s.repo.Create(context.Background(), token)
@@ -48,7 +48,7 @@ func (s *AccessTokenRepositoryTestSuite) TestCreate_Success() {
 	s.Equal(int64(1), nulls)
 }
 
-func (s *AccessTokenRepositoryTestSuite) TestCreateStoresAPermissionArrayAsJsonb() {
+func (s *AccessTokenRepositoryTestSuite) TestCreate_Stores_APermissionArrayAsJsonb() {
 	accID := s.createAccount()
 	token := &models.AccessToken{
 		ID: uuid.New(), AccountID: accID, Name: "Scoped", TokenHash: "not-a-secret",
@@ -67,7 +67,7 @@ func (s *AccessTokenRepositoryTestSuite) TestCreateStoresAPermissionArrayAsJsonb
 	s.Equal("array", kind)
 }
 
-func (s *AccessTokenRepositoryTestSuite) TestFindByAccountID() {
+func (s *AccessTokenRepositoryTestSuite) TestFind_By_AccountID() {
 	accID := s.createAccount()
 	s.Require().NoError(s.repo.Create(context.Background(), &models.AccessToken{ID: uuid.New(), AccountID: accID, Name: "T1"}))
 	s.Require().NoError(s.repo.Create(context.Background(), &models.AccessToken{ID: uuid.New(), AccountID: accID, Name: "T2"}))
@@ -77,7 +77,7 @@ func (s *AccessTokenRepositoryTestSuite) TestFindByAccountID() {
 	s.Len(tokens, 2)
 }
 
-func (s *AccessTokenRepositoryTestSuite) TestFindByIDAndAccount_Found() {
+func (s *AccessTokenRepositoryTestSuite) TestFind_ByIDAndAccount_Found() {
 	accID := s.createAccount()
 	token := &models.AccessToken{ID: uuid.New(), AccountID: accID, Name: "Find Me"}
 	s.Require().NoError(s.repo.Create(context.Background(), token))
@@ -88,13 +88,13 @@ func (s *AccessTokenRepositoryTestSuite) TestFindByIDAndAccount_Found() {
 	s.Equal("Find Me", found.Name)
 }
 
-func (s *AccessTokenRepositoryTestSuite) TestFindByIDAndAccount_NotFound() {
+func (s *AccessTokenRepositoryTestSuite) TestFind_ByIDAndAccount_NotFound() {
 	found, err := s.repo.FindByIDAndAccount(context.Background(), uuid.New(), uuid.New())
 	s.ErrorIs(err, models.ErrRepositoryNotFound)
 	s.Nil(found)
 }
 
-func (s *AccessTokenRepositoryTestSuite) TestFindByIDAndAccount_WrongAccount() {
+func (s *AccessTokenRepositoryTestSuite) TestFind_ByIDAndAccount_WrongAccount() {
 	accID := s.createAccount()
 	otherAccID := s.createAccount()
 	token := &models.AccessToken{ID: uuid.New(), AccountID: accID, Name: "Mine"}
@@ -105,7 +105,7 @@ func (s *AccessTokenRepositoryTestSuite) TestFindByIDAndAccount_WrongAccount() {
 	s.Nil(found)
 }
 
-func (s *AccessTokenRepositoryTestSuite) TestDeleteByAccountAndCreator_LeavesOtherTokens() {
+func (s *AccessTokenRepositoryTestSuite) TestDelete_ByAccountAndCreator_LeavesOtherTokens() {
 	accID := s.createAccount()
 	otherAccount := s.createAccount()
 	creator := uuid.New()
@@ -129,7 +129,7 @@ func (s *AccessTokenRepositoryTestSuite) TestDeleteByAccountAndCreator_LeavesOth
 	s.Equal("Elsewhere", found.Name)
 }
 
-func (s *AccessTokenRepositoryTestSuite) TestRecordUseSetsLastUsedAtAndSkipsRevoked() {
+func (s *AccessTokenRepositoryTestSuite) TestRecord_Use_SetsLastUsedAtAndSkipsRevoked() {
 	accID := s.createAccount()
 	active := &models.AccessToken{ID: uuid.New(), AccountID: accID, Name: "Active"}
 	revoked := &models.AccessToken{ID: uuid.New(), AccountID: accID, Name: "Revoked"}
@@ -153,7 +153,7 @@ func (s *AccessTokenRepositoryTestSuite) TestRecordUseSetsLastUsedAtAndSkipsRevo
 	s.NotNil(found.RevokedAt)
 }
 
-func (s *AccessTokenRepositoryTestSuite) TestMarkRevokedKeepsTheRowAndTheFirstStamp() {
+func (s *AccessTokenRepositoryTestSuite) TestMark_Revoked_KeepsTheRowAndTheFirstStamp() {
 	accID := s.createAccount()
 	token := &models.AccessToken{ID: uuid.New(), AccountID: accID, Name: "Keep"}
 	s.Require().NoError(s.repo.Create(context.Background(), token))
@@ -173,7 +173,7 @@ func (s *AccessTokenRepositoryTestSuite) TestMarkRevokedKeepsTheRowAndTheFirstSt
 	s.True(first.RevokedAt.Equal(*second.RevokedAt))
 }
 
-func (s *AccessTokenRepositoryTestSuite) TestDelete() {
+func (s *AccessTokenRepositoryTestSuite) TestAccessTokenRepository_Delete_Succeeds() {
 	accID := s.createAccount()
 	token := &models.AccessToken{ID: uuid.New(), AccountID: accID, Name: "To Delete"}
 	s.Require().NoError(s.repo.Create(context.Background(), token))

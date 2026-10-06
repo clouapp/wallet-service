@@ -100,7 +100,7 @@ func newTestService(store Store, admins PlatformAdmins) *Service {
 	return NewService(Deps{Store: store, Admins: admins, Activity: discardActivity{}})
 }
 
-func TestListMissingRowUsesCatalogDefaultAndWritesNothing(t *testing.T) {
+func TestList_Missing_RowUsesCatalogDefaultAndWritesNothing(t *testing.T) {
 	t.Parallel()
 
 	store := newMemoryStore()
@@ -128,7 +128,7 @@ func TestListMissingRowUsesCatalogDefaultAndWritesNothing(t *testing.T) {
 	}
 }
 
-func TestSetThenListReadsTheStoredBoolean(t *testing.T) {
+func TestSet_Then_ListReadsTheStoredBoolean(t *testing.T) {
 	t.Parallel()
 
 	store := newMemoryStore()
@@ -177,7 +177,7 @@ func TestSetThenListReadsTheStoredBoolean(t *testing.T) {
 	}
 }
 
-func TestSetRejectsUnknownKeyAndAuditorBeforeWriting(t *testing.T) {
+func TestSet_Rejects_UnknownKeyAndAuditorBeforeWriting(t *testing.T) {
 	t.Parallel()
 
 	store := newMemoryStore()
@@ -211,7 +211,7 @@ func TestSetRejectsUnknownKeyAndAuditorBeforeWriting(t *testing.T) {
 	}
 }
 
-func TestListHidesFlagsFromAUserAndFromAnotherAccount(t *testing.T) {
+func TestList_Hides_FlagsFromAUserAndFromAnotherAccount(t *testing.T) {
 	t.Parallel()
 
 	store := newMemoryStore()
@@ -246,7 +246,7 @@ func TestListHidesFlagsFromAUserAndFromAnotherAccount(t *testing.T) {
 	}
 }
 
-func TestPlatformListAndSetRequireAnAdminAndUseTheCatalogDefault(t *testing.T) {
+func TestPlatform_List_AndSetRequireAnAdminAndUseTheCatalogDefault(t *testing.T) {
 	t.Parallel()
 
 	store := newMemoryStore()
@@ -297,7 +297,7 @@ func TestPlatformListAndSetRequireAnAdminAndUseTheCatalogDefault(t *testing.T) {
 	}
 }
 
-func TestActiveGlobalUsesTheCatalogDefaultAndIgnoresAccountRows(t *testing.T) {
+func TestActive_Global_UsesTheCatalogDefaultAndIgnoresAccountRows(t *testing.T) {
 	t.Parallel()
 
 	store := newMemoryStore()
@@ -351,7 +351,7 @@ func (s failingGlobalStore) ListGlobal(context.Context) ([]models.GlobalFeature,
 	return nil, s.err
 }
 
-func TestActiveForAccountUsesTheCatalogDefaultAndIgnoresGlobalRows(t *testing.T) {
+func TestActive_For_AccountUsesTheCatalogDefaultAndIgnoresGlobalRows(t *testing.T) {
 	t.Parallel()
 
 	store := newMemoryStore()
@@ -411,7 +411,7 @@ func (s failingAccountStore) ListAccount(context.Context, uuid.UUID) ([]models.F
 	return nil, s.err
 }
 
-func TestActiveForAccountReportsAStoreError(t *testing.T) {
+func TestActive_For_AccountReportsAStoreError(t *testing.T) {
 	t.Parallel()
 
 	want := errors.New("account features unavailable")
@@ -422,7 +422,7 @@ func TestActiveForAccountReportsAStoreError(t *testing.T) {
 	}
 }
 
-func TestActiveGlobalReportsAStoreError(t *testing.T) {
+func TestActive_Global_ReportsAStoreError(t *testing.T) {
 	t.Parallel()
 
 	want := errors.New("global features unavailable")
@@ -467,7 +467,7 @@ func (a *scopeAccounts) FindByID(_ context.Context, id uuid.UUID) (*models.Accou
 	return &models.Account{ID: id}, nil
 }
 
-func TestListScopedForPlatformRefusesOtherScopesBeforeTheAdminCheck(t *testing.T) {
+func TestList_Scoped_ForPlatformRefusesOtherScopesBeforeTheAdminCheck(t *testing.T) {
 	t.Parallel()
 
 	store := newMemoryStore()
@@ -490,7 +490,7 @@ func TestListScopedForPlatformRefusesOtherScopesBeforeTheAdminCheck(t *testing.T
 	}
 }
 
-func TestListScopedForPlatformReadsTheAccountRowAndNotTheGlobalVeto(t *testing.T) {
+func TestList_Scoped_ForPlatformReadsTheAccountRowAndNotTheGlobalVeto(t *testing.T) {
 	t.Parallel()
 
 	store := newMemoryStore()
@@ -573,7 +573,7 @@ func (a *recordingFeatureActivity) Append(_ context.Context, row models.AccountA
 	return nil
 }
 
-func TestSetScopedForPlatformRefusesOtherScopesBeforeTheAdminCheck(t *testing.T) {
+func TestSet_Scoped_ForPlatformRefusesOtherScopesBeforeTheAdminCheck(t *testing.T) {
 	t.Parallel()
 
 	store := newMemoryStore()
@@ -597,7 +597,7 @@ func TestSetScopedForPlatformRefusesOtherScopesBeforeTheAdminCheck(t *testing.T)
 	}
 }
 
-func TestSetScopedForPlatformWritesTheAccountRowAndNotTheGlobalVeto(t *testing.T) {
+func TestSet_Scoped_ForPlatformWritesTheAccountRowAndNotTheGlobalVeto(t *testing.T) {
 	t.Parallel()
 
 	store := newMemoryStore()
@@ -736,7 +736,7 @@ func TestSetScopedForPlatformWritesTheAccountRowAndNotTheGlobalVeto(t *testing.T
 	}
 }
 
-func TestSetGlobalRecordsBeforeAndAfterAndSkipsAnUnchangedFlag(t *testing.T) {
+func TestSet_Global_RecordsBeforeAndAfterAndSkipsAnUnchangedFlag(t *testing.T) {
 	t.Parallel()
 
 	store := newMemoryStore()
@@ -779,7 +779,7 @@ func TestSetGlobalRecordsBeforeAndAfterAndSkipsAnUnchangedFlag(t *testing.T) {
 	}
 }
 
-func TestSetScopedForPlatformRefusedScopesRecordNothing(t *testing.T) {
+func TestSet_Scoped_ForPlatformRefusedScopesRecordNothing(t *testing.T) {
 	t.Parallel()
 
 	store := newMemoryStore()
@@ -847,7 +847,7 @@ func boolMapsEqual(left, right map[string]bool) bool {
 	return true
 }
 
-func TestFeatureAuditNamesEveryCatalogFlag(t *testing.T) {
+func TestFeature_Audit_NamesEveryCatalogFlag(t *testing.T) {
 	t.Parallel()
 
 	for _, definition := range All() {

@@ -7,7 +7,7 @@ import (
 	authsvc "github.com/macrowallets/waas/app/services/auth"
 )
 
-func TestGenerateAPITokenSecretIs32BytesHex(t *testing.T) {
+func TestGenerate_API_TokenSecretIs32BytesHex(t *testing.T) {
 	t.Parallel()
 
 	svc := authsvc.NewService()
@@ -37,7 +37,7 @@ func TestGenerateAPITokenSecretIs32BytesHex(t *testing.T) {
 	}
 }
 
-func TestAPITokenHashAcceptsLegacyStoredForm(t *testing.T) {
+func TestAPI_Token_HashAcceptsLegacyStoredForm(t *testing.T) {
 	t.Parallel()
 
 	svc := authsvc.NewService()
@@ -58,7 +58,7 @@ func TestAPITokenHashAcceptsLegacyStoredForm(t *testing.T) {
 	}
 }
 
-func TestAPITokenHashRejectsSecretDigestWithoutTheClaim(t *testing.T) {
+func TestAPI_Token_HashRejectsSecretDigestWithoutTheClaim(t *testing.T) {
 	t.Parallel()
 
 	svc := authsvc.NewService()

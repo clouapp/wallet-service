@@ -11,7 +11,7 @@ import (
 	"github.com/macrowallets/waas/app/services/currencies"
 )
 
-func TestFindAllActiveAndByCode(t *testing.T) {
+func TestFind_All_ActiveAndByCode(t *testing.T) {
 	t.Parallel()
 
 	usd := &models.Currency{Code: "USD", Active: true}
@@ -33,7 +33,7 @@ func TestFindAllActiveAndByCode(t *testing.T) {
 	require.ErrorIs(t, err, store.err)
 }
 
-func TestCurrencyReadsRequireContextAndStore(t *testing.T) {
+func TestCurrency_Reads_RequireContextAndStore(t *testing.T) {
 	t.Parallel()
 
 	_, err := currencies.NewService(currencies.Deps{Store: &fakeStore{}}).FindAllActive(nil)

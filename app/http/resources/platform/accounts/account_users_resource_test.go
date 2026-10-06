@@ -12,7 +12,7 @@ import (
 	"github.com/macrowallets/waas/app/models"
 )
 
-func TestPlatformAccountUserViewMatchesTheMemberListAndThePlatformUser(t *testing.T) {
+func TestPlatform_Account_UserViewMatchesTheMemberListAndThePlatformUser(t *testing.T) {
 	t.Parallel()
 
 	membershipID := uuid.MustParse("11111111-1111-4111-8111-111111111111")

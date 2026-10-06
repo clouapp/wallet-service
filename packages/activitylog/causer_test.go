@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-func TestCauserRoundTrips(t *testing.T) {
+func TestCauser_Round_Trips(t *testing.T) {
 	ctx := WithCauser(context.Background(), Causer{Type: "user", ID: "42", Label: "ana@acme.example"})
 
 	got, ok := CauserFromContext(ctx)
@@ -22,7 +22,7 @@ func TestCauserRoundTrips(t *testing.T) {
 // causer REFUSES the write, while a causer filled with "" would be an
 // attribution to nobody — which is precisely the defect the design rejects the
 // Postgres-trigger approach over. See the spec §3.2 and §7.3.
-func TestCauserAbsentIsNotAnEmptyCauser(t *testing.T) {
+func TestCauser_Absent_IsNotAnEmptyCauser(t *testing.T) {
 	if _, ok := CauserFromContext(context.Background()); ok {
 		t.Fatal("an empty context must not answer ok=true")
 	}
@@ -36,7 +36,7 @@ func TestCauserAbsentIsNotAnEmptyCauser(t *testing.T) {
 // An intent belongs to the NEXT captured statement. If it survived, it would
 // leak onto an unrelated write later in the same request and the trail would
 // claim the settings UPDATE was a "login".
-func TestIntentIsConsumedOnce(t *testing.T) {
+func TestIntent_Is_ConsumedOnce(t *testing.T) {
 	ctx := WithIntent(context.Background(), Intent{Event: "login", Description: "Signed in"})
 
 	first, ok := takeIntent(ctx)
@@ -49,7 +49,7 @@ func TestIntentIsConsumedOnce(t *testing.T) {
 	}
 }
 
-func TestTakeIntentOnAContextWithoutOne(t *testing.T) {
+func TestTake_Intent_OnAContextWithoutOne(t *testing.T) {
 	if _, ok := takeIntent(context.Background()); ok {
 		t.Fatal("a context with no intent must not answer ok=true")
 	}
@@ -57,7 +57,7 @@ func TestTakeIntentOnAContextWithoutOne(t *testing.T) {
 
 // One request's writes can be concurrent, and the intent cell is the only
 // mutable state this package keeps in a context. Exactly one caller may win.
-func TestIntentIsConsumedExactlyOnceUnderConcurrency(t *testing.T) {
+func TestIntent_Is_ConsumedExactlyOnceUnderConcurrency(t *testing.T) {
 	ctx := WithIntent(context.Background(), Intent{Event: "login"})
 
 	const racers = 32
@@ -84,7 +84,7 @@ func TestIntentIsConsumedExactlyOnceUnderConcurrency(t *testing.T) {
 	}
 }
 
-func TestScopeAndBatchRoundTrip(t *testing.T) {
+func TestScope_And_BatchRoundTrip(t *testing.T) {
 	ctx := WithBatch(WithScope(context.Background(), "acme"), "req-1")
 
 	if got := ScopeFromContext(ctx); got != "acme" {
@@ -95,7 +95,7 @@ func TestScopeAndBatchRoundTrip(t *testing.T) {
 	}
 }
 
-func TestScopeAndBatchDefaultToEmpty(t *testing.T) {
+func TestScope_And_BatchDefaultToEmpty(t *testing.T) {
 	if got := ScopeFromContext(context.Background()); got != "" {
 		t.Fatalf("scope: esperava vazio, veio %q", got)
 	}
@@ -106,7 +106,7 @@ func TestScopeAndBatchDefaultToEmpty(t *testing.T) {
 
 // Intents are one-shot so they cannot leak onto an unrelated write later in
 // the same request. A multi-statement act re-applies WithIntent per write.
-func TestAnIntentIsOneShot(t *testing.T) {
+func TestAn_Intent_IsOneShot(t *testing.T) {
 	ctx := WithIntent(context.Background(), Intent{Event: "login"})
 
 	if _, ok := takeIntent(ctx); !ok {

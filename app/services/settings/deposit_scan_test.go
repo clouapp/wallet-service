@@ -10,7 +10,7 @@ import (
 	"github.com/macrowallets/waas/app/models"
 )
 
-func TestEffectiveDepositScan_MissingRowKeepsZeros(t *testing.T) {
+func TestEffective_DepositScan_MissingRowKeepsZeros(t *testing.T) {
 	t.Parallel()
 
 	service := newTestService(newMemoryStore())
@@ -23,7 +23,7 @@ func TestEffectiveDepositScan_MissingRowKeepsZeros(t *testing.T) {
 	}
 }
 
-func TestEffectiveDepositScan_StoredRowOverridesOneKey(t *testing.T) {
+func TestEffective_DepositScan_StoredRowOverridesOneKey(t *testing.T) {
 	t.Parallel()
 
 	store := newMemoryStore()
@@ -44,7 +44,7 @@ func TestEffectiveDepositScan_StoredRowOverridesOneKey(t *testing.T) {
 	}
 }
 
-func TestEffectiveDepositScan_InvalidKeyFallsBackToZero(t *testing.T) {
+func TestEffective_DepositScan_InvalidKeyFallsBackToZero(t *testing.T) {
 	t.Parallel()
 
 	store := newMemoryStore()
@@ -63,7 +63,7 @@ func TestEffectiveDepositScan_InvalidKeyFallsBackToZero(t *testing.T) {
 	}
 }
 
-func TestEffectiveDepositScan_ConcurrencyAboveTheCeilingFallsBack(t *testing.T) {
+func TestEffective_DepositScan_ConcurrencyAboveTheCeilingFallsBack(t *testing.T) {
 	t.Parallel()
 
 	store := newMemoryStore()
@@ -81,7 +81,7 @@ func TestEffectiveDepositScan_ConcurrencyAboveTheCeilingFallsBack(t *testing.T) 
 	}
 }
 
-func TestEffectiveDepositScan_StoreError(t *testing.T) {
+func TestEffective_DepositScan_StoreError(t *testing.T) {
 	t.Parallel()
 
 	service := newTestService(platformErrStore{err: errors.New("db down")})
@@ -91,7 +91,7 @@ func TestEffectiveDepositScan_StoreError(t *testing.T) {
 	}
 }
 
-func TestEffectiveDepositScan_RequiresAPlatformReader(t *testing.T) {
+func TestEffective_DepositScan_RequiresAPlatformReader(t *testing.T) {
 	t.Parallel()
 
 	service := newTestService(errStore{err: errors.New("db down")})
@@ -101,7 +101,7 @@ func TestEffectiveDepositScan_RequiresAPlatformReader(t *testing.T) {
 	}
 }
 
-func TestEffectiveDepositScan_RejectsANilContext(t *testing.T) {
+func TestEffective_DepositScan_RejectsANilContext(t *testing.T) {
 	t.Parallel()
 
 	_, err := newTestService(newMemoryStore()).EffectiveDepositScan(nil)
@@ -110,7 +110,7 @@ func TestEffectiveDepositScan_RejectsANilContext(t *testing.T) {
 	}
 }
 
-func TestAccountRegistryOmitsDepositScan(t *testing.T) {
+func TestAccount_Registry_OmitsDepositScan(t *testing.T) {
 	t.Parallel()
 
 	view, err := newTestService(newMemoryStore()).Registry(context.Background(), uuid.New(), "owner")
@@ -132,7 +132,7 @@ func TestAccountRegistryOmitsDepositScan(t *testing.T) {
 	}
 }
 
-func TestSaveDepositScanIsNotAnAccountGroup(t *testing.T) {
+func TestSave_Deposit_ScanIsNotAnAccountGroup(t *testing.T) {
 	t.Parallel()
 
 	_, err := newTestService(newMemoryStore()).Save(
@@ -144,7 +144,7 @@ func TestSaveDepositScanIsNotAnAccountGroup(t *testing.T) {
 	}
 }
 
-func TestValidateDepositScan(t *testing.T) {
+func TestValidate_Deposit_Scan(t *testing.T) {
 	t.Parallel()
 
 	group, ok := FindGroup(groupDepositScan)

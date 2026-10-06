@@ -35,7 +35,7 @@ func (p *failingTipProvider) GetBlockHeight(context.Context, string) (uint64, er
 	return 0, context.DeadlineExceeded
 }
 
-func TestChainRPCNetworksReadTheTipFromTheAdapterOnTheFirstTick(t *testing.T) {
+func TestChain_RPC_NetworksReadTheTipFromTheAdapterOnTheFirstTick(t *testing.T) {
 	adapter := &evmTipChain{MockChain: mocks.NewMockChain(models.ChainBase), height: 0x2d6f3c7}
 	inner := &failingTipProvider{}
 	svc := &Service{
@@ -54,7 +54,7 @@ func TestChainRPCNetworksReadTheTipFromTheAdapterOnTheFirstTick(t *testing.T) {
 	}
 }
 
-func TestProviderNetworksStillWaitForRepeatedFailuresBeforeFallingBack(t *testing.T) {
+func TestProvider_Networks_StillWaitForRepeatedFailuresBeforeFallingBack(t *testing.T) {
 	adapter := &evmTipChain{MockChain: mocks.NewMockChain(models.ChainETH), height: 0x10}
 	inner := &failingTipProvider{}
 	svc := &Service{

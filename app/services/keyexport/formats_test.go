@@ -25,7 +25,7 @@ func randomSecp256k1Key(t *testing.T) []byte {
 	return key.Serialize()
 }
 
-func TestEVMPrivateKeyHex_ImportsToTheSameAddressAsGoEthereum(t *testing.T) {
+func TestEVM_PrivateKeyHex_ImportsToTheSameAddressAsGoEthereum(t *testing.T) {
 	privateKey := randomSecp256k1Key(t)
 	exported, err := EVMPrivateKeyHex(privateKey)
 	if err != nil {
@@ -51,7 +51,7 @@ func TestEVMPrivateKeyHex_ImportsToTheSameAddressAsGoEthereum(t *testing.T) {
 	}
 }
 
-func TestBitcoinWIF_EncodesTestnetAndMainnetCompressed(t *testing.T) {
+func TestBitcoin_WIF_EncodesTestnetAndMainnetCompressed(t *testing.T) {
 	privateKey := randomSecp256k1Key(t)
 	cases := []struct {
 		testnet  bool
@@ -97,7 +97,7 @@ func TestBitcoinWIF_EncodesTestnetAndMainnetCompressed(t *testing.T) {
 	}
 }
 
-func TestDescriptorChecksum_MatchesBIP380(t *testing.T) {
+func TestDescriptor_Checksum_MatchesBIP380(t *testing.T) {
 	vectors := map[string]string{
 		"raw(deadbeef)":            "89f8spxm",
 		"wpkh(cTestVectorNotAKey)": "4u7gh8gd",
@@ -113,7 +113,7 @@ func TestDescriptorChecksum_MatchesBIP380(t *testing.T) {
 	}
 }
 
-func TestSolanaKeypair_Base58AndJSONImportToTheSeedAddress(t *testing.T) {
+func TestSolana_Keypair_Base58AndJSONImportToTheSeedAddress(t *testing.T) {
 	seed := make([]byte, ed25519.SeedSize)
 	if _, err := rand.Read(seed); err != nil {
 		t.Fatal(err)
@@ -166,7 +166,7 @@ func randomEd25519ScalarBigEndian(t *testing.T) []byte {
 
 // The genesis key is a scalar: read as an RFC 8032 seed (what Phantom and
 // solana-keygen do with 32 bytes) it yields another public key.
-func TestSolanaScalar_RederivesThePublicKeyButIsNotASeed(t *testing.T) {
+func TestSolana_Scalar_RederivesThePublicKeyButIsNotASeed(t *testing.T) {
 	scalar := randomEd25519ScalarBigEndian(t)
 	publicKey, err := Ed25519PublicKeyOfScalar(scalar)
 	if err != nil {

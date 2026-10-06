@@ -16,7 +16,7 @@ import (
 	"github.com/macrowallets/waas/app/services/credentialmail"
 )
 
-func TestQueuedCredentialMailHasNoCredentialAndMailQueueRefuses(t *testing.T) {
+func TestQueued_Credential_MailHasNoCredentialAndMailQueueRefuses(t *testing.T) {
 	const (
 		inviteIDRaw = "22222222-2222-2222-2222-222222222222"
 		mintedLink  = "https://app.example/accept-invite?token=invite-raw-token"

@@ -10,7 +10,7 @@ import (
 )
 
 // TestEVMGasReadinessThreshold verifies the getter wiring. Tasks 13+ populate cfg.
-func TestEVMGasReadinessThreshold(t *testing.T) {
+func TestEVM_Gas_ReadinessThreshold(t *testing.T) {
 	got := (&EVMLive{cfg: EVMConfig{GasReadinessThreshold: big.NewInt(5_000_000_000_000_000)}}).GasReadinessThreshold()
 	if got == nil || got.String() != "5000000000000000" {
 		t.Fatalf("expected 5000000000000000, got %v", got)
@@ -23,7 +23,7 @@ func TestEVMGasReadinessThreshold(t *testing.T) {
 // TestEVMEstimateGasPrice proves the adapter returns the raw wei-valued price
 // fetched from `eth_gasPrice` so the sweep planner can multiply by the
 // hardcoded gas limits and applies the execution safety multiplier.
-func TestEVMEstimateGasPrice(t *testing.T) {
+func TestEVM_Estimate_GasPrice(t *testing.T) {
 	var seenMethod string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var req map[string]interface{}
@@ -53,7 +53,7 @@ func TestEVMEstimateGasPrice(t *testing.T) {
 // TestEVMEstimateGasPrice_PropagatesRPCError ensures the adapter surfaces
 // transport / RPC errors so the sweep planner can decide to fall back to a
 // nil EstimatedGas rather than silently pretending the price is 0.
-func TestEVMEstimateGasPrice_PropagatesRPCError(t *testing.T) {
+func TestEVM_EstimateGasPrice_PropagatesRPCError(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var req map[string]interface{}
 		_ = json.NewDecoder(r.Body).Decode(&req)
@@ -75,7 +75,7 @@ func TestEVMEstimateGasPrice_PropagatesRPCError(t *testing.T) {
 }
 
 // TestEVMDustThresholdNativeVsToken verifies native vs token asset routing.
-func TestEVMDustThresholdNativeVsToken(t *testing.T) {
+func TestEVM_Dust_ThresholdNativeVsToken(t *testing.T) {
 	adapter := &EVMLive{cfg: EVMConfig{
 		NativeSymbol:        "eth",
 		DustThresholdNative: big.NewInt(500_000_000_000_000),
@@ -92,7 +92,7 @@ func TestEVMDustThresholdNativeVsToken(t *testing.T) {
 // field returned by `eth_getTransactionByHash` so the confirmation loop can
 // reconcile sweep / withdrawal / gas_seed rows that were inserted with
 // block_number=0. The JSON shape mirrors what go-ethereum / Infura return.
-func TestEVMGetTransactionBlock_Mined(t *testing.T) {
+func TestEVM_GetTransactionBlock_Mined(t *testing.T) {
 	var seenMethod string
 	var seenHash string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -133,7 +133,7 @@ func TestEVMGetTransactionBlock_Mined(t *testing.T) {
 // node can return: the whole result is null (tx unknown to this node) and the
 // tx exists but blockNumber is null. Both must return (0, nil) so the
 // confirmation loop treats the row as still pending and retries next tick.
-func TestEVMGetTransactionBlock_Pending(t *testing.T) {
+func TestEVM_GetTransactionBlock_Pending(t *testing.T) {
 	tests := []struct {
 		name   string
 		result interface{}
@@ -167,7 +167,7 @@ func TestEVMGetTransactionBlock_Pending(t *testing.T) {
 // TestEVMGetTransactionBlock_RPCError surfaces RPC-level failures so the
 // confirmation loop can skip and retry rather than silently flipping the row
 // to confirmed with a bogus block number.
-func TestEVMGetTransactionBlock_RPCError(t *testing.T) {
+func TestEVM_GetTransactionBlock_RPCError(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var req map[string]interface{}
 		_ = json.NewDecoder(r.Body).Decode(&req)

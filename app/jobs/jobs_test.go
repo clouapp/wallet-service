@@ -13,7 +13,7 @@ import (
 	"github.com/macrowallets/waas/pkg/httpclient"
 )
 
-func TestRefreshWalletBalancesRejectsEmptyArgs(t *testing.T) {
+func TestRefresh_Wallet_BalancesRejectsEmptyArgs(t *testing.T) {
 	j := &RefreshWalletBalances{}
 	if j.Signature() != "refresh_wallet_balances" {
 		t.Fatalf("unexpected signature: %s", j.Signature())
@@ -24,7 +24,7 @@ func TestRefreshWalletBalancesRejectsEmptyArgs(t *testing.T) {
 	}
 }
 
-func TestRefreshWalletBalancesRejectsInvalidUUID(t *testing.T) {
+func TestRefresh_Wallet_BalancesRejectsInvalidUUID(t *testing.T) {
 	j := &RefreshWalletBalances{}
 	err := j.Handle(mustWalletArg("not-a-uuid", "eth"))
 	if err == nil {
@@ -32,7 +32,7 @@ func TestRefreshWalletBalancesRejectsInvalidUUID(t *testing.T) {
 	}
 }
 
-func TestRefreshWalletTransactionsRejectsEmptyArgs(t *testing.T) {
+func TestRefresh_Wallet_TransactionsRejectsEmptyArgs(t *testing.T) {
 	j := &RefreshWalletTransactions{}
 	err := j.Handle()
 	if err == nil {
@@ -40,7 +40,7 @@ func TestRefreshWalletTransactionsRejectsEmptyArgs(t *testing.T) {
 	}
 }
 
-func TestRefreshWalletTokensRejectsEmptyArgs(t *testing.T) {
+func TestRefresh_Wallet_TokensRejectsEmptyArgs(t *testing.T) {
 	j := &RefreshWalletTokens{}
 	err := j.Handle()
 	if err == nil {
@@ -48,7 +48,7 @@ func TestRefreshWalletTokensRejectsEmptyArgs(t *testing.T) {
 	}
 }
 
-func TestRefreshWalletUTXOsRejectsEmptyArgs(t *testing.T) {
+func TestRefresh_Wallet_UTXOsRejectsEmptyArgs(t *testing.T) {
 	j := &RefreshWalletUTXOs{}
 	err := j.Handle()
 	if err == nil {
@@ -56,7 +56,7 @@ func TestRefreshWalletUTXOsRejectsEmptyArgs(t *testing.T) {
 	}
 }
 
-func TestReconcileWalletStateRejectsEmptyArgs(t *testing.T) {
+func TestReconcile_Wallet_StateRejectsEmptyArgs(t *testing.T) {
 	j := &ReconcileWalletState{}
 	err := j.Handle()
 	if err == nil {
@@ -64,7 +64,7 @@ func TestReconcileWalletStateRejectsEmptyArgs(t *testing.T) {
 	}
 }
 
-func TestRefreshWalletBalancesRetryPolicy(t *testing.T) {
+func TestRefresh_Wallet_BalancesRetryPolicy(t *testing.T) {
 	j := &RefreshWalletBalances{}
 	retry, delay := j.ShouldRetry(retryableServerError(), 1)
 	if !retry {
@@ -80,7 +80,7 @@ func TestRefreshWalletBalancesRetryPolicy(t *testing.T) {
 	}
 }
 
-func TestRefreshWalletTransactionsRetryPolicy(t *testing.T) {
+func TestRefresh_Wallet_TransactionsRetryPolicy(t *testing.T) {
 	j := &RefreshWalletTransactions{}
 	retry, delay := j.ShouldRetry(retryableServerError(), 1)
 	if !retry {
@@ -95,7 +95,7 @@ func TestRefreshWalletTransactionsRetryPolicy(t *testing.T) {
 	}
 }
 
-func TestRefreshWalletTokensRetryPolicy(t *testing.T) {
+func TestRefresh_Wallet_TokensRetryPolicy(t *testing.T) {
 	j := &RefreshWalletTokens{}
 	retry, delay := j.ShouldRetry(retryableServerError(), 1)
 	if !retry {
@@ -110,7 +110,7 @@ func TestRefreshWalletTokensRetryPolicy(t *testing.T) {
 	}
 }
 
-func TestRefreshWalletUTXOsRetryPolicy(t *testing.T) {
+func TestRefresh_Wallet_UTXOsRetryPolicy(t *testing.T) {
 	j := &RefreshWalletUTXOs{}
 	retry, delay := j.ShouldRetry(retryableServerError(), 1)
 	if !retry {
@@ -125,7 +125,7 @@ func TestRefreshWalletUTXOsRetryPolicy(t *testing.T) {
 	}
 }
 
-func TestReconcileWalletStateRetryPolicy(t *testing.T) {
+func TestReconcile_Wallet_StateRetryPolicy(t *testing.T) {
 	j := &ReconcileWalletState{}
 	retry, delay := j.ShouldRetry(retryableServerError(), 1)
 	if !retry {
@@ -140,7 +140,7 @@ func TestReconcileWalletStateRetryPolicy(t *testing.T) {
 	}
 }
 
-func TestRetryDelayScalesWithAttempt(t *testing.T) {
+func TestRetry_Delay_ScalesWithAttempt(t *testing.T) {
 	j := &RefreshWalletBalances{}
 	for attempt := 1; attempt < 5; attempt++ {
 		retry, delay := j.ShouldRetry(retryableServerError(), attempt)
@@ -154,7 +154,7 @@ func TestRetryDelayScalesWithAttempt(t *testing.T) {
 	}
 }
 
-func TestShouldRetryDistinguishesKnownFailureFromUnknownOutcome(t *testing.T) {
+func TestShould_Retry_DistinguishesKnownFailureFromUnknownOutcome(t *testing.T) {
 	j := &RefreshWalletBalances{}
 	known := []error{
 		retryableServerError(),
@@ -208,7 +208,7 @@ func timeoutBeforeSend(t *testing.T) error {
 	return err
 }
 
-func TestRefreshWalletBalancesRejectsEmptyChainID(t *testing.T) {
+func TestRefresh_Wallet_BalancesRejectsEmptyChainID(t *testing.T) {
 	j := &RefreshWalletBalances{}
 	err := j.Handle(mustWalletArg("00000000-0000-0000-0000-000000000001", ""))
 	if err == nil {
@@ -216,7 +216,7 @@ func TestRefreshWalletBalancesRejectsEmptyChainID(t *testing.T) {
 	}
 }
 
-func TestRefreshWalletTransactionsRejectsInvalidUUID(t *testing.T) {
+func TestRefresh_Wallet_TransactionsRejectsInvalidUUID(t *testing.T) {
 	j := &RefreshWalletTransactions{}
 	err := j.Handle(mustWalletArg("not-a-uuid", "eth"))
 	if err == nil {
@@ -224,7 +224,7 @@ func TestRefreshWalletTransactionsRejectsInvalidUUID(t *testing.T) {
 	}
 }
 
-func TestRefreshWalletTransactionsRejectsEmptyChainID(t *testing.T) {
+func TestRefresh_Wallet_TransactionsRejectsEmptyChainID(t *testing.T) {
 	j := &RefreshWalletTransactions{}
 	err := j.Handle(mustWalletArg("00000000-0000-0000-0000-000000000001", ""))
 	if err == nil {
@@ -232,7 +232,7 @@ func TestRefreshWalletTransactionsRejectsEmptyChainID(t *testing.T) {
 	}
 }
 
-func TestRefreshWalletTokensRejectsInvalidUUID(t *testing.T) {
+func TestRefresh_Wallet_TokensRejectsInvalidUUID(t *testing.T) {
 	j := &RefreshWalletTokens{}
 	err := j.Handle(mustWalletArg("not-a-uuid", "eth"))
 	if err == nil {
@@ -240,7 +240,7 @@ func TestRefreshWalletTokensRejectsInvalidUUID(t *testing.T) {
 	}
 }
 
-func TestRefreshWalletTokensRejectsEmptyChainID(t *testing.T) {
+func TestRefresh_Wallet_TokensRejectsEmptyChainID(t *testing.T) {
 	j := &RefreshWalletTokens{}
 	err := j.Handle(mustWalletArg("00000000-0000-0000-0000-000000000001", ""))
 	if err == nil {
@@ -248,7 +248,7 @@ func TestRefreshWalletTokensRejectsEmptyChainID(t *testing.T) {
 	}
 }
 
-func TestRefreshWalletUTXOsRejectsInvalidUUID(t *testing.T) {
+func TestRefresh_Wallet_UTXOsRejectsInvalidUUID(t *testing.T) {
 	j := &RefreshWalletUTXOs{}
 	err := j.Handle(mustWalletArg("not-a-uuid", "btc"))
 	if err == nil {
@@ -256,7 +256,7 @@ func TestRefreshWalletUTXOsRejectsInvalidUUID(t *testing.T) {
 	}
 }
 
-func TestRefreshWalletUTXOsRejectsEmptyChainID(t *testing.T) {
+func TestRefresh_Wallet_UTXOsRejectsEmptyChainID(t *testing.T) {
 	j := &RefreshWalletUTXOs{}
 	err := j.Handle(mustWalletArg("00000000-0000-0000-0000-000000000001", ""))
 	if err == nil {
@@ -264,7 +264,7 @@ func TestRefreshWalletUTXOsRejectsEmptyChainID(t *testing.T) {
 	}
 }
 
-func TestReconcileWalletStateRejectsInvalidUUID(t *testing.T) {
+func TestReconcile_Wallet_StateRejectsInvalidUUID(t *testing.T) {
 	j := &ReconcileWalletState{}
 	err := j.Handle(mustWalletArg("not-a-uuid", "eth"))
 	if err == nil {
@@ -272,7 +272,7 @@ func TestReconcileWalletStateRejectsInvalidUUID(t *testing.T) {
 	}
 }
 
-func TestReconcileWalletStateRejectsEmptyChainID(t *testing.T) {
+func TestReconcile_Wallet_StateRejectsEmptyChainID(t *testing.T) {
 	j := &ReconcileWalletState{}
 	err := j.Handle(mustWalletArg("00000000-0000-0000-0000-000000000001", ""))
 	if err == nil {
@@ -280,7 +280,7 @@ func TestReconcileWalletStateRejectsEmptyChainID(t *testing.T) {
 	}
 }
 
-func TestAllJobSignatures(t *testing.T) {
+func TestAll_Job_Signatures(t *testing.T) {
 	expected := map[string]string{
 		"RefreshWalletBalances":     "refresh_wallet_balances",
 		"RefreshWalletTransactions": "refresh_wallet_transactions",
@@ -310,7 +310,7 @@ func TestAllJobSignatures(t *testing.T) {
 	}
 }
 
-func TestAllJobsRejectNonStringWalletID(t *testing.T) {
+func TestAll_Jobs_RejectNonStringWalletID(t *testing.T) {
 	tests := []struct {
 		name string
 		job  interface{ Handle(args ...any) error }
@@ -331,7 +331,7 @@ func TestAllJobsRejectNonStringWalletID(t *testing.T) {
 	}
 }
 
-func TestWalletJobsCallOneServiceMethod(t *testing.T) {
+func TestWallet_Jobs_CallOneServiceMethod(t *testing.T) {
 	rec := &recordingWalletQueue{}
 	id := "11111111-1111-1111-1111-111111111111"
 	jobs := []struct {
@@ -390,7 +390,7 @@ func (r *recordingWalletQueue) ReconcileWallet(context.Context, uuid.UUID, strin
 	return nil
 }
 
-func TestWalletJobsRefusePositionalArgs(t *testing.T) {
+func TestWallet_Jobs_RefusePositionalArgs(t *testing.T) {
 	id := "11111111-1111-1111-1111-111111111111"
 	rec := &recordingWalletQueue{}
 	job := &RefreshWalletBalances{wallets: rec}
@@ -410,7 +410,7 @@ func mustWalletArg(walletID, chainID string) any {
 	return args[0].Value
 }
 
-func TestAllJobsRejectSingleArg(t *testing.T) {
+func TestAll_Jobs_RejectSingleArg(t *testing.T) {
 	tests := []struct {
 		name string
 		job  interface{ Handle(args ...any) error }

@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-func TestHandlersLeaveCredentialDispatchToTheDecidingService(t *testing.T) {
+func TestHandlers_Leave_CredentialDispatchToTheDecidingService(t *testing.T) {
 	checks := []struct {
 		path      string
 		signature string
@@ -64,7 +64,7 @@ func TestHandlersLeaveCredentialDispatchToTheDecidingService(t *testing.T) {
 	}
 }
 
-func TestRegisterSendsWelcomeWithoutTheCredentialJob(t *testing.T) {
+func TestRegister_Sends_WelcomeWithoutTheCredentialJob(t *testing.T) {
 	source, err := os.ReadFile("../auth/auth_controller.go")
 	if err != nil {
 		t.Fatal(err)
@@ -111,7 +111,7 @@ func TestRegisterSendsWelcomeWithoutTheCredentialJob(t *testing.T) {
 	}
 }
 
-func TestSettingsTestMailUsesSend(t *testing.T) {
+func TestSettings_Test_MailUsesSend(t *testing.T) {
 	controller, err := os.ReadFile("../../platform/settings/settings_controller.go")
 	if err != nil {
 		t.Fatal(err)

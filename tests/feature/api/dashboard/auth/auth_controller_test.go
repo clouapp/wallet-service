@@ -23,12 +23,12 @@ type AuthControllerTestSuite struct {
 	goravelTesting.TestCase
 }
 
-func TestAuthControllerSuite(t *testing.T) {
+func TestAuth_Controller_Suite(t *testing.T) {
 	suite.Run(t, new(AuthControllerTestSuite))
 }
 
 // TestRegister_MissingBody returns 400 when no JSON body is provided.
-func (s *AuthControllerTestSuite) TestRegister_MissingBody() {
+func (s *AuthControllerTestSuite) TestRegister_Missing_Body() {
 	resp, err := s.Http(s.T()).
 		WithHeader("Content-Type", "application/json").
 		Post("/v1/auth/register", nil)
@@ -37,7 +37,7 @@ func (s *AuthControllerTestSuite) TestRegister_MissingBody() {
 }
 
 // TestRegister_MissingEmail returns 422 when email is absent (validation errors).
-func (s *AuthControllerTestSuite) TestRegister_MissingEmail() {
+func (s *AuthControllerTestSuite) TestRegister_Missing_Email() {
 	body := `{"password":"secret123"}`
 	resp, err := s.Http(s.T()).
 		WithHeader("Content-Type", "application/json").
@@ -47,7 +47,7 @@ func (s *AuthControllerTestSuite) TestRegister_MissingEmail() {
 }
 
 // TestLogin_InvalidCredentials returns 401 for an unknown email.
-func (s *AuthControllerTestSuite) TestLogin_InvalidCredentials() {
+func (s *AuthControllerTestSuite) TestLogin_Invalid_Credentials() {
 	body := `{"email":"nonexistent@example.com","password":"wrongpass"}`
 	resp, err := s.Http(s.T()).
 		WithHeader("Content-Type", "application/json").
@@ -57,7 +57,7 @@ func (s *AuthControllerTestSuite) TestLogin_InvalidCredentials() {
 }
 
 // TestRecover_AlwaysReturns200 ensures user enumeration is not possible (ForgotPassword handler).
-func (s *AuthControllerTestSuite) TestRecover_AlwaysReturns200() {
+func (s *AuthControllerTestSuite) TestRecover_Always_Returns200() {
 	body := `{"email":"nobody@example.com"}`
 	resp, err := s.Http(s.T()).
 		WithHeader("Content-Type", "application/json").
@@ -67,7 +67,7 @@ func (s *AuthControllerTestSuite) TestRecover_AlwaysReturns200() {
 }
 
 // TestRecoverConfirm_InvalidToken returns 401 for a bad token (ResetPassword handler).
-func (s *AuthControllerTestSuite) TestRecoverConfirm_InvalidToken() {
+func (s *AuthControllerTestSuite) TestRecover_Confirm_InvalidToken() {
 	body := `{"token":"invalid-token","new_password":"newpass123"}`
 	resp, err := s.Http(s.T()).
 		WithHeader("Content-Type", "application/json").
@@ -77,7 +77,7 @@ func (s *AuthControllerTestSuite) TestRecoverConfirm_InvalidToken() {
 }
 
 // TestLogout_NoAuth returns 401 without a bearer token.
-func (s *AuthControllerTestSuite) TestLogout_NoAuth() {
+func (s *AuthControllerTestSuite) TestLogout_No_Auth() {
 	resp, err := s.Http(s.T()).
 		WithHeader("Content-Type", "application/json").
 		Post("/v1/auth/logout", nil)
@@ -88,7 +88,7 @@ func (s *AuthControllerTestSuite) TestLogout_NoAuth() {
 // TestRegister_PersistsUser proves POST /v1/auth/register creates the user.
 // It used to answer 500 because a nil preferences pointer was written as NULL
 // into the NOT NULL column.
-func (s *AuthControllerTestSuite) TestRegister_PersistsUser() {
+func (s *AuthControllerTestSuite) TestRegister_Persists_User() {
 	fixtures.TestDB(s.T())
 	body := `{"email":"register-ok@example.com","password":"secret123","full_name":"Reg User","organization_name":"Reg Org"}`
 	resp, err := s.Http(s.T()).
@@ -110,7 +110,7 @@ func (s *AuthControllerTestSuite) TestRegister_PersistsUser() {
 }
 
 // TestRefreshToken_InvalidToken returns 401 for a bad refresh token.
-func (s *AuthControllerTestSuite) TestRefreshToken_InvalidToken() {
+func (s *AuthControllerTestSuite) TestRefresh_Token_InvalidToken() {
 	body := `{"refresh_token":"bad-token-value"}`
 	resp, err := s.Http(s.T()).
 		WithHeader("Content-Type", "application/json").

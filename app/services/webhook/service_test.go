@@ -71,7 +71,7 @@ func newTestWebhookSvc() *Service {
 	})
 }
 
-func TestCreateConfig(t *testing.T) {
+func TestService_Create_Config(t *testing.T) {
 	fixtures.TestDB(t)
 	svc := newTestWebhookSvc()
 	ctx := context.Background()
@@ -88,7 +88,7 @@ func TestCreateConfig(t *testing.T) {
 	}
 }
 
-func TestListConfigs(t *testing.T) {
+func TestService_List_Configs(t *testing.T) {
 	fixtures.TestDB(t)
 	svc := newTestWebhookSvc()
 	ctx := context.Background()
@@ -105,7 +105,7 @@ func TestListConfigs(t *testing.T) {
 	}
 }
 
-func TestDeleteConfig(t *testing.T) {
+func TestService_Delete_Config(t *testing.T) {
 	fixtures.TestDB(t)
 	svc := newTestWebhookSvc()
 	ctx := context.Background()
@@ -121,7 +121,7 @@ func TestDeleteConfig(t *testing.T) {
 	}
 }
 
-func TestDeliver_Success(t *testing.T) {
+func TestService_Deliver_Success(t *testing.T) {
 	fixtures.TestDB(t)
 	svc := newTestWebhookSvc()
 	ctx := context.Background()
@@ -197,7 +197,7 @@ func TestDeliver_Success(t *testing.T) {
 	}
 }
 
-func TestDeliver_RedeliveryDoesNotSend(t *testing.T) {
+func TestDeliver_Redelivery_DoesNotSend(t *testing.T) {
 	fixtures.TestDB(t)
 	svc := newTestWebhookSvc()
 	ctx := context.Background()
@@ -252,7 +252,7 @@ func TestDeliver_RedeliveryDoesNotSend(t *testing.T) {
 	}
 }
 
-func TestDeliver_Failure(t *testing.T) {
+func TestService_Deliver_Failure(t *testing.T) {
 	fixtures.TestDB(t)
 	svc := newTestWebhookSvc()
 	ctx := context.Background()
@@ -294,7 +294,7 @@ func TestDeliver_Failure(t *testing.T) {
 	}
 }
 
-func TestDeliver_Unreachable(t *testing.T) {
+func TestService_Deliver_Unreachable(t *testing.T) {
 	fixtures.TestDB(t)
 	svc := newTestWebhookSvc()
 	ctx := context.Background()
@@ -330,7 +330,7 @@ func (r *recordingWebhookSender) SendWebhook(_ context.Context, msg types.Webhoo
 	return nil
 }
 
-func TestEnqueueEvent_QueuePayloadCarriesNoSecret(t *testing.T) {
+func TestEnqueue_Event_QueuePayloadCarriesNoSecret(t *testing.T) {
 	fixtures.TestDB(t)
 	ctx := context.Background()
 	const secret = "queue-payload-must-not-carry-this-secret"
@@ -385,7 +385,7 @@ func TestEnqueueEvent_QueuePayloadCarriesNoSecret(t *testing.T) {
 	}
 }
 
-func TestPgArray(t *testing.T) {
+func TestService_Pg_Array(t *testing.T) {
 	tests := []struct {
 		input []string
 		want  string
@@ -402,7 +402,7 @@ func TestPgArray(t *testing.T) {
 	}
 }
 
-func TestEnqueueEvent_NoConfigs(t *testing.T) {
+func TestEnqueue_Event_NoConfigs(t *testing.T) {
 	fixtures.TestDB(t)
 	svc := newTestWebhookSvc()
 
@@ -422,7 +422,7 @@ func TestEnqueueEvent_NoConfigs(t *testing.T) {
 	}
 }
 
-func TestWebhookPayloadStructure(t *testing.T) {
+func TestWebhook_Payload_Structure(t *testing.T) {
 	payload := map[string]interface{}{
 		"id":   "test-id",
 		"type": string(types.EventDepositConfirmed),

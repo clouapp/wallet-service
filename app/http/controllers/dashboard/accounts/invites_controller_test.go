@@ -15,7 +15,7 @@ func invitesControllerDeps() InvitesControllerDeps {
 	}
 }
 
-func TestNewInvitesControllerKeepsItsDependencies(t *testing.T) {
+func TestNew_Invites_ControllerKeepsItsDependencies(t *testing.T) {
 	deps := invitesControllerDeps()
 	ctrl := NewInvitesController(deps)
 	if ctrl == nil {
@@ -29,7 +29,7 @@ func TestNewInvitesControllerKeepsItsDependencies(t *testing.T) {
 	}
 }
 
-func TestNewInvitesControllerRequiresEveryDependency(t *testing.T) {
+func TestNew_Invites_ControllerRequiresEveryDependency(t *testing.T) {
 	cases := []struct {
 		name  string
 		clear func(*InvitesControllerDeps)
@@ -62,7 +62,7 @@ func TestNewInvitesControllerRequiresEveryDependency(t *testing.T) {
 	}
 }
 
-func TestFrontendBaseURLUsesOnlyTheEnv(t *testing.T) {
+func TestFrontend_Base_URLUsesOnlyTheEnv(t *testing.T) {
 	t.Setenv(frontendURLEnv, "")
 	base, err := frontendBaseURL()
 	if err == nil || base != "" {

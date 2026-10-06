@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-func TestProviderFailureHidesTheProviderSentence(t *testing.T) {
+func TestProvider_Failure_HidesTheProviderSentence(t *testing.T) {
 	const raw = "execution reverted: secret-node-detail"
 	err := FromProviderHTTP(http.StatusBadGateway, raw)
 
@@ -31,7 +31,7 @@ func TestProviderFailureHidesTheProviderSentence(t *testing.T) {
 	}
 }
 
-func TestKindOfMapsTheAdapterCases(t *testing.T) {
+func TestKind_Of_MapsTheAdapterCases(t *testing.T) {
 	cases := []struct {
 		status  int
 		message string

@@ -23,7 +23,7 @@ type TotpHolesTestSuite struct {
 	authSuite
 }
 
-func TestTotpHolesSuite(t *testing.T) {
+func TestTotp_Holes_Suite(t *testing.T) {
 	suite.Run(t, new(TotpHolesTestSuite))
 }
 
@@ -49,7 +49,7 @@ func (s *TotpHolesTestSuite) signedInWithTOTP(user seededAuthUser) loginBody {
 	return session
 }
 
-func (s *TotpHolesTestSuite) TestDisableTOTPWithoutACodeLeavesItOn() {
+func (s *TotpHolesTestSuite) TestDisable_TOTP_WithoutACodeLeavesItOn() {
 	user := s.seedUser(true)
 	session := s.signedInWithTOTP(user)
 	before := s.storedUser(user.ID)
@@ -63,7 +63,7 @@ func (s *TotpHolesTestSuite) TestDisableTOTPWithoutACodeLeavesItOn() {
 	s.assertSessionWorks(session)
 }
 
-func (s *TotpHolesTestSuite) TestDisableTOTPWithAWrongCodeRevokesNothing() {
+func (s *TotpHolesTestSuite) TestDisable_TOTP_WithAWrongCodeRevokesNothing() {
 	user := s.seedUser(true)
 	session := s.signedInWithTOTP(user)
 
@@ -74,7 +74,7 @@ func (s *TotpHolesTestSuite) TestDisableTOTPWithAWrongCodeRevokesNothing() {
 	s.assertSessionWorks(session)
 }
 
-func (s *TotpHolesTestSuite) TestDisableTOTPWithTheCurrentCodeRevokesSessions() {
+func (s *TotpHolesTestSuite) TestDisable_TOTP_WithTheCurrentCodeRevokesSessions() {
 	user := s.seedUser(true)
 	caller := s.signedInWithTOTP(user)
 	_, otherChallenge := s.loginAs(user.Email)
@@ -101,7 +101,7 @@ func (s *TotpHolesTestSuite) TestDisableTOTPWithTheCurrentCodeRevokesSessions() 
 	s.assertSessionWorks(loginBody{AccessToken: body.AccessToken, RefreshToken: body.RefreshToken})
 }
 
-func (s *TotpHolesTestSuite) TestSetupTOTPWhileActiveIsRejected() {
+func (s *TotpHolesTestSuite) TestSetup_TOTP_WhileActiveIsRejected() {
 	user := s.seedUser(true)
 	session := s.signedInWithTOTP(user)
 	before := s.storedUser(user.ID)
@@ -114,7 +114,7 @@ func (s *TotpHolesTestSuite) TestSetupTOTPWhileActiveIsRejected() {
 	s.Equal(before.TotpSecret, after.TotpSecret)
 }
 
-func (s *TotpHolesTestSuite) TestCodeConsumedAtLoginIsRejectedForWithdrawal() {
+func (s *TotpHolesTestSuite) TestCode_Consumed_AtLoginIsRejectedForWithdrawal() {
 	user := s.seedUser(true)
 	_, challenge := s.loginAs(user.Email)
 	code := s.currentCode(user.TOTPSecret)

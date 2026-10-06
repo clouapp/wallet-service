@@ -12,7 +12,7 @@ import (
 	"github.com/macrowallets/waas/app/services/credentialmail"
 )
 
-func TestCredentialMailDispatcherPayloadIsSubjectAndPurpose(t *testing.T) {
+func TestCredential_Mail_DispatcherPayloadIsSubjectAndPurpose(t *testing.T) {
 	fake := &mailQueue{}
 	dispatcher := NewCredentialMailDispatcher(func() Enqueuer { return fake })
 	userID := uuid.MustParse("44444444-4444-4444-4444-444444444444")
@@ -32,7 +32,7 @@ func TestCredentialMailDispatcherPayloadIsSubjectAndPurpose(t *testing.T) {
 	assertMailPayload(t, fake.payloads[1], inviteID, credentialmail.PurposeAccountInvite, secret)
 }
 
-func TestCredentialMailDispatcherRequiresAQueueClient(t *testing.T) {
+func TestCredential_Mail_DispatcherRequiresAQueueClient(t *testing.T) {
 	defer func() {
 		if recover() == nil {
 			t.Fatal("expected panic for a nil queue client")

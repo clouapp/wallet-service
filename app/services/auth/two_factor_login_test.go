@@ -241,7 +241,7 @@ func (f *twoFactorFixture) validCode() string {
 
 // ---- tests ----
 
-func TestTwoFactorLogin_BeginIssuesAChallengeNotASession(t *testing.T) {
+func TestTwo_FactorLogin_BeginIssuesAChallengeNotASession(t *testing.T) {
 	f := newTwoFactorFixture(t)
 
 	challenge, err := f.login.Begin(f.user)
@@ -254,7 +254,7 @@ func TestTwoFactorLogin_BeginIssuesAChallengeNotASession(t *testing.T) {
 	require.Equal(t, f.user.ID, resolved.UserID)
 }
 
-func TestTwoFactorLogin_ChallengeIssuedBeforeASessionRevocationIsRefused(t *testing.T) {
+func TestTwo_FactorLogin_ChallengeIssuedBeforeASessionRevocationIsRefused(t *testing.T) {
 	f := newTwoFactorFixture(t)
 	token := f.begin()
 	watermark := f.now.Add(time.Second)
@@ -267,7 +267,7 @@ func TestTwoFactorLogin_ChallengeIssuedBeforeASessionRevocationIsRefused(t *test
 	require.False(t, ok, "the stale challenge is retired")
 }
 
-func TestTwoFactorLogin_ChallengeIssuedAfterTheWatermarkStillWorks(t *testing.T) {
+func TestTwo_FactorLogin_ChallengeIssuedAfterTheWatermarkStillWorks(t *testing.T) {
 	f := newTwoFactorFixture(t)
 	watermark := f.now
 	f.users.byID[f.user.ID].SessionsRevokedAt = &watermark
@@ -277,7 +277,7 @@ func TestTwoFactorLogin_ChallengeIssuedAfterTheWatermarkStillWorks(t *testing.T)
 	require.NoError(t, err)
 }
 
-func TestTwoFactorLogin_ValidTOTPCompletesAndSpendsTheChallenge(t *testing.T) {
+func TestTwo_FactorLogin_ValidTOTPCompletesAndSpendsTheChallenge(t *testing.T) {
 	f := newTwoFactorFixture(t)
 	token := f.begin()
 
@@ -289,7 +289,7 @@ func TestTwoFactorLogin_ValidTOTPCompletesAndSpendsTheChallenge(t *testing.T) {
 	require.ErrorIs(t, err, authsvc.ErrChallengeInvalid, "a challenge yields one session at most")
 }
 
-func TestTwoFactorLogin_DecryptsTheSecretBeforeValidating(t *testing.T) {
+func TestTwo_FactorLogin_DecryptsTheSecretBeforeValidating(t *testing.T) {
 	f := newTwoFactorFixture(t)
 	f.users.byID[f.user.ID].TotpSecret = "not-sealed-" + f.secret
 	token := f.begin()
@@ -300,7 +300,7 @@ func TestTwoFactorLogin_DecryptsTheSecretBeforeValidating(t *testing.T) {
 	require.NotErrorIs(t, err, authsvc.ErrInvalidSecondFactor, "a secret that cannot be opened is a server error, not a wrong code")
 }
 
-func TestTwoFactorLogin_ReplayedCodeIsRefused(t *testing.T) {
+func TestTwo_FactorLogin_ReplayedCodeIsRefused(t *testing.T) {
 	f := newTwoFactorFixture(t)
 	code := f.validCode()
 
@@ -311,7 +311,7 @@ func TestTwoFactorLogin_ReplayedCodeIsRefused(t *testing.T) {
 	require.ErrorIs(t, err, authsvc.ErrInvalidSecondFactor)
 }
 
-func TestTwoFactorLogin_ConcurrentRedemptionsOfOneCodeYieldOneSuccess(t *testing.T) {
+func TestTwo_FactorLogin_ConcurrentRedemptionsOfOneCodeYieldOneSuccess(t *testing.T) {
 	f := newTwoFactorFixture(t)
 	code := f.validCode()
 	const racers = 8
@@ -339,7 +339,7 @@ func TestTwoFactorLogin_ConcurrentRedemptionsOfOneCodeYieldOneSuccess(t *testing
 	require.Equal(t, 1, successes)
 }
 
-func TestTwoFactorLogin_WrongCodeKeepsTheChallengeUsable(t *testing.T) {
+func TestTwo_FactorLogin_WrongCodeKeepsTheChallengeUsable(t *testing.T) {
 	f := newTwoFactorFixture(t)
 	token := f.begin()
 
@@ -352,7 +352,7 @@ func TestTwoFactorLogin_WrongCodeKeepsTheChallengeUsable(t *testing.T) {
 	require.Zero(t, f.attempts.attempts[f.user.ID], "a success clears the attempt counter")
 }
 
-func TestTwoFactorLogin_AttemptCapRevokesTheChallenge(t *testing.T) {
+func TestTwo_FactorLogin_AttemptCapRevokesTheChallenge(t *testing.T) {
 	f := newTwoFactorFixture(t)
 	token := f.begin()
 
@@ -367,7 +367,7 @@ func TestTwoFactorLogin_AttemptCapRevokesTheChallenge(t *testing.T) {
 	require.ErrorIs(t, err, authsvc.ErrChallengeInvalid, "the capped challenge is gone")
 }
 
-func TestTwoFactorLogin_CapSpansNewChallengesForTheSameUser(t *testing.T) {
+func TestTwo_FactorLogin_CapSpansNewChallengesForTheSameUser(t *testing.T) {
 	f := newTwoFactorFixture(t)
 	for i := 0; i < testMaxAttempts; i++ {
 		_, err := f.login.Complete(f.begin(), "000000", "")
@@ -379,7 +379,7 @@ func TestTwoFactorLogin_CapSpansNewChallengesForTheSameUser(t *testing.T) {
 	require.ErrorIs(t, err, authsvc.ErrSecondFactorLocked, "logging in again does not reset the guess budget")
 }
 
-func TestTwoFactorLogin_ExpiredOrUnknownChallengeIsRefused(t *testing.T) {
+func TestTwo_FactorLogin_ExpiredOrUnknownChallengeIsRefused(t *testing.T) {
 	f := newTwoFactorFixture(t)
 	token := f.begin()
 	f.challenges.expire(token)
@@ -394,7 +394,7 @@ func TestTwoFactorLogin_ExpiredOrUnknownChallengeIsRefused(t *testing.T) {
 	require.ErrorIs(t, err, authsvc.ErrChallengeInvalid)
 }
 
-func TestTwoFactorLogin_ChallengeDiesWhenTOTPWasDisabledMeanwhile(t *testing.T) {
+func TestTwo_FactorLogin_ChallengeDiesWhenTOTPWasDisabledMeanwhile(t *testing.T) {
 	f := newTwoFactorFixture(t)
 	token := f.begin()
 	f.users.byID[f.user.ID].TotpEnabled = false
@@ -406,7 +406,7 @@ func TestTwoFactorLogin_ChallengeDiesWhenTOTPWasDisabledMeanwhile(t *testing.T) 
 	require.False(t, ok)
 }
 
-func TestTwoFactorLogin_RecoveryCodeCompletesOnce(t *testing.T) {
+func TestTwo_FactorLogin_RecoveryCodeCompletesOnce(t *testing.T) {
 	f := newTwoFactorFixture(t)
 
 	user, err := f.login.Complete(f.begin(), "", f.recovery[0])
@@ -420,7 +420,7 @@ func TestTwoFactorLogin_RecoveryCodeCompletesOnce(t *testing.T) {
 	require.NoError(t, err, "the other recovery codes still work")
 }
 
-func TestTwoFactorLogin_RecoveryCodeIsTheFallbackForAWrongTOTP(t *testing.T) {
+func TestTwo_FactorLogin_RecoveryCodeIsTheFallbackForAWrongTOTP(t *testing.T) {
 	f := newTwoFactorFixture(t)
 
 	_, err := f.login.Complete(f.begin(), "000000", f.recovery[0])
@@ -428,7 +428,7 @@ func TestTwoFactorLogin_RecoveryCodeIsTheFallbackForAWrongTOTP(t *testing.T) {
 	require.NoError(t, err)
 }
 
-func TestTwoFactorLogin_NoCodeAtAllIsInvalid(t *testing.T) {
+func TestTwo_FactorLogin_NoCodeAtAllIsInvalid(t *testing.T) {
 	f := newTwoFactorFixture(t)
 
 	_, err := f.login.Complete(f.begin(), "", "")
@@ -436,7 +436,7 @@ func TestTwoFactorLogin_NoCodeAtAllIsInvalid(t *testing.T) {
 	require.ErrorIs(t, err, authsvc.ErrInvalidSecondFactor)
 }
 
-func TestSecondFactorVerifier_ConfirmedCodeCannotCompleteALogin(t *testing.T) {
+func TestSecond_FactorVerifier_ConfirmedCodeCannotCompleteALogin(t *testing.T) {
 	f := newTwoFactorFixture(t)
 	verifier, err := authsvc.NewSecondFactorVerifier(authsvc.VerifierDeps{
 		Service:  authsvc.NewService(),
@@ -455,7 +455,7 @@ func TestSecondFactorVerifier_ConfirmedCodeCannotCompleteALogin(t *testing.T) {
 	require.ErrorIs(t, err, authsvc.ErrInvalidSecondFactor)
 }
 
-func TestSecondFactorVerifier_RefusesNotEnrolledUsers(t *testing.T) {
+func TestSecond_FactorVerifier_RefusesNotEnrolledUsers(t *testing.T) {
 	verifier, err := authsvc.NewSecondFactorVerifier(authsvc.VerifierDeps{
 		Service:  authsvc.NewService(),
 		Counters: newFakeUsers(),
@@ -471,7 +471,7 @@ func TestSecondFactorVerifier_RefusesNotEnrolledUsers(t *testing.T) {
 	require.Error(t, err)
 }
 
-func TestNewTwoFactorLogin_ValidatesDependencies(t *testing.T) {
+func TestNew_TwoFactorLogin_ValidatesDependencies(t *testing.T) {
 	f := newTwoFactorFixture(t)
 	verifier, err := authsvc.NewSecondFactorVerifier(authsvc.VerifierDeps{
 		Service:  authsvc.NewService(),

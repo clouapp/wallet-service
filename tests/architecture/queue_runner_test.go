@@ -17,7 +17,7 @@ import (
 // goroutine loop that drains what that queue's deployed worker drains
 // (.ai/guidelines/queues-and-workers.md). The local outbox stand-in is the
 // consumer only when no webhook queue is configured.
-func TestOneConsumerPerQueue(t *testing.T) {
+func TestOne_Consumer_PerQueue(t *testing.T) {
 	module := sharedModule(t)
 	template, err := os.ReadFile(filepath.Join(module.Root, "template.yaml"))
 	if err != nil {
@@ -81,7 +81,7 @@ func TestOneConsumerPerQueue(t *testing.T) {
 	}
 }
 
-func TestSQSConsumers_RefusesASecondFunctionOnTheSameQueue(t *testing.T) {
+func TestSQS_Consumers_RefusesASecondFunctionOnTheSameQueue(t *testing.T) {
 	const template = `
 Resources:
   WebhookWorkerFunction:
@@ -116,7 +116,7 @@ Resources:
 	}
 }
 
-func TestSQSConsumers_KeepsOneFunctionPerQueue(t *testing.T) {
+func TestSQS_Consumers_KeepsOneFunctionPerQueue(t *testing.T) {
 	const template = `
 Resources:
   WebhookWorkerFunction:
@@ -154,7 +154,7 @@ Resources:
 	}
 }
 
-func TestUnguardedGoroutineDrainIsRefused(t *testing.T) {
+func TestUnguarded_Goroutine_DrainIsRefused(t *testing.T) {
 	const src = `package main
 func start() {
 	go func() {
@@ -176,7 +176,7 @@ func start() {
 	}
 }
 
-func TestOutboxStandInBehindDeliverOutboxIsTheOnlyConsumer(t *testing.T) {
+func TestOutbox_Stand_InBehindDeliverOutboxIsTheOnlyConsumer(t *testing.T) {
 	const src = `package localworkers
 func start(cfg Config) {
 	if cfg.DeliverOutbox {
@@ -192,7 +192,7 @@ func start(cfg Config) {
 	}
 }
 
-func TestDeployedHandlerIsNotAGoroutineLoop(t *testing.T) {
+func TestDeployed_Handler_IsNotAGoroutineLoop(t *testing.T) {
 	const src = `package main
 func handleWebhookWorker() {
 	for _, record := range sqsEvent.Records {

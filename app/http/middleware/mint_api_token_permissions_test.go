@@ -7,7 +7,7 @@ import (
 	"github.com/macrowallets/waas/app/policies"
 )
 
-func TestMintAPITokenPermissionsParsesACatalogSubset(t *testing.T) {
+func TestMint_API_TokenPermissionsParsesACatalogSubset(t *testing.T) {
 	t.Parallel()
 
 	permissions, apply := mintAPITokenPermissions([]byte(`{"name":"ci","permissions":["wallets.read","webhooks.write"]}`))

@@ -14,7 +14,7 @@ import (
 	"github.com/macrowallets/waas/tests/feature/support/fixtures"
 )
 
-func TestAddedEVMChainsSeedDoesNotQueryOutsideTheRepository(t *testing.T) {
+func TestAdded_EVM_ChainsSeedDoesNotQueryOutsideTheRepository(t *testing.T) {
 	source, err := os.ReadFile("added_evm_chains.go")
 	if err != nil {
 		t.Fatalf("read added evm chains seed: %v", err)
@@ -27,7 +27,7 @@ func TestAddedEVMChainsSeedDoesNotQueryOutsideTheRepository(t *testing.T) {
 	}
 }
 
-func TestSeedMissingAddedChainsInsertsOnceAndLeavesExistingRows(t *testing.T) {
+func TestSeed_Missing_AddedChainsInsertsOnceAndLeavesExistingRows(t *testing.T) {
 	fixtures.TestDB(t)
 	ctx := context.Background()
 	restoreChainNetworkProfile(t, models.ChainNetworkProfileMainnet)

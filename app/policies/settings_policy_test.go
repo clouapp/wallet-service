@@ -2,7 +2,7 @@ package policies
 
 import "testing"
 
-func TestMailCredentialPermissionsAreNotAccountGrants(t *testing.T) {
+func TestMail_Credential_PermissionsAreNotAccountGrants(t *testing.T) {
 	t.Parallel()
 
 	if PermMailView == PermSettingsView || PermMailUpdate == PermSettingsUpdate {
@@ -23,7 +23,7 @@ func TestMailCredentialPermissionsAreNotAccountGrants(t *testing.T) {
 	}
 }
 
-func TestProviderCredentialPermissionsAreNotAccountGrants(t *testing.T) {
+func TestProvider_Credential_PermissionsAreNotAccountGrants(t *testing.T) {
 	t.Parallel()
 
 	if PermProvidersView == PermSettingsView || PermProvidersUpdate == PermSettingsUpdate ||
@@ -48,7 +48,7 @@ func TestProviderCredentialPermissionsAreNotAccountGrants(t *testing.T) {
 	}
 }
 
-func TestSweepPermissionsAreNotAccountGrants(t *testing.T) {
+func TestSweep_Permissions_AreNotAccountGrants(t *testing.T) {
 	t.Parallel()
 
 	if PermSweepView == PermSettingsView || PermSweepUpdate == PermSettingsUpdate ||
@@ -77,7 +77,7 @@ func TestSweepPermissionsAreNotAccountGrants(t *testing.T) {
 	}
 }
 
-func TestChainPermissionsAreNotAccountGrants(t *testing.T) {
+func TestChain_Permissions_AreNotAccountGrants(t *testing.T) {
 	t.Parallel()
 
 	if PermChainsView == PermSettingsView || PermChainsUpdate == PermSettingsUpdate ||
@@ -109,7 +109,7 @@ func TestChainPermissionsAreNotAccountGrants(t *testing.T) {
 	}
 }
 
-func TestAccountSettingsGuardFollowsTheRoles(t *testing.T) {
+func TestAccount_Settings_GuardFollowsTheRoles(t *testing.T) {
 	t.Parallel()
 
 	if PermSettingsRead == PermSettingsView || PermSettingsWrite == PermSettingsUpdate ||
@@ -155,7 +155,7 @@ func TestAccountSettingsGuardFollowsTheRoles(t *testing.T) {
 	}
 }
 
-func TestSettingsPermissionsFollowTheAccountRoles(t *testing.T) {
+func TestSettings_Permissions_FollowTheAccountRoles(t *testing.T) {
 	t.Parallel()
 
 	cases := []struct {

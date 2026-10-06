@@ -16,7 +16,7 @@ import (
 	"github.com/macrowallets/waas/tests/feature/support/fixtures"
 )
 
-func TestSessionRevocationAndActivityCommitTogether(t *testing.T) {
+func TestSession_Revocation_AndActivityCommitTogether(t *testing.T) {
 	fixtures.TestDB(t)
 	userID := insertSessionUser(t)
 	refresh := repositories.NewRefreshTokenRepository(nil)
@@ -52,7 +52,7 @@ func TestSessionRevocationAndActivityCommitTogether(t *testing.T) {
 	require.Empty(t, listed)
 }
 
-func TestSessionRevocationRollsBackWhenActivityRefusesTheRow(t *testing.T) {
+func TestSession_Revocation_RollsBackWhenActivityRefusesTheRow(t *testing.T) {
 	fixtures.TestDB(t)
 	userID := insertSessionUser(t)
 	refresh := repositories.NewRefreshTokenRepository(nil)

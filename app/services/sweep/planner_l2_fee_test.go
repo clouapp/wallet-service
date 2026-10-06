@@ -39,7 +39,7 @@ func baseSepoliaPlanner(t *testing.T, baseBalance *big.Int) (*service, uuid.UUID
 	}, walletID
 }
 
-func TestPlanBase_BaseThatCoversOnlyL2GasCannotPayTheL1DataFee(t *testing.T) {
+func TestPlan_Base_BaseThatCoversOnlyL2GasCannotPayTheL1DataFee(t *testing.T) {
 	balance := big.NewInt(l2FeeTestAmount + l2FeeTestNativeGas)
 	svc, walletID := baseSepoliaPlanner(t, balance)
 
@@ -52,7 +52,7 @@ func TestPlanBase_BaseThatCoversOnlyL2GasCannotPayTheL1DataFee(t *testing.T) {
 	}
 }
 
-func TestPlanBase_DirectWithdrawalBudgetsGasPlusL1DataFee(t *testing.T) {
+func TestPlan_Base_DirectWithdrawalBudgetsGasPlusL1DataFee(t *testing.T) {
 	balance := big.NewInt(l2FeeTestAmount + l2FeeTestNativeGas + l2FeeTestBufferedL1Fee)
 	svc, walletID := baseSepoliaPlanner(t, balance)
 
@@ -87,7 +87,7 @@ func (m *l1FeeMockChain) NativeTransferGasLimit(context.Context, string, string)
 	return m.seedGasLimit, nil
 }
 
-func TestPlan_MultiSweepAddsAnL1FeePerTransferAndTheRollupSeedLimit(t *testing.T) {
+func TestPlan_Multi_SweepAddsAnL1FeePerTransferAndTheRollupSeedLimit(t *testing.T) {
 	walletID := uuid.New()
 	baseAddr := models.Address{ID: uuid.New(), WalletID: walletID, Address: "BASE"}
 	childA := models.Address{ID: uuid.New(), WalletID: walletID, Address: "CHILD_A"}

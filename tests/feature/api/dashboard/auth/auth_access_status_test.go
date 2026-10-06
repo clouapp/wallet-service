@@ -22,7 +22,7 @@ type AccessStatusTestSuite struct {
 	authSuite
 }
 
-func TestAccessStatusSuite(t *testing.T) {
+func TestAccess_Status_Suite(t *testing.T) {
 	suite.Run(t, new(AccessStatusTestSuite))
 }
 
@@ -129,7 +129,7 @@ func (s *AccessStatusTestSuite) accountName(accountID uuid.UUID) string {
 	return name
 }
 
-func (s *AccessStatusTestSuite) TestLoginRefusesAUserWhoIsNotActive() {
+func (s *AccessStatusTestSuite) TestLogin_Refuses_AUserWhoIsNotActive() {
 	for _, status := range []string{"suspended", models.UserStatusInvited} {
 		user := s.seedUser(false)
 		s.setStatus("users", user.ID, status)
@@ -142,7 +142,7 @@ func (s *AccessStatusTestSuite) TestLoginRefusesAUserWhoIsNotActive() {
 	}
 }
 
-func (s *AccessStatusTestSuite) TestWrongPasswordStillAnswersInvalidCredentialsForASuspendedUser() {
+func (s *AccessStatusTestSuite) TestWrong_Password_StillAnswersInvalidCredentialsForASuspendedUser() {
 	user := s.seedUser(false)
 	s.setStatus("users", user.ID, "suspended")
 
@@ -151,7 +151,7 @@ func (s *AccessStatusTestSuite) TestWrongPasswordStillAnswersInvalidCredentialsF
 	resp.AssertStatus(401)
 }
 
-func (s *AccessStatusTestSuite) TestSessionEndsWhenTheUserIsSuspended() {
+func (s *AccessStatusTestSuite) TestSession_Ends_WhenTheUserIsSuspended() {
 	user := s.seedUser(false)
 	session := s.signIn(user.Email)
 	s.getMe(session.AccessToken).AssertOk()
@@ -164,7 +164,7 @@ func (s *AccessStatusTestSuite) TestSessionEndsWhenTheUserIsSuspended() {
 	s.Empty(renewed.AccessToken)
 }
 
-func (s *AccessStatusTestSuite) TestTwoFactorCompletionRefusesAUserSuspendedMeanwhile() {
+func (s *AccessStatusTestSuite) TestTwo_Factor_CompletionRefusesAUserSuspendedMeanwhile() {
 	user := s.seedUser(true)
 	_, challenge := s.loginAs(user.Email)
 	s.Require().NotEmpty(challenge.ChallengeToken)
@@ -176,7 +176,7 @@ func (s *AccessStatusTestSuite) TestTwoFactorCompletionRefusesAUserSuspendedMean
 	s.Empty(body.AccessToken)
 }
 
-func (s *AccessStatusTestSuite) TestAMembershipThatIsNotActiveCountsAsAbsent() {
+func (s *AccessStatusTestSuite) TestA_Membership_ThatIsNotActiveCountsAsAbsent() {
 	user := s.seedUser(false)
 	accountID := s.seedAccount()
 	s.addMember(accountID, user.ID, "suspended")
@@ -189,7 +189,7 @@ func (s *AccessStatusTestSuite) TestAMembershipThatIsNotActiveCountsAsAbsent() {
 	s.assertNotAMember(s.send("GET", "/v1/wallets", signedIn.AccessToken, accountID, ""))
 }
 
-func (s *AccessStatusTestSuite) TestAnActiveAccountAcceptsMutations() {
+func (s *AccessStatusTestSuite) TestAn_Active_AccountAcceptsMutations() {
 	user := s.seedUser(false)
 	accountID := s.seedAccount()
 	s.addMember(accountID, user.ID, models.StatusActive)
@@ -198,7 +198,7 @@ func (s *AccessStatusTestSuite) TestAnActiveAccountAcceptsMutations() {
 	s.send("PATCH", "/v1/accounts/"+accountID.String(), session.AccessToken, uuid.Nil, `{"name":"Renamed"}`).AssertOk()
 }
 
-func (s *AccessStatusTestSuite) TestFrozenOrArchivedAccountIsReadOnlyOnAccountRoutes() {
+func (s *AccessStatusTestSuite) TestFrozen_Or_ArchivedAccountIsReadOnlyOnAccountRoutes() {
 	for _, status := range []string{models.AccountStatusFrozen, models.AccountStatusArchived} {
 		user := s.seedUser(false)
 		accountID := s.seedAccount()
@@ -236,7 +236,7 @@ func (s *AccessStatusTestSuite) TestFrozenOrArchivedAccountIsReadOnlyOnAccountRo
 	}
 }
 
-func (s *AccessStatusTestSuite) TestFrozenAccountIsReadOnlyThroughTheAccountHeader() {
+func (s *AccessStatusTestSuite) TestFrozen_Account_IsReadOnlyThroughTheAccountHeader() {
 	user := s.seedUser(false)
 	accountID := s.seedAccount()
 	s.addMember(accountID, user.ID, models.StatusActive)
@@ -247,7 +247,7 @@ func (s *AccessStatusTestSuite) TestFrozenAccountIsReadOnlyThroughTheAccountHead
 	s.assertReadOnlyRefusal(s.send("POST", "/v1/wallets", session.AccessToken, accountID, `{}`), models.AccountStatusFrozen)
 }
 
-func (s *AccessStatusTestSuite) TestWalletOfAFrozenAccountIsReadOnly() {
+func (s *AccessStatusTestSuite) TestWallet_Of_AFrozenAccountIsReadOnly() {
 	user := s.seedUser(false)
 	headerAccount := s.seedAccount()
 	walletAccount := s.seedAccount()
@@ -265,7 +265,7 @@ func (s *AccessStatusTestSuite) TestWalletOfAFrozenAccountIsReadOnly() {
 	)
 }
 
-func (s *AccessStatusTestSuite) TestAPITokenOfAFrozenAccountIsReadOnly() {
+func (s *AccessStatusTestSuite) TestAPI_Token_OfAFrozenAccountIsReadOnly() {
 	accountID, bearer, _ := support.SetupAPIAuth(s.T(), false)
 	walletID := seedAPIWalletForAccount(s.T(), accountID, "eth", "frozen-api-wallet")
 	s.setStatus("accounts", accountID, models.AccountStatusFrozen)

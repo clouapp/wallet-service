@@ -12,7 +12,7 @@ func testAddedSeeds() []chainSeed {
 	return buildAddedEVMChainSeeds(func(string) int { return testConfirmations })
 }
 
-func TestAddedChainsSeedOnTheProfileNetworkWithEnvRPCReferences(t *testing.T) {
+func TestAdded_Chains_SeedOnTheProfileNetworkWithEnvRPCReferences(t *testing.T) {
 	t.Parallel()
 
 	want := map[string]map[string]int64{
@@ -59,7 +59,7 @@ func TestAddedChainsSeedOnTheProfileNetworkWithEnvRPCReferences(t *testing.T) {
 	}
 }
 
-func TestChainSeedsCreateEveryMainnetBeforeTheTestRecordsPointingAtIt(t *testing.T) {
+func TestChain_Seeds_CreateEveryMainnetBeforeTheTestRecordsPointingAtIt(t *testing.T) {
 	t.Parallel()
 
 	seen := map[string]bool{}
@@ -94,7 +94,7 @@ func tokensByChain(t *testing.T, profile string) map[string][]tokenSeed {
 	return byChain
 }
 
-func TestTestnetProfileSeedsTestnetContractsOnTheFlippedPrimaries(t *testing.T) {
+func TestTestnet_Profile_SeedsTestnetContractsOnTheFlippedPrimaries(t *testing.T) {
 	t.Parallel()
 
 	byChain := tokensByChain(t, models.ChainNetworkProfileTestnet)
@@ -114,7 +114,7 @@ func TestTestnetProfileSeedsTestnetContractsOnTheFlippedPrimaries(t *testing.T) 
 	}
 }
 
-func TestMainnetProfileSeedsBSCStablecoinsWith18Decimals(t *testing.T) {
+func TestMainnet_Profile_SeedsBSCStablecoinsWith18Decimals(t *testing.T) {
 	t.Parallel()
 
 	byChain := tokensByChain(t, models.ChainNetworkProfileMainnet)
@@ -139,7 +139,7 @@ func TestMainnetProfileSeedsBSCStablecoinsWith18Decimals(t *testing.T) {
 	}
 }
 
-func TestAddedChainExplorersFollowTheNetwork(t *testing.T) {
+func TestAdded_Chain_ExplorersFollowTheNetwork(t *testing.T) {
 	t.Parallel()
 
 	resources, err := resourcesForChains(testAddedSeeds(), models.ChainNetworkProfileTestnet)

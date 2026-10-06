@@ -12,7 +12,7 @@ import (
 	currencysvc "github.com/macrowallets/waas/app/services/currencies"
 )
 
-func TestChainProvider_RegistersTheChainGraph(t *testing.T) {
+func TestChain_Provider_RegistersTheChainGraph(t *testing.T) {
 	require.NotNil(t, foundation.App)
 	(&ChainServiceProvider{}).Register(foundation.App)
 

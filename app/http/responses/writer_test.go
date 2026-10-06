@@ -26,7 +26,7 @@ func newContext(t *testing.T, request *http.Request) (contractshttp.Context, *ht
 	return ginpkg.NewContext(ginCtx), rec
 }
 
-func TestError_WritesTheEnvelope(t *testing.T) {
+func TestError_Writes_TheEnvelope(t *testing.T) {
 	ctx, rec := newContext(t, httptest.NewRequest(http.MethodGet, "/", nil))
 
 	require.NoError(t, Error(ctx, http.StatusNotFound, resources.CodeNotFound, "not found").Render())
@@ -37,7 +37,7 @@ func TestError_WritesTheEnvelope(t *testing.T) {
 	assert.JSONEq(t, `{"error":{"code":"not_found","message":"not found"}}`, rec.Body.String())
 }
 
-func TestInternalError_HidesTheCause(t *testing.T) {
+func TestInternal_Error_HidesTheCause(t *testing.T) {
 	ctx, rec := newContext(t, httptest.NewRequest(http.MethodGet, "/", nil))
 
 	require.NoError(t, InternalError(ctx, errors.New("dial tcp 10.0.0.7:5432: connect: refused")).Render())
@@ -48,7 +48,7 @@ func TestInternalError_HidesTheCause(t *testing.T) {
 	assert.NotContains(t, rec.Body.String(), "10.0.0.7")
 }
 
-func TestProviderError_IsBadGatewayWithoutTheUpstreamText(t *testing.T) {
+func TestProvider_Error_IsBadGatewayWithoutTheUpstreamText(t *testing.T) {
 	ctx, rec := newContext(t, httptest.NewRequest(http.MethodPost, "/", nil))
 
 	require.NoError(t, ProviderError(ctx, errors.New("403 AccessDenied for key acme/logo.png")).Render())
@@ -59,7 +59,7 @@ func TestProviderError_IsBadGatewayWithoutTheUpstreamText(t *testing.T) {
 	assert.NotContains(t, rec.Body.String(), "AccessDenied")
 }
 
-func TestFieldError_StaysUnprocessableWithTheFieldMap(t *testing.T) {
+func TestField_Error_StaysUnprocessableWithTheFieldMap(t *testing.T) {
 	ctx, rec := newContext(t, httptest.NewRequest(http.MethodPatch, "/", nil))
 
 	require.NoError(t, FieldError(ctx, "status", "status cannot be set to active while suspended").Render())
@@ -69,7 +69,7 @@ func TestFieldError_StaysUnprocessableWithTheFieldMap(t *testing.T) {
 	assert.JSONEq(t, `{"error":{"code":"validation_failed","message":"validation failed"},"errors":{"status":["status cannot be set to active while suspended"]}}`, rec.Body.String())
 }
 
-func TestFieldError_EmptyMessageNamesTheField(t *testing.T) {
+func TestField_Error_EmptyMessageNamesTheField(t *testing.T) {
 	ctx, rec := newContext(t, httptest.NewRequest(http.MethodPatch, "/", nil))
 
 	require.NoError(t, FieldError(ctx, "status", "").Render())
@@ -79,7 +79,7 @@ func TestFieldError_EmptyMessageNamesTheField(t *testing.T) {
 	assert.JSONEq(t, `{"error":{"code":"validation_failed","message":"validation failed"},"errors":{"status":["status is invalid"]}}`, rec.Body.String())
 }
 
-func TestValidationFailed_StaysUnprocessable(t *testing.T) {
+func TestValidation_Failed_StaysUnprocessable(t *testing.T) {
 	ctx, rec := newContext(t, httptest.NewRequest(http.MethodPost, "/", nil))
 
 	require.NoError(t, ValidationFailed(ctx, fakeErrors{all: map[string]map[string]string{
@@ -91,7 +91,7 @@ func TestValidationFailed_StaysUnprocessable(t *testing.T) {
 	assert.JSONEq(t, `{"error":{"code":"validation_failed","message":"validation failed"},"errors":{"email":["Email address is required"]}}`, rec.Body.String())
 }
 
-func TestJSON_EncodeFailureAnswersTheEnvelope(t *testing.T) {
+func TestJSON_Encode_FailureAnswersTheEnvelope(t *testing.T) {
 	ctx, rec := newContext(t, httptest.NewRequest(http.MethodGet, "/", nil))
 
 	unencodable := map[string]any{"ok": "value", "broken": make(chan int)}
@@ -103,7 +103,7 @@ func TestJSON_EncodeFailureAnswersTheEnvelope(t *testing.T) {
 	assert.NotContains(t, rec.Body.String(), "value")
 }
 
-func TestJSON_MatchesStdlibEncoder(t *testing.T) {
+func TestJSON_Matches_StdlibEncoder(t *testing.T) {
 	payload := map[string]any{
 		"zebra": 1,
 		"alpha": 2,
@@ -120,7 +120,7 @@ func TestJSON_MatchesStdlibEncoder(t *testing.T) {
 	assert.Equal(t, "encoding/json", gincodecjson.Package)
 }
 
-func TestSend_SuccessBodyIsNotAnErrorEnvelope(t *testing.T) {
+func TestSend_Success_BodyIsNotAnErrorEnvelope(t *testing.T) {
 	ctx, rec := newContext(t, httptest.NewRequest(http.MethodGet, "/", nil))
 
 	require.NoError(t, Send(ctx, http.StatusOK, contractshttp.Json{"status": "ok"}).Render())

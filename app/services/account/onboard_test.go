@@ -16,7 +16,7 @@ import (
 
 const onboardPasswordHash = "stored-password-hash"
 
-func TestOnboardRollsBackAccountAndMembershipWhenMembershipInsertFails(t *testing.T) {
+func TestOnboard_Rolls_BackAccountAndMembershipWhenMembershipInsertFails(t *testing.T) {
 	fixtures.TestDB(t)
 	ctx := context.Background()
 	email := "onboard-rollback-" + uuid.NewString() + "@example.com"
@@ -68,7 +68,7 @@ func TestOnboardRollsBackAccountAndMembershipWhenMembershipInsertFails(t *testin
 	}
 }
 
-func TestOnboardCommitsThenDispatchesMail(t *testing.T) {
+func TestOnboard_Commits_ThenDispatchesMail(t *testing.T) {
 	fixtures.TestDB(t)
 	ctx := context.Background()
 	email := "onboard-commit-" + uuid.NewString() + "@example.com"

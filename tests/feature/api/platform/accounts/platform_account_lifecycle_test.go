@@ -22,7 +22,7 @@ type PlatformAccountLifecycleTestSuite struct {
 	authSuite
 }
 
-func TestPlatformAccountLifecycleSuite(t *testing.T) {
+func TestPlatform_Account_LifecycleSuite(t *testing.T) {
 	suite.Run(t, new(PlatformAccountLifecycleTestSuite))
 }
 
@@ -30,7 +30,7 @@ func (s *PlatformAccountLifecycleTestSuite) SetupTest() {
 	testutil.SeededTestDB(s.T())
 }
 
-func (s *PlatformAccountLifecycleTestSuite) TestPlatformAdminFreezesUnfreezesAndArchives() {
+func (s *PlatformAccountLifecycleTestSuite) TestPlatform_Admin_FreezesUnfreezesAndArchives() {
 	admin := s.seedUser(false)
 	s.grantPlatformAdmin(admin.ID)
 	adminSession := s.signIn(admin.Email)

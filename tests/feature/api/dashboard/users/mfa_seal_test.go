@@ -16,7 +16,7 @@ type MfaSealTestSuite struct {
 	authSuite
 }
 
-func TestMfaSealSuite(t *testing.T) {
+func TestMfa_Seal_Suite(t *testing.T) {
 	suite.Run(t, new(MfaSealTestSuite))
 }
 
@@ -24,7 +24,7 @@ func (s *MfaSealTestSuite) SetupTest() {
 	fixtures.TestDB(s.T())
 }
 
-func (s *MfaSealTestSuite) TestEnrolledSecretIsSealedAndVerifyStillWorks() {
+func (s *MfaSealTestSuite) TestEnrolled_Secret_IsSealedAndVerifyStillWorks() {
 	user := s.seedUser(false)
 	session := s.signIn(user.Email)
 
@@ -75,7 +75,7 @@ func (s *MfaSealTestSuite) TestEnrolledSecretIsSealedAndVerifyStillWorks() {
 	s.Zero(s.rows(`SELECT count(*) FROM account_activity WHERE metadata::text LIKE '%enc:v1:%'`))
 }
 
-func (s *MfaSealTestSuite) TestUnsealedSecretFailsClosed() {
+func (s *MfaSealTestSuite) TestUnsealed_Secret_FailsClosed() {
 	user := s.seedUser(false)
 	_, err := facades.Orm().Query().Exec(`UPDATE users SET totp_enabled = TRUE WHERE id = ?`, user.ID)
 	s.Require().NoError(err)

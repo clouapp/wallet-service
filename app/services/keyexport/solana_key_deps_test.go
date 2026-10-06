@@ -10,7 +10,7 @@ import (
 	"github.com/mr-tron/base58"
 )
 
-func TestNewSolanaKeyUsesDeps(t *testing.T) {
+func TestNew_Solana_KeyUsesDeps(t *testing.T) {
 	seed := make([]byte, ed25519.SeedSize)
 	if _, err := rand.Read(seed); err != nil {
 		t.Fatal(err)

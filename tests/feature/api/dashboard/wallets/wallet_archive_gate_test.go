@@ -29,7 +29,7 @@ type WalletArchiveGateTestSuite struct {
 	goravelTesting.TestCase
 }
 
-func TestWalletArchiveGateSuite(t *testing.T) {
+func TestWallet_Archive_GateSuite(t *testing.T) {
 	suite.Run(t, new(WalletArchiveGateTestSuite))
 }
 
@@ -37,7 +37,7 @@ func (s *WalletArchiveGateTestSuite) SetupTest() {
 	fixtures.TestDB(s.T())
 }
 
-func (s *WalletArchiveGateTestSuite) TestWalletArchiveFollowsTheLoadedRoles() {
+func (s *WalletArchiveGateTestSuite) TestWallet_Archive_FollowsTheLoadedRoles() {
 	account := fixtures.InsertAccount(s.T(), "wallet archive")
 	wallet := fixtures.InsertWalletWithAccount(s.T(), models.ChainETH, &account.ID)
 
@@ -90,7 +90,7 @@ func (s *WalletArchiveGateTestSuite) TestWalletArchiveFollowsTheLoadedRoles() {
 	}
 }
 
-func (s *WalletArchiveGateTestSuite) TestWalletArchiveStaysHiddenFromAnAccountUser() {
+func (s *WalletArchiveGateTestSuite) TestWallet_Archive_StaysHiddenFromAnAccountUser() {
 	account := fixtures.InsertAccount(s.T(), "wallet archive hidden")
 	wallet := fixtures.InsertWalletWithAccount(s.T(), models.ChainETH, &account.ID)
 	actor := s.member(models.AccountRoleUser, account.ID)

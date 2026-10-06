@@ -10,7 +10,7 @@ import (
 	"github.com/macrowallets/waas/app/repositories"
 )
 
-func TestWithdrawalProvider_RegistersTheWithdrawalGraph(t *testing.T) {
+func TestWithdrawal_Provider_RegistersTheWithdrawalGraph(t *testing.T) {
 	require.NotNil(t, foundation.App)
 	(&WithdrawalServiceProvider{}).Register(foundation.App)
 

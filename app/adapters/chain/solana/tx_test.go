@@ -44,7 +44,7 @@ func signSolanaForTest(t *testing.T, unsigned *types.UnsignedTx, seed []byte) *t
 	return signed
 }
 
-func TestSolanaSignNative(t *testing.T) {
+func TestSolana_Sign_Native(t *testing.T) {
 	seed := bytes.Repeat([]byte{0x07}, 32)
 	priv := ed25519.NewKeyFromSeed(seed)
 	from := solana.PublicKeyFromBytes(priv.Public().(ed25519.PublicKey))
@@ -65,7 +65,7 @@ func TestSolanaSignNative(t *testing.T) {
 	}
 }
 
-func TestSolanaBroadcast(t *testing.T) {
+func TestTx_Solana_Broadcast(t *testing.T) {
 	var method string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var req struct {
@@ -97,7 +97,7 @@ func TestSolanaBroadcast(t *testing.T) {
 	}
 }
 
-func TestSolanaSignSPL(t *testing.T) {
+func TestSolana_Sign_SPL(t *testing.T) {
 	seed := bytes.Repeat([]byte{0x07}, 32)
 	priv := ed25519.NewKeyFromSeed(seed)
 	owner := solana.PublicKeyFromBytes(priv.Public().(ed25519.PublicKey))
@@ -127,7 +127,7 @@ func TestSolanaSignSPL(t *testing.T) {
 	}
 }
 
-func TestSolanaSweepNative(t *testing.T) {
+func TestSolana_Sweep_Native(t *testing.T) {
 	live, from, to := newSweepSolana(t)
 	txs, err := live.BuildSweep(context.Background(), types.SweepRequest{
 		From:          from,
@@ -154,7 +154,7 @@ func TestSolanaSweepNative(t *testing.T) {
 	}
 }
 
-func TestSolanaSweepSPL(t *testing.T) {
+func TestSolana_Sweep_SPL(t *testing.T) {
 	live, from, to := newSweepSolana(t)
 	token := &types.Token{Symbol: models.SymbolUSDC, Contract: models.USDCMintSOL, Decimals: 6, ChainID: models.ChainSOL}
 	_, err := live.BuildSweep(context.Background(), types.SweepRequest{
@@ -182,7 +182,7 @@ func TestSolanaSweepSPL(t *testing.T) {
 	}
 }
 
-func TestSolanaBuildTransferCreatesMissingATA(t *testing.T) {
+func TestSolana_Build_TransferCreatesMissingATA(t *testing.T) {
 	var sawAccount bool
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var req struct {

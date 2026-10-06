@@ -10,7 +10,7 @@ import (
 	"github.com/macrowallets/waas/app/models"
 )
 
-func TestNewWebSocketClientKeepsItsDependencies(t *testing.T) {
+func TestNew_Web_SocketClientKeepsItsDependencies(t *testing.T) {
 	repo := &mockCurrencyRepo{}
 	dialer := &recordingDialer{}
 	client := NewWebSocketClient(WebSocketClientDeps{
@@ -28,7 +28,7 @@ func TestNewWebSocketClientKeepsItsDependencies(t *testing.T) {
 	}
 }
 
-func TestConnectRefusesAMissingDialer(t *testing.T) {
+func TestConnect_Refuses_AMissingDialer(t *testing.T) {
 	client := NewWebSocketClient(WebSocketClientDeps{
 		APIKey:     "key",
 		Currencies: &mockCurrencyRepo{},
@@ -39,7 +39,7 @@ func TestConnectRefusesAMissingDialer(t *testing.T) {
 	}
 }
 
-func TestConnectDialsCoinAPIAndSendsHello(t *testing.T) {
+func TestConnect_Dials_CoinAPIAndSendsHello(t *testing.T) {
 	repo := &mockCurrencyRepo{active: []models.Currency{{Code: "BTC"}}}
 	conn := &recordingConn{
 		hello:  make(chan map[string]any, 1),

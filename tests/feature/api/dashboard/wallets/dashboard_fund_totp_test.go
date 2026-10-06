@@ -33,7 +33,7 @@ type DashboardFundTOTPSuite struct {
 	goravelTesting.TestCase
 }
 
-func TestDashboardFundTOTPSuite(t *testing.T) {
+func TestDashboard_Fund_TOTPSuite(t *testing.T) {
 	suite.Run(t, new(DashboardFundTOTPSuite))
 }
 
@@ -41,7 +41,7 @@ func (s *DashboardFundTOTPSuite) SetupTest() {
 	fixtures.TestDB(s.T())
 }
 
-func (s *DashboardFundTOTPSuite) TestAddWhitelistRequiresCodeWhenTOTPIsOn() {
+func (s *DashboardFundTOTPSuite) TestAdd_Whitelist_RequiresCodeWhenTOTPIsOn() {
 	account, wallet := s.wallet()
 	caller := s.member(models.AccountRoleOwner, account.ID, true)
 	label := "no-code-" + uuid.NewString()[:8]
@@ -53,7 +53,7 @@ func (s *DashboardFundTOTPSuite) TestAddWhitelistRequiresCodeWhenTOTPIsOn() {
 	s.Equal(int64(0), s.totpCounter(caller.id))
 }
 
-func (s *DashboardFundTOTPSuite) TestAddWhitelistWithValidCodeWhenTOTPIsOn() {
+func (s *DashboardFundTOTPSuite) TestAdd_Whitelist_WithValidCodeWhenTOTPIsOn() {
 	account, wallet := s.wallet()
 	caller := s.member(models.AccountRoleOwner, account.ID, true)
 	label := "with-code-" + uuid.NewString()[:8]
@@ -71,7 +71,7 @@ func (s *DashboardFundTOTPSuite) TestAddWhitelistWithValidCodeWhenTOTPIsOn() {
 	s.Equal(int64(0), s.whitelistCount(wallet.ID, again))
 }
 
-func (s *DashboardFundTOTPSuite) TestAddWhitelistWithoutTOTPStillProceeds() {
+func (s *DashboardFundTOTPSuite) TestAdd_Whitelist_WithoutTOTPStillProceeds() {
 	account, wallet := s.wallet()
 	caller := s.member(models.AccountRoleOwner, account.ID, false)
 	label := "no-totp-" + uuid.NewString()[:8]
@@ -82,7 +82,7 @@ func (s *DashboardFundTOTPSuite) TestAddWhitelistWithoutTOTPStillProceeds() {
 	s.Equal(int64(1), s.whitelistCount(wallet.ID, label))
 }
 
-func (s *DashboardFundTOTPSuite) TestDeleteWhitelistRequiresCodeWhenTOTPIsOn() {
+func (s *DashboardFundTOTPSuite) TestDelete_Whitelist_RequiresCodeWhenTOTPIsOn() {
 	account, wallet := s.wallet()
 	caller := s.member(models.AccountRoleOwner, account.ID, true)
 	label := "delete-no-code-" + uuid.NewString()[:8]
@@ -95,7 +95,7 @@ func (s *DashboardFundTOTPSuite) TestDeleteWhitelistRequiresCodeWhenTOTPIsOn() {
 	s.Equal(int64(0), s.totpCounter(caller.id))
 }
 
-func (s *DashboardFundTOTPSuite) TestDeleteWhitelistWithValidCodeWhenTOTPIsOn() {
+func (s *DashboardFundTOTPSuite) TestDelete_Whitelist_WithValidCodeWhenTOTPIsOn() {
 	account, wallet := s.wallet()
 	caller := s.member(models.AccountRoleOwner, account.ID, true)
 	label := "delete-code-" + uuid.NewString()[:8]
@@ -108,7 +108,7 @@ func (s *DashboardFundTOTPSuite) TestDeleteWhitelistWithValidCodeWhenTOTPIsOn() 
 	s.Positive(s.totpCounter(caller.id))
 }
 
-func (s *DashboardFundTOTPSuite) TestDeleteWhitelistWithoutTOTPStillProceeds() {
+func (s *DashboardFundTOTPSuite) TestDelete_Whitelist_WithoutTOTPStillProceeds() {
 	account, wallet := s.wallet()
 	caller := s.member(models.AccountRoleOwner, account.ID, false)
 	label := "delete-open-" + uuid.NewString()[:8]
@@ -120,7 +120,7 @@ func (s *DashboardFundTOTPSuite) TestDeleteWhitelistWithoutTOTPStillProceeds() {
 	s.Equal(int64(0), s.whitelistCount(wallet.ID, label))
 }
 
-func (s *DashboardFundTOTPSuite) TestCreateWebhookRequiresCodeWhenTOTPIsOn() {
+func (s *DashboardFundTOTPSuite) TestCreate_Webhook_RequiresCodeWhenTOTPIsOn() {
 	account, wallet := s.wallet()
 	caller := s.member(models.AccountRoleOwner, account.ID, true)
 	hookURL := s.hookURL("no-code")
@@ -133,7 +133,7 @@ func (s *DashboardFundTOTPSuite) TestCreateWebhookRequiresCodeWhenTOTPIsOn() {
 	s.Equal(int64(0), s.totpCounter(caller.id))
 }
 
-func (s *DashboardFundTOTPSuite) TestCreateWebhookWithValidCodeWhenTOTPIsOn() {
+func (s *DashboardFundTOTPSuite) TestCreate_Webhook_WithValidCodeWhenTOTPIsOn() {
 	account, wallet := s.wallet()
 	caller := s.member(models.AccountRoleOwner, account.ID, true)
 	hookURL := s.hookURL("with-code")
@@ -146,7 +146,7 @@ func (s *DashboardFundTOTPSuite) TestCreateWebhookWithValidCodeWhenTOTPIsOn() {
 	s.Positive(s.totpCounter(caller.id))
 }
 
-func (s *DashboardFundTOTPSuite) TestCreateWebhookWithoutTOTPStillProceeds() {
+func (s *DashboardFundTOTPSuite) TestCreate_Webhook_WithoutTOTPStillProceeds() {
 	account, wallet := s.wallet()
 	caller := s.member(models.AccountRoleOwner, account.ID, false)
 	hookURL := s.hookURL("no-totp")
@@ -157,7 +157,7 @@ func (s *DashboardFundTOTPSuite) TestCreateWebhookWithoutTOTPStillProceeds() {
 	s.Equal(int64(1), s.webhookCount(wallet.ID, hookURL))
 }
 
-func (s *DashboardFundTOTPSuite) TestDeleteWebhookRequiresCodeWhenTOTPIsOn() {
+func (s *DashboardFundTOTPSuite) TestDelete_Webhook_RequiresCodeWhenTOTPIsOn() {
 	account, wallet := s.wallet()
 	owner := s.member(models.AccountRoleOwner, account.ID, false)
 	caller := s.member(models.AccountRoleAdmin, account.ID, true)
@@ -174,7 +174,7 @@ func (s *DashboardFundTOTPSuite) TestDeleteWebhookRequiresCodeWhenTOTPIsOn() {
 	s.Equal(int64(0), s.totpCounter(caller.id))
 }
 
-func (s *DashboardFundTOTPSuite) TestDeleteWebhookWithValidCodeWhenTOTPIsOn() {
+func (s *DashboardFundTOTPSuite) TestDelete_Webhook_WithValidCodeWhenTOTPIsOn() {
 	account, wallet := s.wallet()
 	owner := s.member(models.AccountRoleOwner, account.ID, false)
 	caller := s.member(models.AccountRoleAdmin, account.ID, true)
@@ -189,7 +189,7 @@ func (s *DashboardFundTOTPSuite) TestDeleteWebhookWithValidCodeWhenTOTPIsOn() {
 	s.Positive(s.totpCounter(caller.id))
 }
 
-func (s *DashboardFundTOTPSuite) TestDeleteWebhookWithoutTOTPStillProceeds() {
+func (s *DashboardFundTOTPSuite) TestDelete_Webhook_WithoutTOTPStillProceeds() {
 	account, wallet := s.wallet()
 	caller := s.member(models.AccountRoleOwner, account.ID, false)
 	hookURL := s.hookURL("delete-open")
@@ -202,7 +202,7 @@ func (s *DashboardFundTOTPSuite) TestDeleteWebhookWithoutTOTPStillProceeds() {
 	s.Equal(int64(0), s.webhookCount(wallet.ID, hookURL))
 }
 
-func (s *DashboardFundTOTPSuite) TestMissingWhitelistEntryStays404WhenTOTPIsOn() {
+func (s *DashboardFundTOTPSuite) TestMissing_Whitelist_EntryStays404WhenTOTPIsOn() {
 	account, wallet := s.wallet()
 	caller := s.member(models.AccountRoleUser, account.ID, true)
 	s.assign(caller.id, wallet.ID, models.WalletRoleViewer)
@@ -214,7 +214,7 @@ func (s *DashboardFundTOTPSuite) TestMissingWhitelistEntryStays404WhenTOTPIsOn()
 	s.Equal(int64(0), s.totpCounter(caller.id))
 }
 
-func (s *DashboardFundTOTPSuite) TestMissingWebhookStays404WhenTOTPIsOn() {
+func (s *DashboardFundTOTPSuite) TestMissing_Webhook_Stays404WhenTOTPIsOn() {
 	account, wallet := s.wallet()
 	caller := s.member(models.AccountRoleUser, account.ID, true)
 	s.assign(caller.id, wallet.ID, models.WalletRoleViewer)
@@ -226,7 +226,7 @@ func (s *DashboardFundTOTPSuite) TestMissingWebhookStays404WhenTOTPIsOn() {
 	s.Equal(int64(0), s.totpCounter(caller.id))
 }
 
-func (s *DashboardFundTOTPSuite) TestAccountUserWhoIsNotAWalletMemberStays404() {
+func (s *DashboardFundTOTPSuite) TestAccount_User_WhoIsNotAWalletMemberStays404() {
 	account, wallet := s.wallet()
 	caller := s.member(models.AccountRoleUser, account.ID, true)
 	label := "hidden-" + uuid.NewString()[:8]
@@ -239,7 +239,7 @@ func (s *DashboardFundTOTPSuite) TestAccountUserWhoIsNotAWalletMemberStays404() 
 	s.Equal(int64(0), s.totpCounter(caller.id))
 }
 
-func (s *DashboardFundTOTPSuite) TestViewerWithTOTPIsStillForbidden() {
+func (s *DashboardFundTOTPSuite) TestViewer_With_TOTPIsStillForbidden() {
 	account, wallet := s.wallet()
 	caller := s.member(models.AccountRoleUser, account.ID, true)
 	s.assign(caller.id, wallet.ID, models.WalletRoleViewer)

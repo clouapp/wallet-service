@@ -8,7 +8,7 @@ import (
 	"github.com/btcsuite/btcd/btcec/v2"
 )
 
-func TestReconstructSecp256k1(t *testing.T) {
+func TestSigning_Reconstruct_Secp2561(t *testing.T) {
 	svc := NewTSSService()
 	result, err := svc.Keygen(context.Background(), CurveSecp256k1)
 	if err != nil {

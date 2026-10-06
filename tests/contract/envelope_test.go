@@ -2,7 +2,7 @@ package contract
 
 import "testing"
 
-func TestRejectLegacyErrorShape_RejectsAStringError(t *testing.T) {
+func TestReject_LegacyErrorShape_RejectsAStringError(t *testing.T) {
 	err := RejectLegacyErrorShape(Exchange{
 		Step:   "legacy",
 		Status: 400,
@@ -13,7 +13,7 @@ func TestRejectLegacyErrorShape_RejectsAStringError(t *testing.T) {
 	}
 }
 
-func TestRejectLegacyErrorShape_AcceptsTheEnvelope(t *testing.T) {
+func TestReject_LegacyErrorShape_AcceptsTheEnvelope(t *testing.T) {
 	err := RejectLegacyErrorShape(Exchange{
 		Step:   "envelope",
 		Status: 404,
@@ -24,7 +24,7 @@ func TestRejectLegacyErrorShape_AcceptsTheEnvelope(t *testing.T) {
 	}
 }
 
-func TestRejectLegacyErrorShape_IgnoresSuccess(t *testing.T) {
+func TestReject_LegacyErrorShape_IgnoresSuccess(t *testing.T) {
 	err := RejectLegacyErrorShape(Exchange{
 		Step:   "ok",
 		Status: 200,
@@ -35,14 +35,14 @@ func TestRejectLegacyErrorShape_IgnoresSuccess(t *testing.T) {
 	}
 }
 
-func TestRejectLegacyErrorShape_RejectsAnEmptyFailure(t *testing.T) {
+func TestReject_LegacyErrorShape_RejectsAnEmptyFailure(t *testing.T) {
 	err := RejectLegacyErrorShape(Exchange{Step: "empty", Status: 401, Body: ""})
 	if err == nil {
 		t.Fatal("an empty non-2xx body must fail")
 	}
 }
 
-func TestRejectLegacyErrorShape_RequiresFieldErrorsOnValidation(t *testing.T) {
+func TestReject_LegacyErrorShape_RequiresFieldErrorsOnValidation(t *testing.T) {
 	missing := RejectLegacyErrorShape(Exchange{
 		Step:   "validation",
 		Status: 422,
@@ -61,7 +61,7 @@ func TestRejectLegacyErrorShape_RequiresFieldErrorsOnValidation(t *testing.T) {
 	}
 }
 
-func TestRejectLegacyErrorShape_AllowsADomain422WithoutFieldErrors(t *testing.T) {
+func TestReject_LegacyErrorShape_AllowsADomain422WithoutFieldErrors(t *testing.T) {
 	err := RejectLegacyErrorShape(Exchange{
 		Step:   "gas",
 		Status: 422,

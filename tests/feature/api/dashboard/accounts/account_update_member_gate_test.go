@@ -27,7 +27,7 @@ type AccountUpdateMemberGateTestSuite struct {
 	goravelTesting.TestCase
 }
 
-func TestAccountUpdateMemberGateSuite(t *testing.T) {
+func TestAccount_Update_MemberGateSuite(t *testing.T) {
 	suite.Run(t, new(AccountUpdateMemberGateTestSuite))
 }
 
@@ -35,7 +35,7 @@ func (s *AccountUpdateMemberGateTestSuite) SetupTest() {
 	fixtures.TestDB(s.T())
 }
 
-func (s *AccountUpdateMemberGateTestSuite) TestAccountUpdateMemberFollowsUsersWrite() {
+func (s *AccountUpdateMemberGateTestSuite) TestAccount_Update_MemberFollowsUsersWrite() {
 	accountID := s.createAccount()
 
 	for _, role := range []string{models.AccountRoleAuditor, models.AccountRoleUser} {
@@ -57,7 +57,7 @@ func (s *AccountUpdateMemberGateTestSuite) TestAccountUpdateMemberFollowsUsersWr
 	}
 }
 
-func (s *AccountUpdateMemberGateTestSuite) TestRankLimitsStayOnTheChange() {
+func (s *AccountUpdateMemberGateTestSuite) TestRank_Limits_StayOnTheChange() {
 	accountID := s.createAccount()
 	s.insertMember(accountID, models.AccountRoleOwner, models.MembershipStatusActive)
 	ownerID := s.insertMember(accountID, models.AccountRoleOwner, models.MembershipStatusActive)

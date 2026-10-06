@@ -21,7 +21,7 @@ func (f *fakeRows) CountEquals(_ context.Context, table, column, value string) (
 	return f.count, f.err
 }
 
-func TestDBExistsAsksThePort(t *testing.T) {
+func TestDB_Exists_AsksThePort(t *testing.T) {
 	rows := &fakeRows{count: 1}
 	rule := NewDBExists(rows)
 	if !rule.Passes(context.Background(), nil, "eth", "chains", "id") {
@@ -37,7 +37,7 @@ func TestDBExistsAsksThePort(t *testing.T) {
 	}
 }
 
-func TestDBExistsPassesWhenTheReadFailsOrTheValueIsBlank(t *testing.T) {
+func TestDB_Exists_PassesWhenTheReadFailsOrTheValueIsBlank(t *testing.T) {
 	rule := NewDBExists(&fakeRows{err: errors.New("down")})
 	if !rule.Passes(context.Background(), nil, "eth", "chains", "id") {
 		t.Fatal("expected a failed read to pass")
@@ -50,7 +50,7 @@ func TestDBExistsPassesWhenTheReadFailsOrTheValueIsBlank(t *testing.T) {
 	}
 }
 
-func TestUniqueAsksThePort(t *testing.T) {
+func TestUnique_Asks_ThePort(t *testing.T) {
 	rows := &fakeRows{count: 0}
 	rule := NewUnique(rows)
 	if !rule.Passes(context.Background(), nil, "new@example.com", "users", "email") {
@@ -66,14 +66,14 @@ func TestUniqueAsksThePort(t *testing.T) {
 	}
 }
 
-func TestUniquePassesWhenTheReadFails(t *testing.T) {
+func TestUnique_Passes_WhenTheReadFails(t *testing.T) {
 	rule := NewUnique(&fakeRows{err: errors.New("down")})
 	if !rule.Passes(context.Background(), nil, "taken@example.com", "users", "email") {
 		t.Fatal("expected a failed read to pass")
 	}
 }
 
-func TestNewDBExistsRejectsANilPort(t *testing.T) {
+func TestNew_DB_ExistsRejectsANilPort(t *testing.T) {
 	defer func() {
 		if recover() == nil {
 			t.Fatal("expected NewDBExists to panic")
@@ -82,7 +82,7 @@ func TestNewDBExistsRejectsANilPort(t *testing.T) {
 	NewDBExists(nil)
 }
 
-func TestNewUniqueRejectsANilPort(t *testing.T) {
+func TestNew_Unique_RejectsANilPort(t *testing.T) {
 	defer func() {
 		if recover() == nil {
 			t.Fatal("expected NewUnique to panic")

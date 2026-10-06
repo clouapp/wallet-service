@@ -7,7 +7,7 @@ import (
 	"github.com/google/uuid"
 )
 
-func TestRequire2FAMissingRowIsDefaultFalse(t *testing.T) {
+func TestRequire2_FA_MissingRowIsDefaultFalse(t *testing.T) {
 	t.Parallel()
 
 	store := newMemoryStore()
@@ -26,7 +26,7 @@ func TestRequire2FAMissingRowIsDefaultFalse(t *testing.T) {
 	}
 }
 
-func TestRequire2FAStoredValue(t *testing.T) {
+func TestRequire2_FA_StoredValue(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
@@ -74,7 +74,7 @@ func TestRequire2FAStoredValue(t *testing.T) {
 	}
 }
 
-func TestRequire2FAIgnoresSessionIdleAndWebhooksWhenRequire2FAIsAbsent(t *testing.T) {
+func TestRequire2_FA_IgnoresSessionIdleAndWebhooksWhenRequire2FAIsAbsent(t *testing.T) {
 	t.Parallel()
 
 	store := newMemoryStore()
@@ -101,7 +101,7 @@ func TestRequire2FAIgnoresSessionIdleAndWebhooksWhenRequire2FAIsAbsent(t *testin
 	}
 }
 
-func TestRequire2FARejectsNilAccount(t *testing.T) {
+func TestRequire2_FA_RejectsNilAccount(t *testing.T) {
 	t.Parallel()
 
 	service := newTestService(newMemoryStore())

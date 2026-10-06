@@ -12,7 +12,7 @@ import (
 	"github.com/macrowallets/waas/app/http/resources"
 )
 
-func TestHTTPSuiteAssertError(t *testing.T) {
+func TestHTTP_Suite_AssertError(t *testing.T) {
 	suite.Run(t, new(assertErrorSuite))
 }
 
@@ -20,7 +20,7 @@ type assertErrorSuite struct {
 	HTTPSuite
 }
 
-func (s *assertErrorSuite) TestReadsTheEnvelopeThisBranchReturns() {
+func (s *assertErrorSuite) TestReads_The_EnvelopeThisBranchReturns() {
 	s.AssertError(recorder(http.StatusNotFound, encode(s.T(), resources.NewError(resources.ErrorDeps{
 		Code:    resources.CodeNotFound,
 		Message: "wallet not found",
@@ -36,7 +36,7 @@ func (s *assertErrorSuite) TestReadsTheEnvelopeThisBranchReturns() {
 	}))), http.StatusUnprocessableEntity, resources.CodeValidationFailed, resources.ValidationMessage)
 }
 
-func TestMatchErrorEnvelope(t *testing.T) {
+func TestMatch_Error_Envelope(t *testing.T) {
 	ok := encode(t, resources.NewError(resources.ErrorDeps{
 		Code:    resources.CodeNotFound,
 		Message: "wallet not found",

@@ -14,7 +14,7 @@ import (
 	"github.com/macrowallets/waas/app/models"
 )
 
-func TestBitcoinNetworkOfRPCURLReadsTheEsploraPath(t *testing.T) {
+func TestBitcoin_Network_OfRPCURLReadsTheEsploraPath(t *testing.T) {
 	t.Parallel()
 
 	cases := map[string]string{
@@ -45,7 +45,7 @@ func evmNode(t *testing.T, chainIDHex string) *httptest.Server {
 	}))
 }
 
-func TestProbeAsksAnEVMNodeForItsChainID(t *testing.T) {
+func TestProbe_Asks_AnEVMNodeForItsChainID(t *testing.T) {
 	sepolia := evmNode(t, "0xaa36a7")
 	defer sepolia.Close()
 	unknown := evmNode(t, "0x2a")
@@ -62,7 +62,7 @@ func TestProbeAsksAnEVMNodeForItsChainID(t *testing.T) {
 	assert.Empty(t, network)
 }
 
-func TestProbeFailsWhenTheEVMNodeAnswersGarbage(t *testing.T) {
+func TestProbe_Fails_WhenTheEVMNodeAnswersGarbage(t *testing.T) {
 	garbage := evmNode(t, "0xzz")
 	defer garbage.Close()
 
@@ -71,7 +71,7 @@ func TestProbeFailsWhenTheEVMNodeAnswersGarbage(t *testing.T) {
 	assert.Error(t, err)
 }
 
-func TestProbeReadsSolanaAndBitcoinFromTheURL(t *testing.T) {
+func TestProbe_Reads_SolanaAndBitcoinFromTheURL(t *testing.T) {
 	ctx := context.Background()
 	network, err := ProbeRPCNetwork(ctx, models.Chain{AdapterType: models.AdapterTypeSolana}, "https://api.devnet.solana.com")
 	require.NoError(t, err)

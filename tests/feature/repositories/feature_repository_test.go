@@ -17,7 +17,7 @@ type FeatureRepositoryTestSuite struct {
 	repo *repositories.FeatureRepository
 }
 
-func TestFeatureRepositorySuite(t *testing.T) {
+func TestFeature_Repository_Suite(t *testing.T) {
 	suite.Run(t, new(FeatureRepositoryTestSuite))
 }
 
@@ -26,7 +26,7 @@ func (s *FeatureRepositoryTestSuite) SetupTest() {
 	s.repo = repositories.NewFeatureRepository(nil)
 }
 
-func (s *FeatureRepositoryTestSuite) TestGlobalUpsertIsReadBackAndAMissingKeyIsNotFound() {
+func (s *FeatureRepositoryTestSuite) TestGlobal_Upsert_IsReadBackAndAMissingKeyIsNotFound() {
 	ctx := context.Background()
 
 	enabled, found, err := s.repo.GetGlobal(ctx, features.FlagWithdrawalsEnabled)

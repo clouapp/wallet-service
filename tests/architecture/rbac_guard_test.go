@@ -27,7 +27,7 @@ var rbacPivotWriters = []string{
 // TestOnlyPoliciesCallAccountRoleOutranks fails when any production file
 // outside app/policies calls models.AccountRoleOutranks. The function is the
 // rank comparison; defining it in app/models is not a call.
-func TestOnlyPoliciesCallAccountRoleOutranks(t *testing.T) {
+func TestOnly_Policies_CallAccountRoleOutranks(t *testing.T) {
 	module := sharedModule(t)
 	var violations Violations
 	for _, file := range module.ProductionFiles() {
@@ -43,7 +43,7 @@ func TestOnlyPoliciesCallAccountRoleOutranks(t *testing.T) {
 
 // TestOnlyPoliciesReadRBACPivots fails when any production file outside
 // app/policies and the schema writers names a pivot table.
-func TestOnlyPoliciesReadRBACPivots(t *testing.T) {
+func TestOnly_Policies_ReadRBACPivots(t *testing.T) {
 	module := sharedModule(t)
 	var violations Violations
 	for _, file := range module.ProductionFiles() {

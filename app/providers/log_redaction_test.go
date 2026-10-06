@@ -14,7 +14,7 @@ import (
 	"github.com/macrowallets/waas/app/services/security"
 )
 
-func TestInstallLogRedactionWrapsFileAndStdoutChannels(t *testing.T) {
+func TestInstall_Log_RedactionWrapsFileAndStdoutChannels(t *testing.T) {
 	preserveDefaultSlog(t)
 	cfg := &mapConfig{data: map[string]any{
 		"vault": map[string]any{
@@ -61,7 +61,7 @@ func TestInstallLogRedactionWrapsFileAndStdoutChannels(t *testing.T) {
 	}
 }
 
-func TestInstallLogRedactionUsesStdoutWhenLambdaModeIsSet(t *testing.T) {
+func TestInstall_Log_RedactionUsesStdoutWhenLambdaModeIsSet(t *testing.T) {
 	preserveDefaultSlog(t)
 	cfg := &mapConfig{data: map[string]any{
 		"vault": map[string]any{"lambda_mode": "api"},
@@ -73,7 +73,7 @@ func TestInstallLogRedactionUsesStdoutWhenLambdaModeIsSet(t *testing.T) {
 	}
 }
 
-func TestInstallLogRedactionRoutesSlogThroughTheSameHandler(t *testing.T) {
+func TestInstall_Log_RedactionRoutesSlogThroughTheSameHandler(t *testing.T) {
 	preserveDefaultSlog(t)
 	t.Cleanup(func() { security.ConfigureRedaction(nil, nil) })
 
@@ -126,7 +126,7 @@ func TestInstallLogRedactionRoutesSlogThroughTheSameHandler(t *testing.T) {
 	}
 }
 
-func TestRedactLogChannelsRedactsBeforeTheFrameworkHandler(t *testing.T) {
+func TestRedact_Log_ChannelsRedactsBeforeTheFrameworkHandler(t *testing.T) {
 	security.ConfigureRedaction([]string{"rpc.example"}, nil)
 	t.Cleanup(func() { security.ConfigureRedaction(nil, nil) })
 

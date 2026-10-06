@@ -97,7 +97,7 @@ func newObservedRevoker(t *testing.T, now time.Time) (*authsvc.SessionRevoker, *
 	return revoker, watermarks, refresh, sleeps
 }
 
-func TestSessionRevoker_MovesTheWatermarkAndRevokesRefreshTokens(t *testing.T) {
+func TestSession_Revoker_MovesTheWatermarkAndRevokesRefreshTokens(t *testing.T) {
 	now := time.Date(2026, 10, 2, 12, 0, 5, 750_000_000, time.UTC)
 	revoker, watermarks, refresh := newTestRevoker(t, now)
 	userID := uuid.New()
@@ -110,7 +110,7 @@ func TestSessionRevoker_MovesTheWatermarkAndRevokesRefreshTokens(t *testing.T) {
 	require.Equal(t, []uuid.UUID{userID}, refresh.revoked)
 }
 
-func TestSessionRevoker_VoidsEverythingIssuedDuringTheRevocationSecond(t *testing.T) {
+func TestSession_Revoker_VoidsEverythingIssuedDuringTheRevocationSecond(t *testing.T) {
 	now := time.Date(2026, 10, 2, 12, 0, 5, 0, time.UTC)
 	revoker, _, _ := newTestRevoker(t, now)
 
@@ -122,7 +122,7 @@ func TestSessionRevoker_VoidsEverythingIssuedDuringTheRevocationSecond(t *testin
 	require.False(t, authsvc.SessionRevoked(now.Add(time.Second), &watermark))
 }
 
-func TestSessionRevoker_AwaitIssuableWaitsOutTheRevocationSecond(t *testing.T) {
+func TestSession_Revoker_AwaitIssuableWaitsOutTheRevocationSecond(t *testing.T) {
 	now := time.Date(2026, 10, 2, 12, 0, 5, 250_000_000, time.UTC)
 	revoker, _, _, sleeps := newObservedRevoker(t, now)
 
@@ -133,7 +133,7 @@ func TestSessionRevoker_AwaitIssuableWaitsOutTheRevocationSecond(t *testing.T) {
 	require.Equal(t, []time.Duration{750 * time.Millisecond}, sleeps.waits)
 }
 
-func TestSessionRevoker_AwaitIssuableDoesNotWaitOnceTheWatermarkPassed(t *testing.T) {
+func TestSession_Revoker_AwaitIssuableDoesNotWaitOnceTheWatermarkPassed(t *testing.T) {
 	now := time.Date(2026, 10, 2, 12, 0, 5, 0, time.UTC)
 	revoker, _, _, sleeps := newObservedRevoker(t, now)
 
@@ -146,7 +146,7 @@ func TestSessionRevoker_AwaitIssuableDoesNotWaitOnceTheWatermarkPassed(t *testin
 	require.Empty(t, sleeps.waits)
 }
 
-func TestSessionRevoker_AwaitIssuableRefusesAWatermarkFarAhead(t *testing.T) {
+func TestSession_Revoker_AwaitIssuableRefusesAWatermarkFarAhead(t *testing.T) {
 	now := time.Date(2026, 10, 2, 12, 0, 5, 0, time.UTC)
 	revoker, _, _, sleeps := newObservedRevoker(t, now)
 
@@ -155,7 +155,7 @@ func TestSessionRevoker_AwaitIssuableRefusesAWatermarkFarAhead(t *testing.T) {
 	require.Empty(t, sleeps.waits, "a skewed clock must not stall the request")
 }
 
-func TestSessionRevoker_PropagatesStoreFailures(t *testing.T) {
+func TestSession_Revoker_PropagatesStoreFailures(t *testing.T) {
 	watermarkFailure := errors.New("db down")
 	revoker, err := authsvc.NewSessionRevoker(authsvc.RevokerDeps{
 		Watermarks: &fakeWatermarks{err: watermarkFailure},
@@ -175,7 +175,7 @@ func TestSessionRevoker_PropagatesStoreFailures(t *testing.T) {
 	require.ErrorIs(t, err, refreshFailure)
 }
 
-func TestSessionRevoker_RejectsInvalidInput(t *testing.T) {
+func TestSession_Revoker_RejectsInvalidInput(t *testing.T) {
 	_, err := authsvc.NewSessionRevoker(authsvc.RevokerDeps{Refresh: &fakeRefreshRevoker{}})
 	require.Error(t, err)
 	_, err = authsvc.NewSessionRevoker(authsvc.RevokerDeps{Watermarks: &fakeWatermarks{}})
@@ -188,7 +188,7 @@ func TestSessionRevoker_RejectsInvalidInput(t *testing.T) {
 	require.Error(t, err)
 }
 
-func TestSessionRevoker_AttributesAPlatformRevokeToTheActor(t *testing.T) {
+func TestSession_Revoker_AttributesAPlatformRevokeToTheActor(t *testing.T) {
 	now := time.Date(2026, 10, 2, 12, 0, 5, 0, time.UTC)
 	watermarks := &fakeWatermarks{at: map[uuid.UUID]time.Time{}}
 	refresh := &fakeRefreshRevoker{}
@@ -218,7 +218,7 @@ func TestSessionRevoker_AttributesAPlatformRevokeToTheActor(t *testing.T) {
 	require.Error(t, err)
 }
 
-func TestSessionRevoker_WritesAPlatformRowInsideTheTransaction(t *testing.T) {
+func TestSession_Revoker_WritesAPlatformRowInsideTheTransaction(t *testing.T) {
 	now := time.Date(2026, 10, 2, 12, 0, 5, 0, time.UTC)
 	watermarks := &fakeWatermarks{at: map[uuid.UUID]time.Time{}}
 	refresh := &fakeRefreshRevoker{}
@@ -256,7 +256,7 @@ func TestSessionRevoker_WritesAPlatformRowInsideTheTransaction(t *testing.T) {
 	require.False(t, strings.Contains(encoded, "-1"))
 }
 
-func TestSessionRevoker_ActivityFailureFailsTheRevocation(t *testing.T) {
+func TestSession_Revoker_ActivityFailureFailsTheRevocation(t *testing.T) {
 	watermarks := &fakeWatermarks{at: map[uuid.UUID]time.Time{}}
 	refresh := &fakeRefreshRevoker{}
 	activity := &recordingSessionActivity{fail: errors.New("activity refused")}
@@ -273,7 +273,7 @@ func TestSessionRevoker_ActivityFailureFailsTheRevocation(t *testing.T) {
 	require.Empty(t, activity.rows)
 }
 
-func TestSessionRevoked(t *testing.T) {
+func TestSessionRevocation_Session_Revoked(t *testing.T) {
 	watermark := time.Date(2026, 10, 2, 12, 0, 5, 0, time.UTC)
 
 	require.False(t, authsvc.SessionRevoked(watermark.Add(-time.Hour), nil), "no watermark, nothing revoked")

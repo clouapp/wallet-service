@@ -11,7 +11,7 @@ import (
 	"github.com/macrowallets/waas/tests/feature/support/fixtures"
 )
 
-func TestAccountUsersRoleCheckRewritesViewerAndRejectsIt(t *testing.T) {
+func TestAccount_Users_RoleCheckRewritesViewerAndRejectsIt(t *testing.T) {
 	fixtures.TestDB(t)
 	migration := &migrations.M00000000000470AccountUsersRoleCheck{}
 	require.Equal(t, int64(1), constraintCount(t, "account_users_role_check"))

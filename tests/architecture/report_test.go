@@ -5,7 +5,7 @@ import (
 	"testing"
 )
 
-func TestViolations_LinesCollapseRepeatsIntoACount(t *testing.T) {
+func TestViolations_Lines_CollapseRepeatsIntoACount(t *testing.T) {
 	var violations Violations
 	violations.Add("%s calls container.Get()", "a.go")
 	violations.Add("%s calls container.Get()", "a.go")
@@ -20,7 +20,7 @@ func TestViolations_LinesCollapseRepeatsIntoACount(t *testing.T) {
 	}
 }
 
-func TestViolations_EmptyHasNoLines(t *testing.T) {
+func TestViolations_Empty_HasNoLines(t *testing.T) {
 	var violations Violations
 	if got := violations.Lines(); len(got) != 0 {
 		t.Fatalf("Lines() = %v, want none", got)
@@ -30,7 +30,7 @@ func TestViolations_EmptyHasNoLines(t *testing.T) {
 	}
 }
 
-func TestParseEntry_RoundTripsFormatEntry(t *testing.T) {
+func TestParse_Entry_RoundTripsFormatEntry(t *testing.T) {
 	cases := map[string]int{
 		"a.go calls container.Get()":  1,
 		"a.go calls container.Get()(": 7,
@@ -44,7 +44,7 @@ func TestParseEntry_RoundTripsFormatEntry(t *testing.T) {
 	}
 }
 
-func TestParseEntry_TreatsAMalformedCountAsPartOfTheEntry(t *testing.T) {
+func TestParse_Entry_TreatsAMalformedCountAsPartOfTheEntry(t *testing.T) {
 	for _, line := range []string{"a.go (xabc)", "a.go (x0)", "a.go (x-2)", "a.go (x3"} {
 		entry, count := parseEntry(line)
 		if entry != line || count != 1 {
@@ -53,7 +53,7 @@ func TestParseEntry_TreatsAMalformedCountAsPartOfTheEntry(t *testing.T) {
 	}
 }
 
-func TestGrownEntries_ReportsOnlyWhatGrewOrAppeared(t *testing.T) {
+func TestGrown_Entries_ReportsOnlyWhatGrewOrAppeared(t *testing.T) {
 	baseline := map[string]int{"kept": 2, "shrunk": 5, "gone": 1}
 	current := map[string]int{"kept": 2, "shrunk": 4, "grown": 1, "new": 1}
 
@@ -65,7 +65,7 @@ func TestGrownEntries_ReportsOnlyWhatGrewOrAppeared(t *testing.T) {
 	}
 }
 
-func TestMode_DefaultsToReport(t *testing.T) {
+func TestMode_Defaults_ToReport(t *testing.T) {
 	for value, want := range map[string]string{"": modeReport, "bogus": modeReport, "ratchet": modeRatchet, " enforce ": modeEnforce} {
 		t.Setenv(ModeVariable, value)
 		if got := mode(); got != want {

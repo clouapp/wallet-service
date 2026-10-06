@@ -63,7 +63,7 @@ func gasMockChain(id string, balance *big.Int) *mocks.MockChain {
 // Tests
 // ---------------------------------------------------------------------------
 
-func TestRefreshGasStatus_UnseededToSeeded(t *testing.T) {
+func TestRefresh_GasStatus_UnseededToSeeded(t *testing.T) {
 	walletID := uuid.New()
 	baseAddr := models.Address{ID: uuid.New(), WalletID: walletID, Address: "0xBASE"}
 	wallet := &models.Wallet{
@@ -107,7 +107,7 @@ func TestRefreshGasStatus_UnseededToSeeded(t *testing.T) {
 	}
 }
 
-func TestRefreshGasStatus_ZeroBalanceIsUnseeded(t *testing.T) {
+func TestRefresh_GasStatus_ZeroBalanceIsUnseeded(t *testing.T) {
 	walletID := uuid.New()
 	baseAddr := models.Address{ID: uuid.New(), WalletID: walletID, Address: "0xBASE"}
 	wallet := &models.Wallet{
@@ -134,7 +134,7 @@ func TestRefreshGasStatus_ZeroBalanceIsUnseeded(t *testing.T) {
 	}
 }
 
-func TestRefreshGasStatus_BelowThresholdIsLow(t *testing.T) {
+func TestRefresh_GasStatus_BelowThresholdIsLow(t *testing.T) {
 	walletID := uuid.New()
 	baseAddr := models.Address{ID: uuid.New(), WalletID: walletID, Address: "0xBASE"}
 	wallet := &models.Wallet{
@@ -162,7 +162,7 @@ func TestRefreshGasStatus_BelowThresholdIsLow(t *testing.T) {
 	}
 }
 
-func TestRefreshGasStatus_BitcoinAlwaysSeeded(t *testing.T) {
+func TestRefresh_GasStatus_BitcoinAlwaysSeeded(t *testing.T) {
 	walletID := uuid.New()
 	baseAddr := models.Address{ID: uuid.New(), WalletID: walletID, Address: "tb1qbase"}
 	wallet := &models.Wallet{
@@ -204,7 +204,7 @@ func TestRefreshGasStatus_BitcoinAlwaysSeeded(t *testing.T) {
 	}
 }
 
-func TestRefreshGasStatus_NoTransitionNoStatusUpdate(t *testing.T) {
+func TestRefresh_GasStatus_NoTransitionNoStatusUpdate(t *testing.T) {
 	walletID := uuid.New()
 	baseAddr := models.Address{ID: uuid.New(), WalletID: walletID, Address: "0xBASE"}
 	wallet := &models.Wallet{
@@ -243,7 +243,7 @@ func TestRefreshGasStatus_NoTransitionNoStatusUpdate(t *testing.T) {
 	}
 }
 
-func TestRefreshGasStatus_UsesInjectedFallbackWhenRowHasNone(t *testing.T) {
+func TestRefresh_GasStatus_UsesInjectedFallbackWhenRowHasNone(t *testing.T) {
 	walletID := uuid.New()
 	baseAddr := models.Address{ID: uuid.New(), WalletID: walletID, Address: "0xBASE"}
 	wallet := &models.Wallet{
@@ -279,7 +279,7 @@ func TestRefreshGasStatus_UsesInjectedFallbackWhenRowHasNone(t *testing.T) {
 	}
 }
 
-func TestRefreshGasStatus_RowThresholdBeatsInjectedFallback(t *testing.T) {
+func TestRefresh_GasStatus_RowThresholdBeatsInjectedFallback(t *testing.T) {
 	walletID := uuid.New()
 	baseAddr := models.Address{ID: uuid.New(), WalletID: walletID, Address: "0xBASE"}
 	wallet := &models.Wallet{
@@ -309,7 +309,7 @@ func TestRefreshGasStatus_RowThresholdBeatsInjectedFallback(t *testing.T) {
 	}
 }
 
-func TestRefreshGasStatus_MissingOrInvalidFallbackIsAlwaysSeeded(t *testing.T) {
+func TestRefresh_GasStatus_MissingOrInvalidFallbackIsAlwaysSeeded(t *testing.T) {
 	cases := []struct {
 		name     string
 		defaults map[string]GasReadinessDefault
@@ -356,7 +356,7 @@ func TestRefreshGasStatus_MissingOrInvalidFallbackIsAlwaysSeeded(t *testing.T) {
 	}
 }
 
-func TestNewService_CopiesGasDefaults(t *testing.T) {
+func TestNew_Service_CopiesGasDefaults(t *testing.T) {
 	defaults := map[string]GasReadinessDefault{"eth": {Raw: "1"}}
 	svc, ok := NewService(Deps{GasDefaults: defaults}).(*service)
 	if !ok {
@@ -406,7 +406,7 @@ type enqueueOnlyEvents struct{}
 func (enqueueOnlyEvents) EnqueueEvent(context.Context, uuid.UUID, types.EventType, interface{}) {
 }
 
-func TestRefreshGasStatus_CommitsTheWalletAndGasStatusWebhookTogether(t *testing.T) {
+func TestRefresh_GasStatus_CommitsTheWalletAndGasStatusWebhookTogether(t *testing.T) {
 	walletID := uuid.New()
 	baseAddr := models.Address{ID: uuid.New(), WalletID: walletID, Address: "0xBASE"}
 	wallet := &models.Wallet{
@@ -440,7 +440,7 @@ func TestRefreshGasStatus_CommitsTheWalletAndGasStatusWebhookTogether(t *testing
 	}
 }
 
-func TestRefreshGasStatus_RollsBackTheWalletWhenTheGasStatusWebhookFails(t *testing.T) {
+func TestRefresh_GasStatus_RollsBackTheWalletWhenTheGasStatusWebhookFails(t *testing.T) {
 	walletID := uuid.New()
 	baseAddr := models.Address{ID: uuid.New(), WalletID: walletID, Address: "0xBASE"}
 	wallet := &models.Wallet{
@@ -464,7 +464,7 @@ func TestRefreshGasStatus_RollsBackTheWalletWhenTheGasStatusWebhookFails(t *test
 	}
 }
 
-func TestRefreshGasStatus_RejectsAnEventWriterThatCannotJoinTheTransaction(t *testing.T) {
+func TestRefresh_GasStatus_RejectsAnEventWriterThatCannotJoinTheTransaction(t *testing.T) {
 	walletID := uuid.New()
 	baseAddr := models.Address{ID: uuid.New(), WalletID: walletID, Address: "0xBASE"}
 	wallet := &models.Wallet{
@@ -487,7 +487,7 @@ func TestRefreshGasStatus_RejectsAnEventWriterThatCannotJoinTheTransaction(t *te
 	}
 }
 
-func TestRefreshGasStatus_NoTransitionDoesNotWriteAWebhook(t *testing.T) {
+func TestRefresh_GasStatus_NoTransitionDoesNotWriteAWebhook(t *testing.T) {
 	walletID := uuid.New()
 	baseAddr := models.Address{ID: uuid.New(), WalletID: walletID, Address: "0xBASE"}
 	wallet := &models.Wallet{
@@ -514,7 +514,7 @@ func TestRefreshGasStatus_NoTransitionDoesNotWriteAWebhook(t *testing.T) {
 	}
 }
 
-func TestStageWalletGasStatusChangedInsertsTheRowBeforeSending(t *testing.T) {
+func TestStage_Wallet_GasStatusChangedInsertsTheRowBeforeSending(t *testing.T) {
 	walletID := uuid.New()
 	events := &fakeWebhookEventRepo{}
 	var sentBeforeInsert bool
@@ -545,7 +545,7 @@ func TestStageWalletGasStatusChangedInsertsTheRowBeforeSending(t *testing.T) {
 	}
 }
 
-func TestRefreshGasStatus_WalletWithoutDepositAddressErrors(t *testing.T) {
+func TestRefresh_GasStatus_WalletWithoutDepositAddressErrors(t *testing.T) {
 	walletID := uuid.New()
 	wallet := &models.Wallet{
 		ID:             walletID,

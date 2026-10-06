@@ -209,7 +209,7 @@ func TestRPCClient_Call_NilOutput(t *testing.T) {
 	}
 }
 
-func TestRPCClient_IncrementingIDs(t *testing.T) {
+func TestRPC_Client_IncrementingIDs(t *testing.T) {
 	var ids []float64
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var req map[string]interface{}

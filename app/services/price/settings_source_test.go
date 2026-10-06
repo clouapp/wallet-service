@@ -23,7 +23,7 @@ const (
 	quoteNextKey  = "qg-opened-next-91d4"
 )
 
-func TestRefreshCryptoPrices_AsksTheEnabledProviderWithTheOpenedKey(t *testing.T) {
+func TestRefresh_CryptoPrices_AsksTheEnabledProviderWithTheOpenedKey(t *testing.T) {
 	logs := captureQuoteLogs(t)
 	rows := &quoteSettingsRows{groups: map[string]map[string]string{
 		"price_lookup": {"provider_order": "coingecko,coinmarketcap,kraken"},
@@ -64,7 +64,7 @@ func TestRefreshCryptoPrices_AsksTheEnabledProviderWithTheOpenedKey(t *testing.T
 	requireQuoteLogsOmit(t, logs.String(), quoteGeckoKey, quoteCMCKey, quoteEnvKey, quoteNextKey, "enc:v1:")
 }
 
-func TestRefreshCryptoPrices_MissingSettingsUsesTheEnvCoinAPIKey(t *testing.T) {
+func TestRefresh_CryptoPrices_MissingSettingsUsesTheEnvCoinAPIKey(t *testing.T) {
 	logs := captureQuoteLogs(t)
 	var asked []*askedQuoteProvider
 	svc := newQuoteService(&quoteSettingsRows{groups: map[string]map[string]string{}}, quoteEnvKey, func(name, apiKey string) (PriceProvider, bool) {
@@ -82,7 +82,7 @@ func TestRefreshCryptoPrices_MissingSettingsUsesTheEnvCoinAPIKey(t *testing.T) {
 	requireQuoteLogsOmit(t, logs.String(), quoteEnvKey, "enc:v1:")
 }
 
-func TestRefreshCryptoPrices_FailedSettingsReadKeepsTheEnvKeyAndOmitsItFromLogs(t *testing.T) {
+func TestRefresh_CryptoPrices_FailedSettingsReadKeepsTheEnvKeyAndOmitsItFromLogs(t *testing.T) {
 	logs := captureQuoteLogs(t)
 	secret := quoteGeckoKey + " enc:v1:price-blob"
 	var asked []*askedQuoteProvider
@@ -101,7 +101,7 @@ func TestRefreshCryptoPrices_FailedSettingsReadKeepsTheEnvKeyAndOmitsItFromLogs(
 	requireQuoteLogsOmit(t, logs.String(), quoteGeckoKey, quoteEnvKey, "enc:v1:", "price-blob")
 }
 
-func TestRefreshFiatRates_ResolvesProvidersPerQuote(t *testing.T) {
+func TestRefresh_FiatRates_ResolvesProvidersPerQuote(t *testing.T) {
 	logs := captureQuoteLogs(t)
 	rows := &quoteSettingsRows{groups: map[string]map[string]string{
 		"price_lookup": {"provider_order": "coinmarketcap,coingecko"},
@@ -139,7 +139,7 @@ func TestRefreshFiatRates_ResolvesProvidersPerQuote(t *testing.T) {
 	requireQuoteLogsOmit(t, logs.String(), quoteGeckoKey, quoteCMCKey, quoteEnvKey, "enc:v1:")
 }
 
-func TestRefreshCryptoPrices_WithoutASourceKeepsTheInjectedProviders(t *testing.T) {
+func TestRefresh_CryptoPrices_WithoutASourceKeepsTheInjectedProviders(t *testing.T) {
 	asked := &askedQuoteProvider{name: providerCoinAPI}
 	svc := NewService(Deps{
 		Providers: []PriceProvider{asked},

@@ -15,7 +15,7 @@ import (
 	"github.com/macrowallets/waas/tests/feature/support/testutil"
 )
 
-func TestSettingsReadStoresAJSONMapForTenMinutes(t *testing.T) {
+func TestSettings_Read_StoresAJSONMapForTenMinutes(t *testing.T) {
 	fixtures.TestDB(t)
 	ctx := context.Background()
 	settingsRepo := repositories.NewSettingRepository(nil)

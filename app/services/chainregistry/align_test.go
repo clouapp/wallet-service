@@ -142,7 +142,7 @@ func changeByChain(plan *Plan) map[string]ChainChange {
 	return out
 }
 
-func TestTestnetPlanFlipsEveryPrimaryChainButKeepsFundedPolygonOnAmoy(t *testing.T) {
+func TestTestnet_Plan_FlipsEveryPrimaryChainButKeepsFundedPolygonOnAmoy(t *testing.T) {
 	store := vaultTestRegistry()
 
 	plan, err := BuildPlan(context.Background(), models.ChainNetworkProfileTestnet, store, plainDecrypt, nil)
@@ -166,7 +166,7 @@ func TestTestnetPlanFlipsEveryPrimaryChainButKeepsFundedPolygonOnAmoy(t *testing
 	assert.NotContains(t, changes, models.ChainTPolygon)
 }
 
-func TestAppliedPlanIsIdempotent(t *testing.T) {
+func TestApplied_Plan_IsIdempotent(t *testing.T) {
 	store := vaultTestRegistry()
 	ctx := context.Background()
 
@@ -182,7 +182,7 @@ func TestAppliedPlanIsIdempotent(t *testing.T) {
 	assert.Equal(t, writes, store.chainWrite)
 }
 
-func TestPlanRefusesToMoveAFundedChainToAnotherNetwork(t *testing.T) {
+func TestPlan_Refuses_ToMoveAFundedChainToAnotherNetwork(t *testing.T) {
 	store := vaultTestRegistry()
 
 	_, err := BuildPlan(context.Background(), models.ChainNetworkProfileMainnet, store, plainDecrypt, nil)
@@ -193,7 +193,7 @@ func TestPlanRefusesToMoveAFundedChainToAnotherNetwork(t *testing.T) {
 	assert.Zero(t, store.chainWrite)
 }
 
-func TestPlanRefusesWhenTheProbeSeesAnotherNetwork(t *testing.T) {
+func TestPlan_Refuses_WhenTheProbeSeesAnotherNetwork(t *testing.T) {
 	store := vaultTestRegistry()
 	btc := store.chains[models.ChainBTC]
 	btc.RpcURL = btcMainnetRPC
@@ -206,7 +206,7 @@ func TestPlanRefusesWhenTheProbeSeesAnotherNetwork(t *testing.T) {
 	assert.Contains(t, err.Error(), "chains:set-rpc")
 }
 
-func TestTestnetPlanAcceptsBitcoinOnTestnet4(t *testing.T) {
+func TestTestnet_Plan_AcceptsBitcoinOnTestnet4(t *testing.T) {
 	store := vaultTestRegistry()
 	btc := store.chains[models.ChainBTC]
 	btc.RpcURL = "https://mempool.space/testnet4/api"
@@ -222,7 +222,7 @@ func TestTestnetPlanAcceptsBitcoinOnTestnet4(t *testing.T) {
 	assert.Empty(t, plan.Warnings)
 }
 
-func TestMainnetPlanRefusesBitcoinOnTestnet4(t *testing.T) {
+func TestMainnet_Plan_RefusesBitcoinOnTestnet4(t *testing.T) {
 	store := vaultTestRegistry()
 	delete(store.funded, models.ChainPolygon)
 	btc := store.chains[models.ChainBTC]
@@ -243,7 +243,7 @@ func TestMainnetPlanRefusesBitcoinOnTestnet4(t *testing.T) {
 	assert.Contains(t, err.Error(), models.NetworkBitcoinTestnet4)
 }
 
-func TestPlanRefusesASolanaRecordWhoseRPCIsMainnet(t *testing.T) {
+func TestPlan_Refuses_ASolanaRecordWhoseRPCIsMainnet(t *testing.T) {
 	store := vaultTestRegistry()
 	sol := store.chains[models.ChainSOL]
 	sol.RpcURL = solanaMainnet
@@ -255,7 +255,7 @@ func TestPlanRefusesASolanaRecordWhoseRPCIsMainnet(t *testing.T) {
 	assert.True(t, errors.Is(err, ErrRPCNetworkMismatch), err)
 }
 
-func TestPlanWarnsWhenTheProbeCannotTell(t *testing.T) {
+func TestPlan_Warns_WhenTheProbeCannotTell(t *testing.T) {
 	store := vaultTestRegistry()
 	btc := store.chains[models.ChainBTC]
 	btc.RpcURL = "https://bitcoind.internal:8332"
@@ -268,7 +268,7 @@ func TestPlanWarnsWhenTheProbeCannotTell(t *testing.T) {
 	assert.Contains(t, plan.Warnings[0], models.ChainBTC)
 }
 
-func TestPlanWarnsAboutAddedChainsMissingFromTheRegistry(t *testing.T) {
+func TestPlan_Warns_AboutAddedChainsMissingFromTheRegistry(t *testing.T) {
 	store := vaultTestRegistry()
 	delete(store.chains, models.ChainBase)
 	delete(store.chains, models.ChainBSC)
@@ -283,7 +283,7 @@ func TestPlanWarnsAboutAddedChainsMissingFromTheRegistry(t *testing.T) {
 	assert.NotContains(t, changeByChain(plan), models.ChainArbitrum)
 }
 
-func TestPlanRejectsUnknownProfileAndMissingDependencies(t *testing.T) {
+func TestPlan_Rejects_UnknownProfileAndMissingDependencies(t *testing.T) {
 	ctx := context.Background()
 	_, err := BuildPlan(ctx, "staging", vaultTestRegistry(), plainDecrypt, nil)
 	assert.Error(t, err)
@@ -317,7 +317,7 @@ func staticProbe(_ context.Context, record models.Chain, rpcURL string) (string,
 	}
 }
 
-func TestAccountMovesToTheProfileEnvironment(t *testing.T) {
+func TestAccount_Moves_ToTheProfileEnvironment(t *testing.T) {
 	store := vaultTestRegistry()
 	accountID := uuid.New()
 	store.accounts[accountID] = models.Account{ID: accountID, Environment: models.EnvironmentProd}
@@ -333,7 +333,7 @@ func TestAccountMovesToTheProfileEnvironment(t *testing.T) {
 	assert.Nil(t, again)
 }
 
-func TestAccountPairedWithATestAccountIsNotMovedToTest(t *testing.T) {
+func TestAccount_Paired_WithATestAccountIsNotMovedToTest(t *testing.T) {
 	store := vaultTestRegistry()
 	prodID, testID := uuid.New(), uuid.New()
 	store.accounts[prodID] = models.Account{ID: prodID, Environment: models.EnvironmentProd, LinkedAccountID: &testID}
@@ -345,7 +345,7 @@ func TestAccountPairedWithATestAccountIsNotMovedToTest(t *testing.T) {
 	assert.Contains(t, err.Error(), "paired")
 }
 
-func TestAccountPlanRejectsMissingAccounts(t *testing.T) {
+func TestAccount_Plan_RejectsMissingAccounts(t *testing.T) {
 	store := vaultTestRegistry()
 	_, err := PlanAccountEnvironment(context.Background(), store, uuid.Nil, models.ChainNetworkProfileTestnet)
 	assert.Error(t, err)
@@ -366,7 +366,7 @@ func btcWalletWithMainnetAddresses(store *fakeStore) (models.Wallet, models.Addr
 	return wallet, genesis, user
 }
 
-func TestBitcoinMovedToTestnetRetiresBc1AndReissuesTheGenesisAsTb1(t *testing.T) {
+func TestBitcoin_Moved_ToTestnetRetiresBc1AndReissuesTheGenesisAsTb1(t *testing.T) {
 	store := vaultTestRegistry()
 	wallet, _, _ := btcWalletWithMainnetAddresses(store)
 	ctx := context.Background()
@@ -394,7 +394,7 @@ func TestBitcoinMovedToTestnetRetiresBc1AndReissuesTheGenesisAsTb1(t *testing.T)
 	assert.True(t, again.IsEmpty(), "a second run changes nothing")
 }
 
-func TestRepeatedRunReissuesAddressesLeftBehindByAStoppedRun(t *testing.T) {
+func TestRepeated_Run_ReissuesAddressesLeftBehindByAStoppedRun(t *testing.T) {
 	store := vaultTestRegistry()
 	wallet, _, _ := btcWalletWithMainnetAddresses(store)
 	ctx := context.Background()
@@ -410,7 +410,7 @@ func TestRepeatedRunReissuesAddressesLeftBehindByAStoppedRun(t *testing.T) {
 	assert.Equal(t, wallet.ID, alignment.Reissues[models.ChainBTC][0].WalletID)
 }
 
-func TestReissueLeavesEVMAndSolanaAddressesAlone(t *testing.T) {
+func TestReissue_Leaves_EVMAndSolanaAddressesAlone(t *testing.T) {
 	store := vaultTestRegistry()
 	for _, target := range []ReissueTarget{
 		{ChainID: models.ChainETH, AdapterType: models.AdapterTypeEVM, Testnet: true},
@@ -424,7 +424,7 @@ func TestReissueLeavesEVMAndSolanaAddressesAlone(t *testing.T) {
 	assert.Error(t, err)
 }
 
-func TestReissueRejectsAWalletWithAnUnreadablePublicKey(t *testing.T) {
+func TestReissue_Rejects_AWalletWithAnUnreadablePublicKey(t *testing.T) {
 	store := vaultTestRegistry()
 	wallet, _, _ := btcWalletWithMainnetAddresses(store)
 	wallet.MPCPublicKey = "not-hex"

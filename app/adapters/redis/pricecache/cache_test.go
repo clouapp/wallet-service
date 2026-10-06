@@ -12,13 +12,13 @@ import (
 	"github.com/macrowallets/waas/tests/feature/support/testutil"
 )
 
-func TestNewReturnsNilForANilClient(t *testing.T) {
+func TestNew_Returns_NilForANilClient(t *testing.T) {
 	if New(nil) != nil {
 		t.Fatal("expected a nil price cache when Redis is not configured")
 	}
 }
 
-func TestNilCacheReportsAMissingClient(t *testing.T) {
+func TestNil_Cache_ReportsAMissingClient(t *testing.T) {
 	var cache *Cache
 	if _, err := cache.Get(context.Background(), "currency:BTC"); err == nil {
 		t.Fatal("expected error for a nil cache read")
@@ -28,7 +28,7 @@ func TestNilCacheReportsAMissingClient(t *testing.T) {
 	}
 }
 
-func TestSetWritesTheBytesAndKeepsTheTTL(t *testing.T) {
+func TestSet_Writes_TheBytesAndKeepsTheTTL(t *testing.T) {
 	client := testutil.TestRedis(t)
 	prefix := testutil.TestRedisPrefix(t, client)
 	key := prefix + "currency:BTC"
@@ -55,7 +55,7 @@ func TestSetWritesTheBytesAndKeepsTheTTL(t *testing.T) {
 	}
 }
 
-func TestGetReadsTheStoredDecimalText(t *testing.T) {
+func TestGet_Reads_TheStoredDecimalText(t *testing.T) {
 	client := testutil.TestRedis(t)
 	prefix := testutil.TestRedisPrefix(t, client)
 	key := prefix + "currency:ETH"
@@ -74,7 +74,7 @@ func TestGetReadsTheStoredDecimalText(t *testing.T) {
 	}
 }
 
-func TestGetMissingKeyIsRedisNil(t *testing.T) {
+func TestGet_Missing_KeyIsRedisNil(t *testing.T) {
 	client := testutil.TestRedis(t)
 	prefix := testutil.TestRedisPrefix(t, client)
 
@@ -84,7 +84,7 @@ func TestGetMissingKeyIsRedisNil(t *testing.T) {
 	}
 }
 
-func TestCommandsCanceledContext(t *testing.T) {
+func TestCommands_Canceled_Context(t *testing.T) {
 	client := testutil.TestRedis(t)
 	prefix := testutil.TestRedisPrefix(t, client)
 	ctx, cancel := context.WithCancel(context.Background())

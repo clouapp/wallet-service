@@ -22,7 +22,7 @@ type PlatformAccountUsersTestSuite struct {
 	authSuite
 }
 
-func TestPlatformAccountUsersSuite(t *testing.T) {
+func TestPlatform_Account_UsersSuite(t *testing.T) {
 	suite.Run(t, new(PlatformAccountUsersTestSuite))
 }
 
@@ -30,7 +30,7 @@ func (s *PlatformAccountUsersTestSuite) SetupTest() {
 	testutil.SeededTestDB(s.T())
 }
 
-func (s *PlatformAccountUsersTestSuite) TestAPlatformAdminListsAccountUsersNewestUserFirst() {
+func (s *PlatformAccountUsersTestSuite) TestA_Platform_AdminListsAccountUsersNewestUserFirst() {
 	admin := s.seedUser(false)
 	s.grantPlatformAdmin(admin.ID)
 
@@ -127,7 +127,7 @@ func (s *PlatformAccountUsersTestSuite) TestAPlatformAdminListsAccountUsersNewes
 	s.Equal(responses.CodeInvalidRequest, s.accountUsersError(badID).Code)
 }
 
-func (s *PlatformAccountUsersTestSuite) TestAMemberCannotListAccountUsers() {
+func (s *PlatformAccountUsersTestSuite) TestA_Member_CannotListAccountUsers() {
 	member := s.seedUser(false)
 	accountID := s.seedAccountUsersAccount("hidden")
 	person := s.seedAccountPerson("2024-01-01 00:00:00", "Hidden Hana", false, false, "")

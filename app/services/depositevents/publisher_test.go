@@ -103,7 +103,7 @@ func onlyPayload(t *testing.T, enqueuer *recordingEnqueuer) (webhook.ScopedEvent
 	return enqueuer.events[0], payload
 }
 
-func TestPublish_SendsDecimalAndBaseUnitsForEveryAssetPrecision(t *testing.T) {
+func TestPublish_Sends_DecimalAndBaseUnitsForEveryAssetPrecision(t *testing.T) {
 	cases := []struct {
 		chain, asset, baseUnits string
 		decimals                int
@@ -147,7 +147,7 @@ func TestPublish_SendsDecimalAndBaseUnitsForEveryAssetPrecision(t *testing.T) {
 	}
 }
 
-func TestPublish_RefusesAmbiguousOrForeignInput(t *testing.T) {
+func TestPublish_Refuses_AmbiguousOrForeignInput(t *testing.T) {
 	f := newFixture()
 	valid := f.deposit("polygon", "USDC", "25000000")
 
@@ -188,7 +188,7 @@ func TestPublish_RefusesAmbiguousOrForeignInput(t *testing.T) {
 	}
 }
 
-func TestPublish_WalletWithoutAccountIsNotScopedToAnyAccount(t *testing.T) {
+func TestPublish_Wallet_WithoutAccountIsNotScopedToAnyAccount(t *testing.T) {
 	f := newFixture()
 	orphanWallet := uuid.New()
 	f.publisher.wallets = walletStore{orphanWallet: {ID: orphanWallet}}

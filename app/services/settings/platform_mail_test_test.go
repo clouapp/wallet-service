@@ -11,7 +11,7 @@ import (
 	"github.com/macrowallets/waas/app/models"
 )
 
-func TestAuthorizePlatformMailTestAllowsAnAdminAndWritesNothing(t *testing.T) {
+func TestAuthorize_Platform_MailTestAllowsAnAdminAndWritesNothing(t *testing.T) {
 	t.Parallel()
 
 	actor := uuid.New()
@@ -31,7 +31,7 @@ func TestAuthorizePlatformMailTestAllowsAnAdminAndWritesNothing(t *testing.T) {
 	}
 }
 
-func TestSendPlatformMailTestUsesTheSenderAndDropsTheTransportError(t *testing.T) {
+func TestSend_Platform_MailTestUsesTheSenderAndDropsTheTransportError(t *testing.T) {
 	t.Parallel()
 
 	activity := &countingMailTestActivity{}
@@ -54,7 +54,7 @@ func TestSendPlatformMailTestUsesTheSenderAndDropsTheTransportError(t *testing.T
 	}
 }
 
-func TestSendPlatformMailTestRefusesAMissingSender(t *testing.T) {
+func TestSend_Platform_MailTestRefusesAMissingSender(t *testing.T) {
 	t.Parallel()
 
 	service := NewService(Deps{Store: newMemoryStore(), Sealer: prefixSealer{}, Cache: nopCache{}, Activity: &countingMailTestActivity{}})
@@ -64,7 +64,7 @@ func TestSendPlatformMailTestRefusesAMissingSender(t *testing.T) {
 	}
 }
 
-func TestAuthorizePlatformMailTestRefusesANonAdmin(t *testing.T) {
+func TestAuthorize_Platform_MailTestRefusesANonAdmin(t *testing.T) {
 	t.Parallel()
 
 	activity := &countingMailTestActivity{}

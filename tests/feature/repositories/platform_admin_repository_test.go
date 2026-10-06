@@ -19,7 +19,7 @@ type PlatformAdminRepositoryTestSuite struct {
 	userRepo *repositories.UserRepository
 }
 
-func TestPlatformAdminRepositorySuite(t *testing.T) {
+func TestPlatform_Admin_RepositorySuite(t *testing.T) {
 	suite.Run(t, new(PlatformAdminRepositoryTestSuite))
 }
 
@@ -29,7 +29,7 @@ func (s *PlatformAdminRepositoryTestSuite) SetupTest() {
 	s.userRepo = repositories.NewUserRepository(nil)
 }
 
-func (s *PlatformAdminRepositoryTestSuite) TestContainsIsFalseUntilTheUserRowExistsAndRejectsADuplicate() {
+func (s *PlatformAdminRepositoryTestSuite) TestContains_Is_FalseUntilTheUserRowExistsAndRejectsADuplicate() {
 	ctx := context.Background()
 	userID := s.user()
 

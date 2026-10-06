@@ -53,7 +53,7 @@ func dustService(pricer TokenPricer) (*service, types.Chain) {
 	return &service{registry: registry, tokenPricer: pricer}, adapter
 }
 
-func TestDustBaseUnitsRoundsUpToWholeBaseUnits(t *testing.T) {
+func TestDust_Base_UnitsRoundsUpToWholeBaseUnits(t *testing.T) {
 	cases := []struct {
 		dust, price string
 		decimals    uint8
@@ -75,7 +75,7 @@ func TestDustBaseUnitsRoundsUpToWholeBaseUnits(t *testing.T) {
 	}
 }
 
-func TestTokenDustUsesTheChainColumnAndIgnoresEnv(t *testing.T) {
+func TestToken_Dust_UsesTheChainColumnAndIgnoresEnv(t *testing.T) {
 	t.Setenv("BASE_DUST_THRESHOLD_USD", "3")
 	svc, adapter := dustService(usdcPricer("1"))
 
@@ -92,7 +92,7 @@ func TestTokenDustUsesTheChainColumnAndIgnoresEnv(t *testing.T) {
 	}
 }
 
-func TestTokenDustIsSkippedWithoutAQuotedPrice(t *testing.T) {
+func TestToken_Dust_IsSkippedWithoutAQuotedPrice(t *testing.T) {
 	svc, adapter := dustService(&fakeTokenPricer{prices: map[string]decimal.Decimal{}})
 	if got := svc.childDustThreshold(context.Background(), adapter, dustChainEntity("0.1"), models.SymbolUSDC); got != nil {
 		t.Fatalf("an unquoted price must not filter, got %v", got)
@@ -107,7 +107,7 @@ func TestTokenDustIsSkippedWithoutAQuotedPrice(t *testing.T) {
 	}
 }
 
-func TestNativeDustKeepsTheAdapterThreshold(t *testing.T) {
+func TestNative_Dust_KeepsTheAdapterThreshold(t *testing.T) {
 	pricer := usdcPricer("1")
 	svc, _ := dustService(pricer)
 	adapter := balanceMapChain(dustTestChain, models.NativeETH, nil)
@@ -123,7 +123,7 @@ func TestNativeDustKeepsTheAdapterThreshold(t *testing.T) {
 	}
 }
 
-func TestPlannerIgnoresTokenChildrenBelowTheUSDDust(t *testing.T) {
+func TestPlanner_Ignores_TokenChildrenBelowTheUSDDust(t *testing.T) {
 	walletID := uuid.New()
 	base := models.Address{ID: uuid.New(), WalletID: walletID, Address: "BASE"}
 	dusty := models.Address{ID: uuid.New(), WalletID: walletID, Address: "DUSTY"}

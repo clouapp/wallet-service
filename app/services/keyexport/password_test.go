@@ -8,7 +8,7 @@ import (
 	"testing"
 )
 
-func TestValidateArchivePassword(t *testing.T) {
+func TestValidate_Archive_Password(t *testing.T) {
 	strong := "Correct-Horse-Battery-7"
 	cases := []struct {
 		name          string
@@ -37,7 +37,7 @@ func TestValidateArchivePassword(t *testing.T) {
 	}
 }
 
-func TestReadArchivePassword_AsksTwiceRetriesAndGivesUp(t *testing.T) {
+func TestRead_ArchivePassword_AsksTwiceRetriesAndGivesUp(t *testing.T) {
 	strong := []byte("Correct-Horse-Battery-7")
 	terminal := &scriptedTerminal{secrets: [][]byte{[]byte("short"), []byte("short"), strong, strong}}
 	password, err := ReadArchivePassword(terminal)
@@ -63,7 +63,7 @@ func TestReadArchivePassword_AsksTwiceRetriesAndGivesUp(t *testing.T) {
 	}
 }
 
-func TestRequireEnvironmentAllowed(t *testing.T) {
+func TestRequire_Environment_Allowed(t *testing.T) {
 	for _, env := range []string{"local", "testing", "staging", ""} {
 		if err := RequireEnvironmentAllowed(env, false, nil); err != nil {
 			t.Fatalf("APP_ENV=%q must be allowed: %v", env, err)
@@ -88,7 +88,7 @@ func TestRequireEnvironmentAllowed(t *testing.T) {
 	}
 }
 
-func TestOpenTTY_RefusesSomethingThatIsNotATerminal(t *testing.T) {
+func TestOpen_TTY_RefusesSomethingThatIsNotATerminal(t *testing.T) {
 	notATerminal := filepath.Join(t.TempDir(), "stdin")
 	if err := os.WriteFile(notATerminal, []byte("Correct-Horse-Battery-7\n"), 0o600); err != nil {
 		t.Fatal(err)

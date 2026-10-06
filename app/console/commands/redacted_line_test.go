@@ -8,7 +8,7 @@ import (
 	"github.com/macrowallets/waas/app/services/security"
 )
 
-func TestRedactedLineOmitsRPCCredential(t *testing.T) {
+func TestRedacted_Line_OmitsRPCCredential(t *testing.T) {
 	const fixture = "fixture-rpc-query-key"
 	security.ConfigureRedaction([]string{"btc.example"}, nil)
 	t.Cleanup(func() { security.ConfigureRedaction(nil, nil) })
@@ -26,7 +26,7 @@ func TestRedactedLineOmitsRPCCredential(t *testing.T) {
 	}
 }
 
-func TestRedactedLineOmitsPassphraseAssignment(t *testing.T) {
+func TestRedacted_Line_OmitsPassphraseAssignment(t *testing.T) {
 	const fixture = "fixture-passphrase-value"
 	line := redactedLine("preflight failed: passphrase=" + fixture)
 	if strings.Contains(line, fixture) {

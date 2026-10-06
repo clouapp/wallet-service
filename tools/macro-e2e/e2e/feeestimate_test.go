@@ -19,7 +19,7 @@ const (
 
 func staticToken(context.Context) (string, error) { return feeTestToken, nil }
 
-func TestFeeEstimateSendsAReadOnlyGETWithTheBearerToken(t *testing.T) {
+func TestFee_Estimate_SendsAReadOnlyGETWithTheBearerToken(t *testing.T) {
 	var seen *http.Request
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		seen = r
@@ -55,7 +55,7 @@ func TestFeeEstimateSendsAReadOnlyGETWithTheBearerToken(t *testing.T) {
 	}
 }
 
-func TestFeeEstimateOmitsAnEmptyAmount(t *testing.T) {
+func TestFee_Estimate_OmitsAnEmptyAmount(t *testing.T) {
 	var rawQuery string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		rawQuery = r.URL.RawQuery
@@ -73,7 +73,7 @@ func TestFeeEstimateOmitsAnEmptyAmount(t *testing.T) {
 	}
 }
 
-func TestFeeEstimateRejectsBadInputBeforeReadingTheToken(t *testing.T) {
+func TestFee_Estimate_RejectsBadInputBeforeReadingTheToken(t *testing.T) {
 	tokenRead := false
 	token := func(context.Context) (string, error) { tokenRead = true; return feeTestToken, nil }
 	bad := []FeeEstimateRequest{
@@ -94,7 +94,7 @@ func TestFeeEstimateRejectsBadInputBeforeReadingTheToken(t *testing.T) {
 	}
 }
 
-func TestFeeEstimateReportsATokenFailure(t *testing.T) {
+func TestFee_Estimate_ReportsATokenFailure(t *testing.T) {
 	failing := func(context.Context) (string, error) {
 		return "", errors.New("could not read the Markets Macro Wallets API token")
 	}

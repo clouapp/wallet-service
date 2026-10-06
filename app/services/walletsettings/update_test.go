@@ -30,7 +30,7 @@ func requireFieldError(t *testing.T, err error, field string) {
 	}
 }
 
-func TestParseAcceptsNumbersStringsAndNull(t *testing.T) {
+func TestParse_Accepts_NumbersStringsAndNull(t *testing.T) {
 	update := mustParse(t, `{"fee_multiplier": 1.25, "fee_rate_min": "2", "fee_rate_max": null, "label": "  Treasury  "}`)
 	if !update.FeeMultiplier.Set || !update.FeeMultiplier.Value.Equal(decimal.RequireFromString("1.25")) {
 		t.Fatalf("fee_multiplier %+v", update.FeeMultiplier)
@@ -52,7 +52,7 @@ func TestParseAcceptsNumbersStringsAndNull(t *testing.T) {
 	}
 }
 
-func TestParseRejectsInvalidBodies(t *testing.T) {
+func TestParse_Rejects_InvalidBodies(t *testing.T) {
 	cases := []struct {
 		name, body, field string
 	}{
@@ -86,7 +86,7 @@ func TestParseRejectsInvalidBodies(t *testing.T) {
 	}
 }
 
-func TestColumnsAppliesChainRulesAndBounds(t *testing.T) {
+func TestColumns_Applies_ChainRulesAndBounds(t *testing.T) {
 	btcWallet := &models.Wallet{Chain: models.ChainBTC, FeeRateMin: intPointer(3), FeeRateMax: intPointer(40)}
 	evmWallet := &models.Wallet{Chain: models.ChainBase}
 

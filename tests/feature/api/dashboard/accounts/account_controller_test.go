@@ -20,12 +20,12 @@ type AccountControllerTestSuite struct {
 	goravelTesting.TestCase
 }
 
-func TestAccountControllerSuite(t *testing.T) {
+func TestAccount_Controller_Suite(t *testing.T) {
 	suite.Run(t, new(AccountControllerTestSuite))
 }
 
 // TestCreateAccount_Unauthenticated returns 401 without a bearer token.
-func (s *AccountControllerTestSuite) TestCreateAccount_Unauthenticated() {
+func (s *AccountControllerTestSuite) TestCreate_Account_Unauthenticated() {
 	body := `{"name":"My Account"}`
 	resp, err := s.Http(s.T()).
 		WithHeader("Content-Type", "application/json").
@@ -35,7 +35,7 @@ func (s *AccountControllerTestSuite) TestCreateAccount_Unauthenticated() {
 }
 
 // TestGetAccount_Unauthenticated returns 401 without a bearer token.
-func (s *AccountControllerTestSuite) TestGetAccount_Unauthenticated() {
+func (s *AccountControllerTestSuite) TestGet_Account_Unauthenticated() {
 	resp, err := s.Http(s.T()).
 		Get("/v1/accounts/00000000-0000-0000-0000-000000000001")
 	s.Require().NoError(err)
@@ -44,7 +44,7 @@ func (s *AccountControllerTestSuite) TestGetAccount_Unauthenticated() {
 }
 
 // TestUpdateAccount_Unauthenticated returns 401 without a bearer token.
-func (s *AccountControllerTestSuite) TestUpdateAccount_Unauthenticated() {
+func (s *AccountControllerTestSuite) TestUpdate_Account_Unauthenticated() {
 	body := `{"name":"New Name"}`
 	resp, err := s.Http(s.T()).
 		WithHeader("Content-Type", "application/json").
@@ -54,7 +54,7 @@ func (s *AccountControllerTestSuite) TestUpdateAccount_Unauthenticated() {
 }
 
 // TestFreezeAccount_Unauthenticated returns 401 without a bearer token.
-func (s *AccountControllerTestSuite) TestFreezeAccount_Unauthenticated() {
+func (s *AccountControllerTestSuite) TestFreeze_Account_Unauthenticated() {
 	resp, err := s.Http(s.T()).
 		Post("/v1/accounts/00000000-0000-0000-0000-000000000001/freeze", nil)
 	s.Require().NoError(err)
@@ -62,7 +62,7 @@ func (s *AccountControllerTestSuite) TestFreezeAccount_Unauthenticated() {
 }
 
 // TestArchiveAccount_Unauthenticated returns 401 without a bearer token.
-func (s *AccountControllerTestSuite) TestArchiveAccount_Unauthenticated() {
+func (s *AccountControllerTestSuite) TestArchive_Account_Unauthenticated() {
 	resp, err := s.Http(s.T()).
 		Post("/v1/accounts/00000000-0000-0000-0000-000000000001/archive", nil)
 	s.Require().NoError(err)
@@ -70,7 +70,7 @@ func (s *AccountControllerTestSuite) TestArchiveAccount_Unauthenticated() {
 }
 
 // TestUpdateAccountUser_Unauthenticated returns 401 without a bearer token.
-func (s *AccountControllerTestSuite) TestUpdateAccountUser_Unauthenticated() {
+func (s *AccountControllerTestSuite) TestUpdate_AccountUser_Unauthenticated() {
 	body := `{"role":"admin"}`
 	resp, err := s.Http(s.T()).
 		WithHeader("Content-Type", "application/json").
@@ -80,7 +80,7 @@ func (s *AccountControllerTestSuite) TestUpdateAccountUser_Unauthenticated() {
 }
 
 // TestListAccountInvites_Unauthenticated returns 401 without a bearer token.
-func (s *AccountControllerTestSuite) TestListAccountInvites_Unauthenticated() {
+func (s *AccountControllerTestSuite) TestList_AccountInvites_Unauthenticated() {
 	resp, err := s.Http(s.T()).
 		Get("/v1/accounts/00000000-0000-0000-0000-000000000001/invites")
 	s.Require().NoError(err)
@@ -88,7 +88,7 @@ func (s *AccountControllerTestSuite) TestListAccountInvites_Unauthenticated() {
 }
 
 // TestListAccountUsers_Unauthenticated returns 401 without a bearer token.
-func (s *AccountControllerTestSuite) TestListAccountUsers_Unauthenticated() {
+func (s *AccountControllerTestSuite) TestList_AccountUsers_Unauthenticated() {
 	resp, err := s.Http(s.T()).
 		Get("/v1/accounts/00000000-0000-0000-0000-000000000001/users")
 	s.Require().NoError(err)
@@ -96,7 +96,7 @@ func (s *AccountControllerTestSuite) TestListAccountUsers_Unauthenticated() {
 }
 
 // TestListAccountTokens_Unauthenticated returns 401 without a bearer token.
-func (s *AccountControllerTestSuite) TestListAccountTokens_Unauthenticated() {
+func (s *AccountControllerTestSuite) TestList_AccountTokens_Unauthenticated() {
 	resp, err := s.Http(s.T()).
 		Get("/v1/accounts/00000000-0000-0000-0000-000000000001/tokens")
 	s.Require().NoError(err)

@@ -18,7 +18,7 @@ func accountsControllerDeps() AccountsControllerDeps {
 	}
 }
 
-func TestNewAccountsControllerKeepsItsDependencies(t *testing.T) {
+func TestNew_Accounts_ControllerKeepsItsDependencies(t *testing.T) {
 	deps := accountsControllerDeps()
 	ctrl := NewAccountsController(deps)
 	if ctrl == nil {
@@ -38,7 +38,7 @@ func TestNewAccountsControllerKeepsItsDependencies(t *testing.T) {
 	}
 }
 
-func TestNewAccountsControllerRequiresEveryDependency(t *testing.T) {
+func TestNew_Accounts_ControllerRequiresEveryDependency(t *testing.T) {
 	cases := []struct {
 		name  string
 		clear func(*AccountsControllerDeps)

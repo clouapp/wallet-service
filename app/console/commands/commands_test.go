@@ -8,7 +8,7 @@ import (
 	"github.com/macrowallets/waas/app/services/refresh"
 )
 
-func TestRefreshWalletSignature(t *testing.T) {
+func TestRefresh_Wallet_Signature(t *testing.T) {
 	cmd := &RefreshWallet{}
 	if cmd.Signature() != "refresh:wallet" {
 		t.Fatalf("unexpected: %s", cmd.Signature())
@@ -22,28 +22,28 @@ func TestRefreshWalletSignature(t *testing.T) {
 	}
 }
 
-func TestRefreshAddressSignature(t *testing.T) {
+func TestRefresh_Address_Signature(t *testing.T) {
 	cmd := &RefreshAddress{}
 	if cmd.Signature() != "refresh:address" {
 		t.Fatalf("unexpected: %s", cmd.Signature())
 	}
 }
 
-func TestRefreshCurrencySignature(t *testing.T) {
+func TestRefresh_Currency_Signature(t *testing.T) {
 	cmd := &RefreshCurrency{}
 	if cmd.Signature() != "refresh:currency" {
 		t.Fatalf("unexpected: %s", cmd.Signature())
 	}
 }
 
-func TestRefreshTxSignature(t *testing.T) {
+func TestRefresh_Tx_Signature(t *testing.T) {
 	cmd := &RefreshTx{}
 	if cmd.Signature() != "refresh:tx" {
 		t.Fatalf("unexpected: %s", cmd.Signature())
 	}
 }
 
-func TestScanDepositsSignature(t *testing.T) {
+func TestScan_Deposits_Signature(t *testing.T) {
 	cmd := &ScanDeposits{}
 	if cmd.Signature() != "scan:deposits" {
 		t.Fatalf("unexpected: %s", cmd.Signature())
@@ -57,7 +57,7 @@ func TestScanDepositsSignature(t *testing.T) {
 	}
 }
 
-func TestReconcileWalletSignature(t *testing.T) {
+func TestReconcile_Wallet_Signature(t *testing.T) {
 	cmd := &ReconcileWallet{}
 	if cmd.Signature() != "reconcile:wallet" {
 		t.Fatalf("unexpected: %s", cmd.Signature())
@@ -68,7 +68,7 @@ func TestReconcileWalletSignature(t *testing.T) {
 	}
 }
 
-func TestRefreshCurrencyAmbiguousDetection(t *testing.T) {
+func TestRefresh_Currency_AmbiguousDetection(t *testing.T) {
 	for _, currency := range []string{"usdt", "usdc", "dai", "wbtc", "weth"} {
 		if !refresh.AmbiguousCurrency(currency) {
 			t.Errorf("expected %s to be ambiguous", currency)
@@ -79,7 +79,7 @@ func TestRefreshCurrencyAmbiguousDetection(t *testing.T) {
 	}
 }
 
-func TestRefreshWalletHasExpectedFlags(t *testing.T) {
+func TestRefresh_Wallet_HasExpectedFlags(t *testing.T) {
 	cmd := &RefreshWallet{}
 	ext := cmd.Extend()
 	flagNames := make(map[string]bool)
@@ -98,7 +98,7 @@ func TestRefreshWalletHasExpectedFlags(t *testing.T) {
 	}
 }
 
-func TestRefreshAddressHasExpectedArguments(t *testing.T) {
+func TestRefresh_Address_HasExpectedArguments(t *testing.T) {
 	cmd := &RefreshAddress{}
 	ext := cmd.Extend()
 	if len(ext.Arguments) != 2 {
@@ -106,7 +106,7 @@ func TestRefreshAddressHasExpectedArguments(t *testing.T) {
 	}
 }
 
-func TestRefreshCurrencyHasChainFlag(t *testing.T) {
+func TestRefresh_Currency_HasChainFlag(t *testing.T) {
 	cmd := &RefreshCurrency{}
 	ext := cmd.Extend()
 	hasChain := false
@@ -120,7 +120,7 @@ func TestRefreshCurrencyHasChainFlag(t *testing.T) {
 	}
 }
 
-func TestRefreshTxHasTwoArguments(t *testing.T) {
+func TestRefresh_Tx_HasTwoArguments(t *testing.T) {
 	cmd := &RefreshTx{}
 	ext := cmd.Extend()
 	if len(ext.Arguments) != 2 {
@@ -128,7 +128,7 @@ func TestRefreshTxHasTwoArguments(t *testing.T) {
 	}
 }
 
-func TestAllCommandDescriptionsNotEmpty(t *testing.T) {
+func TestAll_Command_DescriptionsNotEmpty(t *testing.T) {
 	cmds := []interface{ Description() string }{
 		&RefreshWallet{},
 		&RefreshAddress{},
@@ -144,7 +144,7 @@ func TestAllCommandDescriptionsNotEmpty(t *testing.T) {
 	}
 }
 
-func TestRefreshAddressHasExpectedFlags(t *testing.T) {
+func TestRefresh_Address_HasExpectedFlags(t *testing.T) {
 	cmd := &RefreshAddress{}
 	ext := cmd.Extend()
 	flagNames := make(map[string]bool)
@@ -163,7 +163,7 @@ func TestRefreshAddressHasExpectedFlags(t *testing.T) {
 	}
 }
 
-func TestReconcileWalletHasExpectedFlags(t *testing.T) {
+func TestReconcile_Wallet_HasExpectedFlags(t *testing.T) {
 	cmd := &ReconcileWallet{}
 	ext := cmd.Extend()
 	flagNames := make(map[string]bool)
@@ -182,7 +182,7 @@ func TestReconcileWalletHasExpectedFlags(t *testing.T) {
 	}
 }
 
-func TestAllRefreshCommandsCategoryIsRefresh(t *testing.T) {
+func TestAll_Refresh_CommandsCategoryIsRefresh(t *testing.T) {
 	cmds := []interface {
 		Extend() command.Extend
 	}{
@@ -199,7 +199,7 @@ func TestAllRefreshCommandsCategoryIsRefresh(t *testing.T) {
 	}
 }
 
-func TestRefreshCurrencyHasTwoArguments(t *testing.T) {
+func TestRefresh_Currency_HasTwoArguments(t *testing.T) {
 	cmd := &RefreshCurrency{}
 	ext := cmd.Extend()
 	if len(ext.Arguments) != 2 {

@@ -14,7 +14,7 @@ import (
 	"github.com/macrowallets/waas/pkg/httpclient"
 )
 
-func TestNewCoinMarketCapProviderUsesTheRESTHost(t *testing.T) {
+func TestNew_Coin_MarketCapProviderUsesTheRESTHost(t *testing.T) {
 	provider := NewCoinMarketCapProvider("")
 	if provider.baseURL != restBaseURL || provider.apiKey != "" || provider.client == nil {
 		t.Fatal("an empty key did not build the CoinMarketCap REST client")
@@ -24,7 +24,7 @@ func TestNewCoinMarketCapProviderUsesTheRESTHost(t *testing.T) {
 	}
 }
 
-func TestFetchCryptoPricesRequiresAKeyBeforeHTTP(t *testing.T) {
+func TestFetch_Crypto_PricesRequiresAKeyBeforeHTTP(t *testing.T) {
 	called := false
 	server := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
 		called = true
@@ -43,7 +43,7 @@ func TestFetchCryptoPricesRequiresAKeyBeforeHTTP(t *testing.T) {
 	}
 }
 
-func TestFetchCryptoPricesReadsTheUSDQuote(t *testing.T) {
+func TestFetch_Crypto_PricesReadsTheUSDQuote(t *testing.T) {
 	const restKey = "cmc-rest-not-logged"
 	var sawKey bool
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -89,7 +89,7 @@ func TestFetchCryptoPricesReadsTheUSDQuote(t *testing.T) {
 	}
 }
 
-func TestFetchFiatRatesDoesNotCallHTTP(t *testing.T) {
+func TestFetch_Fiat_RatesDoesNotCallHTTP(t *testing.T) {
 	const restKey = "cmc-rest-not-logged"
 	called := false
 	server := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
@@ -107,7 +107,7 @@ func TestFetchFiatRatesDoesNotCallHTTP(t *testing.T) {
 	}
 }
 
-func TestGetOmitsTheKeyFromErrors(t *testing.T) {
+func TestGet_Omits_TheKeyFromErrors(t *testing.T) {
 	const restKey = "cmc-rest-not-logged"
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusTooManyRequests)
@@ -136,7 +136,7 @@ func TestGetOmitsTheKeyFromErrors(t *testing.T) {
 	}
 }
 
-func TestFetchCryptoPricesStopsWhenTheContextIsCanceled(t *testing.T) {
+func TestFetch_Crypto_PricesStopsWhenTheContextIsCanceled(t *testing.T) {
 	called := false
 	server := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
 		called = true

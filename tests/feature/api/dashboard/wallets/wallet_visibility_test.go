@@ -39,7 +39,7 @@ type sessionUser struct {
 	token string
 }
 
-func TestWalletVisibilitySuite(t *testing.T) {
+func TestWallet_Visibility_Suite(t *testing.T) {
 	suite.Run(t, new(WalletVisibilityTestSuite))
 }
 
@@ -61,7 +61,7 @@ func (s *WalletVisibilityTestSuite) SetupTest() {
 	s.assign(s.auditor.id, s.assigned.ID)
 }
 
-func (s *WalletVisibilityTestSuite) TestFlagOffHidesWalletsTheMemberDoesNotBelongTo() {
+func (s *WalletVisibilityTestSuite) TestFlag_Off_HidesWalletsTheMemberDoesNotBelongTo() {
 	for _, caller := range []sessionUser{s.owner, s.admin} {
 		ids := s.listed(caller.token)
 		s.ElementsMatch([]string{s.assigned.ID.String(), s.hidden.ID.String()}, ids, caller.id.String())
@@ -81,7 +81,7 @@ func (s *WalletVisibilityTestSuite) TestFlagOffHidesWalletsTheMemberDoesNotBelon
 	}
 }
 
-func (s *WalletVisibilityTestSuite) TestFlagOnLetsUserAndAuditorSeeEveryWallet() {
+func (s *WalletVisibilityTestSuite) TestFlag_On_LetsUserAndAuditorSeeEveryWallet() {
 	_, err := facades.Orm().Query().Exec(`UPDATE accounts SET view_all_wallets = TRUE WHERE id = ?`, s.account.ID)
 	s.Require().NoError(err)
 

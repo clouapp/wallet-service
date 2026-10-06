@@ -11,7 +11,7 @@ const (
 	etherscanEnvKey      = "es-env-key-4c21"
 )
 
-func TestEtherscanKeyForHeight_EnabledGroupOpensTheSealedKey(t *testing.T) {
+func TestEtherscan_KeyForHeight_EnabledGroupOpensTheSealedKey(t *testing.T) {
 	store := newMemoryStore()
 	store.PutPlatform(groupProviderEtherscan, map[string]string{
 		keyProviderEnabled: "true",
@@ -27,7 +27,7 @@ func TestEtherscanKeyForHeight_EnabledGroupOpensTheSealedKey(t *testing.T) {
 	}
 }
 
-func TestEtherscanKeyForHeight_MissingDisabledUnsealedAndFailedReadUseTheEnvKey(t *testing.T) {
+func TestEtherscan_KeyForHeight_MissingDisabledUnsealedAndFailedReadUseTheEnvKey(t *testing.T) {
 	t.Run("missing", func(t *testing.T) {
 		got := newTestService(newMemoryStore()).EtherscanKeyForHeight(context.Background(), "  "+etherscanEnvKey+"  ")
 		if got != etherscanEnvKey {
@@ -81,7 +81,7 @@ func TestEtherscanKeyForHeight_MissingDisabledUnsealedAndFailedReadUseTheEnvKey(
 	})
 }
 
-func TestEtherscanKeyForHeight_NilServiceOrContextKeepsTheEnvKey(t *testing.T) {
+func TestEtherscan_KeyForHeight_NilServiceOrContextKeepsTheEnvKey(t *testing.T) {
 	var service *Service
 	if got := service.EtherscanKeyForHeight(context.Background(), etherscanEnvKey); got != etherscanEnvKey {
 		t.Fatal("a nil settings service did not keep the environment key")

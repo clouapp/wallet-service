@@ -27,7 +27,7 @@ type AccountAddMemberGateTestSuite struct {
 	goravelTesting.TestCase
 }
 
-func TestAccountAddMemberGateSuite(t *testing.T) {
+func TestAccount_Add_MemberGateSuite(t *testing.T) {
 	suite.Run(t, new(AccountAddMemberGateTestSuite))
 }
 
@@ -35,7 +35,7 @@ func (s *AccountAddMemberGateTestSuite) SetupTest() {
 	fixtures.TestDB(s.T())
 }
 
-func (s *AccountAddMemberGateTestSuite) TestAccountAddMemberFollowsTheAccountRole() {
+func (s *AccountAddMemberGateTestSuite) TestAccount_Add_MemberFollowsTheAccountRole() {
 	accountID := uuid.New()
 	s.Require().NoError(facades.Orm().Query().Create(&models.Account{
 		ID: accountID, Name: "Account " + accountID.String()[:8], Status: models.StatusActive, Environment: "prod",
@@ -56,7 +56,7 @@ func (s *AccountAddMemberGateTestSuite) TestAccountAddMemberFollowsTheAccountRol
 	}
 }
 
-func (s *AccountAddMemberGateTestSuite) TestAddMemberValidationStaysUnprocessable() {
+func (s *AccountAddMemberGateTestSuite) TestAdd_Member_ValidationStaysUnprocessable() {
 	accountID := uuid.New()
 	s.Require().NoError(facades.Orm().Query().Create(&models.Account{
 		ID: accountID, Name: "Account " + accountID.String()[:8], Status: models.StatusActive, Environment: "prod",

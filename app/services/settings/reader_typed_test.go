@@ -8,7 +8,7 @@ import (
 	"github.com/google/uuid"
 )
 
-func TestStringIntAndBoolRefuseASecretField(t *testing.T) {
+func TestString_Int_AndBoolRefuseASecretField(t *testing.T) {
 	t.Parallel()
 
 	store := newMemoryStore()
@@ -32,7 +32,7 @@ func TestStringIntAndBoolRefuseASecretField(t *testing.T) {
 	}
 }
 
-func TestSecretRefusesANonSecretField(t *testing.T) {
+func TestSecret_Refuses_ANonSecretField(t *testing.T) {
 	t.Parallel()
 
 	store := newMemoryStore()
@@ -45,7 +45,7 @@ func TestSecretRefusesANonSecretField(t *testing.T) {
 	}
 }
 
-func TestSecretUnsetFieldUsesTheKnownEnvFallback(t *testing.T) {
+func TestSecret_Unset_FieldUsesTheKnownEnvFallback(t *testing.T) {
 	const fallback = "smtp-password-fallback"
 	t.Setenv(envMailPassword, "  "+fallback+"  ")
 
@@ -65,7 +65,7 @@ func TestSecretUnsetFieldUsesTheKnownEnvFallback(t *testing.T) {
 	}
 }
 
-func TestSecretUnsetFieldWithoutAnEnvFallbackStaysUnset(t *testing.T) {
+func TestSecret_Unset_FieldWithoutAnEnvFallbackStaysUnset(t *testing.T) {
 	t.Setenv("MAIL_SES_SECRET", "invented-ses-secret")
 	t.Setenv(envMailPassword, "smtp-password-fallback")
 
@@ -76,7 +76,7 @@ func TestSecretUnsetFieldWithoutAnEnvFallbackStaysUnset(t *testing.T) {
 	}
 }
 
-func TestSecretBadSealFailsClosed(t *testing.T) {
+func TestSecret_Bad_SealFailsClosed(t *testing.T) {
 	t.Setenv(envMailPassword, "smtp-password-fallback")
 
 	store := newMemoryStore()
@@ -98,7 +98,7 @@ func TestSecretBadSealFailsClosed(t *testing.T) {
 	}
 }
 
-func TestSecretOpensASealedValueAndIgnoresTheEnvFallback(t *testing.T) {
+func TestSecret_Opens_ASealedValueAndIgnoresTheEnvFallback(t *testing.T) {
 	const opened = "stored-smtp-secret"
 	t.Setenv(envMailPassword, "smtp-password-fallback")
 
@@ -110,7 +110,7 @@ func TestSecretOpensASealedValueAndIgnoresTheEnvFallback(t *testing.T) {
 	}
 }
 
-func TestTypedReadersUseStoredNonSecretsOrTheRegistryDefault(t *testing.T) {
+func TestTyped_Readers_UseStoredNonSecretsOrTheRegistryDefault(t *testing.T) {
 	t.Parallel()
 
 	store := newMemoryStore()
@@ -143,7 +143,7 @@ func TestTypedReadersUseStoredNonSecretsOrTheRegistryDefault(t *testing.T) {
 	}
 }
 
-func TestSecretOpensAnAccountSecretAndLeavesAnUnsetOneEmpty(t *testing.T) {
+func TestSecret_Opens_AnAccountSecretAndLeavesAnUnsetOneEmpty(t *testing.T) {
 	t.Parallel()
 
 	const opened = "account-signing-secret"

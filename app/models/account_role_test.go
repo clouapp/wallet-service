@@ -2,7 +2,7 @@ package models
 
 import "testing"
 
-func TestAccountRoleVocabularyIsClosed(t *testing.T) {
+func TestAccount_Role_VocabularyIsClosed(t *testing.T) {
 	got := AccountRoles()
 	want := []string{AccountRoleOwner, AccountRoleAdmin, AccountRoleAuditor, AccountRoleUser}
 	if len(got) != len(want) {

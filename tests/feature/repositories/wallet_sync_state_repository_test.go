@@ -21,7 +21,7 @@ type WalletSyncStateRepositoryTestSuite struct {
 	wallet *models.Wallet
 }
 
-func TestWalletSyncStateRepositorySuite(t *testing.T) {
+func TestWallet_Sync_StateRepositorySuite(t *testing.T) {
 	suite.Run(t, new(WalletSyncStateRepositoryTestSuite))
 }
 
@@ -54,7 +54,7 @@ func (s *WalletSyncStateRepositoryTestSuite) findBalancesState() *models.WalletS
 	return state
 }
 
-func (s *WalletSyncStateRepositoryTestSuite) TestUpsertCreatesStateWithTimestamps() {
+func (s *WalletSyncStateRepositoryTestSuite) TestUpsert_Creates_StateWithTimestamps() {
 	s.Require().NoError(s.repo.Upsert(context.Background(), s.syncedBalancesState(time.Now())))
 
 	state := s.findBalancesState()
@@ -62,7 +62,7 @@ func (s *WalletSyncStateRepositoryTestSuite) TestUpsertCreatesStateWithTimestamp
 	s.NotNil(state.UpdatedAt)
 }
 
-func (s *WalletSyncStateRepositoryTestSuite) TestUpsertOfExistingStateKeepsCreatedAt() {
+func (s *WalletSyncStateRepositoryTestSuite) TestUpsert_Of_ExistingStateKeepsCreatedAt() {
 	s.Require().NoError(s.repo.Upsert(context.Background(), s.syncedBalancesState(time.Now().Add(-time.Hour))))
 	first := s.findBalancesState()
 	s.Require().NotNil(first.CreatedAt)
@@ -78,7 +78,7 @@ func (s *WalletSyncStateRepositoryTestSuite) TestUpsertOfExistingStateKeepsCreat
 	s.WithinDuration(secondSync, *second.LastSyncedAt, time.Second)
 }
 
-func (s *WalletSyncStateRepositoryTestSuite) TestUpdateFailureAfterUpsertMarksStateFailed() {
+func (s *WalletSyncStateRepositoryTestSuite) TestUpdate_Failure_AfterUpsertMarksStateFailed() {
 	s.Require().NoError(s.repo.Upsert(context.Background(), s.syncedBalancesState(time.Now())))
 
 	s.Require().NoError(s.repo.UpdateFailure(context.Background(), s.wallet.ID, s.wallet.Chain, string(refresh.RefreshScopeBalances), "rpc unavailable"))

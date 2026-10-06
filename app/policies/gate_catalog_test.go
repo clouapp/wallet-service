@@ -2,7 +2,7 @@ package policies
 
 import "testing"
 
-func TestGateAbilityNamesStayTheLiveCatalog(t *testing.T) {
+func TestGate_Ability_NamesStayTheLiveCatalog(t *testing.T) {
 	t.Parallel()
 
 	cases := []struct {

@@ -26,7 +26,7 @@ type accountFeaturesSuite struct {
 	goravelTesting.TestCase
 }
 
-func TestAccountFeaturesSuite(t *testing.T) {
+func TestAccount_Features_Suite(t *testing.T) {
 	suite.Run(t, new(accountFeaturesSuite))
 }
 
@@ -34,7 +34,7 @@ func (s *accountFeaturesSuite) SetupTest() {
 	fixtures.TestDB(s.T())
 }
 
-func (s *accountFeaturesSuite) TestGetMissingRowUsesCatalogDefault() {
+func (s *accountFeaturesSuite) TestGet_Missing_RowUsesCatalogDefault() {
 	accountID, token := s.owner()
 
 	body := s.get(token, accountID, 200)
@@ -49,7 +49,7 @@ func (s *accountFeaturesSuite) TestGetMissingRowUsesCatalogDefault() {
 	s.Equal(int64(0), s.rowCount(accountID))
 }
 
-func (s *accountFeaturesSuite) TestGetAccountListsActiveFlagKeys() {
+func (s *accountFeaturesSuite) TestGet_Account_ListsActiveFlagKeys() {
 	accountID, token := s.owner()
 
 	body := s.account(token, accountID)
@@ -89,7 +89,7 @@ func (s *accountFeaturesSuite) TestGetAccountListsActiveFlagKeys() {
 	s.NotContains(updated, `"features"`)
 }
 
-func (s *accountFeaturesSuite) TestAccountRoutesCannotWriteAFlag() {
+func (s *accountFeaturesSuite) TestAccount_Routes_CannotWriteAFlag() {
 	accountID, owner := s.owner()
 	admin := s.member(accountID, "admin")
 	auditor := s.member(accountID, "auditor")

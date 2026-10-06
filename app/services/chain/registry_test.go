@@ -10,7 +10,7 @@ import (
 	"github.com/macrowallets/waas/tests/mocks"
 )
 
-func TestRegistry_RegisterAndGet(t *testing.T) {
+func TestRegistry_Register_AndGet(t *testing.T) {
 	r := NewRegistry()
 	mock := mocks.NewMockChain("eth")
 	r.RegisterChain(mock)
@@ -24,7 +24,7 @@ func TestRegistry_RegisterAndGet(t *testing.T) {
 	}
 }
 
-func TestRegistry_ChainNotFound(t *testing.T) {
+func TestRegistry_Chain_NotFound(t *testing.T) {
 	r := NewRegistry()
 	_, err := r.Chain("nonexistent")
 	if !errors.Is(err, ErrUnknownChain) {
@@ -32,7 +32,7 @@ func TestRegistry_ChainNotFound(t *testing.T) {
 	}
 }
 
-func TestRegistry_ChainIDs(t *testing.T) {
+func TestRegistry_Chain_IDs(t *testing.T) {
 	r := NewRegistry()
 	r.RegisterChain(mocks.NewMockChain("eth"))
 	r.RegisterChain(mocks.NewMockChain("btc"))
@@ -44,7 +44,7 @@ func TestRegistry_ChainIDs(t *testing.T) {
 	}
 }
 
-func TestRegistry_OverwriteChain(t *testing.T) {
+func TestRegistry_Overwrite_Chain(t *testing.T) {
 	r := NewRegistry()
 	r.RegisterChain(mocks.NewMockChain("eth"))
 
@@ -58,7 +58,7 @@ func TestRegistry_OverwriteChain(t *testing.T) {
 	}
 }
 
-func TestRegistry_RegisterToken(t *testing.T) {
+func TestRegistry_Register_Token(t *testing.T) {
 	r := NewRegistry()
 	r.RegisterToken(types.Token{Symbol: "usdt", ChainID: "eth", Decimals: 6, Contract: "0xabc"})
 	r.RegisterToken(types.Token{Symbol: "usdc", ChainID: "eth", Decimals: 6, Contract: "0xdef"})
@@ -75,7 +75,7 @@ func TestRegistry_RegisterToken(t *testing.T) {
 	}
 }
 
-func TestRegistry_FindToken(t *testing.T) {
+func TestRegistry_Find_Token(t *testing.T) {
 	r := NewRegistry()
 	r.RegisterToken(types.Token{Symbol: "usdt", ChainID: "eth", Decimals: 6})
 	r.RegisterToken(types.Token{Symbol: "usdc", ChainID: "eth", Decimals: 6})
@@ -113,7 +113,7 @@ func TestRegistry_TokensForChain_Empty(t *testing.T) {
 	}
 }
 
-func TestFindTokenByContract_CaseInsensitiveEVM(t *testing.T) {
+func TestFind_TokenByContract_CaseInsensitiveEVM(t *testing.T) {
 	r := NewRegistry()
 	r.RegisterToken(types.Token{
 		Symbol: models.SymbolUSDT, ChainID: models.ChainETH, Decimals: 6,
@@ -128,7 +128,7 @@ func TestFindTokenByContract_CaseInsensitiveEVM(t *testing.T) {
 	}
 }
 
-func TestFindTokenByContract_SolanaMintExact(t *testing.T) {
+func TestFind_TokenByContract_SolanaMintExact(t *testing.T) {
 	r := NewRegistry()
 	r.RegisterToken(types.Token{
 		Symbol: models.SymbolUSDC, ChainID: models.ChainSOL, Decimals: 6,

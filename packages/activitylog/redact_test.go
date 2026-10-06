@@ -5,7 +5,7 @@ import (
 	"testing"
 )
 
-func TestProjectedSelectHidesASecretValue(t *testing.T) {
+func TestProjected_Select_HidesASecretValue(t *testing.T) {
 	tbl := Table{
 		Columns: []string{"group", "key", "value"},
 		TextRedaction: TextRedaction{
@@ -32,7 +32,7 @@ func TestProjectedSelectHidesASecretValue(t *testing.T) {
 	}
 }
 
-func TestProjectedSelectLeavesAnUnredactedTableAlone(t *testing.T) {
+func TestProjected_Select_LeavesAnUnredactedTableAlone(t *testing.T) {
 	tbl := Table{Columns: []string{"email"}}
 	got, err := tbl.projectedSelect([]string{"email", "id"}, func(name string) string {
 		return `"` + name + `"`
@@ -45,7 +45,7 @@ func TestProjectedSelectLeavesAnUnredactedTableAlone(t *testing.T) {
 	}
 }
 
-func TestRegisterRejectsAnUnsafeRedactionToken(t *testing.T) {
+func TestRegister_Rejects_AnUnsafeRedactionToken(t *testing.T) {
 	freshRegistry(t)
 	err := Register(Table{
 		Name:    "settings",
@@ -61,7 +61,7 @@ func TestRegisterRejectsAnUnsafeRedactionToken(t *testing.T) {
 	}
 }
 
-func TestImageReplacesASecretValueWithValueSet(t *testing.T) {
+func TestImage_Replaces_ASecretValueWithValueSet(t *testing.T) {
 	tbl := Table{
 		Columns: []string{"group", "key", "value"},
 		TextRedaction: TextRedaction{
@@ -99,7 +99,7 @@ func TestImageReplacesASecretValueWithValueSet(t *testing.T) {
 	}
 }
 
-func TestImageUsesTheBooleanWhenTheSecretTextWasNotRead(t *testing.T) {
+func TestImage_Uses_TheBooleanWhenTheSecretTextWasNotRead(t *testing.T) {
 	tbl := Table{
 		Columns: []string{"key", "value"},
 		TextRedaction: TextRedaction{

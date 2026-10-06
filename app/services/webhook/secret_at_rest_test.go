@@ -30,7 +30,7 @@ func expectedSignature(secret, body string) string {
 	return hex.EncodeToString(mac.Sum(nil))
 }
 
-func TestWebhookSecretIsSealedAtRestAndSignaturesUseThePlaintext(t *testing.T) {
+func TestWebhook_Secret_IsSealedAtRestAndSignaturesUseThePlaintext(t *testing.T) {
 	f := newScopedFixture(t)
 	receiver := &recordingReceiver{status: http.StatusOK}
 	server := httptest.NewServer(receiver)
@@ -61,7 +61,7 @@ func TestWebhookSecretIsSealedAtRestAndSignaturesUseThePlaintext(t *testing.T) {
 	}
 }
 
-func TestWebhookConfigWithAPlaintextSecretIsRefusedOnRead(t *testing.T) {
+func TestWebhook_Config_WithAPlaintextSecretIsRefusedOnRead(t *testing.T) {
 	f := newScopedFixture(t)
 	cfg := insertOwnedConfig(t, "https://owned.test/hook", []string{withdrawalEvents}, &f.accountID, nil)
 	if _, err := facades.Orm().Query().Exec(`UPDATE webhook_configs SET secret = 'written-around-the-repository' WHERE id = ?`, cfg.ID); err != nil {

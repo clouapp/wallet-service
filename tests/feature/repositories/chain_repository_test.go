@@ -16,7 +16,7 @@ type ChainRepositoryTestSuite struct {
 	repo *repositories.ChainRepository
 }
 
-func TestChainRepositorySuite(t *testing.T) {
+func TestChain_Repository_Suite(t *testing.T) {
 	suite.Run(t, new(ChainRepositoryTestSuite))
 }
 
@@ -33,7 +33,7 @@ func (s *ChainRepositoryTestSuite) chain(id string, testnet bool, status string)
 	}
 }
 
-func (s *ChainRepositoryTestSuite) TestCreateAndFindByID() {
+func (s *ChainRepositoryTestSuite) TestCreate_And_FindByID() {
 	chain := s.chain("teth", true, "active")
 	s.Require().NoError(s.repo.Create(context.Background(), chain))
 
@@ -43,19 +43,19 @@ func (s *ChainRepositoryTestSuite) TestCreateAndFindByID() {
 	s.True(found.IsTestnet)
 }
 
-func (s *ChainRepositoryTestSuite) TestFindByID_NotFound() {
+func (s *ChainRepositoryTestSuite) TestFind_ByID_NotFound() {
 	found, err := s.repo.FindByID(context.Background(), "missing")
 	s.ErrorIs(err, models.ErrRepositoryNotFound)
 	s.Nil(found)
 }
 
-func (s *ChainRepositoryTestSuite) TestFindByID_Empty() {
+func (s *ChainRepositoryTestSuite) TestFind_ByID_Empty() {
 	found, err := s.repo.FindByID(context.Background(), "")
 	s.ErrorIs(err, models.ErrRepositoryNotFound)
 	s.Nil(found)
 }
 
-func (s *ChainRepositoryTestSuite) TestFindActiveAndByTestnet() {
+func (s *ChainRepositoryTestSuite) TestFind_Active_AndByTestnet() {
 	s.Require().NoError(s.repo.Create(context.Background(), s.chain("eth", false, "active")))
 	s.Require().NoError(s.repo.Create(context.Background(), s.chain("teth", true, "active")))
 	s.Require().NoError(s.repo.Create(context.Background(), s.chain("gone", false, "disabled")))

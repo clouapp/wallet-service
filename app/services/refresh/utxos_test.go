@@ -10,14 +10,14 @@ import (
 	"github.com/macrowallets/waas/app/models"
 )
 
-func TestNewUTXOServiceNotNil(t *testing.T) {
+func TestNew_UTXO_ServiceNotNil(t *testing.T) {
 	svc := NewUTXOService(UTXODeps{})
 	if svc == nil {
 		t.Fatal("expected non-nil UTXOService")
 	}
 }
 
-func TestNewUTXOServiceFields(t *testing.T) {
+func TestNew_UTXO_ServiceFields(t *testing.T) {
 	svc := NewUTXOService(UTXODeps{})
 	if svc.utxoRepo != nil {
 		t.Fatal("expected nil utxoRepo")
@@ -27,7 +27,7 @@ func TestNewUTXOServiceFields(t *testing.T) {
 	}
 }
 
-func TestReplaceWalletUTXOsWithNilRepoReturnsError(t *testing.T) {
+func TestReplace_Wallet_UTXOsWithNilRepoReturnsError(t *testing.T) {
 	svc := NewUTXOService(UTXODeps{})
 	wallet := &models.Wallet{
 		ID:    uuid.New(),

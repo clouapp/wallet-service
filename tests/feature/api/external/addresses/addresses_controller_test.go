@@ -28,7 +28,7 @@ type AddressesControllerTestSuite struct {
 	goravelTesting.TestCase
 }
 
-func TestAddressesControllerSuite(t *testing.T) {
+func TestAddresses_Controller_Suite(t *testing.T) {
 	suite.Run(t, new(AddressesControllerTestSuite))
 }
 
@@ -86,7 +86,7 @@ func seedAddressForWallet(t *testing.T, walletID uuid.UUID, chain, addressStr, e
 	}
 }
 
-func (s *AddressesControllerTestSuite) TestGenerateAddress_Success() {
+func (s *AddressesControllerTestSuite) TestGenerate_Address_Success() {
 	testutil.SeededTestDB(s.T())
 	accountID, bearer, _ := ctltestutil.SetupAPIAuth(s.T(), false)
 	walletID := seedAPIWalletForAccount(s.T(), accountID, "eth", "gen-addr-success")
@@ -108,7 +108,7 @@ func (s *AddressesControllerTestSuite) TestGenerateAddress_Success() {
 	s.Equal(true, payload["is_active"])
 }
 
-func (s *AddressesControllerTestSuite) TestGenerateAddress_MultipleForSameUser() {
+func (s *AddressesControllerTestSuite) TestGenerate_Address_MultipleForSameUser() {
 	testutil.SeededTestDB(s.T())
 	accountID, bearer, _ := ctltestutil.SetupAPIAuth(s.T(), false)
 	walletID := seedAPIWalletForAccount(s.T(), accountID, "eth", "gen-addr-multi")
@@ -132,7 +132,7 @@ func (s *AddressesControllerTestSuite) TestGenerateAddress_MultipleForSameUser()
 	s.NotEqual(addr1, addr2, "successive derivations must yield distinct addresses")
 }
 
-func (s *AddressesControllerTestSuite) TestListWalletAddresses() {
+func (s *AddressesControllerTestSuite) TestList_Wallet_Addresses() {
 	testutil.SeededTestDB(s.T())
 	accountID, bearer, _ := ctltestutil.SetupAPIAuth(s.T(), false)
 	walletID := seedAPIWalletForAccount(s.T(), accountID, "eth", "list-wallet-addrs")
@@ -160,7 +160,7 @@ func (s *AddressesControllerTestSuite) TestListWalletAddresses() {
 	}
 }
 
-func (s *AddressesControllerTestSuite) TestLookupAddress_Success() {
+func (s *AddressesControllerTestSuite) TestLookup_Address_Success() {
 	testutil.SeededTestDB(s.T())
 	accountID, bearer, _ := ctltestutil.SetupAPIAuth(s.T(), false)
 	walletID := seedAPIWalletForAccount(s.T(), accountID, "eth", "lookup-success")
@@ -176,7 +176,7 @@ func (s *AddressesControllerTestSuite) TestLookupAddress_Success() {
 	})
 }
 
-func (s *AddressesControllerTestSuite) TestLookupAddress_NotFound() {
+func (s *AddressesControllerTestSuite) TestLookup_Address_NotFound() {
 	testutil.SeededTestDB(s.T())
 	_, bearer, _ := ctltestutil.SetupAPIAuth(s.T(), false)
 
@@ -185,7 +185,7 @@ func (s *AddressesControllerTestSuite) TestLookupAddress_NotFound() {
 		AssertNotFound()
 }
 
-func (s *AddressesControllerTestSuite) TestListUserAddresses() {
+func (s *AddressesControllerTestSuite) TestList_User_Addresses() {
 	testutil.SeededTestDB(s.T())
 	accountID, bearer, _ := ctltestutil.SetupAPIAuth(s.T(), false)
 	walletID := seedAPIWalletForAccount(s.T(), accountID, "eth", "list-user-addrs")

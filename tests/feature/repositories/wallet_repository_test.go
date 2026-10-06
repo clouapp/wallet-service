@@ -20,7 +20,7 @@ type WalletRepositoryTestSuite struct {
 	repo *repositories.WalletRepository
 }
 
-func TestWalletRepositorySuite(t *testing.T) {
+func TestWallet_Repository_Suite(t *testing.T) {
 	suite.Run(t, new(WalletRepositoryTestSuite))
 }
 
@@ -37,13 +37,13 @@ func (s *WalletRepositoryTestSuite) makeWallet(chainID string) *models.Wallet {
 	}
 }
 
-func (s *WalletRepositoryTestSuite) TestCreate_Success() {
+func (s *WalletRepositoryTestSuite) TestWalletRepository_Create_Success() {
 	w := s.makeWallet("eth")
 	err := s.repo.Create(context.Background(), w)
 	s.NoError(err)
 }
 
-func (s *WalletRepositoryTestSuite) TestFindByID_Found() {
+func (s *WalletRepositoryTestSuite) TestFind_ByID_Found() {
 	w := s.makeWallet("eth")
 	s.Require().NoError(s.repo.Create(context.Background(), w))
 
@@ -53,13 +53,13 @@ func (s *WalletRepositoryTestSuite) TestFindByID_Found() {
 	s.Equal("eth", found.Chain)
 }
 
-func (s *WalletRepositoryTestSuite) TestFindByID_NotFound() {
+func (s *WalletRepositoryTestSuite) TestFind_ByID_NotFound() {
 	found, err := s.repo.FindByID(context.Background(), uuid.New())
 	s.ErrorIs(err, models.ErrRepositoryNotFound)
 	s.Nil(found)
 }
 
-func (s *WalletRepositoryTestSuite) TestFindAll() {
+func (s *WalletRepositoryTestSuite) TestWalletRepository_Find_All() {
 	s.Require().NoError(s.repo.Create(context.Background(), s.makeWallet("eth")))
 	s.Require().NoError(s.repo.Create(context.Background(), s.makeWallet("btc")))
 
@@ -68,7 +68,7 @@ func (s *WalletRepositoryTestSuite) TestFindAll() {
 	s.Len(wallets, 2)
 }
 
-func (s *WalletRepositoryTestSuite) TestSetStatus() {
+func (s *WalletRepositoryTestSuite) TestWalletRepository_Set_Status() {
 	w := s.makeWallet("eth")
 	s.Require().NoError(s.repo.Create(context.Background(), w))
 
@@ -80,7 +80,7 @@ func (s *WalletRepositoryTestSuite) TestSetStatus() {
 	s.Equal("frozen", found.Status)
 }
 
-func (s *WalletRepositoryTestSuite) TestActivateClearsTheCode() {
+func (s *WalletRepositoryTestSuite) TestActivate_Clears_TheCode() {
 	w := s.makeWallet("eth")
 	code := "123456"
 	w.ActivationCode = &code
@@ -96,7 +96,7 @@ func (s *WalletRepositoryTestSuite) TestActivateClearsTheCode() {
 	s.Nil(found.ActivationCode)
 }
 
-func (s *WalletRepositoryTestSuite) TestPaginateByAccountAndMemberKeepsOnlyActiveMemberships() {
+func (s *WalletRepositoryTestSuite) TestPaginate_By_AccountAndMemberKeepsOnlyActiveMemberships() {
 	accountID := uuid.New()
 	otherAccountID := uuid.New()
 	userID := uuid.New()
@@ -146,7 +146,7 @@ func (s *WalletRepositoryTestSuite) membership(members *repositories.WalletUserR
 	}))
 }
 
-func (s *WalletRepositoryTestSuite) TestWithinCommitsAGasCheckAndItsWebhook() {
+func (s *WalletRepositoryTestSuite) TestWithin_Commits_AGasCheckAndItsWebhook() {
 	wallet := s.makeWallet("eth")
 	s.Require().NoError(s.repo.Create(context.Background(), wallet))
 	eventID := uuid.New()
@@ -168,7 +168,7 @@ func (s *WalletRepositoryTestSuite) TestWithinCommitsAGasCheckAndItsWebhook() {
 	s.Equal(int64(1), s.countWebhookEvents(eventID))
 }
 
-func (s *WalletRepositoryTestSuite) TestWithinRollsBackAGasCheckAndItsWebhook() {
+func (s *WalletRepositoryTestSuite) TestWithin_Rolls_BackAGasCheckAndItsWebhook() {
 	wallet := s.makeWallet("eth")
 	s.Require().NoError(s.repo.Create(context.Background(), wallet))
 	eventID := uuid.New()

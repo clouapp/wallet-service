@@ -2,7 +2,7 @@ package models
 
 import "testing"
 
-func TestAPITokenScopesAreChecked(t *testing.T) {
+func TestAPI_Token_ScopesAreChecked(t *testing.T) {
 	grants := []string{APIPermWalletsRead, APIPermWebhooksRead}
 	if !APITokenAllows(grants, APIPermWalletsRead) {
 		t.Fatal("granted scope must pass")

@@ -71,7 +71,7 @@ func (s *countingStore) ListPlatform(ctx context.Context, group string) ([]model
 	return s.memoryStore.ListPlatform(ctx, group)
 }
 
-func TestSettingsCacheTTLIsTenMinutes(t *testing.T) {
+func TestSettings_Cache_TTLIsTenMinutes(t *testing.T) {
 	t.Parallel()
 
 	if settingsCacheTTL != 10*time.Minute {
@@ -79,7 +79,7 @@ func TestSettingsCacheTTLIsTenMinutes(t *testing.T) {
 	}
 }
 
-func TestReadAfterWriteHitsTheJSONMapCache(t *testing.T) {
+func TestRead_After_WriteHitsTheJSONMapCache(t *testing.T) {
 	t.Parallel()
 
 	const secret = "super-secret-value"
@@ -133,7 +133,7 @@ func TestReadAfterWriteHitsTheJSONMapCache(t *testing.T) {
 	}
 }
 
-func TestRequire2FAUsesTheCacheUntilFlushResetOrSaveForgetsIt(t *testing.T) {
+func TestRequire2_FA_UsesTheCacheUntilFlushResetOrSaveForgetsIt(t *testing.T) {
 	t.Parallel()
 
 	store := newCountingStore()
@@ -201,7 +201,7 @@ func TestRequire2FAUsesTheCacheUntilFlushResetOrSaveForgetsIt(t *testing.T) {
 	}
 }
 
-func TestCorruptSealAndCacheFailureFallThroughToTheDatabase(t *testing.T) {
+func TestCorrupt_Seal_AndCacheFailureFallThroughToTheDatabase(t *testing.T) {
 	t.Parallel()
 
 	store := newCountingStore()
@@ -249,7 +249,7 @@ func TestCorruptSealAndCacheFailureFallThroughToTheDatabase(t *testing.T) {
 	}
 }
 
-func TestPlatformReadHitsTheJSONMapUntilItIsForgotten(t *testing.T) {
+func TestPlatform_Read_HitsTheJSONMapUntilItIsForgotten(t *testing.T) {
 	t.Parallel()
 
 	store := newCountingStore()
@@ -306,7 +306,7 @@ func cachedJSONMap(t *testing.T, raw string) map[string]string {
 	return decoded
 }
 
-func TestCacheReadFailureKeepsTheDatabaseError(t *testing.T) {
+func TestCache_Read_FailureKeepsTheDatabaseError(t *testing.T) {
 	t.Parallel()
 
 	store := newCountingStore()

@@ -108,7 +108,7 @@ const esploraTestPrefix = "/testnet4/api"
 
 func txStatusPath(txID string) string { return esploraTestPrefix + "/tx/" + txID + "/status" }
 
-func TestGetTransactionBlockREST_ConfirmedReturnsTheBlockHeight(t *testing.T) {
+func TestGet_TransactionBlockREST_ConfirmedReturnsTheBlockHeight(t *testing.T) {
 	esplora := newFakeEsplora(t)
 	esplora.ok(txStatusPath(esploraTestTxID), `{"confirmed":true,"block_height":154740,"block_hash":"`+esploraTestBlockHash+`","block_time":1790907938}`)
 
@@ -119,7 +119,7 @@ func TestGetTransactionBlockREST_ConfirmedReturnsTheBlockHeight(t *testing.T) {
 	}
 }
 
-func TestGetTransactionBlockREST_PendingCases(t *testing.T) {
+func TestGet_TransactionBlockREST_PendingCases(t *testing.T) {
 	cases := map[string]esploraAnswer{
 		"unconfirmed (mempool)":        {http.StatusOK, `{"confirmed":false}`},
 		"unknown to mempool.space":     {http.StatusOK, `{"confirmed":false}`},
@@ -139,7 +139,7 @@ func TestGetTransactionBlockREST_PendingCases(t *testing.T) {
 	}
 }
 
-func TestGetTransactionBlockREST_FailuresAreErrors(t *testing.T) {
+func TestGet_TransactionBlockREST_FailuresAreErrors(t *testing.T) {
 	cases := map[string]esploraAnswer{
 		"http 500":                   {http.StatusInternalServerError, "boom"},
 		"http 400":                   {http.StatusBadRequest, "Invalid hex hash"},
@@ -161,7 +161,7 @@ func TestGetTransactionBlockREST_FailuresAreErrors(t *testing.T) {
 	}
 }
 
-func TestGetTransactionBlockREST_RetriesRateLimitsThenAnswers(t *testing.T) {
+func TestGet_TransactionBlockREST_RetriesRateLimitsThenAnswers(t *testing.T) {
 	esplora := newFakeEsplora(t)
 	esplora.on(txStatusPath(esploraTestTxID),
 		esploraAnswer{http.StatusTooManyRequests, "slow down"},
@@ -180,7 +180,7 @@ func TestGetTransactionBlockREST_RetriesRateLimitsThenAnswers(t *testing.T) {
 	}
 }
 
-func TestGetTransactionBlockREST_GivesUpOnPersistentRateLimit(t *testing.T) {
+func TestGet_TransactionBlockREST_GivesUpOnPersistentRateLimit(t *testing.T) {
 	esplora := newFakeEsplora(t)
 	esplora.on(txStatusPath(esploraTestTxID), esploraAnswer{http.StatusTooManyRequests, "slow down"})
 	var sleeps []time.Duration
@@ -202,7 +202,7 @@ func TestGetTransactionBlockREST_GivesUpOnPersistentRateLimit(t *testing.T) {
 	}
 }
 
-func TestGetTransactionBlockREST_NormalizesAndValidatesTheTxID(t *testing.T) {
+func TestGet_TransactionBlockREST_NormalizesAndValidatesTheTxID(t *testing.T) {
 	esplora := newFakeEsplora(t)
 	esplora.ok(txStatusPath(esploraTestTxID), `{"confirmed":true,"block_height":154740}`)
 	live := esplora.adapter(nil)
@@ -244,7 +244,7 @@ func fakeBitcoind(t *testing.T, answers map[string]string) *BitcoinLive {
 	return NewBitcoinLive(BitcoinConfig{ChainIDStr: models.ChainTBTC, NativeDecimal: 8, RPCURL: srv.URL, IsTestnet: true})
 }
 
-func TestGetTransactionBlockRPC(t *testing.T) {
+func TestGet_Transaction_BlockRPC(t *testing.T) {
 	rawTxInBlock := `{"jsonrpc":"2.0","id":1,"result":{"txid":"` + esploraTestTxID + `","blockhash":"` + esploraTestBlockHash + `","confirmations":3}}`
 	cases := []struct {
 		name    string
@@ -324,7 +324,7 @@ func esploraBlockOf(t *testing.T, txCount int) *fakeEsplora {
 	return esplora
 }
 
-func TestScanBlockREST_ReadsEveryPageOfALargeBlock(t *testing.T) {
+func TestScan_BlockREST_ReadsEveryPageOfALargeBlock(t *testing.T) {
 	const txCount = 87
 	esplora := esploraBlockOf(t, txCount)
 
@@ -358,7 +358,7 @@ func TestScanBlockREST_ReadsEveryPageOfALargeBlock(t *testing.T) {
 	}
 }
 
-func TestScanBlockREST_ExactMultipleOfThePageSize(t *testing.T) {
+func TestScan_BlockREST_ExactMultipleOfThePageSize(t *testing.T) {
 	esplora := esploraBlockOf(t, 50)
 
 	transfers, err := esplora.adapter(nil).ScanBlock(context.Background(), esploraTestHeight)
@@ -368,7 +368,7 @@ func TestScanBlockREST_ExactMultipleOfThePageSize(t *testing.T) {
 	}
 }
 
-func TestScanBlockREST_CoinbaseOnlyBlock(t *testing.T) {
+func TestScan_BlockREST_CoinbaseOnlyBlock(t *testing.T) {
 	esplora := esploraBlockOf(t, 1)
 
 	transfers, err := esplora.adapter(nil).ScanBlock(context.Background(), esploraTestHeight)
@@ -378,7 +378,7 @@ func TestScanBlockREST_CoinbaseOnlyBlock(t *testing.T) {
 	}
 }
 
-func TestScanBlockREST_RetriesARateLimitedPage(t *testing.T) {
+func TestScan_BlockREST_RetriesARateLimitedPage(t *testing.T) {
 	esplora := esploraBlockOf(t, 30)
 	esplora.on(blockPath("/txs/25"),
 		esploraAnswer{http.StatusTooManyRequests, "slow down"},
@@ -392,7 +392,7 @@ func TestScanBlockREST_RetriesARateLimitedPage(t *testing.T) {
 	}
 }
 
-func TestScanBlockREST_FailsInsteadOfReturningAPartialBlock(t *testing.T) {
+func TestScan_BlockREST_FailsInsteadOfReturningAPartialBlock(t *testing.T) {
 	heightPath := fmt.Sprintf("%s/block-height/%d", esploraTestPrefix, esploraTestHeight)
 	cases := map[string]func(*fakeEsplora){
 		"block hash 404":        func(e *fakeEsplora) { e.on(heightPath, esploraAnswer{http.StatusNotFound, "Block not found"}) },
@@ -437,7 +437,7 @@ func TestScanBlockREST_FailsInsteadOfReturningAPartialBlock(t *testing.T) {
 	}
 }
 
-func TestEsploraErrorsDoNotLeakTheRPCURL(t *testing.T) {
+func TestEsplora_Errors_DoNotLeakTheRPCURL(t *testing.T) {
 	closed := httptest.NewServer(http.NotFoundHandler())
 	host := strings.TrimPrefix(closed.URL, "http://")
 	closed.Close()

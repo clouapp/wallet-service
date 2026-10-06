@@ -16,7 +16,7 @@ import (
 	"github.com/macrowallets/waas/tests/feature/support/fixtures"
 )
 
-func TestInviteTokenCanBeAcceptedWithoutAnEmptyPassword(t *testing.T) {
+func TestInvite_Token_CanBeAcceptedWithoutAnEmptyPassword(t *testing.T) {
 	fixtures.TestDB(t)
 	account := fixtures.InsertAccount(t, "invite-account")
 	ownerID := uuid.New()
@@ -75,7 +75,7 @@ func (r refuseActivity) Append(context.Context, models.AccountActivity) error {
 	return errors.New("activity refused")
 }
 
-func TestInviteActivityRollsBackWithTheInvite(t *testing.T) {
+func TestInvite_Activity_RollsBackWithTheInvite(t *testing.T) {
 	fixtures.TestDB(t)
 	account := fixtures.InsertAccount(t, "invite-rollback")
 	ownerID := uuid.New()
@@ -98,7 +98,7 @@ func TestInviteActivityRollsBackWithTheInvite(t *testing.T) {
 	require.Equal(t, int64(0), scalar[int64](t, `SELECT count(*) FROM account_activity WHERE account_id = ?`, account.ID))
 }
 
-func TestResendInviteRotatesTheOpenToken(t *testing.T) {
+func TestResend_Invite_RotatesTheOpenToken(t *testing.T) {
 	fixtures.TestDB(t)
 	account := fixtures.InsertAccount(t, "invite-resend")
 	other := fixtures.InsertAccount(t, "invite-resend-other")
@@ -157,7 +157,7 @@ func TestResendInviteRotatesTheOpenToken(t *testing.T) {
 	require.Equal(t, hashAfterAccept, scalar[string](t, `SELECT token_hash FROM account_invites WHERE id = ?`, issued.Invite.ID))
 }
 
-func TestRevokeInviteStampsRevokedAtAndLeavesTheToken(t *testing.T) {
+func TestRevoke_Invite_StampsRevokedAtAndLeavesTheToken(t *testing.T) {
 	fixtures.TestDB(t)
 	account := fixtures.InsertAccount(t, "invite-revoke")
 	other := fixtures.InsertAccount(t, "invite-revoke-other")

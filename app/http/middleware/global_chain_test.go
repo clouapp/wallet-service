@@ -13,7 +13,7 @@ import (
 	ginpkg "github.com/goravel/gin"
 )
 
-func TestGlobalChainFollowsThePlanOrder(t *testing.T) {
+func TestGlobal_Chain_FollowsThePlanOrder(t *testing.T) {
 	links := globalChainLinks(time.Second)
 	want := []string{
 		chainRequestTimeout,
@@ -39,7 +39,7 @@ func TestGlobalChainFollowsThePlanOrder(t *testing.T) {
 	}
 }
 
-func TestRequestIDReplacesAFreeTextInboundID(t *testing.T) {
+func TestRequest_ID_ReplacesAFreeTextInboundID(t *testing.T) {
 	ctx, recorder := newChainContext(http.MethodGet, nil, 0)
 	ctx.Request().Origin().Header.Set("X-Request-ID", "not a token")
 	RequestID()(ctx)
@@ -52,7 +52,7 @@ func TestRequestIDReplacesAFreeTextInboundID(t *testing.T) {
 	}
 }
 
-func TestRequestIDKeepsAToken(t *testing.T) {
+func TestRequest_ID_KeepsAToken(t *testing.T) {
 	ctx, recorder := newChainContext(http.MethodGet, nil, 0)
 	ctx.Request().Origin().Header.Set("X-Request-ID", "trace-1")
 	RequestID()(ctx)
@@ -61,7 +61,7 @@ func TestRequestIDKeepsAToken(t *testing.T) {
 	}
 }
 
-func TestSecurityHeadersAreSetBeforeNext(t *testing.T) {
+func TestSecurity_Headers_AreSetBeforeNext(t *testing.T) {
 	ctx, recorder := newChainContext(http.MethodGet, nil, 0)
 	SecurityHeaders()(ctx)
 	header := recorder.Header()
@@ -82,7 +82,7 @@ func TestSecurityHeadersAreSetBeforeNext(t *testing.T) {
 	}
 }
 
-func TestBodyLimitRefusesADeclaredLengthAboveTheCeiling(t *testing.T) {
+func TestBody_Limit_RefusesADeclaredLengthAboveTheCeiling(t *testing.T) {
 	ctx, recorder := newChainContext(http.MethodPost, strings.NewReader("x"), 2)
 	BodyLimit(1)(ctx)
 	if recorder.Code != http.StatusRequestEntityTooLarge {
@@ -94,7 +94,7 @@ func TestBodyLimitRefusesADeclaredLengthAboveTheCeiling(t *testing.T) {
 	}
 }
 
-func TestRequestTimeoutAnswersTheEnvelopeWhenTheHandlerOverruns(t *testing.T) {
+func TestRequest_Timeout_AnswersTheEnvelopeWhenTheHandlerOverruns(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	recorder := httptest.NewRecorder()
 	engine := gin.New()
@@ -114,7 +114,7 @@ func TestRequestTimeoutAnswersTheEnvelopeWhenTheHandlerOverruns(t *testing.T) {
 	}
 }
 
-func TestRecoverPanicOmitsTheRequestFromTheBody(t *testing.T) {
+func TestRecover_Panic_OmitsTheRequestFromTheBody(t *testing.T) {
 	ctx, recorder := newChainContext(http.MethodPost, nil, 0)
 	ctx.Request().Origin().Header.Set("Authorization", "Bearer secret-token")
 	RecoverPanic(ctx, "boom")

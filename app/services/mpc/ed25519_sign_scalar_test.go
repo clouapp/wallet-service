@@ -32,7 +32,7 @@ func scalarKeyPair(t *testing.T) (publicKey, scalarBigEndian []byte) {
 	return publicKey, scalarBigEndian
 }
 
-func TestSignEd25519WithScalar_VerifiesAndIsDeterministic(t *testing.T) {
+func TestSign_Ed25519WithScalar_VerifiesAndIsDeterministic(t *testing.T) {
 	publicKey, scalar := scalarKeyPair(t)
 	message := []byte("solana message bytes")
 
@@ -59,7 +59,7 @@ func TestSignEd25519WithScalar_VerifiesAndIsDeterministic(t *testing.T) {
 	}
 }
 
-func TestSignEd25519WithScalar_RejectsBadInput(t *testing.T) {
+func TestSign_Ed25519WithScalar_RejectsBadInput(t *testing.T) {
 	publicKey, scalar := scalarKeyPair(t)
 	otherPublicKey, _ := scalarKeyPair(t)
 	nonCanonical := bytes.Repeat([]byte{0xff}, ed25519ScalarSize)

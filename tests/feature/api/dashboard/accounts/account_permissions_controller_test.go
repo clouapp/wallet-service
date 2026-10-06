@@ -11,7 +11,7 @@ import (
 	"github.com/macrowallets/waas/app/policies"
 )
 
-func (s *accountRolesSuite) TestPermissionCatalogIsReadableByRolesRead() {
+func (s *accountRolesSuite) TestPermission_Catalog_IsReadableByRolesRead() {
 	accountID, owner := s.member("owner")
 	admin := s.join(accountID, "admin")
 	auditor := s.join(accountID, "auditor")
@@ -31,19 +31,19 @@ func (s *accountRolesSuite) TestPermissionCatalogIsReadableByRolesRead() {
 	s.NotContains(want, "roles.write")
 }
 
-func (s *accountRolesSuite) TestPermissionCatalogHasNoWrite() {
+func (s *accountRolesSuite) TestPermission_Catalog_HasNoWrite() {
 	accountID, owner := s.member("owner")
 	for _, method := range []string{http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete} {
 		s.writePermissions(method, owner, accountID, 404)
 	}
 }
 
-func (s *accountRolesSuite) TestPermissionCatalogUnknownAccountIsNotFound() {
+func (s *accountRolesSuite) TestPermission_Catalog_UnknownAccountIsNotFound() {
 	_, token := s.member("owner")
 	s.catalog(token, uuid.New(), 404)
 }
 
-func (s *accountRolesSuite) TestPermissionCatalogOutsiderIsForbidden() {
+func (s *accountRolesSuite) TestPermission_Catalog_OutsiderIsForbidden() {
 	accountID, _ := s.member("owner")
 	_, outsider := s.member("owner")
 	s.catalog(outsider, accountID, 403)

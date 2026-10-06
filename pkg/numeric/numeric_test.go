@@ -17,7 +17,7 @@ func mustParse(t *testing.T, text string) decimal.Decimal {
 	return value
 }
 
-func TestDecimalMarshalsAsABareNumberWithExactDigits(t *testing.T) {
+func TestDecimal_Marshals_AsABareNumberWithExactDigits(t *testing.T) {
 	raw, err := json.Marshal(map[string]Decimal{"price": NewDecimal(mustParse(t, "65000.1234567890"))})
 	if err != nil {
 		t.Fatal(err)
@@ -27,7 +27,7 @@ func TestDecimalMarshalsAsABareNumberWithExactDigits(t *testing.T) {
 	}
 }
 
-func TestDecimalUnmarshalsNumbersAndStrings(t *testing.T) {
+func TestDecimal_Unmarshals_NumbersAndStrings(t *testing.T) {
 	var payload struct {
 		Number Decimal `json:"number"`
 		Text   Decimal `json:"text"`
@@ -40,7 +40,7 @@ func TestDecimalUnmarshalsNumbersAndStrings(t *testing.T) {
 	}
 }
 
-func TestNullDecimalOmitsNullAndKeepsZero(t *testing.T) {
+func TestNull_Decimal_OmitsNullAndKeepsZero(t *testing.T) {
 	type view struct {
 		Missing NullDecimal `json:"missing,omitzero"`
 		Zero    NullDecimal `json:"zero,omitzero"`
@@ -59,7 +59,7 @@ func TestNullDecimalOmitsNullAndKeepsZero(t *testing.T) {
 	}
 }
 
-func TestNullDecimalWithStaleDigitsButNoValueIsStillNull(t *testing.T) {
+func TestNull_Decimal_WithStaleDigitsButNoValueIsStillNull(t *testing.T) {
 	stale := NullDecimal{NullDecimal: decimal.NullDecimal{Decimal: mustParse(t, "9"), Valid: false}}
 	if !stale.IsZero() {
 		t.Fatal("an invalid NullDecimal must count as NULL")
@@ -73,7 +73,7 @@ func TestNullDecimalWithStaleDigitsButNoValueIsStillNull(t *testing.T) {
 	}
 }
 
-func TestNullDecimalUnmarshalsNull(t *testing.T) {
+func TestNull_Decimal_UnmarshalsNull(t *testing.T) {
 	var payload struct {
 		Value NullDecimal `json:"value"`
 	}
@@ -91,7 +91,7 @@ func TestNullDecimalUnmarshalsNull(t *testing.T) {
 	}
 }
 
-func TestNullDecimalFromPointer(t *testing.T) {
+func TestNull_Decimal_FromPointer(t *testing.T) {
 	if NullDecimalFromPointer(nil).Valid {
 		t.Fatal("nil must map to NULL")
 	}
@@ -101,7 +101,7 @@ func TestNullDecimalFromPointer(t *testing.T) {
 	}
 }
 
-func TestNullDecimalPointer(t *testing.T) {
+func TestNull_Decimal_Pointer(t *testing.T) {
 	if (NullDecimal{}).Pointer() != nil {
 		t.Fatal("NULL must map to nil")
 	}
@@ -110,7 +110,7 @@ func TestNullDecimalPointer(t *testing.T) {
 	}
 }
 
-func TestDecimalAndNullDecimalRoundTripTheDatabaseDriverForms(t *testing.T) {
+func TestDecimal_And_NullDecimalRoundTripTheDatabaseDriverForms(t *testing.T) {
 	var price Decimal
 	if err := price.Scan("0.1960784314"); err != nil {
 		t.Fatal(err)
@@ -129,7 +129,7 @@ func TestDecimalAndNullDecimalRoundTripTheDatabaseDriverForms(t *testing.T) {
 	}
 }
 
-func TestParseAcceptsPlainAndExponentNotation(t *testing.T) {
+func TestParse_Accepts_PlainAndExponentNotation(t *testing.T) {
 	for text, want := range map[string]string{"1.25": "1.25", " 0.10 ": "0.1", "1e-3": "0.001", "-2": "-2", ".5": "0.5", "+1": "1"} {
 		if got := mustParse(t, text); !got.Equal(decimal.RequireFromString(want)) {
 			t.Fatalf("parse %q = %s, want %s", text, got, want)
@@ -137,7 +137,7 @@ func TestParseAcceptsPlainAndExponentNotation(t *testing.T) {
 	}
 }
 
-func TestParseRejectsNonNumbers(t *testing.T) {
+func TestParse_Rejects_NonNumbers(t *testing.T) {
 	for _, text := range []string{"", "  ", "NaN", "Inf", "-Inf", "infinity", "0x1p-2", "1,5", "abc", "1.2.3"} {
 		if _, err := Parse("amount", text); err == nil {
 			t.Fatalf("parse %q: expected an error", text)
@@ -145,7 +145,7 @@ func TestParseRejectsNonNumbers(t *testing.T) {
 	}
 }
 
-func TestParseNonNegative(t *testing.T) {
+func TestParse_Non_Negative(t *testing.T) {
 	if _, err := ParseNonNegative("cap", "-0.01"); !errors.Is(err, ErrNegative) {
 		t.Fatalf("err = %v, want ErrNegative", err)
 	}

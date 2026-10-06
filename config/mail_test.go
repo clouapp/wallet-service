@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-func TestMailDocumentLocalUsesMailpit(t *testing.T) {
+func TestMail_Document_LocalUsesMailpit(t *testing.T) {
 	doc, err := mailDocument(mailEnv{AppEnv: "local"})
 	if err != nil {
 		t.Fatalf("local mail document: %v", err)
@@ -26,7 +26,7 @@ func TestMailDocumentLocalUsesMailpit(t *testing.T) {
 	}
 }
 
-func TestMailDocumentKeepsConfiguredCredentials(t *testing.T) {
+func TestMail_Document_KeepsConfiguredCredentials(t *testing.T) {
 	const password = "mailbox-secret-from-config"
 	doc, err := mailDocument(mailEnv{
 		AppEnv:      "production",
@@ -58,7 +58,7 @@ func TestMailDocumentKeepsConfiguredCredentials(t *testing.T) {
 	}
 }
 
-func TestMailDocumentLocalLogDriverDoesNotUseMailpit(t *testing.T) {
+func TestMail_Document_LocalLogDriverDoesNotUseMailpit(t *testing.T) {
 	doc, err := mailDocument(mailEnv{AppEnv: "local", Driver: "log"})
 	if err != nil {
 		t.Fatalf("local log driver: %v", err)
@@ -71,7 +71,7 @@ func TestMailDocumentLocalLogDriverDoesNotUseMailpit(t *testing.T) {
 	}
 }
 
-func TestMailDocumentRefusesLogDriverInProduction(t *testing.T) {
+func TestMail_Document_RefusesLogDriverInProduction(t *testing.T) {
 	const password = "mailbox-secret-from-config"
 	for _, appEnv := range []string{"production", "prod", " PRODUCTION "} {
 		_, err := mailDocument(mailEnv{AppEnv: appEnv, Driver: " LOG ", Password: password})
@@ -84,7 +84,7 @@ func TestMailDocumentRefusesLogDriverInProduction(t *testing.T) {
 	}
 }
 
-func TestMailDocumentAllowsLogDriverOutsideProduction(t *testing.T) {
+func TestMail_Document_AllowsLogDriverOutsideProduction(t *testing.T) {
 	for _, appEnv := range []string{"local", "testing", "staging"} {
 		doc, err := mailDocument(mailEnv{AppEnv: appEnv, Driver: "log"})
 		if err != nil {
@@ -96,7 +96,7 @@ func TestMailDocumentAllowsLogDriverOutsideProduction(t *testing.T) {
 	}
 }
 
-func TestMailDocumentKeepsAnExplicitLocalHost(t *testing.T) {
+func TestMail_Document_KeepsAnExplicitLocalHost(t *testing.T) {
 	doc, err := mailDocument(mailEnv{AppEnv: "local", Host: "mail.example", Port: 587, Encryption: "tls"})
 	if err != nil {
 		t.Fatalf("local mail document: %v", err)
@@ -106,7 +106,7 @@ func TestMailDocumentKeepsAnExplicitLocalHost(t *testing.T) {
 	}
 }
 
-func TestTestingMailDocumentKeepsTheSMTPDefaults(t *testing.T) {
+func TestTesting_Mail_DocumentKeepsTheSMTPDefaults(t *testing.T) {
 	doc, err := mailDocument(mailEnv{AppEnv: "testing"})
 	if err != nil {
 		t.Fatalf("testing mail document: %v", err)

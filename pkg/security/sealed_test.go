@@ -58,7 +58,7 @@ type failingCipher struct{}
 func (failingCipher) EncryptString(string) (string, error) { return "", errors.New("no key") }
 func (failingCipher) DecryptString(string) (string, error) { return "", errors.New("no key") }
 
-func TestSealAndOpenSecret_RoundTrip(t *testing.T) {
+func TestSeal_AndOpenSecret_RoundTrip(t *testing.T) {
 	c := newGCMCipher(t)
 	for _, secret := range []string{"whsec_markets", "", "a secret with spaces and ünïcode", string(make([]byte, 255))} {
 		sealed, err := SealSecret(c, secret)
@@ -72,7 +72,7 @@ func TestSealAndOpenSecret_RoundTrip(t *testing.T) {
 	}
 }
 
-func TestSealSecret_IsRandomised(t *testing.T) {
+func TestSeal_Secret_IsRandomised(t *testing.T) {
 	c := newGCMCipher(t)
 	first, err := SealSecret(c, "same")
 	require.NoError(t, err)
@@ -81,7 +81,7 @@ func TestSealSecret_IsRandomised(t *testing.T) {
 	require.NotEqual(t, first, second, "a fresh nonce per seal")
 }
 
-func TestOpenSecret_RefusesPlaintextAndForeignKeys(t *testing.T) {
+func TestOpen_Secret_RefusesPlaintextAndForeignKeys(t *testing.T) {
 	c := newGCMCipher(t)
 
 	_, err := OpenSecret(c, "plaintext-secret")
@@ -95,7 +95,7 @@ func TestOpenSecret_RefusesPlaintextAndForeignKeys(t *testing.T) {
 	require.Error(t, err, "a value sealed under another key does not open")
 }
 
-func TestIsSealedSecret_RejectsLookalikes(t *testing.T) {
+func TestIs_SealedSecret_RejectsLookalikes(t *testing.T) {
 	encode := func(v any) string {
 		raw, err := json.Marshal(v)
 		require.NoError(t, err)
@@ -115,7 +115,7 @@ func TestIsSealedSecret_RejectsLookalikes(t *testing.T) {
 	}
 }
 
-func TestSealAndOpenSecret_ReportCipherFailures(t *testing.T) {
+func TestSeal_AndOpenSecret_ReportCipherFailures(t *testing.T) {
 	_, err := SealSecret(failingCipher{}, "secret")
 	require.Error(t, err)
 	_, err = SealSecret(nil, "secret")

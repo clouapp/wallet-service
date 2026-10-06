@@ -98,7 +98,7 @@ func requireAllAddressesExported(t *testing.T, document WalletKeys, fixture wall
 	}
 }
 
-func TestExport_Secp256k1KeysControlEveryEVMAndBitcoinAddress(t *testing.T) {
+func TestExport_Secp2561_KeysControlEveryEVMAndBitcoinAddress(t *testing.T) {
 	keys := mustSecp256k1Keys(t)
 	evm := newWalletFixture(t, keys, mpcpkg.CurveSecp256k1, baseSepolia, "base_deposit", 2)
 	btc := newWalletFixture(t, keys, mpcpkg.CurveSecp256k1, bitcoinTest, "btc_deposit", 2)
@@ -154,7 +154,7 @@ func TestExport_Secp256k1KeysControlEveryEVMAndBitcoinAddress(t *testing.T) {
 	}
 }
 
-func TestExport_BitcoinMainnetUsesMainnetWIF(t *testing.T) {
+func TestExport_Bitcoin_MainnetUsesMainnetWIF(t *testing.T) {
 	keys := mustSecp256k1Keys(t)
 	btc := newWalletFixture(t, keys, mpcpkg.CurveSecp256k1, bitcoinMain, "btc_main", 1)
 	_, contents := exportAndOpen(t, newFakeStore(btc), fixedPassphrase(testWalletPassphrase))
@@ -170,7 +170,7 @@ func TestExport_BitcoinMainnetUsesMainnetWIF(t *testing.T) {
 	}
 }
 
-func TestExport_BitcoinRowOfTheOtherNetworkGetsThatNetworksWIF(t *testing.T) {
+func TestExport_Bitcoin_RowOfTheOtherNetworkGetsThatNetworksWIF(t *testing.T) {
 	keys := mustSecp256k1Keys(t)
 	btc := newWalletFixture(t, keys, mpcpkg.CurveSecp256k1, bitcoinMain, "btc_switched", 0)
 	btc.network = bitcoinTest
@@ -182,7 +182,7 @@ func TestExport_BitcoinRowOfTheOtherNetworkGetsThatNetworksWIF(t *testing.T) {
 	}
 }
 
-func TestExport_Ed25519GenesisIsAScalarAndChildrenAreImportableSeeds(t *testing.T) {
+func TestExport_Ed25519_GenesisIsAScalarAndChildrenAreImportableSeeds(t *testing.T) {
 	keys := mustEd25519Keys(t)
 	sol := newWalletFixture(t, keys, mpcpkg.CurveEd25519, solanaDevnet, "sol_deposit", 2)
 	result, contents := exportAndOpen(t, newFakeStore(sol), fixedPassphrase(testWalletPassphrase))
@@ -228,7 +228,7 @@ func TestExport_Ed25519GenesisIsAScalarAndChildrenAreImportableSeeds(t *testing.
 	}
 }
 
-func TestExport_Ed25519ChildFallsBackToTheSeedStoredOnTheRow(t *testing.T) {
+func TestExport_Ed25519_ChildFallsBackToTheSeedStoredOnTheRow(t *testing.T) {
 	keys := mustEd25519Keys(t)
 	sol := newWalletFixture(t, keys, mpcpkg.CurveEd25519, solanaDevnet, "sol_legacy", 1)
 	sol.wallet.MPCChainCode = ""
@@ -239,7 +239,7 @@ func TestExport_Ed25519ChildFallsBackToTheSeedStoredOnTheRow(t *testing.T) {
 	}
 }
 
-func TestExport_RefusesAWalletWhoseRowIsNotControlledByTheKey(t *testing.T) {
+func TestExport_Refuses_AWalletWhoseRowIsNotControlledByTheKey(t *testing.T) {
 	keys := mustSecp256k1Keys(t)
 	good := newWalletFixture(t, keys, mpcpkg.CurveSecp256k1, baseSepolia, "good", 1)
 	bad := newWalletFixture(t, keys, mpcpkg.CurveSecp256k1, bscMainnet, "bad", 1)
@@ -260,7 +260,7 @@ func TestExport_RefusesAWalletWhoseRowIsNotControlledByTheKey(t *testing.T) {
 	requireNoSecretIn(t, result.Refused[0].Reason, bad)
 }
 
-func TestExport_RefusesSharesThatDoNotBelongToTheWallet(t *testing.T) {
+func TestExport_Refuses_SharesThatDoNotBelongToTheWallet(t *testing.T) {
 	sol := newWalletFixture(t, mustEd25519Keys(t), mpcpkg.CurveEd25519, solanaDevnet, "sol", 0)
 	sol.shareB = mustEd25519Keys(t).ShareB
 	result, _ := exportAndOpen(t, newFakeStore(sol), fixedPassphrase(testWalletPassphrase))
@@ -270,7 +270,7 @@ func TestExport_RefusesSharesThatDoNotBelongToTheWallet(t *testing.T) {
 	requireNoSecretIn(t, result.Refused[0].Reason, sol)
 }
 
-func TestExport_RefusesAWrongPassphrase(t *testing.T) {
+func TestExport_Refuses_AWrongPassphrase(t *testing.T) {
 	sol := newWalletFixture(t, mustEd25519Keys(t), mpcpkg.CurveEd25519, solanaDevnet, "sol", 0)
 	result, _ := exportAndOpen(t, newFakeStore(sol), fixedPassphrase("not-the-passphrase-123"))
 	if len(result.Wallets) != 0 || len(result.Refused) != 1 || !strings.Contains(result.Refused[0].Reason, "share A") {
@@ -278,7 +278,7 @@ func TestExport_RefusesAWrongPassphrase(t *testing.T) {
 	}
 }
 
-func TestExport_PromptRetriesAWrongPassphraseAndAbortStopsTheExport(t *testing.T) {
+func TestExport_Prompt_RetriesAWrongPassphraseAndAbortStopsTheExport(t *testing.T) {
 	sol := newWalletFixture(t, mustEd25519Keys(t), mpcpkg.CurveEd25519, solanaDevnet, "sol", 0)
 	terminal := &scriptedTerminal{secrets: [][]byte{[]byte("wrong-passphrase-1"), []byte(testWalletPassphrase)}}
 	result, _ := exportAndOpen(t, newFakeStore(sol), PromptPassphrases{Terminal: terminal})
@@ -297,7 +297,7 @@ func TestExport_PromptRetriesAWrongPassphraseAndAbortStopsTheExport(t *testing.T
 	}
 }
 
-func TestSelectWallets_FiltersByIDAndFailsOnUnknownIDs(t *testing.T) {
+func TestSelect_Wallets_FiltersByIDAndFailsOnUnknownIDs(t *testing.T) {
 	keys := mustEd25519Keys(t)
 	first := newWalletFixture(t, keys, mpcpkg.CurveEd25519, solanaDevnet, "a", 0)
 	second := newWalletFixture(t, keys, mpcpkg.CurveEd25519, solanaDevnet, "b", 0)
@@ -316,7 +316,7 @@ func TestSelectWallets_FiltersByIDAndFailsOnUnknownIDs(t *testing.T) {
 	}
 }
 
-func TestPlan_RefusesPublicInconsistenciesBeforeTouchingSecrets(t *testing.T) {
+func TestPlan_Refuses_PublicInconsistenciesBeforeTouchingSecrets(t *testing.T) {
 	keys := mustEd25519Keys(t)
 	noAddresses := newWalletFixture(t, keys, mpcpkg.CurveEd25519, solanaDevnet, "empty", 0)
 	noAddresses.addresses = nil
@@ -336,7 +336,7 @@ func TestPlan_RefusesPublicInconsistenciesBeforeTouchingSecrets(t *testing.T) {
 	}
 }
 
-func TestNewService_RequiresEveryDependency(t *testing.T) {
+func TestNew_Service_RequiresEveryDependency(t *testing.T) {
 	if _, err := NewService(Dependencies{}); err == nil {
 		t.Fatal("missing dependencies must be refused")
 	}

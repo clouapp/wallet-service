@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-func TestEncryptDecryptRoundTrip(t *testing.T) {
+func TestEncrypt_Decrypt_RoundTrip(t *testing.T) {
 	passphrase := "correct-horse-battery-staple-123"
 	plaintext := []byte("this is a fake mpc key share bytes 32b!")
 
@@ -26,7 +26,7 @@ func TestEncryptDecryptRoundTrip(t *testing.T) {
 	}
 }
 
-func TestDecryptWrongPassphrase(t *testing.T) {
+func TestDecrypt_Wrong_Passphrase(t *testing.T) {
 	plaintext := []byte("some share data here for testing purposes!")
 	encrypted, _ := EncryptShare(plaintext, "correct-passphrase-here")
 
@@ -36,7 +36,7 @@ func TestDecryptWrongPassphrase(t *testing.T) {
 	}
 }
 
-func TestEncryptedShareFormat(t *testing.T) {
+func TestEncrypted_Share_Format(t *testing.T) {
 	plaintext := []byte("share data for format test purposes")
 	encrypted, err := EncryptShare(plaintext, "test-passphrase-12chars")
 	if err != nil {
@@ -57,7 +57,7 @@ func TestEncryptedShareFormat(t *testing.T) {
 	}
 }
 
-func TestKeygenSecp256k1ProducesShares(t *testing.T) {
+func TestKeygen_Secp2561_ProducesShares(t *testing.T) {
 	svc := NewTSSService()
 
 	result, err := svc.Keygen(context.Background(), CurveSecp256k1)
@@ -81,7 +81,7 @@ func TestKeygenSecp256k1ProducesShares(t *testing.T) {
 	}
 }
 
-func TestKeygenSharesAreDifferent(t *testing.T) {
+func TestKeygen_Shares_AreDifferent(t *testing.T) {
 	svc := NewTSSService()
 
 	r1, err := svc.Keygen(context.Background(), CurveSecp256k1)
@@ -102,7 +102,7 @@ func TestKeygenSharesAreDifferent(t *testing.T) {
 	}
 }
 
-func TestKeygenEd25519ProducesShares(t *testing.T) {
+func TestKeygen_Ed25519_ProducesShares(t *testing.T) {
 	svc := NewTSSService()
 
 	result, err := svc.Keygen(context.Background(), CurveEd25519)
@@ -121,7 +121,7 @@ func TestKeygenEd25519ProducesShares(t *testing.T) {
 	}
 }
 
-func TestKeygenEd25519SharesAreDifferent(t *testing.T) {
+func TestKeygen_Ed25519_SharesAreDifferent(t *testing.T) {
 	svc := NewTSSService()
 
 	r1, err := svc.Keygen(context.Background(), CurveEd25519)
@@ -141,7 +141,7 @@ func TestKeygenEd25519SharesAreDifferent(t *testing.T) {
 	}
 }
 
-func TestSignSecp256k1(t *testing.T) {
+func TestService_Sign_Secp2561(t *testing.T) {
 	svc := NewTSSService()
 
 	// First keygen to get shares

@@ -49,7 +49,7 @@ func serveSolanaFixture(t *testing.T, fixture string) (*SolanaLive, *[]recordedR
 	return NewSolanaLive(SolanaConfig{ChainIDStr: models.ChainSOL, NativeSymbol: models.NativeSOL, RPCURL: srv.URL}), &requests
 }
 
-func TestSolanaScanBlock_DetectsNativeCreditsFromRecordedBlock(t *testing.T) {
+func TestSolana_ScanBlock_DetectsNativeCreditsFromRecordedBlock(t *testing.T) {
 	live, requests := serveSolanaFixture(t, "getBlock_transfers.json")
 
 	transfers, err := live.ScanBlock(context.Background(), fixtureSlot)
@@ -98,7 +98,7 @@ func TestSolanaScanBlock_DetectsNativeCreditsFromRecordedBlock(t *testing.T) {
 	}
 }
 
-func TestSolanaScanBlock_SkippedSlotYieldsNoTransfers(t *testing.T) {
+func TestSolana_ScanBlock_SkippedSlotYieldsNoTransfers(t *testing.T) {
 	live, _ := serveSolanaFixture(t, "getBlock_skipped.json")
 	transfers, err := live.ScanBlock(context.Background(), 506348904)
 	if err != nil {
@@ -109,7 +109,7 @@ func TestSolanaScanBlock_SkippedSlotYieldsNoTransfers(t *testing.T) {
 	}
 }
 
-func TestSolanaScanBlock_OtherRPCErrorsPropagate(t *testing.T) {
+func TestSolana_ScanBlock_OtherRPCErrorsPropagate(t *testing.T) {
 	for _, code := range []int{-32004, -32015, -32603} {
 		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "application/json")
@@ -125,7 +125,7 @@ func TestSolanaScanBlock_OtherRPCErrorsPropagate(t *testing.T) {
 	}
 }
 
-func TestSolanaNativeCredits_IgnoresMisalignedBalances(t *testing.T) {
+func TestSolana_NativeCredits_IgnoresMisalignedBalances(t *testing.T) {
 	block := &solanaBlockAccounts{Transactions: []solanaBlockTransaction{{}}}
 	block.Transactions[0].Transaction.Signatures = []string{"sig"}
 	block.Transactions[0].Transaction.AccountKeys = []solanaBlockAccountKey{{Pubkey: "payer", Signer: true}, {Pubkey: "dest"}}
@@ -139,7 +139,7 @@ func TestSolanaNativeCredits_IgnoresMisalignedBalances(t *testing.T) {
 	}
 }
 
-func TestSolanaGetTransactionBlock_RecordedStatuses(t *testing.T) {
+func TestSolana_GetTransactionBlock_RecordedStatuses(t *testing.T) {
 	body, err := os.ReadFile(filepath.Join("testdata", "solana", "getSignatureStatuses.json"))
 	if err != nil {
 		t.Fatal(err)
@@ -196,7 +196,7 @@ func TestSolanaGetTransactionBlock_RecordedStatuses(t *testing.T) {
 	}
 }
 
-func TestSolanaNativeTransferReserve(t *testing.T) {
+func TestSolana_Native_TransferReserve(t *testing.T) {
 	var method string
 	var params []json.RawMessage
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -223,7 +223,7 @@ func TestSolanaNativeTransferReserve(t *testing.T) {
 	}
 }
 
-func TestSolanaGetTransactionBlock_RequiresSignature(t *testing.T) {
+func TestSolana_GetTransactionBlock_RequiresSignature(t *testing.T) {
 	if _, err := (&SolanaLive{}).GetTransactionBlock(context.Background(), ""); err == nil {
 		t.Fatal("expected error")
 	}

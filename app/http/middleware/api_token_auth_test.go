@@ -36,7 +36,7 @@ type APITokenAuthHMACTestSuite struct {
 	account models.Account
 }
 
-func TestAPITokenAuthHMACSuite(t *testing.T) {
+func TestAPI_Token_AuthHMACSuite(t *testing.T) {
 	suite.Run(t, new(APITokenAuthHMACTestSuite))
 }
 
@@ -122,7 +122,7 @@ func (s *APITokenAuthHMACTestSuite) TestAPITokenAuth_Missing401_WhenClaimTrue() 
 // TestAPITokenAuth_Invalid401: any token that presents an X-Signature header
 // must be verified. A wrong signature is always a 401 "invalid request
 // signature", regardless of the require_signature claim value.
-func (s *APITokenAuthHMACTestSuite) TestAPITokenAuth_Invalid401() {
+func (s *APITokenAuthHMACTestSuite) TestAPI_TokenAuth_Invalid401() {
 	jwt := s.mintToken(true, "external-invalid-sig")
 
 	resp, err := s.Http(s.T()).
@@ -158,7 +158,7 @@ func (s *APITokenAuthHMACTestSuite) TestAPITokenAuth_ValidOK_WhenClaimTrue() {
 	s.assertNotSignatureReject(content)
 }
 
-func (s *APITokenAuthHMACTestSuite) TestSuccessfulCallStampsLastUsedWithoutChangingBody() {
+func (s *APITokenAuthHMACTestSuite) TestSuccessful_Call_StampsLastUsedWithoutChangingBody() {
 	jwt := s.mintToken(false, "usage-stamp")
 
 	first, err := s.Http(s.T()).
@@ -186,7 +186,7 @@ func (s *APITokenAuthHMACTestSuite) TestSuccessfulCallStampsLastUsedWithoutChang
 	s.Nil(stored.RevokedAt)
 }
 
-func (s *APITokenAuthHMACTestSuite) TestRevokedTokenIsUnauthorized() {
+func (s *APITokenAuthHMACTestSuite) TestRevoked_Token_IsUnauthorized() {
 	jwt := s.mintToken(false, "revoked-stamp")
 	_, err := facades.Orm().Query().Exec(
 		`UPDATE access_tokens SET revoked_at = NOW() WHERE account_id = ? AND name = ?`,
@@ -211,7 +211,7 @@ func (s *APITokenAuthHMACTestSuite) TestRevokedTokenIsUnauthorized() {
 
 // TestAPITokenAuth_LegacyStoredHashStillAuthenticates: a row written as the
 // previous hash-of-the-id form, and a JWT with no secret claim, still passes.
-func (s *APITokenAuthHMACTestSuite) TestAPITokenAuth_LegacyStoredHashStillAuthenticates() {
+func (s *APITokenAuthHMACTestSuite) TestAPI_TokenAuth_LegacyStoredHashStillAuthenticates() {
 	record := &models.AccessToken{
 		ID:        uuid.New(),
 		AccountID: s.account.ID,
@@ -236,7 +236,7 @@ func (s *APITokenAuthHMACTestSuite) TestAPITokenAuth_LegacyStoredHashStillAuthen
 
 // TestAPITokenAuth_SecretDigestRejectsAMissingClaim: a sha256 row is not the
 // legacy form. A JWT without the secret claim is rejected.
-func (s *APITokenAuthHMACTestSuite) TestAPITokenAuth_SecretDigestRejectsAMissingClaim() {
+func (s *APITokenAuthHMACTestSuite) TestAPI_TokenAuth_SecretDigestRejectsAMissingClaim() {
 	record := &models.AccessToken{
 		ID:        uuid.New(),
 		AccountID: s.account.ID,

@@ -8,7 +8,7 @@ import (
 	"github.com/google/uuid"
 )
 
-func TestGateMissingRowAndOnProceedOffBlocks(t *testing.T) {
+func TestGate_Missing_RowAndOnProceedOffBlocks(t *testing.T) {
 	t.Parallel()
 
 	cases := []struct {
@@ -60,7 +60,7 @@ func TestGateMissingRowAndOnProceedOffBlocks(t *testing.T) {
 	}
 }
 
-func TestGateOffUsesTheGivenPauseCode(t *testing.T) {
+func TestGate_Off_UsesTheGivenPauseCode(t *testing.T) {
 	t.Parallel()
 
 	store := newMemoryStore()
@@ -83,7 +83,7 @@ func TestGateOffUsesTheGivenPauseCode(t *testing.T) {
 	}
 }
 
-func TestGateGlobalFalseBlocksEvenWhenTheAccountFlagIsOn(t *testing.T) {
+func TestGate_Global_FalseBlocksEvenWhenTheAccountFlagIsOn(t *testing.T) {
 	t.Parallel()
 
 	cases := []struct {
@@ -124,7 +124,7 @@ func TestGateGlobalFalseBlocksEvenWhenTheAccountFlagIsOn(t *testing.T) {
 	}
 }
 
-func TestAccountOverrideSurvivesGlobalCloseAndReopen(t *testing.T) {
+func TestAccount_Override_SurvivesGlobalCloseAndReopen(t *testing.T) {
 	t.Parallel()
 
 	store := newMemoryStore()
@@ -166,7 +166,7 @@ func TestAccountOverrideSurvivesGlobalCloseAndReopen(t *testing.T) {
 	}
 }
 
-func TestGateAccountOffStillBlocksWhenGlobalIsOn(t *testing.T) {
+func TestGate_Account_OffStillBlocksWhenGlobalIsOn(t *testing.T) {
 	t.Parallel()
 
 	store := newMemoryStore()
@@ -187,7 +187,7 @@ func TestGateAccountOffStillBlocksWhenGlobalIsOn(t *testing.T) {
 	}
 }
 
-func TestGateGlobalMissingDoesNotBlock(t *testing.T) {
+func TestGate_Global_MissingDoesNotBlock(t *testing.T) {
 	t.Parallel()
 
 	store := newMemoryStore()
@@ -203,7 +203,7 @@ func TestGateGlobalMissingDoesNotBlock(t *testing.T) {
 	}
 }
 
-func TestGateNilAccountProceeds(t *testing.T) {
+func TestGate_Nil_AccountProceeds(t *testing.T) {
 	t.Parallel()
 
 	service := newTestService(newMemoryStore(), memoryAdmins{})

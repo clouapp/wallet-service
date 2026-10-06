@@ -22,11 +22,11 @@ type WebhooksControllerTestSuite struct {
 	goravelTesting.TestCase
 }
 
-func TestWebhooksControllerSuite(t *testing.T) {
+func TestWebhooks_Controller_Suite(t *testing.T) {
 	suite.Run(t, new(WebhooksControllerTestSuite))
 }
 
-func (s *WebhooksControllerTestSuite) TestCreateWebhook_Success() {
+func (s *WebhooksControllerTestSuite) TestCreate_Webhook_Success() {
 	testutil.SeededTestDB(s.T())
 	_, bearer, _ := ctltestutil.SetupAPIAuth(s.T(), false)
 
@@ -60,7 +60,7 @@ func (s *WebhooksControllerTestSuite) TestCreateWebhook_Success() {
 }
 
 // TestCreateWebhook_MissingURL — validator requires url; returns 422.
-func (s *WebhooksControllerTestSuite) TestCreateWebhook_MissingURL() {
+func (s *WebhooksControllerTestSuite) TestCreate_Webhook_MissingURL() {
 	testutil.SeededTestDB(s.T())
 	_, bearer, _ := ctltestutil.SetupAPIAuth(s.T(), false)
 
@@ -71,7 +71,7 @@ func (s *WebhooksControllerTestSuite) TestCreateWebhook_MissingURL() {
 }
 
 // TestCreateWebhook_MissingSecret — validator requires secret; returns 422.
-func (s *WebhooksControllerTestSuite) TestCreateWebhook_MissingSecret() {
+func (s *WebhooksControllerTestSuite) TestCreate_Webhook_MissingSecret() {
 	testutil.SeededTestDB(s.T())
 	_, bearer, _ := ctltestutil.SetupAPIAuth(s.T(), false)
 
@@ -82,7 +82,7 @@ func (s *WebhooksControllerTestSuite) TestCreateWebhook_MissingSecret() {
 }
 
 // TestCreateWebhook_MissingEvents — validator requires events; returns 422.
-func (s *WebhooksControllerTestSuite) TestCreateWebhook_MissingEvents() {
+func (s *WebhooksControllerTestSuite) TestCreate_Webhook_MissingEvents() {
 	testutil.SeededTestDB(s.T())
 	_, bearer, _ := ctltestutil.SetupAPIAuth(s.T(), false)
 
@@ -92,7 +92,7 @@ func (s *WebhooksControllerTestSuite) TestCreateWebhook_MissingEvents() {
 		AssertStatus(422)
 }
 
-func (s *WebhooksControllerTestSuite) TestListWebhooks_Empty() {
+func (s *WebhooksControllerTestSuite) TestList_Webhooks_Empty() {
 	testutil.SeededTestDB(s.T())
 	_, bearer, _ := ctltestutil.SetupAPIAuth(s.T(), false)
 
@@ -108,7 +108,7 @@ func (s *WebhooksControllerTestSuite) TestListWebhooks_Empty() {
 	s.Empty(payload.Data)
 }
 
-func (s *WebhooksControllerTestSuite) TestListWebhooks_WithData() {
+func (s *WebhooksControllerTestSuite) TestList_Webhooks_WithData() {
 	testutil.SeededTestDB(s.T())
 	_, bearer, _ := ctltestutil.SetupAPIAuth(s.T(), false)
 
@@ -133,7 +133,7 @@ func (s *WebhooksControllerTestSuite) TestListWebhooks_WithData() {
 	s.False(hasSecret, "secret MUST NOT appear in list payload")
 }
 
-func (s *WebhooksControllerTestSuite) TestListWebhooks_Multiple() {
+func (s *WebhooksControllerTestSuite) TestList_Webhooks_Multiple() {
 	testutil.SeededTestDB(s.T())
 	_, bearer, _ := ctltestutil.SetupAPIAuth(s.T(), false)
 

@@ -124,7 +124,7 @@ func newTestService(store Store) *Service {
 	return NewService(Deps{Store: store, Sealer: prefixSealer{}, Cache: nopCache{}, Activity: discardActivity{}})
 }
 
-func TestSaveBlankSecretKeepsTheStoredCiphertext(t *testing.T) {
+func TestSave_Blank_SecretKeepsTheStoredCiphertext(t *testing.T) {
 	t.Parallel()
 
 	store := newMemoryStore()
@@ -168,7 +168,7 @@ func TestSaveBlankSecretKeepsTheStoredCiphertext(t *testing.T) {
 	}
 }
 
-func TestSaveNewSecretIsStoredAndHidden(t *testing.T) {
+func TestSave_New_SecretIsStoredAndHidden(t *testing.T) {
 	t.Parallel()
 
 	store := newMemoryStore()
@@ -191,7 +191,7 @@ func TestSaveNewSecretIsStoredAndHidden(t *testing.T) {
 	}
 }
 
-func TestSaveRefusesAPlatformManagedGroup(t *testing.T) {
+func TestSave_Refuses_APlatformManagedGroup(t *testing.T) {
 	t.Parallel()
 
 	store := newMemoryStore()
@@ -223,7 +223,7 @@ func TestSaveRefusesAPlatformManagedGroup(t *testing.T) {
 	}
 }
 
-func TestAccountCannotReadAnotherAccountsSettings(t *testing.T) {
+func TestAccount_Cannot_ReadAnotherAccountsSettings(t *testing.T) {
 	t.Parallel()
 
 	store := newMemoryStore()
@@ -258,7 +258,7 @@ func TestAccountCannotReadAnotherAccountsSettings(t *testing.T) {
 	}
 }
 
-func TestSaveRejectsAnUnknownGroupBeforeTheRoleCheck(t *testing.T) {
+func TestSave_Rejects_AnUnknownGroupBeforeTheRoleCheck(t *testing.T) {
 	t.Parallel()
 
 	service := newTestService(newMemoryStore())
@@ -268,7 +268,7 @@ func TestSaveRejectsAnUnknownGroupBeforeTheRoleCheck(t *testing.T) {
 	}
 }
 
-func TestSaveUnknownKeyIsValidation(t *testing.T) {
+func TestSave_Unknown_KeyIsValidation(t *testing.T) {
 	t.Parallel()
 
 	service := newTestService(newMemoryStore())
@@ -284,7 +284,7 @@ func TestSaveUnknownKeyIsValidation(t *testing.T) {
 	}
 }
 
-func TestRegistryHidesSecrets(t *testing.T) {
+func TestRegistry_Hides_Secrets(t *testing.T) {
 	t.Parallel()
 
 	store := newMemoryStore()
@@ -322,7 +322,7 @@ func TestRegistryHidesSecrets(t *testing.T) {
 	}
 }
 
-func TestDecimalStaysAString(t *testing.T) {
+func TestDecimal_Stays_AString(t *testing.T) {
 	t.Parallel()
 
 	stored, err := castIn("1.50", Definition{Type: TypeDecimal})
@@ -392,7 +392,7 @@ func (c *memoryCache) Put(key, value string, ttl time.Duration) error {
 	return nil
 }
 
-func TestResetSectionClearsStoredRowsAndRecordsFieldNames(t *testing.T) {
+func TestReset_Section_ClearsStoredRowsAndRecordsFieldNames(t *testing.T) {
 	t.Parallel()
 
 	const secret = "section-reset-secret-do-not-store"
@@ -467,7 +467,7 @@ func TestResetSectionClearsStoredRowsAndRecordsFieldNames(t *testing.T) {
 	}
 }
 
-func TestResetSectionUnknownIsNotFoundBeforeTheRoleCheck(t *testing.T) {
+func TestReset_Section_UnknownIsNotFoundBeforeTheRoleCheck(t *testing.T) {
 	t.Parallel()
 
 	service := newTestService(newMemoryStore())
@@ -485,7 +485,7 @@ func TestResetSectionUnknownIsNotFoundBeforeTheRoleCheck(t *testing.T) {
 	}
 }
 
-func TestResetSectionRefusesAPlatformManagedGroup(t *testing.T) {
+func TestReset_Section_RefusesAPlatformManagedGroup(t *testing.T) {
 	t.Parallel()
 
 	store := newMemoryStore()
@@ -512,7 +512,7 @@ func TestResetSectionRefusesAPlatformManagedGroup(t *testing.T) {
 	}
 }
 
-func TestResetSectionUserCannotResetAKnownSection(t *testing.T) {
+func TestReset_Section_UserCannotResetAKnownSection(t *testing.T) {
 	t.Parallel()
 
 	store := newMemoryStore()
@@ -529,7 +529,7 @@ func TestResetSectionUserCannotResetAKnownSection(t *testing.T) {
 	}
 }
 
-func TestFlushSectionForgetsThePageAndLeavesStoredRows(t *testing.T) {
+func TestFlush_Section_ForgetsThePageAndLeavesStoredRows(t *testing.T) {
 	t.Parallel()
 
 	store := newMemoryStore()
@@ -572,7 +572,7 @@ func TestFlushSectionForgetsThePageAndLeavesStoredRows(t *testing.T) {
 	}
 }
 
-func TestFlushSectionUnknownForgetsNothing(t *testing.T) {
+func TestFlush_Section_UnknownForgetsNothing(t *testing.T) {
 	t.Parallel()
 
 	cache := &memoryCache{}
@@ -592,7 +592,7 @@ func TestFlushSectionUnknownForgetsNothing(t *testing.T) {
 	}
 }
 
-func TestFlushSectionRefusesAPlatformManagedGroup(t *testing.T) {
+func TestFlush_Section_RefusesAPlatformManagedGroup(t *testing.T) {
 	t.Parallel()
 
 	store := newMemoryStore()
@@ -623,7 +623,7 @@ func TestFlushSectionRefusesAPlatformManagedGroup(t *testing.T) {
 	}
 }
 
-func TestFlushSectionUserCannotFlushAKnownSection(t *testing.T) {
+func TestFlush_Section_UserCannotFlushAKnownSection(t *testing.T) {
 	t.Parallel()
 
 	store := newMemoryStore()
@@ -679,7 +679,7 @@ func TestSettingsService_ResetSection_StopsAtTheFirstRepositoryError(t *testing.
 	}
 }
 
-func TestFlushSectionRequiresAccount(t *testing.T) {
+func TestFlush_Section_RequiresAccount(t *testing.T) {
 	t.Parallel()
 
 	service := newTestService(newMemoryStore())

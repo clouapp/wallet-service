@@ -57,7 +57,7 @@ func legacySignedRows(t *testing.T) (txID, withdrawalID uuid.UUID) {
 	return txID, withdrawalID
 }
 
-func TestEnforceNonNegativeAmountsNormalizesBacksUpAndConstrains(t *testing.T) {
+func TestEnforce_Non_NegativeAmountsNormalizesBacksUpAndConstrains(t *testing.T) {
 	fixtures.TestDB(t)
 	migration := &migrations.M00000000000280EnforceNonNegativeAmounts{}
 	require.Equal(t, int64(1), constraintCount(t, transactionAmountConstraint), "migrate:fresh applies the constraint")
@@ -95,7 +95,7 @@ func TestEnforceNonNegativeAmountsNormalizesBacksUpAndConstrains(t *testing.T) {
 	require.Equal(t, "20000000", scalar[string](t, `SELECT amount FROM transactions WHERE id = ?`, txID), "Down never restores a sign")
 }
 
-func TestEnforceNonNegativeAmountsDownDropsAnEmptyBackup(t *testing.T) {
+func TestEnforce_Non_NegativeAmountsDownDropsAnEmptyBackup(t *testing.T) {
 	fixtures.TestDB(t)
 	migration := &migrations.M00000000000280EnforceNonNegativeAmounts{}
 

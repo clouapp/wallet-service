@@ -22,7 +22,7 @@ type PlatformProviderSettingsTestSuite struct {
 	authSuite
 }
 
-func TestPlatformProviderSettingsSuite(t *testing.T) {
+func TestPlatform_Provider_SettingsSuite(t *testing.T) {
 	suite.Run(t, new(PlatformProviderSettingsTestSuite))
 }
 
@@ -38,7 +38,7 @@ func (s *PlatformProviderSettingsTestSuite) SetupTest() {
 	}
 }
 
-func (s *PlatformProviderSettingsTestSuite) TestAPlatformAdminStoresEachProvider() {
+func (s *PlatformProviderSettingsTestSuite) TestA_Platform_AdminStoresEachProvider() {
 	admin := s.seedUser(false)
 	s.grantPlatformAdmin(admin.ID)
 	session := s.signIn(admin.Email)
@@ -117,7 +117,7 @@ func (s *PlatformProviderSettingsTestSuite) TestAPlatformAdminStoresEachProvider
 	}
 }
 
-func (s *PlatformProviderSettingsTestSuite) TestANonAdminIsForbidden() {
+func (s *PlatformProviderSettingsTestSuite) TestA_Non_AdminIsForbidden() {
 	member := s.seedUser(false)
 	session := s.signIn(member.Email)
 	for _, provider := range httpWebhookProviders() {

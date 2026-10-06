@@ -36,7 +36,7 @@ func newTipServer(t *testing.T, status int, body, path string) *tipServer {
 	return srv
 }
 
-func TestProvider_ReadsTheMainnetTip(t *testing.T) {
+func TestProvider_Reads_TheMainnetTip(t *testing.T) {
 	const path = "/api/blocks/tip/height"
 	srv := newTipServer(t, http.StatusOK, "850000\n", path)
 	p := New()
@@ -50,7 +50,7 @@ func TestProvider_ReadsTheMainnetTip(t *testing.T) {
 	assert.Equal(t, int32(1), srv.hits.Load())
 }
 
-func TestProvider_ReadsTheTestnet3Tip(t *testing.T) {
+func TestProvider_Reads_TheTestnet3Tip(t *testing.T) {
 	const path = "/testnet/api/blocks/tip/height"
 	srv := newTipServer(t, http.StatusOK, "4800000\n", path)
 	p := New()
@@ -64,13 +64,13 @@ func TestProvider_ReadsTheTestnet3Tip(t *testing.T) {
 	assert.Equal(t, int32(1), srv.hits.Load())
 }
 
-func TestProvider_DefaultsToBlockstream(t *testing.T) {
+func TestProvider_Defaults_ToBlockstream(t *testing.T) {
 	p := New()
 	assert.Equal(t, mainnetTipURL, p.mainnetURL)
 	assert.Equal(t, testnetTipURL, p.testnetURL)
 }
 
-func TestProvider_RejectsChainIDsAndBadResponses(t *testing.T) {
+func TestProvider_Rejects_ChainIDsAndBadResponses(t *testing.T) {
 	ctx := context.Background()
 	for _, key := range []string{models.ChainETH, blockheight.TipSourceBitcoinTestnet4, ""} {
 		_, err := New().GetBlockHeight(ctx, key)

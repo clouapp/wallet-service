@@ -18,7 +18,7 @@ type TokenRepositoryTestSuite struct {
 	repo   *repositories.TokenRepository
 }
 
-func TestTokenRepositorySuite(t *testing.T) {
+func TestToken_Repository_Suite(t *testing.T) {
 	suite.Run(t, new(TokenRepositoryTestSuite))
 }
 
@@ -32,7 +32,7 @@ func (s *TokenRepositoryTestSuite) SetupTest() {
 	}))
 }
 
-func (s *TokenRepositoryTestSuite) TestFindByChainID_OnlyActive() {
+func (s *TokenRepositoryTestSuite) TestFind_ByChainID_OnlyActive() {
 	active := &models.Token{
 		ID: uuid.New(), ChainID: "eth", Symbol: "USDC", Name: "USD Coin",
 		ContractAddress: "0xabc", Decimals: 6, Status: "active",
@@ -54,13 +54,13 @@ func (s *TokenRepositoryTestSuite) TestFindByChainID_OnlyActive() {
 	s.Len(all, 1)
 }
 
-func (s *TokenRepositoryTestSuite) TestFindByID_NotFound() {
+func (s *TokenRepositoryTestSuite) TestFind_ByID_NotFound() {
 	found, err := s.repo.FindByID(context.Background(), uuid.New())
 	s.ErrorIs(err, models.ErrRepositoryNotFound)
 	s.Nil(found)
 }
 
-func (s *TokenRepositoryTestSuite) TestFindByChainAndContractIgnoresStatus() {
+func (s *TokenRepositoryTestSuite) TestFind_By_ChainAndContractIgnoresStatus() {
 	disabled := &models.Token{
 		ID: uuid.New(), ChainID: "eth", Symbol: "USDC", Name: "USD Coin",
 		ContractAddress: "0xabc", Decimals: 6, Status: "disabled",

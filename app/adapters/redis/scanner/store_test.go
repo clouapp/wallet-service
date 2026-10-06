@@ -11,13 +11,13 @@ import (
 	"github.com/macrowallets/waas/tests/feature/support/testutil"
 )
 
-func TestNewReturnsNilForANilClient(t *testing.T) {
+func TestNew_Returns_NilForANilClient(t *testing.T) {
 	if New(nil) != nil {
 		t.Fatal("expected a nil scanner store when Redis is not configured")
 	}
 }
 
-func TestNilStoreReportsAMissingClient(t *testing.T) {
+func TestNil_Store_ReportsAMissingClient(t *testing.T) {
 	var store *Store
 	ctx := context.Background()
 	if _, err := store.Uint64(ctx, "vault:checkpoint:eth"); err == nil {
@@ -40,7 +40,7 @@ func TestNilStoreReportsAMissingClient(t *testing.T) {
 	}
 }
 
-func TestSetAndUint64RoundTrip(t *testing.T) {
+func TestSet_And_Uint64RoundTrip(t *testing.T) {
 	client := testutil.TestRedis(t)
 	prefix := testutil.TestRedisPrefix(t, client)
 	key := prefix + "vault:checkpoint:eth"
@@ -74,7 +74,7 @@ func TestSetAndUint64RoundTrip(t *testing.T) {
 	}
 }
 
-func TestSetKeepsAPositiveTTL(t *testing.T) {
+func TestSet_Keeps_APositiveTTL(t *testing.T) {
 	client := testutil.TestRedis(t)
 	prefix := testutil.TestRedisPrefix(t, client)
 	key := prefix + "vault:checkpoint:ttl"
@@ -92,7 +92,7 @@ func TestSetKeepsAPositiveTTL(t *testing.T) {
 	}
 }
 
-func TestUint64MissingKeyIsRedisNil(t *testing.T) {
+func TestUint64_Missing_KeyIsRedisNil(t *testing.T) {
 	client := testutil.TestRedis(t)
 	prefix := testutil.TestRedisPrefix(t, client)
 
@@ -102,7 +102,7 @@ func TestUint64MissingKeyIsRedisNil(t *testing.T) {
 	}
 }
 
-func TestSetMembershipCommands(t *testing.T) {
+func TestSet_Membership_Commands(t *testing.T) {
 	client := testutil.TestRedis(t)
 	prefix := testutil.TestRedisPrefix(t, client)
 	key := prefix + "vault:addresses:eth"
@@ -151,7 +151,7 @@ func TestSetMembershipCommands(t *testing.T) {
 	}
 }
 
-func TestReplaceSetSwapsMembersInOneTransaction(t *testing.T) {
+func TestReplace_Set_SwapsMembersInOneTransaction(t *testing.T) {
 	client := testutil.TestRedis(t)
 	prefix := testutil.TestRedisPrefix(t, client)
 	key := prefix + "vault:addresses:eth"
@@ -188,7 +188,7 @@ func TestReplaceSetSwapsMembersInOneTransaction(t *testing.T) {
 	}
 }
 
-func TestReplaceSetWithNoMembersOnlyDeletes(t *testing.T) {
+func TestReplace_Set_WithNoMembersOnlyDeletes(t *testing.T) {
 	client := testutil.TestRedis(t)
 	prefix := testutil.TestRedisPrefix(t, client)
 	key := prefix + "vault:addresses:btc"
@@ -224,7 +224,7 @@ func TestReplaceSetWithNoMembersOnlyDeletes(t *testing.T) {
 	}
 }
 
-func TestCommandsCanceledContext(t *testing.T) {
+func TestCommands_Canceled_Context(t *testing.T) {
 	client := testutil.TestRedis(t)
 	prefix := testutil.TestRedisPrefix(t, client)
 	ctx, cancel := context.WithCancel(context.Background())
@@ -253,7 +253,7 @@ func TestCommandsCanceledContext(t *testing.T) {
 	}
 }
 
-func TestSCardMissingKeyIsZero(t *testing.T) {
+func TestS_Card_MissingKeyIsZero(t *testing.T) {
 	client := testutil.TestRedis(t)
 	prefix := testutil.TestRedisPrefix(t, client)
 

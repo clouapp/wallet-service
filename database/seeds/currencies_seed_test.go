@@ -16,7 +16,7 @@ import (
 	"github.com/macrowallets/waas/tests/feature/support/fixtures"
 )
 
-func TestCurrenciesSeedDoesNotQueryOutsideTheRepository(t *testing.T) {
+func TestCurrencies_Seed_DoesNotQueryOutsideTheRepository(t *testing.T) {
 	source, err := os.ReadFile("currencies.go")
 	if err != nil {
 		t.Fatalf("read currencies seed: %v", err)
@@ -29,7 +29,7 @@ func TestCurrenciesSeedDoesNotQueryOutsideTheRepository(t *testing.T) {
 	}
 }
 
-func TestSeedCurrenciesInsertsTheCatalogAndLeavesExistingRowsOnRerun(t *testing.T) {
+func TestSeed_Currencies_InsertsTheCatalogAndLeavesExistingRowsOnRerun(t *testing.T) {
 	fixtures.TestDB(t)
 	ctx := context.Background()
 	if err := seeds.SeedCurrencies(ctx); err != nil {
@@ -75,7 +75,7 @@ func TestSeedCurrenciesInsertsTheCatalogAndLeavesExistingRowsOnRerun(t *testing.
 	}
 }
 
-func TestSeedCurrenciesKeepsADisabledRow(t *testing.T) {
+func TestSeed_Currencies_KeepsADisabledRow(t *testing.T) {
 	fixtures.TestDB(t)
 	ctx := context.Background()
 	currencies := repositories.NewCurrencyRepository(nil)

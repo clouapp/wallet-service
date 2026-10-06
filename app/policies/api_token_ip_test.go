@@ -2,7 +2,7 @@ package policies
 
 import "testing"
 
-func TestAPITokenIPAllowsBlankKeepsTodaysAccess(t *testing.T) {
+func TestAPI_Token_IPAllowsBlankKeepsTodaysAccess(t *testing.T) {
 	t.Parallel()
 
 	for _, stored := range []string{"", "   "} {
@@ -15,7 +15,7 @@ func TestAPITokenIPAllowsBlankKeepsTodaysAccess(t *testing.T) {
 	}
 }
 
-func TestAPITokenIPAllowsMatchingPrefix(t *testing.T) {
+func TestAPI_Token_IPAllowsMatchingPrefix(t *testing.T) {
 	t.Parallel()
 
 	cases := []struct {
@@ -45,7 +45,7 @@ func TestAPITokenIPAllowsMatchingPrefix(t *testing.T) {
 	}
 }
 
-func TestValidAPITokenIPCIDR(t *testing.T) {
+func TestValid_API_TokenIPCIDR(t *testing.T) {
 	t.Parallel()
 
 	for _, stored := range []string{"", "  ", "10.0.0.0/8", "192.0.2.1", "2001:db8::1", "10.0.0.0/8, 192.0.2.1/32"} {

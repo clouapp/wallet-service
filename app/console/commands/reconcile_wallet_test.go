@@ -29,7 +29,7 @@ func (reconcileWalletDispatcherStub) DispatchWithdrawalBroadcasted(string, strin
 	return nil
 }
 
-func TestNewReconcileWalletKeepsItsDependencies(t *testing.T) {
+func TestNew_Reconcile_WalletKeepsItsDependencies(t *testing.T) {
 	balances := refresh.NewBalanceService(refresh.Deps{})
 	dispatcher := &reconcileWalletDispatcherStub{}
 	cmd := NewReconcileWallet(ReconcileWalletDeps{
@@ -47,7 +47,7 @@ func TestNewReconcileWalletKeepsItsDependencies(t *testing.T) {
 	}
 }
 
-func TestNewReconcileWalletRequiresBalances(t *testing.T) {
+func TestNew_Reconcile_WalletRequiresBalances(t *testing.T) {
 	defer func() {
 		got := recover()
 		if got != "reconcile:wallet: balance refresh service is required" {
@@ -57,7 +57,7 @@ func TestNewReconcileWalletRequiresBalances(t *testing.T) {
 	NewReconcileWallet(ReconcileWalletDeps{Dispatcher: &reconcileWalletDispatcherStub{}})
 }
 
-func TestNewReconcileWalletRequiresADispatcher(t *testing.T) {
+func TestNew_Reconcile_WalletRequiresADispatcher(t *testing.T) {
 	defer func() {
 		got := recover()
 		if got != "reconcile:wallet: refresh dispatcher is required" {
@@ -67,7 +67,7 @@ func TestNewReconcileWalletRequiresADispatcher(t *testing.T) {
 	NewReconcileWallet(ReconcileWalletDeps{Balances: refresh.NewBalanceService(refresh.Deps{})})
 }
 
-func TestReconciliationFailureLineOmitsRPCCredential(t *testing.T) {
+func TestReconciliation_Failure_LineOmitsRPCCredential(t *testing.T) {
 	const fixture = "fixture-rpc-query-key"
 	security.ConfigureRedaction([]string{"btc.example"}, nil)
 	t.Cleanup(func() { security.ConfigureRedaction(nil, nil) })

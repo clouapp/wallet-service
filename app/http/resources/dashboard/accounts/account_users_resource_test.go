@@ -13,7 +13,7 @@ import (
 	"github.com/macrowallets/waas/app/models"
 )
 
-func TestAccountUserKeepsTheModelWire(t *testing.T) {
+func TestAccount_User_KeepsTheModelWire(t *testing.T) {
 	t.Parallel()
 
 	id := uuid.MustParse("11111111-1111-4111-8111-111111111111")
@@ -64,7 +64,7 @@ func TestAccountUserKeepsTheModelWire(t *testing.T) {
 	}
 }
 
-func TestAccountUsersPreserveSliceNilness(t *testing.T) {
+func TestAccount_Users_PreserveSliceNilness(t *testing.T) {
 	t.Parallel()
 
 	if accounts.AccountUsersFrom(nil) != nil {

@@ -5,7 +5,7 @@ import (
 	"testing"
 )
 
-func TestResolveRPCURL(t *testing.T) {
+func TestChainRpcUrl_Resolve_RPCURL(t *testing.T) {
 	env := map[string]string{"SOLANA_RPC_URL": "https://solana-devnet.example/key", "BLANK": "  "}
 	lookup := func(name string) (string, bool) {
 		value, ok := env[name]
@@ -33,7 +33,7 @@ func TestResolveRPCURL(t *testing.T) {
 	}
 }
 
-func TestDialEndpointUsesAStoredURLInsteadOfTheEnvironment(t *testing.T) {
+func TestDial_Endpoint_UsesAStoredURLInsteadOfTheEnvironment(t *testing.T) {
 	t.Setenv("ETH_RPC_URL", "https://env-fallback.invalid/secret-env")
 	const stored = "https://dial.example/v2/route-key"
 	got, err := DialEndpoint(stored)
@@ -49,7 +49,7 @@ func TestDialEndpointUsesAStoredURLInsteadOfTheEnvironment(t *testing.T) {
 	}
 }
 
-func TestRPCURLEnvReferenceClassifiesBitcoinTestnet4OnceResolved(t *testing.T) {
+func TestRPCURL_Env_ReferenceClassifiesBitcoinTestnet4OnceResolved(t *testing.T) {
 	lookup := func(name string) (string, bool) {
 		if name == "BTC_RPC_URL" {
 			return " https://mempool.space/testnet4/api ", true
@@ -70,7 +70,7 @@ func TestRPCURLEnvReferenceClassifiesBitcoinTestnet4OnceResolved(t *testing.T) {
 	}
 }
 
-func TestRPCURLEnvReferenceStillClassifiesSolanaDevnet(t *testing.T) {
+func TestRPCURL_Env_ReferenceStillClassifiesSolanaDevnet(t *testing.T) {
 	chain := &Chain{AdapterType: AdapterTypeSolana, IsTestnet: true}
 	got := chain.ResolveNetwork("https://solana-devnet.g.alchemy.com/v2/redacted")
 	if got.Name != NetworkSolanaDevnet || !got.Testnet {

@@ -84,7 +84,7 @@ func mustPrice(text string) decimal.Decimal {
 	return value
 }
 
-func TestGetPriceUSDSkipsTheCache(t *testing.T) {
+func TestGet_Price_USDSkipsTheCache(t *testing.T) {
 	cache := &recordingPriceCache{value: "9"}
 	svc := NewService(Deps{Currencies: &cacheCurrencyStore{}, Cache: cache})
 
@@ -100,7 +100,7 @@ func TestGetPriceUSDSkipsTheCache(t *testing.T) {
 	}
 }
 
-func TestGetPriceUsesTheCurrencyKey(t *testing.T) {
+func TestGet_Price_UsesTheCurrencyKey(t *testing.T) {
 	cache := &recordingPriceCache{value: "42.5"}
 	store := &cacheCurrencyStore{currency: &models.Currency{Code: "BTC", CurrentPrice: priceOf("1")}}
 	svc := NewService(Deps{Currencies: store, Cache: cache})
@@ -120,7 +120,7 @@ func TestGetPriceUsesTheCurrencyKey(t *testing.T) {
 	}
 }
 
-func TestGetPriceNilCacheReadsTheStore(t *testing.T) {
+func TestGet_Price_NilCacheReadsTheStore(t *testing.T) {
 	store := &cacheCurrencyStore{currency: &models.Currency{Code: "ETH", CurrentPrice: priceOf("3200")}}
 	svc := NewService(Deps{Currencies: store})
 
@@ -136,7 +136,7 @@ func TestGetPriceNilCacheReadsTheStore(t *testing.T) {
 	}
 }
 
-func TestGetPriceFallsThroughWhenTheCacheMisses(t *testing.T) {
+func TestGet_Price_FallsThroughWhenTheCacheMisses(t *testing.T) {
 	cases := []recordingPriceCache{
 		{readErr: errors.New("miss")},
 		{value: "0"},
@@ -159,12 +159,12 @@ func TestGetPriceFallsThroughWhenTheCacheMisses(t *testing.T) {
 	}
 }
 
-func TestCachePriceNilCacheDoesNothing(t *testing.T) {
+func TestCache_Price_NilCacheDoesNothing(t *testing.T) {
 	svc := NewService(Deps{Currencies: &cacheCurrencyStore{}})
 	svc.cachePrice(context.Background(), "BTC", mustPrice("42.5"))
 }
 
-func TestCachePriceKeepsTheKeyTTLAndJSONNumber(t *testing.T) {
+func TestCache_Price_KeepsTheKeyTTLAndJSONNumber(t *testing.T) {
 	cache := &recordingPriceCache{}
 	svc := NewService(Deps{Currencies: &cacheCurrencyStore{}, Cache: cache})
 
@@ -184,7 +184,7 @@ func TestCachePriceKeepsTheKeyTTLAndJSONNumber(t *testing.T) {
 	}
 }
 
-func TestCachePriceContinuesWhenRedisFails(t *testing.T) {
+func TestCache_Price_ContinuesWhenRedisFails(t *testing.T) {
 	cache := &recordingPriceCache{setErr: errors.New("boom")}
 	svc := NewService(Deps{Currencies: &cacheCurrencyStore{}, Cache: cache})
 
@@ -195,7 +195,7 @@ func TestCachePriceContinuesWhenRedisFails(t *testing.T) {
 	}
 }
 
-func TestProcessMessageWritesTheCurrencyKey(t *testing.T) {
+func TestProcess_Message_WritesTheCurrencyKey(t *testing.T) {
 	cache := &recordingPriceCache{}
 	store := &cacheCurrencyStore{currency: &models.Currency{Code: "BTC", CurrentPrice: priceOf("1")}}
 	client := NewWebSocketClient(WebSocketClientDeps{
@@ -221,7 +221,7 @@ func TestProcessMessageWritesTheCurrencyKey(t *testing.T) {
 	}
 }
 
-func TestProcessMessageSkipsANilCache(t *testing.T) {
+func TestProcess_Message_SkipsANilCache(t *testing.T) {
 	store := &cacheCurrencyStore{currency: &models.Currency{Code: "BTC", CurrentPrice: priceOf("1")}}
 	client := NewWebSocketClient(WebSocketClientDeps{
 		APIKey:     "key",
@@ -232,7 +232,7 @@ func TestProcessMessageSkipsANilCache(t *testing.T) {
 	client.processMessage(context.Background(), []byte(`{"asset_id_base":"BTC","rate":42.5}`))
 }
 
-func TestProcessMessageIgnoresACacheError(t *testing.T) {
+func TestProcess_Message_IgnoresACacheError(t *testing.T) {
 	cache := &recordingPriceCache{setErr: errors.New("boom")}
 	store := &cacheCurrencyStore{currency: &models.Currency{Code: "BTC", CurrentPrice: priceOf("1")}}
 	client := NewWebSocketClient(WebSocketClientDeps{

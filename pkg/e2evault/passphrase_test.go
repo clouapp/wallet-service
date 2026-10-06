@@ -32,7 +32,7 @@ func writeVaultFixture(t *testing.T, keyMode os.FileMode, walletID uuid.UUID) Va
 	return VaultPassphrase{VaultDir: dir, KeyFile: key}
 }
 
-func TestVaultPassphrase_ReturnsOnlyAVerifiedPassphrase(t *testing.T) {
+func TestVault_Passphrase_ReturnsOnlyAVerifiedPassphrase(t *testing.T) {
 	walletID := uuid.New()
 	vault := writeVaultFixture(t, 0o600, walletID)
 	vault.decrypt = func(context.Context, string, string) ([]byte, error) {
@@ -57,7 +57,7 @@ func TestVaultPassphrase_ReturnsOnlyAVerifiedPassphrase(t *testing.T) {
 	}
 }
 
-func TestVaultPassphrase_RefusesAKeyOthersCanRead(t *testing.T) {
+func TestVault_Passphrase_RefusesAKeyOthersCanRead(t *testing.T) {
 	walletID := uuid.New()
 	vault := writeVaultFixture(t, 0o644, walletID)
 	vault.decrypt = func(context.Context, string, string) ([]byte, error) {
@@ -69,7 +69,7 @@ func TestVaultPassphrase_RefusesAKeyOthersCanRead(t *testing.T) {
 	}
 }
 
-func TestDefaultVaultPassphraseHonoursEnvironment(t *testing.T) {
+func TestDefault_Vault_PassphraseHonoursEnvironment(t *testing.T) {
 	t.Setenv(vaultDirEnv, "/tmp/vault-dir")
 	t.Setenv(vaultKeyEnv, "/tmp/vault.key")
 	vault, err := DefaultVaultPassphrase()

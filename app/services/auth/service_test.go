@@ -14,11 +14,11 @@ type AuthServiceTestSuite struct {
 	suite.Suite
 }
 
-func TestAuthService(t *testing.T) {
+func TestService_Auth_Service(t *testing.T) {
 	suite.Run(t, new(AuthServiceTestSuite))
 }
 
-func (s *AuthServiceTestSuite) TestHashPassword_ReturnsBcryptHash() {
+func (s *AuthServiceTestSuite) TestHash_Password_ReturnsBcryptHash() {
 	svc := authsvc.NewService()
 	hash, err := svc.HashPassword("mysecret")
 	s.NoError(err)
@@ -32,7 +32,7 @@ func (s *AuthServiceTestSuite) TestCheckPassword_WrongPassword_ReturnsFalse() {
 	s.False(svc.CheckPassword("wrong", hash))
 }
 
-func (s *AuthServiceTestSuite) TestGenerateTOTP_ReturnsKeyAndQR() {
+func (s *AuthServiceTestSuite) TestGenerate_TOTP_ReturnsKeyAndQR() {
 	svc := authsvc.NewService()
 	key, qr, err := svc.GenerateTOTP("user@example.com")
 	s.NoError(err)
@@ -48,7 +48,7 @@ func (s *AuthServiceTestSuite) TestVerifyTOTP_ValidCode_ReturnsTrue() {
 	s.True(svc.VerifyTOTP(key, code))
 }
 
-func (s *AuthServiceTestSuite) TestGenerateRecoveryCodes_Returns10Codes() {
+func (s *AuthServiceTestSuite) TestGenerate_RecoveryCodes_Returns10Codes() {
 	svc := authsvc.NewService()
 	codes, hashes, err := svc.GenerateRecoveryCodes()
 	s.NoError(err)
@@ -56,14 +56,14 @@ func (s *AuthServiceTestSuite) TestGenerateRecoveryCodes_Returns10Codes() {
 	s.Len(hashes, 10)
 }
 
-func (s *AuthServiceTestSuite) TestVerifyRecoveryCode_MatchesHash() {
+func (s *AuthServiceTestSuite) TestVerify_RecoveryCode_MatchesHash() {
 	svc := authsvc.NewService()
 	codes, hashes, _ := svc.GenerateRecoveryCodes()
 	s.True(svc.VerifyRecoveryCode(codes[0], hashes[0]))
 	s.False(svc.VerifyRecoveryCode(codes[0], hashes[1]))
 }
 
-func (s *AuthServiceTestSuite) TestHashToken_IsDeterministicInCheck() {
+func (s *AuthServiceTestSuite) TestHash_Token_IsDeterministicInCheck() {
 	svc := authsvc.NewService()
 	raw := "some-refresh-token"
 	hash := svc.HashToken(raw)

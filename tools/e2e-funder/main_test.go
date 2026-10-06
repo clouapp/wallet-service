@@ -5,7 +5,7 @@ import (
 	"testing"
 )
 
-func TestParseEther(t *testing.T) {
+func TestE2eFunder_Parse_Ether(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
@@ -45,7 +45,7 @@ func TestParseEther(t *testing.T) {
 	}
 }
 
-func TestParsePrivateKeyRejectsInvalidValues(t *testing.T) {
+func TestParse_Private_KeyRejectsInvalidValues(t *testing.T) {
 	t.Parallel()
 
 	for _, input := range []string{"", "0x", "not-hex", "01"} {
@@ -55,7 +55,7 @@ func TestParsePrivateKeyRejectsInvalidValues(t *testing.T) {
 	}
 }
 
-func TestParsePrivateKeyAcceptsHexPrefix(t *testing.T) {
+func TestParse_Private_KeyAcceptsHexPrefix(t *testing.T) {
 	t.Parallel()
 
 	const key = "0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412e2f9f60f4f6f0e"
@@ -68,7 +68,7 @@ func TestParsePrivateKeyAcceptsHexPrefix(t *testing.T) {
 	}
 }
 
-func TestBufferedGasPriceDoublesSuggestion(t *testing.T) {
+func TestBuffered_Gas_PriceDoublesSuggestion(t *testing.T) {
 	t.Parallel()
 
 	got := bufferedGasPrice(big.NewInt(1_500_000_000))
@@ -77,7 +77,7 @@ func TestBufferedGasPriceDoublesSuggestion(t *testing.T) {
 	}
 }
 
-func TestBufferedGasPriceDoesNotMutateInput(t *testing.T) {
+func TestBuffered_Gas_PriceDoesNotMutateInput(t *testing.T) {
 	t.Parallel()
 
 	input := big.NewInt(1_500_000_000)
@@ -87,7 +87,7 @@ func TestBufferedGasPriceDoesNotMutateInput(t *testing.T) {
 	}
 }
 
-func TestDynamicFeeCaps(t *testing.T) {
+func TestDynamic_Fee_Caps(t *testing.T) {
 	t.Parallel()
 
 	baseFee := big.NewInt(1_500_000_000)
@@ -107,7 +107,7 @@ func TestDynamicFeeCaps(t *testing.T) {
 	}
 }
 
-func TestDynamicFeeCapsRejectsMissingFees(t *testing.T) {
+func TestDynamic_Fee_CapsRejectsMissingFees(t *testing.T) {
 	t.Parallel()
 
 	if _, _, err := dynamicFeeCaps(nil, big.NewInt(1)); err == nil {

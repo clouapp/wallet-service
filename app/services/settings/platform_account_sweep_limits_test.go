@@ -9,7 +9,7 @@ import (
 	"github.com/google/uuid"
 )
 
-func TestSavePlatformAccountSweepLimits_AccountRowOverridesThePlatformRow(t *testing.T) {
+func TestSave_PlatformAccountSweepLimits_AccountRowOverridesThePlatformRow(t *testing.T) {
 	t.Parallel()
 
 	actor := uuid.New()
@@ -121,7 +121,7 @@ func TestSavePlatformAccountSweepLimits_AccountRowOverridesThePlatformRow(t *tes
 	}
 }
 
-func TestSavePlatformAccountSweepLimits_NotFoundComesBeforeForbidden(t *testing.T) {
+func TestSave_PlatformAccountSweepLimits_NotFoundComesBeforeForbidden(t *testing.T) {
 	t.Parallel()
 
 	actor := uuid.New()
@@ -179,7 +179,7 @@ func TestSavePlatformAccountSweepLimits_NotFoundComesBeforeForbidden(t *testing.
 	}
 }
 
-func TestSavePlatformAccountSweepLimits_ZeroNegativeAndANegativeCapAreNotStored(t *testing.T) {
+func TestSave_PlatformAccountSweepLimits_ZeroNegativeAndANegativeCapAreNotStored(t *testing.T) {
 	t.Parallel()
 
 	actor := uuid.New()

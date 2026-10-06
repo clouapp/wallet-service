@@ -31,7 +31,7 @@ type WalletWhitelistGateTestSuite struct {
 	goravelTesting.TestCase
 }
 
-func TestWalletWhitelistGateSuite(t *testing.T) {
+func TestWallet_Whitelist_GateSuite(t *testing.T) {
 	suite.Run(t, new(WalletWhitelistGateTestSuite))
 }
 
@@ -39,7 +39,7 @@ func (s *WalletWhitelistGateTestSuite) SetupTest() {
 	fixtures.TestDB(s.T())
 }
 
-func (s *WalletWhitelistGateTestSuite) TestWalletWhitelistCreateFollowsTheLoadedRoles() {
+func (s *WalletWhitelistGateTestSuite) TestWallet_Whitelist_CreateFollowsTheLoadedRoles() {
 	account := fixtures.InsertAccount(s.T(), "wallet whitelist")
 	s.seedChain()
 	wallet := fixtures.InsertWalletWithAccount(s.T(), models.ChainETH, &account.ID)
@@ -84,7 +84,7 @@ func (s *WalletWhitelistGateTestSuite) TestWalletWhitelistCreateFollowsTheLoaded
 	}
 }
 
-func (s *WalletWhitelistGateTestSuite) TestMissingWhitelistEntryIs404BeforeTheRoleCheck() {
+func (s *WalletWhitelistGateTestSuite) TestMissing_Whitelist_EntryIs404BeforeTheRoleCheck() {
 	account := fixtures.InsertAccount(s.T(), "wallet whitelist missing")
 	s.seedChain()
 	wallet := fixtures.InsertWalletWithAccount(s.T(), models.ChainETH, &account.ID)
@@ -96,7 +96,7 @@ func (s *WalletWhitelistGateTestSuite) TestMissingWhitelistEntryIs404BeforeTheRo
 	s.Contains(s.body(resp), "whitelist entry not found")
 }
 
-func (s *WalletWhitelistGateTestSuite) TestWalletWhitelistDeleteFollowsTheLoadedRoles() {
+func (s *WalletWhitelistGateTestSuite) TestWallet_Whitelist_DeleteFollowsTheLoadedRoles() {
 	account := fixtures.InsertAccount(s.T(), "wallet whitelist delete")
 	s.seedChain()
 	wallet := fixtures.InsertWalletWithAccount(s.T(), models.ChainETH, &account.ID)
@@ -148,7 +148,7 @@ func (s *WalletWhitelistGateTestSuite) TestWalletWhitelistDeleteFollowsTheLoaded
 	}
 }
 
-func (s *WalletWhitelistGateTestSuite) TestAddWhitelistEntryValidationStaysUnprocessable() {
+func (s *WalletWhitelistGateTestSuite) TestAdd_Whitelist_EntryValidationStaysUnprocessable() {
 	account := fixtures.InsertAccount(s.T(), "wallet whitelist validation")
 	s.seedChain()
 	wallet := fixtures.InsertWalletWithAccount(s.T(), models.ChainETH, &account.ID)

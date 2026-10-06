@@ -36,7 +36,7 @@ func requireMode(t *testing.T, path string, want os.FileMode) {
 	}
 }
 
-func TestWritePrivateFileUsesPrivateModesAndNoPartialRemains(t *testing.T) {
+func TestWrite_Private_FileUsesPrivateModesAndNoPartialRemains(t *testing.T) {
 	paths := newTestPaths(t)
 	target := filepath.Join(paths.StateDir, "nested", "secret.txt")
 	if err := WritePrivateFile(target, []byte("one")); err != nil {
@@ -55,7 +55,7 @@ func TestWritePrivateFileUsesPrivateModesAndNoPartialRemains(t *testing.T) {
 	}
 }
 
-func TestEnvironIsNULSeparatedSortedAndRoundTrips(t *testing.T) {
+func TestEnviron_Is_NULSeparatedSortedAndRoundTrips(t *testing.T) {
 	environment := map[string]string{"B": "x=y=z", "A": "", "PATH": "/usr/bin:/bin"}
 	encoded := EncodeEnviron(environment)
 	if string(encoded) != "A=\x00B=x=y=z\x00PATH=/usr/bin:/bin\x00" {
@@ -103,7 +103,7 @@ func validEnvDev() string {
 	}, "\r\n") + "\n"
 }
 
-func TestBuildAPIEnvironmentAppliesTheE2EOverrides(t *testing.T) {
+func TestBuild_API_EnvironmentAppliesTheE2EOverrides(t *testing.T) {
 	paths := newTestPaths(t)
 	source := writeEnvDev(t, paths.BackDir, validEnvDev())
 	process := map[string]string{"HOME": "/home/tester", "PATH": "/bin", "USER": "", "SECRET": "not passed"}
@@ -137,7 +137,7 @@ func TestBuildAPIEnvironmentAppliesTheE2EOverrides(t *testing.T) {
 	}
 }
 
-func TestBuildAPIEnvironmentRefusesUnusableSources(t *testing.T) {
+func TestBuild_API_EnvironmentRefusesUnusableSources(t *testing.T) {
 	cases := map[string]string{
 		"not an Alchemy devnet URL":  strings.Replace(validEnvDev(), "solana-devnet.g.alchemy.com", "api.devnet.solana.com", 1),
 		"DATABASE_URL in .env.dev":   strings.Replace(validEnvDev(), "postgres://vault:vault@localhost:5432/vault?sslmode=disable", "mysql://x/y", 1),
@@ -158,7 +158,7 @@ func TestBuildAPIEnvironmentRefusesUnusableSources(t *testing.T) {
 	}
 }
 
-func TestCaptureEnvWritesPrivatelyKeepsABackupAndPrintsNoValues(t *testing.T) {
+func TestCapture_Env_WritesPrivatelyKeepsABackupAndPrintsNoValues(t *testing.T) {
 	paths := newTestPaths(t)
 	writeEnvDev(t, paths.BackDir, validEnvDev())
 	now := time.Date(2026, 10, 3, 5, 6, 7, 0, time.UTC)
@@ -209,7 +209,7 @@ func TestCaptureEnvWritesPrivatelyKeepsABackupAndPrintsNoValues(t *testing.T) {
 	}
 }
 
-func TestCaptureEnvDryRunComparesWithTheCurrentEnvironByKeyOnly(t *testing.T) {
+func TestCapture_Env_DryRunComparesWithTheCurrentEnvironByKeyOnly(t *testing.T) {
 	paths := newTestPaths(t)
 	writeEnvDev(t, paths.BackDir, validEnvDev())
 	now := time.Date(2026, 10, 3, 5, 6, 7, 0, time.UTC)

@@ -194,7 +194,7 @@ func (p *helperProcess) signalAndWait(t *testing.T, sig os.Signal) (int, time.Du
 	}
 }
 
-func TestRealSignal_ExitsZeroBeforeTheDeadline(t *testing.T) {
+func TestReal_Signal_ExitsZeroBeforeTheDeadline(t *testing.T) {
 	const shutdownTimeout = 5 * time.Second
 	for _, sig := range []os.Signal{syscall.SIGTERM, syscall.SIGINT} {
 		t.Run(sig.String(), func(t *testing.T) {
@@ -212,7 +212,7 @@ func TestRealSignal_ExitsZeroBeforeTheDeadline(t *testing.T) {
 	}
 }
 
-func TestRealSignal_HangingWorkersExitNonZeroAtTheDeadline(t *testing.T) {
+func TestReal_Signal_HangingWorkersExitNonZeroAtTheDeadline(t *testing.T) {
 	const shutdownTimeout = 300 * time.Millisecond
 	helper := startSignalHelper(t, helperModeHang, shutdownTimeout)
 
@@ -231,7 +231,7 @@ func TestRealSignal_HangingWorkersExitNonZeroAtTheDeadline(t *testing.T) {
 
 // TestRealSignal_IgnoredWithoutRun reproduces the original bug: with only the
 // Goravel-like subscription, SIGTERM does not stop the process.
-func TestRealSignal_IgnoredWithoutRun(t *testing.T) {
+func TestReal_Signal_IgnoredWithoutRun(t *testing.T) {
 	const observeFor = 500 * time.Millisecond
 	helper := startSignalHelper(t, helperModeNoRun, time.Second)
 

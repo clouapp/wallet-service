@@ -7,7 +7,7 @@ import (
 	"github.com/macrowallets/waas/app/models"
 )
 
-func TestNewRegistryDecimalsKeepsItsDependencies(t *testing.T) {
+func TestNew_Registry_DecimalsKeepsItsDependencies(t *testing.T) {
 	t.Parallel()
 
 	registry, rows := addedChainsRegistry()
@@ -21,7 +21,7 @@ func TestNewRegistryDecimalsKeepsItsDependencies(t *testing.T) {
 	}
 }
 
-func TestNewRegistryDecimalsAllowsAbsentDependencies(t *testing.T) {
+func TestNew_Registry_DecimalsAllowsAbsentDependencies(t *testing.T) {
 	t.Parallel()
 
 	decimals := NewRegistryDecimals(RegistryDecimalsDeps{})

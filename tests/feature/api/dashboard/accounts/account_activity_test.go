@@ -31,7 +31,7 @@ type AccountActivityTestSuite struct {
 	goravelTesting.TestCase
 }
 
-func TestAccountActivitySuite(t *testing.T) {
+func TestAccount_Activity_Suite(t *testing.T) {
 	suite.Run(t, new(AccountActivityTestSuite))
 }
 
@@ -65,7 +65,7 @@ type activityPage struct {
 	Offset int   `json:"offset"`
 }
 
-func (s *AccountActivityTestSuite) TestRoleChangeCommitsMembershipAndActivityWithoutSecrets() {
+func (s *AccountActivityTestSuite) TestRole_Change_CommitsMembershipAndActivityWithoutSecrets() {
 	accountID := s.createAccount()
 	owner := s.loginUser("owner", accountID)
 	member := s.loginUser("user", accountID)
@@ -94,7 +94,7 @@ func (s *AccountActivityTestSuite) TestRoleChangeCommitsMembershipAndActivityWit
 	s.NotContains(s.pageText(page), activityTestPassword)
 }
 
-func (s *AccountActivityTestSuite) TestSettingsSecretPatchDoesNotStoreTheSecret() {
+func (s *AccountActivityTestSuite) TestSettings_Secret_PatchDoesNotStoreTheSecret() {
 	accountID := s.createAccount()
 	owner := s.loginUser("owner", accountID)
 	auditor := s.loginUser("auditor", accountID)
@@ -120,7 +120,7 @@ func (s *AccountActivityTestSuite) TestSettingsSecretPatchDoesNotStoreTheSecret(
 	s.NotContains(text, "enc:v1:")
 }
 
-func (s *AccountActivityTestSuite) TestAuditorListsNewestFirstAndUserIsForbidden() {
+func (s *AccountActivityTestSuite) TestAuditor_Lists_NewestFirstAndUserIsForbidden() {
 	accountID := s.createAccount()
 	owner := s.loginUser("owner", accountID)
 	admin := s.loginUser("admin", accountID)
@@ -179,7 +179,7 @@ func (s *AccountActivityTestSuite) TestAuditorListsNewestFirstAndUserIsForbidden
 	s.Equal("you do not have permission to view account activity", body.Error.Message)
 }
 
-func (s *AccountActivityTestSuite) TestPlatformFeatureWriteUsesANullAccount() {
+func (s *AccountActivityTestSuite) TestPlatform_Feature_WriteUsesANullAccount() {
 	accountID := s.createAccount()
 	owner := s.loginUser("owner", accountID)
 	s.grantPlatformAdmin(owner.id)
@@ -225,7 +225,7 @@ func (s *AccountActivityTestSuite) TestPlatformFeatureWriteUsesANullAccount() {
 	denied.AssertForbidden()
 }
 
-func (s *AccountActivityTestSuite) TestShowMatchesTheListItem() {
+func (s *AccountActivityTestSuite) TestShow_Matches_TheListItem() {
 	accountID := s.createAccount()
 	otherAccountID := s.createAccount()
 	owner := s.loginUser("owner", accountID)
@@ -335,7 +335,7 @@ func (s *AccountActivityTestSuite) TestShowMatchesTheListItem() {
 	}
 }
 
-func (s *AccountActivityTestSuite) TestMemberRemovedStaysOnTheAccountTrail() {
+func (s *AccountActivityTestSuite) TestMember_Removed_StaysOnTheAccountTrail() {
 	accountID := s.createAccount()
 	owner := s.loginUser("owner", accountID)
 	member := s.loginUser("user", accountID)
@@ -352,7 +352,7 @@ func (s *AccountActivityTestSuite) TestMemberRemovedStaysOnTheAccountTrail() {
 	s.NotContains(fmt.Sprint(page.Data[0].Metadata), activityTokenHash)
 }
 
-func (s *AccountActivityTestSuite) TestMFAResetIsAPlatformRow() {
+func (s *AccountActivityTestSuite) TestMFA_Reset_IsAPlatformRow() {
 	accountID := s.createAccount()
 	owner := s.loginUser("owner", accountID)
 	s.grantPlatformAdmin(owner.id)

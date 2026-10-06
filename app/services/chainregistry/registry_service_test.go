@@ -44,7 +44,7 @@ func recordingInstaller(seen *[]string) CatalogInstaller {
 	}
 }
 
-func TestLoadBuildsFromTheCachedSealedCatalog(t *testing.T) {
+func TestLoad_Builds_FromTheCachedSealedCatalog(t *testing.T) {
 	const sealed = "sealed-rpc"
 	cache := NewCatalogCache()
 	cache.Put(catalogCacheKey, []models.Chain{{ID: "eth", RpcURL: sealed}})
@@ -90,7 +90,7 @@ func TestLoadBuildsFromTheCachedSealedCatalog(t *testing.T) {
 	}
 }
 
-func TestRefreshReloadsAndDropsARemovedChain(t *testing.T) {
+func TestRefresh_Reloads_AndDropsARemovedChain(t *testing.T) {
 	const sealed = "sealed-rpc"
 	var seen []string
 	store := &scriptedChains{
@@ -135,7 +135,7 @@ func TestRefreshReloadsAndDropsARemovedChain(t *testing.T) {
 	}
 }
 
-func TestRefreshKeepsThePreviousCatalogWhenALaterReadFails(t *testing.T) {
+func TestRefresh_Keeps_ThePreviousCatalogWhenALaterReadFails(t *testing.T) {
 	store := &scriptedChains{
 		rows: [][]models.Chain{{{ID: "eth", RpcURL: "sealed-rpc"}}},
 		errs: []error{nil, errors.New("db down")},
@@ -158,7 +158,7 @@ func TestRefreshKeepsThePreviousCatalogWhenALaterReadFails(t *testing.T) {
 	}
 }
 
-func TestFirstRefreshFailureLeavesAnEmptyCatalog(t *testing.T) {
+func TestFirst_Refresh_FailureLeavesAnEmptyCatalog(t *testing.T) {
 	store := &scriptedChains{errs: []error{errors.New("db down")}}
 	var seen []string
 	svc := NewChainRegistryService(ChainRegistryDeps{
@@ -181,7 +181,7 @@ func TestFirstRefreshFailureLeavesAnEmptyCatalog(t *testing.T) {
 	}
 }
 
-func TestRefreshDoesNotLogTheURLOrTheCacheKey(t *testing.T) {
+func TestRefresh_Does_NotLogTheURLOrTheCacheKey(t *testing.T) {
 	const sealed = "sealed-rpc-value"
 	var buf bytes.Buffer
 	previous := slog.Default()

@@ -9,7 +9,7 @@ import (
 	"github.com/macrowallets/waas/pkg/types"
 )
 
-func TestBitcoin_ValidateAddress(t *testing.T) {
+func TestBitcoin_Validate_Address(t *testing.T) {
 	adapter := NewBitcoinLive(BitcoinConfig{ChainIDStr: "btc", ChainName: "Bitcoin", NativeSymbol: "btc", RPCURL: "http://fake", Confirmations: 3})
 
 	tests := []struct {
@@ -35,7 +35,7 @@ func TestBitcoin_ValidateAddress(t *testing.T) {
 	}
 }
 
-func TestBitcoin_Identity(t *testing.T) {
+func TestIdentity_Bitcoin_Identity(t *testing.T) {
 	a := NewBitcoinLive(BitcoinConfig{ChainIDStr: "btc", ChainName: "Bitcoin", NativeSymbol: "btc", RPCURL: "http://fake", Confirmations: 3})
 	if a.ID() != "btc" {
 		t.Errorf("expected btc, got %s", a.ID())
@@ -51,7 +51,7 @@ func TestBitcoin_Identity(t *testing.T) {
 	}
 }
 
-func TestBitcoinAmountsUseTheChainRowDecimals(t *testing.T) {
+func TestBitcoin_Amounts_UseTheChainRowDecimals(t *testing.T) {
 	eight := NewBitcoinLive(BitcoinConfig{NativeDecimal: 8})
 	sats, err := eight.btcToSats(decimal.RequireFromString("1.5"))
 	if err != nil || sats.Cmp(big.NewInt(150_000_000)) != 0 || eight.NativeDecimals() != 8 {

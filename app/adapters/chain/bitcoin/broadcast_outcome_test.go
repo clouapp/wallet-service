@@ -13,7 +13,7 @@ import (
 	"github.com/macrowallets/waas/pkg/types"
 )
 
-func TestBroadcastUnknownOutcomeIsNotAKnownFailure(t *testing.T) {
+func TestBroadcast_Unknown_OutcomeIsNotAKnownFailure(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
 		t.Error("closed server was dialed")
 	}))
@@ -32,7 +32,7 @@ func TestBroadcastUnknownOutcomeIsNotAKnownFailure(t *testing.T) {
 	})
 }
 
-func TestBroadcastServerErrorStaysAKnownFailure(t *testing.T) {
+func TestBroadcast_Server_ErrorStaysAKnownFailure(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusBadGateway)
 	}))

@@ -17,7 +17,7 @@ const (
 	seedPasswordFixture = "seed-fixture-password"
 )
 
-func TestSeedPlatformSettingsSkipsABlankEnv(t *testing.T) {
+func TestSeed_Platform_SettingsSkipsABlankEnv(t *testing.T) {
 	clearPlatformSeedEnv(t)
 	t.Setenv("MAIL_HOST", "   ")
 	t.Setenv("MAIL_PASSWORD", "  ")
@@ -43,7 +43,7 @@ func TestSeedPlatformSettingsSkipsABlankEnv(t *testing.T) {
 	}
 }
 
-func TestSeedPlatformSettingsInsertsANonSecretOnce(t *testing.T) {
+func TestSeed_Platform_SettingsInsertsANonSecretOnce(t *testing.T) {
 	clearPlatformSeedEnv(t)
 	fixtures.TestDB(t)
 	t.Setenv("MAIL_HOST", seedHostFixture)
@@ -66,7 +66,7 @@ func TestSeedPlatformSettingsInsertsANonSecretOnce(t *testing.T) {
 	}
 }
 
-func TestSeedPlatformSettingsSealsASecretAndOmitsItFromLogs(t *testing.T) {
+func TestSeed_Platform_SettingsSealsASecretAndOmitsItFromLogs(t *testing.T) {
 	clearPlatformSeedEnv(t)
 	fixtures.TestDB(t)
 
@@ -97,7 +97,7 @@ func TestSeedPlatformSettingsSealsASecretAndOmitsItFromLogs(t *testing.T) {
 	}
 }
 
-func TestSeedPlatformSettingsLeavesAnEditedRow(t *testing.T) {
+func TestSeed_Platform_SettingsLeavesAnEditedRow(t *testing.T) {
 	clearPlatformSeedEnv(t)
 	fixtures.TestDB(t)
 	t.Setenv("MAIL_HOST", seedHostFixture)

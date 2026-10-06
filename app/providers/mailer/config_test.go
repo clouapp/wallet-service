@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-func TestMergeDialKeepsEnvFieldsThatAreNotInUse(t *testing.T) {
+func TestMerge_Dial_KeepsEnvFieldsThatAreNotInUse(t *testing.T) {
 	t.Parallel()
 
 	cfg := map[string]any{
@@ -51,7 +51,7 @@ func TestMergeDialKeepsEnvFieldsThatAreNotInUse(t *testing.T) {
 	}
 }
 
-func TestMergeFromKeepsEnvFieldsThatAreNotInUse(t *testing.T) {
+func TestMerge_From_KeepsEnvFieldsThatAreNotInUse(t *testing.T) {
 	t.Parallel()
 
 	cfg := map[string]any{
@@ -79,7 +79,7 @@ func TestMergeFromKeepsEnvFieldsThatAreNotInUse(t *testing.T) {
 	}
 }
 
-func TestMergeDialAppliesAPasswordOnlyWhenAsked(t *testing.T) {
+func TestMerge_Dial_AppliesAPasswordOnlyWhenAsked(t *testing.T) {
 	t.Parallel()
 
 	const stored = "stored-mailbox-secret"
@@ -96,7 +96,7 @@ func TestMergeDialAppliesAPasswordOnlyWhenAsked(t *testing.T) {
 	}
 }
 
-func TestResolveKeepsTheEnvDocumentWhenTheReaderIsUnset(t *testing.T) {
+func TestResolve_Keeps_TheEnvDocumentWhenTheReaderIsUnset(t *testing.T) {
 	t.Parallel()
 
 	const envPassword = "env-mailbox-secret"
@@ -128,7 +128,7 @@ func TestResolveKeepsTheEnvDocumentWhenTheReaderIsUnset(t *testing.T) {
 	}
 }
 
-func TestResolveKeepsTheEnvDocumentWhenTheReaderFails(t *testing.T) {
+func TestResolve_Keeps_TheEnvDocumentWhenTheReaderFails(t *testing.T) {
 	t.Parallel()
 
 	cfg := NewConfig(Hooks{
@@ -155,7 +155,7 @@ func TestResolveKeepsTheEnvDocumentWhenTheReaderFails(t *testing.T) {
 	}
 }
 
-func TestResolveAppliesSMTPAndFromWhenTheRowsExist(t *testing.T) {
+func TestResolve_Applies_SMTPAndFromWhenTheRowsExist(t *testing.T) {
 	t.Parallel()
 
 	const stored = "stored-mailbox-secret"

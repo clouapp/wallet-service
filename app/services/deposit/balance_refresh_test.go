@@ -25,7 +25,7 @@ func (r *recordingRefresher) RefreshWalletByID(_ context.Context, walletID uuid.
 	return r.err
 }
 
-func TestUpdateConfirmations_RefreshesEachWalletWhoseMovementJustConfirmed(t *testing.T) {
+func TestUpdate_Confirmations_RefreshesEachWalletWhoseMovementJustConfirmed(t *testing.T) {
 	svc, adapter, _ := setupDepositService(t)
 	refresher := &recordingRefresher{err: errors.New("rpc down")}
 	svc.SetBalanceRefresher(refresher)

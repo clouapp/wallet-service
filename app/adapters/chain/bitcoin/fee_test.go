@@ -39,7 +39,7 @@ func rate(satPerVByte int64) btcFeePolicy {
 	return btcFeePolicy{milliSatPerVByte: satPerVByte * milliSatsPerSat, flatFee: flatTestFee}
 }
 
-func TestP2WPKHVSizeRoundsUp(t *testing.T) {
+func TestP2_WPKHV_SizeRoundsUp(t *testing.T) {
 	cases := []struct {
 		inputs, outputs int
 		want            int64
@@ -57,7 +57,7 @@ func TestP2WPKHVSizeRoundsUp(t *testing.T) {
 	}
 }
 
-func TestFeePolicyFeeIsCeilRateTimesVSizeWithARelayFloor(t *testing.T) {
+func TestFee_Policy_FeeIsCeilRateTimesVSizeWithARelayFloor(t *testing.T) {
 	cases := []struct {
 		name            string
 		policy          btcFeePolicy
@@ -78,7 +78,7 @@ func TestFeePolicyFeeIsCeilRateTimesVSizeWithARelayFloor(t *testing.T) {
 	}
 }
 
-func TestParseEsploraFeeEstimates(t *testing.T) {
+func TestParse_Esplora_FeeEstimates(t *testing.T) {
 	cases := []struct {
 		name    string
 		body    string
@@ -106,7 +106,7 @@ func TestParseEsploraFeeEstimates(t *testing.T) {
 	}
 }
 
-func TestSelectBTCSpend(t *testing.T) {
+func TestSelect_BTC_Spend(t *testing.T) {
 	policy := rate(2)
 	oneInChange := policy.fee(1, 2)   // 282
 	oneInNoChange := policy.fee(1, 1) // 220
@@ -172,7 +172,7 @@ func TestSelectBTCSpend(t *testing.T) {
 
 // Every amount up to maxSendableSats must build, balance exactly, and pay at least
 // the min relay fee: the planner promises exactly that.
-func TestSelectBTCSpendAlwaysSucceedsUpToMaxSendable(t *testing.T) {
+func TestSelect_BTC_SpendAlwaysSucceedsUpToMaxSendable(t *testing.T) {
 	rng := rand.New(rand.NewPCG(7, 11))
 	for trial := 0; trial < 500; trial++ {
 		policy := btcFeePolicy{milliSatPerVByte: int64(rng.IntN(50_000)) + 100, flatFee: flatTestFee}
@@ -210,7 +210,7 @@ func TestSelectBTCSpendAlwaysSucceedsUpToMaxSendable(t *testing.T) {
 	}
 }
 
-func TestMaxSendableSats(t *testing.T) {
+func TestMax_Sendable_Sats(t *testing.T) {
 	policy := rate(1)
 	utxos := []btcInput{utxo(0, 10_000), utxo(1, 5_000), utxo(2, 0)}
 	if got, want := maxSendableSats(utxos, policy), int64(15_000)-policy.fee(2, 1); got != want {
@@ -228,7 +228,7 @@ func feeTestAdapter(esplora *fakeEsplora) *BitcoinLive { return esplora.adapter(
 
 func utxoPath() string { return esploraTestPrefix + "/address/" + feeTestFrom + "/utxo" }
 
-func TestBuildTransferUsesTheEstimatedRateAndCountsInputs(t *testing.T) {
+func TestBuild_Transfer_UsesTheEstimatedRateAndCountsInputs(t *testing.T) {
 	esplora := newFakeEsplora(t)
 	esplora.ok(esploraTestPrefix+"/fee-estimates", `{"3":4.2,"6":2}`)
 	esplora.ok(utxoPath(), utxoJSON([]btcInput{utxo(0, 40_000), utxo(1, 40_000), utxo(2, 40_000)}, true))
@@ -250,7 +250,7 @@ func TestBuildTransferUsesTheEstimatedRateAndCountsInputs(t *testing.T) {
 	}
 }
 
-func TestBuildTransferFallsBackToTheFlatFeeWhenEstimatesFail(t *testing.T) {
+func TestBuild_Transfer_FallsBackToTheFlatFeeWhenEstimatesFail(t *testing.T) {
 	for name, answer := range map[string]esploraAnswer{
 		"http 500":  {http.StatusInternalServerError, "boom"},
 		"garbage":   {http.StatusOK, `{"3":"soon"}`},
@@ -270,7 +270,7 @@ func TestBuildTransferFallsBackToTheFlatFeeWhenEstimatesFail(t *testing.T) {
 	}
 }
 
-func TestBuildTransferSpendsOnlyConfirmedUTXOs(t *testing.T) {
+func TestBuild_Transfer_SpendsOnlyConfirmedUTXOs(t *testing.T) {
 	esplora := newFakeEsplora(t)
 	esplora.ok(esploraTestPrefix+"/fee-estimates", `{"3":1}`)
 	body := `[` +
@@ -289,7 +289,7 @@ func TestBuildTransferSpendsOnlyConfirmedUTXOs(t *testing.T) {
 	}
 }
 
-func TestBuildSweepWithoutAmountSendsEverythingAfterTheFee(t *testing.T) {
+func TestBuild_Sweep_WithoutAmountSendsEverythingAfterTheFee(t *testing.T) {
 	esplora := newFakeEsplora(t)
 	esplora.ok(esploraTestPrefix+"/fee-estimates", `{"3":3}`)
 	esplora.ok(utxoPath(), utxoJSON([]btcInput{utxo(0, 30_000), utxo(1, 20_000), utxo(2, 10_000)}, true))
@@ -305,7 +305,7 @@ func TestBuildSweepWithoutAmountSendsEverythingAfterTheFee(t *testing.T) {
 	}
 }
 
-func TestBuildSweepOfThePlannedAmountUsesEveryInput(t *testing.T) {
+func TestBuild_Sweep_OfThePlannedAmountUsesEveryInput(t *testing.T) {
 	esplora := newFakeEsplora(t)
 	esplora.ok(esploraTestPrefix+"/fee-estimates", `{"3":3}`)
 	utxos := []btcInput{utxo(0, 30_000), utxo(1, 20_000)}
@@ -330,7 +330,7 @@ func TestBuildSweepOfThePlannedAmountUsesEveryInput(t *testing.T) {
 	}
 }
 
-func TestBuildSweepRejectsDustAndMissingAddresses(t *testing.T) {
+func TestBuild_Sweep_RejectsDustAndMissingAddresses(t *testing.T) {
 	esplora := newFakeEsplora(t)
 	esplora.ok(esploraTestPrefix+"/fee-estimates", `{"3":1}`)
 	esplora.ok(utxoPath(), utxoJSON([]btcInput{utxo(0, 600)}, true))
@@ -347,7 +347,7 @@ func TestBuildSweepRejectsDustAndMissingAddresses(t *testing.T) {
 	}
 }
 
-func TestEstimateFeeMatchesTheBuiltTransaction(t *testing.T) {
+func TestEstimate_Fee_MatchesTheBuiltTransaction(t *testing.T) {
 	esplora := newFakeEsplora(t)
 	esplora.ok(esploraTestPrefix+"/fee-estimates", `{"3":5}`)
 	esplora.ok(utxoPath(), utxoJSON([]btcInput{utxo(0, 40_000), utxo(1, 40_000)}, true))
@@ -372,7 +372,7 @@ func TestEstimateFeeMatchesTheBuiltTransaction(t *testing.T) {
 	}
 }
 
-func TestFeeRateIsCachedBriefly(t *testing.T) {
+func TestFee_Rate_IsCachedBriefly(t *testing.T) {
 	esplora := newFakeEsplora(t)
 	esplora.ok(esploraTestPrefix+"/fee-estimates", `{"3":5}`)
 	live := feeTestAdapter(esplora)
@@ -387,7 +387,7 @@ func TestFeeRateIsCachedBriefly(t *testing.T) {
 	}
 }
 
-func TestSpendableFundsCountsConfirmedUTXOsAndTheSweepFee(t *testing.T) {
+func TestSpendable_Funds_CountsConfirmedUTXOsAndTheSweepFee(t *testing.T) {
 	esplora := newFakeEsplora(t)
 	esplora.ok(esploraTestPrefix+"/fee-estimates", `{"3":2}`)
 	body := `[` +
@@ -404,7 +404,7 @@ func TestSpendableFundsCountsConfirmedUTXOsAndTheSweepFee(t *testing.T) {
 	}
 }
 
-func TestSpendableFundsEdgeCases(t *testing.T) {
+func TestSpendable_Funds_EdgeCases(t *testing.T) {
 	t.Run("nothing confirmed", func(t *testing.T) {
 		esplora := newFakeEsplora(t)
 		esplora.ok(utxoPath(), utxoJSON([]btcInput{utxo(0, 50_000)}, false))
@@ -440,7 +440,7 @@ func TestSpendableFundsEdgeCases(t *testing.T) {
 	})
 }
 
-func TestSmartFeeRateFromBitcoind(t *testing.T) {
+func TestSmart_Fee_RateFromBitcoind(t *testing.T) {
 	live := fakeBitcoind(t, map[string]string{
 		"estimatesmartfee": `{"jsonrpc":"2.0","id":1,"result":{"feerate":0.00012345,"blocks":3}}`,
 	})

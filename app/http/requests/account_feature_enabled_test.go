@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-func TestParseAccountFeatureEnabled(t *testing.T) {
+func TestParse_Account_FeatureEnabled(t *testing.T) {
 	t.Parallel()
 
 	cases := []struct {

@@ -14,7 +14,7 @@ import (
 	"github.com/macrowallets/waas/pkg/numeric"
 )
 
-func TestWalletKeepsTheModelWire(t *testing.T) {
+func TestWallet_Keeps_TheModelWire(t *testing.T) {
 	t.Parallel()
 
 	id := uuid.MustParse("11111111-1111-4111-8111-111111111111")
@@ -145,7 +145,7 @@ func marshalToMap(t *testing.T, value any) map[string]any {
 	return body
 }
 
-func TestWithNetworkNamesTheNetworkOfAPolygonRecordConfiguredForAmoy(t *testing.T) {
+func TestWith_Network_NamesTheNetworkOfAPolygonRecordConfiguredForAmoy(t *testing.T) {
 	t.Parallel()
 
 	walletID := uuid.New()
@@ -167,7 +167,7 @@ func TestWithNetworkNamesTheNetworkOfAPolygonRecordConfiguredForAmoy(t *testing.
 	}
 }
 
-func TestWithNetworkDropsTheUSDValueOfATestnetWalletWithoutTouchingTheWallet(t *testing.T) {
+func TestWith_Network_DropsTheUSDValueOfATestnetWalletWithoutTouchingTheWallet(t *testing.T) {
 	t.Parallel()
 
 	wallet := &models.Wallet{ID: uuid.New(), Chain: models.ChainPolygon, BalanceUSD: usdValue(t, "4.97")}
@@ -182,7 +182,7 @@ func TestWithNetworkDropsTheUSDValueOfATestnetWalletWithoutTouchingTheWallet(t *
 	}
 }
 
-func TestWithNetworkKeepsTheUSDValueOnMainnet(t *testing.T) {
+func TestWith_Network_KeepsTheUSDValueOnMainnet(t *testing.T) {
 	t.Parallel()
 
 	wallet := &models.Wallet{ID: uuid.New(), Chain: models.ChainPolygon, BalanceUSD: usdValue(t, "4.97")}
@@ -194,7 +194,7 @@ func TestWithNetworkKeepsTheUSDValueOnMainnet(t *testing.T) {
 	}
 }
 
-func TestWithNetworkWritesExactUSDDigitsAsJSONNumbers(t *testing.T) {
+func TestWith_Network_WritesExactUSDDigitsAsJSONNumbers(t *testing.T) {
 	t.Parallel()
 
 	const exactUSD = "1234567890123456.0123456789"
@@ -211,7 +211,7 @@ func TestWithNetworkWritesExactUSDDigitsAsJSONNumbers(t *testing.T) {
 	}
 }
 
-func TestWithNetworkOmitsUnsetDecimals(t *testing.T) {
+func TestWith_Network_OmitsUnsetDecimals(t *testing.T) {
 	t.Parallel()
 
 	body := marshalToMap(t, WithNetworkFrom(&models.Wallet{ID: uuid.New(), Chain: models.ChainPolygon}, mainnetPolygonRecord().ResolveNetwork("")))
@@ -223,7 +223,7 @@ func TestWithNetworkOmitsUnsetDecimals(t *testing.T) {
 	}
 }
 
-func TestWithNetworkOmitsTheNetworkWhenTheChainIsUnknown(t *testing.T) {
+func TestWith_Network_OmitsTheNetworkWhenTheChainIsUnknown(t *testing.T) {
 	t.Parallel()
 
 	body := marshalToMap(t, WithNetworkFrom(&models.Wallet{ID: uuid.New(), Chain: models.ChainPolygon}, models.ResolvedNetwork{}))
@@ -236,7 +236,7 @@ func TestWithNetworkOmitsTheNetworkWhenTheChainIsUnknown(t *testing.T) {
 	}
 }
 
-func TestWithNetworkSerializesCreatedAtWithAZone(t *testing.T) {
+func TestWith_Network_SerializesCreatedAtWithAZone(t *testing.T) {
 	t.Parallel()
 
 	const createdUTC = "2026-09-30T12:00:00Z"

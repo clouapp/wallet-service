@@ -35,7 +35,7 @@ func ingestControllerDeps() IngestControllerDeps {
 	}
 }
 
-func TestNewIngestControllerKeepsItsDependencies(t *testing.T) {
+func TestNew_Ingest_ControllerKeepsItsDependencies(t *testing.T) {
 	deps := ingestControllerDeps()
 	ctrl := NewIngestController(deps)
 	if ctrl == nil {
@@ -61,7 +61,7 @@ func TestNewIngestControllerKeepsItsDependencies(t *testing.T) {
 	}
 }
 
-func TestNewIngestControllerAllowsNilLookup(t *testing.T) {
+func TestNew_Ingest_ControllerAllowsNilLookup(t *testing.T) {
 	deps := ingestControllerDeps()
 	deps.Lookup = nil
 	ctrl := NewIngestController(deps)
@@ -76,7 +76,7 @@ func TestNewIngestControllerAllowsNilLookup(t *testing.T) {
 	}
 }
 
-func TestNewIngestControllerRequiresEveryDependency(t *testing.T) {
+func TestNew_Ingest_ControllerRequiresEveryDependency(t *testing.T) {
 	cases := []struct {
 		name  string
 		clear func(*IngestControllerDeps)
@@ -104,7 +104,7 @@ func TestNewIngestControllerRequiresEveryDependency(t *testing.T) {
 	}
 }
 
-func TestProviderSignatureFailsClosedBeforeParsing(t *testing.T) {
+func TestProvider_Signature_FailsClosedBeforeParsing(t *testing.T) {
 	raw := rawWebhookBody()
 	provider := &scriptedProvider{valid: true}
 	store := &memorySubs{}
@@ -136,7 +136,7 @@ func TestProviderSignatureFailsClosedBeforeParsing(t *testing.T) {
 	}
 }
 
-func TestHandleWebhookIngestRefusesAnUnverifiedBodyBeforeParsing(t *testing.T) {
+func TestHandle_Webhook_IngestRefusesAnUnverifiedBodyBeforeParsing(t *testing.T) {
 	provider := &scriptedProvider{}
 	sink := &recordingIngest{}
 	ctrl := NewIngestController(IngestControllerDeps{Ingest: &ingestsvc.Service{}})
@@ -156,7 +156,7 @@ func TestHandleWebhookIngestRefusesAnUnverifiedBodyBeforeParsing(t *testing.T) {
 	}
 }
 
-func TestHandleWebhookIngestHandsATypedEventAfterTheSignature(t *testing.T) {
+func TestHandle_Webhook_IngestHandsATypedEventAfterTheSignature(t *testing.T) {
 	const (
 		bodyMarker   = "RAW-WEBHOOK-BODY-DO-NOT-LOG"
 		secretMarker = "opened-signing-secret"

@@ -18,7 +18,7 @@ type WalletUserRepositoryTestSuite struct {
 	walletRepo *repositories.WalletRepository
 }
 
-func TestWalletUserRepositorySuite(t *testing.T) {
+func TestWallet_User_RepositorySuite(t *testing.T) {
 	suite.Run(t, new(WalletUserRepositoryTestSuite))
 }
 
@@ -38,7 +38,7 @@ func (s *WalletUserRepositoryTestSuite) createWallet() uuid.UUID {
 	return w.ID
 }
 
-func (s *WalletUserRepositoryTestSuite) TestFindByID_IncludesAMembershipThatIsNotActive() {
+func (s *WalletUserRepositoryTestSuite) TestFind_ByID_IncludesAMembershipThatIsNotActive() {
 	walletID := s.createWallet()
 	id := uuid.New()
 	s.Require().NoError(s.repo.Create(context.Background(), &models.WalletUser{
@@ -55,14 +55,14 @@ func (s *WalletUserRepositoryTestSuite) TestFindByID_IncludesAMembershipThatIsNo
 	s.Nil(missing)
 }
 
-func (s *WalletUserRepositoryTestSuite) TestCreate_Success() {
+func (s *WalletUserRepositoryTestSuite) TestWalletUserRepository_Create_Success() {
 	walletID := s.createWallet()
 	wu := &models.WalletUser{ID: uuid.New(), WalletID: walletID, UserID: uuid.New(), Roles: "owner", Status: "active"}
 	err := s.repo.Create(context.Background(), wu)
 	s.NoError(err)
 }
 
-func (s *WalletUserRepositoryTestSuite) TestFindByWalletID() {
+func (s *WalletUserRepositoryTestSuite) TestFind_By_WalletID() {
 	walletID := s.createWallet()
 	s.Require().NoError(s.repo.Create(context.Background(), &models.WalletUser{ID: uuid.New(), WalletID: walletID, UserID: uuid.New(), Roles: "owner", Status: "active"}))
 	s.Require().NoError(s.repo.Create(context.Background(), &models.WalletUser{ID: uuid.New(), WalletID: walletID, UserID: uuid.New(), Roles: "viewer", Status: "active"}))
@@ -72,7 +72,7 @@ func (s *WalletUserRepositoryTestSuite) TestFindByWalletID() {
 	s.Len(members, 2)
 }
 
-func (s *WalletUserRepositoryTestSuite) TestFindByWalletID_ExcludesSoftDeleted() {
+func (s *WalletUserRepositoryTestSuite) TestFind_ByWalletID_ExcludesSoftDeleted() {
 	walletID := s.createWallet()
 	userID := uuid.New()
 	s.Require().NoError(s.repo.Create(context.Background(), &models.WalletUser{ID: uuid.New(), WalletID: walletID, UserID: userID, Roles: "viewer", Status: "active"}))
@@ -83,7 +83,7 @@ func (s *WalletUserRepositoryTestSuite) TestFindByWalletID_ExcludesSoftDeleted()
 	s.Len(members, 0)
 }
 
-func (s *WalletUserRepositoryTestSuite) TestFindByWalletAndUser_Found() {
+func (s *WalletUserRepositoryTestSuite) TestFind_ByWalletAndUser_Found() {
 	walletID := s.createWallet()
 	userID := uuid.New()
 	s.Require().NoError(s.repo.Create(context.Background(), &models.WalletUser{ID: uuid.New(), WalletID: walletID, UserID: userID, Roles: "admin", Status: "active"}))
@@ -94,13 +94,13 @@ func (s *WalletUserRepositoryTestSuite) TestFindByWalletAndUser_Found() {
 	s.Equal("admin", wu.Roles)
 }
 
-func (s *WalletUserRepositoryTestSuite) TestFindByWalletAndUser_NotFound() {
+func (s *WalletUserRepositoryTestSuite) TestFind_ByWalletAndUser_NotFound() {
 	wu, err := s.repo.FindByWalletAndUser(context.Background(), uuid.New(), uuid.New())
 	s.ErrorIs(err, models.ErrRepositoryNotFound)
 	s.Nil(wu)
 }
 
-func (s *WalletUserRepositoryTestSuite) TestFindByWalletAndUser_IgnoresAMembershipThatIsNotActive() {
+func (s *WalletUserRepositoryTestSuite) TestFind_ByWalletAndUser_IgnoresAMembershipThatIsNotActive() {
 	walletID := s.createWallet()
 	userID := uuid.New()
 	s.Require().NoError(s.repo.Create(context.Background(), &models.WalletUser{ID: uuid.New(), WalletID: walletID, UserID: userID, Roles: "admin", Status: "suspended"}))
@@ -114,7 +114,7 @@ func (s *WalletUserRepositoryTestSuite) TestFindByWalletAndUser_IgnoresAMembersh
 	s.Len(members, 1, "membership management still sees every status")
 }
 
-func (s *WalletUserRepositoryTestSuite) TestFindByWalletAndUserIncludeDeleted() {
+func (s *WalletUserRepositoryTestSuite) TestFind_By_WalletAndUserIncludeDeleted() {
 	walletID := s.createWallet()
 	userID := uuid.New()
 	s.Require().NoError(s.repo.Create(context.Background(), &models.WalletUser{ID: uuid.New(), WalletID: walletID, UserID: userID, Roles: "viewer", Status: "active"}))
@@ -130,7 +130,7 @@ func (s *WalletUserRepositoryTestSuite) TestFindByWalletAndUserIncludeDeleted() 
 	s.NotNil(withDeleted.DeletedAt)
 }
 
-func (s *WalletUserRepositoryTestSuite) TestUpdateField() {
+func (s *WalletUserRepositoryTestSuite) TestWalletUserRepository_Update_Field() {
 	walletID := s.createWallet()
 	userID := uuid.New()
 	wu := &models.WalletUser{ID: uuid.New(), WalletID: walletID, UserID: userID, Roles: "viewer", Status: "active"}
@@ -144,7 +144,7 @@ func (s *WalletUserRepositoryTestSuite) TestUpdateField() {
 	s.Equal("admin", found.Roles)
 }
 
-func (s *WalletUserRepositoryTestSuite) TestSoftDelete() {
+func (s *WalletUserRepositoryTestSuite) TestWalletUserRepository_Soft_Delete() {
 	walletID := s.createWallet()
 	userID := uuid.New()
 	s.Require().NoError(s.repo.Create(context.Background(), &models.WalletUser{ID: uuid.New(), WalletID: walletID, UserID: userID, Roles: "viewer", Status: "active"}))

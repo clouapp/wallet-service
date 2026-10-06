@@ -25,7 +25,7 @@ type apiScopeSuite struct {
 	account models.Account
 }
 
-func TestAPIScope(t *testing.T) {
+func TestApiScope_API_Scope(t *testing.T) {
 	suite.Run(t, new(apiScopeSuite))
 }
 
@@ -40,7 +40,7 @@ func (s *apiScopeSuite) SetupTest() {
 	s.Require().NoError(facades.Orm().Query().Create(&s.account))
 }
 
-func (s *apiScopeSuite) TestBlankPermissionsKeepTodaysAccess() {
+func (s *apiScopeSuite) TestBlank_Permissions_KeepTodaysAccess() {
 	token := s.mint("")
 
 	s.get(token, "/api/v1/wallets").AssertOk()
@@ -48,7 +48,7 @@ func (s *apiScopeSuite) TestBlankPermissionsKeepTodaysAccess() {
 	s.get(token, "/api/v1/webhooks").AssertOk()
 }
 
-func (s *apiScopeSuite) TestListedPermissionsAreTheOnlyAccess() {
+func (s *apiScopeSuite) TestListed_Permissions_AreTheOnlyAccess() {
 	token := s.mint(`["transactions.read","webhooks.read"]`)
 
 	s.get(token, "/api/v1/wallets").AssertForbidden().AssertJson(map[string]any{
@@ -59,7 +59,7 @@ func (s *apiScopeSuite) TestListedPermissionsAreTheOnlyAccess() {
 	s.get(token, "/api/v1/chains").AssertOk()
 }
 
-func (s *apiScopeSuite) TestCreateWalletRequiresWalletsCreate() {
+func (s *apiScopeSuite) TestCreate_Wallet_RequiresWalletsCreate() {
 	reader := s.mint(`["wallets.read"]`)
 	s.post(reader, "/api/v1/wallets").AssertForbidden().AssertJson(map[string]any{
 		"error": map[string]any{"code": "forbidden", "message": "forbidden"},
@@ -69,12 +69,12 @@ func (s *apiScopeSuite) TestCreateWalletRequiresWalletsCreate() {
 	s.post(creator, "/api/v1/wallets").AssertUnprocessableEntity()
 }
 
-func (s *apiScopeSuite) TestMissingWalletIs404BeforeTheScopeCheck() {
+func (s *apiScopeSuite) TestMissing_Wallet_Is404BeforeTheScopeCheck() {
 	token := s.mint(`["transactions.read"]`)
 	s.get(token, "/api/v1/wallets/"+uuid.NewString()).AssertNotFound()
 }
 
-func (s *apiScopeSuite) TestMissingTransactionAndWebhookAre404BeforeTheScopeCheck() {
+func (s *apiScopeSuite) TestMissing_Transaction_AndWebhookAre404BeforeTheScopeCheck() {
 	denied := s.mint(`["wallets.read"]`)
 	allowedTx := s.mint(`["transactions.read"]`)
 	allowedHook := s.mint(`["webhooks.write"]`)

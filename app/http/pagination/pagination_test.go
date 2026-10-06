@@ -7,7 +7,7 @@ import (
 
 var testBounds = Bounds{DefaultLimit: 20, MaxLimit: 100}
 
-func TestParseStrictDefaults(t *testing.T) {
+func TestParse_Strict_Defaults(t *testing.T) {
 	limit, offset, err := ParseStrict("", "", testBounds)
 	if err != nil {
 		t.Fatalf("ParseStrict() error = %v", err)
@@ -17,7 +17,7 @@ func TestParseStrictDefaults(t *testing.T) {
 	}
 }
 
-func TestParseStrictAcceptsBoundaries(t *testing.T) {
+func TestParse_Strict_AcceptsBoundaries(t *testing.T) {
 	testCases := []struct {
 		name       string
 		rawLimit   string
@@ -46,7 +46,7 @@ func TestParseStrictAcceptsBoundaries(t *testing.T) {
 	}
 }
 
-func TestParseStrictRejectsInvalidValues(t *testing.T) {
+func TestParse_Strict_RejectsInvalidValues(t *testing.T) {
 	testCases := []struct {
 		name      string
 		rawLimit  string
@@ -73,7 +73,7 @@ func TestParseStrictRejectsInvalidValues(t *testing.T) {
 	}
 }
 
-func TestParseStrictRejectsMisconfiguredBounds(t *testing.T) {
+func TestParse_Strict_RejectsMisconfiguredBounds(t *testing.T) {
 	testCases := []struct {
 		name   string
 		bounds Bounds

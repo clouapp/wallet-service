@@ -2,7 +2,7 @@ package models
 
 import "testing"
 
-func TestParseWalletRolesAcceptsOnlyTheClosedSet(t *testing.T) {
+func TestParse_Wallet_RolesAcceptsOnlyTheClosedSet(t *testing.T) {
 	got, err := ParseWalletRoles("viewer, spender")
 	if err != nil {
 		t.Fatal(err)

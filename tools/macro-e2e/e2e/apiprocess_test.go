@@ -98,7 +98,7 @@ func newTestManager(t *testing.T, paths Paths, healthAnswers bool) (APIManager, 
 	return manager, out, signals
 }
 
-func TestAPIStopUsesSIGTERMWhenTheProcessHonoursIt(t *testing.T) {
+func TestAPI_Stop_UsesSIGTERMWhenTheProcessHonoursIt(t *testing.T) {
 	paths := newTestPaths(t)
 	fake := startFakeAPI(t, paths, false)
 	manager, out, signals := newTestManager(t, paths, true)
@@ -114,7 +114,7 @@ func TestAPIStopUsesSIGTERMWhenTheProcessHonoursIt(t *testing.T) {
 	}
 }
 
-func TestAPIStopEscalatesToSIGKILLAfterTheGracePeriod(t *testing.T) {
+func TestAPI_Stop_EscalatesToSIGKILLAfterTheGracePeriod(t *testing.T) {
 	paths := newTestPaths(t)
 	fake := startFakeAPI(t, paths, true)
 	manager, out, signals := newTestManager(t, paths, true)
@@ -136,7 +136,7 @@ func TestAPIStopEscalatesToSIGKILLAfterTheGracePeriod(t *testing.T) {
 	}
 }
 
-func TestAPIRefusesForeignProcessesRecordingsAndBusyPorts(t *testing.T) {
+func TestAPI_Refuses_ForeignProcessesRecordingsAndBusyPorts(t *testing.T) {
 	paths := newTestPaths(t)
 	foreign := exec.Command(sleepPath, sleeperLifetime)
 	if err := foreign.Start(); err != nil {
@@ -183,7 +183,7 @@ func TestAPIRefusesForeignProcessesRecordingsAndBusyPorts(t *testing.T) {
 	}
 }
 
-func TestAPIStartRunsTheBinaryWithTheEnvironAndWaitsForHealth(t *testing.T) {
+func TestAPI_Start_RunsTheBinaryWithTheEnvironAndWaitsForHealth(t *testing.T) {
 	paths := newTestPaths(t)
 	script := "#!" + shellPath + "\necho \"db=$DB_DATABASE cwd=$(pwd)\"\nexec " + sleepPath + " " + sleeperLifetime + "\n"
 	if err := os.MkdirAll(filepath.Dir(paths.APIBinary), 0o700); err != nil {
@@ -228,7 +228,7 @@ func TestAPIStartRunsTheBinaryWithTheEnvironAndWaitsForHealth(t *testing.T) {
 	t.Fatalf("log %q", log)
 }
 
-func TestAPIStartReportsAnEarlyExit(t *testing.T) {
+func TestAPI_Start_ReportsAnEarlyExit(t *testing.T) {
 	paths := newTestPaths(t)
 	if err := os.MkdirAll(filepath.Dir(paths.APIBinary), 0o700); err != nil {
 		t.Fatal(err)
@@ -246,7 +246,7 @@ func TestAPIStartReportsAnEarlyExit(t *testing.T) {
 	}
 }
 
-func TestAPIBuildKeepsThePreviousBinary(t *testing.T) {
+func TestAPI_Build_KeepsThePreviousBinary(t *testing.T) {
 	paths := newTestPaths(t)
 	copyExecutable(t, sleepPath, paths.APIBinary)
 	manager, out, _ := newTestManager(t, paths, false)
@@ -267,7 +267,7 @@ func TestAPIBuildKeepsThePreviousBinary(t *testing.T) {
 	}
 }
 
-func TestAPIStatusReportsWithoutChangingAnything(t *testing.T) {
+func TestAPI_Status_ReportsWithoutChangingAnything(t *testing.T) {
 	paths := newTestPaths(t)
 	manager, out, signals := newTestManager(t, paths, true)
 	if err := WritePrivateFile(paths.RecordingLock, []byte(`{}`)); err != nil {

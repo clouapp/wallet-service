@@ -15,7 +15,7 @@ func walletSettingsControllerDeps() WalletSettingsControllerDeps {
 	}
 }
 
-func TestNewSettingsControllerKeepsItsDependencies(t *testing.T) {
+func TestNew_Settings_ControllerKeepsItsDependencies(t *testing.T) {
 	deps := walletSettingsControllerDeps()
 	ctrl := NewSettingsController(deps)
 	if ctrl == nil {
@@ -32,7 +32,7 @@ func TestNewSettingsControllerKeepsItsDependencies(t *testing.T) {
 	}
 }
 
-func TestNewSettingsControllerRequiresEveryDependency(t *testing.T) {
+func TestNew_Settings_ControllerRequiresEveryDependency(t *testing.T) {
 	cases := []struct {
 		name  string
 		clear func(*WalletSettingsControllerDeps)

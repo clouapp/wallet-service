@@ -66,14 +66,14 @@ func planSolana(t *testing.T, svc *service, walletID uuid.UUID) *Plan {
 	return plan
 }
 
-func TestPlanSolana_BaseWithExactAmountCannotPayFeeAndRent(t *testing.T) {
+func TestPlan_Solana_BaseWithExactAmountCannotPayFeeAndRent(t *testing.T) {
 	svc, walletID := solanaReservePlanner(t, map[string]int64{"SolBase": testSolAmount}, nil, nil)
 	if plan := planSolana(t, svc, walletID); plan.Strategy != StrategyInsufficient {
 		t.Fatalf("strategy %s, want insufficient", plan.Strategy)
 	}
 }
 
-func TestPlanSolana_BaseJustCoveringReserveIsDirect(t *testing.T) {
+func TestPlan_Solana_BaseJustCoveringReserveIsDirect(t *testing.T) {
 	svc, walletID := solanaReservePlanner(t, map[string]int64{"SolBase": testSolAmount + testSolFee + testSolRentExempt}, nil, nil)
 	plan := planSolana(t, svc, walletID)
 	if plan.Strategy != StrategyDirectFromBase || plan.Amount.Int64() != testSolAmount {
@@ -81,7 +81,7 @@ func TestPlanSolana_BaseJustCoveringReserveIsDirect(t *testing.T) {
 	}
 }
 
-func TestPlanSolana_ChildNeedsReserveForDirectWithdrawal(t *testing.T) {
+func TestPlan_Solana_ChildNeedsReserveForDirectWithdrawal(t *testing.T) {
 	svc, walletID := solanaReservePlanner(t, map[string]int64{
 		"ChildShort": testSolAmount + testSolFee,
 		"ChildOK":    testSolAmount + testSolFee + testSolRentExempt,
@@ -94,7 +94,7 @@ func TestPlanSolana_ChildNeedsReserveForDirectWithdrawal(t *testing.T) {
 	}
 }
 
-func TestPlanSolana_MultiSweepLegsLeaveTheFeeAndCountNetAmounts(t *testing.T) {
+func TestPlan_Solana_MultiSweepLegsLeaveTheFeeAndCountNetAmounts(t *testing.T) {
 	svc, walletID := solanaReservePlanner(t, map[string]int64{"SolBase": 10_000_000, "ChildA": 15_000_000}, nil, nil)
 	svc.addressRepo = &fakeAddressRepo{children: []models.Address{solanaChild(walletID, "ChildA")}}
 
@@ -107,7 +107,7 @@ func TestPlanSolana_MultiSweepLegsLeaveTheFeeAndCountNetAmounts(t *testing.T) {
 	}
 }
 
-func TestPlanSolana_MultiSweepInsufficientOnceFeesAreCounted(t *testing.T) {
+func TestPlan_Solana_MultiSweepInsufficientOnceFeesAreCounted(t *testing.T) {
 	// Gross balances reach amount+reserve, net of the sweep fee they do not.
 	base := int64(testSolAmount + testSolRentExempt - 15_000_000)
 	svc, walletID := solanaReservePlanner(t, map[string]int64{"SolBase": base, "ChildA": 15_000_000 + testSolFee}, nil, nil)
@@ -118,7 +118,7 @@ func TestPlanSolana_MultiSweepInsufficientOnceFeesAreCounted(t *testing.T) {
 	}
 }
 
-func TestPlanSolana_ChildThatCannotPayItsFeeIsNotSwept(t *testing.T) {
+func TestPlan_Solana_ChildThatCannotPayItsFeeIsNotSwept(t *testing.T) {
 	svc, walletID := solanaReservePlanner(t, map[string]int64{"SolBase": testSolAmount + testSolFee + testSolRentExempt - 1, "Dust": testSolFee}, nil, nil)
 	svc.addressRepo = &fakeAddressRepo{children: []models.Address{solanaChild(walletID, "Dust")}}
 
@@ -128,7 +128,7 @@ func TestPlanSolana_ChildThatCannotPayItsFeeIsNotSwept(t *testing.T) {
 	}
 }
 
-func TestPlanSolana_ReserveErrorFailsThePlan(t *testing.T) {
+func TestPlan_Solana_ReserveErrorFailsThePlan(t *testing.T) {
 	rpcDown := errors.New("rpc down")
 	svc, walletID := solanaReservePlanner(t, map[string]int64{"SolBase": 1_000_000_000}, nil, rpcDown)
 	_, err := svc.PlanForWithdrawal(context.Background(), walletID, models.NativeSOL, big.NewInt(testSolAmount), "Dest", uuid.Nil)
@@ -137,7 +137,7 @@ func TestPlanSolana_ReserveErrorFailsThePlan(t *testing.T) {
 	}
 }
 
-func TestLoadNativeReserve_RejectsInvalidValues(t *testing.T) {
+func TestLoad_NativeReserve_RejectsInvalidValues(t *testing.T) {
 	mockChain := mocks.NewMockChain(models.ChainSOL)
 	mockChain.NativeAssetVal = models.NativeSOL
 	for _, adapter := range []*reservingChain{
@@ -151,7 +151,7 @@ func TestLoadNativeReserve_RejectsInvalidValues(t *testing.T) {
 	}
 }
 
-func TestLoadNativeReserve_TokenAssetHasNoReserve(t *testing.T) {
+func TestLoad_NativeReserve_TokenAssetHasNoReserve(t *testing.T) {
 	mockChain := mocks.NewMockChain(models.ChainSOL)
 	mockChain.NativeAssetVal = models.NativeSOL
 	adapter := &reservingChain{MockChain: mockChain, err: errors.New("must not be called")}

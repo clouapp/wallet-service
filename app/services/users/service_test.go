@@ -13,7 +13,7 @@ import (
 	"github.com/macrowallets/waas/app/services/users"
 )
 
-func TestUpdatePreferencesForwardsToTheStore(t *testing.T) {
+func TestUpdate_Preferences_ForwardsToTheStore(t *testing.T) {
 	t.Parallel()
 
 	store := &fakeStore{}
@@ -29,7 +29,7 @@ func TestUpdatePreferencesForwardsToTheStore(t *testing.T) {
 	require.ErrorIs(t, err, store.err)
 }
 
-func TestUserWritesRequireContextAndStore(t *testing.T) {
+func TestUser_Writes_RequireContextAndStore(t *testing.T) {
 	t.Parallel()
 
 	err := users.NewService(users.Deps{Store: &fakeStore{}}).UpdatePreferences(nil, uuid.New(), &models.UserPreferences{})

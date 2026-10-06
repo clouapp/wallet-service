@@ -11,13 +11,13 @@ import (
 	"github.com/macrowallets/waas/tests/feature/support/testutil"
 )
 
-func TestNewReturnsNilForANilClient(t *testing.T) {
+func TestNew_Returns_NilForANilClient(t *testing.T) {
 	if New(nil) != nil {
 		t.Fatal("expected a nil sweep store when Redis is not configured")
 	}
 }
 
-func TestNilStoreReportsAMissingClient(t *testing.T) {
+func TestNil_Store_ReportsAMissingClient(t *testing.T) {
 	var store *Store
 	ctx := context.Background()
 	if _, err := store.SetNX(ctx, "vault:lock:wallet_ops:x", "1", time.Second); err == nil {
@@ -34,7 +34,7 @@ func TestNilStoreReportsAMissingClient(t *testing.T) {
 	}
 }
 
-func TestSetNXWritesTheValueAndKeepsTheTTL(t *testing.T) {
+func TestSet_NX_WritesTheValueAndKeepsTheTTL(t *testing.T) {
 	client := testutil.TestRedis(t)
 	prefix := testutil.TestRedisPrefix(t, client)
 	key := prefix + "lock"
@@ -72,7 +72,7 @@ func TestSetNXWritesTheValueAndKeepsTheTTL(t *testing.T) {
 	}
 }
 
-func TestDelRemovesTheKey(t *testing.T) {
+func TestDel_Removes_TheKey(t *testing.T) {
 	client := testutil.TestRedis(t)
 	prefix := testutil.TestRedisPrefix(t, client)
 	key := prefix + "lock"
@@ -90,7 +90,7 @@ func TestDelRemovesTheKey(t *testing.T) {
 	}
 }
 
-func TestIncrDoesNotSetATTL(t *testing.T) {
+func TestIncr_Does_NotSetATTL(t *testing.T) {
 	client := testutil.TestRedis(t)
 	prefix := testutil.TestRedisPrefix(t, client)
 	key := prefix + "quota"
@@ -120,7 +120,7 @@ func TestIncrDoesNotSetATTL(t *testing.T) {
 	}
 }
 
-func TestExpireSetsTheTTL(t *testing.T) {
+func TestExpire_Sets_TheTTL(t *testing.T) {
 	client := testutil.TestRedis(t)
 	prefix := testutil.TestRedisPrefix(t, client)
 	key := prefix + "quota"
@@ -142,7 +142,7 @@ func TestExpireSetsTheTTL(t *testing.T) {
 	}
 }
 
-func TestSetNXCanceledContext(t *testing.T) {
+func TestSet_NX_CanceledContext(t *testing.T) {
 	client := testutil.TestRedis(t)
 	prefix := testutil.TestRedisPrefix(t, client)
 	ctx, cancel := context.WithCancel(context.Background())

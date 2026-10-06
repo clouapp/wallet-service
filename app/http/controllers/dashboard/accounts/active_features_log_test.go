@@ -9,7 +9,7 @@ import (
 	"testing"
 )
 
-func TestLogActiveFeaturesFailureOmitsSessionJWT(t *testing.T) {
+func TestLog_Active_FeaturesFailureOmitsSessionJWT(t *testing.T) {
 	const fixture = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.fixture-signature"
 	ctx := context.WithValue(context.Background(), struct{ name string }{"session"}, fixture)
 

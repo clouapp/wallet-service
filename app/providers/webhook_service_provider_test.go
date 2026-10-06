@@ -20,7 +20,7 @@ func (stubCipher) EncryptString(value string) (string, error) { return value, ni
 
 func (stubCipher) DecryptString(payload string) (string, error) { return payload, nil }
 
-func TestWebhookProvider_RegistersTheWebhookGraph(t *testing.T) {
+func TestWebhook_Provider_RegistersTheWebhookGraph(t *testing.T) {
 	require.NotNil(t, goravelfoundation.App)
 	goravelfoundation.App.Singleton(binding.Crypt, func(foundation.Application) (any, error) {
 		return stubCipher{}, nil

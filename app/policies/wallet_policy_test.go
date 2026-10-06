@@ -8,7 +8,7 @@ import (
 	contractsaccess "github.com/goravel/framework/contracts/auth/access"
 )
 
-func TestWalletDecisionsFollowTheLoadedRoles(t *testing.T) {
+func TestWallet_Decisions_FollowTheLoadedRoles(t *testing.T) {
 	t.Parallel()
 
 	owner := WalletMembership{WalletRole: roleOwner}
@@ -58,7 +58,7 @@ func TestWalletDecisionsFollowTheLoadedRoles(t *testing.T) {
 	}
 }
 
-func TestWalletCancelWithdrawalKeepsTheCreatorRule(t *testing.T) {
+func TestWallet_Cancel_WithdrawalKeepsTheCreatorRule(t *testing.T) {
 	t.Parallel()
 
 	creator := uuid.New()
@@ -82,7 +82,7 @@ func TestWalletCancelWithdrawalKeepsTheCreatorRule(t *testing.T) {
 	}
 }
 
-func TestWalletCancelWithdrawalDeniesNilAndEmptyRoleSets(t *testing.T) {
+func TestWallet_Cancel_WithdrawalDeniesNilAndEmptyRoleSets(t *testing.T) {
 	t.Parallel()
 
 	const denied = "only the creator or an owner/admin may cancel this withdrawal"
@@ -99,7 +99,7 @@ func TestWalletCancelWithdrawalDeniesNilAndEmptyRoleSets(t *testing.T) {
 	}
 }
 
-func TestWalletGateStillRequiresTheWalletID(t *testing.T) {
+func TestWallet_Gate_StillRequiresTheWalletID(t *testing.T) {
 	t.Parallel()
 
 	policy := &WalletPolicy{}

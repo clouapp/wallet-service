@@ -16,7 +16,7 @@ import (
 	"github.com/macrowallets/waas/pkg/numeric"
 )
 
-func TestBalanceKeepsTheModelWire(t *testing.T) {
+func TestBalance_Keeps_TheModelWire(t *testing.T) {
 	t.Parallel()
 
 	id := uuid.MustParse("11111111-1111-4111-8111-111111111111")
@@ -67,7 +67,7 @@ func TestBalanceKeepsTheModelWire(t *testing.T) {
 	}
 }
 
-func TestBalanceKeepsARelatedWallet(t *testing.T) {
+func TestBalance_Keeps_ARelatedWallet(t *testing.T) {
 	t.Parallel()
 
 	id := uuid.MustParse("11111111-1111-4111-8111-111111111111")
@@ -89,7 +89,7 @@ func TestBalanceKeepsARelatedWallet(t *testing.T) {
 	}
 }
 
-func TestBalancesFromPreserveSliceNilness(t *testing.T) {
+func TestBalances_From_PreserveSliceNilness(t *testing.T) {
 	t.Parallel()
 
 	if balances.BalancesFrom(nil, walletresource.WalletPtr) != nil {

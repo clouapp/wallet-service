@@ -14,7 +14,7 @@ import (
 	"github.com/macrowallets/waas/pkg/numeric"
 )
 
-func TestWalletsPaginateByAccountForwards(t *testing.T) {
+func TestWallets_Paginate_ByAccountForwards(t *testing.T) {
 	t.Parallel()
 
 	accountID := uuid.New()
@@ -79,7 +79,7 @@ func (f *fakeWallets) SetFrozenUntil(context.Context, uuid.UUID, time.Time) erro
 func (f *fakeWallets) SetStatus(context.Context, uuid.UUID, string) error              { return f.err }
 func (f *fakeWallets) SetLabel(context.Context, uuid.UUID, string) error               { return f.err }
 
-func TestTransactionsFindByChainAndTxHashForwards(t *testing.T) {
+func TestTransactions_Find_ByChainAndTxHashForwards(t *testing.T) {
 	t.Parallel()
 
 	want := &models.Transaction{ID: uuid.New(), TxHash: "0xabc"}
@@ -123,7 +123,7 @@ func (f *fakeTransactions) FindByChainAndTxHash(_ context.Context, chainID, txHa
 	return f.row, nil
 }
 
-func TestAddressesFindByChainAndAddressForwards(t *testing.T) {
+func TestAddresses_Find_ByChainAndAddressForwards(t *testing.T) {
 	t.Parallel()
 
 	want := &models.Address{ID: uuid.New(), Address: "0xabc"}

@@ -37,7 +37,7 @@ func (s *setRPCStore) UpdateRPCURL(_ context.Context, id, sealed string) error {
 	return s.updateErr
 }
 
-func TestReplaceRPCRejectsBlankArgumentsBeforeAnyQuery(t *testing.T) {
+func TestReplace_RPC_RejectsBlankArgumentsBeforeAnyQuery(t *testing.T) {
 	store := &setRPCStore{}
 	rpc := NewReplaceRPC(ReplaceRPCDeps{Store: store, Seal: func(string) (string, error) { return "sealed", nil }})
 	if _, err := rpc.Replace(context.Background(), "  ", setRPCFixture); err == nil || err.Error() != "chain_id is required" {
@@ -51,7 +51,7 @@ func TestReplaceRPCRejectsBlankArgumentsBeforeAnyQuery(t *testing.T) {
 	}
 }
 
-func TestReplaceRPCRejectsABadEndpointBeforeAnyQuery(t *testing.T) {
+func TestReplace_RPC_RejectsABadEndpointBeforeAnyQuery(t *testing.T) {
 	store := &setRPCStore{}
 	rpc := NewReplaceRPC(ReplaceRPCDeps{Store: store})
 	cases := []string{
@@ -78,7 +78,7 @@ func TestReplaceRPCRejectsABadEndpointBeforeAnyQuery(t *testing.T) {
 	}
 }
 
-func TestReplaceRPCReportsAMissingChain(t *testing.T) {
+func TestReplace_RPC_ReportsAMissingChain(t *testing.T) {
 	store := &setRPCStore{findErr: models.ErrRepositoryNotFound}
 	_, err := NewReplaceRPC(ReplaceRPCDeps{Store: store}).Replace(context.Background(), " eth ", setRPCFixture)
 	if err == nil || err.Error() != "chain not found: eth" || strings.Contains(err.Error(), setRPCFixture) {
@@ -89,7 +89,7 @@ func TestReplaceRPCReportsAMissingChain(t *testing.T) {
 	}
 }
 
-func TestReplaceRPCReportsAnEmptyChainRowAsMissing(t *testing.T) {
+func TestReplace_RPC_ReportsAnEmptyChainRowAsMissing(t *testing.T) {
 	store := &setRPCStore{chain: &models.Chain{}}
 	_, err := NewReplaceRPC(ReplaceRPCDeps{Store: store}).Replace(context.Background(), "eth", setRPCFixture)
 	if err == nil || err.Error() != "chain not found: eth" || store.updates != 0 {
@@ -97,7 +97,7 @@ func TestReplaceRPCReportsAnEmptyChainRowAsMissing(t *testing.T) {
 	}
 }
 
-func TestReplaceRPCReportsALoadFailure(t *testing.T) {
+func TestReplace_RPC_ReportsALoadFailure(t *testing.T) {
 	inner := errors.New("connection refused")
 	store := &setRPCStore{findErr: fmtWrap("find chain", inner)}
 	_, err := NewReplaceRPC(ReplaceRPCDeps{Store: store}).Replace(context.Background(), "eth", setRPCFixture)
@@ -109,7 +109,7 @@ func TestReplaceRPCReportsALoadFailure(t *testing.T) {
 	}
 }
 
-func TestReplaceRPCWritesTheSealedEndpoint(t *testing.T) {
+func TestReplace_RPC_WritesTheSealedEndpoint(t *testing.T) {
 	store := &setRPCStore{chain: &models.Chain{ID: "eth"}}
 	rpc := NewReplaceRPC(ReplaceRPCDeps{
 		Store: store,
@@ -132,7 +132,7 @@ func TestReplaceRPCWritesTheSealedEndpoint(t *testing.T) {
 	}
 }
 
-func TestReplaceRPCSealsAnEnvironmentReference(t *testing.T) {
+func TestReplace_RPC_SealsAnEnvironmentReference(t *testing.T) {
 	store := &setRPCStore{chain: &models.Chain{ID: "sol"}}
 	rpc := NewReplaceRPC(ReplaceRPCDeps{
 		Store: store,
@@ -152,7 +152,7 @@ func TestReplaceRPCSealsAnEnvironmentReference(t *testing.T) {
 	}
 }
 
-func TestReplaceRPCReportsAnEncryptionFailure(t *testing.T) {
+func TestReplace_RPC_ReportsAnEncryptionFailure(t *testing.T) {
 	store := &setRPCStore{chain: &models.Chain{ID: "eth"}}
 	rpc := NewReplaceRPC(ReplaceRPCDeps{Store: store, Seal: func(string) (string, error) {
 		return "", errors.New("cipher unavailable")
@@ -166,7 +166,7 @@ func TestReplaceRPCReportsAnEncryptionFailure(t *testing.T) {
 	}
 }
 
-func TestReplaceRPCReportsNoRowsUpdated(t *testing.T) {
+func TestReplace_RPC_ReportsNoRowsUpdated(t *testing.T) {
 	store := &setRPCStore{chain: &models.Chain{ID: "eth"}, updateErr: models.ErrRepositoryNotFound}
 	rpc := NewReplaceRPC(ReplaceRPCDeps{Store: store, Seal: func(string) (string, error) { return "enc:v1:sealed", nil }})
 	_, err := rpc.Replace(context.Background(), "eth", setRPCFixture)
@@ -175,7 +175,7 @@ func TestReplaceRPCReportsNoRowsUpdated(t *testing.T) {
 	}
 }
 
-func TestReplaceRPCReportsAnUpdateFailure(t *testing.T) {
+func TestReplace_RPC_ReportsAnUpdateFailure(t *testing.T) {
 	inner := errors.New("disk full")
 	store := &setRPCStore{chain: &models.Chain{ID: "eth"}, updateErr: fmtWrap("update chain rpc", inner)}
 	rpc := NewReplaceRPC(ReplaceRPCDeps{Store: store, Seal: func(string) (string, error) { return "enc:v1:sealed", nil }})
@@ -188,7 +188,7 @@ func TestReplaceRPCReportsAnUpdateFailure(t *testing.T) {
 	}
 }
 
-func TestReplaceRPCRequiresTheRepository(t *testing.T) {
+func TestReplace_RPC_RequiresTheRepository(t *testing.T) {
 	_, err := NewReplaceRPC(ReplaceRPCDeps{}).Replace(context.Background(), "eth", setRPCFixture)
 	if err == nil || err.Error() != "chain repository is not configured" || strings.Contains(err.Error(), setRPCFixture) {
 		t.Fatalf("error = %v", err)

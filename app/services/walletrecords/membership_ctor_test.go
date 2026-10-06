@@ -15,7 +15,7 @@ func (keptAccounts) FindMember(context.Context, uuid.UUID, uuid.UUID) (*models.A
 	return nil, nil
 }
 
-func TestNewMembershipsKeepsItsDependencies(t *testing.T) {
+func TestNew_Memberships_KeepsItsDependencies(t *testing.T) {
 	t.Parallel()
 
 	wallets := NewWallets(nil)

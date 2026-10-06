@@ -14,7 +14,7 @@ import (
 	"github.com/macrowallets/waas/tests/feature/support/fixtures"
 )
 
-func TestAccountsSeedDoesNotQueryOutsideTheRepository(t *testing.T) {
+func TestAccounts_Seed_DoesNotQueryOutsideTheRepository(t *testing.T) {
 	source, err := os.ReadFile("accounts.go")
 	if err != nil {
 		t.Fatalf("read accounts seed: %v", err)
@@ -27,7 +27,7 @@ func TestAccountsSeedDoesNotQueryOutsideTheRepository(t *testing.T) {
 	}
 }
 
-func TestSeedPairedAccountsInsertsAndRestoresTheLinkOnRerun(t *testing.T) {
+func TestSeed_Paired_AccountsInsertsAndRestoresTheLinkOnRerun(t *testing.T) {
 	fixtures.TestDB(t)
 	ctx := context.Background()
 	prodID := uuid.MustParse("00000000-0000-0000-0000-000000000010")

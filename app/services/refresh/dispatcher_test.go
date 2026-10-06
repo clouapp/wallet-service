@@ -4,7 +4,7 @@ import (
 	"testing"
 )
 
-func TestExpandScopesForEVMFull(t *testing.T) {
+func TestExpand_Scopes_ForEVMFull(t *testing.T) {
 	req := RefreshRequest{ChainID: "eth", Scope: RefreshScopeFull}
 	scopes, err := ExpandScopes(req)
 	if err != nil {
@@ -14,7 +14,7 @@ func TestExpandScopesForEVMFull(t *testing.T) {
 	assertScopes(t, expected, scopes)
 }
 
-func TestExpandScopesForBitcoinFull(t *testing.T) {
+func TestExpand_Scopes_ForBitcoinFull(t *testing.T) {
 	req := RefreshRequest{ChainID: "btc", Scope: RefreshScopeFull}
 	scopes, err := ExpandScopes(req)
 	if err != nil {
@@ -24,7 +24,7 @@ func TestExpandScopesForBitcoinFull(t *testing.T) {
 	assertScopes(t, expected, scopes)
 }
 
-func TestExpandScopesForSolanaFull(t *testing.T) {
+func TestExpand_Scopes_ForSolanaFull(t *testing.T) {
 	req := RefreshRequest{ChainID: "sol", Scope: RefreshScopeFull}
 	scopes, err := ExpandScopes(req)
 	if err != nil {
@@ -34,7 +34,7 @@ func TestExpandScopesForSolanaFull(t *testing.T) {
 	assertScopes(t, expected, scopes)
 }
 
-func TestExpandScopesNonFull(t *testing.T) {
+func TestExpand_Scopes_NonFull(t *testing.T) {
 	req := RefreshRequest{ChainID: "eth", Scope: RefreshScopeBalances}
 	scopes, err := ExpandScopes(req)
 	if err != nil {
@@ -48,7 +48,7 @@ func TestExpandScopesNonFull(t *testing.T) {
 	}
 }
 
-func TestExpandScopesUnknownChain(t *testing.T) {
+func TestExpand_Scopes_UnknownChain(t *testing.T) {
 	req := RefreshRequest{ChainID: "unknown", Scope: RefreshScopeFull}
 	_, err := ExpandScopes(req)
 	if err == nil {
@@ -56,7 +56,7 @@ func TestExpandScopesUnknownChain(t *testing.T) {
 	}
 }
 
-func TestExpandScopesForTestnetEVM(t *testing.T) {
+func TestExpand_Scopes_ForTestnetEVM(t *testing.T) {
 	for _, chainID := range []string{"teth", "tpolygon", "base", "tbase", "arbitrum", "tarbitrum", "bsc", "tbsc"} {
 		req := RefreshRequest{ChainID: chainID, Scope: RefreshScopeFull}
 		scopes, err := ExpandScopes(req)
@@ -69,7 +69,7 @@ func TestExpandScopesForTestnetEVM(t *testing.T) {
 	}
 }
 
-func TestExpandScopesForTestnetBitcoin(t *testing.T) {
+func TestExpand_Scopes_ForTestnetBitcoin(t *testing.T) {
 	req := RefreshRequest{ChainID: "tbtc", Scope: RefreshScopeFull}
 	scopes, err := ExpandScopes(req)
 	if err != nil {
@@ -86,7 +86,7 @@ func TestExpandScopesForTestnetBitcoin(t *testing.T) {
 	}
 }
 
-func TestExpandScopesForTestnetSolana(t *testing.T) {
+func TestExpand_Scopes_ForTestnetSolana(t *testing.T) {
 	req := RefreshRequest{ChainID: "tsol", Scope: RefreshScopeFull}
 	scopes, err := ExpandScopes(req)
 	if err != nil {
@@ -97,7 +97,7 @@ func TestExpandScopesForTestnetSolana(t *testing.T) {
 	}
 }
 
-func TestExpandScopesSingleScopePassesThrough(t *testing.T) {
+func TestExpand_Scopes_SingleScopePassesThrough(t *testing.T) {
 	for _, scope := range []RefreshScope{RefreshScopeBalances, RefreshScopeTransactions, RefreshScopeTokens, RefreshScopeUtxos} {
 		scopes, err := ExpandScopes(RefreshRequest{ChainID: "eth", Scope: scope})
 		if err != nil {
@@ -109,7 +109,7 @@ func TestExpandScopesSingleScopePassesThrough(t *testing.T) {
 	}
 }
 
-func TestExpandScopesAllMainnetChains(t *testing.T) {
+func TestExpand_Scopes_AllMainnetChains(t *testing.T) {
 	cases := []struct {
 		chainID   string
 		wantCount int

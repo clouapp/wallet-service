@@ -23,7 +23,7 @@ type PlatformChainThresholdTestSuite struct {
 	authSuite
 }
 
-func TestPlatformChainThresholdSuite(t *testing.T) {
+func TestPlatform_Chain_ThresholdSuite(t *testing.T) {
 	suite.Run(t, new(PlatformChainThresholdTestSuite))
 }
 
@@ -31,7 +31,7 @@ func (s *PlatformChainThresholdTestSuite) SetupTest() {
 	testutil.SeededTestDB(s.T())
 }
 
-func (s *PlatformChainThresholdTestSuite) TestAPlatformAdminUpdatesOneThresholdTheSweepReaderSees() {
+func (s *PlatformChainThresholdTestSuite) TestA_Platform_AdminUpdatesOneThresholdTheSweepReaderSees() {
 	admin := s.seedUser(false)
 	s.grantPlatformAdmin(admin.ID)
 	session := s.signIn(admin.Email)
@@ -115,7 +115,7 @@ func (s *PlatformChainThresholdTestSuite) TestAPlatformAdminUpdatesOneThresholdT
 	s.Equal(1, seenActivity)
 }
 
-func (s *PlatformChainThresholdTestSuite) TestANonAdminIsForbiddenAndAnUnknownChainIsNotFoundFirst() {
+func (s *PlatformChainThresholdTestSuite) TestA_Non_AdminIsForbiddenAndAnUnknownChainIsNotFoundFirst() {
 	member := s.seedUser(false)
 	session := s.signIn(member.Email)
 	before := s.loadChain(models.ChainETH)
@@ -153,7 +153,7 @@ func (s *PlatformChainThresholdTestSuite) TestANonAdminIsForbiddenAndAnUnknownCh
 	s.Equal(int64(0), s.count(`SELECT count(*) FROM account_activity WHERE action = 'chains.updated'`))
 }
 
-func (s *PlatformChainThresholdTestSuite) TestANegativeValueIsValidationFailedAndTheRowStays() {
+func (s *PlatformChainThresholdTestSuite) TestA_Negative_ValueIsValidationFailedAndTheRowStays() {
 	admin := s.seedUser(false)
 	s.grantPlatformAdmin(admin.ID)
 	session := s.signIn(admin.Email)

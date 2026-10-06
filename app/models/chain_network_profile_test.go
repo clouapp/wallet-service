@@ -2,7 +2,7 @@ package models
 
 import "testing"
 
-func TestEveryProfileDecidesEveryPrimaryChainAndResolvesToItsNetwork(t *testing.T) {
+func TestEvery_Profile_DecidesEveryPrimaryChainAndResolvesToItsNetwork(t *testing.T) {
 	t.Parallel()
 
 	adapterByChain := map[string]string{
@@ -26,7 +26,7 @@ func TestEveryProfileDecidesEveryPrimaryChainAndResolvesToItsNetwork(t *testing.
 	}
 }
 
-func TestTestnetProfileUsesSepoliaAmoyBitcoinTestnetAndSolanaDevnet(t *testing.T) {
+func TestTestnet_Profile_UsesSepoliaAmoyBitcoinTestnetAndSolanaDevnet(t *testing.T) {
 	t.Parallel()
 
 	want := map[string]string{
@@ -43,7 +43,7 @@ func TestTestnetProfileUsesSepoliaAmoyBitcoinTestnetAndSolanaDevnet(t *testing.T
 	}
 }
 
-func TestProfilesPointBaseArbitrumAndBSCAtTheirMainnetsOrTestnets(t *testing.T) {
+func TestProfiles_Point_BaseArbitrumAndBSCAtTheirMainnetsOrTestnets(t *testing.T) {
 	t.Parallel()
 
 	type target struct {
@@ -76,7 +76,7 @@ func TestProfilesPointBaseArbitrumAndBSCAtTheirMainnetsOrTestnets(t *testing.T) 
 	}
 }
 
-func TestAddedTestRecordsAreAlwaysTestnetsAndEVM(t *testing.T) {
+func TestAdded_Test_RecordsAreAlwaysTestnetsAndEVM(t *testing.T) {
 	t.Parallel()
 
 	for _, chainID := range []string{ChainTBase, ChainTArbitrum, ChainTBSC} {
@@ -99,7 +99,7 @@ func TestAddedTestRecordsAreAlwaysTestnetsAndEVM(t *testing.T) {
 	}
 }
 
-func TestTestnetProfileAcceptsBitcoinOnTestnet3OrTestnet4Only(t *testing.T) {
+func TestTestnet_Profile_AcceptsBitcoinOnTestnet3OrTestnet4Only(t *testing.T) {
 	t.Parallel()
 
 	testnet, _, err := PrimaryChainNetwork(ChainNetworkProfileTestnet, ChainBTC)
@@ -132,7 +132,7 @@ func TestTestnetProfileAcceptsBitcoinOnTestnet3OrTestnet4Only(t *testing.T) {
 	}
 }
 
-func TestPrimaryChainNetworkReturnsACopyOfCompatibleNetworks(t *testing.T) {
+func TestPrimary_Chain_NetworkReturnsACopyOfCompatibleNetworks(t *testing.T) {
 	t.Parallel()
 
 	spec, _, err := PrimaryChainNetwork(ChainNetworkProfileTestnet, ChainBTC)
@@ -147,7 +147,7 @@ func TestPrimaryChainNetworkReturnsACopyOfCompatibleNetworks(t *testing.T) {
 	}
 }
 
-func TestProfilesLeaveTestChainsAloneAndRejectUnknownNames(t *testing.T) {
+func TestProfiles_Leave_TestChainsAloneAndRejectUnknownNames(t *testing.T) {
 	t.Parallel()
 
 	if _, decided, err := PrimaryChainNetwork(ChainNetworkProfileTestnet, ChainTPolygon); err != nil || decided {

@@ -9,7 +9,7 @@ import (
 	"testing"
 )
 
-func TestPrintCredentialsOmitsSeedPassphrase(t *testing.T) {
+func TestPrint_Credentials_OmitsSeedPassphrase(t *testing.T) {
 	var logs bytes.Buffer
 	previous := slog.Default()
 	slog.SetDefault(slog.New(slog.NewTextHandler(&logs, &slog.HandlerOptions{Level: slog.LevelInfo})))

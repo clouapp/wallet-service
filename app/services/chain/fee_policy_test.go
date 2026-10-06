@@ -23,7 +23,7 @@ func multiplierWallet(t *testing.T, chainID, multiplier string) *models.Wallet {
 
 func intPointer(value int) *int { return &value }
 
-func TestFeePolicyForWalletReadsTheStoredSettings(t *testing.T) {
+func TestFee_Policy_ForWalletReadsTheStoredSettings(t *testing.T) {
 	cases := []struct {
 		name       string
 		multiplier string
@@ -63,7 +63,7 @@ func TestFeePolicyForWalletReadsTheStoredSettings(t *testing.T) {
 	}
 }
 
-func TestFeePolicyForWalletChecksTheFeeRateBounds(t *testing.T) {
+func TestFee_Policy_ForWalletChecksTheFeeRateBounds(t *testing.T) {
 	wallet := multiplierWallet(t, models.ChainBTC, "")
 	wallet.FeeRateMin, wallet.FeeRateMax = intPointer(20), intPointer(10)
 	if _, err := FeePolicyForWallet(wallet); !errors.Is(err, models.ErrFeeRateBoundsInverted) {
@@ -80,7 +80,7 @@ func TestFeePolicyForWalletChecksTheFeeRateBounds(t *testing.T) {
 	}
 }
 
-func TestScaleGasPriceRoundsUpExactly(t *testing.T) {
+func TestScale_Gas_PriceRoundsUpExactly(t *testing.T) {
 	policy, err := NewFeePolicy(FeePolicyDeps{Multiplier: decimal.RequireFromString("1.25")})
 	if err != nil {
 		t.Fatal(err)
@@ -105,7 +105,7 @@ func TestScaleGasPriceRoundsUpExactly(t *testing.T) {
 	}
 }
 
-func TestAdjustMilliSatRateScalesAndClamps(t *testing.T) {
+func TestAdjust_Milli_SatRateScalesAndClamps(t *testing.T) {
 	multiplied := FeePolicy{multiplier: decimal.RequireFromString("1.5")}
 	bounded := FeePolicy{multiplier: decimal.RequireFromString("3"), minMilliSatPerVByte: 2_000, maxMilliSatPerVByte: 10_000}
 	cases := []struct {
@@ -131,7 +131,7 @@ func TestAdjustMilliSatRateScalesAndClamps(t *testing.T) {
 	}
 }
 
-func TestFeePolicyFingerprintSeparatesSettings(t *testing.T) {
+func TestFee_Policy_FingerprintSeparatesSettings(t *testing.T) {
 	defaultPrint := FeePolicyFingerprint(multiplierWallet(t, models.ChainETH, ""))
 	if defaultPrint != FeePolicyFingerprint(multiplierWallet(t, models.ChainETH, "1.0")) {
 		t.Fatal("NULL and 1.0 price identically and must share a fingerprint")

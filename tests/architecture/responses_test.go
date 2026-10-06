@@ -13,7 +13,7 @@ import (
 // Test2xxResponsesAreResources fails when a JSON body written by app/http
 // encodes a model or a value that embeds one. Resources own the wire.
 // Success and other statuses are both checked: a model must not leave as JSON.
-func Test2xxResponsesAreResources(t *testing.T) {
+func TestCode2_Responses_AreResources(t *testing.T) {
 	module := sharedModule(t)
 	pkgs, err := packages.Load(&packages.Config{
 		Mode: packages.NeedName | packages.NeedFiles | packages.NeedSyntax | packages.NeedTypes | packages.NeedTypesInfo,

@@ -18,7 +18,7 @@ type WithdrawalRepositoryTestSuite struct {
 	repo *repositories.WithdrawalRepository
 }
 
-func TestWithdrawalRepositorySuite(t *testing.T) {
+func TestWithdrawal_Repository_Suite(t *testing.T) {
 	suite.Run(t, new(WithdrawalRepositoryTestSuite))
 }
 
@@ -32,7 +32,7 @@ func (s *WithdrawalRepositoryTestSuite) insertWallet() uuid.UUID {
 	return w.ID
 }
 
-func (s *WithdrawalRepositoryTestSuite) TestCreate_Success() {
+func (s *WithdrawalRepositoryTestSuite) TestWithdrawalRepository_Create_Success() {
 	walletID := s.insertWallet()
 	w := &models.Withdrawal{
 		ID: uuid.New(), WalletID: walletID, Status: "pending",
@@ -42,7 +42,7 @@ func (s *WithdrawalRepositoryTestSuite) TestCreate_Success() {
 	s.NoError(err)
 }
 
-func (s *WithdrawalRepositoryTestSuite) TestFindByWallet_Pagination() {
+func (s *WithdrawalRepositoryTestSuite) TestFind_ByWallet_Pagination() {
 	walletID := s.insertWallet()
 	for i := 0; i < 5; i++ {
 		s.Require().NoError(s.repo.Create(context.Background(), &models.Withdrawal{
@@ -57,7 +57,7 @@ func (s *WithdrawalRepositoryTestSuite) TestFindByWallet_Pagination() {
 	s.Equal(int64(5), total)
 }
 
-func (s *WithdrawalRepositoryTestSuite) TestFindByWallet_FilterByStatus() {
+func (s *WithdrawalRepositoryTestSuite) TestFind_ByWallet_FilterByStatus() {
 	walletID := s.insertWallet()
 	s.Require().NoError(s.repo.Create(context.Background(), &models.Withdrawal{ID: uuid.New(), WalletID: walletID, Status: "pending", Amount: "0.001", FeeEstimate: "0", DestinationAddress: "0x1"}))
 	s.Require().NoError(s.repo.Create(context.Background(), &models.Withdrawal{ID: uuid.New(), WalletID: walletID, Status: "cancelled", Amount: "0.002", FeeEstimate: "0", DestinationAddress: "0x2"}))
@@ -67,7 +67,7 @@ func (s *WithdrawalRepositoryTestSuite) TestFindByWallet_FilterByStatus() {
 	s.Len(pending, 1)
 }
 
-func (s *WithdrawalRepositoryTestSuite) TestFindByIDAndWallet_Found() {
+func (s *WithdrawalRepositoryTestSuite) TestFind_ByIDAndWallet_Found() {
 	walletID := s.insertWallet()
 	w := &models.Withdrawal{ID: uuid.New(), WalletID: walletID, Status: "pending", Amount: "0.001", FeeEstimate: "0", DestinationAddress: "0x1"}
 	s.Require().NoError(s.repo.Create(context.Background(), w))
@@ -77,7 +77,7 @@ func (s *WithdrawalRepositoryTestSuite) TestFindByIDAndWallet_Found() {
 	s.NotNil(found)
 }
 
-func (s *WithdrawalRepositoryTestSuite) TestFindByIDAndWallet_WrongWallet() {
+func (s *WithdrawalRepositoryTestSuite) TestFind_ByIDAndWallet_WrongWallet() {
 	walletID := s.insertWallet()
 	w := &models.Withdrawal{ID: uuid.New(), WalletID: walletID, Status: "pending", Amount: "0.001", FeeEstimate: "0", DestinationAddress: "0x1"}
 	s.Require().NoError(s.repo.Create(context.Background(), w))
@@ -88,7 +88,7 @@ func (s *WithdrawalRepositoryTestSuite) TestFindByIDAndWallet_WrongWallet() {
 	s.Nil(found)
 }
 
-func (s *WithdrawalRepositoryTestSuite) TestUpdateStatus() {
+func (s *WithdrawalRepositoryTestSuite) TestWithdrawalRepository_Update_Status() {
 	walletID := s.insertWallet()
 	w := &models.Withdrawal{ID: uuid.New(), WalletID: walletID, Status: "pending", Amount: "0.001", FeeEstimate: "0", DestinationAddress: "0x1"}
 	s.Require().NoError(s.repo.Create(context.Background(), w))
@@ -101,7 +101,7 @@ func (s *WithdrawalRepositoryTestSuite) TestUpdateStatus() {
 	s.Equal("cancelled", found.Status)
 }
 
-func (s *WithdrawalRepositoryTestSuite) TestUpdateFieldsStoresBroadcastResult() {
+func (s *WithdrawalRepositoryTestSuite) TestUpdate_Fields_StoresBroadcastResult() {
 	walletID := s.insertWallet()
 	withdrawal := &models.Withdrawal{
 		ID:                 uuid.New(),
@@ -124,7 +124,7 @@ func (s *WithdrawalRepositoryTestSuite) TestUpdateFieldsStoresBroadcastResult() 
 	s.Equal(transactionID, *found.TransactionID)
 }
 
-func (s *WithdrawalRepositoryTestSuite) TestWithinRollsBackACreate() {
+func (s *WithdrawalRepositoryTestSuite) TestWithin_Rolls_BackACreate() {
 	walletID := s.insertWallet()
 	id := uuid.New()
 	err := s.repo.Within(context.Background(), func(ctx context.Context) error {
@@ -144,7 +144,7 @@ func (s *WithdrawalRepositoryTestSuite) TestWithinRollsBackACreate() {
 	s.Error(findErr)
 }
 
-func (s *WithdrawalRepositoryTestSuite) TestWithinRollsBackARetry() {
+func (s *WithdrawalRepositoryTestSuite) TestWithin_Rolls_BackARetry() {
 	walletID := s.insertWallet()
 	id := uuid.New()
 	s.Require().NoError(s.repo.Create(context.Background(), &models.Withdrawal{

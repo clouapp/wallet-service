@@ -7,7 +7,7 @@ import (
 
 const preflightTestWalletID = "d6a8ce92-b637-44c2-a9f1-774344802e1a"
 
-func TestReadPreflightRequest_AcceptsWithdrawalAndConsolidation(t *testing.T) {
+func TestRead_PreflightRequest_AcceptsWithdrawalAndConsolidation(t *testing.T) {
 	withdrawal, err := readPreflightRequest(strings.NewReader(`{"mode":"withdrawal","wallet_id":"` + preflightTestWalletID +
 		`","asset":"ETH","amount":"1000000000000000","to":" 0xe3c1d504c4633521197ffa736b2c9a7f93478076 ","passphrase":"twelve-chars-or-more"}`))
 	if err != nil {
@@ -22,7 +22,7 @@ func TestReadPreflightRequest_AcceptsWithdrawalAndConsolidation(t *testing.T) {
 	}
 }
 
-func TestReadPreflightRequest_RejectsIncompleteRequests(t *testing.T) {
+func TestRead_PreflightRequest_RejectsIncompleteRequests(t *testing.T) {
 	valid := map[string]string{
 		"mode": "withdrawal", "wallet_id": preflightTestWalletID, "asset": "ETH",
 		"amount": "1000", "to": "0xe3c1d504c4633521197ffa736b2c9a7f93478076", "passphrase": "twelve-chars-or-more",
@@ -54,7 +54,7 @@ func TestReadPreflightRequest_RejectsIncompleteRequests(t *testing.T) {
 	}
 }
 
-func TestReadPreflightRequest_ErrorsNeverEchoThePassphrase(t *testing.T) {
+func TestRead_PreflightRequest_ErrorsNeverEchoThePassphrase(t *testing.T) {
 	_, err := readPreflightRequest(strings.NewReader(`{"mode":"withdrawal","wallet_id":"` + preflightTestWalletID +
 		`","asset":"ETH","amount":"x","to":"0xabc","passphrase":"secret-passphrase-value"}`))
 	if err == nil || strings.Contains(err.Error(), "secret-passphrase-value") {

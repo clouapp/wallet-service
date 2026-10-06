@@ -16,7 +16,7 @@ var fixedNow = time.Date(2026, 10, 3, 5, 0, 0, 0, time.UTC)
 
 func clock(at time.Time) func() time.Time { return func() time.Time { return at } }
 
-func TestHumanAmountMatchesPythonDecimalScaling(t *testing.T) {
+func TestHuman_Amount_MatchesPythonDecimalScaling(t *testing.T) {
 	cases := []struct {
 		baseUnits string
 		decimals  int
@@ -49,7 +49,7 @@ func TestHumanAmountMatchesPythonDecimalScaling(t *testing.T) {
 	}
 }
 
-func TestParseDecimalsBounds(t *testing.T) {
+func TestParse_Decimals_Bounds(t *testing.T) {
 	for raw, want := range map[string]int{"0": 0, "18": 18, " 6 ": 6, "36": 36} {
 		if got, err := ParseDecimals(raw); err != nil || got != want {
 			t.Errorf("ParseDecimals(%q) = %d, %v", raw, got, err)
@@ -62,7 +62,7 @@ func TestParseDecimalsBounds(t *testing.T) {
 	}
 }
 
-func TestIdempotencyKeyIsPythonUUID5(t *testing.T) {
+func TestIdempotency_Key_IsPythonUUID5(t *testing.T) {
 	cases := map[string]string{
 		"base-sepolia-fund-1": "ddb6b133-6bd9-5e73-9359-4d8721cd1af5",
 		"bnb-consolidate-01":  "7962888e-7fd7-5467-afc2-88d9584e763b",
@@ -74,7 +74,7 @@ func TestIdempotencyKeyIsPythonUUID5(t *testing.T) {
 	}
 }
 
-func TestRequireAndPythonRepr(t *testing.T) {
+func TestRequire_And_PythonRepr(t *testing.T) {
 	if _, err := Require(TagPattern, "Bad Tag", "tag"); err == nil || err.Error() != "invalid tag: 'Bad Tag'" {
 		t.Fatalf("got %v", err)
 	}
@@ -91,7 +91,7 @@ func newRecordingLock(t *testing.T, now time.Time) RecordingLock {
 	return RecordingLock{Path: filepath.Join(t.TempDir(), recordingLockName), PID: 4242, Hostname: "test-host", Now: clock(now)}
 }
 
-func TestRecordingLockAcquireIsExclusiveAndReleaseChecksTheOwner(t *testing.T) {
+func TestRecording_Lock_AcquireIsExclusiveAndReleaseChecksTheOwner(t *testing.T) {
 	lock := newRecordingLock(t, fixedNow)
 	if err := lock.Acquire("send-from-base:tag-one"); err != nil {
 		t.Fatal(err)
@@ -121,7 +121,7 @@ func TestRecordingLockAcquireIsExclusiveAndReleaseChecksTheOwner(t *testing.T) {
 	}
 }
 
-func TestRecordingLockRequireHeldBy(t *testing.T) {
+func TestRecording_Lock_RequireHeldBy(t *testing.T) {
 	lock := newRecordingLock(t, fixedNow)
 	if err := lock.RequireHeldBy("recorder"); err == nil || !strings.Contains(err.Error(), "nobody holds") {
 		t.Fatalf("no lock: %v", err)
@@ -152,7 +152,7 @@ func TestRecordingLockRequireHeldBy(t *testing.T) {
 	}
 }
 
-func TestClaimTransferIsExclusiveAndNeverOverwritten(t *testing.T) {
+func TestClaim_Transfer_IsExclusiveAndNeverOverwritten(t *testing.T) {
 	locks := filepath.Join(t.TempDir(), "locks")
 	plan := pyjson.Object{{Key: "tag", Value: "tag-one"}, {Key: "amount", Value: "0.5"}}
 	claim, err := ClaimTransfer(locks, "tag-one", plan, fixedNow)
@@ -180,7 +180,7 @@ func TestClaimTransferIsExclusiveAndNeverOverwritten(t *testing.T) {
 	}
 }
 
-func TestFileLockWaitsThenGivesUp(t *testing.T) {
+func TestFile_Lock_WaitsThenGivesUp(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "locks", restartLockName)
 	first, err := AcquireFileLock(context.Background(), path, time.Second)
 	if err != nil {
@@ -203,7 +203,7 @@ func TestFileLockWaitsThenGivesUp(t *testing.T) {
 	second.Release()
 }
 
-func TestLedgerUpsertKeepsPythonLayoutAndOrder(t *testing.T) {
+func TestLedger_Upsert_KeepsPythonLayoutAndOrder(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "funding", fundingLedgerName)
 	source := "{\n  \"recordedAt\": \"2026-10-01T00:00:00+00:00\",\n  \"owner\": \"e2e\",\n  \"entries\": [\n    {\n      \"chain\": \"eth\",\n      \"tag\": \"keep-me\",\n      \"amount\": 1.5,\n      \"note\": \"caf\\u00e9\"\n    },\n    {\n      \"tag\": \"base-sepolia-fund-1\",\n      \"status\": \"old\"\n    }\n  ],\n  \"notes\": []\n}\n"
 	if err := WritePrivateFile(path, []byte(source)); err != nil {
@@ -243,7 +243,7 @@ func TestLedgerUpsertKeepsPythonLayoutAndOrder(t *testing.T) {
 	}
 }
 
-func TestParseArgsAcceptsFlagsAnywhere(t *testing.T) {
+func TestParse_Args_AcceptsFlagsAnywhere(t *testing.T) {
 	parsed, err := ParseArgs([]string{"--apply", "a", "--chain=base", "b", "--recording-lock-held-by", "owner-1", "c"}, []string{"apply"}, []string{"chain", "recording-lock-held-by"}, 3)
 	if err != nil {
 		t.Fatal(err)

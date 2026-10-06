@@ -10,7 +10,7 @@ import (
 	"github.com/macrowallets/waas/app/models"
 )
 
-func TestEnqueueInviteMailDispatchesOnlyTheInviteID(t *testing.T) {
+func TestEnqueue_Invite_MailDispatchesOnlyTheInviteID(t *testing.T) {
 	inviteID := uuid.New()
 	const (
 		firstLink = "https://app.example/accept-invite?token=minted-at-issue"
@@ -42,7 +42,7 @@ func TestEnqueueInviteMailDispatchesOnlyTheInviteID(t *testing.T) {
 	}
 }
 
-func TestEnqueueInviteMailKeepsTheStoredLinkWhenTheJobReturnsNone(t *testing.T) {
+func TestEnqueue_Invite_MailKeepsTheStoredLinkWhenTheJobReturnsNone(t *testing.T) {
 	const firstLink = "https://app.example/accept-invite?token=minted-at-issue"
 	svc := &Service{inviteMail: inviteMailFunc(func(uuid.UUID) (string, error) {
 		return "", errors.New("invite mail: send failed")
@@ -58,7 +58,7 @@ func TestEnqueueInviteMailKeepsTheStoredLinkWhenTheJobReturnsNone(t *testing.T) 
 	}
 }
 
-func TestEnqueueInviteMailWithoutAPortLeavesTheInvite(t *testing.T) {
+func TestEnqueue_Invite_MailWithoutAPortLeavesTheInvite(t *testing.T) {
 	issued := &IssuedInvite{
 		Invite:     &models.AccountInvite{ID: uuid.New()},
 		InviteLink: "https://app.example/accept-invite?token=kept",

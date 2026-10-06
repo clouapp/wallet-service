@@ -49,7 +49,7 @@ func TestMain(m *testing.M) {
 // A difference is either a bug or a decided contract change: record the
 // decided ones in .ai/guidelines/http-error-contract.md and rewrite the
 // snapshot with -update-contract.
-func TestHTTPContract(t *testing.T) {
+func TestContract_HTTP_Contract(t *testing.T) {
 	refuseOutboundMail(t)
 	fixtures.TestDB(t)
 	seedReferenceData(t)

@@ -9,7 +9,7 @@ import (
 	"github.com/macrowallets/waas/app/services/withdraw"
 )
 
-func TestWithdrawalFailureCodeNeverLeaksRawErrors(t *testing.T) {
+func TestWithdrawal_Failure_CodeNeverLeaksRawErrors(t *testing.T) {
 	published := map[string]string{
 		WithdrawalFailureInsufficientFunds:    "insufficient_funds",
 		WithdrawalFailureWalletNotGasReady:    "wallet_not_gas_ready",

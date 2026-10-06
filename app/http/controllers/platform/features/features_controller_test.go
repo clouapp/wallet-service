@@ -23,7 +23,7 @@ func featuresControllerDeps() FeaturesControllerDeps {
 	}
 }
 
-func TestNewFeaturesControllerKeepsItsDependencies(t *testing.T) {
+func TestNew_Features_ControllerKeepsItsDependencies(t *testing.T) {
 	deps := featuresControllerDeps()
 	ctrl := NewFeaturesController(deps)
 	if ctrl == nil {
@@ -37,7 +37,7 @@ func TestNewFeaturesControllerKeepsItsDependencies(t *testing.T) {
 	}
 }
 
-func TestNewFeaturesControllerRequiresEveryDependency(t *testing.T) {
+func TestNew_Features_ControllerRequiresEveryDependency(t *testing.T) {
 	cases := []struct {
 		name  string
 		clear func(*FeaturesControllerDeps)

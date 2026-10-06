@@ -7,7 +7,7 @@ import (
 	"github.com/google/uuid"
 )
 
-func TestRequestGrantsUseTheStoredRole(t *testing.T) {
+func TestRequest_Grants_UseTheStoredRole(t *testing.T) {
 	accountID := uuid.New()
 	userID := uuid.New()
 	ctx := context.WithValue(context.Background(), RequestGrantsKey(), AttachRequestGrants(accountID, userID, roleUser))
@@ -44,7 +44,7 @@ func TestRequestGrantsUseTheStoredRole(t *testing.T) {
 	}
 }
 
-func TestPreparedRequestGrantsSkipTheMembershipQuery(t *testing.T) {
+func TestPrepared_Request_GrantsSkipTheMembershipQuery(t *testing.T) {
 	accountID := uuid.New()
 	userID := uuid.New()
 
@@ -54,7 +54,7 @@ func TestPreparedRequestGrantsSkipTheMembershipQuery(t *testing.T) {
 	}
 }
 
-func TestWalletPolicyReadsRequestGrants(t *testing.T) {
+func TestWallet_Policy_ReadsRequestGrants(t *testing.T) {
 	accountID := uuid.New()
 	userID := uuid.New()
 	walletID := uuid.New()

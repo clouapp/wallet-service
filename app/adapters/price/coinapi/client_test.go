@@ -15,7 +15,7 @@ import (
 	"github.com/macrowallets/waas/pkg/httpclient"
 )
 
-func TestNewCoinAPIProviderUsesTheRESTHost(t *testing.T) {
+func TestNew_Coin_APIProviderUsesTheRESTHost(t *testing.T) {
 	provider := NewCoinAPIProvider("")
 	if provider.baseURL != restBaseURL || provider.apiKey != "" || provider.client == nil {
 		t.Fatal("an empty key did not build the CoinAPI REST client")
@@ -25,7 +25,7 @@ func TestNewCoinAPIProviderUsesTheRESTHost(t *testing.T) {
 	}
 }
 
-func TestFetchCryptoPricesRequiresAKeyBeforeHTTP(t *testing.T) {
+func TestFetch_Crypto_PricesRequiresAKeyBeforeHTTP(t *testing.T) {
 	called := false
 	server := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
 		called = true
@@ -44,7 +44,7 @@ func TestFetchCryptoPricesRequiresAKeyBeforeHTTP(t *testing.T) {
 	}
 }
 
-func TestFetchCryptoPricesReadsTheUSDQuote(t *testing.T) {
+func TestFetch_Crypto_PricesReadsTheUSDQuote(t *testing.T) {
 	const restKey = "coinapi-rest-not-logged"
 	var sawKey bool
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -80,7 +80,7 @@ func TestFetchCryptoPricesReadsTheUSDQuote(t *testing.T) {
 	}
 }
 
-func TestFetchFiatRatesInvertsTheQuote(t *testing.T) {
+func TestFetch_Fiat_RatesInvertsTheQuote(t *testing.T) {
 	const restKey = "coinapi-rest-not-logged"
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Query().Get("invert") != "true" || r.URL.Query().Get("filter_asset_id") != "eur,BRL" {
@@ -112,7 +112,7 @@ func TestFetchFiatRatesInvertsTheQuote(t *testing.T) {
 	}
 }
 
-func TestGetOmitsTheKeyFromErrors(t *testing.T) {
+func TestGet_Omits_TheKeyFromErrors(t *testing.T) {
 	const restKey = "coinapi-rest-not-logged"
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusTooManyRequests)
@@ -141,7 +141,7 @@ func TestGetOmitsTheKeyFromErrors(t *testing.T) {
 	}
 }
 
-func TestFetchCryptoPricesStopsWhenTheContextIsCanceled(t *testing.T) {
+func TestFetch_Crypto_PricesStopsWhenTheContextIsCanceled(t *testing.T) {
 	called := false
 	server := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
 		called = true

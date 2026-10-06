@@ -42,7 +42,7 @@ func signBitcoinP2WPKHForTest(t *testing.T, unsigned *types.UnsignedTx, privateK
 	return signed
 }
 
-func TestBitcoinSignP2WPKH(t *testing.T) {
+func TestBitcoin_Sign_P2WPKH(t *testing.T) {
 	priv, err := btcec.NewPrivateKey()
 	if err != nil {
 		t.Fatal(err)
@@ -80,7 +80,7 @@ func TestBitcoinSignP2WPKH(t *testing.T) {
 	}
 }
 
-func TestBitcoinBuildTransferREST(t *testing.T) {
+func TestBitcoin_Build_TransferREST(t *testing.T) {
 	const txid = "2222222222222222222222222222222222222222222222222222222222222222"
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/address/bc1qexample/utxo" {
@@ -115,7 +115,7 @@ func TestBitcoinBuildTransferREST(t *testing.T) {
 	}
 }
 
-func TestBitcoinBroadcastREST(t *testing.T) {
+func TestBitcoin_Broadcast_REST(t *testing.T) {
 	raw := []byte{0x01, 0x02}
 	var gotBody string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -140,7 +140,7 @@ func TestBitcoinBroadcastREST(t *testing.T) {
 	}
 }
 
-func TestBitcoinBuildSweep(t *testing.T) {
+func TestBitcoin_Build_Sweep(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !strings.HasSuffix(r.URL.Path, "/utxo") {
 			http.NotFound(w, r)

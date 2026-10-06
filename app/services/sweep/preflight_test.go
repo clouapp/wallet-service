@@ -33,7 +33,7 @@ func preflightService(t *testing.T, fixture *secp256k1WalletFixture, adapter typ
 	return svc, txRepo
 }
 
-func TestPreflightWithdrawal_EVMBaseIsSignedVerifiedAndNotBroadcast(t *testing.T) {
+func TestPreflight_Withdrawal_EVMBaseIsSignedVerifiedAndNotBroadcast(t *testing.T) {
 	var broadcasts []*types.SignedTx
 	adapter := newEVMSigningChain(t, &broadcasts)
 	fixture := newSecp256k1WalletFixture(t, adapter, evmE2EChildIndex)
@@ -62,7 +62,7 @@ func TestPreflightWithdrawal_EVMBaseIsSignedVerifiedAndNotBroadcast(t *testing.T
 	}
 }
 
-func TestPreflightWithdrawal_EVMChildIsSignedAsTheChild(t *testing.T) {
+func TestPreflight_Withdrawal_EVMChildIsSignedAsTheChild(t *testing.T) {
 	var broadcasts []*types.SignedTx
 	adapter := newEVMSigningChain(t, &broadcasts)
 	fixture := newSecp256k1WalletFixture(t, adapter, evmE2EChildIndex)
@@ -80,7 +80,7 @@ func TestPreflightWithdrawal_EVMChildIsSignedAsTheChild(t *testing.T) {
 	}
 }
 
-func TestPreflightWithdrawal_WrongPassphraseSignsNothing(t *testing.T) {
+func TestPreflight_Withdrawal_WrongPassphraseSignsNothing(t *testing.T) {
 	var broadcasts []*types.SignedTx
 	adapter := newEVMSigningChain(t, &broadcasts)
 	fixture := newSecp256k1WalletFixture(t, adapter, evmE2EChildIndex)
@@ -97,7 +97,7 @@ func TestPreflightWithdrawal_WrongPassphraseSignsNothing(t *testing.T) {
 	}
 }
 
-func TestPreflightWithdrawal_RefusesPlansItCannotSignUpFront(t *testing.T) {
+func TestPreflight_Withdrawal_RefusesPlansItCannotSignUpFront(t *testing.T) {
 	var broadcasts []*types.SignedTx
 	adapter := newEVMSigningChain(t, &broadcasts)
 	fixture := newSecp256k1WalletFixture(t, adapter, evmE2EChildIndex)
@@ -122,7 +122,7 @@ func TestPreflightWithdrawal_RefusesPlansItCannotSignUpFront(t *testing.T) {
 	}
 }
 
-func TestPreflightConsolidation_EVMChildSweepIsSignedAsTheChild(t *testing.T) {
+func TestPreflight_Consolidation_EVMChildSweepIsSignedAsTheChild(t *testing.T) {
 	var broadcasts []*types.SignedTx
 	adapter := newEVMSigningChain(t, &broadcasts)
 	fixture := newSecp256k1WalletFixture(t, adapter, evmE2EChildIndex)
@@ -149,7 +149,7 @@ func TestPreflightConsolidation_EVMChildSweepIsSignedAsTheChild(t *testing.T) {
 	}
 }
 
-func TestPreflightConsolidation_UnknownWalletFails(t *testing.T) {
+func TestPreflight_Consolidation_UnknownWalletFails(t *testing.T) {
 	var broadcasts []*types.SignedTx
 	adapter := newEVMSigningChain(t, &broadcasts)
 	fixture := newSecp256k1WalletFixture(t, adapter, evmE2EChildIndex)
@@ -161,7 +161,7 @@ func TestPreflightConsolidation_UnknownWalletFails(t *testing.T) {
 	}
 }
 
-func TestPreflightWithdrawal_BitcoinBaseSpendIsSignedAndNotBroadcast(t *testing.T) {
+func TestPreflight_Withdrawal_BitcoinBaseSpendIsSignedAndNotBroadcast(t *testing.T) {
 	var broadcasts []*types.SignedTx
 	adapter := newBitcoinSigningChain(t, &broadcasts)
 	fixture := newSecp256k1WalletFixture(t, adapter, btcE2EChildIndex)

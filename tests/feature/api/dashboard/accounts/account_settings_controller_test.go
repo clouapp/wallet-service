@@ -28,7 +28,7 @@ type accountSettingsSuite struct {
 	goravelTesting.TestCase
 }
 
-func TestAccountSettingsSuite(t *testing.T) {
+func TestAccount_Settings_Suite(t *testing.T) {
 	suite.Run(t, new(accountSettingsSuite))
 }
 
@@ -36,7 +36,7 @@ func (s *accountSettingsSuite) SetupTest() {
 	fixtures.TestDB(s.T())
 }
 
-func (s *accountSettingsSuite) TestStoredSweepLimitIsAppliedWhenSweepLoadsLimits() {
+func (s *accountSettingsSuite) TestStored_Sweep_LimitIsAppliedWhenSweepLoadsLimits() {
 	accountID, _ := s.owner()
 	sweepService := s.sweepService()
 
@@ -81,7 +81,7 @@ func (s *accountSettingsSuite) sweepService() sweep.Service {
 	return vault.SweepService
 }
 
-func (s *accountSettingsSuite) TestGetHidesSecretAndShowsIsSet() {
+func (s *accountSettingsSuite) TestGet_Hides_SecretAndShowsIsSet() {
 	accountID, token := s.owner()
 	s.patch(token, accountID, "account_webhooks", `{"signing_secret":"first-secret"}`, 200)
 
@@ -95,7 +95,7 @@ func (s *accountSettingsSuite) TestGetHidesSecretAndShowsIsSet() {
 	s.NotContains(body, "enc:v1:")
 }
 
-func (s *accountSettingsSuite) TestGetRegistryFollowsSettingsRead() {
+func (s *accountSettingsSuite) TestGet_Registry_FollowsSettingsRead() {
 	accountID, ownerToken := s.owner()
 	const sentinel = "view-gate-sentinel"
 	s.patch(ownerToken, accountID, "account_webhooks", `{"signing_secret":"`+sentinel+`"}`, 200)
@@ -138,7 +138,7 @@ func (s *accountSettingsSuite) TestGetRegistryFollowsSettingsRead() {
 	s.Empty(parsed.Sections)
 }
 
-func (s *accountSettingsSuite) TestPatchBlankSecretKeepsTheStoredValue() {
+func (s *accountSettingsSuite) TestPatch_Blank_SecretKeepsTheStoredValue() {
 	accountID, token := s.owner()
 	s.patch(token, accountID, "account_webhooks", `{"signing_secret":"first-secret"}`, 200)
 	before := s.storedSecret(accountID)
@@ -154,7 +154,7 @@ func (s *accountSettingsSuite) TestPatchBlankSecretKeepsTheStoredValue() {
 	s.Equal("first-secret", plain)
 }
 
-func (s *accountSettingsSuite) TestPatchNewSecretIsStoredAndGetHidesIt() {
+func (s *accountSettingsSuite) TestPatch_New_SecretIsStoredAndGetHidesIt() {
 	accountID, token := s.owner()
 	s.patch(token, accountID, "account_webhooks", `{"signing_secret":"second-secret"}`, 200)
 
@@ -173,7 +173,7 @@ func (s *accountSettingsSuite) TestPatchNewSecretIsStoredAndGetHidesIt() {
 	s.NotContains(body, "second-secret")
 }
 
-func (s *accountSettingsSuite) TestPatchAuditorCannotUpdate() {
+func (s *accountSettingsSuite) TestPatch_Auditor_CannotUpdate() {
 	accountID, _ := s.owner()
 	token := s.member(accountID, "auditor")
 
@@ -193,7 +193,7 @@ func (s *accountSettingsSuite) TestPatchAuditorCannotUpdate() {
 	s.Empty(s.storedSecret(accountID))
 }
 
-func (s *accountSettingsSuite) TestAdminCanUpdateAnAccountGroup() {
+func (s *accountSettingsSuite) TestAdmin_Can_UpdateAnAccountGroup() {
 	accountID, _ := s.owner()
 	admin := s.member(accountID, models.AccountRoleAdmin)
 
@@ -206,7 +206,7 @@ func (s *accountSettingsSuite) TestAdminCanUpdateAnAccountGroup() {
 	s.Equal(float64(50), s.groupField(saved, "session_idle_minutes")["value"])
 }
 
-func (s *accountSettingsSuite) TestPatchUnknownGroupIsNotFound() {
+func (s *accountSettingsSuite) TestPatch_Unknown_GroupIsNotFound() {
 	accountID, token := s.owner()
 	response := s.patch(token, accountID, "not-a-group", `{}`, 404)
 	s.Equal("not_found", response["error"].(map[string]any)["code"])
@@ -229,7 +229,7 @@ func (s *accountSettingsSuite) TestPatchUnknownGroupIsNotFound() {
 	s.Empty(s.storedSecret(accountID))
 }
 
-func (s *accountSettingsSuite) TestPatchUserCannotViewOrUpdate() {
+func (s *accountSettingsSuite) TestPatch_User_CannotViewOrUpdate() {
 	accountID, _ := s.owner()
 	token := s.member(accountID, "user")
 	s.get(token, accountID, 403)
@@ -261,7 +261,7 @@ func (s *accountSettingsSuite) TestPatchUserCannotViewOrUpdate() {
 	s.Empty(s.storedSecret(accountID))
 }
 
-func (s *accountSettingsSuite) TestGetDecimalTravelsAsString() {
+func (s *accountSettingsSuite) TestGet_Decimal_TravelsAsString() {
 	accountID, token := s.owner()
 	_, err := facades.Orm().Query().Exec(
 		`INSERT INTO settings (account_id, "group", "key", value, created_at, updated_at)
@@ -280,7 +280,7 @@ func (s *accountSettingsSuite) TestGetDecimalTravelsAsString() {
 	s.Equal("forbidden", response["error"].(map[string]any)["code"])
 }
 
-func (s *accountSettingsSuite) TestResetSectionClearsThePageAndRecordsFieldNames() {
+func (s *accountSettingsSuite) TestReset_Section_ClearsThePageAndRecordsFieldNames() {
 	accountID, token := s.owner()
 	otherID, _ := s.owner()
 	s.patch(token, accountID, "account_webhooks", `{"signing_secret":"reset-me-secret"}`, 200)
@@ -430,7 +430,7 @@ func (s *accountSettingsSuite) TestResetSectionClearsThePageAndRecordsFieldNames
 	s.False(hasValue)
 }
 
-func (s *accountSettingsSuite) TestFlushSectionLeavesStoredRowsAndDropsOnlyThatPageCache() {
+func (s *accountSettingsSuite) TestFlush_Section_LeavesStoredRowsAndDropsOnlyThatPageCache() {
 	accountID, token := s.owner()
 	s.patch(token, accountID, "account_security", `{"session_idle_minutes":45}`, 200)
 	_, err := facades.Orm().Query().Exec(
@@ -491,7 +491,7 @@ func (s *accountSettingsSuite) TestFlushSectionLeavesStoredRowsAndDropsOnlyThatP
 	s.Equal(before, after)
 }
 
-func (s *accountSettingsSuite) TestFlushUnknownSectionIsNotFoundBeforeForbidden() {
+func (s *accountSettingsSuite) TestFlush_Unknown_SectionIsNotFoundBeforeForbidden() {
 	accountID, token := s.owner()
 	securityKey := accountSettingsCacheKey(accountID, "account_security")
 	s.T().Cleanup(func() { facades.Cache().Forget(securityKey) })
@@ -554,7 +554,7 @@ func (s *accountSettingsSuite) assertCacheKeySurvived(key, sentinel string) {
 	s.Fail("refused flush left a cache value that is neither the sentinel nor a settings document")
 }
 
-func (s *accountSettingsSuite) TestFlushPlatformManagedSectionIsForbidden() {
+func (s *accountSettingsSuite) TestFlush_Platform_ManagedSectionIsForbidden() {
 	accountID, token := s.owner()
 	_, err := facades.Orm().Query().Exec(
 		`INSERT INTO settings (account_id, "group", "key", value, created_at, updated_at)
@@ -579,7 +579,7 @@ func (s *accountSettingsSuite) TestFlushPlatformManagedSectionIsForbidden() {
 	s.Equal("12.50", cap)
 }
 
-func (s *accountSettingsSuite) TestResetUnknownSectionIsNotFoundBeforeForbidden() {
+func (s *accountSettingsSuite) TestReset_Unknown_SectionIsNotFoundBeforeForbidden() {
 	accountID, token := s.owner()
 	s.insertSecurityIdle(accountID, "45")
 
@@ -670,7 +670,7 @@ func (s *accountSettingsSuite) assertSecurityIdleAbsent(accountID uuid.UUID) {
 	s.Equal(int64(0), rows)
 }
 
-func (s *accountSettingsSuite) TestResetPlatformManagedSectionIsForbidden() {
+func (s *accountSettingsSuite) TestReset_Platform_ManagedSectionIsForbidden() {
 	accountID, token := s.owner()
 	_, err := facades.Orm().Query().Exec(
 		`INSERT INTO settings (account_id, "group", "key", value, created_at, updated_at)
@@ -699,7 +699,7 @@ func (s *accountSettingsSuite) TestResetPlatformManagedSectionIsForbidden() {
 	s.Equal(int64(0), resets)
 }
 
-func (s *accountSettingsSuite) TestPatchUnknownKeyIsValidation() {
+func (s *accountSettingsSuite) TestPatch_Unknown_KeyIsValidation() {
 	accountID, token := s.owner()
 	raw := s.patchRaw(token, accountID, "account_security", `{"not_a_key":"x"}`, 422)
 	var body struct {
@@ -711,7 +711,7 @@ func (s *accountSettingsSuite) TestPatchUnknownKeyIsValidation() {
 	s.NotEmpty(body.Errors["not_a_key"])
 }
 
-func (s *accountSettingsSuite) TestGetGroupReadsOneAccountAndHidesTheSecret() {
+func (s *accountSettingsSuite) TestGet_Group_ReadsOneAccountAndHidesTheSecret() {
 	accountID, token := s.owner()
 	otherID, _ := s.owner()
 	secret := "group-read-secret"
@@ -805,7 +805,7 @@ func (s *accountSettingsSuite) TestGetGroupReadsOneAccountAndHidesTheSecret() {
 	s.Equal(before, after)
 }
 
-func (s *accountSettingsSuite) TestGetGroupUnknownIsNotFoundBeforeForbidden() {
+func (s *accountSettingsSuite) TestGet_Group_UnknownIsNotFoundBeforeForbidden() {
 	accountID, token := s.owner()
 	response := s.getGroupParsed(token, accountID, "not-a-group", 404)
 	s.Equal("not_found", response["error"].(map[string]any)["code"])
@@ -842,7 +842,7 @@ func (s *accountSettingsSuite) TestGetGroupUnknownIsNotFoundBeforeForbidden() {
 	}
 }
 
-func (s *accountSettingsSuite) TestPutSharesThePatchBodyRules() {
+func (s *accountSettingsSuite) TestPut_Shares_ThePatchBodyRules() {
 	accountID, token := s.owner()
 	secret := "put-keeps-secret"
 	saved := s.putRaw(token, accountID, "account_webhooks", fmt.Sprintf(`{"signing_secret":%q}`, secret), 200)
@@ -890,7 +890,7 @@ func (s *accountSettingsSuite) TestPutSharesThePatchBodyRules() {
 	s.Equal(float64(45), s.groupField(idle, "session_idle_minutes")["value"])
 }
 
-func (s *accountSettingsSuite) TestAnAccountSaveRecordsAccountScopeAndValueSet() {
+func (s *accountSettingsSuite) TestAn_Account_SaveRecordsAccountScopeAndValueSet() {
 	accountID, token := s.owner()
 	otherID, otherToken := s.owner()
 	const secret = "account-scope-audit-marker"

@@ -13,7 +13,7 @@ func chainsControllerDeps() ChainsControllerDeps {
 	}
 }
 
-func TestNewChainsControllerKeepsItsDependencies(t *testing.T) {
+func TestNew_Chains_ControllerKeepsItsDependencies(t *testing.T) {
 	deps := chainsControllerDeps()
 	ctrl := NewChainsController(deps)
 	if ctrl == nil {
@@ -27,7 +27,7 @@ func TestNewChainsControllerKeepsItsDependencies(t *testing.T) {
 	}
 }
 
-func TestNewChainsControllerRequiresEveryDependency(t *testing.T) {
+func TestNew_Chains_ControllerRequiresEveryDependency(t *testing.T) {
 	cases := []struct {
 		name  string
 		clear func(*ChainsControllerDeps)

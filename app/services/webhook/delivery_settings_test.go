@@ -14,7 +14,7 @@ import (
 	"github.com/macrowallets/waas/app/models"
 )
 
-func TestDeliverPending_StoredLimitAndTimeoutOverrideTheEventRow(t *testing.T) {
+func TestDeliver_Pending_StoredLimitAndTimeoutOverrideTheEventRow(t *testing.T) {
 	f := newScopedFixture(t)
 	var hit atomic.Bool
 	release := make(chan struct{})
@@ -58,7 +58,7 @@ func TestDeliverPending_StoredLimitAndTimeoutOverrideTheEventRow(t *testing.T) {
 	}
 }
 
-func TestDeliverPending_SettingsOutageKeepsTheDefaultAndStillDelivers(t *testing.T) {
+func TestDeliver_Pending_SettingsOutageKeepsTheDefaultAndStillDelivers(t *testing.T) {
 	f := newScopedFixture(t)
 	f.svc.SetDeliverySettingsSource(func(context.Context) (DeliverySettings, error) {
 		return DeliverySettings{}, errors.New("settings down")
@@ -83,7 +83,7 @@ func TestDeliverPending_SettingsOutageKeepsTheDefaultAndStillDelivers(t *testing
 	}
 }
 
-func TestDeliverySettingsFromStored_ZeroKeepsTheDefault(t *testing.T) {
+func TestDelivery_SettingsFromStored_ZeroKeepsTheDefault(t *testing.T) {
 	t.Parallel()
 
 	got := DeliverySettingsFromStored(0, 0)
@@ -97,7 +97,7 @@ func TestDeliverySettingsFromStored_ZeroKeepsTheDefault(t *testing.T) {
 	}
 }
 
-func TestResolveDeliverySettings_NilSourceKeepsTheDefault(t *testing.T) {
+func TestResolve_DeliverySettings_NilSourceKeepsTheDefault(t *testing.T) {
 	t.Parallel()
 
 	got := NewService(Deps{}).resolveDeliverySettings(context.Background())

@@ -10,7 +10,7 @@ import (
 	"github.com/macrowallets/waas/tests/feature/support/fixtures"
 )
 
-func TestChainsThresholdsNotNullBackfillsAndRejectsNull(t *testing.T) {
+func TestChains_Thresholds_NotNullBackfillsAndRejectsNull(t *testing.T) {
 	fixtures.TestDB(t)
 	migration := &migrations.M00000000000580ChainsThresholdsNotNull{}
 
@@ -61,7 +61,7 @@ func TestChainsThresholdsNotNullBackfillsAndRejectsNull(t *testing.T) {
 	require.Equal(t, "NO", chainColumnNullable(t, "dust_threshold_native_raw"))
 }
 
-func TestChainsThresholdsNotNullRejectsAnUnknownNullChain(t *testing.T) {
+func TestChains_Thresholds_NotNullRejectsAnUnknownNullChain(t *testing.T) {
 	fixtures.TestDB(t)
 	migration := &migrations.M00000000000580ChainsThresholdsNotNull{}
 	require.NoError(t, migration.Down())

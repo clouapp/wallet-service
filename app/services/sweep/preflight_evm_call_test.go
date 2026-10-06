@@ -46,7 +46,7 @@ func evmCallTestUnsigned(t *testing.T, chainID string, networkID int64) (*evmSig
 	}
 }
 
-func TestPreflightEVMCall_SignsForAnotherNetworkWithTheBaseKey(t *testing.T) {
+func TestPreflight_EVMCall_SignsForAnotherNetworkWithTheBaseKey(t *testing.T) {
 	var broadcasts []*types.SignedTx
 	walletAdapter := newEVMSigningChain(t, &broadcasts)
 	fixture := newSecp256k1WalletFixture(t, walletAdapter, evmE2EChildIndex)
@@ -79,7 +79,7 @@ func TestPreflightEVMCall_SignsForAnotherNetworkWithTheBaseKey(t *testing.T) {
 	}
 }
 
-func TestPreflightEVMCall_RefusesWhatItCannotSign(t *testing.T) {
+func TestPreflight_EVMCall_RefusesWhatItCannotSign(t *testing.T) {
 	var broadcasts []*types.SignedTx
 	walletAdapter := newEVMSigningChain(t, &broadcasts)
 	fixture := newSecp256k1WalletFixture(t, walletAdapter, evmE2EChildIndex)

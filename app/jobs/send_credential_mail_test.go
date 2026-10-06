@@ -13,7 +13,7 @@ import (
 	"github.com/macrowallets/waas/app/services/credentialmail"
 )
 
-func TestCredentialMailArgsCarryNoCredential(t *testing.T) {
+func TestCredential_Mail_ArgsCarryNoCredential(t *testing.T) {
 	subjectID := uuid.MustParse("11111111-1111-1111-1111-111111111111")
 	for _, purpose := range []string{credentialmail.PurposePasswordReset, credentialmail.PurposeAccountInvite} {
 		args, err := CredentialMailArgs(subjectID, purpose)
@@ -49,7 +49,7 @@ func TestCredentialMailArgsCarryNoCredential(t *testing.T) {
 	}
 }
 
-func TestSendCredentialMailRejectsExtraArgsBeforeSending(t *testing.T) {
+func TestSend_Credential_MailRejectsExtraArgsBeforeSending(t *testing.T) {
 	job := &SendCredentialMailJob{}
 	if job.Signature() != "send_credential_mail" {
 		t.Fatalf("signature = %s", job.Signature())
@@ -72,7 +72,7 @@ func TestSendCredentialMailRejectsExtraArgsBeforeSending(t *testing.T) {
 	}
 }
 
-func TestSendCredentialMailHandleCallsSendOnce(t *testing.T) {
+func TestSend_Credential_MailHandleCallsSendOnce(t *testing.T) {
 	userID := uuid.MustParse("22222222-2222-2222-2222-222222222222")
 	var resets int
 	job := NewSendCredentialMailJob(credentialmail.NewService(credentialmail.Deps{

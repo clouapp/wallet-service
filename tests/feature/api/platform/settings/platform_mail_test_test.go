@@ -34,7 +34,7 @@ type PlatformMailTestSuite struct {
 	sends *mailTestCapture
 }
 
-func TestPlatformMailTestSuite(t *testing.T) {
+func TestPlatform_Mail_TestSuite(t *testing.T) {
 	suite.Run(t, new(PlatformMailTestSuite))
 }
 
@@ -54,7 +54,7 @@ func (s *PlatformMailTestSuite) SetupTest() {
 	})
 }
 
-func (s *PlatformMailTestSuite) TestAdminSendsOnceAndTheResponseHasNoPassword() {
+func (s *PlatformMailTestSuite) TestAdmin_Sends_OnceAndTheResponseHasNoPassword() {
 	admin := s.seedUser(false)
 	s.grantPlatformAdmin(admin.ID)
 	session := s.signIn(admin.Email)
@@ -81,7 +81,7 @@ func (s *PlatformMailTestSuite) TestAdminSendsOnceAndTheResponseHasNoPassword() 
 	s.Equal(before, s.count(`SELECT count(*) FROM account_activity`))
 }
 
-func (s *PlatformMailTestSuite) TestANonAdminIsForbiddenAndNothingIsSent() {
+func (s *PlatformMailTestSuite) TestA_Non_AdminIsForbiddenAndNothingIsSent() {
 	member := s.seedUser(false)
 	session := s.signIn(member.Email)
 	before := s.count(`SELECT count(*) FROM account_activity`)
@@ -101,7 +101,7 @@ func (s *PlatformMailTestSuite) TestANonAdminIsForbiddenAndNothingIsSent() {
 	s.Equal(before, s.count(`SELECT count(*) FROM account_activity`))
 }
 
-func (s *PlatformMailTestSuite) TestAnInvalidAddressIsRejectedAndNothingIsSent() {
+func (s *PlatformMailTestSuite) TestAn_Invalid_AddressIsRejectedAndNothingIsSent() {
 	admin := s.seedUser(false)
 	s.grantPlatformAdmin(admin.ID)
 	session := s.signIn(admin.Email)
@@ -116,7 +116,7 @@ func (s *PlatformMailTestSuite) TestAnInvalidAddressIsRejectedAndNothingIsSent()
 	s.Equal(int64(0), s.count(`SELECT count(*) FROM settings WHERE account_id IS NULL AND "group" = 'mail_smtp'`))
 }
 
-func (s *PlatformMailTestSuite) TestAMailerFailureIsBadGatewayWithoutCredentials() {
+func (s *PlatformMailTestSuite) TestA_Mailer_FailureIsBadGatewayWithoutCredentials() {
 	admin := s.seedUser(false)
 	s.grantPlatformAdmin(admin.ID)
 	session := s.signIn(admin.Email)
@@ -136,7 +136,7 @@ func (s *PlatformMailTestSuite) TestAMailerFailureIsBadGatewayWithoutCredentials
 	s.Equal(1, s.sends.count())
 }
 
-func (s *PlatformMailTestSuite) TestGetMailGroupIsNotTheTestRoute() {
+func (s *PlatformMailTestSuite) TestGet_Mail_GroupIsNotTheTestRoute() {
 	admin := s.seedUser(false)
 	s.grantPlatformAdmin(admin.ID)
 	session := s.signIn(admin.Email)

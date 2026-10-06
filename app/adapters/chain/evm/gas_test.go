@@ -66,7 +66,7 @@ func builtGasPrice(t *testing.T, unsigned *types.UnsignedTx) *big.Int {
 	return price
 }
 
-func TestEVMBuildTransfer_TokenUsesEstimateWithMargin(t *testing.T) {
+func TestEVM_BuildTransfer_TokenUsesEstimateWithMargin(t *testing.T) {
 	node := mocks.NewFakeEVMNode(t)
 	node.EstimateGasHex = "0x134a4" // 79_012
 	adapter := newGasTestAdapter(t, node)
@@ -98,7 +98,7 @@ func TestEVMBuildTransfer_TokenUsesEstimateWithMargin(t *testing.T) {
 	}
 }
 
-func TestEVMBuildTransfer_TokenEstimateBelowFloorUsesFloor(t *testing.T) {
+func TestEVM_BuildTransfer_TokenEstimateBelowFloorUsesFloor(t *testing.T) {
 	node := mocks.NewFakeEVMNode(t)
 	node.EstimateGasHex = "0x9c40" // 40_000 → 50_000 with margin, below the floor
 	adapter := newGasTestAdapter(t, node)
@@ -112,7 +112,7 @@ func TestEVMBuildTransfer_TokenEstimateBelowFloorUsesFloor(t *testing.T) {
 	}
 }
 
-func TestEVMBuildTransfer_TokenEstimateErrorFailsWithoutFallback(t *testing.T) {
+func TestEVM_BuildTransfer_TokenEstimateErrorFailsWithoutFallback(t *testing.T) {
 	node := mocks.NewFakeEVMNode(t)
 	node.EstimateGasError = "execution reverted"
 	adapter := newGasTestAdapter(t, node)
@@ -135,7 +135,7 @@ func TestEVMBuildTransfer_TokenEstimateErrorFailsWithoutFallback(t *testing.T) {
 	}
 }
 
-func TestEVMBuildTransfer_TokenZeroEstimateIsAnError(t *testing.T) {
+func TestEVM_BuildTransfer_TokenZeroEstimateIsAnError(t *testing.T) {
 	node := mocks.NewFakeEVMNode(t)
 	node.EstimateGasHex = "0x0"
 	adapter := newGasTestAdapter(t, node)
@@ -145,7 +145,7 @@ func TestEVMBuildTransfer_TokenZeroEstimateIsAnError(t *testing.T) {
 	}
 }
 
-func TestEVMBuildTransfer_NativeKeepsFixedLimitWithoutEstimate(t *testing.T) {
+func TestEVM_BuildTransfer_NativeKeepsFixedLimitWithoutEstimate(t *testing.T) {
 	node := mocks.NewFakeEVMNode(t)
 	adapter := newGasTestAdapter(t, node)
 
@@ -163,7 +163,7 @@ func TestEVMBuildTransfer_NativeKeepsFixedLimitWithoutEstimate(t *testing.T) {
 	}
 }
 
-func TestEVMBuildTransfer_CallerGasLimitSkipsEstimate(t *testing.T) {
+func TestEVM_BuildTransfer_CallerGasLimitSkipsEstimate(t *testing.T) {
 	node := mocks.NewFakeEVMNode(t)
 	adapter := newGasTestAdapter(t, node)
 	req := tokenTransferRequest()
@@ -182,7 +182,7 @@ func TestEVMBuildTransfer_CallerGasLimitSkipsEstimate(t *testing.T) {
 	}
 }
 
-func TestEVMEstimateFee_TokenMatchesBuiltGasTimesPrice(t *testing.T) {
+func TestEVM_EstimateFee_TokenMatchesBuiltGasTimesPrice(t *testing.T) {
 	node := mocks.NewFakeEVMNode(t)
 	node.EstimateGasHex = "0x134a4"
 	adapter := newGasTestAdapter(t, node)
@@ -208,7 +208,7 @@ func TestEVMEstimateFee_TokenMatchesBuiltGasTimesPrice(t *testing.T) {
 	}
 }
 
-func TestEVMEstimateFee_TokenEstimateErrorIsReturned(t *testing.T) {
+func TestEVM_EstimateFee_TokenEstimateErrorIsReturned(t *testing.T) {
 	node := mocks.NewFakeEVMNode(t)
 	node.EstimateGasError = "execution reverted"
 	adapter := newGasTestAdapter(t, node)
@@ -218,7 +218,7 @@ func TestEVMEstimateFee_TokenEstimateErrorIsReturned(t *testing.T) {
 	}
 }
 
-func TestEVMBuildSweep_TokenSeedsAndSweepsWithEstimatedLimit(t *testing.T) {
+func TestEVM_BuildSweep_TokenSeedsAndSweepsWithEstimatedLimit(t *testing.T) {
 	node := mocks.NewFakeEVMNode(t)
 	node.EstimateGasHex = "0x134a4"
 	adapter := newGasTestAdapter(t, node)
@@ -254,7 +254,7 @@ func TestEVMBuildSweep_TokenSeedsAndSweepsWithEstimatedLimit(t *testing.T) {
 	}
 }
 
-func TestEVMBuildSweep_TokenSkipsSeedWhenNativeCoversEstimatedFee(t *testing.T) {
+func TestEVM_BuildSweep_TokenSkipsSeedWhenNativeCoversEstimatedFee(t *testing.T) {
 	node := mocks.NewFakeEVMNode(t)
 	node.EstimateGasHex = "0x134a4"
 	adapter := newGasTestAdapter(t, node)
@@ -285,7 +285,7 @@ func TestEVMBuildSweep_TokenSkipsSeedWhenNativeCoversEstimatedFee(t *testing.T) 
 	}
 }
 
-func TestEVMEstimateTransferGasLimit_RejectsIncompleteTokenRequest(t *testing.T) {
+func TestEVM_EstimateTransferGasLimit_RejectsIncompleteTokenRequest(t *testing.T) {
 	node := mocks.NewFakeEVMNode(t)
 	adapter := newGasTestAdapter(t, node)
 

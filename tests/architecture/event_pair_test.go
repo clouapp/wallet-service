@@ -20,7 +20,7 @@ var singleJobEvents = map[string]bool{
 // TestEveryRegisteredEventHasADispatcherAndAListener refuses a Goravel event
 // that is registered without a Job dispatch. A listener is required unless the
 // event only enqueues one job (.ai/guidelines/queues-and-workers.md).
-func TestEveryRegisteredEventHasADispatcherAndAListener(t *testing.T) {
+func TestEvery_Registered_EventHasADispatcherAndAListener(t *testing.T) {
 	module := sharedModule(t)
 	registered := registeredEvents(t, module)
 	if len(registered) == 0 {
@@ -44,7 +44,7 @@ func TestEveryRegisteredEventHasADispatcherAndAListener(t *testing.T) {
 
 // TestSingleJobEventsUseTheDispatcherPort refuses a listener that only
 // enqueues one job, and requires the service to call the refresh port.
-func TestSingleJobEventsUseTheDispatcherPort(t *testing.T) {
+func TestSingle_Job_EventsUseTheDispatcherPort(t *testing.T) {
 	module := sharedModule(t)
 	for _, name := range listenerTypeNames(module) {
 		switch name {
@@ -164,7 +164,7 @@ func compositeTypeName(expr ast.Expr) string {
 
 // TestNoDeadEventsOrListeners refuses an event type nobody dispatches and a
 // listener nobody registers (.ai/guidelines/queues-and-workers.md).
-func TestNoDeadEventsOrListeners(t *testing.T) {
+func TestNo_Dead_EventsOrListeners(t *testing.T) {
 	module := sharedModule(t)
 	dispatched := dispatchedEventTypes(module)
 	registeredListeners := registeredListenerNames(t, module)

@@ -13,7 +13,7 @@ import (
 // name. The wire shape lives only in app/http/resources. json:"-" stays on
 // fields that must not become visible. UserPreferences keeps the two names
 // of the users.preferences jsonb document.
-func TestModelsCarryNoWireTags(t *testing.T) {
+func TestModels_Carry_NoWireTags(t *testing.T) {
 	module := sharedModule(t)
 	for _, file := range module.ProductionFiles("app/models", "pkg/authmodel") {
 		structTags(file, func(typeName, fieldName, tag string) {
@@ -56,7 +56,7 @@ var serviceFacades = []string{"Orm", "DB", "Event", "Config", "Crypt", "Queue", 
 // TestServicesDoNotKnowTheHTTPLayer reports a service importing the HTTP
 // layer, a repository, an adapter or an I/O library, or calling a facade it
 // should receive through its Deps.
-func TestServicesDoNotKnowTheHTTPLayer(t *testing.T) {
+func TestServices_Do_NotKnowTheHTTPLayer(t *testing.T) {
 	module := sharedModule(t)
 	var violations Violations
 	for _, file := range module.ProductionFiles("app/services") {
@@ -90,7 +90,7 @@ func TestServicesDoNotKnowTheHTTPLayer(t *testing.T) {
 var roleNames = map[string]bool{"owner": true, "admin": true, "auditor": true, "user": true, "viewer": true}
 
 // TestOnlyPoliciesRankRoles reports a role compared outside app/policies.
-func TestOnlyPoliciesRankRoles(t *testing.T) {
+func TestOnly_Policies_RankRoles(t *testing.T) {
 	module := sharedModule(t)
 	var violations Violations
 	for _, file := range module.ProductionFiles("app", "routes") {
@@ -120,7 +120,7 @@ func TestOnlyPoliciesRankRoles(t *testing.T) {
 // TestPermissionDecisionsGoThroughThePolicy reports a Gate asked outside
 // app/policies, app/providers and app/http/middleware, and the in-handler
 // authorize helper (.ai/guidelines/authorization.md).
-func TestPermissionDecisionsGoThroughThePolicy(t *testing.T) {
+func TestPermission_Decisions_GoThroughThePolicy(t *testing.T) {
 	module := sharedModule(t)
 	var violations Violations
 	for _, file := range module.ProductionFiles("app", "routes") {
@@ -147,7 +147,7 @@ func TestPermissionDecisionsGoThroughThePolicy(t *testing.T) {
 // TestNoServiceLocatorOutsideTheCompositionRoot reports container.Get() and
 // the string container key outside app/container, app/providers and main.go:
 // the "god struct" must not come back once a package stops using it.
-func TestNoServiceLocatorOutsideTheCompositionRoot(t *testing.T) {
+func TestNo_Service_LocatorOutsideTheCompositionRoot(t *testing.T) {
 	module := sharedModule(t)
 	containerPath := module.ImportPathOf("app/container")
 	var violations Violations
@@ -175,7 +175,7 @@ func TestNoServiceLocatorOutsideTheCompositionRoot(t *testing.T) {
 // TestFrameworkFacadesComeThroughAppFacades reports production packages that
 // import github.com/goravel/framework/facades directly instead of a local
 // app/facades (the xip rule). One entry per package, with its file count.
-func TestFrameworkFacadesComeThroughAppFacades(t *testing.T) {
+func TestFramework_Facades_ComeThroughAppFacades(t *testing.T) {
 	module := sharedModule(t)
 	var violations Violations
 	for _, file := range module.ProductionFiles() {

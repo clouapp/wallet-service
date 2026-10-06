@@ -11,7 +11,7 @@ import (
 	"github.com/macrowallets/waas/tests/feature/support/testenv"
 )
 
-func TestBootTestLoadsDedicatedTestingEnvironment(t *testing.T) {
+func TestBoot_Test_LoadsDedicatedTestingEnvironment(t *testing.T) {
 	BootTest()
 
 	if got := os.Getenv("APP_ENV"); got != "testing" {

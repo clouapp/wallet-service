@@ -53,7 +53,7 @@ type WalletUnitTestSuite struct {
 	registry *chain.Registry
 }
 
-func TestWalletUnitSuite(t *testing.T) {
+func TestWallet_Unit_Suite(t *testing.T) {
 	suite.Run(t, new(WalletUnitTestSuite))
 }
 
@@ -65,20 +65,20 @@ func (s *WalletUnitTestSuite) SetupTest() {
 	s.service = newTestService(s.T(), s.registry)
 }
 
-func (s *WalletUnitTestSuite) TestCreateWallet_PassphraseTooShort() {
+func (s *WalletUnitTestSuite) TestCreate_Wallet_PassphraseTooShort() {
 	ctx := context.Background()
 	_, err := s.service.CreateWallet(ctx, testAccountID, "eth", "Test", "short")
 	s.Error(err)
 	s.Contains(err.Error(), "passphrase must be at least 12 characters")
 }
 
-func (s *WalletUnitTestSuite) TestCreateWallet_UnknownChain() {
+func (s *WalletUnitTestSuite) TestCreate_Wallet_UnknownChain() {
 	ctx := context.Background()
 	_, err := s.service.CreateWallet(ctx, testAccountID, "unknown_chain", "Test", testPassphrase)
 	s.ErrorIs(err, chainregistry.ErrUnknownChain)
 }
 
-func (s *WalletUnitTestSuite) TestGenerateAddress_WalletNotFound() {
+func (s *WalletUnitTestSuite) TestGenerate_Address_WalletNotFound() {
 	ctx := context.Background()
 	_, err := s.service.GenerateAddress(ctx, [16]byte{}, "user_123", "test-label", `{}`, "")
 	s.Error(err)
@@ -95,7 +95,7 @@ type WalletServiceTestSuite struct {
 	registry *chain.Registry
 }
 
-func TestWalletServiceSuite(t *testing.T) {
+func TestWallet_Service_Suite(t *testing.T) {
 	suite.Run(t, new(WalletServiceTestSuite))
 }
 
@@ -108,7 +108,7 @@ func (s *WalletServiceTestSuite) SetupTest() {
 	s.service = newTestServiceWithRepos(s.T(), s.registry, repositories.NewWalletRepository(nil), repositories.NewAddressRepository(nil))
 }
 
-func (s *WalletServiceTestSuite) TestCreateWallet_Success() {
+func (s *WalletServiceTestSuite) TestCreate_Wallet_Success() {
 	os.Setenv("WALLET_SERVICE_KEY", "0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20")
 	ctx := context.Background()
 
@@ -124,7 +124,7 @@ func (s *WalletServiceTestSuite) TestCreateWallet_Success() {
 	s.Equal(&testAccountID, result.Wallet.AccountID)
 }
 
-func (s *WalletServiceTestSuite) TestCreateWallet_SolanaUsesEd25519() {
+func (s *WalletServiceTestSuite) TestCreate_Wallet_SolanaUsesEd25519() {
 	os.Setenv("WALLET_SERVICE_KEY", "0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20")
 	ctx := context.Background()
 
@@ -160,7 +160,7 @@ func (s *WalletServiceTestSuite) TestCreateWallet_Success_ReturnsKeycardData() {
 	s.Regexp(`^\d{6}$`, result.ActivationCode)
 }
 
-func (s *WalletServiceTestSuite) TestCreateWallet_NormalisesChainID() {
+func (s *WalletServiceTestSuite) TestCreate_Wallet_NormalisesChainID() {
 	os.Setenv("WALLET_SERVICE_KEY", "0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20")
 	ctx := context.Background()
 
@@ -169,7 +169,7 @@ func (s *WalletServiceTestSuite) TestCreateWallet_NormalisesChainID() {
 	s.Equal("eth", result.Wallet.Chain)
 }
 
-func (s *WalletServiceTestSuite) TestCreateWallet_MATICNormalisedToPolygon() {
+func (s *WalletServiceTestSuite) TestCreate_Wallet_MATICNormalisedToPolygon() {
 	os.Setenv("WALLET_SERVICE_KEY", "0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20")
 	// register polygon chain
 	s.registry.RegisterChain(mocks.NewMockChain("polygon"))
@@ -180,7 +180,7 @@ func (s *WalletServiceTestSuite) TestCreateWallet_MATICNormalisedToPolygon() {
 	s.Equal("polygon", result.Wallet.Chain)
 }
 
-func (s *WalletServiceTestSuite) TestActivateWallet_Success() {
+func (s *WalletServiceTestSuite) TestActivate_Wallet_Success() {
 	os.Setenv("WALLET_SERVICE_KEY", "0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20")
 	ctx := context.Background()
 
@@ -194,7 +194,7 @@ func (s *WalletServiceTestSuite) TestActivateWallet_Success() {
 	s.Nil(activated.ActivationCode)
 }
 
-func (s *WalletServiceTestSuite) TestActivateWallet_WrongCode() {
+func (s *WalletServiceTestSuite) TestActivate_Wallet_WrongCode() {
 	os.Setenv("WALLET_SERVICE_KEY", "0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20")
 	ctx := context.Background()
 
@@ -205,7 +205,7 @@ func (s *WalletServiceTestSuite) TestActivateWallet_WrongCode() {
 	s.ErrorIs(err, ErrInvalidActivationCode)
 }
 
-func (s *WalletServiceTestSuite) TestActivateWallet_AlreadyActive() {
+func (s *WalletServiceTestSuite) TestActivate_Wallet_AlreadyActive() {
 	os.Setenv("WALLET_SERVICE_KEY", "0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20")
 	ctx := context.Background()
 
@@ -221,7 +221,7 @@ func (s *WalletServiceTestSuite) TestActivateWallet_AlreadyActive() {
 	s.ErrorIs(err, ErrWalletAlreadyActive)
 }
 
-func (s *WalletServiceTestSuite) TestActivateWallet_NotFound() {
+func (s *WalletServiceTestSuite) TestActivate_Wallet_NotFound() {
 	ctx := context.Background()
 	_, err := s.service.ActivateWallet(ctx, uuid.New(), "123456")
 	s.ErrorIs(err, ErrWalletNotFound)

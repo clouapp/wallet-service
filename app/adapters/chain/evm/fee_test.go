@@ -51,7 +51,7 @@ func bufferedL1Fee() *big.Int {
 	return big.NewInt(feeTestL1Fee * evmL1DataFeeMultiplier)
 }
 
-func TestBaseNativeTransferReserveAddsTheBufferedL1DataFee(t *testing.T) {
+func TestBase_Native_TransferReserveAddsTheBufferedL1DataFee(t *testing.T) {
 	adapter, node := newBaseSepoliaAdapter(t)
 
 	fee, minimumRemaining, err := adapter.NativeTransferReserve(context.Background())
@@ -80,7 +80,7 @@ func TestBaseNativeTransferReserveAddsTheBufferedL1DataFee(t *testing.T) {
 	}
 }
 
-func TestBaseNativeSweepLeavesRoomForTheL1DataFee(t *testing.T) {
+func TestBase_Native_SweepLeavesRoomForTheL1DataFee(t *testing.T) {
 	adapter, _ := newBaseSepoliaAdapter(t)
 	balance := big.NewInt(1_000_000_000_000_000)
 
@@ -102,7 +102,7 @@ func TestBaseNativeSweepLeavesRoomForTheL1DataFee(t *testing.T) {
 	}
 }
 
-func TestBaseTokenSweepSeedsGasForTheL1DataFee(t *testing.T) {
+func TestBase_Token_SweepSeedsGasForTheL1DataFee(t *testing.T) {
 	adapter, node := newBaseSepoliaAdapter(t)
 	node.EstimateGasHex = "0xc350" // 50_000 × 125% = 62_500 → floored to 65_000
 	node.TokenBalanceHex = "0x" + big.NewInt(5_000_000).Text(16)
@@ -125,7 +125,7 @@ func TestBaseTokenSweepSeedsGasForTheL1DataFee(t *testing.T) {
 	}
 }
 
-func TestBaseEstimateFeeIncludesTheL1DataFee(t *testing.T) {
+func TestBase_Estimate_FeeIncludesTheL1DataFee(t *testing.T) {
 	adapter, _ := newBaseSepoliaAdapter(t)
 
 	estimate, err := adapter.EstimateFee(context.Background(), types.TransferRequest{
@@ -140,7 +140,7 @@ func TestBaseEstimateFeeIncludesTheL1DataFee(t *testing.T) {
 	}
 }
 
-func TestBaseL1DataFeeFailureStopsTheReserve(t *testing.T) {
+func TestBase_L1_DataFeeFailureStopsTheReserve(t *testing.T) {
 	node := mocks.NewFakeEVMNode(t) // no L1FeeHex: the oracle call reverts
 	adapter := newNetworkAdapter(node, models.ChainBase, models.NativeETH, models.EVMNetworkIDBaseSepolia)
 
@@ -155,7 +155,7 @@ func TestBaseL1DataFeeFailureStopsTheReserve(t *testing.T) {
 	}
 }
 
-func TestArbitrumNativeTransfersUseThePaddedNodeEstimate(t *testing.T) {
+func TestArbitrum_Native_TransfersUseThePaddedNodeEstimate(t *testing.T) {
 	node := mocks.NewFakeEVMNode(t)
 	node.EstimateGasHex = feeTestArbitrumNativeEstimateHex
 	adapter := newNetworkAdapter(node, models.ChainArbitrum, models.NativeETH, models.EVMNetworkIDArbitrumSepolia)
@@ -193,7 +193,7 @@ func TestArbitrumNativeTransfersUseThePaddedNodeEstimate(t *testing.T) {
 	}
 }
 
-func TestArbitrumNativeSweepEncodesTheLimitItReserved(t *testing.T) {
+func TestArbitrum_Native_SweepEncodesTheLimitItReserved(t *testing.T) {
 	node := mocks.NewFakeEVMNode(t)
 	node.EstimateGasHex = feeTestArbitrumNativeEstimateHex
 	adapter := newNetworkAdapter(node, models.ChainArbitrum, models.NativeETH, models.EVMNetworkIDArbitrumMainnet)
@@ -213,7 +213,7 @@ func TestArbitrumNativeSweepEncodesTheLimitItReserved(t *testing.T) {
 	}
 }
 
-func TestNativeSweepReportsTheValueItEncodes(t *testing.T) {
+func TestNative_Sweep_ReportsTheValueItEncodes(t *testing.T) {
 	node := mocks.NewFakeEVMNode(t)
 	node.EstimateGasHex = feeTestArbitrumNativeEstimateHex
 	adapter := newNetworkAdapter(node, models.ChainArbitrum, models.NativeETH, models.EVMNetworkIDArbitrumSepolia)
@@ -231,7 +231,7 @@ func TestNativeSweepReportsTheValueItEncodes(t *testing.T) {
 	}
 }
 
-func TestTokenSweepReportsTheSeedAndTokenAmounts(t *testing.T) {
+func TestToken_Sweep_ReportsTheSeedAndTokenAmounts(t *testing.T) {
 	adapter, node := newBaseSepoliaAdapter(t)
 	node.EstimateGasHex = "0xc350"
 	tokenAmount := big.NewInt(5_000_000)
@@ -255,7 +255,7 @@ func TestTokenSweepReportsTheSeedAndTokenAmounts(t *testing.T) {
 	}
 }
 
-func TestArbitrumNativeEstimateFailureFailsTheTransfer(t *testing.T) {
+func TestArbitrum_Native_EstimateFailureFailsTheTransfer(t *testing.T) {
 	node := mocks.NewFakeEVMNode(t)
 	node.EstimateGasError = "rate limited"
 	adapter := newNetworkAdapter(node, models.ChainArbitrum, models.NativeETH, models.EVMNetworkIDArbitrumSepolia)
@@ -267,7 +267,7 @@ func TestArbitrumNativeEstimateFailureFailsTheTransfer(t *testing.T) {
 	}
 }
 
-func TestStandardNetworksKeepTheFixedNativeLimitAndNoL1Fee(t *testing.T) {
+func TestStandard_Networks_KeepTheFixedNativeLimitAndNoL1Fee(t *testing.T) {
 	for _, networkID := range []int64{
 		models.EVMNetworkIDEthereumMainnet, models.EVMNetworkIDEthereumSepolia,
 		models.EVMNetworkIDPolygonMainnet, models.EVMNetworkIDPolygonAmoy,
@@ -293,7 +293,7 @@ func TestStandardNetworksKeepTheFixedNativeLimitAndNoL1Fee(t *testing.T) {
 	}
 }
 
-func TestBSCSignsLegacyTransactionsForItsChainID(t *testing.T) {
+func TestBSC_Signs_LegacyTransactionsForItsChainID(t *testing.T) {
 	node := mocks.NewFakeEVMNode(t)
 	adapter := newNetworkAdapter(node, models.ChainBSC, models.NativeBNB, models.EVMNetworkIDBSCTestnet)
 
@@ -315,7 +315,7 @@ func TestBSCSignsLegacyTransactionsForItsChainID(t *testing.T) {
 	}
 }
 
-func TestAbiEncodeBytesPadsToWholeWords(t *testing.T) {
+func TestAbi_Encode_BytesPadsToWholeWords(t *testing.T) {
 	encoded := abiEncodeBytes([]byte{0xde, 0xad})
 	want := strings.Repeat("0", 62) + "20" + strings.Repeat("0", 63) + "2" + "dead" + strings.Repeat("0", 60)
 	if encoded != want {
@@ -357,7 +357,7 @@ func logScanNode(t *testing.T) *httptest.Server {
 	return server
 }
 
-func TestStrictLogScanFailsTheBlockWhenGetLogsFails(t *testing.T) {
+func TestStrict_Log_ScanFailsTheBlockWhenGetLogsFails(t *testing.T) {
 	server := logScanNode(t)
 	strict := NewEVMLive(EVMConfig{ChainIDStr: models.ChainBase, NativeSymbol: "eth", NetworkID: models.EVMNetworkIDBaseSepolia, RPCURL: server.URL, StrictLogScan: true})
 	if _, err := strict.ScanBlock(context.Background(), 1); err == nil {

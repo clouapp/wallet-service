@@ -2,7 +2,7 @@ package policies
 
 import "testing"
 
-func TestActivityReadFollowsTheAccountRoles(t *testing.T) {
+func TestActivity_Read_FollowsTheAccountRoles(t *testing.T) {
 	t.Parallel()
 
 	cases := []struct {

@@ -6,7 +6,7 @@ import (
 	"time"
 )
 
-func TestNilClientIsANoOp(t *testing.T) {
+func TestNil_Client_IsANoOp(t *testing.T) {
 	t.Parallel()
 
 	cache := New(nil)

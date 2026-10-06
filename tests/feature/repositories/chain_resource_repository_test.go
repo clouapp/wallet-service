@@ -17,7 +17,7 @@ type ChainResourceRepositoryTestSuite struct {
 	repo *repositories.ChainResourceRepository
 }
 
-func TestChainResourceRepositorySuite(t *testing.T) {
+func TestChain_Resource_RepositorySuite(t *testing.T) {
 	suite.Run(t, new(ChainResourceRepositoryTestSuite))
 }
 
@@ -30,7 +30,7 @@ func (s *ChainResourceRepositoryTestSuite) SetupTest() {
 	s.repo = repositories.NewChainResourceRepository(nil)
 }
 
-func (s *ChainResourceRepositoryTestSuite) TestFindByChainAndType() {
+func (s *ChainResourceRepositoryTestSuite) TestFind_By_ChainAndType() {
 	explorer := &models.ChainResource{
 		ID: uuid.New(), ChainID: "eth", Type: "explorer", Name: "Etherscan",
 		URL: "https://etherscan.io", Status: "active", DisplayOrder: 1,
@@ -52,7 +52,7 @@ func (s *ChainResourceRepositoryTestSuite) TestFindByChainAndType() {
 	s.Equal("Etherscan", explorers[0].Name)
 }
 
-func (s *ChainResourceRepositoryTestSuite) TestFindByChainTypeAndNameIgnoresStatus() {
+func (s *ChainResourceRepositoryTestSuite) TestFind_By_ChainTypeAndNameIgnoresStatus() {
 	disabled := &models.ChainResource{
 		ID: uuid.New(), ChainID: "eth", Type: "explorer", Name: "Old explorer",
 		URL: "https://example.invalid/explorer", Status: "disabled",

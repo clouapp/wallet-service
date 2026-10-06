@@ -25,7 +25,7 @@ type accountRolesSuite struct {
 	goravelTesting.TestCase
 }
 
-func TestAccountRolesSuite(t *testing.T) {
+func TestAccount_Roles_Suite(t *testing.T) {
 	suite.Run(t, new(accountRolesSuite))
 }
 
@@ -33,7 +33,7 @@ func (s *accountRolesSuite) SetupTest() {
 	fixtures.TestDB(s.T())
 }
 
-func (s *accountRolesSuite) TestOwnerReadsEffectiveGrants() {
+func (s *accountRolesSuite) TestOwner_Reads_EffectiveGrants() {
 	accountID, token := s.member("owner")
 
 	body := s.get(token, accountID, 200)
@@ -46,7 +46,7 @@ func (s *accountRolesSuite) TestOwnerReadsEffectiveGrants() {
 	s.Contains(permissionsOf(body, "auditor"), "roles.read")
 }
 
-func (s *accountRolesSuite) TestUserIsForbiddenAndWritesAreNotFound() {
+func (s *accountRolesSuite) TestUser_Is_ForbiddenAndWritesAreNotFound() {
 	accountID, owner := s.member("owner")
 	user := s.join(accountID, "user")
 
@@ -58,12 +58,12 @@ func (s *accountRolesSuite) TestUserIsForbiddenAndWritesAreNotFound() {
 	}
 }
 
-func (s *accountRolesSuite) TestUnknownAccountIsNotFoundBeforeTheRoleCheck() {
+func (s *accountRolesSuite) TestUnknown_Account_IsNotFoundBeforeTheRoleCheck() {
 	_, token := s.member("owner")
 	s.get(token, uuid.New(), 404)
 }
 
-func (s *accountRolesSuite) TestOutsiderIsForbidden() {
+func (s *accountRolesSuite) TestOutsider_Is_Forbidden() {
 	accountID, _ := s.member("owner")
 	_, outsider := s.member("owner")
 	s.get(outsider, accountID, 403)

@@ -11,7 +11,7 @@ import (
 	"github.com/macrowallets/waas/app/models"
 )
 
-func TestTokenKeepsTheModelWire(t *testing.T) {
+func TestToken_Keeps_TheModelWire(t *testing.T) {
 	t.Parallel()
 
 	id := uuid.MustParse("11111111-1111-4111-8111-111111111111")
@@ -54,7 +54,7 @@ func TestTokenKeepsTheModelWire(t *testing.T) {
 	}
 }
 
-func TestTokensPreserveSliceNilness(t *testing.T) {
+func TestTokens_Preserve_SliceNilness(t *testing.T) {
 	t.Parallel()
 
 	if chains.TokensFrom(nil) != nil {

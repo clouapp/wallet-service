@@ -25,7 +25,7 @@ func computeQuickNodeSignature(body []byte, secret string) string {
 // buildFilterFunction
 // ---------------------------------------------------------------------------
 
-func TestBuildFilterFunction_ValidBase64AndAddressesEmbedded(t *testing.T) {
+func TestBuild_FilterFunction_ValidBase64AndAddressesEmbedded(t *testing.T) {
 	addrs := []string{"bc1qtestaddr1xxxxxxxxxxxxxxxxxxxx", "bc1qtestaddr2yyyyyyyyyyyyyyyyyyyy"}
 	b64 := buildFilterFunction(addrs)
 	require.NotEmpty(t, b64)
@@ -40,7 +40,7 @@ func TestBuildFilterFunction_ValidBase64AndAddressesEmbedded(t *testing.T) {
 	assert.Contains(t, js, `"bc1qtestaddr2yyyyyyyyyyyyyyyyyyyy":true`)
 }
 
-func TestBuildFilterFunction_SkipsEmptyStrings(t *testing.T) {
+func TestBuild_FilterFunction_SkipsEmptyStrings(t *testing.T) {
 	b64 := buildFilterFunction([]string{"bc1qonly", "", "  "})
 	raw, err := base64.StdEncoding.DecodeString(b64)
 	require.NoError(t, err)
@@ -49,7 +49,7 @@ func TestBuildFilterFunction_SkipsEmptyStrings(t *testing.T) {
 	assert.NotContains(t, js, `""`)
 }
 
-func TestBuildFilterFunction_EmptyList(t *testing.T) {
+func TestBuild_FilterFunction_EmptyList(t *testing.T) {
 	b64 := buildFilterFunction(nil)
 	raw, err := base64.StdEncoding.DecodeString(b64)
 	require.NoError(t, err)
@@ -60,7 +60,7 @@ func TestBuildFilterFunction_EmptyList(t *testing.T) {
 // ParsePayload
 // ---------------------------------------------------------------------------
 
-func TestParsePayload_SampleBTCTransaction(t *testing.T) {
+func TestParse_Payload_SampleBTCTransaction(t *testing.T) {
 	payload := []byte(`[{
 		"txid": "abc123def456",
 		"blockNumber": 850000,
@@ -91,7 +91,7 @@ func TestParsePayload_SampleBTCTransaction(t *testing.T) {
 	assert.Nil(t, tx.Amount)
 }
 
-func TestParsePayload_MultipleItems(t *testing.T) {
+func TestParse_Payload_MultipleItems(t *testing.T) {
 	payload := []byte(`[
 		{"txid":"a","blockNumber":1,"blockHash":"h1","toAddress":"bc1qa","amount":0.00000001,"timestamp":100},
 		{"txid":"b","blockNumber":2,"blockHash":"h2","toAddress":"bc1qb","amount":1,"timestamp":200}
@@ -106,14 +106,14 @@ func TestParsePayload_MultipleItems(t *testing.T) {
 	assert.True(t, out[1].AmountIsHuman)
 }
 
-func TestParsePayload_InvalidJSON(t *testing.T) {
+func TestParse_Payload_InvalidJSON(t *testing.T) {
 	p := NewQuickNodeProvider("k")
 	_, err := p.ParsePayload([]byte(`not json`))
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "unmarshal")
 }
 
-func TestParsePayload_EmptyTxid(t *testing.T) {
+func TestParse_Payload_EmptyTxid(t *testing.T) {
 	payload := []byte(`[{"txid":"","blockNumber":1,"blockHash":"h","toAddress":"bc1q","amount":1,"timestamp":1}]`)
 	p := NewQuickNodeProvider("k")
 	_, err := p.ParsePayload(payload)
@@ -125,7 +125,7 @@ func TestParsePayload_EmptyTxid(t *testing.T) {
 // VerifyInbound
 // ---------------------------------------------------------------------------
 
-func TestQuickNodeVerifyInbound_ValidSignature(t *testing.T) {
+func TestQuick_NodeVerifyInbound_ValidSignature(t *testing.T) {
 	p := NewQuickNodeProvider("api-key")
 	body := []byte(`[{"txid":"x"}]`)
 	secret := "qn_webhook_secret"
@@ -139,7 +139,7 @@ func TestQuickNodeVerifyInbound_ValidSignature(t *testing.T) {
 	assert.True(t, ok)
 }
 
-func TestQuickNodeVerifyInbound_InvalidSignature(t *testing.T) {
+func TestQuick_NodeVerifyInbound_InvalidSignature(t *testing.T) {
 	p := NewQuickNodeProvider("api-key")
 	body := []byte(`[{"txid":"x"}]`)
 	secret := "qn_webhook_secret"
@@ -152,7 +152,7 @@ func TestQuickNodeVerifyInbound_InvalidSignature(t *testing.T) {
 	assert.False(t, ok)
 }
 
-func TestQuickNodeVerifyInbound_MissingHeader(t *testing.T) {
+func TestQuick_NodeVerifyInbound_MissingHeader(t *testing.T) {
 	p := NewQuickNodeProvider("api-key")
 	body := []byte(`[]`)
 
@@ -162,7 +162,7 @@ func TestQuickNodeVerifyInbound_MissingHeader(t *testing.T) {
 	assert.Contains(t, err.Error(), "missing")
 }
 
-func TestQuickNodeVerifyInbound_CustomSignatureHeader(t *testing.T) {
+func TestQuick_NodeVerifyInbound_CustomSignatureHeader(t *testing.T) {
 	p := NewQuickNodeProvider("api-key")
 	p.SetSignatureHeader("X-Custom-Sig")
 	body := []byte(`{}`)

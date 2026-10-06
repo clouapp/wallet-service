@@ -21,7 +21,7 @@ func TestSQSClient_SendWebhook_NoURL(t *testing.T) {
 	}
 }
 
-func TestNewSQSClientKeepsItsDependencies(t *testing.T) {
+func TestNew_SQS_ClientKeepsItsDependencies(t *testing.T) {
 	transport := &stubTransport{}
 	urls := QueueURLs{Webhook: "https://sqs.example/webhook"}
 	client := NewSQSClient(SQSClientDeps{Transport: transport, URLs: urls})
@@ -35,7 +35,7 @@ func TestNewSQSClientKeepsItsDependencies(t *testing.T) {
 	}
 }
 
-func TestWebhookMessage_Serialization(t *testing.T) {
+func TestWebhook_Message_Serialization(t *testing.T) {
 	msg := types.WebhookMessage{
 		EventID:       "evt-123",
 		TransactionID: "tx-456",
@@ -57,7 +57,7 @@ func TestWebhookMessage_Serialization(t *testing.T) {
 	}
 }
 
-func TestQueueURLs(t *testing.T) {
+func TestQueue_UR_Ls(t *testing.T) {
 	urls := QueueURLs{
 		Webhook: "https://sqs.us-east-1.amazonaws.com/123/vault-webhooks-dev",
 	}
@@ -66,7 +66,7 @@ func TestQueueURLs(t *testing.T) {
 	}
 }
 
-func TestSendWebhook_KeepsTheEncodedBodyAndAttribute(t *testing.T) {
+func TestSend_Webhook_KeepsTheEncodedBodyAndAttribute(t *testing.T) {
 	msg := types.WebhookMessage{
 		EventID:       "evt-123",
 		TransactionID: "tx-456",
@@ -101,7 +101,7 @@ func TestSendWebhook_KeepsTheEncodedBodyAndAttribute(t *testing.T) {
 	}
 }
 
-func TestSendWebhook_EmptyURLSkipsTheTransport(t *testing.T) {
+func TestSend_Webhook_EmptyURLSkipsTheTransport(t *testing.T) {
 	transport := &stubTransport{err: errors.New("should not be called")}
 	client := NewSQSClient(SQSClientDeps{Transport: transport})
 
@@ -114,7 +114,7 @@ func TestSendWebhook_EmptyURLSkipsTheTransport(t *testing.T) {
 	}
 }
 
-func TestSendWebhook_WrapsTheTransportError(t *testing.T) {
+func TestSend_Webhook_WrapsTheTransportError(t *testing.T) {
 	transport := &stubTransport{err: errors.New("boom")}
 	client := NewSQSClient(SQSClientDeps{Transport: transport, URLs: QueueURLs{Webhook: "https://sqs.example/webhook"}})
 
@@ -124,7 +124,7 @@ func TestSendWebhook_WrapsTheTransportError(t *testing.T) {
 	}
 }
 
-func TestSendBatch_KeepsEntryIDsAndChunkSize(t *testing.T) {
+func TestSend_Batch_KeepsEntryIDsAndChunkSize(t *testing.T) {
 	messages := make([]interface{}, 11)
 	for i := range messages {
 		messages[i] = batchItem{N: i}
@@ -149,7 +149,7 @@ func TestSendBatch_KeepsEntryIDsAndChunkSize(t *testing.T) {
 	}
 }
 
-func TestSendBatch_SkipsAnEntryThatCannotBeEncoded(t *testing.T) {
+func TestSend_Batch_SkipsAnEntryThatCannotBeEncoded(t *testing.T) {
 	transport := &stubTransport{}
 	client := NewSQSClient(SQSClientDeps{Transport: transport})
 	messages := []interface{}{make(chan int), batchItem{N: 2}}
@@ -165,7 +165,7 @@ func TestSendBatch_SkipsAnEntryThatCannotBeEncoded(t *testing.T) {
 	}
 }
 
-func TestSendBatch_EmptyMessagesSkipTheTransport(t *testing.T) {
+func TestSend_Batch_EmptyMessagesSkipTheTransport(t *testing.T) {
 	transport := &stubTransport{err: errors.New("should not be called")}
 	client := NewSQSClient(SQSClientDeps{Transport: transport})
 
@@ -177,7 +177,7 @@ func TestSendBatch_EmptyMessagesSkipTheTransport(t *testing.T) {
 	}
 }
 
-func TestSendBatch_WrapsTheTransportError(t *testing.T) {
+func TestSend_Batch_WrapsTheTransportError(t *testing.T) {
 	transport := &stubTransport{err: errors.New("boom")}
 	client := NewSQSClient(SQSClientDeps{Transport: transport})
 

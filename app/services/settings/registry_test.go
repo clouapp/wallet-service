@@ -6,7 +6,7 @@ import (
 	"github.com/macrowallets/waas/app/policies"
 )
 
-func TestAccountSectionsDoNotShareNamesWithGroups(t *testing.T) {
+func TestAccount_Sections_DoNotShareNamesWithGroups(t *testing.T) {
 	t.Parallel()
 
 	names := map[string]bool{}
@@ -262,7 +262,7 @@ func assertEtherscanProviderGroup(t *testing.T) {
 	}
 }
 
-func TestFindGroupUnknown(t *testing.T) {
+func TestFind_Group_Unknown(t *testing.T) {
 	t.Parallel()
 
 	if _, ok := FindGroup("nope"); ok {
@@ -273,7 +273,7 @@ func TestFindGroupUnknown(t *testing.T) {
 	}
 }
 
-func TestSectionNameDefaultsToTheGroupName(t *testing.T) {
+func TestSection_Name_DefaultsToTheGroupName(t *testing.T) {
 	t.Parallel()
 
 	group := Group{Name: "auth"}
@@ -282,7 +282,7 @@ func TestSectionNameDefaultsToTheGroupName(t *testing.T) {
 	}
 }
 
-func TestRegistryEveryGroupReportsASection(t *testing.T) {
+func TestRegistry_Every_GroupReportsASection(t *testing.T) {
 	t.Parallel()
 
 	for _, group := range Registry() {
@@ -299,7 +299,7 @@ func TestRegistryEveryGroupReportsASection(t *testing.T) {
 	}
 }
 
-func TestRegistryEverySecretDeclaresAType(t *testing.T) {
+func TestRegistry_Every_SecretDeclaresAType(t *testing.T) {
 	t.Parallel()
 
 	for _, group := range Registry() {
@@ -311,7 +311,7 @@ func TestRegistryEverySecretDeclaresAType(t *testing.T) {
 	}
 }
 
-func TestEveryRegistryDefaultCastsThroughItsType(t *testing.T) {
+func TestEvery_Registry_DefaultCastsThroughItsType(t *testing.T) {
 	t.Parallel()
 
 	for _, group := range Registry() {
@@ -333,7 +333,7 @@ func TestEveryRegistryDefaultCastsThroughItsType(t *testing.T) {
 	}
 }
 
-func TestEverySecretGroupDeclaresAPermission(t *testing.T) {
+func TestEvery_Secret_GroupDeclaresAPermission(t *testing.T) {
 	t.Parallel()
 
 	var sawSecret bool
@@ -392,7 +392,7 @@ func platformSecretGroupGatedByAdmins(group Group) bool {
 	}
 }
 
-func TestSigningSecretIsASecretString(t *testing.T) {
+func TestSigning_Secret_IsASecretString(t *testing.T) {
 	t.Parallel()
 
 	definition, ok := Find(groupAccountWebhooks, keySigningSecret)
@@ -405,7 +405,7 @@ func TestSigningSecretIsASecretString(t *testing.T) {
 	}
 }
 
-func TestFind_PortIsInt(t *testing.T) {
+func TestFind_Port_IsInt(t *testing.T) {
 	t.Parallel()
 
 	definition, ok := Find(groupMailSMTP, keyMailPort)

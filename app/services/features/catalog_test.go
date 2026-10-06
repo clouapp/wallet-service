@@ -4,7 +4,7 @@ import (
 	"testing"
 )
 
-func TestCatalogNamesTheAccountFlagsAndTheirDefaults(t *testing.T) {
+func TestCatalog_Names_TheAccountFlagsAndTheirDefaults(t *testing.T) {
 	t.Parallel()
 
 	want := []string{

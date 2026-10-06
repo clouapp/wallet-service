@@ -66,7 +66,7 @@ func storedEvents(t *testing.T) []models.WebhookEvent {
 	return events
 }
 
-func TestEnqueueScoped_DeliversOnlyToConfigsThatCanSeeTheWallet(t *testing.T) {
+func TestEnqueue_Scoped_DeliversOnlyToConfigsThatCanSeeTheWallet(t *testing.T) {
 	f := newScopedFixture(t)
 	otherAccount := fixtures.InsertAccount(t, "other account")
 	otherWallet := fixtures.InsertWallet(t, "eth")
@@ -100,7 +100,7 @@ func TestEnqueueScoped_DeliversOnlyToConfigsThatCanSeeTheWallet(t *testing.T) {
 	}
 }
 
-func TestEnqueueScoped_SameSubjectIsEnqueuedOncePerConfig(t *testing.T) {
+func TestEnqueue_Scoped_SameSubjectIsEnqueuedOncePerConfig(t *testing.T) {
 	f := newScopedFixture(t)
 	insertOwnedConfig(t, "https://owned.test/hook", []string{withdrawalEvents}, &f.accountID, nil)
 	subject := uuid.NewString()
@@ -126,7 +126,7 @@ func TestEnqueueScoped_SameSubjectIsEnqueuedOncePerConfig(t *testing.T) {
 	}
 }
 
-func TestEnqueueScoped_RejectsIncompleteEvents(t *testing.T) {
+func TestEnqueue_Scoped_RejectsIncompleteEvents(t *testing.T) {
 	f := newScopedFixture(t)
 	event := f.event("")
 	if _, err := f.svc.EnqueueScoped(context.Background(), event); err == nil {
@@ -157,7 +157,7 @@ func (r *recordingReceiver) ServeHTTP(w http.ResponseWriter, req *http.Request) 
 	w.WriteHeader(r.status)
 }
 
-func TestDeliverPending_SignsAndMarksDelivered(t *testing.T) {
+func TestDeliver_Pending_SignsAndMarksDelivered(t *testing.T) {
 	f := newScopedFixture(t)
 	receiver := &recordingReceiver{status: http.StatusOK}
 	server := httptest.NewServer(receiver)
@@ -190,7 +190,7 @@ func TestDeliverPending_SignsAndMarksDelivered(t *testing.T) {
 	}
 }
 
-func TestDeliverPending_BacksOffAfterAFailureAndGivesUpAtMaxAttempts(t *testing.T) {
+func TestDeliver_Pending_BacksOffAfterAFailureAndGivesUpAtMaxAttempts(t *testing.T) {
 	f := newScopedFixture(t)
 	receiver := &recordingReceiver{status: http.StatusServiceUnavailable}
 	server := httptest.NewServer(receiver)
@@ -227,7 +227,7 @@ func TestDeliverPending_BacksOffAfterAFailureAndGivesUpAtMaxAttempts(t *testing.
 	}
 }
 
-func TestDeliverPending_FailsEventsOfInactiveConfigs(t *testing.T) {
+func TestDeliver_Pending_FailsEventsOfInactiveConfigs(t *testing.T) {
 	f := newScopedFixture(t)
 	receiver := &recordingReceiver{status: http.StatusOK}
 	server := httptest.NewServer(receiver)
@@ -248,7 +248,7 @@ func TestDeliverPending_FailsEventsOfInactiveConfigs(t *testing.T) {
 	}
 }
 
-func TestUpdateAccountConfig_OwnershipAndClaim(t *testing.T) {
+func TestUpdate_AccountConfig_OwnershipAndClaim(t *testing.T) {
 	f := newScopedFixture(t)
 	ctx := context.Background()
 	otherAccount := fixtures.InsertAccount(t, "other account")
@@ -290,7 +290,7 @@ func TestUpdateAccountConfig_OwnershipAndClaim(t *testing.T) {
 	}
 }
 
-func TestUpdateAccountConfig_ValidatesTheUpdate(t *testing.T) {
+func TestUpdate_AccountConfig_ValidatesTheUpdate(t *testing.T) {
 	f := newScopedFixture(t)
 	ctx := context.Background()
 	owned := insertOwnedConfig(t, "https://owned.test/hook", []string{"deposit.confirmed"}, &f.accountID, nil)
@@ -316,7 +316,7 @@ func TestUpdateAccountConfig_ValidatesTheUpdate(t *testing.T) {
 	}
 }
 
-func TestEnqueueEvent_LegacyPathNeverReachesAccountOwnedConfigs(t *testing.T) {
+func TestEnqueue_Event_LegacyPathNeverReachesAccountOwnedConfigs(t *testing.T) {
 	f := newScopedFixture(t)
 	otherWallet := fixtures.InsertWallet(t, "eth")
 	const sweepEvent = "sweep.confirmed"
@@ -338,7 +338,7 @@ func TestEnqueueEvent_LegacyPathNeverReachesAccountOwnedConfigs(t *testing.T) {
 	}
 }
 
-func TestEnqueueEvent_WalletConfigsSkipEventsWithoutAKnownWallet(t *testing.T) {
+func TestEnqueue_Event_WalletConfigsSkipEventsWithoutAKnownWallet(t *testing.T) {
 	f := newScopedFixture(t)
 	const sweepEvent = "sweep.confirmed"
 

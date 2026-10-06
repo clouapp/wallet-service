@@ -25,7 +25,7 @@ const (
 	verifySigning   = "ing-sign-subscription"
 )
 
-func TestVerifyInbound_EnabledGroupSuppliesTheOpenedKey(t *testing.T) {
+func TestVerify_Inbound_EnabledGroupSuppliesTheOpenedKey(t *testing.T) {
 	logs := captureAlchemyIngestLogs(t)
 	rows := settings.NewService(settings.Deps{Store: &ingestSettingsRows{groups: map[string]map[string]string{
 		"provider_alchemy": {
@@ -52,7 +52,7 @@ func TestVerifyInbound_EnabledGroupSuppliesTheOpenedKey(t *testing.T) {
 	requireAlchemyIngestLogsOmit(t, logs.String(), verifyOpenedKey, verifyEnvKey, verifyBootKey, verifySigning, "enc:v1:")
 }
 
-func TestVerifyInbound_EmptyResolvedAlchemyKeyRejectsTheSignature(t *testing.T) {
+func TestVerify_Inbound_EmptyResolvedAlchemyKeyRejectsTheSignature(t *testing.T) {
 	logs := captureAlchemyIngestLogs(t)
 	body := []byte(`{"event":"test"}`)
 	provider := inboundKeyPort{source: func(context.Context) string { return "" }}

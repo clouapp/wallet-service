@@ -5,7 +5,7 @@ import (
 	"testing"
 )
 
-func TestWithdrawalFailureCodesAreOnTheList(t *testing.T) {
+func TestWithdrawal_Failure_CodesAreOnTheList(t *testing.T) {
 	codes := map[string]string{
 		CodeInsufficientFunds:             "insufficient_funds",
 		CodeWalletNotGasReady:             "wallet_not_gas_ready",
@@ -38,7 +38,7 @@ func TestWithdrawalFailureCodesAreOnTheList(t *testing.T) {
 	}
 }
 
-func TestNewError_IsTheEnvelope(t *testing.T) {
+func TestNew_Error_IsTheEnvelope(t *testing.T) {
 	encoded, err := json.Marshal(NewError(ErrorDeps{Code: CodeNotFound, Message: "wallet not found"}))
 	if err != nil {
 		t.Fatal(err)
@@ -49,7 +49,7 @@ func TestNewError_IsTheEnvelope(t *testing.T) {
 	}
 }
 
-func TestNewError_ExtraFieldsStayInsideError(t *testing.T) {
+func TestNew_Error_ExtraFieldsStayInsideError(t *testing.T) {
 	encoded, err := json.Marshal(NewError(ErrorDeps{Code: "wallet_not_gas_ready", Message: "wallet_not_gas_ready"}).With(map[string]any{
 		"action": "fund_base_address",
 	}))
@@ -62,7 +62,7 @@ func TestNewError_ExtraFieldsStayInsideError(t *testing.T) {
 	}
 }
 
-func TestNewValidation_Is422Shape(t *testing.T) {
+func TestNew_Validation_Is422Shape(t *testing.T) {
 	encoded, err := json.Marshal(NewValidation(map[string][]string{
 		"email": {"Email address is required"},
 	}))
@@ -75,7 +75,7 @@ func TestNewValidation_Is422Shape(t *testing.T) {
 	}
 }
 
-func TestNewValidation_NilFieldsAreAnEmptyObject(t *testing.T) {
+func TestNew_Validation_NilFieldsAreAnEmptyObject(t *testing.T) {
 	encoded, err := json.Marshal(NewValidation(nil))
 	if err != nil {
 		t.Fatal(err)
@@ -86,7 +86,7 @@ func TestNewValidation_NilFieldsAreAnEmptyObject(t *testing.T) {
 	}
 }
 
-func TestNewPage_KeepsTheListEnvelope(t *testing.T) {
+func TestNew_Page_KeepsTheListEnvelope(t *testing.T) {
 	encoded, err := json.Marshal(NewPage(PageDeps[[]string]{
 		Data:   []string{"a"},
 		Total:  3,
@@ -102,7 +102,7 @@ func TestNewPage_KeepsTheListEnvelope(t *testing.T) {
 	}
 }
 
-func TestNewPage_EmptySliceEncodesAsArray(t *testing.T) {
+func TestNew_Page_EmptySliceEncodesAsArray(t *testing.T) {
 	encoded, err := json.Marshal(NewPage(PageDeps[[]string]{
 		Data:   []string{},
 		Total:  0,
@@ -118,7 +118,7 @@ func TestNewPage_EmptySliceEncodesAsArray(t *testing.T) {
 	}
 }
 
-func TestNewPage_NilSliceStaysNull(t *testing.T) {
+func TestNew_Page_NilSliceStaysNull(t *testing.T) {
 	var rows []string
 	encoded, err := json.Marshal(NewPage(PageDeps[[]string]{
 		Data:   rows,

@@ -24,7 +24,7 @@ type apiTokenIPSuite struct {
 	account models.Account
 }
 
-func TestAPITokenIP(t *testing.T) {
+func TestAPI_Token_IP(t *testing.T) {
 	suite.Run(t, new(apiTokenIPSuite))
 }
 
@@ -39,24 +39,24 @@ func (s *apiTokenIPSuite) SetupTest() {
 	s.Require().NoError(facades.Orm().Query().Create(&s.account))
 }
 
-func (s *apiTokenIPSuite) TestBlankAllowlistKeepsTodaysAccess() {
+func (s *apiTokenIPSuite) TestBlank_Allowlist_KeepsTodaysAccess() {
 	token := s.mint("")
 	s.get(token).AssertOk()
 }
 
-func (s *apiTokenIPSuite) TestAllowlistThatContainsTheClientIsOk() {
+func (s *apiTokenIPSuite) TestAllowlist_That_ContainsTheClientIsOk() {
 	token := s.mint("192.0.2.0/24")
 	s.get(token).AssertOk()
 }
 
-func (s *apiTokenIPSuite) TestAllowlistRefusesAnotherIP() {
+func (s *apiTokenIPSuite) TestAllowlist_Refuses_AnotherIP() {
 	token := s.mint("198.51.100.0/24")
 	s.get(token).AssertForbidden().AssertJson(map[string]any{
 		"error": map[string]any{"code": "forbidden", "message": "forbidden"},
 	})
 }
 
-func (s *apiTokenIPSuite) TestBareAddressAllowsOnlyThatAddress() {
+func (s *apiTokenIPSuite) TestBare_Address_AllowsOnlyThatAddress() {
 	token := s.mint("192.0.2.1")
 	s.get(token).AssertOk()
 }

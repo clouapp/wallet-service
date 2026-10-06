@@ -21,7 +21,7 @@ type IdentityRowsSuite struct {
 	memberships *repositories.AccountUserRepository
 }
 
-func TestIdentityRowsSuite(t *testing.T) {
+func TestIdentity_Rows_Suite(t *testing.T) {
 	suite.Run(t, new(IdentityRowsSuite))
 }
 
@@ -32,7 +32,7 @@ func (s *IdentityRowsSuite) SetupTest() {
 	s.memberships = repositories.NewAccountUserRepository(nil)
 }
 
-func (s *IdentityRowsSuite) TestUserAccountQueriesReturnTheStoredRow() {
+func (s *IdentityRowsSuite) TestUser_Account_QueriesReturnTheStoredRow() {
 	ctx := context.Background()
 	user := &models.User{
 		ID:           uuid.New(),

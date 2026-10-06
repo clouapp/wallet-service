@@ -14,7 +14,7 @@ func currenciesControllerDeps() CurrenciesControllerDeps {
 	}
 }
 
-func TestNewCurrenciesControllerKeepsItsDependencies(t *testing.T) {
+func TestNew_Currencies_ControllerKeepsItsDependencies(t *testing.T) {
 	deps := currenciesControllerDeps()
 	ctrl := NewCurrenciesController(deps)
 	if ctrl == nil {
@@ -28,7 +28,7 @@ func TestNewCurrenciesControllerKeepsItsDependencies(t *testing.T) {
 	}
 }
 
-func TestNewCurrenciesControllerRequiresEveryDependency(t *testing.T) {
+func TestNew_Currencies_ControllerRequiresEveryDependency(t *testing.T) {
 	cases := []struct {
 		name  string
 		clear func(*CurrenciesControllerDeps)

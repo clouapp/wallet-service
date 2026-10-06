@@ -26,7 +26,7 @@ func (d *countingDeliverer) DeliverPending(context.Context, int) (int, error) {
 	return 0, nil
 }
 
-func TestStart_RejectsInvalidConfiguration(t *testing.T) {
+func TestStart_Rejects_InvalidConfiguration(t *testing.T) {
 	checker := &countingChecker{}
 	deliverer := &countingDeliverer{}
 	cases := map[string]struct {
@@ -48,7 +48,7 @@ func TestStart_RejectsInvalidConfiguration(t *testing.T) {
 	}
 }
 
-func TestStart_WaitsOneIntervalThenRunsBothLoops(t *testing.T) {
+func TestStart_Waits_OneIntervalThenRunsBothLoops(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	checker := &countingChecker{}
@@ -73,7 +73,7 @@ func TestStart_WaitsOneIntervalThenRunsBothLoops(t *testing.T) {
 	}
 }
 
-func TestStart_SkipsOutboxWhenAQueueDelivers(t *testing.T) {
+func TestStart_Skips_OutboxWhenAQueueDelivers(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	checker := &countingChecker{}
@@ -142,7 +142,7 @@ func (s *recordingScanner) cacheSyncs() []string {
 	return append([]string(nil), s.synced...)
 }
 
-func TestStart_SyncsAddressCachesBeforeTheFirstScan(t *testing.T) {
+func TestStart_Syncs_AddressCachesBeforeTheFirstScan(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	scanner := &recordingScanner{syncErr: errors.New("redis down")}
@@ -170,7 +170,7 @@ func TestStart_SyncsAddressCachesBeforeTheFirstScan(t *testing.T) {
 	}
 }
 
-func TestStart_RejectsInvalidDepositScanConfiguration(t *testing.T) {
+func TestStart_Rejects_InvalidDepositScanConfiguration(t *testing.T) {
 	checker := &countingChecker{}
 	scanner := &recordingScanner{}
 	base := Config{ConfirmationInterval: MinInterval, DepositScanInterval: MinInterval}
@@ -197,7 +197,7 @@ func TestStart_RejectsInvalidDepositScanConfiguration(t *testing.T) {
 	}
 }
 
-func TestStart_ScansEveryConfiguredChainAndKeepsGoingAfterErrors(t *testing.T) {
+func TestStart_Scans_EveryConfiguredChainAndKeepsGoingAfterErrors(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	scanner := &recordingScanner{err: errors.New("rate limited")}
@@ -228,7 +228,7 @@ func TestStart_ScansEveryConfiguredChainAndKeepsGoingAfterErrors(t *testing.T) {
 	}
 }
 
-func TestStart_NoScanWithoutChains(t *testing.T) {
+func TestStart_No_ScanWithoutChains(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	scanner := &recordingScanner{}
@@ -241,7 +241,7 @@ func TestStart_NoScanWithoutChains(t *testing.T) {
 	}
 }
 
-func TestStart_ReprocessesPendingBlocksAfterEachChainScan(t *testing.T) {
+func TestStart_Reprocesses_PendingBlocksAfterEachChainScan(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	scanner := &recordingScanner{err: errors.New("rpc down"), pendingErr: errors.New("redis and file down")}
@@ -273,7 +273,7 @@ func (b *countingBalances) RefreshAll(context.Context) (refresh.PassSummary, err
 	return refresh.PassSummary{Refreshed: 1}, nil
 }
 
-func TestStart_RefreshesBalancesOnItsInterval(t *testing.T) {
+func TestStart_Refreshes_BalancesOnItsInterval(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	balances := &countingBalances{}
@@ -295,7 +295,7 @@ func TestStart_RefreshesBalancesOnItsInterval(t *testing.T) {
 	}
 }
 
-func TestStart_RejectsInvalidBalanceRefreshConfiguration(t *testing.T) {
+func TestStart_Rejects_InvalidBalanceRefreshConfiguration(t *testing.T) {
 	checker := &countingChecker{}
 	cases := map[string]struct {
 		interval time.Duration
@@ -314,7 +314,7 @@ func TestStart_RejectsInvalidBalanceRefreshConfiguration(t *testing.T) {
 	}
 }
 
-func TestParseChainList(t *testing.T) {
+func TestParse_Chain_List(t *testing.T) {
 	cases := map[string][]string{
 		"":              nil,
 		" , ,":          nil,
@@ -362,7 +362,7 @@ func (s *recordingScanner) scansOf(chainID string) int {
 	return count
 }
 
-func TestStart_ScansFastChainsInLoopsOfTheirOwn(t *testing.T) {
+func TestStart_Scans_FastChainsInLoopsOfTheirOwn(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	scanner := &stuckScanner{recordingScanner: &recordingScanner{}, stuckChain: "sol", release: make(chan struct{})}
@@ -405,7 +405,7 @@ func (c *cancelAwareChecker) RunWithdrawalConfirmationCheck(ctx context.Context)
 	return ctx.Err()
 }
 
-func TestLoops_WaitReturnsAfterCancelOnceTheRunInProgressFinished(t *testing.T) {
+func TestLoops_Wait_ReturnsAfterCancelOnceTheRunInProgressFinished(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	checker := &cancelAwareChecker{started: make(chan struct{}), finishDelay: 200 * time.Millisecond}
@@ -445,7 +445,7 @@ func TestLoops_WaitReturnsAfterCancelOnceTheRunInProgressFinished(t *testing.T) 
 	}
 }
 
-func TestLoops_WaitReturnsRightAwayForIdleLoops(t *testing.T) {
+func TestLoops_Wait_ReturnsRightAwayForIdleLoops(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	loops, err := Start(ctx, Config{ConfirmationInterval: time.Hour}, Workers{Checker: &countingChecker{}})
 	if err != nil {
@@ -464,12 +464,12 @@ func TestLoops_WaitReturnsRightAwayForIdleLoops(t *testing.T) {
 	}
 }
 
-func TestLoops_WaitOnNilLoopsReturns(t *testing.T) {
+func TestLoops_Wait_OnNilLoopsReturns(t *testing.T) {
 	var loops *Loops
 	loops.Wait()
 }
 
-func TestSplitScanChainsKeepsTheConfiguredOrder(t *testing.T) {
+func TestSplit_Scan_ChainsKeepsTheConfiguredOrder(t *testing.T) {
 	shared, dedicated := splitScanChains([]string{"sol", "base", "eth", "btc", "tarbitrum", "polygon", "bsc"})
 
 	if want := []string{"sol", "eth", "btc", "polygon"}; strings.Join(shared, ",") != strings.Join(want, ",") {

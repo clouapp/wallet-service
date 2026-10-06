@@ -11,7 +11,7 @@ import (
 	chainsvc "github.com/macrowallets/waas/app/services/chains"
 )
 
-func TestListForEnvironment(t *testing.T) {
+func TestList_For_Environment(t *testing.T) {
 	t.Parallel()
 
 	active := []models.Chain{{ID: "eth"}, {ID: "btc"}}
@@ -89,7 +89,7 @@ func TestListForEnvironment(t *testing.T) {
 	}
 }
 
-func TestFindByIDTokensAndResources(t *testing.T) {
+func TestFind_By_IDTokensAndResources(t *testing.T) {
 	t.Parallel()
 
 	store := &fakeCatalog{active: []models.Chain{{ID: "eth"}}}
@@ -121,7 +121,7 @@ func TestFindByIDTokensAndResources(t *testing.T) {
 	require.EqualError(t, err, "chains service: chain resources repository is required")
 }
 
-func TestListForEnvironmentRequiresContextAndCatalog(t *testing.T) {
+func TestList_For_EnvironmentRequiresContextAndCatalog(t *testing.T) {
 	t.Parallel()
 
 	_, err := chainsvc.NewService(chainsvc.Deps{Chains: &fakeCatalog{}}).ListForEnvironment(nil, models.EnvironmentProd)

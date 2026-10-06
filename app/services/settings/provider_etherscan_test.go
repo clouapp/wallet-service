@@ -12,7 +12,7 @@ import (
 
 const providerEtherscanFixture = "provider-etherscan-key-fixture"
 
-func TestSavePlatformEtherscan_StoresEnabledAndSealsTheAPIKey(t *testing.T) {
+func TestSave_PlatformEtherscan_StoresEnabledAndSealsTheAPIKey(t *testing.T) {
 	t.Parallel()
 
 	store := newMemoryStore()
@@ -64,7 +64,7 @@ func TestSavePlatformEtherscan_StoresEnabledAndSealsTheAPIKey(t *testing.T) {
 	}
 }
 
-func TestSavePlatformEtherscan_RejectsAnAuthTokenAndANonBoolean(t *testing.T) {
+func TestSave_PlatformEtherscan_RejectsAnAuthTokenAndANonBoolean(t *testing.T) {
 	t.Parallel()
 
 	store := newMemoryStore()
@@ -98,7 +98,7 @@ func TestSavePlatformEtherscan_RejectsAnAuthTokenAndANonBoolean(t *testing.T) {
 	}
 }
 
-func TestSavePlatformEtherscan_ForbidsANonAdmin(t *testing.T) {
+func TestSave_PlatformEtherscan_ForbidsANonAdmin(t *testing.T) {
 	t.Parallel()
 
 	store := newMemoryStore()
@@ -121,7 +121,7 @@ func TestSavePlatformEtherscan_ForbidsANonAdmin(t *testing.T) {
 	}
 }
 
-func TestSaveEtherscanIsNotAnAccountGroup(t *testing.T) {
+func TestSave_Etherscan_IsNotAnAccountGroup(t *testing.T) {
 	t.Parallel()
 
 	_, err := newTestService(newMemoryStore()).Save(

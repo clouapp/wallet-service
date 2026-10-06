@@ -21,7 +21,7 @@ func (c redisDailyCounter) Expire(ctx context.Context, key string, ttl time.Dura
 	return c.client.Expire(ctx, key, ttl).Err()
 }
 
-func TestReserveDailyUSDUsesANamespacedCounter(t *testing.T) {
+func TestReserve_Daily_USDUsesANamespacedCounter(t *testing.T) {
 	client := testutil.TestRedis(t)
 	prefix := testutil.TestRedisPrefix(t, client)
 	key := prefix + time.Now().UTC().Format("2006-01-02")

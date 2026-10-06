@@ -12,7 +12,7 @@ import (
 	"github.com/macrowallets/waas/pkg/types"
 )
 
-func TestRegisterActiveChains_KeepsTheSameActiveSet(t *testing.T) {
+func TestRegister_ActiveChains_KeepsTheSameActiveSet(t *testing.T) {
 	previous := openActiveChainEndpoint
 	t.Cleanup(func() { openActiveChainEndpoint = previous })
 	openActiveChainEndpoint = func(stored string) (string, error) {

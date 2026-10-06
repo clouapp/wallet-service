@@ -42,7 +42,7 @@ func sweepControllerDeps() SweepControllerDeps {
 	}
 }
 
-func TestNewSweepControllerKeepsItsDependencies(t *testing.T) {
+func TestNew_Sweep_ControllerKeepsItsDependencies(t *testing.T) {
 	deps := sweepControllerDeps()
 	ctrl := NewSweepController(deps)
 	if ctrl == nil {
@@ -59,7 +59,7 @@ func TestNewSweepControllerKeepsItsDependencies(t *testing.T) {
 	}
 }
 
-func TestNewSweepControllerAllowsNilRedis(t *testing.T) {
+func TestNew_Sweep_ControllerAllowsNilRedis(t *testing.T) {
 	deps := sweepControllerDeps()
 	deps.Redis = nil
 	ctrl := NewSweepController(deps)
@@ -74,7 +74,7 @@ func TestNewSweepControllerAllowsNilRedis(t *testing.T) {
 	}
 }
 
-func TestNewSweepControllerRequiresEveryDependency(t *testing.T) {
+func TestNew_Sweep_ControllerRequiresEveryDependency(t *testing.T) {
 	cases := []struct {
 		name  string
 		clear func(*SweepControllerDeps)

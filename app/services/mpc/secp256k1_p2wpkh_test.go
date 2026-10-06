@@ -8,7 +8,7 @@ import (
 	"github.com/btcsuite/btcd/btcec/v2/ecdsa"
 )
 
-func TestSignSecp256k1P2WPKH_MatchesLowSDER(t *testing.T) {
+func TestSign_Secp2561P2WPKH_MatchesLowSDER(t *testing.T) {
 	privateKey, err := btcec.NewPrivateKey()
 	if err != nil {
 		t.Fatal(err)

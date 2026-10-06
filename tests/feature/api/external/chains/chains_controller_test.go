@@ -27,7 +27,7 @@ type ChainsControllerTestSuite struct {
 	goravelTesting.TestCase
 }
 
-func TestChainsControllerSuite(t *testing.T) {
+func TestChains_Controller_Suite(t *testing.T) {
 	suite.Run(t, new(ChainsControllerTestSuite))
 }
 

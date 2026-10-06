@@ -53,7 +53,7 @@ func walletOfAddress(t *testing.T, address string) uuid.UUID {
 // under the wallet; the scanner then sees the same transactions reach watched
 // addresses and must not record them again as deposits. A withdrawal of the wallet that
 // lands on a watched address, and a sweep recorded by another wallet, are deposits.
-func TestScanBlock_SkipsSweepsAndGasSeedsOfTheSameWallet(t *testing.T) {
+func TestScan_Block_SkipsSweepsAndGasSeedsOfTheSameWallet(t *testing.T) {
 	f := newScanFixture(t, 1000, DefaultScanOptions())
 	walletID := walletOfAddress(t, f.address)
 	otherWallet := fixtures.InsertWallet(t, scanTestChain)

@@ -31,7 +31,7 @@ type PlatformWebhookDeliveryTestSuite struct {
 	authSuite
 }
 
-func TestPlatformWebhookDeliverySuite(t *testing.T) {
+func TestPlatform_Webhook_DeliverySuite(t *testing.T) {
 	suite.Run(t, new(PlatformWebhookDeliveryTestSuite))
 }
 
@@ -40,7 +40,7 @@ func (s *PlatformWebhookDeliveryTestSuite) SetupTest() {
 	settings.FacadeCache{}.Forget("settings:platform:webhook_delivery")
 }
 
-func (s *PlatformWebhookDeliveryTestSuite) TestAStoredLimitAndTimeoutAreWhatDeliveryUses() {
+func (s *PlatformWebhookDeliveryTestSuite) TestA_Stored_LimitAndTimeoutAreWhatDeliveryUses() {
 	admin := s.seedUser(false)
 	s.grantPlatformAdmin(admin.ID)
 	session := s.signIn(admin.Email)
@@ -158,7 +158,7 @@ func (s *PlatformWebhookDeliveryTestSuite) TestAStoredLimitAndTimeoutAreWhatDeli
 	}
 }
 
-func (s *PlatformWebhookDeliveryTestSuite) TestAMissingRowKeepsTheDefault() {
+func (s *PlatformWebhookDeliveryTestSuite) TestA_Missing_RowKeepsTheDefault() {
 	admin := s.seedUser(false)
 	s.grantPlatformAdmin(admin.ID)
 	accountID := s.seedOwnedAccount(admin.ID)
@@ -194,7 +194,7 @@ func (s *PlatformWebhookDeliveryTestSuite) TestAMissingRowKeepsTheDefault() {
 	s.Equal(models.WebhookDeliveryDelivered, s.deliveryStatus(cfg.ID))
 }
 
-func (s *PlatformWebhookDeliveryTestSuite) TestZeroOrNegativeIsRejectedAndANonAdminIsForbidden() {
+func (s *PlatformWebhookDeliveryTestSuite) TestZero_Or_NegativeIsRejectedAndANonAdminIsForbidden() {
 	member := s.seedUser(false)
 	session := s.signIn(member.Email)
 

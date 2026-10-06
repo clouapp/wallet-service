@@ -14,7 +14,7 @@ import (
 	"github.com/macrowallets/waas/app/services/features"
 )
 
-func (s *featureGateSuite) TestNonAdminCannotReadOrWritePlatformFeatures() {
+func (s *featureGateSuite) TestNon_Admin_CannotReadOrWritePlatformFeatures() {
 	_, accountID, session, _ := s.ownerWallet()
 
 	forbidden := s.platform(session, http.MethodGet, "/v1/platform/features", "", http.StatusForbidden)
@@ -28,7 +28,7 @@ func (s *featureGateSuite) TestNonAdminCannotReadOrWritePlatformFeatures() {
 	s.Equal(int64(0), s.activityActionCount(activitylog.ActionFeaturesUpdated))
 }
 
-func (s *featureGateSuite) TestGlobalWithdrawalsFalseBlocksTheNextWithdrawUntilItIsOnAgain() {
+func (s *featureGateSuite) TestGlobal_Withdrawals_FalseBlocksTheNextWithdrawUntilItIsOnAgain() {
 	userID, accountID, session, walletID := s.ownerWallet()
 	apiToken := s.apiToken(accountID, "global-withdrawals")
 	s.grantPlatformAdmin(userID)
@@ -85,7 +85,7 @@ func (s *featureGateSuite) TestGlobalWithdrawalsFalseBlocksTheNextWithdrawUntilI
 	}
 }
 
-func (s *featureGateSuite) TestGlobalSweepFalseBlocksConsolidateAndAccountOffStillBlocksWhenGlobalIsOn() {
+func (s *featureGateSuite) TestGlobal_Sweep_FalseBlocksConsolidateAndAccountOffStillBlocksWhenGlobalIsOn() {
 	userID, accountID, session, walletID := s.ownerWallet()
 	apiToken := s.apiToken(accountID, "global-sweep")
 	s.grantPlatformAdmin(userID)
@@ -219,7 +219,7 @@ func (s *featureGateSuite) accountEnabled(accountID uuid.UUID, key string) bool 
 	return row.Enabled
 }
 
-func (s *featureGateSuite) TestPlatformAdminReadsOneAccountFeatureScope() {
+func (s *featureGateSuite) TestPlatform_Admin_ReadsOneAccountFeatureScope() {
 	userID, accountID, session, _ := s.ownerWallet()
 	accountPath := "/v1/platform/features/account/" + accountID.String()
 
@@ -258,7 +258,7 @@ func (s *featureGateSuite) TestPlatformAdminReadsOneAccountFeatureScope() {
 	s.Equal(int64(1), s.accountFeatureCount(accountID))
 }
 
-func (s *featureGateSuite) TestPlatformAdminWritesOneAccountFeatureScope() {
+func (s *featureGateSuite) TestPlatform_Admin_WritesOneAccountFeatureScope() {
 	userID, accountID, session, _ := s.ownerWallet()
 	accountPath := "/v1/platform/features/account/" + accountID.String()
 	oneFlag := accountPath + "/" + features.FlagWithdrawalsEnabled

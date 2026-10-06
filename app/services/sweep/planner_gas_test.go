@@ -196,7 +196,7 @@ func (f *evmGasFixture) plannerService() *service {
 	}
 }
 
-func TestPlan_EVMTokenEstimatedGasMatchesBuiltTransaction(t *testing.T) {
+func TestPlan_EVM_TokenEstimatedGasMatchesBuiltTransaction(t *testing.T) {
 	fixture := newEVMGasFixture(t)
 	svc := fixture.plannerService()
 	amount := big.NewInt(3_000_000)
@@ -223,7 +223,7 @@ func TestPlan_EVMTokenEstimatedGasMatchesBuiltTransaction(t *testing.T) {
 	}
 }
 
-func TestPlan_EVMTokenEstimateErrorFailsThePlan(t *testing.T) {
+func TestPlan_EVM_TokenEstimateErrorFailsThePlan(t *testing.T) {
 	fixture := newEVMGasFixture(t)
 	fixture.adapter.estimateErr = fmt.Errorf("%w: execution reverted", chain.ErrGasEstimateFailed)
 	svc := fixture.plannerService()
@@ -237,7 +237,7 @@ func TestPlan_EVMTokenEstimateErrorFailsThePlan(t *testing.T) {
 	}
 }
 
-func TestPlan_EVMTokenPreviewWithoutDestinationReportsUnknownGas(t *testing.T) {
+func TestPlan_EVM_TokenPreviewWithoutDestinationReportsUnknownGas(t *testing.T) {
 	fixture := newEVMGasFixture(t)
 	svc := fixture.plannerService()
 
@@ -253,7 +253,7 @@ func TestPlan_EVMTokenPreviewWithoutDestinationReportsUnknownGas(t *testing.T) {
 	}
 }
 
-func TestPlan_MultiSweepSumsEstimatedLegLimits(t *testing.T) {
+func TestPlan_Multi_SweepSumsEstimatedLegLimits(t *testing.T) {
 	walletID := uuid.New()
 	baseAddr := models.Address{ID: uuid.New(), WalletID: walletID, Address: "BASE"}
 	childA := models.Address{ID: uuid.New(), WalletID: walletID, Address: "CHILD_A"}
@@ -302,7 +302,7 @@ func TestPlan_MultiSweepSumsEstimatedLegLimits(t *testing.T) {
 	}
 }
 
-func TestExecute_TokenEstimateErrorDoesNotBroadcast(t *testing.T) {
+func TestExecute_Token_EstimateErrorDoesNotBroadcast(t *testing.T) {
 	fixture := newEVMGasFixture(t)
 	fixture.adapter.estimateErr = fmt.Errorf("%w: execution reverted", chain.ErrGasEstimateFailed)
 	txRepo := &fakeTxRepo{}

@@ -12,7 +12,7 @@ import (
 	"github.com/macrowallets/waas/app/models"
 )
 
-func TestWhitelistEntryKeepsTheModelWire(t *testing.T) {
+func TestWhitelist_Entry_KeepsTheModelWire(t *testing.T) {
 	t.Parallel()
 
 	id := uuid.MustParse("11111111-1111-4111-8111-111111111111")
@@ -59,7 +59,7 @@ func TestWhitelistEntryKeepsTheModelWire(t *testing.T) {
 	}
 }
 
-func TestWhitelistEntriesPreserveSliceNilness(t *testing.T) {
+func TestWhitelist_Entries_PreserveSliceNilness(t *testing.T) {
 	t.Parallel()
 
 	if whitelist.WhitelistEntriesFrom(nil) != nil {

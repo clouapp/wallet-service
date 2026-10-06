@@ -13,7 +13,7 @@ import (
 	"github.com/macrowallets/waas/app/services/users"
 )
 
-func TestListRefusesACallerWhoIsNotAPlatformAdmin(t *testing.T) {
+func TestList_Refuses_ACallerWhoIsNotAPlatformAdmin(t *testing.T) {
 	store := &listStore{rows: []models.User{{ID: uuid.New(), Email: "hidden@example.com", PasswordHash: "hash"}}}
 	service := users.NewService(users.Deps{Store: store, Admins: allowAdmins{}})
 
@@ -25,7 +25,7 @@ func TestListRefusesACallerWhoIsNotAPlatformAdmin(t *testing.T) {
 	require.False(t, store.called)
 }
 
-func TestListReturnsThePageForAPlatformAdmin(t *testing.T) {
+func TestList_Returns_ThePageForAPlatformAdmin(t *testing.T) {
 	actor := uuid.New()
 	newer := models.User{ID: uuid.New(), Email: "newer@example.com", Status: models.StatusActive}
 	store := &listStore{rows: []models.User{newer}, total: 4}
@@ -40,7 +40,7 @@ func TestListReturnsThePageForAPlatformAdmin(t *testing.T) {
 	require.Equal(t, 2, store.offset)
 }
 
-func TestListRejectsAMissingActorAndABadPage(t *testing.T) {
+func TestList_Rejects_AMissingActorAndABadPage(t *testing.T) {
 	actor := uuid.New()
 	store := &listStore{}
 	service := users.NewService(users.Deps{Store: store, Admins: allowAdmins{actor}})

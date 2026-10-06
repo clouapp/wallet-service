@@ -16,7 +16,7 @@ import (
 	"github.com/macrowallets/waas/tests/mocks"
 )
 
-func TestPlanForWithdrawal_SweepEnabled(t *testing.T) {
+func TestPlan_ForWithdrawal_SweepEnabled(t *testing.T) {
 	t.Parallel()
 
 	accountOn := true
@@ -86,7 +86,7 @@ func TestPlanForWithdrawal_SweepEnabled(t *testing.T) {
 	}
 }
 
-func TestPlanForWithdrawal_WalletAccountOffPausesBeforePersist(t *testing.T) {
+func TestPlan_ForWithdrawal_WalletAccountOffPausesBeforePersist(t *testing.T) {
 	t.Parallel()
 
 	callerID := uuid.New()

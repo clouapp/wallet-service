@@ -82,7 +82,7 @@ func requireDecimal(t *testing.T, got decimal.Decimal, want string) {
 	}
 }
 
-func TestConvertSameCurrency(t *testing.T) {
+func TestConvert_Same_Currency(t *testing.T) {
 	result, err := newTestService(t).Convert(context.Background(), "BTC", "BTC", mustDecimal(t, "1.5"))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -90,7 +90,7 @@ func TestConvertSameCurrency(t *testing.T) {
 	requireDecimal(t, result, "1.5")
 }
 
-func TestConvertBTCtoUSD(t *testing.T) {
+func TestConvert_BT_CtoUSD(t *testing.T) {
 	result, err := newTestService(t).ConvertToUSD(context.Background(), "BTC", mustDecimal(t, "0.5"))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -98,7 +98,7 @@ func TestConvertBTCtoUSD(t *testing.T) {
 	requireDecimal(t, result, "32500")
 }
 
-func TestConvertBTCtoBRLRoundsToTheConversionScale(t *testing.T) {
+func TestConvert_BT_CtoBRLRoundsToTheConversionScale(t *testing.T) {
 	result, err := newTestService(t).ConvertCryptoToFiat(context.Background(), "BTC", "BRL", mustDecimal(t, "1"))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -106,7 +106,7 @@ func TestConvertBTCtoBRLRoundsToTheConversionScale(t *testing.T) {
 	requireDecimal(t, result, "331632.653061224489795918")
 }
 
-func TestConvertETHtoEURRoundsHalfAwayFromZero(t *testing.T) {
+func TestConvert_ET_HtoEURRoundsHalfAwayFromZero(t *testing.T) {
 	result, err := newTestService(t).ConvertCryptoToFiat(context.Background(), "ETH", "EUR", mustDecimal(t, "2"))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -114,7 +114,7 @@ func TestConvertETHtoEURRoundsHalfAwayFromZero(t *testing.T) {
 	requireDecimal(t, result, "5871.559633027522935780")
 }
 
-func TestConvertIsExactWhereFloatsDrift(t *testing.T) {
+func TestConvert_Is_ExactWhereFloatsDrift(t *testing.T) {
 	result, err := newTestService(t).ConvertToUSD(context.Background(), "DIME", mustDecimal(t, "3"))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -122,14 +122,14 @@ func TestConvertIsExactWhereFloatsDrift(t *testing.T) {
 	requireDecimal(t, result, "0.3")
 }
 
-func TestConvertUnknownCurrency(t *testing.T) {
+func TestConvert_Unknown_Currency(t *testing.T) {
 	_, err := newTestService(t).Convert(context.Background(), "UNKNOWN", "USD", mustDecimal(t, "1"))
 	if err == nil {
 		t.Error("expected error for unknown currency")
 	}
 }
 
-func TestFindStaleReturnsTheStoreRows(t *testing.T) {
+func TestFind_Stale_ReturnsTheStoreRows(t *testing.T) {
 	want := []models.Currency{{Code: "BTC"}}
 	repo := &mockCurrencyRepo{stale: want, staleErr: errStale}
 	svc := NewService(Deps{Currencies: repo})
@@ -145,7 +145,7 @@ func TestFindStaleReturnsTheStoreRows(t *testing.T) {
 	}
 }
 
-func TestPriceWebSocketUsesTheServiceCurrencyStore(t *testing.T) {
+func TestPrice_Web_SocketUsesTheServiceCurrencyStore(t *testing.T) {
 	repo := &mockCurrencyRepo{}
 	dialer := stubDialer{}
 	svc := NewService(Deps{Currencies: repo}).WithQuoteDialer(dialer)
@@ -167,32 +167,32 @@ type errorString string
 
 func (e errorString) Error() string { return string(e) }
 
-func TestConvertRejectsAZeroTargetPrice(t *testing.T) {
+func TestConvert_Rejects_AZeroTargetPrice(t *testing.T) {
 	_, err := newTestService(t).Convert(context.Background(), "BTC", "FREE", mustDecimal(t, "1"))
 	if err == nil {
 		t.Fatal("expected an error for a zero target price")
 	}
 }
 
-func TestConvertRejectsANegativeAmount(t *testing.T) {
+func TestConvert_Rejects_ANegativeAmount(t *testing.T) {
 	_, err := newTestService(t).Convert(context.Background(), "BTC", "USD", mustDecimal(t, "-1"))
 	if !errors.Is(err, numeric.ErrNegative) {
 		t.Fatalf("err = %v, want ErrNegative", err)
 	}
 }
 
-func TestConvertRequiresBothCodes(t *testing.T) {
+func TestConvert_Requires_BothCodes(t *testing.T) {
 	if _, err := newTestService(t).Convert(context.Background(), " ", "USD", mustDecimal(t, "1")); err == nil {
 		t.Fatal("expected an error for an empty source code")
 	}
 }
 
-func TestInvertRateKeepsThePriceColumnScale(t *testing.T) {
+func TestInvert_Rate_KeepsThePriceColumnScale(t *testing.T) {
 	requireDecimal(t, invertRate(mustDecimal(t, "5.1")), "0.1960784314")
 	requireDecimal(t, invertRate(mustDecimal(t, "0")), "0")
 }
 
-func TestFitQuotedPriceSkipsQuotesThatRoundToZeroOrOverflow(t *testing.T) {
+func TestFit_Quoted_PriceSkipsQuotesThatRoundToZeroOrOverflow(t *testing.T) {
 	if _, ok := fitQuotedPrice("TINY", mustDecimal(t, "0.00000000001")); ok {
 		t.Fatal("a quote that rounds to zero must be skipped")
 	}

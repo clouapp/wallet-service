@@ -5,7 +5,7 @@ import (
 	"testing"
 )
 
-func TestNewBitcoinKeyUsesDeps(t *testing.T) {
+func TestNew_Bitcoin_KeyUsesDeps(t *testing.T) {
 	privateKey := randomSecp256k1Key(t)
 
 	main, err := NewBitcoinKey(BitcoinKeyDeps{PrivateKey: privateKey})

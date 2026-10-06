@@ -14,7 +14,7 @@ func preferencesControllerDeps() PreferencesControllerDeps {
 	}
 }
 
-func TestNewPreferencesControllerKeepsItsDependencies(t *testing.T) {
+func TestNew_Preferences_ControllerKeepsItsDependencies(t *testing.T) {
 	deps := preferencesControllerDeps()
 	ctrl := NewPreferencesController(deps)
 	if ctrl == nil {
@@ -28,7 +28,7 @@ func TestNewPreferencesControllerKeepsItsDependencies(t *testing.T) {
 	}
 }
 
-func TestNewPreferencesControllerRequiresEveryDependency(t *testing.T) {
+func TestNew_Preferences_ControllerRequiresEveryDependency(t *testing.T) {
 	cases := []struct {
 		name  string
 		clear func(*PreferencesControllerDeps)

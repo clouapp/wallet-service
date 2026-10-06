@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-func TestRedactTextHidesURLCredentialsRPCPathsAndAssignments(t *testing.T) {
+func TestRedact_Text_HidesURLCredentialsRPCPathsAndAssignments(t *testing.T) {
 	ConfigureRedaction(
 		[]string{"rpc.example"},
 		[]string{"fake-api-key-value"},
@@ -57,7 +57,7 @@ func TestRedactTextHidesURLCredentialsRPCPathsAndAssignments(t *testing.T) {
 	}
 }
 
-func TestRedactTextLeavesPlainTextAndRedactErrorNil(t *testing.T) {
+func TestRedact_Text_LeavesPlainTextAndRedactErrorNil(t *testing.T) {
 	if got := RedactText("redis ping failed: timeout"); got != "redis ping failed: timeout" {
 		t.Fatalf("RedactText mangled plain text: %q", got)
 	}
@@ -69,7 +69,7 @@ func TestRedactTextLeavesPlainTextAndRedactErrorNil(t *testing.T) {
 	}
 }
 
-func TestRedactTextStripsPEMPrivateKey(t *testing.T) {
+func TestRedact_Text_StripsPEMPrivateKey(t *testing.T) {
 	in := "key -----BEGIN PRIVATE KEY-----\nFAKE-PRIVATE-KEY-BODY\n-----END PRIVATE KEY----- tail"
 	got := RedactText(in)
 	if strings.Contains(got, "FAKE-PRIVATE-KEY-BODY") {

@@ -8,7 +8,7 @@ import (
 	"github.com/google/uuid"
 )
 
-func TestSecretPairsNameTheSMTPPasswordAndNotTheHost(t *testing.T) {
+func TestSecret_Pairs_NameTheSMTPPasswordAndNotTheHost(t *testing.T) {
 	t.Parallel()
 
 	sawPassword := false
@@ -28,7 +28,7 @@ func TestSecretPairsNameTheSMTPPasswordAndNotTheHost(t *testing.T) {
 	}
 }
 
-func TestSettingsAuditScopeIsEmptyForPlatformAndAccountOtherwise(t *testing.T) {
+func TestSettings_Audit_ScopeIsEmptyForPlatformAndAccountOtherwise(t *testing.T) {
 	t.Parallel()
 
 	if settingsAuditScope(nil) != "" {
@@ -44,7 +44,7 @@ func TestSettingsAuditScopeIsEmptyForPlatformAndAccountOtherwise(t *testing.T) {
 	}
 }
 
-func TestSettingsAuditImagesRecordValueSetForASecret(t *testing.T) {
+func TestSettings_Audit_ImagesRecordValueSetForASecret(t *testing.T) {
 	t.Parallel()
 
 	const ciphertext = "enc:v1:ciphertext-that-must-not-be-copied"
@@ -74,7 +74,7 @@ func TestSettingsAuditImagesRecordValueSetForASecret(t *testing.T) {
 	}
 }
 
-func TestSettingsAuditImagesKeepANonSecretValue(t *testing.T) {
+func TestSettings_Audit_ImagesKeepANonSecretValue(t *testing.T) {
 	t.Parallel()
 
 	accountID := uuid.MustParse("11111111-1111-4111-8111-111111111111")

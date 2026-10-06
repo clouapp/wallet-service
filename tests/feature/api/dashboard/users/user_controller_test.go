@@ -51,7 +51,7 @@ type UserControllerTestSuite struct {
 	token  string
 }
 
-func TestUserControllerSuite(t *testing.T) {
+func TestUser_Controller_Suite(t *testing.T) {
 	suite.Run(t, new(UserControllerTestSuite))
 }
 
@@ -112,7 +112,7 @@ func (s *UserControllerTestSuite) seedAccount(name, environment, role string) mo
 	return acc
 }
 
-func (s *UserControllerTestSuite) TestGetMeListsGloballyActiveFeatureKeys() {
+func (s *UserControllerTestSuite) TestGet_Me_ListsGloballyActiveFeatureKeys() {
 	body := s.getMe()
 	s.Equal([]string{features.FlagDepositScanEnabled, features.FlagSweepEnabled, features.FlagWalletCreationEnabled, features.FlagWebhookDeliveryEnabled, features.FlagWithdrawalsEnabled}, body.Features)
 
@@ -165,7 +165,7 @@ func (s *UserControllerTestSuite) getMe() struct {
 	return body
 }
 
-func (s *UserControllerTestSuite) TestUpdateMe_AppliesFullName() {
+func (s *UserControllerTestSuite) TestUpdate_Me_AppliesFullName() {
 	body := `{"full_name":"Renamed User"}`
 	resp, err := s.Http(s.T()).
 		WithHeader("Authorization", "Bearer "+s.token).
@@ -183,7 +183,7 @@ func (s *UserControllerTestSuite) TestUpdateMe_AppliesFullName() {
 	s.Equal("Renamed User", parsed.FullName)
 }
 
-func (s *UserControllerTestSuite) TestUpdateAccount_AppliesName() {
+func (s *UserControllerTestSuite) TestUpdate_Account_AppliesName() {
 	account := s.seedAccounts(1, "prod")[0]
 	body := `{"name":"Renamed Account"}`
 	resp, err := s.Http(s.T()).
@@ -224,13 +224,13 @@ func (s *UserControllerTestSuite) decodeList(resp contractstesting.Response) acc
 	return body
 }
 
-func (s *UserControllerTestSuite) TestListMyAccounts_Unauthenticated() {
+func (s *UserControllerTestSuite) TestList_MyAccounts_Unauthenticated() {
 	resp, err := s.Http(s.T()).Get(myAccountsPath)
 	s.Require().NoError(err)
 	resp.AssertStatus(401)
 }
 
-func (s *UserControllerTestSuite) TestListMyAccounts_EmptyList() {
+func (s *UserControllerTestSuite) TestList_MyAccounts_EmptyList() {
 	body := s.decodeList(s.listAccounts(nil))
 
 	s.Empty(body.Data)
@@ -239,7 +239,7 @@ func (s *UserControllerTestSuite) TestListMyAccounts_EmptyList() {
 	s.Equal(0, body.Offset)
 }
 
-func (s *UserControllerTestSuite) TestListMyAccounts_SinglePage() {
+func (s *UserControllerTestSuite) TestList_MyAccounts_SinglePage() {
 	s.seedAccounts(3, models.EnvironmentProd)
 
 	body := s.decodeList(s.listAccounts(nil))
@@ -253,7 +253,7 @@ func (s *UserControllerTestSuite) TestListMyAccounts_SinglePage() {
 	}
 }
 
-func (s *UserControllerTestSuite) TestListMyAccounts_IncludesCallerRole() {
+func (s *UserControllerTestSuite) TestList_MyAccounts_IncludesCallerRole() {
 	owner := s.seedAccount("Owner Desk", models.EnvironmentProd, "owner")
 	auditor := s.seedAccount("Audit Desk", models.EnvironmentProd, "auditor")
 
@@ -274,7 +274,7 @@ func (s *UserControllerTestSuite) TestListMyAccounts_IncludesCallerRole() {
 	s.Equal("auditor", roles[auditor.ID])
 }
 
-func (s *UserControllerTestSuite) TestListMyAccounts_ManyPagesReachEveryAccount() {
+func (s *UserControllerTestSuite) TestList_MyAccounts_ManyPagesReachEveryAccount() {
 	seeded := s.seedAccounts(manyAccountsCount, models.EnvironmentProd)
 
 	first := s.decodeList(s.listAccounts(nil))
@@ -294,7 +294,7 @@ func (s *UserControllerTestSuite) TestListMyAccounts_ManyPagesReachEveryAccount(
 	s.Len(seen, len(seeded))
 }
 
-func (s *UserControllerTestSuite) TestListMyAccounts_LastPageIsPartial() {
+func (s *UserControllerTestSuite) TestList_MyAccounts_LastPageIsPartial() {
 	s.seedAccounts(manyAccountsCount, models.EnvironmentProd)
 
 	body := s.decodeList(s.listAccounts(url.Values{"limit": {"20"}, "offset": {"60"}}))
@@ -304,7 +304,7 @@ func (s *UserControllerTestSuite) TestListMyAccounts_LastPageIsPartial() {
 	s.Equal("Account 64", body.Data[len(body.Data)-1].Name)
 }
 
-func (s *UserControllerTestSuite) TestListMyAccounts_CapsLimitAtMax() {
+func (s *UserControllerTestSuite) TestList_MyAccounts_CapsLimitAtMax() {
 	s.seedAccounts(manyAccountsCount, models.EnvironmentProd)
 
 	body := s.decodeList(s.listAccounts(url.Values{"limit": {"500"}}))
@@ -313,7 +313,7 @@ func (s *UserControllerTestSuite) TestListMyAccounts_CapsLimitAtMax() {
 	s.Len(body.Data, manyAccountsCount)
 }
 
-func (s *UserControllerTestSuite) TestListMyAccounts_OutOfRangeOffsetReturnsEmptyPage() {
+func (s *UserControllerTestSuite) TestList_MyAccounts_OutOfRangeOffsetReturnsEmptyPage() {
 	s.seedAccounts(3, models.EnvironmentProd)
 
 	body := s.decodeList(s.listAccounts(url.Values{"offset": {"300"}}))
@@ -323,7 +323,7 @@ func (s *UserControllerTestSuite) TestListMyAccounts_OutOfRangeOffsetReturnsEmpt
 	s.Equal(300, body.Offset)
 }
 
-func (s *UserControllerTestSuite) TestListMyAccounts_RejectsInvalidQuery() {
+func (s *UserControllerTestSuite) TestList_MyAccounts_RejectsInvalidQuery() {
 	testCases := []struct {
 		name  string
 		query url.Values
@@ -348,7 +348,7 @@ func (s *UserControllerTestSuite) TestListMyAccounts_RejectsInvalidQuery() {
 	}
 }
 
-func (s *UserControllerTestSuite) TestListMyAccounts_SearchAndEnvironmentFilter() {
+func (s *UserControllerTestSuite) TestList_MyAccounts_SearchAndEnvironmentFilter() {
 	s.seedAccounts(manyAccountsCount, models.EnvironmentProd)
 	s.seedAccounts(1, models.EnvironmentTest)
 

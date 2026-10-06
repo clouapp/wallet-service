@@ -22,7 +22,7 @@ type SessionRevocationTestSuite struct {
 	authSuite
 }
 
-func TestSessionRevocationSuite(t *testing.T) {
+func TestSession_Revocation_Suite(t *testing.T) {
 	suite.Run(t, new(SessionRevocationTestSuite))
 }
 
@@ -60,7 +60,7 @@ func (s *SessionRevocationTestSuite) loginWithPassword(email, password string) c
 	return s.postJSON("/v1/auth/login", fmt.Sprintf(`{"email":%q,"password":%q}`, email, password))
 }
 
-func (s *SessionRevocationTestSuite) TestChangePasswordEndsEverySessionAndRenewsTheCaller() {
+func (s *SessionRevocationTestSuite) TestChange_Password_EndsEverySessionAndRenewsTheCaller() {
 	user := s.seedUser(false)
 	caller := s.signIn(user.Email)
 	otherDevice := s.signIn(user.Email)
@@ -75,7 +75,7 @@ func (s *SessionRevocationTestSuite) TestChangePasswordEndsEverySessionAndRenews
 	s.loginWithPassword(user.Email, authTestNewPassword).AssertOk()
 }
 
-func (s *SessionRevocationTestSuite) TestChangePasswordRefusesTheCallersTokenEvenWithinTheSameSecond() {
+func (s *SessionRevocationTestSuite) TestChange_Password_RefusesTheCallersTokenEvenWithinTheSameSecond() {
 	user := s.seedUser(false)
 	caller := s.signIn(user.Email)
 
@@ -86,7 +86,7 @@ func (s *SessionRevocationTestSuite) TestChangePasswordRefusesTheCallersTokenEve
 	s.getMe(renewed.AccessToken).AssertOk()
 }
 
-func (s *SessionRevocationTestSuite) TestChangePasswordWithTheWrongPasswordRevokesNothing() {
+func (s *SessionRevocationTestSuite) TestChange_Password_WithTheWrongPasswordRevokesNothing() {
 	user := s.seedUser(false)
 	caller := s.signIn(user.Email)
 
@@ -96,7 +96,7 @@ func (s *SessionRevocationTestSuite) TestChangePasswordWithTheWrongPasswordRevok
 	s.assertSessionWorks(caller)
 }
 
-func (s *SessionRevocationTestSuite) TestResetPasswordEndsEverySession() {
+func (s *SessionRevocationTestSuite) TestReset_Password_EndsEverySession() {
 	user := s.seedUser(false)
 	session := s.signIn(user.Email)
 	resetToken := s.seedResetToken(user.ID)
@@ -107,7 +107,7 @@ func (s *SessionRevocationTestSuite) TestResetPasswordEndsEverySession() {
 	s.loginWithPassword(user.Email, authTestNewPassword).AssertOk()
 }
 
-func (s *SessionRevocationTestSuite) TestResetPasswordRetiresAPendingTwoFactorChallenge() {
+func (s *SessionRevocationTestSuite) TestReset_Password_RetiresAPendingTwoFactorChallenge() {
 	user := s.seedUser(true)
 	_, challenge := s.loginAs(user.Email)
 	s.Require().NotEmpty(challenge.ChallengeToken)
@@ -120,7 +120,7 @@ func (s *SessionRevocationTestSuite) TestResetPasswordRetiresAPendingTwoFactorCh
 	s.Empty(body.AccessToken)
 }
 
-func (s *SessionRevocationTestSuite) TestDisableTOTPEndsEverySessionAndRenewsTheCaller() {
+func (s *SessionRevocationTestSuite) TestDisable_TOTP_EndsEverySessionAndRenewsTheCaller() {
 	user := s.seedUser(true)
 	_, first := s.loginAs(user.Email)
 	_, caller := s.verifyTwoFactor(first.ChallengeToken, s.currentCode(user.TOTPSecret), "")
@@ -148,7 +148,7 @@ func (s *SessionRevocationTestSuite) TestDisableTOTPEndsEverySessionAndRenewsThe
 	s.assertSessionWorks(loginBody{AccessToken: body.AccessToken, RefreshToken: body.RefreshToken})
 }
 
-func (s *SessionRevocationTestSuite) TestRefreshTokenCanOnlyBeRotatedOnce() {
+func (s *SessionRevocationTestSuite) TestRefresh_Token_CanOnlyBeRotatedOnce() {
 	user := s.seedUser(false)
 	session := s.signIn(user.Email)
 
@@ -160,7 +160,7 @@ func (s *SessionRevocationTestSuite) TestRefreshTokenCanOnlyBeRotatedOnce() {
 	s.NotEmpty(renewed.RefreshToken)
 }
 
-func (s *SessionRevocationTestSuite) TestSignInRightAfterAResetGetsAWorkingSession() {
+func (s *SessionRevocationTestSuite) TestSign_In_RightAfterAResetGetsAWorkingSession() {
 	user := s.seedUser(false)
 	s.signIn(user.Email)
 	resetToken := s.seedResetToken(user.ID)

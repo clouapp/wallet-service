@@ -28,7 +28,7 @@ import (
 // TestLoginDeniesWhenTheMembershipReadFails proves a failed membership read
 // does not issue a session or return the signed-in body. An empty membership
 // list is a successful read and is not this case.
-func TestLoginDeniesWhenTheMembershipReadFails(t *testing.T) {
+func TestLogin_Denies_WhenTheMembershipReadFails(t *testing.T) {
 	previous := foundation.App
 	foundation.App = quietApp{}
 	t.Cleanup(func() { foundation.App = previous })

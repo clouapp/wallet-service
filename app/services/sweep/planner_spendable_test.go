@@ -45,7 +45,7 @@ func planEVMNative(t *testing.T, svc *service, fixture *evmGasFixture, amount *b
 	return plan
 }
 
-func TestPlanEVMNative_BaseHoldingOnlyTheAmountCannotPayGas(t *testing.T) {
+func TestPlan_EVMNative_BaseHoldingOnlyTheAmountCannotPayGas(t *testing.T) {
 	svc, fixture, _ := evmNativePlanner(t, big.NewInt(evmNativeAmount), false)
 
 	if plan := planEVMNative(t, svc, fixture, big.NewInt(evmNativeAmount)); plan.Strategy != StrategyInsufficient {
@@ -53,7 +53,7 @@ func TestPlanEVMNative_BaseHoldingOnlyTheAmountCannotPayGas(t *testing.T) {
 	}
 }
 
-func TestPlanEVMNative_BaseCoveringAmountPlusGasIsDirect(t *testing.T) {
+func TestPlan_EVMNative_BaseCoveringAmountPlusGasIsDirect(t *testing.T) {
 	balance := new(big.Int).Add(big.NewInt(evmNativeAmount), evmNativeFee)
 	svc, fixture, _ := evmNativePlanner(t, balance, false)
 
@@ -70,7 +70,7 @@ func TestPlanEVMNative_BaseCoveringAmountPlusGasIsDirect(t *testing.T) {
 	}
 }
 
-func TestPlanEVMNative_ChildSweepMovesBalanceMinusGas(t *testing.T) {
+func TestPlan_EVMNative_ChildSweepMovesBalanceMinusGas(t *testing.T) {
 	// Base and child each hold B; the child sweep nets B − fee, the final transfer
 	// needs amount + fee at base: amount = 2B − 2·fee fits exactly.
 	balance := big.NewInt(evmNativeAmount)
@@ -90,7 +90,7 @@ func TestPlanEVMNative_ChildSweepMovesBalanceMinusGas(t *testing.T) {
 	}
 }
 
-func TestPlanEVMToken_IsNotChargedTheNativeReserve(t *testing.T) {
+func TestPlan_EVMToken_IsNotChargedTheNativeReserve(t *testing.T) {
 	fixture := newEVMGasFixture(t) // 0 native, 20 USDC on base
 	svc := fixture.plannerService()
 
@@ -256,7 +256,7 @@ func planBTC(t *testing.T, svc *service, walletID uuid.UUID, amount int64) *Plan
 	return plan
 }
 
-func TestPlanBitcoin_IgnoresUnconfirmedUTXOsAndCountsTheFee(t *testing.T) {
+func TestPlan_Bitcoin_IgnoresUnconfirmedUTXOsAndCountsTheFee(t *testing.T) {
 	svc, walletID, adapter := btcPlanner(t, map[string][]fakeUTXO{
 		"tb1qbase": {{sats: 100_000, confirmations: 3}, {sats: 500_000, confirmations: 0}},
 	})
@@ -282,7 +282,7 @@ func TestPlanBitcoin_IgnoresUnconfirmedUTXOsAndCountsTheFee(t *testing.T) {
 	}
 }
 
-func TestPlanBitcoin_FeeGrowsWithTheSourceInputs(t *testing.T) {
+func TestPlan_Bitcoin_FeeGrowsWithTheSourceInputs(t *testing.T) {
 	svc, walletID, adapter := btcPlanner(t, map[string][]fakeUTXO{
 		"tb1qbase": {{sats: 40_000, confirmations: 1}, {sats: 40_000, confirmations: 1}, {sats: 40_000, confirmations: 1}},
 	})
@@ -299,7 +299,7 @@ func TestPlanBitcoin_FeeGrowsWithTheSourceInputs(t *testing.T) {
 	}
 }
 
-func TestPlanBitcoin_DirectFromChildUsesTheChildsConfirmedFunds(t *testing.T) {
+func TestPlan_Bitcoin_DirectFromChildUsesTheChildsConfirmedFunds(t *testing.T) {
 	svc, walletID, _ := btcPlanner(t, map[string][]fakeUTXO{
 		"tb1qbase":    {{sats: 10_000, confirmations: 1}},
 		"tb1qpending": {{sats: 900_000, confirmations: 0}},
@@ -313,7 +313,7 @@ func TestPlanBitcoin_DirectFromChildUsesTheChildsConfirmedFunds(t *testing.T) {
 	}
 }
 
-func TestPlanBitcoin_MultiSweepLegsAreNetOfTheirFee(t *testing.T) {
+func TestPlan_Bitcoin_MultiSweepLegsAreNetOfTheirFee(t *testing.T) {
 	svc, walletID, adapter := btcPlanner(t, map[string][]fakeUTXO{
 		"tb1qbase":  {{sats: 50_000, confirmations: 1}},
 		"tb1qchild": {{sats: 40_000, confirmations: 1}, {sats: 40_000, confirmations: 1}, {sats: 70_000, confirmations: 0}},
@@ -364,7 +364,7 @@ func newSpendableMock(funds chain.SpendableFunds, err error) *spendableMockChain
 	return &spendableMockChain{MockChain: mockChain, funds: funds, err: err}
 }
 
-func TestPlanSpendableFunds_ErrorsAndInvalidValuesFailThePlan(t *testing.T) {
+func TestPlan_SpendableFunds_ErrorsAndInvalidValuesFailThePlan(t *testing.T) {
 	utxoDown := errors.New("utxo api down")
 	cases := map[string]*spendableMockChain{
 		"reader error":      newSpendableMock(chain.SpendableFunds{}, utxoDown),
@@ -387,7 +387,7 @@ func TestPlanSpendableFunds_ErrorsAndInvalidValuesFailThePlan(t *testing.T) {
 	}
 }
 
-func TestPlanSpendableFunds_OnlyAppliesToTheNativeAsset(t *testing.T) {
+func TestPlan_SpendableFunds_OnlyAppliesToTheNativeAsset(t *testing.T) {
 	adapter := newSpendableMock(chain.SpendableFunds{}, errors.New("must not be called for tokens"))
 	adapter.GetTokenBalanceFn = func(ctx context.Context, address string, token types.Token) (*types.Balance, error) {
 		return &types.Balance{Amount: big.NewInt(1_000)}, nil

@@ -134,7 +134,7 @@ func (m *ownerMemberships) ActivateOwner(_ context.Context, id uuid.UUID) error 
 	return nil
 }
 
-func TestAttachOwnerForPlatformRefusesANonAdminBeforeReadingTheAccount(t *testing.T) {
+func TestAttach_Owner_ForPlatformRefusesANonAdminBeforeReadingTheAccount(t *testing.T) {
 	t.Parallel()
 	accountID := uuid.New()
 	store := &lifecycleAccounts{row: &models.Account{ID: accountID, Status: models.AccountStatusFrozen}}
@@ -152,7 +152,7 @@ func TestAttachOwnerForPlatformRefusesANonAdminBeforeReadingTheAccount(t *testin
 	}
 }
 
-func TestAttachOwnerForPlatformUnknownAccountDoesNotReadTheUser(t *testing.T) {
+func TestAttach_Owner_ForPlatformUnknownAccountDoesNotReadTheUser(t *testing.T) {
 	t.Parallel()
 	actor := uuid.New()
 	store := &lifecycleAccounts{row: &models.Account{ID: uuid.New(), Status: models.StatusActive}}
@@ -170,7 +170,7 @@ func TestAttachOwnerForPlatformUnknownAccountDoesNotReadTheUser(t *testing.T) {
 	}
 }
 
-func TestAttachOwnerForPlatformUnknownUserDoesNotWriteAMembership(t *testing.T) {
+func TestAttach_Owner_ForPlatformUnknownUserDoesNotWriteAMembership(t *testing.T) {
 	t.Parallel()
 	actor := uuid.New()
 	accountID := uuid.New()
@@ -189,7 +189,7 @@ func TestAttachOwnerForPlatformUnknownUserDoesNotWriteAMembership(t *testing.T) 
 	}
 }
 
-func TestAttachOwnerForPlatformCreatesAnOwnerWithoutApplyingRank(t *testing.T) {
+func TestAttach_Owner_ForPlatformCreatesAnOwnerWithoutApplyingRank(t *testing.T) {
 	t.Parallel()
 	actor := uuid.New()
 	accountID := uuid.New()
@@ -221,7 +221,7 @@ func TestAttachOwnerForPlatformCreatesAnOwnerWithoutApplyingRank(t *testing.T) {
 	}
 }
 
-func TestAttachOwnerForPlatformDoesNotWriteWhenTheUserIsAlreadyTheActiveOwner(t *testing.T) {
+func TestAttach_Owner_ForPlatformDoesNotWriteWhenTheUserIsAlreadyTheActiveOwner(t *testing.T) {
 	t.Parallel()
 	actor := uuid.New()
 	accountID := uuid.New()
@@ -247,7 +247,7 @@ func TestAttachOwnerForPlatformDoesNotWriteWhenTheUserIsAlreadyTheActiveOwner(t 
 	}
 }
 
-func TestAttachOwnerForPlatformRestoresAMembershipAsOwner(t *testing.T) {
+func TestAttach_Owner_ForPlatformRestoresAMembershipAsOwner(t *testing.T) {
 	t.Parallel()
 	actor := uuid.New()
 	accountID := uuid.New()

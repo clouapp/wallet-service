@@ -25,7 +25,7 @@ const (
 	sigMarker    = "sig-value-do-not-log"
 )
 
-func TestProviderSignatureRejectsABadSignatureBeforeParsing(t *testing.T) {
+func TestProvider_Signature_RejectsABadSignatureBeforeParsing(t *testing.T) {
 	logs := captureLogs(t)
 	provider := &signatureProvider{valid: false}
 	store := &signatureSubs{sub: &models.WebhookSubscription{SigningSecret: sealedMarker}}
@@ -42,7 +42,7 @@ func TestProviderSignatureRejectsABadSignatureBeforeParsing(t *testing.T) {
 	assertNoSecrets(t, recorder.Body.String()+logs.String())
 }
 
-func TestProviderSignatureDoesNotParseBeforeTheSignatureAndKeepsTheRawBody(t *testing.T) {
+func TestProvider_Signature_DoesNotParseBeforeTheSignatureAndKeepsTheRawBody(t *testing.T) {
 	logs := captureLogs(t)
 	provider := &signatureProvider{valid: true}
 	store := &signatureSubs{sub: &models.WebhookSubscription{SigningSecret: sealedMarker}}
@@ -82,7 +82,7 @@ func TestProviderSignatureDoesNotParseBeforeTheSignatureAndKeepsTheRawBody(t *te
 	assertNoSecrets(t, logs.String())
 }
 
-func TestProviderSignatureFailsClosedWhenTheSubscriptionIsMissing(t *testing.T) {
+func TestProvider_Signature_FailsClosedWhenTheSubscriptionIsMissing(t *testing.T) {
 	logs := captureLogs(t)
 	provider := &signatureProvider{valid: true}
 	store := &signatureSubs{}
@@ -99,7 +99,7 @@ func TestProviderSignatureFailsClosedWhenTheSubscriptionIsMissing(t *testing.T) 
 	assertNoSecrets(t, recorder.Body.String()+logs.String())
 }
 
-func TestProviderSignatureLeavesOtherRoutesAlone(t *testing.T) {
+func TestProvider_Signature_LeavesOtherRoutesAlone(t *testing.T) {
 	provider := &signatureProvider{}
 	store := &signatureSubs{}
 	_, next := runInbound(t, "/v1/ping", []byte(`{"ok":true}`), signatureDeps(t, store, provider), nil)
@@ -108,7 +108,7 @@ func TestProviderSignatureLeavesOtherRoutesAlone(t *testing.T) {
 	}
 }
 
-func TestProviderSignatureDoesNotLogADecryptFailure(t *testing.T) {
+func TestProvider_Signature_DoesNotLogADecryptFailure(t *testing.T) {
 	logs := captureLogs(t)
 	provider := &signatureProvider{valid: true}
 	store := &signatureSubs{sub: &models.WebhookSubscription{SigningSecret: sealedMarker}}

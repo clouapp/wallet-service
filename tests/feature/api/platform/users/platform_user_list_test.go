@@ -28,7 +28,7 @@ type PlatformUserListTestSuite struct {
 	authSuite
 }
 
-func TestPlatformUserListSuite(t *testing.T) {
+func TestPlatform_User_ListSuite(t *testing.T) {
 	suite.Run(t, new(PlatformUserListTestSuite))
 }
 
@@ -36,7 +36,7 @@ func (s *PlatformUserListTestSuite) SetupTest() {
 	testutil.SeededTestDB(s.T())
 }
 
-func (s *PlatformUserListTestSuite) TestAPlatformAdminListsUsersOrderedByCreatedAtDescending() {
+func (s *PlatformUserListTestSuite) TestA_Platform_AdminListsUsersOrderedByCreatedAtDescending() {
 	admin := s.seedUser(false)
 	s.grantPlatformAdmin(admin.ID)
 	s.stampProfile(admin.ID, "2025-01-01 00:00:00", "Admin Ada", false, false)
@@ -94,7 +94,7 @@ func (s *PlatformUserListTestSuite) TestAPlatformAdminListsUsersOrderedByCreated
 	s.Equal(middle.ID.String(), second.Data[0].ID)
 }
 
-func (s *PlatformUserListTestSuite) TestAMemberCannotListPlatformUsers() {
+func (s *PlatformUserListTestSuite) TestA_Member_CannotListPlatformUsers() {
 	member := s.seedUser(false)
 	session := s.signIn(member.Email)
 

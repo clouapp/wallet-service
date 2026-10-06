@@ -11,7 +11,7 @@ import (
 	"github.com/macrowallets/waas/tests/feature/support/fixtures"
 )
 
-func TestAddedChainTokenAndResourceInsertsAreIdempotent(t *testing.T) {
+func TestAdded_Chain_TokenAndResourceInsertsAreIdempotent(t *testing.T) {
 	fixtures.TestDB(t)
 	ctx := context.Background()
 	if err := repositories.NewChainRepository(nil).Create(ctx, &models.Chain{

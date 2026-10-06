@@ -10,13 +10,13 @@ import (
 	awssm "github.com/aws/aws-sdk-go-v2/service/secretsmanager"
 )
 
-func TestNewWalletStoreReturnsNilForANilClient(t *testing.T) {
+func TestNew_Wallet_StoreReturnsNilForANilClient(t *testing.T) {
 	if NewWalletStore(nil) != nil {
 		t.Fatal("expected a nil store when Secrets Manager is not configured")
 	}
 }
 
-func TestNilWalletStoreReportsAMissingClient(t *testing.T) {
+func TestNil_Wallet_StoreReportsAMissingClient(t *testing.T) {
 	var store *WalletStore
 	if _, err := store.Create(context.Background(), "vault/wallet/x/share-b", []byte{0x01}); err == nil {
 		t.Fatal("expected error for a nil client")
@@ -26,7 +26,7 @@ func TestNilWalletStoreReportsAMissingClient(t *testing.T) {
 	}
 }
 
-func TestCreateStoresTheGivenNameAndBytes(t *testing.T) {
+func TestCreate_Stores_TheGivenNameAndBytes(t *testing.T) {
 	want := []byte{0x01, 0x02, 0x03, 0x04}
 	fake := &fakeWalletAPI{arn: "arn:aws:secretsmanager:us-east-1:1:secret:vault/wallet/x/share-b"}
 	store := &WalletStore{api: fake}
@@ -49,7 +49,7 @@ func TestCreateStoresTheGivenNameAndBytes(t *testing.T) {
 	}
 }
 
-func TestCreateForwardsTheNameUnchanged(t *testing.T) {
+func TestCreate_Forwards_TheNameUnchanged(t *testing.T) {
 	fake := &fakeWalletAPI{arn: "arn:aws:secretsmanager:us-east-1:1:secret:padded"}
 	if _, err := (&WalletStore{api: fake}).Create(context.Background(), "  vault/wallet/x/share-b  ", []byte{0x01}); err != nil {
 		t.Fatal("create failed")
@@ -59,7 +59,7 @@ func TestCreateForwardsTheNameUnchanged(t *testing.T) {
 	}
 }
 
-func TestCreateForwardsTheAPIError(t *testing.T) {
+func TestCreate_Forwards_TheAPIError(t *testing.T) {
 	fake := &fakeWalletAPI{err: errors.New("boom")}
 	_, err := (&WalletStore{api: fake}).Create(context.Background(), "vault/wallet/x/share-b", []byte{0x01})
 	if err == nil || err.Error() != "boom" {
@@ -67,7 +67,7 @@ func TestCreateForwardsTheAPIError(t *testing.T) {
 	}
 }
 
-func TestCreateReturnsAnEmptyARNWhenTheResponseHasNone(t *testing.T) {
+func TestCreate_Returns_AnEmptyARNWhenTheResponseHasNone(t *testing.T) {
 	arn, err := (&WalletStore{api: &fakeWalletAPI{}}).Create(context.Background(), "vault/wallet/x/share-b", []byte{0x01})
 	if err != nil {
 		t.Fatal("create failed")
@@ -77,7 +77,7 @@ func TestCreateReturnsAnEmptyARNWhenTheResponseHasNone(t *testing.T) {
 	}
 }
 
-func TestWalletStoreBinaryReadsTheGivenSecretAndReturnsItsBytes(t *testing.T) {
+func TestWallet_Store_BinaryReadsTheGivenSecretAndReturnsItsBytes(t *testing.T) {
 	want := []byte{0x01, 0x02, 0x03, 0x04}
 	fake := &fakeWalletAPI{binary: want}
 	store := &WalletStore{api: fake}
@@ -97,7 +97,7 @@ func TestWalletStoreBinaryReadsTheGivenSecretAndReturnsItsBytes(t *testing.T) {
 	}
 }
 
-func TestWalletStoreBinaryForwardsTheSecretIDUnchanged(t *testing.T) {
+func TestWallet_Store_BinaryForwardsTheSecretIDUnchanged(t *testing.T) {
 	fake := &fakeWalletAPI{binary: []byte{0x01}}
 	if _, err := (&WalletStore{api: fake}).Binary(context.Background(), "  vault/wallet/x/share-b  "); err != nil {
 		t.Fatal("read failed")
@@ -107,7 +107,7 @@ func TestWalletStoreBinaryForwardsTheSecretIDUnchanged(t *testing.T) {
 	}
 }
 
-func TestWalletStoreBinaryForwardsTheAPIError(t *testing.T) {
+func TestWallet_Store_BinaryForwardsTheAPIError(t *testing.T) {
 	fake := &fakeWalletAPI{err: errors.New("boom")}
 	_, err := (&WalletStore{api: fake}).Binary(context.Background(), "vault/wallet/x/share-b")
 	if err == nil || err.Error() != "boom" {

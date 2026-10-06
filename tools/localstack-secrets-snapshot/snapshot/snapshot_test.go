@@ -48,7 +48,7 @@ func vectorEntries() []Entry {
 	}
 }
 
-func TestDigestMatchesPythonJSONDumps(t *testing.T) {
+func TestDigest_Matches_PythonJSONDumps(t *testing.T) {
 	sorted := sortedByName(vectorEntries())
 	rows := make([]any, len(sorted))
 	for index, entry := range sorted {
@@ -67,7 +67,7 @@ func TestDigestMatchesPythonJSONDumps(t *testing.T) {
 	}
 }
 
-func TestEncodeRecordMatchesPythonJSONDumps(t *testing.T) {
+func TestEncode_Record_MatchesPythonJSONDumps(t *testing.T) {
 	encoded, err := encodeRecord(DefaultAccountID, DefaultRegion, sortedByName(vectorEntries()))
 	if err != nil {
 		t.Fatal(err)
@@ -77,7 +77,7 @@ func TestEncodeRecordMatchesPythonJSONDumps(t *testing.T) {
 	}
 }
 
-func TestStampUsesPythonMicrosecondLayout(t *testing.T) {
+func TestStamp_Uses_PythonMicrosecondLayout(t *testing.T) {
 	moment := time.Date(2026, 10, 3, 4, 15, 0, 123456789, time.UTC)
 	if got := Stamp(moment); got != "20261003T041500123456Z" {
 		t.Fatalf("Stamp = %s", got)
@@ -258,7 +258,7 @@ func shareEntry(name, suffix, value string) Entry {
 
 // ---------------------------------------------------------------- export
 
-func TestExportRefusesUntilRestoreRanInThisContainer(t *testing.T) {
+func TestExport_Refuses_UntilRestoreRanInThisContainer(t *testing.T) {
 	f := newFixture(t, fakeCrypter{}, shareEntry("vault/wallet/a/share-b", "AAAAAA", "AQ=="))
 	outcome, err := f.tool.Export(context.Background())
 	if err != nil || outcome != ExportRefused {
@@ -273,7 +273,7 @@ func TestExportRefusesUntilRestoreRanInThisContainer(t *testing.T) {
 	}
 }
 
-func TestExportRefusesWithoutSeedKey(t *testing.T) {
+func TestExport_Refuses_WithoutSeedKey(t *testing.T) {
 	f := newFixture(t, fakeCrypter{})
 	f.markRestored(t)
 	writeFile(t, f.cfg.KeyFile, "short")
@@ -288,7 +288,7 @@ func TestExportRefusesWithoutSeedKey(t *testing.T) {
 	}
 }
 
-func TestExportWritesPrivateSnapshotThenSkipsUnchanged(t *testing.T) {
+func TestExport_Writes_PrivateSnapshotThenSkipsUnchanged(t *testing.T) {
 	f := newFixture(t, fakeCrypter{}, vectorEntries()...)
 	f.markRestored(t)
 	outcome, err := f.tool.Export(context.Background())
@@ -318,7 +318,7 @@ func TestExportWritesPrivateSnapshotThenSkipsUnchanged(t *testing.T) {
 	}
 }
 
-func TestExportCarriesSecretsMissingLiveUnlessForced(t *testing.T) {
+func TestExport_Carries_SecretsMissingLiveUnlessForced(t *testing.T) {
 	kept := shareEntry("vault/wallet/a/share-b", "AAAAAA", "AQ==")
 	vanished := shareEntry("vault/wallet/z/share-b", "ZZZZZZ", "Ag==")
 	f := newFixture(t, fakeCrypter{}, kept, vanished)
@@ -351,7 +351,7 @@ func TestExportCarriesSecretsMissingLiveUnlessForced(t *testing.T) {
 	}
 }
 
-func TestExportRefusesValueChangeUnderSameVersion(t *testing.T) {
+func TestExport_Refuses_ValueChangeUnderSameVersion(t *testing.T) {
 	entry := shareEntry("vault/wallet/a/share-b", "AAAAAA", "AQ==")
 	f := newFixture(t, fakeCrypter{}, entry)
 	f.markRestored(t)
@@ -370,7 +370,7 @@ func TestExportRefusesValueChangeUnderSameVersion(t *testing.T) {
 	}
 }
 
-func TestExportRotatesOldSnapshots(t *testing.T) {
+func TestExport_Rotates_OldSnapshots(t *testing.T) {
 	f := newFixture(t, fakeCrypter{})
 	f.cfg.Keep = 2
 	f.rebuild(t, fakeCrypter{})
@@ -411,7 +411,7 @@ func assertMode(t *testing.T, path string, want os.FileMode) {
 
 // ---------------------------------------------------------------- restore / verify
 
-func TestRestoreRecreatesMissingSecretsWithOriginalARN(t *testing.T) {
+func TestRestore_Recreates_MissingSecretsWithOriginalARN(t *testing.T) {
 	present := shareEntry("vault/wallet/a/share-b", "AAAAAA", "AQ==")
 	lost := shareEntry("vault/wallet/b/share-b", "BBBBBB", "Ag==")
 	edited := shareEntry("vault/wallet/c/share-b", "CCCCCC", "Aw==")
@@ -451,7 +451,7 @@ func TestRestoreRecreatesMissingSecretsWithOriginalARN(t *testing.T) {
 	}
 }
 
-func TestRestoreLeavesNoMarkerWhenASecretFails(t *testing.T) {
+func TestRestore_Leaves_NoMarkerWhenASecretFails(t *testing.T) {
 	entry := shareEntry("vault/wallet/a/share-b", "AAAAAA", "AQ==")
 	f := newFixture(t, fakeCrypter{}, entry)
 	f.markRestored(t)
@@ -468,7 +468,7 @@ func TestRestoreLeavesNoMarkerWhenASecretFails(t *testing.T) {
 	}
 }
 
-func TestRestoreWithoutSnapshotMarksRestored(t *testing.T) {
+func TestRestore_Without_SnapshotMarksRestored(t *testing.T) {
 	f := newFixture(t, fakeCrypter{})
 	if err := f.tool.Restore(context.Background()); err != nil {
 		t.Fatal(err)
@@ -478,7 +478,7 @@ func TestRestoreWithoutSnapshotMarksRestored(t *testing.T) {
 	}
 }
 
-func TestRestoreFailsWhenNoSnapshotIsReadable(t *testing.T) {
+func TestRestore_Fails_WhenNoSnapshotIsReadable(t *testing.T) {
 	f := newFixture(t, fakeCrypter{}, shareEntry("vault/wallet/a/share-b", "AAAAAA", "AQ=="))
 	f.markRestored(t)
 	if _, err := f.tool.Export(context.Background()); err != nil {
@@ -491,7 +491,7 @@ func TestRestoreFailsWhenNoSnapshotIsReadable(t *testing.T) {
 	}
 }
 
-func TestVerifyIsReadOnly(t *testing.T) {
+func TestVerify_Is_ReadOnly(t *testing.T) {
 	kept := shareEntry("vault/wallet/a/share-b", "AAAAAA", "AQ==")
 	lost := shareEntry("vault/wallet/b/share-b", "BBBBBB", "Ag==")
 	f := newFixture(t, fakeCrypter{}, kept, lost)
@@ -514,7 +514,7 @@ func TestVerifyIsReadOnly(t *testing.T) {
 	}
 }
 
-func TestVerifyAllFailsOnAnUnreadableSnapshot(t *testing.T) {
+func TestVerify_All_FailsOnAnUnreadableSnapshot(t *testing.T) {
 	f := newFixture(t, fakeCrypter{}, shareEntry("vault/wallet/a/share-b", "AAAAAA", "AQ=="))
 	f.markRestored(t)
 	if _, err := f.tool.Export(context.Background()); err != nil {
@@ -528,7 +528,7 @@ func TestVerifyAllFailsOnAnUnreadableSnapshot(t *testing.T) {
 
 // ---------------------------------------------------------------- loop
 
-func TestLoopRunsOncePerContainerAndStopsOnCancel(t *testing.T) {
+func TestLoop_Runs_OncePerContainerAndStopsOnCancel(t *testing.T) {
 	f := newFixture(t, fakeCrypter{}, shareEntry("vault/wallet/a/share-b", "AAAAAA", "AQ=="))
 	f.markRestored(t)
 	ctx, cancel := context.WithCancel(context.Background())
@@ -588,7 +588,7 @@ func copyLegacyFixture(t *testing.T, f *fixture) GPGCrypter {
 	return GPGCrypter{KeyFile: f.cfg.KeyFile}
 }
 
-func TestGPGReadsSnapshotWrittenByThePythonTool(t *testing.T) {
+func TestGPG_Reads_SnapshotWrittenByThePythonTool(t *testing.T) {
 	requireGPG(t)
 	f := newFixture(t, fakeCrypter{})
 	crypter := copyLegacyFixture(t, f)
@@ -608,7 +608,7 @@ func TestGPGReadsSnapshotWrittenByThePythonTool(t *testing.T) {
 	}
 }
 
-func TestGPGSnapshotWrittenByGoReadsBackAndMatchesPythonLayout(t *testing.T) {
+func TestGPG_Snapshot_WrittenByGoReadsBackAndMatchesPythonLayout(t *testing.T) {
 	requireGPG(t)
 	f := newFixture(t, fakeCrypter{}, vectorEntries()...)
 	crypter := copyLegacyFixture(t, f)
@@ -642,7 +642,7 @@ func TestGPGSnapshotWrittenByGoReadsBackAndMatchesPythonLayout(t *testing.T) {
 	}
 }
 
-func TestGPGFailsWithWrongKey(t *testing.T) {
+func TestGPG_Fails_WithWrongKey(t *testing.T) {
 	requireGPG(t)
 	f := newFixture(t, fakeCrypter{})
 	copyLegacyFixture(t, f)
@@ -655,7 +655,7 @@ func TestGPGFailsWithWrongKey(t *testing.T) {
 
 // ---------------------------------------------------------------- config / safety
 
-func TestConfigFromEnvRejectsBadNumbers(t *testing.T) {
+func TestConfig_From_EnvRejectsBadNumbers(t *testing.T) {
 	t.Setenv(EnvInterval, "0")
 	if _, err := ConfigFromEnv(); err == nil {
 		t.Fatal("interval 0 accepted")
@@ -673,7 +673,7 @@ func TestConfigFromEnvRejectsBadNumbers(t *testing.T) {
 	}
 }
 
-func TestSafeMessageNeverLeaksMoreThanAWSCodes(t *testing.T) {
+func TestSafe_Message_NeverLeaksMoreThanAWSCodes(t *testing.T) {
 	apiError := &smtypes.ResourceNotFoundException{Message: ptr("secret value would never be here")}
 	if got := safeMessage(apiError); got != "AWS error ResourceNotFoundException" {
 		t.Fatalf("safeMessage = %q", got)
@@ -684,7 +684,7 @@ func TestSafeMessageNeverLeaksMoreThanAWSCodes(t *testing.T) {
 	}
 }
 
-func TestRunCommandMapsExitCodes(t *testing.T) {
+func TestRun_Command_MapsExitCodes(t *testing.T) {
 	f := newFixture(t, fakeCrypter{}, shareEntry("vault/wallet/a/share-b", "AAAAAA", "AQ=="))
 	if code := RunCommand(context.Background(), f.tool, f.log, CommandExport, false); code != ExitRefused {
 		t.Fatalf("export before restore = %d", code)

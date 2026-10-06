@@ -14,7 +14,7 @@ import (
 
 const dashboardGroupSecret = "dash-group-secret-value"
 
-func TestAccountGroup_MemberSeesOneAccountAndHidesASecret(t *testing.T) {
+func TestAccount_Group_MemberSeesOneAccountAndHidesASecret(t *testing.T) {
 	t.Parallel()
 
 	accountA := uuid.New()
@@ -96,7 +96,7 @@ func TestAccountGroup_MemberSeesOneAccountAndHidesASecret(t *testing.T) {
 	}
 }
 
-func TestAccountGroup_OwnerAdminAndAuditorStillReadSweepLimits(t *testing.T) {
+func TestAccount_Group_OwnerAdminAndAuditorStillReadSweepLimits(t *testing.T) {
 	t.Parallel()
 
 	accountID := uuid.New()
@@ -126,7 +126,7 @@ func TestAccountGroup_OwnerAdminAndAuditorStillReadSweepLimits(t *testing.T) {
 	}
 }
 
-func TestAccountGroup_NotFoundComesBeforeForbidden(t *testing.T) {
+func TestAccount_Group_NotFoundComesBeforeForbidden(t *testing.T) {
 	t.Parallel()
 
 	accountID := uuid.New()

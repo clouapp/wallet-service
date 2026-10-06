@@ -20,7 +20,7 @@ type TotpRecoveryCodeRepositoryTestSuite struct {
 	userRepo *repositories.UserRepository
 }
 
-func TestTotpRecoveryCodeRepositorySuite(t *testing.T) {
+func TestTotp_Recovery_CodeRepositorySuite(t *testing.T) {
 	suite.Run(t, new(TotpRecoveryCodeRepositoryTestSuite))
 }
 
@@ -36,7 +36,7 @@ func (s *TotpRecoveryCodeRepositoryTestSuite) createUser() uuid.UUID {
 	return u.ID
 }
 
-func (s *TotpRecoveryCodeRepositoryTestSuite) TestFindUnusedByUserID() {
+func (s *TotpRecoveryCodeRepositoryTestSuite) TestFind_Unused_ByUserID() {
 	userID := s.createUser()
 
 	unused := &models.MfaBackupCode{ID: uuid.New(), SubjectType: models.MFASubjectUsers, SubjectID: userID, CodeHash: "unused_hash"}
@@ -53,7 +53,7 @@ func (s *TotpRecoveryCodeRepositoryTestSuite) TestFindUnusedByUserID() {
 	s.Equal(unused.ID, codes[0].ID)
 }
 
-func (s *TotpRecoveryCodeRepositoryTestSuite) TestMarkUsedIfUnused() {
+func (s *TotpRecoveryCodeRepositoryTestSuite) TestMark_Used_IfUnused() {
 	userID := insertActiveUserRow(s.T())
 
 	code := &models.MfaBackupCode{ID: uuid.New(), SubjectType: models.MFASubjectUsers, SubjectID: userID, CodeHash: "hash"}
@@ -68,7 +68,7 @@ func (s *TotpRecoveryCodeRepositoryTestSuite) TestMarkUsedIfUnused() {
 	s.NotNil(check.UsedAt)
 }
 
-func (s *TotpRecoveryCodeRepositoryTestSuite) TestMarkUsedIfUnused_SecondSpendIsRefused() {
+func (s *TotpRecoveryCodeRepositoryTestSuite) TestMark_UsedIfUnused_SecondSpendIsRefused() {
 	userID := insertActiveUserRow(s.T())
 
 	code := &models.MfaBackupCode{ID: uuid.New(), SubjectType: models.MFASubjectUsers, SubjectID: userID, CodeHash: "hash"}

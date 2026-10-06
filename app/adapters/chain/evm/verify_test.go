@@ -50,7 +50,7 @@ func signEVMForVerify(t *testing.T, adapter *EVMLive, unsigned *types.UnsignedTx
 	return &types.SignedTx{ChainID: models.ChainETH, RawBytes: raw}, crypto.PubkeyToAddress(key.PublicKey).Hex()
 }
 
-func TestEVMVerifySignedTransaction_AcceptsTheSender(t *testing.T) {
+func TestEVM_VerifySignedTransaction_AcceptsTheSender(t *testing.T) {
 	adapter := NewEVMLive(EVMConfig{ChainIDStr: models.ChainETH, NetworkID: verifySepoliaID})
 	unsigned := verifyEVMUnsigned(verifyValueWei)
 	signed, from := signEVMForVerify(t, adapter, unsigned)
@@ -59,7 +59,7 @@ func TestEVMVerifySignedTransaction_AcceptsTheSender(t *testing.T) {
 	}
 }
 
-func TestEVMVerifySignedTransaction_RejectsAnotherSender(t *testing.T) {
+func TestEVM_VerifySignedTransaction_RejectsAnotherSender(t *testing.T) {
 	adapter := NewEVMLive(EVMConfig{ChainIDStr: models.ChainETH, NetworkID: verifySepoliaID})
 	unsigned := verifyEVMUnsigned(verifyValueWei)
 	signed, _ := signEVMForVerify(t, adapter, unsigned)
@@ -69,7 +69,7 @@ func TestEVMVerifySignedTransaction_RejectsAnotherSender(t *testing.T) {
 	}
 }
 
-func TestEVMVerifySignedTransaction_RejectsADifferentTransaction(t *testing.T) {
+func TestEVM_VerifySignedTransaction_RejectsADifferentTransaction(t *testing.T) {
 	adapter := NewEVMLive(EVMConfig{ChainIDStr: models.ChainETH, NetworkID: verifySepoliaID})
 	signed, from := signEVMForVerify(t, adapter, verifyEVMUnsigned(verifyValueWei))
 	other := verifyEVMUnsigned(new(big.Int).Add(mustBig(verifyValueWei), big.NewInt(1)).String())
@@ -79,7 +79,7 @@ func TestEVMVerifySignedTransaction_RejectsADifferentTransaction(t *testing.T) {
 	}
 }
 
-func TestEVMVerifySignedTransaction_RejectsGarbage(t *testing.T) {
+func TestEVM_VerifySignedTransaction_RejectsGarbage(t *testing.T) {
 	adapter := NewEVMLive(EVMConfig{ChainIDStr: models.ChainETH, NetworkID: verifySepoliaID})
 	unsigned := verifyEVMUnsigned(verifyValueWei)
 	if err := adapter.VerifySignedTransaction(unsigned, &types.SignedTx{RawBytes: []byte{0x01, 0x02}}, verifyDestination); err == nil {

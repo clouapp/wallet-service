@@ -7,7 +7,7 @@ import (
 
 // TestImportDirection checks every module import against the layer allow-set.
 // An entry is one package edge: "from-dir → to-dir (from-layer → to-layer)".
-func TestImportDirection(t *testing.T) {
+func TestImports_Import_Direction(t *testing.T) {
 	module := sharedModule(t)
 	var violations Violations
 	for _, file := range module.Files {
@@ -41,7 +41,7 @@ func TestImportDirection(t *testing.T) {
 
 // TestLayerCoversEveryZoneOfTheRepository reports a directory holding Go code
 // that no layer claims: it would escape every import rule.
-func TestLayerCoversEveryZoneOfTheRepository(t *testing.T) {
+func TestLayer_Covers_EveryZoneOfTheRepository(t *testing.T) {
 	module := sharedModule(t)
 	var violations Violations
 	seen := map[string]bool{}
@@ -60,7 +60,7 @@ func TestLayerCoversEveryZoneOfTheRepository(t *testing.T) {
 // TestThePackageDoesNotReachTheModule reports a packages/* (today pkg/*)
 // file importing anything of the module: such a package is meant to be
 // installable outside the project.
-func TestThePackageDoesNotReachTheModule(t *testing.T) {
+func TestThe_Package_DoesNotReachTheModule(t *testing.T) {
 	module := sharedModule(t)
 	var violations Violations
 	for _, file := range module.ProductionFiles("pkg", "packages") {
@@ -76,7 +76,7 @@ func TestThePackageDoesNotReachTheModule(t *testing.T) {
 // TestProductionCodeMayNotImportTheGeneratedMocks reports production code
 // importing the test harness (tests/...), and production packages that exist
 // only to serve tests.
-func TestProductionCodeMayNotImportTheGeneratedMocks(t *testing.T) {
+func TestProduction_Code_MayNotImportTheGeneratedMocks(t *testing.T) {
 	module := sharedModule(t)
 	var violations Violations
 	for _, file := range module.ProductionFiles() {
@@ -96,7 +96,7 @@ func TestProductionCodeMayNotImportTheGeneratedMocks(t *testing.T) {
 	Report(t, &violations)
 }
 
-func TestLayer_MapsEveryKnownZone(t *testing.T) {
+func TestLayer_Maps_EveryKnownZone(t *testing.T) {
 	cases := map[string]string{
 		".":                               LayerMain,
 		"app/models":                      LayerModels,
@@ -142,7 +142,7 @@ func TestLayer_MapsEveryKnownZone(t *testing.T) {
 	}
 }
 
-func TestLayer_LeavesAnUnknownZoneUnclassified(t *testing.T) {
+func TestLayer_Leaves_AnUnknownZoneUnclassified(t *testing.T) {
 	for _, dir := range []string{"app", "app/unknown", "lib", "appendix", "configs", "pkgx/amount"} {
 		if got := Layer(dir); got != "" {
 			t.Errorf("Layer(%q) = %q, want unclassified", dir, got)
@@ -150,7 +150,7 @@ func TestLayer_LeavesAnUnknownZoneUnclassified(t *testing.T) {
 	}
 }
 
-func TestCheckImport_SyntheticEdges(t *testing.T) {
+func TestCheck_Import_SyntheticEdges(t *testing.T) {
 	refused := [][2]string{
 		{LayerModels, LayerServices},
 		{LayerModels, LayerRepositories},
@@ -204,7 +204,7 @@ func TestCheckImport_SyntheticEdges(t *testing.T) {
 	}
 }
 
-func TestCheckTestImport_AdmitsTheHarnessButNotPersistenceFromHTTP(t *testing.T) {
+func TestCheck_TestImport_AdmitsTheHarnessButNotPersistenceFromHTTP(t *testing.T) {
 	if err := CheckTestImport(LayerServices, LayerTests); err != nil {
 		t.Errorf("a service test must reach the harness: %v", err)
 	}
@@ -219,7 +219,7 @@ func TestCheckTestImport_AdmitsTheHarnessButNotPersistenceFromHTTP(t *testing.T)
 	}
 }
 
-func TestEveryLayerHasAnAllowRow(t *testing.T) {
+func TestEvery_Layer_HasAnAllowRow(t *testing.T) {
 	for _, layer := range zones {
 		if _, ok := allowed[layer]; !ok {
 			t.Errorf("layer %q has no row in the allow table", layer)

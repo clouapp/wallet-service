@@ -34,7 +34,7 @@ type WalletWebhookCreateGateTestSuite struct {
 	goravelTesting.TestCase
 }
 
-func TestWalletWebhookCreateGateSuite(t *testing.T) {
+func TestWallet_Webhook_CreateGateSuite(t *testing.T) {
 	suite.Run(t, new(WalletWebhookCreateGateTestSuite))
 }
 
@@ -42,7 +42,7 @@ func (s *WalletWebhookCreateGateTestSuite) SetupTest() {
 	fixtures.TestDB(s.T())
 }
 
-func (s *WalletWebhookCreateGateTestSuite) TestWalletWebhookCreateFollowsTheLoadedRoles() {
+func (s *WalletWebhookCreateGateTestSuite) TestWallet_Webhook_CreateFollowsTheLoadedRoles() {
 	account := fixtures.InsertAccount(s.T(), "wallet webhook create")
 	s.seedChain()
 	wallet := fixtures.InsertWalletWithAccount(s.T(), models.ChainETH, &account.ID)
@@ -87,7 +87,7 @@ func (s *WalletWebhookCreateGateTestSuite) TestWalletWebhookCreateFollowsTheLoad
 	}
 }
 
-func (s *WalletWebhookCreateGateTestSuite) TestMissingWalletWebhookIs404BeforeTheRoleCheck() {
+func (s *WalletWebhookCreateGateTestSuite) TestMissing_Wallet_WebhookIs404BeforeTheRoleCheck() {
 	account := fixtures.InsertAccount(s.T(), "wallet webhook missing")
 	s.seedChain()
 	wallet := fixtures.InsertWalletWithAccount(s.T(), models.ChainETH, &account.ID)
@@ -99,7 +99,7 @@ func (s *WalletWebhookCreateGateTestSuite) TestMissingWalletWebhookIs404BeforeTh
 	s.Contains(s.body(resp), "webhook not found")
 }
 
-func (s *WalletWebhookCreateGateTestSuite) TestWalletWebhookDeleteFollowsTheLoadedRoles() {
+func (s *WalletWebhookCreateGateTestSuite) TestWallet_Webhook_DeleteFollowsTheLoadedRoles() {
 	account := fixtures.InsertAccount(s.T(), "wallet webhook delete")
 	s.seedChain()
 	wallet := fixtures.InsertWalletWithAccount(s.T(), models.ChainETH, &account.ID)
@@ -151,7 +151,7 @@ func (s *WalletWebhookCreateGateTestSuite) TestWalletWebhookDeleteFollowsTheLoad
 	}
 }
 
-func (s *WalletWebhookCreateGateTestSuite) TestWalletWebhookTestFollowsTheLoadedRoles() {
+func (s *WalletWebhookCreateGateTestSuite) TestWallet_Webhook_TestFollowsTheLoadedRoles() {
 	account := fixtures.InsertAccount(s.T(), "wallet webhook test")
 	s.seedChain()
 	wallet := fixtures.InsertWalletWithAccount(s.T(), models.ChainETH, &account.ID)
@@ -212,7 +212,7 @@ func (s *WalletWebhookCreateGateTestSuite) TestWalletWebhookTestFollowsTheLoaded
 	}
 }
 
-func (s *WalletWebhookCreateGateTestSuite) TestCreateWalletWebhookValidationStaysUnprocessable() {
+func (s *WalletWebhookCreateGateTestSuite) TestCreate_Wallet_WebhookValidationStaysUnprocessable() {
 	account := fixtures.InsertAccount(s.T(), "wallet webhook validation")
 	s.seedChain()
 	wallet := fixtures.InsertWalletWithAccount(s.T(), models.ChainETH, &account.ID)

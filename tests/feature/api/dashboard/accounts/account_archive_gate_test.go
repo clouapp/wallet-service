@@ -27,7 +27,7 @@ type AccountArchiveGateTestSuite struct {
 	goravelTesting.TestCase
 }
 
-func TestAccountArchiveGateSuite(t *testing.T) {
+func TestAccount_Archive_GateSuite(t *testing.T) {
 	suite.Run(t, new(AccountArchiveGateTestSuite))
 }
 
@@ -35,7 +35,7 @@ func (s *AccountArchiveGateTestSuite) SetupTest() {
 	fixtures.TestDB(s.T())
 }
 
-func (s *AccountArchiveGateTestSuite) TestAccountLifecycleFollowsTheAccountRole() {
+func (s *AccountArchiveGateTestSuite) TestAccount_Lifecycle_FollowsTheAccountRole() {
 	accountID := uuid.New()
 	s.Require().NoError(facades.Orm().Query().Create(&models.Account{
 		ID: accountID, Name: "Account " + accountID.String()[:8], Status: models.StatusActive, Environment: "prod",

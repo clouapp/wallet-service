@@ -25,7 +25,7 @@ type PlatformSweepLimitsTestSuite struct {
 	authSuite
 }
 
-func TestPlatformSweepLimitsSuite(t *testing.T) {
+func TestPlatform_Sweep_LimitsSuite(t *testing.T) {
 	suite.Run(t, new(PlatformSweepLimitsTestSuite))
 }
 
@@ -34,7 +34,7 @@ func (s *PlatformSweepLimitsTestSuite) SetupTest() {
 	settings.FacadeCache{}.Forget("settings:platform:sweep_limits")
 }
 
-func (s *PlatformSweepLimitsTestSuite) TestAPlatformRowChangesLoadLimitsAndTheAccountRowWins() {
+func (s *PlatformSweepLimitsTestSuite) TestA_Platform_RowChangesLoadLimitsAndTheAccountRowWins() {
 	admin := s.seedUser(false)
 	s.grantPlatformAdmin(admin.ID)
 	session := s.signIn(admin.Email)
@@ -114,7 +114,7 @@ func (s *PlatformSweepLimitsTestSuite) TestAPlatformRowChangesLoadLimitsAndTheAc
 	s.Nil(withoutPlatform.DailyWithdrawCapUSD)
 }
 
-func (s *PlatformSweepLimitsTestSuite) TestZeroNegativeAndANegativeCapAreNotStored() {
+func (s *PlatformSweepLimitsTestSuite) TestZero_Negative_AndANegativeCapAreNotStored() {
 	member := s.seedUser(false)
 	memberSession := s.signIn(member.Email)
 	forbidden := s.putRaw(memberSession.AccessToken, "/v1/platform/settings/sweep_limits",

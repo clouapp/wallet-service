@@ -40,7 +40,7 @@ func scalarKeyPair(t *testing.T) (publicKey, scalarBigEndian []byte) {
 	return publicKey, scalarBigEndian
 }
 
-func TestSignTransactionWithScalar_SignsSolanaTransfer(t *testing.T) {
+func TestSign_TransactionWithScalar_SignsSolanaTransfer(t *testing.T) {
 	publicKey, scalar := scalarKeyPair(t)
 	from := solana.PublicKeyFromBytes(publicKey)
 	to := solana.NewWallet().PublicKey()
@@ -82,7 +82,7 @@ func TestSignTransactionWithScalar_SignsSolanaTransfer(t *testing.T) {
 	}
 }
 
-func TestSignTransactionWithScalar_RejectsForeignFeePayer(t *testing.T) {
+func TestSign_TransactionWithScalar_RejectsForeignFeePayer(t *testing.T) {
 	publicKey, scalar := scalarKeyPair(t)
 	someoneElse := solana.NewWallet().PublicKey()
 	message, err := buildSolanaNativeTx(someoneElse, solana.NewWallet().PublicKey(), 1, testBlockhash)
@@ -107,7 +107,7 @@ func TestSignTransactionWithScalar_RejectsForeignFeePayer(t *testing.T) {
 	}
 }
 
-func TestSignTransactionWithScalar_RejectsMultiSignerMessage(t *testing.T) {
+func TestSign_TransactionWithScalar_RejectsMultiSignerMessage(t *testing.T) {
 	publicKey, _ := scalarKeyPair(t)
 	from := solana.PublicKeyFromBytes(publicKey)
 	cosigner := solana.NewWallet().PublicKey()
@@ -126,7 +126,7 @@ func TestSignTransactionWithScalar_RejectsMultiSignerMessage(t *testing.T) {
 	}
 }
 
-func TestSignTransactionWithScalar_RejectsEmpty(t *testing.T) {
+func TestSign_TransactionWithScalar_RejectsEmpty(t *testing.T) {
 	if _, _, err := (&SolanaLive{}).SolanaSigningView(nil); err == nil {
 		t.Fatal("expected error for nil tx")
 	}

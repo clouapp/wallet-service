@@ -31,7 +31,7 @@ type PlatformMailProvidersTestSuite struct {
 	authSuite
 }
 
-func TestPlatformMailProvidersSuite(t *testing.T) {
+func TestPlatform_Mail_ProvidersSuite(t *testing.T) {
 	suite.Run(t, new(PlatformMailProvidersTestSuite))
 }
 
@@ -55,7 +55,7 @@ func (s *PlatformMailProvidersTestSuite) TearDownTest() {
 	appfacades.RestoreMailBaseline()
 }
 
-func (s *PlatformMailProvidersTestSuite) TestAPlatformAdminStoresEachProvider() {
+func (s *PlatformMailProvidersTestSuite) TestA_Platform_AdminStoresEachProvider() {
 	admin := s.seedUser(false)
 	s.grantPlatformAdmin(admin.ID)
 	session := s.signIn(admin.Email)
@@ -150,7 +150,7 @@ func (s *PlatformMailProvidersTestSuite) TestAPlatformAdminStoresEachProvider() 
 	}
 }
 
-func (s *PlatformMailProvidersTestSuite) TestAnIncompleteSESPairIsNotStored() {
+func (s *PlatformMailProvidersTestSuite) TestAn_Incomplete_SESPairIsNotStored() {
 	admin := s.seedUser(false)
 	s.grantPlatformAdmin(admin.ID)
 	session := s.signIn(admin.Email)
@@ -176,7 +176,7 @@ func (s *PlatformMailProvidersTestSuite) TestAnIncompleteSESPairIsNotStored() {
 	s.Equal(int64(0), s.count(`SELECT count(*) FROM account_activity WHERE action = 'settings.updated' AND target_id = 'mail_ses'`))
 }
 
-func (s *PlatformMailProvidersTestSuite) TestTheMailerStaysOnSMTP() {
+func (s *PlatformMailProvidersTestSuite) TestThe_Mailer_StaysOnSMTP() {
 	envHost := appfacades.Config().GetString("mail.mailers.smtp.host")
 	s.assertSMTPHost(envHost)
 
@@ -206,7 +206,7 @@ func (s *PlatformMailProvidersTestSuite) TestTheMailerStaysOnSMTP() {
 	s.assertSMTPHost(envHost)
 }
 
-func (s *PlatformMailProvidersTestSuite) TestANonAdminIsForbidden() {
+func (s *PlatformMailProvidersTestSuite) TestA_Non_AdminIsForbidden() {
 	member := s.seedUser(false)
 	session := s.signIn(member.Email)
 	for _, provider := range httpMailProviders() {

@@ -17,7 +17,7 @@ import (
 
 const solanaBalanceOwner = "7EcDhSYGxXyscszYEp35KHN8vvw3svAuLKTzXwCFLtV"
 
-func TestSolanaGetTokenBalance(t *testing.T) {
+func TestSolana_Get_TokenBalance(t *testing.T) {
 	ownerKey := solana.MustPublicKeyFromBase58(solanaBalanceOwner)
 	mintKey := solana.MustPublicKeyFromBase58(models.USDCMintSOL)
 	ata, _, err := solana.FindAssociatedTokenAddress(ownerKey, mintKey)
@@ -74,7 +74,7 @@ func TestSolanaGetTokenBalance(t *testing.T) {
 	}
 }
 
-func TestSolanaGetTokenBalance_MissingAccountIsZero(t *testing.T) {
+func TestSolana_GetTokenBalance_MissingAccountIsZero(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = io.WriteString(w, `{"jsonrpc":"2.0","id":1,"error":{"code":-32602,"message":"could not find account"}}`)

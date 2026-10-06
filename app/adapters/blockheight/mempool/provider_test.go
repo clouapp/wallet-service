@@ -36,7 +36,7 @@ func newTipServer(t *testing.T, status int, body string) *tipServer {
 	return srv
 }
 
-func TestProvider_ReadsTheTip(t *testing.T) {
+func TestProvider_Reads_TheTip(t *testing.T) {
 	srv := newTipServer(t, http.StatusOK, "154745\n")
 	p := New()
 	p.client = httpclient.Wrap(srv.Client())
@@ -48,11 +48,11 @@ func TestProvider_ReadsTheTip(t *testing.T) {
 	assert.Equal(t, uint64(154745), height)
 }
 
-func TestProvider_DefaultsToMempoolSpaceTestnet4(t *testing.T) {
+func TestProvider_Defaults_ToMempoolSpaceTestnet4(t *testing.T) {
 	assert.Equal(t, tipHeightURL, New().url)
 }
 
-func TestProvider_RejectsChainIDsAndBadResponses(t *testing.T) {
+func TestProvider_Rejects_ChainIDsAndBadResponses(t *testing.T) {
 	ctx := context.Background()
 	for _, key := range []string{models.ChainTBTC, models.ChainBTC, ""} {
 		_, err := New().GetBlockHeight(ctx, key)

@@ -30,7 +30,7 @@ type PlatformSettingsSectionResetTestSuite struct {
 	authSuite
 }
 
-func TestPlatformSettingsSectionResetSuite(t *testing.T) {
+func TestPlatform_Settings_SectionResetSuite(t *testing.T) {
 	suite.Run(t, new(PlatformSettingsSectionResetTestSuite))
 }
 
@@ -38,7 +38,7 @@ func (s *PlatformSettingsSectionResetTestSuite) SetupTest() {
 	testutil.SeededTestDB(s.T())
 }
 
-func (s *PlatformSettingsSectionResetTestSuite) TestAdminResetDeletesPlatformRowsAndTheNextReadIsTheDefault() {
+func (s *PlatformSettingsSectionResetTestSuite) TestAdmin_Reset_DeletesPlatformRowsAndTheNextReadIsTheDefault() {
 	admin := s.seedUser(false)
 	s.grantPlatformAdmin(admin.ID)
 	session := s.signIn(admin.Email)
@@ -241,7 +241,7 @@ func (s *PlatformSettingsSectionResetTestSuite) TestAdminResetDeletesPlatformRow
 	s.True(sawRemovedHost)
 }
 
-func (s *PlatformSettingsSectionResetTestSuite) TestUnknownSectionIsNotFound() {
+func (s *PlatformSettingsSectionResetTestSuite) TestUnknown_Section_IsNotFound() {
 	admin := s.seedUser(false)
 	s.grantPlatformAdmin(admin.ID)
 	session := s.signIn(admin.Email)
@@ -259,7 +259,7 @@ func (s *PlatformSettingsSectionResetTestSuite) TestUnknownSectionIsNotFound() {
 	s.Equal(int64(0), s.count(`SELECT count(*) FROM account_activity WHERE action = 'settings.section_reset'`))
 }
 
-func (s *PlatformSettingsSectionResetTestSuite) TestNonAdminOnAKnownSectionIsForbidden() {
+func (s *PlatformSettingsSectionResetTestSuite) TestNon_Admin_OnAKnownSectionIsForbidden() {
 	member := s.seedUser(false)
 	session := s.signIn(member.Email)
 	key := "settings:platform:mail_smtp"
@@ -274,7 +274,7 @@ func (s *PlatformSettingsSectionResetTestSuite) TestNonAdminOnAKnownSectionIsFor
 	s.Equal(int64(0), s.count(`SELECT count(*) FROM settings WHERE account_id IS NULL AND "group" = 'mail_smtp' AND "key" = 'host' AND value = ?`, platformResetStoredHost))
 }
 
-func (s *PlatformSettingsSectionResetTestSuite) TestNonAdminOnAnUnknownSectionIsNotFound() {
+func (s *PlatformSettingsSectionResetTestSuite) TestNon_Admin_OnAnUnknownSectionIsNotFound() {
 	member := s.seedUser(false)
 	session := s.signIn(member.Email)
 	key := "settings:platform:mail_smtp"

@@ -19,7 +19,7 @@ import (
 	"github.com/macrowallets/waas/pkg/httpclient"
 )
 
-func TestCreateWebhook_SendsMethodPathAuthAndBody(t *testing.T) {
+func TestCreate_Webhook_SendsMethodPathAuthAndBody(t *testing.T) {
 	const apiKey = "test-key"
 	var (
 		method string
@@ -67,7 +67,7 @@ func TestCreateWebhook_SendsMethodPathAuthAndBody(t *testing.T) {
 	assert.Contains(t, string(filter), "bc1qexample")
 }
 
-func TestCreateWebhook_MapsHTTPErrorsWithoutTheKeyOrHost(t *testing.T) {
+func TestCreate_Webhook_MapsHTTPErrorsWithoutTheKeyOrHost(t *testing.T) {
 	const apiKey = "test-key"
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusTooManyRequests)

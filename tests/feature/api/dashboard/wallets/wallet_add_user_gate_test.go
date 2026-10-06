@@ -28,7 +28,7 @@ type WalletAddUserGateTestSuite struct {
 	goravelTesting.TestCase
 }
 
-func TestWalletAddUserGateSuite(t *testing.T) {
+func TestWallet_Add_UserGateSuite(t *testing.T) {
 	suite.Run(t, new(WalletAddUserGateTestSuite))
 }
 
@@ -36,7 +36,7 @@ func (s *WalletAddUserGateTestSuite) SetupTest() {
 	fixtures.TestDB(s.T())
 }
 
-func (s *WalletAddUserGateTestSuite) TestWalletAddUserFollowsTheLoadedRoles() {
+func (s *WalletAddUserGateTestSuite) TestWallet_Add_UserFollowsTheLoadedRoles() {
 	account := fixtures.InsertAccount(s.T(), "wallet add user")
 	s.seedChain()
 	wallet := fixtures.InsertWalletWithAccount(s.T(), models.ChainETH, &account.ID)
@@ -84,7 +84,7 @@ func (s *WalletAddUserGateTestSuite) TestWalletAddUserFollowsTheLoadedRoles() {
 	}
 }
 
-func (s *WalletAddUserGateTestSuite) TestAddWalletUserValidationStaysUnprocessable() {
+func (s *WalletAddUserGateTestSuite) TestAdd_Wallet_UserValidationStaysUnprocessable() {
 	account := fixtures.InsertAccount(s.T(), "wallet add user validation")
 	s.seedChain()
 	wallet := fixtures.InsertWalletWithAccount(s.T(), models.ChainETH, &account.ID)

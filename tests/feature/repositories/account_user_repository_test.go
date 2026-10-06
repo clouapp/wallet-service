@@ -19,7 +19,7 @@ type AccountUserRepositoryTestSuite struct {
 	accRepo *repositories.AccountRepository
 }
 
-func TestAccountUserRepositorySuite(t *testing.T) {
+func TestAccount_User_RepositorySuite(t *testing.T) {
 	suite.Run(t, new(AccountUserRepositoryTestSuite))
 }
 
@@ -46,14 +46,14 @@ func (s *AccountUserRepositoryTestSuite) createUser() uuid.UUID {
 	return userID
 }
 
-func (s *AccountUserRepositoryTestSuite) TestCreate_Success() {
+func (s *AccountUserRepositoryTestSuite) TestAccountUserRepository_Create_Success() {
 	accID := s.createAccount()
 	au := &models.AccountUser{ID: uuid.New(), AccountID: accID, UserID: s.createUser(), Role: "owner"}
 	err := s.repo.Create(context.Background(), au)
 	s.NoError(err)
 }
 
-func (s *AccountUserRepositoryTestSuite) TestFindByID() {
+func (s *AccountUserRepositoryTestSuite) TestFind_By_ID() {
 	accID := s.createAccount()
 	userID := s.createUser()
 	au := &models.AccountUser{
@@ -77,7 +77,7 @@ func (s *AccountUserRepositoryTestSuite) TestFindByID() {
 	s.Nil(missing)
 }
 
-func (s *AccountUserRepositoryTestSuite) TestFindByAccountID() {
+func (s *AccountUserRepositoryTestSuite) TestFind_By_AccountID() {
 	accID := s.createAccount()
 	s.Require().NoError(s.repo.Create(context.Background(), &models.AccountUser{ID: uuid.New(), AccountID: accID, UserID: s.createUser(), Role: "owner"}))
 	s.Require().NoError(s.repo.Create(context.Background(), &models.AccountUser{ID: uuid.New(), AccountID: accID, UserID: s.createUser(), Role: "admin"}))
@@ -87,7 +87,7 @@ func (s *AccountUserRepositoryTestSuite) TestFindByAccountID() {
 	s.Len(members, 2)
 }
 
-func (s *AccountUserRepositoryTestSuite) TestFindByAccountAndUser_Found() {
+func (s *AccountUserRepositoryTestSuite) TestFind_ByAccountAndUser_Found() {
 	accID := s.createAccount()
 	userID := s.createUser()
 	s.Require().NoError(s.repo.Create(context.Background(), &models.AccountUser{ID: uuid.New(), AccountID: accID, UserID: userID, Role: "admin"}))
@@ -98,13 +98,13 @@ func (s *AccountUserRepositoryTestSuite) TestFindByAccountAndUser_Found() {
 	s.Equal("admin", au.Role)
 }
 
-func (s *AccountUserRepositoryTestSuite) TestFindByAccountAndUser_NotFound() {
+func (s *AccountUserRepositoryTestSuite) TestFind_ByAccountAndUser_NotFound() {
 	au, err := s.repo.FindByAccountAndUser(context.Background(), uuid.New(), uuid.New())
 	s.ErrorIs(err, models.ErrRepositoryNotFound)
 	s.Nil(au)
 }
 
-func (s *AccountUserRepositoryTestSuite) TestFindByAccountAndUserIncludeDeleted() {
+func (s *AccountUserRepositoryTestSuite) TestFind_By_AccountAndUserIncludeDeleted() {
 	accID := s.createAccount()
 	userID := s.createUser()
 	s.Require().NoError(s.repo.Create(context.Background(), &models.AccountUser{ID: uuid.New(), AccountID: accID, UserID: userID, Role: "admin"}))
@@ -122,7 +122,7 @@ func (s *AccountUserRepositoryTestSuite) TestFindByAccountAndUserIncludeDeleted(
 	s.NotNil(withDeleted.DeletedAt)
 }
 
-func (s *AccountUserRepositoryTestSuite) TestRolesForUserAccounts_ReturnsStoredRoles() {
+func (s *AccountUserRepositoryTestSuite) TestRoles_ForUserAccounts_ReturnsStoredRoles() {
 	ownerAccount := s.createAccount()
 	auditorAccount := s.createAccount()
 	otherAccount := s.createAccount()
@@ -144,7 +144,7 @@ func (s *AccountUserRepositoryTestSuite) TestRolesForUserAccounts_ReturnsStoredR
 	s.Error(err)
 }
 
-func (s *AccountUserRepositoryTestSuite) TestRolesForUserAccounts_SkipsRemovedMembership() {
+func (s *AccountUserRepositoryTestSuite) TestRoles_ForUserAccounts_SkipsRemovedMembership() {
 	accountID := s.createAccount()
 	userID := s.createUser()
 	s.Require().NoError(s.repo.Create(context.Background(), &models.AccountUser{ID: uuid.New(), AccountID: accountID, UserID: userID, Role: "auditor"}))
@@ -155,7 +155,7 @@ func (s *AccountUserRepositoryTestSuite) TestRolesForUserAccounts_SkipsRemovedMe
 	s.Empty(roles)
 }
 
-func (s *AccountUserRepositoryTestSuite) TestFindByUserID() {
+func (s *AccountUserRepositoryTestSuite) TestFind_By_UserID() {
 	acc1 := s.createAccount()
 	acc2 := s.createAccount()
 	userID := s.createUser()
@@ -167,7 +167,7 @@ func (s *AccountUserRepositoryTestSuite) TestFindByUserID() {
 	s.Len(memberships, 2)
 }
 
-func (s *AccountUserRepositoryTestSuite) TestAccessLookupsIgnoreMembershipsThatAreNotActive() {
+func (s *AccountUserRepositoryTestSuite) TestAccess_Lookups_IgnoreMembershipsThatAreNotActive() {
 	activeAccount := s.createAccount()
 	suspendedAccount := s.createAccount()
 	userID := insertActiveUserRow(s.T())
@@ -197,7 +197,7 @@ func (s *AccountUserRepositoryTestSuite) TestAccessLookupsIgnoreMembershipsThatA
 	s.Equal("suspended", managed.Status)
 }
 
-func (s *AccountUserRepositoryTestSuite) TestSetRole() {
+func (s *AccountUserRepositoryTestSuite) TestAccountUserRepository_Set_Role() {
 	accID := s.createAccount()
 	userID := s.createUser()
 	au := &models.AccountUser{ID: uuid.New(), AccountID: accID, UserID: userID, Role: "auditor"}
@@ -211,7 +211,7 @@ func (s *AccountUserRepositoryTestSuite) TestSetRole() {
 	s.Equal("admin", found.Role)
 }
 
-func (s *AccountUserRepositoryTestSuite) TestSetStatusAndCountActiveOwners() {
+func (s *AccountUserRepositoryTestSuite) TestSet_Status_AndCountActiveOwners() {
 	accID := s.createAccount()
 	ownerID := s.createUser()
 	suspendedID := s.createUser()
@@ -241,7 +241,7 @@ func (s *AccountUserRepositoryTestSuite) TestSetStatusAndCountActiveOwners() {
 	s.Equal(models.MembershipStatusSuspended, found.Status)
 }
 
-func (s *AccountUserRepositoryTestSuite) TestSoftDeleteByAccountAndUser() {
+func (s *AccountUserRepositoryTestSuite) TestSoft_Delete_ByAccountAndUser() {
 	accID := s.createAccount()
 	userID := s.createUser()
 	s.Require().NoError(s.repo.Create(context.Background(), &models.AccountUser{ID: uuid.New(), AccountID: accID, UserID: userID, Role: "user"}))

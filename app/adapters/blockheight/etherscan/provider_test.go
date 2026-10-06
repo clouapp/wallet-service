@@ -28,7 +28,7 @@ const (
 	heightCiphertext  = "enc:v1:" + heightSettingsKey
 )
 
-func TestProvider_ReadsTheTip(t *testing.T) {
+func TestProvider_Reads_TheTip(t *testing.T) {
 	for _, tc := range []struct {
 		chainID    string
 		chainParam string
@@ -60,12 +60,12 @@ func TestProvider_ReadsTheTip(t *testing.T) {
 	}
 }
 
-func TestProvider_DefaultsToEtherscan(t *testing.T) {
+func TestProvider_Defaults_ToEtherscan(t *testing.T) {
 	p := New(blockheight.EtherscanDeps{})
 	assert.Equal(t, etherscanDefaultBase, p.baseURL)
 }
 
-func TestProvider_ErrorResponse(t *testing.T) {
+func TestProvider_Error_Response(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte(`{"jsonrpc":"2.0","id":1,"error":{"code":-32000,"message":"execution reverted"}}`))
 	}))
@@ -82,14 +82,14 @@ func TestProvider_ErrorResponse(t *testing.T) {
 	assert.Contains(t, chain.CauseText(err), "execution reverted")
 }
 
-func TestProvider_RejectsAnUnknownChain(t *testing.T) {
+func TestProvider_Rejects_AnUnknownChain(t *testing.T) {
 	p := New(blockheight.EtherscanDeps{})
 	_, err := p.GetBlockHeight(context.Background(), "unknown")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "unknown chain_id")
 }
 
-func TestProvider_AsksForTheKeyAtUseTimeAndUsesIt(t *testing.T) {
+func TestProvider_Asks_ForTheKeyAtUseTimeAndUsesIt(t *testing.T) {
 	var calls int
 	keys := []string{" " + heightSettingsKey + " ", heightEnvKey}
 	p := New(blockheight.EtherscanDeps{KeyAtUse: func(context.Context) string {
@@ -130,7 +130,7 @@ func TestProvider_AsksForTheKeyAtUseTimeAndUsesIt(t *testing.T) {
 	requireLogsOmit(t, logs.String(), heightSettingsKey, heightEnvKey, heightCiphertext)
 }
 
-func TestProvider_BlankKeySkipsTheRequest(t *testing.T) {
+func TestProvider_Blank_KeySkipsTheRequest(t *testing.T) {
 	hits := 0
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		hits++
@@ -148,7 +148,7 @@ func TestProvider_BlankKeySkipsTheRequest(t *testing.T) {
 	}
 }
 
-func TestProvider_UsesTheStaticKeyWhenThereIsNoKeyFunction(t *testing.T) {
+func TestProvider_Uses_TheStaticKeyWhenThereIsNoKeyFunction(t *testing.T) {
 	seen := ""
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		seen = r.URL.Query().Get("apikey")
@@ -165,7 +165,7 @@ func TestProvider_UsesTheStaticKeyWhenThereIsNoKeyFunction(t *testing.T) {
 	requireSameKey(t, []string{seen}, heightEnvKey)
 }
 
-func TestProvider_EnabledGroupUsesTheOpenedKey(t *testing.T) {
+func TestProvider_Enabled_GroupUsesTheOpenedKey(t *testing.T) {
 	logs := captureLogs(t)
 	seen := ""
 	p, srv := heightProvider(t, etherscanHeightStore{
@@ -182,7 +182,7 @@ func TestProvider_EnabledGroupUsesTheOpenedKey(t *testing.T) {
 	requireLogsOmit(t, logs.String(), heightSettingsKey, heightEnvKey, heightCiphertext)
 }
 
-func TestProvider_MissingGroupUsesTheEnvKey(t *testing.T) {
+func TestProvider_Missing_GroupUsesTheEnvKey(t *testing.T) {
 	logs := captureLogs(t)
 	seen := ""
 	p, srv := heightProvider(t, etherscanHeightStore{}, &seen)
@@ -194,7 +194,7 @@ func TestProvider_MissingGroupUsesTheEnvKey(t *testing.T) {
 	requireLogsOmit(t, logs.String(), heightSettingsKey, heightEnvKey, heightCiphertext)
 }
 
-func TestProvider_DisabledUnsealedAndFailedReadUseTheEnvKey(t *testing.T) {
+func TestProvider_Disabled_UnsealedAndFailedReadUseTheEnvKey(t *testing.T) {
 	logs := captureLogs(t)
 
 	cases := []etherscanHeightStore{
@@ -310,7 +310,7 @@ func (heightDiscardActivity) Append(context.Context, models.AccountActivity) err
 
 var _ activity.Writer = heightDiscardActivity{}
 
-func TestProvider_NilContextDoesNotCallHTTP(t *testing.T) {
+func TestProvider_Nil_ContextDoesNotCallHTTP(t *testing.T) {
 	called := false
 	srv := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
 		called = true

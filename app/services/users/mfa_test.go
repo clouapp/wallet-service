@@ -14,7 +14,7 @@ import (
 	"github.com/macrowallets/waas/app/services/users"
 )
 
-func TestResetMFAClearsTotpOnceAndLeavesTheUserActive(t *testing.T) {
+func TestReset_MFA_ClearsTotpOnceAndLeavesTheUserActive(t *testing.T) {
 	t.Parallel()
 
 	actor := uuid.New()
@@ -68,7 +68,7 @@ func TestResetMFAClearsTotpOnceAndLeavesTheUserActive(t *testing.T) {
 	require.Equal(t, []uuid.UUID{target}, sessions.targets)
 }
 
-func TestResetMFAOfAnAlreadyClearUserWritesNothing(t *testing.T) {
+func TestReset_MFA_OfAnAlreadyClearUserWritesNothing(t *testing.T) {
 	t.Parallel()
 
 	actor := uuid.New()
@@ -87,7 +87,7 @@ func TestResetMFAOfAnAlreadyClearUserWritesNothing(t *testing.T) {
 	require.Zero(t, store.disabled)
 }
 
-func TestResetMFARefusesACallerWhoIsNotAPlatformAdmin(t *testing.T) {
+func TestReset_MFA_RefusesACallerWhoIsNotAPlatformAdmin(t *testing.T) {
 	t.Parallel()
 
 	target := uuid.New()
@@ -124,7 +124,7 @@ func TestResetMFARefusesACallerWhoIsNotAPlatformAdmin(t *testing.T) {
 	require.Equal(t, 1, missing.finds)
 }
 
-func TestResetMFAReportsAMissingUserToAPlatformAdmin(t *testing.T) {
+func TestReset_MFA_ReportsAMissingUserToAPlatformAdmin(t *testing.T) {
 	t.Parallel()
 
 	actor := uuid.New()

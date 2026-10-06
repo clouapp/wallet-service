@@ -21,7 +21,7 @@ func outboundServices(stdout string, calls *[]recordedProcess) DockerServices {
 	}
 }
 
-func TestOutboundMatchesOnlyComparesTransfersOfTheSameAsset(t *testing.T) {
+func TestOutbound_Matches_OnlyComparesTransfersOfTheSameAsset(t *testing.T) {
 	var calls []recordedProcess
 	services := outboundServices("id-1 confirmed 0xab\n", &calls)
 
@@ -52,7 +52,7 @@ func TestOutboundMatchesOnlyComparesTransfersOfTheSameAsset(t *testing.T) {
 	}
 }
 
-func TestOutboundMatchesRefusesUnsafeInputsBeforeQuerying(t *testing.T) {
+func TestOutbound_Matches_RefusesUnsafeInputsBeforeQuerying(t *testing.T) {
 	cases := map[string][4]string{
 		"lower-case asset":       {testWalletID, testTo, "usdc", "1"},
 		"asset with a quote":     {testWalletID, testTo, "USDC'--", "1"},

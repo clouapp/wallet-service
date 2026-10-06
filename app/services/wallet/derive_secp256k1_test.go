@@ -28,7 +28,7 @@ func TestDeriveSecp256k1ChildAddress_ETH_Index0(t *testing.T) {
 	}
 }
 
-func TestDeriveSecp256k1ChildAddress_DifferentIndices(t *testing.T) {
+func TestDerive_Secp2561ChildAddress_DifferentIndices(t *testing.T) {
 	pubKeyHex := "0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798"
 	chainCodeHex := "873dff81c02f525623fd1fe5167eac3a55a049de3d314bb42ee227ffed37d508"
 
@@ -49,7 +49,7 @@ func TestDeriveSecp256k1ChildAddress_DifferentIndices(t *testing.T) {
 	}
 }
 
-func TestDeriveSecp256k1ChildAddress_ETH(t *testing.T) {
+func TestDerive_Secp2561ChildAddress_ETH(t *testing.T) {
 	pubKeyHex := "0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798"
 	chainCodeHex := "873dff81c02f525623fd1fe5167eac3a55a049de3d314bb42ee227ffed37d508"
 
@@ -70,7 +70,7 @@ func TestDeriveSecp256k1ChildAddress_ETH(t *testing.T) {
 	}
 }
 
-func TestDeriveSecp256k1ChildAddress_BTC(t *testing.T) {
+func TestDerive_Secp2561ChildAddress_BTC(t *testing.T) {
 	pubKeyHex := "0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798"
 	chainCodeHex := "873dff81c02f525623fd1fe5167eac3a55a049de3d314bb42ee227ffed37d508"
 
@@ -91,7 +91,7 @@ func TestDeriveSecp256k1ChildAddress_BTC(t *testing.T) {
 	}
 }
 
-func TestDeriveSecp256k1ChildAddress_RejectsHardenedIndex(t *testing.T) {
+func TestDerive_Secp2561ChildAddress_RejectsHardenedIndex(t *testing.T) {
 	pubKeyHex := "0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798"
 	chainCodeHex := "873dff81c02f525623fd1fe5167eac3a55a049de3d314bb42ee227ffed37d508"
 

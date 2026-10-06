@@ -9,13 +9,13 @@ import (
 	"github.com/macrowallets/waas/tests/feature/support/testutil"
 )
 
-func TestNewReturnsNilForANilClient(t *testing.T) {
+func TestNew_Returns_NilForANilClient(t *testing.T) {
 	if New(nil) != nil {
 		t.Fatal("expected a nil address set when Redis is not configured")
 	}
 }
 
-func TestSIsMemberRejectsMissingContextAndKey(t *testing.T) {
+func TestS_Is_MemberRejectsMissingContextAndKey(t *testing.T) {
 	client := redis.NewClient(&redis.Options{Addr: "127.0.0.1:1", MaxRetries: -1})
 	t.Cleanup(func() { _ = client.Close() })
 	set := New(client)
@@ -28,7 +28,7 @@ func TestSIsMemberRejectsMissingContextAndKey(t *testing.T) {
 	}
 }
 
-func TestSIsMemberRoundTrip(t *testing.T) {
+func TestS_Is_MemberRoundTrip(t *testing.T) {
 	client := testutil.TestRedis(t)
 	prefix := testutil.TestRedisPrefix(t, client)
 	key := prefix + "addresses"
@@ -55,7 +55,7 @@ func TestSIsMemberRoundTrip(t *testing.T) {
 	}
 }
 
-func TestSIsMemberCanceledContext(t *testing.T) {
+func TestS_Is_MemberCanceledContext(t *testing.T) {
 	client := testutil.TestRedis(t)
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
@@ -66,7 +66,7 @@ func TestSIsMemberCanceledContext(t *testing.T) {
 	}
 }
 
-func TestNilSetReportsAMissingClient(t *testing.T) {
+func TestNil_Set_ReportsAMissingClient(t *testing.T) {
 	var set *Set
 	_, err := set.SIsMember(context.Background(), "vault:addresses:eth", "0xabc").Result()
 	if err == nil {

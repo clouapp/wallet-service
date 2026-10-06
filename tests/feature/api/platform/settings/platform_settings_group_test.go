@@ -26,7 +26,7 @@ type PlatformSettingsGroupTestSuite struct {
 	authSuite
 }
 
-func TestPlatformSettingsGroupSuite(t *testing.T) {
+func TestPlatform_Settings_GroupSuite(t *testing.T) {
 	suite.Run(t, new(PlatformSettingsGroupTestSuite))
 }
 
@@ -35,7 +35,7 @@ func (s *PlatformSettingsGroupTestSuite) SetupTest() {
 	settings.FacadeCache{}.Forget("settings:platform:mail_smtp")
 }
 
-func (s *PlatformSettingsGroupTestSuite) TestAPlatformAdminSeesAKnownGroupWithoutSecrets() {
+func (s *PlatformSettingsGroupTestSuite) TestA_Platform_AdminSeesAKnownGroupWithoutSecrets() {
 	admin := s.seedUser(false)
 	s.grantPlatformAdmin(admin.ID)
 	session := s.signIn(admin.Email)
@@ -140,7 +140,7 @@ func (s *PlatformSettingsGroupTestSuite) TestAPlatformAdminSeesAKnownGroupWithou
 	s.Equal("settings group not found", notFound.Error.Message)
 }
 
-func (s *PlatformSettingsGroupTestSuite) TestASecretSettingRecordsKeyAndValueSet() {
+func (s *PlatformSettingsGroupTestSuite) TestA_Secret_SettingRecordsKeyAndValueSet() {
 	admin := s.seedUser(false)
 	s.grantPlatformAdmin(admin.ID)
 	session := s.signIn(admin.Email)
@@ -197,7 +197,7 @@ func (s *PlatformSettingsGroupTestSuite) TestASecretSettingRecordsKeyAndValueSet
 	s.True(sawHost)
 }
 
-func (s *PlatformSettingsGroupTestSuite) TestANonAdminOnAnUnknownGroupIsNotFoundBeforeForbidden() {
+func (s *PlatformSettingsGroupTestSuite) TestA_Non_AdminOnAnUnknownGroupIsNotFoundBeforeForbidden() {
 	member := s.seedUser(false)
 	session := s.signIn(member.Email)
 
@@ -226,7 +226,7 @@ func (s *PlatformSettingsGroupTestSuite) TestANonAdminOnAnUnknownGroupIsNotFound
 	missing.AssertUnauthorized()
 }
 
-func (s *PlatformSettingsGroupTestSuite) TestAPlatformAdminGetsProviderCredentialGroupsWithoutTheSecret() {
+func (s *PlatformSettingsGroupTestSuite) TestA_Platform_AdminGetsProviderCredentialGroupsWithoutTheSecret() {
 	admin := s.seedUser(false)
 	s.grantPlatformAdmin(admin.ID)
 	session := s.signIn(admin.Email)

@@ -14,7 +14,7 @@ func (stubDelivery) Post(context.Context, webhook.SignedDelivery) (httpclient.Re
 	return httpclient.Response{}, nil
 }
 
-func TestNewDeliveryClientIsTheRegisteredAdapter(t *testing.T) {
+func TestNew_Delivery_ClientIsTheRegisteredAdapter(t *testing.T) {
 	webhook.SetDeliveryClient(func() webhook.DeliveryClient { return stubDelivery{} })
 	if webhook.NewDeliveryClient() == nil {
 		t.Fatal("webhook delivery client was not registered")

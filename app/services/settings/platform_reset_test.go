@@ -16,7 +16,7 @@ import (
 
 const platformResetSecret = "platform-section-reset-secret"
 
-func TestResetPlatformSectionDeletesRowsForgetsCacheAndRecordsFieldNames(t *testing.T) {
+func TestReset_Platform_SectionDeletesRowsForgetsCacheAndRecordsFieldNames(t *testing.T) {
 	t.Parallel()
 
 	actor := uuid.New()
@@ -162,7 +162,7 @@ func TestResetPlatformSectionDeletesRowsForgetsCacheAndRecordsFieldNames(t *test
 	}
 }
 
-func TestResetPlatformSectionNotFoundComesBeforeForbidden(t *testing.T) {
+func TestReset_Platform_SectionNotFoundComesBeforeForbidden(t *testing.T) {
 	t.Parallel()
 
 	actor := uuid.New()
@@ -219,7 +219,7 @@ func TestResetPlatformSectionNotFoundComesBeforeForbidden(t *testing.T) {
 	}
 }
 
-func TestResetPlatformSectionRequiresActorAdminCacheAndStore(t *testing.T) {
+func TestReset_Platform_SectionRequiresActorAdminCacheAndStore(t *testing.T) {
 	t.Parallel()
 
 	actor := uuid.New()
@@ -267,7 +267,7 @@ func TestResetPlatformSectionRequiresActorAdminCacheAndStore(t *testing.T) {
 	}
 }
 
-func TestResetPlatformSectionLeavesTheCacheWhenActivityFails(t *testing.T) {
+func TestReset_Platform_SectionLeavesTheCacheWhenActivityFails(t *testing.T) {
 	t.Parallel()
 
 	actor := uuid.New()

@@ -9,7 +9,7 @@ import (
 	"github.com/macrowallets/waas/app/models"
 )
 
-func TestPriceProvidersForQuote_OpensEnabledProvidersInOrder(t *testing.T) {
+func TestPrice_ProvidersForQuote_OpensEnabledProvidersInOrder(t *testing.T) {
 	t.Parallel()
 
 	store := newMemoryStore()
@@ -41,7 +41,7 @@ func TestPriceProvidersForQuote_OpensEnabledProvidersInOrder(t *testing.T) {
 	}
 }
 
-func TestPriceProvidersForQuote_SkipsDisabledUnsealedUnknownAndFailedReads(t *testing.T) {
+func TestPrice_ProvidersForQuote_SkipsDisabledUnsealedUnknownAndFailedReads(t *testing.T) {
 	t.Parallel()
 
 	t.Run("missing lookup", func(t *testing.T) {
@@ -144,7 +144,7 @@ func TestPriceProvidersForQuote_SkipsDisabledUnsealedUnknownAndFailedReads(t *te
 	})
 }
 
-func TestPriceProvidersForQuote_NilServiceOrContextFailsClosed(t *testing.T) {
+func TestPrice_ProvidersForQuote_NilServiceOrContextFailsClosed(t *testing.T) {
 	t.Parallel()
 
 	var service *Service

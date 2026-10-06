@@ -50,7 +50,7 @@ func brokenFileStore(t *testing.T) *depositpending.FileStore {
 	return store
 }
 
-func TestRedisStore_PutListDeleteWithIsolatedKeys(t *testing.T) {
+func TestRedis_Store_PutListDeleteWithIsolatedKeys(t *testing.T) {
 	ctx := context.Background()
 	client := testutil.TestRedis(t)
 	prefix := testutil.TestRedisPrefix(t, client)
@@ -84,7 +84,7 @@ func TestRedisStore_PutListDeleteWithIsolatedKeys(t *testing.T) {
 	}
 }
 
-func TestNewRedisStore_RequiresClientAndPrefix(t *testing.T) {
+func TestNew_RedisStore_RequiresClientAndPrefix(t *testing.T) {
 	if _, err := NewRedisStore(RedisStoreDeps{KeyPrefix: DefaultRedisKeyPrefix}); err == nil {
 		t.Fatal("expected a nil client to be rejected")
 	}
@@ -93,7 +93,7 @@ func TestNewRedisStore_RequiresClientAndPrefix(t *testing.T) {
 	}
 }
 
-func TestDurableStore_RedisDownFallsBackToTheFile(t *testing.T) {
+func TestDurable_Store_RedisDownFallsBackToTheFile(t *testing.T) {
 	ctx := context.Background()
 	redisStore, err := NewRedisStore(RedisStoreDeps{Redis: unreachableRedis(t), KeyPrefix: "test:unreachable:"})
 	if err != nil {
@@ -120,7 +120,7 @@ func TestDurableStore_RedisDownFallsBackToTheFile(t *testing.T) {
 	}
 }
 
-func TestDurableStore_FailsWhenEveryBackendIsDown(t *testing.T) {
+func TestDurable_Store_FailsWhenEveryBackendIsDown(t *testing.T) {
 	ctx := context.Background()
 	redisStore, err := NewRedisStore(RedisStoreDeps{Redis: unreachableRedis(t), KeyPrefix: "test:unreachable:"})
 	if err != nil {
@@ -138,7 +138,7 @@ func TestDurableStore_FailsWhenEveryBackendIsDown(t *testing.T) {
 	}
 }
 
-func TestDurableStore_MergesBothBackendsKeepingTheNewestEntry(t *testing.T) {
+func TestDurable_Store_MergesBothBackendsKeepingTheNewestEntry(t *testing.T) {
 	ctx := context.Background()
 	client := testutil.TestRedis(t)
 	redisStore, err := NewRedisStore(RedisStoreDeps{Redis: client, KeyPrefix: testutil.TestRedisPrefix(t, client)})

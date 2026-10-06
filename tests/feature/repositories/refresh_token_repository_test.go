@@ -20,7 +20,7 @@ type RefreshTokenRepositoryTestSuite struct {
 	userRepo *repositories.UserRepository
 }
 
-func TestRefreshTokenRepositorySuite(t *testing.T) {
+func TestRefresh_Token_RepositorySuite(t *testing.T) {
 	suite.Run(t, new(RefreshTokenRepositoryTestSuite))
 }
 
@@ -36,7 +36,7 @@ func (s *RefreshTokenRepositoryTestSuite) createUser() uuid.UUID {
 	return u.ID
 }
 
-func (s *RefreshTokenRepositoryTestSuite) TestCreate_Success() {
+func (s *RefreshTokenRepositoryTestSuite) TestRefreshTokenRepository_Create_Success() {
 	userID := s.createUser()
 	rt := &models.RefreshToken{
 		ID:        uuid.New(),
@@ -48,7 +48,7 @@ func (s *RefreshTokenRepositoryTestSuite) TestCreate_Success() {
 	s.NoError(err)
 }
 
-func (s *RefreshTokenRepositoryTestSuite) TestFindValidTokens() {
+func (s *RefreshTokenRepositoryTestSuite) TestFind_Valid_Tokens() {
 	userID := s.createUser()
 
 	valid := &models.RefreshToken{ID: uuid.New(), UserID: userID, TokenHash: "valid", ExpiresAt: time.Now().Add(24 * time.Hour)}
@@ -68,7 +68,7 @@ func (s *RefreshTokenRepositoryTestSuite) TestFindValidTokens() {
 	s.Equal(valid.ID, tokens[0].ID)
 }
 
-func (s *RefreshTokenRepositoryTestSuite) TestRevokeIfActive() {
+func (s *RefreshTokenRepositoryTestSuite) TestRevoke_If_Active() {
 	userID := insertActiveUserRow(s.T())
 	rt := &models.RefreshToken{ID: uuid.New(), UserID: userID, TokenHash: "tok", ExpiresAt: time.Now().Add(24 * time.Hour)}
 	s.Require().NoError(s.repo.Create(context.Background(), rt))
@@ -82,7 +82,7 @@ func (s *RefreshTokenRepositoryTestSuite) TestRevokeIfActive() {
 	s.NotNil(check.RevokedAt)
 }
 
-func (s *RefreshTokenRepositoryTestSuite) TestRevokeIfActive_SecondRevocationReportsFalse() {
+func (s *RefreshTokenRepositoryTestSuite) TestRevoke_IfActive_SecondRevocationReportsFalse() {
 	userID := insertActiveUserRow(s.T())
 	rt := &models.RefreshToken{ID: uuid.New(), UserID: userID, TokenHash: "tok", ExpiresAt: time.Now().Add(24 * time.Hour)}
 	s.Require().NoError(s.repo.Create(context.Background(), rt))
@@ -96,7 +96,7 @@ func (s *RefreshTokenRepositoryTestSuite) TestRevokeIfActive_SecondRevocationRep
 	s.False(second, "a token can only be rotated once")
 }
 
-func (s *RefreshTokenRepositoryTestSuite) TestRevokeAllForUser() {
+func (s *RefreshTokenRepositoryTestSuite) TestRevoke_All_ForUser() {
 	userID := s.createUser()
 	rt1 := &models.RefreshToken{ID: uuid.New(), UserID: userID, TokenHash: "t1", ExpiresAt: time.Now().Add(24 * time.Hour)}
 	rt2 := &models.RefreshToken{ID: uuid.New(), UserID: userID, TokenHash: "t2", ExpiresAt: time.Now().Add(24 * time.Hour)}

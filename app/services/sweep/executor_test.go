@@ -248,7 +248,7 @@ func TestExecute_DirectFromBase_SingleTx(t *testing.T) {
 	}
 }
 
-func TestExecutePlan_EVMUsesMPCSign(t *testing.T) {
+func TestExecute_Plan_EVMUsesMPCSign(t *testing.T) {
 	TestExecute_DirectFromBase_SingleTx(t)
 }
 
@@ -413,7 +413,7 @@ func executeSingleLegSweep(t *testing.T, mockChain *mocks.MockChain, asset strin
 
 // The adapter re-sizes a native sweep at build time (balance minus the fee at the
 // gas price it encodes), so the row must record what the tx moves, not the plan.
-func TestExecute_NativeSweepRowRecordsTheBuiltAmount(t *testing.T) {
+func TestExecute_Native_SweepRowRecordsTheBuiltAmount(t *testing.T) {
 	builtAmount := big.NewInt(3_996_861_184_300_000)
 	mockChain := sweepMockChain("eth", "eth")
 	mockChain.BuildSweepFn = func(ctx context.Context, req types.SweepRequest) ([]types.UnsignedTx, error) {
@@ -427,7 +427,7 @@ func TestExecute_NativeSweepRowRecordsTheBuiltAmount(t *testing.T) {
 	}
 }
 
-func TestExecute_SweepRowFallsBackToThePlannedAmount(t *testing.T) {
+func TestExecute_Sweep_RowFallsBackToThePlannedAmount(t *testing.T) {
 	legAmount := big.NewInt(600)
 
 	rows := executeSingleLegSweep(t, sweepMockChain("eth", "eth"), "eth", legAmount)
@@ -437,7 +437,7 @@ func TestExecute_SweepRowFallsBackToThePlannedAmount(t *testing.T) {
 	}
 }
 
-func TestExecute_GasSeedRowRecordsNativeGas(t *testing.T) {
+func TestExecute_Gas_SeedRowRecordsNativeGas(t *testing.T) {
 	seedAmount := big.NewInt(42_000)
 	tokenAmount := big.NewInt(600)
 	mockChain := sweepMockChain("eth", "eth")
@@ -498,7 +498,7 @@ func runLinkedLeg(t *testing.T, fixture linkedLegFixture) *Result {
 	return res
 }
 
-func TestExecute_LinkedLegCommitsGasSeedAndSweepTogether(t *testing.T) {
+func TestExecute_Linked_LegCommitsGasSeedAndSweepTogether(t *testing.T) {
 	fixture := newLinkedTokenLeg(t)
 	res := runLinkedLeg(t, fixture)
 	if res.FailedStep != nil || res.FinalWithdrawTx == nil {
@@ -515,7 +515,7 @@ func TestExecute_LinkedLegCommitsGasSeedAndSweepTogether(t *testing.T) {
 	}
 }
 
-func TestExecute_LinkedLegRollsBackWhenTheSweepRowFails(t *testing.T) {
+func TestExecute_Linked_LegRollsBackWhenTheSweepRowFails(t *testing.T) {
 	fixture := newLinkedTokenLeg(t)
 	fixture.txRepo.failAt = 2
 	res := runLinkedLeg(t, fixture)
@@ -527,7 +527,7 @@ func TestExecute_LinkedLegRollsBackWhenTheSweepRowFails(t *testing.T) {
 	}
 }
 
-func TestExecute_LinkedLegKeepsGasSeedWhenSweepBroadcastFails(t *testing.T) {
+func TestExecute_Linked_LegKeepsGasSeedWhenSweepBroadcastFails(t *testing.T) {
 	fixture := newLinkedTokenLeg(t)
 	var broadcasts int
 	fixture.chain.BroadcastTransactionFn = func(ctx context.Context, signed *types.SignedTx) (string, error) {
@@ -579,7 +579,7 @@ func (r *recordingSweepEvents) StageWithdrawalBroadcasting(context.Context, *mod
 	return func(context.Context) { r.withdrawalSent++ }, nil
 }
 
-func TestExecute_LinkedLegRollsBackWhenTheWebhookInsertFails(t *testing.T) {
+func TestExecute_Linked_LegRollsBackWhenTheWebhookInsertFails(t *testing.T) {
 	fixture := newLinkedTokenLeg(t)
 	events := &recordingSweepEvents{inside: &fixture.txRepo.inside, failStage: true}
 	fixture.svc.webhookSvc = events
@@ -592,7 +592,7 @@ func TestExecute_LinkedLegRollsBackWhenTheWebhookInsertFails(t *testing.T) {
 	}
 }
 
-func TestExecute_LinkedLegSendsTheWebhookAfterCommit(t *testing.T) {
+func TestExecute_Linked_LegSendsTheWebhookAfterCommit(t *testing.T) {
 	fixture := newLinkedTokenLeg(t)
 	events := &recordingSweepEvents{inside: &fixture.txRepo.inside}
 	fixture.svc.webhookSvc = events
@@ -621,7 +621,7 @@ func runManualLeg(t *testing.T, fixture linkedLegFixture) (string, error) {
 	)
 }
 
-func TestConsolidate_ManualLegCommitsGasSeedSweepAndWebhookTogether(t *testing.T) {
+func TestConsolidate_Manual_LegCommitsGasSeedSweepAndWebhookTogether(t *testing.T) {
 	fixture := newLinkedTokenLeg(t)
 	events := &recordingSweepEvents{inside: &fixture.txRepo.inside}
 	fixture.svc.webhookSvc = events
@@ -650,7 +650,7 @@ func TestConsolidate_ManualLegCommitsGasSeedSweepAndWebhookTogether(t *testing.T
 	}
 }
 
-func TestConsolidate_ManualLegRollsBackWhenTheSweepRowFails(t *testing.T) {
+func TestConsolidate_Manual_LegRollsBackWhenTheSweepRowFails(t *testing.T) {
 	fixture := newLinkedTokenLeg(t)
 	fixture.txRepo.failAt = 2
 	if _, err := runManualLeg(t, fixture); err == nil {
@@ -661,7 +661,7 @@ func TestConsolidate_ManualLegRollsBackWhenTheSweepRowFails(t *testing.T) {
 	}
 }
 
-func TestConsolidate_ManualLegKeepsGasSeedWhenSweepBroadcastFails(t *testing.T) {
+func TestConsolidate_Manual_LegKeepsGasSeedWhenSweepBroadcastFails(t *testing.T) {
 	fixture := newLinkedTokenLeg(t)
 	var broadcasts int
 	fixture.chain.BroadcastTransactionFn = func(ctx context.Context, signed *types.SignedTx) (string, error) {
@@ -679,7 +679,7 @@ func TestConsolidate_ManualLegKeepsGasSeedWhenSweepBroadcastFails(t *testing.T) 
 	}
 }
 
-func TestConsolidate_ManualLegRollsBackWhenTheWebhookInsertFails(t *testing.T) {
+func TestConsolidate_Manual_LegRollsBackWhenTheWebhookInsertFails(t *testing.T) {
 	fixture := newLinkedTokenLeg(t)
 	events := &recordingSweepEvents{inside: &fixture.txRepo.inside, failStage: true}
 	fixture.svc.webhookSvc = events
@@ -703,7 +703,7 @@ func directWithdrawalPlan(walletID uuid.UUID, base models.Address) *Plan {
 	}
 }
 
-func TestExecute_WithdrawalCommitsRowAndWebhookTogether(t *testing.T) {
+func TestExecute_Withdrawal_CommitsRowAndWebhookTogether(t *testing.T) {
 	walletID := uuid.New()
 	baseAddr := models.Address{ID: uuid.New(), WalletID: walletID, Address: "0xBASE", ExternalUserID: "user-1"}
 	wallet := &models.Wallet{ID: walletID, Chain: "eth", DepositAddress: &baseAddr, MPCCurve: "secp256k1"}
@@ -734,7 +734,7 @@ func TestExecute_WithdrawalCommitsRowAndWebhookTogether(t *testing.T) {
 	}
 }
 
-func TestExecute_WithdrawalRollsBackWhenTheWebhookInsertFails(t *testing.T) {
+func TestExecute_Withdrawal_RollsBackWhenTheWebhookInsertFails(t *testing.T) {
 	walletID := uuid.New()
 	baseAddr := models.Address{ID: uuid.New(), WalletID: walletID, Address: "0xBASE", ExternalUserID: "user-1"}
 	wallet := &models.Wallet{ID: walletID, Chain: "eth", DepositAddress: &baseAddr, MPCCurve: "secp256k1"}
@@ -756,7 +756,7 @@ func TestExecute_WithdrawalRollsBackWhenTheWebhookInsertFails(t *testing.T) {
 	}
 }
 
-func TestStageWithdrawalBroadcastingInsertsTheRowBeforeSending(t *testing.T) {
+func TestStage_Withdrawal_BroadcastingInsertsTheRowBeforeSending(t *testing.T) {
 	walletID := uuid.New()
 	tx := &models.Transaction{ID: uuid.New(), WalletID: walletID, TxType: models.TxTypeWithdrawal}
 	events := &fakeWebhookEventRepo{}
@@ -783,7 +783,7 @@ func TestStageWithdrawalBroadcastingInsertsTheRowBeforeSending(t *testing.T) {
 	}
 }
 
-func TestStageSweepBroadcastInsertsTheRowBeforeSending(t *testing.T) {
+func TestStage_Sweep_BroadcastInsertsTheRowBeforeSending(t *testing.T) {
 	walletID := uuid.New()
 	tx := &models.Transaction{ID: uuid.New(), WalletID: walletID, TxType: models.TxTypeSweep}
 	events := &fakeWebhookEventRepo{}
@@ -810,7 +810,7 @@ func TestStageSweepBroadcastInsertsTheRowBeforeSending(t *testing.T) {
 	}
 }
 
-func TestStageSweepConfirmedInsertsTheRowBeforeSending(t *testing.T) {
+func TestStage_Sweep_ConfirmedInsertsTheRowBeforeSending(t *testing.T) {
 	walletID := uuid.New()
 	tx := &models.Transaction{ID: uuid.New(), WalletID: walletID, TxType: models.TxTypeSweep}
 	events := &fakeWebhookEventRepo{}

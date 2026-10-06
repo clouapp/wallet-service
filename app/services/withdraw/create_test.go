@@ -19,7 +19,7 @@ import (
 
 const createTestPassphrase = "create-passphrase-0001"
 
-func TestCreateUnknownChainIsNotAStoreFailure(t *testing.T) {
+func TestCreate_Unknown_ChainIsNotAStoreFailure(t *testing.T) {
 	registry := chain.NewRegistry()
 	registry.RegisterChain(mocks.NewMockChain("eth"))
 	svc := &Service{registry: registry}
@@ -64,7 +64,7 @@ func (refusingLookup) TokensForChain(string) []types.Token {
 	return nil
 }
 
-func TestCreateStoresTheFeeAndDoesNotBroadcast(t *testing.T) {
+func TestCreate_Stores_TheFeeAndDoesNotBroadcast(t *testing.T) {
 	broadcaster := &fakeBroadcaster{}
 	feeChain := newCreateChain(t, broadcaster, "0.00021", nil)
 	rows := &memWithdrawalRows{}
@@ -109,7 +109,7 @@ func TestCreateStoresTheFeeAndDoesNotBroadcast(t *testing.T) {
 	}
 }
 
-func TestCreatePassesTheTokenToTheFeeEstimate(t *testing.T) {
+func TestCreate_Passes_TheTokenToTheFeeEstimate(t *testing.T) {
 	broadcaster := &fakeBroadcaster{}
 	feeChain := newCreateChain(t, broadcaster, "21000", nil)
 	feeChain.chain.NativeAssetVal = "ETH"
@@ -143,7 +143,7 @@ func TestCreatePassesTheTokenToTheFeeEstimate(t *testing.T) {
 	}
 }
 
-func TestCreateKeepsAZeroFeeWhenTheEstimateFails(t *testing.T) {
+func TestCreate_Keeps_AZeroFeeWhenTheEstimateFails(t *testing.T) {
 	broadcaster := &fakeBroadcaster{}
 	feeChain := newCreateChain(t, broadcaster, "", errors.New("rpc down"))
 	rows := &memWithdrawalRows{}
@@ -166,7 +166,7 @@ func TestCreateKeepsAZeroFeeWhenTheEstimateFails(t *testing.T) {
 	}
 }
 
-func TestCreateRejectsReplayedTOTPBeforeTheRow(t *testing.T) {
+func TestCreate_Rejects_ReplayedTOTPBeforeTheRow(t *testing.T) {
 	broadcaster := &fakeBroadcaster{}
 	feeChain := newCreateChain(t, broadcaster, "1", nil)
 	rows := &memWithdrawalRows{}
@@ -190,7 +190,7 @@ func TestCreateRejectsReplayedTOTPBeforeTheRow(t *testing.T) {
 	}
 }
 
-func TestCreateRequiresEnabledTOTPBeforeThePassphrase(t *testing.T) {
+func TestCreate_Requires_EnabledTOTPBeforeThePassphrase(t *testing.T) {
 	broadcaster := &fakeBroadcaster{}
 	feeChain := newCreateChain(t, broadcaster, "1", nil)
 	rows := &memWithdrawalRows{}
@@ -215,7 +215,7 @@ func TestCreateRequiresEnabledTOTPBeforeThePassphrase(t *testing.T) {
 	}
 }
 
-func TestCreateRejectsABadPassphraseBeforeTheRow(t *testing.T) {
+func TestCreate_Rejects_ABadPassphraseBeforeTheRow(t *testing.T) {
 	broadcaster := &fakeBroadcaster{}
 	feeChain := newCreateChain(t, broadcaster, "1", nil)
 	rows := &memWithdrawalRows{}
@@ -244,7 +244,7 @@ func TestCreateRejectsABadPassphraseBeforeTheRow(t *testing.T) {
 	}
 }
 
-func TestCreateStopsAtThePassphraseAttemptCap(t *testing.T) {
+func TestCreate_Stops_AtThePassphraseAttemptCap(t *testing.T) {
 	broadcaster := &fakeBroadcaster{}
 	feeChain := newCreateChain(t, broadcaster, "1", nil)
 	rows := &memWithdrawalRows{}
@@ -270,7 +270,7 @@ func TestCreateStopsAtThePassphraseAttemptCap(t *testing.T) {
 	}
 }
 
-func TestCreateSkipsTOTPForAnAccessTokenCaller(t *testing.T) {
+func TestCreate_Skips_TOTPForAnAccessTokenCaller(t *testing.T) {
 	broadcaster := &fakeBroadcaster{}
 	feeChain := newCreateChain(t, broadcaster, "1", nil)
 	rows := &memWithdrawalRows{}
@@ -292,7 +292,7 @@ func TestCreateSkipsTOTPForAnAccessTokenCaller(t *testing.T) {
 	}
 }
 
-func TestCreateReturnsABroadcastRowWithoutAnotherWrite(t *testing.T) {
+func TestCreate_Returns_ABroadcastRowWithoutAnotherWrite(t *testing.T) {
 	broadcaster := &fakeBroadcaster{}
 	feeChain := newCreateChain(t, broadcaster, "9", nil)
 	existingID := uuid.New()
@@ -324,7 +324,7 @@ func TestCreateReturnsABroadcastRowWithoutAnotherWrite(t *testing.T) {
 	}
 }
 
-func TestCreateRetriesAFailedRowAndKeepsTheOldViewFields(t *testing.T) {
+func TestCreate_Retries_AFailedRowAndKeepsTheOldViewFields(t *testing.T) {
 	broadcaster := &fakeBroadcaster{}
 	feeChain := newCreateChain(t, broadcaster, "9", nil)
 	existingID := uuid.New()
@@ -360,7 +360,7 @@ func TestCreateRetriesAFailedRowAndKeepsTheOldViewFields(t *testing.T) {
 	}
 }
 
-func TestCreateLeavesTheFailedRowWhenTheRetryTransactionFails(t *testing.T) {
+func TestCreate_Leaves_TheFailedRowWhenTheRetryTransactionFails(t *testing.T) {
 	broadcaster := &fakeBroadcaster{}
 	feeChain := newCreateChain(t, broadcaster, "9", nil)
 	existingID := uuid.New()
@@ -393,7 +393,7 @@ func TestCreateLeavesTheFailedRowWhenTheRetryTransactionFails(t *testing.T) {
 	}
 }
 
-func TestCreateRejectsANonUUIDIdempotencyKeyAfterThePassphrase(t *testing.T) {
+func TestCreate_Rejects_ANonUUIDIdempotencyKeyAfterThePassphrase(t *testing.T) {
 	broadcaster := &fakeBroadcaster{}
 	feeChain := newCreateChain(t, broadcaster, "1", nil)
 	rows := &memWithdrawalRows{}
@@ -417,7 +417,7 @@ func TestCreateRejectsANonUUIDIdempotencyKeyAfterThePassphrase(t *testing.T) {
 	}
 }
 
-func TestCreateAssignsAnIDWhenTheIdempotencyKeyIsEmpty(t *testing.T) {
+func TestCreate_Assigns_AnIDWhenTheIdempotencyKeyIsEmpty(t *testing.T) {
 	broadcaster := &fakeBroadcaster{}
 	feeChain := newCreateChain(t, broadcaster, "1", nil)
 	rows := &memWithdrawalRows{}

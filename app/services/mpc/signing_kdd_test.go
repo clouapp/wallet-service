@@ -64,7 +64,7 @@ func verifyDER(t *testing.T, signature, digest, publicKey []byte) bool {
 	return parsed.Verify(digest, key)
 }
 
-func TestSign_WithKeyDerivationDeltaSignsForTheChildKey(t *testing.T) {
+func TestSign_With_KeyDerivationDeltaSignsForTheChildKey(t *testing.T) {
 	keys := kddKeys(t)
 	child := kddChild(t, keys)
 	digest := sha256.Sum256([]byte("child sweep"))
@@ -85,7 +85,7 @@ func TestSign_WithKeyDerivationDeltaSignsForTheChildKey(t *testing.T) {
 	}
 }
 
-func TestSign_WithoutDeltaStillSignsForTheWalletKey(t *testing.T) {
+func TestSign_Without_DeltaStillSignsForTheWalletKey(t *testing.T) {
 	keys := kddKeys(t)
 	digest := sha256.Sum256([]byte("base withdrawal"))
 
@@ -101,7 +101,7 @@ func TestSign_WithoutDeltaStillSignsForTheWalletKey(t *testing.T) {
 	}
 }
 
-func TestSign_DoesNotMutateTheCallersShares(t *testing.T) {
+func TestSign_Does_NotMutateTheCallersShares(t *testing.T) {
 	keys := kddKeys(t)
 	child := kddChild(t, keys)
 	shareA := append([]byte(nil), keys.ShareA...)
@@ -130,7 +130,7 @@ func unmarshalSaves(t *testing.T, keys *KeygenResult) (keygen.LocalPartySaveData
 	return saveA, saveB
 }
 
-func TestApplyKeyDerivationDelta_RejectsMismatchedInputs(t *testing.T) {
+func TestApply_KeyDerivationDelta_RejectsMismatchedInputs(t *testing.T) {
 	keys := kddKeys(t)
 	child := kddChild(t, keys)
 	otherChild, err := hdkey.DeriveSecp256k1Child(keys.CombinedPubKey, keys.ChainCode, kddTestChildIndex+1)
@@ -161,7 +161,7 @@ func TestApplyKeyDerivationDelta_RejectsMismatchedInputs(t *testing.T) {
 	}
 }
 
-func TestApplyKeyDerivationDelta_RejectsSharesOfDifferentWallets(t *testing.T) {
+func TestApply_KeyDerivationDelta_RejectsSharesOfDifferentWallets(t *testing.T) {
 	keys := kddKeys(t)
 	other, err := NewTSSService().Keygen(context.Background(), CurveSecp256k1)
 	if err != nil {
@@ -174,7 +174,7 @@ func TestApplyKeyDerivationDelta_RejectsSharesOfDifferentWallets(t *testing.T) {
 	}
 }
 
-func TestApplyKeyDerivationDelta_MovesBothPartiesToTheChildKey(t *testing.T) {
+func TestApply_KeyDerivationDelta_MovesBothPartiesToTheChildKey(t *testing.T) {
 	keys := kddKeys(t)
 	child := kddChild(t, keys)
 	saveA, saveB := unmarshalSaves(t, keys)

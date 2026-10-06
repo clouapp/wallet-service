@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-func TestIsNegative(t *testing.T) {
+func TestSign_Is_Negative(t *testing.T) {
 	t.Parallel()
 
 	cases := map[string]bool{
@@ -27,7 +27,7 @@ func TestIsNegative(t *testing.T) {
 	}
 }
 
-func TestRequireNonNegative(t *testing.T) {
+func TestRequire_Non_Negative(t *testing.T) {
 	t.Parallel()
 
 	if err := RequireNonNegative("transactions.amount", "5000000000"); err != nil {
@@ -48,7 +48,7 @@ func TestRequireNonNegative(t *testing.T) {
 	}
 }
 
-func TestRequireNonNegativeColumns(t *testing.T) {
+func TestRequire_Non_NegativeColumns(t *testing.T) {
 	t.Parallel()
 
 	negative := "-1"

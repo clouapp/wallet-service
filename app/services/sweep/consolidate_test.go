@@ -25,7 +25,7 @@ import (
 // TestConsolidateAll_ShortPassphraseRejected verifies the input guard fires
 // before any repository / lock / quota work, so a bad call cannot burn the
 // per-account daily quota.
-func TestConsolidateAll_SweepFlagStopsBeforeWalletLookup(t *testing.T) {
+func TestConsolidate_All_SweepFlagStopsBeforeWalletLookup(t *testing.T) {
 	paused := errors.New("sweep_paused")
 	svc := &service{flags: func(context.Context, uuid.UUID) error { return paused }}
 
@@ -35,7 +35,7 @@ func TestConsolidateAll_SweepFlagStopsBeforeWalletLookup(t *testing.T) {
 	}
 }
 
-func TestConsolidateAll_ShortPassphraseRejected(t *testing.T) {
+func TestConsolidate_All_ShortPassphraseRejected(t *testing.T) {
 	svc := &service{}
 	_, err := svc.ConsolidateAll(context.Background(), uuid.New(), "usdt", "short", uuid.Nil)
 	if err == nil {
@@ -46,7 +46,7 @@ func TestConsolidateAll_ShortPassphraseRejected(t *testing.T) {
 	}
 }
 
-func TestConsolidateAll_BitcoinNoChildren(t *testing.T) {
+func TestConsolidate_All_BitcoinNoChildren(t *testing.T) {
 	walletID := uuid.New()
 	baseAddr := models.Address{ID: uuid.New(), WalletID: walletID, Address: "BASE"}
 	wallet := &models.Wallet{ID: walletID, Chain: models.ChainBTC, DepositAddress: &baseAddr}
@@ -72,7 +72,7 @@ func TestConsolidateAll_BitcoinNoChildren(t *testing.T) {
 	}
 }
 
-func TestConsolidateAll_UnknownAdapter(t *testing.T) {
+func TestConsolidate_All_UnknownAdapter(t *testing.T) {
 	walletID := uuid.New()
 	baseAddr := models.Address{ID: uuid.New(), WalletID: walletID, Address: "BASE"}
 	wallet := &models.Wallet{ID: walletID, Chain: models.ChainETH, DepositAddress: &baseAddr}
@@ -157,7 +157,7 @@ func TestConsolidateAll_NoEligibleChildren_Noop(t *testing.T) {
 // The wallet here has a garbage ciphertext so any passphrase yields
 // ErrInvalidPassphrase from mpcpkg.DecryptShare; after the failed call, the
 // Redis quota key for the caller must be absent (count 0).
-func TestConsolidateAll_QuotaNotBurnedOnInvalidPassphrase(t *testing.T) {
+func TestConsolidate_All_QuotaNotBurnedOnInvalidPassphrase(t *testing.T) {
 	client := testutil.TestRedis(t)
 
 	walletID := uuid.New()

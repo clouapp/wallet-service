@@ -2,7 +2,7 @@ package settings
 
 import "testing"
 
-func TestSigningAlgorithmIsAClosedVocabulary(t *testing.T) {
+func TestSigning_Algorithm_IsAClosedVocabulary(t *testing.T) {
 	t.Parallel()
 
 	definition, ok := Find(groupAccountWebhooks, keySigningAlgorithm)
@@ -17,7 +17,7 @@ func TestSigningAlgorithmIsAClosedVocabulary(t *testing.T) {
 	}
 }
 
-func TestValidateSessionIdleRefusesAMinuteCountOutsideTheRange(t *testing.T) {
+func TestValidate_Session_IdleRefusesAMinuteCountOutsideTheRange(t *testing.T) {
 	t.Parallel()
 
 	group, ok := FindGroup(groupAccountSecurity)
@@ -36,7 +36,7 @@ func TestValidateSessionIdleRefusesAMinuteCountOutsideTheRange(t *testing.T) {
 	}
 }
 
-func TestWebhookCredentialIsDeclaredSecret(t *testing.T) {
+func TestWebhook_Credential_IsDeclaredSecret(t *testing.T) {
 	t.Parallel()
 
 	definition, ok := Find(groupAccountWebhooks, keySigningSecret)

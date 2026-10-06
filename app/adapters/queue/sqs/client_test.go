@@ -11,13 +11,13 @@ import (
 	"github.com/macrowallets/waas/app/services/queue"
 )
 
-func TestNewReturnsNilForANilClient(t *testing.T) {
+func TestNew_Returns_NilForANilClient(t *testing.T) {
 	if New(nil) != nil {
 		t.Fatal("expected a nil transport when SQS is not configured")
 	}
 }
 
-func TestSendCopiesTheBodyAndStringAttributes(t *testing.T) {
+func TestSend_Copies_TheBodyAndStringAttributes(t *testing.T) {
 	fake := &fakeAPI{}
 	client := &Client{api: fake}
 	attributes := map[string]string{"event_type": "deposit.confirmed"}
@@ -43,7 +43,7 @@ func TestSendCopiesTheBodyAndStringAttributes(t *testing.T) {
 	}
 }
 
-func TestSendBatchCopiesEntriesInOrder(t *testing.T) {
+func TestSend_Batch_CopiesEntriesInOrder(t *testing.T) {
 	fake := &fakeAPI{}
 	client := &Client{api: fake}
 	entries := []queue.BatchEntry{
@@ -71,7 +71,7 @@ func TestSendBatchCopiesEntriesInOrder(t *testing.T) {
 	}
 }
 
-func TestSendForwardsTheAPIError(t *testing.T) {
+func TestSend_Forwards_TheAPIError(t *testing.T) {
 	fake := &fakeAPI{err: errors.New("boom")}
 	err := (&Client{api: fake}).Send(context.Background(), "https://sqs.example/webhook", `{"n":1}`, nil)
 	if err == nil || err.Error() != "boom" {
@@ -79,7 +79,7 @@ func TestSendForwardsTheAPIError(t *testing.T) {
 	}
 }
 
-func TestSendForwardsACanceledContext(t *testing.T) {
+func TestSend_Forwards_ACanceledContext(t *testing.T) {
 	fake := &fakeAPI{}
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
@@ -90,7 +90,7 @@ func TestSendForwardsACanceledContext(t *testing.T) {
 	}
 }
 
-func TestNilClientReportsAMissingClient(t *testing.T) {
+func TestNil_Client_ReportsAMissingClient(t *testing.T) {
 	var client *Client
 	if err := client.Send(context.Background(), "https://sqs.example/webhook", `{"n":1}`, nil); err == nil {
 		t.Fatal("expected error for a nil client")

@@ -10,7 +10,7 @@ func freshRegistry(t *testing.T) {
 	t.Cleanup(resetRegistry)
 }
 
-func TestRegisterAndLookup(t *testing.T) {
+func TestRegister_And_Lookup(t *testing.T) {
 	freshRegistry(t)
 
 	if err := Register(Table{Name: "publishers", LogName: "admin", Subject: "publisher", Columns: []string{"name"}}); err != nil {
@@ -29,7 +29,7 @@ func TestRegisterAndLookup(t *testing.T) {
 	}
 }
 
-func TestRegisterRefusesAnUnnamedTable(t *testing.T) {
+func TestRegister_Refuses_AnUnnamedTable(t *testing.T) {
 	freshRegistry(t)
 
 	if err := Register(Table{Subject: "publisher"}); err == nil {
@@ -41,7 +41,7 @@ func TestRegisterRefusesAnUnnamedTable(t *testing.T) {
 // plugin also refuses it at capture time, independent of the registry — two
 // locks on the same door, because a recursion here is not a wrong row, it is a
 // process that never returns. See the spec §5.4.
-func TestRegisterRefusesTheTrailItself(t *testing.T) {
+func TestRegister_Refuses_TheTrailItself(t *testing.T) {
 	freshRegistry(t)
 
 	if err := Register(Table{Name: trailTable, Columns: []string{"event"}}); err == nil {
@@ -49,7 +49,7 @@ func TestRegisterRefusesTheTrailItself(t *testing.T) {
 	}
 }
 
-func TestRegisterRefusesADuplicate(t *testing.T) {
+func TestRegister_Refuses_ADuplicate(t *testing.T) {
 	freshRegistry(t)
 
 	if err := Register(Table{Name: "publishers", Columns: []string{"name"}}); err != nil {
@@ -63,7 +63,7 @@ func TestRegisterRefusesADuplicate(t *testing.T) {
 // The allowlist is the redaction. A column absent from it is absent from the
 // image even when the row carries it — which is the case for every write to
 // users, because UserRepository.Update writes all eleven columns every time.
-func TestImageKeepsOnlyAllowlistedColumns(t *testing.T) {
+func TestImage_Keeps_OnlyAllowlistedColumns(t *testing.T) {
 	tbl := Table{Name: "users", Columns: []string{"email", "status"}}
 
 	img, flags := tbl.image(map[string]any{
@@ -91,7 +91,7 @@ func TestImageKeepsOnlyAllowlistedColumns(t *testing.T) {
 // A known category whose secret list is empty keeps its whole document.
 // Reading "empty list" as "unrecognised" would prune categories whose diff
 // is most worth having.
-func TestImageKeepsTheDocumentForAKnownCategoryWithNoSecrets(t *testing.T) {
+func TestImage_Keeps_TheDocumentForAKnownCategoryWithNoSecrets(t *testing.T) {
 	tbl := Table{
 		Name:    "settings",
 		Columns: []string{"category", "payload"},
@@ -117,7 +117,7 @@ func TestImageKeepsTheDocumentForAKnownCategoryWithNoSecrets(t *testing.T) {
 	}
 }
 
-func TestImageReplacesSecretPathsWithABoolean(t *testing.T) {
+func TestImage_Replaces_SecretPathsWithABoolean(t *testing.T) {
 	tbl := Table{
 		Name:    "settings",
 		Columns: []string{"category", "payload"},
@@ -149,7 +149,7 @@ func TestImageReplacesSecretPathsWithABoolean(t *testing.T) {
 // settings category is exactly the change that would otherwise leak on the day
 // it ships: the category is added, the redactor has no branch, and nothing
 // fails.
-func TestImagePrunesEverythingForAnUnknownCategory(t *testing.T) {
+func TestImage_Prunes_EverythingForAnUnknownCategory(t *testing.T) {
 	tbl := Table{
 		Name:    "settings",
 		Columns: []string{"category", "payload"},
@@ -174,7 +174,7 @@ func TestImagePrunesEverythingForAnUnknownCategory(t *testing.T) {
 }
 
 // The jsonb column arrives from database/sql as []byte as often as string.
-func TestImageAcceptsJSONAsBytes(t *testing.T) {
+func TestImage_Accepts_JSONAsBytes(t *testing.T) {
 	tbl := Table{
 		Name:    "settings",
 		Columns: []string{"payload"},
@@ -196,7 +196,7 @@ func TestImageAcceptsJSONAsBytes(t *testing.T) {
 
 // Unparseable jsonb is dropped, not passed through: passing it through would put
 // raw, unredacted bytes into a table one permission can read.
-func TestImageDropsUnparseableJSON(t *testing.T) {
+func TestImage_Drops_UnparseableJSON(t *testing.T) {
 	tbl := Table{
 		Name:    "settings",
 		Columns: []string{"payload"},

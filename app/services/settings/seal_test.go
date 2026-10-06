@@ -26,7 +26,7 @@ func (stubDecryptError) Error() string { return "stub decrypt" }
 
 var errStubDecrypt = stubDecryptError{}
 
-func TestPrefixSealTagsStoredCiphertextOnce(t *testing.T) {
+func TestPrefix_Seal_TagsStoredCiphertextOnce(t *testing.T) {
 	t.Parallel()
 
 	const stored = "cipher-blob"
@@ -39,7 +39,7 @@ func TestPrefixSealTagsStoredCiphertextOnce(t *testing.T) {
 	}
 }
 
-func TestSealTagsCiphertextAndOpenRefusesPlaintext(t *testing.T) {
+func TestSeal_Tags_CiphertextAndOpenRefusesPlaintext(t *testing.T) {
 	t.Parallel()
 
 	const plaintext = "super-secret"
@@ -74,7 +74,7 @@ func TestSealTagsCiphertextAndOpenRefusesPlaintext(t *testing.T) {
 	}
 }
 
-func TestOpenWithTheWrongKeyFailsClosed(t *testing.T) {
+func TestOpen_With_TheWrongKeyFailsClosed(t *testing.T) {
 	t.Parallel()
 
 	sealed, err := Seal(stubCipher{prefix: "one:"}, "JBSWY3DPEHPK3PXP")
@@ -90,7 +90,7 @@ func TestOpenWithTheWrongKeyFailsClosed(t *testing.T) {
 	}
 }
 
-func TestSealOpenRoundTrip(t *testing.T) {
+func TestSeal_Open_RoundTrip(t *testing.T) {
 	t.Parallel()
 
 	const secret = "JBSWY3DPEHPK3PXP"
@@ -108,7 +108,7 @@ func TestSealOpenRoundTrip(t *testing.T) {
 	}
 }
 
-func TestSealIsIdempotentAndEmptySafe(t *testing.T) {
+func TestSeal_Is_IdempotentAndEmptySafe(t *testing.T) {
 	t.Parallel()
 
 	cipher := stubCipher{prefix: "aes:"}

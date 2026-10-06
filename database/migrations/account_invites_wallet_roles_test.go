@@ -10,7 +10,7 @@ import (
 	"github.com/macrowallets/waas/tests/feature/support/fixtures"
 )
 
-func TestAccountInvitesWalletRolesIsNullableJsonb(t *testing.T) {
+func TestAccount_Invites_WalletRolesIsNullableJsonb(t *testing.T) {
 	fixtures.TestDB(t)
 
 	require.Equal(t, "jsonb", walletRolesType(t))

@@ -31,14 +31,14 @@ func bind[T any](t *testing.T, value any) {
 	})
 }
 
-func TestMustMake_ResolvesTheBindingRegisteredUnderItsType(t *testing.T) {
+func TestMust_Make_ResolvesTheBindingRegisteredUnderItsType(t *testing.T) {
 	want := &boundService{name: "accounts"}
 	bind[*boundService](t, want)
 
 	assert.Same(t, want, MustMake[*boundService]())
 }
 
-func TestMustMake_ResolvesEachTypeIndependently(t *testing.T) {
+func TestMust_Make_ResolvesEachTypeIndependently(t *testing.T) {
 	first := &pairedServiceA{name: "users"}
 	second := &pairedServiceB{name: "accounts"}
 	bind[*pairedServiceA](t, first)
@@ -48,7 +48,7 @@ func TestMustMake_ResolvesEachTypeIndependently(t *testing.T) {
 	assert.Same(t, second, MustMake[*pairedServiceB]())
 }
 
-func TestMake_UnboundTypeIsAnErrorNamingTheType(t *testing.T) {
+func TestMake_Unbound_TypeIsAnErrorNamingTheType(t *testing.T) {
 	got, err := Make[*unboundService]()
 
 	require.Error(t, err)
@@ -56,7 +56,7 @@ func TestMake_UnboundTypeIsAnErrorNamingTheType(t *testing.T) {
 	assert.Contains(t, err.Error(), "container: resolving *container.unboundService")
 }
 
-func TestMake_WrongTypeIsAnErrorNamingBoth(t *testing.T) {
+func TestMake_Wrong_TypeIsAnErrorNamingBoth(t *testing.T) {
 	bind[*misboundService](t, &misboundActual{})
 
 	_, err := Make[*misboundService]()
@@ -66,7 +66,7 @@ func TestMake_WrongTypeIsAnErrorNamingBoth(t *testing.T) {
 	assert.Contains(t, err.Error(), "*container.misboundActual")
 }
 
-func TestMake_ABindingThatAnswersNilIsNotAResolution(t *testing.T) {
+func TestMake_A_BindingThatAnswersNilIsNotAResolution(t *testing.T) {
 	bind[*wrongTypeService](t, nil)
 
 	_, err := Make[*wrongTypeService]()
@@ -75,7 +75,7 @@ func TestMake_ABindingThatAnswersNilIsNotAResolution(t *testing.T) {
 	assert.Contains(t, err.Error(), "*container.wrongTypeService")
 }
 
-func TestMake_WithNoApplicationIsAnErrorNotAPanic(t *testing.T) {
+func TestMake_With_NoApplicationIsAnErrorNotAPanic(t *testing.T) {
 	previous := foundation.App
 	foundation.App = nil
 	t.Cleanup(func() { foundation.App = previous })
@@ -86,7 +86,7 @@ func TestMake_WithNoApplicationIsAnErrorNotAPanic(t *testing.T) {
 	assert.Contains(t, err.Error(), "no application is booted")
 }
 
-func TestMustMake_PanicsOnAMiss(t *testing.T) {
+func TestMust_Make_PanicsOnAMiss(t *testing.T) {
 	_, err := Make[*mustMissingSvc]()
 	require.Error(t, err)
 

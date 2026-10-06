@@ -8,7 +8,7 @@ import (
 	"github.com/google/uuid"
 )
 
-func TestReaderWithoutACacheReadsTheTable(t *testing.T) {
+func TestReader_Without_ACacheReadsTheTable(t *testing.T) {
 	t.Parallel()
 
 	store := newCountingStore()
@@ -28,7 +28,7 @@ func TestReaderWithoutACacheReadsTheTable(t *testing.T) {
 	}
 }
 
-func TestReaderRefusesAGroupOutsideTheCatalog(t *testing.T) {
+func TestReader_Refuses_AGroupOutsideTheCatalog(t *testing.T) {
 	t.Parallel()
 
 	service := newTestService(newMemoryStore())
@@ -38,7 +38,7 @@ func TestReaderRefusesAGroupOutsideTheCatalog(t *testing.T) {
 	}
 }
 
-func TestConsumersRereadAfterForget(t *testing.T) {
+func TestConsumers_Reread_AfterForget(t *testing.T) {
 	t.Parallel()
 
 	store := newCountingStore()

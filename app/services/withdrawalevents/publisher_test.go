@@ -172,7 +172,7 @@ func onlyPayload(t *testing.T, enqueuer *fakeEnqueuer) (webhook.ScopedEvent, Pay
 	return event, payload
 }
 
-func TestPublishBroadcast_PayloadCarriesBothAmountsAndScope(t *testing.T) {
+func TestPublish_Broadcast_PayloadCarriesBothAmountsAndScope(t *testing.T) {
 	f := newFixture()
 
 	if err := f.publisher.PublishBroadcast(context.Background(), f.withdrawal, f.tx); err != nil {
@@ -209,7 +209,7 @@ func TestPublishBroadcast_PayloadCarriesBothAmountsAndScope(t *testing.T) {
 	}
 }
 
-func TestPublishBroadcast_RequiresTransactionHash(t *testing.T) {
+func TestPublish_Broadcast_RequiresTransactionHash(t *testing.T) {
 	f := newFixture()
 	f.tx.TxHash = " "
 
@@ -221,7 +221,7 @@ func TestPublishBroadcast_RequiresTransactionHash(t *testing.T) {
 	}
 }
 
-func TestPublishFailed_SendsOnlyThePublicCode(t *testing.T) {
+func TestPublish_Failed_SendsOnlyThePublicCode(t *testing.T) {
 	f := newFixture()
 	f.withdrawal.TransactionID = nil
 	f.withdrawal.Status = models.WithdrawalStatusFailed
@@ -249,7 +249,7 @@ func TestPublishFailed_SendsOnlyThePublicCode(t *testing.T) {
 	}
 }
 
-func TestPublishFailed_RejectsEmptyCodeAndMissingWithdrawal(t *testing.T) {
+func TestPublish_Failed_RejectsEmptyCodeAndMissingWithdrawal(t *testing.T) {
 	f := newFixture()
 
 	if err := f.publisher.PublishFailed(context.Background(), f.withdrawal, "  ", FailedAttempt{}); err == nil {
@@ -263,7 +263,7 @@ func TestPublishFailed_RejectsEmptyCodeAndMissingWithdrawal(t *testing.T) {
 	}
 }
 
-func TestPublishFailed_UnknownDecimalsFallsBackToRequestedAmount(t *testing.T) {
+func TestPublish_Failed_UnknownDecimalsFallsBackToRequestedAmount(t *testing.T) {
 	f := newFixture()
 	units, _ := new(big.Int).SetString(usdcBaseUnits, 10)
 
@@ -279,7 +279,7 @@ func TestPublishFailed_UnknownDecimalsFallsBackToRequestedAmount(t *testing.T) {
 	}
 }
 
-func TestMarkConfirmed_PublishesThenMarksWithdrawalConfirmed(t *testing.T) {
+func TestMark_Confirmed_PublishesThenMarksWithdrawalConfirmed(t *testing.T) {
 	f := newFixture()
 	f.confirmTx()
 
@@ -300,7 +300,7 @@ func TestMarkConfirmed_PublishesThenMarksWithdrawalConfirmed(t *testing.T) {
 	}
 }
 
-func TestMarkConfirmed_LeavesWithdrawalUntouchedWhenPublishingFails(t *testing.T) {
+func TestMark_Confirmed_LeavesWithdrawalUntouchedWhenPublishingFails(t *testing.T) {
 	f := newFixture()
 	f.confirmTx()
 	f.enqueuer.err = errors.New("database down")
@@ -313,7 +313,7 @@ func TestMarkConfirmed_LeavesWithdrawalUntouchedWhenPublishingFails(t *testing.T
 	}
 }
 
-func TestMarkConfirmed_FindsWithdrawalByIdempotencyKeyWhenNotLinked(t *testing.T) {
+func TestMark_Confirmed_FindsWithdrawalByIdempotencyKeyWhenNotLinked(t *testing.T) {
 	f := newFixture()
 	f.confirmTx()
 	delete(f.withdrawals.byTransaction, f.tx.ID)
@@ -332,7 +332,7 @@ func TestMarkConfirmed_FindsWithdrawalByIdempotencyKeyWhenNotLinked(t *testing.T
 	}
 }
 
-func TestMarkConfirmed_RejectsTransactionsThatAreNotConfirmedWithdrawals(t *testing.T) {
+func TestMark_Confirmed_RejectsTransactionsThatAreNotConfirmedWithdrawals(t *testing.T) {
 	f := newFixture()
 
 	if err := f.publisher.MarkConfirmed(context.Background(), f.tx); err == nil {
@@ -351,7 +351,7 @@ func TestMarkConfirmed_RejectsTransactionsThatAreNotConfirmedWithdrawals(t *test
 	}
 }
 
-func TestBackfill_ConfirmsBroadcastWithdrawalsWithConfirmedTransactions(t *testing.T) {
+func TestBackfill_Confirms_BroadcastWithdrawalsWithConfirmedTransactions(t *testing.T) {
 	f := newFixture()
 	f.confirmTx()
 	unlinked := models.Withdrawal{ID: uuid.New(), WalletID: f.wallet.ID}

@@ -43,7 +43,7 @@ func (e handlerEntry) Trace() map[string]any     { return nil }
 func (e handlerEntry) User() any                 { return nil }
 func (e handlerEntry) With() map[string]any      { return e.with }
 
-func TestRedactingHandlerHidesSecretsBeforeTheInnerHandler(t *testing.T) {
+func TestRedacting_Handler_HidesSecretsBeforeTheInnerHandler(t *testing.T) {
 	ConfigureRedaction([]string{"rpc.example"}, []string{"fake-api-key-value"})
 	t.Cleanup(func() { ConfigureRedaction(nil, nil) })
 

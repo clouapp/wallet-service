@@ -19,7 +19,7 @@ import (
 	"github.com/macrowallets/waas/app/services/settings"
 )
 
-func TestCreateAccountOutageOmitsTheCause(t *testing.T) {
+func TestCreate_Account_OutageOmitsTheCause(t *testing.T) {
 	cause := errors.New(`create account: pq: insert into "accounts" ("name") values ('Acme')`)
 	ctrl := NewAccountsController(AccountsControllerDeps{
 		AccountService: accountsvc.NewService(accountsvc.Deps{

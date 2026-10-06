@@ -8,7 +8,7 @@ import (
 	contractshttp "github.com/goravel/framework/contracts/http"
 )
 
-func TestWrapLegacy_StringErrorBecomesEnvelope(t *testing.T) {
+func TestWrap_Legacy_StringErrorBecomesEnvelope(t *testing.T) {
 	got, ok := WrapLegacy(http.StatusNotFound, contractshttp.Json{"error": "wallet not found"})
 	if !ok {
 		t.Fatal("expected a legacy error map to wrap")
@@ -23,7 +23,7 @@ func TestWrapLegacy_StringErrorBecomesEnvelope(t *testing.T) {
 	}
 }
 
-func TestWrapLegacy_MachineCodeIsTheCode(t *testing.T) {
+func TestWrap_Legacy_MachineCodeIsTheCode(t *testing.T) {
 	got, ok := WrapLegacy(http.StatusUnprocessableEntity, map[string]any{
 		"error":  "wallet_not_gas_ready",
 		"action": "fund_base_address",
@@ -41,7 +41,7 @@ func TestWrapLegacy_MachineCodeIsTheCode(t *testing.T) {
 	}
 }
 
-func TestWrapLegacy_ExplicitCodeAndExtras(t *testing.T) {
+func TestWrap_Legacy_ExplicitCodeAndExtras(t *testing.T) {
 	got, ok := WrapLegacy(http.StatusUnprocessableEntity, contractshttp.Json{
 		"error": "fee estimation unavailable",
 		"code":  "FEE_ESTIMATE_FAILED",
@@ -59,7 +59,7 @@ func TestWrapLegacy_ExplicitCodeAndExtras(t *testing.T) {
 	}
 }
 
-func TestWrapLegacy_SignatureCode(t *testing.T) {
+func TestWrap_Legacy_SignatureCode(t *testing.T) {
 	got, ok := WrapLegacy(http.StatusUnauthorized, contractshttp.Json{"error": "missing request signature"})
 	if !ok {
 		t.Fatal("expected wrap")
@@ -69,7 +69,7 @@ func TestWrapLegacy_SignatureCode(t *testing.T) {
 	}
 }
 
-func TestWrapLegacy_LeavesSuccessBodiesAlone(t *testing.T) {
+func TestWrap_Legacy_LeavesSuccessBodiesAlone(t *testing.T) {
 	if _, ok := WrapLegacy(http.StatusOK, contractshttp.Json{"status": "ok"}); ok {
 		t.Fatal("a body without an error string must not wrap")
 	}
@@ -78,7 +78,7 @@ func TestWrapLegacy_LeavesSuccessBodiesAlone(t *testing.T) {
 	}
 }
 
-func TestFieldMessages_SortsRules(t *testing.T) {
+func TestField_Messages_SortsRules(t *testing.T) {
 	messages := FieldMessages(fakeErrors{all: map[string]map[string]string{
 		"email": {"email": "Please provide a valid email address", "required": "Email address is required"},
 	}})

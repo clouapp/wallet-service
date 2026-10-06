@@ -5,7 +5,7 @@ import (
 	"testing"
 )
 
-func TestFormatBaseUnits(t *testing.T) {
+func TestFormat_Base_Units(t *testing.T) {
 	cases := []struct {
 		units    string
 		decimals int
@@ -39,7 +39,7 @@ func TestFormatBaseUnits(t *testing.T) {
 	}
 }
 
-func TestNormalizeDecimal(t *testing.T) {
+func TestAmount_Normalize_Decimal(t *testing.T) {
 	cases := map[string]string{"3.000": "3", "0.50": "0.5", "25": "25", " 1.10 ": "1.1", "": ""}
 	for in, want := range cases {
 		if got := NormalizeDecimal(in); got != want {
@@ -48,7 +48,7 @@ func TestNormalizeDecimal(t *testing.T) {
 	}
 }
 
-func TestDecimalToBaseUnits(t *testing.T) {
+func TestDecimal_To_BaseUnits(t *testing.T) {
 	cases := []struct {
 		value    string
 		decimals int
@@ -83,7 +83,7 @@ func TestDecimalToBaseUnits(t *testing.T) {
 	}
 }
 
-func TestParseBaseUnits(t *testing.T) {
+func TestParse_Base_Units(t *testing.T) {
 	if units, ok := ParseBaseUnits(" 25000000 "); !ok || units.String() != "25000000" {
 		t.Fatalf("ParseBaseUnits(25000000) = %v, %v", units, ok)
 	}

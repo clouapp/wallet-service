@@ -56,7 +56,7 @@ func setupDepositService(t *testing.T) (*Service, *mocks.MockChain, *mocks.MockS
 }
 
 // We test the core logic without a running blockchain — mock the adapter.
-func TestScanLatestBlocks_NoNewBlocks(t *testing.T) {
+func TestScan_LatestBlocks_NoNewBlocks(t *testing.T) {
 	fixtures.TestDB(t)
 	registry := chain.NewRegistry()
 	mockChain := mocks.NewMockChain("eth")
@@ -77,7 +77,7 @@ func TestScanLatestBlocks_NoNewBlocks(t *testing.T) {
 	}
 }
 
-func TestScanLatestBlocks_UnknownChain(t *testing.T) {
+func TestScan_LatestBlocks_UnknownChain(t *testing.T) {
 	fixtures.TestDB(t)
 	registry := chain.NewRegistry()
 	svc := newDepositSvc(registry, nil)
@@ -88,7 +88,7 @@ func TestScanLatestBlocks_UnknownChain(t *testing.T) {
 	}
 }
 
-func TestProcessTransfer_MatchesAddress(t *testing.T) {
+func TestProcess_Transfer_MatchesAddress(t *testing.T) {
 	fixtures.TestDB(t)
 	registry := chain.NewRegistry()
 	mockChain := mocks.NewMockChain("eth")
@@ -140,7 +140,7 @@ func TestProcessTransfer_MatchesAddress(t *testing.T) {
 	}
 }
 
-func TestProcessTransfer_IgnoresUnknownAddress(t *testing.T) {
+func TestProcess_Transfer_IgnoresUnknownAddress(t *testing.T) {
 	fixtures.TestDB(t)
 	registry := chain.NewRegistry()
 	mockChain := mocks.NewMockChain("eth")
@@ -166,7 +166,7 @@ func TestProcessTransfer_IgnoresUnknownAddress(t *testing.T) {
 	}
 }
 
-func TestProcessTransfer_Dedup(t *testing.T) {
+func TestProcess_Transfer_Dedup(t *testing.T) {
 	fixtures.TestDB(t)
 	registry := chain.NewRegistry()
 	mockChain := mocks.NewMockChain("eth")
@@ -202,7 +202,7 @@ func TestProcessTransfer_Dedup(t *testing.T) {
 	}
 }
 
-func TestProcessTransfer_TokenDeposit(t *testing.T) {
+func TestProcess_Transfer_TokenDeposit(t *testing.T) {
 	fixtures.TestDB(t)
 	registry := chain.NewRegistry()
 	mockChain := mocks.NewMockChain("eth")
@@ -231,7 +231,7 @@ func TestProcessTransfer_TokenDeposit(t *testing.T) {
 	}
 }
 
-func TestUpdateConfirmations(t *testing.T) {
+func TestService_Update_Confirmations(t *testing.T) {
 	fixtures.TestDB(t)
 	registry := chain.NewRegistry()
 	mockChain := mocks.NewMockChain("eth")
@@ -267,7 +267,7 @@ func TestUpdateConfirmations(t *testing.T) {
 
 // TestUpdateConfirmations_TipBlockCountsAsOne covers the off-by-one: a transaction in
 // the tip block has one confirmation, so a chain requiring 1 confirms it right away.
-func TestUpdateConfirmations_TipBlockCountsAsOne(t *testing.T) {
+func TestUpdate_Confirmations_TipBlockCountsAsOne(t *testing.T) {
 	fixtures.TestDB(t)
 	registry := chain.NewRegistry()
 	mockChain := mocks.NewMockChain("btc")
@@ -295,7 +295,7 @@ func TestUpdateConfirmations_TipBlockCountsAsOne(t *testing.T) {
 
 // TestUpdateConfirmations_TipBehindTransactionCountsZero covers a lagging height
 // provider that reports a tip below the transaction's block.
-func TestUpdateConfirmations_TipBehindTransactionCountsZero(t *testing.T) {
+func TestUpdate_Confirmations_TipBehindTransactionCountsZero(t *testing.T) {
 	fixtures.TestDB(t)
 	registry := chain.NewRegistry()
 	mockChain := mocks.NewMockChain("eth")
@@ -317,7 +317,7 @@ func TestUpdateConfirmations_TipBehindTransactionCountsZero(t *testing.T) {
 	}
 }
 
-func TestConfirmationsAt(t *testing.T) {
+func TestService_Confirmations_At(t *testing.T) {
 	cases := []struct {
 		name    string
 		tip     uint64
@@ -345,7 +345,7 @@ func TestConfirmationsAt(t *testing.T) {
 // must call adapter.GetTransactionBlock to backfill the block number before
 // running confirmation math; otherwise these rows stay at `confirming`
 // forever.
-func TestUpdateConfirmations_ReconcilesOutboundBlockNumber(t *testing.T) {
+func TestUpdate_Confirmations_ReconcilesOutboundBlockNumber(t *testing.T) {
 	fixtures.TestDB(t)
 	registry := chain.NewRegistry()
 	mockChain := mocks.NewMockChain("eth")
@@ -417,7 +417,7 @@ func (r *recordingWithdrawalConfirmations) Backfill(_ context.Context, limit int
 // tracker: the withdrawal reaches its required confirmations and is handed to
 // the withdrawal publisher, while a deposit on the same chain is left untouched
 // so no deposit webhook is emitted from a dev machine.
-func TestRunWithdrawalConfirmationCheck_OnlyAdvancesWithdrawals(t *testing.T) {
+func TestRun_WithdrawalConfirmationCheck_OnlyAdvancesWithdrawals(t *testing.T) {
 	fixtures.TestDB(t)
 	const (
 		withdrawalBlock = 100
@@ -468,7 +468,7 @@ func TestRunWithdrawalConfirmationCheck_OnlyAdvancesWithdrawals(t *testing.T) {
 // adapter reports block=0 (tx still in mempool) the row is left alone —
 // block_number stays 0, status unchanged — so the next tick retries. This
 // prevents us from flipping a pending tx to confirmed with a zero block.
-func TestUpdateConfirmations_StillPendingOutboundSkipped(t *testing.T) {
+func TestUpdate_Confirmations_StillPendingOutboundSkipped(t *testing.T) {
 	fixtures.TestDB(t)
 	registry := chain.NewRegistry()
 	mockChain := mocks.NewMockChain("eth")

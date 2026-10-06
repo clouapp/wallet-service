@@ -21,7 +21,7 @@ func TestMain(m *testing.M) {
 	os.Exit(m.Run())
 }
 
-func TestUsersSeedDoesNotQueryOutsideTheRepository(t *testing.T) {
+func TestUsers_Seed_DoesNotQueryOutsideTheRepository(t *testing.T) {
 	source, err := os.ReadFile("users.go")
 	if err != nil {
 		t.Fatalf("read users seed: %v", err)
@@ -34,7 +34,7 @@ func TestUsersSeedDoesNotQueryOutsideTheRepository(t *testing.T) {
 	}
 }
 
-func TestSeedUsersInsertsDashboardUsersAndKeepsThemOnRerun(t *testing.T) {
+func TestSeed_Users_InsertsDashboardUsersAndKeepsThemOnRerun(t *testing.T) {
 	fixtures.TestDB(t)
 	ctx := context.Background()
 	acmeID := uuid.MustParse("00000000-0000-0000-0000-000000000010")

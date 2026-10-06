@@ -10,7 +10,7 @@ import (
 	"github.com/google/uuid"
 )
 
-func TestEffectiveMailDelivery_MissingRowKeepsEveryFieldUnused(t *testing.T) {
+func TestEffective_MailDelivery_MissingRowKeepsEveryFieldUnused(t *testing.T) {
 	t.Parallel()
 
 	got, err := newTestService(newMemoryStore()).EffectiveMailDelivery(context.Background())
@@ -22,7 +22,7 @@ func TestEffectiveMailDelivery_MissingRowKeepsEveryFieldUnused(t *testing.T) {
 	}
 }
 
-func TestEffectiveMailDelivery_UsesStoredHeaderAndSkipsABadField(t *testing.T) {
+func TestEffective_MailDelivery_UsesStoredHeaderAndSkipsABadField(t *testing.T) {
 	t.Parallel()
 
 	store := newMemoryStore()
@@ -52,7 +52,7 @@ func TestEffectiveMailDelivery_UsesStoredHeaderAndSkipsABadField(t *testing.T) {
 	}
 }
 
-func TestEffectiveMailDelivery_StoreError(t *testing.T) {
+func TestEffective_MailDelivery_StoreError(t *testing.T) {
 	t.Parallel()
 
 	_, err := newTestService(platformErrStore{err: errors.New("db down")}).EffectiveMailDelivery(context.Background())
@@ -61,7 +61,7 @@ func TestEffectiveMailDelivery_StoreError(t *testing.T) {
 	}
 }
 
-func TestSavePlatformMailDelivery_StoresTheHeaderAndNamesTheFields(t *testing.T) {
+func TestSave_PlatformMailDelivery_StoresTheHeaderAndNamesTheFields(t *testing.T) {
 	t.Parallel()
 
 	store := newMemoryStore()
@@ -150,7 +150,7 @@ func TestSavePlatformMailDelivery_StoresTheHeaderAndNamesTheFields(t *testing.T)
 	}
 }
 
-func TestSavePlatformMailDelivery_RefusesLogInProduction(t *testing.T) {
+func TestSave_PlatformMailDelivery_RefusesLogInProduction(t *testing.T) {
 	t.Setenv("APP_ENV", "production")
 
 	store := newMemoryStore()
@@ -171,7 +171,7 @@ func TestSavePlatformMailDelivery_RefusesLogInProduction(t *testing.T) {
 	}
 }
 
-func TestSaveMailDeliveryIsNotAnAccountGroup(t *testing.T) {
+func TestSave_Mail_DeliveryIsNotAnAccountGroup(t *testing.T) {
 	t.Parallel()
 
 	_, err := newTestService(newMemoryStore()).Save(

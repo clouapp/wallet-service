@@ -8,7 +8,7 @@ import (
 	"github.com/joho/godotenv"
 )
 
-func TestValidateConfigurationAcceptsDedicatedTestDatabase(t *testing.T) {
+func TestValidate_Configuration_AcceptsDedicatedTestDatabase(t *testing.T) {
 	t.Parallel()
 
 	err := ValidateConfiguration(Configuration{
@@ -20,7 +20,7 @@ func TestValidateConfigurationAcceptsDedicatedTestDatabase(t *testing.T) {
 	}
 }
 
-func TestValidateConfigurationRejectsProtectedDatabases(t *testing.T) {
+func TestValidate_Configuration_RejectsProtectedDatabases(t *testing.T) {
 	t.Parallel()
 
 	for _, databaseName := range []string{
@@ -44,7 +44,7 @@ func TestValidateConfigurationRejectsProtectedDatabases(t *testing.T) {
 	}
 }
 
-func TestTestingEnvironmentFileUsesDedicatedDatabase(t *testing.T) {
+func TestTesting_Environment_FileUsesDedicatedDatabase(t *testing.T) {
 	t.Parallel()
 
 	root, err := repositoryRoot()
@@ -63,7 +63,7 @@ func TestTestingEnvironmentFileUsesDedicatedDatabase(t *testing.T) {
 	}
 }
 
-func TestApplyDatabaseOverrideToE2EDatabaseIsRefused(t *testing.T) {
+func TestApply_Database_OverrideToE2EDatabaseIsRefused(t *testing.T) {
 	t.Setenv("APP_ENV", "testing")
 	t.Setenv("DB_DATABASE", E2EDatabaseName)
 	t.Setenv(DatabaseOverrideVariable, E2EDatabaseName)
@@ -76,7 +76,7 @@ func TestApplyDatabaseOverrideToE2EDatabaseIsRefused(t *testing.T) {
 	}
 }
 
-func TestApplyDatabaseOverrideUsesIsolatedDatabase(t *testing.T) {
+func TestApply_Database_OverrideUsesIsolatedDatabase(t *testing.T) {
 	t.Setenv("DB_DATABASE", "vault_test")
 	t.Setenv(DatabaseOverrideVariable, " vault_accounts_test ")
 
@@ -87,7 +87,7 @@ func TestApplyDatabaseOverrideUsesIsolatedDatabase(t *testing.T) {
 	}
 }
 
-func TestApplyDatabaseOverrideKeepsDatabaseWhenUnset(t *testing.T) {
+func TestApply_Database_OverrideKeepsDatabaseWhenUnset(t *testing.T) {
 	t.Setenv("DB_DATABASE", "vault_test")
 	t.Setenv(DatabaseOverrideVariable, "  ")
 
@@ -98,7 +98,7 @@ func TestApplyDatabaseOverrideKeepsDatabaseWhenUnset(t *testing.T) {
 	}
 }
 
-func TestApplyDatabaseOverrideStillRejectsUnsafeDatabase(t *testing.T) {
+func TestApply_Database_OverrideStillRejectsUnsafeDatabase(t *testing.T) {
 	t.Setenv("APP_ENV", "testing")
 	t.Setenv("DB_DATABASE", "vault_test")
 	t.Setenv(DatabaseOverrideVariable, "vault")
@@ -111,7 +111,7 @@ func TestApplyDatabaseOverrideStillRejectsUnsafeDatabase(t *testing.T) {
 	}
 }
 
-func TestTestRedisURLMovesTheDevURLToTheTestIndex(t *testing.T) {
+func TestTest_Redis_URLMovesTheDevURLToTheTestIndex(t *testing.T) {
 	t.Parallel()
 
 	testCases := []struct{ redisURL, want string }{
@@ -131,7 +131,7 @@ func TestTestRedisURLMovesTheDevURLToTheTestIndex(t *testing.T) {
 	}
 }
 
-func TestTestRedisURLRefusesTheLiveIndexAndBadInput(t *testing.T) {
+func TestTest_Redis_URLRefusesTheLiveIndexAndBadInput(t *testing.T) {
 	t.Parallel()
 
 	for _, testCase := range []struct{ redisURL, database string }{
@@ -147,7 +147,7 @@ func TestTestRedisURLRefusesTheLiveIndexAndBadInput(t *testing.T) {
 	}
 }
 
-func TestTestingEnvironmentFileUsesANonLiveRedisIndex(t *testing.T) {
+func TestTesting_Environment_FileUsesANonLiveRedisIndex(t *testing.T) {
 	t.Parallel()
 
 	root, err := repositoryRoot()
@@ -163,7 +163,7 @@ func TestTestingEnvironmentFileUsesANonLiveRedisIndex(t *testing.T) {
 	}
 }
 
-func TestValidateConfigurationRejectsUnsafeTargets(t *testing.T) {
+func TestValidate_Configuration_RejectsUnsafeTargets(t *testing.T) {
 	t.Parallel()
 
 	testCases := []struct {

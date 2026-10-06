@@ -19,7 +19,7 @@ type WebhookConfigRepositoryTestSuite struct {
 	repo *repositories.WebhookConfigRepository
 }
 
-func TestWebhookConfigRepositorySuite(t *testing.T) {
+func TestWebhook_Config_RepositorySuite(t *testing.T) {
 	suite.Run(t, new(WebhookConfigRepositoryTestSuite))
 }
 
@@ -35,7 +35,7 @@ func (s *WebhookConfigRepositoryTestSuite) insertWallet() uuid.UUID {
 	return w.ID
 }
 
-func (s *WebhookConfigRepositoryTestSuite) TestCreate_Success() {
+func (s *WebhookConfigRepositoryTestSuite) TestWebhookConfigRepository_Create_Success() {
 	walletID := s.insertWallet()
 	cfg := &models.WebhookConfig{
 		ID: uuid.New(), URL: "https://example.com/hook", Secret: "sec",
@@ -51,7 +51,7 @@ func (s *WebhookConfigRepositoryTestSuite) storedSecret(id uuid.UUID) string {
 	return secret
 }
 
-func (s *WebhookConfigRepositoryTestSuite) TestSecretIsSealedAtRestAndOpenedOnRead() {
+func (s *WebhookConfigRepositoryTestSuite) TestSecret_Is_SealedAtRestAndOpenedOnRead() {
 	walletID := s.insertWallet()
 	cfg := &models.WebhookConfig{ID: uuid.New(), URL: "https://sealed.test", Secret: "whsec_plain", Events: `{"a"}`, IsActive: true, WalletID: &walletID, Type: "wallet"}
 	s.Require().NoError(s.repo.Create(context.Background(), cfg))
@@ -70,7 +70,7 @@ func (s *WebhookConfigRepositoryTestSuite) TestSecretIsSealedAtRestAndOpenedOnRe
 	s.Equal("whsec_plain", byWallet[0].Secret)
 }
 
-func (s *WebhookConfigRepositoryTestSuite) TestUpdateFieldsSealsASecret() {
+func (s *WebhookConfigRepositoryTestSuite) TestUpdate_Fields_SealsASecret() {
 	cfg := &models.WebhookConfig{ID: uuid.New(), URL: "https://rotate.test", Secret: "old", Events: `{"a"}`, IsActive: true}
 	s.Require().NoError(s.repo.Create(context.Background(), cfg))
 	fields := map[string]any{"secret": "rotated"}
@@ -84,7 +84,7 @@ func (s *WebhookConfigRepositoryTestSuite) TestUpdateFieldsSealsASecret() {
 	s.Equal("rotated", loaded.Secret)
 }
 
-func (s *WebhookConfigRepositoryTestSuite) TestFindRefusesASecretStoredInPlaintext() {
+func (s *WebhookConfigRepositoryTestSuite) TestFind_Refuses_ASecretStoredInPlaintext() {
 	cfg := &models.WebhookConfig{ID: uuid.New(), URL: "https://plain.test", Secret: "s", Events: `{"a"}`, IsActive: true}
 	s.Require().NoError(s.repo.Create(context.Background(), cfg))
 	_, err := facades.Orm().Query().Exec(`UPDATE webhook_configs SET secret = 'plaintext' WHERE id = ?`, cfg.ID)
@@ -96,7 +96,7 @@ func (s *WebhookConfigRepositoryTestSuite) TestFindRefusesASecretStoredInPlainte
 	s.ErrorIs(err, settings.ErrNotSealed)
 }
 
-func (s *WebhookConfigRepositoryTestSuite) TestFindByWalletID() {
+func (s *WebhookConfigRepositoryTestSuite) TestFind_By_WalletID() {
 	walletID := s.insertWallet()
 	s.Require().NoError(s.repo.Create(context.Background(), &models.WebhookConfig{ID: uuid.New(), URL: "https://a.com", Secret: "s", Events: `{"a"}`, IsActive: true, WalletID: &walletID, Type: "wallet"}))
 	s.Require().NoError(s.repo.Create(context.Background(), &models.WebhookConfig{ID: uuid.New(), URL: "https://b.com", Secret: "s", Events: `{"b"}`, IsActive: true, WalletID: &walletID, Type: "wallet"}))
@@ -106,7 +106,7 @@ func (s *WebhookConfigRepositoryTestSuite) TestFindByWalletID() {
 	s.Len(cfgs, 2)
 }
 
-func (s *WebhookConfigRepositoryTestSuite) TestFindByIDAndWallet_Found() {
+func (s *WebhookConfigRepositoryTestSuite) TestFind_ByIDAndWallet_Found() {
 	walletID := s.insertWallet()
 	cfg := &models.WebhookConfig{ID: uuid.New(), URL: "https://f.com", Secret: "s", Events: `{"x"}`, IsActive: true, WalletID: &walletID, Type: "wallet"}
 	s.Require().NoError(s.repo.Create(context.Background(), cfg))
@@ -116,7 +116,7 @@ func (s *WebhookConfigRepositoryTestSuite) TestFindByIDAndWallet_Found() {
 	s.NotNil(found)
 }
 
-func (s *WebhookConfigRepositoryTestSuite) TestFindByIDAndWallet_WrongWallet() {
+func (s *WebhookConfigRepositoryTestSuite) TestFind_ByIDAndWallet_WrongWallet() {
 	walletID := s.insertWallet()
 	otherWallet := s.insertWallet()
 	cfg := &models.WebhookConfig{ID: uuid.New(), URL: "https://f.com", Secret: "s", Events: `{"x"}`, IsActive: true, WalletID: &walletID, Type: "wallet"}
@@ -127,7 +127,7 @@ func (s *WebhookConfigRepositoryTestSuite) TestFindByIDAndWallet_WrongWallet() {
 	s.Nil(found)
 }
 
-func (s *WebhookConfigRepositoryTestSuite) TestFindActive() {
+func (s *WebhookConfigRepositoryTestSuite) TestWebhookConfigRepository_Find_Active() {
 	s.Require().NoError(s.repo.Create(context.Background(), &models.WebhookConfig{ID: uuid.New(), URL: "https://a.com", Secret: "s", Events: `{"a"}`, IsActive: true}))
 	s.Require().NoError(s.repo.Create(context.Background(), &models.WebhookConfig{ID: uuid.New(), URL: "https://b.com", Secret: "s", Events: `{"b"}`, IsActive: true}))
 
@@ -140,7 +140,7 @@ func (s *WebhookConfigRepositoryTestSuite) TestFindActive() {
 	s.Len(active, 2)
 }
 
-func (s *WebhookConfigRepositoryTestSuite) TestFindAll() {
+func (s *WebhookConfigRepositoryTestSuite) TestWebhookConfigRepository_Find_All() {
 	s.Require().NoError(s.repo.Create(context.Background(), &models.WebhookConfig{ID: uuid.New(), URL: "https://a.com", Secret: "s", Events: `{"a"}`, IsActive: true}))
 	s.Require().NoError(s.repo.Create(context.Background(), &models.WebhookConfig{ID: uuid.New(), URL: "https://b.com", Secret: "s", Events: `{"b"}`, IsActive: false}))
 
@@ -149,7 +149,7 @@ func (s *WebhookConfigRepositoryTestSuite) TestFindAll() {
 	s.Len(all, 2)
 }
 
-func (s *WebhookConfigRepositoryTestSuite) TestDelete() {
+func (s *WebhookConfigRepositoryTestSuite) TestWebhookConfigRepository_Delete_Succeeds() {
 	cfg := &models.WebhookConfig{ID: uuid.New(), URL: "https://d.com", Secret: "s", Events: `{"d"}`, IsActive: true}
 	s.Require().NoError(s.repo.Create(context.Background(), cfg))
 
@@ -161,7 +161,7 @@ func (s *WebhookConfigRepositoryTestSuite) TestDelete() {
 	s.Len(all, 0)
 }
 
-func (s *WebhookConfigRepositoryTestSuite) TestDeleteByID() {
+func (s *WebhookConfigRepositoryTestSuite) TestDelete_By_ID() {
 	cfg := &models.WebhookConfig{ID: uuid.New(), URL: "https://e.com", Secret: "s", Events: `{"e"}`, IsActive: true}
 	s.Require().NoError(s.repo.Create(context.Background(), cfg))
 

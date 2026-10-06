@@ -9,7 +9,7 @@ import (
 	"github.com/google/uuid"
 )
 
-func TestFlushPlatformSectionForgetsThePageAndLeavesStoredRows(t *testing.T) {
+func TestFlush_Platform_SectionForgetsThePageAndLeavesStoredRows(t *testing.T) {
 	t.Parallel()
 
 	actor := uuid.New()
@@ -75,7 +75,7 @@ func TestFlushPlatformSectionForgetsThePageAndLeavesStoredRows(t *testing.T) {
 	}
 }
 
-func TestFlushPlatformSectionNotFoundComesBeforeForbidden(t *testing.T) {
+func TestFlush_Platform_SectionNotFoundComesBeforeForbidden(t *testing.T) {
 	t.Parallel()
 
 	actor := uuid.New()
@@ -117,7 +117,7 @@ func TestFlushPlatformSectionNotFoundComesBeforeForbidden(t *testing.T) {
 	}
 }
 
-func TestFlushPlatformSectionRequiresActorAdminAndCache(t *testing.T) {
+func TestFlush_Platform_SectionRequiresActorAdminAndCache(t *testing.T) {
 	t.Parallel()
 
 	actor := uuid.New()

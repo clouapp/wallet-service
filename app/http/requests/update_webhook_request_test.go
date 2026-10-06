@@ -5,7 +5,7 @@ import (
 	"testing"
 )
 
-func TestUpdateWebhookRequestRulesMatchTheFieldsTheHandlerAccepts(t *testing.T) {
+func TestUpdate_Webhook_RequestRulesMatchTheFieldsTheHandlerAccepts(t *testing.T) {
 	rules := (&UpdateWebhookRequest{}).Rules(nil)
 	want := map[string]string{
 		"events":    "array",

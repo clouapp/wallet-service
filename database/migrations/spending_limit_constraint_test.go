@@ -10,7 +10,7 @@ import (
 	"github.com/macrowallets/waas/tests/feature/support/fixtures"
 )
 
-func TestSpendingLimitConstraintRejectsANegativeDailyUSD(t *testing.T) {
+func TestSpending_Limit_ConstraintRejectsANegativeDailyUSD(t *testing.T) {
 	fixtures.TestDB(t)
 	require.Equal(t, int64(1), constraintCount(t, "access_tokens_spending_limit_daily_usd_non_negative"))
 

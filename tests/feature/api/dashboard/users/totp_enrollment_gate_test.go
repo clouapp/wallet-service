@@ -34,7 +34,7 @@ type totpEnrollmentSuite struct {
 	goravelTesting.TestCase
 }
 
-func TestTOTPEnrollment(t *testing.T) {
+func TestTotpEnrollmentGate_TOTP_Enrollment(t *testing.T) {
 	suite.Run(t, new(totpEnrollmentSuite))
 }
 
@@ -42,7 +42,7 @@ func (s *totpEnrollmentSuite) SetupTest() {
 	fixtures.TestDB(s.T())
 }
 
-func (s *totpEnrollmentSuite) TestMissingFlagAndSettingLeaveTheAccountOpen() {
+func (s *totpEnrollmentSuite) TestMissing_Flag_AndSettingLeaveTheAccountOpen() {
 	accountID, token := s.member(false)
 	s.Equal(http.StatusOK, s.statusOf(s.getAccount(token, accountID)))
 	s.Equal(http.StatusOK, s.statusOf(s.getWallets(token, accountID)))
@@ -50,7 +50,7 @@ func (s *totpEnrollmentSuite) TestMissingFlagAndSettingLeaveTheAccountOpen() {
 	s.Zero(s.settingRows("require_2fa"))
 }
 
-func (s *totpEnrollmentSuite) TestAccountFlagBlocksUntilTOTPIsConfirmed() {
+func (s *totpEnrollmentSuite) TestAccount_Flag_BlocksUntilTOTPIsConfirmed() {
 	accountID, userID, token := s.memberID(false)
 	s.Equal(http.StatusOK, s.statusOf(s.getAccount(token, accountID)))
 
@@ -70,7 +70,7 @@ func (s *totpEnrollmentSuite) TestAccountFlagBlocksUntilTOTPIsConfirmed() {
 	s.Zero(s.flagRows(features.FlagWithdrawalsEnabled))
 }
 
-func (s *totpEnrollmentSuite) TestGlobalFlagBlocksLoginStillWorksAndConfirmedTOTPPasses() {
+func (s *totpEnrollmentSuite) TestGlobal_Flag_BlocksLoginStillWorksAndConfirmedTOTPPasses() {
 	accountID, userID, email := s.memberEmail(false)
 	s.setGlobal(true)
 
@@ -87,7 +87,7 @@ func (s *totpEnrollmentSuite) TestGlobalFlagBlocksLoginStillWorksAndConfirmedTOT
 	s.NotEqual(middleware.CodeTwoFactorEnrollmentRequired, code)
 }
 
-func (s *totpEnrollmentSuite) TestAccountPolicyBlocksAndIdleOrWebhooksDoNot() {
+func (s *totpEnrollmentSuite) TestAccount_Policy_BlocksAndIdleOrWebhooksDoNot() {
 	accountID, token := s.member(false)
 	s.insertSetting(accountID, "account_security", "session_idle_minutes", "15")
 	s.insertSetting(accountID, "account_webhooks", "default_events", "deposit.confirmed")

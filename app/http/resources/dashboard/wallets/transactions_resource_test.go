@@ -26,7 +26,7 @@ func polygonCatalog() assetDecimalsCatalog {
 	)
 }
 
-func TestTokenTransactionGetsTheTokenDecimals(t *testing.T) {
+func TestToken_Transaction_GetsTheTokenDecimals(t *testing.T) {
 	t.Parallel()
 
 	tx := models.Transaction{Chain: "polygon", Asset: "USDC", Amount: "3000000", TokenContract: "0x41e94eb019c0762f9bfcf9fb1e58725bfb0e7582"}
@@ -38,7 +38,7 @@ func TestTokenTransactionGetsTheTokenDecimals(t *testing.T) {
 	}
 }
 
-func TestNativeTransactionGetsTheChainNativeDecimals(t *testing.T) {
+func TestNative_Transaction_GetsTheChainNativeDecimals(t *testing.T) {
 	t.Parallel()
 
 	tx := models.Transaction{Chain: "polygon", Asset: "MATIC", Amount: "1000000000000000000"}
@@ -50,7 +50,7 @@ func TestNativeTransactionGetsTheChainNativeDecimals(t *testing.T) {
 	}
 }
 
-func TestUnknownTokenContractHasNoDecimals(t *testing.T) {
+func TestUnknown_Token_ContractHasNoDecimals(t *testing.T) {
 	t.Parallel()
 
 	tx := models.Transaction{Chain: "polygon", Asset: "WETH", Amount: "1", TokenContract: mainnetWETHContract}
@@ -60,7 +60,7 @@ func TestUnknownTokenContractHasNoDecimals(t *testing.T) {
 	}
 }
 
-func TestSolanaMintMatchesExactly(t *testing.T) {
+func TestSolana_Mint_MatchesExactly(t *testing.T) {
 	t.Parallel()
 
 	catalog := newAssetDecimalsCatalog(
@@ -79,7 +79,7 @@ func TestSolanaMintMatchesExactly(t *testing.T) {
 	}
 }
 
-func TestMissingChainLeavesNativeDecimalsUnknown(t *testing.T) {
+func TestMissing_Chain_LeavesNativeDecimalsUnknown(t *testing.T) {
 	t.Parallel()
 
 	catalog := newAssetDecimalsCatalog(nil, nil)
@@ -89,7 +89,7 @@ func TestMissingChainLeavesNativeDecimalsUnknown(t *testing.T) {
 	}
 }
 
-func TestTransactionKeepsTheTransactionFieldsAndAddsDecimals(t *testing.T) {
+func TestTransaction_Keeps_TheTransactionFieldsAndAddsDecimals(t *testing.T) {
 	t.Parallel()
 
 	txID := uuid.New()
@@ -127,7 +127,7 @@ func marshalTransaction(t *testing.T, tx models.Transaction) map[string]any {
 	return body
 }
 
-func TestTransactionSerializesEveryTimestampWithAZone(t *testing.T) {
+func TestTransaction_Serializes_EveryTimestampWithAZone(t *testing.T) {
 	t.Parallel()
 
 	const (
@@ -153,7 +153,7 @@ func TestTransactionSerializesEveryTimestampWithAZone(t *testing.T) {
 	}
 }
 
-func TestTransactionWithoutTimestampsSerializesNull(t *testing.T) {
+func TestTransaction_Without_TimestampsSerializesNull(t *testing.T) {
 	t.Parallel()
 
 	body := marshalTransaction(t, models.Transaction{Chain: "polygon", Asset: "MATIC", Amount: "1"})
@@ -163,7 +163,7 @@ func TestTransactionWithoutTimestampsSerializesNull(t *testing.T) {
 	}
 }
 
-func TestTransactionKeepsTheModelWire(t *testing.T) {
+func TestTransaction_Keeps_TheModelWire(t *testing.T) {
 	t.Parallel()
 
 	id := uuid.MustParse("11111111-1111-4111-8111-111111111111")
@@ -235,7 +235,7 @@ func TestTransactionKeepsTheModelWire(t *testing.T) {
 	}
 }
 
-func TestTransactionKeepsRelatedRowsOnTheirViews(t *testing.T) {
+func TestTransaction_Keeps_RelatedRowsOnTheirViews(t *testing.T) {
 	t.Parallel()
 
 	id := uuid.MustParse("11111111-1111-4111-8111-111111111111")
@@ -273,7 +273,7 @@ func TestTransactionKeepsRelatedRowsOnTheirViews(t *testing.T) {
 	}
 }
 
-func TestTransactionCarriesAnUnsignedAmountWithTypeAndDirection(t *testing.T) {
+func TestTransaction_Carries_AnUnsignedAmountWithTypeAndDirection(t *testing.T) {
 	t.Parallel()
 
 	cases := map[string]struct {
@@ -328,7 +328,7 @@ func TestTransactionCarriesAnUnsignedAmountWithTypeAndDirection(t *testing.T) {
 	}
 }
 
-func TestTransactionsFromKeepsNilEmptyAndOrder(t *testing.T) {
+func TestTransactions_From_KeepsNilEmptyAndOrder(t *testing.T) {
 	t.Parallel()
 
 	if got := transactionsFrom(nil, polygonCatalog()); got != nil {

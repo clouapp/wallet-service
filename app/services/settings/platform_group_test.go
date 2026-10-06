@@ -22,7 +22,7 @@ func (a *countingPlatformAdmins) Contains(context.Context, uuid.UUID) (bool, err
 	return a.allow, nil
 }
 
-func TestPlatformGroup_AdminSeesDefaultsAndHidesASecret(t *testing.T) {
+func TestPlatform_Group_AdminSeesDefaultsAndHidesASecret(t *testing.T) {
 	t.Parallel()
 
 	actor := uuid.New()
@@ -80,7 +80,7 @@ func TestPlatformGroup_AdminSeesDefaultsAndHidesASecret(t *testing.T) {
 	}
 }
 
-func TestPlatformGroup_AdminReadsProviderCredentialsWithoutTheSecret(t *testing.T) {
+func TestPlatform_Group_AdminReadsProviderCredentialsWithoutTheSecret(t *testing.T) {
 	t.Parallel()
 
 	actor := uuid.New()
@@ -139,7 +139,7 @@ func providerCredentialGroups() []providerCredentialGroup {
 	return groups
 }
 
-func TestGetGroup_DefaultTakesTheTypeShape(t *testing.T) {
+func TestGet_Group_DefaultTakesTheTypeShape(t *testing.T) {
 	t.Parallel()
 
 	actor := uuid.New()
@@ -182,7 +182,7 @@ func TestSettingsService_Bool_DefaultsToDisabled(t *testing.T) {
 	}
 }
 
-func TestPlatformGroup_NotFoundComesBeforeForbidden(t *testing.T) {
+func TestPlatform_Group_NotFoundComesBeforeForbidden(t *testing.T) {
 	t.Parallel()
 
 	actor := uuid.New()

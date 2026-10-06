@@ -12,7 +12,7 @@ import (
 	"github.com/macrowallets/waas/app/services/users"
 )
 
-func TestRequestPasswordResetDispatchesOnlyTheUserID(t *testing.T) {
+func TestRequest_Password_ResetDispatchesOnlyTheUserID(t *testing.T) {
 	userID := uuid.New()
 	var got uuid.UUID
 	store := &resetMailStore{user: &models.User{ID: userID, Email: "ada@example.com"}}
@@ -35,7 +35,7 @@ func TestRequestPasswordResetDispatchesOnlyTheUserID(t *testing.T) {
 	}
 }
 
-func TestRequestPasswordResetSkipsAMissingUser(t *testing.T) {
+func TestRequest_Password_ResetSkipsAMissingUser(t *testing.T) {
 	store := &resetMailStore{err: errors.New("db down")}
 	svc := users.NewService(users.Deps{
 		Store: store,
@@ -54,7 +54,7 @@ func TestRequestPasswordResetSkipsAMissingUser(t *testing.T) {
 	}
 }
 
-func TestRequestPasswordResetRequiresTheDispatcherWhenTheUserExists(t *testing.T) {
+func TestRequest_Password_ResetRequiresTheDispatcherWhenTheUserExists(t *testing.T) {
 	svc := users.NewService(users.Deps{
 		Store: &resetMailStore{user: &models.User{ID: uuid.New(), Email: "ada@example.com"}},
 	})

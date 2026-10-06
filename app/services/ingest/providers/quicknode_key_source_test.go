@@ -8,7 +8,7 @@ import (
 	"github.com/macrowallets/waas/app/services/ingest/providers"
 )
 
-func TestVerifyInbound_EmptyResolvedQuickNodeKeyRejectsTheSignature(t *testing.T) {
+func TestVerify_Inbound_EmptyResolvedQuickNodeKeyRejectsTheSignature(t *testing.T) {
 	logs := captureAlchemyIngestLogs(t)
 	provider := inboundKeyPort{source: func(context.Context) string { return "" }}
 	headers := providers.Header{}

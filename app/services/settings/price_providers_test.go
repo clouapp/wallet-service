@@ -42,7 +42,7 @@ func priceProviderCases() []priceProviderCase {
 	}
 }
 
-func TestSavePlatformPriceSettings_StoresOrderAndSealsTheKey(t *testing.T) {
+func TestSave_PlatformPriceSettings_StoresOrderAndSealsTheKey(t *testing.T) {
 	t.Parallel()
 
 	store := newMemoryStore()
@@ -118,7 +118,7 @@ func TestSavePlatformPriceSettings_StoresOrderAndSealsTheKey(t *testing.T) {
 	}
 }
 
-func TestSavePlatformPriceLookup_RejectsAnUnknownProvider(t *testing.T) {
+func TestSave_PlatformPriceLookup_RejectsAnUnknownProvider(t *testing.T) {
 	t.Parallel()
 
 	store := newMemoryStore()
@@ -150,7 +150,7 @@ func TestSavePlatformPriceLookup_RejectsAnUnknownProvider(t *testing.T) {
 	}
 }
 
-func TestSavePlatformPriceLookup_RejectsADisabledProvider(t *testing.T) {
+func TestSave_PlatformPriceLookup_RejectsADisabledProvider(t *testing.T) {
 	t.Parallel()
 
 	store := newMemoryStore()
@@ -177,7 +177,7 @@ func TestSavePlatformPriceLookup_RejectsADisabledProvider(t *testing.T) {
 	}
 }
 
-func TestSavePlatformPriceLookup_RefusesAnEmptyOrderInProduction(t *testing.T) {
+func TestSave_PlatformPriceLookup_RefusesAnEmptyOrderInProduction(t *testing.T) {
 	t.Setenv("APP_ENV", "production")
 
 	store := newMemoryStore()
@@ -196,7 +196,7 @@ func TestSavePlatformPriceLookup_RefusesAnEmptyOrderInProduction(t *testing.T) {
 	}
 }
 
-func TestSavePlatformPriceLookup_AllowsAnEmptyOrderOutsideProduction(t *testing.T) {
+func TestSave_PlatformPriceLookup_AllowsAnEmptyOrderOutsideProduction(t *testing.T) {
 	t.Setenv("APP_ENV", "local")
 
 	store := newMemoryStore()
@@ -213,7 +213,7 @@ func TestSavePlatformPriceLookup_AllowsAnEmptyOrderOutsideProduction(t *testing.
 	}
 }
 
-func TestSavePlatformPriceSettings_ForbidsANonAdmin(t *testing.T) {
+func TestSave_PlatformPriceSettings_ForbidsANonAdmin(t *testing.T) {
 	t.Parallel()
 
 	store := newMemoryStore()
@@ -235,7 +235,7 @@ func TestSavePlatformPriceSettings_ForbidsANonAdmin(t *testing.T) {
 	}
 }
 
-func TestSavePriceSettingsIsNotAnAccountGroup(t *testing.T) {
+func TestSave_Price_SettingsIsNotAnAccountGroup(t *testing.T) {
 	t.Parallel()
 
 	names := append([]string{groupPriceLookup}, priceProviderGroupNames()...)

@@ -23,7 +23,7 @@ type AccountActivityRepositoryTestSuite struct {
 	tokens      *repositories.AccessTokenRepository
 }
 
-func TestAccountActivityRepositorySuite(t *testing.T) {
+func TestAccount_Activity_RepositorySuite(t *testing.T) {
 	suite.Run(t, new(AccountActivityRepositoryTestSuite))
 }
 
@@ -35,7 +35,7 @@ func (s *AccountActivityRepositoryTestSuite) SetupTest() {
 	s.tokens = repositories.NewAccessTokenRepository(nil)
 }
 
-func (s *AccountActivityRepositoryTestSuite) TestMembershipAndActivityRollBackTogether() {
+func (s *AccountActivityRepositoryTestSuite) TestMembership_And_ActivityRollBackTogether() {
 	ctx := context.Background()
 	accountID := s.account()
 	actorID := s.user()
@@ -62,7 +62,7 @@ func (s *AccountActivityRepositoryTestSuite) TestMembershipAndActivityRollBackTo
 	s.Empty(rows)
 }
 
-func (s *AccountActivityRepositoryTestSuite) TestMembershipAndActivityCommitTogether() {
+func (s *AccountActivityRepositoryTestSuite) TestMembership_And_ActivityCommitTogether() {
 	ctx := context.Background()
 	accountID := s.account()
 	actorID := s.user()
@@ -89,7 +89,7 @@ func (s *AccountActivityRepositoryTestSuite) TestMembershipAndActivityCommitToge
 	s.NotContains(rows[0].Metadata, "secret")
 }
 
-func (s *AccountActivityRepositoryTestSuite) TestSettingsWriteAndActivityRollBackTogether() {
+func (s *AccountActivityRepositoryTestSuite) TestSettings_Write_AndActivityRollBackTogether() {
 	ctx := context.Background()
 	accountID := s.account()
 	actorID := s.user()
@@ -127,7 +127,7 @@ func (s *AccountActivityRepositoryTestSuite) TestSettingsWriteAndActivityRollBac
 	s.Equal(int64(0), total)
 }
 
-func (s *AccountActivityRepositoryTestSuite) TestTokenAndActivityRollBackTogether() {
+func (s *AccountActivityRepositoryTestSuite) TestToken_And_ActivityRollBackTogether() {
 	ctx := context.Background()
 	accountID := s.account()
 	actorID := s.user()
@@ -169,7 +169,7 @@ func (s *AccountActivityRepositoryTestSuite) TestTokenAndActivityRollBackTogethe
 	s.Equal(int64(0), activityTotal)
 }
 
-func (s *AccountActivityRepositoryTestSuite) TestTokenAndActivityCommitTogether() {
+func (s *AccountActivityRepositoryTestSuite) TestToken_And_ActivityCommitTogether() {
 	ctx := context.Background()
 	accountID := s.account()
 	actorID := s.user()
@@ -225,7 +225,7 @@ func jsonMarshal(meta models.ActivityMetadata) (string, error) {
 	return string(raw), nil
 }
 
-func (s *AccountActivityRepositoryTestSuite) TestFindReturnsOnlyThatAccountsRow() {
+func (s *AccountActivityRepositoryTestSuite) TestFind_Returns_OnlyThatAccountsRow() {
 	ctx := context.Background()
 	accountID := s.account()
 	otherID := s.account()
@@ -276,7 +276,7 @@ func (s *AccountActivityRepositoryTestSuite) TestFindReturnsOnlyThatAccountsRow(
 	s.Equal(rowID, listed[0].ID)
 }
 
-func (s *AccountActivityRepositoryTestSuite) TestPlatformRowUsesANullAccountID() {
+func (s *AccountActivityRepositoryTestSuite) TestPlatform_Row_UsesANullAccountID() {
 	ctx := context.Background()
 	actorID := s.user()
 	meta, err := activitylog.FeatureChange("sweep-enabled", false)

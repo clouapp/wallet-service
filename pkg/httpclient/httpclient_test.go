@@ -123,7 +123,7 @@ func firstSuccessAfterSilence(client *http.Client, url string, deadline time.Dur
 	return false
 }
 
-func TestNew_ReplacesASilentlyDeadHTTP2Connection(t *testing.T) {
+func TestNew_Replaces_ASilentlyDeadHTTP2Connection(t *testing.T) {
 	srv := http2TestServer(t)
 	proxy := newSilenceableProxy(t, srv.Listener.Addr().String())
 	url := "https://" + proxy.addr() + "/"
@@ -143,7 +143,7 @@ func TestNew_ReplacesASilentlyDeadHTTP2Connection(t *testing.T) {
 	}
 }
 
-func TestDefaultTransportWithoutHealthCheck_KeepsUsingTheDeadConnection(t *testing.T) {
+func TestDefault_TransportWithoutHealthCheck_KeepsUsingTheDeadConnection(t *testing.T) {
 	if testing.Short() {
 		t.Skip("documents the failure mode the health check fixes; takes a few seconds")
 	}
@@ -167,7 +167,7 @@ func TestDefaultTransportWithoutHealthCheck_KeepsUsingTheDeadConnection(t *testi
 	}
 }
 
-func TestNew_SharesTheHealthCheckedTransport(t *testing.T) {
+func TestNew_Shares_TheHealthCheckedTransport(t *testing.T) {
 	first, second := New(5*time.Second), New(30*time.Second)
 	if first.Transport != sharedTransport || second.Transport != sharedTransport {
 		t.Fatal("clients must share the health-checked transport and its connection pool")
@@ -181,7 +181,7 @@ func TestNew_SharesTheHealthCheckedTransport(t *testing.T) {
 	}
 }
 
-func TestClientDo_ReturnsStatusHeaderAndLimitedBody(t *testing.T) {
+func TestClient_Do_ReturnsStatusHeaderAndLimitedBody(t *testing.T) {
 	const maxBytes = 4
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		user, pass, ok := r.BasicAuth()
@@ -224,7 +224,7 @@ func TestClientDo_ReturnsStatusHeaderAndLimitedBody(t *testing.T) {
 	}
 }
 
-func TestClientDo_ExpiredContextDoesNotDial(t *testing.T) {
+func TestClient_Do_ExpiredContextDoesNotDial(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
 		t.Error("request was sent after the deadline")
 	}))
@@ -238,14 +238,14 @@ func TestClientDo_ExpiredContextDoesNotDial(t *testing.T) {
 	}
 }
 
-func TestClientDo_RejectsAMissingURLBeforeDialing(t *testing.T) {
+func TestClient_Do_RejectsAMissingURLBeforeDialing(t *testing.T) {
 	_, err := NewClient(time.Second).Do(context.Background(), Request{Method: MethodGet})
 	if !IsBuild(err) {
 		t.Fatalf("expected a build error, got %v", err)
 	}
 }
 
-func TestNew_RejectsANonPositiveTimeout(t *testing.T) {
+func TestNew_Rejects_ANonPositiveTimeout(t *testing.T) {
 	for _, timeout := range []time.Duration{0, -time.Second} {
 		func() {
 			defer func() {

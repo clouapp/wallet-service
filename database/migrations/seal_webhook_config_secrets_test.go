@@ -72,7 +72,7 @@ func deliveredSignature(t *testing.T, secret string) string {
 	return signature
 }
 
-func TestSealWebhookConfigSecretsKeepsSignaturesIdentical(t *testing.T) {
+func TestSeal_Webhook_ConfigSecretsKeepsSignaturesIdentical(t *testing.T) {
 	fixtures.TestDB(t)
 	migration := &migrations.M00000000000440SealWebhookConfigSecrets{}
 	configID := legacyWebhookConfig(t, legacyWebhookSecret)
@@ -92,7 +92,7 @@ func TestSealWebhookConfigSecretsKeepsSignaturesIdentical(t *testing.T) {
 	require.Equal(t, signatureBefore, deliveredSignature(t, opened), "Markets verifies X-Vault-Signature; it must not change")
 }
 
-func TestSealWebhookConfigSecretsIsIdempotent(t *testing.T) {
+func TestSeal_Webhook_ConfigSecretsIsIdempotent(t *testing.T) {
 	fixtures.TestDB(t)
 	migration := &migrations.M00000000000440SealWebhookConfigSecrets{}
 	configID := legacyWebhookConfig(t, legacyWebhookSecret)
@@ -104,7 +104,7 @@ func TestSealWebhookConfigSecretsIsIdempotent(t *testing.T) {
 	require.Equal(t, sealedOnce, storedWebhookSecret(t, configID), "a sealed row is not sealed twice")
 }
 
-func TestSealWebhookConfigSecretsDownRestoresPlaintext(t *testing.T) {
+func TestSeal_Webhook_ConfigSecretsDownRestoresPlaintext(t *testing.T) {
 	fixtures.TestDB(t)
 	migration := &migrations.M00000000000440SealWebhookConfigSecrets{}
 	configID := legacyWebhookConfig(t, legacyWebhookSecret)
@@ -119,7 +119,7 @@ func TestSealWebhookConfigSecretsDownRestoresPlaintext(t *testing.T) {
 	require.True(t, security.IsSealedSecret(storedWebhookSecret(t, configID)))
 }
 
-func TestSealWebhookConfigSecretsWidensTheColumnForLongSecrets(t *testing.T) {
+func TestSeal_Webhook_ConfigSecretsWidensTheColumnForLongSecrets(t *testing.T) {
 	fixtures.TestDB(t)
 	exec(t, `ALTER TABLE webhook_configs ALTER COLUMN secret TYPE VARCHAR(255)`)
 	longSecret := strings.Repeat("s", 255)

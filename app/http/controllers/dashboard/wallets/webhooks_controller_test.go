@@ -15,7 +15,7 @@ func webhooksControllerDeps() WebhooksControllerDeps {
 	}
 }
 
-func TestNewWebhooksControllerKeepsItsDependencies(t *testing.T) {
+func TestNew_Webhooks_ControllerKeepsItsDependencies(t *testing.T) {
 	deps := webhooksControllerDeps()
 	ctrl := NewWebhooksController(deps)
 	if ctrl == nil {
@@ -32,7 +32,7 @@ func TestNewWebhooksControllerKeepsItsDependencies(t *testing.T) {
 	}
 }
 
-func TestNewWebhooksControllerRequiresEveryDependency(t *testing.T) {
+func TestNew_Webhooks_ControllerRequiresEveryDependency(t *testing.T) {
 	cases := []struct {
 		name  string
 		clear func(*WebhooksControllerDeps)

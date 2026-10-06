@@ -22,7 +22,7 @@ type PlatformAccountOwnersTestSuite struct {
 	authSuite
 }
 
-func TestPlatformAccountOwnersSuite(t *testing.T) {
+func TestPlatform_Account_OwnersSuite(t *testing.T) {
 	suite.Run(t, new(PlatformAccountOwnersTestSuite))
 }
 
@@ -30,7 +30,7 @@ func (s *PlatformAccountOwnersTestSuite) SetupTest() {
 	testutil.SeededTestDB(s.T())
 }
 
-func (s *PlatformAccountOwnersTestSuite) TestAPlatformAdminAttachesAnOwner() {
+func (s *PlatformAccountOwnersTestSuite) TestA_Platform_AdminAttachesAnOwner() {
 	admin := s.seedUser(false)
 	s.grantOwnerAdmin(admin.ID)
 	session := s.signIn(admin.Email)
@@ -138,7 +138,7 @@ func (s *PlatformAccountOwnersTestSuite) TestAPlatformAdminAttachesAnOwner() {
 	))
 }
 
-func (s *PlatformAccountOwnersTestSuite) TestAMemberCannotAttachAnOwner() {
+func (s *PlatformAccountOwnersTestSuite) TestA_Member_CannotAttachAnOwner() {
 	member := s.seedUser(false)
 	accountID := s.seedOwnerAccount("hidden", models.StatusActive)
 	person := s.seedOwnerPerson(false)
@@ -170,7 +170,7 @@ func (s *PlatformAccountOwnersTestSuite) TestAMemberCannotAttachAnOwner() {
 	anonymous.AssertUnauthorized()
 }
 
-func (s *PlatformAccountOwnersTestSuite) TestUnknownAccountAndUnknownUser() {
+func (s *PlatformAccountOwnersTestSuite) TestUnknown_Account_AndUnknownUser() {
 	admin := s.seedUser(false)
 	s.grantOwnerAdmin(admin.ID)
 	session := s.signIn(admin.Email)
@@ -206,7 +206,7 @@ func (s *PlatformAccountOwnersTestSuite) TestUnknownAccountAndUnknownUser() {
 	s.Equal(responses.CodeInvalidRequest, s.ownerError(badID).Code)
 }
 
-func (s *PlatformAccountOwnersTestSuite) TestAFrozenAccountStillAcceptsTheAttach() {
+func (s *PlatformAccountOwnersTestSuite) TestA_Frozen_AccountStillAcceptsTheAttach() {
 	admin := s.seedUser(false)
 	s.grantOwnerAdmin(admin.ID)
 	session := s.signIn(admin.Email)

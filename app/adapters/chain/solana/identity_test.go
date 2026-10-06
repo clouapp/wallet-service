@@ -9,7 +9,7 @@ import (
 	"github.com/macrowallets/waas/pkg/types"
 )
 
-func TestSolana_ValidateAddress(t *testing.T) {
+func TestSolana_Validate_Address(t *testing.T) {
 	adapter := NewSolanaLive(SolanaConfig{ChainIDStr: "sol", ChainName: "Solana", NativeSymbol: "sol", RPCURL: "http://fake", Confirmations: 1})
 
 	tests := []struct {
@@ -37,7 +37,7 @@ func TestSolana_ValidateAddress(t *testing.T) {
 	}
 }
 
-func TestSolana_Identity(t *testing.T) {
+func TestIdentity_Solana_Identity(t *testing.T) {
 	a := NewSolanaLive(SolanaConfig{ChainIDStr: "sol", ChainName: "Solana", NativeSymbol: "sol", RPCURL: "http://fake", Confirmations: 1})
 	if a.ID() != "sol" {
 		t.Errorf("expected sol, got %s", a.ID())
@@ -53,7 +53,7 @@ func TestSolana_Identity(t *testing.T) {
 	}
 }
 
-func TestSolanaFeeUsesChainRowDecimals(t *testing.T) {
+func TestSolana_Fee_UsesChainRowDecimals(t *testing.T) {
 	nine := NewSolanaLive(SolanaConfig{NativeSymbol: "SOL", NativeDecimal: 9})
 	estimate, err := nine.EstimateFee(context.Background(), types.TransferRequest{})
 	if err != nil || estimate.Fee != amount.FormatBaseUnits(big.NewInt(solanaNativeFeeLamports), 9) || nine.NativeDecimals() != 9 {

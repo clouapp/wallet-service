@@ -38,7 +38,7 @@ func requireBigInt(t *testing.T, name string, got *big.Int, want int64) {
 // EVM native
 // ---------------------------------------------------------------------------
 
-func TestQuoteEVMNative_DirectMatchesThePlanAndTheReserve(t *testing.T) {
+func TestQuote_EVMNative_DirectMatchesThePlanAndTheReserve(t *testing.T) {
 	balance := new(big.Int).Add(big.NewInt(evmNativeAmount), evmNativeFee)
 	svc, fixture, _ := evmNativePlanner(t, balance, false)
 
@@ -59,7 +59,7 @@ func TestQuoteEVMNative_DirectMatchesThePlanAndTheReserve(t *testing.T) {
 	}
 }
 
-func TestQuoteEVMNative_InsufficientStillQuotesTheFeeAndFlagsIt(t *testing.T) {
+func TestQuote_EVMNative_InsufficientStillQuotesTheFeeAndFlagsIt(t *testing.T) {
 	svc, fixture, _ := evmNativePlanner(t, big.NewInt(evmNativeAmount), false)
 
 	q := quote(t, svc, fixture.wallet.ID, gasPlanNative, evmNativeAmount, quoteRecipientEVM)
@@ -72,7 +72,7 @@ func TestQuoteEVMNative_InsufficientStillQuotesTheFeeAndFlagsIt(t *testing.T) {
 	}
 }
 
-func TestQuote_RejectsNonPositiveAmounts(t *testing.T) {
+func TestQuote_Rejects_NonPositiveAmounts(t *testing.T) {
 	svc, fixture, _ := evmNativePlanner(t, big.NewInt(evmNativeAmount), false)
 	for _, amount := range []*big.Int{nil, big.NewInt(0), big.NewInt(-1)} {
 		if _, err := svc.QuoteWithdrawalFee(context.Background(), FeeQuoteRequest{WalletID: fixture.wallet.ID, Asset: gasPlanNative, Amount: amount}); err == nil {
@@ -88,7 +88,7 @@ func TestQuote_RejectsNonPositiveAmounts(t *testing.T) {
 // erc20QuoteFee is the port's token gas limit (98_765) at 2 gwei.
 var erc20QuoteFee = big.NewInt(98_765 * 2_000_000_000)
 
-func TestQuoteERC20_MatchesTheBuiltTransactionAndThePlan(t *testing.T) {
+func TestQuote_ERC20_MatchesTheBuiltTransactionAndThePlan(t *testing.T) {
 	fixture := newEVMGasFixture(t)
 	svc := fixture.plannerService()
 	amount := big.NewInt(3_000_000)
@@ -115,7 +115,7 @@ func TestQuoteERC20_MatchesTheBuiltTransactionAndThePlan(t *testing.T) {
 	}
 }
 
-func TestQuoteERC20_WithoutRecipientSimulatesTheProbe(t *testing.T) {
+func TestQuote_ERC20_WithoutRecipientSimulatesTheProbe(t *testing.T) {
 	fixture := newEVMGasFixture(t)
 	svc := fixture.plannerService()
 
@@ -133,7 +133,7 @@ func TestQuoteERC20_WithoutRecipientSimulatesTheProbe(t *testing.T) {
 	}
 }
 
-func TestQuoteERC20_UnfundedAmountIsSimulatedAtTheBaseBalance(t *testing.T) {
+func TestQuote_ERC20_UnfundedAmountIsSimulatedAtTheBaseBalance(t *testing.T) {
 	fixture := newEVMGasFixture(t) // 20 USDC on base
 	svc := fixture.plannerService()
 
@@ -148,7 +148,7 @@ func TestQuoteERC20_UnfundedAmountIsSimulatedAtTheBaseBalance(t *testing.T) {
 	}
 }
 
-func TestQuoteERC20_NoTokenBalanceCannotBeSimulated(t *testing.T) {
+func TestQuote_ERC20_NoTokenBalanceCannotBeSimulated(t *testing.T) {
 	fixture := newEVMGasFixture(t)
 	fixture.adapter.tokenBalance = big.NewInt(0)
 	svc := fixture.plannerService()
@@ -159,7 +159,7 @@ func TestQuoteERC20_NoTokenBalanceCannotBeSimulated(t *testing.T) {
 	}
 }
 
-func TestQuoteERC20_RevertingTransferFailsWithoutAGuess(t *testing.T) {
+func TestQuote_ERC20_RevertingTransferFailsWithoutAGuess(t *testing.T) {
 	fixture := newEVMGasFixture(t)
 	fixture.adapter.estimateErr = fmt.Errorf("%w: execution reverted: blacklisted", chain.ErrGasEstimateFailed)
 	svc := fixture.plannerService()
@@ -170,7 +170,7 @@ func TestQuoteERC20_RevertingTransferFailsWithoutAGuess(t *testing.T) {
 	}
 }
 
-func TestQuoteERC20_UnusableGasPriceIsUnavailable(t *testing.T) {
+func TestQuote_ERC20_UnusableGasPriceIsUnavailable(t *testing.T) {
 	fixture := newEVMGasFixture(t)
 	fixture.adapter.gasPrice = big.NewInt(0)
 	svc := fixture.plannerService()
@@ -185,7 +185,7 @@ func TestQuoteERC20_UnusableGasPriceIsUnavailable(t *testing.T) {
 // EVM L2: OP-stack L1 data fee, and multi-sweep agreeing with the planner
 // ---------------------------------------------------------------------------
 
-func TestQuoteBaseSepolia_AddsTheL1DataFee(t *testing.T) {
+func TestQuote_BaseSepolia_AddsTheL1DataFee(t *testing.T) {
 	balance := big.NewInt(l2FeeTestAmount + l2FeeTestNativeGas + l2FeeTestBufferedL1Fee)
 	svc, walletID := baseSepoliaPlanner(t, balance)
 
@@ -198,7 +198,7 @@ func TestQuoteBaseSepolia_AddsTheL1DataFee(t *testing.T) {
 	}
 }
 
-func TestQuoteMultiSweep_EqualsThePlannersEstimate(t *testing.T) {
+func TestQuote_MultiSweep_EqualsThePlannersEstimate(t *testing.T) {
 	walletID := uuid.New()
 	baseAddr := models.Address{ID: uuid.New(), WalletID: walletID, Address: "BASE"}
 	childA := models.Address{ID: uuid.New(), WalletID: walletID, Address: "CHILD_A"}
@@ -244,7 +244,7 @@ func TestQuoteMultiSweep_EqualsThePlannersEstimate(t *testing.T) {
 // Bitcoin (fake bitcoind at 2 sat/vB)
 // ---------------------------------------------------------------------------
 
-func TestQuoteBitcoin_DirectUsesTheBuildersSelection(t *testing.T) {
+func TestQuote_Bitcoin_DirectUsesTheBuildersSelection(t *testing.T) {
 	svc, walletID, _ := btcPlanner(t, map[string][]fakeUTXO{"tb1qbase": {{sats: 100_000, confirmations: 3}}})
 
 	q := quote(t, svc, walletID, models.NativeBTC, 10_000, "tb1qdest")
@@ -256,7 +256,7 @@ func TestQuoteBitcoin_DirectUsesTheBuildersSelection(t *testing.T) {
 	}
 }
 
-func TestQuoteBitcoin_MultiSweepAddsTheLegFeeAndSpendsItsOutput(t *testing.T) {
+func TestQuote_Bitcoin_MultiSweepAddsTheLegFeeAndSpendsItsOutput(t *testing.T) {
 	svc, walletID, _ := btcPlanner(t, map[string][]fakeUTXO{
 		"tb1qbase":  {{sats: 50_000, confirmations: 1}},
 		"tb1qchild": {{sats: 40_000, confirmations: 1}, {sats: 40_000, confirmations: 1}, {sats: 70_000, confirmations: 0}},
@@ -274,7 +274,7 @@ func TestQuoteBitcoin_MultiSweepAddsTheLegFeeAndSpendsItsOutput(t *testing.T) {
 	}
 }
 
-func TestQuoteBitcoin_InsufficientQuotesATypicalTransfer(t *testing.T) {
+func TestQuote_Bitcoin_InsufficientQuotesATypicalTransfer(t *testing.T) {
 	svc, walletID, _ := btcPlanner(t, map[string][]fakeUTXO{"tb1qbase": {{sats: 10_000, confirmations: 1}}})
 
 	q := quote(t, svc, walletID, models.NativeBTC, 500_000, "")
@@ -351,7 +351,7 @@ func solanaQuotePlanner(t *testing.T, nativeBalance, tokenBalance int64, port *s
 	}, walletID
 }
 
-func TestQuoteSolanaNative_OneSignatureAndTheRentMinimum(t *testing.T) {
+func TestQuote_SolanaNative_OneSignatureAndTheRentMinimum(t *testing.T) {
 	svc, walletID := solanaQuotePlanner(t, 29_995_000, 0, &solQuotePort{rent: big.NewInt(quoteSOLRent0)})
 
 	q := quote(t, svc, walletID, models.NativeSOL, 20_000_000, quoteSOLDest)
@@ -363,7 +363,7 @@ func TestQuoteSolanaNative_OneSignatureAndTheRentMinimum(t *testing.T) {
 	}
 }
 
-func TestQuoteSolanaNative_InsufficientKeepsTheFee(t *testing.T) {
+func TestQuote_SolanaNative_InsufficientKeepsTheFee(t *testing.T) {
 	svc, walletID := solanaQuotePlanner(t, 20_000_000, 0, &solQuotePort{rent: big.NewInt(quoteSOLRent0)})
 
 	q := quote(t, svc, walletID, models.NativeSOL, 20_000_000, "")
@@ -374,7 +374,7 @@ func TestQuoteSolanaNative_InsufficientKeepsTheFee(t *testing.T) {
 	requireBigInt(t, "fee", q.Fee, quoteSOLLamports)
 }
 
-func TestQuoteSolanaSPL_FundsTheMissingRecipientTokenAccount(t *testing.T) {
+func TestQuote_SolanaSPL_FundsTheMissingRecipientTokenAccount(t *testing.T) {
 	svc, walletID := solanaQuotePlanner(t, 0, 5_000_000, &solQuotePort{creation: big.NewInt(quoteSOLRent165)})
 
 	q := quote(t, svc, walletID, models.SymbolUSDC, 1_000_000, quoteSOLDest)
@@ -386,7 +386,7 @@ func TestQuoteSolanaSPL_FundsTheMissingRecipientTokenAccount(t *testing.T) {
 	}
 }
 
-func TestQuoteSolanaSPL_RentFailureIsUnavailable(t *testing.T) {
+func TestQuote_SolanaSPL_RentFailureIsUnavailable(t *testing.T) {
 	svc, walletID := solanaQuotePlanner(t, 0, 5_000_000, &solQuotePort{quoteErr: errors.New("node behind")})
 
 	_, err := svc.QuoteWithdrawalFee(context.Background(), FeeQuoteRequest{WalletID: walletID, Asset: models.SymbolUSDC, Amount: big.NewInt(1_000_000), ToAddress: quoteSOLDest})

@@ -14,7 +14,7 @@ import (
 	"github.com/macrowallets/waas/app/services/users"
 )
 
-func TestSuspendWritesOnePlatformRowAndReactivateClearsIt(t *testing.T) {
+func TestSuspend_Writes_OnePlatformRowAndReactivateClearsIt(t *testing.T) {
 	t.Parallel()
 
 	actor := uuid.New()
@@ -65,7 +65,7 @@ func TestSuspendWritesOnePlatformRowAndReactivateClearsIt(t *testing.T) {
 	require.Len(t, activity.rows, 2)
 }
 
-func TestSuspendRefusesACallerWhoIsNotAPlatformAdmin(t *testing.T) {
+func TestSuspend_Refuses_ACallerWhoIsNotAPlatformAdmin(t *testing.T) {
 	t.Parallel()
 
 	actor := uuid.New()
@@ -96,7 +96,7 @@ func TestSuspendRefusesACallerWhoIsNotAPlatformAdmin(t *testing.T) {
 	require.ErrorIs(t, err, users.ErrNotFound)
 }
 
-func TestRevokeSessionsRecordsTheAdminAndRefusesEveryoneElse(t *testing.T) {
+func TestRevoke_Sessions_RecordsTheAdminAndRefusesEveryoneElse(t *testing.T) {
 	t.Parallel()
 
 	actor := uuid.New()
@@ -147,7 +147,7 @@ func TestRevokeSessionsRecordsTheAdminAndRefusesEveryoneElse(t *testing.T) {
 	require.ErrorIs(t, missing.RevokeSessions(context.Background(), actor, uuid.New()), users.ErrNotFound)
 }
 
-func TestSuspendReportsAMissingUser(t *testing.T) {
+func TestSuspend_Reports_AMissingUser(t *testing.T) {
 	t.Parallel()
 
 	actor := uuid.New()

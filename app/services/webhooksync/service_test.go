@@ -22,7 +22,7 @@ const (
 	syncSigning   = "ing-sign-subscription"
 )
 
-func TestSyncChainAddresses_ReadsTheProviderKeyOnEverySync(t *testing.T) {
+func TestSync_ChainAddresses_ReadsTheProviderKeyOnEverySync(t *testing.T) {
 	logs := captureSyncLogs(t)
 	rows := &syncSettingsRows{groups: map[string]map[string]string{
 		"provider_alchemy": {
@@ -60,7 +60,7 @@ func TestSyncChainAddresses_ReadsTheProviderKeyOnEverySync(t *testing.T) {
 	requireSyncLogsOmit(t, logs.String(), syncOpenedKey, syncNextKey, syncEnvKey, syncSigning, "enc:v1:")
 }
 
-func TestSyncChainAddresses_EmptyKeyDoesNotCallTheProvider(t *testing.T) {
+func TestSync_ChainAddresses_EmptyKeyDoesNotCallTheProvider(t *testing.T) {
 	logs := captureSyncLogs(t)
 	stub := &syncStub{}
 	service := NewService(Deps{

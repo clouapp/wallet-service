@@ -20,12 +20,12 @@ func (r *recordingAddressCache) SAdd(_ context.Context, key string, members ...a
 	return r.err
 }
 
-func TestCacheAddress_NilCacheDoesNothing(t *testing.T) {
+func TestCache_Address_NilCacheDoesNothing(t *testing.T) {
 	service := &Service{}
 	service.cacheAddress(context.Background(), "eth", "0xabc")
 }
 
-func TestCacheAddress_KeepsTheKeyAndTheAddress(t *testing.T) {
+func TestCache_Address_KeepsTheKeyAndTheAddress(t *testing.T) {
 	cache := &recordingAddressCache{}
 	service := &Service{addresses: cache}
 
@@ -42,7 +42,7 @@ func TestCacheAddress_KeepsTheKeyAndTheAddress(t *testing.T) {
 	}
 }
 
-func TestCacheAddress_LogsAndContinuesWhenRedisFails(t *testing.T) {
+func TestCache_Address_LogsAndContinuesWhenRedisFails(t *testing.T) {
 	cache := &recordingAddressCache{err: errors.New("boom")}
 	service := &Service{addresses: cache}
 

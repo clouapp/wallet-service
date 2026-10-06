@@ -7,7 +7,7 @@ import (
 	"github.com/macrowallets/waas/app/models"
 )
 
-func TestCanRolesReadIsOwnerAdminAndAuditor(t *testing.T) {
+func TestCan_Roles_ReadIsOwnerAdminAndAuditor(t *testing.T) {
 	for _, role := range []string{models.AccountRoleOwner, models.AccountRoleAdmin, models.AccountRoleAuditor, models.RetiredAccountRoleViewer} {
 		if !Can(AccountRoleGrants(role), PermRolesRead) {
 			t.Fatalf("%s must hold roles.read", role)
@@ -20,7 +20,7 @@ func TestCanRolesReadIsOwnerAdminAndAuditor(t *testing.T) {
 	}
 }
 
-func TestEffectiveRoleGrantsFollowTheLiveGates(t *testing.T) {
+func TestEffective_Role_GrantsFollowTheLiveGates(t *testing.T) {
 	grants := EffectiveRoleGrants()
 	if len(grants) != len(models.AccountRoles()) {
 		t.Fatalf("roles = %d, want %d", len(grants), len(models.AccountRoles()))
@@ -81,7 +81,7 @@ func TestEffectiveRoleGrantsFollowTheLiveGates(t *testing.T) {
 	}
 }
 
-func TestAccountPermissionCatalogIsTheLiveCodeCatalog(t *testing.T) {
+func TestAccount_Permission_CatalogIsTheLiveCodeCatalog(t *testing.T) {
 	catalog := AccountPermissionCatalog()
 	if catalog == nil {
 		t.Fatal("catalog is nil")

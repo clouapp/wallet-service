@@ -20,28 +20,28 @@ import (
 	"github.com/macrowallets/waas/tests/mocks"
 )
 
-func TestProcessTransfers_UnknownChain(t *testing.T) {
+func TestProcess_Transfers_UnknownChain(t *testing.T) {
 	reg := chain.NewRegistry()
 	svc := &Service{registry: reg}
 	err := svc.ProcessTransfers(t.Context(), "unknown_chain", nil)
 	assert.ErrorIs(t, err, chainregistry.ErrUnknownChain)
 }
 
-func TestIngest_UnknownChainUsesTheTypedEvent(t *testing.T) {
+func TestIngest_Unknown_ChainUsesTheTypedEvent(t *testing.T) {
 	reg := chain.NewRegistry()
 	svc := &Service{registry: reg}
 	err := svc.Ingest(t.Context(), InboundEvent{ChainID: "unknown_chain"})
 	assert.ErrorIs(t, err, chainregistry.ErrUnknownChain)
 }
 
-func TestNewService_NilDeps(t *testing.T) {
+func TestNew_Service_NilDeps(t *testing.T) {
 	svc := NewService(Deps{})
 	assert.NotNil(t, svc)
 }
 
 // InboundTransfer matches the deposit-scanner DetectedTransfer shape field-for-field
 // (LogIndex is int in webhook payloads vs uint in types.DetectedTransfer).
-func TestInboundTransfer_DetectedTransferMapping(t *testing.T) {
+func TestInbound_Transfer_DetectedTransferMapping(t *testing.T) {
 	ts := time.Unix(1700000000, 0).UTC()
 	token := &types.Token{Symbol: "USDC", Name: "USD Coin", Contract: "0xtoken", Decimals: 6, ChainID: "ethereum"}
 	amount := big.NewInt(42)
@@ -83,7 +83,7 @@ func TestInboundTransfer_DetectedTransferMapping(t *testing.T) {
 	assert.True(t, in.Timestamp.Equal(dt.Timestamp))
 }
 
-func TestProcessTransfers_HumanUSDTUsesSeedDecimals(t *testing.T) {
+func TestProcess_Transfers_HumanUSDTUsesSeedDecimals(t *testing.T) {
 	reg := chain.NewRegistry()
 	mockChain := mocks.NewMockChain(models.ChainETH)
 	mockChain.NativeAssetVal = models.NativeETH
@@ -133,7 +133,7 @@ func TestProcessTransfers_HumanUSDTUsesSeedDecimals(t *testing.T) {
 	assert.Equal(t, "1500000", txs.created[0].Amount)
 }
 
-func TestProcessTransfers_NativeHumanUsesChainDecimals(t *testing.T) {
+func TestProcess_Transfers_NativeHumanUsesChainDecimals(t *testing.T) {
 	const to = "bc1qreceiver"
 	reg := chain.NewRegistry()
 	mockChain := mocks.NewMockChain(models.ChainBTC)
@@ -172,7 +172,7 @@ func TestProcessTransfers_NativeHumanUsesChainDecimals(t *testing.T) {
 	assert.Empty(t, skipped.created)
 }
 
-func TestProcessTransfers_AddressSetKeepsTheMembershipDecision(t *testing.T) {
+func TestProcess_Transfers_AddressSetKeepsTheMembershipDecision(t *testing.T) {
 	const to = "0xReceiver"
 	reg, addrs, txs := ingestFixture(to)
 	member := &stubAddressSet{member: true}
@@ -215,7 +215,7 @@ func TestProcessTransfers_AddressSetKeepsTheMembershipDecision(t *testing.T) {
 	assert.Empty(t, failed.created)
 }
 
-func TestProcessTransfers_DispatchesTheTransactionRefresh(t *testing.T) {
+func TestProcess_Transfers_DispatchesTheTransactionRefresh(t *testing.T) {
 	const to = "0xReceiver"
 	reg, addrs, txs := ingestFixture(to)
 	jobs := &recordingRefresh{}
@@ -339,7 +339,7 @@ func (s stubMembership) Result() (bool, error) {
 
 // A provider webhook for the sweep that moved funds into the base address is not a
 // deposit of the base owner; a transfer from anywhere else to that address still is.
-func TestProcessTransfers_SkipsSweepOfTheSameWallet(t *testing.T) {
+func TestProcess_Transfers_SkipsSweepOfTheSameWallet(t *testing.T) {
 	const (
 		baseAddress = "0xBase"
 		sweepHash   = "0xsweep"

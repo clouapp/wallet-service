@@ -14,7 +14,7 @@ import (
 	"github.com/macrowallets/waas/tests/feature/support/fixtures"
 )
 
-func TestAccountUsersSeedDoesNotQueryOutsideTheRepository(t *testing.T) {
+func TestAccount_Users_SeedDoesNotQueryOutsideTheRepository(t *testing.T) {
 	source, err := os.ReadFile("account_users.go")
 	if err != nil {
 		t.Fatalf("read account users seed: %v", err)
@@ -27,7 +27,7 @@ func TestAccountUsersSeedDoesNotQueryOutsideTheRepository(t *testing.T) {
 	}
 }
 
-func TestSeedAccountUsersInsertsMembershipsAndLeavesThemOnRerun(t *testing.T) {
+func TestSeed_Account_UsersInsertsMembershipsAndLeavesThemOnRerun(t *testing.T) {
 	fixtures.TestDB(t)
 	ctx := context.Background()
 

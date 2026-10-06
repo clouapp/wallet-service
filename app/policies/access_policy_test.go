@@ -7,7 +7,7 @@ import (
 	"github.com/macrowallets/waas/app/models"
 )
 
-func TestCanUsersReadFailsClosedAndFollowsTheRoleCatalog(t *testing.T) {
+func TestCan_Users_ReadFailsClosedAndFollowsTheRoleCatalog(t *testing.T) {
 	for _, role := range []string{models.AccountRoleOwner, models.AccountRoleAdmin, models.AccountRoleAuditor, models.RetiredAccountRoleViewer} {
 		if !Can(AccountRoleGrants(role), PermUsersRead) {
 			t.Fatalf("%s must hold users.read", role)
@@ -24,7 +24,7 @@ func TestCanUsersReadFailsClosedAndFollowsTheRoleCatalog(t *testing.T) {
 	}
 }
 
-func TestCanAccountLifecycleIsOwnerOnly(t *testing.T) {
+func TestCan_Account_LifecycleIsOwnerOnly(t *testing.T) {
 	if !Can(AccountRoleGrants(models.AccountRoleOwner), PermAccountLifecycle) {
 		t.Fatal("owner must hold account.lifecycle")
 	}
@@ -35,7 +35,7 @@ func TestCanAccountLifecycleIsOwnerOnly(t *testing.T) {
 	}
 }
 
-func TestCanTokensReadIsOwnerAdminAndAuditor(t *testing.T) {
+func TestCan_Tokens_ReadIsOwnerAdminAndAuditor(t *testing.T) {
 	for _, role := range []string{models.AccountRoleOwner, models.AccountRoleAdmin, models.AccountRoleAuditor} {
 		if !Can(AccountRoleGrants(role), PermTokensRead) {
 			t.Fatalf("%s must hold tokens.read", role)
@@ -51,7 +51,7 @@ func TestCanTokensReadIsOwnerAdminAndAuditor(t *testing.T) {
 	}
 }
 
-func TestCanTokensWriteIsOwnerAndAdmin(t *testing.T) {
+func TestCan_Tokens_WriteIsOwnerAndAdmin(t *testing.T) {
 	for _, role := range []string{models.AccountRoleOwner, models.AccountRoleAdmin} {
 		if !Can(AccountRoleGrants(role), PermTokensWrite) {
 			t.Fatalf("%s must hold tokens.write", role)
@@ -68,7 +68,7 @@ func TestCanTokensWriteIsOwnerAndAdmin(t *testing.T) {
 	}
 }
 
-func TestCanAccountWriteIsOwnerAndAdmin(t *testing.T) {
+func TestCan_Account_WriteIsOwnerAndAdmin(t *testing.T) {
 	for _, role := range []string{models.AccountRoleOwner, models.AccountRoleAdmin} {
 		if !Can(AccountRoleGrants(role), PermAccountWrite) {
 			t.Fatalf("%s must hold account.write", role)
@@ -81,7 +81,7 @@ func TestCanAccountWriteIsOwnerAndAdmin(t *testing.T) {
 	}
 }
 
-func TestCanUsersWriteIsOwnerAndAdmin(t *testing.T) {
+func TestCan_Users_WriteIsOwnerAndAdmin(t *testing.T) {
 	for _, role := range []string{models.AccountRoleOwner, models.AccountRoleAdmin} {
 		if !Can(AccountRoleGrants(role), PermUsersWrite) {
 			t.Fatalf("%s must hold users.write", role)
@@ -97,7 +97,7 @@ func TestCanUsersWriteIsOwnerAndAdmin(t *testing.T) {
 	}
 }
 
-func TestWalletGrantsAddressCreateAndRefusesFundMovement(t *testing.T) {
+func TestWallet_Grants_AddressCreateAndRefusesFundMovement(t *testing.T) {
 	for _, role := range []string{models.AccountRoleOwner, models.AccountRoleAdmin, models.AccountRoleUser} {
 		if !Can(WalletGrants(role), PermAddressesCreate) {
 			t.Fatalf("%s must hold addresses.create", role)
@@ -138,7 +138,7 @@ func TestWalletGrantsAddressCreateAndRefusesFundMovement(t *testing.T) {
 	}
 }
 
-func TestMayGrantDoesNotAllowARoleAboveTheActor(t *testing.T) {
+func TestMay_Grant_DoesNotAllowARoleAboveTheActor(t *testing.T) {
 	if !MayGrant(models.AccountRoleOwner, models.AccountRoleOwner) {
 		t.Fatal("owner may grant owner")
 	}
@@ -162,7 +162,7 @@ func TestMayGrantDoesNotAllowARoleAboveTheActor(t *testing.T) {
 	}
 }
 
-func TestMayActOnUsesTheSameRankAndRemovalRefusesSelfAndLastOwner(t *testing.T) {
+func TestMay_Act_OnUsesTheSameRankAndRemovalRefusesSelfAndLastOwner(t *testing.T) {
 	if !MayActOn(models.AccountRoleAdmin, models.AccountRoleAdmin) {
 		t.Fatal("admin may act on another admin")
 	}

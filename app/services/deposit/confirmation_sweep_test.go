@@ -175,7 +175,7 @@ func confirmingTx(txType string, required int) models.Transaction {
 	}
 }
 
-func TestApplyConfirmations_CommitsSweepConfirmationWithItsWebhook(t *testing.T) {
+func TestApply_Confirmations_CommitsSweepConfirmationWithItsWebhook(t *testing.T) {
 	store := &sweepConfirmStore{sweepConfirmMemory: &sweepConfirmMemory{}}
 	events := &sweepConfirmEventRepo{}
 	sender := &sweepConfirmQueue{store: store}
@@ -231,7 +231,7 @@ func TestApplyConfirmations_CommitsSweepConfirmationWithItsWebhook(t *testing.T)
 	}
 }
 
-func TestApplyConfirmations_RollsBackSweepConfirmationWhenTheWebhookInsertFails(t *testing.T) {
+func TestApply_Confirmations_RollsBackSweepConfirmationWhenTheWebhookInsertFails(t *testing.T) {
 	store := &sweepConfirmStore{sweepConfirmMemory: &sweepConfirmMemory{}}
 	events := &sweepConfirmEventRepo{fail: true}
 	sender := &sweepConfirmQueue{store: store}
@@ -256,7 +256,7 @@ func TestApplyConfirmations_RollsBackSweepConfirmationWhenTheWebhookInsertFails(
 	}
 }
 
-func TestApplyConfirmations_RefusesSweepConfirmationWithoutATransaction(t *testing.T) {
+func TestApply_Confirmations_RefusesSweepConfirmationWithoutATransaction(t *testing.T) {
 	memory := &sweepConfirmMemory{}
 	events := &sweepConfirmEventRepo{}
 	sender := &sweepConfirmQueue{}
@@ -275,7 +275,7 @@ func TestApplyConfirmations_RefusesSweepConfirmationWithoutATransaction(t *testi
 	}
 }
 
-func TestApplyConfirmations_ConfirmsASweepWithoutAWebhookWriter(t *testing.T) {
+func TestApply_Confirmations_ConfirmsASweepWithoutAWebhookWriter(t *testing.T) {
 	store := &sweepConfirmStore{sweepConfirmMemory: &sweepConfirmMemory{}}
 	svc := &Service{txRepo: store}
 	sweep := confirmingTx(models.TxTypeSweep, 1)

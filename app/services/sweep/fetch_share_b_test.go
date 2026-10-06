@@ -9,7 +9,7 @@ import (
 	"github.com/macrowallets/waas/app/models"
 )
 
-func TestFetchShareB_NilReaderReportsSecretsManagerNotConfigured(t *testing.T) {
+func TestFetch_ShareB_NilReaderReportsSecretsManagerNotConfigured(t *testing.T) {
 	svc := &service{}
 	_, err := svc.fetchShareB(context.Background(), &models.Wallet{MPCSecretARN: "arn:secret"})
 	if err == nil || err.Error() != "sweep: secrets manager not configured" {
@@ -17,7 +17,7 @@ func TestFetchShareB_NilReaderReportsSecretsManagerNotConfigured(t *testing.T) {
 	}
 }
 
-func TestFetchShareB_EmptyARNIsRejectedBeforeTheReader(t *testing.T) {
+func TestFetch_ShareB_EmptyARNIsRejectedBeforeTheReader(t *testing.T) {
 	reader := &recordingSecret{err: errors.New("must not be called")}
 	svc := &service{secrets: reader}
 	_, err := svc.fetchShareB(context.Background(), &models.Wallet{})
@@ -29,7 +29,7 @@ func TestFetchShareB_EmptyARNIsRejectedBeforeTheReader(t *testing.T) {
 	}
 }
 
-func TestFetchShareB_WrapsTheReaderErrorAndKeepsTheARN(t *testing.T) {
+func TestFetch_ShareB_WrapsTheReaderErrorAndKeepsTheARN(t *testing.T) {
 	const arn = "arn:aws:secretsmanager:us-east-1:1:secret:vault/wallet/x/share-b"
 	reader := &recordingSecret{err: errors.New("down")}
 	svc := &service{secrets: reader}
@@ -42,7 +42,7 @@ func TestFetchShareB_WrapsTheReaderErrorAndKeepsTheARN(t *testing.T) {
 	}
 }
 
-func TestFetchShareB_ReturnsTheReaderBytes(t *testing.T) {
+func TestFetch_ShareB_ReturnsTheReaderBytes(t *testing.T) {
 	want := []byte{0x0a, 0x0b, 0x0c}
 	reader := &recordingSecret{bin: want}
 	svc := &service{secrets: reader}

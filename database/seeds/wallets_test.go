@@ -30,7 +30,7 @@ func (f *fakeSeedSecretsManager) GetSecretValue(
 	return f.output, f.err
 }
 
-func TestValidateExistingSeedWalletSecret(t *testing.T) {
+func TestValidate_Existing_SeedWalletSecret(t *testing.T) {
 	t.Parallel()
 
 	wallet := &models.Wallet{
@@ -45,7 +45,7 @@ func TestValidateExistingSeedWalletSecret(t *testing.T) {
 	}
 }
 
-func TestValidateExistingSeedWalletSecretRejectsMissingSecret(t *testing.T) {
+func TestValidate_Existing_SeedWalletSecretRejectsMissingSecret(t *testing.T) {
 	t.Parallel()
 
 	wallet := &models.Wallet{
@@ -64,7 +64,7 @@ func TestValidateExistingSeedWalletSecretRejectsMissingSecret(t *testing.T) {
 	}
 }
 
-func TestValidateExistingSeedWalletSecretRejectsEmptyPayload(t *testing.T) {
+func TestValidate_Existing_SeedWalletSecretRejectsEmptyPayload(t *testing.T) {
 	t.Parallel()
 
 	wallet := &models.Wallet{MPCSecretARN: "arn:empty"}
@@ -78,7 +78,7 @@ func TestValidateExistingSeedWalletSecretRejectsEmptyPayload(t *testing.T) {
 	}
 }
 
-func TestValidateExistingSeedWalletSecretRejectsNilDependencies(t *testing.T) {
+func TestValidate_Existing_SeedWalletSecretRejectsNilDependencies(t *testing.T) {
 	t.Parallel()
 
 	if err := validateExistingSeedWalletSecret(context.Background(), nil, &models.Wallet{}); err == nil {
@@ -94,7 +94,7 @@ func stringPointer(value string) *string {
 	return &value
 }
 
-func TestWalletsSeedDoesNotQueryOutsideTheRepository(t *testing.T) {
+func TestWallets_Seed_DoesNotQueryOutsideTheRepository(t *testing.T) {
 	source, err := os.ReadFile("wallets.go")
 	if err != nil {
 		t.Fatalf("read wallets seed: %v", err)
@@ -107,7 +107,7 @@ func TestWalletsSeedDoesNotQueryOutsideTheRepository(t *testing.T) {
 	}
 }
 
-func TestSeedWalletRowsAndMembershipsStayOnRerun(t *testing.T) {
+func TestSeed_Wallet_RowsAndMembershipsStayOnRerun(t *testing.T) {
 	fixtures.TestDB(t)
 	ctx := context.Background()
 	specs := seedWalletSpecs()

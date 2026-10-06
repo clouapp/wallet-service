@@ -27,7 +27,7 @@ func ed25519PublicFromBigEndianScalar(t *testing.T, scalarBigEndian []byte) []by
 	return new(edwards25519.Point).ScalarBaseMult(secret).Bytes()
 }
 
-func TestReconstructEd25519Scalar_MatchesWalletPublicKey(t *testing.T) {
+func TestReconstruct_Ed25519Scalar_MatchesWalletPublicKey(t *testing.T) {
 	svc := NewTSSService()
 	keys, err := svc.Keygen(context.Background(), CurveEd25519)
 	if err != nil {
@@ -55,7 +55,7 @@ func TestReconstructEd25519Scalar_MatchesWalletPublicKey(t *testing.T) {
 }
 
 // The legacy share sum seeds SLIP-0010 child derivation; it is not the genesis key.
-func TestReconstructEd25519PrivateKey_IsNotTheGenesisKey(t *testing.T) {
+func TestReconstruct_Ed25519PrivateKey_IsNotTheGenesisKey(t *testing.T) {
 	svc := NewTSSService()
 	keys, err := svc.Keygen(context.Background(), CurveEd25519)
 	if err != nil {
@@ -71,7 +71,7 @@ func TestReconstructEd25519PrivateKey_IsNotTheGenesisKey(t *testing.T) {
 	}
 }
 
-func TestReconstructEd25519Scalar_RejectsMismatchedShares(t *testing.T) {
+func TestReconstruct_Ed25519Scalar_RejectsMismatchedShares(t *testing.T) {
 	svc := NewTSSService()
 	first, err := svc.Keygen(context.Background(), CurveEd25519)
 	if err != nil {
@@ -113,7 +113,7 @@ func TestReconstructEd25519Scalar_RejectsMismatchedShares(t *testing.T) {
 	}
 }
 
-func TestReconstructEd25519Scalar_MalformedShareErrorHidesInput(t *testing.T) {
+func TestReconstruct_Ed25519Scalar_MalformedShareErrorHidesInput(t *testing.T) {
 	secretLooking := []byte(`{"Xi":"not-a-number-but-looks-secret"}`)
 	_, err := NewTSSService().ReconstructEd25519Scalar(secretLooking, secretLooking)
 	if err == nil || strings.Contains(err.Error(), "looks-secret") {
@@ -121,7 +121,7 @@ func TestReconstructEd25519Scalar_MalformedShareErrorHidesInput(t *testing.T) {
 	}
 }
 
-func TestInterpolateTwoSharesAtZero_RejectsOutOfRangeInputs(t *testing.T) {
+func TestInterpolate_TwoSharesAtZero_RejectsOutOfRangeInputs(t *testing.T) {
 	n := tss.Edwards().Params().N
 	one, two := big.NewInt(1), big.NewInt(2)
 	cases := map[string][4]*big.Int{
@@ -141,7 +141,7 @@ func TestInterpolateTwoSharesAtZero_RejectsOutOfRangeInputs(t *testing.T) {
 	}
 }
 
-func TestInterpolateTwoSharesAtZero_RecoversLineIntercept(t *testing.T) {
+func TestInterpolate_TwoSharesAtZero_RecoversLineIntercept(t *testing.T) {
 	n := tss.Edwards().Params().N
 	// f(x) = 7 + 3x → f(1) = 10, f(5) = 22; ids above n behave like their residue.
 	for _, idB := range []*big.Int{big.NewInt(5), new(big.Int).Add(n, big.NewInt(5))} {
@@ -155,7 +155,7 @@ func TestInterpolateTwoSharesAtZero_RecoversLineIntercept(t *testing.T) {
 	}
 }
 
-func TestDecryptShare_RejectsWrongIVLength(t *testing.T) {
+func TestDecrypt_Share_RejectsWrongIVLength(t *testing.T) {
 	enc, err := EncryptShare([]byte("seed"), "passphrase-long-enough")
 	if err != nil {
 		t.Fatal(err)

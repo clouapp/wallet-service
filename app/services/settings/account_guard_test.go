@@ -9,7 +9,7 @@ import (
 	"github.com/macrowallets/waas/app/policies"
 )
 
-func TestAccountSettingsCatalogDeclaresTheAccountGuard(t *testing.T) {
+func TestAccount_Settings_CatalogDeclaresTheAccountGuard(t *testing.T) {
 	t.Parallel()
 
 	catalog := AccountSettingsCatalog()
@@ -36,7 +36,7 @@ func TestAccountSettingsCatalogDeclaresTheAccountGuard(t *testing.T) {
 	}
 }
 
-func TestOwnerAndAdminStillWriteAnAccountGroup(t *testing.T) {
+func TestOwner_And_AdminStillWriteAnAccountGroup(t *testing.T) {
 	t.Parallel()
 
 	accountID := uuid.New()

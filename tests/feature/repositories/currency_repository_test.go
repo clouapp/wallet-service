@@ -19,7 +19,7 @@ type CurrencyRepositoryTestSuite struct {
 	repo *repositories.CurrencyRepository
 }
 
-func TestCurrencyRepositorySuite(t *testing.T) {
+func TestCurrency_Repository_Suite(t *testing.T) {
 	suite.Run(t, new(CurrencyRepositoryTestSuite))
 }
 
@@ -32,13 +32,13 @@ func (s *CurrencyRepositoryTestSuite) currency(code, kind string, active bool) *
 	return &models.Currency{Name: code, Code: code, Type: kind, Active: active, CurrentPrice: numeric.NewDecimal(decimal.NewFromInt(1))}
 }
 
-func (s *CurrencyRepositoryTestSuite) TestFindByCode_NotFound() {
+func (s *CurrencyRepositoryTestSuite) TestFind_ByCode_NotFound() {
 	found, err := s.repo.FindByCode(context.Background(), "NOPE")
 	s.ErrorIs(err, models.ErrRepositoryNotFound)
 	s.Nil(found)
 }
 
-func (s *CurrencyRepositoryTestSuite) TestSetPriceAndFindActive() {
+func (s *CurrencyRepositoryTestSuite) TestSet_Price_AndFindActive() {
 	btc := s.currency("BTC", models.CurrencyTypeCrypto, true)
 	usd := s.currency("USD", models.CurrencyTypeFiat, true)
 	brl := s.currency("BRL", models.CurrencyTypeFiat, true)
@@ -68,7 +68,7 @@ func (s *CurrencyRepositoryTestSuite) TestSetPriceAndFindActive() {
 	s.Len(all, 3)
 }
 
-func (s *CurrencyRepositoryTestSuite) TestFindStaleSkipsUSDAndFreshRows() {
+func (s *CurrencyRepositoryTestSuite) TestFind_Stale_SkipsUSDAndFreshRows() {
 	old := time.Now().Add(-2 * time.Hour)
 	btc := s.currency("BTC", models.CurrencyTypeCrypto, true)
 	btc.PriceUpdatedAt = &old

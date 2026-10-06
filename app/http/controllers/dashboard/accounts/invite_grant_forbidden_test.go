@@ -13,7 +13,7 @@ import (
 	accountsvc "github.com/macrowallets/waas/app/services/account"
 )
 
-func TestInviteGrantForbiddenOmitsTheCause(t *testing.T) {
+func TestInvite_Grant_ForbiddenOmitsTheCause(t *testing.T) {
 	cause := fmt.Errorf("insert account_invites: %w", accountsvc.ErrGrantRole)
 	response := &recordingResponse{}
 	inviteGrantForbidden(&recordingContext{base: context.Background(), response: response}, cause)

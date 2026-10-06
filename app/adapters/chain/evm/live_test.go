@@ -12,7 +12,7 @@ import (
 	pkgtypes "github.com/macrowallets/waas/pkg/types"
 )
 
-func TestEVM_ValidateAddress(t *testing.T) {
+func TestEVM_Validate_Address(t *testing.T) {
 	adapter := NewEVMLive(EVMConfig{ChainIDStr: "eth", RPCURL: "http://fake"})
 
 	tests := []struct {
@@ -40,7 +40,7 @@ func TestEVM_ValidateAddress(t *testing.T) {
 	}
 }
 
-func TestEVM_Identity(t *testing.T) {
+func TestLive_EVM_Identity(t *testing.T) {
 	eth := NewEVMLive(EVMConfig{ChainIDStr: "eth", ChainName: "Ethereum", NativeSymbol: "eth", Confirmations: 12})
 	poly := NewEVMLive(EVMConfig{ChainIDStr: "polygon", ChainName: "Polygon", NativeSymbol: "matic", Confirmations: 128})
 
@@ -67,7 +67,7 @@ func TestEVM_Identity(t *testing.T) {
 	}
 }
 
-func TestEncodeERC20Transfer(t *testing.T) {
+func TestEncode_ERC20_Transfer(t *testing.T) {
 	to := "0x742d35Cc6634C0532925a3b844Bc9e7595f2bD12"
 	amount := big.NewInt(1000000) // 1 USDT (6 decimals)
 
@@ -82,7 +82,7 @@ func TestEncodeERC20Transfer(t *testing.T) {
 	}
 }
 
-func TestHexToBigInt(t *testing.T) {
+func TestHex_To_BigInt(t *testing.T) {
 	tests := []struct {
 		input string
 		want  int64
@@ -107,7 +107,7 @@ func TestHexToBigInt(t *testing.T) {
 	}
 }
 
-func TestHexToUint64(t *testing.T) {
+func TestHex_To_Uint64(t *testing.T) {
 	tests := []struct {
 		input string
 		want  uint64
@@ -126,7 +126,7 @@ func TestHexToUint64(t *testing.T) {
 	}
 }
 
-func TestPadAddr(t *testing.T) {
+func TestLive_Pad_Addr(t *testing.T) {
 	got := padAddr("0x742d35Cc6634C0532925a3b844Bc9e7595f2bD12")
 	if len(got) != 64 {
 		t.Errorf("expected 64 chars, got %d", len(got))
@@ -137,7 +137,7 @@ func TestPadAddr(t *testing.T) {
 	}
 }
 
-func TestTopicToAddr(t *testing.T) {
+func TestTopic_To_Addr(t *testing.T) {
 	topic := "0x000000000000000000000000742d35cc6634c0532925a3b844bc9e7595f2bd12"
 	got := topicToAddr(topic)
 	if got != "0x742d35cc6634c0532925a3b844bc9e7595f2bd12" {
@@ -145,7 +145,7 @@ func TestTopicToAddr(t *testing.T) {
 	}
 }
 
-func TestFmtUnits(t *testing.T) {
+func TestLive_Fmt_Units(t *testing.T) {
 	tests := []struct {
 		amount   *big.Int
 		decimals uint8
@@ -173,7 +173,7 @@ func TestFmtUnits(t *testing.T) {
 	}
 }
 
-func TestEVMFinalizeMPCSignatureBuildsBroadcastableTransaction(t *testing.T) {
+func TestEVM_Finalize_MPCSignatureBuildsBroadcastableTransaction(t *testing.T) {
 	t.Parallel()
 
 	privateKey, err := crypto.GenerateKey()
@@ -248,7 +248,7 @@ func TestEVMFinalizeMPCSignatureBuildsBroadcastableTransaction(t *testing.T) {
 	}
 }
 
-func TestEVMFinalizeMPCSignatureRejectsWrongPublicKey(t *testing.T) {
+func TestEVM_Finalize_MPCSignatureRejectsWrongPublicKey(t *testing.T) {
 	t.Parallel()
 
 	privateKey, err := crypto.GenerateKey()
@@ -288,7 +288,7 @@ func TestEVMFinalizeMPCSignatureRejectsWrongPublicKey(t *testing.T) {
 	}
 }
 
-func TestBufferedEVMGasPrice(t *testing.T) {
+func TestBuffered_EVM_GasPrice(t *testing.T) {
 	t.Parallel()
 
 	input := big.NewInt(1_300_000_000)

@@ -9,7 +9,7 @@ import (
 	"github.com/macrowallets/waas/app/services/withdraw"
 )
 
-func TestHumanToBaseUnits(t *testing.T) {
+func TestHuman_To_BaseUnits(t *testing.T) {
 	got, err := withdraw.ResolveWithdrawalAmount(models.ChainETH, models.NativeETH, 18, "", "0.001", nil)
 	if err != nil {
 		t.Fatal(err)
@@ -34,7 +34,7 @@ func TestHumanToBaseUnits(t *testing.T) {
 	}
 }
 
-func TestWithdrawalIDFromIdempotencyKey(t *testing.T) {
+func TestWithdrawal_ID_FromIdempotencyKey(t *testing.T) {
 	t.Parallel()
 
 	key := uuid.New()
@@ -47,7 +47,7 @@ func TestWithdrawalIDFromIdempotencyKey(t *testing.T) {
 	}
 }
 
-func TestWithdrawalIDFromIdempotencyKeyGeneratesIDWhenAbsent(t *testing.T) {
+func TestWithdrawal_ID_FromIdempotencyKeyGeneratesIDWhenAbsent(t *testing.T) {
 	t.Parallel()
 
 	got, err := withdrawalIDFromIdempotencyKey("")
@@ -59,7 +59,7 @@ func TestWithdrawalIDFromIdempotencyKeyGeneratesIDWhenAbsent(t *testing.T) {
 	}
 }
 
-func TestWithdrawalIDFromIdempotencyKeyRejectsInvalidUUID(t *testing.T) {
+func TestWithdrawal_ID_FromIdempotencyKeyRejectsInvalidUUID(t *testing.T) {
 	t.Parallel()
 
 	if _, err := withdrawalIDFromIdempotencyKey("not-a-uuid"); err == nil {

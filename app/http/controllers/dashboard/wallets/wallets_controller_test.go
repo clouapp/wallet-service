@@ -18,7 +18,7 @@ func walletsControllerDeps() (WalletsControllerDeps, *wallet.Service) {
 	}, svc
 }
 
-func TestNewWalletsControllerKeepsItsDependencies(t *testing.T) {
+func TestNew_Wallets_ControllerKeepsItsDependencies(t *testing.T) {
 	deps, svc := walletsControllerDeps()
 	ctrl := NewWalletsController(deps)
 	if ctrl == nil {
@@ -38,7 +38,7 @@ func TestNewWalletsControllerKeepsItsDependencies(t *testing.T) {
 	}
 }
 
-func TestNewWalletsControllerRequiresEveryDependency(t *testing.T) {
+func TestNew_Wallets_ControllerRequiresEveryDependency(t *testing.T) {
 	cases := []struct {
 		name  string
 		clear func(*WalletsControllerDeps)

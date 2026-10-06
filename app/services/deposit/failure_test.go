@@ -241,7 +241,7 @@ func (l *lockedWriter) Write(p []byte) (int, error) {
 	return l.w.Write(p)
 }
 
-func TestFailurePolicyFromSettings(t *testing.T) {
+func TestFailure_Policy_FromSettings(t *testing.T) {
 	cases := []struct {
 		name                                   string
 		retries, delayMs, pending, max, newCap int
@@ -273,7 +273,7 @@ func TestFailurePolicyFromSettings(t *testing.T) {
 	}
 }
 
-func TestFailurePolicy_Backoffs(t *testing.T) {
+func TestFailure_Policy_Backoffs(t *testing.T) {
 	policy := DefaultFailurePolicy()
 	if got := fmt.Sprint(policy.immediateDelays()); got != "[100ms 300ms 900ms]" {
 		t.Fatalf("immediate delays %s, want [100ms 300ms 900ms]", got)
@@ -285,7 +285,7 @@ func TestFailurePolicy_Backoffs(t *testing.T) {
 	}
 }
 
-func TestScanLatestBlocks_TransientWriteFailureIsFixedByTheImmediateRetry(t *testing.T) {
+func TestScan_LatestBlocks_TransientWriteFailureIsFixedByTheImmediateRetry(t *testing.T) {
 	backends := newPendingBackends(t)
 	f := newFailureFixture(t, backends.store)
 	f.txRepo.failCreate(failingTx, 2)
@@ -307,7 +307,7 @@ func TestScanLatestBlocks_TransientWriteFailureIsFixedByTheImmediateRetry(t *tes
 	}
 }
 
-func TestScanLatestBlocks_TransientFetchFailureIsRefetched(t *testing.T) {
+func TestScan_LatestBlocks_TransientFetchFailureIsRefetched(t *testing.T) {
 	backends := newPendingBackends(t)
 	f := newFailureFixture(t, backends.store)
 	f.adapter.failNextFetches(failingBlock, 2)
@@ -324,7 +324,7 @@ func TestScanLatestBlocks_TransientFetchFailureIsRefetched(t *testing.T) {
 	}
 }
 
-func TestScanLatestBlocks_PersistentFailureGoesPendingAndTheCheckpointAdvances(t *testing.T) {
+func TestScan_LatestBlocks_PersistentFailureGoesPendingAndTheCheckpointAdvances(t *testing.T) {
 	logs := captureLogs(t)
 	backends := newPendingBackends(t)
 	f := newFailureFixture(t, backends.store)
@@ -368,7 +368,7 @@ func TestScanLatestBlocks_PersistentFailureGoesPendingAndTheCheckpointAdvances(t
 	}
 }
 
-func TestReprocessPending_BacksOffThenRecoversWithoutDuplicates(t *testing.T) {
+func TestReprocess_Pending_BacksOffThenRecoversWithoutDuplicates(t *testing.T) {
 	backends := newPendingBackends(t)
 	f := newFailureFixture(t, backends.store)
 	f.txRepo.failCreate(failingTx, alwaysFail)
@@ -414,7 +414,7 @@ func TestReprocessPending_BacksOffThenRecoversWithoutDuplicates(t *testing.T) {
 	}
 }
 
-func TestScanLatestBlocks_RedisDownRecordsThePendingBlockInTheFile(t *testing.T) {
+func TestScan_LatestBlocks_RedisDownRecordsThePendingBlockInTheFile(t *testing.T) {
 	dir := newPendingDir(t)
 	store := openPendingStore(t, unreachableRedisClient(t), "test:unreachable:", dir)
 	f := newFailureFixture(t, store)
@@ -435,7 +435,7 @@ func TestScanLatestBlocks_RedisDownRecordsThePendingBlockInTheFile(t *testing.T)
 	}
 }
 
-func TestScanLatestBlocks_PendingStoreDownKeepsTheCheckpointBeforeTheBlock(t *testing.T) {
+func TestScan_LatestBlocks_PendingStoreDownKeepsTheCheckpointBeforeTheBlock(t *testing.T) {
 	dir := newPendingDir(t)
 	store := openPendingStore(t, unreachableRedisClient(t), "test:unreachable:", dir)
 	breakDir(t, dir)
@@ -462,7 +462,7 @@ func TestScanLatestBlocks_PendingStoreDownKeepsTheCheckpointBeforeTheBlock(t *te
 	}
 }
 
-func TestScanLatestBlocks_StopsWhenTooManyBlocksFailInOneCycle(t *testing.T) {
+func TestScan_LatestBlocks_StopsWhenTooManyBlocksFailInOneCycle(t *testing.T) {
 	backends := newPendingBackends(t)
 	f := newFailureFixture(t, backends.store)
 	policy := DefaultFailurePolicy()
@@ -484,7 +484,7 @@ func TestScanLatestBlocks_StopsWhenTooManyBlocksFailInOneCycle(t *testing.T) {
 	}
 }
 
-func TestPendingBlocks_SurviveAnAPIRestart(t *testing.T) {
+func TestPending_Blocks_SurviveAnAPIRestart(t *testing.T) {
 	backends := newPendingBackends(t)
 	f := newFailureFixture(t, backends.store)
 	f.txRepo.failCreate(failingTx, alwaysFail)
@@ -522,7 +522,7 @@ func TestPendingBlocks_SurviveAnAPIRestart(t *testing.T) {
 	}
 }
 
-func TestProcessingABlockTwiceSendsEachDepositWebhookOnce(t *testing.T) {
+func TestProcessing_A_BlockTwiceSendsEachDepositWebhookOnce(t *testing.T) {
 	backends := newPendingBackends(t)
 	f := newFailureFixture(t, backends.store)
 	account := fixtures.InsertAccount(t, "idempotency owner")
@@ -572,7 +572,7 @@ func TestProcessingABlockTwiceSendsEachDepositWebhookOnce(t *testing.T) {
 	}
 }
 
-func TestUniqueDepositIndexRejectsASecondRowForTheSameTransaction(t *testing.T) {
+func TestUnique_Deposit_IndexRejectsASecondRowForTheSameTransaction(t *testing.T) {
 	fixtures.TestDB(t)
 	wallet := fixtures.InsertWallet(t, scanTestChain)
 	repo := repositories.NewTransactionRepository(nil)

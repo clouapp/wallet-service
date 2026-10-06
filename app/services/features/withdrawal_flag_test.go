@@ -13,7 +13,7 @@ import (
 
 // Request is the withdrawal execution path. The container wires it to Gate,
 // and a closed global row must stop it before Redis or a broadcast.
-func TestWithdrawalRequestHonoursAClosedGlobalFlag(t *testing.T) {
+func TestWithdrawal_Request_HonoursAClosedGlobalFlag(t *testing.T) {
 	t.Parallel()
 
 	store := newMemoryStore()

@@ -23,7 +23,7 @@ func authControllerDeps() AuthControllerDeps {
 	}
 }
 
-func TestNewAuthControllerKeepsItsDependencies(t *testing.T) {
+func TestNew_Auth_ControllerKeepsItsDependencies(t *testing.T) {
 	deps := authControllerDeps()
 	ctrl := NewAuthController(deps)
 	if ctrl == nil {
@@ -55,7 +55,7 @@ func TestNewAuthControllerKeepsItsDependencies(t *testing.T) {
 	}
 }
 
-func TestNewAuthControllerRequiresEveryDependency(t *testing.T) {
+func TestNew_Auth_ControllerRequiresEveryDependency(t *testing.T) {
 	cases := []struct {
 		name  string
 		clear func(*AuthControllerDeps)

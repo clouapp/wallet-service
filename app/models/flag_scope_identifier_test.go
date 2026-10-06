@@ -6,7 +6,7 @@ import (
 	"github.com/google/uuid"
 )
 
-func TestFlagScopeIdentifierConcatenatesPrefixAndID(t *testing.T) {
+func TestFlag_Scope_IdentifierConcatenatesPrefixAndID(t *testing.T) {
 	t.Parallel()
 
 	id := uuid.MustParse("6f1c0c3e-1b4a-4e3a-9c2d-7a8b9c0d1e2f")
@@ -33,7 +33,7 @@ func TestFlagScopeIdentifierConcatenatesPrefixAndID(t *testing.T) {
 	}
 }
 
-func TestFlagScopeIdentifierKeepsTheZeroID(t *testing.T) {
+func TestFlag_Scope_IdentifierKeepsTheZeroID(t *testing.T) {
 	t.Parallel()
 
 	var account Account

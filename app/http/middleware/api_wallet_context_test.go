@@ -55,7 +55,7 @@ type APIWalletContextTestSuite struct {
 	tokenB   string // JWT signed for accountB
 }
 
-func TestAPIWalletContextSuite(t *testing.T) {
+func TestAPI_Wallet_ContextSuite(t *testing.T) {
 	suite.Run(t, new(APIWalletContextTestSuite))
 }
 
@@ -152,7 +152,7 @@ func (s *APIWalletContextTestSuite) authedGet(path, jwt string) contractstesting
 // TestWalletBelongsToAnotherAccount is the IDOR case: account B tries to
 // access account A's wallet. The middleware must return 404 with a generic
 // message — never 403 or anything that leaks the wallet's existence.
-func (s *APIWalletContextTestSuite) TestWalletBelongsToAnotherAccount() {
+func (s *APIWalletContextTestSuite) TestWallet_Belongs_ToAnotherAccount() {
 	resp := s.authedGet("/api/v1/wallets/"+s.walletA.ID.String()+"/gas-status", s.tokenB)
 	resp.AssertStatus(404).AssertJson(map[string]any{"error": map[string]any{
 		"code":    "not_found",
@@ -163,7 +163,7 @@ func (s *APIWalletContextTestSuite) TestWalletBelongsToAnotherAccount() {
 // TestWalletNotFound returns 404 with the same body as the cross-account
 // case, so callers cannot distinguish "exists but not yours" from "does not
 // exist at all".
-func (s *APIWalletContextTestSuite) TestWalletNotFound() {
+func (s *APIWalletContextTestSuite) TestWallet_Not_Found() {
 	missing := uuid.New().String()
 	resp := s.authedGet("/api/v1/wallets/"+missing+"/gas-status", s.tokenA)
 	resp.AssertStatus(404).AssertJson(map[string]any{"error": map[string]any{
@@ -177,7 +177,7 @@ func (s *APIWalletContextTestSuite) TestWalletNotFound() {
 // downstream sweep service depends on chain adapters that aren't wired in
 // tests — we only need to prove the middleware did not short-circuit with a
 // 404 `wallet not found`.
-func (s *APIWalletContextTestSuite) TestValidOwnership() {
+func (s *APIWalletContextTestSuite) TestAPIWalletContext_Valid_Ownership() {
 	resp := s.authedGet("/api/v1/wallets/"+s.walletA.ID.String()+"/gas-status", s.tokenA)
 	body, err := resp.Content()
 	s.Require().NoError(err)
@@ -189,7 +189,7 @@ func (s *APIWalletContextTestSuite) TestValidOwnership() {
 
 // TestInvalidWalletIDFormat is a sanity case: non-UUID walletId must 404
 // through the middleware, not bubble up as a 500.
-func (s *APIWalletContextTestSuite) TestInvalidWalletIDFormat() {
+func (s *APIWalletContextTestSuite) TestInvalid_Wallet_IDFormat() {
 	resp := s.authedGet("/api/v1/wallets/not-a-uuid/gas-status", s.tokenA)
 	resp.AssertStatus(404).AssertJson(map[string]any{"error": map[string]any{
 		"code":    "not_found",

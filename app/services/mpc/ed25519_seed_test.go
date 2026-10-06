@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-func TestSignEd25519Seed_MatchesTheImportableSeed(t *testing.T) {
+func TestSign_Ed25519Seed_MatchesTheImportableSeed(t *testing.T) {
 	seed := bytes.Repeat([]byte{0x07}, ed25519.SeedSize)
 	message := []byte("solana-message")
 	signature, publicKey, err := SignEd25519Seed(seed, message)
@@ -26,7 +26,7 @@ func TestSignEd25519Seed_MatchesTheImportableSeed(t *testing.T) {
 	}
 }
 
-func TestSignEd25519Seed_RejectsAShortSeed(t *testing.T) {
+func TestSign_Ed25519Seed_RejectsAShortSeed(t *testing.T) {
 	if _, _, err := SignEd25519Seed(bytes.Repeat([]byte{1}, ed25519.SeedSize-1), []byte("m")); err == nil {
 		t.Fatal("expected a short seed to be rejected")
 	}

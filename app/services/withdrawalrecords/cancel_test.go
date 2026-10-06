@@ -57,7 +57,7 @@ func (a *cancelActivity) Append(_ context.Context, row models.AccountActivity) e
 	return nil
 }
 
-func TestWithinOpensTheStoreTransaction(t *testing.T) {
+func TestWithin_Opens_TheStoreTransaction(t *testing.T) {
 	store := &cancelStore{}
 	records := NewRecords(Deps{Store: store})
 	called := false
@@ -73,7 +73,7 @@ func TestWithinOpensTheStoreTransaction(t *testing.T) {
 	}
 }
 
-func TestCancelRecordsTheEventWithoutAnAmount(t *testing.T) {
+func TestCancel_Records_TheEventWithoutAnAmount(t *testing.T) {
 	store := &cancelStore{}
 	activity := &cancelActivity{}
 	records := NewRecords(Deps{Store: store, Activity: activity})

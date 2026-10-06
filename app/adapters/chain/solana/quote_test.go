@@ -50,7 +50,7 @@ func fakeSolanaRPC(t *testing.T, results map[string]string) *SolanaLive {
 
 var quoteUSDC = &types.Token{Symbol: models.SymbolUSDC, Contract: models.USDCMintSOL, Decimals: 6}
 
-func TestSolanaQuoteTransferFee_NativePaysOneSignature(t *testing.T) {
+func TestSolana_QuoteTransferFee_NativePaysOneSignature(t *testing.T) {
 	adapter := fakeSolanaRPC(t, map[string]string{})
 
 	quote, err := adapter.QuoteTransferFee(context.Background(), types.TransferRequest{From: solanaBalanceOwner, To: solanaBalanceOwner})
@@ -62,7 +62,7 @@ func TestSolanaQuoteTransferFee_NativePaysOneSignature(t *testing.T) {
 	}
 }
 
-func TestSolanaQuoteTransferFee_MissingTokenAccountAddsItsRent(t *testing.T) {
+func TestSolana_QuoteTransferFee_MissingTokenAccountAddsItsRent(t *testing.T) {
 	adapter := fakeSolanaRPC(t, map[string]string{
 		"getAccountInfo":                        `"result":{"context":{"slot":1},"value":null}`,
 		"getMinimumBalanceForRentExemption:165": `"result":2039280`,
@@ -77,7 +77,7 @@ func TestSolanaQuoteTransferFee_MissingTokenAccountAddsItsRent(t *testing.T) {
 	}
 }
 
-func TestSolanaQuoteTransferFee_ExistingTokenAccountPaysOnlyTheSignature(t *testing.T) {
+func TestSolana_QuoteTransferFee_ExistingTokenAccountPaysOnlyTheSignature(t *testing.T) {
 	adapter := fakeSolanaRPC(t, map[string]string{
 		"getAccountInfo": `"result":{"context":{"slot":1},"value":{"lamports":2039280}}`,
 	})
@@ -91,7 +91,7 @@ func TestSolanaQuoteTransferFee_ExistingTokenAccountPaysOnlyTheSignature(t *test
 	}
 }
 
-func TestSolanaQuoteTransferFee_RentFailureIsAnError(t *testing.T) {
+func TestSolana_QuoteTransferFee_RentFailureIsAnError(t *testing.T) {
 	adapter := fakeSolanaRPC(t, map[string]string{
 		"getAccountInfo":                        `"result":{"context":{"slot":1},"value":null}`,
 		"getMinimumBalanceForRentExemption:165": `"error":{"code":-32000,"message":"node behind"}`,
@@ -102,7 +102,7 @@ func TestSolanaQuoteTransferFee_RentFailureIsAnError(t *testing.T) {
 	}
 }
 
-func TestSolanaNativeTransferReserveReadsTheSystemAccountRent(t *testing.T) {
+func TestSolana_Native_TransferReserveReadsTheSystemAccountRent(t *testing.T) {
 	adapter := fakeSolanaRPC(t, map[string]string{"getMinimumBalanceForRentExemption:0": `"result":890880`})
 
 	fee, minimum, err := adapter.NativeTransferReserve(context.Background())
@@ -116,7 +116,7 @@ func TestSolanaNativeTransferReserveReadsTheSystemAccountRent(t *testing.T) {
 
 // Solana answers getAccountInfo for a missing account with value null, not an error:
 // the transfer must then create the recipient's token account.
-func TestSolanaBuildTransferCreatesTheTokenAccountWhenGetAccountInfoIsNull(t *testing.T) {
+func TestSolana_Build_TransferCreatesTheTokenAccountWhenGetAccountInfoIsNull(t *testing.T) {
 	hash := solana.Hash{}
 	hash[0] = 1
 	adapter := fakeSolanaRPC(t, map[string]string{

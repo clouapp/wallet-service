@@ -11,7 +11,7 @@ import (
 	"github.com/macrowallets/waas/tests/feature/support/fixtures"
 )
 
-func TestAccessTokenPermissionsBecomeNullableJsonb(t *testing.T) {
+func TestAccess_Token_PermissionsBecomeNullableJsonb(t *testing.T) {
 	fixtures.TestDB(t)
 	migration := &migrations.M00000000000570AccessTokensPermissionsJsonb{}
 

@@ -8,7 +8,7 @@ import (
 	"github.com/macrowallets/waas/pkg/types"
 )
 
-func TestResolveWithdrawalAmount_USDTUses6Decimals(t *testing.T) {
+func TestResolve_WithdrawalAmount_USDTUses6Decimals(t *testing.T) {
 	tokens := []types.Token{{
 		Symbol: models.SymbolUSDT, ChainID: models.ChainETH, Decimals: 6,
 		Contract: models.USDTContractETH,
@@ -25,7 +25,7 @@ func TestResolveWithdrawalAmount_USDTUses6Decimals(t *testing.T) {
 	}
 }
 
-func TestResolveWithdrawalAmount_OmittedAssetIsNative(t *testing.T) {
+func TestResolve_WithdrawalAmount_OmittedAssetIsNative(t *testing.T) {
 	got, err := ResolveWithdrawalAmount(models.ChainETH, models.NativeETH, 18, "", "0.001", nil)
 	if err != nil {
 		t.Fatal(err)
@@ -36,7 +36,7 @@ func TestResolveWithdrawalAmount_OmittedAssetIsNative(t *testing.T) {
 	}
 }
 
-func TestResolveWithdrawalAmount_POLIsNative(t *testing.T) {
+func TestResolve_WithdrawalAmount_POLIsNative(t *testing.T) {
 	got, err := ResolveWithdrawalAmount(models.ChainPolygon, models.NativePOL, 18, models.NativePOL, "1", nil)
 	if err != nil {
 		t.Fatal(err)
@@ -47,7 +47,7 @@ func TestResolveWithdrawalAmount_POLIsNative(t *testing.T) {
 	}
 }
 
-func TestResolveWithdrawalAmount_LegacyMaticIsAnAliasOfTheNativePOL(t *testing.T) {
+func TestResolve_WithdrawalAmount_LegacyMaticIsAnAliasOfTheNativePOL(t *testing.T) {
 	want, _ := new(big.Int).SetString("2500000000000000000", 10)
 	for _, requested := range []string{types.LegacyNativeSymbolMATIC, "MATIC", " Matic ", types.NativeSymbolPOL, "POL"} {
 		got, err := ResolveWithdrawalAmount(models.ChainPolygon, types.NativeSymbolPOL, 18, requested, "2.5", nil)
@@ -60,14 +60,14 @@ func TestResolveWithdrawalAmount_LegacyMaticIsAnAliasOfTheNativePOL(t *testing.T
 	}
 }
 
-func TestResolveWithdrawalAmount_MaticIsNotAliasedOnOtherChains(t *testing.T) {
+func TestResolve_WithdrawalAmount_MaticIsNotAliasedOnOtherChains(t *testing.T) {
 	_, err := ResolveWithdrawalAmount(models.ChainETH, models.NativeETH, 18, types.LegacyNativeSymbolMATIC, "1", nil)
 	if err == nil {
 		t.Fatal("expected MATIC to be unknown on ethereum")
 	}
 }
 
-func TestResolveWithdrawalAmount_UnknownAsset(t *testing.T) {
+func TestResolve_WithdrawalAmount_UnknownAsset(t *testing.T) {
 	_, err := ResolveWithdrawalAmount(models.ChainETH, models.NativeETH, 18, "SHIB", "1", nil)
 	if err == nil {
 		t.Fatal("expected error")

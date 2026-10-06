@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-func TestDeriveEd25519Child_ProducesValidKey(t *testing.T) {
+func TestDerive_Ed25519Child_ProducesValidKey(t *testing.T) {
 	masterKey := make([]byte, 32)
 	chainCode := make([]byte, 32)
 	for i := range masterKey {
@@ -39,7 +39,7 @@ func TestDeriveEd25519Child_ProducesValidKey(t *testing.T) {
 	}
 }
 
-func TestDeriveEd25519Child_DifferentIndices(t *testing.T) {
+func TestDerive_Ed25519Child_DifferentIndices(t *testing.T) {
 	masterKey := make([]byte, 32)
 	chainCode := make([]byte, 32)
 	for i := range masterKey {
@@ -57,7 +57,7 @@ func TestDeriveEd25519Child_DifferentIndices(t *testing.T) {
 	}
 }
 
-func TestDeriveEd25519Child_Deterministic(t *testing.T) {
+func TestDerive_Ed25519Child_Deterministic(t *testing.T) {
 	masterKey := make([]byte, 32)
 	chainCode := make([]byte, 32)
 	for i := range masterKey {
@@ -75,7 +75,7 @@ func TestDeriveEd25519Child_Deterministic(t *testing.T) {
 	}
 }
 
-func TestDeriveEd25519Child_AddressDerivation(t *testing.T) {
+func TestDerive_Ed25519Child_AddressDerivation(t *testing.T) {
 	masterKey := make([]byte, 32)
 	chainCode := make([]byte, 32)
 	for i := range masterKey {
@@ -102,7 +102,7 @@ func TestDeriveEd25519Child_AddressDerivation(t *testing.T) {
 	}
 }
 
-func TestDeriveEd25519Child_RejectsShortMasterKey(t *testing.T) {
+func TestDerive_Ed25519Child_RejectsShortMasterKey(t *testing.T) {
 	_, err := deriveEd25519Child(make([]byte, 16), make([]byte, 32), 0)
 	if err == nil {
 		t.Fatal("expected error for short master key")

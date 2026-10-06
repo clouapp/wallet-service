@@ -30,7 +30,7 @@ type WalletFreezeGateTestSuite struct {
 	goravelTesting.TestCase
 }
 
-func TestWalletFreezeGateSuite(t *testing.T) {
+func TestWallet_Freeze_GateSuite(t *testing.T) {
 	suite.Run(t, new(WalletFreezeGateTestSuite))
 }
 
@@ -38,7 +38,7 @@ func (s *WalletFreezeGateTestSuite) SetupTest() {
 	fixtures.TestDB(s.T())
 }
 
-func (s *WalletFreezeGateTestSuite) TestWalletFreezeFollowsTheLoadedRoles() {
+func (s *WalletFreezeGateTestSuite) TestWallet_Freeze_FollowsTheLoadedRoles() {
 	account := fixtures.InsertAccount(s.T(), "wallet freeze")
 	wallet := fixtures.InsertWalletWithAccount(s.T(), models.ChainETH, &account.ID)
 
@@ -98,7 +98,7 @@ func (s *WalletFreezeGateTestSuite) TestWalletFreezeFollowsTheLoadedRoles() {
 	}
 }
 
-func (s *WalletFreezeGateTestSuite) TestWalletFreezeStaysHiddenFromAnAccountUser() {
+func (s *WalletFreezeGateTestSuite) TestWallet_Freeze_StaysHiddenFromAnAccountUser() {
 	account := fixtures.InsertAccount(s.T(), "wallet freeze hidden")
 	wallet := fixtures.InsertWalletWithAccount(s.T(), models.ChainETH, &account.ID)
 	actor := s.member(models.AccountRoleUser, account.ID)

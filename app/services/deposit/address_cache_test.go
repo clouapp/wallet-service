@@ -60,7 +60,7 @@ func cachedMembers(t *testing.T, rdb *redis.Client, chainID string) []string {
 	return members
 }
 
-func TestSyncAddressCache_RebuildsAStaleSet(t *testing.T) {
+func TestSync_AddressCache_RebuildsAStaleSet(t *testing.T) {
 	fixtures.TestDB(t)
 	rdb := testRedis(t)
 	ctx := context.Background()
@@ -104,7 +104,7 @@ func TestSyncAddressCache_RebuildsAStaleSet(t *testing.T) {
 	}
 }
 
-func TestSyncAddressCache_SameSizeDifferentMembersIsStale(t *testing.T) {
+func TestSync_AddressCache_SameSizeDifferentMembersIsStale(t *testing.T) {
 	fixtures.TestDB(t)
 	rdb := testRedis(t)
 	ctx := context.Background()
@@ -136,7 +136,7 @@ func TestSyncAddressCache_SameSizeDifferentMembersIsStale(t *testing.T) {
 	}
 }
 
-func TestRefreshAddressCache_ClearsTheSetWhenNoAddressIsActive(t *testing.T) {
+func TestRefresh_AddressCache_ClearsTheSetWhenNoAddressIsActive(t *testing.T) {
 	fixtures.TestDB(t)
 	rdb := testRedis(t)
 	ctx := context.Background()
@@ -162,7 +162,7 @@ func TestRefreshAddressCache_ClearsTheSetWhenNoAddressIsActive(t *testing.T) {
 	}
 }
 
-func TestIsWatchedAddress_FallsBackToTheDatabaseWhenRedisFails(t *testing.T) {
+func TestIs_WatchedAddress_FallsBackToTheDatabaseWhenRedisFails(t *testing.T) {
 	fixtures.TestDB(t)
 	const chainID = "eth"
 	const address = "0x00000000000000000000000000000000000000d4"

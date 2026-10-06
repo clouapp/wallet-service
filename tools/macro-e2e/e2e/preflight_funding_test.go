@@ -52,7 +52,7 @@ func preparePreflightState(t *testing.T) Paths {
 	return paths
 }
 
-func TestPreflightSendsThePassphraseOnStdinAndParsesTheLastResultLine(t *testing.T) {
+func TestPreflight_Sends_ThePassphraseOnStdinAndParsesTheLastResultLine(t *testing.T) {
 	paths := preparePreflightState(t)
 	var captured struct {
 		binary string
@@ -89,7 +89,7 @@ func TestPreflightSendsThePassphraseOnStdinAndParsesTheLastResultLine(t *testing
 	}
 }
 
-func TestPreflightFailuresAndVerification(t *testing.T) {
+func TestPreflight_Failures_AndVerification(t *testing.T) {
 	paths := preparePreflightState(t)
 	failing := Preflight{Paths: paths, Passphrases: &fixedPassphrase{}, Run: func(context.Context, string, []string, string, []string, []byte) (ProcessResult, error) {
 		return ProcessResult{Stdout: []byte(strings.Repeat("x", 2000)), Stderr: []byte("boom"), ExitCode: 3}, nil
@@ -213,7 +213,7 @@ func sendRequest(apply bool) SendRequest {
 	return SendRequest{Tag: testTag, WalletID: testWalletID, Asset: "ETH", BaseUnits: "5", Decimals: "1", To: testTo, ExternalUserID: "42", Chain: "base", Apply: apply}
 }
 
-func TestSendFromBaseDryRunPrintsThePlanAndSendsNothing(t *testing.T) {
+func TestSend_From_BaseDryRunPrintsThePlanAndSendsNothing(t *testing.T) {
 	fixture := newFundingFixture(t)
 	code, err := fixture.funding.SendFromBase(context.Background(), sendRequest(false))
 	if err != nil || code != ExitOK {
@@ -231,7 +231,7 @@ func TestSendFromBaseDryRunPrintsThePlanAndSendsNothing(t *testing.T) {
 	}
 }
 
-func TestSendFromBaseAppliesOnceRecordsTheLedgerAndReleasesTheLock(t *testing.T) {
+func TestSend_From_BaseAppliesOnceRecordsTheLedgerAndReleasesTheLock(t *testing.T) {
 	fixture := newFundingFixture(t)
 	code, err := fixture.funding.SendFromBase(context.Background(), sendRequest(true))
 	if err != nil || code != ExitOK {
@@ -275,7 +275,7 @@ func TestSendFromBaseAppliesOnceRecordsTheLedgerAndReleasesTheLock(t *testing.T)
 	}
 }
 
-func TestSendFromBaseGuards(t *testing.T) {
+func TestSend_From_BaseGuards(t *testing.T) {
 	t.Run("vault_test already has the transfer", func(t *testing.T) {
 		fixture := newFundingFixture(t)
 		fixture.matches = []string{"id-1 completed 0xab"}
@@ -361,7 +361,7 @@ func TestSendFromBaseGuards(t *testing.T) {
 	})
 }
 
-func TestSendFromBaseReportsErrorsAndMissingHashes(t *testing.T) {
+func TestSend_From_BaseReportsErrorsAndMissingHashes(t *testing.T) {
 	fixture := newFundingFixture(t)
 	fixture.api.postCode = http.StatusUnprocessableEntity
 	fixture.api.postBody = `{"error": "insufficient funds"}`
@@ -384,7 +384,7 @@ func TestSendFromBaseReportsErrorsAndMissingHashes(t *testing.T) {
 	}
 }
 
-func TestConsolidateDryRunAndApplyOnce(t *testing.T) {
+func TestConsolidate_Dry_RunAndApplyOnce(t *testing.T) {
 	fixture := newFundingFixture(t)
 	request := ConsolidateRequest{Tag: "bnb-consolidate-01", WalletID: testWalletID, Asset: "BNB"}
 	if code, err := fixture.funding.Consolidate(context.Background(), request); err != nil || code != ExitOK {
@@ -424,7 +424,7 @@ func TestConsolidateDryRunAndApplyOnce(t *testing.T) {
 	}
 }
 
-func TestResponseHelpers(t *testing.T) {
+func TestPreflightFunding_Response_Helpers(t *testing.T) {
 	decode := func(document string) any {
 		value, err := pyjson.Decode([]byte(document))
 		if err != nil {

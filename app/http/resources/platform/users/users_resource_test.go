@@ -11,7 +11,7 @@ import (
 	"github.com/macrowallets/waas/app/models"
 )
 
-func TestPlatformUserViewOmitsSecretFields(t *testing.T) {
+func TestPlatform_User_ViewOmitsSecretFields(t *testing.T) {
 	t.Parallel()
 
 	suspended := time.Date(2026, 10, 3, 15, 4, 5, 0, time.UTC)

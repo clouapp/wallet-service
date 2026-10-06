@@ -28,7 +28,7 @@ type WalletCanAddressTestSuite struct {
 	account models.Account
 }
 
-func TestWalletCanAddressSuite(t *testing.T) {
+func TestWallet_Can_AddressSuite(t *testing.T) {
 	suite.Run(t, new(WalletCanAddressTestSuite))
 }
 
@@ -96,7 +96,7 @@ func (s *WalletCanAddressTestSuite) assertForbidden(resp contractstesting.Respon
 	s.Equal("forbidden", parsed.Error.Message)
 }
 
-func (s *WalletCanAddressTestSuite) TestAddressCreateFollowsWalletCan() {
+func (s *WalletCanAddressTestSuite) TestAddress_Create_FollowsWalletCan() {
 	wallet := fixtures.InsertWalletWithAccount(s.T(), "eth", &s.account.ID)
 	body := `{"label":"` + strings.Repeat("a", 256) + `"}`
 	path := "/v1/wallets/" + wallet.ID.String() + "/addresses"
@@ -113,7 +113,7 @@ func (s *WalletCanAddressTestSuite) TestAddressCreateFollowsWalletCan() {
 	s.assertForbidden(s.post(s.loginUser(models.AccountRoleAuditor), path, body))
 }
 
-func (s *WalletCanAddressTestSuite) TestMissingWalletIsNotFoundBeforeWalletCan() {
+func (s *WalletCanAddressTestSuite) TestMissing_Wallet_IsNotFoundBeforeWalletCan() {
 	token := s.loginUser(models.AccountRoleOwner)
 	resp := s.post(token, "/v1/wallets/"+uuid.NewString()+"/addresses", `{"label":"desk"}`)
 	resp.AssertNotFound()
@@ -123,7 +123,7 @@ func (s *WalletCanAddressTestSuite) TestMissingWalletIsNotFoundBeforeWalletCan()
 	s.NotContains(content, `"message":"forbidden"`)
 }
 
-func (s *WalletCanAddressTestSuite) TestUserStillCannotMoveFunds() {
+func (s *WalletCanAddressTestSuite) TestUser_Still_CannotMoveFunds() {
 	wallet := fixtures.InsertWalletWithAccount(s.T(), "eth", &s.account.ID)
 	token := s.loginUser(models.AccountRoleUser)
 	for _, path := range []string{

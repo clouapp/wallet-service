@@ -14,7 +14,7 @@ import (
 	"github.com/macrowallets/waas/pkg/numeric"
 )
 
-func TestMembershipsForWalletReturnsTheStoredRoles(t *testing.T) {
+func TestMemberships_For_WalletReturnsTheStoredRoles(t *testing.T) {
 	t.Parallel()
 
 	accountID := uuid.New()
@@ -37,7 +37,7 @@ func TestMembershipsForWalletReturnsTheStoredRoles(t *testing.T) {
 	require.Equal(t, accountID, accounts.accountID)
 }
 
-func TestMembershipsForWalletTreatsAMissAsAnEmptyRole(t *testing.T) {
+func TestMemberships_For_WalletTreatsAMissAsAnEmptyRole(t *testing.T) {
 	t.Parallel()
 
 	accountID := uuid.New()
@@ -70,7 +70,7 @@ func TestMembershipsForWalletTreatsAMissAsAnEmptyRole(t *testing.T) {
 	require.Equal(t, "", accountRole)
 }
 
-func TestMembershipsForWalletDeniesWhenAMembershipReadFails(t *testing.T) {
+func TestMemberships_For_WalletDeniesWhenAMembershipReadFails(t *testing.T) {
 	t.Parallel()
 
 	accountID := uuid.New()
@@ -95,7 +95,7 @@ func TestMembershipsForWalletDeniesWhenAMembershipReadFails(t *testing.T) {
 	require.Equal(t, "", accountRole)
 }
 
-func TestMembershipsForWalletKeepsTheOtherRoleWhenAMembershipIsMissing(t *testing.T) {
+func TestMemberships_For_WalletKeepsTheOtherRoleWhenAMembershipIsMissing(t *testing.T) {
 	t.Parallel()
 
 	accountID := uuid.New()
@@ -119,7 +119,7 @@ func TestMembershipsForWalletKeepsTheOtherRoleWhenAMembershipIsMissing(t *testin
 	require.Equal(t, "", accountRole)
 }
 
-func TestNewMembershipsRejectsAMissingDependency(t *testing.T) {
+func TestNew_Memberships_RejectsAMissingDependency(t *testing.T) {
 	t.Parallel()
 
 	wallets := walletrecords.NewWallets(&roleWallets{})

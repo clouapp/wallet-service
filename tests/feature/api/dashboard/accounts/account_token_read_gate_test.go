@@ -31,7 +31,7 @@ type AccountTokenReadGateTestSuite struct {
 	goravelTesting.TestCase
 }
 
-func TestAccountTokenReadGateSuite(t *testing.T) {
+func TestAccount_Token_ReadGateSuite(t *testing.T) {
 	suite.Run(t, new(AccountTokenReadGateTestSuite))
 }
 
@@ -39,7 +39,7 @@ func (s *AccountTokenReadGateTestSuite) SetupTest() {
 	fixtures.TestDB(s.T())
 }
 
-func (s *AccountTokenReadGateTestSuite) TestAccountTokenListFollowsTheAccountRole() {
+func (s *AccountTokenReadGateTestSuite) TestAccount_Token_ListFollowsTheAccountRole() {
 	accountID := uuid.New()
 	s.Require().NoError(facades.Orm().Query().Create(&models.Account{
 		ID: accountID, Name: "Account " + accountID.String()[:8], Status: models.StatusActive, Environment: "prod",

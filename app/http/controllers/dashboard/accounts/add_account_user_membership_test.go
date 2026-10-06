@@ -27,7 +27,7 @@ import (
 // TestAddAccountUserDeniesWhenTheMembershipReadFails proves a failed read of
 // the membership just written does not answer 201. A missing row stays the
 // created response; this store error is not that answer.
-func TestAddAccountUserDeniesWhenTheMembershipReadFails(t *testing.T) {
+func TestAdd_Account_UserDeniesWhenTheMembershipReadFails(t *testing.T) {
 	previous := foundation.App
 	foundation.App = quietApp{}
 	t.Cleanup(func() { foundation.App = previous })

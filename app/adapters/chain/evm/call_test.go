@@ -30,7 +30,7 @@ func evmCallTestCall() chain.EVMCall {
 	}
 }
 
-func TestBuildCall_SigningHashIsTheEIP155HashOfTheCall(t *testing.T) {
+func TestBuild_Call_SigningHashIsTheEIP155HashOfTheCall(t *testing.T) {
 	adapter := NewEVMLive(EVMConfig{ChainIDStr: "arbitrum", NetworkID: evmCallTestNetworkID})
 	call := evmCallTestCall()
 
@@ -48,7 +48,7 @@ func TestBuildCall_SigningHashIsTheEIP155HashOfTheCall(t *testing.T) {
 	}
 }
 
-func TestBuildCall_SignedCallDecodesToTheRequestedTransaction(t *testing.T) {
+func TestBuild_Call_SignedCallDecodesToTheRequestedTransaction(t *testing.T) {
 	adapter := NewEVMLive(EVMConfig{ChainIDStr: "arbitrum", NetworkID: evmCallTestNetworkID})
 	privateKey, err := crypto.GenerateKey()
 	if err != nil {
@@ -86,7 +86,7 @@ func TestBuildCall_SignedCallDecodesToTheRequestedTransaction(t *testing.T) {
 	}
 }
 
-func TestBuildCall_AllowsAPlainTransferWithoutData(t *testing.T) {
+func TestBuild_Call_AllowsAPlainTransferWithoutData(t *testing.T) {
 	adapter := NewEVMLive(EVMConfig{ChainIDStr: "arbitrum", NetworkID: evmCallTestNetworkID})
 	call := evmCallTestCall()
 	call.Data = nil
@@ -95,7 +95,7 @@ func TestBuildCall_AllowsAPlainTransferWithoutData(t *testing.T) {
 	}
 }
 
-func TestBuildCall_RejectsIncompleteCalls(t *testing.T) {
+func TestBuild_Call_RejectsIncompleteCalls(t *testing.T) {
 	adapter := NewEVMLive(EVMConfig{ChainIDStr: "arbitrum", NetworkID: evmCallTestNetworkID})
 	cases := map[string]func(*chain.EVMCall){
 		"bad destination":    func(c *chain.EVMCall) { c.To = "0x1234" },

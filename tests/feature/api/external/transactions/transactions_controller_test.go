@@ -23,7 +23,7 @@ type TransactionsControllerTestSuite struct {
 	goravelTesting.TestCase
 }
 
-func TestTransactionsControllerSuite(t *testing.T) {
+func TestTransactions_Controller_Suite(t *testing.T) {
 	suite.Run(t, new(TransactionsControllerTestSuite))
 }
 
@@ -76,7 +76,7 @@ func seedTransactionForAccount(t *testing.T, accountID uuid.UUID, chain string) 
 	return txID.String()
 }
 
-func (s *TransactionsControllerTestSuite) TestListTransactions_Empty() {
+func (s *TransactionsControllerTestSuite) TestList_Transactions_Empty() {
 	testutil.SeededTestDB(s.T())
 	_, bearer, _ := ctltestutil.SetupAPIAuth(s.T(), false)
 
@@ -92,7 +92,7 @@ func (s *TransactionsControllerTestSuite) TestListTransactions_Empty() {
 	s.Empty(payload.Data)
 }
 
-func (s *TransactionsControllerTestSuite) TestListTransactions_WithFilters() {
+func (s *TransactionsControllerTestSuite) TestList_Transactions_WithFilters() {
 	testutil.SeededTestDB(s.T())
 	_, bearer, _ := ctltestutil.SetupAPIAuth(s.T(), false)
 
@@ -109,7 +109,7 @@ func (s *TransactionsControllerTestSuite) TestListTransactions_WithFilters() {
 	s.NotNil(payload.Data)
 }
 
-func (s *TransactionsControllerTestSuite) TestListTransactions_WithPagination() {
+func (s *TransactionsControllerTestSuite) TestList_Transactions_WithPagination() {
 	testutil.SeededTestDB(s.T())
 	_, bearer, _ := ctltestutil.SetupAPIAuth(s.T(), false)
 
@@ -118,7 +118,7 @@ func (s *TransactionsControllerTestSuite) TestListTransactions_WithPagination() 
 		AssertOk()
 }
 
-func (s *TransactionsControllerTestSuite) TestListTransactions_ScopedToAccount() {
+func (s *TransactionsControllerTestSuite) TestList_Transactions_ScopedToAccount() {
 	testutil.SeededTestDB(s.T())
 	accountA, bearerA, _ := ctltestutil.SetupAPIAuth(s.T(), false)
 	accountB, bearerB, _ := ctltestutil.SetupAPIAuth(s.T(), false)
@@ -149,7 +149,7 @@ func (s *TransactionsControllerTestSuite) TestListTransactions_ScopedToAccount()
 	_ = accountB
 }
 
-func (s *TransactionsControllerTestSuite) TestGetTransaction_NotFound() {
+func (s *TransactionsControllerTestSuite) TestGet_Transaction_NotFound() {
 	testutil.SeededTestDB(s.T())
 	_, bearer, _ := ctltestutil.SetupAPIAuth(s.T(), false)
 
@@ -158,7 +158,7 @@ func (s *TransactionsControllerTestSuite) TestGetTransaction_NotFound() {
 		AssertNotFound()
 }
 
-func (s *TransactionsControllerTestSuite) TestGetTransaction_InvalidUUID() {
+func (s *TransactionsControllerTestSuite) TestGet_Transaction_InvalidUUID() {
 	testutil.SeededTestDB(s.T())
 	_, bearer, _ := ctltestutil.SetupAPIAuth(s.T(), false)
 
@@ -167,7 +167,7 @@ func (s *TransactionsControllerTestSuite) TestGetTransaction_InvalidUUID() {
 		AssertBadRequest()
 }
 
-func (s *TransactionsControllerTestSuite) TestGetTransaction_Success() {
+func (s *TransactionsControllerTestSuite) TestGet_Transaction_Success() {
 	testutil.SeededTestDB(s.T())
 	accountID, bearer, _ := ctltestutil.SetupAPIAuth(s.T(), false)
 
@@ -183,7 +183,7 @@ func (s *TransactionsControllerTestSuite) TestGetTransaction_Success() {
 		})
 }
 
-func (s *TransactionsControllerTestSuite) TestListUserTransactions() {
+func (s *TransactionsControllerTestSuite) TestList_User_Transactions() {
 	testutil.SeededTestDB(s.T())
 	_, bearer, _ := ctltestutil.SetupAPIAuth(s.T(), false)
 
@@ -199,7 +199,7 @@ func (s *TransactionsControllerTestSuite) TestListUserTransactions() {
 	s.NotNil(payload.Data)
 }
 
-func (s *TransactionsControllerTestSuite) TestListUserTransactions_WithFilters() {
+func (s *TransactionsControllerTestSuite) TestList_UserTransactions_WithFilters() {
 	testutil.SeededTestDB(s.T())
 	_, bearer, _ := ctltestutil.SetupAPIAuth(s.T(), false)
 

@@ -7,7 +7,7 @@ import (
 	"github.com/macrowallets/waas/app/services/refresh"
 )
 
-func TestNewRefreshCurrencyKeepsItsDependencies(t *testing.T) {
+func TestNew_Refresh_CurrencyKeepsItsDependencies(t *testing.T) {
 	registry := chainpkg.NewRegistry()
 	balances := refresh.NewBalanceService(refresh.Deps{})
 	dispatcher := &refreshAddressDispatcherStub{}
@@ -30,7 +30,7 @@ func TestNewRefreshCurrencyKeepsItsDependencies(t *testing.T) {
 	}
 }
 
-func TestNewRefreshCurrencyRequiresARegistry(t *testing.T) {
+func TestNew_Refresh_CurrencyRequiresARegistry(t *testing.T) {
 	defer func() {
 		got := recover()
 		if got != "refresh:currency: chain registry is required" {
@@ -43,7 +43,7 @@ func TestNewRefreshCurrencyRequiresARegistry(t *testing.T) {
 	})
 }
 
-func TestNewRefreshCurrencyRequiresBalances(t *testing.T) {
+func TestNew_Refresh_CurrencyRequiresBalances(t *testing.T) {
 	defer func() {
 		got := recover()
 		if got != "refresh:currency: balance refresh service is required" {
@@ -56,7 +56,7 @@ func TestNewRefreshCurrencyRequiresBalances(t *testing.T) {
 	})
 }
 
-func TestNewRefreshCurrencyRequiresADispatcher(t *testing.T) {
+func TestNew_Refresh_CurrencyRequiresADispatcher(t *testing.T) {
 	defer func() {
 		got := recover()
 		if got != "refresh:currency: refresh dispatcher is required" {

@@ -2,7 +2,7 @@ package policies
 
 import "testing"
 
-func TestAPITokenPermissionCatalogIsClosed(t *testing.T) {
+func TestAPI_Token_PermissionCatalogIsClosed(t *testing.T) {
 	t.Parallel()
 
 	want := []string{
@@ -29,7 +29,7 @@ func TestAPITokenPermissionCatalogIsClosed(t *testing.T) {
 	}
 }
 
-func TestHoldsAPITokenPermission(t *testing.T) {
+func TestHolds_API_TokenPermission(t *testing.T) {
 	t.Parallel()
 
 	catalog := APITokenPermissionCatalog()
@@ -67,7 +67,7 @@ func TestHoldsAPITokenPermission(t *testing.T) {
 	}
 }
 
-func TestAPITokenAllows(t *testing.T) {
+func TestAPI_Token_Allows(t *testing.T) {
 	t.Parallel()
 
 	for _, permission := range APITokenPermissionCatalog() {
@@ -95,7 +95,7 @@ func TestAPITokenAllows(t *testing.T) {
 	}
 }
 
-func TestMintAPITokenPermissionsRefusesWhatTheCreatorDoesNotHold(t *testing.T) {
+func TestMint_API_TokenPermissionsRefusesWhatTheCreatorDoesNotHold(t *testing.T) {
 	t.Parallel()
 
 	if !MintAPITokenPermissions(roleOwner, nil).Allowed() {

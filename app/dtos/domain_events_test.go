@@ -6,7 +6,7 @@ import (
 	"github.com/goravel/framework/contracts/event"
 )
 
-func TestWalletCreatedPassesArgsThrough(t *testing.T) {
+func TestWallet_Created_PassesArgsThrough(t *testing.T) {
 	e := &WalletCreated{}
 	args := []event.Arg{
 		{Type: "string", Value: "wallet-1"},
@@ -27,7 +27,7 @@ func TestWalletCreatedPassesArgsThrough(t *testing.T) {
 	}
 }
 
-func TestWalletActivatedPassesArgsThrough(t *testing.T) {
+func TestWallet_Activated_PassesArgsThrough(t *testing.T) {
 	e := &WalletActivated{}
 	args := []event.Arg{
 		{Type: "string", Value: "wallet-2"},
@@ -45,7 +45,7 @@ func TestWalletActivatedPassesArgsThrough(t *testing.T) {
 	}
 }
 
-func TestDepositDetectedPassesArgsThrough(t *testing.T) {
+func TestDeposit_Detected_PassesArgsThrough(t *testing.T) {
 	e := &DepositDetected{}
 	args := []event.Arg{
 		{Type: "string", Value: "wallet-3"},
@@ -63,7 +63,7 @@ func TestDepositDetectedPassesArgsThrough(t *testing.T) {
 	}
 }
 
-func TestWithdrawalBroadcastedPassesArgsThrough(t *testing.T) {
+func TestWithdrawal_Broadcasted_PassesArgsThrough(t *testing.T) {
 	e := &WithdrawalBroadcasted{}
 	args := []event.Arg{
 		{Type: "string", Value: "wallet-4"},
@@ -81,7 +81,7 @@ func TestWithdrawalBroadcastedPassesArgsThrough(t *testing.T) {
 	}
 }
 
-func TestWalletRefreshRequestedPassesArgsThrough(t *testing.T) {
+func TestWallet_Refresh_RequestedPassesArgsThrough(t *testing.T) {
 	e := &WalletRefreshRequested{}
 	args := []event.Arg{
 		{Type: "string", Value: "wallet-5"},
@@ -99,7 +99,7 @@ func TestWalletRefreshRequestedPassesArgsThrough(t *testing.T) {
 	}
 }
 
-func TestAllEventsHandleEmptyArgs(t *testing.T) {
+func TestAll_Events_HandleEmptyArgs(t *testing.T) {
 	events := []struct {
 		name string
 		evt  interface {
@@ -125,7 +125,7 @@ func TestAllEventsHandleEmptyArgs(t *testing.T) {
 	}
 }
 
-func TestAllEventsPreserveArgTypes(t *testing.T) {
+func TestAll_Events_PreserveArgTypes(t *testing.T) {
 	events := []struct {
 		name string
 		evt  interface {

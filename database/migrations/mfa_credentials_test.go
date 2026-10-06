@@ -11,7 +11,7 @@ import (
 	"github.com/macrowallets/waas/tests/feature/support/fixtures"
 )
 
-func TestCopyLegacyTotpSealsTheSecretAndMovesRecoveryCodes(t *testing.T) {
+func TestCopy_Legacy_TotpSealsTheSecretAndMovesRecoveryCodes(t *testing.T) {
 	fixtures.TestDB(t)
 	require.NoError(t, (&migrations.M00000000000550DropLegacyTotpSecret{}).Down())
 
@@ -72,7 +72,7 @@ func TestCopyLegacyTotpSealsTheSecretAndMovesRecoveryCodes(t *testing.T) {
 	require.NoError(t, (&migrations.M00000000000510CreateMfaBackupCodesTable{}).Up())
 }
 
-func TestCopyLegacyTotpLeavesTheColumnWhenTheCopyDoesNotMatch(t *testing.T) {
+func TestCopy_Legacy_TotpLeavesTheColumnWhenTheCopyDoesNotMatch(t *testing.T) {
 	fixtures.TestDB(t)
 	require.NoError(t, (&migrations.M00000000000550DropLegacyTotpSecret{}).Down())
 

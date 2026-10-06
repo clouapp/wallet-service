@@ -12,7 +12,7 @@ import (
 	"github.com/macrowallets/waas/app/models"
 )
 
-func TestWebhookConfigKeepsTheModelWire(t *testing.T) {
+func TestWebhook_Config_KeepsTheModelWire(t *testing.T) {
 	t.Parallel()
 
 	id := uuid.MustParse("11111111-1111-4111-8111-111111111111")
@@ -65,7 +65,7 @@ func TestWebhookConfigKeepsTheModelWire(t *testing.T) {
 	}
 }
 
-func TestWebhookConfigsPreserveSliceNilness(t *testing.T) {
+func TestWebhook_Configs_PreserveSliceNilness(t *testing.T) {
 	t.Parallel()
 
 	if webhooks.WebhookConfigsFrom(nil) != nil {

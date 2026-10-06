@@ -13,7 +13,7 @@ import (
 	"github.com/macrowallets/waas/app/models"
 )
 
-func TestUserFromMatchesTheModelWire(t *testing.T) {
+func TestUser_From_MatchesTheModelWire(t *testing.T) {
 	t.Parallel()
 
 	id := uuid.MustParse("11111111-1111-4111-8111-111111111111")

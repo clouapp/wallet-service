@@ -2,7 +2,7 @@ package models
 
 import "testing"
 
-func TestAccountPermissionsAreTheClosedCatalog(t *testing.T) {
+func TestAccount_Permissions_AreTheClosedCatalog(t *testing.T) {
 	want := []string{
 		"account.read",
 		"account.write",

@@ -20,7 +20,7 @@ type PasswordResetTokenRepositoryTestSuite struct {
 	userRepo *repositories.UserRepository
 }
 
-func TestPasswordResetTokenRepositorySuite(t *testing.T) {
+func TestPassword_Reset_TokenRepositorySuite(t *testing.T) {
 	suite.Run(t, new(PasswordResetTokenRepositoryTestSuite))
 }
 
@@ -36,7 +36,7 @@ func (s *PasswordResetTokenRepositoryTestSuite) createUser() uuid.UUID {
 	return u.ID
 }
 
-func (s *PasswordResetTokenRepositoryTestSuite) TestCreate_Success() {
+func (s *PasswordResetTokenRepositoryTestSuite) TestPasswordResetTokenRepository_Create_Success() {
 	userID := s.createUser()
 	prt := &models.PasswordResetToken{
 		ID:        uuid.New(),
@@ -48,7 +48,7 @@ func (s *PasswordResetTokenRepositoryTestSuite) TestCreate_Success() {
 	s.NoError(err)
 }
 
-func (s *PasswordResetTokenRepositoryTestSuite) TestFindValidTokens() {
+func (s *PasswordResetTokenRepositoryTestSuite) TestFind_Valid_Tokens() {
 	userID := s.createUser()
 
 	valid := &models.PasswordResetToken{ID: uuid.New(), UserID: userID, TokenHash: "valid", ExpiresAt: time.Now().Add(1 * time.Hour)}
@@ -68,7 +68,7 @@ func (s *PasswordResetTokenRepositoryTestSuite) TestFindValidTokens() {
 	s.Equal(valid.ID, tokens[0].ID)
 }
 
-func (s *PasswordResetTokenRepositoryTestSuite) TestMarkUsed() {
+func (s *PasswordResetTokenRepositoryTestSuite) TestPasswordResetTokenRepository_Mark_Used() {
 	userID := s.createUser()
 	prt := &models.PasswordResetToken{ID: uuid.New(), UserID: userID, TokenHash: "tok", ExpiresAt: time.Now().Add(1 * time.Hour)}
 	s.Require().NoError(s.repo.Create(context.Background(), prt))

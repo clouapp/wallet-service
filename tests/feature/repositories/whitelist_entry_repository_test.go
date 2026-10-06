@@ -17,7 +17,7 @@ type WhitelistEntryRepositoryTestSuite struct {
 	repo *repositories.WhitelistEntryRepository
 }
 
-func TestWhitelistEntryRepositorySuite(t *testing.T) {
+func TestWhitelist_Entry_RepositorySuite(t *testing.T) {
 	suite.Run(t, new(WhitelistEntryRepositoryTestSuite))
 }
 
@@ -31,7 +31,7 @@ func (s *WhitelistEntryRepositoryTestSuite) insertWallet() uuid.UUID {
 	return w.ID
 }
 
-func (s *WhitelistEntryRepositoryTestSuite) TestCreate_Success() {
+func (s *WhitelistEntryRepositoryTestSuite) TestWhitelistEntryRepository_Create_Success() {
 	walletID := s.insertWallet()
 	entry := &models.WhitelistEntry{
 		ID: uuid.New(), WalletID: walletID,
@@ -41,7 +41,7 @@ func (s *WhitelistEntryRepositoryTestSuite) TestCreate_Success() {
 	s.NoError(err)
 }
 
-func (s *WhitelistEntryRepositoryTestSuite) TestFindByWalletID() {
+func (s *WhitelistEntryRepositoryTestSuite) TestFind_By_WalletID() {
 	walletID := s.insertWallet()
 	s.Require().NoError(s.repo.Create(context.Background(), &models.WhitelistEntry{ID: uuid.New(), WalletID: walletID, Address: "0x1"}))
 	s.Require().NoError(s.repo.Create(context.Background(), &models.WhitelistEntry{ID: uuid.New(), WalletID: walletID, Address: "0x2"}))
@@ -51,7 +51,7 @@ func (s *WhitelistEntryRepositoryTestSuite) TestFindByWalletID() {
 	s.Len(entries, 2)
 }
 
-func (s *WhitelistEntryRepositoryTestSuite) TestFindByIDAndWallet_Found() {
+func (s *WhitelistEntryRepositoryTestSuite) TestFind_ByIDAndWallet_Found() {
 	walletID := s.insertWallet()
 	entry := &models.WhitelistEntry{ID: uuid.New(), WalletID: walletID, Address: "0xfind"}
 	s.Require().NoError(s.repo.Create(context.Background(), entry))
@@ -62,7 +62,7 @@ func (s *WhitelistEntryRepositoryTestSuite) TestFindByIDAndWallet_Found() {
 	s.Equal("0xfind", found.Address)
 }
 
-func (s *WhitelistEntryRepositoryTestSuite) TestFindByIDAndWallet_WrongWallet() {
+func (s *WhitelistEntryRepositoryTestSuite) TestFind_ByIDAndWallet_WrongWallet() {
 	walletID := s.insertWallet()
 	otherWallet := s.insertWallet()
 	entry := &models.WhitelistEntry{ID: uuid.New(), WalletID: walletID, Address: "0xfind"}
@@ -73,7 +73,7 @@ func (s *WhitelistEntryRepositoryTestSuite) TestFindByIDAndWallet_WrongWallet() 
 	s.Nil(found)
 }
 
-func (s *WhitelistEntryRepositoryTestSuite) TestDelete() {
+func (s *WhitelistEntryRepositoryTestSuite) TestWhitelistEntryRepository_Delete_Succeeds() {
 	walletID := s.insertWallet()
 	entry := &models.WhitelistEntry{ID: uuid.New(), WalletID: walletID, Address: "0xdel"}
 	s.Require().NoError(s.repo.Create(context.Background(), entry))

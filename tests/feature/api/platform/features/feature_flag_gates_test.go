@@ -34,7 +34,7 @@ type featureGateSuite struct {
 	goravelTesting.TestCase
 }
 
-func TestFeatureFlagGates(t *testing.T) {
+func TestFeature_Flag_Gates(t *testing.T) {
 	suite.Run(t, new(featureGateSuite))
 }
 
@@ -42,11 +42,11 @@ func (s *featureGateSuite) SetupTest() {
 	fixtures.TestDB(s.T())
 }
 
-func (s *featureGateSuite) TestWithdrawalsEnabled() {
+func (s *featureGateSuite) TestFeatureGate_Withdrawals_Enabled() {
 	s.gateBothSurfaces(features.FlagWithdrawalsEnabled, features.CodeWithdrawalsPaused, "/withdrawals")
 }
 
-func (s *featureGateSuite) TestSweepEnabled() {
+func (s *featureGateSuite) TestFeatureGate_Sweep_Enabled() {
 	s.gateBothSurfaces(features.FlagSweepEnabled, features.CodeSweepPaused, "/consolidate")
 }
 

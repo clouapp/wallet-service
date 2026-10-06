@@ -2,7 +2,7 @@ package mpcshare
 
 import "testing"
 
-func TestDiscardPassphraseDropsTheValue(t *testing.T) {
+func TestDiscard_Passphrase_DropsTheValue(t *testing.T) {
 	value := "not-a-real-passphrase"
 	DiscardPassphrase(&value)
 	if value != "" {

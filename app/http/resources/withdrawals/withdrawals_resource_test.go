@@ -13,7 +13,7 @@ import (
 	"github.com/macrowallets/waas/app/models"
 )
 
-func TestFailureCodesAreThePublicList(t *testing.T) {
+func TestFailure_Codes_AreThePublicList(t *testing.T) {
 	t.Parallel()
 
 	codes := []struct{ got, want string }{
@@ -42,7 +42,7 @@ func TestFailureCodesAreThePublicList(t *testing.T) {
 	}
 }
 
-func TestWithdrawalKeepsTheModelWire(t *testing.T) {
+func TestWithdrawal_Keeps_TheModelWire(t *testing.T) {
 	t.Parallel()
 
 	id := uuid.MustParse("11111111-1111-4111-8111-111111111111")
@@ -94,7 +94,7 @@ func TestWithdrawalKeepsTheModelWire(t *testing.T) {
 	}
 }
 
-func TestWithdrawalsPreserveSliceNilness(t *testing.T) {
+func TestWithdrawals_Preserve_SliceNilness(t *testing.T) {
 	t.Parallel()
 
 	if withdrawals.WithdrawalsFrom(nil) != nil {

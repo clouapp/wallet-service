@@ -38,7 +38,7 @@ type criticalEndpointsSuite struct {
 	goravelTesting.TestCase
 }
 
-func TestCriticalEndpointsSuite(t *testing.T) {
+func TestCritical_Endpoints_Suite(t *testing.T) {
 	suite.Run(t, new(criticalEndpointsSuite))
 }
 
@@ -223,7 +223,7 @@ func (s *criticalEndpointsSuite) TestGenerateAddress_SignedToken_OK() {
 // rejects a signed-required token that carries no X-Signature header.
 // No wallet seeding is needed because the middleware aborts before the
 // APIWalletContext runs.
-func (s *criticalEndpointsSuite) TestGenerateAddress_SignedTokenMissingSig_401() {
+func (s *criticalEndpointsSuite) TestGenerateAddress_SignedTokenMissingSig_Code401() {
 	jwt := s.mintSignedToken("gen-addr-missing-sig")
 
 	body := `{"external_user_id":"user_missing_sig"}`
@@ -263,7 +263,7 @@ func (s *criticalEndpointsSuite) TestConsolidate_SignedToken_AcceptsRequest() {
 	s.assertNoMiddlewareReject(resp)
 }
 
-func (s *criticalEndpointsSuite) TestConsolidate_SignedTokenMissingSig_401() {
+func (s *criticalEndpointsSuite) TestConsolidate_SignedTokenMissingSig_Code401() {
 	jwt := s.mintSignedToken("consolidate-missing-sig")
 
 	body := `{"asset":"eth","passphrase":"test-pass-phrase-12345"}`
@@ -303,7 +303,7 @@ func (s *criticalEndpointsSuite) TestCreateWithdrawal_UnsignedToken_AcceptsReque
 // A stored daily_usd decimal string is the cap withdraw.Service enforces.
 // The handler must not refuse that JSON before the passphrase check. The
 // seeded share cannot decrypt, so the request stops there as an internal error.
-func (s *criticalEndpointsSuite) TestCreateWithdrawal_StringDailyCapReachesPassphrase() {
+func (s *criticalEndpointsSuite) TestCreate_Withdrawal_StringDailyCapReachesPassphrase() {
 	walletID, jwt := s.seedAccountWalletWithLimit(false, "withdrawal-string-cap", `{"daily_usd":"12.50"}`)
 
 	resp := s.post("/api/v1/wallets/"+walletID+"/withdrawals", jwt, critWithdrawalBody, "")
@@ -326,7 +326,7 @@ func (s *criticalEndpointsSuite) TestCreateWithdrawal_SignedToken_AcceptsRequest
 	s.assertNoMiddlewareReject(resp)
 }
 
-func (s *criticalEndpointsSuite) TestCreateWithdrawal_SignedTokenMissingSig_401() {
+func (s *criticalEndpointsSuite) TestCreateWithdrawal_SignedTokenMissingSig_Code401() {
 	jwt := s.mintSignedToken("withdrawal-missing-sig")
 
 	s.post("/api/v1/wallets/"+uuid.NewString()+"/withdrawals", jwt, critWithdrawalBody, "").

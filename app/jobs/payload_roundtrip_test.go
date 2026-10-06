@@ -12,7 +12,7 @@ import (
 // TestEachWalletJobRoundTripsPayloadCallsOneServiceAndCarriesNoCredential
 // covers the wallet jobs that had a service-call test and no payload
 // round-trip or credential check. SendCredentialMailJob already has both.
-func TestEachWalletJobRoundTripsPayloadCallsOneServiceAndCarriesNoCredential(t *testing.T) {
+func TestEach_Wallet_JobRoundTripsPayloadCallsOneServiceAndCarriesNoCredential(t *testing.T) {
 	walletID := uuid.MustParse("11111111-1111-1111-1111-111111111111")
 	const chainID = "eth"
 	args, err := WalletArgs(walletID.String(), chainID)

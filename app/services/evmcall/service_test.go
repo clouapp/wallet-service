@@ -156,7 +156,7 @@ func (h *testHarness) request() Request {
 		Value: big.NewInt(30_000_000_000_000_000), Tag: testTag}
 }
 
-func TestSimulate_PlansWithoutSigningOrSending(t *testing.T) {
+func TestSimulate_Plans_WithoutSigningOrSending(t *testing.T) {
 	h := newHarness(t)
 	plan, err := h.service.Simulate(context.Background(), h.request())
 	if err != nil {
@@ -180,7 +180,7 @@ func TestSimulate_PlansWithoutSigningOrSending(t *testing.T) {
 	}
 }
 
-func TestSimulate_HonorsAGasLimitThatCoversTheEstimate(t *testing.T) {
+func TestSimulate_Honors_AGasLimitThatCoversTheEstimate(t *testing.T) {
 	h := newHarness(t)
 	request := h.request()
 	request.GasLimit = 150_000
@@ -190,7 +190,7 @@ func TestSimulate_HonorsAGasLimitThatCoversTheEstimate(t *testing.T) {
 	}
 }
 
-func TestSimulate_PlainTransferNeedsNoBytecode(t *testing.T) {
+func TestSimulate_Plain_TransferNeedsNoBytecode(t *testing.T) {
 	h := newHarness(t)
 	h.rpc.code = nil
 	request := h.request()
@@ -203,7 +203,7 @@ func TestSimulate_PlainTransferNeedsNoBytecode(t *testing.T) {
 	}
 }
 
-func TestSimulate_RefusesUnsafeCalls(t *testing.T) {
+func TestSimulate_Refuses_UnsafeCalls(t *testing.T) {
 	cases := map[string]func(h *testHarness, r *Request){
 		"mainnet chain id":        func(_ *testHarness, r *Request) { r.ChainID = 1 },
 		"bsc mainnet":             func(_ *testHarness, r *Request) { r.ChainID = 56 },
@@ -235,7 +235,7 @@ func TestSimulate_RefusesUnsafeCalls(t *testing.T) {
 	}
 }
 
-func TestBroadcast_SignsForTheRequestedChainAndSendsOnce(t *testing.T) {
+func TestBroadcast_Signs_ForTheRequestedChainAndSendsOnce(t *testing.T) {
 	h := newHarness(t)
 	result, err := h.service.Broadcast(context.Background(), h.request(), testPassphrase)
 	if err != nil {
@@ -258,7 +258,7 @@ func TestBroadcast_SignsForTheRequestedChainAndSendsOnce(t *testing.T) {
 	assertFileLacks(t, result.ResultPath, testPassphrase)
 }
 
-func TestBroadcast_ASecondRunWithTheSameTagNeverSends(t *testing.T) {
+func TestBroadcast_A_SecondRunWithTheSameTagNeverSends(t *testing.T) {
 	h := newHarness(t)
 	if _, err := h.service.Broadcast(context.Background(), h.request(), testPassphrase); err != nil {
 		t.Fatal(err)
@@ -273,7 +273,7 @@ func TestBroadcast_ASecondRunWithTheSameTagNeverSends(t *testing.T) {
 	}
 }
 
-func TestBroadcast_ASendErrorIsNeverRetried(t *testing.T) {
+func TestBroadcast_A_SendErrorIsNeverRetried(t *testing.T) {
 	h := newHarness(t)
 	h.rpc.sendErr = errors.New("insufficient funds for gas")
 	result, err := h.service.Broadcast(context.Background(), h.request(), testPassphrase)
@@ -286,7 +286,7 @@ func TestBroadcast_ASendErrorIsNeverRetried(t *testing.T) {
 	assertFileHolds(t, result.ResultPath, "insufficient funds for gas")
 }
 
-func TestBroadcast_ASendErrorForAKnownTransactionStillWaitsForTheReceipt(t *testing.T) {
+func TestBroadcast_A_SendErrorForAKnownTransactionStillWaitsForTheReceipt(t *testing.T) {
 	h := newHarness(t)
 	h.rpc.sendErr, h.rpc.known = errors.New("already known"), true
 	result, err := h.service.Broadcast(context.Background(), h.request(), testPassphrase)
@@ -298,7 +298,7 @@ func TestBroadcast_ASendErrorForAKnownTransactionStillWaitsForTheReceipt(t *test
 	}
 }
 
-func TestBroadcast_ANonceThatMovedAfterSigningSendsNothing(t *testing.T) {
+func TestBroadcast_A_NonceThatMovedAfterSigningSendsNothing(t *testing.T) {
 	h := newHarness(t)
 	h.rpc.pendingNonces = []uint64{0, 1}
 	result, err := h.service.Broadcast(context.Background(), h.request(), testPassphrase)
@@ -308,7 +308,7 @@ func TestBroadcast_ANonceThatMovedAfterSigningSendsNothing(t *testing.T) {
 	assertFileHolds(t, result.ClaimPath, testTag)
 }
 
-func TestBroadcast_AnUnexpectedHashStopsBeforeWaiting(t *testing.T) {
+func TestBroadcast_An_UnexpectedHashStopsBeforeWaiting(t *testing.T) {
 	h := newHarness(t)
 	h.rpc.sendHash = "0x" + strings.Repeat("ab", 32)
 	result, err := h.service.Broadcast(context.Background(), h.request(), testPassphrase)
@@ -317,7 +317,7 @@ func TestBroadcast_AnUnexpectedHashStopsBeforeWaiting(t *testing.T) {
 	}
 }
 
-func TestBroadcast_ReportsRevertedAndMissingReceipts(t *testing.T) {
+func TestBroadcast_Reports_RevertedAndMissingReceipts(t *testing.T) {
 	h := newHarness(t)
 	h.rpc.receipts = []*Receipt{{Status: "0x0", BlockNumber: 7, GasUsed: 50_000}}
 	result, err := h.service.Broadcast(context.Background(), h.request(), testPassphrase)
@@ -334,7 +334,7 @@ func TestBroadcast_ReportsRevertedAndMissingReceipts(t *testing.T) {
 	}
 }
 
-func TestBroadcast_RefusesBeforeTouchingTheNode(t *testing.T) {
+func TestBroadcast_Refuses_BeforeTouchingTheNode(t *testing.T) {
 	cases := map[string]func(r *Request) string{
 		"no tag":           func(r *Request) string { r.Tag = ""; return testPassphrase },
 		"bad tag":          func(r *Request) string { r.Tag = "Bad Tag"; return testPassphrase },
@@ -354,7 +354,7 @@ func TestBroadcast_RefusesBeforeTouchingTheNode(t *testing.T) {
 	}
 }
 
-func TestNewService_RequiresRPCAndWallets(t *testing.T) {
+func TestNew_Service_RequiresRPCAndWallets(t *testing.T) {
 	if _, err := NewService(Dependencies{Wallets: fakeWallets{}}); err == nil {
 		t.Error("no rpc: expected an error")
 	}

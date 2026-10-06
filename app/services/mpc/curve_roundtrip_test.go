@@ -70,7 +70,7 @@ func roundTripShares(t *testing.T, name string, shareA, shareB []byte) (recovere
 	return recoveredA, recoveredB
 }
 
-func TestKeygenSignRoundTripSecp256k1(t *testing.T) {
+func TestKeygen_Sign_RoundTripSecp2561(t *testing.T) {
 	svc := NewTSSService()
 	keys, err := svc.Keygen(context.Background(), CurveSecp256k1)
 	if err != nil {
@@ -95,7 +95,7 @@ func TestKeygenSignRoundTripSecp256k1(t *testing.T) {
 	}
 }
 
-func TestKeygenSignRoundTripEd25519(t *testing.T) {
+func TestKeygen_Sign_RoundTripEd25519(t *testing.T) {
 	svc := NewTSSService()
 	keys, err := svc.Keygen(context.Background(), CurveEd25519)
 	if err != nil {

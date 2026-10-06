@@ -9,7 +9,7 @@ import (
 	"github.com/google/uuid"
 )
 
-func TestTestnetNetwork_AllowsOnlyTheTestnets(t *testing.T) {
+func TestTestnet_Network_AllowsOnlyTheTestnets(t *testing.T) {
 	for _, chainID := range []int64{11155111, 421614, 84532, 80002, 97} {
 		if _, err := TestnetNetwork(chainID); err != nil {
 			t.Errorf("%d: %v", chainID, err)
@@ -27,7 +27,7 @@ func TestTestnetNetwork_AllowsOnlyTheTestnets(t *testing.T) {
 	}
 }
 
-func TestRequestValidate_RejectsMalformedRequests(t *testing.T) {
+func TestRequest_Validate_RejectsMalformedRequests(t *testing.T) {
 	valid := Request{WalletID: uuid.New(), ChainID: testChainID, To: testInbox, Value: big.NewInt(1)}
 	if err := valid.Validate(); err != nil {
 		t.Fatal(err)
@@ -50,7 +50,7 @@ func TestRequestValidate_RejectsMalformedRequests(t *testing.T) {
 	}
 }
 
-func TestParseNativeAmount(t *testing.T) {
+func TestParse_Native_Amount(t *testing.T) {
 	cases := map[string]string{
 		"0.03": "30000000000000000", "1": "1000000000000000000", "0": "0",
 		"0.000000000000000001": "1", " 2.5 ": "2500000000000000000",
@@ -68,7 +68,7 @@ func TestParseNativeAmount(t *testing.T) {
 	}
 }
 
-func TestParseWeiAndFormatNative(t *testing.T) {
+func TestParse_Wei_AndFormatNative(t *testing.T) {
 	if wei, err := ParseWei("30000000000000000"); err != nil || FormatNative(wei) != "0.03" {
 		t.Fatalf("wei %v err %v", wei, err)
 	}
@@ -82,7 +82,7 @@ func TestParseWeiAndFormatNative(t *testing.T) {
 	}
 }
 
-func TestDecodeCallData(t *testing.T) {
+func TestDecode_Call_Data(t *testing.T) {
 	for _, empty := range []string{"", "0x", "  "} {
 		if data, err := DecodeCallData(empty); err != nil || data != nil {
 			t.Errorf("%q: %v %v", empty, data, err)

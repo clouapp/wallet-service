@@ -20,7 +20,7 @@ type PlatformEtherscanSettingsTestSuite struct {
 	authSuite
 }
 
-func TestPlatformEtherscanSettingsSuite(t *testing.T) {
+func TestPlatform_Etherscan_SettingsSuite(t *testing.T) {
 	suite.Run(t, new(PlatformEtherscanSettingsTestSuite))
 }
 
@@ -34,7 +34,7 @@ func (s *PlatformEtherscanSettingsTestSuite) SetupTest() {
 	settings.FacadeCache{}.Forget("settings:platform:provider_etherscan")
 }
 
-func (s *PlatformEtherscanSettingsTestSuite) TestAPlatformAdminStoresEnabledAndASealedKey() {
+func (s *PlatformEtherscanSettingsTestSuite) TestA_Platform_AdminStoresEnabledAndASealedKey() {
 	admin := s.seedUser(false)
 	s.grantPlatformAdmin(admin.ID)
 	session := s.signIn(admin.Email)
@@ -113,7 +113,7 @@ func (s *PlatformEtherscanSettingsTestSuite) TestAPlatformAdminStoresEnabledAndA
 	))
 }
 
-func (s *PlatformEtherscanSettingsTestSuite) TestANonAdminIsForbidden() {
+func (s *PlatformEtherscanSettingsTestSuite) TestA_Non_AdminIsForbidden() {
 	member := s.seedUser(false)
 	session := s.signIn(member.Email)
 	const fixture = "provider-etherscan-key-fixture"

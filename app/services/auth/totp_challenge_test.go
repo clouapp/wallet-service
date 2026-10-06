@@ -36,7 +36,7 @@ func redisAttemptLimiter(t *testing.T, window time.Duration) *authsvc.CacheAttem
 	return limiter
 }
 
-func TestCacheTOTPChallengeStore_IssueAndResolve(t *testing.T) {
+func TestCache_TOTPChallengeStore_IssueAndResolve(t *testing.T) {
 	store := redisChallengeStore(t, time.Minute)
 	userID := uuid.New()
 
@@ -58,7 +58,7 @@ func TestCacheTOTPChallengeStore_IssueAndResolve(t *testing.T) {
 	require.Equal(t, userID, again.UserID)
 }
 
-func TestCacheTOTPChallengeStore_KeysDoNotContainTheToken(t *testing.T) {
+func TestCache_TOTPChallengeStore_KeysDoNotContainTheToken(t *testing.T) {
 	client := testutil.TestRedis(t)
 	store := redisChallengeStore(t, time.Minute)
 
@@ -71,7 +71,7 @@ func TestCacheTOTPChallengeStore_KeysDoNotContainTheToken(t *testing.T) {
 	require.Empty(t, keys)
 }
 
-func TestCacheTOTPChallengeStore_ConsumeIsSingleUse(t *testing.T) {
+func TestCache_TOTPChallengeStore_ConsumeIsSingleUse(t *testing.T) {
 	store := redisChallengeStore(t, time.Minute)
 	token, err := store.Issue(uuid.New())
 	require.NoError(t, err)
@@ -83,7 +83,7 @@ func TestCacheTOTPChallengeStore_ConsumeIsSingleUse(t *testing.T) {
 	require.False(t, ok, "a consumed challenge no longer resolves")
 }
 
-func TestCacheTOTPChallengeStore_ConcurrentConsumeHasOneWinner(t *testing.T) {
+func TestCache_TOTPChallengeStore_ConcurrentConsumeHasOneWinner(t *testing.T) {
 	store := redisChallengeStore(t, time.Minute)
 	token, err := store.Issue(uuid.New())
 	require.NoError(t, err)
@@ -108,7 +108,7 @@ func TestCacheTOTPChallengeStore_ConcurrentConsumeHasOneWinner(t *testing.T) {
 	require.Equal(t, 1, winners)
 }
 
-func TestCacheTOTPChallengeStore_Expires(t *testing.T) {
+func TestCache_TOTPChallengeStore_Expires(t *testing.T) {
 	store := redisChallengeStore(t, time.Second)
 	token, err := store.Issue(uuid.New())
 	require.NoError(t, err)
@@ -120,7 +120,7 @@ func TestCacheTOTPChallengeStore_Expires(t *testing.T) {
 	require.False(t, ok)
 }
 
-func TestCacheTOTPChallengeStore_RevokeAndUnknownTokens(t *testing.T) {
+func TestCache_TOTPChallengeStore_RevokeAndUnknownTokens(t *testing.T) {
 	store := redisChallengeStore(t, time.Minute)
 	token, err := store.Issue(uuid.New())
 	require.NoError(t, err)
@@ -138,7 +138,7 @@ func TestCacheTOTPChallengeStore_RevokeAndUnknownTokens(t *testing.T) {
 	require.False(t, store.Consume(""))
 }
 
-func TestCacheTOTPChallengeStore_ValidatesInput(t *testing.T) {
+func TestCache_TOTPChallengeStore_ValidatesInput(t *testing.T) {
 	_, err := authsvc.NewCacheTOTPChallengeStore(authsvc.ChallengeStoreDeps{TTL: time.Minute})
 	require.Error(t, err)
 	_, err = authsvc.NewCacheTOTPChallengeStore(authsvc.ChallengeStoreDeps{
@@ -152,7 +152,7 @@ func TestCacheTOTPChallengeStore_ValidatesInput(t *testing.T) {
 	require.Error(t, err)
 }
 
-func TestCacheAttemptLimiter_CountsAndResets(t *testing.T) {
+func TestCache_AttemptLimiter_CountsAndResets(t *testing.T) {
 	limiter := redisAttemptLimiter(t, time.Minute)
 	userID := uuid.New()
 	t.Cleanup(func() { limiter.Reset(userID) })
@@ -169,7 +169,7 @@ func TestCacheAttemptLimiter_CountsAndResets(t *testing.T) {
 	require.Equal(t, int64(1), got)
 }
 
-func TestCacheAttemptLimiter_ConcurrentClaimsAreAllCounted(t *testing.T) {
+func TestCache_AttemptLimiter_ConcurrentClaimsAreAllCounted(t *testing.T) {
 	limiter := redisAttemptLimiter(t, time.Minute)
 	userID := uuid.New()
 	t.Cleanup(func() { limiter.Reset(userID) })
@@ -191,7 +191,7 @@ func TestCacheAttemptLimiter_ConcurrentClaimsAreAllCounted(t *testing.T) {
 	require.Equal(t, int64(racers+1), got)
 }
 
-func TestCacheAttemptLimiter_WindowLapses(t *testing.T) {
+func TestCache_AttemptLimiter_WindowLapses(t *testing.T) {
 	limiter := redisAttemptLimiter(t, time.Second)
 	userID := uuid.New()
 	t.Cleanup(func() { limiter.Reset(userID) })

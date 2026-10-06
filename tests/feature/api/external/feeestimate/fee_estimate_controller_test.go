@@ -52,7 +52,7 @@ type feeEstimateSuite struct {
 	adapter *mocks.MockChain
 }
 
-func TestFeeEstimateSuite(t *testing.T) {
+func TestFee_Estimate_Suite(t *testing.T) {
 	suite.Run(t, new(feeEstimateSuite))
 }
 
@@ -108,14 +108,14 @@ func (s *feeEstimateSuite) get(path, bearer string, expectedStatus int) map[stri
 	return body
 }
 
-func (s *feeEstimateSuite) TestRequiresBearerToken() {
+func (s *feeEstimateSuite) TestRequires_Bearer_Token() {
 	accountID, _, _ := ctltestutil.SetupAPIAuth(s.T(), false)
 	walletID := s.seedWallet(accountID)
 
 	s.get(feeEstimatePath(walletID, nil), "", 401)
 }
 
-func (s *feeEstimateSuite) TestOtherAccountsWalletIsNotFound() {
+func (s *feeEstimateSuite) TestOther_Accounts_WalletIsNotFound() {
 	ownerAccountID, _, _ := ctltestutil.SetupAPIAuth(s.T(), false)
 	walletID := s.seedWallet(ownerAccountID)
 	_, intruderBearer, _ := ctltestutil.SetupAPIAuth(s.T(), false)
@@ -124,7 +124,7 @@ func (s *feeEstimateSuite) TestOtherAccountsWalletIsNotFound() {
 	s.Equal("wallet not found", feeEstimateErrorMessage(body))
 }
 
-func (s *feeEstimateSuite) TestQuotesTheNativeTransferThroughThePlanner() {
+func (s *feeEstimateSuite) TestQuotes_The_NativeTransferThroughThePlanner() {
 	accountID, bearer, _ := ctltestutil.SetupAPIAuth(s.T(), false)
 	walletID := s.seedWallet(accountID)
 
@@ -141,7 +141,7 @@ func (s *feeEstimateSuite) TestQuotesTheNativeTransferThroughThePlanner() {
 	s.Equal("10", evm["gas_price_wei"])
 }
 
-func (s *feeEstimateSuite) TestInsufficientFundsStillReturnsTheFee() {
+func (s *feeEstimateSuite) TestInsufficient_Funds_StillReturnsTheFee() {
 	accountID, bearer, _ := ctltestutil.SetupAPIAuth(s.T(), false)
 	walletID := s.seedWallet(accountID)
 
@@ -152,7 +152,7 @@ func (s *feeEstimateSuite) TestInsufficientFundsStillReturnsTheFee() {
 	s.Equal("probe", body["recipient"])
 }
 
-func (s *feeEstimateSuite) TestNodeFailureIs503WithoutAFee() {
+func (s *feeEstimateSuite) TestNode_Failure_Is503WithoutAFee() {
 	accountID, bearer, _ := ctltestutil.SetupAPIAuth(s.T(), false)
 	walletID := s.seedWallet(accountID)
 	s.adapter.EstimateGasPriceVal = nil
@@ -164,7 +164,7 @@ func (s *feeEstimateSuite) TestNodeFailureIs503WithoutAFee() {
 	s.Nil(body["fee"])
 }
 
-func (s *feeEstimateSuite) TestInvalidInputsAreRejectedBeforeQuoting() {
+func (s *feeEstimateSuite) TestInvalid_Inputs_AreRejectedBeforeQuoting() {
 	accountID, bearer, _ := ctltestutil.SetupAPIAuth(s.T(), false)
 	walletID := s.seedWallet(accountID)
 

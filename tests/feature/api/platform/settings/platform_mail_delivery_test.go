@@ -23,7 +23,7 @@ type PlatformMailDeliveryTestSuite struct {
 	authSuite
 }
 
-func TestPlatformMailDeliverySuite(t *testing.T) {
+func TestPlatform_Mail_DeliverySuite(t *testing.T) {
 	suite.Run(t, new(PlatformMailDeliveryTestSuite))
 }
 
@@ -40,7 +40,7 @@ func (s *PlatformMailDeliveryTestSuite) TearDownTest() {
 	appfacades.RestoreMailBaseline()
 }
 
-func (s *PlatformMailDeliveryTestSuite) TestAPlatformAdminStoresTheFromHeaderTheMailerReads() {
+func (s *PlatformMailDeliveryTestSuite) TestA_Platform_AdminStoresTheFromHeaderTheMailerReads() {
 	admin := s.seedUser(false)
 	s.grantPlatformAdmin(admin.ID)
 	session := s.signIn(admin.Email)
@@ -123,7 +123,7 @@ func (s *PlatformMailDeliveryTestSuite) TestAPlatformAdminStoresTheFromHeaderThe
 	s.Equal(int64(1), s.count(`SELECT count(*) FROM account_activity WHERE action = 'settings.updated' AND target_id = 'mail_delivery'`))
 }
 
-func (s *PlatformMailDeliveryTestSuite) TestAMissingRowKeepsTheEnvFromHeader() {
+func (s *PlatformMailDeliveryTestSuite) TestA_Missing_RowKeepsTheEnvFromHeader() {
 	envAddress := appfacades.Config().GetString("mail.from.address")
 	envName := appfacades.Config().GetString("mail.from.name")
 
@@ -139,7 +139,7 @@ func (s *PlatformMailDeliveryTestSuite) TestAMissingRowKeepsTheEnvFromHeader() {
 	s.Equal(int64(0), s.count(`SELECT count(*) FROM settings WHERE account_id IS NULL AND "group" = 'mail_delivery'`))
 }
 
-func (s *PlatformMailDeliveryTestSuite) TestAFailedReadKeepsTheEnvFromHeader() {
+func (s *PlatformMailDeliveryTestSuite) TestA_Failed_ReadKeepsTheEnvFromHeader() {
 	envAddress := appfacades.Config().GetString("mail.from.address")
 	envName := appfacades.Config().GetString("mail.from.name")
 	previous := appfacades.SetMailFromReader(func(context.Context) (appfacades.MailFrom, error) {
@@ -158,7 +158,7 @@ func (s *PlatformMailDeliveryTestSuite) TestAFailedReadKeepsTheEnvFromHeader() {
 	}
 }
 
-func (s *PlatformMailDeliveryTestSuite) TestANonAdminIsForbidden() {
+func (s *PlatformMailDeliveryTestSuite) TestA_Non_AdminIsForbidden() {
 	member := s.seedUser(false)
 	session := s.signIn(member.Email)
 	forbidden := s.putRaw(session.AccessToken, "/v1/platform/settings/mail_delivery",

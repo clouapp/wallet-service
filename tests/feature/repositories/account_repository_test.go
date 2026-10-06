@@ -19,7 +19,7 @@ type AccountRepositoryTestSuite struct {
 	repo *repositories.AccountRepository
 }
 
-func TestAccountRepositorySuite(t *testing.T) {
+func TestAccount_Repository_Suite(t *testing.T) {
 	suite.Run(t, new(AccountRepositoryTestSuite))
 }
 
@@ -28,7 +28,7 @@ func (s *AccountRepositoryTestSuite) SetupTest() {
 	s.repo = repositories.NewAccountRepository(nil)
 }
 
-func (s *AccountRepositoryTestSuite) TestCreate_Success() {
+func (s *AccountRepositoryTestSuite) TestAccountRepository_Create_Success() {
 	acc := &models.Account{ID: uuid.New(), Name: "Test Account", Status: "active"}
 	err := s.repo.Create(context.Background(), acc)
 	s.NoError(err)
@@ -39,7 +39,7 @@ func (s *AccountRepositoryTestSuite) TestCreate_Success() {
 	s.Equal("Test Account", found.Name)
 }
 
-func (s *AccountRepositoryTestSuite) TestFindByID_Found() {
+func (s *AccountRepositoryTestSuite) TestFind_ByID_Found() {
 	acc := &models.Account{ID: uuid.New(), Name: "Find Me", Status: "active"}
 	s.Require().NoError(s.repo.Create(context.Background(), acc))
 
@@ -49,7 +49,7 @@ func (s *AccountRepositoryTestSuite) TestFindByID_Found() {
 	s.Equal(acc.ID, found.ID)
 }
 
-func (s *AccountRepositoryTestSuite) TestExists() {
+func (s *AccountRepositoryTestSuite) TestAccountRepository_Exists_Succeeds() {
 	missing, err := s.repo.Exists(context.Background(), uuid.New())
 	s.NoError(err)
 	s.False(missing)
@@ -65,13 +65,13 @@ func (s *AccountRepositoryTestSuite) TestExists() {
 	s.True(found)
 }
 
-func (s *AccountRepositoryTestSuite) TestFindByID_NotFound() {
+func (s *AccountRepositoryTestSuite) TestFind_ByID_NotFound() {
 	found, err := s.repo.FindByID(context.Background(), uuid.New())
 	s.ErrorIs(err, models.ErrRepositoryNotFound)
 	s.Nil(found)
 }
 
-func (s *AccountRepositoryTestSuite) TestFindByIDs() {
+func (s *AccountRepositoryTestSuite) TestFind_By_IDs() {
 	a1 := &models.Account{ID: uuid.New(), Name: "A1", Status: "active"}
 	a2 := &models.Account{ID: uuid.New(), Name: "A2", Status: "active"}
 	a3 := &models.Account{ID: uuid.New(), Name: "A3", Status: "active"}
@@ -84,7 +84,7 @@ func (s *AccountRepositoryTestSuite) TestFindByIDs() {
 	s.Len(results, 2)
 }
 
-func (s *AccountRepositoryTestSuite) TestFindByIDs_Empty() {
+func (s *AccountRepositoryTestSuite) TestFind_ByIDs_Empty() {
 	results, err := s.repo.FindByIDs(context.Background(), []uuid.UUID{})
 	s.NoError(err)
 	s.Len(results, 0)
@@ -120,7 +120,7 @@ func accountNames(accounts []models.Account) []string {
 	return names
 }
 
-func (s *AccountRepositoryTestSuite) TestPaginateByMember_OrdersByNameAcrossPages() {
+func (s *AccountRepositoryTestSuite) TestPaginate_ByMember_OrdersByNameAcrossPages() {
 	userID := s.createUser()
 	for _, name := range []string{"Delta", "alpha", "Charlie", "Bravo", "Echo"} {
 		s.createMemberAccount(userID, name, models.EnvironmentProd)
@@ -137,7 +137,7 @@ func (s *AccountRepositoryTestSuite) TestPaginateByMember_OrdersByNameAcrossPage
 	s.Equal([]string{"Echo"}, accountNames(last))
 }
 
-func (s *AccountRepositoryTestSuite) TestPaginateByMember_OutOfRangeOffsetReturnsEmptyPageWithTotal() {
+func (s *AccountRepositoryTestSuite) TestPaginate_ByMember_OutOfRangeOffsetReturnsEmptyPageWithTotal() {
 	userID := s.createUser()
 	s.createMemberAccount(userID, "Only", models.EnvironmentProd)
 
@@ -148,7 +148,7 @@ func (s *AccountRepositoryTestSuite) TestPaginateByMember_OutOfRangeOffsetReturn
 	s.Empty(accounts)
 }
 
-func (s *AccountRepositoryTestSuite) TestPaginateByMember_NoMemberships() {
+func (s *AccountRepositoryTestSuite) TestPaginate_ByMember_NoMemberships() {
 	accounts, total, err := s.repo.PaginateByMember(context.Background(), uuid.New(), "", "", 20, 0)
 	s.Require().NoError(err)
 	s.Equal(int64(0), total)
@@ -156,7 +156,7 @@ func (s *AccountRepositoryTestSuite) TestPaginateByMember_NoMemberships() {
 	s.Empty(accounts)
 }
 
-func (s *AccountRepositoryTestSuite) TestPaginateByMember_ExcludesOtherUsersAndRemovedMemberships() {
+func (s *AccountRepositoryTestSuite) TestPaginate_ByMember_ExcludesOtherUsersAndRemovedMemberships() {
 	userID := s.createUser()
 	kept := s.createMemberAccount(userID, "Kept", models.EnvironmentProd)
 	removed := s.createMemberAccount(userID, "Removed", models.EnvironmentProd)
@@ -170,7 +170,7 @@ func (s *AccountRepositoryTestSuite) TestPaginateByMember_ExcludesOtherUsersAndR
 	s.Equal(kept.ID, accounts[0].ID)
 }
 
-func (s *AccountRepositoryTestSuite) TestPaginateByMember_FiltersByEnvironment() {
+func (s *AccountRepositoryTestSuite) TestPaginate_ByMember_FiltersByEnvironment() {
 	userID := s.createUser()
 	s.createMemberAccount(userID, "Acme Corp", models.EnvironmentProd)
 	s.createMemberAccount(userID, "Acme Corp (Test)", models.EnvironmentTest)
@@ -181,7 +181,7 @@ func (s *AccountRepositoryTestSuite) TestPaginateByMember_FiltersByEnvironment()
 	s.Equal([]string{"Acme Corp (Test)"}, accountNames(accounts))
 }
 
-func (s *AccountRepositoryTestSuite) TestPaginateByMember_SearchesNameCaseInsensitivelyAndById() {
+func (s *AccountRepositoryTestSuite) TestPaginate_ByMember_SearchesNameCaseInsensitivelyAndById() {
 	userID := s.createUser()
 	custody := s.createMemberAccount(userID, "Custody Desk", models.EnvironmentProd)
 	s.createMemberAccount(userID, "Treasury", models.EnvironmentProd)
@@ -197,7 +197,7 @@ func (s *AccountRepositoryTestSuite) TestPaginateByMember_SearchesNameCaseInsens
 	s.Equal(custody.ID, byID[0].ID)
 }
 
-func (s *AccountRepositoryTestSuite) TestPaginateByMember_TreatsLikeWildcardsLiterally() {
+func (s *AccountRepositoryTestSuite) TestPaginate_ByMember_TreatsLikeWildcardsLiterally() {
 	userID := s.createUser()
 	s.createMemberAccount(userID, "100% Reserve", models.EnvironmentProd)
 	s.createMemberAccount(userID, "1000 Reserve", models.EnvironmentProd)
@@ -213,7 +213,7 @@ func (s *AccountRepositoryTestSuite) TestPaginateByMember_TreatsLikeWildcardsLit
 	s.Equal([]string{"snake_case"}, accountNames(underscore))
 }
 
-func (s *AccountRepositoryTestSuite) TestListOrdersByCreatedAtDescending() {
+func (s *AccountRepositoryTestSuite) TestList_Orders_ByCreatedAtDescending() {
 	olderID := uuid.MustParse("00000000-0000-4000-8000-000000000001")
 	sameTimeHigherID := uuid.MustParse("00000000-0000-4000-8000-000000000002")
 	newerID := uuid.MustParse("00000000-0000-4000-8000-000000000003")
@@ -261,7 +261,7 @@ func (s *AccountRepositoryTestSuite) stampAccountCreatedAt(id uuid.UUID, at time
 	s.Require().NoError(err)
 }
 
-func (s *AccountRepositoryTestSuite) TestSetName() {
+func (s *AccountRepositoryTestSuite) TestAccountRepository_Set_Name() {
 	acc := &models.Account{ID: uuid.New(), Name: "Old Name", Status: "active"}
 	s.Require().NoError(s.repo.Create(context.Background(), acc))
 
@@ -273,7 +273,7 @@ func (s *AccountRepositoryTestSuite) TestSetName() {
 	s.Equal("New Name", found.Name)
 }
 
-func (s *AccountRepositoryTestSuite) TestSetEnvironment() {
+func (s *AccountRepositoryTestSuite) TestAccountRepository_Set_Environment() {
 	acc := &models.Account{ID: uuid.New(), Name: "Acme", Status: "active", Environment: models.EnvironmentProd}
 	s.Require().NoError(s.repo.Create(context.Background(), acc))
 

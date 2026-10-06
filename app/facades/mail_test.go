@@ -5,7 +5,7 @@ import (
 	"testing"
 )
 
-func TestGateMailSendReadsTheInstalledDial(t *testing.T) {
+func TestGate_Mail_SendReadsTheInstalledDial(t *testing.T) {
 	previousSMTP := SetMailSMTPReader(func(context.Context) (MailDial, error) {
 		return MailDial{Host: "127.0.0.1", UseHost: true}, nil
 	})

@@ -27,7 +27,7 @@ func computeAlchemySignature(body []byte, secret string) string {
 // VerifyInbound
 // ---------------------------------------------------------------------------
 
-func TestVerifyInbound_ValidSignature(t *testing.T) {
+func TestVerify_Inbound_ValidSignature(t *testing.T) {
 	provider := NewAlchemyProvider("test-key")
 	body := []byte(`{"event":"test"}`)
 	secret := "whsec_test_secret"
@@ -41,7 +41,7 @@ func TestVerifyInbound_ValidSignature(t *testing.T) {
 	assert.True(t, valid)
 }
 
-func TestVerifyInbound_InvalidSignature(t *testing.T) {
+func TestVerify_Inbound_InvalidSignature(t *testing.T) {
 	provider := NewAlchemyProvider("test-key")
 	body := []byte(`{"event":"test"}`)
 	secret := "whsec_test_secret"
@@ -54,7 +54,7 @@ func TestVerifyInbound_InvalidSignature(t *testing.T) {
 	assert.False(t, valid)
 }
 
-func TestVerifyInbound_MissingHeader(t *testing.T) {
+func TestVerify_Inbound_MissingHeader(t *testing.T) {
 	provider := NewAlchemyProvider("test-key")
 	body := []byte(`{"event":"test"}`)
 
@@ -70,7 +70,7 @@ func TestVerifyInbound_MissingHeader(t *testing.T) {
 // ParsePayload — native ETH transfer (category: external)
 // ---------------------------------------------------------------------------
 
-func TestParsePayload_NativeETHTransfer(t *testing.T) {
+func TestParse_Payload_NativeETHTransfer(t *testing.T) {
 	payload := []byte(`{
 		"event": {
 			"activity": [{
@@ -117,7 +117,7 @@ func TestParsePayload_NativeETHTransfer(t *testing.T) {
 // ParsePayload — ERC-20 token transfer (category: token)
 // ---------------------------------------------------------------------------
 
-func TestParsePayload_ERC20TokenTransfer(t *testing.T) {
+func TestParse_Payload_ERC20TokenTransfer(t *testing.T) {
 	payload := []byte(`{
 		"event": {
 			"activity": [{
@@ -168,7 +168,7 @@ func TestParsePayload_ERC20TokenTransfer(t *testing.T) {
 // diffAddresses
 // ---------------------------------------------------------------------------
 
-func TestParsePayload_NativeOmitsRawValueKeepsHumanAmount(t *testing.T) {
+func TestParse_Payload_NativeOmitsRawValueKeepsHumanAmount(t *testing.T) {
 	payload := []byte(`{
 		"event": {
 			"activity": [{
@@ -194,7 +194,7 @@ func TestParsePayload_NativeOmitsRawValueKeepsHumanAmount(t *testing.T) {
 	assert.Nil(t, tx.Token)
 }
 
-func TestParsePayload_ERC20OmitsRawValueKeepsHumanAmount(t *testing.T) {
+func TestParse_Payload_ERC20OmitsRawValueKeepsHumanAmount(t *testing.T) {
 	payload := []byte(`{
 		"event": {
 			"activity": [{
@@ -226,7 +226,7 @@ func TestParsePayload_ERC20OmitsRawValueKeepsHumanAmount(t *testing.T) {
 	}
 }
 
-func TestDiffAddresses(t *testing.T) {
+func TestClient_Diff_Addresses(t *testing.T) {
 	current := []string{"0xAAA", "0xBBB", "0xCCC"}
 	desired := []string{"0xBBB", "0xDDD"}
 
@@ -235,7 +235,7 @@ func TestDiffAddresses(t *testing.T) {
 	assert.Equal(t, []string{"0xAAA", "0xCCC"}, toRemove)
 }
 
-func TestDiffAddresses_CaseInsensitive(t *testing.T) {
+func TestDiff_Addresses_CaseInsensitive(t *testing.T) {
 	current := []string{"0xaaa"}
 	desired := []string{"0xAAA"}
 
@@ -244,7 +244,7 @@ func TestDiffAddresses_CaseInsensitive(t *testing.T) {
 	assert.Empty(t, toRemove, "case-insensitive match should not remove")
 }
 
-func TestDiffAddresses_NoChanges(t *testing.T) {
+func TestDiff_Addresses_NoChanges(t *testing.T) {
 	addrs := []string{"0xAAA", "0xBBB"}
 
 	toAdd, toRemove := diffAddresses(addrs, addrs)
@@ -252,7 +252,7 @@ func TestDiffAddresses_NoChanges(t *testing.T) {
 	assert.Empty(t, toRemove)
 }
 
-func TestAlchemyHeaders_ReadTheKeySourceOnEveryCall(t *testing.T) {
+func TestAlchemy_Headers_ReadTheKeySourceOnEveryCall(t *testing.T) {
 	const (
 		opened = "ing-opened-a91c"
 		env    = "ing-env-44d0"

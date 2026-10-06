@@ -10,7 +10,7 @@ import (
 	"github.com/macrowallets/waas/app/repositories"
 )
 
-func TestWalletProvider_RegistersTheWalletGraph(t *testing.T) {
+func TestWallet_Provider_RegistersTheWalletGraph(t *testing.T) {
 	require.NotNil(t, foundation.App)
 	(&WalletServiceProvider{}).Register(foundation.App)
 

@@ -10,7 +10,7 @@ import (
 	"github.com/macrowallets/waas/app/models"
 )
 
-func TestReadersSeeTheHistoricalStringKeys(t *testing.T) {
+func TestReaders_See_TheHistoricalStringKeys(t *testing.T) {
 	userID := uuid.MustParse("11111111-1111-1111-1111-111111111111")
 	accountID := uuid.MustParse("22222222-2222-2222-2222-222222222222")
 	walletID := uuid.MustParse("33333333-3333-3333-3333-333333333333")
@@ -71,7 +71,7 @@ func TestReadersSeeTheHistoricalStringKeys(t *testing.T) {
 	}
 }
 
-func TestMissingValuesStayAbsent(t *testing.T) {
+func TestMissing_Values_StayAbsent(t *testing.T) {
 	ctx := context.Background()
 	if _, ok := UserID(ctx); ok {
 		t.Fatal("missing user id reported present")
@@ -105,7 +105,7 @@ func TestMissingValuesStayAbsent(t *testing.T) {
 	}
 }
 
-func TestMustPanicsWhenTheValueIsMissing(t *testing.T) {
+func TestMust_Panics_WhenTheValueIsMissing(t *testing.T) {
 	ctx := context.Background()
 	assertPanics(t, func() { MustUserID(ctx) })
 	assertPanics(t, func() { MustUser(ctx) })
@@ -113,7 +113,7 @@ func TestMustPanicsWhenTheValueIsMissing(t *testing.T) {
 	assertPanics(t, func() { MustWallet(ctx) })
 }
 
-func TestFrameworkContextCopiesTheSameKeys(t *testing.T) {
+func TestFramework_Context_CopiesTheSameKeys(t *testing.T) {
 	ctx := frameworkhttp.NewContext()
 	userID := uuid.MustParse("55555555-5555-5555-5555-555555555555")
 	ctx.WithValue(KeyUserID, userID)

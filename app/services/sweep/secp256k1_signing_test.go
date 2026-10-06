@@ -251,7 +251,7 @@ func assertEVMSentFrom(t *testing.T, signed *types.SignedTx, address string) {
 	}
 }
 
-func TestExecutePlan_EVMChildSignsAsTheChildAddress(t *testing.T) {
+func TestExecute_Plan_EVMChildSignsAsTheChildAddress(t *testing.T) {
 	var broadcasts []*types.SignedTx
 	adapter := newEVMSigningChain(t, &broadcasts)
 	fixture := newSecp256k1WalletFixture(t, adapter, evmE2EChildIndex)
@@ -268,7 +268,7 @@ func TestExecutePlan_EVMChildSignsAsTheChildAddress(t *testing.T) {
 	assertEVMSentFrom(t, broadcasts[0], child.Address)
 }
 
-func TestExecutePlan_EVMBaseStillSignsAsTheWalletAddress(t *testing.T) {
+func TestExecute_Plan_EVMBaseStillSignsAsTheWalletAddress(t *testing.T) {
 	var broadcasts []*types.SignedTx
 	adapter := newEVMSigningChain(t, &broadcasts)
 	fixture := newSecp256k1WalletFixture(t, adapter, evmE2EChildIndex)
@@ -285,7 +285,7 @@ func TestExecutePlan_EVMBaseStillSignsAsTheWalletAddress(t *testing.T) {
 	assertEVMSentFrom(t, broadcasts[0], base.Address)
 }
 
-func TestConsolidate_EVMChildSweepToBaseSignsAsTheChild(t *testing.T) {
+func TestConsolidate_EVM_ChildSweepToBaseSignsAsTheChild(t *testing.T) {
 	var broadcasts []*types.SignedTx
 	adapter := newEVMSigningChain(t, &broadcasts)
 	fixture := newSecp256k1WalletFixture(t, adapter, evmE2EChildIndex)
@@ -304,7 +304,7 @@ func TestConsolidate_EVMChildSweepToBaseSignsAsTheChild(t *testing.T) {
 	assertEVMSentFrom(t, broadcasts[0], fixture.child.Address)
 }
 
-func TestExecutePlan_EVMChildRowWithWrongIndexIsNotSigned(t *testing.T) {
+func TestExecute_Plan_EVMChildRowWithWrongIndexIsNotSigned(t *testing.T) {
 	var broadcasts []*types.SignedTx
 	adapter := newEVMSigningChain(t, &broadcasts)
 	fixture := newSecp256k1WalletFixture(t, adapter, evmE2EChildIndex)
@@ -322,7 +322,7 @@ func TestExecutePlan_EVMChildRowWithWrongIndexIsNotSigned(t *testing.T) {
 	}
 }
 
-func TestExecutePlan_EVMChildOfAnotherWalletIsNotSigned(t *testing.T) {
+func TestExecute_Plan_EVMChildOfAnotherWalletIsNotSigned(t *testing.T) {
 	var broadcasts []*types.SignedTx
 	adapter := newEVMSigningChain(t, &broadcasts)
 	fixture := newSecp256k1WalletFixture(t, adapter, evmE2EChildIndex)
@@ -340,7 +340,7 @@ func TestExecutePlan_EVMChildOfAnotherWalletIsNotSigned(t *testing.T) {
 	}
 }
 
-func TestExecutePlan_EVMChildWithoutChainCodeIsNotSigned(t *testing.T) {
+func TestExecute_Plan_EVMChildWithoutChainCodeIsNotSigned(t *testing.T) {
 	var broadcasts []*types.SignedTx
 	adapter := newEVMSigningChain(t, &broadcasts)
 	fixture := newSecp256k1WalletFixture(t, adapter, evmE2EChildIndex)
@@ -358,7 +358,7 @@ func TestExecutePlan_EVMChildWithoutChainCodeIsNotSigned(t *testing.T) {
 	}
 }
 
-func TestExecutePlan_FailedSignedTransactionVerificationBlocksBroadcast(t *testing.T) {
+func TestExecute_Plan_FailedSignedTransactionVerificationBlocksBroadcast(t *testing.T) {
 	walletID := uuid.New()
 	base := models.Address{ID: uuid.New(), WalletID: walletID}
 	wallet := &models.Wallet{ID: walletID, Chain: models.ChainETH, DepositAddress: &base, MPCCurve: string(mpcpkg.CurveSecp256k1)}
@@ -381,7 +381,7 @@ func TestExecutePlan_FailedSignedTransactionVerificationBlocksBroadcast(t *testi
 	}
 }
 
-func TestExecutePlan_BaseRowOfAnotherWalletIsNotSigned(t *testing.T) {
+func TestExecute_Plan_BaseRowOfAnotherWalletIsNotSigned(t *testing.T) {
 	walletID := uuid.New()
 	base := models.Address{ID: uuid.New(), WalletID: walletID}
 	wallet := &models.Wallet{ID: walletID, Chain: models.ChainETH, DepositAddress: &base, MPCCurve: string(mpcpkg.CurveSecp256k1)}
@@ -456,7 +456,7 @@ func assertBitcoinSignedAs(t *testing.T, adapter *bitcoinSigningChain, address s
 	}
 }
 
-func TestExecutePlan_BitcoinChildSpendsAsTheChildAddress(t *testing.T) {
+func TestExecute_Plan_BitcoinChildSpendsAsTheChildAddress(t *testing.T) {
 	var broadcasts []*types.SignedTx
 	adapter := newBitcoinSigningChain(t, &broadcasts)
 	fixture := newSecp256k1WalletFixture(t, adapter, btcE2EChildIndex)
@@ -476,7 +476,7 @@ func TestExecutePlan_BitcoinChildSpendsAsTheChildAddress(t *testing.T) {
 	assertBitcoinSignedAs(t, adapter, child.Address, btcE2EWithdrawSats)
 }
 
-func TestExecutePlan_BitcoinBaseStillSpendsAsTheWalletAddress(t *testing.T) {
+func TestExecute_Plan_BitcoinBaseStillSpendsAsTheWalletAddress(t *testing.T) {
 	var broadcasts []*types.SignedTx
 	adapter := newBitcoinSigningChain(t, &broadcasts)
 	fixture := newSecp256k1WalletFixture(t, adapter, btcE2EChildIndex)
@@ -493,7 +493,7 @@ func TestExecutePlan_BitcoinBaseStillSpendsAsTheWalletAddress(t *testing.T) {
 	assertBitcoinSignedAs(t, adapter, base.Address, btcE2EWithdrawSats)
 }
 
-func TestExecutePlan_BitcoinChildRowWithWrongIndexIsNotSigned(t *testing.T) {
+func TestExecute_Plan_BitcoinChildRowWithWrongIndexIsNotSigned(t *testing.T) {
 	var broadcasts []*types.SignedTx
 	adapter := newBitcoinSigningChain(t, &broadcasts)
 	fixture := newSecp256k1WalletFixture(t, adapter, btcE2EChildIndex)
@@ -511,7 +511,7 @@ func TestExecutePlan_BitcoinChildRowWithWrongIndexIsNotSigned(t *testing.T) {
 	}
 }
 
-func TestExecutePlan_BitcoinSharesOfAnotherWalletAreRejected(t *testing.T) {
+func TestExecute_Plan_BitcoinSharesOfAnotherWalletAreRejected(t *testing.T) {
 	var broadcasts []*types.SignedTx
 	adapter := newBitcoinSigningChain(t, &broadcasts)
 	fixture := newSecp256k1WalletFixture(t, adapter, btcE2EChildIndex)

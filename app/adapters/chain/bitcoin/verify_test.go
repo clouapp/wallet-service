@@ -60,14 +60,14 @@ func reserialize(t *testing.T, signed *types.SignedTx, mutate func(*wire.MsgTx))
 	return &types.SignedTx{ChainID: signed.ChainID, RawBytes: buf.Bytes()}
 }
 
-func TestVerifySignedP2WPKH_AcceptsTheOwnersSignature(t *testing.T) {
+func TestVerify_SignedP2WPKH_AcceptsTheOwnersSignature(t *testing.T) {
 	fixture := newP2WPKHFixture(t)
 	if err := verifySignedP2WPKH(fixture.unsigned, fixture.sign(t, fixture.key), fixture.address); err != nil {
 		t.Fatal(err)
 	}
 }
 
-func TestVerifySignedP2WPKH_RejectsAnotherKeysSignature(t *testing.T) {
+func TestVerify_SignedP2WPKH_RejectsAnotherKeysSignature(t *testing.T) {
 	fixture := newP2WPKHFixture(t)
 	other, err := btcec.NewPrivateKey()
 	if err != nil {
@@ -79,7 +79,7 @@ func TestVerifySignedP2WPKH_RejectsAnotherKeysSignature(t *testing.T) {
 	}
 }
 
-func TestVerifySignedP2WPKH_RejectsTamperedTransactions(t *testing.T) {
+func TestVerify_SignedP2WPKH_RejectsTamperedTransactions(t *testing.T) {
 	fixture := newP2WPKHFixture(t)
 	signed := fixture.sign(t, fixture.key)
 	cases := map[string]func(*wire.MsgTx){
@@ -100,7 +100,7 @@ func TestVerifySignedP2WPKH_RejectsTamperedTransactions(t *testing.T) {
 	}
 }
 
-func TestVerifySignedP2WPKH_RejectsAnotherSourceAddress(t *testing.T) {
+func TestVerify_SignedP2WPKH_RejectsAnotherSourceAddress(t *testing.T) {
 	fixture := newP2WPKHFixture(t)
 	other := newP2WPKHFixture(t)
 	err := verifySignedP2WPKH(fixture.unsigned, fixture.sign(t, fixture.key), other.address)
@@ -109,7 +109,7 @@ func TestVerifySignedP2WPKH_RejectsAnotherSourceAddress(t *testing.T) {
 	}
 }
 
-func TestVerifySignedP2WPKH_RejectsAWrongReportedTxid(t *testing.T) {
+func TestVerify_SignedP2WPKH_RejectsAWrongReportedTxid(t *testing.T) {
 	fixture := newP2WPKHFixture(t)
 	signed := fixture.sign(t, fixture.key)
 	signed.TxHash = verifyFundingTxID

@@ -13,7 +13,7 @@ func whitelistControllerDeps() WhitelistControllerDeps {
 	}
 }
 
-func TestNewWhitelistControllerKeepsItsDependencies(t *testing.T) {
+func TestNew_Whitelist_ControllerKeepsItsDependencies(t *testing.T) {
 	deps := whitelistControllerDeps()
 	ctrl := NewWhitelistController(deps)
 	if ctrl == nil {
@@ -27,7 +27,7 @@ func TestNewWhitelistControllerKeepsItsDependencies(t *testing.T) {
 	}
 }
 
-func TestNewWhitelistControllerRequiresEveryDependency(t *testing.T) {
+func TestNew_Whitelist_ControllerRequiresEveryDependency(t *testing.T) {
 	cases := []struct {
 		name  string
 		clear func(*WhitelistControllerDeps)

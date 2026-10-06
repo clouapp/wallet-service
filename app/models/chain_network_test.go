@@ -4,7 +4,7 @@ import "testing"
 
 func networkIDPointer(id int64) *int64 { return &id }
 
-func TestChainNetworkFollowsTheConfiguredNetworkNotTheChainID(t *testing.T) {
+func TestChain_Network_FollowsTheConfiguredNetworkNotTheChainID(t *testing.T) {
 	t.Parallel()
 
 	cases := []struct {
@@ -29,7 +29,7 @@ func TestChainNetworkFollowsTheConfiguredNetworkNotTheChainID(t *testing.T) {
 	}
 }
 
-func TestBaseArbitrumAndBSCAreClassifiedByTheirNetworkID(t *testing.T) {
+func TestBase_Arbitrum_AndBSCAreClassifiedByTheirNetworkID(t *testing.T) {
 	t.Parallel()
 
 	cases := []struct {
@@ -59,7 +59,7 @@ func TestBaseArbitrumAndBSCAreClassifiedByTheirNetworkID(t *testing.T) {
 	}
 }
 
-func TestResolveNetworkFlagsTestnetsByTheNetworkActuallyUsed(t *testing.T) {
+func TestResolve_Network_FlagsTestnetsByTheNetworkActuallyUsed(t *testing.T) {
 	t.Parallel()
 
 	cases := []struct {
@@ -92,7 +92,7 @@ func TestResolveNetworkFlagsTestnetsByTheNetworkActuallyUsed(t *testing.T) {
 	}
 }
 
-func TestSolanaNetworkOfRPCURLIgnoresUnparseableInput(t *testing.T) {
+func TestSolana_Network_OfRPCURLIgnoresUnparseableInput(t *testing.T) {
 	t.Parallel()
 
 	for _, rpcURL := range []string{"", "   ", "not a url", "://devnet", "devnet"} {
@@ -102,7 +102,7 @@ func TestSolanaNetworkOfRPCURLIgnoresUnparseableInput(t *testing.T) {
 	}
 }
 
-func TestIsBitcoinTestnet4RPCURLMatchesWholePathSegmentsOrHostLabels(t *testing.T) {
+func TestIs_Bitcoin_Testnet4RPCURLMatchesWholePathSegmentsOrHostLabels(t *testing.T) {
 	t.Parallel()
 
 	cases := map[string]bool{
@@ -128,7 +128,7 @@ func TestIsBitcoinTestnet4RPCURLMatchesWholePathSegmentsOrHostLabels(t *testing.
 	}
 }
 
-func TestBitcoinTestnet4IsATestnet(t *testing.T) {
+func TestBitcoin_Testnet4_IsATestnet(t *testing.T) {
 	t.Parallel()
 
 	if !IsTestnetNetwork(NetworkBitcoinTestnet4) || !IsTestnetNetwork(NetworkBitcoinTestnet) || IsTestnetNetwork(NetworkBitcoinMainnet) {
@@ -136,7 +136,7 @@ func TestBitcoinTestnet4IsATestnet(t *testing.T) {
 	}
 }
 
-func TestChainNetworkIsUnknownWithoutEnoughMetadata(t *testing.T) {
+func TestChain_Network_IsUnknownWithoutEnoughMetadata(t *testing.T) {
 	t.Parallel()
 
 	cases := []struct {

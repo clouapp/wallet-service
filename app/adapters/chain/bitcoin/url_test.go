@@ -11,7 +11,7 @@ import (
 	"github.com/macrowallets/waas/pkg/types"
 )
 
-func TestRESTErrorsOmitTheRPCURL(t *testing.T) {
+func TestREST_Errors_OmitTheRPCURL(t *testing.T) {
 	const secret = "secret-key"
 	const pathSecret = "secret-path"
 	live := NewBitcoinLive(BitcoinConfig{RPCURL: "http://user:" + secret + "@127.0.0.1:1/" + pathSecret, NativeSymbol: "BTC"})

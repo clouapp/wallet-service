@@ -6,7 +6,7 @@ import (
 	"github.com/macrowallets/waas/app/services/price"
 )
 
-func TestNewCoinMarketCapProviderIsTheRegisteredAdapter(t *testing.T) {
+func TestNew_Coin_MarketCapProviderIsTheRegisteredAdapter(t *testing.T) {
 	stub := namedProvider{name: "coinmarketcap"}
 	price.SetCoinMarketCapProvider(func(string) price.PriceProvider { return stub })
 	provider := price.NewCoinMarketCapProvider("registered-only")

@@ -12,14 +12,14 @@ import (
 	"github.com/macrowallets/waas/tests/mocks"
 )
 
-func TestNewBalanceServiceNotNil(t *testing.T) {
+func TestNew_Balance_ServiceNotNil(t *testing.T) {
 	svc := NewBalanceService(Deps{})
 	if svc == nil {
 		t.Fatal("expected non-nil BalanceService")
 	}
 }
 
-func TestNewBalanceServiceStoresAllDependencies(t *testing.T) {
+func TestNew_Balance_ServiceStoresAllDependencies(t *testing.T) {
 	reg := chain.NewRegistry()
 	svc := NewBalanceService(Deps{Registry: reg})
 	if svc.registry != reg {
@@ -39,7 +39,7 @@ func TestNewBalanceServiceStoresAllDependencies(t *testing.T) {
 	}
 }
 
-func TestBalanceServiceRefreshWalletRejectsNilDepositAddress(t *testing.T) {
+func TestBalance_Service_RefreshWalletRejectsNilDepositAddress(t *testing.T) {
 	reg := chain.NewRegistry()
 	mock := mocks.NewMockChain("eth")
 	reg.RegisterChain(mock)
@@ -58,7 +58,7 @@ func TestBalanceServiceRefreshWalletRejectsNilDepositAddress(t *testing.T) {
 	}
 }
 
-func TestBalanceServiceRefreshWalletRejectsUnknownChain(t *testing.T) {
+func TestBalance_Service_RefreshWalletRejectsUnknownChain(t *testing.T) {
 	reg := chain.NewRegistry()
 	svc := NewBalanceService(Deps{Registry: reg})
 	wallet := &models.Wallet{

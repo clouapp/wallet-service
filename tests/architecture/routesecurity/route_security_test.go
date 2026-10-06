@@ -254,7 +254,7 @@ func TestMain(m *testing.M) {
 // TestEveryRouteIsInTheRouteTable checks the table against the booted router
 // in both directions: a served route without a row, and a row the router no
 // longer serves.
-func TestEveryRouteIsInTheRouteTable(t *testing.T) {
+func TestEvery_Route_IsInTheRouteTable(t *testing.T) {
 	served := servedRoutes()
 	var violations architecture.Violations
 	for route := range served {
@@ -273,7 +273,7 @@ func TestEveryRouteIsInTheRouteTable(t *testing.T) {
 // TestAuthenticatedRoutesRefuseAnAnonymousCaller sends every session and
 // API-token route a request without credentials and expects 401 before any
 // handler runs.
-func TestAuthenticatedRoutesRefuseAnAnonymousCaller(t *testing.T) {
+func TestAuthenticated_Routes_RefuseAnAnonymousCaller(t *testing.T) {
 	var violations architecture.Violations
 	for route, entry := range routeTable {
 		if entry.auth != guardSession && entry.auth != guardAPIToken {
@@ -293,7 +293,7 @@ func TestAuthenticatedRoutesRefuseAnAnonymousCaller(t *testing.T) {
 	architecture.Report(t, &violations)
 }
 
-func TestRequestFor_FillsEveryPathParameter(t *testing.T) {
+func TestRequest_For_FillsEveryPathParameter(t *testing.T) {
 	method, path := requestFor("GET|HEAD /v1/wallets/{walletId}/transactions/{txId}")
 	if method != nethttp.MethodGet {
 		t.Errorf("method = %q, want GET", method)

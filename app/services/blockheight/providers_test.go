@@ -10,7 +10,7 @@ import (
 	"github.com/macrowallets/waas/app/models"
 )
 
-func TestNewProviders_WithoutAKeyFunctionLeavesEVMOnItsRPC(t *testing.T) {
+func TestNew_Providers_WithoutAKeyFunctionLeavesEVMOnItsRPC(t *testing.T) {
 	for _, deps := range []ProvidersDeps{{}, {Etherscan: &tipSource{height: 1}}} {
 		providers := NewProviders(deps)
 
@@ -21,7 +21,7 @@ func TestNewProviders_WithoutAKeyFunctionLeavesEVMOnItsRPC(t *testing.T) {
 	}
 }
 
-func TestNewProviders_ForwardsTheEtherscanPort(t *testing.T) {
+func TestNew_Providers_ForwardsTheEtherscanPort(t *testing.T) {
 	var calls int
 	etherscan := &tipSource{height: 0x10}
 	providers := NewProviders(ProvidersDeps{
@@ -47,7 +47,7 @@ func TestNewProviders_ForwardsTheEtherscanPort(t *testing.T) {
 	}
 }
 
-func TestNewProviders_ForwardsTheBlockstreamPort(t *testing.T) {
+func TestNew_Providers_ForwardsTheBlockstreamPort(t *testing.T) {
 	blockstream := &tipSource{height: 850000}
 	providers := NewProviders(ProvidersDeps{Blockstream: blockstream})
 
@@ -59,7 +59,7 @@ func TestNewProviders_ForwardsTheBlockstreamPort(t *testing.T) {
 	assert.Equal(t, []string{models.ChainBTC}, blockstream.keys)
 }
 
-func TestNewProviders_ForwardsTheSolanaPort(t *testing.T) {
+func TestNew_Providers_ForwardsTheSolanaPort(t *testing.T) {
 	solana := &tipSource{height: 123456789}
 	providers := NewProviders(ProvidersDeps{Solana: solana})
 
@@ -71,7 +71,7 @@ func TestNewProviders_ForwardsTheSolanaPort(t *testing.T) {
 	assert.Equal(t, []string{models.ChainSOL}, solana.keys)
 }
 
-func TestNewProviders_BitcoinUsesTheTestnet4AwareProvider(t *testing.T) {
+func TestNew_Providers_BitcoinUsesTheTestnet4AwareProvider(t *testing.T) {
 	providers := NewProviders(ProvidersDeps{NetworkByChain: map[string]string{models.ChainBTC: models.NetworkBitcoinTestnet4}})
 
 	routed, ok := providers[models.AdapterTypeBitcoin].(*NetworkRouted)

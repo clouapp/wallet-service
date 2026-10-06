@@ -25,7 +25,7 @@ func quoteEsplora(t *testing.T, utxos []btcInput) *BitcoinLive {
 
 // The 3-block testnet4 estimate (0.5 sat/vB) is floored at 1 sat/vB, so a one-input
 // payment with change costs its 141 vB: the fee of the f12f9d93… withdrawal.
-func TestBitcoinQuoteTransferFee_OneInputWithChangeAtTheFlooredRate(t *testing.T) {
+func TestBitcoin_QuoteTransferFee_OneInputWithChangeAtTheFlooredRate(t *testing.T) {
 	adapter := quoteEsplora(t, []btcInput{utxo(0, 337_841)})
 
 	quote, err := adapter.QuoteTransferFee(context.Background(), feeTestFrom, big.NewInt(10_000), nil)
@@ -41,7 +41,7 @@ func TestBitcoinQuoteTransferFee_OneInputWithChangeAtTheFlooredRate(t *testing.T
 	}
 }
 
-func TestBitcoinQuoteTransferFee_UTXOFailureIsAnErrorNotATypicalFee(t *testing.T) {
+func TestBitcoin_QuoteTransferFee_UTXOFailureIsAnErrorNotATypicalFee(t *testing.T) {
 	esplora := newFakeEsplora(t)
 	esplora.ok(quoteFeeEstimatesPath, liveTestnet4FeeEstimates)
 	esplora.on(quoteUTXOPath, esploraAnswer{http.StatusInternalServerError, "boom"})
@@ -51,7 +51,7 @@ func TestBitcoinQuoteTransferFee_UTXOFailureIsAnErrorNotATypicalFee(t *testing.T
 	}
 }
 
-func TestBitcoinQuoteTransferFee_UncoveredAmountQuotesATypicalTransfer(t *testing.T) {
+func TestBitcoin_QuoteTransferFee_UncoveredAmountQuotesATypicalTransfer(t *testing.T) {
 	adapter := quoteEsplora(t, []btcInput{utxo(0, 5_000)})
 
 	quote, err := adapter.QuoteTransferFee(context.Background(), feeTestFrom, big.NewInt(10_000), nil)
@@ -63,7 +63,7 @@ func TestBitcoinQuoteTransferFee_UncoveredAmountQuotesATypicalTransfer(t *testin
 	}
 }
 
-func TestBitcoinQuoteTransferFee_PendingInputsJoinTheSelection(t *testing.T) {
+func TestBitcoin_QuoteTransferFee_PendingInputsJoinTheSelection(t *testing.T) {
 	adapter := quoteEsplora(t, nil)
 
 	quote, err := adapter.QuoteTransferFee(context.Background(), feeTestFrom, big.NewInt(10_000), []*big.Int{big.NewInt(50_000)})
@@ -78,7 +78,7 @@ func TestBitcoinQuoteTransferFee_PendingInputsJoinTheSelection(t *testing.T) {
 	}
 }
 
-func TestBitcoinQuoteTransferFee_EstimatorFailureReportsTheFlatFeeTheBuilderUses(t *testing.T) {
+func TestBitcoin_QuoteTransferFee_EstimatorFailureReportsTheFlatFeeTheBuilderUses(t *testing.T) {
 	esplora := newFakeEsplora(t)
 	esplora.ok(quoteUTXOPath, utxoJSON([]btcInput{utxo(0, 100_000)}, true))
 
@@ -91,7 +91,7 @@ func TestBitcoinQuoteTransferFee_EstimatorFailureReportsTheFlatFeeTheBuilderUses
 	}
 }
 
-func TestBitcoinQuoteTransferFee_ValidatesItsInputs(t *testing.T) {
+func TestBitcoin_QuoteTransferFee_ValidatesItsInputs(t *testing.T) {
 	adapter := quoteEsplora(t, []btcInput{utxo(0, 100_000)})
 	for name, call := range map[string]func() error{
 		"empty from": func() error {
@@ -118,7 +118,7 @@ func TestBitcoinQuoteTransferFee_ValidatesItsInputs(t *testing.T) {
 	}
 }
 
-func TestBitcoinQuoteSweepFee_SpendsEveryInputToOneOutput(t *testing.T) {
+func TestBitcoin_QuoteSweepFee_SpendsEveryInputToOneOutput(t *testing.T) {
 	adapter := quoteEsplora(t, []btcInput{utxo(0, 40_000), utxo(1, 40_000)})
 
 	quote, err := adapter.QuoteSweepFee(context.Background(), feeTestFrom)

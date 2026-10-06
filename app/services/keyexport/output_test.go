@@ -24,7 +24,7 @@ func requireMode(t *testing.T, path string, want os.FileMode) {
 	}
 }
 
-func TestPrepareOutputPath_DefaultIsUnderHomeWith0700DirAnd0600File(t *testing.T) {
+func TestPrepare_OutputPath_DefaultIsUnderHomeWith0700DirAnd0600File(t *testing.T) {
 	home := t.TempDir()
 	path, err := PrepareOutputPath(OutputRequest{Home: home, Now: outputTestNow})
 	if err != nil {
@@ -50,7 +50,7 @@ func TestPrepareOutputPath_DefaultIsUnderHomeWith0700DirAnd0600File(t *testing.T
 	}
 }
 
-func TestPrepareOutputPath_TightensTheDefaultDirButRefusesALooseCustomDir(t *testing.T) {
+func TestPrepare_OutputPath_TightensTheDefaultDirButRefusesALooseCustomDir(t *testing.T) {
 	home := t.TempDir()
 	defaultDir := filepath.Join(home, DefaultExportSubdir)
 	if err := os.MkdirAll(defaultDir, 0o755); err != nil {
@@ -83,7 +83,7 @@ func TestPrepareOutputPath_TightensTheDefaultDirButRefusesALooseCustomDir(t *tes
 	requireMode(t, filepath.Dir(created), ArchiveDirMode)
 }
 
-func TestPrepareOutputPath_RefusesPathsInsideTheRepository(t *testing.T) {
+func TestPrepare_OutputPath_RefusesPathsInsideTheRepository(t *testing.T) {
 	repo := t.TempDir()
 	if err := os.WriteFile(filepath.Join(repo, goModFileName), []byte("module x\n"), 0o600); err != nil {
 		t.Fatal(err)
@@ -124,7 +124,7 @@ func TestPrepareOutputPath_RefusesPathsInsideTheRepository(t *testing.T) {
 	}
 }
 
-func TestRepositoryRoots_FindsThisModuleAndGitToplevel(t *testing.T) {
+func TestRepository_Roots_FindsThisModuleAndGitToplevel(t *testing.T) {
 	cwd, err := os.Getwd()
 	if err != nil {
 		t.Fatal(err)
@@ -140,7 +140,7 @@ func TestRepositoryRoots_FindsThisModuleAndGitToplevel(t *testing.T) {
 	}
 }
 
-func TestPrepareOutputPath_RequiresAZipName(t *testing.T) {
+func TestPrepare_OutputPath_RequiresAZipName(t *testing.T) {
 	if _, err := PrepareOutputPath(OutputRequest{Requested: filepath.Join(t.TempDir(), "keys.tar"), Now: outputTestNow}); err == nil {
 		t.Fatal("non-.zip output must be refused")
 	}
@@ -149,7 +149,7 @@ func TestPrepareOutputPath_RequiresAZipName(t *testing.T) {
 	}
 }
 
-func TestArchiveOutput_IsExclusiveAndRemovesPartialFiles(t *testing.T) {
+func TestArchive_Output_IsExclusiveAndRemovesPartialFiles(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "keys.zip")
 	failing := NewArchiveOutput(path)

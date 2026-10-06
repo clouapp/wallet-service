@@ -24,7 +24,7 @@ import (
 // membership read does not continue into the wallet. A wallet membership that
 // would otherwise admit the caller is not this case, and a missing membership
 // row stays the existing not-found answer.
-func TestWalletContextDeniesWhenTheMembershipReadFails(t *testing.T) {
+func TestWallet_Context_DeniesWhenTheMembershipReadFails(t *testing.T) {
 	userID := uuid.New()
 	accountID := uuid.New()
 	walletID := uuid.New()

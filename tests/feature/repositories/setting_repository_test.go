@@ -16,7 +16,7 @@ import (
 	"github.com/macrowallets/waas/tests/feature/support/fixtures"
 )
 
-func TestListPlatformReadsOnlyPlatformRows(t *testing.T) {
+func TestList_Platform_ReadsOnlyPlatformRows(t *testing.T) {
 	fixtures.TestDB(t)
 	ctx := context.Background()
 	repo := repositories.NewSettingRepository(nil)
@@ -52,7 +52,7 @@ func TestListPlatformReadsOnlyPlatformRows(t *testing.T) {
 	}
 }
 
-func TestListGroupDoesNotReturnAnotherAccount(t *testing.T) {
+func TestList_Group_DoesNotReturnAnotherAccount(t *testing.T) {
 	fixtures.TestDB(t)
 	ctx := context.Background()
 	repo := repositories.NewSettingRepository(nil)
@@ -80,7 +80,7 @@ func TestListGroupDoesNotReturnAnotherAccount(t *testing.T) {
 	}
 }
 
-func TestDeleteGroupLeavesPlatformRowsAndOtherAccounts(t *testing.T) {
+func TestDelete_Group_LeavesPlatformRowsAndOtherAccounts(t *testing.T) {
 	fixtures.TestDB(t)
 	ctx := context.Background()
 	repo := repositories.NewSettingRepository(nil)
@@ -145,7 +145,7 @@ func (w rollbackActivity) Append(ctx context.Context, row models.AccountActivity
 	return errors.New("rollback")
 }
 
-func TestResetSectionCommitsWithActivityAndRollsBackTogether(t *testing.T) {
+func TestReset_Section_CommitsWithActivityAndRollsBackTogether(t *testing.T) {
 	fixtures.TestDB(t)
 	ctx := context.Background()
 	settingsRepo := repositories.NewSettingRepository(nil)
@@ -250,7 +250,7 @@ func TestResetSectionCommitsWithActivityAndRollsBackTogether(t *testing.T) {
 	}
 }
 
-func TestUpsertPlatformReplacesTheSameKey(t *testing.T) {
+func TestUpsert_Platform_ReplacesTheSameKey(t *testing.T) {
 	fixtures.TestDB(t)
 	ctx := context.Background()
 	repo := repositories.NewSettingRepository(nil)
@@ -283,7 +283,7 @@ func TestUpsertPlatformReplacesTheSameKey(t *testing.T) {
 	}
 }
 
-func TestDeletePlatformLeavesAccountRows(t *testing.T) {
+func TestDelete_Platform_LeavesAccountRows(t *testing.T) {
 	fixtures.TestDB(t)
 	ctx := context.Background()
 	repo := repositories.NewSettingRepository(nil)
@@ -326,7 +326,7 @@ func TestDeletePlatformLeavesAccountRows(t *testing.T) {
 	}
 }
 
-func TestResetPlatformSectionCommitsWithActivityAndRollsBackTogether(t *testing.T) {
+func TestReset_Platform_SectionCommitsWithActivityAndRollsBackTogether(t *testing.T) {
 	fixtures.TestDB(t)
 	ctx := context.Background()
 	settingsRepo := repositories.NewSettingRepository(nil)

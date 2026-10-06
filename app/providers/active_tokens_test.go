@@ -28,7 +28,7 @@ func (s staticActiveTokens) FindActive(context.Context) ([]models.Token, error) 
 	return s.rows, nil
 }
 
-func TestReadActiveTokens_StoresTheCatalogFromFindActive(t *testing.T) {
+func TestRead_ActiveTokens_StoresTheCatalogFromFindActive(t *testing.T) {
 	resetActiveTokens()
 	t.Cleanup(resetActiveTokens)
 
@@ -47,7 +47,7 @@ func TestReadActiveTokens_StoresTheCatalogFromFindActive(t *testing.T) {
 	}
 }
 
-func TestReadActiveTokens_LeavesAnEmptyCatalogWhenTheReadFails(t *testing.T) {
+func TestRead_ActiveTokens_LeavesAnEmptyCatalogWhenTheReadFails(t *testing.T) {
 	resetActiveTokens()
 	t.Cleanup(resetActiveTokens)
 
@@ -59,7 +59,7 @@ func TestReadActiveTokens_LeavesAnEmptyCatalogWhenTheReadFails(t *testing.T) {
 	}
 }
 
-func TestBootedActiveTokens_NotLoadedBeforeBoot(t *testing.T) {
+func TestBooted_ActiveTokens_NotLoadedBeforeBoot(t *testing.T) {
 	resetActiveTokens()
 	t.Cleanup(resetActiveTokens)
 
@@ -69,7 +69,7 @@ func TestBootedActiveTokens_NotLoadedBeforeBoot(t *testing.T) {
 	}
 }
 
-func TestRegisterActiveTokens_KeepsTheSameActiveSet(t *testing.T) {
+func TestRegister_ActiveTokens_KeepsTheSameActiveSet(t *testing.T) {
 	reg := chainpkg.NewRegistry()
 	byChain := registerActiveTokens(reg, []models.Token{
 		{ChainID: "eth", Symbol: "usdt", Name: "Tether", ContractAddress: "0xabc", Decimals: 6},

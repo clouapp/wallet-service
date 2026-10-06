@@ -24,7 +24,7 @@ type WalletsControllerTestSuite struct {
 	goravelTesting.TestCase
 }
 
-func TestWalletsControllerSuite(t *testing.T) {
+func TestWallets_Controller_Suite(t *testing.T) {
 	suite.Run(t, new(WalletsControllerTestSuite))
 }
 
@@ -41,7 +41,7 @@ func TestWalletsControllerSuite(t *testing.T) {
 // TestCreateWallet_MissingChain confirms that the external API rejects a
 // request with no chain. The shared validator maps rule violations to 422
 // (Unprocessable Entity) via controllers.validateRequest — not 400.
-func (s *WalletsControllerTestSuite) TestCreateWallet_MissingChain() {
+func (s *WalletsControllerTestSuite) TestCreate_Wallet_MissingChain() {
 	testutil.SeededTestDB(s.T())
 	_, bearer, _ := ctltestutil.SetupAPIAuth(s.T(), false)
 
@@ -53,7 +53,7 @@ func (s *WalletsControllerTestSuite) TestCreateWallet_MissingChain() {
 
 // TestCreateWallet_UnknownChain confirms the db_exists:chains,id rule rejects
 // chains that aren't seeded. Returns 422 via the shared validator.
-func (s *WalletsControllerTestSuite) TestCreateWallet_UnknownChain() {
+func (s *WalletsControllerTestSuite) TestCreate_Wallet_UnknownChain() {
 	testutil.SeededTestDB(s.T())
 	_, bearer, _ := ctltestutil.SetupAPIAuth(s.T(), false)
 
@@ -63,7 +63,7 @@ func (s *WalletsControllerTestSuite) TestCreateWallet_UnknownChain() {
 		AssertStatus(422)
 }
 
-func (s *WalletsControllerTestSuite) TestListWallets() {
+func (s *WalletsControllerTestSuite) TestWalletsController_List_Wallets() {
 	testutil.SeededTestDB(s.T())
 	accountID, bearer, _ := ctltestutil.SetupAPIAuth(s.T(), false)
 
@@ -91,7 +91,7 @@ func (s *WalletsControllerTestSuite) TestListWallets() {
 
 // TestListWallets_ScopedToAccount guards the account filter on ListWallets:
 // wallets owned by account A must not appear in the response for account B.
-func (s *WalletsControllerTestSuite) TestListWallets_ScopedToAccount() {
+func (s *WalletsControllerTestSuite) TestList_Wallets_ScopedToAccount() {
 	testutil.SeededTestDB(s.T())
 	accountA, bearerA, _ := ctltestutil.SetupAPIAuth(s.T(), false)
 	_, bearerB, _ := ctltestutil.SetupAPIAuth(s.T(), false)
@@ -118,7 +118,7 @@ func (s *WalletsControllerTestSuite) TestListWallets_ScopedToAccount() {
 	s.Empty(payloadB.Data, "wallets must be scoped to the calling account")
 }
 
-func (s *WalletsControllerTestSuite) TestGetWallet_Success() {
+func (s *WalletsControllerTestSuite) TestGet_Wallet_Success() {
 	testutil.SeededTestDB(s.T())
 	accountID, bearer, _ := ctltestutil.SetupAPIAuth(s.T(), false)
 
@@ -133,7 +133,7 @@ func (s *WalletsControllerTestSuite) TestGetWallet_Success() {
 // TestGetWallet_NotFound — the APIWalletContext middleware returns a generic
 // 404 "wallet not found" body for any walletId that the caller's account
 // does not own (including valid UUIDs that simply don't exist).
-func (s *WalletsControllerTestSuite) TestGetWallet_NotFound() {
+func (s *WalletsControllerTestSuite) TestGet_Wallet_NotFound() {
 	testutil.SeededTestDB(s.T())
 	_, bearer, _ := ctltestutil.SetupAPIAuth(s.T(), false)
 
@@ -146,7 +146,7 @@ func (s *WalletsControllerTestSuite) TestGetWallet_NotFound() {
 // 400) for malformed walletIds on the external API so callers can't probe
 // for the difference between "malformed" and "not yours". This is the
 // documented behaviour of middleware.APIWalletContext.
-func (s *WalletsControllerTestSuite) TestGetWallet_InvalidUUID() {
+func (s *WalletsControllerTestSuite) TestGet_Wallet_InvalidUUID() {
 	testutil.SeededTestDB(s.T())
 	_, bearer, _ := ctltestutil.SetupAPIAuth(s.T(), false)
 
@@ -157,7 +157,7 @@ func (s *WalletsControllerTestSuite) TestGetWallet_InvalidUUID() {
 
 // TestGetWallet_OtherAccount — IDOR guard: a wallet owned by account A is
 // indistinguishable from "does not exist" when looked up by account B.
-func (s *WalletsControllerTestSuite) TestGetWallet_OtherAccount() {
+func (s *WalletsControllerTestSuite) TestGet_Wallet_OtherAccount() {
 	testutil.SeededTestDB(s.T())
 	accountA, _, _ := ctltestutil.SetupAPIAuth(s.T(), false)
 	_, bearerB, _ := ctltestutil.SetupAPIAuth(s.T(), false)

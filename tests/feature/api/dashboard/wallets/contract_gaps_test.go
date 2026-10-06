@@ -38,7 +38,7 @@ type contractGapsSuite struct {
 	token     string
 }
 
-func TestContractGapsSuite(t *testing.T) {
+func TestContract_Gaps_Suite(t *testing.T) {
 	suite.Run(t, new(contractGapsSuite))
 }
 
@@ -195,13 +195,13 @@ func (s *contractGapsSuite) jsonBody(resp contractstesting.Response) map[string]
 	return parsed
 }
 
-func (s *contractGapsSuite) TestArchiveWallet_Unauthenticated() {
+func (s *contractGapsSuite) TestArchive_Wallet_Unauthenticated() {
 	walletID := s.seedWallet("archive auth")
 	resp := s.call(http.MethodPost, "/v1/wallets/"+walletID.String()+"/archive", "", "")
 	resp.AssertUnauthorized()
 }
 
-func (s *contractGapsSuite) TestArchiveWallet_ForbiddenForAccountUser() {
+func (s *contractGapsSuite) TestArchive_Wallet_ForbiddenForAccountUser() {
 	walletID := s.seedWallet("archive forbidden")
 	_, _, token := s.seedSession("user")
 
@@ -210,7 +210,7 @@ func (s *contractGapsSuite) TestArchiveWallet_ForbiddenForAccountUser() {
 	s.Equal("only wallet/account owners and admins may archive wallets", s.errorText(s.jsonBody(resp)))
 }
 
-func (s *contractGapsSuite) TestArchiveWallet_ArchivesThenRejectsASecondCall() {
+func (s *contractGapsSuite) TestArchive_Wallet_ArchivesThenRejectsASecondCall() {
 	walletID := s.seedWallet("archive twice")
 	path := "/v1/wallets/" + walletID.String() + "/archive"
 
@@ -227,7 +227,7 @@ func (s *contractGapsSuite) TestArchiveWallet_ArchivesThenRejectsASecondCall() {
 	s.Equal("wallet already archived", s.errorText(s.jsonBody(second)))
 }
 
-func (s *contractGapsSuite) TestUpdateWalletSettings_PersistsLabel() {
+func (s *contractGapsSuite) TestUpdate_WalletSettings_PersistsLabel() {
 	walletID := s.seedWallet("old name")
 	resp := s.call(http.MethodPatch, "/v1/wallets/"+walletID.String()+"/settings", s.token, `{"label":"Desk"}`)
 	resp.AssertOk()
@@ -238,7 +238,7 @@ func (s *contractGapsSuite) TestUpdateWalletSettings_PersistsLabel() {
 	s.Equal("Desk", stored.Label)
 }
 
-func (s *contractGapsSuite) TestWebhookTest_Unauthenticated() {
+func (s *contractGapsSuite) TestWebhook_Test_Unauthenticated() {
 	walletID := s.seedWallet("webhook auth")
 	webhookID := s.seedWebhook(walletID, "http://127.0.0.1:1/hook", "secret")
 	resp := s.call(http.MethodPost, "/v1/wallets/"+walletID.String()+"/webhooks/"+webhookID.String()+"/test", "", "")
@@ -254,7 +254,7 @@ func (s *contractGapsSuite) captureLogs() *bytes.Buffer {
 	return logs
 }
 
-func (s *contractGapsSuite) TestWebhookTest_SignsTheBodyLikeANormalDelivery() {
+func (s *contractGapsSuite) TestWebhook_Test_SignsTheBodyLikeANormalDelivery() {
 	const secret = "test-webhook-secret-not-logged"
 	logs := s.captureLogs()
 	var (
@@ -296,7 +296,7 @@ func (s *contractGapsSuite) TestWebhookTest_SignsTheBodyLikeANormalDelivery() {
 	s.Equal(webhookID.String(), data["webhook_id"])
 }
 
-func (s *contractGapsSuite) TestWebhookTest_RefusedURLIsAnError() {
+func (s *contractGapsSuite) TestWebhook_Test_RefusedURLIsAnError() {
 	const secret = "refused-webhook-secret"
 	logs := s.captureLogs()
 	closed := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
@@ -314,12 +314,12 @@ func (s *contractGapsSuite) TestWebhookTest_RefusedURLIsAnError() {
 	s.Equal("webhook test delivery failed", s.errorText(s.jsonBody(resp)))
 }
 
-func (s *contractGapsSuite) TestGetWithdrawal_Unauthenticated() {
+func (s *contractGapsSuite) TestGet_Withdrawal_Unauthenticated() {
 	resp := s.call(http.MethodGet, "/v1/withdrawals/"+uuid.NewString(), "", "")
 	resp.AssertUnauthorized()
 }
 
-func (s *contractGapsSuite) TestGetWithdrawal_ReturnsTheAccountWithdrawal() {
+func (s *contractGapsSuite) TestGet_Withdrawal_ReturnsTheAccountWithdrawal() {
 	walletID := s.seedWallet("withdrawal happy")
 	withdrawalID := s.seedWithdrawal(walletID)
 
@@ -331,19 +331,19 @@ func (s *contractGapsSuite) TestGetWithdrawal_ReturnsTheAccountWithdrawal() {
 	s.Equal("pending", body["status"])
 }
 
-func (s *contractGapsSuite) TestGetWithdrawal_UnknownIDIsNotFound() {
+func (s *contractGapsSuite) TestGet_Withdrawal_UnknownIDIsNotFound() {
 	resp := s.call(http.MethodGet, "/v1/withdrawals/"+uuid.NewString(), s.token, "")
 	resp.AssertNotFound()
 	s.Equal("withdrawal not found", s.errorText(s.jsonBody(resp)))
 }
 
-func (s *contractGapsSuite) TestAddWalletUser_Unauthenticated() {
+func (s *contractGapsSuite) TestAdd_WalletUser_Unauthenticated() {
 	walletID := s.seedWallet("wallet user auth")
 	resp := s.call(http.MethodPost, "/v1/wallets/"+walletID.String()+"/users", "", `{"user_id":"`+uuid.NewString()+`","roles":"view"}`)
 	resp.AssertUnauthorized()
 }
 
-func (s *contractGapsSuite) TestAddWalletUser_AddsAnActiveAccountMember() {
+func (s *contractGapsSuite) TestAdd_WalletUser_AddsAnActiveAccountMember() {
 	walletID := s.seedWallet("wallet user happy")
 	_, memberID, _ := s.seedSession("user")
 
@@ -355,7 +355,7 @@ func (s *contractGapsSuite) TestAddWalletUser_AddsAnActiveAccountMember() {
 	s.Equal("viewer,spender", body["roles"])
 }
 
-func (s *contractGapsSuite) TestAddWalletUser_RejectsAnUnknownRole() {
+func (s *contractGapsSuite) TestAdd_WalletUser_RejectsAnUnknownRole() {
 	walletID := s.seedWallet("wallet user role")
 	_, memberID, _ := s.seedSession("user")
 
@@ -372,7 +372,7 @@ func (s *contractGapsSuite) TestAddWalletUser_RejectsAnUnknownRole() {
 	s.Empty(data)
 }
 
-func (s *contractGapsSuite) TestAddWalletUser_RejectsUserWhoIsNotAMember() {
+func (s *contractGapsSuite) TestAdd_WalletUser_RejectsUserWhoIsNotAMember() {
 	walletID := s.seedWallet("wallet user outsider")
 	outsiderID := uuid.New()
 	hash, err := authsvc.NewService().HashPassword(contractGapPassword)

@@ -16,7 +16,7 @@ func (a allowPlatformAdmins) Contains(_ context.Context, userID uuid.UUID) (bool
 	return a.ids[userID], nil
 }
 
-func TestEffectiveWebhookDelivery_MissingRowKeepsZeros(t *testing.T) {
+func TestEffective_WebhookDelivery_MissingRowKeepsZeros(t *testing.T) {
 	t.Parallel()
 
 	got, err := newTestService(newMemoryStore()).EffectiveWebhookDelivery(context.Background())
@@ -28,7 +28,7 @@ func TestEffectiveWebhookDelivery_MissingRowKeepsZeros(t *testing.T) {
 	}
 }
 
-func TestEffectiveWebhookDelivery_StoredRowOverridesBothKeys(t *testing.T) {
+func TestEffective_WebhookDelivery_StoredRowOverridesBothKeys(t *testing.T) {
 	t.Parallel()
 
 	store := newMemoryStore()
@@ -52,7 +52,7 @@ func TestEffectiveWebhookDelivery_StoredRowOverridesBothKeys(t *testing.T) {
 	}
 }
 
-func TestEffectiveWebhookDelivery_InvalidKeyFallsBackToZero(t *testing.T) {
+func TestEffective_WebhookDelivery_InvalidKeyFallsBackToZero(t *testing.T) {
 	t.Parallel()
 
 	store := newMemoryStore()
@@ -69,7 +69,7 @@ func TestEffectiveWebhookDelivery_InvalidKeyFallsBackToZero(t *testing.T) {
 	}
 }
 
-func TestEffectiveWebhookDelivery_AttemptsAboveTheCeilingFallBack(t *testing.T) {
+func TestEffective_WebhookDelivery_AttemptsAboveTheCeilingFallBack(t *testing.T) {
 	t.Parallel()
 
 	store := newMemoryStore()
@@ -86,7 +86,7 @@ func TestEffectiveWebhookDelivery_AttemptsAboveTheCeilingFallBack(t *testing.T) 
 	}
 }
 
-func TestEffectiveWebhookDelivery_StoreError(t *testing.T) {
+func TestEffective_WebhookDelivery_StoreError(t *testing.T) {
 	t.Parallel()
 
 	_, err := newTestService(platformErrStore{err: errors.New("db down")}).EffectiveWebhookDelivery(context.Background())
@@ -95,7 +95,7 @@ func TestEffectiveWebhookDelivery_StoreError(t *testing.T) {
 	}
 }
 
-func TestSavePlatform_ZeroOrNegativeIsNotStored(t *testing.T) {
+func TestSave_Platform_ZeroOrNegativeIsNotStored(t *testing.T) {
 	t.Parallel()
 
 	store := newMemoryStore()
@@ -130,7 +130,7 @@ func TestSavePlatform_ZeroOrNegativeIsNotStored(t *testing.T) {
 	}
 }
 
-func TestSavePlatform_RecordsNamesAndDeliveryReadsThem(t *testing.T) {
+func TestSave_Platform_RecordsNamesAndDeliveryReadsThem(t *testing.T) {
 	t.Parallel()
 
 	store := newMemoryStore()
@@ -180,7 +180,7 @@ func TestSavePlatform_RecordsNamesAndDeliveryReadsThem(t *testing.T) {
 	}
 }
 
-func TestSavePlatform_UnknownGroupIsNotFoundBeforeTheAdminCheck(t *testing.T) {
+func TestSave_Platform_UnknownGroupIsNotFoundBeforeTheAdminCheck(t *testing.T) {
 	t.Parallel()
 
 	store := newMemoryStore()
@@ -207,7 +207,7 @@ func TestSavePlatform_UnknownGroupIsNotFoundBeforeTheAdminCheck(t *testing.T) {
 	}
 }
 
-func TestSaveWebhookDeliveryIsNotAnAccountGroup(t *testing.T) {
+func TestSave_Webhook_DeliveryIsNotAnAccountGroup(t *testing.T) {
 	t.Parallel()
 
 	_, err := newTestService(newMemoryStore()).Save(
@@ -219,7 +219,7 @@ func TestSaveWebhookDeliveryIsNotAnAccountGroup(t *testing.T) {
 	}
 }
 
-func TestValidateWebhookDelivery(t *testing.T) {
+func TestValidate_Webhook_Delivery(t *testing.T) {
 	t.Parallel()
 
 	group, ok := FindGroup(groupWebhookDelivery)

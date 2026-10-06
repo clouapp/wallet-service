@@ -15,7 +15,7 @@ import (
 	"github.com/macrowallets/waas/config"
 )
 
-func TestDeliverUsesSMTPAndFromWhenTheRowsExist(t *testing.T) {
+func TestDeliver_Uses_SMTPAndFromWhenTheRowsExist(t *testing.T) {
 	const stored = "stored-mailbox-secret"
 	var written map[string]any
 	var restored bool
@@ -68,7 +68,7 @@ func TestDeliverUsesSMTPAndFromWhenTheRowsExist(t *testing.T) {
 	}
 }
 
-func TestDeliverKeepsTheEnvDocumentWhenTheRowsAreMissing(t *testing.T) {
+func TestDeliver_Keeps_TheEnvDocumentWhenTheRowsAreMissing(t *testing.T) {
 	const envPassword = "env-mailbox-secret"
 	var written map[string]any
 	cfg := mailer.NewConfig(mailer.Hooks{
@@ -109,7 +109,7 @@ func TestDeliverKeepsTheEnvDocumentWhenTheRowsAreMissing(t *testing.T) {
 	}
 }
 
-func TestDeliverKeepsTheEnvDocumentWhenTheReadFails(t *testing.T) {
+func TestDeliver_Keeps_TheEnvDocumentWhenTheReadFails(t *testing.T) {
 	var written map[string]any
 	cfg := mailer.NewConfig(mailer.Hooks{
 		Baseline: func() map[string]any {
@@ -139,7 +139,7 @@ func TestDeliverKeepsTheEnvDocumentWhenTheReadFails(t *testing.T) {
 	}
 }
 
-func TestQueueRefusesWithoutPublishingOrDialing(t *testing.T) {
+func TestQueue_Refuses_WithoutPublishingOrDialing(t *testing.T) {
 	var written bool
 	cfg := mailer.NewConfig(mailer.Hooks{
 		Baseline: func() map[string]any { return map[string]any{} },
@@ -160,7 +160,7 @@ func TestQueueRefusesWithoutPublishingOrDialing(t *testing.T) {
 	}
 }
 
-func TestNewMailerKeepsNilDependencies(t *testing.T) {
+func TestNew_Mailer_KeepsNilDependencies(t *testing.T) {
 	cfg := mailer.NewConfig(mailer.Hooks{})
 	var held bool
 	got := NewMailer(MailerDeps{
@@ -183,7 +183,7 @@ func TestNewMailerKeepsNilDependencies(t *testing.T) {
 	}
 }
 
-func TestNewFacadeKeepsNilDependencies(t *testing.T) {
+func TestNew_Facade_KeepsNilDependencies(t *testing.T) {
 	mailer := &Mailer{}
 	transport := &recordingMail{}
 	got := NewFacade(FacadeDeps{Mailer: mailer, Inner: transport})
@@ -196,7 +196,7 @@ func TestNewFacadeKeepsNilDependencies(t *testing.T) {
 	}
 }
 
-func TestDeliverAcceptsTheLogDriverWithoutDialing(t *testing.T) {
+func TestDeliver_Accepts_TheLogDriverWithoutDialing(t *testing.T) {
 	const secret = "env-mailbox-secret"
 	var written bool
 	var observed bool
@@ -238,7 +238,7 @@ func TestDeliverAcceptsTheLogDriverWithoutDialing(t *testing.T) {
 	}
 }
 
-func TestDeliverRefusesTheLogDriverInProduction(t *testing.T) {
+func TestDeliver_Refuses_TheLogDriverInProduction(t *testing.T) {
 	const secret = "env-mailbox-secret"
 	var written bool
 	cfg := mailer.NewConfig(mailer.Hooks{
@@ -266,7 +266,7 @@ func TestDeliverRefusesTheLogDriverInProduction(t *testing.T) {
 	}
 }
 
-func TestDeliverRefusesAMissingMailer(t *testing.T) {
+func TestDeliver_Refuses_AMissingMailer(t *testing.T) {
 	if err := NewFacade(FacadeDeps{Inner: &recordingMail{}}).Send(); !errors.Is(err, errMailerRequired) {
 		t.Fatal("a missing mailer was sent")
 	}

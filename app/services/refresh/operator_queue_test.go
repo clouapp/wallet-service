@@ -5,7 +5,7 @@ import (
 	"testing"
 )
 
-func TestRefreshWalletQueueScopeDispatchesEveryJobForFull(t *testing.T) {
+func TestRefresh_Wallet_QueueScopeDispatchesEveryJobForFull(t *testing.T) {
 	recorder := &recordingDispatcher{}
 	op := &Operator{dispatcher: recorder}
 
@@ -29,7 +29,7 @@ func TestRefreshWalletQueueScopeDispatchesEveryJobForFull(t *testing.T) {
 	}
 }
 
-func TestRefreshWalletQueueScopeDispatchesOnlyTheNamedJob(t *testing.T) {
+func TestRefresh_Wallet_QueueScopeDispatchesOnlyTheNamedJob(t *testing.T) {
 	for _, scope := range []string{"balances", "transactions", "tokens", "utxos"} {
 		t.Run(scope, func(t *testing.T) {
 			recorder := &recordingDispatcher{}
@@ -47,7 +47,7 @@ func TestRefreshWalletQueueScopeDispatchesOnlyTheNamedJob(t *testing.T) {
 	}
 }
 
-func TestRefreshWalletQueueScopeRejectsUnknownScope(t *testing.T) {
+func TestRefresh_Wallet_QueueScopeRejectsUnknownScope(t *testing.T) {
 	recorder := &recordingDispatcher{}
 	op := &Operator{dispatcher: recorder}
 	err := op.dispatchScopedJobs("nope", "wallet-1", "eth")
@@ -59,7 +59,7 @@ func TestRefreshWalletQueueScopeRejectsUnknownScope(t *testing.T) {
 	}
 }
 
-func TestRefreshWalletQueueScopeStopsOnTheFirstError(t *testing.T) {
+func TestRefresh_Wallet_QueueScopeStopsOnTheFirstError(t *testing.T) {
 	want := errors.New("queue down")
 	recorder := &recordingDispatcher{failKind: "transactions", err: want}
 	op := &Operator{dispatcher: recorder}
@@ -72,7 +72,7 @@ func TestRefreshWalletQueueScopeStopsOnTheFirstError(t *testing.T) {
 	}
 }
 
-func TestQueuedRefreshDispatchesWalletRefreshRequestedForBalances(t *testing.T) {
+func TestQueued_Refresh_DispatchesWalletRefreshRequestedForBalances(t *testing.T) {
 	recorder := &recordingDispatcher{}
 	var events []recordedDispatch
 	op := &Operator{
@@ -93,7 +93,7 @@ func TestQueuedRefreshDispatchesWalletRefreshRequestedForBalances(t *testing.T) 
 	}
 }
 
-func TestQueuedRefreshUsesTheEventForBalancesAndJobsForTheRest(t *testing.T) {
+func TestQueued_Refresh_UsesTheEventForBalancesAndJobsForTheRest(t *testing.T) {
 	recorder := &recordingDispatcher{}
 	var events int
 	op := &Operator{
@@ -128,7 +128,7 @@ func TestQueuedRefreshUsesTheEventForBalancesAndJobsForTheRest(t *testing.T) {
 	}
 }
 
-func TestQueuedRefreshLeavesANarrowScopeOnTheJobDispatcher(t *testing.T) {
+func TestQueued_Refresh_LeavesANarrowScopeOnTheJobDispatcher(t *testing.T) {
 	recorder := &recordingDispatcher{}
 	op := &Operator{
 		dispatcher: recorder,
@@ -145,7 +145,7 @@ func TestQueuedRefreshLeavesANarrowScopeOnTheJobDispatcher(t *testing.T) {
 	}
 }
 
-func TestQueuedRefreshStopsWhenTheEventDispatchFails(t *testing.T) {
+func TestQueued_Refresh_StopsWhenTheEventDispatchFails(t *testing.T) {
 	want := errors.New("event down")
 	recorder := &recordingDispatcher{}
 	op := &Operator{
@@ -163,7 +163,7 @@ func TestQueuedRefreshStopsWhenTheEventDispatchFails(t *testing.T) {
 	}
 }
 
-func TestQueuedRefreshBalancesNeedsTheDispatcher(t *testing.T) {
+func TestQueued_Refresh_BalancesNeedsTheDispatcher(t *testing.T) {
 	op := &Operator{requestRefresh: func(string, string) error { return nil }}
 	err := op.dispatchQueuedRefresh("balances", "wallet-1", "eth")
 	if err == nil || err.Error() != "refresh:wallet: refresh dispatcher is not initialized" {
@@ -171,7 +171,7 @@ func TestQueuedRefreshBalancesNeedsTheDispatcher(t *testing.T) {
 	}
 }
 
-func TestQueuedRefreshRejectsAMissingEventDispatcher(t *testing.T) {
+func TestQueued_Refresh_RejectsAMissingEventDispatcher(t *testing.T) {
 	op := &Operator{}
 	err := op.dispatchQueuedRefresh("balances", "wallet-1", "eth")
 	if err == nil || err.Error() != "refresh:wallet: event dispatcher is not initialized" {
@@ -179,7 +179,7 @@ func TestQueuedRefreshRejectsAMissingEventDispatcher(t *testing.T) {
 	}
 }
 
-func TestRefreshWalletQueueScopeRejectsNilDispatcher(t *testing.T) {
+func TestRefresh_Wallet_QueueScopeRejectsNilDispatcher(t *testing.T) {
 	op := &Operator{}
 	err := op.dispatchScopedJobs("balances", "wallet-1", "eth")
 	if err == nil || err.Error() != "refresh:wallet: refresh dispatcher is not initialized" {

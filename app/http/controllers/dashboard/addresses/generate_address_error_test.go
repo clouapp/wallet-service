@@ -13,7 +13,7 @@ import (
 	"github.com/macrowallets/waas/app/http/responses"
 )
 
-func TestGenerateAddressErrorOmitsTheProviderText(t *testing.T) {
+func TestGenerate_Address_ErrorOmitsTheProviderText(t *testing.T) {
 	const upstream = "api error AccessDeniedException: not authorized for arn:aws:secretsmanager:us-east-1:0:secret:share-b-AbCdEf"
 	cause := fmt.Errorf("fetch service share: %w", stubProviderError{text: upstream})
 	response := &recordingResponse{}
@@ -40,7 +40,7 @@ func TestGenerateAddressErrorOmitsTheProviderText(t *testing.T) {
 	}
 }
 
-func TestGenerateAddressErrorKeepsTheHandlersOwnMessage(t *testing.T) {
+func TestGenerate_Address_ErrorKeepsTheHandlersOwnMessage(t *testing.T) {
 	response := &recordingResponse{}
 	generateAddressError(&recordingContext{base: context.Background(), response: response}, fmt.Errorf("wallet not found"))
 
@@ -61,7 +61,7 @@ func TestGenerateAddressErrorKeepsTheHandlersOwnMessage(t *testing.T) {
 	}
 }
 
-func TestGenerateAddressErrorHidesAWrappedCause(t *testing.T) {
+func TestGenerate_Address_ErrorHidesAWrappedCause(t *testing.T) {
 	const query = `pq: insert into addresses (label) values ('secret-label')`
 	cause := fmt.Errorf("create address: %w", fmt.Errorf("%s", query))
 	response := &recordingResponse{}

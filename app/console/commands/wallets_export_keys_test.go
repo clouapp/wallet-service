@@ -35,7 +35,7 @@ type exportKeysChainStub struct{}
 
 func (exportKeysChainStub) FindByID(context.Context, string) (*models.Chain, error) { return nil, nil }
 
-func TestNewWalletsExportKeysKeepsItsDependencies(t *testing.T) {
+func TestNew_Wallets_ExportKeysKeepsItsDependencies(t *testing.T) {
 	wallets := exportKeysWalletStub{}
 	addresses := exportKeysAddressStub{}
 	chains := exportKeysChainStub{}
@@ -54,7 +54,7 @@ func TestNewWalletsExportKeysKeepsItsDependencies(t *testing.T) {
 	}
 }
 
-func TestNewWalletsExportKeysStoresNilDependencies(t *testing.T) {
+func TestNew_Wallets_ExportKeysStoresNilDependencies(t *testing.T) {
 	cmd := NewWalletsExportKeys(WalletsExportKeysDeps{})
 	if cmd == nil {
 		t.Fatal("NewWalletsExportKeys returned nil")
@@ -67,7 +67,7 @@ func TestNewWalletsExportKeysStoresNilDependencies(t *testing.T) {
 	}
 }
 
-func TestWalletsExportKeys_SignatureAndFlags(t *testing.T) {
+func TestWallets_ExportKeys_SignatureAndFlags(t *testing.T) {
 	cmd := &WalletsExportKeys{}
 	if cmd.Signature() != "wallets:export-keys" {
 		t.Fatalf("signature %s", cmd.Signature())
@@ -100,7 +100,7 @@ func TestWalletsExportKeys_SignatureAndFlags(t *testing.T) {
 	}
 }
 
-func TestParseWalletsExportKeysFlags_AcceptsRepeatedAndCommaSeparatedUUIDs(t *testing.T) {
+func TestParse_WalletsExportKeysFlags_AcceptsRepeatedAndCommaSeparatedUUIDs(t *testing.T) {
 	invocation, err := parseWalletsExportKeysFlags(walletsExportKeysFlags{
 		Wallets: []string{exportKeysTestWalletA, " " + exportKeysTestWalletB + "," + exportKeysTestWalletA},
 		Out:     " /tmp/x/keys.zip ", PassphraseVault: true,
@@ -120,7 +120,7 @@ func TestParseWalletsExportKeysFlags_AcceptsRepeatedAndCommaSeparatedUUIDs(t *te
 	}
 }
 
-func TestParseWalletsExportKeysFlags_RequiresAnExplicitSelection(t *testing.T) {
+func TestParse_WalletsExportKeysFlags_RequiresAnExplicitSelection(t *testing.T) {
 	if _, err := parseWalletsExportKeysFlags(walletsExportKeysFlags{}); err == nil || !strings.Contains(err.Error(), "--all") {
 		t.Fatalf("no --wallet and no --all must be refused: %v", err)
 	}
@@ -129,7 +129,7 @@ func TestParseWalletsExportKeysFlags_RequiresAnExplicitSelection(t *testing.T) {
 	}
 }
 
-func TestParseWalletsExportKeysFlags_RefusesBadWalletIDs(t *testing.T) {
+func TestParse_WalletsExportKeysFlags_RefusesBadWalletIDs(t *testing.T) {
 	for _, bad := range []string{"", "not-a-uuid", uuid.Nil.String(), exportKeysTestWalletA + ",", "base_deposit"} {
 		if _, err := parseWalletsExportKeysFlags(walletsExportKeysFlags{Wallets: []string{bad}}); err == nil {
 			t.Fatalf("--wallet %q must be refused", bad)
@@ -151,7 +151,7 @@ func (f *fakeSecretValues) GetSecretValue(_ context.Context, input *secretsmanag
 	return &secretsmanager.GetSecretValueOutput{SecretBinary: f.binary}, nil
 }
 
-func TestSecretsManagerShareB_FetchesTheWalletSecretWithoutLeakingErrors(t *testing.T) {
+func TestSecrets_ManagerShareB_FetchesTheWalletSecretWithoutLeakingErrors(t *testing.T) {
 	wallet := models.Wallet{ID: uuid.MustParse(exportKeysTestWalletA), MPCSecretARN: "arn:aws:secretsmanager:test"}
 	secrets := &fakeSecretValues{binary: []byte(`{"Xi":1}`)}
 	share, err := secretsManagerShareB{secrets: secrets}.FetchShareB(context.Background(), wallet)

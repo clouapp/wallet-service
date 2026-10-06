@@ -9,20 +9,20 @@ import (
 	"github.com/macrowallets/waas/tests/feature/support/testutil"
 )
 
-func TestNewReturnsNilForANilClient(t *testing.T) {
+func TestNew_Returns_NilForANilClient(t *testing.T) {
 	if New(nil) != nil {
 		t.Fatal("expected a nil address cache when Redis is not configured")
 	}
 }
 
-func TestNilCacheReportsAMissingClient(t *testing.T) {
+func TestNil_Cache_ReportsAMissingClient(t *testing.T) {
 	var cache *Cache
 	if err := cache.SAdd(context.Background(), "vault:addresses:eth", "0xabc"); err == nil {
 		t.Fatal("expected error for a nil cache")
 	}
 }
 
-func TestSAddRejectsMissingContextKeyAndMember(t *testing.T) {
+func TestS_Add_RejectsMissingContextKeyAndMember(t *testing.T) {
 	client := redis.NewClient(&redis.Options{Addr: "127.0.0.1:1", MaxRetries: -1})
 	t.Cleanup(func() { _ = client.Close() })
 	cache := New(client)
@@ -38,7 +38,7 @@ func TestSAddRejectsMissingContextKeyAndMember(t *testing.T) {
 	}
 }
 
-func TestSAddWritesTheMemberAndSetsNoTTL(t *testing.T) {
+func TestS_Add_WritesTheMemberAndSetsNoTTL(t *testing.T) {
 	client := testutil.TestRedis(t)
 	prefix := testutil.TestRedisPrefix(t, client)
 	key := prefix + "vault:addresses:eth"
@@ -68,7 +68,7 @@ func TestSAddWritesTheMemberAndSetsNoTTL(t *testing.T) {
 	}
 }
 
-func TestSAddCanceledContext(t *testing.T) {
+func TestS_Add_CanceledContext(t *testing.T) {
 	client := testutil.TestRedis(t)
 	prefix := testutil.TestRedisPrefix(t, client)
 	ctx, cancel := context.WithCancel(context.Background())
@@ -80,7 +80,7 @@ func TestSAddCanceledContext(t *testing.T) {
 	}
 }
 
-func TestSAddUsesTheGivenKey(t *testing.T) {
+func TestS_Add_UsesTheGivenKey(t *testing.T) {
 	client := testutil.TestRedis(t)
 	prefix := testutil.TestRedisPrefix(t, client)
 	key := prefix + "other"

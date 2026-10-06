@@ -12,7 +12,7 @@ import (
 
 const mailSMTPFixture = "mailbox-secret-value"
 
-func TestEffectiveMailSMTP_MissingRowKeepsEveryFieldUnused(t *testing.T) {
+func TestEffective_MailSMTP_MissingRowKeepsEveryFieldUnused(t *testing.T) {
 	t.Parallel()
 
 	got, err := newTestService(newMemoryStore()).EffectiveMailSMTP(context.Background())
@@ -24,7 +24,7 @@ func TestEffectiveMailSMTP_MissingRowKeepsEveryFieldUnused(t *testing.T) {
 	}
 }
 
-func TestEffectiveMailSMTP_OpensASealedPasswordAndSkipsABadField(t *testing.T) {
+func TestEffective_MailSMTP_OpensASealedPasswordAndSkipsABadField(t *testing.T) {
 	t.Parallel()
 
 	store := newMemoryStore()
@@ -67,7 +67,7 @@ func TestEffectiveMailSMTP_OpensASealedPasswordAndSkipsABadField(t *testing.T) {
 	}
 }
 
-func TestEffectiveMailSMTP_StoreError(t *testing.T) {
+func TestEffective_MailSMTP_StoreError(t *testing.T) {
 	t.Parallel()
 
 	_, err := newTestService(platformErrStore{err: errors.New("db down")}).EffectiveMailSMTP(context.Background())
@@ -76,7 +76,7 @@ func TestEffectiveMailSMTP_StoreError(t *testing.T) {
 	}
 }
 
-func TestSavePlatformMailSMTP_SealsThePasswordAndHidesIt(t *testing.T) {
+func TestSave_PlatformMailSMTP_SealsThePasswordAndHidesIt(t *testing.T) {
 	t.Parallel()
 
 	store := newMemoryStore()
@@ -161,7 +161,7 @@ func TestSavePlatformMailSMTP_SealsThePasswordAndHidesIt(t *testing.T) {
 	}
 }
 
-func TestSaveMailSMTPIsNotAnAccountGroup(t *testing.T) {
+func TestSave_Mail_SMTPIsNotAnAccountGroup(t *testing.T) {
 	t.Parallel()
 
 	_, err := newTestService(newMemoryStore()).Save(

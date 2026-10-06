@@ -42,7 +42,7 @@ func rateLimitedThenOK(failures int32, failure func(w http.ResponseWriter)) (*ht
 	return srv, &calls
 }
 
-func TestRPCCallRetriesRateLimitWithExponentialBackoff(t *testing.T) {
+func TestRPC_Call_RetriesRateLimitWithExponentialBackoff(t *testing.T) {
 	srv, calls := rateLimitedThenOK(3, func(w http.ResponseWriter) { w.WriteHeader(http.StatusTooManyRequests) })
 	defer srv.Close()
 	sleeps := &recordedSleeps{}
@@ -65,7 +65,7 @@ func TestRPCCallRetriesRateLimitWithExponentialBackoff(t *testing.T) {
 	}
 }
 
-func TestRPCCallHonoursRetryAfterAndCapsIt(t *testing.T) {
+func TestRPC_Call_HonoursRetryAfterAndCapsIt(t *testing.T) {
 	retryAfter := "1"
 	srv, _ := rateLimitedThenOK(2, func(w http.ResponseWriter) {
 		w.Header().Set("Retry-After", retryAfter)
@@ -83,7 +83,7 @@ func TestRPCCallHonoursRetryAfterAndCapsIt(t *testing.T) {
 	}
 }
 
-func TestRPCCallRetriesJSONRPCRateLimitError(t *testing.T) {
+func TestRPC_Call_RetriesJSONRPCRateLimitError(t *testing.T) {
 	srv, calls := rateLimitedThenOK(1, func(w http.ResponseWriter) {
 		_, _ = w.Write([]byte(`{"jsonrpc":"2.0","id":1,"error":{"code":429,"message":"Too many requests"}}`))
 	})
@@ -97,7 +97,7 @@ func TestRPCCallRetriesJSONRPCRateLimitError(t *testing.T) {
 	}
 }
 
-func TestRPCCallGivesUpAfterMaxAttempts(t *testing.T) {
+func TestRPC_Call_GivesUpAfterMaxAttempts(t *testing.T) {
 	srv, calls := rateLimitedThenOK(100, func(w http.ResponseWriter) { w.WriteHeader(http.StatusTooManyRequests) })
 	defer srv.Close()
 
@@ -110,7 +110,7 @@ func TestRPCCallGivesUpAfterMaxAttempts(t *testing.T) {
 	}
 }
 
-func TestRPCCallStopsBackingOffWhenContextEnds(t *testing.T) {
+func TestRPC_Call_StopsBackingOffWhenContextEnds(t *testing.T) {
 	srv, calls := rateLimitedThenOK(100, func(w http.ResponseWriter) { w.WriteHeader(http.StatusTooManyRequests) })
 	defer srv.Close()
 	c := testRetryClient(srv.URL, &recordedSleeps{}, 6)
@@ -126,7 +126,7 @@ func TestRPCCallStopsBackingOffWhenContextEnds(t *testing.T) {
 	}
 }
 
-func TestRPCCallDoesNotRetryOtherFailures(t *testing.T) {
+func TestRPC_Call_DoesNotRetryOtherFailures(t *testing.T) {
 	srv, calls := rateLimitedThenOK(100, func(w http.ResponseWriter) { w.WriteHeader(http.StatusInternalServerError) })
 	defer srv.Close()
 
@@ -138,7 +138,7 @@ func TestRPCCallDoesNotRetryOtherFailures(t *testing.T) {
 	}
 }
 
-func TestRPCCallTransportErrorOmitsURL(t *testing.T) {
+func TestRPC_Call_TransportErrorOmitsURL(t *testing.T) {
 	c := NewRPCClient(RPCClientDeps{URL: "http://127.0.0.1:1/v2/secret-api-key"})
 	err := c.Call(context.Background(), "getSlot", nil)
 	if err == nil || strings.Contains(err.Error(), "secret-api-key") {
@@ -146,7 +146,7 @@ func TestRPCCallTransportErrorOmitsURL(t *testing.T) {
 	}
 }
 
-func TestRPCCallErrorBodyOmitsURL(t *testing.T) {
+func TestRPC_Call_ErrorBodyOmitsURL(t *testing.T) {
 	const secret = "secret-api-key"
 	var endpoint string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -162,7 +162,7 @@ func TestRPCCallErrorBodyOmitsURL(t *testing.T) {
 	}
 }
 
-func TestRPCErrorMessageOmitsURLButKeepsTheType(t *testing.T) {
+func TestRPC_Error_MessageOmitsURLButKeepsTheType(t *testing.T) {
 	const secret = "secret-api-key"
 	var endpoint string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -178,7 +178,7 @@ func TestRPCErrorMessageOmitsURLButKeepsTheType(t *testing.T) {
 	}
 }
 
-func TestParseRetryAfter(t *testing.T) {
+func TestParse_Retry_After(t *testing.T) {
 	now := time.Date(2026, 10, 1, 12, 0, 0, 0, time.UTC)
 	cases := []struct {
 		value string

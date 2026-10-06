@@ -101,7 +101,7 @@ func mailProviderCases() []mailProviderCase {
 	}
 }
 
-func TestSavePlatformMailProviders_SealsSecretsAndHidesThem(t *testing.T) {
+func TestSave_PlatformMailProviders_SealsSecretsAndHidesThem(t *testing.T) {
 	t.Parallel()
 
 	for _, provider := range mailProviderCases() {
@@ -169,7 +169,7 @@ func TestSavePlatformMailProviders_SealsSecretsAndHidesThem(t *testing.T) {
 	}
 }
 
-func TestSavePlatformMailSES_RequiresTheKeyPairTogether(t *testing.T) {
+func TestSave_PlatformMailSES_RequiresTheKeyPairTogether(t *testing.T) {
 	t.Parallel()
 
 	store := newMemoryStore()
@@ -210,7 +210,7 @@ func TestSavePlatformMailSES_RequiresTheKeyPairTogether(t *testing.T) {
 	}
 }
 
-func TestSaveMailProvidersIsNotAnAccountGroup(t *testing.T) {
+func TestSave_Mail_ProvidersIsNotAnAccountGroup(t *testing.T) {
 	t.Parallel()
 
 	for _, name := range []string{groupMailSES, groupMailMailgun, groupMailResend, groupMailPostmark} {

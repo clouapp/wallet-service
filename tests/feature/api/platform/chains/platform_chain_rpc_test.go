@@ -32,7 +32,7 @@ type PlatformChainRPCTestSuite struct {
 	authSuite
 }
 
-func TestPlatformChainRPCSuite(t *testing.T) {
+func TestPlatform_Chain_RPCSuite(t *testing.T) {
 	suite.Run(t, new(PlatformChainRPCTestSuite))
 }
 
@@ -40,7 +40,7 @@ func (s *PlatformChainRPCTestSuite) SetupTest() {
 	testutil.SeededTestDB(s.T())
 }
 
-func (s *PlatformChainRPCTestSuite) TestAPlatformAdminReplacesTheEndpointTheDialerSees() {
+func (s *PlatformChainRPCTestSuite) TestA_Platform_AdminReplacesTheEndpointTheDialerSees() {
 	s.T().Setenv("ETH_RPC_URL", "http://env-fallback.invalid/secret-env")
 	token := "k" + strings.ReplaceAll(uuid.NewString(), "-", "")
 	var wantHost string
@@ -136,7 +136,7 @@ func (s *PlatformChainRPCTestSuite) TestAPlatformAdminReplacesTheEndpointTheDial
 	}
 }
 
-func (s *PlatformChainRPCTestSuite) TestANonAdminIsForbiddenAnUnknownChainIsNotFoundAndAnEmptyURLIsRejected() {
+func (s *PlatformChainRPCTestSuite) TestA_Non_AdminIsForbiddenAnUnknownChainIsNotFoundAndAnEmptyURLIsRejected() {
 	member := s.seedUser(false)
 	session := s.signIn(member.Email)
 	before := s.loadChain(models.ChainETH).RpcURL

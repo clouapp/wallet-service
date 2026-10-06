@@ -32,7 +32,7 @@ func (r *getReader) Find(context.Context, uuid.UUID, uuid.UUID) (*models.Account
 	return r.row, nil
 }
 
-func TestGetResolvesTheRowBeforeActivityRead(t *testing.T) {
+func TestGet_Resolves_TheRowBeforeActivityRead(t *testing.T) {
 	t.Parallel()
 
 	accountID := uuid.New()
@@ -68,7 +68,7 @@ func TestGetResolvesTheRowBeforeActivityRead(t *testing.T) {
 	}
 }
 
-func TestGetHidesForeignPlatformAndUnknownRows(t *testing.T) {
+func TestGet_Hides_ForeignPlatformAndUnknownRows(t *testing.T) {
 	t.Parallel()
 
 	accountID := uuid.New()

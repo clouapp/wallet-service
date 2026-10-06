@@ -16,7 +16,7 @@ func restoreSweepLimitsColumn(t *testing.T) {
 	require.NoError(t, (&migrations.M00000000000530DropAccountsSweepLimits{}).Down())
 }
 
-func TestMoveAccountSweepLimitsCopiesTheJSONAndLeavesTheColumn(t *testing.T) {
+func TestMove_Account_SweepLimitsCopiesTheJSONAndLeavesTheColumn(t *testing.T) {
 	fixtures.TestDB(t)
 	restoreSweepLimitsColumn(t)
 	account := fixtures.InsertAccount(t, "sweep-json")
@@ -54,7 +54,7 @@ func TestMoveAccountSweepLimitsCopiesTheJSONAndLeavesTheColumn(t *testing.T) {
 	require.Contains(t, scalar[string](t, `SELECT sweep_limits::text FROM accounts WHERE id = ?`, account.ID), "12.50")
 }
 
-func TestMoveAccountSweepLimitsRefusesANegativeCap(t *testing.T) {
+func TestMove_Account_SweepLimitsRefusesANegativeCap(t *testing.T) {
 	fixtures.TestDB(t)
 	restoreSweepLimitsColumn(t)
 	account := fixtures.InsertAccount(t, "sweep-negative")
@@ -73,7 +73,7 @@ func TestMoveAccountSweepLimitsRefusesANegativeCap(t *testing.T) {
 	require.Equal(t, int64(0), scalar[int64](t, `SELECT count(*) FROM settings WHERE "group" = 'account_sweep_limits'`))
 }
 
-func TestMoveAccountSweepLimitsSkipsBlankNullAndEmptyDocuments(t *testing.T) {
+func TestMove_Account_SweepLimitsSkipsBlankNullAndEmptyDocuments(t *testing.T) {
 	fixtures.TestDB(t)
 	restoreSweepLimitsColumn(t)
 	blank := fixtures.InsertAccount(t, "sweep-blank")
@@ -89,7 +89,7 @@ func TestMoveAccountSweepLimitsSkipsBlankNullAndEmptyDocuments(t *testing.T) {
 	require.Equal(t, int64(0), scalar[int64](t, `SELECT count(*) FROM settings WHERE account_id IN (?, ?, ?)`, blank.ID, empty.ID, absent.ID))
 }
 
-func TestMoveAccountSweepLimitsRejectsANonPositiveCount(t *testing.T) {
+func TestMove_Account_SweepLimitsRejectsANonPositiveCount(t *testing.T) {
 	fixtures.TestDB(t)
 	restoreSweepLimitsColumn(t)
 	account := fixtures.InsertAccount(t, "sweep-zero")

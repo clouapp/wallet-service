@@ -245,7 +245,7 @@ func assertSolanaSignedBy(t *testing.T, signed *types.SignedTx, address string) 
 	}
 }
 
-func TestExecutePlan_SolanaGenesisSignsWithReconstructedScalar(t *testing.T) {
+func TestExecute_Plan_SolanaGenesisSignsWithReconstructedScalar(t *testing.T) {
 	fixture := newSolanaWalletFixture(t)
 	var broadcasts []*types.SignedTx
 	svc := newSolanaExecutor(fixture, newSolanaSigningChain(&broadcasts))
@@ -266,7 +266,7 @@ func TestExecutePlan_SolanaGenesisSignsWithReconstructedScalar(t *testing.T) {
 	}
 }
 
-func TestExecutePlan_SolanaChildSignsWithStoredSeed(t *testing.T) {
+func TestExecute_Plan_SolanaChildSignsWithStoredSeed(t *testing.T) {
 	fixture := newSolanaWalletFixture(t)
 	var broadcasts []*types.SignedTx
 	svc := newSolanaExecutor(fixture, newSolanaSigningChain(&broadcasts))
@@ -283,7 +283,7 @@ func TestExecutePlan_SolanaChildSignsWithStoredSeed(t *testing.T) {
 	assertSolanaSignedBy(t, broadcasts[0], child.Address)
 }
 
-func TestExecutePlan_SolanaMultiSweepSignsChildThenGenesis(t *testing.T) {
+func TestExecute_Plan_SolanaMultiSweepSignsChildThenGenesis(t *testing.T) {
 	fixture := newSolanaWalletFixture(t)
 	var broadcasts []*types.SignedTx
 	svc := newSolanaExecutor(fixture, newSolanaSigningChain(&broadcasts))
@@ -305,7 +305,7 @@ func TestExecutePlan_SolanaMultiSweepSignsChildThenGenesis(t *testing.T) {
 	assertSolanaSignedBy(t, broadcasts[1], fixture.wallet.DepositAddress.Address)
 }
 
-func TestExecutePlan_SolanaChildRejectsWrongPassphrase(t *testing.T) {
+func TestExecute_Plan_SolanaChildRejectsWrongPassphrase(t *testing.T) {
 	fixture := newSolanaWalletFixture(t)
 	var broadcasts []*types.SignedTx
 	svc := newSolanaExecutor(fixture, newSolanaSigningChain(&broadcasts))
@@ -323,7 +323,7 @@ func TestExecutePlan_SolanaChildRejectsWrongPassphrase(t *testing.T) {
 	}
 }
 
-func TestExecutePlan_SolanaChildWithoutStoredKeyFails(t *testing.T) {
+func TestExecute_Plan_SolanaChildWithoutStoredKeyFails(t *testing.T) {
 	fixture := newSolanaWalletFixture(t)
 	var broadcasts []*types.SignedTx
 	svc := newSolanaExecutor(fixture, newSolanaSigningChain(&broadcasts))
@@ -340,7 +340,7 @@ func TestExecutePlan_SolanaChildWithoutStoredKeyFails(t *testing.T) {
 	}
 }
 
-func TestExecutePlan_SolanaGenesisNeedsScalarSigner(t *testing.T) {
+func TestExecute_Plan_SolanaGenesisNeedsScalarSigner(t *testing.T) {
 	fixture := newSolanaWalletFixture(t)
 	var broadcasts []*types.SignedTx
 	signingChain := newSolanaSigningChain(&broadcasts)
@@ -370,7 +370,7 @@ func runSolanaPlanExpectingNoBroadcast(t *testing.T, fixture *solanaWalletFixtur
 	}
 }
 
-func TestExecutePlan_SolanaBaseRowWithForeignAddressIsNotSignedAsGenesis(t *testing.T) {
+func TestExecute_Plan_SolanaBaseRowWithForeignAddressIsNotSignedAsGenesis(t *testing.T) {
 	fixture := newSolanaWalletFixture(t)
 	impostor := *fixture.wallet.DepositAddress
 	impostor.Address = fixture.child.Address
@@ -378,7 +378,7 @@ func TestExecutePlan_SolanaBaseRowWithForeignAddressIsNotSignedAsGenesis(t *test
 		Amount: big.NewInt(1), Strategy: StrategyDirectFromBase, SourceAddress: &impostor}, "has no stored signing key")
 }
 
-func TestExecutePlan_SolanaWalletPublicKeyMismatchFails(t *testing.T) {
+func TestExecute_Plan_SolanaWalletPublicKeyMismatchFails(t *testing.T) {
 	fixture := newSolanaWalletFixture(t)
 	other, err := fixture.tss.Keygen(context.Background(), mpcpkg.CurveEd25519)
 	if err != nil {
@@ -390,7 +390,7 @@ func TestExecutePlan_SolanaWalletPublicKeyMismatchFails(t *testing.T) {
 		Amount: big.NewInt(1), Strategy: StrategyDirectFromBase, SourceAddress: &base}, "fee payer is not the signing key")
 }
 
-func TestExecutePlan_SolanaChildWithAnotherChildsSeedFails(t *testing.T) {
+func TestExecute_Plan_SolanaChildWithAnotherChildsSeedFails(t *testing.T) {
 	fixture := newSolanaWalletFixture(t)
 	sibling := fixture.deriveChild(t, solE2EChildIndex+1)
 	swapped := fixture.child
@@ -399,7 +399,7 @@ func TestExecutePlan_SolanaChildWithAnotherChildsSeedFails(t *testing.T) {
 		Amount: big.NewInt(1), Strategy: StrategyDirectFromChild, SourceAddress: &swapped}, "stored key belongs to another address")
 }
 
-func TestExecutePlan_SolanaChildWithCorruptIVFails(t *testing.T) {
+func TestExecute_Plan_SolanaChildWithCorruptIVFails(t *testing.T) {
 	fixture := newSolanaWalletFixture(t)
 	corrupt := fixture.child
 	corrupt.EncryptionIV = "00"

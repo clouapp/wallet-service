@@ -8,7 +8,7 @@ import (
 	accountsvc "github.com/macrowallets/waas/app/services/account"
 )
 
-func TestInviteLinkIsARealTokenAndIsNotQueued(t *testing.T) {
+func TestInvite_Link_IsARealTokenAndIsNotQueued(t *testing.T) {
 	link, err := accountsvc.InviteLink("https://app.example", "tok_abc")
 	if err != nil {
 		t.Fatal(err)

@@ -26,7 +26,7 @@ type PlatformSettingsSectionCacheTestSuite struct {
 	authSuite
 }
 
-func TestPlatformSettingsSectionCacheSuite(t *testing.T) {
+func TestPlatform_Settings_SectionCacheSuite(t *testing.T) {
 	suite.Run(t, new(PlatformSettingsSectionCacheTestSuite))
 }
 
@@ -34,7 +34,7 @@ func (s *PlatformSettingsSectionCacheTestSuite) SetupTest() {
 	testutil.SeededTestDB(s.T())
 }
 
-func (s *PlatformSettingsSectionCacheTestSuite) TestAdminFlushDeletesPlatformKeysAndLeavesStoredRows() {
+func (s *PlatformSettingsSectionCacheTestSuite) TestAdmin_Flush_DeletesPlatformKeysAndLeavesStoredRows() {
 	admin := s.seedUser(false)
 	s.grantPlatformAdmin(admin.ID)
 	session := s.signIn(admin.Email)
@@ -66,7 +66,7 @@ func (s *PlatformSettingsSectionCacheTestSuite) TestAdminFlushDeletesPlatformKey
 	))
 }
 
-func (s *PlatformSettingsSectionCacheTestSuite) TestUnknownSectionIsNotFound() {
+func (s *PlatformSettingsSectionCacheTestSuite) TestUnknown_Section_IsNotFound() {
 	admin := s.seedUser(false)
 	s.grantPlatformAdmin(admin.ID)
 	session := s.signIn(admin.Email)
@@ -84,7 +84,7 @@ func (s *PlatformSettingsSectionCacheTestSuite) TestUnknownSectionIsNotFound() {
 	s.Equal(int64(0), s.count(`SELECT count(*) FROM account_activity WHERE action = 'settings.updated'`))
 }
 
-func (s *PlatformSettingsSectionCacheTestSuite) TestNonAdminOnAKnownSectionIsForbidden() {
+func (s *PlatformSettingsSectionCacheTestSuite) TestNon_Admin_OnAKnownSectionIsForbidden() {
 	member := s.seedUser(false)
 	session := s.signIn(member.Email)
 	key := "settings:platform:mail_smtp"
@@ -99,7 +99,7 @@ func (s *PlatformSettingsSectionCacheTestSuite) TestNonAdminOnAKnownSectionIsFor
 	s.Equal(int64(0), s.count(`SELECT count(*) FROM settings WHERE account_id IS NULL AND "group" = 'mail_smtp'`))
 }
 
-func (s *PlatformSettingsSectionCacheTestSuite) TestNonAdminOnAnUnknownSectionIsNotFound() {
+func (s *PlatformSettingsSectionCacheTestSuite) TestNon_Admin_OnAnUnknownSectionIsNotFound() {
 	member := s.seedUser(false)
 	session := s.signIn(member.Email)
 	key := "settings:platform:mail_smtp"

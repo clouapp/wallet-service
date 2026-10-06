@@ -32,7 +32,7 @@ func withdrawalsControllerDeps() WithdrawalsControllerDeps {
 	}
 }
 
-func TestNewWithdrawalsControllerKeepsItsDependencies(t *testing.T) {
+func TestNew_Withdrawals_ControllerKeepsItsDependencies(t *testing.T) {
 	deps := withdrawalsControllerDeps()
 	ctrl := NewWithdrawalsController(deps)
 	if ctrl == nil {
@@ -73,7 +73,7 @@ func TestNewWithdrawalsControllerKeepsItsDependencies(t *testing.T) {
 	}
 }
 
-func TestNewWithdrawalsControllerAllowsNilEventsAndRedis(t *testing.T) {
+func TestNew_Withdrawals_ControllerAllowsNilEventsAndRedis(t *testing.T) {
 	deps := withdrawalsControllerDeps()
 	deps.Events = nil
 	deps.Redis = nil
@@ -89,7 +89,7 @@ func TestNewWithdrawalsControllerAllowsNilEventsAndRedis(t *testing.T) {
 	}
 }
 
-func TestNewWithdrawalsControllerRequiresEveryDependency(t *testing.T) {
+func TestNew_Withdrawals_ControllerRequiresEveryDependency(t *testing.T) {
 	cases := []struct {
 		name  string
 		clear func(*WithdrawalsControllerDeps)

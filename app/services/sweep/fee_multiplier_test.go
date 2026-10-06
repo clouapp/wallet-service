@@ -21,7 +21,7 @@ func setFeeMultiplier(t *testing.T, wallet *models.Wallet, multiplier string) {
 	wallet.FeeMultiplier = numeric.NewNullDecimal(decimal.RequireFromString(multiplier))
 }
 
-func TestQuoteAndPlanPriceWithTheWalletFeeMultiplier(t *testing.T) {
+func TestQuote_And_PlanPriceWithTheWalletFeeMultiplier(t *testing.T) {
 	balance := new(big.Int).Add(big.NewInt(evmNativeAmount), new(big.Int).Mul(evmNativeFee, big.NewInt(3)))
 	svc, fixture, _ := evmNativePlanner(t, balance, false)
 
@@ -53,7 +53,7 @@ func TestQuoteAndPlanPriceWithTheWalletFeeMultiplier(t *testing.T) {
 	}
 }
 
-func TestQuoteRefusesAStoredMultiplierOutOfRange(t *testing.T) {
+func TestQuote_Refuses_AStoredMultiplierOutOfRange(t *testing.T) {
 	balance := new(big.Int).Add(big.NewInt(evmNativeAmount), evmNativeFee)
 	svc, fixture, _ := evmNativePlanner(t, balance, false)
 	fixture.wallet.FeeMultiplier = numeric.NewNullDecimal(decimal.NewFromInt(50))
@@ -86,7 +86,7 @@ func (c *scopingMockChain) WithFeePolicy(chain.FeePolicy) types.Chain { return c
 
 var errBuiltWithScopedAdapter = errors.New("built with the wallet-scoped adapter")
 
-func TestExecutePlanBuildsWithTheWalletScopedAdapter(t *testing.T) {
+func TestExecute_Plan_BuildsWithTheWalletScopedAdapter(t *testing.T) {
 	shared := sweepMockChain(models.ChainETH, models.NativeETH)
 	shared.BuildTransferFn = func(context.Context, types.TransferRequest) (*types.UnsignedTx, error) {
 		return nil, errors.New("built with the shared adapter")

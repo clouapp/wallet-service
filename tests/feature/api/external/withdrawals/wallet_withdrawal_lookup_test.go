@@ -25,7 +25,7 @@ type walletWithdrawalLookupSuite struct {
 	goravelTesting.TestCase
 }
 
-func TestWalletWithdrawalLookupSuite(t *testing.T) {
+func TestWallet_Withdrawal_LookupSuite(t *testing.T) {
 	suite.Run(t, new(walletWithdrawalLookupSuite))
 }
 
@@ -117,7 +117,7 @@ func lookupPath(walletID uuid.UUID, idempotencyKey string) string {
 	return "/api/v1/wallets/" + walletID.String() + "/withdrawals/" + idempotencyKey
 }
 
-func (s *walletWithdrawalLookupSuite) TestReturnsFailedWithdrawalWithFailureReason() {
+func (s *walletWithdrawalLookupSuite) TestReturns_Failed_WithdrawalWithFailureReason() {
 	accountID, bearer, _ := testutil.SetupAPIAuth(s.T(), false)
 	walletID := s.seedWallet(accountID)
 	reason := "insufficient_funds"
@@ -133,7 +133,7 @@ func (s *walletWithdrawalLookupSuite) TestReturnsFailedWithdrawalWithFailureReas
 	s.Nil(body["transaction_status"])
 }
 
-func (s *walletWithdrawalLookupSuite) TestReturnsBroadcastWithdrawalWithTxHash() {
+func (s *walletWithdrawalLookupSuite) TestReturns_Broadcast_WithdrawalWithTxHash() {
 	accountID, bearer, _ := testutil.SetupAPIAuth(s.T(), false)
 	walletID := s.seedWallet(accountID)
 	txHash := "0x" + hex.EncodeToString(make([]byte, 32))
@@ -147,7 +147,7 @@ func (s *walletWithdrawalLookupSuite) TestReturnsBroadcastWithdrawalWithTxHash()
 	s.Nil(body["failure_reason"])
 }
 
-func (s *walletWithdrawalLookupSuite) TestUnknownIdempotencyKeyIsNotFound() {
+func (s *walletWithdrawalLookupSuite) TestUnknown_Idempotency_KeyIsNotFound() {
 	accountID, bearer, _ := testutil.SetupAPIAuth(s.T(), false)
 	walletID := s.seedWallet(accountID)
 
@@ -155,7 +155,7 @@ func (s *walletWithdrawalLookupSuite) TestUnknownIdempotencyKeyIsNotFound() {
 	s.Equal(errorObject("not_found", "withdrawal not found"), body["error"])
 }
 
-func (s *walletWithdrawalLookupSuite) TestWithdrawalOfAnotherWalletInSameAccountIsNotFound() {
+func (s *walletWithdrawalLookupSuite) TestWithdrawal_Of_AnotherWalletInSameAccountIsNotFound() {
 	accountID, bearer, _ := testutil.SetupAPIAuth(s.T(), false)
 	walletWithWithdrawal := s.seedWallet(accountID)
 	otherWallet := s.seedWallet(accountID)
@@ -165,7 +165,7 @@ func (s *walletWithdrawalLookupSuite) TestWithdrawalOfAnotherWalletInSameAccount
 	s.Equal(errorObject("not_found", "withdrawal not found"), body["error"])
 }
 
-func (s *walletWithdrawalLookupSuite) TestOtherAccountsWalletIsNotFound() {
+func (s *walletWithdrawalLookupSuite) TestOther_Accounts_WalletIsNotFound() {
 	ownerAccountID, _, _ := testutil.SetupAPIAuth(s.T(), false)
 	walletID := s.seedWallet(ownerAccountID)
 	withdrawalID := s.seedWithdrawal(walletID, ownerAccountID, "broadcast", nil, nil)
@@ -175,7 +175,7 @@ func (s *walletWithdrawalLookupSuite) TestOtherAccountsWalletIsNotFound() {
 	s.Equal(errorObject("not_found", "wallet not found"), body["error"])
 }
 
-func (s *walletWithdrawalLookupSuite) TestRequiresBearerToken() {
+func (s *walletWithdrawalLookupSuite) TestRequires_Bearer_Token() {
 	accountID, _, _ := testutil.SetupAPIAuth(s.T(), false)
 	walletID := s.seedWallet(accountID)
 	withdrawalID := s.seedWithdrawal(walletID, accountID, "failed", nil, nil)
@@ -183,7 +183,7 @@ func (s *walletWithdrawalLookupSuite) TestRequiresBearerToken() {
 	s.get(lookupPath(walletID, withdrawalID.String()), "", 401)
 }
 
-func (s *walletWithdrawalLookupSuite) TestRejectsNonUUIDIdempotencyKey() {
+func (s *walletWithdrawalLookupSuite) TestRejects_Non_UUIDIdempotencyKey() {
 	accountID, bearer, _ := testutil.SetupAPIAuth(s.T(), false)
 	walletID := s.seedWallet(accountID)
 

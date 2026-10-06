@@ -14,7 +14,7 @@ import (
 	"github.com/macrowallets/waas/tests/feature/support/fixtures"
 )
 
-func TestSweepThresholdsSeedDoesNotQueryOutsideTheRepository(t *testing.T) {
+func TestSweep_Thresholds_SeedDoesNotQueryOutsideTheRepository(t *testing.T) {
 	source, err := os.ReadFile("sweep_thresholds.go")
 	if err != nil {
 		t.Fatalf("read sweep thresholds seed: %v", err)
@@ -27,7 +27,7 @@ func TestSweepThresholdsSeedDoesNotQueryOutsideTheRepository(t *testing.T) {
 	}
 }
 
-func TestSeedSweepThresholdsWritesTheCatalogAndRefreshesItOnRerun(t *testing.T) {
+func TestSeed_Sweep_ThresholdsWritesTheCatalogAndRefreshesItOnRerun(t *testing.T) {
 	fixtures.TestDB(t)
 	ctx := context.Background()
 	if profile := strings.TrimSpace(facades.Config().GetString("vault.chains.network_profile")); profile != "" {

@@ -21,7 +21,7 @@ type UserRepositoryTestSuite struct {
 	repo *repositories.UserRepository
 }
 
-func TestUserRepositorySuite(t *testing.T) {
+func TestUser_Repository_Suite(t *testing.T) {
 	suite.Run(t, new(UserRepositoryTestSuite))
 }
 
@@ -30,7 +30,7 @@ func (s *UserRepositoryTestSuite) SetupTest() {
 	s.repo = repositories.NewUserRepository(nil)
 }
 
-func (s *UserRepositoryTestSuite) TestCreate_Success() {
+func (s *UserRepositoryTestSuite) TestUserRepository_Create_Success() {
 	user := &models.User{
 		ID:           uuid.New(),
 		Email:        "test@example.com",
@@ -49,7 +49,7 @@ func (s *UserRepositoryTestSuite) TestCreate_Success() {
 	s.NotNil(found.Preferences)
 }
 
-func (s *UserRepositoryTestSuite) TestFindByEmail_Found() {
+func (s *UserRepositoryTestSuite) TestFind_ByEmail_Found() {
 	user := &models.User{
 		ID:           uuid.New(),
 		Email:        "found@example.com",
@@ -64,13 +64,13 @@ func (s *UserRepositoryTestSuite) TestFindByEmail_Found() {
 	s.Equal(user.ID, found.ID)
 }
 
-func (s *UserRepositoryTestSuite) TestFindByEmail_NotFound() {
+func (s *UserRepositoryTestSuite) TestFind_ByEmail_NotFound() {
 	found, err := s.repo.FindByEmail(context.Background(), "nonexistent@example.com")
 	s.ErrorIs(err, models.ErrRepositoryNotFound)
 	s.Nil(found)
 }
 
-func (s *UserRepositoryTestSuite) TestFindByID_Found() {
+func (s *UserRepositoryTestSuite) TestFind_ByID_Found() {
 	user := &models.User{
 		ID:           uuid.New(),
 		Email:        "byid@example.com",
@@ -85,13 +85,13 @@ func (s *UserRepositoryTestSuite) TestFindByID_Found() {
 	s.Equal("byid@example.com", found.Email)
 }
 
-func (s *UserRepositoryTestSuite) TestFindByID_NotFound() {
+func (s *UserRepositoryTestSuite) TestFind_ByID_NotFound() {
 	found, err := s.repo.FindByID(context.Background(), uuid.New())
 	s.ErrorIs(err, models.ErrRepositoryNotFound)
 	s.Nil(found)
 }
 
-func (s *UserRepositoryTestSuite) TestUpdateFullName() {
+func (s *UserRepositoryTestSuite) TestUpdate_Full_Name() {
 	user := &models.User{
 		ID:           uuid.New(),
 		Email:        "name@example.com",
@@ -109,7 +109,7 @@ func (s *UserRepositoryTestSuite) TestUpdateFullName() {
 	s.Equal("New Name", found.FullName)
 }
 
-func (s *UserRepositoryTestSuite) TestUpdatePasswordHash() {
+func (s *UserRepositoryTestSuite) TestUpdate_Password_Hash() {
 	user := &models.User{
 		ID:           uuid.New(),
 		Email:        "pw@example.com",
@@ -126,7 +126,7 @@ func (s *UserRepositoryTestSuite) TestUpdatePasswordHash() {
 	s.Equal("new_hash", found.PasswordHash)
 }
 
-func (s *UserRepositoryTestSuite) TestAdvanceTotpCounter_OnlyMovesForward() {
+func (s *UserRepositoryTestSuite) TestAdvance_TotpCounter_OnlyMovesForward() {
 	userID := insertActiveUserRow(s.T())
 
 	advanced, err := s.repo.AdvanceTotpCounter(context.Background(), userID, 100)
@@ -146,7 +146,7 @@ func (s *UserRepositoryTestSuite) TestAdvanceTotpCounter_OnlyMovesForward() {
 	s.Equal(int64(100), found.TotpLastUsedCounter)
 }
 
-func (s *UserRepositoryTestSuite) TestUpdateSessionsRevokedAt() {
+func (s *UserRepositoryTestSuite) TestUpdate_Sessions_RevokedAt() {
 	userID := insertActiveUserRow(s.T())
 	found, err := s.repo.FindByID(context.Background(), userID)
 	s.Require().NoError(err)
@@ -161,7 +161,7 @@ func (s *UserRepositoryTestSuite) TestUpdateSessionsRevokedAt() {
 	s.True(watermark.Equal(*found.SessionsRevokedAt))
 }
 
-func (s *UserRepositoryTestSuite) TestSetSuspendedAtSetsAndClearsTheColumn() {
+func (s *UserRepositoryTestSuite) TestSet_Suspended_AtSetsAndClearsTheColumn() {
 	userID := insertActiveUserRow(s.T())
 	found, err := s.repo.FindByID(context.Background(), userID)
 	s.Require().NoError(err)
@@ -182,7 +182,7 @@ func (s *UserRepositoryTestSuite) TestSetSuspendedAtSetsAndClearsTheColumn() {
 	s.EqualError(s.repo.SetSuspendedAt(context.Background(), uuid.Nil, &at), "set suspended at: user id is required")
 }
 
-func (s *UserRepositoryTestSuite) TestListOrdersByCreatedAtDescending() {
+func (s *UserRepositoryTestSuite) TestList_Orders_ByCreatedAtDescending() {
 	older := insertActiveUserRow(s.T())
 	newer := insertActiveUserRow(s.T())
 	s.stampCreatedAt(older, time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC))
@@ -211,7 +211,7 @@ func (s *UserRepositoryTestSuite) TestListOrdersByCreatedAtDescending() {
 	s.EqualError(err, "list users: context is required")
 }
 
-func (s *UserRepositoryTestSuite) TestUpdateTotpSecretStoresTheSealedCredential() {
+func (s *UserRepositoryTestSuite) TestUpdate_Totp_SecretStoresTheSealedCredential() {
 	userID := insertActiveUserRow(s.T())
 	sealed, err := settings.Seal(facades.Crypt(), "totp-plaintext-marker")
 	s.Require().NoError(err)

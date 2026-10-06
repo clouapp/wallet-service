@@ -28,7 +28,7 @@ var routeRegistrationFiles = []string{
 // row is not served, or the row's chain is not the middleware the route files
 // register. Cors and CacheControl are omitted. The check does not use the
 // architecture baseline: a mismatch is always a failure.
-func TestGuardChainMatchesRegistration(t *testing.T) {
+func TestGuard_Chain_MatchesRegistration(t *testing.T) {
 	module, err := architecture.LoadModule()
 	if err != nil {
 		t.Fatalf("load module: %v", err)

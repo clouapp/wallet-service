@@ -2,7 +2,7 @@ package policies
 
 import "testing"
 
-func TestSeesEveryAccountWalletFollowsTheFlagForUserAndAuditor(t *testing.T) {
+func TestSees_Every_AccountWalletFollowsTheFlagForUserAndAuditor(t *testing.T) {
 	for _, role := range []string{"owner", "admin"} {
 		if !SeesEveryAccountWallet(role, false) || !SeesEveryAccountWallet(role, true) {
 			t.Fatalf("%s must see every wallet whether or not the flag is set", role)

@@ -25,7 +25,7 @@ type PlatformSettingsIndexTestSuite struct {
 	authSuite
 }
 
-func TestPlatformSettingsIndexSuite(t *testing.T) {
+func TestPlatform_Settings_IndexSuite(t *testing.T) {
 	suite.Run(t, new(PlatformSettingsIndexTestSuite))
 }
 
@@ -34,7 +34,7 @@ func (s *PlatformSettingsIndexTestSuite) SetupTest() {
 	settings.FacadeCache{}.Forget("settings:platform:mail_smtp")
 }
 
-func (s *PlatformSettingsIndexTestSuite) TestAPlatformAdminSeesPlatformGroupsAndNotSecrets() {
+func (s *PlatformSettingsIndexTestSuite) TestA_Platform_AdminSeesPlatformGroupsAndNotSecrets() {
 	admin := s.seedUser(false)
 	s.grantPlatformAdmin(admin.ID)
 	session := s.signIn(admin.Email)
@@ -126,7 +126,7 @@ func (s *PlatformSettingsIndexTestSuite) TestAPlatformAdminSeesPlatformGroupsAnd
 	))
 }
 
-func (s *PlatformSettingsIndexTestSuite) TestANonAdminIsForbiddenAndAMissingSessionIsUnauthorized() {
+func (s *PlatformSettingsIndexTestSuite) TestA_Non_AdminIsForbiddenAndAMissingSessionIsUnauthorized() {
 	member := s.seedUser(false)
 	session := s.signIn(member.Email)
 	forbidden := s.getRaw(session.AccessToken, "/v1/platform/settings")

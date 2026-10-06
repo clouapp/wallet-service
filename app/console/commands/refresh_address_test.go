@@ -26,7 +26,7 @@ func (refreshAddressDispatcherStub) DispatchWithdrawalBroadcasted(string, string
 	return nil
 }
 
-func TestNewRefreshAddressKeepsItsDependencies(t *testing.T) {
+func TestNew_Refresh_AddressKeepsItsDependencies(t *testing.T) {
 	balances := refresh.NewBalanceService(refresh.Deps{})
 	dispatcher := &refreshAddressDispatcherStub{}
 	cmd := NewRefreshAddress(RefreshAddressDeps{
@@ -44,7 +44,7 @@ func TestNewRefreshAddressKeepsItsDependencies(t *testing.T) {
 	}
 }
 
-func TestNewRefreshAddressRequiresBalances(t *testing.T) {
+func TestNew_Refresh_AddressRequiresBalances(t *testing.T) {
 	defer func() {
 		got := recover()
 		if got != "refresh:address: balance refresh service is required" {
@@ -54,7 +54,7 @@ func TestNewRefreshAddressRequiresBalances(t *testing.T) {
 	NewRefreshAddress(RefreshAddressDeps{Dispatcher: &refreshAddressDispatcherStub{}})
 }
 
-func TestNewRefreshAddressRequiresADispatcher(t *testing.T) {
+func TestNew_Refresh_AddressRequiresADispatcher(t *testing.T) {
 	defer func() {
 		got := recover()
 		if got != "refresh:address: refresh dispatcher is required" {

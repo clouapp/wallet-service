@@ -21,7 +21,7 @@ func sampleEntry(block uint64, attempts int, at time.Time) Entry {
 	}
 }
 
-func TestEntryValidate(t *testing.T) {
+func TestStore_Entry_Validate(t *testing.T) {
 	now := time.Now().UTC()
 	valid := sampleEntry(10, 1, now)
 	if err := valid.Validate(); err != nil {
@@ -47,7 +47,7 @@ func TestEntryValidate(t *testing.T) {
 	}
 }
 
-func TestDueSortsByNextRetryAndSkipsFutureEntries(t *testing.T) {
+func TestDue_Sorts_ByNextRetryAndSkipsFutureEntries(t *testing.T) {
 	now := time.Now().UTC()
 	late := sampleEntry(5, 1, now.Add(-10*time.Second))
 	early := sampleEntry(9, 1, now.Add(-time.Minute))
@@ -58,7 +58,7 @@ func TestDueSortsByNextRetryAndSkipsFutureEntries(t *testing.T) {
 	}
 }
 
-func TestTruncateError(t *testing.T) {
+func TestStore_Truncate_Error(t *testing.T) {
 	if got := TruncateError(strings.Repeat("x", MaxErrorLength+20)); len(got) != MaxErrorLength {
 		t.Fatalf("expected %d bytes, got %d", MaxErrorLength, len(got))
 	}
@@ -67,7 +67,7 @@ func TestTruncateError(t *testing.T) {
 	}
 }
 
-func TestFileStore_PutReplaceDeleteSurvivesReopen(t *testing.T) {
+func TestFile_Store_PutReplaceDeleteSurvivesReopen(t *testing.T) {
 	ctx := context.Background()
 	dir := t.TempDir()
 	now := time.Now().UTC().Truncate(time.Millisecond)
@@ -104,7 +104,7 @@ func TestFileStore_PutReplaceDeleteSurvivesReopen(t *testing.T) {
 	}
 }
 
-func TestFileStore_IgnoresATornLastRecordAndKeepsAppending(t *testing.T) {
+func TestFile_Store_IgnoresATornLastRecordAndKeepsAppending(t *testing.T) {
 	ctx := context.Background()
 	dir := t.TempDir()
 	now := time.Now().UTC()
@@ -137,7 +137,7 @@ func TestFileStore_IgnoresATornLastRecordAndKeepsAppending(t *testing.T) {
 	}
 }
 
-func TestFileStore_RejectsACorruptRecordInTheMiddle(t *testing.T) {
+func TestFile_Store_RejectsACorruptRecordInTheMiddle(t *testing.T) {
 	ctx := context.Background()
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, testChain+".jsonl"), []byte("garbage\n{\"op\":\"delete\",\"block\":1}\n"), 0o600); err != nil {
@@ -152,7 +152,7 @@ func TestFileStore_RejectsACorruptRecordInTheMiddle(t *testing.T) {
 	}
 }
 
-func TestFileStore_CompactsResolvedEntries(t *testing.T) {
+func TestFile_Store_CompactsResolvedEntries(t *testing.T) {
 	ctx := context.Background()
 	dir := t.TempDir()
 	now := time.Now().UTC()
@@ -188,7 +188,7 @@ func TestFileStore_CompactsResolvedEntries(t *testing.T) {
 	}
 }
 
-func TestNewDurableStore_NeedsABackend(t *testing.T) {
+func TestNew_DurableStore_NeedsABackend(t *testing.T) {
 	if _, err := NewDurableStore(DurableStoreDeps{}); err == nil {
 		t.Fatal("expected an error without any backend")
 	}

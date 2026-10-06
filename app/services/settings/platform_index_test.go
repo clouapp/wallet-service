@@ -12,7 +12,7 @@ import (
 
 const platformIndexSecret = "platform-index-secret-value"
 
-func TestPlatformIndex_ListsPlatformGroupsAndHidesSecrets(t *testing.T) {
+func TestPlatform_Index_ListsPlatformGroupsAndHidesSecrets(t *testing.T) {
 	t.Parallel()
 
 	store := newMemoryStore()
@@ -71,7 +71,7 @@ func TestPlatformIndex_ListsPlatformGroupsAndHidesSecrets(t *testing.T) {
 	}
 }
 
-func TestPlatformIndex_ForbidsANonAdminBeforeReading(t *testing.T) {
+func TestPlatform_Index_ForbidsANonAdminBeforeReading(t *testing.T) {
 	t.Parallel()
 
 	actor := uuid.New()
@@ -89,7 +89,7 @@ func TestPlatformIndex_ForbidsANonAdminBeforeReading(t *testing.T) {
 	}
 }
 
-func TestVisibleOnPlatformIndexKeepsAnUncataloguedViewPermission(t *testing.T) {
+func TestVisible_On_PlatformIndexKeepsAnUncataloguedViewPermission(t *testing.T) {
 	t.Parallel()
 
 	if visibleOnPlatformIndex(Group{Name: groupAccountSecurity, Scope: ScopeAccount, ViewPermission: "settings.view"}) {

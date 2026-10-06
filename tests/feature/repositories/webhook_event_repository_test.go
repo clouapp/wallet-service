@@ -18,7 +18,7 @@ type WebhookEventRepositoryTestSuite struct {
 	repo *repositories.WebhookEventRepository
 }
 
-func TestWebhookEventRepositorySuite(t *testing.T) {
+func TestWebhook_Event_RepositorySuite(t *testing.T) {
 	suite.Run(t, new(WebhookEventRepositoryTestSuite))
 }
 
@@ -27,7 +27,7 @@ func (s *WebhookEventRepositoryTestSuite) SetupTest() {
 	s.repo = repositories.NewWebhookEventRepository(nil)
 }
 
-func (s *WebhookEventRepositoryTestSuite) TestCreate_Success() {
+func (s *WebhookEventRepositoryTestSuite) TestWebhookEventRepository_Create_Success() {
 	event := &models.WebhookEvent{
 		ID:             uuid.New(),
 		EventType:      "deposit.confirmed",
@@ -41,7 +41,7 @@ func (s *WebhookEventRepositoryTestSuite) TestCreate_Success() {
 	s.NoError(err)
 }
 
-func (s *WebhookEventRepositoryTestSuite) TestMarkDelivered() {
+func (s *WebhookEventRepositoryTestSuite) TestWebhookEventRepository_Mark_Delivered() {
 	event := &models.WebhookEvent{
 		ID:             uuid.New(),
 		EventType:      "deposit.confirmed",
@@ -63,7 +63,7 @@ func (s *WebhookEventRepositoryTestSuite) TestMarkDelivered() {
 	s.Equal(1, check.Attempts)
 }
 
-func (s *WebhookEventRepositoryTestSuite) TestIncrementAttempt() {
+func (s *WebhookEventRepositoryTestSuite) TestWebhookEventRepository_Increment_Attempt() {
 	event := &models.WebhookEvent{
 		ID:             uuid.New(),
 		EventType:      "deposit.confirmed",

@@ -13,7 +13,7 @@ import (
 	"github.com/macrowallets/waas/app/services/webhook"
 )
 
-func TestPostSendsTheSignedBodyUnchanged(t *testing.T) {
+func TestPost_Sends_TheSignedBodyUnchanged(t *testing.T) {
 	const (
 		signature = "already-signed"
 		eventType = "deposit.confirmed"
@@ -67,7 +67,7 @@ func TestPostSendsTheSignedBodyUnchanged(t *testing.T) {
 	}
 }
 
-func TestPostKeepsRawBytesAndLeavesTheSecretOffTheWire(t *testing.T) {
+func TestPost_Keeps_RawBytesAndLeavesTheSecretOffTheWire(t *testing.T) {
 	const plantedSecret = "signing-secret-not-sent"
 	raw := []byte{0x00, 0x01, '{', '}', 0xff}
 	var got []byte
@@ -104,7 +104,7 @@ func TestPostKeepsRawBytesAndLeavesTheSecretOffTheWire(t *testing.T) {
 	}
 }
 
-func TestPostOmitsTheSignatureFromTransportErrors(t *testing.T) {
+func TestPost_Omits_TheSignatureFromTransportErrors(t *testing.T) {
 	const signature = "sig-not-logged"
 	_, err := NewClient().Post(context.Background(), webhook.SignedDelivery{
 		URL:        "http://127.0.0.1:1/nope",
@@ -119,7 +119,7 @@ func TestPostOmitsTheSignatureFromTransportErrors(t *testing.T) {
 	}
 }
 
-func TestPostRequiresAContextAndATimeout(t *testing.T) {
+func TestPost_Requires_AContextAndATimeout(t *testing.T) {
 	called := false
 	server := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
 		called = true

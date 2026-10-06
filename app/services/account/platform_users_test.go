@@ -89,7 +89,7 @@ func (m *platformUserMemberships) ActivateOwner(context.Context, uuid.UUID) erro
 	return fmt.Errorf("activate owner is not used")
 }
 
-func TestListUsersForPlatformRefusesANonAdminBeforeReadingTheAccount(t *testing.T) {
+func TestList_Users_ForPlatformRefusesANonAdminBeforeReadingTheAccount(t *testing.T) {
 	t.Parallel()
 	accountID := uuid.New()
 	store := &lifecycleAccounts{row: &models.Account{ID: accountID, Status: models.StatusActive}}
@@ -114,7 +114,7 @@ func TestListUsersForPlatformRefusesANonAdminBeforeReadingTheAccount(t *testing.
 	}
 }
 
-func TestListUsersForPlatformUnknownAccountDoesNotReadMemberships(t *testing.T) {
+func TestList_Users_ForPlatformUnknownAccountDoesNotReadMemberships(t *testing.T) {
 	t.Parallel()
 	actor := uuid.New()
 	store := &lifecycleAccounts{row: &models.Account{ID: uuid.New(), Status: models.StatusActive}}
@@ -131,7 +131,7 @@ func TestListUsersForPlatformUnknownAccountDoesNotReadMemberships(t *testing.T) 
 	}
 }
 
-func TestListUsersForPlatformReturnsThePageForAPlatformAdmin(t *testing.T) {
+func TestList_Users_ForPlatformReturnsThePageForAPlatformAdmin(t *testing.T) {
 	t.Parallel()
 	actor := uuid.New()
 	accountID := uuid.New()
@@ -156,7 +156,7 @@ func TestListUsersForPlatformReturnsThePageForAPlatformAdmin(t *testing.T) {
 	}
 }
 
-func TestListUsersForPlatformRejectsARowWithoutAUser(t *testing.T) {
+func TestList_Users_ForPlatformRejectsARowWithoutAUser(t *testing.T) {
 	t.Parallel()
 	actor := uuid.New()
 	accountID := uuid.New()
@@ -170,7 +170,7 @@ func TestListUsersForPlatformRejectsARowWithoutAUser(t *testing.T) {
 	}
 }
 
-func TestListUsersForPlatformRejectsBadInputBeforeReading(t *testing.T) {
+func TestList_Users_ForPlatformRejectsBadInputBeforeReading(t *testing.T) {
 	t.Parallel()
 	actor := uuid.New()
 	accountID := uuid.New()

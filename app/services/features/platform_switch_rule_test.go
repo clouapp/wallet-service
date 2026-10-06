@@ -8,7 +8,7 @@ import (
 	"testing"
 )
 
-func TestClaudeRecordsFlagsAsPlatformKillSwitches(t *testing.T) {
+func TestClaude_Records_FlagsAsPlatformKillSwitches(t *testing.T) {
 	t.Parallel()
 
 	_, file, _, ok := runtime.Caller(0)

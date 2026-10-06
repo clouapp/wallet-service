@@ -11,7 +11,7 @@ import (
 	"github.com/shopspring/decimal"
 )
 
-func TestStoreSpendingLimitBlankAndNonNegative(t *testing.T) {
+func TestStore_Spending_LimitBlankAndNonNegative(t *testing.T) {
 	t.Parallel()
 	cases := []struct {
 		name  string
@@ -40,7 +40,7 @@ func TestStoreSpendingLimitBlankAndNonNegative(t *testing.T) {
 	}
 }
 
-func TestStoreSpendingLimitRejectsANegativeAmount(t *testing.T) {
+func TestStore_Spending_LimitRejectsANegativeAmount(t *testing.T) {
 	t.Parallel()
 	cases := []map[string]any{
 		{"daily_usd": "-1"},
@@ -59,7 +59,7 @@ func TestStoreSpendingLimitRejectsANegativeAmount(t *testing.T) {
 	}
 }
 
-func TestBlankSpendingLimitDoesNotTouchRedisOrTheQuote(t *testing.T) {
+func TestBlank_Spending_LimitDoesNotTouchRedisOrTheQuote(t *testing.T) {
 	locker := &spendLocker{}
 	quote := &fixedQuote{usd: decimal.NewFromInt(1), fail: errors.New("quote must not run")}
 	svc := &Service{locker: locker, usdQuote: quote}
@@ -82,7 +82,7 @@ func TestBlankSpendingLimitDoesNotTouchRedisOrTheQuote(t *testing.T) {
 	}
 }
 
-func TestDailyUSDCapIsPerTokenAndRefundsARejectedSpend(t *testing.T) {
+func TestDaily_USD_CapIsPerTokenAndRefundsARejectedSpend(t *testing.T) {
 	tokenID := uuid.New()
 	otherID := uuid.New()
 	locker := &spendLocker{}
@@ -130,7 +130,7 @@ func TestDailyUSDCapIsPerTokenAndRefundsARejectedSpend(t *testing.T) {
 	}
 }
 
-func TestSetCapWithoutAPriceStopsTheWithdrawal(t *testing.T) {
+func TestSet_Cap_WithoutAPriceStopsTheWithdrawal(t *testing.T) {
 	svc := &Service{locker: &spendLocker{}, usdQuote: failingQuote{}}
 	err := svc.enforceTokenSpendingLimit(context.Background(), WithdrawRequest{
 		AccessTokenID: uuid.New(),
@@ -146,7 +146,7 @@ func TestSetCapWithoutAPriceStopsTheWithdrawal(t *testing.T) {
 	}
 }
 
-func TestStoredNegativeCapIsNotTreatedAsUnlimited(t *testing.T) {
+func TestStored_Negative_CapIsNotTreatedAsUnlimited(t *testing.T) {
 	err := (&Service{locker: &spendLocker{}, usdQuote: &fixedQuote{usd: decimal.NewFromInt(1)}}).enforceTokenSpendingLimit(
 		context.Background(),
 		WithdrawRequest{
@@ -161,7 +161,7 @@ func TestStoredNegativeCapIsNotTreatedAsUnlimited(t *testing.T) {
 	}
 }
 
-func TestRequestOverTheDailyCapDoesNotNeedAWallet(t *testing.T) {
+func TestRequest_Over_TheDailyCapDoesNotNeedAWallet(t *testing.T) {
 	locker := &spendLocker{acquired: true}
 	svc := &Service{locker: locker, usdQuote: &fixedQuote{usd: decimal.NewFromInt(25)}}
 	_, _, err := svc.Request(context.Background(), WithdrawRequest{
@@ -180,7 +180,7 @@ func TestRequestOverTheDailyCapDoesNotNeedAWallet(t *testing.T) {
 	}
 }
 
-func TestRequestBlankCapStillReportsABusyWallet(t *testing.T) {
+func TestRequest_Blank_CapStillReportsABusyWallet(t *testing.T) {
 	locker := &spendLocker{}
 	svc := &Service{locker: locker, usdQuote: failingQuote{}}
 	_, _, err := svc.Request(context.Background(), WithdrawRequest{

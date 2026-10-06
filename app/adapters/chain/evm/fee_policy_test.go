@@ -25,7 +25,7 @@ func multiplierWallet(t *testing.T, chainID, multiplier string) *models.Wallet {
 	return wallet
 }
 
-func TestEVMGasPriceAndBuiltTransfersFollowTheWalletMultiplier(t *testing.T) {
+func TestEVM_Gas_PriceAndBuiltTransfersFollowTheWalletMultiplier(t *testing.T) {
 	node := mocks.NewFakeEVMNode(t)
 	shared := newNetworkAdapter(node, models.ChainETH, models.NativeETH, models.EVMNetworkIDEthereumSepolia)
 	policy, err := chain.NewFeePolicy(chain.FeePolicyDeps{Multiplier: decimal.RequireFromString("1.5")})
@@ -69,7 +69,7 @@ func TestEVMGasPriceAndBuiltTransfersFollowTheWalletMultiplier(t *testing.T) {
 	}
 }
 
-func TestEVMTokenSweepSeedsGasAtTheScaledPrice(t *testing.T) {
+func TestEVM_Token_SweepSeedsGasAtTheScaledPrice(t *testing.T) {
 	adapter, node := newBaseSepoliaAdapter(t)
 	node.EstimateGasHex = "0xc350"
 	node.TokenBalanceHex = "0x" + big.NewInt(5_000_000).Text(16)
@@ -103,7 +103,7 @@ func TestEVMTokenSweepSeedsGasAtTheScaledPrice(t *testing.T) {
 	}
 }
 
-func TestChainForWalletScopesOnlyAdaptersWithPerUnitFees(t *testing.T) {
+func TestChain_For_WalletScopesOnlyAdaptersWithPerUnitFees(t *testing.T) {
 	node := mocks.NewFakeEVMNode(t)
 	registry := chain.NewRegistry()
 	evm := newNetworkAdapter(node, models.ChainETH, models.NativeETH, models.EVMNetworkIDEthereumSepolia)

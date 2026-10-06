@@ -11,7 +11,7 @@ import (
 	"github.com/gorilla/websocket"
 )
 
-func TestDialRejectsMissingContextAndURL(t *testing.T) {
+func TestDial_Rejects_MissingContextAndURL(t *testing.T) {
 	if _, err := (Dialer{}).Dial(nil, "ws://example.test"); err == nil {
 		t.Fatal("expected error for a nil context")
 	}
@@ -20,7 +20,7 @@ func TestDialRejectsMissingContextAndURL(t *testing.T) {
 	}
 }
 
-func TestDialRoundTrip(t *testing.T) {
+func TestDial_Round_Trip(t *testing.T) {
 	received := make(chan map[string]string, 1)
 	upgrader := websocket.Upgrader{}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -66,7 +66,7 @@ func TestDialRoundTrip(t *testing.T) {
 	}
 }
 
-func TestDialCanceledContext(t *testing.T) {
+func TestDial_Canceled_Context(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	_, err := (Dialer{}).Dial(ctx, "ws://127.0.0.1:1")

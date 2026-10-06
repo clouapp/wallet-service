@@ -13,7 +13,7 @@ import (
 	"github.com/macrowallets/waas/pkg/numeric"
 )
 
-func TestChainKeepsTheModelWire(t *testing.T) {
+func TestChain_Keeps_TheModelWire(t *testing.T) {
 	t.Parallel()
 
 	created := carbon.NewDateTime(carbon.Parse("2024-05-06 07:08:09"))
@@ -79,7 +79,7 @@ func TestChainKeepsTheModelWire(t *testing.T) {
 	}
 }
 
-func TestChainsFromPreserveSliceNilness(t *testing.T) {
+func TestChains_From_PreserveSliceNilness(t *testing.T) {
 	t.Parallel()
 
 	if chains.ChainsFrom(nil) != nil {

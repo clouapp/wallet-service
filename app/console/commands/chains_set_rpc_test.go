@@ -4,7 +4,7 @@ import (
 	"testing"
 )
 
-func TestChainsSetRPCSignature(t *testing.T) {
+func TestChains_Set_RPCSignature(t *testing.T) {
 	cmd := NewChainsSetRPC(nil)
 	if cmd.Signature() != "chains:set-rpc" {
 		t.Fatalf("signature = %s", cmd.Signature())

@@ -14,7 +14,7 @@ func balancesControllerDeps() BalancesControllerDeps {
 	}
 }
 
-func TestNewBalancesControllerKeepsItsDependencies(t *testing.T) {
+func TestNew_Balances_ControllerKeepsItsDependencies(t *testing.T) {
 	deps := balancesControllerDeps()
 	ctrl := NewBalancesController(deps)
 	if ctrl == nil {
@@ -28,7 +28,7 @@ func TestNewBalancesControllerKeepsItsDependencies(t *testing.T) {
 	}
 }
 
-func TestNewBalancesControllerRequiresEveryDependency(t *testing.T) {
+func TestNew_Balances_ControllerRequiresEveryDependency(t *testing.T) {
 	cases := []struct {
 		name  string
 		clear func(*BalancesControllerDeps)

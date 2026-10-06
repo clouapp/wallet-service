@@ -11,7 +11,7 @@ import (
 	"github.com/macrowallets/waas/pkg/httpclient"
 )
 
-func TestKnownFailureIsATimeoutBeforeSendOrServerErrorOrRateLimit(t *testing.T) {
+func TestKnown_Failure_IsATimeoutBeforeSendOrServerErrorOrRateLimit(t *testing.T) {
 	ctx, cancel := context.WithDeadline(context.Background(), time.Now().Add(-time.Second))
 	defer cancel()
 	_, beforeSend := httpclient.NewClient(time.Second).Do(ctx, httpclient.Request{
@@ -44,7 +44,7 @@ func TestKnownFailureIsATimeoutBeforeSendOrServerErrorOrRateLimit(t *testing.T) 
 	}
 }
 
-func TestClassifyBroadcastLeavesADefiniteRejection(t *testing.T) {
+func TestClassify_Broadcast_LeavesADefiniteRejection(t *testing.T) {
 	for _, err := range []error{
 		FromProviderHTTP(http.StatusBadRequest, "rejected"),
 		FromProviderHTTP(http.StatusNotFound, "missing"),
@@ -62,7 +62,7 @@ func TestClassifyBroadcastLeavesADefiniteRejection(t *testing.T) {
 	}
 }
 
-func TestClassifyBroadcastMarksAnUnansweredSend(t *testing.T) {
+func TestClassify_Broadcast_MarksAnUnansweredSend(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
 		t.Error("closed server was dialed")
 	}))
@@ -90,7 +90,7 @@ func TestClassifyBroadcastMarksAnUnansweredSend(t *testing.T) {
 	}
 }
 
-func TestUnknownOutcomeHidesAServerErrorFromRetry(t *testing.T) {
+func TestUnknown_Outcome_HidesAServerErrorFromRetry(t *testing.T) {
 	err := UnknownOutcome(FromProviderHTTP(http.StatusBadGateway, "maybe accepted"))
 	if !errors.Is(err, ErrUnknownOutcome) || KnownFailure(err) {
 		t.Fatalf("known=%v err=%v", KnownFailure(err), err)

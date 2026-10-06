@@ -216,7 +216,7 @@ func depositHashes(t *testing.T) []string {
 	return hashes
 }
 
-func TestScanOptionsFromSettings(t *testing.T) {
+func TestScan_Options_FromSettings(t *testing.T) {
 	cases := []struct {
 		name                        string
 		batch, catchUp, concurrency int
@@ -246,7 +246,7 @@ func TestScanOptionsFromSettings(t *testing.T) {
 	}
 }
 
-func TestApplyStoredScanOptions(t *testing.T) {
+func TestApply_Stored_ScanOptions(t *testing.T) {
 	base := ScanOptions{BatchBlocks: 50, CatchUpBlocks: 500, Concurrency: 8}
 	cases := []struct {
 		name                        string
@@ -271,7 +271,7 @@ func TestApplyStoredScanOptions(t *testing.T) {
 	}
 }
 
-func TestResolveScanOptions_StoredWindowReplacesTheEnvironmentAndAFailureRestoresIt(t *testing.T) {
+func TestResolve_ScanOptions_StoredWindowReplacesTheEnvironmentAndAFailureRestoresIt(t *testing.T) {
 	svc := &Service{}
 	envWindow := ScanOptions{BatchBlocks: 50, CatchUpBlocks: 500, Concurrency: 8}
 	if err := svc.SetScanOptions(envWindow); err != nil {
@@ -294,7 +294,7 @@ func TestResolveScanOptions_StoredWindowReplacesTheEnvironmentAndAFailureRestore
 	}
 }
 
-func TestScanLatestBlocks_ReadsTheWindowOnEachInvocation(t *testing.T) {
+func TestScan_LatestBlocks_ReadsTheWindowOnEachInvocation(t *testing.T) {
 	svc := &Service{registry: chain.NewRegistry()}
 	if err := svc.SetScanOptions(DefaultScanOptions()); err != nil {
 		t.Fatal(err)
@@ -319,7 +319,7 @@ func TestScanLatestBlocks_ReadsTheWindowOnEachInvocation(t *testing.T) {
 	}
 }
 
-func TestScanOptionsForRun(t *testing.T) {
+func TestScan_Options_ForRun(t *testing.T) {
 	env := ScanOptions{BatchBlocks: 50, CatchUpBlocks: 80, Concurrency: 8}
 	cases := []struct {
 		name                        string
@@ -356,7 +356,7 @@ func TestScanOptionsForRun(t *testing.T) {
 	}
 }
 
-func TestScanLatestBlocks_EachScanCallsScanOptionsFromSettings(t *testing.T) {
+func TestScan_LatestBlocks_EachScanCallsScanOptionsFromSettings(t *testing.T) {
 	const (
 		envBatch       = 10
 		envCatchUp     = 100
@@ -427,7 +427,7 @@ func TestScanLatestBlocks_EachScanCallsScanOptionsFromSettings(t *testing.T) {
 	}
 }
 
-func TestSetScanOptions_KeepsTheCurrentOptionsWhenInvalid(t *testing.T) {
+func TestSet_ScanOptions_KeepsTheCurrentOptionsWhenInvalid(t *testing.T) {
 	svc := newDepositSvc(chain.NewRegistry(), nil)
 	if err := svc.SetScanOptions(ScanOptions{BatchBlocks: 0, CatchUpBlocks: 10, Concurrency: 1}); err == nil {
 		t.Fatal("expected a zero batch to be rejected")
@@ -437,7 +437,7 @@ func TestSetScanOptions_KeepsTheCurrentOptionsWhenInvalid(t *testing.T) {
 	}
 }
 
-func TestScanWindow(t *testing.T) {
+func TestScan_Scan_Window(t *testing.T) {
 	svc := newDepositSvc(chain.NewRegistry(), nil)
 	if err := svc.SetScanOptions(ScanOptions{BatchBlocks: 50, CatchUpBlocks: 500, Concurrency: 8}); err != nil {
 		t.Fatal(err)
@@ -449,7 +449,7 @@ func TestScanWindow(t *testing.T) {
 	}
 }
 
-func TestScanRange_RecordsInBlockOrderWithParallelFetches(t *testing.T) {
+func TestScan_Range_RecordsInBlockOrderWithParallelFetches(t *testing.T) {
 	f := newScanFixture(t, 1000, ScanOptions{BatchBlocks: 10, CatchUpBlocks: 100, Concurrency: 4})
 	f.adapter.depositTo(103, "tx-103", f.address)
 	f.adapter.depositTo(117, "tx-117", f.address)
@@ -477,7 +477,7 @@ func TestScanRange_RecordsInBlockOrderWithParallelFetches(t *testing.T) {
 	}
 }
 
-func TestScanRange_StopsBeforeTheFirstFailedBlock(t *testing.T) {
+func TestScan_Range_StopsBeforeTheFirstFailedBlock(t *testing.T) {
 	f := newScanFixture(t, 1000, ScanOptions{BatchBlocks: 10, CatchUpBlocks: 100, Concurrency: 4})
 	f.adapter.depositTo(106, "tx-106", f.address)
 	f.adapter.depositTo(108, "tx-108", f.address)
@@ -495,7 +495,7 @@ func TestScanRange_StopsBeforeTheFirstFailedBlock(t *testing.T) {
 	}
 }
 
-func TestScanRange_RejectsBlockZeroAndAcceptsAnEmptyRange(t *testing.T) {
+func TestScan_Range_RejectsBlockZeroAndAcceptsAnEmptyRange(t *testing.T) {
 	f := newScanFixture(t, 1000, DefaultScanOptions())
 	if _, err := f.svc.scanRange(context.Background(), scanTestChain, f.adapter, 0, 5); err == nil {
 		t.Fatal("expected a range starting at block 0 to be rejected")
@@ -506,7 +506,7 @@ func TestScanRange_RejectsBlockZeroAndAcceptsAnEmptyRange(t *testing.T) {
 	}
 }
 
-func TestScanLatestBlocks_CatchesUpWithoutSkippingBlocks(t *testing.T) {
+func TestScan_LatestBlocks_CatchesUpWithoutSkippingBlocks(t *testing.T) {
 	f := newScanFixture(t, 3000, ScanOptions{BatchBlocks: 10, CatchUpBlocks: 100, Concurrency: 4}).withRedisCheckpoint(t, 1000)
 	f.adapter.depositTo(1001, "tx-first", f.address)
 	f.adapter.depositTo(1100, "tx-last", f.address)
@@ -533,7 +533,7 @@ func TestScanLatestBlocks_CatchesUpWithoutSkippingBlocks(t *testing.T) {
 	}
 }
 
-func TestScanLatestBlocks_NearTheHeadUsesTheNormalBatch(t *testing.T) {
+func TestScan_LatestBlocks_NearTheHeadUsesTheNormalBatch(t *testing.T) {
 	f := newScanFixture(t, 1008, ScanOptions{BatchBlocks: 10, CatchUpBlocks: 100, Concurrency: 4}).withRedisCheckpoint(t, 1000)
 	if err := f.svc.ScanLatestBlocks(context.Background(), scanTestChain); err != nil {
 		t.Fatal(err)
@@ -546,7 +546,7 @@ func TestScanLatestBlocks_NearTheHeadUsesTheNormalBatch(t *testing.T) {
 	}
 }
 
-func TestScanLatestBlocks_FailedBlockKeepsTheCheckpointBeforeIt(t *testing.T) {
+func TestScan_LatestBlocks_FailedBlockKeepsTheCheckpointBeforeIt(t *testing.T) {
 	f := newScanFixture(t, 3000, ScanOptions{BatchBlocks: 10, CatchUpBlocks: 100, Concurrency: 4}).withRedisCheckpoint(t, 1000)
 	f.adapter.failAt[1050] = errors.New("rpc call getBlock: Post: context deadline exceeded")
 
@@ -558,7 +558,7 @@ func TestScanLatestBlocks_FailedBlockKeepsTheCheckpointBeforeIt(t *testing.T) {
 	}
 }
 
-func TestScanBlock_TargetedScanIsIdempotentAndLeavesTheCheckpoint(t *testing.T) {
+func TestScan_Block_TargetedScanIsIdempotentAndLeavesTheCheckpoint(t *testing.T) {
 	f := newScanFixture(t, 1000, DefaultScanOptions()).withRedisCheckpoint(t, 500)
 	f.adapter.depositTo(900, "tx-internal", f.address)
 	f.adapter.depositTo(900, "tx-unwatched", "someone-else")
@@ -598,7 +598,7 @@ func TestScanBlock_TargetedScanIsIdempotentAndLeavesTheCheckpoint(t *testing.T) 
 	}
 }
 
-func TestScanBlock_RefusesBlocksPastTheHead(t *testing.T) {
+func TestScan_Block_RefusesBlocksPastTheHead(t *testing.T) {
 	f := newScanFixture(t, 1000, DefaultScanOptions())
 	for _, block := range []uint64{0, 1001} {
 		if _, err := f.svc.ScanBlock(context.Background(), scanTestChain, block); err == nil {
@@ -613,7 +613,7 @@ func TestScanBlock_RefusesBlocksPastTheHead(t *testing.T) {
 	}
 }
 
-func TestScanTransaction_RecordsOnlyThatTransaction(t *testing.T) {
+func TestScan_Transaction_RecordsOnlyThatTransaction(t *testing.T) {
 	f := newScanFixture(t, 1000, DefaultScanOptions())
 	f.adapter.depositTo(700, "0xabcdef", f.address)
 	f.adapter.depositTo(700, "0x123456", f.address)
@@ -627,7 +627,7 @@ func TestScanTransaction_RecordsOnlyThatTransaction(t *testing.T) {
 	}
 }
 
-func TestScanTransaction_RefusesUnknownOrBlankTransactions(t *testing.T) {
+func TestScan_Transaction_RefusesUnknownOrBlankTransactions(t *testing.T) {
 	f := newScanFixture(t, 1000, DefaultScanOptions())
 	if _, err := f.svc.ScanTransaction(context.Background(), scanTestChain, "  "); err == nil {
 		t.Fatal("expected a blank hash to be refused")
@@ -638,7 +638,7 @@ func TestScanTransaction_RefusesUnknownOrBlankTransactions(t *testing.T) {
 	}
 }
 
-func TestSameTxHash(t *testing.T) {
+func TestSame_Tx_Hash(t *testing.T) {
 	cases := []struct {
 		a, b string
 		want bool
@@ -655,7 +655,7 @@ func TestSameTxHash(t *testing.T) {
 	}
 }
 
-func TestScanTransaction_SolanaSignatureFromRecordedDevnetBlock(t *testing.T) {
+func TestScan_Transaction_SolanaSignatureFromRecordedDevnetBlock(t *testing.T) {
 	fixtures.TestDB(t)
 	adapter := solanaFixtureChain(t)
 	registry := chain.NewRegistry()

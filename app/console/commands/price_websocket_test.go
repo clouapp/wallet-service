@@ -18,7 +18,7 @@ func (priceWebSocketCacheStub) Set(context.Context, string, []byte, time.Duratio
 	return nil
 }
 
-func TestNewPriceWebSocketKeepsItsDependencies(t *testing.T) {
+func TestNew_Price_WebSocketKeepsItsDependencies(t *testing.T) {
 	prices := price.NewService(price.Deps{})
 	cache := priceWebSocketCacheStub{}
 	cmd := NewPriceWebSocket(PriceWebSocketDeps{
@@ -40,7 +40,7 @@ func TestNewPriceWebSocketKeepsItsDependencies(t *testing.T) {
 	}
 }
 
-func TestNewPriceWebSocketAllowsANilCache(t *testing.T) {
+func TestNew_Price_WebSocketAllowsANilCache(t *testing.T) {
 	prices := price.NewService(price.Deps{})
 	cmd := NewPriceWebSocket(PriceWebSocketDeps{Prices: prices, CoinAPIKey: "test-key"})
 	if cmd == nil {

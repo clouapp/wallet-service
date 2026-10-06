@@ -28,7 +28,7 @@ type PlatformAccountSweepLimitsTestSuite struct {
 	authSuite
 }
 
-func TestPlatformAccountSweepLimitsSuite(t *testing.T) {
+func TestPlatform_Account_SweepLimitsSuite(t *testing.T) {
 	suite.Run(t, new(PlatformAccountSweepLimitsTestSuite))
 }
 
@@ -36,7 +36,7 @@ func (s *PlatformAccountSweepLimitsTestSuite) SetupTest() {
 	testutil.SeededTestDB(s.T())
 }
 
-func (s *PlatformAccountSweepLimitsTestSuite) TestAnAdminWriteOverridesThePlatformRowForLoadLimits() {
+func (s *PlatformAccountSweepLimitsTestSuite) TestAn_Admin_WriteOverridesThePlatformRowForLoadLimits() {
 	admin := s.seedUser(false)
 	s.grantPlatformAdmin(admin.ID)
 	session := s.signIn(admin.Email)
@@ -125,7 +125,7 @@ func (s *PlatformAccountSweepLimitsTestSuite) TestAnAdminWriteOverridesThePlatfo
 	s.NotContains(raw, "enc:v1:")
 }
 
-func (s *PlatformAccountSweepLimitsTestSuite) TestAnotherGroupAndAnUnknownAccountAreNotFoundBeforeForbidden() {
+func (s *PlatformAccountSweepLimitsTestSuite) TestAnother_Group_AndAnUnknownAccountAreNotFoundBeforeForbidden() {
 	member := s.seedUser(false)
 	memberSession := s.signIn(member.Email)
 	admin := s.seedUser(false)
@@ -174,7 +174,7 @@ func (s *PlatformAccountSweepLimitsTestSuite) TestAnotherGroupAndAnUnknownAccoun
 	missing.AssertUnauthorized()
 }
 
-func (s *PlatformAccountSweepLimitsTestSuite) TestZeroNegativeAndANegativeCapLeaveTheRowUnchanged() {
+func (s *PlatformAccountSweepLimitsTestSuite) TestZero_Negative_AndANegativeCapLeaveTheRowUnchanged() {
 	admin := s.seedUser(false)
 	s.grantPlatformAdmin(admin.ID)
 	session := s.signIn(admin.Email)

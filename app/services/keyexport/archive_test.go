@@ -8,7 +8,7 @@ import (
 	"github.com/yeka/zip"
 )
 
-func TestWriteEncryptedZip_EveryEntryIsAES256AndNeedsThePassword(t *testing.T) {
+func TestWrite_EncryptedZip_EveryEntryIsAES256AndNeedsThePassword(t *testing.T) {
 	files := []ArchiveFile{
 		{Name: "INSTRUCOES.md", Data: []byte("leia")},
 		{Name: "wallets/x/wallet.json", Data: []byte(`{"secret":"material"}`)},
@@ -44,7 +44,7 @@ func TestWriteEncryptedZip_EveryEntryIsAES256AndNeedsThePassword(t *testing.T) {
 	}
 }
 
-func TestWriteEncryptedZip_RefusesBadInput(t *testing.T) {
+func TestWrite_EncryptedZip_RefusesBadInput(t *testing.T) {
 	var sink bytes.Buffer
 	ok := []ArchiveFile{{Name: "a.json", Data: []byte("{}")}}
 	cases := map[string]struct {

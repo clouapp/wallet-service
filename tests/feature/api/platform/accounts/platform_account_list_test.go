@@ -20,7 +20,7 @@ type PlatformAccountListTestSuite struct {
 	authSuite
 }
 
-func TestPlatformAccountListSuite(t *testing.T) {
+func TestPlatform_Account_ListSuite(t *testing.T) {
 	suite.Run(t, new(PlatformAccountListTestSuite))
 }
 
@@ -28,7 +28,7 @@ func (s *PlatformAccountListTestSuite) SetupTest() {
 	testutil.SeededTestDB(s.T())
 }
 
-func (s *PlatformAccountListTestSuite) TestAPlatformAdminListsAccountsOrderedByCreatedAtDescending() {
+func (s *PlatformAccountListTestSuite) TestA_Platform_AdminListsAccountsOrderedByCreatedAtDescending() {
 	admin := s.seedUser(false)
 	s.grantPlatformAdmin(admin.ID)
 
@@ -82,7 +82,7 @@ func (s *PlatformAccountListTestSuite) TestAPlatformAdminListsAccountsOrderedByC
 	s.Contains(pastRaw, `"data":[]`)
 }
 
-func (s *PlatformAccountListTestSuite) TestAMemberCannotListPlatformAccounts() {
+func (s *PlatformAccountListTestSuite) TestA_Member_CannotListPlatformAccounts() {
 	member := s.seedUser(false)
 	session := s.signIn(member.Email)
 	s.seedListedAccount("Hidden", models.StatusActive, "2024-01-01 00:00:00", uuid.Nil)

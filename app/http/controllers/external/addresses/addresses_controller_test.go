@@ -19,7 +19,7 @@ func addressesControllerDeps() AddressesControllerDeps {
 	}
 }
 
-func TestNewAddressesControllerKeepsItsDependencies(t *testing.T) {
+func TestNew_Addresses_ControllerKeepsItsDependencies(t *testing.T) {
 	deps := addressesControllerDeps()
 	ctrl := NewAddressesController(deps)
 	if ctrl == nil {
@@ -39,7 +39,7 @@ func TestNewAddressesControllerKeepsItsDependencies(t *testing.T) {
 	}
 }
 
-func TestNewAddressesControllerRequiresEveryDependency(t *testing.T) {
+func TestNew_Addresses_ControllerRequiresEveryDependency(t *testing.T) {
 	cases := []struct {
 		name  string
 		clear func(*AddressesControllerDeps)

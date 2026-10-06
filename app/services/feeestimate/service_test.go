@@ -190,7 +190,7 @@ func requireError(t *testing.T, err error, kind Kind, code string) *Error {
 	return estimateErr
 }
 
-func TestEstimate_RendersTheSepoliaWithdrawalFee(t *testing.T) {
+func TestEstimate_Renders_TheSepoliaWithdrawalFee(t *testing.T) {
 	f := newFixture(t, DefaultCacheTTL)
 
 	got := f.estimate(t, Request{Wallet: f.wallets[models.ChainETH], Asset: "eth", Amount: "0.001", To: testEVMRecipient})
@@ -216,7 +216,7 @@ func TestEstimate_RendersTheSepoliaWithdrawalFee(t *testing.T) {
 	}
 }
 
-func TestEstimate_TokenIsResolvedAndTheFeeStaysNative(t *testing.T) {
+func TestEstimate_Token_IsResolvedAndTheFeeStaysNative(t *testing.T) {
 	f := newFixture(t, DefaultCacheTTL)
 	f.quoter.quote.Chain, f.quoter.quote.Asset, f.quoter.quote.FeeAsset = models.ChainPolygon, models.SymbolUSDC, models.NativePOL
 
@@ -230,7 +230,7 @@ func TestEstimate_TokenIsResolvedAndTheFeeStaysNative(t *testing.T) {
 	}
 }
 
-func TestEstimate_OmittedAmountQuotesTheReferenceMinimum(t *testing.T) {
+func TestEstimate_Omitted_AmountQuotesTheReferenceMinimum(t *testing.T) {
 	f := newFixture(t, DefaultCacheTTL)
 
 	eth := f.estimate(t, Request{Wallet: f.wallets[models.ChainETH]})
@@ -244,7 +244,7 @@ func TestEstimate_OmittedAmountQuotesTheReferenceMinimum(t *testing.T) {
 	}
 }
 
-func TestEstimate_InvalidInputsFailBeforeQuoting(t *testing.T) {
+func TestEstimate_Invalid_InputsFailBeforeQuoting(t *testing.T) {
 	f := newFixture(t, DefaultCacheTTL)
 	eth := f.wallets[models.ChainETH]
 	cases := []struct {
@@ -275,7 +275,7 @@ func TestEstimate_InvalidInputsFailBeforeQuoting(t *testing.T) {
 	}
 }
 
-func TestEstimate_InsufficientFundsStillReturnsTheFee(t *testing.T) {
+func TestEstimate_Insufficient_FundsStillReturnsTheFee(t *testing.T) {
 	f := newFixture(t, DefaultCacheTTL)
 	f.quoter.quote.Strategy, f.quoter.quote.Basis, f.quoter.quote.AmountSpendable = sweep.StrategyInsufficient, sweep.FeeBasisUnfundedDirect, false
 
@@ -286,7 +286,7 @@ func TestEstimate_InsufficientFundsStillReturnsTheFee(t *testing.T) {
 	}
 }
 
-func TestEstimate_NeverRendersNegativeAmounts(t *testing.T) {
+func TestEstimate_Never_RendersNegativeAmounts(t *testing.T) {
 	f := newFixture(t, DefaultCacheTTL)
 	f.quoter.quote.BaseBalance = big.NewInt(-5)
 	f.quoter.quote.MinimumRemaining = nil
@@ -299,7 +299,7 @@ func TestEstimate_NeverRendersNegativeAmounts(t *testing.T) {
 	}
 }
 
-func TestEstimate_QuoteErrorsAreClassified(t *testing.T) {
+func TestEstimate_Quote_ErrorsAreClassified(t *testing.T) {
 	cases := map[error]struct {
 		kind Kind
 		code string
@@ -334,7 +334,7 @@ func TestEstimate_QuoteErrorsAreClassified(t *testing.T) {
 	}
 }
 
-func TestEstimate_CachesBrieflyPerWalletAssetAmountAndRecipient(t *testing.T) {
+func TestEstimate_Caches_BrieflyPerWalletAssetAmountAndRecipient(t *testing.T) {
 	f := newFixture(t, 20*time.Second)
 	req := Request{Wallet: f.wallets[models.ChainETH], Amount: "0.001", To: testEVMRecipient}
 
@@ -358,7 +358,7 @@ func TestEstimate_CachesBrieflyPerWalletAssetAmountAndRecipient(t *testing.T) {
 	}
 }
 
-func TestEstimate_FeeMultiplierChangeNeverReusesACachedQuote(t *testing.T) {
+func TestEstimate_Fee_MultiplierChangeNeverReusesACachedQuote(t *testing.T) {
 	f := newFixture(t, 20*time.Second)
 	wallet := f.wallets[models.ChainETH]
 	req := Request{Wallet: wallet, Amount: "0.001", To: testEVMRecipient}
@@ -378,7 +378,7 @@ func TestEstimate_FeeMultiplierChangeNeverReusesACachedQuote(t *testing.T) {
 	t.Fatalf("no cache key carries the multiplier fingerprint: %v", f.cache.ttls)
 }
 
-func TestEstimate_ZeroTTLDisablesTheCache(t *testing.T) {
+func TestEstimate_Zero_TTLDisablesTheCache(t *testing.T) {
 	f := newFixture(t, 0)
 	req := Request{Wallet: f.wallets[models.ChainETH], Amount: "1"}
 
@@ -390,7 +390,7 @@ func TestEstimate_ZeroTTLDisablesTheCache(t *testing.T) {
 	}
 }
 
-func TestEstimate_CacheFailuresFallThroughToAFreshQuote(t *testing.T) {
+func TestEstimate_Cache_FailuresFallThroughToAFreshQuote(t *testing.T) {
 	f := newFixture(t, DefaultCacheTTL)
 	f.cache.getErr = errors.New("redis down")
 	f.cache.setErr = errors.New("redis down")
@@ -402,7 +402,7 @@ func TestEstimate_CacheFailuresFallThroughToAFreshQuote(t *testing.T) {
 	}
 }
 
-func TestEstimate_UnreadableCacheEntryIsAMiss(t *testing.T) {
+func TestEstimate_Unreadable_CacheEntryIsAMiss(t *testing.T) {
 	f := newFixture(t, DefaultCacheTTL)
 	req := Request{Wallet: f.wallets[models.ChainETH], Amount: "1"}
 	f.estimate(t, req)
@@ -417,7 +417,7 @@ func TestEstimate_UnreadableCacheEntryIsAMiss(t *testing.T) {
 	}
 }
 
-func TestEstimate_JSONShape(t *testing.T) {
+func TestEstimate_JSON_Shape(t *testing.T) {
 	f := newFixture(t, DefaultCacheTTL)
 	raw, err := json.Marshal(f.estimate(t, Request{Wallet: f.wallets[models.ChainETH], Amount: "0.001"}))
 	if err != nil {
@@ -437,7 +437,7 @@ func TestEstimate_JSONShape(t *testing.T) {
 	}
 }
 
-func TestNewService_RequiresItsCollaborators(t *testing.T) {
+func TestNew_Service_RequiresItsCollaborators(t *testing.T) {
 	if _, err := NewService(Deps{Registry: &fakeRegistry{}, Chains: fakeCatalog{}, CacheTTL: DefaultCacheTTL}); err == nil {
 		t.Fatal("expected an error without a quoter")
 	}

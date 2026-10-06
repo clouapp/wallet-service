@@ -11,13 +11,13 @@ import (
 	"github.com/macrowallets/waas/tests/feature/support/testutil"
 )
 
-func TestNewReturnsNilForANilClient(t *testing.T) {
+func TestNew_Returns_NilForANilClient(t *testing.T) {
 	if New(nil) != nil {
 		t.Fatal("expected a nil locker when Redis is not configured")
 	}
 }
 
-func TestNilClientReportsAMissingClient(t *testing.T) {
+func TestNil_Client_ReportsAMissingClient(t *testing.T) {
 	var client *Client
 	if _, err := client.SetNX(context.Background(), "vault:lock:withdrawal:x", "1", time.Second); err == nil {
 		t.Fatal("expected error for a nil client")
@@ -33,7 +33,7 @@ func TestNilClientReportsAMissingClient(t *testing.T) {
 	}
 }
 
-func TestSetNXWritesTheValueAndKeepsTheTTL(t *testing.T) {
+func TestSet_NX_WritesTheValueAndKeepsTheTTL(t *testing.T) {
 	client := testutil.TestRedis(t)
 	prefix := testutil.TestRedisPrefix(t, client)
 	key := prefix + "lock"
@@ -71,7 +71,7 @@ func TestSetNXWritesTheValueAndKeepsTheTTL(t *testing.T) {
 	}
 }
 
-func TestDelRemovesTheKey(t *testing.T) {
+func TestDel_Removes_TheKey(t *testing.T) {
 	client := testutil.TestRedis(t)
 	prefix := testutil.TestRedisPrefix(t, client)
 	key := prefix + "lock"
@@ -89,7 +89,7 @@ func TestDelRemovesTheKey(t *testing.T) {
 	}
 }
 
-func TestIntMissingKeyIsZero(t *testing.T) {
+func TestInt_Missing_KeyIsZero(t *testing.T) {
 	client := testutil.TestRedis(t)
 	prefix := testutil.TestRedisPrefix(t, client)
 	count, err := New(client).Int(context.Background(), prefix+"missing")
@@ -101,7 +101,7 @@ func TestIntMissingKeyIsZero(t *testing.T) {
 	}
 }
 
-func TestIntRejectsANonInteger(t *testing.T) {
+func TestInt_Rejects_ANonInteger(t *testing.T) {
 	client := testutil.TestRedis(t)
 	prefix := testutil.TestRedisPrefix(t, client)
 	key := prefix + "bad"
@@ -116,7 +116,7 @@ func TestIntRejectsANonInteger(t *testing.T) {
 	}
 }
 
-func TestIncrExpireCountsAndSetsTTL(t *testing.T) {
+func TestIncr_Expire_CountsAndSetsTTL(t *testing.T) {
 	client := testutil.TestRedis(t)
 	prefix := testutil.TestRedisPrefix(t, client)
 	key := prefix + "attempts"
@@ -145,7 +145,7 @@ func TestIncrExpireCountsAndSetsTTL(t *testing.T) {
 	}
 }
 
-func TestSetNXCanceledContext(t *testing.T) {
+func TestSet_NX_CanceledContext(t *testing.T) {
 	client := testutil.TestRedis(t)
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()

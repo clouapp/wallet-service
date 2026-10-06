@@ -2,7 +2,7 @@ package config
 
 import "testing"
 
-func TestDebugEnabledOnlyInLocal(t *testing.T) {
+func TestDebug_Enabled_OnlyInLocal(t *testing.T) {
 	cases := []struct {
 		name     string
 		env      string

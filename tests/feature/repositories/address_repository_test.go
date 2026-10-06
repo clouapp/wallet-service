@@ -18,7 +18,7 @@ type AddressRepositoryTestSuite struct {
 	repo *repositories.AddressRepository
 }
 
-func TestAddressRepositorySuite(t *testing.T) {
+func TestAddress_Repository_Suite(t *testing.T) {
 	suite.Run(t, new(AddressRepositoryTestSuite))
 }
 
@@ -32,7 +32,7 @@ func (s *AddressRepositoryTestSuite) insertWallet(chainID string) uuid.UUID {
 	return w.ID
 }
 
-func (s *AddressRepositoryTestSuite) TestCountByChainAndAddress() {
+func (s *AddressRepositoryTestSuite) TestCount_By_ChainAndAddress() {
 	walletID := s.insertWallet("eth")
 	fixtures.InsertAddress(s.T(), walletID, "eth", "0xABC", "user1", 0)
 
@@ -45,7 +45,7 @@ func (s *AddressRepositoryTestSuite) TestCountByChainAndAddress() {
 	s.Equal(int64(0), count)
 }
 
-func (s *AddressRepositoryTestSuite) TestFindByChainAndAddress_Found() {
+func (s *AddressRepositoryTestSuite) TestFind_ByChainAndAddress_Found() {
 	walletID := s.insertWallet("eth")
 	fixtures.InsertAddress(s.T(), walletID, "eth", "0xFIND", "user1", 0)
 
@@ -55,13 +55,13 @@ func (s *AddressRepositoryTestSuite) TestFindByChainAndAddress_Found() {
 	s.Equal("0xFIND", addr.Address)
 }
 
-func (s *AddressRepositoryTestSuite) TestFindByChainAndAddress_NotFound() {
+func (s *AddressRepositoryTestSuite) TestFind_ByChainAndAddress_NotFound() {
 	addr, err := s.repo.FindByChainAndAddress(context.Background(), "eth", "0xNOPE")
 	s.ErrorIs(err, models.ErrRepositoryNotFound)
 	s.Nil(addr)
 }
 
-func (s *AddressRepositoryTestSuite) TestFindByExternalUserID() {
+func (s *AddressRepositoryTestSuite) TestFind_By_ExternalUserID() {
 	walletID := s.insertWallet("eth")
 	fixtures.InsertAddress(s.T(), walletID, "eth", "0xA1", "user_ext", 0)
 	fixtures.InsertAddress(s.T(), walletID, "eth", "0xA2", "user_ext", 1)
@@ -71,7 +71,7 @@ func (s *AddressRepositoryTestSuite) TestFindByExternalUserID() {
 	s.Len(addrs, 2)
 }
 
-func (s *AddressRepositoryTestSuite) TestFindByWalletID() {
+func (s *AddressRepositoryTestSuite) TestFind_By_WalletID() {
 	wA := s.insertWallet("eth")
 	wB := s.insertWallet("btc")
 	fixtures.InsertAddress(s.T(), wA, "eth", "0xW1A", "u1", 0)
@@ -94,7 +94,7 @@ func (s *AddressRepositoryTestSuite) TestFindByWalletID() {
 // GET /api/v1/users/{external_id}/addresses: if two accounts each register an
 // address for the same external_user_id, a query from account A must never
 // return B's address. The filter is applied via the wallet's account_id.
-func (s *AddressRepositoryTestSuite) TestFindByExternalUserIDAndAccount_FiltersByAccount() {
+func (s *AddressRepositoryTestSuite) TestFind_ByExternalUserIDAndAccount_FiltersByAccount() {
 	accountA := fixtures.InsertAccount(s.T(), "acc-A")
 	accountB := fixtures.InsertAccount(s.T(), "acc-B")
 
@@ -121,7 +121,7 @@ func (s *AddressRepositoryTestSuite) TestFindByExternalUserIDAndAccount_FiltersB
 // TestFindByExternalUserIDAndAccount_ExcludesUnassignedWallets confirms that
 // addresses on wallets without an account_id (e.g. legacy data) are NOT
 // returned — the filter requires an exact account match, never NULL.
-func (s *AddressRepositoryTestSuite) TestFindByExternalUserIDAndAccount_ExcludesUnassignedWallets() {
+func (s *AddressRepositoryTestSuite) TestFind_ByExternalUserIDAndAccount_ExcludesUnassignedWallets() {
 	account := fixtures.InsertAccount(s.T(), "acc-scoped")
 	unassignedWallet := fixtures.InsertWallet(s.T(), "eth") // account_id = NULL
 	fixtures.InsertAddress(s.T(), unassignedWallet.ID, "eth", "0xLEGACY", "user_123", 1)
@@ -134,7 +134,7 @@ func (s *AddressRepositoryTestSuite) TestFindByExternalUserIDAndAccount_Excludes
 // TestFindByChainAndAddressAndAccount_FiltersByAccount guards the IDOR fix on
 // GET /api/v1/addresses/{address}: a caller from account B must get the
 // not-found sentinel even when the address exists under account A.
-func (s *AddressRepositoryTestSuite) TestFindByChainAndAddressAndAccount_FiltersByAccount() {
+func (s *AddressRepositoryTestSuite) TestFind_ByChainAndAddressAndAccount_FiltersByAccount() {
 	accountA := fixtures.InsertAccount(s.T(), "acc-A")
 	accountB := fixtures.InsertAccount(s.T(), "acc-B")
 
@@ -157,7 +157,7 @@ func (s *AddressRepositoryTestSuite) TestFindByChainAndAddressAndAccount_Filters
 	s.Nil(missing)
 }
 
-func (s *AddressRepositoryTestSuite) TestPluckActiveAddresses() {
+func (s *AddressRepositoryTestSuite) TestPluck_Active_Addresses() {
 	walletID := s.insertWallet("eth")
 	fixtures.InsertAddress(s.T(), walletID, "eth", "0xACTIVE1", "u1", 0)
 	fixtures.InsertAddress(s.T(), walletID, "eth", "0xACTIVE2", "u2", 1)

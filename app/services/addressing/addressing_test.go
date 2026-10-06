@@ -20,7 +20,7 @@ func mustPubKey(t *testing.T) []byte {
 	return pub
 }
 
-func TestBitcoinRecordOnTestnetDerivesTb1UnderTheMainnetChainID(t *testing.T) {
+func TestBitcoin_Record_OnTestnetDerivesTb1UnderTheMainnetChainID(t *testing.T) {
 	t.Parallel()
 	pub := mustPubKey(t)
 
@@ -38,7 +38,7 @@ func TestBitcoinRecordOnTestnetDerivesTb1UnderTheMainnetChainID(t *testing.T) {
 	}
 }
 
-func TestNetworkDoesNotChangeEVMAddresses(t *testing.T) {
+func TestNetwork_Does_NotChangeEVMAddresses(t *testing.T) {
 	t.Parallel()
 	pub := mustPubKey(t)
 
@@ -55,7 +55,7 @@ func TestNetworkDoesNotChangeEVMAddresses(t *testing.T) {
 	}
 }
 
-func TestBaseArbitrumAndBSCShareTheEthereumAddressOfTheKey(t *testing.T) {
+func TestBase_Arbitrum_AndBSCShareTheEthereumAddressOfTheKey(t *testing.T) {
 	t.Parallel()
 	pub := mustPubKey(t)
 
@@ -71,7 +71,7 @@ func TestBaseArbitrumAndBSCShareTheEthereumAddressOfTheKey(t *testing.T) {
 	}
 }
 
-func TestBtcHRPAndUnsupportedChains(t *testing.T) {
+func TestBtc_HRP_AndUnsupportedChains(t *testing.T) {
 	t.Parallel()
 
 	if BtcHRP(true) != BtcHRPTestnet || BtcHRP(false) != BtcHRPMainnet {

@@ -73,7 +73,7 @@ type WalletRecoveryMaterialTestSuite struct {
 	walletService *wallet.Service
 }
 
-func TestWalletRecoveryMaterialSuite(t *testing.T) {
+func TestWallet_Recovery_MaterialSuite(t *testing.T) {
 	suite.Run(t, new(WalletRecoveryMaterialTestSuite))
 }
 
@@ -140,7 +140,7 @@ func (s *WalletRecoveryMaterialTestSuite) assertNoShareLeak(content string) {
 	}
 }
 
-func (s *WalletRecoveryMaterialTestSuite) TestExternalCreate_OmitsShareAndPassphrase() {
+func (s *WalletRecoveryMaterialTestSuite) TestExternal_Create_OmitsShareAndPassphrase() {
 	_, bearer, _ := ctltestutil.SetupAPIAuth(s.T(), false)
 
 	content, payload := s.createExternalWallet(bearer)
@@ -170,7 +170,7 @@ func (s *WalletRecoveryMaterialTestSuite) TestExternalCreate_OmitsShareAndPassph
 	s.assertNoShareLeak(content)
 }
 
-func (s *WalletRecoveryMaterialTestSuite) TestExternalCreate_MaterialIsNotReturnedAgain() {
+func (s *WalletRecoveryMaterialTestSuite) TestExternal_Create_MaterialIsNotReturnedAgain() {
 	_, bearer, _ := ctltestutil.SetupAPIAuth(s.T(), false)
 	createdContent, created := s.createExternalWallet(bearer)
 	walletID := created["id"].(string)
@@ -196,7 +196,7 @@ func (s *WalletRecoveryMaterialTestSuite) TestExternalCreate_MaterialIsNotReturn
 	s.NotContains(list.Data[0], servicePublicKeyField)
 }
 
-func (s *WalletRecoveryMaterialTestSuite) TestAdminCreate_ResponseShapeUnchanged() {
+func (s *WalletRecoveryMaterialTestSuite) TestAdmin_Create_ResponseShapeUnchanged() {
 	accountID, token := s.setupAdminSession()
 
 	body := fmt.Sprintf(`{"chain":%q,"label":"Admin","passphrase":%q}`,

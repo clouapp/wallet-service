@@ -5,7 +5,7 @@ import (
 	"testing"
 )
 
-func TestNormalizer_NumbersUUIDsByFirstAppearanceAcrossBodies(t *testing.T) {
+func TestNormalizer_Numbers_UUIDsByFirstAppearanceAcrossBodies(t *testing.T) {
 	normalizer := NewNormalizer()
 	first := normalizer.Normalize(`{"id":"0F8FAD5B-D9CB-469F-A165-70867728950E","account_id":"7c9e6679-7425-40de-944b-e07fc1f90ae7"}`)
 	second := normalizer.Normalize(`{"account":"7c9e6679-7425-40de-944b-e07fc1f90ae7","user":"0f8fad5b-d9cb-469f-a165-70867728950e"}`)
@@ -18,7 +18,7 @@ func TestNormalizer_NumbersUUIDsByFirstAppearanceAcrossBodies(t *testing.T) {
 	}
 }
 
-func TestNormalizer_ReplacesTimestampsAndJWTs(t *testing.T) {
+func TestNormalizer_Replaces_TimestampsAndJWTs(t *testing.T) {
 	normalizer := NewNormalizer()
 	got := normalizer.Normalize(`{"created_at":"2026-10-02T12:05:01.123456-03:00","at":"2026-10-02 15:05:01Z",` +
 		`"access_token":"eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.c2lnbmF0dXJl","day":"2026-10-02"}`)
@@ -28,7 +28,7 @@ func TestNormalizer_ReplacesTimestampsAndJWTs(t *testing.T) {
 	}
 }
 
-func TestNormalizer_MasksVolatileFieldsOfAnyScalarValue(t *testing.T) {
+func TestNormalizer_Masks_VolatileFieldsOfAnyScalarValue(t *testing.T) {
 	normalizer := NewNormalizer("refresh_token", "secret")
 	got := normalizer.Normalize(`{"refresh_token": "a1b2\"c3", "secret":12345, "secretive":"kept"}`)
 	want := `{"refresh_token":"<refresh_token>", "secret":"<secret>", "secretive":"kept"}`
@@ -37,7 +37,7 @@ func TestNormalizer_MasksVolatileFieldsOfAnyScalarValue(t *testing.T) {
 	}
 }
 
-func TestNormalizer_StripsTheFixtureWalletLabelSuffix(t *testing.T) {
+func TestNormalizer_Strips_TheFixtureWalletLabelSuffix(t *testing.T) {
 	got := NewNormalizer().Normalize(`{"label":"eth test wallet ab12cd34-7","other":"test wallet"}`)
 	want := `{"label":"eth test wallet","other":"test wallet"}`
 	if got != want {
@@ -45,7 +45,7 @@ func TestNormalizer_StripsTheFixtureWalletLabelSuffix(t *testing.T) {
 	}
 }
 
-func TestNormalizer_LeavesStableBytesUntouched(t *testing.T) {
+func TestNormalizer_Leaves_StableBytesUntouched(t *testing.T) {
 	body := `{"error":"invalid credentials","status":"ok","amount":"0.5","n":42}`
 	if got := NewNormalizer("secret").Normalize(body); got != body {
 		t.Errorf("got %s, want it unchanged", got)
@@ -55,7 +55,7 @@ func TestNormalizer_LeavesStableBytesUntouched(t *testing.T) {
 	}
 }
 
-func TestRenderAndSections_RoundTrip(t *testing.T) {
+func TestRender_AndSections_RoundTrip(t *testing.T) {
 	exchanges := []Exchange{
 		{Step: "01 health", Method: "GET", Path: "/health", Status: 200, ContentType: "application/json", Body: `{"status":"ok"}`},
 		{Step: "02 logout", Method: "POST", Path: "/v1/auth/logout", Status: 204, ContentType: "", Body: ""},
@@ -71,7 +71,7 @@ func TestRenderAndSections_RoundTrip(t *testing.T) {
 	}
 }
 
-func TestDiff_ReportsChangedAddedAndRemovedExchanges(t *testing.T) {
+func TestDiff_Reports_ChangedAddedAndRemovedExchanges(t *testing.T) {
 	base := []Exchange{
 		{Step: "01 a", Method: "GET", Path: "/a", Status: 200, Body: `{"x":1}`},
 		{Step: "02 b", Method: "GET", Path: "/b", Status: 200, Body: `{}`},
@@ -93,7 +93,7 @@ func TestDiff_ReportsChangedAddedAndRemovedExchanges(t *testing.T) {
 	}
 }
 
-func TestJSONPath_ReadsNestedValues(t *testing.T) {
+func TestJSON_Path_ReadsNestedValues(t *testing.T) {
 	document := []byte(`{"token":"t","metadata":{"id":"m"},"accounts":[{"id":"a0"},{"id":"a1"}],"n":3}`)
 	for path, want := range map[string]string{"token": "t", "metadata.id": "m", "accounts.1.id": "a1", "n": "3"} {
 		got, err := jsonPath(document, path)

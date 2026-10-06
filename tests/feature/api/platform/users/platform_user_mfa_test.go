@@ -18,7 +18,7 @@ type PlatformUserMFATestSuite struct {
 	authSuite
 }
 
-func TestPlatformUserMFASuite(t *testing.T) {
+func TestPlatform_User_MFASuite(t *testing.T) {
 	suite.Run(t, new(PlatformUserMFATestSuite))
 }
 
@@ -26,7 +26,7 @@ func (s *PlatformUserMFATestSuite) SetupTest() {
 	testutil.SeededTestDB(s.T())
 }
 
-func (s *PlatformUserMFATestSuite) TestAPlatformAdminClearsTotpWithoutSuspendingAndRevokesSessions() {
+func (s *PlatformUserMFATestSuite) TestA_Platform_AdminClearsTotpWithoutSuspendingAndRevokesSessions() {
 	admin := s.seedUser(false)
 	s.grantPlatformAdmin(admin.ID)
 	adminSession := s.signIn(admin.Email)
@@ -120,7 +120,7 @@ func (s *PlatformUserMFATestSuite) TestAPlatformAdminClearsTotpWithoutSuspending
 	s.Equal(1, seen)
 }
 
-func (s *PlatformUserMFATestSuite) TestAMemberCannotResetPlatformMFA() {
+func (s *PlatformUserMFATestSuite) TestA_Member_CannotResetPlatformMFA() {
 	member := s.seedUser(false)
 	victim := s.seedUser(true)
 	session := s.signIn(member.Email)
@@ -151,7 +151,7 @@ func (s *PlatformUserMFATestSuite) TestAMemberCannotResetPlatformMFA() {
 	missing.AssertForbidden()
 }
 
-func (s *PlatformUserMFATestSuite) TestAnUnknownUserIsNotFound() {
+func (s *PlatformUserMFATestSuite) TestAn_Unknown_UserIsNotFound() {
 	admin := s.seedUser(false)
 	s.grantPlatformAdmin(admin.ID)
 	session := s.signIn(admin.Email)

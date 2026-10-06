@@ -6,7 +6,7 @@ import (
 	"github.com/macrowallets/waas/app/models"
 )
 
-func TestClassify(t *testing.T) {
+func TestTxkind_Classify_Succeeds(t *testing.T) {
 	t.Parallel()
 
 	cases := map[string]struct {

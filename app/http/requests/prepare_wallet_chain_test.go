@@ -12,7 +12,7 @@ import (
 	"github.com/macrowallets/waas/app/models"
 )
 
-func TestPrepareForValidationReadsTheWalletChainFromTheRequest(t *testing.T) {
+func TestPrepare_For_ValidationReadsTheWalletChainFromTheRequest(t *testing.T) {
 	wallet := &models.Wallet{Chain: "eth"}
 	ctx := scopeContext{ctx: context.WithValue(context.Background(), requestctx.KeyWallet, wallet)}
 	preparers := []validationPreparer{
@@ -32,7 +32,7 @@ func TestPrepareForValidationReadsTheWalletChainFromTheRequest(t *testing.T) {
 	}
 }
 
-func TestPrepareForValidationLeavesTheChainUnsetWhenTheWalletIsMissing(t *testing.T) {
+func TestPrepare_For_ValidationLeavesTheChainUnsetWhenTheWalletIsMissing(t *testing.T) {
 	preparers := []validationPreparer{
 		&EstimateWithdrawalRequest{},
 		&AddWhitelistEntryRequest{},

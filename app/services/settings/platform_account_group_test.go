@@ -50,7 +50,7 @@ func (refuseOpenSealer) Open(string) (string, error) {
 	return "", errors.New("opened a secret")
 }
 
-func TestPlatformAccountGroup_AdminSeesOneAccountAndHidesASecret(t *testing.T) {
+func TestPlatform_AccountGroup_AdminSeesOneAccountAndHidesASecret(t *testing.T) {
 	t.Parallel()
 
 	actor := uuid.New()
@@ -138,7 +138,7 @@ func TestPlatformAccountGroup_AdminSeesOneAccountAndHidesASecret(t *testing.T) {
 	}
 }
 
-func TestPlatformAccountGroup_NotFoundComesBeforeForbidden(t *testing.T) {
+func TestPlatform_AccountGroup_NotFoundComesBeforeForbidden(t *testing.T) {
 	t.Parallel()
 
 	actor := uuid.New()
@@ -184,7 +184,7 @@ func TestPlatformAccountGroup_NotFoundComesBeforeForbidden(t *testing.T) {
 	}
 }
 
-func TestRenderStoredGroupOmitsASecret(t *testing.T) {
+func TestRender_Stored_GroupOmitsASecret(t *testing.T) {
 	t.Parallel()
 
 	accountID := uuid.New()

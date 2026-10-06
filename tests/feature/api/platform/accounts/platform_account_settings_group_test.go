@@ -24,7 +24,7 @@ type PlatformAccountSettingsGroupTestSuite struct {
 	authSuite
 }
 
-func TestPlatformAccountSettingsGroupSuite(t *testing.T) {
+func TestPlatform_Account_SettingsGroupSuite(t *testing.T) {
 	suite.Run(t, new(PlatformAccountSettingsGroupTestSuite))
 }
 
@@ -32,7 +32,7 @@ func (s *PlatformAccountSettingsGroupTestSuite) SetupTest() {
 	testutil.SeededTestDB(s.T())
 }
 
-func (s *PlatformAccountSettingsGroupTestSuite) TestAnAdminReadsOneAccountAndNotAnotherOrASecret() {
+func (s *PlatformAccountSettingsGroupTestSuite) TestAn_Admin_ReadsOneAccountAndNotAnotherOrASecret() {
 	admin := s.seedUser(false)
 	s.grantPlatformAdmin(admin.ID)
 	session := s.signIn(admin.Email)
@@ -148,7 +148,7 @@ func (s *PlatformAccountSettingsGroupTestSuite) TestAnAdminReadsOneAccountAndNot
 	s.Equal("settings group not found", s.errorMessage(badIDUnknownGroup))
 }
 
-func (s *PlatformAccountSettingsGroupTestSuite) TestANonAdminOnAKnownPairIsForbiddenAndAnUnknownAccountIsNotFound() {
+func (s *PlatformAccountSettingsGroupTestSuite) TestA_Non_AdminOnAKnownPairIsForbiddenAndAnUnknownAccountIsNotFound() {
 	member := s.seedUser(false)
 	session := s.signIn(member.Email)
 	accountID := s.createAccount("Known")

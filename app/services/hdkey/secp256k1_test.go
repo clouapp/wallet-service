@@ -26,7 +26,7 @@ func randomParent(t *testing.T) (privateKey, publicKey, chainCode []byte) {
 
 // The public derivation used for addresses and the private tweak used for signing
 // must both agree with btcutil's independent BIP-32 implementation.
-func TestDeriveSecp256k1Child_MatchesBIP32PrivateDerivation(t *testing.T) {
+func TestDerive_Secp2561Child_MatchesBIP32PrivateDerivation(t *testing.T) {
 	parentPrivate, parentPublic, chainCode := randomParent(t)
 	extended := hdkeychain.NewExtendedKey(chaincfg.MainNetParams.HDPrivateKeyID[:], parentPrivate, chainCode, []byte{0, 0, 0, 0}, 0, 0, true)
 
@@ -67,7 +67,7 @@ func TestDeriveSecp256k1Child_MatchesBIP32PrivateDerivation(t *testing.T) {
 	}
 }
 
-func TestDeriveSecp256k1Child_RejectsInvalidInput(t *testing.T) {
+func TestDerive_Secp2561Child_RejectsInvalidInput(t *testing.T) {
 	_, parentPublic, chainCode := randomParent(t)
 	cases := map[string]func() error{
 		"short public key": func() error { _, err := DeriveSecp256k1Child(parentPublic[:32], chainCode, 1); return err },
@@ -89,7 +89,7 @@ func TestDeriveSecp256k1Child_RejectsInvalidInput(t *testing.T) {
 	}
 }
 
-func TestChildPrivateKey_RejectsOutOfRangeInput(t *testing.T) {
+func TestChild_PrivateKey_RejectsOutOfRangeInput(t *testing.T) {
 	parentPrivate, _, _ := randomParent(t)
 	n := btcec.S256().N
 	order := make([]byte, PrivateKeySize)
@@ -119,7 +119,7 @@ func TestChildPrivateKey_RejectsOutOfRangeInput(t *testing.T) {
 	}
 }
 
-func TestChildPrivateKey_WrapsModuloTheOrder(t *testing.T) {
+func TestChild_PrivateKey_WrapsModuloTheOrder(t *testing.T) {
 	n := btcec.S256().N
 	parent := new(big.Int).Sub(n, big.NewInt(1))
 	parentBytes := make([]byte, PrivateKeySize)
@@ -134,7 +134,7 @@ func TestChildPrivateKey_WrapsModuloTheOrder(t *testing.T) {
 	}
 }
 
-func TestPublicKeyOf_RejectsOutOfRangeKeys(t *testing.T) {
+func TestPublic_KeyOf_RejectsOutOfRangeKeys(t *testing.T) {
 	order := make([]byte, PrivateKeySize)
 	btcec.S256().N.FillBytes(order)
 	for name, key := range map[string][]byte{"zero": make([]byte, PrivateKeySize), "order": order, "short": {1}} {

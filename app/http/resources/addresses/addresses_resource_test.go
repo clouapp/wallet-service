@@ -13,7 +13,7 @@ import (
 	"github.com/macrowallets/waas/app/models"
 )
 
-func TestAddressKeepsTheModelWire(t *testing.T) {
+func TestAddress_Keeps_TheModelWire(t *testing.T) {
 	t.Parallel()
 
 	id := uuid.MustParse("11111111-1111-4111-8111-111111111111")
@@ -74,7 +74,7 @@ func TestAddressKeepsTheModelWire(t *testing.T) {
 	}
 }
 
-func TestAddressKeepsARelatedWalletOffTheKeyMaterial(t *testing.T) {
+func TestAddress_Keeps_ARelatedWalletOffTheKeyMaterial(t *testing.T) {
 	t.Parallel()
 
 	id := uuid.MustParse("11111111-1111-4111-8111-111111111111")
@@ -98,7 +98,7 @@ func TestAddressKeepsARelatedWalletOffTheKeyMaterial(t *testing.T) {
 	}
 }
 
-func TestAddressesFromPreserveSliceNilness(t *testing.T) {
+func TestAddresses_From_PreserveSliceNilness(t *testing.T) {
 	t.Parallel()
 
 	if addresses.AddressesFrom(nil, walletresource.WalletPtr) != nil {

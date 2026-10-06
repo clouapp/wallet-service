@@ -20,7 +20,7 @@ func (f *fakeDeleter) DeleteOlderThan(context.Context, int, int) (int64, error) 
 	return f.rows, nil
 }
 
-func TestRetentionDays(t *testing.T) {
+func TestPrune_Retention_Days(t *testing.T) {
 	days, err := retentionDays("")
 	if err != nil || days != defaultRetentionDays {
 		t.Fatalf("default = %d, %v", days, err)
@@ -40,7 +40,7 @@ func TestRetentionDays(t *testing.T) {
 	}
 }
 
-func TestPruneRejectsABadWindowBeforeDeleting(t *testing.T) {
+func TestPrune_Rejects_ABadWindowBeforeDeleting(t *testing.T) {
 	logRows := &fakeDeleter{}
 	accountRows := &fakeDeleter{}
 	service := NewService(Deps{Rows: &getReader{}, ActivityLog: logRows, AccountActivity: accountRows})
@@ -52,7 +52,7 @@ func TestPruneRejectsABadWindowBeforeDeleting(t *testing.T) {
 	}
 }
 
-func TestPruneReportsBothTables(t *testing.T) {
+func TestPrune_Reports_BothTables(t *testing.T) {
 	service := NewService(Deps{
 		Rows:            &getReader{},
 		ActivityLog:     &fakeDeleter{rows: 2},
@@ -68,7 +68,7 @@ func TestPruneReportsBothTables(t *testing.T) {
 	}
 }
 
-func TestPruneStopsWhenADeleteFails(t *testing.T) {
+func TestPrune_Stops_WhenADeleteFails(t *testing.T) {
 	accountRows := &fakeDeleter{}
 	service := NewService(Deps{
 		Rows:            &getReader{},

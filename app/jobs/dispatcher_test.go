@@ -11,7 +11,7 @@ import (
 	"github.com/goravel/framework/contracts/queue"
 )
 
-func TestDispatcherEnqueuesTheSameBlockchainPayload(t *testing.T) {
+func TestDispatcher_Enqueues_TheSameBlockchainPayload(t *testing.T) {
 	fake := &fakeQueue{}
 	dispatcher := newDispatcher(func() Enqueuer { return fake }, nil)
 	walletID := "11111111-1111-1111-1111-111111111111"
@@ -68,7 +68,7 @@ func TestDispatcherEnqueuesTheSameBlockchainPayload(t *testing.T) {
 	}
 }
 
-func TestDispatcherReturnsTheQueueError(t *testing.T) {
+func TestDispatcher_Returns_TheQueueError(t *testing.T) {
 	want := errors.New("queue unavailable")
 	fake := &fakeQueue{err: want}
 	dispatcher := newDispatcher(func() Enqueuer { return fake }, nil)
@@ -78,7 +78,7 @@ func TestDispatcherReturnsTheQueueError(t *testing.T) {
 	}
 }
 
-func TestDispatcherFiresDomainEventsWithoutAQueueJob(t *testing.T) {
+func TestDispatcher_Fires_DomainEventsWithoutAQueueJob(t *testing.T) {
 	queueFake := &fakeQueue{}
 	events := &fakeEvents{}
 	dispatcher := newDispatcher(func() Enqueuer { return queueFake }, func() EventBus { return events })
@@ -145,7 +145,7 @@ func TestDispatcherFiresDomainEventsWithoutAQueueJob(t *testing.T) {
 	}
 }
 
-func TestDispatcherSkipsDomainEventsWhenTheBusIsNil(t *testing.T) {
+func TestDispatcher_Skips_DomainEventsWhenTheBusIsNil(t *testing.T) {
 	dispatcher := newDispatcher(func() Enqueuer { return &fakeQueue{} }, nil)
 	if err := dispatcher.DispatchWalletCreated("wallet", "eth"); err != nil {
 		t.Fatal(err)
@@ -156,7 +156,7 @@ func TestDispatcherSkipsDomainEventsWhenTheBusIsNil(t *testing.T) {
 	}
 }
 
-func TestNewDispatcherRejectsNilClient(t *testing.T) {
+func TestNew_Dispatcher_RejectsNilClient(t *testing.T) {
 	defer func() {
 		if recover() == nil {
 			t.Fatal("expected panic for a nil queue client")

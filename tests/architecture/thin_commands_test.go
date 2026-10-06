@@ -17,7 +17,7 @@ var commandExceptions = map[string]bool{
 // TestCommandsAreThin refuses an artisan command that queries, calls more
 // than one service method, or returns an error without fail
 // (.ai/guidelines/queues-and-workers.md).
-func TestCommandsAreThin(t *testing.T) {
+func TestCommands_Are_Thin(t *testing.T) {
 	module := sharedModule(t)
 	var violations []string
 	var handlers int
@@ -142,7 +142,7 @@ func returnsNilOrFail(stmt *ast.ReturnStmt) bool {
 	}
 }
 
-func TestCommandHandleProblems_RefusesAQueryAndASecondCall(t *testing.T) {
+func TestCommand_HandleProblems_RefusesAQueryAndASecondCall(t *testing.T) {
 	fn := parseHandle(t, `package commands
 func (c *Cmd) Handle(ctx console.Context) error {
 	row, err := c.store.FindByID(ctx, id)

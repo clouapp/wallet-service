@@ -11,7 +11,7 @@ import (
 	"github.com/macrowallets/waas/tests/mocks"
 )
 
-func TestEVMNativeTransferReserveIsTheBuiltNativeTransferFee(t *testing.T) {
+func TestEVM_Native_TransferReserveIsTheBuiltNativeTransferFee(t *testing.T) {
 	node := mocks.NewFakeEVMNode(t)
 	adapter := newGasTestAdapter(t, node)
 
@@ -39,7 +39,7 @@ func TestEVMNativeTransferReserveIsTheBuiltNativeTransferFee(t *testing.T) {
 	}
 }
 
-func TestEVMNativeTransferReserveFailsWithoutAUsableGasPrice(t *testing.T) {
+func TestEVM_Native_TransferReserveFailsWithoutAUsableGasPrice(t *testing.T) {
 	zero := mocks.NewFakeEVMNode(t)
 	zero.GasPriceHex = "0x0"
 	if _, _, err := newGasTestAdapter(t, zero).NativeTransferReserve(context.Background()); err == nil {

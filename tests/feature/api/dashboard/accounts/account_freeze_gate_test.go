@@ -27,7 +27,7 @@ type AccountFreezeGateTestSuite struct {
 	goravelTesting.TestCase
 }
 
-func TestAccountFreezeGateSuite(t *testing.T) {
+func TestAccount_Freeze_GateSuite(t *testing.T) {
 	suite.Run(t, new(AccountFreezeGateTestSuite))
 }
 
@@ -35,7 +35,7 @@ func (s *AccountFreezeGateTestSuite) SetupTest() {
 	fixtures.TestDB(s.T())
 }
 
-func (s *AccountFreezeGateTestSuite) TestAccountFreezeFollowsTheAccountRole() {
+func (s *AccountFreezeGateTestSuite) TestAccount_Freeze_FollowsTheAccountRole() {
 	accountID := uuid.New()
 	s.Require().NoError(facades.Orm().Query().Create(&models.Account{
 		ID: accountID, Name: "Account " + accountID.String()[:8], Status: models.StatusActive, Environment: "prod",

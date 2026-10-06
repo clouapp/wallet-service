@@ -18,7 +18,7 @@ type WebhookSubscriptionRepositoryTestSuite struct {
 	repo *repositories.WebhookSubscriptionRepository
 }
 
-func TestWebhookSubscriptionRepositorySuite(t *testing.T) {
+func TestWebhook_Subscription_RepositorySuite(t *testing.T) {
 	suite.Run(t, new(WebhookSubscriptionRepositoryTestSuite))
 }
 
@@ -46,19 +46,19 @@ func (s *WebhookSubscriptionRepositoryTestSuite) subscription(provider, chainID,
 	}
 }
 
-func (s *WebhookSubscriptionRepositoryTestSuite) TestFindByChainID_NotFound() {
+func (s *WebhookSubscriptionRepositoryTestSuite) TestFind_ByChainID_NotFound() {
 	found, err := s.repo.FindByChainID(context.Background(), "eth")
 	s.ErrorIs(err, models.ErrRepositoryNotFound)
 	s.Nil(found)
 }
 
-func (s *WebhookSubscriptionRepositoryTestSuite) TestFindByChainID_Empty() {
+func (s *WebhookSubscriptionRepositoryTestSuite) TestFind_ByChainID_Empty() {
 	found, err := s.repo.FindByChainID(context.Background(), "")
 	s.ErrorIs(err, models.ErrRepositoryNotFound)
 	s.Nil(found)
 }
 
-func (s *WebhookSubscriptionRepositoryTestSuite) TestCreateFindAndRecordSync() {
+func (s *WebhookSubscriptionRepositoryTestSuite) TestCreate_Find_AndRecordSync() {
 	active := s.subscription("alchemy", "eth", "active")
 	s.Require().NoError(s.repo.Create(context.Background(), active))
 	inactive := s.subscription("helius", "eth", "disabled")

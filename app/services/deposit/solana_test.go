@@ -50,7 +50,7 @@ func solanaFixtureChain(t *testing.T) *mocks.MockChain {
 	return adapter
 }
 
-func TestSolanaDeposit_DetectedFromRecordedBlockThenConfirmed(t *testing.T) {
+func TestSolana_Deposit_DetectedFromRecordedBlockThenConfirmed(t *testing.T) {
 	fixtures.TestDB(t)
 	adapter := solanaFixtureChain(t)
 	registry := chain.NewRegistry()
@@ -94,7 +94,7 @@ func TestSolanaDeposit_DetectedFromRecordedBlockThenConfirmed(t *testing.T) {
 	}
 }
 
-func TestSolanaWithdrawal_SlotReconciledFromSignatureStatus(t *testing.T) {
+func TestSolana_Withdrawal_SlotReconciledFromSignatureStatus(t *testing.T) {
 	fixtures.TestDB(t)
 	adapter := solanaFixtureChain(t)
 	registry := chain.NewRegistry()

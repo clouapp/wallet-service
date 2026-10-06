@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-func TestEmbeddedTemplatesArePresentational(t *testing.T) {
+func TestEmbedded_Templates_ArePresentational(t *testing.T) {
 	const resetLink = "https://example.test/reset-password?token=one-time-link"
 	reset := (&PasswordResetMail{To: "person@example.test", ResetLink: resetLink}).Content().Html
 	if !strings.Contains(reset, `href="`+resetLink+`"`) || !strings.Contains(reset, "Reset Password") {

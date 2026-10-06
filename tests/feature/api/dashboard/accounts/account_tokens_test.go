@@ -33,7 +33,7 @@ type accountTokensSuite struct {
 	goravelTesting.TestCase
 }
 
-func TestAccountTokenPermissions(t *testing.T) {
+func TestAccount_Token_Permissions(t *testing.T) {
 	suite.Run(t, new(accountTokensSuite))
 }
 
@@ -41,7 +41,7 @@ func (s *accountTokensSuite) SetupTest() {
 	fixtures.TestDB(s.T())
 }
 
-func (s *accountTokensSuite) TestOwnerMintsACatalogSubset() {
+func (s *accountTokensSuite) TestOwner_Mints_ACatalogSubset() {
 	accountID := s.createAccount()
 	owner := s.loginUser("owner", accountID)
 
@@ -64,7 +64,7 @@ func (s *accountTokensSuite) TestOwnerMintsACatalogSubset() {
 	s.JSONEq(`["wallets.read","webhooks.write"]`, s.storedPermissions(accountID, "ci"))
 }
 
-func (s *accountTokensSuite) TestOmittedPermissionsStayEmpty() {
+func (s *accountTokensSuite) TestOmitted_Permissions_StayEmpty() {
 	accountID := s.createAccount()
 	owner := s.loginUser("owner", accountID)
 
@@ -74,7 +74,7 @@ func (s *accountTokensSuite) TestOmittedPermissionsStayEmpty() {
 	s.Equal("", s.storedPermissions(accountID, "plain"))
 }
 
-func (s *accountTokensSuite) TestEmptyPermissionListStaysEmpty() {
+func (s *accountTokensSuite) TestEmpty_Permission_ListStaysEmpty() {
 	accountID := s.createAccount()
 	owner := s.loginUser("owner", accountID)
 
@@ -84,7 +84,7 @@ func (s *accountTokensSuite) TestEmptyPermissionListStaysEmpty() {
 	s.Equal("", s.storedPermissions(accountID, "empty"))
 }
 
-func (s *accountTokensSuite) TestNameOutsideTheCatalogIsRejected() {
+func (s *accountTokensSuite) TestName_Outside_TheCatalogIsRejected() {
 	accountID := s.createAccount()
 	owner := s.loginUser("owner", accountID)
 
@@ -103,7 +103,7 @@ func (s *accountTokensSuite) TestNameOutsideTheCatalogIsRejected() {
 	s.NotEmpty(parsed.Errors["permissions.*"])
 }
 
-func (s *accountTokensSuite) TestBlankSpendingLimitStaysEmptyObject() {
+func (s *accountTokensSuite) TestBlank_Spending_LimitStaysEmptyObject() {
 	accountID := s.createAccount()
 	owner := s.loginUser("owner", accountID)
 
@@ -112,7 +112,7 @@ func (s *accountTokensSuite) TestBlankSpendingLimitStaysEmptyObject() {
 	s.Equal("{}", s.storedSpendingLimit(accountID, "blank-cap"))
 }
 
-func (s *accountTokensSuite) TestDailyUSDSpendingLimitIsStored() {
+func (s *accountTokensSuite) TestDaily_USD_SpendingLimitIsStored() {
 	accountID := s.createAccount()
 	owner := s.loginUser("owner", accountID)
 
@@ -121,7 +121,7 @@ func (s *accountTokensSuite) TestDailyUSDSpendingLimitIsStored() {
 	s.Equal(`{"daily_usd":"12.50"}`, s.storedSpendingLimit(accountID, "capped"))
 }
 
-func (s *accountTokensSuite) TestNegativeSpendingLimitIsNotStored() {
+func (s *accountTokensSuite) TestNegative_Spending_LimitIsNotStored() {
 	accountID := s.createAccount()
 	owner := s.loginUser("owner", accountID)
 
@@ -141,7 +141,7 @@ func (s *accountTokensSuite) TestNegativeSpendingLimitIsNotStored() {
 	s.NotEmpty(parsed.Errors["spending_limit.daily_usd"])
 }
 
-func (s *accountTokensSuite) TestAuditorCanListAndCannotMint() {
+func (s *accountTokensSuite) TestAuditor_Can_ListAndCannotMint() {
 	accountID := s.createAccount()
 	s.loginUser("owner", accountID)
 	auditor := s.loginUser("auditor", accountID)
@@ -157,7 +157,7 @@ func (s *accountTokensSuite) TestAuditorCanListAndCannotMint() {
 	s.Equal(int64(0), s.tokenCount(accountID))
 }
 
-func (s *accountTokensSuite) TestUserCannotListTokens() {
+func (s *accountTokensSuite) TestUser_Cannot_ListTokens() {
 	accountID := s.createAccount()
 	s.loginUser("owner", accountID)
 	user := s.loginUser("user", accountID)
@@ -180,7 +180,7 @@ func (s *accountTokensSuite) TestUserCannotListTokens() {
 	s.Empty(parsed.Data)
 }
 
-func (s *accountTokensSuite) TestBlankIPCidrIsStoredEmpty() {
+func (s *accountTokensSuite) TestBlank_IP_CidrIsStoredEmpty() {
 	accountID := s.createAccount()
 	owner := s.loginUser("owner", accountID)
 
@@ -189,7 +189,7 @@ func (s *accountTokensSuite) TestBlankIPCidrIsStoredEmpty() {
 	s.Equal("", s.storedIPCidr(accountID, "open"))
 }
 
-func (s *accountTokensSuite) TestIPCidrIsStored() {
+func (s *accountTokensSuite) TestIP_Cidr_IsStored() {
 	accountID := s.createAccount()
 	owner := s.loginUser("owner", accountID)
 
@@ -198,7 +198,7 @@ func (s *accountTokensSuite) TestIPCidrIsStored() {
 	s.Equal("192.0.2.0/24", s.storedIPCidr(accountID, "locked"))
 }
 
-func (s *accountTokensSuite) TestInvalidIPCidrIs422() {
+func (s *accountTokensSuite) TestInvalid_IP_CidrIs422() {
 	accountID := s.createAccount()
 	owner := s.loginUser("owner", accountID)
 
@@ -219,7 +219,7 @@ func (s *accountTokensSuite) TestInvalidIPCidrIs422() {
 	s.NotEmpty(parsed.Errors["ip_cidr"])
 }
 
-func (s *accountTokensSuite) TestCreateStoresOnlyTheSecretHash() {
+func (s *accountTokensSuite) TestCreate_Stores_OnlyTheSecretHash() {
 	accountID := s.createAccount()
 	owner := s.loginUser("owner", accountID)
 
@@ -260,7 +260,7 @@ func (s *accountTokensSuite) TestCreateStoresOnlyTheSecretHash() {
 	}
 }
 
-func (s *accountTokensSuite) TestCreateAndRevokeWriteActivityWithoutTheSecret() {
+func (s *accountTokensSuite) TestCreate_And_RevokeWriteActivityWithoutTheSecret() {
 	accountID := s.createAccount()
 	owner := s.loginUser("owner", accountID)
 
@@ -305,7 +305,7 @@ func (s *accountTokensSuite) TestCreateAndRevokeWriteActivityWithoutTheSecret() 
 	s.assertAbsent(listed, stored, "stored digest")
 }
 
-func (s *accountTokensSuite) TestUserCannotMint() {
+func (s *accountTokensSuite) TestUser_Cannot_Mint() {
 	accountID := s.createAccount()
 	s.loginUser("owner", accountID)
 	user := s.loginUser("user", accountID)
@@ -315,7 +315,7 @@ func (s *accountTokensSuite) TestUserCannotMint() {
 	s.Equal(int64(0), s.tokenCount(accountID))
 }
 
-func (s *accountTokensSuite) TestMintScopesStayWithTheRole() {
+func (s *accountTokensSuite) TestMint_Scopes_StayWithTheRole() {
 	accountID := s.createAccount()
 	owner := s.loginUser("owner", accountID)
 	admin := s.loginUser("admin", accountID)
@@ -344,7 +344,7 @@ func (s *accountTokensSuite) TestMintScopesStayWithTheRole() {
 	s.Equal(int64(2), s.tokenCount(accountID))
 }
 
-func (s *accountTokensSuite) TestAdminCanMint() {
+func (s *accountTokensSuite) TestAdmin_Can_Mint() {
 	accountID := s.createAccount()
 	admin := s.loginUser("admin", accountID)
 
@@ -353,7 +353,7 @@ func (s *accountTokensSuite) TestAdminCanMint() {
 	s.Equal(int64(1), s.tokenCount(accountID))
 }
 
-func (s *accountTokensSuite) TestAdminCanRevoke() {
+func (s *accountTokensSuite) TestAdmin_Can_Revoke() {
 	accountID := s.createAccount()
 	admin := s.loginUser("admin", accountID)
 
@@ -364,7 +364,7 @@ func (s *accountTokensSuite) TestAdminCanRevoke() {
 	s.True(s.tokenRevoked(accountID, "admin-revoke"))
 }
 
-func (s *accountTokensSuite) TestAuditorCannotRevoke() {
+func (s *accountTokensSuite) TestAuditor_Cannot_Revoke() {
 	accountID := s.createAccount()
 	owner := s.loginUser("owner", accountID)
 	auditor := s.loginUser("auditor", accountID)
@@ -377,7 +377,7 @@ func (s *accountTokensSuite) TestAuditorCannotRevoke() {
 	s.Equal(int64(0), s.activityCount(accountID, activitylog.ActionTokenRevoked))
 }
 
-func (s *accountTokensSuite) TestUserCannotRevoke() {
+func (s *accountTokensSuite) TestUser_Cannot_Revoke() {
 	accountID := s.createAccount()
 	owner := s.loginUser("owner", accountID)
 	user := s.loginUser("user", accountID)

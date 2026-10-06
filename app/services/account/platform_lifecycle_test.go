@@ -71,7 +71,7 @@ func (a *lifecycleAccounts) List(context.Context, int, int) ([]models.Account, i
 	return nil, 0, fmt.Errorf("list is not used")
 }
 
-func TestSetPlatformLifecycle(t *testing.T) {
+func TestSet_Platform_Lifecycle(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	actor := uuid.New()
@@ -116,7 +116,7 @@ func TestSetPlatformLifecycle(t *testing.T) {
 	}
 }
 
-func TestSetPlatformLifecycleRefusesANonAdminAfterTheAccountExists(t *testing.T) {
+func TestSet_Platform_LifecycleRefusesANonAdminAfterTheAccountExists(t *testing.T) {
 	t.Parallel()
 	store := &lifecycleAccounts{row: &models.Account{ID: uuid.New(), Status: models.StatusActive}}
 	service := NewService(Deps{Accounts: store}).WithPlatformAdmins(lifecycleAdmins{allowed: uuid.New()})
@@ -129,7 +129,7 @@ func TestSetPlatformLifecycleRefusesANonAdminAfterTheAccountExists(t *testing.T)
 	}
 }
 
-func TestSetPlatformLifecycleMissingAccountIsNotFoundBeforeTheAdminCheck(t *testing.T) {
+func TestSet_Platform_LifecycleMissingAccountIsNotFoundBeforeTheAdminCheck(t *testing.T) {
 	t.Parallel()
 	store := &lifecycleAccounts{}
 	service := NewService(Deps{Accounts: store}).WithPlatformAdmins(lifecycleAdmins{})
@@ -142,7 +142,7 @@ func TestSetPlatformLifecycleMissingAccountIsNotFoundBeforeTheAdminCheck(t *test
 	}
 }
 
-func TestSetPlatformLifecycleMissingAccountWritesNothing(t *testing.T) {
+func TestSet_Platform_LifecycleMissingAccountWritesNothing(t *testing.T) {
 	t.Parallel()
 	actor := uuid.New()
 	store := &lifecycleAccounts{}
@@ -156,7 +156,7 @@ func TestSetPlatformLifecycleMissingAccountWritesNothing(t *testing.T) {
 	}
 }
 
-func TestSetPlatformLifecycleRejectsBadInput(t *testing.T) {
+func TestSet_Platform_LifecycleRejectsBadInput(t *testing.T) {
 	t.Parallel()
 	actor := uuid.New()
 	accountID := uuid.New()

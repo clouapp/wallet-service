@@ -11,7 +11,7 @@ import (
 	"github.com/macrowallets/waas/app/models"
 )
 
-func TestEffectiveSweepLimits_UsesRegistryDefaultsWhenNothingIsStored(t *testing.T) {
+func TestEffective_SweepLimits_UsesRegistryDefaultsWhenNothingIsStored(t *testing.T) {
 	t.Parallel()
 
 	service := newTestService(newMemoryStore())
@@ -24,7 +24,7 @@ func TestEffectiveSweepLimits_UsesRegistryDefaultsWhenNothingIsStored(t *testing
 	}
 }
 
-func TestEffectiveSweepLimits_StoredRowOverridesOneKey(t *testing.T) {
+func TestEffective_SweepLimits_StoredRowOverridesOneKey(t *testing.T) {
 	t.Parallel()
 
 	store := newMemoryStore()
@@ -56,7 +56,7 @@ func TestEffectiveSweepLimits_StoredRowOverridesOneKey(t *testing.T) {
 	}
 }
 
-func TestEffectiveSweepLimits_InvalidKeyFallsBackToThatDefault(t *testing.T) {
+func TestEffective_SweepLimits_InvalidKeyFallsBackToThatDefault(t *testing.T) {
 	t.Parallel()
 
 	store := newMemoryStore()
@@ -93,7 +93,7 @@ func TestEffectiveSweepLimits_InvalidKeyFallsBackToThatDefault(t *testing.T) {
 	}
 }
 
-func TestEffectiveSweepLimits_FallbackChain(t *testing.T) {
+func TestEffective_SweepLimits_FallbackChain(t *testing.T) {
 	child, ok := FindGroup(groupAccountSweepLimits)
 	if !ok {
 		t.Fatal("account_sweep_limits is not in the registry")
@@ -188,7 +188,7 @@ func TestEffectiveSweepLimits_FallbackChain(t *testing.T) {
 	}
 }
 
-func TestEffectiveSweepLimits_ReadsThePlatformGroupUnderTheAccountOverride(t *testing.T) {
+func TestEffective_SweepLimits_ReadsThePlatformGroupUnderTheAccountOverride(t *testing.T) {
 	t.Parallel()
 
 	store := newCountingStore()
@@ -266,7 +266,7 @@ func TestEffectiveSweepLimits_ReadsThePlatformGroupUnderTheAccountOverride(t *te
 	}
 }
 
-func TestSavePlatformSweepLimits_RejectsZeroNegativeAndANegativeCap(t *testing.T) {
+func TestSave_PlatformSweepLimits_RejectsZeroNegativeAndANegativeCap(t *testing.T) {
 	t.Parallel()
 
 	store := newMemoryStore()
@@ -299,7 +299,7 @@ func TestSavePlatformSweepLimits_RejectsZeroNegativeAndANegativeCap(t *testing.T
 	}
 }
 
-func TestSavePlatformSweepLimits_BlankCapStaysEmptyAndIsWhatTheReaderReturns(t *testing.T) {
+func TestSave_PlatformSweepLimits_BlankCapStaysEmptyAndIsWhatTheReaderReturns(t *testing.T) {
 	t.Parallel()
 
 	store := newMemoryStore()
@@ -368,7 +368,7 @@ func TestSavePlatformSweepLimits_BlankCapStaysEmptyAndIsWhatTheReaderReturns(t *
 	}
 }
 
-func TestEffectiveSweepLimits_StoreError(t *testing.T) {
+func TestEffective_SweepLimits_StoreError(t *testing.T) {
 	t.Parallel()
 
 	service := newTestService(errStore{err: errors.New("db down")})
@@ -378,7 +378,7 @@ func TestEffectiveSweepLimits_StoreError(t *testing.T) {
 	}
 }
 
-func TestEffectiveSweepLimits_RejectsANilAccount(t *testing.T) {
+func TestEffective_SweepLimits_RejectsANilAccount(t *testing.T) {
 	t.Parallel()
 
 	service := newTestService(newMemoryStore())
@@ -388,7 +388,7 @@ func TestEffectiveSweepLimits_RejectsANilAccount(t *testing.T) {
 	}
 }
 
-func TestDefaultSweepLimitsMatchTheRegistry(t *testing.T) {
+func TestDefault_Sweep_LimitsMatchTheRegistry(t *testing.T) {
 	t.Parallel()
 
 	group, ok := FindGroup(groupAccountSweepLimits)
@@ -449,7 +449,7 @@ func (s errStore) UpsertMany(context.Context, uuid.UUID, string, map[string]stri
 	return s.err
 }
 
-func TestAccountSweepLimitsWireOmitsWhenNothingIsStored(t *testing.T) {
+func TestAccount_Sweep_LimitsWireOmitsWhenNothingIsStored(t *testing.T) {
 	t.Parallel()
 
 	service := newTestService(newMemoryStore())
@@ -459,7 +459,7 @@ func TestAccountSweepLimitsWireOmitsWhenNothingIsStored(t *testing.T) {
 	}
 }
 
-func TestAccountSweepLimitsWireUsesTheStoredOverrideAndRegistryDefaults(t *testing.T) {
+func TestAccount_Sweep_LimitsWireUsesTheStoredOverrideAndRegistryDefaults(t *testing.T) {
 	t.Parallel()
 
 	store := newMemoryStore()
@@ -483,7 +483,7 @@ func TestAccountSweepLimitsWireUsesTheStoredOverrideAndRegistryDefaults(t *testi
 	}
 }
 
-func TestAccountSweepLimitsWireOmitsANegativeCap(t *testing.T) {
+func TestAccount_Sweep_LimitsWireOmitsANegativeCap(t *testing.T) {
 	t.Parallel()
 
 	store := newMemoryStore()
@@ -505,7 +505,7 @@ func TestAccountSweepLimitsWireOmitsANegativeCap(t *testing.T) {
 	}
 }
 
-func TestMarshalSweepLimitsWireRefusesANegativeCap(t *testing.T) {
+func TestMarshal_Sweep_LimitsWireRefusesANegativeCap(t *testing.T) {
 	t.Parallel()
 
 	values := DefaultSweepLimits()

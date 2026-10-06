@@ -16,7 +16,7 @@ import (
 	"github.com/macrowallets/waas/app/services/chainregistry"
 )
 
-func TestMapCreateWalletErrorDoesNotHideAnOutageAs409(t *testing.T) {
+func TestMap_Create_WalletErrorDoesNotHideAnOutageAs409(t *testing.T) {
 	cause := errors.New("create wallet: pq: connection refused at db.internal")
 	response := &recordingCreateResponse{}
 	mapCreateWalletError(&recordingCreateContext{response: response}, cause)
@@ -41,7 +41,7 @@ func TestMapCreateWalletErrorDoesNotHideAnOutageAs409(t *testing.T) {
 	}
 }
 
-func TestMapCreateWalletErrorKeepsCallerFailuresAs4xx(t *testing.T) {
+func TestMap_Create_WalletErrorKeepsCallerFailuresAs4(t *testing.T) {
 	cases := []struct {
 		name    string
 		err     error

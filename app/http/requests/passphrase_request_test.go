@@ -2,7 +2,7 @@ package requests
 
 import "testing"
 
-func TestPassphraseFormsAcceptOnlyThePassphraseField(t *testing.T) {
+func TestPassphrase_Forms_AcceptOnlyThePassphraseField(t *testing.T) {
 	forms := []struct {
 		name  string
 		rules map[string]string

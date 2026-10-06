@@ -15,7 +15,7 @@ type TwoFactorLoginTestSuite struct {
 	authSuite
 }
 
-func TestTwoFactorLoginSuite(t *testing.T) {
+func TestTwo_Factor_LoginSuite(t *testing.T) {
 	suite.Run(t, new(TwoFactorLoginTestSuite))
 }
 
@@ -23,7 +23,7 @@ func (s *TwoFactorLoginTestSuite) SetupTest() {
 	fixtures.TestDB(s.T())
 }
 
-func (s *TwoFactorLoginTestSuite) TestLoginWithTOTPReturnsAChallengeAndNoSession() {
+func (s *TwoFactorLoginTestSuite) TestLogin_With_TOTPReturnsAChallengeAndNoSession() {
 	user := s.seedUser(true)
 
 	resp, body := s.loginAs(user.Email)
@@ -40,7 +40,7 @@ func (s *TwoFactorLoginTestSuite) TestLoginWithTOTPReturnsAChallengeAndNoSession
 	s.NotContains(raw, `"partial_token"`)
 }
 
-func (s *TwoFactorLoginTestSuite) TestVerifyRejectsTheOldPartialTokenField() {
+func (s *TwoFactorLoginTestSuite) TestVerify_Rejects_TheOldPartialTokenField() {
 	user := s.seedUser(true)
 	_, challenge := s.loginAs(user.Email)
 
@@ -51,7 +51,7 @@ func (s *TwoFactorLoginTestSuite) TestVerifyRejectsTheOldPartialTokenField() {
 	resp.AssertStatus(422)
 }
 
-func (s *TwoFactorLoginTestSuite) TestSessionAuthRejectsThePartialToken() {
+func (s *TwoFactorLoginTestSuite) TestSession_Auth_RejectsThePartialToken() {
 	user := s.seedUser(true)
 	_, body := s.loginAs(user.Email)
 	s.Require().NotEmpty(body.ChallengeToken)
@@ -66,7 +66,7 @@ func (s *TwoFactorLoginTestSuite) TestSessionAuthRejectsThePartialToken() {
 	resp.AssertStatus(401)
 }
 
-func (s *TwoFactorLoginTestSuite) TestValidTOTPCompletesTheLogin() {
+func (s *TwoFactorLoginTestSuite) TestValid_TOTP_CompletesTheLogin() {
 	user := s.seedUser(true)
 	_, challenge := s.loginAs(user.Email)
 
@@ -78,7 +78,7 @@ func (s *TwoFactorLoginTestSuite) TestValidTOTPCompletesTheLogin() {
 	s.getMe(body.AccessToken).AssertOk()
 }
 
-func (s *TwoFactorLoginTestSuite) TestPartialTokenIsSingleUse() {
+func (s *TwoFactorLoginTestSuite) TestPartial_Token_IsSingleUse() {
 	user := s.seedUser(true)
 	_, challenge := s.loginAs(user.Email)
 	resp, _ := s.verifyTwoFactor(challenge.ChallengeToken, s.currentCode(user.TOTPSecret), "")
@@ -89,7 +89,7 @@ func (s *TwoFactorLoginTestSuite) TestPartialTokenIsSingleUse() {
 	resp.AssertStatus(401)
 }
 
-func (s *TwoFactorLoginTestSuite) TestReplayedCodeIsRefused() {
+func (s *TwoFactorLoginTestSuite) TestReplayed_Code_IsRefused() {
 	user := s.seedUser(true)
 	code := s.currentCode(user.TOTPSecret)
 	_, first := s.loginAs(user.Email)
@@ -102,7 +102,7 @@ func (s *TwoFactorLoginTestSuite) TestReplayedCodeIsRefused() {
 	resp.AssertStatus(401)
 }
 
-func (s *TwoFactorLoginTestSuite) TestRecoveryCodeStillWorksAndIsSingleUse() {
+func (s *TwoFactorLoginTestSuite) TestRecovery_Code_StillWorksAndIsSingleUse() {
 	user := s.seedUser(true)
 
 	_, first := s.loginAs(user.Email)
@@ -115,7 +115,7 @@ func (s *TwoFactorLoginTestSuite) TestRecoveryCodeStillWorksAndIsSingleUse() {
 	resp.AssertStatus(401)
 }
 
-func (s *TwoFactorLoginTestSuite) TestWrongCodesHitTheAttemptCap() {
+func (s *TwoFactorLoginTestSuite) TestWrong_Codes_HitTheAttemptCap() {
 	user := s.seedUser(true)
 	_, challenge := s.loginAs(user.Email)
 
@@ -128,7 +128,7 @@ func (s *TwoFactorLoginTestSuite) TestWrongCodesHitTheAttemptCap() {
 	resp.AssertStatus(429)
 }
 
-func (s *TwoFactorLoginTestSuite) TestVerifyWithoutAnyCodeIs422() {
+func (s *TwoFactorLoginTestSuite) TestVerify_Without_AnyCodeIs422() {
 	user := s.seedUser(true)
 	_, challenge := s.loginAs(user.Email)
 
@@ -137,13 +137,13 @@ func (s *TwoFactorLoginTestSuite) TestVerifyWithoutAnyCodeIs422() {
 	resp.AssertStatus(422)
 }
 
-func (s *TwoFactorLoginTestSuite) TestUnknownPartialTokenIs401() {
+func (s *TwoFactorLoginTestSuite) TestUnknown_Partial_TokenIs401() {
 	resp, _ := s.verifyTwoFactor("not-a-challenge", "123456", "")
 
 	resp.AssertStatus(401)
 }
 
-func (s *TwoFactorLoginTestSuite) TestLoginWithoutTOTPStillReturnsASession() {
+func (s *TwoFactorLoginTestSuite) TestLogin_Without_TOTPStillReturnsASession() {
 	user := s.seedUser(false)
 
 	resp, body := s.loginAs(user.Email)

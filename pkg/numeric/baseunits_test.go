@@ -5,7 +5,7 @@ import (
 	"testing"
 )
 
-func TestToBaseUnitsIsExactWhereFloatMultiplicationTruncates(t *testing.T) {
+func TestTo_Base_UnitsIsExactWhereFloatMultiplicationTruncates(t *testing.T) {
 	cases := []struct {
 		human    string
 		decimals int32
@@ -29,7 +29,7 @@ func TestToBaseUnitsIsExactWhereFloatMultiplicationTruncates(t *testing.T) {
 	}
 }
 
-func TestToBaseUnitsRoundsProviderNoiseToTheNearestUnit(t *testing.T) {
+func TestTo_Base_UnitsRoundsProviderNoiseToTheNearestUnit(t *testing.T) {
 	for human, want := range map[string]string{"0.30000000000000004": "300000", "0.29999999999999998": "300000", "0.0000005": "1"} {
 		got, err := ToBaseUnits(mustParse(t, human), 6)
 		if err != nil {
@@ -41,7 +41,7 @@ func TestToBaseUnitsRoundsProviderNoiseToTheNearestUnit(t *testing.T) {
 	}
 }
 
-func TestToBaseUnitsRejectsBadInput(t *testing.T) {
+func TestTo_Base_UnitsRejectsBadInput(t *testing.T) {
 	if _, err := ToBaseUnits(mustParse(t, "-1"), 8); !errors.Is(err, ErrNegative) {
 		t.Fatalf("err = %v, want ErrNegative", err)
 	}

@@ -28,7 +28,7 @@ type WalletRemoveUserGateTestSuite struct {
 	goravelTesting.TestCase
 }
 
-func TestWalletRemoveUserGateSuite(t *testing.T) {
+func TestWallet_Remove_UserGateSuite(t *testing.T) {
 	suite.Run(t, new(WalletRemoveUserGateTestSuite))
 }
 
@@ -36,7 +36,7 @@ func (s *WalletRemoveUserGateTestSuite) SetupTest() {
 	fixtures.TestDB(s.T())
 }
 
-func (s *WalletRemoveUserGateTestSuite) TestWalletRemoveUserFollowsTheLoadedRoles() {
+func (s *WalletRemoveUserGateTestSuite) TestWallet_Remove_UserFollowsTheLoadedRoles() {
 	account := fixtures.InsertAccount(s.T(), "wallet remove user")
 	s.seedChain()
 	wallet := fixtures.InsertWalletWithAccount(s.T(), models.ChainETH, &account.ID)

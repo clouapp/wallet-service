@@ -32,7 +32,7 @@ func addedChainsRegistry() (*chain.Registry, chainRows) {
 	return registry, rows
 }
 
-func TestRegistryDecimalsOfBaseArbitrumAndBSCAssets(t *testing.T) {
+func TestRegistry_Decimals_OfBaseArbitrumAndBSCAssets(t *testing.T) {
 	registry, rows := addedChainsRegistry()
 	decimals := NewRegistryDecimals(RegistryDecimalsDeps{Registry: registry, Chains: rows})
 
@@ -58,7 +58,7 @@ func TestRegistryDecimalsOfBaseArbitrumAndBSCAssets(t *testing.T) {
 	}
 }
 
-func TestRegistryDecimalsRefusesAssetsForeignToTheChain(t *testing.T) {
+func TestRegistry_Decimals_RefusesAssetsForeignToTheChain(t *testing.T) {
 	registry, rows := addedChainsRegistry()
 	decimals := NewRegistryDecimals(RegistryDecimalsDeps{Registry: registry, Chains: rows})
 

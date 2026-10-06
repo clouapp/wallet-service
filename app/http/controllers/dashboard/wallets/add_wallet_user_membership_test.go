@@ -25,7 +25,7 @@ import (
 // TestAddWalletUserDeniesWhenTheMembershipReadFails proves a failed lookup of
 // an existing wallet membership does not create another row or answer 201.
 // A missing row is not this case.
-func TestAddWalletUserDeniesWhenTheMembershipReadFails(t *testing.T) {
+func TestAdd_Wallet_UserDeniesWhenTheMembershipReadFails(t *testing.T) {
 	previous := foundation.App
 	foundation.App = quietWalletApp{}
 	t.Cleanup(func() { foundation.App = previous })

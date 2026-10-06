@@ -145,7 +145,7 @@ func awaitRun(t *testing.T, results <-chan runResult, since time.Time, limit tim
 	}
 }
 
-func TestRun_SignalShutsDownServerAndWorkersCleanly(t *testing.T) {
+func TestRun_Signal_ShutsDownServerAndWorkersCleanly(t *testing.T) {
 	for _, sig := range []os.Signal{syscall.SIGTERM, syscall.SIGINT} {
 		t.Run(sig.String(), func(t *testing.T) {
 			server := newFakeServer()
@@ -182,7 +182,7 @@ func TestRun_SignalShutsDownServerAndWorkersCleanly(t *testing.T) {
 	}
 }
 
-func TestRun_CancelledContextShutsDownCleanly(t *testing.T) {
+func TestRun_Cancelled_ContextShutsDownCleanly(t *testing.T) {
 	server := newFakeServer()
 	workers := newFakeWorkers(t, false)
 	ctx, cancel := context.WithCancel(context.Background())
@@ -203,7 +203,7 @@ func TestRun_CancelledContextShutsDownCleanly(t *testing.T) {
 	}
 }
 
-func TestRun_TimesOut(t *testing.T) {
+func TestRun_Times_Out(t *testing.T) {
 	cases := map[string]struct {
 		shutdownBlock func(t *testing.T) func(ctx context.Context) error
 		hangWorkers   bool
@@ -260,7 +260,7 @@ func TestRun_TimesOut(t *testing.T) {
 	}
 }
 
-func TestRun_SecondSignalAbandonsTheShutdown(t *testing.T) {
+func TestRun_Second_SignalAbandonsTheShutdown(t *testing.T) {
 	server := newFakeServer()
 	release := make(chan struct{})
 	t.Cleanup(func() { close(release) })
@@ -280,7 +280,7 @@ func TestRun_SecondSignalAbandonsTheShutdown(t *testing.T) {
 	}
 }
 
-func TestRun_ServerFailureStopsWorkersAndFails(t *testing.T) {
+func TestRun_Server_FailureStopsWorkersAndFails(t *testing.T) {
 	server := newFakeServer()
 	workers := newFakeWorkers(t, false)
 	results := runInBackground(t, context.Background(), Config{
@@ -299,7 +299,7 @@ func TestRun_ServerFailureStopsWorkersAndFails(t *testing.T) {
 	}
 }
 
-func TestRun_ReportsServerShutdownError(t *testing.T) {
+func TestRun_Reports_ServerShutdownError(t *testing.T) {
 	server := newFakeServer()
 	server.shutdownBlock = func(context.Context) error { return errors.New("connection reset") }
 	signals := make(chan os.Signal, 1)
@@ -316,7 +316,7 @@ func TestRun_ReportsServerShutdownError(t *testing.T) {
 	}
 }
 
-func TestRun_WithoutWorkers(t *testing.T) {
+func TestRun_Without_Workers(t *testing.T) {
 	cases := map[string]StartWorkers{
 		"no starter":            nil,
 		"starter starts no one": func(context.Context) Workers { return nil },
@@ -338,7 +338,7 @@ func TestRun_WithoutWorkers(t *testing.T) {
 	}
 }
 
-func TestRun_RejectsInvalidConfiguration(t *testing.T) {
+func TestRun_Rejects_InvalidConfiguration(t *testing.T) {
 	var missingCtx context.Context
 	cases := map[string]struct {
 		ctx context.Context

@@ -10,7 +10,7 @@ import (
 	"github.com/macrowallets/waas/app/models"
 )
 
-func TestAddUserDeniesWhenTheMembershipReadFails(t *testing.T) {
+func TestAdd_User_DeniesWhenTheMembershipReadFails(t *testing.T) {
 	accountID := uuid.New()
 	actorID := uuid.New()
 	targetID := uuid.New()
@@ -29,7 +29,7 @@ func TestAddUserDeniesWhenTheMembershipReadFails(t *testing.T) {
 	}
 }
 
-func TestGetUserRoleDeniesWhenTheMembershipReadFails(t *testing.T) {
+func TestGet_User_RoleDeniesWhenTheMembershipReadFails(t *testing.T) {
 	store := roleReadFails{}
 	svc := NewService(Deps{Memberships: store})
 
@@ -39,7 +39,7 @@ func TestGetUserRoleDeniesWhenTheMembershipReadFails(t *testing.T) {
 	}
 }
 
-func TestGetUserRoleReturnsEmptyWhenTheMembershipIsMissing(t *testing.T) {
+func TestGet_User_RoleReturnsEmptyWhenTheMembershipIsMissing(t *testing.T) {
 	svc := NewService(Deps{Memberships: roleMissing{}})
 
 	role, err := svc.GetUserRole(context.Background(), uuid.New(), uuid.New())

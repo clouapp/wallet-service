@@ -36,7 +36,7 @@ var keyColumnStems = []string{
 // TestNoResourceTypeHasAFieldNamedLikeAKeyColumn walks every HTTP resource
 // struct and fails when a field is named like a key column. The field is
 // absent from the struct; a json:"-" tag is not a substitute.
-func TestNoResourceTypeHasAFieldNamedLikeAKeyColumn(t *testing.T) {
+func TestNo_Resource_TypeHasAFieldNamedLikeAKeyColumn(t *testing.T) {
 	for _, name := range []string{
 		"share", "ShareA", "share_b", "MPCCustomerShare", "MPCShareIV", "MPCShareSalt",
 		"private_key", "PrivateKey", "EncryptedPrivateKey",

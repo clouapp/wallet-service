@@ -12,7 +12,7 @@ const (
 	pythonIndent1  = "{\n \"entries\": [\n  {\n   \"tag\": \"a\",\n   \"n\": 3,\n   \"f\": 1.5,\n   \"nested\": {\n    \"x"
 )
 
-func TestDecodeThenDumpsRoundTripsLikePython(t *testing.T) {
+func TestDecode_Then_DumpsRoundTripsLikePython(t *testing.T) {
 	decoded, err := Decode([]byte(sourceDocument))
 	if err != nil {
 		t.Fatal(err)
@@ -31,7 +31,7 @@ func TestDecodeThenDumpsRoundTripsLikePython(t *testing.T) {
 	}
 }
 
-func TestQuoteEscapesLikeEnsureASCII(t *testing.T) {
+func TestQuote_Escapes_LikeEnsureASCII(t *testing.T) {
 	cases := map[string]string{
 		"plain":              `"plain"`,
 		"a\"b\\c":            `"a\"b\\c"`,
@@ -50,7 +50,7 @@ func TestQuoteEscapesLikeEnsureASCII(t *testing.T) {
 	}
 }
 
-func TestObjectSetKeepsPositionOrAppends(t *testing.T) {
+func TestObject_Set_KeepsPositionOrAppends(t *testing.T) {
 	object := Object{{Key: "a", Value: 1}, {Key: "b", Value: 2}}
 	updated := object.Set("a", 9).Set("c", 3)
 	got, _ := Dumps(updated, Compact)
@@ -65,7 +65,7 @@ func TestObjectSetKeepsPositionOrAppends(t *testing.T) {
 	}
 }
 
-func TestDecodeRejectsTrailingData(t *testing.T) {
+func TestDecode_Rejects_TrailingData(t *testing.T) {
 	if _, err := Decode([]byte(`{"a": 1} {"b": 2}`)); err == nil {
 		t.Fatal("trailing data accepted")
 	}
@@ -74,7 +74,7 @@ func TestDecodeRejectsTrailingData(t *testing.T) {
 	}
 }
 
-func TestDumpsRejectsUnsupportedTypes(t *testing.T) {
+func TestDumps_Rejects_UnsupportedTypes(t *testing.T) {
 	if _, err := Dumps(map[string]int{"a": 1}, Default); err == nil {
 		t.Fatal("unordered map accepted")
 	}

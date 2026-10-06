@@ -12,7 +12,7 @@ import (
 	wallet "github.com/macrowallets/waas/app/services/wallet"
 )
 
-func TestCreateWalletResponseKeepsTheModelWire(t *testing.T) {
+func TestCreate_Wallet_ResponseKeepsTheModelWire(t *testing.T) {
 	t.Parallel()
 
 	id := uuid.MustParse("11111111-1111-4111-8111-111111111111")

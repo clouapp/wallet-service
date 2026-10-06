@@ -27,7 +27,7 @@ type AccountUpdateGateTestSuite struct {
 	goravelTesting.TestCase
 }
 
-func TestAccountUpdateGateSuite(t *testing.T) {
+func TestAccount_Update_GateSuite(t *testing.T) {
 	suite.Run(t, new(AccountUpdateGateTestSuite))
 }
 
@@ -35,7 +35,7 @@ func (s *AccountUpdateGateTestSuite) SetupTest() {
 	fixtures.TestDB(s.T())
 }
 
-func (s *AccountUpdateGateTestSuite) TestAccountWriteFollowsTheAccountRole() {
+func (s *AccountUpdateGateTestSuite) TestAccount_Write_FollowsTheAccountRole() {
 	accountID := uuid.New()
 	original := "Account " + accountID.String()[:8]
 	s.Require().NoError(facades.Orm().Query().Create(&models.Account{

@@ -7,7 +7,7 @@ import (
 	"github.com/macrowallets/waas/app/models"
 )
 
-func TestEffectiveWalletGrantsUnionsTheCatalogs(t *testing.T) {
+func TestEffective_Wallet_GrantsUnionsTheCatalogs(t *testing.T) {
 	owner := catalogPermissionsOf(t, AccountRoleCatalog(), models.AccountRoleOwner)
 	if !slices.Contains(owner, models.AccountPermWalletsRead) {
 		t.Fatal("owner grant lacks wallets.read")
