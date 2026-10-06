@@ -2,71 +2,35 @@ package jobs
 
 import (
 	"context"
-	"errors"
-	"fmt"
-	"log/slog"
 	"time"
 
-	"github.com/google/uuid"
-	"github.com/macrowallets/waas/app/container"
-	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/services/refresh"
-	"github.com/macrowallets/waas/app/services/walletrecords"
 )
 
+const refreshWalletBalancesJob = "refresh_wallet_balances"
+
 type RefreshWalletBalances struct {
-	balances *refresh.BalanceService
+	wallets walletQueue
 }
 
 // NewRefreshWalletBalances refreshes one wallet's balances.
-func NewRefreshWalletBalances(balances *refresh.BalanceService) *RefreshWalletBalances {
-	if balances == nil {
-		panic("refresh_wallet_balances: balance refresh service is required")
+func NewRefreshWalletBalances(refresher *refresh.WalletRefresher) *RefreshWalletBalances {
+	if refresher == nil {
+		panic("refresh_wallet_balances: wallet refresher is required")
 	}
-	return &RefreshWalletBalances{balances: balances}
+	return &RefreshWalletBalances{wallets: refresher}
 }
 
 func (j *RefreshWalletBalances) Signature() string {
-	return "refresh_wallet_balances"
+	return refreshWalletBalancesJob
 }
 
 func (j *RefreshWalletBalances) Handle(args ...any) error {
-	if len(args) < 2 {
-		return fmt.Errorf("refresh_wallet_balances: expected 2 args (wallet_id, chain_id)")
-	}
-	walletIDStr, ok0 := args[0].(string)
-	chainID, ok1 := args[1].(string)
-	if !ok0 || walletIDStr == "" {
-		return fmt.Errorf("refresh_wallet_balances: wallet_id must be a non-empty string")
-	}
-	if !ok1 || chainID == "" {
-		return fmt.Errorf("refresh_wallet_balances: chain_id must be a non-empty string")
-	}
-
-	walletID, err := uuid.Parse(walletIDStr)
+	payload, err := decodeWalletPayload(refreshWalletBalancesJob, args)
 	if err != nil {
-		return fmt.Errorf("refresh_wallet_balances: invalid wallet_id: %w", err)
+		return err
 	}
-
-	wallet, err := container.MustMake[*walletrecords.Wallets]().FindByID(context.Background(), walletID)
-	if err != nil && !errors.Is(err, models.ErrRepositoryNotFound) {
-		return fmt.Errorf("refresh_wallet_balances: load wallet: %w", err)
-	}
-	if wallet == nil || errors.Is(err, models.ErrRepositoryNotFound) {
-		return fmt.Errorf("refresh_wallet_balances: wallet not found: %s", walletIDStr)
-	}
-	if wallet.Chain != chainID {
-		return fmt.Errorf("refresh_wallet_balances: chain_id %q does not match wallet chain %q", chainID, wallet.Chain)
-	}
-
-	if j.balances == nil {
-		return fmt.Errorf("refresh_wallet_balances: balance refresh service is not initialized")
-	}
-	slog.Info("refresh_wallet_balances", "wallet", walletIDStr, "chain", chainID)
-	if err := j.balances.RefreshWallet(context.Background(), wallet); err != nil {
-		return fmt.Errorf("refresh_wallet_balances: %w", err)
-	}
-	return nil
+	return j.wallets.RefreshBalances(context.Background(), payload.WalletID, payload.ChainID)
 }
 
 func (j *RefreshWalletBalances) ShouldRetry(err error, attempt int) (bool, time.Duration) {

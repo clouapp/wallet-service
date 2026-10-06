@@ -22,6 +22,7 @@ import (
 	"github.com/macrowallets/waas/app/providers"
 	"github.com/macrowallets/waas/app/repositories"
 	chainpkg "github.com/macrowallets/waas/app/services/chain"
+	"github.com/macrowallets/waas/app/services/credentialmail"
 	"github.com/macrowallets/waas/app/services/deposit"
 	"github.com/macrowallets/waas/app/services/price"
 	"github.com/macrowallets/waas/app/services/refresh"
@@ -36,14 +37,14 @@ func Boot() contractsfoundation.Application {
 		WithProviders(Providers).
 		WithSeeders(seeders.All).
 		WithJobs(func() []queue.Job {
-			balances := container.MustMake[*refresh.BalanceService]()
+			refresher := container.MustMake[*refresh.WalletRefresher]()
 			return []queue.Job{
-				jobs.NewRefreshWalletBalances(balances),
-				jobs.NewRefreshWalletTransactions(balances),
-				jobs.NewRefreshWalletTokens(balances),
-				&jobs.RefreshWalletUTXOs{},
-				jobs.NewReconcileWalletState(balances),
-				&jobs.SendCredentialMailJob{},
+				jobs.NewRefreshWalletBalances(refresher),
+				jobs.NewRefreshWalletTransactions(refresher),
+				jobs.NewRefreshWalletTokens(refresher),
+				jobs.NewRefreshWalletUTXOs(refresher),
+				jobs.NewReconcileWalletState(refresher),
+				jobs.NewSendCredentialMailJob(container.MustMake[*credentialmail.Service]()),
 			}
 		}).
 		WithCommands(func() []console.Command {

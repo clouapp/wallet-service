@@ -2,61 +2,35 @@ package jobs
 
 import (
 	"context"
-	"errors"
-	"fmt"
-	"log/slog"
 	"time"
 
-	"github.com/google/uuid"
-	"github.com/macrowallets/waas/app/container"
-	"github.com/macrowallets/waas/app/models"
-	"github.com/macrowallets/waas/app/services/walletrecords"
+	"github.com/macrowallets/waas/app/services/refresh"
 )
 
-type RefreshWalletUTXOs struct{}
+const refreshWalletUTXOsJob = "refresh_wallet_utxos"
+
+type RefreshWalletUTXOs struct {
+	wallets walletQueue
+}
+
+// NewRefreshWalletUTXOs refreshes one wallet's unspent outputs.
+func NewRefreshWalletUTXOs(refresher *refresh.WalletRefresher) *RefreshWalletUTXOs {
+	if refresher == nil {
+		panic("refresh_wallet_utxos: wallet refresher is required")
+	}
+	return &RefreshWalletUTXOs{wallets: refresher}
+}
 
 func (j *RefreshWalletUTXOs) Signature() string {
-	return "refresh_wallet_utxos"
+	return refreshWalletUTXOsJob
 }
 
 func (j *RefreshWalletUTXOs) Handle(args ...any) error {
-	if len(args) < 2 {
-		return fmt.Errorf("refresh_wallet_utxos: expected 2 args (wallet_id, chain_id)")
-	}
-	walletIDStr, ok0 := args[0].(string)
-	chainID, ok1 := args[1].(string)
-	if !ok0 || walletIDStr == "" {
-		return fmt.Errorf("refresh_wallet_utxos: wallet_id must be a non-empty string")
-	}
-	if !ok1 || chainID == "" {
-		return fmt.Errorf("refresh_wallet_utxos: chain_id must be a non-empty string")
-	}
-
-	walletID, err := uuid.Parse(walletIDStr)
+	payload, err := decodeWalletPayload(refreshWalletUTXOsJob, args)
 	if err != nil {
-		return fmt.Errorf("refresh_wallet_utxos: invalid wallet_id: %w", err)
+		return err
 	}
-
-	wallet, err := container.MustMake[*walletrecords.Wallets]().FindByID(context.Background(), walletID)
-	if err != nil && !errors.Is(err, models.ErrRepositoryNotFound) {
-		return fmt.Errorf("refresh_wallet_utxos: load wallet: %w", err)
-	}
-	if wallet == nil || errors.Is(err, models.ErrRepositoryNotFound) {
-		return fmt.Errorf("refresh_wallet_utxos: wallet not found: %s", walletIDStr)
-	}
-	if wallet.Chain != chainID {
-		return fmt.Errorf("refresh_wallet_utxos: chain_id %q does not match wallet chain %q", chainID, wallet.Chain)
-	}
-
-	// Chain-level UTXO fetching will be added per-provider; infrastructure is ready
-	if chainID != "btc" && chainID != "tbtc" {
-		slog.Warn("refresh_wallet_utxos: skipping non-Bitcoin chain", "wallet", walletIDStr, "chain", chainID)
-		return nil
-	}
-
-	slog.Info("refresh_wallet_utxos: UTXO fetch from chain not yet implemented, infrastructure ready",
-		"wallet", walletIDStr, "chain", chainID)
-	return nil
+	return j.wallets.RefreshUTXOs(context.Background(), payload.WalletID, payload.ChainID)
 }
 
 func (j *RefreshWalletUTXOs) ShouldRetry(err error, attempt int) (bool, time.Duration) {

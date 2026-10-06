@@ -1,11 +1,14 @@
 package jobs
 
 import (
+	"context"
 	"strings"
 	"testing"
 
 	"github.com/google/uuid"
 
+	"github.com/macrowallets/waas/app/models"
+	"github.com/macrowallets/waas/app/services/account"
 	"github.com/macrowallets/waas/app/services/credentialmail"
 )
 
@@ -58,4 +61,59 @@ func TestSendCredentialMailRejectsExtraArgsBeforeSending(t *testing.T) {
 	if retry || delay != 0 {
 		t.Fatalf("retry = %v delay = %s", retry, delay)
 	}
+}
+
+func TestSendCredentialMailHandleCallsSendOnce(t *testing.T) {
+	userID := uuid.MustParse("22222222-2222-2222-2222-222222222222")
+	var welcome int
+	job := NewSendCredentialMailJob(credentialmail.NewService(credentialmail.Deps{
+		Users: mailUsers(func(id uuid.UUID) (*models.User, error) {
+			if id != userID {
+				t.Fatalf("lookup id = %s", id)
+			}
+			return &models.User{ID: userID, Email: "person@example.com", FullName: "Ada"}, nil
+		}),
+		Tokens:         mailTokens{},
+		Resets:         mailResets{},
+		Invites:        mailInvites{},
+		Sender:         mailSender{welcome: func() { welcome++ }},
+		Dispatch:       func(uuid.UUID, string) error { t.Fatal("handle must not enqueue"); return nil },
+		DispatchInvite: func(uuid.UUID) (string, error) { t.Fatal("handle must not dispatch"); return "", nil },
+	}))
+	if err := job.Handle(userID.String(), credentialmail.PurposeWelcome); err != nil {
+		t.Fatal(err)
+	}
+	if welcome != 1 {
+		t.Fatalf("welcome sends = %d, want 1", welcome)
+	}
+}
+
+type mailUsers func(uuid.UUID) (*models.User, error)
+
+func (f mailUsers) FindByID(_ context.Context, id uuid.UUID) (*models.User, error) {
+	return f(id)
+}
+
+type mailTokens struct{}
+
+func (mailTokens) GenerateRandomToken() (string, error) { return "", nil }
+func (mailTokens) HashToken(string) string              { return "" }
+
+type mailResets struct{}
+
+func (mailResets) Create(context.Context, *models.PasswordResetToken) error { return nil }
+
+type mailInvites struct{}
+
+func (mailInvites) RefreshInviteForMail(context.Context, uuid.UUID, string) (account.InviteMail, error) {
+	return account.InviteMail{}, nil
+}
+
+type mailSender struct{ welcome func() }
+
+func (mailSender) SendInvite(context.Context, account.InviteMail) error { return nil }
+func (mailSender) SendReset(context.Context, string, string) error      { return nil }
+func (s mailSender) SendWelcome(context.Context, string, string) error {
+	s.welcome()
+	return nil
 }

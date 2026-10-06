@@ -47,28 +47,24 @@ func CredentialMailArgs(subjectID uuid.UUID, purpose string) ([]queue.Arg, error
 }
 
 func (j *SendCredentialMailJob) Handle(args ...any) error {
-	subjectID, purpose, err := decodeCredentialMailArgs(args)
+	payload, err := decodeCredentialMailArgs(args)
 	if err != nil {
 		return err
 	}
-	mailer := j.service
-	if mailer == nil {
-		mailer = container.MustMake[*credentialmail.Service]()
+	// The invite link is the return value of Send, captured for the sync
+	// runner. It is not a queue argument.
+	link, err := j.mailer().Send(context.Background(), payload.SubjectID, payload.Purpose)
+	if j.inviteLink != nil {
+		*j.inviteLink = link
 	}
-	switch purpose {
-	case credentialmail.PurposePasswordReset:
-		return mailer.SendPasswordReset(context.Background(), subjectID)
-	case credentialmail.PurposeWelcome:
-		return mailer.SendWelcome(context.Background(), subjectID)
-	case credentialmail.PurposeAccountInvite:
-		link, err := mailer.SendAccountInvite(context.Background(), subjectID)
-		if j.inviteLink != nil {
-			*j.inviteLink = link
-		}
-		return err
-	default:
-		return fmt.Errorf("send_credential_mail: unknown purpose %q", purpose)
+	return err
+}
+
+func (j *SendCredentialMailJob) mailer() *credentialmail.Service {
+	if j != nil && j.service != nil {
+		return j.service
 	}
+	return container.MustMake[*credentialmail.Service]()
 }
 
 // ShouldRetry refuses another attempt. A second run would mint another
@@ -100,24 +96,29 @@ func (j *SendCredentialMailJob) ShouldRetry(error, int) (bool, time.Duration) {
 	return false, 0
 }
 
-func decodeCredentialMailArgs(args []any) (uuid.UUID, string, error) {
+type credentialMailPayload struct {
+	SubjectID uuid.UUID
+	Purpose   string
+}
+
+func decodeCredentialMailArgs(args []any) (credentialMailPayload, error) {
 	if len(args) != 2 {
-		return uuid.Nil, "", fmt.Errorf("send_credential_mail: expected 2 args (subject_id, purpose)")
+		return credentialMailPayload{}, fmt.Errorf("send_credential_mail: expected 2 args (subject_id, purpose)")
 	}
 	subjectRaw, ok := args[0].(string)
 	if !ok || subjectRaw == "" {
-		return uuid.Nil, "", errors.New("send_credential_mail: subject_id must be a non-empty string")
+		return credentialMailPayload{}, errors.New("send_credential_mail: subject_id must be a non-empty string")
 	}
 	purpose, ok := args[1].(string)
 	if !ok || !credentialmail.KnownPurpose(purpose) {
-		return uuid.Nil, "", errors.New("send_credential_mail: purpose is not a credential mail purpose")
+		return credentialMailPayload{}, errors.New("send_credential_mail: purpose is not a credential mail purpose")
 	}
 	subjectID, err := uuid.Parse(subjectRaw)
 	if err != nil {
-		return uuid.Nil, "", fmt.Errorf("send_credential_mail: invalid subject_id: %w", err)
+		return credentialMailPayload{}, fmt.Errorf("send_credential_mail: invalid subject_id: %w", err)
 	}
 	if subjectID == uuid.Nil {
-		return uuid.Nil, "", errors.New("send_credential_mail: subject id is required")
+		return credentialMailPayload{}, errors.New("send_credential_mail: subject id is required")
 	}
-	return subjectID, purpose, nil
+	return credentialMailPayload{SubjectID: subjectID, Purpose: purpose}, nil
 }

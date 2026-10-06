@@ -2,72 +2,35 @@ package jobs
 
 import (
 	"context"
-	"errors"
-	"fmt"
-	"log/slog"
 	"time"
 
-	"github.com/google/uuid"
-	"github.com/macrowallets/waas/app/container"
-	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/services/refresh"
-	"github.com/macrowallets/waas/app/services/walletrecords"
 )
 
+const reconcileWalletStateJob = "reconcile_wallet_state"
+
 type ReconcileWalletState struct {
-	balances *refresh.BalanceService
+	wallets walletQueue
 }
 
 // NewReconcileWalletState reconciles one wallet against chain state.
-func NewReconcileWalletState(balances *refresh.BalanceService) *ReconcileWalletState {
-	if balances == nil {
-		panic("reconcile_wallet_state: balance refresh service is required")
+func NewReconcileWalletState(refresher *refresh.WalletRefresher) *ReconcileWalletState {
+	if refresher == nil {
+		panic("reconcile_wallet_state: wallet refresher is required")
 	}
-	return &ReconcileWalletState{balances: balances}
+	return &ReconcileWalletState{wallets: refresher}
 }
 
 func (j *ReconcileWalletState) Signature() string {
-	return "reconcile_wallet_state"
+	return reconcileWalletStateJob
 }
 
 func (j *ReconcileWalletState) Handle(args ...any) error {
-	if len(args) < 2 {
-		return fmt.Errorf("reconcile_wallet_state: expected 2 args (wallet_id, chain_id)")
-	}
-	walletIDStr, ok0 := args[0].(string)
-	chainID, ok1 := args[1].(string)
-	if !ok0 || walletIDStr == "" {
-		return fmt.Errorf("reconcile_wallet_state: wallet_id must be a non-empty string")
-	}
-	if !ok1 || chainID == "" {
-		return fmt.Errorf("reconcile_wallet_state: chain_id must be a non-empty string")
-	}
-
-	walletID, err := uuid.Parse(walletIDStr)
+	payload, err := decodeWalletPayload(reconcileWalletStateJob, args)
 	if err != nil {
-		return fmt.Errorf("reconcile_wallet_state: invalid wallet_id: %w", err)
+		return err
 	}
-
-	wallet, err := container.MustMake[*walletrecords.Wallets]().FindByID(context.Background(), walletID)
-	if err != nil && !errors.Is(err, models.ErrRepositoryNotFound) {
-		return fmt.Errorf("reconcile_wallet_state: load wallet: %w", err)
-	}
-	if wallet == nil || errors.Is(err, models.ErrRepositoryNotFound) {
-		return fmt.Errorf("reconcile_wallet_state: wallet not found: %s", walletIDStr)
-	}
-	if wallet.Chain != chainID {
-		return fmt.Errorf("reconcile_wallet_state: chain_id %q does not match wallet chain %q", chainID, wallet.Chain)
-	}
-
-	if j.balances == nil {
-		return fmt.Errorf("reconcile_wallet_state: balance refresh service is not initialized")
-	}
-	slog.Info("reconcile_wallet_state", "wallet", walletIDStr, "chain", chainID)
-	// Full reconciliation compares chain state vs DB; for now runs a fresh balance sync
-	if err := j.balances.RefreshWallet(context.Background(), wallet); err != nil {
-		return fmt.Errorf("reconcile_wallet_state: %w", err)
-	}
-	return nil
+	return j.wallets.ReconcileWallet(context.Background(), payload.WalletID, payload.ChainID)
 }
 
 func (j *ReconcileWalletState) ShouldRetry(err error, attempt int) (bool, time.Duration) {

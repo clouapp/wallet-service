@@ -1,9 +1,12 @@
 package jobs
 
 import (
+	"context"
 	"fmt"
 	"testing"
 	"time"
+
+	"github.com/google/uuid"
 )
 
 func TestRefreshWalletBalancesRejectsEmptyArgs(t *testing.T) {
@@ -268,6 +271,65 @@ func TestAllJobsRejectNonStringWalletID(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestWalletJobsCallOneServiceMethod(t *testing.T) {
+	rec := &recordingWalletQueue{}
+	id := "11111111-1111-1111-1111-111111111111"
+	jobs := []struct {
+		name string
+		job  interface{ Handle(args ...any) error }
+		got  *int
+	}{
+		{"balances", &RefreshWalletBalances{wallets: rec}, &rec.balances},
+		{"transactions", &RefreshWalletTransactions{wallets: rec}, &rec.transactions},
+		{"tokens", &RefreshWalletTokens{wallets: rec}, &rec.tokens},
+		{"utxos", &RefreshWalletUTXOs{wallets: rec}, &rec.utxos},
+		{"reconcile", &ReconcileWalletState{wallets: rec}, &rec.reconcile},
+	}
+	for _, tc := range jobs {
+		t.Run(tc.name, func(t *testing.T) {
+			before := *tc.got
+			if err := tc.job.Handle(id, "eth"); err != nil {
+				t.Fatal(err)
+			}
+			if *tc.got != before+1 {
+				t.Fatalf("service calls = %d, want %d", *tc.got, before+1)
+			}
+		})
+	}
+	if rec.balances != 1 || rec.transactions != 1 || rec.tokens != 1 || rec.utxos != 1 || rec.reconcile != 1 {
+		t.Fatalf("calls = %+v, each job must call only its own method", rec)
+	}
+}
+
+type recordingWalletQueue struct {
+	balances, transactions, tokens, utxos, reconcile int
+}
+
+func (r *recordingWalletQueue) RefreshBalances(context.Context, uuid.UUID, string) error {
+	r.balances++
+	return nil
+}
+
+func (r *recordingWalletQueue) RefreshTransactions(context.Context, uuid.UUID, string) error {
+	r.transactions++
+	return nil
+}
+
+func (r *recordingWalletQueue) RefreshTokens(context.Context, uuid.UUID, string) error {
+	r.tokens++
+	return nil
+}
+
+func (r *recordingWalletQueue) RefreshUTXOs(context.Context, uuid.UUID, string) error {
+	r.utxos++
+	return nil
+}
+
+func (r *recordingWalletQueue) ReconcileWallet(context.Context, uuid.UUID, string) error {
+	r.reconcile++
+	return nil
 }
 
 func TestAllJobsRejectSingleArg(t *testing.T) {

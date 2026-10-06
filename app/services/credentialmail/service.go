@@ -157,6 +157,21 @@ func (s *Service) DispatchAccountInvite(inviteID uuid.UUID) (string, error) {
 	return s.dispatchInvite(inviteID)
 }
 
+// Send delivers one decoded credential-mail purpose. An invite returns the
+// minted link. The other purposes return an empty link.
+func (s *Service) Send(ctx context.Context, subjectID uuid.UUID, purpose string) (string, error) {
+	switch purpose {
+	case PurposePasswordReset:
+		return "", s.SendPasswordReset(ctx, subjectID)
+	case PurposeWelcome:
+		return "", s.SendWelcome(ctx, subjectID)
+	case PurposeAccountInvite:
+		return s.SendAccountInvite(ctx, subjectID)
+	default:
+		return "", fmt.Errorf("credential mail: unknown purpose %q", purpose)
+	}
+}
+
 // SendWelcome loads the user and sends the welcome message. The address and
 // name come from the row. They are not queue arguments.
 func (s *Service) SendWelcome(ctx context.Context, userID uuid.UUID) error {

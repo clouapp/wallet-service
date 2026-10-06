@@ -88,6 +88,33 @@ func TestSendAccountInviteDoesNotEnqueueTheLink(t *testing.T) {
 	}
 }
 
+func TestSendRunsTheDecodedPurpose(t *testing.T) {
+	userID := uuid.New()
+	var welcome int
+	svc := NewService(Deps{
+		Users: userLookupFunc(func(_ context.Context, id uuid.UUID) (*models.User, error) {
+			if id != userID {
+				t.Fatalf("lookup id = %s", id)
+			}
+			return &models.User{ID: userID, Email: "person@example.com", FullName: "Ada"}, nil
+		}),
+		Tokens:         tokenIssuerFunc{mint: func() (string, error) { return "raw", nil }, hash: func(string) string { return "hash" }},
+		Resets:         resetWriterFunc(func(context.Context, *models.PasswordResetToken) error { return nil }),
+		Invites:        inviteRefresherFunc(func(context.Context, uuid.UUID, string) (account.InviteMail, error) { return account.InviteMail{}, nil }),
+		Sender:         senderFunc{welcome: func(string, string) { welcome++ }},
+		Dispatch:       func(uuid.UUID, string) error { t.Fatal("send must not enqueue"); return nil },
+		DispatchInvite: func(uuid.UUID) (string, error) { t.Fatal("send must not dispatch an invite"); return "", nil },
+	})
+
+	link, err := svc.Send(context.Background(), userID, PurposeWelcome)
+	if err != nil || link != "" || welcome != 1 {
+		t.Fatalf("link %q err %v welcome %d", link, err, welcome)
+	}
+	if _, err := svc.Send(context.Background(), userID, "not-a-purpose"); err == nil {
+		t.Fatal("unknown purpose must be refused")
+	}
+}
+
 func TestSendWelcomeUsesTheLoadedUser(t *testing.T) {
 	userID := uuid.New()
 	const hash = "stored-password-hash"
