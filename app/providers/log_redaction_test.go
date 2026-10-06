@@ -2,6 +2,8 @@ package providers
 
 import (
 	"context"
+	"fmt"
+	"log/slog"
 	"strings"
 	"testing"
 	"time"
@@ -13,6 +15,7 @@ import (
 )
 
 func TestInstallLogRedactionWrapsFileAndStdoutChannels(t *testing.T) {
+	preserveDefaultSlog(t)
 	cfg := &mapConfig{data: map[string]any{
 		"vault": map[string]any{
 			"rpc": map[string]any{
@@ -59,6 +62,7 @@ func TestInstallLogRedactionWrapsFileAndStdoutChannels(t *testing.T) {
 }
 
 func TestInstallLogRedactionUsesStdoutWhenLambdaModeIsSet(t *testing.T) {
+	preserveDefaultSlog(t)
 	cfg := &mapConfig{data: map[string]any{
 		"vault": map[string]any{"lambda_mode": "api"},
 	}}
@@ -66,6 +70,59 @@ func TestInstallLogRedactionUsesStdoutWhenLambdaModeIsSet(t *testing.T) {
 	logging := cfg.Get("logging").(map[string]any)
 	if logging["default"] != "stdout" {
 		t.Fatalf("default channel = %#v, want stdout", logging["default"])
+	}
+}
+
+func TestInstallLogRedactionRoutesSlogThroughTheSameHandler(t *testing.T) {
+	preserveDefaultSlog(t)
+	t.Cleanup(func() { security.ConfigureRedaction(nil, nil) })
+
+	inner := &stubHandler{}
+	cfg := &mapConfig{data: map[string]any{
+		"logging": map[string]any{
+			"default": "app",
+			"channels": map[string]any{
+				"app": map[string]any{
+					"driver": contractslog.DriverCustom,
+					"via":    stubLogger{handler: inner},
+				},
+			},
+		},
+		"vault": map[string]any{
+			"rpc": map[string]any{
+				"eth": "https://user:fake-rpc-password@rpc.example/v2/fake-path-key-value?apikey=fake-query-key",
+			},
+			"api_key_secret": "fake-api-key-value",
+		},
+	}}
+
+	InstallLogRedaction(cfg, nil)
+	slog.Info(
+		"dial https://user:fake-rpc-password@rpc.example/v2/fake-path-key-value?apikey=fake-query-key",
+		"url", "https://user:fake-rpc-password@rpc.example/v2/fake-path-key-value?apikey=fake-query-key",
+		"api_key", "fake-api-key-value",
+		"wallet", "9f0e3c1a",
+	)
+
+	if len(inner.got) != 1 {
+		t.Fatalf("slog records = %#v", inner.got)
+	}
+	logged := inner.got[0] + " " + fmt.Sprint(inner.with)
+	for _, secret := range []string{
+		"fake-rpc-password",
+		"fake-path-key-value",
+		"fake-query-key",
+		"fake-api-key-value",
+	} {
+		if strings.Contains(logged, secret) {
+			t.Fatalf("slog leaked %q: %s", secret, logged)
+		}
+	}
+	if !strings.Contains(inner.got[0], "dial") {
+		t.Fatalf("message was dropped: %s", inner.got[0])
+	}
+	if len(inner.with) != 1 || inner.with[0]["api_key"] != "[redacted]" || inner.with[0]["wallet"] != "9f0e3c1a" {
+		t.Fatalf("fields = %#v", inner.with)
 	}
 }
 
@@ -107,13 +164,25 @@ type stubLogger struct{ handler *stubHandler }
 
 func (l stubLogger) Handle(string) (contractslog.Handler, error) { return l.handler, nil }
 
-type stubHandler struct{ got []string }
+type stubHandler struct {
+	got  []string
+	with []map[string]any
+}
 
 func (h *stubHandler) Enabled(contractslog.Level) bool { return true }
 
 func (h *stubHandler) Handle(entry contractslog.Entry) error {
 	h.got = append(h.got, entry.Message())
+	if fields := entry.With(); len(fields) > 0 {
+		h.with = append(h.with, fields)
+	}
 	return nil
+}
+
+func preserveDefaultSlog(t *testing.T) {
+	t.Helper()
+	previous := slog.Default()
+	t.Cleanup(func() { slog.SetDefault(previous) })
 }
 
 type stubEntry struct{ message string }

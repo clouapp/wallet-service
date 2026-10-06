@@ -75,8 +75,6 @@ var (
 )
 
 func init() {
-	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo})))
-
 	bootstrap.Boot()
 	deposits = container.MustMake[*deposit.Service]()
 	webhooks = container.MustMake[*webhook.Service]()

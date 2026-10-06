@@ -1,14 +1,18 @@
 package providers
 
 import (
+	"context"
+	"log/slog"
 	"net/url"
 	"os"
 	"sort"
 	"strings"
+	"sync"
 
 	"github.com/goravel/framework/contracts/config"
 	"github.com/goravel/framework/contracts/foundation"
 	contractslog "github.com/goravel/framework/contracts/log"
+	frameworklog "github.com/goravel/framework/log"
 	frameworklogger "github.com/goravel/framework/log/logger"
 
 	"github.com/macrowallets/waas/app/services/security"
@@ -54,7 +58,169 @@ func InstallLogRedaction(cfg config.Config, parser foundation.Json) []string {
 		logging["default"] = defaultLogChannel(cfg)
 	}
 	cfg.Add("logging", logging)
+	bindDefaultSlog(cfg)
 	return wrapped
+}
+
+// bindDefaultSlog points slog.Default at the default channel's handler.
+// redactLogChannels has already replaced that channel's driver with the
+// redacting wrapper, so a slog record is handled by security.NewRedactingHandler
+// — the same handler facades.Log() writes through — and not by a second sink.
+func bindDefaultSlog(cfg config.Config) {
+	logging, _ := cfg.Get("logging").(map[string]any)
+	channels, _ := logging["channels"].(map[string]any)
+	name, _ := logging["default"].(string)
+	handlers := slogHandlers(name, channels, map[string]struct{}{})
+	if len(handlers) == 0 {
+		return
+	}
+	handler := handlers[0]
+	if len(handlers) > 1 {
+		handler = fanoutHandler{handlers: handlers}
+	}
+	slog.SetDefault(slog.New(handler))
+}
+
+// fanoutHandler writes one record to every handler of a stack channel.
+type fanoutHandler struct {
+	handlers []slog.Handler
+}
+
+func (f fanoutHandler) Enabled(ctx context.Context, level slog.Level) bool {
+	for _, handler := range f.handlers {
+		if handler.Enabled(ctx, level) {
+			return true
+		}
+	}
+	return false
+}
+
+func (f fanoutHandler) Handle(ctx context.Context, record slog.Record) error {
+	var first error
+	for _, handler := range f.handlers {
+		if err := handler.Handle(ctx, record.Clone()); err != nil && first == nil {
+			first = err
+		}
+	}
+	return first
+}
+
+func (f fanoutHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
+	next := make([]slog.Handler, len(f.handlers))
+	for i, handler := range f.handlers {
+		next[i] = handler.WithAttrs(attrs)
+	}
+	return fanoutHandler{handlers: next}
+}
+
+func (f fanoutHandler) WithGroup(name string) slog.Handler {
+	next := make([]slog.Handler, len(f.handlers))
+	for i, handler := range f.handlers {
+		next[i] = handler.WithGroup(name)
+	}
+	return fanoutHandler{handlers: next}
+}
+
+// slogHandlers resolves one channel to the slog handlers in front of its
+// already-wrapped Goravel handler. A stack contributes each child. The
+// Goravel handler is opened on the first record so installing the default
+// logger does not open the log file by itself.
+func slogHandlers(name string, channels map[string]any, seen map[string]struct{}) []slog.Handler {
+	if name == "" {
+		return nil
+	}
+	if _, loop := seen[name]; loop {
+		return nil
+	}
+	seen[name] = struct{}{}
+	channel, _ := channels[name].(map[string]any)
+	if channel == nil {
+		return nil
+	}
+	driver, _ := channel["driver"].(string)
+	if driver == contractslog.DriverStack {
+		var handlers []slog.Handler
+		for _, child := range channelNames(channel["channels"]) {
+			handlers = append(handlers, slogHandlers(child, channels, seen)...)
+		}
+		return handlers
+	}
+	via, ok := channel["via"].(contractslog.Logger)
+	if !ok {
+		return nil
+	}
+	return []slog.Handler{&channelSlogHandler{via: via, channel: "logging.channels." + name}}
+}
+
+func channelNames(value any) []string {
+	switch typed := value.(type) {
+	case []string:
+		return typed
+	case []any:
+		names := make([]string, 0, len(typed))
+		for _, item := range typed {
+			name, ok := item.(string)
+			if ok {
+				names = append(names, name)
+			}
+		}
+		return names
+	default:
+		return nil
+	}
+}
+
+// channelSlogHandler is the default channel's redacting handler behind slog.
+// via.Handle returns security.NewRedactingHandler; Goravel's adapter is what
+// turns that handler into an slog.Handler.
+type channelSlogHandler struct {
+	via     contractslog.Logger
+	channel string
+	once    sync.Once
+	inner   slog.Handler
+}
+
+func (h *channelSlogHandler) Enabled(ctx context.Context, level slog.Level) bool {
+	inner := h.resolve()
+	if inner == nil {
+		return false
+	}
+	return inner.Enabled(ctx, level)
+}
+
+func (h *channelSlogHandler) Handle(ctx context.Context, record slog.Record) error {
+	inner := h.resolve()
+	if inner == nil {
+		return nil
+	}
+	return inner.Handle(ctx, record)
+}
+
+func (h *channelSlogHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
+	inner := h.resolve()
+	if inner == nil {
+		return h
+	}
+	return inner.WithAttrs(attrs)
+}
+
+func (h *channelSlogHandler) WithGroup(name string) slog.Handler {
+	inner := h.resolve()
+	if inner == nil {
+		return h
+	}
+	return inner.WithGroup(name)
+}
+
+func (h *channelSlogHandler) resolve() slog.Handler {
+	h.once.Do(func() {
+		handler, err := h.via.Handle(h.channel)
+		if err != nil || handler == nil {
+			return
+		}
+		h.inner = frameworklog.HandlerToSlogHandler(handler)
+	})
+	return h.inner
 }
 
 func defaultLogging(cfg config.Config, parser foundation.Json) map[string]any {
