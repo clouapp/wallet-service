@@ -21,12 +21,7 @@ func (m *SettingsTestMail) Envelope() *contractsmail.Envelope {
 
 func (m *SettingsTestMail) Content() *contractsmail.Content {
 	return &contractsmail.Content{
-		Html: `<!DOCTYPE html>
-<html>
-<body style="font-family:sans-serif;max-width:600px;margin:40px auto;color:#333;">
-  <p>This is a test message from Vault.</p>
-</body>
-</html>`,
+		Html: render("settings_test.html", nil),
 	}
 }
 
