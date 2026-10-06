@@ -45,7 +45,9 @@ make dev          # starts Docker + backend + frontend
 | `make dev-front` | Frontend only (vinext) |
 | `make run` | Backend without live reload |
 | `make stop` | Kill all dev processes |
-| `make test` | Run Go tests (migrates fresh `TEST_DB_DATABASE`, default `vault_unit_test`; `vault` and `vault_test` are refused) |
+| `make test` | `test-unit` then `test-integration` (both always run; fails if either fails) |
+| `make test-unit` | Packages whose tests need no PostgreSQL/Redis, all in parallel, no lock |
+| `make test-integration` | Packages whose tests import `tests/testenv`, `tests/testutil`, `tests` or `bootstrap`: under `~/.local/state/macro-e2e/locks/vault_unit_test.lock`, migrates `TEST_DB_DATABASE` (default `vault_unit_test`) fresh once as a template, each test binary clones it into `vault_unit_test_pN` with its own Redis index (`REDIS_DB` − N), `-p TEST_PARALLEL` (default 4, max 6); clones dropped on exit. Only names starting with `vault_unit_test` are accepted (`vault`, `vault_test` refused) |
 | `make docker-up` | Start Docker services |
 | `make docker-down` | Stop Docker services |
 | `make migrate` | Run pending migrations |
@@ -166,6 +168,23 @@ back/
 ├── tools/                   # Standalone binaries: macro-e2e, localstack-secrets-snapshot
 └── tests/                   # Mocks + test utilities
 ```
+
+## Tests
+
+```bash
+make test                        # unit + integration
+make test-unit                   # no database, seconds
+make test-integration TEST_PARALLEL=6 TEST_FLAGS=-v
+make test-integration TEST_FLAGS='-run TestWalletRepository'
+```
+
+- Unit vs integration is decided per package from its test imports (`go list`), no build tags: a package is integration when its tests import `tests/testenv`, `tests/testutil`, `tests` or `bootstrap`.
+- `mocks.TestDB(t)` migrates the schema fresh once per test binary (a worker clone already is), then truncates every table but `migrations` before and after each test. Tests that run migrations up/down use `mocks.TestDBFreshSchema(t)` (fresh schema before and after).
+- `go run ./tools/testdb prepare | drop-clones` are the template/cleanup steps `make test-integration` runs; both refuse names outside `vault_unit_test*`.
+- Running `go test ./app/repositories` directly still works on `vault_unit_test` itself (no clone; take the lock with `flock ~/.local/state/macro-e2e/locks/vault_unit_test.lock …` when another run may be active).
+- `TEST_TIMEOUT` (default 30m) is a safety net per `go test` invocation.
+- Timings on the dev machine: `make test` ~2.5 min (was ~35 min with `-p 1` and `migrate:fresh` twice per test); `test-unit` ~1.5 min (mostly `app/services/mpc` keygen), `test-integration` ~40 s with 6 workers, ~1.7 min with `TEST_PARALLEL=1`.
+- Unreachable endpoints in tests use a just-released local port (`testutil.ClosedLocalURL`), not port 1: on WSL2 `127.0.0.1:1` hangs until the client timeout instead of refusing.
 
 ## Migrations
 

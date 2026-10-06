@@ -2,6 +2,8 @@ package mocks
 
 import (
 	"os"
+	"strings"
+	"sync"
 	"testing"
 
 	"github.com/google/uuid"
@@ -13,11 +15,104 @@ import (
 
 // ---------------------------------------------------------------------------
 // TestDB — sets up Goravel ORM with test database
-// Uses the pre-boot .env.testing connection. Each test gets a clean schema.
+// Uses the pre-boot .env.testing connection. Each test gets empty tables.
 // ---------------------------------------------------------------------------
 
-// TestDB sets up test database. Assumes Goravel is already booted via TestMain.
+// migrationsTable keeps the applied migrations when the tables are emptied.
+const migrationsTable = "migrations"
+
+// freshSchemaOnce migrates the database fresh once per test binary outside worker
+// mode; a worker clone is already a copy of the freshly migrated template.
+var (
+	freshSchemaOnce sync.Once
+	freshSchemaErr  error
+)
+
+// TestDB gives the test empty tables on a migrated schema: the schema is migrated
+// fresh once per test binary, then every table but migrations is truncated before
+// and after each test. Assumes Goravel is already booted via TestMain. Tests that
+// change the schema itself use TestDBFreshSchema.
 func TestDB(t *testing.T) {
+	t.Helper()
+
+	connectTestDB(t)
+	freshSchemaOnce.Do(func() {
+		if !testenv.WorkerMode() {
+			freshSchemaErr = facades.Artisan().Call("migrate:fresh")
+		}
+	})
+	if freshSchemaErr != nil {
+		t.Fatalf("migration failed: %v", freshSchemaErr)
+	}
+	truncateTables(t)
+	t.Cleanup(func() {
+		requireSafeTestDatabase(t)
+		truncateTables(t)
+	})
+}
+
+// TestDBFreshSchema migrates the schema fresh before and after the test, for tests
+// that run migrations up and down.
+func TestDBFreshSchema(t *testing.T) {
+	t.Helper()
+
+	connectTestDB(t)
+	if err := facades.Artisan().Call("migrate:fresh"); err != nil {
+		t.Fatalf("migration failed: %v", err)
+	}
+	t.Cleanup(func() {
+		requireSafeTestDatabase(t)
+		if err := facades.Artisan().Call("migrate:fresh"); err != nil {
+			t.Errorf("test database cleanup migration failed: %v", err)
+		}
+	})
+}
+
+// emptyTablesStatement deletes every row of the current schema but the migrations
+// table and restarts the sequences those tables own, in one round trip. Foreign keys
+// are not checked while it runs (session_replication_role, superuser only), so the
+// order does not matter. DELETE on these small tables takes milliseconds where
+// TRUNCATE, which rewrites and fsyncs every table, takes ~0.5 s per test.
+const emptyTablesStatement = `DO $$
+DECLARE r record;
+BEGIN
+	PERFORM set_config('session_replication_role', 'replica', true);
+	FOR r IN SELECT tablename FROM pg_tables WHERE schemaname = current_schema() AND tablename <> '` + migrationsTable + `' LOOP
+		EXECUTE format('DELETE FROM %I', r.tablename);
+	END LOOP;
+	FOR r IN SELECT s.relname FROM pg_class s
+		JOIN pg_namespace n ON n.oid = s.relnamespace
+		JOIN pg_depend d ON d.objid = s.oid AND d.classid = 'pg_class'::regclass AND d.refclassid = 'pg_class'::regclass
+		JOIN pg_class owner ON owner.oid = d.refobjid
+		WHERE s.relkind = 'S' AND n.nspname = current_schema() AND owner.relname <> '` + migrationsTable + `' LOOP
+		EXECUTE format('ALTER SEQUENCE %I RESTART', r.relname);
+	END LOOP;
+END $$`
+
+// truncateTables empties every table of the current schema except migrations and
+// restarts their sequences; without superuser rights it falls back to TRUNCATE.
+func truncateTables(t *testing.T) {
+	t.Helper()
+
+	if _, err := facades.Orm().Query().Exec(emptyTablesStatement); err == nil {
+		return
+	}
+	var tables []string
+	if err := facades.Orm().Query().Raw(
+		`SELECT quote_ident(tablename) FROM pg_tables WHERE schemaname = current_schema() AND tablename <> ? ORDER BY tablename`,
+		migrationsTable,
+	).Scan(&tables); err != nil {
+		t.Fatalf("list test tables: %v", err)
+	}
+	if len(tables) == 0 {
+		return
+	}
+	if _, err := facades.Orm().Query().Exec("TRUNCATE TABLE " + strings.Join(tables, ", ") + " RESTART IDENTITY CASCADE"); err != nil {
+		t.Fatalf("truncate test tables: %v", err)
+	}
+}
+
+func connectTestDB(t *testing.T) {
 	t.Helper()
 
 	requireSafeTestDatabase(t)
@@ -51,18 +146,6 @@ func TestDB(t *testing.T) {
 		fail("test DB unavailable — ping failed: %v (set TEST_DB_REQUIRED=1 to fail instead of skip)", err)
 		return
 	}
-
-	// Run migrations to set up schema
-	if err := facades.Artisan().Call("migrate:fresh"); err != nil {
-		t.Fatalf("migration failed: %v", err)
-	}
-
-	t.Cleanup(func() {
-		requireSafeTestDatabase(t)
-		if err := facades.Artisan().Call("migrate:fresh"); err != nil {
-			t.Errorf("test database cleanup migration failed: %v", err)
-		}
-	})
 }
 
 func requireSafeTestDatabase(t *testing.T) {

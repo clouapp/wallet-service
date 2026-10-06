@@ -188,12 +188,20 @@ func TestValidateConfigurationRejectsUnsafeTargets(t *testing.T) {
 			errorContains: "is protected",
 		},
 		{
-			name: "database without _test suffix",
+			name: "database outside the test prefix",
 			configuration: Configuration{
 				AppEnvironment: "testing",
 				DatabaseName:   "vault_staging",
 			},
-			errorContains: "must end with _test",
+			errorContains: "must start with vault_unit_test",
+		},
+		{
+			name: "other _test database",
+			configuration: Configuration{
+				AppEnvironment: "testing",
+				DatabaseName:   "markets_test",
+			},
+			errorContains: "must start with vault_unit_test",
 		},
 		{
 			name: "empty database",

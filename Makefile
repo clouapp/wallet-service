@@ -1,4 +1,4 @@
-.PHONY: help build localstack-hooks e2e-tools clean run dev dev-back dev-front stop deploy deploy-guided delete validate local test test-coverage test-race test-verbose lint fmt vet security migrate migrate-rollback migrate-status migrate-fresh migrate-fresh-seed migrate-fresh-hard db-reset db-seed key-generate jwt-secret docker-up docker-down docker-logs docker-build docker-test docker-status ecr-login ecr-push logs-api logs-scanner logs-webhook logs-withdrawal dlq-check dlq-replay-webhooks dlq-replay-withdrawals ping env-info swagger-install swagger-generate swagger-fmt deps-install deps-update
+.PHONY: help build localstack-hooks e2e-tools clean run dev dev-back dev-front stop deploy deploy-guided delete validate local test test-unit test-integration test-coverage test-race test-verbose lint fmt vet security migrate migrate-rollback migrate-status migrate-fresh migrate-fresh-seed migrate-fresh-hard db-reset db-seed key-generate jwt-secret docker-up docker-down docker-logs docker-build docker-test docker-status ecr-login ecr-push logs-api logs-scanner logs-webhook logs-withdrawal dlq-check dlq-replay-webhooks dlq-replay-withdrawals ping env-info swagger-install swagger-generate swagger-fmt deps-install deps-update
 
 # =============================================================================
 # Configuration
@@ -22,10 +22,27 @@ endif
 # Project paths
 FRONT_DIR = ../front
 
-# Destructive test database (migrate:fresh per test); must end with _test.
-# vault (dev) and vault_test (local e2e stack) are refused by tests/testenv.
+# Destructive test database; must start with vault_unit_test. vault (dev) and
+# vault_test (local e2e stack) are refused by tests/testenv and ensure_test_database.
+# make test-integration migrates it fresh once as a TEMPLATE and clones it into one
+# database per worker (<name>_p1.._pN, dropped at the end), under TEST_DB_LOCK.
 TEST_DB_DATABASE ?= vault_unit_test
 export TEST_DB_DATABASE
+TEST_DB_PREFIX := vault_unit_test
+TEST_DB_LOCK ?= $(HOME)/.local/state/macro-e2e/locks/vault_unit_test.lock
+# Integration test binaries running at once (1..6, tests/testenv.MaxWorkers).
+TEST_PARALLEL ?= 4
+# Safety net per go test invocation, not a target: the full suite takes a few minutes.
+TEST_TIMEOUT ?= 30m
+TEST_FLAGS ?=
+
+# A package is an integration package when its tests import the test environment
+# (tests/testenv, tests/testutil, tests) or boot the app (bootstrap): those reach
+# PostgreSQL and Redis. Every other package is a unit package.
+TEST_PACKAGE_IMPORTS = go list -f '{{.ImportPath}}{{range .TestImports}} {{.}}{{end}}{{range .XTestImports}} {{.}}{{end}}' ./...
+INTEGRATION_TEST_IMPORT = / github\.com\/macrowallets\/waas\/(tests\/testenv|tests\/testutil|tests|bootstrap)( |$$)/
+INTEGRATION_TEST_PACKAGES = $(shell $(TEST_PACKAGE_IMPORTS) | awk '$(INTEGRATION_TEST_IMPORT) {print $$1}')
+UNIT_TEST_PACKAGES = $(shell $(TEST_PACKAGE_IMPORTS) | awk '!$(INTEGRATION_TEST_IMPORT) {print $$1}')
 
 # Docker configuration
 # The running containers were created from .env.dev (ports 4567/5433/6380); composing without it
@@ -78,12 +95,33 @@ define ensure_docker
 endef
 
 define ensure_test_database
+	@case "$(TEST_DB_DATABASE)" in \
+		vault|vault_test) echo "❌ $(TEST_DB_DATABASE) holds live data; refusing it as a test database"; exit 1 ;; \
+		$(TEST_DB_PREFIX)_p[0-9]*) echo "❌ $(TEST_DB_DATABASE) is a worker clone name, not a template"; exit 1 ;; \
+		$(TEST_DB_PREFIX)|$(TEST_DB_PREFIX)_*) ;; \
+		*) echo "❌ TEST_DB_DATABASE must start with $(TEST_DB_PREFIX), got '$(TEST_DB_DATABASE)'"; exit 1 ;; \
+	esac
 	$(call ensure_docker)
 	@echo "🧪 Test database: $(TEST_DB_DATABASE)"
 	@if [ "$$(docker exec waas-postgres psql -U vault -d postgres -tAc "SELECT 1 FROM pg_database WHERE datname = '$(TEST_DB_DATABASE)'")" != "1" ]; then \
 		echo "🧪 Creating isolated PostgreSQL database $(TEST_DB_DATABASE)..."; \
 		docker exec waas-postgres createdb -U vault $(TEST_DB_DATABASE); \
 	fi
+endef
+
+# run_with_test_databases runs go test $(1) under TEST_DB_LOCK: migrates the template
+# fresh once, lets each test binary clone it into its own <template>_pN database and
+# Redis index (tests/testenv), and drops the clones on any exit.
+define run_with_test_databases
+	$(call ensure_test_database)
+	@mkdir -p "$(dir $(TEST_DB_LOCK))"
+	@echo "🔒 Taking $(TEST_DB_LOCK)..."
+	@flock "$(TEST_DB_LOCK)" sh -c 'set -a; [ ! -f .env.dev ] || . ./.env.dev; . ./.env.testing; set +a; \
+		export DB_DATABASE="$(TEST_DB_DATABASE)" TEST_DB_REQUIRED=1; \
+		trap "go run ./tools/testdb drop-clones" EXIT; trap "exit 130" INT TERM; \
+		go run ./tools/testdb drop-clones && go run ./tools/testdb prepare && \
+		TEST_DB_TEMPLATE="$(TEST_DB_DATABASE)" TEST_DB_WORKERS="$(TEST_PARALLEL)" \
+			go test -p "$(TEST_PARALLEL)" -count=1 -timeout $(TEST_TIMEOUT) $(1)'
 endef
 
 define ensure_env_dev
@@ -337,43 +375,35 @@ invoke-scanner-remote: ## Invoke deposit scanner on AWS
 # Testing Commands
 # =============================================================================
 
-test: ## Run all tests
+test: ## Run all tests: test-unit, then test-integration (both always run)
 	@echo "🧪 Running tests..."
-	$(call ensure_test_database)
+	@$(MAKE) --no-print-directory test-unit; unit=$$?; \
+		$(MAKE) --no-print-directory test-integration; integration=$$?; \
+		echo "🧪 unit: exit $$unit, integration: exit $$integration"; \
+		[ $$unit -eq 0 ] && [ $$integration -eq 0 ]
+
+test-unit: ## Unit tests: packages without PostgreSQL/Redis, all in parallel, no lock
+	@echo "🧪 Running unit tests..."
 	@set -a; [ ! -f .env.dev ] || . ./.env.dev; . ./.env.testing; set +a; \
-		DB_DATABASE=$(TEST_DB_DATABASE) TEST_DB_REQUIRED=1 go test -p 1 ./... -v -count=1
+		go test -count=1 -timeout $(TEST_TIMEOUT) $(TEST_FLAGS) $(UNIT_TEST_PACKAGES)
+
+test-integration: ## Integration tests (PostgreSQL/Redis): one cloned database per worker, -p TEST_PARALLEL
+	@echo "🔗 Running integration tests ($(TEST_PARALLEL) workers)..."
+	$(call run_with_test_databases,$(TEST_FLAGS) $(INTEGRATION_TEST_PACKAGES))
 
 test-coverage: ## Run tests with coverage report
 	@echo "📊 Running tests with coverage..."
-	$(call ensure_test_database)
-	@set -a; [ ! -f .env.dev ] || . ./.env.dev; . ./.env.testing; set +a; \
-		DB_DATABASE=$(TEST_DB_DATABASE) TEST_DB_REQUIRED=1 go test -p 1 ./... -coverprofile=coverage.out -count=1
+	$(call run_with_test_databases,-coverprofile=coverage.out ./...)
 	go tool cover -html=coverage.out
 	@echo "✅ Coverage report generated: coverage.out"
 
 test-race: ## Run tests with race detector
 	@echo "🏁 Running tests with race detector..."
-	$(call ensure_test_database)
-	@set -a; [ ! -f .env.dev ] || . ./.env.dev; . ./.env.testing; set +a; \
-		DB_DATABASE=$(TEST_DB_DATABASE) TEST_DB_REQUIRED=1 go test -p 1 ./... -race -count=1
+	@$(MAKE) --no-print-directory test TEST_FLAGS="$(TEST_FLAGS) -race"
 
 test-verbose: ## Run tests with verbose output
 	@echo "🔍 Running tests (verbose)..."
-	$(call ensure_test_database)
-	@set -a; [ ! -f .env.dev ] || . ./.env.dev; . ./.env.testing; set +a; \
-		DB_DATABASE=$(TEST_DB_DATABASE) TEST_DB_REQUIRED=1 go test -p 1 ./... -v -count=1
-
-test-unit: ## Run unit tests only (exclude integration tests)
-	@echo "🧪 Running unit tests..."
-	$(call ensure_test_database)
-	@set -a; [ ! -f .env.dev ] || . ./.env.dev; . ./.env.testing; set +a; \
-		DB_DATABASE=$(TEST_DB_DATABASE) TEST_DB_REQUIRED=1 go test -p 1 ./... -short -v -count=1
-
-test-integration: ## Run integration tests only
-	@echo "🔗 Running integration tests..."
-	$(call ensure_test_database)
-	@set -a; [ ! -f .env.dev ] || . ./.env.dev; . ./.env.testing; set +a; \
-		DB_DATABASE=$(TEST_DB_DATABASE) TEST_DB_REQUIRED=1 go test -p 1 ./... -run Integration -v -count=1
+	@$(MAKE) --no-print-directory test TEST_FLAGS="$(TEST_FLAGS) -v"
 
 # =============================================================================
 # Code Quality Commands

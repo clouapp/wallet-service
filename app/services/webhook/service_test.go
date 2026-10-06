@@ -201,12 +201,13 @@ func TestDeliver_Unreachable(t *testing.T) {
 	tx := mocks.InsertTransaction(t, w.ID, nil, "eth", "deposit", "confirmed", "eth", "100", 50)
 
 	eventID := "evt-unreach-123"
+	unreachable := testutil.ClosedLocalURL(t) + "/nope"
 	facades.Orm().Query().Exec(`INSERT INTO webhook_events (id, transaction_id, event_type, payload, delivery_url, delivery_status, attempts, max_attempts, created_at)
-		VALUES ($1, $2, 'deposit.confirmed', '{}', 'http://localhost:1/nope', 'pending', 0, 10, NOW())`,
-		eventID, tx.ID)
+		VALUES ($1, $2, 'deposit.confirmed', '{}', $3, 'pending', 0, 10, NOW())`,
+		eventID, tx.ID, unreachable)
 
 	msg := types.WebhookMessage{
-		EventID: eventID, Payload: "{}", DeliveryURL: "http://localhost:1/nope", Secret: "s",
+		EventID: eventID, Payload: "{}", DeliveryURL: unreachable, Secret: "s",
 	}
 
 	err := svc.Deliver(ctx, msg)

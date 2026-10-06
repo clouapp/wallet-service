@@ -21,7 +21,12 @@ func TestBootTestLoadsDedicatedTestingEnvironment(t *testing.T) {
 	if override := strings.TrimSpace(os.Getenv(testenv.DatabaseOverrideVariable)); override != "" {
 		expectedDatabase = override
 	}
-	if got := facades.Config().GetString("database.connections.postgres.database"); got != expectedDatabase {
+	got := facades.Config().GetString("database.connections.postgres.database")
+	if testenv.WorkerMode() {
+		if !testenv.IsWorkerDatabase(strings.TrimSpace(os.Getenv(testenv.TemplateVariable)), got) {
+			t.Fatalf("database = %q, want a worker clone of %s", got, os.Getenv(testenv.TemplateVariable))
+		}
+	} else if got != expectedDatabase {
 		t.Fatalf("database = %q, want %s", got, expectedDatabase)
 	}
 
