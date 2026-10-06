@@ -25,7 +25,12 @@ func (p *ActivityServiceProvider) Register(app foundation.Application) {
 		if err != nil {
 			return nil, err
 		}
-		return activity.NewService(activity.Deps{Rows: rows, Admins: admins}), nil
+		return activity.NewService(activity.Deps{
+			Rows:            rows,
+			Admins:          admins,
+			AccountActivity: rows,
+			ActivityLog:     repositories.NewActivityLogRepository(nil),
+		}), nil
 	})
 }
 

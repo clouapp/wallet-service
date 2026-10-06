@@ -4,6 +4,8 @@ import (
 	"testing"
 
 	"github.com/goravel/framework/contracts/console/command"
+
+	"github.com/macrowallets/waas/app/services/refresh"
 )
 
 func TestRefreshWalletSignature(t *testing.T) {
@@ -68,11 +70,11 @@ func TestReconcileWalletSignature(t *testing.T) {
 
 func TestRefreshCurrencyAmbiguousDetection(t *testing.T) {
 	for _, currency := range []string{"usdt", "usdc", "dai", "wbtc", "weth"} {
-		if !ambiguousCurrencies[currency] {
+		if !refresh.AmbiguousCurrency(currency) {
 			t.Errorf("expected %s to be ambiguous", currency)
 		}
 	}
-	if ambiguousCurrencies["eth"] {
+	if refresh.AmbiguousCurrency("eth") {
 		t.Error("eth should not be ambiguous")
 	}
 }

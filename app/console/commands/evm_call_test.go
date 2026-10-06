@@ -173,16 +173,16 @@ func TestParseEVMCallFlags_ErrorsNeverEchoTheRPCURL(t *testing.T) {
 }
 
 func TestResolveEVMCallClaimDir(t *testing.T) {
-	if dir, err := resolveEVMCallClaimDir("/tmp/claims"); err != nil || dir != "/tmp/claims" {
+	if dir, err := evmcall.ResolveClaimDir("/tmp/claims"); err != nil || dir != "/tmp/claims" {
 		t.Fatalf("flag: %s %v", dir, err)
 	}
-	t.Setenv(evmCallClaimDirEnv, "/tmp/env-claims")
-	if dir, _ := resolveEVMCallClaimDir(""); dir != "/tmp/env-claims" {
+	t.Setenv(evmcall.ClaimDirEnv, "/tmp/env-claims")
+	if dir, _ := evmcall.ResolveClaimDir(""); dir != "/tmp/env-claims" {
 		t.Fatalf("env: %s", dir)
 	}
-	t.Setenv(evmCallClaimDirEnv, "")
-	t.Setenv(evmCallStateDirEnv, "/tmp/state")
-	if dir, _ := resolveEVMCallClaimDir(""); dir != "/tmp/state/locks" {
+	t.Setenv(evmcall.ClaimDirEnv, "")
+	t.Setenv(evmcall.StateDirEnv, "/tmp/state")
+	if dir, _ := evmcall.ResolveClaimDir(""); dir != "/tmp/state/locks" {
 		t.Fatalf("state dir: %s", dir)
 	}
 }

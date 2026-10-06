@@ -101,11 +101,11 @@ func (c *WalletsExportKeys) Extend() command.Extend {
 func (c *WalletsExportKeys) Handle(ctx console.Context) error {
 	invocation, err := parseWalletsExportKeysFlags(readWalletsExportKeysFlags(ctx))
 	if err != nil {
-		return failCommand(ctx, err)
+		return fail(ctx, err)
 	}
 	tty, err := keyexport.OpenTTY()
 	if err != nil {
-		return failCommand(ctx, err)
+		return fail(ctx, err)
 	}
 	defer tty.Close()
 
@@ -114,12 +114,12 @@ func (c *WalletsExportKeys) Handle(ctx console.Context) error {
 	defer stopSignals()
 
 	if err := keyexport.RequireEnvironmentAllowed(facades.Config().GetString("app.env"), invocation.allowProduction, tty); err != nil {
-		return failCommand(ctx, err)
+		return fail(ctx, err)
 	}
 	now := time.Now()
 	outPath, err := prepareWalletsExportPath(invocation.out, now)
 	if err != nil {
-		return failCommand(ctx, err)
+		return fail(ctx, err)
 	}
 	return runWalletsExport(c, ctx, invocation, tty, keyexport.NewArchiveOutput(outPath), &output, now)
 }
@@ -127,51 +127,51 @@ func (c *WalletsExportKeys) Handle(ctx console.Context) error {
 func runWalletsExport(cmd *WalletsExportKeys, ctx console.Context, invocation walletsExportKeysInvocation, tty *keyexport.TTY, archive *keyexport.ArchiveOutput, output *atomic.Pointer[keyexport.ArchiveOutput], now time.Time) error {
 	service, err := cmd.newWalletsExportService()
 	if err != nil {
-		return failCommand(ctx, err)
+		return fail(ctx, err)
 	}
 	wallets, err := service.SelectWallets(context.Background(), invocation.walletIDs)
 	if err != nil {
-		return failCommand(ctx, err)
+		return fail(ctx, err)
 	}
 	plans, refused, err := service.Plan(context.Background(), wallets)
 	if err != nil {
-		return failCommand(ctx, err)
+		return fail(ctx, err)
 	}
 	reportWalletsExportPlan(ctx, plans, refused, archive.Path())
 	if len(plans) == 0 {
-		return failCommand(ctx, errors.New("no selected wallet can be exported"))
+		return fail(ctx, errors.New("no selected wallet can be exported"))
 	}
 
 	password, err := keyexport.ReadArchivePassword(tty)
 	if err != nil {
-		return failCommand(ctx, err)
+		return fail(ctx, err)
 	}
 	defer zeroPassword(password)
 
 	result, err := service.Export(context.Background(), plans, walletsExportPassphrases(invocation, tty))
 	if err != nil {
-		return failCommand(ctx, err)
+		return fail(ctx, err)
 	}
 	defer result.Wipe()
 	result.Refused = append(refused, result.Refused...)
 	if len(result.Wallets) == 0 {
 		reportWalletsExportRefusals(ctx, result.Refused)
-		return failCommand(ctx, errors.New("no wallet passed reconstruction; nothing was written"))
+		return fail(ctx, errors.New("no wallet passed reconstruction; nothing was written"))
 	}
 
 	files, err := keyexport.ArchiveFiles(result, keyexport.ArchiveMeta{GeneratedAt: now, AppEnv: facades.Config().GetString("app.env")})
 	if err != nil {
-		return failCommand(ctx, err)
+		return fail(ctx, err)
 	}
 	output.Store(archive)
 	if err := archive.Write(func(w io.Writer) error {
 		return keyexport.WriteEncryptedZip(w, password, files, now)
 	}); err != nil {
-		return failCommand(ctx, err)
+		return fail(ctx, err)
 	}
 	reportWalletsExportResult(ctx, result, archive.Path())
 	if len(result.Refused) > 0 {
-		return failCommand(ctx, fmt.Errorf("%d wallet(s) were refused and are not in the archive", len(result.Refused)))
+		return fail(ctx, fmt.Errorf("%d wallet(s) were refused and are not in the archive", len(result.Refused)))
 	}
 	return nil
 }

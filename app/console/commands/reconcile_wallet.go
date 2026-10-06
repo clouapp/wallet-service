@@ -2,23 +2,17 @@ package commands
 
 import (
 	"context"
-	"errors"
-	"fmt"
 
-	"github.com/google/uuid"
 	"github.com/goravel/framework/contracts/console"
 	"github.com/goravel/framework/contracts/console/command"
 
-	"github.com/macrowallets/waas/app/container"
-	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/services/refresh"
-	"github.com/macrowallets/waas/app/services/security"
-	"github.com/macrowallets/waas/app/services/walletrecords"
 )
 
 type ReconcileWallet struct {
 	balances   *refresh.BalanceService
 	dispatcher refresh.Dispatcher
+	run        *refresh.Operator
 }
 
 // ReconcileWalletDeps is everything the reconcile:wallet command needs.
@@ -26,6 +20,7 @@ type ReconcileWallet struct {
 type ReconcileWalletDeps struct {
 	Balances   *refresh.BalanceService
 	Dispatcher refresh.Dispatcher
+	Wallets    refresh.WalletLookup
 }
 
 // NewReconcileWallet reconciles one wallet in process or on the queue.
@@ -36,12 +31,18 @@ func NewReconcileWallet(deps ReconcileWalletDeps) *ReconcileWallet {
 	if deps.Dispatcher == nil {
 		panic("reconcile:wallet: refresh dispatcher is required")
 	}
-	return &ReconcileWallet{balances: deps.Balances, dispatcher: deps.Dispatcher}
+	return &ReconcileWallet{
+		balances:   deps.Balances,
+		dispatcher: deps.Dispatcher,
+		run: refresh.NewOperator(refresh.OperatorDeps{
+			Balances:   deps.Balances,
+			Dispatcher: deps.Dispatcher,
+			Wallets:    deps.Wallets,
+		}),
+	}
 }
 
-func (c *ReconcileWallet) Signature() string {
-	return "reconcile:wallet"
-}
+func (c *ReconcileWallet) Signature() string { return "reconcile:wallet" }
 
 func (c *ReconcileWallet) Description() string {
 	return "Reconcile a wallet by comparing on-chain state with the read model"
@@ -51,11 +52,7 @@ func (c *ReconcileWallet) Extend() command.Extend {
 	return command.Extend{
 		Category: "reconcile",
 		Arguments: []command.Argument{
-			&command.ArgumentString{
-				Name:     "wallet_id",
-				Usage:    "wallet UUID to reconcile",
-				Required: true,
-			},
+			&command.ArgumentString{Name: "wallet_id", Usage: "wallet UUID to reconcile", Required: true},
 		},
 		Flags: []command.Flag{
 			&command.BoolFlag{Name: "queue", Usage: "dispatch to queue instead of sync execution"},
@@ -66,48 +63,14 @@ func (c *ReconcileWallet) Extend() command.Extend {
 }
 
 func (c *ReconcileWallet) Handle(ctx console.Context) error {
-	walletID := ctx.ArgumentString("wallet_id")
-	reason := ctx.Option("reason")
-
-	id, err := uuid.Parse(walletID)
+	out, err := c.run.Reconcile(context.Background(), refresh.ReconcileCommand{
+		WalletID: ctx.ArgumentString("wallet_id"),
+		Queue:    ctx.OptionBool("queue"),
+		Reason:   ctx.Option("reason"),
+	})
+	printReport(ctx, out.Info, out.Warning, out.Line, out.SoftError)
 	if err != nil {
-		ctx.Error("invalid wallet_id: " + walletID)
-		return fmt.Errorf("invalid wallet_id: %w", err)
+		return fail(ctx, err)
 	}
-
-	wallet, err := container.MustMake[*walletrecords.Wallets]().FindByID(context.Background(), id)
-	if err != nil && !errors.Is(err, models.ErrRepositoryNotFound) {
-		ctx.Error("failed to load wallet: " + err.Error())
-		return fmt.Errorf("load wallet: %w", err)
-	}
-	if wallet == nil || errors.Is(err, models.ErrRepositoryNotFound) {
-		ctx.Error("wallet not found: " + walletID)
-		return fmt.Errorf("wallet not found: %s", walletID)
-	}
-
-	if ctx.OptionBool("queue") {
-		ctx.Info("dispatching wallet reconciliation to blockchain queue: wallet=" + walletID + " reason=" + reason)
-		if c.dispatcher == nil {
-			return fmt.Errorf("reconcile:wallet: refresh dispatcher is not initialized")
-		}
-		return c.dispatcher.DispatchReconcile(walletID, wallet.Chain)
-	}
-
-	ctx.Info("sync mode: reconciling wallet=" + walletID + " reason=" + reason)
-	if c.balances == nil {
-		return fmt.Errorf("reconcile:wallet: balance refresh service is not initialized")
-	}
-	if err := c.balances.RefreshWallet(context.Background(), wallet); err != nil {
-		ctx.Error(reconciliationFailureLine(err))
-		return fmt.Errorf("reconcile wallet: %w", err)
-	}
-	ctx.Info("wallet " + walletID + " reconciled successfully")
 	return nil
-}
-
-// reconciliationFailureLine is the console line for a failed sync reconcile.
-// The balance error can carry the RPC URL, including a key in the userinfo,
-// path, or query. The host may stay; the credential does not.
-func reconciliationFailureLine(err error) string {
-	return security.RedactText("reconciliation failed: " + err.Error())
 }

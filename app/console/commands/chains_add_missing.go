@@ -2,55 +2,28 @@ package commands
 
 import (
 	"context"
-	"fmt"
-	"strings"
 
 	"github.com/goravel/framework/contracts/console"
 	"github.com/goravel/framework/contracts/console/command"
 
-	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/services/chainregistry"
 )
-
-// AddedChain is a record the seeder would create: its rpc_url is "env:<EnvVar>"
-// and it signs for Network.
-type AddedChain struct {
-	ID        string
-	EnvVar    string
-	Network   string
-	NetworkID int64
-	IsTestnet bool
-}
-
-// AddedChainsPlan is what the seeder created, or would create.
-type AddedChainsPlan struct {
-	Chains    []AddedChain
-	Tokens    []string
-	Resources []string
-	Skipped   []string
-}
-
-// MissingChainsSeeder reports or creates the added EVM chain records. Bootstrap
-// supplies the database seeder so this command does not import database/seeds.
-type MissingChainsSeeder func(ctx context.Context, apply bool) (AddedChainsPlan, error)
 
 // ChainsAddMissing creates the base/arbitrum/bsc records (and their t-prefixed
 // test records) that a live registry lacks, without touching any existing row.
 type ChainsAddMissing struct {
-	seed MissingChainsSeeder
+	missing *chainregistry.MissingChains
 }
 
-// NewChainsAddMissing wires the seeder.
-func NewChainsAddMissing(seed MissingChainsSeeder) *ChainsAddMissing {
-	if seed == nil {
+// NewChainsAddMissing wires the missing-chain service.
+func NewChainsAddMissing(missing *chainregistry.MissingChains) *ChainsAddMissing {
+	if missing == nil {
 		panic("chains:add-missing: seeder is required")
 	}
-	return &ChainsAddMissing{seed: seed}
+	return &ChainsAddMissing{missing: missing}
 }
 
-func (c *ChainsAddMissing) Signature() string {
-	return "chains:add-missing"
-}
+func (c *ChainsAddMissing) Signature() string { return "chains:add-missing" }
 
 func (c *ChainsAddMissing) Description() string {
 	return "Create missing base/arbitrum/bsc chain records with tokens, explorers and thresholds; dry run unless --apply"
@@ -66,56 +39,10 @@ func (c *ChainsAddMissing) Extend() command.Extend {
 }
 
 func (c *ChainsAddMissing) Handle(ctx console.Context) error {
-	background := context.Background()
-	plan, err := c.seed(background, false)
+	report, err := c.missing.Add(context.Background(), ctx.OptionBool("apply"))
+	printReport(ctx, report.Info, report.Warning, nil, nil)
 	if err != nil {
-		return failCommand(ctx, err)
-	}
-	for _, id := range plan.Skipped {
-		ctx.Info(fmt.Sprintf("%s: already in the registry, left as is", id))
-	}
-	if len(plan.Chains) == 0 {
-		ctx.Info("nothing to add")
-		return nil
-	}
-	for _, added := range plan.Chains {
-		if err := checkAddedChainRPC(background, added); err != nil {
-			return failCommand(ctx, err)
-		}
-		ctx.Info(fmt.Sprintf("%s: create on %s (network_id %d, is_testnet %t), rpc_url env:%s",
-			added.ID, added.Network, added.NetworkID, added.IsTestnet, added.EnvVar))
-	}
-	for _, token := range plan.Tokens {
-		ctx.Info("token " + token)
-	}
-	for _, resource := range plan.Resources {
-		ctx.Info("resource " + resource)
-	}
-	if !ctx.OptionBool("apply") {
-		ctx.Info("dry run: nothing written (pass --apply)")
-		return nil
-	}
-	if _, err := c.seed(background, true); err != nil {
-		return failCommand(ctx, err)
-	}
-	ctx.Info(fmt.Sprintf("created %d chains; restart the API so it registers their adapters", len(plan.Chains)))
-	return nil
-}
-
-// checkAddedChainRPC refuses a record whose environment RPC is unset or serves
-// another network, so no adapter signs for a network its row does not name.
-func checkAddedChainRPC(ctx context.Context, added AddedChain) error {
-	rpcURL, err := models.ResolveRPCURL(models.RPCURLEnvPrefix + added.EnvVar)
-	if err != nil {
-		return fmt.Errorf("%s: %w", added.ID, err)
-	}
-	record := models.Chain{ID: added.ID, AdapterType: models.AdapterTypeEVM}
-	served, err := chainregistry.ProbeRPCNetwork(ctx, record, rpcURL)
-	if err != nil {
-		return fmt.Errorf("%s: probe %s: %w", added.ID, added.EnvVar, err)
-	}
-	if !strings.EqualFold(served, added.Network) {
-		return fmt.Errorf("%w: %s serves %q, %s needs %q", chainregistry.ErrRPCNetworkMismatch, added.EnvVar, served, added.ID, added.Network)
+		return fail(ctx, err)
 	}
 	return nil
 }

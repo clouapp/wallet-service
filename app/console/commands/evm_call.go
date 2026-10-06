@@ -2,29 +2,17 @@ package commands
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"math/big"
-	"os"
-	"os/signal"
-	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
-	"syscall"
 
 	"github.com/google/uuid"
 	"github.com/goravel/framework/contracts/console"
 	"github.com/goravel/framework/contracts/console/command"
 
 	"github.com/macrowallets/waas/app/services/evmcall"
-)
-
-const (
-	evmCallClaimDirEnv     = "EVM_CALL_CLAIM_DIR"
-	evmCallStateDirEnv     = "MACRO_E2E_STATE_DIR"
-	evmCallDefaultStateDir = ".local/state/macro-e2e"
-	evmCallLocksSubdir     = "locks"
 )
 
 var evmCallRPCEnvPattern = regexp.MustCompile(`^[A-Z][A-Z0-9_]*$`)
@@ -35,6 +23,7 @@ var evmCallRPCEnvPattern = regexp.MustCompile(`^[A-Z][A-Z0-9_]*$`)
 type EVMCall struct {
 	wallets evmcall.WalletSource
 	signer  evmcall.Signer
+	runner  *evmcall.Runner
 }
 
 // EVMCallDeps is everything the evm:call command needs. Signer may be nil; it is
@@ -46,7 +35,11 @@ type EVMCallDeps struct {
 
 // NewEVMCall wires the command from EVMCallDeps.
 func NewEVMCall(deps EVMCallDeps) *EVMCall {
-	return &EVMCall{wallets: deps.Wallets, signer: deps.Signer}
+	return &EVMCall{
+		wallets: deps.Wallets,
+		signer:  deps.Signer,
+		runner:  &evmcall.Runner{Wallets: deps.Wallets, Signer: deps.Signer},
+	}
 }
 
 type evmCallFlags struct {
@@ -83,7 +76,7 @@ func (c *EVMCall) Extend() command.Extend {
 			&command.StringFlag{Name: "rpc-env", Usage: "name of the environment variable holding the RPC URL (the URL is never printed)"},
 			&command.StringFlag{Name: "gas-limit", Usage: "gas limit; must cover eth_estimateGas (default: estimate + 30%)"},
 			&command.StringFlag{Name: "tag", Usage: "unique name of this broadcast; a tag is claimed once and never reused"},
-			&command.StringFlag{Name: "claim-dir", Usage: "directory of claim/result files (default: $" + evmCallClaimDirEnv + " or <e2e state dir>/locks)"},
+			&command.StringFlag{Name: "claim-dir", Usage: "directory of claim/result files (default: $" + evmcall.ClaimDirEnv + " or <e2e state dir>/locks)"},
 			&command.BoolFlag{Name: "dry-run", Usage: "simulate and estimate only: no signing, no broadcast"},
 			&command.BoolFlag{Name: "broadcast", Usage: "sign with MPC and send exactly once, then wait for the receipt"},
 			&command.BoolFlag{Name: "passphrase-stdin", Usage: "read the wallet passphrase from the first line of stdin"},
@@ -95,40 +88,21 @@ func (c *EVMCall) Extend() command.Extend {
 func (c *EVMCall) Handle(ctx console.Context) error {
 	invocation, err := parseEVMCallFlags(readEVMCallFlags(ctx))
 	if err != nil {
-		return failCommand(ctx, err)
+		return fail(ctx, err)
 	}
-	background, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
-
-	service, err := c.newEVMCallService(invocation)
-	if err != nil {
-		return failCommand(ctx, err)
-	}
-	if !invocation.broadcast {
-		plan, err := service.Simulate(background, invocation.request)
-		if err != nil {
-			return failCommand(ctx, err)
-		}
-		ctx.Info("plan " + mustJSON(plan))
-		ctx.Info(fmt.Sprintf("dry run (rpc from $%s): simulated and estimated; nothing signed or sent", invocation.rpcEnv))
-		return nil
-	}
-
-	passphrase, err := evmCallPassphrase(background, invocation)
-	if err != nil {
-		return failCommand(ctx, err)
-	}
-	result, err := service.Broadcast(background, invocation.request, passphrase)
-	if result != nil {
-		ctx.Info(redactedLine("result " + mustJSON(result)))
+	lines, err := c.runner.Execute(context.Background(), evmcall.RunRequest{
+		Request:         invocation.request,
+		RPCEnv:          invocation.rpcEnv,
+		Broadcast:       invocation.broadcast,
+		PassphraseStdin: invocation.passphraseStdin,
+		ClaimDir:        invocation.claimDir,
+	})
+	for _, line := range lines {
+		ctx.Info(redactedLine(line))
 	}
 	if err != nil {
-		return failCommand(ctx, err)
+		return fail(ctx, err)
 	}
-	if result.Outcome != evmcall.OutcomeReceiptSuccess {
-		return failCommand(ctx, fmt.Errorf("transaction %s: %s", result.TxHash, result.Outcome))
-	}
-	ctx.Info(fmt.Sprintf("tx %s succeeded in block %d", result.TxHash, result.Receipt.BlockNumber))
 	return nil
 }
 
@@ -232,66 +206,4 @@ func parseEVMCallGasLimit(raw string) (uint64, error) {
 		return 0, fmt.Errorf("--gas-limit must be a positive integer")
 	}
 	return gasLimit, nil
-}
-
-func (c *EVMCall) newEVMCallService(invocation evmCallInvocation) (*evmcall.Service, error) {
-	if c == nil || c.wallets == nil {
-		return nil, fmt.Errorf("evm call: wallet source is required")
-	}
-	rpcURL := strings.TrimSpace(os.Getenv(invocation.rpcEnv))
-	if rpcURL == "" {
-		return nil, fmt.Errorf("environment variable %s is not set", invocation.rpcEnv)
-	}
-	rpc, err := evmcall.NewJSONRPC(rpcURL)
-	if err != nil {
-		return nil, fmt.Errorf("%s: %w", invocation.rpcEnv, err)
-	}
-	deps := evmcall.Dependencies{RPC: rpc, Wallets: c.wallets}
-	if invocation.broadcast {
-		if c.signer == nil {
-			return nil, fmt.Errorf("sweep service cannot sign evm calls")
-		}
-		claimDir, err := resolveEVMCallClaimDir(invocation.claimDir)
-		if err != nil {
-			return nil, err
-		}
-		deps.Signer, deps.Claimer = c.signer, evmcall.FileClaimer{Dir: claimDir}
-	}
-	return evmcall.NewService(deps)
-}
-
-func resolveEVMCallClaimDir(flagValue string) (string, error) {
-	if flagValue != "" {
-		return flagValue, nil
-	}
-	if dir := strings.TrimSpace(os.Getenv(evmCallClaimDirEnv)); dir != "" {
-		return dir, nil
-	}
-	if state := strings.TrimSpace(os.Getenv(evmCallStateDirEnv)); state != "" {
-		return filepath.Join(state, evmCallLocksSubdir), nil
-	}
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return "", fmt.Errorf("resolve claim directory: %w", err)
-	}
-	return filepath.Join(home, evmCallDefaultStateDir, evmCallLocksSubdir), nil
-}
-
-func evmCallPassphrase(ctx context.Context, invocation evmCallInvocation) (string, error) {
-	if invocation.passphraseStdin {
-		return evmcall.ReadPassphraseLine(os.Stdin)
-	}
-	vault, err := evmcall.DefaultVaultPassphrase()
-	if err != nil {
-		return "", err
-	}
-	return vault.Read(ctx, invocation.request.WalletID)
-}
-
-func mustJSON(value interface{}) string {
-	encoded, err := json.Marshal(value)
-	if err != nil {
-		return fmt.Sprintf("%+v", value)
-	}
-	return string(encoded)
 }

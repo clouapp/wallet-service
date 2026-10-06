@@ -73,7 +73,7 @@ func TestReconciliationFailureLineOmitsRPCCredential(t *testing.T) {
 	t.Cleanup(func() { security.ConfigureRedaction(nil, nil) })
 
 	err := errors.New(`get native balance: Get "https://user:` + fixture + `@btc.example/v2/` + fixture + `?apikey=` + fixture + `": dial tcp`)
-	line := reconciliationFailureLine(err)
+	line := redactedLine("reconciliation failed: " + err.Error())
 	if strings.Contains(line, fixture) {
 		t.Fatal("reconciliation failure line wrote the RPC credential")
 	}

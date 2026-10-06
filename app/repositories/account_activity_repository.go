@@ -151,3 +151,21 @@ func (r *AccountActivityRepository) ListPlatform(ctx context.Context, limit, off
 	}
 	return rows, total, nil
 }
+
+// DeleteOlderThan removes one batch of account_activity rows older than days.
+func (r *AccountActivityRepository) DeleteOlderThan(ctx context.Context, days, limit int) (int64, error) {
+	if r == nil {
+		return 0, fmt.Errorf("prune account_activity: repository is required")
+	}
+	result, err := r.Query(ctx).Exec(
+		`DELETE FROM account_activity WHERE id IN (
+			SELECT id FROM account_activity WHERE created_at < NOW() - (? * INTERVAL '1 day')
+			ORDER BY created_at LIMIT ?
+		)`,
+		days, limit,
+	)
+	if err != nil {
+		return 0, fmt.Errorf("prune account_activity: %w", err)
+	}
+	return result.RowsAffected, nil
+}

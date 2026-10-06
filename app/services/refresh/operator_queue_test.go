@@ -1,4 +1,4 @@
-package commands
+package refresh
 
 import (
 	"errors"
@@ -7,9 +7,9 @@ import (
 
 func TestRefreshWalletQueueScopeDispatchesEveryJobForFull(t *testing.T) {
 	recorder := &recordingDispatcher{}
-	cmd := &RefreshWallet{dispatcher: recorder}
+	op := &Operator{dispatcher: recorder}
 
-	if err := cmd.dispatchScopedJobs("full", "wallet-1", "eth"); err != nil {
+	if err := op.dispatchScopedJobs("full", "wallet-1", "eth"); err != nil {
 		t.Fatalf("dispatch: %v", err)
 	}
 
@@ -33,8 +33,8 @@ func TestRefreshWalletQueueScopeDispatchesOnlyTheNamedJob(t *testing.T) {
 	for _, scope := range []string{"balances", "transactions", "tokens", "utxos"} {
 		t.Run(scope, func(t *testing.T) {
 			recorder := &recordingDispatcher{}
-			cmd := &RefreshWallet{dispatcher: recorder}
-			if err := cmd.dispatchScopedJobs(scope, "wallet-2", "btc"); err != nil {
+			op := &Operator{dispatcher: recorder}
+			if err := op.dispatchScopedJobs(scope, "wallet-2", "btc"); err != nil {
 				t.Fatalf("dispatch: %v", err)
 			}
 			if len(recorder.calls) != 1 || recorder.calls[0].kind != scope {
@@ -49,8 +49,8 @@ func TestRefreshWalletQueueScopeDispatchesOnlyTheNamedJob(t *testing.T) {
 
 func TestRefreshWalletQueueScopeRejectsUnknownScope(t *testing.T) {
 	recorder := &recordingDispatcher{}
-	cmd := &RefreshWallet{dispatcher: recorder}
-	err := cmd.dispatchScopedJobs("nope", "wallet-1", "eth")
+	op := &Operator{dispatcher: recorder}
+	err := op.dispatchScopedJobs("nope", "wallet-1", "eth")
 	if err == nil || err.Error() != "unknown scope: nope" {
 		t.Fatalf("error = %v", err)
 	}
@@ -62,8 +62,8 @@ func TestRefreshWalletQueueScopeRejectsUnknownScope(t *testing.T) {
 func TestRefreshWalletQueueScopeStopsOnTheFirstError(t *testing.T) {
 	want := errors.New("queue down")
 	recorder := &recordingDispatcher{failKind: "transactions", err: want}
-	cmd := &RefreshWallet{dispatcher: recorder}
-	err := cmd.dispatchScopedJobs("full", "wallet-1", "eth")
+	op := &Operator{dispatcher: recorder}
+	err := op.dispatchScopedJobs("full", "wallet-1", "eth")
 	if !errors.Is(err, want) {
 		t.Fatalf("error = %v, want %v", err, want)
 	}
@@ -75,14 +75,14 @@ func TestRefreshWalletQueueScopeStopsOnTheFirstError(t *testing.T) {
 func TestQueuedRefreshDispatchesWalletRefreshRequestedForBalances(t *testing.T) {
 	recorder := &recordingDispatcher{}
 	var events []recordedDispatch
-	cmd := &RefreshWallet{
+	op := &Operator{
 		dispatcher: recorder,
 		requestRefresh: func(walletID, chainID string) error {
 			events = append(events, recordedDispatch{kind: "event", walletID: walletID, chainID: chainID})
 			return nil
 		},
 	}
-	if err := cmd.dispatchQueuedRefresh("balances", "wallet-1", "eth"); err != nil {
+	if err := op.dispatchQueuedRefresh("balances", "wallet-1", "eth"); err != nil {
 		t.Fatalf("dispatch: %v", err)
 	}
 	if len(events) != 1 || events[0] != (recordedDispatch{kind: "event", walletID: "wallet-1", chainID: "eth"}) {
@@ -96,7 +96,7 @@ func TestQueuedRefreshDispatchesWalletRefreshRequestedForBalances(t *testing.T) 
 func TestQueuedRefreshUsesTheEventForBalancesAndJobsForTheRest(t *testing.T) {
 	recorder := &recordingDispatcher{}
 	var events int
-	cmd := &RefreshWallet{
+	op := &Operator{
 		dispatcher: recorder,
 		requestRefresh: func(walletID, chainID string) error {
 			events++
@@ -106,7 +106,7 @@ func TestQueuedRefreshUsesTheEventForBalancesAndJobsForTheRest(t *testing.T) {
 			return nil
 		},
 	}
-	if err := cmd.dispatchQueuedRefresh("full", "wallet-1", "eth"); err != nil {
+	if err := op.dispatchQueuedRefresh("full", "wallet-1", "eth"); err != nil {
 		t.Fatalf("dispatch: %v", err)
 	}
 	if events != 1 {
@@ -130,14 +130,14 @@ func TestQueuedRefreshUsesTheEventForBalancesAndJobsForTheRest(t *testing.T) {
 
 func TestQueuedRefreshLeavesANarrowScopeOnTheJobDispatcher(t *testing.T) {
 	recorder := &recordingDispatcher{}
-	cmd := &RefreshWallet{
+	op := &Operator{
 		dispatcher: recorder,
 		requestRefresh: func(string, string) error {
 			t.Fatal("WalletRefreshRequested is the balances refresh")
 			return nil
 		},
 	}
-	if err := cmd.dispatchQueuedRefresh("transactions", "wallet-2", "btc"); err != nil {
+	if err := op.dispatchQueuedRefresh("transactions", "wallet-2", "btc"); err != nil {
 		t.Fatalf("dispatch: %v", err)
 	}
 	if len(recorder.calls) != 1 || recorder.calls[0].kind != "transactions" {
@@ -148,13 +148,13 @@ func TestQueuedRefreshLeavesANarrowScopeOnTheJobDispatcher(t *testing.T) {
 func TestQueuedRefreshStopsWhenTheEventDispatchFails(t *testing.T) {
 	want := errors.New("event down")
 	recorder := &recordingDispatcher{}
-	cmd := &RefreshWallet{
+	op := &Operator{
 		dispatcher: recorder,
 		requestRefresh: func(string, string) error {
 			return want
 		},
 	}
-	err := cmd.dispatchQueuedRefresh("full", "wallet-1", "eth")
+	err := op.dispatchQueuedRefresh("full", "wallet-1", "eth")
 	if !errors.Is(err, want) {
 		t.Fatalf("error = %v, want %v", err, want)
 	}
@@ -164,26 +164,24 @@ func TestQueuedRefreshStopsWhenTheEventDispatchFails(t *testing.T) {
 }
 
 func TestQueuedRefreshBalancesNeedsTheDispatcher(t *testing.T) {
-	cmd := &RefreshWallet{
-		requestRefresh: func(string, string) error { return nil },
-	}
-	err := cmd.dispatchQueuedRefresh("balances", "wallet-1", "eth")
+	op := &Operator{requestRefresh: func(string, string) error { return nil }}
+	err := op.dispatchQueuedRefresh("balances", "wallet-1", "eth")
 	if err == nil || err.Error() != "refresh:wallet: refresh dispatcher is not initialized" {
 		t.Fatalf("error = %v", err)
 	}
 }
 
 func TestQueuedRefreshRejectsAMissingEventDispatcher(t *testing.T) {
-	cmd := &RefreshWallet{}
-	err := cmd.dispatchQueuedRefresh("balances", "wallet-1", "eth")
+	op := &Operator{}
+	err := op.dispatchQueuedRefresh("balances", "wallet-1", "eth")
 	if err == nil || err.Error() != "refresh:wallet: event dispatcher is not initialized" {
 		t.Fatalf("error = %v", err)
 	}
 }
 
 func TestRefreshWalletQueueScopeRejectsNilDispatcher(t *testing.T) {
-	cmd := &RefreshWallet{}
-	err := cmd.dispatchScopedJobs("balances", "wallet-1", "eth")
+	op := &Operator{}
+	err := op.dispatchScopedJobs("balances", "wallet-1", "eth")
 	if err == nil || err.Error() != "refresh:wallet: refresh dispatcher is not initialized" {
 		t.Fatalf("error = %v", err)
 	}
@@ -225,7 +223,9 @@ func (r *recordingDispatcher) DispatchWalletCreated(string, string) error { retu
 
 func (r *recordingDispatcher) DispatchWalletActivated(string, string) error { return nil }
 
-func (r *recordingDispatcher) DispatchDepositDetected(string, string, string) error { return nil }
+func (r *recordingDispatcher) DispatchDepositDetected(string, string, string) error {
+	return nil
+}
 
 func (r *recordingDispatcher) DispatchWithdrawalBroadcasted(string, string) error { return nil }
 

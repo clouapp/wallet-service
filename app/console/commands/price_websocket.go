@@ -28,9 +28,7 @@ func NewPriceWebSocket(deps PriceWebSocketDeps) *PriceWebSocket {
 	return &PriceWebSocket{prices: deps.Prices, coinAPIKey: deps.CoinAPIKey, cache: deps.Cache}
 }
 
-func (c *PriceWebSocket) Signature() string {
-	return "price:websocket"
-}
+func (c *PriceWebSocket) Signature() string { return "price:websocket" }
 
 func (c *PriceWebSocket) Description() string {
 	return "Connect to CoinAPI WebSocket for real-time crypto price updates"
@@ -41,25 +39,15 @@ func (c *PriceWebSocket) Extend() command.Extend {
 }
 
 func (c *PriceWebSocket) Handle(ctx console.Context) error {
-	ctx.Info("refreshing initial prices...")
-	bgCtx := context.Background()
-	if c.prices != nil {
-		if err := c.prices.RefreshCryptoPrices(bgCtx); err != nil {
-			ctx.Error(redactedLine("initial crypto refresh failed: " + err.Error()))
+	err := c.prices.Stream(context.Background(), c.coinAPIKey, c.cache, func(level, message string) {
+		if level == "error" {
+			ctx.Error(message)
+			return
 		}
-		if err := c.prices.RefreshFiatRates(bgCtx); err != nil {
-			ctx.Error(redactedLine("initial fiat refresh failed: " + err.Error()))
-		}
+		ctx.Info(message)
+	})
+	if err != nil {
+		return fail(ctx, err)
 	}
-	ctx.Info("initial prices refreshed")
-
-	apiKey := c.coinAPIKey
-	if apiKey == "" {
-		ctx.Error("COINAPI_API_KEY is not configured")
-		return nil
-	}
-
-	ws := c.prices.PriceWebSocket(apiKey, c.cache)
-	ctx.Info("starting CoinAPI WebSocket connection...")
-	return ws.Connect(bgCtx)
+	return nil
 }

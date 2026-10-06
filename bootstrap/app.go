@@ -21,11 +21,15 @@ import (
 	"github.com/macrowallets/waas/app/listeners"
 	"github.com/macrowallets/waas/app/providers"
 	"github.com/macrowallets/waas/app/repositories"
+	"github.com/macrowallets/waas/app/services/activity"
 	chainpkg "github.com/macrowallets/waas/app/services/chain"
+	"github.com/macrowallets/waas/app/services/chainregistry"
+	"github.com/macrowallets/waas/app/services/chains"
 	"github.com/macrowallets/waas/app/services/credentialmail"
 	"github.com/macrowallets/waas/app/services/deposit"
 	"github.com/macrowallets/waas/app/services/price"
 	"github.com/macrowallets/waas/app/services/refresh"
+	"github.com/macrowallets/waas/app/services/walletrecords"
 	"github.com/macrowallets/waas/config"
 	"github.com/macrowallets/waas/database/seeders"
 )
@@ -53,28 +57,40 @@ func Boot() contractsfoundation.Application {
 			deposits := container.MustMake[*deposit.Service]()
 			registry := container.MustMake[*chainpkg.Registry]()
 			prices := container.MustMake[*price.Service]()
+			wallets := container.MustMake[*walletrecords.Wallets]()
+			addresses := container.MustMake[*walletrecords.Addresses]()
+			transactions := container.MustMake[*walletrecords.Transactions]()
 			return []console.Command{
 				commands.NewRefreshWallet(commands.RefreshWalletDeps{
-					Balances:   balances,
-					Dispatcher: dispatcher,
+					Balances:       balances,
+					Dispatcher:     dispatcher,
+					Wallets:        wallets,
+					RequestRefresh: dispatchWalletRefreshRequested,
 				}),
 				commands.NewRefreshAddress(commands.RefreshAddressDeps{
 					Balances:   balances,
 					Dispatcher: dispatcher,
+					Wallets:    wallets,
+					Addresses:  addresses,
 				}),
 				commands.NewRefreshCurrency(commands.RefreshCurrencyDeps{
 					Registry:   registry,
 					Balances:   balances,
 					Dispatcher: dispatcher,
+					Wallets:    wallets,
+					Addresses:  addresses,
 				}),
 				commands.NewRefreshTx(commands.RefreshTxDeps{
-					Balances:   balances,
-					Dispatcher: dispatcher,
+					Balances:     balances,
+					Dispatcher:   dispatcher,
+					Wallets:      wallets,
+					Transactions: transactions,
 				}),
 				commands.NewScanDeposits(deposits),
 				commands.NewReconcileWallet(commands.ReconcileWalletDeps{
 					Balances:   balances,
 					Dispatcher: dispatcher,
+					Wallets:    wallets,
 				}),
 				commands.NewPriceWebSocket(commands.PriceWebSocketDeps{
 					Prices:     prices,
@@ -82,11 +98,20 @@ func Boot() contractsfoundation.Application {
 					Cache:      pricecache.New(container.MustMake[*container.SharedRedis]().Client),
 				}),
 				commands.NewPriceCheckUpdate(prices),
-				commands.NewChainsSetRPC(container.MustMake[*repositories.ChainRepository]()),
-				commands.NewChainsAlignNetwork(deposits),
-				commands.NewChainsAddMissing(seedMissingAddedChains),
+				commands.NewChainsSetRPC(chains.NewReplaceRPC(chains.ReplaceRPCDeps{
+					Store: container.MustMake[*repositories.ChainRepository](),
+					Seal:  func(plaintext string) (string, error) { return goravelfacades.Crypt().EncryptString(plaintext) },
+				})),
+				commands.NewChainsAlignNetwork(chainregistry.NewAligner(chainregistry.AlignerDeps{
+					Store:   repositories.NewChainRegistryRepository(nil),
+					Decrypt: decryptChainRPC,
+					Probe:   chainregistry.ProbeRPCNetwork,
+					Cache:   deposits,
+					Profile: configuredChainProfile,
+				})),
+				commands.NewChainsAddMissing(chainregistry.NewMissingChains(seedMissingAddedChains)),
 				&commands.WithdrawPreflight{},
-				commands.NewPruneActivity(),
+				commands.NewPruneActivity(container.MustMake[*activity.Service]()),
 				commands.NewEVMCall(commands.EVMCallDeps{
 					Wallets: container.MustMake[*repositories.WalletRepository](),
 					Signer:  evmCallSigner(),

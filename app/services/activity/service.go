@@ -42,17 +42,27 @@ type Writer interface {
 	Append(ctx context.Context, row models.AccountActivity) error
 }
 
+// BatchDeleter removes one batch of rows older than a retention window.
+type BatchDeleter interface {
+	DeleteOlderThan(ctx context.Context, days, limit int) (int64, error)
+}
+
 // Service lists account activity for roles that hold activity.read.
 type Service struct {
-	rows   Reader
-	admins PlatformAdmins
+	rows            Reader
+	admins          PlatformAdmins
+	accountActivity BatchDeleter
+	activityLog     BatchDeleter
 }
 
 // Deps is everything the account activity reader needs. Rows is required.
 // A nil Admins leaves ListPlatform unable to tell a platform admin from anyone else.
+// AccountActivity and ActivityLog are required by Prune.
 type Deps struct {
-	Rows   Reader
-	Admins PlatformAdmins
+	Rows            Reader
+	Admins          PlatformAdmins
+	AccountActivity BatchDeleter
+	ActivityLog     BatchDeleter
 }
 
 // NewService builds the account activity reader. The writer is the same
@@ -61,7 +71,12 @@ func NewService(deps Deps) *Service {
 	if deps.Rows == nil {
 		panic("account activity service: reader is required")
 	}
-	return &Service{rows: deps.Rows, admins: deps.Admins}
+	return &Service{
+		rows:            deps.Rows,
+		admins:          deps.Admins,
+		accountActivity: deps.AccountActivity,
+		activityLog:     deps.ActivityLog,
+	}
 }
 
 // List returns one page, newest first. GET /v1/accounts/{accountId}/activity

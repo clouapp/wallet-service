@@ -2,33 +2,26 @@ package commands
 
 import (
 	"context"
-	"errors"
-	"fmt"
 
-	"github.com/google/uuid"
 	"github.com/goravel/framework/contracts/console"
 	"github.com/goravel/framework/contracts/console/command"
-	"github.com/goravel/framework/contracts/event"
-	"github.com/goravel/framework/facades"
 
-	"github.com/macrowallets/waas/app/container"
-	"github.com/macrowallets/waas/app/dtos"
-	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/services/refresh"
-	"github.com/macrowallets/waas/app/services/walletrecords"
 )
 
 type RefreshWallet struct {
-	balances       *refresh.BalanceService
-	dispatcher     refresh.Dispatcher
-	requestRefresh func(walletID, chainID string) error
+	balances   *refresh.BalanceService
+	dispatcher refresh.Dispatcher
+	run        *refresh.Operator
 }
 
 // RefreshWalletDeps is everything the refresh:wallet command needs.
 // Balances and Dispatcher are required.
 type RefreshWalletDeps struct {
-	Balances   *refresh.BalanceService
-	Dispatcher refresh.Dispatcher
+	Balances       *refresh.BalanceService
+	Dispatcher     refresh.Dispatcher
+	Wallets        refresh.WalletLookup
+	RequestRefresh func(walletID, chainID string) error
 }
 
 // NewRefreshWallet refreshes one wallet's read model.
@@ -40,28 +33,18 @@ func NewRefreshWallet(deps RefreshWalletDeps) *RefreshWallet {
 		panic("refresh:wallet: refresh dispatcher is required")
 	}
 	return &RefreshWallet{
-		balances:       deps.Balances,
-		dispatcher:     deps.Dispatcher,
-		requestRefresh: dispatchWalletRefreshRequested,
+		balances:   deps.Balances,
+		dispatcher: deps.Dispatcher,
+		run: refresh.NewOperator(refresh.OperatorDeps{
+			Balances:       deps.Balances,
+			Dispatcher:     deps.Dispatcher,
+			Wallets:        deps.Wallets,
+			RequestRefresh: deps.RequestRefresh,
+		}),
 	}
 }
 
-// dispatchWalletRefreshRequested fires the registered WalletRefreshRequested
-// event. The balance job is dispatched through the refresh Dispatcher port.
-func dispatchWalletRefreshRequested(walletID, chainID string) error {
-	ev := facades.Event()
-	if ev == nil {
-		return fmt.Errorf("refresh:wallet: event dispatcher is not initialized")
-	}
-	return ev.Job(&dtos.WalletRefreshRequested{}, []event.Arg{
-		{Type: "string", Value: walletID},
-		{Type: "string", Value: chainID},
-	}).Dispatch()
-}
-
-func (c *RefreshWallet) Signature() string {
-	return "refresh:wallet"
-}
+func (c *RefreshWallet) Signature() string { return "refresh:wallet" }
 
 func (c *RefreshWallet) Description() string {
 	return "Refresh a wallet read model (sync-first by default)"
@@ -71,11 +54,7 @@ func (c *RefreshWallet) Extend() command.Extend {
 	return command.Extend{
 		Category: "refresh",
 		Arguments: []command.Argument{
-			&command.ArgumentString{
-				Name:     "wallet_id",
-				Usage:    "wallet UUID to refresh",
-				Required: true,
-			},
+			&command.ArgumentString{Name: "wallet_id", Usage: "wallet UUID to refresh", Required: true},
 		},
 		Flags: []command.Flag{
 			&command.StringFlag{Name: "scope", Value: "full", Usage: "balances|transactions|tokens|utxos|full"},
@@ -88,121 +67,16 @@ func (c *RefreshWallet) Extend() command.Extend {
 }
 
 func (c *RefreshWallet) Handle(ctx console.Context) error {
-	walletID := ctx.ArgumentString("wallet_id")
-	scope := ctx.Option("scope")
-	reason := ctx.Option("reason")
-
-	id, err := uuid.Parse(walletID)
+	out, err := c.run.RefreshWallet(context.Background(), refresh.WalletCommand{
+		WalletID: ctx.ArgumentString("wallet_id"),
+		Scope:    ctx.Option("scope"),
+		Chain:    ctx.Option("chain"),
+		Queue:    ctx.OptionBool("queue"),
+		Reason:   ctx.Option("reason"),
+	})
+	printReport(ctx, out.Info, out.Warning, out.Line, out.SoftError)
 	if err != nil {
-		ctx.Error("invalid wallet_id: " + walletID)
-		return fmt.Errorf("invalid wallet_id: %w", err)
+		return fail(ctx, err)
 	}
-
-	wallet, err := container.MustMake[*walletrecords.Wallets]().FindByID(context.Background(), id)
-	if err != nil && !errors.Is(err, models.ErrRepositoryNotFound) {
-		ctx.Error("failed to load wallet: " + err.Error())
-		return fmt.Errorf("load wallet: %w", err)
-	}
-	if wallet == nil || errors.Is(err, models.ErrRepositoryNotFound) {
-		ctx.Error("wallet not found: " + walletID)
-		return fmt.Errorf("wallet not found: %s", walletID)
-	}
-
-	chainID := ctx.Option("chain")
-	if chainID == "" {
-		chainID = wallet.Chain
-	}
-
-	if ctx.OptionBool("queue") {
-		ctx.Info("dispatching wallet refresh to blockchain queue: wallet=" + walletID + " scope=" + scope + " reason=" + reason)
-		return c.dispatchQueuedRefresh(scope, walletID, chainID)
-	}
-
-	ctx.Info("sync mode: refreshing wallet=" + walletID + " scope=" + scope + " reason=" + reason)
-	if c.balances == nil {
-		return fmt.Errorf("refresh:wallet: balance refresh service is not initialized")
-	}
-	if err := c.balances.RefreshWallet(context.Background(), wallet); err != nil {
-		ctx.Error(redactedLine("refresh failed: " + err.Error()))
-		return fmt.Errorf("refresh wallet: %w", redactedError(err))
-	}
-	ctx.Info("wallet " + walletID + " refreshed successfully")
 	return nil
-}
-
-// dispatchQueuedRefresh sends a queued refresh. Scopes that include balances
-// still fire WalletRefreshRequested. That event only enqueues one job, so
-// this command dispatches the balance job through the Dispatcher port.
-func (c *RefreshWallet) dispatchQueuedRefresh(scope, walletID, chainID string) error {
-	switch scope {
-	case "balances":
-		if err := c.requestWalletRefresh(walletID, chainID); err != nil {
-			return err
-		}
-		return c.dispatchBalances(walletID, chainID)
-	case "full":
-		if err := c.requestWalletRefresh(walletID, chainID); err != nil {
-			return err
-		}
-		if c.dispatcher == nil {
-			return fmt.Errorf("refresh:wallet: refresh dispatcher is not initialized")
-		}
-		for _, dispatch := range []func(string, string) error{
-			c.dispatcher.DispatchBalances,
-			c.dispatcher.DispatchTransactions,
-			c.dispatcher.DispatchTokens,
-			c.dispatcher.DispatchUTXOs,
-		} {
-			if err := dispatch(walletID, chainID); err != nil {
-				return err
-			}
-		}
-		return nil
-	default:
-		return c.dispatchScopedJobs(scope, walletID, chainID)
-	}
-}
-
-func (c *RefreshWallet) requestWalletRefresh(walletID, chainID string) error {
-	if c.requestRefresh == nil {
-		return fmt.Errorf("refresh:wallet: event dispatcher is not initialized")
-	}
-	return c.requestRefresh(walletID, chainID)
-}
-
-func (c *RefreshWallet) dispatchBalances(walletID, chainID string) error {
-	if c.dispatcher == nil {
-		return fmt.Errorf("refresh:wallet: refresh dispatcher is not initialized")
-	}
-	return c.dispatcher.DispatchBalances(walletID, chainID)
-}
-
-func (c *RefreshWallet) dispatchScopedJobs(scope, walletID, chainID string) error {
-	if c.dispatcher == nil {
-		return fmt.Errorf("refresh:wallet: refresh dispatcher is not initialized")
-	}
-	switch scope {
-	case "balances":
-		return c.dispatcher.DispatchBalances(walletID, chainID)
-	case "transactions":
-		return c.dispatcher.DispatchTransactions(walletID, chainID)
-	case "tokens":
-		return c.dispatcher.DispatchTokens(walletID, chainID)
-	case "utxos":
-		return c.dispatcher.DispatchUTXOs(walletID, chainID)
-	case "full":
-		for _, dispatch := range []func(string, string) error{
-			c.dispatcher.DispatchBalances,
-			c.dispatcher.DispatchTransactions,
-			c.dispatcher.DispatchTokens,
-			c.dispatcher.DispatchUTXOs,
-		} {
-			if err := dispatch(walletID, chainID); err != nil {
-				return err
-			}
-		}
-		return nil
-	default:
-		return fmt.Errorf("unknown scope: %s", scope)
-	}
 }
