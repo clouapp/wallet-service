@@ -17,6 +17,7 @@ func TestGlobalChainFollowsThePlanOrder(t *testing.T) {
 	links := globalChainLinks(time.Second)
 	want := []string{
 		chainRequestTimeout,
+		chainProviderSignature,
 		chainRequestID,
 		chainSecurityHeaders,
 		chainBodyLimit,

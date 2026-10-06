@@ -1,16 +1,13 @@
 package ingest
 
 import (
-	"errors"
-	"io"
+	"context"
 	"log/slog"
-	"strings"
 
 	"github.com/goravel/framework/contracts/http"
 
-	"github.com/macrowallets/waas/app/facades"
+	"github.com/macrowallets/waas/app/http/middleware"
 	"github.com/macrowallets/waas/app/http/responses"
-	"github.com/macrowallets/waas/app/models"
 	ingestsvc "github.com/macrowallets/waas/app/services/ingest"
 	"github.com/macrowallets/waas/app/services/ingest/providers"
 )
@@ -19,114 +16,58 @@ import (
 // built with a KeySource, so the credential is read at verify time.
 type providerLookup func() map[string]providers.WebhookProvider
 
+// inboundIngest accepts one verified webhook as a typed event.
+type inboundIngest interface {
+	Ingest(ctx context.Context, event ingestsvc.InboundEvent) error
+}
+
 // IngestController serves inbound provider webhooks.
 type IngestController struct {
-	subscriptions *ingestsvc.Subscriptions
-	ingest        *ingestsvc.Service
-	lookup        providerLookup
+	ingest inboundIngest
+	lookup providerLookup
 }
 
 // IngestControllerDeps is everything the ingest controller needs.
 // Lookup may be nil; a nil lookup resolves the adapter registered for the provider.
 type IngestControllerDeps struct {
-	Subscriptions *ingestsvc.Subscriptions
-	Ingest        *ingestsvc.Service
-	Lookup        providerLookup
+	Ingest *ingestsvc.Service
+	Lookup providerLookup
 }
 
 // NewIngestController wires the inbound webhook handlers from IngestControllerDeps.
 func NewIngestController(deps IngestControllerDeps) *IngestController {
-	if deps.Subscriptions == nil {
-		panic("ingest controller: webhook subscriptions service is required")
-	}
 	if deps.Ingest == nil {
 		panic("ingest controller: ingest service is required")
 	}
 	return &IngestController{
-		subscriptions: deps.Subscriptions,
-		ingest:        deps.Ingest,
-		lookup:        deps.Lookup,
+		ingest: deps.Ingest,
+		lookup: deps.Lookup,
 	}
 }
 
 func (ctrl *IngestController) provider(name string) (providers.WebhookProvider, bool) {
-	if ctrl != nil && ctrl.lookup != nil {
-		if found, ok := ctrl.lookup()[name]; ok && found != nil {
-			return found, true
-		}
-	}
-	// Alchemy, Helius, and QuickNode clients are registered by their adapters
-	// during init, so these fallbacks are resolved on the request rather than
-	// in a package map.
-	var found providers.WebhookProvider
-	switch name {
-	case "alchemy":
-		found = providers.NewAlchemyProvider("")
-	case "helius":
-		found = providers.NewHeliusProvider("")
-	case "quicknode":
-		found = providers.NewQuickNodeProvider("")
-	default:
-		return nil, false
-	}
-	return found, found != nil
+	return providers.Resolve(name, ctrl.lookup)
 }
 
 func (ctrl *IngestController) HandleWebhookIngest(ctx http.Context) http.Response {
-	req := ctx.Request().Origin()
-	rawBody, err := io.ReadAll(req.Body)
-	if err != nil {
-		slog.Error("ingest read body", "error", err)
-		return responses.Send(ctx, http.StatusBadRequest, http.Json{"error": "invalid body"})
+	providerName, chainID, rawBody, verified := middleware.VerifiedInboundWebhook(ctx)
+	if !verified {
+		return responses.Send(ctx, http.StatusUnauthorized, http.Json{"error": "invalid webhook signature"})
 	}
-
-	providerName := strings.ToLower(strings.TrimSpace(ctx.Request().Input("provider")))
-	chainID := strings.TrimSpace(ctx.Request().Input("chainID"))
-	if providerName == "" || chainID == "" {
-		return responses.Send(ctx, http.StatusBadRequest, http.Json{"error": "provider and chainID are required"})
-	}
-
-	sub, err := ctrl.subscriptions.FindByProviderAndChain(ctx.Context(), providerName, chainID)
-	if errors.Is(err, models.ErrRepositoryNotFound) {
-		sub, err = nil, nil
-	}
-	if err != nil {
-		slog.Error("ingest subscription lookup", "provider", providerName, "chain", chainID, "error", err)
-		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "subscription lookup failed"})
-	}
-	if sub == nil {
-		return responses.Send(ctx, http.StatusNotFound, http.Json{"error": "webhook subscription not found"})
-	}
-
-	secret, err := facades.Crypt().DecryptString(sub.SigningSecret)
-	if err != nil {
-		slog.Error("ingest decrypt signing secret", "error", err)
-		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "configuration error"})
-	}
-
 	provider, found := ctrl.provider(providerName)
 	if !found {
 		return responses.Send(ctx, http.StatusBadRequest, http.Json{"error": "unknown provider"})
 	}
-
-	valid, verifyErr := provider.VerifyInbound(providers.Header(req.Header), rawBody, secret)
-	if verifyErr != nil {
-		slog.Warn("ingest verify", "provider", providerName, "error", verifyErr)
-		return responses.Send(ctx, http.StatusUnauthorized, http.Json{"error": "invalid webhook signature"})
-	}
-	if !valid {
-		return responses.Send(ctx, http.StatusUnauthorized, http.Json{"error": "invalid webhook signature"})
-	}
-
 	transfers, err := provider.ParsePayload(rawBody)
 	if err != nil {
-		slog.Warn("ingest parse", "provider", providerName, "error", err)
+		slog.Warn("ingest parse rejected", "provider", providerName)
 		return responses.Send(ctx, http.StatusBadRequest, http.Json{"error": "invalid payload"})
 	}
-
-	if err := ctrl.ingest.ProcessTransfers(ctx.Context(), chainID, transfers); err != nil {
+	if err := ctrl.ingest.Ingest(ctx.Context(), ingestsvc.InboundEvent{
+		ChainID:   chainID,
+		Transfers: transfers,
+	}); err != nil {
 		return responses.InternalError(ctx, err)
 	}
-
 	return responses.Send(ctx, http.StatusOK, http.Json{"ok": true})
 }

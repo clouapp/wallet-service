@@ -35,7 +35,7 @@ an earlier one refuses. `Cors` and `CacheControl` are not guards.
 | external `/api/v1` | `APITokenAuth` (includes `ip_cidr`) → `APIWalletContext` on `/{walletId}` (404 before the scope check) → `APIScope(permission)` on the routes the token catalog names |
 | guest `/v1/auth/*` except logout | no auth middleware |
 | public `/health`, `/swagger/*` | no auth middleware |
-| inbound `/v1/webhooks/ingest/...` | no auth middleware; the provider signature is checked in the ingest handler |
+| inbound `/v1/webhooks/ingest/...` | `ProviderSignature` checks the provider signature before the body is parsed |
 
 `AccountContext` answers 404 for an unknown account and 403 when the caller has
 no active membership. `APIScope` answers 403 when a token that lists

@@ -30,7 +30,8 @@ const (
 )
 
 // Repeated guard chains. Cors and CacheControl are not guards. The ingest
-// signature is checked in the handler, so that route's chain is empty.
+// route's guard is ProviderSignature, which checks the provider signature
+// before the body is parsed.
 const (
 	chainSession                = "SessionAuth"
 	chainAccount                = "SessionAuth > AccountContext > TOTPEnrollment"
@@ -72,6 +73,7 @@ const (
 	chainTransactions           = "APITokenAuth > APIScope(transactions.read)"
 	chainWebhooksRead           = "APITokenAuth > APIScope(webhooks.read)"
 	chainWebhooksWrite          = "APITokenAuth > APIScope(webhooks.write)"
+	chainProviderSignature      = "ProviderSignature"
 )
 
 // routeSecurity is one row of the closed table: who may call the route, and
@@ -88,7 +90,9 @@ func guest() routeSecurity { return routeSecurity{auth: guardGuest} }
 func public() routeSecurity {
 	return routeSecurity{auth: guardPublic}
 }
-func provider() routeSecurity { return routeSecurity{auth: guardProviderSignature} }
+func provider() routeSecurity {
+	return routeSecurity{auth: guardProviderSignature, chain: chainProviderSignature}
+}
 
 // routeTable is the closed list of every route the router serves, keyed by
 // Goravel's "METHOD /path". A new route fails TestEveryRouteIsInTheRouteTable

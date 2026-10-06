@@ -62,3 +62,25 @@ type WebhookProvider interface {
 	VerifyInbound(headers Header, body []byte, secret string) (bool, error)
 	ParsePayload(body []byte) ([]InboundTransfer, error)
 }
+
+// Resolve returns the inbound provider for name. lookup is tried first. A miss
+// falls back to the adapter registered for Alchemy, Helius, or QuickNode.
+func Resolve(name string, lookup func() map[string]WebhookProvider) (WebhookProvider, bool) {
+	if lookup != nil {
+		if found, ok := lookup()[name]; ok && found != nil {
+			return found, true
+		}
+	}
+	var found WebhookProvider
+	switch name {
+	case "alchemy":
+		found = NewAlchemyProvider("")
+	case "helius":
+		found = NewHeliusProvider("")
+	case "quicknode":
+		found = NewQuickNodeProvider("")
+	default:
+		return nil, false
+	}
+	return found, found != nil
+}

@@ -12,11 +12,12 @@ import (
 )
 
 // RequestTimeout bounds the rest of the global chain. A non-positive duration
-// does not install a deadline.
+// does not install a deadline. The chain continues without building the
+// Goravel request, because that build JSON-decodes the body.
 func RequestTimeout(timeout time.Duration) contractshttp.Middleware {
 	return func(ctx contractshttp.Context) {
 		if timeout <= 0 {
-			ctx.Request().Next()
+			continueChain(ctx)
 			return
 		}
 
@@ -32,7 +33,7 @@ func RequestTimeout(timeout time.Duration) contractshttp.Middleware {
 				}
 				close(done)
 			}()
-			ctx.Request().Next()
+			continueChain(ctx)
 		}()
 
 		select {

@@ -6,14 +6,18 @@ import (
 	contractshttp "github.com/goravel/framework/contracts/http"
 )
 
-// Global chain order from the alignment plan: request timeout, request id,
-// security headers, body limit, CORS. Recover is installed separately.
+// Global chain order from the alignment plan: request timeout, then the
+// inbound provider signature, then request id, security headers, body limit,
+// and CORS. The signature step sits before any middleware that builds the
+// Goravel request, so an ingest body is not parsed first. Recover is
+// installed separately.
 const (
-	chainRequestTimeout  = "request_timeout"
-	chainRequestID       = "request_id"
-	chainSecurityHeaders = "security_headers"
-	chainBodyLimit       = "body_limit"
-	chainCORS            = "cors"
+	chainRequestTimeout    = "request_timeout"
+	chainProviderSignature = "provider_signature"
+	chainRequestID         = "request_id"
+	chainSecurityHeaders   = "security_headers"
+	chainBodyLimit         = "body_limit"
+	chainCORS              = "cors"
 )
 
 type chainLink struct {
@@ -24,6 +28,7 @@ type chainLink struct {
 func globalChainLinks(timeout time.Duration) []chainLink {
 	return []chainLink{
 		{name: chainRequestTimeout, middleware: RequestTimeout(timeout)},
+		{name: chainProviderSignature, middleware: ProviderSignature()},
 		{name: chainRequestID, middleware: RequestID()},
 		{name: chainSecurityHeaders, middleware: SecurityHeaders()},
 		{name: chainBodyLimit, middleware: BodyLimit(MaxGlobalBodyBytes)},

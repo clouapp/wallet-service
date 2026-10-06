@@ -26,6 +26,13 @@ func TestProcessTransfers_UnknownChain(t *testing.T) {
 	assert.ErrorIs(t, err, chainregistry.ErrUnknownChain)
 }
 
+func TestIngest_UnknownChainUsesTheTypedEvent(t *testing.T) {
+	reg := chain.NewRegistry()
+	svc := &Service{registry: reg}
+	err := svc.Ingest(t.Context(), InboundEvent{ChainID: "unknown_chain"})
+	assert.ErrorIs(t, err, chainregistry.ErrUnknownChain)
+}
+
 func TestNewService_NilDeps(t *testing.T) {
 	svc := NewService(Deps{})
 	assert.NotNil(t, svc)

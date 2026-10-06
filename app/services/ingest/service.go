@@ -85,6 +85,18 @@ func NewService(deps Deps) *Service {
 	}
 }
 
+// InboundEvent is one provider webhook after its signature has been checked
+// and its payload parsed. The service never takes the raw provider JSON.
+type InboundEvent struct {
+	ChainID   string
+	Transfers []providers.InboundTransfer
+}
+
+// Ingest records a verified webhook from the typed event.
+func (s *Service) Ingest(ctx context.Context, event InboundEvent) error {
+	return s.ProcessTransfers(ctx, event.ChainID, event.Transfers)
+}
+
 func (s *Service) ProcessTransfers(ctx context.Context, chainID string, transfers []providers.InboundTransfer) error {
 	adapter, err := s.registry.Chain(chainID)
 	if err != nil {
