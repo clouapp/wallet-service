@@ -36,6 +36,8 @@ type RPCClient struct {
 	password  string
 	headers   map[string]string
 	retry     rateLimitRetry
+	// maxResponseBytes bounds one answer; zero means rpcMaxResponseBytes.
+	maxResponseBytes int
 }
 
 // apiKeyHeader carries the optional API key of a hosted provider (Tatum gateways).
@@ -72,6 +74,12 @@ func NewRPCClient(url, user, pass string) *RPCClient {
 	}
 }
 
+// WithMaxResponseBytes raises (or lowers) the size of the largest answer accepted.
+func (c *RPCClient) WithMaxResponseBytes(limit int) *RPCClient {
+	c.maxResponseBytes = limit
+	return c
+}
+
 // WithHeader sends name: value on every request; an empty value is ignored.
 func (c *RPCClient) WithHeader(name, value string) *RPCClient {
 	if value == "" {
@@ -97,6 +105,7 @@ func (c *RPCClient) Call(ctx context.Context, method string, out interface{}, pa
 		if err != nil {
 			return err
 		}
+		respBody = c.redactHeaderValues(respBody)
 		if isRateLimited(status, respBody) {
 			if attempt >= c.retry.maxAttempts {
 				return fmt.Errorf("rpc call %s: %w (HTTP %d) after %d attempts", method, ErrRateLimited, status, attempt)
@@ -142,9 +151,16 @@ func (c *RPCClient) post(ctx context.Context, method string, params []interface{
 	}
 	defer resp.Body.Close()
 
-	respBody, err := io.ReadAll(io.LimitReader(resp.Body, rpcMaxResponseBytes))
+	limit := c.maxResponseBytes
+	if limit <= 0 {
+		limit = rpcMaxResponseBytes
+	}
+	respBody, err := io.ReadAll(io.LimitReader(resp.Body, int64(limit)+1))
 	if err != nil {
 		return 0, nil, nil, fmt.Errorf("read %s response: %w", method, withoutURL(err))
+	}
+	if len(respBody) > limit {
+		return 0, nil, nil, fmt.Errorf("rpc call %s: response larger than %d bytes", method, limit)
 	}
 	return resp.StatusCode, resp.Header, respBody, nil
 }
@@ -170,6 +186,17 @@ func decodeRPCResponse(method string, status int, respBody []byte, out interface
 		return json.Unmarshal(rpcResp.Result, out)
 	}
 	return nil
+}
+
+// redactHeaderValues removes the extra header values (API keys) from an answer
+// before it can reach an error: a provider may echo an invalid key back.
+func (c *RPCClient) redactHeaderValues(body []byte) []byte {
+	for _, value := range c.headers {
+		if value != "" {
+			body = bytes.ReplaceAll(body, []byte(value), []byte(redactedSecret))
+		}
+	}
+	return body
 }
 
 // withoutURL drops the request URL from transport errors: provider URLs embed API keys.

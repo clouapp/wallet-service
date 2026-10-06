@@ -275,7 +275,7 @@ func (p directProvider) transactionFee(ctx context.Context, txID string) (int64,
 	if p.live.restAPI {
 		return p.live.esploraTransactionFee(ctx, txID)
 	}
-	return p.live.rpcTransactionFee(ctx, txID)
+	return rpcOutcome(p.live.rpcTransactionFee(ctx, txID))
 }
 
 func (p *electrumProvider) transactionFee(ctx context.Context, txID string) (int64, error) {

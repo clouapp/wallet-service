@@ -204,7 +204,7 @@ func buildVaultContainer() (*container.Container, error) {
 				if ch.IsTestnet {
 					network = "testnet"
 				}
-				adapter = chainpkg.NewBitcoinLive(chainpkg.BitcoinConfig{
+				btcCfg := chainpkg.BitcoinConfig{
 					ChainIDStr:    ch.ID,
 					ChainName:     ch.Name,
 					NativeSymbol:  ch.NativeSymbol,
@@ -212,8 +212,17 @@ func buildVaultContainer() (*container.Container, error) {
 					Network:       network,
 					IsTestnet:     ch.IsTestnet,
 					Confirmations: uint64(ch.RequiredConfirmations),
-					Fallbacks:     bitcoinFallbacks(ch.ID),
-				})
+				}
+				fallbackKey := "vault.utxo_fallbacks." + ch.ID
+				tatumKey := facades.Config().GetString(fallbackKey + ".api_key")
+				btcCfg.Fallbacks = bitcoinFallbacks(
+					facades.Config().GetString(fallbackKey+".rpc_urls"),
+					tatumKey,
+					chainpkg.DefaultBitcoinFallbackURLs(btcCfg),
+				)
+				btcCfg.TatumDataAPIURL = facades.Config().GetString(fallbackKey + ".tatum_data_api_url")
+				slog.Info("btc fallback providers", "chain", ch.ID, "count", len(btcCfg.Fallbacks), "tatum_key_set", tatumKey != "")
+				adapter = chainpkg.NewBitcoinLive(btcCfg)
 			case models.AdapterTypeSolana:
 				adapter = chainpkg.NewSolanaLive(chainpkg.SolanaConfig{
 					ChainIDStr:    ch.ID,
@@ -396,16 +405,29 @@ func resolveGasReadinessThreshold(ch *models.Chain) *big.Int {
 	return nil
 }
 
-// bitcoinFallbacks are the secondary providers configured for a Bitcoin-family chain
-// (vault.utxo_fallbacks.<id>); chains without an entry get none.
-func bitcoinFallbacks(chainID string) []chainpkg.BitcoinFallback {
-	prefix := "vault.utxo_fallbacks." + chainID
-	apiKey := facades.Config().GetString(prefix + ".api_key")
-	var fallbacks []chainpkg.BitcoinFallback
-	for _, rawURL := range strings.Split(facades.Config().GetString(prefix+".rpc_urls"), ",") {
+// noBitcoinFallbacks as <PREFIX>_FALLBACK_RPC_URL turns the built-in list off.
+const noBitcoinFallbacks = "none"
+
+// bitcoinFallbacks are the secondary providers of a Bitcoin-family chain: the
+// comma-separated configured URLs (vault.utxo_fallbacks.<id>.rpc_urls), the network's
+// built-in defaults when none is configured, or nothing for "none". apiKey is the
+// optional Tatum key; the adapter sends it to Tatum hosts only.
+func bitcoinFallbacks(configured, apiKey string, defaults []string) []chainpkg.BitcoinFallback {
+	if strings.EqualFold(strings.TrimSpace(configured), noBitcoinFallbacks) {
+		return nil
+	}
+	var urls []string
+	for _, rawURL := range strings.Split(configured, ",") {
 		if rawURL = strings.TrimSpace(rawURL); rawURL != "" {
-			fallbacks = append(fallbacks, chainpkg.BitcoinFallback{URL: rawURL, APIKey: apiKey})
+			urls = append(urls, rawURL)
 		}
+	}
+	if len(urls) == 0 {
+		urls = defaults
+	}
+	fallbacks := make([]chainpkg.BitcoinFallback, 0, len(urls))
+	for _, rawURL := range urls {
+		fallbacks = append(fallbacks, chainpkg.BitcoinFallback{URL: rawURL, APIKey: apiKey})
 	}
 	return fallbacks
 }

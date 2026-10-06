@@ -121,6 +121,9 @@ func (a *BitcoinLive) esploraDo(ctx context.Context, method, requestURL, path st
 	if len(body) > esploraMaxResponseBytes {
 		return 0, nil, nil, fmt.Errorf("esplora %s %s: response larger than %d bytes", method, path, esploraMaxResponseBytes)
 	}
+	if a.apiKey != "" {
+		body = []byte(redactSecrets(string(body), a.apiKey))
+	}
 	return resp.StatusCode, resp.Header, body, nil
 }
 

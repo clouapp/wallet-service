@@ -39,6 +39,22 @@ type bitcoinProvider interface {
 // listunspent); the failover moves on without counting it as a failure.
 var errProviderUnsupported = errors.New("operation not supported by this provider")
 
+// jsonRPCMethodNotFoundCode is a node that does not expose a method (Tatum's gateway
+// has no wallet for listunspent): the call is unsupported there, not a failure.
+const jsonRPCMethodNotFoundCode = -32601
+
+func unsupportedWhenMethodNotFound(err error) error {
+	var rpcErr *rpcError
+	if errors.As(err, &rpcErr) && rpcErr.Code == jsonRPCMethodNotFoundCode {
+		return fmt.Errorf("%w: %s", errProviderUnsupported, rpcErr.Message)
+	}
+	return err
+}
+
+func rpcOutcome[T any](value T, err error) (T, error) {
+	return value, unsupportedWhenMethodNotFound(err)
+}
+
 // btcBroadcastRejectedError is a node that received the transaction and refused it
 // under its rules (bad signature, missing inputs, fee below the relay minimum). Any
 // other node would refuse the same bytes, so the failover does not try the next one.
@@ -97,6 +113,8 @@ func btcTxID(raw []byte) string {
 type directProvider struct {
 	live *BitcoinLive
 	name string
+	// kind replaces "esplora"/"json-rpc" in the label (a Tatum gateway).
+	kind string
 	// checkGenesis makes the first call verify the block at height 0 is the network's
 	// genesis block, so a fallback configured for the wrong network is never used.
 	checkGenesis    bool
@@ -108,6 +126,9 @@ func newDirectProvider(live *BitcoinLive, name string, checkGenesis bool) direct
 }
 
 func (p directProvider) label() string {
+	if p.kind != "" {
+		return p.name + " (" + p.kind + ")"
+	}
 	if p.live.restAPI {
 		return p.name + " (esplora)"
 	}
@@ -121,7 +142,7 @@ func (p directProvider) balance(ctx context.Context, address string) (*types.Bal
 	if p.live.restAPI {
 		return p.live.getBalanceREST(ctx, address)
 	}
-	return p.live.getBalanceRPC(ctx, address)
+	return rpcOutcome(p.live.getBalanceRPC(ctx, address))
 }
 
 func (p directProvider) confirmedUTXOs(ctx context.Context, address string) ([]btcInput, error) {
@@ -131,7 +152,7 @@ func (p directProvider) confirmedUTXOs(ctx context.Context, address string) ([]b
 	if p.live.restAPI {
 		return p.live.listUTXOsREST(ctx, address)
 	}
-	return p.live.listUTXOsRPC(ctx, address)
+	return rpcOutcome(p.live.listUTXOsRPC(ctx, address))
 }
 
 func (p directProvider) latestBlock(ctx context.Context) (uint64, error) {
@@ -143,7 +164,7 @@ func (p directProvider) latestBlock(ctx context.Context) (uint64, error) {
 	}
 	var count uint64
 	if err := p.live.rpc.Call(ctx, "getblockcount", &count); err != nil {
-		return 0, err
+		return 0, unsupportedWhenMethodNotFound(err)
 	}
 	return count, nil
 }
@@ -155,7 +176,7 @@ func (p directProvider) scanBlock(ctx context.Context, blockNum uint64) ([]types
 	if p.live.restAPI {
 		return p.live.scanBlockREST(ctx, blockNum)
 	}
-	return p.live.scanBlockRPC(ctx, blockNum)
+	return rpcOutcome(p.live.scanBlockRPC(ctx, blockNum))
 }
 
 func (p directProvider) transactionBlock(ctx context.Context, txID string) (uint64, error) {
@@ -165,7 +186,7 @@ func (p directProvider) transactionBlock(ctx context.Context, txID string) (uint
 	if p.live.restAPI {
 		return p.live.getTransactionBlockREST(ctx, txID)
 	}
-	return p.live.getTransactionBlockRPC(ctx, txID)
+	return rpcOutcome(p.live.getTransactionBlockRPC(ctx, txID))
 }
 
 func (p directProvider) feeRate(ctx context.Context) (int64, error) {
@@ -175,7 +196,7 @@ func (p directProvider) feeRate(ctx context.Context) (int64, error) {
 	if p.live.restAPI {
 		return p.live.fetchEsploraFeeRate(ctx)
 	}
-	return p.live.fetchSmartFeeRate(ctx)
+	return rpcOutcome(p.live.fetchSmartFeeRate(ctx))
 }
 
 func (p directProvider) broadcast(ctx context.Context, raw []byte) (string, error) {
@@ -218,7 +239,7 @@ func (p directProvider) broadcastRPC(ctx context.Context, raw []byte) (string, e
 		}
 	}
 	if err != nil {
-		return "", err
+		return "", unsupportedWhenMethodNotFound(err)
 	}
 	return txHash, nil
 }

@@ -213,17 +213,24 @@ API_KEY_SECRET=dev-secret-key-not-for-production
 
 ### Bitcoin-family provider failover
 
-BTC, TBTC, LTC and TLTC take optional fallback providers after `<PREFIX>_RPC_URL`:
+BTC, TBTC, LTC and TLTC take fallback providers after `<PREFIX>_RPC_URL`:
 
 ```bash
-TLTC_FALLBACK_RPC_URL=electrum+ssl://host:port?cert_sha256=<HEX>,https://litecoin-testnet.gateway.tatum.io
-TLTC_FALLBACK_RPC_API_KEY=            # optional, sent as x-api-key to the http(s) fallbacks
+LTC_FALLBACK_RPC_URL=                 # empty: the network's built-in list; "none": no fallback
+LTC_FALLBACK_RPC_API_KEY=             # optional Tatum key (x-api-key, *.tatum.io hosts only)
+LTC_TATUM_DATA_API_URL=               # optional, default https://api.tatum.io (used only with a key)
 ```
 
-- Comma-separated, tried in order: an Esplora REST API, a bitcoind JSON-RPC node (`https://`), or ElectrumX 1.4 (`electrum+ssl://`, pinned with `cert_sha256` when self-signed; `electrum+tcp://` loopback only). Each fallback's genesis block is checked once; a wrong network is refused.
-- Reads (UTXOs, balance, tip, block scan, tx status, fee rate, paid fee) move to the next provider on transport errors, 5xx or rate limits; a provider failing 3 times in a row is skipped for 30 s, doubling up to 5 min.
+- Comma-separated, tried in order: an Esplora REST API, a bitcoind JSON-RPC node (`https://`), ElectrumX 1.4 (`electrum+ssl://`, pinned with `cert_sha256` when self-signed, verified by the system roots without it; `electrum+tcp://` loopback only), or a Tatum gateway (`https://*.tatum.io`). Each fallback's genesis block is checked once; a wrong network is refused.
+- Built-in lists (`app/services/chain/bitcoin_fallback_defaults.go`, chosen by the network the record resolves to, so `ltc` on the testnet profile gets the testnet list):
+  - Litecoin mainnet: ElectrumX `electrum-ltc.bysh.me:50002`, `backup.electrum-ltc.org:443`, `electrum1.cipig.net:20063` (Let's Encrypt, no pin), `electrum.ltc.xurious.com:50002`, then `https://litecoin-mainnet.gateway.tatum.io`.
+  - Litecoin testnet: ElectrumX `electrum-ltc.bysh.me:51002`, `electrum.ltc.xurious.com:51002`, then `https://litecoin-testnet.gateway.tatum.io` (also what `macro-e2e capture-env` writes).
+  - Bitcoin: none; set `BTC_FALLBACK_RPC_URL` / `TBTC_FALLBACK_RPC_URL` (e.g. `https://bitcoin-mainnet.gateway.tatum.io`) and the same key / Data API vars to use them.
+- Pin rotation: a rotated self-signed certificate is refused ("does not match the pin") and the next provider serves. Re-read it with `openssl s_client -connect HOST:PORT -servername HOST </dev/null | openssl x509 -outform DER | sha256sum`, check `server.features` reports the network's genesis, then update the constant (or override the list by env).
+- Reads (UTXOs, balance, tip, block scan, tx status, fee rate, paid fee) move to the next provider on transport errors, 5xx or rate limits; a provider failing 3 times in a row is skipped for 30 s, doubling up to 5 min. A JSON-RPC "method not found" (-32601) is "unsupported", not a failure.
 - Broadcast sends the same signed bytes (never re-signed) to the primary, then to the next provider only when it was not accepted (transport error, 5xx, rate limit). A definite rejection stops there; "already known" counts as success with the locally computed txid.
-- ElectrumX cannot list a block's transactions (block scans skip it); the keyless Tatum gateway allows 5 requests/min and cannot list UTXOs. The e2e environ (`macro-e2e capture-env`) sets both LTC testnet vars to two pinned ElectrumX servers + Tatum; update the pins if those certificates rotate. LTC mainnet has no fallback configured.
+- ElectrumX cannot list a block's transactions (block scans go to Tatum or the primary). Tatum keyless: 5 requests/min, tip, block scan, tx status, fee, paid fee and broadcast, no UTXOs or balance. With `<PREFIX>_FALLBACK_RPC_API_KEY`: the plan's limit (5 req/s on the free plan) on the gateway, and UTXOs/balance from the Data API `GET /v4/data/utxos` (100 credits per call; chains bitcoin, bitcoin-testnet, litecoin, litecoin-testnet; none for BTC testnet4). Every listed UTXO is checked with the gateway's `gettxout` (unspent, ≥ 1 confirmation, same value and address) before it is spent. The key is never logged and is redacted from error bodies (Tatum echoes it in its 401).
+- Bitcoin-family JSON-RPC answers may be up to 32 MiB (a verbose `getblock` is ~7× the block size); other chains keep 1 MiB.
 
 ### Paid fees
 

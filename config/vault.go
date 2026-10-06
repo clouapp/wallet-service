@@ -51,8 +51,11 @@ func registerVault() {
 		},
 		// Secondary providers of the Bitcoin-family chains, tried in order when the
 		// chain's RPC URL fails (reads) or does not decide on a broadcast. Comma-separated
-		// Esplora / bitcoind JSON-RPC URLs or electrum+ssl://host:port?cert_sha256=HEX;
-		// the optional API key goes out as x-api-key to the HTTP ones. Empty: no fallback.
+		// Esplora / bitcoind JSON-RPC URLs, electrum+ssl://host:port?cert_sha256=HEX or a
+		// Tatum gateway (https://*.tatum.io). Empty: the network's built-in list
+		// (Litecoin mainnet and testnet; Bitcoin has none); "none": no fallback. The
+		// optional API key is Tatum's (x-api-key, Tatum hosts only); with it the Data API
+		// at tatum_data_api_url (default https://api.tatum.io) also serves UTXOs.
 		"utxo_fallbacks": map[string]any{
 			"btc":  utxoFallback("BTC"),
 			"tbtc": utxoFallback("TBTC"),
@@ -109,11 +112,12 @@ func registerVault() {
 	})
 }
 
-// utxoFallback reads <PREFIX>_FALLBACK_RPC_URL (comma-separated, in order) and the
-// optional <PREFIX>_FALLBACK_RPC_API_KEY.
+// utxoFallback reads <PREFIX>_FALLBACK_RPC_URL (comma-separated, in order), the
+// optional Tatum key <PREFIX>_FALLBACK_RPC_API_KEY and <PREFIX>_TATUM_DATA_API_URL.
 func utxoFallback(prefix string) map[string]any {
 	return map[string]any{
-		"rpc_urls": envString(prefix+"_FALLBACK_RPC_URL", ""),
-		"api_key":  envString(prefix+"_FALLBACK_RPC_API_KEY", ""),
+		"rpc_urls":           envString(prefix+"_FALLBACK_RPC_URL", ""),
+		"api_key":            envString(prefix+"_FALLBACK_RPC_API_KEY", ""),
+		"tatum_data_api_url": envString(prefix+"_TATUM_DATA_API_URL", ""),
 	}
 }

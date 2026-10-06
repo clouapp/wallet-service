@@ -321,13 +321,13 @@ func TestBitcoinFallbackProvider_RejectsUnsupportedURLs(t *testing.T) {
 		},
 	})
 	if got := len(live.providers.members); got != 3 {
-		t.Fatalf("members = %d, want primary + pinned electrum + json-rpc", got)
+		t.Fatalf("members = %d, want primary + pinned electrum + tatum", got)
 	}
 	if label := live.providers.members[1].provider.label(); label != "fallback-4 (electrum)" {
 		t.Fatalf("label = %q", label)
 	}
-	jsonRPC := live.providers.members[2].provider.(directProvider)
-	if jsonRPC.label() != "fallback-5 (json-rpc)" || jsonRPC.live.rpc.headers[apiKeyHeader] != "k" {
-		t.Fatalf("json-rpc fallback = %q headers=%v", jsonRPC.label(), jsonRPC.live.rpc.headers)
+	tatum := live.providers.members[2].provider.(tatumProvider)
+	if tatum.label() != "fallback-5 (tatum)" || tatum.gateway.live.rpc.headers[apiKeyHeader] != "k" {
+		t.Fatalf("tatum fallback = %q headers=%v", tatum.label(), tatum.gateway.live.rpc.headers)
 	}
 }

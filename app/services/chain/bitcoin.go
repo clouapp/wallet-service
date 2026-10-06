@@ -22,6 +22,11 @@ const btcDecimals = 8
 
 const bitcoinRESTTimeout = 30 * time.Second
 
+// bitcoinRPCMaxResponseBytes bounds one JSON-RPC answer: getblock at verbosity 2
+// is ~7 times the block size (a 60 kB Litecoin block is 400 kB of JSON), so a full
+// block needs far more than the 1 MiB default.
+const bitcoinRPCMaxResponseBytes = esploraMaxResponseBytes
+
 type BitcoinConfig struct {
 	ChainIDStr     string
 	ChainName      string
@@ -36,11 +41,15 @@ type BitcoinConfig struct {
 	// Fallbacks are tried in order when the provider at RPCURL fails (see
 	// bitcoinFailover); empty keeps RPCURL as the only provider.
 	Fallbacks []BitcoinFallback
+	// TatumDataAPIURL is the Tatum Data API base a keyed Tatum fallback reads UTXOs
+	// from; empty means DefaultTatumDataAPIURL.
+	TatumDataAPIURL string
 }
 
-// BitcoinFallback is a secondary provider: an Esplora or bitcoind JSON-RPC URL, or an
-// Electrum server (electrum+ssl://host:port?cert_sha256=HEX). APIKey, optional, is
-// sent as the x-api-key header to HTTP providers (Tatum's gateway, for one).
+// BitcoinFallback is a secondary provider: an Esplora or bitcoind JSON-RPC URL, an
+// Electrum server (electrum+ssl://host:port?cert_sha256=HEX) or a Tatum gateway
+// (https://*.tatum.io). APIKey, optional, is the Tatum key: it is sent as x-api-key
+// to Tatum hosts only, never to another provider.
 type BitcoinFallback struct {
 	URL    string
 	APIKey string
@@ -60,7 +69,7 @@ type BitcoinLive struct {
 	// feeRateTimeout bounds one fee-rate fetch; zero means btcFeeRateFetchTimeout.
 	feeRateTimeout time.Duration
 	fee            FeePolicy
-	// apiKey, when set, goes out as the x-api-key header (fallback HTTP providers).
+	// apiKey, when set, goes out as the x-api-key header (Tatum fallbacks only).
 	apiKey    string
 	providers *bitcoinFailover
 }
@@ -69,7 +78,7 @@ func NewBitcoinLive(cfg BitcoinConfig) *BitcoinLive {
 	live := &BitcoinLive{
 		cfg:          cfg,
 		network:      bitcoinNetworkOf(cfg),
-		rpc:          NewRPCClient(cfg.RPCURL, cfg.RPCUser, cfg.RPCPass),
+		rpc:          NewRPCClient(cfg.RPCURL, cfg.RPCUser, cfg.RPCPass).WithMaxResponseBytes(bitcoinRPCMaxResponseBytes),
 		restAPI:      isEsploraURL(cfg.RPCURL),
 		http:         httpclient.New(bitcoinRESTTimeout),
 		esploraRetry: esploraRetry(),
@@ -104,21 +113,39 @@ func (a *BitcoinLive) fallbackProvider(n int, fallback BitcoinFallback) (bitcoin
 	if !strings.HasPrefix(rawURL, "https://") && !strings.HasPrefix(rawURL, "http://") {
 		return nil, fmt.Errorf("unsupported scheme: want https://, http:// or %s", electrumSSLScheme)
 	}
+	tatum := isTatumURL(rawURL)
+	apiKey := ""
+	if tatum {
+		apiKey = fallback.APIKey
+	}
+	direct := newDirectProvider(a.secondary(rawURL, apiKey), name, true)
+	if !tatum {
+		return direct, nil
+	}
+	data, err := newTatumDataAPI(a.cfg.TatumDataAPIURL, apiKey, a.network.name, a.http)
+	if err != nil {
+		return nil, err
+	}
+	return newTatumProvider(direct, data), nil
+}
+
+// secondary is a copy of this adapter pointed at rawURL; apiKey, when set, goes out
+// as the x-api-key header.
+func (a *BitcoinLive) secondary(rawURL, apiKey string) *BitcoinLive {
 	copyCfg := a.cfg
 	copyCfg.RPCURL = rawURL
 	copyCfg.RPCUser, copyCfg.RPCPass = "", ""
 	copyCfg.Fallbacks = nil
-	secondary := &BitcoinLive{
+	return &BitcoinLive{
 		cfg:          copyCfg,
 		network:      a.network,
-		rpc:          NewRPCClient(rawURL, "", "").WithHeader(apiKeyHeader, fallback.APIKey),
+		rpc:          NewRPCClient(rawURL, "", "").WithHeader(apiKeyHeader, apiKey).WithMaxResponseBytes(bitcoinRPCMaxResponseBytes),
 		restAPI:      isEsploraURL(rawURL),
 		http:         a.http,
 		esploraRetry: esploraRetry(),
 		feeRates:     a.feeRates,
-		apiKey:       fallback.APIKey,
+		apiKey:       apiKey,
 	}
-	return newDirectProvider(secondary, name, true), nil
 }
 
 // chainProviders is the failover of this adapter; a zero-value adapter talks to
