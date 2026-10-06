@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/google/uuid"
@@ -238,7 +239,10 @@ func (s *Service) SendPasswordReset(ctx context.Context, userID uuid.UUID) error
 	if err := s.resets.Create(ctx, token); err != nil {
 		return fmt.Errorf("password reset mail: store token: %w", err)
 	}
-	if err := s.sender.SendReset(ctx, user.Email, passwordResetURLPrefix+raw); err != nil {
+	before := ctx.Err()
+	err = s.sender.SendReset(ctx, user.Email, passwordResetURLPrefix+raw)
+	warnIfDeadlineHitMidSend(ctx, before, err, PurposePasswordReset)
+	if err != nil {
 		return errors.New("password reset mail: send failed")
 	}
 	return nil
@@ -269,8 +273,23 @@ func (s *Service) SendAccountInvite(ctx context.Context, inviteID uuid.UUID) (st
 	if message.Link == "" || message.To == "" {
 		return "", errors.New("invite mail: minted message is incomplete")
 	}
-	if err := s.sender.SendInvite(ctx, message); err != nil {
+	before := ctx.Err()
+	err = s.sender.SendInvite(ctx, message)
+	warnIfDeadlineHitMidSend(ctx, before, err, PurposeAccountInvite)
+	if err != nil {
 		return message.Link, errors.New("invite mail: send failed")
 	}
 	return message.Link, nil
+}
+
+// warnIfDeadlineHitMidSend logs a credential send whose result is not known
+// because the deadline fired while Mail().Send was in progress. The line
+// names the purpose only.
+func warnIfDeadlineHitMidSend(ctx context.Context, before, sendErr error, purpose string) {
+	if sendErr == nil || ctx == nil || errors.Is(before, context.DeadlineExceeded) {
+		return
+	}
+	if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+		slog.Warn("credential mail send outcome unknown", "purpose", purpose)
+	}
 }

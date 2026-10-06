@@ -1,7 +1,10 @@
 package credentialmail
 
 import (
+	"bytes"
 	"context"
+	"errors"
+	"log/slog"
 	"strings"
 	"testing"
 	"time"
@@ -141,6 +144,171 @@ func TestSendWelcomeUsesTheLoadedUser(t *testing.T) {
 	}
 }
 
+func TestDeadlineMidSendLogsWarnWithoutTheCredential(t *testing.T) {
+	const raw = "super-secret-reset-token"
+	const inviteLink = "https://app.example/accept-invite?token=invite-secret"
+	userID := uuid.New()
+	inviteID := uuid.New()
+	var mints int
+
+	logs := captureCredentialMailLogs(t)
+	resetCtx := newMidSendDeadline()
+	svc := credentialService(t, userID, func() (string, error) {
+		mints++
+		return raw, nil
+	}, senderFunc{
+		reset:    func(string, string) { resetCtx.hit() },
+		resetErr: errors.New("smtp: " + raw),
+	})
+
+	err := svc.SendPasswordReset(resetCtx, userID)
+	if err == nil || err.Error() != "password reset mail: send failed" {
+		t.Fatalf("reset err = %v", err)
+	}
+	if mints != 1 {
+		t.Fatalf("mints = %d", mints)
+	}
+	assertUnknownSendWarn(t, logs.String(), PurposePasswordReset, raw, "person@example.com")
+
+	logs.Reset()
+	mints = 0
+	inviteCtx := newMidSendDeadline()
+	var refreshes int
+	svc = NewService(Deps{
+		Users:  userLookupFunc(func(context.Context, uuid.UUID) (*models.User, error) { return nil, nil }),
+		Tokens: tokenIssuerFunc{mint: func() (string, error) { mints++; return "", nil }, hash: func(string) string { return "" }},
+		Resets: resetWriterFunc(func(context.Context, *models.PasswordResetToken) error { return nil }),
+		Invites: inviteRefresherFunc(func(context.Context, uuid.UUID, string) (account.InviteMail, error) {
+			refreshes++
+			return account.InviteMail{To: "new@example.com", Link: inviteLink}, nil
+		}),
+		Sender: senderFunc{
+			invite:    func(account.InviteMail) { inviteCtx.hit() },
+			inviteErr: errors.New("smtp: " + inviteLink),
+		},
+		Dispatch:       func(uuid.UUID, string) error { t.Fatal("send must not enqueue"); return nil },
+		DispatchInvite: func(uuid.UUID) (string, error) { t.Fatal("send must not dispatch"); return "", nil },
+	})
+	t.Setenv("APP_FRONTEND_URL", "https://app.example")
+
+	got, err := svc.SendAccountInvite(inviteCtx, inviteID)
+	if err == nil || err.Error() != "invite mail: send failed" || got != inviteLink {
+		t.Fatalf("invite got %q err %v", got, err)
+	}
+	if refreshes != 1 || mints != 0 {
+		t.Fatalf("refreshes = %d mints = %d", refreshes, mints)
+	}
+	assertUnknownSendWarn(t, logs.String(), PurposeAccountInvite, "invite-secret", inviteLink)
+}
+
+func TestKnownSendFailureDoesNotLogUnknownOutcome(t *testing.T) {
+	userID := uuid.New()
+	logs := captureCredentialMailLogs(t)
+	svc := credentialService(t, userID, func() (string, error) { return "raw-token", nil }, senderFunc{
+		resetErr: errors.New("connection refused"),
+	})
+	if err := svc.SendPasswordReset(context.Background(), userID); err == nil {
+		t.Fatal("expected a send failure")
+	}
+	if logs.Len() != 0 {
+		t.Fatalf("known failure logged %q", logs.String())
+	}
+
+	ctx, cancel := context.WithDeadline(context.Background(), time.Now().Add(-time.Second))
+	defer cancel()
+	if err := svc.SendPasswordReset(ctx, userID); err == nil {
+		t.Fatal("expected a send failure")
+	}
+	if logs.Len() != 0 {
+		t.Fatalf("deadline before send logged %q", logs.String())
+	}
+}
+
+func TestCompletedSendDoesNotLogUnknownOutcome(t *testing.T) {
+	userID := uuid.New()
+	logs := captureCredentialMailLogs(t)
+	ctx := newMidSendDeadline()
+	svc := credentialService(t, userID, func() (string, error) { return "raw-token", nil }, senderFunc{
+		reset: func(string, string) { ctx.hit() },
+	})
+	if err := svc.SendPasswordReset(ctx, userID); err != nil {
+		t.Fatal(err)
+	}
+	if logs.Len() != 0 {
+		t.Fatalf("completed send logged %q", logs.String())
+	}
+}
+
+// midSendDeadline reports DeadlineExceeded only after hit, which the sender
+// calls while Mail().Send is in progress.
+type midSendDeadline struct {
+	context.Context
+	fired chan struct{}
+}
+
+func newMidSendDeadline() *midSendDeadline {
+	return &midSendDeadline{Context: context.Background(), fired: make(chan struct{})}
+}
+
+func (m *midSendDeadline) hit() {
+	select {
+	case <-m.fired:
+	default:
+		close(m.fired)
+	}
+}
+
+func (m *midSendDeadline) Err() error {
+	select {
+	case <-m.fired:
+		return context.DeadlineExceeded
+	default:
+		return m.Context.Err()
+	}
+}
+
+func credentialService(t *testing.T, userID uuid.UUID, mint func() (string, error), sender senderFunc) *Service {
+	t.Helper()
+	return NewService(Deps{
+		Users: userLookupFunc(func(_ context.Context, id uuid.UUID) (*models.User, error) {
+			if id != userID {
+				t.Fatalf("lookup id = %s", id)
+			}
+			return &models.User{ID: userID, Email: "person@example.com"}, nil
+		}),
+		Tokens:         tokenIssuerFunc{mint: mint, hash: func(string) string { return "stored-hash" }},
+		Resets:         resetWriterFunc(func(context.Context, *models.PasswordResetToken) error { return nil }),
+		Invites:        inviteRefresherFunc(func(context.Context, uuid.UUID, string) (account.InviteMail, error) { return account.InviteMail{}, nil }),
+		Sender:         sender,
+		Dispatch:       func(uuid.UUID, string) error { t.Fatal("send must not enqueue"); return nil },
+		DispatchInvite: func(uuid.UUID) (string, error) { t.Fatal("send must not dispatch"); return "", nil },
+	})
+}
+
+func captureCredentialMailLogs(t *testing.T) *bytes.Buffer {
+	t.Helper()
+	var buf bytes.Buffer
+	previous := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug})))
+	t.Cleanup(func() { slog.SetDefault(previous) })
+	return &buf
+}
+
+func assertUnknownSendWarn(t *testing.T, logs, purpose string, forbidden ...string) {
+	t.Helper()
+	if !strings.Contains(logs, "level=WARN") || !strings.Contains(logs, "credential mail send outcome unknown") || !strings.Contains(logs, "purpose="+purpose) {
+		t.Fatalf("log = %q", logs)
+	}
+	if strings.Contains(logs, "level=ERROR") {
+		t.Fatalf("log used ERROR: %q", logs)
+	}
+	for _, secret := range forbidden {
+		if secret != "" && strings.Contains(logs, secret) {
+			t.Fatalf("log leaked %q in %q", secret, logs)
+		}
+	}
+}
+
 func TestDispatchPayloadIsSubjectAndPurpose(t *testing.T) {
 	subjectID := uuid.New()
 	var gotID uuid.UUID
@@ -234,23 +402,25 @@ func (f inviteRefresherFunc) RefreshInviteForMail(ctx context.Context, inviteID 
 }
 
 type senderFunc struct {
-	invite  func(account.InviteMail)
-	reset   func(to, link string)
-	welcome func(to, fullName string)
+	invite    func(account.InviteMail)
+	reset     func(to, link string)
+	welcome   func(to, fullName string)
+	inviteErr error
+	resetErr  error
 }
 
 func (f senderFunc) SendInvite(ctx context.Context, message account.InviteMail) error {
 	if f.invite != nil {
 		f.invite(message)
 	}
-	return nil
+	return f.inviteErr
 }
 
 func (f senderFunc) SendReset(ctx context.Context, to, resetLink string) error {
 	if f.reset != nil {
 		f.reset(to, resetLink)
 	}
-	return nil
+	return f.resetErr
 }
 
 func (f senderFunc) SendWelcome(_ context.Context, to, fullName string) error {
