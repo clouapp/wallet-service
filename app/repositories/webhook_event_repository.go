@@ -2,7 +2,9 @@ package repositories
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -31,6 +33,28 @@ func (r *WebhookEventRepository) Create(ctx context.Context, event *models.Webho
 		return fmt.Errorf("create webhook event: %w", err)
 	}
 	return nil
+}
+
+// AlreadyDelivered reports whether this event was already sent. A missing row
+// is not delivered, so the worker can still post it. The check is the delivery
+// state: a second SQS delivery of a delivered event must not post again.
+func (r *WebhookEventRepository) AlreadyDelivered(ctx context.Context, eventID string) (bool, error) {
+	id := strings.TrimSpace(eventID)
+	if id == "" {
+		return false, fmt.Errorf("webhook event id is required")
+	}
+	var event models.WebhookEvent
+	err := r.Query(ctx).Where("id = ?", id).First(&event)
+	if err != nil {
+		if errors.Is(db.NotFound(err, ""), models.ErrRepositoryNotFound) {
+			return false, nil
+		}
+		return false, fmt.Errorf("load webhook event: %w", err)
+	}
+	if event.ID == uuid.Nil {
+		return false, nil
+	}
+	return event.DeliveryStatus == models.WebhookDeliveryDelivered, nil
 }
 
 // MarkDelivered sets delivery_status to delivered, records delivered_at, and

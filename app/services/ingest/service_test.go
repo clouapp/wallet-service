@@ -411,6 +411,9 @@ type ingestWebhookEventRepo struct{}
 func (f *ingestWebhookEventRepo) Create(_ context.Context, event *models.WebhookEvent) error {
 	return nil
 }
+func (f *ingestWebhookEventRepo) AlreadyDelivered(context.Context, string) (bool, error) {
+	return false, nil
+}
 func (f *ingestWebhookEventRepo) MarkDelivered(_ context.Context, eventID string) error { return nil }
 func (f *ingestWebhookEventRepo) IncrementAttempt(_ context.Context, eventID, errMsg string) error {
 	return nil

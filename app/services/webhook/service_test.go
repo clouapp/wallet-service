@@ -197,6 +197,61 @@ func TestDeliver_Success(t *testing.T) {
 	}
 }
 
+func TestDeliver_RedeliveryDoesNotSend(t *testing.T) {
+	mocks.TestDB(t)
+	svc := newTestWebhookSvc()
+	ctx := context.Background()
+
+	var posts int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		posts++
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	w := mocks.InsertWallet(t, "eth")
+	tx := mocks.InsertTransaction(t, w.ID, nil, "eth", "deposit", "confirmed", "eth", "100", 50)
+	payload := `{"type":"deposit.confirmed","data":{"amount":"100"}}`
+	eventID := uuid.NewString()
+	facades.Orm().Query().Exec(`INSERT INTO webhook_events (id, transaction_id, event_type, payload, delivery_url, delivery_status, attempts, max_attempts, created_at)
+		VALUES ($1, $2, 'deposit.confirmed', $3, $4, 'pending', 0, 10, NOW())`,
+		eventID, tx.ID, payload, server.URL)
+
+	cfg, err := svc.CreateConfig(ctx, server.URL, "redelivery-secret", []string{"deposit.confirmed"}, nil)
+	if err != nil {
+		t.Fatalf("CreateConfig: %v", err)
+	}
+	msg := types.WebhookMessage{
+		EventID:     eventID,
+		EventType:   types.EventDepositConfirmed,
+		Payload:     payload,
+		DeliveryURL: server.URL,
+		ConfigID:    cfg.ID.String(),
+		Attempt:     1,
+	}
+
+	if err := svc.Deliver(ctx, msg); err != nil {
+		t.Fatalf("first Deliver: %v", err)
+	}
+	if err := svc.Deliver(ctx, msg); err != nil {
+		t.Fatalf("redelivery Deliver: %v", err)
+	}
+	if posts != 1 {
+		t.Fatalf("redelivery posted %d times, want 1", posts)
+	}
+
+	var event models.WebhookEvent
+	if err := facades.Orm().Query().Where("id", eventID).First(&event); err != nil {
+		t.Fatalf("find webhook event: %v", err)
+	}
+	if event.DeliveryStatus != models.WebhookDeliveryDelivered {
+		t.Fatalf("status = %s, want delivered", event.DeliveryStatus)
+	}
+	if event.Attempts != 1 {
+		t.Fatalf("attempts = %d, want 1", event.Attempts)
+	}
+}
+
 func TestDeliver_Failure(t *testing.T) {
 	mocks.TestDB(t)
 	svc := newTestWebhookSvc()

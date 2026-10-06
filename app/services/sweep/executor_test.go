@@ -1061,6 +1061,9 @@ func (f *fakeWebhookEventRepo) Create(_ context.Context, event *models.WebhookEv
 	f.created = append(f.created, event)
 	return nil
 }
+func (f *fakeWebhookEventRepo) AlreadyDelivered(context.Context, string) (bool, error) {
+	return false, nil
+}
 func (f *fakeWebhookEventRepo) MarkDelivered(_ context.Context, eventID string) error { return nil }
 func (f *fakeWebhookEventRepo) IncrementAttempt(_ context.Context, eventID, errMsg string) error {
 	return nil

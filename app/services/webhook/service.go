@@ -34,6 +34,7 @@ type configStore interface {
 // eventStore is the delivery-queue persistence this service uses.
 type eventStore interface {
 	Create(ctx context.Context, event *models.WebhookEvent) error
+	AlreadyDelivered(ctx context.Context, eventID string) (bool, error)
 	MarkDelivered(ctx context.Context, eventID string) error
 	IncrementAttempt(ctx context.Context, eventID, errMsg string) error
 	ExistsForSubject(ctx context.Context, configID uuid.UUID, eventType, subjectID string) (bool, error)
@@ -351,8 +352,20 @@ const (
 // Deliver executes the HTTP delivery. Called by the SQS Lambda worker.
 // The signing secret is loaded from the config id. It is not taken from the
 // queue payload and it is not logged.
+// A redelivery of an event already marked delivered does not post again.
 // Returns error to trigger SQS retry → eventually DLQ after 10 failures.
 func (s *Service) Deliver(ctx context.Context, msg types.WebhookMessage) error {
+	if s == nil || s.webhookEventRepo == nil {
+		return errors.New("webhook event store is required")
+	}
+	delivered, err := s.webhookEventRepo.AlreadyDelivered(ctx, msg.EventID)
+	if err != nil {
+		return err
+	}
+	if delivered {
+		slog.Info("webhook already delivered", "event_id", msg.EventID)
+		return nil
+	}
 	secret, err := s.signingSecret(ctx, msg.ConfigID)
 	if err != nil {
 		return err
