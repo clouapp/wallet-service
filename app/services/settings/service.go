@@ -71,6 +71,7 @@ type Service struct {
 	activity activitylog.Writer
 	admins   platformAdmins
 	accounts accountDirectory
+	testMail PlatformTestMailer
 }
 
 // Deps is everything the account settings service needs. Store, Sealer, and
@@ -117,6 +118,16 @@ func (s *Service) WithAccounts(accounts accountDirectory) *Service {
 		return nil
 	}
 	s.accounts = accounts
+	return s
+}
+
+// WithPlatformTestMailer sets the sender for the platform mail test.
+// A nil sender leaves that route unable to deliver the message.
+func (s *Service) WithPlatformTestMailer(mailer PlatformTestMailer) *Service {
+	if s == nil {
+		return nil
+	}
+	s.testMail = mailer
 	return s
 }
 

@@ -81,11 +81,25 @@ func TestRegisterSendsWelcomeWithoutTheCredentialJob(t *testing.T) {
 }
 
 func TestSettingsTestMailUsesSend(t *testing.T) {
-	source, err := os.ReadFile("../../platform/settings/settings_controller.go")
+	controller, err := os.ReadFile("../../platform/settings/settings_controller.go")
 	if err != nil {
 		t.Fatal(err)
 	}
-	body := functionBody(t, string(source), "func (ctrl *SettingsController) TestMail")
+	handler := functionBody(t, string(controller), "func (ctrl *SettingsController) TestMail")
+	if !strings.Contains(handler, "SendPlatformMailTest(") {
+		t.Fatal("settings test mail must be sent by the settings service")
+	}
+	for _, forbidden := range []string{"Mail()", "SettingsTestMail", ".Queue(", "SendCredentialMailJob", "Dispatch("} {
+		if strings.Contains(handler, forbidden) {
+			t.Fatalf("the settings controller sends mail via %s", forbidden)
+		}
+	}
+
+	source, err := os.ReadFile("../../../../providers/platform_test_mail.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := functionBody(t, string(source), "func (platformTestMailer) Send")
 	if !strings.Contains(body, "Mail().To(") || !strings.Contains(body, ".Send(") || !strings.Contains(body, "SettingsTestMail") {
 		t.Fatal("settings test mail must use Mail().Send")
 	}

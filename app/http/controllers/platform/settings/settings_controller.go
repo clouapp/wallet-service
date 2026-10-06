@@ -10,7 +10,6 @@ import (
 	"github.com/macrowallets/waas/app/http/middleware"
 	"github.com/macrowallets/waas/app/http/requests"
 	"github.com/macrowallets/waas/app/http/responses"
-	"github.com/macrowallets/waas/app/mails"
 	settingssvc "github.com/macrowallets/waas/app/services/settings"
 )
 
@@ -272,7 +271,7 @@ func (ctrl *SettingsController) TestMail(ctx http.Context) http.Response {
 	if resp := requests.Validate(ctx, &req); resp != nil {
 		return resp
 	}
-	err := appfacades.Mail().To([]string{req.To}).Send(&mails.SettingsTestMail{To: req.To})
+	err := ctrl.settings.SendPlatformMailTest(ctx.Context(), req.To)
 	if err != nil {
 		appfacades.Log().Error(mailTestFailedMessage)
 		return responses.Send(ctx, http.StatusBadGateway, http.Json{"error": mailTestFailedMessage})

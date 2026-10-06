@@ -50,4 +50,7 @@ var (
 	// ErrSecretSeal is a stored secret whose seal did not open. The ciphertext
 	// is not returned and the env fallback is not used.
 	ErrSecretSeal = errors.New("settings secret could not be opened")
+	// errPlatformTestMail is a failed settings test send. The transport error
+	// can name the SMTP host and password, so it is not wrapped.
+	errPlatformTestMail = errors.New("the test message was not sent")
 )

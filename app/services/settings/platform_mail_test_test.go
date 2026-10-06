@@ -3,6 +3,7 @@ package settings
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/google/uuid"
@@ -30,6 +31,39 @@ func TestAuthorizePlatformMailTestAllowsAnAdminAndWritesNothing(t *testing.T) {
 	}
 }
 
+func TestSendPlatformMailTestUsesTheSenderAndDropsTheTransportError(t *testing.T) {
+	t.Parallel()
+
+	activity := &countingMailTestActivity{}
+	sender := &recordingTestMailer{err: errors.New("dial smtp.mail-test.invalid password mail-test-smtp-secret")}
+	service := NewService(Deps{Store: newMemoryStore(), Sealer: prefixSealer{}, Cache: nopCache{}, Activity: activity}).
+		WithPlatformTestMailer(sender)
+
+	err := service.SendPlatformMailTest(context.Background(), "mail-test@example.test")
+	if !errors.Is(err, errPlatformTestMail) {
+		t.Fatalf("err = %v", err)
+	}
+	if strings.Contains(err.Error(), "password") || strings.Contains(err.Error(), "smtp.mail-test.invalid") || strings.Contains(err.Error(), "mail-test-smtp-secret") {
+		t.Fatalf("transport detail leaked: %v", err)
+	}
+	if sender.n != 1 || sender.to != "mail-test@example.test" {
+		t.Fatalf("sender = %+v", sender)
+	}
+	if activity.n != 0 {
+		t.Fatalf("activity rows = %d", activity.n)
+	}
+}
+
+func TestSendPlatformMailTestRefusesAMissingSender(t *testing.T) {
+	t.Parallel()
+
+	service := NewService(Deps{Store: newMemoryStore(), Sealer: prefixSealer{}, Cache: nopCache{}, Activity: &countingMailTestActivity{}})
+	err := service.SendPlatformMailTest(context.Background(), "mail-test@example.test")
+	if err == nil {
+		t.Fatal("expected a missing sender to fail")
+	}
+}
+
 func TestAuthorizePlatformMailTestRefusesANonAdmin(t *testing.T) {
 	t.Parallel()
 
@@ -44,6 +78,18 @@ func TestAuthorizePlatformMailTestRefusesANonAdmin(t *testing.T) {
 	if activity.n != 0 {
 		t.Fatalf("activity rows = %d", activity.n)
 	}
+}
+
+type recordingTestMailer struct {
+	to  string
+	err error
+	n   int
+}
+
+func (r *recordingTestMailer) Send(_ context.Context, to string) error {
+	r.n++
+	r.to = to
+	return r.err
 }
 
 type countingMailTestActivity struct {
