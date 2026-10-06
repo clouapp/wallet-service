@@ -11,7 +11,6 @@ import (
 
 	appfacades "github.com/macrowallets/waas/app/facades"
 	"github.com/macrowallets/waas/app/http/responses"
-	"github.com/macrowallets/waas/app/mails"
 	"github.com/macrowallets/waas/app/services/settings"
 	"github.com/macrowallets/waas/tests/feature/support"
 	"github.com/macrowallets/waas/tests/feature/support/testutil"
@@ -37,7 +36,6 @@ func (s *PlatformMailDeliveryTestSuite) SetupTest() {
 }
 
 func (s *PlatformMailDeliveryTestSuite) TearDownTest() {
-	appfacades.SetMailSendObserver(nil)
 	appfacades.RestoreMailBaseline()
 }
 
@@ -97,11 +95,10 @@ func (s *PlatformMailDeliveryTestSuite) TestA_Platform_AdminStoresTheFromHeaderT
 	s.Equal(int64(0), s.count(`SELECT count(*) FROM account_activity WHERE metadata::text LIKE '%Macro%'`))
 
 	var seenAddress, seenName string
-	appfacades.SetMailSendObserver(func() {
+	_ = sendWelcomeObserved(func() {
 		seenAddress = appfacades.Config().GetString("mail.from.address")
 		seenName = appfacades.Config().GetString("mail.from.name")
 	})
-	_ = appfacades.Mail().To([]string{"nobody@example.test"}).Send(&mails.WelcomeMail{To: "nobody@example.test"})
 	if seenAddress != "from-header@example.test" || seenName != "Macro" {
 		s.Fail("the mailer did not read mail_delivery at send time")
 	}
@@ -131,11 +128,10 @@ func (s *PlatformMailDeliveryTestSuite) TestA_Missing_RowKeepsTheEnvFromHeader()
 	envName := appfacades.Config().GetString("mail.from.name")
 
 	var seenAddress, seenName string
-	appfacades.SetMailSendObserver(func() {
+	_ = sendWelcomeObserved(func() {
 		seenAddress = appfacades.Config().GetString("mail.from.address")
 		seenName = appfacades.Config().GetString("mail.from.name")
 	})
-	_ = appfacades.Mail().To([]string{"nobody@example.test"}).Send(&mails.WelcomeMail{To: "nobody@example.test"})
 	if seenAddress != envAddress || seenName != envName {
 		s.Fail("a missing mail_delivery row replaced the env from header")
 	}
@@ -151,11 +147,10 @@ func (s *PlatformMailDeliveryTestSuite) TestA_Failed_ReadKeepsTheEnvFromHeader()
 	defer appfacades.SetMailFromReader(previous)
 
 	var seenAddress, seenName string
-	appfacades.SetMailSendObserver(func() {
+	_ = sendWelcomeObserved(func() {
 		seenAddress = appfacades.Config().GetString("mail.from.address")
 		seenName = appfacades.Config().GetString("mail.from.name")
 	})
-	_ = appfacades.Mail().To([]string{"nobody@example.test"}).Send(&mails.WelcomeMail{To: "nobody@example.test"})
 	if seenAddress != envAddress || seenName != envName {
 		s.Fail("a failed mail_delivery read replaced the env from header")
 	}

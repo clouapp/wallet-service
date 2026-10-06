@@ -315,9 +315,8 @@ func buildVaultContainer(app foundation.Application) (*container.Container, erro
 		Flags: func(ctx context.Context, accountID uuid.UUID) error {
 			return flags.Gate(ctx, accountID, features.FlagSweepEnabled, features.CodeSweepPaused)
 		},
-		GasDefaults:    nil,
-		TokenPricer:    c.PriceService,
-		DustUSDDefault: nil,
+		GasDefaults: nil,
+		TokenPricer: c.PriceService,
 	})
 	c.WithdrawalService = withdraw.NewService(withdraw.Deps{
 		Registry:     c.Registry,

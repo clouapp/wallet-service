@@ -56,14 +56,7 @@ func (s *service) tokenDustUSD(chainEntity *models.Chain) decimal.Decimal {
 	if chainEntity.DustThresholdUSD.Valid {
 		return chainEntity.DustThresholdUSD.Decimal
 	}
-	if s == nil || s.dustUSDDefault == nil || chainEntity.ID == "" {
-		return decimal.Zero
-	}
-	fallback := s.dustUSDDefault(chainEntity.ID)
-	if fallback.IsNegative() {
-		return decimal.Zero
-	}
-	return fallback
+	return decimal.Zero
 }
 
 // dustBaseUnits is ceil(dustUSD ÷ priceUSD × 10^decimals): the fewest base

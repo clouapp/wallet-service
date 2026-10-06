@@ -37,7 +37,7 @@ func (p *SettingsServiceProvider) Register(app foundation.Application) {
 		return settings.NewService(settings.Deps{Store: store, Sealer: settings.CryptSealer{}, Cache: settings.FacadeCache{}, Activity: activityLog}).
 			WithPlatformAdmins(admins).
 			WithAccounts(accounts).
-			WithPlatformTestMailer(platformTestMailer{}), nil
+			WithPlatformTestMailer(NewPlatformTestMailer()), nil
 	})
 	bindMailFacade(app)
 }

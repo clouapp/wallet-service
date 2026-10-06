@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/shopspring/decimal"
 
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/services/chain"
@@ -140,9 +139,6 @@ type service struct {
 	chainRepo   chainReader
 	flags       accountGate
 	gasDefaults map[string]GasReadinessDefault
-	// dustUSDDefault is unused in production. An unset dust_threshold_usd filters
-	// nothing; the environment does not fill it. Tests may inject a substitute.
-	dustUSDDefault func(chainID string) decimal.Decimal
 	// tokenPricer converts USD dust thresholds to token amounts; nil disables token dust filtering.
 	tokenPricer TokenPricer
 
@@ -154,40 +150,38 @@ type service struct {
 // Deps is everything the sweep service needs. A nil field means that
 // dependency is absent.
 type Deps struct {
-	Registry       chainLookup
-	MPC            mpcSigner
-	Secrets        SecretStore
-	Redis          RedisStore
-	Webhook        eventEnqueuer
-	Wallets        walletReader
-	Addresses      addressReader
-	Transactions   transactionWriter
-	SweepLimits    accountSweepLimitSource
-	Chains         chainReader
-	Flags          accountGate
-	GasDefaults    map[string]GasReadinessDefault
-	TokenPricer    TokenPricer
-	DustUSDDefault func(chainID string) decimal.Decimal
+	Registry     chainLookup
+	MPC          mpcSigner
+	Secrets      SecretStore
+	Redis        RedisStore
+	Webhook      eventEnqueuer
+	Wallets      walletReader
+	Addresses    addressReader
+	Transactions transactionWriter
+	SweepLimits  accountSweepLimitSource
+	Chains       chainReader
+	Flags        accountGate
+	GasDefaults  map[string]GasReadinessDefault
+	TokenPricer  TokenPricer
 }
 
 // NewService wires the sweep service from Deps. All concrete methods are
 // implemented in planner.go / executor.go / gas_readiness.go / limits.go.
 func NewService(deps Deps) Service {
 	return &service{
-		registry:       deps.Registry,
-		mpc:            deps.MPC,
-		secrets:        deps.Secrets,
-		rdb:            deps.Redis,
-		webhookSvc:     deps.Webhook,
-		walletRepo:     deps.Wallets,
-		addressRepo:    deps.Addresses,
-		txRepo:         deps.Transactions,
-		sweepLimits:    deps.SweepLimits,
-		chainRepo:      deps.Chains,
-		flags:          deps.Flags,
-		gasDefaults:    cloneGasDefaults(deps.GasDefaults),
-		dustUSDDefault: deps.DustUSDDefault,
-		tokenPricer:    deps.TokenPricer,
+		registry:    deps.Registry,
+		mpc:         deps.MPC,
+		secrets:     deps.Secrets,
+		rdb:         deps.Redis,
+		webhookSvc:  deps.Webhook,
+		walletRepo:  deps.Wallets,
+		addressRepo: deps.Addresses,
+		txRepo:      deps.Transactions,
+		sweepLimits: deps.SweepLimits,
+		chainRepo:   deps.Chains,
+		flags:       deps.Flags,
+		gasDefaults: cloneGasDefaults(deps.GasDefaults),
+		tokenPricer: deps.TokenPricer,
 	}
 }
 

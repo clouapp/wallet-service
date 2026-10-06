@@ -44,18 +44,10 @@ type MailFrom struct {
 // read failed and the env From header stays.
 type MailFromReader func(ctx context.Context) (MailFrom, error)
 
-// MailSender replaces the SMTP dial for one send. The mailer still reads
-// mail_smtp and mail_delivery before the sender runs. Nil restores the dial.
-// The sender runs while the mail lock is held and must not send mail or call
-// back into this package.
-type MailSender func(mailable ...mail.Mailable) error
-
 var (
 	mailMu           sync.Mutex
 	readMailSMTP     MailDialReader
 	readMailFrom     MailFromReader
-	mailSendObserver func()
-	mailSender       MailSender
 	mailBaselineOnce sync.Once
 	mailBaseline     map[string]any
 	mailBaselineSet  bool
@@ -79,31 +71,6 @@ func SetMailFromReader(reader MailFromReader) MailFromReader {
 	previous := readMailFrom
 	readMailFrom = reader
 	return previous
-}
-
-// SetMailSendObserver runs after the per-send settings are applied and before
-// the dial. The observer must not send mail. Nil clears it.
-func SetMailSendObserver(observer func()) {
-	mailMu.Lock()
-	mailSendObserver = observer
-	mailMu.Unlock()
-}
-
-// SetMailSender installs a dial replacement. It returns the previous sender
-// so a test can put it back. Nil restores the SMTP dial.
-func SetMailSender(sender MailSender) MailSender {
-	mailMu.Lock()
-	defer mailMu.Unlock()
-	previous := mailSender
-	mailSender = sender
-	return previous
-}
-
-// MailSenderFunc returns the installed dial replacement. Nil means SMTP.
-func MailSenderFunc() MailSender {
-	mailMu.Lock()
-	defer mailMu.Unlock()
-	return mailSender
 }
 
 // RestoreMailBaseline puts the env mail config back. A send already does
@@ -192,13 +159,6 @@ func WriteMailConfig(cfg map[string]any) {
 // mail lock. GateMailSend already holds it.
 func RestoreMailDocument() {
 	restoreMailBaseline()
-}
-
-// ObserveMailSend runs the send observer. The caller holds the mail lock.
-func ObserveMailSend() {
-	if mailSendObserver != nil {
-		mailSendObserver()
-	}
 }
 
 func restoreMailBaseline() {

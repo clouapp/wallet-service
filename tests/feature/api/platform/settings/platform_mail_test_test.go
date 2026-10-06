@@ -1,6 +1,7 @@
 package settings
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"strings"
@@ -8,13 +9,13 @@ import (
 	"testing"
 
 	"github.com/google/uuid"
-	contractsmail "github.com/goravel/framework/contracts/mail"
 	contractstesting "github.com/goravel/framework/contracts/testing/http"
 	"github.com/goravel/framework/facades"
 
+	"github.com/macrowallets/waas/app/container"
 	appfacades "github.com/macrowallets/waas/app/facades"
 	"github.com/macrowallets/waas/app/http/responses"
-	"github.com/macrowallets/waas/app/mails"
+	"github.com/macrowallets/waas/app/providers"
 	"github.com/macrowallets/waas/app/services/settings"
 	"github.com/macrowallets/waas/tests/feature/support"
 	"github.com/macrowallets/waas/tests/feature/support/testutil"
@@ -46,10 +47,9 @@ func (s *PlatformMailTestSuite) SetupTest() {
 	s.Require().NoError(err)
 	appfacades.RestoreMailBaseline()
 	s.sends = &mailTestCapture{}
-	appfacades.SetMailSender(s.sends.send)
+	container.MustMake[*settings.Service]().WithPlatformTestMailer(s.sends)
 	s.T().Cleanup(func() {
-		appfacades.SetMailSender(nil)
-		appfacades.SetMailSendObserver(nil)
+		container.MustMake[*settings.Service]().WithPlatformTestMailer(providers.NewPlatformTestMailer())
 		appfacades.RestoreMailBaseline()
 	})
 }
@@ -205,14 +205,12 @@ type mailTestCapture struct {
 	fail error
 }
 
-func (c *mailTestCapture) send(mailable ...contractsmail.Mailable) error {
+func (c *mailTestCapture) Send(_ context.Context, to string) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.n++
-	if len(mailable) == 1 {
-		if mail, ok := mailable[0].(*mails.SettingsTestMail); ok && mail != nil && mail.Envelope() != nil {
-			c.to = append([]string{}, mail.Envelope().To...)
-		}
+	if to != "" {
+		c.to = append(c.to, to)
 	}
 	return c.fail
 }

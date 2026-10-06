@@ -86,21 +86,9 @@ func (g Group) SectionName() string {
 	return g.Section
 }
 
-var override []Group
-
 // Registry returns the catalog. Callers must not modify it.
 func Registry() []Group {
-	if override != nil {
-		return override
-	}
 	return catalog()
-}
-
-// UseForTest replaces the catalog until the returned function runs.
-func UseForTest(groups []Group) func() {
-	previous := override
-	override = groups
-	return func() { override = previous }
 }
 
 func catalog() []Group {

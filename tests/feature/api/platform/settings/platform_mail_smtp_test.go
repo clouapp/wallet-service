@@ -13,7 +13,6 @@ import (
 	"github.com/macrowallets/waas/app/container"
 	appfacades "github.com/macrowallets/waas/app/facades"
 	"github.com/macrowallets/waas/app/http/responses"
-	"github.com/macrowallets/waas/app/mails"
 	"github.com/macrowallets/waas/app/services/settings"
 	"github.com/macrowallets/waas/tests/feature/support"
 	"github.com/macrowallets/waas/tests/feature/support/testutil"
@@ -41,7 +40,6 @@ func (s *PlatformMailSMTPTestSuite) SetupTest() {
 }
 
 func (s *PlatformMailSMTPTestSuite) TearDownTest() {
-	appfacades.SetMailSendObserver(nil)
 	appfacades.RestoreMailBaseline()
 }
 
@@ -111,7 +109,7 @@ func (s *PlatformMailSMTPTestSuite) TestA_Platform_AdminStoresASealedPasswordThe
 	}
 
 	var seen appfacades.MailDial
-	appfacades.SetMailSendObserver(func() {
+	_ = sendWelcomeObserved(func() {
 		seen = appfacades.MailDial{
 			Host:       appfacades.Config().GetString("mail.host"),
 			Port:       appfacades.Config().GetInt("mail.port"),
@@ -120,7 +118,6 @@ func (s *PlatformMailSMTPTestSuite) TestA_Platform_AdminStoresASealedPasswordThe
 			Password:   appfacades.Config().GetString("mail.password"),
 		}
 	})
-	_ = appfacades.Mail().To([]string{"nobody@example.test"}).Send(&mails.WelcomeMail{To: "nobody@example.test"})
 	if seen.Host != "127.0.0.1" || seen.Port != 1 || seen.Encryption != "starttls" || seen.Username != "mailer" ||
 		subtle.ConstantTimeCompare([]byte(seen.Password), []byte(mailSMTPFixture)) != 1 {
 		s.Fail("the mailer did not read mail_smtp at send time")
@@ -158,7 +155,7 @@ func (s *PlatformMailSMTPTestSuite) TestA_Missing_RowKeepsTheEnvMailer() {
 	envPassword := appfacades.Config().GetString("mail.mailers.smtp.password")
 
 	var seen appfacades.MailDial
-	appfacades.SetMailSendObserver(func() {
+	_ = sendWelcomeObserved(func() {
 		smtp := mailSMTPMap(appfacades.Config().Get("mail"))
 		seen = appfacades.MailDial{
 			Host:       smtpString(smtp, "host"),
@@ -167,7 +164,6 @@ func (s *PlatformMailSMTPTestSuite) TestA_Missing_RowKeepsTheEnvMailer() {
 			Password:   smtpString(smtp, "password"),
 		}
 	})
-	_ = appfacades.Mail().To([]string{"nobody@example.test"}).Send(&mails.WelcomeMail{To: "nobody@example.test"})
 	if seen.Host != envHost || seen.Port != envPort || seen.Encryption != envEncryption ||
 		subtle.ConstantTimeCompare([]byte(seen.Password), []byte(envPassword)) != 1 {
 		s.Fail("a missing mail_smtp row replaced the env mailer")
@@ -183,10 +179,9 @@ func (s *PlatformMailSMTPTestSuite) TestA_Failed_ReadKeepsTheEnvMailer() {
 	defer appfacades.SetMailSMTPReader(previous)
 
 	var sawHost string
-	appfacades.SetMailSendObserver(func() {
+	_ = sendWelcomeObserved(func() {
 		sawHost = smtpString(mailSMTPMap(appfacades.Config().Get("mail")), "host")
 	})
-	_ = appfacades.Mail().To([]string{"nobody@example.test"}).Send(&mails.WelcomeMail{To: "nobody@example.test"})
 	if sawHost != envHost {
 		s.Fail("a failed mail_smtp read replaced the env mailer")
 	}

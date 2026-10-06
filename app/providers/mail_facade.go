@@ -42,7 +42,6 @@ func bindMailFacade(app foundation.Application) {
 			Baseline: appfacades.MailBaseline,
 			Write:    appfacades.WriteMailConfig,
 			Restore:  appfacades.RestoreMailDocument,
-			Observe:  appfacades.ObserveMailSend,
 			SMTP:     readMailSMTP,
 			From:     readMailFrom,
 		})

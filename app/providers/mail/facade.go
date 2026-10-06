@@ -2,8 +2,6 @@ package mail
 
 import (
 	contractsmail "github.com/goravel/framework/contracts/mail"
-
-	appfacades "github.com/macrowallets/waas/app/facades"
 )
 
 // Facade adapts *Mailer to the framework mail contract. facades.Mail()
@@ -88,20 +86,13 @@ func (f *Facade) Queue(...contractsmail.Mailable) error {
 	return errQueueRefused
 }
 
-// Send implements mail.Mail. The SMTP document is published first. A test
-// sender replaces the dial after mail_smtp and mail_delivery are read.
+// Send implements mail.Mail. The SMTP document is published first, then the
+// inner transport dials.
 func (f *Facade) Send(mailable ...contractsmail.Mailable) error {
-	if f == nil || f.mailer == nil {
-		return errMailerRequired
-	}
-	sender := appfacades.MailSenderFunc()
-	if sender == nil && f.inner == nil {
+	if f == nil || f.mailer == nil || f.inner == nil {
 		return errMailerRequired
 	}
 	return f.mailer.Deliver(func() error {
-		if sender != nil {
-			return sender(mailable...)
-		}
 		return f.inner.Send(mailable...)
 	})
 }

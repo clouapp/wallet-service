@@ -98,11 +98,6 @@ func TestEffective_SweepLimits_FallbackChain(t *testing.T) {
 	if !ok {
 		t.Fatal("account_sweep_limits is not in the registry")
 	}
-	restore := UseForTest([]Group{
-		{Name: child.Inherits, Scope: ScopePlatform},
-		child,
-	})
-	defer restore()
 
 	store := newCountingStore()
 	service := newTestService(store)

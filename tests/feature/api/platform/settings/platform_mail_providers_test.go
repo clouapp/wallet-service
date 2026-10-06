@@ -10,7 +10,6 @@ import (
 	"github.com/goravel/framework/facades"
 
 	appfacades "github.com/macrowallets/waas/app/facades"
-	"github.com/macrowallets/waas/app/mails"
 	"github.com/macrowallets/waas/app/services/settings"
 	"github.com/macrowallets/waas/tests/feature/support"
 	"github.com/macrowallets/waas/tests/feature/support/testutil"
@@ -51,7 +50,6 @@ func (s *PlatformMailProvidersTestSuite) SetupTest() {
 }
 
 func (s *PlatformMailProvidersTestSuite) TearDownTest() {
-	appfacades.SetMailSendObserver(nil)
 	appfacades.RestoreMailBaseline()
 }
 
@@ -232,11 +230,9 @@ func (s *PlatformMailProvidersTestSuite) TestA_Non_AdminIsForbidden() {
 func (s *PlatformMailProvidersTestSuite) assertSMTPHost(envHost string) {
 	s.T().Helper()
 	var seen string
-	appfacades.SetMailSendObserver(func() {
+	_ = sendWelcomeObserved(func() {
 		seen = smtpString(mailSMTPMap(appfacades.Config().Get("mail")), "host")
 	})
-	_ = appfacades.Mail().To([]string{"nobody@example.test"}).Send(&mails.WelcomeMail{To: "nobody@example.test"})
-	appfacades.SetMailSendObserver(nil)
 	if seen != envHost {
 		s.Fail("the mailer left SMTP")
 	}
