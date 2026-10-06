@@ -1,4 +1,5 @@
 // Package support provides shared helpers for controller integration tests.
+// Feature suites need `docker compose up -d postgres redis localstack`.
 //
 // These helpers centralise the three patterns that every external /api/v1
 // controller test needs to repeat:
