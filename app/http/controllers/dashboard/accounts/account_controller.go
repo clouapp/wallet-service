@@ -316,7 +316,7 @@ func (ctrl *AccountsController) AddAccountUser(ctx http.Context) http.Response {
 
 	if err := ctrl.accountService.AddUser(ctx.Context(), account.ID, targetPtr.ID, req.Role, callerID); err != nil {
 		if errors.Is(err, accountsvc.ErrGrantRole) {
-			return responses.Send(ctx, http.StatusForbidden, http.Json{"error": err.Error()})
+			return inviteGrantForbidden(ctx, err)
 		}
 		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to add user"})
 	}

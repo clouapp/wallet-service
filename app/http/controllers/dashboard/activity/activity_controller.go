@@ -128,10 +128,13 @@ func mapActivityError(ctx http.Context, err error) http.Response {
 		return nil
 	}
 	if errors.Is(err, activitysvc.ErrNotFound) {
-		return responses.Send(ctx, http.StatusNotFound, http.Json{"error": err.Error()})
+		return responses.Error(ctx, http.StatusNotFound, responses.CodeNotFound, activitysvc.ErrNotFound.Error())
 	}
-	if errors.Is(err, activitysvc.ErrReadForbidden) || errors.Is(err, activitysvc.ErrPlatformForbidden) {
-		return responses.Send(ctx, http.StatusForbidden, http.Json{"error": err.Error()})
+	if errors.Is(err, activitysvc.ErrReadForbidden) {
+		return responses.Error(ctx, http.StatusForbidden, responses.CodeForbidden, activitysvc.ErrReadForbidden.Error())
+	}
+	if errors.Is(err, activitysvc.ErrPlatformForbidden) {
+		return responses.Error(ctx, http.StatusForbidden, responses.CodeForbidden, activitysvc.ErrPlatformForbidden.Error())
 	}
 	return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "internal_error"})
 }

@@ -43,7 +43,7 @@ func (ctrl *UnspentsController) ListUnspentOutputs(ctx http.Context) http.Respon
 
 	utxos, err := ctrl.utxos.ListSpendable(ctx.Context(), wallet.ID, wallet.Chain)
 	if err != nil {
-		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to list utxos: " + err.Error()})
+		return responses.InternalError(ctx, err)
 	}
 
 	result := make([]UnspentOutput, 0, len(utxos))

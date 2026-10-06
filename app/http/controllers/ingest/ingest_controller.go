@@ -125,8 +125,7 @@ func (ctrl *IngestController) HandleWebhookIngest(ctx http.Context) http.Respons
 	}
 
 	if err := ctrl.ingest.ProcessTransfers(ctx.Context(), chainID, transfers); err != nil {
-		slog.Warn("ingest process", "chain", chainID, "error", err)
-		return responses.Send(ctx, http.StatusBadRequest, http.Json{"error": err.Error()})
+		return responses.InternalError(ctx, err)
 	}
 
 	return responses.Send(ctx, http.StatusOK, http.Json{"ok": true})

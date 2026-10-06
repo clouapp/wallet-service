@@ -2,7 +2,9 @@ package controllers
 
 import (
 	"errors"
+	"fmt"
 	"log/slog"
+	"strings"
 
 	"github.com/google/uuid"
 	"github.com/goravel/framework/contracts/http"
@@ -88,7 +90,18 @@ func feeEstimateErrorResponse(ctx http.Context, wallet *models.Wallet, err error
 	}
 	status := feeEstimateStatus(estimateErr.Kind)
 	if status >= http.StatusInternalServerError {
-		slog.Warn("fee estimate failed", "wallet_id", wallet.ID, "chain", wallet.Chain, "code", estimateErr.Code, "error", err)
+		slog.Warn("fee estimate failed", "wallet_id", wallet.ID, "chain", wallet.Chain, "code", estimateErr.Code, "error_type", errType(err))
 	}
-	return responses.Send(ctx, status, http.Json{"error": estimateErr.Message, "code": estimateErr.Code})
+	message := estimateErr.Message
+	if strings.HasPrefix(message, "unknown asset ") {
+		message = "unknown asset"
+	}
+	return responses.Send(ctx, status, http.Json{"error": message, "code": estimateErr.Code})
+}
+
+func errType(err error) string {
+	if err == nil {
+		return ""
+	}
+	return fmt.Sprintf("%T", err)
 }

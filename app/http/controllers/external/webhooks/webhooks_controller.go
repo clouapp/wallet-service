@@ -2,6 +2,8 @@ package webhooks
 
 import (
 	"errors"
+	"fmt"
+	"log/slog"
 
 	"github.com/google/uuid"
 	"github.com/goravel/framework/contracts/http"
@@ -60,9 +62,8 @@ func (ctrl *WebhooksController) CreateWebhook(ctx http.Context) http.Response {
 
 	cfg, err := ctrl.webhooks.CreateConfig(ctx.Context(), req.URL, req.Secret, req.Events, owner)
 	if err != nil {
-		return responses.Send(ctx, http.StatusInternalServerError, http.Json{
-			"error": err.Error(),
-		})
+		slog.Error("create webhook config failed", "error_type", fmt.Sprintf("%T", err))
+		return responses.Error(ctx, http.StatusInternalServerError, responses.CodeInternal, "internal error")
 	}
 	return responses.Send(ctx, http.StatusCreated, webhookresource.WebhookConfigPtr(cfg))
 }
@@ -86,9 +87,8 @@ func (ctrl *WebhooksController) ListWebhooks(ctx http.Context) http.Response {
 
 	configs, err := ctrl.webhooks.ListAccountConfigs(ctx.Context(), accountID)
 	if err != nil {
-		return responses.Send(ctx, http.StatusInternalServerError, http.Json{
-			"error": err.Error(),
-		})
+		slog.Error("list webhook configs failed", "error_type", fmt.Sprintf("%T", err))
+		return responses.Error(ctx, http.StatusInternalServerError, responses.CodeInternal, "internal error")
 	}
 	return ctx.Response().Success().Json(http.Json{
 		"data": webhookresource.WebhookConfigsFrom(configs),
@@ -136,13 +136,15 @@ func (ctrl *WebhooksController) UpdateWebhook(ctx http.Context) http.Response {
 	case err == nil:
 		return responses.Send(ctx, http.StatusOK, webhookresource.WebhookConfigPtr(cfg))
 	case errors.Is(err, webhook.ErrWebhookConfigNotFound):
-		return responses.Send(ctx, http.StatusNotFound, http.Json{"error": err.Error()})
+		return responses.Error(ctx, http.StatusNotFound, responses.CodeNotFound, webhook.ErrWebhookConfigNotFound.Error())
 	case errors.Is(err, webhook.ErrWebhookOwnershipNotProven):
-		return responses.Send(ctx, http.StatusForbidden, http.Json{"error": err.Error()})
-	case errors.Is(err, webhook.ErrWebhookUpdateEmpty),
-		errors.Is(err, webhook.ErrWebhookEventsEmpty),
-		errors.Is(err, webhook.ErrWebhookUnknownEvent):
-		return responses.Send(ctx, http.StatusBadRequest, http.Json{"error": err.Error()})
+		return responses.Error(ctx, http.StatusForbidden, responses.CodeForbidden, webhook.ErrWebhookOwnershipNotProven.Error())
+	case errors.Is(err, webhook.ErrWebhookUpdateEmpty):
+		return responses.Error(ctx, http.StatusBadRequest, responses.CodeInvalidRequest, webhook.ErrWebhookUpdateEmpty.Error())
+	case errors.Is(err, webhook.ErrWebhookEventsEmpty):
+		return responses.Error(ctx, http.StatusBadRequest, responses.CodeInvalidRequest, webhook.ErrWebhookEventsEmpty.Error())
+	case errors.Is(err, webhook.ErrWebhookUnknownEvent):
+		return responses.Error(ctx, http.StatusBadRequest, responses.CodeInvalidRequest, webhook.ErrWebhookUnknownEvent.Error())
 	default:
 		return controllers.MapInternalError(ctx, err, "update_webhook")
 	}

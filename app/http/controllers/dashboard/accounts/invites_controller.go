@@ -123,7 +123,7 @@ func (ctrl *InvitesController) Create(ctx http.Context) http.Response {
 	issued, err := ctrl.accounts.IssueInvite(ctx.Context(), account.ID, req.Email, req.Role, callerID, base)
 	if err != nil {
 		if errors.Is(err, accountsvc.ErrGrantRole) {
-			return responses.Send(ctx, http.StatusForbidden, http.Json{"error": err.Error()})
+			return inviteGrantForbidden(ctx, err)
 		}
 		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to create invite"})
 	}
@@ -146,7 +146,7 @@ func (ctrl *InvitesController) Resend(ctx http.Context) http.Response {
 	issued, err := ctrl.accounts.ResendInvite(ctx.Context(), account.ID, inviteID, base)
 	if err != nil {
 		if errors.Is(err, accountsvc.ErrInviteInvalid) {
-			return responses.Send(ctx, http.StatusNotFound, http.Json{"error": err.Error()})
+			return responses.Error(ctx, http.StatusNotFound, responses.CodeNotFound, accountsvc.ErrInviteInvalid.Error())
 		}
 		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to resend invite"})
 	}
@@ -164,7 +164,7 @@ func (ctrl *InvitesController) Delete(ctx http.Context) http.Response {
 	}
 	if err := ctrl.accounts.RevokeInvite(ctx.Context(), account.ID, inviteID); err != nil {
 		if errors.Is(err, accountsvc.ErrInviteInvalid) {
-			return responses.Send(ctx, http.StatusNotFound, http.Json{"error": err.Error()})
+			return responses.Error(ctx, http.StatusNotFound, responses.CodeNotFound, accountsvc.ErrInviteInvalid.Error())
 		}
 		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to revoke invite"})
 	}
@@ -248,11 +248,13 @@ func (ctrl *InvitesController) Accept(ctx http.Context) http.Response {
 	if err != nil {
 		switch {
 		case errors.Is(err, accountsvc.ErrInviteInvalid):
-			return responses.Send(ctx, http.StatusNotFound, http.Json{"error": err.Error()})
+			return responses.Error(ctx, http.StatusNotFound, responses.CodeNotFound, accountsvc.ErrInviteInvalid.Error())
 		case errors.Is(err, accountsvc.ErrInviteLoginRequired):
-			return responses.Send(ctx, http.StatusUnauthorized, http.Json{"error": err.Error()})
-		case errors.Is(err, accountsvc.ErrInvitePassword), errors.Is(err, accountsvc.ErrGrantRole):
-			return responses.Send(ctx, http.StatusUnprocessableEntity, http.Json{"error": err.Error()})
+			return responses.Error(ctx, http.StatusUnauthorized, responses.CodeUnauthorized, accountsvc.ErrInviteLoginRequired.Error())
+		case errors.Is(err, accountsvc.ErrInvitePassword):
+			return responses.Error(ctx, http.StatusUnprocessableEntity, responses.CodeUnprocessable, accountsvc.ErrInvitePassword.Error())
+		case errors.Is(err, accountsvc.ErrGrantRole):
+			return responses.Error(ctx, http.StatusUnprocessableEntity, responses.CodeUnprocessable, accountsvc.ErrGrantRole.Error())
 		default:
 			return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to accept invite"})
 		}

@@ -61,6 +61,33 @@ func TestGenerateAddressErrorKeepsTheHandlersOwnMessage(t *testing.T) {
 	}
 }
 
+func TestGenerateAddressErrorHidesAWrappedCause(t *testing.T) {
+	const query = `pq: insert into addresses (label) values ('secret-label')`
+	cause := fmt.Errorf("create address: %w", fmt.Errorf("%s", query))
+	response := &recordingResponse{}
+	generateAddressError(&recordingContext{base: context.Background(), response: response}, cause)
+
+	if response.status != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want 500", response.status)
+	}
+	raw := response.bytes(t)
+	if bytes.Contains(raw, []byte("secret-label")) || bytes.Contains(raw, []byte("insert into")) || bytes.Contains(raw, []byte(cause.Error())) {
+		t.Fatal("response body contains the wrapped cause")
+	}
+	var body struct {
+		Error struct {
+			Code    string `json:"code"`
+			Message string `json:"message"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal(raw, &body); err != nil {
+		t.Fatal("response body is not the error envelope")
+	}
+	if body.Error.Code != responses.CodeInternal || body.Error.Message != "internal error" {
+		t.Fatalf("response envelope = %+v", body.Error)
+	}
+}
+
 type stubProviderError struct{ text string }
 
 func (e stubProviderError) Error() string     { return e.text }

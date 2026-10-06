@@ -203,10 +203,12 @@ func mapSettingsError(ctx http.Context, err error) http.Response {
 		return responses.Send(ctx, http.StatusNotFound, http.Json{"error": "settings group not found"})
 	case errors.Is(err, settingssvc.ErrSectionNotFound):
 		return responses.Send(ctx, http.StatusNotFound, http.Json{"error": "settings section not found"})
-	case errors.Is(err, settingssvc.ErrViewForbidden),
-		errors.Is(err, settingssvc.ErrUpdateForbidden),
-		errors.Is(err, settingssvc.ErrManagedByPlatform):
-		return responses.Send(ctx, http.StatusForbidden, http.Json{"error": err.Error()})
+	case errors.Is(err, settingssvc.ErrViewForbidden):
+		return responses.Error(ctx, http.StatusForbidden, responses.CodeForbidden, settingssvc.ErrViewForbidden.Error())
+	case errors.Is(err, settingssvc.ErrUpdateForbidden):
+		return responses.Error(ctx, http.StatusForbidden, responses.CodeForbidden, settingssvc.ErrUpdateForbidden.Error())
+	case errors.Is(err, settingssvc.ErrManagedByPlatform):
+		return responses.Error(ctx, http.StatusForbidden, responses.CodeForbidden, settingssvc.ErrManagedByPlatform.Error())
 	default:
 		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "internal_error"})
 	}

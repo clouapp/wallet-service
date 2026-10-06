@@ -3,6 +3,7 @@ package controllers
 import (
 	"errors"
 	"log/slog"
+	"strings"
 
 	"github.com/goravel/framework/contracts/http"
 
@@ -79,7 +80,7 @@ func MapSweepError(ctx http.Context, err error) http.Response {
 func MapWithdrawalCreateError(ctx http.Context, err error) http.Response {
 	var refusal *withdraw.CreateRefusal
 	if errors.As(err, &refusal) && refusal != nil {
-		return responses.Send(ctx, createRefusalStatus(refusal.Status), http.Json{"error": refusal.Message})
+		return mapWithdrawalRefusal(ctx, refusal)
 	}
 	var row *withdraw.CreateRowError
 	if errors.As(err, &row) && row != nil {
@@ -94,6 +95,21 @@ func MapWithdrawalCreateError(ctx http.Context, err error) http.Response {
 		return MapInternalError(ctx, cause, endpoint)
 	}
 	return MapInternalError(ctx, err, "create_wallet_withdrawal")
+}
+
+// mapWithdrawalRefusal keeps a caller-fixable refusal on the status the
+// service chose. A chain that is not registered is an outage, and an unknown
+// asset names what the customer typed, so neither of those texts is returned.
+func mapWithdrawalRefusal(ctx http.Context, refusal *withdraw.CreateRefusal) http.Response {
+	message := refusal.Message
+	if strings.HasPrefix(message, "chain not registered:") {
+		slog.Error("create withdrawal chain unavailable")
+		return responses.Error(ctx, http.StatusInternalServerError, responses.CodeInternal, "internal error")
+	}
+	if strings.HasPrefix(message, "unknown asset ") {
+		message = "unknown asset"
+	}
+	return responses.Send(ctx, createRefusalStatus(refusal.Status), http.Json{"error": message})
 }
 
 func createRefusalStatus(status withdraw.CreateStatus) int {

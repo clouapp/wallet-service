@@ -257,16 +257,20 @@ func mapPlatformFeatureError(ctx http.Context, err error) http.Response {
 		return nil
 	}
 	switch {
-	case errors.Is(err, featuressvc.ErrNotFound), errors.Is(err, featuressvc.ErrScopeNotFound), errors.Is(err, featuressvc.ErrAccountNotFound):
-		return responses.Send(ctx, http.StatusNotFound, http.Json{"error": err.Error()})
+	case errors.Is(err, featuressvc.ErrNotFound):
+		return responses.Error(ctx, http.StatusNotFound, responses.CodeNotFound, featuressvc.ErrNotFound.Error())
+	case errors.Is(err, featuressvc.ErrScopeNotFound):
+		return responses.Error(ctx, http.StatusNotFound, responses.CodeNotFound, featuressvc.ErrScopeNotFound.Error())
+	case errors.Is(err, featuressvc.ErrAccountNotFound):
+		return responses.Error(ctx, http.StatusNotFound, responses.CodeNotFound, featuressvc.ErrAccountNotFound.Error())
 	case errors.Is(err, featuressvc.ErrInvalidAccountID):
-		return responses.Send(ctx, http.StatusBadRequest, http.Json{"error": err.Error()})
+		return responses.Error(ctx, http.StatusBadRequest, responses.CodeInvalidRequest, featuressvc.ErrInvalidAccountID.Error())
 	case errors.Is(err, featuressvc.ErrDuplicateWrite):
 		return responses.FieldsFailed(ctx, map[string][]string{
 			"features": {"feature key is duplicated"},
 		})
 	case errors.Is(err, featuressvc.ErrPlatformForbidden):
-		return responses.Send(ctx, http.StatusForbidden, http.Json{"error": err.Error()})
+		return responses.Error(ctx, http.StatusForbidden, responses.CodeForbidden, featuressvc.ErrPlatformForbidden.Error())
 	default:
 		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "internal_error"})
 	}

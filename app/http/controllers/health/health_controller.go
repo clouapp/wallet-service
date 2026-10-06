@@ -2,6 +2,8 @@ package health
 
 import (
 	"context"
+	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/goravel/framework/contracts/http"
@@ -78,7 +80,8 @@ func (c *Controller) depositScannerHealth(parent context.Context) DepositScanner
 	}
 	if err != nil {
 		health.Status = depositScannerUnobservable
-		health.Error = err.Error()
+		health.Error = "pending store unavailable"
+		slog.Error("deposit scanner pending counts", "error_type", fmt.Sprintf("%T", err))
 	}
 	return health
 }

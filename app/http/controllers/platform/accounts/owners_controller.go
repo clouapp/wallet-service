@@ -77,11 +77,11 @@ func mapAttachOwnerError(ctx http.Context, err error) http.Response {
 	}
 	switch {
 	case errors.Is(err, accountsvc.ErrPlatformOwnersForbidden):
-		return responses.Send(ctx, http.StatusForbidden, http.Json{"error": err.Error()})
+		return responses.Error(ctx, http.StatusForbidden, responses.CodeForbidden, accountsvc.ErrPlatformOwnersForbidden.Error())
 	case errors.Is(err, accountsvc.ErrAccountNotFound):
-		return responses.Send(ctx, http.StatusNotFound, http.Json{"error": err.Error()})
+		return responses.Error(ctx, http.StatusNotFound, responses.CodeNotFound, accountsvc.ErrAccountNotFound.Error())
 	case errors.Is(err, accountsvc.ErrPlatformOwnerUserNotFound):
-		return responses.Send(ctx, http.StatusNotFound, http.Json{"error": err.Error()})
+		return responses.Error(ctx, http.StatusNotFound, responses.CodeNotFound, accountsvc.ErrPlatformOwnerUserNotFound.Error())
 	default:
 		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "internal_error"})
 	}

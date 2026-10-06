@@ -299,12 +299,13 @@ func mapPlatformSettingsError(ctx http.Context, err error) http.Response {
 	case errors.Is(err, settingssvc.ErrGroupNotFound):
 		return responses.Send(ctx, http.StatusNotFound, http.Json{"error": "settings group not found"})
 	case errors.Is(err, settingssvc.ErrAccountNotFound):
-		return responses.Send(ctx, http.StatusNotFound, http.Json{"error": err.Error()})
+		return responses.Error(ctx, http.StatusNotFound, responses.CodeNotFound, settingssvc.ErrAccountNotFound.Error())
 	case errors.Is(err, settingssvc.ErrSectionNotFound):
 		return responses.Send(ctx, http.StatusNotFound, http.Json{"error": "settings section not found"})
-	case errors.Is(err, settingssvc.ErrPlatformForbidden),
-		errors.Is(err, settingssvc.ErrPlatformViewForbidden):
-		return responses.Send(ctx, http.StatusForbidden, http.Json{"error": err.Error()})
+	case errors.Is(err, settingssvc.ErrPlatformForbidden):
+		return responses.Error(ctx, http.StatusForbidden, responses.CodeForbidden, settingssvc.ErrPlatformForbidden.Error())
+	case errors.Is(err, settingssvc.ErrPlatformViewForbidden):
+		return responses.Error(ctx, http.StatusForbidden, responses.CodeForbidden, settingssvc.ErrPlatformViewForbidden.Error())
 	default:
 		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "internal_error"})
 	}

@@ -220,15 +220,15 @@ func (ctrl *WithdrawalsController) CreateWalletWithdrawal(ctx http.Context) http
 		}
 		switch {
 		case errors.Is(err, withdraw.ErrInvalidPassphrase):
-			return responses.Send(ctx, http.StatusUnauthorized, http.Json{"error": err.Error()})
+			return responses.Error(ctx, http.StatusUnauthorized, responses.CodeUnauthorized, withdraw.ErrInvalidPassphrase.Error())
 		case errors.Is(err, withdraw.ErrPassphraseTooShort):
-			return responses.Send(ctx, http.StatusBadRequest, http.Json{"error": err.Error()})
+			return responses.Error(ctx, http.StatusBadRequest, responses.CodeInvalidRequest, withdraw.ErrPassphraseTooShort.Error())
 		case errors.Is(err, withdraw.ErrInsufficientFunds):
-			return responses.Send(ctx, http.StatusUnprocessableEntity, http.Json{"error": err.Error()})
+			return responses.Error(ctx, http.StatusUnprocessableEntity, responses.CodeUnprocessable, withdraw.ErrInsufficientFunds.Error())
 		case errors.Is(err, withdraw.ErrConcurrentWithdraw):
-			return responses.Send(ctx, http.StatusConflict, http.Json{"error": err.Error()})
+			return responses.Error(ctx, http.StatusConflict, responses.CodeConflict, withdraw.ErrConcurrentWithdraw.Error())
 		case errors.Is(err, withdraw.ErrTooManyAttempts):
-			return responses.Send(ctx, http.StatusTooManyRequests, http.Json{"error": err.Error()})
+			return responses.Error(ctx, http.StatusTooManyRequests, responses.CodeTooManyRequests, withdraw.ErrTooManyAttempts.Error())
 		default:
 			return controllers.MapInternalError(ctx, err, "create_wallet_withdrawal")
 		}

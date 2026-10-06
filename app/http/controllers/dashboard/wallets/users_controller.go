@@ -2,6 +2,8 @@ package wallets
 
 import (
 	"errors"
+	"fmt"
+	"log/slog"
 
 	"github.com/google/uuid"
 	"github.com/goravel/framework/contracts/http"
@@ -93,7 +95,11 @@ func (ctrl *UsersController) AddWalletUser(ctx http.Context) http.Response {
 	targetID, _ := uuid.Parse(req.UserID)
 	roles, err := models.ParseWalletRoles(req.Roles)
 	if err != nil {
-		return responses.Send(ctx, http.StatusUnprocessableEntity, http.Json{"error": err.Error()})
+		if errors.Is(err, models.ErrInvalidWalletRoles) {
+			return responses.Error(ctx, http.StatusUnprocessableEntity, responses.CodeUnprocessable, models.ErrInvalidWalletRoles.Error())
+		}
+		slog.Error("parse wallet roles failed", "error_type", fmt.Sprintf("%T", err))
+		return responses.Error(ctx, http.StatusInternalServerError, responses.CodeInternal, "internal error")
 	}
 	roleList := models.FormatWalletRoles(roles)
 	if resp := ctrl.requireActiveAccountMember(ctx, wallet, targetID); resp != nil {

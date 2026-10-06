@@ -2,6 +2,7 @@ package wallets
 
 import (
 	"errors"
+	"fmt"
 	"log/slog"
 	"strings"
 
@@ -207,11 +208,7 @@ func (ctrl *WalletsController) CreateWalletAdmin(ctx http.Context) http.Response
 	accountID, _ := requestctx.AccountID(ctx)
 	result, err := ctrl.walletService().CreateWallet(ctx.Context(), accountID, req.Chain, req.Label, req.Passphrase)
 	if err != nil {
-		msg := err.Error()
-		if strings.Contains(msg, "unknown chain") {
-			return responses.Send(ctx, http.StatusBadRequest, http.Json{"error": msg})
-		}
-		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": msg})
+		return createWalletError(ctx, err)
 	}
 
 	return responses.Send(ctx, http.StatusCreated, http.Json{
@@ -239,15 +236,29 @@ func (ctrl *WalletsController) ActivateWallet(ctx http.Context) http.Response {
 	if err != nil {
 		switch {
 		case errors.Is(err, wallet.ErrWalletNotFound):
-			return responses.Send(ctx, http.StatusNotFound, http.Json{"error": err.Error()})
+			return responses.Error(ctx, http.StatusNotFound, responses.CodeNotFound, wallet.ErrWalletNotFound.Error())
 		case errors.Is(err, wallet.ErrWalletAlreadyActive):
-			return responses.Send(ctx, http.StatusConflict, http.Json{"error": err.Error()})
+			return responses.Error(ctx, http.StatusConflict, responses.CodeConflict, wallet.ErrWalletAlreadyActive.Error())
 		case errors.Is(err, wallet.ErrInvalidActivationCode):
-			return responses.Send(ctx, http.StatusBadRequest, http.Json{"error": err.Error()})
+			return responses.Error(ctx, http.StatusBadRequest, responses.CodeInvalidRequest, wallet.ErrInvalidActivationCode.Error())
 		default:
 			return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "internal error"})
 		}
 	}
 
 	return responses.Send(ctx, http.StatusOK, http.Json{"status": "active"})
+}
+
+// createWalletError keeps an unknown chain at 400 without the chain the
+// customer typed. Keygen and share failures can carry key material, so the
+// log keeps the type and the body is internal error.
+func createWalletError(ctx http.Context, err error) http.Response {
+	if err != nil {
+		text := err.Error()
+		if text == "unknown chain" || strings.HasPrefix(text, "unknown chain:") {
+			return responses.Error(ctx, http.StatusBadRequest, responses.CodeInvalidRequest, "unknown chain")
+		}
+	}
+	slog.Error("create wallet failed", "error_type", fmt.Sprintf("%T", err))
+	return responses.Error(ctx, http.StatusInternalServerError, responses.CodeInternal, "internal error")
 }

@@ -3,6 +3,7 @@ package wallets
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"sort"
@@ -95,7 +96,7 @@ func (ctrl *SettingsController) UpdateWalletSettings(ctx http.Context) http.Resp
 
 	body, err := readSettingsBody(ctx)
 	if err != nil {
-		return responses.Send(ctx, http.StatusBadRequest, http.Json{"error": err.Error()})
+		return settingsBodyError(ctx, err)
 	}
 	update, err := walletsettings.Parse(body)
 	if err != nil {
@@ -133,14 +134,19 @@ func (ctrl *SettingsController) settingsAdapterType(ctx http.Context, chainID st
 	return chainEntity.AdapterType, nil
 }
 
+var (
+	errSettingsBodyRequired   = errors.New("request body is required")
+	errSettingsBodyUnreadable = errors.New("request body could not be read")
+)
+
 func readSettingsBody(ctx http.Context) ([]byte, error) {
 	request := ctx.Request().Origin()
 	if request == nil || request.Body == nil {
-		return nil, errors.New("request body is required")
+		return nil, errSettingsBodyRequired
 	}
 	body, err := io.ReadAll(io.LimitReader(request.Body, walletsettings.MaxBodyBytes+1))
 	if err != nil {
-		return nil, errors.New("request body could not be read")
+		return nil, errSettingsBodyUnreadable
 	}
 	request.Body = io.NopCloser(bytes.NewReader(body))
 	return body, nil
@@ -148,13 +154,25 @@ func readSettingsBody(ctx http.Context) ([]byte, error) {
 
 func walletSettingsErrorResponse(ctx http.Context, err error) http.Response {
 	if errors.Is(err, walletsettings.ErrNoFields) {
-		return responses.Send(ctx, http.StatusBadRequest, http.Json{"error": err.Error()})
+		return responses.Error(ctx, http.StatusBadRequest, responses.CodeInvalidRequest, walletsettings.ErrNoFields.Error())
 	}
 	var fieldErr *walletsettings.FieldError
 	if errors.As(err, &fieldErr) {
 		return responses.FieldsFailed(ctx, map[string][]string{fieldErr.Field: {fieldErr.Message}})
 	}
 	return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to update wallet settings"})
+}
+
+func settingsBodyError(ctx http.Context, err error) http.Response {
+	switch {
+	case errors.Is(err, errSettingsBodyRequired):
+		return responses.Error(ctx, http.StatusBadRequest, responses.CodeInvalidRequest, errSettingsBodyRequired.Error())
+	case errors.Is(err, errSettingsBodyUnreadable):
+		return responses.Error(ctx, http.StatusBadRequest, responses.CodeInvalidRequest, errSettingsBodyUnreadable.Error())
+	default:
+		slog.Error("read wallet settings body failed", "error_type", fmt.Sprintf("%T", err))
+		return responses.Error(ctx, http.StatusInternalServerError, responses.CodeInternal, "internal error")
+	}
 }
 
 func auditWalletSettingsChange(ctx http.Context, before, after *models.Wallet, columns map[string]any) {

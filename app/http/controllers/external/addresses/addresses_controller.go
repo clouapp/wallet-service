@@ -89,9 +89,7 @@ func (ctrl *AddressesController) GenerateAddress(ctx http.Context) http.Response
 
 	addr, err := ctrl.walletService().GenerateAddress(ctx.Context(), walletID, req.ExternalUserID, req.Label, req.Metadata, req.Passphrase)
 	if err != nil {
-		return responses.Send(ctx, http.StatusUnprocessableEntity, http.Json{
-			"error": err.Error(),
-		})
+		return controllers.AddressGenerationError(ctx, err)
 	}
 
 	// Refresh Redis address cache for the chain
@@ -146,9 +144,7 @@ func (ctrl *AddressesController) UpdateAddress(ctx http.Context) http.Response {
 
 	addr, err := ctrl.walletService().UpdateAddress(ctx.Context(), addressID, fields)
 	if err != nil {
-		return responses.Send(ctx, http.StatusNotFound, http.Json{
-			"error": err.Error(),
-		})
+		return controllers.AddressUpdateError(ctx, err)
 	}
 
 	return ctx.Response().Success().Json(addressresource.AddressPtr(addr, walletresource.WalletPtr))

@@ -1,6 +1,7 @@
 package users
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 	"unicode/utf8"
@@ -231,7 +232,7 @@ func (ctrl *UsersController) ListMyAccounts(ctx http.Context) http.Response {
 	query.Load(ctx)
 	limit, offset, err := pagination.ParseStrict(query.Limit, query.Offset, myAccountsBounds)
 	if err != nil {
-		return responses.Send(ctx, http.StatusBadRequest, http.Json{"error": err.Error()})
+		return paginationError(ctx, err)
 	}
 
 	search, environment, errMessage := parseMyAccountsFilter(query.Search, query.Environment)
@@ -553,4 +554,15 @@ type TotpSetupSwagger struct {
 
 type ConfirmTotpSwagger struct {
 	Code string `json:"code" example:"123456"`
+}
+
+func paginationError(ctx http.Context, err error) http.Response {
+	switch {
+	case errors.Is(err, pagination.ErrInvalidLimit):
+		return responses.Error(ctx, http.StatusBadRequest, responses.CodeInvalidRequest, pagination.ErrInvalidLimit.Error())
+	case errors.Is(err, pagination.ErrInvalidOffset):
+		return responses.Error(ctx, http.StatusBadRequest, responses.CodeInvalidRequest, pagination.ErrInvalidOffset.Error())
+	default:
+		return responses.InternalError(ctx, err)
+	}
 }

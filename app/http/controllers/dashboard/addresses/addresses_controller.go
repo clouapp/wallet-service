@@ -1,8 +1,6 @@
 package addresses
 
 import (
-	"errors"
-
 	"github.com/goravel/framework/contracts/http"
 
 	"github.com/macrowallets/waas/app/http/controllers"
@@ -99,23 +97,7 @@ func (ctrl *AddressesController) GenerateAddress(ctx http.Context) http.Response
 // The client gets this endpoint's 502. A message the handler already owns
 // stays 422.
 func generateAddressError(ctx http.Context, err error) http.Response {
-	if upstreamProvider(err) {
-		return responses.ProviderError(ctx, err)
-	}
-	return responses.Send(ctx, http.StatusUnprocessableEntity, http.Json{
-		"error": err.Error(),
-	})
-}
-
-// upstreamProviderError is the method AWS API exceptions share. Handlers
-// use it so the provider's own text is recognized without importing the SDK.
-type upstreamProviderError interface {
-	ErrorCode() string
-}
-
-func upstreamProvider(err error) bool {
-	var api upstreamProviderError
-	return errors.As(err, &api)
+	return controllers.AddressGenerationError(ctx, err)
 }
 
 // UpdateAddress godoc
@@ -162,9 +144,7 @@ func (ctrl *AddressesController) UpdateAddress(ctx http.Context) http.Response {
 
 	addr, err := ctrl.walletService().UpdateAddress(ctx.Context(), addressID, fields)
 	if err != nil {
-		return responses.Send(ctx, http.StatusNotFound, http.Json{
-			"error": err.Error(),
-		})
+		return controllers.AddressUpdateError(ctx, err)
 	}
 
 	return ctx.Response().Success().Json(addressresource.AddressPtr(addr, walletresource.WalletPtr))

@@ -104,9 +104,9 @@ func (ctrl *LifecycleController) set(ctx http.Context, status string) http.Respo
 func mapLifecycleError(ctx http.Context, err error) http.Response {
 	switch {
 	case errors.Is(err, accountsvc.ErrPlatformLifecycleForbidden):
-		return responses.Send(ctx, http.StatusForbidden, http.Json{"error": err.Error()})
+		return responses.Error(ctx, http.StatusForbidden, responses.CodeForbidden, accountsvc.ErrPlatformLifecycleForbidden.Error())
 	case errors.Is(err, accountsvc.ErrAccountNotFound):
-		return responses.Send(ctx, http.StatusNotFound, http.Json{"error": err.Error()})
+		return responses.Error(ctx, http.StatusNotFound, responses.CodeNotFound, accountsvc.ErrAccountNotFound.Error())
 	default:
 		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "internal_error"})
 	}

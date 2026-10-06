@@ -63,7 +63,7 @@ func mapListError(ctx http.Context, err error) http.Response {
 		return nil
 	}
 	if errors.Is(err, usersvc.ErrViewForbidden) {
-		return responses.Send(ctx, http.StatusForbidden, http.Json{"error": err.Error()})
+		return responses.Error(ctx, http.StatusForbidden, responses.CodeForbidden, usersvc.ErrViewForbidden.Error())
 	}
 	return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "internal_error"})
 }
@@ -159,7 +159,7 @@ func mapMFAResetError(ctx http.Context, err error) http.Response {
 	case errors.Is(err, usersvc.ErrNotFound):
 		return responses.Send(ctx, http.StatusNotFound, http.Json{"error": "user not found"})
 	case errors.Is(err, usersvc.ErrMFAForbidden):
-		return responses.Send(ctx, http.StatusForbidden, http.Json{"error": err.Error()})
+		return responses.Error(ctx, http.StatusForbidden, responses.CodeForbidden, usersvc.ErrMFAForbidden.Error())
 	default:
 		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "internal_error"})
 	}
@@ -210,8 +210,10 @@ func mapSuspensionError(ctx http.Context, err error) http.Response {
 		return nil
 	}
 	switch {
-	case errors.Is(err, usersvc.ErrPlatformForbidden), errors.Is(err, usersvc.ErrSessionsForbidden):
-		return responses.Send(ctx, http.StatusForbidden, http.Json{"error": err.Error()})
+	case errors.Is(err, usersvc.ErrPlatformForbidden):
+		return responses.Error(ctx, http.StatusForbidden, responses.CodeForbidden, usersvc.ErrPlatformForbidden.Error())
+	case errors.Is(err, usersvc.ErrSessionsForbidden):
+		return responses.Error(ctx, http.StatusForbidden, responses.CodeForbidden, usersvc.ErrSessionsForbidden.Error())
 	case errors.Is(err, usersvc.ErrNotFound):
 		return responses.Send(ctx, http.StatusNotFound, http.Json{"error": "user not found"})
 	default:

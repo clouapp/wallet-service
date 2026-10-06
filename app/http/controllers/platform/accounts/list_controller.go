@@ -61,7 +61,7 @@ func mapListError(ctx http.Context, err error) http.Response {
 		return nil
 	}
 	if errors.Is(err, accountsvc.ErrPlatformViewForbidden) {
-		return responses.Send(ctx, http.StatusForbidden, http.Json{"error": err.Error()})
+		return responses.Error(ctx, http.StatusForbidden, responses.CodeForbidden, accountsvc.ErrPlatformViewForbidden.Error())
 	}
 	return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "internal_error"})
 }

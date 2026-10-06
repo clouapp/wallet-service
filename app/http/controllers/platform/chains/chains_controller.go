@@ -129,7 +129,7 @@ func mapChainRPCError(ctx http.Context, err error) http.Response {
 	case errors.Is(err, chainsvc.ErrNotFound):
 		return responses.Send(ctx, http.StatusNotFound, http.Json{"error": "chain not found"})
 	case errors.Is(err, chainsvc.ErrPlatformForbidden):
-		return responses.Send(ctx, http.StatusForbidden, http.Json{"error": err.Error()})
+		return responses.Error(ctx, http.StatusForbidden, responses.CodeForbidden, chainsvc.ErrPlatformForbidden.Error())
 	default:
 		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "internal_error"})
 	}
@@ -154,7 +154,7 @@ func mapChainThresholdError(ctx http.Context, err error) http.Response {
 	case errors.Is(err, chainsvc.ErrNotFound):
 		return responses.Send(ctx, http.StatusNotFound, http.Json{"error": "chain not found"})
 	case errors.Is(err, chainsvc.ErrPlatformForbidden):
-		return responses.Send(ctx, http.StatusForbidden, http.Json{"error": err.Error()})
+		return responses.Error(ctx, http.StatusForbidden, responses.CodeForbidden, chainsvc.ErrPlatformForbidden.Error())
 	default:
 		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "internal_error"})
 	}
