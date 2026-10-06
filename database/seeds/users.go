@@ -33,11 +33,11 @@ func SeedUsers(ctx context.Context) error {
 			return fmt.Errorf("find user %s: %w", u.id, err)
 		}
 		if existing != nil && existing.ID != uuid.Nil {
-			slog.Info("user already exists, ensuring default account", "email", u.email)
+			slog.Info("user already exists, ensuring default account", "user_id", u.id)
 			if existing.DefaultAccountID == nil || *existing.DefaultAccountID != acmeAccountID {
 				accountID := acmeAccountID
 				if err := repo.UpdateDefaultAccountID(ctx, u.id, &accountID); err != nil {
-					return fmt.Errorf("update user default account %s: %w", u.email, err)
+					return fmt.Errorf("update user default account %s: %w", u.id, err)
 				}
 			}
 			continue
@@ -57,9 +57,9 @@ func SeedUsers(ctx context.Context) error {
 			Status:           "active",
 			DefaultAccountID: &defAcc,
 		}); err != nil {
-			return fmt.Errorf("create user %s: %w", u.email, err)
+			return fmt.Errorf("create user %s: %w", u.id, err)
 		}
-		slog.Info("created user", "email", u.email)
+		slog.Info("created user", "user_id", u.id)
 	}
 	return nil
 }

@@ -45,10 +45,10 @@ func (c *PriceWebSocket) Handle(ctx console.Context) error {
 	bgCtx := context.Background()
 	if c.prices != nil {
 		if err := c.prices.RefreshCryptoPrices(bgCtx); err != nil {
-			ctx.Error("initial crypto refresh failed: " + err.Error())
+			ctx.Error(redactedLine("initial crypto refresh failed: " + err.Error()))
 		}
 		if err := c.prices.RefreshFiatRates(bgCtx); err != nil {
-			ctx.Error("initial fiat refresh failed: " + err.Error())
+			ctx.Error(redactedLine("initial fiat refresh failed: " + err.Error()))
 		}
 	}
 	ctx.Info("initial prices refreshed")

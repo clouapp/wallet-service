@@ -93,8 +93,8 @@ func (c *ScanDeposits) Handle(ctx console.Context) error {
 	case retryPending:
 		result, err := service.ReprocessPending(context.Background(), chainID, true)
 		if err != nil {
-			ctx.Error("pending retry failed: " + err.Error())
-			return fmt.Errorf("retry pending %s blocks: %w", chainID, err)
+			ctx.Error(redactedLine("pending retry failed: " + err.Error()))
+			return fmt.Errorf("retry pending %s blocks: %w", chainID, redactedError(err))
 		}
 		ctx.Info(fmt.Sprintf("pending retry complete: chain=%s retried=%d resolved=%d still_pending=%d", chainID, result.Due, result.Resolved, result.StillPending))
 		if result.StillPending > 0 {
@@ -103,21 +103,21 @@ func (c *ScanDeposits) Handle(ctx console.Context) error {
 	case block > 0:
 		recorded, err := service.ScanBlock(context.Background(), chainID, uint64(block))
 		if err != nil {
-			ctx.Error("block scan failed: " + err.Error())
-			return fmt.Errorf("scan %s block %d: %w", chainID, block, err)
+			ctx.Error(redactedLine("block scan failed: " + err.Error()))
+			return fmt.Errorf("scan %s block %d: %w", chainID, block, redactedError(err))
 		}
 		ctx.Info("block scan complete: chain=" + chainID + " block=" + strconv.FormatInt(block, 10) + " new_deposits=" + strconv.Itoa(recorded))
 	case txHash != "":
 		recorded, err := service.ScanTransaction(context.Background(), chainID, txHash)
 		if err != nil {
-			ctx.Error("transaction scan failed: " + err.Error())
-			return fmt.Errorf("scan %s transaction %s: %w", chainID, txHash, err)
+			ctx.Error(redactedLine("transaction scan failed: " + err.Error()))
+			return fmt.Errorf("scan %s transaction %s: %w", chainID, txHash, redactedError(err))
 		}
 		ctx.Info("transaction scan complete: chain=" + chainID + " tx=" + txHash + " new_deposits=" + strconv.Itoa(recorded))
 	default:
 		if err := service.ScanLatestBlocks(context.Background(), chainID); err != nil {
-			ctx.Error("deposit scan failed: " + err.Error())
-			return fmt.Errorf("scan deposits for %s: %w", chainID, err)
+			ctx.Error(redactedLine("deposit scan failed: " + err.Error()))
+			return fmt.Errorf("scan deposits for %s: %w", chainID, redactedError(err))
 		}
 		ctx.Info("deposit scan complete: chain=" + chainID)
 	}
@@ -132,10 +132,10 @@ func printPendingBlocks(ctx console.Context, service *deposit.Service, chainID s
 	}
 	ctx.Info(fmt.Sprintf("pending blocks: chain=%s count=%d", chainID, len(entries)))
 	for _, entry := range entries {
-		ctx.Line(fmt.Sprintf("block=%d attempts=%d error_class=%s first_failed=%s last_failed=%s next_retry=%s tx=%s error=%q",
+		ctx.Line(redactedLine(fmt.Sprintf("block=%d attempts=%d error_class=%s first_failed=%s last_failed=%s next_retry=%s tx=%s error=%q",
 			entry.Block, entry.Attempts, entry.ErrorClass,
 			entry.FirstFailedAt.Format(time.RFC3339), entry.LastFailedAt.Format(time.RFC3339), entry.NextRetryAt.Format(time.RFC3339),
-			strings.Join(entry.TxHashes, ","), entry.LastError))
+			strings.Join(entry.TxHashes, ","), entry.LastError)))
 	}
 	return nil
 }

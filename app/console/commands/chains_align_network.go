@@ -122,13 +122,13 @@ func refreshAddressCache(ctx console.Context, background context.Context, chainI
 		return
 	}
 	if err := deposits.RefreshAddressCache(background, chainID); err != nil {
-		ctx.Warning(fmt.Sprintf("address cache of %s not refreshed: %s", chainID, err))
+		ctx.Warning(redactedLine(fmt.Sprintf("address cache of %s not refreshed: %s", chainID, err)))
 	}
 }
 
 func failCommand(ctx console.Context, err error) error {
-	ctx.Error(err.Error())
-	return err
+	ctx.Error(redactedLine(err.Error()))
+	return redactedError(err)
 }
 
 func formatNetworkID(id *int64) string {

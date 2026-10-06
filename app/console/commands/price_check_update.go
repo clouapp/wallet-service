@@ -46,7 +46,7 @@ func (c *PriceCheckUpdate) Handle(ctx console.Context) error {
 		ctx.Info(fmt.Sprintf("found %d stale crypto currencies, refreshing...", len(staleCryptos)))
 		if c.prices != nil {
 			if err := c.prices.RefreshCryptoPrices(bgCtx); err != nil {
-				ctx.Error("crypto refresh failed: " + err.Error())
+				ctx.Error(redactedLine("crypto refresh failed: " + err.Error()))
 			}
 		}
 
@@ -74,7 +74,7 @@ func (c *PriceCheckUpdate) Handle(ctx console.Context) error {
 		ctx.Info(fmt.Sprintf("found %d stale fiat currencies, refreshing...", len(staleFiats)))
 		if c.prices != nil {
 			if err := c.prices.RefreshFiatRates(bgCtx); err != nil {
-				ctx.Error("fiat refresh failed: " + err.Error())
+				ctx.Error(redactedLine("fiat refresh failed: " + err.Error()))
 			}
 		}
 	} else {

@@ -106,8 +106,8 @@ func (c *RefreshTx) Handle(ctx console.Context) error {
 		return fmt.Errorf("refresh:tx: balance refresh service is not initialized")
 	}
 	if err := c.balances.RefreshWallet(context.Background(), wallet); err != nil {
-		ctx.Error("refresh failed: " + err.Error())
-		return fmt.Errorf("refresh wallet for tx %s: %w", txHash, err)
+		ctx.Error(redactedLine("refresh failed: " + err.Error()))
+		return fmt.Errorf("refresh wallet for tx %s: %w", txHash, redactedError(err))
 	}
 	ctx.Info("transaction " + txHash + " wallet refreshed successfully")
 	return nil

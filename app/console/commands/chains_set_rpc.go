@@ -112,8 +112,8 @@ func (c *ChainsSetRPC) setRPC(ctx chainRPCConsole, chainID, rawURL string) error
 
 	encURL, err := c.seal(rawURL)
 	if err != nil {
-		ctx.Error("failed to encrypt url: " + err.Error())
-		return fmt.Errorf("encrypt url: %w", err)
+		ctx.Error(redactedLine("failed to encrypt url: " + err.Error()))
+		return fmt.Errorf("encrypt url: %w", redactedError(err))
 	}
 
 	if err := c.chains.UpdateRPCURL(context.Background(), chainID, encURL); err != nil {

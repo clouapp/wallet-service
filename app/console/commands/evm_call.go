@@ -120,7 +120,7 @@ func (c *EVMCall) Handle(ctx console.Context) error {
 	}
 	result, err := service.Broadcast(background, invocation.request, passphrase)
 	if result != nil {
-		ctx.Info("result " + mustJSON(result))
+		ctx.Info(redactedLine("result " + mustJSON(result)))
 	}
 	if err != nil {
 		return failCommand(ctx, err)

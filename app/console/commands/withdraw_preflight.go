@@ -77,8 +77,8 @@ func (c *WithdrawPreflight) Handle(ctx console.Context) error {
 	}
 	output, err := runPreflight(context.Background(), request)
 	if err != nil {
-		ctx.Error("preflight failed: " + err.Error())
-		return err
+		ctx.Error(redactedLine("preflight failed: " + err.Error()))
+		return redactedError(err)
 	}
 	encoded, err := json.Marshal(output)
 	if err != nil {
