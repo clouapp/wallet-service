@@ -39,7 +39,7 @@ type solanaBlockTransaction struct {
 
 // solanaBlockAccounts is getBlock with transactionDetails "accounts": account keys
 // (static and lookup-table loaded, in balance order) and balances, without
-// instructions, which keeps busy blocks well under the RPC body limit.
+// instructions, which keeps busy blocks under solanaRPCMaxResponseBytes.
 type solanaBlockAccounts struct {
 	Blockhash    string                   `json:"blockhash"`
 	BlockTime    *int64                   `json:"blockTime"`

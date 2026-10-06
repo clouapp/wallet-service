@@ -21,8 +21,12 @@ type SolanaLive struct {
 	rpc *RPCClient
 }
 
+// solanaRPCMaxResponseBytes bounds one JSON-RPC answer: getBlock with
+// transactionDetails "accounts" on a busy slot exceeds the 1 MiB default.
+const solanaRPCMaxResponseBytes = 32 << 20
+
 func NewSolanaLive(cfg SolanaConfig) *SolanaLive {
-	return &SolanaLive{cfg: cfg, rpc: NewRPCClient(cfg.RPCURL, "", "")}
+	return &SolanaLive{cfg: cfg, rpc: NewRPCClient(cfg.RPCURL, "", "").WithMaxResponseBytes(solanaRPCMaxResponseBytes)}
 }
 
 func (a *SolanaLive) ID() string                    { return a.cfg.ChainIDStr }

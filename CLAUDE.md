@@ -230,7 +230,11 @@ LTC_TATUM_DATA_API_URL=               # optional, default https://api.tatum.io (
 - Reads (UTXOs, balance, tip, block scan, tx status, fee rate, paid fee) move to the next provider on transport errors, 5xx or rate limits; a provider failing 3 times in a row is skipped for 30 s, doubling up to 5 min. A JSON-RPC "method not found" (-32601) is "unsupported", not a failure.
 - Broadcast sends the same signed bytes (never re-signed) to the primary, then to the next provider only when it was not accepted (transport error, 5xx, rate limit). A definite rejection stops there; "already known" counts as success with the locally computed txid.
 - ElectrumX cannot list a block's transactions (block scans go to Tatum or the primary). Tatum keyless: 5 requests/min, tip, block scan, tx status, fee, paid fee and broadcast, no UTXOs or balance. With `<PREFIX>_FALLBACK_RPC_API_KEY`: the plan's limit (5 req/s on the free plan) on the gateway, and UTXOs/balance from the Data API `GET /v4/data/utxos` (100 credits per call; chains bitcoin, bitcoin-testnet, litecoin, litecoin-testnet; none for BTC testnet4). Every listed UTXO is checked with the gateway's `gettxout` (unspent, ≥ 1 confirmation, same value and address) before it is spent. The key is never logged and is redacted from error bodies (Tatum echoes it in its 401).
-- Bitcoin-family JSON-RPC answers may be up to 32 MiB (a verbose `getblock` is ~7× the block size); other chains keep 1 MiB.
+- Bitcoin-family JSON-RPC answers may be up to 32 MiB (a verbose `getblock` is ~7× the block size).
+
+### RPC response limits
+
+One node answer is read up to a per-chain limit and refused past it with an explicit `response larger than N bytes` error (never truncated): EVM 64 MiB (`evmRPCMaxResponseBytes`; a busy Base Sepolia block with full transactions is ~4.3 MB), Solana 32 MiB (`solanaRPCMaxResponseBytes`), Bitcoin family 32 MiB, TRON HTTP 64 MiB. Other JSON-RPC clients (chain probes, `evmcall`) keep the 1 MiB default.
 
 ### Paid fees
 
