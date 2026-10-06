@@ -1,4 +1,4 @@
-package chain
+package mpc
 
 import (
 	"crypto/ed25519"
@@ -9,20 +9,24 @@ import (
 	"filippo.io/edwards25519"
 )
 
-const (
-	ed25519ScalarSize = 32
-	// ed25519ScalarNonceDomain separates the nonce prefix hash from any other use of
-	// the scalar; changing it changes every future signature, never their validity.
-	ed25519ScalarNonceDomain = "macro-wallets/ed25519-scalar-nonce/v1"
-)
+// ed25519ScalarNonceDomain separates the nonce prefix hash from any other use of
+// the scalar; changing it changes every future signature, never their validity.
+const ed25519ScalarNonceDomain = "macro-wallets/ed25519-scalar-nonce/v1"
+
+// SignEd25519WithScalar signs message with a raw Ed25519 scalar. Genesis keys
+// stay raw scalars: there is no seed to expand, so this is not SignEd25519Seed.
+// scalarBigEndian is 32 bytes big-endian and must be a canonical non-zero scalar
+// whose public point equals publicKey. The caller zeros the scalar. Errors do
+// not include it. The signature is verified before it is returned.
+func SignEd25519WithScalar(scalarBigEndian, publicKey, message []byte) ([]byte, error) {
+	return signEd25519WithScalar(scalarBigEndian, publicKey, message)
+}
 
 // signEd25519WithScalar returns an RFC 8032 Ed25519 signature of message for a key
 // known only as its scalar a (A = a·B), which is what MPC reconstruction yields; there
 // is no seed to expand, so ed25519.NewKeyFromSeed cannot be used. The nonce is
 // deterministic like RFC 8032: r = SHA-512(prefix || message) with
-// prefix = SHA-512(domain || a)[32:]. scalarBigEndian is 32 bytes big-endian and must
-// be a canonical non-zero scalar whose public point equals publicKey. The signature
-// is verified before it is returned.
+// prefix = SHA-512(domain || a)[32:].
 func signEd25519WithScalar(scalarBigEndian, publicKey, message []byte) ([]byte, error) {
 	if len(scalarBigEndian) != ed25519ScalarSize {
 		return nil, fmt.Errorf("ed25519 scalar must be %d bytes, got %d", ed25519ScalarSize, len(scalarBigEndian))
@@ -94,16 +98,4 @@ func signEd25519WithScalar(scalarBigEndian, publicKey, message []byte) ([]byte, 
 		return nil, fmt.Errorf("ed25519 scalar signature failed verification")
 	}
 	return signature, nil
-}
-
-// SignEd25519WithScalar signs with a raw scalar. Sweep uses it for Solana genesis
-// keys, which stay raw scalars. The adapter only assembles the signed transaction.
-func SignEd25519WithScalar(scalarBigEndian, publicKey, message []byte) ([]byte, error) {
-	return signEd25519WithScalar(scalarBigEndian, publicKey, message)
-}
-
-func zeroBytes(b []byte) {
-	for i := range b {
-		b[i] = 0
-	}
 }

@@ -1,4 +1,4 @@
-package chain
+package mpc
 
 import (
 	"bytes"
@@ -11,7 +11,7 @@ import (
 )
 
 // scalarKeyPair returns an ed25519 public key and its scalar in big-endian form,
-// the same shape MPC reconstruction yields.
+// the same shape MPC reconstruction yields. It is not a SLIP-0010 seed.
 func scalarKeyPair(t *testing.T) (publicKey, scalarBigEndian []byte) {
 	t.Helper()
 	seed := make([]byte, ed25519.SeedSize)

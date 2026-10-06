@@ -155,7 +155,7 @@ Como recuperar fundos do endereço genesis:
 
 1. **Pela plataforma (recomendado)**: enquanto a plataforma e as shares existirem, faça um
    saque/sweep a partir do endereço base. O backend assina com esse mesmo escalar
-   (` + "`app/services/chain/ed25519_scalar.go`" + `, ` + "`signEd25519WithScalar`" + `).
+   (` + "`app/services/mpc`" + `, ` + "`SignEd25519WithScalar`" + `).
 2. **Offline, com uma biblioteca que assine com escalar** (sem seed): uma assinatura Ed25519
    válida é ` + "`R = r·B`" + `, ` + "`S = r + SHA-512(R ‖ A ‖ msg)·a mod L`" + `, com ` + "`r`" + `
    secreto e único por mensagem. Em Go, ` + "`filippo.io/edwards25519`" + ` faz isso (é o que o

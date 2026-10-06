@@ -9,7 +9,6 @@ import (
 
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/services/addressing"
-	"github.com/macrowallets/waas/app/services/chain"
 	mpcpkg "github.com/macrowallets/waas/app/services/mpc"
 	"github.com/macrowallets/waas/pkg/types"
 )
@@ -54,7 +53,7 @@ func (s *service) signEd25519Genesis(ctx context.Context, adapter types.Chain, k
 	if subtle.ConstantTimeCompare(feePayer, publicKey) != 1 {
 		return nil, fmt.Errorf("sol sign: fee payer is not the signing key")
 	}
-	signature, err := chain.SignEd25519WithScalar(scalar, publicKey, message)
+	signature, err := mpcpkg.SignEd25519WithScalar(scalar, publicKey, message)
 	if err != nil {
 		return nil, fmt.Errorf("sol sign: %w", err)
 	}

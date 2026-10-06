@@ -12,7 +12,7 @@ import (
 	"github.com/gagliardetto/solana-go"
 	"github.com/gagliardetto/solana-go/programs/system"
 
-	"github.com/macrowallets/waas/app/services/chain"
+	"github.com/macrowallets/waas/app/services/mpc"
 	"github.com/macrowallets/waas/pkg/types"
 )
 
@@ -58,7 +58,7 @@ func TestSignTransactionWithScalar_SignsSolanaTransfer(t *testing.T) {
 	if !bytes.Equal(feePayer, publicKey) {
 		t.Fatal("fee payer is not the signing key")
 	}
-	signature, err := chain.SignEd25519WithScalar(scalar, publicKey, content)
+	signature, err := mpc.SignEd25519WithScalar(scalar, publicKey, content)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -98,7 +98,7 @@ func TestSignTransactionWithScalar_RejectsForeignFeePayer(t *testing.T) {
 	if bytes.Equal(feePayer, publicKey) {
 		t.Fatal("expected a foreign fee payer")
 	}
-	signature, err := chain.SignEd25519WithScalar(scalar, publicKey, content)
+	signature, err := mpc.SignEd25519WithScalar(scalar, publicKey, content)
 	if err != nil {
 		t.Fatal(err)
 	}
