@@ -25,9 +25,9 @@ import (
 )
 
 // SeedPassphrase is the fixed passphrase protecting every seed wallet's share_A.
-// It is printed in the post-seed banner so a developer can operate the seeded
-// wallets end-to-end (generate address, withdraw, sweep) without rerunning the
-// MPC ceremony. Kept long enough to satisfy the >=12-char service policy.
+// The value stays in this package for the seed ceremony and is never written to
+// a log or the post-seed banner. Kept long enough to satisfy the >=12-char
+// service policy.
 const SeedPassphrase = "macro-seed-pass-2026"
 
 // seedWalletSpec describes one demo wallet. curve is derived from chain but kept

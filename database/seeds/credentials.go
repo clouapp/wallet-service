@@ -18,8 +18,7 @@ func PrintCredentials() {
 	fmt.Println("  Accounts: Acme Corp (prod) · Acme Corp (Test) — paired, default = prod")
 	fmt.Println("  Wallets: ETH · BTC · Polygon · SOL (prod) · Sepolia · Bitcoin testnet · Amoy · Solana devnet (test)")
 	fmt.Println()
-	fmt.Println("  MPC passphrase for every seeded wallet:")
-	fmt.Println("    " + SeedPassphrase)
+	slog.Info("seeded wallets share one MPC passphrase")
 	fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	fmt.Println()
 }
