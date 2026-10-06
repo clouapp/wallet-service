@@ -7,11 +7,19 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	bitcoinchain "github.com/macrowallets/waas/app/adapters/chain/bitcoin"
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/services/chain"
 	"github.com/macrowallets/waas/tests/mocks"
 )
+
+// networkFlagChain is the chain port with only the testnet flag the wallet
+// service reads. Address bytes come from the addressing package.
+type networkFlagChain struct {
+	*mocks.MockChain
+	testnet bool
+}
+
+func (c *networkFlagChain) IsTestnet() bool { return c.testnet }
 
 const derivePubKeyHex = "0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798"
 
@@ -20,9 +28,9 @@ func TestBtcRecordOnTestnetDerivesTb1Addresses(t *testing.T) {
 	require.NoError(t, err)
 
 	testnetRegistry := chain.NewRegistry()
-	testnetRegistry.RegisterChain(bitcoinchain.NewBitcoinLive(bitcoinchain.BitcoinConfig{ChainIDStr: models.ChainBTC, IsTestnet: true}))
+	testnetRegistry.RegisterChain(&networkFlagChain{MockChain: mocks.NewMockChain(models.ChainBTC), testnet: true})
 	mainnetRegistry := chain.NewRegistry()
-	mainnetRegistry.RegisterChain(bitcoinchain.NewBitcoinLive(bitcoinchain.BitcoinConfig{ChainIDStr: models.ChainBTC}))
+	mainnetRegistry.RegisterChain(&networkFlagChain{MockChain: mocks.NewMockChain(models.ChainBTC)})
 
 	onTestnet, err := newTestService(t, testnetRegistry).deriveChainAddress(models.ChainBTC, pub)
 	require.NoError(t, err)

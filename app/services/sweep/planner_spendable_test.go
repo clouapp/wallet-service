@@ -2,19 +2,12 @@ package sweep
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
-	"encoding/json"
 	"errors"
-	"fmt"
 	"math/big"
-	"net/http"
-	"net/http/httptest"
 	"testing"
 
 	"github.com/google/uuid"
 
-	bitcoinchain "github.com/macrowallets/waas/app/adapters/chain/bitcoin"
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/services/chain"
 	"github.com/macrowallets/waas/pkg/types"
@@ -34,7 +27,7 @@ const evmNativeAmount = 1_000_000_000_000_000 // 0.001
 func evmNativePlanner(t *testing.T, balance *big.Int, withChild bool) (*service, *evmGasFixture, models.Address) {
 	t.Helper()
 	fixture := newEVMGasFixture(t)
-	fixture.node.NativeBalanceHex = "0x" + balance.Text(16)
+	fixture.adapter.nativeBalance = new(big.Int).Set(balance)
 	svc := fixture.plannerService()
 	child := models.Address{ID: uuid.New(), WalletID: fixture.wallet.ID, Address: gasPlanDestination}
 	if withChild {
@@ -128,51 +121,111 @@ func btcPlannerFee(inputs int) int64 {
 	return (halves + 1) / 2 * btcPlannerSatPerVByte
 }
 
-// fakeBitcoindChain is a real BitcoinLive over a fake bitcoind that answers
-// listunspent by address and minconf, and estimatesmartfee at 2 sat/vB.
-func fakeBitcoindChain(t *testing.T, utxos map[string][]fakeUTXO) *bitcoinchain.BitcoinLive {
-	t.Helper()
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		var req struct {
-			ID     uint64            `json:"id"`
-			Method string            `json:"method"`
-			Params []json.RawMessage `json:"params"`
-		}
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			t.Errorf("decode rpc: %v", err)
-			return
-		}
-		var result interface{}
-		switch req.Method {
-		case "estimatesmartfee":
-			result = map[string]interface{}{"feerate": float64(btcPlannerSatPerVByte) / 100_000, "blocks": 3}
-		case "listunspent":
-			var minconf int
-			var addresses []string
-			_ = json.Unmarshal(req.Params[0], &minconf)
-			_ = json.Unmarshal(req.Params[2], &addresses)
-			unspent := make([]map[string]interface{}, 0)
-			for i, u := range utxos[addresses[0]] {
-				if u.confirmations < minconf {
-					continue
-				}
-				txid := sha256.Sum256([]byte(fmt.Sprintf("%s/%d", addresses[0], i)))
-				unspent = append(unspent, map[string]interface{}{
-					"txid": hex.EncodeToString(txid[:]),
-					"vout": i, "amount": float64(u.sats) / 1e8, "confirmations": u.confirmations,
-				})
-			}
-			result = unspent
-		default:
-			t.Errorf("unexpected rpc %s", req.Method)
-		}
-		_ = json.NewEncoder(w).Encode(map[string]interface{}{"jsonrpc": "2.0", "id": req.ID, "result": result})
-	}))
-	t.Cleanup(srv.Close)
-	return bitcoinchain.NewBitcoinLive(bitcoinchain.BitcoinConfig{ChainIDStr: models.ChainBTC, NativeSymbol: models.NativeBTC, NativeDecimal: 8, RPCURL: srv.URL, IsTestnet: true})
+// btcVSize is ceil(10.5 + 68*inputs + 31*outputs), the size the fee tests expect
+// the port to report. The live client's coin selection is not constructed here.
+func btcVSize(inputs, outputs int) int64 {
+	halves := int64(21 + 136*inputs + 62*outputs)
+	return (halves + 1) / 2
 }
 
-func btcPlanner(t *testing.T, utxos map[string][]fakeUTXO, children ...string) (*service, uuid.UUID, *bitcoinchain.BitcoinLive) {
+// btcPlanPort reports confirmed funds and fee quotes per address. Unconfirmed
+// outputs stay in GetBalance and out of SpendableFunds.
+type btcPlanPort struct {
+	*mocks.MockChain
+	utxos map[string][]fakeUTXO
+}
+
+func (p *btcPlanPort) confirmed(address string) (sats int64, inputs int) {
+	for _, utxo := range p.utxos[address] {
+		if utxo.confirmations > 0 {
+			sats += utxo.sats
+			inputs++
+		}
+	}
+	return sats, inputs
+}
+
+func (p *btcPlanPort) GetBalance(_ context.Context, address string) (*types.Balance, error) {
+	var sats int64
+	for _, utxo := range p.utxos[address] {
+		sats += utxo.sats
+	}
+	return &types.Balance{Address: address, Asset: models.NativeBTC, Amount: big.NewInt(sats), Decimals: 8}, nil
+}
+
+func (p *btcPlanPort) SpendableFunds(_ context.Context, address string) (chain.SpendableFunds, error) {
+	sats, inputs := p.confirmed(address)
+	fee := int64(0)
+	if inputs > 0 {
+		fee = btcPlannerFee(inputs)
+		if fee > sats {
+			fee = sats
+		}
+	}
+	return chain.SpendableFunds{Balance: big.NewInt(sats), MaxTransferFee: big.NewInt(fee)}, nil
+}
+
+func (p *btcPlanPort) QuoteSweepFee(_ context.Context, from string) (chain.BitcoinFeeQuote, error) {
+	_, inputs := p.confirmed(from)
+	if inputs == 0 {
+		inputs = 1
+	}
+	vsize := btcVSize(inputs, 1)
+	return chain.BitcoinFeeQuote{
+		Fee: vsize * btcPlannerSatPerVByte, Inputs: inputs, Outputs: 1, VSize: vsize,
+		MilliSatPerVByte: btcPlannerSatPerVByte * 1000, Covered: true,
+	}, nil
+}
+
+func (p *btcPlanPort) QuoteTransferFee(_ context.Context, from string, amount *big.Int, pending []*big.Int) (chain.BitcoinFeeQuote, error) {
+	sats, inputs := p.confirmed(from)
+	available := sats
+	for _, extra := range pending {
+		if extra != nil {
+			available += extra.Int64()
+		}
+	}
+	quoteInputs := inputs + len(pending)
+	if quoteInputs == 0 {
+		quoteInputs = 1
+	}
+	fee := btcVSize(quoteInputs, 2) * btcPlannerSatPerVByte
+	covered := amount != nil && inputs > 0 && available >= amount.Int64()+fee
+	if !covered {
+		quoteInputs = 1
+		fee = btcVSize(1, 2) * btcPlannerSatPerVByte
+	}
+	return chain.BitcoinFeeQuote{
+		Fee: fee, Inputs: quoteInputs, Outputs: 2, VSize: btcVSize(quoteInputs, 2),
+		MilliSatPerVByte: btcPlannerSatPerVByte * 1000, Covered: covered,
+	}, nil
+}
+
+func (p *btcPlanPort) BuildTransfer(_ context.Context, req types.TransferRequest) (*types.UnsignedTx, error) {
+	sats, inputs := p.confirmed(req.From)
+	fee := int64(0)
+	if inputs > 0 {
+		fee = btcPlannerFee(inputs)
+	}
+	if req.Amount != nil && sats < req.Amount.Int64()+fee {
+		return nil, errors.New("insufficient confirmed funds")
+	}
+	return &types.UnsignedTx{ChainID: models.ChainBTC}, nil
+}
+
+func (p *btcPlanPort) BuildSweep(_ context.Context, req types.SweepRequest) ([]types.UnsignedTx, error) {
+	sats, inputs := p.confirmed(req.From)
+	fee := int64(0)
+	if inputs > 0 {
+		fee = btcPlannerFee(inputs)
+	}
+	if req.Amount != nil && sats < req.Amount.Int64()+fee {
+		return nil, errors.New("insufficient confirmed funds")
+	}
+	return []types.UnsignedTx{{ChainID: models.ChainBTC}}, nil
+}
+
+func btcPlanner(t *testing.T, utxos map[string][]fakeUTXO, children ...string) (*service, uuid.UUID, *btcPlanPort) {
 	t.Helper()
 	walletID := uuid.New()
 	base := models.Address{ID: uuid.New(), WalletID: walletID, Address: "tb1qbase"}
@@ -180,7 +233,10 @@ func btcPlanner(t *testing.T, utxos map[string][]fakeUTXO, children ...string) (
 	for _, child := range children {
 		addresses = append(addresses, models.Address{ID: uuid.New(), WalletID: walletID, Address: child})
 	}
-	adapter := fakeBitcoindChain(t, utxos)
+	mockChain := mocks.NewMockChain(models.ChainBTC)
+	mockChain.NativeAssetVal = models.NativeBTC
+	mockChain.NativeDecimalsVal = 8
+	adapter := &btcPlanPort{MockChain: mockChain, utxos: utxos}
 	registry := chain.NewRegistry()
 	registry.RegisterChain(adapter)
 	return &service{

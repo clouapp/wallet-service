@@ -2,25 +2,18 @@ package providers_test
 
 import (
 	"context"
-	"crypto/hmac"
-	"crypto/sha256"
-	"encoding/hex"
 	"strings"
 	"testing"
 
-	quicknodeingest "github.com/macrowallets/waas/app/adapters/ingest/quicknode"
 	"github.com/macrowallets/waas/app/services/ingest/providers"
 )
 
 func TestVerifyInbound_EmptyResolvedQuickNodeKeyRejectsTheSignature(t *testing.T) {
 	logs := captureAlchemyIngestLogs(t)
-	body := []byte(`[{"txid":"x"}]`)
-	provider := quicknodeingest.NewQuickNodeProvider(verifyBootKey).UseKeySource(func(context.Context) string { return "" })
-	mac := hmac.New(sha256.New, []byte(verifySigning))
-	mac.Write(body)
+	provider := inboundKeyPort{source: func(context.Context) string { return "" }}
 	headers := providers.Header{}
-	headers.Set("X-QN-Signature", hex.EncodeToString(mac.Sum(nil)))
-	valid, err := provider.VerifyInbound(headers, body, verifySigning)
+	headers.Set("X-QN-Signature", "ignored-by-the-port")
+	valid, err := provider.VerifyInbound(headers, []byte(`[{"txid":"x"}]`), verifySigning)
 	if err == nil || valid {
 		t.Fatal("an empty resolved key accepted the webhook")
 	}

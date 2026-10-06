@@ -4,28 +4,18 @@ import (
 	"bytes"
 	"context"
 	"crypto/rand"
-	"encoding/binary"
 	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"math/big"
-	"net/http"
-	"net/http/httptest"
 	"strings"
 	"sync"
 	"testing"
 
 	"github.com/btcsuite/btcd/btcec/v2"
-	btcecdsa "github.com/btcsuite/btcd/btcec/v2/ecdsa"
-	"github.com/btcsuite/btcd/btcutil"
-	"github.com/btcsuite/btcd/chaincfg"
-	"github.com/btcsuite/btcd/chaincfg/chainhash"
-	"github.com/btcsuite/btcd/wire"
 	"github.com/ethereum/go-ethereum/common"
 	gethtypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/google/uuid"
 
-	bitcoinchain "github.com/macrowallets/waas/app/adapters/chain/bitcoin"
 	evmchain "github.com/macrowallets/waas/app/adapters/chain/evm"
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/services/addressing"
@@ -218,7 +208,12 @@ func evmNativeTransfer(t *testing.T, nonce uint64, to string, amount *big.Int) *
 
 func newEVMSigningChain(t *testing.T, broadcasts *[]*types.SignedTx) *evmSigningChain {
 	t.Helper()
-	mockChain := sweepMockChain(models.ChainETH, models.NativeETH)
+	return newEVMSigningChainOn(t, broadcasts, models.ChainETH, sepoliaNetworkID)
+}
+
+func newEVMSigningChainOn(t *testing.T, broadcasts *[]*types.SignedTx, chainID string, networkID int64) *evmSigningChain {
+	t.Helper()
+	mockChain := sweepMockChain(chainID, models.NativeETH)
 	mockChain.GetBalanceFn = func(ctx context.Context, address string) (*types.Balance, error) {
 		return &types.Balance{Address: address, Asset: models.NativeETH, Amount: big.NewInt(2_000_000_000_000_000)}, nil
 	}
@@ -232,7 +227,7 @@ func newEVMSigningChain(t *testing.T, broadcasts *[]*types.SignedTx) *evmSigning
 		*broadcasts = append(*broadcasts, signed)
 		return signed.TxHash, nil
 	}
-	live := evmchain.NewEVMLive(evmchain.EVMConfig{ChainIDStr: models.ChainETH, NativeSymbol: models.NativeETH, NetworkID: sepoliaNetworkID})
+	live := evmchain.NewEVMLive(evmchain.EVMConfig{ChainIDStr: chainID, NativeSymbol: models.NativeETH, NetworkID: networkID})
 	return &evmSigningChain{MockChain: mockChain, live: live}
 }
 
@@ -411,149 +406,64 @@ func TestExecutePlan_BaseRowOfAnotherWalletIsNotSigned(t *testing.T) {
 // Bitcoin P2WPKH: the reconstructed wallet key plus the BIP-32 tweak.
 // ---------------------------------------------------------------------------
 
-// bitcoinSigningChain is the production testnet Bitcoin adapter backed by a fake
-// Esplora that knows one confirmed UTXO; broadcasts are recorded, never sent.
+// bitcoinSigningChain is the Bitcoin port the sweep service signs through.
+// Digests and assembly are recorded; the live client is not constructed.
 type bitcoinSigningChain struct {
-	*bitcoinchain.BitcoinLive
+	*mocks.MockChain
 	broadcasts *[]*types.SignedTx
+	publicKeys [][]byte
+	built      []types.TransferRequest
 }
 
-func (c *bitcoinSigningChain) BroadcastTransaction(ctx context.Context, signed *types.SignedTx) (string, error) {
-	*c.broadcasts = append(*c.broadcasts, signed)
-	return signed.TxHash, nil
+func (c *bitcoinSigningChain) IsTestnet() bool { return true }
+
+func (c *bitcoinSigningChain) BitcoinP2WPKHDigests(*types.UnsignedTx) ([][]byte, error) {
+	return [][]byte{bytes.Repeat([]byte{0x11}, 32)}, nil
 }
 
-// fakeEsplora serves a single confirmed UTXO for every address the test funds.
-type fakeEsplora struct {
-	mu     sync.Mutex
-	funded map[string]int64
-}
-
-func (f *fakeEsplora) fund(address string, sats int64) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	f.funded[address] = sats
-}
-
-func (f *fakeEsplora) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	const utxoSuffix = "/utxo"
-	_, rest, found := strings.Cut(r.URL.Path, "/address/")
-	if !found || !strings.HasSuffix(rest, utxoSuffix) {
-		http.NotFound(w, r)
-		return
+func (c *bitcoinSigningChain) AssembleBitcoinP2WPKH(_ *types.UnsignedTx, _, publicKeys [][]byte) (*types.SignedTx, error) {
+	for _, key := range publicKeys {
+		c.publicKeys = append(c.publicKeys, append([]byte(nil), key...))
 	}
-	address := strings.TrimSuffix(rest, utxoSuffix)
-	f.mu.Lock()
-	sats, ok := f.funded[address]
-	f.mu.Unlock()
-	utxos := []map[string]interface{}{}
-	if ok {
-		utxos = append(utxos, map[string]interface{}{
-			"txid": btcE2EFundingTxID, "vout": 0, "value": sats,
-			"status": map[string]interface{}{"confirmed": true, "block_height": 154745},
-		})
-	}
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(utxos)
+	return &types.SignedTx{ChainID: models.ChainBTC, TxHash: strings.Repeat("ab", 32), RawBytes: []byte{0x02}}, nil
 }
 
-func newBitcoinSigningChain(t *testing.T, broadcasts *[]*types.SignedTx) (*bitcoinSigningChain, *fakeEsplora) {
+func newBitcoinSigningChain(t *testing.T, broadcasts *[]*types.SignedTx) *bitcoinSigningChain {
 	t.Helper()
-	esplora := &fakeEsplora{funded: map[string]int64{}}
-	server := httptest.NewServer(esplora)
-	t.Cleanup(server.Close)
-	live := bitcoinchain.NewBitcoinLive(bitcoinchain.BitcoinConfig{
-		ChainIDStr:   models.ChainBTC,
-		NativeSymbol: models.NativeBTC,
-		// The path keeps the adapter on its Esplora REST client.
-		RPCURL:         server.URL + "/mempool.space/testnet4/api",
-		Network:        "bitcoin-testnet4",
-		IsTestnet:      true,
-		Confirmations:  1,
-		FeeRateDefault: 2,
-	})
-	return &bitcoinSigningChain{BitcoinLive: live, broadcasts: broadcasts}, esplora
+	mockChain := sweepMockChain(models.ChainBTC, models.NativeBTC)
+	adapter := &bitcoinSigningChain{MockChain: mockChain, broadcasts: broadcasts}
+	mockChain.BuildTransferFn = func(_ context.Context, req types.TransferRequest) (*types.UnsignedTx, error) {
+		adapter.built = append(adapter.built, req)
+		return &types.UnsignedTx{ChainID: models.ChainBTC, RawBytes: []byte("btc-transfer")}, nil
+	}
+	mockChain.BroadcastTransactionFn = func(_ context.Context, signed *types.SignedTx) (string, error) {
+		*broadcasts = append(*broadcasts, signed)
+		return signed.TxHash, nil
+	}
+	return adapter
 }
 
-// assertBitcoinSpendValid checks every input the way a node evaluates a P2WPKH
-// spend (OP_DUP OP_HASH160 <program> OP_EQUALVERIFY OP_CHECKSIG), with a BIP-143
-// digest computed here from the spec rather than by the production code.
-func assertBitcoinSpendValid(t *testing.T, signed *types.SignedTx, from string, value int64) *wire.MsgTx {
+func assertBitcoinSignedAs(t *testing.T, adapter *bitcoinSigningChain, address string, amount int64) {
 	t.Helper()
-	var transaction wire.MsgTx
-	if err := transaction.Deserialize(bytes.NewReader(signed.RawBytes)); err != nil {
-		t.Fatal(err)
+	if len(adapter.publicKeys) != 1 {
+		t.Fatalf("assembled %d keys, want the one signing key", len(adapter.publicKeys))
 	}
-	address, err := btcutil.DecodeAddress(from, &chaincfg.TestNet3Params)
-	if err != nil {
-		t.Fatal(err)
+	if got := mustAddress(t, models.ChainBTC, true, adapter.publicKeys[0]); got != address {
+		t.Fatalf("assembled key derives %s, want %s", got, address)
 	}
-	program := address.ScriptAddress()
-	for index, input := range transaction.TxIn {
-		if len(input.Witness) != 2 {
-			t.Fatalf("input %d witness has %d items", index, len(input.Witness))
-		}
-		signatureWithHashType, publicKeyBytes := input.Witness[0], input.Witness[1]
-		if !bytes.Equal(btcutil.Hash160(publicKeyBytes), program) {
-			t.Fatalf("input %d witness key does not hash to %s", index, from)
-		}
-		publicKey, err := btcec.ParsePubKey(publicKeyBytes)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if signatureWithHashType[len(signatureWithHashType)-1] != 0x01 {
-			t.Fatalf("input %d is not SIGHASH_ALL", index)
-		}
-		signature, err := btcecdsa.ParseDERSignature(signatureWithHashType[:len(signatureWithHashType)-1])
-		if err != nil {
-			t.Fatal(err)
-		}
-		if !signature.Verify(specBIP143Digest(&transaction, index, program, value), publicKey) {
-			t.Fatalf("input %d signature does not verify as a spend from %s", index, from)
-		}
+	if len(adapter.built) != 1 || adapter.built[0].Amount.Int64() != amount || adapter.built[0].From != address {
+		t.Fatalf("built transfers %+v, want %d sats from %s", adapter.built, amount, address)
 	}
-	return &transaction
-}
-
-// specBIP143Digest is the BIP-143 SIGHASH_ALL digest for a P2WPKH input.
-func specBIP143Digest(transaction *wire.MsgTx, index int, program []byte, value int64) []byte {
-	var prevouts, sequences, outputs bytes.Buffer
-	for _, input := range transaction.TxIn {
-		prevouts.Write(input.PreviousOutPoint.Hash[:])
-		_ = binary.Write(&prevouts, binary.LittleEndian, input.PreviousOutPoint.Index)
-		_ = binary.Write(&sequences, binary.LittleEndian, input.Sequence)
-	}
-	for _, output := range transaction.TxOut {
-		_ = binary.Write(&outputs, binary.LittleEndian, output.Value)
-		_ = wire.WriteVarBytes(&outputs, 0, output.PkScript)
-	}
-	scriptCode := append(append([]byte{0x19, 0x76, 0xa9, 0x14}, program...), 0x88, 0xac)
-
-	var preimage bytes.Buffer
-	_ = binary.Write(&preimage, binary.LittleEndian, transaction.Version)
-	preimage.Write(chainhash.DoubleHashB(prevouts.Bytes()))
-	preimage.Write(chainhash.DoubleHashB(sequences.Bytes()))
-	spent := transaction.TxIn[index]
-	preimage.Write(spent.PreviousOutPoint.Hash[:])
-	_ = binary.Write(&preimage, binary.LittleEndian, spent.PreviousOutPoint.Index)
-	preimage.Write(scriptCode)
-	_ = binary.Write(&preimage, binary.LittleEndian, value)
-	_ = binary.Write(&preimage, binary.LittleEndian, spent.Sequence)
-	preimage.Write(chainhash.DoubleHashB(outputs.Bytes()))
-	_ = binary.Write(&preimage, binary.LittleEndian, transaction.LockTime)
-	_ = binary.Write(&preimage, binary.LittleEndian, uint32(0x01))
-	return chainhash.DoubleHashB(preimage.Bytes())
 }
 
 func TestExecutePlan_BitcoinChildSpendsAsTheChildAddress(t *testing.T) {
 	var broadcasts []*types.SignedTx
-	adapter, esplora := newBitcoinSigningChain(t, &broadcasts)
+	adapter := newBitcoinSigningChain(t, &broadcasts)
 	fixture := newSecp256k1WalletFixture(t, adapter, btcE2EChildIndex)
 	child := fixture.child
 	if !strings.HasPrefix(child.Address, addressing.BtcHRPTestnet+"1") {
 		t.Fatalf("testnet child address %s", child.Address)
 	}
-	esplora.fund(child.Address, btcE2EFundingSats)
 	plan := &Plan{WalletID: fixture.wallet.ID, Chain: models.ChainBTC, Asset: models.NativeBTC,
 		Amount: big.NewInt(btcE2EWithdrawSats), Strategy: StrategyDirectFromChild, SourceAddress: &child}
 
@@ -563,18 +473,14 @@ func TestExecutePlan_BitcoinChildSpendsAsTheChildAddress(t *testing.T) {
 	if len(broadcasts) != 1 {
 		t.Fatalf("broadcasts %d", len(broadcasts))
 	}
-	transaction := assertBitcoinSpendValid(t, broadcasts[0], child.Address, btcE2EFundingSats)
-	if transaction.TxOut[0].Value != btcE2EWithdrawSats {
-		t.Fatalf("payment output %d sats", transaction.TxOut[0].Value)
-	}
+	assertBitcoinSignedAs(t, adapter, child.Address, btcE2EWithdrawSats)
 }
 
 func TestExecutePlan_BitcoinBaseStillSpendsAsTheWalletAddress(t *testing.T) {
 	var broadcasts []*types.SignedTx
-	adapter, esplora := newBitcoinSigningChain(t, &broadcasts)
+	adapter := newBitcoinSigningChain(t, &broadcasts)
 	fixture := newSecp256k1WalletFixture(t, adapter, btcE2EChildIndex)
 	base := *fixture.wallet.DepositAddress
-	esplora.fund(base.Address, btcE2EFundingSats)
 	plan := &Plan{WalletID: fixture.wallet.ID, Chain: models.ChainBTC, Asset: models.NativeBTC,
 		Amount: big.NewInt(btcE2EWithdrawSats), Strategy: StrategyDirectFromBase, SourceAddress: &base}
 
@@ -584,16 +490,15 @@ func TestExecutePlan_BitcoinBaseStillSpendsAsTheWalletAddress(t *testing.T) {
 	if len(broadcasts) != 1 {
 		t.Fatalf("broadcasts %d", len(broadcasts))
 	}
-	assertBitcoinSpendValid(t, broadcasts[0], base.Address, btcE2EFundingSats)
+	assertBitcoinSignedAs(t, adapter, base.Address, btcE2EWithdrawSats)
 }
 
 func TestExecutePlan_BitcoinChildRowWithWrongIndexIsNotSigned(t *testing.T) {
 	var broadcasts []*types.SignedTx
-	adapter, esplora := newBitcoinSigningChain(t, &broadcasts)
+	adapter := newBitcoinSigningChain(t, &broadcasts)
 	fixture := newSecp256k1WalletFixture(t, adapter, btcE2EChildIndex)
 	child := fixture.child
 	child.DerivationIndex--
-	esplora.fund(child.Address, btcE2EFundingSats)
 	plan := &Plan{WalletID: fixture.wallet.ID, Chain: models.ChainBTC, Asset: models.NativeBTC,
 		Amount: big.NewInt(btcE2EWithdrawSats), Strategy: StrategyDirectFromChild, SourceAddress: &child}
 
@@ -608,7 +513,7 @@ func TestExecutePlan_BitcoinChildRowWithWrongIndexIsNotSigned(t *testing.T) {
 
 func TestExecutePlan_BitcoinSharesOfAnotherWalletAreRejected(t *testing.T) {
 	var broadcasts []*types.SignedTx
-	adapter, esplora := newBitcoinSigningChain(t, &broadcasts)
+	adapter := newBitcoinSigningChain(t, &broadcasts)
 	fixture := newSecp256k1WalletFixture(t, adapter, btcE2EChildIndex)
 	impostor, err := btcec.NewPrivateKey()
 	if err != nil {
@@ -618,7 +523,6 @@ func TestExecutePlan_BitcoinSharesOfAnotherWalletAreRejected(t *testing.T) {
 	base := *fixture.wallet.DepositAddress
 	base.Address = mustAddress(t, models.ChainBTC, true, impostor.PubKey().SerializeCompressed())
 	fixture.wallet.DepositAddress = &base
-	esplora.fund(base.Address, btcE2EFundingSats)
 	plan := &Plan{WalletID: fixture.wallet.ID, Chain: models.ChainBTC, Asset: models.NativeBTC,
 		Amount: big.NewInt(btcE2EWithdrawSats), Strategy: StrategyDirectFromBase, SourceAddress: &base}
 

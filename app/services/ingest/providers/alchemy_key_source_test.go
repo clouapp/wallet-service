@@ -13,7 +13,6 @@ import (
 
 	"github.com/google/uuid"
 
-	alchemyingest "github.com/macrowallets/waas/app/adapters/ingest/alchemy"
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/services/ingest/providers"
 	"github.com/macrowallets/waas/app/services/settings"
@@ -35,10 +34,10 @@ func TestVerifyInbound_EnabledGroupSuppliesTheOpenedKey(t *testing.T) {
 		},
 	}}, Sealer: ingestPrefixSealer{}, Cache: nil, Activity: ingestDiscardActivity{}})
 	var seen string
-	provider := alchemyingest.NewAlchemyProvider(verifyBootKey).UseKeySource(func(ctx context.Context) string {
+	provider := inboundKeyPort{source: func(ctx context.Context) string {
 		seen = rows.IngestProviderKey(ctx, "alchemy", verifyEnvKey)
 		return seen
-	})
+	}}
 
 	body := []byte(`{"event":"test"}`)
 	headers := providers.Header{}
@@ -56,7 +55,7 @@ func TestVerifyInbound_EnabledGroupSuppliesTheOpenedKey(t *testing.T) {
 func TestVerifyInbound_EmptyResolvedAlchemyKeyRejectsTheSignature(t *testing.T) {
 	logs := captureAlchemyIngestLogs(t)
 	body := []byte(`{"event":"test"}`)
-	provider := alchemyingest.NewAlchemyProvider(verifyBootKey).UseKeySource(func(context.Context) string { return "" })
+	provider := inboundKeyPort{source: func(context.Context) string { return "" }}
 	headers := providers.Header{}
 	headers.Set("X-Alchemy-Signature", openedAlchemySignature(body, verifySigning))
 	valid, err := provider.VerifyInbound(headers, body, verifySigning)
@@ -67,6 +66,19 @@ func TestVerifyInbound_EmptyResolvedAlchemyKeyRejectsTheSignature(t *testing.T) 
 		t.Fatal("the verify error carried a credential")
 	}
 	requireAlchemyIngestLogsOmit(t, logs.String(), verifyOpenedKey, verifyEnvKey, verifyBootKey, verifySigning, "enc:v1:")
+}
+
+// inboundKeyPort is the ingest port. It consults the key source and refuses a
+// blank credential; signature bytes stay with the provider adapter.
+type inboundKeyPort struct {
+	source providers.KeySource
+}
+
+func (p inboundKeyPort) VerifyInbound(providers.Header, []byte, string) (bool, error) {
+	if err := providers.GateInboundCredential(context.Background(), p.source); err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 func openedAlchemySignature(body []byte, secret string) string {

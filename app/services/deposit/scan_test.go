@@ -656,7 +656,7 @@ func TestSameTxHash(t *testing.T) {
 
 func TestScanTransaction_SolanaSignatureFromRecordedDevnetBlock(t *testing.T) {
 	mocks.TestDB(t)
-	adapter := solanaFixtureRPC(t)
+	adapter := solanaFixtureChain(t)
 	registry := chain.NewRegistry()
 	registry.RegisterChain(adapter)
 	wallet := mocks.InsertWallet(t, models.ChainSOL)

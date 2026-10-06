@@ -5,17 +5,15 @@ import (
 	"strings"
 	"testing"
 
-	heliusingest "github.com/macrowallets/waas/app/adapters/ingest/helius"
 	"github.com/macrowallets/waas/app/services/ingest/providers"
 )
 
 func TestVerifyInbound_EmptyResolvedHeliusKeyRejectsTheSignature(t *testing.T) {
 	logs := captureAlchemyIngestLogs(t)
-	body := []byte(`[{"signature":"abc"}]`)
-	provider := heliusingest.NewHeliusProvider(verifyBootKey).UseKeySource(func(context.Context) string { return "" })
+	provider := inboundKeyPort{source: func(context.Context) string { return "" }}
 	headers := providers.Header{}
 	headers.Set("Authorization", verifySigning)
-	valid, err := provider.VerifyInbound(headers, body, verifySigning)
+	valid, err := provider.VerifyInbound(headers, []byte(`[{"signature":"abc"}]`), verifySigning)
 	if err == nil || valid {
 		t.Fatal("an empty resolved key accepted the webhook")
 	}

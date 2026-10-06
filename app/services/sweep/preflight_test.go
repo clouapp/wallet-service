@@ -163,11 +163,10 @@ func TestPreflightConsolidation_UnknownWalletFails(t *testing.T) {
 
 func TestPreflightWithdrawal_BitcoinBaseSpendIsSignedAndNotBroadcast(t *testing.T) {
 	var broadcasts []*types.SignedTx
-	adapter, esplora := newBitcoinSigningChain(t, &broadcasts)
+	adapter := newBitcoinSigningChain(t, &broadcasts)
 	fixture := newSecp256k1WalletFixture(t, adapter, btcE2EChildIndex)
 	svc, txRepo := preflightService(t, fixture, adapter)
 	base := *fixture.wallet.DepositAddress
-	esplora.fund(base.Address, btcE2EFundingSats)
 	plan := &Plan{WalletID: fixture.wallet.ID, Chain: models.ChainBTC, Asset: models.NativeBTC,
 		Amount: big.NewInt(btcE2EWithdrawSats), Strategy: StrategyDirectFromBase, SourceAddress: &base}
 

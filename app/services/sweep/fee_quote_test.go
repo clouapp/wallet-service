@@ -2,21 +2,18 @@ package sweep
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
-	"io"
+	"fmt"
 	"math/big"
-	"net/http"
-	"net/http/httptest"
 	"strings"
 	"testing"
 
 	"github.com/google/uuid"
 
-	solanachain "github.com/macrowallets/waas/app/adapters/chain/solana"
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/services/chain"
 	"github.com/macrowallets/waas/pkg/types"
+	"github.com/macrowallets/waas/tests/mocks"
 )
 
 const quoteRecipientEVM = "0x00000000000000000000000000000000000000aa"
@@ -88,7 +85,7 @@ func TestQuote_RejectsNonPositiveAmounts(t *testing.T) {
 // EVM ERC-20 (USDC on Polygon: the fee is in the native coin)
 // ---------------------------------------------------------------------------
 
-// erc20QuoteFee is FakeEVMNode's 79012 gas estimate padded by 25% at 2 gwei.
+// erc20QuoteFee is the port's token gas limit (98_765) at 2 gwei.
 var erc20QuoteFee = big.NewInt(98_765 * 2_000_000_000)
 
 func TestQuoteERC20_MatchesTheBuiltTransactionAndThePlan(t *testing.T) {
@@ -127,10 +124,12 @@ func TestQuoteERC20_WithoutRecipientSimulatesTheProbe(t *testing.T) {
 	if !q.RecipientIsProbe || q.Fee.Cmp(erc20QuoteFee) != 0 {
 		t.Fatalf("quote %+v", q)
 	}
-	probe := strings.ToLower(strings.TrimPrefix(chain.EVMFeeProbeRecipient(), "0x"))
-	calls := fixture.node.CallsTo("eth_estimateGas")
-	if len(calls) == 0 || !strings.Contains(strings.ToLower(string(calls[len(calls)-1].Params[0])), probe) {
-		t.Fatalf("the token transfer must be simulated to the probe %s: %+v", probe, calls)
+	if len(fixture.adapter.estimates) == 0 {
+		t.Fatal("the token transfer was not sized")
+	}
+	last := fixture.adapter.estimates[len(fixture.adapter.estimates)-1]
+	if !strings.EqualFold(last.To, chain.EVMFeeProbeRecipient()) {
+		t.Fatalf("the token transfer must be sized to the probe %s, got %s", chain.EVMFeeProbeRecipient(), last.To)
 	}
 }
 
@@ -144,16 +143,14 @@ func TestQuoteERC20_UnfundedAmountIsSimulatedAtTheBaseBalance(t *testing.T) {
 		t.Fatalf("quote %+v", q)
 	}
 	requireBigInt(t, "quoted amount", q.Amount, 30_000_000)
-	calls := fixture.node.CallsTo("eth_estimateGas")
-	cappedAmountWord := strings.Repeat("0", 64-len(big.NewInt(20_000_000).Text(16))) + big.NewInt(20_000_000).Text(16)
-	if !strings.Contains(string(calls[len(calls)-1].Params[0]), cappedAmountWord) {
-		t.Fatalf("the simulation must transfer the 20 USDC the base holds: %s", calls[len(calls)-1].Params[0])
+	if len(fixture.adapter.estimates) == 0 || fixture.adapter.estimates[len(fixture.adapter.estimates)-1].Amount.Cmp(big.NewInt(20_000_000)) != 0 {
+		t.Fatal("the simulation must transfer the 20 USDC the base holds")
 	}
 }
 
 func TestQuoteERC20_NoTokenBalanceCannotBeSimulated(t *testing.T) {
 	fixture := newEVMGasFixture(t)
-	fixture.node.TokenBalanceHex = "0x0"
+	fixture.adapter.tokenBalance = big.NewInt(0)
 	svc := fixture.plannerService()
 
 	_, err := svc.QuoteWithdrawalFee(context.Background(), FeeQuoteRequest{WalletID: fixture.wallet.ID, Asset: gasPlanAsset, Amount: big.NewInt(1_000_000), ToAddress: gasPlanDestination})
@@ -164,7 +161,7 @@ func TestQuoteERC20_NoTokenBalanceCannotBeSimulated(t *testing.T) {
 
 func TestQuoteERC20_RevertingTransferFailsWithoutAGuess(t *testing.T) {
 	fixture := newEVMGasFixture(t)
-	fixture.node.EstimateGasError = "execution reverted: blacklisted"
+	fixture.adapter.estimateErr = fmt.Errorf("%w: execution reverted: blacklisted", chain.ErrGasEstimateFailed)
 	svc := fixture.plannerService()
 
 	_, err := svc.QuoteWithdrawalFee(context.Background(), FeeQuoteRequest{WalletID: fixture.wallet.ID, Asset: gasPlanAsset, Amount: big.NewInt(1_000_000), ToAddress: gasPlanDestination})
@@ -175,7 +172,7 @@ func TestQuoteERC20_RevertingTransferFailsWithoutAGuess(t *testing.T) {
 
 func TestQuoteERC20_UnusableGasPriceIsUnavailable(t *testing.T) {
 	fixture := newEVMGasFixture(t)
-	fixture.node.GasPriceHex = "0x0"
+	fixture.adapter.gasPrice = big.NewInt(0)
 	svc := fixture.plannerService()
 
 	_, err := svc.QuoteWithdrawalFee(context.Background(), FeeQuoteRequest{WalletID: fixture.wallet.ID, Asset: gasPlanAsset, Amount: big.NewInt(1_000_000), ToAddress: gasPlanDestination})
@@ -302,32 +299,47 @@ const (
 
 var quoteSOLUSDC = types.Token{Symbol: models.SymbolUSDC, Contract: models.USDCMintSOL, Decimals: 6, ChainID: models.ChainSOL}
 
-func solanaQuotePlanner(t *testing.T, results map[string]string) (*service, uuid.UUID) {
+// solQuotePort is the Solana fee port. Rent and signature numbers are what the
+// port reports; the live RPC client stays in the adapter tests.
+type solQuotePort struct {
+	*mocks.MockChain
+	rent     *big.Int
+	creation *big.Int
+	quoteErr error
+}
+
+func (p *solQuotePort) NativeTransferReserve(context.Context) (*big.Int, *big.Int, error) {
+	rent := p.rent
+	if rent == nil {
+		rent = big.NewInt(0)
+	}
+	return big.NewInt(quoteSOLLamports), new(big.Int).Set(rent), nil
+}
+
+func (p *solQuotePort) QuoteTransferFee(_ context.Context, req types.TransferRequest) (chain.SolanaFeeQuote, error) {
+	if p.quoteErr != nil {
+		return chain.SolanaFeeQuote{}, p.quoteErr
+	}
+	creation := big.NewInt(0)
+	if req.Token != nil && p.creation != nil {
+		creation = new(big.Int).Set(p.creation)
+	}
+	return chain.SolanaFeeQuote{Signatures: 1, LamportsPerSignature: quoteSOLLamports, AccountCreationLamports: creation}, nil
+}
+
+func solanaQuotePlanner(t *testing.T, nativeBalance, tokenBalance int64, port *solQuotePort) (*service, uuid.UUID) {
 	t.Helper()
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		body, _ := io.ReadAll(r.Body)
-		var req struct {
-			Method string            `json:"method"`
-			Params []json.RawMessage `json:"params"`
-		}
-		_ = json.Unmarshal(body, &req)
-		key := req.Method
-		if req.Method == "getMinimumBalanceForRentExemption" {
-			key += ":" + string(req.Params[0])
-		}
-		result, ok := results[key]
-		if !ok {
-			t.Errorf("unexpected solana rpc %s", key)
-			http.Error(w, "unexpected", http.StatusInternalServerError)
-			return
-		}
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = io.WriteString(w, `{"jsonrpc":"2.0","id":1,`+result+`}`)
-	}))
-	t.Cleanup(srv.Close)
-	adapter := solanachain.NewSolanaLive(solanachain.SolanaConfig{ChainIDStr: models.ChainSOL, NativeSymbol: models.NativeSOL, RPCURL: srv.URL})
+	mockChain := mocks.NewMockChain(models.ChainSOL)
+	mockChain.NativeAssetVal = models.NativeSOL
+	mockChain.GetBalanceFn = func(_ context.Context, address string) (*types.Balance, error) {
+		return &types.Balance{Address: address, Asset: models.NativeSOL, Amount: big.NewInt(nativeBalance)}, nil
+	}
+	mockChain.GetTokenBalanceFn = func(_ context.Context, address string, token types.Token) (*types.Balance, error) {
+		return &types.Balance{Address: address, Asset: token.Symbol, Amount: big.NewInt(tokenBalance), Decimals: token.Decimals}, nil
+	}
+	port.MockChain = mockChain
 	registry := chain.NewRegistry()
-	registry.RegisterChain(adapter)
+	registry.RegisterChain(port)
 	registry.RegisterToken(quoteSOLUSDC)
 	walletID := uuid.New()
 	base := models.Address{ID: uuid.New(), WalletID: walletID, Address: quoteSOLBase}
@@ -340,10 +352,7 @@ func solanaQuotePlanner(t *testing.T, results map[string]string) (*service, uuid
 }
 
 func TestQuoteSolanaNative_OneSignatureAndTheRentMinimum(t *testing.T) {
-	svc, walletID := solanaQuotePlanner(t, map[string]string{
-		"getBalance":                          `"result":{"value":29995000}`,
-		"getMinimumBalanceForRentExemption:0": `"result":890880`,
-	})
+	svc, walletID := solanaQuotePlanner(t, 29_995_000, 0, &solQuotePort{rent: big.NewInt(quoteSOLRent0)})
 
 	q := quote(t, svc, walletID, models.NativeSOL, 20_000_000, quoteSOLDest)
 
@@ -355,10 +364,7 @@ func TestQuoteSolanaNative_OneSignatureAndTheRentMinimum(t *testing.T) {
 }
 
 func TestQuoteSolanaNative_InsufficientKeepsTheFee(t *testing.T) {
-	svc, walletID := solanaQuotePlanner(t, map[string]string{
-		"getBalance":                          `"result":{"value":20000000}`,
-		"getMinimumBalanceForRentExemption:0": `"result":890880`,
-	})
+	svc, walletID := solanaQuotePlanner(t, 20_000_000, 0, &solQuotePort{rent: big.NewInt(quoteSOLRent0)})
 
 	q := quote(t, svc, walletID, models.NativeSOL, 20_000_000, "")
 
@@ -369,11 +375,7 @@ func TestQuoteSolanaNative_InsufficientKeepsTheFee(t *testing.T) {
 }
 
 func TestQuoteSolanaSPL_FundsTheMissingRecipientTokenAccount(t *testing.T) {
-	svc, walletID := solanaQuotePlanner(t, map[string]string{
-		"getTokenAccountBalance":                `"result":{"value":{"amount":"5000000","decimals":6}}`,
-		"getAccountInfo":                        `"result":{"context":{"slot":1},"value":null}`,
-		"getMinimumBalanceForRentExemption:165": `"result":2039280`,
-	})
+	svc, walletID := solanaQuotePlanner(t, 0, 5_000_000, &solQuotePort{creation: big.NewInt(quoteSOLRent165)})
 
 	q := quote(t, svc, walletID, models.SymbolUSDC, 1_000_000, quoteSOLDest)
 
@@ -385,11 +387,7 @@ func TestQuoteSolanaSPL_FundsTheMissingRecipientTokenAccount(t *testing.T) {
 }
 
 func TestQuoteSolanaSPL_RentFailureIsUnavailable(t *testing.T) {
-	svc, walletID := solanaQuotePlanner(t, map[string]string{
-		"getTokenAccountBalance":                `"result":{"value":{"amount":"5000000","decimals":6}}`,
-		"getAccountInfo":                        `"result":{"context":{"slot":1},"value":null}`,
-		"getMinimumBalanceForRentExemption:165": `"error":{"code":-32000,"message":"node behind"}`,
-	})
+	svc, walletID := solanaQuotePlanner(t, 0, 5_000_000, &solQuotePort{quoteErr: errors.New("node behind")})
 
 	_, err := svc.QuoteWithdrawalFee(context.Background(), FeeQuoteRequest{WalletID: walletID, Asset: models.SymbolUSDC, Amount: big.NewInt(1_000_000), ToAddress: quoteSOLDest})
 	if !errors.Is(err, ErrFeeQuoteUnavailable) {

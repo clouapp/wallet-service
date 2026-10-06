@@ -2,64 +2,56 @@ package deposit
 
 import (
 	"context"
-	"encoding/json"
-	"io"
-	"net/http"
-	"net/http/httptest"
-	"os"
-	"path/filepath"
+	"math/big"
 	"testing"
 
 	"github.com/goravel/framework/facades"
 
-	solanachain "github.com/macrowallets/waas/app/adapters/chain/solana"
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/services/chain"
+	"github.com/macrowallets/waas/pkg/types"
 	"github.com/macrowallets/waas/tests/mocks"
 )
 
 const (
 	solFixtureSlot      = 506367800
+	solFixtureHead      = 506367988
 	solFixtureRecipient = "AJor34TKjdm2pAK6V7nkBmKNpnARHL7CkiwnBVTE9J6b"
+	solFixtureSender    = "AMbsiP9F8YY2y8n9uFdqtw7yNZZHvTWFEWSQGHKtmkoQ"
 	solFixtureSignature = "41iqE5xg9ttZAk1uZkirZsQz3GG1DJ3kcU33YUFJAyraS3MFG2BWMxweU7KUXqhDZuUmzW2bqs5L3PPE1RRQEK9r"
+	solFixtureLamports  = 150_000_000
 )
 
-// solanaFixtureRPC serves devnet responses recorded beside the Solana adapter.
-func solanaFixtureRPC(t *testing.T) *solanachain.SolanaLive {
+// solanaFixtureChain is the Solana port for deposit tests. Parsing a recorded
+// block stays in the adapter tests; here the port reports that credit and slot.
+func solanaFixtureChain(t *testing.T) *mocks.MockChain {
 	t.Helper()
-	block, err := os.ReadFile(filepath.Join("..", "..", "adapters", "chain", "solana", "testdata", "solana", "getBlock_transfers.json"))
-	if err != nil {
-		t.Fatal(err)
+	adapter := mocks.NewMockChain(models.ChainSOL)
+	adapter.NativeAssetVal = models.NativeSOL
+	adapter.RequiredConfirmationsVal = 1
+	adapter.GetLatestBlockFn = func(context.Context) (uint64, error) { return solFixtureHead, nil }
+	adapter.ScanBlockFn = func(context.Context, uint64) ([]types.DetectedTransfer, error) {
+		return []types.DetectedTransfer{{
+			TxHash:      solFixtureSignature,
+			BlockNumber: solFixtureSlot,
+			From:        solFixtureSender,
+			To:          solFixtureRecipient,
+			Amount:      big.NewInt(solFixtureLamports),
+			Asset:       models.NativeSOL,
+		}}, nil
 	}
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		var req struct {
-			Method string `json:"method"`
+	adapter.GetTransactionBlockFn = func(_ context.Context, txHash string) (uint64, error) {
+		if txHash == solFixtureSignature {
+			return solFixtureSlot, nil
 		}
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			t.Error(err)
-			return
-		}
-		w.Header().Set("Content-Type", "application/json")
-		switch req.Method {
-		case "getBlock":
-			_, _ = w.Write(block)
-		case "getSlot":
-			_, _ = io.WriteString(w, `{"jsonrpc":"2.0","id":1,"result":506367988}`)
-		case "getSignatureStatuses":
-			_, _ = io.WriteString(w, `{"jsonrpc":"2.0","id":1,"result":{"context":{"slot":506367988},"value":[{"slot":506367800,"err":null,"confirmationStatus":"finalized","confirmations":null}]}}`)
-		default:
-			t.Errorf("unexpected rpc method %s", req.Method)
-		}
-	}))
-	t.Cleanup(srv.Close)
-	return solanachain.NewSolanaLive(solanachain.SolanaConfig{
-		ChainIDStr: models.ChainSOL, NativeSymbol: models.NativeSOL, RPCURL: srv.URL, Confirmations: 1,
-	})
+		return 0, nil
+	}
+	return adapter
 }
 
 func TestSolanaDeposit_DetectedFromRecordedBlockThenConfirmed(t *testing.T) {
 	mocks.TestDB(t)
-	adapter := solanaFixtureRPC(t)
+	adapter := solanaFixtureChain(t)
 	registry := chain.NewRegistry()
 	registry.RegisterChain(adapter)
 	w := mocks.InsertWallet(t, models.ChainSOL)
@@ -103,7 +95,7 @@ func TestSolanaDeposit_DetectedFromRecordedBlockThenConfirmed(t *testing.T) {
 
 func TestSolanaWithdrawal_SlotReconciledFromSignatureStatus(t *testing.T) {
 	mocks.TestDB(t)
-	adapter := solanaFixtureRPC(t)
+	adapter := solanaFixtureChain(t)
 	registry := chain.NewRegistry()
 	registry.RegisterChain(adapter)
 	w := mocks.InsertWallet(t, models.ChainSOL)

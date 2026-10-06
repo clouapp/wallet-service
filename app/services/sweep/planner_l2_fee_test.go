@@ -7,11 +7,9 @@ import (
 
 	"github.com/google/uuid"
 
-	evmchain "github.com/macrowallets/waas/app/adapters/chain/evm"
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/services/chain"
 	"github.com/macrowallets/waas/pkg/types"
-	"github.com/macrowallets/waas/tests/mocks"
 )
 
 const (
@@ -25,13 +23,8 @@ const (
 
 func baseSepoliaPlanner(t *testing.T, baseBalance *big.Int) (*service, uuid.UUID) {
 	t.Helper()
-	node := mocks.NewFakeEVMNode(t)
-	node.L1FeeHex = l2FeeTestL1FeeHex
-	node.NativeBalanceHex = "0x" + baseBalance.Text(16)
-	adapter := evmchain.NewEVMLive(evmchain.EVMConfig{
-		ChainIDStr: models.ChainBase, NativeSymbol: models.NativeETH, NativeDecimal: 18,
-		NetworkID: models.EVMNetworkIDBaseSepolia, RPCURL: node.URL(),
-	})
+	adapter := newEVMPlanPort(models.ChainBase, models.NativeETH, big.NewInt(l2FeeTestBufferedL1Fee))
+	adapter.nativeBalance = new(big.Int).Set(baseBalance)
 	registry := chain.NewRegistry()
 	registry.RegisterChain(adapter)
 
