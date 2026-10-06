@@ -3,6 +3,7 @@ package fixtures
 import (
 	"context"
 	"os"
+	"sync"
 	"testing"
 
 	"github.com/google/uuid"
@@ -14,11 +15,18 @@ import (
 )
 
 // ---------------------------------------------------------------------------
-// TestDB — sets up Goravel ORM with test database
-// Uses the pre-boot .env.testing connection. Each test gets a clean schema.
+// TestDB — checks the isolated test database.
+// Pending migrations run once per process. A test does not drop or rebuild
+// the schema. Emails, account ids, wallet labels, and client IPs come from
+// the run nonce and sequence in identity.go.
 // ---------------------------------------------------------------------------
 
-// TestDB sets up test database. Assumes Goravel is already booted via TestMain.
+var (
+	schemaOnce sync.Once
+	schemaErr  error
+)
+
+// TestDB checks the test database. Assumes Goravel is already booted via TestMain.
 func TestDB(t *testing.T) {
 	t.Helper()
 
@@ -54,17 +62,13 @@ func TestDB(t *testing.T) {
 		return
 	}
 
-	// Run migrations to set up schema
-	if err := facades.Artisan().Call("migrate:fresh"); err != nil {
-		t.Fatalf("migration failed: %v", err)
-	}
-
-	t.Cleanup(func() {
-		requireSafeTestDatabase(t)
-		if err := facades.Artisan().Call("migrate:fresh"); err != nil {
-			t.Errorf("test database cleanup migration failed: %v", err)
-		}
+	// Apply pending migrations once. This does not drop tables.
+	schemaOnce.Do(func() {
+		schemaErr = facades.Artisan().Call("migrate")
 	})
+	if schemaErr != nil {
+		t.Fatalf("migration failed: %v", schemaErr)
+	}
 }
 
 func requireSafeTestDatabase(t *testing.T) {
@@ -107,7 +111,7 @@ func InsertWalletWithAccount(t *testing.T, chainID string, accountID *uuid.UUID)
 	w := models.Wallet{
 		ID:               walletID,
 		Chain:            chainID,
-		Label:            chainID + " test wallet",
+		Label:            WalletLabel(chainID),
 		MPCCustomerShare: "deadbeef",
 		MPCShareIV:       "cafebabe",
 		MPCShareSalt:     "feedface",
@@ -133,7 +137,7 @@ func InsertWalletWithAccount(t *testing.T, chainID string, accountID *uuid.UUID)
 func InsertAccount(t *testing.T, name string) models.Account {
 	t.Helper()
 	acc := models.Account{
-		ID:          uuid.New(),
+		ID:          AccountID(),
 		Name:        name,
 		Status:      "active",
 		Environment: "prod",

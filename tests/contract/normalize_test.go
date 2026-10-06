@@ -37,6 +37,14 @@ func TestNormalizer_MasksVolatileFieldsOfAnyScalarValue(t *testing.T) {
 	}
 }
 
+func TestNormalizer_StripsTheFixtureWalletLabelSuffix(t *testing.T) {
+	got := NewNormalizer().Normalize(`{"label":"eth test wallet ab12cd34-7","other":"test wallet"}`)
+	want := `{"label":"eth test wallet","other":"test wallet"}`
+	if got != want {
+		t.Errorf("got %s, want %s", got, want)
+	}
+}
+
 func TestNormalizer_LeavesStableBytesUntouched(t *testing.T) {
 	body := `{"error":"invalid credentials","status":"ok","amount":"0.5","n":42}`
 	if got := NewNormalizer("secret").Normalize(body); got != body {

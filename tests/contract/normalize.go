@@ -14,6 +14,9 @@ var (
 	uuidPattern      = regexp.MustCompile(`[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}`)
 	timestampPattern = regexp.MustCompile(`\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:?\d{2})?`)
 	jwtPattern       = regexp.MustCompile(`eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+`)
+	// Fixture wallet labels append " <run nonce>-<sequence>" so a leftover row
+	// does not collide. The recorded contract keeps the stable prefix.
+	fixtureWalletLabel = regexp.MustCompile(` test wallet [0-9a-f]{8}-\d+`)
 )
 
 // Normalizer replaces the values that differ between two runs of the same
@@ -52,6 +55,7 @@ func (n *Normalizer) Normalize(text string) string {
 			return fmt.Sprintf(`"%s":"<%s>"`, field, field)
 		})
 	}
+	text = fixtureWalletLabel.ReplaceAllString(text, " test wallet")
 	text = jwtPattern.ReplaceAllString(text, "<jwt>")
 	text = uuidPattern.ReplaceAllStringFunc(text, func(match string) string {
 		key := strings.ToLower(match)

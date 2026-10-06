@@ -25,6 +25,7 @@ import (
 	"github.com/macrowallets/waas/app/http/middleware"
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/repositories"
+	"github.com/macrowallets/waas/tests/feature/support/fixtures"
 )
 
 // SignFunc returns the hex-encoded HMAC-SHA256 of `body`, keyed by the raw JWT
@@ -49,7 +50,7 @@ type SignFunc func(body []byte) string
 func SetupAPIAuth(t *testing.T, requireSignature bool) (accountID uuid.UUID, bearerJWT string, sign SignFunc) {
 	t.Helper()
 
-	accountID = uuid.New()
+	accountID = fixtures.AccountID()
 	shortID := accountID.String()[:8]
 	if err := repositories.NewAccountRepository(nil).Create(context.Background(), &models.Account{
 		ID:          accountID,
