@@ -1,7 +1,6 @@
 package providers
 
 import (
-	"context"
 	"errors"
 	"testing"
 
@@ -13,66 +12,6 @@ import (
 	"github.com/macrowallets/waas/pkg/types"
 )
 
-func resetActiveChains() {
-	activeChainMu.Lock()
-	activeChainsReady = false
-	activeChainRows = nil
-	activeChainMu.Unlock()
-}
-
-type staticActiveChains struct {
-	rows []models.Chain
-	err  error
-}
-
-func (s staticActiveChains) FindActive(context.Context) ([]models.Chain, error) {
-	if s.err != nil {
-		return nil, s.err
-	}
-	return s.rows, nil
-}
-
-func TestReadActiveChains_StoresTheCatalogFromFindActive(t *testing.T) {
-	resetActiveChains()
-	t.Cleanup(resetActiveChains)
-
-	networkID := models.EVMNetworkIDEthereumMainnet
-	readActiveChains(staticActiveChains{rows: []models.Chain{{
-		ID:          "eth",
-		Name:        "Ethereum",
-		AdapterType: models.AdapterTypeEVM,
-		NetworkID:   &networkID,
-		Status:      "active",
-	}}})
-
-	rows, ok := bootedActiveChains()
-	if !ok || len(rows) != 1 || rows[0].ID != "eth" || rows[0].AdapterType != models.AdapterTypeEVM {
-		t.Fatalf("catalog = %+v ok=%v", rows, ok)
-	}
-}
-
-func TestReadActiveChains_LeavesAnEmptyCatalogWhenTheReadFails(t *testing.T) {
-	resetActiveChains()
-	t.Cleanup(resetActiveChains)
-
-	readActiveChains(staticActiveChains{err: errors.New("db down")})
-
-	rows, ok := bootedActiveChains()
-	if !ok || len(rows) != 0 {
-		t.Fatalf("catalog = %+v ok=%v", rows, ok)
-	}
-}
-
-func TestBootedActiveChains_NotLoadedBeforeBoot(t *testing.T) {
-	resetActiveChains()
-	t.Cleanup(resetActiveChains)
-
-	rows, ok := bootedActiveChains()
-	if ok || rows != nil {
-		t.Fatalf("catalog = %+v ok=%v", rows, ok)
-	}
-}
-
 func TestRegisterActiveChains_KeepsTheSameActiveSet(t *testing.T) {
 	previous := openActiveChainEndpoint
 	t.Cleanup(func() { openActiveChainEndpoint = previous })
@@ -83,13 +22,10 @@ func TestRegisterActiveChains_KeepsTheSameActiveSet(t *testing.T) {
 		return "https://rpc.test/chain", nil
 	}
 
-	resetActiveChains()
-	t.Cleanup(resetActiveChains)
-
 	ethNetwork := models.EVMNetworkIDEthereumMainnet
 	gasRaw := "1000"
 	dustRaw := "2000"
-	readActiveChains(staticActiveChains{rows: []models.Chain{
+	rows := []models.Chain{
 		{
 			ID:                       "eth",
 			Name:                     "Ethereum",
@@ -131,11 +67,6 @@ func TestRegisterActiveChains_KeepsTheSameActiveSet(t *testing.T) {
 			AdapterType: "other",
 			RpcURL:      "sealed-other",
 		},
-	}})
-
-	rows, ok := bootedActiveChains()
-	if !ok || len(rows) != 5 {
-		t.Fatalf("catalog len=%d ok=%v", len(rows), ok)
 	}
 
 	reg := chainpkg.NewRegistry()

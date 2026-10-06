@@ -8,6 +8,7 @@ import (
 	"github.com/macrowallets/waas/app/facades"
 	"github.com/macrowallets/waas/app/repositories"
 	chainpkg "github.com/macrowallets/waas/app/services/chain"
+	"github.com/macrowallets/waas/app/services/chainregistry"
 	chainsvc "github.com/macrowallets/waas/app/services/chains"
 	"github.com/macrowallets/waas/app/services/currencies"
 	"github.com/macrowallets/waas/pkg/security"
@@ -22,6 +23,18 @@ type ChainServiceProvider struct{}
 func (p *ChainServiceProvider) Register(app foundation.Application) {
 	app.Singleton((*repositories.ChainRepository)(nil), func(foundation.Application) (any, error) {
 		return repositories.NewChainRepository(nil), nil
+	})
+	app.Singleton((*chainregistry.ChainRegistryService)(nil), func(app foundation.Application) (any, error) {
+		chains, err := resolve[*repositories.ChainRepository](app)
+		if err != nil {
+			return nil, err
+		}
+		return chainregistry.NewChainRegistryService(chainregistry.ChainRegistryDeps{
+			Store:    chainCatalog{repo: chains},
+			Cache:    chainregistry.NewCatalogCache(),
+			Install:  registerActiveChains,
+			Registry: chainpkg.NewRegistry(),
+		}), nil
 	})
 	app.Singleton((*chainsvc.Service)(nil), func(app foundation.Application) (any, error) {
 		chains, err := resolve[*repositories.ChainRepository](app)

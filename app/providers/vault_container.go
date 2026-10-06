@@ -44,7 +44,7 @@ import (
 	"github.com/macrowallets/waas/app/repositories"
 	authsvc "github.com/macrowallets/waas/app/services/auth"
 	"github.com/macrowallets/waas/app/services/blockheight"
-	chainpkg "github.com/macrowallets/waas/app/services/chain"
+	"github.com/macrowallets/waas/app/services/chainregistry"
 	"github.com/macrowallets/waas/app/services/deposit"
 	"github.com/macrowallets/waas/app/services/deposit/pending"
 	"github.com/macrowallets/waas/app/services/depositevents"
@@ -258,19 +258,19 @@ func buildVaultContainer(app foundation.Application) (*container.Container, erro
 	}
 	buildWebhookIngest(c, accountSettings)
 
-	c.Registry = chainpkg.NewRegistry()
-
 	activeTokens, loaded := bootedActiveTokens()
 	if !loaded {
 		slog.Error("failed to load tokens from DB", "error", errActiveTokensNotLoaded)
 	}
-	tokensByChain := registerActiveTokens(c.Registry, activeTokens)
-
-	activeChains, chainsLoaded := bootedActiveChains()
-	if !chainsLoaded {
-		slog.Error("failed to load chains from DB", "error", errActiveChainsNotLoaded)
+	registryService, err := resolve[*chainregistry.ChainRegistryService](app)
+	if err != nil {
+		return nil, fmt.Errorf("vault: chain registry: %w", err)
 	}
-	networkByChain := registerActiveChains(c.Registry, activeChains, tokensByChain)
+	if err := registryService.Load(registerActiveTokens(nil, activeTokens)); err != nil {
+		slog.Error("failed to load chains from DB", "error", err)
+	}
+	c.Registry = registryService.Registry()
+	networkByChain := registryService.Networks()
 
 	c.WebhookService = webhook.NewService(webhook.Deps{
 		SQS:     c.SQS,

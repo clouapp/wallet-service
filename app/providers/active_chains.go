@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"log/slog"
-	"sync"
 
 	"github.com/goravel/framework/contracts/foundation"
 
@@ -14,80 +13,49 @@ import (
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/repositories"
 	chainpkg "github.com/macrowallets/waas/app/services/chain"
+	"github.com/macrowallets/waas/app/services/chainregistry"
 	"github.com/macrowallets/waas/pkg/types"
 )
 
 // errActiveChainsNotLoaded means Boot has not read the chain catalog yet.
 var errActiveChainsNotLoaded = errors.New("active chains were not loaded during boot")
 
-var (
-	activeChainMu     sync.Mutex
-	activeChainsReady bool
-	activeChainRows   []models.Chain
-)
-
 // openActiveChainEndpoint opens a sealed rpc_url. The container factory uses
 // the process cipher. Tests replace this with a stub that never logs a URL.
 var openActiveChainEndpoint = openChainEndpoint
 
-type activeChainReader interface {
-	FindActive(ctx context.Context) ([]models.Chain, error)
+// chainCatalog is the chain rows the registry service reads. Register only
+// stores this adapter; the query runs in ChainRegistryService.Refresh.
+type chainCatalog struct {
+	repo *repositories.ChainRepository
 }
 
-// loadActiveChains reads the active chain catalog in Boot.
-// The container factory registers that catalog and does not query chains.
-// A read failure is logged and leaves the catalog empty. The process stays up.
-func loadActiveChains(app foundation.Application) {
+func (c chainCatalog) FindActive(ctx context.Context) ([]models.Chain, error) {
+	if c.repo == nil {
+		return nil, errActiveChainsNotLoaded
+	}
+	return c.repo.FindActive(ctx)
+}
+
+// refreshChainRegistry loads the sealed catalog and builds the chain registry.
+// A read failure is logged and leaves the process up. The URL is not logged.
+func refreshChainRegistry(app foundation.Application) {
 	if app == nil {
 		slog.Error("failed to load chains from DB", "error", errActiveChainsNotLoaded)
-		rememberActiveChains(nil)
 		return
 	}
-	repo, err := resolve[*repositories.ChainRepository](app)
-	if err != nil || repo == nil {
+	svc, err := resolve[*chainregistry.ChainRegistryService](app)
+	if err != nil || svc == nil {
 		if err == nil {
 			err = errActiveChainsNotLoaded
 		}
 		slog.Error("failed to load chains from DB", "error", err)
-		rememberActiveChains(nil)
 		return
 	}
-	readActiveChains(repo)
-}
-
-func readActiveChains(repo activeChainReader) {
-	if repo == nil {
-		slog.Error("failed to load chains from DB", "error", errActiveChainsNotLoaded)
-		rememberActiveChains(nil)
-		return
-	}
-	rows, err := repo.FindActive(context.Background())
-	if err != nil {
+	tokens, _ := bootedActiveTokens()
+	if err := svc.Refresh(context.Background(), registerActiveTokens(nil, tokens)); err != nil {
 		slog.Error("failed to load chains from DB", "error", err)
-		rememberActiveChains(nil)
-		return
 	}
-	rememberActiveChains(rows)
-}
-
-func rememberActiveChains(rows []models.Chain) {
-	copied := make([]models.Chain, len(rows))
-	copy(copied, rows)
-	activeChainMu.Lock()
-	activeChainRows = copied
-	activeChainsReady = true
-	activeChainMu.Unlock()
-}
-
-func bootedActiveChains() ([]models.Chain, bool) {
-	activeChainMu.Lock()
-	defer activeChainMu.Unlock()
-	if !activeChainsReady {
-		return nil, false
-	}
-	out := make([]models.Chain, len(activeChainRows))
-	copy(out, activeChainRows)
-	return out, true
 }
 
 // registerActiveChains installs the Boot catalog on the chain registry and

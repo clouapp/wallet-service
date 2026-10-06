@@ -25,6 +25,17 @@ func NewRegistry() *Registry {
 	}
 }
 
+// ResetCatalog drops every loaded chain and token so a refresh can install the current rows.
+func (r *Registry) ResetCatalog() {
+	if r == nil {
+		return
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.chains = make(map[string]types.Chain)
+	r.tokens = make(map[string][]types.Token)
+}
+
 func (r *Registry) RegisterChain(c types.Chain) {
 	r.mu.Lock()
 	defer r.mu.Unlock()

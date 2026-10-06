@@ -12,5 +12,5 @@ func (receiver *AppServiceProvider) Register(app foundation.Application) {
 
 func (receiver *AppServiceProvider) Boot(app foundation.Application) {
 	loadActiveTokens(app)
-	loadActiveChains(app)
+	refreshChainRegistry(app)
 }
