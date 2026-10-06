@@ -1,12 +1,15 @@
 package seeds
 
-import "fmt"
+import (
+	"fmt"
+	"log/slog"
+)
 
 // PrintCredentials logs dev login hints to stdout after seeding.
 func PrintCredentials() {
 	fmt.Println()
 	fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-	fmt.Println("  Seed data created — login credentials")
+	slog.Info("seed data created — login credentials")
 	fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	fmt.Println("  admin@macro.markets / secret  (account owner)")
 	fmt.Println("  alice@macro.markets / secret  (account admin)")
