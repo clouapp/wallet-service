@@ -15,10 +15,7 @@ import (
 	"strings"
 
 	"github.com/google/uuid"
-	"github.com/goravel/framework/contracts/event"
-	"github.com/goravel/framework/facades"
 
-	"github.com/macrowallets/waas/app/dtos"
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/services/chainregistry"
 	mpc "github.com/macrowallets/waas/app/services/mpc"
@@ -248,6 +245,7 @@ func (s *Service) CreateWallet(ctx context.Context, accountID uuid.UUID, chainID
 
 	s.cacheAddress(ctx, chainID, depositAddressStr)
 	s.dispatchBalanceRefresh(walletID.String(), chainID)
+	s.dispatchWalletCreated(walletID.String(), chainID)
 
 	if s.webhookSyncSvc != nil {
 		go func() {
@@ -257,11 +255,6 @@ func (s *Service) CreateWallet(ctx context.Context, accountID uuid.UUID, chainID
 			}
 		}()
 	}
-
-	_ = facades.Event().Job(&dtos.WalletCreated{}, []event.Arg{
-		{Type: "string", Value: walletID.String()},
-		{Type: "string", Value: chainID},
-	}).Dispatch()
 
 	return &CreateWalletResult{
 		Wallet:           w,
@@ -292,10 +285,7 @@ func (s *Service) ActivateWallet(ctx context.Context, walletID uuid.UUID, code s
 	w.ActivationCode = nil
 
 	s.dispatchBalanceRefresh(w.ID.String(), w.Chain)
-	_ = facades.Event().Job(&dtos.WalletActivated{}, []event.Arg{
-		{Type: "string", Value: w.ID.String()},
-		{Type: "string", Value: w.Chain},
-	}).Dispatch()
+	s.dispatchWalletActivated(w.ID.String(), w.Chain)
 
 	return w, nil
 }
@@ -305,6 +295,20 @@ func (s *Service) dispatchBalanceRefresh(walletID, chainID string) {
 		return
 	}
 	_ = s.dispatcher.DispatchBalances(walletID, chainID)
+}
+
+func (s *Service) dispatchWalletCreated(walletID, chainID string) {
+	if s.dispatcher == nil {
+		return
+	}
+	_ = s.dispatcher.DispatchWalletCreated(walletID, chainID)
+}
+
+func (s *Service) dispatchWalletActivated(walletID, chainID string) {
+	if s.dispatcher == nil {
+		return
+	}
+	_ = s.dispatcher.DispatchWalletActivated(walletID, chainID)
 }
 
 func curveForChain(chainID string) mpc.Curve {

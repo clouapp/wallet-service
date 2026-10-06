@@ -7,10 +7,7 @@ import (
 	"log/slog"
 
 	"github.com/google/uuid"
-	"github.com/goravel/framework/contracts/event"
-	"github.com/goravel/framework/facades"
 
-	"github.com/macrowallets/waas/app/dtos"
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/services/chain"
 	"github.com/macrowallets/waas/app/services/chainregistry"
@@ -226,14 +223,7 @@ func (s *Service) processTransfer(ctx context.Context, chainID string, adapter t
 
 	s.publishDepositPending(ctx, *tx)
 	s.dispatchTransactionRefresh(tx.WalletID.String(), chainID)
-
-	if ev := facades.Event(); ev != nil {
-		_ = ev.Job(&dtos.DepositDetected{}, []event.Arg{
-			{Type: "string", Value: tx.WalletID.String()},
-			{Type: "string", Value: chainID},
-			{Type: "string", Value: transfer.TxHash},
-		}).Dispatch()
-	}
+	s.dispatchDepositDetected(tx.WalletID.String(), chainID, transfer.TxHash)
 
 	slog.Info("ingest deposit", "chain", chainID, "tx", transfer.TxHash, "log_index", transfer.LogIndex, "user", addr.ExternalUserID, "asset", asset, "amount", transfer.Amount.String())
 	return nil
@@ -244,6 +234,13 @@ func (s *Service) dispatchTransactionRefresh(walletID, chainID string) {
 		return
 	}
 	_ = s.dispatcher.DispatchTransactions(walletID, chainID)
+}
+
+func (s *Service) dispatchDepositDetected(walletID, chainID, txHash string) {
+	if s.dispatcher == nil {
+		return
+	}
+	_ = s.dispatcher.DispatchDepositDetected(walletID, chainID, txHash)
 }
 
 func (s *Service) publishDepositPending(ctx context.Context, tx models.Transaction) {

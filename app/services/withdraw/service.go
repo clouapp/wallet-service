@@ -9,10 +9,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/goravel/framework/contracts/event"
-	"github.com/goravel/framework/facades"
 
-	"github.com/macrowallets/waas/app/dtos"
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/repositories"
 	mpcpkg "github.com/macrowallets/waas/app/services/mpc"
@@ -315,13 +312,9 @@ func (s *Service) Request(ctx context.Context, req WithdrawRequest) (*models.Tra
 	// final tx — do not re-emit here. The public withdrawal.broadcast event is
 	// published by withdrawalevents.Publisher once the withdrawal row is
 	// marked broadcast. The balance refresh is the domain event's only job,
-	// so the service dispatches it through the Dispatcher port. The domain
-	// event stays.
+	// so the service dispatches both through the Dispatcher port.
 	s.dispatchBalanceRefresh(finalTx.WalletID.String(), wallet.Chain)
-	_ = facades.Event().Job(&dtos.WithdrawalBroadcasted{}, []event.Arg{
-		{Type: "string", Value: finalTx.WalletID.String()},
-		{Type: "string", Value: wallet.Chain},
-	}).Dispatch()
+	s.dispatchWithdrawalBroadcasted(finalTx.WalletID.String(), wallet.Chain)
 
 	slog.Info("withdrawal broadcast",
 		"tx_id", finalTx.ID,
@@ -338,6 +331,13 @@ func (s *Service) dispatchBalanceRefresh(walletID, chainID string) {
 		return
 	}
 	_ = s.dispatcher.DispatchBalances(walletID, chainID)
+}
+
+func (s *Service) dispatchWithdrawalBroadcasted(walletID, chainID string) {
+	if s.dispatcher == nil {
+		return
+	}
+	_ = s.dispatcher.DispatchWithdrawalBroadcasted(walletID, chainID)
 }
 
 // decryptShareA decrypts the wallet's MPC customer share (share A) using the

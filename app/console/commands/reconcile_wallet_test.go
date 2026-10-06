@@ -16,6 +16,18 @@ func (reconcileWalletDispatcherStub) DispatchTransactions(string, string) error 
 func (reconcileWalletDispatcherStub) DispatchTokens(string, string) error       { return nil }
 func (reconcileWalletDispatcherStub) DispatchUTXOs(string, string) error        { return nil }
 func (reconcileWalletDispatcherStub) DispatchReconcile(string, string) error    { return nil }
+func (reconcileWalletDispatcherStub) DispatchWalletCreated(string, string) error {
+	return nil
+}
+func (reconcileWalletDispatcherStub) DispatchWalletActivated(string, string) error {
+	return nil
+}
+func (reconcileWalletDispatcherStub) DispatchDepositDetected(string, string, string) error {
+	return nil
+}
+func (reconcileWalletDispatcherStub) DispatchWithdrawalBroadcasted(string, string) error {
+	return nil
+}
 
 func TestNewReconcileWalletKeepsItsDependencies(t *testing.T) {
 	balances := refresh.NewBalanceService(refresh.Deps{})

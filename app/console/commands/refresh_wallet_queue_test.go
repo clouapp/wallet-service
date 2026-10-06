@@ -221,6 +221,14 @@ func (r *recordingDispatcher) DispatchReconcile(walletID, chainID string) error 
 	return r.record("reconcile", walletID, chainID)
 }
 
+func (r *recordingDispatcher) DispatchWalletCreated(string, string) error { return nil }
+
+func (r *recordingDispatcher) DispatchWalletActivated(string, string) error { return nil }
+
+func (r *recordingDispatcher) DispatchDepositDetected(string, string, string) error { return nil }
+
+func (r *recordingDispatcher) DispatchWithdrawalBroadcasted(string, string) error { return nil }
+
 func (r *recordingDispatcher) record(kind, walletID, chainID string) error {
 	r.calls = append(r.calls, recordedDispatch{kind: kind, walletID: walletID, chainID: chainID})
 	if r.failKind == kind {
