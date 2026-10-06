@@ -7,16 +7,16 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/macrowallets/waas/database/migrations"
-	"github.com/macrowallets/waas/tests/mocks"
+	"github.com/macrowallets/waas/tests/feature/support/fixtures"
 )
 
 func TestAccountInvitesWalletRolesIsNullableJsonb(t *testing.T) {
-	mocks.TestDB(t)
+	fixtures.TestDB(t)
 
 	require.Equal(t, "jsonb", walletRolesType(t))
 	require.Equal(t, "YES", walletRolesNullable(t))
 
-	account := mocks.InsertAccount(t, "invite-wallet-roles")
+	account := fixtures.InsertAccount(t, "invite-wallet-roles")
 	ownerID := uuid.New()
 	inviteID := uuid.New()
 	exec(t, `INSERT INTO users (id, email, password_hash, full_name, status, created_at, updated_at)

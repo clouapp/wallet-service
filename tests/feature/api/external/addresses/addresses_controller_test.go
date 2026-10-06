@@ -14,7 +14,7 @@ import (
 
 	"github.com/macrowallets/waas/app/models"
 	ctltestutil "github.com/macrowallets/waas/tests/feature/support"
-	"github.com/macrowallets/waas/tests/testutil"
+	"github.com/macrowallets/waas/tests/feature/support/testutil"
 )
 
 // AddressesControllerTestSuite exercises the external /api/v1 address routes

@@ -167,5 +167,6 @@ func repositoryRoot() (string, error) {
 	if !ok {
 		return "", fmt.Errorf("resolve repository root: caller information is unavailable")
 	}
-	return filepath.Clean(filepath.Join(filepath.Dir(currentFile), "..", "..")), nil
+	// environment.go lives in tests/feature/support/testenv, four levels under the module root.
+	return filepath.Clean(filepath.Join(filepath.Dir(currentFile), "..", "..", "..", "..")), nil
 }

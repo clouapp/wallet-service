@@ -168,7 +168,7 @@ Known violations include `app/models → app/services/mpc` and `config → app/m
 - The destructive suite migrates fresh only a dedicated `*_test` database
   (`TEST_DB_DATABASE`, default `vault_unit_test`); `vault` (dev) and `vault_test` (local
   e2e, holds MPC shares that cannot be recreated) are refused. — guarded by
-  `tests/testenv/environment_test.go`
+  `tests/feature/support/testenv/environment_test.go`
   (`TestValidateConfigurationRejectsProtectedDatabases`,
   `TestApplyDatabaseOverrideToE2EDatabaseIsRefused`).
 - Tests use Redis index `REDIS_DB` (15) of `.env.testing`, never the live index 0, and
@@ -301,7 +301,7 @@ snapshots in the `localstack_data` volume; the snapshot key lives in
 | `app/console/`, `app/jobs/`, `app/events/`, `app/listeners/`, `app/mails/`, `app/rules/` | artisan commands, queue jobs, events, mail, validation rules |
 | `database/` | migrations, seeders, seed logic |
 | `pkg/` | `amount`, `types`, `httpclient` |
-| `tests/` | `testenv`, `testutil`, hand-written `mocks`, `architecture` (machine-checked rules), `contract` (HTTP contract snapshot) |
+| `tests/` | `feature/support` (suite, docker reuse, fixtures, request signing), hand-written `mocks`, `architecture` (machine-checked rules), `contract` (HTTP contract snapshot) |
 | `docs/` | Swagger output and design notes (`GORAVEL_INTEGRATION.md`, `INTEGRATION_STATUS.md` are historical) |
 
 Everything inside a `.go` file is English.

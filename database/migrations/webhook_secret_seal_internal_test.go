@@ -9,7 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/macrowallets/waas/app/services/settings"
-	"github.com/macrowallets/waas/tests/mocks"
+	"github.com/macrowallets/waas/tests/feature/support/fixtures"
 )
 
 type mismatchCipher struct{}
@@ -30,7 +30,7 @@ func TestSealWebhookSecretAbortsWhenTheCopyDoesNotMatch(t *testing.T) {
 }
 
 func TestWebhookSecretRewriteRollsBackWhenALaterRowFails(t *testing.T) {
-	mocks.TestDB(t)
+	fixtures.TestDB(t)
 	const first = "rollback-webhook-secret-a"
 	const second = "rollback-webhook-secret-b"
 	firstID := insertPlainWebhook(t, first)

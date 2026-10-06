@@ -13,6 +13,7 @@ import (
 	"github.com/macrowallets/waas/app/services/chain"
 	"github.com/macrowallets/waas/app/services/depositevents"
 	"github.com/macrowallets/waas/pkg/types"
+	"github.com/macrowallets/waas/tests/feature/support/fixtures"
 	"github.com/macrowallets/waas/tests/mocks"
 )
 
@@ -42,14 +43,14 @@ type depositEventsFixture struct {
 
 func newDepositEventsFixture(t *testing.T) depositEventsFixture {
 	t.Helper()
-	mocks.TestDB(t)
+	fixtures.TestDB(t)
 	registry := chain.NewRegistry()
 	adapter := mocks.NewMockChain("eth")
 	adapter.RequiredConfirmationsVal = confirmedAtBlock - depositBlock
 	registry.RegisterChain(adapter)
 
-	account := mocks.InsertAccount(t, "deposit owner")
-	wallet := mocks.InsertWalletWithAccount(t, "eth", &account.ID)
+	account := fixtures.InsertAccount(t, "deposit owner")
+	wallet := fixtures.InsertWalletWithAccount(t, "eth", &account.ID)
 
 	webhookSvc := newWebhookSvc()
 	publisher := depositevents.NewPublisher(depositevents.PublisherDeps{
@@ -73,17 +74,17 @@ func depositWebhookRows(t *testing.T) []models.WebhookEvent {
 
 func TestUpdateConfirmations_DepositConfirmedNeverLeaksToAnotherAccount(t *testing.T) {
 	f := newDepositEventsFixture(t)
-	otherAccount := mocks.InsertAccount(t, "other tenant")
-	otherWallet := mocks.InsertWalletWithAccount(t, "eth", &otherAccount.ID)
+	otherAccount := fixtures.InsertAccount(t, "other tenant")
+	otherWallet := fixtures.InsertWalletWithAccount(t, "eth", &otherAccount.ID)
 	events := []string{depositConfirmedEvent}
 
-	owner := mocks.InsertScopedWebhookConfig(t, "https://owner.test/hook", depositHookSecret, events, &f.accountID, nil)
-	ownerWallet := mocks.InsertScopedWebhookConfig(t, "https://owner-wallet.test/hook", depositHookSecret, events, nil, &f.wallet.ID)
-	legacy := mocks.InsertScopedWebhookConfig(t, "https://legacy.test/hook", depositHookSecret, events, nil, nil)
-	otherTenant := mocks.InsertScopedWebhookConfig(t, "https://other-tenant.test/hook", depositHookSecret, events, &otherAccount.ID, nil)
-	otherTenantWallet := mocks.InsertScopedWebhookConfig(t, "https://other-wallet.test/hook", depositHookSecret, events, nil, &otherWallet.ID)
+	owner := fixtures.InsertScopedWebhookConfig(t, "https://owner.test/hook", depositHookSecret, events, &f.accountID, nil)
+	ownerWallet := fixtures.InsertScopedWebhookConfig(t, "https://owner-wallet.test/hook", depositHookSecret, events, nil, &f.wallet.ID)
+	legacy := fixtures.InsertScopedWebhookConfig(t, "https://legacy.test/hook", depositHookSecret, events, nil, nil)
+	otherTenant := fixtures.InsertScopedWebhookConfig(t, "https://other-tenant.test/hook", depositHookSecret, events, &otherAccount.ID, nil)
+	otherTenantWallet := fixtures.InsertScopedWebhookConfig(t, "https://other-wallet.test/hook", depositHookSecret, events, nil, &otherWallet.ID)
 
-	mocks.InsertTransaction(t, f.wallet.ID, nil, "eth", models.TxTypeDeposit, "pending", "eth", halfEtherBaseUnits, depositBlock)
+	fixtures.InsertTransaction(t, f.wallet.ID, nil, "eth", models.TxTypeDeposit, "pending", "eth", halfEtherBaseUnits, depositBlock)
 	if err := f.svc.updateConfirmations(context.Background(), "eth", f.adapter, confirmedAtBlock); err != nil {
 		t.Fatalf("updateConfirmations: %v", err)
 	}
@@ -109,8 +110,8 @@ func TestUpdateConfirmations_DepositConfirmedNeverLeaksToAnotherAccount(t *testi
 
 func TestUpdateConfirmations_DepositConfirmedCarriesDecimalAmountAndBaseUnits(t *testing.T) {
 	f := newDepositEventsFixture(t)
-	mocks.InsertScopedWebhookConfig(t, "https://owner.test/hook", depositHookSecret, []string{depositConfirmedEvent}, &f.accountID, nil)
-	tx := mocks.InsertTransaction(t, f.wallet.ID, nil, "eth", models.TxTypeDeposit, "pending", "eth", halfEtherBaseUnits, depositBlock)
+	fixtures.InsertScopedWebhookConfig(t, "https://owner.test/hook", depositHookSecret, []string{depositConfirmedEvent}, &f.accountID, nil)
+	tx := fixtures.InsertTransaction(t, f.wallet.ID, nil, "eth", models.TxTypeDeposit, "pending", "eth", halfEtherBaseUnits, depositBlock)
 
 	if err := f.svc.updateConfirmations(context.Background(), "eth", f.adapter, confirmedAtBlock); err != nil {
 		t.Fatalf("updateConfirmations: %v", err)
@@ -144,8 +145,8 @@ func TestUpdateConfirmations_DepositConfirmedCarriesDecimalAmountAndBaseUnits(t 
 
 func TestDepositConfirmed_RedeliveryIsDeduplicatedPerConfig(t *testing.T) {
 	f := newDepositEventsFixture(t)
-	mocks.InsertScopedWebhookConfig(t, "https://owner.test/hook", depositHookSecret, []string{depositConfirmedEvent}, &f.accountID, nil)
-	mocks.InsertTransaction(t, f.wallet.ID, nil, "eth", models.TxTypeDeposit, "pending", "eth", halfEtherBaseUnits, depositBlock)
+	fixtures.InsertScopedWebhookConfig(t, "https://owner.test/hook", depositHookSecret, []string{depositConfirmedEvent}, &f.accountID, nil)
+	fixtures.InsertTransaction(t, f.wallet.ID, nil, "eth", models.TxTypeDeposit, "pending", "eth", halfEtherBaseUnits, depositBlock)
 
 	if err := f.svc.updateConfirmations(context.Background(), "eth", f.adapter, confirmedAtBlock); err != nil {
 		t.Fatalf("updateConfirmations: %v", err)

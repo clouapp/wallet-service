@@ -24,7 +24,7 @@ import (
 
 	"github.com/macrowallets/waas/config"
 	"github.com/macrowallets/waas/database/migrations"
-	"github.com/macrowallets/waas/tests/testenv"
+	"github.com/macrowallets/waas/tests/feature/support/testenv"
 )
 
 // BootTest initializes Goravel for testing (service-level tests, no routes).

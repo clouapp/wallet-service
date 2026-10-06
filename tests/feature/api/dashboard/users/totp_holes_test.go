@@ -13,7 +13,7 @@ import (
 	"github.com/stretchr/testify/suite"
 
 	"github.com/macrowallets/waas/app/models"
-	"github.com/macrowallets/waas/tests/mocks"
+	"github.com/macrowallets/waas/tests/feature/support/fixtures"
 )
 
 // TotpHolesTestSuite covers the three TOTP gaps left after S4: disabling
@@ -28,7 +28,7 @@ func TestTotpHolesSuite(t *testing.T) {
 }
 
 func (s *TotpHolesTestSuite) SetupTest() {
-	mocks.TestDB(s.T())
+	fixtures.TestDB(s.T())
 }
 
 func (s *TotpHolesTestSuite) storedUser(id uuid.UUID) models.User {

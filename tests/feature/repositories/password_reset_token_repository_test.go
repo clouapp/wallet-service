@@ -11,7 +11,7 @@ import (
 
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/repositories"
-	"github.com/macrowallets/waas/tests/mocks"
+	"github.com/macrowallets/waas/tests/feature/support/fixtures"
 )
 
 type PasswordResetTokenRepositoryTestSuite struct {
@@ -25,7 +25,7 @@ func TestPasswordResetTokenRepositorySuite(t *testing.T) {
 }
 
 func (s *PasswordResetTokenRepositoryTestSuite) SetupTest() {
-	mocks.TestDB(s.T())
+	fixtures.TestDB(s.T())
 	s.repo = repositories.NewPasswordResetTokenRepository(nil)
 	s.userRepo = repositories.NewUserRepository(nil)
 }

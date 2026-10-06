@@ -6,7 +6,7 @@ import (
 
 	"github.com/macrowallets/waas/app/container"
 	"github.com/macrowallets/waas/bootstrap"
-	"github.com/macrowallets/waas/tests/testenv"
+	"github.com/macrowallets/waas/tests/feature/support/testenv"
 )
 
 // TestMain boots the full Goravel application (including routes) once

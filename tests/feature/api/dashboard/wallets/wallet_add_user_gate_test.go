@@ -14,7 +14,7 @@ import (
 
 	"github.com/macrowallets/waas/app/models"
 	authsvc "github.com/macrowallets/waas/app/services/auth"
-	"github.com/macrowallets/waas/tests/mocks"
+	"github.com/macrowallets/waas/tests/feature/support/fixtures"
 )
 
 const walletAddUserGatePassword = "correct-horse-battery"
@@ -33,13 +33,13 @@ func TestWalletAddUserGateSuite(t *testing.T) {
 }
 
 func (s *WalletAddUserGateTestSuite) SetupTest() {
-	mocks.TestDB(s.T())
+	fixtures.TestDB(s.T())
 }
 
 func (s *WalletAddUserGateTestSuite) TestWalletAddUserFollowsTheLoadedRoles() {
-	account := mocks.InsertAccount(s.T(), "wallet add user")
+	account := fixtures.InsertAccount(s.T(), "wallet add user")
 	s.seedChain()
-	wallet := mocks.InsertWalletWithAccount(s.T(), models.ChainETH, &account.ID)
+	wallet := fixtures.InsertWalletWithAccount(s.T(), models.ChainETH, &account.ID)
 
 	denied := []struct {
 		accountRole string
@@ -85,9 +85,9 @@ func (s *WalletAddUserGateTestSuite) TestWalletAddUserFollowsTheLoadedRoles() {
 }
 
 func (s *WalletAddUserGateTestSuite) TestAddWalletUserValidationStaysUnprocessable() {
-	account := mocks.InsertAccount(s.T(), "wallet add user validation")
+	account := fixtures.InsertAccount(s.T(), "wallet add user validation")
 	s.seedChain()
-	wallet := mocks.InsertWalletWithAccount(s.T(), models.ChainETH, &account.ID)
+	wallet := fixtures.InsertWalletWithAccount(s.T(), models.ChainETH, &account.ID)
 	owner := s.member(models.AccountRoleOwner, account.ID)
 	target := s.insertUser("invalid-role-" + uuid.NewString()[:8] + "@example.com")
 	s.accountMember(account.ID, target, models.AccountRoleUser)

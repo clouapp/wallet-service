@@ -18,7 +18,7 @@ import (
 
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/pkg/types"
-	"github.com/macrowallets/waas/tests/mocks"
+	"github.com/macrowallets/waas/tests/feature/support/fixtures"
 )
 
 const (
@@ -35,9 +35,9 @@ type scopedFixture struct {
 
 func newScopedFixture(t *testing.T) scopedFixture {
 	t.Helper()
-	mocks.TestDB(t)
-	account := mocks.InsertAccount(t, "scoped account")
-	wallet := mocks.InsertWalletWithAccount(t, "eth", &account.ID)
+	fixtures.TestDB(t)
+	account := fixtures.InsertAccount(t, "scoped account")
+	wallet := fixtures.InsertWalletWithAccount(t, "eth", &account.ID)
 	return scopedFixture{svc: newTestWebhookSvc(), accountID: account.ID, wallet: wallet}
 }
 
@@ -54,7 +54,7 @@ func (f scopedFixture) event(subjectID string) ScopedEvent {
 
 func insertOwnedConfig(t *testing.T, url string, events []string, accountID, walletID *uuid.UUID) models.WebhookConfig {
 	t.Helper()
-	return mocks.InsertScopedWebhookConfig(t, url, scopedSecret, events, accountID, walletID)
+	return fixtures.InsertScopedWebhookConfig(t, url, scopedSecret, events, accountID, walletID)
 }
 
 func storedEvents(t *testing.T) []models.WebhookEvent {
@@ -68,8 +68,8 @@ func storedEvents(t *testing.T) []models.WebhookEvent {
 
 func TestEnqueueScoped_DeliversOnlyToConfigsThatCanSeeTheWallet(t *testing.T) {
 	f := newScopedFixture(t)
-	otherAccount := mocks.InsertAccount(t, "other account")
-	otherWallet := mocks.InsertWallet(t, "eth")
+	otherAccount := fixtures.InsertAccount(t, "other account")
+	otherWallet := fixtures.InsertWallet(t, "eth")
 
 	legacy := insertOwnedConfig(t, "https://legacy.test/hook", []string{withdrawalEvents}, nil, nil)
 	owned := insertOwnedConfig(t, "https://owned.test/hook", []string{withdrawalEvents}, &f.accountID, nil)
@@ -251,7 +251,7 @@ func TestDeliverPending_FailsEventsOfInactiveConfigs(t *testing.T) {
 func TestUpdateAccountConfig_OwnershipAndClaim(t *testing.T) {
 	f := newScopedFixture(t)
 	ctx := context.Background()
-	otherAccount := mocks.InsertAccount(t, "other account")
+	otherAccount := fixtures.InsertAccount(t, "other account")
 	newEvents := []string{"deposit.confirmed", "withdrawal.broadcast", "withdrawal.confirmed", "withdrawal.failed"}
 
 	owned := insertOwnedConfig(t, "https://owned.test/hook", []string{"deposit.confirmed"}, &f.accountID, nil)
@@ -318,7 +318,7 @@ func TestUpdateAccountConfig_ValidatesTheUpdate(t *testing.T) {
 
 func TestEnqueueEvent_LegacyPathNeverReachesAccountOwnedConfigs(t *testing.T) {
 	f := newScopedFixture(t)
-	otherWallet := mocks.InsertWallet(t, "eth")
+	otherWallet := fixtures.InsertWallet(t, "eth")
 	const sweepEvent = "sweep.confirmed"
 
 	legacy := insertOwnedConfig(t, "https://legacy.test/hook", []string{sweepEvent}, nil, nil)
@@ -326,7 +326,7 @@ func TestEnqueueEvent_LegacyPathNeverReachesAccountOwnedConfigs(t *testing.T) {
 	insertOwnedConfig(t, "https://owned.test/hook", []string{sweepEvent}, &f.accountID, nil)
 	insertOwnedConfig(t, "https://other-wallet.test/hook", []string{sweepEvent}, nil, &otherWallet.ID)
 
-	tx := mocks.InsertTransaction(t, f.wallet.ID, nil, "eth", models.TxTypeSweep, "confirmed", "ETH", "1000", 1)
+	tx := fixtures.InsertTransaction(t, f.wallet.ID, nil, "eth", models.TxTypeSweep, "confirmed", "ETH", "1000", 1)
 	f.svc.EnqueueEvent(context.Background(), tx.ID, types.EventType(sweepEvent), tx)
 
 	got := map[uuid.UUID]bool{}
@@ -345,7 +345,7 @@ func TestEnqueueEvent_WalletConfigsSkipEventsWithoutAKnownWallet(t *testing.T) {
 	legacy := insertOwnedConfig(t, "https://legacy.test/hook", []string{sweepEvent}, nil, nil)
 	insertOwnedConfig(t, "https://wallet.test/hook", []string{sweepEvent}, nil, &f.wallet.ID)
 
-	tx := mocks.InsertTransaction(t, f.wallet.ID, nil, "eth", models.TxTypeSweep, "confirmed", "ETH", "1000", 1)
+	tx := fixtures.InsertTransaction(t, f.wallet.ID, nil, "eth", models.TxTypeSweep, "confirmed", "ETH", "1000", 1)
 	f.svc.EnqueueEvent(context.Background(), tx.ID, types.EventType(sweepEvent), map[string]string{"tx_hash": tx.TxHash})
 
 	events := storedEvents(t)

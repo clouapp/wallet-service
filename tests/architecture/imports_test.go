@@ -130,7 +130,7 @@ func TestLayer_MapsEveryKnownZone(t *testing.T) {
 		"app/http/middleware":             LayerHTTP,
 		"app/services/withdrawalevents":   LayerServices,
 		"database/seeders":                LayerDatabase,
-		"tests/testenv":                   LayerTests,
+		"tests/feature/support/testenv":   LayerTests,
 		"app/repositories":                LayerRepositories,
 		"app/events":                      LayerEvents,
 		"app/services/chain/testdata/sol": LayerServices,

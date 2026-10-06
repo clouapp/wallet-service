@@ -8,11 +8,11 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/macrowallets/waas/database/migrations"
-	"github.com/macrowallets/waas/tests/mocks"
+	"github.com/macrowallets/waas/tests/feature/support/fixtures"
 )
 
 func TestAccessTokenPermissionsBecomeNullableJsonb(t *testing.T) {
-	mocks.TestDB(t)
+	fixtures.TestDB(t)
 	migration := &migrations.M00000000000570AccessTokensPermissionsJsonb{}
 
 	require.Equal(t, "jsonb", permissionsColumnType(t))
@@ -26,7 +26,7 @@ func TestAccessTokenPermissionsBecomeNullableJsonb(t *testing.T) {
 	require.Zero(t, constraintCount(t, "access_tokens_permissions_array"))
 	require.NoError(t, migration.Down())
 
-	account := mocks.InsertAccount(t, "token-permissions")
+	account := fixtures.InsertAccount(t, "token-permissions")
 	blankID := insertLegacyPermission(t, account.ID, "")
 	spaceID := insertLegacyPermission(t, account.ID, "   ")
 	arrayID := insertLegacyPermission(t, account.ID, `  ["webhooks.read"]  `)

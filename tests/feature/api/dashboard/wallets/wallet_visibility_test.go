@@ -14,7 +14,7 @@ import (
 
 	"github.com/macrowallets/waas/app/models"
 	authsvc "github.com/macrowallets/waas/app/services/auth"
-	"github.com/macrowallets/waas/tests/mocks"
+	"github.com/macrowallets/waas/tests/feature/support/fixtures"
 )
 
 const walletVisibilityPassword = "correct-horse-battery"
@@ -44,15 +44,15 @@ func TestWalletVisibilitySuite(t *testing.T) {
 }
 
 func (s *WalletVisibilityTestSuite) SetupTest() {
-	mocks.TestDB(s.T())
-	s.account = mocks.InsertAccount(s.T(), "visibility")
+	fixtures.TestDB(s.T())
+	s.account = fixtures.InsertAccount(s.T(), "visibility")
 	s.Require().NoError(facades.Orm().Query().Create(&models.Chain{
 		ID: models.ChainBase, Name: models.ChainBase, AdapterType: models.AdapterTypeEVM,
 		NativeSymbol: "ETH", NativeDecimals: 18, RpcURL: "encrypted-rpc",
 		RequiredConfirmations: 1, Status: "active",
 	}))
-	s.assigned = mocks.InsertWalletWithAccount(s.T(), models.ChainBase, &s.account.ID)
-	s.hidden = mocks.InsertWalletWithAccount(s.T(), models.ChainBase, &s.account.ID)
+	s.assigned = fixtures.InsertWalletWithAccount(s.T(), models.ChainBase, &s.account.ID)
+	s.hidden = fixtures.InsertWalletWithAccount(s.T(), models.ChainBase, &s.account.ID)
 	s.owner = s.member(models.AccountRoleOwner)
 	s.admin = s.member(models.AccountRoleAdmin)
 	s.user = s.member(models.AccountRoleUser)

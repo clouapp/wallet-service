@@ -6,7 +6,7 @@ import (
 
 	"github.com/stretchr/testify/suite"
 
-	"github.com/macrowallets/waas/tests/mocks"
+	"github.com/macrowallets/waas/tests/feature/support/fixtures"
 )
 
 // TwoFactorLoginTestSuite drives the password + TOTP login over HTTP against
@@ -20,7 +20,7 @@ func TestTwoFactorLoginSuite(t *testing.T) {
 }
 
 func (s *TwoFactorLoginTestSuite) SetupTest() {
-	mocks.TestDB(s.T())
+	fixtures.TestDB(s.T())
 }
 
 func (s *TwoFactorLoginTestSuite) TestLoginWithTOTPReturnsAChallengeAndNoSession() {

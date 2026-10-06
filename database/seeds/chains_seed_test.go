@@ -15,7 +15,7 @@ import (
 	"github.com/macrowallets/waas/database/seeds"
 	"github.com/macrowallets/waas/pkg/numeric"
 	"github.com/macrowallets/waas/pkg/types"
-	"github.com/macrowallets/waas/tests/mocks"
+	"github.com/macrowallets/waas/tests/feature/support/fixtures"
 )
 
 func TestChainsSeedDoesNotQueryOutsideTheRepository(t *testing.T) {
@@ -32,7 +32,7 @@ func TestChainsSeedDoesNotQueryOutsideTheRepository(t *testing.T) {
 }
 
 func TestSeedChainsInsertsChainsAndRefreshesOnlyTheSealedEndpointOnRerun(t *testing.T) {
-	mocks.TestDB(t)
+	fixtures.TestDB(t)
 	ctx := context.Background()
 	if profile := strings.TrimSpace(facades.Config().GetString("vault.chains.network_profile")); profile != "" {
 		t.Fatalf("expected an empty chain network profile, got %q", profile)

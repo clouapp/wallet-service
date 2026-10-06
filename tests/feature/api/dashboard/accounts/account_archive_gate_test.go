@@ -14,7 +14,7 @@ import (
 
 	"github.com/macrowallets/waas/app/models"
 	authsvc "github.com/macrowallets/waas/app/services/auth"
-	"github.com/macrowallets/waas/tests/mocks"
+	"github.com/macrowallets/waas/tests/feature/support/fixtures"
 )
 
 const accountArchiveGatePassword = "correct-horse-battery"
@@ -32,7 +32,7 @@ func TestAccountArchiveGateSuite(t *testing.T) {
 }
 
 func (s *AccountArchiveGateTestSuite) SetupTest() {
-	mocks.TestDB(s.T())
+	fixtures.TestDB(s.T())
 }
 
 func (s *AccountArchiveGateTestSuite) TestAccountLifecycleFollowsTheAccountRole() {

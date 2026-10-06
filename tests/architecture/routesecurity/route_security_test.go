@@ -14,7 +14,7 @@ import (
 	"github.com/macrowallets/waas/app/container"
 	"github.com/macrowallets/waas/bootstrap"
 	"github.com/macrowallets/waas/tests/architecture"
-	"github.com/macrowallets/waas/tests/testenv"
+	"github.com/macrowallets/waas/tests/feature/support/testenv"
 )
 
 // guard is the authentication a route runs behind. The ordered middleware

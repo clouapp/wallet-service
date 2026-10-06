@@ -12,7 +12,7 @@ import (
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/repositories"
 	activitylog "github.com/macrowallets/waas/app/services/activity"
-	"github.com/macrowallets/waas/tests/mocks"
+	"github.com/macrowallets/waas/tests/feature/support/fixtures"
 )
 
 type AccountActivityRepositoryTestSuite struct {
@@ -28,7 +28,7 @@ func TestAccountActivityRepositorySuite(t *testing.T) {
 }
 
 func (s *AccountActivityRepositoryTestSuite) SetupTest() {
-	mocks.TestDB(s.T())
+	fixtures.TestDB(s.T())
 	s.activity = repositories.NewAccountActivityRepository(nil)
 	s.memberships = repositories.NewAccountUserRepository(nil)
 	s.settings = repositories.NewSettingRepository(nil)

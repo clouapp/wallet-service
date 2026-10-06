@@ -9,7 +9,7 @@ import (
 
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/repositories"
-	"github.com/macrowallets/waas/tests/mocks"
+	"github.com/macrowallets/waas/tests/feature/support/fixtures"
 )
 
 type TokenRepositoryTestSuite struct {
@@ -23,7 +23,7 @@ func TestTokenRepositorySuite(t *testing.T) {
 }
 
 func (s *TokenRepositoryTestSuite) SetupTest() {
-	mocks.TestDB(s.T())
+	fixtures.TestDB(s.T())
 	s.chains = repositories.NewChainRepository(nil)
 	s.repo = repositories.NewTokenRepository(nil)
 	s.Require().NoError(s.chains.Create(context.Background(), &models.Chain{

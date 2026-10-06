@@ -11,7 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	authsvc "github.com/macrowallets/waas/app/services/auth"
-	"github.com/macrowallets/waas/tests/testutil"
+	"github.com/macrowallets/waas/tests/feature/support/testutil"
 )
 
 func redisChallengeStore(t *testing.T, ttl time.Duration) *authsvc.CacheTOTPChallengeStore {

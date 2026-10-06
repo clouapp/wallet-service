@@ -22,8 +22,8 @@ import (
 	mpc "github.com/macrowallets/waas/app/services/mpc"
 	wallet "github.com/macrowallets/waas/app/services/wallet"
 	ctltestutil "github.com/macrowallets/waas/tests/feature/support"
+	"github.com/macrowallets/waas/tests/feature/support/testutil"
 	"github.com/macrowallets/waas/tests/mocks"
-	"github.com/macrowallets/waas/tests/testutil"
 )
 
 const (

@@ -16,7 +16,7 @@ import (
 	"github.com/macrowallets/waas/app/models"
 	accountsvc "github.com/macrowallets/waas/app/services/account"
 	authsvc "github.com/macrowallets/waas/app/services/auth"
-	"github.com/macrowallets/waas/tests/mocks"
+	"github.com/macrowallets/waas/tests/feature/support/fixtures"
 )
 
 const membersTestPassword = "correct-horse-battery"
@@ -34,7 +34,7 @@ const membersFrontendURL = "https://wallet.example"
 
 func (s *AccountMembersTestSuite) SetupTest() {
 	s.T().Setenv("APP_FRONTEND_URL", membersFrontendURL)
-	mocks.TestDB(s.T())
+	fixtures.TestDB(s.T())
 }
 
 type memberSession struct {

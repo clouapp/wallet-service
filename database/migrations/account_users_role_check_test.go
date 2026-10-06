@@ -8,18 +8,18 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/macrowallets/waas/database/migrations"
-	"github.com/macrowallets/waas/tests/mocks"
+	"github.com/macrowallets/waas/tests/feature/support/fixtures"
 )
 
 func TestAccountUsersRoleCheckRewritesViewerAndRejectsIt(t *testing.T) {
-	mocks.TestDB(t)
+	fixtures.TestDB(t)
 	migration := &migrations.M00000000000470AccountUsersRoleCheck{}
 	require.Equal(t, int64(1), constraintCount(t, "account_users_role_check"))
 
 	require.NoError(t, migration.Down())
 	require.Zero(t, constraintCount(t, "account_users_role_check"))
 
-	account := mocks.InsertAccount(t, "role-check")
+	account := fixtures.InsertAccount(t, "role-check")
 	userID := uuid.New()
 	membershipID := uuid.New()
 	exec(t, `INSERT INTO users (id, email, password_hash, status, created_at, updated_at)

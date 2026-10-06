@@ -22,8 +22,8 @@ import (
 	"github.com/macrowallets/waas/app/repositories"
 	"github.com/macrowallets/waas/pkg/httpclient"
 	"github.com/macrowallets/waas/pkg/types"
-	"github.com/macrowallets/waas/tests/mocks"
-	"github.com/macrowallets/waas/tests/testutil"
+	"github.com/macrowallets/waas/tests/feature/support/fixtures"
+	"github.com/macrowallets/waas/tests/feature/support/testutil"
 )
 
 // The delivery adapter imports this package, so these tests cannot import it.
@@ -72,7 +72,7 @@ func newTestWebhookSvc() *Service {
 }
 
 func TestCreateConfig(t *testing.T) {
-	mocks.TestDB(t)
+	fixtures.TestDB(t)
 	svc := newTestWebhookSvc()
 	ctx := context.Background()
 
@@ -89,7 +89,7 @@ func TestCreateConfig(t *testing.T) {
 }
 
 func TestListConfigs(t *testing.T) {
-	mocks.TestDB(t)
+	fixtures.TestDB(t)
 	svc := newTestWebhookSvc()
 	ctx := context.Background()
 
@@ -106,7 +106,7 @@ func TestListConfigs(t *testing.T) {
 }
 
 func TestDeleteConfig(t *testing.T) {
-	mocks.TestDB(t)
+	fixtures.TestDB(t)
 	svc := newTestWebhookSvc()
 	ctx := context.Background()
 
@@ -122,7 +122,7 @@ func TestDeleteConfig(t *testing.T) {
 }
 
 func TestDeliver_Success(t *testing.T) {
-	mocks.TestDB(t)
+	fixtures.TestDB(t)
 	svc := newTestWebhookSvc()
 	ctx := context.Background()
 
@@ -140,8 +140,8 @@ func TestDeliver_Success(t *testing.T) {
 	defer server.Close()
 
 	// Create webhook config + dummy transaction
-	w := mocks.InsertWallet(t, "eth")
-	tx := mocks.InsertTransaction(t, w.ID, nil, "eth", "deposit", "confirmed", "eth", "100", 50)
+	w := fixtures.InsertWallet(t, "eth")
+	tx := fixtures.InsertTransaction(t, w.ID, nil, "eth", "deposit", "confirmed", "eth", "100", 50)
 
 	// Insert webhook event manually
 	payload := `{"type":"deposit.confirmed","data":{"amount":"100"}}`
@@ -198,7 +198,7 @@ func TestDeliver_Success(t *testing.T) {
 }
 
 func TestDeliver_RedeliveryDoesNotSend(t *testing.T) {
-	mocks.TestDB(t)
+	fixtures.TestDB(t)
 	svc := newTestWebhookSvc()
 	ctx := context.Background()
 
@@ -209,8 +209,8 @@ func TestDeliver_RedeliveryDoesNotSend(t *testing.T) {
 	}))
 	defer server.Close()
 
-	w := mocks.InsertWallet(t, "eth")
-	tx := mocks.InsertTransaction(t, w.ID, nil, "eth", "deposit", "confirmed", "eth", "100", 50)
+	w := fixtures.InsertWallet(t, "eth")
+	tx := fixtures.InsertTransaction(t, w.ID, nil, "eth", "deposit", "confirmed", "eth", "100", 50)
 	payload := `{"type":"deposit.confirmed","data":{"amount":"100"}}`
 	eventID := uuid.NewString()
 	facades.Orm().Query().Exec(`INSERT INTO webhook_events (id, transaction_id, event_type, payload, delivery_url, delivery_status, attempts, max_attempts, created_at)
@@ -253,7 +253,7 @@ func TestDeliver_RedeliveryDoesNotSend(t *testing.T) {
 }
 
 func TestDeliver_Failure(t *testing.T) {
-	mocks.TestDB(t)
+	fixtures.TestDB(t)
 	svc := newTestWebhookSvc()
 	ctx := context.Background()
 
@@ -263,8 +263,8 @@ func TestDeliver_Failure(t *testing.T) {
 	}))
 	defer server.Close()
 
-	w := mocks.InsertWallet(t, "eth")
-	tx := mocks.InsertTransaction(t, w.ID, nil, "eth", "deposit", "confirmed", "eth", "100", 50)
+	w := fixtures.InsertWallet(t, "eth")
+	tx := fixtures.InsertTransaction(t, w.ID, nil, "eth", "deposit", "confirmed", "eth", "100", 50)
 
 	eventID := uuid.NewString()
 	facades.Orm().Query().Exec(`INSERT INTO webhook_events (id, transaction_id, event_type, payload, delivery_url, delivery_status, attempts, max_attempts, created_at)
@@ -295,12 +295,12 @@ func TestDeliver_Failure(t *testing.T) {
 }
 
 func TestDeliver_Unreachable(t *testing.T) {
-	mocks.TestDB(t)
+	fixtures.TestDB(t)
 	svc := newTestWebhookSvc()
 	ctx := context.Background()
 
-	w := mocks.InsertWallet(t, "eth")
-	tx := mocks.InsertTransaction(t, w.ID, nil, "eth", "deposit", "confirmed", "eth", "100", 50)
+	w := fixtures.InsertWallet(t, "eth")
+	tx := fixtures.InsertTransaction(t, w.ID, nil, "eth", "deposit", "confirmed", "eth", "100", 50)
 
 	eventID := "evt-unreach-123"
 	facades.Orm().Query().Exec(`INSERT INTO webhook_events (id, transaction_id, event_type, payload, delivery_url, delivery_status, attempts, max_attempts, created_at)
@@ -331,7 +331,7 @@ func (r *recordingWebhookSender) SendWebhook(_ context.Context, msg types.Webhoo
 }
 
 func TestEnqueueEvent_QueuePayloadCarriesNoSecret(t *testing.T) {
-	mocks.TestDB(t)
+	fixtures.TestDB(t)
 	ctx := context.Background()
 	const secret = "queue-payload-must-not-carry-this-secret"
 	sender := &recordingWebhookSender{}
@@ -347,8 +347,8 @@ func TestEnqueueEvent_QueuePayloadCarriesNoSecret(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateConfig: %v", err)
 	}
-	w := mocks.InsertWallet(t, "eth")
-	tx := mocks.InsertTransaction(t, w.ID, nil, "eth", "deposit", "pending", "eth", "100", 50)
+	w := fixtures.InsertWallet(t, "eth")
+	tx := fixtures.InsertTransaction(t, w.ID, nil, "eth", "deposit", "pending", "eth", "100", 50)
 
 	svc.EnqueueEvent(ctx, tx.ID, types.EventDepositPending, map[string]string{"test": "data"})
 	if _, err := svc.EnqueueScoped(ctx, ScopedEvent{
@@ -403,12 +403,12 @@ func TestPgArray(t *testing.T) {
 }
 
 func TestEnqueueEvent_NoConfigs(t *testing.T) {
-	mocks.TestDB(t)
+	fixtures.TestDB(t)
 	svc := newTestWebhookSvc()
 
 	// Insert a wallet + transaction for FK
-	w := mocks.InsertWallet(t, "eth")
-	tx := mocks.InsertTransaction(t, w.ID, nil, "eth", "deposit", "pending", "eth", "100", 50)
+	w := fixtures.InsertWallet(t, "eth")
+	tx := fixtures.InsertTransaction(t, w.ID, nil, "eth", "deposit", "pending", "eth", "100", 50)
 
 	// Should not panic with no webhook configs
 	svc.EnqueueEvent(context.Background(), tx.ID, types.EventDepositPending, map[string]string{"test": "data"})

@@ -10,7 +10,7 @@ import (
 
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/pkg/types"
-	"github.com/macrowallets/waas/tests/mocks"
+	"github.com/macrowallets/waas/tests/feature/support/fixtures"
 )
 
 const internalTransferBlock = 900
@@ -56,7 +56,7 @@ func walletOfAddress(t *testing.T, address string) uuid.UUID {
 func TestScanBlock_SkipsSweepsAndGasSeedsOfTheSameWallet(t *testing.T) {
 	f := newScanFixture(t, 1000, DefaultScanOptions())
 	walletID := walletOfAddress(t, f.address)
-	otherWallet := mocks.InsertWallet(t, scanTestChain)
+	otherWallet := fixtures.InsertWallet(t, scanTestChain)
 
 	recordOutbound(t, walletID, models.TxTypeSweep, "tx-sweep", f.address)
 	recordOutbound(t, walletID, models.TxTypeGasSeed, "tx-gas-seed", f.address)

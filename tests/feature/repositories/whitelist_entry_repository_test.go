@@ -9,7 +9,7 @@ import (
 
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/repositories"
-	"github.com/macrowallets/waas/tests/mocks"
+	"github.com/macrowallets/waas/tests/feature/support/fixtures"
 )
 
 type WhitelistEntryRepositoryTestSuite struct {
@@ -22,12 +22,12 @@ func TestWhitelistEntryRepositorySuite(t *testing.T) {
 }
 
 func (s *WhitelistEntryRepositoryTestSuite) SetupTest() {
-	mocks.TestDB(s.T())
+	fixtures.TestDB(s.T())
 	s.repo = repositories.NewWhitelistEntryRepository(nil)
 }
 
 func (s *WhitelistEntryRepositoryTestSuite) insertWallet() uuid.UUID {
-	w := mocks.InsertWallet(s.T(), "eth")
+	w := fixtures.InsertWallet(s.T(), "eth")
 	return w.ID
 }
 

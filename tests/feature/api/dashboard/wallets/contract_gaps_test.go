@@ -24,7 +24,7 @@ import (
 	"github.com/macrowallets/waas/app/models"
 	authsvc "github.com/macrowallets/waas/app/services/auth"
 	"github.com/macrowallets/waas/app/services/settings"
-	"github.com/macrowallets/waas/tests/mocks"
+	"github.com/macrowallets/waas/tests/feature/support/fixtures"
 )
 
 const contractGapPassword = "correct-horse-battery"
@@ -43,7 +43,7 @@ func TestContractGapsSuite(t *testing.T) {
 }
 
 func (s *contractGapsSuite) SetupTest() {
-	mocks.TestDB(s.T())
+	fixtures.TestDB(s.T())
 	s.accountID = uuid.Nil
 	s.accountID, s.ownerID, s.token = s.seedSession("owner")
 }

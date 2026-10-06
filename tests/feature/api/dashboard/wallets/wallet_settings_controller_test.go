@@ -14,7 +14,7 @@ import (
 
 	"github.com/macrowallets/waas/app/models"
 	authsvc "github.com/macrowallets/waas/app/services/auth"
-	"github.com/macrowallets/waas/tests/mocks"
+	"github.com/macrowallets/waas/tests/feature/support/fixtures"
 )
 
 const walletSettingsTestPassword = "correct-horse-battery"
@@ -34,8 +34,8 @@ func TestWalletSettingsSuite(t *testing.T) {
 }
 
 func (s *WalletSettingsTestSuite) SetupTest() {
-	mocks.TestDB(s.T())
-	s.account = mocks.InsertAccount(s.T(), "settings")
+	fixtures.TestDB(s.T())
+	s.account = fixtures.InsertAccount(s.T(), "settings")
 	// The auditor still has to reach the settings policy. With the flag off,
 	// a user or auditor who is not a wallet member never sees the wallet.
 	_, err := facades.Orm().Query().Exec(`UPDATE accounts SET view_all_wallets = TRUE WHERE id = ?`, s.account.ID)
@@ -84,7 +84,7 @@ func (s *WalletSettingsTestSuite) memberToken(role string) string {
 }
 
 func (s *WalletSettingsTestSuite) wallet(chainID string) models.Wallet {
-	return mocks.InsertWalletWithAccount(s.T(), chainID, &s.account.ID)
+	return fixtures.InsertWalletWithAccount(s.T(), chainID, &s.account.ID)
 }
 
 func (s *WalletSettingsTestSuite) patch(token string, walletID uuid.UUID, body string) contractstesting.Response {
@@ -165,8 +165,8 @@ func (s *WalletSettingsTestSuite) TestViewersCannotChangeSettings() {
 }
 
 func (s *WalletSettingsTestSuite) TestOtherAccountsWalletsAreNotReachable() {
-	other := mocks.InsertAccount(s.T(), "other")
-	foreign := mocks.InsertWalletWithAccount(s.T(), models.ChainBase, &other.ID)
+	other := fixtures.InsertAccount(s.T(), "other")
+	foreign := fixtures.InsertWalletWithAccount(s.T(), models.ChainBase, &other.ID)
 	s.patch(s.ownerToken, foreign.ID, `{"fee_multiplier": 2}`).AssertStatus(403)
 	s.False(s.stored(foreign.ID).FeeMultiplier.Valid)
 }

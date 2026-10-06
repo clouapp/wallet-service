@@ -13,7 +13,7 @@ import (
 	"github.com/macrowallets/waas/app/repositories"
 	"github.com/macrowallets/waas/database/seeds"
 	"github.com/macrowallets/waas/pkg/numeric"
-	"github.com/macrowallets/waas/tests/mocks"
+	"github.com/macrowallets/waas/tests/feature/support/fixtures"
 )
 
 func TestCurrenciesSeedDoesNotQueryOutsideTheRepository(t *testing.T) {
@@ -30,7 +30,7 @@ func TestCurrenciesSeedDoesNotQueryOutsideTheRepository(t *testing.T) {
 }
 
 func TestSeedCurrenciesInsertsTheCatalogAndLeavesExistingRowsOnRerun(t *testing.T) {
-	mocks.TestDB(t)
+	fixtures.TestDB(t)
 	ctx := context.Background()
 	if err := seeds.SeedCurrencies(ctx); err != nil {
 		t.Fatalf("seed currencies: %v", err)
@@ -76,7 +76,7 @@ func TestSeedCurrenciesInsertsTheCatalogAndLeavesExistingRowsOnRerun(t *testing.
 }
 
 func TestSeedCurrenciesKeepsADisabledRow(t *testing.T) {
-	mocks.TestDB(t)
+	fixtures.TestDB(t)
 	ctx := context.Background()
 	currencies := repositories.NewCurrencyRepository(nil)
 	existingID := uuid.MustParse("00000000-0000-0000-0000-0000000000c1")

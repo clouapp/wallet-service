@@ -11,7 +11,7 @@ import (
 
 	"github.com/macrowallets/waas/app/http/middleware"
 	"github.com/macrowallets/waas/app/models"
-	"github.com/macrowallets/waas/tests/mocks"
+	"github.com/macrowallets/waas/tests/feature/support/fixtures"
 )
 
 // apiTokenIPSuite checks S3.4.6 on /api/v1. A blank ip_cidr keeps today's
@@ -29,7 +29,7 @@ func TestAPITokenIP(t *testing.T) {
 }
 
 func (s *apiTokenIPSuite) SetupTest() {
-	mocks.TestDB(s.T())
+	fixtures.TestDB(s.T())
 	s.account = models.Account{
 		ID:          uuid.New(),
 		Name:        "api-ip-" + uuid.NewString(),

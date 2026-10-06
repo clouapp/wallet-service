@@ -12,7 +12,7 @@ import (
 
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/repositories"
-	"github.com/macrowallets/waas/tests/mocks"
+	"github.com/macrowallets/waas/tests/feature/support/fixtures"
 )
 
 type TransactionRepositoryTestSuite struct {
@@ -25,12 +25,12 @@ func TestTransactionRepositorySuite(t *testing.T) {
 }
 
 func (s *TransactionRepositoryTestSuite) SetupTest() {
-	mocks.TestDB(s.T())
+	fixtures.TestDB(s.T())
 	s.repo = repositories.NewTransactionRepository(nil)
 }
 
 func (s *TransactionRepositoryTestSuite) insertWallet() uuid.UUID {
-	w := mocks.InsertWallet(s.T(), "eth")
+	w := fixtures.InsertWallet(s.T(), "eth")
 	return w.ID
 }
 
@@ -304,11 +304,11 @@ func (s *TransactionRepositoryTestSuite) makeTxForUser(walletID uuid.UUID, userI
 // transaction tagged external_user_id="shared_user"; a query issued with
 // accountA.ID must never see accountB's row.
 func (s *TransactionRepositoryTestSuite) TestListForAccount_FiltersByAccount() {
-	accountA := mocks.InsertAccount(s.T(), "acc-A")
-	accountB := mocks.InsertAccount(s.T(), "acc-B")
+	accountA := fixtures.InsertAccount(s.T(), "acc-A")
+	accountB := fixtures.InsertAccount(s.T(), "acc-B")
 
-	walletA := mocks.InsertWalletWithAccount(s.T(), "eth", &accountA.ID)
-	walletB := mocks.InsertWalletWithAccount(s.T(), "eth", &accountB.ID)
+	walletA := fixtures.InsertWalletWithAccount(s.T(), "eth", &accountA.ID)
+	walletB := fixtures.InsertWalletWithAccount(s.T(), "eth", &accountB.ID)
 
 	s.Require().NoError(s.repo.Create(context.Background(), s.makeTxForUser(walletA.ID, "shared_user", "deposit", "confirmed")))
 	s.Require().NoError(s.repo.Create(context.Background(), s.makeTxForUser(walletA.ID, "shared_user", "withdrawal", "pending")))
@@ -333,8 +333,8 @@ func (s *TransactionRepositoryTestSuite) TestListForAccount_FiltersByAccount() {
 // transactions on wallets with NULL account_id (legacy data) must never leak
 // into any account's scoped view.
 func (s *TransactionRepositoryTestSuite) TestListForAccount_ExcludesUnassignedWallets() {
-	account := mocks.InsertAccount(s.T(), "acc-scoped")
-	unassigned := mocks.InsertWallet(s.T(), "eth") // account_id = NULL
+	account := fixtures.InsertAccount(s.T(), "acc-scoped")
+	unassigned := fixtures.InsertWallet(s.T(), "eth") // account_id = NULL
 	s.Require().NoError(s.repo.Create(context.Background(), s.makeTxForUser(unassigned.ID, "user_x", "deposit", "confirmed")))
 
 	txs, total, err := s.repo.ListForAccount(context.Background(), account.ID, "", "", "", "user_x", 50, 0)
@@ -346,8 +346,8 @@ func (s *TransactionRepositoryTestSuite) TestListForAccount_ExcludesUnassignedWa
 // TestListForAccount_AppliesSecondaryFilters confirms chain/type/status filters
 // are still honored in addition to the account-level filter.
 func (s *TransactionRepositoryTestSuite) TestListForAccount_AppliesSecondaryFilters() {
-	account := mocks.InsertAccount(s.T(), "acc")
-	wallet := mocks.InsertWalletWithAccount(s.T(), "eth", &account.ID)
+	account := fixtures.InsertAccount(s.T(), "acc")
+	wallet := fixtures.InsertWalletWithAccount(s.T(), "eth", &account.ID)
 
 	s.Require().NoError(s.repo.Create(context.Background(), s.makeTxForUser(wallet.ID, "u", "deposit", "confirmed")))
 	s.Require().NoError(s.repo.Create(context.Background(), s.makeTxForUser(wallet.ID, "u", "withdrawal", "pending")))

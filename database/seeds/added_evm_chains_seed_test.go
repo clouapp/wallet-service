@@ -11,7 +11,7 @@ import (
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/repositories"
 	"github.com/macrowallets/waas/database/seeds"
-	"github.com/macrowallets/waas/tests/mocks"
+	"github.com/macrowallets/waas/tests/feature/support/fixtures"
 )
 
 func TestAddedEVMChainsSeedDoesNotQueryOutsideTheRepository(t *testing.T) {
@@ -28,7 +28,7 @@ func TestAddedEVMChainsSeedDoesNotQueryOutsideTheRepository(t *testing.T) {
 }
 
 func TestSeedMissingAddedChainsInsertsOnceAndLeavesExistingRows(t *testing.T) {
-	mocks.TestDB(t)
+	fixtures.TestDB(t)
 	ctx := context.Background()
 	restoreChainNetworkProfile(t, models.ChainNetworkProfileMainnet)
 

@@ -9,7 +9,7 @@ import (
 
 	"github.com/redis/go-redis/v9"
 
-	"github.com/macrowallets/waas/tests/testutil"
+	"github.com/macrowallets/waas/tests/feature/support/testutil"
 )
 
 func TestNewReturnsNilForANilClient(t *testing.T) {

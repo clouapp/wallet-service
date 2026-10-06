@@ -8,7 +8,7 @@ import (
 
 	"github.com/goravel/framework/facades"
 
-	"github.com/macrowallets/waas/tests/testenv"
+	"github.com/macrowallets/waas/tests/feature/support/testenv"
 )
 
 func TestBootTestLoadsDedicatedTestingEnvironment(t *testing.T) {

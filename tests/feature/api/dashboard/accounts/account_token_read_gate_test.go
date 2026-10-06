@@ -14,7 +14,7 @@ import (
 
 	"github.com/macrowallets/waas/app/models"
 	authsvc "github.com/macrowallets/waas/app/services/auth"
-	"github.com/macrowallets/waas/tests/mocks"
+	"github.com/macrowallets/waas/tests/feature/support/fixtures"
 )
 
 const (
@@ -36,7 +36,7 @@ func TestAccountTokenReadGateSuite(t *testing.T) {
 }
 
 func (s *AccountTokenReadGateTestSuite) SetupTest() {
-	mocks.TestDB(s.T())
+	fixtures.TestDB(s.T())
 }
 
 func (s *AccountTokenReadGateTestSuite) TestAccountTokenListFollowsTheAccountRole() {

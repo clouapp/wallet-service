@@ -11,7 +11,7 @@ import (
 
 	"github.com/macrowallets/waas/app/http/responses"
 	"github.com/macrowallets/waas/app/models"
-	"github.com/macrowallets/waas/tests/testutil"
+	"github.com/macrowallets/waas/tests/feature/support/testutil"
 )
 
 // PlatformUserSuspendTestSuite is the platform suspension in S3.4.4.

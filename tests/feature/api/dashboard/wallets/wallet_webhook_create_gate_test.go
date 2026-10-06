@@ -18,7 +18,7 @@ import (
 
 	"github.com/macrowallets/waas/app/models"
 	authsvc "github.com/macrowallets/waas/app/services/auth"
-	"github.com/macrowallets/waas/tests/mocks"
+	"github.com/macrowallets/waas/tests/feature/support/fixtures"
 )
 
 const walletWebhookCreateGatePassword = "correct-horse-battery"
@@ -39,13 +39,13 @@ func TestWalletWebhookCreateGateSuite(t *testing.T) {
 }
 
 func (s *WalletWebhookCreateGateTestSuite) SetupTest() {
-	mocks.TestDB(s.T())
+	fixtures.TestDB(s.T())
 }
 
 func (s *WalletWebhookCreateGateTestSuite) TestWalletWebhookCreateFollowsTheLoadedRoles() {
-	account := mocks.InsertAccount(s.T(), "wallet webhook create")
+	account := fixtures.InsertAccount(s.T(), "wallet webhook create")
 	s.seedChain()
-	wallet := mocks.InsertWalletWithAccount(s.T(), models.ChainETH, &account.ID)
+	wallet := fixtures.InsertWalletWithAccount(s.T(), models.ChainETH, &account.ID)
 
 	denied := []struct {
 		accountRole string
@@ -88,9 +88,9 @@ func (s *WalletWebhookCreateGateTestSuite) TestWalletWebhookCreateFollowsTheLoad
 }
 
 func (s *WalletWebhookCreateGateTestSuite) TestMissingWalletWebhookIs404BeforeTheRoleCheck() {
-	account := mocks.InsertAccount(s.T(), "wallet webhook missing")
+	account := fixtures.InsertAccount(s.T(), "wallet webhook missing")
 	s.seedChain()
-	wallet := mocks.InsertWalletWithAccount(s.T(), models.ChainETH, &account.ID)
+	wallet := fixtures.InsertWalletWithAccount(s.T(), models.ChainETH, &account.ID)
 	actor := s.member(models.AccountRoleUser, account.ID)
 	s.assign(actor.id, wallet.ID, models.WalletRoleViewer)
 
@@ -100,9 +100,9 @@ func (s *WalletWebhookCreateGateTestSuite) TestMissingWalletWebhookIs404BeforeTh
 }
 
 func (s *WalletWebhookCreateGateTestSuite) TestWalletWebhookDeleteFollowsTheLoadedRoles() {
-	account := mocks.InsertAccount(s.T(), "wallet webhook delete")
+	account := fixtures.InsertAccount(s.T(), "wallet webhook delete")
 	s.seedChain()
-	wallet := mocks.InsertWalletWithAccount(s.T(), models.ChainETH, &account.ID)
+	wallet := fixtures.InsertWalletWithAccount(s.T(), models.ChainETH, &account.ID)
 	owner := s.member(models.AccountRoleOwner, account.ID)
 
 	denied := []struct {
@@ -152,9 +152,9 @@ func (s *WalletWebhookCreateGateTestSuite) TestWalletWebhookDeleteFollowsTheLoad
 }
 
 func (s *WalletWebhookCreateGateTestSuite) TestWalletWebhookTestFollowsTheLoadedRoles() {
-	account := mocks.InsertAccount(s.T(), "wallet webhook test")
+	account := fixtures.InsertAccount(s.T(), "wallet webhook test")
 	s.seedChain()
-	wallet := mocks.InsertWalletWithAccount(s.T(), models.ChainETH, &account.ID)
+	wallet := fixtures.InsertWalletWithAccount(s.T(), models.ChainETH, &account.ID)
 	owner := s.member(models.AccountRoleOwner, account.ID)
 
 	var deliveries atomic.Int32
@@ -213,9 +213,9 @@ func (s *WalletWebhookCreateGateTestSuite) TestWalletWebhookTestFollowsTheLoaded
 }
 
 func (s *WalletWebhookCreateGateTestSuite) TestCreateWalletWebhookValidationStaysUnprocessable() {
-	account := mocks.InsertAccount(s.T(), "wallet webhook validation")
+	account := fixtures.InsertAccount(s.T(), "wallet webhook validation")
 	s.seedChain()
-	wallet := mocks.InsertWalletWithAccount(s.T(), models.ChainETH, &account.ID)
+	wallet := fixtures.InsertWalletWithAccount(s.T(), models.ChainETH, &account.ID)
 	owner := s.member(models.AccountRoleOwner, account.ID)
 
 	resp := s.postWebhook(owner.token, account.ID, wallet.ID, `{}`)

@@ -19,8 +19,8 @@ import (
 	"github.com/macrowallets/waas/app/container"
 	"github.com/macrowallets/waas/bootstrap"
 	"github.com/macrowallets/waas/database/seeds"
-	"github.com/macrowallets/waas/tests/mocks"
-	"github.com/macrowallets/waas/tests/testenv"
+	"github.com/macrowallets/waas/tests/feature/support/fixtures"
+	"github.com/macrowallets/waas/tests/feature/support/testenv"
 )
 
 const (
@@ -51,7 +51,7 @@ func TestMain(m *testing.M) {
 // snapshot with -update-contract.
 func TestHTTPContract(t *testing.T) {
 	refuseOutboundMail(t)
-	mocks.TestDB(t)
+	fixtures.TestDB(t)
 	seedReferenceData(t)
 
 	runner := &scenarioRunner{t: t, vars: map[string]string{}, normalizer: NewNormalizer(volatileFields...)}
@@ -368,7 +368,7 @@ func insertFixtureWallet(t *testing.T, vars map[string]string) {
 	if err != nil {
 		t.Fatalf("account id %q: %v", vars["account"], err)
 	}
-	wallet := mocks.InsertWalletWithAccount(t, "eth", &accountID)
+	wallet := fixtures.InsertWalletWithAccount(t, "eth", &accountID)
 	if _, err := facades.Orm().Query().Exec(`UPDATE addresses SET address = ? WHERE id = ?`,
 		fixtureDepositAddress, wallet.DepositAddress.ID); err != nil {
 		t.Fatalf("pin fixture deposit address: %v", err)

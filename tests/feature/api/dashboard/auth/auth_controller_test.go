@@ -8,7 +8,7 @@ import (
 	goravelTesting "github.com/goravel/framework/testing"
 	"github.com/stretchr/testify/suite"
 
-	"github.com/macrowallets/waas/tests/mocks"
+	"github.com/macrowallets/waas/tests/feature/support/fixtures"
 )
 
 // AuthControllerTestSuite exercises the /v1/auth/* pre-authentication routes.
@@ -89,7 +89,7 @@ func (s *AuthControllerTestSuite) TestLogout_NoAuth() {
 // It used to answer 500 because a nil preferences pointer was written as NULL
 // into the NOT NULL column.
 func (s *AuthControllerTestSuite) TestRegister_PersistsUser() {
-	mocks.TestDB(s.T())
+	fixtures.TestDB(s.T())
 	body := `{"email":"register-ok@example.com","password":"secret123","full_name":"Reg User","organization_name":"Reg Org"}`
 	resp, err := s.Http(s.T()).
 		WithHeader("Content-Type", "application/json").

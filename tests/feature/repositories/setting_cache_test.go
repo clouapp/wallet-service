@@ -11,16 +11,16 @@ import (
 
 	"github.com/macrowallets/waas/app/repositories"
 	"github.com/macrowallets/waas/app/services/settings"
-	"github.com/macrowallets/waas/tests/mocks"
-	"github.com/macrowallets/waas/tests/testutil"
+	"github.com/macrowallets/waas/tests/feature/support/fixtures"
+	"github.com/macrowallets/waas/tests/feature/support/testutil"
 )
 
 func TestSettingsReadStoresAJSONMapForTenMinutes(t *testing.T) {
-	mocks.TestDB(t)
+	fixtures.TestDB(t)
 	ctx := context.Background()
 	settingsRepo := repositories.NewSettingRepository(nil)
 	activityRepo := repositories.NewAccountActivityRepository(nil)
-	account := mocks.InsertAccount(t, "settings-cache")
+	account := fixtures.InsertAccount(t, "settings-cache")
 	actorID := uuid.New()
 	if _, err := facades.Orm().Query().Exec(
 		`INSERT INTO users (id, email, password_hash, status, created_at, updated_at)

@@ -8,7 +8,7 @@ import (
 	appmail "github.com/macrowallets/waas/app/providers/mail"
 	"github.com/macrowallets/waas/app/providers/mailer"
 	"github.com/macrowallets/waas/bootstrap"
-	"github.com/macrowallets/waas/tests/testenv"
+	"github.com/macrowallets/waas/tests/feature/support/testenv"
 )
 
 func TestMain(m *testing.M) {

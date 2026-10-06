@@ -9,7 +9,7 @@ import (
 	"github.com/stretchr/testify/suite"
 
 	"github.com/macrowallets/waas/app/http/responses"
-	"github.com/macrowallets/waas/tests/testutil"
+	"github.com/macrowallets/waas/tests/feature/support/testutil"
 )
 
 // PlatformUserMFATestSuite is DELETE /v1/platform/users/{id}/mfa from S3.4.1.

@@ -9,7 +9,7 @@ import (
 	"github.com/goravel/framework/facades"
 	"github.com/stretchr/testify/suite"
 
-	"github.com/macrowallets/waas/tests/mocks"
+	"github.com/macrowallets/waas/tests/feature/support/fixtures"
 )
 
 type MfaSealTestSuite struct {
@@ -21,7 +21,7 @@ func TestMfaSealSuite(t *testing.T) {
 }
 
 func (s *MfaSealTestSuite) SetupTest() {
-	mocks.TestDB(s.T())
+	fixtures.TestDB(s.T())
 }
 
 func (s *MfaSealTestSuite) TestEnrolledSecretIsSealedAndVerifyStillWorks() {

@@ -1,4 +1,4 @@
-package mocks
+package fixtures
 
 import (
 	"context"
@@ -10,7 +10,7 @@ import (
 
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/repositories"
-	"github.com/macrowallets/waas/tests/testenv"
+	"github.com/macrowallets/waas/tests/feature/support/testenv"
 )
 
 // ---------------------------------------------------------------------------

@@ -13,8 +13,9 @@ import (
 	"github.com/macrowallets/waas/app/services/chain"
 	"github.com/macrowallets/waas/app/services/webhook"
 	"github.com/macrowallets/waas/pkg/types"
+	"github.com/macrowallets/waas/tests/feature/support/fixtures"
+	"github.com/macrowallets/waas/tests/feature/support/testutil"
 	"github.com/macrowallets/waas/tests/mocks"
-	"github.com/macrowallets/waas/tests/testutil"
 )
 
 func TestMain(m *testing.M) {
@@ -43,7 +44,7 @@ func newDepositSvc(registry *chain.Registry, webhookSvc *webhook.Service) *Servi
 
 func setupDepositService(t *testing.T) (*Service, *mocks.MockChain, *mocks.MockSQS) {
 	t.Helper()
-	mocks.TestDB(t)
+	fixtures.TestDB(t)
 	registry := chain.NewRegistry()
 	mockChain := mocks.NewMockChain("eth")
 	mockChain.RequiredConfirmationsVal = 3
@@ -56,7 +57,7 @@ func setupDepositService(t *testing.T) (*Service, *mocks.MockChain, *mocks.MockS
 
 // We test the core logic without a running blockchain — mock the adapter.
 func TestScanLatestBlocks_NoNewBlocks(t *testing.T) {
-	mocks.TestDB(t)
+	fixtures.TestDB(t)
 	registry := chain.NewRegistry()
 	mockChain := mocks.NewMockChain("eth")
 	mockChain.GetLatestBlockFn = func(ctx context.Context) (uint64, error) {
@@ -77,7 +78,7 @@ func TestScanLatestBlocks_NoNewBlocks(t *testing.T) {
 }
 
 func TestScanLatestBlocks_UnknownChain(t *testing.T) {
-	mocks.TestDB(t)
+	fixtures.TestDB(t)
 	registry := chain.NewRegistry()
 	svc := newDepositSvc(registry, nil)
 
@@ -88,15 +89,15 @@ func TestScanLatestBlocks_UnknownChain(t *testing.T) {
 }
 
 func TestProcessTransfer_MatchesAddress(t *testing.T) {
-	mocks.TestDB(t)
+	fixtures.TestDB(t)
 	registry := chain.NewRegistry()
 	mockChain := mocks.NewMockChain("eth")
 	mockChain.RequiredConfirmationsVal = 3
 	registry.RegisterChain(mockChain)
 
 	// Insert a wallet + address
-	w := mocks.InsertWallet(t, "eth")
-	addr := mocks.InsertAddress(t, w.ID, "eth", "0xuser_deposit_addr", "user_123", 0)
+	w := fixtures.InsertWallet(t, "eth")
+	addr := fixtures.InsertAddress(t, w.ID, "eth", "0xuser_deposit_addr", "user_123", 0)
 
 	svc := newDepositSvc(registry, newWebhookSvc())
 
@@ -140,7 +141,7 @@ func TestProcessTransfer_MatchesAddress(t *testing.T) {
 }
 
 func TestProcessTransfer_IgnoresUnknownAddress(t *testing.T) {
-	mocks.TestDB(t)
+	fixtures.TestDB(t)
 	registry := chain.NewRegistry()
 	mockChain := mocks.NewMockChain("eth")
 	registry.RegisterChain(mockChain)
@@ -166,14 +167,14 @@ func TestProcessTransfer_IgnoresUnknownAddress(t *testing.T) {
 }
 
 func TestProcessTransfer_Dedup(t *testing.T) {
-	mocks.TestDB(t)
+	fixtures.TestDB(t)
 	registry := chain.NewRegistry()
 	mockChain := mocks.NewMockChain("eth")
 	mockChain.RequiredConfirmationsVal = 3
 	registry.RegisterChain(mockChain)
 
-	w := mocks.InsertWallet(t, "eth")
-	addr := mocks.InsertAddress(t, w.ID, "eth", "0xdedup_addr", "user_dedup", 0)
+	w := fixtures.InsertWallet(t, "eth")
+	addr := fixtures.InsertAddress(t, w.ID, "eth", "0xdedup_addr", "user_dedup", 0)
 
 	svc := newDepositSvc(registry, newWebhookSvc())
 
@@ -202,14 +203,14 @@ func TestProcessTransfer_Dedup(t *testing.T) {
 }
 
 func TestProcessTransfer_TokenDeposit(t *testing.T) {
-	mocks.TestDB(t)
+	fixtures.TestDB(t)
 	registry := chain.NewRegistry()
 	mockChain := mocks.NewMockChain("eth")
 	mockChain.RequiredConfirmationsVal = 12
 	registry.RegisterChain(mockChain)
 
-	w := mocks.InsertWallet(t, "eth")
-	addr := mocks.InsertAddress(t, w.ID, "eth", "0xtoken_addr", "user_token", 0)
+	w := fixtures.InsertWallet(t, "eth")
+	addr := fixtures.InsertAddress(t, w.ID, "eth", "0xtoken_addr", "user_token", 0)
 
 	svc := newDepositSvc(registry, newWebhookSvc())
 
@@ -231,16 +232,16 @@ func TestProcessTransfer_TokenDeposit(t *testing.T) {
 }
 
 func TestUpdateConfirmations(t *testing.T) {
-	mocks.TestDB(t)
+	fixtures.TestDB(t)
 	registry := chain.NewRegistry()
 	mockChain := mocks.NewMockChain("eth")
 	mockChain.RequiredConfirmationsVal = 3
 	registry.RegisterChain(mockChain)
 
-	w := mocks.InsertWallet(t, "eth")
+	w := fixtures.InsertWallet(t, "eth")
 
 	// Insert a pending deposit at block 100
-	insertedTx := mocks.InsertTransaction(t, w.ID, nil, "eth", "deposit", "pending", "eth", "1000", 100)
+	insertedTx := fixtures.InsertTransaction(t, w.ID, nil, "eth", "deposit", "pending", "eth", "1000", 100)
 
 	svc := newDepositSvc(registry, newWebhookSvc())
 
@@ -267,14 +268,14 @@ func TestUpdateConfirmations(t *testing.T) {
 // TestUpdateConfirmations_TipBlockCountsAsOne covers the off-by-one: a transaction in
 // the tip block has one confirmation, so a chain requiring 1 confirms it right away.
 func TestUpdateConfirmations_TipBlockCountsAsOne(t *testing.T) {
-	mocks.TestDB(t)
+	fixtures.TestDB(t)
 	registry := chain.NewRegistry()
 	mockChain := mocks.NewMockChain("btc")
 	mockChain.RequiredConfirmationsVal = 1
 	registry.RegisterChain(mockChain)
 
-	w := mocks.InsertWallet(t, "btc")
-	insertedTx := mocks.InsertTransaction(t, w.ID, nil, "btc", "deposit", "pending", "btc", "15000", 154745)
+	w := fixtures.InsertWallet(t, "btc")
+	insertedTx := fixtures.InsertTransaction(t, w.ID, nil, "btc", "deposit", "pending", "btc", "15000", 154745)
 	if _, err := facades.Orm().Query().Model(&models.Transaction{}).Where("id", insertedTx.ID).
 		Update(map[string]interface{}{"required_confs": 1}); err != nil {
 		t.Fatal(err)
@@ -295,14 +296,14 @@ func TestUpdateConfirmations_TipBlockCountsAsOne(t *testing.T) {
 // TestUpdateConfirmations_TipBehindTransactionCountsZero covers a lagging height
 // provider that reports a tip below the transaction's block.
 func TestUpdateConfirmations_TipBehindTransactionCountsZero(t *testing.T) {
-	mocks.TestDB(t)
+	fixtures.TestDB(t)
 	registry := chain.NewRegistry()
 	mockChain := mocks.NewMockChain("eth")
 	mockChain.RequiredConfirmationsVal = 3
 	registry.RegisterChain(mockChain)
 
-	w := mocks.InsertWallet(t, "eth")
-	insertedTx := mocks.InsertTransaction(t, w.ID, nil, "eth", "deposit", "pending", "eth", "1000", 100)
+	w := fixtures.InsertWallet(t, "eth")
+	insertedTx := fixtures.InsertTransaction(t, w.ID, nil, "eth", "deposit", "pending", "eth", "1000", 100)
 	svc := newDepositSvc(registry, newWebhookSvc())
 
 	svc.updateConfirmations(context.Background(), "eth", mockChain, 99)
@@ -345,14 +346,14 @@ func TestConfirmationsAt(t *testing.T) {
 // running confirmation math; otherwise these rows stay at `confirming`
 // forever.
 func TestUpdateConfirmations_ReconcilesOutboundBlockNumber(t *testing.T) {
-	mocks.TestDB(t)
+	fixtures.TestDB(t)
 	registry := chain.NewRegistry()
 	mockChain := mocks.NewMockChain("eth")
 	mockChain.RequiredConfirmationsVal = 3
 	registry.RegisterChain(mockChain)
 
-	w := mocks.InsertWallet(t, "eth")
-	sweepTx := mocks.InsertTransaction(t, w.ID, nil, "eth", models.TxTypeSweep, "confirming", "eth", "1000", 0)
+	w := fixtures.InsertWallet(t, "eth")
+	sweepTx := fixtures.InsertTransaction(t, w.ID, nil, "eth", models.TxTypeSweep, "confirming", "eth", "1000", 0)
 
 	mockChain.GetTransactionBlockVal = 100
 	var lookedUp string
@@ -417,7 +418,7 @@ func (r *recordingWithdrawalConfirmations) Backfill(_ context.Context, limit int
 // the withdrawal publisher, while a deposit on the same chain is left untouched
 // so no deposit webhook is emitted from a dev machine.
 func TestRunWithdrawalConfirmationCheck_OnlyAdvancesWithdrawals(t *testing.T) {
-	mocks.TestDB(t)
+	fixtures.TestDB(t)
 	const (
 		withdrawalBlock = 100
 		chainTip        = 103
@@ -431,9 +432,9 @@ func TestRunWithdrawalConfirmationCheck_OnlyAdvancesWithdrawals(t *testing.T) {
 	mockChain.GetTransactionBlockVal = withdrawalBlock
 	registry.RegisterChain(mockChain)
 
-	w := mocks.InsertWallet(t, "eth")
-	withdrawalTx := mocks.InsertTransaction(t, w.ID, nil, "eth", models.TxTypeWithdrawal, "confirming", "eth", "1000", 0)
-	depositTx := mocks.InsertTransaction(t, w.ID, nil, "eth", models.TxTypeDeposit, "pending", "eth", "1000", withdrawalBlock)
+	w := fixtures.InsertWallet(t, "eth")
+	withdrawalTx := fixtures.InsertTransaction(t, w.ID, nil, "eth", models.TxTypeWithdrawal, "confirming", "eth", "1000", 0)
+	depositTx := fixtures.InsertTransaction(t, w.ID, nil, "eth", models.TxTypeDeposit, "pending", "eth", "1000", withdrawalBlock)
 
 	recorder := &recordingWithdrawalConfirmations{}
 	svc := newDepositSvc(registry, newWebhookSvc())
@@ -468,14 +469,14 @@ func TestRunWithdrawalConfirmationCheck_OnlyAdvancesWithdrawals(t *testing.T) {
 // block_number stays 0, status unchanged — so the next tick retries. This
 // prevents us from flipping a pending tx to confirmed with a zero block.
 func TestUpdateConfirmations_StillPendingOutboundSkipped(t *testing.T) {
-	mocks.TestDB(t)
+	fixtures.TestDB(t)
 	registry := chain.NewRegistry()
 	mockChain := mocks.NewMockChain("eth")
 	mockChain.RequiredConfirmationsVal = 3
 	registry.RegisterChain(mockChain)
 
-	w := mocks.InsertWallet(t, "eth")
-	withdrawal := mocks.InsertTransaction(t, w.ID, nil, "eth", models.TxTypeWithdrawal, "confirming", "eth", "1000", 0)
+	w := fixtures.InsertWallet(t, "eth")
+	withdrawal := fixtures.InsertTransaction(t, w.ID, nil, "eth", models.TxTypeWithdrawal, "confirming", "eth", "1000", 0)
 
 	mockChain.GetTransactionBlockVal = 0
 

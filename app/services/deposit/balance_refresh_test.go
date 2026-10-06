@@ -9,7 +9,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/macrowallets/waas/app/models"
-	"github.com/macrowallets/waas/tests/mocks"
+	"github.com/macrowallets/waas/tests/feature/support/fixtures"
 )
 
 type recordingRefresher struct {
@@ -30,13 +30,13 @@ func TestUpdateConfirmations_RefreshesEachWalletWhoseMovementJustConfirmed(t *te
 	refresher := &recordingRefresher{err: errors.New("rpc down")}
 	svc.SetBalanceRefresher(refresher)
 
-	depositWallet := mocks.InsertWallet(t, "eth")
-	withdrawWallet := mocks.InsertWallet(t, "eth")
-	quietWallet := mocks.InsertWallet(t, "eth")
-	mocks.InsertTransaction(t, depositWallet.ID, nil, "eth", models.TxTypeDeposit, "pending", "eth", "1000", 100)
-	mocks.InsertTransaction(t, depositWallet.ID, nil, "eth", models.TxTypeSweep, "pending", "eth", "900", 100)
-	mocks.InsertTransaction(t, withdrawWallet.ID, nil, "eth", models.TxTypeWithdrawal, "pending", "eth", "500", 100)
-	mocks.InsertTransaction(t, quietWallet.ID, nil, "eth", models.TxTypeDeposit, "pending", "eth", "700", 109)
+	depositWallet := fixtures.InsertWallet(t, "eth")
+	withdrawWallet := fixtures.InsertWallet(t, "eth")
+	quietWallet := fixtures.InsertWallet(t, "eth")
+	fixtures.InsertTransaction(t, depositWallet.ID, nil, "eth", models.TxTypeDeposit, "pending", "eth", "1000", 100)
+	fixtures.InsertTransaction(t, depositWallet.ID, nil, "eth", models.TxTypeSweep, "pending", "eth", "900", 100)
+	fixtures.InsertTransaction(t, withdrawWallet.ID, nil, "eth", models.TxTypeWithdrawal, "pending", "eth", "500", 100)
+	fixtures.InsertTransaction(t, quietWallet.ID, nil, "eth", models.TxTypeDeposit, "pending", "eth", "700", 109)
 
 	if err := svc.updateConfirmations(context.Background(), "eth", adapter, 110); err != nil {
 		t.Fatal(err)

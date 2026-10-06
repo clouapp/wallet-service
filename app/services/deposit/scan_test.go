@@ -17,8 +17,9 @@ import (
 	"github.com/macrowallets/waas/app/repositories"
 	"github.com/macrowallets/waas/app/services/chain"
 	"github.com/macrowallets/waas/pkg/types"
+	"github.com/macrowallets/waas/tests/feature/support/fixtures"
+	"github.com/macrowallets/waas/tests/feature/support/testutil"
 	"github.com/macrowallets/waas/tests/mocks"
-	"github.com/macrowallets/waas/tests/testutil"
 )
 
 // scanTestChain has its own checkpoint key, so these tests never touch a real chain's.
@@ -160,12 +161,12 @@ func (r *recordedSleeps) recorded() []time.Duration {
 
 func newScanFixture(t *testing.T, head uint64, opts ScanOptions) scanFixture {
 	t.Helper()
-	mocks.TestDB(t)
+	fixtures.TestDB(t)
 	adapter := newConcurrentChain(head)
 	registry := chain.NewRegistry()
 	registry.RegisterChain(adapter)
-	wallet := mocks.InsertWallet(t, scanTestChain)
-	address := mocks.InsertAddress(t, wallet.ID, scanTestChain, "watched-addr", "user_scan", 0)
+	wallet := fixtures.InsertWallet(t, scanTestChain)
+	address := fixtures.InsertAddress(t, wallet.ID, scanTestChain, "watched-addr", "user_scan", 0)
 
 	svc := newDepositSvc(registry, newWebhookSvc())
 	if err := svc.SetScanOptions(opts); err != nil {
@@ -655,12 +656,12 @@ func TestSameTxHash(t *testing.T) {
 }
 
 func TestScanTransaction_SolanaSignatureFromRecordedDevnetBlock(t *testing.T) {
-	mocks.TestDB(t)
+	fixtures.TestDB(t)
 	adapter := solanaFixtureChain(t)
 	registry := chain.NewRegistry()
 	registry.RegisterChain(adapter)
-	wallet := mocks.InsertWallet(t, models.ChainSOL)
-	mocks.InsertAddress(t, wallet.ID, models.ChainSOL, solFixtureRecipient, "", 1)
+	wallet := fixtures.InsertWallet(t, models.ChainSOL)
+	fixtures.InsertAddress(t, wallet.ID, models.ChainSOL, solFixtureRecipient, "", 1)
 	svc := NewService(Deps{
 		Registry:     registry,
 		Webhook:      newWebhookSvc(),

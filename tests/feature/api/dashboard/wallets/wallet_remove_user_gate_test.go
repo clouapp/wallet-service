@@ -14,7 +14,7 @@ import (
 
 	"github.com/macrowallets/waas/app/models"
 	authsvc "github.com/macrowallets/waas/app/services/auth"
-	"github.com/macrowallets/waas/tests/mocks"
+	"github.com/macrowallets/waas/tests/feature/support/fixtures"
 )
 
 const walletRemoveUserGatePassword = "correct-horse-battery"
@@ -33,13 +33,13 @@ func TestWalletRemoveUserGateSuite(t *testing.T) {
 }
 
 func (s *WalletRemoveUserGateTestSuite) SetupTest() {
-	mocks.TestDB(s.T())
+	fixtures.TestDB(s.T())
 }
 
 func (s *WalletRemoveUserGateTestSuite) TestWalletRemoveUserFollowsTheLoadedRoles() {
-	account := mocks.InsertAccount(s.T(), "wallet remove user")
+	account := fixtures.InsertAccount(s.T(), "wallet remove user")
 	s.seedChain()
-	wallet := mocks.InsertWalletWithAccount(s.T(), models.ChainETH, &account.ID)
+	wallet := fixtures.InsertWalletWithAccount(s.T(), models.ChainETH, &account.ID)
 
 	denied := []struct {
 		accountRole string

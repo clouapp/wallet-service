@@ -11,7 +11,7 @@ import (
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/repositories"
 	"github.com/macrowallets/waas/pkg/amount"
-	"github.com/macrowallets/waas/tests/mocks"
+	"github.com/macrowallets/waas/tests/feature/support/fixtures"
 )
 
 type AmountGuardTestSuite struct {
@@ -28,7 +28,7 @@ func TestAmountGuardSuite(t *testing.T) {
 }
 
 func (s *AmountGuardTestSuite) SetupTest() {
-	mocks.TestDB(s.T())
+	fixtures.TestDB(s.T())
 	s.transactions = repositories.NewTransactionRepository(nil)
 	s.withdrawals = repositories.NewWithdrawalRepository(nil)
 	s.balances = repositories.NewWalletAssetBalanceRepository(nil)
@@ -52,7 +52,7 @@ func (s *AmountGuardTestSuite) countTransactions(walletID uuid.UUID) int64 {
 }
 
 func (s *AmountGuardTestSuite) TestCreateRejectsNegativeAmountAndFee() {
-	wallet := mocks.InsertWallet(s.T(), "sol")
+	wallet := fixtures.InsertWallet(s.T(), "sol")
 
 	negativeAmount := s.solDeposit(wallet.ID, "-5000000000")
 	s.ErrorIs(s.transactions.Create(context.Background(), negativeAmount), amount.ErrNegativeAmount)
@@ -66,7 +66,7 @@ func (s *AmountGuardTestSuite) TestCreateRejectsNegativeAmountAndFee() {
 }
 
 func (s *AmountGuardTestSuite) TestCreateStoresTheAbsoluteAmount() {
-	wallet := mocks.InsertWallet(s.T(), "sol")
+	wallet := fixtures.InsertWallet(s.T(), "sol")
 	tx := s.solDeposit(wallet.ID, "5000000000")
 
 	s.Require().NoError(s.transactions.Create(context.Background(), tx))
@@ -78,7 +78,7 @@ func (s *AmountGuardTestSuite) TestCreateStoresTheAbsoluteAmount() {
 }
 
 func (s *AmountGuardTestSuite) TestUpdateFieldsRejectsNegativeAmount() {
-	wallet := mocks.InsertWallet(s.T(), "sol")
+	wallet := fixtures.InsertWallet(s.T(), "sol")
 	tx := s.solDeposit(wallet.ID, "5000000000")
 	s.Require().NoError(s.transactions.Create(context.Background(), tx))
 
@@ -91,7 +91,7 @@ func (s *AmountGuardTestSuite) TestUpdateFieldsRejectsNegativeAmount() {
 }
 
 func (s *AmountGuardTestSuite) TestWithdrawalRejectsNegativeAmounts() {
-	wallet := mocks.InsertWallet(s.T(), "sol")
+	wallet := fixtures.InsertWallet(s.T(), "sol")
 	withdrawal := &models.Withdrawal{ID: uuid.New(), WalletID: wallet.ID, Status: models.WithdrawalStatusBroadcasting, Amount: "-0.02", FeeEstimate: "0", DestinationAddress: "So1Dest"}
 	s.ErrorIs(s.withdrawals.Create(context.Background(), withdrawal), amount.ErrNegativeAmount)
 
@@ -101,7 +101,7 @@ func (s *AmountGuardTestSuite) TestWithdrawalRejectsNegativeAmounts() {
 }
 
 func (s *AmountGuardTestSuite) TestBalanceWritesRejectNegativeAmounts() {
-	wallet := mocks.InsertWallet(s.T(), "sol")
+	wallet := fixtures.InsertWallet(s.T(), "sol")
 
 	row := models.WalletAssetBalance{ID: uuid.New(), WalletID: wallet.ID, ChainID: "sol", AssetType: "native", AssetSymbol: "SOL", AssetKey: "SOL", Decimals: 9, AmountRaw: "-1", AmountDisplay: "-0.000000001"}
 	s.ErrorIs(s.balances.ReplaceForWallet(context.Background(), wallet.ID, "sol", []models.WalletAssetBalance{row}), amount.ErrNegativeAmount)
@@ -114,7 +114,7 @@ func (s *AmountGuardTestSuite) TestBalanceWritesRejectNegativeAmounts() {
 
 // The CHECK constraints reject a signed amount even from writes that skip the repositories.
 func (s *AmountGuardTestSuite) TestDatabaseRejectsSignedAmountsOutsideTheRepositories() {
-	wallet := mocks.InsertWallet(s.T(), "sol")
+	wallet := fixtures.InsertWallet(s.T(), "sol")
 	tx := s.solDeposit(wallet.ID, "5000000000")
 	s.Require().NoError(s.transactions.Create(context.Background(), tx))
 	withdrawal := &models.Withdrawal{ID: uuid.New(), WalletID: wallet.ID, Status: models.WithdrawalStatusBroadcasting, Amount: "0.02", FeeEstimate: "0", DestinationAddress: "So1Dest"}

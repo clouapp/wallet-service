@@ -7,11 +7,11 @@ import (
 	"github.com/goravel/framework/facades"
 	"github.com/stretchr/testify/require"
 
-	"github.com/macrowallets/waas/tests/mocks"
+	"github.com/macrowallets/waas/tests/feature/support/fixtures"
 )
 
 func TestSpendingLimitConstraintRejectsANegativeDailyUSD(t *testing.T) {
-	mocks.TestDB(t)
+	fixtures.TestDB(t)
 	require.Equal(t, int64(1), constraintCount(t, "access_tokens_spending_limit_daily_usd_non_negative"))
 
 	accountID := uuid.New()

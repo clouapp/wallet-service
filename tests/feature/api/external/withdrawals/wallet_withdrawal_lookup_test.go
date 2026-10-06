@@ -14,7 +14,7 @@ import (
 
 	"github.com/macrowallets/waas/app/models"
 	testutil "github.com/macrowallets/waas/tests/feature/support"
-	"github.com/macrowallets/waas/tests/mocks"
+	"github.com/macrowallets/waas/tests/feature/support/fixtures"
 )
 
 // walletWithdrawalLookupSuite covers GET /api/v1/wallets/{walletId}/withdrawals/{idempotencyKey},
@@ -30,7 +30,7 @@ func TestWalletWithdrawalLookupSuite(t *testing.T) {
 }
 
 func (s *walletWithdrawalLookupSuite) SetupTest() {
-	mocks.TestDB(s.T())
+	fixtures.TestDB(s.T())
 }
 
 func (s *walletWithdrawalLookupSuite) seedWallet(accountID uuid.UUID) uuid.UUID {

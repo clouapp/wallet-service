@@ -7,11 +7,11 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/macrowallets/waas/database/migrations"
-	"github.com/macrowallets/waas/tests/mocks"
+	"github.com/macrowallets/waas/tests/feature/support/fixtures"
 )
 
 func TestChainsThresholdsNotNullBackfillsAndRejectsNull(t *testing.T) {
-	mocks.TestDB(t)
+	fixtures.TestDB(t)
 	migration := &migrations.M00000000000580ChainsThresholdsNotNull{}
 
 	require.Equal(t, "NO", chainColumnNullable(t, "gas_readiness_threshold_raw"))
@@ -62,7 +62,7 @@ func TestChainsThresholdsNotNullBackfillsAndRejectsNull(t *testing.T) {
 }
 
 func TestChainsThresholdsNotNullRejectsAnUnknownNullChain(t *testing.T) {
-	mocks.TestDB(t)
+	fixtures.TestDB(t)
 	migration := &migrations.M00000000000580ChainsThresholdsNotNull{}
 	require.NoError(t, migration.Down())
 	insertBareChain(t, "zz")

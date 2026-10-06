@@ -17,7 +17,7 @@ import (
 	activitylog "github.com/macrowallets/waas/app/services/activity"
 	authsvc "github.com/macrowallets/waas/app/services/auth"
 	"github.com/macrowallets/waas/app/services/features"
-	"github.com/macrowallets/waas/tests/mocks"
+	"github.com/macrowallets/waas/tests/feature/support/fixtures"
 )
 
 const (
@@ -36,7 +36,7 @@ func TestAccountActivitySuite(t *testing.T) {
 }
 
 func (s *AccountActivityTestSuite) SetupTest() {
-	mocks.TestDB(s.T())
+	fixtures.TestDB(s.T())
 }
 
 type activitySession struct {

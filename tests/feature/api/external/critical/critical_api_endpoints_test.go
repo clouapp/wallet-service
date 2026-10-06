@@ -16,7 +16,7 @@ import (
 
 	"github.com/macrowallets/waas/app/http/middleware"
 	"github.com/macrowallets/waas/app/models"
-	"github.com/macrowallets/waas/tests/mocks"
+	"github.com/macrowallets/waas/tests/feature/support/fixtures"
 )
 
 // criticalEndpointsSuite exercises the high-value external API endpoints
@@ -43,7 +43,7 @@ func TestCriticalEndpointsSuite(t *testing.T) {
 }
 
 func (s *criticalEndpointsSuite) SetupTest() {
-	mocks.TestDB(s.T())
+	fixtures.TestDB(s.T())
 }
 
 // seedAccountWallet creates an Account, an access_tokens row, mints a JWT

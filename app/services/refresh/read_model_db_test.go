@@ -14,8 +14,9 @@ import (
 	"github.com/macrowallets/waas/app/services/chain"
 	"github.com/macrowallets/waas/pkg/amount"
 	"github.com/macrowallets/waas/pkg/types"
+	"github.com/macrowallets/waas/tests/feature/support/fixtures"
+	"github.com/macrowallets/waas/tests/feature/support/testutil"
 	"github.com/macrowallets/waas/tests/mocks"
-	"github.com/macrowallets/waas/tests/testutil"
 )
 
 func TestMain(m *testing.M) {
@@ -84,14 +85,14 @@ func reloadWallet(t *testing.T, wallet models.Wallet) models.Wallet {
 }
 
 func TestRefreshAll_FillsTheReadModelForEthBtcAndSolFromTheBaseAddress(t *testing.T) {
-	mocks.TestDB(t)
+	fixtures.TestDB(t)
 	insertChain(t, "sol", models.AdapterTypeSolana, "sol", 9)
 	insertChain(t, "btc", models.AdapterTypeBitcoin, "btc", 8)
 	insertChain(t, "eth", models.AdapterTypeEVM, "eth", 18)
-	solWallet := mocks.InsertWallet(t, "sol")
-	btcWallet := mocks.InsertWallet(t, "btc")
-	ethWallet := mocks.InsertWallet(t, "eth")
-	solChild := mocks.InsertAddress(t, solWallet.ID, "sol", "SolChildAddress", "user", 1)
+	solWallet := fixtures.InsertWallet(t, "sol")
+	btcWallet := fixtures.InsertWallet(t, "btc")
+	ethWallet := fixtures.InsertWallet(t, "eth")
+	solChild := fixtures.InsertAddress(t, solWallet.ID, "sol", "SolChildAddress", "user", 1)
 
 	solBase := reloadWithAddress(t, solWallet).DepositAddress.Address
 	btcBase := reloadWithAddress(t, btcWallet).DepositAddress.Address
@@ -121,9 +122,9 @@ func TestRefreshAll_FillsTheReadModelForEthBtcAndSolFromTheBaseAddress(t *testin
 }
 
 func TestRefreshWallet_NegativeChainAmountIsRejectedAndRecordedAsAFailure(t *testing.T) {
-	mocks.TestDB(t)
+	fixtures.TestDB(t)
 	insertChain(t, "sol", models.AdapterTypeSolana, "sol", 9)
-	wallet := mocks.InsertWallet(t, "sol")
+	wallet := fixtures.InsertWallet(t, "sol")
 	registry := chain.NewRegistry()
 	adapter := mocks.NewMockChain("sol")
 	adapter.GetBalanceFn = func(_ context.Context, address string) (*types.Balance, error) {

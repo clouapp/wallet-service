@@ -21,7 +21,7 @@ import (
 	"github.com/macrowallets/waas/app/models"
 	chainpkg "github.com/macrowallets/waas/app/services/chain"
 	"github.com/macrowallets/waas/pkg/security"
-	"github.com/macrowallets/waas/tests/testutil"
+	"github.com/macrowallets/waas/tests/feature/support/testutil"
 )
 
 // PlatformChainRPCTestSuite is PATCH /v1/platform/chains/{chainId}/rpc from

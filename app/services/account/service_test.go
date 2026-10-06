@@ -11,7 +11,7 @@ import (
 
 	"github.com/macrowallets/waas/app/repositories"
 	accountsvc "github.com/macrowallets/waas/app/services/account"
-	"github.com/macrowallets/waas/tests/mocks"
+	"github.com/macrowallets/waas/tests/feature/support/fixtures"
 )
 
 type AccountServiceTestSuite struct {
@@ -24,7 +24,7 @@ func TestAccountService(t *testing.T) {
 }
 
 func (s *AccountServiceTestSuite) SetupTest() {
-	mocks.TestDB(s.T())
+	fixtures.TestDB(s.T())
 }
 
 func (s *AccountServiceTestSuite) createUser() uuid.UUID {

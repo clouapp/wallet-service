@@ -9,7 +9,7 @@ import (
 
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/repositories"
-	"github.com/macrowallets/waas/tests/mocks"
+	"github.com/macrowallets/waas/tests/feature/support/fixtures"
 )
 
 // IdentityRowsSuite locks the rows the account and user queries return after
@@ -26,7 +26,7 @@ func TestIdentityRowsSuite(t *testing.T) {
 }
 
 func (s *IdentityRowsSuite) SetupTest() {
-	mocks.TestDB(s.T())
+	fixtures.TestDB(s.T())
 	s.users = repositories.NewUserRepository(nil)
 	s.accounts = repositories.NewAccountRepository(nil)
 	s.memberships = repositories.NewAccountUserRepository(nil)

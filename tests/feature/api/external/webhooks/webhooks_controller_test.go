@@ -11,7 +11,7 @@ import (
 
 	"github.com/macrowallets/waas/app/services/settings"
 	ctltestutil "github.com/macrowallets/waas/tests/feature/support"
-	"github.com/macrowallets/waas/tests/testutil"
+	"github.com/macrowallets/waas/tests/feature/support/testutil"
 )
 
 // WebhooksControllerTestSuite exercises the external /api/v1/webhooks

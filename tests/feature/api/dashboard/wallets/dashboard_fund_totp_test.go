@@ -17,7 +17,7 @@ import (
 
 	"github.com/macrowallets/waas/app/models"
 	authsvc "github.com/macrowallets/waas/app/services/auth"
-	"github.com/macrowallets/waas/tests/mocks"
+	"github.com/macrowallets/waas/tests/feature/support/fixtures"
 )
 
 const (
@@ -38,7 +38,7 @@ func TestDashboardFundTOTPSuite(t *testing.T) {
 }
 
 func (s *DashboardFundTOTPSuite) SetupTest() {
-	mocks.TestDB(s.T())
+	fixtures.TestDB(s.T())
 }
 
 func (s *DashboardFundTOTPSuite) TestAddWhitelistRequiresCodeWhenTOTPIsOn() {
@@ -261,13 +261,13 @@ type fundCaller struct {
 
 func (s *DashboardFundTOTPSuite) wallet() (models.Account, models.Wallet) {
 	s.T().Helper()
-	account := mocks.InsertAccount(s.T(), "dashboard totp")
+	account := fixtures.InsertAccount(s.T(), "dashboard totp")
 	s.Require().NoError(facades.Orm().Query().Create(&models.Chain{
 		ID: models.ChainETH, Name: models.ChainETH, AdapterType: models.AdapterTypeEVM,
 		NativeSymbol: "ETH", NativeDecimals: 18, RpcURL: "encrypted-rpc",
 		RequiredConfirmations: 1, Status: "active",
 	}))
-	return account, mocks.InsertWalletWithAccount(s.T(), models.ChainETH, &account.ID)
+	return account, fixtures.InsertWalletWithAccount(s.T(), models.ChainETH, &account.ID)
 }
 
 func (s *DashboardFundTOTPSuite) member(role string, accountID uuid.UUID, withTOTP bool) fundCaller {

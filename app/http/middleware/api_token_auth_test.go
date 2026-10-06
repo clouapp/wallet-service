@@ -15,7 +15,7 @@ import (
 	"github.com/macrowallets/waas/app/http/middleware"
 	"github.com/macrowallets/waas/app/models"
 	authsvc "github.com/macrowallets/waas/app/services/auth"
-	"github.com/macrowallets/waas/tests/mocks"
+	"github.com/macrowallets/waas/tests/feature/support/fixtures"
 )
 
 // ---------------------------------------------------------------------------
@@ -41,7 +41,7 @@ func TestAPITokenAuthHMACSuite(t *testing.T) {
 }
 
 func (s *APITokenAuthHMACTestSuite) SetupTest() {
-	mocks.TestDB(s.T())
+	fixtures.TestDB(s.T())
 
 	s.account = models.Account{
 		ID:          uuid.New(),

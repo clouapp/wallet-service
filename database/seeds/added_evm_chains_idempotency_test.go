@@ -8,11 +8,11 @@ import (
 
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/repositories"
-	"github.com/macrowallets/waas/tests/mocks"
+	"github.com/macrowallets/waas/tests/feature/support/fixtures"
 )
 
 func TestAddedChainTokenAndResourceInsertsAreIdempotent(t *testing.T) {
-	mocks.TestDB(t)
+	fixtures.TestDB(t)
 	ctx := context.Background()
 	if err := repositories.NewChainRepository(nil).Create(ctx, &models.Chain{
 		ID: "base", Name: "Base", AdapterType: models.AdapterTypeEVM, NativeSymbol: "eth",

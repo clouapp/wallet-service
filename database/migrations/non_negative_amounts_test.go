@@ -10,8 +10,8 @@ import (
 
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/database/migrations"
-	"github.com/macrowallets/waas/tests/mocks"
-	"github.com/macrowallets/waas/tests/testutil"
+	"github.com/macrowallets/waas/tests/feature/support/fixtures"
+	"github.com/macrowallets/waas/tests/feature/support/testutil"
 )
 
 func TestMain(m *testing.M) {
@@ -47,7 +47,7 @@ func constraintCount(t *testing.T, name string) int64 {
 func legacySignedRows(t *testing.T) (txID, withdrawalID uuid.UUID) {
 	t.Helper()
 	require.NoError(t, (&migrations.M00000000000280EnforceNonNegativeAmounts{}).Down())
-	wallet := mocks.InsertWallet(t, "sol")
+	wallet := fixtures.InsertWallet(t, "sol")
 	txID, withdrawalID = uuid.New(), uuid.New()
 	exec(t, `INSERT INTO transactions (id, wallet_id, external_user_id, chain, tx_type, tx_hash, to_address, amount, fee, asset, status, required_confs)
 	         VALUES (?, ?, 'user1', 'sol', 'withdrawal', ?, 'So1Dest', '-20000000', '-5000', 'sol', 'confirmed', 1)`,
@@ -58,7 +58,7 @@ func legacySignedRows(t *testing.T) (txID, withdrawalID uuid.UUID) {
 }
 
 func TestEnforceNonNegativeAmountsNormalizesBacksUpAndConstrains(t *testing.T) {
-	mocks.TestDB(t)
+	fixtures.TestDB(t)
 	migration := &migrations.M00000000000280EnforceNonNegativeAmounts{}
 	require.Equal(t, int64(1), constraintCount(t, transactionAmountConstraint), "migrate:fresh applies the constraint")
 
@@ -96,7 +96,7 @@ func TestEnforceNonNegativeAmountsNormalizesBacksUpAndConstrains(t *testing.T) {
 }
 
 func TestEnforceNonNegativeAmountsDownDropsAnEmptyBackup(t *testing.T) {
-	mocks.TestDB(t)
+	fixtures.TestDB(t)
 	migration := &migrations.M00000000000280EnforceNonNegativeAmounts{}
 
 	require.NoError(t, migration.Down())

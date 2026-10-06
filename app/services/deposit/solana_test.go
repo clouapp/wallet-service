@@ -10,6 +10,7 @@ import (
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/services/chain"
 	"github.com/macrowallets/waas/pkg/types"
+	"github.com/macrowallets/waas/tests/feature/support/fixtures"
 	"github.com/macrowallets/waas/tests/mocks"
 )
 
@@ -50,12 +51,12 @@ func solanaFixtureChain(t *testing.T) *mocks.MockChain {
 }
 
 func TestSolanaDeposit_DetectedFromRecordedBlockThenConfirmed(t *testing.T) {
-	mocks.TestDB(t)
+	fixtures.TestDB(t)
 	adapter := solanaFixtureChain(t)
 	registry := chain.NewRegistry()
 	registry.RegisterChain(adapter)
-	w := mocks.InsertWallet(t, models.ChainSOL)
-	addr := mocks.InsertAddress(t, w.ID, models.ChainSOL, solFixtureRecipient, "user_sol", 1)
+	w := fixtures.InsertWallet(t, models.ChainSOL)
+	addr := fixtures.InsertAddress(t, w.ID, models.ChainSOL, solFixtureRecipient, "user_sol", 1)
 	svc := newDepositSvc(registry, newWebhookSvc())
 
 	transfers, err := adapter.ScanBlock(context.Background(), solFixtureSlot)
@@ -94,12 +95,12 @@ func TestSolanaDeposit_DetectedFromRecordedBlockThenConfirmed(t *testing.T) {
 }
 
 func TestSolanaWithdrawal_SlotReconciledFromSignatureStatus(t *testing.T) {
-	mocks.TestDB(t)
+	fixtures.TestDB(t)
 	adapter := solanaFixtureChain(t)
 	registry := chain.NewRegistry()
 	registry.RegisterChain(adapter)
-	w := mocks.InsertWallet(t, models.ChainSOL)
-	withdrawal := mocks.InsertTransaction(t, w.ID, nil, models.ChainSOL, models.TxTypeWithdrawal, "confirming", models.NativeSOL, "20000000", 0)
+	w := fixtures.InsertWallet(t, models.ChainSOL)
+	withdrawal := fixtures.InsertTransaction(t, w.ID, nil, models.ChainSOL, models.TxTypeWithdrawal, "confirming", models.NativeSOL, "20000000", 0)
 	if _, err := facades.Orm().Query().Model(&models.Transaction{}).Where("id", withdrawal.ID).
 		Update(map[string]interface{}{"required_confs": 1, "tx_hash": solFixtureSignature}); err != nil {
 		t.Fatal(err)

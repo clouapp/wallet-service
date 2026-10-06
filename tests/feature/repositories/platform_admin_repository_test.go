@@ -10,7 +10,7 @@ import (
 
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/repositories"
-	"github.com/macrowallets/waas/tests/mocks"
+	"github.com/macrowallets/waas/tests/feature/support/fixtures"
 )
 
 type PlatformAdminRepositoryTestSuite struct {
@@ -24,7 +24,7 @@ func TestPlatformAdminRepositorySuite(t *testing.T) {
 }
 
 func (s *PlatformAdminRepositoryTestSuite) SetupTest() {
-	mocks.TestDB(s.T())
+	fixtures.TestDB(s.T())
 	s.repo = repositories.NewPlatformAdminRepository(nil)
 	s.userRepo = repositories.NewUserRepository(nil)
 }

@@ -15,7 +15,7 @@ import (
 	appfacades "github.com/macrowallets/waas/app/facades"
 	"github.com/macrowallets/waas/app/mails"
 	"github.com/macrowallets/waas/app/services/settings"
-	"github.com/macrowallets/waas/tests/testutil"
+	"github.com/macrowallets/waas/tests/feature/support/testutil"
 )
 
 const mailSMTPFixture = "mailbox-secret-value"

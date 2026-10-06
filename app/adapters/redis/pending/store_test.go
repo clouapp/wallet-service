@@ -12,7 +12,7 @@ import (
 	"github.com/redis/go-redis/v9"
 
 	depositpending "github.com/macrowallets/waas/app/services/deposit/pending"
-	"github.com/macrowallets/waas/tests/testutil"
+	"github.com/macrowallets/waas/tests/feature/support/testutil"
 )
 
 const testChain = "tpend"

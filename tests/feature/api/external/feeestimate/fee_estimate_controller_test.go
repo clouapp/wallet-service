@@ -18,6 +18,7 @@ import (
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/pkg/types"
 	ctltestutil "github.com/macrowallets/waas/tests/feature/support"
+	"github.com/macrowallets/waas/tests/feature/support/fixtures"
 	"github.com/macrowallets/waas/tests/mocks"
 )
 
@@ -56,7 +57,7 @@ func TestFeeEstimateSuite(t *testing.T) {
 }
 
 func (s *feeEstimateSuite) SetupTest() {
-	mocks.TestDB(s.T())
+	fixtures.TestDB(s.T())
 	s.Require().NoError(facades.Orm().Query().Create(&models.Chain{
 		ID: feeEstimateChainID, Name: "Fee estimate test", AdapterType: models.AdapterTypeEVM,
 		NativeSymbol: feeEstimateNative, NativeDecimals: 18, RpcURL: "unused", RequiredConfirmations: 1,
@@ -73,7 +74,7 @@ func (s *feeEstimateSuite) SetupTest() {
 
 func (s *feeEstimateSuite) seedWallet(accountID uuid.UUID) uuid.UUID {
 	s.T().Helper()
-	return mocks.InsertWalletWithAccount(s.T(), feeEstimateChainID, &accountID).ID
+	return fixtures.InsertWalletWithAccount(s.T(), feeEstimateChainID, &accountID).ID
 }
 
 func feeEstimatePath(walletID uuid.UUID, query url.Values) string {

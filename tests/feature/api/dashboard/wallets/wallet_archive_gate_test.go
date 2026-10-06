@@ -14,7 +14,7 @@ import (
 
 	"github.com/macrowallets/waas/app/models"
 	authsvc "github.com/macrowallets/waas/app/services/auth"
-	"github.com/macrowallets/waas/tests/mocks"
+	"github.com/macrowallets/waas/tests/feature/support/fixtures"
 )
 
 const walletArchiveGatePassword = "correct-horse-battery"
@@ -34,12 +34,12 @@ func TestWalletArchiveGateSuite(t *testing.T) {
 }
 
 func (s *WalletArchiveGateTestSuite) SetupTest() {
-	mocks.TestDB(s.T())
+	fixtures.TestDB(s.T())
 }
 
 func (s *WalletArchiveGateTestSuite) TestWalletArchiveFollowsTheLoadedRoles() {
-	account := mocks.InsertAccount(s.T(), "wallet archive")
-	wallet := mocks.InsertWalletWithAccount(s.T(), models.ChainETH, &account.ID)
+	account := fixtures.InsertAccount(s.T(), "wallet archive")
+	wallet := fixtures.InsertWalletWithAccount(s.T(), models.ChainETH, &account.ID)
 
 	denied := []struct {
 		accountRole string
@@ -58,9 +58,9 @@ func (s *WalletArchiveGateTestSuite) TestWalletArchiveFollowsTheLoadedRoles() {
 		s.Equal("active", s.walletStatus(wallet.ID))
 	}
 
-	visible := mocks.InsertAccount(s.T(), "wallet archive visible")
+	visible := fixtures.InsertAccount(s.T(), "wallet archive visible")
 	s.setViewAll(visible.ID, true)
-	visibleWallet := mocks.InsertWalletWithAccount(s.T(), models.ChainETH, &visible.ID)
+	visibleWallet := fixtures.InsertWalletWithAccount(s.T(), models.ChainETH, &visible.ID)
 	for _, role := range []string{models.AccountRoleUser, models.AccountRoleAuditor} {
 		actor := s.member(role, visible.ID)
 		resp := s.archive(actor.token, visible.ID, visibleWallet.ID)
@@ -78,7 +78,7 @@ func (s *WalletArchiveGateTestSuite) TestWalletArchiveFollowsTheLoadedRoles() {
 		{accountRole: models.AccountRoleUser, walletRole: "owner"},
 	}
 	for _, caller := range allowed {
-		ownWallet := mocks.InsertWalletWithAccount(s.T(), models.ChainETH, &account.ID)
+		ownWallet := fixtures.InsertWalletWithAccount(s.T(), models.ChainETH, &account.ID)
 		actor := s.member(caller.accountRole, account.ID)
 		if caller.walletRole != "" {
 			s.assign(actor.id, ownWallet.ID, caller.walletRole)
@@ -91,8 +91,8 @@ func (s *WalletArchiveGateTestSuite) TestWalletArchiveFollowsTheLoadedRoles() {
 }
 
 func (s *WalletArchiveGateTestSuite) TestWalletArchiveStaysHiddenFromAnAccountUser() {
-	account := mocks.InsertAccount(s.T(), "wallet archive hidden")
-	wallet := mocks.InsertWalletWithAccount(s.T(), models.ChainETH, &account.ID)
+	account := fixtures.InsertAccount(s.T(), "wallet archive hidden")
+	wallet := fixtures.InsertWalletWithAccount(s.T(), models.ChainETH, &account.ID)
 	actor := s.member(models.AccountRoleUser, account.ID)
 
 	resp := s.archive(actor.token, account.ID, wallet.ID)

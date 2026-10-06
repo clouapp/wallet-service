@@ -16,7 +16,7 @@ import (
 	"github.com/macrowallets/waas/app/models"
 	authsvc "github.com/macrowallets/waas/app/services/auth"
 	"github.com/macrowallets/waas/app/services/features"
-	"github.com/macrowallets/waas/tests/mocks"
+	"github.com/macrowallets/waas/tests/feature/support/fixtures"
 )
 
 const (
@@ -56,7 +56,7 @@ func TestUserControllerSuite(t *testing.T) {
 }
 
 func (s *UserControllerTestSuite) SetupTest() {
-	mocks.TestDB(s.T())
+	fixtures.TestDB(s.T())
 
 	hash, err := authsvc.NewService().HashPassword(myAccountsTestPassword)
 	s.Require().NoError(err)

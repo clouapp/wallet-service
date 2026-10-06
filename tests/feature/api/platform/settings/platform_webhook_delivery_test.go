@@ -20,8 +20,8 @@ import (
 	"github.com/macrowallets/waas/app/services/settings"
 	"github.com/macrowallets/waas/app/services/webhook"
 	"github.com/macrowallets/waas/pkg/types"
-	"github.com/macrowallets/waas/tests/mocks"
-	"github.com/macrowallets/waas/tests/testutil"
+	"github.com/macrowallets/waas/tests/feature/support/fixtures"
+	"github.com/macrowallets/waas/tests/feature/support/testutil"
 )
 
 // PlatformWebhookDeliveryTestSuite is PUT /v1/platform/settings/webhook_delivery
@@ -66,7 +66,7 @@ func (s *PlatformWebhookDeliveryTestSuite) TestAStoredLimitAndTimeoutAreWhatDeli
 		server.Close()
 	}()
 
-	cfg := mocks.InsertScopedWebhookConfig(s.T(), server.URL, "delivery-settings-secret", []string{"withdrawal.broadcast"}, &accountID, nil)
+	cfg := fixtures.InsertScopedWebhookConfig(s.T(), server.URL, "delivery-settings-secret", []string{"withdrawal.broadcast"}, &accountID, nil)
 	sealedBefore := s.sealedSecret(cfg.ID)
 	if !strings.HasPrefix(sealedBefore, "enc:v1:") || strings.Contains(sealedBefore, "delivery-settings-secret") {
 		s.Fail("webhook secret was not sealed")
@@ -118,7 +118,7 @@ func (s *PlatformWebhookDeliveryTestSuite) TestAStoredLimitAndTimeoutAreWhatDeli
 	s.Equal("1", s.settingValue("timeout_seconds"))
 	s.Equal(int64(1), s.count(`SELECT count(*) FROM account_activity WHERE action = 'settings.updated'`))
 
-	wallet := mocks.InsertWalletWithAccount(s.T(), models.ChainETH, &accountID)
+	wallet := fixtures.InsertWalletWithAccount(s.T(), models.ChainETH, &accountID)
 	svc := container.Get().WebhookService
 	enqueued, err := svc.EnqueueScoped(context.Background(), webhook.ScopedEvent{
 		EventType: types.EventWithdrawalBroadcast,
@@ -167,8 +167,8 @@ func (s *PlatformWebhookDeliveryTestSuite) TestAMissingRowKeepsTheDefault() {
 	}))
 	defer receiver.Close()
 
-	cfg := mocks.InsertScopedWebhookConfig(s.T(), receiver.URL, "delivery-default-secret", []string{"withdrawal.broadcast"}, &accountID, nil)
-	wallet := mocks.InsertWalletWithAccount(s.T(), models.ChainETH, &accountID)
+	cfg := fixtures.InsertScopedWebhookConfig(s.T(), receiver.URL, "delivery-default-secret", []string{"withdrawal.broadcast"}, &accountID, nil)
+	wallet := fixtures.InsertWalletWithAccount(s.T(), models.ChainETH, &accountID)
 	svc := container.Get().WebhookService
 	enqueued, err := svc.EnqueueScoped(context.Background(), webhook.ScopedEvent{
 		EventType: types.EventWithdrawalBroadcast,

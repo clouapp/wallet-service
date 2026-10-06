@@ -12,7 +12,7 @@ import (
 
 	"github.com/macrowallets/waas/app/http/middleware"
 	"github.com/macrowallets/waas/app/models"
-	"github.com/macrowallets/waas/tests/mocks"
+	"github.com/macrowallets/waas/tests/feature/support/fixtures"
 )
 
 // apiScopeSuite checks S3.4.6 on the external routes. A blank permissions
@@ -30,7 +30,7 @@ func TestAPIScope(t *testing.T) {
 }
 
 func (s *apiScopeSuite) SetupTest() {
-	mocks.TestDB(s.T())
+	fixtures.TestDB(s.T())
 	s.account = models.Account{
 		ID:          uuid.New(),
 		Name:        "api-scope-" + uuid.NewString(),

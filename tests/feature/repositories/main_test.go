@@ -4,7 +4,7 @@ import (
 	"os"
 	"testing"
 
-	"github.com/macrowallets/waas/tests/testutil"
+	"github.com/macrowallets/waas/tests/feature/support/testutil"
 )
 
 func TestMain(m *testing.M) {

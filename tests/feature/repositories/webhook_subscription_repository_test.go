@@ -10,7 +10,7 @@ import (
 
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/repositories"
-	"github.com/macrowallets/waas/tests/mocks"
+	"github.com/macrowallets/waas/tests/feature/support/fixtures"
 )
 
 type WebhookSubscriptionRepositoryTestSuite struct {
@@ -23,7 +23,7 @@ func TestWebhookSubscriptionRepositorySuite(t *testing.T) {
 }
 
 func (s *WebhookSubscriptionRepositoryTestSuite) SetupTest() {
-	mocks.TestDB(s.T())
+	fixtures.TestDB(s.T())
 	s.repo = repositories.NewWebhookSubscriptionRepository(nil)
 	chain := &models.Chain{
 		ID: "eth", Name: "eth", AdapterType: models.AdapterTypeEVM, NativeSymbol: "ETH",

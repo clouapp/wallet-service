@@ -11,7 +11,7 @@ import (
 
 	"github.com/macrowallets/waas/app/repositories"
 	"github.com/macrowallets/waas/app/services/chain"
-	"github.com/macrowallets/waas/tests/mocks"
+	"github.com/macrowallets/waas/tests/feature/support/fixtures"
 )
 
 // addressCacheTestRedisDB is the logical database .env.testing assigns to tests; the
@@ -61,16 +61,16 @@ func cachedMembers(t *testing.T, rdb *redis.Client, chainID string) []string {
 }
 
 func TestSyncAddressCache_RebuildsAStaleSet(t *testing.T) {
-	mocks.TestDB(t)
+	fixtures.TestDB(t)
 	rdb := testRedis(t)
 	ctx := context.Background()
 	const chainID = "eth"
 	key := addressCacheKey(chainID)
 	t.Cleanup(func() { rdb.Del(context.Background(), key) })
 
-	w := mocks.InsertWallet(t, chainID)
-	mocks.InsertAddress(t, w.ID, chainID, "0x00000000000000000000000000000000000000a1", "user_a", 1)
-	mocks.InsertAddress(t, w.ID, chainID, "0x00000000000000000000000000000000000000b2", "user_b", 2)
+	w := fixtures.InsertWallet(t, chainID)
+	fixtures.InsertAddress(t, w.ID, chainID, "0x00000000000000000000000000000000000000a1", "user_a", 1)
+	fixtures.InsertAddress(t, w.ID, chainID, "0x00000000000000000000000000000000000000b2", "user_b", 2)
 	if err := rdb.Del(ctx, key).Err(); err != nil {
 		t.Fatal(err)
 	}
@@ -105,19 +105,19 @@ func TestSyncAddressCache_RebuildsAStaleSet(t *testing.T) {
 }
 
 func TestSyncAddressCache_SameSizeDifferentMembersIsStale(t *testing.T) {
-	mocks.TestDB(t)
+	fixtures.TestDB(t)
 	rdb := testRedis(t)
 	ctx := context.Background()
 	const chainID = "eth"
 	key := addressCacheKey(chainID)
 	t.Cleanup(func() { rdb.Del(context.Background(), key) })
 
-	w := mocks.InsertWallet(t, chainID)
+	w := fixtures.InsertWallet(t, chainID)
 	active, err := repositories.NewAddressRepository(nil).PluckActiveAddresses(context.Background(), chainID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	mocks.InsertAddress(t, w.ID, chainID, "0x00000000000000000000000000000000000000c3", "user_c", 1)
+	fixtures.InsertAddress(t, w.ID, chainID, "0x00000000000000000000000000000000000000c3", "user_c", 1)
 	stale := append(append([]string(nil), active...), "0xnot-in-the-database")
 	if err := rdb.Del(ctx, key).Err(); err != nil {
 		t.Fatal(err)
@@ -137,7 +137,7 @@ func TestSyncAddressCache_SameSizeDifferentMembersIsStale(t *testing.T) {
 }
 
 func TestRefreshAddressCache_ClearsTheSetWhenNoAddressIsActive(t *testing.T) {
-	mocks.TestDB(t)
+	fixtures.TestDB(t)
 	rdb := testRedis(t)
 	ctx := context.Background()
 	const chainID = "btc"
@@ -163,11 +163,11 @@ func TestRefreshAddressCache_ClearsTheSetWhenNoAddressIsActive(t *testing.T) {
 }
 
 func TestIsWatchedAddress_FallsBackToTheDatabaseWhenRedisFails(t *testing.T) {
-	mocks.TestDB(t)
+	fixtures.TestDB(t)
 	const chainID = "eth"
 	const address = "0x00000000000000000000000000000000000000d4"
-	w := mocks.InsertWallet(t, chainID)
-	mocks.InsertAddress(t, w.ID, chainID, address, "user_d", 1)
+	w := fixtures.InsertWallet(t, chainID)
+	fixtures.InsertAddress(t, w.ID, chainID, address, "user_d", 1)
 	unreachable := redis.NewClient(&redis.Options{Addr: "127.0.0.1:1", DialTimeout: 100 * time.Millisecond, MaxRetries: -1})
 	t.Cleanup(func() { _ = unreachable.Close() })
 	svc := newCacheTestService(t, unreachable)

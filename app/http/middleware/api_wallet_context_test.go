@@ -14,8 +14,8 @@ import (
 	"github.com/macrowallets/waas/app/http/middleware"
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/bootstrap"
-	"github.com/macrowallets/waas/tests/mocks"
-	"github.com/macrowallets/waas/tests/testenv"
+	"github.com/macrowallets/waas/tests/feature/support/fixtures"
+	"github.com/macrowallets/waas/tests/feature/support/testenv"
 )
 
 // testJWTSecret must be set before Goravel boots so that MintAPIToken / APITokenAuth
@@ -60,7 +60,7 @@ func TestAPIWalletContextSuite(t *testing.T) {
 }
 
 func (s *APIWalletContextTestSuite) SetupTest() {
-	mocks.TestDB(s.T())
+	fixtures.TestDB(s.T())
 	s.seedFixtures()
 }
 

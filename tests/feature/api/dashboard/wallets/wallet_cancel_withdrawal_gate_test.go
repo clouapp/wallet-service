@@ -14,7 +14,7 @@ import (
 
 	"github.com/macrowallets/waas/app/models"
 	authsvc "github.com/macrowallets/waas/app/services/auth"
-	"github.com/macrowallets/waas/tests/mocks"
+	"github.com/macrowallets/waas/tests/feature/support/fixtures"
 )
 
 const walletCancelWithdrawalGatePassword = "correct-horse-battery"
@@ -38,12 +38,12 @@ func TestWalletCancelWithdrawalGateSuite(t *testing.T) {
 }
 
 func (s *WalletCancelWithdrawalGateTestSuite) SetupTest() {
-	mocks.TestDB(s.T())
+	fixtures.TestDB(s.T())
 }
 
 func (s *WalletCancelWithdrawalGateTestSuite) TestWalletCancelWithdrawalFollowsTheLoadedRoles() {
-	account := mocks.InsertAccount(s.T(), "wallet cancel")
-	wallet := mocks.InsertWalletWithAccount(s.T(), models.ChainETH, &account.ID)
+	account := fixtures.InsertAccount(s.T(), "wallet cancel")
+	wallet := fixtures.InsertWalletWithAccount(s.T(), models.ChainETH, &account.ID)
 	someoneElse := uuid.New()
 
 	denied := []struct {
@@ -64,9 +64,9 @@ func (s *WalletCancelWithdrawalGateTestSuite) TestWalletCancelWithdrawalFollowsT
 		s.Equal("pending", s.withdrawalStatus(withdrawalID))
 	}
 
-	visible := mocks.InsertAccount(s.T(), "wallet cancel visible")
+	visible := fixtures.InsertAccount(s.T(), "wallet cancel visible")
 	s.setViewAll(visible.ID, true)
-	visibleWallet := mocks.InsertWalletWithAccount(s.T(), models.ChainETH, &visible.ID)
+	visibleWallet := fixtures.InsertWalletWithAccount(s.T(), models.ChainETH, &visible.ID)
 	for _, role := range []string{models.AccountRoleUser, models.AccountRoleAuditor} {
 		actor := s.member(role, visible.ID)
 		withdrawalID := s.pending(visibleWallet.ID, visible.ID, &someoneElse)
@@ -88,7 +88,7 @@ func (s *WalletCancelWithdrawalGateTestSuite) TestWalletCancelWithdrawalFollowsT
 		{accountRole: models.AccountRoleUser, walletRole: models.WalletRoleSpender, creator: true},
 	}
 	for _, caller := range allowed {
-		ownWallet := mocks.InsertWalletWithAccount(s.T(), models.ChainETH, &account.ID)
+		ownWallet := fixtures.InsertWalletWithAccount(s.T(), models.ChainETH, &account.ID)
 		actor := s.member(caller.accountRole, account.ID)
 		if caller.walletRole != "" {
 			s.assign(actor.id, ownWallet.ID, caller.walletRole)
@@ -114,9 +114,9 @@ func (s *WalletCancelWithdrawalGateTestSuite) TestWalletCancelWithdrawalFollowsT
 }
 
 func (s *WalletCancelWithdrawalGateTestSuite) TestWalletCancelWithdrawalDeniesTheAuditorWhoCreatedIt() {
-	account := mocks.InsertAccount(s.T(), "wallet cancel auditor creator")
+	account := fixtures.InsertAccount(s.T(), "wallet cancel auditor creator")
 	s.setViewAll(account.ID, true)
-	wallet := mocks.InsertWalletWithAccount(s.T(), models.ChainETH, &account.ID)
+	wallet := fixtures.InsertWalletWithAccount(s.T(), models.ChainETH, &account.ID)
 
 	auditor := s.member(models.AccountRoleAuditor, account.ID)
 	createdByAuditor := s.pending(wallet.ID, account.ID, &auditor.id)
@@ -138,8 +138,8 @@ func (s *WalletCancelWithdrawalGateTestSuite) TestWalletCancelWithdrawalDeniesTh
 }
 
 func (s *WalletCancelWithdrawalGateTestSuite) TestWalletCancelWithdrawalStaysHiddenFromAnAccountUser() {
-	account := mocks.InsertAccount(s.T(), "wallet cancel hidden")
-	wallet := mocks.InsertWalletWithAccount(s.T(), models.ChainETH, &account.ID)
+	account := fixtures.InsertAccount(s.T(), "wallet cancel hidden")
+	wallet := fixtures.InsertWalletWithAccount(s.T(), models.ChainETH, &account.ID)
 	creator := uuid.New()
 	withdrawalID := s.pending(wallet.ID, account.ID, &creator)
 	actor := s.member(models.AccountRoleUser, account.ID)
@@ -152,8 +152,8 @@ func (s *WalletCancelWithdrawalGateTestSuite) TestWalletCancelWithdrawalStaysHid
 }
 
 func (s *WalletCancelWithdrawalGateTestSuite) TestMissingWithdrawalStaysNotFoundForAViewer() {
-	account := mocks.InsertAccount(s.T(), "wallet cancel missing")
-	wallet := mocks.InsertWalletWithAccount(s.T(), models.ChainETH, &account.ID)
+	account := fixtures.InsertAccount(s.T(), "wallet cancel missing")
+	wallet := fixtures.InsertWalletWithAccount(s.T(), models.ChainETH, &account.ID)
 	actor := s.member(models.AccountRoleUser, account.ID)
 	s.assign(actor.id, wallet.ID, models.WalletRoleViewer)
 	kept := s.pending(wallet.ID, account.ID, nil)

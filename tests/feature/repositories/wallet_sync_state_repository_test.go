@@ -12,7 +12,7 @@ import (
 	"github.com/macrowallets/waas/app/repositories"
 	"github.com/macrowallets/waas/app/services/refresh"
 	"github.com/macrowallets/waas/pkg/types"
-	"github.com/macrowallets/waas/tests/testutil"
+	"github.com/macrowallets/waas/tests/feature/support/testutil"
 )
 
 type WalletSyncStateRepositoryTestSuite struct {

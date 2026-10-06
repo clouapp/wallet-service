@@ -15,7 +15,7 @@ import (
 
 	"github.com/macrowallets/waas/app/models"
 	authsvc "github.com/macrowallets/waas/app/services/auth"
-	"github.com/macrowallets/waas/tests/mocks"
+	"github.com/macrowallets/waas/tests/feature/support/fixtures"
 )
 
 const accountRolesPassword = "correct-horse-battery"
@@ -30,7 +30,7 @@ func TestAccountRolesSuite(t *testing.T) {
 }
 
 func (s *accountRolesSuite) SetupTest() {
-	mocks.TestDB(s.T())
+	fixtures.TestDB(s.T())
 }
 
 func (s *accountRolesSuite) TestOwnerReadsEffectiveGrants() {

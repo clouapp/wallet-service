@@ -11,7 +11,7 @@ import (
 
 	"github.com/macrowallets/waas/app/http/responses"
 	"github.com/macrowallets/waas/app/models"
-	"github.com/macrowallets/waas/tests/testutil"
+	"github.com/macrowallets/waas/tests/feature/support/testutil"
 )
 
 // PlatformAccountListTestSuite is GET /v1/platform/accounts from S3.4.1.

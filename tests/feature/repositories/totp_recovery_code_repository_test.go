@@ -11,7 +11,7 @@ import (
 
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/repositories"
-	"github.com/macrowallets/waas/tests/mocks"
+	"github.com/macrowallets/waas/tests/feature/support/fixtures"
 )
 
 type TotpRecoveryCodeRepositoryTestSuite struct {
@@ -25,7 +25,7 @@ func TestTotpRecoveryCodeRepositorySuite(t *testing.T) {
 }
 
 func (s *TotpRecoveryCodeRepositoryTestSuite) SetupTest() {
-	mocks.TestDB(s.T())
+	fixtures.TestDB(s.T())
 	s.repo = repositories.NewTotpRecoveryCodeRepository(nil)
 	s.userRepo = repositories.NewUserRepository(nil)
 }

@@ -12,7 +12,7 @@ import (
 
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/services/settings"
-	"github.com/macrowallets/waas/tests/testutil"
+	"github.com/macrowallets/waas/tests/feature/support/testutil"
 )
 
 // ---------------------------------------------------------------------------
@@ -77,7 +77,8 @@ func TestLoadLimits_AppliesStoredSweepLimits(t *testing.T) {
 
 func TestLoadLimits_ReadErrorReturnsDefaults(t *testing.T) {
 	svc := &service{sweepLimits: func(context.Context, uuid.UUID) (settings.SweepLimitValues, error) {
-		return settings.SweepLimitValues{}, errors.New("settings unavailable")	}}
+		return settings.SweepLimitValues{}, errors.New("settings unavailable")
+	}}
 
 	limits, err := svc.LoadLimits(context.Background(), uuid.New())
 	if err != nil {

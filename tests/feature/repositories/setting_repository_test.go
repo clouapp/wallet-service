@@ -13,14 +13,14 @@ import (
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/repositories"
 	"github.com/macrowallets/waas/app/services/settings"
-	"github.com/macrowallets/waas/tests/mocks"
+	"github.com/macrowallets/waas/tests/feature/support/fixtures"
 )
 
 func TestListPlatformReadsOnlyPlatformRows(t *testing.T) {
-	mocks.TestDB(t)
+	fixtures.TestDB(t)
 	ctx := context.Background()
 	repo := repositories.NewSettingRepository(nil)
-	account := mocks.InsertAccount(t, "deposit-scan-settings")
+	account := fixtures.InsertAccount(t, "deposit-scan-settings")
 
 	if err := repo.UpsertMany(ctx, account.ID, "deposit_scan", map[string]string{
 		"batch_blocks": "999",
@@ -53,11 +53,11 @@ func TestListPlatformReadsOnlyPlatformRows(t *testing.T) {
 }
 
 func TestListGroupDoesNotReturnAnotherAccount(t *testing.T) {
-	mocks.TestDB(t)
+	fixtures.TestDB(t)
 	ctx := context.Background()
 	repo := repositories.NewSettingRepository(nil)
-	accountA := mocks.InsertAccount(t, "settings-scope-a")
-	accountB := mocks.InsertAccount(t, "settings-scope-b")
+	accountA := fixtures.InsertAccount(t, "settings-scope-a")
+	accountB := fixtures.InsertAccount(t, "settings-scope-b")
 
 	if err := repo.UpsertMany(ctx, accountA.ID, "account_security", map[string]string{
 		"require_2fa": "true",
@@ -81,11 +81,11 @@ func TestListGroupDoesNotReturnAnotherAccount(t *testing.T) {
 }
 
 func TestDeleteGroupLeavesPlatformRowsAndOtherAccounts(t *testing.T) {
-	mocks.TestDB(t)
+	fixtures.TestDB(t)
 	ctx := context.Background()
 	repo := repositories.NewSettingRepository(nil)
-	owner := mocks.InsertAccount(t, "reset-owner")
-	other := mocks.InsertAccount(t, "reset-other")
+	owner := fixtures.InsertAccount(t, "reset-owner")
+	other := fixtures.InsertAccount(t, "reset-other")
 
 	if err := repo.UpsertMany(ctx, owner.ID, "account_security", map[string]string{"require_2fa": "true"}); err != nil {
 		t.Fatalf("store owner security: %v", err)
@@ -146,11 +146,11 @@ func (w rollbackActivity) Append(ctx context.Context, row models.AccountActivity
 }
 
 func TestResetSectionCommitsWithActivityAndRollsBackTogether(t *testing.T) {
-	mocks.TestDB(t)
+	fixtures.TestDB(t)
 	ctx := context.Background()
 	settingsRepo := repositories.NewSettingRepository(nil)
 	activityRepo := repositories.NewAccountActivityRepository(nil)
-	account := mocks.InsertAccount(t, "reset-commit")
+	account := fixtures.InsertAccount(t, "reset-commit")
 	actorID := uuid.New()
 	if _, err := facades.Orm().Query().Exec(
 		`INSERT INTO users (id, email, password_hash, status, created_at, updated_at)
@@ -251,7 +251,7 @@ func TestResetSectionCommitsWithActivityAndRollsBackTogether(t *testing.T) {
 }
 
 func TestUpsertPlatformReplacesTheSameKey(t *testing.T) {
-	mocks.TestDB(t)
+	fixtures.TestDB(t)
 	ctx := context.Background()
 	repo := repositories.NewSettingRepository(nil)
 
@@ -284,10 +284,10 @@ func TestUpsertPlatformReplacesTheSameKey(t *testing.T) {
 }
 
 func TestDeletePlatformLeavesAccountRows(t *testing.T) {
-	mocks.TestDB(t)
+	fixtures.TestDB(t)
 	ctx := context.Background()
 	repo := repositories.NewSettingRepository(nil)
-	account := mocks.InsertAccount(t, "platform-reset-delete")
+	account := fixtures.InsertAccount(t, "platform-reset-delete")
 
 	if err := repo.UpsertMany(ctx, account.ID, "mail_smtp", map[string]string{
 		"host": "account-host.example.test",
@@ -327,11 +327,11 @@ func TestDeletePlatformLeavesAccountRows(t *testing.T) {
 }
 
 func TestResetPlatformSectionCommitsWithActivityAndRollsBackTogether(t *testing.T) {
-	mocks.TestDB(t)
+	fixtures.TestDB(t)
 	ctx := context.Background()
 	settingsRepo := repositories.NewSettingRepository(nil)
 	activityRepo := repositories.NewAccountActivityRepository(nil)
-	account := mocks.InsertAccount(t, "platform-reset-commit")
+	account := fixtures.InsertAccount(t, "platform-reset-commit")
 	actorID := uuid.New()
 	if _, err := facades.Orm().Query().Exec(
 		`INSERT INTO users (id, email, password_hash, status, created_at, updated_at)

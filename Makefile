@@ -23,7 +23,7 @@ endif
 FRONT_DIR = ../front
 
 # Destructive test database (migrate:fresh per test); must end with _test.
-# vault (dev) and vault_test (local e2e stack) are refused by tests/testenv.
+# vault (dev) and vault_test (local e2e stack) are refused by tests/feature/support/testenv.
 TEST_DB_DATABASE ?= vault_unit_test
 export TEST_DB_DATABASE
 

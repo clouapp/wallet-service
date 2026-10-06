@@ -9,7 +9,7 @@ import (
 
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/repositories"
-	"github.com/macrowallets/waas/tests/mocks"
+	"github.com/macrowallets/waas/tests/feature/support/fixtures"
 )
 
 type ChainResourceRepositoryTestSuite struct {
@@ -22,7 +22,7 @@ func TestChainResourceRepositorySuite(t *testing.T) {
 }
 
 func (s *ChainResourceRepositoryTestSuite) SetupTest() {
-	mocks.TestDB(s.T())
+	fixtures.TestDB(s.T())
 	s.Require().NoError(repositories.NewChainRepository(nil).Create(context.Background(), &models.Chain{
 		ID: "eth", Name: "Ethereum", AdapterType: models.AdapterTypeEVM, NativeSymbol: "ETH",
 		NativeDecimals: 18, RpcURL: "enc", RequiredConfirmations: 12, Status: "active",

@@ -10,7 +10,7 @@ import (
 
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/repositories"
-	"github.com/macrowallets/waas/tests/mocks"
+	"github.com/macrowallets/waas/tests/feature/support/fixtures"
 )
 
 type WebhookEventRepositoryTestSuite struct {
@@ -23,7 +23,7 @@ func TestWebhookEventRepositorySuite(t *testing.T) {
 }
 
 func (s *WebhookEventRepositoryTestSuite) SetupTest() {
-	mocks.TestDB(s.T())
+	fixtures.TestDB(s.T())
 	s.repo = repositories.NewWebhookEventRepository(nil)
 }
 

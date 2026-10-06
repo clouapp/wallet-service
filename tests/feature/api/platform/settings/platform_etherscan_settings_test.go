@@ -10,7 +10,7 @@ import (
 	"github.com/stretchr/testify/suite"
 
 	"github.com/macrowallets/waas/app/services/settings"
-	"github.com/macrowallets/waas/tests/testutil"
+	"github.com/macrowallets/waas/tests/feature/support/testutil"
 )
 
 // PlatformEtherscanSettingsTestSuite is PUT /v1/platform/settings/provider_etherscan.

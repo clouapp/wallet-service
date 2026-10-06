@@ -12,8 +12,8 @@ import (
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/repositories"
 	"github.com/macrowallets/waas/database/seeds"
-	"github.com/macrowallets/waas/tests/mocks"
-	"github.com/macrowallets/waas/tests/testutil"
+	"github.com/macrowallets/waas/tests/feature/support/fixtures"
+	"github.com/macrowallets/waas/tests/feature/support/testutil"
 )
 
 func TestMain(m *testing.M) {
@@ -35,7 +35,7 @@ func TestUsersSeedDoesNotQueryOutsideTheRepository(t *testing.T) {
 }
 
 func TestSeedUsersInsertsDashboardUsersAndKeepsThemOnRerun(t *testing.T) {
-	mocks.TestDB(t)
+	fixtures.TestDB(t)
 	ctx := context.Background()
 	acmeID := uuid.MustParse("00000000-0000-0000-0000-000000000010")
 	accounts := repositories.NewAccountRepository(nil)

@@ -18,8 +18,9 @@ import (
 	"github.com/macrowallets/waas/app/services/sweep"
 	"github.com/macrowallets/waas/app/services/webhook"
 	"github.com/macrowallets/waas/pkg/types"
+	"github.com/macrowallets/waas/tests/feature/support/fixtures"
+	"github.com/macrowallets/waas/tests/feature/support/testutil"
 	"github.com/macrowallets/waas/tests/mocks"
-	"github.com/macrowallets/waas/tests/testutil"
 )
 
 func TestMain(m *testing.M) {
@@ -82,7 +83,7 @@ func (m *mockSweepSvc) LoadLimits(context.Context, uuid.UUID) (*sweep.Limits, er
 
 func setupWithdrawService(t *testing.T) (*Service, *mocks.MockChain) {
 	t.Helper()
-	mocks.TestDB(t)
+	fixtures.TestDB(t)
 	registry := chain.NewRegistry()
 	mockChain := mocks.NewMockChain("eth")
 	mockChain.RequiredConfirmationsVal = 12
@@ -289,8 +290,8 @@ func TestGetTransaction(t *testing.T) {
 	svc, _ := setupWithdrawService(t)
 	ctx := context.Background()
 
-	w := mocks.InsertWallet(t, "eth")
-	inserted := mocks.InsertTransaction(t, w.ID, nil, "eth", "withdrawal", "pending", "eth", "100", 0)
+	w := fixtures.InsertWallet(t, "eth")
+	inserted := fixtures.InsertTransaction(t, w.ID, nil, "eth", "withdrawal", "pending", "eth", "100", 0)
 
 	got, err := svc.GetTransaction(ctx, inserted.ID)
 	if err != nil {
@@ -313,10 +314,10 @@ func TestListTransactions_Filters(t *testing.T) {
 	svc, _ := setupWithdrawService(t)
 	ctx := context.Background()
 
-	w := mocks.InsertWallet(t, "eth")
-	mocks.InsertTransaction(t, w.ID, nil, "eth", "deposit", "confirmed", "eth", "100", 50)
-	mocks.InsertTransaction(t, w.ID, nil, "eth", "withdrawal", "pending", "usdt", "200", 0)
-	mocks.InsertTransaction(t, w.ID, nil, "eth", "deposit", "pending", "eth", "300", 60)
+	w := fixtures.InsertWallet(t, "eth")
+	fixtures.InsertTransaction(t, w.ID, nil, "eth", "deposit", "confirmed", "eth", "100", 50)
+	fixtures.InsertTransaction(t, w.ID, nil, "eth", "withdrawal", "pending", "usdt", "200", 0)
+	fixtures.InsertTransaction(t, w.ID, nil, "eth", "deposit", "pending", "eth", "300", 60)
 
 	// All
 	all, _, _ := svc.ListTransactions(ctx, "", "", "", "", 50, 0)

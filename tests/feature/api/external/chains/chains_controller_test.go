@@ -8,7 +8,7 @@ import (
 	"github.com/stretchr/testify/suite"
 
 	ctltestutil "github.com/macrowallets/waas/tests/feature/support"
-	"github.com/macrowallets/waas/tests/testutil"
+	"github.com/macrowallets/waas/tests/feature/support/testutil"
 )
 
 // ChainsControllerTestSuite covers both auth surfaces the chains list handler

@@ -14,7 +14,7 @@ import (
 
 	"github.com/macrowallets/waas/app/models"
 	authsvc "github.com/macrowallets/waas/app/services/auth"
-	"github.com/macrowallets/waas/tests/mocks"
+	"github.com/macrowallets/waas/tests/feature/support/fixtures"
 )
 
 const walletCanAddressPassword = "correct-horse-battery"
@@ -33,8 +33,8 @@ func TestWalletCanAddressSuite(t *testing.T) {
 }
 
 func (s *WalletCanAddressTestSuite) SetupTest() {
-	mocks.TestDB(s.T())
-	s.account = mocks.InsertAccount(s.T(), "wallet-can")
+	fixtures.TestDB(s.T())
+	s.account = fixtures.InsertAccount(s.T(), "wallet-can")
 	_, err := facades.Orm().Query().Exec(`UPDATE accounts SET view_all_wallets = TRUE WHERE id = ?`, s.account.ID)
 	s.Require().NoError(err)
 	s.account.ViewAllWallets = true
@@ -97,7 +97,7 @@ func (s *WalletCanAddressTestSuite) assertForbidden(resp contractstesting.Respon
 }
 
 func (s *WalletCanAddressTestSuite) TestAddressCreateFollowsWalletCan() {
-	wallet := mocks.InsertWalletWithAccount(s.T(), "eth", &s.account.ID)
+	wallet := fixtures.InsertWalletWithAccount(s.T(), "eth", &s.account.ID)
 	body := `{"label":"` + strings.Repeat("a", 256) + `"}`
 	path := "/v1/wallets/" + wallet.ID.String() + "/addresses"
 
@@ -124,7 +124,7 @@ func (s *WalletCanAddressTestSuite) TestMissingWalletIsNotFoundBeforeWalletCan()
 }
 
 func (s *WalletCanAddressTestSuite) TestUserStillCannotMoveFunds() {
-	wallet := mocks.InsertWalletWithAccount(s.T(), "eth", &s.account.ID)
+	wallet := fixtures.InsertWalletWithAccount(s.T(), "eth", &s.account.ID)
 	token := s.loginUser(models.AccountRoleUser)
 	for _, path := range []string{
 		"/v1/wallets",

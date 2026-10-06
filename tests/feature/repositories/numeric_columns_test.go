@@ -15,7 +15,7 @@ import (
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/repositories"
 	"github.com/macrowallets/waas/pkg/numeric"
-	"github.com/macrowallets/waas/tests/mocks"
+	"github.com/macrowallets/waas/tests/feature/support/fixtures"
 )
 
 // NumericColumnsTestSuite round-trips every numeric(p,s) column through PostgreSQL
@@ -29,7 +29,7 @@ func TestNumericColumnsSuite(t *testing.T) {
 }
 
 func (s *NumericColumnsTestSuite) SetupTest() {
-	mocks.TestDB(s.T())
+	fixtures.TestDB(s.T())
 }
 
 func (s *NumericColumnsTestSuite) exact(text string) decimal.Decimal {
@@ -63,7 +63,7 @@ func (s *NumericColumnsTestSuite) insertChain(id string, dustUSD numeric.NullDec
 
 func (s *NumericColumnsTestSuite) TestWalletFeeMultiplierAndBalanceUSDRoundTripExactly() {
 	repo := repositories.NewWalletRepository(nil)
-	wallet := mocks.InsertWallet(s.T(), "eth")
+	wallet := fixtures.InsertWallet(s.T(), "eth")
 	ctx := context.Background()
 
 	feeMultiplier := s.exact("1.2345")
@@ -91,7 +91,7 @@ func (s *NumericColumnsTestSuite) TestWalletFeeMultiplierAndBalanceUSDRoundTripE
 
 func (s *NumericColumnsTestSuite) TestWalletDecimalUpdatedThroughUpdateFieldAndClearedToNull() {
 	repo := repositories.NewWalletRepository(nil)
-	wallet := mocks.InsertWallet(s.T(), "eth")
+	wallet := fixtures.InsertWallet(s.T(), "eth")
 	ctx := context.Background()
 
 	s.Require().NoError(repo.UpdateSettings(ctx, wallet.ID, map[string]any{
@@ -115,7 +115,7 @@ func (s *NumericColumnsTestSuite) TestWalletDecimalUpdatedThroughUpdateFieldAndC
 
 func (s *NumericColumnsTestSuite) TestAssetBalancePriceAndValueRoundTripExactly() {
 	s.insertChain("eth", numeric.NewNullDecimal(s.exact("1.0000")))
-	wallet := mocks.InsertWallet(s.T(), "eth")
+	wallet := fixtures.InsertWallet(s.T(), "eth")
 	repo := repositories.NewWalletAssetBalanceRepository(nil)
 	ctx := context.Background()
 
@@ -142,7 +142,7 @@ func (s *NumericColumnsTestSuite) TestAssetBalancePriceAndValueRoundTripExactly(
 
 func (s *NumericColumnsTestSuite) TestSnapshotBalanceUSDRoundTripsExactly() {
 	s.insertChain("eth", numeric.NullDecimal{})
-	wallet := mocks.InsertWallet(s.T(), "eth")
+	wallet := fixtures.InsertWallet(s.T(), "eth")
 	repo := repositories.NewWalletBalanceSnapshotRepository(nil)
 	ctx := context.Background()
 

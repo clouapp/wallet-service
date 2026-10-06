@@ -14,7 +14,7 @@ import (
 
 	"github.com/macrowallets/waas/app/models"
 	authsvc "github.com/macrowallets/waas/app/services/auth"
-	"github.com/macrowallets/waas/tests/mocks"
+	"github.com/macrowallets/waas/tests/feature/support/fixtures"
 )
 
 const (
@@ -36,13 +36,13 @@ func TestWalletWhitelistGateSuite(t *testing.T) {
 }
 
 func (s *WalletWhitelistGateTestSuite) SetupTest() {
-	mocks.TestDB(s.T())
+	fixtures.TestDB(s.T())
 }
 
 func (s *WalletWhitelistGateTestSuite) TestWalletWhitelistCreateFollowsTheLoadedRoles() {
-	account := mocks.InsertAccount(s.T(), "wallet whitelist")
+	account := fixtures.InsertAccount(s.T(), "wallet whitelist")
 	s.seedChain()
-	wallet := mocks.InsertWalletWithAccount(s.T(), models.ChainETH, &account.ID)
+	wallet := fixtures.InsertWalletWithAccount(s.T(), models.ChainETH, &account.ID)
 
 	denied := []struct {
 		accountRole string
@@ -85,9 +85,9 @@ func (s *WalletWhitelistGateTestSuite) TestWalletWhitelistCreateFollowsTheLoaded
 }
 
 func (s *WalletWhitelistGateTestSuite) TestMissingWhitelistEntryIs404BeforeTheRoleCheck() {
-	account := mocks.InsertAccount(s.T(), "wallet whitelist missing")
+	account := fixtures.InsertAccount(s.T(), "wallet whitelist missing")
 	s.seedChain()
-	wallet := mocks.InsertWalletWithAccount(s.T(), models.ChainETH, &account.ID)
+	wallet := fixtures.InsertWalletWithAccount(s.T(), models.ChainETH, &account.ID)
 	actor := s.member(models.AccountRoleUser, account.ID)
 	s.assign(actor.id, wallet.ID, models.WalletRoleViewer)
 
@@ -97,9 +97,9 @@ func (s *WalletWhitelistGateTestSuite) TestMissingWhitelistEntryIs404BeforeTheRo
 }
 
 func (s *WalletWhitelistGateTestSuite) TestWalletWhitelistDeleteFollowsTheLoadedRoles() {
-	account := mocks.InsertAccount(s.T(), "wallet whitelist delete")
+	account := fixtures.InsertAccount(s.T(), "wallet whitelist delete")
 	s.seedChain()
-	wallet := mocks.InsertWalletWithAccount(s.T(), models.ChainETH, &account.ID)
+	wallet := fixtures.InsertWalletWithAccount(s.T(), models.ChainETH, &account.ID)
 	owner := s.member(models.AccountRoleOwner, account.ID)
 
 	denied := []struct {
@@ -149,9 +149,9 @@ func (s *WalletWhitelistGateTestSuite) TestWalletWhitelistDeleteFollowsTheLoaded
 }
 
 func (s *WalletWhitelistGateTestSuite) TestAddWhitelistEntryValidationStaysUnprocessable() {
-	account := mocks.InsertAccount(s.T(), "wallet whitelist validation")
+	account := fixtures.InsertAccount(s.T(), "wallet whitelist validation")
 	s.seedChain()
-	wallet := mocks.InsertWalletWithAccount(s.T(), models.ChainETH, &account.ID)
+	wallet := fixtures.InsertWalletWithAccount(s.T(), models.ChainETH, &account.ID)
 	owner := s.member(models.AccountRoleOwner, account.ID)
 	label := "missing-address-" + uuid.NewString()[:8]
 

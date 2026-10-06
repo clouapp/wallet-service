@@ -12,14 +12,14 @@ import (
 	"github.com/macrowallets/waas/app/services/settings"
 	sweepsvc "github.com/macrowallets/waas/app/services/sweep"
 	"github.com/macrowallets/waas/database/migrations"
-	"github.com/macrowallets/waas/tests/mocks"
+	"github.com/macrowallets/waas/tests/feature/support/fixtures"
 )
 
 func TestDropAccountsSweepLimitsRemovesTheColumnAndSweepReadsSettings(t *testing.T) {
-	mocks.TestDB(t)
+	fixtures.TestDB(t)
 	require.Equal(t, int64(0), sweepLimitsColumnCount(t), "migrate leaves accounts.sweep_limits dropped")
 
-	account := mocks.InsertAccount(t, "sweep-from-settings")
+	account := fixtures.InsertAccount(t, "sweep-from-settings")
 	exec(t, `INSERT INTO settings (account_id, "group", "key", value, created_at, updated_at)
 		VALUES (?, 'account_sweep_limits', 'max_addresses_evm', '40', NOW(), NOW())`, account.ID)
 	exec(t, `INSERT INTO settings (account_id, "group", "key", value, created_at, updated_at)

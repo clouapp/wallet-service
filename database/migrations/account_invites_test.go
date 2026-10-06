@@ -13,12 +13,12 @@ import (
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/repositories"
 	accountsvc "github.com/macrowallets/waas/app/services/account"
-	"github.com/macrowallets/waas/tests/mocks"
+	"github.com/macrowallets/waas/tests/feature/support/fixtures"
 )
 
 func TestInviteTokenCanBeAcceptedWithoutAnEmptyPassword(t *testing.T) {
-	mocks.TestDB(t)
-	account := mocks.InsertAccount(t, "invite-account")
+	fixtures.TestDB(t)
+	account := fixtures.InsertAccount(t, "invite-account")
 	ownerID := uuid.New()
 	exec(t, `INSERT INTO users (id, email, password_hash, full_name, status, created_at, updated_at)
 		VALUES (?, 'owner-invite@example.com', 'hash', 'Owner', 'active', NOW(), NOW())`, ownerID)
@@ -76,8 +76,8 @@ func (r refuseActivity) Append(context.Context, models.AccountActivity) error {
 }
 
 func TestInviteActivityRollsBackWithTheInvite(t *testing.T) {
-	mocks.TestDB(t)
-	account := mocks.InsertAccount(t, "invite-rollback")
+	fixtures.TestDB(t)
+	account := fixtures.InsertAccount(t, "invite-rollback")
 	ownerID := uuid.New()
 	exec(t, `INSERT INTO users (id, email, password_hash, full_name, status, created_at, updated_at)
 		VALUES (?, 'owner-rollback@example.com', 'hash', 'Owner', 'active', NOW(), NOW())`, ownerID)
@@ -99,9 +99,9 @@ func TestInviteActivityRollsBackWithTheInvite(t *testing.T) {
 }
 
 func TestResendInviteRotatesTheOpenToken(t *testing.T) {
-	mocks.TestDB(t)
-	account := mocks.InsertAccount(t, "invite-resend")
-	other := mocks.InsertAccount(t, "invite-resend-other")
+	fixtures.TestDB(t)
+	account := fixtures.InsertAccount(t, "invite-resend")
+	other := fixtures.InsertAccount(t, "invite-resend-other")
 	ownerID := uuid.New()
 	exec(t, `INSERT INTO users (id, email, password_hash, full_name, status, created_at, updated_at)
 		VALUES (?, 'owner-resend@example.com', 'hash', 'Owner', 'active', NOW(), NOW())`, ownerID)
@@ -158,9 +158,9 @@ func TestResendInviteRotatesTheOpenToken(t *testing.T) {
 }
 
 func TestRevokeInviteStampsRevokedAtAndLeavesTheToken(t *testing.T) {
-	mocks.TestDB(t)
-	account := mocks.InsertAccount(t, "invite-revoke")
-	other := mocks.InsertAccount(t, "invite-revoke-other")
+	fixtures.TestDB(t)
+	account := fixtures.InsertAccount(t, "invite-revoke")
+	other := fixtures.InsertAccount(t, "invite-revoke-other")
 	ownerID := uuid.New()
 	exec(t, `INSERT INTO users (id, email, password_hash, full_name, status, created_at, updated_at)
 		VALUES (?, 'owner-revoke@example.com', 'hash', 'Owner', 'active', NOW(), NOW())`, ownerID)

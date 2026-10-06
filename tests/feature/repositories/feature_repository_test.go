@@ -9,7 +9,7 @@ import (
 
 	"github.com/macrowallets/waas/app/repositories"
 	"github.com/macrowallets/waas/app/services/features"
-	"github.com/macrowallets/waas/tests/mocks"
+	"github.com/macrowallets/waas/tests/feature/support/fixtures"
 )
 
 type FeatureRepositoryTestSuite struct {
@@ -22,7 +22,7 @@ func TestFeatureRepositorySuite(t *testing.T) {
 }
 
 func (s *FeatureRepositoryTestSuite) SetupTest() {
-	mocks.TestDB(s.T())
+	fixtures.TestDB(s.T())
 	s.repo = repositories.NewFeatureRepository(nil)
 }
 

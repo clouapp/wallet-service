@@ -14,7 +14,7 @@ import (
 
 	"github.com/macrowallets/waas/app/models"
 	authsvc "github.com/macrowallets/waas/app/services/auth"
-	"github.com/macrowallets/waas/tests/mocks"
+	"github.com/macrowallets/waas/tests/feature/support/fixtures"
 )
 
 const walletFreezeGatePassword = "correct-horse-battery"
@@ -35,12 +35,12 @@ func TestWalletFreezeGateSuite(t *testing.T) {
 }
 
 func (s *WalletFreezeGateTestSuite) SetupTest() {
-	mocks.TestDB(s.T())
+	fixtures.TestDB(s.T())
 }
 
 func (s *WalletFreezeGateTestSuite) TestWalletFreezeFollowsTheLoadedRoles() {
-	account := mocks.InsertAccount(s.T(), "wallet freeze")
-	wallet := mocks.InsertWalletWithAccount(s.T(), models.ChainETH, &account.ID)
+	account := fixtures.InsertAccount(s.T(), "wallet freeze")
+	wallet := fixtures.InsertWalletWithAccount(s.T(), models.ChainETH, &account.ID)
 
 	denied := []struct {
 		accountRole string
@@ -60,9 +60,9 @@ func (s *WalletFreezeGateTestSuite) TestWalletFreezeFollowsTheLoadedRoles() {
 		s.assertUnfrozen(wallet.ID)
 	}
 
-	visible := mocks.InsertAccount(s.T(), "wallet freeze visible")
+	visible := fixtures.InsertAccount(s.T(), "wallet freeze visible")
 	s.setViewAll(visible.ID, true)
-	visibleWallet := mocks.InsertWalletWithAccount(s.T(), models.ChainETH, &visible.ID)
+	visibleWallet := fixtures.InsertWalletWithAccount(s.T(), models.ChainETH, &visible.ID)
 	for _, role := range []string{models.AccountRoleUser, models.AccountRoleAuditor} {
 		actor := s.member(role, visible.ID)
 		resp := s.freeze(actor.token, visible.ID, visibleWallet.ID)
@@ -79,7 +79,7 @@ func (s *WalletFreezeGateTestSuite) TestWalletFreezeFollowsTheLoadedRoles() {
 		{accountRole: models.AccountRoleUser, walletRole: "owner"},
 	}
 	for _, caller := range allowed {
-		ownWallet := mocks.InsertWalletWithAccount(s.T(), models.ChainETH, &account.ID)
+		ownWallet := fixtures.InsertWalletWithAccount(s.T(), models.ChainETH, &account.ID)
 		actor := s.member(caller.accountRole, account.ID)
 		if caller.walletRole != "" {
 			s.assign(actor.id, ownWallet.ID, caller.walletRole)
@@ -99,8 +99,8 @@ func (s *WalletFreezeGateTestSuite) TestWalletFreezeFollowsTheLoadedRoles() {
 }
 
 func (s *WalletFreezeGateTestSuite) TestWalletFreezeStaysHiddenFromAnAccountUser() {
-	account := mocks.InsertAccount(s.T(), "wallet freeze hidden")
-	wallet := mocks.InsertWalletWithAccount(s.T(), models.ChainETH, &account.ID)
+	account := fixtures.InsertAccount(s.T(), "wallet freeze hidden")
+	wallet := fixtures.InsertWalletWithAccount(s.T(), models.ChainETH, &account.ID)
 	actor := s.member(models.AccountRoleUser, account.ID)
 
 	resp := s.freeze(actor.token, account.ID, wallet.ID)

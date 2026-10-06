@@ -15,7 +15,7 @@ import (
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/services/settings"
 	"github.com/macrowallets/waas/app/services/sweep"
-	"github.com/macrowallets/waas/tests/testutil"
+	"github.com/macrowallets/waas/tests/feature/support/testutil"
 )
 
 // PlatformSweepLimitsTestSuite is PUT /v1/platform/settings/sweep_limits from

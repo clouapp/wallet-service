@@ -23,9 +23,9 @@ import (
 	"github.com/macrowallets/waas/app/services/deposit/pending"
 	"github.com/macrowallets/waas/app/services/depositevents"
 	"github.com/macrowallets/waas/pkg/types"
-	"github.com/macrowallets/waas/tests/mocks"
+	"github.com/macrowallets/waas/tests/feature/support/fixtures"
+	"github.com/macrowallets/waas/tests/feature/support/testutil"
 	"github.com/macrowallets/waas/tests/pendingredis"
-	"github.com/macrowallets/waas/tests/testutil"
 )
 
 const (
@@ -525,7 +525,7 @@ func TestPendingBlocks_SurviveAnAPIRestart(t *testing.T) {
 func TestProcessingABlockTwiceSendsEachDepositWebhookOnce(t *testing.T) {
 	backends := newPendingBackends(t)
 	f := newFailureFixture(t, backends.store)
-	account := mocks.InsertAccount(t, "idempotency owner")
+	account := fixtures.InsertAccount(t, "idempotency owner")
 	if _, err := facades.Orm().Query().Exec("UPDATE wallets SET account_id = ? WHERE chain = ?", account.ID, scanTestChain); err != nil {
 		t.Fatal(err)
 	}
@@ -537,7 +537,7 @@ func TestProcessingABlockTwiceSendsEachDepositWebhookOnce(t *testing.T) {
 	})
 	f.svc.webhookSvc = webhookSvc
 	f.svc.SetDepositEvents(publisher)
-	mocks.InsertScopedWebhookConfig(t, "https://owner.test/hook", depositHookSecret, []string{string(types.EventDepositPending), depositConfirmedEvent}, &account.ID, nil)
+	fixtures.InsertScopedWebhookConfig(t, "https://owner.test/hook", depositHookSecret, []string{string(types.EventDepositPending), depositConfirmedEvent}, &account.ID, nil)
 
 	if err := f.svc.ScanLatestBlocks(context.Background(), scanTestChain); err != nil {
 		t.Fatal(err)
@@ -573,8 +573,8 @@ func TestProcessingABlockTwiceSendsEachDepositWebhookOnce(t *testing.T) {
 }
 
 func TestUniqueDepositIndexRejectsASecondRowForTheSameTransaction(t *testing.T) {
-	mocks.TestDB(t)
-	wallet := mocks.InsertWallet(t, scanTestChain)
+	fixtures.TestDB(t)
+	wallet := fixtures.InsertWallet(t, scanTestChain)
 	repo := repositories.NewTransactionRepository(nil)
 	newDeposit := func(txType string) *models.Transaction {
 		return &models.Transaction{

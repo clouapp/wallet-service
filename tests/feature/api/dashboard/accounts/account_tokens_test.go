@@ -20,7 +20,7 @@ import (
 	"github.com/macrowallets/waas/app/models"
 	activitylog "github.com/macrowallets/waas/app/services/activity"
 	authsvc "github.com/macrowallets/waas/app/services/auth"
-	"github.com/macrowallets/waas/tests/mocks"
+	"github.com/macrowallets/waas/tests/feature/support/fixtures"
 )
 
 const accountTokenPassword = "correct-horse-battery"
@@ -38,7 +38,7 @@ func TestAccountTokenPermissions(t *testing.T) {
 }
 
 func (s *accountTokensSuite) SetupTest() {
-	mocks.TestDB(s.T())
+	fixtures.TestDB(s.T())
 }
 
 func (s *accountTokensSuite) TestOwnerMintsACatalogSubset() {

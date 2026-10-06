@@ -43,7 +43,8 @@ type SignFunc func(body []byte) string
 // callers can exercise every external route this helper is used for.
 //
 // Requires an active Goravel ORM + a migrated `accounts` and `access_tokens`
-// schema. Call tests/testutil.SeededTestDB(t) or mocks.TestDB(t) first.
+// schema. Call tests/feature/support/testutil.SeededTestDB(t) or
+// tests/feature/support/fixtures.TestDB(t) first.
 func SetupAPIAuth(t *testing.T, requireSignature bool) (accountID uuid.UUID, bearerJWT string, sign SignFunc) {
 	t.Helper()
 

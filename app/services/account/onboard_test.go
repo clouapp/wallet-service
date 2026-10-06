@@ -11,13 +11,13 @@ import (
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/repositories"
 	accountsvc "github.com/macrowallets/waas/app/services/account"
-	"github.com/macrowallets/waas/tests/mocks"
+	"github.com/macrowallets/waas/tests/feature/support/fixtures"
 )
 
 const onboardPasswordHash = "stored-password-hash"
 
 func TestOnboardRollsBackAccountAndMembershipWhenMembershipInsertFails(t *testing.T) {
-	mocks.TestDB(t)
+	fixtures.TestDB(t)
 	ctx := context.Background()
 	email := "onboard-rollback-" + uuid.NewString() + "@example.com"
 	organization := "Onboard Rollback " + uuid.NewString()
@@ -69,7 +69,7 @@ func TestOnboardRollsBackAccountAndMembershipWhenMembershipInsertFails(t *testin
 }
 
 func TestOnboardCommitsThenDispatchesMail(t *testing.T) {
-	mocks.TestDB(t)
+	fixtures.TestDB(t)
 	ctx := context.Background()
 	email := "onboard-commit-" + uuid.NewString() + "@example.com"
 	organization := "Onboard Commit " + uuid.NewString()

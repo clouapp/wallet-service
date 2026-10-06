@@ -19,7 +19,7 @@ import (
 	"github.com/macrowallets/waas/app/models"
 	authsvc "github.com/macrowallets/waas/app/services/auth"
 	"github.com/macrowallets/waas/app/services/features"
-	"github.com/macrowallets/waas/tests/mocks"
+	"github.com/macrowallets/waas/tests/feature/support/fixtures"
 )
 
 const featureGatePassword = "correct-horse-battery"
@@ -39,7 +39,7 @@ func TestFeatureFlagGates(t *testing.T) {
 }
 
 func (s *featureGateSuite) SetupTest() {
-	mocks.TestDB(s.T())
+	fixtures.TestDB(s.T())
 }
 
 func (s *featureGateSuite) TestWithdrawalsEnabled() {

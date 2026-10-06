@@ -11,8 +11,9 @@ import (
 	"github.com/macrowallets/waas/app/repositories"
 	"github.com/macrowallets/waas/app/services/chain"
 	"github.com/macrowallets/waas/app/services/chainregistry"
+	"github.com/macrowallets/waas/tests/feature/support/fixtures"
+	"github.com/macrowallets/waas/tests/feature/support/testutil"
 	"github.com/macrowallets/waas/tests/mocks"
-	"github.com/macrowallets/waas/tests/testutil"
 )
 
 func TestMain(m *testing.M) {
@@ -99,7 +100,7 @@ func TestWalletServiceSuite(t *testing.T) {
 }
 
 func (s *WalletServiceTestSuite) SetupTest() {
-	mocks.TestDB(s.T())
+	fixtures.TestDB(s.T())
 	s.registry = chain.NewRegistry()
 	s.registry.RegisterChain(mocks.NewMockChain("eth"))
 	s.registry.RegisterChain(mocks.NewMockChain("btc"))

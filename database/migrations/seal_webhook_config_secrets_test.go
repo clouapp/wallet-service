@@ -18,7 +18,7 @@ import (
 	"github.com/macrowallets/waas/database/migrations"
 	"github.com/macrowallets/waas/pkg/security"
 	"github.com/macrowallets/waas/pkg/types"
-	"github.com/macrowallets/waas/tests/mocks"
+	"github.com/macrowallets/waas/tests/feature/support/fixtures"
 )
 
 const (
@@ -73,7 +73,7 @@ func deliveredSignature(t *testing.T, secret string) string {
 }
 
 func TestSealWebhookConfigSecretsKeepsSignaturesIdentical(t *testing.T) {
-	mocks.TestDB(t)
+	fixtures.TestDB(t)
 	migration := &migrations.M00000000000440SealWebhookConfigSecrets{}
 	configID := legacyWebhookConfig(t, legacyWebhookSecret)
 	emptySecretID := legacyWebhookConfig(t, "")
@@ -93,7 +93,7 @@ func TestSealWebhookConfigSecretsKeepsSignaturesIdentical(t *testing.T) {
 }
 
 func TestSealWebhookConfigSecretsIsIdempotent(t *testing.T) {
-	mocks.TestDB(t)
+	fixtures.TestDB(t)
 	migration := &migrations.M00000000000440SealWebhookConfigSecrets{}
 	configID := legacyWebhookConfig(t, legacyWebhookSecret)
 
@@ -105,7 +105,7 @@ func TestSealWebhookConfigSecretsIsIdempotent(t *testing.T) {
 }
 
 func TestSealWebhookConfigSecretsDownRestoresPlaintext(t *testing.T) {
-	mocks.TestDB(t)
+	fixtures.TestDB(t)
 	migration := &migrations.M00000000000440SealWebhookConfigSecrets{}
 	configID := legacyWebhookConfig(t, legacyWebhookSecret)
 	require.NoError(t, migration.Up())
@@ -120,7 +120,7 @@ func TestSealWebhookConfigSecretsDownRestoresPlaintext(t *testing.T) {
 }
 
 func TestSealWebhookConfigSecretsWidensTheColumnForLongSecrets(t *testing.T) {
-	mocks.TestDB(t)
+	fixtures.TestDB(t)
 	exec(t, `ALTER TABLE webhook_configs ALTER COLUMN secret TYPE VARCHAR(255)`)
 	longSecret := strings.Repeat("s", 255)
 	configID := legacyWebhookConfig(t, longSecret)

@@ -8,7 +8,7 @@ import (
 
 	"github.com/macrowallets/waas/app/services/settings"
 	"github.com/macrowallets/waas/database/migrations"
-	"github.com/macrowallets/waas/tests/mocks"
+	"github.com/macrowallets/waas/tests/feature/support/fixtures"
 )
 
 const (
@@ -21,7 +21,7 @@ func TestSeedPlatformSettingsSkipsABlankEnv(t *testing.T) {
 	clearPlatformSeedEnv(t)
 	t.Setenv("MAIL_HOST", "   ")
 	t.Setenv("MAIL_PASSWORD", "  ")
-	mocks.TestDB(t)
+	fixtures.TestDB(t)
 
 	if err := (&migrations.M00000000000590SeedPlatformSettingsFromEnv{}).Up(); err != nil {
 		t.Fatal("blank platform settings seed failed")
@@ -45,7 +45,7 @@ func TestSeedPlatformSettingsSkipsABlankEnv(t *testing.T) {
 
 func TestSeedPlatformSettingsInsertsANonSecretOnce(t *testing.T) {
 	clearPlatformSeedEnv(t)
-	mocks.TestDB(t)
+	fixtures.TestDB(t)
 	t.Setenv("MAIL_HOST", seedHostFixture)
 	migration := &migrations.M00000000000590SeedPlatformSettingsFromEnv{}
 
@@ -68,7 +68,7 @@ func TestSeedPlatformSettingsInsertsANonSecretOnce(t *testing.T) {
 
 func TestSeedPlatformSettingsSealsASecretAndOmitsItFromLogs(t *testing.T) {
 	clearPlatformSeedEnv(t)
-	mocks.TestDB(t)
+	fixtures.TestDB(t)
 
 	var logs bytes.Buffer
 	previous := slog.Default()
@@ -99,7 +99,7 @@ func TestSeedPlatformSettingsSealsASecretAndOmitsItFromLogs(t *testing.T) {
 
 func TestSeedPlatformSettingsLeavesAnEditedRow(t *testing.T) {
 	clearPlatformSeedEnv(t)
-	mocks.TestDB(t)
+	fixtures.TestDB(t)
 	t.Setenv("MAIL_HOST", seedHostFixture)
 	migration := &migrations.M00000000000590SeedPlatformSettingsFromEnv{}
 	if err := migration.Up(); err != nil {

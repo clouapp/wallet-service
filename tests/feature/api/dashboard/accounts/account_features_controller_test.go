@@ -16,7 +16,7 @@ import (
 	"github.com/macrowallets/waas/app/models"
 	authsvc "github.com/macrowallets/waas/app/services/auth"
 	"github.com/macrowallets/waas/app/services/features"
-	"github.com/macrowallets/waas/tests/mocks"
+	"github.com/macrowallets/waas/tests/feature/support/fixtures"
 )
 
 const accountFeaturesPassword = "correct-horse-battery"
@@ -31,7 +31,7 @@ func TestAccountFeaturesSuite(t *testing.T) {
 }
 
 func (s *accountFeaturesSuite) SetupTest() {
-	mocks.TestDB(s.T())
+	fixtures.TestDB(s.T())
 }
 
 func (s *accountFeaturesSuite) TestGetMissingRowUsesCatalogDefault() {

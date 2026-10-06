@@ -14,7 +14,7 @@ import (
 
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/repositories"
-	"github.com/macrowallets/waas/tests/mocks"
+	"github.com/macrowallets/waas/tests/feature/support/fixtures"
 )
 
 type fakeSeedSecretsManager struct {
@@ -108,7 +108,7 @@ func TestWalletsSeedDoesNotQueryOutsideTheRepository(t *testing.T) {
 }
 
 func TestSeedWalletRowsAndMembershipsStayOnRerun(t *testing.T) {
-	mocks.TestDB(t)
+	fixtures.TestDB(t)
 	ctx := context.Background()
 	specs := seedWalletSpecs()
 	if len(specs) != 8 {

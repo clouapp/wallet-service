@@ -12,7 +12,7 @@ import (
 
 	"github.com/macrowallets/waas/app/http/responses"
 	"github.com/macrowallets/waas/app/services/settings"
-	"github.com/macrowallets/waas/tests/testutil"
+	"github.com/macrowallets/waas/tests/feature/support/testutil"
 )
 
 const platformIndexSecret = "platform-index-http-secret"

@@ -8,7 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/macrowallets/waas/database/migrations"
-	"github.com/macrowallets/waas/tests/mocks"
+	"github.com/macrowallets/waas/tests/feature/support/fixtures"
 )
 
 func restoreSweepLimitsColumn(t *testing.T) {
@@ -17,10 +17,10 @@ func restoreSweepLimitsColumn(t *testing.T) {
 }
 
 func TestMoveAccountSweepLimitsCopiesTheJSONAndLeavesTheColumn(t *testing.T) {
-	mocks.TestDB(t)
+	fixtures.TestDB(t)
 	restoreSweepLimitsColumn(t)
-	account := mocks.InsertAccount(t, "sweep-json")
-	other := mocks.InsertAccount(t, "sweep-other")
+	account := fixtures.InsertAccount(t, "sweep-json")
+	other := fixtures.InsertAccount(t, "sweep-other")
 	exec(t, `UPDATE accounts SET sweep_limits = CAST(? AS jsonb) WHERE id = ?`,
 		`{"max_addresses_per_request":{"evm":40,"sol":8,"btc":12},"max_consolidate_requests_per_day":7,"daily_withdraw_cap_usd":"12.50"}`,
 		account.ID)
@@ -55,10 +55,10 @@ func TestMoveAccountSweepLimitsCopiesTheJSONAndLeavesTheColumn(t *testing.T) {
 }
 
 func TestMoveAccountSweepLimitsRefusesANegativeCap(t *testing.T) {
-	mocks.TestDB(t)
+	fixtures.TestDB(t)
 	restoreSweepLimitsColumn(t)
-	account := mocks.InsertAccount(t, "sweep-negative")
-	kept := mocks.InsertAccount(t, "sweep-kept")
+	account := fixtures.InsertAccount(t, "sweep-negative")
+	kept := fixtures.InsertAccount(t, "sweep-kept")
 	exec(t, `UPDATE accounts SET sweep_limits = CAST(? AS jsonb) WHERE id = ?`,
 		`{"max_addresses_per_request":{"evm":4},"daily_withdraw_cap_usd":"-1"}`,
 		account.ID)
@@ -74,11 +74,11 @@ func TestMoveAccountSweepLimitsRefusesANegativeCap(t *testing.T) {
 }
 
 func TestMoveAccountSweepLimitsSkipsBlankNullAndEmptyDocuments(t *testing.T) {
-	mocks.TestDB(t)
+	fixtures.TestDB(t)
 	restoreSweepLimitsColumn(t)
-	blank := mocks.InsertAccount(t, "sweep-blank")
-	empty := mocks.InsertAccount(t, "sweep-empty")
-	absent := mocks.InsertAccount(t, "sweep-absent")
+	blank := fixtures.InsertAccount(t, "sweep-blank")
+	empty := fixtures.InsertAccount(t, "sweep-empty")
+	absent := fixtures.InsertAccount(t, "sweep-absent")
 	exec(t, `UPDATE accounts SET sweep_limits = CAST(? AS jsonb) WHERE id = ?`,
 		`{"daily_withdraw_cap_usd":"","max_addresses_per_request":{"evm":null}}`,
 		blank.ID)
@@ -90,9 +90,9 @@ func TestMoveAccountSweepLimitsSkipsBlankNullAndEmptyDocuments(t *testing.T) {
 }
 
 func TestMoveAccountSweepLimitsRejectsANonPositiveCount(t *testing.T) {
-	mocks.TestDB(t)
+	fixtures.TestDB(t)
 	restoreSweepLimitsColumn(t)
-	account := mocks.InsertAccount(t, "sweep-zero")
+	account := fixtures.InsertAccount(t, "sweep-zero")
 	exec(t, `UPDATE accounts SET sweep_limits = CAST(? AS jsonb) WHERE id = ?`,
 		`{"max_consolidate_requests_per_day":0}`,
 		account.ID)

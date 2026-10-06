@@ -11,7 +11,7 @@ import (
 	"github.com/stretchr/testify/suite"
 
 	authsvc "github.com/macrowallets/waas/app/services/auth"
-	"github.com/macrowallets/waas/tests/mocks"
+	"github.com/macrowallets/waas/tests/feature/support/fixtures"
 )
 
 const authTestNewPassword = "new-correct-horse-battery-staple"
@@ -27,7 +27,7 @@ func TestSessionRevocationSuite(t *testing.T) {
 }
 
 func (s *SessionRevocationTestSuite) SetupTest() {
-	mocks.TestDB(s.T())
+	fixtures.TestDB(s.T())
 }
 
 func (s *SessionRevocationTestSuite) changePassword(bearer, current, next string) (contractstesting.Response, loginBody) {

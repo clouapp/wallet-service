@@ -11,7 +11,7 @@ import (
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/repositories"
 	"github.com/macrowallets/waas/app/services/settings"
-	"github.com/macrowallets/waas/tests/mocks"
+	"github.com/macrowallets/waas/tests/feature/support/fixtures"
 )
 
 type WebhookConfigRepositoryTestSuite struct {
@@ -24,14 +24,14 @@ func TestWebhookConfigRepositorySuite(t *testing.T) {
 }
 
 func (s *WebhookConfigRepositoryTestSuite) SetupTest() {
-	mocks.TestDB(s.T())
+	fixtures.TestDB(s.T())
 	s.repo = repositories.NewWebhookConfigRepository(repositories.WebhookConfigRepositoryDeps{
 		Cipher: facades.Crypt(),
 	})
 }
 
 func (s *WebhookConfigRepositoryTestSuite) insertWallet() uuid.UUID {
-	w := mocks.InsertWallet(s.T(), "eth")
+	w := fixtures.InsertWallet(s.T(), "eth")
 	return w.ID
 }
 

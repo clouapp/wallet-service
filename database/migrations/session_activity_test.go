@@ -13,11 +13,11 @@ import (
 	"github.com/macrowallets/waas/app/repositories"
 	activitylog "github.com/macrowallets/waas/app/services/activity"
 	authsvc "github.com/macrowallets/waas/app/services/auth"
-	"github.com/macrowallets/waas/tests/mocks"
+	"github.com/macrowallets/waas/tests/feature/support/fixtures"
 )
 
 func TestSessionRevocationAndActivityCommitTogether(t *testing.T) {
-	mocks.TestDB(t)
+	fixtures.TestDB(t)
 	userID := insertSessionUser(t)
 	refresh := repositories.NewRefreshTokenRepository(nil)
 	tokenID := uuid.New()
@@ -53,7 +53,7 @@ func TestSessionRevocationAndActivityCommitTogether(t *testing.T) {
 }
 
 func TestSessionRevocationRollsBackWhenActivityRefusesTheRow(t *testing.T) {
-	mocks.TestDB(t)
+	fixtures.TestDB(t)
 	userID := insertSessionUser(t)
 	refresh := repositories.NewRefreshTokenRepository(nil)
 	tokenID := uuid.New()

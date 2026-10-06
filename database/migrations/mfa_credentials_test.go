@@ -8,11 +8,11 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/macrowallets/waas/database/migrations"
-	"github.com/macrowallets/waas/tests/mocks"
+	"github.com/macrowallets/waas/tests/feature/support/fixtures"
 )
 
 func TestCopyLegacyTotpSealsTheSecretAndMovesRecoveryCodes(t *testing.T) {
-	mocks.TestDB(t)
+	fixtures.TestDB(t)
 	require.NoError(t, (&migrations.M00000000000550DropLegacyTotpSecret{}).Down())
 
 	userID := uuid.New()
@@ -73,7 +73,7 @@ func TestCopyLegacyTotpSealsTheSecretAndMovesRecoveryCodes(t *testing.T) {
 }
 
 func TestCopyLegacyTotpLeavesTheColumnWhenTheCopyDoesNotMatch(t *testing.T) {
-	mocks.TestDB(t)
+	fixtures.TestDB(t)
 	require.NoError(t, (&migrations.M00000000000550DropLegacyTotpSecret{}).Down())
 
 	userID := uuid.New()

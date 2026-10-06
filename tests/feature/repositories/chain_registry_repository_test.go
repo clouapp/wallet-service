@@ -9,7 +9,7 @@ import (
 
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/repositories"
-	"github.com/macrowallets/waas/tests/mocks"
+	"github.com/macrowallets/waas/tests/feature/support/fixtures"
 )
 
 type ChainRegistryRepositoryTestSuite struct {
@@ -22,7 +22,7 @@ func TestChainRegistryRepositorySuite(t *testing.T) {
 }
 
 func (s *ChainRegistryRepositoryTestSuite) SetupTest() {
-	mocks.TestDB(s.T())
+	fixtures.TestDB(s.T())
 	s.repo = repositories.NewChainRegistryRepository(nil)
 }
 
@@ -33,7 +33,7 @@ func (s *ChainRegistryRepositoryTestSuite) TestFindAccountNotFound() {
 }
 
 func (s *ChainRegistryRepositoryTestSuite) TestFindAccount() {
-	account := mocks.InsertAccount(s.T(), "registry")
+	account := fixtures.InsertAccount(s.T(), "registry")
 
 	found, err := s.repo.FindAccount(context.Background(), account.ID)
 	s.NoError(err)
@@ -53,7 +53,7 @@ func (s *ChainRegistryRepositoryTestSuite) TestUpdateAccountEnvironmentNotFound(
 }
 
 func (s *ChainRegistryRepositoryTestSuite) TestUpdateAccountEnvironment() {
-	account := mocks.InsertAccount(s.T(), "registry-env")
+	account := fixtures.InsertAccount(s.T(), "registry-env")
 
 	s.NoError(s.repo.UpdateAccountEnvironment(context.Background(), account.ID, models.EnvironmentTest))
 

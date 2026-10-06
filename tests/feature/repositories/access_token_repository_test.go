@@ -10,7 +10,7 @@ import (
 
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/repositories"
-	"github.com/macrowallets/waas/tests/mocks"
+	"github.com/macrowallets/waas/tests/feature/support/fixtures"
 )
 
 type AccessTokenRepositoryTestSuite struct {
@@ -24,7 +24,7 @@ func TestAccessTokenRepositorySuite(t *testing.T) {
 }
 
 func (s *AccessTokenRepositoryTestSuite) SetupTest() {
-	mocks.TestDB(s.T())
+	fixtures.TestDB(s.T())
 	s.repo = repositories.NewAccessTokenRepository(nil)
 	s.accRepo = repositories.NewAccountRepository(nil)
 }

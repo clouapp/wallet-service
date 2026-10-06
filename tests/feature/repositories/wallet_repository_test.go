@@ -12,7 +12,7 @@ import (
 
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/repositories"
-	"github.com/macrowallets/waas/tests/mocks"
+	"github.com/macrowallets/waas/tests/feature/support/fixtures"
 )
 
 type WalletRepositoryTestSuite struct {
@@ -25,7 +25,7 @@ func TestWalletRepositorySuite(t *testing.T) {
 }
 
 func (s *WalletRepositoryTestSuite) SetupTest() {
-	mocks.TestDB(s.T())
+	fixtures.TestDB(s.T())
 	s.repo = repositories.NewWalletRepository(nil)
 }
 
