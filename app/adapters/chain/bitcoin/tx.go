@@ -11,8 +11,6 @@ import (
 	"math/big"
 	"strings"
 
-	"github.com/btcsuite/btcd/btcec/v2"
-	"github.com/btcsuite/btcd/btcec/v2/ecdsa"
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
@@ -43,28 +41,55 @@ type btcOutput struct {
 	Value   int64
 }
 
-func signBitcoinP2WPKH(unsigned *types.UnsignedTx, privateKey []byte, net *chaincfg.Params) (*types.SignedTx, error) {
-	if len(privateKey) != 32 {
-		return nil, fmt.Errorf("btc private key must be 32 bytes")
-	}
-	if net == nil {
-		net = netParams(unsigned)
-	}
-	priv, _ := btcec.PrivKeyFromBytes(privateKey)
+// BitcoinP2WPKHDigests returns one BIP-143 sighash per input. It does not sign.
+func (a *BitcoinLive) BitcoinP2WPKHDigests(unsigned *types.UnsignedTx) ([][]byte, error) {
+	return bitcoinP2WPKHDigests(unsigned)
+}
+
+func bitcoinP2WPKHDigests(unsigned *types.UnsignedTx) ([][]byte, error) {
+	net := netParams(unsigned)
 	msg, err := unsignedToMsgTx(unsigned, net)
 	if err != nil {
 		return nil, err
 	}
-	for i, in := range inputsFrom(unsigned) {
+	inputs := inputsFrom(unsigned)
+	digests := make([][]byte, len(inputs))
+	for i, in := range inputs {
 		program, err := witnessProgram(in.Address, net)
 		if err != nil {
 			return nil, err
 		}
-		witness, err := p2wpkhWitness(msg, i, in.Value, program, priv)
+		digests[i], err = bip143Sighash(msg, i, in.Value, p2wpkhScriptCode(program))
 		if err != nil {
 			return nil, err
 		}
-		msg.TxIn[i].Witness = witness
+	}
+	return digests, nil
+}
+
+// AssembleBitcoinP2WPKH attaches signatures the custody service obtained from
+// mpc. signatures[i] is the DER encoding plus SIGHASH_ALL; publicKeys[i] is the
+// compressed key. The witness layout is unchanged.
+func (a *BitcoinLive) AssembleBitcoinP2WPKH(unsigned *types.UnsignedTx, signatures, publicKeys [][]byte) (*types.SignedTx, error) {
+	return assembleBitcoinP2WPKH(unsigned, signatures, publicKeys)
+}
+
+func assembleBitcoinP2WPKH(unsigned *types.UnsignedTx, signatures, publicKeys [][]byte) (*types.SignedTx, error) {
+	if unsigned == nil {
+		return nil, fmt.Errorf("btc unsigned transaction is required")
+	}
+	msg, err := unsignedToMsgTx(unsigned, netParams(unsigned))
+	if err != nil {
+		return nil, err
+	}
+	if len(signatures) != len(msg.TxIn) || len(publicKeys) != len(msg.TxIn) {
+		return nil, fmt.Errorf("btc witness has %d signatures and %d keys for %d inputs", len(signatures), len(publicKeys), len(msg.TxIn))
+	}
+	for i := range msg.TxIn {
+		if len(signatures[i]) == 0 || len(publicKeys[i]) == 0 {
+			return nil, fmt.Errorf("btc input %d is missing a signature or public key", i)
+		}
+		msg.TxIn[i].Witness = wire.TxWitness{signatures[i], publicKeys[i]}
 	}
 	var buf bytes.Buffer
 	if err := msg.Serialize(&buf); err != nil {
@@ -151,16 +176,6 @@ func p2wpkhScriptCode(program []byte) []byte {
 	script = append(script, 0x76, 0xa9, 0x14)
 	script = append(script, program...)
 	return append(script, 0x88, 0xac)
-}
-
-func p2wpkhWitness(msg *wire.MsgTx, idx int, value int64, program []byte, priv *btcec.PrivateKey) (wire.TxWitness, error) {
-	sighash, err := bip143Sighash(msg, idx, value, p2wpkhScriptCode(program))
-	if err != nil {
-		return nil, err
-	}
-	sig := ecdsa.Sign(priv, sighash)
-	der := append(sig.Serialize(), btcSigHashAll)
-	return wire.TxWitness{der, priv.PubKey().SerializeCompressed()}, nil
 }
 
 func bip143Sighash(msg *wire.MsgTx, idx int, value int64, scriptCode []byte) ([]byte, error) {

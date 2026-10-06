@@ -211,8 +211,11 @@ func (a *BitcoinLive) BuildTransfer(ctx context.Context, req types.TransferReque
 	return a.buildBitcoinTransfer(ctx, req)
 }
 
-func (a *BitcoinLive) SignTransaction(ctx context.Context, unsigned *types.UnsignedTx, privateKey []byte) (*types.SignedTx, error) {
-	return signBitcoinP2WPKH(unsigned, privateKey, netParams(unsigned))
+// SignTransaction is required by the chain interface. Bitcoin signing lives in
+// the custody service, which asks mpc for the witness and then calls
+// AssembleBitcoinP2WPKH. This method does not use the private key.
+func (a *BitcoinLive) SignTransaction(ctx context.Context, unsigned *types.UnsignedTx, _ []byte) (*types.SignedTx, error) {
+	return nil, fmt.Errorf("bitcoin transactions are signed by the custody service")
 }
 
 func (a *BitcoinLive) BroadcastTransaction(ctx context.Context, signed *types.SignedTx) (string, error) {

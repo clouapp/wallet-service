@@ -130,11 +130,19 @@ func (s *service) signSecp256k1MPC(ctx context.Context, adapter types.Chain, key
 	return finalizeMPCTransaction(adapter, unsigned, signature, key.publicKey)
 }
 
-// signSecp256k1Local signs on chains whose adapter needs the private key (Bitcoin).
-// The wallet key is reconstructed and checked against the wallet public key; a child
-// key is the wallet key plus the BIP-32 tweak and is checked against the child public
-// key. Both are zeroed when signing returns.
-func (s *service) signSecp256k1Local(ctx context.Context, adapter types.Chain, keys walletKeys, key *secp256k1Signer, walletPublicKey string, unsigned *types.UnsignedTx) (*types.SignedTx, error) {
+// bitcoinP2WPKHAssembler is the part of the Bitcoin adapter that builds sighashes
+// and attaches an already produced witness. It never receives key material.
+type bitcoinP2WPKHAssembler interface {
+	BitcoinP2WPKHDigests(unsigned *types.UnsignedTx) ([][]byte, error)
+	AssembleBitcoinP2WPKH(unsigned *types.UnsignedTx, signatures, publicKeys [][]byte) (*types.SignedTx, error)
+}
+
+// signSecp256k1Local signs Bitcoin. The wallet key is reconstructed and checked
+// against the wallet public key; a child key is the wallet key plus the BIP-32
+// tweak and is checked against the child public key. Both are zeroed when
+// signing returns. The signature itself is produced in mpc; the adapter only
+// assembles the witness.
+func (s *service) signSecp256k1Local(_ context.Context, adapter types.Chain, keys walletKeys, key *secp256k1Signer, walletPublicKey string, unsigned *types.UnsignedTx) (*types.SignedTx, error) {
 	walletKey, err := s.mpc.ReconstructSecp256k1PrivateKey(keys.shareA, keys.shareB)
 	if err != nil {
 		return nil, err
@@ -143,18 +151,41 @@ func (s *service) signSecp256k1Local(ctx context.Context, adapter types.Chain, k
 	if err := requirePrivateKeyMatches(walletKey, walletPublicKey); err != nil {
 		return nil, err
 	}
-	if key.tweak == nil {
-		return adapter.SignTransaction(ctx, unsigned, walletKey)
+	signingKey := walletKey
+	if key.tweak != nil {
+		childKey, err := hdkey.ChildPrivateKey(walletKey, key.tweak)
+		if err != nil {
+			return nil, err
+		}
+		defer zeroBytes(childKey)
+		if err := requirePrivateKeyMatches(childKey, hex.EncodeToString(key.publicKey)); err != nil {
+			return nil, err
+		}
+		signingKey = childKey
 	}
-	childKey, err := hdkey.ChildPrivateKey(walletKey, key.tweak)
+	return signBitcoinThroughCustody(adapter, signingKey, unsigned)
+}
+
+func signBitcoinThroughCustody(adapter types.Chain, privateKey []byte, unsigned *types.UnsignedTx) (*types.SignedTx, error) {
+	assembler, ok := adapter.(bitcoinP2WPKHAssembler)
+	if !ok {
+		return nil, fmt.Errorf("chain %s cannot assemble a bitcoin transaction", adapter.ID())
+	}
+	digests, err := assembler.BitcoinP2WPKHDigests(unsigned)
 	if err != nil {
 		return nil, err
 	}
-	defer zeroBytes(childKey)
-	if err := requirePrivateKeyMatches(childKey, hex.EncodeToString(key.publicKey)); err != nil {
-		return nil, err
+	signatures := make([][]byte, len(digests))
+	publicKeys := make([][]byte, len(digests))
+	for i, digest := range digests {
+		signature, publicKey, err := mpcpkg.SignSecp256k1P2WPKH(privateKey, digest)
+		if err != nil {
+			return nil, err
+		}
+		signatures[i] = signature
+		publicKeys[i] = publicKey
 	}
-	return adapter.SignTransaction(ctx, unsigned, childKey)
+	return assembler.AssembleBitcoinP2WPKH(unsigned, signatures, publicKeys)
 }
 
 func requirePrivateKeyMatches(privateKey []byte, publicKeyHex string) error {

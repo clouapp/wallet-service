@@ -12,14 +12,35 @@ import (
 	"testing"
 
 	"github.com/btcsuite/btcd/btcec/v2"
-	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/wire"
 
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/services/addressing"
+	"github.com/macrowallets/waas/app/services/mpc"
 	"github.com/macrowallets/waas/pkg/types"
 )
+
+func signBitcoinP2WPKHForTest(t *testing.T, unsigned *types.UnsignedTx, privateKey []byte) *types.SignedTx {
+	t.Helper()
+	digests, err := bitcoinP2WPKHDigests(unsigned)
+	if err != nil {
+		t.Fatal(err)
+	}
+	signatures := make([][]byte, len(digests))
+	publicKeys := make([][]byte, len(digests))
+	for i, digest := range digests {
+		signatures[i], publicKeys[i], err = mpc.SignSecp256k1P2WPKH(privateKey, digest)
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	signed, err := assembleBitcoinP2WPKH(unsigned, signatures, publicKeys)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return signed
+}
 
 func TestBitcoinSignP2WPKH(t *testing.T) {
 	priv, err := btcec.NewPrivateKey()
@@ -49,10 +70,7 @@ func TestBitcoinSignP2WPKH(t *testing.T) {
 			}},
 		},
 	}
-	signed, err := signBitcoinP2WPKH(unsigned, priv.Serialize(), &chaincfg.MainNetParams)
-	if err != nil {
-		t.Fatal(err)
-	}
+	signed := signBitcoinP2WPKHForTest(t, unsigned, priv.Serialize())
 	msg := &wire.MsgTx{}
 	if err := msg.Deserialize(bytes.NewReader(signed.RawBytes)); err != nil {
 		t.Fatal(err)

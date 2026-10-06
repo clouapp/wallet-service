@@ -6,7 +6,6 @@ import (
 	"testing"
 
 	"github.com/btcsuite/btcd/btcec/v2"
-	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcd/wire"
 
 	"github.com/macrowallets/waas/app/models"
@@ -44,11 +43,7 @@ func newP2WPKHFixture(t *testing.T) *p2wpkhFixture {
 
 func (f *p2wpkhFixture) sign(t *testing.T, key *btcec.PrivateKey) *types.SignedTx {
 	t.Helper()
-	signed, err := signBitcoinP2WPKH(f.unsigned, key.Serialize(), &chaincfg.TestNet3Params)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return signed
+	return signBitcoinP2WPKHForTest(t, f.unsigned, key.Serialize())
 }
 
 func reserialize(t *testing.T, signed *types.SignedTx, mutate func(*wire.MsgTx)) *types.SignedTx {
