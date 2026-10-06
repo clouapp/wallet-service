@@ -11,8 +11,6 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/goravel/framework/facades"
-	goravelTesting "github.com/goravel/framework/testing"
-	"github.com/stretchr/testify/suite"
 
 	"github.com/macrowallets/waas/app/container"
 	"github.com/macrowallets/waas/app/models"
@@ -47,13 +45,12 @@ func (gasSizingChain) EstimateTransferGasLimit(_ context.Context, req types.Tran
 // feeEstimateSuite covers GET /api/v1/wallets/{walletId}/fee-estimate through the
 // real middleware, controller, estimator and planner, with a mock chain adapter.
 type feeEstimateSuite struct {
-	suite.Suite
-	goravelTesting.TestCase
+	ctltestutil.HTTPSuite
 	adapter *mocks.MockChain
 }
 
 func TestFee_Estimate_Suite(t *testing.T) {
-	suite.Run(t, new(feeEstimateSuite))
+	ctltestutil.RunSuite(t, new(feeEstimateSuite))
 }
 
 func (s *feeEstimateSuite) SetupTest() {
@@ -88,12 +85,7 @@ func feeEstimatePath(walletID uuid.UUID, query url.Values) string {
 func (s *feeEstimateSuite) get(path, bearer string, expectedStatus int) map[string]any {
 	s.T().Helper()
 
-	request := s.Http(s.T())
-	if bearer != "" {
-		request = request.WithHeader("Authorization", "Bearer "+bearer)
-	}
-	resp, err := request.Get(path)
-	s.Require().NoError(err)
+	resp := s.External(path, ctltestutil.Token{Bearer: bearer}).Get()
 	content, err := resp.Content()
 	s.Require().NoError(err)
 	resp.AssertStatus(expectedStatus)

@@ -6,13 +6,10 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"strings"
 	"testing"
 
 	"github.com/google/uuid"
 	"github.com/goravel/framework/facades"
-	goravelTesting "github.com/goravel/framework/testing"
-	"github.com/stretchr/testify/suite"
 
 	"github.com/macrowallets/waas/app/container"
 	"github.com/macrowallets/waas/app/models"
@@ -67,14 +64,13 @@ func (r *recordingMPCService) Keygen(ctx context.Context, curve mpc.Curve) (*mpc
 // creation runs through the real routes, middleware and controllers without
 // RPC providers or LocalStack.
 type WalletRecoveryMaterialTestSuite struct {
-	suite.Suite
-	goravelTesting.TestCase
+	ctltestutil.HTTPSuite
 	mpcService    *recordingMPCService
 	walletService *wallet.Service
 }
 
 func TestWallet_Recovery_MaterialSuite(t *testing.T) {
-	suite.Run(t, new(WalletRecoveryMaterialTestSuite))
+	ctltestutil.RunSuite(t, new(WalletRecoveryMaterialTestSuite))
 }
 
 func (s *WalletRecoveryMaterialTestSuite) SetupTest() {
@@ -101,7 +97,7 @@ func (s *WalletRecoveryMaterialTestSuite) SetupTest() {
 
 func (s *WalletRecoveryMaterialTestSuite) createExternalWallet(bearer string) (string, map[string]any) {
 	body := fmt.Sprintf(`{"chain":%q,"label":"Recovery","passphrase":%q}`, recoveryTestChain, recoveryTestPassphrase)
-	resp := ctltestutil.Post(s.T(), &s.TestCase, externalWalletsPath, body, bearer, nil)
+	resp := s.External(externalWalletsPath, ctltestutil.Token{Bearer: bearer}).Post(body)
 	resp.AssertCreated()
 	return s.decodeObject(resp.Content())
 }
@@ -178,12 +174,12 @@ func (s *WalletRecoveryMaterialTestSuite) TestExternal_Create_MaterialIsNotRetur
 	s.assertShareStaysOffTheWire(createdContent, created, stored)
 	s.assertNoShareLeak(createdContent)
 
-	getContent, fetched := s.decodeObject(ctltestutil.Get(s.T(), &s.TestCase, externalWalletsPath+"/"+walletID, bearer).AssertOk().Content())
+	getContent, fetched := s.decodeObject(s.External(externalWalletsPath+"/"+walletID, ctltestutil.Token{Bearer: bearer}).Get().AssertOk().Content())
 	s.Equal(walletID, fetched["id"])
 	s.assertShareStaysOffTheWire(getContent, fetched, stored)
 	s.NotContains(fetched, servicePublicKeyField)
 
-	listResp := ctltestutil.Get(s.T(), &s.TestCase, externalWalletsPath, bearer).AssertOk()
+	listResp := s.External(externalWalletsPath, ctltestutil.Token{Bearer: bearer}).Get().AssertOk()
 	listContent, err := listResp.Content()
 	s.Require().NoError(err)
 	var list struct {
@@ -201,12 +197,7 @@ func (s *WalletRecoveryMaterialTestSuite) TestAdmin_Create_ResponseShapeUnchange
 
 	body := fmt.Sprintf(`{"chain":%q,"label":"Admin","passphrase":%q}`,
 		recoveryTestChain, recoveryTestPassphrase)
-	resp, err := s.Http(s.T()).
-		WithHeader("Content-Type", "application/json").
-		WithHeader("Authorization", "Bearer "+token).
-		WithHeader(accountHeaderName, accountID.String()).
-		Post(adminWalletsPath, strings.NewReader(body))
-	s.Require().NoError(err)
+	resp := s.Post(adminWalletsPath, ctltestutil.Session{AccessToken: token, AccountID: accountID.String()}, body)
 	resp.AssertCreated()
 	content, payload := s.decodeObject(resp.Content())
 
@@ -258,10 +249,7 @@ func (s *WalletRecoveryMaterialTestSuite) setupAdminSession() (uuid.UUID, string
 	}))
 
 	loginBody := fmt.Sprintf(`{"email":%q,"password":%q}`, email, recoveryAdminPassword)
-	resp, err := s.Http(s.T()).
-		WithHeader("Content-Type", "application/json").
-		Post("/v1/auth/login", strings.NewReader(loginBody))
-	s.Require().NoError(err)
+	resp := s.Post("/v1/auth/login", ctltestutil.Session{}, loginBody)
 	resp.AssertOk()
 	content, err := resp.Content()
 	s.Require().NoError(err)

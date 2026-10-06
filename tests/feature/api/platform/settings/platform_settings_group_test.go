@@ -7,12 +7,12 @@ import (
 
 	contractstesting "github.com/goravel/framework/contracts/testing/http"
 	"github.com/goravel/framework/facades"
-	"github.com/stretchr/testify/suite"
 
 	"github.com/google/uuid"
 
 	"github.com/macrowallets/waas/app/http/responses"
 	"github.com/macrowallets/waas/app/services/settings"
+	"github.com/macrowallets/waas/tests/feature/support"
 	"github.com/macrowallets/waas/tests/feature/support/testutil"
 )
 
@@ -27,7 +27,7 @@ type PlatformSettingsGroupTestSuite struct {
 }
 
 func TestPlatform_Settings_GroupSuite(t *testing.T) {
-	suite.Run(t, new(PlatformSettingsGroupTestSuite))
+	support.RunSuite(t, new(PlatformSettingsGroupTestSuite))
 }
 
 func (s *PlatformSettingsGroupTestSuite) SetupTest() {
@@ -221,8 +221,7 @@ func (s *PlatformSettingsGroupTestSuite) TestA_Non_AdminOnAnUnknownGroupIsNotFou
 	s.Equal(int64(0), s.count(`SELECT count(*) FROM account_activity WHERE action = 'settings.updated'`))
 	s.Equal(int64(0), s.count(`SELECT count(*) FROM account_activity WHERE action = 'platform.secret_viewed'`))
 
-	missing, err := s.Http(s.T()).Get("/v1/platform/settings/mail_smtp")
-	s.Require().NoError(err)
+	missing := s.Get("/v1/platform/settings/mail_smtp", support.Session{})
 	missing.AssertUnauthorized()
 }
 
@@ -316,20 +315,13 @@ func (s *PlatformSettingsGroupTestSuite) grantPlatformAdmin(userID uuid.UUID) {
 
 func (s *PlatformSettingsGroupTestSuite) putRaw(token, path, body string) contractstesting.Response {
 	s.T().Helper()
-	resp, err := s.Http(s.T()).
-		WithHeader("Authorization", "Bearer "+token).
-		WithHeader("Content-Type", "application/json").
-		Put(path, strings.NewReader(body))
-	s.Require().NoError(err)
+	resp := s.Put(path, support.Session{AccessToken: token}, body)
 	return resp
 }
 
 func (s *PlatformSettingsGroupTestSuite) getRaw(token, path string) contractstesting.Response {
 	s.T().Helper()
-	resp, err := s.Http(s.T()).
-		WithHeader("Authorization", "Bearer "+token).
-		Get(path)
-	s.Require().NoError(err)
+	resp := s.Get(path, support.Session{AccessToken: token})
 	return resp
 }
 

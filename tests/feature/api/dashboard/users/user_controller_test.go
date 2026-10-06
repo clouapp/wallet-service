@@ -10,12 +10,11 @@ import (
 	"github.com/google/uuid"
 	contractstesting "github.com/goravel/framework/contracts/testing/http"
 	"github.com/goravel/framework/facades"
-	goravelTesting "github.com/goravel/framework/testing"
-	"github.com/stretchr/testify/suite"
 
 	"github.com/macrowallets/waas/app/models"
 	authsvc "github.com/macrowallets/waas/app/services/auth"
 	"github.com/macrowallets/waas/app/services/features"
+	"github.com/macrowallets/waas/tests/feature/support"
 	"github.com/macrowallets/waas/tests/feature/support/fixtures"
 )
 
@@ -45,14 +44,13 @@ type accountListBody struct {
 // UserControllerTestSuite exercises GET /v1/users/me/accounts with a real
 // dashboard session obtained from POST /v1/auth/login.
 type UserControllerTestSuite struct {
-	suite.Suite
-	goravelTesting.TestCase
+	support.HTTPSuite
 	userID uuid.UUID
 	token  string
 }
 
 func TestUser_Controller_Suite(t *testing.T) {
-	suite.Run(t, new(UserControllerTestSuite))
+	support.RunSuite(t, new(UserControllerTestSuite))
 }
 
 func (s *UserControllerTestSuite) SetupTest() {
@@ -74,10 +72,7 @@ func (s *UserControllerTestSuite) SetupTest() {
 
 func (s *UserControllerTestSuite) login(email string) string {
 	body := fmt.Sprintf(`{"email":%q,"password":%q}`, email, myAccountsTestPassword)
-	resp, err := s.Http(s.T()).
-		WithHeader("Content-Type", "application/json").
-		Post("/v1/auth/login", strings.NewReader(body))
-	s.Require().NoError(err)
+	resp := s.Post("/v1/auth/login", support.Session{}, body)
 	resp.AssertStatus(200)
 
 	content, err := resp.Content()
@@ -136,11 +131,7 @@ func (s *UserControllerTestSuite) TestGet_Me_ListsGloballyActiveFeatureKeys() {
 	body = s.getMe()
 	s.Equal([]string{features.FlagDepositScanEnabled, features.FlagSweepEnabled, features.FlagUser2FARequired, features.FlagWalletCreationEnabled, features.FlagWebhookDeliveryEnabled}, body.Features)
 
-	patch, err := s.Http(s.T()).
-		WithHeader("Authorization", "Bearer "+s.token).
-		WithHeader("Content-Type", "application/json").
-		Patch("/v1/users/me", strings.NewReader(`{"full_name":"Renamed User"}`))
-	s.Require().NoError(err)
+	patch := s.Patch("/v1/users/me", support.Session{AccessToken: s.token}, `{"full_name":"Renamed User"}`)
 	patch.AssertOk()
 	content, err := patch.Content()
 	s.Require().NoError(err)
@@ -151,10 +142,7 @@ func (s *UserControllerTestSuite) getMe() struct {
 	Features []string `json:"features"`
 } {
 	s.T().Helper()
-	resp, err := s.Http(s.T()).
-		WithHeader("Authorization", "Bearer "+s.token).
-		Get("/v1/users/me")
-	s.Require().NoError(err)
+	resp := s.Get("/v1/users/me", support.Session{AccessToken: s.token})
 	resp.AssertOk()
 	content, err := resp.Content()
 	s.Require().NoError(err)
@@ -167,11 +155,7 @@ func (s *UserControllerTestSuite) getMe() struct {
 
 func (s *UserControllerTestSuite) TestUpdate_Me_AppliesFullName() {
 	body := `{"full_name":"Renamed User"}`
-	resp, err := s.Http(s.T()).
-		WithHeader("Authorization", "Bearer "+s.token).
-		WithHeader("Content-Type", "application/json").
-		Patch("/v1/users/me", strings.NewReader(body))
-	s.Require().NoError(err)
+	resp := s.Patch("/v1/users/me", support.Session{AccessToken: s.token}, body)
 	resp.AssertOk()
 
 	content, err := resp.Content()
@@ -186,11 +170,7 @@ func (s *UserControllerTestSuite) TestUpdate_Me_AppliesFullName() {
 func (s *UserControllerTestSuite) TestUpdate_Account_AppliesName() {
 	account := s.seedAccounts(1, "prod")[0]
 	body := `{"name":"Renamed Account"}`
-	resp, err := s.Http(s.T()).
-		WithHeader("Authorization", "Bearer "+s.token).
-		WithHeader("Content-Type", "application/json").
-		Patch("/v1/accounts/"+account.ID.String(), strings.NewReader(body))
-	s.Require().NoError(err)
+	resp := s.Patch("/v1/accounts/"+account.ID.String(), support.Session{AccessToken: s.token}, body)
 	resp.AssertOk()
 
 	content, err := resp.Content()
@@ -207,10 +187,7 @@ func (s *UserControllerTestSuite) listAccounts(query url.Values) contractstestin
 	if len(query) > 0 {
 		path += "?" + query.Encode()
 	}
-	resp, err := s.Http(s.T()).
-		WithHeader("Authorization", "Bearer "+s.token).
-		Get(path)
-	s.Require().NoError(err)
+	resp := s.Get(path, support.Session{AccessToken: s.token})
 	return resp
 }
 
@@ -225,8 +202,7 @@ func (s *UserControllerTestSuite) decodeList(resp contractstesting.Response) acc
 }
 
 func (s *UserControllerTestSuite) TestList_MyAccounts_Unauthenticated() {
-	resp, err := s.Http(s.T()).Get(myAccountsPath)
-	s.Require().NoError(err)
+	resp := s.Get(myAccountsPath, support.Session{})
 	resp.AssertStatus(401)
 }
 

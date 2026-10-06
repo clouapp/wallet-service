@@ -8,9 +8,9 @@ import (
 	"github.com/google/uuid"
 	contractstesting "github.com/goravel/framework/contracts/testing/http"
 	"github.com/goravel/framework/facades"
-	"github.com/stretchr/testify/suite"
 
 	authsvc "github.com/macrowallets/waas/app/services/auth"
+	"github.com/macrowallets/waas/tests/feature/support"
 	"github.com/macrowallets/waas/tests/feature/support/fixtures"
 )
 
@@ -23,7 +23,7 @@ type SessionRevocationTestSuite struct {
 }
 
 func TestSession_Revocation_Suite(t *testing.T) {
-	suite.Run(t, new(SessionRevocationTestSuite))
+	support.RunSuite(t, new(SessionRevocationTestSuite))
 }
 
 func (s *SessionRevocationTestSuite) SetupTest() {

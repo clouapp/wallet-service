@@ -2,19 +2,18 @@ package settings
 
 import (
 	"context"
-	"strings"
 	"testing"
 
 	"github.com/google/uuid"
 	contractstesting "github.com/goravel/framework/contracts/testing/http"
 	"github.com/goravel/framework/facades"
-	"github.com/stretchr/testify/suite"
 
 	"github.com/macrowallets/waas/app/container"
 	"github.com/macrowallets/waas/app/http/responses"
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/services/settings"
 	"github.com/macrowallets/waas/app/services/sweep"
+	"github.com/macrowallets/waas/tests/feature/support"
 	"github.com/macrowallets/waas/tests/feature/support/testutil"
 )
 
@@ -26,7 +25,7 @@ type PlatformSweepLimitsTestSuite struct {
 }
 
 func TestPlatform_Sweep_LimitsSuite(t *testing.T) {
-	suite.Run(t, new(PlatformSweepLimitsTestSuite))
+	support.RunSuite(t, new(PlatformSweepLimitsTestSuite))
 }
 
 func (s *PlatformSweepLimitsTestSuite) SetupTest() {
@@ -191,11 +190,7 @@ func (s *PlatformSweepLimitsTestSuite) seedOwnedAccount(userID uuid.UUID) uuid.U
 
 func (s *PlatformSweepLimitsTestSuite) putRaw(token, path, body string) contractstesting.Response {
 	s.T().Helper()
-	resp, err := s.Http(s.T()).
-		WithHeader("Authorization", "Bearer "+token).
-		WithHeader("Content-Type", "application/json").
-		Put(path, strings.NewReader(body))
-	s.Require().NoError(err)
+	resp := s.Put(path, support.Session{AccessToken: token}, body)
 	return resp
 }
 

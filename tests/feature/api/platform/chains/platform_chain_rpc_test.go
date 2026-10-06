@@ -13,7 +13,6 @@ import (
 	"github.com/google/uuid"
 	contractstesting "github.com/goravel/framework/contracts/testing/http"
 	"github.com/goravel/framework/facades"
-	"github.com/stretchr/testify/suite"
 
 	evmchain "github.com/macrowallets/waas/app/adapters/chain/evm"
 	"github.com/macrowallets/waas/app/container"
@@ -21,6 +20,7 @@ import (
 	"github.com/macrowallets/waas/app/models"
 	chainpkg "github.com/macrowallets/waas/app/services/chain"
 	"github.com/macrowallets/waas/pkg/security"
+	"github.com/macrowallets/waas/tests/feature/support"
 	"github.com/macrowallets/waas/tests/feature/support/testutil"
 )
 
@@ -33,7 +33,7 @@ type PlatformChainRPCTestSuite struct {
 }
 
 func TestPlatform_Chain_RPCSuite(t *testing.T) {
-	suite.Run(t, new(PlatformChainRPCTestSuite))
+	support.RunSuite(t, new(PlatformChainRPCTestSuite))
 }
 
 func (s *PlatformChainRPCTestSuite) SetupTest() {
@@ -236,11 +236,7 @@ func (s *PlatformChainRPCTestSuite) loadChain(id string) *models.Chain {
 
 func (s *PlatformChainRPCTestSuite) patchRaw(token, path, body string) contractstesting.Response {
 	s.T().Helper()
-	resp, err := s.Http(s.T()).
-		WithHeader("Authorization", "Bearer "+token).
-		WithHeader("Content-Type", "application/json").
-		Patch(path, strings.NewReader(body))
-	s.Require().NoError(err)
+	resp := s.Patch(path, support.Session{AccessToken: token}, body)
 	return resp
 }
 
@@ -256,10 +252,7 @@ func (s *PlatformChainRPCTestSuite) quietBody(resp contractstesting.Response, se
 
 func (s *PlatformChainRPCTestSuite) accountActivity(bearer string, accountID uuid.UUID) contractstesting.Response {
 	s.T().Helper()
-	resp, err := s.Http(s.T()).
-		WithHeader("Authorization", "Bearer "+bearer).
-		Get("/v1/accounts/" + accountID.String() + "/activity")
-	s.Require().NoError(err)
+	resp := s.Get("/v1/accounts/"+accountID.String()+"/activity", support.Session{AccessToken: bearer})
 	return resp
 }
 

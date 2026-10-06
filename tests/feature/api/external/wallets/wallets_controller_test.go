@@ -5,8 +5,6 @@ import (
 	"testing"
 
 	"github.com/google/uuid"
-	goravelTesting "github.com/goravel/framework/testing"
-	"github.com/stretchr/testify/suite"
 
 	ctltestutil "github.com/macrowallets/waas/tests/feature/support"
 	"github.com/macrowallets/waas/tests/feature/support/testutil"
@@ -20,12 +18,11 @@ import (
 // the docker-compose stack. Read endpoints (list/get) seed wallets directly
 // via the ORM so they stay independent of LocalStack / chain adapters.
 type WalletsControllerTestSuite struct {
-	suite.Suite
-	goravelTesting.TestCase
+	ctltestutil.HTTPSuite
 }
 
 func TestWallets_Controller_Suite(t *testing.T) {
-	suite.Run(t, new(WalletsControllerTestSuite))
+	ctltestutil.RunSuite(t, new(WalletsControllerTestSuite))
 }
 
 // Note on wallet creation coverage
@@ -46,8 +43,7 @@ func (s *WalletsControllerTestSuite) TestCreate_Wallet_MissingChain() {
 	_, bearer, _ := ctltestutil.SetupAPIAuth(s.T(), false)
 
 	body := `{"label":"No chain","passphrase":"test-passphrase-123"}`
-	ctltestutil.
-		Post(s.T(), &s.TestCase, "/api/v1/wallets", body, bearer, nil).
+	s.External("/api/v1/wallets", ctltestutil.Token{Bearer: bearer}).Post(body).
 		AssertStatus(422)
 }
 
@@ -58,8 +54,7 @@ func (s *WalletsControllerTestSuite) TestCreate_Wallet_UnknownChain() {
 	_, bearer, _ := ctltestutil.SetupAPIAuth(s.T(), false)
 
 	body := `{"chain":"dogecoin","label":"Doge","passphrase":"test-passphrase-123"}`
-	ctltestutil.
-		Post(s.T(), &s.TestCase, "/api/v1/wallets", body, bearer, nil).
+	s.External("/api/v1/wallets", ctltestutil.Token{Bearer: bearer}).Post(body).
 		AssertStatus(422)
 }
 
@@ -70,7 +65,7 @@ func (s *WalletsControllerTestSuite) TestWalletsController_List_Wallets() {
 	_ = seedAPIWalletForAccount(s.T(), accountID, "eth", "ETH")
 	_ = seedAPIWalletForAccount(s.T(), accountID, "btc", "BTC")
 
-	resp := ctltestutil.Get(s.T(), &s.TestCase, "/api/v1/wallets", bearer)
+	resp := s.External("/api/v1/wallets", ctltestutil.Token{Bearer: bearer}).Get()
 	resp.AssertOk()
 
 	content, err := resp.Content()
@@ -97,7 +92,7 @@ func (s *WalletsControllerTestSuite) TestList_Wallets_ScopedToAccount() {
 	_, bearerB, _ := ctltestutil.SetupAPIAuth(s.T(), false)
 	_ = seedAPIWalletForAccount(s.T(), accountA, "eth", "A-eth")
 
-	respA := ctltestutil.Get(s.T(), &s.TestCase, "/api/v1/wallets", bearerA)
+	respA := s.External("/api/v1/wallets", ctltestutil.Token{Bearer: bearerA}).Get()
 	respA.AssertOk()
 	contentA, err := respA.Content()
 	s.Require().NoError(err)
@@ -107,7 +102,7 @@ func (s *WalletsControllerTestSuite) TestList_Wallets_ScopedToAccount() {
 	s.Require().NoError(json.Unmarshal([]byte(contentA), &payloadA))
 	s.Len(payloadA.Data, 1)
 
-	respB := ctltestutil.Get(s.T(), &s.TestCase, "/api/v1/wallets", bearerB)
+	respB := s.External("/api/v1/wallets", ctltestutil.Token{Bearer: bearerB}).Get()
 	respB.AssertOk()
 	contentB, err := respB.Content()
 	s.Require().NoError(err)
@@ -124,8 +119,7 @@ func (s *WalletsControllerTestSuite) TestGet_Wallet_Success() {
 
 	walletID := seedAPIWalletForAccount(s.T(), accountID, "eth", "ETH")
 
-	ctltestutil.
-		Get(s.T(), &s.TestCase, "/api/v1/wallets/"+walletID, bearer).
+	s.External("/api/v1/wallets/"+walletID, ctltestutil.Token{Bearer: bearer}).Get().
 		AssertOk().
 		AssertJson(map[string]any{"id": walletID, "chain": "eth"})
 }
@@ -137,8 +131,7 @@ func (s *WalletsControllerTestSuite) TestGet_Wallet_NotFound() {
 	testutil.SeededTestDB(s.T())
 	_, bearer, _ := ctltestutil.SetupAPIAuth(s.T(), false)
 
-	ctltestutil.
-		Get(s.T(), &s.TestCase, "/api/v1/wallets/"+uuid.NewString(), bearer).
+	s.External("/api/v1/wallets/"+uuid.NewString(), ctltestutil.Token{Bearer: bearer}).Get().
 		AssertNotFound()
 }
 
@@ -150,8 +143,7 @@ func (s *WalletsControllerTestSuite) TestGet_Wallet_InvalidUUID() {
 	testutil.SeededTestDB(s.T())
 	_, bearer, _ := ctltestutil.SetupAPIAuth(s.T(), false)
 
-	ctltestutil.
-		Get(s.T(), &s.TestCase, "/api/v1/wallets/not-a-uuid", bearer).
+	s.External("/api/v1/wallets/not-a-uuid", ctltestutil.Token{Bearer: bearer}).Get().
 		AssertNotFound()
 }
 
@@ -164,7 +156,6 @@ func (s *WalletsControllerTestSuite) TestGet_Wallet_OtherAccount() {
 
 	walletA := seedAPIWalletForAccount(s.T(), accountA, "eth", "A-owned")
 
-	ctltestutil.
-		Get(s.T(), &s.TestCase, "/api/v1/wallets/"+walletA, bearerB).
+	s.External("/api/v1/wallets/"+walletA, ctltestutil.Token{Bearer: bearerB}).Get().
 		AssertNotFound()
 }

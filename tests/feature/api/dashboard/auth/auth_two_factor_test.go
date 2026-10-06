@@ -4,8 +4,7 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/stretchr/testify/suite"
-
+	"github.com/macrowallets/waas/tests/feature/support"
 	"github.com/macrowallets/waas/tests/feature/support/fixtures"
 )
 
@@ -16,7 +15,7 @@ type TwoFactorLoginTestSuite struct {
 }
 
 func TestTwo_Factor_LoginSuite(t *testing.T) {
-	suite.Run(t, new(TwoFactorLoginTestSuite))
+	support.RunSuite(t, new(TwoFactorLoginTestSuite))
 }
 
 func (s *TwoFactorLoginTestSuite) SetupTest() {
@@ -58,11 +57,7 @@ func (s *TwoFactorLoginTestSuite) TestSession_Auth_RejectsThePartialToken() {
 
 	s.getMe(body.ChallengeToken).AssertStatus(401)
 
-	resp, err := s.Http(s.T()).
-		WithHeader("Authorization", "Bearer "+body.ChallengeToken).
-		WithHeader("X-Account-Id", user.ID.String()).
-		Get("/v1/wallets")
-	s.Require().NoError(err)
+	resp := s.Get("/v1/wallets", support.Session{AccessToken: body.ChallengeToken, AccountID: user.ID.String()})
 	resp.AssertStatus(401)
 }
 

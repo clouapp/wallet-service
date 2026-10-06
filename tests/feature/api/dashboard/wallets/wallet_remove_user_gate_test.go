@@ -9,11 +9,10 @@ import (
 	"github.com/google/uuid"
 	contractstesting "github.com/goravel/framework/contracts/testing/http"
 	"github.com/goravel/framework/facades"
-	goravelTesting "github.com/goravel/framework/testing"
-	"github.com/stretchr/testify/suite"
 
 	"github.com/macrowallets/waas/app/models"
 	authsvc "github.com/macrowallets/waas/app/services/auth"
+	"github.com/macrowallets/waas/tests/feature/support"
 	"github.com/macrowallets/waas/tests/feature/support/fixtures"
 )
 
@@ -24,12 +23,11 @@ const walletRemoveUserGatePassword = "correct-horse-battery"
 // so may account role owner or admin. Auditor, user, and the other wallet
 // roles are refused before the membership is removed.
 type WalletRemoveUserGateTestSuite struct {
-	suite.Suite
-	goravelTesting.TestCase
+	support.HTTPSuite
 }
 
 func TestWallet_Remove_UserGateSuite(t *testing.T) {
-	suite.Run(t, new(WalletRemoveUserGateTestSuite))
+	support.RunSuite(t, new(WalletRemoveUserGateTestSuite))
 }
 
 func (s *WalletRemoveUserGateTestSuite) SetupTest() {
@@ -135,10 +133,7 @@ func (s *WalletRemoveUserGateTestSuite) login(userID uuid.UUID) string {
 	var email string
 	s.Require().NoError(facades.Orm().Query().Raw(`SELECT email FROM users WHERE id = ?`, userID).Scan(&email))
 	body := fmt.Sprintf(`{"email":%q,"password":%q}`, email, walletRemoveUserGatePassword)
-	resp, err := s.Http(s.T()).
-		WithHeader("Content-Type", "application/json").
-		Post("/v1/auth/login", strings.NewReader(body))
-	s.Require().NoError(err)
+	resp := s.Post("/v1/auth/login", support.Session{}, body)
 	resp.AssertStatus(200)
 	var parsed struct {
 		AccessToken string `json:"access_token"`
@@ -149,11 +144,7 @@ func (s *WalletRemoveUserGateTestSuite) login(userID uuid.UUID) string {
 }
 
 func (s *WalletRemoveUserGateTestSuite) removeUser(token string, accountID, walletID, targetID uuid.UUID) contractstesting.Response {
-	resp, err := s.Http(s.T()).
-		WithHeader("Authorization", "Bearer "+token).
-		WithHeader("X-Account-Id", accountID.String()).
-		Delete("/v1/wallets/"+walletID.String()+"/users/"+targetID.String(), nil)
-	s.Require().NoError(err)
+	resp := s.Delete("/v1/wallets/"+walletID.String()+"/users/"+targetID.String(), support.Session{AccessToken: token, AccountID: accountID.String()}, nil)
 	return resp
 }
 

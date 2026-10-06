@@ -3,20 +3,19 @@ package accounts
 import (
 	"context"
 	"encoding/json"
-	"strings"
 	"testing"
 
 	"github.com/google/uuid"
 	contractstesting "github.com/goravel/framework/contracts/testing/http"
 	"github.com/goravel/framework/facades"
 	"github.com/shopspring/decimal"
-	"github.com/stretchr/testify/suite"
 
 	"github.com/macrowallets/waas/app/container"
 	"github.com/macrowallets/waas/app/http/responses"
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/services/settings"
 	"github.com/macrowallets/waas/app/services/sweep"
+	"github.com/macrowallets/waas/tests/feature/support"
 	"github.com/macrowallets/waas/tests/feature/support/testutil"
 )
 
@@ -29,7 +28,7 @@ type PlatformAccountSweepLimitsTestSuite struct {
 }
 
 func TestPlatform_Account_SweepLimitsSuite(t *testing.T) {
-	suite.Run(t, new(PlatformAccountSweepLimitsTestSuite))
+	support.RunSuite(t, new(PlatformAccountSweepLimitsTestSuite))
 }
 
 func (s *PlatformAccountSweepLimitsTestSuite) SetupTest() {
@@ -167,10 +166,7 @@ func (s *PlatformAccountSweepLimitsTestSuite) TestAnother_Group_AndAnUnknownAcco
 	))
 	s.Equal(int64(0), s.count(`SELECT count(*) FROM account_activity WHERE action = 'settings.updated'`))
 
-	missing, err := s.Http(s.T()).
-		WithHeader("Content-Type", "application/json").
-		Put(s.groupPath(accountID, "account_sweep_limits"), strings.NewReader(body))
-	s.Require().NoError(err)
+	missing := s.Put(s.groupPath(accountID, "account_sweep_limits"), support.Session{}, body)
 	missing.AssertUnauthorized()
 }
 
@@ -304,20 +300,13 @@ func (s *PlatformAccountSweepLimitsTestSuite) groupPath(accountID uuid.UUID, gro
 
 func (s *PlatformAccountSweepLimitsTestSuite) putRaw(token, path, body string) contractstesting.Response {
 	s.T().Helper()
-	resp, err := s.Http(s.T()).
-		WithHeader("Authorization", "Bearer "+token).
-		WithHeader("Content-Type", "application/json").
-		Put(path, strings.NewReader(body))
-	s.Require().NoError(err)
+	resp := s.Put(path, support.Session{AccessToken: token}, body)
 	return resp
 }
 
 func (s *PlatformAccountSweepLimitsTestSuite) getRaw(token, path string) contractstesting.Response {
 	s.T().Helper()
-	resp, err := s.Http(s.T()).
-		WithHeader("Authorization", "Bearer "+token).
-		Get(path)
-	s.Require().NoError(err)
+	resp := s.Get(path, support.Session{AccessToken: token})
 	return resp
 }
 

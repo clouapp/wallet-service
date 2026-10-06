@@ -3,17 +3,15 @@ package wallets
 import (
 	"encoding/json"
 	"fmt"
-	"strings"
 	"testing"
 
 	"github.com/google/uuid"
 	contractstesting "github.com/goravel/framework/contracts/testing/http"
 	"github.com/goravel/framework/facades"
-	goravelTesting "github.com/goravel/framework/testing"
-	"github.com/stretchr/testify/suite"
 
 	"github.com/macrowallets/waas/app/models"
 	authsvc "github.com/macrowallets/waas/app/services/auth"
+	"github.com/macrowallets/waas/tests/feature/support"
 	"github.com/macrowallets/waas/tests/feature/support/fixtures"
 )
 
@@ -29,12 +27,11 @@ const walletCancelWithdrawalGatePassword = "correct-horse-battery"
 // pending. An account user with view_all_wallets false and no wallet
 // membership is 404 from WalletContext.
 type WalletCancelWithdrawalGateTestSuite struct {
-	suite.Suite
-	goravelTesting.TestCase
+	support.HTTPSuite
 }
 
 func TestWallet_Cancel_WithdrawalGateSuite(t *testing.T) {
-	suite.Run(t, new(WalletCancelWithdrawalGateTestSuite))
+	support.RunSuite(t, new(WalletCancelWithdrawalGateTestSuite))
 }
 
 func (s *WalletCancelWithdrawalGateTestSuite) SetupTest() {
@@ -236,10 +233,7 @@ func (s *WalletCancelWithdrawalGateTestSuite) login(userID uuid.UUID) string {
 	var email string
 	s.Require().NoError(facades.Orm().Query().Raw(`SELECT email FROM users WHERE id = ?`, userID).Scan(&email))
 	body := fmt.Sprintf(`{"email":%q,"password":%q}`, email, walletCancelWithdrawalGatePassword)
-	resp, err := s.Http(s.T()).
-		WithHeader("Content-Type", "application/json").
-		Post("/v1/auth/login", strings.NewReader(body))
-	s.Require().NoError(err)
+	resp := s.Post("/v1/auth/login", support.Session{}, body)
 	resp.AssertStatus(200)
 	var parsed struct {
 		AccessToken string `json:"access_token"`
@@ -254,11 +248,7 @@ func (s *WalletCancelWithdrawalGateTestSuite) cancel(token string, accountID, wa
 }
 
 func (s *WalletCancelWithdrawalGateTestSuite) cancelPath(token string, accountID uuid.UUID, path string) contractstesting.Response {
-	resp, err := s.Http(s.T()).
-		WithHeader("Authorization", "Bearer "+token).
-		WithHeader("X-Account-Id", accountID.String()).
-		Post(path, nil)
-	s.Require().NoError(err)
+	resp := s.Post(path, support.Session{AccessToken: token, AccountID: accountID.String()}, nil)
 	return resp
 }
 

@@ -6,8 +6,6 @@ import (
 	"testing"
 
 	"github.com/goravel/framework/facades"
-	goravelTesting "github.com/goravel/framework/testing"
-	"github.com/stretchr/testify/suite"
 
 	"github.com/macrowallets/waas/app/services/settings"
 	ctltestutil "github.com/macrowallets/waas/tests/feature/support"
@@ -18,12 +16,11 @@ import (
 // endpoints (CreateWebhook, ListWebhooks). Per-wallet webhook management is
 // a dashboard-only concern and is covered elsewhere.
 type WebhooksControllerTestSuite struct {
-	suite.Suite
-	goravelTesting.TestCase
+	ctltestutil.HTTPSuite
 }
 
 func TestWebhooks_Controller_Suite(t *testing.T) {
-	suite.Run(t, new(WebhooksControllerTestSuite))
+	ctltestutil.RunSuite(t, new(WebhooksControllerTestSuite))
 }
 
 func (s *WebhooksControllerTestSuite) TestCreate_Webhook_Success() {
@@ -32,7 +29,7 @@ func (s *WebhooksControllerTestSuite) TestCreate_Webhook_Success() {
 
 	const secret = "webhook_secret_123"
 	body := `{"url":"https://example.com/webhook","secret":"` + secret + `","events":["deposit.confirmed","withdrawal.confirmed"]}`
-	resp := ctltestutil.Post(s.T(), &s.TestCase, "/api/v1/webhooks", body, bearer, nil)
+	resp := s.External("/api/v1/webhooks", ctltestutil.Token{Bearer: bearer}).Post(body)
 	resp.AssertCreated().AssertJson(map[string]any{
 		"url":       "https://example.com/webhook",
 		"is_active": true,
@@ -65,8 +62,7 @@ func (s *WebhooksControllerTestSuite) TestCreate_Webhook_MissingURL() {
 	_, bearer, _ := ctltestutil.SetupAPIAuth(s.T(), false)
 
 	body := `{"secret":"webhook_secret","events":["deposit.confirmed"]}`
-	ctltestutil.
-		Post(s.T(), &s.TestCase, "/api/v1/webhooks", body, bearer, nil).
+	s.External("/api/v1/webhooks", ctltestutil.Token{Bearer: bearer}).Post(body).
 		AssertStatus(422)
 }
 
@@ -76,8 +72,7 @@ func (s *WebhooksControllerTestSuite) TestCreate_Webhook_MissingSecret() {
 	_, bearer, _ := ctltestutil.SetupAPIAuth(s.T(), false)
 
 	body := `{"url":"https://example.com/webhook","events":["deposit.confirmed"]}`
-	ctltestutil.
-		Post(s.T(), &s.TestCase, "/api/v1/webhooks", body, bearer, nil).
+	s.External("/api/v1/webhooks", ctltestutil.Token{Bearer: bearer}).Post(body).
 		AssertStatus(422)
 }
 
@@ -87,8 +82,7 @@ func (s *WebhooksControllerTestSuite) TestCreate_Webhook_MissingEvents() {
 	_, bearer, _ := ctltestutil.SetupAPIAuth(s.T(), false)
 
 	body := `{"url":"https://example.com/webhook","secret":"webhook_secret"}`
-	ctltestutil.
-		Post(s.T(), &s.TestCase, "/api/v1/webhooks", body, bearer, nil).
+	s.External("/api/v1/webhooks", ctltestutil.Token{Bearer: bearer}).Post(body).
 		AssertStatus(422)
 }
 
@@ -96,7 +90,7 @@ func (s *WebhooksControllerTestSuite) TestList_Webhooks_Empty() {
 	testutil.SeededTestDB(s.T())
 	_, bearer, _ := ctltestutil.SetupAPIAuth(s.T(), false)
 
-	resp := ctltestutil.Get(s.T(), &s.TestCase, "/api/v1/webhooks", bearer)
+	resp := s.External("/api/v1/webhooks", ctltestutil.Token{Bearer: bearer}).Get()
 	resp.AssertOk()
 
 	content, err := resp.Content()
@@ -113,11 +107,10 @@ func (s *WebhooksControllerTestSuite) TestList_Webhooks_WithData() {
 	_, bearer, _ := ctltestutil.SetupAPIAuth(s.T(), false)
 
 	create := `{"url":"https://a.com/webhook","secret":"secret_a","events":["deposit.confirmed"]}`
-	ctltestutil.
-		Post(s.T(), &s.TestCase, "/api/v1/webhooks", create, bearer, nil).
+	s.External("/api/v1/webhooks", ctltestutil.Token{Bearer: bearer}).Post(create).
 		AssertCreated()
 
-	resp := ctltestutil.Get(s.T(), &s.TestCase, "/api/v1/webhooks", bearer)
+	resp := s.External("/api/v1/webhooks", ctltestutil.Token{Bearer: bearer}).Get()
 	resp.AssertOk()
 
 	content, err := resp.Content()
@@ -137,18 +130,12 @@ func (s *WebhooksControllerTestSuite) TestList_Webhooks_Multiple() {
 	testutil.SeededTestDB(s.T())
 	_, bearer, _ := ctltestutil.SetupAPIAuth(s.T(), false)
 
-	ctltestutil.
-		Post(s.T(), &s.TestCase, "/api/v1/webhooks",
-			`{"url":"https://a.com/webhook","secret":"secret_a","events":["deposit.confirmed"]}`,
-			bearer, nil).
+	s.External("/api/v1/webhooks", ctltestutil.Token{Bearer: bearer}).Post(`{"url":"https://a.com/webhook","secret":"secret_a","events":["deposit.confirmed"]}`).
 		AssertCreated()
-	ctltestutil.
-		Post(s.T(), &s.TestCase, "/api/v1/webhooks",
-			`{"url":"https://b.com/webhook","secret":"secret_b","events":["withdrawal.confirmed"]}`,
-			bearer, nil).
+	s.External("/api/v1/webhooks", ctltestutil.Token{Bearer: bearer}).Post(`{"url":"https://b.com/webhook","secret":"secret_b","events":["withdrawal.confirmed"]}`).
 		AssertCreated()
 
-	resp := ctltestutil.Get(s.T(), &s.TestCase, "/api/v1/webhooks", bearer)
+	resp := s.External("/api/v1/webhooks", ctltestutil.Token{Bearer: bearer}).Get()
 	resp.AssertOk()
 
 	content, err := resp.Content()

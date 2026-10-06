@@ -1,16 +1,15 @@
 package accounts
 
 import (
-	"strings"
 	"testing"
 
 	"github.com/google/uuid"
 	contractstesting "github.com/goravel/framework/contracts/testing/http"
 	"github.com/goravel/framework/facades"
-	"github.com/stretchr/testify/suite"
 
 	"github.com/macrowallets/waas/app/http/responses"
 	"github.com/macrowallets/waas/app/models"
+	"github.com/macrowallets/waas/tests/feature/support"
 	"github.com/macrowallets/waas/tests/feature/support/testutil"
 )
 
@@ -23,7 +22,7 @@ type PlatformAccountLifecycleTestSuite struct {
 }
 
 func TestPlatform_Account_LifecycleSuite(t *testing.T) {
-	suite.Run(t, new(PlatformAccountLifecycleTestSuite))
+	support.RunSuite(t, new(PlatformAccountLifecycleTestSuite))
 }
 
 func (s *PlatformAccountLifecycleTestSuite) SetupTest() {
@@ -119,21 +118,13 @@ func (s *PlatformAccountLifecycleTestSuite) post(bearer, path string) contractst
 
 func (s *PlatformAccountLifecycleTestSuite) send(method, path, bearer, body string) contractstesting.Response {
 	s.T().Helper()
-	req := s.Http(s.T()).
-		WithHeader("Authorization", "Bearer "+bearer).
-		WithHeader("Content-Type", "application/json")
-	var (
-		resp contractstesting.Response
-		err  error
-	)
+	session := support.Session{AccessToken: bearer}
 	switch method {
 	case "PATCH":
-		resp, err = req.Patch(path, strings.NewReader(body))
+		return s.Patch(path, session, body)
 	default:
-		resp, err = req.Post(path, strings.NewReader(body))
+		return s.Post(path, session, body)
 	}
-	s.Require().NoError(err)
-	return resp
 }
 
 func (s *PlatformAccountLifecycleTestSuite) statusOf(resp contractstesting.Response) string {

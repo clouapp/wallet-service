@@ -7,8 +7,8 @@ import (
 	"github.com/google/uuid"
 	contractstesting "github.com/goravel/framework/contracts/testing/http"
 	"github.com/goravel/framework/facades"
-	"github.com/stretchr/testify/suite"
 
+	"github.com/macrowallets/waas/tests/feature/support"
 	"github.com/macrowallets/waas/tests/feature/support/fixtures"
 )
 
@@ -17,7 +17,7 @@ type MfaSealTestSuite struct {
 }
 
 func TestMfa_Seal_Suite(t *testing.T) {
-	suite.Run(t, new(MfaSealTestSuite))
+	support.RunSuite(t, new(MfaSealTestSuite))
 }
 
 func (s *MfaSealTestSuite) SetupTest() {

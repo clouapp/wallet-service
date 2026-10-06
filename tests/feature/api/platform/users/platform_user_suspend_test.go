@@ -1,16 +1,15 @@
 package users
 
 import (
-	"strings"
 	"testing"
 
 	"github.com/google/uuid"
 	contractstesting "github.com/goravel/framework/contracts/testing/http"
 	"github.com/goravel/framework/facades"
-	"github.com/stretchr/testify/suite"
 
 	"github.com/macrowallets/waas/app/http/responses"
 	"github.com/macrowallets/waas/app/models"
+	"github.com/macrowallets/waas/tests/feature/support"
 	"github.com/macrowallets/waas/tests/feature/support/testutil"
 )
 
@@ -21,7 +20,7 @@ type PlatformUserSuspendTestSuite struct {
 }
 
 func TestPlatform_User_SuspendSuite(t *testing.T) {
-	suite.Run(t, new(PlatformUserSuspendTestSuite))
+	support.RunSuite(t, new(PlatformUserSuspendTestSuite))
 }
 
 func (s *PlatformUserSuspendTestSuite) SetupTest() {
@@ -202,23 +201,16 @@ func (s *PlatformUserSuspendTestSuite) addMember(accountID, userID uuid.UUID, ro
 
 func (s *PlatformUserSuspendTestSuite) send(method, path, bearer, body string) contractstesting.Response {
 	s.T().Helper()
-	req := s.Http(s.T()).
-		WithHeader("Authorization", "Bearer "+bearer).
-		WithHeader("Content-Type", "application/json")
-	var (
-		resp contractstesting.Response
-		err  error
-	)
+	session := support.Session{AccessToken: bearer}
 	switch method {
 	case "GET":
-		resp, err = req.Get(path)
+		return s.Get(path, session)
 	case "PATCH":
-		resp, err = req.Patch(path, strings.NewReader(body))
+		return s.Patch(path, session, body)
 	default:
 		s.FailNow("unsupported method " + method)
+		return nil
 	}
-	s.Require().NoError(err)
-	return resp
 }
 
 func (s *PlatformUserSuspendTestSuite) count(query string, args ...any) int64 {

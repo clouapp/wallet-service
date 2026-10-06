@@ -3,17 +3,17 @@ package support
 import (
 	"bytes"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
-
-	"github.com/stretchr/testify/suite"
 
 	"github.com/macrowallets/waas/app/http/resources"
 )
 
 func TestHTTP_Suite_AssertError(t *testing.T) {
-	suite.Run(t, new(assertErrorSuite))
+	RunSuite(t, new(assertErrorSuite))
 }
 
 type assertErrorSuite struct {
@@ -102,6 +102,56 @@ func TestMatch_Error_Envelope(t *testing.T) {
 				t.Fatal(err)
 			}
 		})
+	}
+}
+
+func TestExternal_SignsTheBodyWhenTheTokenRequiresIt(t *testing.T) {
+	body := `{"external_user_id":"user_signed"}`
+	token := Token{Bearer: "raw-jwt", Sign: Signer("raw-jwt")}
+	signed := credentialHeaders(tokenCredential(token), body, true, true)
+	if signed["Authorization"] != "Bearer raw-jwt" {
+		t.Fatalf("authorization = %q", signed["Authorization"])
+	}
+	if signed["X-Signature"] != token.Sign([]byte(body)) {
+		t.Fatalf("signature = %q", signed["X-Signature"])
+	}
+
+	unsigned := credentialHeaders(tokenCredential(Token{Bearer: "raw-jwt"}), body, true, true)
+	if _, ok := unsigned["X-Signature"]; ok {
+		t.Fatal("token without a signer attached X-Signature")
+	}
+
+	// A GET has no body, so the signer is not applied.
+	get := credentialHeaders(tokenCredential(token), "", true, false)
+	if _, ok := get["X-Signature"]; ok {
+		t.Fatal("GET attached X-Signature")
+	}
+}
+
+func TestRequest_Body_KeepsTheBytesASignatureCovers(t *testing.T) {
+	payload, reader, err := requestBody(`{"a":1}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if payload != `{"a":1}` {
+		t.Fatalf("payload = %q", payload)
+	}
+	got, err := io.ReadAll(reader)
+	if err != nil || string(got) != payload {
+		t.Fatalf("reader = %q err=%v", got, err)
+	}
+
+	payload, reader, err = requestBody(strings.NewReader(`{"b":2}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if payload != `{"b":2}` || reader == nil {
+		t.Fatalf("reader body = %q", payload)
+	}
+
+	payload, reader, err = requestBody(nil)
+	if err != nil || payload != "" || reader != nil {
+		t.Fatalf("nil body = %q reader=%v err=%v", payload, reader, err)
 	}
 }
 

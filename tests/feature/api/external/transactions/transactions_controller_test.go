@@ -6,8 +6,6 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/goravel/framework/facades"
-	goravelTesting "github.com/goravel/framework/testing"
-	"github.com/stretchr/testify/suite"
 
 	"github.com/macrowallets/waas/app/models"
 	ctltestutil "github.com/macrowallets/waas/tests/feature/support"
@@ -19,12 +17,11 @@ import (
 // TestCriticalEndpointsSuite for withdrawal — here we confirm the listing,
 // filtering, and single-transaction retrieval contract.
 type TransactionsControllerTestSuite struct {
-	suite.Suite
-	goravelTesting.TestCase
+	ctltestutil.HTTPSuite
 }
 
 func TestTransactions_Controller_Suite(t *testing.T) {
-	suite.Run(t, new(TransactionsControllerTestSuite))
+	ctltestutil.RunSuite(t, new(TransactionsControllerTestSuite))
 }
 
 // seedTransactionForAccount inserts a Wallet (bound to accountID) plus one
@@ -80,7 +77,7 @@ func (s *TransactionsControllerTestSuite) TestList_Transactions_Empty() {
 	testutil.SeededTestDB(s.T())
 	_, bearer, _ := ctltestutil.SetupAPIAuth(s.T(), false)
 
-	resp := ctltestutil.Get(s.T(), &s.TestCase, "/api/v1/transactions", bearer)
+	resp := s.External("/api/v1/transactions", ctltestutil.Token{Bearer: bearer}).Get()
 	resp.AssertOk()
 
 	content, err := resp.Content()
@@ -96,8 +93,7 @@ func (s *TransactionsControllerTestSuite) TestList_Transactions_WithFilters() {
 	testutil.SeededTestDB(s.T())
 	_, bearer, _ := ctltestutil.SetupAPIAuth(s.T(), false)
 
-	resp := ctltestutil.Get(s.T(), &s.TestCase,
-		"/api/v1/transactions?chain=eth&type=deposit&status=pending&limit=10", bearer)
+	resp := s.External("/api/v1/transactions?chain=eth&type=deposit&status=pending&limit=10", ctltestutil.Token{Bearer: bearer}).Get()
 	resp.AssertOk()
 
 	content, err := resp.Content()
@@ -113,8 +109,7 @@ func (s *TransactionsControllerTestSuite) TestList_Transactions_WithPagination()
 	testutil.SeededTestDB(s.T())
 	_, bearer, _ := ctltestutil.SetupAPIAuth(s.T(), false)
 
-	ctltestutil.
-		Get(s.T(), &s.TestCase, "/api/v1/transactions?limit=5&offset=0", bearer).
+	s.External("/api/v1/transactions?limit=5&offset=0", ctltestutil.Token{Bearer: bearer}).Get().
 		AssertOk()
 }
 
@@ -125,7 +120,7 @@ func (s *TransactionsControllerTestSuite) TestList_Transactions_ScopedToAccount(
 
 	_ = seedTransactionForAccount(s.T(), accountA, "eth")
 
-	respA := ctltestutil.Get(s.T(), &s.TestCase, "/api/v1/transactions", bearerA)
+	respA := s.External("/api/v1/transactions", ctltestutil.Token{Bearer: bearerA}).Get()
 	respA.AssertOk()
 	contentA, err := respA.Content()
 	s.Require().NoError(err)
@@ -137,7 +132,7 @@ func (s *TransactionsControllerTestSuite) TestList_Transactions_ScopedToAccount(
 	s.Require().NoError(json.Unmarshal([]byte(contentA), &payloadA))
 	s.Len(payloadA.Data, 1, "owner should see their transaction")
 
-	respB := ctltestutil.Get(s.T(), &s.TestCase, "/api/v1/transactions", bearerB)
+	respB := s.External("/api/v1/transactions", ctltestutil.Token{Bearer: bearerB}).Get()
 	respB.AssertOk()
 	contentB, err := respB.Content()
 	s.Require().NoError(err)
@@ -153,8 +148,7 @@ func (s *TransactionsControllerTestSuite) TestGet_Transaction_NotFound() {
 	testutil.SeededTestDB(s.T())
 	_, bearer, _ := ctltestutil.SetupAPIAuth(s.T(), false)
 
-	ctltestutil.
-		Get(s.T(), &s.TestCase, "/api/v1/transactions/"+uuid.NewString(), bearer).
+	s.External("/api/v1/transactions/"+uuid.NewString(), ctltestutil.Token{Bearer: bearer}).Get().
 		AssertNotFound()
 }
 
@@ -162,8 +156,7 @@ func (s *TransactionsControllerTestSuite) TestGet_Transaction_InvalidUUID() {
 	testutil.SeededTestDB(s.T())
 	_, bearer, _ := ctltestutil.SetupAPIAuth(s.T(), false)
 
-	ctltestutil.
-		Get(s.T(), &s.TestCase, "/api/v1/transactions/not-a-uuid", bearer).
+	s.External("/api/v1/transactions/not-a-uuid", ctltestutil.Token{Bearer: bearer}).Get().
 		AssertBadRequest()
 }
 
@@ -173,8 +166,7 @@ func (s *TransactionsControllerTestSuite) TestGet_Transaction_Success() {
 
 	txID := seedTransactionForAccount(s.T(), accountID, "eth")
 
-	ctltestutil.
-		Get(s.T(), &s.TestCase, "/api/v1/transactions/"+txID, bearer).
+	s.External("/api/v1/transactions/"+txID, ctltestutil.Token{Bearer: bearer}).Get().
 		AssertOk().
 		AssertJson(map[string]any{
 			"id":      txID,
@@ -187,7 +179,7 @@ func (s *TransactionsControllerTestSuite) TestList_User_Transactions() {
 	testutil.SeededTestDB(s.T())
 	_, bearer, _ := ctltestutil.SetupAPIAuth(s.T(), false)
 
-	resp := ctltestutil.Get(s.T(), &s.TestCase, "/api/v1/users/user_nobody/transactions", bearer)
+	resp := s.External("/api/v1/users/user_nobody/transactions", ctltestutil.Token{Bearer: bearer}).Get()
 	resp.AssertOk()
 
 	content, err := resp.Content()
@@ -203,7 +195,6 @@ func (s *TransactionsControllerTestSuite) TestList_UserTransactions_WithFilters(
 	testutil.SeededTestDB(s.T())
 	_, bearer, _ := ctltestutil.SetupAPIAuth(s.T(), false)
 
-	ctltestutil.
-		Get(s.T(), &s.TestCase, "/api/v1/users/test_user/transactions?chain=eth&type=deposit", bearer).
+	s.External("/api/v1/users/test_user/transactions?chain=eth&type=deposit", ctltestutil.Token{Bearer: bearer}).Get().
 		AssertOk()
 }

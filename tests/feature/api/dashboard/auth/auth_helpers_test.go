@@ -10,11 +10,10 @@ import (
 	"github.com/google/uuid"
 	contractstesting "github.com/goravel/framework/contracts/testing/http"
 	"github.com/goravel/framework/facades"
-	goravelTesting "github.com/goravel/framework/testing"
 	"github.com/pquerna/otp/totp"
-	"github.com/stretchr/testify/suite"
 
 	authsvc "github.com/macrowallets/waas/app/services/auth"
+	"github.com/macrowallets/waas/tests/feature/support"
 )
 
 const authTestPassword = "correct-horse-battery-staple"
@@ -39,8 +38,7 @@ type loginBody struct {
 
 // authSuite carries the helpers shared by the dashboard auth suites.
 type authSuite struct {
-	suite.Suite
-	goravelTesting.TestCase
+	support.HTTPSuite
 }
 
 func (s *authSuite) seedUser(withTOTP bool) seededAuthUser {
@@ -95,10 +93,7 @@ func (s *authSuite) seedUser(withTOTP bool) seededAuthUser {
 }
 
 func (s *authSuite) postJSON(path, body string) contractstesting.Response {
-	resp, err := s.Http(s.T()).
-		WithHeader("Content-Type", "application/json").
-		Post(path, strings.NewReader(body))
-	s.Require().NoError(err)
+	resp := s.Post(path, support.Session{}, body)
 	return resp
 }
 
@@ -131,17 +126,12 @@ func (s *authSuite) currentCode(secret string) string {
 }
 
 func (s *authSuite) getMe(bearer string) contractstesting.Response {
-	resp, err := s.Http(s.T()).WithHeader("Authorization", "Bearer "+bearer).Get("/v1/users/me")
-	s.Require().NoError(err)
+	resp := s.Get("/v1/users/me", support.Session{AccessToken: bearer})
 	return resp
 }
 
 func (s *authSuite) authedPost(bearer, path, body string) contractstesting.Response {
-	resp, err := s.Http(s.T()).
-		WithHeader("Authorization", "Bearer "+bearer).
-		WithHeader("Content-Type", "application/json").
-		Post(path, strings.NewReader(body))
-	s.Require().NoError(err)
+	resp := s.Post(path, support.Session{AccessToken: bearer}, body)
 	return resp
 }
 
@@ -154,11 +144,7 @@ func (s *authSuite) authedDeleteJSON(bearer, path, body string) contractstesting
 	if body != "" {
 		payload = strings.NewReader(body)
 	}
-	resp, err := s.Http(s.T()).
-		WithHeader("Authorization", "Bearer "+bearer).
-		WithHeader("Content-Type", "application/json").
-		Delete(path, payload)
-	s.Require().NoError(err)
+	resp := s.Delete(path, support.Session{AccessToken: bearer}, payload)
 	return resp
 }
 

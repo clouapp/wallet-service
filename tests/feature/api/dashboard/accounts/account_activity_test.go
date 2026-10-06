@@ -4,19 +4,17 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"strings"
 	"testing"
 
 	"github.com/google/uuid"
 	contractstesting "github.com/goravel/framework/contracts/testing/http"
 	"github.com/goravel/framework/facades"
-	goravelTesting "github.com/goravel/framework/testing"
-	"github.com/stretchr/testify/suite"
 
 	"github.com/macrowallets/waas/app/models"
 	activitylog "github.com/macrowallets/waas/app/services/activity"
 	authsvc "github.com/macrowallets/waas/app/services/auth"
 	"github.com/macrowallets/waas/app/services/features"
+	"github.com/macrowallets/waas/tests/feature/support"
 	"github.com/macrowallets/waas/tests/feature/support/fixtures"
 )
 
@@ -27,12 +25,11 @@ const (
 )
 
 type AccountActivityTestSuite struct {
-	suite.Suite
-	goravelTesting.TestCase
+	support.HTTPSuite
 }
 
 func TestAccount_Activity_Suite(t *testing.T) {
-	suite.Run(t, new(AccountActivityTestSuite))
+	support.RunSuite(t, new(AccountActivityTestSuite))
 }
 
 func (s *AccountActivityTestSuite) SetupTest() {
@@ -421,10 +418,7 @@ func (s *AccountActivityTestSuite) loginUser(role string, accountID uuid.UUID) a
 func (s *AccountActivityTestSuite) login(email string) string {
 	s.T().Helper()
 	body := fmt.Sprintf(`{"email":%q,"password":%q}`, email, activityTestPassword)
-	resp, err := s.Http(s.T()).
-		WithHeader("Content-Type", "application/json").
-		Post("/v1/auth/login", strings.NewReader(body))
-	s.Require().NoError(err)
+	resp := s.Post("/v1/auth/login", support.Session{}, body)
 	resp.AssertStatus(200)
 	content, err := resp.Content()
 	s.Require().NoError(err)
@@ -472,30 +466,20 @@ func (s *AccountActivityTestSuite) patchMember(token string, accountID, userID u
 
 func (s *AccountActivityTestSuite) patch(token, path, body string, status int) contractstesting.Response {
 	s.T().Helper()
-	resp, err := s.Http(s.T()).
-		WithHeader("Authorization", "Bearer "+token).
-		WithHeader("Content-Type", "application/json").
-		Patch(path, strings.NewReader(body))
-	s.Require().NoError(err)
+	resp := s.Patch(path, support.Session{AccessToken: token}, body)
 	resp.AssertStatus(status)
 	return resp
 }
 
 func (s *AccountActivityTestSuite) delete(token, path string) contractstesting.Response {
 	s.T().Helper()
-	resp, err := s.Http(s.T()).
-		WithHeader("Authorization", "Bearer "+token).
-		Delete(path, nil)
-	s.Require().NoError(err)
+	resp := s.Delete(path, support.Session{AccessToken: token}, nil)
 	return resp
 }
 
 func (s *AccountActivityTestSuite) get(token, path string) contractstesting.Response {
 	s.T().Helper()
-	resp, err := s.Http(s.T()).
-		WithHeader("Authorization", "Bearer "+token).
-		Get(path)
-	s.Require().NoError(err)
+	resp := s.Get(path, support.Session{AccessToken: token})
 	return resp
 }
 
@@ -600,27 +584,21 @@ func (s *AccountActivityTestSuite) errorText(resp contractstesting.Response) (st
 func (s *AccountActivityTestSuite) writeActivity(method, token string, accountID uuid.UUID, id string, status int) {
 	s.T().Helper()
 	path := "/v1/accounts/" + accountID.String() + "/activity/" + id
-	request := s.Http(s.T()).
-		WithHeader("Authorization", "Bearer "+token).
-		WithHeader("Content-Type", "application/json")
-	body := strings.NewReader(`{}`)
-	var (
-		resp contractstesting.Response
-		err  error
-	)
+	session := support.Session{AccessToken: token}
+	var resp contractstesting.Response
 	switch method {
 	case http.MethodPost:
-		resp, err = request.Post(path, body)
+		resp = s.Post(path, session, `{}`)
 	case http.MethodPut:
-		resp, err = request.Put(path, body)
+		resp = s.Put(path, session, `{}`)
 	case http.MethodPatch:
-		resp, err = request.Patch(path, body)
+		resp = s.Patch(path, session, `{}`)
 	case http.MethodDelete:
-		resp, err = request.Delete(path, body)
+		resp = s.Delete(path, session, `{}`)
 	default:
 		s.FailNow("unsupported method " + method)
+		return
 	}
-	s.Require().NoError(err)
 	resp.AssertStatus(status)
 }
 

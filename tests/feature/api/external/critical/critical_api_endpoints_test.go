@@ -1,21 +1,18 @@
 package critical
 
 import (
-	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
-	"strings"
 	"testing"
 
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/google/uuid"
 	contractstestinghttp "github.com/goravel/framework/contracts/testing/http"
 	"github.com/goravel/framework/facades"
-	goravelTesting "github.com/goravel/framework/testing"
-	"github.com/stretchr/testify/suite"
 
 	"github.com/macrowallets/waas/app/http/middleware"
 	"github.com/macrowallets/waas/app/models"
+	"github.com/macrowallets/waas/tests/feature/support"
 	"github.com/macrowallets/waas/tests/feature/support/fixtures"
 )
 
@@ -24,7 +21,7 @@ import (
 // under both the legacy unsigned Bearer JWT scheme and the HMAC-required
 // signed scheme introduced by the `require_signature` claim.
 //
-// All requests hit the production Goravel router via s.Http(s.T()). Each
+// All requests hit the production Goravel router via s.External. Each
 // test seeds its own account + wallet + access_token row so tests are
 // isolated from one another.
 //
@@ -34,12 +31,11 @@ import (
 // chain adapter registration, and the chains-table seed fixtures, which
 // the per-package TestMain does not install.
 type criticalEndpointsSuite struct {
-	suite.Suite
-	goravelTesting.TestCase
+	support.HTTPSuite
 }
 
 func TestCritical_Endpoints_Suite(t *testing.T) {
-	suite.Run(t, new(criticalEndpointsSuite))
+	support.RunSuite(t, new(criticalEndpointsSuite))
 }
 
 func (s *criticalEndpointsSuite) SetupTest() {
@@ -138,32 +134,6 @@ func (s *criticalEndpointsSuite) mintSignedToken(label string) string {
 	return jwt
 }
 
-// signBody returns the hex-encoded HMAC-SHA256 of `body` keyed by the raw
-// JWT. This matches the scheme enforced by APITokenAuth when the token's
-// `require_signature` claim is true.
-func signBody(jwt, body string) string {
-	mac := hmac.New(sha256.New, []byte(jwt))
-	mac.Write([]byte(body))
-	return hex.EncodeToString(mac.Sum(nil))
-}
-
-// post dispatches a JSON POST against the production Goravel router and
-// returns the response. When signature is non-empty the X-Signature
-// header is attached.
-func (s *criticalEndpointsSuite) post(path, jwt, body, signature string) contractstestinghttp.Response {
-	s.T().Helper()
-
-	req := s.Http(s.T()).
-		WithHeader("Authorization", "Bearer "+jwt).
-		WithHeader("Content-Type", "application/json")
-	if signature != "" {
-		req = req.WithHeader("X-Signature", signature)
-	}
-	resp, err := req.Post(path, strings.NewReader(body))
-	s.Require().NoError(err)
-	return resp
-}
-
 // assertNoMiddlewareReject fails the test if the response body carries any
 // of the middleware-level reject strings. Used on "AcceptsRequest" cases
 // where the controller may still return 4xx/5xx due to unmocked chain
@@ -196,7 +166,7 @@ func (s *criticalEndpointsSuite) TestGenerateAddress_UnsignedToken_OK() {
 	walletID, jwt := s.seedAccountWallet(false, "gen-addr-unsigned")
 
 	body := `{"external_user_id":"user_unsigned","label":"test-addr"}`
-	s.post("/api/v1/wallets/"+walletID+"/addresses", jwt, body, "").
+	s.External("/api/v1/wallets/"+walletID+"/addresses", support.Token{Bearer: jwt}).Post(body).
 		AssertCreated().
 		AssertJson(map[string]any{
 			"external_user_id": "user_unsigned",
@@ -209,8 +179,7 @@ func (s *criticalEndpointsSuite) TestGenerateAddress_SignedToken_OK() {
 	walletID, jwt := s.seedAccountWallet(true, "gen-addr-signed")
 
 	body := `{"external_user_id":"user_signed","label":"test-addr"}`
-	sig := signBody(jwt, body)
-	s.post("/api/v1/wallets/"+walletID+"/addresses", jwt, body, sig).
+	s.External("/api/v1/wallets/"+walletID+"/addresses", support.Token{Bearer: jwt, Sign: support.Signer(jwt)}).Post(body).
 		AssertCreated().
 		AssertJson(map[string]any{
 			"external_user_id": "user_signed",
@@ -227,7 +196,7 @@ func (s *criticalEndpointsSuite) TestGenerateAddress_SignedTokenMissingSig_Code4
 	jwt := s.mintSignedToken("gen-addr-missing-sig")
 
 	body := `{"external_user_id":"user_missing_sig"}`
-	s.post("/api/v1/wallets/"+uuid.NewString()+"/addresses", jwt, body, "").
+	s.External("/api/v1/wallets/"+uuid.NewString()+"/addresses", support.Token{Bearer: jwt}).Post(body).
 		AssertStatus(401).
 		AssertJson(map[string]any{"error": map[string]any{
 			"code":    "invalid_signature",
@@ -250,7 +219,7 @@ func (s *criticalEndpointsSuite) TestConsolidate_UnsignedToken_AcceptsRequest() 
 	walletID, jwt := s.seedAccountWallet(false, "consolidate-unsigned")
 
 	body := `{"asset":"eth","passphrase":"test-pass-phrase-12345"}`
-	resp := s.post("/api/v1/wallets/"+walletID+"/consolidate", jwt, body, "")
+	resp := s.External("/api/v1/wallets/"+walletID+"/consolidate", support.Token{Bearer: jwt}).Post(body)
 	s.assertNoMiddlewareReject(resp)
 }
 
@@ -258,8 +227,7 @@ func (s *criticalEndpointsSuite) TestConsolidate_SignedToken_AcceptsRequest() {
 	walletID, jwt := s.seedAccountWallet(true, "consolidate-signed")
 
 	body := `{"asset":"eth","passphrase":"test-pass-phrase-12345"}`
-	sig := signBody(jwt, body)
-	resp := s.post("/api/v1/wallets/"+walletID+"/consolidate", jwt, body, sig)
+	resp := s.External("/api/v1/wallets/"+walletID+"/consolidate", support.Token{Bearer: jwt, Sign: support.Signer(jwt)}).Post(body)
 	s.assertNoMiddlewareReject(resp)
 }
 
@@ -267,7 +235,7 @@ func (s *criticalEndpointsSuite) TestConsolidate_SignedTokenMissingSig_Code401()
 	jwt := s.mintSignedToken("consolidate-missing-sig")
 
 	body := `{"asset":"eth","passphrase":"test-pass-phrase-12345"}`
-	s.post("/api/v1/wallets/"+uuid.NewString()+"/consolidate", jwt, body, "").
+	s.External("/api/v1/wallets/"+uuid.NewString()+"/consolidate", support.Token{Bearer: jwt}).Post(body).
 		AssertStatus(401).
 		AssertJson(map[string]any{"error": map[string]any{
 			"code":    "invalid_signature",
@@ -296,7 +264,7 @@ const critWithdrawalBody = `{"amount":"1","destination_address":"0x742d35Cc6634C
 func (s *criticalEndpointsSuite) TestCreateWithdrawal_UnsignedToken_AcceptsRequest() {
 	walletID, jwt := s.seedAccountWallet(false, "withdrawal-unsigned")
 
-	resp := s.post("/api/v1/wallets/"+walletID+"/withdrawals", jwt, critWithdrawalBody, "")
+	resp := s.External("/api/v1/wallets/"+walletID+"/withdrawals", support.Token{Bearer: jwt}).Post(critWithdrawalBody)
 	s.assertNoMiddlewareReject(resp)
 }
 
@@ -306,7 +274,7 @@ func (s *criticalEndpointsSuite) TestCreateWithdrawal_UnsignedToken_AcceptsReque
 func (s *criticalEndpointsSuite) TestCreate_Withdrawal_StringDailyCapReachesPassphrase() {
 	walletID, jwt := s.seedAccountWalletWithLimit(false, "withdrawal-string-cap", `{"daily_usd":"12.50"}`)
 
-	resp := s.post("/api/v1/wallets/"+walletID+"/withdrawals", jwt, critWithdrawalBody, "")
+	resp := s.External("/api/v1/wallets/"+walletID+"/withdrawals", support.Token{Bearer: jwt}).Post(critWithdrawalBody)
 	resp.AssertInternalServerError().AssertJson(map[string]any{"error": map[string]any{
 		"code":    "internal",
 		"message": "internal error",
@@ -321,15 +289,14 @@ func (s *criticalEndpointsSuite) TestCreate_Withdrawal_StringDailyCapReachesPass
 func (s *criticalEndpointsSuite) TestCreateWithdrawal_SignedToken_AcceptsRequest() {
 	walletID, jwt := s.seedAccountWallet(true, "withdrawal-signed")
 
-	sig := signBody(jwt, critWithdrawalBody)
-	resp := s.post("/api/v1/wallets/"+walletID+"/withdrawals", jwt, critWithdrawalBody, sig)
+	resp := s.External("/api/v1/wallets/"+walletID+"/withdrawals", support.Token{Bearer: jwt, Sign: support.Signer(jwt)}).Post(critWithdrawalBody)
 	s.assertNoMiddlewareReject(resp)
 }
 
 func (s *criticalEndpointsSuite) TestCreateWithdrawal_SignedTokenMissingSig_Code401() {
 	jwt := s.mintSignedToken("withdrawal-missing-sig")
 
-	s.post("/api/v1/wallets/"+uuid.NewString()+"/withdrawals", jwt, critWithdrawalBody, "").
+	s.External("/api/v1/wallets/"+uuid.NewString()+"/withdrawals", support.Token{Bearer: jwt}).Post(critWithdrawalBody).
 		AssertStatus(401).
 		AssertJson(map[string]any{"error": map[string]any{
 			"code":    "invalid_signature",

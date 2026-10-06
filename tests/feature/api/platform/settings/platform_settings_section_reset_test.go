@@ -8,13 +8,13 @@ import (
 
 	contractstesting "github.com/goravel/framework/contracts/testing/http"
 	"github.com/goravel/framework/facades"
-	"github.com/stretchr/testify/suite"
 
 	"github.com/google/uuid"
 
 	"github.com/macrowallets/waas/app/http/responses"
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/services/settings"
+	"github.com/macrowallets/waas/tests/feature/support"
 	"github.com/macrowallets/waas/tests/feature/support/testutil"
 )
 
@@ -31,7 +31,7 @@ type PlatformSettingsSectionResetTestSuite struct {
 }
 
 func TestPlatform_Settings_SectionResetSuite(t *testing.T) {
-	suite.Run(t, new(PlatformSettingsSectionResetTestSuite))
+	support.RunSuite(t, new(PlatformSettingsSectionResetTestSuite))
 }
 
 func (s *PlatformSettingsSectionResetTestSuite) SetupTest() {
@@ -285,8 +285,7 @@ func (s *PlatformSettingsSectionResetTestSuite) TestNon_Admin_OnAnUnknownSection
 	s.Equal("settings section not found", response["error"].(map[string]any)["message"])
 	s.Equal("stale-"+key, facades.Cache().GetString(key))
 
-	missing, err := s.Http(s.T()).Post("/v1/platform/settings/sections/mail/reset", strings.NewReader("{}"))
-	s.Require().NoError(err)
+	missing := s.Post("/v1/platform/settings/sections/mail/reset", support.Session{}, "{}")
 	missing.AssertUnauthorized()
 }
 
@@ -356,20 +355,13 @@ func (s *PlatformSettingsSectionResetTestSuite) resetParsed(token, section strin
 
 func (s *PlatformSettingsSectionResetTestSuite) postSection(token, section string) contractstesting.Response {
 	s.T().Helper()
-	resp, err := s.Http(s.T()).
-		WithHeader("Authorization", "Bearer "+token).
-		WithHeader("Content-Type", "application/json").
-		Post("/v1/platform/settings/sections/"+section+"/reset", strings.NewReader("{}"))
-	s.Require().NoError(err)
+	resp := s.Post("/v1/platform/settings/sections/"+section+"/reset", support.Session{AccessToken: token}, "{}")
 	return resp
 }
 
 func (s *PlatformSettingsSectionResetTestSuite) get(token, path string) contractstesting.Response {
 	s.T().Helper()
-	resp, err := s.Http(s.T()).
-		WithHeader("Authorization", "Bearer "+token).
-		Get(path)
-	s.Require().NoError(err)
+	resp := s.Get(path, support.Session{AccessToken: token})
 	return resp
 }
 

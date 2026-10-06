@@ -4,15 +4,14 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
-	"strings"
 	"testing"
 
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/google/uuid"
 	"github.com/goravel/framework/facades"
-	"github.com/stretchr/testify/suite"
 
 	"github.com/macrowallets/waas/app/models"
+	"github.com/macrowallets/waas/tests/feature/support"
 	"github.com/macrowallets/waas/tests/feature/support/fixtures"
 )
 
@@ -24,7 +23,7 @@ type TotpHolesTestSuite struct {
 }
 
 func TestTotp_Holes_Suite(t *testing.T) {
-	suite.Run(t, new(TotpHolesTestSuite))
+	support.RunSuite(t, new(TotpHolesTestSuite))
 }
 
 func (s *TotpHolesTestSuite) SetupTest() {
@@ -155,11 +154,8 @@ func (s *TotpHolesTestSuite) TestCode_Consumed_AtLoginIsRejectedForWithdrawal() 
 		`{"amount":"1","destination_address":"0x742d35Cc6634C0532925a3b844Bc9e7595f2bD12","passphrase":"test-passphrase-123","totp_code":%q}`,
 		code,
 	)
-	withdrawal := s.Http(s.T()).
-		WithHeader("Authorization", "Bearer "+session.AccessToken).
-		WithHeader("Content-Type", "application/json").
-		WithHeader("X-Account-Id", accountID.String())
-	withdrawalResp, err := withdrawal.Post("/v1/wallets/"+walletID.String()+"/withdrawals", strings.NewReader(body))
-	s.Require().NoError(err)
-	withdrawalResp.AssertStatus(401).AssertJson(map[string]any{"error": map[string]any{"code": "unauthorized", "message": "invalid 2FA code"}})
+	s.Post("/v1/wallets/"+walletID.String()+"/withdrawals", support.Session{
+		AccessToken: session.AccessToken,
+		AccountID:   accountID.String(),
+	}, body).AssertStatus(401).AssertJson(map[string]any{"error": map[string]any{"code": "unauthorized", "message": "invalid 2FA code"}})
 }

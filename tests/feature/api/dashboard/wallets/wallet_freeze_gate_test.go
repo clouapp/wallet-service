@@ -3,17 +3,15 @@ package wallets
 import (
 	"encoding/json"
 	"fmt"
-	"strings"
 	"testing"
 
 	"github.com/google/uuid"
 	contractstesting "github.com/goravel/framework/contracts/testing/http"
 	"github.com/goravel/framework/facades"
-	goravelTesting "github.com/goravel/framework/testing"
-	"github.com/stretchr/testify/suite"
 
 	"github.com/macrowallets/waas/app/models"
 	authsvc "github.com/macrowallets/waas/app/services/auth"
+	"github.com/macrowallets/waas/tests/feature/support"
 	"github.com/macrowallets/waas/tests/feature/support/fixtures"
 )
 
@@ -26,12 +24,11 @@ const walletFreezeGatePassword = "correct-horse-battery"
 // An account user with view_all_wallets false and no wallet membership is 404
 // from WalletContext.
 type WalletFreezeGateTestSuite struct {
-	suite.Suite
-	goravelTesting.TestCase
+	support.HTTPSuite
 }
 
 func TestWallet_Freeze_GateSuite(t *testing.T) {
-	suite.Run(t, new(WalletFreezeGateTestSuite))
+	support.RunSuite(t, new(WalletFreezeGateTestSuite))
 }
 
 func (s *WalletFreezeGateTestSuite) SetupTest() {
@@ -164,10 +161,7 @@ func (s *WalletFreezeGateTestSuite) login(userID uuid.UUID) string {
 	var email string
 	s.Require().NoError(facades.Orm().Query().Raw(`SELECT email FROM users WHERE id = ?`, userID).Scan(&email))
 	body := fmt.Sprintf(`{"email":%q,"password":%q}`, email, walletFreezeGatePassword)
-	resp, err := s.Http(s.T()).
-		WithHeader("Content-Type", "application/json").
-		Post("/v1/auth/login", strings.NewReader(body))
-	s.Require().NoError(err)
+	resp := s.Post("/v1/auth/login", support.Session{}, body)
 	resp.AssertStatus(200)
 	var parsed struct {
 		AccessToken string `json:"access_token"`
@@ -178,21 +172,12 @@ func (s *WalletFreezeGateTestSuite) login(userID uuid.UUID) string {
 }
 
 func (s *WalletFreezeGateTestSuite) freeze(token string, accountID, walletID uuid.UUID) contractstesting.Response {
-	resp, err := s.Http(s.T()).
-		WithHeader("Authorization", "Bearer "+token).
-		WithHeader("X-Account-Id", accountID.String()).
-		Post("/v1/wallets/"+walletID.String()+"/freeze", nil)
-	s.Require().NoError(err)
+	resp := s.Post("/v1/wallets/"+walletID.String()+"/freeze", support.Session{AccessToken: token, AccountID: accountID.String()}, nil)
 	return resp
 }
 
 func (s *WalletFreezeGateTestSuite) freezeBody(token string, accountID, walletID uuid.UUID, body string) contractstesting.Response {
-	resp, err := s.Http(s.T()).
-		WithHeader("Authorization", "Bearer "+token).
-		WithHeader("Content-Type", "application/json").
-		WithHeader("X-Account-Id", accountID.String()).
-		Post("/v1/wallets/"+walletID.String()+"/freeze", strings.NewReader(body))
-	s.Require().NoError(err)
+	resp := s.Post("/v1/wallets/"+walletID.String()+"/freeze", support.Session{AccessToken: token, AccountID: accountID.String()}, body)
 	return resp
 }
 

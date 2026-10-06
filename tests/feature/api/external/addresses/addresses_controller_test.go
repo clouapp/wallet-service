@@ -9,8 +9,6 @@ import (
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/google/uuid"
 	"github.com/goravel/framework/facades"
-	goravelTesting "github.com/goravel/framework/testing"
-	"github.com/stretchr/testify/suite"
 
 	"github.com/macrowallets/waas/app/models"
 	ctltestutil "github.com/macrowallets/waas/tests/feature/support"
@@ -24,12 +22,11 @@ import (
 // pattern. Wallet creation and mutation flows are covered elsewhere; this
 // suite is exclusively about the read / derive paths.
 type AddressesControllerTestSuite struct {
-	suite.Suite
-	goravelTesting.TestCase
+	ctltestutil.HTTPSuite
 }
 
 func TestAddresses_Controller_Suite(t *testing.T) {
-	suite.Run(t, new(AddressesControllerTestSuite))
+	ctltestutil.RunSuite(t, new(AddressesControllerTestSuite))
 }
 
 // seedAPIWalletForAccount inserts a Wallet bound to accountID with real
@@ -92,7 +89,7 @@ func (s *AddressesControllerTestSuite) TestGenerate_Address_Success() {
 	walletID := seedAPIWalletForAccount(s.T(), accountID, "eth", "gen-addr-success")
 
 	body := `{"external_user_id":"user_123","metadata":"{\"tier\":\"premium\"}"}`
-	resp := ctltestutil.Post(s.T(), &s.TestCase, "/api/v1/wallets/"+walletID+"/addresses", body, bearer, nil)
+	resp := s.External("/api/v1/wallets/"+walletID+"/addresses", ctltestutil.Token{Bearer: bearer}).Post(body)
 
 	resp.AssertCreated().AssertJson(map[string]any{
 		"external_user_id": "user_123",
@@ -115,14 +112,14 @@ func (s *AddressesControllerTestSuite) TestGenerate_Address_MultipleForSameUser(
 
 	body := `{"external_user_id":"user_multi"}`
 
-	resp1 := ctltestutil.Post(s.T(), &s.TestCase, "/api/v1/wallets/"+walletID+"/addresses", body, bearer, nil)
+	resp1 := s.External("/api/v1/wallets/"+walletID+"/addresses", ctltestutil.Token{Bearer: bearer}).Post(body)
 	resp1.AssertCreated()
 	j1, err := resp1.Json()
 	s.Require().NoError(err)
 	addr1, _ := j1["address"].(string)
 	s.Require().NotEmpty(addr1)
 
-	resp2 := ctltestutil.Post(s.T(), &s.TestCase, "/api/v1/wallets/"+walletID+"/addresses", body, bearer, nil)
+	resp2 := s.External("/api/v1/wallets/"+walletID+"/addresses", ctltestutil.Token{Bearer: bearer}).Post(body)
 	resp2.AssertCreated()
 	j2, err := resp2.Json()
 	s.Require().NoError(err)
@@ -141,7 +138,7 @@ func (s *AddressesControllerTestSuite) TestList_Wallet_Addresses() {
 	seedAddressForWallet(s.T(), wUUID, "eth", "0x"+uuid.NewString()[:16], "user1", 1)
 	seedAddressForWallet(s.T(), wUUID, "eth", "0x"+uuid.NewString()[:16], "user2", 2)
 
-	resp := ctltestutil.Get(s.T(), &s.TestCase, "/api/v1/wallets/"+walletID+"/addresses", bearer)
+	resp := s.External("/api/v1/wallets/"+walletID+"/addresses", ctltestutil.Token{Bearer: bearer}).Get()
 	resp.AssertOk()
 
 	content, err := resp.Content()
@@ -168,7 +165,7 @@ func (s *AddressesControllerTestSuite) TestLookup_Address_Success() {
 	address := "0x" + uuid.NewString()[:32]
 	seedAddressForWallet(s.T(), uuid.MustParse(walletID), "eth", address, "lookup_user", 1)
 
-	resp := ctltestutil.Get(s.T(), &s.TestCase, "/api/v1/addresses/"+address+"?chain=eth", bearer)
+	resp := s.External("/api/v1/addresses/"+address+"?chain=eth", ctltestutil.Token{Bearer: bearer}).Get()
 	resp.AssertOk().AssertJson(map[string]any{
 		"address":          address,
 		"external_user_id": "lookup_user",
@@ -180,8 +177,7 @@ func (s *AddressesControllerTestSuite) TestLookup_Address_NotFound() {
 	testutil.SeededTestDB(s.T())
 	_, bearer, _ := ctltestutil.SetupAPIAuth(s.T(), false)
 
-	ctltestutil.
-		Get(s.T(), &s.TestCase, "/api/v1/addresses/0xnonexistent?chain=eth", bearer).
+	s.External("/api/v1/addresses/0xnonexistent?chain=eth", ctltestutil.Token{Bearer: bearer}).Get().
 		AssertNotFound()
 }
 
@@ -195,7 +191,7 @@ func (s *AddressesControllerTestSuite) TestList_User_Addresses() {
 	seedAddressForWallet(s.T(), wUUID, "eth", "0x"+uuid.NewString()[:16], "target_user", 2)
 	seedAddressForWallet(s.T(), wUUID, "eth", "0x"+uuid.NewString()[:16], "other_user", 3)
 
-	resp := ctltestutil.Get(s.T(), &s.TestCase, "/api/v1/users/target_user/addresses", bearer)
+	resp := s.External("/api/v1/users/target_user/addresses", ctltestutil.Token{Bearer: bearer}).Get()
 	resp.AssertOk()
 
 	content, err := resp.Content()

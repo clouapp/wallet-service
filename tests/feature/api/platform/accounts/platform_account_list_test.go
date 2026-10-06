@@ -7,10 +7,10 @@ import (
 	"github.com/google/uuid"
 	contractstesting "github.com/goravel/framework/contracts/testing/http"
 	"github.com/goravel/framework/facades"
-	"github.com/stretchr/testify/suite"
 
 	"github.com/macrowallets/waas/app/http/responses"
 	"github.com/macrowallets/waas/app/models"
+	"github.com/macrowallets/waas/tests/feature/support"
 	"github.com/macrowallets/waas/tests/feature/support/testutil"
 )
 
@@ -21,7 +21,7 @@ type PlatformAccountListTestSuite struct {
 }
 
 func TestPlatform_Account_ListSuite(t *testing.T) {
-	suite.Run(t, new(PlatformAccountListTestSuite))
+	support.RunSuite(t, new(PlatformAccountListTestSuite))
 }
 
 func (s *PlatformAccountListTestSuite) SetupTest() {
@@ -99,8 +99,7 @@ func (s *PlatformAccountListTestSuite) TestA_Member_CannotListPlatformAccounts()
 	s.Equal(responses.CodeForbidden, body.Error.Code)
 	s.Equal("you do not have permission to view accounts", body.Error.Message)
 
-	anonymous, err := s.Http(s.T()).Get("/v1/platform/accounts")
-	s.Require().NoError(err)
+	anonymous := s.Get("/v1/platform/accounts", support.Session{})
 	anonymous.AssertUnauthorized()
 }
 
@@ -133,10 +132,7 @@ func (s *PlatformAccountListTestSuite) seedListedAccount(name, status, createdAt
 
 func (s *PlatformAccountListTestSuite) listAccounts(bearer, query string) contractstesting.Response {
 	s.T().Helper()
-	resp, err := s.Http(s.T()).
-		WithHeader("Authorization", "Bearer "+bearer).
-		Get("/v1/platform/accounts" + query)
-	s.Require().NoError(err)
+	resp := s.Get("/v1/platform/accounts"+query, support.Session{AccessToken: bearer})
 	return resp
 }
 

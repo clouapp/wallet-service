@@ -8,10 +8,10 @@ import (
 	"github.com/google/uuid"
 	contractstesting "github.com/goravel/framework/contracts/testing/http"
 	"github.com/goravel/framework/facades"
-	"github.com/stretchr/testify/suite"
 
 	"github.com/macrowallets/waas/app/http/responses"
 	"github.com/macrowallets/waas/app/models"
+	"github.com/macrowallets/waas/tests/feature/support"
 	"github.com/macrowallets/waas/tests/feature/support/testutil"
 )
 
@@ -23,7 +23,7 @@ type PlatformAccountOwnersTestSuite struct {
 }
 
 func TestPlatform_Account_OwnersSuite(t *testing.T) {
-	suite.Run(t, new(PlatformAccountOwnersTestSuite))
+	support.RunSuite(t, new(PlatformAccountOwnersTestSuite))
 }
 
 func (s *PlatformAccountOwnersTestSuite) SetupTest() {
@@ -163,10 +163,7 @@ func (s *PlatformAccountOwnersTestSuite) TestA_Member_CannotAttachAnOwner() {
 		"%"+person.ID.String()+"%",
 	))
 
-	anonymous, err := s.Http(s.T()).
-		WithHeader("Content-Type", "application/json").
-		Post("/v1/platform/accounts/"+accountID.String()+"/owners", strings.NewReader(`{"email":"`+person.Email+`"}`))
-	s.Require().NoError(err)
+	anonymous := s.Post("/v1/platform/accounts/"+accountID.String()+"/owners", support.Session{}, `{"email":"`+person.Email+`"}`)
 	anonymous.AssertUnauthorized()
 }
 
@@ -348,11 +345,7 @@ func (s *PlatformAccountOwnersTestSuite) postOwnerRaw(bearer string, accountID u
 
 func (s *PlatformAccountOwnersTestSuite) postOwnerPath(bearer, path, body string) contractstesting.Response {
 	s.T().Helper()
-	resp, err := s.Http(s.T()).
-		WithHeader("Authorization", "Bearer "+bearer).
-		WithHeader("Content-Type", "application/json").
-		Post(path, strings.NewReader(body))
-	s.Require().NoError(err)
+	resp := s.Post(path, support.Session{AccessToken: bearer}, body)
 	return resp
 }
 

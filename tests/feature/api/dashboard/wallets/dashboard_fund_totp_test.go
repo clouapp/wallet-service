@@ -3,20 +3,17 @@ package wallets
 import (
 	"encoding/json"
 	"fmt"
-	"io"
-	"strings"
 	"testing"
 	"time"
 
 	"github.com/google/uuid"
 	contractstesting "github.com/goravel/framework/contracts/testing/http"
 	"github.com/goravel/framework/facades"
-	goravelTesting "github.com/goravel/framework/testing"
 	"github.com/pquerna/otp/totp"
-	"github.com/stretchr/testify/suite"
 
 	"github.com/macrowallets/waas/app/models"
 	authsvc "github.com/macrowallets/waas/app/services/auth"
+	"github.com/macrowallets/waas/tests/feature/support"
 	"github.com/macrowallets/waas/tests/feature/support/fixtures"
 )
 
@@ -29,12 +26,11 @@ const (
 // changes: a user who already has TOTP on must send a code, a user who does
 // not still proceeds, and a refusal writes nothing.
 type DashboardFundTOTPSuite struct {
-	suite.Suite
-	goravelTesting.TestCase
+	support.HTTPSuite
 }
 
 func TestDashboard_Fund_TOTPSuite(t *testing.T) {
-	suite.Run(t, new(DashboardFundTOTPSuite))
+	support.RunSuite(t, new(DashboardFundTOTPSuite))
 }
 
 func (s *DashboardFundTOTPSuite) SetupTest() {
@@ -416,36 +412,25 @@ func (s *DashboardFundTOTPSuite) deleteWebhook(token string, accountID, walletID
 
 func (s *DashboardFundTOTPSuite) send(token string, accountID uuid.UUID, method, path, body string) contractstesting.Response {
 	s.T().Helper()
-	var payload io.Reader
+	session := support.Session{AccessToken: token, AccountID: accountID.String()}
+	var payload any
 	if body != "" {
-		payload = strings.NewReader(body)
+		payload = body
 	}
-	request := s.Http(s.T()).
-		WithHeader("Authorization", "Bearer "+token).
-		WithHeader("X-Account-Id", accountID.String()).
-		WithHeader("Content-Type", "application/json")
-	var (
-		resp contractstesting.Response
-		err  error
-	)
 	switch method {
 	case "POST":
-		resp, err = request.Post(path, payload)
+		return s.Post(path, session, payload)
 	case "DELETE":
-		resp, err = request.Delete(path, payload)
+		return s.Delete(path, session, payload)
 	default:
 		s.FailNow("unsupported method")
+		return nil
 	}
-	s.Require().NoError(err)
-	return resp
 }
 
 func (s *DashboardFundTOTPSuite) postJSON(path, body string) contractstesting.Response {
 	s.T().Helper()
-	resp, err := s.Http(s.T()).
-		WithHeader("Content-Type", "application/json").
-		Post(path, strings.NewReader(body))
-	s.Require().NoError(err)
+	resp := s.Post(path, support.Session{}, body)
 	return resp
 }
 

@@ -13,11 +13,10 @@ import (
 	"github.com/google/uuid"
 	contractstesting "github.com/goravel/framework/contracts/testing/http"
 	"github.com/goravel/framework/facades"
-	goravelTesting "github.com/goravel/framework/testing"
-	"github.com/stretchr/testify/suite"
 
 	"github.com/macrowallets/waas/app/models"
 	authsvc "github.com/macrowallets/waas/app/services/auth"
+	"github.com/macrowallets/waas/tests/feature/support"
 	"github.com/macrowallets/waas/tests/feature/support/fixtures"
 )
 
@@ -30,12 +29,11 @@ const walletWebhookCreateGatePassword = "correct-horse-battery"
 // a webhook, and so may account role owner or admin. Auditor, user, and the
 // other wallet roles are refused before a webhook is written, tested, or removed.
 type WalletWebhookCreateGateTestSuite struct {
-	suite.Suite
-	goravelTesting.TestCase
+	support.HTTPSuite
 }
 
 func TestWallet_Webhook_CreateGateSuite(t *testing.T) {
-	suite.Run(t, new(WalletWebhookCreateGateTestSuite))
+	support.RunSuite(t, new(WalletWebhookCreateGateTestSuite))
 }
 
 func (s *WalletWebhookCreateGateTestSuite) SetupTest() {
@@ -272,10 +270,7 @@ func (s *WalletWebhookCreateGateTestSuite) login(userID uuid.UUID) string {
 	var email string
 	s.Require().NoError(facades.Orm().Query().Raw(`SELECT email FROM users WHERE id = ?`, userID).Scan(&email))
 	body := fmt.Sprintf(`{"email":%q,"password":%q}`, email, walletWebhookCreateGatePassword)
-	resp, err := s.Http(s.T()).
-		WithHeader("Content-Type", "application/json").
-		Post("/v1/auth/login", strings.NewReader(body))
-	s.Require().NoError(err)
+	resp := s.Post("/v1/auth/login", support.Session{}, body)
 	resp.AssertStatus(200)
 	var parsed struct {
 		AccessToken string `json:"access_token"`
@@ -305,30 +300,17 @@ func (s *WalletWebhookCreateGateTestSuite) createdWebhookID(resp contractstestin
 }
 
 func (s *WalletWebhookCreateGateTestSuite) testWebhook(token string, accountID, walletID, webhookID uuid.UUID) contractstesting.Response {
-	resp, err := s.Http(s.T()).
-		WithHeader("Authorization", "Bearer "+token).
-		WithHeader("X-Account-Id", accountID.String()).
-		Post("/v1/wallets/"+walletID.String()+"/webhooks/"+webhookID.String()+"/test", nil)
-	s.Require().NoError(err)
+	resp := s.Post("/v1/wallets/"+walletID.String()+"/webhooks/"+webhookID.String()+"/test", support.Session{AccessToken: token, AccountID: accountID.String()}, nil)
 	return resp
 }
 
 func (s *WalletWebhookCreateGateTestSuite) deleteWebhook(token string, accountID, walletID, webhookID uuid.UUID) contractstesting.Response {
-	resp, err := s.Http(s.T()).
-		WithHeader("Authorization", "Bearer "+token).
-		WithHeader("X-Account-Id", accountID.String()).
-		Delete("/v1/wallets/"+walletID.String()+"/webhooks/"+webhookID.String(), nil)
-	s.Require().NoError(err)
+	resp := s.Delete("/v1/wallets/"+walletID.String()+"/webhooks/"+webhookID.String(), support.Session{AccessToken: token, AccountID: accountID.String()}, nil)
 	return resp
 }
 
 func (s *WalletWebhookCreateGateTestSuite) postWebhook(token string, accountID, walletID uuid.UUID, body string) contractstesting.Response {
-	resp, err := s.Http(s.T()).
-		WithHeader("Authorization", "Bearer "+token).
-		WithHeader("X-Account-Id", accountID.String()).
-		WithHeader("Content-Type", "application/json").
-		Post("/v1/wallets/"+walletID.String()+"/webhooks", strings.NewReader(body))
-	s.Require().NoError(err)
+	resp := s.Post("/v1/wallets/"+walletID.String()+"/webhooks", support.Session{AccessToken: token, AccountID: accountID.String()}, body)
 	return resp
 }
 

@@ -3,17 +3,15 @@ package accounts
 import (
 	"encoding/json"
 	"fmt"
-	"strings"
 	"testing"
 
 	"github.com/google/uuid"
 	contractstesting "github.com/goravel/framework/contracts/testing/http"
 	"github.com/goravel/framework/facades"
-	goravelTesting "github.com/goravel/framework/testing"
-	"github.com/stretchr/testify/suite"
 
 	"github.com/macrowallets/waas/app/models"
 	authsvc "github.com/macrowallets/waas/app/services/auth"
+	"github.com/macrowallets/waas/tests/feature/support"
 	"github.com/macrowallets/waas/tests/feature/support/fixtures"
 )
 
@@ -23,12 +21,11 @@ const accountFreezeGatePassword = "correct-horse-battery"
 // through Can(account.lifecycle). The owner may freeze the account. Admin,
 // auditor and user are refused before the status is written.
 type AccountFreezeGateTestSuite struct {
-	suite.Suite
-	goravelTesting.TestCase
+	support.HTTPSuite
 }
 
 func TestAccount_Freeze_GateSuite(t *testing.T) {
-	suite.Run(t, new(AccountFreezeGateTestSuite))
+	support.RunSuite(t, new(AccountFreezeGateTestSuite))
 }
 
 func (s *AccountFreezeGateTestSuite) SetupTest() {
@@ -67,10 +64,7 @@ func (s *AccountFreezeGateTestSuite) login(role string, accountID uuid.UUID) str
 	}))
 
 	body := fmt.Sprintf(`{"email":%q,"password":%q}`, email, accountFreezeGatePassword)
-	resp, err := s.Http(s.T()).
-		WithHeader("Content-Type", "application/json").
-		Post("/v1/auth/login", strings.NewReader(body))
-	s.Require().NoError(err)
+	resp := s.Post("/v1/auth/login", support.Session{}, body)
 	resp.AssertStatus(200)
 	content, err := resp.Content()
 	s.Require().NoError(err)
@@ -83,10 +77,7 @@ func (s *AccountFreezeGateTestSuite) login(role string, accountID uuid.UUID) str
 }
 
 func (s *AccountFreezeGateTestSuite) freeze(token string, accountID uuid.UUID) contractstesting.Response {
-	resp, err := s.Http(s.T()).
-		WithHeader("Authorization", "Bearer "+token).
-		Post("/v1/accounts/"+accountID.String()+"/freeze", nil)
-	s.Require().NoError(err)
+	resp := s.Post("/v1/accounts/"+accountID.String()+"/freeze", support.Session{AccessToken: token}, nil)
 	return resp
 }
 

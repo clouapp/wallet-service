@@ -10,26 +10,24 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/goravel/framework/facades"
-	goravelTesting "github.com/goravel/framework/testing"
-	"github.com/stretchr/testify/suite"
 
 	"github.com/macrowallets/waas/app/container"
 	"github.com/macrowallets/waas/app/models"
 	authsvc "github.com/macrowallets/waas/app/services/auth"
 	"github.com/macrowallets/waas/app/services/settings"
 	"github.com/macrowallets/waas/app/services/sweep"
+	"github.com/macrowallets/waas/tests/feature/support"
 	"github.com/macrowallets/waas/tests/feature/support/fixtures"
 )
 
 const accountSettingsPassword = "correct-horse-battery"
 
 type accountSettingsSuite struct {
-	suite.Suite
-	goravelTesting.TestCase
+	support.HTTPSuite
 }
 
 func TestAccount_Settings_Suite(t *testing.T) {
-	suite.Run(t, new(accountSettingsSuite))
+	support.RunSuite(t, new(accountSettingsSuite))
 }
 
 func (s *accountSettingsSuite) SetupTest() {
@@ -947,10 +945,7 @@ func (s *accountSettingsSuite) TestAn_Account_SaveRecordsAccountScopeAndValueSet
 
 func (s *accountSettingsSuite) activityPage(token string, accountID uuid.UUID) map[string]any {
 	s.T().Helper()
-	resp, err := s.Http(s.T()).
-		WithHeader("Authorization", "Bearer "+token).
-		Get("/v1/accounts/" + accountID.String() + "/activity")
-	s.Require().NoError(err)
+	resp := s.Get("/v1/accounts/"+accountID.String()+"/activity", support.Session{AccessToken: token})
 	resp.AssertOk()
 	content, err := resp.Content()
 	s.Require().NoError(err)
@@ -1016,10 +1011,7 @@ func (s *accountSettingsSuite) user(role string) (uuid.UUID, string) {
 func (s *accountSettingsSuite) login(email string) string {
 	s.T().Helper()
 	body := fmt.Sprintf(`{"email":%q,"password":%q}`, email, accountSettingsPassword)
-	resp, err := s.Http(s.T()).
-		WithHeader("Content-Type", "application/json").
-		Post("/v1/auth/login", strings.NewReader(body))
-	s.Require().NoError(err)
+	resp := s.Post("/v1/auth/login", support.Session{}, body)
 	resp.AssertStatus(200)
 	content, err := resp.Content()
 	s.Require().NoError(err)
@@ -1033,10 +1025,7 @@ func (s *accountSettingsSuite) login(email string) string {
 
 func (s *accountSettingsSuite) getGroup(token string, accountID uuid.UUID, group string, status int) string {
 	s.T().Helper()
-	resp, err := s.Http(s.T()).
-		WithHeader("Authorization", "Bearer "+token).
-		Get("/v1/accounts/" + accountID.String() + "/settings/" + group)
-	s.Require().NoError(err)
+	resp := s.Get("/v1/accounts/"+accountID.String()+"/settings/"+group, support.Session{AccessToken: token})
 	resp.AssertStatus(status)
 	content, err := resp.Content()
 	s.Require().NoError(err)
@@ -1059,11 +1048,7 @@ func (s *accountSettingsSuite) put(token string, accountID uuid.UUID, group, bod
 
 func (s *accountSettingsSuite) putRaw(token string, accountID uuid.UUID, group, body string, status int) string {
 	s.T().Helper()
-	resp, err := s.Http(s.T()).
-		WithHeader("Authorization", "Bearer "+token).
-		WithHeader("Content-Type", "application/json").
-		Put("/v1/accounts/"+accountID.String()+"/settings/"+group, strings.NewReader(body))
-	s.Require().NoError(err)
+	resp := s.Put("/v1/accounts/"+accountID.String()+"/settings/"+group, support.Session{AccessToken: token}, body)
 	resp.AssertStatus(status)
 	content, err := resp.Content()
 	s.Require().NoError(err)
@@ -1092,10 +1077,7 @@ func (s *accountSettingsSuite) groupField(body, key string) map[string]any {
 
 func (s *accountSettingsSuite) get(token string, accountID uuid.UUID, status int) string {
 	s.T().Helper()
-	resp, err := s.Http(s.T()).
-		WithHeader("Authorization", "Bearer "+token).
-		Get("/v1/accounts/" + accountID.String() + "/settings")
-	s.Require().NoError(err)
+	resp := s.Get("/v1/accounts/"+accountID.String()+"/settings", support.Session{AccessToken: token})
 	resp.AssertStatus(status)
 	content, err := resp.Content()
 	s.Require().NoError(err)
@@ -1112,11 +1094,7 @@ func (s *accountSettingsSuite) patch(token string, accountID uuid.UUID, group, b
 
 func (s *accountSettingsSuite) patchRaw(token string, accountID uuid.UUID, group, body string, status int) string {
 	s.T().Helper()
-	resp, err := s.Http(s.T()).
-		WithHeader("Authorization", "Bearer "+token).
-		WithHeader("Content-Type", "application/json").
-		Patch("/v1/accounts/"+accountID.String()+"/settings/"+group, strings.NewReader(body))
-	s.Require().NoError(err)
+	resp := s.Patch("/v1/accounts/"+accountID.String()+"/settings/"+group, support.Session{AccessToken: token}, body)
 	resp.AssertStatus(status)
 	content, err := resp.Content()
 	s.Require().NoError(err)
@@ -1129,11 +1107,7 @@ func accountSettingsCacheKey(accountID uuid.UUID, group string) string {
 
 func (s *accountSettingsSuite) flush(token string, accountID uuid.UUID, section string, status int) string {
 	s.T().Helper()
-	resp, err := s.Http(s.T()).
-		WithHeader("Authorization", "Bearer "+token).
-		WithHeader("Content-Type", "application/json").
-		Post("/v1/accounts/"+accountID.String()+"/settings/sections/"+section+"/cache", strings.NewReader("{}"))
-	s.Require().NoError(err)
+	resp := s.Post("/v1/accounts/"+accountID.String()+"/settings/sections/"+section+"/cache", support.Session{AccessToken: token}, "{}")
 	resp.AssertStatus(status)
 	content, err := resp.Content()
 	s.Require().NoError(err)
@@ -1149,11 +1123,7 @@ func (s *accountSettingsSuite) flushParsed(token string, accountID uuid.UUID, se
 
 func (s *accountSettingsSuite) reset(token string, accountID uuid.UUID, section string, status int) string {
 	s.T().Helper()
-	resp, err := s.Http(s.T()).
-		WithHeader("Authorization", "Bearer "+token).
-		WithHeader("Content-Type", "application/json").
-		Post("/v1/accounts/"+accountID.String()+"/settings/sections/"+section+"/reset", strings.NewReader("{}"))
-	s.Require().NoError(err)
+	resp := s.Post("/v1/accounts/"+accountID.String()+"/settings/sections/"+section+"/reset", support.Session{AccessToken: token}, "{}")
 	resp.AssertStatus(status)
 	content, err := resp.Content()
 	s.Require().NoError(err)

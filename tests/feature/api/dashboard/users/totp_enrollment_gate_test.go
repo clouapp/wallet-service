@@ -5,20 +5,18 @@ import (
 	"fmt"
 	"net/http"
 	"reflect"
-	"strings"
 	"testing"
 	"unsafe"
 
 	"github.com/google/uuid"
 	contractstestinghttp "github.com/goravel/framework/contracts/testing/http"
 	"github.com/goravel/framework/facades"
-	goravelTesting "github.com/goravel/framework/testing"
-	"github.com/stretchr/testify/suite"
 
 	"github.com/macrowallets/waas/app/http/middleware"
 	"github.com/macrowallets/waas/app/models"
 	authsvc "github.com/macrowallets/waas/app/services/auth"
 	"github.com/macrowallets/waas/app/services/features"
+	"github.com/macrowallets/waas/tests/feature/support"
 	"github.com/macrowallets/waas/tests/feature/support/fixtures"
 )
 
@@ -30,12 +28,11 @@ const totpEnrollmentPassword = "correct-horse-battery"
 // row stays off. Login and /v1/users/me/totp stay open. The suite never logs
 // tokens or TOTP material.
 type totpEnrollmentSuite struct {
-	suite.Suite
-	goravelTesting.TestCase
+	support.HTTPSuite
 }
 
 func TestTotpEnrollmentGate_TOTP_Enrollment(t *testing.T) {
-	suite.Run(t, new(totpEnrollmentSuite))
+	support.RunSuite(t, new(totpEnrollmentSuite))
 }
 
 func (s *totpEnrollmentSuite) SetupTest() {
@@ -178,24 +175,12 @@ func (s *totpEnrollmentSuite) getChains(token string, accountID uuid.UUID) contr
 
 func (s *totpEnrollmentSuite) get(token, path, accountID string) contractstestinghttp.Response {
 	s.T().Helper()
-	request := s.Http(s.T()).WithHeader("Authorization", "Bearer "+token)
-	if accountID != "" {
-		request = request.WithHeader("X-Account-Id", accountID)
-	}
-	response, err := request.Get(path)
-	s.Require().NoError(err)
-	return response
+	return s.Get(path, support.Session{AccessToken: token, AccountID: accountID})
 }
 
 func (s *totpEnrollmentSuite) post(token, path, body string) contractstestinghttp.Response {
 	s.T().Helper()
-	request := s.Http(s.T()).WithHeader("Content-Type", "application/json")
-	if token != "" {
-		request = request.WithHeader("Authorization", "Bearer "+token)
-	}
-	response, err := request.Post(path, strings.NewReader(body))
-	s.Require().NoError(err)
-	return response
+	return s.Post(path, support.Session{AccessToken: token}, body)
 }
 
 func (s *totpEnrollmentSuite) patchFlag(_ string, accountID uuid.UUID, enabled bool) {
@@ -220,11 +205,7 @@ func (s *totpEnrollmentSuite) patchSettings(token string, accountID uuid.UUID, b
 
 func (s *totpEnrollmentSuite) patch(token, path, body string) contractstestinghttp.Response {
 	s.T().Helper()
-	response, err := s.Http(s.T()).
-		WithHeader("Authorization", "Bearer "+token).
-		WithHeader("Content-Type", "application/json").
-		Patch(path, strings.NewReader(body))
-	s.Require().NoError(err)
+	response := s.Patch(path, support.Session{AccessToken: token}, body)
 	return response
 }
 

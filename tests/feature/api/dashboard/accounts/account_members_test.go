@@ -10,24 +10,22 @@ import (
 	"github.com/google/uuid"
 	contractstesting "github.com/goravel/framework/contracts/testing/http"
 	"github.com/goravel/framework/facades"
-	goravelTesting "github.com/goravel/framework/testing"
-	"github.com/stretchr/testify/suite"
 
 	"github.com/macrowallets/waas/app/models"
 	accountsvc "github.com/macrowallets/waas/app/services/account"
 	authsvc "github.com/macrowallets/waas/app/services/auth"
+	"github.com/macrowallets/waas/tests/feature/support"
 	"github.com/macrowallets/waas/tests/feature/support/fixtures"
 )
 
 const membersTestPassword = "correct-horse-battery"
 
 type AccountMembersTestSuite struct {
-	suite.Suite
-	goravelTesting.TestCase
+	support.HTTPSuite
 }
 
 func TestAccount_Members_Suite(t *testing.T) {
-	suite.Run(t, new(AccountMembersTestSuite))
+	support.RunSuite(t, new(AccountMembersTestSuite))
 }
 
 const membersFrontendURL = "https://wallet.example"
@@ -61,10 +59,7 @@ func (s *AccountMembersTestSuite) loginUser(role, status string, accountID uuid.
 
 func (s *AccountMembersTestSuite) login(email string) string {
 	body := fmt.Sprintf(`{"email":%q,"password":%q}`, email, membersTestPassword)
-	resp, err := s.Http(s.T()).
-		WithHeader("Content-Type", "application/json").
-		Post("/v1/auth/login", strings.NewReader(body))
-	s.Require().NoError(err)
+	resp := s.Post("/v1/auth/login", support.Session{}, body)
 	resp.AssertStatus(200)
 	content, err := resp.Content()
 	s.Require().NoError(err)
@@ -104,27 +99,17 @@ func (s *AccountMembersTestSuite) tokenCount(accountID, createdBy uuid.UUID) int
 }
 
 func (s *AccountMembersTestSuite) patchMember(token string, accountID, userID uuid.UUID, body string) contractstesting.Response {
-	resp, err := s.Http(s.T()).
-		WithHeader("Authorization", "Bearer "+token).
-		WithHeader("Content-Type", "application/json").
-		Patch("/v1/accounts/"+accountID.String()+"/users/"+userID.String(), strings.NewReader(body))
-	s.Require().NoError(err)
+	resp := s.Patch("/v1/accounts/"+accountID.String()+"/users/"+userID.String(), support.Session{AccessToken: token}, body)
 	return resp
 }
 
 func (s *AccountMembersTestSuite) getUsers(token string, accountID uuid.UUID) contractstesting.Response {
-	resp, err := s.Http(s.T()).
-		WithHeader("Authorization", "Bearer "+token).
-		Get("/v1/accounts/" + accountID.String() + "/users")
-	s.Require().NoError(err)
+	resp := s.Get("/v1/accounts/"+accountID.String()+"/users", support.Session{AccessToken: token})
 	return resp
 }
 
 func (s *AccountMembersTestSuite) getAccount(token string, accountID uuid.UUID) contractstesting.Response {
-	resp, err := s.Http(s.T()).
-		WithHeader("Authorization", "Bearer "+token).
-		Get("/v1/accounts/" + accountID.String())
-	s.Require().NoError(err)
+	resp := s.Get("/v1/accounts/"+accountID.String(), support.Session{AccessToken: token})
 	return resp
 }
 
@@ -165,10 +150,7 @@ func (s *AccountMembersTestSuite) TestUsers_Read_FollowsTheAccountRole() {
 }
 
 func (s *AccountMembersTestSuite) getInvites(token string, accountID uuid.UUID) contractstesting.Response {
-	resp, err := s.Http(s.T()).
-		WithHeader("Authorization", "Bearer "+token).
-		Get("/v1/accounts/" + accountID.String() + "/invites")
-	s.Require().NoError(err)
+	resp := s.Get("/v1/accounts/"+accountID.String()+"/invites", support.Session{AccessToken: token})
 	return resp
 }
 
@@ -204,10 +186,7 @@ func (s *AccountMembersTestSuite) inviteExpiresEpoch(id uuid.UUID) int64 {
 }
 
 func (s *AccountMembersTestSuite) postResend(token string, accountID, inviteID uuid.UUID) contractstesting.Response {
-	resp, err := s.Http(s.T()).
-		WithHeader("Authorization", "Bearer "+token).
-		Post("/v1/accounts/"+accountID.String()+"/invites/"+inviteID.String()+"/resend", strings.NewReader(""))
-	s.Require().NoError(err)
+	resp := s.Post("/v1/accounts/"+accountID.String()+"/invites/"+inviteID.String()+"/resend", support.Session{AccessToken: token}, "")
 	return resp
 }
 
@@ -250,11 +229,7 @@ func (s *AccountMembersTestSuite) TestMissing_Account_IsNotFoundBeforeInviteList
 }
 
 func (s *AccountMembersTestSuite) postInvite(token string, accountID uuid.UUID, body string) contractstesting.Response {
-	resp, err := s.Http(s.T()).
-		WithHeader("Authorization", "Bearer "+token).
-		WithHeader("Content-Type", "application/json").
-		Post("/v1/accounts/"+accountID.String()+"/invites", strings.NewReader(body))
-	s.Require().NoError(err)
+	resp := s.Post("/v1/accounts/"+accountID.String()+"/invites", support.Session{AccessToken: token}, body)
 	return resp
 }
 
@@ -319,11 +294,7 @@ func objectKeys(content string) []string {
 }
 
 func (s *AccountMembersTestSuite) postAccountUser(token string, accountID uuid.UUID, body string) contractstesting.Response {
-	resp, err := s.Http(s.T()).
-		WithHeader("Authorization", "Bearer "+token).
-		WithHeader("Content-Type", "application/json").
-		Post("/v1/accounts/"+accountID.String()+"/users", strings.NewReader(body))
-	s.Require().NoError(err)
+	resp := s.Post("/v1/accounts/"+accountID.String()+"/users", support.Session{AccessToken: token}, body)
 	return resp
 }
 
@@ -619,10 +590,7 @@ func (s *AccountMembersTestSuite) TestRemove_Revokes_TokensCreatedByTheMember() 
 	s.insertToken(accountID, member.id, "member-token")
 	s.insertToken(accountID, owner.id, "owner-token")
 
-	resp, err := s.Http(s.T()).
-		WithHeader("Authorization", "Bearer "+owner.token).
-		Delete("/v1/accounts/"+accountID.String()+"/users/"+member.id.String(), nil)
-	s.Require().NoError(err)
+	resp := s.Delete("/v1/accounts/"+accountID.String()+"/users/"+member.id.String(), support.Session{AccessToken: owner.token}, nil)
 	resp.AssertNoContent()
 
 	s.Equal(int64(0), s.tokenCount(accountID, member.id))
@@ -655,10 +623,7 @@ func (s *AccountMembersTestSuite) TestResend_Invite_RotatesTheTokenForUsersWrite
 	s.Contains(missingBody, `"code":"not_found"`)
 	s.NotContains(missingBody, `"message":"forbidden"`)
 
-	invalidID, err := s.Http(s.T()).
-		WithHeader("Authorization", "Bearer "+owner.token).
-		Post("/v1/accounts/"+accountID.String()+"/invites/not-a-uuid/resend", strings.NewReader(""))
-	s.Require().NoError(err)
+	invalidID := s.Post("/v1/accounts/"+accountID.String()+"/invites/not-a-uuid/resend", support.Session{AccessToken: owner.token}, "")
 	invalidID.AssertStatus(400)
 
 	unknown := s.postResend(owner.token, accountID, uuid.New())
@@ -682,8 +647,7 @@ func (s *AccountMembersTestSuite) TestResend_Invite_RotatesTheTokenForUsersWrite
 	s.Equal(models.AccountRoleAuditor, s.storedInviteRole(inviteID))
 	s.Equal(int64(0), s.countActivity(`SELECT count(*) FROM account_activity WHERE action = 'member.invited' AND account_id = ?`, accountID))
 
-	preview, err := s.Http(s.T()).Get("/v1/auth/invites/" + rawToken)
-	s.Require().NoError(err)
+	preview := s.Get("/v1/auth/invites/"+rawToken, support.Session{})
 	preview.AssertNotFound()
 
 	again := s.postResend(admin.token, accountID, inviteID)
@@ -726,10 +690,7 @@ func (s *AccountMembersTestSuite) TestDelete_Invite_RevokesForUsersWrite() {
 	s.Contains(missingBody, `"code":"not_found"`)
 	s.NotContains(missingBody, `"message":"forbidden"`)
 
-	invalidID, err := s.Http(s.T()).
-		WithHeader("Authorization", "Bearer "+owner.token).
-		Delete("/v1/accounts/"+accountID.String()+"/invites/not-a-uuid", nil)
-	s.Require().NoError(err)
+	invalidID := s.Delete("/v1/accounts/"+accountID.String()+"/invites/not-a-uuid", support.Session{AccessToken: owner.token}, nil)
 	invalidID.AssertStatus(400)
 
 	unknown := s.deleteInvite(owner.token, accountID, uuid.New())
@@ -757,8 +718,7 @@ func (s *AccountMembersTestSuite) TestDelete_Invite_RevokesForUsersWrite() {
 	revokedAt := s.countActivity(`SELECT EXTRACT(EPOCH FROM revoked_at)::bigint FROM account_invites WHERE id = ?`, inviteID)
 	s.NotZero(revokedAt)
 
-	preview, err := s.Http(s.T()).Get("/v1/auth/invites/" + rawToken)
-	s.Require().NoError(err)
+	preview := s.Get("/v1/auth/invites/"+rawToken, support.Session{})
 	preview.AssertNotFound()
 
 	props := s.activityText(
@@ -802,19 +762,13 @@ func (s *AccountMembersTestSuite) TestMissing_Account_ChildIs404BeforeUsersWrite
 	user := s.loginUser("user", models.MembershipStatusActive, accountID)
 	missing := uuid.New()
 
-	deleted, err := s.Http(s.T()).
-		WithHeader("Authorization", "Bearer "+user.token).
-		Delete("/v1/accounts/"+accountID.String()+"/users/"+missing.String(), nil)
-	s.Require().NoError(err)
+	deleted := s.Delete("/v1/accounts/"+accountID.String()+"/users/"+missing.String(), support.Session{AccessToken: user.token}, nil)
 	deleted.AssertNotFound()
 	deletedBody, err := deleted.Content()
 	s.Require().NoError(err)
 	s.Contains(deletedBody, "member not found")
 
-	revoked, err := s.Http(s.T()).
-		WithHeader("Authorization", "Bearer "+user.token).
-		Delete("/v1/accounts/"+accountID.String()+"/tokens/"+missing.String(), nil)
-	s.Require().NoError(err)
+	revoked := s.Delete("/v1/accounts/"+accountID.String()+"/tokens/"+missing.String(), support.Session{AccessToken: user.token}, nil)
 	revoked.AssertNotFound()
 	revokedBody, err := revoked.Content()
 	s.Require().NoError(err)
@@ -834,10 +788,7 @@ func (s *AccountMembersTestSuite) TestMissing_Account_ChildIs404BeforeUsersWrite
 }
 
 func (s *AccountMembersTestSuite) deleteInvite(token string, accountID, inviteID uuid.UUID) contractstesting.Response {
-	resp, err := s.Http(s.T()).
-		WithHeader("Authorization", "Bearer "+token).
-		Delete("/v1/accounts/"+accountID.String()+"/invites/"+inviteID.String(), nil)
-	s.Require().NoError(err)
+	resp := s.Delete("/v1/accounts/"+accountID.String()+"/invites/"+inviteID.String(), support.Session{AccessToken: token}, nil)
 	return resp
 }
 

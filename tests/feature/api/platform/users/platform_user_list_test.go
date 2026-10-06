@@ -8,9 +8,9 @@ import (
 	"github.com/google/uuid"
 	contractstesting "github.com/goravel/framework/contracts/testing/http"
 	"github.com/goravel/framework/facades"
-	"github.com/stretchr/testify/suite"
 
 	"github.com/macrowallets/waas/app/http/responses"
+	"github.com/macrowallets/waas/tests/feature/support"
 	"github.com/macrowallets/waas/tests/feature/support/testutil"
 )
 
@@ -29,7 +29,7 @@ type PlatformUserListTestSuite struct {
 }
 
 func TestPlatform_User_ListSuite(t *testing.T) {
-	suite.Run(t, new(PlatformUserListTestSuite))
+	support.RunSuite(t, new(PlatformUserListTestSuite))
 }
 
 func (s *PlatformUserListTestSuite) SetupTest() {
@@ -110,8 +110,7 @@ func (s *PlatformUserListTestSuite) TestA_Member_CannotListPlatformUsers() {
 	s.Equal(responses.CodeForbidden, body.Error.Code)
 	s.Equal("you do not have permission to view users", body.Error.Message)
 
-	anonymous, err := s.Http(s.T()).Get("/v1/platform/users")
-	s.Require().NoError(err)
+	anonymous := s.Get("/v1/platform/users", support.Session{})
 	anonymous.AssertUnauthorized()
 }
 
@@ -172,10 +171,7 @@ func (s *PlatformUserListTestSuite) plantSecrets(id uuid.UUID) {
 
 func (s *PlatformUserListTestSuite) listUsers(bearer, query string) contractstesting.Response {
 	s.T().Helper()
-	resp, err := s.Http(s.T()).
-		WithHeader("Authorization", "Bearer "+bearer).
-		Get("/v1/platform/users" + query)
-	s.Require().NoError(err)
+	resp := s.Get("/v1/platform/users"+query, support.Session{AccessToken: bearer})
 	return resp
 }
 

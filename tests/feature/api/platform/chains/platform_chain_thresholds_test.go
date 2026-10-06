@@ -2,17 +2,16 @@ package chains
 
 import (
 	"net/http"
-	"strings"
 	"testing"
 
 	"github.com/google/uuid"
 	contractstesting "github.com/goravel/framework/contracts/testing/http"
 	"github.com/goravel/framework/facades"
 	"github.com/shopspring/decimal"
-	"github.com/stretchr/testify/suite"
 
 	"github.com/macrowallets/waas/app/http/responses"
 	"github.com/macrowallets/waas/app/models"
+	"github.com/macrowallets/waas/tests/feature/support"
 	"github.com/macrowallets/waas/tests/feature/support/testutil"
 )
 
@@ -24,7 +23,7 @@ type PlatformChainThresholdTestSuite struct {
 }
 
 func TestPlatform_Chain_ThresholdSuite(t *testing.T) {
-	suite.Run(t, new(PlatformChainThresholdTestSuite))
+	support.RunSuite(t, new(PlatformChainThresholdTestSuite))
 }
 
 func (s *PlatformChainThresholdTestSuite) SetupTest() {
@@ -233,29 +232,19 @@ func (s *PlatformChainThresholdTestSuite) patchChain(token, chainID, body string
 
 func (s *PlatformChainThresholdTestSuite) patchRaw(token, path, body string) contractstesting.Response {
 	s.T().Helper()
-	resp, err := s.Http(s.T()).
-		WithHeader("Authorization", "Bearer "+token).
-		WithHeader("Content-Type", "application/json").
-		Patch(path, strings.NewReader(body))
-	s.Require().NoError(err)
+	resp := s.Patch(path, support.Session{AccessToken: token}, body)
 	return resp
 }
 
 func (s *PlatformChainThresholdTestSuite) accountActivity(bearer string, accountID uuid.UUID) contractstesting.Response {
 	s.T().Helper()
-	resp, err := s.Http(s.T()).
-		WithHeader("Authorization", "Bearer "+bearer).
-		Get("/v1/accounts/" + accountID.String() + "/activity")
-	s.Require().NoError(err)
+	resp := s.Get("/v1/accounts/"+accountID.String()+"/activity", support.Session{AccessToken: bearer})
 	return resp
 }
 
 func (s *PlatformChainThresholdTestSuite) platformActivity(bearer string) contractstesting.Response {
 	s.T().Helper()
-	resp, err := s.Http(s.T()).
-		WithHeader("Authorization", "Bearer "+bearer).
-		Get("/v1/platform/activity")
-	s.Require().NoError(err)
+	resp := s.Get("/v1/platform/activity", support.Session{AccessToken: bearer})
 	return resp
 }
 

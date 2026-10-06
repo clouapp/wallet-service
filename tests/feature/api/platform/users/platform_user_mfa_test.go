@@ -6,9 +6,9 @@ import (
 	"github.com/google/uuid"
 	contractstesting "github.com/goravel/framework/contracts/testing/http"
 	"github.com/goravel/framework/facades"
-	"github.com/stretchr/testify/suite"
 
 	"github.com/macrowallets/waas/app/http/responses"
+	"github.com/macrowallets/waas/tests/feature/support"
 	"github.com/macrowallets/waas/tests/feature/support/testutil"
 )
 
@@ -19,7 +19,7 @@ type PlatformUserMFATestSuite struct {
 }
 
 func TestPlatform_User_MFASuite(t *testing.T) {
-	suite.Run(t, new(PlatformUserMFATestSuite))
+	support.RunSuite(t, new(PlatformUserMFATestSuite))
 }
 
 func (s *PlatformUserMFATestSuite) SetupTest() {
@@ -182,10 +182,7 @@ func (s *PlatformUserMFATestSuite) grantPlatformAdmin(userID uuid.UUID) {
 
 func (s *PlatformUserMFATestSuite) platformActivity(bearer string) contractstesting.Response {
 	s.T().Helper()
-	resp, err := s.Http(s.T()).
-		WithHeader("Authorization", "Bearer "+bearer).
-		Get("/v1/platform/activity")
-	s.Require().NoError(err)
+	resp := s.Get("/v1/platform/activity", support.Session{AccessToken: bearer})
 	return resp
 }
 

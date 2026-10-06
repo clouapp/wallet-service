@@ -3,17 +3,15 @@ package accounts
 import (
 	"encoding/json"
 	"fmt"
-	"strings"
 	"testing"
 
 	"github.com/google/uuid"
 	contractstesting "github.com/goravel/framework/contracts/testing/http"
 	"github.com/goravel/framework/facades"
-	goravelTesting "github.com/goravel/framework/testing"
-	"github.com/stretchr/testify/suite"
 
 	"github.com/macrowallets/waas/app/models"
 	authsvc "github.com/macrowallets/waas/app/services/auth"
+	"github.com/macrowallets/waas/tests/feature/support"
 	"github.com/macrowallets/waas/tests/feature/support/fixtures"
 )
 
@@ -27,12 +25,11 @@ const (
 // through Can(tokens.read). Owner, admin, and auditor may list. The user
 // role is refused before the handler returns the token list.
 type AccountTokenReadGateTestSuite struct {
-	suite.Suite
-	goravelTesting.TestCase
+	support.HTTPSuite
 }
 
 func TestAccount_Token_ReadGateSuite(t *testing.T) {
-	suite.Run(t, new(AccountTokenReadGateTestSuite))
+	support.RunSuite(t, new(AccountTokenReadGateTestSuite))
 }
 
 func (s *AccountTokenReadGateTestSuite) SetupTest() {
@@ -79,10 +76,7 @@ func (s *AccountTokenReadGateTestSuite) login(role string, accountID uuid.UUID) 
 	}))
 
 	body := fmt.Sprintf(`{"email":%q,"password":%q}`, email, accountTokenReadGatePassword)
-	resp, err := s.Http(s.T()).
-		WithHeader("Content-Type", "application/json").
-		Post("/v1/auth/login", strings.NewReader(body))
-	s.Require().NoError(err)
+	resp := s.Post("/v1/auth/login", support.Session{}, body)
 	resp.AssertStatus(200)
 	content, err := resp.Content()
 	s.Require().NoError(err)
@@ -95,10 +89,7 @@ func (s *AccountTokenReadGateTestSuite) login(role string, accountID uuid.UUID) 
 }
 
 func (s *AccountTokenReadGateTestSuite) listTokens(token string, accountID uuid.UUID) contractstesting.Response {
-	resp, err := s.Http(s.T()).
-		WithHeader("Authorization", "Bearer "+token).
-		Get("/v1/accounts/" + accountID.String() + "/tokens")
-	s.Require().NoError(err)
+	resp := s.Get("/v1/accounts/"+accountID.String()+"/tokens", support.Session{AccessToken: token})
 	return resp
 }
 

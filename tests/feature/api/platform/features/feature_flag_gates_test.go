@@ -12,13 +12,12 @@ import (
 	"github.com/google/uuid"
 	contractstestinghttp "github.com/goravel/framework/contracts/testing/http"
 	"github.com/goravel/framework/facades"
-	goravelTesting "github.com/goravel/framework/testing"
-	"github.com/stretchr/testify/suite"
 
 	"github.com/macrowallets/waas/app/http/middleware"
 	"github.com/macrowallets/waas/app/models"
 	authsvc "github.com/macrowallets/waas/app/services/auth"
 	"github.com/macrowallets/waas/app/services/features"
+	"github.com/macrowallets/waas/tests/feature/support"
 	"github.com/macrowallets/waas/tests/feature/support/fixtures"
 )
 
@@ -30,12 +29,11 @@ const featureGatePassword = "correct-horse-battery"
 // use the same check. The body is empty so a request that passes the gate
 // fails validation before any chain call.
 type featureGateSuite struct {
-	suite.Suite
-	goravelTesting.TestCase
+	support.HTTPSuite
 }
 
 func TestFeature_Flag_Gates(t *testing.T) {
-	suite.Run(t, new(featureGateSuite))
+	support.RunSuite(t, new(featureGateSuite))
 }
 
 func (s *featureGateSuite) SetupTest() {
@@ -100,15 +98,15 @@ type gateSurface struct {
 
 func (s *featureGateSuite) post(surface gateSurface, accountID, walletID uuid.UUID, suffix string) contractstestinghttp.Response {
 	s.T().Helper()
-	request := s.Http(s.T()).
-		WithHeader("Authorization", "Bearer "+surface.token).
-		WithHeader("Content-Type", "application/json")
-	if surface.header {
-		request = request.WithHeader("X-Account-Id", accountID.String())
+	path := surface.prefix + walletID.String() + suffix
+	if strings.HasPrefix(surface.prefix, "/api/") {
+		return s.External(path, support.Token{Bearer: surface.token}).Post(`{}`)
 	}
-	response, err := request.Post(surface.prefix+walletID.String()+suffix, strings.NewReader(`{}`))
-	s.Require().NoError(err)
-	return response
+	session := support.Session{AccessToken: surface.token}
+	if surface.header {
+		session.AccountID = accountID.String()
+	}
+	return s.Post(path, session, `{}`)
 }
 
 func (s *featureGateSuite) notGate(label string, response contractstestinghttp.Response, code string) {
@@ -200,10 +198,7 @@ func (s *featureGateSuite) ownerWallet() (uuid.UUID, uuid.UUID, string, uuid.UUI
 	}))
 
 	body := fmt.Sprintf(`{"email":%q,"password":%q}`, email, featureGatePassword)
-	response, err := s.Http(s.T()).
-		WithHeader("Content-Type", "application/json").
-		Post("/v1/auth/login", strings.NewReader(body))
-	s.Require().NoError(err)
+	response := s.Post("/v1/auth/login", support.Session{}, body)
 	response.AssertOk()
 	content, err := response.Content()
 	s.Require().NoError(err)

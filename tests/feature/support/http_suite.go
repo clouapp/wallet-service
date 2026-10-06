@@ -5,14 +5,35 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http/httptest"
+	"testing"
 
+	goravelTesting "github.com/goravel/framework/testing"
 	"github.com/stretchr/testify/suite"
 )
 
-// HTTPSuite is the base an HTTP feature suite embeds. An error path checks
-// the status and the body with AssertError.
+// HTTPSuite is the base an HTTP feature suite embeds. Start it with RunSuite.
+// A dashboard request passes its session on the call (s.Get(path, session)).
+// An external request passes its token (s.External(path, token)), which signs
+// the body when the token requires it. The credential is an argument: the
+// suite does not keep one for a request to pick up. An error path checks the
+// status and the body with AssertError.
 type HTTPSuite struct {
 	suite.Suite
+	tc goravelTesting.TestCase
+}
+
+// Session is the dashboard credential passed on every dashboard request.
+// A zero Session sends no Authorization header. AccountID, when set, is the
+// X-Account-Id scope header.
+type Session struct {
+	AccessToken string
+	AccountID   string
+}
+
+// RunSuite starts an HTTP feature suite.
+func RunSuite(t *testing.T, s suite.TestingSuite) {
+	t.Helper()
+	suite.Run(t, s)
 }
 
 // AssertError checks that rec answered with status and the envelope

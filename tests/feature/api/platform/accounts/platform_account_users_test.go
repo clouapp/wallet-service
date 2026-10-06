@@ -8,10 +8,10 @@ import (
 	"github.com/google/uuid"
 	contractstesting "github.com/goravel/framework/contracts/testing/http"
 	"github.com/goravel/framework/facades"
-	"github.com/stretchr/testify/suite"
 
 	"github.com/macrowallets/waas/app/http/responses"
 	"github.com/macrowallets/waas/app/models"
+	"github.com/macrowallets/waas/tests/feature/support"
 	"github.com/macrowallets/waas/tests/feature/support/testutil"
 )
 
@@ -23,7 +23,7 @@ type PlatformAccountUsersTestSuite struct {
 }
 
 func TestPlatform_Account_UsersSuite(t *testing.T) {
-	suite.Run(t, new(PlatformAccountUsersTestSuite))
+	support.RunSuite(t, new(PlatformAccountUsersTestSuite))
 }
 
 func (s *PlatformAccountUsersTestSuite) SetupTest() {
@@ -143,8 +143,7 @@ func (s *PlatformAccountUsersTestSuite) TestA_Member_CannotListAccountUsers() {
 	s.NotContains(raw, person.String())
 	s.NotContains(raw, "Hidden Hana")
 
-	anonymous, err := s.Http(s.T()).Get("/v1/platform/accounts/" + accountID.String() + "/users")
-	s.Require().NoError(err)
+	anonymous := s.Get("/v1/platform/accounts/"+accountID.String()+"/users", support.Session{})
 	anonymous.AssertUnauthorized()
 }
 
@@ -242,10 +241,7 @@ func (s *PlatformAccountUsersTestSuite) listAccountUsers(bearer string, accountI
 
 func (s *PlatformAccountUsersTestSuite) listAccountUsersPath(bearer, path string) contractstesting.Response {
 	s.T().Helper()
-	resp, err := s.Http(s.T()).
-		WithHeader("Authorization", "Bearer "+bearer).
-		Get(path)
-	s.Require().NoError(err)
+	resp := s.Get(path, support.Session{AccessToken: bearer})
 	return resp
 }
 

@@ -8,12 +8,12 @@ import (
 
 	contractstesting "github.com/goravel/framework/contracts/testing/http"
 	"github.com/goravel/framework/facades"
-	"github.com/stretchr/testify/suite"
 
 	"github.com/google/uuid"
 
 	"github.com/macrowallets/waas/app/http/responses"
 	"github.com/macrowallets/waas/app/services/settings"
+	"github.com/macrowallets/waas/tests/feature/support"
 	"github.com/macrowallets/waas/tests/feature/support/testutil"
 )
 
@@ -27,7 +27,7 @@ type PlatformSettingsSectionCacheTestSuite struct {
 }
 
 func TestPlatform_Settings_SectionCacheSuite(t *testing.T) {
-	suite.Run(t, new(PlatformSettingsSectionCacheTestSuite))
+	support.RunSuite(t, new(PlatformSettingsSectionCacheTestSuite))
 }
 
 func (s *PlatformSettingsSectionCacheTestSuite) SetupTest() {
@@ -110,8 +110,7 @@ func (s *PlatformSettingsSectionCacheTestSuite) TestNon_Admin_OnAnUnknownSection
 	s.Equal("settings section not found", response["error"].(map[string]any)["message"])
 	s.Equal("stale-"+key, facades.Cache().GetString(key))
 
-	missing, err := s.Http(s.T()).Post("/v1/platform/settings/sections/mail/cache", strings.NewReader("{}"))
-	s.Require().NoError(err)
+	missing := s.Post("/v1/platform/settings/sections/mail/cache", support.Session{}, "{}")
 	missing.AssertUnauthorized()
 }
 
@@ -167,11 +166,7 @@ func (s *PlatformSettingsSectionCacheTestSuite) flushParsed(token, section strin
 
 func (s *PlatformSettingsSectionCacheTestSuite) postSection(token, section string) contractstesting.Response {
 	s.T().Helper()
-	resp, err := s.Http(s.T()).
-		WithHeader("Authorization", "Bearer "+token).
-		WithHeader("Content-Type", "application/json").
-		Post("/v1/platform/settings/sections/"+section+"/cache", strings.NewReader("{}"))
-	s.Require().NoError(err)
+	resp := s.Post("/v1/platform/settings/sections/"+section+"/cache", support.Session{AccessToken: token}, "{}")
 	return resp
 }
 

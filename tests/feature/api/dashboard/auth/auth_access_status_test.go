@@ -1,13 +1,11 @@
 package auth
 
 import (
-	"strings"
 	"testing"
 
 	"github.com/google/uuid"
 	contractstesting "github.com/goravel/framework/contracts/testing/http"
 	"github.com/goravel/framework/facades"
-	"github.com/stretchr/testify/suite"
 
 	"github.com/macrowallets/waas/app/http/responses"
 	"github.com/macrowallets/waas/app/models"
@@ -23,7 +21,7 @@ type AccessStatusTestSuite struct {
 }
 
 func TestAccess_Status_Suite(t *testing.T) {
-	suite.Run(t, new(AccessStatusTestSuite))
+	support.RunSuite(t, new(AccessStatusTestSuite))
 }
 
 func (s *AccessStatusTestSuite) SetupTest() {
@@ -55,28 +53,21 @@ func (s *AccessStatusTestSuite) addMember(accountID, userID uuid.UUID, status st
 }
 
 func (s *AccessStatusTestSuite) send(method, path, bearer string, accountID uuid.UUID, body string) contractstesting.Response {
-	req := s.Http(s.T()).
-		WithHeader("Authorization", "Bearer "+bearer).
-		WithHeader("Content-Type", "application/json")
+	session := support.Session{AccessToken: bearer}
 	if accountID != uuid.Nil {
-		req = req.WithHeader("X-Account-Id", accountID.String())
+		session.AccountID = accountID.String()
 	}
-	var (
-		resp contractstesting.Response
-		err  error
-	)
 	switch method {
 	case "GET":
-		resp, err = req.Get(path)
+		return s.Get(path, session)
 	case "POST":
-		resp, err = req.Post(path, strings.NewReader(body))
+		return s.Post(path, session, body)
 	case "PATCH":
-		resp, err = req.Patch(path, strings.NewReader(body))
+		return s.Patch(path, session, body)
 	default:
 		s.FailNow("unsupported method " + method)
+		return nil
 	}
-	s.Require().NoError(err)
-	return resp
 }
 
 func (s *AccessStatusTestSuite) assertReadOnlyRefusal(resp contractstesting.Response, status string) {
@@ -270,9 +261,9 @@ func (s *AccessStatusTestSuite) TestAPI_Token_OfAFrozenAccountIsReadOnly() {
 	walletID := seedAPIWalletForAccount(s.T(), accountID, "eth", "frozen-api-wallet")
 	s.setStatus("accounts", accountID, models.AccountStatusFrozen)
 
-	support.Get(s.T(), &s.TestCase, "/api/v1/wallets/"+walletID, bearer).AssertOk()
+	s.External("/api/v1/wallets/"+walletID, support.Token{Bearer: bearer}).Get().AssertOk()
 	s.assertReadOnlyRefusal(
-		support.Post(s.T(), &s.TestCase, "/api/v1/wallets/"+walletID+"/addresses", `{"external_user_id":"u1"}`, bearer, nil),
+		s.External("/api/v1/wallets/"+walletID+"/addresses", support.Token{Bearer: bearer}).Post(`{"external_user_id":"u1"}`),
 		models.AccountStatusFrozen,
 	)
 }

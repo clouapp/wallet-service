@@ -3,17 +3,15 @@ package accounts
 import (
 	"encoding/json"
 	"fmt"
-	"strings"
 	"testing"
 
 	"github.com/google/uuid"
 	contractstesting "github.com/goravel/framework/contracts/testing/http"
 	"github.com/goravel/framework/facades"
-	goravelTesting "github.com/goravel/framework/testing"
-	"github.com/stretchr/testify/suite"
 
 	"github.com/macrowallets/waas/app/models"
 	authsvc "github.com/macrowallets/waas/app/services/auth"
+	"github.com/macrowallets/waas/tests/feature/support"
 	"github.com/macrowallets/waas/tests/feature/support/fixtures"
 )
 
@@ -23,12 +21,11 @@ const accountAddMemberGatePassword = "correct-horse-battery"
 // through Can(users.write). Owner and admin may add a member. Auditor and
 // user are refused before a membership is written.
 type AccountAddMemberGateTestSuite struct {
-	suite.Suite
-	goravelTesting.TestCase
+	support.HTTPSuite
 }
 
 func TestAccount_Add_MemberGateSuite(t *testing.T) {
-	suite.Run(t, new(AccountAddMemberGateTestSuite))
+	support.RunSuite(t, new(AccountAddMemberGateTestSuite))
 }
 
 func (s *AccountAddMemberGateTestSuite) SetupTest() {
@@ -78,10 +75,7 @@ func (s *AccountAddMemberGateTestSuite) login(role string, accountID uuid.UUID) 
 	}))
 
 	body := fmt.Sprintf(`{"email":%q,"password":%q}`, email, accountAddMemberGatePassword)
-	resp, err := s.Http(s.T()).
-		WithHeader("Content-Type", "application/json").
-		Post("/v1/auth/login", strings.NewReader(body))
-	s.Require().NoError(err)
+	resp := s.Post("/v1/auth/login", support.Session{}, body)
 	resp.AssertStatus(200)
 	content, err := resp.Content()
 	s.Require().NoError(err)
@@ -118,11 +112,7 @@ func (s *AccountAddMemberGateTestSuite) addMember(token string, accountID, targe
 }
 
 func (s *AccountAddMemberGateTestSuite) post(token string, accountID uuid.UUID, body string) contractstesting.Response {
-	resp, err := s.Http(s.T()).
-		WithHeader("Authorization", "Bearer "+token).
-		WithHeader("Content-Type", "application/json").
-		Post("/v1/accounts/"+accountID.String()+"/users", strings.NewReader(body))
-	s.Require().NoError(err)
+	resp := s.Post("/v1/accounts/"+accountID.String()+"/users", support.Session{AccessToken: token}, body)
 	return resp
 }
 

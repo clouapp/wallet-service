@@ -13,13 +13,12 @@ import (
 	"github.com/google/uuid"
 	contractstesting "github.com/goravel/framework/contracts/testing/http"
 	"github.com/goravel/framework/facades"
-	goravelTesting "github.com/goravel/framework/testing"
-	"github.com/stretchr/testify/suite"
 
 	"github.com/macrowallets/waas/app/http/middleware"
 	"github.com/macrowallets/waas/app/models"
 	activitylog "github.com/macrowallets/waas/app/services/activity"
 	authsvc "github.com/macrowallets/waas/app/services/auth"
+	"github.com/macrowallets/waas/tests/feature/support"
 	"github.com/macrowallets/waas/tests/feature/support/fixtures"
 )
 
@@ -29,12 +28,11 @@ const accountTokenPassword = "correct-horse-battery"
 // from the API catalog, and the creator cannot grant a permission the role
 // does not hold. The suite never prints the minted token.
 type accountTokensSuite struct {
-	suite.Suite
-	goravelTesting.TestCase
+	support.HTTPSuite
 }
 
 func TestAccount_Token_Permissions(t *testing.T) {
-	suite.Run(t, new(accountTokensSuite))
+	support.RunSuite(t, new(accountTokensSuite))
 }
 
 func (s *accountTokensSuite) SetupTest() {
@@ -146,10 +144,7 @@ func (s *accountTokensSuite) TestAuditor_Can_ListAndCannotMint() {
 	s.loginUser("owner", accountID)
 	auditor := s.loginUser("auditor", accountID)
 
-	list, err := s.Http(s.T()).
-		WithHeader("Authorization", "Bearer "+auditor.token).
-		Get("/v1/accounts/" + accountID.String() + "/tokens")
-	s.Require().NoError(err)
+	list := s.Get("/v1/accounts/"+accountID.String()+"/tokens", support.Session{AccessToken: auditor.token})
 	s.Equal(http.StatusOK, s.statusOf(list))
 
 	resp := s.createToken(auditor.token, accountID, `{"name":"nope"}`)
@@ -162,10 +157,7 @@ func (s *accountTokensSuite) TestUser_Cannot_ListTokens() {
 	s.loginUser("owner", accountID)
 	user := s.loginUser("user", accountID)
 
-	list, err := s.Http(s.T()).
-		WithHeader("Authorization", "Bearer "+user.token).
-		Get("/v1/accounts/" + accountID.String() + "/tokens")
-	s.Require().NoError(err)
+	list := s.Get("/v1/accounts/"+accountID.String()+"/tokens", support.Session{AccessToken: user.token})
 	s.Equal(http.StatusForbidden, s.statusOf(list))
 	var parsed struct {
 		Error struct {
@@ -251,10 +243,7 @@ func (s *accountTokensSuite) TestCreate_Stores_OnlyTheSecretHash() {
 	s.assertAbsent(s.body(list), claims.Secret, "secret")
 	s.assertAbsent(s.body(list), stored, "stored digest")
 
-	external, err := s.Http(s.T()).
-		WithHeader("Authorization", "Bearer "+parsed.Token).
-		Get("/api/v1/chains")
-	s.Require().NoError(err)
+	external := s.External("/api/v1/chains", support.Token{Bearer: parsed.Token}).Get()
 	if s.statusOf(external) == http.StatusUnauthorized {
 		s.Fail("minted token was rejected")
 	}
@@ -423,10 +412,7 @@ func (s *accountTokensSuite) loginUser(role string, accountID uuid.UUID) struct 
 
 func (s *accountTokensSuite) login(email string) string {
 	body := fmt.Sprintf(`{"email":%q,"password":%q}`, email, accountTokenPassword)
-	resp, err := s.Http(s.T()).
-		WithHeader("Content-Type", "application/json").
-		Post("/v1/auth/login", strings.NewReader(body))
-	s.Require().NoError(err)
+	resp := s.Post("/v1/auth/login", support.Session{}, body)
 	s.Equal(http.StatusOK, s.statusOf(resp))
 	var parsed struct {
 		AccessToken string `json:"access_token"`
@@ -439,11 +425,7 @@ func (s *accountTokensSuite) login(email string) string {
 }
 
 func (s *accountTokensSuite) createToken(token string, accountID uuid.UUID, body string) contractstesting.Response {
-	resp, err := s.Http(s.T()).
-		WithHeader("Authorization", "Bearer "+token).
-		WithHeader("Content-Type", "application/json").
-		Post("/v1/accounts/"+accountID.String()+"/tokens", strings.NewReader(body))
-	s.Require().NoError(err)
+	resp := s.Post("/v1/accounts/"+accountID.String()+"/tokens", support.Session{AccessToken: token}, body)
 	return resp
 }
 
@@ -457,18 +439,12 @@ func (s *accountTokensSuite) metadataHasPermissions(resp contractstesting.Respon
 }
 
 func (s *accountTokensSuite) revokeToken(token string, accountID uuid.UUID, tokenID string) contractstesting.Response {
-	resp, err := s.Http(s.T()).
-		WithHeader("Authorization", "Bearer "+token).
-		Delete("/v1/accounts/"+accountID.String()+"/tokens/"+tokenID, strings.NewReader(""))
-	s.Require().NoError(err)
+	resp := s.Delete("/v1/accounts/"+accountID.String()+"/tokens/"+tokenID, support.Session{AccessToken: token}, "")
 	return resp
 }
 
 func (s *accountTokensSuite) activityBody(token string, accountID uuid.UUID) string {
-	resp, err := s.Http(s.T()).
-		WithHeader("Authorization", "Bearer "+token).
-		Get("/v1/accounts/" + accountID.String() + "/activity")
-	s.Require().NoError(err)
+	resp := s.Get("/v1/accounts/"+accountID.String()+"/activity", support.Session{AccessToken: token})
 	s.Equal(http.StatusOK, s.statusOf(resp))
 	return s.body(resp)
 }
@@ -482,10 +458,7 @@ func (s *accountTokensSuite) activityCount(accountID uuid.UUID, action string) i
 }
 
 func (s *accountTokensSuite) listTokens(token string, accountID uuid.UUID) contractstesting.Response {
-	resp, err := s.Http(s.T()).
-		WithHeader("Authorization", "Bearer "+token).
-		Get("/v1/accounts/" + accountID.String() + "/tokens")
-	s.Require().NoError(err)
+	resp := s.Get("/v1/accounts/"+accountID.String()+"/tokens", support.Session{AccessToken: token})
 	return resp
 }
 

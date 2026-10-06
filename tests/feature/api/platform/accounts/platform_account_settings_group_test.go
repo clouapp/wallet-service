@@ -7,10 +7,10 @@ import (
 	"github.com/google/uuid"
 	contractstesting "github.com/goravel/framework/contracts/testing/http"
 	"github.com/goravel/framework/facades"
-	"github.com/stretchr/testify/suite"
 
 	"github.com/macrowallets/waas/app/http/responses"
 	"github.com/macrowallets/waas/app/models"
+	"github.com/macrowallets/waas/tests/feature/support"
 	"github.com/macrowallets/waas/tests/feature/support/testutil"
 )
 
@@ -25,7 +25,7 @@ type PlatformAccountSettingsGroupTestSuite struct {
 }
 
 func TestPlatform_Account_SettingsGroupSuite(t *testing.T) {
-	suite.Run(t, new(PlatformAccountSettingsGroupTestSuite))
+	support.RunSuite(t, new(PlatformAccountSettingsGroupTestSuite))
 }
 
 func (s *PlatformAccountSettingsGroupTestSuite) SetupTest() {
@@ -176,8 +176,7 @@ func (s *PlatformAccountSettingsGroupTestSuite) TestA_Non_AdminOnAKnownPairIsFor
 		accountID,
 	))
 
-	missing, err := s.Http(s.T()).Get(s.groupPath(accountID, "account_sweep_limits"))
-	s.Require().NoError(err)
+	missing := s.Get(s.groupPath(accountID, "account_sweep_limits"), support.Session{})
 	missing.AssertUnauthorized()
 }
 
@@ -234,10 +233,7 @@ func (s *PlatformAccountSettingsGroupTestSuite) groupPath(accountID uuid.UUID, g
 
 func (s *PlatformAccountSettingsGroupTestSuite) getRaw(token, path string) contractstesting.Response {
 	s.T().Helper()
-	resp, err := s.Http(s.T()).
-		WithHeader("Authorization", "Bearer "+token).
-		Get(path)
-	s.Require().NoError(err)
+	resp := s.Get(path, support.Session{AccessToken: token})
 	return resp
 }
 

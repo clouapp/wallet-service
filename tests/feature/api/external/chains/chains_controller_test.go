@@ -4,9 +4,6 @@ import (
 	"encoding/json"
 	"testing"
 
-	goravelTesting "github.com/goravel/framework/testing"
-	"github.com/stretchr/testify/suite"
-
 	ctltestutil "github.com/macrowallets/waas/tests/feature/support"
 	"github.com/macrowallets/waas/tests/feature/support/testutil"
 )
@@ -23,19 +20,17 @@ import (
 //     and access token, so we can exercise the live handler end-to-end with
 //     the seeded `chains` fixtures.
 type ChainsControllerTestSuite struct {
-	suite.Suite
-	goravelTesting.TestCase
+	ctltestutil.HTTPSuite
 }
 
 func TestChains_Controller_Suite(t *testing.T) {
-	suite.Run(t, new(ChainsControllerTestSuite))
+	ctltestutil.RunSuite(t, new(ChainsControllerTestSuite))
 }
 
 // TestListChains_Dashboard_Unauthenticated returns 401 without a Bearer token.
 // /v1/chains is guarded by SessionAuth; the handler never runs.
 func (s *ChainsControllerTestSuite) TestListChains_Dashboard_Unauthenticated() {
-	resp, err := s.Http(s.T()).Get("/v1/chains")
-	s.Require().NoError(err)
+	resp := s.Get("/v1/chains", ctltestutil.Session{})
 	resp.AssertStatus(401)
 }
 
@@ -46,7 +41,7 @@ func (s *ChainsControllerTestSuite) TestListChains_ExternalAPI_Success() {
 	testutil.SeededTestDB(s.T())
 	_, bearer, _ := ctltestutil.SetupAPIAuth(s.T(), false)
 
-	resp := ctltestutil.Get(s.T(), &s.TestCase, "/api/v1/chains", bearer)
+	resp := s.External("/api/v1/chains", ctltestutil.Token{Bearer: bearer}).Get()
 	resp.AssertOk()
 
 	content, err := resp.Content()
@@ -60,7 +55,6 @@ func (s *ChainsControllerTestSuite) TestListChains_ExternalAPI_Success() {
 
 // TestListChains_ExternalAPI_Unauthenticated returns 401 when no bearer is present.
 func (s *ChainsControllerTestSuite) TestListChains_ExternalAPI_Unauthenticated() {
-	resp, err := s.Http(s.T()).Get("/api/v1/chains")
-	s.Require().NoError(err)
+	resp := s.External("/api/v1/chains", ctltestutil.Token{}).Get()
 	resp.AssertStatus(401)
 }

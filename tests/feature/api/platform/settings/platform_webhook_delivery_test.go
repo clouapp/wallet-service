@@ -12,7 +12,6 @@ import (
 	"github.com/google/uuid"
 	contractstesting "github.com/goravel/framework/contracts/testing/http"
 	"github.com/goravel/framework/facades"
-	"github.com/stretchr/testify/suite"
 
 	"github.com/macrowallets/waas/app/container"
 	"github.com/macrowallets/waas/app/http/responses"
@@ -20,6 +19,7 @@ import (
 	"github.com/macrowallets/waas/app/services/settings"
 	"github.com/macrowallets/waas/app/services/webhook"
 	"github.com/macrowallets/waas/pkg/types"
+	"github.com/macrowallets/waas/tests/feature/support"
 	"github.com/macrowallets/waas/tests/feature/support/fixtures"
 	"github.com/macrowallets/waas/tests/feature/support/testutil"
 )
@@ -32,7 +32,7 @@ type PlatformWebhookDeliveryTestSuite struct {
 }
 
 func TestPlatform_Webhook_DeliverySuite(t *testing.T) {
-	suite.Run(t, new(PlatformWebhookDeliveryTestSuite))
+	support.RunSuite(t, new(PlatformWebhookDeliveryTestSuite))
 }
 
 func (s *PlatformWebhookDeliveryTestSuite) SetupTest() {
@@ -285,20 +285,13 @@ func (s *PlatformWebhookDeliveryTestSuite) loadChain(id string) *models.Chain {
 
 func (s *PlatformWebhookDeliveryTestSuite) putRaw(token, path, body string) contractstesting.Response {
 	s.T().Helper()
-	resp, err := s.Http(s.T()).
-		WithHeader("Authorization", "Bearer "+token).
-		WithHeader("Content-Type", "application/json").
-		Put(path, strings.NewReader(body))
-	s.Require().NoError(err)
+	resp := s.Put(path, support.Session{AccessToken: token}, body)
 	return resp
 }
 
 func (s *PlatformWebhookDeliveryTestSuite) accountActivity(bearer string, accountID uuid.UUID) contractstesting.Response {
 	s.T().Helper()
-	resp, err := s.Http(s.T()).
-		WithHeader("Authorization", "Bearer "+bearer).
-		Get("/v1/accounts/" + accountID.String() + "/activity")
-	s.Require().NoError(err)
+	resp := s.Get("/v1/accounts/"+accountID.String()+"/activity", support.Session{AccessToken: bearer})
 	return resp
 }
 

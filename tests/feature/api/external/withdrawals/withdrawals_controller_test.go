@@ -1,16 +1,14 @@
 package withdrawals
 
 import (
-	"strings"
 	"testing"
 
 	"github.com/google/uuid"
 	"github.com/goravel/framework/facades"
-	goravelTesting "github.com/goravel/framework/testing"
-	"github.com/stretchr/testify/suite"
 
 	"github.com/macrowallets/waas/app/http/middleware"
 	"github.com/macrowallets/waas/app/models"
+	"github.com/macrowallets/waas/tests/feature/support"
 	"github.com/macrowallets/waas/tests/feature/support/fixtures"
 )
 
@@ -26,12 +24,11 @@ import (
 // idempotency_key, transaction_id, tx_hash, origin) that never matched the
 // production controller contract, so they could not exercise real code paths.
 type WithdrawalsControllerTestSuite struct {
-	suite.Suite
-	goravelTesting.TestCase
+	support.HTTPSuite
 }
 
 func TestWithdrawals_Controller_Suite(t *testing.T) {
-	suite.Run(t, new(WithdrawalsControllerTestSuite))
+	support.RunSuite(t, new(WithdrawalsControllerTestSuite))
 }
 
 func (s *WithdrawalsControllerTestSuite) SetupTest() {
@@ -70,11 +67,7 @@ func (s *WithdrawalsControllerTestSuite) TestCreate_Withdrawal_WalletNotFound() 
 
 	body := `{"external_user_id":"user","to_address":"0x742d35Cc6634C0532925a3b844Bc9e7595f2bD12","amount":"100","asset":"eth"}`
 	unknownWallet := uuid.NewString()
-	resp, err := s.Http(s.T()).
-		WithHeader("Authorization", "Bearer "+jwt).
-		WithHeader("Content-Type", "application/json").
-		Post("/api/v1/wallets/"+unknownWallet+"/withdraw/preview", strings.NewReader(body))
-	s.Require().NoError(err)
+	resp := s.External("/api/v1/wallets/"+unknownWallet+"/withdraw/preview", support.Token{Bearer: jwt}).Post(body)
 
 	resp.AssertStatus(404).AssertJson(map[string]any{"error": map[string]any{
 		"code":    "not_found",

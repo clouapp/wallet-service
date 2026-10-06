@@ -3,12 +3,12 @@ package accounts
 import (
 	"encoding/json"
 	"net/http"
-	"strings"
 
 	"github.com/google/uuid"
 	contractstestinghttp "github.com/goravel/framework/contracts/testing/http"
 
 	"github.com/macrowallets/waas/app/policies"
+	"github.com/macrowallets/waas/tests/feature/support"
 )
 
 func (s *accountRolesSuite) TestPermission_Catalog_IsReadableByRolesRead() {
@@ -51,10 +51,7 @@ func (s *accountRolesSuite) TestPermission_Catalog_OutsiderIsForbidden() {
 
 func (s *accountRolesSuite) catalog(token string, accountID uuid.UUID, status int) []string {
 	s.T().Helper()
-	resp, err := s.Http(s.T()).
-		WithHeader("Authorization", "Bearer "+token).
-		Get("/v1/accounts/" + accountID.String() + "/permissions")
-	s.Require().NoError(err)
+	resp := s.Get("/v1/accounts/"+accountID.String()+"/permissions", support.Session{AccessToken: token})
 	resp.AssertStatus(status)
 	content, err := resp.Content()
 	s.Require().NoError(err)
@@ -75,26 +72,21 @@ func (s *accountRolesSuite) catalog(token string, accountID uuid.UUID, status in
 func (s *accountRolesSuite) writePermissions(method, token string, accountID uuid.UUID, status int) {
 	s.T().Helper()
 	path := "/v1/accounts/" + accountID.String() + "/permissions"
-	request := s.Http(s.T()).
-		WithHeader("Authorization", "Bearer "+token).
-		WithHeader("Content-Type", "application/json")
-	body := strings.NewReader(`{"permissions":["roles.write"]}`)
-	var (
-		resp contractstestinghttp.Response
-		err  error
-	)
+	session := support.Session{AccessToken: token}
+	body := `{"permissions":["roles.write"]}`
+	var resp contractstestinghttp.Response
 	switch method {
 	case http.MethodPost:
-		resp, err = request.Post(path, body)
+		resp = s.Post(path, session, body)
 	case http.MethodPut:
-		resp, err = request.Put(path, body)
+		resp = s.Put(path, session, body)
 	case http.MethodPatch:
-		resp, err = request.Patch(path, body)
+		resp = s.Patch(path, session, body)
 	case http.MethodDelete:
-		resp, err = request.Delete(path, body)
+		resp = s.Delete(path, session, body)
 	default:
 		s.FailNow("unsupported method " + method)
+		return
 	}
-	s.Require().NoError(err)
 	resp.AssertStatus(status)
 }

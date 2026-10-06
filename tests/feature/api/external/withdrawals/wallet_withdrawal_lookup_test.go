@@ -9,8 +9,6 @@ import (
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/google/uuid"
 	"github.com/goravel/framework/facades"
-	goravelTesting "github.com/goravel/framework/testing"
-	"github.com/stretchr/testify/suite"
 
 	"github.com/macrowallets/waas/app/models"
 	testutil "github.com/macrowallets/waas/tests/feature/support"
@@ -21,12 +19,11 @@ import (
 // which custody clients use to learn the outcome of a withdrawal whose HTTP
 // response they never received.
 type walletWithdrawalLookupSuite struct {
-	suite.Suite
-	goravelTesting.TestCase
+	testutil.HTTPSuite
 }
 
 func TestWallet_Withdrawal_LookupSuite(t *testing.T) {
-	suite.Run(t, new(walletWithdrawalLookupSuite))
+	testutil.RunSuite(t, new(walletWithdrawalLookupSuite))
 }
 
 func (s *walletWithdrawalLookupSuite) SetupTest() {
@@ -92,12 +89,7 @@ func (s *walletWithdrawalLookupSuite) seedBroadcastTransaction(walletID uuid.UUI
 func (s *walletWithdrawalLookupSuite) get(path, bearer string, expectedStatus int) map[string]any {
 	s.T().Helper()
 
-	request := s.Http(s.T())
-	if bearer != "" {
-		request = request.WithHeader("Authorization", "Bearer "+bearer)
-	}
-	resp, err := request.Get(path)
-	s.Require().NoError(err)
+	resp := s.External(path, testutil.Token{Bearer: bearer}).Get()
 	resp.AssertStatus(expectedStatus)
 
 	content, err := resp.Content()

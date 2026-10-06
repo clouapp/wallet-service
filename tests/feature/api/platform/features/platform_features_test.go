@@ -3,7 +3,6 @@ package features
 import (
 	"encoding/json"
 	"net/http"
-	"strings"
 
 	"github.com/google/uuid"
 	contractstestinghttp "github.com/goravel/framework/contracts/testing/http"
@@ -12,6 +11,7 @@ import (
 	"github.com/macrowallets/waas/app/models"
 	activitylog "github.com/macrowallets/waas/app/services/activity"
 	"github.com/macrowallets/waas/app/services/features"
+	"github.com/macrowallets/waas/tests/feature/support"
 )
 
 func (s *featureGateSuite) TestNon_Admin_CannotReadOrWritePlatformFeatures() {
@@ -129,24 +129,18 @@ func (s *featureGateSuite) grantPlatformAdmin(userID uuid.UUID) {
 
 func (s *featureGateSuite) platform(token, method, path, body string, status int) map[string]any {
 	s.T().Helper()
-	request := s.Http(s.T()).
-		WithHeader("Authorization", "Bearer "+token).
-		WithHeader("Content-Type", "application/json")
-	var (
-		response contractstestinghttp.Response
-		err      error
-	)
+	session := support.Session{AccessToken: token}
+	var response contractstestinghttp.Response
 	switch method {
 	case http.MethodGet:
-		response, err = request.Get(path)
+		response = s.Get(path, session)
 	case http.MethodPatch:
-		response, err = request.Patch(path, strings.NewReader(body))
+		response = s.Patch(path, session, body)
 	case http.MethodPut:
-		response, err = request.Put(path, strings.NewReader(body))
+		response = s.Put(path, session, body)
 	default:
 		s.T().Fatalf("unsupported method %s", method)
 	}
-	s.Require().NoError(err)
 	response.AssertStatus(status)
 	content, err := response.Content()
 	s.Require().NoError(err)

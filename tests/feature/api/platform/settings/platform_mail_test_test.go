@@ -11,12 +11,12 @@ import (
 	contractsmail "github.com/goravel/framework/contracts/mail"
 	contractstesting "github.com/goravel/framework/contracts/testing/http"
 	"github.com/goravel/framework/facades"
-	"github.com/stretchr/testify/suite"
 
 	appfacades "github.com/macrowallets/waas/app/facades"
 	"github.com/macrowallets/waas/app/http/responses"
 	"github.com/macrowallets/waas/app/mails"
 	"github.com/macrowallets/waas/app/services/settings"
+	"github.com/macrowallets/waas/tests/feature/support"
 	"github.com/macrowallets/waas/tests/feature/support/testutil"
 )
 
@@ -35,7 +35,7 @@ type PlatformMailTestSuite struct {
 }
 
 func TestPlatform_Mail_TestSuite(t *testing.T) {
-	suite.Run(t, new(PlatformMailTestSuite))
+	support.RunSuite(t, new(PlatformMailTestSuite))
 }
 
 func (s *PlatformMailTestSuite) SetupTest() {
@@ -175,30 +175,19 @@ func (s *PlatformMailTestSuite) post(token, body string, status int) string {
 
 func (s *PlatformMailTestSuite) postRaw(token, body string) contractstesting.Response {
 	s.T().Helper()
-	resp, err := s.Http(s.T()).
-		WithHeader("Authorization", "Bearer "+token).
-		WithHeader("Content-Type", "application/json").
-		Post("/v1/platform/settings/mail/test", strings.NewReader(body))
-	s.Require().NoError(err)
+	resp := s.Post("/v1/platform/settings/mail/test", support.Session{AccessToken: token}, body)
 	return resp
 }
 
 func (s *PlatformMailTestSuite) putRaw(token, path, body string) contractstesting.Response {
 	s.T().Helper()
-	resp, err := s.Http(s.T()).
-		WithHeader("Authorization", "Bearer "+token).
-		WithHeader("Content-Type", "application/json").
-		Put(path, strings.NewReader(body))
-	s.Require().NoError(err)
+	resp := s.Put(path, support.Session{AccessToken: token}, body)
 	return resp
 }
 
 func (s *PlatformMailTestSuite) getRaw(token, path string) contractstesting.Response {
 	s.T().Helper()
-	resp, err := s.Http(s.T()).
-		WithHeader("Authorization", "Bearer "+token).
-		Get(path)
-	s.Require().NoError(err)
+	resp := s.Get(path, support.Session{AccessToken: token})
 	return resp
 }
 

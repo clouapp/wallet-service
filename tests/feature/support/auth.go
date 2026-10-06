@@ -34,6 +34,24 @@ import (
 // `require_signature = true`.
 type SignFunc func(body []byte) string
 
+// Token is the external API credential passed on every external request.
+// Sign is set when the token requires a body signature; External applies it
+// to the bytes it sends. A nil Sign sends no X-Signature header.
+type Token struct {
+	Bearer string
+	Sign   SignFunc
+}
+
+// Signer hashes request bodies with HMAC-SHA256 keyed by the raw bearer.
+func Signer(bearer string) SignFunc {
+	key := []byte(bearer)
+	return func(body []byte) string {
+		mac := hmac.New(sha256.New, key)
+		mac.Write(body)
+		return hex.EncodeToString(mac.Sum(nil))
+	}
+}
+
 // SetupAPIAuth seeds an Account + access_tokens row and mints a Bearer JWT for
 // the external /api/v1 scheme. When requireSignature is true, the returned
 // SignFunc hashes request bodies with HMAC-SHA256 keyed by the raw JWT — the
@@ -84,12 +102,7 @@ func SetupAPIAuth(t *testing.T, requireSignature bool) (accountID uuid.UUID, bea
 	}
 
 	if requireSignature {
-		key := []byte(jwtStr)
-		sign = func(body []byte) string {
-			mac := hmac.New(sha256.New, key)
-			mac.Write(body)
-			return hex.EncodeToString(mac.Sum(nil))
-		}
+		sign = Signer(jwtStr)
 	}
 
 	return accountID, jwtStr, sign

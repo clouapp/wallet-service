@@ -4,29 +4,26 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"strings"
 	"testing"
 
 	"github.com/google/uuid"
 	contractstestinghttp "github.com/goravel/framework/contracts/testing/http"
 	"github.com/goravel/framework/facades"
-	goravelTesting "github.com/goravel/framework/testing"
-	"github.com/stretchr/testify/suite"
 
 	"github.com/macrowallets/waas/app/models"
 	authsvc "github.com/macrowallets/waas/app/services/auth"
+	"github.com/macrowallets/waas/tests/feature/support"
 	"github.com/macrowallets/waas/tests/feature/support/fixtures"
 )
 
 const accountRolesPassword = "correct-horse-battery"
 
 type accountRolesSuite struct {
-	suite.Suite
-	goravelTesting.TestCase
+	support.HTTPSuite
 }
 
 func TestAccount_Roles_Suite(t *testing.T) {
-	suite.Run(t, new(accountRolesSuite))
+	support.RunSuite(t, new(accountRolesSuite))
 }
 
 func (s *accountRolesSuite) SetupTest() {
@@ -102,10 +99,7 @@ func (s *accountRolesSuite) join(accountID uuid.UUID, role string) string {
 func (s *accountRolesSuite) login(email string) string {
 	s.T().Helper()
 	body := fmt.Sprintf(`{"email":%q,"password":%q}`, email, accountRolesPassword)
-	resp, err := s.Http(s.T()).
-		WithHeader("Content-Type", "application/json").
-		Post("/v1/auth/login", strings.NewReader(body))
-	s.Require().NoError(err)
+	resp := s.Post("/v1/auth/login", support.Session{}, body)
 	resp.AssertStatus(200)
 	content, err := resp.Content()
 	s.Require().NoError(err)
@@ -119,10 +113,7 @@ func (s *accountRolesSuite) login(email string) string {
 
 func (s *accountRolesSuite) get(token string, accountID uuid.UUID, status int) roleListBody {
 	s.T().Helper()
-	resp, err := s.Http(s.T()).
-		WithHeader("Authorization", "Bearer "+token).
-		Get("/v1/accounts/" + accountID.String() + "/roles")
-	s.Require().NoError(err)
+	resp := s.Get("/v1/accounts/"+accountID.String()+"/roles", support.Session{AccessToken: token})
 	resp.AssertStatus(status)
 	content, err := resp.Content()
 	s.Require().NoError(err)
@@ -185,27 +176,22 @@ func keysOf(body map[string]json.RawMessage) []string {
 func (s *accountRolesSuite) write(method, token string, accountID uuid.UUID, status int) {
 	s.T().Helper()
 	path := "/v1/accounts/" + accountID.String() + "/roles"
-	request := s.Http(s.T()).
-		WithHeader("Authorization", "Bearer "+token).
-		WithHeader("Content-Type", "application/json")
-	body := strings.NewReader(`{"permissions":[]}`)
-	var (
-		resp contractstestinghttp.Response
-		err  error
-	)
+	session := support.Session{AccessToken: token}
+	body := `{"permissions":[]}`
+	var resp contractstestinghttp.Response
 	switch method {
 	case http.MethodPost:
-		resp, err = request.Post(path, body)
+		resp = s.Post(path, session, body)
 	case http.MethodPut:
-		resp, err = request.Put(path, body)
+		resp = s.Put(path, session, body)
 	case http.MethodPatch:
-		resp, err = request.Patch(path, body)
+		resp = s.Patch(path, session, body)
 	case http.MethodDelete:
-		resp, err = request.Delete(path, body)
+		resp = s.Delete(path, session, body)
 	default:
 		s.FailNow("unsupported method " + method)
+		return
 	}
-	s.Require().NoError(err)
 	resp.AssertStatus(status)
 }
 

@@ -6,12 +6,12 @@ import (
 
 	contractstesting "github.com/goravel/framework/contracts/testing/http"
 	"github.com/goravel/framework/facades"
-	"github.com/stretchr/testify/suite"
 
 	"github.com/google/uuid"
 
 	"github.com/macrowallets/waas/app/http/responses"
 	"github.com/macrowallets/waas/app/services/settings"
+	"github.com/macrowallets/waas/tests/feature/support"
 	"github.com/macrowallets/waas/tests/feature/support/testutil"
 )
 
@@ -26,7 +26,7 @@ type PlatformSettingsIndexTestSuite struct {
 }
 
 func TestPlatform_Settings_IndexSuite(t *testing.T) {
-	suite.Run(t, new(PlatformSettingsIndexTestSuite))
+	support.RunSuite(t, new(PlatformSettingsIndexTestSuite))
 }
 
 func (s *PlatformSettingsIndexTestSuite) SetupTest() {
@@ -142,8 +142,7 @@ func (s *PlatformSettingsIndexTestSuite) TestA_Non_AdminIsForbiddenAndAMissingSe
 	s.Equal("you do not have permission to view settings", body.Error.Message)
 	s.Equal(int64(0), s.count(`SELECT count(*) FROM settings WHERE account_id IS NULL`))
 
-	missing, err := s.Http(s.T()).Get("/v1/platform/settings")
-	s.Require().NoError(err)
+	missing := s.Get("/v1/platform/settings", support.Session{})
 	missing.AssertUnauthorized()
 }
 
@@ -158,20 +157,13 @@ func (s *PlatformSettingsIndexTestSuite) grantPlatformAdmin(userID uuid.UUID) {
 
 func (s *PlatformSettingsIndexTestSuite) putRaw(token, path, body string) contractstesting.Response {
 	s.T().Helper()
-	resp, err := s.Http(s.T()).
-		WithHeader("Authorization", "Bearer "+token).
-		WithHeader("Content-Type", "application/json").
-		Put(path, strings.NewReader(body))
-	s.Require().NoError(err)
+	resp := s.Put(path, support.Session{AccessToken: token}, body)
 	return resp
 }
 
 func (s *PlatformSettingsIndexTestSuite) getRaw(token, path string) contractstesting.Response {
 	s.T().Helper()
-	resp, err := s.Http(s.T()).
-		WithHeader("Authorization", "Bearer "+token).
-		Get(path)
-	s.Require().NoError(err)
+	resp := s.Get(path, support.Session{AccessToken: token})
 	return resp
 }
 

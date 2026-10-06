@@ -11,27 +11,24 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
-	"strings"
 	"testing"
 
 	"github.com/google/uuid"
 	contractstesting "github.com/goravel/framework/contracts/testing/http"
 	"github.com/goravel/framework/facades"
-	goravelTesting "github.com/goravel/framework/testing"
-	"github.com/stretchr/testify/suite"
 
 	appfacades "github.com/macrowallets/waas/app/facades"
 	"github.com/macrowallets/waas/app/models"
 	authsvc "github.com/macrowallets/waas/app/services/auth"
 	"github.com/macrowallets/waas/app/services/settings"
+	"github.com/macrowallets/waas/tests/feature/support"
 	"github.com/macrowallets/waas/tests/feature/support/fixtures"
 )
 
 const contractGapPassword = "correct-horse-battery"
 
 type contractGapsSuite struct {
-	suite.Suite
-	goravelTesting.TestCase
+	support.HTTPSuite
 
 	accountID uuid.UUID
 	ownerID   uuid.UUID
@@ -39,7 +36,7 @@ type contractGapsSuite struct {
 }
 
 func TestContract_Gaps_Suite(t *testing.T) {
-	suite.Run(t, new(contractGapsSuite))
+	support.RunSuite(t, new(contractGapsSuite))
 }
 
 func (s *contractGapsSuite) SetupTest() {
@@ -74,10 +71,7 @@ func (s *contractGapsSuite) seedSession(role string) (uuid.UUID, uuid.UUID, stri
 	}))
 
 	body := fmt.Sprintf(`{"email":%q,"password":%q}`, email, contractGapPassword)
-	resp, err := s.Http(s.T()).
-		WithHeader("Content-Type", "application/json").
-		Post("/v1/auth/login", strings.NewReader(body))
-	s.Require().NoError(err)
+	resp := s.Post("/v1/auth/login", support.Session{}, body)
 	resp.AssertOk()
 	content, err := resp.Content()
 	s.Require().NoError(err)
@@ -147,28 +141,21 @@ func (s *contractGapsSuite) seedWithdrawal(walletID uuid.UUID) uuid.UUID {
 func (s *contractGapsSuite) call(method, path, token, body string) contractstesting.Response {
 	s.T().Helper()
 
-	req := s.Http(s.T()).WithHeader("Content-Type", "application/json")
+	session := support.Session{}
 	if token != "" {
-		req = req.WithHeader("Authorization", "Bearer "+token).
-			WithHeader("X-Account-Id", s.accountID.String())
+		session = support.Session{AccessToken: token, AccountID: s.accountID.String()}
 	}
-	var (
-		resp contractstesting.Response
-		err  error
-	)
-	reader := strings.NewReader(body)
 	switch method {
 	case http.MethodGet:
-		resp, err = req.Get(path)
+		return s.Get(path, session)
 	case http.MethodPost:
-		resp, err = req.Post(path, reader)
+		return s.Post(path, session, body)
 	case http.MethodPatch:
-		resp, err = req.Patch(path, reader)
+		return s.Patch(path, session, body)
 	default:
 		s.FailNow("unsupported method " + method)
+		return nil
 	}
-	s.Require().NoError(err)
-	return resp
 }
 
 func (s *contractGapsSuite) errorText(body map[string]any) string {

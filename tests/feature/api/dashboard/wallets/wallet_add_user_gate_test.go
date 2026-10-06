@@ -3,17 +3,15 @@ package wallets
 import (
 	"encoding/json"
 	"fmt"
-	"strings"
 	"testing"
 
 	"github.com/google/uuid"
 	contractstesting "github.com/goravel/framework/contracts/testing/http"
 	"github.com/goravel/framework/facades"
-	goravelTesting "github.com/goravel/framework/testing"
-	"github.com/stretchr/testify/suite"
 
 	"github.com/macrowallets/waas/app/models"
 	authsvc "github.com/macrowallets/waas/app/services/auth"
+	"github.com/macrowallets/waas/tests/feature/support"
 	"github.com/macrowallets/waas/tests/feature/support/fixtures"
 )
 
@@ -24,12 +22,11 @@ const walletAddUserGatePassword = "correct-horse-battery"
 // account role owner or admin. Auditor, user, and the other wallet roles are
 // refused before a wallet membership is written.
 type WalletAddUserGateTestSuite struct {
-	suite.Suite
-	goravelTesting.TestCase
+	support.HTTPSuite
 }
 
 func TestWallet_Add_UserGateSuite(t *testing.T) {
-	suite.Run(t, new(WalletAddUserGateTestSuite))
+	support.RunSuite(t, new(WalletAddUserGateTestSuite))
 }
 
 func (s *WalletAddUserGateTestSuite) SetupTest() {
@@ -154,10 +151,7 @@ func (s *WalletAddUserGateTestSuite) login(userID uuid.UUID) string {
 	var email string
 	s.Require().NoError(facades.Orm().Query().Raw(`SELECT email FROM users WHERE id = ?`, userID).Scan(&email))
 	body := fmt.Sprintf(`{"email":%q,"password":%q}`, email, walletAddUserGatePassword)
-	resp, err := s.Http(s.T()).
-		WithHeader("Content-Type", "application/json").
-		Post("/v1/auth/login", strings.NewReader(body))
-	s.Require().NoError(err)
+	resp := s.Post("/v1/auth/login", support.Session{}, body)
 	resp.AssertStatus(200)
 	var parsed struct {
 		AccessToken string `json:"access_token"`
@@ -169,12 +163,7 @@ func (s *WalletAddUserGateTestSuite) login(userID uuid.UUID) string {
 
 func (s *WalletAddUserGateTestSuite) addUser(token string, accountID, walletID, targetID uuid.UUID, roles string) contractstesting.Response {
 	body := fmt.Sprintf(`{"user_id":%q,"roles":%q}`, targetID.String(), roles)
-	resp, err := s.Http(s.T()).
-		WithHeader("Authorization", "Bearer "+token).
-		WithHeader("X-Account-Id", accountID.String()).
-		WithHeader("Content-Type", "application/json").
-		Post("/v1/wallets/"+walletID.String()+"/users", strings.NewReader(body))
-	s.Require().NoError(err)
+	resp := s.Post("/v1/wallets/"+walletID.String()+"/users", support.Session{AccessToken: token, AccountID: accountID.String()}, body)
 	return resp
 }
 
