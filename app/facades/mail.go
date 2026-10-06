@@ -116,7 +116,8 @@ func RestoreMailBaseline() {
 
 // Mail returns the process mailer. After boot it is the mail facade over the
 // mailer and mailer.Config. Each Send reads mail_smtp and the mail_delivery
-// From header first. The transport stays SMTP.
+// From header first. SMTP dials unless MAIL_MAILER is log. The log driver
+// is refused in production.
 func Mail() mail.Mail {
 	resolved := goravelfacades.Mail()
 	if resolved == nil {

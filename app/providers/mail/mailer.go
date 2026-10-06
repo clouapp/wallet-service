@@ -3,6 +3,7 @@ package mail
 import (
 	"context"
 	"errors"
+	"log/slog"
 
 	"github.com/macrowallets/waas/app/providers/mailer"
 )
@@ -15,7 +16,8 @@ var errMailerRequired = errors.New("mail: mailer is required")
 var errQueueRefused = errors.New("mail: queue is refused")
 
 // Mailer publishes mailer.Config onto the process mail document and then
-// dials. The transport stays SMTP.
+// dials. The log driver accepts the message without a dial. Production
+// refuses that driver before anything is published.
 type Mailer struct {
 	config *mailer.Config
 	gate   func(func() error) error
@@ -42,16 +44,24 @@ func (m *Mailer) Config() *mailer.Config {
 	return m.config
 }
 
-// Deliver reads mailer.Config, publishes it for the SMTP dial, runs the
-// observer, calls send, and restores the env document.
+// Deliver reads mailer.Config, publishes it, runs the observer, and dials.
+// The log driver accepts the message here and does not call send. A log
+// driver in production is refused before the document is published.
 func (m *Mailer) Deliver(send func() error) error {
 	if m == nil || m.config == nil || send == nil {
 		return errMailerRequired
 	}
 	run := func() error {
-		m.config.WriteResolved(context.Background())
+		useLog, err := m.config.Publish(context.Background())
+		if err != nil {
+			return err
+		}
 		defer m.config.Restore()
 		m.config.Observe()
+		if useLog {
+			slog.Info("mail accepted by the log driver")
+			return nil
+		}
 		return send()
 	}
 	if m.gate == nil {

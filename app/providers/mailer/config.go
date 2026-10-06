@@ -2,8 +2,14 @@ package mailer
 
 import (
 	"context"
+	"errors"
 	"log/slog"
+	"strings"
+
+	"github.com/macrowallets/waas/config"
 )
+
+var errMailerConfigRequired = errors.New("mail: config is required")
 
 const (
 	smtpUnreadMessage = "mail smtp settings unread; keeping the env mailer"
@@ -90,6 +96,36 @@ func (c *Config) WriteResolved(ctx context.Context) {
 		return
 	}
 	c.hooks.Write(c.Resolve(ctx))
+}
+
+// Publish writes the resolved document for one send. useLog is true when the
+// configured driver is log and this environment allows it. The log driver is
+// refused in production before the document is published.
+func (c *Config) Publish(ctx context.Context) (useLog bool, err error) {
+	if c == nil {
+		return false, errMailerConfigRequired
+	}
+	doc := c.Resolve(ctx)
+	useLog, err = logTransport(doc)
+	if err != nil {
+		return false, err
+	}
+	if c.hooks.Write != nil {
+		c.hooks.Write(doc)
+	}
+	return useLog, nil
+}
+
+func logTransport(doc map[string]any) (bool, error) {
+	driver, _ := doc["driver"].(string)
+	appEnv, _ := doc["app_env"].(string)
+	if err := config.RefuseLogDriver(appEnv, driver); err != nil {
+		return false, err
+	}
+	if strings.EqualFold(strings.TrimSpace(driver), "log") {
+		return true, nil
+	}
+	return false, nil
 }
 
 // Restore puts the env mail document back after the dial.

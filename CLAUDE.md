@@ -271,15 +271,17 @@ make dev            # Docker + backend (Air) + frontend
 | `make lint` | golangci-lint v2 with `.golangci.yml` (report mode: lists findings, exits 0) |
 | `make arch` | architecture checks with every finding listed (`ARCH_MODE=ratchet\|enforce` to block) |
 | `make contract` / `make contract-update` | compare / rewrite the HTTP contract snapshot |
-| `make docker-up` / `make docker-down` | Postgres, Redis, LocalStack |
+| `make docker-up` / `make docker-down` | Postgres, Redis, Mailpit, LocalStack |
 | `make migrate` / `make migrate-status` / `make migrate-rollback` / `make migrate-fresh` | migrations |
 | `make db-seed` / `make migrate-fresh-seed` | dev seed data |
 | `make key-generate` / `make jwt-secret` | `APP_KEY` / `JWT_SECRET` in `.env.dev` |
 | `make swagger-generate` | regenerate `docs/` (Swagger UI at `/swagger/index.html`) |
 
 Docker (compose project `macro-wallets`, prefix `waas-`): `waas-postgres`, `waas-redis`,
-`waas-localstack`; host ports come from `.env.dev` (`DB_PORT`, `REDIS_PORT`,
-`LOCALSTACK_PORT`). LocalStack community has no native persistence: hooks in
+`waas-mailpit`, `waas-localstack`; host ports come from `.env.dev` (`DB_PORT`, `REDIS_PORT`,
+`MAILPIT_SMTP_PORT`, `MAILPIT_UI_PORT`, `LOCALSTACK_PORT`). Local mail uses Mailpit
+(`MAIL_MAILER=smtp`, SMTP on port 1025) or `MAIL_MAILER=log`. The log driver is refused
+when `APP_ENV` is production. LocalStack community has no native persistence: hooks in
 `docker/localstack/` keep Secrets Manager (MPC share B) in encrypted, ARN-preserving
 snapshots in the `localstack_data` volume; the snapshot key lives in
 `~/.config/macro-wallets/localstack-seed/`, never in the repository.

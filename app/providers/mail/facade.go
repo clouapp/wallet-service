@@ -7,8 +7,8 @@ import (
 )
 
 // Facade adapts *Mailer to the framework mail contract. facades.Mail()
-// returns it. The mailer reads mailer.Config at send time and the inner
-// transport stays SMTP.
+// returns it. The mailer reads mailer.Config at send time. SMTP dials
+// unless the configured driver is log.
 type Facade struct {
 	mailer *Mailer
 	inner  contractsmail.Mail

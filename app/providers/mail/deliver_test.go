@@ -1,14 +1,18 @@
 package mail
 
 import (
+	"bytes"
 	"context"
 	"crypto/subtle"
 	"errors"
+	"log/slog"
+	"strings"
 	"testing"
 
 	contractsmail "github.com/goravel/framework/contracts/mail"
 
 	"github.com/macrowallets/waas/app/providers/mailer"
+	"github.com/macrowallets/waas/config"
 )
 
 func TestDeliverUsesSMTPAndFromWhenTheRowsExist(t *testing.T) {
@@ -189,6 +193,76 @@ func TestNewFacadeKeepsNilDependencies(t *testing.T) {
 	empty := NewFacade(FacadeDeps{})
 	if empty == nil || empty.Mailer() != nil || empty.inner != nil {
 		t.Fatal("a missing dependency was filled in")
+	}
+}
+
+func TestDeliverAcceptsTheLogDriverWithoutDialing(t *testing.T) {
+	const secret = "env-mailbox-secret"
+	var written bool
+	var observed bool
+	var logs bytes.Buffer
+	previous := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&logs, nil)))
+	t.Cleanup(func() { slog.SetDefault(previous) })
+
+	cfg := mailer.NewConfig(mailer.Hooks{
+		Baseline: func() map[string]any {
+			return map[string]any{
+				"driver":   "log",
+				"app_env":  "local",
+				"password": secret,
+				"mailers":  map[string]any{"smtp": map[string]any{"password": secret}},
+			}
+		},
+		Write:   func(map[string]any) { written = true },
+		Restore: func() {},
+		Observe: func() { observed = true },
+	})
+	transport := &recordingMail{}
+	err := NewFacade(FacadeDeps{Mailer: NewMailer(MailerDeps{Config: cfg}), Inner: transport}).Send()
+	if err != nil {
+		t.Fatal("log driver send failed")
+	}
+	if transport.sent {
+		t.Fatal("log driver dialed")
+	}
+	if !written || !observed {
+		t.Fatal("log driver skipped the mail document")
+	}
+	text := logs.String()
+	if strings.Contains(text, secret) {
+		t.Fatal("log driver wrote a credential")
+	}
+	if !strings.Contains(text, "mail accepted by the log driver") {
+		t.Fatal("log driver did not accept the message")
+	}
+}
+
+func TestDeliverRefusesTheLogDriverInProduction(t *testing.T) {
+	const secret = "env-mailbox-secret"
+	var written bool
+	cfg := mailer.NewConfig(mailer.Hooks{
+		Baseline: func() map[string]any {
+			return map[string]any{
+				"driver":   "log",
+				"app_env":  "production",
+				"password": secret,
+			}
+		},
+		Write:   func(map[string]any) { written = true },
+		Restore: func() {},
+		Observe: func() {},
+	})
+	transport := &recordingMail{}
+	err := NewFacade(FacadeDeps{Mailer: NewMailer(MailerDeps{Config: cfg}), Inner: transport}).Send()
+	if !errors.Is(err, config.ErrLogDriverRefused) {
+		t.Fatal("production log driver was not refused")
+	}
+	if strings.Contains(err.Error(), secret) {
+		t.Fatal("refusal included a credential")
+	}
+	if transport.sent || written {
+		t.Fatal("refused log driver dialed or published")
 	}
 }
 

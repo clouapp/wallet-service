@@ -22,8 +22,8 @@ var (
 // mailer.Config. The framework mail provider binds binding.Mail first;
 // SettingsServiceProvider is registered later and has no Relationship, so
 // this Bind is the one that stays. Each resolution builds a new SMTP
-// application because that type keeps builder state. mail_delivery.driver
-// does not select a transport.
+// application because that type keeps builder state. The process driver is
+// MAIL_MAILER. mail_delivery.driver does not select a transport.
 func bindMailFacade(app foundation.Application) {
 	app.Bind(binding.Mail, func(app foundation.Application) (any, error) {
 		cfg := app.MakeConfig()

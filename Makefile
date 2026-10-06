@@ -432,7 +432,7 @@ security: ## Run security scan with gosec
 # Docker Commands (Local Development)
 # =============================================================================
 
-docker-up: localstack-hooks ## Start local development environment (PostgreSQL + Redis)
+docker-up: localstack-hooks ## Start local development environment (PostgreSQL, Redis, Mailpit, LocalStack)
 	@echo "🐳 Starting local development environment..."
 	$(DOCKER_COMPOSE) up -d
 	@echo "⏳ Waiting for PostgreSQL to accept connections..."
