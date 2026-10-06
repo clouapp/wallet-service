@@ -23,7 +23,11 @@ import (
 	"github.com/macrowallets/waas/tests/testenv"
 )
 
-const snapshotPath = "testdata/http_contract.txt"
+const (
+	snapshotPath     = "testdata/http_contract.txt"
+	baseSnapshotPath = "testdata/http_contract_base.txt"
+	baseDiffPath     = "testdata/http_contract_base.diff"
+)
 
 var updateContract = flag.Bool("update-contract", false, "rewrite "+snapshotPath+" from the current answers")
 
@@ -46,6 +50,7 @@ func TestMain(m *testing.M) {
 // decided ones in .ai/guidelines/http-error-contract.md and rewrite the
 // snapshot with -update-contract.
 func TestHTTPContract(t *testing.T) {
+	refuseOutboundMail(t)
 	mocks.TestDB(t)
 	seedReferenceData(t)
 
@@ -80,6 +85,36 @@ func TestHTTPContract(t *testing.T) {
 	for _, difference := range Diff(string(want), got) {
 		t.Errorf("%s", difference)
 	}
+	assertBaseDiff(t, got)
+}
+
+// assertBaseDiff compares this run with the recording taken on the base
+// commit. Differences this branch already shipped are locked in baseDiffPath
+// and listed in .ai/guidelines/http-error-contract.md.
+func assertBaseDiff(t *testing.T, got string) {
+	t.Helper()
+	base, err := os.ReadFile(baseSnapshotPath)
+	if err != nil {
+		t.Fatalf("read base recording: %v", err)
+	}
+	gotDiff := RenderDiff(Diff(string(base), got))
+	expected, err := os.ReadFile(baseDiffPath)
+	if err != nil {
+		t.Fatalf("read base diff: %v", err)
+	}
+	if string(expected) != gotDiff {
+		t.Errorf("base-to-tip contract diff changed (%d bytes recorded, %d bytes from this run)", len(expected), len(gotDiff))
+	}
+}
+
+// refuseOutboundMail points Goravel's mailer at an address Dial rejects before
+// any network call. The mailer reads mail.host and mail.port. An unbracketed
+// IPv6 address fails that parse, so a blocked SMTP socket cannot turn the
+// handler's response into a timeout.
+func refuseOutboundMail(t *testing.T) {
+	t.Helper()
+	facades.Config().Add("mail.host", "::1")
+	facades.Config().Add("mail.port", 59999)
 }
 
 func seedReferenceData(t *testing.T) {

@@ -141,3 +141,7 @@ two bugfixes that landed in the commits before it.
 | `POST /v1/accounts/{id}/users` | invalid role, 2026-10-03, account roles | enum `owner admin viewer` | enum `owner admin auditor user` |
 | `GET /v1/chains`, `GET /api/v1/chains` | 2026-10-03, base/arbitrum/bsc from #1 | eth, btc, polygon, sol and their testnets | also `base`, `tbase`, `arbitrum`, `tarbitrum`, `bsc`, `tbsc` |
 | `GET /v1/wallets/{id}/settings` | 2026-10-03, label already returned by the settings controller | no `label` | `label` plus the same fee fields (`fee_multiplier` stays JSON null) |
+| `GET /v1/users/me` | 2026-10-05, active feature keys | no `features` | `features` lists the globally active flags |
+| `GET /v1/accounts/{id}` | 2026-10-05, account feature keys | no `features` | `features` lists the active flags |
+| `GET /v1/users/me/accounts` | 2026-10-05, caller role | no `role` | `role` |
+| `POST /v1/auth/2fa/verify` | body names `challenge_token`, 2026-10-05, second-factor token rename | 422, `partial_token` required | 401 `unauthorized`, `invalid or expired partial token` |

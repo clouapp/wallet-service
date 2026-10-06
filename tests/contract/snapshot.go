@@ -76,3 +76,11 @@ func Diff(want, got string) []string {
 	}
 	return differences
 }
+
+// RenderDiff joins Diff lines the way testdata/http_contract_base.diff stores them.
+func RenderDiff(differences []string) string {
+	if len(differences) == 0 {
+		return ""
+	}
+	return strings.Join(differences, "\n") + "\n"
+}
