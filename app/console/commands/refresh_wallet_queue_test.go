@@ -73,8 +73,10 @@ func TestRefreshWalletQueueScopeStopsOnTheFirstError(t *testing.T) {
 }
 
 func TestQueuedRefreshDispatchesWalletRefreshRequestedForBalances(t *testing.T) {
+	recorder := &recordingDispatcher{}
 	var events []recordedDispatch
 	cmd := &RefreshWallet{
+		dispatcher: recorder,
 		requestRefresh: func(walletID, chainID string) error {
 			events = append(events, recordedDispatch{kind: "event", walletID: walletID, chainID: chainID})
 			return nil
@@ -85,6 +87,9 @@ func TestQueuedRefreshDispatchesWalletRefreshRequestedForBalances(t *testing.T) 
 	}
 	if len(events) != 1 || events[0] != (recordedDispatch{kind: "event", walletID: "wallet-1", chainID: "eth"}) {
 		t.Fatalf("events = %#v", events)
+	}
+	if len(recorder.calls) != 1 || recorder.calls[0] != (recordedDispatch{kind: "balances", walletID: "wallet-1", chainID: "eth"}) {
+		t.Fatalf("calls = %#v", recorder.calls)
 	}
 }
 
@@ -108,6 +113,7 @@ func TestQueuedRefreshUsesTheEventForBalancesAndJobsForTheRest(t *testing.T) {
 		t.Fatalf("events = %d, want 1", events)
 	}
 	want := []recordedDispatch{
+		{kind: "balances", walletID: "wallet-1", chainID: "eth"},
 		{kind: "transactions", walletID: "wallet-1", chainID: "eth"},
 		{kind: "tokens", walletID: "wallet-1", chainID: "eth"},
 		{kind: "utxos", walletID: "wallet-1", chainID: "eth"},
@@ -154,6 +160,16 @@ func TestQueuedRefreshStopsWhenTheEventDispatchFails(t *testing.T) {
 	}
 	if len(recorder.calls) != 0 {
 		t.Fatalf("jobs dispatched after the event failed: %#v", recorder.calls)
+	}
+}
+
+func TestQueuedRefreshBalancesNeedsTheDispatcher(t *testing.T) {
+	cmd := &RefreshWallet{
+		requestRefresh: func(string, string) error { return nil },
+	}
+	err := cmd.dispatchQueuedRefresh("balances", "wallet-1", "eth")
+	if err == nil || err.Error() != "refresh:wallet: refresh dispatcher is not initialized" {
+		t.Fatalf("error = %v", err)
 	}
 }
 

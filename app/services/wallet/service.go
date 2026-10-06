@@ -22,6 +22,7 @@ import (
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/services/chainregistry"
 	mpc "github.com/macrowallets/waas/app/services/mpc"
+	"github.com/macrowallets/waas/app/services/refresh"
 	"github.com/macrowallets/waas/pkg/mpcshare"
 	"github.com/macrowallets/waas/pkg/types"
 )
@@ -104,6 +105,7 @@ type Deps struct {
 	Wallets      WalletStore
 	Addresses    AddressStore
 	WebhookSync  webhookAddressSyncer
+	Dispatcher   refresh.Dispatcher
 }
 
 type Service struct {
@@ -114,6 +116,7 @@ type Service struct {
 	walletRepo     WalletStore
 	addressRepo    AddressStore
 	webhookSyncSvc webhookAddressSyncer
+	dispatcher     refresh.Dispatcher
 }
 
 // NewService builds a wallet service from Deps.
@@ -126,6 +129,7 @@ func NewService(deps Deps) *Service {
 		walletRepo:     deps.Wallets,
 		addressRepo:    deps.Addresses,
 		webhookSyncSvc: deps.WebhookSync,
+		dispatcher:     deps.Dispatcher,
 	}
 }
 
@@ -243,6 +247,7 @@ func (s *Service) CreateWallet(ctx context.Context, accountID uuid.UUID, chainID
 	w.DepositAddress = addr
 
 	s.cacheAddress(ctx, chainID, depositAddressStr)
+	s.dispatchBalanceRefresh(walletID.String(), chainID)
 
 	if s.webhookSyncSvc != nil {
 		go func() {
@@ -286,12 +291,20 @@ func (s *Service) ActivateWallet(ctx context.Context, walletID uuid.UUID, code s
 	w.Status = string(types.WalletStatusActive)
 	w.ActivationCode = nil
 
+	s.dispatchBalanceRefresh(w.ID.String(), w.Chain)
 	_ = facades.Event().Job(&dtos.WalletActivated{}, []event.Arg{
 		{Type: "string", Value: w.ID.String()},
 		{Type: "string", Value: w.Chain},
 	}).Dispatch()
 
 	return w, nil
+}
+
+func (s *Service) dispatchBalanceRefresh(walletID, chainID string) {
+	if s.dispatcher == nil {
+		return
+	}
+	_ = s.dispatcher.DispatchBalances(walletID, chainID)
 }
 
 func curveForChain(chainID string) mpc.Curve {

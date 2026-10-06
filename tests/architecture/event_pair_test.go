@@ -6,9 +6,20 @@ import (
 	"testing"
 )
 
-// TestEveryRegisteredEventHasADispatcherAndAListener refuses a Goravel event
-// that is registered without a listener or without a Job dispatch
+// singleJobEvents only enqueue one job. The service dispatches that job
+// through refresh.Dispatcher, so the event stays registered without a listener
 // (.ai/guidelines/queues-and-workers.md).
+var singleJobEvents = map[string]bool{
+	"WalletCreated":          true,
+	"WalletActivated":        true,
+	"DepositDetected":        true,
+	"WithdrawalBroadcasted":  true,
+	"WalletRefreshRequested": true,
+}
+
+// TestEveryRegisteredEventHasADispatcherAndAListener refuses a Goravel event
+// that is registered without a Job dispatch. A listener is required unless the
+// event only enqueues one job (.ai/guidelines/queues-and-workers.md).
 func TestEveryRegisteredEventHasADispatcherAndAListener(t *testing.T) {
 	module := sharedModule(t)
 	registered := registeredEvents(t, module)
@@ -22,11 +33,38 @@ func TestEveryRegisteredEventHasADispatcherAndAListener(t *testing.T) {
 	}
 	sort.Strings(names)
 	for _, name := range names {
-		if registered[name] == 0 {
+		if registered[name] == 0 && !singleJobEvents[name] {
 			t.Errorf("%s is registered without a listener", name)
 		}
 		if !dispatched[name] {
 			t.Errorf("%s is registered without a dispatcher", name)
+		}
+	}
+}
+
+// TestSingleJobEventsUseTheDispatcherPort refuses a listener that only
+// enqueues one job, and requires the service to call the refresh port.
+func TestSingleJobEventsUseTheDispatcherPort(t *testing.T) {
+	module := sharedModule(t)
+	for _, name := range listenerTypeNames(module) {
+		switch name {
+		case "EnqueueWalletRefresh", "EnqueueTransactionRefresh":
+			t.Errorf("%s only enqueues one job; the service must call the Dispatcher port", name)
+		}
+	}
+	checks := []struct {
+		path   string
+		method string
+	}{
+		{"app/services/wallet/service.go", "DispatchBalances"},
+		{"app/services/withdraw/service.go", "DispatchBalances"},
+		{"app/services/ingest/service.go", "DispatchTransactions"},
+		{"app/console/commands/refresh_wallet.go", "DispatchBalances"},
+	}
+	for _, check := range checks {
+		file := productionFile(t, module, check.path)
+		if selectorCount(file, check.method) == 0 {
+			t.Errorf("%s does not call %s", check.path, check.method)
 		}
 	}
 }
@@ -172,10 +210,30 @@ func registeredListenerNames(t *testing.T, module *Module) map[string]bool {
 			return false
 		})
 	}
-	if len(found) == 0 {
-		t.Fatal("no registered listeners")
-	}
 	return found
+}
+
+func productionFile(t *testing.T, module *Module, path string) *SourceFile {
+	t.Helper()
+	for _, file := range module.ProductionFiles() {
+		if file.Path == path {
+			return file
+		}
+	}
+	t.Fatalf("%s was not parsed", path)
+	return nil
+}
+
+func selectorCount(file *SourceFile, name string) int {
+	count := 0
+	ast.Inspect(file.AST, func(node ast.Node) bool {
+		selector, ok := node.(*ast.SelectorExpr)
+		if ok && selector.Sel != nil && selector.Sel.Name == name {
+			count++
+		}
+		return true
+	})
+	return count
 }
 
 func eventTypeNames(module *Module) []string {

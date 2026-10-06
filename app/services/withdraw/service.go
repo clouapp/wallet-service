@@ -16,6 +16,7 @@ import (
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/repositories"
 	mpcpkg "github.com/macrowallets/waas/app/services/mpc"
+	"github.com/macrowallets/waas/app/services/refresh"
 	"github.com/macrowallets/waas/app/services/sweep"
 	"github.com/macrowallets/waas/app/services/webhook"
 	"github.com/macrowallets/waas/pkg/mpcshare"
@@ -91,6 +92,7 @@ type Service struct {
 	addressRepo     *repositories.AddressRepository
 	sweep           sweepRunner
 	flags           accountGate
+	dispatcher      refresh.Dispatcher
 	usdQuote        USDQuote
 	// createUsers, createTotp, createRows and createChains serve Create.
 	// Request does not read them. A nil value fails Create before it persists.
@@ -112,6 +114,7 @@ type Deps struct {
 	Addresses    *repositories.AddressRepository
 	Sweep        sweepRunner
 	Flags        accountGate
+	Dispatcher   refresh.Dispatcher
 }
 
 // NewService wires the withdrawal service from Deps.
@@ -126,6 +129,7 @@ func NewService(deps Deps) *Service {
 		addressRepo:     deps.Addresses,
 		sweep:           deps.Sweep,
 		flags:           deps.Flags,
+		dispatcher:      deps.Dispatcher,
 	}
 }
 
@@ -310,8 +314,10 @@ func (s *Service) Request(ctx context.Context, req WithdrawRequest) (*models.Tra
 	// The sweep executor already enqueues EventWithdrawalBroadcasting for the
 	// final tx — do not re-emit here. The public withdrawal.broadcast event is
 	// published by withdrawalevents.Publisher once the withdrawal row is
-	// marked broadcast. We still dispatch the Goravel domain
-	// event so wallet-refresh listeners fire.
+	// marked broadcast. The balance refresh is the domain event's only job,
+	// so the service dispatches it through the Dispatcher port. The domain
+	// event stays.
+	s.dispatchBalanceRefresh(finalTx.WalletID.String(), wallet.Chain)
 	_ = facades.Event().Job(&dtos.WithdrawalBroadcasted{}, []event.Arg{
 		{Type: "string", Value: finalTx.WalletID.String()},
 		{Type: "string", Value: wallet.Chain},
@@ -325,6 +331,13 @@ func (s *Service) Request(ctx context.Context, req WithdrawRequest) (*models.Tra
 		"sweeps", len(result.Sweeps),
 	)
 	return finalTx, meta, nil
+}
+
+func (s *Service) dispatchBalanceRefresh(walletID, chainID string) {
+	if s.dispatcher == nil {
+		return
+	}
+	_ = s.dispatcher.DispatchBalances(walletID, chainID)
 }
 
 // decryptShareA decrypts the wallet's MPC customer share (share A) using the

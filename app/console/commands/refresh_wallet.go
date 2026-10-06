@@ -47,7 +47,7 @@ func NewRefreshWallet(deps RefreshWalletDeps) *RefreshWallet {
 }
 
 // dispatchWalletRefreshRequested fires the registered WalletRefreshRequested
-// event. Its listener enqueues the balance refresh.
+// event. The balance job is dispatched through the refresh Dispatcher port.
 func dispatchWalletRefreshRequested(walletID, chainID string) error {
 	ev := facades.Event()
 	if ev == nil {
@@ -130,13 +130,16 @@ func (c *RefreshWallet) Handle(ctx console.Context) error {
 	return nil
 }
 
-// dispatchQueuedRefresh sends a queued refresh through the registered event
-// when the scope includes balances. The listener enqueues that job, so this
-// path does not enqueue balances a second time.
+// dispatchQueuedRefresh sends a queued refresh. Scopes that include balances
+// still fire WalletRefreshRequested. That event only enqueues one job, so
+// this command dispatches the balance job through the Dispatcher port.
 func (c *RefreshWallet) dispatchQueuedRefresh(scope, walletID, chainID string) error {
 	switch scope {
 	case "balances":
-		return c.requestWalletRefresh(walletID, chainID)
+		if err := c.requestWalletRefresh(walletID, chainID); err != nil {
+			return err
+		}
+		return c.dispatchBalances(walletID, chainID)
 	case "full":
 		if err := c.requestWalletRefresh(walletID, chainID); err != nil {
 			return err
@@ -145,6 +148,7 @@ func (c *RefreshWallet) dispatchQueuedRefresh(scope, walletID, chainID string) e
 			return fmt.Errorf("refresh:wallet: refresh dispatcher is not initialized")
 		}
 		for _, dispatch := range []func(string, string) error{
+			c.dispatcher.DispatchBalances,
 			c.dispatcher.DispatchTransactions,
 			c.dispatcher.DispatchTokens,
 			c.dispatcher.DispatchUTXOs,
@@ -164,6 +168,13 @@ func (c *RefreshWallet) requestWalletRefresh(walletID, chainID string) error {
 		return fmt.Errorf("refresh:wallet: event dispatcher is not initialized")
 	}
 	return c.requestRefresh(walletID, chainID)
+}
+
+func (c *RefreshWallet) dispatchBalances(walletID, chainID string) error {
+	if c.dispatcher == nil {
+		return fmt.Errorf("refresh:wallet: refresh dispatcher is not initialized")
+	}
+	return c.dispatcher.DispatchBalances(walletID, chainID)
 }
 
 func (c *RefreshWallet) dispatchScopedJobs(scope, walletID, chainID string) error {

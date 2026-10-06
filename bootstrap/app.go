@@ -99,12 +99,15 @@ func Boot() contractsfoundation.Application {
 			}
 		}).
 		WithEvents(func() map[contractsevent.Event][]contractsevent.Listener {
+			// These events stay registered. Each one only enqueues one job, so the
+			// service dispatches that job through the refresh Dispatcher port
+			// and no listener remains.
 			return map[contractsevent.Event][]contractsevent.Listener{
-				&dtos.WalletCreated{}:          {&listeners.EnqueueWalletRefresh{}},
-				&dtos.WalletActivated{}:        {&listeners.EnqueueWalletRefresh{}},
-				&dtos.DepositDetected{}:        {&listeners.EnqueueTransactionRefresh{}},
-				&dtos.WithdrawalBroadcasted{}:  {&listeners.EnqueueWalletRefresh{}},
-				&dtos.WalletRefreshRequested{}: {&listeners.EnqueueWalletRefresh{}},
+				&dtos.WalletCreated{}:          {},
+				&dtos.WalletActivated{}:        {},
+				&dtos.DepositDetected{}:        {},
+				&dtos.WithdrawalBroadcasted{}:  {},
+				&dtos.WalletRefreshRequested{}: {},
 			}
 		}).
 		WithRules(Rules).

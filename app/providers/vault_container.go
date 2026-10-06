@@ -40,6 +40,7 @@ import (
 	_ "github.com/macrowallets/waas/app/adapters/webhook/delivery"
 	"github.com/macrowallets/waas/app/container"
 	"github.com/macrowallets/waas/app/facades"
+	"github.com/macrowallets/waas/app/listeners"
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/repositories"
 	authsvc "github.com/macrowallets/waas/app/services/auth"
@@ -277,6 +278,7 @@ func buildVaultContainer(app foundation.Application) (*container.Container, erro
 		Configs: c.WebhookConfigRepo,
 		Events:  c.WebhookEventRepo,
 	})
+	refreshDispatcher := listeners.NewRefreshDispatcher()
 	c.WalletService = wallet.NewService(wallet.Deps{
 		Registry:     c.Registry,
 		AddressCache: addresscache.New(c.Redis),
@@ -285,6 +287,7 @@ func buildVaultContainer(app foundation.Application) (*container.Container, erro
 		Wallets:      c.WalletRepo,
 		Addresses:    c.AddressRepo,
 		WebhookSync:  c.WebhookSyncService,
+		Dispatcher:   refreshDispatcher,
 	})
 	flags, err := container.Make[*features.Service]()
 	if err != nil {
@@ -328,6 +331,7 @@ func buildVaultContainer(app foundation.Application) (*container.Container, erro
 		Flags: func(ctx context.Context, accountID uuid.UUID) error {
 			return flags.Gate(ctx, accountID, features.FlagWithdrawalsEnabled, features.CodeWithdrawalsPaused)
 		},
+		Dispatcher: refreshDispatcher,
 	})
 	c.WithdrawalService.UseUSDQuote(c.PriceService)
 	verifier, ok := c.SecondFactor.(*authsvc.SecondFactorVerifier)
@@ -415,6 +419,7 @@ func buildVaultContainer(app foundation.Application) (*container.Container, erro
 		Webhook:      c.WebhookService,
 		AddressRepo:  c.AddressRepo,
 		Transactions: c.TransactionRepo,
+		Dispatcher:   refreshDispatcher,
 	})
 	c.IngestService.SetDepositEvents(c.DepositEvents)
 	c.BalanceRefreshService = refresh.NewBalanceService(refresh.Deps{
