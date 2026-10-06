@@ -27,13 +27,13 @@ func TestWallets_Controller_Suite(t *testing.T) {
 
 // Note on wallet creation coverage
 // --------------------------------
-// The happy-path POST /api/v1/wallets tests live in
-// WalletRecoveryMaterialTestSuite, which swaps the container's wallet service
-// for one backed by mock chain / MPC / Secrets Manager dependencies (the real
-// registry is populated from RPC-reachable providers at bootstrap). The
-// validator-level create tests below guarantee the 422 contract for bad
-// inputs, and TestCriticalEndpointsSuite exercises the wallet-bound external
-// API paths against a directly-seeded wallet.
+// The happy-path create tests live in WalletRecoveryMaterialTestSuite, which
+// passes a wallet service backed by mock chain / MPC / Secrets Manager
+// dependencies into the wallet controllers (the real registry is populated
+// from RPC-reachable providers at bootstrap). The validator-level create
+// tests below guarantee the 422 contract for bad inputs, and
+// TestCriticalEndpointsSuite exercises the wallet-bound external API paths
+// against a directly-seeded wallet.
 
 // TestCreateWallet_MissingChain confirms that the external API rejects a
 // request with no chain. The shared validator maps rule violations to 422

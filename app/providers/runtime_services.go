@@ -28,9 +28,8 @@ import (
 )
 
 // registerRuntimeServices binds the services that buildVaultContainer still
-// owns, so routes, jobs and commands can MustMake them. WalletService is not
-// bound: recovery tests replace that field after boot, and currentWalletService
-// has to observe the replacement.
+// owns, so routes, jobs and commands can MustMake them. WalletService stays
+// on the container; routes read it through currentWalletService.
 func registerRuntimeServices(app foundation.Application) {
 	bindRuntime(app, func(c *container.Container) *deposit.Service { return c.DepositService }, "deposit service")
 	bindRuntime(app, func(c *container.Container) *price.Service { return c.PriceService }, "price service")

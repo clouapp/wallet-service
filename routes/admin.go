@@ -339,8 +339,7 @@ func newDashboardUsersController() *dashusers.UsersController {
 	})
 }
 
-// currentWalletService reads the wallet service on each call. Recovery tests
-// replace that field after boot, so a singleton captured at boot would be stale.
+// currentWalletService reads the wallet service on each call.
 func currentWalletService() *walletsvc.Service {
 	return container.Get().WalletService
 }

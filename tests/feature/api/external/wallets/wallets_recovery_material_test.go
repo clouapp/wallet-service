@@ -6,18 +6,26 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"sync"
 	"testing"
 
 	"github.com/google/uuid"
 	"github.com/goravel/framework/facades"
 
 	"github.com/macrowallets/waas/app/container"
+	dashwallets "github.com/macrowallets/waas/app/http/controllers/dashboard/wallets"
+	extwallets "github.com/macrowallets/waas/app/http/controllers/external/wallets"
+	"github.com/macrowallets/waas/app/http/middleware"
 	"github.com/macrowallets/waas/app/models"
+	accountsvc "github.com/macrowallets/waas/app/services/account"
 	authsvc "github.com/macrowallets/waas/app/services/auth"
 	"github.com/macrowallets/waas/app/services/chain"
 	chainsvc "github.com/macrowallets/waas/app/services/chains"
+	featuressvc "github.com/macrowallets/waas/app/services/features"
 	mpc "github.com/macrowallets/waas/app/services/mpc"
+	settingssvc "github.com/macrowallets/waas/app/services/settings"
 	wallet "github.com/macrowallets/waas/app/services/wallet"
+	"github.com/macrowallets/waas/app/services/walletrecords"
 	ctltestutil "github.com/macrowallets/waas/tests/feature/support"
 	"github.com/macrowallets/waas/tests/feature/support/testutil"
 	"github.com/macrowallets/waas/tests/mocks"
@@ -25,7 +33,8 @@ import (
 
 const (
 	externalWalletsPath      = "/api/v1/wallets"
-	adminWalletsPath         = "/v1/wallets"
+	externalCreateWalletPath = "/api/v1/recovery-material/wallets"
+	adminCreateWalletPath    = "/v1/recovery-material/wallets"
 	recoveryTestChain        = "eth"
 	recoveryTestPassphrase   = "recovery-passphrase-long-enough"
 	recoveryWrongPassphrase  = "not-the-recovery-passphrase"
@@ -59,10 +68,10 @@ func (r *recordingMPCService) Keygen(ctx context.Context, curve mpc.Curve) (*mpc
 }
 
 // WalletRecoveryMaterialTestSuite checks that wallet creation does not return
-// the customer share or the passphrase. The container's wallet service is
-// swapped for one backed by in-memory MPC and Secrets Manager mocks, so
-// creation runs through the real routes, middleware and controllers without
-// RPC providers or LocalStack.
+// the customer share or the passphrase. Create handlers are controllers built
+// with wallet.NewService, so the chain, MPC and Secrets Manager ports are the
+// test doubles. List and get stay on the booted routes, which read the wallet
+// row and do not use that service.
 type WalletRecoveryMaterialTestSuite struct {
 	ctltestutil.HTTPSuite
 	mpcService    *recordingMPCService
@@ -83,7 +92,6 @@ func (s *WalletRecoveryMaterialTestSuite) SetupTest() {
 	deps := container.Get()
 	s.Require().NotNil(deps.WalletRepo)
 	s.Require().NotNil(deps.AddressRepo)
-	originalWalletService := deps.WalletService
 	s.walletService = wallet.NewService(wallet.Deps{
 		Registry:  registry,
 		MPC:       s.mpcService,
@@ -91,13 +99,50 @@ func (s *WalletRecoveryMaterialTestSuite) SetupTest() {
 		Wallets:   deps.WalletRepo,
 		Addresses: deps.AddressRepo,
 	})
-	deps.WalletService = s.walletService
-	s.T().Cleanup(func() { deps.WalletService = originalWalletService })
+	s.registerCreateRoutes()
+}
+
+// recoveryRoutesOnce registers the create routes on the booted router. The
+// handlers close over this suite and read walletService on each call, so a
+// later test's service is the one that runs.
+var recoveryRoutesOnce sync.Once
+
+func (s *WalletRecoveryMaterialTestSuite) registerCreateRoutes() {
+	recoveryRoutesOnce.Do(func() {
+		service := func() *wallet.Service { return s.walletService }
+		external := extwallets.NewWalletsController(extwallets.WalletsControllerDeps{
+			Wallets:       container.MustMake[*walletrecords.Wallets](),
+			WalletService: service,
+		})
+		dashboard := dashwallets.NewWalletsController(dashwallets.WalletsControllerDeps{
+			Wallets:       container.MustMake[*walletrecords.Wallets](),
+			Members:       container.MustMake[*walletrecords.Members](),
+			Chains:        container.MustMake[*chainsvc.Service](),
+			WalletService: service,
+		})
+		accounts := container.MustMake[*accountsvc.Service]()
+		noCache := middleware.CacheControl(0)
+		facades.Route().Prefix("/api/v1/recovery-material").Middleware(
+			middleware.APITokenAuth(accounts),
+			noCache,
+			middleware.APIScope(middleware.PermWalletsCreate),
+		).Post("/wallets", external.CreateWallet)
+		facades.Route().Prefix("/v1/recovery-material/wallets").Middleware(
+			middleware.SessionAuth(),
+			middleware.AccountHeader(accounts),
+			middleware.TOTPEnrollment(
+				container.MustMake[*featuressvc.Service](),
+				container.MustMake[*settingssvc.Service](),
+			),
+			noCache,
+			middleware.RequireFundAction(middleware.FundCreateWallet),
+		).Post("", dashboard.CreateWalletAdmin)
+	})
 }
 
 func (s *WalletRecoveryMaterialTestSuite) createExternalWallet(bearer string) (string, map[string]any) {
 	body := fmt.Sprintf(`{"chain":%q,"label":"Recovery","passphrase":%q}`, recoveryTestChain, recoveryTestPassphrase)
-	resp := s.External(externalWalletsPath, ctltestutil.Token{Bearer: bearer}).Post(body)
+	resp := s.External(externalCreateWalletPath, ctltestutil.Token{Bearer: bearer}).Post(body)
 	resp.AssertCreated()
 	return s.decodeObject(resp.Content())
 }
@@ -197,7 +242,7 @@ func (s *WalletRecoveryMaterialTestSuite) TestAdmin_Create_ResponseShapeUnchange
 
 	body := fmt.Sprintf(`{"chain":%q,"label":"Admin","passphrase":%q}`,
 		recoveryTestChain, recoveryTestPassphrase)
-	resp := s.Post(adminWalletsPath, ctltestutil.Session{AccessToken: token, AccountID: accountID.String()}, body)
+	resp := s.Post(adminCreateWalletPath, ctltestutil.Session{AccessToken: token, AccountID: accountID.String()}, body)
 	resp.AssertCreated()
 	content, payload := s.decodeObject(resp.Content())
 
