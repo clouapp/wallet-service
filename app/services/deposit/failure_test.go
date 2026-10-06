@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -39,52 +38,111 @@ const (
 	dbDownMessage = "insert: dial tcp 127.0.0.1:5433: connect: connection refused"
 )
 
-// flakyTxRepo fails Create for chosen transactions: N times, or always with alwaysFail.
-type flakyTxRepo struct {
-	*repositories.TransactionRepository
-	mu       sync.Mutex
-	failures map[string]int
-	creates  map[string]int
+// createFailureGate fails selected inserts in the real transaction repository.
+// A sequence counts down across the statement rollback, because nextval is not
+// undone when the trigger rejects the row. An empty control table inserts normally.
+type createFailureGate struct {
+	sequences []string
 }
 
-func newFlakyTxRepo() *flakyTxRepo {
-	return &flakyTxRepo{TransactionRepository: repositories.NewTransactionRepository(nil), failures: map[string]int{}, creates: map[string]int{}}
-}
-
-func (r *flakyTxRepo) failCreate(txHash string, times int) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	r.failures[txHash] = times
-}
-
-func (r *flakyTxRepo) heal() {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	r.failures = map[string]int{}
-}
-
-func (r *flakyTxRepo) Create(ctx context.Context, tx *models.Transaction) error {
-	r.mu.Lock()
-	r.creates[tx.TxHash]++
-	remaining := r.failures[tx.TxHash]
-	if remaining > 0 {
-		r.failures[tx.TxHash] = remaining - 1
+func installCreateFailureGate(t *testing.T) *createFailureGate {
+	t.Helper()
+	gate := &createFailureGate{}
+	statements := []string{
+		`CREATE TABLE IF NOT EXISTS test_deposit_create_fail (
+			tx_hash text PRIMARY KEY,
+			seq_name text NOT NULL,
+			fail_count int NOT NULL
+		)`,
+		fmt.Sprintf(`CREATE OR REPLACE FUNCTION test_deposit_create_fail() RETURNS trigger AS $fn$
+DECLARE
+	fc int;
+	sn text;
+	n bigint;
+BEGIN
+	SELECT fail_count, seq_name INTO fc, sn FROM test_deposit_create_fail WHERE tx_hash = NEW.tx_hash;
+	IF NOT FOUND THEN
+		RETURN NEW;
+	END IF;
+	IF fc < 0 THEN
+		RAISE EXCEPTION '%s';
+	END IF;
+	EXECUTE format('SELECT nextval(%%L)', sn) INTO n;
+	IF n <= fc THEN
+		RAISE EXCEPTION '%s';
+	END IF;
+	RETURN NEW;
+END;
+$fn$ LANGUAGE plpgsql`, dbDownMessage, dbDownMessage),
+		`DROP TRIGGER IF EXISTS test_deposit_create_fail_trg ON transactions`,
+		`CREATE TRIGGER test_deposit_create_fail_trg
+			BEFORE INSERT ON transactions
+			FOR EACH ROW EXECUTE FUNCTION test_deposit_create_fail()`,
+		`DELETE FROM test_deposit_create_fail`,
 	}
-	r.mu.Unlock()
-	if remaining != 0 {
-		return errors.New(dbDownMessage)
+	for _, statement := range statements {
+		if _, err := facades.Orm().Query().Exec(statement); err != nil {
+			t.Fatal(err)
+		}
 	}
-	return r.TransactionRepository.Create(ctx, tx)
+	t.Cleanup(func() {
+		_, _ = facades.Orm().Query().Exec(`DELETE FROM test_deposit_create_fail`)
+		_, _ = facades.Orm().Query().Exec(`DROP TRIGGER IF EXISTS test_deposit_create_fail_trg ON transactions`)
+		_, _ = facades.Orm().Query().Exec(`DROP FUNCTION IF EXISTS test_deposit_create_fail()`)
+		for _, seq := range gate.sequences {
+			_, _ = facades.Orm().Query().Exec(`DROP SEQUENCE IF EXISTS ` + seq)
+		}
+		_, _ = facades.Orm().Query().Exec(`DROP TABLE IF EXISTS test_deposit_create_fail`)
+	})
+	return gate
 }
 
-// racingTxRepo reports no recorded deposit, as a process that checked just before
-// another one inserted the same transaction would see.
-type racingTxRepo struct {
-	*repositories.TransactionRepository
+func (g *createFailureGate) failCreate(t *testing.T, txHash string, times int) {
+	t.Helper()
+	seq := ""
+	if times > 0 {
+		seq = failSequenceName(t, txHash)
+		g.sequences = append(g.sequences, seq)
+		if _, err := facades.Orm().Query().Exec(`CREATE SEQUENCE IF NOT EXISTS ` + seq); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := facades.Orm().Query().Exec(`SELECT setval(?::regclass, 1, false)`, seq); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := facades.Orm().Query().Exec(
+		`INSERT INTO test_deposit_create_fail (tx_hash, seq_name, fail_count) VALUES (?, ?, ?)
+		 ON CONFLICT (tx_hash) DO UPDATE SET seq_name = EXCLUDED.seq_name, fail_count = EXCLUDED.fail_count`,
+		txHash, seq, times,
+	); err != nil {
+		t.Fatal(err)
+	}
 }
 
-func (racingTxRepo) CountByChainAndTxHash(context.Context, string, string, string) (int64, error) {
-	return 0, nil
+func (g *createFailureGate) heal(t *testing.T) {
+	t.Helper()
+	if _, err := facades.Orm().Query().Exec(`DELETE FROM test_deposit_create_fail`); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func failSequenceName(t *testing.T, txHash string) string {
+	t.Helper()
+	name := "test_fail_"
+	if txHash == "" {
+		t.Fatal("tx hash is required")
+	}
+	for _, r := range txHash {
+		switch {
+		case r >= 'a' && r <= 'z', r >= '0' && r <= '9':
+			name += string(r)
+		case r == '-' || r == '_':
+			name += "_"
+		default:
+			t.Fatalf("tx hash %q cannot name a sequence", txHash)
+		}
+	}
+	return name
 }
 
 type testClock struct {
@@ -106,15 +164,14 @@ func (c *testClock) advance(d time.Duration) {
 
 type failureFixture struct {
 	scanFixture
-	txRepo *flakyTxRepo
+	txRepo *createFailureGate
 	clock  *testClock
 }
 
 func newFailureFixture(t *testing.T, store pending.Store) failureFixture {
 	t.Helper()
 	f := newScanFixture(t, scanHead, ScanOptions{BatchBlocks: 10, CatchUpBlocks: 100, Concurrency: 4}).withRedisCheckpoint(t, startBlock)
-	txRepo := newFlakyTxRepo()
-	f.svc.txRepo = txRepo
+	txRepo := installCreateFailureGate(t)
 	clock := &testClock{now: time.Date(2026, 10, 2, 12, 0, 0, 0, time.UTC)}
 	f.svc.now = clock.Now
 	if store != nil {
@@ -288,7 +345,7 @@ func TestFailure_Policy_Backoffs(t *testing.T) {
 func TestScan_LatestBlocks_TransientWriteFailureIsFixedByTheImmediateRetry(t *testing.T) {
 	backends := newPendingBackends(t)
 	f := newFailureFixture(t, backends.store)
-	f.txRepo.failCreate(failingTx, 2)
+	f.txRepo.failCreate(t, failingTx, 2)
 
 	if err := f.svc.ScanLatestBlocks(context.Background(), scanTestChain); err != nil {
 		t.Fatal(err)
@@ -311,7 +368,7 @@ func TestScan_LatestBlocks_TransientFetchFailureIsRefetched(t *testing.T) {
 	backends := newPendingBackends(t)
 	f := newFailureFixture(t, backends.store)
 	f.adapter.failNextFetches(failingBlock, 2)
-	f.txRepo.heal()
+	f.txRepo.heal(t)
 
 	if err := f.svc.ScanLatestBlocks(context.Background(), scanTestChain); err != nil {
 		t.Fatal(err)
@@ -328,7 +385,7 @@ func TestScan_LatestBlocks_PersistentFailureGoesPendingAndTheCheckpointAdvances(
 	logs := captureLogs(t)
 	backends := newPendingBackends(t)
 	f := newFailureFixture(t, backends.store)
-	f.txRepo.failCreate(failingTx, alwaysFail)
+	f.txRepo.failCreate(t, failingTx, alwaysFail)
 
 	if err := f.svc.ScanLatestBlocks(context.Background(), scanTestChain); err != nil {
 		t.Fatalf("a block saved as pending must not fail the cycle: %v", err)
@@ -371,7 +428,7 @@ func TestScan_LatestBlocks_PersistentFailureGoesPendingAndTheCheckpointAdvances(
 func TestReprocess_Pending_BacksOffThenRecoversWithoutDuplicates(t *testing.T) {
 	backends := newPendingBackends(t)
 	f := newFailureFixture(t, backends.store)
-	f.txRepo.failCreate(failingTx, alwaysFail)
+	f.txRepo.failCreate(t, failingTx, alwaysFail)
 	if err := f.svc.ScanLatestBlocks(context.Background(), scanTestChain); err != nil {
 		t.Fatal(err)
 	}
@@ -390,7 +447,7 @@ func TestReprocess_Pending_BacksOffThenRecoversWithoutDuplicates(t *testing.T) {
 		t.Fatalf("expected attempt 2 with a doubled backoff, got %+v", entry)
 	}
 
-	f.txRepo.heal()
+	f.txRepo.heal(t)
 	f.clock.advance(2 * DefaultPendingRetryDelay)
 	result, err = f.svc.ReprocessPending(context.Background(), scanTestChain, false)
 	if err != nil || result.Resolved != 1 || result.StillPending != 0 {
@@ -418,7 +475,7 @@ func TestScan_LatestBlocks_RedisDownRecordsThePendingBlockInTheFile(t *testing.T
 	dir := newPendingDir(t)
 	store := openPendingStore(t, unreachableRedisClient(t), "test:unreachable:", dir)
 	f := newFailureFixture(t, store)
-	f.txRepo.failCreate(failingTx, alwaysFail)
+	f.txRepo.failCreate(t, failingTx, alwaysFail)
 
 	if err := f.svc.ScanLatestBlocks(context.Background(), scanTestChain); err != nil {
 		t.Fatalf("the file alone must be enough to save the pending block: %v", err)
@@ -440,7 +497,7 @@ func TestScan_LatestBlocks_PendingStoreDownKeepsTheCheckpointBeforeTheBlock(t *t
 	store := openPendingStore(t, unreachableRedisClient(t), "test:unreachable:", dir)
 	breakDir(t, dir)
 	f := newFailureFixture(t, store)
-	f.txRepo.failCreate(failingTx, alwaysFail)
+	f.txRepo.failCreate(t, failingTx, alwaysFail)
 
 	err := f.svc.ScanLatestBlocks(context.Background(), scanTestChain)
 	if err == nil || !strings.Contains(err.Error(), "could not be recorded nor saved as pending") {
@@ -453,7 +510,7 @@ func TestScan_LatestBlocks_PendingStoreDownKeepsTheCheckpointBeforeTheBlock(t *t
 		t.Fatal("no block after the unsaved one may be recorded in this cycle")
 	}
 
-	f.txRepo.heal()
+	f.txRepo.heal(t)
 	if err := f.svc.ScanLatestBlocks(context.Background(), scanTestChain); err != nil {
 		t.Fatal(err)
 	}
@@ -470,8 +527,8 @@ func TestScan_LatestBlocks_StopsWhenTooManyBlocksFailInOneCycle(t *testing.T) {
 	if err := f.svc.SetFailurePolicy(policy); err != nil {
 		t.Fatal(err)
 	}
-	f.txRepo.failCreate(failingTx, alwaysFail)
-	f.txRepo.failCreate(healthyTx, alwaysFail)
+	f.txRepo.failCreate(t, failingTx, alwaysFail)
+	f.txRepo.failCreate(t, healthyTx, alwaysFail)
 
 	if err := f.svc.ScanLatestBlocks(context.Background(), scanTestChain); err == nil {
 		t.Fatal("expected the cycle to stop at the second failing block")
@@ -487,7 +544,7 @@ func TestScan_LatestBlocks_StopsWhenTooManyBlocksFailInOneCycle(t *testing.T) {
 func TestPending_Blocks_SurviveAnAPIRestart(t *testing.T) {
 	backends := newPendingBackends(t)
 	f := newFailureFixture(t, backends.store)
-	f.txRepo.failCreate(failingTx, alwaysFail)
+	f.txRepo.failCreate(t, failingTx, alwaysFail)
 	if err := f.svc.ScanLatestBlocks(context.Background(), scanTestChain); err != nil {
 		t.Fatal(err)
 	}
@@ -510,6 +567,8 @@ func TestPending_Blocks_SurviveAnAPIRestart(t *testing.T) {
 	if err := backends.rdb.Del(context.Background(), keys...).Err(); err != nil {
 		t.Fatal(err)
 	}
+	// The restarted process uses the real repository with the database healthy again.
+	f.txRepo.heal(t)
 	fileOnlyRestart := newDepositSvc(f.svc.registry, newWebhookSvc())
 	fileOnlyRestart.SetPendingStore(openPendingStore(t, backends.rdb, backends.prefix, backends.dir))
 	fileOnlyRestart.sleep = f.sleeps.sleep
@@ -547,11 +606,9 @@ func TestProcessing_A_BlockTwiceSendsEachDepositWebhookOnce(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	f.svc.txRepo = racingTxRepo{TransactionRepository: repositories.NewTransactionRepository(nil)}
 	if recorded, err := f.svc.ScanBlock(context.Background(), scanTestChain, failingBlock); err != nil || recorded != 0 {
-		t.Fatalf("an insert racing a recorded deposit must be absorbed by the unique index, got %d, %v", recorded, err)
+		t.Fatalf("a recorded deposit scanned again must not be inserted, got %d, %v", recorded, err)
 	}
-	f.svc.txRepo = repositories.NewTransactionRepository(nil)
 	for pass := 0; pass < 2; pass++ {
 		if err := f.svc.updateConfirmations(context.Background(), scanTestChain, f.adapter, scanHead+10); err != nil {
 			t.Fatal(err)

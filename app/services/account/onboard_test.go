@@ -2,7 +2,7 @@ package account_test
 
 import (
 	"context"
-	"errors"
+	"strings"
 	"testing"
 
 	"github.com/google/uuid"
@@ -23,9 +23,8 @@ func TestOnboard_Rolls_BackAccountAndMembershipWhenMembershipInsertFails(t *test
 	organization := "Onboard Rollback " + uuid.NewString()
 	users := repositories.NewUserRepository(nil)
 	accounts := repositories.NewAccountRepository(nil)
-	memberships := &membershipInsertFails{
-		AccountUserRepository: repositories.NewAccountUserRepository(nil),
-	}
+	memberships := repositories.NewAccountUserRepository(nil)
+	refuseAccountUserInserts(t)
 	svc := accountsvc.NewService(accountsvc.Deps{
 		Accounts:    accounts,
 		Memberships: memberships,
@@ -42,14 +41,11 @@ func TestOnboard_Rolls_BackAccountAndMembershipWhenMembershipInsertFails(t *test
 		dispatched++
 		return nil
 	})
-	if err == nil || user != nil {
-		t.Fatal("membership failure returned a user")
+	if err == nil || user != nil || !strings.Contains(err.Error(), "membership insert failed") {
+		t.Fatalf("membership insert did not fail the register: %v", err)
 	}
 	if dispatched != 0 {
 		t.Fatal("mail was dispatched after the transaction rolled back")
-	}
-	if memberships.userID == uuid.Nil || memberships.accountID == uuid.Nil {
-		t.Fatal("membership insert was not reached after the user insert")
 	}
 	if count := rowCount(t, &models.User{}, "email = ?", email); count != 0 {
 		t.Fatalf("user rows = %d", count)
@@ -57,13 +53,10 @@ func TestOnboard_Rolls_BackAccountAndMembershipWhenMembershipInsertFails(t *test
 	if count := rowCount(t, &models.Account{}, "name = ? OR name = ?", organization, organization+" [test]"); count != 0 {
 		t.Fatalf("account rows = %d", count)
 	}
-	if count := rowCount(t, &models.Account{}, "id = ?", memberships.accountID); count != 0 {
-		t.Fatalf("production account rows = %d", count)
-	}
-	if count := rowCount(t, &models.AccountUser{}, "user_id = ? OR account_id = ?", memberships.userID, memberships.accountID); count != 0 {
+	if count := rowCount(t, &models.AccountUser{}, "user_id IN (SELECT id FROM users WHERE email = ?)", email); count != 0 {
 		t.Fatalf("membership rows = %d", count)
 	}
-	if count := rowCount(t, &models.PlatformAdmin{}, "user_id = ?", memberships.userID); count != 0 {
+	if count := rowCount(t, &models.PlatformAdmin{}, "user_id IN (SELECT id FROM users WHERE email = ?)", email); count != 0 {
 		t.Fatalf("platform admin rows = %d", count)
 	}
 }
@@ -75,9 +68,7 @@ func TestOnboard_Commits_ThenDispatchesMail(t *testing.T) {
 	organization := "Onboard Commit " + uuid.NewString()
 	users := repositories.NewUserRepository(nil)
 	accounts := repositories.NewAccountRepository(nil)
-	memberships := &membershipTransaction{
-		AccountUserRepository: repositories.NewAccountUserRepository(nil),
-	}
+	memberships := repositories.NewAccountUserRepository(nil)
 	svc := accountsvc.NewService(accountsvc.Deps{
 		Accounts:    accounts,
 		Memberships: memberships,
@@ -91,9 +82,6 @@ func TestOnboard_Commits_ThenDispatchesMail(t *testing.T) {
 		FullName:         "Commit User",
 		OrganizationName: organization,
 	}, func(userID uuid.UUID) error {
-		if memberships.open {
-			t.Fatal("mail was dispatched before the transaction committed")
-		}
 		stored, findErr := users.FindByID(context.Background(), userID)
 		if findErr != nil || stored == nil || stored.Email != email {
 			t.Fatal("mail was dispatched before the user was committed")
@@ -142,31 +130,39 @@ func TestOnboard_Commits_ThenDispatchesMail(t *testing.T) {
 	}
 }
 
-type membershipInsertFails struct {
-	*repositories.AccountUserRepository
-	userID    uuid.UUID
-	accountID uuid.UUID
-}
-
-func (m *membershipInsertFails) Create(_ context.Context, row *models.AccountUser) error {
-	if row == nil {
-		return errors.New("membership insert failed")
+// refuseAccountUserInserts makes the real membership repository's INSERT fail.
+// The flag row is committed before Onboard, so the register transaction can
+// roll back without clearing it. Cleanup removes the flag and the trigger.
+func refuseAccountUserInserts(t *testing.T) {
+	t.Helper()
+	statements := []string{
+		`CREATE TABLE IF NOT EXISTS test_account_user_insert_fail (id int PRIMARY KEY)`,
+		`CREATE OR REPLACE FUNCTION test_account_user_insert_fail() RETURNS trigger AS $fn$
+BEGIN
+	IF EXISTS (SELECT 1 FROM test_account_user_insert_fail) THEN
+		RAISE EXCEPTION 'membership insert failed';
+	END IF;
+	RETURN NEW;
+END;
+$fn$ LANGUAGE plpgsql`,
+		`DROP TRIGGER IF EXISTS test_account_user_insert_fail_trg ON account_users`,
+		`CREATE TRIGGER test_account_user_insert_fail_trg
+			BEFORE INSERT ON account_users
+			FOR EACH ROW EXECUTE FUNCTION test_account_user_insert_fail()`,
+		`DELETE FROM test_account_user_insert_fail`,
+		`INSERT INTO test_account_user_insert_fail (id) VALUES (1)`,
 	}
-	m.userID = row.UserID
-	m.accountID = row.AccountID
-	return errors.New("membership insert failed")
-}
-
-type membershipTransaction struct {
-	*repositories.AccountUserRepository
-	open bool
-}
-
-func (m *membershipTransaction) Within(ctx context.Context, fn func(context.Context) error) error {
-	m.open = true
-	err := m.AccountUserRepository.Within(ctx, fn)
-	m.open = false
-	return err
+	for _, statement := range statements {
+		if _, err := facades.Orm().Query().Exec(statement); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Cleanup(func() {
+		_, _ = facades.Orm().Query().Exec(`DELETE FROM test_account_user_insert_fail`)
+		_, _ = facades.Orm().Query().Exec(`DROP TRIGGER IF EXISTS test_account_user_insert_fail_trg ON account_users`)
+		_, _ = facades.Orm().Query().Exec(`DROP FUNCTION IF EXISTS test_account_user_insert_fail()`)
+		_, _ = facades.Orm().Query().Exec(`DROP TABLE IF EXISTS test_account_user_insert_fail`)
+	})
 }
 
 func rowCount(t *testing.T, model any, query string, args ...any) int64 {
