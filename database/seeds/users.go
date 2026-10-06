@@ -30,7 +30,7 @@ func SeedUsers(ctx context.Context) error {
 	for _, u := range users {
 		existing, err := repo.FindByID(ctx, u.id)
 		if err != nil && !errors.Is(err, models.ErrRepositoryNotFound) {
-			return fmt.Errorf("find user %s: %w", u.email, err)
+			return fmt.Errorf("find user %s: %w", u.id, err)
 		}
 		if existing != nil && existing.ID != uuid.Nil {
 			slog.Info("user already exists, ensuring default account", "email", u.email)
