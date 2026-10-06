@@ -1,6 +1,7 @@
 package accounts
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -138,10 +139,17 @@ func (ctrl *AccountsController) GetAccount(ctx http.Context) http.Response {
 	}
 	names, err := ctrl.features.ActiveForAccount(ctx.Context(), account.ID)
 	if err != nil {
-		appfacades.Log().WithContext(ctx).Errorf("account: active features: %v", err)
+		logActiveFeaturesFailure(ctx, err)
 		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to fetch account"})
 	}
 	return responses.Send(ctx, http.StatusOK, AccountDetail{Account: view, Features: names})
+}
+
+// logActiveFeaturesFailure records that the account's active feature keys
+// could not be read. The request context holds the session JWT; that value
+// is not written.
+func logActiveFeaturesFailure(_ context.Context, err error) {
+	slog.Error(fmt.Sprintf("account: active features: %v", err))
 }
 
 // AccountDetail is GET /v1/accounts/{accountId}. Existing account fields stay.
