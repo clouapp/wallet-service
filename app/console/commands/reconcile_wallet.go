@@ -12,6 +12,7 @@ import (
 	"github.com/macrowallets/waas/app/container"
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/services/refresh"
+	"github.com/macrowallets/waas/app/services/security"
 	"github.com/macrowallets/waas/app/services/walletrecords"
 )
 
@@ -97,9 +98,16 @@ func (c *ReconcileWallet) Handle(ctx console.Context) error {
 		return fmt.Errorf("reconcile:wallet: balance refresh service is not initialized")
 	}
 	if err := c.balances.RefreshWallet(context.Background(), wallet); err != nil {
-		ctx.Error("reconciliation failed: " + err.Error())
+		ctx.Error(reconciliationFailureLine(err))
 		return fmt.Errorf("reconcile wallet: %w", err)
 	}
 	ctx.Info("wallet " + walletID + " reconciled successfully")
 	return nil
+}
+
+// reconciliationFailureLine is the console line for a failed sync reconcile.
+// The balance error can carry the RPC URL, including a key in the userinfo,
+// path, or query. The host may stay; the credential does not.
+func reconciliationFailureLine(err error) string {
+	return security.RedactText("reconciliation failed: " + err.Error())
 }

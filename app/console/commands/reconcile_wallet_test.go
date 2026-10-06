@@ -1,9 +1,12 @@
 package commands
 
 import (
+	"errors"
+	"strings"
 	"testing"
 
 	"github.com/macrowallets/waas/app/services/refresh"
+	"github.com/macrowallets/waas/app/services/security"
 )
 
 type reconcileWalletDispatcherStub struct{}
@@ -50,4 +53,16 @@ func TestNewReconcileWalletRequiresADispatcher(t *testing.T) {
 		}
 	}()
 	NewReconcileWallet(ReconcileWalletDeps{Balances: refresh.NewBalanceService(refresh.Deps{})})
+}
+
+func TestReconciliationFailureLineOmitsRPCCredential(t *testing.T) {
+	const fixture = "fixture-rpc-query-key"
+	security.ConfigureRedaction([]string{"btc.example"}, nil)
+	t.Cleanup(func() { security.ConfigureRedaction(nil, nil) })
+
+	err := errors.New(`get native balance: Get "https://user:` + fixture + `@btc.example/v2/` + fixture + `?apikey=` + fixture + `": dial tcp`)
+	line := reconciliationFailureLine(err)
+	if strings.Contains(line, fixture) {
+		t.Fatal("reconciliation failure line wrote the RPC credential")
+	}
 }
