@@ -133,10 +133,10 @@ two bugfixes that landed in the commits before it.
 
 | Method and path | Condition | Was | Is |
 |---|---|---|---|
-| `POST /v1/auth/register` | valid body | 500 `failed to create user` (preferences NULL) | 201, the user, `preferences: {}` |
-| `POST /v1/auth/register` | e-mail already registered | 500 | 422 `validation_failed`, `errors.email` |
-| `PATCH /v1/users/me`, `PATCH /v1/accounts/{id}` | body, request has no rules | 200, body ignored | 200, the field is applied |
-| any failure | string `error`, raw Goravel 422, or empty middleware body | those shapes | `{"error":{"code","message"}}`; validation also has `errors` |
+| `POST /v1/auth/register` | valid body, 2026-10-02, nil preferences inserted as NULL | 500 `failed to create user` (preferences NULL) | 201, the user, `preferences: {}` |
+| `POST /v1/auth/register` | e-mail already registered, 2026-10-02, registration persists the user | 500 | 422 `validation_failed`, `errors.email` |
+| `PATCH /v1/users/me`, `PATCH /v1/accounts/{id}` | body, request has no rules, 2026-10-02, empty Rules returned before binding | 200, body ignored | 200, the field is applied |
+| any failure | 2026-10-02, one error envelope on every failure; string `error`, raw Goravel 422, or empty middleware body | those shapes | `{"error":{"code","message"}}`; validation also has `errors` |
 | `GET /health` | 2026-10-03, scanner already on the branch | `{"status","version"}` | also `deposit_scanner` |
 | `POST /v1/accounts/{id}/users` | invalid role, 2026-10-03, account roles | enum `owner admin viewer` | enum `owner admin auditor user` |
 | `GET /v1/chains`, `GET /api/v1/chains` | 2026-10-03, base/arbitrum/bsc from #1 | eth, btc, polygon, sol and their testnets | also `base`, `tbase`, `arbitrum`, `tarbitrum`, `bsc`, `tbsc` |
