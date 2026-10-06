@@ -20,11 +20,11 @@ type Client struct {
 	api api
 }
 
-var _ sweep.SecretReader = (*Client)(nil)
+var _ sweep.SecretStore = (*Client)(nil)
 var _ api = (*awssm.Client)(nil)
 
-// New wraps client. A nil client returns a nil reader so the service keeps its nil-client path.
-func New(client *awssm.Client) sweep.SecretReader {
+// New wraps client. A nil client returns a nil SecretStore so the service keeps its nil-client path.
+func New(client *awssm.Client) sweep.SecretStore {
 	if client == nil {
 		return nil
 	}

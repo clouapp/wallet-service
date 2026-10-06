@@ -5,10 +5,10 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/aws/aws-sdk-go-v2/service/secretsmanager"
 	"github.com/goravel/framework/contracts/foundation"
 
 	"github.com/macrowallets/waas/app/adapters/redis/feecache"
+	sweepsecrets "github.com/macrowallets/waas/app/adapters/secretsmanager"
 	"github.com/macrowallets/waas/app/container"
 	"github.com/macrowallets/waas/app/facades"
 	"github.com/macrowallets/waas/app/models"
@@ -59,7 +59,7 @@ func registerRuntimeServices(app foundation.Application) {
 	app.Singleton((*price.CoinAPICredential)(nil), func(foundation.Application) (any, error) {
 		return &price.CoinAPICredential{Key: container.Get().PriceConfig.CoinAPIKey}, nil
 	})
-	app.Singleton((*secretsmanager.Client)(nil), func(foundation.Application) (any, error) {
+	app.Singleton((*sweepsecrets.SDKClient)(nil), func(foundation.Application) (any, error) {
 		client := container.Get().SecretsManager
 		if client == nil {
 			return nil, fmt.Errorf("secrets manager is not configured")

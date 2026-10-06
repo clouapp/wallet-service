@@ -5,15 +5,12 @@ import (
 	"fmt"
 	"log/slog"
 	"math/big"
-	"net/url"
 	"os"
 	"path/filepath"
 	"time"
 
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
-	"github.com/aws/aws-sdk-go-v2/service/secretsmanager"
 	"github.com/aws/aws-sdk-go-v2/service/sqs"
-	smithyendpoints "github.com/aws/smithy-go/endpoints"
 	"github.com/google/uuid"
 	"github.com/goravel/framework/contracts/foundation"
 	"github.com/redis/go-redis/v9"
@@ -69,19 +66,6 @@ import (
 	"github.com/macrowallets/waas/pkg/security"
 )
 
-type staticEndpointResolver struct{ url string }
-
-func (r staticEndpointResolver) ResolveEndpoint(
-	ctx context.Context,
-	params secretsmanager.EndpointParameters,
-) (smithyendpoints.Endpoint, error) {
-	u, err := url.Parse(r.url)
-	if err != nil {
-		return smithyendpoints.Endpoint{}, err
-	}
-	return smithyendpoints.Endpoint{URI: *u}, nil
-}
-
 // openChainEndpoint opens a sealed rpc_url and returns the URL to dial.
 // A read failure does not include the URL.
 func openChainEndpoint(stored string) (string, error) {
@@ -136,12 +120,7 @@ func buildVaultContainer(app foundation.Application) (*container.Container, erro
 		},
 	})
 
-	smClient := secretsmanager.NewFromConfig(awsCfg)
-	if endpoint := facades.Config().GetString("vault.aws.endpoint_url"); endpoint != "" {
-		smClient = secretsmanager.NewFromConfig(awsCfg,
-			secretsmanager.WithEndpointResolverV2(staticEndpointResolver{url: endpoint}))
-	}
-	c.SecretsManager = smClient
+	c.SecretsManager = sweepsecrets.NewClient(awsCfg, facades.Config().GetString("vault.aws.endpoint_url"))
 	c.MPCService = mpc.NewTSSService()
 
 	users, err := resolve[*repositories.UserRepository](app)

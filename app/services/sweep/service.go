@@ -78,10 +78,10 @@ type chainReader interface {
 	FindByID(ctx context.Context, id string) (*models.Chain, error)
 }
 
-// SecretReader loads one secret's binary value. The provider supplies it;
-// this package never imports the AWS SDK. A nil SecretReader means Secrets
+// SecretStore loads one secret's binary value. The provider supplies it;
+// this package never imports the AWS SDK. A nil SecretStore means Secrets
 // Manager is not configured. The service keeps the secret id. Bytes are not logged.
-type SecretReader interface {
+type SecretStore interface {
 	Binary(ctx context.Context, secretID string) ([]byte, error)
 }
 
@@ -130,7 +130,7 @@ type GasReadinessDefault struct {
 type service struct {
 	registry    chainLookup
 	mpc         mpcSigner
-	secrets     SecretReader
+	secrets     SecretStore
 	rdb         RedisStore
 	webhookSvc  eventEnqueuer
 	walletRepo  walletReader
@@ -156,7 +156,7 @@ type service struct {
 type Deps struct {
 	Registry       chainLookup
 	MPC            mpcSigner
-	Secrets        SecretReader
+	Secrets        SecretStore
 	Redis          RedisStore
 	Webhook        eventEnqueuer
 	Wallets        walletReader

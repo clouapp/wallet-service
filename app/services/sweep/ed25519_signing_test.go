@@ -4,12 +4,11 @@ import (
 	"context"
 	"crypto/ed25519"
 	"encoding/hex"
+	"fmt"
 	"math/big"
 	"strings"
 	"testing"
 
-	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/service/secretsmanager"
 	"github.com/google/uuid"
 
 	bin "github.com/gagliardetto/binary"
@@ -44,15 +43,29 @@ type solanaWalletFixture struct {
 	walletRepo     *indexedWalletRepo
 }
 
-// copyingSecrets hands out a fresh copy per read, like AWS does; callers zero what they get.
-type copyingSecrets struct{ *mocks.MockSecretsManager }
+// copyingSecretStore hands out a fresh copy per read, like Secrets Manager does; callers zero what they get.
+type copyingSecretStore struct {
+	values map[string][]byte
+}
 
-func (c copyingSecrets) Binary(ctx context.Context, secretID string) ([]byte, error) {
-	out, err := c.GetSecretValue(ctx, &secretsmanager.GetSecretValueInput{SecretId: &secretID})
-	if err != nil {
-		return nil, err
+func (s *copyingSecretStore) Create(_ context.Context, name string, secretBinary []byte) (string, error) {
+	if s.values == nil {
+		s.values = map[string][]byte{}
 	}
-	return append([]byte(nil), out.SecretBinary...), nil
+	arn := "arn:aws:secretsmanager:us-east-1:000000000000:secret:" + name
+	if _, exists := s.values[arn]; exists {
+		return "", fmt.Errorf("secret already exists")
+	}
+	s.values[arn] = append([]byte(nil), secretBinary...)
+	return arn, nil
+}
+
+func (s *copyingSecretStore) Binary(_ context.Context, secretID string) ([]byte, error) {
+	raw, ok := s.values[secretID]
+	if !ok {
+		return nil, fmt.Errorf("secret not found")
+	}
+	return append([]byte(nil), raw...), nil
 }
 
 type indexedWalletRepo struct {
@@ -82,11 +95,8 @@ func newSolanaWalletFixture(t *testing.T) *solanaWalletFixture {
 	}
 
 	walletID := uuid.New()
-	secrets := mocks.NewMockSecretsManager()
-	secret, err := secrets.CreateSecret(ctx, &secretsmanager.CreateSecretInput{
-		Name:         aws.String("sol-e2e-" + walletID.String()),
-		SecretBinary: append([]byte(nil), keys.ShareB...),
-	})
+	secrets := &copyingSecretStore{}
+	secretARN, err := secrets.Create(ctx, "sol-e2e-"+walletID.String(), append([]byte(nil), keys.ShareB...))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -98,7 +108,7 @@ func newSolanaWalletFixture(t *testing.T) *solanaWalletFixture {
 		MPCCustomerShare: hex.EncodeToString(encryptedShareA.Ciphertext),
 		MPCShareIV:       hex.EncodeToString(encryptedShareA.IV),
 		MPCShareSalt:     hex.EncodeToString(encryptedShareA.Salt),
-		MPCSecretARN:     aws.ToString(secret.ARN),
+		MPCSecretARN:     secretARN,
 		MPCPublicKey:     hex.EncodeToString(keys.CombinedPubKey),
 		MPCCurve:         string(mpcpkg.CurveEd25519),
 		MPCChainCode:     hex.EncodeToString(keys.ChainCode),
@@ -114,7 +124,7 @@ func newSolanaWalletFixture(t *testing.T) *solanaWalletFixture {
 		addressService: walletsvc.NewService(walletsvc.Deps{
 			Registry:  chain.NewRegistry(),
 			MPC:       tss,
-			Secrets:   copyingSecrets{secrets},
+			Secrets:   secrets,
 			Wallets:   walletRepo,
 			Addresses: &fakeAddressRepo{},
 		}),
