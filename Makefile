@@ -1,4 +1,4 @@
-.PHONY: help build localstack-hooks e2e-tools clean run dev dev-back dev-front stop deploy deploy-guided delete validate local test arch arch-baseline contract contract-update test-coverage test-race test-verbose lint fmt vet security migrate migrate-rollback migrate-status migrate-fresh migrate-fresh-seed migrate-fresh-hard db-reset db-seed key-generate jwt-secret docker-up docker-down docker-logs docker-build docker-test docker-status ecr-login ecr-push logs-api logs-scanner logs-webhook logs-withdrawal dlq-check dlq-replay-webhooks dlq-replay-withdrawals ping env-info swagger-install swagger-generate swagger-fmt deps-install deps-update
+.PHONY: help build localstack-hooks e2e-tools clean run dev dev-back dev-front stop deploy deploy-guided delete validate local test arch arch-baseline contract contract-update test-coverage test-race test-verbose lint fmt vet security mocks migrate migrate-rollback migrate-status migrate-fresh migrate-fresh-seed migrate-fresh-hard db-reset db-seed key-generate jwt-secret docker-up docker-down docker-logs docker-build docker-test docker-status ecr-login ecr-push logs-api logs-scanner logs-webhook logs-withdrawal dlq-check dlq-replay-webhooks dlq-replay-withdrawals ping env-info swagger-install swagger-generate swagger-fmt deps-install deps-update
 
 # =============================================================================
 # Configuration
@@ -29,6 +29,12 @@ export TEST_DB_DATABASE
 
 # golangci-lint v2 reads .golangci.yml; v1 cannot
 GOLANGCI_LINT_VERSION ?= v2.5.0
+
+# mockery v2 reads .mockery.yaml. Pin the binary and the Go toolchain so
+# `make mocks` regenerates tests/mocks the same way on every machine.
+# Only _test.go files may import tests/mocks.
+MOCKERY_VERSION := v2.53.7
+GO_TOOLCHAIN := go1.25.0
 
 # Docker configuration
 # The running containers were created from .env.dev (ports 4567/5433/6380); composing without it
@@ -148,7 +154,7 @@ help: ## Show this help message
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(firstword $(MAKEFILE_LIST)) | awk 'BEGIN {FS = ":.*?## "}; /^logs|^dlq|^ping/ {printf "  \033[36m%-20s\033[0m %s\n", $$1, $$2}'
 	@echo ""
 	@echo "🔧 Utility Commands:"
-	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(firstword $(MAKEFILE_LIST)) | awk 'BEGIN {FS = ":.*?## "}; /^lint|^fmt|^vet|^security|^env-info|^clean/ {printf "  \033[36m%-20s\033[0m %s\n", $$1, $$2}'
+	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(firstword $(MAKEFILE_LIST)) | awk 'BEGIN {FS = ":.*?## "}; /^lint|^fmt|^vet|^security|^mocks|^env-info|^clean/ {printf "  \033[36m%-20s\033[0m %s\n", $$1, $$2}'
 	@echo ""
 	@echo "🖥️  Local Dev Commands:"
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(firstword $(MAKEFILE_LIST)) | awk 'BEGIN {FS = ":.*?## "}; /^run|^dev|^stop|^air-install|^key-generate|^jwt-secret/ {printf "  \033[36m%-20s\033[0m %s\n", $$1, $$2}'
@@ -401,6 +407,11 @@ test-integration: ## Run integration tests only
 # =============================================================================
 # Code Quality Commands
 # =============================================================================
+
+mocks: ## Regenerate tests/mocks with mockery v2 (.mockery.yaml)
+	@echo "🧪 Generating mocks with mockery $(MOCKERY_VERSION) (GOTOOLCHAIN=$(GO_TOOLCHAIN))..."
+	GOTOOLCHAIN=$(GO_TOOLCHAIN) go run github.com/vektra/mockery/v2@$(MOCKERY_VERSION) --config .mockery.yaml
+	@echo "✅ Mocks written to tests/mocks (do not edit generated files by hand)"
 
 lint: ## Run golangci-lint (.golangci.yml, report mode)
 	@echo "🔍 Running linter..."
