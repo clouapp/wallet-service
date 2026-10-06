@@ -150,15 +150,7 @@ func (s *WalletRemoveUserGateTestSuite) removeUser(token string, accountID, wall
 
 func (s *WalletRemoveUserGateTestSuite) assertRemoveForbidden(resp contractstesting.Response) {
 	resp.AssertStatus(403)
-	var parsed struct {
-		Error struct {
-			Code    string `json:"code"`
-			Message string `json:"message"`
-		} `json:"error"`
-	}
-	s.Require().NoError(json.Unmarshal([]byte(s.body(resp)), &parsed))
-	s.Equal("forbidden", parsed.Error.Code)
-	s.Equal("only wallet/account owners and admins may add wallet users", parsed.Error.Message)
+	s.AssertError(resp, 403, "forbidden", "only wallet/account owners and admins may add wallet users")
 }
 
 func (s *WalletRemoveUserGateTestSuite) activeWalletMembershipCount(walletID, userID uuid.UUID) int64 {

@@ -96,8 +96,7 @@ func (s *WalletCancelWithdrawalGateTestSuite) TestWallet_Cancel_WithdrawalFollow
 		}
 		held := s.insertWithdrawal(ownWallet.ID, account.ID, models.WithdrawalStatusConfirmed, &creatorID)
 		refused := s.cancel(actor.token, account.ID, ownWallet.ID, held)
-		refused.AssertStatus(422)
-		s.Equal("only pending withdrawals can be cancelled", s.errorMessage(refused))
+		s.AssertError(refused, 422, "unprocessable", "only pending withdrawals can be cancelled")
 		s.Equal(models.WithdrawalStatusConfirmed, s.withdrawalStatus(held))
 
 		withdrawalID := s.pending(ownWallet.ID, account.ID, &creatorID)
@@ -142,9 +141,7 @@ func (s *WalletCancelWithdrawalGateTestSuite) TestWallet_Cancel_WithdrawalStaysH
 	actor := s.member(models.AccountRoleUser, account.ID)
 
 	resp := s.cancel(actor.token, account.ID, wallet.ID, withdrawalID)
-	resp.AssertStatus(404)
-	s.Equal("not_found", s.errorCode(resp))
-	s.Equal("wallet not found", s.errorMessage(resp))
+	s.AssertError(resp, 404, "not_found", "wallet not found")
 	s.Equal("pending", s.withdrawalStatus(withdrawalID))
 }
 
@@ -156,13 +153,11 @@ func (s *WalletCancelWithdrawalGateTestSuite) TestMissing_Withdrawal_StaysNotFou
 	kept := s.pending(wallet.ID, account.ID, nil)
 
 	missing := s.cancel(actor.token, account.ID, wallet.ID, uuid.New())
-	missing.AssertStatus(404)
-	s.Equal("withdrawal not found", s.errorMessage(missing))
+	s.AssertError(missing, 404, "not_found", "withdrawal not found")
 	s.Equal("pending", s.withdrawalStatus(kept))
 
 	invalid := s.cancelPath(actor.token, account.ID, "/v1/wallets/"+wallet.ID.String()+"/withdrawals/not-a-uuid/cancel")
-	invalid.AssertStatus(400)
-	s.Equal("invalid withdrawal id", s.errorMessage(invalid))
+	s.AssertError(invalid, 400, "invalid_request", "invalid withdrawal id")
 	s.Equal("pending", s.withdrawalStatus(kept))
 }
 
@@ -253,9 +248,7 @@ func (s *WalletCancelWithdrawalGateTestSuite) cancelPath(token string, accountID
 }
 
 func (s *WalletCancelWithdrawalGateTestSuite) assertCancelForbidden(resp contractstesting.Response) {
-	resp.AssertStatus(403)
-	s.Equal("forbidden", s.errorCode(resp))
-	s.Equal("only the creator or an owner/admin may cancel this withdrawal", s.errorMessage(resp))
+	s.AssertError(resp, 403, "forbidden", "only the creator or an owner/admin may cancel this withdrawal")
 }
 
 func (s *WalletCancelWithdrawalGateTestSuite) withdrawalStatus(withdrawalID uuid.UUID) string {

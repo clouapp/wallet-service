@@ -129,15 +129,7 @@ func (s *PlatformSettingsGroupTestSuite) TestA_Platform_AdminSeesAKnownGroupWith
 	missing.AssertNotFound()
 	accountOnly := s.getRaw(session.AccessToken, "/v1/platform/settings/account_security")
 	accountOnly.AssertNotFound()
-	var notFound struct {
-		Error struct {
-			Code    string `json:"code"`
-			Message string `json:"message"`
-		} `json:"error"`
-	}
-	s.decode(accountOnly, &notFound)
-	s.Equal(responses.CodeNotFound, notFound.Error.Code)
-	s.Equal("settings group not found", notFound.Error.Message)
+	s.AssertError(accountOnly, 404, responses.CodeNotFound, "settings group not found")
 }
 
 func (s *PlatformSettingsGroupTestSuite) TestA_Secret_SettingRecordsKeyAndValueSet() {
@@ -208,15 +200,7 @@ func (s *PlatformSettingsGroupTestSuite) TestA_Non_AdminOnAnUnknownGroupIsNotFou
 
 	known := s.getRaw(session.AccessToken, "/v1/platform/settings/mail_smtp")
 	known.AssertForbidden()
-	var body struct {
-		Error struct {
-			Code    string `json:"code"`
-			Message string `json:"message"`
-		} `json:"error"`
-	}
-	s.decode(known, &body)
-	s.Equal(responses.CodeForbidden, body.Error.Code)
-	s.Equal("you do not have permission to view settings", body.Error.Message)
+	s.AssertError(known, 403, responses.CodeForbidden, "you do not have permission to view settings")
 	s.Equal(int64(0), s.count(`SELECT count(*) FROM settings WHERE account_id IS NULL AND "group" = 'mail_smtp'`))
 	s.Equal(int64(0), s.count(`SELECT count(*) FROM account_activity WHERE action = 'settings.updated'`))
 	s.Equal(int64(0), s.count(`SELECT count(*) FROM account_activity WHERE action = 'platform.secret_viewed'`))

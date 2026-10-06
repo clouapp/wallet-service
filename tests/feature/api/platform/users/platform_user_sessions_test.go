@@ -99,15 +99,7 @@ func (s *PlatformUserSessionsTestSuite) TestA_Member_CannotRevokePlatformSession
 
 	resp := s.authedPost(session.AccessToken, "/v1/platform/users/"+victim.ID.String()+"/sessions/revoke", "")
 	resp.AssertForbidden()
-	var body struct {
-		Error struct {
-			Code    string `json:"code"`
-			Message string `json:"message"`
-		} `json:"error"`
-	}
-	s.decode(resp, &body)
-	s.Equal(responses.CodeForbidden, body.Error.Code)
-	s.Equal("you do not have permission to revoke user sessions", body.Error.Message)
+	s.AssertError(resp, 403, responses.CodeForbidden, "you do not have permission to revoke user sessions")
 	s.Equal(int64(0), s.count(`SELECT count(*) FROM users WHERE id = ? AND sessions_revoked_at IS NOT NULL`, victim.ID))
 	s.Equal(int64(0), s.count(`SELECT count(*) FROM account_activity WHERE action = 'user.sessions_revoked'`))
 	s.assertSessionWorks(victimSession)
@@ -123,13 +115,7 @@ func (s *PlatformUserSessionsTestSuite) TestAn_Unknown_UserIsNotFound() {
 
 	resp := s.authedPost(session.AccessToken, "/v1/platform/users/"+uuid.New().String()+"/sessions/revoke", "")
 	resp.AssertNotFound()
-	var body struct {
-		Error struct {
-			Code string `json:"code"`
-		} `json:"error"`
-	}
-	s.decode(resp, &body)
-	s.Equal(responses.CodeNotFound, body.Error.Code)
+	s.AssertError(resp, 404, responses.CodeNotFound, "user not found")
 	s.Equal(int64(0), s.count(`SELECT count(*) FROM account_activity WHERE action = 'user.sessions_revoked'`))
 
 	invalid := s.authedPost(session.AccessToken, "/v1/platform/users/not-a-uuid/sessions/revoke", "")

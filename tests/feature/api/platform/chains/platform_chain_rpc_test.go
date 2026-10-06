@@ -144,28 +144,14 @@ func (s *PlatformChainRPCTestSuite) TestA_Non_AdminIsForbiddenAnUnknownChainIsNo
 	forbidden := s.patchRaw(session.AccessToken, "/v1/platform/chains/eth/rpc", `{"rpcUrl":"https://dial.example/v2/not-stored"}`)
 	forbidden.AssertForbidden()
 	s.quietBody(forbidden, "not-stored")
-	var forbiddenBody struct {
-		Error struct {
-			Code    string `json:"code"`
-			Message string `json:"message"`
-		} `json:"error"`
-	}
-	s.decode(forbidden, &forbiddenBody)
-	s.Equal(responses.CodeForbidden, forbiddenBody.Error.Code)
-	s.Equal("you do not have permission to update chains", forbiddenBody.Error.Message)
+	s.AssertError(forbidden, 403, responses.CodeForbidden, "you do not have permission to update chains")
 	if s.loadChain(models.ChainETH).RpcURL != before {
 		s.Fail("a non-admin changed the stored endpoint")
 	}
 
 	missing := s.patchRaw(session.AccessToken, "/v1/platform/chains/no-such-chain/rpc", `{"rpcUrl":""}`)
 	missing.AssertNotFound()
-	var missingBody struct {
-		Error struct {
-			Code string `json:"code"`
-		} `json:"error"`
-	}
-	s.decode(missing, &missingBody)
-	s.Equal(responses.CodeNotFound, missingBody.Error.Code)
+	s.AssertError(missing, 404, responses.CodeNotFound, "chain not found")
 
 	admin := s.seedUser(false)
 	s.grantPlatformAdmin(admin.ID)
@@ -265,6 +251,7 @@ func (s *PlatformChainRPCTestSuite) count(query string, args ...any) int64 {
 
 func (s *PlatformChainRPCTestSuite) assertValidation(resp contractstesting.Response, field, message string) {
 	s.T().Helper()
+	s.AssertError(resp, 422, responses.CodeValidationFailed, "validation failed")
 	var body struct {
 		Error struct {
 			Code    string `json:"code"`
@@ -273,7 +260,5 @@ func (s *PlatformChainRPCTestSuite) assertValidation(resp contractstesting.Respo
 		Errors map[string][]string `json:"errors"`
 	}
 	s.decode(resp, &body)
-	s.Equal(responses.CodeValidationFailed, body.Error.Code)
-	s.Equal("validation failed", body.Error.Message)
 	s.Equal([]string{message}, body.Errors[field])
 }

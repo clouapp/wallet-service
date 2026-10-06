@@ -21,7 +21,7 @@ func (s *accountRolesSuite) TestPermission_Catalog_IsReadableByRolesRead() {
 	s.Equal(want, s.catalog(owner, accountID, 200))
 	s.Equal(want, s.catalog(admin, accountID, 200))
 	s.Equal(want, s.catalog(auditor, accountID, 200))
-	s.catalog(user, accountID, 403)
+	s.catalog(user, accountID, 403, "forbidden")
 
 	s.Contains(want, policies.PermWithdrawalsCreate)
 	s.Contains(want, policies.PermSweepExecute)
@@ -46,17 +46,18 @@ func (s *accountRolesSuite) TestPermission_Catalog_UnknownAccountIsNotFound() {
 func (s *accountRolesSuite) TestPermission_Catalog_OutsiderIsForbidden() {
 	accountID, _ := s.member("owner")
 	_, outsider := s.member("owner")
-	s.catalog(outsider, accountID, 403)
+	s.catalog(outsider, accountID, 403, "not a member of this account")
 }
 
-func (s *accountRolesSuite) catalog(token string, accountID uuid.UUID, status int) []string {
+func (s *accountRolesSuite) catalog(token string, accountID uuid.UUID, status int, message ...string) []string {
 	s.T().Helper()
 	resp := s.Get("/v1/accounts/"+accountID.String()+"/permissions", support.Session{AccessToken: token})
 	resp.AssertStatus(status)
 	content, err := resp.Content()
 	s.Require().NoError(err)
 	if status == 403 {
-		s.Contains(content, `"code":"forbidden"`)
+		s.Require().Len(message, 1)
+		s.AssertError(resp, 403, "forbidden", message[0])
 	}
 	if status != 200 {
 		return nil

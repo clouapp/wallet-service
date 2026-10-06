@@ -100,15 +100,7 @@ func (s *PlatformUserListTestSuite) TestA_Member_CannotListPlatformUsers() {
 
 	resp := s.listUsers(session.AccessToken, "")
 	resp.AssertForbidden()
-	var body struct {
-		Error struct {
-			Code    string `json:"code"`
-			Message string `json:"message"`
-		} `json:"error"`
-	}
-	s.decode(resp, &body)
-	s.Equal(responses.CodeForbidden, body.Error.Code)
-	s.Equal("you do not have permission to view users", body.Error.Message)
+	s.AssertError(resp, 403, responses.CodeForbidden, "you do not have permission to view users")
 
 	anonymous := s.Get("/v1/platform/users", support.Session{})
 	anonymous.AssertUnauthorized()

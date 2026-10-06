@@ -165,15 +165,7 @@ func (s *AccountActivityTestSuite) TestAuditor_Lists_NewestFirstAndUserIsForbidd
 	s.NotContains(content, "member.role_changed")
 	s.NotContains(content, `"data"`)
 	s.NotContains(content, `"total"`)
-	var body struct {
-		Error struct {
-			Code    string `json:"code"`
-			Message string `json:"message"`
-		} `json:"error"`
-	}
-	s.Require().NoError(json.Unmarshal([]byte(content), &body))
-	s.Equal("forbidden", body.Error.Code)
-	s.Equal("you do not have permission to view account activity", body.Error.Message)
+	s.AssertError(forbidden, 403, "forbidden", "you do not have permission to view account activity")
 }
 
 func (s *AccountActivityTestSuite) TestPlatform_Feature_WriteUsesANullAccount() {
@@ -256,45 +248,27 @@ func (s *AccountActivityTestSuite) TestShow_Matches_TheListItem() {
 	}
 
 	forbidden := s.showActivity(user.token, accountID, rowID)
-	forbidden.AssertForbidden()
+	s.AssertError(forbidden, 403, "forbidden", "you do not have permission to view account activity")
 	forbiddenContent, err := forbidden.Content()
 	s.Require().NoError(err)
 	s.NotContains(forbiddenContent, rowID)
 	s.NotContains(forbiddenContent, "member.role_changed")
-	userCode, userMessage := s.errorText(forbidden)
-	s.Equal("forbidden", userCode)
-	s.Equal("you do not have permission to view account activity", userMessage)
 	for _, id := range []string{s.activityID(s.activityData(otherOwner.token, "/v1/accounts/"+otherAccountID.String()+"/activity")[0]), uuid.NewString(), "not-a-uuid"} {
 		again := s.showActivity(user.token, accountID, id)
-		again.AssertNotFound()
-		code, message := s.errorText(again)
-		s.Equal("not_found", code)
-		s.Equal("activity not found", message)
+		s.AssertError(again, 404, "not_found", "activity not found")
 	}
 
 	missing := s.showActivity(auditor.token, accountID, uuid.NewString())
-	missing.AssertNotFound()
-	missingCode, missingMessage := s.errorText(missing)
-	s.Equal("not_found", missingCode)
-	s.Equal("activity not found", missingMessage)
+	s.AssertError(missing, 404, "not_found", "activity not found")
 	otherItems := s.activityData(otherOwner.token, "/v1/accounts/"+otherAccountID.String()+"/activity")
 	s.Require().Len(otherItems, 1)
 	foreign := s.showActivity(auditor.token, accountID, s.activityID(otherItems[0]))
-	foreign.AssertNotFound()
-	foreignCode, foreignMessage := s.errorText(foreign)
-	s.Equal(missingCode, foreignCode)
-	s.Equal(missingMessage, foreignMessage)
+	s.AssertError(foreign, 404, "not_found", "activity not found")
 	garbage := s.showActivity(auditor.token, accountID, "not-a-uuid")
-	garbage.AssertNotFound()
-	garbageCode, garbageMessage := s.errorText(garbage)
-	s.Equal(missingCode, garbageCode)
-	s.Equal(missingMessage, garbageMessage)
+	s.AssertError(garbage, 404, "not_found", "activity not found")
 
 	unknownAccount := s.showActivity(user.token, uuid.New(), rowID)
-	unknownAccount.AssertNotFound()
-	accountCode, accountMessage := s.errorText(unknownAccount)
-	s.Equal("not_found", accountCode)
-	s.Equal("account not found", accountMessage)
+	s.AssertError(unknownAccount, 404, "not_found", "account not found")
 
 	s.grantPlatformAdmin(owner.id)
 	s.patch(owner.token, "/v1/platform/features/"+features.FlagSweepEnabled, `{"enabled":false}`, 200)
@@ -306,10 +280,7 @@ func (s *AccountActivityTestSuite) TestShow_Matches_TheListItem() {
 		s.NotEqual(platformID, s.activityID(item))
 	}
 	platform := s.showActivity(auditor.token, accountID, platformID)
-	platform.AssertNotFound()
-	platformCode, platformMessage := s.errorText(platform)
-	s.Equal(missingCode, platformCode)
-	s.Equal(missingMessage, platformMessage)
+	s.AssertError(platform, 404, "not_found", "activity not found")
 
 	s.patch(owner.token, "/v1/accounts/"+accountID.String()+"/settings/account_webhooks",
 		fmt.Sprintf(`{"signing_secret":%q}`, activityPlainSecret), 200)

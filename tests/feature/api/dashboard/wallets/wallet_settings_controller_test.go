@@ -126,10 +126,10 @@ func (s *WalletSettingsTestSuite) TestInvalid_Fields_AreRefusedWithoutWriting() 
 	} {
 		resp := s.patch(s.ownerToken, wallet.ID, body)
 		resp.AssertStatus(422)
+		s.AssertError(resp, 422, "validation_failed", "validation failed")
 		content, err := resp.Content()
 		s.Require().NoError(err)
 		s.Contains(content, `"errors"`, body)
-		s.Contains(content, `"validation_failed"`, body)
 	}
 	s.patch(s.ownerToken, wallet.ID, `{}`).AssertStatus(400)
 	s.False(s.stored(wallet.ID).FeeMultiplier.Valid)

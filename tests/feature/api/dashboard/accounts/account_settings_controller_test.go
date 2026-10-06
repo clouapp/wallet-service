@@ -131,8 +131,7 @@ func (s *accountSettingsSuite) TestGet_Registry_FollowsSettingsRead() {
 		Sections []any `json:"sections"`
 	}
 	s.Require().NoError(json.Unmarshal([]byte(denied), &parsed))
-	s.Equal("forbidden", parsed.Error.Code)
-	s.Equal(settings.ErrViewForbidden.Error(), parsed.Error.Message)
+	s.AssertError(support.BodyRecorder(403, denied), 403, "forbidden", settings.ErrViewForbidden.Error())
 	s.Empty(parsed.Sections)
 }
 
@@ -181,13 +180,15 @@ func (s *accountSettingsSuite) TestPatch_Auditor_CannotUpdate() {
 	s.Equal(false, s.group(body, "account_webhooks")["can_update"])
 
 	response := s.patch(token, accountID, "account_webhooks", `{"signing_secret":"nope"}`, 403)
-	s.Equal("forbidden", response["error"].(map[string]any)["code"])
-	s.Equal(settings.ErrUpdateForbidden.Error(), response["error"].(map[string]any)["message"])
+	encoded, err := json.Marshal(response)
+	s.Require().NoError(err)
+	s.AssertError(support.BodyRecorder(403, string(encoded)), 403, "forbidden", settings.ErrUpdateForbidden.Error())
 	s.Empty(s.storedSecret(accountID))
 
 	response = s.put(token, accountID, "account_webhooks", `{"signing_secret":"nope"}`, 403)
-	s.Equal("forbidden", response["error"].(map[string]any)["code"])
-	s.Equal(settings.ErrUpdateForbidden.Error(), response["error"].(map[string]any)["message"])
+	encoded, err = json.Marshal(response)
+	s.Require().NoError(err)
+	s.AssertError(support.BodyRecorder(403, string(encoded)), 403, "forbidden", settings.ErrUpdateForbidden.Error())
 	s.Empty(s.storedSecret(accountID))
 }
 
@@ -207,7 +208,9 @@ func (s *accountSettingsSuite) TestAdmin_Can_UpdateAnAccountGroup() {
 func (s *accountSettingsSuite) TestPatch_Unknown_GroupIsNotFound() {
 	accountID, token := s.owner()
 	response := s.patch(token, accountID, "not-a-group", `{}`, 404)
-	s.Equal("not_found", response["error"].(map[string]any)["code"])
+	encoded, err := json.Marshal(response)
+	s.Require().NoError(err)
+	s.AssertError(support.BodyRecorder(404, string(encoded)), 404, "not_found", "settings group not found")
 
 	auditor := s.member(accountID, "auditor")
 	denied := s.patchRaw(auditor, accountID, "not-a-group", `{}`, 404)
@@ -221,8 +224,7 @@ func (s *accountSettingsSuite) TestPatch_Unknown_GroupIsNotFound() {
 		Fields []any `json:"fields"`
 	}
 	s.Require().NoError(json.Unmarshal([]byte(denied), &parsed))
-	s.Equal("not_found", parsed.Error.Code)
-	s.Equal("settings group not found", parsed.Error.Message)
+	s.AssertError(support.BodyRecorder(404, denied), 404, "not_found", "settings group not found")
 	s.Empty(parsed.Fields)
 	s.Empty(s.storedSecret(accountID))
 }
@@ -243,8 +245,7 @@ func (s *accountSettingsSuite) TestPatch_User_CannotViewOrUpdate() {
 		Fields []any `json:"fields"`
 	}
 	s.Require().NoError(json.Unmarshal([]byte(denied), &parsed))
-	s.Equal("forbidden", parsed.Error.Code)
-	s.Equal(settings.ErrUpdateForbidden.Error(), parsed.Error.Message)
+	s.AssertError(support.BodyRecorder(403, denied), 403, "forbidden", settings.ErrUpdateForbidden.Error())
 	s.Empty(parsed.Fields)
 	s.Empty(s.storedSecret(accountID))
 
@@ -253,8 +254,7 @@ func (s *accountSettingsSuite) TestPatch_User_CannotViewOrUpdate() {
 	s.NotContains(denied, `"fields"`)
 	s.NotContains(denied, "enc:v1:")
 	s.Require().NoError(json.Unmarshal([]byte(denied), &parsed))
-	s.Equal("forbidden", parsed.Error.Code)
-	s.Equal(settings.ErrUpdateForbidden.Error(), parsed.Error.Message)
+	s.AssertError(support.BodyRecorder(403, denied), 403, "forbidden", settings.ErrUpdateForbidden.Error())
 	s.Empty(parsed.Fields)
 	s.Empty(s.storedSecret(accountID))
 }
@@ -275,7 +275,9 @@ func (s *accountSettingsSuite) TestGet_Decimal_TravelsAsString() {
 	s.Equal(false, s.group(body, "account_sweep_limits")["can_update"])
 
 	response := s.patch(token, accountID, "account_sweep_limits", `{"daily_withdraw_cap_usd":"9.00"}`, 403)
-	s.Equal("forbidden", response["error"].(map[string]any)["code"])
+	encoded, err := json.Marshal(response)
+	s.Require().NoError(err)
+	s.AssertError(support.BodyRecorder(403, string(encoded)), 403, "forbidden", settings.ErrManagedByPlatform.Error())
 }
 
 func (s *accountSettingsSuite) TestReset_Section_ClearsThePageAndRecordsFieldNames() {
@@ -496,7 +498,9 @@ func (s *accountSettingsSuite) TestFlush_Unknown_SectionIsNotFoundBeforeForbidde
 	s.Require().NoError(facades.Cache().Put(securityKey, "stale-security", 10*time.Minute))
 
 	response := s.flushParsed(token, accountID, "not-a-section", 404)
-	s.Equal("not_found", response["error"].(map[string]any)["code"])
+	encoded, err := json.Marshal(response)
+	s.Require().NoError(err)
+	s.AssertError(support.BodyRecorder(404, string(encoded)), 404, "not_found", "settings section not found")
 	s.assertCacheKeySurvived(securityKey, "stale-security")
 
 	admin := s.member(accountID, models.AccountRoleAdmin)
@@ -518,8 +522,9 @@ func (s *accountSettingsSuite) TestFlush_Unknown_SectionIsNotFoundBeforeForbidde
 func (s *accountSettingsSuite) assertFlushMissing(token string, accountID uuid.UUID, section, securityKey string) {
 	s.T().Helper()
 	parsed := s.flushParsed(token, accountID, section, 404)
-	s.Equal("not_found", parsed["error"].(map[string]any)["code"])
-	s.Equal("settings section not found", parsed["error"].(map[string]any)["message"])
+	encoded, err := json.Marshal(parsed)
+	s.Require().NoError(err)
+	s.AssertError(support.BodyRecorder(404, string(encoded)), 404, "not_found", "settings section not found")
 	s.assertCacheKeySurvived(securityKey, "stale-security")
 }
 
@@ -528,11 +533,7 @@ func (s *accountSettingsSuite) assertFlushWriteDenied(token string, accountID uu
 	raw := s.flush(token, accountID, section, 403)
 	s.NotContains(raw, "enc:v1:")
 	s.NotContains(raw, "stale-security")
-	var parsed map[string]any
-	s.Require().NoError(json.Unmarshal([]byte(raw), &parsed))
-	errBody, _ := parsed["error"].(map[string]any)
-	s.Equal("forbidden", errBody["code"])
-	s.Equal(settings.ErrUpdateForbidden.Error(), errBody["message"])
+	s.AssertError(support.BodyRecorder(403, raw), 403, "forbidden", settings.ErrUpdateForbidden.Error())
 	s.assertCacheKeySurvived(securityKey, "stale-security")
 }
 
@@ -565,7 +566,9 @@ func (s *accountSettingsSuite) TestFlush_Platform_ManagedSectionIsForbidden() {
 	s.Require().NoError(facades.Cache().Put(limitsKey, "stale-limits", 10*time.Minute))
 
 	response := s.flushParsed(token, accountID, "limits", 403)
-	s.Equal("forbidden", response["error"].(map[string]any)["code"])
+	encoded, err := json.Marshal(response)
+	s.Require().NoError(err)
+	s.AssertError(support.BodyRecorder(403, string(encoded)), 403, "forbidden", settings.ErrManagedByPlatform.Error())
 	s.Equal("stale-limits", facades.Cache().GetString(limitsKey))
 
 	var cap string
@@ -582,7 +585,9 @@ func (s *accountSettingsSuite) TestReset_Unknown_SectionIsNotFoundBeforeForbidde
 	s.insertSecurityIdle(accountID, "45")
 
 	response := s.resetParsed(token, accountID, "not-a-section", 404)
-	s.Equal("not_found", response["error"].(map[string]any)["code"])
+	encoded, err := json.Marshal(response)
+	s.Require().NoError(err)
+	s.AssertError(support.BodyRecorder(404, string(encoded)), 404, "not_found", "settings section not found")
 	s.assertSecurityIdle(accountID, "45")
 
 	admin := s.member(accountID, models.AccountRoleAdmin)
@@ -592,7 +597,7 @@ func (s *accountSettingsSuite) TestReset_Unknown_SectionIsNotFoundBeforeForbidde
 
 	s.insertSecurityIdle(accountID, "45")
 	var resets int64
-	err := facades.Orm().Query().Raw(
+	err = facades.Orm().Query().Raw(
 		`SELECT count(*) FROM account_activity WHERE account_id = ? AND action = 'settings.section_reset'`,
 		accountID,
 	).Scan(&resets)
@@ -619,8 +624,9 @@ func (s *accountSettingsSuite) TestReset_Unknown_SectionIsNotFoundBeforeForbidde
 func (s *accountSettingsSuite) assertResetMissing(token string, accountID uuid.UUID, section string) {
 	s.T().Helper()
 	parsed := s.resetParsed(token, accountID, section, 404)
-	s.Equal("not_found", parsed["error"].(map[string]any)["code"])
-	s.Equal("settings section not found", parsed["error"].(map[string]any)["message"])
+	encoded, err := json.Marshal(parsed)
+	s.Require().NoError(err)
+	s.AssertError(support.BodyRecorder(404, string(encoded)), 404, "not_found", "settings section not found")
 	s.assertSecurityIdle(accountID, "45")
 }
 
@@ -628,11 +634,7 @@ func (s *accountSettingsSuite) assertResetWriteDenied(token string, accountID uu
 	s.T().Helper()
 	raw := s.reset(token, accountID, section, 403)
 	s.NotContains(raw, "enc:v1:")
-	var parsed map[string]any
-	s.Require().NoError(json.Unmarshal([]byte(raw), &parsed))
-	errBody, _ := parsed["error"].(map[string]any)
-	s.Equal("forbidden", errBody["code"])
-	s.Equal(settings.ErrUpdateForbidden.Error(), errBody["message"])
+	s.AssertError(support.BodyRecorder(403, raw), 403, "forbidden", settings.ErrUpdateForbidden.Error())
 	s.assertSecurityIdle(accountID, "45")
 }
 
@@ -678,7 +680,9 @@ func (s *accountSettingsSuite) TestReset_Platform_ManagedSectionIsForbidden() {
 	s.Require().NoError(err)
 
 	response := s.resetParsed(token, accountID, "limits", 403)
-	s.Equal("forbidden", response["error"].(map[string]any)["code"])
+	encoded, err := json.Marshal(response)
+	s.Require().NoError(err)
+	s.AssertError(support.BodyRecorder(403, string(encoded)), 403, "forbidden", settings.ErrManagedByPlatform.Error())
 
 	var cap string
 	err = facades.Orm().Query().Raw(
@@ -700,12 +704,11 @@ func (s *accountSettingsSuite) TestReset_Platform_ManagedSectionIsForbidden() {
 func (s *accountSettingsSuite) TestPatch_Unknown_KeyIsValidation() {
 	accountID, token := s.owner()
 	raw := s.patchRaw(token, accountID, "account_security", `{"not_a_key":"x"}`, 422)
+	s.AssertError(support.BodyRecorder(422, raw), 422, "validation_failed", "validation failed")
 	var body struct {
-		Error  map[string]any      `json:"error"`
 		Errors map[string][]string `json:"errors"`
 	}
 	s.Require().NoError(json.Unmarshal([]byte(raw), &body))
-	s.Equal("validation_failed", body.Error["code"])
 	s.NotEmpty(body.Errors["not_a_key"])
 }
 
@@ -790,8 +793,7 @@ func (s *accountSettingsSuite) TestGet_Group_ReadsOneAccountAndHidesTheSecret() 
 		Fields []any `json:"fields"`
 	}
 	s.Require().NoError(json.Unmarshal([]byte(denied), &deniedBody))
-	s.Equal("forbidden", deniedBody.Error.Code)
-	s.Equal(settings.ErrViewForbidden.Error(), deniedBody.Error.Message)
+	s.AssertError(support.BodyRecorder(403, denied), 403, "forbidden", settings.ErrViewForbidden.Error())
 	s.Empty(deniedBody.Fields)
 
 	var after int64
@@ -806,21 +808,22 @@ func (s *accountSettingsSuite) TestGet_Group_ReadsOneAccountAndHidesTheSecret() 
 func (s *accountSettingsSuite) TestGet_Group_UnknownIsNotFoundBeforeForbidden() {
 	accountID, token := s.owner()
 	response := s.getGroupParsed(token, accountID, "not-a-group", 404)
-	s.Equal("not_found", response["error"].(map[string]any)["code"])
+	s.assertMapError(response, 404, "not_found", "settings group not found")
 	response = s.getGroupParsed(token, accountID, "mail_smtp", 404)
-	s.Equal("not_found", response["error"].(map[string]any)["code"])
+	s.assertMapError(response, 404, "not_found", "settings group not found")
 
 	auditor := s.member(accountID, "auditor")
 	response = s.getGroupParsed(auditor, accountID, "sweep_limits", 404)
-	s.Equal("not_found", response["error"].(map[string]any)["code"])
+	s.assertMapError(response, 404, "not_found", "settings group not found")
 	limits := s.getGroup(auditor, accountID, "account_sweep_limits", 200)
 	s.Equal(false, s.groupDocument(limits)["can_update"])
 
 	user := s.member(accountID, "user")
 	for _, group := range []string{"not-a-group", "deposit_scan"} {
 		missing := s.getGroupParsed(user, accountID, group, 404)
-		s.Equal("not_found", missing["error"].(map[string]any)["code"])
-		s.Equal("settings group not found", missing["error"].(map[string]any)["message"])
+		encoded, err := json.Marshal(missing)
+		s.Require().NoError(err)
+		s.AssertError(support.BodyRecorder(404, string(encoded)), 404, "not_found", "settings group not found")
 	}
 	for _, group := range []string{"account_security"} {
 		denied := s.getGroup(user, accountID, group, 403)
@@ -834,8 +837,7 @@ func (s *accountSettingsSuite) TestGet_Group_UnknownIsNotFoundBeforeForbidden() 
 			Fields []any `json:"fields"`
 		}
 		s.Require().NoError(json.Unmarshal([]byte(denied), &parsed))
-		s.Equal("forbidden", parsed.Error.Code)
-		s.Equal(settings.ErrViewForbidden.Error(), parsed.Error.Message)
+		s.AssertError(support.BodyRecorder(403, denied), 403, "forbidden", settings.ErrViewForbidden.Error())
 		s.Empty(parsed.Fields)
 	}
 }
@@ -859,16 +861,12 @@ func (s *accountSettingsSuite) TestPut_Shares_ThePatchBodyRules() {
 
 	rejected := s.putRaw(token, accountID, "account_security", `{"session_idle_minutes":-1}`, 422)
 	s.NotContains(rejected, secret)
-	var invalid struct {
-		Error map[string]any `json:"error"`
-	}
-	s.Require().NoError(json.Unmarshal([]byte(rejected), &invalid))
-	s.Equal("validation_failed", invalid.Error["code"])
+	s.AssertError(support.BodyRecorder(422, rejected), 422, "validation_failed", "validation failed")
 	idle = s.getGroup(token, accountID, "account_security", 200)
 	s.Equal(float64(45), s.groupField(idle, "session_idle_minutes")["value"])
 
 	response := s.put(token, accountID, "account_sweep_limits", `{"daily_withdraw_cap_usd":"-1"}`, 403)
-	s.Equal("forbidden", response["error"].(map[string]any)["code"])
+	s.assertMapError(response, 403, "forbidden", settings.ErrManagedByPlatform.Error())
 	var caps int64
 	err := facades.Orm().Query().Raw(
 		`SELECT count(*) FROM settings WHERE account_id = ? AND "group" = 'account_sweep_limits' AND "key" = 'daily_withdraw_cap_usd'`,
@@ -879,11 +877,13 @@ func (s *accountSettingsSuite) TestPut_Shares_ThePatchBodyRules() {
 
 	user := s.member(accountID, "user")
 	response = s.put(user, accountID, "not-a-group", `{}`, 404)
-	s.Equal("not_found", response["error"].(map[string]any)["code"])
-	s.Equal("settings group not found", response["error"].(map[string]any)["message"])
+	encoded, err := json.Marshal(response)
+	s.Require().NoError(err)
+	s.AssertError(support.BodyRecorder(404, string(encoded)), 404, "not_found", "settings group not found")
 	response = s.put(user, accountID, "account_security", `{"session_idle_minutes":12}`, 403)
-	s.Equal("forbidden", response["error"].(map[string]any)["code"])
-	s.Equal(settings.ErrUpdateForbidden.Error(), response["error"].(map[string]any)["message"])
+	encoded, err = json.Marshal(response)
+	s.Require().NoError(err)
+	s.AssertError(support.BodyRecorder(403, string(encoded)), 403, "forbidden", settings.ErrUpdateForbidden.Error())
 	idle = s.getGroup(token, accountID, "account_security", 200)
 	s.Equal(float64(45), s.groupField(idle, "session_idle_minutes")["value"])
 }
@@ -1135,6 +1135,13 @@ func (s *accountSettingsSuite) resetParsed(token string, accountID uuid.UUID, se
 	var parsed map[string]any
 	s.Require().NoError(json.Unmarshal([]byte(s.reset(token, accountID, section, status)), &parsed))
 	return parsed
+}
+
+func (s *accountSettingsSuite) assertMapError(body map[string]any, status int, code, message string) {
+	s.T().Helper()
+	encoded, err := json.Marshal(body)
+	s.Require().NoError(err)
+	s.AssertError(support.BodyRecorder(status, string(encoded)), status, code, message)
 }
 
 func (s *accountSettingsSuite) storedSecret(accountID uuid.UUID) string {

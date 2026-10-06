@@ -71,32 +71,22 @@ func (s *AccessStatusTestSuite) send(method, path, bearer string, accountID uuid
 }
 
 func (s *AccessStatusTestSuite) assertReadOnlyRefusal(resp contractstesting.Response, status string) {
-	resp.AssertStatus(403)
+	s.AssertError(resp, 403, responses.CodeAccountFrozen, "account is "+status+"; only reads are allowed")
 	var body struct {
 		Error struct {
-			Code    string `json:"code"`
-			Message string `json:"message"`
-			Status  string `json:"status"`
+			Status string `json:"status"`
 		} `json:"error"`
 	}
 	s.decode(resp, &body)
-	s.Equal(responses.CodeAccountFrozen, body.Error.Code)
-	s.Contains(body.Error.Message, "only reads are allowed")
 	s.Equal(status, body.Error.Status)
 }
 
 func (s *AccessStatusTestSuite) assertNotAMember(resp contractstesting.Response) {
-	resp.AssertStatus(403)
-	code, message := s.errorParts(resp)
-	s.Equal(responses.CodeForbidden, code)
-	s.Equal("not a member of this account", message)
+	s.AssertError(resp, 403, responses.CodeForbidden, "not a member of this account")
 }
 
 func (s *AccessStatusTestSuite) assertAccountMissing(resp contractstesting.Response) {
-	resp.AssertStatus(404)
-	code, message := s.errorParts(resp)
-	s.Equal(responses.CodeNotFound, code)
-	s.Equal("account not found", message)
+	s.AssertError(resp, 404, responses.CodeNotFound, "account not found")
 }
 
 func (s *AccessStatusTestSuite) errorParts(resp contractstesting.Response) (string, string) {

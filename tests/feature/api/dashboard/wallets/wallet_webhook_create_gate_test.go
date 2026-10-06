@@ -218,7 +218,7 @@ func (s *WalletWebhookCreateGateTestSuite) TestCreate_Wallet_WebhookValidationSt
 
 	resp := s.postWebhook(owner.token, account.ID, wallet.ID, `{}`)
 	resp.AssertStatus(422)
-	s.Contains(s.body(resp), `"validation_failed"`)
+	s.AssertError(resp, 422, "validation_failed", "validation failed")
 	s.Equal(int64(0), s.webhookCount(wallet.ID, ""))
 }
 
@@ -326,15 +326,7 @@ func (s *WalletWebhookCreateGateTestSuite) assertWebhookTestDelivered(resp contr
 
 func (s *WalletWebhookCreateGateTestSuite) assertWebhookForbidden(resp contractstesting.Response) {
 	resp.AssertStatus(403)
-	var parsed struct {
-		Error struct {
-			Code    string `json:"code"`
-			Message string `json:"message"`
-		} `json:"error"`
-	}
-	s.Require().NoError(json.Unmarshal([]byte(s.body(resp)), &parsed))
-	s.Equal("forbidden", parsed.Error.Code)
-	s.Equal("only wallet/account owners and admins may manage webhooks", parsed.Error.Message)
+	s.AssertError(resp, 403, "forbidden", "only wallet/account owners and admins may manage webhooks")
 }
 
 func (s *WalletWebhookCreateGateTestSuite) assertCreatedWebhook(resp contractstesting.Response, walletID uuid.UUID, hookURL string) {

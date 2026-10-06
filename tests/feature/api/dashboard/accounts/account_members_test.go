@@ -115,17 +115,7 @@ func (s *AccountMembersTestSuite) getAccount(token string, accountID uuid.UUID) 
 
 func (s *AccountMembersTestSuite) assertForbidden(resp contractstesting.Response, message string) {
 	resp.AssertStatus(403)
-	content, err := resp.Content()
-	s.Require().NoError(err)
-	var parsed struct {
-		Error struct {
-			Code    string `json:"code"`
-			Message string `json:"message"`
-		} `json:"error"`
-	}
-	s.Require().NoError(json.Unmarshal([]byte(content), &parsed))
-	s.Equal("forbidden", parsed.Error.Code)
-	s.Equal(message, parsed.Error.Message)
+	s.AssertError(resp, 403, "forbidden", message)
 }
 
 func (s *AccountMembersTestSuite) storedRole(accountID, userID uuid.UUID) (string, string) {
@@ -222,9 +212,9 @@ func (s *AccountMembersTestSuite) TestMissing_Account_IsNotFoundBeforeInviteList
 
 	resp := s.getInvites(user.token, uuid.New())
 	resp.AssertNotFound()
+	s.AssertError(resp, 404, "not_found", "account not found")
 	content, err := resp.Content()
 	s.Require().NoError(err)
-	s.Contains(content, `"code":"not_found"`)
 	s.NotContains(content, `"message":"forbidden"`)
 }
 
@@ -445,9 +435,9 @@ func (s *AccountMembersTestSuite) TestMissing_Account_IsNotFoundBeforeInviteCrea
 
 	resp := s.postInvite(user.token, uuid.New(), `{"email":"missing@example.com","role":"user"}`)
 	resp.AssertNotFound()
+	s.AssertError(resp, 404, "not_found", "account not found")
 	content, err := resp.Content()
 	s.Require().NoError(err)
-	s.Contains(content, `"code":"not_found"`)
 	s.NotContains(content, `"message":"forbidden"`)
 }
 
@@ -466,9 +456,9 @@ func (s *AccountMembersTestSuite) TestMissing_Account_IsNotFoundBeforeUsersRead(
 
 	resp := s.getUsers(user.token, uuid.New())
 	resp.AssertNotFound()
+	s.AssertError(resp, 404, "not_found", "account not found")
 	content, err := resp.Content()
 	s.Require().NoError(err)
-	s.Contains(content, `"code":"not_found"`)
 	s.NotContains(content, `"message":"forbidden"`)
 }
 
@@ -618,9 +608,9 @@ func (s *AccountMembersTestSuite) TestResend_Invite_RotatesTheTokenForUsersWrite
 
 	missingAccount := s.postResend(user.token, uuid.New(), inviteID)
 	missingAccount.AssertNotFound()
+	s.AssertError(missingAccount, 404, "not_found", "account not found")
 	missingBody, err := missingAccount.Content()
 	s.Require().NoError(err)
-	s.Contains(missingBody, `"code":"not_found"`)
 	s.NotContains(missingBody, `"message":"forbidden"`)
 
 	invalidID := s.Post("/v1/accounts/"+accountID.String()+"/invites/not-a-uuid/resend", support.Session{AccessToken: owner.token}, "")
@@ -628,9 +618,7 @@ func (s *AccountMembersTestSuite) TestResend_Invite_RotatesTheTokenForUsersWrite
 
 	unknown := s.postResend(owner.token, accountID, uuid.New())
 	unknown.AssertNotFound()
-	unknownBody, err := unknown.Content()
-	s.Require().NoError(err)
-	s.Contains(unknownBody, "invite is invalid or expired")
+	s.AssertError(unknown, 404, "not_found", "invite is invalid or expired")
 
 	other := s.postResend(owner.token, accountID, otherInviteID)
 	other.AssertNotFound()
@@ -685,9 +673,9 @@ func (s *AccountMembersTestSuite) TestDelete_Invite_RevokesForUsersWrite() {
 
 	missingAccount := s.deleteInvite(user.token, uuid.New(), inviteID)
 	missingAccount.AssertNotFound()
+	s.AssertError(missingAccount, 404, "not_found", "account not found")
 	missingBody, err := missingAccount.Content()
 	s.Require().NoError(err)
-	s.Contains(missingBody, `"code":"not_found"`)
 	s.NotContains(missingBody, `"message":"forbidden"`)
 
 	invalidID := s.Delete("/v1/accounts/"+accountID.String()+"/invites/not-a-uuid", support.Session{AccessToken: owner.token}, nil)
@@ -695,9 +683,7 @@ func (s *AccountMembersTestSuite) TestDelete_Invite_RevokesForUsersWrite() {
 
 	unknown := s.deleteInvite(owner.token, accountID, uuid.New())
 	unknown.AssertNotFound()
-	unknownBody, err := unknown.Content()
-	s.Require().NoError(err)
-	s.Contains(unknownBody, "invite is invalid or expired")
+	s.AssertError(unknown, 404, "not_found", "invite is invalid or expired")
 
 	other := s.deleteInvite(owner.token, accountID, otherInviteID)
 	other.AssertNotFound()
@@ -810,6 +796,7 @@ func (s *AccountMembersTestSuite) assertFieldError(resp contractstesting.Respons
 	resp.AssertStatus(422)
 	content, err := resp.Content()
 	s.Require().NoError(err)
+	s.AssertError(resp, 422, "validation_failed", "validation failed")
 	var parsed struct {
 		Error struct {
 			Code    string `json:"code"`
@@ -818,7 +805,5 @@ func (s *AccountMembersTestSuite) assertFieldError(resp contractstesting.Respons
 		Errors map[string][]string `json:"errors"`
 	}
 	s.Require().NoError(json.Unmarshal([]byte(content), &parsed))
-	s.Equal("validation_failed", parsed.Error.Code)
-	s.Equal("validation failed", parsed.Error.Message)
 	s.NotEmpty(parsed.Errors[field])
 }

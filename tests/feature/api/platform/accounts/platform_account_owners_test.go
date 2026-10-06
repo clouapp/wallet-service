@@ -147,8 +147,7 @@ func (s *PlatformAccountOwnersTestSuite) TestA_Member_CannotAttachAnOwner() {
 
 	resp := s.postOwner(session.AccessToken, accountID, person.Email)
 	resp.AssertForbidden()
-	s.Equal(responses.CodeForbidden, s.ownerError(resp).Code)
-	s.Equal("you do not have permission to attach an account owner", s.ownerError(resp).Message)
+	s.AssertError(resp, 403, responses.CodeForbidden, "you do not have permission to attach an account owner")
 	raw, err := resp.Content()
 	s.Require().NoError(err)
 	s.NotContains(raw, person.Email)
@@ -176,31 +175,29 @@ func (s *PlatformAccountOwnersTestSuite) TestUnknown_Account_AndUnknownUser() {
 
 	missingAccount := s.postOwner(session.AccessToken, uuid.New(), person.Email)
 	missingAccount.AssertNotFound()
-	s.Equal(responses.CodeNotFound, s.ownerError(missingAccount).Code)
-	s.Equal("account not found", s.ownerError(missingAccount).Message)
+	s.AssertError(missingAccount, 404, responses.CodeNotFound, "account not found")
 	s.Equal(int64(0), s.ownerCount(
 		`SELECT count(*) FROM account_users WHERE user_id = ?`, person.ID,
 	))
 
 	missingUser := s.postOwner(session.AccessToken, accountID, "missing-owner@example.com")
 	missingUser.AssertNotFound()
-	s.Equal(responses.CodeNotFound, s.ownerError(missingUser).Code)
-	s.Equal("user not found", s.ownerError(missingUser).Message)
+	s.AssertError(missingUser, 404, responses.CodeNotFound, "user not found")
 	s.Equal(int64(0), s.ownerCount(`SELECT count(*) FROM users WHERE email = ?`, "missing-owner@example.com"))
 	s.Equal(int64(0), s.ownerCount(`SELECT count(*) FROM account_users WHERE account_id = ?`, accountID))
 
 	invalid := s.postOwner(session.AccessToken, accountID, "not-an-email")
 	invalid.AssertStatus(422)
-	s.Equal(responses.CodeValidationFailed, s.ownerError(invalid).Code)
+	s.AssertError(invalid, 422, responses.CodeValidationFailed, "validation failed")
 
 	onlyID := s.postOwnerRaw(session.AccessToken, accountID, `{"user_id":"`+person.ID.String()+`"}`)
 	onlyID.AssertStatus(422)
-	s.Equal(responses.CodeValidationFailed, s.ownerError(onlyID).Code)
+	s.AssertError(onlyID, 422, responses.CodeValidationFailed, "validation failed")
 	s.Equal(int64(0), s.ownerCount(`SELECT count(*) FROM account_users WHERE account_id = ?`, accountID))
 
 	badID := s.postOwnerPath(session.AccessToken, "/v1/platform/accounts/not-a-uuid/owners", `{"email":"`+person.Email+`"}`)
 	badID.AssertStatus(400)
-	s.Equal(responses.CodeInvalidRequest, s.ownerError(badID).Code)
+	s.AssertError(badID, 400, responses.CodeInvalidRequest, "invalid account id")
 }
 
 func (s *PlatformAccountOwnersTestSuite) TestA_Frozen_AccountStillAcceptsTheAttach() {

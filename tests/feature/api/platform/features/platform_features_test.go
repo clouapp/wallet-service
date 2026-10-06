@@ -18,10 +18,10 @@ func (s *featureGateSuite) TestNon_Admin_CannotReadOrWritePlatformFeatures() {
 	_, accountID, session, _ := s.ownerWallet()
 
 	forbidden := s.platform(session, http.MethodGet, "/v1/platform/features", "", http.StatusForbidden)
-	s.Equal("forbidden", errorCode(forbidden))
+	s.AssertError(support.BodyRecorder(http.StatusForbidden, mustJSON(forbidden)), http.StatusForbidden, "forbidden", features.ErrPlatformForbidden.Error())
 
 	forbidden = s.platform(session, http.MethodPatch, "/v1/platform/features/"+features.FlagWithdrawalsEnabled, `{"enabled":false}`, http.StatusForbidden)
-	s.Equal("forbidden", errorCode(forbidden))
+	s.AssertError(support.BodyRecorder(http.StatusForbidden, mustJSON(forbidden)), http.StatusForbidden, "forbidden", features.ErrPlatformForbidden.Error())
 	s.Equal(int64(0), s.globalRowCount())
 	s.Equal(int64(0), s.accountFeatureCount(accountID))
 	s.Equal(int64(0), s.activityActionCount(activitylog.ActionFeaturesGlobalUpdated))
@@ -45,7 +45,7 @@ func (s *featureGateSuite) TestGlobal_Withdrawals_FalseBlocksTheNextWithdrawUnti
 	s.Equal(int64(0), s.globalRowCount())
 
 	unknown := s.platform(session, http.MethodPatch, "/v1/platform/features/not-a-flag", `{"enabled":false}`, http.StatusNotFound)
-	s.Equal("not_found", errorCode(unknown))
+	s.AssertError(support.BodyRecorder(http.StatusNotFound, mustJSON(unknown)), http.StatusNotFound, "not_found", features.ErrNotFound.Error())
 	s.Equal(int64(0), s.globalRowCount())
 
 	s.setFlag(session, accountID, features.FlagWithdrawalsEnabled, true)
@@ -64,10 +64,7 @@ func (s *featureGateSuite) TestGlobal_Withdrawals_FalseBlocksTheNextWithdrawUnti
 		beforeWithdrawals := s.rows(&models.Withdrawal{}, walletID)
 		beforeTransactions := s.rows(&models.Transaction{}, walletID)
 		response := s.post(surface, accountID, walletID, "/withdrawals")
-		s.Equal(http.StatusConflict, s.status(response), surface.name+" global off")
-		errorBody, _ := s.json(response)["error"].(map[string]any)
-		s.Equal(features.CodeWithdrawalsPaused, errorBody["code"], surface.name)
-		s.Equal(features.CodeWithdrawalsPaused, errorBody["message"], surface.name)
+		s.AssertError(response, http.StatusConflict, features.CodeWithdrawalsPaused, features.CodeWithdrawalsPaused)
 		s.Equal(beforeWithdrawals, s.rows(&models.Withdrawal{}, walletID), surface.name+" broadcast a withdrawal")
 		s.Equal(beforeTransactions, s.rows(&models.Transaction{}, walletID), surface.name+" broadcast a transaction")
 	}
@@ -79,9 +76,7 @@ func (s *featureGateSuite) TestGlobal_Withdrawals_FalseBlocksTheNextWithdrawUnti
 	s.setFlag(session, accountID, features.FlagWithdrawalsEnabled, false)
 	for _, surface := range surfaces {
 		response := s.post(surface, accountID, walletID, "/withdrawals")
-		s.Equal(http.StatusConflict, s.status(response), surface.name+" account off")
-		errorBody, _ := s.json(response)["error"].(map[string]any)
-		s.Equal(features.CodeWithdrawalsPaused, errorBody["code"], surface.name)
+		s.AssertError(response, http.StatusConflict, features.CodeWithdrawalsPaused, features.CodeWithdrawalsPaused)
 	}
 }
 
@@ -100,9 +95,7 @@ func (s *featureGateSuite) TestGlobal_Sweep_FalseBlocksConsolidateAndAccountOffS
 	for _, surface := range surfaces {
 		beforeTransactions := s.rows(&models.Transaction{}, walletID)
 		response := s.post(surface, accountID, walletID, "/consolidate")
-		s.Equal(http.StatusConflict, s.status(response), surface.name+" global sweep off")
-		errorBody, _ := s.json(response)["error"].(map[string]any)
-		s.Equal(features.CodeSweepPaused, errorBody["code"], surface.name)
+		s.AssertError(response, http.StatusConflict, features.CodeSweepPaused, features.CodeSweepPaused)
 		s.Equal(beforeTransactions, s.rows(&models.Transaction{}, walletID), surface.name+" broadcast a sweep")
 	}
 
@@ -112,9 +105,7 @@ func (s *featureGateSuite) TestGlobal_Sweep_FalseBlocksConsolidateAndAccountOffS
 	s.setFlag(session, accountID, features.FlagSweepEnabled, false)
 	for _, surface := range surfaces {
 		response := s.post(surface, accountID, walletID, "/consolidate")
-		s.Equal(http.StatusConflict, s.status(response), surface.name+" account sweep off")
-		errorBody, _ := s.json(response)["error"].(map[string]any)
-		s.Equal(features.CodeSweepPaused, errorBody["code"], surface.name)
+		s.AssertError(response, http.StatusConflict, features.CodeSweepPaused, features.CodeSweepPaused)
 	}
 }
 
@@ -218,23 +209,20 @@ func (s *featureGateSuite) TestPlatform_Admin_ReadsOneAccountFeatureScope() {
 	accountPath := "/v1/platform/features/account/" + accountID.String()
 
 	forbidden := s.platform(session, http.MethodGet, accountPath, "", http.StatusForbidden)
-	s.Equal("forbidden", errorCode(forbidden))
+	s.AssertError(support.BodyRecorder(http.StatusForbidden, mustJSON(forbidden)), http.StatusForbidden, "forbidden", features.ErrPlatformForbidden.Error())
 	s.Equal(int64(0), s.accountFeatureCount(accountID))
 
 	for _, scope := range []string{"global", "user", "chain"} {
 		refused := s.platform(session, http.MethodGet, "/v1/platform/features/"+scope+"/"+accountID.String(), "", http.StatusNotFound)
-		s.Equal("not_found", errorCode(refused))
-		s.Equal("feature scope not found", errorMessage(refused))
+		s.AssertError(support.BodyRecorder(http.StatusNotFound, mustJSON(refused)), http.StatusNotFound, "not_found", "feature scope not found")
 	}
 	badID := s.platform(session, http.MethodGet, "/v1/platform/features/account/not-a-uuid", "", http.StatusBadRequest)
-	s.Equal("invalid_request", errorCode(badID))
-	s.Equal("invalid account id", errorMessage(badID))
+	s.AssertError(support.BodyRecorder(http.StatusBadRequest, mustJSON(badID)), http.StatusBadRequest, "invalid_request", "invalid account id")
 	s.Equal(int64(0), s.featureActivityCount())
 
 	s.grantPlatformAdmin(userID)
 	unknown := s.platform(session, http.MethodGet, "/v1/platform/features/account/"+uuid.New().String(), "", http.StatusNotFound)
-	s.Equal("not_found", errorCode(unknown))
-	s.Equal("account not found", errorMessage(unknown))
+	s.AssertError(support.BodyRecorder(http.StatusNotFound, mustJSON(unknown)), http.StatusNotFound, "not_found", "account not found")
 
 	s.platform(session, http.MethodPatch, "/v1/platform/features/"+features.FlagWithdrawalsEnabled, `{"enabled":false}`, http.StatusOK)
 	beforeRead := s.featureActivityCount()
@@ -259,15 +247,14 @@ func (s *featureGateSuite) TestPlatform_Admin_WritesOneAccountFeatureScope() {
 	body := `{"enabled":true}`
 
 	forbidden := s.platform(session, http.MethodPut, oneFlag, body, http.StatusForbidden)
-	s.Equal("forbidden", errorCode(forbidden))
+	s.AssertError(support.BodyRecorder(http.StatusForbidden, mustJSON(forbidden)), http.StatusForbidden, "forbidden", features.ErrPlatformForbidden.Error())
 	s.Equal(int64(0), s.accountFeatureCount(accountID))
 	s.Equal(int64(0), s.globalRowCount())
 	s.Equal(int64(0), s.featureActivityCount())
 
 	for _, scope := range []string{"global", "user", "chain"} {
 		refused := s.platform(session, http.MethodPut, "/v1/platform/features/"+scope+"/"+accountID.String()+"/"+features.FlagWithdrawalsEnabled, "not-json", http.StatusNotFound)
-		s.Equal("not_found", errorCode(refused))
-		s.Equal("feature scope not found", errorMessage(refused))
+		s.AssertError(support.BodyRecorder(http.StatusNotFound, mustJSON(refused)), http.StatusNotFound, "not_found", "feature scope not found")
 	}
 	s.Equal(int64(0), s.activityActionCount(activitylog.ActionUserFeaturesUpdated))
 	s.Equal(int64(0), s.activityActionCount(activitylog.ActionChainFeaturesUpdated))
@@ -275,18 +262,15 @@ func (s *featureGateSuite) TestPlatform_Admin_WritesOneAccountFeatureScope() {
 	s.Equal(int64(0), s.activityActionCount(activitylog.ActionFeaturesGlobalUpdated))
 	s.Equal(int64(0), s.featureActivityCount())
 	badID := s.platform(session, http.MethodPut, "/v1/platform/features/account/not-a-uuid/"+features.FlagWithdrawalsEnabled, "not-json", http.StatusBadRequest)
-	s.Equal("invalid_request", errorCode(badID))
-	s.Equal("invalid account id", errorMessage(badID))
+	s.AssertError(support.BodyRecorder(http.StatusBadRequest, mustJSON(badID)), http.StatusBadRequest, "invalid_request", "invalid account id")
 	s.Equal(int64(0), s.accountFeatureCount(accountID))
 
 	s.grantPlatformAdmin(userID)
 	unknownAccount := s.platform(session, http.MethodPut, "/v1/platform/features/account/"+uuid.New().String()+"/"+features.FlagWithdrawalsEnabled, body, http.StatusNotFound)
-	s.Equal("not_found", errorCode(unknownAccount))
-	s.Equal("account not found", errorMessage(unknownAccount))
+	s.AssertError(support.BodyRecorder(http.StatusNotFound, mustJSON(unknownAccount)), http.StatusNotFound, "not_found", "account not found")
 
 	unknownFlag := s.platform(session, http.MethodPut, accountPath+"/not-a-flag", `{"enabled":false}`, http.StatusNotFound)
-	s.Equal("not_found", errorCode(unknownFlag))
-	s.Equal("feature not found", errorMessage(unknownFlag))
+	s.AssertError(support.BodyRecorder(http.StatusNotFound, mustJSON(unknownFlag)), http.StatusNotFound, "not_found", "feature not found")
 	s.Equal(int64(0), s.accountFeatureCount(accountID))
 
 	s.platform(session, http.MethodPatch, "/v1/platform/features/"+features.FlagWithdrawalsEnabled, `{"enabled":false}`, http.StatusOK)
@@ -311,7 +295,7 @@ func (s *featureGateSuite) TestPlatform_Admin_WritesOneAccountFeatureScope() {
 	s.Equal(int64(1), s.accountFeatureCount(accountID))
 
 	rejected := s.platform(session, http.MethodPut, accountPath, `{"features":[{"key":"not-a-flag","enabled":false},{"key":"`+features.FlagSweepEnabled+`","enabled":false}]}`, http.StatusNotFound)
-	s.Equal("feature not found", errorMessage(rejected))
+	s.AssertError(support.BodyRecorder(http.StatusNotFound, mustJSON(rejected)), http.StatusNotFound, "not_found", "feature not found")
 	s.Equal(int64(1), s.accountFeatureCount(accountID))
 	s.Equal(int64(0), s.accountFeatureKeyCount(accountID, features.FlagSweepEnabled))
 	s.Equal(int64(0), s.accountFeatureActivityCount(accountID))
@@ -348,7 +332,7 @@ func (s *featureGateSuite) TestPlatform_Admin_WritesOneAccountFeatureScope() {
 
 	for _, scope := range []string{"user", "chain"} {
 		refused := s.platform(session, http.MethodPut, "/v1/platform/features/"+scope+"/"+accountID.String(), `{"features":[{"key":"`+features.FlagSweepEnabled+`","enabled":true}]}`, http.StatusNotFound)
-		s.Equal("not_found", errorCode(refused))
+		s.AssertError(support.BodyRecorder(http.StatusNotFound, mustJSON(refused)), http.StatusNotFound, "not_found", "feature scope not found")
 	}
 	s.Equal(int64(0), s.activityActionCount(activitylog.ActionUserFeaturesUpdated))
 	s.Equal(int64(0), s.activityActionCount(activitylog.ActionChainFeaturesUpdated))

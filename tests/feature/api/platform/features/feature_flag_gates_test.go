@@ -68,11 +68,7 @@ func (s *featureGateSuite) gateBothSurfaces(key, code, suffix string) {
 		beforeWithdrawals := s.rows(&models.Withdrawal{}, walletID)
 		beforeTransactions := s.rows(&models.Transaction{}, walletID)
 		response := s.post(surface, accountID, walletID, suffix)
-		s.Equal(http.StatusConflict, s.status(response), surface.name+" flag off")
-		body := s.json(response)
-		errorBody, _ := body["error"].(map[string]any)
-		s.Equal(code, errorBody["code"], surface.name)
-		s.Equal(code, errorBody["message"], surface.name)
+		s.AssertError(response, http.StatusConflict, code, code)
 		s.Equal(beforeWithdrawals, s.rows(&models.Withdrawal{}, walletID), surface.name+" persisted a withdrawal")
 		s.Equal(beforeTransactions, s.rows(&models.Transaction{}, walletID), surface.name+" persisted a transaction")
 	}

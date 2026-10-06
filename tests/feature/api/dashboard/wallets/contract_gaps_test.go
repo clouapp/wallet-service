@@ -193,8 +193,7 @@ func (s *contractGapsSuite) TestArchive_Wallet_ForbiddenForAccountUser() {
 	_, _, token := s.seedSession("user")
 
 	resp := s.call(http.MethodPost, "/v1/wallets/"+walletID.String()+"/archive", token, "")
-	resp.AssertForbidden()
-	s.Equal("only wallet/account owners and admins may archive wallets", s.errorText(s.jsonBody(resp)))
+	s.AssertError(resp, http.StatusForbidden, "forbidden", "only wallet/account owners and admins may archive wallets")
 }
 
 func (s *contractGapsSuite) TestArchive_Wallet_ArchivesThenRejectsASecondCall() {
@@ -210,8 +209,7 @@ func (s *contractGapsSuite) TestArchive_Wallet_ArchivesThenRejectsASecondCall() 
 	s.Equal(models.WalletStatusArchived, stored.Status)
 
 	second := s.call(http.MethodPost, path, s.token, "")
-	second.AssertStatus(http.StatusConflict)
-	s.Equal("wallet already archived", s.errorText(s.jsonBody(second)))
+	s.AssertError(second, http.StatusConflict, "conflict", "wallet already archived")
 }
 
 func (s *contractGapsSuite) TestUpdate_WalletSettings_PersistsLabel() {
@@ -293,12 +291,11 @@ func (s *contractGapsSuite) TestWebhook_Test_RefusedURLIsAnError() {
 	walletID := s.seedWallet("webhook refused")
 	webhookID := s.seedWebhook(walletID, url, secret)
 	resp := s.call(http.MethodPost, "/v1/wallets/"+walletID.String()+"/webhooks/"+webhookID.String()+"/test", s.token, "")
-	resp.AssertStatus(http.StatusBadGateway)
+	s.AssertError(resp, http.StatusBadGateway, "provider_unavailable", "webhook test delivery failed")
 	content, err := resp.Content()
 	s.Require().NoError(err)
 	s.NotContains(content, secret)
 	s.NotContains(logs.String(), secret)
-	s.Equal("webhook test delivery failed", s.errorText(s.jsonBody(resp)))
 }
 
 func (s *contractGapsSuite) TestGet_Withdrawal_Unauthenticated() {
@@ -320,8 +317,7 @@ func (s *contractGapsSuite) TestGet_Withdrawal_ReturnsTheAccountWithdrawal() {
 
 func (s *contractGapsSuite) TestGet_Withdrawal_UnknownIDIsNotFound() {
 	resp := s.call(http.MethodGet, "/v1/withdrawals/"+uuid.NewString(), s.token, "")
-	resp.AssertNotFound()
-	s.Equal("withdrawal not found", s.errorText(s.jsonBody(resp)))
+	s.AssertError(resp, http.StatusNotFound, "not_found", "withdrawal not found")
 }
 
 func (s *contractGapsSuite) TestAdd_WalletUser_Unauthenticated() {
@@ -349,8 +345,7 @@ func (s *contractGapsSuite) TestAdd_WalletUser_RejectsAnUnknownRole() {
 	for _, roles := range []string{"view", "spend", "owner", "auditor", "viewer,nope"} {
 		resp := s.call(http.MethodPost, "/v1/wallets/"+walletID.String()+"/users", s.token,
 			fmt.Sprintf(`{"user_id":%q,"roles":%q}`, memberID.String(), roles))
-		resp.AssertUnprocessableEntity()
-		s.Equal("roles must be a set of admin, spender, approver, viewer", s.errorText(s.jsonBody(resp)))
+		s.AssertError(resp, http.StatusUnprocessableEntity, "unprocessable", "roles must be a set of admin, spender, approver, viewer")
 	}
 
 	listed := s.call(http.MethodGet, "/v1/wallets/"+walletID.String()+"/users", s.token, "")
@@ -373,8 +368,7 @@ func (s *contractGapsSuite) TestAdd_WalletUser_RejectsUserWhoIsNotAMember() {
 
 	resp := s.call(http.MethodPost, "/v1/wallets/"+walletID.String()+"/users", s.token,
 		fmt.Sprintf(`{"user_id":%q,"roles":"viewer"}`, outsiderID.String()))
-	resp.AssertUnprocessableEntity()
-	s.Equal("user is not an active member of this account", s.errorText(s.jsonBody(resp)))
+	s.AssertError(resp, http.StatusUnprocessableEntity, "unprocessable", "user is not an active member of this account")
 }
 
 func contractGapJSON(t *testing.T, value any) string {

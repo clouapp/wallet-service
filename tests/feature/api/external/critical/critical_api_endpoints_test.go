@@ -196,12 +196,8 @@ func (s *criticalEndpointsSuite) TestGenerateAddress_SignedTokenMissingSig_Code4
 	jwt := s.mintSignedToken("gen-addr-missing-sig")
 
 	body := `{"external_user_id":"user_missing_sig"}`
-	s.External("/api/v1/wallets/"+uuid.NewString()+"/addresses", support.Token{Bearer: jwt}).Post(body).
-		AssertStatus(401).
-		AssertJson(map[string]any{"error": map[string]any{
-			"code":    "invalid_signature",
-			"message": "missing request signature",
-		}})
+	resp := s.External("/api/v1/wallets/"+uuid.NewString()+"/addresses", support.Token{Bearer: jwt}).Post(body)
+	s.AssertError(resp, 401, "invalid_signature", "missing request signature")
 }
 
 // ---------------------------------------------------------------------------
@@ -235,12 +231,8 @@ func (s *criticalEndpointsSuite) TestConsolidate_SignedTokenMissingSig_Code401()
 	jwt := s.mintSignedToken("consolidate-missing-sig")
 
 	body := `{"asset":"eth","passphrase":"test-pass-phrase-12345"}`
-	s.External("/api/v1/wallets/"+uuid.NewString()+"/consolidate", support.Token{Bearer: jwt}).Post(body).
-		AssertStatus(401).
-		AssertJson(map[string]any{"error": map[string]any{
-			"code":    "invalid_signature",
-			"message": "missing request signature",
-		}})
+	resp := s.External("/api/v1/wallets/"+uuid.NewString()+"/consolidate", support.Token{Bearer: jwt}).Post(body)
+	s.AssertError(resp, 401, "invalid_signature", "missing request signature")
 }
 
 // ---------------------------------------------------------------------------
@@ -275,10 +267,7 @@ func (s *criticalEndpointsSuite) TestCreate_Withdrawal_StringDailyCapReachesPass
 	walletID, jwt := s.seedAccountWalletWithLimit(false, "withdrawal-string-cap", `{"daily_usd":"12.50"}`)
 
 	resp := s.External("/api/v1/wallets/"+walletID+"/withdrawals", support.Token{Bearer: jwt}).Post(critWithdrawalBody)
-	resp.AssertInternalServerError().AssertJson(map[string]any{"error": map[string]any{
-		"code":    "internal",
-		"message": "internal error",
-	}})
+	s.AssertError(resp, 500, "internal", "internal error")
 	body, err := resp.Content()
 	s.Require().NoError(err)
 	s.NotContains(body, "cannot unmarshal")
@@ -296,10 +285,6 @@ func (s *criticalEndpointsSuite) TestCreateWithdrawal_SignedToken_AcceptsRequest
 func (s *criticalEndpointsSuite) TestCreateWithdrawal_SignedTokenMissingSig_Code401() {
 	jwt := s.mintSignedToken("withdrawal-missing-sig")
 
-	s.External("/api/v1/wallets/"+uuid.NewString()+"/withdrawals", support.Token{Bearer: jwt}).Post(critWithdrawalBody).
-		AssertStatus(401).
-		AssertJson(map[string]any{"error": map[string]any{
-			"code":    "invalid_signature",
-			"message": "missing request signature",
-		}})
+	resp := s.External("/api/v1/wallets/"+uuid.NewString()+"/withdrawals", support.Token{Bearer: jwt}).Post(critWithdrawalBody)
+	s.AssertError(resp, 401, "invalid_signature", "missing request signature")
 }

@@ -69,8 +69,5 @@ func (s *WithdrawalsControllerTestSuite) TestCreate_Withdrawal_WalletNotFound() 
 	unknownWallet := uuid.NewString()
 	resp := s.External("/api/v1/wallets/"+unknownWallet+"/withdraw/preview", support.Token{Bearer: jwt}).Post(body)
 
-	resp.AssertStatus(404).AssertJson(map[string]any{"error": map[string]any{
-		"code":    "not_found",
-		"message": "wallet not found",
-	}})
+	s.AssertError(resp, 404, "not_found", "wallet not found")
 }

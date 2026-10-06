@@ -125,13 +125,7 @@ func (s *PlatformUserSuspendTestSuite) TestA_Member_CannotSuspendAPlatformUser()
 
 	resp := s.authedPost(session.AccessToken, "/v1/platform/users/"+victim.ID.String()+"/suspend", "")
 	resp.AssertForbidden()
-	var body struct {
-		Error struct {
-			Code string `json:"code"`
-		} `json:"error"`
-	}
-	s.decode(resp, &body)
-	s.Equal(responses.CodeForbidden, body.Error.Code)
+	s.AssertError(resp, 403, responses.CodeForbidden, "you do not have permission to suspend users")
 	s.Equal(int64(0), s.count(`SELECT count(*) FROM users WHERE id = ? AND suspended_at IS NOT NULL`, victim.ID))
 	s.Equal(int64(0), s.count(`SELECT count(*) FROM account_activity WHERE action = 'user.suspended'`))
 
@@ -146,13 +140,7 @@ func (s *PlatformUserSuspendTestSuite) TestAn_Unknown_UserIsNotFoundForAPlatform
 
 	resp := s.authedPost(session.AccessToken, "/v1/platform/users/"+uuid.New().String()+"/suspend", "")
 	resp.AssertNotFound()
-	var body struct {
-		Error struct {
-			Code string `json:"code"`
-		} `json:"error"`
-	}
-	s.decode(resp, &body)
-	s.Equal(responses.CodeNotFound, body.Error.Code)
+	s.AssertError(resp, 404, responses.CodeNotFound, "user not found")
 
 	invalid := s.authedPost(session.AccessToken, "/v1/platform/users/not-a-uuid/suspend", "")
 	invalid.AssertBadRequest()
@@ -161,15 +149,7 @@ func (s *PlatformUserSuspendTestSuite) TestAn_Unknown_UserIsNotFoundForAPlatform
 func (s *PlatformUserSuspendTestSuite) assertSuspended(resp contractstesting.Response) {
 	s.T().Helper()
 	resp.AssertForbidden()
-	var body struct {
-		Error struct {
-			Code    string `json:"code"`
-			Message string `json:"message"`
-		} `json:"error"`
-	}
-	s.decode(resp, &body)
-	s.Equal(responses.CodeForbidden, body.Error.Code)
-	s.Equal(responses.SuspendedUserMessage, body.Error.Message)
+	s.AssertError(resp, 403, responses.CodeForbidden, responses.SuspendedUserMessage)
 }
 
 func (s *PlatformUserSuspendTestSuite) grantPlatformAdmin(userID uuid.UUID) {

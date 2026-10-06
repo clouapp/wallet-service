@@ -73,17 +73,7 @@ func (s *WalletCanAddressTestSuite) post(token, path, body string) contractstest
 
 func (s *WalletCanAddressTestSuite) assertForbidden(resp contractstesting.Response) {
 	resp.AssertStatus(403)
-	content, err := resp.Content()
-	s.Require().NoError(err)
-	var parsed struct {
-		Error struct {
-			Code    string `json:"code"`
-			Message string `json:"message"`
-		} `json:"error"`
-	}
-	s.Require().NoError(json.Unmarshal([]byte(content), &parsed))
-	s.Equal("forbidden", parsed.Error.Code)
-	s.Equal("forbidden", parsed.Error.Message)
+	s.AssertError(resp, 403, "forbidden", "forbidden")
 }
 
 func (s *WalletCanAddressTestSuite) TestAddress_Create_FollowsWalletCan() {
@@ -94,9 +84,9 @@ func (s *WalletCanAddressTestSuite) TestAddress_Create_FollowsWalletCan() {
 	for _, role := range []string{models.AccountRoleOwner, models.AccountRoleAdmin, models.AccountRoleUser} {
 		resp := s.post(s.loginUser(role), path, body)
 		resp.AssertStatus(422)
+		s.AssertError(resp, 422, "validation_failed", "validation failed")
 		content, err := resp.Content()
 		s.Require().NoError(err)
-		s.Contains(content, `"validation_failed"`, role)
 		s.NotContains(content, `"message":"forbidden"`, role)
 	}
 
@@ -107,9 +97,9 @@ func (s *WalletCanAddressTestSuite) TestMissing_Wallet_IsNotFoundBeforeWalletCan
 	token := s.loginUser(models.AccountRoleOwner)
 	resp := s.post(token, "/v1/wallets/"+uuid.NewString()+"/addresses", `{"label":"desk"}`)
 	resp.AssertNotFound()
+	s.AssertError(resp, 404, "not_found", "wallet not found")
 	content, err := resp.Content()
 	s.Require().NoError(err)
-	s.Contains(content, `"code":"not_found"`)
 	s.NotContains(content, `"message":"forbidden"`)
 }
 

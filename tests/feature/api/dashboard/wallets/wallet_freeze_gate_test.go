@@ -102,15 +102,7 @@ func (s *WalletFreezeGateTestSuite) TestWallet_Freeze_StaysHiddenFromAnAccountUs
 
 	resp := s.freeze(actor.token, account.ID, wallet.ID)
 	resp.AssertStatus(404)
-	var parsed struct {
-		Error struct {
-			Code    string `json:"code"`
-			Message string `json:"message"`
-		} `json:"error"`
-	}
-	s.Require().NoError(json.Unmarshal([]byte(s.body(resp)), &parsed))
-	s.Equal("not_found", parsed.Error.Code)
-	s.Equal("wallet not found", parsed.Error.Message)
+	s.AssertError(resp, 404, "not_found", "wallet not found")
 	s.assertUnfrozen(wallet.ID)
 }
 
@@ -183,15 +175,7 @@ func (s *WalletFreezeGateTestSuite) freezeBody(token string, accountID, walletID
 
 func (s *WalletFreezeGateTestSuite) assertFreezeForbidden(resp contractstesting.Response) {
 	resp.AssertStatus(403)
-	var parsed struct {
-		Error struct {
-			Code    string `json:"code"`
-			Message string `json:"message"`
-		} `json:"error"`
-	}
-	s.Require().NoError(json.Unmarshal([]byte(s.body(resp)), &parsed))
-	s.Equal("forbidden", parsed.Error.Code)
-	s.Equal("only owners and account admins may freeze wallets", parsed.Error.Message)
+	s.AssertError(resp, 403, "forbidden", "only owners and account admins may freeze wallets")
 }
 
 func (s *WalletFreezeGateTestSuite) assertUnfrozen(walletID uuid.UUID) {

@@ -88,15 +88,7 @@ func (s *PlatformMailTestSuite) TestA_Non_AdminIsForbiddenAndNothingIsSent() {
 
 	resp := s.postRaw(session.AccessToken, `{"to":"`+mailTestRecipient+`"}`)
 	resp.AssertForbidden()
-	var body struct {
-		Error struct {
-			Code    string `json:"code"`
-			Message string `json:"message"`
-		} `json:"error"`
-	}
-	s.decode(resp, &body)
-	s.Equal(responses.CodeForbidden, body.Error.Code)
-	s.Equal("you do not have permission to update settings", body.Error.Message)
+	s.AssertError(resp, 403, responses.CodeForbidden, "you do not have permission to update settings")
 	s.Equal(0, s.sends.count())
 	s.Equal(before, s.count(`SELECT count(*) FROM account_activity`))
 }
@@ -108,9 +100,9 @@ func (s *PlatformMailTestSuite) TestAn_Invalid_AddressIsRejectedAndNothingIsSent
 
 	resp := s.postRaw(session.AccessToken, `{"to":"not-an-email"}`)
 	resp.AssertUnprocessableEntity()
+	s.AssertError(resp, 422, responses.CodeValidationFailed, "validation failed")
 	content, err := resp.Content()
 	s.Require().NoError(err)
-	s.Contains(content, `"validation_failed"`)
 	s.Contains(content, `"to"`)
 	s.Equal(0, s.sends.count())
 	s.Equal(int64(0), s.count(`SELECT count(*) FROM settings WHERE account_id IS NULL AND "group" = 'mail_smtp'`))
@@ -131,8 +123,7 @@ func (s *PlatformMailTestSuite) TestA_Mailer_FailureIsBadGatewayWithoutCredentia
 		} `json:"error"`
 	}
 	s.Require().NoError(json.Unmarshal([]byte(raw), &body))
-	s.Equal(responses.CodeProviderUnavailable, body.Error.Code)
-	s.Equal("the test message was not sent", body.Error.Message)
+	s.AssertError(support.BodyRecorder(502, raw), 502, responses.CodeProviderUnavailable, "the test message was not sent")
 	s.Equal(1, s.sends.count())
 }
 
@@ -143,15 +134,7 @@ func (s *PlatformMailTestSuite) TestGet_Mail_GroupIsNotTheTestRoute() {
 
 	resp := s.getRaw(session.AccessToken, "/v1/platform/settings/mail")
 	resp.AssertNotFound()
-	var body struct {
-		Error struct {
-			Code    string `json:"code"`
-			Message string `json:"message"`
-		} `json:"error"`
-	}
-	s.decode(resp, &body)
-	s.Equal(responses.CodeNotFound, body.Error.Code)
-	s.Equal("settings group not found", body.Error.Message)
+	s.AssertError(resp, 404, responses.CodeNotFound, "settings group not found")
 	s.Equal(0, s.sends.count())
 }
 

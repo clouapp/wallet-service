@@ -132,17 +132,7 @@ func (s *AccountUpdateMemberGateTestSuite) patchMember(token string, accountID, 
 
 func (s *AccountUpdateMemberGateTestSuite) assertForbidden(resp contractstesting.Response, message string) {
 	resp.AssertStatus(403)
-	content, err := resp.Content()
-	s.Require().NoError(err)
-	var parsed struct {
-		Error struct {
-			Code    string `json:"code"`
-			Message string `json:"message"`
-		} `json:"error"`
-	}
-	s.Require().NoError(json.Unmarshal([]byte(content), &parsed))
-	s.Equal("forbidden", parsed.Error.Code)
-	s.Equal(message, parsed.Error.Message)
+	s.AssertError(resp, 403, "forbidden", message)
 }
 
 func (s *AccountUpdateMemberGateTestSuite) storedRole(accountID, userID uuid.UUID) string {

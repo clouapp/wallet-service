@@ -87,17 +87,13 @@ func (s *accountTokensSuite) TestName_Outside_TheCatalogIsRejected() {
 	owner := s.loginUser("owner", accountID)
 
 	resp := s.createToken(owner.token, accountID, `{"name":"bad","permissions":["wallets:read"]}`)
-	s.Equal(http.StatusUnprocessableEntity, s.statusOf(resp))
+	s.AssertError(resp, http.StatusUnprocessableEntity, "validation_failed", "validation failed")
 	s.Equal(int64(0), s.tokenCount(accountID))
 
 	var parsed struct {
-		Error struct {
-			Code string `json:"code"`
-		} `json:"error"`
 		Errors map[string][]string `json:"errors"`
 	}
 	s.Require().NoError(json.Unmarshal([]byte(s.body(resp)), &parsed))
-	s.Equal("validation_failed", parsed.Error.Code)
 	s.NotEmpty(parsed.Errors["permissions.*"])
 }
 
@@ -124,18 +120,14 @@ func (s *accountTokensSuite) TestNegative_Spending_LimitIsNotStored() {
 	owner := s.loginUser("owner", accountID)
 
 	resp := s.createToken(owner.token, accountID, `{"name":"negative","spending_limit":{"daily_usd":"-1"}}`)
-	s.Equal(http.StatusUnprocessableEntity, s.statusOf(resp))
+	s.AssertError(resp, http.StatusUnprocessableEntity, "validation_failed", "validation failed")
 	s.Equal(int64(0), s.tokenCount(accountID))
 	s.Equal(int64(0), s.activityCount(accountID, activitylog.ActionTokenCreated))
 
 	var parsed struct {
-		Error struct {
-			Code string `json:"code"`
-		} `json:"error"`
 		Errors map[string][]string `json:"errors"`
 	}
 	s.Require().NoError(json.Unmarshal([]byte(s.body(resp)), &parsed))
-	s.Equal("validation_failed", parsed.Error.Code)
 	s.NotEmpty(parsed.Errors["spending_limit.daily_usd"])
 }
 
@@ -167,8 +159,7 @@ func (s *accountTokensSuite) TestUser_Cannot_ListTokens() {
 		Data json.RawMessage `json:"data"`
 	}
 	s.Require().NoError(json.Unmarshal([]byte(s.body(list)), &parsed))
-	s.Equal("forbidden", parsed.Error.Code)
-	s.Equal("forbidden", parsed.Error.Message)
+	s.AssertError(list, http.StatusForbidden, "forbidden", "forbidden")
 	s.Empty(parsed.Data)
 }
 
@@ -198,6 +189,7 @@ func (s *accountTokensSuite) TestInvalid_IP_CidrIs422() {
 	s.Equal(http.StatusUnprocessableEntity, s.statusOf(resp))
 	s.Equal(int64(0), s.tokenCount(accountID))
 
+	s.AssertError(resp, 422, "validation_failed", "validation failed")
 	var parsed struct {
 		Error struct {
 			Code    string `json:"code"`
@@ -206,8 +198,6 @@ func (s *accountTokensSuite) TestInvalid_IP_CidrIs422() {
 		Errors map[string][]string `json:"errors"`
 	}
 	s.Require().NoError(json.Unmarshal([]byte(s.body(resp)), &parsed))
-	s.Equal("validation_failed", parsed.Error.Code)
-	s.Equal("validation failed", parsed.Error.Message)
 	s.NotEmpty(parsed.Errors["ip_cidr"])
 }
 
@@ -529,17 +519,11 @@ func (s *accountTokensSuite) tokenRevoked(accountID uuid.UUID, name string) bool
 }
 
 func (s *accountTokensSuite) assertCreateForbidden(resp contractstesting.Response) {
-	s.Equal(http.StatusForbidden, s.statusOf(resp))
+	s.AssertError(resp, http.StatusForbidden, "forbidden", "forbidden")
 	var parsed struct {
-		Error struct {
-			Code    string `json:"code"`
-			Message string `json:"message"`
-		} `json:"error"`
 		Data json.RawMessage `json:"data"`
 	}
 	s.Require().NoError(json.Unmarshal([]byte(s.body(resp)), &parsed))
-	s.Equal("forbidden", parsed.Error.Code)
-	s.Equal("forbidden", parsed.Error.Message)
 	s.Empty(parsed.Data)
 }
 

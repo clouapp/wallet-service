@@ -99,6 +99,7 @@ func (s *AccountTokenReadGateTestSuite) assertForbidden(resp contractstesting.Re
 	s.Require().NoError(err)
 	s.NotContains(content, accountTokenReadGateName)
 	s.NotContains(content, accountTokenReadGateHash)
+	s.AssertError(resp, 403, "forbidden", "forbidden")
 	var parsed struct {
 		Error struct {
 			Code    string `json:"code"`
@@ -107,8 +108,6 @@ func (s *AccountTokenReadGateTestSuite) assertForbidden(resp contractstesting.Re
 		Data json.RawMessage `json:"data"`
 	}
 	s.Require().NoError(json.Unmarshal([]byte(content), &parsed))
-	s.Equal("forbidden", parsed.Error.Code)
-	s.Equal("forbidden", parsed.Error.Message)
 	s.Empty(parsed.Data)
 }
 

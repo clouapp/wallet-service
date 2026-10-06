@@ -155,8 +155,7 @@ func (s *WalletWhitelistGateTestSuite) TestAdd_Whitelist_EntryValidationStaysUnp
 
 	resp := s.addEntry(owner.token, account.ID, wallet.ID, "", label)
 	resp.AssertStatus(422)
-	content := s.body(resp)
-	s.Contains(content, `"validation_failed"`)
+	s.AssertError(resp, 422, "validation_failed", "validation failed")
 	s.Equal(int64(0), s.whitelistCount(wallet.ID, label))
 }
 
@@ -241,15 +240,7 @@ func (s *WalletWhitelistGateTestSuite) createdEntryID(resp contractstesting.Resp
 
 func (s *WalletWhitelistGateTestSuite) assertWhitelistForbidden(resp contractstesting.Response) {
 	resp.AssertStatus(403)
-	var parsed struct {
-		Error struct {
-			Code    string `json:"code"`
-			Message string `json:"message"`
-		} `json:"error"`
-	}
-	s.Require().NoError(json.Unmarshal([]byte(s.body(resp)), &parsed))
-	s.Equal("forbidden", parsed.Error.Code)
-	s.Equal("only wallet/account owners and admins may manage the whitelist", parsed.Error.Message)
+	s.AssertError(resp, 403, "forbidden", "only wallet/account owners and admins may manage the whitelist")
 }
 
 func (s *WalletWhitelistGateTestSuite) assertCreatedEntry(resp contractstesting.Response, walletID uuid.UUID, address, label string) {

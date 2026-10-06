@@ -121,28 +121,14 @@ func (s *PlatformChainThresholdTestSuite) TestA_Non_AdminIsForbiddenAndAnUnknown
 
 	forbidden := s.patchRaw(session.AccessToken, "/v1/platform/chains/eth", `{"dust_threshold_usd":"-1"}`)
 	forbidden.AssertForbidden()
-	var forbiddenBody struct {
-		Error struct {
-			Code    string `json:"code"`
-			Message string `json:"message"`
-		} `json:"error"`
-	}
-	s.decode(forbidden, &forbiddenBody)
-	s.Equal(responses.CodeForbidden, forbiddenBody.Error.Code)
-	s.Equal("you do not have permission to update chains", forbiddenBody.Error.Message)
+	s.AssertError(forbidden, 403, responses.CodeForbidden, "you do not have permission to update chains")
 	after := s.loadChain(models.ChainETH)
 	s.True(before.DustThresholdUSD.Decimal.Equal(after.DustThresholdUSD.Decimal))
 	s.Equal(int64(0), s.count(`SELECT count(*) FROM account_activity WHERE action = 'chains.updated'`))
 
 	missing := s.patchRaw(session.AccessToken, "/v1/platform/chains/no-such-chain", `{"dust_threshold_usd":"-1"}`)
 	missing.AssertNotFound()
-	var missingBody struct {
-		Error struct {
-			Code string `json:"code"`
-		} `json:"error"`
-	}
-	s.decode(missing, &missingBody)
-	s.Equal(responses.CodeNotFound, missingBody.Error.Code)
+	s.AssertError(missing, 404, responses.CodeNotFound, "chain not found")
 
 	admin := s.seedUser(false)
 	s.grantPlatformAdmin(admin.ID)
@@ -257,6 +243,7 @@ func (s *PlatformChainThresholdTestSuite) count(query string, args ...any) int64
 
 func (s *PlatformChainThresholdTestSuite) assertValidation(resp contractstesting.Response, field, message string) {
 	s.T().Helper()
+	s.AssertError(resp, 422, responses.CodeValidationFailed, "validation failed")
 	var body struct {
 		Error struct {
 			Code    string `json:"code"`
@@ -265,8 +252,6 @@ func (s *PlatformChainThresholdTestSuite) assertValidation(resp contractstesting
 		Errors map[string][]string `json:"errors"`
 	}
 	s.decode(resp, &body)
-	s.Equal(responses.CodeValidationFailed, body.Error.Code)
-	s.Equal("validation failed", body.Error.Message)
 	s.Equal([]string{message}, body.Errors[field])
 }
 

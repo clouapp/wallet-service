@@ -9,6 +9,8 @@ import (
 	"strings"
 	"testing"
 
+	goravelhttp "github.com/goravel/framework/testing/http"
+
 	"github.com/macrowallets/waas/app/http/resources"
 )
 
@@ -34,6 +36,14 @@ func (s *assertErrorSuite) TestReads_The_EnvelopeThisBranchReturns() {
 	s.AssertError(recorder(http.StatusUnprocessableEntity, encode(s.T(), resources.NewValidation(map[string][]string{
 		"email": {"Email address is required"},
 	}))), http.StatusUnprocessableEntity, resources.CodeValidationFailed, resources.ValidationMessage)
+
+	body := io.NopCloser(strings.NewReader(`{"error":{"code":"not_found","message":"wallet not found"}}`))
+	resp := goravelhttp.NewTestResponse(s.T(), &http.Response{
+		StatusCode: http.StatusNotFound,
+		Body:       body,
+		Header:     make(http.Header),
+	}, nil, nil)
+	s.AssertError(resp, http.StatusNotFound, resources.CodeNotFound, "wallet not found")
 }
 
 func TestMatch_Error_Envelope(t *testing.T) {

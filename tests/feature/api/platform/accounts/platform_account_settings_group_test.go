@@ -125,27 +125,21 @@ func (s *PlatformAccountSettingsGroupTestSuite) TestAn_Admin_ReadsOneAccountAndN
 	s.Equal("8.75", s.settingValue(&accountB, "account_sweep_limits", "daily_withdraw_cap_usd"))
 
 	missingAccount := s.getRaw(session.AccessToken, s.groupPath(uuid.New(), "account_sweep_limits"))
-	missingAccount.AssertNotFound()
-	s.Equal("account not found", s.errorMessage(missingAccount))
+	s.AssertError(missingAccount, 404, "not_found", "account not found")
 
 	missingGroup := s.getRaw(session.AccessToken, s.groupPath(accountA, "no-such-group"))
-	missingGroup.AssertNotFound()
-	s.Equal("settings group not found", s.errorMessage(missingGroup))
+	s.AssertError(missingGroup, 404, "not_found", "settings group not found")
 
 	platformOnly := s.getRaw(session.AccessToken, s.groupPath(accountA, "mail_smtp"))
-	platformOnly.AssertNotFound()
-	s.Equal("settings group not found", s.errorMessage(platformOnly))
+	s.AssertError(platformOnly, 404, "not_found", "settings group not found")
 
 	accountManaged := s.getRaw(session.AccessToken, s.groupPath(accountA, "account_security"))
-	accountManaged.AssertNotFound()
-	s.Equal("settings group not found", s.errorMessage(accountManaged))
+	s.AssertError(accountManaged, 404, "not_found", "settings group not found")
 
 	badID := s.getRaw(session.AccessToken, "/v1/platform/accounts/not-a-uuid/settings/account_sweep_limits")
-	badID.AssertNotFound()
-	s.Equal("account not found", s.errorMessage(badID))
+	s.AssertError(badID, 404, "not_found", "account not found")
 	badIDUnknownGroup := s.getRaw(session.AccessToken, "/v1/platform/accounts/not-a-uuid/settings/no-such-group")
-	badIDUnknownGroup.AssertNotFound()
-	s.Equal("settings group not found", s.errorMessage(badIDUnknownGroup))
+	s.AssertError(badIDUnknownGroup, 404, "not_found", "settings group not found")
 }
 
 func (s *PlatformAccountSettingsGroupTestSuite) TestA_Non_AdminOnAKnownPairIsForbiddenAndAnUnknownAccountIsNotFound() {
@@ -154,22 +148,17 @@ func (s *PlatformAccountSettingsGroupTestSuite) TestA_Non_AdminOnAKnownPairIsFor
 	accountID := s.createAccount("Known")
 
 	unknownAccount := s.getRaw(session.AccessToken, s.groupPath(uuid.New(), "account_sweep_limits"))
-	unknownAccount.AssertNotFound()
-	s.Equal("account not found", s.errorMessage(unknownAccount))
-	s.Equal(responses.CodeNotFound, s.errorCode(unknownAccount))
+	s.AssertError(unknownAccount, 404, responses.CodeNotFound, "account not found")
 
 	unknownGroup := s.getRaw(session.AccessToken, s.groupPath(accountID, "no-such-group"))
-	unknownGroup.AssertNotFound()
-	s.Equal("settings group not found", s.errorMessage(unknownGroup))
+	s.AssertError(unknownGroup, 404, "not_found", "settings group not found")
 
 	platformOnly := s.getRaw(session.AccessToken, s.groupPath(accountID, "sweep_limits"))
 	platformOnly.AssertNotFound()
 
 	before := s.count(`SELECT count(*) FROM account_activity`)
 	known := s.getRaw(session.AccessToken, s.groupPath(accountID, "account_sweep_limits"))
-	known.AssertForbidden()
-	s.Equal(responses.CodeForbidden, s.errorCode(known))
-	s.Equal("you do not have permission to view settings", s.errorMessage(known))
+	s.AssertError(known, 403, responses.CodeForbidden, "you do not have permission to view settings")
 	s.Equal(before, s.count(`SELECT count(*) FROM account_activity`))
 	s.Equal(int64(0), s.count(
 		`SELECT count(*) FROM settings WHERE account_id = ? AND "group" = 'account_sweep_limits'`,

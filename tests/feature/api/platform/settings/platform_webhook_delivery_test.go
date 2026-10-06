@@ -200,25 +200,11 @@ func (s *PlatformWebhookDeliveryTestSuite) TestZero_Or_NegativeIsRejectedAndANon
 
 	missing := s.putRaw(session.AccessToken, "/v1/platform/settings/no-such-group", `{"max_attempts":1}`)
 	missing.AssertNotFound()
-	var missingBody struct {
-		Error struct {
-			Code string `json:"code"`
-		} `json:"error"`
-	}
-	s.decode(missing, &missingBody)
-	s.Equal(responses.CodeNotFound, missingBody.Error.Code)
+	s.AssertError(missing, 404, responses.CodeNotFound, "settings group not found")
 
 	forbidden := s.putRaw(session.AccessToken, "/v1/platform/settings/webhook_delivery", `{"max_attempts":4,"timeout_seconds":8}`)
 	forbidden.AssertForbidden()
-	var forbiddenBody struct {
-		Error struct {
-			Code    string `json:"code"`
-			Message string `json:"message"`
-		} `json:"error"`
-	}
-	s.decode(forbidden, &forbiddenBody)
-	s.Equal(responses.CodeForbidden, forbiddenBody.Error.Code)
-	s.Equal("you do not have permission to update settings", forbiddenBody.Error.Message)
+	s.AssertError(forbidden, 403, responses.CodeForbidden, "you do not have permission to update settings")
 	s.Equal(int64(0), s.count(
 		`SELECT count(*) FROM settings WHERE account_id IS NULL AND "group" = 'webhook_delivery'`,
 	))
@@ -238,14 +224,11 @@ func (s *PlatformWebhookDeliveryTestSuite) TestZero_Or_NegativeIsRejectedAndANon
 	} {
 		rejected := s.putRaw(adminSession.AccessToken, "/v1/platform/settings/webhook_delivery", body)
 		rejected.AssertUnprocessableEntity()
+		s.AssertError(rejected, 422, responses.CodeValidationFailed, "validation failed")
 		var parsed struct {
-			Error struct {
-				Code string `json:"code"`
-			} `json:"error"`
 			Errors map[string][]string `json:"errors"`
 		}
 		s.decode(rejected, &parsed)
-		s.Equal(responses.CodeValidationFailed, parsed.Error.Code)
 		s.NotEmpty(parsed.Errors)
 	}
 	s.Equal(int64(0), s.count(
@@ -341,6 +324,7 @@ func (s *PlatformWebhookDeliveryTestSuite) deliveryAttempts(id uuid.UUID) int {
 
 func (s *PlatformWebhookDeliveryTestSuite) assertValidation(resp contractstesting.Response, field, message string) {
 	s.T().Helper()
+	s.AssertError(resp, 422, responses.CodeValidationFailed, "validation failed")
 	var body struct {
 		Error struct {
 			Code    string `json:"code"`
@@ -349,8 +333,6 @@ func (s *PlatformWebhookDeliveryTestSuite) assertValidation(resp contractstestin
 		Errors map[string][]string `json:"errors"`
 	}
 	s.decode(resp, &body)
-	s.Equal(responses.CodeValidationFailed, body.Error.Code)
-	s.Equal("validation failed", body.Error.Message)
 	s.Equal([]string{message}, body.Errors[field])
 }
 

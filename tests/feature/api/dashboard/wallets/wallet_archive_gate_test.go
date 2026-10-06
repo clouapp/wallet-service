@@ -94,15 +94,7 @@ func (s *WalletArchiveGateTestSuite) TestWallet_Archive_StaysHiddenFromAnAccount
 
 	resp := s.archive(actor.token, account.ID, wallet.ID)
 	resp.AssertStatus(404)
-	var parsed struct {
-		Error struct {
-			Code    string `json:"code"`
-			Message string `json:"message"`
-		} `json:"error"`
-	}
-	s.Require().NoError(json.Unmarshal([]byte(s.body(resp)), &parsed))
-	s.Equal("not_found", parsed.Error.Code)
-	s.Equal("wallet not found", parsed.Error.Message)
+	s.AssertError(resp, 404, "not_found", "wallet not found")
 	s.Equal("active", s.walletStatus(wallet.ID))
 }
 
@@ -170,15 +162,7 @@ func (s *WalletArchiveGateTestSuite) archive(token string, accountID, walletID u
 
 func (s *WalletArchiveGateTestSuite) assertArchiveForbidden(resp contractstesting.Response) {
 	resp.AssertStatus(403)
-	var parsed struct {
-		Error struct {
-			Code    string `json:"code"`
-			Message string `json:"message"`
-		} `json:"error"`
-	}
-	s.Require().NoError(json.Unmarshal([]byte(s.body(resp)), &parsed))
-	s.Equal("forbidden", parsed.Error.Code)
-	s.Equal("only wallet/account owners and admins may archive wallets", parsed.Error.Message)
+	s.AssertError(resp, 403, "forbidden", "only wallet/account owners and admins may archive wallets")
 }
 
 func (s *WalletArchiveGateTestSuite) walletStatus(walletID uuid.UUID) string {

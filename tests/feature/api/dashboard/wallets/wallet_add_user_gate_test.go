@@ -91,15 +91,7 @@ func (s *WalletAddUserGateTestSuite) TestAdd_Wallet_UserValidationStaysUnprocess
 
 	resp := s.addUser(owner.token, account.ID, wallet.ID, target, "owner")
 	resp.AssertStatus(422)
-	var parsed struct {
-		Error struct {
-			Code    string `json:"code"`
-			Message string `json:"message"`
-		} `json:"error"`
-	}
-	s.Require().NoError(json.Unmarshal([]byte(s.body(resp)), &parsed))
-	s.Equal("unprocessable", parsed.Error.Code)
-	s.Equal("roles must be a set of admin, spender, approver, viewer", parsed.Error.Message)
+	s.AssertError(resp, 422, "unprocessable", "roles must be a set of admin, spender, approver, viewer")
 	s.Equal(int64(0), s.walletMembershipCount(wallet.ID, target))
 }
 
@@ -169,15 +161,7 @@ func (s *WalletAddUserGateTestSuite) addUser(token string, accountID, walletID, 
 
 func (s *WalletAddUserGateTestSuite) assertAddForbidden(resp contractstesting.Response) {
 	resp.AssertStatus(403)
-	var parsed struct {
-		Error struct {
-			Code    string `json:"code"`
-			Message string `json:"message"`
-		} `json:"error"`
-	}
-	s.Require().NoError(json.Unmarshal([]byte(s.body(resp)), &parsed))
-	s.Equal("forbidden", parsed.Error.Code)
-	s.Equal("only wallet/account owners and admins may add wallet users", parsed.Error.Message)
+	s.AssertError(resp, 403, "forbidden", "only wallet/account owners and admins may add wallet users")
 }
 
 func (s *WalletAddUserGateTestSuite) assertCreatedViewer(resp contractstesting.Response, targetID uuid.UUID) {

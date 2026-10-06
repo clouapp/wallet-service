@@ -41,8 +41,7 @@ func (s *PlatformAccountLifecycleTestSuite) TestPlatform_Admin_FreezesUnfreezesA
 	outsider := s.seedUser(false)
 	outsiderSession := s.signIn(outsider.Email)
 	forbidden := s.post(outsiderSession.AccessToken, "/v1/platform/accounts/"+accountID.String()+"/freeze")
-	forbidden.AssertForbidden()
-	s.Equal(responses.CodeForbidden, s.errorCode(forbidden))
+	s.AssertError(forbidden, 403, responses.CodeForbidden, "you do not have permission to change account status")
 	s.Equal(models.StatusActive, s.accountStatus(accountID))
 
 	frozen := s.post(adminSession.AccessToken, "/v1/platform/accounts/"+accountID.String()+"/freeze")
@@ -54,9 +53,7 @@ func (s *PlatformAccountLifecycleTestSuite) TestPlatform_Admin_FreezesUnfreezesA
 	s.Equal(models.AccountStatusFrozen, s.statusOf(again))
 
 	blocked := s.send("PATCH", "/v1/accounts/"+accountID.String(), ownerSession.AccessToken, `{"name":"renamed"}`)
-	blocked.AssertForbidden()
-	s.Equal(responses.CodeAccountFrozen, s.errorCode(blocked))
-	s.Contains(s.errorMessage(blocked), "only reads are allowed")
+	s.AssertError(blocked, 403, responses.CodeAccountFrozen, "account is frozen; only reads are allowed")
 	s.Equal("lifecycle-"+accountID.String()[:8], s.accountName(accountID))
 
 	unfrozen := s.post(adminSession.AccessToken, "/v1/platform/accounts/"+accountID.String()+"/unfreeze")
@@ -76,13 +73,10 @@ func (s *PlatformAccountLifecycleTestSuite) TestPlatform_Admin_FreezesUnfreezesA
 	))
 
 	missing := s.post(adminSession.AccessToken, "/v1/platform/accounts/"+uuid.NewString()+"/freeze")
-	missing.AssertNotFound()
-	s.Equal(responses.CodeNotFound, s.errorCode(missing))
-	s.Equal("account not found", s.errorMessage(missing))
+	s.AssertError(missing, 404, responses.CodeNotFound, "account not found")
 
 	badID := s.post(adminSession.AccessToken, "/v1/platform/accounts/not-a-uuid/archive")
-	badID.AssertStatus(400)
-	s.Equal(responses.CodeInvalidRequest, s.errorCode(badID))
+	s.AssertError(badID, 400, responses.CodeInvalidRequest, "invalid account id")
 }
 
 func (s *PlatformAccountLifecycleTestSuite) grantPlatformAdmin(userID uuid.UUID) {

@@ -218,6 +218,7 @@ func (s *PlatformSweepLimitsTestSuite) platformValue(key string) string {
 
 func (s *PlatformSweepLimitsTestSuite) assertValidationFailed(resp contractstesting.Response) {
 	s.T().Helper()
+	s.AssertError(resp, 422, responses.CodeValidationFailed, "validation failed")
 	var body struct {
 		Error struct {
 			Code    string `json:"code"`
@@ -226,7 +227,5 @@ func (s *PlatformSweepLimitsTestSuite) assertValidationFailed(resp contractstest
 		Errors map[string][]string `json:"errors"`
 	}
 	s.decode(resp, &body)
-	s.Equal(responses.CodeValidationFailed, body.Error.Code)
-	s.Equal("validation failed", body.Error.Message)
 	s.NotEmpty(body.Errors)
 }

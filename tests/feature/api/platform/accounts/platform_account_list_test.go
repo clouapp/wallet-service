@@ -89,15 +89,7 @@ func (s *PlatformAccountListTestSuite) TestA_Member_CannotListPlatformAccounts()
 
 	resp := s.listAccounts(session.AccessToken, "")
 	resp.AssertForbidden()
-	var body struct {
-		Error struct {
-			Code    string `json:"code"`
-			Message string `json:"message"`
-		} `json:"error"`
-	}
-	s.decode(resp, &body)
-	s.Equal(responses.CodeForbidden, body.Error.Code)
-	s.Equal("you do not have permission to view accounts", body.Error.Message)
+	s.AssertError(resp, 403, responses.CodeForbidden, "you do not have permission to view accounts")
 
 	anonymous := s.Get("/v1/platform/accounts", support.Session{})
 	anonymous.AssertUnauthorized()

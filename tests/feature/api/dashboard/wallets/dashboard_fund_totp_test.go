@@ -452,9 +452,7 @@ func (s *DashboardFundTOTPSuite) createdID(resp contractstesting.Response) uuid.
 
 func (s *DashboardFundTOTPSuite) assertCodeDenied(resp contractstesting.Response) {
 	s.T().Helper()
-	resp.AssertStatus(401).AssertJson(map[string]any{
-		"error": map[string]any{"code": "unauthorized", "message": "invalid 2FA code"},
-	})
+	s.AssertError(resp, 401, "unauthorized", "invalid 2FA code")
 }
 
 func (s *DashboardFundTOTPSuite) whitelistCount(walletID uuid.UUID, label string) int64 {

@@ -118,17 +118,7 @@ func (s *AccountAddMemberGateTestSuite) post(token string, accountID uuid.UUID, 
 
 func (s *AccountAddMemberGateTestSuite) assertForbidden(resp contractstesting.Response) {
 	resp.AssertStatus(403)
-	content, err := resp.Content()
-	s.Require().NoError(err)
-	var parsed struct {
-		Error struct {
-			Code    string `json:"code"`
-			Message string `json:"message"`
-		} `json:"error"`
-	}
-	s.Require().NoError(json.Unmarshal([]byte(content), &parsed))
-	s.Equal("forbidden", parsed.Error.Code)
-	s.Equal("forbidden", parsed.Error.Message)
+	s.AssertError(resp, 403, "forbidden", "forbidden")
 }
 
 func (s *AccountAddMemberGateTestSuite) membershipCount(accountID, userID uuid.UUID) int64 {

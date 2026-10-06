@@ -211,9 +211,7 @@ func (s *totpEnrollmentSuite) patch(token, path, body string) contractstestinght
 
 func (s *totpEnrollmentSuite) equalEnrollment(response contractstestinghttp.Response) {
 	s.T().Helper()
-	status, code := s.errorCode(response)
-	s.Equal(http.StatusForbidden, status)
-	s.Equal(middleware.CodeTwoFactorEnrollmentRequired, code)
+	s.AssertError(response, http.StatusForbidden, middleware.CodeTwoFactorEnrollmentRequired, middleware.CodeTwoFactorEnrollmentRequired)
 }
 
 func (s *totpEnrollmentSuite) errorCode(response contractstestinghttp.Response) (int, string) {

@@ -119,12 +119,11 @@ func (s *PlatformAccountUsersTestSuite) TestA_Platform_AdminListsAccountUsersNew
 
 	missing := s.listAccountUsers(session.AccessToken, uuid.New(), "")
 	missing.AssertNotFound()
-	s.Equal(responses.CodeNotFound, s.accountUsersError(missing).Code)
-	s.Equal("account not found", s.accountUsersError(missing).Message)
+	s.AssertError(missing, 404, responses.CodeNotFound, "account not found")
 
 	badID := s.listAccountUsersPath(session.AccessToken, "/v1/platform/accounts/not-a-uuid/users")
 	badID.AssertStatus(400)
-	s.Equal(responses.CodeInvalidRequest, s.accountUsersError(badID).Code)
+	s.AssertError(badID, 400, responses.CodeInvalidRequest, "invalid account id")
 }
 
 func (s *PlatformAccountUsersTestSuite) TestA_Member_CannotListAccountUsers() {
@@ -136,8 +135,7 @@ func (s *PlatformAccountUsersTestSuite) TestA_Member_CannotListAccountUsers() {
 
 	resp := s.listAccountUsers(session.AccessToken, accountID, "")
 	resp.AssertForbidden()
-	s.Equal(responses.CodeForbidden, s.accountUsersError(resp).Code)
-	s.Equal("you do not have permission to view account users", s.accountUsersError(resp).Message)
+	s.AssertError(resp, 403, responses.CodeForbidden, "you do not have permission to view account users")
 	raw, err := resp.Content()
 	s.Require().NoError(err)
 	s.NotContains(raw, person.String())

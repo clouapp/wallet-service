@@ -55,7 +55,7 @@ func (s *TotpHolesTestSuite) TestDisable_TOTP_WithoutACodeLeavesItOn() {
 
 	resp := s.authedDelete(session.AccessToken, "/v1/users/me/totp")
 
-	resp.AssertStatus(401).AssertJson(map[string]any{"error": map[string]any{"code": "unauthorized", "message": "invalid 2FA code"}})
+	s.AssertError(resp, 401, "unauthorized", "invalid 2FA code")
 	after := s.storedUser(user.ID)
 	s.True(after.TotpEnabled)
 	s.Equal(before.TotpSecret, after.TotpSecret)
@@ -68,7 +68,7 @@ func (s *TotpHolesTestSuite) TestDisable_TOTP_WithAWrongCodeRevokesNothing() {
 
 	resp := s.authedDeleteJSON(session.AccessToken, "/v1/users/me/totp", `{"code":"000000"}`)
 
-	resp.AssertStatus(401).AssertJson(map[string]any{"error": map[string]any{"code": "unauthorized", "message": "invalid 2FA code"}})
+	s.AssertError(resp, 401, "unauthorized", "invalid 2FA code")
 	s.True(s.storedUser(user.ID).TotpEnabled)
 	s.assertSessionWorks(session)
 }
@@ -107,7 +107,7 @@ func (s *TotpHolesTestSuite) TestSetup_TOTP_WhileActiveIsRejected() {
 
 	resp := s.authedPost(session.AccessToken, "/v1/users/me/totp/setup", "")
 
-	resp.AssertStatus(409).AssertJson(map[string]any{"error": map[string]any{"code": "conflict", "message": "2FA is already enabled"}})
+	s.AssertError(resp, 409, "conflict", "2FA is already enabled")
 	after := s.storedUser(user.ID)
 	s.True(after.TotpEnabled)
 	s.Equal(before.TotpSecret, after.TotpSecret)
@@ -154,8 +154,9 @@ func (s *TotpHolesTestSuite) TestCode_Consumed_AtLoginIsRejectedForWithdrawal() 
 		`{"amount":"1","destination_address":"0x742d35Cc6634C0532925a3b844Bc9e7595f2bD12","passphrase":"test-passphrase-123","totp_code":%q}`,
 		code,
 	)
-	s.Post("/v1/wallets/"+walletID.String()+"/withdrawals", support.Session{
+	resp = s.Post("/v1/wallets/"+walletID.String()+"/withdrawals", support.Session{
 		AccessToken: session.AccessToken,
 		AccountID:   accountID.String(),
-	}, body).AssertStatus(401).AssertJson(map[string]any{"error": map[string]any{"code": "unauthorized", "message": "invalid 2FA code"}})
+	}, body)
+	s.AssertError(resp, 401, "unauthorized", "invalid 2FA code")
 }

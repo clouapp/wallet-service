@@ -143,8 +143,8 @@ func (s *walletWithdrawalLookupSuite) TestUnknown_Idempotency_KeyIsNotFound() {
 	accountID, bearer, _ := testutil.SetupAPIAuth(s.T(), false)
 	walletID := s.seedWallet(accountID)
 
-	body := s.get(lookupPath(walletID, uuid.NewString()), bearer, 404)
-	s.Equal(errorObject("not_found", "withdrawal not found"), body["error"])
+	resp := s.External(lookupPath(walletID, uuid.NewString()), testutil.Token{Bearer: bearer}).Get()
+	s.AssertError(resp, 404, "not_found", "withdrawal not found")
 }
 
 func (s *walletWithdrawalLookupSuite) TestWithdrawal_Of_AnotherWalletInSameAccountIsNotFound() {
@@ -153,8 +153,8 @@ func (s *walletWithdrawalLookupSuite) TestWithdrawal_Of_AnotherWalletInSameAccou
 	otherWallet := s.seedWallet(accountID)
 	withdrawalID := s.seedWithdrawal(walletWithWithdrawal, accountID, "failed", nil, nil)
 
-	body := s.get(lookupPath(otherWallet, withdrawalID.String()), bearer, 404)
-	s.Equal(errorObject("not_found", "withdrawal not found"), body["error"])
+	resp := s.External(lookupPath(otherWallet, withdrawalID.String()), testutil.Token{Bearer: bearer}).Get()
+	s.AssertError(resp, 404, "not_found", "withdrawal not found")
 }
 
 func (s *walletWithdrawalLookupSuite) TestOther_Accounts_WalletIsNotFound() {
@@ -163,8 +163,8 @@ func (s *walletWithdrawalLookupSuite) TestOther_Accounts_WalletIsNotFound() {
 	withdrawalID := s.seedWithdrawal(walletID, ownerAccountID, "broadcast", nil, nil)
 	_, intruderBearer, _ := testutil.SetupAPIAuth(s.T(), false)
 
-	body := s.get(lookupPath(walletID, withdrawalID.String()), intruderBearer, 404)
-	s.Equal(errorObject("not_found", "wallet not found"), body["error"])
+	resp := s.External(lookupPath(walletID, withdrawalID.String()), testutil.Token{Bearer: intruderBearer}).Get()
+	s.AssertError(resp, 404, "not_found", "wallet not found")
 }
 
 func (s *walletWithdrawalLookupSuite) TestRequires_Bearer_Token() {
@@ -179,6 +179,6 @@ func (s *walletWithdrawalLookupSuite) TestRejects_Non_UUIDIdempotencyKey() {
 	accountID, bearer, _ := testutil.SetupAPIAuth(s.T(), false)
 	walletID := s.seedWallet(accountID)
 
-	body := s.get(lookupPath(walletID, "not-a-uuid"), bearer, 400)
-	s.Equal(errorObject("invalid_request", "idempotency_key must be a UUID"), body["error"])
+	resp := s.External(lookupPath(walletID, "not-a-uuid"), testutil.Token{Bearer: bearer}).Get()
+	s.AssertError(resp, 400, "invalid_request", "idempotency_key must be a UUID")
 }

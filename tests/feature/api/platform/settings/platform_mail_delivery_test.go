@@ -10,6 +10,7 @@ import (
 	"github.com/goravel/framework/facades"
 
 	appfacades "github.com/macrowallets/waas/app/facades"
+	"github.com/macrowallets/waas/app/http/responses"
 	"github.com/macrowallets/waas/app/mails"
 	"github.com/macrowallets/waas/app/services/settings"
 	"github.com/macrowallets/waas/tests/feature/support"
@@ -110,9 +111,7 @@ func (s *PlatformMailDeliveryTestSuite) TestA_Platform_AdminStoresTheFromHeaderT
 
 	rejected := s.putRaw(session.AccessToken, "/v1/platform/settings/mail_delivery", `{"from_address":"not-an-email"}`)
 	rejected.AssertUnprocessableEntity()
-	rejectedBody, err := rejected.Content()
-	s.Require().NoError(err)
-	s.Contains(rejectedBody, `"validation_failed"`)
+	s.AssertError(rejected, 422, responses.CodeValidationFailed, "validation failed")
 	s.Equal("from-header@example.test", s.mailValue("from_address"))
 	s.Equal("Macro", s.mailValue("from_name"))
 

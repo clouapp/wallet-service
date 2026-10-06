@@ -213,6 +213,7 @@ func (s *accountFeaturesSuite) get(token string, accountID uuid.UUID, status int
 		s.NotContains(content, features.FlagWithdrawalsEnabled)
 		s.NotContains(content, features.FlagSweepEnabled)
 		s.NotContains(content, features.FlagDepositScanEnabled)
+		s.AssertError(resp, status, "forbidden", features.ErrViewForbidden.Error())
 		var denied struct {
 			Error struct {
 				Code    string `json:"code"`
@@ -221,8 +222,6 @@ func (s *accountFeaturesSuite) get(token string, accountID uuid.UUID, status int
 			Features json.RawMessage `json:"features"`
 		}
 		s.Require().NoError(json.Unmarshal([]byte(content), &denied))
-		s.Equal("forbidden", denied.Error.Code)
-		s.Equal(features.ErrViewForbidden.Error(), denied.Error.Message)
 		s.Empty(denied.Features)
 		return featureListBody{}
 	}

@@ -47,7 +47,7 @@ func (s *accountRolesSuite) TestUser_Is_ForbiddenAndWritesAreNotFound() {
 	accountID, owner := s.member("owner")
 	user := s.join(accountID, "user")
 
-	s.get(user, accountID, 403)
+	s.get(user, accountID, 403, "forbidden")
 	s.get(owner, accountID, 200)
 
 	for _, method := range []string{http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete} {
@@ -63,7 +63,7 @@ func (s *accountRolesSuite) TestUnknown_Account_IsNotFoundBeforeTheRoleCheck() {
 func (s *accountRolesSuite) TestOutsider_Is_Forbidden() {
 	accountID, _ := s.member("owner")
 	_, outsider := s.member("owner")
-	s.get(outsider, accountID, 403)
+	s.get(outsider, accountID, 403, "not a member of this account")
 }
 
 func (s *accountRolesSuite) member(role string) (uuid.UUID, string) {
@@ -111,14 +111,15 @@ func (s *accountRolesSuite) login(email string) string {
 	return parsed.AccessToken
 }
 
-func (s *accountRolesSuite) get(token string, accountID uuid.UUID, status int) roleListBody {
+func (s *accountRolesSuite) get(token string, accountID uuid.UUID, status int, message ...string) roleListBody {
 	s.T().Helper()
 	resp := s.Get("/v1/accounts/"+accountID.String()+"/roles", support.Session{AccessToken: token})
 	resp.AssertStatus(status)
 	content, err := resp.Content()
 	s.Require().NoError(err)
 	if status == 403 {
-		s.Contains(content, `"code":"forbidden"`)
+		s.Require().Len(message, 1)
+		s.AssertError(resp, 403, "forbidden", message[0])
 	}
 	if status != 200 {
 		return roleListBody{}

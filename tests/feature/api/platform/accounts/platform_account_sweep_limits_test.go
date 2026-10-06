@@ -136,30 +136,21 @@ func (s *PlatformAccountSweepLimitsTestSuite) TestAnother_Group_AndAnUnknownAcco
 	for _, group := range []string{"no-such-group", "sweep_limits", "mail_smtp", "account_security", "account_webhooks"} {
 		for _, token := range []string{memberSession.AccessToken, adminSession.AccessToken} {
 			missing := s.putRaw(token, s.groupPath(accountID, group), body)
-			missing.AssertNotFound()
-			s.Equal("settings group not found", s.errorMessage(missing))
-			s.Equal(responses.CodeNotFound, s.errorCode(missing))
+			s.AssertError(missing, 404, responses.CodeNotFound, "settings group not found")
 		}
 	}
 	badID := s.putRaw(adminSession.AccessToken, "/v1/platform/accounts/not-a-uuid/settings/account_sweep_limits", body)
-	badID.AssertNotFound()
-	s.Equal("account not found", s.errorMessage(badID))
+	s.AssertError(badID, 404, "not_found", "account not found")
 	badIDOtherGroup := s.putRaw(memberSession.AccessToken, "/v1/platform/accounts/not-a-uuid/settings/no-such-group", body)
-	badIDOtherGroup.AssertNotFound()
-	s.Equal("settings group not found", s.errorMessage(badIDOtherGroup))
+	s.AssertError(badIDOtherGroup, 404, "not_found", "settings group not found")
 
 	unknownAccount := s.putRaw(memberSession.AccessToken, s.groupPath(uuid.New(), "account_sweep_limits"), body)
-	unknownAccount.AssertNotFound()
-	s.Equal("account not found", s.errorMessage(unknownAccount))
-	s.Equal(responses.CodeNotFound, s.errorCode(unknownAccount))
+	s.AssertError(unknownAccount, 404, responses.CodeNotFound, "account not found")
 	unknownForAdmin := s.putRaw(adminSession.AccessToken, s.groupPath(uuid.New(), "account_sweep_limits"), body)
-	unknownForAdmin.AssertNotFound()
-	s.Equal("account not found", s.errorMessage(unknownForAdmin))
+	s.AssertError(unknownForAdmin, 404, "not_found", "account not found")
 
 	known := s.putRaw(memberSession.AccessToken, s.groupPath(accountID, "account_sweep_limits"), body)
-	known.AssertForbidden()
-	s.Equal(responses.CodeForbidden, s.errorCode(known))
-	s.Equal("you do not have permission to update settings", s.errorMessage(known))
+	s.AssertError(known, 403, responses.CodeForbidden, "you do not have permission to update settings")
 	s.Equal(int64(0), s.count(
 		`SELECT count(*) FROM settings WHERE account_id = ? AND "group" = 'account_sweep_limits'`,
 		accountID,
@@ -344,6 +335,7 @@ func (s *PlatformAccountSweepLimitsTestSuite) errorBody(resp contractstesting.Re
 
 func (s *PlatformAccountSweepLimitsTestSuite) assertValidationFailed(resp contractstesting.Response) {
 	s.T().Helper()
+	s.AssertError(resp, 422, responses.CodeValidationFailed, "validation failed")
 	var body struct {
 		Error struct {
 			Code    string `json:"code"`
@@ -352,8 +344,6 @@ func (s *PlatformAccountSweepLimitsTestSuite) assertValidationFailed(resp contra
 		Errors map[string][]string `json:"errors"`
 	}
 	s.decode(resp, &body)
-	s.Equal(responses.CodeValidationFailed, body.Error.Code)
-	s.Equal("validation failed", body.Error.Message)
 	s.NotEmpty(body.Errors)
 }
 

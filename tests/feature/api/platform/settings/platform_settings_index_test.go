@@ -131,15 +131,7 @@ func (s *PlatformSettingsIndexTestSuite) TestA_Non_AdminIsForbiddenAndAMissingSe
 	session := s.signIn(member.Email)
 	forbidden := s.getRaw(session.AccessToken, "/v1/platform/settings")
 	forbidden.AssertForbidden()
-	var body struct {
-		Error struct {
-			Code    string `json:"code"`
-			Message string `json:"message"`
-		} `json:"error"`
-	}
-	s.decode(forbidden, &body)
-	s.Equal(responses.CodeForbidden, body.Error.Code)
-	s.Equal("you do not have permission to view settings", body.Error.Message)
+	s.AssertError(forbidden, 403, responses.CodeForbidden, "you do not have permission to view settings")
 	s.Equal(int64(0), s.count(`SELECT count(*) FROM settings WHERE account_id IS NULL`))
 
 	missing := s.Get("/v1/platform/settings", support.Session{})

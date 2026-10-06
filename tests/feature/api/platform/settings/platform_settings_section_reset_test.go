@@ -249,12 +249,15 @@ func (s *PlatformSettingsSectionResetTestSuite) TestUnknown_Section_IsNotFound()
 	s.seedCache(key)
 
 	response := s.resetParsed(session.AccessToken, "not-a-section", 404)
-	s.Equal(responses.CodeNotFound, response["error"].(map[string]any)["code"])
-	s.Equal("settings section not found", response["error"].(map[string]any)["message"])
+	encoded, err := json.Marshal(response)
+	s.Require().NoError(err)
+	s.AssertError(support.BodyRecorder(404, string(encoded)), 404, responses.CodeNotFound, "settings section not found")
 	s.Equal("stale-"+key, facades.Cache().GetString(key))
 
 	accountPage := s.resetParsed(session.AccessToken, "security", 404)
-	s.Equal(responses.CodeNotFound, accountPage["error"].(map[string]any)["code"])
+	encoded, err = json.Marshal(accountPage)
+	s.Require().NoError(err)
+	s.AssertError(support.BodyRecorder(404, string(encoded)), 404, responses.CodeNotFound, "settings section not found")
 	s.Equal("stale-"+key, facades.Cache().GetString(key))
 	s.Equal(int64(0), s.count(`SELECT count(*) FROM account_activity WHERE action = 'settings.section_reset'`))
 }
@@ -267,8 +270,9 @@ func (s *PlatformSettingsSectionResetTestSuite) TestNon_Admin_OnAKnownSectionIsF
 	before := s.count(`SELECT count(*) FROM account_activity`)
 
 	response := s.resetParsed(session.AccessToken, "mail", 403)
-	s.Equal(responses.CodeForbidden, response["error"].(map[string]any)["code"])
-	s.Equal("you do not have permission to update settings", response["error"].(map[string]any)["message"])
+	encoded, err := json.Marshal(response)
+	s.Require().NoError(err)
+	s.AssertError(support.BodyRecorder(403, string(encoded)), 403, responses.CodeForbidden, "you do not have permission to update settings")
 	s.Equal("stale-"+key, facades.Cache().GetString(key))
 	s.Equal(before, s.count(`SELECT count(*) FROM account_activity`))
 	s.Equal(int64(0), s.count(`SELECT count(*) FROM settings WHERE account_id IS NULL AND "group" = 'mail_smtp' AND "key" = 'host' AND value = ?`, platformResetStoredHost))
@@ -281,8 +285,9 @@ func (s *PlatformSettingsSectionResetTestSuite) TestNon_Admin_OnAnUnknownSection
 	s.seedCache(key)
 
 	response := s.resetParsed(session.AccessToken, "not-a-section", 404)
-	s.Equal(responses.CodeNotFound, response["error"].(map[string]any)["code"])
-	s.Equal("settings section not found", response["error"].(map[string]any)["message"])
+	encoded, err := json.Marshal(response)
+	s.Require().NoError(err)
+	s.AssertError(support.BodyRecorder(404, string(encoded)), 404, responses.CodeNotFound, "settings section not found")
 	s.Equal("stale-"+key, facades.Cache().GetString(key))
 
 	missing := s.Post("/v1/platform/settings/sections/mail/reset", support.Session{}, "{}")
