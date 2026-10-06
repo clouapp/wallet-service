@@ -285,6 +285,12 @@ func (s *Service) ActivateWallet(ctx context.Context, walletID uuid.UUID, code s
 	}
 	w.Status = string(types.WalletStatusActive)
 	w.ActivationCode = nil
+
+	_ = facades.Event().Job(&dtos.WalletActivated{}, []event.Arg{
+		{Type: "string", Value: w.ID.String()},
+		{Type: "string", Value: w.Chain},
+	}).Dispatch()
+
 	return w, nil
 }
 
