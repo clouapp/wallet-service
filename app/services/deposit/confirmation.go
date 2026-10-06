@@ -38,8 +38,9 @@ type evmNetwork interface {
 }
 
 // solanaNetwork is the port the live Solana client already satisfies.
+// Assembly takes a signature the custody service already produced.
 type solanaNetwork interface {
-	SignTransactionWithScalar(ctx context.Context, unsigned *types.UnsignedTx, scalar, publicKey []byte) (*types.SignedTx, error)
+	AssembleSolana(unsigned *types.UnsignedTx, signature []byte) (*types.SignedTx, error)
 }
 
 // bitcoinNetwork is the port the live Bitcoin client already satisfies.

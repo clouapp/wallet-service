@@ -1,7 +1,6 @@
 package solana
 
 import (
-	"bytes"
 	"context"
 	"crypto/ed25519"
 	"encoding/base64"
@@ -16,7 +15,6 @@ import (
 	"github.com/gagliardetto/solana-go/programs/system"
 	"github.com/gagliardetto/solana-go/programs/token"
 
-	"github.com/macrowallets/waas/app/services/chain"
 	"github.com/macrowallets/waas/pkg/types"
 )
 
@@ -60,71 +58,39 @@ func buildSolanaSPLTx(owner, destOwner, mint solana.PublicKey, amount uint64, bl
 	return tx.Message.MarshalBinary()
 }
 
-func signSolanaTx(unsigned *types.UnsignedTx, privateKey []byte) (*types.SignedTx, error) {
-	if unsigned == nil {
-		return nil, fmt.Errorf("sol sign: missing transaction")
-	}
-	if len(privateKey) != 32 {
-		return nil, fmt.Errorf("sol private key must be 32 bytes")
-	}
-	seed := append([]byte(nil), privateKey...)
-	priv := solana.PrivateKey(ed25519.NewKeyFromSeed(seed))
-	defer zeroBytes(seed)
-	defer zeroBytes(priv)
-
-	msg := &solana.Message{}
-	if err := msg.UnmarshalWithDecoder(bin.NewBinDecoder(unsigned.RawBytes)); err != nil {
-		return nil, fmt.Errorf("sol message: %w", err)
-	}
-	tx := &solana.Transaction{Message: *msg}
-	sigs, err := tx.Sign(func(key solana.PublicKey) *solana.PrivateKey {
-		if !key.Equals(priv.PublicKey()) {
-			return nil
-		}
-		return &priv
-	})
+// SolanaSigningView returns the message bytes and the fee-payer public key.
+// It does not sign. The custody service signs the message and calls AssembleSolana.
+func (a *SolanaLive) SolanaSigningView(unsigned *types.UnsignedTx) (message, feePayer []byte, err error) {
+	msg, err := solanaMessage(unsigned)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	raw, err := tx.MarshalBinary()
+	if msg.Header.NumRequiredSignatures != 1 {
+		return nil, nil, fmt.Errorf("sol sign: expected exactly one signer, message requires %d", msg.Header.NumRequiredSignatures)
+	}
+	if len(msg.AccountKeys) == 0 {
+		return nil, nil, fmt.Errorf("sol sign: fee payer is not the signing key")
+	}
+	content, err := msg.MarshalBinary()
 	if err != nil {
-		return nil, err
+		return nil, nil, fmt.Errorf("sol message: %w", err)
 	}
-	hash := ""
-	if len(sigs) > 0 {
-		hash = sigs[0].String()
-	}
-	return &types.SignedTx{ChainID: unsigned.ChainID, RawBytes: raw, TxHash: hash}, nil
+	return content, append([]byte(nil), msg.AccountKeys[0][:]...), nil
 }
 
-// SignTransactionWithScalar signs for the account whose key is known only as the
-// scalar behind publicKey, the genesis address of an MPC wallet. The message must have
-// that account as its fee payer and only signer.
-func (a *SolanaLive) SignTransactionWithScalar(ctx context.Context, unsigned *types.UnsignedTx, scalar, publicKey []byte) (*types.SignedTx, error) {
-	return signSolanaTxWithScalar(unsigned, scalar, publicKey)
-}
-
-func signSolanaTxWithScalar(unsigned *types.UnsignedTx, scalar, publicKey []byte) (*types.SignedTx, error) {
-	if unsigned == nil || len(unsigned.RawBytes) == 0 {
-		return nil, fmt.Errorf("sol sign: missing transaction")
-	}
-	msg := &solana.Message{}
-	if err := msg.UnmarshalWithDecoder(bin.NewBinDecoder(unsigned.RawBytes)); err != nil {
-		return nil, fmt.Errorf("sol message: %w", err)
+// AssembleSolana attaches a 64-byte signature the custody service already produced.
+// The message must require exactly one signer. The signature is checked against the
+// fee payer already carried in the message.
+func (a *SolanaLive) AssembleSolana(unsigned *types.UnsignedTx, signature []byte) (*types.SignedTx, error) {
+	msg, err := solanaMessage(unsigned)
+	if err != nil {
+		return nil, err
 	}
 	if msg.Header.NumRequiredSignatures != 1 {
 		return nil, fmt.Errorf("sol sign: expected exactly one signer, message requires %d", msg.Header.NumRequiredSignatures)
 	}
-	if len(msg.AccountKeys) == 0 || !bytes.Equal(msg.AccountKeys[0][:], publicKey) {
-		return nil, fmt.Errorf("sol sign: fee payer is not the signing key")
-	}
-	content, err := msg.MarshalBinary()
-	if err != nil {
-		return nil, fmt.Errorf("sol message: %w", err)
-	}
-	signature, err := chain.SignEd25519WithScalar(scalar, publicKey, content)
-	if err != nil {
-		return nil, fmt.Errorf("sol sign: %w", err)
+	if len(signature) != ed25519.SignatureSize {
+		return nil, fmt.Errorf("sol signature must be %d bytes", ed25519.SignatureSize)
 	}
 	tx := &solana.Transaction{Message: *msg, Signatures: []solana.Signature{solana.SignatureFromBytes(signature)}}
 	if err := tx.VerifySignatures(); err != nil {
@@ -135,6 +101,17 @@ func signSolanaTxWithScalar(unsigned *types.UnsignedTx, scalar, publicKey []byte
 		return nil, err
 	}
 	return &types.SignedTx{ChainID: unsigned.ChainID, RawBytes: raw, TxHash: tx.Signatures[0].String()}, nil
+}
+
+func solanaMessage(unsigned *types.UnsignedTx) (*solana.Message, error) {
+	if unsigned == nil || len(unsigned.RawBytes) == 0 {
+		return nil, fmt.Errorf("sol sign: missing transaction")
+	}
+	msg := &solana.Message{}
+	if err := msg.UnmarshalWithDecoder(bin.NewBinDecoder(unsigned.RawBytes)); err != nil {
+		return nil, fmt.Errorf("sol message: %w", err)
+	}
+	return msg, nil
 }
 
 func (a *SolanaLive) buildSolanaTransfer(ctx context.Context, req types.TransferRequest) (*types.UnsignedTx, error) {
@@ -256,10 +233,4 @@ func broadcastSolanaTx(ctx context.Context, a *SolanaLive, signed *types.SignedT
 		return "", err
 	}
 	return signature, nil
-}
-
-func zeroBytes(b []byte) {
-	for i := range b {
-		b[i] = 0
-	}
 }

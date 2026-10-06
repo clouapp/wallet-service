@@ -17,8 +17,30 @@ import (
 	"github.com/gagliardetto/solana-go"
 
 	"github.com/macrowallets/waas/app/models"
+	"github.com/macrowallets/waas/app/services/mpc"
 	"github.com/macrowallets/waas/pkg/types"
 )
+
+func signSolanaForTest(t *testing.T, unsigned *types.UnsignedTx, seed []byte) *types.SignedTx {
+	t.Helper()
+	live := &SolanaLive{}
+	message, feePayer, err := live.SolanaSigningView(unsigned)
+	if err != nil {
+		t.Fatal(err)
+	}
+	signature, publicKey, err := mpc.SignEd25519Seed(seed, message)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(feePayer, publicKey) {
+		t.Fatal("fee payer is not the signing key")
+	}
+	signed, err := live.AssembleSolana(unsigned, signature)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return signed
+}
 
 func TestSolanaSignNative(t *testing.T) {
 	seed := bytes.Repeat([]byte{0x07}, 32)
@@ -31,10 +53,7 @@ func TestSolanaSignNative(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	signed, err := signSolanaTx(&types.UnsignedTx{ChainID: models.ChainSOL, RawBytes: raw}, seed)
-	if err != nil {
-		t.Fatal(err)
-	}
+	signed := signSolanaForTest(t, &types.UnsignedTx{ChainID: models.ChainSOL, RawBytes: raw}, seed)
 	tx, err := solana.TransactionFromBytes(signed.RawBytes)
 	if err != nil {
 		t.Fatal(err)
@@ -88,10 +107,7 @@ func TestSolanaSignSPL(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	signed, err := signSolanaTx(&types.UnsignedTx{ChainID: models.ChainSOL, RawBytes: raw}, seed)
-	if err != nil {
-		t.Fatal(err)
-	}
+	signed := signSolanaForTest(t, &types.UnsignedTx{ChainID: models.ChainSOL, RawBytes: raw}, seed)
 	tx, err := solana.TransactionFromBytes(signed.RawBytes)
 	if err != nil {
 		t.Fatal(err)

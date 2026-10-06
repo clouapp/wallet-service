@@ -153,8 +153,12 @@ type solanaSigningChain struct {
 	live *solanachain.SolanaLive
 }
 
-func (c *solanaSigningChain) SignTransactionWithScalar(ctx context.Context, unsigned *types.UnsignedTx, scalar, publicKey []byte) (*types.SignedTx, error) {
-	return c.live.SignTransactionWithScalar(ctx, unsigned, scalar, publicKey)
+func (c *solanaSigningChain) SolanaSigningView(unsigned *types.UnsignedTx) ([]byte, []byte, error) {
+	return c.live.SolanaSigningView(unsigned)
+}
+
+func (c *solanaSigningChain) AssembleSolana(unsigned *types.UnsignedTx, signature []byte) (*types.SignedTx, error) {
+	return c.live.AssembleSolana(unsigned, signature)
 }
 
 func solanaTransferMessage(from, to string, amount *big.Int) (*types.UnsignedTx, error) {
@@ -191,7 +195,6 @@ func newSolanaSigningChain(broadcasts *[]*types.SignedTx) *solanaSigningChain {
 		}
 		return []types.UnsignedTx{*unsigned}, nil
 	}
-	mockChain.SignTransactionFn = live.SignTransaction
 	mockChain.BroadcastTransactionFn = func(ctx context.Context, signed *types.SignedTx) (string, error) {
 		*broadcasts = append(*broadcasts, signed)
 		return signed.TxHash, nil
@@ -337,7 +340,7 @@ func TestExecutePlan_SolanaGenesisNeedsScalarSigner(t *testing.T) {
 		Amount: big.NewInt(1), Strategy: StrategyDirectFromBase, SourceAddress: &base}
 
 	if _, err := svc.ExecutePlan(context.Background(), plan, fixture.credentials(t, solE2EPassphrase), uuid.New(), solE2EDestination, "user-sol"); err == nil {
-		t.Fatal("expected an error when the chain cannot sign with a scalar")
+		t.Fatal("expected an error when the chain cannot assemble a solana transaction")
 	}
 	if signingChain.SignTransactionCalls != 0 || len(broadcasts) != 0 {
 		t.Fatal("genesis must never fall back to seed signing")

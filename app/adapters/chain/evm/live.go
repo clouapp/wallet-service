@@ -434,8 +434,10 @@ func (a *EVMLive) DustThreshold(asset string) *big.Int {
 	return nil
 }
 
-func (a *EVMLive) SignTransaction(ctx context.Context, unsigned *types.UnsignedTx, privateKey []byte) (*types.SignedTx, error) {
-	// TODO: RLP encode + secp256k1 sign with EIP-155 replay protection
+// SignTransaction is required by the chain interface. EVM signing lives in the
+// custody service, which asks mpc for the signature and then calls
+// FinalizeMPCSignature. This method does not use the private key.
+func (a *EVMLive) SignTransaction(ctx context.Context, unsigned *types.UnsignedTx, _ []byte) (*types.SignedTx, error) {
 	return nil, fmt.Errorf("EVM signing not implemented — use go-ethereum/types.SignTx")
 }
 

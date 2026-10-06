@@ -121,8 +121,12 @@ func (a *SolanaLive) BuildTransfer(ctx context.Context, req types.TransferReques
 	return a.buildSolanaTransfer(ctx, req)
 }
 
-func (a *SolanaLive) SignTransaction(ctx context.Context, unsigned *types.UnsignedTx, privateKey []byte) (*types.SignedTx, error) {
-	return signSolanaTx(unsigned, privateKey)
+// SignTransaction is required by the chain interface. Solana signing lives in
+// the custody service: a child seed goes through mpc.SignEd25519Seed and a
+// genesis scalar through chain.SignEd25519WithScalar, then AssembleSolana.
+// This method does not use the key.
+func (a *SolanaLive) SignTransaction(ctx context.Context, unsigned *types.UnsignedTx, _ []byte) (*types.SignedTx, error) {
+	return nil, fmt.Errorf("solana transactions are signed by the custody service")
 }
 
 func (a *SolanaLive) BroadcastTransaction(ctx context.Context, signed *types.SignedTx) (string, error) {

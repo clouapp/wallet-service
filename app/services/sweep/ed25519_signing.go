@@ -3,19 +3,22 @@ package sweep
 import (
 	"context"
 	"crypto/ed25519"
+	"crypto/subtle"
 	"encoding/hex"
 	"fmt"
 
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/services/addressing"
+	"github.com/macrowallets/waas/app/services/chain"
 	mpcpkg "github.com/macrowallets/waas/app/services/mpc"
 	"github.com/macrowallets/waas/pkg/types"
 )
 
-// ed25519ScalarSigner is implemented by chains that can sign with a bare ed25519
-// scalar, which is the only form the genesis key of an MPC wallet takes.
-type ed25519ScalarSigner interface {
-	SignTransactionWithScalar(ctx context.Context, unsigned *types.UnsignedTx, scalar, publicKey []byte) (*types.SignedTx, error)
+// solanaAssembler is implemented by the Solana adapter. It exposes the message
+// to sign and attaches a signature. It never receives a seed or a scalar.
+type solanaAssembler interface {
+	SolanaSigningView(unsigned *types.UnsignedTx) (message, feePayer []byte, err error)
+	AssembleSolana(unsigned *types.UnsignedTx, signature []byte) (*types.SignedTx, error)
 }
 
 // signEd25519 signs for the genesis address with the scalar reconstructed from both
@@ -31,14 +34,10 @@ func (s *service) signEd25519(ctx context.Context, adapter types.Chain, keys wal
 		return nil, err
 	}
 	defer zeroBytes(seed)
-	return adapter.SignTransaction(ctx, unsigned, seed)
+	return signSolanaChild(adapter, seed, unsigned)
 }
 
 func (s *service) signEd25519Genesis(ctx context.Context, adapter types.Chain, keys walletKeys, wallet *models.Wallet, unsigned *types.UnsignedTx) (*types.SignedTx, error) {
-	scalarSigner, ok := adapter.(ed25519ScalarSigner)
-	if !ok {
-		return nil, fmt.Errorf("chain %s cannot sign with an ed25519 scalar", adapter.ID())
-	}
 	publicKey, err := hex.DecodeString(wallet.MPCPublicKey)
 	if err != nil || len(publicKey) != ed25519.PublicKeySize {
 		return nil, fmt.Errorf("wallet %s has no valid ed25519 public key", wallet.ID)
@@ -48,7 +47,45 @@ func (s *service) signEd25519Genesis(ctx context.Context, adapter types.Chain, k
 		return nil, err
 	}
 	defer zeroBytes(scalar)
-	return scalarSigner.SignTransactionWithScalar(ctx, unsigned, scalar, publicKey)
+	assembler, message, feePayer, err := solanaSigningMaterial(adapter, unsigned)
+	if err != nil {
+		return nil, err
+	}
+	if subtle.ConstantTimeCompare(feePayer, publicKey) != 1 {
+		return nil, fmt.Errorf("sol sign: fee payer is not the signing key")
+	}
+	signature, err := chain.SignEd25519WithScalar(scalar, publicKey, message)
+	if err != nil {
+		return nil, fmt.Errorf("sol sign: %w", err)
+	}
+	return assembler.AssembleSolana(unsigned, signature)
+}
+
+func signSolanaChild(adapter types.Chain, seed []byte, unsigned *types.UnsignedTx) (*types.SignedTx, error) {
+	assembler, message, feePayer, err := solanaSigningMaterial(adapter, unsigned)
+	if err != nil {
+		return nil, err
+	}
+	signature, publicKey, err := mpcpkg.SignEd25519Seed(seed, message)
+	if err != nil {
+		return nil, err
+	}
+	if subtle.ConstantTimeCompare(feePayer, publicKey) != 1 {
+		return nil, fmt.Errorf("sol sign: fee payer is not the signing key")
+	}
+	return assembler.AssembleSolana(unsigned, signature)
+}
+
+func solanaSigningMaterial(adapter types.Chain, unsigned *types.UnsignedTx) (solanaAssembler, []byte, []byte, error) {
+	assembler, ok := adapter.(solanaAssembler)
+	if !ok {
+		return nil, nil, nil, fmt.Errorf("chain %s cannot assemble a solana transaction", adapter.ID())
+	}
+	message, feePayer, err := assembler.SolanaSigningView(unsigned)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	return assembler, message, feePayer, nil
 }
 
 func isGenesisSigner(wallet *models.Wallet, signer models.Address) bool {

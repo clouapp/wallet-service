@@ -1,7 +1,7 @@
 package solana
 
 import (
-	"context"
+	"bytes"
 	"crypto/ed25519"
 	"crypto/rand"
 	"crypto/sha512"
@@ -12,6 +12,7 @@ import (
 	"github.com/gagliardetto/solana-go"
 	"github.com/gagliardetto/solana-go/programs/system"
 
+	"github.com/macrowallets/waas/app/services/chain"
 	"github.com/macrowallets/waas/pkg/types"
 )
 
@@ -48,8 +49,20 @@ func TestSignTransactionWithScalar_SignsSolanaTransfer(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	signed, err := (&SolanaLive{}).SignTransactionWithScalar(context.Background(),
-		&types.UnsignedTx{ChainID: "tsol", RawBytes: message}, scalar, publicKey)
+	live := &SolanaLive{}
+	unsigned := &types.UnsignedTx{ChainID: "tsol", RawBytes: message}
+	content, feePayer, err := live.SolanaSigningView(unsigned)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(feePayer, publicKey) {
+		t.Fatal("fee payer is not the signing key")
+	}
+	signature, err := chain.SignEd25519WithScalar(scalar, publicKey, content)
+	if err != nil {
+		t.Fatal(err)
+	}
+	signed, err := live.AssembleSolana(unsigned, signature)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -76,13 +89,26 @@ func TestSignTransactionWithScalar_RejectsForeignFeePayer(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := signSolanaTxWithScalar(&types.UnsignedTx{RawBytes: message}, scalar, publicKey); err == nil {
+	live := &SolanaLive{}
+	unsigned := &types.UnsignedTx{RawBytes: message}
+	content, feePayer, err := live.SolanaSigningView(unsigned)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Equal(feePayer, publicKey) {
+		t.Fatal("expected a foreign fee payer")
+	}
+	signature, err := chain.SignEd25519WithScalar(scalar, publicKey, content)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := live.AssembleSolana(unsigned, signature); err == nil {
 		t.Fatal("expected fee payer mismatch")
 	}
 }
 
 func TestSignTransactionWithScalar_RejectsMultiSignerMessage(t *testing.T) {
-	publicKey, scalar := scalarKeyPair(t)
+	publicKey, _ := scalarKeyPair(t)
 	from := solana.PublicKeyFromBytes(publicKey)
 	cosigner := solana.NewWallet().PublicKey()
 	hash := solana.MustHashFromBase58(testBlockhash)
@@ -95,17 +121,16 @@ func TestSignTransactionWithScalar_RejectsMultiSignerMessage(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := signSolanaTxWithScalar(&types.UnsignedTx{RawBytes: message}, scalar, publicKey); err == nil {
+	if _, _, err := (&SolanaLive{}).SolanaSigningView(&types.UnsignedTx{RawBytes: message}); err == nil {
 		t.Fatal("expected multi-signer rejection")
 	}
 }
 
 func TestSignTransactionWithScalar_RejectsEmpty(t *testing.T) {
-	publicKey, scalar := scalarKeyPair(t)
-	if _, err := signSolanaTxWithScalar(nil, scalar, publicKey); err == nil {
+	if _, _, err := (&SolanaLive{}).SolanaSigningView(nil); err == nil {
 		t.Fatal("expected error for nil tx")
 	}
-	if _, err := signSolanaTxWithScalar(&types.UnsignedTx{}, scalar, publicKey); err == nil {
+	if _, _, err := (&SolanaLive{}).SolanaSigningView(&types.UnsignedTx{}); err == nil {
 		t.Fatal("expected error for empty tx")
 	}
 }

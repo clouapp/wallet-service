@@ -96,8 +96,8 @@ func signEd25519WithScalar(scalarBigEndian, publicKey, message []byte) ([]byte, 
 	return signature, nil
 }
 
-// SignEd25519WithScalar signs with a raw scalar. The live Solana adapter uses it
-// for genesis keys, which stay raw scalars.
+// SignEd25519WithScalar signs with a raw scalar. Sweep uses it for Solana genesis
+// keys, which stay raw scalars. The adapter only assembles the signed transaction.
 func SignEd25519WithScalar(scalarBigEndian, publicKey, message []byte) ([]byte, error) {
 	return signEd25519WithScalar(scalarBigEndian, publicKey, message)
 }
