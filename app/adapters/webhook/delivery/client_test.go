@@ -118,3 +118,27 @@ func TestPostOmitsTheSignatureFromTransportErrors(t *testing.T) {
 		t.Fatal("transport error was accepted or included the signature")
 	}
 }
+
+func TestPostRequiresAContextAndATimeout(t *testing.T) {
+	called := false
+	server := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		called = true
+	}))
+	t.Cleanup(server.Close)
+
+	call := webhook.SignedDelivery{
+		URL:        server.URL,
+		Body:       []byte("{}"),
+		Signature:  "sig",
+		EventType:  "webhook.test",
+		DeliveryID: "delivery-1",
+		Timeout:    time.Second,
+	}
+	if _, err := NewClient().Post(nil, call); err == nil || called {
+		t.Fatal("a nil context was posted")
+	}
+	call.Timeout = 0
+	if _, err := NewClient().Post(context.Background(), call); err == nil || called {
+		t.Fatal("a delivery without a timeout was posted")
+	}
+}

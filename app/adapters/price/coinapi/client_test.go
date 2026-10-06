@@ -1,6 +1,7 @@
 package coinapi
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -35,10 +36,10 @@ func TestFetchCryptoPricesRequiresAKeyBeforeHTTP(t *testing.T) {
 	provider.baseURL = server.URL
 	provider.client = httpclient.Wrap(server.Client())
 
-	if _, err := provider.FetchCryptoPrices([]string{"BTC"}); err == nil || called {
+	if _, err := provider.FetchCryptoPrices(context.Background(), []string{"BTC"}); err == nil || called {
 		t.Fatal("a missing key called CoinAPI or was accepted")
 	}
-	if _, err := provider.FetchFiatRates([]string{"EUR"}); err == nil {
+	if _, err := provider.FetchFiatRates(context.Background(), []string{"EUR"}); err == nil {
 		t.Fatal("a missing key was accepted for fiat")
 	}
 }
@@ -63,7 +64,7 @@ func TestFetchCryptoPricesReadsTheUSDQuote(t *testing.T) {
 	provider.baseURL = server.URL
 	provider.client = httpclient.Wrap(server.Client())
 
-	prices, err := provider.FetchCryptoPrices([]string{"btc", "eth"})
+	prices, err := provider.FetchCryptoPrices(context.Background(), []string{"btc", "eth"})
 	if err != nil {
 		t.Fatal("crypto quote failed")
 	}
@@ -97,7 +98,7 @@ func TestFetchFiatRatesInvertsTheQuote(t *testing.T) {
 	provider.baseURL = server.URL
 	provider.client = httpclient.Wrap(server.Client())
 
-	rates, err := provider.FetchFiatRates([]string{"eur", "BRL"})
+	rates, err := provider.FetchFiatRates(context.Background(), []string{"eur", "BRL"})
 	if err != nil {
 		t.Fatal("fiat quote failed")
 	}
@@ -123,7 +124,7 @@ func TestGetOmitsTheKeyFromErrors(t *testing.T) {
 	provider.baseURL = server.URL
 	provider.client = httpclient.Wrap(server.Client())
 
-	_, err := provider.FetchCryptoPrices([]string{"ETH"})
+	_, err := provider.FetchCryptoPrices(context.Background(), []string{"ETH"})
 	if err == nil {
 		t.Fatal("a non-JSON body was accepted")
 	}
@@ -134,8 +135,29 @@ func TestGetOmitsTheKeyFromErrors(t *testing.T) {
 	closed := server.URL
 	server.Close()
 	provider.baseURL = closed
-	_, err = provider.FetchFiatRates([]string{"EUR"})
+	_, err = provider.FetchFiatRates(context.Background(), []string{"EUR"})
 	if !errors.Is(err, chain.ErrProviderUnavailable) || !strings.Contains(chain.CauseText(err), "coinapi fiat:") || strings.Contains(err.Error(), restKey) || strings.Contains(chain.CauseText(err), restKey) {
 		t.Fatal("transport error was not the unavailable sentinel, or it included the key")
+	}
+}
+
+func TestFetchCryptoPricesStopsWhenTheContextIsCanceled(t *testing.T) {
+	called := false
+	server := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		called = true
+	}))
+	t.Cleanup(server.Close)
+
+	provider := NewCoinAPIProvider("present")
+	provider.baseURL = server.URL
+	provider.client = httpclient.Wrap(server.Client())
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, err := provider.FetchCryptoPrices(ctx, []string{"BTC"}); err == nil || called {
+		t.Fatal("a canceled context called CoinAPI or was accepted")
+	}
+	if _, err := provider.FetchFiatRates(nil, []string{"EUR"}); err == nil || called {
+		t.Fatal("a nil context called CoinAPI or was accepted")
 	}
 }

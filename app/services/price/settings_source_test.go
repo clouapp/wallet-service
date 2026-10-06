@@ -225,12 +225,12 @@ type askedQuoteProvider struct {
 
 func (p *askedQuoteProvider) Name() string { return p.name }
 
-func (p *askedQuoteProvider) FetchCryptoPrices([]string) (map[string]decimal.Decimal, error) {
+func (p *askedQuoteProvider) FetchCryptoPrices(context.Context, []string) (map[string]decimal.Decimal, error) {
 	p.calls++
 	return map[string]decimal.Decimal{"BTC": decimal.RequireFromString("10")}, nil
 }
 
-func (p *askedQuoteProvider) FetchFiatRates([]string) (map[string]decimal.Decimal, error) {
+func (p *askedQuoteProvider) FetchFiatRates(context.Context, []string) (map[string]decimal.Decimal, error) {
 	p.fiatCalls++
 	return map[string]decimal.Decimal{"EUR": decimal.RequireFromString("1.1")}, nil
 }

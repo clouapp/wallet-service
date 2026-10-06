@@ -88,7 +88,7 @@ func (s *Service) RefreshCryptoPrices(ctx context.Context) error {
 			break
 		}
 
-		prices, err := provider.FetchCryptoPrices(staleCodes)
+		prices, err := provider.FetchCryptoPrices(ctx, staleCodes)
 		if err != nil {
 			slog.Warn("crypto price fetch failed", "provider", provider.Name(), "error", err)
 			continue
@@ -132,7 +132,7 @@ func (s *Service) RefreshFiatRates(ctx context.Context) error {
 	}
 
 	for _, provider := range s.providersForQuote(ctx) {
-		rates, err := provider.FetchFiatRates(codes)
+		rates, err := provider.FetchFiatRates(ctx, codes)
 		if err != nil {
 			slog.Warn("fiat rate fetch failed", "provider", provider.Name(), "error", err)
 			continue

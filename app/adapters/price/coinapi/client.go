@@ -52,7 +52,7 @@ func (p *CoinAPIProvider) Name() string { return "coinapi" }
 
 // FetchCryptoPrices returns USD prices. Codes are uppercased unless the asset
 // map renames them. A non-positive rate is skipped.
-func (p *CoinAPIProvider) FetchCryptoPrices(codes []string) (map[string]decimal.Decimal, error) {
+func (p *CoinAPIProvider) FetchCryptoPrices(ctx context.Context, codes []string) (map[string]decimal.Decimal, error) {
 	if p.apiKey == "" {
 		return nil, fmt.Errorf("coinapi: api key not configured")
 	}
@@ -68,7 +68,7 @@ func (p *CoinAPIProvider) FetchCryptoPrices(codes []string) (map[string]decimal.
 	}
 
 	url := fmt.Sprintf("%s/exchangerate/USD?invert=true&filter_asset_id=%s", p.baseURL, strings.Join(apiCodes, ","))
-	body, err := p.get(url, "coinapi")
+	body, err := p.get(ctx, url, "coinapi")
 	if err != nil {
 		return nil, err
 	}
@@ -98,13 +98,13 @@ func (p *CoinAPIProvider) FetchCryptoPrices(codes []string) (map[string]decimal.
 
 // FetchFiatRates returns USD per fiat unit. The exchangerate payload is units
 // per USD, and the price column stores the inverted USD rate.
-func (p *CoinAPIProvider) FetchFiatRates(codes []string) (map[string]decimal.Decimal, error) {
+func (p *CoinAPIProvider) FetchFiatRates(ctx context.Context, codes []string) (map[string]decimal.Decimal, error) {
 	if p.apiKey == "" {
 		return nil, fmt.Errorf("coinapi: api key not configured")
 	}
 
 	url := fmt.Sprintf("%s/exchangerate/USD?invert=true&filter_asset_id=%s", p.baseURL, strings.Join(codes, ","))
-	body, err := p.get(url, "coinapi fiat")
+	body, err := p.get(ctx, url, "coinapi fiat")
 	if err != nil {
 		return nil, err
 	}
@@ -128,8 +128,14 @@ func (p *CoinAPIProvider) FetchFiatRates(codes []string) (map[string]decimal.Dec
 	return rates, nil
 }
 
-func (p *CoinAPIProvider) get(url, label string) ([]byte, error) {
-	resp, err := p.client.Do(context.Background(), httpclient.Request{
+func (p *CoinAPIProvider) get(ctx context.Context, url, label string) ([]byte, error) {
+	if ctx == nil {
+		return nil, fmt.Errorf("%s: context is required", label)
+	}
+	ctx, cancel := context.WithTimeout(ctx, httpTimeout)
+	defer cancel()
+
+	resp, err := p.client.Do(ctx, httpclient.Request{
 		Method: httpclient.MethodGet,
 		URL:    url,
 		Header: map[string]string{"X-CoinAPI-Key": p.apiKey},

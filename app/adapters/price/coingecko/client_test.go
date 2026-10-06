@@ -1,6 +1,7 @@
 package coingecko
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -39,7 +40,7 @@ func TestFetchCryptoPricesSkipsUnknownCodesWithoutHTTP(t *testing.T) {
 	provider.baseURL = server.URL
 	provider.client = httpclient.Wrap(server.Client())
 
-	prices, err := provider.FetchCryptoPrices([]string{"NOTACOIN"})
+	prices, err := provider.FetchCryptoPrices(context.Background(), []string{"NOTACOIN"})
 	if err != nil {
 		t.Fatal("unknown codes failed the quote")
 	}
@@ -71,7 +72,7 @@ func TestFetchCryptoPricesReadsTheUSDQuote(t *testing.T) {
 	provider.baseURL = server.URL
 	provider.client = httpclient.Wrap(server.Client())
 
-	prices, err := provider.FetchCryptoPrices([]string{"btc"})
+	prices, err := provider.FetchCryptoPrices(context.Background(), []string{"btc"})
 	if err != nil {
 		t.Fatal("crypto quote failed")
 	}
@@ -107,7 +108,7 @@ func TestFetchFiatRatesInvertsTheUSDCQuote(t *testing.T) {
 	provider.baseURL = server.URL
 	provider.client = httpclient.Wrap(server.Client())
 
-	rates, err := provider.FetchFiatRates([]string{"EUR", "BRL"})
+	rates, err := provider.FetchFiatRates(context.Background(), []string{"EUR", "BRL"})
 	if err != nil {
 		t.Fatal("fiat quote failed")
 	}
@@ -133,11 +134,32 @@ func TestDoGetOmitsTheKeyFromAStatusError(t *testing.T) {
 	provider.baseURL = server.URL
 	provider.client = httpclient.Wrap(server.Client())
 
-	_, err := provider.FetchCryptoPrices([]string{"ETH"})
+	_, err := provider.FetchCryptoPrices(context.Background(), []string{"ETH"})
 	if err == nil {
 		t.Fatal("a non-200 response was accepted")
 	}
 	if !errors.Is(err, chain.ErrRateLimited) || strings.Contains(err.Error(), proKey) || strings.Contains(err.Error(), "slow down") {
 		t.Fatal("status error was not the rate-limit sentinel, or it included the key or the provider body")
+	}
+}
+
+func TestFetchCryptoPricesStopsWhenTheContextIsCanceled(t *testing.T) {
+	called := false
+	server := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		called = true
+	}))
+	t.Cleanup(server.Close)
+
+	provider := NewCoinGeckoProvider("")
+	provider.baseURL = server.URL
+	provider.client = httpclient.Wrap(server.Client())
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, err := provider.FetchCryptoPrices(ctx, []string{"BTC"}); err == nil || called {
+		t.Fatal("a canceled context called CoinGecko or was accepted")
+	}
+	if _, err := provider.FetchCryptoPrices(nil, []string{"BTC"}); err == nil || called {
+		t.Fatal("a nil context called CoinGecko or was accepted")
 	}
 }

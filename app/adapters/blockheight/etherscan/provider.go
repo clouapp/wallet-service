@@ -69,6 +69,9 @@ type etherscanBlockNumberResp struct {
 func (p *Provider) GetBlockHeight(ctx context.Context, chainID string) (height uint64, err error) {
 	var reqURL string
 	defer func() { err = httpclient.RedactURL(err, reqURL) }()
+	if ctx == nil {
+		return 0, fmt.Errorf("etherscan: context is required")
+	}
 	eid, err := etherscanChainID(chainID)
 	if err != nil {
 		return 0, err
@@ -76,9 +79,6 @@ func (p *Provider) GetBlockHeight(ctx context.Context, chainID string) (height u
 
 	apiKey := strings.TrimSpace(p.apiKey)
 	if p.keyAtUse != nil {
-		if ctx == nil {
-			ctx = context.Background()
-		}
 		apiKey = strings.TrimSpace(p.keyAtUse(ctx))
 		if apiKey == "" {
 			return 0, blockheight.ErrTipFromChainRPC

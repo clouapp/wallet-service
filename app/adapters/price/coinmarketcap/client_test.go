@@ -1,6 +1,7 @@
 package coinmarketcap
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -34,10 +35,10 @@ func TestFetchCryptoPricesRequiresAKeyBeforeHTTP(t *testing.T) {
 	provider.baseURL = server.URL
 	provider.client = httpclient.Wrap(server.Client())
 
-	if _, err := provider.FetchCryptoPrices([]string{"BTC"}); err == nil || called {
+	if _, err := provider.FetchCryptoPrices(context.Background(), []string{"BTC"}); err == nil || called {
 		t.Fatal("a missing key called CoinMarketCap or was accepted")
 	}
-	if _, err := provider.FetchFiatRates([]string{"EUR"}); err == nil || called {
+	if _, err := provider.FetchFiatRates(context.Background(), []string{"EUR"}); err == nil || called {
 		t.Fatal("fiat rates called CoinMarketCap or were accepted")
 	}
 }
@@ -65,7 +66,7 @@ func TestFetchCryptoPricesReadsTheUSDQuote(t *testing.T) {
 	provider.baseURL = server.URL
 	provider.client = httpclient.Wrap(server.Client())
 
-	prices, err := provider.FetchCryptoPrices([]string{"btc", "matic", "eth"})
+	prices, err := provider.FetchCryptoPrices(context.Background(), []string{"btc", "matic", "eth"})
 	if err != nil {
 		t.Fatal("crypto quote failed")
 	}
@@ -100,7 +101,7 @@ func TestFetchFiatRatesDoesNotCallHTTP(t *testing.T) {
 	provider.baseURL = server.URL
 	provider.client = httpclient.Wrap(server.Client())
 
-	_, err := provider.FetchFiatRates([]string{"EUR"})
+	_, err := provider.FetchFiatRates(context.Background(), []string{"EUR"})
 	if err == nil || called || !strings.Contains(err.Error(), "coinmarketcap: fiat rates not supported") || strings.Contains(err.Error(), restKey) {
 		t.Fatal("fiat rates were accepted, called CoinMarketCap, or included the key")
 	}
@@ -118,7 +119,7 @@ func TestGetOmitsTheKeyFromErrors(t *testing.T) {
 	provider.baseURL = server.URL
 	provider.client = httpclient.Wrap(server.Client())
 
-	_, err := provider.FetchCryptoPrices([]string{"ETH"})
+	_, err := provider.FetchCryptoPrices(context.Background(), []string{"ETH"})
 	if err == nil {
 		t.Fatal("a non-JSON body was accepted")
 	}
@@ -129,8 +130,29 @@ func TestGetOmitsTheKeyFromErrors(t *testing.T) {
 	closed := server.URL
 	server.Close()
 	provider.baseURL = closed
-	_, err = provider.FetchCryptoPrices([]string{"ETH"})
+	_, err = provider.FetchCryptoPrices(context.Background(), []string{"ETH"})
 	if !errors.Is(err, chain.ErrProviderUnavailable) || !strings.Contains(chain.CauseText(err), "coinmarketcap:") || strings.Contains(err.Error(), restKey) || strings.Contains(chain.CauseText(err), restKey) {
 		t.Fatal("transport error was not the unavailable sentinel, or it included the key")
+	}
+}
+
+func TestFetchCryptoPricesStopsWhenTheContextIsCanceled(t *testing.T) {
+	called := false
+	server := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		called = true
+	}))
+	t.Cleanup(server.Close)
+
+	provider := NewCoinMarketCapProvider("present")
+	provider.baseURL = server.URL
+	provider.client = httpclient.Wrap(server.Client())
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, err := provider.FetchCryptoPrices(ctx, []string{"BTC"}); err == nil || called {
+		t.Fatal("a canceled context called CoinMarketCap or was accepted")
+	}
+	if _, err := provider.FetchCryptoPrices(nil, []string{"BTC"}); err == nil || called {
+		t.Fatal("a nil context called CoinMarketCap or was accepted")
 	}
 }

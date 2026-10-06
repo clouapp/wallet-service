@@ -45,7 +45,7 @@ func (p *CoinMarketCapProvider) Name() string { return "coinmarketcap" }
 
 // FetchCryptoPrices returns USD prices. Codes are uppercased unless the asset
 // map renames them. A non-positive price, or a symbol that was not requested, is skipped.
-func (p *CoinMarketCapProvider) FetchCryptoPrices(codes []string) (map[string]decimal.Decimal, error) {
+func (p *CoinMarketCapProvider) FetchCryptoPrices(ctx context.Context, codes []string) (map[string]decimal.Decimal, error) {
 	if p.apiKey == "" {
 		return nil, fmt.Errorf("coinmarketcap: api key not configured")
 	}
@@ -63,7 +63,7 @@ func (p *CoinMarketCapProvider) FetchCryptoPrices(codes []string) (map[string]de
 	}
 
 	url := fmt.Sprintf("%s/v1/cryptocurrency/quotes/latest?symbol=%s&convert=USD", p.baseURL, strings.Join(apiSymbols, ","))
-	body, err := p.get(url)
+	body, err := p.get(ctx, url)
 	if err != nil {
 		return nil, err
 	}
@@ -91,12 +91,18 @@ func (p *CoinMarketCapProvider) FetchCryptoPrices(codes []string) (map[string]de
 }
 
 // FetchFiatRates reports that CoinMarketCap fiat quotes are not used.
-func (p *CoinMarketCapProvider) FetchFiatRates(codes []string) (map[string]decimal.Decimal, error) {
+func (p *CoinMarketCapProvider) FetchFiatRates(context.Context, []string) (map[string]decimal.Decimal, error) {
 	return nil, fmt.Errorf("coinmarketcap: fiat rates not supported")
 }
 
-func (p *CoinMarketCapProvider) get(url string) ([]byte, error) {
-	resp, err := p.client.Do(context.Background(), httpclient.Request{
+func (p *CoinMarketCapProvider) get(ctx context.Context, url string) ([]byte, error) {
+	if ctx == nil {
+		return nil, fmt.Errorf("coinmarketcap: context is required")
+	}
+	ctx, cancel := context.WithTimeout(ctx, httpTimeout)
+	defer cancel()
+
+	resp, err := p.client.Do(ctx, httpclient.Request{
 		Method: httpclient.MethodGet,
 		URL:    url,
 		Header: map[string]string{

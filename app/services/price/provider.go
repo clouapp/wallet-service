@@ -1,6 +1,8 @@
 package price
 
 import (
+	"context"
+
 	"github.com/shopspring/decimal"
 
 	"github.com/macrowallets/waas/app/models"
@@ -8,8 +10,8 @@ import (
 
 type PriceProvider interface {
 	Name() string
-	FetchCryptoPrices(codes []string) (map[string]decimal.Decimal, error)
-	FetchFiatRates(codes []string) (map[string]decimal.Decimal, error)
+	FetchCryptoPrices(ctx context.Context, codes []string) (map[string]decimal.Decimal, error)
+	FetchFiatRates(ctx context.Context, codes []string) (map[string]decimal.Decimal, error)
 }
 
 // InvertRate turns a quote in units per USD into the USD price of one unit, at the

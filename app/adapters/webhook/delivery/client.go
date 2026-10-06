@@ -18,7 +18,14 @@ func NewClient() *Client {
 }
 
 // Post sends the signed body. Headers, URL, and body are the values the service computed.
+// A missing context or a non-positive timeout fails before any network use.
 func (c *Client) Post(ctx context.Context, call webhook.SignedDelivery) (httpclient.Response, error) {
+	if ctx == nil {
+		return httpclient.Response{}, fmt.Errorf("webhook delivery: context is required")
+	}
+	if call.Timeout <= 0 {
+		return httpclient.Response{}, fmt.Errorf("webhook delivery: timeout is required")
+	}
 	return httpclient.NewClient(call.Timeout).Do(ctx, httpclient.Request{
 		Method: httpclient.MethodPost,
 		URL:    call.URL,

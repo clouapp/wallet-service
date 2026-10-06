@@ -63,7 +63,7 @@ func (p *CoinGeckoProvider) Name() string { return "coingecko" }
 
 // FetchCryptoPrices returns USD prices for the codes CoinGecko knows.
 // Unknown codes are skipped. A non-positive price is skipped.
-func (p *CoinGeckoProvider) FetchCryptoPrices(codes []string) (map[string]decimal.Decimal, error) {
+func (p *CoinGeckoProvider) FetchCryptoPrices(ctx context.Context, codes []string) (map[string]decimal.Decimal, error) {
 	ids := make([]string, 0, len(codes))
 	for _, code := range codes {
 		if id, ok := geckoIDMap[strings.ToUpper(code)]; ok {
@@ -75,7 +75,7 @@ func (p *CoinGeckoProvider) FetchCryptoPrices(codes []string) (map[string]decima
 	}
 
 	url := fmt.Sprintf("%s/simple/price?ids=%s&vs_currencies=usd", p.baseURL, strings.Join(ids, ","))
-	body, err := p.doGet(url)
+	body, err := p.doGet(ctx, url)
 	if err != nil {
 		return nil, fmt.Errorf("coingecko crypto prices: %w", err)
 	}
@@ -98,14 +98,14 @@ func (p *CoinGeckoProvider) FetchCryptoPrices(codes []string) (map[string]decima
 
 // FetchFiatRates returns USD per fiat unit. CoinGecko quotes fiat per USDC,
 // and the price column stores the inverted USD rate.
-func (p *CoinGeckoProvider) FetchFiatRates(codes []string) (map[string]decimal.Decimal, error) {
+func (p *CoinGeckoProvider) FetchFiatRates(ctx context.Context, codes []string) (map[string]decimal.Decimal, error) {
 	lowerCodes := make([]string, len(codes))
 	for i, c := range codes {
 		lowerCodes[i] = strings.ToLower(c)
 	}
 
 	url := fmt.Sprintf("%s/simple/price?ids=usd-coin&vs_currencies=%s", p.baseURL, strings.Join(lowerCodes, ","))
-	body, err := p.doGet(url)
+	body, err := p.doGet(ctx, url)
 	if err != nil {
 		return nil, fmt.Errorf("coingecko fiat rates: %w", err)
 	}
@@ -127,12 +127,18 @@ func (p *CoinGeckoProvider) FetchFiatRates(codes []string) (map[string]decimal.D
 	return rates, nil
 }
 
-func (p *CoinGeckoProvider) doGet(url string) ([]byte, error) {
+func (p *CoinGeckoProvider) doGet(ctx context.Context, url string) ([]byte, error) {
+	if ctx == nil {
+		return nil, fmt.Errorf("coingecko: context is required")
+	}
+	ctx, cancel := context.WithTimeout(ctx, httpTimeout)
+	defer cancel()
+
 	header := map[string]string{"Accept": "application/json"}
 	if p.apiKey != "" {
 		header["x-cg-pro-api-key"] = p.apiKey
 	}
-	resp, err := p.client.Do(context.Background(), httpclient.Request{
+	resp, err := p.client.Do(ctx, httpclient.Request{
 		Method: httpclient.MethodGet,
 		URL:    url,
 		Header: header,

@@ -309,3 +309,22 @@ func (heightDiscardActivity) Within(ctx context.Context, fn func(context.Context
 func (heightDiscardActivity) Append(context.Context, models.AccountActivity) error { return nil }
 
 var _ activity.Writer = heightDiscardActivity{}
+
+func TestProvider_NilContextDoesNotCallHTTP(t *testing.T) {
+	called := false
+	srv := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		called = true
+	}))
+	t.Cleanup(srv.Close)
+
+	p := New(blockheight.EtherscanDeps{KeyAtUse: func(context.Context) string {
+		t.Fatal("a nil context read the key")
+		return ""
+	}})
+	p.client = httpclient.Wrap(srv.Client())
+	p.baseURL = srv.URL
+
+	_, err := p.GetBlockHeight(nil, models.ChainETH)
+	require.Error(t, err)
+	assert.False(t, called)
+}
