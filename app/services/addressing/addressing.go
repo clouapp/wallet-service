@@ -79,6 +79,8 @@ func DeriveAddress(chainID string, pubKey []byte) (string, error) {
 		return DeriveBtcAddress(LtcHRPTestnet, pubKey)
 	case models.ChainTron, models.ChainTTron:
 		return DeriveTronAddress(pubKey)
+	case models.ChainXRP, models.ChainTXRP:
+		return DeriveXRPAddress(pubKey)
 	case models.ChainSOL, models.ChainTSOL:
 		return DeriveSolAddress(pubKey)
 	default:

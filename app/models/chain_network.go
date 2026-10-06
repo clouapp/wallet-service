@@ -26,6 +26,11 @@ const (
 	NetworkTronNile        = "tron-nile"
 	NetworkLitecoinMainnet = "litecoin-mainnet"
 	NetworkLitecoinTestnet = "litecoin-testnet"
+	// NetworkXRPLMainnet and NetworkXRPLTestnet are the XRP Ledger networks.
+	// Testnet is the public altnet, not mainnet. Classic r-addresses are the
+	// same on both; the record's network chooses which server a read uses.
+	NetworkXRPLMainnet = "xrpl-mainnet"
+	NetworkXRPLTestnet = "xrpl-testnet"
 )
 
 const (
@@ -95,11 +100,24 @@ var testnetNetworks = map[string]struct{}{
 	NetworkBSCTestnet:      {},
 	NetworkTronNile:        {},
 	NetworkLitecoinTestnet: {},
+	NetworkXRPLTestnet:     {},
 }
 
 var litecoinChainIDs = map[string]struct{}{
 	ChainLTC:  {},
 	ChainTLTC: {},
+}
+
+var xrpChainIDs = map[string]struct{}{
+	ChainXRP:  {},
+	ChainTXRP: {},
+}
+
+// IsXRPChainID reports whether chainID is an XRP Ledger record. Classic
+// addresses do not change between mainnet and the altnet testnet.
+func IsXRPChainID(chainID string) bool {
+	_, ok := xrpChainIDs[chainID]
+	return ok
 }
 
 // IsLitecoinChainID reports whether chainID is a Litecoin record. Litecoin runs on
@@ -167,6 +185,11 @@ func (c *Chain) Network() string {
 			return NetworkTronNile
 		}
 		return NetworkTronMainnet
+	case AdapterTypeXRP:
+		if c.IsTestnet {
+			return NetworkXRPLTestnet
+		}
+		return NetworkXRPLMainnet
 	default:
 		return ""
 	}

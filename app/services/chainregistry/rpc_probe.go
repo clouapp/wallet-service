@@ -46,6 +46,12 @@ var tronNetworkByHostLabel = map[string]string{
 
 var tronMainnetHosts = []string{"api.trongrid.io"}
 
+// NetworkXRPLDevnet is the XRPL devnet. No chain record targets it; a URL that
+// names it must not be read as the altnet testnet.
+const NetworkXRPLDevnet = "xrpl-devnet"
+
+var xrplMainnetHosts = []string{"s1.ripple.com", "s2.ripple.com", "xrplcluster.com", "xrpl.ws"}
+
 // ProbeRPCNetwork names the network rpcURL serves: EVM by asking eth_chainId,
 // Bitcoin and Litecoin by the Esplora path, Solana and TRON by the host. "" means
 // it cannot tell.
@@ -62,6 +68,8 @@ func ProbeRPCNetwork(ctx context.Context, record models.Chain, rpcURL string) (s
 		return models.SolanaNetworkOfRPCURL(rpcURL), nil
 	case models.AdapterTypeTron:
 		return TronNetworkOfRPCURL(rpcURL), nil
+	case models.AdapterTypeXRP:
+		return XRPLNetworkOfRPCURL(rpcURL), nil
 	default:
 		return "", nil
 	}
@@ -128,6 +136,29 @@ func TronNetworkOfRPCURL(rpcURL string) string {
 	}
 	if hostMatches(host, tronMainnetHosts) {
 		return models.NetworkTronMainnet
+	}
+	return ""
+}
+
+// XRPLNetworkOfRPCURL names the XRP Ledger network of a rippled URL. altnet is
+// the public testnet. A devnet host is reported separately so it is not treated
+// as that testnet. "" means the host does not say.
+func XRPLNetworkOfRPCURL(rpcURL string) string {
+	host, _, ok := rpcHostAndPath(rpcURL)
+	if !ok {
+		return ""
+	}
+	labels := strings.FieldsFunc(host, func(r rune) bool { return r == '.' || r == '-' })
+	for _, label := range labels {
+		switch label {
+		case "altnet":
+			return models.NetworkXRPLTestnet
+		case "devnet":
+			return NetworkXRPLDevnet
+		}
+	}
+	if hostMatches(host, xrplMainnetHosts) {
+		return models.NetworkXRPLMainnet
 	}
 	return ""
 }

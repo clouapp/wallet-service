@@ -15,6 +15,7 @@ const (
 	AdapterTypeBitcoin = "bitcoin"
 	AdapterTypeSolana  = "solana"
 	AdapterTypeTron    = "tron"
+	AdapterTypeXRP     = "xrp"
 
 	ChainETH      = "eth"
 	ChainBTC      = "btc"
@@ -25,6 +26,7 @@ const (
 	ChainBSC      = "bsc"
 	ChainTron     = "tron"
 	ChainLTC      = "ltc"
+	ChainXRP      = "xrp"
 
 	ChainTETH      = "teth"
 	ChainTBTC      = "tbtc"
@@ -35,6 +37,7 @@ const (
 	ChainTBSC      = "tbsc"
 	ChainTTron     = "ttron"
 	ChainTLTC      = "tltc"
+	ChainTXRP      = "txrp"
 
 	ChainMatic = "matic"
 
@@ -45,6 +48,7 @@ const (
 	NativeBNB = "bnb"
 	NativeTRX = "trx"
 	NativeLTC = "ltc"
+	NativeXRP = "xrp"
 
 	SymbolUSDT = "USDT"
 	SymbolUSDC = "USDC"

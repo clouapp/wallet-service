@@ -48,6 +48,18 @@ func TestExpand_Scopes_NonFull(t *testing.T) {
 	}
 }
 
+func TestExpand_Scopes_ForXRPFullIsBalanceOnly(t *testing.T) {
+	for _, chainID := range []string{"xrp", "txrp"} {
+		scopes, err := ExpandScopes(RefreshRequest{ChainID: chainID, Scope: RefreshScopeFull})
+		if err != nil {
+			t.Fatalf("%s: %v", chainID, err)
+		}
+		if len(scopes) != 1 || scopes[0] != RefreshScopeBalances {
+			t.Fatalf("%s scopes %v, want balances only", chainID, scopes)
+		}
+	}
+}
+
 func TestExpand_Scopes_UnknownChain(t *testing.T) {
 	req := RefreshRequest{ChainID: "unknown", Scope: RefreshScopeFull}
 	_, err := ExpandScopes(req)

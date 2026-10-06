@@ -42,15 +42,15 @@ var AddedEVMChainIDs = []string{
 }
 
 // AddedChainIDs are every record chains:add-missing may create.
-var AddedChainIDs = append(append([]string(nil), AddedEVMChainIDs...), AddedTronLitecoinChainIDs...)
+var AddedChainIDs = append(append(append([]string(nil), AddedEVMChainIDs...), AddedTronLitecoinChainIDs...), AddedXRPChainIDs...)
 
 func addedEVMChainSeeds() []chainSeed {
 	return buildAddedEVMChainSeeds(configuredConfirmations)
 }
 
-// addedChainSeeds are the EVM, TRON and Litecoin records added after eth/btc/polygon/sol.
+// addedChainSeeds are the EVM, TRON, Litecoin and XRP Ledger records added after eth/btc/polygon/sol.
 func addedChainSeeds() []chainSeed {
-	return append(addedEVMChainSeeds(), addedTronLitecoinChainSeeds()...)
+	return append(append(addedEVMChainSeeds(), addedTronLitecoinChainSeeds()...), addedXRPChainSeeds()...)
 }
 
 // buildAddedEVMChainSeeds lists the added records; confirmations returns the
@@ -157,7 +157,10 @@ func resourcesOfNetwork(network string) []resourceSeed {
 	if resources, ok := networkResources[network]; ok {
 		return resources
 	}
-	return tronLitecoinResources[network]
+	if resources, ok := tronLitecoinResources[network]; ok {
+		return resources
+	}
+	return xrpResources[network]
 }
 
 func tokensForChains(chains []chainSeed, profile string) ([]tokenSeed, error) {
@@ -235,6 +238,10 @@ func addedChainThresholdSpec(chainID string) (addedThresholdSpec, bool) {
 		return addedThresholdSpec{gasReadinessRaw: "20000000", dustNativeRaw: "1000000", dustUSD: decimal.New(1, 0)}, true
 	case models.ChainLTC, models.ChainTLTC:
 		return addedThresholdSpec{gasReadinessRaw: "", dustNativeRaw: "10000", dustUSD: decimal.Zero}, true
+	case models.ChainXRP, models.ChainTXRP:
+		// Fees are paid from the same XRP balance. One drop is the smallest
+		// amount; this experiment does not sweep.
+		return addedThresholdSpec{gasReadinessRaw: "", dustNativeRaw: "1", dustUSD: decimal.Zero}, true
 	default:
 		return addedThresholdSpec{}, false
 	}
@@ -273,7 +280,7 @@ type AddedChain struct {
 	IsTestnet   bool
 }
 
-// SeedMissingAddedChains creates the added EVM, TRON and Litecoin records that are not in the registry
+// SeedMissingAddedChains creates the added EVM, TRON, Litecoin and XRP Ledger records that are not in the registry
 // yet, with their thresholds, tokens and resources. It never updates an existing row
 // (unlike SeedChains, which re-encrypts every rpc_url), so it is safe on a live
 // database. With apply false it only reports what it would create.
@@ -284,7 +291,7 @@ func SeedMissingAddedChains(ctx context.Context, apply bool) (AddedChainsResult,
 		return result, err
 	}
 	if profile == "" {
-		return result, fmt.Errorf("CHAIN_NETWORK_PROFILE is required: it decides which network base/arbitrum/bsc/tron/ltc point at")
+		return result, fmt.Errorf("CHAIN_NETWORK_PROFILE is required: it decides which network base/arbitrum/bsc/tron/ltc/xrp point at")
 	}
 	tokens, err := addedChainTokens(profile)
 	if err != nil {

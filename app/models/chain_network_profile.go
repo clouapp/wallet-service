@@ -3,7 +3,7 @@ package models
 import "fmt"
 
 // Chain network profiles: which networks the primary chain records (eth, btc,
-// polygon, sol, base, arbitrum, bsc, tron, ltc) point at. The t-prefixed records
+// polygon, sol, base, arbitrum, bsc, tron, ltc, xrp) point at. The t-prefixed records
 // are always test networks.
 const (
 	ChainNetworkProfileMainnet = "mainnet"
@@ -49,6 +49,7 @@ var primaryChainNetworks = map[string]map[string]ChainNetworkSpec{
 		ChainBSC:      {Network: NetworkBSCMainnet, NetworkID: int64Ptr(EVMNetworkIDBSCMainnet)},
 		ChainTron:     {Network: NetworkTronMainnet},
 		ChainLTC:      {Network: NetworkLitecoinMainnet},
+		ChainXRP:      {Network: NetworkXRPLMainnet},
 	},
 	ChainNetworkProfileTestnet: {
 		ChainETH:      {Network: NetworkEthereumSepolia, NetworkID: int64Ptr(EVMNetworkIDEthereumSepolia), IsTestnet: true},
@@ -60,11 +61,12 @@ var primaryChainNetworks = map[string]map[string]ChainNetworkSpec{
 		ChainBSC:      {Network: NetworkBSCTestnet, NetworkID: int64Ptr(EVMNetworkIDBSCTestnet), IsTestnet: true},
 		ChainTron:     {Network: NetworkTronNile, IsTestnet: true},
 		ChainLTC:      {Network: NetworkLitecoinTestnet, IsTestnet: true},
+		ChainXRP:      {Network: NetworkXRPLTestnet, IsTestnet: true},
 	},
 }
 
 // PrimaryChainIDs lists the records a profile decides, in display order.
-var PrimaryChainIDs = []string{ChainETH, ChainBTC, ChainPolygon, ChainSOL, ChainBase, ChainArbitrum, ChainBSC, ChainTron, ChainLTC}
+var PrimaryChainIDs = []string{ChainETH, ChainBTC, ChainPolygon, ChainSOL, ChainBase, ChainArbitrum, ChainBSC, ChainTron, ChainLTC, ChainXRP}
 
 var testChainIDs = map[string]struct{}{
 	ChainTETH:      {},
@@ -76,6 +78,7 @@ var testChainIDs = map[string]struct{}{
 	ChainTBSC:      {},
 	ChainTTron:     {},
 	ChainTLTC:      {},
+	ChainTXRP:      {},
 }
 
 var evmChainIDs = map[string]struct{}{

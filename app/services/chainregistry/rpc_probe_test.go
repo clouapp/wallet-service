@@ -85,3 +85,21 @@ func TestProbe_Reads_SolanaAndBitcoinFromTheURL(t *testing.T) {
 	require.NoError(t, err)
 	assert.Empty(t, network)
 }
+
+func TestXRPLNetworkOfRPCURL(t *testing.T) {
+	record := models.Chain{ID: models.ChainXRP, AdapterType: models.AdapterTypeXRP}
+	cases := []struct {
+		url  string
+		want string
+	}{
+		{"https://s.altnet.rippletest.net:51234", models.NetworkXRPLTestnet},
+		{"https://s1.ripple.com:51234", models.NetworkXRPLMainnet},
+		{"https://s.devnet.rippletest.net:51234", NetworkXRPLDevnet},
+		{"https://example.com", ""},
+	}
+	for _, tc := range cases {
+		got, err := ProbeRPCNetwork(context.Background(), record, tc.url)
+		require.NoError(t, err)
+		assert.Equal(t, tc.want, got, tc.url)
+	}
+}

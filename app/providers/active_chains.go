@@ -13,6 +13,7 @@ import (
 	evmchain "github.com/macrowallets/waas/app/adapters/chain/evm"
 	solanachain "github.com/macrowallets/waas/app/adapters/chain/solana"
 	tronchain "github.com/macrowallets/waas/app/adapters/chain/tron"
+	xrpchain "github.com/macrowallets/waas/app/adapters/chain/xrp"
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/repositories"
 	chainpkg "github.com/macrowallets/waas/app/services/chain"
@@ -118,6 +119,17 @@ func registerActiveChains(reg *chainpkg.Registry, rows []models.Chain, tokensByC
 			btcCfg.TatumDataAPIURL = facades.Config().GetString(fallbackKey + ".tatum_data_api_url")
 			slog.Info("btc fallback providers", "chain", ch.ID, "count", len(btcCfg.Fallbacks), "tatum_key_set", tatumKey != "")
 			adapter = bitcoinchain.NewBitcoinLive(btcCfg)
+		case models.AdapterTypeXRP:
+			adapter = xrpchain.NewLive(xrpchain.Config{
+				ChainIDStr:            ch.ID,
+				ChainName:             ch.Name,
+				NativeSymbol:          ch.NativeSymbol,
+				RPCURL:                rpcURL,
+				IsTestnet:             ch.IsTestnet,
+				Confirmations:         uint64(ch.RequiredConfirmations),
+				GasReadinessThreshold: resolveGasReadinessThreshold(&ch),
+				DustThresholdNative:   resolveDustThresholdNative(&ch),
+			})
 		case models.AdapterTypeTron:
 			adapter = tronchain.NewTronLive(tronchain.TronConfig{
 				ChainIDStr:            ch.ID,

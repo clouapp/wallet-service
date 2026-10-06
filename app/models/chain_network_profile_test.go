@@ -8,7 +8,7 @@ func TestEvery_Profile_DecidesEveryPrimaryChainAndResolvesToItsNetwork(t *testin
 	adapterByChain := map[string]string{
 		ChainETH: AdapterTypeEVM, ChainPolygon: AdapterTypeEVM, ChainBTC: AdapterTypeBitcoin, ChainSOL: AdapterTypeSolana,
 		ChainBase: AdapterTypeEVM, ChainArbitrum: AdapterTypeEVM, ChainBSC: AdapterTypeEVM,
-		ChainTron: AdapterTypeTron, ChainLTC: AdapterTypeBitcoin,
+		ChainTron: AdapterTypeTron, ChainLTC: AdapterTypeBitcoin, ChainXRP: AdapterTypeXRP,
 	}
 	for _, profile := range []string{ChainNetworkProfileMainnet, ChainNetworkProfileTestnet} {
 		for _, chainID := range PrimaryChainIDs {
@@ -132,6 +132,7 @@ func TestBitcoinFamilyCoversBitcoinAndLitecoinOnly(t *testing.T) {
 	for chainID, want := range map[string]bool{
 		ChainBTC: true, ChainTBTC: true, ChainLTC: true, ChainTLTC: true,
 		ChainTron: false, ChainTTron: false, ChainETH: false, ChainSOL: false, "": false,
+		ChainXRP: false, ChainTXRP: false,
 	} {
 		if got := IsBitcoinFamilyChainID(chainID); got != want {
 			t.Errorf("IsBitcoinFamilyChainID(%q) = %t, want %t", chainID, got, want)
@@ -156,6 +157,9 @@ func TestLitecoinAndTronRecordsResolveToTheirOwnNetworks(t *testing.T) {
 		{Chain{ID: ChainLTC, AdapterType: AdapterTypeBitcoin}, NetworkLitecoinMainnet},
 		{Chain{ID: ChainTron, AdapterType: AdapterTypeTron, IsTestnet: true}, NetworkTronNile},
 		{Chain{ID: ChainTron, AdapterType: AdapterTypeTron}, NetworkTronMainnet},
+		{Chain{ID: ChainXRP, AdapterType: AdapterTypeXRP, IsTestnet: true}, NetworkXRPLTestnet},
+		{Chain{ID: ChainTXRP, AdapterType: AdapterTypeXRP, IsTestnet: true}, NetworkXRPLTestnet},
+		{Chain{ID: ChainXRP, AdapterType: AdapterTypeXRP}, NetworkXRPLMainnet},
 		{Chain{ID: ChainBTC, AdapterType: AdapterTypeBitcoin, IsTestnet: true}, NetworkBitcoinTestnet},
 	}
 	for _, tc := range cases {
@@ -237,5 +241,24 @@ func TestProfiles_Leave_TestChainsAloneAndRejectUnknownNames(t *testing.T) {
 	}
 	if _, err := EnvironmentForChainNetworkProfile("staging"); err == nil {
 		t.Error("unknown profile environment accepted")
+	}
+}
+
+func TestProfilesPointXRPAtXRPLAndKeepTheTestRecordOnAltnet(t *testing.T) {
+	t.Parallel()
+
+	mainnet, decided, err := PrimaryChainNetwork(ChainNetworkProfileMainnet, ChainXRP)
+	if err != nil || !decided || mainnet.Network != NetworkXRPLMainnet || mainnet.IsTestnet || mainnet.NetworkID != nil {
+		t.Fatalf("mainnet xrp: decided=%t spec=%+v err=%v", decided, mainnet, err)
+	}
+	testnet, decided, err := PrimaryChainNetwork(ChainNetworkProfileTestnet, ChainXRP)
+	if err != nil || !decided || testnet.Network != NetworkXRPLTestnet || !testnet.IsTestnet || testnet.NetworkID != nil {
+		t.Fatalf("testnet xrp: decided=%t spec=%+v err=%v", decided, testnet, err)
+	}
+	if !IsTestChainID(ChainTXRP) || IsTestChainID(ChainXRP) || IsEVMChainID(ChainXRP) || IsBitcoinFamilyChainID(ChainXRP) {
+		t.Fatal("txrp is the always-testnet record; xrp is neither EVM nor Bitcoin-family")
+	}
+	if _, decided, err := PrimaryChainNetwork(ChainNetworkProfileTestnet, ChainTXRP); err != nil || decided {
+		t.Fatalf("txrp must stay outside the profile, decided=%t err=%v", decided, err)
 	}
 }

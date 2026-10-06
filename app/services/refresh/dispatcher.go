@@ -16,6 +16,11 @@ var tronChains = map[string]bool{
 	models.ChainTTron: true,
 }
 
+var xrpChains = map[string]bool{
+	models.ChainXRP:  true,
+	models.ChainTXRP: true,
+}
+
 func ExpandScopes(req RefreshRequest) ([]RefreshScope, error) {
 	if req.Scope != RefreshScopeFull {
 		return []RefreshScope{req.Scope}, nil
@@ -26,6 +31,8 @@ func ExpandScopes(req RefreshRequest) ([]RefreshScope, error) {
 		return []RefreshScope{RefreshScopeBalances, RefreshScopeTransactions, RefreshScopeUtxos}, nil
 	case solanaChains[req.ChainID], tronChains[req.ChainID]:
 		return []RefreshScope{RefreshScopeBalances, RefreshScopeTransactions, RefreshScopeTokens}, nil
+	case xrpChains[req.ChainID]:
+		return []RefreshScope{RefreshScopeBalances}, nil
 	case models.IsEVMChainID(req.ChainID):
 		return []RefreshScope{RefreshScopeBalances, RefreshScopeTransactions, RefreshScopeTokens}, nil
 	default:

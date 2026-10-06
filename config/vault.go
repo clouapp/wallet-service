@@ -42,6 +42,8 @@ func registerVault() {
 				"bsc":      envInt("BSC_REQUIRED_CONFIRMATIONS", 30),
 				"tron":     envInt("TRON_REQUIRED_CONFIRMATIONS", 20),
 				"ltc":      envInt("LTC_REQUIRED_CONFIRMATIONS", 6),
+				// One validated XRP Ledger is the inclusion point (~4 s). txrp shares it.
+				"xrp": envInt("XRP_REQUIRED_CONFIRMATIONS", 1),
 			},
 		},
 		// TronGrid API key (TRON-PRO-API-KEY header). Optional: Nile, and light use of

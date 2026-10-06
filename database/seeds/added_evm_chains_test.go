@@ -64,7 +64,7 @@ func TestChain_Seeds_CreateEveryMainnetBeforeTheTestRecordsPointingAtIt(t *testi
 
 	seen := map[string]bool{}
 	ids := map[string]bool{}
-	for _, seed := range chainSeedsWith(append(testAddedSeeds(), testTronLitecoinSeeds()...)) {
+	for _, seed := range chainSeedsWith(append(append(testAddedSeeds(), testTronLitecoinSeeds()...), testXRPSeeds()...)) {
 		if ids[seed.id] {
 			t.Fatalf("chain %s is seeded twice", seed.id)
 		}
