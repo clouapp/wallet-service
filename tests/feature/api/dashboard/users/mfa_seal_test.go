@@ -59,7 +59,7 @@ func (s *MfaSealTestSuite) TestEnrolled_Secret_IsSealedAndVerifyStillWorks() {
 	_, challenge := s.loginAs(user.Email)
 	s.Require().NotEmpty(challenge.ChallengeToken)
 	replayed, _ := s.verifyTwoFactor(challenge.ChallengeToken, s.currentCode(setupBody.Secret), "")
-	replayed.AssertUnauthorized()
+	s.AssertError(replayed, 401, "unauthorized", "invalid 2FA code")
 	s.refuseSecret(replayed, setupBody.Secret, stored)
 
 	var confirmed struct {
@@ -89,7 +89,7 @@ func (s *MfaSealTestSuite) TestUnsealed_Secret_FailsClosed() {
 	_, challenge := s.loginAs(user.Email)
 	s.Require().NotEmpty(challenge.ChallengeToken)
 	resp, _ := s.verifyTwoFactor(challenge.ChallengeToken, "000000", "")
-	resp.AssertStatus(500)
+	s.AssertError(resp, 500, "internal", "internal error")
 	s.refuseSecret(resp, "clear-text-marker", "clear-text-marker")
 }
 

@@ -118,6 +118,9 @@ func TestProvider_Signature_FailsClosedBeforeParsing(t *testing.T) {
 	if recorder.Code != http.StatusNotFound || continued() {
 		t.Fatalf("status = %d continued = %v body %s", recorder.Code, continued(), recorder.Body.String())
 	}
+	if !strings.Contains(recorder.Body.String(), `"code":"not_found"`) || !strings.Contains(recorder.Body.String(), `"message":"webhook subscription not found"`) {
+		t.Fatalf("body = %s", recorder.Body.String())
+	}
 	if provider.verifyCalls != 0 || provider.parseCalls != 0 {
 		t.Fatal("missing subscription reached verification")
 	}
@@ -150,6 +153,9 @@ func TestHandle_Webhook_IngestRefusesAnUnverifiedBodyBeforeParsing(t *testing.T)
 	}
 	if recorder.Code != http.StatusUnauthorized {
 		t.Fatalf("status = %d, body %s", recorder.Code, recorder.Body.String())
+	}
+	if !strings.Contains(recorder.Body.String(), `"code":"invalid_signature"`) || !strings.Contains(recorder.Body.String(), `"message":"invalid webhook signature"`) {
+		t.Fatalf("body = %s", recorder.Body.String())
 	}
 	if provider.parseCalls != 0 || sink.calls != 0 {
 		t.Fatalf("parse = %d, ingest = %d", provider.parseCalls, sink.calls)

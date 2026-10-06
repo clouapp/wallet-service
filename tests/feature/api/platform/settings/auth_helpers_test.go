@@ -164,9 +164,23 @@ func (s *authSuite) signIn(email string) loginBody {
 }
 
 func (s *authSuite) assertSessionRefused(session loginBody) {
-	s.getMe(session.AccessToken).AssertStatus(401)
+	s.assertSessionRevoked(s.getMe(session.AccessToken))
 	resp, _ := s.refresh(session.RefreshToken)
-	resp.AssertStatus(401)
+	s.AssertError(resp, 401, "unauthorized", "invalid or expired refresh token")
+}
+
+func (s *authSuite) assertSessionRevoked(resp contractstesting.Response) {
+	s.T().Helper()
+	resp.AssertUnauthorized()
+	var body struct {
+		Error struct {
+			Code    string `json:"code"`
+			Message string `json:"message"`
+		} `json:"error"`
+	}
+	s.decode(resp, &body)
+	s.Equal("unauthorized", body.Error.Code)
+	s.Equal("session revoked", body.Error.Message)
 }
 
 func (s *authSuite) assertSessionWorks(session loginBody) {

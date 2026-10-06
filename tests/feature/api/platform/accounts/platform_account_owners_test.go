@@ -163,7 +163,7 @@ func (s *PlatformAccountOwnersTestSuite) TestA_Member_CannotAttachAnOwner() {
 	))
 
 	anonymous := s.Post("/v1/platform/accounts/"+accountID.String()+"/owners", support.Session{}, `{"email":"`+person.Email+`"}`)
-	anonymous.AssertUnauthorized()
+	s.AssertError(anonymous, 401, "unauthorized", "missing or malformed bearer token")
 }
 
 func (s *PlatformAccountOwnersTestSuite) TestUnknown_Account_AndUnknownUser() {

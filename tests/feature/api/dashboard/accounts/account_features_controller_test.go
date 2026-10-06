@@ -251,6 +251,9 @@ func (s *accountFeaturesSuite) refuseWrite(method, token string, accountID uuid.
 		return
 	}
 	resp.AssertNotFound()
+	content, err := resp.Content()
+	s.Require().NoError(err)
+	s.Contains(content, "404 page not found")
 	s.Equal(int64(0), s.rowCount(accountID))
 }
 

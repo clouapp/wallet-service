@@ -90,8 +90,7 @@ func (s *WalletWhitelistGateTestSuite) TestMissing_Whitelist_EntryIs404BeforeThe
 	s.assign(actor.id, wallet.ID, models.WalletRoleViewer)
 
 	resp := s.deleteEntry(actor.token, account.ID, wallet.ID, uuid.New())
-	resp.AssertNotFound()
-	s.Contains(s.body(resp), "whitelist entry not found")
+	s.AssertError(resp, 404, "not_found", "whitelist entry not found")
 }
 
 func (s *WalletWhitelistGateTestSuite) TestWallet_Whitelist_DeleteFollowsTheLoadedRoles() {

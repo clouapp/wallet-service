@@ -258,5 +258,8 @@ func (s *APITokenAuthHMACTestSuite) TestAPI_TokenAuth_SecretDigestRejectsAMissin
 		WithHeader("Authorization", "Bearer "+signed).
 		Get("/api/v1/chains")
 	s.Require().NoError(err)
-	resp.AssertStatus(401)
+	resp.AssertStatus(401).AssertJson(map[string]any{"error": map[string]any{
+		"code":    "unauthorized",
+		"message": "invalid or expired api token",
+	}})
 }

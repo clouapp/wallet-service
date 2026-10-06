@@ -117,7 +117,7 @@ func (s *AccessStatusTestSuite) TestLogin_Refuses_AUserWhoIsNotActive() {
 
 		resp, body := s.loginAs(user.Email)
 
-		resp.AssertStatus(403)
+		s.AssertError(resp, 403, "forbidden", "user is not active")
 		s.Empty(body.AccessToken, status)
 		s.Empty(body.ChallengeToken, status)
 	}
@@ -129,7 +129,7 @@ func (s *AccessStatusTestSuite) TestWrong_Password_StillAnswersInvalidCredential
 
 	resp := s.postJSON("/v1/auth/login", `{"email":"`+user.Email+`","password":"not-the-password"}`)
 
-	resp.AssertStatus(401)
+	s.AssertError(resp, 401, "unauthorized", "invalid credentials")
 }
 
 func (s *AccessStatusTestSuite) TestSession_Ends_WhenTheUserIsSuspended() {
@@ -139,9 +139,9 @@ func (s *AccessStatusTestSuite) TestSession_Ends_WhenTheUserIsSuspended() {
 
 	s.setStatus("users", user.ID, "suspended")
 
-	s.getMe(session.AccessToken).AssertStatus(401)
+	s.AssertError(s.getMe(session.AccessToken), 401, "unauthorized", "user is not active")
 	resp, renewed := s.refresh(session.RefreshToken)
-	resp.AssertStatus(401)
+	s.AssertError(resp, 401, "unauthorized", "user is not active")
 	s.Empty(renewed.AccessToken)
 }
 
@@ -153,7 +153,7 @@ func (s *AccessStatusTestSuite) TestTwo_Factor_CompletionRefusesAUserSuspendedMe
 
 	resp, body := s.verifyTwoFactor(challenge.ChallengeToken, s.currentCode(user.TOTPSecret), "")
 
-	resp.AssertStatus(403)
+	s.AssertError(resp, 403, "forbidden", "user is not active")
 	s.Empty(body.AccessToken)
 }
 

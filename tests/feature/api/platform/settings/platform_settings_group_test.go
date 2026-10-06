@@ -194,9 +194,9 @@ func (s *PlatformSettingsGroupTestSuite) TestA_Non_AdminOnAnUnknownGroupIsNotFou
 	session := s.signIn(member.Email)
 
 	unknown := s.getRaw(session.AccessToken, "/v1/platform/settings/no-such-group")
-	unknown.AssertNotFound()
+	s.AssertError(unknown, 404, "not_found", "settings group not found")
 	accountOnly := s.getRaw(session.AccessToken, "/v1/platform/settings/account_security")
-	accountOnly.AssertNotFound()
+	s.AssertError(accountOnly, 404, "not_found", "settings group not found")
 
 	known := s.getRaw(session.AccessToken, "/v1/platform/settings/mail_smtp")
 	known.AssertForbidden()
@@ -206,7 +206,7 @@ func (s *PlatformSettingsGroupTestSuite) TestA_Non_AdminOnAnUnknownGroupIsNotFou
 	s.Equal(int64(0), s.count(`SELECT count(*) FROM account_activity WHERE action = 'platform.secret_viewed'`))
 
 	missing := s.Get("/v1/platform/settings/mail_smtp", support.Session{})
-	missing.AssertUnauthorized()
+	s.AssertError(missing, 401, "unauthorized", "missing or malformed bearer token")
 }
 
 func (s *PlatformSettingsGroupTestSuite) TestA_Platform_AdminGetsProviderCredentialGroupsWithoutTheSecret() {

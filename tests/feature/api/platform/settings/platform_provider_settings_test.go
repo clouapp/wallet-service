@@ -9,6 +9,7 @@ import (
 	contractstesting "github.com/goravel/framework/contracts/testing/http"
 	"github.com/goravel/framework/facades"
 
+	"github.com/macrowallets/waas/app/http/responses"
 	"github.com/macrowallets/waas/app/services/settings"
 	"github.com/macrowallets/waas/tests/feature/support"
 	"github.com/macrowallets/waas/tests/feature/support/testutil"
@@ -124,7 +125,7 @@ func (s *PlatformProviderSettingsTestSuite) TestA_Non_AdminIsForbidden() {
 		body := map[string]any{"enabled": true}
 		body[provider.secretKey] = provider.fixture
 		forbidden := s.putRaw(session.AccessToken, "/v1/platform/settings/"+provider.group, providerJSON(body))
-		forbidden.AssertForbidden()
+		s.AssertError(forbidden, 403, responses.CodeForbidden, "you do not have permission to update settings")
 		content, err := forbidden.Content()
 		s.Require().NoError(err)
 		if responseIncludesSecret(content, []string{provider.fixture}) {

@@ -177,8 +177,8 @@ func (s *AddressesControllerTestSuite) TestLookup_Address_NotFound() {
 	testutil.SeededTestDB(s.T())
 	_, bearer, _ := ctltestutil.SetupAPIAuth(s.T(), false)
 
-	s.External("/api/v1/addresses/0xnonexistent?chain=eth", ctltestutil.Token{Bearer: bearer}).Get().
-		AssertNotFound()
+	resp := s.External("/api/v1/addresses/0xnonexistent?chain=eth", ctltestutil.Token{Bearer: bearer}).Get()
+	s.AssertError(resp, 404, "not_found", "address not found")
 }
 
 func (s *AddressesControllerTestSuite) TestList_User_Addresses() {

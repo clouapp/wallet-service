@@ -104,7 +104,9 @@ func (s *feeEstimateSuite) TestRequires_Bearer_Token() {
 	accountID, _, _ := ctltestutil.SetupAPIAuth(s.T(), false)
 	walletID := s.seedWallet(accountID)
 
-	s.get(feeEstimatePath(walletID, nil), "", 401)
+	body := s.get(feeEstimatePath(walletID, nil), "", 401)
+	s.Equal("unauthorized", feeEstimateErrorCode(body))
+	s.Equal("missing bearer token", feeEstimateErrorMessage(body))
 }
 
 func (s *feeEstimateSuite) TestOther_Accounts_WalletIsNotFound() {

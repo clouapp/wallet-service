@@ -103,7 +103,7 @@ func (s *PlatformUserListTestSuite) TestA_Member_CannotListPlatformUsers() {
 	s.AssertError(resp, 403, responses.CodeForbidden, "you do not have permission to view users")
 
 	anonymous := s.Get("/v1/platform/users", support.Session{})
-	anonymous.AssertUnauthorized()
+	s.AssertError(anonymous, 401, "unauthorized", "missing or malformed bearer token")
 }
 
 func (s *PlatformUserListTestSuite) grantPlatformAdmin(userID uuid.UUID) {

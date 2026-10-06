@@ -211,7 +211,7 @@ func (s *AccountActivityTestSuite) TestPlatform_Feature_WriteUsesANullAccount() 
 
 	outsider := s.loginUser("owner", accountID)
 	denied := s.get(outsider.token, "/v1/platform/activity")
-	denied.AssertForbidden()
+	s.AssertError(denied, 403, "forbidden", "you do not have permission to view platform activity")
 }
 
 func (s *AccountActivityTestSuite) TestShow_Matches_TheListItem() {
@@ -571,6 +571,9 @@ func (s *AccountActivityTestSuite) writeActivity(method, token string, accountID
 		return
 	}
 	resp.AssertStatus(status)
+	content, err := resp.Content()
+	s.Require().NoError(err)
+	s.Contains(content, "404 page not found")
 }
 
 func (s *AccountActivityTestSuite) pageText(page activityPage) string {

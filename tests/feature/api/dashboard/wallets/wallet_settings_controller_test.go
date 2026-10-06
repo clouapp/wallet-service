@@ -131,7 +131,8 @@ func (s *WalletSettingsTestSuite) TestInvalid_Fields_AreRefusedWithoutWriting() 
 		s.Require().NoError(err)
 		s.Contains(content, `"errors"`, body)
 	}
-	s.patch(s.ownerToken, wallet.ID, `{}`).AssertStatus(400)
+	empty := s.patch(s.ownerToken, wallet.ID, `{}`)
+	s.AssertError(empty, 400, "invalid_request", "no settings to update")
 	s.False(s.stored(wallet.ID).FeeMultiplier.Valid)
 }
 
@@ -143,21 +144,31 @@ func (s *WalletSettingsTestSuite) TestChain_Rules_ForFeeSettings() {
 	s.Require().NotNil(stored.FeeRateMax)
 	s.Equal(2, *stored.FeeRateMin)
 	s.Equal(40, *stored.FeeRateMax)
-	s.patch(s.ownerToken, btc.ID, `{"fee_rate_min": 41}`).AssertStatus(422)
+	tooHigh := s.patch(s.ownerToken, btc.ID, `{"fee_rate_min": 41}`)
+	s.AssertError(tooHigh, 422, "validation_failed", "validation failed")
+	tooHighBody, err := tooHigh.Content()
+	s.Require().NoError(err)
+	s.Contains(tooHighBody, "fee_rate_min must not exceed fee_rate_max: 41 > 40")
 
 	sol := s.wallet(models.ChainSOL)
-	s.patch(s.ownerToken, sol.ID, `{"fee_multiplier": 2}`).AssertStatus(422)
+	flat := s.patch(s.ownerToken, sol.ID, `{"fee_multiplier": 2}`)
+	s.AssertError(flat, 422, "validation_failed", "validation failed")
+	flatBody, err := flat.Content()
+	s.Require().NoError(err)
+	s.Contains(flatBody, "does not apply to solana wallets (flat network fee)")
 }
 
 func (s *WalletSettingsTestSuite) TestViewers_Cannot_ChangeSettings() {
 	wallet := s.wallet(models.ChainBase)
-	s.patch(s.viewerToken, wallet.ID, `{"fee_multiplier": 2}`).AssertStatus(403)
+	denied := s.patch(s.viewerToken, wallet.ID, `{"fee_multiplier": 2}`)
+	s.AssertError(denied, 403, "forbidden", "only wallet/account owners and admins may update wallet settings")
 	s.False(s.stored(wallet.ID).FeeMultiplier.Valid)
 }
 
 func (s *WalletSettingsTestSuite) TestOther_Accounts_WalletsAreNotReachable() {
 	other := fixtures.InsertAccount(s.T(), "other")
 	foreign := fixtures.InsertWalletWithAccount(s.T(), models.ChainBase, &other.ID)
-	s.patch(s.ownerToken, foreign.ID, `{"fee_multiplier": 2}`).AssertStatus(403)
+	denied := s.patch(s.ownerToken, foreign.ID, `{"fee_multiplier": 2}`)
+	s.AssertError(denied, 403, "forbidden", "not a member of this wallet or its account")
 	s.False(s.stored(foreign.ID).FeeMultiplier.Valid)
 }

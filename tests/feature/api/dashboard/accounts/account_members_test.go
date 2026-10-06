@@ -294,7 +294,7 @@ func (s *AccountMembersTestSuite) TestInvite_Link_UsesTheFrontendURL() {
 	s.T().Setenv("APP_FRONTEND_URL", "")
 
 	missing := s.postInvite(owner.token, accountID, `{"email":"no-base@example.com","role":"user"}`)
-	missing.AssertStatus(500)
+	s.AssertError(missing, 500, "internal", "failed to create invite")
 	missingBody, err := missing.Content()
 	s.Require().NoError(err)
 	s.Contains(missingBody, "failed to create invite")
@@ -306,7 +306,7 @@ func (s *AccountMembersTestSuite) TestInvite_Link_UsesTheFrontendURL() {
 	s.Equal(int64(0), s.countActivity(`SELECT count(*) FROM account_activity WHERE action = 'member.invited' AND account_id = ?`, accountID))
 
 	unknown := s.postAccountUser(owner.token, accountID, `{"email":"no-base-user@example.com","role":"user"}`)
-	unknown.AssertStatus(500)
+	s.AssertError(unknown, 500, "internal", "failed to create invite")
 	unknownBody, err := unknown.Content()
 	s.Require().NoError(err)
 	s.Contains(unknownBody, "failed to create invite")
@@ -319,7 +319,7 @@ func (s *AccountMembersTestSuite) TestInvite_Link_UsesTheFrontendURL() {
 	const storedHash = "resend-without-base-digest"
 	inviteID := s.insertOpenInvite(accountID, owner.id, "held@example.com", models.AccountRoleUser, storedHash)
 	resent := s.postResend(owner.token, accountID, inviteID)
-	resent.AssertStatus(500)
+	s.AssertError(resent, 500, "internal", "failed to create invite")
 	resentBody, err := resent.Content()
 	s.Require().NoError(err)
 	s.Contains(resentBody, "failed to resend invite")
@@ -514,7 +514,8 @@ func (s *AccountMembersTestSuite) TestSuspend_Keeps_MintedTokensAndBlocksMembers
 	s.Equal(int64(1), s.tokenCount(accountID, member.id))
 	s.Equal(int64(1), s.tokenCount(accountID, owner.id))
 
-	s.getAccount(member.token, accountID).AssertForbidden()
+	denied := s.getAccount(member.token, accountID)
+	s.AssertError(denied, 403, "forbidden", "not a member of this account")
 	s.getAccount(owner.token, accountID).AssertOk()
 }
 
@@ -585,7 +586,8 @@ func (s *AccountMembersTestSuite) TestRemove_Revokes_TokensCreatedByTheMember() 
 
 	s.Equal(int64(0), s.tokenCount(accountID, member.id))
 	s.Equal(int64(1), s.tokenCount(accountID, owner.id))
-	s.getAccount(member.token, accountID).AssertForbidden()
+	denied := s.getAccount(member.token, accountID)
+	s.AssertError(denied, 403, "forbidden", "not a member of this account")
 }
 
 func (s *AccountMembersTestSuite) TestResend_Invite_RotatesTheTokenForUsersWrite() {
@@ -614,14 +616,14 @@ func (s *AccountMembersTestSuite) TestResend_Invite_RotatesTheTokenForUsersWrite
 	s.NotContains(missingBody, `"message":"forbidden"`)
 
 	invalidID := s.Post("/v1/accounts/"+accountID.String()+"/invites/not-a-uuid/resend", support.Session{AccessToken: owner.token}, "")
-	invalidID.AssertStatus(400)
+	s.AssertError(invalidID, 400, "invalid_request", "invalid invite id")
 
 	unknown := s.postResend(owner.token, accountID, uuid.New())
 	unknown.AssertNotFound()
 	s.AssertError(unknown, 404, "not_found", "invite is invalid or expired")
 
 	other := s.postResend(owner.token, accountID, otherInviteID)
-	other.AssertNotFound()
+	s.AssertError(other, 404, "not_found", "invite is invalid or expired")
 	s.Equal(otherHash, s.inviteTokenHash(otherInviteID))
 
 	resent := s.postResend(owner.token, accountID, inviteID)
@@ -636,7 +638,7 @@ func (s *AccountMembersTestSuite) TestResend_Invite_RotatesTheTokenForUsersWrite
 	s.Equal(int64(0), s.countActivity(`SELECT count(*) FROM account_activity WHERE action = 'member.invited' AND account_id = ?`, accountID))
 
 	preview := s.Get("/v1/auth/invites/"+rawToken, support.Session{})
-	preview.AssertNotFound()
+	s.AssertError(preview, 404, "not_found", "invite is invalid or expired")
 
 	again := s.postResend(admin.token, accountID, inviteID)
 	s.assertInviteAccepted(again, "held-auditor@example.com", models.AccountRoleAuditor)
@@ -647,7 +649,7 @@ func (s *AccountMembersTestSuite) TestResend_Invite_RotatesTheTokenForUsersWrite
 	s.Require().NoError(err)
 	acceptedHash := s.inviteTokenHash(inviteID)
 	accepted := s.postResend(owner.token, accountID, inviteID)
-	accepted.AssertNotFound()
+	s.AssertError(accepted, 404, "not_found", "invite is invalid or expired")
 	s.Equal(acceptedHash, s.inviteTokenHash(inviteID))
 }
 
@@ -679,14 +681,14 @@ func (s *AccountMembersTestSuite) TestDelete_Invite_RevokesForUsersWrite() {
 	s.NotContains(missingBody, `"message":"forbidden"`)
 
 	invalidID := s.Delete("/v1/accounts/"+accountID.String()+"/invites/not-a-uuid", support.Session{AccessToken: owner.token}, nil)
-	invalidID.AssertStatus(400)
+	s.AssertError(invalidID, 400, "invalid_request", "invalid invite id")
 
 	unknown := s.deleteInvite(owner.token, accountID, uuid.New())
 	unknown.AssertNotFound()
 	s.AssertError(unknown, 404, "not_found", "invite is invalid or expired")
 
 	other := s.deleteInvite(owner.token, accountID, otherInviteID)
-	other.AssertNotFound()
+	s.AssertError(other, 404, "not_found", "invite is invalid or expired")
 	s.Equal(otherHash, s.inviteTokenHash(otherInviteID))
 	s.Equal(int64(1), s.countActivity(`SELECT count(*) FROM account_invites WHERE id = ? AND revoked_at IS NULL`, otherInviteID))
 
@@ -705,7 +707,7 @@ func (s *AccountMembersTestSuite) TestDelete_Invite_RevokesForUsersWrite() {
 	s.NotZero(revokedAt)
 
 	preview := s.Get("/v1/auth/invites/"+rawToken, support.Session{})
-	preview.AssertNotFound()
+	s.AssertError(preview, 404, "not_found", "invite is invalid or expired")
 
 	props := s.activityText(
 		`SELECT properties::text FROM activity_log WHERE subject_type = 'account_invite' AND subject_id = ? AND event = 'updated'`,
@@ -724,7 +726,7 @@ func (s *AccountMembersTestSuite) TestDelete_Invite_RevokesForUsersWrite() {
 	s.Equal(int64(0), s.countActivity(`SELECT count(*) FROM account_activity WHERE action = 'member.invited' AND account_id = ?`, accountID))
 
 	again := s.deleteInvite(admin.token, accountID, inviteID)
-	again.AssertNotFound()
+	s.AssertError(again, 404, "not_found", "invite is invalid or expired")
 	s.Equal(revokedAt, s.countActivity(`SELECT EXTRACT(EPOCH FROM revoked_at)::bigint FROM account_invites WHERE id = ?`, inviteID))
 	s.Equal(storedHash, s.inviteTokenHash(inviteID))
 	s.Equal(int64(1), s.countActivity(`SELECT count(*) FROM activity_log WHERE subject_type = 'account_invite' AND subject_id = ? AND event = 'updated'`, inviteID.String()))
@@ -738,7 +740,7 @@ func (s *AccountMembersTestSuite) TestDelete_Invite_RevokesForUsersWrite() {
 	_, err = facades.Orm().Query().Exec(`UPDATE account_invites SET accepted_at = NOW() WHERE id = ?`, acceptedID)
 	s.Require().NoError(err)
 	accepted := s.deleteInvite(owner.token, accountID, acceptedID)
-	accepted.AssertNotFound()
+	s.AssertError(accepted, 404, "not_found", "invite is invalid or expired")
 	s.Equal("accepted-delete-digest", s.inviteTokenHash(acceptedID))
 	s.Equal(int64(1), s.countActivity(`SELECT count(*) FROM account_invites WHERE id = ? AND revoked_at IS NULL`, acceptedID))
 }
@@ -749,28 +751,16 @@ func (s *AccountMembersTestSuite) TestMissing_Account_ChildIs404BeforeUsersWrite
 	missing := uuid.New()
 
 	deleted := s.Delete("/v1/accounts/"+accountID.String()+"/users/"+missing.String(), support.Session{AccessToken: user.token}, nil)
-	deleted.AssertNotFound()
-	deletedBody, err := deleted.Content()
-	s.Require().NoError(err)
-	s.Contains(deletedBody, "member not found")
+	s.AssertError(deleted, 404, "not_found", "member not found")
 
 	revoked := s.Delete("/v1/accounts/"+accountID.String()+"/tokens/"+missing.String(), support.Session{AccessToken: user.token}, nil)
-	revoked.AssertNotFound()
-	revokedBody, err := revoked.Content()
-	s.Require().NoError(err)
-	s.Contains(revokedBody, "token not found")
+	s.AssertError(revoked, 404, "not_found", "token not found")
 
 	resent := s.postResend(user.token, accountID, missing)
-	resent.AssertNotFound()
-	resentBody, err := resent.Content()
-	s.Require().NoError(err)
-	s.Contains(resentBody, "invite is invalid or expired")
+	s.AssertError(resent, 404, "not_found", "invite is invalid or expired")
 
 	patched := s.patchMember(user.token, accountID, missing, `{"role":"admin"}`)
-	patched.AssertNotFound()
-	patchedBody, err := patched.Content()
-	s.Require().NoError(err)
-	s.Contains(patchedBody, "member not found")
+	s.AssertError(patched, 404, "not_found", "member not found")
 }
 
 func (s *AccountMembersTestSuite) deleteInvite(token string, accountID, inviteID uuid.UUID) contractstesting.Response {

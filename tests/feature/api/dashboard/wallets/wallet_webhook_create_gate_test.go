@@ -93,8 +93,7 @@ func (s *WalletWebhookCreateGateTestSuite) TestMissing_Wallet_WebhookIs404Before
 	s.assign(actor.id, wallet.ID, models.WalletRoleViewer)
 
 	resp := s.deleteWebhook(actor.token, account.ID, wallet.ID, uuid.New())
-	resp.AssertNotFound()
-	s.Contains(s.body(resp), "webhook not found")
+	s.AssertError(resp, 404, "not_found", "webhook not found")
 }
 
 func (s *WalletWebhookCreateGateTestSuite) TestWallet_Webhook_DeleteFollowsTheLoadedRoles() {

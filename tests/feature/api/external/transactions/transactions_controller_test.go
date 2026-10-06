@@ -148,16 +148,16 @@ func (s *TransactionsControllerTestSuite) TestGet_Transaction_NotFound() {
 	testutil.SeededTestDB(s.T())
 	_, bearer, _ := ctltestutil.SetupAPIAuth(s.T(), false)
 
-	s.External("/api/v1/transactions/"+uuid.NewString(), ctltestutil.Token{Bearer: bearer}).Get().
-		AssertNotFound()
+	resp := s.External("/api/v1/transactions/"+uuid.NewString(), ctltestutil.Token{Bearer: bearer}).Get()
+	s.AssertError(resp, 404, "not_found", "transaction not found")
 }
 
 func (s *TransactionsControllerTestSuite) TestGet_Transaction_InvalidUUID() {
 	testutil.SeededTestDB(s.T())
 	_, bearer, _ := ctltestutil.SetupAPIAuth(s.T(), false)
 
-	s.External("/api/v1/transactions/not-a-uuid", ctltestutil.Token{Bearer: bearer}).Get().
-		AssertBadRequest()
+	resp := s.External("/api/v1/transactions/not-a-uuid", ctltestutil.Token{Bearer: bearer}).Get()
+	s.AssertError(resp, 400, "invalid_request", "invalid tx id")
 }
 
 func (s *TransactionsControllerTestSuite) TestGet_Transaction_Success() {

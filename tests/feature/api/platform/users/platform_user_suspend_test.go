@@ -61,7 +61,7 @@ func (s *PlatformUserSuspendTestSuite) TestA_Platform_AdminSuspendsAndTheNextReq
 	s.Empty(loginBody.AccessToken)
 
 	refreshResp, refreshBody := s.refresh(victimSession.RefreshToken)
-	refreshResp.AssertUnauthorized()
+	s.AssertError(refreshResp, 401, "unauthorized", "invalid or expired refresh token")
 	s.Empty(refreshBody.AccessToken)
 
 	accountID := s.seedAccount()
@@ -109,7 +109,7 @@ func (s *PlatformUserSuspendTestSuite) TestA_Platform_AdminSuspendsAndTheNextReq
 
 	restored := s.authedPost(adminSession.AccessToken, "/v1/platform/users/"+victim.ID.String()+"/reactivate", "")
 	restored.AssertOk()
-	s.getMe(victimSession.AccessToken).AssertUnauthorized()
+	s.assertSessionRevoked(s.getMe(victimSession.AccessToken))
 	signedIn := s.signIn(victim.Email)
 	s.getMe(signedIn.AccessToken).AssertOk()
 	s.Equal(int64(1), s.count(
@@ -130,7 +130,7 @@ func (s *PlatformUserSuspendTestSuite) TestA_Member_CannotSuspendAPlatformUser()
 	s.Equal(int64(0), s.count(`SELECT count(*) FROM account_activity WHERE action = 'user.suspended'`))
 
 	missing := s.authedPost(session.AccessToken, "/v1/platform/users/"+uuid.New().String()+"/reactivate", "")
-	missing.AssertForbidden()
+	s.AssertError(missing, 403, responses.CodeForbidden, "you do not have permission to suspend users")
 }
 
 func (s *PlatformUserSuspendTestSuite) TestAn_Unknown_UserIsNotFoundForAPlatformAdmin() {
@@ -143,7 +143,7 @@ func (s *PlatformUserSuspendTestSuite) TestAn_Unknown_UserIsNotFoundForAPlatform
 	s.AssertError(resp, 404, responses.CodeNotFound, "user not found")
 
 	invalid := s.authedPost(session.AccessToken, "/v1/platform/users/not-a-uuid/suspend", "")
-	invalid.AssertBadRequest()
+	s.AssertError(invalid, 400, "invalid_request", "invalid user id")
 }
 
 func (s *PlatformUserSuspendTestSuite) assertSuspended(resp contractstesting.Response) {

@@ -140,7 +140,7 @@ func (s *PlatformUserMFATestSuite) TestA_Member_CannotResetPlatformMFA() {
 	s.assertSessionWorks(victimSession)
 
 	missing := s.authedDelete(session.AccessToken, "/v1/platform/users/"+uuid.New().String()+"/mfa")
-	missing.AssertForbidden()
+	s.AssertError(missing, 403, responses.CodeForbidden, "you do not have permission to reset user mfa")
 }
 
 func (s *PlatformUserMFATestSuite) TestAn_Unknown_UserIsNotFound() {
@@ -154,7 +154,7 @@ func (s *PlatformUserMFATestSuite) TestAn_Unknown_UserIsNotFound() {
 	s.Equal(int64(0), s.count(`SELECT count(*) FROM account_activity WHERE action = 'user.mfa_reset'`))
 
 	invalid := s.authedDelete(session.AccessToken, "/v1/platform/users/not-a-uuid/mfa")
-	invalid.AssertBadRequest()
+	s.AssertError(invalid, 400, "invalid_request", "invalid user id")
 }
 
 func (s *PlatformUserMFATestSuite) grantPlatformAdmin(userID uuid.UUID) {

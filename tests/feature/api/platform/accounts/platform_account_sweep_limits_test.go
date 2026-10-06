@@ -158,7 +158,7 @@ func (s *PlatformAccountSweepLimitsTestSuite) TestAnother_Group_AndAnUnknownAcco
 	s.Equal(int64(0), s.count(`SELECT count(*) FROM account_activity WHERE action = 'settings.updated'`))
 
 	missing := s.Put(s.groupPath(accountID, "account_sweep_limits"), support.Session{}, body)
-	missing.AssertUnauthorized()
+	s.AssertError(missing, 401, "unauthorized", "missing or malformed bearer token")
 }
 
 func (s *PlatformAccountSweepLimitsTestSuite) TestZero_Negative_AndANegativeCapLeaveTheRowUnchanged() {

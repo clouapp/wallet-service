@@ -9,6 +9,7 @@ import (
 	contractstesting "github.com/goravel/framework/contracts/testing/http"
 	"github.com/goravel/framework/facades"
 
+	"github.com/macrowallets/waas/app/http/responses"
 	"github.com/macrowallets/waas/app/services/settings"
 	"github.com/macrowallets/waas/tests/feature/support"
 	"github.com/macrowallets/waas/tests/feature/support/testutil"
@@ -134,7 +135,7 @@ func (s *PlatformPriceSettingsTestSuite) TestAn_Unknown_ProviderIsNotStored() {
 	refused := s.putRaw(session.AccessToken, "/v1/platform/settings/price_lookup", priceJSON(map[string]any{
 		"provider_order": []string{"coingecko", "kraken"},
 	}))
-	refused.AssertUnprocessableEntity()
+	s.AssertError(refused, 422, responses.CodeValidationFailed, "validation failed")
 	content, err := refused.Content()
 	s.Require().NoError(err)
 	if !strings.Contains(content, "must be one of") {
@@ -150,7 +151,10 @@ func (s *PlatformPriceSettingsTestSuite) TestAn_Unknown_ProviderIsNotStored() {
 	again := s.putRaw(session.AccessToken, "/v1/platform/settings/price_lookup", priceJSON(map[string]any{
 		"provider_order": []string{"not-a-provider"},
 	}))
-	again.AssertUnprocessableEntity()
+	s.AssertError(again, 422, responses.CodeValidationFailed, "validation failed")
+	againContent, againErr := again.Content()
+	s.Require().NoError(againErr)
+	s.Contains(againContent, "must be one of")
 	s.Equal("coinapi", s.settingValue("price_lookup", "provider_order"))
 	s.Equal(int64(1), s.count(
 		`SELECT count(*) FROM account_activity WHERE action = 'settings.updated' AND target_id = 'price_lookup'`,
@@ -166,7 +170,7 @@ func (s *PlatformPriceSettingsTestSuite) TestA_Non_AdminIsForbidden() {
 			body = priceJSON(map[string]any{"enabled": true, "api_key": priceCoinAPIKeyFixture})
 		}
 		forbidden := s.putRaw(session.AccessToken, path, body)
-		forbidden.AssertForbidden()
+		s.AssertError(forbidden, 403, responses.CodeForbidden, "you do not have permission to update settings")
 		content, err := forbidden.Content()
 		s.Require().NoError(err)
 		if responseIncludesSecret(content, []string{priceCoinAPIKeyFixture}) {

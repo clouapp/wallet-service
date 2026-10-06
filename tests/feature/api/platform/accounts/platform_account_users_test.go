@@ -142,7 +142,7 @@ func (s *PlatformAccountUsersTestSuite) TestA_Member_CannotListAccountUsers() {
 	s.NotContains(raw, "Hidden Hana")
 
 	anonymous := s.Get("/v1/platform/accounts/"+accountID.String()+"/users", support.Session{})
-	anonymous.AssertUnauthorized()
+	s.AssertError(anonymous, 401, "unauthorized", "missing or malformed bearer token")
 }
 
 func (s *PlatformAccountUsersTestSuite) grantPlatformAdmin(userID uuid.UUID) {

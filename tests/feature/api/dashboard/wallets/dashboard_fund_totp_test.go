@@ -205,8 +205,7 @@ func (s *DashboardFundTOTPSuite) TestMissing_Whitelist_EntryStays404WhenTOTPIsOn
 
 	resp := s.deleteWhitelist(caller.token, account.ID, wallet.ID, uuid.New(), "")
 
-	resp.AssertNotFound()
-	s.Contains(s.body(resp), "whitelist entry not found")
+	s.AssertError(resp, 404, "not_found", "whitelist entry not found")
 	s.Equal(int64(0), s.totpCounter(caller.id))
 }
 
@@ -217,8 +216,7 @@ func (s *DashboardFundTOTPSuite) TestMissing_Webhook_Stays404WhenTOTPIsOn() {
 
 	resp := s.deleteWebhook(caller.token, account.ID, wallet.ID, uuid.New(), "")
 
-	resp.AssertNotFound()
-	s.Contains(s.body(resp), "webhook not found")
+	s.AssertError(resp, 404, "not_found", "webhook not found")
 	s.Equal(int64(0), s.totpCounter(caller.id))
 }
 
@@ -229,8 +227,7 @@ func (s *DashboardFundTOTPSuite) TestAccount_User_WhoIsNotAWalletMemberStays404(
 
 	resp := s.postWhitelist(caller.token, account.ID, wallet.ID, fundWhitelistAddress, label, s.currentCode(caller.secret))
 
-	resp.AssertNotFound()
-	s.Contains(s.body(resp), "wallet not found")
+	s.AssertError(resp, 404, "not_found", "wallet not found")
 	s.Equal(int64(0), s.whitelistCount(wallet.ID, label))
 	s.Equal(int64(0), s.totpCounter(caller.id))
 }
@@ -243,7 +240,7 @@ func (s *DashboardFundTOTPSuite) TestViewer_With_TOTPIsStillForbidden() {
 
 	resp := s.postWhitelist(caller.token, account.ID, wallet.ID, fundWhitelistAddress, label, s.currentCode(caller.secret))
 
-	resp.AssertStatus(403)
+	s.AssertError(resp, 403, "forbidden", "only wallet/account owners and admins may manage the whitelist")
 	s.Equal(int64(0), s.whitelistCount(wallet.ID, label))
 	s.Equal(int64(0), s.totpCounter(caller.id))
 }

@@ -185,7 +185,7 @@ func (s *contractGapsSuite) jsonBody(resp contractstesting.Response) map[string]
 func (s *contractGapsSuite) TestArchive_Wallet_Unauthenticated() {
 	walletID := s.seedWallet("archive auth")
 	resp := s.call(http.MethodPost, "/v1/wallets/"+walletID.String()+"/archive", "", "")
-	resp.AssertUnauthorized()
+	s.AssertError(resp, 401, "unauthorized", "missing or malformed bearer token")
 }
 
 func (s *contractGapsSuite) TestArchive_Wallet_ForbiddenForAccountUser() {
@@ -227,7 +227,7 @@ func (s *contractGapsSuite) TestWebhook_Test_Unauthenticated() {
 	walletID := s.seedWallet("webhook auth")
 	webhookID := s.seedWebhook(walletID, "http://127.0.0.1:1/hook", "secret")
 	resp := s.call(http.MethodPost, "/v1/wallets/"+walletID.String()+"/webhooks/"+webhookID.String()+"/test", "", "")
-	resp.AssertUnauthorized()
+	s.AssertError(resp, 401, "unauthorized", "missing or malformed bearer token")
 }
 
 func (s *contractGapsSuite) captureLogs() *bytes.Buffer {
@@ -300,7 +300,7 @@ func (s *contractGapsSuite) TestWebhook_Test_RefusedURLIsAnError() {
 
 func (s *contractGapsSuite) TestGet_Withdrawal_Unauthenticated() {
 	resp := s.call(http.MethodGet, "/v1/withdrawals/"+uuid.NewString(), "", "")
-	resp.AssertUnauthorized()
+	s.AssertError(resp, 401, "unauthorized", "missing or malformed bearer token")
 }
 
 func (s *contractGapsSuite) TestGet_Withdrawal_ReturnsTheAccountWithdrawal() {
@@ -323,7 +323,7 @@ func (s *contractGapsSuite) TestGet_Withdrawal_UnknownIDIsNotFound() {
 func (s *contractGapsSuite) TestAdd_WalletUser_Unauthenticated() {
 	walletID := s.seedWallet("wallet user auth")
 	resp := s.call(http.MethodPost, "/v1/wallets/"+walletID.String()+"/users", "", `{"user_id":"`+uuid.NewString()+`","roles":"view"}`)
-	resp.AssertUnauthorized()
+	s.AssertError(resp, 401, "unauthorized", "missing or malformed bearer token")
 }
 
 func (s *contractGapsSuite) TestAdd_WalletUser_AddsAnActiveAccountMember() {

@@ -213,7 +213,7 @@ func (s *PlatformWebhookDeliveryTestSuite) TestZero_Or_NegativeIsRejectedAndANon
 	s.grantPlatformAdmin(admin.ID)
 	adminSession := s.signIn(admin.Email)
 	adminMissing := s.putRaw(adminSession.AccessToken, "/v1/platform/settings/account_security", `{"require_2fa":true}`)
-	adminMissing.AssertNotFound()
+	s.AssertError(adminMissing, 404, responses.CodeNotFound, "settings group not found")
 
 	for _, body := range []string{
 		`{"max_attempts":0,"timeout_seconds":8}`,

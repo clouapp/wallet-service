@@ -12,6 +12,7 @@ import (
 
 	"github.com/macrowallets/waas/app/container"
 	appfacades "github.com/macrowallets/waas/app/facades"
+	"github.com/macrowallets/waas/app/http/responses"
 	"github.com/macrowallets/waas/app/mails"
 	"github.com/macrowallets/waas/app/services/settings"
 	"github.com/macrowallets/waas/tests/feature/support"
@@ -139,7 +140,11 @@ func (s *PlatformMailSMTPTestSuite) TestA_Platform_AdminStoresASealedPasswordThe
 	s.Equal(int64(1), s.count(`SELECT count(*) FROM account_activity WHERE action = 'settings.updated' AND target_id = 'mail_smtp'`))
 
 	moved := s.putRaw(session.AccessToken, "/v1/platform/settings/mail_smtp", `{"host":"127.0.0.2"}`)
-	moved.AssertUnprocessableEntity()
+	s.AssertError(moved, 422, responses.CodeValidationFailed, "validation failed")
+	movedContent, err := moved.Content()
+	s.Require().NoError(err)
+	s.Contains(movedContent, `"password"`)
+	s.Contains(movedContent, "must be set when host changes")
 	s.Equal("127.0.0.1", s.mailValue("host"))
 	if s.mailValue("password") != sealed {
 		s.Fail("a destination change without the password replaced the secret")
@@ -192,7 +197,7 @@ func (s *PlatformMailSMTPTestSuite) TestA_Non_AdminIsForbidden() {
 	session := s.signIn(member.Email)
 	forbidden := s.putRaw(session.AccessToken, "/v1/platform/settings/mail_smtp",
 		`{"host":"127.0.0.1","port":1,"encryption":"starttls","username":"mailer","password":"`+mailSMTPFixture+`"}`)
-	forbidden.AssertForbidden()
+	s.AssertError(forbidden, 403, responses.CodeForbidden, "you do not have permission to update settings")
 	content, err := forbidden.Content()
 	s.Require().NoError(err)
 	if strings.Contains(content, mailSMTPFixture) || strings.Contains(content, "enc:v1:") {

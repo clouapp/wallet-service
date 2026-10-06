@@ -25,56 +25,56 @@ func TestAccount_Controller_Suite(t *testing.T) {
 func (s *AccountControllerTestSuite) TestCreate_Account_Unauthenticated() {
 	body := `{"name":"My Account"}`
 	resp := s.Post("/v1/accounts", support.Session{}, body)
-	resp.AssertStatus(401)
+	s.AssertError(resp, 401, "unauthorized", "missing or malformed bearer token")
 }
 
 // TestGetAccount_Unauthenticated returns 401 without a bearer token.
 func (s *AccountControllerTestSuite) TestGet_Account_Unauthenticated() {
 	resp := s.Get("/v1/accounts/00000000-0000-0000-0000-000000000001", support.Session{})
 	// SessionAuth will reject before AccountContext runs
-	resp.AssertStatus(401)
+	s.AssertError(resp, 401, "unauthorized", "missing or malformed bearer token")
 }
 
 // TestUpdateAccount_Unauthenticated returns 401 without a bearer token.
 func (s *AccountControllerTestSuite) TestUpdate_Account_Unauthenticated() {
 	body := `{"name":"New Name"}`
 	resp := s.Patch("/v1/accounts/00000000-0000-0000-0000-000000000001", support.Session{}, body)
-	resp.AssertStatus(401)
+	s.AssertError(resp, 401, "unauthorized", "missing or malformed bearer token")
 }
 
 // TestFreezeAccount_Unauthenticated returns 401 without a bearer token.
 func (s *AccountControllerTestSuite) TestFreeze_Account_Unauthenticated() {
 	resp := s.Post("/v1/accounts/00000000-0000-0000-0000-000000000001/freeze", support.Session{}, nil)
-	resp.AssertStatus(401)
+	s.AssertError(resp, 401, "unauthorized", "missing or malformed bearer token")
 }
 
 // TestArchiveAccount_Unauthenticated returns 401 without a bearer token.
 func (s *AccountControllerTestSuite) TestArchive_Account_Unauthenticated() {
 	resp := s.Post("/v1/accounts/00000000-0000-0000-0000-000000000001/archive", support.Session{}, nil)
-	resp.AssertStatus(401)
+	s.AssertError(resp, 401, "unauthorized", "missing or malformed bearer token")
 }
 
 // TestUpdateAccountUser_Unauthenticated returns 401 without a bearer token.
 func (s *AccountControllerTestSuite) TestUpdate_AccountUser_Unauthenticated() {
 	body := `{"role":"admin"}`
 	resp := s.Patch("/v1/accounts/00000000-0000-0000-0000-000000000001/users/00000000-0000-0000-0000-000000000002", support.Session{}, body)
-	resp.AssertStatus(401)
+	s.AssertError(resp, 401, "unauthorized", "missing or malformed bearer token")
 }
 
 // TestListAccountInvites_Unauthenticated returns 401 without a bearer token.
 func (s *AccountControllerTestSuite) TestList_AccountInvites_Unauthenticated() {
 	resp := s.Get("/v1/accounts/00000000-0000-0000-0000-000000000001/invites", support.Session{})
-	resp.AssertStatus(401)
+	s.AssertError(resp, 401, "unauthorized", "missing or malformed bearer token")
 }
 
 // TestListAccountUsers_Unauthenticated returns 401 without a bearer token.
 func (s *AccountControllerTestSuite) TestList_AccountUsers_Unauthenticated() {
 	resp := s.Get("/v1/accounts/00000000-0000-0000-0000-000000000001/users", support.Session{})
-	resp.AssertStatus(401)
+	s.AssertError(resp, 401, "unauthorized", "missing or malformed bearer token")
 }
 
 // TestListAccountTokens_Unauthenticated returns 401 without a bearer token.
 func (s *AccountControllerTestSuite) TestList_AccountTokens_Unauthenticated() {
 	resp := s.Get("/v1/accounts/00000000-0000-0000-0000-000000000001/tokens", support.Session{})
-	resp.AssertStatus(401)
+	s.AssertError(resp, 401, "unauthorized", "missing or malformed bearer token")
 }

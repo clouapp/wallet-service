@@ -33,6 +33,7 @@ func TestProvider_Signature_RejectsABadSignatureBeforeParsing(t *testing.T) {
 	if recorder.Code != http.StatusUnauthorized {
 		t.Fatalf("status = %d, body %s", recorder.Code, recorder.Body.String())
 	}
+	assertErrorBody(t, recorder.Body.String(), "invalid_signature", "invalid webhook signature")
 	if next() {
 		t.Fatal("a bad signature reached the rest of the chain")
 	}
@@ -93,9 +94,7 @@ func TestProvider_Signature_FailsClosedWhenTheSubscriptionIsMissing(t *testing.T
 	if next() || provider.verifyCalls != 0 || provider.parseCalls != 0 {
 		t.Fatal("a missing subscription reached signature verification")
 	}
-	if !strings.Contains(recorder.Body.String(), "webhook subscription not found") {
-		t.Fatalf("body = %s", recorder.Body.String())
-	}
+	assertErrorBody(t, recorder.Body.String(), "not_found", "webhook subscription not found")
 	assertNoSecrets(t, recorder.Body.String()+logs.String())
 }
 
@@ -123,6 +122,7 @@ func TestProvider_Signature_DoesNotLogADecryptFailure(t *testing.T) {
 	if recorder.Code != http.StatusInternalServerError {
 		t.Fatalf("status = %d, body %s", recorder.Code, recorder.Body.String())
 	}
+	assertErrorBody(t, recorder.Body.String(), "internal", "configuration error")
 	if next() || provider.verifyCalls != 0 {
 		t.Fatal("decrypt failure reached signature verification")
 	}
@@ -186,6 +186,13 @@ func captureLogs(t *testing.T) *bytes.Buffer {
 	slog.SetDefault(slog.New(slog.NewTextHandler(&buf, nil)))
 	t.Cleanup(func() { slog.SetDefault(previous) })
 	return &buf
+}
+
+func assertErrorBody(t *testing.T, body, code, message string) {
+	t.Helper()
+	if !strings.Contains(body, `"code":"`+code+`"`) || !strings.Contains(body, `"message":"`+message+`"`) {
+		t.Fatalf("body = %s", body)
+	}
 }
 
 func assertNoSecrets(t *testing.T, text string) {

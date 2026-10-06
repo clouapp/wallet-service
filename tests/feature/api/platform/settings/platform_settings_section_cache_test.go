@@ -116,7 +116,7 @@ func (s *PlatformSettingsSectionCacheTestSuite) TestNon_Admin_OnAnUnknownSection
 	s.Equal("stale-"+key, facades.Cache().GetString(key))
 
 	missing := s.Post("/v1/platform/settings/sections/mail/cache", support.Session{}, "{}")
-	missing.AssertUnauthorized()
+	s.AssertError(missing, 401, "unauthorized", "missing or malformed bearer token")
 }
 
 func (s *PlatformSettingsSectionCacheTestSuite) grantPlatformAdmin(userID uuid.UUID) {

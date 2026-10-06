@@ -1081,6 +1081,9 @@ func (s *accountSettingsSuite) get(token string, accountID uuid.UUID, status int
 	resp.AssertStatus(status)
 	content, err := resp.Content()
 	s.Require().NoError(err)
+	if status != 200 {
+		s.AssertError(resp, status, "forbidden", settings.ErrViewForbidden.Error())
+	}
 	return content
 }
 

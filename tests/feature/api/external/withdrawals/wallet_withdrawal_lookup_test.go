@@ -172,7 +172,8 @@ func (s *walletWithdrawalLookupSuite) TestRequires_Bearer_Token() {
 	walletID := s.seedWallet(accountID)
 	withdrawalID := s.seedWithdrawal(walletID, accountID, "failed", nil, nil)
 
-	s.get(lookupPath(walletID, withdrawalID.String()), "", 401)
+	body := s.get(lookupPath(walletID, withdrawalID.String()), "", 401)
+	s.Equal(errorObject("unauthorized", "missing bearer token"), body["error"])
 }
 
 func (s *walletWithdrawalLookupSuite) TestRejects_Non_UUIDIdempotencyKey() {

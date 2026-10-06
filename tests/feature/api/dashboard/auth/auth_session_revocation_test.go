@@ -71,7 +71,7 @@ func (s *SessionRevocationTestSuite) TestChange_Password_EndsEverySessionAndRene
 	s.assertSessionRefused(caller)
 	s.assertSessionRefused(otherDevice)
 	s.assertSessionWorks(renewed)
-	s.loginWithPassword(user.Email, authTestPassword).AssertStatus(401)
+	s.AssertError(s.loginWithPassword(user.Email, authTestPassword), 401, "unauthorized", "invalid credentials")
 	s.loginWithPassword(user.Email, authTestNewPassword).AssertOk()
 }
 
@@ -82,7 +82,7 @@ func (s *SessionRevocationTestSuite) TestChange_Password_RefusesTheCallersTokenE
 	resp, renewed := s.changePassword(caller.AccessToken, authTestPassword, authTestNewPassword)
 
 	resp.AssertOk()
-	s.getMe(caller.AccessToken).AssertStatus(401)
+	s.assertSessionRevoked(s.getMe(caller.AccessToken))
 	s.getMe(renewed.AccessToken).AssertOk()
 }
 
@@ -92,7 +92,7 @@ func (s *SessionRevocationTestSuite) TestChange_Password_WithTheWrongPasswordRev
 
 	resp, _ := s.changePassword(caller.AccessToken, "not-the-password", authTestNewPassword)
 
-	resp.AssertStatus(401)
+	s.AssertError(resp, 401, "unauthorized", "current password is incorrect")
 	s.assertSessionWorks(caller)
 }
 
@@ -116,7 +116,7 @@ func (s *SessionRevocationTestSuite) TestReset_Password_RetiresAPendingTwoFactor
 	s.resetPassword(resetToken).AssertOk()
 
 	resp, body := s.verifyTwoFactor(challenge.ChallengeToken, s.currentCode(user.TOTPSecret), "")
-	resp.AssertStatus(401)
+	s.AssertError(resp, 401, "unauthorized", "invalid or expired partial token")
 	s.Empty(body.AccessToken)
 }
 
@@ -156,7 +156,7 @@ func (s *SessionRevocationTestSuite) TestRefresh_Token_CanOnlyBeRotatedOnce() {
 	first.AssertOk()
 	second, _ := s.refresh(session.RefreshToken)
 
-	second.AssertStatus(401)
+	s.AssertError(second, 401, "unauthorized", "invalid or expired refresh token")
 	s.NotEmpty(renewed.RefreshToken)
 }
 

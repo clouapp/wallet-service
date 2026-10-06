@@ -62,8 +62,11 @@ func (s *WebhooksControllerTestSuite) TestCreate_Webhook_MissingURL() {
 	_, bearer, _ := ctltestutil.SetupAPIAuth(s.T(), false)
 
 	body := `{"secret":"webhook_secret","events":["deposit.confirmed"]}`
-	s.External("/api/v1/webhooks", ctltestutil.Token{Bearer: bearer}).Post(body).
-		AssertStatus(422)
+	resp := s.External("/api/v1/webhooks", ctltestutil.Token{Bearer: bearer}).Post(body)
+	s.AssertError(resp, 422, "validation_failed", "validation failed")
+	content, err := resp.Content()
+	s.Require().NoError(err)
+	s.Contains(content, "url is required to not be empty")
 }
 
 // TestCreateWebhook_MissingSecret — validator requires secret; returns 422.
@@ -72,8 +75,11 @@ func (s *WebhooksControllerTestSuite) TestCreate_Webhook_MissingSecret() {
 	_, bearer, _ := ctltestutil.SetupAPIAuth(s.T(), false)
 
 	body := `{"url":"https://example.com/webhook","events":["deposit.confirmed"]}`
-	s.External("/api/v1/webhooks", ctltestutil.Token{Bearer: bearer}).Post(body).
-		AssertStatus(422)
+	resp := s.External("/api/v1/webhooks", ctltestutil.Token{Bearer: bearer}).Post(body)
+	s.AssertError(resp, 422, "validation_failed", "validation failed")
+	content, err := resp.Content()
+	s.Require().NoError(err)
+	s.Contains(content, "secret is required to not be empty")
 }
 
 // TestCreateWebhook_MissingEvents — validator requires events; returns 422.
@@ -82,8 +88,11 @@ func (s *WebhooksControllerTestSuite) TestCreate_Webhook_MissingEvents() {
 	_, bearer, _ := ctltestutil.SetupAPIAuth(s.T(), false)
 
 	body := `{"url":"https://example.com/webhook","secret":"webhook_secret"}`
-	s.External("/api/v1/webhooks", ctltestutil.Token{Bearer: bearer}).Post(body).
-		AssertStatus(422)
+	resp := s.External("/api/v1/webhooks", ctltestutil.Token{Bearer: bearer}).Post(body)
+	s.AssertError(resp, 422, "validation_failed", "validation failed")
+	content, err := resp.Content()
+	s.Require().NoError(err)
+	s.Contains(content, "events is required to not be empty")
 }
 
 func (s *WebhooksControllerTestSuite) TestList_Webhooks_Empty() {

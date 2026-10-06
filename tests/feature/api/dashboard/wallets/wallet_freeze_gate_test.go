@@ -82,7 +82,10 @@ func (s *WalletFreezeGateTestSuite) TestWallet_Freeze_FollowsTheLoadedRoles() {
 			s.assign(actor.id, ownWallet.ID, caller.walletRole)
 		}
 		invalid := s.freezeBody(actor.token, account.ID, ownWallet.ID, `{"frozen_until":"not-a-timestamp"}`)
-		invalid.AssertStatus(422)
+		s.AssertError(invalid, 422, "validation_failed", "validation failed")
+		invalidBody, err := invalid.Content()
+		s.Require().NoError(err)
+		s.Contains(invalidBody, "The frozen_until must be a valid RFC3339 timestamp.")
 		s.assertUnfrozen(ownWallet.ID)
 
 		resp := s.freezeBody(actor.token, account.ID, ownWallet.ID, `{}`)

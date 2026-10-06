@@ -135,7 +135,7 @@ func (s *PlatformSettingsIndexTestSuite) TestA_Non_AdminIsForbiddenAndAMissingSe
 	s.Equal(int64(0), s.count(`SELECT count(*) FROM settings WHERE account_id IS NULL`))
 
 	missing := s.Get("/v1/platform/settings", support.Session{})
-	missing.AssertUnauthorized()
+	s.AssertError(missing, 401, "unauthorized", "missing or malformed bearer token")
 }
 
 func (s *PlatformSettingsIndexTestSuite) grantPlatformAdmin(userID uuid.UUID) {

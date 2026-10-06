@@ -157,7 +157,7 @@ func (s *PlatformChainRPCTestSuite) TestA_Non_AdminIsForbiddenAnUnknownChainIsNo
 	s.grantPlatformAdmin(admin.ID)
 	adminSession := s.signIn(admin.Email)
 	adminMissing := s.patchRaw(adminSession.AccessToken, "/v1/platform/chains/no-such-chain/rpc", `{"rpcUrl":"https://dial.example"}`)
-	adminMissing.AssertNotFound()
+	s.AssertError(adminMissing, 404, responses.CodeNotFound, "chain not found")
 	s.Equal(int64(0), s.count(`SELECT count(*) FROM account_activity WHERE action = 'chains.updated'`))
 
 	empty := s.patchRaw(adminSession.AccessToken, "/v1/platform/chains/eth/rpc", `{"rpcUrl":""}`)

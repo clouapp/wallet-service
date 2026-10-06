@@ -66,12 +66,22 @@ func (s *apiScopeSuite) TestCreate_Wallet_RequiresWalletsCreate() {
 	})
 
 	creator := s.mint(`["wallets.create"]`)
-	s.post(creator, "/api/v1/wallets").AssertUnprocessableEntity()
+	created := s.post(creator, "/api/v1/wallets")
+	created.AssertUnprocessableEntity().AssertJson(map[string]any{
+		"error": map[string]any{"code": "validation_failed", "message": "validation failed"},
+	})
+	content, err := created.Content()
+	s.Require().NoError(err)
+	s.Contains(content, "Blockchain chain is required")
+	s.Contains(content, "Wallet label is required")
+	s.Contains(content, "Passphrase is required")
 }
 
 func (s *apiScopeSuite) TestMissing_Wallet_Is404BeforeTheScopeCheck() {
 	token := s.mint(`["transactions.read"]`)
-	s.get(token, "/api/v1/wallets/"+uuid.NewString()).AssertNotFound()
+	s.get(token, "/api/v1/wallets/"+uuid.NewString()).AssertNotFound().AssertJson(map[string]any{
+		"error": map[string]any{"code": "not_found", "message": "wallet not found"},
+	})
 }
 
 func (s *apiScopeSuite) TestMissing_Transaction_AndWebhookAre404BeforeTheScopeCheck() {
@@ -86,7 +96,9 @@ func (s *apiScopeSuite) TestMissing_Transaction_AndWebhookAre404BeforeTheScopeCh
 			"error": map[string]any{"code": "not_found", "message": "transaction not found"},
 		})
 	}
-	s.get(denied, "/api/v1/transactions/not-a-uuid").AssertBadRequest()
+	s.get(denied, "/api/v1/transactions/not-a-uuid").AssertBadRequest().AssertJson(map[string]any{
+		"error": map[string]any{"code": "invalid_request", "message": "invalid tx id"},
+	})
 
 	for _, token := range []string{denied, allowedHook} {
 		resp := s.patch(token, "/api/v1/webhooks/"+missing)
@@ -94,7 +106,9 @@ func (s *apiScopeSuite) TestMissing_Transaction_AndWebhookAre404BeforeTheScopeCh
 			"error": map[string]any{"code": "not_found", "message": "webhook not found"},
 		})
 	}
-	s.patch(denied, "/api/v1/webhooks/not-a-uuid").AssertBadRequest()
+	s.patch(denied, "/api/v1/webhooks/not-a-uuid").AssertBadRequest().AssertJson(map[string]any{
+		"error": map[string]any{"code": "invalid_request", "message": "invalid webhook id"},
+	})
 }
 
 func (s *apiScopeSuite) mint(permissions string) string {

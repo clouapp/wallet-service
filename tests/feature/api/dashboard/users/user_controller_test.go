@@ -203,7 +203,7 @@ func (s *UserControllerTestSuite) decodeList(resp contractstesting.Response) acc
 
 func (s *UserControllerTestSuite) TestList_MyAccounts_Unauthenticated() {
 	resp := s.Get(myAccountsPath, support.Session{})
-	resp.AssertStatus(401)
+	s.AssertError(resp, 401, "unauthorized", "missing or malformed bearer token")
 }
 
 func (s *UserControllerTestSuite) TestList_MyAccounts_EmptyList() {
@@ -301,25 +301,23 @@ func (s *UserControllerTestSuite) TestList_MyAccounts_OutOfRangeOffsetReturnsEmp
 
 func (s *UserControllerTestSuite) TestList_MyAccounts_RejectsInvalidQuery() {
 	testCases := []struct {
-		name  string
-		query url.Values
+		name    string
+		query   url.Values
+		message string
 	}{
-		{name: "zero limit", query: url.Values{"limit": {"0"}}},
-		{name: "negative limit", query: url.Values{"limit": {"-1"}}},
-		{name: "non numeric limit", query: url.Values{"limit": {"all"}}},
-		{name: "negative offset", query: url.Values{"offset": {"-20"}}},
-		{name: "non numeric offset", query: url.Values{"offset": {"x"}}},
-		{name: "unknown environment", query: url.Values{"environment": {"staging"}}},
-		{name: "search too long", query: url.Values{"search": {strings.Repeat("a", 101)}}},
+		{name: "zero limit", query: url.Values{"limit": {"0"}}, message: "limit must be a positive integer"},
+		{name: "negative limit", query: url.Values{"limit": {"-1"}}, message: "limit must be a positive integer"},
+		{name: "non numeric limit", query: url.Values{"limit": {"all"}}, message: "limit must be a positive integer"},
+		{name: "negative offset", query: url.Values{"offset": {"-20"}}, message: "offset must be a non-negative integer"},
+		{name: "non numeric offset", query: url.Values{"offset": {"x"}}, message: "offset must be a non-negative integer"},
+		{name: "unknown environment", query: url.Values{"environment": {"staging"}}, message: `environment must be "prod" or "test"`},
+		{name: "search too long", query: url.Values{"search": {strings.Repeat("a", 101)}}, message: "search must be at most 100 characters"},
 	}
 
 	for _, testCase := range testCases {
 		s.Run(testCase.name, func() {
 			resp := s.listAccounts(testCase.query)
-			resp.AssertStatus(400)
-			content, err := resp.Content()
-			s.Require().NoError(err)
-			s.Contains(content, `"error"`)
+			s.AssertError(resp, 400, "invalid_request", testCase.message)
 		})
 	}
 }

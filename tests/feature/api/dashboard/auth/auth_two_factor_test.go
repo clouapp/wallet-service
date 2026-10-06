@@ -47,7 +47,10 @@ func (s *TwoFactorLoginTestSuite) TestVerify_Rejects_TheOldPartialTokenField() {
 		`{"partial_token":%q,"code":"000000"}`, challenge.ChallengeToken,
 	))
 
-	resp.AssertStatus(422)
+	s.AssertError(resp, 422, "validation_failed", "validation failed")
+	content, err := resp.Content()
+	s.Require().NoError(err)
+	s.Contains(content, "challenge_token is required to not be empty")
 }
 
 func (s *TwoFactorLoginTestSuite) TestSession_Auth_RejectsThePartialToken() {
@@ -55,10 +58,10 @@ func (s *TwoFactorLoginTestSuite) TestSession_Auth_RejectsThePartialToken() {
 	_, body := s.loginAs(user.Email)
 	s.Require().NotEmpty(body.ChallengeToken)
 
-	s.getMe(body.ChallengeToken).AssertStatus(401)
+	s.AssertError(s.getMe(body.ChallengeToken), 401, "unauthorized", "invalid token")
 
 	resp := s.Get("/v1/wallets", support.Session{AccessToken: body.ChallengeToken, AccountID: user.ID.String()})
-	resp.AssertStatus(401)
+	s.AssertError(resp, 401, "unauthorized", "invalid token")
 }
 
 func (s *TwoFactorLoginTestSuite) TestValid_TOTP_CompletesTheLogin() {
@@ -81,7 +84,7 @@ func (s *TwoFactorLoginTestSuite) TestPartial_Token_IsSingleUse() {
 
 	resp, _ = s.verifyTwoFactor(challenge.ChallengeToken, "", user.RecoveryCodes[0])
 
-	resp.AssertStatus(401)
+	s.AssertError(resp, 401, "unauthorized", "invalid or expired partial token")
 }
 
 func (s *TwoFactorLoginTestSuite) TestReplayed_Code_IsRefused() {
@@ -94,7 +97,7 @@ func (s *TwoFactorLoginTestSuite) TestReplayed_Code_IsRefused() {
 	_, second := s.loginAs(user.Email)
 	resp, _ = s.verifyTwoFactor(second.ChallengeToken, code, "")
 
-	resp.AssertStatus(401)
+	s.AssertError(resp, 401, "unauthorized", "invalid 2FA code")
 }
 
 func (s *TwoFactorLoginTestSuite) TestRecovery_Code_StillWorksAndIsSingleUse() {
@@ -107,7 +110,7 @@ func (s *TwoFactorLoginTestSuite) TestRecovery_Code_StillWorksAndIsSingleUse() {
 
 	_, second := s.loginAs(user.Email)
 	resp, _ = s.verifyTwoFactor(second.ChallengeToken, "", user.RecoveryCodes[0])
-	resp.AssertStatus(401)
+	s.AssertError(resp, 401, "unauthorized", "invalid 2FA code")
 }
 
 func (s *TwoFactorLoginTestSuite) TestWrong_Codes_HitTheAttemptCap() {
@@ -116,11 +119,11 @@ func (s *TwoFactorLoginTestSuite) TestWrong_Codes_HitTheAttemptCap() {
 
 	for i := 0; i < 5; i++ {
 		resp, _ := s.verifyTwoFactor(challenge.ChallengeToken, "000000", "")
-		resp.AssertStatus(401)
+		s.AssertError(resp, 401, "unauthorized", "invalid 2FA code")
 	}
 	resp, _ := s.verifyTwoFactor(challenge.ChallengeToken, s.currentCode(user.TOTPSecret), "")
 
-	resp.AssertStatus(429)
+	s.AssertError(resp, 429, "too_many_requests", "too many 2FA attempts, sign in again later")
 }
 
 func (s *TwoFactorLoginTestSuite) TestVerify_Without_AnyCodeIs422() {
@@ -129,13 +132,13 @@ func (s *TwoFactorLoginTestSuite) TestVerify_Without_AnyCodeIs422() {
 
 	resp, _ := s.verifyTwoFactor(challenge.ChallengeToken, "", "")
 
-	resp.AssertStatus(422)
+	s.AssertError(resp, 422, "unprocessable", "code or recovery_code is required")
 }
 
 func (s *TwoFactorLoginTestSuite) TestUnknown_Partial_TokenIs401() {
 	resp, _ := s.verifyTwoFactor("not-a-challenge", "123456", "")
 
-	resp.AssertStatus(401)
+	s.AssertError(resp, 401, "unauthorized", "invalid or expired partial token")
 }
 
 func (s *TwoFactorLoginTestSuite) TestLogin_Without_TOTPStillReturnsASession() {

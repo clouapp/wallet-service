@@ -121,6 +121,9 @@ func (s *accountRolesSuite) get(token string, accountID uuid.UUID, status int, m
 		s.Require().Len(message, 1)
 		s.AssertError(resp, 403, "forbidden", message[0])
 	}
+	if status == 404 {
+		s.AssertError(resp, 404, "not_found", "account not found")
+	}
 	if status != 200 {
 		return roleListBody{}
 	}
@@ -194,6 +197,11 @@ func (s *accountRolesSuite) write(method, token string, accountID uuid.UUID, sta
 		return
 	}
 	resp.AssertStatus(status)
+	if status == http.StatusNotFound {
+		content, err := resp.Content()
+		s.Require().NoError(err)
+		s.Contains(content, "404 page not found")
+	}
 }
 
 type roleListBody struct {

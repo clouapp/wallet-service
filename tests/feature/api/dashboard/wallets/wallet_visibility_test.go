@@ -70,11 +70,9 @@ func (s *WalletVisibilityTestSuite) TestFlag_Off_HidesWalletsTheMemberDoesNotBel
 		s.Equal([]string{s.assigned.ID.String()}, ids)
 		s.get(caller.token, s.assigned.ID).AssertOk()
 		hidden := s.get(caller.token, s.hidden.ID)
-		hidden.AssertNotFound()
-		s.bodyContains(hidden, "wallet not found")
+		s.AssertError(hidden, 404, "not_found", "wallet not found")
 		settings := s.getPath(caller.token, "/v1/wallets/"+s.hidden.ID.String()+"/settings")
-		settings.AssertNotFound()
-		s.bodyContains(settings, "wallet not found")
+		s.AssertError(settings, 404, "not_found", "wallet not found")
 	}
 }
 

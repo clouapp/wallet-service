@@ -116,7 +116,11 @@ func (s *PlatformMailDeliveryTestSuite) TestA_Platform_AdminStoresTheFromHeaderT
 	s.Equal("Macro", s.mailValue("from_name"))
 
 	blankName := s.putRaw(session.AccessToken, "/v1/platform/settings/mail_delivery", `{"from_name":""}`)
-	blankName.AssertUnprocessableEntity()
+	s.AssertError(blankName, 422, responses.CodeValidationFailed, "validation failed")
+	blankContent, err := blankName.Content()
+	s.Require().NoError(err)
+	s.Contains(blankContent, `"from_name"`)
+	s.Contains(blankContent, "is required")
 	s.Equal("Macro", s.mailValue("from_name"))
 	s.Equal("from-header@example.test", s.mailValue("from_address"))
 	s.Equal(int64(1), s.count(`SELECT count(*) FROM account_activity WHERE action = 'settings.updated' AND target_id = 'mail_delivery'`))
@@ -162,7 +166,7 @@ func (s *PlatformMailDeliveryTestSuite) TestA_Non_AdminIsForbidden() {
 	session := s.signIn(member.Email)
 	forbidden := s.putRaw(session.AccessToken, "/v1/platform/settings/mail_delivery",
 		`{"driver":"smtp","from_address":"from-header@example.test","from_name":"Macro"}`)
-	forbidden.AssertForbidden()
+	s.AssertError(forbidden, 403, responses.CodeForbidden, "you do not have permission to update settings")
 	s.Equal(int64(0), s.count(`SELECT count(*) FROM settings WHERE account_id IS NULL AND "group" = 'mail_delivery'`))
 	s.Equal(int64(0), s.count(`SELECT count(*) FROM account_activity WHERE action = 'settings.updated'`))
 }

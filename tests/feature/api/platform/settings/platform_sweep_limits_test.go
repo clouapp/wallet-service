@@ -118,7 +118,7 @@ func (s *PlatformSweepLimitsTestSuite) TestZero_Negative_AndANegativeCapAreNotSt
 	memberSession := s.signIn(member.Email)
 	forbidden := s.putRaw(memberSession.AccessToken, "/v1/platform/settings/sweep_limits",
 		`{"max_addresses_evm":40,"max_addresses_solana":12,"max_addresses_bitcoin":30,"max_consolidate_requests_per_day":8}`)
-	forbidden.AssertForbidden()
+	s.AssertError(forbidden, 403, responses.CodeForbidden, "you do not have permission to update settings")
 	s.Equal(int64(0), s.platformSweepCount())
 
 	admin := s.seedUser(false)

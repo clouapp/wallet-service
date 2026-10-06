@@ -154,7 +154,7 @@ func (s *PlatformAccountSettingsGroupTestSuite) TestA_Non_AdminOnAKnownPairIsFor
 	s.AssertError(unknownGroup, 404, "not_found", "settings group not found")
 
 	platformOnly := s.getRaw(session.AccessToken, s.groupPath(accountID, "sweep_limits"))
-	platformOnly.AssertNotFound()
+	s.AssertError(platformOnly, 404, "not_found", "settings group not found")
 
 	before := s.count(`SELECT count(*) FROM account_activity`)
 	known := s.getRaw(session.AccessToken, s.groupPath(accountID, "account_sweep_limits"))
@@ -166,7 +166,7 @@ func (s *PlatformAccountSettingsGroupTestSuite) TestA_Non_AdminOnAKnownPairIsFor
 	))
 
 	missing := s.Get(s.groupPath(accountID, "account_sweep_limits"), support.Session{})
-	missing.AssertUnauthorized()
+	s.AssertError(missing, 401, "unauthorized", "missing or malformed bearer token")
 }
 
 func (s *PlatformAccountSettingsGroupTestSuite) grantPlatformAdmin(userID uuid.UUID) {

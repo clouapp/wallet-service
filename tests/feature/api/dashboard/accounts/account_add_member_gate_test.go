@@ -62,7 +62,10 @@ func (s *AccountAddMemberGateTestSuite) TestAdd_Member_ValidationStaysUnprocessa
 	before := s.accountMembershipCount(accountID)
 
 	resp := s.post(token, accountID, `{"email":"not-an-email","role":"user"}`)
-	resp.AssertStatus(422)
+	s.AssertError(resp, 422, "validation_failed", "validation failed")
+	content, err := resp.Content()
+	s.Require().NoError(err)
+	s.Contains(content, "email value is an invalid email address")
 	s.Equal(before, s.accountMembershipCount(accountID))
 }
 

@@ -112,7 +112,7 @@ func (s *WalletCanAddressTestSuite) TestUser_Still_CannotMoveFunds() {
 		"/v1/wallets/" + wallet.ID.String() + "/consolidate",
 	} {
 		resp := s.post(token, path, `{}`)
-		resp.AssertStatus(403)
+		s.AssertError(resp, 403, "forbidden", "insufficient role")
 		content, err := resp.Content()
 		s.Require().NoError(err)
 		s.NotContains(content, `"message":"forbidden"`, path)

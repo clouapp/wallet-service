@@ -62,7 +62,7 @@ func (s *PlatformUserSessionsTestSuite) TestA_Platform_AdminRevokesSessionsWitho
 
 	s.assertSessionRefused(session)
 	verify, body := s.verifyTwoFactor(challenge.ChallengeToken, "", victim.RecoveryCodes[0])
-	verify.AssertStatus(401)
+	s.AssertError(verify, 401, "unauthorized", "invalid or expired partial token")
 	s.Empty(body.AccessToken)
 
 	s.getMe(adminSession.AccessToken).AssertOk()
@@ -105,7 +105,7 @@ func (s *PlatformUserSessionsTestSuite) TestA_Member_CannotRevokePlatformSession
 	s.assertSessionWorks(victimSession)
 
 	missing := s.authedPost(session.AccessToken, "/v1/platform/users/"+uuid.New().String()+"/sessions/revoke", "")
-	missing.AssertForbidden()
+	s.AssertError(missing, 403, responses.CodeForbidden, "you do not have permission to revoke user sessions")
 }
 
 func (s *PlatformUserSessionsTestSuite) TestAn_Unknown_UserIsNotFound() {
@@ -119,7 +119,7 @@ func (s *PlatformUserSessionsTestSuite) TestAn_Unknown_UserIsNotFound() {
 	s.Equal(int64(0), s.count(`SELECT count(*) FROM account_activity WHERE action = 'user.sessions_revoked'`))
 
 	invalid := s.authedPost(session.AccessToken, "/v1/platform/users/not-a-uuid/sessions/revoke", "")
-	invalid.AssertBadRequest()
+	s.AssertError(invalid, 400, "invalid_request", "invalid user id")
 }
 
 func (s *PlatformUserSessionsTestSuite) grantPlatformAdmin(userID uuid.UUID) {

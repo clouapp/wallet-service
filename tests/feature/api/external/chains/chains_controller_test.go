@@ -31,7 +31,7 @@ func TestChains_Controller_Suite(t *testing.T) {
 // /v1/chains is guarded by SessionAuth; the handler never runs.
 func (s *ChainsControllerTestSuite) TestListChains_Dashboard_Unauthenticated() {
 	resp := s.Get("/v1/chains", ctltestutil.Session{})
-	resp.AssertStatus(401)
+	s.AssertError(resp, 401, "unauthorized", "missing or malformed bearer token")
 }
 
 // TestListChains_ExternalAPI_Success exercises the /api/v1/chains route with
@@ -56,5 +56,5 @@ func (s *ChainsControllerTestSuite) TestListChains_ExternalAPI_Success() {
 // TestListChains_ExternalAPI_Unauthenticated returns 401 when no bearer is present.
 func (s *ChainsControllerTestSuite) TestListChains_ExternalAPI_Unauthenticated() {
 	resp := s.External("/api/v1/chains", ctltestutil.Token{}).Get()
-	resp.AssertStatus(401)
+	s.AssertError(resp, 401, "unauthorized", "missing bearer token")
 }

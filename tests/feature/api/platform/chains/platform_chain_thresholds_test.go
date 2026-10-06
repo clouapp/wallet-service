@@ -134,7 +134,7 @@ func (s *PlatformChainThresholdTestSuite) TestA_Non_AdminIsForbiddenAndAnUnknown
 	s.grantPlatformAdmin(admin.ID)
 	adminSession := s.signIn(admin.Email)
 	adminMissing := s.patchRaw(adminSession.AccessToken, "/v1/platform/chains/no-such-chain", `{"gas_readiness_threshold_raw":"1"}`)
-	adminMissing.AssertNotFound()
+	s.AssertError(adminMissing, 404, responses.CodeNotFound, "chain not found")
 	s.Equal(int64(0), s.count(`SELECT count(*) FROM account_activity WHERE action = 'chains.updated'`))
 }
 

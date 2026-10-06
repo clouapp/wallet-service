@@ -43,8 +43,11 @@ func (s *WalletsControllerTestSuite) TestCreate_Wallet_MissingChain() {
 	_, bearer, _ := ctltestutil.SetupAPIAuth(s.T(), false)
 
 	body := `{"label":"No chain","passphrase":"test-passphrase-123"}`
-	s.External("/api/v1/wallets", ctltestutil.Token{Bearer: bearer}).Post(body).
-		AssertStatus(422)
+	resp := s.External("/api/v1/wallets", ctltestutil.Token{Bearer: bearer}).Post(body)
+	s.AssertError(resp, 422, "validation_failed", "validation failed")
+	content, err := resp.Content()
+	s.Require().NoError(err)
+	s.Contains(content, "Blockchain chain is required")
 }
 
 // TestCreateWallet_UnknownChain confirms the db_exists:chains,id rule rejects
@@ -54,8 +57,11 @@ func (s *WalletsControllerTestSuite) TestCreate_Wallet_UnknownChain() {
 	_, bearer, _ := ctltestutil.SetupAPIAuth(s.T(), false)
 
 	body := `{"chain":"dogecoin","label":"Doge","passphrase":"test-passphrase-123"}`
-	s.External("/api/v1/wallets", ctltestutil.Token{Bearer: bearer}).Post(body).
-		AssertStatus(422)
+	resp := s.External("/api/v1/wallets", ctltestutil.Token{Bearer: bearer}).Post(body)
+	s.AssertError(resp, 422, "validation_failed", "validation failed")
+	content, err := resp.Content()
+	s.Require().NoError(err)
+	s.Contains(content, "The specified chain is not supported")
 }
 
 func (s *WalletsControllerTestSuite) TestWalletsController_List_Wallets() {
@@ -131,8 +137,8 @@ func (s *WalletsControllerTestSuite) TestGet_Wallet_NotFound() {
 	testutil.SeededTestDB(s.T())
 	_, bearer, _ := ctltestutil.SetupAPIAuth(s.T(), false)
 
-	s.External("/api/v1/wallets/"+uuid.NewString(), ctltestutil.Token{Bearer: bearer}).Get().
-		AssertNotFound()
+	resp := s.External("/api/v1/wallets/"+uuid.NewString(), ctltestutil.Token{Bearer: bearer}).Get()
+	s.AssertError(resp, 404, "not_found", "wallet not found")
 }
 
 // TestGetWallet_InvalidUUID — the middleware intentionally returns 404 (not
@@ -143,8 +149,8 @@ func (s *WalletsControllerTestSuite) TestGet_Wallet_InvalidUUID() {
 	testutil.SeededTestDB(s.T())
 	_, bearer, _ := ctltestutil.SetupAPIAuth(s.T(), false)
 
-	s.External("/api/v1/wallets/not-a-uuid", ctltestutil.Token{Bearer: bearer}).Get().
-		AssertNotFound()
+	resp := s.External("/api/v1/wallets/not-a-uuid", ctltestutil.Token{Bearer: bearer}).Get()
+	s.AssertError(resp, 404, "not_found", "wallet not found")
 }
 
 // TestGetWallet_OtherAccount — IDOR guard: a wallet owned by account A is
@@ -156,6 +162,6 @@ func (s *WalletsControllerTestSuite) TestGet_Wallet_OtherAccount() {
 
 	walletA := seedAPIWalletForAccount(s.T(), accountA, "eth", "A-owned")
 
-	s.External("/api/v1/wallets/"+walletA, ctltestutil.Token{Bearer: bearerB}).Get().
-		AssertNotFound()
+	resp := s.External("/api/v1/wallets/"+walletA, ctltestutil.Token{Bearer: bearerB}).Get()
+	s.AssertError(resp, 404, "not_found", "wallet not found")
 }
