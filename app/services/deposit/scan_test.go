@@ -41,6 +41,20 @@ type concurrentChain struct {
 	calls    atomic.Int64
 	inFlight atomic.Int64
 	peak     atomic.Int64
+
+	chunkMu sync.Mutex
+	chunks  []*chunkGate
+}
+
+// chunkGate holds one parallel fetch wave until every block has entered, then
+// lets higher block numbers return first. An in-order deposit list then proves
+// the scan reordered the results.
+type chunkGate struct {
+	from, to uint64
+	need     int32
+	arrived  atomic.Int32
+	release  map[uint64]chan struct{}
+	left     map[uint64]chan struct{}
 }
 
 func newConcurrentChain(head uint64) *concurrentChain {
@@ -88,8 +102,8 @@ func (c *concurrentChain) ScanBlock(_ context.Context, blockNum uint64) ([]types
 			break
 		}
 	}
-	// Later blocks answer first, so an in-order result proves the reordering.
-	time.Sleep(time.Duration(blockNum%5) * time.Millisecond)
+	leave := c.waitTurn(blockNum)
+	defer leave()
 	if err := c.failAt[blockNum]; err != nil {
 		return nil, err
 	}
@@ -97,6 +111,71 @@ func (c *concurrentChain) ScanBlock(_ context.Context, blockNum uint64) ([]types
 		return nil, fmt.Errorf("rpc call getBlock %d: connection reset by peer", blockNum)
 	}
 	return c.transfers[blockNum], nil
+}
+
+// orderParallelFetches arms the same chunk boundaries scanRange uses, so each
+// wave overlaps and the later block returns before the earlier ones.
+func (c *concurrentChain) orderParallelFetches(from, to uint64, concurrency int) {
+	if concurrency < 1 || from == 0 || from > to {
+		return
+	}
+	c.chunkMu.Lock()
+	defer c.chunkMu.Unlock()
+	c.chunks = nil
+	for start := from; start <= to; {
+		end := to
+		if to-start >= uint64(concurrency) {
+			end = start + uint64(concurrency) - 1
+		}
+		c.chunks = append(c.chunks, newChunkGate(start, end))
+		if end == to {
+			return
+		}
+		start = end + 1
+	}
+}
+
+func newChunkGate(from, to uint64) *chunkGate {
+	gate := &chunkGate{
+		from: from, to: to, need: int32(to - from + 1),
+		release: map[uint64]chan struct{}{},
+		left:    map[uint64]chan struct{}{},
+	}
+	for blockNum := from; blockNum <= to; blockNum++ {
+		gate.release[blockNum] = make(chan struct{})
+		gate.left[blockNum] = make(chan struct{})
+	}
+	return gate
+}
+
+func (c *concurrentChain) waitTurn(blockNum uint64) func() {
+	c.chunkMu.Lock()
+	var gate *chunkGate
+	for _, candidate := range c.chunks {
+		if blockNum >= candidate.from && blockNum <= candidate.to {
+			gate = candidate
+			break
+		}
+	}
+	c.chunkMu.Unlock()
+	if gate == nil {
+		return func() {}
+	}
+	if gate.arrived.Add(1) == gate.need {
+		go releaseLaterBlocksFirst(gate)
+	}
+	<-gate.release[blockNum]
+	return func() { close(gate.left[blockNum]) }
+}
+
+func releaseLaterBlocksFirst(gate *chunkGate) {
+	for blockNum := gate.to; ; blockNum-- {
+		close(gate.release[blockNum])
+		<-gate.left[blockNum]
+		if blockNum == gate.from {
+			return
+		}
+	}
 }
 
 func (c *concurrentChain) depositTo(blockNum uint64, txHash, to string) {
@@ -450,13 +529,19 @@ func TestScan_Scan_Window(t *testing.T) {
 }
 
 func TestScan_Range_RecordsInBlockOrderWithParallelFetches(t *testing.T) {
-	f := newScanFixture(t, 1000, ScanOptions{BatchBlocks: 10, CatchUpBlocks: 100, Concurrency: 4})
+	const (
+		from        = 101
+		to          = 130
+		concurrency = 4
+	)
+	f := newScanFixture(t, 1000, ScanOptions{BatchBlocks: 10, CatchUpBlocks: 100, Concurrency: concurrency})
+	f.adapter.orderParallelFetches(from, to, concurrency)
 	f.adapter.depositTo(103, "tx-103", f.address)
 	f.adapter.depositTo(117, "tx-117", f.address)
 	f.adapter.depositTo(117, "tx-117-other", "someone-else")
 	f.adapter.depositTo(130, "tx-130", f.address)
 
-	scanned, err := f.svc.scanRange(context.Background(), scanTestChain, f.adapter, 101, 130)
+	scanned, err := f.svc.scanRange(context.Background(), scanTestChain, f.adapter, from, to)
 	if err != nil {
 		t.Fatal(err)
 	}

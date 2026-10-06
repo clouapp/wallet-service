@@ -12,18 +12,79 @@ import (
 	"github.com/macrowallets/waas/app/services/refresh"
 )
 
-type countingChecker struct{ runs atomic.Int32 }
+type countingChecker struct {
+	runs     atomic.Int32
+	progress chan struct{}
+}
 
-func (c *countingChecker) RunWithdrawalConfirmationCheck(context.Context) error {
+func (c *countingChecker) RunWithdrawalConfirmationCheck(ctx context.Context) error {
 	c.runs.Add(1)
+	notify(ctx, c.progress)
 	return nil
 }
 
-type countingDeliverer struct{ runs atomic.Int32 }
+type countingDeliverer struct {
+	runs     atomic.Int32
+	progress chan struct{}
+}
 
-func (d *countingDeliverer) DeliverPending(context.Context, int) (int, error) {
+func (d *countingDeliverer) DeliverPending(ctx context.Context, _ int) (int, error) {
 	d.runs.Add(1)
+	notify(ctx, d.progress)
 	return 0, nil
+}
+
+func progressChan() chan struct{} { return make(chan struct{}, 32) }
+
+func notify(ctx context.Context, progress chan struct{}) {
+	if progress == nil {
+		return
+	}
+	select {
+	case progress <- struct{}{}:
+	case <-ctx.Done():
+	}
+}
+
+// waitUntil returns when ready is true or the deadline passes. progress wakes
+// the wait; it does not decide the outcome.
+func waitUntil(t *testing.T, limit time.Duration, progress <-chan struct{}, ready func() bool) {
+	t.Helper()
+	if ready() {
+		return
+	}
+	timer := time.NewTimer(limit)
+	defer timer.Stop()
+	for {
+		select {
+		case <-progress:
+			if ready() {
+				return
+			}
+		case <-timer.C:
+			return
+		}
+	}
+}
+
+func waitUntilEither(t *testing.T, limit time.Duration, first, second <-chan struct{}, ready func() bool) {
+	t.Helper()
+	if ready() {
+		return
+	}
+	timer := time.NewTimer(limit)
+	defer timer.Stop()
+	for {
+		select {
+		case <-first:
+		case <-second:
+		case <-timer.C:
+			return
+		}
+		if ready() {
+			return
+		}
+	}
 }
 
 func TestStart_Rejects_InvalidConfiguration(t *testing.T) {
@@ -51,8 +112,8 @@ func TestStart_Rejects_InvalidConfiguration(t *testing.T) {
 func TestStart_Waits_OneIntervalThenRunsBothLoops(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	checker := &countingChecker{}
-	deliverer := &countingDeliverer{}
+	checker := &countingChecker{progress: progressChan()}
+	deliverer := &countingDeliverer{progress: progressChan()}
 	cfg := Config{ConfirmationInterval: MinInterval, DeliveryInterval: MinInterval, DeliverOutbox: true}
 
 	if _, err := Start(ctx, cfg, Workers{Checker: checker, Deliverer: deliverer}); err != nil {
@@ -64,10 +125,9 @@ func TestStart_Waits_OneIntervalThenRunsBothLoops(t *testing.T) {
 		t.Fatalf("workers must not run before the first interval, got checker=%d deliverer=%d", checker.runs.Load(), deliverer.runs.Load())
 	}
 
-	deadline := time.Now().Add(3 * MinInterval)
-	for time.Now().Before(deadline) && (checker.runs.Load() == 0 || deliverer.runs.Load() == 0) {
-		time.Sleep(50 * time.Millisecond)
-	}
+	waitUntilEither(t, 3*MinInterval, checker.progress, deliverer.progress, func() bool {
+		return checker.runs.Load() > 0 && deliverer.runs.Load() > 0
+	})
 	if checker.runs.Load() == 0 || deliverer.runs.Load() == 0 {
 		t.Fatalf("expected both loops to run, got checker=%d deliverer=%d", checker.runs.Load(), deliverer.runs.Load())
 	}
@@ -100,21 +160,26 @@ type recordingScanner struct {
 	err        error
 	syncErr    error
 	pendingErr error
+	progress   chan struct{}
 }
 
-func (s *recordingScanner) ScanLatestBlocks(_ context.Context, chainID string) error {
+func (s *recordingScanner) ScanLatestBlocks(ctx context.Context, chainID string) error {
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	s.chains = append(s.chains, chainID)
 	s.steps = append(s.steps, "scan:"+chainID)
-	return s.err
+	err := s.err
+	s.mu.Unlock()
+	notify(ctx, s.progress)
+	return err
 }
 
-func (s *recordingScanner) ReprocessDuePending(_ context.Context, chainID string) (int, error) {
+func (s *recordingScanner) ReprocessDuePending(ctx context.Context, chainID string) (int, error) {
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	s.steps = append(s.steps, "pending:"+chainID)
-	return 0, s.pendingErr
+	err := s.pendingErr
+	s.mu.Unlock()
+	notify(ctx, s.progress)
+	return 0, err
 }
 
 func (s *recordingScanner) recordedSteps() []string {
@@ -145,7 +210,7 @@ func (s *recordingScanner) cacheSyncs() []string {
 func TestStart_Syncs_AddressCachesBeforeTheFirstScan(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	scanner := &recordingScanner{syncErr: errors.New("redis down")}
+	scanner := &recordingScanner{syncErr: errors.New("redis down"), progress: progressChan()}
 	cfg := Config{ConfirmationInterval: time.Hour, DepositScanChains: []string{"sol", "eth", "btc"}, DepositScanInterval: MinInterval}
 
 	if _, err := Start(ctx, cfg, Workers{Checker: &countingChecker{}, Scanner: scanner}); err != nil {
@@ -158,10 +223,7 @@ func TestStart_Syncs_AddressCachesBeforeTheFirstScan(t *testing.T) {
 		t.Fatalf("no scan may run on start, got %v", got)
 	}
 
-	deadline := time.Now().Add(3 * MinInterval)
-	for time.Now().Before(deadline) && len(scanner.scanned()) < 3 {
-		time.Sleep(50 * time.Millisecond)
-	}
+	waitUntil(t, 3*MinInterval, scanner.progress, func() bool { return len(scanner.scanned()) >= 3 })
 	if got := scanner.scanned(); len(got) < 3 {
 		t.Fatalf("scans must keep running after a failed cache sync, got %v", got)
 	}
@@ -200,7 +262,7 @@ func TestStart_Rejects_InvalidDepositScanConfiguration(t *testing.T) {
 func TestStart_Scans_EveryConfiguredChainAndKeepsGoingAfterErrors(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	scanner := &recordingScanner{err: errors.New("rate limited")}
+	scanner := &recordingScanner{err: errors.New("rate limited"), progress: progressChan()}
 	chains := []string{"sol", "tsol"}
 	cfg := Config{ConfirmationInterval: time.Hour, DepositScanChains: chains, DepositScanInterval: MinInterval}
 
@@ -213,10 +275,7 @@ func TestStart_Scans_EveryConfiguredChainAndKeepsGoingAfterErrors(t *testing.T) 
 	if got := scanner.scanned(); len(got) != 0 {
 		t.Fatalf("scanner must not run before the first interval, got %v", got)
 	}
-	deadline := time.Now().Add(4 * MinInterval)
-	for time.Now().Before(deadline) && len(scanner.scanned()) < 4 {
-		time.Sleep(50 * time.Millisecond)
-	}
+	waitUntil(t, 4*MinInterval, scanner.progress, func() bool { return len(scanner.scanned()) >= 4 })
 	got := scanner.scanned()
 	if len(got) < 4 {
 		t.Fatalf("expected two rounds over both chains, got %v", got)
@@ -244,16 +303,13 @@ func TestStart_No_ScanWithoutChains(t *testing.T) {
 func TestStart_Reprocesses_PendingBlocksAfterEachChainScan(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	scanner := &recordingScanner{err: errors.New("rpc down"), pendingErr: errors.New("redis and file down")}
+	scanner := &recordingScanner{err: errors.New("rpc down"), pendingErr: errors.New("redis and file down"), progress: progressChan()}
 	cfg := Config{ConfirmationInterval: time.Hour, DepositScanChains: []string{"sol", "btc"}, DepositScanInterval: MinInterval}
 
 	if _, err := Start(ctx, cfg, Workers{Checker: &countingChecker{}, Scanner: scanner}); err != nil {
 		t.Fatalf("Start: %v", err)
 	}
-	deadline := time.Now().Add(4 * MinInterval)
-	for time.Now().Before(deadline) && len(scanner.recordedSteps()) < 8 {
-		time.Sleep(50 * time.Millisecond)
-	}
+	waitUntil(t, 4*MinInterval, scanner.progress, func() bool { return len(scanner.recordedSteps()) >= 8 })
 	got := scanner.recordedSteps()
 	want := []string{"scan:sol", "pending:sol", "scan:btc", "pending:btc"}
 	if len(got) < 8 {
@@ -266,17 +322,21 @@ func TestStart_Reprocesses_PendingBlocksAfterEachChainScan(t *testing.T) {
 	}
 }
 
-type countingBalances struct{ runs atomic.Int32 }
+type countingBalances struct {
+	runs     atomic.Int32
+	progress chan struct{}
+}
 
-func (b *countingBalances) RefreshAll(context.Context) (refresh.PassSummary, error) {
+func (b *countingBalances) RefreshAll(ctx context.Context) (refresh.PassSummary, error) {
 	b.runs.Add(1)
+	notify(ctx, b.progress)
 	return refresh.PassSummary{Refreshed: 1}, nil
 }
 
 func TestStart_Refreshes_BalancesOnItsInterval(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	balances := &countingBalances{}
+	balances := &countingBalances{progress: progressChan()}
 	cfg := Config{ConfirmationInterval: time.Hour, BalanceRefreshInterval: MinInterval}
 
 	if _, err := Start(ctx, cfg, Workers{Checker: &countingChecker{}, Balances: balances}); err != nil {
@@ -286,10 +346,7 @@ func TestStart_Refreshes_BalancesOnItsInterval(t *testing.T) {
 	if balances.runs.Load() != 0 {
 		t.Fatal("the balance refresh must wait one interval")
 	}
-	deadline := time.Now().Add(3 * MinInterval)
-	for time.Now().Before(deadline) && balances.runs.Load() < 2 {
-		time.Sleep(50 * time.Millisecond)
-	}
+	waitUntil(t, 3*MinInterval, balances.progress, func() bool { return balances.runs.Load() >= 2 })
 	if balances.runs.Load() < 2 {
 		t.Fatalf("expected repeated balance refreshes, got %d", balances.runs.Load())
 	}
@@ -365,7 +422,7 @@ func (s *recordingScanner) scansOf(chainID string) int {
 func TestStart_Scans_FastChainsInLoopsOfTheirOwn(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	scanner := &stuckScanner{recordingScanner: &recordingScanner{}, stuckChain: "sol", release: make(chan struct{})}
+	scanner := &stuckScanner{recordingScanner: &recordingScanner{progress: progressChan()}, stuckChain: "sol", release: make(chan struct{})}
 	defer close(scanner.release)
 	cfg := Config{ConfirmationInterval: time.Hour, DepositScanChains: []string{"sol", "eth", "arbitrum", "bsc"}, DepositScanInterval: MinInterval}
 
@@ -373,10 +430,9 @@ func TestStart_Scans_FastChainsInLoopsOfTheirOwn(t *testing.T) {
 		t.Fatalf("Start: %v", err)
 	}
 
-	deadline := time.Now().Add(5 * MinInterval)
-	for time.Now().Before(deadline) && (scanner.scansOf("arbitrum") < 2 || scanner.scansOf("bsc") < 2) {
-		time.Sleep(50 * time.Millisecond)
-	}
+	waitUntil(t, 5*MinInterval, scanner.progress, func() bool {
+		return scanner.scansOf("arbitrum") >= 2 && scanner.scansOf("bsc") >= 2
+	})
 	if scanner.scansOf("arbitrum") < 2 || scanner.scansOf("bsc") < 2 {
 		t.Fatalf("arbitrum and bsc must keep scanning while sol is stuck, got %v", scanner.scanned())
 	}

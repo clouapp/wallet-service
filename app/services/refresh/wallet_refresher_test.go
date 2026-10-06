@@ -47,14 +47,28 @@ type recordingBalances struct {
 	failures  map[string]error
 	inFlight  int
 	peak      int
+	// entered and release are set by the serialization test. Each refresh
+	// reports that it is inside the critical section and waits until release
+	// is closed, so overlap is visible without a sleep.
+	entered chan struct{}
+	release chan struct{}
 }
 
 func (b *recordingBalances) RefreshWallet(_ context.Context, wallet *models.Wallet) error {
 	b.mu.Lock()
 	b.inFlight++
 	b.peak = max(b.peak, b.inFlight)
+	entered, release := b.entered, b.release
 	b.mu.Unlock()
-	time.Sleep(time.Millisecond)
+
+	if entered != nil {
+		select {
+		case entered <- struct{}{}:
+		default:
+		}
+		<-release
+	}
+
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	b.inFlight--
@@ -243,24 +257,45 @@ func TestRefresh_UTX_OsKeepsTheChainRuleInTheService(t *testing.T) {
 
 func TestWallet_Refresher_SerializesRefreshes(t *testing.T) {
 	wallets := &fakeWalletStore{wallets: []models.Wallet{walletOn("eth", "a"), walletOn("eth", "b"), walletOn("eth", "c")}}
-	balances := &recordingBalances{}
+	release := make(chan struct{})
+	entered := make(chan struct{}, 1)
+	balances := &recordingBalances{entered: entered, release: release}
 	refresher, _ := newTestRefresher(t, balances, wallets, fakeChains{"eth"})
 
-	var wg sync.WaitGroup
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		_, _ = refresher.RefreshAll(context.Background())
-	}()
-	for _, wallet := range wallets.wallets {
-		wg.Add(1)
-		go func(id uuid.UUID) {
-			defer wg.Done()
-			_ = refresher.RefreshWalletByID(context.Background(), id)
-		}(wallet.ID)
+	const callers = 4
+	var ready, done sync.WaitGroup
+	start := make(chan struct{})
+	ready.Add(callers)
+	done.Add(callers)
+	launch := func(work func()) {
+		go func() {
+			defer done.Done()
+			ready.Done()
+			<-start
+			work()
+		}()
 	}
-	wg.Wait()
-	if balances.peak != 1 {
-		t.Fatalf("refreshes must never overlap, peak was %d", balances.peak)
+	launch(func() { _, _ = refresher.RefreshAll(context.Background()) })
+	for _, wallet := range wallets.wallets {
+		id := wallet.ID
+		launch(func() { _ = refresher.RefreshWalletByID(context.Background(), id) })
+	}
+	ready.Wait()
+	close(start)
+
+	<-entered
+	balances.mu.Lock()
+	peak := balances.peak
+	balances.mu.Unlock()
+	if peak != 1 {
+		t.Fatalf("refreshes must never overlap, peak was %d", peak)
+	}
+	close(release)
+	done.Wait()
+	balances.mu.Lock()
+	peak = balances.peak
+	balances.mu.Unlock()
+	if peak != 1 {
+		t.Fatalf("refreshes must never overlap, peak was %d", peak)
 	}
 }
