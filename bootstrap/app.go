@@ -8,6 +8,7 @@ import (
 	contractsfoundation "github.com/goravel/framework/contracts/foundation"
 	contractsconfiguration "github.com/goravel/framework/contracts/foundation/configuration"
 	"github.com/goravel/framework/contracts/queue"
+	goravelfacades "github.com/goravel/framework/facades"
 	"github.com/goravel/framework/foundation"
 
 	"github.com/macrowallets/waas/app/adapters/redis/pricecache"
@@ -106,13 +107,21 @@ func Boot() contractsfoundation.Application {
 			}
 		}).
 		WithRules(Rules).
-		WithConfig(config.Boot).
+		WithConfig(bootConfig).
 		WithMiddleware(func(h contractsconfiguration.Middleware) {
 			h.Use(middleware.GlobalChain(requestTimeout())...).
 				Recover(middleware.RecoverPanic)
 		}).
 		WithRouting(providers.RegisterRoutes).
 		Create()
+}
+
+// bootConfig loads configuration and then installs the redacting log handler.
+// WithConfig runs before service providers, which is the last moment a channel
+// can be rewritten: the framework caches handlers on first use.
+func bootConfig() {
+	config.Boot()
+	providers.InstallLogRedaction(appfacades.Config(), goravelfacades.App().Json())
 }
 
 // requestTimeout is http.request_timeout, the same key the gin driver used.
