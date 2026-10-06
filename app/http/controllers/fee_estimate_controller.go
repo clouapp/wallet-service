@@ -13,6 +13,7 @@ import (
 	"github.com/macrowallets/waas/app/http/requests"
 	"github.com/macrowallets/waas/app/http/responses"
 	"github.com/macrowallets/waas/app/models"
+	"github.com/macrowallets/waas/app/services/chain"
 	"github.com/macrowallets/waas/app/services/feeestimate"
 )
 
@@ -90,7 +91,7 @@ func feeEstimateErrorResponse(ctx http.Context, wallet *models.Wallet, err error
 	}
 	status := feeEstimateStatus(estimateErr.Kind)
 	if status >= http.StatusInternalServerError {
-		slog.Warn("fee estimate failed", "wallet_id", wallet.ID, "chain", wallet.Chain, "code", estimateErr.Code, "error_type", errType(err))
+		slog.Warn("fee estimate failed", "wallet_id", wallet.ID, "chain", wallet.Chain, "code", estimateErr.Code, "error_type", errType(err), "provider_cause", chain.CauseText(err))
 	}
 	message := estimateErr.Message
 	if strings.HasPrefix(message, "unknown asset ") {

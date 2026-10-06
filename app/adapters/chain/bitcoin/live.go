@@ -181,13 +181,10 @@ func (a *BitcoinLive) getBalanceREST(ctx context.Context, address string) (bal *
 		if httpclient.IsBuild(err) {
 			return nil, fmt.Errorf("build utxo request: %w", err)
 		}
-		if httpclient.IsRead(err) {
-			return nil, fmt.Errorf("read utxo response: %w", err)
-		}
-		return nil, fmt.Errorf("fetch utxos for %s: %w", address, err)
+		return nil, chain.Unavailable(fmt.Errorf("fetch utxos for %s: %w", address, err))
 	}
 	if resp.StatusCode != httpclient.StatusOK {
-		return nil, fmt.Errorf("utxo API returned %d: %s", resp.StatusCode, string(resp.Body))
+		return nil, chain.FromProviderHTTP(resp.StatusCode, httpclient.RedactURLText(string(resp.Body), url))
 	}
 
 	var utxos []struct {
@@ -242,13 +239,10 @@ func (a *BitcoinLive) getLatestBlockREST(ctx context.Context) (height uint64, er
 		if httpclient.IsBuild(err) {
 			return 0, fmt.Errorf("build block height request: %w", err)
 		}
-		if httpclient.IsRead(err) {
-			return 0, fmt.Errorf("read block height response: %w", err)
-		}
-		return 0, fmt.Errorf("fetch block height: %w", err)
+		return 0, chain.Unavailable(fmt.Errorf("fetch block height: %w", err))
 	}
 	if resp.StatusCode != httpclient.StatusOK {
-		return 0, fmt.Errorf("block height API returned %d: %s", resp.StatusCode, string(resp.Body))
+		return 0, chain.FromProviderHTTP(resp.StatusCode, httpclient.RedactURLText(string(resp.Body), url))
 	}
 
 	if err := json.Unmarshal(resp.Body, &height); err != nil {

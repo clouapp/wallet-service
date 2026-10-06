@@ -11,6 +11,7 @@ import (
 
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/services/blockheight"
+	"github.com/macrowallets/waas/app/services/chain"
 	"github.com/macrowallets/waas/pkg/httpclient"
 )
 
@@ -100,14 +101,11 @@ func (p *Provider) GetBlockHeight(ctx context.Context, chainID string) (height u
 		if httpclient.IsBuild(err) {
 			return 0, fmt.Errorf("etherscan: build request: %w", err)
 		}
-		if httpclient.IsRead(err) {
-			return 0, fmt.Errorf("etherscan: read body: %w", err)
-		}
-		return 0, fmt.Errorf("etherscan: http: %w", err)
+		return 0, chain.Unavailable(fmt.Errorf("etherscan: http: %w", err))
 	}
 
 	if resp.StatusCode != httpclient.StatusOK {
-		return 0, fmt.Errorf("etherscan: unexpected status %d: %s", resp.StatusCode, strings.TrimSpace(string(resp.Body)))
+		return 0, chain.FromProviderHTTP(resp.StatusCode, httpclient.RedactURLText(strings.TrimSpace(string(resp.Body)), reqURL))
 	}
 
 	var env etherscanBlockNumberResp
@@ -116,7 +114,7 @@ func (p *Provider) GetBlockHeight(ctx context.Context, chainID string) (height u
 	}
 
 	if env.Error != nil {
-		return 0, fmt.Errorf("etherscan: rpc error %d: %s", env.Error.Code, env.Error.Message)
+		return 0, chain.Wrap(chain.KindOrProvider(0, env.Error.Message), fmt.Errorf("etherscan: rpc error %d: %s", env.Error.Code, httpclient.RedactURLText(env.Error.Message, reqURL)))
 	}
 
 	result := strings.TrimSpace(env.Result)

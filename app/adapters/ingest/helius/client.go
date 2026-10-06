@@ -15,6 +15,7 @@ import (
 	"github.com/shopspring/decimal"
 
 	"github.com/macrowallets/waas/app/models"
+	"github.com/macrowallets/waas/app/services/chain"
 	"github.com/macrowallets/waas/app/services/ingest/providers"
 	"github.com/macrowallets/waas/pkg/httpclient"
 	"github.com/macrowallets/waas/pkg/numeric"
@@ -113,10 +114,10 @@ func (h *HeliusProvider) CreateWebhook(ctx context.Context, cfg providers.Provid
 		if httpclient.IsBuild(err) {
 			return nil, fmt.Errorf("helius: build create request: %w", err)
 		}
-		return nil, fmt.Errorf("helius: create webhook call: %w", err)
+		return nil, chain.Unavailable(fmt.Errorf("helius: create webhook call: %w", err))
 	}
 	if status != httpclient.StatusOK {
-		return nil, fmt.Errorf("helius create webhook: status %d: %s", status, respBody)
+		return nil, chain.FromProviderHTTP(status, string(respBody))
 	}
 
 	var result heliusCreateResp
@@ -153,10 +154,10 @@ func (h *HeliusProvider) SyncAddresses(ctx context.Context, webhookID string, al
 		if httpclient.IsBuild(err) {
 			return fmt.Errorf("helius: build get webhook request: %w", err)
 		}
-		return fmt.Errorf("helius: get webhook call: %w", err)
+		return chain.Unavailable(fmt.Errorf("helius: get webhook call: %w", err))
 	}
 	if getStatus != httpclient.StatusOK {
-		return fmt.Errorf("helius get webhook: status %d: %s", getStatus, getBody)
+		return chain.FromProviderHTTP(getStatus, string(getBody))
 	}
 
 	var current heliusCreateResp
@@ -188,10 +189,10 @@ func (h *HeliusProvider) SyncAddresses(ctx context.Context, webhookID string, al
 		if httpclient.IsBuild(err) {
 			return fmt.Errorf("helius: build put webhook request: %w", err)
 		}
-		return fmt.Errorf("helius: put webhook call: %w", err)
+		return chain.Unavailable(fmt.Errorf("helius: put webhook call: %w", err))
 	}
 	if putStatus != httpclient.StatusOK {
-		return fmt.Errorf("helius put webhook: status %d: %s", putStatus, putBodyBytes)
+		return chain.FromProviderHTTP(putStatus, string(putBodyBytes))
 	}
 	return nil
 }
@@ -215,10 +216,10 @@ func (h *HeliusProvider) DeleteWebhook(ctx context.Context, webhookID string) er
 		if httpclient.IsBuild(err) {
 			return fmt.Errorf("helius: build delete request: %w", err)
 		}
-		return fmt.Errorf("helius: delete webhook call: %w", err)
+		return chain.Unavailable(fmt.Errorf("helius: delete webhook call: %w", err))
 	}
 	if status != httpclient.StatusOK && status != httpclient.StatusNoContent {
-		return fmt.Errorf("helius delete webhook: status %d: %s", status, respBody)
+		return chain.FromProviderHTTP(status, string(respBody))
 	}
 	return nil
 }

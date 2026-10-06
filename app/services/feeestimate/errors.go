@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/macrowallets/waas/app/services/chain"
 	"github.com/macrowallets/waas/app/services/sweep"
 	"github.com/macrowallets/waas/app/services/withdraw"
 )
@@ -67,8 +68,15 @@ func classifyQuoteError(err error) *Error {
 		return newError(KindUnprocessable, CodeTokenBalanceRequired, "the wallet holds none of this token, so its transfer cannot be simulated", err)
 	case errors.Is(err, sweep.ErrTooManyAddresses):
 		return newError(KindRateLimited, CodeTooManyAddresses, "the wallet has more addresses than one request may plan over", err)
-	case errors.Is(err, sweep.ErrGasEstimateFailed):
+	case errors.Is(err, sweep.ErrGasEstimateFailed), errors.Is(err, chain.ErrFee), errors.Is(err, chain.ErrNonce):
 		return newError(KindUnavailable, CodeGasEstimateFailed, "the node could not size this transfer", err)
+	case errors.Is(err, chain.ErrInvalidAddress):
+		return newError(KindUnprocessable, CodeInvalidAddress, chain.ErrInvalidAddress.Error(), err)
+	case errors.Is(err, chain.ErrInsufficientFunds):
+		return newError(KindUnprocessable, CodeGasEstimateFailed, chain.ErrInsufficientFunds.Error(), err)
+	case errors.Is(err, chain.ErrProviderUnavailable), errors.Is(err, chain.ErrProvider),
+		errors.Is(err, chain.ErrNotFound), errors.Is(err, chain.ErrRateLimited):
+		return newError(KindUnavailable, CodeUnavailable, "the chain node could not price this withdrawal; try again later", err)
 	default:
 		return newError(KindUnavailable, CodeUnavailable, "the chain node could not price this withdrawal; try again later", err)
 	}

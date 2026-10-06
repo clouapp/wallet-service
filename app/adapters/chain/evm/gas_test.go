@@ -124,8 +124,11 @@ func TestEVMBuildTransfer_TokenEstimateErrorFailsWithoutFallback(t *testing.T) {
 	if !errors.Is(err, chain.ErrGasEstimateFailed) {
 		t.Fatalf("expected chain.ErrGasEstimateFailed, got %v", err)
 	}
-	if !strings.Contains(err.Error(), "execution reverted") || !strings.Contains(err.Error(), "USDC") {
-		t.Fatalf("error should name the token and the node reason, got %q", err.Error())
+	if !strings.Contains(err.Error(), "USDC") || strings.Contains(err.Error(), "execution reverted") {
+		t.Fatalf("error should name the token and not the node sentence, got %q", err.Error())
+	}
+	if chain.CauseText(err) == "" || !strings.Contains(chain.CauseText(err), "execution reverted") {
+		t.Fatalf("the node sentence must stay on the log cause, got %q", chain.CauseText(err))
 	}
 	if sent := node.CallsTo("eth_sendRawTransaction"); len(sent) != 0 {
 		t.Fatalf("nothing may be broadcast after a failed estimate, got %d sends", len(sent))

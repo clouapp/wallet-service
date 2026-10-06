@@ -13,6 +13,7 @@ import (
 
 	"github.com/shopspring/decimal"
 
+	"github.com/macrowallets/waas/app/services/chain"
 	"github.com/macrowallets/waas/app/services/ingest/providers"
 	"github.com/macrowallets/waas/pkg/httpclient"
 	"github.com/macrowallets/waas/pkg/numeric"
@@ -140,10 +141,10 @@ func (q *QuickNodeProvider) CreateWebhook(ctx context.Context, cfg providers.Pro
 		if httpclient.IsBuild(err) {
 			return nil, fmt.Errorf("quicknode: build create request: %w", err)
 		}
-		return nil, fmt.Errorf("quicknode: create stream: %w", err)
+		return nil, chain.Unavailable(fmt.Errorf("quicknode: create stream: %w", err))
 	}
 	if status != httpclient.StatusOK && status != httpclient.StatusCreated {
-		return nil, fmt.Errorf("quicknode create stream: status %d: %s", status, respBody)
+		return nil, chain.FromProviderHTTP(status, string(respBody))
 	}
 
 	var result quicknodeCreateStreamResp
@@ -202,10 +203,10 @@ func (q *QuickNodeProvider) SyncAddresses(ctx context.Context, webhookID string,
 		if httpclient.IsBuild(err) {
 			return fmt.Errorf("quicknode: build patch request: %w", err)
 		}
-		return fmt.Errorf("quicknode: patch stream: %w", err)
+		return chain.Unavailable(fmt.Errorf("quicknode: patch stream: %w", err))
 	}
 	if status != httpclient.StatusOK && status != httpclient.StatusNoContent {
-		return fmt.Errorf("quicknode patch stream: status %d: %s", status, respBody)
+		return chain.FromProviderHTTP(status, string(respBody))
 	}
 	return nil
 }
@@ -230,10 +231,10 @@ func (q *QuickNodeProvider) DeleteWebhook(ctx context.Context, webhookID string)
 		if httpclient.IsBuild(err) {
 			return fmt.Errorf("quicknode: build delete request: %w", err)
 		}
-		return fmt.Errorf("quicknode: delete stream: %w", err)
+		return chain.Unavailable(fmt.Errorf("quicknode: delete stream: %w", err))
 	}
 	if status != httpclient.StatusOK && status != httpclient.StatusNoContent {
-		return fmt.Errorf("quicknode delete stream: status %d: %s", status, respBody)
+		return chain.FromProviderHTTP(status, string(respBody))
 	}
 	return nil
 }

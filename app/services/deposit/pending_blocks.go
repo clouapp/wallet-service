@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/macrowallets/waas/app/services/chain"
 	"github.com/macrowallets/waas/app/services/deposit/pending"
 )
 
@@ -42,7 +43,7 @@ func (s *Service) recordPending(ctx context.Context, chainID string, block uint6
 		entry.TxHashes = append([]string(nil), failure.failedTx...)
 	}
 	entry.ErrorClass = errorClass(failure.err)
-	entry.LastError = pending.TruncateError(failure.err.Error())
+	entry.LastError = pending.TruncateError(chain.ClientText(failure.err))
 	entry.LastFailedAt = now
 	entry.NextRetryAt = now.Add(s.failure.pendingBackoff(entry.Attempts))
 	if err := s.pending.Put(ctx, entry); err != nil {
@@ -58,6 +59,7 @@ func (s *Service) recordPending(ctx context.Context, chainID string, block uint6
 		"first_failed_at", entry.FirstFailedAt.Format(time.RFC3339),
 		"next_retry_at", entry.NextRetryAt.Format(time.RFC3339),
 		"error", failure.err,
+		"provider_cause", chain.CauseText(failure.err),
 	)
 	return nil
 }

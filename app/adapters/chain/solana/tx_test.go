@@ -6,6 +6,7 @@ import (
 	"crypto/ed25519"
 	"encoding/binary"
 	"encoding/json"
+	"errors"
 	"io"
 	"math/big"
 	"net/http"
@@ -17,6 +18,7 @@ import (
 	"github.com/gagliardetto/solana-go"
 
 	"github.com/macrowallets/waas/app/models"
+	"github.com/macrowallets/waas/app/services/chain"
 	"github.com/macrowallets/waas/app/services/mpc"
 	"github.com/macrowallets/waas/pkg/types"
 )
@@ -147,7 +149,7 @@ func TestSolanaSweepNative(t *testing.T) {
 		To:            to,
 		NativeBalance: big.NewInt(4000),
 	})
-	if err == nil || !strings.Contains(err.Error(), "insufficient native for fee") {
+	if !errors.Is(err, chain.ErrInsufficientFunds) || strings.Contains(err.Error(), "4000") {
 		t.Fatalf("err %v", err)
 	}
 }
@@ -162,7 +164,7 @@ func TestSolanaSweepSPL(t *testing.T) {
 		Amount:        big.NewInt(10),
 		Token:         token,
 	})
-	if err == nil || !strings.Contains(err.Error(), "insufficient native for fee") {
+	if !errors.Is(err, chain.ErrInsufficientFunds) {
 		t.Fatalf("err %v", err)
 	}
 	txs, err := live.BuildSweep(context.Background(), types.SweepRequest{

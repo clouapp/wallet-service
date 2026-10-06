@@ -261,7 +261,7 @@ func (a *EVMLive) EstimateTransferGasLimit(ctx context.Context, req types.Transf
 	}
 	var hexEstimate string
 	if err := a.rpc.Call(ctx, "eth_estimateGas", &hexEstimate, call); err != nil {
-		return 0, fmt.Errorf("%w: %s transfer of %s from %s to %s: %v",
+		return 0, fmt.Errorf("%w: %s transfer of %s from %s to %s: %w",
 			chain.ErrGasEstimateFailed, req.Token.Symbol, req.Amount, req.From, req.To, err)
 	}
 	estimate := hexToUint64(hexEstimate)
@@ -315,7 +315,7 @@ func (a *EVMLive) BuildSweep(ctx context.Context, req types.SweepRequest) ([]typ
 		}
 		amount := new(big.Int).Sub(req.NativeBalance, feeReserve)
 		if amount.Sign() <= 0 {
-			return nil, fmt.Errorf("insufficient native for sweep: balance=%s fee=%s", req.NativeBalance, feeReserve)
+			return nil, chain.Insufficient(fmt.Errorf("insufficient native for sweep: balance=%s fee=%s", req.NativeBalance, feeReserve))
 		}
 		nativeReq.Amount = amount
 		nativeReq.GasLimit = &gasLimit

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/macrowallets/waas/app/adapters/chain/rpc"
+	"github.com/macrowallets/waas/app/services/chain"
 	"github.com/macrowallets/waas/pkg/types"
 )
 
@@ -142,7 +143,8 @@ func (a *SolanaLive) GetTransactionBlock(ctx context.Context, txHash string) (ui
 	}
 	status := result.Value[0]
 	if status.Err != nil {
-		return 0, fmt.Errorf("sol transaction %s failed on-chain: %v", txHash, status.Err)
+		raw := fmt.Sprint(status.Err)
+		return 0, chain.Wrap(chain.KindOrProvider(0, raw), fmt.Errorf("sol transaction %s failed on-chain: %s", txHash, raw))
 	}
 	if status.ConfirmationStatus != solanaCommitmentFinalized {
 		return 0, nil

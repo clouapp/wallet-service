@@ -239,8 +239,8 @@ func selectBTCSpend(utxos []btcInput, amount int64, policy btcFeePolicy) (btcSpe
 			return spend, nil
 		}
 	}
-	return btcSpend{}, fmt.Errorf("insufficient funds: %d confirmed sats in %d utxos cannot pay %d sats plus fee %d",
-		sumBTCInputs(ordered), len(ordered), amount, policy.fee(max(len(ordered), btcTypicalInputs), btcOutputsPaymentOnly))
+	return btcSpend{}, chain.Insufficient(fmt.Errorf("insufficient funds: %d confirmed sats in %d utxos cannot pay %d sats plus fee %d",
+		sumBTCInputs(ordered), len(ordered), amount, policy.fee(max(len(ordered), btcTypicalInputs), btcOutputsPaymentOnly)))
 }
 
 // maxSendableSats is the most one transfer spending every UTXO can pay a single

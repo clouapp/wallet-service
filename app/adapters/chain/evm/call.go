@@ -17,7 +17,7 @@ func (a *EVMLive) BuildCall(call chain.EVMCall) (*types.UnsignedTx, error) {
 		return nil, fmt.Errorf("evm call: adapter %s has no network id", a.cfg.ChainIDStr)
 	}
 	if !common.IsHexAddress(call.To) {
-		return nil, fmt.Errorf("evm call: destination %q is not an EVM address", call.To)
+		return nil, chain.InvalidAddress(fmt.Errorf("evm call: destination %q is not an EVM address", call.To))
 	}
 	if call.Value == nil || call.Value.Sign() < 0 {
 		return nil, fmt.Errorf("evm call: value must be zero or positive")

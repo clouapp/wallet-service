@@ -17,6 +17,7 @@ import (
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/services/activity"
 	"github.com/macrowallets/waas/app/services/blockheight"
+	"github.com/macrowallets/waas/app/services/chain"
 	"github.com/macrowallets/waas/app/services/settings"
 	"github.com/macrowallets/waas/pkg/httpclient"
 )
@@ -76,7 +77,9 @@ func TestProvider_ErrorResponse(t *testing.T) {
 
 	_, err := p.GetBlockHeight(context.Background(), models.ChainETH)
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "rpc error")
+	assert.ErrorIs(t, err, chain.ErrProvider)
+	assert.NotContains(t, err.Error(), "execution reverted")
+	assert.Contains(t, chain.CauseText(err), "execution reverted")
 }
 
 func TestProvider_RejectsAnUnknownChain(t *testing.T) {

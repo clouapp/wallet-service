@@ -2,23 +2,24 @@ package solana
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math/big"
-	"strings"
 
 	"github.com/gagliardetto/solana-go"
 
+	"github.com/macrowallets/waas/app/services/chain"
 	"github.com/macrowallets/waas/pkg/types"
 )
 
 func (a *SolanaLive) GetTokenBalance(ctx context.Context, address string, token types.Token) (*types.Balance, error) {
 	owner, err := solana.PublicKeyFromBase58(address)
 	if err != nil {
-		return nil, fmt.Errorf("sol owner: %w", err)
+		return nil, chain.InvalidAddress(fmt.Errorf("sol owner: %w", err))
 	}
 	mint, err := solana.PublicKeyFromBase58(token.Contract)
 	if err != nil {
-		return nil, fmt.Errorf("sol mint: %w", err)
+		return nil, chain.InvalidAddress(fmt.Errorf("sol mint: %w", err))
 	}
 	ata, _, err := solana.FindAssociatedTokenAddress(owner, mint)
 	if err != nil {
@@ -32,7 +33,7 @@ func (a *SolanaLive) GetTokenBalance(ctx context.Context, address string, token 
 	}
 	callErr := a.rpc.Call(ctx, "getTokenAccountBalance", &result, ata.String(), map[string]string{"commitment": "finalized"})
 	if callErr != nil {
-		if strings.Contains(strings.ToLower(callErr.Error()), "could not find account") {
+		if errors.Is(callErr, chain.ErrNotFound) {
 			return &types.Balance{Address: address, Asset: token.Symbol, Amount: big.NewInt(0), Decimals: token.Decimals, Human: "0"}, nil
 		}
 		return nil, callErr

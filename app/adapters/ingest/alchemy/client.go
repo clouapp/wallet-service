@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/macrowallets/waas/app/services/chain"
 	"github.com/macrowallets/waas/app/services/ingest/providers"
 	"github.com/macrowallets/waas/pkg/httpclient"
 	"github.com/macrowallets/waas/pkg/numeric"
@@ -97,10 +98,10 @@ func (a *AlchemyProvider) CreateWebhook(ctx context.Context, cfg providers.Provi
 		if httpclient.IsBuild(err) {
 			return nil, fmt.Errorf("alchemy: build create request: %w", err)
 		}
-		return nil, fmt.Errorf("alchemy: create webhook call: %w", err)
+		return nil, chain.Unavailable(fmt.Errorf("alchemy: create webhook call: %w", err))
 	}
 	if status != httpclient.StatusOK {
-		return nil, fmt.Errorf("alchemy create-webhook: status %d: %s", status, respBody)
+		return nil, chain.FromProviderHTTP(status, string(respBody))
 	}
 
 	var result alchemyCreateResp
@@ -165,10 +166,10 @@ func (a *AlchemyProvider) SyncAddresses(ctx context.Context, webhookID string, a
 		if httpclient.IsBuild(err) {
 			return fmt.Errorf("alchemy: build patch request: %w", err)
 		}
-		return fmt.Errorf("alchemy: patch addresses call: %w", err)
+		return chain.Unavailable(fmt.Errorf("alchemy: patch addresses call: %w", err))
 	}
 	if status != httpclient.StatusOK {
-		return fmt.Errorf("alchemy update-webhook-addresses: status %d: %s", status, respBody)
+		return chain.FromProviderHTTP(status, string(respBody))
 	}
 	return nil
 }
@@ -193,7 +194,7 @@ func (a *AlchemyProvider) fetchAllAddresses(ctx context.Context, webhookID strin
 			return nil, err
 		}
 		if status != httpclient.StatusOK {
-			return nil, fmt.Errorf("alchemy webhook-addresses: status %d: %s", status, respBody)
+			return nil, chain.FromProviderHTTP(status, string(respBody))
 		}
 
 		var page alchemyAddrPage
@@ -236,10 +237,10 @@ func (a *AlchemyProvider) DeleteWebhook(ctx context.Context, webhookID string) e
 		if httpclient.IsBuild(err) {
 			return fmt.Errorf("alchemy: build delete request: %w", err)
 		}
-		return fmt.Errorf("alchemy: delete webhook call: %w", err)
+		return chain.Unavailable(fmt.Errorf("alchemy: delete webhook call: %w", err))
 	}
 	if status != httpclient.StatusOK && status != httpclient.StatusNoContent {
-		return fmt.Errorf("alchemy delete-webhook: status %d: %s", status, respBody)
+		return chain.FromProviderHTTP(status, string(respBody))
 	}
 	return nil
 }

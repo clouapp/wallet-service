@@ -147,8 +147,11 @@ func classify(class string, err error) error {
 }
 
 func errorClass(err error) string {
-	if errors.Is(err, chain.ErrRateLimited) {
+	switch {
+	case errors.Is(err, chain.ErrRateLimited):
 		return pending.ClassRateLimited
+	case errors.Is(err, chain.ErrProviderUnavailable), errors.Is(err, chain.ErrProvider):
+		return pending.ClassRPC
 	}
 	var classified *classifiedError
 	if errors.As(err, &classified) {

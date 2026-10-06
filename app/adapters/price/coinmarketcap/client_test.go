@@ -1,6 +1,7 @@
 package coinmarketcap
 
 import (
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -8,6 +9,7 @@ import (
 
 	"github.com/shopspring/decimal"
 
+	"github.com/macrowallets/waas/app/services/chain"
 	"github.com/macrowallets/waas/pkg/httpclient"
 )
 
@@ -128,7 +130,7 @@ func TestGetOmitsTheKeyFromErrors(t *testing.T) {
 	server.Close()
 	provider.baseURL = closed
 	_, err = provider.FetchCryptoPrices([]string{"ETH"})
-	if err == nil || !strings.Contains(err.Error(), "coinmarketcap:") || strings.Contains(err.Error(), restKey) {
-		t.Fatal("transport error was not labeled, or it included the key")
+	if !errors.Is(err, chain.ErrProviderUnavailable) || !strings.Contains(chain.CauseText(err), "coinmarketcap:") || strings.Contains(err.Error(), restKey) || strings.Contains(chain.CauseText(err), restKey) {
+		t.Fatal("transport error was not the unavailable sentinel, or it included the key")
 	}
 }

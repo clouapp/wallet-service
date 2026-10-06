@@ -67,17 +67,18 @@ func (a *BitcoinLive) esploraGet(ctx context.Context, path string) ([]byte, erro
 	for attempt := 1; ; attempt++ {
 		status, header, body, err := a.esploraFetch(ctx, requestURL, path)
 		if err != nil {
-			return nil, httpclient.RedactURL(err, requestURL)
+			return nil, chain.Unavailable(httpclient.RedactURL(err, requestURL))
 		}
 		if status >= httpclient.StatusOK && status < httpclient.StatusMultipleChoices {
 			return body, nil
 		}
 		if !isRateLimited(status, body) {
-			return nil, &esploraStatusError{
+			statusErr := &esploraStatusError{
 				path:   path,
 				status: status,
 				body:   httpclient.RedactURLText(strings.TrimSpace(string(body)), requestURL),
 			}
+			return nil, chain.Wrap(chain.KindOrProvider(status, statusErr.body), statusErr)
 		}
 		if attempt >= a.esploraRetry.maxAttempts {
 			return nil, httpclient.RedactURL(fmt.Errorf("esplora GET %s: %w (HTTP %d) after %d attempts", path, chain.ErrRateLimited, status, attempt), requestURL)

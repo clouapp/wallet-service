@@ -8,6 +8,7 @@ import (
 
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/services/blockheight"
+	"github.com/macrowallets/waas/app/services/chain"
 	"github.com/macrowallets/waas/pkg/httpclient"
 )
 
@@ -77,14 +78,11 @@ func (p *Provider) GetBlockHeight(ctx context.Context, chainID string) (height u
 		if httpclient.IsBuild(err) {
 			return 0, fmt.Errorf("solana: build request: %w", err)
 		}
-		if httpclient.IsRead(err) {
-			return 0, fmt.Errorf("solana: read body: %w", err)
-		}
-		return 0, fmt.Errorf("solana: http: %w", err)
+		return 0, chain.Unavailable(fmt.Errorf("solana: http: %w", err))
 	}
 
 	if resp.StatusCode != httpclient.StatusOK {
-		return 0, fmt.Errorf("solana: unexpected status %d: %s", resp.StatusCode, string(resp.Body))
+		return 0, chain.FromProviderHTTP(resp.StatusCode, httpclient.RedactURLText(string(resp.Body), u))
 	}
 
 	var out slotResp
@@ -93,7 +91,7 @@ func (p *Provider) GetBlockHeight(ctx context.Context, chainID string) (height u
 	}
 
 	if out.Error != nil {
-		return 0, fmt.Errorf("solana: rpc error %d: %s", out.Error.Code, out.Error.Message)
+		return 0, chain.Wrap(chain.KindOrProvider(0, out.Error.Message), fmt.Errorf("solana: rpc error %d: %s", out.Error.Code, httpclient.RedactURLText(out.Error.Message, u)))
 	}
 
 	if out.Result == "" {

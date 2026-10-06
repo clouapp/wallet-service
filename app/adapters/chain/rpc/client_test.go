@@ -3,6 +3,7 @@ package rpc
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -103,7 +104,8 @@ func TestRPCClient_Call_RPCError(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected RPC error")
 	}
-	if err.Error() != "RPC error -32601: method not found" {
+	var rpcErr *RPCError
+	if !errors.As(err, &rpcErr) || rpcErr.Code != -32601 || err.Error() != "provider error" || strings.Contains(err.Error(), "method not found") {
 		t.Errorf("unexpected error message: %v", err)
 	}
 }

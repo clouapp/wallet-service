@@ -9,6 +9,7 @@ import (
 
 	"github.com/shopspring/decimal"
 
+	"github.com/macrowallets/waas/app/services/chain"
 	"github.com/macrowallets/waas/app/services/price"
 	"github.com/macrowallets/waas/pkg/httpclient"
 )
@@ -104,10 +105,10 @@ func (p *CoinMarketCapProvider) get(url string) ([]byte, error) {
 		},
 	})
 	if err != nil {
-		if httpclient.IsBuild(err) || httpclient.IsRead(err) {
+		if httpclient.IsBuild(err) {
 			return nil, err
 		}
-		return nil, fmt.Errorf("coinmarketcap: %w", err)
+		return nil, chain.Unavailable(fmt.Errorf("coinmarketcap: %w", err))
 	}
 	return resp.Body, nil
 }

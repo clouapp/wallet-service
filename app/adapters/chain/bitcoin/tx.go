@@ -17,6 +17,7 @@ import (
 	"github.com/btcsuite/btcd/wire"
 	"github.com/shopspring/decimal"
 
+	"github.com/macrowallets/waas/app/services/chain"
 	"github.com/macrowallets/waas/pkg/httpclient"
 	"github.com/macrowallets/waas/pkg/types"
 )
@@ -276,13 +277,13 @@ func (a *BitcoinLive) buildBitcoinSweep(ctx context.Context, req types.SweepRequ
 		amount = req.Amount.Int64()
 	}
 	if amount < btcDustSats {
-		return nil, fmt.Errorf("insufficient funds: %d confirmed sats leave %d sats after fees, below the %d sat dust limit",
-			sumBTCInputs(inputs), amount, btcDustSats)
+		return nil, chain.Insufficient(fmt.Errorf("insufficient funds: %d confirmed sats leave %d sats after fees, below the %d sat dust limit",
+			sumBTCInputs(inputs), amount, btcDustSats))
 	}
 	spend, ok := spendFromInputs(inputs, amount, policy)
 	if !ok {
-		return nil, fmt.Errorf("insufficient funds: %d confirmed sats in %d utxos cannot pay %d sats plus fee %d",
-			sumBTCInputs(inputs), len(inputs), amount, policy.fee(max(len(inputs), btcTypicalInputs), btcOutputsPaymentOnly))
+		return nil, chain.Insufficient(fmt.Errorf("insufficient funds: %d confirmed sats in %d utxos cannot pay %d sats plus fee %d",
+			sumBTCInputs(inputs), len(inputs), amount, policy.fee(max(len(inputs), btcTypicalInputs), btcOutputsPaymentOnly)))
 	}
 	return []types.UnsignedTx{*a.unsignedBitcoinTx(req.From, req.To, amount, spend)}, nil
 }
@@ -343,7 +344,7 @@ func (a *BitcoinLive) listConfirmedUTXOs(ctx context.Context, address string) ([
 
 func (a *BitcoinLive) listUTXOsREST(ctx context.Context, address string) ([]btcInput, error) {
 	if strings.TrimSpace(address) == "" || strings.ContainsAny(address, "/?#") {
-		return nil, fmt.Errorf("btc utxo: invalid address %q", address)
+		return nil, chain.InvalidAddress(fmt.Errorf("btc utxo: invalid address %q", address))
 	}
 	body, err := a.esploraGet(ctx, "/address/"+address+"/utxo")
 	if err != nil {
@@ -407,10 +408,13 @@ func (a *BitcoinLive) broadcastBitcoin(ctx context.Context, signed *types.Signed
 			HasBody: true,
 		})
 		if err != nil {
-			return "", httpclient.RedactURL(err, url)
+			if httpclient.IsBuild(err) {
+				return "", httpclient.RedactURL(err, url)
+			}
+			return "", chain.Unavailable(httpclient.RedactURL(err, url))
 		}
 		if resp.StatusCode >= httpclient.StatusMultipleChoices {
-			return "", httpclient.RedactURL(fmt.Errorf("btc broadcast %d: %s", resp.StatusCode, resp.Body), url)
+			return "", chain.FromProviderHTTP(resp.StatusCode, httpclient.RedactURLText(string(resp.Body), url))
 		}
 		return strings.TrimSpace(string(resp.Body)), nil
 	}

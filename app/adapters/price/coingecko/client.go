@@ -9,6 +9,7 @@ import (
 
 	"github.com/shopspring/decimal"
 
+	"github.com/macrowallets/waas/app/services/chain"
 	"github.com/macrowallets/waas/app/services/price"
 	"github.com/macrowallets/waas/pkg/httpclient"
 )
@@ -137,10 +138,13 @@ func (p *CoinGeckoProvider) doGet(url string) ([]byte, error) {
 		Header: header,
 	})
 	if err != nil {
-		return nil, err
+		if httpclient.IsBuild(err) {
+			return nil, err
+		}
+		return nil, chain.Unavailable(err)
 	}
 	if resp.StatusCode != httpclient.StatusOK {
-		return nil, fmt.Errorf("status %d: %s", resp.StatusCode, string(resp.Body))
+		return nil, chain.FromProviderHTTP(resp.StatusCode, httpclient.RedactURLText(string(resp.Body), url))
 	}
 	return resp.Body, nil
 }

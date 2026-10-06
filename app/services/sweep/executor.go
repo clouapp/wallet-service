@@ -9,6 +9,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/macrowallets/waas/app/models"
+	"github.com/macrowallets/waas/app/services/chain"
 	mpcpkg "github.com/macrowallets/waas/app/services/mpc"
 	"github.com/macrowallets/waas/pkg/mpcshare"
 	"github.com/macrowallets/waas/pkg/types"
@@ -108,10 +109,11 @@ func (s *service) ExecutePlan(
 					"child", leg.From.Address,
 					"wallet_id", wallet.ID,
 					"error", err,
+					"provider_cause", chain.CauseText(err),
 				)
 				result.FailedStep = &FailedStep{
 					Index:      i,
-					LastError:  err.Error(),
+					LastError:  chain.ClientText(err),
 					RetryReady: true,
 				}
 				return result, nil

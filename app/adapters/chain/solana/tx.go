@@ -4,10 +4,10 @@ import (
 	"context"
 	"crypto/ed25519"
 	"encoding/base64"
+	"errors"
 	"fmt"
 
 	"math/big"
-	"strings"
 
 	bin "github.com/gagliardetto/binary"
 	"github.com/gagliardetto/solana-go"
@@ -15,6 +15,7 @@ import (
 	"github.com/gagliardetto/solana-go/programs/system"
 	"github.com/gagliardetto/solana-go/programs/token"
 
+	"github.com/macrowallets/waas/app/services/chain"
 	"github.com/macrowallets/waas/pkg/types"
 )
 
@@ -169,7 +170,7 @@ func (a *SolanaLive) destATAMissing(ctx context.Context, ata string) (create boo
 	}
 	callErr := a.rpc.Call(ctx, "getAccountInfo", &info, ata, map[string]string{"commitment": "finalized"})
 	if callErr != nil {
-		if strings.Contains(strings.ToLower(callErr.Error()), "could not find account") {
+		if errors.Is(callErr, chain.ErrNotFound) {
 			return true, false, nil
 		}
 		return false, false, callErr
@@ -184,7 +185,7 @@ func (a *SolanaLive) buildSolanaSweep(ctx context.Context, req types.SweepReques
 	fee := big.NewInt(solanaNativeFeeLamports)
 	if req.Token != nil {
 		if req.NativeBalance == nil || req.NativeBalance.Cmp(fee) < 0 {
-			return nil, fmt.Errorf("insufficient native for fee")
+			return nil, chain.Insufficient(fmt.Errorf("insufficient native for fee"))
 		}
 		if req.Amount == nil {
 			return nil, fmt.Errorf("amount is required")
@@ -210,7 +211,7 @@ func (a *SolanaLive) buildSolanaSweep(ctx context.Context, req types.SweepReques
 		amount = new(big.Int).Sub(req.NativeBalance, fee)
 	}
 	if amount.Sign() <= 0 {
-		return nil, fmt.Errorf("insufficient native for fee")
+		return nil, chain.Insufficient(fmt.Errorf("insufficient native for fee"))
 	}
 	unsigned, err := a.buildSolanaTransfer(ctx, types.TransferRequest{
 		From:   req.From,

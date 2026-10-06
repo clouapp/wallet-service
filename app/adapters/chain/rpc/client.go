@@ -151,21 +151,16 @@ func (c *RPCClient) post(ctx context.Context, method string, params []interface{
 			return 0, nil, nil, fmt.Errorf("build %s request: %w", method, withoutURL(err))
 		}
 		if httpclient.IsRead(err) {
-			return 0, nil, nil, fmt.Errorf("read %s response: %w", method, withoutURL(err))
+			return 0, nil, nil, chain.Unavailable(fmt.Errorf("read %s response: %w", method, withoutURL(err)))
 		}
-		return 0, nil, nil, fmt.Errorf("rpc call %s: %w", method, withoutURL(err))
+		return 0, nil, nil, chain.Unavailable(fmt.Errorf("rpc call %s: %w", method, withoutURL(err)))
 	}
 	return resp.StatusCode, resp.Header, resp.Body, nil
 }
 
 func decodeRPCResponse(method string, status int, respBody []byte, out interface{}) error {
 	if status < httpclient.StatusOK || status >= httpclient.StatusMultipleChoices {
-		return fmt.Errorf(
-			"rpc call %s: HTTP %d: %s",
-			method,
-			status,
-			strings.TrimSpace(string(respBody)),
-		)
+		return chain.FromProviderHTTP(status, strings.TrimSpace(string(respBody)))
 	}
 
 	var rpcResp rpcResponse
@@ -187,21 +182,22 @@ func withoutURL(err error) error {
 }
 
 // scrub removes the endpoint from an error returned to callers. A JSON-RPC error
-// keeps its type so callers can still match it; the URL is not logged.
+// stays on the unwrap chain so callers can still match its code. Error() is the
+// typed sentinel, not the provider sentence. The URL is not logged.
 func (c *RPCClient) scrub(err error) error {
 	if err == nil || c == nil {
 		return err
 	}
 	endpoint := c.Endpoint()
-	var rpcErr *rpcError
-	if errors.As(err, &rpcErr) {
-		message := httpclient.RedactURLText(rpcErr.Message, endpoint)
-		if message == rpcErr.Message {
-			return err
-		}
+	var failure *chain.Failure
+	if errors.As(err, &failure) && failure != nil {
+		failure.Cause = httpclient.RedactURL(failure.Cause, endpoint)
+		return err
+	}
+	if rpcErr, ok := err.(*rpcError); ok && rpcErr != nil {
 		clone := *rpcErr
-		clone.Message = message
-		return &clone
+		clone.Message = httpclient.RedactURLText(rpcErr.Message, endpoint)
+		return chain.Wrap(chain.KindOrProvider(0, clone.Message), &clone)
 	}
 	return httpclient.RedactURL(err, endpoint)
 }

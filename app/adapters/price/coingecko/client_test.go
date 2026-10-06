@@ -1,6 +1,7 @@
 package coingecko
 
 import (
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -8,6 +9,7 @@ import (
 
 	"github.com/shopspring/decimal"
 
+	"github.com/macrowallets/waas/app/services/chain"
 	"github.com/macrowallets/waas/app/services/price"
 	"github.com/macrowallets/waas/pkg/httpclient"
 )
@@ -135,7 +137,7 @@ func TestDoGetOmitsTheKeyFromAStatusError(t *testing.T) {
 	if err == nil {
 		t.Fatal("a non-200 response was accepted")
 	}
-	if !strings.Contains(err.Error(), "status 429") || strings.Contains(err.Error(), proKey) {
-		t.Fatal("status error did not keep the status, or it included the key")
+	if !errors.Is(err, chain.ErrRateLimited) || strings.Contains(err.Error(), proKey) || strings.Contains(err.Error(), "slow down") {
+		t.Fatal("status error was not the rate-limit sentinel, or it included the key or the provider body")
 	}
 }

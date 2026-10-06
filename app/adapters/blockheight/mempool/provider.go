@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/macrowallets/waas/app/services/blockheight"
+	"github.com/macrowallets/waas/app/services/chain"
 	"github.com/macrowallets/waas/pkg/httpclient"
 )
 
@@ -53,14 +54,11 @@ func fetchEsploraTipHeight(ctx context.Context, client *httpclient.Client, heigh
 		if httpclient.IsBuild(err) {
 			return 0, fmt.Errorf("%s: build request: %w", source, err)
 		}
-		if httpclient.IsRead(err) {
-			return 0, fmt.Errorf("%s: read body: %w", source, err)
-		}
-		return 0, fmt.Errorf("%s: http: %w", source, err)
+		return 0, chain.Unavailable(fmt.Errorf("%s: http: %w", source, err))
 	}
 
 	if resp.StatusCode != httpclient.StatusOK {
-		return 0, fmt.Errorf("%s: unexpected status %d: %s", source, resp.StatusCode, strings.TrimSpace(string(resp.Body)))
+		return 0, chain.FromProviderHTTP(resp.StatusCode, httpclient.RedactURLText(strings.TrimSpace(string(resp.Body)), heightURL))
 	}
 
 	s := strings.TrimSpace(string(resp.Body))

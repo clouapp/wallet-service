@@ -1,6 +1,7 @@
 package coinapi
 
 import (
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -8,6 +9,7 @@ import (
 
 	"github.com/shopspring/decimal"
 
+	"github.com/macrowallets/waas/app/services/chain"
 	"github.com/macrowallets/waas/app/services/price"
 	"github.com/macrowallets/waas/pkg/httpclient"
 )
@@ -133,7 +135,7 @@ func TestGetOmitsTheKeyFromErrors(t *testing.T) {
 	server.Close()
 	provider.baseURL = closed
 	_, err = provider.FetchFiatRates([]string{"EUR"})
-	if err == nil || !strings.Contains(err.Error(), "coinapi fiat:") || strings.Contains(err.Error(), restKey) {
-		t.Fatal("transport error was not labeled, or it included the key")
+	if !errors.Is(err, chain.ErrProviderUnavailable) || !strings.Contains(chain.CauseText(err), "coinapi fiat:") || strings.Contains(err.Error(), restKey) || strings.Contains(chain.CauseText(err), restKey) {
+		t.Fatal("transport error was not the unavailable sentinel, or it included the key")
 	}
 }

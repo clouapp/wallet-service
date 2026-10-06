@@ -58,7 +58,7 @@ func (a *EVMLive) NativeTransferGasLimit(ctx context.Context, from, to string) (
 	}
 	var hexEstimate string
 	if err := a.rpc.Call(ctx, "eth_estimateGas", &hexEstimate, call); err != nil {
-		return 0, fmt.Errorf("%w: native transfer from %s on %s: %v", chain.ErrGasEstimateFailed, call["from"], a.cfg.ChainIDStr, err)
+		return 0, fmt.Errorf("%w: native transfer from %s on %s: %w", chain.ErrGasEstimateFailed, call["from"], a.cfg.ChainIDStr, err)
 	}
 	estimate := hexToUint64(hexEstimate)
 	if estimate == 0 {
@@ -118,7 +118,7 @@ func (a *EVMLive) l1DataFee(ctx context.Context, transaction *gethtypes.Transact
 	}
 	var hexFee string
 	if err := a.rpc.Call(ctx, "eth_call", &hexFee, call, "latest"); err != nil {
-		return nil, fmt.Errorf("%w: L1 data fee on %s: %v", chain.ErrGasEstimateFailed, a.cfg.ChainIDStr, err)
+		return nil, fmt.Errorf("%w: L1 data fee on %s: %w", chain.ErrGasEstimateFailed, a.cfg.ChainIDStr, err)
 	}
 	fee := hexToBigInt(hexFee)
 	if fee.Sign() <= 0 {

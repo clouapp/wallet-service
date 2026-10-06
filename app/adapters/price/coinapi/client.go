@@ -9,6 +9,7 @@ import (
 
 	"github.com/shopspring/decimal"
 
+	"github.com/macrowallets/waas/app/services/chain"
 	"github.com/macrowallets/waas/app/services/price"
 	"github.com/macrowallets/waas/pkg/httpclient"
 )
@@ -134,10 +135,10 @@ func (p *CoinAPIProvider) get(url, label string) ([]byte, error) {
 		Header: map[string]string{"X-CoinAPI-Key": p.apiKey},
 	})
 	if err != nil {
-		if httpclient.IsBuild(err) || httpclient.IsRead(err) {
+		if httpclient.IsBuild(err) {
 			return nil, err
 		}
-		return nil, fmt.Errorf("%s: %w", label, err)
+		return nil, chain.Unavailable(fmt.Errorf("%s: %w", label, err))
 	}
 	return resp.Body, nil
 }
