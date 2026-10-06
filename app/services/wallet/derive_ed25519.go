@@ -29,6 +29,7 @@ func deriveEd25519Child(masterKey, chainCode []byte, index uint32) (*Ed25519Chil
 
 	// SLIP-0010 data: 0x00 || ser256(kpar) || ser32(i)
 	data := make([]byte, 1+32+4)
+	defer zeroBytes(data)
 	data[0] = 0x00
 	copy(data[1:33], masterKey)
 	binary.BigEndian.PutUint32(data[33:], hardenedIndex)
@@ -36,6 +37,7 @@ func deriveEd25519Child(masterKey, chainCode []byte, index uint32) (*Ed25519Chil
 	h := hmac.New(sha512.New, chainCode)
 	h.Write(data)
 	I := h.Sum(nil)
+	defer zeroBytes(I)
 
 	childKey := make([]byte, 32)
 	copy(childKey, I[:32])
@@ -47,4 +49,10 @@ func deriveEd25519Child(masterKey, chainCode []byte, index uint32) (*Ed25519Chil
 		ChildChainCode:  childChainCode,
 		Index:           index,
 	}, nil
+}
+
+func zeroBytes(b []byte) {
+	for i := range b {
+		b[i] = 0
+	}
 }

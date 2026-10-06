@@ -163,11 +163,14 @@ func (s *Service) CreateWallet(ctx context.Context, accountID uuid.UUID, chainID
 	if err != nil {
 		return nil, fmt.Errorf("mpc keygen: %w", err)
 	}
+	defer zeroBytes(keygenResult.ShareA)
+	defer zeroBytes(keygenResult.ShareB)
 
 	enc, err := mpc.EncryptShare(keygenResult.ShareA, passphrase)
 	if err != nil {
 		return nil, fmt.Errorf("encrypt share: %w", err)
 	}
+	defer zeroBytes(enc.Ciphertext)
 
 	n, err := cryptorand.Int(cryptorand.Reader, big.NewInt(1_000_000))
 	if err != nil {
@@ -449,6 +452,7 @@ func (s *Service) generateEd25519Address(ctx context.Context, w *models.Wallet, 
 	if err != nil {
 		return nil, fmt.Errorf("encrypt child key: %w", err)
 	}
+	defer zeroBytes(childEnc.Ciphertext)
 
 	addr := &models.Address{
 		ID:                  uuid.New(),

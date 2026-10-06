@@ -22,6 +22,7 @@ func SignSecp256k1P2WPKH(privateKey, digest []byte) (signature, compressedPublic
 		return nil, nil, fmt.Errorf("btc sighash must be 32 bytes")
 	}
 	priv, _ := btcec.PrivKeyFromBytes(privateKey)
+	defer priv.Zero()
 	signature = append(ecdsa.Sign(priv, digest).Serialize(), bitcoinSighashAll)
 	return signature, priv.PubKey().SerializeCompressed(), nil
 }

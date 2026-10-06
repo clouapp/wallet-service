@@ -353,6 +353,10 @@ func zeroBytes(b []byte) {
 // from both MPC shares. The caller MUST zero the returned bytes after use.
 func (s *TSSService) ReconstructSecp256k1PrivateKey(shareA, shareB []byte) ([]byte, error) {
 	var saveA, saveB keygen.LocalPartySaveData
+	defer func() {
+		wipeBigInt(saveA.Xi)
+		wipeBigInt(saveB.Xi)
+	}()
 	if err := json.Unmarshal(shareA, &saveA); err != nil {
 		return nil, fmt.Errorf("unmarshal secp256k1 shareA: %w", err)
 	}
@@ -369,9 +373,11 @@ func (s *TSSService) ReconstructSecp256k1PrivateKey(shareA, shareB []byte) ([]by
 	if err != nil {
 		return nil, fmt.Errorf("reconstruct secp256k1 scalar: %w", err)
 	}
+	defer wipeBigInt(secret)
 	out := make([]byte, 32)
 	b := secret.Bytes()
 	copy(out[32-len(b):], b)
+	zeroBytes(b)
 	return out, nil
 }
 

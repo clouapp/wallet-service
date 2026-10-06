@@ -40,6 +40,7 @@ func EncryptWithServiceKey(data []byte, keyHex string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("decode key: %w", err)
 	}
+	defer zeroBytes(key)
 	if len(key) != 32 {
 		return "", fmt.Errorf("service key must be 32 bytes, got %d", len(key))
 	}
@@ -58,6 +59,7 @@ func EncryptWithServiceKey(data []byte, keyHex string) (string, error) {
 		return "", fmt.Errorf("new gcm: %w", err)
 	}
 	ct := gcm.Seal(nil, nonce, data, nil)
+	defer zeroBytes(ct)
 
 	type payload struct {
 		IV     string `json:"iv"`

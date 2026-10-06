@@ -109,6 +109,7 @@ func decryptChildSeed(address models.Address, passphrase string) ([]byte, error)
 	if err != nil {
 		return nil, fmt.Errorf("address %s: stored key is not hex", address.Address)
 	}
+	defer zeroBytes(ciphertext)
 	iv, err := hex.DecodeString(address.EncryptionIV)
 	if err != nil {
 		return nil, fmt.Errorf("address %s: stored iv is not hex", address.Address)

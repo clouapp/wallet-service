@@ -202,8 +202,10 @@ func decryptStoredSeed(address models.Address, passphrase string) ([]byte, error
 	iv, errIV := hex.DecodeString(address.EncryptionIV)
 	salt, errSalt := hex.DecodeString(address.EncryptionSalt)
 	if errCiphertext != nil || errIV != nil || errSalt != nil {
+		zeroBytes(ciphertext)
 		return nil, fmt.Errorf("stored seed is not hex")
 	}
+	defer zeroBytes(ciphertext)
 	return mpcpkg.DecryptShare(&mpcpkg.EncryptedShare{Ciphertext: ciphertext, IV: iv, Salt: salt}, passphrase)
 }
 
