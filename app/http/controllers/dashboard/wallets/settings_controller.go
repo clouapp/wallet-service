@@ -164,10 +164,8 @@ func auditWalletSettingsChange(ctx http.Context, before, after *models.Wallet, c
 	}
 	sort.Strings(changed)
 	userID, _ := requestctx.UserID(ctx)
-	slog.Info("wallet settings updated",
-		"wallet_id", before.ID,
+	slog.Info("wallet settings updated for wallet "+before.ID.String()+" by user "+userID.String(),
 		"chain", before.Chain,
-		"user_id", userID,
 		"fields", strings.Join(changed, ","),
 		"fee_multiplier_before", nullDecimalText(before.FeeMultiplier),
 		"fee_multiplier_after", nullDecimalText(after.FeeMultiplier),
