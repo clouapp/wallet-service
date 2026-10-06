@@ -4,11 +4,9 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"math/big"
 	"math/rand/v2"
-	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -93,11 +91,7 @@ func sleepContext(ctx context.Context, d time.Duration) error {
 }
 
 func withoutURL(err error) error {
-	var urlErr *url.Error
-	if errors.As(err, &urlErr) {
-		return fmt.Errorf("%s: %w", urlErr.Op, urlErr.Err)
-	}
-	return err
+	return httpclient.WithoutURL(err)
 }
 
 func fmtUnits(amount *big.Int, decimals uint8) string {

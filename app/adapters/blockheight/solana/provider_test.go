@@ -57,6 +57,25 @@ func TestProvider_DefaultsToThePublicRPC(t *testing.T) {
 	assert.Equal(t, devnetRPC, p.devnetRPC)
 }
 
+func TestProvider_ErrorOmitsTheRPCURL(t *testing.T) {
+	const secret = "secret-api-key"
+	var endpoint string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusBadGateway)
+		_, _ = io.WriteString(w, "down "+endpoint)
+	}))
+	t.Cleanup(srv.Close)
+	endpoint = srv.URL + "/v2/" + secret
+
+	p := New()
+	p.client = httpclient.Wrap(srv.Client())
+	p.mainnetRPC = endpoint
+
+	_, err := p.GetBlockHeight(context.Background(), models.ChainSOL)
+	require.Error(t, err)
+	assert.NotContains(t, err.Error(), secret)
+}
+
 func TestProvider_RejectsAnUnknownChain(t *testing.T) {
 	_, err := New().GetBlockHeight(context.Background(), models.ChainBTC)
 	require.Error(t, err)

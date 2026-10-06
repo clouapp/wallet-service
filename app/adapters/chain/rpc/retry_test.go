@@ -146,6 +146,38 @@ func TestRPCCallTransportErrorOmitsURL(t *testing.T) {
 	}
 }
 
+func TestRPCCallErrorBodyOmitsURL(t *testing.T) {
+	const secret = "secret-api-key"
+	var endpoint string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusBadGateway)
+		_, _ = w.Write([]byte("down " + endpoint))
+	}))
+	defer srv.Close()
+	endpoint = srv.URL + "/v2/" + secret
+
+	err := NewRPCClient(RPCClientDeps{URL: endpoint}).Call(context.Background(), "getSlot", nil)
+	if err == nil || strings.Contains(err.Error(), secret) {
+		t.Fatalf("err = %v", err)
+	}
+}
+
+func TestRPCErrorMessageOmitsURLButKeepsTheType(t *testing.T) {
+	const secret = "secret-api-key"
+	var endpoint string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"jsonrpc":"2.0","id":1,"error":{"code":-32000,"message":"rejected ` + endpoint + `"}}`))
+	}))
+	defer srv.Close()
+	endpoint = srv.URL + "/v2/" + secret
+
+	err := NewRPCClient(RPCClientDeps{URL: endpoint}).Call(context.Background(), "getSlot", nil)
+	var rpcErr *RPCError
+	if !errors.As(err, &rpcErr) || rpcErr.Code != -32000 || strings.Contains(err.Error(), secret) {
+		t.Fatalf("err = %v", err)
+	}
+}
+
 func TestParseRetryAfter(t *testing.T) {
 	now := time.Date(2026, 10, 1, 12, 0, 0, 0, time.UTC)
 	cases := []struct {

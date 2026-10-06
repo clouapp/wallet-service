@@ -67,21 +67,25 @@ func (a *BitcoinLive) esploraGet(ctx context.Context, path string) ([]byte, erro
 	for attempt := 1; ; attempt++ {
 		status, header, body, err := a.esploraFetch(ctx, requestURL, path)
 		if err != nil {
-			return nil, err
+			return nil, httpclient.RedactURL(err, requestURL)
 		}
 		if status >= httpclient.StatusOK && status < httpclient.StatusMultipleChoices {
 			return body, nil
 		}
 		if !isRateLimited(status, body) {
-			return nil, &esploraStatusError{path: path, status: status, body: strings.TrimSpace(string(body))}
+			return nil, &esploraStatusError{
+				path:   path,
+				status: status,
+				body:   httpclient.RedactURLText(strings.TrimSpace(string(body)), requestURL),
+			}
 		}
 		if attempt >= a.esploraRetry.maxAttempts {
-			return nil, fmt.Errorf("esplora GET %s: %w (HTTP %d) after %d attempts", path, chain.ErrRateLimited, status, attempt)
+			return nil, httpclient.RedactURL(fmt.Errorf("esplora GET %s: %w (HTTP %d) after %d attempts", path, chain.ErrRateLimited, status, attempt), requestURL)
 		}
 		delay := a.esploraRetry.delay(attempt, header.Get("Retry-After"), time.Now())
 		slog.Warn("esplora rate limited, backing off", "chain", a.cfg.ChainIDStr, "path", path, "status", status, "attempt", attempt, "delay", delay.String())
 		if err := a.esploraRetry.sleep(ctx, delay); err != nil {
-			return nil, fmt.Errorf("esplora GET %s: %w", path, err)
+			return nil, httpclient.RedactURL(fmt.Errorf("esplora GET %s: %w", path, err), requestURL)
 		}
 	}
 }

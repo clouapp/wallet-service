@@ -407,10 +407,10 @@ func (a *BitcoinLive) broadcastBitcoin(ctx context.Context, signed *types.Signed
 			HasBody: true,
 		})
 		if err != nil {
-			return "", err
+			return "", httpclient.RedactURL(err, url)
 		}
 		if resp.StatusCode >= httpclient.StatusMultipleChoices {
-			return "", fmt.Errorf("btc broadcast %d: %s", resp.StatusCode, resp.Body)
+			return "", httpclient.RedactURL(fmt.Errorf("btc broadcast %d: %s", resp.StatusCode, resp.Body), url)
 		}
 		return strings.TrimSpace(string(resp.Body)), nil
 	}

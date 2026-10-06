@@ -114,7 +114,8 @@ type Response struct {
 }
 
 // Do sends call and reads its body. A nil context, empty method, or empty URL fails
-// before any network use. Transport errors stay unwrapped so callers can drop the URL.
+// before any network use. A *url.Error is stripped before it is returned: the URL
+// is not logged and does not appear in the error text.
 func (c *Client) Do(ctx context.Context, call Request) (Response, error) {
 	if c == nil || c.raw == nil {
 		return Response{}, fmt.Errorf("httpclient: client is required")
@@ -135,7 +136,7 @@ func (c *Client) Do(ctx context.Context, call Request) (Response, error) {
 	}
 	req, err := http.NewRequestWithContext(ctx, call.Method, call.URL, body)
 	if err != nil {
-		return Response{}, phase("build", err)
+		return Response{}, phase("build", RedactURL(err, call.URL))
 	}
 	for key, value := range call.Header {
 		req.Header.Set(key, value)
@@ -146,7 +147,7 @@ func (c *Client) Do(ctx context.Context, call Request) (Response, error) {
 
 	resp, err := c.raw.Do(req)
 	if err != nil {
-		return Response{}, phase("roundtrip", err)
+		return Response{}, phase("roundtrip", RedactURL(err, call.URL))
 	}
 	defer resp.Body.Close()
 
@@ -156,7 +157,7 @@ func (c *Client) Do(ctx context.Context, call Request) (Response, error) {
 	}
 	payload, err := io.ReadAll(reader)
 	if err != nil {
-		return Response{}, phase("read", err)
+		return Response{}, phase("read", RedactURL(err, call.URL))
 	}
 	return Response{
 		StatusCode: resp.StatusCode,

@@ -42,7 +42,8 @@ func (p *Provider) GetBlockHeight(ctx context.Context, key string) (uint64, erro
 }
 
 // fetchEsploraTipHeight reads an Esplora GET /blocks/tip/height body: a bare decimal.
-func fetchEsploraTipHeight(ctx context.Context, client *httpclient.Client, heightURL, source string) (uint64, error) {
+func fetchEsploraTipHeight(ctx context.Context, client *httpclient.Client, heightURL, source string) (height uint64, err error) {
+	defer func() { err = httpclient.RedactURL(err, heightURL) }()
 	resp, err := client.Do(ctx, httpclient.Request{
 		Method:   httpclient.MethodGet,
 		URL:      heightURL,
@@ -63,7 +64,7 @@ func fetchEsploraTipHeight(ctx context.Context, client *httpclient.Client, heigh
 	}
 
 	s := strings.TrimSpace(string(resp.Body))
-	height, err := strconv.ParseUint(s, 10, 64)
+	height, err = strconv.ParseUint(s, 10, 64)
 	if err != nil {
 		return 0, fmt.Errorf("%s: parse height %q: %w", source, s, err)
 	}

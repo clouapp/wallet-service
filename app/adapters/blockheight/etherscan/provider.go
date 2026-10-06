@@ -65,7 +65,9 @@ type etherscanBlockNumberResp struct {
 	} `json:"error"`
 }
 
-func (p *Provider) GetBlockHeight(ctx context.Context, chainID string) (uint64, error) {
+func (p *Provider) GetBlockHeight(ctx context.Context, chainID string) (height uint64, err error) {
+	var reqURL string
+	defer func() { err = httpclient.RedactURL(err, reqURL) }()
 	eid, err := etherscanChainID(chainID)
 	if err != nil {
 		return 0, err
@@ -91,7 +93,7 @@ func (p *Provider) GetBlockHeight(ctx context.Context, chainID string) (uint64, 
 	}
 
 	base := strings.TrimSuffix(p.baseURL, "/")
-	reqURL := fmt.Sprintf("%s/v2/api?%s", base, q.Encode())
+	reqURL = fmt.Sprintf("%s/v2/api?%s", base, q.Encode())
 
 	resp, err := p.client.Do(ctx, httpclient.Request{Method: httpclient.MethodGet, URL: reqURL})
 	if err != nil {
@@ -123,7 +125,7 @@ func (p *Provider) GetBlockHeight(ctx context.Context, chainID string) (uint64, 
 	}
 
 	hexStr := strings.TrimPrefix(strings.TrimPrefix(result, "0x"), "0X")
-	height, err := strconv.ParseUint(hexStr, 16, 64)
+	height, err = strconv.ParseUint(hexStr, 16, 64)
 	if err != nil {
 		return 0, fmt.Errorf("etherscan: parse block height %q: %w", result, err)
 	}

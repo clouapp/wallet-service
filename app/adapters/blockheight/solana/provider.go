@@ -58,8 +58,10 @@ type slotResp struct {
 	} `json:"error"`
 }
 
-func (p *Provider) GetBlockHeight(ctx context.Context, chainID string) (uint64, error) {
-	u, err := p.rpcURL(chainID)
+func (p *Provider) GetBlockHeight(ctx context.Context, chainID string) (height uint64, err error) {
+	var u string
+	defer func() { err = httpclient.RedactURL(err, u) }()
+	u, err = p.rpcURL(chainID)
 	if err != nil {
 		return 0, err
 	}

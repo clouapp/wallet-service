@@ -173,7 +173,8 @@ func (a *BitcoinLive) getBalanceRPC(ctx context.Context, address string) (*types
 
 // getBalanceREST fetches UTXOs via the Blockstream/mempool.space REST API
 // (GET /api/address/:address/utxo) and sums the satoshi values.
-func (a *BitcoinLive) getBalanceREST(ctx context.Context, address string) (*types.Balance, error) {
+func (a *BitcoinLive) getBalanceREST(ctx context.Context, address string) (bal *types.Balance, err error) {
+	defer func() { err = httpclient.RedactURL(err, a.cfg.RPCURL) }()
 	url := strings.TrimRight(a.cfg.RPCURL, "/") + "/address/" + address + "/utxo"
 	resp, err := a.http.Do(ctx, httpclient.Request{Method: httpclient.MethodGet, URL: url})
 	if err != nil {
@@ -233,7 +234,8 @@ func (a *BitcoinLive) GetLatestBlock(ctx context.Context) (uint64, error) {
 	return count, nil
 }
 
-func (a *BitcoinLive) getLatestBlockREST(ctx context.Context) (uint64, error) {
+func (a *BitcoinLive) getLatestBlockREST(ctx context.Context) (height uint64, err error) {
+	defer func() { err = httpclient.RedactURL(err, a.cfg.RPCURL) }()
 	url := strings.TrimRight(a.cfg.RPCURL, "/") + "/blocks/tip/height"
 	resp, err := a.http.Do(ctx, httpclient.Request{Method: httpclient.MethodGet, URL: url})
 	if err != nil {
@@ -249,7 +251,6 @@ func (a *BitcoinLive) getLatestBlockREST(ctx context.Context) (uint64, error) {
 		return 0, fmt.Errorf("block height API returned %d: %s", resp.StatusCode, string(resp.Body))
 	}
 
-	var height uint64
 	if err := json.Unmarshal(resp.Body, &height); err != nil {
 		return 0, fmt.Errorf("parse block height: %w", err)
 	}

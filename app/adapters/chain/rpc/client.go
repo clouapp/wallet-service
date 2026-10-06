@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"net/url"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -100,7 +99,8 @@ func (c *RPCClient) ReplaceEndpoint(endpoint string) {
 // Call executes a JSON-RPC method and unmarshals result into `out`. A rate-limited
 // request (HTTP 429/403 or JSON-RPC 429) was not served, so it is retried with
 // backoff; every other failure is returned at once.
-func (c *RPCClient) Call(ctx context.Context, method string, out interface{}, params ...interface{}) error {
+func (c *RPCClient) Call(ctx context.Context, method string, out interface{}, params ...interface{}) (err error) {
+	defer func() { err = c.scrub(err) }()
 	if params == nil {
 		params = []interface{}{}
 	}
@@ -183,9 +183,25 @@ func decodeRPCResponse(method string, status int, respBody []byte, out interface
 
 // withoutURL drops the request URL from transport errors: provider URLs embed API keys.
 func withoutURL(err error) error {
-	var urlErr *url.Error
-	if errors.As(err, &urlErr) {
-		return fmt.Errorf("%s: %w", urlErr.Op, urlErr.Err)
+	return httpclient.WithoutURL(err)
+}
+
+// scrub removes the endpoint from an error returned to callers. A JSON-RPC error
+// keeps its type so callers can still match it; the URL is not logged.
+func (c *RPCClient) scrub(err error) error {
+	if err == nil || c == nil {
+		return err
 	}
-	return err
+	endpoint := c.Endpoint()
+	var rpcErr *rpcError
+	if errors.As(err, &rpcErr) {
+		message := httpclient.RedactURLText(rpcErr.Message, endpoint)
+		if message == rpcErr.Message {
+			return err
+		}
+		clone := *rpcErr
+		clone.Message = message
+		return &clone
+	}
+	return httpclient.RedactURL(err, endpoint)
 }
