@@ -121,6 +121,7 @@ func Boot() contractsfoundation.Application {
 					Addresses: container.MustMake[*repositories.AddressRepository](),
 					Chains:    container.MustMake[*repositories.ChainRepository](),
 				}),
+				&commands.TransactionsBackfillFees{},
 			}
 		}).
 		WithEvents(func() map[contractsevent.Event][]contractsevent.Listener {

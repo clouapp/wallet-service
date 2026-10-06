@@ -128,7 +128,12 @@ func utcTime(value *carbon.DateTime) *time.Time {
 type Transaction struct {
 	transactionRecord
 	zonedTimestamps
-	Decimals       *int   `json:"decimals,omitempty"`
+	Decimals *int `json:"decimals,omitempty"`
+	// FeeAsset and FeeDecimals describe fee, which is always in base units of the
+	// chain's native asset (a token transfer pays its fee in TRX, ETH, ...). Omitted
+	// while the fee is unknown.
+	FeeAsset       string `json:"fee_asset,omitempty"`
+	FeeDecimals    *int   `json:"fee_decimals,omitempty"`
 	Type           string `json:"type" enums:"deposit,withdrawal,sweep,consolidation,gas_funding,transfer,fee,unknown"`
 	Direction      string `json:"direction" enums:"incoming,outgoing,internal,unknown"`
 	ChainDirection string `json:"chain_direction,omitempty" enums:"inbound,outbound,self,unknown"`
@@ -162,16 +167,19 @@ func loadAssetDecimalsCatalog(ctx context.Context, chainID string) assetDecimals
 // assetDecimalsCatalog holds the native and token decimals of one chain.
 type assetDecimalsCatalog struct {
 	nativeDecimals map[string]int
+	nativeSymbols  map[string]string
 	tokenDecimals  map[string]map[string]int
 }
 
 func newAssetDecimalsCatalog(chain *models.Chain, tokens []models.Token) assetDecimalsCatalog {
 	catalog := assetDecimalsCatalog{
 		nativeDecimals: map[string]int{},
+		nativeSymbols:  map[string]string{},
 		tokenDecimals:  map[string]map[string]int{},
 	}
 	if chain != nil && chain.ID != "" {
 		catalog.nativeDecimals[chain.ID] = chain.NativeDecimals
+		catalog.nativeSymbols[chain.ID] = strings.ToUpper(chain.NativeSymbol)
 	}
 	for _, token := range tokens {
 		if catalog.tokenDecimals[token.ChainID] == nil {
@@ -206,6 +214,19 @@ func (c assetDecimalsCatalog) decimalsFor(tx models.Transaction) *int {
 	return &decimals
 }
 
+// feeAssetFor is the native asset and decimals tx.Fee is denominated in.
+func (c assetDecimalsCatalog) feeAssetFor(tx models.Transaction) (string, *int) {
+	if strings.TrimSpace(tx.Fee) == "" {
+		return "", nil
+	}
+	decimals, ok := c.nativeDecimals[tx.Chain]
+	symbol := c.nativeSymbols[tx.Chain]
+	if !ok || symbol == "" {
+		return "", nil
+	}
+	return symbol, &decimals
+}
+
 // transactionsFrom copies a page. A nil slice stays nil; an empty slice stays empty.
 func transactionsFrom(transactions []models.Transaction, catalog assetDecimalsCatalog) []Transaction {
 	if transactions == nil {
@@ -215,10 +236,13 @@ func transactionsFrom(transactions []models.Transaction, catalog assetDecimalsCa
 	for i := range transactions {
 		tx := transactions[i]
 		kind := txkind.Classify(tx.TxType, tx.Origin, tx.Direction)
+		feeAsset, feeDecimals := catalog.feeAssetFor(tx)
 		views[i] = Transaction{
 			transactionRecord: newTransactionRecord(tx),
 			zonedTimestamps:   newZonedTimestamps(tx.CreatedAt, tx.UpdatedAt),
 			Decimals:          catalog.decimalsFor(tx),
+			FeeAsset:          feeAsset,
+			FeeDecimals:       feeDecimals,
 			Type:              kind.Type,
 			Direction:         kind.Direction,
 			ChainDirection:    tx.Direction,

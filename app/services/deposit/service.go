@@ -61,7 +61,9 @@ type transactionStore interface {
 	CountByChainAndTxHash(ctx context.Context, chainID, txHash, txType string) (int64, error)
 	CountInternalTransfers(ctx context.Context, chainID, txHash string, walletID uuid.UUID) (int64, error)
 	FindPendingByChain(ctx context.Context, chainID string) ([]models.Transaction, error)
+	FindConfirmedOutboundWithoutFee(ctx context.Context, chainID string, limit int) ([]models.Transaction, error)
 	SetBlockNumber(ctx context.Context, id uuid.UUID, block uint64) error
+	SetFee(ctx context.Context, id uuid.UUID, fee string) error
 	RecordConfirmations(ctx context.Context, id uuid.UUID, confirmations int, status string, confirmedAt *time.Time) error
 }
 

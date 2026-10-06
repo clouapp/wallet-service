@@ -120,6 +120,9 @@ func TestSolana_Withdrawal_SlotReconciledFromSignatureStatus(t *testing.T) {
 	if reloaded.BlockNumber != solFixtureSlot || reloaded.Status != "confirmed" {
 		t.Fatalf("expected slot %d and confirmed, got %d / %s", solFixtureSlot, reloaded.BlockNumber, reloaded.Status)
 	}
+	if reloaded.Fee != "5000" {
+		t.Fatalf("paid fee %q, want the 5000 lamports of meta.fee", reloaded.Fee)
+	}
 	if len(confirmations.confirmed) != 1 || confirmations.confirmed[0].ID != withdrawal.ID {
 		t.Fatalf("withdrawal.confirmed must be published once, got %d", len(confirmations.confirmed))
 	}

@@ -23,7 +23,8 @@ var providerChainIDByNetwork = map[string]string{
 }
 
 // ErrTipFromChainRPC means no provider serves the network's tip: the caller reads
-// the chain's own RPC instead (Etherscan's free tier does not cover Base or BSC).
+// the chain's own RPC instead (Etherscan's free tier does not cover Base or BSC;
+// Litecoin's tip comes from its own Esplora API and TRON's from TronGrid).
 var ErrTipFromChainRPC = errors.New("blockheight: network tip comes from the chain RPC")
 
 var chainRPCTipNetworks = map[string]struct{}{
@@ -33,6 +34,10 @@ var chainRPCTipNetworks = map[string]struct{}{
 	models.NetworkArbitrumSepolia: {},
 	models.NetworkBSCMainnet:      {},
 	models.NetworkBSCTestnet:      {},
+	models.NetworkLitecoinMainnet: {},
+	models.NetworkLitecoinTestnet: {},
+	models.NetworkTronMainnet:     {},
+	models.NetworkTronNile:        {},
 }
 
 // NetworkRouted asks the inner provider for the tip of the network a chain record

@@ -27,7 +27,7 @@ func seedMissingAddedChains(ctx context.Context, apply bool) (chainregistry.Adde
 	chains := make([]chainregistry.AddedChain, len(plan.Chains))
 	for i, added := range plan.Chains {
 		chains[i] = chainregistry.AddedChain{
-			ID: added.ID, EnvVar: added.EnvVar, Network: added.Network,
+			ID: added.ID, AdapterType: added.AdapterType, EnvVar: added.EnvVar, Network: added.Network,
 			NetworkID: added.NetworkID, IsTestnet: added.IsTestnet,
 		}
 	}

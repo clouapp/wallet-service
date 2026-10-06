@@ -219,6 +219,9 @@ var (
 	bitcoinTest  = Network{ChainID: models.ChainBTC, AdapterType: models.AdapterTypeBitcoin, Name: models.NetworkBitcoinTestnet, Testnet: true}
 	bitcoinMain  = Network{ChainID: models.ChainBTC, AdapterType: models.AdapterTypeBitcoin, Name: models.NetworkBitcoinMainnet, Testnet: false}
 	solanaDevnet = Network{ChainID: models.ChainSOL, AdapterType: models.AdapterTypeSolana, Name: models.NetworkSolanaDevnet, Testnet: true}
+	litecoinTest = Network{ChainID: models.ChainLTC, AdapterType: models.AdapterTypeBitcoin, Name: models.NetworkLitecoinTestnet, Testnet: true}
+	litecoinMain = Network{ChainID: models.ChainLTC, AdapterType: models.AdapterTypeBitcoin, Name: models.NetworkLitecoinMainnet, Testnet: false}
+	tronNile     = Network{ChainID: models.ChainTron, AdapterType: models.AdapterTypeTron, Name: models.NetworkTronNile, Testnet: true}
 )
 
 // fakeStore serves fixtures as the database, Secrets Manager and network registry.

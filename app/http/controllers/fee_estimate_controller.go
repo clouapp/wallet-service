@@ -47,7 +47,7 @@ func feeEstimateStatus(kind feeestimate.Kind) int {
 
 // GetWalletFeeEstimate godoc
 // @Summary      Estimate a withdrawal's network fee
-// @Description  Prices the withdrawal POST /withdrawals would send, with the same planner and chain adapters, without signing or broadcasting. The fee is always in the chain's native coin. Answers are cached for FEE_ESTIMATE_CACHE_TTL_SECONDS (default 15). Node failures answer 503.
+// @Description  Prices the withdrawal POST /withdrawals would send, with the same planner and chain adapters, without signing or broadcasting. The fee is always in the chain's native coin (ETH, POL, BTC, LTC, SOL, TRX), also for tokens. EVM transfers are legacy transactions paying gas_price_wei for every unit of gas (plus the L1 data fee on OP-stack networks); Bitcoin and Litecoin use the node's fee rate and the coin selection the builder runs; Solana pays 5000 lamports per signature plus the recipient's token account when it must be created; TRON is priced as burned TRX with no free or staked resources (bandwidth per signed byte, 1.1 TRX to activate a new recipient, TRC-20 energy from estimateenergy at the chain's energy price), broken down in details.tron. When the wallet cannot cover the amount, the fee of the transfer from the base address is returned with insufficient_funds=true. Answers are cached for FEE_ESTIMATE_CACHE_TTL_SECONDS (default 15). Node failures answer 503; no value is guessed.
 // @Tags         Wallet Withdrawals
 // @Security     BearerAuth
 // @Produce      json

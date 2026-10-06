@@ -709,6 +709,200 @@ definitions:
       wallet_id:
         type: string
     type: object
+  controllers.WithdrawalResponse:
+    properties:
+      failed_step:
+        $ref: '#/definitions/controllers.WithdrawalFailedStep'
+      origin:
+        example: user_request
+        type: string
+      status:
+        example: confirming
+        type: string
+      strategy:
+        example: direct_from_base
+        type: string
+      sweeps:
+        items:
+          $ref: '#/definitions/controllers.WithdrawalSweepItem'
+        type: array
+      transaction_id:
+        example: 8c5e3b3a-4a8f-4c0b-9e8a-2d1e8f0b7c4d
+        type: string
+      tx_hash:
+        example: 0xaaa...
+        type: string
+    type: object
+  controllers.WithdrawalSweepItem:
+    properties:
+      from:
+        example: 0xChildAddress
+        type: string
+      origin:
+        example: sweep
+        type: string
+      tx_hash:
+        example: 0xbbb...
+        type: string
+      tx_id:
+        example: 1f2d3c4b-5a6b-7c8d-9e0f-112233445566
+        type: string
+    type: object
+  feeestimate.BitcoinDetails:
+    properties:
+      fee_rate_sat_per_vbyte:
+        example: "1"
+        type: string
+      fee_rate_source:
+        example: estimator
+        type: string
+      inputs:
+        example: 1
+        type: integer
+      outputs:
+        example: 2
+        type: integer
+      vsize:
+        example: 141
+        type: integer
+    type: object
+  feeestimate.Details:
+    properties:
+      bitcoin:
+        $ref: '#/definitions/feeestimate.BitcoinDetails'
+      evm:
+        $ref: '#/definitions/feeestimate.EVMDetails'
+      solana:
+        $ref: '#/definitions/feeestimate.SolanaDetails'
+      tron:
+        $ref: '#/definitions/feeestimate.TronDetails'
+    type: object
+  feeestimate.EVMDetails:
+    properties:
+      gas_limit:
+        example: 21000
+        type: integer
+      gas_price_gwei:
+        example: "1.994918016"
+        type: string
+      gas_price_wei:
+        example: "1994918016"
+        type: string
+      l1_data_fee_wei:
+        example: "0"
+        type: string
+      tx_type:
+        example: legacy
+        type: string
+    type: object
+  feeestimate.Estimate:
+    properties:
+      amount:
+        example: "0.001"
+        type: string
+      amount_base_units:
+        example: "1000000000000000"
+        type: string
+      amount_is_reference:
+        example: false
+        type: boolean
+      amount_spendable:
+        example: true
+        type: boolean
+      asset:
+        example: ETH
+        type: string
+      base_balance_base_units:
+        example: "1958106721664000"
+        type: string
+      basis:
+        example: plan
+        type: string
+      cached:
+        example: false
+        type: boolean
+      chain:
+        example: eth
+        type: string
+      details:
+        $ref: '#/definitions/feeestimate.Details'
+      estimated_at:
+        type: string
+      expires_at:
+        type: string
+      fee:
+        example: "0.000041893278336"
+        type: string
+      fee_asset:
+        example: ETH
+        type: string
+      fee_base_units:
+        example: "41893278336000"
+        type: string
+      fee_decimals:
+        example: 18
+        type: integer
+      fee_multiplier:
+        example: "1"
+        type: string
+      insufficient_funds:
+        example: false
+        type: boolean
+      minimum_remaining_base_units:
+        example: "0"
+        type: string
+      recipient:
+        example: provided
+        type: string
+      strategy:
+        example: direct_from_base
+        type: string
+      transfers:
+        example: 1
+        type: integer
+      wallet_id:
+        example: d6a8ce92-b637-44c2-a9f1-774344802e1a
+        type: string
+    type: object
+  feeestimate.SolanaDetails:
+    properties:
+      lamports_per_signature:
+        example: 5000
+        type: integer
+      signatures:
+        example: 1
+        type: integer
+      token_account_creation_lamports:
+        example: "0"
+        type: string
+    type: object
+  feeestimate.TronDetails:
+    properties:
+      account_activation_fee_sun:
+        example: "0"
+        type: string
+      bandwidth_bytes:
+        example: 345
+        type: integer
+      bandwidth_fee_sun:
+        example: "345000"
+        type: string
+      energy:
+        example: 21975
+        type: integer
+      energy_fee_limit_sun:
+        example: "2637000"
+        type: string
+      energy_is_reference:
+        example: false
+        type: boolean
+      sun_per_bandwidth_byte:
+        example: 1000
+        type: integer
+      sun_per_energy:
+        example: 100
+        type: integer
+    type: object
   github_com_goravel_framework_support_carbon.DateTime:
     properties:
       error: {}
@@ -1454,6 +1648,76 @@ paths:
       summary: Remove a user from an account
       tags:
       - Accounts
+  /api/v1/wallets/{walletId}/fee-estimate:
+    get:
+      description: Prices the withdrawal POST /withdrawals would send, with the same
+        planner and chain adapters, without signing or broadcasting. The fee is always
+        in the chain's native coin (ETH, POL, BTC, LTC, SOL, TRX), also for tokens.
+        EVM transfers are legacy transactions paying gas_price_wei for every unit
+        of gas (plus the L1 data fee on OP-stack networks); Bitcoin and Litecoin use
+        the node's fee rate and the coin selection the builder runs; Solana pays 5000
+        lamports per signature plus the recipient's token account when it must be
+        created; TRON is priced as burned TRX with no free or staked resources (bandwidth
+        per signed byte, 1.1 TRX to activate a new recipient, TRC-20 energy from estimateenergy
+        at the chain's energy price), broken down in details.tron. When the wallet
+        cannot cover the amount, the fee of the transfer from the base address is
+        returned with insufficient_funds=true. Answers are cached for FEE_ESTIMATE_CACHE_TTL_SECONDS
+        (default 15). Node failures answer 503; no value is guessed.
+      parameters:
+      - description: Wallet UUID
+        format: uuid
+        in: path
+        name: walletId
+        required: true
+        type: string
+      - description: Asset symbol; the chain's native coin when omitted
+        example: USDC
+        in: query
+        name: asset
+        type: string
+      - description: Decimal amount, as sent to POST /withdrawals; the smallest transfer
+          when omitted
+        example: "0.001"
+        in: query
+        name: amount
+        type: string
+      - description: Destination address; a probe recipient when omitted
+        in: query
+        name: to
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/feeestimate.Estimate'
+        "400":
+          description: invalid_amount
+          schema:
+            $ref: '#/definitions/controllers.FeeEstimateErrorResponse'
+        "404":
+          description: wallet not found (or owned by another account)
+          schema:
+            $ref: '#/definitions/controllers.ErrorResponse'
+        "422":
+          description: unknown_asset, invalid_address, amount_below_minimum, token_balance_required,
+            unsupported_chain
+          schema:
+            $ref: '#/definitions/controllers.FeeEstimateErrorResponse'
+        "429":
+          description: sweep_limit_exceeded
+          schema:
+            $ref: '#/definitions/controllers.FeeEstimateErrorResponse'
+        "503":
+          description: fee_estimate_unavailable, gas_estimate_failed
+          schema:
+            $ref: '#/definitions/controllers.FeeEstimateErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Estimate a withdrawal's network fee
+      tags:
+      - Wallet Withdrawals
   /api/v1/wallets/{walletId}/withdrawals/{idempotencyKey}:
     get:
       description: Returns the outcome of a withdrawal created with the given idempotency_key

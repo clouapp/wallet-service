@@ -85,10 +85,15 @@ func (a *EVMLive) WithFeePolicy(policy chain.FeePolicy) types.Chain {
 // FeePolicy is the wallet fee policy this adapter prices with.
 func (a *EVMLive) FeePolicy() chain.FeePolicy { return a.fee }
 
+// evmRPCMaxResponseBytes bounds one JSON-RPC answer: eth_getBlockByNumber with full
+// transactions on a busy L2 block is several MB (Base Sepolia 47639340 is ~4.3 MB),
+// and L2 gas limits allow far larger calldata blocks than the 1 MiB default.
+const evmRPCMaxResponseBytes = 64 << 20
+
 func NewEVMLive(cfg EVMConfig) *EVMLive {
 	return &EVMLive{
 		cfg: cfg,
-		rpc: rpc.NewRPCClient(rpc.RPCClientDeps{URL: cfg.RPCURL}),
+		rpc: rpc.NewRPCClient(rpc.RPCClientDeps{URL: cfg.RPCURL}).WithMaxResponseBytes(evmRPCMaxResponseBytes),
 	}
 }
 

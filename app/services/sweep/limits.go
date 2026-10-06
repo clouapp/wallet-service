@@ -39,6 +39,8 @@ func limitsFromSettings(accountID uuid.UUID, values settings.SweepLimitValues) *
 			models.AdapterTypeEVM:     values.MaxAddressesEVM,
 			models.AdapterTypeSolana:  values.MaxAddressesSolana,
 			models.AdapterTypeBitcoin: values.MaxAddressesBitcoin,
+			// Each TRON leg can wait a block for its gas_seed.
+			models.AdapterTypeTron: 50,
 		},
 		MaxConsolidateReqPerDay: values.MaxConsolidateRequestsPerDay,
 	}

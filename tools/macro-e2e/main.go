@@ -9,7 +9,8 @@
 //	macro-e2e preflight consolidation WALLET_ID ASSET
 //	macro-e2e send-from-base TAG WALLET_ID ASSET AMOUNT_BASE_UNITS DECIMALS TO EXTERNAL_USER_ID
 //	    [--apply] [--recording-lock-held-by OWNER] [--chain CHAIN]
-//	macro-e2e consolidate TAG WALLET_ID ASSET [--apply]
+//	macro-e2e consolidate TAG WALLET_ID ASSET [--chain CHAIN] [--apply]
+//	macro-e2e ledger-reconcile TAG... [--apply]
 //	macro-e2e fee-estimate WALLET_ID ASSET TO_ADDRESS [--amount DECIMAL]
 //
 // Run from macro-wallets/back (go run ./tools/macro-e2e ...) or set MACRO_WALLETS_BACK_DIR.
@@ -41,7 +42,8 @@ const (
   macro-e2e preflight withdrawal WALLET_ID ASSET AMOUNT_BASE_UNITS TO_ADDRESS
   macro-e2e preflight consolidation WALLET_ID ASSET
   macro-e2e send-from-base TAG WALLET_ID ASSET AMOUNT_BASE_UNITS DECIMALS TO EXTERNAL_USER_ID [--apply] [--recording-lock-held-by OWNER] [--chain CHAIN]
-  macro-e2e consolidate TAG WALLET_ID ASSET [--apply]
+  macro-e2e consolidate TAG WALLET_ID ASSET [--chain CHAIN] [--apply]
+  macro-e2e ledger-reconcile TAG... [--apply]
   macro-e2e fee-estimate WALLET_ID ASSET TO_ADDRESS [--amount DECIMAL]`
 	jsonIndent = 2
 )
@@ -85,6 +87,8 @@ func dispatch(ctx context.Context, command string, args []string, out, errOut io
 		return sendFromBase(ctx, args, out, errOut)
 	case "consolidate":
 		return consolidate(ctx, args, out, errOut)
+	case "ledger-reconcile":
+		return ledgerReconcile(ctx, args, out)
 	case "fee-estimate":
 		return feeEstimate(ctx, args, out)
 	case "help", "-h", "--help":
@@ -195,7 +199,7 @@ func sendFromBase(ctx context.Context, args []string, out, errOut io.Writer) (in
 }
 
 func consolidate(ctx context.Context, args []string, out, errOut io.Writer) (int, error) {
-	parsed, err := e2e.ParseArgs(args, []string{"apply"}, nil, 3)
+	parsed, err := e2e.ParseArgs(args, []string{"apply"}, []string{"chain"}, 3)
 	if err != nil {
 		return exitUsage, err
 	}
@@ -207,8 +211,38 @@ func consolidate(ctx context.Context, args []string, out, errOut io.Writer) (int
 		Tag:      parsed.Positional[0],
 		WalletID: parsed.Positional[1],
 		Asset:    parsed.Positional[2],
+		Chain:    parsed.Values["chain"],
 		Apply:    parsed.Switches["apply"],
 	})
+}
+
+func ledgerReconcile(ctx context.Context, args []string, out io.Writer) (int, error) {
+	parsed, err := e2e.ParseArgsAtLeast(args, []string{"apply"}, nil, 1)
+	if err != nil {
+		return exitUsage, err
+	}
+	paths, err := e2e.DefaultPaths()
+	if err != nil {
+		return e2e.ExitFailure, err
+	}
+	environment, err := e2e.ReadAPIEnviron(paths.APIEnviron)
+	if err != nil {
+		return e2e.ExitFailure, err
+	}
+	verifier, err := e2e.ChainVerifierFromEnviron(environment)
+	if err != nil {
+		return e2e.ExitFailure, err
+	}
+	reconcile := e2e.Reconcile{
+		Paths:     paths,
+		Ledger:    fundingLedger(paths),
+		Recording: recordingLock(paths),
+		SweepRows: e2e.DockerServicesFromEnv().SweepRows,
+		Verify:    verifier.Verify,
+		Now:       time.Now,
+		Out:       out,
+	}
+	return reconcile.Run(ctx, e2e.ReconcileRequest{Tags: parsed.Positional, Apply: parsed.Switches["apply"]})
 }
 
 func feeEstimate(ctx context.Context, args []string, out io.Writer) (int, error) {
@@ -256,18 +290,25 @@ func newFunding(out, errOut io.Writer) (e2e.Funding, error) {
 		Passphrases: runner.Passphrases,
 		Services: e2e.Services{
 			OutboundMatches: docker.OutboundMatches,
+			SweepRows:       docker.SweepRows,
 			MarketsToken:    docker.MarketsToken,
 			API:             e2e.APIClientFromEnv(),
 		},
-		Ledger:    e2e.FundingLedger{Path: runner.Paths.FundingLedger, Now: time.Now},
-		Recording: recordingLock(runner.Paths),
-		Now:       time.Now,
-		Sleep:     e2e.SleepContext,
-		PollEvery: e2e.TxHashPollInterval,
-		PollFor:   e2e.TxHashWait,
-		Out:       out,
-		Err:       errOut,
+		Ledger:         fundingLedger(runner.Paths),
+		Recording:      recordingLock(runner.Paths),
+		Now:            time.Now,
+		Sleep:          e2e.SleepContext,
+		PollEvery:      e2e.TxHashPollInterval,
+		PollFor:        e2e.TxHashWait,
+		SweepPollEvery: e2e.SweepPollInterval,
+		SweepPollFor:   e2e.SweepPollWait,
+		Out:            out,
+		Err:            errOut,
 	}, nil
+}
+
+func fundingLedger(paths e2e.Paths) e2e.FundingLedger {
+	return e2e.FundingLedger{Path: paths.FundingLedger, LockPath: paths.LedgerLock, Now: time.Now}
 }
 
 func recordingLock(paths e2e.Paths) e2e.RecordingLock {

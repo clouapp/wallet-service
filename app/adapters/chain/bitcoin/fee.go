@@ -44,13 +44,65 @@ const (
 	btcTypicalInputs            = 1
 
 	btcFeeRateCacheTTL = 30 * time.Second
+	// A fee-rate fetch is cut after this long so a stalled source cannot use up the
+	// caller's budget: litecoinspace's /v1/fees/recommended at times answers in 15-20 s
+	// while its other endpoints answer in under 2 s.
+	btcFeeRateFetchTimeout = 2 * time.Second
+	// A failed fetch prices with the last network rate while it is younger than this,
+	// before falling back to the flat fee.
+	btcFeeRateStaleTTL = 10 * time.Minute
+	satsPerBTC         = 100_000_000
+	btcDecimals        = 8
+)
+
+// Esplora fee-rate endpoints. Blockstream and mempool serve /fee-estimates;
+// mempool-based explorers also serve /v1/fees/recommended, the only one litecoinspace
+// answers (its /fee-estimates is a 404).
+const (
+	esploraFeeEstimatesPath    = "/fee-estimates"
+	mempoolRecommendedFeesPath = "/v1/fees/recommended"
+)
+
+// mempool's /v1/fees/recommended rates are the medians of its projected next blocks
+// (backend/src/api/fee-api.ts): fastestFee the first, halfHourFee the second, hourFee
+// the third. hourFee is the 3-block target, the start of the 3-6 block window read
+// from /fee-estimates; halfHourFee (never lower) stands in when it is missing. The
+// names are Bitcoin's 10-minute blocks: on Litecoin (2.5 minutes) the third block is
+// about 7.5 minutes away.
+const (
+	mempoolTargetFeeField   = "hourFee"
+	mempoolFallbackFeeField = "halfHourFee"
+	mempoolMinimumFeeField  = "minimumFee"
+)
+
+// btcFeeSource is one Esplora endpoint answering a fee rate in milli-sat/vB.
+type btcFeeSource struct {
+	path  string
+	parse func(body []byte) (int64, error)
+}
+
+var (
+	esploraFeeEstimatesSource    = btcFeeSource{path: esploraFeeEstimatesPath, parse: parseEsploraFeeEstimates}
+	mempoolRecommendedFeesSource = btcFeeSource{path: mempoolRecommendedFeesPath, parse: parseMempoolRecommendedFees}
+
+	// A source answering 404 (not served by this provider) passes to the next one.
+	bitcoinFeeSources  = []btcFeeSource{esploraFeeEstimatesSource, mempoolRecommendedFeesSource}
+	litecoinFeeSources = []btcFeeSource{mempoolRecommendedFeesSource, esploraFeeEstimatesSource}
 )
 
 // btcFeePolicy prices a P2WPKH transaction. milliSatPerVByte is the estimated rate;
-// 0 means the estimator was unavailable and flatFee applies.
+// 0 means the estimator was unavailable and flatFee applies. dustSats is the
+// network's dust limit (see dust).
 type btcFeePolicy struct {
 	milliSatPerVByte int64
 	flatFee          int64
+	dustSats         int64
+}
+
+// dust is the smallest output the policy creates: the network's limit, never below
+// Bitcoin's 546 sats, the lowest of every Bitcoin-family network.
+func (p btcFeePolicy) dust() int64 {
+	return max(p.dustSats, btcDustSats)
 }
 
 // p2wpkhVSize is ceil(10.5 + 68×inputs + 31×outputs).
@@ -83,6 +135,9 @@ type btcFeeRateCache struct {
 	mu               sync.Mutex
 	milliSatPerVByte int64
 	fetchedAt        time.Time
+	// failedAt is the last failed fetch; for btcFeeRateCacheTTL after it, quotes use
+	// the fallback rate instead of waiting on the source again.
+	failedAt time.Time
 }
 
 func (c *btcFeeRateCache) get(now time.Time) (int64, bool) {
@@ -97,6 +152,19 @@ func (c *btcFeeRateCache) get(now time.Time) (int64, bool) {
 	return c.milliSatPerVByte, true
 }
 
+// stale is the last network rate while it is younger than btcFeeRateStaleTTL.
+func (c *btcFeeRateCache) stale(now time.Time) (int64, bool) {
+	if c == nil {
+		return 0, false
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.milliSatPerVByte <= 0 || now.Sub(c.fetchedAt) >= btcFeeRateStaleTTL {
+		return 0, false
+	}
+	return c.milliSatPerVByte, true
+}
+
 func (c *btcFeeRateCache) put(rate int64, now time.Time) {
 	if c == nil {
 		return
@@ -105,6 +173,25 @@ func (c *btcFeeRateCache) put(rate int64, now time.Time) {
 	defer c.mu.Unlock()
 	c.milliSatPerVByte = rate
 	c.fetchedAt = now
+	c.failedAt = time.Time{}
+}
+
+func (c *btcFeeRateCache) markFailed(now time.Time) {
+	if c == nil {
+		return
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.failedAt = now
+}
+
+func (c *btcFeeRateCache) recentlyFailed(now time.Time) bool {
+	if c == nil {
+		return false
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return !c.failedAt.IsZero() && now.Sub(c.failedAt) < btcFeeRateCacheTTL
 }
 
 // flatBTCFee is the fallback fee: btcFeeVBytes at the configured (or default) rate,
@@ -118,35 +205,73 @@ func (a *BitcoinLive) flatBTCFee() int64 {
 	return ceilDiv(int64(btcFeeVBytes)*milliSatPerVByte, milliSatsPerSat)
 }
 
-// feePolicy prices transactions at the estimated rate for a 3-6 block target, or at
-// the flat fallback fee when the estimator fails or answers garbage. Both are
-// adjusted by the wallet's fee policy; the cache keeps the network's rate.
+// feePolicy prices transactions at the estimated rate for a 3-6 block target. When
+// the estimator fails, answers garbage or stalls past feeRateTimeout, it prices at the
+// last network rate younger than btcFeeRateStaleTTL, else at the flat fallback fee,
+// and does not ask the estimator again for btcFeeRateCacheTTL. All are adjusted by
+// the wallet's fee policy; the cache keeps the network's rate.
 func (a *BitcoinLive) feePolicy(ctx context.Context) btcFeePolicy {
-	policy := btcFeePolicy{flatFee: a.flatBTCFee()}
+	policy := btcFeePolicy{flatFee: a.flatBTCFee(), dustSats: a.network.dustSats}
 	now := time.Now()
 	if rate, ok := a.feeRates.get(now); ok {
 		policy.milliSatPerVByte = a.fee.AdjustMilliSatRate(rate)
 		return policy
 	}
-	rate, err := a.fetchFeeRate(ctx)
+	if a.feeRates.recentlyFailed(now) {
+		return a.fallbackFeePolicy(policy, now)
+	}
+	rate, err := a.fetchFeeRateWithin(ctx)
 	if err != nil {
-		slog.Warn("btc fee estimate unavailable, using the flat fee", "chain", a.cfg.ChainIDStr, "flat_fee_sats", policy.flatFee, "error", err)
-		return policy
+		a.feeRates.markFailed(time.Now())
+		slog.Warn("btc fee estimate unavailable, using the fallback rate", "chain", a.cfg.ChainIDStr, "error", err)
+		return a.fallbackFeePolicy(policy, time.Now())
 	}
 	a.feeRates.put(rate, now)
 	policy.milliSatPerVByte = a.fee.AdjustMilliSatRate(rate)
 	return policy
 }
 
+// fallbackFeePolicy is policy at the last network rate younger than
+// btcFeeRateStaleTTL, or at its flat fee when there is none.
+func (a *BitcoinLive) fallbackFeePolicy(policy btcFeePolicy, now time.Time) btcFeePolicy {
+	if lastRate, ok := a.feeRates.stale(now); ok {
+		policy.milliSatPerVByte = a.fee.AdjustMilliSatRate(lastRate)
+	}
+	return policy
+}
+
+func (a *BitcoinLive) fetchFeeRateWithin(ctx context.Context) (int64, error) {
+	timeout := a.feeRateTimeout
+	if timeout <= 0 {
+		timeout = btcFeeRateFetchTimeout
+	}
+	fetchCtx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	return a.fetchFeeRate(fetchCtx)
+}
+
 func (a *BitcoinLive) fetchFeeRate(ctx context.Context) (int64, error) {
-	if a.restAPI {
-		body, err := a.esploraGet(ctx, "/fee-estimates")
+	return a.chainProviders().feeRate(ctx)
+}
+
+// fetchEsploraFeeRate asks the network's Esplora fee-rate endpoints in order.
+func (a *BitcoinLive) fetchEsploraFeeRate(ctx context.Context) (int64, error) {
+	if len(a.network.feeSources) == 0 {
+		return 0, fmt.Errorf("no fee-rate source for %s", a.network.name)
+	}
+	var notServed error
+	for _, source := range a.network.feeSources {
+		body, err := a.esploraGet(ctx, source.path)
+		if isEsploraNotFound(err) {
+			notServed = err
+			continue
+		}
 		if err != nil {
 			return 0, err
 		}
-		return parseEsploraFeeEstimates(body)
+		return source.parse(body)
 	}
-	return a.fetchSmartFeeRate(ctx)
+	return 0, fmt.Errorf("no fee-rate endpoint served: %w", notServed)
 }
 
 // parseEsploraFeeEstimates reads {"<blocks>": sat/vB, ...} and returns the rate of
@@ -164,6 +289,55 @@ func parseEsploraFeeEstimates(body []byte) (int64, error) {
 		return milliSatRate(satPerVByte, fmt.Sprintf("%d-block estimate", target))
 	}
 	return 0, fmt.Errorf("fee estimates have no %d-%d block target", btcFeeTargetMinBlocks, btcFeeTargetMaxBlocks)
+}
+
+// parseMempoolRecommendedFees reads {"fastestFee":…,"halfHourFee":…,"hourFee":…,
+// "economyFee":…,"minimumFee":…} (sat/vB) and returns hourFee, or halfHourFee when
+// hourFee is absent, floored at minimumFee (the provider's mempool purge rate) when
+// present and at the min relay fee. Rates are read as decimals, never as floats.
+func parseMempoolRecommendedFees(body []byte) (int64, error) {
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(body, &fields); err != nil {
+		return 0, fmt.Errorf("parse recommended fees: %w", err)
+	}
+	field := mempoolTargetFeeField
+	if _, ok := fields[field]; !ok {
+		field = mempoolFallbackFeeField
+	}
+	raw, ok := fields[field]
+	if !ok {
+		return 0, fmt.Errorf("recommended fees have neither %s nor %s", mempoolTargetFeeField, mempoolFallbackFeeField)
+	}
+	rate, err := milliSatRateOfJSONNumber(raw, field)
+	if err != nil {
+		return 0, err
+	}
+	if minimumRaw, ok := fields[mempoolMinimumFeeField]; ok {
+		minimum, err := milliSatRateOfJSONNumber(minimumRaw, mempoolMinimumFeeField)
+		if err != nil {
+			return 0, err
+		}
+		rate = max(rate, minimum)
+	}
+	return rate, nil
+}
+
+// milliSatRateOfJSONNumber is milliSatRate for a sat/vB JSON number, converted
+// exactly (rounded half away from zero to a milli-sat) without passing through float.
+func milliSatRateOfJSONNumber(raw json.RawMessage, source string) (int64, error) {
+	text := strings.TrimSpace(string(raw))
+	if text == "" || strings.HasPrefix(text, `"`) {
+		return 0, fmt.Errorf("%s of %s is not a JSON number", source, text)
+	}
+	satPerVByte, err := decimal.NewFromString(text)
+	if err != nil {
+		return 0, fmt.Errorf("%s of %s is not a number: %w", source, text, err)
+	}
+	if !satPerVByte.IsPositive() || satPerVByte.GreaterThan(decimal.NewFromInt(btcMaxSaneSatPerVByte)) {
+		return 0, fmt.Errorf("%s of %s sat/vB is not a usable fee rate", source, text)
+	}
+	rate := satPerVByte.Mul(decimal.NewFromInt(milliSatsPerSat)).Round(0).IntPart()
+	return max(rate, btcMinRelayMilliSatPerVByte), nil
 }
 
 // fetchSmartFeeRate asks bitcoind (estimatesmartfee, BTC/kvB).
@@ -222,7 +396,7 @@ func spendFromInputs(inputs []btcInput, amount int64, policy btcFeePolicy) (btcS
 	sum := sumBTCInputs(inputs)
 	owned := append([]btcInput(nil), inputs...)
 	withChange := policy.fee(len(inputs), btcOutputsPaymentWithChange)
-	if change := sum - amount - withChange; change >= btcDustSats {
+	if change := sum - amount - withChange; change >= policy.dust() {
 		return btcSpend{inputs: owned, sum: sum, fee: withChange, change: change}, true
 	}
 	if leftover := sum - amount; leftover >= policy.fee(len(inputs), btcOutputsPaymentOnly) {
@@ -235,8 +409,8 @@ func spendFromInputs(inputs []btcInput, amount int64, policy btcFeePolicy) (btcS
 // Whenever amount ≤ maxSendableSats(utxos) it succeeds (at the latest with every UTXO
 // and no change), which is what the sweep planner relies on.
 func selectBTCSpend(utxos []btcInput, amount int64, policy btcFeePolicy) (btcSpend, error) {
-	if amount < btcDustSats {
-		return btcSpend{}, fmt.Errorf("btc amount %d sats is below the %d sat dust limit", amount, btcDustSats)
+	if amount < policy.dust() {
+		return btcSpend{}, fmt.Errorf("btc amount %d sats is below the %d sat dust limit", amount, policy.dust())
 	}
 	ordered := spendableBTCInputs(utxos)
 	for count := 1; count <= len(ordered); count++ {
@@ -256,7 +430,7 @@ func maxSendableSats(utxos []btcInput, policy btcFeePolicy) int64 {
 		return 0
 	}
 	sendable := sumBTCInputs(ordered) - policy.fee(len(ordered), btcOutputsPaymentOnly)
-	if sendable < btcDustSats {
+	if sendable < policy.dust() {
 		return 0
 	}
 	return sendable
@@ -360,7 +534,7 @@ func (p btcFeePolicy) quote(inputs, outputs int, fee int64, covered bool) chain.
 
 // MinimumTransferAmount is the smallest amount BuildTransfer accepts (the dust limit).
 func (a *BitcoinLive) MinimumTransferAmount() *big.Int {
-	return big.NewInt(btcDustSats)
+	return big.NewInt(btcFeePolicy{dustSats: a.network.dustSats}.dust())
 }
 
 // SpendableFunds reads address's confirmed UTXOs and prices spending them with the

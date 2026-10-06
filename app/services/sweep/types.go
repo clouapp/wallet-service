@@ -62,6 +62,8 @@ type CompletedSweep struct {
 	From         models.Address
 	TxHash       string
 	InternalTxID uuid.UUID
+	// Amount is what the sweep moved, in the asset's base units.
+	Amount *big.Int
 }
 
 // FailedStep records mid-plan failure position for idempotent retry.
@@ -82,6 +84,8 @@ type Result struct {
 	// threading the Plan through. nil means "estimate unavailable" (non-EVM,
 	// gas-price fetch failure, or empty plan).
 	EstimatedGas *big.Int
+	// AssetDecimals are the decimals of the swept asset's base units; nil when unknown.
+	AssetDecimals *int
 }
 
 // GasStatus snapshots the gas-readiness check for a wallet.

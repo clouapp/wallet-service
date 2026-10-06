@@ -7,6 +7,9 @@ import (
 	"github.com/goravel/framework/database/orm"
 )
 
+// NoSpendingLimit is the spending_limit of a token without limits.
+const NoSpendingLimit = "{}"
+
 type AccessToken struct {
 	orm.Model
 	ID            uuid.UUID  `gorm:"type:uuid;primary_key"`

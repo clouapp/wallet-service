@@ -64,7 +64,7 @@ func TestChain_Seeds_CreateEveryMainnetBeforeTheTestRecordsPointingAtIt(t *testi
 
 	seen := map[string]bool{}
 	ids := map[string]bool{}
-	for _, seed := range chainSeedsWith(testAddedSeeds()) {
+	for _, seed := range chainSeedsWith(append(testAddedSeeds(), testTronLitecoinSeeds()...)) {
 		if ids[seed.id] {
 			t.Fatalf("chain %s is seeded twice", seed.id)
 		}
@@ -74,7 +74,7 @@ func TestChain_Seeds_CreateEveryMainnetBeforeTheTestRecordsPointingAtIt(t *testi
 		}
 		seen[seed.id] = true
 	}
-	for _, id := range append(append([]string(nil), models.PrimaryChainIDs...), AddedEVMChainIDs...) {
+	for _, id := range append(append([]string(nil), models.PrimaryChainIDs...), AddedChainIDs...) {
 		if !ids[id] {
 			t.Errorf("chain %s is not seeded", id)
 		}

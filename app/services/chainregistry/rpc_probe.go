@@ -18,10 +18,15 @@ const (
 	// NetworkBitcoinSignet is a Bitcoin network no chain record targets; probing
 	// it still has to fail the check rather than read as "unknown".
 	NetworkBitcoinSignet = "bitcoin-signet"
+	// NetworkTronShasta is a TRON testnet no chain record targets.
+	NetworkTronShasta = "tron-shasta"
 )
 
 // Esplora REST hosts (Blockstream, mempool.space) put the network in the path.
 var esploraHosts = []string{"blockstream.info", "mempool.space"}
+
+// Litecoin Esplora hosts (litecoinspace.org/testnet/api) do the same.
+var litecoinEsploraHosts = []string{"litecoinspace.org"}
 
 var esploraNetworkByPathSegment = map[string]string{
 	"testnet":  models.NetworkBitcoinTestnet,
@@ -29,16 +34,34 @@ var esploraNetworkByPathSegment = map[string]string{
 	"signet":   NetworkBitcoinSignet,
 }
 
+const litecoinTestnetPathSegment = "testnet"
+
+// TronGrid hosts name the network in a host label (nile.trongrid.io,
+// api.shasta.trongrid.io); api.trongrid.io is mainnet.
+var tronNetworkByHostLabel = map[string]string{
+	"nile":   models.NetworkTronNile,
+	"nileex": models.NetworkTronNile,
+	"shasta": NetworkTronShasta,
+}
+
+var tronMainnetHosts = []string{"api.trongrid.io"}
+
 // ProbeRPCNetwork names the network rpcURL serves: EVM by asking eth_chainId,
-// Bitcoin by the Esplora path, Solana by the host. "" means it cannot tell.
+// Bitcoin and Litecoin by the Esplora path, Solana and TRON by the host. "" means
+// it cannot tell.
 func ProbeRPCNetwork(ctx context.Context, record models.Chain, rpcURL string) (string, error) {
 	switch record.AdapterType {
 	case models.AdapterTypeEVM:
 		return probeEVM(ctx, rpcURL)
 	case models.AdapterTypeBitcoin:
+		if models.IsLitecoinChainID(record.ID) {
+			return LitecoinNetworkOfRPCURL(rpcURL), nil
+		}
 		return BitcoinNetworkOfRPCURL(rpcURL), nil
 	case models.AdapterTypeSolana:
 		return models.SolanaNetworkOfRPCURL(rpcURL), nil
+	case models.AdapterTypeTron:
+		return TronNetworkOfRPCURL(rpcURL), nil
 	default:
 		return "", nil
 	}
@@ -63,14 +86,11 @@ func probeEVM(ctx context.Context, rpcURL string) (string, error) {
 // BitcoinNetworkOfRPCURL names the network of an Esplora REST URL
 // (https://blockstream.info/testnet/api → bitcoin-testnet), or "" for other hosts.
 func BitcoinNetworkOfRPCURL(rpcURL string) string {
-	parsed, err := url.Parse(strings.TrimSpace(rpcURL))
-	if err != nil || parsed.Hostname() == "" {
+	host, path, ok := rpcHostAndPath(rpcURL)
+	if !ok || !hostMatches(host, esploraHosts) {
 		return ""
 	}
-	if !isEsploraHost(strings.ToLower(parsed.Hostname())) {
-		return ""
-	}
-	for _, segment := range strings.Split(strings.ToLower(parsed.Path), "/") {
+	for _, segment := range strings.Split(path, "/") {
 		if network, ok := esploraNetworkByPathSegment[segment]; ok {
 			return network
 		}
@@ -78,9 +98,51 @@ func BitcoinNetworkOfRPCURL(rpcURL string) string {
 	return models.NetworkBitcoinMainnet
 }
 
-func isEsploraHost(host string) bool {
-	for _, known := range esploraHosts {
-		if host == known || strings.HasSuffix(host, "."+known) {
+// LitecoinNetworkOfRPCURL names the network of a Litecoin Esplora REST URL
+// (https://litecoinspace.org/testnet/api → litecoin-testnet), or "" for other hosts.
+func LitecoinNetworkOfRPCURL(rpcURL string) string {
+	host, path, ok := rpcHostAndPath(rpcURL)
+	if !ok || !hostMatches(host, litecoinEsploraHosts) {
+		return ""
+	}
+	for _, segment := range strings.Split(path, "/") {
+		if segment == litecoinTestnetPathSegment {
+			return models.NetworkLitecoinTestnet
+		}
+	}
+	return models.NetworkLitecoinMainnet
+}
+
+// TronNetworkOfRPCURL names the TRON network of a TronGrid-style URL, or "" when
+// the host does not say.
+func TronNetworkOfRPCURL(rpcURL string) string {
+	host, _, ok := rpcHostAndPath(rpcURL)
+	if !ok {
+		return ""
+	}
+	labels := strings.FieldsFunc(host, func(r rune) bool { return r == '.' || r == '-' })
+	for _, label := range labels {
+		if network, ok := tronNetworkByHostLabel[label]; ok {
+			return network
+		}
+	}
+	if hostMatches(host, tronMainnetHosts) {
+		return models.NetworkTronMainnet
+	}
+	return ""
+}
+
+func rpcHostAndPath(rpcURL string) (host, path string, ok bool) {
+	parsed, err := url.Parse(strings.TrimSpace(rpcURL))
+	if err != nil || parsed.Hostname() == "" {
+		return "", "", false
+	}
+	return strings.ToLower(parsed.Hostname()), strings.ToLower(parsed.Path), true
+}
+
+func hostMatches(host string, known []string) bool {
+	for _, candidate := range known {
+		if host == candidate || strings.HasSuffix(host, "."+candidate) {
 			return true
 		}
 	}

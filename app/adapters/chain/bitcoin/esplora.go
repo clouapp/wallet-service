@@ -1,6 +1,7 @@
 package bitcoin
 
 import (
+	"bytes"
 	"context"
 	"encoding/hex"
 	"encoding/json"
@@ -110,6 +111,37 @@ func (a *BitcoinLive) esploraFetch(ctx context.Context, requestURL, path string)
 		return 0, nil, nil, fmt.Errorf("esplora GET %s: response larger than %d bytes", path, esploraMaxResponseBytes)
 	}
 	return resp.StatusCode, resp.Header, resp.Body, nil
+}
+
+// apiKeyHeader carries the optional API key of a hosted provider (Tatum).
+const apiKeyHeader = "x-api-key"
+
+// esploraPost sends a text body to an Esplora path. The answer is refused past
+// esploraMaxResponseBytes. Errors do not include the URL or an API key.
+func (a *BitcoinLive) esploraPost(ctx context.Context, path, body string) (int, []byte, error) {
+	if a == nil || a.cfg.RPCURL == "" {
+		return 0, nil, fmt.Errorf("esplora POST %s: RPC URL is not configured", path)
+	}
+	requestURL := strings.TrimRight(a.cfg.RPCURL, "/") + path
+	resp, err := a.http.Do(ctx, httpclient.Request{
+		Method:   httpclient.MethodPost,
+		URL:      requestURL,
+		Header:   map[string]string{"Content-Type": "text/plain"},
+		Body:     []byte(body),
+		HasBody:  true,
+		MaxBytes: esploraMaxResponseBytes + 1,
+	})
+	if err != nil {
+		return 0, nil, fmt.Errorf("esplora POST %s: %w", path, withoutURL(err))
+	}
+	if len(resp.Body) > esploraMaxResponseBytes {
+		return 0, nil, fmt.Errorf("esplora POST %s: response larger than %d bytes", path, esploraMaxResponseBytes)
+	}
+	out := resp.Body
+	if a.apiKey != "" {
+		out = bytes.ReplaceAll(out, []byte(a.apiKey), []byte("[redacted]"))
+	}
+	return resp.StatusCode, out, nil
 }
 
 func isEsploraNotFound(err error) bool {

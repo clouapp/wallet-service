@@ -57,8 +57,11 @@ type Funding struct {
 	Sleep       func(ctx context.Context, duration time.Duration) error
 	PollEvery   time.Duration
 	PollFor     time.Duration
-	Out         io.Writer
-	Err         io.Writer
+	// SweepPollEvery and SweepPollFor bound the vault_test poll for the sweep tx hashes.
+	SweepPollEvery time.Duration
+	SweepPollFor   time.Duration
+	Out            io.Writer
+	Err            io.Writer
 }
 
 // SendRequest is one transfer from a base address.
@@ -80,7 +83,16 @@ type ConsolidateRequest struct {
 	Tag      string
 	WalletID string
 	Asset    string
-	Apply    bool
+	// Chain names the ledger chain when the asset is a token (USDT on tron); empty means lower(asset).
+	Chain string
+	Apply bool
+}
+
+func (request ConsolidateRequest) ledgerChain() (string, error) {
+	if request.Chain == "" {
+		return strings.ToLower(request.Asset), nil
+	}
+	return Require(ChainPattern, request.Chain, "chain")
 }
 
 type validatedSend struct {
@@ -268,6 +280,9 @@ func (funding Funding) Consolidate(ctx context.Context, request ConsolidateReque
 	if err := requireAll([]fieldCheck{{TagPattern, request.Tag, "tag"}, {UUIDPattern, request.WalletID, "wallet id"}, {AssetPattern, request.Asset, "asset"}}); err != nil {
 		return ExitFailure, err
 	}
+	if _, err := request.ledgerChain(); err != nil {
+		return ExitFailure, err
+	}
 	idempotencyKey := IdempotencyKey(request.Tag)
 	if alreadyFunded, err := funding.Ledger.HasTag(request.Tag); err != nil {
 		return ExitFailure, err
@@ -323,6 +338,7 @@ func (funding Funding) consolidateOnce(ctx context.Context, request ConsolidateR
 	if err != nil {
 		return ExitFailure, err
 	}
+	requestedAt := funding.Now()
 	status, response, err := funding.Services.API.Request(ctx, http.MethodPost, "/api/v1/wallets/"+request.WalletID+"/consolidate", token, pyjson.Object{
 		{Key: "asset", Value: request.Asset},
 		{Key: "passphrase", Value: passphrase},
@@ -334,8 +350,12 @@ func (funding Funding) consolidateOnce(ctx context.Context, request ConsolidateR
 	if err := funding.writeFundingRecord(request.Tag, plan, status, response); err != nil {
 		return ExitFailure, err
 	}
-	if err := funding.Ledger.Upsert(request.Tag, pyjson.Object{
-		{Key: "chain", Value: strings.ToLower(request.Asset)},
+	ledgerChain, err := request.ledgerChain()
+	if err != nil {
+		return ExitFailure, err
+	}
+	entry := pyjson.Object{
+		{Key: "chain", Value: ledgerChain},
 		{Key: "tag", Value: request.Tag},
 		{Key: "purpose", Value: consolidatePurpose},
 		{Key: "sweeps", Value: sweeps},
@@ -344,7 +364,8 @@ func (funding Funding) consolidateOnce(ctx context.Context, request ConsolidateR
 		{Key: "response_file", Value: funding.fundingRecordPath(request.Tag)},
 		{Key: "status", Value: statusSubmitted},
 		{Key: "recordedAt", Value: NowISO(funding.Now())},
-	}); err != nil {
+	}
+	if err := funding.Ledger.Upsert(request.Tag, entry); err != nil {
 		return ExitFailure, err
 	}
 	fmt.Fprintf(funding.Out, "POST status %d; claim %s\n", status, claim)
@@ -353,10 +374,59 @@ func (funding Funding) consolidateOnce(ctx context.Context, request ConsolidateR
 		indented = dumpsOrEmpty(response)
 	}
 	fmt.Fprintln(funding.Out, truncateRunes(indented, consolidateResultRunes))
-	if status < firstErrorStatus {
-		return ExitOK, nil
+	if status >= firstErrorStatus {
+		return ExitFailure, nil
 	}
-	return ExitFailure, nil
+	return funding.recordSweepHashes(ctx, request, entry, requestedAt, response)
+}
+
+// recordSweepHashes polls vault_test (never the API again) until every planned leg has a
+// row with a tx hash, then writes the hashes into the ledger entry: status confirmed once
+// every row is confirmed, else submitted (ledger-reconcile confirms it later).
+func (funding Funding) recordSweepHashes(ctx context.Context, request ConsolidateRequest, entry pyjson.Object, requestedAt time.Time, response any) (int, error) {
+	query := SweepQuery{WalletID: request.WalletID, CreatedFrom: requestedAt.Add(-SweepWindowSlack)}
+	matches := funding.awaitSweepRows(ctx, query, sweepLegs(entry), ResponseSweepHashes(response))
+	for index, match := range matches {
+		fmt.Fprintln(funding.Out, describeSweepMatch(index, match))
+	}
+	entryStatus := statusSubmitted
+	switch {
+	case !allHashesKnown(matches):
+		entryStatus = statusNoTxHashYet
+	case allRowsConfirmed(matches):
+		entryStatus = statusConfirmed
+	}
+	entry = withSweepHashes(entry, matches).Set("status", entryStatus).Set("recordedAt", NowISO(funding.Now()))
+	if err := funding.Ledger.Upsert(request.Tag, entry); err != nil {
+		return ExitFailure, err
+	}
+	switch entryStatus {
+	case statusNoTxHashYet:
+		fmt.Fprintf(funding.Out, "tx hash: %s for every leg after %s; ledger status %q\n", noTxHashYet, funding.SweepPollFor, entryStatus)
+		return ExitNoTxHashYet, nil
+	case statusSubmitted:
+		fmt.Fprintf(funding.Out, "tx hash: %s; vault_test has not confirmed every leg yet, ledger status stays %q (run ledger-reconcile %s later)\n", entry.String("hash"), entryStatus, request.Tag)
+	default:
+		fmt.Fprintf(funding.Out, "tx hash: %s; confirmed in vault_test\n", entry.String("hash"))
+	}
+	return ExitOK, nil
+}
+
+func (funding Funding) awaitSweepRows(ctx context.Context, query SweepQuery, legs []pyjson.Object, responseHashes map[string]string) []SweepMatch {
+	deadline := funding.Now().Add(funding.SweepPollFor)
+	for {
+		rows, err := funding.Services.SweepRows(ctx, query)
+		if err != nil {
+			fmt.Fprintf(funding.Err, "vault_test sweep lookup failed (will retry): %v\n", err)
+		}
+		matches := MatchSweepLegs(legs, rows, responseHashes)
+		if allHashesKnown(matches) || !funding.Now().Before(deadline) {
+			return matches
+		}
+		if err := funding.Sleep(ctx, funding.SweepPollEvery); err != nil {
+			return matches
+		}
+	}
 }
 
 func (funding Funding) credentials(ctx context.Context, walletID string) (string, string, error) {

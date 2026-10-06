@@ -90,6 +90,9 @@ func (f *fakeTxRepo) CountInternalTransfers(chainID, txHash string, walletID uui
 func (f *fakeTxRepo) FindPendingByChain(chainID string) ([]models.Transaction, error) {
 	return nil, nil
 }
+func (f *fakeTxRepo) FindConfirmedOutboundWithoutFee(chainID string, limit int) ([]models.Transaction, error) {
+	return nil, nil
+}
 func (f *fakeTxRepo) UpdateFields(id uuid.UUID, fields map[string]interface{}) error { return nil }
 func (f *fakeTxRepo) ListForAccount(accountID uuid.UUID, chainID, txType, status, userID string, limit, offset int) ([]models.Transaction, int64, error) {
 	return nil, 0, nil
@@ -609,7 +612,7 @@ func TestExecute_Linked_LegSendsTheWebhookAfterCommit(t *testing.T) {
 func runManualLeg(t *testing.T, fixture linkedLegFixture) (string, error) {
 	t.Helper()
 	wallet := fixture.svc.walletRepo.(*fakeWalletRepo).wallet
-	return fixture.svc.broadcastLeg(
+	completed, err := fixture.svc.broadcastLeg(
 		context.Background(),
 		fixture.chain,
 		mpcpkg.CurveSecp256k1,
@@ -620,6 +623,10 @@ func runManualLeg(t *testing.T, fixture linkedLegFixture) (string, error) {
 		uuid.New(),
 		legBroadcastOpts{Origin: models.TxOriginManualConsolidation},
 	)
+	if err != nil {
+		return "", err
+	}
+	return completed.TxHash, nil
 }
 
 func TestConsolidate_Manual_LegCommitsGasSeedSweepAndWebhookTogether(t *testing.T) {

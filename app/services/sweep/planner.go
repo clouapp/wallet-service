@@ -516,11 +516,13 @@ func fetchBalance(
 }
 
 // chainNeedsGasSeed reports whether the chain requires a preparatory gas_seed
-// transaction before a token sweep. SOL and BTC pay fees from the source
-// itself and do not receive an EVM gas top-up.
+// transaction before a token sweep. SOL, BTC and LTC pay fees from the source
+// itself and do not receive a gas top-up; EVM and TRON children do.
 func chainNeedsGasSeed(chainID string) bool {
-	switch chainID {
-	case models.ChainSOL, models.ChainTSOL, models.ChainBTC, models.ChainTBTC:
+	switch {
+	case chainID == models.ChainSOL, chainID == models.ChainTSOL:
+		return false
+	case models.IsBitcoinFamilyChainID(chainID):
 		return false
 	default:
 		return true
@@ -529,7 +531,7 @@ func chainNeedsGasSeed(chainID string) bool {
 
 func supportedSweepAdapter(adapterType string) bool {
 	switch adapterType {
-	case models.AdapterTypeEVM, models.AdapterTypeSolana, models.AdapterTypeBitcoin:
+	case models.AdapterTypeEVM, models.AdapterTypeSolana, models.AdapterTypeBitcoin, models.AdapterTypeTron:
 		return true
 	default:
 		return false

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -168,8 +169,21 @@ func TestRPCClient_Call_BasicAuth(t *testing.T) {
 	}
 }
 
+// closedPortURL is http://127.0.0.1:<port> on a port that was just free, so the
+// connection is refused at once (127.0.0.1:1 hangs until the timeout on WSL2).
+func closedPortURL(t *testing.T) string {
+	t.Helper()
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("reserve a local port: %v", err)
+	}
+	addr := listener.Addr().String()
+	_ = listener.Close()
+	return "http://" + addr
+}
+
 func TestRPCClient_Call_ConnectionRefused(t *testing.T) {
-	rpc := NewRPCClient(RPCClientDeps{URL: "http://localhost:1/invalid"})
+	rpc := NewRPCClient(RPCClientDeps{URL: closedPortURL(t)})
 	var result string
 	err := rpc.Call(context.Background(), "test", &result)
 	if err == nil {

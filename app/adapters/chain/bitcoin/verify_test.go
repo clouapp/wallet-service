@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/btcsuite/btcd/btcec/v2"
+	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcd/wire"
 
 	"github.com/macrowallets/waas/app/models"
@@ -62,7 +63,7 @@ func reserialize(t *testing.T, signed *types.SignedTx, mutate func(*wire.MsgTx))
 
 func TestVerify_SignedP2WPKH_AcceptsTheOwnersSignature(t *testing.T) {
 	fixture := newP2WPKHFixture(t)
-	if err := verifySignedP2WPKH(fixture.unsigned, fixture.sign(t, fixture.key), fixture.address); err != nil {
+	if err := verifySignedP2WPKH(fixture.unsigned, fixture.sign(t, fixture.key), fixture.address, &chaincfg.TestNet3Params); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -73,7 +74,7 @@ func TestVerify_SignedP2WPKH_RejectsAnotherKeysSignature(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	err = verifySignedP2WPKH(fixture.unsigned, fixture.sign(t, other), fixture.address)
+	err = verifySignedP2WPKH(fixture.unsigned, fixture.sign(t, other), fixture.address, &chaincfg.TestNet3Params)
 	if err == nil || !strings.Contains(err.Error(), "does not own") {
 		t.Fatalf("want ownership error, got %v", err)
 	}
@@ -94,7 +95,7 @@ func TestVerify_SignedP2WPKH_RejectsTamperedTransactions(t *testing.T) {
 		},
 	}
 	for name, mutate := range cases {
-		if err := verifySignedP2WPKH(fixture.unsigned, reserialize(t, signed, mutate), fixture.address); err == nil {
+		if err := verifySignedP2WPKH(fixture.unsigned, reserialize(t, signed, mutate), fixture.address, &chaincfg.TestNet3Params); err == nil {
 			t.Errorf("%s: tampered transaction was accepted", name)
 		}
 	}
@@ -103,7 +104,7 @@ func TestVerify_SignedP2WPKH_RejectsTamperedTransactions(t *testing.T) {
 func TestVerify_SignedP2WPKH_RejectsAnotherSourceAddress(t *testing.T) {
 	fixture := newP2WPKHFixture(t)
 	other := newP2WPKHFixture(t)
-	err := verifySignedP2WPKH(fixture.unsigned, fixture.sign(t, fixture.key), other.address)
+	err := verifySignedP2WPKH(fixture.unsigned, fixture.sign(t, fixture.key), other.address, &chaincfg.TestNet3Params)
 	if err == nil || !strings.Contains(err.Error(), "expected "+other.address) {
 		t.Fatalf("want source mismatch, got %v", err)
 	}
@@ -113,7 +114,7 @@ func TestVerify_SignedP2WPKH_RejectsAWrongReportedTxid(t *testing.T) {
 	fixture := newP2WPKHFixture(t)
 	signed := fixture.sign(t, fixture.key)
 	signed.TxHash = verifyFundingTxID
-	if err := verifySignedP2WPKH(fixture.unsigned, signed, fixture.address); err == nil {
+	if err := verifySignedP2WPKH(fixture.unsigned, signed, fixture.address, &chaincfg.TestNet3Params); err == nil {
 		t.Fatal("a txid that is not the transaction's hash must be refused")
 	}
 }

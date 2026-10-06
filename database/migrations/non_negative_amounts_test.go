@@ -59,7 +59,7 @@ func legacySignedRows(t *testing.T) (txID, withdrawalID uuid.UUID) {
 }
 
 func TestEnforce_Non_NegativeAmountsNormalizesBacksUpAndConstrains(t *testing.T) {
-	fixtures.TestDB(t)
+	fixtures.TestDBFreshSchema(t)
 	migration := &migrations.M00000000000280EnforceNonNegativeAmounts{}
 	assert.Equal(t, int64(1), constraintCount(t, transactionAmountConstraint), "migrate:fresh applies the constraint")
 
@@ -97,7 +97,7 @@ func TestEnforce_Non_NegativeAmountsNormalizesBacksUpAndConstrains(t *testing.T)
 }
 
 func TestEnforce_Non_NegativeAmountsDownDropsAnEmptyBackup(t *testing.T) {
-	fixtures.TestDB(t)
+	fixtures.TestDBFreshSchema(t)
 	migration := &migrations.M00000000000280EnforceNonNegativeAmounts{}
 
 	require.NoError(t, migration.Down())

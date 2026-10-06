@@ -9,6 +9,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/shopspring/decimal"
 
+	tronchain "github.com/macrowallets/waas/app/adapters/chain/tron"
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/services/chain"
 	"github.com/macrowallets/waas/pkg/types"
@@ -70,6 +71,7 @@ type FeeQuote struct {
 	EVM              *EVMFeeDetails
 	Bitcoin          *BitcoinFeeDetails
 	Solana           *SolanaFeeDetails
+	Tron             *TronFeeDetails
 }
 
 // EVMFeeDetails: every transfer is a legacy transaction paying GasPrice per gas.
@@ -94,6 +96,25 @@ type SolanaFeeDetails struct {
 	Signatures              int
 	LamportsPerSignature    int64
 	AccountCreationLamports *big.Int
+}
+
+// TronFeeDetails sums the resources of the priced transfers, all paid by burning
+// TRX (no staked or free bandwidth/energy is assumed), in sun.
+type TronFeeDetails struct {
+	BandwidthBytes      int64
+	SunPerBandwidthByte int64
+	BandwidthFee        *big.Int
+	ActivationFee       *big.Int
+	Energy              int64
+	SunPerEnergy        int64
+	EnergyFeeLimit      *big.Int
+	// EnergyIsReference: a TRC-20 sender holds none of the token, so its energy is
+	// the adapter's reference value instead of a simulation.
+	EnergyIsReference bool
+}
+
+type tronFeeQuoter interface {
+	QuoteTransferFee(ctx context.Context, req types.TransferRequest) (tronchain.TronFeeQuote, error)
 }
 
 type bitcoinFeeQuoter interface {
@@ -157,6 +178,8 @@ func (s *service) QuoteWithdrawalFee(ctx context.Context, req FeeQuoteRequest) (
 		err = quoteBitcoinFee(ctx, adapter, quoted, target, quote)
 	case models.AdapterTypeSolana:
 		err = s.quoteSolanaFee(ctx, adapter, quoted, target, quote)
+	case models.AdapterTypeTron:
+		err = s.quoteTronFee(ctx, adapter, quoted, target, quote)
 	default:
 		err = ErrUnsupportedChain
 	}
@@ -170,13 +193,21 @@ func (s *service) QuoteWithdrawalFee(ctx context.Context, req FeeQuoteRequest) (
 }
 
 // quoteRecipient is the recipient the planner and the adapters size transfers for:
-// the caller's, or on EVM the fee probe (a token plan needs one to be simulated).
-// Bitcoin fees do not depend on it and Solana substitutes its own probe.
+// the caller's, or on EVM and TRON the chain's fee probe (a token plan needs one to
+// be simulated; TRON's is never activated, so a quote is the worst case). Bitcoin
+// fees do not depend on it and Solana substitutes its own probe.
 func quoteRecipient(adapterType, toAddress string) string {
-	if toAddress == "" && adapterType == models.AdapterTypeEVM {
-		return chain.EVMFeeProbeRecipient()
+	if toAddress != "" {
+		return toAddress
 	}
-	return toAddress
+	switch adapterType {
+	case models.AdapterTypeEVM:
+		return chain.EVMFeeProbeRecipient()
+	case models.AdapterTypeTron:
+		return tronchain.TronFeeProbeRecipient()
+	default:
+		return toAddress
+	}
 }
 
 // unfundedDirectPlan is the plan the withdrawal would run once the base address
@@ -353,4 +384,54 @@ func (s *service) quoteSolanaFee(ctx context.Context, adapter types.Chain, plan 
 	quote.Transfers = len(transfers)
 	quote.Solana = details
 	return nil
+}
+
+// quoteTronFee prices every transfer the executor sends for the plan with the
+// adapter's transfer pricing, the same figures the planner summed as gas units. A
+// gas_seed is sized for an unknown amount; a TRC-20 sender holding less than the
+// amount (an unfunded quote) is simulated with what it holds.
+func (s *service) quoteTronFee(ctx context.Context, adapter types.Chain, plan *Plan, target gasPlanTarget, quote *FeeQuote) error {
+	quoter, ok := adapter.(tronFeeQuoter)
+	if !ok {
+		return fmt.Errorf("%w: chain %s cannot price its transfers", ErrUnsupportedChain, plan.Chain)
+	}
+	token, err := s.planToken(adapter, plan)
+	if err != nil {
+		return err
+	}
+	transfers := planTransfers(plan, token, target)
+	if len(transfers) == 0 {
+		return fmt.Errorf("sweep: fee quote: strategy %s has no transfer to price", plan.Strategy)
+	}
+	fee := new(big.Int)
+	details := &TronFeeDetails{BandwidthFee: new(big.Int), ActivationFee: new(big.Int), EnergyFeeLimit: new(big.Int)}
+	for _, transfer := range transfers {
+		transferQuote, err := quoter.QuoteTransferFee(ctx, transfer)
+		if err != nil {
+			return fmt.Errorf("%w: %v", ErrFeeQuoteUnavailable, err)
+		}
+		fee.Add(fee, transferQuote.Fee())
+		addTronFeeDetails(details, transferQuote)
+	}
+	quote.Fee = fee
+	quote.Transfers = len(transfers)
+	quote.Tron = details
+	return nil
+}
+
+func addTronFeeDetails(details *TronFeeDetails, transfer tronchain.TronFeeQuote) {
+	details.BandwidthBytes += transfer.BandwidthBytes
+	details.SunPerBandwidthByte = transfer.SunPerBandwidthByte
+	details.SunPerEnergy = transfer.SunPerEnergy
+	details.Energy += transfer.Energy
+	details.EnergyIsReference = details.EnergyIsReference || transfer.EnergyIsReference
+	for _, part := range []struct{ sum, add *big.Int }{
+		{details.BandwidthFee, transfer.BandwidthFee},
+		{details.ActivationFee, transfer.ActivationFee},
+		{details.EnergyFeeLimit, transfer.FeeLimit},
+	} {
+		if part.add != nil {
+			part.sum.Add(part.sum, part.add)
+		}
+	}
 }

@@ -25,6 +25,8 @@ const (
 	baseSepoliaRPC = "https://base-sepolia-rpc.publicnode.com"
 	arbSepoliaRPC  = "https://arbitrum-sepolia-rpc.publicnode.com"
 	bscTestnetRPC  = "https://bsc-testnet-rpc.publicnode.com"
+	tronNileRPC    = "https://nile.trongrid.io"
+	ltcTestnetRPC  = "https://litecoinspace.org/testnet/api"
 	compressedPub  = "0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798"
 	mainnetGenesis = "bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4"
 )
@@ -113,8 +115,8 @@ func ptr(v int64) *int64 { return &v }
 
 // vaultTestRegistry is the vault_test registry before the fix: eth signs for
 // mainnet over a Sepolia RPC, btc is mainnet, polygon is Amoy but listed as
-// mainnet, sol runs on devnet but is listed as mainnet. base, arbitrum and bsc
-// were created by chains:add-missing on their testnets.
+// mainnet, sol runs on devnet but is listed as mainnet. base, arbitrum, bsc, tron
+// and ltc were created by chains:add-missing on their testnets.
 func vaultTestRegistry() *fakeStore {
 	return &fakeStore{
 		chains: map[string]models.Chain{
@@ -126,6 +128,8 @@ func vaultTestRegistry() *fakeStore {
 			models.ChainBase:     {ID: models.ChainBase, AdapterType: models.AdapterTypeEVM, NetworkID: ptr(models.EVMNetworkIDBaseSepolia), IsTestnet: true, RpcURL: baseSepoliaRPC},
 			models.ChainArbitrum: {ID: models.ChainArbitrum, AdapterType: models.AdapterTypeEVM, NetworkID: ptr(models.EVMNetworkIDArbitrumSepolia), IsTestnet: true, RpcURL: arbSepoliaRPC},
 			models.ChainBSC:      {ID: models.ChainBSC, AdapterType: models.AdapterTypeEVM, NetworkID: ptr(models.EVMNetworkIDBSCTestnet), IsTestnet: true, RpcURL: bscTestnetRPC},
+			models.ChainTron:     {ID: models.ChainTron, AdapterType: models.AdapterTypeTron, IsTestnet: true, RpcURL: tronNileRPC},
+			models.ChainLTC:      {ID: models.ChainLTC, AdapterType: models.AdapterTypeBitcoin, IsTestnet: true, RpcURL: ltcTestnetRPC},
 		},
 		funded:    map[string]bool{models.ChainPolygon: true},
 		accounts:  map[uuid.UUID]models.Account{},
@@ -295,26 +299,62 @@ func TestPlan_Rejects_UnknownProfileAndMissingDependencies(t *testing.T) {
 
 // staticProbe stands in for ProbeRPCNetwork without network calls: EVM records
 // answer with their own id, the others go through the URL rules.
-func staticProbe(_ context.Context, record models.Chain, rpcURL string) (string, error) {
-	switch record.AdapterType {
-	case models.AdapterTypeEVM:
-		switch rpcURL {
-		case baseSepoliaRPC:
-			return models.NetworkBaseSepolia, nil
-		case arbSepoliaRPC:
-			return models.NetworkArbitrumSepolia, nil
-		case bscTestnetRPC:
-			return models.NetworkBSCTestnet, nil
-		}
-		if strings.Contains(rpcURL, "sepolia") {
-			return models.NetworkEthereumSepolia, nil
-		}
-		return models.NetworkPolygonAmoy, nil
-	case models.AdapterTypeBitcoin:
-		return BitcoinNetworkOfRPCURL(rpcURL), nil
-	default:
-		return models.SolanaNetworkOfRPCURL(rpcURL), nil
+func staticProbe(ctx context.Context, record models.Chain, rpcURL string) (string, error) {
+	if record.AdapterType != models.AdapterTypeEVM {
+		return ProbeRPCNetwork(ctx, record, rpcURL)
 	}
+	switch rpcURL {
+	case baseSepoliaRPC:
+		return models.NetworkBaseSepolia, nil
+	case arbSepoliaRPC:
+		return models.NetworkArbitrumSepolia, nil
+	case bscTestnetRPC:
+		return models.NetworkBSCTestnet, nil
+	}
+	if strings.Contains(rpcURL, "sepolia") {
+		return models.NetworkEthereumSepolia, nil
+	}
+	return models.NetworkPolygonAmoy, nil
+}
+
+func TestProbeNamesTronAndLitecoinNetworksFromTheirURLs(t *testing.T) {
+	ctx := context.Background()
+	tron := models.Chain{ID: models.ChainTron, AdapterType: models.AdapterTypeTron}
+	ltc := models.Chain{ID: models.ChainLTC, AdapterType: models.AdapterTypeBitcoin}
+	cases := []struct {
+		record models.Chain
+		rpcURL string
+		want   string
+	}{
+		{tron, "https://nile.trongrid.io", models.NetworkTronNile},
+		{tron, "https://api.nileex.io", models.NetworkTronNile},
+		{tron, "https://api.shasta.trongrid.io", NetworkTronShasta},
+		{tron, "https://api.trongrid.io", models.NetworkTronMainnet},
+		{tron, "https://tron.internal:8090", ""},
+		{tron, "not a url", ""},
+		{ltc, "https://litecoinspace.org/testnet/api", models.NetworkLitecoinTestnet},
+		{ltc, "https://litecoinspace.org/api", models.NetworkLitecoinMainnet},
+		{ltc, "https://blockstream.info/testnet/api", ""},
+		{models.Chain{ID: models.ChainBTC, AdapterType: models.AdapterTypeBitcoin}, "https://litecoinspace.org/testnet/api", ""},
+	}
+	for _, tc := range cases {
+		got, err := ProbeRPCNetwork(ctx, tc.record, tc.rpcURL)
+		require.NoError(t, err)
+		assert.Equal(t, tc.want, got, "%s on %s", tc.record.ID, tc.rpcURL)
+	}
+}
+
+func TestTestnetPlanRefusesATronRecordOnMainnet(t *testing.T) {
+	store := vaultTestRegistry()
+	tron := store.chains[models.ChainTron]
+	tron.RpcURL = "https://api.trongrid.io"
+	store.chains[models.ChainTron] = tron
+
+	_, err := BuildPlan(context.Background(), models.ChainNetworkProfileTestnet, store, plainDecrypt, staticProbe)
+
+	require.Error(t, err)
+	assert.True(t, errors.Is(err, ErrRPCNetworkMismatch), err)
+	assert.Contains(t, err.Error(), models.NetworkTronMainnet)
 }
 
 func TestAccount_Moves_ToTheProfileEnvironment(t *testing.T) {

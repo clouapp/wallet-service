@@ -211,6 +211,33 @@ func (r *TransactionRepository) FindPendingByChain(ctx context.Context, chainID 
 	return pending, nil
 }
 
+// FindConfirmedOutboundWithoutFee lists confirmed withdrawals, sweeps and gas seeds
+// of chainID whose paid fee was never recorded, oldest first.
+func (r *TransactionRepository) FindConfirmedOutboundWithoutFee(ctx context.Context, chainID string, limit int) ([]models.Transaction, error) {
+	if limit <= 0 {
+		return nil, fmt.Errorf("list transactions without fee: limit is required")
+	}
+	var rows []models.Transaction
+	err := r.Query(ctx).
+		Where("chain", chainID).
+		WhereIn("tx_type", []any{models.TxTypeWithdrawal, models.TxTypeSweep, models.TxTypeGasSeed}).
+		Where("status", string(types.TxStatusConfirmed)).
+		Where("tx_hash <> ''").
+		Where("(fee IS NULL OR fee = '')").
+		Order("created_at").
+		Limit(limit).
+		Find(&rows)
+	if err != nil {
+		return nil, fmt.Errorf("list transactions without fee: %w", err)
+	}
+	return rows, nil
+}
+
+// SetFee stores the paid fee in native base units.
+func (r *TransactionRepository) SetFee(ctx context.Context, id uuid.UUID, fee string) error {
+	return r.updateColumns(ctx, id, map[string]any{"fee": fee}, "set transaction fee")
+}
+
 // SetBlockNumber sets transactions.block_number.
 func (r *TransactionRepository) SetBlockNumber(ctx context.Context, id uuid.UUID, block uint64) error {
 	return r.updateColumns(ctx, id, map[string]any{"block_number": block}, "set transaction block number")

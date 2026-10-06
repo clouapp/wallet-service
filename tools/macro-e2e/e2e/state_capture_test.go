@@ -119,8 +119,10 @@ func TestBuild_API_EnvironmentAppliesTheE2EOverrides(t *testing.T) {
 		"REDIS_PORT":                "6379",
 		"DB_DATABASE":               E2EDatabase,
 		"CHAIN_NETWORK_PROFILE":     "testnet",
-		"LOCAL_DEPOSIT_SCAN_CHAINS": "sol,eth,btc,polygon,base,arbitrum,bsc",
+		"LOCAL_DEPOSIT_SCAN_CHAINS": "sol,eth,btc,polygon,base,arbitrum,bsc,tron,ltc",
 		"BTC_RPC_URL":               "https://mempool.space/testnet4/api",
+		"TRON_RPC_URL":              "https://nile.trongrid.io",
+		"TLTC_RPC_URL":              "https://litecoinspace.org/testnet/api",
 		"ETH_RPC_URL":               "https://eth-sepolia.g.alchemy.com" + testSolanaKeyPath,
 		"TETH_RPC_URL":              "https://eth-sepolia.g.alchemy.com" + testSolanaKeyPath,
 		"DATABASE_URL":              "postgres://vault:vault@localhost:5432/vault_test?sslmode=disable",
@@ -197,7 +199,8 @@ func TestCapture_Env_WritesPrivatelyKeepsABackupAndPrintsNoValues(t *testing.T) 
 		}
 	}
 	wantLines := []string{
-		"overrides: DB_DATABASE=vault_test CHAIN_NETWORK_PROFILE=testnet LOCAL_DEPOSIT_SCAN_CHAINS=sol,eth,btc,polygon,base,arbitrum,bsc BTC_RPC_URL=https://mempool.space/testnet4/api",
+		"overrides: DB_DATABASE=vault_test CHAIN_NETWORK_PROFILE=testnet LOCAL_DEPOSIT_SCAN_CHAINS=sol,eth,btc,polygon,base,arbitrum,bsc,tron,ltc BTC_RPC_URL=https://mempool.space/testnet4/api TRON_RPC_URL=https://nile.trongrid.io TTRON_RPC_URL=https://nile.trongrid.io LTC_RPC_URL=https://litecoinspace.org/testnet/api TLTC_RPC_URL=https://litecoinspace.org/testnet/api" +
+			" LTC_FALLBACK_RPC_URL=" + litecoinTestnetFallbacks + " TLTC_FALLBACK_RPC_URL=" + litecoinTestnetFallbacks,
 		"ETH_RPC_URL TETH_RPC_URL: Alchemy Sepolia, key of SOLANA_RPC_URL (not printed)",
 		"previous environ kept as " + backup,
 		"wrote " + paths.APIEnviron,

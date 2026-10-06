@@ -51,16 +51,17 @@ type Manifest struct {
 }
 
 type ManifestWallet struct {
-	WalletID     string `json:"wallet_id"`
-	Label        string `json:"label"`
-	Chain        string `json:"chain"`
-	Status       string `json:"status"`
-	Curve        string `json:"curve"`
-	Network      string `json:"network"`
-	Testnet      bool   `json:"testnet"`
-	AllEVMChains bool   `json:"key_valid_on_every_evm_network"`
-	AddressCount int    `json:"address_count"`
-	Directory    string `json:"directory"`
+	WalletID      string `json:"wallet_id"`
+	Label         string `json:"label"`
+	Chain         string `json:"chain"`
+	Status        string `json:"status"`
+	Curve         string `json:"curve"`
+	Network       string `json:"network"`
+	Testnet       bool   `json:"testnet"`
+	AllEVMChains  bool   `json:"key_valid_on_every_evm_network"`
+	AllTronChains bool   `json:"key_valid_on_every_tron_network"`
+	AddressCount  int    `json:"address_count"`
+	Directory     string `json:"directory"`
 }
 
 const archiveEncryptionLabel = "WinZip AES-256 (AE-2)"
@@ -98,16 +99,17 @@ func buildManifest(result *Result, meta ArchiveMeta) Manifest {
 	for _, wallet := range result.Wallets {
 		plan := wallet.Plan
 		manifest.Wallets = append(manifest.Wallets, ManifestWallet{
-			WalletID:     plan.Wallet.ID.String(),
-			Label:        plan.Wallet.Label,
-			Chain:        plan.Wallet.Chain,
-			Status:       plan.Wallet.Status,
-			Curve:        plan.Wallet.MPCCurve,
-			Network:      networkLabel(plan.Network.Name),
-			Testnet:      plan.Network.Testnet,
-			AllEVMChains: plan.SpansEVMNetworks(),
-			AddressCount: wallet.AddressCount,
-			Directory:    walletDir(plan.Wallet.ID.String()) + "/",
+			WalletID:      plan.Wallet.ID.String(),
+			Label:         plan.Wallet.Label,
+			Chain:         plan.Wallet.Chain,
+			Status:        plan.Wallet.Status,
+			Curve:         plan.Wallet.MPCCurve,
+			Network:       networkLabel(plan.Network.Name),
+			Testnet:       plan.Network.Testnet,
+			AllEVMChains:  plan.SpansEVMNetworks(),
+			AllTronChains: plan.SpansTronNetworks(),
+			AddressCount:  wallet.AddressCount,
+			Directory:     walletDir(plan.Wallet.ID.String()) + "/",
 		})
 	}
 	return manifest
@@ -161,6 +163,9 @@ func walletWarnings(plan WalletPlan) []string {
 	}
 	if plan.SpansEVMNetworks() {
 		warnings = append(warnings, "chave EVM: o mesmo endereço existe em TODAS as redes EVM (Ethereum, Polygon, BSC, Base, Arbitrum, mainnets incluídas); a chave gasta fundos em qualquer uma delas")
+	}
+	if plan.SpansTronNetworks() {
+		warnings = append(warnings, "chave TRON: o mesmo endereço T... existe na mainnet TRON e nas testnets (Nile, Shasta), e a mesma chave controla o endereço EVM 0x<mesmos 20 bytes> em todas as redes EVM; a chave gasta fundos em qualquer uma delas")
 	}
 	if plan.Wallet.Status != "" && plan.Wallet.Status != string(types.WalletStatusActive) {
 		warnings = append(warnings, fmt.Sprintf("wallet com status %q na plataforma", plan.Wallet.Status))

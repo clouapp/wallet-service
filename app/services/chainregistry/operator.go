@@ -141,11 +141,12 @@ func formatGenesis(address string) string {
 
 // AddedChain is a record the seeder would create.
 type AddedChain struct {
-	ID        string
-	EnvVar    string
-	Network   string
-	NetworkID int64
-	IsTestnet bool
+	ID          string
+	AdapterType string
+	EnvVar      string
+	Network     string
+	NetworkID   *int64
+	IsTestnet   bool
 }
 
 // AddedChainsPlan is what the seeder created, or would create.
@@ -193,8 +194,8 @@ func (m *MissingChains) Add(ctx context.Context, apply bool) (Report, error) {
 		if err := checkAddedChainRPC(ctx, added); err != nil {
 			return report, err
 		}
-		report.Info = append(report.Info, fmt.Sprintf("%s: create on %s (network_id %d, is_testnet %t), rpc_url env:%s",
-			added.ID, added.Network, added.NetworkID, added.IsTestnet, added.EnvVar))
+		report.Info = append(report.Info, fmt.Sprintf("%s: create on %s (network_id %s, is_testnet %t), rpc_url env:%s",
+			added.ID, added.Network, formatNetworkID(added.NetworkID), added.IsTestnet, added.EnvVar))
 	}
 	for _, token := range plan.Tokens {
 		report.Info = append(report.Info, "token "+token)
@@ -218,7 +219,7 @@ func checkAddedChainRPC(ctx context.Context, added AddedChain) error {
 	if err != nil {
 		return fmt.Errorf("%s: %w", added.ID, err)
 	}
-	record := models.Chain{ID: added.ID, AdapterType: models.AdapterTypeEVM}
+	record := models.Chain{ID: added.ID, AdapterType: added.AdapterType}
 	served, err := ProbeRPCNetwork(ctx, record, rpcURL)
 	if err != nil {
 		return fmt.Errorf("%s: probe %s: %w", added.ID, added.EnvVar, err)

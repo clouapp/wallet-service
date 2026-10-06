@@ -138,11 +138,11 @@ func (s *service) ConsolidateAll(
 	curve := mpcpkg.Curve(wallet.MPCCurve)
 	keys := walletKeys{shareA: shareA, shareB: shareB, passphrase: passphrase}
 	defer mpcshare.DiscardPassphrase(&keys.passphrase)
-	result := &Result{EstimatedGas: copyBigInt(plan.EstimatedGas)}
+	result := &Result{EstimatedGas: copyBigInt(plan.EstimatedGas), AssetDecimals: s.assetDecimals(adapter, plan, chainEntity)}
 
 	for i, leg := range plan.Sweeps {
 		sweepTxID := uuid.New()
-		hash, err := s.broadcastLeg(
+		completed, err := s.broadcastLeg(
 			ctx, adapter, curve, keys, wallet, plan, leg, sweepTxID,
 			legBroadcastOpts{
 				Origin:              models.TxOriginManualConsolidation,
@@ -165,11 +165,7 @@ func (s *service) ConsolidateAll(
 			}
 			return result, nil
 		}
-		result.Sweeps = append(result.Sweeps, CompletedSweep{
-			From:         leg.From,
-			TxHash:       hash,
-			InternalTxID: sweepTxID,
-		})
+		result.Sweeps = append(result.Sweeps, completed)
 	}
 	return result, nil
 }
@@ -189,20 +185,26 @@ func (s *service) planConsolidation(
 		return nil, fmt.Errorf("sweep: list children: %w", err)
 	}
 
+	reserve, err := loadNativeReserve(ctx, adapter, asset)
+	if err != nil {
+		return nil, err
+	}
 	dust := s.childDustThreshold(ctx, adapter, chainEntity, asset)
 	type childBal struct {
 		addr    models.Address
 		balance *big.Int
+		reserve nativeReserve
 	}
 	eligible := make([]childBal, 0, len(children))
 	for _, c := range children {
 		if c.ID == wallet.DepositAddress.ID {
 			continue
 		}
-		bal, berr := fetchBalance(ctx, s.registry, wallet.Chain, adapter, c, asset)
-		if berr != nil || bal == nil || bal.Sign() == 0 {
+		funds, ferr := loadSourceFunds(ctx, s.registry, wallet.Chain, adapter, c, asset, reserve)
+		if ferr != nil || funds.balance == nil || funds.balance.Sign() == 0 {
 			continue
 		}
+		bal := funds.balance
 		// Dust is skipped silently here. The planner surfaces it in
 		// plan.DustIgnored for transparency to callers who can choose to
 		// retry with a lower target; for manual consolidation there is no
@@ -210,7 +212,7 @@ func (s *service) planConsolidation(
 		if dust != nil && dust.Sign() > 0 && bal.Cmp(dust) < 0 {
 			continue
 		}
-		eligible = append(eligible, childBal{addr: c, balance: new(big.Int).Set(bal)})
+		eligible = append(eligible, childBal{addr: c, balance: new(big.Int).Set(bal), reserve: funds.reserve})
 	}
 
 	if len(eligible) == 0 {
@@ -225,14 +227,10 @@ func (s *service) planConsolidation(
 		return eligible[i].balance.Cmp(eligible[j].balance) > 0
 	})
 
-	reserve, err := loadNativeReserve(ctx, adapter, asset)
-	if err != nil {
-		return nil, err
-	}
 	totalAmount := new(big.Int)
 	sweeps := make([]PlannedSweep, 0, len(eligible))
 	for _, cb := range eligible {
-		swept := reserve.sweepableAmount(cb.balance)
+		swept := cb.reserve.sweepableAmount(cb.balance)
 		if swept.Sign() <= 0 {
 			continue
 		}
@@ -280,4 +278,18 @@ func (s *service) decryptShareA(wallet *models.Wallet, passphrase string) ([]byt
 		return nil, err
 	}
 	return shareA, nil
+}
+
+// assetDecimals is the number of decimals of plan.Asset: the token's, or the
+// chain's native decimals; nil when the token is not registered.
+func (s *service) assetDecimals(adapter types.Chain, plan *Plan, chainEntity *models.Chain) *int {
+	token, err := s.planAssetToken(adapter, plan)
+	if err != nil {
+		return nil
+	}
+	decimals := chainEntity.NativeDecimals
+	if token != nil {
+		decimals = int(token.Decimals)
+	}
+	return &decimals
 }

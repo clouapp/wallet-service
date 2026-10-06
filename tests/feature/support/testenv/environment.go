@@ -15,7 +15,6 @@ import (
 
 const (
 	testingEnvironmentName = "testing"
-	testDatabaseSuffix     = "_test"
 	databaseVariable       = "DB_DATABASE"
 	redisURLVariable       = "REDIS_URL"
 	redisDatabaseVariable  = "REDIS_DB"
@@ -33,12 +32,12 @@ const (
 	E2EDatabaseName = "vault_test"
 )
 
-// protectedDatabaseNames are live databases the destructive setup never touches,
-// even though E2EDatabaseName satisfies the _test suffix rule.
+// protectedDatabaseNames are live databases the destructive setup never touches;
+// every other target must also start with DefaultTestDatabaseName.
 var protectedDatabaseNames = [...]string{DevelopmentDatabaseName, E2EDatabaseName}
 
 // DatabaseOverrideVariable points the destructive test setup at another
-// *_test database so the suite can run while vault_test serves a live app.
+// vault_unit_test* database so the suite can run while vault_test serves a live app.
 const DatabaseOverrideVariable = "TEST_DB_DATABASE"
 
 type Configuration struct {
@@ -68,6 +67,9 @@ func Load() error {
 		return fmt.Errorf("load required testing environment %s: %w", testingEnvironmentPath, err)
 	}
 	applyDatabaseOverride()
+	if err := acquireWorker(); err != nil {
+		return err
+	}
 	if err := isolateRedis(); err != nil {
 		return err
 	}
@@ -136,18 +138,17 @@ func ValidateConfiguration(configuration Configuration) error {
 	}
 	if isProtectedDatabase(databaseName) {
 		return fmt.Errorf(
-			"refusing destructive test setup: database %q is protected (live dev/e2e data); set %s to a dedicated *%s database such as %s",
+			"refusing destructive test setup: database %q is protected (live dev/e2e data); set %s to a dedicated database starting with %s",
 			databaseName,
 			DatabaseOverrideVariable,
-			testDatabaseSuffix,
 			DefaultTestDatabaseName,
 		)
 	}
-	if !strings.HasSuffix(databaseName, testDatabaseSuffix) {
+	if !strings.HasPrefix(databaseName, DefaultTestDatabaseName) {
 		return fmt.Errorf(
-			"refusing destructive test setup: database %q must end with %s",
+			"refusing destructive test setup: database %q must start with %s",
 			databaseName,
-			testDatabaseSuffix,
+			DefaultTestDatabaseName,
 		)
 	}
 	return nil

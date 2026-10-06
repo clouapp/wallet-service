@@ -65,7 +65,7 @@ func sweepThresholdDefs() ([]thresholdDef, error) {
 		{models.ChainBTC, "", "10000", dustNone},
 		{models.ChainTBTC, "", "10000", dustNone},
 	}
-	for _, chainID := range AddedEVMChainIDs {
+	for _, chainID := range AddedChainIDs {
 		thresholds, err := addedChainThresholds(chainID)
 		if err != nil {
 			return nil, err

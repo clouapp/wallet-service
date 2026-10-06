@@ -459,6 +459,9 @@ func (f *ingestTxRepo) CountInternalTransfers(_ context.Context, chainID, txHash
 func (f *ingestTxRepo) FindPendingByChain(chainID string) ([]models.Transaction, error) {
 	return nil, nil
 }
+func (f *ingestTxRepo) FindConfirmedOutboundWithoutFee(chainID string, limit int) ([]models.Transaction, error) {
+	return nil, nil
+}
 func (f *ingestTxRepo) UpdateFields(id uuid.UUID, fields map[string]interface{}) error { return nil }
 func (f *ingestTxRepo) List(chainID, txType, status, userID string, limit, offset int) ([]models.Transaction, int64, error) {
 	return nil, 0, nil

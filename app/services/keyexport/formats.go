@@ -13,6 +13,8 @@ import (
 	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/mr-tron/base58"
 
+	bitcoinchain "github.com/macrowallets/waas/app/adapters/chain/bitcoin"
+	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/services/addressing"
 	"github.com/macrowallets/waas/app/services/hdkey"
 )
@@ -21,21 +23,50 @@ const (
 	evmHexPrefix         = "0x"
 	electrumP2WPKHPrefix = "p2wpkh:"
 	ed25519ScalarSize    = 32
+	tronPrivateKeyHexLen = 2 * hdkey.PrivateKeySize
 )
 
 var (
 	errBadPrivateKey    = errors.New("private key must be 32 bytes")
+	errBadTronKeyHex    = errors.New("tron private key must be 64 hex characters without a 0x prefix")
 	errBadEd25519Seed   = errors.New("ed25519 seed must be 32 bytes")
 	errBadEd25519Scalar = errors.New("ed25519 scalar must be a canonical non-zero 32-byte scalar")
 )
 
-// bitcoinParams picks the WIF version: every Bitcoin test network (testnet3,
-// testnet4, signet, regtest) shares the testnet WIF prefix.
-func bitcoinParams(testnet bool) *chaincfg.Params {
-	if testnet {
-		return &chaincfg.TestNet3Params
+// utxoFamily is the mainnet id of the Bitcoin-family chain of chainID (btc or ltc);
+// which of its networks a key is for is then decided by testnet alone.
+func utxoFamily(chainID string) string {
+	if models.IsLitecoinChainID(chainID) {
+		return models.ChainLTC
 	}
-	return &chaincfg.MainNetParams
+	return models.ChainBTC
+}
+
+// utxoParams picks the WIF version and bech32 prefix: Bitcoin 0x80/0xef with bc/tb
+// (every Bitcoin test network shares the testnet prefixes), Litecoin 0xb0/0xef with
+// ltc/tltc.
+func utxoParams(chainID string, testnet bool) (*chaincfg.Params, error) {
+	if !models.IsBitcoinFamilyChainID(chainID) {
+		return nil, fmt.Errorf("chain %q has no Bitcoin-family key format", chainID)
+	}
+	params := bitcoinchain.BitcoinFamilyParams(utxoFamily(chainID), testnet)
+	if params == nil {
+		return nil, fmt.Errorf("chain %q has no Bitcoin-family key format", chainID)
+	}
+	return params, nil
+}
+
+func utxoNetworkName(chainID string, testnet bool) string {
+	switch {
+	case models.IsLitecoinChainID(chainID) && testnet:
+		return models.NetworkLitecoinTestnet
+	case models.IsLitecoinChainID(chainID):
+		return models.NetworkLitecoinMainnet
+	case testnet:
+		return models.NetworkBitcoinTestnet
+	default:
+		return models.NetworkBitcoinMainnet
+	}
 }
 
 // EVMPrivateKeyHex is the 0x-prefixed hex MetaMask imports.
@@ -60,35 +91,56 @@ func EVMAddressOfPrivateKeyHex(privateKeyHex string) (string, error) {
 	return addressing.DeriveEthAddress(publicKey)
 }
 
-// BitcoinWIF is the compressed WIF of privateKey on mainnet or on a test network.
+// BitcoinWIF is the compressed WIF of privateKey on Bitcoin mainnet or a test network.
 func BitcoinWIF(privateKey []byte, testnet bool) (string, error) {
+	return UTXOWIF(privateKey, models.ChainBTC, testnet)
+}
+
+// BitcoinP2WPKHAddressOfWIF is UTXOP2WPKHAddressOfWIF on Bitcoin.
+func BitcoinP2WPKHAddressOfWIF(wifString string, testnet bool) (string, error) {
+	return UTXOP2WPKHAddressOfWIF(wifString, models.ChainBTC, testnet)
+}
+
+// UTXOWIF is the compressed WIF of privateKey on the Bitcoin-family network of
+// chainID (Bitcoin or Litecoin) and testnet.
+func UTXOWIF(privateKey []byte, chainID string, testnet bool) (string, error) {
 	if len(privateKey) != hdkey.PrivateKeySize {
 		return "", errBadPrivateKey
 	}
+	params, err := utxoParams(chainID, testnet)
+	if err != nil {
+		return "", err
+	}
 	key, _ := btcec.PrivKeyFromBytes(privateKey)
 	defer key.Zero()
-	wif, err := btcutil.NewWIF(key, bitcoinParams(testnet), true)
+	wif, err := btcutil.NewWIF(key, params, true)
 	if err != nil {
 		return "", fmt.Errorf("encode wif: %w", err)
 	}
 	return wif.String(), nil
 }
 
-// BitcoinP2WPKHAddressOfWIF decodes a WIF, checks its network and compression, and
-// returns the native SegWit address it controls.
-func BitcoinP2WPKHAddressOfWIF(wifString string, testnet bool) (string, error) {
+// UTXOP2WPKHAddressOfWIF decodes a WIF, checks its network and compression, and
+// returns the native SegWit address it controls on that network. Bitcoin and
+// Litecoin testnets share the WIF prefix 0xef, so the address (tb1 vs tltc1) is what
+// tells them apart.
+func UTXOP2WPKHAddressOfWIF(wifString, chainID string, testnet bool) (string, error) {
+	params, err := utxoParams(chainID, testnet)
+	if err != nil {
+		return "", err
+	}
 	wif, err := btcutil.DecodeWIF(wifString)
 	if err != nil {
 		return "", fmt.Errorf("decode wif: %w", err)
 	}
 	defer wif.PrivKey.Zero()
-	if !wif.IsForNet(bitcoinParams(testnet)) {
-		return "", errors.New("wif is for another bitcoin network")
+	if !wif.IsForNet(params) {
+		return "", fmt.Errorf("wif is not for %s", utxoNetworkName(chainID, testnet))
 	}
 	if !wif.CompressPubKey {
 		return "", errors.New("wif is not compressed")
 	}
-	return addressing.DeriveBtcAddress(addressing.BtcHRP(testnet), wif.SerializePubKey())
+	return addressing.DeriveBtcAddress(params.Bech32HRPSegwit, wif.SerializePubKey())
 }
 
 // BitcoinKeyDeps is the 32-byte secp256k1 scalar and the network the WIF is for.
@@ -101,7 +153,14 @@ type BitcoinKeyDeps struct {
 // NewBitcoinKey renders every Bitcoin form of a key: WIF, Electrum import line and
 // the Bitcoin Core / Sparrow wpkh descriptor with its checksum.
 func NewBitcoinKey(deps BitcoinKeyDeps) (*BitcoinKey, error) {
-	wif, err := BitcoinWIF(deps.PrivateKey, deps.Testnet)
+	return NewUTXOKey(deps.PrivateKey, models.ChainBTC, deps.Testnet)
+}
+
+// NewUTXOKey renders every Bitcoin-family form of a key: WIF, the Electrum /
+// Electrum-LTC import line and the Bitcoin Core / Litecoin Core / Sparrow wpkh
+// descriptor with its checksum.
+func NewUTXOKey(privateKey []byte, chainID string, testnet bool) (*BitcoinKey, error) {
+	wif, err := UTXOWIF(privateKey, chainID, testnet)
 	if err != nil {
 		return nil, err
 	}
@@ -115,8 +174,52 @@ func NewBitcoinKey(deps BitcoinKeyDeps) (*BitcoinKey, error) {
 		ElectrumImport:         electrumP2WPKHPrefix + wif,
 		Descriptor:             descriptor,
 		DescriptorWithChecksum: descriptor + "#" + checksum,
-		PrivateKeyHex:          hex.EncodeToString(deps.PrivateKey),
+		PrivateKeyHex:          hex.EncodeToString(privateKey),
 	}, nil
+}
+
+// TronPrivateKeyHex is the 64-hex-character key, without 0x, that TronLink ("Import
+// private key") and TronWeb import.
+func TronPrivateKeyHex(privateKey []byte) (string, error) {
+	if len(privateKey) != hdkey.PrivateKeySize {
+		return "", errBadPrivateKey
+	}
+	return hex.EncodeToString(privateKey), nil
+}
+
+// TronAddressOfPrivateKeyHex re-derives the base58 T... address from the exported hex.
+func TronAddressOfPrivateKeyHex(privateKeyHex string) (string, error) {
+	if len(privateKeyHex) != tronPrivateKeyHexLen {
+		return "", errBadTronKeyHex
+	}
+	raw, err := hex.DecodeString(privateKeyHex)
+	if err != nil {
+		return "", errBadTronKeyHex
+	}
+	defer zeroBytes(raw)
+	publicKey, err := hdkey.PublicKeyOf(raw)
+	if err != nil {
+		return "", err
+	}
+	return addressing.DeriveTronAddress(publicKey)
+}
+
+// NewTronKey renders the TronLink form of a key and the hex (41...) form of the
+// address it re-derives.
+func NewTronKey(privateKey []byte) (*TronKey, error) {
+	privateKeyHex, err := TronPrivateKeyHex(privateKey)
+	if err != nil {
+		return nil, err
+	}
+	address, err := TronAddressOfPrivateKeyHex(privateKeyHex)
+	if err != nil {
+		return nil, err
+	}
+	addressHex, err := addressing.TronAddressToHex(address)
+	if err != nil {
+		return nil, err
+	}
+	return &TronKey{PrivateKeyHex: privateKeyHex, AddressHex: addressHex}, nil
 }
 
 // SolanaKeypair is seed || public key, the 64-byte secret Phantom (base58) and

@@ -4,12 +4,15 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"strings"
 
 	"github.com/goravel/framework/contracts/foundation"
+	"github.com/goravel/framework/facades"
 
 	bitcoinchain "github.com/macrowallets/waas/app/adapters/chain/bitcoin"
 	evmchain "github.com/macrowallets/waas/app/adapters/chain/evm"
 	solanachain "github.com/macrowallets/waas/app/adapters/chain/solana"
+	tronchain "github.com/macrowallets/waas/app/adapters/chain/tron"
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/repositories"
 	chainpkg "github.com/macrowallets/waas/app/services/chain"
@@ -95,7 +98,7 @@ func registerActiveChains(reg *chainpkg.Registry, rows []models.Chain, tokensByC
 			if ch.IsTestnet {
 				network = "testnet"
 			}
-			adapter = bitcoinchain.NewBitcoinLive(bitcoinchain.BitcoinConfig{
+			btcCfg := bitcoinchain.BitcoinConfig{
 				ChainIDStr:    ch.ID,
 				ChainName:     ch.Name,
 				NativeSymbol:  ch.NativeSymbol,
@@ -104,6 +107,29 @@ func registerActiveChains(reg *chainpkg.Registry, rows []models.Chain, tokensByC
 				Network:       network,
 				IsTestnet:     ch.IsTestnet,
 				Confirmations: uint64(ch.RequiredConfirmations),
+			}
+			fallbackKey := "vault.utxo_fallbacks." + ch.ID
+			tatumKey := facades.Config().GetString(fallbackKey + ".api_key")
+			btcCfg.Fallbacks = bitcoinFallbacks(
+				facades.Config().GetString(fallbackKey+".rpc_urls"),
+				tatumKey,
+				bitcoinchain.DefaultBitcoinFallbackURLs(btcCfg),
+			)
+			btcCfg.TatumDataAPIURL = facades.Config().GetString(fallbackKey + ".tatum_data_api_url")
+			slog.Info("btc fallback providers", "chain", ch.ID, "count", len(btcCfg.Fallbacks), "tatum_key_set", tatumKey != "")
+			adapter = bitcoinchain.NewBitcoinLive(btcCfg)
+		case models.AdapterTypeTron:
+			adapter = tronchain.NewTronLive(tronchain.TronConfig{
+				ChainIDStr:            ch.ID,
+				ChainName:             ch.Name,
+				NativeSymbol:          ch.NativeSymbol,
+				RPCURL:                rpcURL,
+				APIKey:                facades.Config().GetString("vault.tron.api_key"),
+				IsTestnet:             ch.IsTestnet,
+				Confirmations:         uint64(ch.RequiredConfirmations),
+				Tokens:                tokensByChain[ch.ID],
+				GasReadinessThreshold: resolveGasReadinessThreshold(&ch),
+				DustThresholdNative:   resolveDustThresholdNative(&ch),
 			})
 		case models.AdapterTypeSolana:
 			adapter = solanachain.NewSolanaLive(solanachain.SolanaConfig{
@@ -123,4 +149,31 @@ func registerActiveChains(reg *chainpkg.Registry, rows []models.Chain, tokensByC
 		}
 	}
 	return networkByChain
+}
+
+// noBitcoinFallbacks as <PREFIX>_FALLBACK_RPC_URL turns the built-in list off.
+const noBitcoinFallbacks = "none"
+
+// bitcoinFallbacks are the secondary providers of a Bitcoin-family chain: the
+// comma-separated configured URLs, the network's built-in defaults when none is
+// configured, or nothing for "none". apiKey is the optional Tatum key; the adapter
+// sends it to Tatum hosts only.
+func bitcoinFallbacks(configured, apiKey string, defaults []string) []bitcoinchain.BitcoinFallback {
+	if strings.EqualFold(strings.TrimSpace(configured), noBitcoinFallbacks) {
+		return nil
+	}
+	var urls []string
+	for _, rawURL := range strings.Split(configured, ",") {
+		if rawURL = strings.TrimSpace(rawURL); rawURL != "" {
+			urls = append(urls, rawURL)
+		}
+	}
+	if len(urls) == 0 {
+		urls = defaults
+	}
+	fallbacks := make([]bitcoinchain.BitcoinFallback, 0, len(urls))
+	for _, rawURL := range urls {
+		fallbacks = append(fallbacks, bitcoinchain.BitcoinFallback{URL: rawURL, APIKey: apiKey})
+	}
+	return fallbacks
 }

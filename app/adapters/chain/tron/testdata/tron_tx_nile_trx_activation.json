@@ -1,0 +1,31 @@
+{
+  "raw_data": {
+    "ref_block_bytes": "80a5",
+    "ref_block_hash": "fe933857069873ce",
+    "expiration": 1791126756000,
+    "contract": [
+      {
+        "parameter": {
+          "value": {
+            "owner_address": "41d3682962027e721c5247a9faf7865fe4a71d5438",
+            "to_address": "4178e9849e9a67a1067a87e7d1396b54120151513a",
+            "amount": 1000000000
+          },
+          "type_url": "type.googleapis.com/protocol.TransferContract"
+        },
+        "type": "TransferContract"
+      }
+    ],
+    "timestamp": 1791126698599
+  },
+  "signature": [
+    "b2e39dfc13c5c571b7898ffab8d4a6e79d2a5fda4a132c65e2de12391ceab44059950e931599f83d8119ecd0bdac9ef09f5705e85e45def5b56880af332257e701"
+  ],
+  "ret": [
+    {
+      "contractRet": "SUCCESS"
+    }
+  ],
+  "raw_data_hex": "0a0280a52208fe933857069873ce40a0b5e5bb90345a69080112650a2d747970652e676f6f676c65617069732e636f6d2f70726f746f636f6c2e5472616e73666572436f6e747261637412340a1541d3682962027e721c5247a9faf7865fe4a71d543812154178e9849e9a67a1067a87e7d1396b54120151513a188094ebdc0370e7f4e1bb9034",
+  "txID": "35ad1db76fd458aca1384dab73b548d86ea0cbb8697f79c4e2ff97f1eff0904e"
+}

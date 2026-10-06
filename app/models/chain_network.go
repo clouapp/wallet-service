@@ -22,6 +22,10 @@ const (
 	NetworkArbitrumSepolia = "arbitrum-sepolia"
 	NetworkBSCMainnet      = "bsc-mainnet"
 	NetworkBSCTestnet      = "bsc-testnet"
+	NetworkTronMainnet     = "tron-mainnet"
+	NetworkTronNile        = "tron-nile"
+	NetworkLitecoinMainnet = "litecoin-mainnet"
+	NetworkLitecoinTestnet = "litecoin-testnet"
 )
 
 const (
@@ -89,6 +93,31 @@ var testnetNetworks = map[string]struct{}{
 	NetworkBaseSepolia:     {},
 	NetworkArbitrumSepolia: {},
 	NetworkBSCTestnet:      {},
+	NetworkTronNile:        {},
+	NetworkLitecoinTestnet: {},
+}
+
+var litecoinChainIDs = map[string]struct{}{
+	ChainLTC:  {},
+	ChainTLTC: {},
+}
+
+// IsLitecoinChainID reports whether chainID is a Litecoin record. Litecoin runs on
+// the Bitcoin adapter with Litecoin's address and key parameters.
+func IsLitecoinChainID(chainID string) bool {
+	_, ok := litecoinChainIDs[chainID]
+	return ok
+}
+
+// IsBitcoinFamilyChainID reports whether chainID is a UTXO record whose address
+// depends on the network it points at (bc1/tb1, ltc1/tltc1).
+func IsBitcoinFamilyChainID(chainID string) bool {
+	switch chainID {
+	case ChainBTC, ChainTBTC:
+		return true
+	default:
+		return IsLitecoinChainID(chainID)
+	}
 }
 
 // ResolvedNetwork is where a chain record actually points. Name is "" when the
@@ -118,6 +147,12 @@ func (c *Chain) Network() string {
 		}
 		return EVMNetworkName(*c.NetworkID)
 	case AdapterTypeBitcoin:
+		if IsLitecoinChainID(c.ID) {
+			if c.IsTestnet {
+				return NetworkLitecoinTestnet
+			}
+			return NetworkLitecoinMainnet
+		}
 		if c.IsTestnet {
 			return NetworkBitcoinTestnet
 		}
@@ -127,6 +162,11 @@ func (c *Chain) Network() string {
 			return NetworkSolanaDevnet
 		}
 		return NetworkSolanaMainnet
+	case AdapterTypeTron:
+		if c.IsTestnet {
+			return NetworkTronNile
+		}
+		return NetworkTronMainnet
 	default:
 		return ""
 	}
@@ -150,7 +190,7 @@ func (c *Chain) ResolveNetwork(rpcURL string) ResolvedNetwork {
 			name = cluster
 		}
 	case AdapterTypeBitcoin:
-		if c.IsTestnet && IsBitcoinTestnet4RPCURL(rpcURL) {
+		if c.IsTestnet && !IsLitecoinChainID(c.ID) && IsBitcoinTestnet4RPCURL(rpcURL) {
 			name = NetworkBitcoinTestnet4
 		}
 	}

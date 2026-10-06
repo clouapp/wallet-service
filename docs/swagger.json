@@ -548,6 +548,91 @@
                 }
             }
         },
+        "/api/v1/wallets/{walletId}/fee-estimate": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Prices the withdrawal POST /withdrawals would send, with the same planner and chain adapters, without signing or broadcasting. The fee is always in the chain's native coin (ETH, POL, BTC, LTC, SOL, TRX), also for tokens. EVM transfers are legacy transactions paying gas_price_wei for every unit of gas (plus the L1 data fee on OP-stack networks); Bitcoin and Litecoin use the node's fee rate and the coin selection the builder runs; Solana pays 5000 lamports per signature plus the recipient's token account when it must be created; TRON is priced as burned TRX with no free or staked resources (bandwidth per signed byte, 1.1 TRX to activate a new recipient, TRC-20 energy from estimateenergy at the chain's energy price), broken down in details.tron. When the wallet cannot cover the amount, the fee of the transfer from the base address is returned with insufficient_funds=true. Answers are cached for FEE_ESTIMATE_CACHE_TTL_SECONDS (default 15). Node failures answer 503; no value is guessed.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Wallet Withdrawals"
+                ],
+                "summary": "Estimate a withdrawal's network fee",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "format": "uuid",
+                        "description": "Wallet UUID",
+                        "name": "walletId",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "example": "USDC",
+                        "description": "Asset symbol; the chain's native coin when omitted",
+                        "name": "asset",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "example": "0.001",
+                        "description": "Decimal amount, as sent to POST /withdrawals; the smallest transfer when omitted",
+                        "name": "amount",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Destination address; a probe recipient when omitted",
+                        "name": "to",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/feeestimate.Estimate"
+                        }
+                    },
+                    "400": {
+                        "description": "invalid_amount",
+                        "schema": {
+                            "$ref": "#/definitions/controllers.FeeEstimateErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "wallet not found (or owned by another account)",
+                        "schema": {
+                            "$ref": "#/definitions/controllers.ErrorResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "unknown_asset, invalid_address, amount_below_minimum, token_balance_required, unsupported_chain",
+                        "schema": {
+                            "$ref": "#/definitions/controllers.FeeEstimateErrorResponse"
+                        }
+                    },
+                    "429": {
+                        "description": "sweep_limit_exceeded",
+                        "schema": {
+                            "$ref": "#/definitions/controllers.FeeEstimateErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "fee_estimate_unavailable, gas_estimate_failed",
+                        "schema": {
+                            "$ref": "#/definitions/controllers.FeeEstimateErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/api/v1/wallets/{walletId}/withdrawals/{idempotencyKey}": {
             "get": {
                 "security": [
@@ -4502,6 +4587,276 @@
                 },
                 "wallet_id": {
                     "type": "string"
+                }
+            }
+        },
+        "controllers.WithdrawalResponse": {
+            "type": "object",
+            "properties": {
+                "failed_step": {
+                    "$ref": "#/definitions/controllers.WithdrawalFailedStep"
+                },
+                "origin": {
+                    "type": "string",
+                    "example": "user_request"
+                },
+                "status": {
+                    "type": "string",
+                    "example": "confirming"
+                },
+                "strategy": {
+                    "type": "string",
+                    "example": "direct_from_base"
+                },
+                "sweeps": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/controllers.WithdrawalSweepItem"
+                    }
+                },
+                "transaction_id": {
+                    "type": "string",
+                    "example": "8c5e3b3a-4a8f-4c0b-9e8a-2d1e8f0b7c4d"
+                },
+                "tx_hash": {
+                    "type": "string",
+                    "example": "0xaaa..."
+                }
+            }
+        },
+        "controllers.WithdrawalSweepItem": {
+            "type": "object",
+            "properties": {
+                "from": {
+                    "type": "string",
+                    "example": "0xChildAddress"
+                },
+                "origin": {
+                    "type": "string",
+                    "example": "sweep"
+                },
+                "tx_hash": {
+                    "type": "string",
+                    "example": "0xbbb..."
+                },
+                "tx_id": {
+                    "type": "string",
+                    "example": "1f2d3c4b-5a6b-7c8d-9e0f-112233445566"
+                }
+            }
+        },
+        "feeestimate.BitcoinDetails": {
+            "type": "object",
+            "properties": {
+                "fee_rate_sat_per_vbyte": {
+                    "type": "string",
+                    "example": "1"
+                },
+                "fee_rate_source": {
+                    "type": "string",
+                    "example": "estimator"
+                },
+                "inputs": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "outputs": {
+                    "type": "integer",
+                    "example": 2
+                },
+                "vsize": {
+                    "type": "integer",
+                    "example": 141
+                }
+            }
+        },
+        "feeestimate.Details": {
+            "type": "object",
+            "properties": {
+                "bitcoin": {
+                    "$ref": "#/definitions/feeestimate.BitcoinDetails"
+                },
+                "evm": {
+                    "$ref": "#/definitions/feeestimate.EVMDetails"
+                },
+                "solana": {
+                    "$ref": "#/definitions/feeestimate.SolanaDetails"
+                },
+                "tron": {
+                    "$ref": "#/definitions/feeestimate.TronDetails"
+                }
+            }
+        },
+        "feeestimate.EVMDetails": {
+            "type": "object",
+            "properties": {
+                "gas_limit": {
+                    "type": "integer",
+                    "example": 21000
+                },
+                "gas_price_gwei": {
+                    "type": "string",
+                    "example": "1.994918016"
+                },
+                "gas_price_wei": {
+                    "type": "string",
+                    "example": "1994918016"
+                },
+                "l1_data_fee_wei": {
+                    "type": "string",
+                    "example": "0"
+                },
+                "tx_type": {
+                    "type": "string",
+                    "example": "legacy"
+                }
+            }
+        },
+        "feeestimate.Estimate": {
+            "type": "object",
+            "properties": {
+                "amount": {
+                    "type": "string",
+                    "example": "0.001"
+                },
+                "amount_base_units": {
+                    "type": "string",
+                    "example": "1000000000000000"
+                },
+                "amount_is_reference": {
+                    "type": "boolean",
+                    "example": false
+                },
+                "amount_spendable": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "asset": {
+                    "type": "string",
+                    "example": "ETH"
+                },
+                "base_balance_base_units": {
+                    "type": "string",
+                    "example": "1958106721664000"
+                },
+                "basis": {
+                    "type": "string",
+                    "example": "plan"
+                },
+                "cached": {
+                    "type": "boolean",
+                    "example": false
+                },
+                "chain": {
+                    "type": "string",
+                    "example": "eth"
+                },
+                "details": {
+                    "$ref": "#/definitions/feeestimate.Details"
+                },
+                "estimated_at": {
+                    "type": "string"
+                },
+                "expires_at": {
+                    "type": "string"
+                },
+                "fee": {
+                    "type": "string",
+                    "example": "0.000041893278336"
+                },
+                "fee_asset": {
+                    "type": "string",
+                    "example": "ETH"
+                },
+                "fee_base_units": {
+                    "type": "string",
+                    "example": "41893278336000"
+                },
+                "fee_decimals": {
+                    "type": "integer",
+                    "example": 18
+                },
+                "fee_multiplier": {
+                    "type": "string",
+                    "example": "1"
+                },
+                "insufficient_funds": {
+                    "type": "boolean",
+                    "example": false
+                },
+                "minimum_remaining_base_units": {
+                    "type": "string",
+                    "example": "0"
+                },
+                "recipient": {
+                    "type": "string",
+                    "example": "provided"
+                },
+                "strategy": {
+                    "type": "string",
+                    "example": "direct_from_base"
+                },
+                "transfers": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "wallet_id": {
+                    "type": "string",
+                    "example": "d6a8ce92-b637-44c2-a9f1-774344802e1a"
+                }
+            }
+        },
+        "feeestimate.SolanaDetails": {
+            "type": "object",
+            "properties": {
+                "lamports_per_signature": {
+                    "type": "integer",
+                    "example": 5000
+                },
+                "signatures": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "token_account_creation_lamports": {
+                    "type": "string",
+                    "example": "0"
+                }
+            }
+        },
+        "feeestimate.TronDetails": {
+            "type": "object",
+            "properties": {
+                "account_activation_fee_sun": {
+                    "type": "string",
+                    "example": "0"
+                },
+                "bandwidth_bytes": {
+                    "type": "integer",
+                    "example": 345
+                },
+                "bandwidth_fee_sun": {
+                    "type": "string",
+                    "example": "345000"
+                },
+                "energy": {
+                    "type": "integer",
+                    "example": 21975
+                },
+                "energy_fee_limit_sun": {
+                    "type": "string",
+                    "example": "2637000"
+                },
+                "energy_is_reference": {
+                    "type": "boolean",
+                    "example": false
+                },
+                "sun_per_bandwidth_byte": {
+                    "type": "integer",
+                    "example": 1000
+                },
+                "sun_per_energy": {
+                    "type": "integer",
+                    "example": 100
                 }
             }
         },

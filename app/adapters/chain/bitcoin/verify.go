@@ -20,18 +20,23 @@ import (
 // over the input's BIP-143 digest. This is the check a node runs as OP_EQUALVERIFY
 // and OP_CHECKSIG, so a key that does not own the input never reaches the network.
 func (a *BitcoinLive) VerifySignedTransaction(unsigned *types.UnsignedTx, signed *types.SignedTx, from string) error {
-	return verifySignedP2WPKH(unsigned, signed, from)
+	if err := a.requireBuiltOnThisNetwork(unsigned); err != nil {
+		return fmt.Errorf("btc verify: %w", err)
+	}
+	return verifySignedP2WPKH(unsigned, signed, from, a.network.params)
 }
 
-func verifySignedP2WPKH(unsigned *types.UnsignedTx, signed *types.SignedTx, from string) error {
+func verifySignedP2WPKH(unsigned *types.UnsignedTx, signed *types.SignedTx, from string, net *chaincfg.Params) error {
 	if unsigned == nil || signed == nil || len(signed.RawBytes) == 0 {
 		return fmt.Errorf("btc verify: unsigned and signed transactions are required")
+	}
+	if net == nil {
+		return fmt.Errorf("btc verify: network parameters are required")
 	}
 	inputs := inputsFrom(unsigned)
 	if len(inputs) == 0 {
 		return fmt.Errorf("btc verify: transaction has no inputs")
 	}
-	net := netParams(unsigned)
 	built, err := unsignedToMsgTx(unsigned, net)
 	if err != nil {
 		return fmt.Errorf("btc verify: rebuild transaction: %w", err)

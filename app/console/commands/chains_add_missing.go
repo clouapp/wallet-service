@@ -26,7 +26,7 @@ func NewChainsAddMissing(missing *chainregistry.MissingChains) *ChainsAddMissing
 func (c *ChainsAddMissing) Signature() string { return "chains:add-missing" }
 
 func (c *ChainsAddMissing) Description() string {
-	return "Create missing base/arbitrum/bsc chain records with tokens, explorers and thresholds; dry run unless --apply"
+	return "Create missing base/arbitrum/bsc/tron/ltc chain records with tokens, explorers and thresholds; dry run unless --apply"
 }
 
 func (c *ChainsAddMissing) Extend() command.Extend {

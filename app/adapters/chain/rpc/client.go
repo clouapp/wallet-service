@@ -1,6 +1,7 @@
 package rpc
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -23,12 +24,14 @@ const (
 // RPCClient is a generic JSON-RPC 2.0 client.
 // BTC, ETH, and SOL all speak JSON-RPC — only method names differ.
 type RPCClient struct {
-	endpoint  atomic.Value // string; replaced without logging the URL
-	client    *httpclient.Client
-	requestID atomic.Uint64
-	username  string
-	password  string
-	retry     rateLimitRetry
+	endpoint         atomic.Value // string; replaced without logging the URL
+	client           *httpclient.Client
+	requestID        atomic.Uint64
+	username         string
+	password         string
+	headers          map[string]string
+	retry            rateLimitRetry
+	maxResponseBytes int
 }
 
 type rpcRequest struct {
@@ -74,6 +77,37 @@ func NewRPCClient(deps RPCClientDeps) *RPCClient {
 	return client
 }
 
+// WithMaxResponseBytes raises or lowers the size of the largest answer accepted.
+// Zero keeps rpcMaxResponseBytes. A larger answer is an error, not a truncated body.
+func (c *RPCClient) WithMaxResponseBytes(limit int) *RPCClient {
+	if c == nil {
+		return nil
+	}
+	c.maxResponseBytes = limit
+	return c
+}
+
+// WithHeader sends name: value on every request. An empty value is ignored.
+// Header is the value WithHeader stored for name. Tests use it to confirm a key
+// is attached to the client and not to a provider that must not see it.
+func (c *RPCClient) Header(name string) string {
+	if c == nil || c.headers == nil {
+		return ""
+	}
+	return c.headers[name]
+}
+
+func (c *RPCClient) WithHeader(name, value string) *RPCClient {
+	if c == nil || value == "" {
+		return c
+	}
+	if c.headers == nil {
+		c.headers = make(map[string]string)
+	}
+	c.headers[name] = value
+	return c
+}
+
 // Endpoint is the URL the next call dials. Callers must not log it.
 func (c *RPCClient) Endpoint() string {
 	if c == nil {
@@ -110,6 +144,7 @@ func (c *RPCClient) Call(ctx context.Context, method string, out interface{}, pa
 		if err != nil {
 			return err
 		}
+		respBody = c.redactHeaderValues(respBody)
 		if isRateLimited(status, respBody) {
 			if attempt >= c.retry.maxAttempts {
 				return fmt.Errorf("rpc call %s: %w (HTTP %d) after %d attempts", method, chain.ErrRateLimited, status, attempt)
@@ -136,15 +171,23 @@ func (c *RPCClient) post(ctx context.Context, method string, params []interface{
 		return 0, nil, nil, fmt.Errorf("encode %s request: %w", method, err)
 	}
 
+	header := map[string]string{"Content-Type": "application/json", "User-Agent": rpcUserAgent}
+	for name, value := range c.headers {
+		header[name] = value
+	}
+	limit := c.maxResponseBytes
+	if limit <= 0 {
+		limit = rpcMaxResponseBytes
+	}
 	resp, err := c.client.Do(ctx, httpclient.Request{
 		Method:   httpclient.MethodPost,
 		URL:      c.Endpoint(),
-		Header:   map[string]string{"Content-Type": "application/json", "User-Agent": rpcUserAgent},
+		Header:   header,
 		Body:     body,
 		HasBody:  true,
 		Username: c.username,
 		Password: c.password,
-		MaxBytes: rpcMaxResponseBytes,
+		MaxBytes: int64(limit) + 1,
 	})
 	if err != nil {
 		if httpclient.IsBuild(err) {
@@ -155,7 +198,27 @@ func (c *RPCClient) post(ctx context.Context, method string, params []interface{
 		}
 		return 0, nil, nil, chain.Unavailable(fmt.Errorf("rpc call %s: %w", method, withoutURL(err)))
 	}
-	return resp.StatusCode, resp.Header, resp.Body, nil
+	if limit <= 0 {
+		limit = rpcMaxResponseBytes
+	}
+	if len(resp.Body) > limit {
+		return 0, nil, nil, fmt.Errorf("rpc call %s: response larger than %d bytes", method, limit)
+	}
+	return resp.StatusCode, resp.Header, c.redactHeaderValues(resp.Body), nil
+}
+
+// redactHeaderValues removes extra header values (API keys) from an answer
+// before it can reach an error: a provider may echo an invalid key back.
+func (c *RPCClient) redactHeaderValues(body []byte) []byte {
+	if c == nil || len(c.headers) == 0 || len(body) == 0 {
+		return body
+	}
+	for _, value := range c.headers {
+		if value != "" {
+			body = bytes.ReplaceAll(body, []byte(value), []byte("[redacted]"))
+		}
+	}
+	return body
 }
 
 func decodeRPCResponse(method string, status int, respBody []byte, out interface{}) error {

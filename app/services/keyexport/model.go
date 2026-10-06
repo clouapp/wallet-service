@@ -65,6 +65,13 @@ func (p WalletPlan) SpansEVMNetworks() bool {
 	return p.Network.AdapterType == models.AdapterTypeEVM
 }
 
+// SpansTronNetworks reports whether the wallet's keys control the same T... address
+// on TRON mainnet and every TRON testnet (and, as 0x + the same 20 bytes, on every
+// EVM network).
+func (p WalletPlan) SpansTronNetworks() bool {
+	return p.Network.AdapterType == models.AdapterTypeTron
+}
+
 // Refusal is a wallet that was not exported. Reason never carries key material.
 type Refusal struct {
 	WalletID uuid.UUID `json:"wallet_id"`
@@ -104,7 +111,8 @@ type SharesInfo struct {
 }
 
 // AddressKey is one database address and the key that controls it, in the formats
-// wallets import. Exactly one of EVM, Bitcoin, Solana or SolanaScalar is set.
+// wallets import. Exactly one of EVM, Bitcoin, Litecoin, Tron, Solana or
+// SolanaScalar is set.
 type AddressKey struct {
 	AddressID       string `json:"address_id"`
 	Address         string `json:"address"`
@@ -123,6 +131,8 @@ type AddressKey struct {
 
 	EVM          *EVMKey          `json:"evm,omitempty"`
 	Bitcoin      *BitcoinKey      `json:"bitcoin,omitempty"`
+	Litecoin     *BitcoinKey      `json:"litecoin,omitempty"`
+	Tron         *TronKey         `json:"tron,omitempty"`
 	Solana       *SolanaKey       `json:"solana,omitempty"`
 	SolanaScalar *SolanaScalarKey `json:"solana_scalar,omitempty"`
 	Notes        []string         `json:"notes,omitempty"`
@@ -132,12 +142,20 @@ type EVMKey struct {
 	PrivateKeyHex string `json:"private_key_hex"`
 }
 
+// BitcoinKey is the key of a Bitcoin-family address (Bitcoin or Litecoin): the WIF
+// carries the network's prefix.
 type BitcoinKey struct {
 	WIF                    string `json:"wif_compressed"`
 	ElectrumImport         string `json:"electrum_import"`
 	Descriptor             string `json:"descriptor"`
 	DescriptorWithChecksum string `json:"descriptor_with_checksum"`
 	PrivateKeyHex          string `json:"private_key_hex"`
+}
+
+// TronKey is the key TronLink imports and the hex (41...) form of the address.
+type TronKey struct {
+	PrivateKeyHex string `json:"private_key_hex"`
+	AddressHex    string `json:"address_hex"`
 }
 
 type SolanaKey struct {

@@ -28,8 +28,12 @@ type SolanaLive struct {
 
 var _ types.Chain = (*SolanaLive)(nil)
 
+// solanaRPCMaxResponseBytes bounds one JSON-RPC answer: getBlock with
+// transactionDetails "accounts" on a busy slot exceeds the 1 MiB default.
+const solanaRPCMaxResponseBytes = 32 << 20
+
 func NewSolanaLive(cfg SolanaConfig) *SolanaLive {
-	return &SolanaLive{cfg: cfg, rpc: rpc.NewRPCClient(rpc.RPCClientDeps{URL: cfg.RPCURL})}
+	return &SolanaLive{cfg: cfg, rpc: rpc.NewRPCClient(rpc.RPCClientDeps{URL: cfg.RPCURL}).WithMaxResponseBytes(solanaRPCMaxResponseBytes)}
 }
 
 // Endpoint is the URL the next dial uses. Callers must not log it.
@@ -52,7 +56,7 @@ func (a *SolanaLive) ReplaceEndpoint(endpoint string) {
 	}
 	a.cfg.RPCURL = endpoint
 	if a.rpc == nil {
-		a.rpc = rpc.NewRPCClient(rpc.RPCClientDeps{URL: endpoint})
+		a.rpc = rpc.NewRPCClient(rpc.RPCClientDeps{URL: endpoint}).WithMaxResponseBytes(solanaRPCMaxResponseBytes)
 		return
 	}
 	a.rpc.ReplaceEndpoint(endpoint)

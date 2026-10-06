@@ -6,10 +6,12 @@ import (
 	"fmt"
 	"log/slog"
 	"math/big"
+	"strings"
 	"time"
 
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/services/blockheight"
+	"github.com/macrowallets/waas/app/services/chain"
 	"github.com/macrowallets/waas/pkg/types"
 )
 
@@ -157,13 +159,26 @@ func (s *Service) applyConfirmations(ctx context.Context, adapter types.Chain, c
 		}
 
 		confirmedNow := newStatus == string(types.TxStatusConfirmed) && tx.Status != string(types.TxStatusConfirmed)
+		fee := ""
+		if confirmedNow && needsPaidFee(tx) {
+			if got, ok := paidFee(ctx, adapter, tx); ok {
+				fee = got
+				tx.Fee = got
+			}
+		}
 		if tx.TxType == models.TxTypeSweep && confirmedNow {
-			if err := s.persistSweepConfirmed(ctx, tx, confs, newStatus, confirmedAt); err != nil {
+			if err := s.persistSweepConfirmed(ctx, tx, confs, newStatus, confirmedAt, fee); err != nil {
 				slog.Error("confirm sweep", "tx_id", tx.ID, "error", err)
 				continue
 			}
 			confirmedWallets.add(tx.WalletID)
 			continue
+		}
+		if fee != "" {
+			if err := s.txRepo.SetFee(ctx, tx.ID, fee); err != nil {
+				slog.Error("update confs", "tx_id", tx.ID, "error", err)
+				continue
+			}
 		}
 
 		if err := s.txRepo.RecordConfirmations(ctx, tx.ID, confs, newStatus, confirmedAt); err != nil {
@@ -199,13 +214,24 @@ type confirmationTx interface {
 	Within(ctx context.Context, fn func(context.Context) error) error
 }
 
-// persistSweepConfirmed writes the confirmation and the sweep.confirmed webhook
-// row in one transaction. A failed webhook insert rolls the confirmation back.
-// The queue send runs only after that commit. With no webhook writer, only the
-// transaction row is written.
-func (s *Service) persistSweepConfirmed(ctx context.Context, tx models.Transaction, confs int, status string, confirmedAt *time.Time) error {
+// persistSweepConfirmed writes the confirmation, the paid fee, and the
+// sweep.confirmed webhook row in one transaction. A failed webhook insert rolls
+// the confirmation back. The queue send runs only after that commit. With no
+// webhook writer, only the transaction row is written.
+func (s *Service) persistSweepConfirmed(ctx context.Context, tx models.Transaction, confs int, status string, confirmedAt *time.Time, fee string) error {
+	write := func(txCtx context.Context) error {
+		if fee != "" {
+			if err := s.txRepo.SetFee(txCtx, tx.ID, fee); err != nil {
+				return fmt.Errorf("confirm sweep fee: %w", err)
+			}
+		}
+		if err := s.txRepo.RecordConfirmations(txCtx, tx.ID, confs, status, confirmedAt); err != nil {
+			return fmt.Errorf("confirm sweep: %w", err)
+		}
+		return nil
+	}
 	if s.webhookSvc == nil {
-		return s.txRepo.RecordConfirmations(ctx, tx.ID, confs, status, confirmedAt)
+		return write(ctx)
 	}
 	joiner, ok := s.txRepo.(confirmationTx)
 	if !ok {
@@ -213,8 +239,8 @@ func (s *Service) persistSweepConfirmed(ctx context.Context, tx models.Transacti
 	}
 	var send func(context.Context)
 	err := joiner.Within(ctx, func(txCtx context.Context) error {
-		if err := s.txRepo.RecordConfirmations(txCtx, tx.ID, confs, status, confirmedAt); err != nil {
-			return fmt.Errorf("confirm sweep: %w", err)
+		if err := write(txCtx); err != nil {
+			return err
 		}
 		staged, stageErr := s.webhookSvc.StageSweepConfirmed(txCtx, &tx)
 		if stageErr != nil {
@@ -230,6 +256,28 @@ func (s *Service) persistSweepConfirmed(ctx context.Context, tx models.Transacti
 		send(ctx)
 	}
 	return nil
+}
+
+// needsPaidFee: outbound rows (withdrawal, sweep, gas_seed) record the fee they paid
+// when they confirm; deposits were paid for by their sender.
+func needsPaidFee(tx models.Transaction) bool {
+	return isOutboundTxType(tx.TxType) && strings.TrimSpace(tx.Fee) == "" && tx.TxHash != ""
+}
+
+// paidFee reads the fee tx paid from the chain, in native base units. A chain that
+// cannot tell, or a failed lookup, leaves the fee empty: confirmation never waits on
+// it, and transactions:backfill-fees fills it later.
+func paidFee(ctx context.Context, adapter types.Chain, tx models.Transaction) (string, bool) {
+	reader, ok := adapter.(chain.TransactionFeeReader)
+	if !ok {
+		return "", false
+	}
+	fee, err := reader.TransactionFee(ctx, tx.TxHash)
+	if err != nil {
+		slog.Warn("read paid fee", "tx_id", tx.ID, "tx_hash", tx.TxHash, "chain", tx.Chain, "error", err)
+		return "", false
+	}
+	return fee.String(), true
 }
 
 // confirmationsAt counts the block that includes the transaction as its first

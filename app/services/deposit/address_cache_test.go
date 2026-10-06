@@ -4,6 +4,8 @@ import (
 	"context"
 	"os"
 	"sort"
+	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -14,9 +16,13 @@ import (
 	"github.com/macrowallets/waas/tests/feature/support/fixtures"
 )
 
-// addressCacheTestRedisDB is the logical database .env.testing assigns to tests; the
-// API uses 0, so these tests can never touch its watched-address sets.
-const addressCacheTestRedisDB = 15
+// addressCacheTestRedisDB is the logical database .env.testing assigns to tests when
+// REDIS_DB is unset; the API uses 0, so these tests can never touch its watched-address
+// sets. A parallel worker gets its own REDIS_DB from testenv.
+const (
+	addressCacheTestRedisDB = 15
+	liveRedisDB             = 0
+)
 
 func testRedis(t *testing.T) *redis.Client {
 	t.Helper()
@@ -28,7 +34,15 @@ func testRedis(t *testing.T) *redis.Client {
 	if port == "" {
 		port = "6379"
 	}
-	client := redis.NewClient(&redis.Options{Addr: host + ":" + port, DB: addressCacheTestRedisDB})
+	database := addressCacheTestRedisDB
+	if raw := strings.TrimSpace(os.Getenv("REDIS_DB")); raw != "" {
+		parsed, err := strconv.Atoi(raw)
+		if err != nil || parsed == liveRedisDB {
+			t.Fatalf("REDIS_DB must be a non-live Redis index, got %q", raw)
+		}
+		database = parsed
+	}
+	client := redis.NewClient(&redis.Options{Addr: host + ":" + port, DB: database})
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 	if err := client.Ping(ctx).Err(); err != nil {

@@ -40,6 +40,10 @@ func (s *sweepConfirmMemory) FindPendingByChain(context.Context, string) ([]mode
 	return nil, nil
 }
 func (s *sweepConfirmMemory) SetBlockNumber(context.Context, uuid.UUID, uint64) error { return nil }
+func (s *sweepConfirmMemory) SetFee(context.Context, uuid.UUID, string) error      { return nil }
+func (s *sweepConfirmMemory) FindConfirmedOutboundWithoutFee(context.Context, string, int) ([]models.Transaction, error) {
+	return nil, nil
+}
 
 func (s *sweepConfirmMemory) RecordConfirmations(_ context.Context, id uuid.UUID, _ int, status string, _ *time.Time) error {
 	s.rows = append(s.rows, sweepConfirmRow{

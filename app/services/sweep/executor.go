@@ -95,7 +95,7 @@ func (s *service) ExecutePlan(
 	case StrategyMultiSweep:
 		for i, leg := range plan.Sweeps {
 			sweepTxID := uuid.New()
-			hash, err := s.broadcastLeg(
+			completed, err := s.broadcastLeg(
 				ctx, adapter, curve, keys, wallet, plan,
 				leg, sweepTxID, legBroadcastOpts{
 					Origin:              models.TxOriginSweep,
@@ -118,11 +118,12 @@ func (s *service) ExecutePlan(
 				}
 				return result, nil
 			}
-			result.Sweeps = append(result.Sweeps, CompletedSweep{
-				From:         leg.From,
-				TxHash:       hash,
-				InternalTxID: sweepTxID,
-			})
+			result.Sweeps = append(result.Sweeps, completed)
+		}
+		for _, sweep := range result.Sweeps {
+			if err := awaitInclusion(ctx, adapter, sweep.TxHash); err != nil {
+				return result, fmt.Errorf("sweep: sweep from %s: %w", sweep.From.Address, err)
+			}
 		}
 
 		finalTx, err := s.broadcastWithdrawal(
@@ -167,13 +168,14 @@ type legBroadcastOpts struct {
 // in the manual consolidation path). Only the sweep row triggers a
 // webhook event.
 //
-// Returns the on-chain hash of the sweep (not the gas_seed).
+// Returns the completed sweep: its on-chain hash (not the gas_seed's) and the
+// amount it moved.
 //
-// A withdrawal-driven leg (ParentTransactionID set) and a manual consolidation
-// (no parent) both commit the gas seed, the sweep row, and the sweep.broadcast
-// webhook event in one transaction after the broadcasts. A failed later insert
-// rolls the earlier rows back. SQS runs only after that commit. The final
-// withdrawal row and gas-status updates stay outside this commit.
+// Gas seeds are broadcast and awaited before the sweep (TRON pays the child
+// from the seed). A shortfall is topped up, at most twice, before the sweep
+// is signed. The sweep row and its sweep.broadcast webhook commit in one
+// transaction after that broadcast. A failed webhook insert rolls the sweep
+// row back. SQS runs only after that commit.
 func (s *service) broadcastLeg(
 	ctx context.Context,
 	adapter types.Chain,
@@ -184,8 +186,45 @@ func (s *service) broadcastLeg(
 	leg PlannedSweep,
 	sweepTxID uuid.UUID,
 	opts legBroadcastOpts,
-) (string, error) {
-	return s.broadcastLinkedLeg(ctx, adapter, curve, keys, wallet, plan, leg, sweepTxID, opts)
+) (CompletedSweep, error) {
+	unsigneds, token, err := s.buildSweepLeg(ctx, adapter, wallet, plan, leg)
+	if err != nil {
+		return CompletedSweep{}, err
+	}
+
+	completed := CompletedSweep{From: leg.From, InternalTxID: sweepTxID}
+	var sweepRow *models.Transaction
+	for idx := range unsigneds {
+		unsigned := unsigneds[idx]
+		signer, isGasSeed := sweepLegSigner(wallet, leg, len(unsigneds), idx)
+		if isGasSeed {
+			if err := s.broadcastGasSeed(ctx, adapter, curve, keys, wallet, plan, leg, &unsigned, opts); err != nil {
+				return CompletedSweep{}, err
+			}
+			continue
+		}
+		if err := s.fundSweep(ctx, adapter, curve, keys, wallet, plan, leg, &unsigned, opts); err != nil {
+			return CompletedSweep{}, err
+		}
+
+		signed, signErr := s.signUnsigned(ctx, adapter, curve, keys, wallet, signer, &unsigned)
+		if signErr != nil {
+			return CompletedSweep{}, fmt.Errorf("sign transaction: %w", signErr)
+		}
+		hash, bcErr := adapter.BroadcastTransaction(ctx, signed)
+		if bcErr != nil {
+			return CompletedSweep{}, fmt.Errorf("broadcast: %w", bcErr)
+		}
+		sweepRow = sweepLegTransaction(wallet, plan, leg, sweepTxID, opts, &unsigned, hash, token, false, adapter)
+		completed.TxHash = hash
+		completed.Amount = sweptAmount(&unsigned, leg.Amount)
+	}
+	if sweepRow != nil {
+		if err := s.commitLinkedLeg(ctx, []linkedLegRow{{tx: sweepRow}}); err != nil {
+			return CompletedSweep{}, err
+		}
+	}
+	return completed, nil
 }
 
 // sweepBroadcastStager inserts sweep.broadcast webhook rows on the caller's
@@ -199,13 +238,10 @@ type linkedLegRow struct {
 	gasSeed bool
 }
 
-// broadcastLinkedLeg is the withdrawal-driven sweep leg. Chain broadcasts stay
-// outside the database transaction. Rows whose broadcasts already succeeded are
-// committed together, so a failed sweep insert or webhook insert rolls back the
-// gas seed from that same commit. A later broadcast failure still keeps the
-// earlier broadcast's row: that row is committed on its own before the error
-// returns, because the sweep row was never written.
-func (s *service) broadcastLinkedLeg(
+// broadcastGasSeed signs a base to child native transfer with the base key,
+// broadcasts it, records it as a gas_seed row and waits until it is in a block
+// where the chain requires it.
+func (s *service) broadcastGasSeed(
 	ctx context.Context,
 	adapter types.Chain,
 	curve mpcpkg.Curve,
@@ -213,45 +249,78 @@ func (s *service) broadcastLinkedLeg(
 	wallet *models.Wallet,
 	plan *Plan,
 	leg PlannedSweep,
-	sweepTxID uuid.UUID,
+	unsigned *types.UnsignedTx,
 	opts legBroadcastOpts,
-) (string, error) {
-	unsigneds, token, err := s.buildSweepLeg(ctx, adapter, wallet, plan, leg)
+) error {
+	signed, err := s.signUnsigned(ctx, adapter, curve, keys, wallet, *wallet.DepositAddress, unsigned)
 	if err != nil {
-		return "", err
+		return fmt.Errorf("sign transaction: %w", err)
 	}
+	hash, err := adapter.BroadcastTransaction(ctx, signed)
+	if err != nil {
+		return fmt.Errorf("broadcast: %w", err)
+	}
+	tx := sweepLegTransaction(wallet, plan, leg, uuid.New(), opts, unsigned, hash, nil, true, adapter)
+	if err := s.txRepo.Create(ctx, tx); err != nil {
+		return fmt.Errorf("persist %s tx: %w", models.TxTypeGasSeed, err)
+	}
+	if err := awaitInclusion(ctx, adapter, hash); err != nil {
+		return fmt.Errorf("gas_seed: %w", err)
+	}
+	return nil
+}
 
-	var finalSweepHash string
-	pending := make([]linkedLegRow, 0, len(unsigneds))
-	for idx := range unsigneds {
-		unsigned := unsigneds[idx]
-		signer, isGasSeed := sweepLegSigner(wallet, leg, len(unsigneds), idx)
-		signed, signErr := s.signUnsigned(ctx, adapter, curve, keys, wallet, signer, &unsigned)
-		if signErr != nil {
-			if commitErr := s.commitLinkedLeg(ctx, pending); commitErr != nil {
-				return "", commitErr
-			}
-			return "", fmt.Errorf("sign transaction: %w", signErr)
+// sweepFundingChecker is implemented by chains that size a gas_seed by the sweep's
+// estimated cost rather than its ceiling, and can re-price that cost right before
+// the sweep (TRON: the contract deployer's share of the energy can run out).
+type sweepFundingChecker interface {
+	SweepFundingShortfall(ctx context.Context, sweep *types.UnsignedTx) (*big.Int, error)
+}
+
+// sweepFundingTopUps bounds the extra gas_seeds sent for one sweep when its sender
+// is still short after the first.
+const sweepFundingTopUps = 2
+
+// fundSweep tops the sweep's sender up with what it still lacks (each top-up a
+// gas_seed awaited like the first) and refuses the sweep when the sender stays
+// short or its shortfall cannot be read.
+func (s *service) fundSweep(
+	ctx context.Context,
+	adapter types.Chain,
+	curve mpcpkg.Curve,
+	keys walletKeys,
+	wallet *models.Wallet,
+	plan *Plan,
+	leg PlannedSweep,
+	sweep *types.UnsignedTx,
+	opts legBroadcastOpts,
+) error {
+	checker, ok := adapter.(sweepFundingChecker)
+	if !ok {
+		return nil
+	}
+	for topUps := 0; ; topUps++ {
+		shortfall, err := checker.SweepFundingShortfall(ctx, sweep)
+		if err != nil {
+			return fmt.Errorf("sweep funding of %s: %w", leg.From.Address, err)
 		}
-		hash, bcErr := adapter.BroadcastTransaction(ctx, signed)
-		if bcErr != nil {
-			if commitErr := s.commitLinkedLeg(ctx, pending); commitErr != nil {
-				return "", commitErr
-			}
-			return "", fmt.Errorf("broadcast: %w", bcErr)
+		if shortfall == nil || shortfall.Sign() <= 0 {
+			return nil
 		}
-		pending = append(pending, linkedLegRow{
-			tx:      sweepLegTransaction(wallet, plan, leg, sweepTxID, opts, &unsigned, hash, token, isGasSeed, adapter),
-			gasSeed: isGasSeed,
+		if topUps == sweepFundingTopUps {
+			return fmt.Errorf("sweep sender %s still lacks %s %s after %d gas_seed top-ups", leg.From.Address, shortfall, adapter.NativeAsset(), topUps)
+		}
+		slog.Info("topping up sweep sender", "chain", plan.Chain, "address", leg.From.Address, "shortfall", shortfall.String())
+		seed, err := adapter.BuildTransfer(ctx, types.TransferRequest{
+			From: wallet.DepositAddress.Address, To: leg.From.Address, Amount: shortfall, Asset: adapter.NativeAsset(),
 		})
-		if !isGasSeed {
-			finalSweepHash = hash
+		if err != nil {
+			return fmt.Errorf("build gas_seed top-up: %w", err)
+		}
+		if err := s.broadcastGasSeed(ctx, adapter, curve, keys, wallet, plan, leg, seed, opts); err != nil {
+			return err
 		}
 	}
-	if err := s.commitLinkedLeg(ctx, pending); err != nil {
-		return "", err
-	}
-	return finalSweepHash, nil
 }
 
 func (s *service) commitLinkedLeg(ctx context.Context, rows []linkedLegRow) error {
@@ -543,6 +612,18 @@ func builtAmount(unsigned *types.UnsignedTx, planned *big.Int) string {
 	return planned.String()
 }
 
+// sweptAmount is builtAmount as a number: nil when neither the unsigned tx nor the
+// plan knows it.
+func sweptAmount(unsigned *types.UnsignedTx, planned *big.Int) *big.Int {
+	if unsigned != nil && unsigned.TransferAmount != nil {
+		return new(big.Int).Set(unsigned.TransferAmount)
+	}
+	if planned == nil {
+		return nil
+	}
+	return new(big.Int).Set(planned)
+}
+
 // sweepLegSigner is the address whose key signs transaction idx of a leg: the base
 // address for the gas seed, the child for the sweep.
 func sweepLegSigner(wallet *models.Wallet, leg PlannedSweep, legTxCount, idx int) (models.Address, bool) {
@@ -553,12 +634,28 @@ func sweepLegSigner(wallet *models.Wallet, leg PlannedSweep, legTxCount, idx int
 	return leg.From, false
 }
 
+// inclusionAwaiter is implemented by chains whose node refuses a transaction until
+// the one it depends on is in a block: on TRON a child can spend only after its
+// gas_seed created and funded its account, and a TRC-20 withdrawal from base is
+// built only once base holds the swept tokens.
+type inclusionAwaiter interface {
+	AwaitTransactionIncluded(ctx context.Context, txHash string) error
+}
+
+func awaitInclusion(ctx context.Context, adapter types.Chain, txHash string) error {
+	awaiter, ok := adapter.(inclusionAwaiter)
+	if !ok {
+		return nil
+	}
+	return awaiter.AwaitTransactionIncluded(ctx, txHash)
+}
+
 func localSignChain(chainID string) bool {
-	switch chainID {
-	case models.ChainSOL, models.ChainTSOL, models.ChainBTC, models.ChainTBTC:
+	switch {
+	case chainID == models.ChainSOL, chainID == models.ChainTSOL:
 		return true
 	default:
-		return false
+		return models.IsBitcoinFamilyChainID(chainID)
 	}
 }
 

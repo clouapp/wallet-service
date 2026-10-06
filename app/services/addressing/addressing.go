@@ -21,6 +21,8 @@ import (
 const (
 	BtcHRPMainnet = "bc"
 	BtcHRPTestnet = "tb"
+	LtcHRPMainnet = "ltc"
+	LtcHRPTestnet = "tltc"
 )
 
 // BtcHRP is the bech32 prefix of the Bitcoin network: tb on a test network, bc otherwise.
@@ -31,12 +33,30 @@ func BtcHRP(testnet bool) string {
 	return BtcHRPMainnet
 }
 
+// LtcHRP is the bech32 prefix of the Litecoin network: tltc on a test network, ltc otherwise.
+func LtcHRP(testnet bool) string {
+	if testnet {
+		return LtcHRPTestnet
+	}
+	return LtcHRPMainnet
+}
+
+// UTXOHRP is the bech32 prefix of the Bitcoin-family network chainID transacts on.
+func UTXOHRP(chainID string, testnet bool) string {
+	if models.IsLitecoinChainID(chainID) {
+		return LtcHRP(testnet)
+	}
+	return BtcHRP(testnet)
+}
+
 // DeriveAddressOnNetwork is DeriveAddress for a chain record that may point at a
-// test network under a mainnet id: a "btc" record on testnet derives tb1 addresses.
-// The address of the other chains does not depend on the network.
+// test network under a mainnet id: a "btc" record on testnet derives tb1 addresses
+// and an "ltc" one tltc1. The address of the other chains does not depend on the
+// network.
 func DeriveAddressOnNetwork(chainID string, testnet bool, pubKey []byte) (string, error) {
-	if chainID == models.ChainBTC {
-		return DeriveBtcAddress(BtcHRP(testnet), pubKey)
+	switch chainID {
+	case models.ChainBTC, models.ChainLTC:
+		return DeriveBtcAddress(UTXOHRP(chainID, testnet), pubKey)
 	}
 	return DeriveAddress(chainID, pubKey)
 }
@@ -53,6 +73,12 @@ func DeriveAddress(chainID string, pubKey []byte) (string, error) {
 		return DeriveBtcAddress(BtcHRPMainnet, pubKey)
 	case models.ChainTBTC:
 		return DeriveBtcAddress(BtcHRPTestnet, pubKey)
+	case models.ChainLTC:
+		return DeriveBtcAddress(LtcHRPMainnet, pubKey)
+	case models.ChainTLTC:
+		return DeriveBtcAddress(LtcHRPTestnet, pubKey)
+	case models.ChainTron, models.ChainTTron:
+		return DeriveTronAddress(pubKey)
 	case models.ChainSOL, models.ChainTSOL:
 		return DeriveSolAddress(pubKey)
 	default:
@@ -71,7 +97,7 @@ func DeriveEthAddress(compressedPubKey []byte) (string, error) {
 }
 
 // DeriveBtcAddress derives a native SegWit (P2WPKH / bech32) address.
-// hrp is "bc" for mainnet, "tb" for testnet.
+// hrp is "bc"/"tb" for Bitcoin mainnet/testnet, "ltc"/"tltc" for Litecoin.
 func DeriveBtcAddress(hrp string, compressedPubKey []byte) (string, error) {
 	pub, err := btcec.ParsePubKey(compressedPubKey)
 	if err != nil {

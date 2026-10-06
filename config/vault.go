@@ -34,12 +34,33 @@ func registerVault() {
 			"network_profile": envString("CHAIN_NETWORK_PROFILE", ""),
 			// Confirmations seeded on new chain rows (and their t-prefixed test
 			// records). Base ~2 s blocks: 12 ≈ 24 s; Arbitrum ~0.25 s: 120 ≈ 30 s;
-			// BSC ~0.45 s with fast finality: 30 ≈ 14 s.
+			// BSC ~0.45 s with fast finality: 30 ≈ 14 s; TRON 3 s blocks solidify after
+			// 19 (2/3 of 27 SRs + 1): 20 ≈ 60 s; Litecoin ~2.5 min: 6 ≈ 15 min.
 			"required_confirmations": map[string]any{
 				"base":     envInt("BASE_REQUIRED_CONFIRMATIONS", 12),
 				"arbitrum": envInt("ARBITRUM_REQUIRED_CONFIRMATIONS", 120),
 				"bsc":      envInt("BSC_REQUIRED_CONFIRMATIONS", 30),
+				"tron":     envInt("TRON_REQUIRED_CONFIRMATIONS", 20),
+				"ltc":      envInt("LTC_REQUIRED_CONFIRMATIONS", 6),
 			},
+		},
+		// TronGrid API key (TRON-PRO-API-KEY header). Optional: Nile, and light use of
+		// mainnet, work without one at TronGrid's lower anonymous rate limit.
+		"tron": map[string]any{
+			"api_key": envString("TRON_API_KEY", ""),
+		},
+		// Secondary providers of the Bitcoin-family chains, tried in order when the
+		// chain's RPC URL fails (reads) or does not decide on a broadcast. Comma-separated
+		// Esplora / bitcoind JSON-RPC URLs, electrum+ssl://host:port?cert_sha256=HEX or a
+		// Tatum gateway (https://*.tatum.io). Empty: the network's built-in list
+		// (Litecoin mainnet and testnet; Bitcoin has none); "none": no fallback. The
+		// optional API key is Tatum's (x-api-key, Tatum hosts only); with it the Data API
+		// at tatum_data_api_url (default https://api.tatum.io) also serves UTXOs.
+		"utxo_fallbacks": map[string]any{
+			"btc":  utxoFallback("BTC"),
+			"tbtc": utxoFallback("TBTC"),
+			"ltc":  utxoFallback("LTC"),
+			"tltc": utxoFallback("TLTC"),
 		},
 		"queues": map[string]any{
 			"webhook":    envString("WEBHOOK_QUEUE_URL", ""),
@@ -98,4 +119,14 @@ func registerFeeEstimate() {
 	facades.Config().Add("fee_estimate", map[string]any{
 		"cache_ttl_seconds": envInt("FEE_ESTIMATE_CACHE_TTL_SECONDS", defaultFeeEstimateCacheTTLSeconds),
 	})
+}
+
+// utxoFallback reads <PREFIX>_FALLBACK_RPC_URL (comma-separated, in order), the
+// optional Tatum key <PREFIX>_FALLBACK_RPC_API_KEY and <PREFIX>_TATUM_DATA_API_URL.
+func utxoFallback(prefix string) map[string]any {
+	return map[string]any{
+		"rpc_urls":           envString(prefix+"_FALLBACK_RPC_URL", ""),
+		"api_key":            envString(prefix+"_FALLBACK_RPC_API_KEY", ""),
+		"tatum_data_api_url": envString(prefix+"_TATUM_DATA_API_URL", ""),
+	}
 }
