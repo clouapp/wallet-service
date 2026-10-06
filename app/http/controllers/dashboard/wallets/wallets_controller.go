@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"strings"
 
 	"github.com/google/uuid"
 	"github.com/goravel/framework/contracts/http"
@@ -17,6 +16,7 @@ import (
 	"github.com/macrowallets/waas/app/http/responses"
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/policies"
+	"github.com/macrowallets/waas/app/services/chainregistry"
 	chainsvc "github.com/macrowallets/waas/app/services/chains"
 	wallet "github.com/macrowallets/waas/app/services/wallet"
 	"github.com/macrowallets/waas/app/services/walletrecords"
@@ -253,11 +253,8 @@ func (ctrl *WalletsController) ActivateWallet(ctx http.Context) http.Response {
 // customer typed. Keygen and share failures can carry key material, so the
 // log keeps the type and the body is internal error.
 func createWalletError(ctx http.Context, err error) http.Response {
-	if err != nil {
-		text := err.Error()
-		if text == "unknown chain" || strings.HasPrefix(text, "unknown chain:") {
-			return responses.Error(ctx, http.StatusBadRequest, responses.CodeInvalidRequest, "unknown chain")
-		}
+	if errors.Is(err, chainregistry.ErrUnknownChain) {
+		return responses.Error(ctx, http.StatusBadRequest, responses.CodeInvalidRequest, "unknown chain")
 	}
 	slog.Error("create wallet failed", "error_type", fmt.Sprintf("%T", err))
 	return responses.Error(ctx, http.StatusInternalServerError, responses.CodeInternal, "internal error")

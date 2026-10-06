@@ -12,6 +12,7 @@ import (
 
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/services/chain"
+	"github.com/macrowallets/waas/app/services/chainregistry"
 	"github.com/macrowallets/waas/app/services/ingest/providers"
 	"github.com/macrowallets/waas/app/services/webhook"
 	"github.com/macrowallets/waas/pkg/types"
@@ -22,8 +23,7 @@ func TestProcessTransfers_UnknownChain(t *testing.T) {
 	reg := chain.NewRegistry()
 	svc := &Service{registry: reg}
 	err := svc.ProcessTransfers(t.Context(), "unknown_chain", nil)
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "unknown chain")
+	assert.ErrorIs(t, err, chainregistry.ErrUnknownChain)
 }
 
 func TestNewService_NilDeps(t *testing.T) {

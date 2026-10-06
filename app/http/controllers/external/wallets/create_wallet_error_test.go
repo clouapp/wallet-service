@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 
@@ -12,6 +13,7 @@ import (
 
 	"github.com/macrowallets/waas/app/http/resources"
 	"github.com/macrowallets/waas/app/http/responses"
+	"github.com/macrowallets/waas/app/services/chainregistry"
 )
 
 func TestMapCreateWalletErrorDoesNotHideAnOutageAs409(t *testing.T) {
@@ -49,7 +51,7 @@ func TestMapCreateWalletErrorKeepsCallerFailuresAs4xx(t *testing.T) {
 	}{
 		{
 			name:    "unknown chain",
-			err:     errors.New("unknown chain: sol"),
+			err:     fmt.Errorf("%w: sol", chainregistry.ErrUnknownChain),
 			status:  http.StatusConflict,
 			code:    responses.CodeConflict,
 			message: "unknown chain",

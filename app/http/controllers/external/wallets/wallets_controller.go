@@ -1,8 +1,8 @@
 package wallets
 
 import (
+	"errors"
 	"log/slog"
-	"strings"
 
 	"github.com/google/uuid"
 	"github.com/goravel/framework/contracts/http"
@@ -13,6 +13,7 @@ import (
 	"github.com/macrowallets/waas/app/http/requests"
 	walletresource "github.com/macrowallets/waas/app/http/resources/dashboard/wallets"
 	"github.com/macrowallets/waas/app/http/responses"
+	"github.com/macrowallets/waas/app/services/chainregistry"
 	wallet "github.com/macrowallets/waas/app/services/wallet"
 	"github.com/macrowallets/waas/app/services/walletrecords"
 )
@@ -106,7 +107,7 @@ func (ctrl *WalletsController) CreateWallet(ctx http.Context) http.Response {
 // message about the caller.
 func mapCreateWalletError(ctx http.Context, err error) http.Response {
 	switch {
-	case strings.HasPrefix(err.Error(), "unknown chain"):
+	case errors.Is(err, chainregistry.ErrUnknownChain):
 		return responses.Send(ctx, http.StatusConflict, http.Json{"error": "unknown chain"})
 	case err.Error() == "passphrase must be at least 12 characters":
 		return responses.Send(ctx, http.StatusUnprocessableEntity, http.Json{"error": "passphrase must be at least 12 characters"})

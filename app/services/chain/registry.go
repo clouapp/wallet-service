@@ -1,12 +1,17 @@
 package chain
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 	"sync"
 
 	"github.com/macrowallets/waas/pkg/types"
 )
+
+// ErrUnknownChain is a chain id the registry does not know.
+// Callers match chainregistry.ErrUnknownChain, which is this value.
+var ErrUnknownChain = errors.New("unknown chain")
 
 // ---------------------------------------------------------------------------
 // Registry — all chains and tokens. Singleton per Lambda instance.
@@ -84,7 +89,7 @@ func (r *Registry) Chain(id string) (types.Chain, error) {
 	defer r.mu.RUnlock()
 	c, ok := r.chains[id]
 	if !ok {
-		return nil, fmt.Errorf("chain not registered: %s", id)
+		return nil, fmt.Errorf("%w: %s", ErrUnknownChain, id)
 	}
 	return c, nil
 }

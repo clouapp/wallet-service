@@ -10,6 +10,7 @@ import (
 
 	"github.com/macrowallets/waas/app/repositories"
 	"github.com/macrowallets/waas/app/services/chain"
+	"github.com/macrowallets/waas/app/services/chainregistry"
 	"github.com/macrowallets/waas/tests/mocks"
 	"github.com/macrowallets/waas/tests/testutil"
 )
@@ -73,8 +74,7 @@ func (s *WalletUnitTestSuite) TestCreateWallet_PassphraseTooShort() {
 func (s *WalletUnitTestSuite) TestCreateWallet_UnknownChain() {
 	ctx := context.Background()
 	_, err := s.service.CreateWallet(ctx, testAccountID, "unknown_chain", "Test", testPassphrase)
-	s.Error(err)
-	s.Contains(err.Error(), "unknown chain")
+	s.ErrorIs(err, chainregistry.ErrUnknownChain)
 }
 
 func (s *WalletUnitTestSuite) TestGenerateAddress_WalletNotFound() {

@@ -115,8 +115,8 @@ func TestRefreshReloadsAndDropsARemovedChain(t *testing.T) {
 	if err := svc.Refresh(context.Background(), nil); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := svc.Registry().Chain("eth"); err == nil {
-		t.Fatal("removed chain stayed registered")
+	if _, err := svc.Registry().Chain("eth"); !errors.Is(err, ErrUnknownChain) {
+		t.Fatalf("removed chain err = %v", err)
 	}
 	if _, err := svc.Registry().Chain("btc"); err != nil {
 		t.Fatal(err)
@@ -150,7 +150,7 @@ func TestRefreshKeepsThePreviousCatalogWhenALaterReadFails(t *testing.T) {
 		t.Fatal(err)
 	}
 	err := svc.Refresh(context.Background(), nil)
-	if err == nil || err.Error() != "db down" {
+	if err == nil || err.Error() != "db down" || errors.Is(err, ErrUnknownChain) {
 		t.Fatalf("err = %v", err)
 	}
 	if _, chainErr := svc.Registry().Chain("eth"); chainErr != nil {
@@ -167,11 +167,11 @@ func TestFirstRefreshFailureLeavesAnEmptyCatalog(t *testing.T) {
 		Registry: chain.NewRegistry(),
 	})
 	err := svc.Refresh(context.Background(), nil)
-	if err == nil || strings.Contains(err.Error(), catalogCacheKey) {
+	if err == nil || strings.Contains(err.Error(), catalogCacheKey) || errors.Is(err, ErrUnknownChain) {
 		t.Fatalf("err = %v", err)
 	}
-	if _, chainErr := svc.Registry().Chain("eth"); chainErr == nil {
-		t.Fatal("failed refresh registered a chain")
+	if _, chainErr := svc.Registry().Chain("eth"); !errors.Is(chainErr, ErrUnknownChain) {
+		t.Fatalf("missing chain err = %v", chainErr)
 	}
 	if err := svc.Load(nil); err != nil {
 		t.Fatal(err)

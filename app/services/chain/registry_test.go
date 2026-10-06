@@ -1,6 +1,7 @@
 package chain
 
 import (
+	"errors"
 	"strings"
 	"testing"
 
@@ -26,8 +27,8 @@ func TestRegistry_RegisterAndGet(t *testing.T) {
 func TestRegistry_ChainNotFound(t *testing.T) {
 	r := NewRegistry()
 	_, err := r.Chain("nonexistent")
-	if err == nil {
-		t.Fatal("expected error for unregistered chain")
+	if !errors.Is(err, ErrUnknownChain) {
+		t.Fatalf("err = %v", err)
 	}
 }
 

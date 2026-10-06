@@ -11,6 +11,7 @@ import (
 
 	"github.com/macrowallets/waas/app/models"
 	authsvc "github.com/macrowallets/waas/app/services/auth"
+	"github.com/macrowallets/waas/app/services/chainregistry"
 	mpcpkg "github.com/macrowallets/waas/app/services/mpc"
 	"github.com/macrowallets/waas/pkg/mpcshare"
 	"github.com/macrowallets/waas/pkg/types"
@@ -34,6 +35,7 @@ const (
 type CreateRefusal struct {
 	Status  CreateStatus
 	Message string
+	cause   error
 }
 
 func (e *CreateRefusal) Error() string {
@@ -41,6 +43,13 @@ func (e *CreateRefusal) Error() string {
 		return ""
 	}
 	return e.Message
+}
+
+func (e *CreateRefusal) Unwrap() error {
+	if e == nil {
+		return nil
+	}
+	return e.cause
 }
 
 // CreateRowError is a withdrawal-row read or write that the handler logs and
@@ -220,7 +229,10 @@ func (s *Service) resolveCreateAmount(ctx context.Context, in CreateInput) (*Res
 	}
 	adapter, err := s.registry.Chain(in.Wallet.Chain)
 	if err != nil {
-		return nil, nil, &CreateRefusal{Status: CreateStatusUnprocessable, Message: err.Error()}
+		if errors.Is(err, chainregistry.ErrUnknownChain) {
+			return nil, nil, &CreateRefusal{Status: CreateStatusUnprocessable, Message: err.Error(), cause: err}
+		}
+		return nil, nil, err
 	}
 	if s.createChains == nil {
 		return nil, nil, fmt.Errorf("create withdrawal: chain catalog is required")

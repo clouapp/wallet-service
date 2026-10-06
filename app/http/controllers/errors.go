@@ -8,6 +8,7 @@ import (
 	"github.com/goravel/framework/contracts/http"
 
 	"github.com/macrowallets/waas/app/http/responses"
+	"github.com/macrowallets/waas/app/services/chainregistry"
 	"github.com/macrowallets/waas/app/services/sweep"
 	"github.com/macrowallets/waas/app/services/withdraw"
 )
@@ -98,14 +99,14 @@ func MapWithdrawalCreateError(ctx http.Context, err error) http.Response {
 }
 
 // mapWithdrawalRefusal keeps a caller-fixable refusal on the status the
-// service chose. A chain that is not registered is an outage, and an unknown
+// service chose. A chain the registry does not know is an outage, and an unknown
 // asset names what the customer typed, so neither of those texts is returned.
 func mapWithdrawalRefusal(ctx http.Context, refusal *withdraw.CreateRefusal) http.Response {
-	message := refusal.Message
-	if strings.HasPrefix(message, "chain not registered:") {
+	if errors.Is(refusal, chainregistry.ErrUnknownChain) {
 		slog.Error("create withdrawal chain unavailable")
 		return responses.Error(ctx, http.StatusInternalServerError, responses.CodeInternal, "internal error")
 	}
+	message := refusal.Message
 	if strings.HasPrefix(message, "unknown asset ") {
 		message = "unknown asset"
 	}

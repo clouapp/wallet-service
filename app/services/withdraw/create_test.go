@@ -11,12 +11,58 @@ import (
 	"github.com/macrowallets/waas/app/models"
 	authsvc "github.com/macrowallets/waas/app/services/auth"
 	"github.com/macrowallets/waas/app/services/chain"
+	"github.com/macrowallets/waas/app/services/chainregistry"
 	mpcpkg "github.com/macrowallets/waas/app/services/mpc"
 	"github.com/macrowallets/waas/pkg/types"
 	"github.com/macrowallets/waas/tests/mocks"
 )
 
 const createTestPassphrase = "create-passphrase-0001"
+
+func TestCreateUnknownChainIsNotAStoreFailure(t *testing.T) {
+	registry := chain.NewRegistry()
+	registry.RegisterChain(mocks.NewMockChain("eth"))
+	svc := &Service{registry: registry}
+	svc.UseCreate(memUsers{}, acceptTotp{}, &memWithdrawalRows{}, &memChains{decimals: 18})
+	storeDown := errors.New("db down")
+	_, missing := svc.Create(context.Background(), CreateInput{
+		Wallet:             sealedCreateWallet(t, "nope", nil),
+		DashboardUserID:    uuid.New(),
+		TotpCode:           "000000",
+		Passphrase:         createTestPassphrase,
+		Amount:             "1",
+		DestinationAddress: "0xdest",
+		IdempotencyKey:     uuid.New().String(),
+	})
+	if !errors.Is(missing, chainregistry.ErrUnknownChain) || errors.Is(missing, storeDown) {
+		t.Fatalf("missing chain err = %v", missing)
+	}
+	svc.registry = &refusingLookup{err: storeDown}
+	_, failed := svc.Create(context.Background(), CreateInput{
+		Wallet:             sealedCreateWallet(t, "eth", nil),
+		DashboardUserID:    uuid.New(),
+		TotpCode:           "000000",
+		Passphrase:         createTestPassphrase,
+		Amount:             "1",
+		DestinationAddress: "0xdest",
+		IdempotencyKey:     uuid.New().String(),
+	})
+	if !errors.Is(failed, storeDown) || errors.Is(failed, chainregistry.ErrUnknownChain) {
+		t.Fatalf("store failure err = %v", failed)
+	}
+}
+
+type refusingLookup struct {
+	err error
+}
+
+func (r refusingLookup) Chain(string) (types.Chain, error) {
+	return nil, r.err
+}
+
+func (refusingLookup) TokensForChain(string) []types.Token {
+	return nil
+}
 
 func TestCreateStoresTheFeeAndDoesNotBroadcast(t *testing.T) {
 	broadcaster := &fakeBroadcaster{}

@@ -2,6 +2,7 @@ package ingest
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 
@@ -12,6 +13,7 @@ import (
 	"github.com/macrowallets/waas/app/dtos"
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/services/chain"
+	"github.com/macrowallets/waas/app/services/chainregistry"
 	"github.com/macrowallets/waas/app/services/ingest/providers"
 	"github.com/macrowallets/waas/app/services/webhook"
 	"github.com/macrowallets/waas/app/services/withdraw"
@@ -86,7 +88,10 @@ func NewService(deps Deps) *Service {
 func (s *Service) ProcessTransfers(ctx context.Context, chainID string, transfers []providers.InboundTransfer) error {
 	adapter, err := s.registry.Chain(chainID)
 	if err != nil {
-		return fmt.Errorf("unknown chain %s: %w", chainID, err)
+		if errors.Is(err, chainregistry.ErrUnknownChain) {
+			return err
+		}
+		return fmt.Errorf("load chain %s: %w", chainID, err)
 	}
 
 	for _, transfer := range transfers {

@@ -20,6 +20,7 @@ import (
 
 	"github.com/macrowallets/waas/app/dtos"
 	"github.com/macrowallets/waas/app/models"
+	"github.com/macrowallets/waas/app/services/chainregistry"
 	mpc "github.com/macrowallets/waas/app/services/mpc"
 	"github.com/macrowallets/waas/pkg/mpcshare"
 	"github.com/macrowallets/waas/pkg/types"
@@ -154,7 +155,10 @@ func (s *Service) CreateWallet(ctx context.Context, accountID uuid.UUID, chainID
 	}
 
 	if _, err := s.registry.Chain(chainID); err != nil {
-		return nil, fmt.Errorf("unknown chain: %s", chainID)
+		if errors.Is(err, chainregistry.ErrUnknownChain) {
+			return nil, err
+		}
+		return nil, fmt.Errorf("create wallet: %w", err)
 	}
 
 	curve := curveForChain(chainID)
