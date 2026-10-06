@@ -42,7 +42,7 @@ func newDepositSvc(registry *chain.Registry, webhookSvc *webhook.Service) *Servi
 	})
 }
 
-func setupDepositService(t *testing.T) (*Service, *mocks.MockChain, *mocks.MockSQS) {
+func setupDepositService(t *testing.T) (*Service, *mocks.MockChain) {
 	t.Helper()
 	fixtures.TestDB(t)
 	registry := chain.NewRegistry()
@@ -50,9 +50,8 @@ func setupDepositService(t *testing.T) (*Service, *mocks.MockChain, *mocks.MockS
 	mockChain.RequiredConfirmationsVal = 3
 	registry.RegisterChain(mockChain)
 
-	mockSQS := mocks.NewMockSQS()
 	svc := newDepositSvc(registry, newWebhookSvc())
-	return svc, mockChain, mockSQS
+	return svc, mockChain
 }
 
 // We test the core logic without a running blockchain — mock the adapter.

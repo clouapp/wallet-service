@@ -518,7 +518,13 @@ func TestStage_Wallet_GasStatusChangedInsertsTheRowBeforeSending(t *testing.T) {
 	walletID := uuid.New()
 	events := &fakeWebhookEventRepo{}
 	var sentBeforeInsert bool
-	sender := &orderQueueSender{events: events, sentBeforeInsert: &sentBeforeInsert}
+	var sent int
+	sender := newRecordingSender(t, func(types.WebhookMessage) {
+		if len(events.created) == 0 {
+			sentBeforeInsert = true
+		}
+		sent++
+	})
 	svc := webhook.NewService(webhook.Deps{
 		SQS: sender,
 		Configs: &fakeWebhookConfigRepo{configs: []models.WebhookConfig{{
@@ -533,15 +539,15 @@ func TestStage_Wallet_GasStatusChangedInsertsTheRowBeforeSending(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(events.created) != 1 || sender.sent != 0 {
-		t.Fatalf("created=%d sent=%d before the closure", len(events.created), sender.sent)
+	if len(events.created) != 1 || sent != 0 {
+		t.Fatalf("created=%d sent=%d before the closure", len(events.created), sent)
 	}
 	if events.created[0].TransactionID != nil || events.created[0].EventType != string(types.EventWalletGasStatusChanged) {
 		t.Fatalf("transaction=%v type=%s", events.created[0].TransactionID, events.created[0].EventType)
 	}
 	send(context.Background())
-	if sentBeforeInsert || sender.sent != 1 {
-		t.Fatalf("sentBeforeInsert=%v sent=%d", sentBeforeInsert, sender.sent)
+	if sentBeforeInsert || sent != 1 {
+		t.Fatalf("sentBeforeInsert=%v sent=%d", sentBeforeInsert, sent)
 	}
 }
 

@@ -2,14 +2,20 @@ package seeds
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/hex"
-	"errors"
+	"encoding/json"
+	"io"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"strings"
 	"testing"
 
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/aws/retry"
+	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/secretsmanager"
-	"github.com/aws/aws-sdk-go-v2/service/secretsmanager/types"
 	"github.com/google/uuid"
 
 	"github.com/macrowallets/waas/app/models"
@@ -17,17 +23,26 @@ import (
 	"github.com/macrowallets/waas/tests/feature/support/fixtures"
 )
 
-type fakeSeedSecretsManager struct {
-	output *secretsmanager.GetSecretValueOutput
-	err    error
-}
-
-func (f *fakeSeedSecretsManager) GetSecretValue(
-	context.Context,
-	*secretsmanager.GetSecretValueInput,
-	...func(*secretsmanager.Options),
-) (*secretsmanager.GetSecretValueOutput, error) {
-	return f.output, f.err
+func seedSecretsClient(t *testing.T, respond func(http.ResponseWriter)) *secretsmanager.Client {
+	t.Helper()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.Header.Get("X-Amz-Target") != "secretsmanager.GetSecretValue" {
+			t.Errorf("request %s target %s", r.Method, r.Header.Get("X-Amz-Target"))
+		}
+		if !strings.HasPrefix(r.Header.Get("Authorization"), "AWS4-HMAC-SHA256") {
+			t.Errorf("auth %q", r.Header.Get("Authorization"))
+		}
+		_, _ = io.Copy(io.Discard, r.Body)
+		respond(w)
+	}))
+	t.Cleanup(server.Close)
+	return secretsmanager.NewFromConfig(aws.Config{
+		Region:      "us-east-1",
+		Credentials: credentials.NewStaticCredentialsProvider("AKID", "SECRET", ""),
+	}, func(o *secretsmanager.Options) {
+		o.BaseEndpoint = aws.String(server.URL)
+		o.Retryer = retry.AddWithMaxAttempts(retry.NewStandard(), 1)
+	})
 }
 
 func TestValidate_Existing_SeedWalletSecret(t *testing.T) {
@@ -36,9 +51,12 @@ func TestValidate_Existing_SeedWalletSecret(t *testing.T) {
 	wallet := &models.Wallet{
 		MPCSecretARN: "arn:aws:secretsmanager:us-east-1:000000000000:secret:vault/wallet/test/share-b",
 	}
-	manager := &fakeSeedSecretsManager{
-		output: &secretsmanager.GetSecretValueOutput{SecretBinary: []byte("share-b")},
-	}
+	manager := seedSecretsClient(t, func(w http.ResponseWriter) {
+		w.Header().Set("Content-Type", "application/x-amz-json-1.1")
+		_ = json.NewEncoder(w).Encode(map[string]string{
+			"SecretBinary": base64.StdEncoding.EncodeToString([]byte("share-b")),
+		})
+	})
 
 	if err := validateExistingSeedWalletSecret(context.Background(), manager, wallet); err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -51,9 +69,12 @@ func TestValidate_Existing_SeedWalletSecretRejectsMissingSecret(t *testing.T) {
 	wallet := &models.Wallet{
 		MPCSecretARN: "arn:aws:secretsmanager:us-east-1:000000000000:secret:missing",
 	}
-	manager := &fakeSeedSecretsManager{
-		err: &types.ResourceNotFoundException{Message: stringPointer("missing")},
-	}
+	manager := seedSecretsClient(t, func(w http.ResponseWriter) {
+		w.Header().Set("Content-Type", "application/x-amz-json-1.1")
+		w.Header().Set("X-Amzn-ErrorType", "ResourceNotFoundException")
+		w.WriteHeader(http.StatusBadRequest)
+		_ = json.NewEncoder(w).Encode(map[string]string{"__type": "ResourceNotFoundException", "message": "missing"})
+	})
 
 	err := validateExistingSeedWalletSecret(context.Background(), manager, wallet)
 	if err == nil {
@@ -68,9 +89,10 @@ func TestValidate_Existing_SeedWalletSecretRejectsEmptyPayload(t *testing.T) {
 	t.Parallel()
 
 	wallet := &models.Wallet{MPCSecretARN: "arn:empty"}
-	manager := &fakeSeedSecretsManager{
-		output: &secretsmanager.GetSecretValueOutput{},
-	}
+	manager := seedSecretsClient(t, func(w http.ResponseWriter) {
+		w.Header().Set("Content-Type", "application/x-amz-json-1.1")
+		_, _ = w.Write([]byte("{}"))
+	})
 
 	err := validateExistingSeedWalletSecret(context.Background(), manager, wallet)
 	if err == nil || !strings.Contains(err.Error(), "empty share_B") {
@@ -84,14 +106,12 @@ func TestValidate_Existing_SeedWalletSecretRejectsNilDependencies(t *testing.T) 
 	if err := validateExistingSeedWalletSecret(context.Background(), nil, &models.Wallet{}); err == nil {
 		t.Fatal("expected nil manager error")
 	}
-	manager := &fakeSeedSecretsManager{err: errors.New("unexpected")}
+	manager := seedSecretsClient(t, func(http.ResponseWriter) {
+		t.Fatal("a nil wallet must not call Secrets Manager")
+	})
 	if err := validateExistingSeedWalletSecret(context.Background(), manager, nil); err == nil {
 		t.Fatal("expected nil wallet error")
 	}
-}
-
-func stringPointer(value string) *string {
-	return &value
 }
 
 func TestWallets_Seed_DoesNotQueryOutsideTheRepository(t *testing.T) {

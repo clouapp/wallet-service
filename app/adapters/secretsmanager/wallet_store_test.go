@@ -3,11 +3,11 @@ package secretsmanager
 import (
 	"bytes"
 	"context"
-	"errors"
+	"encoding/base64"
+	"encoding/json"
+	"net/http"
+	"strings"
 	"testing"
-
-	"github.com/aws/aws-sdk-go-v2/aws"
-	awssm "github.com/aws/aws-sdk-go-v2/service/secretsmanager"
 )
 
 func TestNew_Wallet_StoreReturnsNilForANilClient(t *testing.T) {
@@ -28,47 +28,63 @@ func TestNil_Wallet_StoreReportsAMissingClient(t *testing.T) {
 
 func TestCreate_Stores_TheGivenNameAndBytes(t *testing.T) {
 	want := []byte{0x01, 0x02, 0x03, 0x04}
-	fake := &fakeWalletAPI{arn: "arn:aws:secretsmanager:us-east-1:1:secret:vault/wallet/x/share-b"}
-	store := &WalletStore{api: fake}
+	const arn = "arn:aws:secretsmanager:us-east-1:1:secret:vault/wallet/x/share-b"
+	var got awsRequest
+	store := NewWalletStore(secretsClient(t, func(call awsRequest, w http.ResponseWriter) {
+		got = call
+		writeSecretsCreated(w, arn)
+	})).(*WalletStore)
 
-	arn, err := store.Create(context.Background(), "vault/wallet/x/share-b", want)
+	gotARN, err := store.Create(context.Background(), "vault/wallet/x/share-b", want)
 	if err != nil {
 		t.Fatal("create failed")
 	}
-	if arn != fake.arn {
+	if gotARN != arn {
 		t.Fatal("ARN changed")
 	}
-	if fake.create == nil || aws.ToString(fake.create.Name) != "vault/wallet/x/share-b" {
+	if got.target != "secretsmanager.CreateSecret" || jsonString(t, got.body, "Name") != "vault/wallet/x/share-b" {
 		t.Fatal("secret name changed")
 	}
-	if fake.create.Description != nil || fake.create.SecretString != nil || fake.create.KmsKeyId != nil || fake.create.ClientRequestToken != nil || len(fake.create.Tags) != 0 {
-		t.Fatal("CreateSecret gained extra fields")
-	}
-	if !bytes.Equal(fake.create.SecretBinary, want) || &fake.create.SecretBinary[0] != &want[0] {
+	if !bytes.Equal(secretBinary(t, got.body), want) {
 		t.Fatal("secret bytes changed")
+	}
+	for _, extra := range []string{"Description", "SecretString", "KmsKeyId", "Tags"} {
+		if _, ok := got.body[extra]; ok {
+			t.Fatalf("CreateSecret gained %s", extra)
+		}
 	}
 }
 
 func TestCreate_Forwards_TheNameUnchanged(t *testing.T) {
-	fake := &fakeWalletAPI{arn: "arn:aws:secretsmanager:us-east-1:1:secret:padded"}
-	if _, err := (&WalletStore{api: fake}).Create(context.Background(), "  vault/wallet/x/share-b  ", []byte{0x01}); err != nil {
+	var got awsRequest
+	store := NewWalletStore(secretsClient(t, func(call awsRequest, w http.ResponseWriter) {
+		got = call
+		writeSecretsCreated(w, "arn:aws:secretsmanager:us-east-1:1:secret:padded")
+	})).(*WalletStore)
+	if _, err := store.Create(context.Background(), "  vault/wallet/x/share-b  ", []byte{0x01}); err != nil {
 		t.Fatal("create failed")
 	}
-	if fake.create == nil || aws.ToString(fake.create.Name) != "  vault/wallet/x/share-b  " {
+	if jsonString(t, got.body, "Name") != "  vault/wallet/x/share-b  " {
 		t.Fatal("secret name changed")
 	}
 }
 
 func TestCreate_Forwards_TheAPIError(t *testing.T) {
-	fake := &fakeWalletAPI{err: errors.New("boom")}
-	_, err := (&WalletStore{api: fake}).Create(context.Background(), "vault/wallet/x/share-b", []byte{0x01})
-	if err == nil || err.Error() != "boom" {
+	store := NewWalletStore(secretsClient(t, func(_ awsRequest, w http.ResponseWriter) {
+		writeAWSError(w, "application/x-amz-json-1.1", "boom")
+	})).(*WalletStore)
+	_, err := store.Create(context.Background(), "vault/wallet/x/share-b", []byte{0x01})
+	if err == nil || !strings.Contains(err.Error(), "boom") {
 		t.Fatal("API error was not returned unchanged")
 	}
 }
 
 func TestCreate_Returns_AnEmptyARNWhenTheResponseHasNone(t *testing.T) {
-	arn, err := (&WalletStore{api: &fakeWalletAPI{}}).Create(context.Background(), "vault/wallet/x/share-b", []byte{0x01})
+	store := NewWalletStore(secretsClient(t, func(_ awsRequest, w http.ResponseWriter) {
+		w.Header().Set("Content-Type", "application/x-amz-json-1.1")
+		_, _ = w.Write([]byte("{}"))
+	})).(*WalletStore)
+	arn, err := store.Create(context.Background(), "vault/wallet/x/share-b", []byte{0x01})
 	if err != nil {
 		t.Fatal("create failed")
 	}
@@ -79,65 +95,64 @@ func TestCreate_Returns_AnEmptyARNWhenTheResponseHasNone(t *testing.T) {
 
 func TestWallet_Store_BinaryReadsTheGivenSecretAndReturnsItsBytes(t *testing.T) {
 	want := []byte{0x01, 0x02, 0x03, 0x04}
-	fake := &fakeWalletAPI{binary: want}
-	store := &WalletStore{api: fake}
+	var got awsRequest
+	store := NewWalletStore(secretsClient(t, func(call awsRequest, w http.ResponseWriter) {
+		got = call
+		writeSecretsValue(w, want)
+	})).(*WalletStore)
 
-	got, err := store.Binary(context.Background(), "vault/wallet/x/share-b")
+	binary, err := store.Binary(context.Background(), "vault/wallet/x/share-b")
 	if err != nil {
 		t.Fatal("read failed")
 	}
-	if fake.get == nil || aws.ToString(fake.get.SecretId) != "vault/wallet/x/share-b" {
+	if got.target != "secretsmanager.GetSecretValue" || jsonString(t, got.body, "SecretId") != "vault/wallet/x/share-b" {
 		t.Fatal("secret id changed")
 	}
-	if fake.get.VersionId != nil || fake.get.VersionStage != nil {
-		t.Fatal("GetSecretValue gained extra fields")
+	if _, ok := got.body["VersionId"]; ok {
+		t.Fatal("GetSecretValue gained VersionId")
 	}
-	if !bytes.Equal(got, want) || &got[0] != &want[0] {
+	if _, ok := got.body["VersionStage"]; ok {
+		t.Fatal("GetSecretValue gained VersionStage")
+	}
+	if !bytes.Equal(binary, want) {
 		t.Fatal("secret bytes changed")
 	}
 }
 
 func TestWallet_Store_BinaryForwardsTheSecretIDUnchanged(t *testing.T) {
-	fake := &fakeWalletAPI{binary: []byte{0x01}}
-	if _, err := (&WalletStore{api: fake}).Binary(context.Background(), "  vault/wallet/x/share-b  "); err != nil {
+	var got awsRequest
+	store := NewWalletStore(secretsClient(t, func(call awsRequest, w http.ResponseWriter) {
+		got = call
+		writeSecretsValue(w, []byte{0x01})
+	})).(*WalletStore)
+	if _, err := store.Binary(context.Background(), "  vault/wallet/x/share-b  "); err != nil {
 		t.Fatal("read failed")
 	}
-	if fake.get == nil || aws.ToString(fake.get.SecretId) != "  vault/wallet/x/share-b  " {
+	if jsonString(t, got.body, "SecretId") != "  vault/wallet/x/share-b  " {
 		t.Fatal("secret id changed")
 	}
 }
 
 func TestWallet_Store_BinaryForwardsTheAPIError(t *testing.T) {
-	fake := &fakeWalletAPI{err: errors.New("boom")}
-	_, err := (&WalletStore{api: fake}).Binary(context.Background(), "vault/wallet/x/share-b")
-	if err == nil || err.Error() != "boom" {
+	store := NewWalletStore(secretsClient(t, func(_ awsRequest, w http.ResponseWriter) {
+		writeAWSError(w, "application/x-amz-json-1.1", "boom")
+	})).(*WalletStore)
+	_, err := store.Binary(context.Background(), "vault/wallet/x/share-b")
+	if err == nil || !strings.Contains(err.Error(), "boom") {
 		t.Fatal("API error was not returned unchanged")
 	}
 }
 
-type fakeWalletAPI struct {
-	create *awssm.CreateSecretInput
-	get    *awssm.GetSecretValueInput
-	arn    string
-	binary []byte
-	err    error
+func writeSecretsCreated(w http.ResponseWriter, arn string) {
+	w.Header().Set("Content-Type", "application/x-amz-json-1.1")
+	_ = json.NewEncoder(w).Encode(map[string]string{"ARN": arn})
 }
 
-func (f *fakeWalletAPI) CreateSecret(_ context.Context, input *awssm.CreateSecretInput, _ ...func(*awssm.Options)) (*awssm.CreateSecretOutput, error) {
-	f.create = input
-	if f.err != nil {
-		return nil, f.err
+func secretBinary(t *testing.T, body map[string]json.RawMessage) []byte {
+	t.Helper()
+	raw, err := base64.StdEncoding.DecodeString(jsonString(t, body, "SecretBinary"))
+	if err != nil {
+		t.Fatal(err)
 	}
-	if f.arn == "" {
-		return &awssm.CreateSecretOutput{}, nil
-	}
-	return &awssm.CreateSecretOutput{ARN: aws.String(f.arn)}, nil
-}
-
-func (f *fakeWalletAPI) GetSecretValue(_ context.Context, input *awssm.GetSecretValueInput, _ ...func(*awssm.Options)) (*awssm.GetSecretValueOutput, error) {
-	f.get = input
-	if f.err != nil {
-		return nil, f.err
-	}
-	return &awssm.GetSecretValueOutput{SecretBinary: f.binary}, nil
+	return raw
 }

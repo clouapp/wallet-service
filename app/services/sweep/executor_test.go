@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/stretchr/testify/mock"
 
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/services/chain"
@@ -761,7 +762,13 @@ func TestStage_Withdrawal_BroadcastingInsertsTheRowBeforeSending(t *testing.T) {
 	tx := &models.Transaction{ID: uuid.New(), WalletID: walletID, TxType: models.TxTypeWithdrawal}
 	events := &fakeWebhookEventRepo{}
 	var sentBeforeInsert bool
-	sender := &orderQueueSender{events: events, sentBeforeInsert: &sentBeforeInsert}
+	var sent int
+	sender := newRecordingSender(t, func(types.WebhookMessage) {
+		if len(events.created) == 0 {
+			sentBeforeInsert = true
+		}
+		sent++
+	})
 	svc := webhook.NewService(webhook.Deps{
 		SQS: sender,
 		Configs: &fakeWebhookConfigRepo{configs: []models.WebhookConfig{{
@@ -774,12 +781,12 @@ func TestStage_Withdrawal_BroadcastingInsertsTheRowBeforeSending(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(events.created) != 1 || sender.sent != 0 {
-		t.Fatalf("created=%d sent=%d before the closure", len(events.created), sender.sent)
+	if len(events.created) != 1 || sent != 0 {
+		t.Fatalf("created=%d sent=%d before the closure", len(events.created), sent)
 	}
 	send(context.Background())
-	if sentBeforeInsert || sender.sent != 1 || events.created[0].EventType != string(types.EventWithdrawalBroadcasting) {
-		t.Fatalf("sentBeforeInsert=%v sent=%d type=%s", sentBeforeInsert, sender.sent, events.created[0].EventType)
+	if sentBeforeInsert || sent != 1 || events.created[0].EventType != string(types.EventWithdrawalBroadcasting) {
+		t.Fatalf("sentBeforeInsert=%v sent=%d type=%s", sentBeforeInsert, sent, events.created[0].EventType)
 	}
 }
 
@@ -788,7 +795,13 @@ func TestStage_Sweep_BroadcastInsertsTheRowBeforeSending(t *testing.T) {
 	tx := &models.Transaction{ID: uuid.New(), WalletID: walletID, TxType: models.TxTypeSweep}
 	events := &fakeWebhookEventRepo{}
 	var sentBeforeInsert bool
-	sender := &orderQueueSender{events: events, sentBeforeInsert: &sentBeforeInsert}
+	var sent int
+	sender := newRecordingSender(t, func(types.WebhookMessage) {
+		if len(events.created) == 0 {
+			sentBeforeInsert = true
+		}
+		sent++
+	})
 	svc := webhook.NewService(webhook.Deps{
 		SQS: sender,
 		Configs: &fakeWebhookConfigRepo{configs: []models.WebhookConfig{{
@@ -801,12 +814,12 @@ func TestStage_Sweep_BroadcastInsertsTheRowBeforeSending(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(events.created) != 1 || sender.sent != 0 {
-		t.Fatalf("created=%d sent=%d before the closure", len(events.created), sender.sent)
+	if len(events.created) != 1 || sent != 0 {
+		t.Fatalf("created=%d sent=%d before the closure", len(events.created), sent)
 	}
 	send(context.Background())
-	if sentBeforeInsert || sender.sent != 1 || events.created[0].EventType != string(types.EventSweepBroadcast) {
-		t.Fatalf("sentBeforeInsert=%v sent=%d type=%s", sentBeforeInsert, sender.sent, events.created[0].EventType)
+	if sentBeforeInsert || sent != 1 || events.created[0].EventType != string(types.EventSweepBroadcast) {
+		t.Fatalf("sentBeforeInsert=%v sent=%d type=%s", sentBeforeInsert, sent, events.created[0].EventType)
 	}
 }
 
@@ -815,7 +828,13 @@ func TestStage_Sweep_ConfirmedInsertsTheRowBeforeSending(t *testing.T) {
 	tx := &models.Transaction{ID: uuid.New(), WalletID: walletID, TxType: models.TxTypeSweep}
 	events := &fakeWebhookEventRepo{}
 	var sentBeforeInsert bool
-	sender := &orderQueueSender{events: events, sentBeforeInsert: &sentBeforeInsert}
+	var sent int
+	sender := newRecordingSender(t, func(types.WebhookMessage) {
+		if len(events.created) == 0 {
+			sentBeforeInsert = true
+		}
+		sent++
+	})
 	svc := webhook.NewService(webhook.Deps{
 		SQS: sender,
 		Configs: &fakeWebhookConfigRepo{configs: []models.WebhookConfig{{
@@ -828,30 +847,16 @@ func TestStage_Sweep_ConfirmedInsertsTheRowBeforeSending(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(events.created) != 1 || sender.sent != 0 {
-		t.Fatalf("created=%d sent=%d before the closure", len(events.created), sender.sent)
+	if len(events.created) != 1 || sent != 0 {
+		t.Fatalf("created=%d sent=%d before the closure", len(events.created), sent)
 	}
 	if events.created[0].TransactionID == nil || *events.created[0].TransactionID != tx.ID || events.created[0].EventType != string(types.EventSweepConfirmed) {
 		t.Fatalf("transaction=%v type=%s", events.created[0].TransactionID, events.created[0].EventType)
 	}
 	send(context.Background())
-	if sentBeforeInsert || sender.sent != 1 {
-		t.Fatalf("sentBeforeInsert=%v sent=%d", sentBeforeInsert, sender.sent)
+	if sentBeforeInsert || sent != 1 {
+		t.Fatalf("sentBeforeInsert=%v sent=%d", sentBeforeInsert, sent)
 	}
-}
-
-type orderQueueSender struct {
-	events           *fakeWebhookEventRepo
-	sent             int
-	sentBeforeInsert *bool
-}
-
-func (o *orderQueueSender) SendWebhook(context.Context, types.WebhookMessage) error {
-	if len(o.events.created) == 0 && o.sentBeforeInsert != nil {
-		*o.sentBeforeInsert = true
-	}
-	o.sent++
-	return nil
 }
 
 // TestExecute_MultiSweep_RetryAfterPartialFailure simulates the end-to-end
@@ -1019,14 +1024,15 @@ type recordedWebhook struct {
 	txID      uuid.UUID
 }
 
-type fakeQueueSender struct {
-	sent []recordedWebhook
-}
-
-func (f *fakeQueueSender) SendWebhook(ctx context.Context, msg types.WebhookMessage) error {
-	txID, _ := uuid.Parse(msg.TransactionID)
-	f.sent = append(f.sent, recordedWebhook{eventType: msg.EventType, txID: txID})
-	return nil
+func newRecordingSender(t *testing.T, onSend func(types.WebhookMessage)) *mocks.MockSender {
+	t.Helper()
+	sender := mocks.NewMockSender(t)
+	sender.EXPECT().SendWebhook(mock.Anything, mock.Anything).Run(func(_ context.Context, msg types.WebhookMessage) {
+		if onSend != nil {
+			onSend(msg)
+		}
+	}).Return(nil).Maybe()
+	return sender
 }
 
 type fakeWebhookConfigRepo struct {
@@ -1110,7 +1116,11 @@ func TestExecute_MultiSweep_WebhookEmittedPerSweep(t *testing.T) {
 	// Wire a real webhook.Service backed by fakes; one active config that
 	// subscribes to both event types we care about. The Events column uses
 	// a postgres-array string format (see webhook.pgArray).
-	sender := &fakeQueueSender{}
+	var sent []recordedWebhook
+	sender := newRecordingSender(t, func(msg types.WebhookMessage) {
+		txID, _ := uuid.Parse(msg.TransactionID)
+		sent = append(sent, recordedWebhook{eventType: msg.EventType, txID: txID})
+	})
 	cfgRepo := &fakeWebhookConfigRepo{
 		configs: []models.WebhookConfig{{
 			ID:       uuid.New(),
@@ -1152,7 +1162,7 @@ func TestExecute_MultiSweep_WebhookEmittedPerSweep(t *testing.T) {
 	}
 
 	var sweepEvents, withdrawalEvents, otherEvents int
-	for _, ev := range sender.sent {
+	for _, ev := range sent {
 		switch ev.eventType {
 		case types.EventSweepBroadcast:
 			sweepEvents++
@@ -1177,9 +1187,9 @@ func TestExecute_MultiSweep_WebhookEmittedPerSweep(t *testing.T) {
 	}
 	// One WebhookEvent row per SQS send because we configured a single
 	// subscriber. Parity guards against accidental double-bookkeeping.
-	if len(eventRepo.created) != len(sender.sent) {
+	if len(eventRepo.created) != len(sent) {
 		t.Fatalf("webhook_events rows (%d) must mirror SQS sends (%d)",
-			len(eventRepo.created), len(sender.sent))
+			len(eventRepo.created), len(sent))
 	}
 }
 

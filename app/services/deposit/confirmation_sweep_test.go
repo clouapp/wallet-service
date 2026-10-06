@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/stretchr/testify/mock"
 
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/services/queue"
@@ -139,18 +140,17 @@ func (f *sweepConfirmEventRepo) FindDueForDelivery(context.Context, int, time.Du
 }
 func (f *sweepConfirmEventRepo) MarkFailed(context.Context, string, string) error { return nil }
 
-type sweepConfirmQueue struct {
-	store      *sweepConfirmStore
-	sent       int
-	sentInside bool
-}
-
-func (q *sweepConfirmQueue) SendWebhook(context.Context, types.WebhookMessage) error {
-	if q.store != nil && q.store.inside {
-		q.sentInside = true
-	}
-	q.sent++
-	return nil
+func newSweepConfirmSender(t *testing.T, onSend func()) (sender *mocks.MockSender, sent *int) {
+	t.Helper()
+	count := 0
+	sender = mocks.NewMockSender(t)
+	sender.EXPECT().SendWebhook(mock.Anything, mock.Anything).Run(func(context.Context, types.WebhookMessage) {
+		if onSend != nil {
+			onSend()
+		}
+		count++
+	}).Return(nil).Maybe()
+	return sender, &count
 }
 
 func sweepConfirmWebhook(events *sweepConfirmEventRepo, sender queue.Sender) *webhook.Service {
@@ -178,7 +178,12 @@ func confirmingTx(txType string, required int) models.Transaction {
 func TestApply_Confirmations_CommitsSweepConfirmationWithItsWebhook(t *testing.T) {
 	store := &sweepConfirmStore{sweepConfirmMemory: &sweepConfirmMemory{}}
 	events := &sweepConfirmEventRepo{}
-	sender := &sweepConfirmQueue{store: store}
+	var sentInside bool
+	sender, sent := newSweepConfirmSender(t, func() {
+		if store.inside {
+			sentInside = true
+		}
+	})
 	svc := &Service{
 		txRepo:     store,
 		webhookSvc: sweepConfirmWebhook(events, sender),
@@ -226,15 +231,15 @@ func TestApply_Confirmations_CommitsSweepConfirmationWithItsWebhook(t *testing.T
 	if events.created[0].TransactionID == nil || *events.created[0].TransactionID != sweep.ID {
 		t.Fatalf("transaction id %v", events.created[0].TransactionID)
 	}
-	if sender.sent != 1 || sender.sentInside {
-		t.Fatalf("sent=%d sentInside=%v", sender.sent, sender.sentInside)
+	if *sent != 1 || sentInside {
+		t.Fatalf("sent=%d sentInside=%v", *sent, sentInside)
 	}
 }
 
 func TestApply_Confirmations_RollsBackSweepConfirmationWhenTheWebhookInsertFails(t *testing.T) {
 	store := &sweepConfirmStore{sweepConfirmMemory: &sweepConfirmMemory{}}
 	events := &sweepConfirmEventRepo{fail: true}
-	sender := &sweepConfirmQueue{store: store}
+	sender, sent := newSweepConfirmSender(t, nil)
 	svc := &Service{
 		txRepo:     store,
 		webhookSvc: sweepConfirmWebhook(events, sender),
@@ -248,8 +253,8 @@ func TestApply_Confirmations_RollsBackSweepConfirmationWhenTheWebhookInsertFails
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, ok := store.committedByID(sweep.ID); ok || sender.sent != 0 || store.withins != 1 {
-		t.Fatalf("sweep kept=%v sent=%d withins=%d", ok, sender.sent, store.withins)
+	if _, ok := store.committedByID(sweep.ID); ok || *sent != 0 || store.withins != 1 {
+		t.Fatalf("sweep kept=%v sent=%d withins=%d", ok, *sent, store.withins)
 	}
 	if _, ok := store.committedByID(deposit.ID); !ok || deposits.n != 1 {
 		t.Fatalf("deposit kept=%v published=%d", ok, deposits.n)
@@ -259,7 +264,7 @@ func TestApply_Confirmations_RollsBackSweepConfirmationWhenTheWebhookInsertFails
 func TestApply_Confirmations_RefusesSweepConfirmationWithoutATransaction(t *testing.T) {
 	memory := &sweepConfirmMemory{}
 	events := &sweepConfirmEventRepo{}
-	sender := &sweepConfirmQueue{}
+	sender, sent := newSweepConfirmSender(t, nil)
 	svc := &Service{
 		txRepo:     &sweepConfirmStoreWithoutTx{sweepConfirmMemory: memory},
 		webhookSvc: sweepConfirmWebhook(events, sender),
@@ -270,8 +275,8 @@ func TestApply_Confirmations_RefusesSweepConfirmationWithoutATransaction(t *test
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, ok := memory.committedByID(sweep.ID); ok || sender.sent != 0 || len(events.created) != 0 || memory.withins != 0 {
-		t.Fatalf("kept=%v sent=%d events=%d withins=%d", ok, sender.sent, len(events.created), memory.withins)
+	if _, ok := memory.committedByID(sweep.ID); ok || *sent != 0 || len(events.created) != 0 || memory.withins != 0 {
+		t.Fatalf("kept=%v sent=%d events=%d withins=%d", ok, *sent, len(events.created), memory.withins)
 	}
 }
 

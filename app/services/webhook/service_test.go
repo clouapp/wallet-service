@@ -17,6 +17,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/goravel/framework/facades"
+	"github.com/stretchr/testify/mock"
 
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/repositories"
@@ -24,6 +25,7 @@ import (
 	"github.com/macrowallets/waas/pkg/types"
 	"github.com/macrowallets/waas/tests/feature/support/fixtures"
 	"github.com/macrowallets/waas/tests/feature/support/testutil"
+	"github.com/macrowallets/waas/tests/mocks"
 )
 
 // The delivery adapter imports this package, so these tests cannot import it.
@@ -321,20 +323,15 @@ func TestService_Deliver_Unreachable(t *testing.T) {
 	}
 }
 
-type recordingWebhookSender struct {
-	messages []types.WebhookMessage
-}
-
-func (r *recordingWebhookSender) SendWebhook(_ context.Context, msg types.WebhookMessage) error {
-	r.messages = append(r.messages, msg)
-	return nil
-}
-
 func TestEnqueue_Event_QueuePayloadCarriesNoSecret(t *testing.T) {
 	fixtures.TestDB(t)
 	ctx := context.Background()
 	const secret = "queue-payload-must-not-carry-this-secret"
-	sender := &recordingWebhookSender{}
+	var messages []types.WebhookMessage
+	sender := mocks.NewMockSender(t)
+	sender.EXPECT().SendWebhook(mock.Anything, mock.Anything).Run(func(_ context.Context, msg types.WebhookMessage) {
+		messages = append(messages, msg)
+	}).Return(nil).Maybe()
 	svc := NewService(Deps{
 		SQS: sender,
 		Configs: repositories.NewWebhookConfigRepository(repositories.WebhookConfigRepositoryDeps{
@@ -368,10 +365,10 @@ func TestEnqueue_Event_QueuePayloadCarriesNoSecret(t *testing.T) {
 	}
 	send(ctx)
 
-	if len(sender.messages) != 3 {
-		t.Fatalf("queued messages = %d, want 3", len(sender.messages))
+	if len(messages) != 3 {
+		t.Fatalf("queued messages = %d, want 3", len(messages))
 	}
-	for _, msg := range sender.messages {
+	for _, msg := range messages {
 		raw, err := json.Marshal(msg)
 		if err != nil {
 			t.Fatal(err)

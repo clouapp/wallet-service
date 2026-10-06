@@ -199,27 +199,6 @@ func (m *MockChain) EstimateGasPrice(ctx context.Context) (*big.Int, error) {
 }
 
 // ---------------------------------------------------------------------------
-// MockSQS — captures messages sent to queues
-// ---------------------------------------------------------------------------
-
-type MockSQS struct {
-	WebhookMessages []types.WebhookMessage
-	SendWebhookErr  error
-}
-
-func NewMockSQS() *MockSQS {
-	return &MockSQS{}
-}
-
-func (m *MockSQS) SendWebhook(ctx context.Context, msg types.WebhookMessage) error {
-	if m.SendWebhookErr != nil {
-		return m.SendWebhookErr
-	}
-	m.WebhookMessages = append(m.WebhookMessages, msg)
-	return nil
-}
-
-// ---------------------------------------------------------------------------
 // Transfer helpers for building test data
 // ---------------------------------------------------------------------------
 
