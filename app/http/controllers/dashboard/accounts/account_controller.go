@@ -111,7 +111,7 @@ func (ctrl *AccountsController) CreateAccount(ctx http.Context) http.Response {
 
 	acc, err := ctrl.accountService.Create(ctx.Context(), req.Name, userID)
 	if err != nil {
-		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to create account"})
+		return responses.InternalError(ctx, err)
 	}
 	view, err := ctrl.accountView(ctx, *acc)
 	if err != nil {

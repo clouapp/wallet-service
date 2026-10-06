@@ -138,16 +138,21 @@ type recordingRequest struct {
 	http.ContextRequest
 	email string
 	role  string
+	name  string
 }
 
 func (r *recordingRequest) ValidateRequest(req http.FormRequest) (contractsvalidation.Errors, error) {
-	body, ok := req.(*requests.AddAccountUserRequest)
-	if !ok {
+	switch body := req.(type) {
+	case *requests.AddAccountUserRequest:
+		body.Email = r.email
+		body.Role = r.role
+		return nil, nil
+	case *requests.CreateAccountRequest:
+		body.Name = r.name
+		return nil, nil
+	default:
 		return nil, errors.New("unexpected form request")
 	}
-	body.Email = r.email
-	body.Role = r.role
-	return nil, nil
 }
 
 type recordingResponse struct {
