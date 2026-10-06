@@ -5,7 +5,6 @@ import (
 
 	accountsvc "github.com/macrowallets/waas/app/services/account"
 	authsvc "github.com/macrowallets/waas/app/services/auth"
-	"github.com/macrowallets/waas/app/services/credentialmail"
 	featuressvc "github.com/macrowallets/waas/app/services/features"
 	"github.com/macrowallets/waas/app/services/settings"
 )
@@ -16,7 +15,6 @@ func accountsControllerDeps() AccountsControllerDeps {
 		Passwords:      &authsvc.Service{},
 		Limits:         &settings.Service{},
 		Features:       &featuressvc.Service{},
-		CredentialMail: &credentialmail.Service{},
 	}
 }
 
@@ -37,9 +35,6 @@ func TestNewAccountsControllerKeepsItsDependencies(t *testing.T) {
 	}
 	if ctrl.features != deps.Features {
 		t.Fatal("accounts controller did not keep the features service")
-	}
-	if ctrl.credentialMail != deps.CredentialMail {
-		t.Fatal("accounts controller did not keep credential mail")
 	}
 }
 
@@ -68,11 +63,6 @@ func TestNewAccountsControllerRequiresEveryDependency(t *testing.T) {
 			name:  "features service",
 			clear: func(deps *AccountsControllerDeps) { deps.Features = nil },
 			panic: "dashboard accounts controller: features service is required",
-		},
-		{
-			name:  "credential mail",
-			clear: func(deps *AccountsControllerDeps) { deps.CredentialMail = nil },
-			panic: "dashboard accounts controller: credential mail is required",
 		},
 	}
 	for _, tc := range cases {

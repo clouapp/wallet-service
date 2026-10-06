@@ -15,7 +15,6 @@ import (
 	"github.com/macrowallets/waas/app/models"
 	accountsvc "github.com/macrowallets/waas/app/services/account"
 	authsvc "github.com/macrowallets/waas/app/services/auth"
-	"github.com/macrowallets/waas/app/services/credentialmail"
 	featuressvc "github.com/macrowallets/waas/app/services/features"
 	"github.com/macrowallets/waas/app/services/settings"
 )
@@ -26,10 +25,9 @@ func TestCreateAccountOutageOmitsTheCause(t *testing.T) {
 		AccountService: accountsvc.NewService(accountsvc.Deps{
 			Accounts: createFailsAccounts{err: cause},
 		}),
-		Passwords:      &authsvc.Service{},
-		Limits:         &settings.Service{},
-		Features:       &featuressvc.Service{},
-		CredentialMail: &credentialmail.Service{},
+		Passwords: &authsvc.Service{},
+		Limits:    &settings.Service{},
+		Features:  &featuressvc.Service{},
 	})
 	response := &recordingResponse{}
 	ctrl.CreateAccount(&recordingContext{

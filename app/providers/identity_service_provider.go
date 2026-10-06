@@ -3,6 +3,7 @@ package providers
 import (
 	"github.com/goravel/framework/contracts/foundation"
 
+	"github.com/macrowallets/waas/app/listeners"
 	"github.com/macrowallets/waas/app/repositories"
 	"github.com/macrowallets/waas/app/services/account"
 	authsvc "github.com/macrowallets/waas/app/services/auth"
@@ -65,11 +66,12 @@ func (p *IdentityServiceProvider) Register(app foundation.Application) {
 			return nil, err
 		}
 		return usersvc.NewService(usersvc.Deps{
-			Store:    store,
-			Recovery: recovery,
-			Activity: activityLog,
-			Admins:   admins,
-			Sessions: revoker,
+			Store:     store,
+			Recovery:  recovery,
+			Activity:  activityLog,
+			Admins:    admins,
+			Sessions:  revoker,
+			ResetMail: listeners.NewCredentialMailDispatcher(),
 		}), nil
 	})
 	app.Singleton((*sessions.RefreshTokens)(nil), func(app foundation.Application) (any, error) {
@@ -122,6 +124,7 @@ func (p *IdentityServiceProvider) Register(app foundation.Application) {
 			Tokens:      tokens,
 			Activity:    activityLog,
 			Invites:     invites,
+			InviteMail:  listeners.NewCredentialMailDispatcher(),
 		}).WithPlatformAdmins(admins), nil
 	})
 }

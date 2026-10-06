@@ -49,36 +49,40 @@ type RecoveryStore interface {
 
 // Service is the user reads and writes the dashboard handlers call.
 type Service struct {
-	store    Store
-	recovery RecoveryStore
-	activity ActivityLog
-	admins   PlatformAdmins
-	sessions Sessions
-	clock    func() time.Time
+	store     Store
+	recovery  RecoveryStore
+	activity  ActivityLog
+	admins    PlatformAdmins
+	sessions  Sessions
+	clock     func() time.Time
+	resetMail ResetMailDispatcher
 }
 
 // Deps is everything the user service uses. A nil Store is reported when a
 // method runs, as the missing-repository error. Recovery, Activity, Admins,
-// Sessions, and Clock may be nil. A nil Activity leaves DisableTotp as a
-// status change with no audit row.
+// Sessions, Clock, and ResetMail may be nil. A nil Activity leaves DisableTotp
+// as a status change with no audit row. A nil ResetMail is reported when a
+// reset mail is due.
 type Deps struct {
-	Store    Store
-	Recovery RecoveryStore
-	Activity ActivityLog
-	Admins   PlatformAdmins
-	Sessions Sessions
-	Clock    func() time.Time
+	Store     Store
+	Recovery  RecoveryStore
+	Activity  ActivityLog
+	Admins    PlatformAdmins
+	Sessions  Sessions
+	Clock     func() time.Time
+	ResetMail ResetMailDispatcher
 }
 
 // NewService builds a user service.
 func NewService(deps Deps) *Service {
 	return &Service{
-		store:    deps.Store,
-		recovery: deps.Recovery,
-		activity: deps.Activity,
-		admins:   deps.Admins,
-		sessions: deps.Sessions,
-		clock:    deps.Clock,
+		store:     deps.Store,
+		recovery:  deps.Recovery,
+		activity:  deps.Activity,
+		admins:    deps.Admins,
+		sessions:  deps.Sessions,
+		clock:     deps.Clock,
+		resetMail: deps.ResetMail,
 	}
 }
 

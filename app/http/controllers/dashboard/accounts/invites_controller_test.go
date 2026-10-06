@@ -5,15 +5,13 @@ import (
 	"testing"
 
 	accountsvc "github.com/macrowallets/waas/app/services/account"
-	"github.com/macrowallets/waas/app/services/credentialmail"
 	usersvc "github.com/macrowallets/waas/app/services/users"
 )
 
 func invitesControllerDeps() InvitesControllerDeps {
 	return InvitesControllerDeps{
-		Accounts:       &accountsvc.Service{},
-		Users:          &usersvc.Service{},
-		CredentialMail: &credentialmail.Service{},
+		Accounts: &accountsvc.Service{},
+		Users:    &usersvc.Service{},
 	}
 }
 
@@ -28,9 +26,6 @@ func TestNewInvitesControllerKeepsItsDependencies(t *testing.T) {
 	}
 	if ctrl.users != deps.Users {
 		t.Fatal("invites controller did not keep the user service")
-	}
-	if ctrl.credentialMail != deps.CredentialMail {
-		t.Fatal("invites controller did not keep credential mail")
 	}
 }
 
@@ -49,11 +44,6 @@ func TestNewInvitesControllerRequiresEveryDependency(t *testing.T) {
 			name:  "user service",
 			clear: func(deps *InvitesControllerDeps) { deps.Users = nil },
 			panic: "dashboard invites controller: user service is required",
-		},
-		{
-			name:  "credential mail",
-			clear: func(deps *InvitesControllerDeps) { deps.CredentialMail = nil },
-			panic: "dashboard invites controller: credential mail is required",
 		},
 	}
 	for _, tc := range cases {

@@ -7,6 +7,7 @@ import (
 	"github.com/goravel/framework/contracts/foundation"
 
 	appfacades "github.com/macrowallets/waas/app/facades"
+	"github.com/macrowallets/waas/app/listeners"
 	"github.com/macrowallets/waas/app/mails"
 	"github.com/macrowallets/waas/app/services/account"
 	authsvc "github.com/macrowallets/waas/app/services/auth"
@@ -37,14 +38,15 @@ func (p *CredentialMailServiceProvider) Register(app foundation.Application) {
 		if err != nil {
 			return nil, err
 		}
+		dispatcher := listeners.NewCredentialMailDispatcher()
 		return credentialmail.NewService(credentialmail.Deps{
 			Users:          users,
 			Tokens:         tokens,
 			Resets:         resets,
 			Invites:        invites,
 			Sender:         credentialMailSender{},
-			Dispatch:       dispatchCredentialMail,
-			DispatchInvite: dispatchAccountInviteMail,
+			Dispatch:       dispatcher.Dispatch,
+			DispatchInvite: dispatcher.DispatchAccountInvite,
 		}), nil
 	})
 }

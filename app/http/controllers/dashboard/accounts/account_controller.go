@@ -23,7 +23,6 @@ import (
 	"github.com/macrowallets/waas/app/policies"
 	accountsvc "github.com/macrowallets/waas/app/services/account"
 	authsvc "github.com/macrowallets/waas/app/services/auth"
-	"github.com/macrowallets/waas/app/services/credentialmail"
 	featuressvc "github.com/macrowallets/waas/app/services/features"
 	"github.com/macrowallets/waas/app/services/settings"
 	"github.com/macrowallets/waas/app/services/withdraw"
@@ -38,19 +37,18 @@ type AccountsController struct {
 	passwords      *authsvc.Service
 	limits         *settings.Service
 	features       *featuressvc.Service
-	credentialMail *credentialmail.Service
 }
 
 // AccountsControllerDeps is everything the dashboard accounts controller needs.
 // Persistence goes through AccountService. Passwords only turns a new API token
 // secret into its sha256 digest. Limits supplies sweep_limits from settings.
 // Features supplies the active flag keys on GET. Every field is required.
+// Invite mail is dispatched by the account service.
 type AccountsControllerDeps struct {
 	AccountService *accountsvc.Service
 	Passwords      *authsvc.Service
 	Limits         *settings.Service
 	Features       *featuressvc.Service
-	CredentialMail *credentialmail.Service
 }
 
 // NewAccountsController wires the dashboard account handlers from AccountsControllerDeps.
@@ -67,15 +65,11 @@ func NewAccountsController(deps AccountsControllerDeps) *AccountsController {
 	if deps.Features == nil {
 		panic("dashboard accounts controller: features service is required")
 	}
-	if deps.CredentialMail == nil {
-		panic("dashboard accounts controller: credential mail is required")
-	}
 	return &AccountsController{
 		accountService: deps.AccountService,
 		passwords:      deps.Passwords,
 		limits:         deps.Limits,
 		features:       deps.Features,
-		credentialMail: deps.CredentialMail,
 	}
 }
 
@@ -298,19 +292,15 @@ func (ctrl *AccountsController) AddAccountUser(ctx http.Context) http.Response {
 			}
 			return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to create invite"})
 		}
-		link, mailErr := ctrl.credentialMail.DispatchAccountInvite(issued.Invite.ID)
-		if mailErr != nil {
+		if issued.MailErr != nil {
 			appfacades.Log().WithContext(ctx).Errorf("account: send invite mail failed")
-		}
-		if link == "" {
-			link = issued.InviteLink
 		}
 		return responses.Send(ctx, http.StatusAccepted, http.Json{
 			"invite_id":   issued.Invite.ID,
 			"email":       issued.Invite.Email,
 			"role":        issued.Invite.Role,
 			"expires_at":  issued.Invite.ExpiresAt,
-			"invite_link": link,
+			"invite_link": issued.InviteLink,
 		})
 	}
 

@@ -6,12 +6,10 @@ import (
 	"github.com/google/uuid"
 	contractsaccess "github.com/goravel/framework/contracts/auth/access"
 	"github.com/goravel/framework/contracts/foundation"
-	"github.com/goravel/framework/contracts/queue"
 	"github.com/goravel/framework/facades"
 
 	"github.com/macrowallets/waas/app/container"
 	"github.com/macrowallets/waas/app/http/middleware/requestctx"
-	"github.com/macrowallets/waas/app/jobs"
 	"github.com/macrowallets/waas/app/policies"
 	accountsvc "github.com/macrowallets/waas/app/services/account"
 	"github.com/macrowallets/waas/app/services/walletrecords"
@@ -148,22 +146,4 @@ func withWalletMembership(ctx context.Context, arguments map[string]any) map[str
 	out[policies.ArgWalletRole] = walletRole
 	out[policies.ArgAccountRole] = accountRole
 	return out
-}
-
-// dispatchCredentialMail runs the credential job now. The payload is the
-// subject id and the purpose. DispatchSync does not store that payload.
-func dispatchCredentialMail(subjectID uuid.UUID, purpose string) error {
-	args, err := jobs.CredentialMailArgs(subjectID, purpose)
-	if err != nil {
-		return err
-	}
-	return facades.Queue().Job(&jobs.SendCredentialMailJob{}, args).DispatchSync()
-}
-
-// dispatchAccountInviteMail runs the same job and returns the minted link for
-// the add-user response. The queue arguments stay the invite id and the purpose.
-func dispatchAccountInviteMail(inviteID uuid.UUID) (string, error) {
-	return jobs.DispatchSyncAccountInvite(func(job queue.Job, args []queue.Arg) error {
-		return facades.Queue().Job(job, args).DispatchSync()
-	}, inviteID, nil)
 }

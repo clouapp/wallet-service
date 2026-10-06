@@ -86,9 +86,17 @@ type InviteStore interface {
 	PaginateByAccountID(ctx context.Context, accountID uuid.UUID, limit, offset int) ([]models.AccountInvite, int64, error)
 }
 
+// InviteMailDispatcher enqueues the invite credential job. The payload is the
+// invite id and the purpose. The returned link is the one the job minted; it
+// is not a queue argument.
+type InviteMailDispatcher interface {
+	DispatchAccountInvite(inviteID uuid.UUID) (string, error)
+}
+
 // Deps is everything Account needs. Users, Tokens and Activity are required
 // for the dashboard member and token handlers. Older callers that only create
-// accounts may leave them nil.
+// accounts may leave them nil. A nil InviteMail leaves an issued invite
+// unmailed, which is how tests that only store the row are built.
 type Deps struct {
 	Accounts    AccountStore
 	Memberships MembershipStore
@@ -96,6 +104,7 @@ type Deps struct {
 	Tokens      TokenStore
 	Activity    ActivityLog
 	Invites     InviteStore
+	InviteMail  InviteMailDispatcher
 }
 
 // MemberChange is a PATCH of one membership. A nil field is left as stored.
@@ -113,6 +122,7 @@ type Service struct {
 	activity    ActivityLog
 	invites     InviteStore
 	admins      PlatformAdmins
+	inviteMail  InviteMailDispatcher
 }
 
 // NewService builds an account service from Deps.
@@ -124,6 +134,7 @@ func NewService(deps Deps) *Service {
 		tokens:      deps.Tokens,
 		activity:    deps.Activity,
 		invites:     deps.Invites,
+		inviteMail:  deps.InviteMail,
 	}
 }
 

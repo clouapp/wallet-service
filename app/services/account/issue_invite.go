@@ -25,10 +25,14 @@ var (
 )
 
 // IssuedInvite is a stored invite plus the one-time link. RawToken is not persisted.
+// MailErr is set when the row was stored and the credential-mail job failed.
+// The invite still stands. The link is the one the job minted when that call
+// returned one.
 type IssuedInvite struct {
 	Invite     *models.AccountInvite
 	InviteLink string
 	RawToken   string
+	MailErr    error
 }
 
 // IssueInvite stores only the hash of a fresh token. It does not create a user.
@@ -103,6 +107,7 @@ func (s *Service) IssueInvite(ctx context.Context, accountID uuid.UUID, email, r
 	if err != nil {
 		return nil, err
 	}
+	s.enqueueInviteMail(issued)
 	return issued, nil
 }
 
@@ -142,7 +147,22 @@ func (s *Service) ResendInvite(ctx context.Context, accountID, inviteID uuid.UUI
 		return nil, err
 	}
 	invite.TokenHash = hash
-	return &IssuedInvite{Invite: invite, InviteLink: link, RawToken: raw}, nil
+	issued := &IssuedInvite{Invite: invite, InviteLink: link, RawToken: raw}
+	s.enqueueInviteMail(issued)
+	return issued, nil
+}
+
+// enqueueInviteMail dispatches the credential-mail job after the invite row
+// is stored. A nil port does not enqueue. The queue payload is the invite id.
+func (s *Service) enqueueInviteMail(issued *IssuedInvite) {
+	if s == nil || issued == nil || issued.Invite == nil || s.inviteMail == nil {
+		return
+	}
+	link, err := s.inviteMail.DispatchAccountInvite(issued.Invite.ID)
+	if link != "" {
+		issued.InviteLink = link
+	}
+	issued.MailErr = err
 }
 
 // RevokeInvite stamps revoked_at on one open invite. The stored token hash,

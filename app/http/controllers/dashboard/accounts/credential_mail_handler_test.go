@@ -6,15 +6,15 @@ import (
 	"testing"
 )
 
-func TestHandlersDispatchCredentialMailInsteadOfSendingIt(t *testing.T) {
+func TestHandlersLeaveCredentialDispatchToTheDecidingService(t *testing.T) {
 	checks := []struct {
 		path      string
 		signature string
-		dispatch  string
 	}{
-		{"account_controller.go", "func (ctrl *AccountsController) AddAccountUser", "DispatchAccountInvite"},
-		{"invites_controller.go", "func dispatchInviteMail", "Dispatch("},
-		{"../auth/auth_controller.go", "func (ctrl *AuthController) ForgotPassword", "PurposePasswordReset"},
+		{"account_controller.go", "func (ctrl *AccountsController) AddAccountUser"},
+		{"invites_controller.go", "func (ctrl *InvitesController) Create"},
+		{"invites_controller.go", "func (ctrl *InvitesController) Resend"},
+		{"../auth/auth_controller.go", "func (ctrl *AuthController) ForgotPassword"},
 	}
 	for _, check := range checks {
 		source, err := os.ReadFile(check.path)
@@ -22,13 +22,44 @@ func TestHandlersDispatchCredentialMailInsteadOfSendingIt(t *testing.T) {
 			t.Fatal(err)
 		}
 		body := functionBody(t, string(source), check.signature)
-		if !strings.Contains(body, check.dispatch) {
-			t.Fatalf("%s does not dispatch the credential job", check.signature)
-		}
-		for _, forbidden := range []string{"Mail()", "SendAccountInvite", "SendPasswordReset", ".Queue(", "PasswordResetMail", "UserInviteMail"} {
+		for _, forbidden := range []string{"Mail()", "SendAccountInvite", "SendPasswordReset", ".Queue(", "PasswordResetMail", "UserInviteMail", "DispatchAccountInvite", "Dispatch(", "SendCredentialMailJob", "facades.Queue"} {
 			if strings.Contains(body, forbidden) {
-				t.Fatalf("%s still sends a credential mail via %s", check.signature, forbidden)
+				t.Fatalf("%s still dispatches mail via %s", check.signature, forbidden)
 			}
+		}
+	}
+
+	reset, err := os.ReadFile("../../../../services/users/password_reset_mail.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	resetBody := functionBody(t, string(reset), "func (s *Service) RequestPasswordReset")
+	if !strings.Contains(resetBody, "DispatchPasswordReset(") {
+		t.Fatal("password reset does not dispatch through the port")
+	}
+	for _, forbidden := range []string{"facades.Queue", ".Queue(", "token", "InviteLink", "ResetLink"} {
+		if strings.Contains(resetBody, forbidden) {
+			t.Fatalf("password reset dispatch carries %s", forbidden)
+		}
+	}
+
+	invites, err := os.ReadFile("../../../../services/account/issue_invite.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, signature := range []string{"func (s *Service) IssueInvite", "func (s *Service) ResendInvite"} {
+		body := functionBody(t, string(invites), signature)
+		if !strings.Contains(body, "enqueueInviteMail(") {
+			t.Fatalf("%s does not dispatch the invite job", signature)
+		}
+	}
+	enqueue := functionBody(t, string(invites), "func (s *Service) enqueueInviteMail")
+	if !strings.Contains(enqueue, "DispatchAccountInvite(") {
+		t.Fatal("invite mail does not dispatch through the port")
+	}
+	for _, forbidden := range []string{"facades.Queue", ".Queue(", "RawToken"} {
+		if strings.Contains(enqueue, forbidden) {
+			t.Fatalf("invite dispatch carries %s", forbidden)
 		}
 	}
 }

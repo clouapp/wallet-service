@@ -16,25 +16,22 @@ import (
 	"github.com/macrowallets/waas/app/http/responses"
 	"github.com/macrowallets/waas/app/models"
 	accountsvc "github.com/macrowallets/waas/app/services/account"
-	"github.com/macrowallets/waas/app/services/credentialmail"
 	usersvc "github.com/macrowallets/waas/app/services/users"
 )
 
 // InvitesController previews and accepts account invites. The raw token stays
 // in the link; handlers never log it.
 type InvitesController struct {
-	accounts       *accountsvc.Service
-	users          *usersvc.Service
-	credentialMail *credentialmail.Service
+	accounts *accountsvc.Service
+	users    *usersvc.Service
 }
 
 // InvitesControllerDeps is everything the dashboard invites controller needs.
-// Accounts issues and revokes invites. Users accepts an invite. CredentialMail
-// sends the invite message. Every field is required.
+// Accounts issues, resends, and revokes invites. The account service dispatches
+// the invite mail. Users accepts an invite. Every field is required.
 type InvitesControllerDeps struct {
-	Accounts       *accountsvc.Service
-	Users          *usersvc.Service
-	CredentialMail *credentialmail.Service
+	Accounts *accountsvc.Service
+	Users    *usersvc.Service
 }
 
 // NewInvitesController wires invite preview and accept from InvitesControllerDeps.
@@ -45,13 +42,9 @@ func NewInvitesController(deps InvitesControllerDeps) *InvitesController {
 	if deps.Users == nil {
 		panic("dashboard invites controller: user service is required")
 	}
-	if deps.CredentialMail == nil {
-		panic("dashboard invites controller: credential mail is required")
-	}
 	return &InvitesController{
-		accounts:       deps.Accounts,
-		users:          deps.Users,
-		credentialMail: deps.CredentialMail,
+		accounts: deps.Accounts,
+		users:    deps.Users,
 	}
 }
 
@@ -127,7 +120,7 @@ func (ctrl *InvitesController) Create(ctx http.Context) http.Response {
 		}
 		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to create invite"})
 	}
-	dispatchInviteMail(ctx, ctrl.credentialMail, issued.Invite.ID)
+	logInviteMail(ctx, issued)
 	return responses.Send(ctx, http.StatusAccepted, inviteCreatedView(issued.Invite))
 }
 
@@ -150,7 +143,7 @@ func (ctrl *InvitesController) Resend(ctx http.Context) http.Response {
 		}
 		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to resend invite"})
 	}
-	dispatchInviteMail(ctx, ctrl.credentialMail, issued.Invite.ID)
+	logInviteMail(ctx, issued)
 	return responses.Send(ctx, http.StatusAccepted, inviteCreatedView(issued.Invite))
 }
 
@@ -180,15 +173,12 @@ func inviteCreatedView(invite *models.AccountInvite) inviteListItem {
 	return inviteListItems([]models.AccountInvite{view})[0]
 }
 
-// dispatchInviteMail enqueues the invite id and the purpose. The job mints the
-// token. A failure is logged without the token, its hash, or the link.
-func dispatchInviteMail(ctx http.Context, mailer *credentialmail.Service, inviteID uuid.UUID) {
-	if mailer == nil || inviteID == uuid.Nil {
+// logInviteMail records a dispatch failure without the token, its hash, or the link.
+func logInviteMail(ctx http.Context, issued *accountsvc.IssuedInvite) {
+	if issued == nil || issued.MailErr == nil {
 		return
 	}
-	if err := mailer.Dispatch(inviteID, credentialmail.PurposeAccountInvite); err != nil {
-		appfacades.Log().WithContext(ctx).Errorf("account: send invite mail failed")
-	}
+	appfacades.Log().WithContext(ctx).Errorf("account: send invite mail failed")
 }
 
 // List returns the account's invites for a caller who holds users.read.

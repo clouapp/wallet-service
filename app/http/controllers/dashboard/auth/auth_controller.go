@@ -367,13 +367,7 @@ func (ctrl *AuthController) ForgotPassword(ctx http.Context) http.Response {
 		return errResp
 	}
 
-	userPtr, findErr := ctrl.users.FindByEmail(ctx.Context(), req.Email)
-	if findErr != nil || userPtr == nil {
-		return responses.Send(ctx, http.StatusOK, http.Json{"message": "if that address is registered, you will receive a reset link"})
-	}
-	user := *userPtr
-
-	if err := ctrl.credentialMail.Dispatch(user.ID, credentialmail.PurposePasswordReset); err != nil {
+	if err := ctrl.users.RequestPasswordReset(ctx.Context(), req.Email); err != nil {
 		appfacades.Log().WithContext(ctx).Errorf("auth: send password reset mail failed")
 	}
 
