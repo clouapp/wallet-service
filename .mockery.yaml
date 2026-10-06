@@ -1,0 +1,21 @@
+with-expecter: true
+dir: tests/mocks
+outpkg: mocks
+filename: "mock_{{.InterfaceName}}.go"
+mockname: "Mock{{.InterfaceName}}"
+resolve-type-alias: false
+issue-845-fix: true
+log-level: error
+packages:
+  github.com/macrowallets/waas/pkg/types:
+    interfaces:
+      # types.Chain stays the hand-written MockChain; a generated MockChain would collide.
+      TransferGasEstimator:
+      L1DataFeeEstimator:
+      MPCSignatureFinalizer:
+  github.com/macrowallets/waas/app/services/mpc:
+    interfaces:
+      Service:
+  github.com/macrowallets/waas/app/services/queue:
+    interfaces:
+      Sender:

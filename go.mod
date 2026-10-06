@@ -50,6 +50,8 @@ require (
 	gorm.io/gorm v1.31.1
 )
 
+require github.com/stretchr/objx v0.5.2 // indirect
+
 require (
 	atomicgo.dev/cursor v0.2.0 // indirect
 	atomicgo.dev/keyboard v0.2.9 // indirect
