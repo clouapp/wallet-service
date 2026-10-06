@@ -231,7 +231,7 @@ func broadcastSolanaTx(ctx context.Context, a *SolanaLive, signed *types.SignedT
 	encoded := base64.StdEncoding.EncodeToString(signed.RawBytes)
 	var signature string
 	if err := a.rpc.Call(ctx, "sendTransaction", &signature, encoded, map[string]string{"encoding": "base64"}); err != nil {
-		return "", err
+		return "", chain.ClassifyBroadcast(err)
 	}
 	return signature, nil
 }

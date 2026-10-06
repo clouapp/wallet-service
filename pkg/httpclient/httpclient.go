@@ -144,6 +144,10 @@ func (c *Client) Do(ctx context.Context, call Request) (Response, error) {
 	if call.Username != "" {
 		req.SetBasicAuth(call.Username, call.Password)
 	}
+	// The deadline already passed, so the request is not sent.
+	if err := ctx.Err(); err != nil {
+		return Response{}, phase("build", err)
+	}
 
 	resp, err := c.raw.Do(req)
 	if err != nil {
@@ -179,6 +183,12 @@ func IsBuild(err error) bool {
 // IsRead reports a failure while reading the response body.
 func IsRead(err error) bool {
 	return phaseOf(err) == "read"
+}
+
+// IsRoundtrip reports a failure from the send itself. The request may have left
+// the process; the outcome is not known from this error alone.
+func IsRoundtrip(err error) bool {
+	return phaseOf(err) == "roundtrip"
 }
 
 type phaseError struct {

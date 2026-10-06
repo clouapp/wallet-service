@@ -224,6 +224,20 @@ func TestClientDo_ReturnsStatusHeaderAndLimitedBody(t *testing.T) {
 	}
 }
 
+func TestClientDo_ExpiredContextDoesNotDial(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		t.Error("request was sent after the deadline")
+	}))
+	t.Cleanup(srv.Close)
+
+	ctx, cancel := context.WithDeadline(context.Background(), time.Now().Add(-time.Second))
+	defer cancel()
+	_, err := NewClient(time.Second).Do(ctx, Request{Method: MethodGet, URL: srv.URL})
+	if !IsBuild(err) || !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("got %v", err)
+	}
+}
+
 func TestClientDo_RejectsAMissingURLBeforeDialing(t *testing.T) {
 	_, err := NewClient(time.Second).Do(context.Background(), Request{Method: MethodGet})
 	if !IsBuild(err) {

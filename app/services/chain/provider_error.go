@@ -13,7 +13,8 @@ import (
 // for the redacting log, never on Error().
 var (
 	// ErrProviderUnavailable is a timeout or a provider that did not answer.
-	// Callers map it to HTTP 502 and may retry.
+	// Callers map it to HTTP 502. A job retries it only when KnownFailure
+	// reports a timeout before send or an HTTP 5xx.
 	ErrProviderUnavailable = errors.New("provider unavailable")
 	// ErrNotFound means the provider has no such object.
 	ErrNotFound = errors.New("not found")
@@ -36,6 +37,8 @@ const causeLimit = 512
 type Failure struct {
 	Kind  error
 	Cause error
+	// Status is the upstream HTTP status, or 0 when this was not an HTTP response.
+	Status int
 }
 
 func (e *Failure) Error() string {
@@ -149,7 +152,7 @@ func FromProviderHTTP(status int, body string) error {
 	} else {
 		cause = fmt.Errorf("upstream HTTP %d: %s", status, body)
 	}
-	return Wrap(KindOrProvider(status, body), cause)
+	return &Failure{Kind: KindOrProvider(status, body), Cause: cause, Status: status}
 }
 
 // ClientText is the stable sentence a response may show. A Failure contributes

@@ -34,8 +34,5 @@ func (j *RefreshWalletTokens) Handle(args ...any) error {
 }
 
 func (j *RefreshWalletTokens) ShouldRetry(err error, attempt int) (bool, time.Duration) {
-	if attempt >= 5 {
-		return false, 0
-	}
-	return true, time.Duration(attempt) * 5 * time.Second
+	return shouldRetry(err, attempt)
 }

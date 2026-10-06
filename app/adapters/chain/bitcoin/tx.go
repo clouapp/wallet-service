@@ -411,17 +411,17 @@ func (a *BitcoinLive) broadcastBitcoin(ctx context.Context, signed *types.Signed
 			if httpclient.IsBuild(err) {
 				return "", httpclient.RedactURL(err, url)
 			}
-			return "", chain.Unavailable(httpclient.RedactURL(err, url))
+			return "", chain.ClassifyBroadcast(chain.Unavailable(httpclient.RedactURL(err, url)))
 		}
 		if resp.StatusCode >= httpclient.StatusMultipleChoices {
-			return "", chain.FromProviderHTTP(resp.StatusCode, httpclient.RedactURLText(string(resp.Body), url))
+			return "", chain.ClassifyBroadcast(chain.FromProviderHTTP(resp.StatusCode, httpclient.RedactURLText(string(resp.Body), url)))
 		}
 		return strings.TrimSpace(string(resp.Body)), nil
 	}
 	rawHex := hex.EncodeToString(signed.RawBytes)
 	var txHash string
 	if err := a.rpc.Call(ctx, "sendrawtransaction", &txHash, rawHex); err != nil {
-		return "", err
+		return "", chain.ClassifyBroadcast(err)
 	}
 	return txHash, nil
 }

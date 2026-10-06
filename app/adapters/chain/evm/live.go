@@ -500,7 +500,7 @@ func (a *EVMLive) BroadcastTransaction(ctx context.Context, signed *types.Signed
 	rawHex := "0x" + hex.EncodeToString(signed.RawBytes)
 	var txHash string
 	if err := a.rpc.Call(ctx, "eth_sendRawTransaction", &txHash, rawHex); err != nil {
-		return "", err
+		return "", chain.ClassifyBroadcast(err)
 	}
 	return txHash, nil
 }

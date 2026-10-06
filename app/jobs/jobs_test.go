@@ -2,11 +2,15 @@ package jobs
 
 import (
 	"context"
-	"fmt"
+	"errors"
+	"net/http"
 	"testing"
 	"time"
 
 	"github.com/google/uuid"
+
+	"github.com/macrowallets/waas/app/services/chain"
+	"github.com/macrowallets/waas/pkg/httpclient"
 )
 
 func TestRefreshWalletBalancesRejectsEmptyArgs(t *testing.T) {
@@ -62,7 +66,7 @@ func TestReconcileWalletStateRejectsEmptyArgs(t *testing.T) {
 
 func TestRefreshWalletBalancesRetryPolicy(t *testing.T) {
 	j := &RefreshWalletBalances{}
-	retry, delay := j.ShouldRetry(fmt.Errorf("test"), 1)
+	retry, delay := j.ShouldRetry(retryableServerError(), 1)
 	if !retry {
 		t.Fatal("expected retry on attempt 1")
 	}
@@ -70,7 +74,7 @@ func TestRefreshWalletBalancesRetryPolicy(t *testing.T) {
 		t.Fatalf("expected 5s delay, got %v", delay)
 	}
 
-	retry, _ = j.ShouldRetry(fmt.Errorf("test"), 5)
+	retry, _ = j.ShouldRetry(retryableServerError(), 5)
 	if retry {
 		t.Fatal("expected no retry on attempt 5")
 	}
@@ -78,14 +82,14 @@ func TestRefreshWalletBalancesRetryPolicy(t *testing.T) {
 
 func TestRefreshWalletTransactionsRetryPolicy(t *testing.T) {
 	j := &RefreshWalletTransactions{}
-	retry, delay := j.ShouldRetry(fmt.Errorf("test"), 1)
+	retry, delay := j.ShouldRetry(retryableServerError(), 1)
 	if !retry {
 		t.Fatal("expected retry on attempt 1")
 	}
 	if delay != 5*time.Second {
 		t.Fatalf("expected 5s delay, got %v", delay)
 	}
-	retry, _ = j.ShouldRetry(fmt.Errorf("test"), 5)
+	retry, _ = j.ShouldRetry(retryableServerError(), 5)
 	if retry {
 		t.Fatal("expected no retry at attempt 5")
 	}
@@ -93,14 +97,14 @@ func TestRefreshWalletTransactionsRetryPolicy(t *testing.T) {
 
 func TestRefreshWalletTokensRetryPolicy(t *testing.T) {
 	j := &RefreshWalletTokens{}
-	retry, delay := j.ShouldRetry(fmt.Errorf("test"), 1)
+	retry, delay := j.ShouldRetry(retryableServerError(), 1)
 	if !retry {
 		t.Fatal("expected retry on attempt 1")
 	}
 	if delay != 5*time.Second {
 		t.Fatalf("expected 5s delay, got %v", delay)
 	}
-	retry, _ = j.ShouldRetry(fmt.Errorf("test"), 5)
+	retry, _ = j.ShouldRetry(retryableServerError(), 5)
 	if retry {
 		t.Fatal("expected no retry at attempt 5")
 	}
@@ -108,14 +112,14 @@ func TestRefreshWalletTokensRetryPolicy(t *testing.T) {
 
 func TestRefreshWalletUTXOsRetryPolicy(t *testing.T) {
 	j := &RefreshWalletUTXOs{}
-	retry, delay := j.ShouldRetry(fmt.Errorf("test"), 1)
+	retry, delay := j.ShouldRetry(retryableServerError(), 1)
 	if !retry {
 		t.Fatal("expected retry on attempt 1")
 	}
 	if delay != 5*time.Second {
 		t.Fatalf("expected 5s delay, got %v", delay)
 	}
-	retry, _ = j.ShouldRetry(fmt.Errorf("test"), 5)
+	retry, _ = j.ShouldRetry(retryableServerError(), 5)
 	if retry {
 		t.Fatal("expected no retry at attempt 5")
 	}
@@ -123,14 +127,14 @@ func TestRefreshWalletUTXOsRetryPolicy(t *testing.T) {
 
 func TestReconcileWalletStateRetryPolicy(t *testing.T) {
 	j := &ReconcileWalletState{}
-	retry, delay := j.ShouldRetry(fmt.Errorf("test"), 1)
+	retry, delay := j.ShouldRetry(retryableServerError(), 1)
 	if !retry {
 		t.Fatal("expected retry on attempt 1")
 	}
 	if delay != 5*time.Second {
 		t.Fatalf("expected 5s delay, got %v", delay)
 	}
-	retry, _ = j.ShouldRetry(fmt.Errorf("test"), 5)
+	retry, _ = j.ShouldRetry(retryableServerError(), 5)
 	if retry {
 		t.Fatal("expected no retry at attempt 5")
 	}
@@ -139,7 +143,7 @@ func TestReconcileWalletStateRetryPolicy(t *testing.T) {
 func TestRetryDelayScalesWithAttempt(t *testing.T) {
 	j := &RefreshWalletBalances{}
 	for attempt := 1; attempt < 5; attempt++ {
-		retry, delay := j.ShouldRetry(fmt.Errorf("test"), attempt)
+		retry, delay := j.ShouldRetry(retryableServerError(), attempt)
 		if !retry {
 			t.Fatalf("expected retry on attempt %d", attempt)
 		}
@@ -148,6 +152,60 @@ func TestRetryDelayScalesWithAttempt(t *testing.T) {
 			t.Fatalf("attempt %d: expected %v, got %v", attempt, expected, delay)
 		}
 	}
+}
+
+func TestShouldRetryDistinguishesKnownFailureFromUnknownOutcome(t *testing.T) {
+	j := &RefreshWalletBalances{}
+	known := []error{
+		retryableServerError(),
+		chain.FromProviderHTTP(http.StatusInternalServerError, "down"),
+		chain.FromProviderHTTP(http.StatusServiceUnavailable, "down"),
+		chain.FromProviderHTTP(http.StatusGatewayTimeout, "down"),
+		fmtRateLimit(),
+		timeoutBeforeSend(t),
+	}
+	for _, err := range known {
+		retry, delay := j.ShouldRetry(err, 1)
+		if !retry || delay != 5*time.Second {
+			t.Fatalf("known failure %v: retry=%v delay=%v", err, retry, delay)
+		}
+	}
+
+	unknown := []error{
+		errors.New("test"),
+		chain.ErrUnknownOutcome,
+		chain.UnknownOutcome(errors.New("broadcast result unknown")),
+		chain.UnknownOutcome(chain.FromProviderHTTP(http.StatusBadGateway, "maybe accepted")),
+		chain.FromProviderHTTP(http.StatusBadRequest, "rejected"),
+		chain.FromProviderHTTP(http.StatusNotFound, "missing"),
+	}
+	for _, err := range unknown {
+		if retry, delay := j.ShouldRetry(err, 1); retry || delay != 0 {
+			t.Fatalf("unknown outcome %v: retry=%v delay=%v", err, retry, delay)
+		}
+	}
+}
+
+func retryableServerError() error {
+	return chain.FromProviderHTTP(http.StatusBadGateway, "down")
+}
+
+func fmtRateLimit() error {
+	return errors.Join(errors.New("rpc call"), chain.ErrRateLimited)
+}
+
+func timeoutBeforeSend(t *testing.T) error {
+	t.Helper()
+	ctx, cancel := context.WithDeadline(context.Background(), time.Now().Add(-time.Second))
+	defer cancel()
+	_, err := httpclient.NewClient(time.Second).Do(ctx, httpclient.Request{
+		Method: httpclient.MethodGet,
+		URL:    "http://127.0.0.1:1",
+	})
+	if !httpclient.IsBuild(err) || !chain.KnownFailure(err) {
+		t.Fatalf("timeout before send: %v", err)
+	}
+	return err
 }
 
 func TestRefreshWalletBalancesRejectsEmptyChainID(t *testing.T) {
