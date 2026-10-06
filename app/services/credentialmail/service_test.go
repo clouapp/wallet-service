@@ -106,9 +106,8 @@ func TestSendRunsTheDecodedPurpose(t *testing.T) {
 		DispatchInvite: func(uuid.UUID) (string, error) { t.Fatal("send must not dispatch an invite"); return "", nil },
 	})
 
-	link, err := svc.Send(context.Background(), userID, PurposeWelcome)
-	if err != nil || link != "" || welcome != 1 {
-		t.Fatalf("link %q err %v welcome %d", link, err, welcome)
+	if _, err := svc.Send(context.Background(), userID, PurposeWelcome); err == nil || welcome != 0 {
+		t.Fatalf("welcome send via the job purpose err %v welcome %d", err, welcome)
 	}
 	if _, err := svc.Send(context.Background(), userID, "not-a-purpose"); err == nil {
 		t.Fatal("unknown purpose must be refused")
@@ -173,6 +172,9 @@ func TestDispatchPayloadIsSubjectAndPurpose(t *testing.T) {
 	}
 	if err := svc.Dispatch(uuid.Nil, PurposeAccountInvite); err == nil {
 		t.Fatal("nil subject must be refused")
+	}
+	if err := svc.Dispatch(subjectID, PurposeWelcome); err == nil || gotPurpose != PurposePasswordReset {
+		t.Fatal("welcome must not be queued")
 	}
 }
 

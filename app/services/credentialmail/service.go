@@ -17,8 +17,8 @@ const (
 	PurposePasswordReset = "password_reset"
 	// PurposeAccountInvite is the queue purpose for an invite link.
 	PurposeAccountInvite = "account_invite"
-	// PurposeWelcome is the queue purpose for the post-register welcome.
-	// The message has no credential. The payload is still the user id and this purpose.
+	// PurposeWelcome names the post-register welcome. It is not a queue purpose.
+	// Register calls SendWelcome, which delivers with Mail().Send.
 	PurposeWelcome = "welcome"
 
 	passwordResetLifetime  = time.Hour
@@ -121,9 +121,10 @@ func NewService(deps Deps) *Service {
 }
 
 // KnownPurpose reports whether purpose may be placed on the queue.
+// Welcome is not a queue purpose.
 func KnownPurpose(purpose string) bool {
 	switch purpose {
-	case PurposePasswordReset, PurposeAccountInvite, PurposeWelcome:
+	case PurposePasswordReset, PurposeAccountInvite:
 		return true
 	default:
 		return false
@@ -138,6 +139,9 @@ func (s *Service) Dispatch(subjectID uuid.UUID, purpose string) error {
 	}
 	if subjectID == uuid.Nil {
 		return errors.New("credential mail: subject id is required")
+	}
+	if purpose == PurposeWelcome {
+		return errors.New("credential mail: welcome is sent, not queued")
 	}
 	if !KnownPurpose(purpose) {
 		return errors.New("credential mail: unknown purpose")
@@ -158,13 +162,11 @@ func (s *Service) DispatchAccountInvite(inviteID uuid.UUID) (string, error) {
 }
 
 // Send delivers one decoded credential-mail purpose. An invite returns the
-// minted link. The other purposes return an empty link.
+// minted link. A reset returns an empty link. Welcome is not a purpose here.
 func (s *Service) Send(ctx context.Context, subjectID uuid.UUID, purpose string) (string, error) {
 	switch purpose {
 	case PurposePasswordReset:
 		return "", s.SendPasswordReset(ctx, subjectID)
-	case PurposeWelcome:
-		return "", s.SendWelcome(ctx, subjectID)
 	case PurposeAccountInvite:
 		return s.SendAccountInvite(ctx, subjectID)
 	default:

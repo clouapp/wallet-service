@@ -14,8 +14,8 @@ import (
 )
 
 // SendCredentialMailJob mints a reset or invite token at send time and calls
-// Mail().Send. Welcome loads the user and sends no credential. The queue
-// arguments are the subject id and the purpose.
+// Mail().Send. Welcome is not this job. The queue arguments are the subject
+// id and the purpose.
 type SendCredentialMailJob struct {
 	service    *credentialmail.Service
 	inviteLink *string

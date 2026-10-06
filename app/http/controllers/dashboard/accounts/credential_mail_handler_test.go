@@ -15,7 +15,6 @@ func TestHandlersDispatchCredentialMailInsteadOfSendingIt(t *testing.T) {
 		{"account_controller.go", "func (ctrl *AccountsController) AddAccountUser", "DispatchAccountInvite"},
 		{"invites_controller.go", "func dispatchInviteMail", "Dispatch("},
 		{"../auth/auth_controller.go", "func (ctrl *AuthController) ForgotPassword", "PurposePasswordReset"},
-		{"../auth/auth_controller.go", "func (ctrl *AuthController) Register", "PurposeWelcome"},
 	}
 	for _, check := range checks {
 		source, err := os.ReadFile(check.path)
@@ -34,7 +33,7 @@ func TestHandlersDispatchCredentialMailInsteadOfSendingIt(t *testing.T) {
 	}
 }
 
-func TestRegisterDispatchesWelcomeAfterOnboard(t *testing.T) {
+func TestRegisterSendsWelcomeWithoutTheCredentialJob(t *testing.T) {
 	source, err := os.ReadFile("../auth/auth_controller.go")
 	if err != nil {
 		t.Fatal(err)
@@ -42,21 +41,58 @@ func TestRegisterDispatchesWelcomeAfterOnboard(t *testing.T) {
 	body := functionBody(t, string(source), "func (ctrl *AuthController) Register")
 	onboard := strings.Index(body, "Onboard(")
 	login := strings.Index(body, "LoginUsingID(")
-	dispatch := strings.Index(body, "Dispatch(")
-	if onboard < 0 || login < 0 || dispatch < 0 || onboard > dispatch || dispatch > login {
-		t.Fatal("welcome mail must be dispatched after onboard returns and before login")
+	send := strings.Index(body, "SendWelcome(")
+	if onboard < 0 || login < 0 || send < 0 || onboard > send || send > login {
+		t.Fatal("welcome mail must be sent after onboard returns and before login")
 	}
-	if strings.Contains(body, "Mail()") || strings.Contains(body, "WelcomeMail") {
-		t.Fatal("register still sends welcome mail from the handler")
+	for _, forbidden := range []string{"Mail()", "WelcomeMail", "Dispatch(", "PurposeWelcome", ".Queue(", "SendCredentialMailJob"} {
+		if strings.Contains(body, forbidden) {
+			t.Fatalf("register still queues welcome mail via %s", forbidden)
+		}
 	}
-	call := body[dispatch:]
-	end := strings.Index(call, ")")
+	call := body[send:]
+	open := strings.Index(call, "(")
+	if open < 0 {
+		t.Fatal("welcome send call is unopened")
+	}
+	depth := 0
+	end := -1
+	for i, char := range call[open:] {
+		switch char {
+		case '(':
+			depth++
+		case ')':
+			depth--
+			if depth == 0 {
+				end = open + i
+			}
+		}
+		if end >= 0 {
+			break
+		}
+	}
 	if end < 0 {
-		t.Fatal("dispatch call is unclosed")
+		t.Fatal("welcome send call is unclosed")
 	}
-	args := strings.ToLower(call[:end])
-	if strings.Contains(args, "password") || strings.Contains(args, "hash") || strings.Contains(args, "token") {
-		t.Fatal("welcome dispatch carries more than the user id and purpose")
+	args := strings.ToLower(call[open : end+1])
+	if strings.Contains(args, "password") || strings.Contains(args, "hash") || strings.Contains(args, "token") || strings.Contains(args, "email") {
+		t.Fatal("welcome send carries more than the user id")
+	}
+}
+
+func TestSettingsTestMailUsesSend(t *testing.T) {
+	source, err := os.ReadFile("../../platform/settings/settings_controller.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := functionBody(t, string(source), "func (ctrl *SettingsController) TestMail")
+	if !strings.Contains(body, "Mail().To(") || !strings.Contains(body, ".Send(") || !strings.Contains(body, "SettingsTestMail") {
+		t.Fatal("settings test mail must use Mail().Send")
+	}
+	for _, forbidden := range []string{".Queue(", "SendCredentialMailJob", "Dispatch("} {
+		if strings.Contains(body, forbidden) {
+			t.Fatalf("settings test mail is queued via %s", forbidden)
+		}
 	}
 }
 

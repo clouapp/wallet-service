@@ -122,8 +122,8 @@ func (ctrl *AuthController) Register(ctx http.Context) http.Response {
 		FullName:         req.FullName,
 		OrganizationName: req.OrganizationName,
 	}, func(userID uuid.UUID) error {
-		if mailErr := ctrl.credentialMail.Dispatch(userID, credentialmail.PurposeWelcome); mailErr != nil {
-			appfacades.Log().WithContext(ctx).Errorf("auth: send welcome mail: %v", mailErr)
+		if mailErr := ctrl.credentialMail.SendWelcome(ctx.Context(), userID); mailErr != nil {
+			appfacades.Log().WithContext(ctx).Error("auth: send welcome mail failed")
 		}
 		return nil
 	})

@@ -15,7 +15,7 @@ import (
 
 func TestCredentialMailArgsCarryNoCredential(t *testing.T) {
 	subjectID := uuid.MustParse("11111111-1111-1111-1111-111111111111")
-	for _, purpose := range []string{credentialmail.PurposePasswordReset, credentialmail.PurposeAccountInvite, credentialmail.PurposeWelcome} {
+	for _, purpose := range []string{credentialmail.PurposePasswordReset, credentialmail.PurposeAccountInvite} {
 		args, err := CredentialMailArgs(subjectID, purpose)
 		if err != nil {
 			t.Fatal(err)
@@ -44,6 +44,9 @@ func TestCredentialMailArgsCarryNoCredential(t *testing.T) {
 	if _, err := CredentialMailArgs(subjectID, "https://app.example/accept-invite?token=secret"); err == nil {
 		t.Fatal("a link must not be a purpose")
 	}
+	if _, err := CredentialMailArgs(subjectID, credentialmail.PurposeWelcome); err == nil {
+		t.Fatal("welcome must not be a queue purpose")
+	}
 }
 
 func TestSendCredentialMailRejectsExtraArgsBeforeSending(t *testing.T) {
@@ -71,7 +74,7 @@ func TestSendCredentialMailRejectsExtraArgsBeforeSending(t *testing.T) {
 
 func TestSendCredentialMailHandleCallsSendOnce(t *testing.T) {
 	userID := uuid.MustParse("22222222-2222-2222-2222-222222222222")
-	var welcome int
+	var resets int
 	job := NewSendCredentialMailJob(credentialmail.NewService(credentialmail.Deps{
 		Users: mailUsers(func(id uuid.UUID) (*models.User, error) {
 			if id != userID {
@@ -79,22 +82,25 @@ func TestSendCredentialMailHandleCallsSendOnce(t *testing.T) {
 			}
 			return &models.User{ID: userID, Email: "person@example.com", FullName: "Ada"}, nil
 		}),
-		Tokens:         mailTokens{},
+		Tokens:         mailTokens{raw: "reset-raw-token", hash: "reset-hash"},
 		Resets:         mailResets{},
 		Invites:        mailInvites{},
-		Sender:         mailSender{welcome: func() { welcome++ }},
+		Sender:         mailSender{reset: func() { resets++ }},
 		Dispatch:       func(uuid.UUID, string) error { t.Fatal("handle must not enqueue"); return nil },
 		DispatchInvite: func(uuid.UUID) (string, error) { t.Fatal("handle must not dispatch"); return "", nil },
 	}))
-	args, err := CredentialMailArgs(userID, credentialmail.PurposeWelcome)
+	if err := job.Handle(`{"subject_id":"` + userID.String() + `","purpose":"` + credentialmail.PurposeWelcome + `"}`); err == nil {
+		t.Fatal("welcome must not run on the credential job")
+	}
+	args, err := CredentialMailArgs(userID, credentialmail.PurposePasswordReset)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if err := job.Handle(args[0].Value); err != nil {
 		t.Fatal(err)
 	}
-	if welcome != 1 {
-		t.Fatalf("welcome sends = %d, want 1", welcome)
+	if resets != 1 {
+		t.Fatalf("reset sends = %d, want 1", resets)
 	}
 }
 
@@ -104,10 +110,13 @@ func (f mailUsers) FindByID(_ context.Context, id uuid.UUID) (*models.User, erro
 	return f(id)
 }
 
-type mailTokens struct{}
+type mailTokens struct {
+	raw  string
+	hash string
+}
 
-func (mailTokens) GenerateRandomToken() (string, error) { return "", nil }
-func (mailTokens) HashToken(string) string              { return "" }
+func (t mailTokens) GenerateRandomToken() (string, error) { return t.raw, nil }
+func (t mailTokens) HashToken(string) string              { return t.hash }
 
 type mailResets struct{}
 
@@ -119,11 +128,13 @@ func (mailInvites) RefreshInviteForMail(context.Context, uuid.UUID, string) (acc
 	return account.InviteMail{}, nil
 }
 
-type mailSender struct{ welcome func() }
+type mailSender struct{ reset func() }
 
 func (mailSender) SendInvite(context.Context, account.InviteMail) error { return nil }
-func (mailSender) SendReset(context.Context, string, string) error      { return nil }
-func (s mailSender) SendWelcome(context.Context, string, string) error {
-	s.welcome()
+func (s mailSender) SendReset(context.Context, string, string) error {
+	if s.reset != nil {
+		s.reset()
+	}
 	return nil
 }
+func (mailSender) SendWelcome(context.Context, string, string) error { return nil }
