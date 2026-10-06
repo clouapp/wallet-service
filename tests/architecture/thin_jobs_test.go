@@ -35,6 +35,49 @@ func TestJobsAreThin(t *testing.T) {
 	}
 }
 
+// TestJobPayloadIsDecodedNotPositional refuses a job that checks args by
+// position (.ai/guidelines/queues-and-workers.md).
+func TestJobPayloadIsDecodedNotPositional(t *testing.T) {
+	module := sharedModule(t)
+	var violations []string
+	for _, file := range module.ProductionFiles("app/jobs") {
+		ast.Inspect(file.AST, func(node ast.Node) bool {
+			switch n := node.(type) {
+			case *ast.IndexExpr, *ast.SliceExpr:
+				if indexesArgs(indexedExpr(n)) {
+					violations = append(violations, file.Path+" indexes args")
+				}
+			case *ast.CallExpr:
+				if ident, ok := n.Fun.(*ast.Ident); ok && ident.Name == "len" && len(n.Args) == 1 {
+					if arg, ok := n.Args[0].(*ast.Ident); ok && arg.Name == "args" {
+						violations = append(violations, file.Path+" checks len(args)")
+					}
+				}
+			}
+			return true
+		})
+	}
+	for _, line := range violations {
+		t.Errorf("positional job args: %s", line)
+	}
+}
+
+func indexedExpr(node ast.Node) ast.Expr {
+	switch n := node.(type) {
+	case *ast.IndexExpr:
+		return n.X
+	case *ast.SliceExpr:
+		return n.X
+	default:
+		return nil
+	}
+}
+
+func indexesArgs(expr ast.Expr) bool {
+	ident, ok := expr.(*ast.Ident)
+	return ok && ident.Name == "args"
+}
+
 func TestJobHandleProblems_RefusesASwitchAndASecondCall(t *testing.T) {
 	fn := parseHandle(t, `package jobs
 func (j *Job) Handle(args ...any) error {

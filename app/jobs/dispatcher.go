@@ -63,11 +63,12 @@ func (d *Dispatcher) dispatch(job queue.Job, walletID, chainID string) error {
 	if d == nil || d.client == nil {
 		return fmt.Errorf("wallet job dispatcher is not initialized")
 	}
+	args, err := WalletArgs(walletID, chainID)
+	if err != nil {
+		return err
+	}
 	return d.client().
-		Job(job, []queue.Arg{
-			{Type: "string", Value: walletID},
-			{Type: "string", Value: chainID},
-		}).
+		Job(job, args).
 		OnConnection(blockchainConnection).
 		OnQueue(blockchainQueueName).
 		Dispatch()

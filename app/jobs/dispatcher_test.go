@@ -1,6 +1,7 @@
 package jobs
 
 import (
+	"encoding/json"
 	"errors"
 	"testing"
 	"time"
@@ -44,14 +45,22 @@ func TestDispatcherEnqueuesTheSameBlockchainPayload(t *testing.T) {
 			if got.queueName != blockchainQueueName {
 				t.Fatalf("queue = %q, want %q", got.queueName, blockchainQueueName)
 			}
-			if len(got.args) != 1 || len(got.args[0]) != 2 {
-				t.Fatalf("args = %#v, want one pair", got.args)
+			if len(got.args) != 1 || len(got.args[0]) != 1 {
+				t.Fatalf("args = %#v, want one payload", got.args)
 			}
-			if got.args[0][0].Type != "string" || got.args[0][0].Value != walletID {
-				t.Fatalf("wallet arg = %#v", got.args[0][0])
+			if got.args[0][0].Type != "string" {
+				t.Fatalf("payload arg = %#v", got.args[0][0])
 			}
-			if got.args[0][1].Type != "string" || got.args[0][1].Value != chainID {
-				t.Fatalf("chain arg = %#v", got.args[0][1])
+			text, ok := got.args[0][0].Value.(string)
+			if !ok {
+				t.Fatalf("payload arg = %#v", got.args[0][0])
+			}
+			var payload walletDocument
+			if err := json.Unmarshal([]byte(text), &payload); err != nil {
+				t.Fatal(err)
+			}
+			if payload.WalletID != walletID || payload.ChainID != chainID {
+				t.Fatalf("payload = %#v", payload)
 			}
 		})
 	}

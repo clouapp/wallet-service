@@ -31,8 +31,8 @@ func (j *SendCredentialMailJob) Signature() string {
 	return "send_credential_mail"
 }
 
-// CredentialMailArgs is the only payload this job accepts. A token, link, or
-// address is refused by the purpose check and by the two-argument shape.
+// CredentialMailArgs is the only payload this job accepts: one JSON object
+// with the subject id and the purpose.
 func CredentialMailArgs(subjectID uuid.UUID, purpose string) ([]queue.Arg, error) {
 	if subjectID == uuid.Nil {
 		return nil, errors.New("send_credential_mail: subject id is required")
@@ -40,10 +40,7 @@ func CredentialMailArgs(subjectID uuid.UUID, purpose string) ([]queue.Arg, error
 	if !credentialmail.KnownPurpose(purpose) {
 		return nil, errors.New("send_credential_mail: unknown purpose")
 	}
-	return []queue.Arg{
-		{Type: "string", Value: subjectID.String()},
-		{Type: "string", Value: purpose},
-	}, nil
+	return encode(credentialMailPayload{SubjectID: subjectID, Purpose: purpose})
 }
 
 func (j *SendCredentialMailJob) Handle(args ...any) error {
@@ -97,28 +94,20 @@ func (j *SendCredentialMailJob) ShouldRetry(error, int) (bool, time.Duration) {
 }
 
 type credentialMailPayload struct {
-	SubjectID uuid.UUID
-	Purpose   string
+	SubjectID uuid.UUID `json:"subject_id"`
+	Purpose   string    `json:"purpose"`
 }
 
 func decodeCredentialMailArgs(args []any) (credentialMailPayload, error) {
-	if len(args) != 2 {
-		return credentialMailPayload{}, fmt.Errorf("send_credential_mail: expected 2 args (subject_id, purpose)")
+	var payload credentialMailPayload
+	if err := decode(args, &payload); err != nil {
+		return credentialMailPayload{}, fmt.Errorf("send_credential_mail: %w", err)
 	}
-	subjectRaw, ok := args[0].(string)
-	if !ok || subjectRaw == "" {
-		return credentialMailPayload{}, errors.New("send_credential_mail: subject_id must be a non-empty string")
-	}
-	purpose, ok := args[1].(string)
-	if !ok || !credentialmail.KnownPurpose(purpose) {
-		return credentialMailPayload{}, errors.New("send_credential_mail: purpose is not a credential mail purpose")
-	}
-	subjectID, err := uuid.Parse(subjectRaw)
-	if err != nil {
-		return credentialMailPayload{}, fmt.Errorf("send_credential_mail: invalid subject_id: %w", err)
-	}
-	if subjectID == uuid.Nil {
+	if payload.SubjectID == uuid.Nil {
 		return credentialMailPayload{}, errors.New("send_credential_mail: subject id is required")
 	}
-	return credentialMailPayload{SubjectID: subjectID, Purpose: purpose}, nil
+	if !credentialmail.KnownPurpose(payload.Purpose) {
+		return credentialMailPayload{}, errors.New("send_credential_mail: purpose is not a credential mail purpose")
+	}
+	return payload, nil
 }

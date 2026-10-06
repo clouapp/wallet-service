@@ -22,7 +22,7 @@ func TestRefreshWalletBalancesRejectsEmptyArgs(t *testing.T) {
 
 func TestRefreshWalletBalancesRejectsInvalidUUID(t *testing.T) {
 	j := &RefreshWalletBalances{}
-	err := j.Handle("not-a-uuid", "eth")
+	err := j.Handle(mustWalletArg("not-a-uuid", "eth"))
 	if err == nil {
 		t.Fatal("expected error for invalid UUID")
 	}
@@ -152,7 +152,7 @@ func TestRetryDelayScalesWithAttempt(t *testing.T) {
 
 func TestRefreshWalletBalancesRejectsEmptyChainID(t *testing.T) {
 	j := &RefreshWalletBalances{}
-	err := j.Handle("00000000-0000-0000-0000-000000000001", "")
+	err := j.Handle(mustWalletArg("00000000-0000-0000-0000-000000000001", ""))
 	if err == nil {
 		t.Fatal("expected error for empty chain_id")
 	}
@@ -160,7 +160,7 @@ func TestRefreshWalletBalancesRejectsEmptyChainID(t *testing.T) {
 
 func TestRefreshWalletTransactionsRejectsInvalidUUID(t *testing.T) {
 	j := &RefreshWalletTransactions{}
-	err := j.Handle("not-a-uuid", "eth")
+	err := j.Handle(mustWalletArg("not-a-uuid", "eth"))
 	if err == nil {
 		t.Fatal("expected error for invalid UUID")
 	}
@@ -168,7 +168,7 @@ func TestRefreshWalletTransactionsRejectsInvalidUUID(t *testing.T) {
 
 func TestRefreshWalletTransactionsRejectsEmptyChainID(t *testing.T) {
 	j := &RefreshWalletTransactions{}
-	err := j.Handle("00000000-0000-0000-0000-000000000001", "")
+	err := j.Handle(mustWalletArg("00000000-0000-0000-0000-000000000001", ""))
 	if err == nil {
 		t.Fatal("expected error for empty chain_id")
 	}
@@ -176,7 +176,7 @@ func TestRefreshWalletTransactionsRejectsEmptyChainID(t *testing.T) {
 
 func TestRefreshWalletTokensRejectsInvalidUUID(t *testing.T) {
 	j := &RefreshWalletTokens{}
-	err := j.Handle("not-a-uuid", "eth")
+	err := j.Handle(mustWalletArg("not-a-uuid", "eth"))
 	if err == nil {
 		t.Fatal("expected error for invalid UUID")
 	}
@@ -184,7 +184,7 @@ func TestRefreshWalletTokensRejectsInvalidUUID(t *testing.T) {
 
 func TestRefreshWalletTokensRejectsEmptyChainID(t *testing.T) {
 	j := &RefreshWalletTokens{}
-	err := j.Handle("00000000-0000-0000-0000-000000000001", "")
+	err := j.Handle(mustWalletArg("00000000-0000-0000-0000-000000000001", ""))
 	if err == nil {
 		t.Fatal("expected error for empty chain_id")
 	}
@@ -192,7 +192,7 @@ func TestRefreshWalletTokensRejectsEmptyChainID(t *testing.T) {
 
 func TestRefreshWalletUTXOsRejectsInvalidUUID(t *testing.T) {
 	j := &RefreshWalletUTXOs{}
-	err := j.Handle("not-a-uuid", "btc")
+	err := j.Handle(mustWalletArg("not-a-uuid", "btc"))
 	if err == nil {
 		t.Fatal("expected error for invalid UUID")
 	}
@@ -200,7 +200,7 @@ func TestRefreshWalletUTXOsRejectsInvalidUUID(t *testing.T) {
 
 func TestRefreshWalletUTXOsRejectsEmptyChainID(t *testing.T) {
 	j := &RefreshWalletUTXOs{}
-	err := j.Handle("00000000-0000-0000-0000-000000000001", "")
+	err := j.Handle(mustWalletArg("00000000-0000-0000-0000-000000000001", ""))
 	if err == nil {
 		t.Fatal("expected error for empty chain_id")
 	}
@@ -208,7 +208,7 @@ func TestRefreshWalletUTXOsRejectsEmptyChainID(t *testing.T) {
 
 func TestReconcileWalletStateRejectsInvalidUUID(t *testing.T) {
 	j := &ReconcileWalletState{}
-	err := j.Handle("not-a-uuid", "eth")
+	err := j.Handle(mustWalletArg("not-a-uuid", "eth"))
 	if err == nil {
 		t.Fatal("expected error for invalid UUID")
 	}
@@ -216,7 +216,7 @@ func TestReconcileWalletStateRejectsInvalidUUID(t *testing.T) {
 
 func TestReconcileWalletStateRejectsEmptyChainID(t *testing.T) {
 	j := &ReconcileWalletState{}
-	err := j.Handle("00000000-0000-0000-0000-000000000001", "")
+	err := j.Handle(mustWalletArg("00000000-0000-0000-0000-000000000001", ""))
 	if err == nil {
 		t.Fatal("expected error for empty chain_id")
 	}
@@ -265,7 +265,7 @@ func TestAllJobsRejectNonStringWalletID(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			err := tc.job.Handle(123, "eth")
+			err := tc.job.Handle(`{"wallet_id":123,"chain_id":"eth"}`)
 			if err == nil {
 				t.Fatal("expected error for non-string wallet_id")
 			}
@@ -290,7 +290,7 @@ func TestWalletJobsCallOneServiceMethod(t *testing.T) {
 	for _, tc := range jobs {
 		t.Run(tc.name, func(t *testing.T) {
 			before := *tc.got
-			if err := tc.job.Handle(id, "eth"); err != nil {
+			if err := tc.job.Handle(mustWalletArg(id, "eth")); err != nil {
 				t.Fatal(err)
 			}
 			if *tc.got != before+1 {
@@ -330,6 +330,26 @@ func (r *recordingWalletQueue) RefreshUTXOs(context.Context, uuid.UUID, string) 
 func (r *recordingWalletQueue) ReconcileWallet(context.Context, uuid.UUID, string) error {
 	r.reconcile++
 	return nil
+}
+
+func TestWalletJobsRefusePositionalArgs(t *testing.T) {
+	id := "11111111-1111-1111-1111-111111111111"
+	rec := &recordingWalletQueue{}
+	job := &RefreshWalletBalances{wallets: rec}
+	if err := job.Handle(id, "eth"); err == nil {
+		t.Fatal("positional args must be refused")
+	}
+	if rec.balances != 0 {
+		t.Fatal("positional args must not call the service")
+	}
+}
+
+func mustWalletArg(walletID, chainID string) any {
+	args, err := WalletArgs(walletID, chainID)
+	if err != nil {
+		panic(err)
+	}
+	return args[0].Value
 }
 
 func TestAllJobsRejectSingleArg(t *testing.T) {

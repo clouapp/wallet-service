@@ -4,7 +4,6 @@ import (
 	"fmt"
 
 	frameworkevent "github.com/goravel/framework/contracts/event"
-	"github.com/goravel/framework/contracts/queue"
 	"github.com/goravel/framework/facades"
 
 	"github.com/macrowallets/waas/app/jobs"
@@ -44,11 +43,12 @@ func (l *EnqueueWalletRefresh) Handle(args ...any) error {
 	if !ok1 || chainID == "" {
 		return fmt.Errorf("enqueue_wallet_refresh: chain_id must be a non-empty string")
 	}
+	payload, err := jobs.WalletArgs(walletID, chainID)
+	if err != nil {
+		return err
+	}
 	return facades.Queue().
-		Job(&jobs.RefreshWalletBalances{}, []queue.Arg{
-			{Type: "string", Value: walletID},
-			{Type: "string", Value: chainID},
-		}).
+		Job(&jobs.RefreshWalletBalances{}, payload).
 		OnConnection("database").
 		OnQueue("blockchain").
 		Dispatch()

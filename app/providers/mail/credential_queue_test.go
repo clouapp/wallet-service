@@ -76,10 +76,11 @@ func TestQueuedCredentialMailHasNoCredentialAndMailQueueRefuses(t *testing.T) {
 
 func assertQueuedMessageHasNoCredential(t *testing.T, payload, subjectID, purpose, link, password string) {
 	t.Helper()
-	want, err := json.Marshal([]queue.Arg{
-		{Type: "string", Value: subjectID},
-		{Type: "string", Value: purpose},
-	})
+	wantArgs, err := jobs.CredentialMailArgs(uuid.MustParse(subjectID), purpose)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want, err := json.Marshal(wantArgs)
 	if err != nil {
 		t.Fatal(err)
 	}

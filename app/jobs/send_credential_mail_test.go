@@ -2,6 +2,7 @@ package jobs
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 	"testing"
 
@@ -19,20 +20,22 @@ func TestCredentialMailArgsCarryNoCredential(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if len(args) != 2 {
+		if len(args) != 1 || args[0].Type != "string" {
 			t.Fatalf("args = %#v", args)
 		}
-		if args[0].Value != subjectID.String() || args[1].Value != purpose {
-			t.Fatalf("args = %#v", args)
+		text, ok := args[0].Value.(string)
+		if !ok {
+			t.Fatalf("arg %#v is not text", args[0].Value)
 		}
-		for _, arg := range args {
-			text, ok := arg.Value.(string)
-			if !ok {
-				t.Fatalf("arg %#v is not text", arg.Value)
-			}
-			if strings.Contains(text, "token") || strings.Contains(text, "http") || strings.Contains(text, "@") {
-				t.Fatalf("payload %q carries a credential", text)
-			}
+		var payload credentialMailPayload
+		if err := json.Unmarshal([]byte(text), &payload); err != nil {
+			t.Fatal(err)
+		}
+		if payload.SubjectID != subjectID || payload.Purpose != purpose {
+			t.Fatalf("payload = %#v", payload)
+		}
+		if strings.Contains(text, "token") || strings.Contains(text, "http") || strings.Contains(text, "@") {
+			t.Fatalf("payload %q carries a credential", text)
 		}
 	}
 	if _, err := CredentialMailArgs(uuid.Nil, credentialmail.PurposePasswordReset); err == nil {
@@ -51,10 +54,13 @@ func TestSendCredentialMailRejectsExtraArgsBeforeSending(t *testing.T) {
 	if err := job.Handle(); err == nil {
 		t.Fatal("empty args must be refused")
 	}
-	if err := job.Handle(uuid.New().String(), credentialmail.PurposePasswordReset, "raw-token"); err == nil {
-		t.Fatal("a third argument must be refused")
+	if err := job.Handle(uuid.New().String(), credentialmail.PurposePasswordReset); err == nil {
+		t.Fatal("positional args must be refused")
 	}
-	if err := job.Handle("not-a-uuid", credentialmail.PurposeAccountInvite); err == nil {
+	if err := job.Handle(`{"subject_id":"` + uuid.New().String() + `","purpose":"` + credentialmail.PurposePasswordReset + `","token":"raw-token"}`); err == nil {
+		t.Fatal("an extra field must be refused")
+	}
+	if err := job.Handle(`{"subject_id":"not-a-uuid","purpose":"` + credentialmail.PurposeAccountInvite + `"}`); err == nil {
 		t.Fatal("invalid subject must be refused")
 	}
 	retry, delay := job.ShouldRetry(nil, 1)
@@ -80,7 +86,11 @@ func TestSendCredentialMailHandleCallsSendOnce(t *testing.T) {
 		Dispatch:       func(uuid.UUID, string) error { t.Fatal("handle must not enqueue"); return nil },
 		DispatchInvite: func(uuid.UUID) (string, error) { t.Fatal("handle must not dispatch"); return "", nil },
 	}))
-	if err := job.Handle(userID.String(), credentialmail.PurposeWelcome); err != nil {
+	args, err := CredentialMailArgs(userID, credentialmail.PurposeWelcome)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := job.Handle(args[0].Value); err != nil {
 		t.Fatal(err)
 	}
 	if welcome != 1 {
