@@ -127,7 +127,7 @@ func (s *Service) EnqueueEvent(ctx context.Context, txID uuid.UUID, eventType ty
 			EventType:     eventType,
 			Payload:       string(payload),
 			DeliveryURL:   cfg.URL,
-			Secret:        cfg.Secret,
+			ConfigID:      cfg.ID.String(),
 			Attempt:       1,
 		}
 		if s.sqs == nil {
@@ -142,7 +142,7 @@ func (s *Service) EnqueueEvent(ctx context.Context, txID uuid.UUID, eventType ty
 // StageWithdrawalBroadcasting inserts withdrawal.broadcasting webhook rows using
 // ctx, so they join the caller's transaction. The returned send delivers those
 // rows and runs only after that transaction commits. A nil send means no config
-// matched. The signing secret stays inside the send closure and is not logged.
+// matched. The queued message carries the config id. Deliver loads the signing secret and does not log it.
 func (s *Service) StageWithdrawalBroadcasting(ctx context.Context, tx *models.Transaction) (func(context.Context), error) {
 	if s == nil {
 		return nil, fmt.Errorf("stage withdrawal broadcasting: webhook service is required")
@@ -168,8 +168,8 @@ func (s *Service) StageWithdrawalBroadcasting(ctx context.Context, tx *models.Tr
 
 // StageSweepBroadcast inserts sweep.broadcast webhook rows using ctx, so they join
 // the caller's transaction. The returned send delivers those rows and runs only
-// after that transaction commits. A nil send means no config matched. The signing
-// secret stays inside the send closure and is not logged.
+// after that transaction commits. A nil send means no config matched. The queued
+// message carries the config id. Deliver loads the signing secret and does not log it.
 func (s *Service) StageSweepBroadcast(ctx context.Context, tx *models.Transaction) (func(context.Context), error) {
 	if s == nil {
 		return nil, fmt.Errorf("stage sweep broadcast: webhook service is required")
@@ -196,7 +196,7 @@ func (s *Service) StageSweepBroadcast(ctx context.Context, tx *models.Transactio
 // StageSweepConfirmed inserts sweep.confirmed webhook rows using ctx, so they
 // join the caller's transaction. The returned send delivers those rows and runs
 // only after that transaction commits. A nil send means no config matched. The
-// signing secret stays inside the send closure and is not logged.
+// queued message carries the config id. Deliver loads the signing secret and does not log it.
 func (s *Service) StageSweepConfirmed(ctx context.Context, tx *models.Transaction) (func(context.Context), error) {
 	if s == nil {
 		return nil, fmt.Errorf("stage sweep confirmed: webhook service is required")
@@ -224,7 +224,7 @@ func (s *Service) StageSweepConfirmed(ctx context.Context, tx *models.Transactio
 // using ctx, so they join the caller's transaction. The returned send delivers
 // those rows and runs only after that transaction commits. A nil send means no
 // config matched. This event has no transaction row, so transaction_id stays
-// empty. The signing secret stays inside the send closure and is not logged.
+// empty. The queued message carries the config id. Deliver loads the signing secret and does not log it.
 func (s *Service) StageWalletGasStatusChanged(ctx context.Context, walletID uuid.UUID, data interface{}) (func(context.Context), error) {
 	if s == nil {
 		return nil, fmt.Errorf("stage wallet gas status: webhook service is required")
@@ -301,7 +301,7 @@ func (s *Service) stageLegacyEvent(ctx context.Context, txID *uuid.UUID, eventTy
 			EventType:     eventType,
 			Payload:       string(payload),
 			DeliveryURL:   cfg.URL,
-			Secret:        cfg.Secret,
+			ConfigID:      cfg.ID.String(),
 			Attempt:       1,
 		})
 	}
@@ -349,9 +349,15 @@ const (
 )
 
 // Deliver executes the HTTP delivery. Called by the SQS Lambda worker.
+// The signing secret is loaded from the config id. It is not taken from the
+// queue payload and it is not logged.
 // Returns error to trigger SQS retry → eventually DLQ after 10 failures.
 func (s *Service) Deliver(ctx context.Context, msg types.WebhookMessage) error {
-	resp, err := postSignedWebhook(ctx, msg.DeliveryURL, msg.Secret, msg.Payload, string(msg.EventType), msg.EventID, s.resolveDeliverySettings(ctx).Timeout)
+	secret, err := s.signingSecret(ctx, msg.ConfigID)
+	if err != nil {
+		return err
+	}
+	resp, err := postSignedWebhook(ctx, msg.DeliveryURL, secret, msg.Payload, string(msg.EventType), msg.EventID, s.resolveDeliverySettings(ctx).Timeout)
 	if err != nil {
 		if httpclient.IsBuild(err) {
 			return fmt.Errorf("build request: %w", err)
@@ -370,6 +376,25 @@ func (s *Service) Deliver(ctx context.Context, msg types.WebhookMessage) error {
 
 	slog.Info("webhook delivered", "event_id", msg.EventID, "url", msg.DeliveryURL)
 	return nil
+}
+
+// signingSecret loads the signing secret for configID. The secret is not logged.
+func (s *Service) signingSecret(ctx context.Context, configID string) (string, error) {
+	if s == nil || s.webhookConfigRepo == nil {
+		return "", errors.New("webhook config store is required")
+	}
+	id, err := uuid.Parse(strings.TrimSpace(configID))
+	if err != nil || id == uuid.Nil {
+		return "", errors.New("webhook config id is required")
+	}
+	cfg, err := s.webhookConfigRepo.FindByID(ctx, id)
+	if errors.Is(err, models.ErrRepositoryNotFound) {
+		cfg, err = nil, nil
+	}
+	if err != nil || cfg == nil || !cfg.IsActive {
+		return "", errors.New(errConfigInactive)
+	}
+	return cfg.Secret, nil
 }
 
 func (s *Service) markAttempt(ctx context.Context, eventID, errMsg string) {

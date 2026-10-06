@@ -142,7 +142,7 @@ func (s *Service) enqueueForConfig(ctx context.Context, cfg models.WebhookConfig
 		EventType:   event.EventType,
 		Payload:     string(payload),
 		DeliveryURL: cfg.URL,
-		Secret:      cfg.Secret,
+		ConfigID:    cfg.ID.String(),
 		Attempt:     1,
 	}
 	if event.TransactionID != nil {
@@ -207,7 +207,7 @@ func (s *Service) deliverStored(ctx context.Context, event models.WebhookEvent) 
 		EventType:   types.EventType(event.EventType),
 		Payload:     event.Payload,
 		DeliveryURL: event.DeliveryURL,
-		Secret:      cfg.Secret,
+		ConfigID:    cfg.ID.String(),
 		Attempt:     event.Attempts + 1,
 	}
 	if event.TransactionID != nil {

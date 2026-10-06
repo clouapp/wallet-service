@@ -11,6 +11,7 @@ import (
 
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/pkg/types"
+	"github.com/macrowallets/waas/tests/mocks"
 )
 
 func TestIntegrationDeliverDepositConfirmed(t *testing.T) {
@@ -26,6 +27,7 @@ func TestIntegrationDeliverDepositConfirmed(t *testing.T) {
 		t.Fatal("MARKETS_WEBHOOK_URL is set but MARKETS_WEBHOOK_SECRET, MARKETS_MACRO_ADDRESS, or MARKETS_BITGO_ADDRESS is empty")
 	}
 
+	mocks.TestDB(t)
 	svc := newTestWebhookSvc()
 	ctx := context.Background()
 
@@ -64,12 +66,16 @@ func deliverDepositConfirmed(t *testing.T, svc *Service, ctx context.Context, we
 		t.Fatalf("marshal deposit.confirmed: %v", err)
 	}
 
+	cfg, err := svc.CreateConfig(ctx, webhookURL, secret, []string{string(types.EventDepositConfirmed)}, nil)
+	if err != nil {
+		t.Fatalf("create webhook config: %v", err)
+	}
 	return svc.Deliver(ctx, types.WebhookMessage{
 		EventID:     uuid.New().String(),
 		EventType:   types.EventDepositConfirmed,
 		Payload:     string(payload),
 		DeliveryURL: webhookURL,
-		Secret:      secret,
+		ConfigID:    cfg.ID.String(),
 		Attempt:     1,
 	})
 }

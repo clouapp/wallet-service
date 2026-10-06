@@ -48,7 +48,7 @@ func TestDepositScanEvent(t *testing.T) {
 func TestWebhookMessage_Fields(t *testing.T) {
 	msg := WebhookMessage{
 		EventID: "e1", TransactionID: "t1", EventType: EventDepositConfirmed,
-		Payload: "{}", DeliveryURL: "https://example.com", Secret: "s", Attempt: 3,
+		Payload: "{}", DeliveryURL: "https://example.com", ConfigID: "cfg-1", Attempt: 3,
 	}
 	if msg.EventID != "e1" {
 		t.Error("EventID")

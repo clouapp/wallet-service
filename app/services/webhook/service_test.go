@@ -6,21 +6,55 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/goravel/framework/facades"
 
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/repositories"
+	"github.com/macrowallets/waas/pkg/httpclient"
 	"github.com/macrowallets/waas/pkg/types"
 	"github.com/macrowallets/waas/tests/mocks"
 	"github.com/macrowallets/waas/tests/testutil"
 )
+
+// The delivery adapter imports this package, so these tests cannot import it.
+// Register the same POST the adapter uses so Deliver signs with the loaded secret.
+func init() {
+	SetDeliveryClient(func() DeliveryClient { return testHTTPDelivery{} })
+}
+
+type testHTTPDelivery struct{}
+
+func (testHTTPDelivery) Post(ctx context.Context, call SignedDelivery) (httpclient.Response, error) {
+	if ctx == nil {
+		return httpclient.Response{}, fmt.Errorf("webhook delivery: context is required")
+	}
+	if call.Timeout <= 0 {
+		return httpclient.Response{}, fmt.Errorf("webhook delivery: timeout is required")
+	}
+	return httpclient.NewClient(call.Timeout).Do(ctx, httpclient.Request{
+		Method: httpclient.MethodPost,
+		URL:    call.URL,
+		Header: map[string]string{
+			"Content-Type":        "application/json",
+			"X-Vault-Signature":   call.Signature,
+			"X-Vault-Event":       call.EventType,
+			"X-Vault-Delivery-Id": call.DeliveryID,
+			"X-Vault-Timestamp":   fmt.Sprintf("%d", time.Now().Unix()),
+		},
+		Body:    call.Body,
+		HasBody: true,
+	})
+}
 
 func TestMain(m *testing.M) {
 	// Boot Goravel once for all tests in this package
@@ -117,16 +151,20 @@ func TestDeliver_Success(t *testing.T) {
 		eventID, tx.ID, payload, server.URL)
 
 	secret := "test-secret"
+	cfg, err := svc.CreateConfig(ctx, server.URL, secret, []string{"deposit.confirmed"}, nil)
+	if err != nil {
+		t.Fatalf("CreateConfig: %v", err)
+	}
 	msg := types.WebhookMessage{
 		EventID:     eventID,
 		EventType:   types.EventDepositConfirmed,
 		Payload:     payload,
 		DeliveryURL: server.URL,
-		Secret:      secret,
+		ConfigID:    cfg.ID.String(),
 		Attempt:     1,
 	}
 
-	err := svc.Deliver(ctx, msg)
+	err = svc.Deliver(ctx, msg)
 	if err != nil {
 		t.Fatalf("Deliver: %v", err)
 	}
@@ -178,11 +216,15 @@ func TestDeliver_Failure(t *testing.T) {
 		VALUES ($1, $2, 'deposit.confirmed', '{}', $3, 'pending', 0, 10, NOW())`,
 		eventID, tx.ID, server.URL)
 
+	cfg, err := svc.CreateConfig(ctx, server.URL, "s", []string{"deposit.confirmed"}, nil)
+	if err != nil {
+		t.Fatalf("CreateConfig: %v", err)
+	}
 	msg := types.WebhookMessage{
-		EventID: eventID, Payload: "{}", DeliveryURL: server.URL, Secret: "s", Attempt: 1,
+		EventID: eventID, Payload: "{}", DeliveryURL: server.URL, ConfigID: cfg.ID.String(), Attempt: 1,
 	}
 
-	err := svc.Deliver(ctx, msg)
+	err = svc.Deliver(ctx, msg)
 	if err == nil {
 		t.Fatal("expected error for 500 response")
 	}
@@ -210,13 +252,81 @@ func TestDeliver_Unreachable(t *testing.T) {
 		VALUES ($1, $2, 'deposit.confirmed', '{}', 'http://localhost:1/nope', 'pending', 0, 10, NOW())`,
 		eventID, tx.ID)
 
+	cfg, err := svc.CreateConfig(ctx, "http://localhost:1/nope", "s", []string{"deposit.confirmed"}, nil)
+	if err != nil {
+		t.Fatalf("CreateConfig: %v", err)
+	}
 	msg := types.WebhookMessage{
-		EventID: eventID, Payload: "{}", DeliveryURL: "http://localhost:1/nope", Secret: "s",
+		EventID: eventID, Payload: "{}", DeliveryURL: "http://localhost:1/nope", ConfigID: cfg.ID.String(),
 	}
 
-	err := svc.Deliver(ctx, msg)
+	err = svc.Deliver(ctx, msg)
 	if err == nil {
 		t.Fatal("expected error for unreachable server")
+	}
+}
+
+type recordingWebhookSender struct {
+	messages []types.WebhookMessage
+}
+
+func (r *recordingWebhookSender) SendWebhook(_ context.Context, msg types.WebhookMessage) error {
+	r.messages = append(r.messages, msg)
+	return nil
+}
+
+func TestEnqueueEvent_QueuePayloadCarriesNoSecret(t *testing.T) {
+	mocks.TestDB(t)
+	ctx := context.Background()
+	const secret = "queue-payload-must-not-carry-this-secret"
+	sender := &recordingWebhookSender{}
+	svc := NewService(Deps{
+		SQS: sender,
+		Configs: repositories.NewWebhookConfigRepository(repositories.WebhookConfigRepositoryDeps{
+			Cipher: facades.Crypt(),
+		}),
+		Events: repositories.NewWebhookEventRepository(nil),
+	})
+	events := []string{string(types.EventDepositPending), string(types.EventWithdrawalBroadcasting)}
+	cfg, err := svc.CreateConfig(ctx, "https://example.com/hook", secret, events, nil)
+	if err != nil {
+		t.Fatalf("CreateConfig: %v", err)
+	}
+	w := mocks.InsertWallet(t, "eth")
+	tx := mocks.InsertTransaction(t, w.ID, nil, "eth", "deposit", "pending", "eth", "100", 50)
+
+	svc.EnqueueEvent(ctx, tx.ID, types.EventDepositPending, map[string]string{"test": "data"})
+	if _, err := svc.EnqueueScoped(ctx, ScopedEvent{
+		EventType: types.EventDepositPending,
+		SubjectID: uuid.NewString(),
+		WalletID:  w.ID,
+		Data:      map[string]string{"test": "data"},
+	}); err != nil {
+		t.Fatalf("EnqueueScoped: %v", err)
+	}
+	send, err := svc.StageWithdrawalBroadcasting(ctx, &tx)
+	if err != nil {
+		t.Fatalf("StageWithdrawalBroadcasting: %v", err)
+	}
+	if send == nil {
+		t.Fatal("expected a queued withdrawal webhook")
+	}
+	send(ctx)
+
+	if len(sender.messages) != 3 {
+		t.Fatalf("queued messages = %d, want 3", len(sender.messages))
+	}
+	for _, msg := range sender.messages {
+		raw, err := json.Marshal(msg)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if strings.Contains(string(raw), secret) || strings.Contains(string(raw), `"secret"`) {
+			t.Fatal("queue payload carries a secret")
+		}
+		if msg.ConfigID != cfg.ID.String() {
+			t.Fatalf("config id = %s", msg.ConfigID)
+		}
 	}
 }
 

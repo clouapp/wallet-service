@@ -58,12 +58,14 @@ func deliveredSignature(t *testing.T, secret string) string {
 		}),
 		Events: repositories.NewWebhookEventRepository(nil),
 	})
+	cfg, err := svc.CreateConfig(context.Background(), server.URL, secret, []string{"deposit.confirmed"}, nil)
+	require.NoError(t, err)
 	require.NoError(t, svc.Deliver(context.Background(), types.WebhookMessage{
 		EventID:     uuid.NewString(),
 		EventType:   types.EventDepositConfirmed,
 		Payload:     webhookPayload,
 		DeliveryURL: server.URL,
-		Secret:      secret,
+		ConfigID:    cfg.ID.String(),
 		Attempt:     1,
 	}))
 	require.NotEmpty(t, signature)

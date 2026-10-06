@@ -334,13 +334,15 @@ const (
 // SQS Message payloads
 // ---------------------------------------------------------------------------
 
+// WebhookMessage is the SQS delivery job. It carries the webhook config id.
+// The signing secret is loaded when the job runs and is not part of this payload.
 type WebhookMessage struct {
 	EventID       string    `json:"event_id"`
 	TransactionID string    `json:"transaction_id"`
 	EventType     EventType `json:"event_type"`
 	Payload       string    `json:"payload"` // JSON string
 	DeliveryURL   string    `json:"delivery_url"`
-	Secret        string    `json:"secret"`
+	ConfigID      string    `json:"config_id"`
 	Attempt       int       `json:"attempt"`
 }
 

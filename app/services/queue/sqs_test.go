@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/macrowallets/waas/pkg/types"
@@ -41,7 +42,7 @@ func TestWebhookMessage_Serialization(t *testing.T) {
 		EventType:     types.EventDepositConfirmed,
 		Payload:       `{"amount":"100"}`,
 		DeliveryURL:   "https://example.com/wh",
-		Secret:        "secret",
+		ConfigID:      "11111111-1111-1111-1111-111111111111",
 		Attempt:       1,
 	}
 
@@ -72,7 +73,7 @@ func TestSendWebhook_KeepsTheEncodedBodyAndAttribute(t *testing.T) {
 		EventType:     types.EventDepositConfirmed,
 		Payload:       `{"amount":"100"}`,
 		DeliveryURL:   "https://example.com/wh",
-		Secret:        "test-webhook-secret",
+		ConfigID:      "11111111-1111-1111-1111-111111111111",
 		Attempt:       1,
 	}
 	transport := &stubTransport{}
@@ -94,6 +95,9 @@ func TestSendWebhook_KeepsTheEncodedBodyAndAttribute(t *testing.T) {
 	}
 	if len(transport.attributes) != 1 || transport.attributes["event_type"] != string(msg.EventType) {
 		t.Fatalf("event_type attribute = %v", transport.attributes["event_type"])
+	}
+	if strings.Contains(transport.body, `"secret"`) {
+		t.Fatal("queued webhook body carries a secret")
 	}
 }
 
