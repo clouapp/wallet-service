@@ -169,7 +169,7 @@ func fakeBitcoindChain(t *testing.T, utxos map[string][]fakeUTXO) *bitcoinchain.
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{"jsonrpc": "2.0", "id": req.ID, "result": result})
 	}))
 	t.Cleanup(srv.Close)
-	return bitcoinchain.NewBitcoinLive(bitcoinchain.BitcoinConfig{ChainIDStr: models.ChainBTC, NativeSymbol: models.NativeBTC, RPCURL: srv.URL, IsTestnet: true})
+	return bitcoinchain.NewBitcoinLive(bitcoinchain.BitcoinConfig{ChainIDStr: models.ChainBTC, NativeSymbol: models.NativeBTC, NativeDecimal: 8, RPCURL: srv.URL, IsTestnet: true})
 }
 
 func btcPlanner(t *testing.T, utxos map[string][]fakeUTXO, children ...string) (*service, uuid.UUID, *bitcoinchain.BitcoinLive) {

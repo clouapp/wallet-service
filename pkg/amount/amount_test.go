@@ -48,6 +48,41 @@ func TestNormalizeDecimal(t *testing.T) {
 	}
 }
 
+func TestDecimalToBaseUnits(t *testing.T) {
+	cases := []struct {
+		value    string
+		decimals int
+		want     string
+	}{
+		{"1.5", 8, "150000000"},
+		{"1.5", 2, "150"},
+		{"0.00000001", 8, "1"},
+		{"0", 18, "0"},
+		{" 3 ", 0, "3"},
+		{"25000000", 0, "25000000"},
+	}
+	for _, c := range cases {
+		got, err := DecimalToBaseUnits(c.value, c.decimals)
+		if err != nil || got.String() != c.want {
+			t.Errorf("DecimalToBaseUnits(%q, %d) = %v, %v; want %s", c.value, c.decimals, got, err, c.want)
+		}
+	}
+	for _, bad := range []struct {
+		value    string
+		decimals int
+	}{
+		{"-1", 8},
+		{"1.5", 0},
+		{"1e6", 6},
+		{"", 8},
+		{"abc", 8},
+	} {
+		if _, err := DecimalToBaseUnits(bad.value, bad.decimals); err == nil {
+			t.Errorf("DecimalToBaseUnits(%q, %d) must fail", bad.value, bad.decimals)
+		}
+	}
+}
+
 func TestParseBaseUnits(t *testing.T) {
 	if units, ok := ParseBaseUnits(" 25000000 "); !ok || units.String() != "25000000" {
 		t.Fatalf("ParseBaseUnits(25000000) = %v, %v", units, ok)

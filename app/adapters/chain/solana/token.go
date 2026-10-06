@@ -39,9 +39,11 @@ func (a *SolanaLive) GetTokenBalance(ctx context.Context, address string, token 
 		return nil, callErr
 	}
 	amt, ok := new(big.Int).SetString(result.Value.Amount, 10)
-	if !ok {
+	if !ok || amt.Sign() < 0 {
 		return nil, fmt.Errorf("sol token amount %q", result.Value.Amount)
 	}
+	// The token row's decimals win. The mint's reported decimals fill in only
+	// when the row did not carry any.
 	dec := token.Decimals
 	if dec == 0 {
 		dec = result.Value.Decimals

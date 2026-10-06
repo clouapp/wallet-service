@@ -99,6 +99,7 @@ func registerActiveChains(reg *chainpkg.Registry, rows []models.Chain, tokensByC
 				ChainIDStr:    ch.ID,
 				ChainName:     ch.Name,
 				NativeSymbol:  ch.NativeSymbol,
+				NativeDecimal: uint8(ch.NativeDecimals),
 				RPCURL:        rpcURL,
 				Network:       network,
 				IsTestnet:     ch.IsTestnet,
@@ -109,6 +110,7 @@ func registerActiveChains(reg *chainpkg.Registry, rows []models.Chain, tokensByC
 				ChainIDStr:    ch.ID,
 				ChainName:     ch.Name,
 				NativeSymbol:  ch.NativeSymbol,
+				NativeDecimal: uint8(ch.NativeDecimals),
 				RPCURL:        rpcURL,
 				Confirmations: uint64(ch.RequiredConfirmations),
 			})

@@ -14,6 +14,7 @@ type SolanaConfig struct {
 	ChainIDStr    string
 	ChainName     string
 	NativeSymbol  string
+	NativeDecimal uint8
 	RPCURL        string
 	Confirmations uint64
 }
@@ -62,6 +63,14 @@ func (a *SolanaLive) Name() string                  { return a.cfg.ChainName }
 func (a *SolanaLive) RequiredConfirmations() uint64 { return a.cfg.Confirmations }
 func (a *SolanaLive) NativeAsset() string           { return a.cfg.NativeSymbol }
 
+// NativeDecimals is the chain row's native_decimals for amounts leaving this adapter.
+func (a *SolanaLive) NativeDecimals() int {
+	if a == nil {
+		return 0
+	}
+	return int(a.cfg.NativeDecimal)
+}
+
 func (a *SolanaLive) DeriveAddress(masterKey []byte, index uint32) (string, error) {
 	return "", fmt.Errorf("SOL key derivation not implemented — use ed25519 SLIP-0010")
 }
@@ -87,10 +96,10 @@ func (a *SolanaLive) ValidateAddress(address string) bool {
 }
 
 func (a *SolanaLive) EstimateFee(ctx context.Context, req types.TransferRequest) (*types.FeeEstimate, error) {
-	fee := new(big.Int).SetInt64(5000)
+	fee := big.NewInt(solanaNativeFeeLamports)
 
 	return &types.FeeEstimate{
-		Fee:      fmtUnits(fee, 9),
+		Fee:      fmtUnits(fee, a.cfg.NativeDecimal),
 		FeeAsset: a.cfg.NativeSymbol,
 	}, nil
 }
@@ -114,7 +123,7 @@ func (a *SolanaLive) GetBalance(ctx context.Context, address string) (*types.Bal
 		return nil, err
 	}
 	bal := new(big.Int).SetUint64(result.Value)
-	return &types.Balance{Address: address, Asset: a.cfg.NativeSymbol, Amount: bal, Decimals: 9, Human: fmtUnits(bal, 9)}, nil
+	return &types.Balance{Address: address, Asset: a.cfg.NativeSymbol, Amount: bal, Decimals: a.cfg.NativeDecimal, Human: fmtUnits(bal, a.cfg.NativeDecimal)}, nil
 }
 
 func (a *SolanaLive) BuildTransfer(ctx context.Context, req types.TransferRequest) (*types.UnsignedTx, error) {

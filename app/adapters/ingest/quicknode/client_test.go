@@ -5,7 +5,6 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
-	"math/big"
 	"strings"
 	"testing"
 	"time"
@@ -87,8 +86,9 @@ func TestParsePayload_SampleBTCTransaction(t *testing.T) {
 	assert.Nil(t, tx.Token)
 	assert.True(t, time.Unix(1679000000, 0).Equal(tx.Timestamp))
 
-	expected := big.NewInt(50_000_000)
-	assert.Equal(t, 0, tx.Amount.Cmp(expected), "0.5 BTC = 50M satoshis")
+	assert.True(t, tx.AmountIsHuman)
+	assert.Equal(t, "0.5", tx.HumanAmount)
+	assert.Nil(t, tx.Amount)
 }
 
 func TestParsePayload_MultipleItems(t *testing.T) {
@@ -100,8 +100,10 @@ func TestParsePayload_MultipleItems(t *testing.T) {
 	out, err := p.ParsePayload(payload)
 	require.NoError(t, err)
 	require.Len(t, out, 2)
-	assert.Equal(t, int64(1), out[0].Amount.Int64())
-	assert.Equal(t, int64(100_000_000), out[1].Amount.Int64())
+	assert.Equal(t, "0.00000001", out[0].HumanAmount)
+	assert.Equal(t, "1", out[1].HumanAmount)
+	assert.True(t, out[0].AmountIsHuman)
+	assert.True(t, out[1].AmountIsHuman)
 }
 
 func TestParsePayload_InvalidJSON(t *testing.T) {

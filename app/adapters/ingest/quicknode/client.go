@@ -16,7 +16,6 @@ import (
 	"github.com/macrowallets/waas/app/services/chain"
 	"github.com/macrowallets/waas/app/services/ingest/providers"
 	"github.com/macrowallets/waas/pkg/httpclient"
-	"github.com/macrowallets/waas/pkg/numeric"
 )
 
 const (
@@ -24,8 +23,6 @@ const (
 	quicknodeDefaultSignatureHeader = "X-QN-Signature"
 	quicknodeHTTPTimeout            = 30 * time.Second
 	quicknodeDefaultNetwork         = "bitcoin-mainnet"
-	// quicknodeBTCDecimals converts a BTC amount to satoshis.
-	quicknodeBTCDecimals = 8
 )
 
 // QuickNodeProvider manages QuickNode Streams webhooks for Bitcoin block filtering.
@@ -304,27 +301,26 @@ func quicknodeItemToTransfer(item quicknodeTransferItem) (providers.InboundTrans
 	if item.Amount.IsNegative() {
 		return providers.InboundTransfer{}, fmt.Errorf("negative amount")
 	}
-	amount, err := numeric.ToBaseUnits(item.Amount, quicknodeBTCDecimals)
-	if err != nil {
-		return providers.InboundTransfer{}, fmt.Errorf("amount %s: %w", item.Amount.String(), err)
-	}
 
 	ts := time.Unix(item.Timestamp, 0)
 	if item.Timestamp < 0 {
 		return providers.InboundTransfer{}, fmt.Errorf("invalid timestamp %d", item.Timestamp)
 	}
 
+	// The amount is a human decimal. The chain row's native decimals scale it
+	// in the ingest service; this adapter does not guess satoshis.
 	return providers.InboundTransfer{
-		TxHash:      item.Txid,
-		BlockNumber: item.BlockNumber,
-		BlockHash:   item.BlockHash,
-		From:        "",
-		To:          item.ToAddress,
-		Amount:      amount,
-		Asset:       "BTC",
-		Token:       nil,
-		LogIndex:    -1,
-		Timestamp:   ts,
+		TxHash:        item.Txid,
+		BlockNumber:   item.BlockNumber,
+		BlockHash:     item.BlockHash,
+		From:          "",
+		To:            item.ToAddress,
+		AmountIsHuman: true,
+		HumanAmount:   item.Amount.String(),
+		Asset:         "BTC",
+		Token:         nil,
+		LogIndex:      -1,
+		Timestamp:     ts,
 	}, nil
 }
 

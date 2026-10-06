@@ -132,6 +132,45 @@ func TestProcessTransfers_HumanUSDTUsesSeedDecimals(t *testing.T) {
 	assert.Equal(t, "1500000", txs.created[0].Amount)
 }
 
+func TestProcessTransfers_NativeHumanUsesChainDecimals(t *testing.T) {
+	const to = "bc1qreceiver"
+	reg := chain.NewRegistry()
+	mockChain := mocks.NewMockChain(models.ChainBTC)
+	mockChain.NativeAssetVal = models.NativeBTC
+	mockChain.NativeDecimalsVal = 8
+	reg.RegisterChain(mockChain)
+	addrs := &ingestAddressRepo{addr: &models.Address{
+		ID:             uuid.New(),
+		WalletID:       uuid.New(),
+		ExternalUserID: "user-1",
+		Chain:          models.ChainBTC,
+		Address:        to,
+	}}
+	txs := &ingestTxRepo{}
+	svc := NewService(Deps{Registry: reg, AddressRepo: addrs, Transactions: txs})
+
+	transfer := providers.InboundTransfer{
+		TxHash:        "abc",
+		To:            to,
+		AmountIsHuman: true,
+		HumanAmount:   "0.5",
+		Asset:         "BTC",
+		LogIndex:      -1,
+	}
+	err := svc.processTransfer(t.Context(), models.ChainBTC, mockChain, transfer)
+	require.NoError(t, err)
+	require.Len(t, txs.created, 1)
+	assert.Equal(t, "50000000", txs.created[0].Amount)
+	assert.Equal(t, "BTC", txs.created[0].Asset)
+
+	mockChain.NativeDecimalsVal = 0
+	skipped := &ingestTxRepo{}
+	svc.txRepo = skipped
+	err = svc.processTransfer(t.Context(), models.ChainBTC, mockChain, transfer)
+	require.Error(t, err)
+	assert.Empty(t, skipped.created)
+}
+
 func TestProcessTransfers_AddressSetKeepsTheMembershipDecision(t *testing.T) {
 	const to = "0xReceiver"
 	reg, addrs, txs := ingestFixture(to)

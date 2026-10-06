@@ -168,6 +168,32 @@ func TestParsePayload_ERC20TokenTransfer(t *testing.T) {
 // diffAddresses
 // ---------------------------------------------------------------------------
 
+func TestParsePayload_NativeOmitsRawValueKeepsHumanAmount(t *testing.T) {
+	payload := []byte(`{
+		"event": {
+			"activity": [{
+				"blockNum": "0x1",
+				"hash": "0xnativehuman",
+				"fromAddress": "0xfrom",
+				"toAddress": "0xto",
+				"value": 1.5,
+				"asset": "ETH",
+				"category": "external",
+				"rawContract": {"rawValue": "", "address": "", "decimals": 18}
+			}]
+		}
+	}`)
+
+	transfers, err := NewAlchemyProvider("test-key").ParsePayload(payload)
+	require.NoError(t, err)
+	require.Len(t, transfers, 1)
+	tx := transfers[0]
+	assert.True(t, tx.AmountIsHuman)
+	assert.Equal(t, "1.5", tx.HumanAmount)
+	assert.Nil(t, tx.Amount)
+	assert.Nil(t, tx.Token)
+}
+
 func TestParsePayload_ERC20OmitsRawValueKeepsHumanAmount(t *testing.T) {
 	payload := []byte(`{
 		"event": {

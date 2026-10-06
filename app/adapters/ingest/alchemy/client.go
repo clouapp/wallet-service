@@ -15,7 +15,6 @@ import (
 	"github.com/macrowallets/waas/app/services/chain"
 	"github.com/macrowallets/waas/app/services/ingest/providers"
 	"github.com/macrowallets/waas/pkg/httpclient"
-	"github.com/macrowallets/waas/pkg/numeric"
 	"github.com/macrowallets/waas/pkg/types"
 	"github.com/shopspring/decimal"
 )
@@ -26,8 +25,6 @@ const (
 	alchemyAuthTokenHdr  = "X-Alchemy-Token"
 	alchemyAddrPageLimit = 100
 	alchemyHTTPTimeout   = 30 * time.Second
-	// alchemyNativeDecimals converts a native ETH value to wei.
-	alchemyNativeDecimals = 18
 )
 
 type AlchemyProvider struct {
@@ -324,11 +321,16 @@ func activityToTransfer(act alchemyActivity) (providers.InboundTransfer, error) 
 	amountIsHuman := false
 	humanAmount := ""
 	var amount *big.Int
-	if act.Category == "token" && act.RawContract.RawValue == "" {
+	// A missing raw value is a human decimal. The ingest service scales it with
+	// the token row or the chain row, never a hardcoded decimal count.
+	if act.RawContract.RawValue == "" {
+		if act.Value.IsNegative() {
+			return providers.InboundTransfer{}, fmt.Errorf("negative amount")
+		}
 		amountIsHuman = true
 		humanAmount = act.Value.String()
 	} else {
-		amount, err = parseAmount(act)
+		amount, err = parseRawValue(act.RawContract.RawValue)
 		if err != nil {
 			return providers.InboundTransfer{}, err
 		}
@@ -366,21 +368,14 @@ func activityToTransfer(act alchemyActivity) (providers.InboundTransfer, error) 
 	return t, nil
 }
 
-// parseAmount prefers the exact raw value; otherwise it converts the decimal value
-// to wei (native ETH has alchemyNativeDecimals).
-func parseAmount(act alchemyActivity) (*big.Int, error) {
-	if act.RawContract.RawValue != "" {
-		raw := strings.TrimPrefix(act.RawContract.RawValue, "0x")
-		if val, ok := new(big.Int).SetString(raw, 16); ok {
-			return val, nil
-		}
+// parseRawValue reads an exact base-unit integer from a 0x hex string.
+func parseRawValue(rawValue string) (*big.Int, error) {
+	raw := strings.TrimPrefix(rawValue, "0x")
+	val, ok := new(big.Int).SetString(raw, 16)
+	if !ok || val.Sign() < 0 {
+		return nil, fmt.Errorf("raw value %q", rawValue)
 	}
-
-	wei, err := numeric.ToBaseUnits(act.Value, alchemyNativeDecimals)
-	if err != nil {
-		return nil, fmt.Errorf("value %s: %w", act.Value.String(), err)
-	}
-	return wei, nil
+	return val, nil
 }
 
 func parseHexUint64(s string) (uint64, error) {

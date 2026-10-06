@@ -17,6 +17,7 @@ import (
 	"github.com/macrowallets/waas/app/services/ingest/providers"
 	"github.com/macrowallets/waas/app/services/webhook"
 	"github.com/macrowallets/waas/app/services/withdraw"
+	"github.com/macrowallets/waas/pkg/amount"
 	"github.com/macrowallets/waas/pkg/types"
 )
 
@@ -171,11 +172,27 @@ func (s *Service) processTransfer(ctx context.Context, chainID string, adapter t
 			}
 			transfer.Amount = base.BaseUnits
 		}
+	} else if transfer.AmountIsHuman {
+		reader, ok := adapter.(interface{ NativeDecimals() int })
+		if !ok {
+			return fmt.Errorf("chain %s native decimals are not loaded", chainID)
+		}
+		base, convErr := amount.DecimalToBaseUnits(transfer.HumanAmount, reader.NativeDecimals())
+		if convErr != nil {
+			return convErr
+		}
+		transfer.Amount = base
+		if transfer.Asset != "" {
+			asset = types.CanonicalAssetSymbol(transfer.Asset)
+		}
 	} else if transfer.Asset != "" {
 		asset = types.CanonicalAssetSymbol(transfer.Asset)
 	}
 	if transfer.Amount == nil {
 		return fmt.Errorf("missing amount")
+	}
+	if transfer.Amount.Sign() < 0 {
+		return fmt.Errorf("amount %s: %w", transfer.Amount, amount.ErrNegativeAmount)
 	}
 
 	tx := &models.Transaction{

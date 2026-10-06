@@ -92,7 +92,7 @@ func (f *fakeEsplora) totalHits() int {
 // adapter is a REST BitcoinLive against the fake whose rate-limit backoff records
 // instead of sleeping.
 func (f *fakeEsplora) adapter(sleeps *[]time.Duration) *BitcoinLive {
-	live := NewBitcoinLive(BitcoinConfig{ChainIDStr: models.ChainTBTC, NativeSymbol: models.NativeBTC, RPCURL: f.srv.URL + "/testnet4/api", IsTestnet: true})
+	live := NewBitcoinLive(BitcoinConfig{ChainIDStr: models.ChainTBTC, NativeSymbol: models.NativeBTC, NativeDecimal: 8, RPCURL: f.srv.URL + "/testnet4/api", IsTestnet: true})
 	live.restAPI = true
 	live.esploraRetry.jitter = func(time.Duration) time.Duration { return 0 }
 	live.esploraRetry.sleep = func(ctx context.Context, d time.Duration) error {
@@ -241,7 +241,7 @@ func fakeBitcoind(t *testing.T, answers map[string]string) *BitcoinLive {
 		_, _ = w.Write([]byte(answer))
 	}))
 	t.Cleanup(srv.Close)
-	return NewBitcoinLive(BitcoinConfig{ChainIDStr: models.ChainTBTC, RPCURL: srv.URL, IsTestnet: true})
+	return NewBitcoinLive(BitcoinConfig{ChainIDStr: models.ChainTBTC, NativeDecimal: 8, RPCURL: srv.URL, IsTestnet: true})
 }
 
 func TestGetTransactionBlockRPC(t *testing.T) {

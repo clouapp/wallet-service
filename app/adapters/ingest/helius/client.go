@@ -18,15 +18,12 @@ import (
 	"github.com/macrowallets/waas/app/services/chain"
 	"github.com/macrowallets/waas/app/services/ingest/providers"
 	"github.com/macrowallets/waas/pkg/httpclient"
-	"github.com/macrowallets/waas/pkg/numeric"
 	"github.com/macrowallets/waas/pkg/types"
 )
 
 const (
 	heliusAPIBase     = "https://api-mainnet.helius-rpc.com"
 	heliusHTTPTimeout = 30 * time.Second
-	// heliusMaxTokenDecimals bounds SPL mint decimals.
-	heliusMaxTokenDecimals = 18
 
 	heliusWebhookTypeMainnet = "enhanced"
 	heliusWebhookTypeDevnet  = "enhancedDevnet"
@@ -290,6 +287,9 @@ func (h *HeliusProvider) ParsePayload(body []byte) ([]providers.InboundTransfer,
 			if nt.ToUserAccount == "" && nt.FromUserAccount == "" {
 				continue
 			}
+			if nt.Amount < 0 {
+				return nil, fmt.Errorf("helius: negative amount (tx=%s)", tx.Signature)
+			}
 			out = append(out, providers.InboundTransfer{
 				TxHash:      tx.Signature,
 				BlockNumber: tx.Slot,
@@ -321,18 +321,13 @@ func (h *HeliusProvider) ParsePayload(body []byte) ([]providers.InboundTransfer,
 				LogIndex:  -1,
 				Timestamp: ts,
 			}
-			if tt.Decimals == nil {
-				transfer.AmountIsHuman = true
-				transfer.HumanAmount = tt.TokenAmount.String()
-				transfer.Token.Decimals = 0
-			} else {
-				amount, err := humanToRawBigInt(tt.TokenAmount, *tt.Decimals)
-				if err != nil {
-					return nil, fmt.Errorf("helius: token amount (tx=%s mint=%s): %w", tx.Signature, tt.Mint, err)
-				}
-				transfer.Amount = amount
-				transfer.Token.Decimals = *tt.Decimals
+			if tt.TokenAmount.IsNegative() {
+				return nil, fmt.Errorf("helius: negative token amount (tx=%s mint=%s)", tx.Signature, tt.Mint)
 			}
+			// tokenAmount is a human decimal. The token row's decimals scale it
+			// in the ingest service; the payload's decimals are not that row.
+			transfer.AmountIsHuman = true
+			transfer.HumanAmount = tt.TokenAmount.String()
 			out = append(out, transfer)
 		}
 	}
@@ -382,16 +377,6 @@ func resolveHeliusAuthHeader(cfgSecret string) (string, error) {
 		return "", fmt.Errorf("helius: generate auth header: %w", err)
 	}
 	return "Bearer " + hex.EncodeToString(b[:]), nil
-}
-
-func humanToRawBigInt(human decimal.Decimal, decimals uint8) (*big.Int, error) {
-	if decimals > heliusMaxTokenDecimals {
-		return nil, fmt.Errorf("decimals %d out of range", decimals)
-	}
-	if human.IsNegative() {
-		return nil, fmt.Errorf("negative token amount")
-	}
-	return numeric.ToBaseUnits(human, int32(decimals))
 }
 
 func exchange(ctx context.Context, client *httpclient.Client, method, rawURL string, header map[string]string, body []byte) (int, []byte, error) {

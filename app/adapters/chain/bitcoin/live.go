@@ -12,13 +12,10 @@ import (
 
 	"github.com/macrowallets/waas/app/adapters/chain/rpc"
 	"github.com/macrowallets/waas/app/services/chain"
+	"github.com/macrowallets/waas/pkg/amount"
 	"github.com/macrowallets/waas/pkg/httpclient"
-	"github.com/macrowallets/waas/pkg/numeric"
 	"github.com/macrowallets/waas/pkg/types"
 )
-
-// btcDecimals is the number of decimal places of one BTC in satoshis.
-const btcDecimals = 8
 
 const bitcoinRESTTimeout = 30 * time.Second
 
@@ -26,6 +23,7 @@ type BitcoinConfig struct {
 	ChainIDStr     string
 	ChainName      string
 	NativeSymbol   string
+	NativeDecimal  uint8
 	RPCURL         string
 	RPCUser        string
 	RPCPass        string
@@ -112,6 +110,14 @@ func (a *BitcoinLive) Name() string                  { return a.cfg.ChainName }
 func (a *BitcoinLive) RequiredConfirmations() uint64 { return a.cfg.Confirmations }
 func (a *BitcoinLive) NativeAsset() string           { return a.cfg.NativeSymbol }
 
+// NativeDecimals is the chain row's native_decimals for amounts leaving this adapter.
+func (a *BitcoinLive) NativeDecimals() int {
+	if a == nil {
+		return 0
+	}
+	return int(a.cfg.NativeDecimal)
+}
+
 // IsTestnet reports whether the chain record points at Bitcoin testnet (tb1 addresses).
 func (a *BitcoinLive) IsTestnet() bool { return a.cfg.IsTestnet }
 
@@ -141,7 +147,7 @@ func (a *BitcoinLive) EstimateFee(ctx context.Context, req types.TransferRequest
 	}
 
 	return &types.FeeEstimate{
-		Fee:      fmtUnits(fee, 8),
+		Fee:      fmtUnits(fee, a.cfg.NativeDecimal),
 		FeeAsset: symbol,
 	}, nil
 }
@@ -162,13 +168,13 @@ func (a *BitcoinLive) getBalanceRPC(ctx context.Context, address string) (*types
 	}
 	total := big.NewInt(0)
 	for _, u := range utxos {
-		sats, err := btcToSats(u.Amount)
+		sats, err := a.btcToSats(u.Amount)
 		if err != nil {
 			return nil, fmt.Errorf("listunspent for %s: %w", address, err)
 		}
 		total.Add(total, sats)
 	}
-	return &types.Balance{Address: address, Asset: a.cfg.NativeSymbol, Amount: total, Decimals: 8, Human: fmtUnits(total, 8)}, nil
+	return &types.Balance{Address: address, Asset: a.cfg.NativeSymbol, Amount: total, Decimals: a.cfg.NativeDecimal, Human: fmtUnits(total, a.cfg.NativeDecimal)}, nil
 }
 
 // getBalanceREST fetches UTXOs via the Blockstream/mempool.space REST API
@@ -198,7 +204,7 @@ func (a *BitcoinLive) getBalanceREST(ctx context.Context, address string) (bal *
 	for _, u := range utxos {
 		total.Add(total, big.NewInt(u.Value))
 	}
-	return &types.Balance{Address: address, Asset: a.cfg.NativeSymbol, Amount: total, Decimals: 8, Human: fmtUnits(total, 8)}, nil
+	return &types.Balance{Address: address, Asset: a.cfg.NativeSymbol, Amount: total, Decimals: a.cfg.NativeDecimal, Human: fmtUnits(total, a.cfg.NativeDecimal)}, nil
 }
 
 func (a *BitcoinLive) GetTokenBalance(ctx context.Context, address string, token types.Token) (*types.Balance, error) {
@@ -294,7 +300,7 @@ func (a *BitcoinLive) scanBlockRPC(ctx context.Context, blockNum uint64) ([]type
 			if addr == "" {
 				continue
 			}
-			s, err := btcToSats(vout.Value)
+			s, err := a.btcToSats(vout.Value)
 			if err != nil {
 				return nil, fmt.Errorf("block %d tx %s: %w", blockNum, tx.Txid, err)
 			}
@@ -307,10 +313,10 @@ func (a *BitcoinLive) scanBlockRPC(ctx context.Context, blockNum uint64) ([]type
 	return transfers, nil
 }
 
-// btcToSats converts a bitcoind BTC amount (JSON number with up to 8 decimals) to
-// satoshis exactly.
-func btcToSats(btc decimal.Decimal) (*big.Int, error) {
-	sats, err := numeric.ToBaseUnits(btc, btcDecimals)
+// btcToSats converts a bitcoind coin amount into base units using the chain row's
+// native decimals.
+func (a *BitcoinLive) btcToSats(btc decimal.Decimal) (*big.Int, error) {
+	sats, err := amount.DecimalToBaseUnits(btc.String(), a.NativeDecimals())
 	if err != nil {
 		return nil, fmt.Errorf("btc amount %s: %w", btc.String(), err)
 	}

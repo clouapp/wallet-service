@@ -15,6 +15,7 @@ import (
 	gethtypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 
+	"github.com/macrowallets/waas/pkg/amount"
 	"github.com/macrowallets/waas/pkg/types"
 )
 
@@ -121,6 +122,14 @@ func (a *EVMLive) ID() string                    { return a.cfg.ChainIDStr }
 func (a *EVMLive) Name() string                  { return a.cfg.ChainName }
 func (a *EVMLive) RequiredConfirmations() uint64 { return a.cfg.Confirmations }
 func (a *EVMLive) NativeAsset() string           { return a.cfg.NativeSymbol }
+
+// NativeDecimals is the chain row's native_decimals for amounts leaving this adapter.
+func (a *EVMLive) NativeDecimals() int {
+	if a == nil {
+		return 0
+	}
+	return int(a.cfg.NativeDecimal)
+}
 
 func (a *EVMLive) DeriveAddress(masterKey []byte, index uint32) (string, error) {
 	// TODO: BIP-44 m/44'/60'/0'/0/{index} via hdkeychain
@@ -772,16 +781,9 @@ func topicToAddr(topic string) string {
 	return "0x" + t
 }
 
-func fmtUnits(amount *big.Int, decimals uint8) string {
-	if amount == nil {
+func fmtUnits(units *big.Int, decimals uint8) string {
+	if units == nil {
 		return "0"
 	}
-	d := new(big.Int).Exp(big.NewInt(10), big.NewInt(int64(decimals)), nil)
-	whole := new(big.Int).Div(amount, d)
-	frac := new(big.Int).Mod(amount, d)
-	if frac.Sign() == 0 {
-		return whole.String()
-	}
-	fracStr := strings.TrimRight(fmt.Sprintf("%0*s", decimals, frac.String()), "0")
-	return whole.String() + "." + fracStr
+	return amount.FormatBaseUnits(units, int(decimals))
 }

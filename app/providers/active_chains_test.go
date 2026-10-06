@@ -43,6 +43,7 @@ func TestRegisterActiveChains_KeepsTheSameActiveSet(t *testing.T) {
 			Name:                  "Bitcoin",
 			AdapterType:           models.AdapterTypeBitcoin,
 			NativeSymbol:          "btc",
+			NativeDecimals:        8,
 			IsTestnet:             true,
 			RequiredConfirmations: 3,
 			RpcURL:                "sealed-btc",
@@ -52,6 +53,7 @@ func TestRegisterActiveChains_KeepsTheSameActiveSet(t *testing.T) {
 			Name:                  "Solana",
 			AdapterType:           models.AdapterTypeSolana,
 			NativeSymbol:          "sol",
+			NativeDecimals:        9,
 			RequiredConfirmations: 1,
 			RpcURL:                "sealed-sol",
 		},
@@ -86,16 +88,19 @@ func TestRegisterActiveChains_KeepsTheSameActiveSet(t *testing.T) {
 	if evmLive.DustThreshold("eth") == nil || evmLive.DustThreshold("eth").String() != "2000" {
 		t.Fatal("eth dust threshold was not taken from the active chain row")
 	}
+	if evmLive.NativeDecimals() != 18 {
+		t.Fatalf("eth native decimals %d, want the chain row", evmLive.NativeDecimals())
+	}
 
 	btc, err := reg.Chain("btc")
 	btcLive, isBTC := btc.(*bitcoinchain.BitcoinLive)
-	if err != nil || !isBTC || !btcLive.IsTestnet() || btc.NativeAsset() != "btc" || btc.RequiredConfirmations() != 3 || btcLive.Endpoint() == "" {
+	if err != nil || !isBTC || !btcLive.IsTestnet() || btc.NativeAsset() != "btc" || btc.RequiredConfirmations() != 3 || btcLive.Endpoint() == "" || btcLive.NativeDecimals() != 8 {
 		t.Fatal("btc adapter was not registered from the active chain row")
 	}
 
 	sol, err := reg.Chain("sol")
-	_, isSOL := sol.(*solanachain.SolanaLive)
-	if err != nil || !isSOL || sol.ID() != "sol" || sol.NativeAsset() != "sol" || sol.RequiredConfirmations() != 1 {
+	solLive, isSOL := sol.(*solanachain.SolanaLive)
+	if err != nil || !isSOL || sol.ID() != "sol" || sol.NativeAsset() != "sol" || sol.RequiredConfirmations() != 1 || solLive.NativeDecimals() != 9 {
 		t.Fatal("sol adapter was not registered from the active chain row")
 	}
 

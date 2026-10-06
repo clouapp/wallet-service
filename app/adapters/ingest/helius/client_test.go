@@ -132,8 +132,10 @@ func TestHeliusParsePayload_SPLTokenTransfer(t *testing.T) {
 	assert.Equal(t, -1, tx.LogIndex)
 	require.NotNil(t, tx.Token)
 	assert.Equal(t, "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v", tx.Token.Contract)
-	assert.Equal(t, uint8(6), tx.Token.Decimals)
-	assert.Equal(t, 0, big.NewInt(100_000_000).Cmp(tx.Amount))
+	assert.Equal(t, uint8(0), tx.Token.Decimals)
+	assert.True(t, tx.AmountIsHuman)
+	assert.Equal(t, "100", tx.HumanAmount)
+	assert.Nil(t, tx.Amount)
 }
 
 func TestHeliusParsePayload_SPLOmitsDecimalsKeepsHumanAmount(t *testing.T) {

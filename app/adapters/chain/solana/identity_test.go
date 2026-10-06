@@ -1,7 +1,12 @@
 package solana
 
 import (
+	"context"
+	"math/big"
 	"testing"
+
+	"github.com/macrowallets/waas/pkg/amount"
+	"github.com/macrowallets/waas/pkg/types"
 )
 
 func TestSolana_ValidateAddress(t *testing.T) {
@@ -45,5 +50,18 @@ func TestSolana_Identity(t *testing.T) {
 	}
 	if a.RequiredConfirmations() != 1 {
 		t.Errorf("expected 1, got %d", a.RequiredConfirmations())
+	}
+}
+
+func TestSolanaFeeUsesChainRowDecimals(t *testing.T) {
+	nine := NewSolanaLive(SolanaConfig{NativeSymbol: "SOL", NativeDecimal: 9})
+	estimate, err := nine.EstimateFee(context.Background(), types.TransferRequest{})
+	if err != nil || estimate.Fee != amount.FormatBaseUnits(big.NewInt(solanaNativeFeeLamports), 9) || nine.NativeDecimals() != 9 {
+		t.Fatalf("9-decimal row: %+v err %v", estimate, err)
+	}
+	three := NewSolanaLive(SolanaConfig{NativeSymbol: "SOL", NativeDecimal: 3})
+	estimate, err = three.EstimateFee(context.Background(), types.TransferRequest{})
+	if err != nil || estimate.Fee != amount.FormatBaseUnits(big.NewInt(solanaNativeFeeLamports), 3) {
+		t.Fatalf("3-decimal row: %+v err %v", estimate, err)
 	}
 }

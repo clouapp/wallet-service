@@ -5,13 +5,14 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
-	"math"
 	"math/big"
 	"sort"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/shopspring/decimal"
 
 	"github.com/macrowallets/waas/app/services/chain"
 	"github.com/macrowallets/waas/pkg/types"
@@ -43,7 +44,6 @@ const (
 	btcTypicalInputs            = 1
 
 	btcFeeRateCacheTTL = 30 * time.Second
-	satsPerBTC         = 100_000_000
 )
 
 // btcFeePolicy prices a P2WPKH transaction. milliSatPerVByte is the estimated rate;
@@ -152,7 +152,7 @@ func (a *BitcoinLive) fetchFeeRate(ctx context.Context) (int64, error) {
 // parseEsploraFeeEstimates reads {"<blocks>": sat/vB, ...} and returns the rate of
 // the first target present in 3..6 blocks, floored at the min relay fee.
 func parseEsploraFeeEstimates(body []byte) (int64, error) {
-	var estimates map[string]float64
+	var estimates map[string]decimal.Decimal
 	if err := json.Unmarshal(body, &estimates); err != nil {
 		return 0, fmt.Errorf("parse fee estimates: %w", err)
 	}
@@ -169,8 +169,8 @@ func parseEsploraFeeEstimates(body []byte) (int64, error) {
 // fetchSmartFeeRate asks bitcoind (estimatesmartfee, BTC/kvB).
 func (a *BitcoinLive) fetchSmartFeeRate(ctx context.Context) (int64, error) {
 	var estimate struct {
-		FeeRate *float64 `json:"feerate"`
-		Errors  []string `json:"errors"`
+		FeeRate *decimal.Decimal `json:"feerate"`
+		Errors  []string         `json:"errors"`
 	}
 	if err := a.rpc.Call(ctx, "estimatesmartfee", &estimate, btcSmartFeeTargetBlocks); err != nil {
 		return 0, err
@@ -178,16 +178,21 @@ func (a *BitcoinLive) fetchSmartFeeRate(ctx context.Context) (int64, error) {
 	if estimate.FeeRate == nil {
 		return 0, fmt.Errorf("estimatesmartfee returned no rate: %s", strings.Join(estimate.Errors, "; "))
 	}
-	// BTC/kvB × 1e8 sat/BTC ÷ 1000 vB/kvB = sat/vB.
-	return milliSatRate(*estimate.FeeRate*(satsPerBTC/milliSatsPerSat), "estimatesmartfee")
+	// estimatesmartfee reports coin/kvB. Base units per vB are coin/kvB × 10^(decimals-3):
+	// 10^decimals base units per coin, and 1000 vB per kvB. Decimals come from the chain row.
+	satPerVByte := estimate.FeeRate.Shift(int32(a.cfg.NativeDecimal) - 3)
+	return milliSatRate(satPerVByte, "estimatesmartfee")
 }
 
-func milliSatRate(satPerVByte float64, source string) (int64, error) {
-	if math.IsNaN(satPerVByte) || math.IsInf(satPerVByte, 0) || satPerVByte <= 0 || satPerVByte > btcMaxSaneSatPerVByte {
-		return 0, fmt.Errorf("%s of %v sat/vB is not a usable fee rate", source, satPerVByte)
+func milliSatRate(satPerVByte decimal.Decimal, source string) (int64, error) {
+	if !satPerVByte.IsPositive() || satPerVByte.GreaterThan(decimal.NewFromInt(btcMaxSaneSatPerVByte)) {
+		return 0, fmt.Errorf("%s of %s sat/vB is not a usable fee rate", source, satPerVByte.String())
 	}
-	rate := int64(math.Round(satPerVByte * milliSatsPerSat))
-	return max(rate, btcMinRelayMilliSatPerVByte), nil
+	milli := satPerVByte.Shift(3).Round(0).BigInt()
+	if !milli.IsInt64() {
+		return 0, fmt.Errorf("%s of %s sat/vB is not a usable fee rate", source, satPerVByte.String())
+	}
+	return max(milli.Int64(), int64(btcMinRelayMilliSatPerVByte)), nil
 }
 
 // ---------------------------------------------------------------------------

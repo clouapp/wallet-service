@@ -1,7 +1,10 @@
 package bitcoin
 
 import (
+	"math/big"
 	"testing"
+
+	"github.com/shopspring/decimal"
 
 	"github.com/macrowallets/waas/pkg/types"
 )
@@ -45,6 +48,19 @@ func TestBitcoin_Identity(t *testing.T) {
 	}
 	if a.RequiredConfirmations() != 3 {
 		t.Errorf("expected 3, got %d", a.RequiredConfirmations())
+	}
+}
+
+func TestBitcoinAmountsUseTheChainRowDecimals(t *testing.T) {
+	eight := NewBitcoinLive(BitcoinConfig{NativeDecimal: 8})
+	sats, err := eight.btcToSats(decimal.RequireFromString("1.5"))
+	if err != nil || sats.Cmp(big.NewInt(150_000_000)) != 0 || eight.NativeDecimals() != 8 {
+		t.Fatalf("8-decimal row: %s err %v decimals %d", sats, err, eight.NativeDecimals())
+	}
+	two := NewBitcoinLive(BitcoinConfig{NativeDecimal: 2, NativeSymbol: "COIN"})
+	units, err := two.btcToSats(decimal.RequireFromString("1.5"))
+	if err != nil || units.Cmp(big.NewInt(150)) != 0 || fmtUnits(units, two.cfg.NativeDecimal) != "1.5" {
+		t.Fatalf("2-decimal row: %s formatted %s err %v", units, fmtUnits(units, two.cfg.NativeDecimal), err)
 	}
 }
 

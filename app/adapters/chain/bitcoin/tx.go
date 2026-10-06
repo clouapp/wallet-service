@@ -382,7 +382,7 @@ func (a *BitcoinLive) listUTXOsRPC(ctx context.Context, address string) ([]btcIn
 	}
 	out := make([]btcInput, 0, len(raw))
 	for _, utxo := range raw {
-		sats, err := btcToSats(utxo.Amount)
+		sats, err := a.btcToSats(utxo.Amount)
 		if err != nil {
 			return nil, fmt.Errorf("utxo %s:%d: %w", utxo.TxID, utxo.Vout, err)
 		}
