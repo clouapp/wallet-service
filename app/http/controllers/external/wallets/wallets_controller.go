@@ -21,13 +21,11 @@ func validateRequest(ctx http.Context, req http.FormRequest) http.Response {
 	return controllers.ValidateRequest(ctx, req)
 }
 
-// CreateWalletResponse is the external create response: the wallet fields plus
-// the KeyCard recovery material, which is returned only here, once. The service
-// share (share B) and the plaintext customer share are never part of it.
+// CreateWalletResponse is the external create response: the wallet fields and
+// the combined public key. The customer share, the passphrase, and the service
+// share are not on it.
 type CreateWalletResponse struct {
 	walletresource.Wallet
-	// JSON {iv,salt,ct,cipher,kdf}: the customer share (share A) encrypted with the wallet passphrase (AES-256-GCM, Argon2id), base64 fields.
-	EncryptedUserKey string `json:"encrypted_user_key" example:"{\"iv\":\"...\",\"salt\":\"...\",\"ct\":\"...\",\"cipher\":\"aes-256-gcm\",\"kdf\":\"argon2id\"}"`
 	// Hex of the combined MPC public key.
 	ServicePublicKey string `json:"service_public_key" example:"02a1b2c3..."`
 }
@@ -35,7 +33,6 @@ type CreateWalletResponse struct {
 func newCreateWalletResponse(result *wallet.CreateWalletResult) CreateWalletResponse {
 	return CreateWalletResponse{
 		Wallet:           walletresource.WalletFrom(*result.Wallet),
-		EncryptedUserKey: result.EncryptedUserKey,
 		ServicePublicKey: result.ServicePublicKey,
 	}
 }
@@ -70,9 +67,7 @@ func NewWalletsController(deps WalletsControllerDeps) *WalletsController {
 // CreateWallet godoc
 // @Summary      Create a new wallet
 // @Description  Creates a new HD wallet for the specified blockchain. Only one wallet per chain is allowed.
-// @Description  The response carries the wallet fields plus the one-time KeyCard recovery material:
-// @Description  `encrypted_user_key` (the customer MPC share encrypted with the passphrase) and
-// @Description  `service_public_key`. Store them securely — no other endpoint ever returns them again.
+// @Description  The response carries the wallet fields and `service_public_key`.
 // @Tags         Wallets
 // @Accept       json
 // @Produce      json

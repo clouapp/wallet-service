@@ -153,10 +153,7 @@ func (s *WalletServiceTestSuite) TestCreateWallet_Success_ReturnsKeycardData() {
 	s.NotNil(result.Wallet.ActivationCode)
 	s.Len(*result.Wallet.ActivationCode, 6)
 
-	// Keycard fields
-	s.NotEmpty(result.EncryptedUserKey)
 	s.NotEmpty(result.ServicePublicKey)
-	s.NotEmpty(result.EncryptedPasscode)
 	s.NotEmpty(result.ActivationCode)
 	s.Len(result.ActivationCode, 6)
 	s.Regexp(`^\d{6}$`, result.ActivationCode)

@@ -7,9 +7,7 @@ import (
 	cryptorand "crypto/rand"
 	"crypto/sha512"
 	"crypto/subtle"
-	"encoding/base64"
 	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -32,13 +30,13 @@ var (
 	ErrInvalidActivationCode = errors.New("invalid activation code")
 )
 
-// CreateWalletResult holds the wallet record plus one-time KeyCard data.
+// CreateWalletResult holds the wallet record, the combined public key, and the
+// one-time activation code. The customer share, the passphrase, and the service
+// share stay off this result.
 type CreateWalletResult struct {
-	Wallet            *models.Wallet
-	EncryptedUserKey  string // JSON {iv,salt,ct,cipher,kdf} — AES-256-GCM/Argon2id, base64
-	ServicePublicKey  string // hex of CombinedPubKey
-	EncryptedPasscode string // JSON {iv,ct,cipher} — AES-256-GCM with service key, base64
-	ActivationCode    string // 6-digit zero-padded decimal
+	Wallet           *models.Wallet
+	ServicePublicKey string // hex of CombinedPubKey
+	ActivationCode   string // 6-digit zero-padded decimal
 }
 
 // SecretStore stores and loads the service share. The provider supplies it;
@@ -169,30 +167,6 @@ func (s *Service) CreateWallet(ctx context.Context, accountID uuid.UUID, chainID
 		return nil, fmt.Errorf("encrypt share: %w", err)
 	}
 
-	type userKeyPayload struct {
-		IV     string `json:"iv"`
-		Salt   string `json:"salt"`
-		CT     string `json:"ct"`
-		Cipher string `json:"cipher"`
-		KDF    string `json:"kdf"`
-	}
-	ukp := userKeyPayload{
-		IV:     base64.StdEncoding.EncodeToString(enc.IV),
-		Salt:   base64.StdEncoding.EncodeToString(enc.Salt),
-		CT:     base64.StdEncoding.EncodeToString(enc.Ciphertext),
-		Cipher: "aes-256-gcm",
-		KDF:    "argon2id",
-	}
-	ukJSON, err := json.Marshal(ukp)
-	if err != nil {
-		return nil, fmt.Errorf("marshal user key: %w", err)
-	}
-
-	encPasscode, err := mpc.EncryptWithServiceKey([]byte(passphrase), facades.Config().GetString("vault.wallet_service_key"))
-	if err != nil {
-		return nil, fmt.Errorf("encrypt passcode: %w", err)
-	}
-
 	n, err := cryptorand.Int(cryptorand.Reader, big.NewInt(1_000_000))
 	if err != nil {
 		return nil, fmt.Errorf("generate activation code: %w", err)
@@ -276,11 +250,9 @@ func (s *Service) CreateWallet(ctx context.Context, accountID uuid.UUID, chainID
 	}).Dispatch()
 
 	return &CreateWalletResult{
-		Wallet:            w,
-		EncryptedUserKey:  string(ukJSON),
-		ServicePublicKey:  hex.EncodeToString(keygenResult.CombinedPubKey),
-		EncryptedPasscode: encPasscode,
-		ActivationCode:    code,
+		Wallet:           w,
+		ServicePublicKey: hex.EncodeToString(keygenResult.CombinedPubKey),
+		ActivationCode:   code,
 	}, nil
 }
 

@@ -27,7 +27,6 @@ func TestCreateWalletResponseKeepsTheModelWire(t *testing.T) {
 
 	raw, err := json.Marshal(newCreateWalletResponse(&wallet.CreateWalletResult{
 		Wallet:           record,
-		EncryptedUserKey: "ek",
 		ServicePublicKey: "pk",
 	}))
 	if err != nil {
@@ -38,7 +37,7 @@ func TestCreateWalletResponseKeepsTheModelWire(t *testing.T) {
 			t.Fatal("wallet key material is on the wire")
 		}
 	}
-	const want = `{"created_at":"2024-05-06 07:08:09","updated_at":null,"id":"11111111-1111-4111-8111-111111111111","chain":"eth","label":"hot","address_index":0,"status":"active","required_approvals":1,"read_model_status":"","gas_status":"","sweep_policy_version":0,"encrypted_user_key":"ek","service_public_key":"pk"}`
+	const want = `{"created_at":"2024-05-06 07:08:09","updated_at":null,"id":"11111111-1111-4111-8111-111111111111","chain":"eth","label":"hot","address_index":0,"status":"active","required_approvals":1,"read_model_status":"","gas_status":"","sweep_policy_version":0,"service_public_key":"pk"}`
 	if string(raw) != want {
 		t.Fatalf("wire changed\n got %s\nwant %s", raw, want)
 	}

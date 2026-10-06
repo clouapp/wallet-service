@@ -1846,7 +1846,7 @@
                         "SignatureAuth": []
                     }
                 ],
-                "description": "Creates a new HD wallet for the specified blockchain. Only one wallet per chain is allowed.\nThe response carries the wallet fields plus the one-time KeyCard recovery material:\n`encrypted_user_key` (the customer MPC share encrypted with the passphrase) and\n`service_public_key`. Store them securely — no other endpoint ever returns them again.",
+                "description": "Creates a new HD wallet for the specified blockchain. Only one wallet per chain is allowed.\nThe response carries the wallet fields and `service_public_key`.",
                 "consumes": [
                     "application/json"
                 ],
@@ -3765,11 +3765,6 @@
                 },
                 "deposit_address_id": {
                     "type": "string"
-                },
-                "encrypted_user_key": {
-                    "description": "JSON {iv,salt,ct,cipher,kdf}: the customer share (share A) encrypted with the wallet passphrase (AES-256-GCM, Argon2id), base64 fields.",
-                    "type": "string",
-                    "example": "{\"iv\":\"...\",\"salt\":\"...\",\"ct\":\"...\",\"cipher\":\"aes-256-gcm\",\"kdf\":\"argon2id\"}"
                 },
                 "fee_multiplier": {
                     "type": "number"

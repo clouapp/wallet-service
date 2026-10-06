@@ -191,7 +191,8 @@ func (ctrl *WalletsController) hideUnlessVisible(ctx http.Context, walletID uuid
 }
 
 // CreateWalletAdmin creates a wallet from the admin panel with full MPC keygen.
-// Returns keycard data including activation_code for the two-step setup flow.
+// The response carries the wallet, the combined public key, and the activation
+// code. The customer share, the passphrase, and the service share are not on it.
 func (ctrl *WalletsController) CreateWalletAdmin(ctx http.Context) http.Response {
 	var req requests.CreateWalletAdminRequest
 	if resp := validateRequest(ctx, &req); resp != nil {
@@ -213,9 +214,7 @@ func (ctrl *WalletsController) CreateWalletAdmin(ctx http.Context) http.Response
 
 	return responses.Send(ctx, http.StatusCreated, http.Json{
 		"wallet":             walletresource.WalletPtr(result.Wallet),
-		"encrypted_user_key": result.EncryptedUserKey,
 		"service_public_key": result.ServicePublicKey,
-		"encrypted_passcode": result.EncryptedPasscode,
 		"activation_code":    result.ActivationCode,
 	})
 }
