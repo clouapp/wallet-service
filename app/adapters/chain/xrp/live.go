@@ -1,6 +1,7 @@
 // Package xrp is the XRP Ledger adapter. Classic r-addresses come from
-// addressing.DeriveXRPAddress. This experiment reads a balance and the
-// validated ledger index. It does not build, sign, or broadcast a payment.
+// addressing.DeriveXRPAddress. It reads a balance and the validated ledger,
+// and it can build, sign, and broadcast one native Payment on the altnet
+// (network id 1). Sweeps and issued currencies are not implemented.
 package xrp
 
 import (
@@ -30,9 +31,10 @@ const (
 	xrpRPCMaxResponseBytes = 1 << 20
 )
 
-// ErrPaymentsNotImplemented is returned by every method that would build, sign,
-// or broadcast a payment. Nothing is signed and nothing is sent.
-var ErrPaymentsNotImplemented = errors.New("xrp payments are not implemented: this experiment derives a classic address and reads the ledger")
+// ErrPaymentsNotImplemented is returned by BuildSweep. A native Payment is
+// built, signed, and broadcast by BuildTransfer, SignTransaction, and
+// BroadcastTransaction. Nothing else is sent.
+var ErrPaymentsNotImplemented = errors.New("xrp sweeps are not implemented")
 
 // Config is everything that differs between XRP Ledger networks. The testnet
 // record points at the public altnet, not mainnet.
@@ -47,7 +49,7 @@ type Config struct {
 	DustThresholdNative   *big.Int
 }
 
-// Live is the read-only XRP Ledger adapter.
+// Live is the XRP Ledger adapter. Payments are limited to the altnet testnet.
 type Live struct {
 	cfg  Config
 	http *http.Client
@@ -134,23 +136,7 @@ func (a *Live) GetTokenBalance(context.Context, string, types.Token) (*types.Bal
 	return nil, fmt.Errorf("xrp: no issued currencies in this experiment")
 }
 
-func (a *Live) BuildTransfer(context.Context, types.TransferRequest) (*types.UnsignedTx, error) {
-	return nil, ErrPaymentsNotImplemented
-}
-
-func (a *Live) SignTransaction(context.Context, *types.UnsignedTx, []byte) (*types.SignedTx, error) {
-	return nil, ErrPaymentsNotImplemented
-}
-
-func (a *Live) BroadcastTransaction(context.Context, *types.SignedTx) (string, error) {
-	return "", ErrPaymentsNotImplemented
-}
-
 func (a *Live) BuildSweep(context.Context, types.SweepRequest) ([]types.UnsignedTx, error) {
-	return nil, ErrPaymentsNotImplemented
-}
-
-func (a *Live) EstimateFee(context.Context, types.TransferRequest) (*types.FeeEstimate, error) {
 	return nil, ErrPaymentsNotImplemented
 }
 
@@ -165,9 +151,10 @@ func (a *Live) ScanBlock(context.Context, uint64) ([]types.DetectedTransfer, err
 	return nil, fmt.Errorf("xrp ledger scan is not implemented in this experiment")
 }
 
-// GetTransactionBlock is unused: outbound payments are not built here.
-func (a *Live) GetTransactionBlock(context.Context, string) (uint64, error) {
-	return 0, nil
+// GetTransactionBlock is the validated ledger of txHash, or 0 when the
+// payment is not in a validated ledger yet.
+func (a *Live) GetTransactionBlock(ctx context.Context, txHash string) (uint64, error) {
+	return a.transactionLedger(ctx, txHash)
 }
 
 // EstimateGasPrice does not apply: an XRP fee is a drop bid, not a gas price.

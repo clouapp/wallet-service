@@ -54,14 +54,11 @@ func TestLiveReadsDropsAndRefusesPayments(t *testing.T) {
 	if err != nil || index != 42 {
 		t.Fatalf("ledger %d err %v", index, err)
 	}
-	if _, err := adapter.BuildTransfer(context.Background(), types.TransferRequest{}); err != ErrPaymentsNotImplemented {
-		t.Fatalf("build: %v", err)
+	if _, err := adapter.SignTransaction(context.Background(), &types.UnsignedTx{}, []byte{1}); err == nil {
+		t.Fatal("sign accepted an empty payment")
 	}
-	if _, err := adapter.SignTransaction(context.Background(), &types.UnsignedTx{}, []byte{1}); err != ErrPaymentsNotImplemented {
-		t.Fatalf("sign: %v", err)
-	}
-	if _, err := adapter.BroadcastTransaction(context.Background(), &types.SignedTx{}); err != ErrPaymentsNotImplemented {
-		t.Fatalf("broadcast: %v", err)
+	if _, err := adapter.BroadcastTransaction(context.Background(), &types.SignedTx{}); err == nil {
+		t.Fatal("broadcast accepted an empty payment")
 	}
 	if _, err := adapter.BuildSweep(context.Background(), types.SweepRequest{}); err != ErrPaymentsNotImplemented {
 		t.Fatalf("sweep: %v", err)
