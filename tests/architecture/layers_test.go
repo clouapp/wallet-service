@@ -55,9 +55,10 @@ var serviceFacades = []string{"Orm", "DB", "Event", "Config", "Crypt", "Queue", 
 
 // TestServicesDoNotKnowTheHTTPLayer reports a service importing the HTTP
 // layer, a repository, an adapter or an I/O library, or calling a facade it
-// should receive through its Deps.
+// should receive through its Deps, from the framework package or app/facades.
 func TestServices_Do_NotKnowTheHTTPLayer(t *testing.T) {
 	module := sharedModule(t)
+	facadePackages := []string{goravelFacades, module.ImportPathOf("app/facades")}
 	var violations Violations
 	for _, file := range module.ProductionFiles("app/services") {
 		for _, importPath := range file.Imports() {
@@ -75,10 +76,12 @@ func TestServices_Do_NotKnowTheHTTPLayer(t *testing.T) {
 				}
 			}
 		}
-		calls := packageCalls(file, goravelFacades, "facades")
-		for _, facade := range serviceFacades {
-			for range calls[facade] {
-				violations.Add("%s calls facades.%s()", file.Path, facade)
+		for _, facadePackage := range facadePackages {
+			calls := packageCalls(file, facadePackage, "facades")
+			for _, facade := range serviceFacades {
+				for range calls[facade] {
+					violations.Add("%s calls facades.%s()", file.Path, facade)
+				}
 			}
 		}
 	}
