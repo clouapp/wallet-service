@@ -48,12 +48,14 @@ func TestChild_Lookup_FailureIsUnavailable(t *testing.T) {
 // TestWallet_Can_FollowsTheWalletCatalog pins WalletCan, which no route
 // registers today: the stored request grants decide when present, the
 // account role's wallet catalog otherwise, and a refusal is 403 forbidden.
+// A permission the Gate does not define is refused when the guard is built.
 func TestWallet_Can_FollowsTheWalletCatalog(t *testing.T) {
 	roles := []string{
 		models.AccountRoleOwner, models.AccountRoleAdmin, models.AccountRoleAuditor, models.AccountRoleUser,
 		models.RetiredAccountRoleViewer, "", "superuser",
 	}
-	for _, permission := range append(models.AccountPermissions(), "") {
+	assertPanics(t, "an empty permission", func() { WalletCan("") })
+	for _, permission := range models.AccountPermissions() {
 		for _, role := range roles {
 			for _, stored := range []bool{false, true} {
 				ctx := newGuardContext(nil)
