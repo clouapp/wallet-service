@@ -245,10 +245,32 @@ func (s *totpEnrollmentSuite) statusOf(response contractstestinghttp.Response) i
 	return httpResponse.StatusCode
 }
 
+// setTotpEnabled confirms or clears a user's TOTP. Confirming also stores the
+// sealed secret in mfa_credentials: since f9901c4 that row, not users.totp_enabled
+// alone, is what makes a second factor real, and the login challenge is refused
+// for a user without it.
 func (s *totpEnrollmentSuite) setTotpEnabled(userID uuid.UUID, enabled bool) error {
-	_, err := facades.Orm().Query().Exec(
+	if _, err := facades.Orm().Query().Exec(
 		`UPDATE users SET totp_enabled = ? WHERE id = ?`,
 		enabled, userID,
+	); err != nil || !enabled {
+		return err
+	}
+	secret, _, err := authsvc.NewService().GenerateTOTP(userID.String() + "@example.com")
+	if err != nil {
+		return err
+	}
+	sealed, err := facades.Crypt().EncryptString(secret)
+	if err != nil {
+		return err
+	}
+	_, err = facades.Orm().Query().Exec(`
+		INSERT INTO mfa_credentials (
+			id, subject_type, subject_id, secret, confirmed_at, last_used_counter, created_at, updated_at
+		) VALUES (?, 'users', ?, ?, NOW(), 0, NOW(), NOW())
+		ON CONFLICT (subject_type, subject_id) DO UPDATE
+		SET secret = EXCLUDED.secret, confirmed_at = NOW(), updated_at = NOW()`,
+		uuid.New(), userID, "enc:v1:"+sealed,
 	)
 	return err
 }
