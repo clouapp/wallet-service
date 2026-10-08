@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"net/http"
 	"strings"
 )
 
@@ -31,6 +30,18 @@ var (
 )
 
 const causeLimit = 512
+
+// Upstream HTTP statuses KindOf classifies. Plain numbers, not net/http: a service
+// reads the status an adapter reports and does not know the HTTP layer.
+const (
+	statusNotFound           = 404
+	statusRequestTimeout     = 408
+	statusTooManyRequests    = 429
+	statusInternalError      = 500
+	statusBadGateway         = 502
+	statusServiceUnavailable = 503
+	statusGatewayTimeout     = 504
+)
 
 // Failure is a typed adapter error. Error() is the sentinel text. Cause is
 // the provider detail, unwrapped for errors.As, and omitted from Error().
@@ -104,11 +115,11 @@ func Insufficient(cause error) error {
 // only. An unrecognized message returns nil so the caller can keep its own error.
 func KindOf(status int, message string) error {
 	switch status {
-	case http.StatusNotFound:
+	case statusNotFound:
 		return ErrNotFound
-	case http.StatusRequestTimeout, http.StatusInternalServerError, http.StatusBadGateway, http.StatusServiceUnavailable, http.StatusGatewayTimeout:
+	case statusRequestTimeout, statusInternalError, statusBadGateway, statusServiceUnavailable, statusGatewayTimeout:
 		return ErrProviderUnavailable
-	case http.StatusTooManyRequests:
+	case statusTooManyRequests:
 		return ErrRateLimited
 	}
 	msg := strings.ToLower(message)
