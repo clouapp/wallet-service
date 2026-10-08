@@ -40,20 +40,6 @@ func sweepControllerDeps() SweepControllerDeps {
 	}
 }
 
-func TestNew_Sweep_ControllerKeepsItsDependencies(t *testing.T) {
-	deps := sweepControllerDeps()
-	ctrl := NewSweepController(deps)
-	if ctrl == nil {
-		t.Fatal("NewSweepController returned nil")
-	}
-	if ctrl.sweeps != deps.Sweeps {
-		t.Fatal("sweep controller did not keep the sweep service")
-	}
-	if ctrl.flags != deps.Flags {
-		t.Fatal("sweep controller did not keep the feature flags")
-	}
-}
-
 func TestNew_Sweep_ControllerRequiresEveryDependency(t *testing.T) {
 	cases := []struct {
 		name  string

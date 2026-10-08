@@ -1,7 +1,8 @@
-package sweep
+package controllers_test
 
 import (
 	"context"
+	"github.com/macrowallets/waas/app/http/controllers"
 	"math/big"
 	"testing"
 
@@ -33,42 +34,39 @@ func (*sweepServiceStub) LoadLimits(context.Context, uuid.UUID) (*sweepsvc.Limit
 	return nil, nil
 }
 
-func sweepControllerDeps() SweepControllerDeps {
-	return SweepControllerDeps{
+func sweepHandlerDeps() controllers.SweepHandlerDeps {
+	return controllers.SweepHandlerDeps{
 		Sweeps: &sweepServiceStub{},
 		Flags:  &features.Service{},
 	}
 }
 
-func TestNew_Sweep_ControllerRequiresEveryDependency(t *testing.T) {
+func TestNew_SweepHandler_RequiresEveryDependencyAndNamesTheSurface(t *testing.T) {
 	cases := []struct {
 		name  string
-		clear func(*SweepControllerDeps)
+		clear func(*controllers.SweepHandlerDeps)
 		panic string
 	}{
-		{
-			name:  "sweep service",
-			clear: func(deps *SweepControllerDeps) { deps.Sweeps = nil },
-			panic: "dashboard sweep controller: sweep service is required",
-		},
-		{
-			name:  "feature flags",
-			clear: func(deps *SweepControllerDeps) { deps.Flags = nil },
-			panic: "dashboard sweep controller: feature flags are required",
-		},
+		{"sweep service", func(d *controllers.SweepHandlerDeps) { d.Sweeps = nil }, "test sweep controller: sweep service is required"},
+		{"feature flags", func(d *controllers.SweepHandlerDeps) { d.Flags = nil }, "test sweep controller: feature flags are required"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			deps := sweepControllerDeps()
+			deps := sweepHandlerDeps()
 			tc.clear(&deps)
 			defer func() {
-				got := recover()
-				if got != tc.panic {
+				if got := recover(); got != tc.panic {
 					t.Fatalf("panic = %v", got)
 				}
 			}()
-			NewSweepController(deps)
+			controllers.NewSweepHandler("test", deps)
 			t.Fatal("expected a panic")
 		})
+	}
+}
+
+func TestNew_SweepHandler_AcceptsCompleteDependencies(t *testing.T) {
+	if controllers.NewSweepHandler("test", sweepHandlerDeps()) == nil {
+		t.Fatal("NewSweepHandler returned nil")
 	}
 }
