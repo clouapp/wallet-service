@@ -27,6 +27,7 @@ const (
 	bscTestnetRPC  = "https://bsc-testnet-rpc.publicnode.com"
 	tronNileRPC    = "https://nile.trongrid.io"
 	ltcTestnetRPC  = "https://litecoinspace.org/testnet/api"
+	xrpAltnetRPC   = "https://s.altnet.rippletest.net:51234"
 	compressedPub  = "0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798"
 	mainnetGenesis = "bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4"
 )
@@ -130,6 +131,7 @@ func vaultTestRegistry() *fakeStore {
 			models.ChainBSC:      {ID: models.ChainBSC, AdapterType: models.AdapterTypeEVM, NetworkID: ptr(models.EVMNetworkIDBSCTestnet), IsTestnet: true, RpcURL: bscTestnetRPC},
 			models.ChainTron:     {ID: models.ChainTron, AdapterType: models.AdapterTypeTron, IsTestnet: true, RpcURL: tronNileRPC},
 			models.ChainLTC:      {ID: models.ChainLTC, AdapterType: models.AdapterTypeBitcoin, IsTestnet: true, RpcURL: ltcTestnetRPC},
+			models.ChainXRP:      {ID: models.ChainXRP, AdapterType: models.AdapterTypeXRP, IsTestnet: true, RpcURL: xrpAltnetRPC},
 		},
 		funded:    map[string]bool{models.ChainPolygon: true},
 		accounts:  map[uuid.UUID]models.Account{},
