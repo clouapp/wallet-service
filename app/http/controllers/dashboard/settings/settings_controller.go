@@ -190,13 +190,7 @@ func mapSettingsError(ctx http.Context, err error) http.Response {
 	}
 	var invalid *settingssvc.ValidationError
 	if errors.As(err, &invalid) {
-		return responses.Send(ctx, http.StatusUnprocessableEntity, map[string]any{
-			"error": map[string]any{
-				"code":    responses.CodeValidationFailed,
-				"message": "validation failed",
-			},
-			"errors": invalid.Fields,
-		})
+		return responses.FieldsFailed(ctx, invalid.Fields)
 	}
 	switch {
 	case errors.Is(err, settingssvc.ErrGroupNotFound):

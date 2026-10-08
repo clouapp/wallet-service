@@ -37,7 +37,7 @@ func optionalStringRules(fields ...string) map[string]string {
 // An empty rule map still binds the body; a missing body is not an error.
 func Validate(ctx http.Context, req http.FormRequest) http.Response {
 	if ctx == nil || req == nil {
-		return responses.Send(ctx, http.StatusBadRequest, http.Json{"error": "invalid request body"})
+		return responses.Fail(ctx, http.StatusBadRequest, responses.CodeInvalidRequest, "invalid request body")
 	}
 	if len(req.Rules(ctx)) == 0 {
 		return bindRulelessRequest(ctx, req)
@@ -48,7 +48,7 @@ func Validate(ctx http.Context, req http.FormRequest) http.Response {
 		if validationErrors != nil {
 			return responses.ValidationFailed(ctx, validationErrors)
 		}
-		return responses.Send(ctx, http.StatusBadRequest, http.Json{"error": "invalid request body"})
+		return responses.Fail(ctx, http.StatusBadRequest, responses.CodeInvalidRequest, "invalid request body")
 	}
 	if validationErrors != nil {
 		return responses.ValidationFailed(ctx, validationErrors)
@@ -78,7 +78,7 @@ func bindRulelessRequest(ctx http.Context, req http.FormRequest) http.Response {
 		if errors.Is(err, io.EOF) {
 			return nil
 		}
-		return responses.Send(ctx, http.StatusBadRequest, http.Json{"error": "invalid request body"})
+		return responses.Fail(ctx, http.StatusBadRequest, responses.CodeInvalidRequest, "invalid request body")
 	}
 	return nil
 }

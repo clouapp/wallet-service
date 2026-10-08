@@ -82,10 +82,7 @@ var messageCodes = map[string]string{
 // SuspendedUser answers login, refresh and the next session request when
 // users.suspended_at is set. The envelope is {"error":{"code","message"}}.
 func SuspendedUser(ctx contractshttp.Context) contractshttp.AbortableResponse {
-	return Send(ctx, http.StatusForbidden, contractshttp.Json{
-		"error": SuspendedUserMessage,
-		"code":  CodeForbidden,
-	})
+	return Fail(ctx, http.StatusForbidden, CodeForbidden, SuspendedUserMessage)
 }
 
 // Send writes body, wrapping a legacy {"error":"text"} map into the envelope.
