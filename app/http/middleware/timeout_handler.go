@@ -21,9 +21,11 @@ const timeoutMessage = "request timed out"
 // gin context. On the deadline the client gets the 504 envelope, with the
 // headers the global chain stamps on every answer.
 //
+// corsOrigins are the origins a 504 is readable from (see Cors).
+//
 // The answer is buffered whole before it is sent. A non-positive timeout returns
 // next unchanged.
-func TimeoutHandler(timeout time.Duration) func(next http.Handler) http.Handler {
+func TimeoutHandler(timeout time.Duration, corsOrigins []string) func(next http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		if timeout <= 0 {
 			return next
@@ -56,13 +58,13 @@ func TimeoutHandler(timeout time.Duration) func(next http.Handler) http.Handler 
 			case <-ctx.Done():
 				if errors.Is(ctx.Err(), context.DeadlineExceeded) {
 					buffer.discard()
-					writeTimeout(w, r, requestID)
+					writeTimeout(w, r, requestID, corsOrigins)
 					return
 				}
 				<-done // the client went away; let the handler finish
 			}
 			if errors.Is(ctx.Err(), context.DeadlineExceeded) {
-				writeTimeout(w, r, requestID)
+				writeTimeout(w, r, requestID, corsOrigins)
 				return
 			}
 			buffer.flushTo(w)
@@ -79,11 +81,11 @@ var timeoutBody = func() []byte {
 	return body
 }()
 
-func writeTimeout(w http.ResponseWriter, r *http.Request, requestID string) {
+func writeTimeout(w http.ResponseWriter, r *http.Request, requestID string, corsOrigins []string) {
 	header := w.Header()
 	set := func(key, value string) { header.Set(key, value) }
 	setSecurityHeaders(set, r.TLS != nil)
-	setCorsHeaders(set, r.Header.Get("Origin"))
+	setCorsHeaders(set, r.Header.Get("Origin"), corsOrigins)
 	header.Set(requestIDHeader, requestID)
 	header.Set("Content-Type", "application/json; charset=utf-8")
 	w.WriteHeader(http.StatusGatewayTimeout)

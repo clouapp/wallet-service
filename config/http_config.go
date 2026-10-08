@@ -25,6 +25,11 @@ func registerHTTP() {
 			// /api/v1: per API token (client IP when no token is sent).
 			"api_per_minute": envInt("THROTTLE_API_PER_MINUTE", 600),
 		},
+		// Origins the Cors middleware echoes back with credentials. The gin
+		// driver's own CORS reads the "cors" config key and is left unconfigured
+		// on purpose: its headers differ from the ones the front end gets today
+		// (see app/http/middleware/cors.go).
+		"cors_allowed_origins": corsOrigins(envString("CORS_ALLOWED_ORIGINS", "")),
 		// Comma-separated CIDRs of the reverse proxies whose X-Forwarded-For is
 		// believed (middleware.ClientIP). Anything else is attributed to the
 		// connection's own address.

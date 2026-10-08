@@ -36,7 +36,7 @@ func Boot() contractsfoundation.Application {
 			h.Use(middleware.GlobalChain(requestTimeout(), middleware.InboundSignatureDeps{
 				Subscriptions: container.MustMake[*ingest.Subscriptions](),
 				Lookup:        container.MustMake[*ingest.Catalog]().Lookup,
-			})...).
+			}, corsOrigins())...).
 				Recover(middleware.RecoverPanic)
 		}).
 		WithRouting(registerRoutes).
@@ -68,7 +68,7 @@ func bootConfig() {
 // RequestTimeoutHandler is the hard cut for the local server: it answers 504 at
 // http.request_timeout whatever the handler does. Lambda mode does not use it.
 func RequestTimeoutHandler() func(http.Handler) http.Handler {
-	return middleware.TimeoutHandler(requestTimeout())
+	return middleware.TimeoutHandler(requestTimeout(), corsOrigins())
 }
 
 // checkBootConfig refuses to start on a missing or malformed secret. APP_KEY
@@ -89,6 +89,12 @@ func checkBootConfig() {
 	if _, err := middleware.ParseTrustedProxies(cfg.GetString("http.trusted_proxies")); err != nil {
 		panic(fmt.Errorf("refusing to boot: TRUSTED_PROXIES: %w", err))
 	}
+}
+
+// corsOrigins is http.cors_allowed_origins, parsed once from
+// CORS_ALLOWED_ORIGINS when the config boots.
+func corsOrigins() []string {
+	return appfacades.Config().Get("http.cors_allowed_origins").([]string)
 }
 
 // requestTimeout is http.request_timeout, the same key the gin driver used.

@@ -52,7 +52,7 @@ func TestRequest_Timeout_OnlyInstallsADeadline(t *testing.T) {
 
 func TestTimeout_Handler_Answers504WithTheWireTheMiddlewareSentBefore(t *testing.T) {
 	engine := timeoutEngine(func(c *gin.Context) { time.Sleep(5 * timeoutLimit) })
-	handler := TimeoutHandler(timeoutLimit)(engine)
+	handler := TimeoutHandler(timeoutLimit, nil)(engine)
 
 	cases := map[string]struct{ inbound, wantID string }{
 		"generated id": {},
@@ -106,7 +106,7 @@ func TestTimeout_Handler_FlushesAnAnswerThatBeatsTheDeadline(t *testing.T) {
 	direct := httptest.NewRecorder()
 	engine.ServeHTTP(direct, httptest.NewRequest(http.MethodGet, "/", nil))
 	wrapped := httptest.NewRecorder()
-	TimeoutHandler(time.Second)(engine).ServeHTTP(wrapped, httptest.NewRequest(http.MethodGet, "/", nil))
+	TimeoutHandler(time.Second, nil)(engine).ServeHTTP(wrapped, httptest.NewRequest(http.MethodGet, "/", nil))
 
 	if wrapped.Code != http.StatusCreated || wrapped.Body.String() != direct.Body.String() {
 		t.Fatalf("wrapped = %d %q, direct = %d %q", wrapped.Code, wrapped.Body.String(), direct.Code, direct.Body.String())
@@ -118,7 +118,7 @@ func TestTimeout_Handler_FlushesAnAnswerThatBeatsTheDeadline(t *testing.T) {
 
 func TestTimeout_Handler_WithoutADeadlineIsTheHandlerItself(t *testing.T) {
 	inner := http.HandlerFunc(func(http.ResponseWriter, *http.Request) {})
-	if got := TimeoutHandler(0)(inner); fmt.Sprintf("%p", got) != fmt.Sprintf("%p", inner) {
+	if got := TimeoutHandler(0, nil)(inner); fmt.Sprintf("%p", got) != fmt.Sprintf("%p", inner) {
 		t.Fatal("a non-positive timeout must not wrap the handler")
 	}
 }
@@ -145,7 +145,7 @@ func TestTimeout_Handler_LateWriteNeverReachesTheNextRequest(t *testing.T) {
 		<-r.aWrote
 		c.String(http.StatusOK, "answer-of-b")
 	})
-	server := httptest.NewServer(TimeoutHandler(limit)(engine))
+	server := httptest.NewServer(TimeoutHandler(limit, nil)(engine))
 	defer server.Close()
 
 	get := func(path string) (int, string) {

@@ -16,7 +16,7 @@ import (
 )
 
 func TestGlobal_Chain_FollowsThePlanOrder(t *testing.T) {
-	links := globalChainLinks(time.Second, InboundSignatureDeps{Subscriptions: &ingestsvc.Subscriptions{}})
+	links := globalChainLinks(time.Second, InboundSignatureDeps{Subscriptions: &ingestsvc.Subscriptions{}}, nil)
 	want := []string{
 		chainRequestTimeout,
 		chainProviderSignature,
@@ -36,8 +36,8 @@ func TestGlobal_Chain_FollowsThePlanOrder(t *testing.T) {
 			t.Fatalf("position %d (%s) has no middleware", i, want[i])
 		}
 	}
-	if len(GlobalChain(time.Second, InboundSignatureDeps{Subscriptions: &ingestsvc.Subscriptions{}})) != len(want) {
-		t.Fatalf("GlobalChain len = %d, want %d", len(GlobalChain(time.Second, InboundSignatureDeps{Subscriptions: &ingestsvc.Subscriptions{}})), len(want))
+	if len(GlobalChain(time.Second, InboundSignatureDeps{Subscriptions: &ingestsvc.Subscriptions{}}, nil)) != len(want) {
+		t.Fatalf("GlobalChain len = %d, want %d", len(GlobalChain(time.Second, InboundSignatureDeps{Subscriptions: &ingestsvc.Subscriptions{}}, nil)), len(want))
 	}
 }
 
