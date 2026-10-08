@@ -14,9 +14,12 @@ import (
 // exists is 403 when users.write is missing. Rank, MayGrant, and MayActOn
 // stay in the account service after this check. A denial leaves the
 // membership unchanged.
-func AccountUpdateMember() http.Middleware {
+func AccountUpdateMember(accounts *accountsvc.Service) http.Middleware {
+	if accounts == nil {
+		panic("account update member: the account service is required")
+	}
 	return func(ctx http.Context) {
-		switch gateAccountChild(ctx) {
+		switch gateAccountChild(ctx, accounts) {
 		case childPass:
 			ctx.Request().Next()
 			return

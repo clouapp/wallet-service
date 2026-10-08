@@ -11,7 +11,6 @@ import (
 	"github.com/google/uuid"
 	"github.com/goravel/framework/contracts/http"
 
-	"github.com/macrowallets/waas/app/container"
 	"github.com/macrowallets/waas/app/http/middleware/requestctx"
 	"github.com/macrowallets/waas/app/http/requests"
 	authsvc "github.com/macrowallets/waas/app/services/auth"
@@ -27,11 +26,10 @@ import (
 // share. A caller without TOTP continues. A missing whitelist entry or
 // webhook is left to the handler, which answers 404. External token routes
 // do not register this middleware.
-func RequireEnabledTOTP() http.Middleware {
-	users := container.MustMake[*usersvc.Service]()
-	verifier := container.MustMake[*authsvc.SecondFactorVerifier]()
-	entries := container.MustMake[*walletrecords.Whitelist]()
-	hooks := container.MustMake[*walletrecords.Webhooks]()
+func RequireEnabledTOTP(users *usersvc.Service, verifier *authsvc.SecondFactorVerifier, entries *walletrecords.Whitelist, hooks *walletrecords.Webhooks) http.Middleware {
+	if users == nil || verifier == nil || entries == nil || hooks == nil {
+		panic("require enabled totp: users, verifier, whitelist and webhooks are required")
+	}
 	return func(ctx http.Context) {
 		if changeTargetMissing(ctx, entries, hooks) {
 			ctx.Request().Next()

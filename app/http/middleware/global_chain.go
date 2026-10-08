@@ -25,10 +25,10 @@ type chainLink struct {
 	middleware contractshttp.Middleware
 }
 
-func globalChainLinks(timeout time.Duration) []chainLink {
+func globalChainLinks(timeout time.Duration, signature InboundSignatureDeps) []chainLink {
 	return []chainLink{
 		{name: chainRequestTimeout, middleware: RequestTimeout(timeout)},
-		{name: chainProviderSignature, middleware: ProviderSignature()},
+		{name: chainProviderSignature, middleware: ProviderSignature(signature)},
 		{name: chainRequestID, middleware: RequestID()},
 		{name: chainSecurityHeaders, middleware: SecurityHeaders()},
 		{name: chainBodyLimit, middleware: BodyLimit(MaxGlobalBodyBytes)},
@@ -38,9 +38,9 @@ func globalChainLinks(timeout time.Duration) []chainLink {
 
 // GlobalChain is the middleware installed once through WithMiddleware Use.
 // timeout is the configured http.request_timeout. Zero disables the deadline,
-// matching the gin driver.
-func GlobalChain(timeout time.Duration) []contractshttp.Middleware {
-	links := globalChainLinks(timeout)
+// matching the gin driver. signature carries the inbound webhook lookups.
+func GlobalChain(timeout time.Duration, signature InboundSignatureDeps) []contractshttp.Middleware {
+	links := globalChainLinks(timeout, signature)
 	chain := make([]contractshttp.Middleware, len(links))
 	for i, link := range links {
 		chain[i] = link.middleware

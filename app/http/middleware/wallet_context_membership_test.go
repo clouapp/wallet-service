@@ -7,11 +7,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	contractsfoundation "github.com/goravel/framework/contracts/foundation"
 	"github.com/goravel/framework/contracts/http"
-	"github.com/goravel/framework/foundation"
 
-	"github.com/macrowallets/waas/app/container"
 	"github.com/macrowallets/waas/app/http/middleware/requestctx"
 	"github.com/macrowallets/waas/app/http/resources"
 	"github.com/macrowallets/waas/app/http/responses"
@@ -30,16 +27,15 @@ func TestWallet_Context_DeniesWhenTheMembershipReadFails(t *testing.T) {
 	walletID := uuid.New()
 	memberships := &failingAccountMembers{}
 	walletMembers := &admittingWalletMembers{}
-	bindContainer(t, walletrecords.NewWallets(oneWallet{wallet: &models.Wallet{
+	wallets := walletrecords.NewWallets(oneWallet{wallet: &models.Wallet{
 		ID:        walletID,
 		AccountID: &accountID,
 		Status:    models.StatusActive,
-	}}))
-	bindContainer(t, accountsvc.NewService(accountsvc.Deps{
+	}})
+	accounts := accountsvc.NewService(accountsvc.Deps{
 		Accounts:    openAccount{account: &models.Account{ID: accountID, Status: models.StatusActive}},
 		Memberships: memberships,
-	}))
-	bindContainer(t, walletrecords.NewMembers(walletMembers))
+	})
 
 	response := &recordingWalletResponse{}
 	request := &recordingWalletRequest{walletID: walletID.String()}
@@ -49,7 +45,11 @@ func TestWallet_Context_DeniesWhenTheMembershipReadFails(t *testing.T) {
 		response: response,
 	}
 
-	WalletContext()(ctx)
+	WalletContext(WalletContextDeps{
+		Wallets:  wallets,
+		Accounts: accounts,
+		Members:  walletrecords.NewMembers(walletMembers),
+	})(ctx)
 
 	if memberships.reads != 1 {
 		t.Fatalf("membership reads = %d, want 1", memberships.reads)
@@ -72,30 +72,6 @@ func TestWallet_Context_DeniesWhenTheMembershipReadFails(t *testing.T) {
 	}
 	if _, stored := requestctx.Wallet(ctx); stored {
 		t.Fatal("a failed membership read stored the wallet")
-	}
-}
-
-// bindContainer replaces the T binding for one test. TestMain boots the app,
-// which already built and cached the production instance, so the rebinding
-// drops that cache entry and the cleanup puts the production instance back for
-// the suites that share this process.
-func bindContainer[T any](t *testing.T, value T) {
-	t.Helper()
-	var zero T
-	production, err := container.Make[T]()
-	if err != nil {
-		t.Fatalf("resolve %T: %v", zero, err)
-	}
-	rebind := func(instance T) {
-		foundation.App.Singleton(zero, func(contractsfoundation.Application) (any, error) {
-			return instance, nil
-		})
-		foundation.App.Fresh(zero)
-	}
-	t.Cleanup(func() { rebind(production) })
-	rebind(value)
-	if _, err := container.Make[T](); err != nil {
-		t.Fatalf("bind %T: %v", zero, err)
 	}
 }
 

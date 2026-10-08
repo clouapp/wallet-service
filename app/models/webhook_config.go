@@ -21,3 +21,11 @@ type WebhookConfig struct {
 func (w *WebhookConfig) TableName() string {
 	return "webhook_configs"
 }
+
+// WebhookOwnership is the columns that decide whether an account may see a
+// webhook. The signing secret is not selected and is not opened.
+type WebhookOwnership struct {
+	ID        uuid.UUID  `gorm:"column:id"`
+	AccountID *uuid.UUID `gorm:"column:account_id"`
+	WalletID  *uuid.UUID `gorm:"column:wallet_id"`
+}

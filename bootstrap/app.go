@@ -27,6 +27,7 @@ import (
 	"github.com/macrowallets/waas/app/services/chains"
 	"github.com/macrowallets/waas/app/services/credentialmail"
 	"github.com/macrowallets/waas/app/services/deposit"
+	"github.com/macrowallets/waas/app/services/ingest"
 	"github.com/macrowallets/waas/app/services/price"
 	"github.com/macrowallets/waas/app/services/refresh"
 	"github.com/macrowallets/waas/app/services/walletrecords"
@@ -115,7 +116,10 @@ func Boot() contractsfoundation.Application {
 		WithRules(Rules).
 		WithConfig(bootConfig).
 		WithMiddleware(func(h contractsconfiguration.Middleware) {
-			h.Use(middleware.GlobalChain(requestTimeout())...).
+			h.Use(middleware.GlobalChain(requestTimeout(), middleware.InboundSignatureDeps{
+				Subscriptions: container.MustMake[*ingest.Subscriptions](),
+				Lookup:        container.MustMake[*ingest.Catalog]().Lookup,
+			})...).
 				Recover(middleware.RecoverPanic)
 		}).
 		WithRouting(registerRoutes).

@@ -216,6 +216,18 @@ func (s *Service) ListInvites(ctx context.Context, accountID uuid.UUID, limit, o
 	return s.invites.PaginateByAccountID(ctx, accountID, limit, offset)
 }
 
+// FindOpenInvite returns one invite of the account that is not accepted and
+// not revoked. A missing one is models.ErrRepositoryNotFound.
+func (s *Service) FindOpenInvite(ctx context.Context, accountID, inviteID uuid.UUID) (*models.AccountInvite, error) {
+	if s == nil || s.invites == nil {
+		return nil, errors.New("account invite stores are required")
+	}
+	if ctx == nil {
+		return nil, errors.New("find invite: context is required")
+	}
+	return s.invites.FindOpenByAccountAndID(ctx, accountID, inviteID)
+}
+
 func newInviteToken() (raw, hash string, err error) {
 	buf := make([]byte, 32)
 	if _, err = rand.Read(buf); err != nil {

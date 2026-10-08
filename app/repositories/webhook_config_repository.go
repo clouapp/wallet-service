@@ -97,21 +97,13 @@ func (r *WebhookConfigRepository) FindAll(ctx context.Context) ([]models.Webhook
 	return r.openWebhookSecrets(cfgs)
 }
 
-// WebhookOwnership is the columns that decide whether an account may see a
-// webhook. The signing secret is not selected and is not opened.
-type WebhookOwnership struct {
-	ID        uuid.UUID  `gorm:"column:id"`
-	AccountID *uuid.UUID `gorm:"column:account_id"`
-	WalletID  *uuid.UUID `gorm:"column:wallet_id"`
-}
-
 // FindOwnership loads id, account_id, and wallet_id for one config. A missing
 // row is ErrRepositoryNotFound. The signing secret stays sealed.
-func (r *WebhookConfigRepository) FindOwnership(ctx context.Context, id uuid.UUID) (*WebhookOwnership, error) {
+func (r *WebhookConfigRepository) FindOwnership(ctx context.Context, id uuid.UUID) (*models.WebhookOwnership, error) {
 	if id == uuid.Nil {
 		return nil, models.ErrRepositoryNotFound
 	}
-	var row WebhookOwnership
+	var row models.WebhookOwnership
 	err := r.Query(ctx).Model(&models.WebhookConfig{}).
 		Select("id", "account_id", "wallet_id").
 		Where("id = ?", id).

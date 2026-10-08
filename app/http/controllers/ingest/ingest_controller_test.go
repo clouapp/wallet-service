@@ -176,7 +176,7 @@ func TestHandle_Webhook_IngestHandsATypedEventAfterTheSignature(t *testing.T) {
 	store := &memorySubs{sub: &models.WebhookSubscription{SigningSecret: "sealed-signing-secret"}}
 	sink := &recordingIngest{}
 	ctx, recorder := newIngestContext(raw, sigMarker)
-	middleware.ProviderSignatureWith(middleware.InboundSignatureDeps{
+	middleware.ProviderSignature(middleware.InboundSignatureDeps{
 		Subscriptions: ingestsvc.NewSubscriptions(store),
 		Lookup: func() map[string]providers.WebhookProvider {
 			return map[string]providers.WebhookProvider{"alchemy": provider}
@@ -291,7 +291,7 @@ func postIngest(t *testing.T, path string, body []byte, deps middleware.InboundS
 	continued := false
 	engine := gin.New()
 	engine.POST(path, func(c *gin.Context) {
-		middleware.ProviderSignatureWith(deps)(ginpkg.NewContext(c))
+		middleware.ProviderSignature(deps)(ginpkg.NewContext(c))
 	}, func(*gin.Context) { continued = true })
 	recorder := httptest.NewRecorder()
 	request := httptest.NewRequest(http.MethodPost, path, bytes.NewReader(body))

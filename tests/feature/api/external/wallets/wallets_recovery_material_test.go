@@ -133,7 +133,10 @@ func (s *WalletRecoveryMaterialTestSuite) registerCreateRoutes() {
 		facades.Route().Prefix("/api/v1/recovery-material").Middleware(
 			middleware.APITokenAuth(accounts),
 			noCache,
-			middleware.APIScope(middleware.PermWalletsCreate),
+			middleware.APIScope(middleware.ScopeLookups{
+				Transactions: container.MustMake[*walletrecords.Transactions](),
+				Webhooks:     container.MustMake[*walletrecords.Webhooks](),
+			}, middleware.PermWalletsCreate),
 		).Post("/wallets", external.CreateWallet)
 		facades.Route().Prefix("/v1/recovery-material/wallets").Middleware(
 			middleware.SessionAuth(),

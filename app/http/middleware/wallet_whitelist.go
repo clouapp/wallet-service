@@ -3,7 +3,6 @@ package middleware
 import (
 	"github.com/goravel/framework/contracts/http"
 
-	"github.com/macrowallets/waas/app/container"
 	"github.com/macrowallets/waas/app/http/middleware/requestctx"
 	"github.com/macrowallets/waas/app/http/requests"
 	"github.com/macrowallets/waas/app/policies"
@@ -19,9 +18,12 @@ import (
 // answers 404, and only an entry that exists is 403. A denial is 403 with
 // the policy message. Create writes nothing, and delete leaves the entry in
 // place.
-func WalletWhitelist(memberships *walletrecords.Memberships) http.Middleware {
+func WalletWhitelist(memberships *walletrecords.Memberships, entries *walletrecords.Whitelist) http.Middleware {
 	if memberships == nil {
 		panic("wallet whitelist: wallet memberships are required")
+	}
+	if entries == nil {
+		panic("wallet whitelist: whitelist entries are required")
 	}
 	return func(ctx http.Context) {
 		wallet := requestctx.MustWallet(ctx)
@@ -31,7 +33,7 @@ func WalletWhitelist(memberships *walletrecords.Memberships) http.Middleware {
 				ctx.Request().Next()
 				return
 			}
-			entry, err := container.MustMake[*walletrecords.Whitelist]().FindByIDAndWallet(ctx.Context(), entryID, wallet.ID)
+			entry, err := entries.FindByIDAndWallet(ctx.Context(), entryID, wallet.ID)
 			if err != nil || entry == nil {
 				ctx.Request().Next()
 				return

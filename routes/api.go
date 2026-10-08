@@ -1,6 +1,7 @@
 package routes
 
 import (
+	contractshttp "github.com/goravel/framework/contracts/http"
 	"github.com/goravel/framework/contracts/route"
 
 	"github.com/macrowallets/waas/app/container"
@@ -46,6 +47,13 @@ func RegisterExternalAPI() {
 	sweepCtrl := newExternalSweepController()
 	withdrawalCtrl := newExternalWithdrawalsController()
 	feeEstimateCtrl := newFeeEstimateController()
+	scopeLookups := middleware.ScopeLookups{
+		Transactions: container.MustMake[*walletrecords.Transactions](),
+		Webhooks:     container.MustMake[*walletrecords.Webhooks](),
+	}
+	apiScope := func(permission string) contractshttp.Middleware {
+		return middleware.APIScope(scopeLookups, permission)
+	}
 
 	facades.Route().Prefix("/api/v1").Middleware(middleware.Throttle(middleware.ThrottleAPI), middleware.APITokenAuth(
 		container.MustMake[*accountsvc.Service](),
@@ -57,37 +65,37 @@ func RegisterExternalAPI() {
 		// Wallet routes resolve the wallet (404) before the scope check (403).
 		router.Get("/chains", chainCtrl.ListChains)
 
-		router.Middleware(middleware.APIScope(middleware.PermWalletsCreate)).Post("/wallets", walletCtrl.CreateWallet)
-		router.Middleware(middleware.APIScope(middleware.PermWalletsRead)).Get("/wallets", walletCtrl.ListWallets)
+		router.Middleware(apiScope(middleware.PermWalletsCreate)).Post("/wallets", walletCtrl.CreateWallet)
+		router.Middleware(apiScope(middleware.PermWalletsRead)).Get("/wallets", walletCtrl.ListWallets)
 
 		router.Get("/addresses/{address}", addressCtrl.LookupAddress)
 		router.Get("/users/{external_id}/addresses", addressCtrl.ListUserAddresses)
 
-		router.Prefix("/wallets/{walletId}").Middleware(middleware.APIWalletContext()).Group(func(r route.Router) {
-			r.Middleware(middleware.APIScope(middleware.PermWalletsRead)).Get("", walletCtrl.GetWallet)
+		router.Prefix("/wallets/{walletId}").Middleware(middleware.APIWalletContext(container.MustMake[*walletrecords.Wallets]())).Group(func(r route.Router) {
+			r.Middleware(apiScope(middleware.PermWalletsRead)).Get("", walletCtrl.GetWallet)
 
-			r.Middleware(middleware.APIScope(middleware.PermAddressesCreate)).Post("/addresses", addressCtrl.GenerateAddress)
+			r.Middleware(apiScope(middleware.PermAddressesCreate)).Post("/addresses", addressCtrl.GenerateAddress)
 			r.Get("/addresses", addressCtrl.ListWalletAddresses)
 			r.Patch("/addresses/{addressId}", addressCtrl.UpdateAddress)
 
-			r.Middleware(middleware.APIScope(middleware.PermSweepExecute)).Post("/consolidate", sweepCtrl.ConsolidateWallet)
+			r.Middleware(apiScope(middleware.PermSweepExecute)).Post("/consolidate", sweepCtrl.ConsolidateWallet)
 			r.Get("/gas-status", sweepCtrl.GetGasStatus)
 			r.Middleware(middleware.Throttle(middleware.ThrottleGasCheck)).Post("/gas-check", sweepCtrl.ForceGasCheck)
 			r.Post("/withdraw/preview", sweepCtrl.PreviewWithdraw)
 			r.Get("/fee-estimate", feeEstimateCtrl.GetWalletFeeEstimate)
-			r.Middleware(middleware.APIScope(middleware.PermWithdrawalsCreate)).Post("/withdrawals", withdrawalCtrl.CreateWalletWithdrawal)
+			r.Middleware(apiScope(middleware.PermWithdrawalsCreate)).Post("/withdrawals", withdrawalCtrl.CreateWalletWithdrawal)
 			r.Get("/withdrawals/{idempotencyKey}", withdrawalCtrl.GetWalletWithdrawalByIdempotencyKey)
 		})
 
-		router.Middleware(middleware.APIScope(middleware.PermTransactionsRead)).Group(func(r route.Router) {
+		router.Middleware(apiScope(middleware.PermTransactionsRead)).Group(func(r route.Router) {
 			r.Get("/transactions", transactionCtrl.ListTransactions)
 			r.Get("/transactions/{id}", transactionCtrl.GetTransaction)
 			r.Get("/users/{external_id}/transactions", transactionCtrl.ListUserTransactions)
 		})
 
-		router.Middleware(middleware.APIScope(middleware.PermWebhooksWrite)).Post("/webhooks", webhookCtrl.CreateWebhook)
-		router.Middleware(middleware.APIScope(middleware.PermWebhooksRead)).Get("/webhooks", webhookCtrl.ListWebhooks)
-		router.Middleware(middleware.APIScope(middleware.PermWebhooksWrite)).Patch("/webhooks/{webhookId}", webhookCtrl.UpdateWebhook)
+		router.Middleware(apiScope(middleware.PermWebhooksWrite)).Post("/webhooks", webhookCtrl.CreateWebhook)
+		router.Middleware(apiScope(middleware.PermWebhooksRead)).Get("/webhooks", webhookCtrl.ListWebhooks)
+		router.Middleware(apiScope(middleware.PermWebhooksWrite)).Patch("/webhooks/{webhookId}", webhookCtrl.UpdateWebhook)
 	})
 }
 

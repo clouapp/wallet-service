@@ -100,10 +100,19 @@ func TestTransactions_Find_ByChainAndTxHashForwards(t *testing.T) {
 }
 
 type fakeTransactions struct {
-	row     *models.Transaction
-	chainID string
-	txHash  string
-	err     error
+	row       *models.Transaction
+	chainID   string
+	txHash    string
+	accountID uuid.UUID
+	err       error
+}
+
+func (f *fakeTransactions) FindByIDForAccount(_ context.Context, _, accountID uuid.UUID) (*models.Transaction, error) {
+	f.accountID = accountID
+	if f.err != nil {
+		return nil, f.err
+	}
+	return f.row, nil
 }
 
 func (f *fakeTransactions) FindByWallet(context.Context, uuid.UUID, string, string, int, int) ([]models.Transaction, int64, error) {
@@ -161,4 +170,60 @@ func (f *fakeAddresses) FindByChainAndAddress(_ context.Context, chainID, addres
 		return nil, f.err
 	}
 	return f.row, nil
+}
+
+func TestTransactions_Find_ByIDForAccountForwards(t *testing.T) {
+	t.Parallel()
+
+	accountID := uuid.New()
+	want := &models.Transaction{ID: uuid.New()}
+	store := &fakeTransactions{row: want}
+	got, err := walletrecords.NewTransactions(store).FindByIDForAccount(context.Background(), want.ID, accountID)
+	require.NoError(t, err)
+	assert.Equal(t, want, got)
+	assert.Equal(t, accountID, store.accountID)
+
+	store.err = models.ErrRepositoryNotFound
+	_, err = walletrecords.NewTransactions(store).FindByIDForAccount(context.Background(), want.ID, accountID)
+	assert.ErrorIs(t, err, models.ErrRepositoryNotFound)
+
+	_, err = walletrecords.NewTransactions(store).FindByIDForAccount(nil, want.ID, accountID)
+	assert.EqualError(t, err, "find transaction: context is required")
+}
+
+type fakeWebhooks struct {
+	row *models.WebhookOwnership
+	err error
+}
+
+func (f *fakeWebhooks) FindByWalletID(context.Context, uuid.UUID) ([]models.WebhookConfig, error) {
+	return nil, f.err
+}
+func (f *fakeWebhooks) Create(context.Context, *models.WebhookConfig) error { return f.err }
+func (f *fakeWebhooks) FindByIDAndWallet(context.Context, uuid.UUID, uuid.UUID) (*models.WebhookConfig, error) {
+	return nil, f.err
+}
+func (f *fakeWebhooks) FindOwnership(context.Context, uuid.UUID) (*models.WebhookOwnership, error) {
+	if f.err != nil {
+		return nil, f.err
+	}
+	return f.row, nil
+}
+func (f *fakeWebhooks) Delete(context.Context, *models.WebhookConfig) error { return f.err }
+
+func TestWebhooks_Find_OwnershipForwards(t *testing.T) {
+	t.Parallel()
+
+	want := &models.WebhookOwnership{ID: uuid.New()}
+	store := &fakeWebhooks{row: want}
+	got, err := walletrecords.NewWebhooks(store).FindOwnership(context.Background(), want.ID)
+	require.NoError(t, err)
+	assert.Equal(t, want, got)
+
+	store.err = models.ErrRepositoryNotFound
+	_, err = walletrecords.NewWebhooks(store).FindOwnership(context.Background(), want.ID)
+	assert.ErrorIs(t, err, models.ErrRepositoryNotFound)
+
+	_, err = walletrecords.NewWebhooks(store).FindOwnership(nil, want.ID)
+	assert.EqualError(t, err, "find webhook ownership: context is required")
 }

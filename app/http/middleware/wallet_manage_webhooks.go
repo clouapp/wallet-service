@@ -3,7 +3,6 @@ package middleware
 import (
 	"github.com/goravel/framework/contracts/http"
 
-	"github.com/macrowallets/waas/app/container"
 	"github.com/macrowallets/waas/app/http/middleware/requestctx"
 	"github.com/macrowallets/waas/app/http/requests"
 	"github.com/macrowallets/waas/app/policies"
@@ -20,9 +19,12 @@ import (
 // 404, and only a webhook that exists is 403. A denial is 403 with the
 // policy message. Create writes nothing, delete leaves the webhook in place,
 // and a refused test is not sent.
-func WalletManageWebhooks(memberships *walletrecords.Memberships) http.Middleware {
+func WalletManageWebhooks(memberships *walletrecords.Memberships, webhooks *walletrecords.Webhooks) http.Middleware {
 	if memberships == nil {
 		panic("wallet manage webhooks: wallet memberships are required")
+	}
+	if webhooks == nil {
+		panic("wallet manage webhooks: wallet webhooks are required")
 	}
 	return func(ctx http.Context) {
 		wallet := requestctx.MustWallet(ctx)
@@ -32,7 +34,7 @@ func WalletManageWebhooks(memberships *walletrecords.Memberships) http.Middlewar
 				ctx.Request().Next()
 				return
 			}
-			cfg, err := container.MustMake[*walletrecords.Webhooks]().FindByIDAndWallet(ctx.Context(), webhookID, wallet.ID)
+			cfg, err := webhooks.FindByIDAndWallet(ctx.Context(), webhookID, wallet.ID)
 			if err != nil || cfg == nil {
 				ctx.Request().Next()
 				return

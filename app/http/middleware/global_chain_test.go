@@ -11,10 +11,12 @@ import (
 	"github.com/gin-gonic/gin"
 	contractshttp "github.com/goravel/framework/contracts/http"
 	ginpkg "github.com/goravel/gin"
+
+	ingestsvc "github.com/macrowallets/waas/app/services/ingest"
 )
 
 func TestGlobal_Chain_FollowsThePlanOrder(t *testing.T) {
-	links := globalChainLinks(time.Second)
+	links := globalChainLinks(time.Second, InboundSignatureDeps{Subscriptions: &ingestsvc.Subscriptions{}})
 	want := []string{
 		chainRequestTimeout,
 		chainProviderSignature,
@@ -34,8 +36,8 @@ func TestGlobal_Chain_FollowsThePlanOrder(t *testing.T) {
 			t.Fatalf("position %d (%s) has no middleware", i, want[i])
 		}
 	}
-	if len(GlobalChain(time.Second)) != len(want) {
-		t.Fatalf("GlobalChain len = %d, want %d", len(GlobalChain(time.Second)), len(want))
+	if len(GlobalChain(time.Second, InboundSignatureDeps{Subscriptions: &ingestsvc.Subscriptions{}})) != len(want) {
+		t.Fatalf("GlobalChain len = %d, want %d", len(GlobalChain(time.Second, InboundSignatureDeps{Subscriptions: &ingestsvc.Subscriptions{}})), len(want))
 	}
 }
 

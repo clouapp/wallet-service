@@ -76,7 +76,7 @@ func TestProvider_Signature_DoesNotParseBeforeTheSignatureAndKeepsTheRawBody(t *
 	if string(provider.gotBody) != string(jsonArrayBody()) || provider.gotSecret != secretMarker {
 		t.Fatalf("verify saw secret %q body %q", provider.gotSecret, provider.gotBody)
 	}
-	ProviderSignatureWith(signatureDeps(t, store, provider))(ginpkg.NewContext(held))
+	ProviderSignature(signatureDeps(t, store, provider))(ginpkg.NewContext(held))
 	if provider.verifyCalls != 1 || store.calls != 1 {
 		t.Fatalf("second pass verify=%d lookups=%d", provider.verifyCalls, store.calls)
 	}
@@ -143,7 +143,7 @@ func runInbound(t *testing.T, path string, body []byte, deps InboundSignatureDep
 	engine := gin.New()
 	engine.POST(path, func(c *gin.Context) {
 		held = c
-		ProviderSignatureWith(deps)(ginpkg.NewContext(c))
+		ProviderSignature(deps)(ginpkg.NewContext(c))
 	}, func(c *gin.Context) {
 		continued = true
 		if after != nil {
@@ -243,4 +243,13 @@ func (p *signatureProvider) VerifyInbound(headers providers.Header, body []byte,
 func (p *signatureProvider) ParsePayload([]byte) ([]providers.InboundTransfer, error) {
 	p.parseCalls++
 	return nil, nil
+}
+
+func TestProvider_Signature_RefusesToBuildWithoutSubscriptions(t *testing.T) {
+	defer func() {
+		if recover() == nil {
+			t.Fatal("ProviderSignature built without a subscriptions lookup")
+		}
+	}()
+	ProviderSignature(InboundSignatureDeps{})
 }

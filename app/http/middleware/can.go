@@ -8,12 +8,10 @@ import (
 	"github.com/goravel/framework/contracts/http"
 	goravelerrors "github.com/goravel/framework/errors"
 
-	"github.com/macrowallets/waas/app/container"
 	"github.com/macrowallets/waas/app/http/middleware/requestctx"
 	"github.com/macrowallets/waas/app/http/responses"
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/policies"
-	"github.com/macrowallets/waas/app/repositories"
 	accountsvc "github.com/macrowallets/waas/app/services/account"
 )
 
@@ -47,9 +45,12 @@ const PermTokensWrite = policies.PermTokensWrite
 // unknown role fail closed. A child resource (member, token, or invite) is
 // resolved first: a missing one is left to the handler, which answers 404,
 // and only a resource that exists is 403 when the permission is missing.
-func Can(permission string) http.Middleware {
+func Can(accounts *accountsvc.Service, permission string) http.Middleware {
+	if accounts == nil {
+		panic("can: the account service is required")
+	}
 	return func(ctx http.Context) {
-		switch gateAccountChild(ctx) {
+		switch gateAccountChild(ctx, accounts) {
 		case childPass:
 			ctx.Request().Next()
 			return
@@ -76,20 +77,20 @@ const (
 // with no child id keep today's check. An id that is not a UUID is passed
 // through so the handler can answer 400. A missing child is passed through
 // so the handler can answer 404. A failed read is 503 and does not admit.
-func gateAccountChild(ctx http.Context) childGate {
+func gateAccountChild(ctx http.Context, accounts *accountsvc.Service) childGate {
 	switch {
 	case strings.TrimSpace(ctx.Request().Route("userId")) != "":
-		return gateMember(ctx)
+		return gateMember(ctx, accounts)
 	case strings.TrimSpace(ctx.Request().Route("tokenId")) != "":
-		return gateToken(ctx)
+		return gateToken(ctx, accounts)
 	case strings.TrimSpace(ctx.Request().Route("id")) != "":
-		return gateInvite(ctx)
+		return gateInvite(ctx, accounts)
 	default:
 		return childCheck
 	}
 }
 
-func gateMember(ctx http.Context) childGate {
+func gateMember(ctx http.Context, accounts *accountsvc.Service) childGate {
 	id, ok := childUUID(ctx, "userId")
 	if !ok {
 		return childPass
@@ -98,7 +99,7 @@ func gateMember(ctx http.Context) childGate {
 	if !ok {
 		return childCheck
 	}
-	member, err := container.MustMake[*accountsvc.Service]().FindMember(ctx.Context(), accountID, id)
+	member, err := accounts.FindMember(ctx.Context(), accountID, id)
 	if err != nil && !rowMissing(err) {
 		abortWithJSON(ctx, http.StatusServiceUnavailable, http.Json{"error": "failed to load membership"})
 		return childAnswered
@@ -109,7 +110,7 @@ func gateMember(ctx http.Context) childGate {
 	return childCheck
 }
 
-func gateToken(ctx http.Context) childGate {
+func gateToken(ctx http.Context, accounts *accountsvc.Service) childGate {
 	id, ok := childUUID(ctx, "tokenId")
 	if !ok {
 		return childPass
@@ -118,7 +119,7 @@ func gateToken(ctx http.Context) childGate {
 	if !ok {
 		return childCheck
 	}
-	token, err := container.MustMake[*accountsvc.Service]().FindAccessToken(ctx.Context(), id, accountID)
+	token, err := accounts.FindAccessToken(ctx.Context(), id, accountID)
 	if err != nil && !rowMissing(err) {
 		abortWithJSON(ctx, http.StatusServiceUnavailable, http.Json{"error": "failed to load token"})
 		return childAnswered
@@ -129,7 +130,7 @@ func gateToken(ctx http.Context) childGate {
 	return childCheck
 }
 
-func gateInvite(ctx http.Context) childGate {
+func gateInvite(ctx http.Context, accounts *accountsvc.Service) childGate {
 	id, ok := childUUID(ctx, "id")
 	if !ok {
 		return childPass
@@ -138,7 +139,7 @@ func gateInvite(ctx http.Context) childGate {
 	if !ok {
 		return childCheck
 	}
-	invite, err := container.MustMake[*repositories.AccountInviteRepository]().FindOpenByAccountAndID(ctx.Context(), accountID, id)
+	invite, err := accounts.FindOpenInvite(ctx.Context(), accountID, id)
 	if err != nil && !rowMissing(err) {
 		abortWithJSON(ctx, http.StatusServiceUnavailable, http.Json{"error": "failed to load invite"})
 		return childAnswered

@@ -6,11 +6,11 @@ import (
 	"github.com/google/uuid"
 	"github.com/goravel/framework/contracts/http"
 
-	"github.com/macrowallets/waas/app/container"
 	"github.com/macrowallets/waas/app/http/middleware/requestctx"
 	"github.com/macrowallets/waas/app/http/responses"
+	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/policies"
-	"github.com/macrowallets/waas/app/repositories"
+	"github.com/macrowallets/waas/app/services/walletrecords"
 )
 
 // Permission names a route passes to APIScope. They are the S3.4.6 catalog.
@@ -26,6 +26,12 @@ const (
 	PermTransactionsRead  = policies.PermTransactionsRead
 )
 
+// ScopeLookups are the reads APIScope makes to resolve the path child.
+type ScopeLookups struct {
+	Transactions *walletrecords.Transactions
+	Webhooks     *walletrecords.Webhooks
+}
+
 // APIScope limits a token that lists permissions to those names. A blank
 // permissions store keeps today's access. A missing permission is 403
 // forbidden: S3.4.6 does not name another code. The check reads the token
@@ -33,14 +39,17 @@ const (
 // PATCH /webhooks/{webhookId} resolve the resource first: a missing resource,
 // and a resource that is not this account's, is 404 before the permission
 // check. An id that is not a UUID is left to the handler, which answers 400.
-func APIScope(permission string) http.Middleware {
+func APIScope(lookups ScopeLookups, permission string) http.Middleware {
+	if lookups.Transactions == nil || lookups.Webhooks == nil {
+		panic("api scope: transactions and webhooks are required")
+	}
 	return func(ctx http.Context) {
 		token, ok := requestctx.APIToken(ctx)
 		if !ok || token == nil {
 			abortWithJSON(ctx, http.StatusUnauthorized, http.Json{"error": "unauthenticated"})
 			return
 		}
-		switch gateExternalChild(ctx) {
+		switch gateExternalChild(ctx, lookups) {
 		case childPass:
 			ctx.Request().Next()
 			return
@@ -58,17 +67,17 @@ func APIScope(permission string) http.Middleware {
 // gateExternalChild resolves the external path child before the scope check.
 // A transaction or webhook that is missing or belongs to another account is
 // 404 here, because the transaction handler loads by id alone.
-func gateExternalChild(ctx http.Context) childGate {
+func gateExternalChild(ctx http.Context, lookups ScopeLookups) childGate {
 	if raw := strings.TrimSpace(ctx.Request().Route("webhookId")); raw != "" {
-		return gateExternalWebhook(ctx, raw)
+		return gateExternalWebhook(ctx, lookups.Webhooks, raw)
 	}
 	if raw := strings.TrimSpace(ctx.Request().Route("id")); raw != "" {
-		return gateExternalTransaction(ctx, raw)
+		return gateExternalTransaction(ctx, lookups.Transactions, raw)
 	}
 	return childCheck
 }
 
-func gateExternalTransaction(ctx http.Context, raw string) childGate {
+func gateExternalTransaction(ctx http.Context, transactions *walletrecords.Transactions, raw string) childGate {
 	id, err := uuid.Parse(raw)
 	if err != nil {
 		return childPass
@@ -78,7 +87,7 @@ func gateExternalTransaction(ctx http.Context, raw string) childGate {
 		abortWithJSON(ctx, http.StatusUnauthorized, http.Json{"error": "unauthenticated"})
 		return childAnswered
 	}
-	tx, err := container.MustMake[*repositories.TransactionRepository]().FindByIDForAccount(ctx.Context(), id, accountID)
+	tx, err := transactions.FindByIDForAccount(ctx.Context(), id, accountID)
 	if err != nil && !rowMissing(err) {
 		abortWithJSON(ctx, http.StatusInternalServerError, http.Json{"error": "failed to load transaction"})
 		return childAnswered
@@ -90,7 +99,7 @@ func gateExternalTransaction(ctx http.Context, raw string) childGate {
 	return childCheck
 }
 
-func gateExternalWebhook(ctx http.Context, raw string) childGate {
+func gateExternalWebhook(ctx http.Context, webhooks *walletrecords.Webhooks, raw string) childGate {
 	id, err := uuid.Parse(raw)
 	if err != nil {
 		return childPass
@@ -100,7 +109,7 @@ func gateExternalWebhook(ctx http.Context, raw string) childGate {
 		abortWithJSON(ctx, http.StatusUnauthorized, http.Json{"error": "unauthenticated"})
 		return childAnswered
 	}
-	row, err := container.MustMake[*repositories.WebhookConfigRepository]().FindOwnership(ctx.Context(), id)
+	row, err := webhooks.FindOwnership(ctx.Context(), id)
 	if err != nil && !rowMissing(err) {
 		abortWithJSON(ctx, http.StatusInternalServerError, http.Json{"error": "failed to load webhook"})
 		return childAnswered
@@ -112,7 +121,7 @@ func gateExternalWebhook(ctx http.Context, raw string) childGate {
 	return childCheck
 }
 
-func webhookVisibleToAccount(row *repositories.WebhookOwnership, accountID uuid.UUID) bool {
+func webhookVisibleToAccount(row *models.WebhookOwnership, accountID uuid.UUID) bool {
 	if row == nil || row.ID == uuid.Nil || row.WalletID != nil {
 		return false
 	}

@@ -1,6 +1,7 @@
 package routes
 
 import (
+	contractshttp "github.com/goravel/framework/contracts/http"
 	"github.com/goravel/framework/contracts/route"
 
 	"github.com/macrowallets/waas/app/container"
@@ -52,6 +53,17 @@ func RegisterAdminRoutes() {
 	noCache := middleware.CacheControl(0)
 	accounts := container.MustMake[*accountsvc.Service]()
 	accountHeader := middleware.AccountHeader(accounts)
+	can := func(permission string) contractshttp.Middleware {
+		return middleware.Can(accounts, permission)
+	}
+	whitelist := container.MustMake[*walletrecords.Whitelist]()
+	walletWebhooks := container.MustMake[*walletrecords.Webhooks]()
+	requireTOTP := middleware.RequireEnabledTOTP(
+		container.MustMake[*usersvc.Service](),
+		container.MustMake[*authsvc.SecondFactorVerifier](),
+		whitelist,
+		walletWebhooks,
+	)
 	inviteCtrl := newDashboardInvitesController()
 	totpEnrollment := middleware.TOTPEnrollment(
 		container.MustMake[*featuressvc.Service](),
@@ -117,31 +129,31 @@ func RegisterAdminRoutes() {
 		router.Post("", accountsCtrl.CreateAccount)
 		router.Prefix("/{accountId}").Middleware(middleware.AccountContext(accounts), totpEnrollment).Group(func(r route.Router) {
 			r.Get("", accountsCtrl.GetAccount)
-			r.Middleware(middleware.Can(middleware.PermAccountWrite)).Patch("", accountsCtrl.UpdateAccount)
-			r.Middleware(middleware.Can(middleware.PermAccountLifecycle)).Post("/archive", accountsCtrl.ArchiveAccount)
-			r.Middleware(middleware.Can(middleware.PermAccountLifecycle)).Post("/freeze", accountsCtrl.FreezeAccount)
+			r.Middleware(can(middleware.PermAccountWrite)).Patch("", accountsCtrl.UpdateAccount)
+			r.Middleware(can(middleware.PermAccountLifecycle)).Post("/archive", accountsCtrl.ArchiveAccount)
+			r.Middleware(can(middleware.PermAccountLifecycle)).Post("/freeze", accountsCtrl.FreezeAccount)
 
-			r.Middleware(middleware.Can(middleware.PermUsersRead)).Get("/users", accountsCtrl.ListAccountUsers)
-			r.Middleware(middleware.Can(middleware.PermUsersWrite)).Post("/users", accountsCtrl.AddAccountUser)
-			r.Middleware(middleware.AccountUpdateMember()).Patch("/users/{userId}", accountsCtrl.UpdateAccountUser)
-			r.Middleware(middleware.Can(middleware.PermUsersWrite)).Delete("/users/{userId}", accountsCtrl.RemoveAccountUser)
-			r.Middleware(middleware.Can(middleware.PermUsersRead)).Get("/invites", inviteCtrl.List)
-			r.Middleware(middleware.Can(middleware.PermUsersWrite)).Post("/invites", inviteCtrl.Create)
-			r.Middleware(middleware.Can(middleware.PermUsersWrite)).Post("/invites/{id}/resend", inviteCtrl.Resend)
-			r.Middleware(middleware.Can(middleware.PermUsersWrite)).Delete("/invites/{id}", inviteCtrl.Delete)
+			r.Middleware(can(middleware.PermUsersRead)).Get("/users", accountsCtrl.ListAccountUsers)
+			r.Middleware(can(middleware.PermUsersWrite)).Post("/users", accountsCtrl.AddAccountUser)
+			r.Middleware(middleware.AccountUpdateMember(accounts)).Patch("/users/{userId}", accountsCtrl.UpdateAccountUser)
+			r.Middleware(can(middleware.PermUsersWrite)).Delete("/users/{userId}", accountsCtrl.RemoveAccountUser)
+			r.Middleware(can(middleware.PermUsersRead)).Get("/invites", inviteCtrl.List)
+			r.Middleware(can(middleware.PermUsersWrite)).Post("/invites", inviteCtrl.Create)
+			r.Middleware(can(middleware.PermUsersWrite)).Post("/invites/{id}/resend", inviteCtrl.Resend)
+			r.Middleware(can(middleware.PermUsersWrite)).Delete("/invites/{id}", inviteCtrl.Delete)
 
 			// S3.4.2: GET /v1/accounts/{accountId}/roles roles.read.
 			// Effective grants are the code catalog. There is no
 			// account_role_permissions row and no write on this path.
-			r.Middleware(middleware.Can(middleware.PermRolesRead)).Get("/roles", accountRolesCtrl.Index)
+			r.Middleware(can(middleware.PermRolesRead)).Get("/roles", accountRolesCtrl.Index)
 			// S3.4.2: GET /v1/accounts/{accountId}/permissions roles.read.
 			// The catalog is the same code. There is no permissions table
 			// and no write on this path.
-			r.Middleware(middleware.Can(middleware.PermRolesRead)).Get("/permissions", accountRolesCtrl.Permissions)
+			r.Middleware(can(middleware.PermRolesRead)).Get("/permissions", accountRolesCtrl.Permissions)
 
-			r.Middleware(middleware.Can(middleware.PermTokensRead)).Get("/tokens", accountsCtrl.ListAccountTokens)
-			r.Middleware(middleware.Can(middleware.PermTokensWrite), middleware.MintAPITokenPermissions()).Post("/tokens", accountsCtrl.CreateAccountToken)
-			r.Middleware(middleware.Can(middleware.PermTokensWrite)).Delete("/tokens/{tokenId}", accountsCtrl.RevokeAccountToken)
+			r.Middleware(can(middleware.PermTokensRead)).Get("/tokens", accountsCtrl.ListAccountTokens)
+			r.Middleware(can(middleware.PermTokensWrite), middleware.MintAPITokenPermissions()).Post("/tokens", accountsCtrl.CreateAccountToken)
+			r.Middleware(can(middleware.PermTokensWrite)).Delete("/tokens/{tokenId}", accountsCtrl.RevokeAccountToken)
 
 			// S1.4.7: GET /v1/accounts/{accountId}/settings settings.read (policies.MayViewSettings).
 			r.Middleware(middleware.MayViewSettings()).Get("/settings", accountSettingsCtrl.Show)
@@ -262,11 +274,15 @@ func RegisterAdminRoutes() {
 		router.Get("", walletCtrl.ListWallets)
 		router.Middleware(middleware.RequireFundAction(middleware.FundCreateWallet)).Post("", walletCtrl.CreateWalletAdmin)
 		router.Get("/{walletId}", walletCtrl.GetWallet)
-		router.Prefix("/{walletId}").Middleware(middleware.WalletContext()).Group(func(r route.Router) {
+		router.Prefix("/{walletId}").Middleware(middleware.WalletContext(middleware.WalletContextDeps{
+			Wallets:  container.MustMake[*walletrecords.Wallets](),
+			Accounts: accounts,
+			Members:  container.MustMake[*walletrecords.Members](),
+		})).Group(func(r route.Router) {
 			r.Post("/activate", walletCtrl.ActivateWallet)
 
 			r.Get("/addresses", addressCtrl.ListWalletAddresses)
-			r.Middleware(middleware.Can(middleware.PermAddressesCreate)).Post("/addresses", addressCtrl.GenerateAddress)
+			r.Middleware(can(middleware.PermAddressesCreate)).Post("/addresses", addressCtrl.GenerateAddress)
 			r.Patch("/addresses/{addressId}", addressCtrl.UpdateAddress)
 
 			r.Get("/users", walletUsersCtrl.ListWalletUsers)
@@ -274,13 +290,13 @@ func RegisterAdminRoutes() {
 			r.Middleware(middleware.WalletRemoveUser(walletPolicyMemberships())).Delete("/users/{userId}", walletUsersCtrl.RemoveWalletUser)
 
 			r.Get("/whitelist", whitelistCtrl.ListWhitelistEntries)
-			r.Middleware(middleware.WalletWhitelist(walletPolicyMemberships()), middleware.RequireEnabledTOTP()).Post("/whitelist", whitelistCtrl.AddWhitelistEntry)
-			r.Middleware(middleware.WalletWhitelist(walletPolicyMemberships()), middleware.RequireEnabledTOTP()).Delete("/whitelist/{entryId}", whitelistCtrl.DeleteWhitelistEntry)
+			r.Middleware(middleware.WalletWhitelist(walletPolicyMemberships(), whitelist), requireTOTP).Post("/whitelist", whitelistCtrl.AddWhitelistEntry)
+			r.Middleware(middleware.WalletWhitelist(walletPolicyMemberships(), whitelist), requireTOTP).Delete("/whitelist/{entryId}", whitelistCtrl.DeleteWhitelistEntry)
 
 			r.Get("/webhooks", walletWebhooksCtrl.ListWalletWebhooks)
-			r.Middleware(middleware.WalletManageWebhooks(walletPolicyMemberships()), middleware.RequireEnabledTOTP()).Post("/webhooks", walletWebhooksCtrl.CreateWalletWebhook)
-			r.Middleware(middleware.WalletManageWebhooks(walletPolicyMemberships())).Post("/webhooks/{webhookId}/test", walletWebhooksCtrl.TestWalletWebhook)
-			r.Middleware(middleware.WalletManageWebhooks(walletPolicyMemberships()), middleware.RequireEnabledTOTP()).Delete("/webhooks/{webhookId}", walletWebhooksCtrl.DeleteWalletWebhook)
+			r.Middleware(middleware.WalletManageWebhooks(walletPolicyMemberships(), walletWebhooks), requireTOTP).Post("/webhooks", walletWebhooksCtrl.CreateWalletWebhook)
+			r.Middleware(middleware.WalletManageWebhooks(walletPolicyMemberships(), walletWebhooks)).Post("/webhooks/{webhookId}/test", walletWebhooksCtrl.TestWalletWebhook)
+			r.Middleware(middleware.WalletManageWebhooks(walletPolicyMemberships(), walletWebhooks), requireTOTP).Delete("/webhooks/{webhookId}", walletWebhooksCtrl.DeleteWalletWebhook)
 
 			r.Get("/settings", walletSettingsCtrl.GetWalletSettings)
 			r.Patch("/settings", walletSettingsCtrl.UpdateWalletSettings)
@@ -304,7 +320,7 @@ func RegisterAdminRoutes() {
 			r.Middleware(middleware.Throttle(middleware.ThrottleGasCheck)).Post("/gas-check", sweepCtrl.ForceGasCheck)
 			r.Post("/withdraw/preview", sweepCtrl.PreviewWithdraw)
 
-			r.Prefix("/unspents").Middleware(middleware.UTXOOnly()).Group(func(ur route.Router) {
+			r.Prefix("/unspents").Middleware(middleware.UTXOOnly(container.MustMake[*walletrecords.Wallets]())).Group(func(ur route.Router) {
 				ur.Get("", unspentsCtrl.ListUnspentOutputs)
 			})
 		})

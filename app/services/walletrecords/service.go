@@ -337,6 +337,7 @@ type WebhookStore interface {
 	FindByWalletID(ctx context.Context, walletID uuid.UUID) ([]models.WebhookConfig, error)
 	Create(ctx context.Context, cfg *models.WebhookConfig) error
 	FindByIDAndWallet(ctx context.Context, id, walletID uuid.UUID) (*models.WebhookConfig, error)
+	FindOwnership(ctx context.Context, id uuid.UUID) (*models.WebhookOwnership, error)
 	Delete(ctx context.Context, cfg *models.WebhookConfig) error
 }
 
@@ -376,6 +377,15 @@ func (s *Webhooks) FindByIDAndWallet(ctx context.Context, id, walletID uuid.UUID
 	return s.store.FindByIDAndWallet(ctx, id, walletID)
 }
 
+// FindOwnership loads the ownership columns of one config, whichever wallet or
+// account it belongs to. A missing config is models.ErrRepositoryNotFound.
+func (s *Webhooks) FindOwnership(ctx context.Context, id uuid.UUID) (*models.WebhookOwnership, error) {
+	if err := s.ready(ctx, "find webhook ownership"); err != nil {
+		return nil, err
+	}
+	return s.store.FindOwnership(ctx, id)
+}
+
 func (s *Webhooks) Delete(ctx context.Context, cfg *models.WebhookConfig) error {
 	if err := s.ready(ctx, "delete wallet webhook"); err != nil {
 		return err
@@ -388,6 +398,7 @@ type TransactionStore interface {
 	FindByWallet(ctx context.Context, walletID uuid.UUID, txType, status string, limit, offset int) ([]models.Transaction, int64, error)
 	FindByIDAndWallet(ctx context.Context, txID string, walletID uuid.UUID) (*models.Transaction, error)
 	FindByID(ctx context.Context, id uuid.UUID) (*models.Transaction, error)
+	FindByIDForAccount(ctx context.Context, id, accountID uuid.UUID) (*models.Transaction, error)
 	FindByChainAndTxHash(ctx context.Context, chainID, txHash string) (*models.Transaction, error)
 }
 
@@ -425,6 +436,16 @@ func (s *Transactions) FindByID(ctx context.Context, id uuid.UUID) (*models.Tran
 		return nil, err
 	}
 	return s.store.FindByID(ctx, id)
+}
+
+// FindByIDForAccount returns the transaction when it belongs to a wallet of
+// accountID. A missing one and one on another account are both
+// models.ErrRepositoryNotFound.
+func (s *Transactions) FindByIDForAccount(ctx context.Context, id, accountID uuid.UUID) (*models.Transaction, error) {
+	if err := s.ready(ctx, "find transaction"); err != nil {
+		return nil, err
+	}
+	return s.store.FindByIDForAccount(ctx, id, accountID)
 }
 
 func (s *Transactions) FindByChainAndTxHash(ctx context.Context, chainID, txHash string) (*models.Transaction, error) {
