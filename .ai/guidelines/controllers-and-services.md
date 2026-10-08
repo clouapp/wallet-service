@@ -58,8 +58,10 @@ shape before writing it again:
 |---|---|---|
 | `Register` creating a user, two accounts, two memberships, the default account, then mail, login and a refresh token — no transaction | onboarding | `AuthService.Register`: ONE transaction for the rows; mail and session after commit |
 | `CreateWalletWithdrawal` (195 lines) verifying TOTP and the passphrase, resolving the amount, estimating the fee, creating/updating an idempotent row and publishing events | a withdrawal | `WithdrawalsService.Create` (TOTP and passphrase as ports; idempotency by constraint) |
-| `ctx.Value("account_environment")` vs `chain.IsTestnet` in five handlers | an environment rule | the scope middleware / `app/policies` (see `authorization.md`) |
-| `strings.Contains(err.Error(), "unknown chain")` | a missing sentinel | `chainregistry.ErrUnknownChain`, matched with `errors.Is` |
+| `ctx.Value("account_environment")` vs `chain.IsTestnet` in five handlers | an environment rule | `chains.Service.FindForEnvironment` (`ErrChainNotInEnvironment`) |
+| `strings.Contains(err.Error(), "unknown chain")`, `err.Error() == "wallet not found"` | a missing sentinel | `chainregistry.ErrUnknownChain`, `wallet.ErrWalletNotFound`, `price.ErrCurrencyNotFound`, matched with `errors.Is` |
+| listing memberships, loading each account, sorting and picking the default at login | an account read model | `account.Service.SignInAccounts` |
+| pairing every listed account with the caller's role and failing when one has none | a membership invariant | `account.Service.ListForMemberWithRoles` |
 | `MintAPIToken` living in middleware and called from a controller | issuing a credential | `ApiTokensService` |
 | `facades.Mail().To(...).Send(...)` in a controller | a notification | a job, see `mail-and-notifications.md` |
 
@@ -67,6 +69,14 @@ A decision (`if status == ...`), a loop over domain objects, time arithmetic, or
 two service calls that must agree are all signs. **One service call per
 handler**: two that must agree is a transaction, and a transaction belongs to
 the service.
+
+Two surfaces serving the same route share ONE handler type in
+`app/http/controllers` (`SweepHandler`, `AddressesHandler`); each surface keeps
+its own routes, guards and constructor and aliases or embeds it. A copy per
+surface drifts.
+
+A read that fails and is not fatal to the response (a side list on a view) is
+logged, never dropped with `_`.
 
 ## What crosses the boundary
 
