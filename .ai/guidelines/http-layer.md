@@ -67,7 +67,11 @@ Four steps, in that order, and nothing else. Dependencies come through the
 **constructor**, with the concrete service — no `container.Get()`, no
 `facades.App()`, no repository, no package-level `var authService = …`. The
 route table builds the controller with `container.MustMake[*services.WalletsService]()`,
-so a missing binding fails at boot, not on the first request.
+so a missing binding fails at boot, not on the first request. Middleware and
+resources follow the same rule: a middleware factory takes what it reads
+(`middleware.Can(accounts, perm)`, `middleware.WalletContext(deps)`) and a
+resource only shapes data its controller already loaded. `container.MustMake`
+stays in `bootstrap/`, `routes/`, `app/providers/` and `main.go`.
 
 ## Who is asking
 

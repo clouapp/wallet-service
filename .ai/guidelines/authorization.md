@@ -32,7 +32,7 @@ an earlier one refuses. `Cors` and `CacheControl` are not guards.
 |---|---|
 | dashboard account `/v1/accounts/{accountId}` | `SessionAuth` → `AccountContext` → `TOTPEnrollment` |
 | dashboard wallet `/v1/wallets` | `SessionAuth` → `AccountHeader` → `TOTPEnrollment`, then `WalletContext` on the nested `/{walletId}` group, then `UTXOOnly` on unspents |
-| external `/api/v1` | `APITokenAuth` (includes `ip_cidr`) → `APIWalletContext` on `/{walletId}` (404 before the scope check) → `APIScope(permission)` on the routes the token catalog names |
+| external `/api/v1` | `APITokenAuth` (includes `ip_cidr`) → `APIWalletContext` on `/{walletId}` (404 before the scope check) → `APIScope(lookups, permission)` on the routes the token catalog names |
 | platform `/v1/platform` | `SessionAuth` → `PlatformAdmin` on the whole group |
 | guest `/v1/auth/*` except logout | no auth middleware |
 | public `/health`, `/swagger/*` | no auth middleware |
@@ -43,7 +43,7 @@ no active membership. `APIScope` answers 403 when a token that lists
 permissions does not hold the route's permission. A blank permissions store
 keeps the previous access. A blank `ip_cidr` does the same for the allowlist.
 
-`Can(perm)` is route middleware after `AccountContext` (and `TOTPEnrollment`,
+`Can(accounts, perm)` is route middleware after `AccountContext` (and `TOTPEnrollment`,
 which already sits on that group). It asks `policies.Can` with the role the
 account middleware stored. The routes that use it are
 `GET /v1/accounts/{accountId}/users` and
