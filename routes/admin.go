@@ -355,9 +355,11 @@ func newDashboardUsersController() *dashusers.UsersController {
 	})
 }
 
-// currentWalletService reads the wallet service on each call.
-func currentWalletService() *walletsvc.Service {
-	return container.Get().WalletService
+// boundWalletService hands a controller the wallet service WalletServiceProvider
+// binds.
+func boundWalletService() func() *walletsvc.Service {
+	service := container.MustMake[*walletsvc.Service]()
+	return func() *walletsvc.Service { return service }
 }
 
 func newDashboardWalletsController() *dashwallets.WalletsController {
@@ -366,7 +368,7 @@ func newDashboardWalletsController() *dashwallets.WalletsController {
 		Members:       container.MustMake[*walletrecords.Members](),
 		Balances:      container.MustMake[*walletrecords.Balances](),
 		Chains:        container.MustMake[*chainsvc.Service](),
-		WalletService: currentWalletService,
+		WalletService: boundWalletService(),
 	})
 }
 
@@ -446,7 +448,7 @@ func newDashboardPreferencesController() *dashpreferences.PreferencesController 
 func newDashboardAddressesController() *dashaddresses.AddressesController {
 	return dashaddresses.NewAddressesController(dashaddresses.AddressesControllerDeps{
 		Addresses:     container.MustMake[*walletrecords.Addresses](),
-		WalletService: currentWalletService,
+		WalletService: boundWalletService(),
 		Deposits:      container.MustMake[*deposit.Service](),
 	})
 }

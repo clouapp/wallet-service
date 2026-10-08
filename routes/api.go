@@ -116,7 +116,7 @@ func newExternalChainsController() *extchains.ChainsController {
 func newExternalAddressesController() *extaddresses.AddressesController {
 	return extaddresses.NewAddressesController(extaddresses.AddressesControllerDeps{
 		Addresses:     container.MustMake[*walletrecords.Addresses](),
-		WalletService: currentWalletService,
+		WalletService: boundWalletService(),
 		Deposits:      container.MustMake[*deposit.Service](),
 		Registry:      container.MustMake[*chainpkg.Registry](),
 	})
@@ -149,6 +149,6 @@ func newExternalWalletsController() *extwallets.WalletsController {
 		Wallets:       container.MustMake[*walletrecords.Wallets](),
 		Balances:      container.MustMake[*walletrecords.Balances](),
 		Chains:        container.MustMake[*chainsvc.Service](),
-		WalletService: currentWalletService,
+		WalletService: boundWalletService(),
 	})
 }

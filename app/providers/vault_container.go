@@ -18,7 +18,6 @@ import (
 	mempooltip "github.com/macrowallets/waas/app/adapters/blockheight/mempool"
 	solanatip "github.com/macrowallets/waas/app/adapters/blockheight/solana"
 
-	"github.com/macrowallets/waas/app/adapters/redis/addresscache"
 	"github.com/macrowallets/waas/app/adapters/redis/addressset"
 	redispending "github.com/macrowallets/waas/app/adapters/redis/pending"
 	"github.com/macrowallets/waas/app/adapters/redis/scanner"
@@ -246,15 +245,11 @@ func buildVaultContainer(app foundation.Application) (*container.Container, erro
 		return nil, err
 	}
 	c.WebhookService = webhookService
-	c.WalletService = wallet.NewService(wallet.Deps{
-		Registry:     c.Registry,
-		AddressCache: addresscache.New(c.Redis),
-		MPC:          c.MPCService,
-		Secrets:      sweepsecrets.NewWalletStore(c.SecretsManager),
-		Wallets:      c.WalletRepo,
-		Addresses:    c.AddressRepo,
-		WebhookSync:  c.WebhookSyncService,
-	})
+	walletService, err := resolve[*wallet.Service](app)
+	if err != nil {
+		return nil, err
+	}
+	c.WalletService = walletService
 	flags, err := container.Make[*features.Service]()
 	if err != nil {
 		return nil, fmt.Errorf("vault: feature flags: %w", err)
