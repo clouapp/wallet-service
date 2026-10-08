@@ -20,7 +20,6 @@ const (
 	LayerServices     = "services"
 	LayerAdapters     = "adapters"
 	LayerRepositories = "repositories"
-	LayerDTOs         = "dtos"
 	LayerModels       = "models"
 	LayerMails        = "mails"
 	LayerConsole      = "console"
@@ -49,13 +48,11 @@ var zones = map[string]string{
 	"app/services":     LayerServices,
 	"app/adapters":     LayerAdapters,
 	"app/repositories": LayerRepositories,
-	"app/dtos":         LayerDTOs,
 	"app/models":       LayerModels,
 	"app/mails":        LayerMails,
 	"app/console":      LayerConsole,
 	"app/jobs":         LayerJobs,
 	"app/events":       LayerEvents,
-	"app/listeners":    LayerEvents,
 	"app/rules":        LayerRules,
 	"app/facades":      LayerFacades,
 	"database":         LayerDatabase,
@@ -71,7 +68,7 @@ var zones = map[string]string{
 // layer except the test harness.
 var everything = []string{
 	LayerBootstrap, LayerConfig, LayerRoutes, LayerContainer, LayerProviders, LayerHTTP,
-	LayerPolicies, LayerServices, LayerAdapters, LayerRepositories, LayerDTOs, LayerModels,
+	LayerPolicies, LayerServices, LayerAdapters, LayerRepositories, LayerModels,
 	LayerMails, LayerConsole, LayerJobs, LayerEvents, LayerRules, LayerFacades, LayerDatabase,
 	LayerPackages, LayerDocs,
 }
@@ -89,20 +86,19 @@ var allowed = map[string][]string{
 	LayerModels:       {},
 	LayerPackages:     {},
 	LayerDocs:         {},
-	LayerDTOs:         {LayerModels},
-	LayerPolicies:     {LayerDTOs, LayerModels},
-	LayerMails:        {LayerDTOs, LayerModels},
-	LayerServices:     {LayerServices, LayerDTOs, LayerModels, LayerMails, LayerPolicies},
-	LayerAdapters:     {LayerAdapters, LayerServices, LayerDTOs, LayerModels},
-	LayerRepositories: {LayerRepositories, LayerServices, LayerDTOs, LayerModels},
-	LayerHTTP:         {LayerHTTP, LayerContainer, LayerDTOs, LayerModels, LayerServices, LayerMails, LayerPolicies, LayerFacades},
+	LayerPolicies:     {LayerModels},
+	LayerMails:        {LayerModels},
+	LayerServices:     {LayerServices, LayerModels, LayerMails, LayerPolicies},
+	LayerAdapters:     {LayerAdapters, LayerServices, LayerModels},
+	LayerRepositories: {LayerRepositories, LayerServices, LayerModels},
+	LayerHTTP:         {LayerHTTP, LayerContainer, LayerModels, LayerServices, LayerMails, LayerPolicies, LayerFacades},
 	LayerFacades:      {},
 	LayerRoutes:       {LayerContainer, LayerHTTP, LayerServices, LayerModels},
-	LayerRules:        {LayerDTOs, LayerModels},
-	LayerConsole:      {LayerConsole, LayerContainer, LayerServices, LayerDTOs, LayerModels},
-	LayerJobs:         {LayerContainer, LayerServices, LayerDTOs, LayerModels},
-	LayerEvents:       {LayerEvents, LayerJobs, LayerContainer, LayerServices, LayerDTOs, LayerModels},
-	LayerDatabase:     {LayerDatabase, LayerConfig, LayerServices, LayerAdapters, LayerRepositories, LayerDTOs, LayerModels},
+	LayerRules:        {LayerModels},
+	LayerConsole:      {LayerConsole, LayerContainer, LayerServices, LayerModels},
+	LayerJobs:         {LayerContainer, LayerServices, LayerModels},
+	LayerEvents:       {LayerEvents, LayerJobs, LayerContainer, LayerServices, LayerModels},
+	LayerDatabase:     {LayerDatabase, LayerConfig, LayerServices, LayerAdapters, LayerRepositories, LayerModels},
 	LayerTests:        append([]string{LayerTests}, everything...),
 	LayerTools:        append([]string{LayerTools}, everything...),
 }
