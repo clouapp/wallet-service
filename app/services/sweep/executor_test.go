@@ -519,6 +519,16 @@ func TestExecute_Linked_LegCommitsGasSeedAndSweepTogether(t *testing.T) {
 	}
 }
 
+// requireOnlyGasSeedRow asserts the leg's database transaction rolled back: the
+// gas seed is already on-chain and recorded when it is awaited, outside that
+// transaction, so it is the only row left and no sweep row survived.
+func requireOnlyGasSeedRow(t *testing.T, created []*models.Transaction) {
+	t.Helper()
+	if len(created) != 1 || created[0].TxType != models.TxTypeGasSeed {
+		t.Fatalf("rows %+v, want only the gas seed recorded when it was broadcast", created)
+	}
+}
+
 func TestExecute_Linked_LegRollsBackWhenTheSweepRowFails(t *testing.T) {
 	fixture := newLinkedTokenLeg(t)
 	fixture.txRepo.failAt = 2
@@ -526,9 +536,10 @@ func TestExecute_Linked_LegRollsBackWhenTheSweepRowFails(t *testing.T) {
 	if res == nil || res.FailedStep == nil || res.FinalWithdrawTx != nil {
 		t.Fatalf("want a failed leg and no withdrawal, got %+v", res)
 	}
-	if len(fixture.txRepo.created) != 0 || fixture.txRepo.withins != 1 {
-		t.Fatalf("created=%d withins=%d, want the gas seed rolled back with the sweep row", len(fixture.txRepo.created), fixture.txRepo.withins)
+	if fixture.txRepo.withins != 1 {
+		t.Fatalf("withins=%d, want the sweep row in one transaction", fixture.txRepo.withins)
 	}
+	requireOnlyGasSeedRow(t, fixture.txRepo.created)
 }
 
 func TestExecute_Linked_LegKeepsGasSeedWhenSweepBroadcastFails(t *testing.T) {
@@ -591,9 +602,10 @@ func TestExecute_Linked_LegRollsBackWhenTheWebhookInsertFails(t *testing.T) {
 	if res == nil || res.FailedStep == nil {
 		t.Fatalf("want the leg failed, got %+v", res)
 	}
-	if !events.stagedIn || events.sent != 0 || len(fixture.txRepo.created) != 0 {
-		t.Fatalf("stagedIn=%v sent=%d rows=%d", events.stagedIn, events.sent, len(fixture.txRepo.created))
+	if !events.stagedIn || events.sent != 0 {
+		t.Fatalf("stagedIn=%v sent=%d", events.stagedIn, events.sent)
 	}
+	requireOnlyGasSeedRow(t, fixture.txRepo.created)
 }
 
 func TestExecute_Linked_LegSendsTheWebhookAfterCommit(t *testing.T) {
@@ -664,9 +676,10 @@ func TestConsolidate_Manual_LegRollsBackWhenTheSweepRowFails(t *testing.T) {
 	if _, err := runManualLeg(t, fixture); err == nil {
 		t.Fatal("want the sweep insert to fail the leg")
 	}
-	if len(fixture.txRepo.created) != 0 || fixture.txRepo.withins != 1 {
-		t.Fatalf("created=%d withins=%d, want the gas seed rolled back with the sweep row", len(fixture.txRepo.created), fixture.txRepo.withins)
+	if fixture.txRepo.withins != 1 {
+		t.Fatalf("withins=%d, want the sweep row in one transaction", fixture.txRepo.withins)
 	}
+	requireOnlyGasSeedRow(t, fixture.txRepo.created)
 }
 
 func TestConsolidate_Manual_LegKeepsGasSeedWhenSweepBroadcastFails(t *testing.T) {
@@ -694,9 +707,10 @@ func TestConsolidate_Manual_LegRollsBackWhenTheWebhookInsertFails(t *testing.T) 
 	if _, err := runManualLeg(t, fixture); err == nil {
 		t.Fatal("want the webhook insert to fail the leg")
 	}
-	if !events.stagedIn || events.sent != 0 || len(fixture.txRepo.created) != 0 {
-		t.Fatalf("stagedIn=%v sent=%d rows=%d", events.stagedIn, events.sent, len(fixture.txRepo.created))
+	if !events.stagedIn || events.sent != 0 {
+		t.Fatalf("stagedIn=%v sent=%d", events.stagedIn, events.sent)
 	}
+	requireOnlyGasSeedRow(t, fixture.txRepo.created)
 }
 
 func directWithdrawalPlan(walletID uuid.UUID, base models.Address) *Plan {
