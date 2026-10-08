@@ -20,6 +20,7 @@ import (
 	goravel_redis "github.com/goravel/redis"
 
 	"github.com/macrowallets/waas/app/providers"
+	"github.com/macrowallets/waas/packages/activitylog"
 )
 
 func Providers() []foundation.ServiceProvider {
@@ -40,6 +41,7 @@ func Providers() []foundation.ServiceProvider {
 		&frameworkevent.ServiceProvider{},
 		&frameworkmail.ServiceProvider{},
 		&frameworkcrypt.ServiceProvider{},
+		&activitylog.ServiceProvider{},
 		&providers.AuthServiceProvider{},
 		&providers.IdentityServiceProvider{},
 		&providers.ActivityServiceProvider{},
