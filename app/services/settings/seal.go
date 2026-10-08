@@ -1,6 +1,8 @@
 package settings
 
 import (
+	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -70,6 +72,55 @@ func Open(c Cipher, value string) (string, error) {
 		return "", ErrNotSealed
 	}
 	plaintext, err := c.DecryptString(raw)
+	if err != nil {
+		return "", fmt.Errorf("open setting: %w", err)
+	}
+	return plaintext, nil
+}
+
+// Rows sealed before the prefix existed hold the bare Crypt envelope: base64
+// of {"iv": <12-byte nonce>, "value": <ciphertext+tag>}. They are still read,
+// never written.
+const (
+	gcmNonceSize = 12
+	gcmTagSize   = 16
+)
+
+// isLegacyEnvelope reports whether stored has the shape Crypt produces. It
+// checks the envelope only; whether the key opens it is the cipher's job.
+func isLegacyEnvelope(stored string) bool {
+	raw, err := base64.StdEncoding.DecodeString(stored)
+	if err != nil {
+		return false
+	}
+	var envelope map[string][]byte
+	if err := json.Unmarshal(raw, &envelope); err != nil || len(envelope) != 2 {
+		return false
+	}
+	iv, hasIV := envelope["iv"]
+	value, hasValue := envelope["value"]
+	return hasIV && hasValue && len(iv) == gcmNonceSize && len(value) >= gcmTagSize
+}
+
+// OpenStored opens a secret in either stored format: the enc:v1: prefix Seal
+// writes, or the bare Crypt envelope older rows hold. Unlike Open, an empty
+// value is refused, because it is for secrets that must have content (a chain
+// RPC endpoint). A value in neither format is refused rather than used as
+// plaintext. The plaintext is never written into the error.
+func OpenStored(c Cipher, stored string) (string, error) {
+	if c == nil {
+		return "", fmt.Errorf("open setting: cipher is required")
+	}
+	if stored == "" {
+		return "", ErrNotSealed
+	}
+	if IsSealed(stored) {
+		return Open(c, stored)
+	}
+	if !isLegacyEnvelope(stored) {
+		return "", ErrNotSealed
+	}
+	plaintext, err := c.DecryptString(stored)
 	if err != nil {
 		return "", fmt.Errorf("open setting: %w", err)
 	}

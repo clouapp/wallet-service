@@ -1,4 +1,4 @@
-package security
+package settings
 
 import (
 	"crypto/aes"
@@ -14,7 +14,8 @@ import (
 )
 
 // gcmCipher produces the same envelope as facades.Crypt(): base64 of
-// {"iv": nonce, "value": ciphertext+tag}.
+// {"iv": nonce, "value": ciphertext+tag}. Rows sealed before the enc:v1:
+// prefix hold exactly that.
 type gcmCipher struct{ aead cipher.AEAD }
 
 func newGCMCipher(t *testing.T) gcmCipher {
@@ -59,50 +60,41 @@ type failingCipher struct{}
 func (failingCipher) EncryptString(string) (string, error) { return "", errors.New("no key") }
 func (failingCipher) DecryptString(string) (string, error) { return "", errors.New("no key") }
 
-func TestSeal_AndOpenSecret_RoundTrip(t *testing.T) {
+func TestOpenStored_OpensBothStoredFormats(t *testing.T) {
 	c := newGCMCipher(t)
-	for _, secret := range []string{"whsec_markets", "", "a secret with spaces and ünïcode", string(make([]byte, 255))} {
-		sealed, err := SealSecret(c, secret)
-		require.NoError(t, err)
-		assert.NotEqual(t, secret, sealed)
-		assert.True(t, IsSealedSecret(sealed))
+	const secret = "https://rpc.example/key"
 
-		opened, err := OpenSecret(c, sealed)
-		require.NoError(t, err)
-		assert.Equal(t, secret, opened)
-	}
+	legacy, err := c.EncryptString(secret)
+	require.NoError(t, err)
+	assert.False(t, IsSealed(legacy), "the bare envelope has no prefix")
+	opened, err := OpenStored(c, legacy)
+	require.NoError(t, err)
+	assert.Equal(t, secret, opened, "a row written before the prefix still opens")
+
+	prefixed, err := Seal(c, secret)
+	require.NoError(t, err)
+	opened, err = OpenStored(c, prefixed)
+	require.NoError(t, err)
+	assert.Equal(t, secret, opened)
 }
 
-func TestSeal_Secret_IsRandomised(t *testing.T) {
+func TestSeal_WritesThePrefixedFormatOverARealCipher(t *testing.T) {
 	c := newGCMCipher(t)
-	first, err := SealSecret(c, "same")
+	sealed, err := Seal(c, "secret")
 	require.NoError(t, err)
-	second, err := SealSecret(c, "same")
-	require.NoError(t, err)
-	assert.NotEqual(t, first, second, "a fresh nonce per seal")
+	assert.True(t, IsSealed(sealed))
+	assert.False(t, isLegacyEnvelope(sealed), "new writes are never the bare envelope")
 }
 
-func TestOpen_Secret_RefusesPlaintextAndForeignKeys(t *testing.T) {
+func TestOpenStored_RefusesWhatWasNeverSealed(t *testing.T) {
 	c := newGCMCipher(t)
-
-	_, err := OpenSecret(c, "plaintext-secret")
-	assert.ErrorIs(t, err, ErrSecretNotSealed)
-	_, err = OpenSecret(c, "")
-	assert.ErrorIs(t, err, ErrSecretNotSealed)
-
-	sealedElsewhere, err := SealSecret(newGCMCipher(t), "secret")
-	require.NoError(t, err)
-	_, err = OpenSecret(c, sealedElsewhere)
-	assert.Error(t, err, "a value sealed under another key does not open")
-}
-
-func TestIs_SealedSecret_RejectsLookalikes(t *testing.T) {
 	encode := func(v any) string {
 		raw, err := json.Marshal(v)
 		require.NoError(t, err)
 		return base64.StdEncoding.EncodeToString(raw)
 	}
 	cases := map[string]string{
+		"empty":           "",
 		"plaintext":       "whsec_markets",
 		"base64 text":     base64.StdEncoding.EncodeToString([]byte("whsec_markets")),
 		"json no iv":      encode(map[string][]byte{"value": make([]byte, 32)}),
@@ -112,20 +104,45 @@ func TestIs_SealedSecret_RejectsLookalikes(t *testing.T) {
 		"not an envelope": encode([]string{"iv", "value"}),
 	}
 	for name, value := range cases {
-		assert.False(t, IsSealedSecret(value), name)
+		_, err := OpenStored(c, value)
+		assert.ErrorIs(t, err, ErrNotSealed, name)
 	}
 }
 
-func TestSeal_AndOpenSecret_ReportCipherFailures(t *testing.T) {
-	_, err := SealSecret(failingCipher{}, "secret")
-	assert.Error(t, err)
-	_, err = SealSecret(nil, "secret")
-	assert.Error(t, err)
-
-	sealed, err := SealSecret(newGCMCipher(t), "secret")
+func TestOpenStored_ReportsCipherFailures(t *testing.T) {
+	legacy, err := newGCMCipher(t).EncryptString("secret")
 	require.NoError(t, err)
-	_, err = OpenSecret(failingCipher{}, sealed)
+
+	_, err = OpenStored(nil, legacy)
 	assert.Error(t, err)
-	_, err = OpenSecret(nil, sealed)
+	_, err = OpenStored(failingCipher{}, legacy)
 	assert.Error(t, err)
+	_, err = OpenStored(newGCMCipher(t), legacy)
+	assert.Error(t, err, "a value sealed under another key does not open")
+}
+
+// The strict Open keeps refusing the bare envelope: settings, webhook secrets
+// and TOTP rows were all backfilled to the prefix, so a bare one is a row
+// written around the sealing path.
+func TestOpen_StillRefusesTheBareEnvelope(t *testing.T) {
+	c := newGCMCipher(t)
+	legacy, err := c.EncryptString("secret")
+	require.NoError(t, err)
+	_, err = Open(c, legacy)
+	assert.ErrorIs(t, err, ErrNotSealed)
+}
+
+// An empty plaintext is stored empty by Seal and read back empty by Open; a
+// stored secret that must have content (an RPC endpoint) goes through
+// OpenStored, which refuses the empty value.
+func TestEmptyValues_KeepEachReadersMeaning(t *testing.T) {
+	c := newGCMCipher(t)
+	sealed, err := Seal(c, "")
+	require.NoError(t, err)
+	assert.Equal(t, "", sealed)
+	opened, err := Open(c, "")
+	require.NoError(t, err)
+	assert.Equal(t, "", opened)
+	_, err = OpenStored(c, "")
+	assert.ErrorIs(t, err, ErrNotSealed)
 }
