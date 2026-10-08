@@ -15,7 +15,7 @@ import (
 
 	smtypes "github.com/aws/aws-sdk-go-v2/service/secretsmanager/types"
 
-	"github.com/macrowallets/waas/pkg/pyjson"
+	"github.com/macrowallets/waas/tools/internal/pyjson"
 )
 
 // Vectors produced once with CPython's json module (the format the existing

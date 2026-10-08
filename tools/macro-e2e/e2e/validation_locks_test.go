@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/macrowallets/waas/pkg/pyjson"
+	"github.com/macrowallets/waas/tools/internal/pyjson"
 )
 
 var fixedNow = time.Date(2026, 10, 3, 5, 0, 0, 0, time.UTC)

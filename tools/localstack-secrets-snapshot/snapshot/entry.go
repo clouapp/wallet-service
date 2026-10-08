@@ -5,7 +5,7 @@ import (
 	"encoding/hex"
 	"sort"
 
-	"github.com/macrowallets/waas/pkg/pyjson"
+	"github.com/macrowallets/waas/tools/internal/pyjson"
 )
 
 // CustomIDTag is the moto tag that makes CreateSecret reuse an ARN suffix.

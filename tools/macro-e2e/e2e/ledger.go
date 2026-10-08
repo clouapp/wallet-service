@@ -8,7 +8,7 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/macrowallets/waas/pkg/pyjson"
+	"github.com/macrowallets/waas/tools/internal/pyjson"
 )
 
 const (
