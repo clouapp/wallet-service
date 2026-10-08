@@ -28,7 +28,7 @@ type activeTokenReader interface {
 }
 
 // loadActiveTokens reads the active token catalog in Boot.
-// The container factory registers that catalog and does not query tokens.
+// The chain registry binding registers that catalog and does not query tokens.
 // A read failure is logged and leaves the catalog empty. The process stays up.
 func loadActiveTokens(app foundation.Application) {
 	if app == nil {

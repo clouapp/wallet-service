@@ -27,8 +27,9 @@ import (
 // errActiveChainsNotLoaded means Boot has not read the chain catalog yet.
 var errActiveChainsNotLoaded = errors.New("active chains were not loaded during boot")
 
-// openActiveChainEndpoint opens a sealed rpc_url. The container factory uses
-// the process cipher. Tests replace this with a stub that never logs a URL.
+// openActiveChainEndpoint opens a sealed rpc_url with the process cipher when
+// the registry installs a chain. Tests replace this with a stub that never
+// logs a URL.
 var openActiveChainEndpoint = openChainEndpoint
 
 // openChainEndpoint opens a sealed rpc_url and returns the URL to dial.
