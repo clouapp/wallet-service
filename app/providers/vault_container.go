@@ -258,23 +258,11 @@ func buildVaultContainer(app foundation.Application) (*container.Container, erro
 		return nil, err
 	}
 	c.PriceService = prices
-	c.SweepService = sweep.NewService(sweep.Deps{
-		Registry:     c.Registry,
-		MPC:          c.MPCService,
-		Secrets:      sweepsecrets.New(c.SecretsManager),
-		Cache:        facades.Cache(),
-		Webhook:      c.WebhookService,
-		Wallets:      c.WalletRepo,
-		Addresses:    c.AddressRepo,
-		Transactions: c.TransactionRepo,
-		SweepLimits:  accountSettings.EffectiveSweepLimits,
-		Chains:       c.ChainRepo,
-		Flags: func(ctx context.Context, accountID uuid.UUID) error {
-			return flags.Gate(ctx, accountID, features.FlagSweepEnabled, features.CodeSweepPaused)
-		},
-		GasDefaults: nil,
-		TokenPricer: c.PriceService,
-	})
+	box, err := resolve[*sweep.Box](app)
+	if err != nil {
+		return nil, err
+	}
+	c.SweepService = box.Service
 	c.WithdrawalService = withdraw.NewService(withdraw.Deps{
 		Registry:     c.Registry,
 		Webhook:      c.WebhookService,
