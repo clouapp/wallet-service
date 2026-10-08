@@ -118,17 +118,21 @@ func TestOnly_Policies_RankRoles(t *testing.T) {
 }
 
 // TestPermissionDecisionsGoThroughThePolicy reports a Gate asked outside
-// app/policies, app/providers and app/http/middleware, and the in-handler
-// authorize helper (.ai/guidelines/authorization.md).
+// app/policies, app/providers and app/http/middleware, through the framework
+// facade or the app/facades one, and the in-handler authorize helper
+// (.ai/guidelines/authorization.md).
 func TestPermission_Decisions_GoThroughThePolicy(t *testing.T) {
 	module := sharedModule(t)
+	facadePackages := []string{goravelFacades, module.ImportPathOf("app/facades")}
 	var violations Violations
 	for _, file := range module.ProductionFiles("app", "routes") {
 		if hasAnyPrefix(file.Dir, []string{"app/policies", "app/providers", "app/http/middleware"}) {
 			continue
 		}
-		for range packageCalls(file, goravelFacades, "facades")["Gate"] {
-			violations.Add("%s calls facades.Gate()", file.Path)
+		for _, facades := range facadePackages {
+			for range packageCalls(file, facades, "facades")["Gate"] {
+				violations.Add("%s calls facades.Gate()", file.Path)
+			}
 		}
 		ast.Inspect(file.AST, func(node ast.Node) bool {
 			call, ok := node.(*ast.CallExpr)
