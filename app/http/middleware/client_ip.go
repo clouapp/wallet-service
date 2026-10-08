@@ -28,7 +28,7 @@ func ClientIP(ctx http.Context) string {
 	}
 	// A malformed entry leaves the valid ones trusted: fewer trusted proxies can
 	// only attribute a request to the proxy, never to a forged address.
-	// config.ValidateBoot refuses the malformed entry at boot.
+	// Boot refuses a malformed entry (bootstrap.checkBootConfig).
 	trusted, _ := ParseTrustedProxies(facades.Config().GetString("http.trusted_proxies", defaultTrustedProxies))
 	return resolveClientIP(origin.RemoteAddr, origin.Header.Values("X-Forwarded-For"), trusted)
 }

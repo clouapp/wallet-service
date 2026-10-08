@@ -26,6 +26,10 @@ today and has a fix tracked elsewhere. Do not read either as permission.
   `config/*.go`, read from env through `config/env.go`. — UNGUARDED; known exception:
   `app/models/chain_rpc_url.go` resolves `${ENV}` placeholders in RPC URLs with
   `os.LookupEnv`.
+- Boot refuses an empty `JWT_SECRET` and an `APP_KEY` that is not 32 bytes
+  (`config.ValidateSecrets`, called from `bootstrap.checkBootConfig`), except for
+  `artisan key:generate` and `artisan jwt:secret`, which create them. A
+  `JWT_SECRET` under 32 characters only warns. — guarded by `config/boot_check_test.go`.
 - Services are built once in `app/providers/vault_container.go` and reached through
   `app/container` (the "god struct", being replaced by typed bindings — see
   `.ai/guidelines/controllers-and-services.md`). — UNGUARDED.

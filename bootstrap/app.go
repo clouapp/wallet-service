@@ -1,7 +1,10 @@
 package bootstrap
 
 import (
+	"fmt"
+	"log/slog"
 	"net/http"
+	"os"
 	"time"
 
 	"github.com/goravel/framework/contracts/console"
@@ -132,6 +135,7 @@ func registerRoutes() {
 // can be rewritten: the framework caches handlers on first use.
 func bootConfig() {
 	config.Boot()
+	checkBootConfig()
 	providers.InstallLogRedaction(appfacades.Config(), goravelfacades.App().Json())
 }
 
@@ -139,6 +143,26 @@ func bootConfig() {
 // http.request_timeout whatever the handler does. Lambda mode does not use it.
 func RequestTimeoutHandler() func(http.Handler) http.Handler {
 	return middleware.TimeoutHandler(requestTimeout())
+}
+
+// checkBootConfig refuses to start on a missing or malformed secret. APP_KEY
+// and JWT_SECRET are exempt only for the commands that create them
+// (`artisan key:generate`, `artisan jwt:secret`), which have to run on a fresh
+// env file. A short JWT_SECRET is a warning.
+func checkBootConfig() {
+	cfg := appfacades.Config()
+	if !config.IsKeyGenerationCommand(os.Args[1:]) {
+		warnings, err := config.ValidateSecrets(cfg.GetString("app.key"), cfg.GetString("jwt.secret"))
+		for _, warning := range warnings {
+			slog.Warn(warning)
+		}
+		if err != nil {
+			panic(fmt.Errorf("refusing to boot: %w", err))
+		}
+	}
+	if _, err := middleware.ParseTrustedProxies(cfg.GetString("http.trusted_proxies")); err != nil {
+		panic(fmt.Errorf("refusing to boot: TRUSTED_PROXIES: %w", err))
+	}
 }
 
 // requestTimeout is http.request_timeout, the same key the gin driver used.
