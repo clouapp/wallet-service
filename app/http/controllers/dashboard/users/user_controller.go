@@ -234,13 +234,13 @@ func (ctrl *UsersController) ListMyAccounts(ctx http.Context) http.Response {
 		return responses.FailMessage(ctx, http.StatusBadRequest, errMessage)
 	}
 
-	accounts, total, err := ctrl.accounts.ListForMember(ctx.Context(), userID, search, environment, limit, offset)
+	members, total, err := ctrl.accounts.ListForMemberWithRoles(ctx.Context(), userID, search, environment, limit, offset)
 	if err != nil {
 		appfacades.Log().WithContext(ctx).Errorf("user: list my accounts: %v", err)
 		return responses.Fail(ctx, http.StatusInternalServerError, responses.CodeInternal, "failed to fetch accounts")
 	}
 
-	items, err := ctrl.accountsWithCallerRole(ctx, userID, accounts)
+	items, err := ctrl.accountViewsWithRole(ctx, members)
 	if err != nil {
 		appfacades.Log().WithContext(ctx).Errorf("user: list my accounts roles: %v", err)
 		return responses.Fail(ctx, http.StatusInternalServerError, responses.CodeInternal, "failed to fetch accounts")
@@ -249,45 +249,21 @@ func (ctrl *UsersController) ListMyAccounts(ctx http.Context) http.Response {
 	return ctx.Response().Success().Json(pagination.Response(items, total, limit, offset))
 }
 
-// accountsWithCallerRole copies each account and adds the caller's stored
-// membership role. A listed account with no active role is a broken
-// membership and fails the request instead of omitting the field.
-func (ctrl *UsersController) accountsWithCallerRole(ctx http.Context, userID uuid.UUID, accounts []models.Account) ([]myAccount, error) {
-	items := make([]myAccount, 0, len(accounts))
-	if len(accounts) == 0 {
-		return items, nil
-	}
-
-	accountIDs := make([]uuid.UUID, len(accounts))
-	for i, account := range accounts {
-		accountIDs[i] = account.ID
-	}
-	roles, err := ctrl.accounts.RolesForUserAccounts(ctx.Context(), userID, accountIDs)
-	if err != nil {
-		return nil, err
-	}
-	for _, account := range accounts {
-		role, ok := roles[account.ID]
-		if !ok || strings.TrimSpace(role) == "" {
-			return nil, fmt.Errorf("account %s has no role for user %s", account.ID, userID)
-		}
-		view, err := ctrl.accountView(ctx, account)
+// accountViewsWithRole shapes the listed accounts with the caller's role on each.
+func (ctrl *UsersController) accountViewsWithRole(ctx http.Context, members []accountsvc.MemberAccount) ([]myAccount, error) {
+	items := make([]myAccount, 0, len(members))
+	for _, member := range members {
+		view, err := ctrl.accountView(ctx, member.Account)
 		if err != nil {
 			return nil, err
 		}
-		items = append(items, myAccount{Account: view, Role: role})
+		items = append(items, myAccount{Account: view, Role: member.Role})
 	}
 	return items, nil
 }
 
 func (ctrl *UsersController) accountView(ctx http.Context, account models.Account) (accountresource.Account, error) {
-	view := accountresource.AccountFrom(account)
-	document, err := ctrl.limits.AccountSweepLimitsWire(ctx.Context(), account.ID)
-	if err != nil {
-		return accountresource.Account{}, err
-	}
-	view.SweepLimits = document
-	return view, nil
+	return controllers.AccountView(ctx.Context(), ctrl.limits, account)
 }
 
 func parseMyAccountsFilter(search, environment string) (string, string, string) {

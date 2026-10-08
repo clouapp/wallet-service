@@ -12,6 +12,7 @@ import (
 	"github.com/goravel/framework/contracts/http"
 
 	appfacades "github.com/macrowallets/waas/app/facades"
+	"github.com/macrowallets/waas/app/http/controllers"
 	"github.com/macrowallets/waas/app/http/middleware"
 	"github.com/macrowallets/waas/app/http/middleware/requestctx"
 	"github.com/macrowallets/waas/app/http/pagination"
@@ -69,13 +70,7 @@ func NewAccountsController(deps AccountsControllerDeps) *AccountsController {
 }
 
 func (ctrl *AccountsController) accountView(ctx http.Context, account models.Account) (tokenresource.Account, error) {
-	view := tokenresource.AccountFrom(account)
-	document, err := ctrl.limits.AccountSweepLimitsWire(ctx.Context(), account.ID)
-	if err != nil {
-		return tokenresource.Account{}, err
-	}
-	view.SweepLimits = document
-	return view, nil
+	return controllers.AccountView(ctx.Context(), ctrl.limits, account)
 }
 
 // CreateAccount godoc

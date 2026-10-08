@@ -3,6 +3,8 @@ package account
 import (
 	"context"
 	"fmt"
+	"sort"
+	"strings"
 
 	"github.com/google/uuid"
 
@@ -112,6 +114,43 @@ func (s *Service) ListForMember(ctx context.Context, userID uuid.UUID, search, e
 		return nil, 0, err
 	}
 	return s.accounts.PaginateByMember(ctx, userID, search, environment, limit, offset)
+}
+
+// MemberAccount is an account with the listing user's role on it.
+type MemberAccount struct {
+	Account models.Account
+	Role    string
+}
+
+// ListForMemberWithRoles is ListForMember with the user's stored role on each
+// listed account. A listed account with no active role is a broken membership
+// and fails the read instead of being served without one.
+func (s *Service) ListForMemberWithRoles(ctx context.Context, userID uuid.UUID, search, environment string, limit, offset int) ([]MemberAccount, int64, error) {
+	accounts, total, err := s.ListForMember(ctx, userID, search, environment, limit, offset)
+	if err != nil {
+		return nil, 0, err
+	}
+	items := make([]MemberAccount, 0, len(accounts))
+	if len(accounts) == 0 {
+		return items, total, nil
+	}
+
+	accountIDs := make([]uuid.UUID, len(accounts))
+	for i, account := range accounts {
+		accountIDs[i] = account.ID
+	}
+	roles, err := s.RolesForUserAccounts(ctx, userID, accountIDs)
+	if err != nil {
+		return nil, 0, err
+	}
+	for _, account := range accounts {
+		role, ok := roles[account.ID]
+		if !ok || strings.TrimSpace(role) == "" {
+			return nil, 0, fmt.Errorf("account %s has no role for user %s", account.ID, userID)
+		}
+		items = append(items, MemberAccount{Account: account, Role: role})
+	}
+	return items, total, nil
 }
 
 // RolesForUserAccounts returns the caller's role on each account.
@@ -321,4 +360,56 @@ func (s *Service) requireAccounts() error {
 		return fmt.Errorf("account service: accounts repository is required")
 	}
 	return nil
+}
+
+// SignInAccount is one account of a signed-in user with the user's role on it.
+type SignInAccount struct {
+	Account models.Account
+	Role    string
+}
+
+// SignInAccounts is what a login answers with: the user's accounts and which of
+// them is the default. DefaultID is uuid.Nil when the user has no account.
+type SignInAccounts struct {
+	Accounts  []SignInAccount
+	DefaultID uuid.UUID
+}
+
+// SignInAccounts lists the accounts the user belongs to, ordered by environment
+// and then id because the store has no order and the list is part of the login
+// body. The default is the user's own default account when they still belong to
+// it, otherwise the first account. A membership whose account cannot be read is
+// left out; a failed membership read is the error.
+func (s *Service) SignInAccounts(ctx context.Context, userID uuid.UUID, defaultAccountID *uuid.UUID) (SignInAccounts, error) {
+	memberships, err := s.ListMemberships(ctx, userID)
+	if err != nil {
+		return SignInAccounts{}, err
+	}
+
+	var result SignInAccounts
+	for _, membership := range memberships {
+		account, err := s.FindByID(ctx, membership.AccountID)
+		if err != nil || account == nil {
+			continue
+		}
+		result.Accounts = append(result.Accounts, SignInAccount{Account: *account, Role: membership.Role})
+	}
+
+	sort.Slice(result.Accounts, func(i, j int) bool {
+		left, right := result.Accounts[i].Account, result.Accounts[j].Account
+		if left.Environment != right.Environment {
+			return left.Environment < right.Environment
+		}
+		return left.ID.String() < right.ID.String()
+	})
+
+	for _, entry := range result.Accounts {
+		if defaultAccountID != nil && *defaultAccountID == entry.Account.ID {
+			result.DefaultID = entry.Account.ID
+		}
+	}
+	if result.DefaultID == uuid.Nil && len(result.Accounts) > 0 {
+		result.DefaultID = result.Accounts[0].Account.ID
+	}
+	return result, nil
 }

@@ -3,7 +3,6 @@ package auth
 import (
 	"context"
 	"errors"
-	"sort"
 
 	"github.com/google/uuid"
 	"github.com/goravel/framework/contracts/http"
@@ -452,7 +451,7 @@ func membershipReadUnavailable(ctx http.Context) http.Response {
 }
 
 func (ctrl *AuthController) loadUserAccounts(user *models.User) ([]map[string]interface{}, map[string]interface{}, error) {
-	memberships, err := ctrl.accounts.ListMemberships(context.Background(), user.ID)
+	signIn, err := ctrl.accounts.SignInAccounts(context.Background(), user.ID, user.DefaultAccountID)
 	if err != nil {
 		appfacades.Log().Errorf("auth: load memberships: %v", err)
 		return nil, nil, err
@@ -460,42 +459,19 @@ func (ctrl *AuthController) loadUserAccounts(user *models.User) ([]map[string]in
 
 	var accounts []map[string]interface{}
 	var defaultAccount map[string]interface{}
-
-	for _, m := range memberships {
-		acct, err := ctrl.accounts.FindByID(context.Background(), m.AccountID)
-		if err != nil || acct == nil {
-			continue
-		}
+	for _, member := range signIn.Accounts {
 		entry := map[string]interface{}{
-			"id":                acct.ID,
-			"name":              acct.Name,
-			"environment":       acct.Environment,
-			"linked_account_id": acct.LinkedAccountID,
-			"status":            acct.Status,
-			"role":              m.Role,
+			"id":                member.Account.ID,
+			"name":              member.Account.Name,
+			"environment":       member.Account.Environment,
+			"linked_account_id": member.Account.LinkedAccountID,
+			"status":            member.Account.Status,
+			"role":              member.Role,
 		}
 		accounts = append(accounts, entry)
-
-		if user.DefaultAccountID != nil && *user.DefaultAccountID == acct.ID {
+		if member.Account.ID == signIn.DefaultID {
 			defaultAccount = entry
 		}
-	}
-
-	// FindByUserID has no order, so Postgres can return the two onboarded
-	// accounts either way. The list is part of the success body.
-	sort.Slice(accounts, func(i, j int) bool {
-		leftEnvironment, _ := accounts[i]["environment"].(string)
-		rightEnvironment, _ := accounts[j]["environment"].(string)
-		if leftEnvironment != rightEnvironment {
-			return leftEnvironment < rightEnvironment
-		}
-		leftID, _ := accounts[i]["id"].(uuid.UUID)
-		rightID, _ := accounts[j]["id"].(uuid.UUID)
-		return leftID.String() < rightID.String()
-	})
-
-	if defaultAccount == nil && len(accounts) > 0 {
-		defaultAccount = accounts[0]
 	}
 	return accounts, defaultAccount, nil
 }
