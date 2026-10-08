@@ -1006,7 +1006,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Revokes the current JWT and all active refresh tokens for the user",
+                "description": "Ends every session of the user: access tokens and refresh tokens",
                 "produces": [
                     "application/json"
                 ],

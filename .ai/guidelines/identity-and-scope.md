@@ -23,6 +23,26 @@ The actor lives on the request context under an **unexported** key in
 Do not add an exported setter: a `WithUser(ctx, u)` that any package can call
 is a context every policy then trusts.
 
+## Ending a dashboard session
+
+A dashboard JWT carries only `key`, `sub`, `iat` and `exp`, with `iat` in whole
+seconds, so two tokens of one user minted in the same second are byte-identical.
+That rules out per-token revocation (the guard's `Logout` blacklists the token
+string, which a login in the same second would mint again and find refused).
+
+Every way of ending a session (logout, password change or reset, TOTP disable,
+platform revoke) goes through `auth.SessionRevoker.RevokeAll`. The rule:
+
+- The watermark (`users.sessions_revoked_at`) is the start of the NEXT second
+  after the revocation, so the whole revocation second is void.
+- `SessionAuth` refuses a token whose `iat` is before the watermark.
+- A new session is minted only after the watermark (`AwaitIssuable` waits out
+  the rest of the second, at most ~1s), so its `iat` is at or after it and it
+  differs from every token issued before.
+
+Do not blacklist individual tokens and do not add a sub-second discriminator:
+the guard offers no way to set a `jti`.
+
 ## The scope chain
 
 ```

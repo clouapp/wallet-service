@@ -335,7 +335,7 @@ func (ctrl *AuthController) RefreshToken(ctx http.Context) http.Response {
 
 // Logout godoc
 // @Summary      Logout current user
-// @Description  Revokes the current JWT and all active refresh tokens for the user
+// @Description  Ends every session of the user: access tokens and refresh tokens
 // @Tags         Auth
 // @Security     BearerAuth
 // @Produce      json
@@ -343,13 +343,14 @@ func (ctrl *AuthController) RefreshToken(ctx http.Context) http.Response {
 // @Failure      401  {object}  ErrorResponse
 // @Router       /auth/logout [post]
 func (ctrl *AuthController) Logout(ctx http.Context) http.Response {
+	// The session watermark, not the guard's per-token blacklist: a JWT carries
+	// only whole-second claims, so a sign-in in the second of the logout would
+	// mint the very token the blacklist just refused (see session_revocation.go).
 	if uid, ok := requestctx.UserID(ctx); ok {
-		if err := ctrl.refreshTokens.RevokeAllForUser(ctx.Context(), uid); err != nil {
-			appfacades.Log().WithContext(ctx).Errorf("auth: revoke refresh tokens: %v", err)
+		if _, err := ctrl.revoker.RevokeAll(ctx.Context(), uid); err != nil {
+			appfacades.Log().WithContext(ctx).Errorf("auth: logout: revoke sessions: %v", err)
+			return responses.Fail(ctx, http.StatusInternalServerError, responses.CodeInternal, "failed to end session")
 		}
-	}
-	if err := appfacades.Auth(ctx).Logout(); err != nil {
-		appfacades.Log().WithContext(ctx).Errorf("auth: logout: %v", err)
 	}
 	return ctx.Response().NoContent()
 }
