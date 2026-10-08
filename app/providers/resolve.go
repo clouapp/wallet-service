@@ -4,6 +4,8 @@ import (
 	"fmt"
 
 	"github.com/goravel/framework/contracts/foundation"
+
+	"github.com/macrowallets/waas/app/container"
 )
 
 // resolve makes T from the container and asserts its type, so a binding that
@@ -14,7 +16,7 @@ func resolve[T any](app foundation.Application) (T, error) {
 	if err != nil {
 		return zero, err
 	}
-	if instance == nil {
+	if container.IsNil(instance) {
 		return zero, fmt.Errorf("container returned nil, want %T", zero)
 	}
 	typed, ok := instance.(T)

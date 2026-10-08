@@ -114,10 +114,16 @@ func (c feeEstimateChains) FindByID(id string) (*models.Chain, error) {
 func bindRuntime[T any](app foundation.Application, load func(*container.Container) T, name string) {
 	var key T
 	app.Singleton(key, func(foundation.Application) (any, error) {
-		value := load(container.Get())
-		if any(value) == nil {
-			return nil, fmt.Errorf("vault: %s is not initialized", name)
-		}
-		return value, nil
+		return initialized(load(container.Get()), name)
 	})
+}
+
+// initialized refuses a service the container left nil, a typed nil pointer
+// included, so the boot fails instead of the first request.
+func initialized[T any](value T, name string) (T, error) {
+	if container.IsNil(value) {
+		var zero T
+		return zero, fmt.Errorf("vault: %s is not initialized", name)
+	}
+	return value, nil
 }

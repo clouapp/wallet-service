@@ -9,6 +9,7 @@ package container
 
 import (
 	"fmt"
+	"reflect"
 
 	"github.com/goravel/framework/facades"
 	"github.com/goravel/framework/foundation"
@@ -25,7 +26,7 @@ func Make[T any]() (T, error) {
 	if err != nil {
 		return zero, fmt.Errorf("container: resolving %T: %w", zero, err)
 	}
-	if instance == nil {
+	if IsNil(instance) {
 		return zero, fmt.Errorf("container: resolving %T: binding returned nil", zero)
 	}
 	typed, ok := instance.(T)
@@ -44,4 +45,21 @@ func MustMake[T any]() T {
 		panic(err)
 	}
 	return typed
+}
+
+// IsNil reports whether value is nil or an interface holding a nil pointer,
+// map, slice, func or channel. value == nil is false for a typed nil, so a
+// service that failed to build would pass a plain nil check and fail on the
+// first request instead of at boot.
+func IsNil(value any) bool {
+	if value == nil {
+		return true
+	}
+	reflected := reflect.ValueOf(value)
+	switch reflected.Kind() {
+	case reflect.Chan, reflect.Func, reflect.Interface, reflect.Map, reflect.Pointer, reflect.Slice:
+		return reflected.IsNil()
+	default:
+		return false
+	}
 }
