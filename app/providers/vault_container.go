@@ -7,7 +7,6 @@ import (
 	"math/big"
 	"os"
 	"path/filepath"
-	"time"
 
 	"github.com/google/uuid"
 	"github.com/goravel/framework/contracts/foundation"
@@ -377,21 +376,14 @@ func buildVaultContainer(app foundation.Application) (*container.Container, erro
 		Transactions: c.TransactionRepo,
 	})
 	c.IngestService.SetDepositEvents(c.DepositEvents)
-	c.BalanceRefreshService = refresh.NewBalanceService(refresh.Deps{
-		Registry:      c.Registry,
-		Wallets:       c.WalletRepo,
-		AssetBalances: c.WalletAssetBalanceRepo,
-		Snapshots:     c.WalletBalanceSnapshotRepo,
-		SyncStates:    c.WalletSyncStateRepo,
-	})
-	walletRefresher, err := refresh.NewWalletRefresher(refresh.WalletRefresherDeps{
-		Balances: c.BalanceRefreshService,
-		Wallets:  c.WalletRepo,
-		Chains:   c.Registry,
-		Spacing:  time.Duration(facades.Config().GetInt("vault.local_workers.balance_refresh_spacing_ms")) * time.Millisecond,
-	})
+	balances, err := resolve[*refresh.BalanceService](app)
 	if err != nil {
-		return nil, fmt.Errorf("vault: wallet refresher: %w", err)
+		return nil, err
+	}
+	c.BalanceRefreshService = balances
+	walletRefresher, err := resolve[*refresh.WalletRefresher](app)
+	if err != nil {
+		return nil, err
 	}
 	c.WalletRefresher = walletRefresher
 	c.DepositService.SetBalanceRefresher(c.WalletRefresher)
