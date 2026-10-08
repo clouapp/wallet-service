@@ -12,9 +12,9 @@ import (
 
 	"github.com/macrowallets/waas/app/http/middleware"
 	"github.com/macrowallets/waas/app/models"
-	"github.com/macrowallets/waas/bootstrap"
 	"github.com/macrowallets/waas/tests/feature/support/fixtures"
 	"github.com/macrowallets/waas/tests/feature/support/testenv"
+	"github.com/macrowallets/waas/tests/feature/support/testutil"
 )
 
 // testJWTSecret must be set before Goravel boots so that MintAPIToken / APITokenAuth
@@ -29,7 +29,7 @@ func TestMain(m *testing.M) {
 	if os.Getenv("AWS_DEFAULT_REGION") == "" {
 		_ = os.Setenv("AWS_DEFAULT_REGION", "us-east-1")
 	}
-	bootstrap.Boot()
+	testutil.BootApp()
 	os.Exit(m.Run())
 }
 

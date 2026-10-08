@@ -31,6 +31,15 @@ collide in stores that outlive the process. (If the team prefers xip's
 `func (s *WalletsSuite) TestWallets_Create_RefusesAMainnetChainOnATestAccount()`.
 testify: `require` for preconditions, `assert` for independent checks.
 
+## Booting the application
+
+Tests boot with the providers the binary registers (`bootstrap.Providers()`),
+never a list of their own. A feature package's `main_test.go` calls
+`testutil.BootApp()`: `bootstrap.Boot()` plus the framework testing provider,
+which the HTTP test case reads its router from and which production does not
+register. A service-level test calls `testutil.BootTest()`: the same providers
+without routes, commands or jobs.
+
 ## HTTP feature suites
 
 A suite embeds `support.HTTPSuite`, runs through `support.RunSuite`, and passes

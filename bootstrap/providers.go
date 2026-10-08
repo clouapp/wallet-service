@@ -13,7 +13,6 @@ import (
 	frameworkmail "github.com/goravel/framework/mail"
 	frameworkqueue "github.com/goravel/framework/queue"
 	frameworkroute "github.com/goravel/framework/route"
-	frameworktesting "github.com/goravel/framework/testing"
 	frameworkvalidation "github.com/goravel/framework/validation"
 	frameworkview "github.com/goravel/framework/view"
 	gin "github.com/goravel/gin"
@@ -36,7 +35,6 @@ func Providers() []foundation.ServiceProvider {
 		&frameworkview.ServiceProvider{},
 		&gin.ServiceProvider{},
 		&frameworkroute.ServiceProvider{},
-		&frameworktesting.ServiceProvider{},
 		&frameworkauth.ServiceProvider{},
 		&frameworkqueue.ServiceProvider{},
 		&frameworkevent.ServiceProvider{},
