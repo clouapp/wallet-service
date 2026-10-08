@@ -44,6 +44,20 @@ const (
 	CodeProviderUnavailable = resources.CodeProviderUnavailable
 	CodeUnavailable         = resources.CodeUnavailable
 	CodeTimeout             = resources.CodeTimeout
+
+	// CodeInternalError is the 500 code some routes answer instead of
+	// CodeInternal. Both are on the wire today; unifying them is a contract
+	// change (http-error-contract.md).
+	CodeInternalError = resources.CodeInternalError
+
+	// Domain codes a handler answers with a status other than their default.
+	CodeInsufficientFunds             = resources.CodeInsufficientFunds
+	CodeWalletNotGasReady             = resources.CodeWalletNotGasReady
+	CodeUnsupportedChain              = resources.CodeUnsupportedChain
+	CodeSweepLimitExceeded            = resources.CodeSweepLimitExceeded
+	CodeSpendingLimitExceeded         = resources.CodeSpendingLimitExceeded
+	CodeSpendingLimitInvalid          = resources.CodeSpendingLimitInvalid
+	CodeSpendingLimitQuoteUnavailable = resources.CodeSpendingLimitQuoteUnavailable
 )
 
 const contentTypeJSON = "application/json"
@@ -82,6 +96,27 @@ func Send(ctx contractshttp.Context, status int, body any) contractshttp.Abortab
 		return ctx.Response().Json(status, wrapped)
 	}
 	return ctx.Response().Json(status, body)
+}
+
+// Fail writes the error envelope through ctx.Response().Json, the writer the
+// legacy {"error":"text"} maps used: content type application/json;
+// charset=utf-8 and no trailing newline. Error writes the same envelope
+// through JSON, with a trailing newline; a route keeps the writer it has.
+func Fail(ctx contractshttp.Context, status int, code, message string) contractshttp.AbortableResponse {
+	return FailWith(ctx, status, code, message, nil)
+}
+
+// FailWith is Fail with the contract fields that travel inside the error
+// object (limit_type, retry_after_seconds, action, status). A field named
+// code or message is ignored.
+func FailWith(ctx contractshttp.Context, status int, code, message string, fields map[string]any) contractshttp.AbortableResponse {
+	return ctx.Response().Json(status, resources.NewError(resources.ErrorDeps{Code: code, Message: message}).With(fields))
+}
+
+// FailMessage is Fail for a message known only at run time: the code is
+// CodeFor(status, message), the rule the legacy maps were wrapped with.
+func FailMessage(ctx contractshttp.Context, status int, message string) contractshttp.AbortableResponse {
+	return Fail(ctx, status, CodeFor(status, message), message)
 }
 
 // JSON encodes v with encoding/json and writes it with the given status.
@@ -161,8 +196,12 @@ func WrapLegacy(status int, body any) (resources.ErrorEnvelope, bool) {
 		}
 		extra[key] = value
 	}
+	code := explicit
+	if code == "" {
+		code = CodeFor(status, message)
+	}
 	return resources.NewError(resources.ErrorDeps{
-		Code:    codeFor(status, message, explicit),
+		Code:    code,
 		Message: message,
 	}).With(extra), true
 }
@@ -198,10 +237,12 @@ func FieldMessages(errs contractsvalidation.Errors) map[string][]string {
 	return fields
 }
 
-func codeFor(status int, message, explicit string) string {
-	if explicit != "" {
-		return explicit
-	}
+// CodeFor is the code of a message whose code the caller does not name: a
+// listed sentence (the signature failures), a message that is itself a
+// machine code, or the status default. It is the heuristic the legacy maps
+// were wrapped with; FailMessage keeps it for messages known only at run
+// time, and every message known when the code is written names its code.
+func CodeFor(status int, message string) string {
 	if code, ok := messageCodes[message]; ok {
 		return code
 	}
