@@ -13,7 +13,6 @@ func Rules() []validation.Rule {
 	rows := repositories.NewExistence(nil)
 	return []validation.Rule{
 		&rules.RFC3339{},
-		&rules.IntegerString{},
 		&rules.DecimalString{},
 		rules.NewBlockchainAddress(container.MustMake[*chainpkg.Registry]()),
 		rules.NewUnique(rows),

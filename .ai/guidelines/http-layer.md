@@ -115,13 +115,16 @@ Rules:
   the same.** `form` is what the binder reads; without it a snake_case field
   binds nothing, silently. `TestEveryFormRequestFieldTagsFormAndJSONAlike`.
 - **Every field bound into a number carries a type rule.** Amounts are strings
-  (`decimal_string`, `integer_string` rules) and are parsed with `pkg/amount`
+  (`decimal_string` rule) and are parsed with `pkg/amount`
   in the service, never `float64`.
 - **A form request never touches the container or the ORM.** Context a rule
   needs (the wallet's chain for `blockchain_address`) comes from the scope
   middleware that already loaded the wallet: `middleware.CurrentWallet(ctx).Chain`.
-  Existence and uniqueness are settled by the database constraint in the
-  repository (SQLSTATE 23505 → 409), not by a `db_exists`/`unique` read.
+  `db_exists:<table>,<column>` and `unique:<table>,<column>` (`app/rules`; Goravel
+  v1.17 has no native ones) give the form a friendly 422 through the `RowCount`
+  port. A rule written without its table and column fails, and a failed read
+  passes. They are a courtesy: a write is still settled by the database
+  constraint in the repository (SQLSTATE 23505 → 409).
 - **A route parameter wins over a body or query field of the same name.**
 - **Body-less POST → `ValidatePath`.**
 - A check made after the form request passed answers with `responses.FieldError`.

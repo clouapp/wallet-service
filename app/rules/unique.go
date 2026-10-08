@@ -6,8 +6,9 @@ import (
 	"github.com/goravel/framework/contracts/validation"
 )
 
-// Unique reports whether no row stores this value yet. A missing option or a
-// failed read passes. The table's unique constraint still rejects the write.
+// Unique reports whether no row stores this value yet. A rule without its table
+// and column fails every value. A failed read passes. The table's unique
+// constraint still rejects the write.
 type Unique struct {
 	rows RowCount
 }
@@ -27,7 +28,7 @@ func (r *Unique) Signature() string {
 func (r *Unique) Passes(ctx context.Context, _ validation.Data, val any, options ...any) bool {
 	table, column, ok := ruleColumn(options)
 	if !ok {
-		return true
+		return false
 	}
 	value, ok := ruleString(val)
 	if !ok {
