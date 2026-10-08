@@ -7,6 +7,7 @@ func Boot() {
 	registerApp()
 	registerAuth()
 	registerJWT()
+	registerHashing()
 	registerMail()
 	registerQueue()
 	registerHTTP()

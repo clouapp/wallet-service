@@ -52,7 +52,7 @@ func TestLogin_Denies_WhenTheMembershipReadFails(t *testing.T) {
 		}),
 		RefreshTokens:  sessions.NewRefreshTokens(refreshes),
 		PasswordResets: &sessions.PasswordResets{},
-		Passwords:      &authsvc.Service{},
+		Passwords:      authsvc.NewServiceWithHasher(testHasher()),
 		TwoFactor:      &authsvc.TwoFactorLogin{},
 		Revoker:        &authsvc.SessionRevoker{},
 		CredentialMail: &credentialmail.Service{},
@@ -158,6 +158,13 @@ type recordingResponse struct {
 	http.ContextResponse
 	status int
 	body   any
+	raw    []byte
+}
+
+func (r *recordingResponse) Data(code int, _ string, data []byte) http.AbortableResponse {
+	r.status = code
+	r.raw = data
+	return recordingAbort{}
 }
 
 func (r *recordingResponse) Json(code int, obj any) http.AbortableResponse {
@@ -178,3 +185,5 @@ func (quietApp) MakeLog() contractslog.Log { return quietLog{} }
 type quietLog struct{ contractslog.Log }
 
 func (quietLog) Errorf(string, ...any) {}
+
+func (l quietLog) WithContext(context.Context) contractslog.Log { return l }

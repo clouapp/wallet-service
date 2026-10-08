@@ -5,26 +5,45 @@ import (
 	"encoding/base32"
 	"fmt"
 
+	"github.com/goravel/framework/contracts/hash"
 	"github.com/pquerna/otp/totp"
 	"golang.org/x/crypto/bcrypt"
+
+	appfacades "github.com/macrowallets/waas/app/facades"
 )
 
-type Service struct{}
+// Service hashes and checks passwords through the hash facade and handles
+// TOTP, recovery codes and tokens.
+type Service struct {
+	// hasher is the password hasher. Nil means the process hash facade.
+	hasher hash.Hash
+}
 
-// DummyPasswordHash is a bcrypt hash at bcrypt.DefaultCost of a random string
+// DummyPasswordHash is a bcrypt hash at cost 10 (the hashing config's rounds) of a random string
 // nobody knows. Login compares the submitted password against it when the email
 // has no user, so a missing user costs the same bcrypt time as a wrong password.
 const DummyPasswordHash = "$2a$10$NJIEW0bsDrp6v6qmmZ4t5.0cbwEo2J8oNSsiEklai1L7uSQVgXIPO"
 
+// NewService hashes passwords with the process hash facade.
 func NewService() *Service { return &Service{} }
 
+// NewServiceWithHasher hashes passwords with hasher instead of the facade, for
+// callers that run without a booted application.
+func NewServiceWithHasher(hasher hash.Hash) *Service { return &Service{hasher: hasher} }
+
+func (s *Service) passwordHasher() hash.Hash {
+	if s.hasher != nil {
+		return s.hasher
+	}
+	return appfacades.Hash()
+}
+
 func (s *Service) HashPassword(password string) (string, error) {
-	bytes, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
-	return string(bytes), err
+	return s.passwordHasher().Make(password)
 }
 
 func (s *Service) CheckPassword(password, hash string) bool {
-	return bcrypt.CompareHashAndPassword([]byte(hash), []byte(password)) == nil
+	return s.passwordHasher().Check(password, hash)
 }
 
 func (s *Service) GenerateTOTP(email string) (secret, qrURL string, err error) {
