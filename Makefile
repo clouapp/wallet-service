@@ -127,8 +127,8 @@ define run_with_test_databases
 	@echo "🔒 Taking $(TEST_DB_LOCK)..."
 	@flock "$(TEST_DB_LOCK)" sh -c 'set -a; [ ! -f .env.dev ] || . ./.env.dev; . ./.env.testing; set +a; \
 		export DB_DATABASE="$(TEST_DB_DATABASE)" TEST_DB_REQUIRED=1; \
-		trap "go run ./tools/testdb drop-clones" EXIT; trap "exit 130" INT TERM; \
-		go run ./tools/testdb drop-clones && go run ./tools/testdb prepare && \
+		trap "go run ./tests/feature/support/testdb drop-clones" EXIT; trap "exit 130" INT TERM; \
+		go run ./tests/feature/support/testdb drop-clones && go run ./tests/feature/support/testdb prepare && \
 		TEST_DB_TEMPLATE="$(TEST_DB_DATABASE)" TEST_DB_WORKERS="$(TEST_PARALLEL)" \
 			go test -p "$(TEST_PARALLEL)" -count=1 -timeout $(TEST_TIMEOUT) $(1)'
 endef

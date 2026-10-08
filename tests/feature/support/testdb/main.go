@@ -1,8 +1,8 @@
 // Command testdb prepares and cleans the PostgreSQL databases of the parallel
 // integration tests (make test-integration):
 //
-//	go run ./tools/testdb prepare      # migrate the template (TEST_DB_DATABASE) fresh
-//	go run ./tools/testdb drop-clones  # drop its worker clones <template>_pN
+//	go run ./tests/feature/support/testdb prepare      # migrate the template (TEST_DB_DATABASE) fresh
+//	go run ./tests/feature/support/testdb drop-clones  # drop its worker clones <template>_pN
 //
 // Both refuse anything but a database starting with vault_unit_test (never vault or
 // vault_test), through the same guard as the test setup.

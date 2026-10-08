@@ -427,7 +427,7 @@ make test-integration TEST_FLAGS='-run TestWalletRepository'
 
 - Unit vs integration is decided per package from its test imports (`go list`), no build tags: a package is integration when its tests import `tests/testenv`, `tests/testutil`, `tests` or `bootstrap`.
 - `mocks.TestDB(t)` migrates the schema fresh once per test binary (a worker clone already is), then truncates every table but `migrations` before and after each test. Tests that run migrations up/down use `mocks.TestDBFreshSchema(t)` (fresh schema before and after).
-- `go run ./tools/testdb prepare | drop-clones` are the template/cleanup steps `make test-integration` runs; both refuse names outside `vault_unit_test*`.
+- `go run ./tests/feature/support/testdb prepare | drop-clones` are the template/cleanup steps `make test-integration` runs; both refuse names outside `vault_unit_test*`.
 - Running `go test ./app/repositories` directly still works on `vault_unit_test` itself (no clone; take the lock with `flock ~/.local/state/macro-e2e/locks/vault_unit_test.lock …` when another run may be active).
 - `TEST_TIMEOUT` (default 30m) is a safety net per `go test` invocation.
 - Timings on the dev machine: `make test` ~2.5 min (was ~35 min with `-p 1` and `migrate:fresh` twice per test); `test-unit` ~1.5 min (mostly `app/services/mpc` keygen), `test-integration` ~40 s with 6 workers, ~1.7 min with `TEST_PARALLEL=1`.

@@ -24,7 +24,6 @@ app/services/deposit → app/repositories (services → repositories)
 app/services/deposit → app/repositories (services → repositories) [test] (x5)
 app/services/evmcall → app/adapters/chain/evm (services → adapters) [test]
 app/services/evmcall → app/adapters/chain/rpc (services → adapters) [test]
-app/services/keyexport → app/adapters/chain/bitcoin (services → adapters) [test]
 app/services/sweep → app/adapters/chain/evm (services → adapters) [test]
 app/services/sweep → app/adapters/chain/solana (services → adapters) [test]
 app/services/withdraw → app/repositories (services → repositories)
