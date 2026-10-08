@@ -21,6 +21,13 @@ var secretAssign = regexp.MustCompile(`(?i)\b(password[-_]?reset[-_]?token|priva
 // pemPrivateKey matches a PEM block that carries a private key.
 var pemPrivateKey = regexp.MustCompile(`(?s)-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----.*?-----END [A-Z0-9 ]*PRIVATE KEY-----`)
 
+// driverJSONBody matches the body the Goravel gin driver quotes when a request
+// body is not valid JSON: "decode json [<body>] error: ...". The body is the
+// raw request (a login carries its email and password), and the driver logs it
+// at error level before the project's handlers run. The match runs to the last
+// "] error", so a bracket inside the body cannot cut the redaction short.
+var driverJSONBody = regexp.MustCompile(`(?s)(decode json \[).*(\] error)`)
+
 const redactedMark = "[redacted]"
 
 // secretSegmentMin is the shortest path or query piece of a configured RPC URL
@@ -101,6 +108,7 @@ func snapshotRedaction() (map[string]struct{}, []string) {
 
 func redactText(text string, hosts map[string]struct{}, secrets []string) string {
 	text = pemPrivateKey.ReplaceAllString(text, redactedMark)
+	text = driverJSONBody.ReplaceAllString(text, "${1}"+redactedMark+"${2}")
 	text = urlPattern.ReplaceAllStringFunc(text, func(raw string) string {
 		return redactURL(raw, hosts)
 	})

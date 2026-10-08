@@ -4,12 +4,17 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/gin-gonic/gin"
 	"github.com/goravel/framework/contracts/config"
 	contractslog "github.com/goravel/framework/contracts/log"
+	frameworklog "github.com/goravel/framework/log"
+	ginpkg "github.com/goravel/gin"
 
 	"github.com/macrowallets/waas/app/services/security"
 )
@@ -274,3 +279,50 @@ func first(values []any) any {
 }
 
 var _ config.Config = (*mapConfig)(nil)
+
+// The gin driver quotes the whole body of a request that is not valid JSON in
+// an error log ("decode json [<body>] error"). This runs the driver's own
+// code path against the redacting handler InstallLogRedaction installs.
+func TestRedact_Log_MalformedJSONBodyFromTheGinDriverNeverReachesTheSink(t *testing.T) {
+	preserveDefaultSlog(t)
+	t.Cleanup(func() { security.ConfigureRedaction(nil, nil) })
+	previous := ginpkg.LogFacade
+	t.Cleanup(func() { ginpkg.LogFacade = previous })
+
+	inner := &stubHandler{}
+	cfg := &mapConfig{data: map[string]any{
+		"logging": map[string]any{
+			"default": "app",
+			"channels": map[string]any{
+				"app": map[string]any{"driver": contractslog.DriverCustom, "via": stubLogger{handler: inner}},
+			},
+		},
+	}}
+	InstallLogRedaction(cfg, nil)
+	logger, err := frameworklog.NewApplication(context.Background(), nil, cfg, nil)
+	if err != nil {
+		t.Fatalf("log application: %v", err)
+	}
+	ginpkg.LogFacade = logger
+
+	gin.SetMode(gin.TestMode)
+	engine := gin.New()
+	engine.POST("/v1/auth/login", func(c *gin.Context) {
+		_ = ginpkg.NewContext(c).Request().Input("email") // builds the Goravel request, as a handler does
+		c.Status(http.StatusTeapot)
+	})
+	request := httptest.NewRequest(http.MethodPost, "/v1/auth/login",
+		strings.NewReader(`{"email":"luiz@example.com","password":"hunter2-secret`))
+	request.Header.Set("Content-Type", "application/json")
+	engine.ServeHTTP(httptest.NewRecorder(), request)
+
+	if len(inner.got) == 0 {
+		t.Fatal("the driver did not log the malformed body; this test no longer exercises the leak")
+	}
+	logged := strings.Join(inner.got, "\n") + fmt.Sprint(inner.with)
+	for _, leaked := range []string{"luiz@example.com", "hunter2-secret"} {
+		if strings.Contains(logged, leaked) {
+			t.Fatalf("%q reached the log sink: %s", leaked, logged)
+		}
+	}
+}

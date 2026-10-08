@@ -51,6 +51,17 @@ func (s *AuthControllerTestSuite) TestLogin_Invalid_Credentials() {
 	s.AssertError(resp, 401, "unauthorized", "invalid credentials")
 }
 
+// TestLogin_MalformedJSON answers 400 with the same envelope as an empty body.
+// The gin driver logs the quoted body of such a request; hiding it from the log
+// (app/services/security.RedactText) must not change this answer.
+func (s *AuthControllerTestSuite) TestLogin_Malformed_JSON() {
+	resp := s.Post("/v1/auth/login", support.Session{}, `{"email":"admin@macro.markets","password":"secre`)
+	s.AssertError(resp, 400, "invalid_request", "invalid request body")
+	content, err := resp.Content()
+	s.Require().NoError(err)
+	s.Equal(`{"error":{"code":"invalid_request","message":"invalid request body"}}`, content)
+}
+
 // TestRecover_AlwaysReturns200 ensures user enumeration is not possible (ForgotPassword handler).
 func (s *AuthControllerTestSuite) TestRecover_Always_Returns200() {
 	body := `{"email":"nobody@example.com"}`
