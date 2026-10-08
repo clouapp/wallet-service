@@ -31,7 +31,8 @@ const (
 
 // Repeated guard chains. Cors and CacheControl are not guards. The ingest
 // route's guard is ProviderSignature, which checks the provider signature
-// before the body is parsed.
+// before the body is parsed. It is installed once in the global chain
+// (app/http/middleware/global_chain.go), so the route files register none.
 const (
 	chainSession                = "SessionAuth"
 	chainAccount                = "SessionAuth > AccountContext > TOTPEnrollment"
@@ -73,7 +74,6 @@ const (
 	chainTransactions           = "APITokenAuth > APIScope(transactions.read)"
 	chainWebhooksRead           = "APITokenAuth > APIScope(webhooks.read)"
 	chainWebhooksWrite          = "APITokenAuth > APIScope(webhooks.write)"
-	chainProviderSignature      = "ProviderSignature"
 )
 
 // routeSecurity is one row of the closed table: who may call the route, and
@@ -91,7 +91,7 @@ func public() routeSecurity {
 	return routeSecurity{auth: guardPublic}
 }
 func provider() routeSecurity {
-	return routeSecurity{auth: guardProviderSignature, chain: chainProviderSignature}
+	return routeSecurity{auth: guardProviderSignature}
 }
 
 // routeTable is the closed list of every route the router serves, keyed by
