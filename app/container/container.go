@@ -13,10 +13,8 @@ import (
 	"github.com/macrowallets/waas/app/services/deposit"
 	"github.com/macrowallets/waas/app/services/depositevents"
 	"github.com/macrowallets/waas/app/services/ingest"
-	"github.com/macrowallets/waas/app/services/ingest/providers"
 	mpc "github.com/macrowallets/waas/app/services/mpc"
 	"github.com/macrowallets/waas/app/services/price"
-	"github.com/macrowallets/waas/app/services/queue"
 	"github.com/macrowallets/waas/app/services/refresh"
 	"github.com/macrowallets/waas/app/services/sweep"
 	"github.com/macrowallets/waas/app/services/wallet"
@@ -30,7 +28,6 @@ import (
 // Container holds the WaaS dependency graph, resolved once from the Goravel service container.
 type Container struct {
 	Redis          redis.UniversalClient
-	SQS            queue.Sender
 	SecretsManager *secretsmanager.Client
 	MPCService     mpc.Service
 
@@ -58,7 +55,6 @@ type Container struct {
 	WalletUTXORepo            *repositories.WalletUTXORepository
 	WalletSyncStateRepo       *repositories.WalletSyncStateRepository
 	CurrencyRepo              *repositories.CurrencyRepository
-	WebhookProviders          map[string]providers.WebhookProvider
 	WebhookSyncService        *webhooksync.Service
 
 	PriceService *price.Service

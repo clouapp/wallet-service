@@ -17,8 +17,6 @@ import (
 	"github.com/macrowallets/waas/app/services/price"
 	"github.com/macrowallets/waas/app/services/refresh"
 	"github.com/macrowallets/waas/app/services/sweep"
-	"github.com/macrowallets/waas/app/services/webhook"
-	"github.com/macrowallets/waas/app/services/webhooksync"
 	"github.com/macrowallets/waas/app/services/withdraw"
 	"github.com/macrowallets/waas/app/services/withdrawalevents"
 )
@@ -29,14 +27,11 @@ import (
 func registerRuntimeServices(app foundation.Application) {
 	bindRuntime(app, func(c *container.Container) *deposit.Service { return c.DepositService }, "deposit service")
 	bindRuntime(app, func(c *container.Container) *price.Service { return c.PriceService }, "price service")
-	bindRuntime(app, func(c *container.Container) *webhook.Service { return c.WebhookService }, "webhook service")
 	bindRuntime(app, func(c *container.Container) *ingest.Service { return c.IngestService }, "ingest service")
 	bindRuntime(app, func(c *container.Container) *refresh.BalanceService { return c.BalanceRefreshService }, "balance refresh service")
 	bindRuntime(app, func(c *container.Container) *refresh.WalletRefresher { return c.WalletRefresher }, "wallet refresher")
 	bindRuntime(app, func(c *container.Container) *withdraw.Service { return c.WithdrawalService }, "withdrawal service")
 	bindRuntime(app, func(c *container.Container) *withdrawalevents.Publisher { return c.WithdrawalEvents }, "withdrawal events")
-	bindRuntime(app, func(c *container.Container) *webhooksync.Service { return c.WebhookSyncService }, "webhook sync service")
-	bindRuntime(app, func(c *container.Container) *ingest.Catalog { return ingest.NewCatalog(c.WebhookProviders) }, "ingest provider catalog")
 
 	app.Singleton((*price.CoinAPICredential)(nil), func(foundation.Application) (any, error) {
 		return &price.CoinAPICredential{Key: container.Get().PriceConfig.CoinAPIKey}, nil

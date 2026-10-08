@@ -9,8 +9,6 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/service/sqs"
 	"github.com/google/uuid"
 	"github.com/goravel/framework/contracts/foundation"
 	"github.com/redis/go-redis/v9"
@@ -19,24 +17,18 @@ import (
 	etherscantip "github.com/macrowallets/waas/app/adapters/blockheight/etherscan"
 	mempooltip "github.com/macrowallets/waas/app/adapters/blockheight/mempool"
 	solanatip "github.com/macrowallets/waas/app/adapters/blockheight/solana"
-	alchemyingest "github.com/macrowallets/waas/app/adapters/ingest/alchemy"
-	heliusingest "github.com/macrowallets/waas/app/adapters/ingest/helius"
-	quicknodeingest "github.com/macrowallets/waas/app/adapters/ingest/quicknode"
 	coinapiws "github.com/macrowallets/waas/app/adapters/price/coinapi"
 
 	// Link the CoinGecko HTTP client. Quotes still call price.NewCoinGeckoProvider.
 	_ "github.com/macrowallets/waas/app/adapters/price/coingecko"
 	// Link the CoinMarketCap HTTP client. Quotes still call price.NewCoinMarketCapProvider.
 	_ "github.com/macrowallets/waas/app/adapters/price/coinmarketcap"
-	queuesqs "github.com/macrowallets/waas/app/adapters/queue/sqs"
 	"github.com/macrowallets/waas/app/adapters/redis/addresscache"
 	"github.com/macrowallets/waas/app/adapters/redis/addressset"
 	redispending "github.com/macrowallets/waas/app/adapters/redis/pending"
 	"github.com/macrowallets/waas/app/adapters/redis/scanner"
 	sweepsecrets "github.com/macrowallets/waas/app/adapters/secretsmanager"
 
-	// Link the webhook delivery HTTP client. The service still signs each post.
-	_ "github.com/macrowallets/waas/app/adapters/webhook/delivery"
 	"github.com/macrowallets/waas/app/container"
 	"github.com/macrowallets/waas/app/facades"
 	"github.com/macrowallets/waas/app/models"
@@ -50,7 +42,6 @@ import (
 	"github.com/macrowallets/waas/app/services/depositevents"
 	"github.com/macrowallets/waas/app/services/features"
 	"github.com/macrowallets/waas/app/services/ingest"
-	"github.com/macrowallets/waas/app/services/ingest/providers"
 	mpc "github.com/macrowallets/waas/app/services/mpc"
 	"github.com/macrowallets/waas/app/services/price"
 	"github.com/macrowallets/waas/app/services/refresh"
@@ -101,13 +92,6 @@ func buildVaultContainer(app foundation.Application) (*container.Container, erro
 		return nil, fmt.Errorf("vault: redis: %w", err)
 	}
 	c.Redis = redisClient
-
-	awsCfg, err := resolve[*aws.Config](app)
-	if err != nil {
-		return nil, err
-	}
-	sqsClient := sqs.NewFromConfig(*awsCfg)
-	c.SQS = queuesqs.New(sqsClient, facades.Config().GetString("vault.queues.webhook"))
 
 	secrets, err := resolve[*sweepsecrets.SDKClient](app)
 	if err != nil {
@@ -249,7 +233,11 @@ func buildVaultContainer(app foundation.Application) (*container.Container, erro
 	if err != nil {
 		return nil, fmt.Errorf("vault: account settings: %w", err)
 	}
-	buildWebhookIngest(c, accountSettings)
+	webhookSync, err := resolve[*webhooksync.Service](app)
+	if err != nil {
+		return nil, err
+	}
+	c.WebhookSyncService = webhookSync
 
 	registry, err := resolve[*chainpkg.Registry](app)
 	if err != nil {
@@ -262,11 +250,11 @@ func buildVaultContainer(app foundation.Application) (*container.Container, erro
 	}
 	networkByChain := registryService.Networks()
 
-	c.WebhookService = webhook.NewService(webhook.Deps{
-		SQS:     c.SQS,
-		Configs: c.WebhookConfigRepo,
-		Events:  c.WebhookEventRepo,
-	})
+	webhookService, err := resolve[*webhook.Service](app)
+	if err != nil {
+		return nil, err
+	}
+	c.WebhookService = webhookService
 	c.WalletService = wallet.NewService(wallet.Deps{
 		Registry:     c.Registry,
 		AddressCache: addresscache.New(c.Redis),
@@ -280,13 +268,6 @@ func buildVaultContainer(app foundation.Application) (*container.Container, erro
 	if err != nil {
 		return nil, fmt.Errorf("vault: feature flags: %w", err)
 	}
-	c.WebhookService.SetDeliverySettingsSource(func(ctx context.Context) (webhook.DeliverySettings, error) {
-		stored, readErr := accountSettings.EffectiveWebhookDelivery(ctx)
-		if readErr != nil {
-			return webhook.DeliverySettings{}, readErr
-		}
-		return webhook.DeliverySettingsFromStored(stored.MaxAttempts, stored.TimeoutSeconds), nil
-	})
 	c.PriceService = buildPriceService(c, accountSettings)
 	c.SweepService = sweep.NewService(sweep.Deps{
 		Registry:     c.Registry,
@@ -426,49 +407,6 @@ func buildVaultContainer(app foundation.Application) (*container.Container, erro
 	c.DepositService.SetBalanceRefresher(c.WalletRefresher)
 
 	return c, nil
-}
-
-// buildWebhookIngest keeps provider credentials out of the boot snapshot.
-// Each provider reads its KeySource when it calls the vendor or verifies a
-// webhook. webhooksync asks again on every sync. A missing or unusable
-// settings row falls back to vault.webhooks.*; an empty result fails closed.
-func buildWebhookIngest(c *container.Container, accountSettings *settings.Service) {
-	keyFor := func(ctx context.Context, provider string) string {
-		envKey := facades.Config().GetString(ingestEnvConfigKey(provider))
-		if accountSettings == nil {
-			return envKey
-		}
-		return accountSettings.IngestProviderKey(ctx, provider, envKey)
-	}
-	providerMap := map[string]providers.WebhookProvider{
-		"alchemy":   alchemyingest.NewAlchemyProvider("").UseKeySource(func(ctx context.Context) string { return keyFor(ctx, "alchemy") }),
-		"helius":    heliusingest.NewHeliusProvider("").UseKeySource(func(ctx context.Context) string { return keyFor(ctx, "helius") }),
-		"quicknode": quicknodeingest.NewQuickNodeProvider("").UseKeySource(func(ctx context.Context) string { return keyFor(ctx, "quicknode") }),
-	}
-	c.WebhookProviders = providerMap
-	syncers := make(map[string]webhooksync.AddressSyncer, len(providerMap))
-	for name, provider := range providerMap {
-		syncers[name] = provider
-	}
-	c.WebhookSyncService = webhooksync.NewService(webhooksync.Deps{
-		Subscriptions: c.WebhookSubscriptionRepo,
-		Addresses:     c.AddressRepo,
-		Providers:     syncers,
-		ProviderKey:   keyFor,
-	})
-}
-
-func ingestEnvConfigKey(provider string) string {
-	switch provider {
-	case "alchemy":
-		return "vault.webhooks.alchemy_auth_token"
-	case "helius":
-		return "vault.webhooks.helius_api_key"
-	case "quicknode":
-		return "vault.webhooks.quicknode_api_key"
-	default:
-		return ""
-	}
 }
 
 // buildPriceService quotes through price.SettingsSource on each refresh.
