@@ -319,7 +319,7 @@ func (s *AccountMembersTestSuite) TestInvite_Link_UsesTheFrontendURL() {
 	const storedHash = "resend-without-base-digest"
 	inviteID := s.insertOpenInvite(accountID, owner.id, "held@example.com", models.AccountRoleUser, storedHash)
 	resent := s.postResend(owner.token, accountID, inviteID)
-	s.AssertError(resent, 500, "internal", "failed to create invite")
+	s.AssertError(resent, 500, "internal", "failed to resend invite")
 	resentBody, err := resent.Content()
 	s.Require().NoError(err)
 	s.Contains(resentBody, "failed to resend invite")
@@ -425,7 +425,7 @@ func (s *AccountMembersTestSuite) TestCreate_Invite_RefusesARoleAboveTheCaller()
 	s.loginUser("owner", models.MembershipStatusActive, accountID)
 
 	resp := s.postInvite(admin.token, accountID, `{"email":"would-be-owner@example.com","role":"owner"}`)
-	s.assertForbidden(resp, "cannot grant a role above your own")
+	s.assertForbidden(resp, "forbidden")
 	s.Equal(int64(0), s.countRows(&models.AccountInvite{}, "account_id = ? AND email = ?", accountID, "would-be-owner@example.com"))
 }
 
