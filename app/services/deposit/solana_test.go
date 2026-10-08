@@ -94,9 +94,24 @@ func TestSolana_Deposit_DetectedFromRecordedBlockThenConfirmed(t *testing.T) {
 	}
 }
 
+// solanaFeeChain is the Solana port that also reads a paid fee. Decoding meta.fee
+// stays in the adapter tests (TestSolanaTransactionFee); here the port reports it.
+type solanaFeeChain struct {
+	*mocks.MockChain
+	fee int64
+}
+
+func (c solanaFeeChain) TransactionFee(_ context.Context, txHash string) (*big.Int, error) {
+	if txHash != solFixtureSignature {
+		return nil, chain.ErrTransactionFeeUnknown
+	}
+	return big.NewInt(c.fee), nil
+}
+
 func TestSolana_Withdrawal_SlotReconciledFromSignatureStatus(t *testing.T) {
 	fixtures.TestDB(t)
-	adapter := solanaFixtureChain(t)
+	const paidLamports = 5000
+	adapter := solanaFeeChain{MockChain: solanaFixtureChain(t), fee: paidLamports}
 	registry := chain.NewRegistry()
 	registry.RegisterChain(adapter)
 	w := fixtures.InsertWallet(t, models.ChainSOL)
@@ -121,7 +136,7 @@ func TestSolana_Withdrawal_SlotReconciledFromSignatureStatus(t *testing.T) {
 		t.Fatalf("expected slot %d and confirmed, got %d / %s", solFixtureSlot, reloaded.BlockNumber, reloaded.Status)
 	}
 	if reloaded.Fee != "5000" {
-		t.Fatalf("paid fee %q, want the 5000 lamports of meta.fee", reloaded.Fee)
+		t.Fatalf("paid fee %q, want the %d lamports the port reports", reloaded.Fee, paidLamports)
 	}
 	if len(confirmations.confirmed) != 1 || confirmations.confirmed[0].ID != withdrawal.ID {
 		t.Fatalf("withdrawal.confirmed must be published once, got %d", len(confirmations.confirmed))
