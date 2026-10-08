@@ -8,8 +8,8 @@ import (
 	"github.com/goravel/framework/contracts/http"
 	goravelerrors "github.com/goravel/framework/errors"
 
+	"github.com/macrowallets/waas/app/facades"
 	"github.com/macrowallets/waas/app/http/middleware/requestctx"
-	"github.com/macrowallets/waas/app/http/responses"
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/policies"
 	accountsvc "github.com/macrowallets/waas/app/services/account"
@@ -40,28 +40,31 @@ const PermTokensRead = policies.PermTokensRead
 const PermTokensWrite = policies.PermTokensWrite
 
 // Can refuses the route unless the account role already stored by
-// AccountContext or AccountHeader holds permission. The decision is
-// policies.Can on that role's code catalog. An empty permission and an
-// unknown role fail closed. A child resource (member, token, or invite) is
-// resolved first: a missing one is left to the handler, which answers 404,
-// and only a resource that exists is 403 when the permission is missing.
+// AccountContext or AccountHeader holds permission. The Gate's ability for
+// permission decides with policies.Can on the stored request grants, or on
+// that role's code catalog. An unknown role fails closed, and a permission
+// the Gate does not define is refused when the route is built. A child
+// resource (member, token, or invite) is resolved first: a missing one is
+// left to the handler, which answers 404, and only a resource that exists
+// is 403 when the permission is missing.
 func Can(accounts *accountsvc.Service, permission string) http.Middleware {
 	if accounts == nil {
 		panic("can: the account service is required")
 	}
-	return func(ctx http.Context) {
+	return authorize(facades.Gate(), permission, accountChildSubject(accounts))
+}
+
+// accountChildSubject resolves the member, token or invite the path names,
+// then hands the Gate the caller's account grants.
+func accountChildSubject(accounts *accountsvc.Service) subject {
+	return func(ctx http.Context) (map[string]any, outcome) {
 		switch gateAccountChild(ctx, accounts) {
 		case childPass:
-			ctx.Request().Next()
-			return
+			return nil, pass
 		case childAnswered:
-			return
+			return nil, answered
 		}
-		if !accountPermissionHeld(ctx, permission) {
-			abortWithJSON(ctx, http.StatusForbidden, http.Json{"error": responses.CodeForbidden})
-			return
-		}
-		ctx.Request().Next()
+		return map[string]any{policies.ArgGrants: accountGrants(ctx)}, decide
 	}
 }
 
@@ -175,12 +178,18 @@ func rowMissing(err error) bool {
 	return errors.Is(err, models.ErrRepositoryNotFound) || errors.Is(err, goravelerrors.OrmRecordNotFound)
 }
 
-// accountPermissionHeld asks policies.Can with the role AccountContext or
-// AccountHeader already stored. An empty permission and an unknown role fail closed.
-func accountPermissionHeld(ctx http.Context, permission string) bool {
+// accountGrants is the account catalog AccountContext or AccountHeader
+// stored for this request, or the stored role's catalog when none was.
+func accountGrants(ctx http.Context) policies.Grants {
 	grants, ok := policies.AccountGrants(ctx)
 	if !ok {
 		grants = policies.AccountRoleGrants(AccountRole(ctx))
 	}
-	return policies.Can(grants, permission)
+	return grants
+}
+
+// accountPermissionHeld asks policies.Can with the role AccountContext or
+// AccountHeader already stored. An empty permission and an unknown role fail closed.
+func accountPermissionHeld(ctx http.Context, permission string) bool {
+	return policies.Can(accountGrants(ctx), permission)
 }
