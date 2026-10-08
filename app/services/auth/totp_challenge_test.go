@@ -209,3 +209,46 @@ func TestCache_AttemptLimiter_WindowLapses(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, int64(1), got)
 }
+
+// An unreachable cache refuses the attempt: a second factor is never checked
+// without a counted attempt.
+func TestCache_AttemptLimiter_RefusesWhenTheCacheIsDown(t *testing.T) {
+	limiter, err := authsvc.NewCacheAttemptLimiter(authsvc.AttemptLimiterDeps{
+		Cache:  memcache.Down{Cache: memcache.New()},
+		Window: time.Minute,
+	})
+	require.NoError(t, err)
+
+	_, err = limiter.Claim(uuid.New())
+	require.ErrorIs(t, err, memcache.ErrUnavailable)
+}
+
+// A counter that lapsed between Add and Increment is recreated without an
+// expiry; the claim gives it the window again so the lockout cannot stick.
+func TestCache_AttemptLimiter_GivesALapsedCounterItsWindow(t *testing.T) {
+	cache := &lapsingCache{Cache: memcache.New()}
+	limiter, err := authsvc.NewCacheAttemptLimiter(authsvc.AttemptLimiterDeps{
+		Cache:  cache,
+		Window: time.Minute,
+	})
+	require.NoError(t, err)
+
+	got, err := limiter.Claim(uuid.New())
+	require.NoError(t, err)
+	assert.Equal(t, int64(1), got)
+	assert.Equal(t, time.Minute, cache.putTTL, "the recreated counter has no window")
+}
+
+// lapsingCache loses every Add, as if the key existed and then expired
+// before Increment recreated it.
+type lapsingCache struct {
+	*memcache.Cache
+	putTTL time.Duration
+}
+
+func (c *lapsingCache) Add(string, any, time.Duration) bool { return false }
+
+func (c *lapsingCache) Put(key string, value any, ttl time.Duration) error {
+	c.putTTL = ttl
+	return c.Cache.Put(key, value, ttl)
+}

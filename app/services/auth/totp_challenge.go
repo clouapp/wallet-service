@@ -12,6 +12,8 @@ import (
 
 	"github.com/google/uuid"
 	contractscache "github.com/goravel/framework/contracts/cache"
+
+	"github.com/macrowallets/waas/app/services/cacheguard"
 )
 
 const (
@@ -153,9 +155,10 @@ func hashToken(token string) string {
 	return hex.EncodeToString(sum[:])
 }
 
-// CacheAttemptLimiter counts second-factor attempts per user in the cache.
-// The window starts at the first attempt and is not extended by later ones,
-// so a locked-out user can try again once it lapses.
+// CacheAttemptLimiter counts second-factor attempts per user in the cache
+// through cacheguard.Count. The window starts at the first attempt and is not
+// extended by later ones, so a locked-out user can try again once it lapses.
+// An unreachable cache refuses the attempt.
 type CacheAttemptLimiter struct {
 	cache  contractscache.Driver
 	window time.Duration
@@ -182,20 +185,9 @@ func (l *CacheAttemptLimiter) Claim(userID uuid.UUID) (int64, error) {
 	if userID == uuid.Nil {
 		return 0, errors.New("auth: claim attempt: user id is required")
 	}
-	key := attemptsKey(userID)
-	if l.cache.Add(key, 1, l.window) {
-		return 1, nil
-	}
-	attempt, err := l.cache.Increment(key)
+	attempt, err := cacheguard.Count(l.cache, attemptsKey(userID), 1, l.window)
 	if err != nil {
 		return 0, fmt.Errorf("auth: claim attempt: %w", err)
-	}
-	// The key lapsed between Add and Increment, and INCRBY recreated it
-	// without an expiry; give it one so the lockout cannot become permanent.
-	if attempt == 1 {
-		if err := l.cache.Put(key, 1, l.window); err != nil {
-			return 0, fmt.Errorf("auth: claim attempt: %w", err)
-		}
 	}
 	return attempt, nil
 }
