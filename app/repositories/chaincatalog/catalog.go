@@ -10,6 +10,7 @@ import (
 	"github.com/spf13/cast"
 
 	"github.com/macrowallets/waas/app/models"
+	"github.com/macrowallets/waas/app/services/settings"
 )
 
 const (
@@ -76,7 +77,13 @@ func (cat *Catalog) encryptRPCFromEnv(envKey string) (string, error) {
 	if raw == "" {
 		raw = placeholderRPCURL
 	}
-	return cat.cipher.EncryptString(raw)
+	return settings.Seal(cat.cipher, raw)
+}
+
+// openRPC opens a stored rpc_url in either format: the enc:v1: prefix this
+// catalog writes, or the bare Crypt envelope rows from before it hold.
+func (cat *Catalog) openRPC(stored string) (string, error) {
+	return settings.OpenStored(cat.cipher, stored)
 }
 
 func i64p(v int64) *int64   { return &v }

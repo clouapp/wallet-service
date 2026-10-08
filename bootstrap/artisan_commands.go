@@ -17,6 +17,7 @@ import (
 	"github.com/macrowallets/waas/app/services/chainregistry"
 	"github.com/macrowallets/waas/app/services/evmcall"
 	"github.com/macrowallets/waas/app/services/keyexport"
+	"github.com/macrowallets/waas/app/services/settings"
 	"github.com/macrowallets/waas/app/services/sweep"
 	"github.com/macrowallets/waas/app/services/walletrecords"
 )
@@ -41,7 +42,7 @@ func seedMissingAddedChains(ctx context.Context, apply bool) (chainregistry.Adde
 }
 
 func decryptChainRPC(encrypted string) (string, error) {
-	stored, err := facades.Crypt().DecryptString(encrypted)
+	stored, err := settings.OpenStored(facades.Crypt(), encrypted)
 	if err != nil {
 		return "", err
 	}

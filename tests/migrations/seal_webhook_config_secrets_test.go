@@ -14,9 +14,9 @@ import (
 
 	_ "github.com/macrowallets/waas/app/adapters/webhook/delivery"
 	"github.com/macrowallets/waas/app/repositories"
+	"github.com/macrowallets/waas/app/services/settings"
 	"github.com/macrowallets/waas/app/services/webhook"
 	"github.com/macrowallets/waas/database/migrations"
-	"github.com/macrowallets/waas/pkg/security"
 	"github.com/macrowallets/waas/pkg/types"
 	"github.com/macrowallets/waas/tests/feature/support/fixtures"
 	"github.com/stretchr/testify/assert"
@@ -82,10 +82,10 @@ func TestSeal_Webhook_ConfigSecretsKeepsSignaturesIdentical(t *testing.T) {
 
 	sealed := storedWebhookSecret(t, configID)
 	assert.NotEqual(t, legacyWebhookSecret, sealed)
-	assert.True(t, security.IsSealedSecret(sealed))
-	assert.True(t, security.IsSealedSecret(storedWebhookSecret(t, emptySecretID)), "an empty secret is sealed too")
+	assert.True(t, opensAsSealed(t, sealed))
+	assert.True(t, opensAsSealed(t, storedWebhookSecret(t, emptySecretID)), "an empty secret is sealed too")
 
-	opened, err := security.OpenSecret(facades.Crypt(), sealed)
+	opened, err := settings.OpenStored(facades.Crypt(), sealed)
 	require.NoError(t, err)
 	assert.Equal(t, legacyWebhookSecret, opened)
 	assert.Equal(t, signatureBefore, deliveredSignature(t, opened), "Markets verifies X-Vault-Signature; it must not change")
@@ -115,7 +115,7 @@ func TestSeal_Webhook_ConfigSecretsDownRestoresPlaintext(t *testing.T) {
 	assert.Equal(t, legacyWebhookSecret, storedWebhookSecret(t, configID))
 
 	require.NoError(t, migration.Up())
-	assert.True(t, security.IsSealedSecret(storedWebhookSecret(t, configID)))
+	assert.True(t, opensAsSealed(t, storedWebhookSecret(t, configID)))
 }
 
 func TestSeal_Webhook_ConfigSecretsWidensTheColumnForLongSecrets(t *testing.T) {
@@ -127,7 +127,15 @@ func TestSeal_Webhook_ConfigSecretsWidensTheColumnForLongSecrets(t *testing.T) {
 	require.NoError(t, (&migrations.M00000000000440SealWebhookConfigSecrets{}).Up())
 
 	assert.Greater(t, len(storedWebhookSecret(t, configID)), 255, "the sealed form outgrows varchar(255)")
-	opened, err := security.OpenSecret(facades.Crypt(), storedWebhookSecret(t, configID))
+	opened, err := settings.OpenStored(facades.Crypt(), storedWebhookSecret(t, configID))
 	require.NoError(t, err)
 	assert.Equal(t, longSecret, opened)
+}
+
+// opensAsSealed reports whether stored is a sealed value the app can open, in
+// either stored format. The migrations here write the bare Crypt envelope.
+func opensAsSealed(t *testing.T, stored string) bool {
+	t.Helper()
+	_, err := settings.OpenStored(facades.Crypt(), stored)
+	return err == nil
 }

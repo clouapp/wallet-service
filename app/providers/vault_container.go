@@ -23,6 +23,7 @@ import (
 	heliusingest "github.com/macrowallets/waas/app/adapters/ingest/helius"
 	quicknodeingest "github.com/macrowallets/waas/app/adapters/ingest/quicknode"
 	coinapiws "github.com/macrowallets/waas/app/adapters/price/coinapi"
+
 	// Link the CoinGecko HTTP client. Quotes still call price.NewCoinGeckoProvider.
 	_ "github.com/macrowallets/waas/app/adapters/price/coingecko"
 	// Link the CoinMarketCap HTTP client. Quotes still call price.NewCoinMarketCapProvider.
@@ -36,6 +37,7 @@ import (
 	"github.com/macrowallets/waas/app/adapters/redis/scanner"
 	sweepredis "github.com/macrowallets/waas/app/adapters/redis/sweep"
 	sweepsecrets "github.com/macrowallets/waas/app/adapters/secretsmanager"
+
 	// Link the webhook delivery HTTP client. The service still signs each post.
 	_ "github.com/macrowallets/waas/app/adapters/webhook/delivery"
 	"github.com/macrowallets/waas/app/container"
@@ -63,7 +65,6 @@ import (
 	"github.com/macrowallets/waas/app/services/withdraw"
 	"github.com/macrowallets/waas/app/services/withdrawalevents"
 	"github.com/macrowallets/waas/app/services/withdrawalrecords"
-	"github.com/macrowallets/waas/pkg/security"
 )
 
 // openChainEndpoint opens a sealed rpc_url and returns the URL to dial.
@@ -73,7 +74,7 @@ func openChainEndpoint(stored string) (string, error) {
 	if cipher == nil {
 		return "", fmt.Errorf("open chain rpc")
 	}
-	opened, err := security.OpenSecret(cipher, stored)
+	opened, err := settings.OpenStored(cipher, stored)
 	if err != nil {
 		return "", fmt.Errorf("open chain rpc")
 	}

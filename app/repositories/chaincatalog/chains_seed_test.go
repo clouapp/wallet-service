@@ -12,6 +12,7 @@ import (
 
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/repositories"
+	"github.com/macrowallets/waas/app/services/settings"
 	"github.com/macrowallets/waas/pkg/numeric"
 	"github.com/macrowallets/waas/pkg/types"
 	"github.com/macrowallets/waas/tests/feature/support/fixtures"
@@ -197,7 +198,10 @@ func requireSealedEndpoint(t *testing.T, sealed, plaintext string) {
 	if sealed == "" || sealed == plaintext || strings.HasPrefix(sealed, "http://") || strings.HasPrefix(sealed, "https://") || strings.HasPrefix(sealed, "env:") {
 		t.Fatal("chain endpoint is missing or stored unsealed")
 	}
-	opened, err := facades.Crypt().DecryptString(sealed)
+	if !settings.IsSealed(sealed) {
+		t.Fatal("chain endpoint is not stored with the enc:v1: prefix")
+	}
+	opened, err := settings.OpenStored(facades.Crypt(), sealed)
 	if err != nil || opened != plaintext {
 		t.Fatal("sealed endpoint does not round-trip to the seed source")
 	}

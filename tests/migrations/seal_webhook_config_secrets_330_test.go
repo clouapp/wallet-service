@@ -12,7 +12,6 @@ import (
 	"github.com/macrowallets/waas/app/repositories"
 	"github.com/macrowallets/waas/app/services/settings"
 	"github.com/macrowallets/waas/database/migrations"
-	"github.com/macrowallets/waas/pkg/security"
 	"github.com/macrowallets/waas/tests/feature/support/fixtures"
 )
 
@@ -50,7 +49,7 @@ func TestAppendix_B330_SealsPlaintextAndDoesNotSealTwice(t *testing.T) {
 
 func TestAppendix_B330_PrefixesACryptEnvelopeWithoutEncryptingAgain(t *testing.T) {
 	fixtures.TestDB(t)
-	envelope, err := security.SealSecret(facades.Crypt(), legacyWebhookSecret)
+	envelope, err := facades.Crypt().EncryptString(legacyWebhookSecret)
 	require.NoError(t, err)
 	configID := legacyWebhookConfig(t, envelope)
 

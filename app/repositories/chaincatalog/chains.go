@@ -11,6 +11,7 @@ import (
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/repositories"
 	"github.com/macrowallets/waas/app/services/chainregistry"
+	"github.com/macrowallets/waas/app/services/settings"
 	"github.com/macrowallets/waas/pkg/types"
 )
 
@@ -138,7 +139,7 @@ func withProfileNetwork(c chainSeed, profile string) (chainSeed, error) {
 
 func (cat *Catalog) encryptSeedRPC(c chainSeed) (string, error) {
 	if c.rpcEnvReference {
-		return cat.cipher.EncryptString(models.RPCURLEnvPrefix + c.envVar)
+		return settings.Seal(cat.cipher, models.RPCURLEnvPrefix+c.envVar)
 	}
 	return cat.encryptRPCFromEnv(c.envVar)
 }
@@ -179,7 +180,7 @@ func insertSeedChain(ctx context.Context, chains *repositories.ChainRepository, 
 // seed runs offline; chains:align-network checks the RPCs.
 func (cat *Catalog) alignSeededChains(ctx context.Context, profile string) error {
 	store := repositories.NewChainRegistryRepository(nil)
-	alignment, err := chainregistry.PlanAlignment(ctx, profile, store, cat.cipher.DecryptString, nil, uuid.Nil)
+	alignment, err := chainregistry.PlanAlignment(ctx, profile, store, cat.openRPC, nil, uuid.Nil)
 	if err != nil {
 		return fmt.Errorf("align chains to the %s profile: %w", profile, err)
 	}

@@ -11,7 +11,7 @@ import (
 	"github.com/macrowallets/waas/app/services/chainregistry"
 	chainsvc "github.com/macrowallets/waas/app/services/chains"
 	"github.com/macrowallets/waas/app/services/currencies"
-	"github.com/macrowallets/waas/pkg/security"
+	"github.com/macrowallets/waas/app/services/settings"
 )
 
 // ChainServiceProvider binds the chain, token, chain-resource, and currency
@@ -119,8 +119,9 @@ func (p *ChainServiceProvider) Register(app foundation.Application) {
 
 func (p *ChainServiceProvider) Boot(foundation.Application) {}
 
-// chainRPCSealer seals chains.rpc_url with the process cipher. Errors do not
-// include the URL.
+// chainRPCSealer seals chains.rpc_url with the process cipher. It writes the
+// enc:v1: format and reads that and the bare Crypt envelope older rows hold.
+// Errors do not include the URL.
 type chainRPCSealer struct{}
 
 func (chainRPCSealer) Seal(plaintext string) (string, error) {
@@ -128,7 +129,7 @@ func (chainRPCSealer) Seal(plaintext string) (string, error) {
 	if cipher == nil {
 		return "", fmt.Errorf("seal chain rpc: crypt is not available")
 	}
-	sealed, err := security.SealSecret(cipher, plaintext)
+	sealed, err := settings.Seal(cipher, plaintext)
 	if err != nil || sealed == "" || sealed == plaintext {
 		return "", fmt.Errorf("seal chain rpc")
 	}
@@ -140,7 +141,7 @@ func (chainRPCSealer) Open(stored string) (string, error) {
 	if cipher == nil {
 		return "", fmt.Errorf("open chain rpc: crypt is not available")
 	}
-	opened, err := security.OpenSecret(cipher, stored)
+	opened, err := settings.OpenStored(cipher, stored)
 	if err != nil || opened == "" {
 		return "", fmt.Errorf("open chain rpc")
 	}

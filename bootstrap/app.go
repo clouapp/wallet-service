@@ -30,6 +30,7 @@ import (
 	"github.com/macrowallets/waas/app/services/ingest"
 	"github.com/macrowallets/waas/app/services/price"
 	"github.com/macrowallets/waas/app/services/refresh"
+	"github.com/macrowallets/waas/app/services/settings"
 	"github.com/macrowallets/waas/app/services/sweep"
 	"github.com/macrowallets/waas/app/services/walletrecords"
 	"github.com/macrowallets/waas/config"
@@ -90,7 +91,7 @@ func Boot() contractsfoundation.Application {
 				commands.NewPriceCheckUpdate(prices),
 				commands.NewChainsSetRPC(chains.NewReplaceRPC(chains.ReplaceRPCDeps{
 					Store: container.MustMake[*repositories.ChainRepository](),
-					Seal:  func(plaintext string) (string, error) { return appfacades.Crypt().EncryptString(plaintext) },
+					Seal:  func(plaintext string) (string, error) { return settings.Seal(appfacades.Crypt(), plaintext) },
 				})),
 				commands.NewChainsAlignNetwork(chainregistry.NewAligner(chainregistry.AlignerDeps{
 					Store:   repositories.NewChainRegistryRepository(nil),

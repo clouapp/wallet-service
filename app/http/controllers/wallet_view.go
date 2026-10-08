@@ -13,9 +13,9 @@ import (
 	walletbalances "github.com/macrowallets/waas/app/http/resources/dashboard/wallets/balances"
 	"github.com/macrowallets/waas/app/models"
 	chainsvc "github.com/macrowallets/waas/app/services/chains"
+	"github.com/macrowallets/waas/app/services/settings"
 	"github.com/macrowallets/waas/app/services/walletrecords"
 	"github.com/macrowallets/waas/pkg/numeric"
-	"github.com/macrowallets/waas/pkg/security"
 )
 
 // walletNetwork is the network a wallet's chain record really points at (for
@@ -143,7 +143,7 @@ func networkRPCURL(chainRecord *models.Chain) string {
 		slog.Warn("open chain rpc for wallet network", "chain", chainRecord.ID)
 		return ""
 	}
-	storedURL, err := security.OpenSecret(cipher, chainRecord.RpcURL)
+	storedURL, err := settings.OpenStored(cipher, chainRecord.RpcURL)
 	if err != nil {
 		slog.Warn("open chain rpc for wallet network", "chain", chainRecord.ID)
 		return ""

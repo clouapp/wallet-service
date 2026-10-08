@@ -19,7 +19,7 @@ import (
 	"github.com/macrowallets/waas/app/http/responses"
 	"github.com/macrowallets/waas/app/models"
 	chainpkg "github.com/macrowallets/waas/app/services/chain"
-	"github.com/macrowallets/waas/pkg/security"
+	"github.com/macrowallets/waas/app/services/settings"
 	"github.com/macrowallets/waas/tests/feature/support"
 	"github.com/macrowallets/waas/tests/feature/support/testutil"
 )
@@ -80,10 +80,10 @@ func (s *PlatformChainRPCTestSuite) TestA_Platform_AdminReplacesTheEndpointTheDi
 	if stored.RpcURL == "" || stored.RpcURL == server.URL || strings.Contains(stored.RpcURL, token) {
 		s.Fail("endpoint was not sealed")
 	}
-	if !security.IsSealedSecret(stored.RpcURL) {
-		s.Fail("endpoint is not a sealed envelope")
+	if !settings.IsSealed(stored.RpcURL) {
+		s.Fail("endpoint is not stored with the enc:v1: prefix")
 	}
-	opened, err := security.OpenSecret(facades.Crypt(), stored.RpcURL)
+	opened, err := settings.OpenStored(facades.Crypt(), stored.RpcURL)
 	s.Require().NoError(err)
 	endpoint, err := models.DialEndpoint(opened)
 	s.Require().NoError(err)
