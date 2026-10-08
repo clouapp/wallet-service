@@ -172,7 +172,11 @@ func (ctrl *AuthController) Login(ctx http.Context) http.Response {
 	}
 
 	userPtr, err := ctrl.users.FindByEmail(ctx.Context(), req.Email)
-	if err != nil || userPtr == nil {
+	if err != nil && !errors.Is(err, models.ErrRepositoryNotFound) {
+		appfacades.Log().WithContext(ctx).Errorf("auth: login: find user: %v", err)
+		return responses.InternalError(ctx, nil)
+	}
+	if userPtr == nil {
 		// Spend the bcrypt time a wrong password would, so the response time
 		// does not tell a registered email from an unknown one.
 		ctrl.passwords.CheckPassword(req.Password, authsvc.DummyPasswordHash)
