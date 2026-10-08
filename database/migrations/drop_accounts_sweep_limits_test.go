@@ -18,6 +18,9 @@ import (
 
 func TestDrop_Accounts_SweepLimitsRemovesTheColumnAndSweepReadsSettings(t *testing.T) {
 	fixtures.TestDB(t)
+	// An earlier package on the same Redis index can leave its platform limits cached
+	// for ten minutes; this test reads the defaults.
+	settings.FacadeCache{}.Forget("settings:platform:sweep_limits")
 	assert.Equal(t, int64(0), sweepLimitsColumnCount(t), "migrate leaves accounts.sweep_limits dropped")
 
 	account := fixtures.InsertAccount(t, "sweep-from-settings")
