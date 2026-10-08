@@ -13,6 +13,15 @@ definitions:
         items:
           $ref: '#/definitions/models.Account'
         type: array
+      limit:
+        example: 20
+        type: integer
+      offset:
+        example: 0
+        type: integer
+      total:
+        example: 64
+        type: integer
     type: object
   controllers.AccountUserListResponse:
     properties:
@@ -21,7 +30,7 @@ definitions:
           $ref: '#/definitions/models.AccountUser'
         type: array
     type: object
-  controllers.AddAccountUserRequest:
+  controllers.AddAccountUserSwagger:
     properties:
       email:
         example: user@example.com
@@ -30,7 +39,7 @@ definitions:
         example: admin
         type: string
     type: object
-  controllers.AddWalletUserRequest:
+  controllers.AddWalletUserSwagger:
     properties:
       roles:
         example: viewer
@@ -39,7 +48,7 @@ definitions:
         example: 00000000-0000-0000-0000-000000000001
         type: string
     type: object
-  controllers.AddWhitelistEntryRequest:
+  controllers.AddWhitelistEntrySwagger:
     properties:
       address:
         example: bc1qar0srrr7xfkvy5l643lydnw9re59gtzzwf5mdq
@@ -86,25 +95,72 @@ definitions:
           $ref: '#/definitions/controllers.ChainInfo'
         type: array
     type: object
-  controllers.ChangePasswordRequest:
+  controllers.ChangePasswordSwagger:
     properties:
       current_password:
         type: string
       new_password:
         type: string
     type: object
-  controllers.CreateAccountRequest:
+  controllers.ConfirmTotpSwagger:
+    properties:
+      code:
+        example: "123456"
+        type: string
+    type: object
+  controllers.ConsolidatePlanSummary:
+    properties:
+      children_swept:
+        example: 3
+        type: integer
+      dust_ignored:
+        example: 0
+        type: integer
+      estimated_gas_cost:
+        example: "0"
+        type: string
+      total_amount:
+        example: "0"
+        type: string
+    type: object
+  controllers.ConsolidateRequestSwagger:
+    properties:
+      asset:
+        example: eth
+        type: string
+      idempotency_key:
+        example: cns_01HABCDEFG
+        type: string
+      passphrase:
+        example: my-secure-wallet-passphrase
+        type: string
+    type: object
+  controllers.ConsolidateResponse:
+    properties:
+      plan_summary:
+        $ref: '#/definitions/controllers.ConsolidatePlanSummary'
+      transactions:
+        items:
+          $ref: '#/definitions/controllers.ConsolidateTransaction'
+        type: array
+    type: object
+  controllers.ConsolidateTransaction:
+    properties:
+      from:
+        type: string
+      origin:
+        example: manual_consolidation
+        type: string
+      status:
+        example: confirming
+        type: string
+      tx_hash:
+        type: string
+    type: object
+  controllers.CreateAccountSwagger:
     properties:
       name:
         example: Acme Corp
-        type: string
-    type: object
-  controllers.CreateAccountTokenRequest:
-    properties:
-      name:
-        example: CI Token
-        type: string
-      valid_until:
         type: string
     type: object
   controllers.CreateAccountTokenResponse:
@@ -114,7 +170,74 @@ definitions:
       token:
         type: string
     type: object
-  controllers.CreateWalletRequest:
+  controllers.CreateAccountTokenSwagger:
+    properties:
+      name:
+        example: CI Token
+        type: string
+      require_signature:
+        example: true
+        type: boolean
+      valid_until:
+        type: string
+    type: object
+  controllers.CreateWalletResponse:
+    properties:
+      account_id:
+        description: Account and admin fields
+        type: string
+      address_index:
+        type: integer
+      balance:
+        type: string
+      balance_asset:
+        type: string
+      balance_last_synced_at:
+        type: string
+      balance_raw:
+        type: string
+      balance_usd:
+        type: number
+      chain:
+        type: string
+      created_at:
+        $ref: '#/definitions/github_com_goravel_framework_support_carbon.DateTime'
+      deposit_address:
+        $ref: '#/definitions/models.Address'
+      deposit_address_id:
+        type: string
+      fee_multiplier:
+        type: number
+      fee_rate_max:
+        type: integer
+      fee_rate_min:
+        type: integer
+      frozen_until:
+        type: string
+      gas_last_checked_at:
+        type: string
+      gas_status:
+        type: string
+      id:
+        type: string
+      label:
+        type: string
+      read_model_status:
+        type: string
+      required_approvals:
+        type: integer
+      service_public_key:
+        description: Hex of the combined MPC public key.
+        example: 02a1b2c3...
+        type: string
+      status:
+        type: string
+      sweep_policy_version:
+        type: integer
+      updated_at:
+        $ref: '#/definitions/github_com_goravel_framework_support_carbon.DateTime'
+    type: object
+  controllers.CreateWalletSwagger:
     properties:
       chain:
         example: eth
@@ -126,7 +249,7 @@ definitions:
         example: my-secret-passphrase-12chars
         type: string
     type: object
-  controllers.CreateWalletWebhookRequest:
+  controllers.CreateWalletWebhookSwagger:
     properties:
       events:
         example: deposit.confirmed,withdrawal.confirmed
@@ -138,10 +261,13 @@ definitions:
         example: https://example.com/hook
         type: string
     type: object
-  controllers.CreateWalletWithdrawalRequest:
+  controllers.CreateWalletWithdrawalSwagger:
     properties:
       amount:
         example: "0.001"
+        type: string
+      asset:
+        example: USDT
         type: string
       destination_address:
         example: bc1q...
@@ -149,13 +275,21 @@ definitions:
       note:
         example: Monthly payment
         type: string
+      passphrase:
+        example: my-secure-wallet-passphrase
+        type: string
+      totp_code:
+        example: "123456"
+        type: string
     type: object
   controllers.CreateWebhookRequest:
     properties:
       events:
         example:
         - deposit.confirmed
+        - withdrawal.broadcast
         - withdrawal.confirmed
+        - withdrawal.failed
         items:
           type: string
         type: array
@@ -166,42 +300,48 @@ definitions:
         example: https://example.com/webhook
         type: string
     type: object
-  controllers.CreateWithdrawalRequest:
-    properties:
-      amount:
-        example: "0.5"
-        type: string
-      asset:
-        example: eth
-        type: string
-      external_user_id:
-        example: user_123
-        type: string
-      idempotency_key:
-        example: wdl_20260317_001
-        type: string
-      passphrase:
-        example: strong-passphrase-min-12
-        type: string
-      to_address:
-        example: "0xABCDEF1234567890"
-        type: string
-    type: object
   controllers.ErrorResponse:
     properties:
       error:
         example: something went wrong
         type: string
     type: object
-  controllers.ForgotPasswordRequest:
+  controllers.ForgotPasswordSwagger:
     properties:
       email:
         example: user@example.com
         type: string
     type: object
-  controllers.FreezeWalletRequest:
+  controllers.FreezeWalletSwagger:
     properties:
       frozen_until:
+        type: string
+    type: object
+  controllers.GasStatusResponse:
+    properties:
+      base_address:
+        example: 0x...
+        type: string
+      gas_status:
+        example: seeded
+        type: string
+      last_checked_at:
+        example: 1713500000
+        type: integer
+      native_asset:
+        example: eth
+        type: string
+      native_balance_display:
+        example: "1.0"
+        type: string
+      native_balance_raw:
+        example: "1000000000000000000"
+        type: string
+      threshold_display:
+        example: "0.005"
+        type: string
+      threshold_raw:
+        example: "5000000000000000"
         type: string
     type: object
   controllers.GenerateAddressRequest:
@@ -213,8 +353,25 @@ definitions:
         example: '{"tier":"premium"}'
         type: string
     type: object
+  controllers.DepositScannerHealth:
+    properties:
+      error:
+        type: string
+      pending:
+        additionalProperties:
+          type: integer
+        type: object
+      pending_total:
+        example: 0
+        type: integer
+      status:
+        example: ok
+        type: string
+    type: object
   controllers.HealthResponse:
     properties:
+      deposit_scanner:
+        $ref: '#/definitions/controllers.DepositScannerHealth'
       status:
         example: ok
         type: string
@@ -222,7 +379,7 @@ definitions:
         example: 0.1.0
         type: string
     type: object
-  controllers.LoginRequest:
+  controllers.LoginSwagger:
     properties:
       email:
         example: user@example.com
@@ -231,12 +388,12 @@ definitions:
         example: s3cr3t
         type: string
     type: object
-  controllers.RefreshTokenRequest:
+  controllers.RefreshTokenSwagger:
     properties:
       refresh_token:
         type: string
     type: object
-  controllers.RegisterRequest:
+  controllers.RegisterSwagger:
     properties:
       email:
         example: user@example.com
@@ -244,16 +401,28 @@ definitions:
       full_name:
         example: Alice Smith
         type: string
+      organization_name:
+        example: Acme Corp
+        type: string
       password:
         example: s3cr3t
         type: string
     type: object
-  controllers.ResetPasswordRequest:
+  controllers.ResetPasswordSwagger:
     properties:
       new_password:
         example: newS3cr3t
         type: string
       token:
+        type: string
+    type: object
+  controllers.TotpSetupSwagger:
+    properties:
+      qr_url:
+        example: otpauth://totp/...
+        type: string
+      secret:
+        example: JBSWY3DPEHPK3PXP
         type: string
     type: object
   controllers.TransactionListResponse:
@@ -263,12 +432,12 @@ definitions:
           $ref: '#/definitions/models.Transaction'
         type: array
     type: object
-  controllers.TwoFactorRequest:
+  controllers.TwoFactorSwagger:
     properties:
       code:
         example: "123456"
         type: string
-      partial_token:
+      challenge_token:
         type: string
       recovery_code:
         example: ABCDEFGH12345678
@@ -294,7 +463,7 @@ definitions:
           $ref: '#/definitions/controllers.UnspentOutput'
         type: array
     type: object
-  controllers.UpdateAccountRequest:
+  controllers.UpdateAccountSwagger:
     properties:
       name:
         example: New Name
@@ -303,13 +472,19 @@ definitions:
         example: true
         type: boolean
     type: object
-  controllers.UpdateMeRequest:
+  controllers.UpdateDefaultAccountSwagger:
+    properties:
+      account_id:
+        example: 550e8400-e29b-41d4-a716-446655440000
+        type: string
+    type: object
+  controllers.UpdateMeSwagger:
     properties:
       full_name:
         example: Alice Smith
         type: string
     type: object
-  controllers.UpdateWalletSettingsRequest:
+  controllers.UpdateWalletSettingsSwagger:
     properties:
       fee_multiplier:
         example: 1.25
@@ -325,6 +500,24 @@ definitions:
       required_approvals:
         example: 2
         type: integer
+    type: object
+  controllers.UpdateWebhookRequest:
+    properties:
+      events:
+        example:
+        - deposit.confirmed
+        - withdrawal.broadcast
+        - withdrawal.confirmed
+        - withdrawal.failed
+        items:
+          type: string
+        type: array
+      is_active:
+        example: true
+        type: boolean
+      secret:
+        example: my-webhook-secret
+        type: string
     type: object
   controllers.WalletListResponse:
     properties:
@@ -348,6 +541,75 @@ definitions:
       status:
         type: string
     type: object
+  controllers.WalletTransactionView:
+    properties:
+      address:
+        allOf:
+        - $ref: '#/definitions/models.Address'
+        description: Relationships
+      address_id:
+        type: string
+      amount:
+        type: string
+      asset:
+        type: string
+      block_hash:
+        type: string
+      block_number:
+        type: integer
+      chain:
+        type: string
+      confirmations:
+        type: integer
+      confirmed_at:
+        type: string
+      created_at:
+        $ref: '#/definitions/github_com_goravel_framework_support_carbon.DateTime'
+      decimals:
+        type: integer
+      direction:
+        type: string
+      error_message:
+        type: string
+      external_user_id:
+        type: string
+      fee:
+        type: string
+      from_address:
+        type: string
+      id:
+        type: string
+      idempotency_key:
+        type: string
+      log_index:
+        type: integer
+      origin:
+        type: string
+      parent_transaction_id:
+        type: string
+      required_confs:
+        type: integer
+      source:
+        type: string
+      status:
+        type: string
+      synced_at:
+        type: string
+      to_address:
+        type: string
+      token_contract:
+        type: string
+      tx_hash:
+        type: string
+      tx_type:
+        type: string
+      updated_at:
+        $ref: '#/definitions/github_com_goravel_framework_support_carbon.DateTime'
+      wallet:
+        $ref: '#/definitions/models.Wallet'
+      wallet_id:
+        type: string
+    type: object
   controllers.WalletUserListResponse:
     properties:
       data:
@@ -369,12 +631,277 @@ definitions:
           $ref: '#/definitions/models.WhitelistEntry'
         type: array
     type: object
+  controllers.WithdrawPreviewDustEntry:
+    properties:
+      address:
+        type: string
+      balance:
+        type: string
+      reason:
+        example: below_dust_threshold
+        type: string
+    type: object
+  controllers.WithdrawPreviewRequestSwagger:
+    properties:
+      amount:
+        example: "1000000000000000000"
+        type: string
+      asset:
+        example: eth
+        type: string
+    type: object
+  controllers.WithdrawPreviewResponse:
+    properties:
+      base_balance:
+        type: string
+      dust_ignored:
+        items:
+          $ref: '#/definitions/controllers.WithdrawPreviewDustEntry'
+        type: array
+      estimated_gas_total_native:
+        example: "0"
+        type: string
+      reaches_target:
+        example: true
+        type: boolean
+      strategy:
+        example: multi_sweep
+        type: string
+      sweeps_required:
+        example: 2
+        type: integer
+    type: object
   controllers.WithdrawalListResponse:
     properties:
       data:
         items:
           $ref: '#/definitions/models.Withdrawal'
         type: array
+    type: object
+  controllers.WithdrawalLookupResponse:
+    properties:
+      amount:
+        example: "4"
+        type: string
+      created_at:
+        type: string
+      destination_address:
+        type: string
+      failure_reason:
+        example: insufficient_funds
+        type: string
+      id:
+        example: 80571fff-8d0b-5c1e-9a3f-2b6f0f7c1a11
+        type: string
+      idempotency_key:
+        example: 80571fff-8d0b-5c1e-9a3f-2b6f0f7c1a11
+        type: string
+      status:
+        example: broadcast
+        type: string
+      transaction_status:
+        example: confirming
+        type: string
+      tx_hash:
+        type: string
+      updated_at:
+        type: string
+      wallet_id:
+        type: string
+    type: object
+  controllers.WithdrawalResponse:
+    properties:
+      failed_step:
+        $ref: '#/definitions/controllers.WithdrawalFailedStep'
+      origin:
+        example: user_request
+        type: string
+      status:
+        example: confirming
+        type: string
+      strategy:
+        example: direct_from_base
+        type: string
+      sweeps:
+        items:
+          $ref: '#/definitions/controllers.WithdrawalSweepItem'
+        type: array
+      transaction_id:
+        example: 8c5e3b3a-4a8f-4c0b-9e8a-2d1e8f0b7c4d
+        type: string
+      tx_hash:
+        example: 0xaaa...
+        type: string
+    type: object
+  controllers.WithdrawalSweepItem:
+    properties:
+      from:
+        example: 0xChildAddress
+        type: string
+      origin:
+        example: sweep
+        type: string
+      tx_hash:
+        example: 0xbbb...
+        type: string
+      tx_id:
+        example: 1f2d3c4b-5a6b-7c8d-9e0f-112233445566
+        type: string
+    type: object
+  feeestimate.BitcoinDetails:
+    properties:
+      fee_rate_sat_per_vbyte:
+        example: "1"
+        type: string
+      fee_rate_source:
+        example: estimator
+        type: string
+      inputs:
+        example: 1
+        type: integer
+      outputs:
+        example: 2
+        type: integer
+      vsize:
+        example: 141
+        type: integer
+    type: object
+  feeestimate.Details:
+    properties:
+      bitcoin:
+        $ref: '#/definitions/feeestimate.BitcoinDetails'
+      evm:
+        $ref: '#/definitions/feeestimate.EVMDetails'
+      solana:
+        $ref: '#/definitions/feeestimate.SolanaDetails'
+      tron:
+        $ref: '#/definitions/feeestimate.TronDetails'
+    type: object
+  feeestimate.EVMDetails:
+    properties:
+      gas_limit:
+        example: 21000
+        type: integer
+      gas_price_gwei:
+        example: "1.994918016"
+        type: string
+      gas_price_wei:
+        example: "1994918016"
+        type: string
+      l1_data_fee_wei:
+        example: "0"
+        type: string
+      tx_type:
+        example: legacy
+        type: string
+    type: object
+  feeestimate.Estimate:
+    properties:
+      amount:
+        example: "0.001"
+        type: string
+      amount_base_units:
+        example: "1000000000000000"
+        type: string
+      amount_is_reference:
+        example: false
+        type: boolean
+      amount_spendable:
+        example: true
+        type: boolean
+      asset:
+        example: ETH
+        type: string
+      base_balance_base_units:
+        example: "1958106721664000"
+        type: string
+      basis:
+        example: plan
+        type: string
+      cached:
+        example: false
+        type: boolean
+      chain:
+        example: eth
+        type: string
+      details:
+        $ref: '#/definitions/feeestimate.Details'
+      estimated_at:
+        type: string
+      expires_at:
+        type: string
+      fee:
+        example: "0.000041893278336"
+        type: string
+      fee_asset:
+        example: ETH
+        type: string
+      fee_base_units:
+        example: "41893278336000"
+        type: string
+      fee_decimals:
+        example: 18
+        type: integer
+      fee_multiplier:
+        example: "1"
+        type: string
+      insufficient_funds:
+        example: false
+        type: boolean
+      minimum_remaining_base_units:
+        example: "0"
+        type: string
+      recipient:
+        example: provided
+        type: string
+      strategy:
+        example: direct_from_base
+        type: string
+      transfers:
+        example: 1
+        type: integer
+      wallet_id:
+        example: d6a8ce92-b637-44c2-a9f1-774344802e1a
+        type: string
+    type: object
+  feeestimate.SolanaDetails:
+    properties:
+      lamports_per_signature:
+        example: 5000
+        type: integer
+      signatures:
+        example: 1
+        type: integer
+      token_account_creation_lamports:
+        example: "0"
+        type: string
+    type: object
+  feeestimate.TronDetails:
+    properties:
+      account_activation_fee_sun:
+        example: "0"
+        type: string
+      bandwidth_bytes:
+        example: 345
+        type: integer
+      bandwidth_fee_sun:
+        example: "345000"
+        type: string
+      energy:
+        example: 21975
+        type: integer
+      energy_fee_limit_sun:
+        example: "2637000"
+        type: string
+      energy_is_reference:
+        example: false
+        type: boolean
+      sun_per_bandwidth_byte:
+        example: 1000
+        type: integer
+      sun_per_energy:
+        example: 100
+        type: integer
     type: object
   github_com_goravel_framework_support_carbon.DateTime:
     properties:
@@ -407,11 +934,17 @@ definitions:
     properties:
       created_at:
         $ref: '#/definitions/github_com_goravel_framework_support_carbon.DateTime'
+      environment:
+        type: string
       id:
+        type: string
+      linked_account_id:
         type: string
       name:
         type: string
       status:
+        type: string
+      sweep_limits:
         type: string
       updated_at:
         $ref: '#/definitions/github_com_goravel_framework_support_carbon.DateTime'
@@ -454,6 +987,8 @@ definitions:
         type: string
       derivation_index:
         type: integer
+      derivation_type:
+        type: string
       external_user_id:
         type: string
       id:
@@ -497,6 +1032,8 @@ definitions:
         type: string
       created_at:
         $ref: '#/definitions/github_com_goravel_framework_support_carbon.DateTime'
+      direction:
+        type: string
       error_message:
         type: string
       external_user_id:
@@ -509,9 +1046,19 @@ definitions:
         type: string
       idempotency_key:
         type: string
+      log_index:
+        type: integer
+      origin:
+        type: string
+      parent_transaction_id:
+        type: string
       required_confs:
         type: integer
+      source:
+        type: string
       status:
+        type: string
+      synced_at:
         type: string
       to_address:
         type: string
@@ -532,12 +1079,16 @@ definitions:
     properties:
       created_at:
         $ref: '#/definitions/github_com_goravel_framework_support_carbon.DateTime'
+      default_account_id:
+        type: string
       email:
         type: string
       full_name:
         type: string
       id:
         type: string
+      preferences:
+        $ref: '#/definitions/models.UserPreferences'
       status:
         type: string
       totp_enabled:
@@ -545,16 +1096,37 @@ definitions:
       updated_at:
         $ref: '#/definitions/github_com_goravel_framework_support_carbon.DateTime'
     type: object
+  models.UserPreferences:
+    properties:
+      display_in_fiat:
+        type: boolean
+      preferred_fiat_code:
+        type: string
+    type: object
   models.Wallet:
     properties:
       account_id:
         description: Account and admin fields
         type: string
+      address_index:
+        type: integer
+      balance:
+        type: string
+      balance_asset:
+        type: string
+      balance_last_synced_at:
+        type: string
+      balance_raw:
+        type: string
+      balance_usd:
+        type: number
       chain:
         type: string
       created_at:
         $ref: '#/definitions/github_com_goravel_framework_support_carbon.DateTime'
       deposit_address:
+        $ref: '#/definitions/models.Address'
+      deposit_address_id:
         type: string
       fee_multiplier:
         type: number
@@ -564,16 +1136,63 @@ definitions:
         type: integer
       frozen_until:
         type: string
+      gas_last_checked_at:
+        type: string
+      gas_status:
+        type: string
       id:
         type: string
       label:
+        type: string
+      read_model_status:
         type: string
       required_approvals:
         type: integer
       status:
         type: string
+      sweep_policy_version:
+        type: integer
       updated_at:
         $ref: '#/definitions/github_com_goravel_framework_support_carbon.DateTime'
+    type: object
+  models.WalletAssetBalance:
+    properties:
+      amount_display:
+        type: string
+      amount_raw:
+        type: string
+      asset_contract:
+        type: string
+      asset_key:
+        type: string
+      asset_name:
+        type: string
+      asset_symbol:
+        type: string
+      asset_type:
+        type: string
+      chain_id:
+        type: string
+      created_at:
+        $ref: '#/definitions/github_com_goravel_framework_support_carbon.DateTime'
+      decimals:
+        type: integer
+      id:
+        type: string
+      last_synced_at:
+        type: string
+      price_usd:
+        type: number
+      source_address:
+        type: string
+      updated_at:
+        $ref: '#/definitions/github_com_goravel_framework_support_carbon.DateTime'
+      value_usd:
+        type: number
+      wallet:
+        $ref: '#/definitions/models.Wallet'
+      wallet_id:
+        type: string
     type: object
   models.WalletUser:
     properties:
@@ -598,6 +1217,8 @@ definitions:
     type: object
   models.WebhookConfig:
     properties:
+      account_id:
+        type: string
       created_at:
         $ref: '#/definitions/github_com_goravel_framework_support_carbon.DateTime'
       events:
@@ -643,6 +1264,10 @@ definitions:
         type: string
       destination_address:
         type: string
+      failure_reason:
+        description: FailureReason holds the public error code returned to the caller,
+          never internal details.
+        type: string
       fee_estimate:
         type: string
       id:
@@ -653,9 +1278,18 @@ definitions:
         type: string
       transaction_id:
         type: string
+      tx_hash:
+        type: string
       updated_at:
         $ref: '#/definitions/github_com_goravel_framework_support_carbon.DateTime'
       wallet_id:
+        type: string
+    type: object
+  requests.UpdateAddressRequest:
+    properties:
+      external_user_id:
+        type: string
+      label:
         type: string
     type: object
 host: localhost:8080
@@ -683,7 +1317,7 @@ paths:
         name: request
         required: true
         schema:
-          $ref: '#/definitions/controllers.CreateAccountRequest'
+          $ref: '#/definitions/controllers.CreateAccountSwagger'
       produces:
       - application/json
       responses:
@@ -750,7 +1384,7 @@ paths:
         name: request
         required: true
         schema:
-          $ref: '#/definitions/controllers.UpdateAccountRequest'
+          $ref: '#/definitions/controllers.UpdateAccountSwagger'
       produces:
       - application/json
       responses:
@@ -867,7 +1501,7 @@ paths:
         name: request
         required: true
         schema:
-          $ref: '#/definitions/controllers.CreateAccountTokenRequest'
+          $ref: '#/definitions/controllers.CreateAccountTokenSwagger'
       produces:
       - application/json
       responses:
@@ -961,7 +1595,7 @@ paths:
         name: request
         required: true
         schema:
-          $ref: '#/definitions/controllers.AddAccountUserRequest'
+          $ref: '#/definitions/controllers.AddAccountUserSwagger'
       produces:
       - application/json
       responses:
@@ -1014,6 +1648,228 @@ paths:
       summary: Remove a user from an account
       tags:
       - Accounts
+  /api/v1/wallets/{walletId}/fee-estimate:
+    get:
+      description: Prices the withdrawal POST /withdrawals would send, with the same
+        planner and chain adapters, without signing or broadcasting. The fee is always
+        in the chain's native coin (ETH, POL, BTC, LTC, SOL, TRX), also for tokens.
+        EVM transfers are legacy transactions paying gas_price_wei for every unit
+        of gas (plus the L1 data fee on OP-stack networks); Bitcoin and Litecoin use
+        the node's fee rate and the coin selection the builder runs; Solana pays 5000
+        lamports per signature plus the recipient's token account when it must be
+        created; TRON is priced as burned TRX with no free or staked resources (bandwidth
+        per signed byte, 1.1 TRX to activate a new recipient, TRC-20 energy from estimateenergy
+        at the chain's energy price), broken down in details.tron. When the wallet
+        cannot cover the amount, the fee of the transfer from the base address is
+        returned with insufficient_funds=true. Answers are cached for FEE_ESTIMATE_CACHE_TTL_SECONDS
+        (default 15). Node failures answer 503; no value is guessed.
+      parameters:
+      - description: Wallet UUID
+        format: uuid
+        in: path
+        name: walletId
+        required: true
+        type: string
+      - description: Asset symbol; the chain's native coin when omitted
+        example: USDC
+        in: query
+        name: asset
+        type: string
+      - description: Decimal amount, as sent to POST /withdrawals; the smallest transfer
+          when omitted
+        example: "0.001"
+        in: query
+        name: amount
+        type: string
+      - description: Destination address; a probe recipient when omitted
+        in: query
+        name: to
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/feeestimate.Estimate'
+        "400":
+          description: invalid_amount
+          schema:
+            $ref: '#/definitions/controllers.FeeEstimateErrorResponse'
+        "404":
+          description: wallet not found (or owned by another account)
+          schema:
+            $ref: '#/definitions/controllers.ErrorResponse'
+        "422":
+          description: unknown_asset, invalid_address, amount_below_minimum, token_balance_required,
+            unsupported_chain
+          schema:
+            $ref: '#/definitions/controllers.FeeEstimateErrorResponse'
+        "429":
+          description: sweep_limit_exceeded
+          schema:
+            $ref: '#/definitions/controllers.FeeEstimateErrorResponse'
+        "503":
+          description: fee_estimate_unavailable, gas_estimate_failed
+          schema:
+            $ref: '#/definitions/controllers.FeeEstimateErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Estimate a withdrawal's network fee
+      tags:
+      - Wallet Withdrawals
+  /api/v1/wallets/{walletId}/withdrawals/{idempotencyKey}:
+    get:
+      description: Returns the outcome of a withdrawal created with the given idempotency_key
+        (the key is also the withdrawal id). Lets a client that lost the create response
+        learn whether the withdrawal was broadcast or failed. Scoped to the token's
+        account.
+      parameters:
+      - description: Wallet UUID
+        in: path
+        name: walletId
+        required: true
+        type: string
+      - description: Idempotency key (UUID) sent when the withdrawal was created
+        in: path
+        name: idempotencyKey
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/controllers.WithdrawalLookupResponse'
+        "400":
+          description: idempotency_key must be a UUID
+          schema:
+            $ref: '#/definitions/controllers.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/controllers.ErrorResponse'
+        "404":
+          description: wallet not found / withdrawal not found
+          schema:
+            $ref: '#/definitions/controllers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Look up a withdrawal by idempotency key
+      tags:
+      - Wallet Withdrawals
+  /api/v1/webhooks:
+    get:
+      description: Returns the account's webhook configurations plus legacy unowned
+        ones it can claim with PATCH.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/controllers.WebhookConfigListResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/controllers.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/controllers.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      - SignatureAuth: []
+      summary: List webhooks
+      tags:
+      - Webhooks
+    post:
+      consumes:
+      - application/json
+      description: Registers an account-level webhook endpoint. Deliveries are POSTed
+        as JSON and signed with HMAC-SHA256 of the raw body in `X-Vault-Signature`
+        (hex, keyed by `secret`); `X-Vault-Event` carries the event type and `X-Vault-Delivery-Id`
+        the event id. Supported events include deposit.confirmed, withdrawal.broadcast,
+        withdrawal.confirmed and withdrawal.failed. Withdrawal events are only delivered
+        for wallets of the token's account.
+      parameters:
+      - description: Webhook configuration
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/controllers.CreateWebhookRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/models.WebhookConfig'
+        "400":
+          description: Missing required fields
+          schema:
+            $ref: '#/definitions/controllers.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/controllers.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      - SignatureAuth: []
+      summary: Create a webhook
+      tags:
+      - Webhooks
+  /api/v1/webhooks/{webhookId}:
+    patch:
+      consumes:
+      - application/json
+      description: Replaces the subscribed events and/or toggles is_active on one
+        of the account's webhooks. A legacy webhook created before account ownership
+        was recorded is claimed by the calling account when `secret` matches its signing
+        secret. The secret itself is never changed or returned.
+      parameters:
+      - description: Webhook UUID
+        in: path
+        name: webhookId
+        required: true
+        type: string
+      - description: Fields to change
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/controllers.UpdateWebhookRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/models.WebhookConfig'
+        "400":
+          description: Invalid id, empty update or unknown event
+          schema:
+            $ref: '#/definitions/controllers.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/controllers.ErrorResponse'
+        "403":
+          description: Secret does not match a legacy webhook
+          schema:
+            $ref: '#/definitions/controllers.ErrorResponse'
+        "404":
+          description: webhook not found
+          schema:
+            $ref: '#/definitions/controllers.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      - SignatureAuth: []
+      summary: Update a webhook subscription
+      tags:
+      - Webhooks
   /auth/2fa/verify:
     post:
       consumes:
@@ -1025,7 +1881,7 @@ paths:
         name: request
         required: true
         schema:
-          $ref: '#/definitions/controllers.TwoFactorRequest'
+          $ref: '#/definitions/controllers.TwoFactorSwagger'
       produces:
       - application/json
       responses:
@@ -1056,7 +1912,7 @@ paths:
         name: request
         required: true
         schema:
-          $ref: '#/definitions/controllers.ForgotPasswordRequest'
+          $ref: '#/definitions/controllers.ForgotPasswordSwagger'
       produces:
       - application/json
       responses:
@@ -1078,14 +1934,14 @@ paths:
       consumes:
       - application/json
       description: Validates credentials and returns JWT access + refresh tokens.
-        If TOTP is enabled, returns a partial token requiring 2FA.
+        If TOTP is enabled, returns a challenge token requiring 2FA.
       parameters:
       - description: Login credentials
         in: body
         name: request
         required: true
         schema:
-          $ref: '#/definitions/controllers.LoginRequest'
+          $ref: '#/definitions/controllers.LoginSwagger'
       produces:
       - application/json
       responses:
@@ -1133,7 +1989,7 @@ paths:
         name: request
         required: true
         schema:
-          $ref: '#/definitions/controllers.RefreshTokenRequest'
+          $ref: '#/definitions/controllers.RefreshTokenSwagger'
       produces:
       - application/json
       responses:
@@ -1163,7 +2019,7 @@ paths:
         name: request
         required: true
         schema:
-          $ref: '#/definitions/controllers.RegisterRequest'
+          $ref: '#/definitions/controllers.RegisterSwagger'
       produces:
       - application/json
       responses:
@@ -1175,8 +2031,8 @@ paths:
           description: Bad Request
           schema:
             $ref: '#/definitions/controllers.ErrorResponse'
-        "409":
-          description: Conflict
+        "422":
+          description: Unprocessable Entity
           schema:
             $ref: '#/definitions/controllers.ErrorResponse'
       summary: Register a new user
@@ -1193,7 +2049,7 @@ paths:
         name: request
         required: true
         schema:
-          $ref: '#/definitions/controllers.ResetPasswordRequest'
+          $ref: '#/definitions/controllers.ResetPasswordSwagger'
       produces:
       - application/json
       responses:
@@ -1216,7 +2072,7 @@ paths:
       - Auth
   /health:
     get:
-      description: Returns service status and version
+      description: Returns service status and version, and how many deposit blocks per chain wait for a retry
       produces:
       - application/json
       responses:
@@ -1256,7 +2112,7 @@ paths:
         name: request
         required: true
         schema:
-          $ref: '#/definitions/controllers.UpdateMeRequest'
+          $ref: '#/definitions/controllers.UpdateMeSwagger'
       produces:
       - application/json
       responses:
@@ -1279,7 +2135,31 @@ paths:
       - User
   /users/me/accounts:
     get:
-      description: Returns all accounts the authenticated user is a member of
+      description: Returns a paginated list of accounts the authenticated user is
+        a member of, ordered by name. A limit above 100 is capped; an offset past
+        the end returns an empty page with the real total.
+      parameters:
+      - description: Page size, 1-100 (default 20)
+        example: 20
+        in: query
+        name: limit
+        type: integer
+      - description: Rows to skip, >= 0 (default 0)
+        example: 0
+        in: query
+        name: offset
+        type: integer
+      - description: Case-insensitive match on name or id (max 100 chars)
+        in: query
+        name: search
+        type: string
+      - description: Only accounts in this environment
+        enum:
+        - prod
+        - test
+        in: query
+        name: environment
+        type: string
       produces:
       - application/json
       responses:
@@ -1287,6 +2167,10 @@ paths:
           description: OK
           schema:
             $ref: '#/definitions/controllers.AccountListResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/controllers.ErrorResponse'
         "401":
           description: Unauthorized
           schema:
@@ -1294,6 +2178,39 @@ paths:
       security:
       - BearerAuth: []
       summary: List accounts for current user
+      tags:
+      - User
+  /users/me/default-account:
+    patch:
+      consumes:
+      - application/json
+      description: Updates the authenticated user's default account
+      parameters:
+      - description: Default account payload
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/controllers.UpdateDefaultAccountSwagger'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/controllers.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/controllers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Set default account
       tags:
       - User
   /users/me/password:
@@ -1307,7 +2224,7 @@ paths:
         name: request
         required: true
         schema:
-          $ref: '#/definitions/controllers.ChangePasswordRequest'
+          $ref: '#/definitions/controllers.ChangePasswordSwagger'
       produces:
       - application/json
       responses:
@@ -1328,6 +2245,83 @@ paths:
       security:
       - BearerAuth: []
       summary: Change password
+      tags:
+      - User
+  /users/me/totp:
+    delete:
+      description: Disables 2FA and clears TOTP secret and recovery codes
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/models.User'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/controllers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Disable TOTP
+      tags:
+      - User
+  /users/me/totp/setup:
+    post:
+      description: Generates a TOTP secret and QR URL; stores encrypted secret until
+        verified
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/controllers.TotpSetupSwagger'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/controllers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Begin TOTP enrollment
+      tags:
+      - User
+  /users/me/totp/verify:
+    post:
+      consumes:
+      - application/json
+      description: Verifies the TOTP code, enables 2FA, and returns one-time recovery
+        codes
+      parameters:
+      - description: TOTP verification code
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/controllers.ConfirmTotpSwagger'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/controllers.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/controllers.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/controllers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Complete TOTP enrollment
       tags:
       - User
   /v1/addresses/{address}:
@@ -1369,8 +2363,7 @@ paths:
       - Addresses
   /v1/chains:
     get:
-      description: Returns all supported blockchain networks with their native asset
-        and confirmation requirements
+      description: Returns blockchain networks filtered by the account's environment
       produces:
       - application/json
       responses:
@@ -1391,7 +2384,7 @@ paths:
   /v1/transactions:
     get:
       description: Returns a paginated list of transactions with optional filters
-        by chain, type, status, or user
+        by chain, type, status, or user. Always scoped to the authenticated account.
       parameters:
       - description: Chain ID filter
         example: eth
@@ -1434,6 +2427,10 @@ paths:
           description: OK
           schema:
             $ref: '#/definitions/controllers.TransactionListResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/controllers.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
@@ -1564,22 +2561,23 @@ paths:
     post:
       consumes:
       - application/json
-      description: Creates a new HD wallet for the specified blockchain. Only one
-        wallet per chain is allowed.
+      description: |-
+        Creates a new HD wallet for the specified blockchain. Only one wallet per chain is allowed.
+        The response carries the wallet fields and `service_public_key`.
       parameters:
       - description: Wallet creation request
         in: body
         name: body
         required: true
         schema:
-          $ref: '#/definitions/controllers.CreateWalletRequest'
+          $ref: '#/definitions/controllers.CreateWalletSwagger'
       produces:
       - application/json
       responses:
         "201":
           description: Created
           schema:
-            $ref: '#/definitions/models.Wallet'
+            $ref: '#/definitions/controllers.CreateWalletResponse'
         "400":
           description: Missing or invalid fields
           schema:
@@ -1588,41 +2586,14 @@ paths:
           description: Wallet for this chain already exists or chain is unsupported
           schema:
             $ref: '#/definitions/controllers.ErrorResponse'
+        "500":
+          description: Wallet service returned no wallet
+          schema:
+            $ref: '#/definitions/controllers.ErrorResponse'
       security:
       - ApiKeyAuth: []
       - SignatureAuth: []
       summary: Create a new wallet
-      tags:
-      - Wallets
-  /v1/wallets/{id}:
-    get:
-      description: Returns a single wallet by its UUID
-      parameters:
-      - description: Wallet UUID
-        format: uuid
-        in: path
-        name: id
-        required: true
-        type: string
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/models.Wallet'
-        "400":
-          description: Invalid UUID
-          schema:
-            $ref: '#/definitions/controllers.ErrorResponse'
-        "404":
-          description: Wallet not found
-          schema:
-            $ref: '#/definitions/controllers.ErrorResponse'
-      security:
-      - ApiKeyAuth: []
-      - SignatureAuth: []
-      summary: Get a wallet
       tags:
       - Wallets
   /v1/wallets/{id}/addresses:
@@ -1699,99 +2670,74 @@ paths:
       summary: Generate a deposit address
       tags:
       - Addresses
-  /v1/wallets/{id}/withdrawals:
-    post:
-      consumes:
-      - application/json
-      description: Signs and broadcasts a withdrawal synchronously using MPC co-signing.
-        Passphrase is required to decrypt the customer's key share.
+  /v1/wallets/{walletId}:
+    get:
+      description: Returns a single wallet by its UUID
       parameters:
       - description: Wallet UUID
         format: uuid
         in: path
-        name: id
+        name: walletId
         required: true
         type: string
-      - description: Withdrawal request
-        in: body
-        name: body
-        required: true
-        schema:
-          $ref: '#/definitions/controllers.CreateWithdrawalRequest'
-      produces:
-      - application/json
-      responses:
-        "201":
-          description: Created
-          schema:
-            $ref: '#/definitions/models.Transaction'
-        "400":
-          description: Missing fields or invalid amount
-          schema:
-            $ref: '#/definitions/controllers.ErrorResponse'
-        "401":
-          description: Invalid passphrase
-          schema:
-            $ref: '#/definitions/controllers.ErrorResponse'
-        "409":
-          description: Concurrent withdrawal in progress
-          schema:
-            $ref: '#/definitions/controllers.ErrorResponse'
-        "422":
-          description: Insufficient funds
-          schema:
-            $ref: '#/definitions/controllers.ErrorResponse'
-        "429":
-          description: Too many failed passphrase attempts
-          schema:
-            $ref: '#/definitions/controllers.ErrorResponse'
-      security:
-      - ApiKeyAuth: []
-      - SignatureAuth: []
-      summary: Create a withdrawal
-      tags:
-      - Withdrawals
-  /v1/webhooks:
-    get:
-      description: Returns all registered webhook configurations
       produces:
       - application/json
       responses:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/controllers.WebhookConfigListResponse'
-        "500":
-          description: Internal Server Error
+            $ref: '#/definitions/models.Wallet'
+        "400":
+          description: Invalid UUID
+          schema:
+            $ref: '#/definitions/controllers.ErrorResponse'
+        "404":
+          description: Wallet not found
           schema:
             $ref: '#/definitions/controllers.ErrorResponse'
       security:
       - ApiKeyAuth: []
       - SignatureAuth: []
-      summary: List webhooks
+      summary: Get a wallet
       tags:
-      - Webhooks
-    post:
+      - Wallets
+  /v1/wallets/{walletId}/addresses/{addressId}:
+    patch:
       consumes:
       - application/json
-      description: 'Registers a webhook endpoint to receive event notifications. Supported
-        events: deposit.confirmed, withdrawal.confirmed, withdrawal.failed'
+      description: Updates the label and/or external_user_id of an existing address
       parameters:
-      - description: Webhook configuration
+      - description: Wallet UUID
+        format: uuid
+        in: path
+        name: walletId
+        required: true
+        type: string
+      - description: Address UUID
+        format: uuid
+        in: path
+        name: addressId
+        required: true
+        type: string
+      - description: Fields to update
         in: body
         name: body
         required: true
         schema:
-          $ref: '#/definitions/controllers.CreateWebhookRequest'
+          $ref: '#/definitions/requests.UpdateAddressRequest'
       produces:
       - application/json
       responses:
-        "201":
-          description: Created
+        "200":
+          description: OK
           schema:
-            $ref: '#/definitions/models.WebhookConfig'
+            $ref: '#/definitions/models.Address'
         "400":
-          description: Missing required fields
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/controllers.ErrorResponse'
+        "404":
+          description: Not Found
           schema:
             $ref: '#/definitions/controllers.ErrorResponse'
         "500":
@@ -1800,10 +2746,195 @@ paths:
             $ref: '#/definitions/controllers.ErrorResponse'
       security:
       - ApiKeyAuth: []
-      - SignatureAuth: []
-      summary: Create a webhook
+      summary: Update an address
       tags:
-      - Webhooks
+      - Addresses
+  /v1/wallets/{walletId}/consolidate:
+    post:
+      consumes:
+      - application/json
+      description: Sweep all eligible child addresses' balance into the wallet's base
+        deposit address.
+      parameters:
+      - description: Wallet UUID
+        format: uuid
+        in: path
+        name: walletId
+        required: true
+        type: string
+      - description: Consolidation request
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/controllers.ConsolidateRequestSwagger'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/controllers.ConsolidateResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/controllers.ErrorResponse'
+        "422":
+          description: Unprocessable Entity
+          schema:
+            $ref: '#/definitions/controllers.ErrorResponse'
+        "429":
+          description: Too Many Requests
+          schema:
+            $ref: '#/definitions/controllers.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      - BearerAuth: []
+      summary: Consolidate wallet balances
+      tags:
+      - Wallets
+  /v1/wallets/{walletId}/gas-check:
+    post:
+      description: Action variant of gas-status. Forces an on-chain read. Rate-limited
+        per wallet.
+      parameters:
+      - description: Wallet UUID
+        format: uuid
+        in: path
+        name: walletId
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/controllers.GasStatusResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/controllers.ErrorResponse'
+        "422":
+          description: Unprocessable Entity
+          schema:
+            $ref: '#/definitions/controllers.ErrorResponse'
+        "429":
+          description: Too Many Requests
+          schema:
+            $ref: '#/definitions/controllers.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      - BearerAuth: []
+      summary: Force refresh of wallet gas status
+      tags:
+      - Wallets
+  /v1/wallets/{walletId}/gas-status:
+    get:
+      description: Returns the gas readiness status, native balance, and configured
+        threshold for a wallet's base address.
+      parameters:
+      - description: Wallet UUID
+        format: uuid
+        in: path
+        name: walletId
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/controllers.GasStatusResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/controllers.ErrorResponse'
+        "422":
+          description: Unprocessable Entity
+          schema:
+            $ref: '#/definitions/controllers.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      - BearerAuth: []
+      summary: Get wallet gas readiness
+      tags:
+      - Wallets
+  /v1/wallets/{walletId}/withdraw/preview:
+    post:
+      consumes:
+      - application/json
+      description: Returns the planned sweep strategy without executing any transaction.
+      parameters:
+      - description: Wallet UUID
+        format: uuid
+        in: path
+        name: walletId
+        required: true
+        type: string
+      - description: Preview request
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/controllers.WithdrawPreviewRequestSwagger'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/controllers.WithdrawPreviewResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/controllers.ErrorResponse'
+        "422":
+          description: Unprocessable Entity
+          schema:
+            $ref: '#/definitions/controllers.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      - BearerAuth: []
+      summary: Preview a withdrawal
+      tags:
+      - Wallets
+  /wallets/{walletId}/balances:
+    get:
+      description: Returns the native balance and the balances of the tokens the wallet
+        chain configures, as of the last balance refresh. Amounts come raw (base units)
+        and for display, with the asset decimals.
+      parameters:
+      - description: Wallet UUID
+        in: path
+        name: walletId
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              items:
+                $ref: '#/definitions/models.WalletAssetBalance'
+              type: array
+            type: object
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/controllers.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/controllers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: List the asset balances of a wallet
+      tags:
+      - Wallets
   /wallets/{walletId}/freeze:
     post:
       consumes:
@@ -1821,7 +2952,7 @@ paths:
         name: request
         required: true
         schema:
-          $ref: '#/definitions/controllers.FreezeWalletRequest'
+          $ref: '#/definitions/controllers.FreezeWalletSwagger'
       produces:
       - application/json
       responses:
@@ -1883,7 +3014,7 @@ paths:
         name: request
         required: true
         schema:
-          $ref: '#/definitions/controllers.UpdateWalletSettingsRequest'
+          $ref: '#/definitions/controllers.UpdateWalletSettingsSwagger'
       produces:
       - application/json
       responses:
@@ -1978,7 +3109,7 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/models.Transaction'
+            $ref: '#/definitions/controllers.WalletTransactionView'
         "403":
           description: Forbidden
           schema:
@@ -2071,7 +3202,7 @@ paths:
         name: request
         required: true
         schema:
-          $ref: '#/definitions/controllers.AddWalletUserRequest'
+          $ref: '#/definitions/controllers.AddWalletUserSwagger'
       produces:
       - application/json
       responses:
@@ -2170,7 +3301,7 @@ paths:
         name: request
         required: true
         schema:
-          $ref: '#/definitions/controllers.CreateWalletWebhookRequest'
+          $ref: '#/definitions/controllers.CreateWalletWebhookSwagger'
       produces:
       - application/json
       responses:
@@ -2269,7 +3400,7 @@ paths:
         name: request
         required: true
         schema:
-          $ref: '#/definitions/controllers.AddWhitelistEntryRequest'
+          $ref: '#/definitions/controllers.AddWhitelistEntrySwagger'
       produces:
       - application/json
       responses:
@@ -2386,7 +3517,7 @@ paths:
         name: request
         required: true
         schema:
-          $ref: '#/definitions/controllers.CreateWalletWithdrawalRequest'
+          $ref: '#/definitions/controllers.CreateWalletWithdrawalSwagger'
       produces:
       - application/json
       responses:

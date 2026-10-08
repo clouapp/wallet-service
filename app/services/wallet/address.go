@@ -1,69 +1,42 @@
 package wallet
 
-import (
-	"encoding/hex"
-	"fmt"
+import "github.com/macrowallets/waas/app/services/addressing"
 
-	"github.com/btcsuite/btcd/btcec/v2"
-	"github.com/btcsuite/btcd/btcutil"
-	"github.com/btcsuite/btcd/btcutil/bech32"
-	"github.com/ethereum/go-ethereum/crypto"
-	"github.com/mr-tron/base58"
-
-	"github.com/macrowallets/waas/app/models"
-)
-
-// deriveAddress derives the single MPC deposit address from the combined public key.
-func deriveAddress(chainID string, compressedPubKey []byte) (string, error) {
-	switch chainID {
-	case models.ChainETH, models.ChainPolygon, models.ChainTETH, models.ChainTPolygon:
-		return deriveEthAddress(compressedPubKey)
-	case models.ChainBTC:
-		return deriveBtcAddress("bc", compressedPubKey)
-	case models.ChainTBTC:
-		return deriveBtcAddress("tb", compressedPubKey)
-	case models.ChainSOL, models.ChainTSOL:
-		return deriveSolAddress(compressedPubKey)
-	default:
-		return "", fmt.Errorf("unsupported chain for address derivation: %s", chainID)
-	}
-}
+// Thin aliases over the addressing package so internal call sites keep the
+// short names they've always used. The actual logic lives in addressing/.
 
 func deriveEthAddress(compressedPubKey []byte) (string, error) {
-	pub, err := btcec.ParsePubKey(compressedPubKey)
-	if err != nil {
-		return "", fmt.Errorf("parse pubkey: %w", err)
-	}
-	// go-ethereum expects uncompressed pubkey without 0x04 prefix
-	uncompressed := pub.SerializeUncompressed()[1:]
-	hash := crypto.Keccak256(uncompressed)
-	return "0x" + hex.EncodeToString(hash[12:]), nil
+	return addressing.DeriveEthAddress(compressedPubKey)
 }
 
-// deriveBtcAddress derives a native SegWit (P2WPKH / bech32) address.
-// hrp is "bc" for mainnet, "tb" for testnet.
 func deriveBtcAddress(hrp string, compressedPubKey []byte) (string, error) {
-	pub, err := btcec.ParsePubKey(compressedPubKey)
-	if err != nil {
-		return "", fmt.Errorf("parse pubkey: %w", err)
-	}
-	pubHash := btcutil.Hash160(pub.SerializeCompressed())
-
-	conv, err := bech32.ConvertBits(pubHash, 8, 5, true)
-	if err != nil {
-		return "", fmt.Errorf("convert bits: %w", err)
-	}
-	witnessProgram := append([]byte{0x00}, conv...)
-	addr, err := bech32.Encode(hrp, witnessProgram)
-	if err != nil {
-		return "", fmt.Errorf("bech32 encode: %w", err)
-	}
-	return addr, nil
+	return addressing.DeriveBtcAddress(hrp, compressedPubKey)
 }
 
 func deriveSolAddress(pubKey []byte) (string, error) {
-	if len(pubKey) != 32 {
-		return "", fmt.Errorf("ed25519 pubkey must be 32 bytes, got %d", len(pubKey))
+	return addressing.DeriveSolAddress(pubKey)
+}
+
+// testnetReporter is a chain adapter that knows whether its record is on a test
+// network (Bitcoin: it selects tb1 over bc1).
+type testnetReporter interface {
+	IsTestnet() bool
+}
+
+// deriveChainAddress derives the address on the network the registered adapter of
+// chainID points at, so a "btc" record configured for testnet yields tb1.
+func (s *Service) deriveChainAddress(chainID string, pubKey []byte) (string, error) {
+	return addressing.DeriveAddressOnNetwork(chainID, s.chainIsTestnet(chainID), pubKey)
+}
+
+func (s *Service) chainIsTestnet(chainID string) bool {
+	if s.registry == nil {
+		return false
 	}
-	return base58.Encode(pubKey), nil
+	adapter, err := s.registry.Chain(chainID)
+	if err != nil {
+		return false
+	}
+	reporter, ok := adapter.(testnetReporter)
+	return ok && reporter.IsTestnet()
 }

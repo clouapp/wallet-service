@@ -1,44 +1,79 @@
 package repositories
 
 import (
+	"context"
+	"fmt"
+
 	"github.com/google/uuid"
-	"github.com/goravel/framework/facades"
+	"github.com/goravel/framework/contracts/database/orm"
 
 	"github.com/macrowallets/waas/app/models"
+	"github.com/macrowallets/waas/app/repositories/internal/db"
 )
 
-type TokenRepository interface {
-	FindByChainID(chainID string) ([]models.Token, error)
-	FindActive() ([]models.Token, error)
-	FindByID(id uuid.UUID) (*models.Token, error)
-	Create(token *models.Token) error
+// TokenRepository persists tokens configured on a chain.
+type TokenRepository struct {
+	db.Base
 }
 
-type tokenRepository struct{}
+// NewTokenRepository wraps an orm.Query. Pass nil for a fresh query per call.
+func NewTokenRepository(query orm.Query) *TokenRepository {
+	return &TokenRepository{Base: db.NewBase(query)}
+}
 
-func NewTokenRepository() TokenRepository { return &tokenRepository{} }
-
-func (r *tokenRepository) FindByChainID(chainID string) ([]models.Token, error) {
+// FindByChainID returns the active tokens of a chain.
+func (r *TokenRepository) FindByChainID(ctx context.Context, chainID string) ([]models.Token, error) {
 	var tokens []models.Token
-	err := facades.Orm().Query().Where("chain_id", chainID).Where("status", "active").Find(&tokens)
-	return tokens, err
-}
-
-func (r *tokenRepository) FindActive() ([]models.Token, error) {
-	var tokens []models.Token
-	err := facades.Orm().Query().Where("status", "active").Find(&tokens)
-	return tokens, err
-}
-
-func (r *tokenRepository) FindByID(id uuid.UUID) (*models.Token, error) {
-	var token models.Token
-	err := facades.Orm().Query().Where("id", id).First(&token)
-	if token.ID == uuid.Nil {
-		return nil, err
+	if err := r.Query(ctx).Where("chain_id", chainID).Where("status", "active").Find(&tokens); err != nil {
+		return nil, fmt.Errorf("list tokens: %w", err)
 	}
-	return &token, err
+	return tokens, nil
 }
 
-func (r *tokenRepository) Create(token *models.Token) error {
-	return facades.Orm().Query().Create(token)
+// FindActive returns every active token.
+func (r *TokenRepository) FindActive(ctx context.Context) ([]models.Token, error) {
+	var tokens []models.Token
+	if err := r.Query(ctx).Where("status", "active").Find(&tokens); err != nil {
+		return nil, fmt.Errorf("list active tokens: %w", err)
+	}
+	return tokens, nil
+}
+
+// FindByID returns the token, or ErrRepositoryNotFound.
+func (r *TokenRepository) FindByID(ctx context.Context, id uuid.UUID) (*models.Token, error) {
+	var token models.Token
+	if err := r.Query(ctx).Where("id", id).First(&token); err != nil {
+		return nil, fmt.Errorf("find token: %w", err)
+	}
+	if token.ID == uuid.Nil {
+		return nil, models.ErrRepositoryNotFound
+	}
+	return &token, nil
+}
+
+// FindByChainAndContract returns the token for a chain and contract, or
+// ErrRepositoryNotFound. Status is not filtered: a disabled row is still present.
+func (r *TokenRepository) FindByChainAndContract(ctx context.Context, chainID, contractAddress string) (*models.Token, error) {
+	if chainID == "" || contractAddress == "" {
+		return nil, models.ErrRepositoryNotFound
+	}
+	var token models.Token
+	if err := r.Query(ctx).Where("chain_id", chainID).Where("contract_address", contractAddress).First(&token); err != nil {
+		return nil, fmt.Errorf("find token by contract: %w", err)
+	}
+	if token.ID == uuid.Nil {
+		return nil, models.ErrRepositoryNotFound
+	}
+	return &token, nil
+}
+
+// Create inserts a token.
+func (r *TokenRepository) Create(ctx context.Context, token *models.Token) error {
+	if token == nil {
+		return fmt.Errorf("create token: token is nil")
+	}
+	if err := r.Query(ctx).Create(token); err != nil {
+		return fmt.Errorf("create token: %w", err)
+	}
+	return nil
 }

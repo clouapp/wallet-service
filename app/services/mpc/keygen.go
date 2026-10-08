@@ -2,7 +2,9 @@ package mpc
 
 import (
 	"context"
+	"crypto/hmac"
 	"crypto/rand"
+	"crypto/sha512"
 	"encoding/json"
 	"fmt"
 	"math/big"
@@ -132,18 +134,25 @@ loop:
 	}
 	shareBBytes, err := json.Marshal(saveB)
 	if err != nil {
+		zeroBytes(shareABytes)
 		return nil, fmt.Errorf("marshal shareB: %w", err)
 	}
 
 	pubKey := saveA.ECDSAPub
 	if pubKey == nil {
+		zeroBytes(shareABytes)
+		zeroBytes(shareBBytes)
 		return nil, fmt.Errorf("keygen produced nil ECDSAPub")
 	}
+
+	compressedPub := compressSecp256k1(pubKey.X(), pubKey.Y())
+	chainCode := generateChainCode(compressedPub, shareABytes, shareBBytes)
 
 	return &KeygenResult{
 		ShareA:         shareABytes,
 		ShareB:         shareBBytes,
-		CombinedPubKey: compressSecp256k1(pubKey.X(), pubKey.Y()),
+		CombinedPubKey: compressedPub,
+		ChainCode:      chainCode,
 	}, nil
 }
 
@@ -158,6 +167,7 @@ func routeMessage(party tss.Party, msg tss.Message, errCh chan<- error) {
 		errCh <- err
 		return
 	}
+	defer zeroBytes(bz)
 	pMsg, parseErr := tss.ParseWireMessage(bz, msg.GetFrom(), msg.IsBroadcast())
 	if parseErr != nil {
 		errCh <- parseErr
@@ -200,6 +210,7 @@ func compressSecp256k1(x, y *big.Int) []byte {
 // randomBigInt256 returns a cryptographically random 256-bit positive integer.
 func randomBigInt256() (*big.Int, error) {
 	buf := make([]byte, 32)
+	defer zeroBytes(buf)
 	if _, err := rand.Read(buf); err != nil {
 		return nil, err
 	}
@@ -289,11 +300,14 @@ loop:
 	}
 	shareBBytes, err := json.Marshal(saveB)
 	if err != nil {
+		zeroBytes(shareABytes)
 		return nil, fmt.Errorf("marshal shareB: %w", err)
 	}
 
 	pubPoint := saveA.EDDSAPub
 	if pubPoint == nil {
+		zeroBytes(shareABytes)
+		zeroBytes(shareBBytes)
 		return nil, fmt.Errorf("keygen produced nil EDDSAPub")
 	}
 
@@ -303,11 +317,27 @@ loop:
 		Y:     pubPoint.Y(),
 	}
 
+	serializedPub := pk.Serialize()
+	chainCode := generateChainCode(serializedPub, shareABytes, shareBBytes)
+
 	return &KeygenResult{
 		ShareA:         shareABytes,
 		ShareB:         shareBBytes,
-		CombinedPubKey: pk.Serialize(),
+		CombinedPubKey: serializedPub,
+		ChainCode:      chainCode,
 	}, nil
+}
+
+// generateChainCode produces a deterministic 32-byte chain code from key material.
+func generateChainCode(pubKey, shareA, shareB []byte) []byte {
+	material := make([]byte, len(shareA)+len(shareB))
+	copy(material, shareA)
+	copy(material[len(shareA):], shareB)
+	defer zeroBytes(material)
+	h := hmac.New(sha512.New, material)
+	h.Write(pubKey)
+	sum := h.Sum(nil)
+	return sum[32:]
 }
 
 func matchEddsaSavesByIndex(saves []eddsaKeygen.LocalPartySaveData) (eddsaKeygen.LocalPartySaveData, eddsaKeygen.LocalPartySaveData, error) {

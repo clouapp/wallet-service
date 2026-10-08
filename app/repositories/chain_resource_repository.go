@@ -1,33 +1,67 @@
 package repositories
 
 import (
-	"github.com/goravel/framework/facades"
+	"context"
+	"fmt"
+
+	"github.com/google/uuid"
+	"github.com/goravel/framework/contracts/database/orm"
 
 	"github.com/macrowallets/waas/app/models"
+	"github.com/macrowallets/waas/app/repositories/internal/db"
 )
 
-type ChainResourceRepository interface {
-	FindByChainID(chainID string) ([]models.ChainResource, error)
-	FindByChainAndType(chainID, resourceType string) ([]models.ChainResource, error)
-	Create(resource *models.ChainResource) error
+// ChainResourceRepository persists explorer, faucet, and docs links for a chain.
+type ChainResourceRepository struct {
+	db.Base
 }
 
-type chainResourceRepository struct{}
+// NewChainResourceRepository wraps an orm.Query. Pass nil for a fresh query per call.
+func NewChainResourceRepository(query orm.Query) *ChainResourceRepository {
+	return &ChainResourceRepository{Base: db.NewBase(query)}
+}
 
-func NewChainResourceRepository() ChainResourceRepository { return &chainResourceRepository{} }
-
-func (r *chainResourceRepository) FindByChainID(chainID string) ([]models.ChainResource, error) {
+// FindByChainID returns the active resources of a chain ordered by display_order.
+func (r *ChainResourceRepository) FindByChainID(ctx context.Context, chainID string) ([]models.ChainResource, error) {
 	var resources []models.ChainResource
-	err := facades.Orm().Query().Where("chain_id", chainID).Where("status", "active").Order("display_order ASC").Find(&resources)
-	return resources, err
+	if err := r.Query(ctx).Where("chain_id", chainID).Where("status", "active").Order("display_order ASC").Find(&resources); err != nil {
+		return nil, fmt.Errorf("list chain resources: %w", err)
+	}
+	return resources, nil
 }
 
-func (r *chainResourceRepository) FindByChainAndType(chainID, resourceType string) ([]models.ChainResource, error) {
+// FindByChainAndType returns the active resources of one type on a chain.
+func (r *ChainResourceRepository) FindByChainAndType(ctx context.Context, chainID, resourceType string) ([]models.ChainResource, error) {
 	var resources []models.ChainResource
-	err := facades.Orm().Query().Where("chain_id", chainID).Where("type", resourceType).Where("status", "active").Order("display_order ASC").Find(&resources)
-	return resources, err
+	if err := r.Query(ctx).Where("chain_id", chainID).Where("type", resourceType).Where("status", "active").Order("display_order ASC").Find(&resources); err != nil {
+		return nil, fmt.Errorf("list chain resources by type: %w", err)
+	}
+	return resources, nil
 }
 
-func (r *chainResourceRepository) Create(resource *models.ChainResource) error {
-	return facades.Orm().Query().Create(resource)
+// FindByChainTypeAndName returns the resource for a chain, type, and name, or
+// ErrRepositoryNotFound. Status is not filtered: a disabled row is still present.
+func (r *ChainResourceRepository) FindByChainTypeAndName(ctx context.Context, chainID, resourceType, name string) (*models.ChainResource, error) {
+	if chainID == "" || resourceType == "" || name == "" {
+		return nil, models.ErrRepositoryNotFound
+	}
+	var resource models.ChainResource
+	if err := r.Query(ctx).Where("chain_id", chainID).Where("type", resourceType).Where("name", name).First(&resource); err != nil {
+		return nil, fmt.Errorf("find chain resource: %w", err)
+	}
+	if resource.ID == uuid.Nil {
+		return nil, models.ErrRepositoryNotFound
+	}
+	return &resource, nil
+}
+
+// Create inserts a chain resource.
+func (r *ChainResourceRepository) Create(ctx context.Context, resource *models.ChainResource) error {
+	if resource == nil {
+		return fmt.Errorf("create chain resource: resource is nil")
+	}
+	if err := r.Query(ctx).Create(resource); err != nil {
+		return fmt.Errorf("create chain resource: %w", err)
+	}
+	return nil
 }

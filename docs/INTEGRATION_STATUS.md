@@ -1,3 +1,7 @@
+> **Historical.** This document describes the Goravel migration as it stood in March 2026 and
+> is no longer maintained. The current invariants are in `CLAUDE.md`; the shape of the code is in
+> `.ai/guidelines/`.
+
 # Goravel Integration Status
 
 **Last Updated**: March 18, 2026

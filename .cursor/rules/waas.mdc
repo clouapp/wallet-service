@@ -1,0 +1,16 @@
+---
+description: WaaS backend rules — pointer
+alwaysApply: true
+---
+
+The rules for this repository live in two places, and nowhere else:
+
+- `CLAUDE.md` — invariants of the system (surfaces, custody, scope, queues, deploy).
+- `.ai/guidelines/` — the shape of the code, one file per concern; start at
+  `.ai/guidelines/README.md`.
+
+`tests/architecture/` is the machine-checked subset: if a rule and a test
+disagree, the test is the rule.
+
+Everything inside a `.go` file is English — identifiers, comments, error strings,
+log messages, test names.

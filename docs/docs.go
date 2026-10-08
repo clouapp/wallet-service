@@ -49,7 +49,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/controllers.CreateAccountRequest"
+                            "$ref": "#/definitions/controllers.CreateAccountSwagger"
                         }
                     }
                 ],
@@ -151,7 +151,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/controllers.UpdateAccountRequest"
+                            "$ref": "#/definitions/controllers.UpdateAccountSwagger"
                         }
                     }
                 ],
@@ -333,7 +333,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/controllers.CreateAccountTokenRequest"
+                            "$ref": "#/definitions/controllers.CreateAccountTokenSwagger"
                         }
                     }
                 ],
@@ -479,7 +479,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/controllers.AddAccountUserRequest"
+                            "$ref": "#/definitions/controllers.AddAccountUserSwagger"
                         }
                     }
                 ],
@@ -555,6 +555,315 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/v1/wallets/{walletId}/fee-estimate": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Prices the withdrawal POST /withdrawals would send, with the same planner and chain adapters, without signing or broadcasting. The fee is always in the chain's native coin (ETH, POL, BTC, LTC, SOL, TRX), also for tokens. EVM transfers are legacy transactions paying gas_price_wei for every unit of gas (plus the L1 data fee on OP-stack networks); Bitcoin and Litecoin use the node's fee rate and the coin selection the builder runs; Solana pays 5000 lamports per signature plus the recipient's token account when it must be created; TRON is priced as burned TRX with no free or staked resources (bandwidth per signed byte, 1.1 TRX to activate a new recipient, TRC-20 energy from estimateenergy at the chain's energy price), broken down in details.tron. When the wallet cannot cover the amount, the fee of the transfer from the base address is returned with insufficient_funds=true. Answers are cached for FEE_ESTIMATE_CACHE_TTL_SECONDS (default 15). Node failures answer 503; no value is guessed.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Wallet Withdrawals"
+                ],
+                "summary": "Estimate a withdrawal's network fee",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "format": "uuid",
+                        "description": "Wallet UUID",
+                        "name": "walletId",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "example": "USDC",
+                        "description": "Asset symbol; the chain's native coin when omitted",
+                        "name": "asset",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "example": "0.001",
+                        "description": "Decimal amount, as sent to POST /withdrawals; the smallest transfer when omitted",
+                        "name": "amount",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Destination address; a probe recipient when omitted",
+                        "name": "to",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/feeestimate.Estimate"
+                        }
+                    },
+                    "400": {
+                        "description": "invalid_amount",
+                        "schema": {
+                            "$ref": "#/definitions/controllers.FeeEstimateErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "wallet not found (or owned by another account)",
+                        "schema": {
+                            "$ref": "#/definitions/controllers.ErrorResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "unknown_asset, invalid_address, amount_below_minimum, token_balance_required, unsupported_chain",
+                        "schema": {
+                            "$ref": "#/definitions/controllers.FeeEstimateErrorResponse"
+                        }
+                    },
+                    "429": {
+                        "description": "sweep_limit_exceeded",
+                        "schema": {
+                            "$ref": "#/definitions/controllers.FeeEstimateErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "fee_estimate_unavailable, gas_estimate_failed",
+                        "schema": {
+                            "$ref": "#/definitions/controllers.FeeEstimateErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/wallets/{walletId}/withdrawals/{idempotencyKey}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns the outcome of a withdrawal created with the given idempotency_key (the key is also the withdrawal id). Lets a client that lost the create response learn whether the withdrawal was broadcast or failed. Scoped to the token's account.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Wallet Withdrawals"
+                ],
+                "summary": "Look up a withdrawal by idempotency key",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Wallet UUID",
+                        "name": "walletId",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Idempotency key (UUID) sent when the withdrawal was created",
+                        "name": "idempotencyKey",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/controllers.WithdrawalLookupResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "idempotency_key must be a UUID",
+                        "schema": {
+                            "$ref": "#/definitions/controllers.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/controllers.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "wallet not found / withdrawal not found",
+                        "schema": {
+                            "$ref": "#/definitions/controllers.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/webhooks": {
+            "get": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    },
+                    {
+                        "SignatureAuth": []
+                    }
+                ],
+                "description": "Returns the account's webhook configurations plus legacy unowned ones it can claim with PATCH.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Webhooks"
+                ],
+                "summary": "List webhooks",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/controllers.WebhookConfigListResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/controllers.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/controllers.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    },
+                    {
+                        "SignatureAuth": []
+                    }
+                ],
+                "description": "Registers an account-level webhook endpoint. Deliveries are POSTed as JSON and signed with HMAC-SHA256 of the raw body in ` + "`" + `X-Vault-Signature` + "`" + ` (hex, keyed by ` + "`" + `secret` + "`" + `); ` + "`" + `X-Vault-Event` + "`" + ` carries the event type and ` + "`" + `X-Vault-Delivery-Id` + "`" + ` the event id. Supported events include deposit.confirmed, withdrawal.broadcast, withdrawal.confirmed and withdrawal.failed. Withdrawal events are only delivered for wallets of the token's account.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Webhooks"
+                ],
+                "summary": "Create a webhook",
+                "parameters": [
+                    {
+                        "description": "Webhook configuration",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/controllers.CreateWebhookRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/models.WebhookConfig"
+                        }
+                    },
+                    "400": {
+                        "description": "Missing required fields",
+                        "schema": {
+                            "$ref": "#/definitions/controllers.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/controllers.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/webhooks/{webhookId}": {
+            "patch": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    },
+                    {
+                        "SignatureAuth": []
+                    }
+                ],
+                "description": "Replaces the subscribed events and/or toggles is_active on one of the account's webhooks. A legacy webhook created before account ownership was recorded is claimed by the calling account when ` + "`" + `secret` + "`" + ` matches its signing secret. The secret itself is never changed or returned.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Webhooks"
+                ],
+                "summary": "Update a webhook subscription",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Webhook UUID",
+                        "name": "webhookId",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Fields to change",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/controllers.UpdateWebhookRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/models.WebhookConfig"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid id, empty update or unknown event",
+                        "schema": {
+                            "$ref": "#/definitions/controllers.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/controllers.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Secret does not match a legacy webhook",
+                        "schema": {
+                            "$ref": "#/definitions/controllers.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "webhook not found",
+                        "schema": {
+                            "$ref": "#/definitions/controllers.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/auth/2fa/verify": {
             "post": {
                 "description": "Validates a TOTP code or recovery code and returns full JWT tokens",
@@ -575,7 +884,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/controllers.TwoFactorRequest"
+                            "$ref": "#/definitions/controllers.TwoFactorSwagger"
                         }
                     }
                 ],
@@ -621,7 +930,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/controllers.ForgotPasswordRequest"
+                            "$ref": "#/definitions/controllers.ForgotPasswordSwagger"
                         }
                     }
                 ],
@@ -646,7 +955,7 @@ const docTemplate = `{
         },
         "/auth/login": {
             "post": {
-                "description": "Validates credentials and returns JWT access + refresh tokens. If TOTP is enabled, returns a partial token requiring 2FA.",
+                "description": "Validates credentials and returns JWT access + refresh tokens. If TOTP is enabled, returns a challenge token requiring 2FA.",
                 "consumes": [
                     "application/json"
                 ],
@@ -664,7 +973,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/controllers.LoginRequest"
+                            "$ref": "#/definitions/controllers.LoginSwagger"
                         }
                     }
                 ],
@@ -738,7 +1047,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/controllers.RefreshTokenRequest"
+                            "$ref": "#/definitions/controllers.RefreshTokenSwagger"
                         }
                     }
                 ],
@@ -784,7 +1093,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/controllers.RegisterRequest"
+                            "$ref": "#/definitions/controllers.RegisterSwagger"
                         }
                     }
                 ],
@@ -801,8 +1110,8 @@ const docTemplate = `{
                             "$ref": "#/definitions/controllers.ErrorResponse"
                         }
                     },
-                    "409": {
-                        "description": "Conflict",
+                    "422": {
+                        "description": "Unprocessable Entity",
                         "schema": {
                             "$ref": "#/definitions/controllers.ErrorResponse"
                         }
@@ -830,7 +1139,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/controllers.ResetPasswordRequest"
+                            "$ref": "#/definitions/controllers.ResetPasswordSwagger"
                         }
                     }
                 ],
@@ -861,7 +1170,7 @@ const docTemplate = `{
         },
         "/health": {
             "get": {
-                "description": "Returns service status and version",
+                "description": "Returns service status and version, and how many deposit blocks per chain wait for a retry",
                 "produces": [
                     "application/json"
                 ],
@@ -933,7 +1242,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/controllers.UpdateMeRequest"
+                            "$ref": "#/definitions/controllers.UpdateMeSwagger"
                         }
                     }
                 ],
@@ -966,7 +1275,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Returns all accounts the authenticated user is a member of",
+                "description": "Returns a paginated list of accounts the authenticated user is a member of, ordered by name. A limit above 100 is capped; an offset past the end returns an empty page with the real total.",
                 "produces": [
                     "application/json"
                 ],
@@ -974,6 +1283,38 @@ const docTemplate = `{
                     "User"
                 ],
                 "summary": "List accounts for current user",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "example": 20,
+                        "description": "Page size, 1-100 (default 20)",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "example": 0,
+                        "description": "Rows to skip, \u003e= 0 (default 0)",
+                        "name": "offset",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Case-insensitive match on name or id (max 100 chars)",
+                        "name": "search",
+                        "in": "query"
+                    },
+                    {
+                        "enum": [
+                            "prod",
+                            "test"
+                        ],
+                        "type": "string",
+                        "description": "Only accounts in this environment",
+                        "name": "environment",
+                        "in": "query"
+                    }
+                ],
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -981,8 +1322,66 @@ const docTemplate = `{
                             "$ref": "#/definitions/controllers.AccountListResponse"
                         }
                     },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/controllers.ErrorResponse"
+                        }
+                    },
                     "401": {
                         "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/controllers.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/users/me/default-account": {
+            "patch": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Updates the authenticated user's default account",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "User"
+                ],
+                "summary": "Set default account",
+                "parameters": [
+                    {
+                        "description": "Default account payload",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/controllers.UpdateDefaultAccountSwagger"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/controllers.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
                         "schema": {
                             "$ref": "#/definitions/controllers.ErrorResponse"
                         }
@@ -1015,7 +1414,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/controllers.ChangePasswordRequest"
+                            "$ref": "#/definitions/controllers.ChangePasswordSwagger"
                         }
                     }
                 ],
@@ -1037,6 +1436,126 @@ const docTemplate = `{
                     },
                     "401": {
                         "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/controllers.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/users/me/totp": {
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Disables 2FA and clears TOTP secret and recovery codes",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "User"
+                ],
+                "summary": "Disable TOTP",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/models.User"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/controllers.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/users/me/totp/setup": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Generates a TOTP secret and QR URL; stores encrypted secret until verified",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "User"
+                ],
+                "summary": "Begin TOTP enrollment",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/controllers.TotpSetupSwagger"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/controllers.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/users/me/totp/verify": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Verifies the TOTP code, enables 2FA, and returns one-time recovery codes",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "User"
+                ],
+                "summary": "Complete TOTP enrollment",
+                "parameters": [
+                    {
+                        "description": "TOTP verification code",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/controllers.ConfirmTotpSwagger"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/controllers.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/controllers.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
                         "schema": {
                             "$ref": "#/definitions/controllers.ErrorResponse"
                         }
@@ -1111,7 +1630,7 @@ const docTemplate = `{
                         "SignatureAuth": []
                     }
                 ],
-                "description": "Returns all supported blockchain networks with their native asset and confirmation requirements",
+                "description": "Returns blockchain networks filtered by the account's environment",
                 "produces": [
                     "application/json"
                 ],
@@ -1145,7 +1664,7 @@ const docTemplate = `{
                         "SignatureAuth": []
                     }
                 ],
-                "description": "Returns a paginated list of transactions with optional filters by chain, type, status, or user",
+                "description": "Returns a paginated list of transactions with optional filters by chain, type, status, or user. Always scoped to the authenticated account.",
                 "produces": [
                     "application/json"
                 ],
@@ -1208,6 +1727,12 @@ const docTemplate = `{
                         "description": "OK",
                         "schema": {
                             "$ref": "#/definitions/controllers.TransactionListResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/controllers.ErrorResponse"
                         }
                     },
                     "500": {
@@ -1413,7 +1938,7 @@ const docTemplate = `{
                         "SignatureAuth": []
                     }
                 ],
-                "description": "Creates a new HD wallet for the specified blockchain. Only one wallet per chain is allowed.",
+                "description": "Creates a new HD wallet for the specified blockchain. Only one wallet per chain is allowed.\nThe response carries the wallet fields and ` + "`" + `service_public_key` + "`" + `.",
                 "consumes": [
                     "application/json"
                 ],
@@ -1431,7 +1956,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/controllers.CreateWalletRequest"
+                            "$ref": "#/definitions/controllers.CreateWalletSwagger"
                         }
                     }
                 ],
@@ -1439,7 +1964,7 @@ const docTemplate = `{
                     "201": {
                         "description": "Created",
                         "schema": {
-                            "$ref": "#/definitions/models.Wallet"
+                            "$ref": "#/definitions/controllers.CreateWalletResponse"
                         }
                     },
                     "400": {
@@ -1453,53 +1978,9 @@ const docTemplate = `{
                         "schema": {
                             "$ref": "#/definitions/controllers.ErrorResponse"
                         }
-                    }
-                }
-            }
-        },
-        "/v1/wallets/{id}": {
-            "get": {
-                "security": [
-                    {
-                        "ApiKeyAuth": []
                     },
-                    {
-                        "SignatureAuth": []
-                    }
-                ],
-                "description": "Returns a single wallet by its UUID",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Wallets"
-                ],
-                "summary": "Get a wallet",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "format": "uuid",
-                        "description": "Wallet UUID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/models.Wallet"
-                        }
-                    },
-                    "400": {
-                        "description": "Invalid UUID",
-                        "schema": {
-                            "$ref": "#/definitions/controllers.ErrorResponse"
-                        }
-                    },
-                    "404": {
-                        "description": "Wallet not found",
+                    "500": {
+                        "description": "Wallet service returned no wallet",
                         "schema": {
                             "$ref": "#/definitions/controllers.ErrorResponse"
                         }
@@ -1623,87 +2104,7 @@ const docTemplate = `{
                 }
             }
         },
-        "/v1/wallets/{id}/withdrawals": {
-            "post": {
-                "security": [
-                    {
-                        "ApiKeyAuth": []
-                    },
-                    {
-                        "SignatureAuth": []
-                    }
-                ],
-                "description": "Signs and broadcasts a withdrawal synchronously using MPC co-signing. Passphrase is required to decrypt the customer's key share.",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Withdrawals"
-                ],
-                "summary": "Create a withdrawal",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "format": "uuid",
-                        "description": "Wallet UUID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "description": "Withdrawal request",
-                        "name": "body",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/controllers.CreateWithdrawalRequest"
-                        }
-                    }
-                ],
-                "responses": {
-                    "201": {
-                        "description": "Created",
-                        "schema": {
-                            "$ref": "#/definitions/models.Transaction"
-                        }
-                    },
-                    "400": {
-                        "description": "Missing fields or invalid amount",
-                        "schema": {
-                            "$ref": "#/definitions/controllers.ErrorResponse"
-                        }
-                    },
-                    "401": {
-                        "description": "Invalid passphrase",
-                        "schema": {
-                            "$ref": "#/definitions/controllers.ErrorResponse"
-                        }
-                    },
-                    "409": {
-                        "description": "Concurrent withdrawal in progress",
-                        "schema": {
-                            "$ref": "#/definitions/controllers.ErrorResponse"
-                        }
-                    },
-                    "422": {
-                        "description": "Insufficient funds",
-                        "schema": {
-                            "$ref": "#/definitions/controllers.ErrorResponse"
-                        }
-                    },
-                    "429": {
-                        "description": "Too many failed passphrase attempts",
-                        "schema": {
-                            "$ref": "#/definitions/controllers.ErrorResponse"
-                        }
-                    }
-                }
-            }
-        },
-        "/v1/webhooks": {
+        "/v1/wallets/{walletId}": {
             "get": {
                 "security": [
                     {
@@ -1713,19 +2114,108 @@ const docTemplate = `{
                         "SignatureAuth": []
                     }
                 ],
-                "description": "Returns all registered webhook configurations",
+                "description": "Returns a single wallet by its UUID",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
-                    "Webhooks"
+                    "Wallets"
                 ],
-                "summary": "List webhooks",
+                "summary": "Get a wallet",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "format": "uuid",
+                        "description": "Wallet UUID",
+                        "name": "walletId",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
                 "responses": {
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/controllers.WebhookConfigListResponse"
+                            "$ref": "#/definitions/models.Wallet"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid UUID",
+                        "schema": {
+                            "$ref": "#/definitions/controllers.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Wallet not found",
+                        "schema": {
+                            "$ref": "#/definitions/controllers.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/wallets/{walletId}/addresses/{addressId}": {
+            "patch": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Updates the label and/or external_user_id of an existing address",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Addresses"
+                ],
+                "summary": "Update an address",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "format": "uuid",
+                        "description": "Wallet UUID",
+                        "name": "walletId",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "format": "uuid",
+                        "description": "Address UUID",
+                        "name": "addressId",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Fields to update",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/requests.UpdateAddressRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/models.Address"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/controllers.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/controllers.ErrorResponse"
                         }
                     },
                     "500": {
@@ -1735,17 +2225,19 @@ const docTemplate = `{
                         }
                     }
                 }
-            },
+            }
+        },
+        "/v1/wallets/{walletId}/consolidate": {
             "post": {
                 "security": [
                     {
                         "ApiKeyAuth": []
                     },
                     {
-                        "SignatureAuth": []
+                        "BearerAuth": []
                     }
                 ],
-                "description": "Registers a webhook endpoint to receive event notifications. Supported events: deposit.confirmed, withdrawal.confirmed, withdrawal.failed",
+                "description": "Sweep all eligible child addresses' balance into the wallet's base deposit address.",
                 "consumes": [
                     "application/json"
                 ],
@@ -1753,35 +2245,269 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Webhooks"
+                    "Wallets"
                 ],
-                "summary": "Create a webhook",
+                "summary": "Consolidate wallet balances",
                 "parameters": [
                     {
-                        "description": "Webhook configuration",
+                        "type": "string",
+                        "format": "uuid",
+                        "description": "Wallet UUID",
+                        "name": "walletId",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Consolidation request",
                         "name": "body",
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/controllers.CreateWebhookRequest"
+                            "$ref": "#/definitions/controllers.ConsolidateRequestSwagger"
                         }
                     }
                 ],
                 "responses": {
-                    "201": {
-                        "description": "Created",
+                    "200": {
+                        "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/models.WebhookConfig"
+                            "$ref": "#/definitions/controllers.ConsolidateResponse"
                         }
                     },
                     "400": {
-                        "description": "Missing required fields",
+                        "description": "Bad Request",
                         "schema": {
                             "$ref": "#/definitions/controllers.ErrorResponse"
                         }
                     },
-                    "500": {
-                        "description": "Internal Server Error",
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/controllers.ErrorResponse"
+                        }
+                    },
+                    "429": {
+                        "description": "Too Many Requests",
+                        "schema": {
+                            "$ref": "#/definitions/controllers.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/wallets/{walletId}/gas-check": {
+            "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    },
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Action variant of gas-status. Forces an on-chain read. Rate-limited per wallet.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Wallets"
+                ],
+                "summary": "Force refresh of wallet gas status",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "format": "uuid",
+                        "description": "Wallet UUID",
+                        "name": "walletId",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/controllers.GasStatusResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/controllers.ErrorResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/controllers.ErrorResponse"
+                        }
+                    },
+                    "429": {
+                        "description": "Too Many Requests",
+                        "schema": {
+                            "$ref": "#/definitions/controllers.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/wallets/{walletId}/gas-status": {
+            "get": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    },
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns the gas readiness status, native balance, and configured threshold for a wallet's base address.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Wallets"
+                ],
+                "summary": "Get wallet gas readiness",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "format": "uuid",
+                        "description": "Wallet UUID",
+                        "name": "walletId",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/controllers.GasStatusResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/controllers.ErrorResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/controllers.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/wallets/{walletId}/withdraw/preview": {
+            "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    },
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns the planned sweep strategy without executing any transaction.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Wallets"
+                ],
+                "summary": "Preview a withdrawal",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "format": "uuid",
+                        "description": "Wallet UUID",
+                        "name": "walletId",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Preview request",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/controllers.WithdrawPreviewRequestSwagger"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/controllers.WithdrawPreviewResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/controllers.ErrorResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/controllers.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/wallets/{walletId}/balances": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns the native balance and the balances of the tokens the wallet chain configures, as of the last balance refresh. Amounts come raw (base units) and for display, with the asset decimals.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Wallets"
+                ],
+                "summary": "List the asset balances of a wallet",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Wallet UUID",
+                        "name": "walletId",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "array",
+                                "items": {
+                                    "$ref": "#/definitions/models.WalletAssetBalance"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/controllers.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
                         "schema": {
                             "$ref": "#/definitions/controllers.ErrorResponse"
                         }
@@ -1821,7 +2547,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/controllers.FreezeWalletRequest"
+                            "$ref": "#/definitions/controllers.FreezeWalletSwagger"
                         }
                     }
                 ],
@@ -1917,7 +2643,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/controllers.UpdateWalletSettingsRequest"
+                            "$ref": "#/definitions/controllers.UpdateWalletSettingsSwagger"
                         }
                     }
                 ],
@@ -2059,7 +2785,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/models.Transaction"
+                            "$ref": "#/definitions/controllers.WalletTransactionView"
                         }
                     },
                     "403": {
@@ -2205,7 +2931,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/controllers.AddWalletUserRequest"
+                            "$ref": "#/definitions/controllers.AddWalletUserSwagger"
                         }
                     }
                 ],
@@ -2357,7 +3083,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/controllers.CreateWalletWebhookRequest"
+                            "$ref": "#/definitions/controllers.CreateWalletWebhookSwagger"
                         }
                     }
                 ],
@@ -2509,7 +3235,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/controllers.AddWhitelistEntryRequest"
+                            "$ref": "#/definitions/controllers.AddWhitelistEntrySwagger"
                         }
                     }
                 ],
@@ -2687,7 +3413,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/controllers.CreateWalletWithdrawalRequest"
+                            "$ref": "#/definitions/controllers.CreateWalletWithdrawalSwagger"
                         }
                     }
                 ],
@@ -2846,6 +3572,18 @@ const docTemplate = `{
                     "items": {
                         "$ref": "#/definitions/models.Account"
                     }
+                },
+                "limit": {
+                    "type": "integer",
+                    "example": 20
+                },
+                "offset": {
+                    "type": "integer",
+                    "example": 0
+                },
+                "total": {
+                    "type": "integer",
+                    "example": 64
                 }
             }
         },
@@ -2860,7 +3598,7 @@ const docTemplate = `{
                 }
             }
         },
-        "controllers.AddAccountUserRequest": {
+        "controllers.AddAccountUserSwagger": {
             "type": "object",
             "properties": {
                 "email": {
@@ -2873,7 +3611,7 @@ const docTemplate = `{
                 }
             }
         },
-        "controllers.AddWalletUserRequest": {
+        "controllers.AddWalletUserSwagger": {
             "type": "object",
             "properties": {
                 "roles": {
@@ -2886,7 +3624,7 @@ const docTemplate = `{
                 }
             }
         },
-        "controllers.AddWhitelistEntryRequest": {
+        "controllers.AddWhitelistEntrySwagger": {
             "type": "object",
             "properties": {
                 "address": {
@@ -2956,7 +3694,7 @@ const docTemplate = `{
                 }
             }
         },
-        "controllers.ChangePasswordRequest": {
+        "controllers.ChangePasswordSwagger": {
             "type": "object",
             "properties": {
                 "current_password": {
@@ -2967,24 +3705,92 @@ const docTemplate = `{
                 }
             }
         },
-        "controllers.CreateAccountRequest": {
+        "controllers.ConfirmTotpSwagger": {
+            "type": "object",
+            "properties": {
+                "code": {
+                    "type": "string",
+                    "example": "123456"
+                }
+            }
+        },
+        "controllers.ConsolidatePlanSummary": {
+            "type": "object",
+            "properties": {
+                "children_swept": {
+                    "type": "integer",
+                    "example": 3
+                },
+                "dust_ignored": {
+                    "type": "integer",
+                    "example": 0
+                },
+                "estimated_gas_cost": {
+                    "type": "string",
+                    "example": "0"
+                },
+                "total_amount": {
+                    "type": "string",
+                    "example": "0"
+                }
+            }
+        },
+        "controllers.ConsolidateRequestSwagger": {
+            "type": "object",
+            "properties": {
+                "asset": {
+                    "type": "string",
+                    "example": "eth"
+                },
+                "idempotency_key": {
+                    "type": "string",
+                    "example": "cns_01HABCDEFG"
+                },
+                "passphrase": {
+                    "type": "string",
+                    "example": "my-secure-wallet-passphrase"
+                }
+            }
+        },
+        "controllers.ConsolidateResponse": {
+            "type": "object",
+            "properties": {
+                "plan_summary": {
+                    "$ref": "#/definitions/controllers.ConsolidatePlanSummary"
+                },
+                "transactions": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/controllers.ConsolidateTransaction"
+                    }
+                }
+            }
+        },
+        "controllers.ConsolidateTransaction": {
+            "type": "object",
+            "properties": {
+                "from": {
+                    "type": "string"
+                },
+                "origin": {
+                    "type": "string",
+                    "example": "manual_consolidation"
+                },
+                "status": {
+                    "type": "string",
+                    "example": "confirming"
+                },
+                "tx_hash": {
+                    "type": "string"
+                }
+            }
+        },
+        "controllers.CreateAccountSwagger": {
             "type": "object",
             "properties": {
                 "name": {
                     "type": "string",
                     "example": "Acme Corp"
-                }
-            }
-        },
-        "controllers.CreateAccountTokenRequest": {
-            "type": "object",
-            "properties": {
-                "name": {
-                    "type": "string",
-                    "example": "CI Token"
-                },
-                "valid_until": {
-                    "type": "string"
                 }
             }
         },
@@ -2999,7 +3805,106 @@ const docTemplate = `{
                 }
             }
         },
-        "controllers.CreateWalletRequest": {
+        "controllers.CreateAccountTokenSwagger": {
+            "type": "object",
+            "properties": {
+                "name": {
+                    "type": "string",
+                    "example": "CI Token"
+                },
+                "require_signature": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "valid_until": {
+                    "type": "string"
+                }
+            }
+        },
+        "controllers.CreateWalletResponse": {
+            "type": "object",
+            "properties": {
+                "account_id": {
+                    "description": "Account and admin fields",
+                    "type": "string"
+                },
+                "address_index": {
+                    "type": "integer"
+                },
+                "balance": {
+                    "type": "string"
+                },
+                "balance_asset": {
+                    "type": "string"
+                },
+                "balance_last_synced_at": {
+                    "type": "string"
+                },
+                "balance_raw": {
+                    "type": "string"
+                },
+                "balance_usd": {
+                    "type": "number"
+                },
+                "chain": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "$ref": "#/definitions/github_com_goravel_framework_support_carbon.DateTime"
+                },
+                "deposit_address": {
+                    "$ref": "#/definitions/models.Address"
+                },
+                "deposit_address_id": {
+                    "type": "string"
+                },
+                "fee_multiplier": {
+                    "type": "number"
+                },
+                "fee_rate_max": {
+                    "type": "integer"
+                },
+                "fee_rate_min": {
+                    "type": "integer"
+                },
+                "frozen_until": {
+                    "type": "string"
+                },
+                "gas_last_checked_at": {
+                    "type": "string"
+                },
+                "gas_status": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "label": {
+                    "type": "string"
+                },
+                "read_model_status": {
+                    "type": "string"
+                },
+                "required_approvals": {
+                    "type": "integer"
+                },
+                "service_public_key": {
+                    "description": "Hex of the combined MPC public key.",
+                    "type": "string",
+                    "example": "02a1b2c3..."
+                },
+                "status": {
+                    "type": "string"
+                },
+                "sweep_policy_version": {
+                    "type": "integer"
+                },
+                "updated_at": {
+                    "$ref": "#/definitions/github_com_goravel_framework_support_carbon.DateTime"
+                }
+            }
+        },
+        "controllers.CreateWalletSwagger": {
             "type": "object",
             "properties": {
                 "chain": {
@@ -3016,7 +3921,7 @@ const docTemplate = `{
                 }
             }
         },
-        "controllers.CreateWalletWebhookRequest": {
+        "controllers.CreateWalletWebhookSwagger": {
             "type": "object",
             "properties": {
                 "events": {
@@ -3033,12 +3938,16 @@ const docTemplate = `{
                 }
             }
         },
-        "controllers.CreateWalletWithdrawalRequest": {
+        "controllers.CreateWalletWithdrawalSwagger": {
             "type": "object",
             "properties": {
                 "amount": {
                     "type": "string",
                     "example": "0.001"
+                },
+                "asset": {
+                    "type": "string",
+                    "example": "USDT"
                 },
                 "destination_address": {
                     "type": "string",
@@ -3047,6 +3956,14 @@ const docTemplate = `{
                 "note": {
                     "type": "string",
                     "example": "Monthly payment"
+                },
+                "passphrase": {
+                    "type": "string",
+                    "example": "my-secure-wallet-passphrase"
+                },
+                "totp_code": {
+                    "type": "string",
+                    "example": "123456"
                 }
             }
         },
@@ -3060,7 +3977,9 @@ const docTemplate = `{
                     },
                     "example": [
                         "deposit.confirmed",
-                        "withdrawal.confirmed"
+                        "withdrawal.broadcast",
+                        "withdrawal.confirmed",
+                        "withdrawal.failed"
                     ]
                 },
                 "secret": {
@@ -3073,35 +3992,6 @@ const docTemplate = `{
                 }
             }
         },
-        "controllers.CreateWithdrawalRequest": {
-            "type": "object",
-            "properties": {
-                "amount": {
-                    "type": "string",
-                    "example": "0.5"
-                },
-                "asset": {
-                    "type": "string",
-                    "example": "eth"
-                },
-                "external_user_id": {
-                    "type": "string",
-                    "example": "user_123"
-                },
-                "idempotency_key": {
-                    "type": "string",
-                    "example": "wdl_20260317_001"
-                },
-                "passphrase": {
-                    "type": "string",
-                    "example": "strong-passphrase-min-12"
-                },
-                "to_address": {
-                    "type": "string",
-                    "example": "0xABCDEF1234567890"
-                }
-            }
-        },
         "controllers.ErrorResponse": {
             "type": "object",
             "properties": {
@@ -3111,7 +4001,7 @@ const docTemplate = `{
                 }
             }
         },
-        "controllers.ForgotPasswordRequest": {
+        "controllers.ForgotPasswordSwagger": {
             "type": "object",
             "properties": {
                 "email": {
@@ -3120,11 +4010,48 @@ const docTemplate = `{
                 }
             }
         },
-        "controllers.FreezeWalletRequest": {
+        "controllers.FreezeWalletSwagger": {
             "type": "object",
             "properties": {
                 "frozen_until": {
                     "type": "string"
+                }
+            }
+        },
+        "controllers.GasStatusResponse": {
+            "type": "object",
+            "properties": {
+                "base_address": {
+                    "type": "string",
+                    "example": "0x..."
+                },
+                "gas_status": {
+                    "type": "string",
+                    "example": "seeded"
+                },
+                "last_checked_at": {
+                    "type": "integer",
+                    "example": 1713500000
+                },
+                "native_asset": {
+                    "type": "string",
+                    "example": "eth"
+                },
+                "native_balance_display": {
+                    "type": "string",
+                    "example": "1.0"
+                },
+                "native_balance_raw": {
+                    "type": "string",
+                    "example": "1000000000000000000"
+                },
+                "threshold_display": {
+                    "type": "string",
+                    "example": "0.005"
+                },
+                "threshold_raw": {
+                    "type": "string",
+                    "example": "5000000000000000"
                 }
             }
         },
@@ -3141,9 +4068,34 @@ const docTemplate = `{
                 }
             }
         },
+        "controllers.DepositScannerHealth": {
+            "type": "object",
+            "properties": {
+                "error": {
+                    "type": "string"
+                },
+                "pending": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "integer"
+                    }
+                },
+                "pending_total": {
+                    "type": "integer",
+                    "example": 0
+                },
+                "status": {
+                    "type": "string",
+                    "example": "ok"
+                }
+            }
+        },
         "controllers.HealthResponse": {
             "type": "object",
             "properties": {
+                "deposit_scanner": {
+                    "$ref": "#/definitions/controllers.DepositScannerHealth"
+                },
                 "status": {
                     "type": "string",
                     "example": "ok"
@@ -3154,7 +4106,7 @@ const docTemplate = `{
                 }
             }
         },
-        "controllers.LoginRequest": {
+        "controllers.LoginSwagger": {
             "type": "object",
             "properties": {
                 "email": {
@@ -3167,7 +4119,7 @@ const docTemplate = `{
                 }
             }
         },
-        "controllers.RefreshTokenRequest": {
+        "controllers.RefreshTokenSwagger": {
             "type": "object",
             "properties": {
                 "refresh_token": {
@@ -3175,7 +4127,7 @@ const docTemplate = `{
                 }
             }
         },
-        "controllers.RegisterRequest": {
+        "controllers.RegisterSwagger": {
             "type": "object",
             "properties": {
                 "email": {
@@ -3186,13 +4138,17 @@ const docTemplate = `{
                     "type": "string",
                     "example": "Alice Smith"
                 },
+                "organization_name": {
+                    "type": "string",
+                    "example": "Acme Corp"
+                },
                 "password": {
                     "type": "string",
                     "example": "s3cr3t"
                 }
             }
         },
-        "controllers.ResetPasswordRequest": {
+        "controllers.ResetPasswordSwagger": {
             "type": "object",
             "properties": {
                 "new_password": {
@@ -3201,6 +4157,19 @@ const docTemplate = `{
                 },
                 "token": {
                     "type": "string"
+                }
+            }
+        },
+        "controllers.TotpSetupSwagger": {
+            "type": "object",
+            "properties": {
+                "qr_url": {
+                    "type": "string",
+                    "example": "otpauth://totp/..."
+                },
+                "secret": {
+                    "type": "string",
+                    "example": "JBSWY3DPEHPK3PXP"
                 }
             }
         },
@@ -3215,14 +4184,14 @@ const docTemplate = `{
                 }
             }
         },
-        "controllers.TwoFactorRequest": {
+        "controllers.TwoFactorSwagger": {
             "type": "object",
             "properties": {
                 "code": {
                     "type": "string",
                     "example": "123456"
                 },
-                "partial_token": {
+                "challenge_token": {
                     "type": "string"
                 },
                 "recovery_code": {
@@ -3262,7 +4231,7 @@ const docTemplate = `{
                 }
             }
         },
-        "controllers.UpdateAccountRequest": {
+        "controllers.UpdateAccountSwagger": {
             "type": "object",
             "properties": {
                 "name": {
@@ -3275,7 +4244,16 @@ const docTemplate = `{
                 }
             }
         },
-        "controllers.UpdateMeRequest": {
+        "controllers.UpdateDefaultAccountSwagger": {
+            "type": "object",
+            "properties": {
+                "account_id": {
+                    "type": "string",
+                    "example": "550e8400-e29b-41d4-a716-446655440000"
+                }
+            }
+        },
+        "controllers.UpdateMeSwagger": {
             "type": "object",
             "properties": {
                 "full_name": {
@@ -3284,7 +4262,7 @@ const docTemplate = `{
                 }
             }
         },
-        "controllers.UpdateWalletSettingsRequest": {
+        "controllers.UpdateWalletSettingsSwagger": {
             "type": "object",
             "properties": {
                 "fee_multiplier": {
@@ -3305,6 +4283,31 @@ const docTemplate = `{
                 "required_approvals": {
                     "type": "integer",
                     "example": 2
+                }
+            }
+        },
+        "controllers.UpdateWebhookRequest": {
+            "type": "object",
+            "properties": {
+                "events": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "deposit.confirmed",
+                        "withdrawal.broadcast",
+                        "withdrawal.confirmed",
+                        "withdrawal.failed"
+                    ]
+                },
+                "is_active": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "secret": {
+                    "type": "string",
+                    "example": "my-webhook-secret"
                 }
             }
         },
@@ -3342,6 +4345,112 @@ const docTemplate = `{
                 }
             }
         },
+        "controllers.WalletTransactionView": {
+            "type": "object",
+            "properties": {
+                "address": {
+                    "description": "Relationships",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/models.Address"
+                        }
+                    ]
+                },
+                "address_id": {
+                    "type": "string"
+                },
+                "amount": {
+                    "type": "string"
+                },
+                "asset": {
+                    "type": "string"
+                },
+                "block_hash": {
+                    "type": "string"
+                },
+                "block_number": {
+                    "type": "integer"
+                },
+                "chain": {
+                    "type": "string"
+                },
+                "confirmations": {
+                    "type": "integer"
+                },
+                "confirmed_at": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "$ref": "#/definitions/github_com_goravel_framework_support_carbon.DateTime"
+                },
+                "decimals": {
+                    "type": "integer"
+                },
+                "direction": {
+                    "type": "string"
+                },
+                "error_message": {
+                    "type": "string"
+                },
+                "external_user_id": {
+                    "type": "string"
+                },
+                "fee": {
+                    "type": "string"
+                },
+                "from_address": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "idempotency_key": {
+                    "type": "string"
+                },
+                "log_index": {
+                    "type": "integer"
+                },
+                "origin": {
+                    "type": "string"
+                },
+                "parent_transaction_id": {
+                    "type": "string"
+                },
+                "required_confs": {
+                    "type": "integer"
+                },
+                "source": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "synced_at": {
+                    "type": "string"
+                },
+                "to_address": {
+                    "type": "string"
+                },
+                "token_contract": {
+                    "type": "string"
+                },
+                "tx_hash": {
+                    "type": "string"
+                },
+                "tx_type": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "$ref": "#/definitions/github_com_goravel_framework_support_carbon.DateTime"
+                },
+                "wallet": {
+                    "$ref": "#/definitions/models.Wallet"
+                },
+                "wallet_id": {
+                    "type": "string"
+                }
+            }
+        },
         "controllers.WalletUserListResponse": {
             "type": "object",
             "properties": {
@@ -3375,6 +4484,64 @@ const docTemplate = `{
                 }
             }
         },
+        "controllers.WithdrawPreviewDustEntry": {
+            "type": "object",
+            "properties": {
+                "address": {
+                    "type": "string"
+                },
+                "balance": {
+                    "type": "string"
+                },
+                "reason": {
+                    "type": "string",
+                    "example": "below_dust_threshold"
+                }
+            }
+        },
+        "controllers.WithdrawPreviewRequestSwagger": {
+            "type": "object",
+            "properties": {
+                "amount": {
+                    "type": "string",
+                    "example": "1000000000000000000"
+                },
+                "asset": {
+                    "type": "string",
+                    "example": "eth"
+                }
+            }
+        },
+        "controllers.WithdrawPreviewResponse": {
+            "type": "object",
+            "properties": {
+                "base_balance": {
+                    "type": "string"
+                },
+                "dust_ignored": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/controllers.WithdrawPreviewDustEntry"
+                    }
+                },
+                "estimated_gas_total_native": {
+                    "type": "string",
+                    "example": "0"
+                },
+                "reaches_target": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "strategy": {
+                    "type": "string",
+                    "example": "multi_sweep"
+                },
+                "sweeps_required": {
+                    "type": "integer",
+                    "example": 2
+                }
+            }
+        },
         "controllers.WithdrawalListResponse": {
             "type": "object",
             "properties": {
@@ -3383,6 +4550,320 @@ const docTemplate = `{
                     "items": {
                         "$ref": "#/definitions/models.Withdrawal"
                     }
+                }
+            }
+        },
+        "controllers.WithdrawalLookupResponse": {
+            "type": "object",
+            "properties": {
+                "amount": {
+                    "type": "string",
+                    "example": "4"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "destination_address": {
+                    "type": "string"
+                },
+                "failure_reason": {
+                    "type": "string",
+                    "example": "insufficient_funds"
+                },
+                "id": {
+                    "type": "string",
+                    "example": "80571fff-8d0b-5c1e-9a3f-2b6f0f7c1a11"
+                },
+                "idempotency_key": {
+                    "type": "string",
+                    "example": "80571fff-8d0b-5c1e-9a3f-2b6f0f7c1a11"
+                },
+                "status": {
+                    "type": "string",
+                    "example": "broadcast"
+                },
+                "transaction_status": {
+                    "type": "string",
+                    "example": "confirming"
+                },
+                "tx_hash": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "wallet_id": {
+                    "type": "string"
+                }
+            }
+        },
+        "controllers.WithdrawalResponse": {
+            "type": "object",
+            "properties": {
+                "failed_step": {
+                    "$ref": "#/definitions/controllers.WithdrawalFailedStep"
+                },
+                "origin": {
+                    "type": "string",
+                    "example": "user_request"
+                },
+                "status": {
+                    "type": "string",
+                    "example": "confirming"
+                },
+                "strategy": {
+                    "type": "string",
+                    "example": "direct_from_base"
+                },
+                "sweeps": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/controllers.WithdrawalSweepItem"
+                    }
+                },
+                "transaction_id": {
+                    "type": "string",
+                    "example": "8c5e3b3a-4a8f-4c0b-9e8a-2d1e8f0b7c4d"
+                },
+                "tx_hash": {
+                    "type": "string",
+                    "example": "0xaaa..."
+                }
+            }
+        },
+        "controllers.WithdrawalSweepItem": {
+            "type": "object",
+            "properties": {
+                "from": {
+                    "type": "string",
+                    "example": "0xChildAddress"
+                },
+                "origin": {
+                    "type": "string",
+                    "example": "sweep"
+                },
+                "tx_hash": {
+                    "type": "string",
+                    "example": "0xbbb..."
+                },
+                "tx_id": {
+                    "type": "string",
+                    "example": "1f2d3c4b-5a6b-7c8d-9e0f-112233445566"
+                }
+            }
+        },
+        "feeestimate.BitcoinDetails": {
+            "type": "object",
+            "properties": {
+                "fee_rate_sat_per_vbyte": {
+                    "type": "string",
+                    "example": "1"
+                },
+                "fee_rate_source": {
+                    "type": "string",
+                    "example": "estimator"
+                },
+                "inputs": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "outputs": {
+                    "type": "integer",
+                    "example": 2
+                },
+                "vsize": {
+                    "type": "integer",
+                    "example": 141
+                }
+            }
+        },
+        "feeestimate.Details": {
+            "type": "object",
+            "properties": {
+                "bitcoin": {
+                    "$ref": "#/definitions/feeestimate.BitcoinDetails"
+                },
+                "evm": {
+                    "$ref": "#/definitions/feeestimate.EVMDetails"
+                },
+                "solana": {
+                    "$ref": "#/definitions/feeestimate.SolanaDetails"
+                },
+                "tron": {
+                    "$ref": "#/definitions/feeestimate.TronDetails"
+                }
+            }
+        },
+        "feeestimate.EVMDetails": {
+            "type": "object",
+            "properties": {
+                "gas_limit": {
+                    "type": "integer",
+                    "example": 21000
+                },
+                "gas_price_gwei": {
+                    "type": "string",
+                    "example": "1.994918016"
+                },
+                "gas_price_wei": {
+                    "type": "string",
+                    "example": "1994918016"
+                },
+                "l1_data_fee_wei": {
+                    "type": "string",
+                    "example": "0"
+                },
+                "tx_type": {
+                    "type": "string",
+                    "example": "legacy"
+                }
+            }
+        },
+        "feeestimate.Estimate": {
+            "type": "object",
+            "properties": {
+                "amount": {
+                    "type": "string",
+                    "example": "0.001"
+                },
+                "amount_base_units": {
+                    "type": "string",
+                    "example": "1000000000000000"
+                },
+                "amount_is_reference": {
+                    "type": "boolean",
+                    "example": false
+                },
+                "amount_spendable": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "asset": {
+                    "type": "string",
+                    "example": "ETH"
+                },
+                "base_balance_base_units": {
+                    "type": "string",
+                    "example": "1958106721664000"
+                },
+                "basis": {
+                    "type": "string",
+                    "example": "plan"
+                },
+                "cached": {
+                    "type": "boolean",
+                    "example": false
+                },
+                "chain": {
+                    "type": "string",
+                    "example": "eth"
+                },
+                "details": {
+                    "$ref": "#/definitions/feeestimate.Details"
+                },
+                "estimated_at": {
+                    "type": "string"
+                },
+                "expires_at": {
+                    "type": "string"
+                },
+                "fee": {
+                    "type": "string",
+                    "example": "0.000041893278336"
+                },
+                "fee_asset": {
+                    "type": "string",
+                    "example": "ETH"
+                },
+                "fee_base_units": {
+                    "type": "string",
+                    "example": "41893278336000"
+                },
+                "fee_decimals": {
+                    "type": "integer",
+                    "example": 18
+                },
+                "fee_multiplier": {
+                    "type": "string",
+                    "example": "1"
+                },
+                "insufficient_funds": {
+                    "type": "boolean",
+                    "example": false
+                },
+                "minimum_remaining_base_units": {
+                    "type": "string",
+                    "example": "0"
+                },
+                "recipient": {
+                    "type": "string",
+                    "example": "provided"
+                },
+                "strategy": {
+                    "type": "string",
+                    "example": "direct_from_base"
+                },
+                "transfers": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "wallet_id": {
+                    "type": "string",
+                    "example": "d6a8ce92-b637-44c2-a9f1-774344802e1a"
+                }
+            }
+        },
+        "feeestimate.SolanaDetails": {
+            "type": "object",
+            "properties": {
+                "lamports_per_signature": {
+                    "type": "integer",
+                    "example": 5000
+                },
+                "signatures": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "token_account_creation_lamports": {
+                    "type": "string",
+                    "example": "0"
+                }
+            }
+        },
+        "feeestimate.TronDetails": {
+            "type": "object",
+            "properties": {
+                "account_activation_fee_sun": {
+                    "type": "string",
+                    "example": "0"
+                },
+                "bandwidth_bytes": {
+                    "type": "integer",
+                    "example": 345
+                },
+                "bandwidth_fee_sun": {
+                    "type": "string",
+                    "example": "345000"
+                },
+                "energy": {
+                    "type": "integer",
+                    "example": 21975
+                },
+                "energy_fee_limit_sun": {
+                    "type": "string",
+                    "example": "2637000"
+                },
+                "energy_is_reference": {
+                    "type": "boolean",
+                    "example": false
+                },
+                "sun_per_bandwidth_byte": {
+                    "type": "integer",
+                    "example": 1000
+                },
+                "sun_per_energy": {
+                    "type": "integer",
+                    "example": 100
                 }
             }
         },
@@ -3433,13 +4914,22 @@ const docTemplate = `{
                 "created_at": {
                     "$ref": "#/definitions/github_com_goravel_framework_support_carbon.DateTime"
                 },
+                "environment": {
+                    "type": "string"
+                },
                 "id": {
+                    "type": "string"
+                },
+                "linked_account_id": {
                     "type": "string"
                 },
                 "name": {
                     "type": "string"
                 },
                 "status": {
+                    "type": "string"
+                },
+                "sweep_limits": {
                     "type": "string"
                 },
                 "updated_at": {
@@ -3503,6 +4993,9 @@ const docTemplate = `{
                 },
                 "derivation_index": {
                     "type": "integer"
+                },
+                "derivation_type": {
+                    "type": "string"
                 },
                 "external_user_id": {
                     "type": "string"
@@ -3573,6 +5066,9 @@ const docTemplate = `{
                 "created_at": {
                     "$ref": "#/definitions/github_com_goravel_framework_support_carbon.DateTime"
                 },
+                "direction": {
+                    "type": "string"
+                },
                 "error_message": {
                     "type": "string"
                 },
@@ -3591,10 +5087,25 @@ const docTemplate = `{
                 "idempotency_key": {
                     "type": "string"
                 },
+                "log_index": {
+                    "type": "integer"
+                },
+                "origin": {
+                    "type": "string"
+                },
+                "parent_transaction_id": {
+                    "type": "string"
+                },
                 "required_confs": {
                     "type": "integer"
                 },
+                "source": {
+                    "type": "string"
+                },
                 "status": {
+                    "type": "string"
+                },
+                "synced_at": {
                     "type": "string"
                 },
                 "to_address": {
@@ -3626,6 +5137,9 @@ const docTemplate = `{
                 "created_at": {
                     "$ref": "#/definitions/github_com_goravel_framework_support_carbon.DateTime"
                 },
+                "default_account_id": {
+                    "type": "string"
+                },
                 "email": {
                     "type": "string"
                 },
@@ -3634,6 +5148,9 @@ const docTemplate = `{
                 },
                 "id": {
                     "type": "string"
+                },
+                "preferences": {
+                    "$ref": "#/definitions/models.UserPreferences"
                 },
                 "status": {
                     "type": "string"
@@ -3646,12 +5163,41 @@ const docTemplate = `{
                 }
             }
         },
+        "models.UserPreferences": {
+            "type": "object",
+            "properties": {
+                "display_in_fiat": {
+                    "type": "boolean"
+                },
+                "preferred_fiat_code": {
+                    "type": "string"
+                }
+            }
+        },
         "models.Wallet": {
             "type": "object",
             "properties": {
                 "account_id": {
                     "description": "Account and admin fields",
                     "type": "string"
+                },
+                "address_index": {
+                    "type": "integer"
+                },
+                "balance": {
+                    "type": "string"
+                },
+                "balance_asset": {
+                    "type": "string"
+                },
+                "balance_last_synced_at": {
+                    "type": "string"
+                },
+                "balance_raw": {
+                    "type": "string"
+                },
+                "balance_usd": {
+                    "type": "number"
                 },
                 "chain": {
                     "type": "string"
@@ -3660,6 +5206,9 @@ const docTemplate = `{
                     "$ref": "#/definitions/github_com_goravel_framework_support_carbon.DateTime"
                 },
                 "deposit_address": {
+                    "$ref": "#/definitions/models.Address"
+                },
+                "deposit_address_id": {
                     "type": "string"
                 },
                 "fee_multiplier": {
@@ -3674,10 +5223,19 @@ const docTemplate = `{
                 "frozen_until": {
                     "type": "string"
                 },
+                "gas_last_checked_at": {
+                    "type": "string"
+                },
+                "gas_status": {
+                    "type": "string"
+                },
                 "id": {
                     "type": "string"
                 },
                 "label": {
+                    "type": "string"
+                },
+                "read_model_status": {
                     "type": "string"
                 },
                 "required_approvals": {
@@ -3686,8 +5244,70 @@ const docTemplate = `{
                 "status": {
                     "type": "string"
                 },
+                "sweep_policy_version": {
+                    "type": "integer"
+                },
                 "updated_at": {
                     "$ref": "#/definitions/github_com_goravel_framework_support_carbon.DateTime"
+                }
+            }
+        },
+        "models.WalletAssetBalance": {
+            "type": "object",
+            "properties": {
+                "amount_display": {
+                    "type": "string"
+                },
+                "amount_raw": {
+                    "type": "string"
+                },
+                "asset_contract": {
+                    "type": "string"
+                },
+                "asset_key": {
+                    "type": "string"
+                },
+                "asset_name": {
+                    "type": "string"
+                },
+                "asset_symbol": {
+                    "type": "string"
+                },
+                "asset_type": {
+                    "type": "string"
+                },
+                "chain_id": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "$ref": "#/definitions/github_com_goravel_framework_support_carbon.DateTime"
+                },
+                "decimals": {
+                    "type": "integer"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "last_synced_at": {
+                    "type": "string"
+                },
+                "price_usd": {
+                    "type": "number"
+                },
+                "source_address": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "$ref": "#/definitions/github_com_goravel_framework_support_carbon.DateTime"
+                },
+                "value_usd": {
+                    "type": "number"
+                },
+                "wallet": {
+                    "$ref": "#/definitions/models.Wallet"
+                },
+                "wallet_id": {
+                    "type": "string"
                 }
             }
         },
@@ -3726,6 +5346,9 @@ const docTemplate = `{
         "models.WebhookConfig": {
             "type": "object",
             "properties": {
+                "account_id": {
+                    "type": "string"
+                },
                 "created_at": {
                     "$ref": "#/definitions/github_com_goravel_framework_support_carbon.DateTime"
                 },
@@ -3794,6 +5417,10 @@ const docTemplate = `{
                 "destination_address": {
                     "type": "string"
                 },
+                "failure_reason": {
+                    "description": "FailureReason holds the public error code returned to the caller, never internal details.",
+                    "type": "string"
+                },
                 "fee_estimate": {
                     "type": "string"
                 },
@@ -3809,10 +5436,24 @@ const docTemplate = `{
                 "transaction_id": {
                     "type": "string"
                 },
+                "tx_hash": {
+                    "type": "string"
+                },
                 "updated_at": {
                     "$ref": "#/definitions/github_com_goravel_framework_support_carbon.DateTime"
                 },
                 "wallet_id": {
+                    "type": "string"
+                }
+            }
+        },
+        "requests.UpdateAddressRequest": {
+            "type": "object",
+            "properties": {
+                "external_user_id": {
+                    "type": "string"
+                },
+                "label": {
                     "type": "string"
                 }
             }

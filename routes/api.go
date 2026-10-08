@@ -1,187 +1,150 @@
 package routes
 
 import (
-	"github.com/goravel/framework/contracts/http"
 	"github.com/goravel/framework/contracts/route"
 	"github.com/goravel/framework/facades"
 
+	"github.com/macrowallets/waas/app/container"
 	"github.com/macrowallets/waas/app/http/controllers"
+	extaddresses "github.com/macrowallets/waas/app/http/controllers/external/addresses"
+	extchains "github.com/macrowallets/waas/app/http/controllers/external/chains"
+	extsweep "github.com/macrowallets/waas/app/http/controllers/external/sweep"
+	exttransactions "github.com/macrowallets/waas/app/http/controllers/external/transactions"
+	extwallets "github.com/macrowallets/waas/app/http/controllers/external/wallets"
+	extwebhooks "github.com/macrowallets/waas/app/http/controllers/external/webhooks"
+	extwithdrawals "github.com/macrowallets/waas/app/http/controllers/external/withdrawals"
 	"github.com/macrowallets/waas/app/http/middleware"
-	"github.com/macrowallets/waas/docs"
+	accountsvc "github.com/macrowallets/waas/app/services/account"
+	authsvc "github.com/macrowallets/waas/app/services/auth"
+	chainpkg "github.com/macrowallets/waas/app/services/chain"
+	chainsvc "github.com/macrowallets/waas/app/services/chains"
+	"github.com/macrowallets/waas/app/services/deposit"
+	featuressvc "github.com/macrowallets/waas/app/services/features"
+	"github.com/macrowallets/waas/app/services/feeestimate"
+	"github.com/macrowallets/waas/app/services/sweep"
+	usersvc "github.com/macrowallets/waas/app/services/users"
+	"github.com/macrowallets/waas/app/services/walletrecords"
+	"github.com/macrowallets/waas/app/services/webhook"
+	"github.com/macrowallets/waas/app/services/withdraw"
+	"github.com/macrowallets/waas/app/services/withdrawalevents"
+	"github.com/macrowallets/waas/app/services/withdrawalrecords"
 )
 
-func Api() {
-	// Health check - no auth
-	facades.Route().Get("/health", controllers.Health)
-
-	// Swagger spec
-	facades.Route().Get("/swagger/doc.json", func(ctx http.Context) http.Response {
-		return ctx.Response().
-			Header("Content-Type", "application/json").
-			String(http.StatusOK, docs.SwaggerInfo.ReadDoc())
-	})
-
-	// Swagger UI (CDN-hosted)
-	facades.Route().Get("/swagger/index.html", func(ctx http.Context) http.Response {
-		html := `<!DOCTYPE html>
-<html>
-<head>
-  <title>Vault API - Swagger UI</title>
-  <meta charset="utf-8"/>
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <link rel="stylesheet" type="text/css" href="https://unpkg.com/swagger-ui-dist@5/swagger-ui.css">
-</head>
-<body>
-<div id="swagger-ui"></div>
-<script src="https://unpkg.com/swagger-ui-dist@5/swagger-ui-bundle.js"></script>
-<script>
-  SwaggerUIBundle({
-    url: "/swagger/doc.json",
-    dom_id: '#swagger-ui',
-    presets: [SwaggerUIBundle.presets.apis, SwaggerUIBundle.SwaggerUIStandalonePreset],
-    layout: "BaseLayout",
-    deepLinking: true
-  })
-</script>
-</body>
-</html>`
-		return ctx.Response().
-			Header("Content-Type", "text/html; charset=utf-8").
-			String(http.StatusOK, html)
-	})
-
-	// Inbound webhooks from chain providers (per-subscription signing secret; no session/API token auth).
-	facades.Route().Prefix("/v1/webhooks/ingest").Group(func(router route.Router) {
-		router.Post("/{provider}/{chainID}", controllers.HandleWebhookIngest)
-	})
-
+// RegisterExternalAPI registers Bearer API-token routes under /api/v1.
+//
+// All per-wallet routes live inside a nested group that applies
+// APIWalletContext() so the walletId in the URL is verified to belong to the
+// authenticated account before any controller runs. This prevents IDOR: a
+// valid API token cannot operate on another account's wallets.
+func RegisterExternalAPI() {
 	noCache := middleware.CacheControl(0)
+	chainCtrl := newExternalChainsController()
+	transactionCtrl := newExternalTransactionsController()
+	webhookCtrl := newExternalWebhooksController()
+	walletCtrl := newExternalWalletsController()
+	addressCtrl := newExternalAddressesController()
+	sweepCtrl := newExternalSweepController()
+	withdrawalCtrl := newExternalWithdrawalsController()
+	feeEstimateCtrl := newFeeEstimateController()
 
-	// Auth routes — no HMAC, uses JWT
-	facades.Route().Prefix("/v1/auth").Middleware(noCache).Group(func(router route.Router) {
-		router.Post("/register", controllers.Register)
-		router.Post("/login", controllers.Login)
-		router.Post("/2fa/verify", controllers.VerifyTwoFactor)
-		router.Post("/refresh", controllers.RefreshToken)
-		router.Post("/recover", controllers.ForgotPassword)
-		router.Post("/recover/confirm", controllers.ResetPassword)
-	})
-	// Logout requires session auth — separate group
-	facades.Route().Prefix("/v1/auth").Middleware(middleware.SessionAuth, noCache).Group(func(router route.Router) {
-		router.Post("/logout", controllers.Logout)
-	})
+	facades.Route().Prefix("/api/v1").Middleware(middleware.APITokenAuth(
+		container.MustMake[*accountsvc.Service](),
+	), noCache).Group(func(router route.Router) {
+		// APIScope follows the S3.4.6 catalog and the S3.4.2 verbs:
+		// wallets.read/create, addresses.create, withdrawals.create,
+		// sweep.execute, webhooks.read/write, transactions.read.
+		// A route the plan does not name stays behind APITokenAuth only.
+		// Wallet routes resolve the wallet (404) before the scope check (403).
+		router.Get("/chains", chainCtrl.ListChains)
 
-	// User routes — JWT auth
-	facades.Route().Prefix("/v1/users").Middleware(middleware.SessionAuth, noCache).Group(func(router route.Router) {
-		router.Get("/me", controllers.GetMe)
-		router.Patch("/me", controllers.UpdateMe)
-		router.Post("/me/password", controllers.ChangePassword)
-		router.Get("/me/accounts", controllers.ListMyAccounts)
-		router.Patch("/me/default-account", controllers.UpdateDefaultAccount)
-	})
+		router.Middleware(middleware.APIScope(middleware.PermWalletsCreate)).Post("/wallets", walletCtrl.CreateWallet)
+		router.Middleware(middleware.APIScope(middleware.PermWalletsRead)).Get("/wallets", walletCtrl.ListWallets)
 
-	// Account routes — JWT auth + account membership
-	facades.Route().Prefix("/v1/accounts").Middleware(middleware.SessionAuth, noCache).Group(func(router route.Router) {
-		router.Post("", controllers.CreateAccount)
-		router.Prefix("/{accountId}").Middleware(middleware.AccountContext).Group(func(r route.Router) {
-			r.Get("", controllers.GetAccount)
-			r.Patch("", controllers.UpdateAccount)
-			r.Post("/archive", controllers.ArchiveAccount)
-			r.Post("/freeze", controllers.FreezeAccount)
+		router.Get("/addresses/{address}", addressCtrl.LookupAddress)
+		router.Get("/users/{external_id}/addresses", addressCtrl.ListUserAddresses)
 
-			// Account users
-			r.Get("/users", controllers.ListAccountUsers)
-			r.Post("/users", controllers.AddAccountUser)
-			r.Delete("/users/{userId}", controllers.RemoveAccountUser)
+		router.Prefix("/wallets/{walletId}").Middleware(middleware.APIWalletContext()).Group(func(r route.Router) {
+			r.Middleware(middleware.APIScope(middleware.PermWalletsRead)).Get("", walletCtrl.GetWallet)
 
-			// API tokens
-			r.Get("/tokens", controllers.ListAccountTokens)
-			r.Post("/tokens", controllers.CreateAccountToken)
-			r.Delete("/tokens/{tokenId}", controllers.RevokeAccountToken)
+			r.Middleware(middleware.APIScope(middleware.PermAddressesCreate)).Post("/addresses", addressCtrl.GenerateAddress)
+			r.Get("/addresses", addressCtrl.ListWalletAddresses)
+			r.Patch("/addresses/{addressId}", addressCtrl.UpdateAddress)
+
+			r.Middleware(middleware.APIScope(middleware.PermSweepExecute)).Post("/consolidate", sweepCtrl.ConsolidateWallet)
+			r.Get("/gas-status", sweepCtrl.GetGasStatus)
+			r.Post("/gas-check", sweepCtrl.ForceGasCheck)
+			r.Post("/withdraw/preview", sweepCtrl.PreviewWithdraw)
+			r.Get("/fee-estimate", feeEstimateCtrl.GetWalletFeeEstimate)
+			r.Middleware(middleware.APIScope(middleware.PermWithdrawalsCreate)).Post("/withdrawals", withdrawalCtrl.CreateWalletWithdrawal)
+			r.Get("/withdrawals/{idempotencyKey}", withdrawalCtrl.GetWalletWithdrawalByIdempotencyKey)
 		})
-	})
 
-	// Chain routes — JWT auth + account header for environment filtering
-	facades.Route().Prefix("/v1/chains").Middleware(middleware.SessionAuth, middleware.AccountHeader, noCache).Group(func(router route.Router) {
-		router.Get("", controllers.ListChains)
-		router.Get("/{chainId}", controllers.GetChain)
-		router.Get("/{chainId}/tokens", controllers.ListChainTokens)
-		router.Get("/{chainId}/resources", controllers.ListChainResources)
-	})
-
-	// Wallet sub-resource routes — JWT auth + account header
-	facades.Route().Prefix("/v1/wallets").Middleware(middleware.SessionAuth, middleware.AccountHeader, noCache).Group(func(router route.Router) {
-		router.Get("", controllers.ListWallets)
-		router.Post("", controllers.CreateWalletAdmin)
-		router.Get("/{walletId}", controllers.GetWallet)
-		router.Prefix("/{walletId}").Group(func(r route.Router) {
-			r.Post("/activate", controllers.ActivateWallet)
-
-			// Addresses
-			r.Get("/addresses", controllers.ListWalletAddresses)
-			r.Post("/addresses", controllers.GenerateAddress)
-
-			// Wallet users
-			r.Get("/users", controllers.ListWalletUsers)
-			r.Post("/users", controllers.AddWalletUser)
-			r.Delete("/users/{userId}", controllers.RemoveWalletUser)
-
-			// Whitelist
-			r.Get("/whitelist", controllers.ListWhitelistEntries)
-			r.Post("/whitelist", controllers.AddWhitelistEntry)
-			r.Delete("/whitelist/{entryId}", controllers.DeleteWhitelistEntry)
-
-			// Wallet-scoped webhooks
-			r.Get("/webhooks", controllers.ListWalletWebhooks)
-			r.Post("/webhooks", controllers.CreateWalletWebhook)
-			r.Delete("/webhooks/{webhookId}", controllers.DeleteWalletWebhook)
-
-			// Settings and freeze
-			r.Get("/settings", controllers.GetWalletSettings)
-			r.Patch("/settings", controllers.UpdateWalletSettings)
-			r.Post("/freeze", controllers.FreezeWallet)
-
-			// Wallet transactions (admin panel view)
-			r.Get("/transactions", controllers.ListWalletTransactions)
-			r.Get("/transactions/{txId}", controllers.GetWalletTransaction)
-
-			// Wallet withdrawals (admin panel view)
-			r.Get("/withdrawals", controllers.ListWalletWithdrawals)
-			r.Post("/withdrawals", controllers.CreateWalletWithdrawal)
-			r.Get("/withdrawals/{withdrawalId}", controllers.GetWalletWithdrawal)
-			r.Post("/withdrawals/{withdrawalId}/cancel", controllers.CancelWalletWithdrawal)
-
-			// UTXOs — UTXOOnly middleware rejects non-UTXO chains
-			r.Prefix("/unspents").Middleware(middleware.UTXOOnly).Group(func(ur route.Router) {
-				ur.Get("", controllers.ListUnspentOutputs)
-			})
+		router.Middleware(middleware.APIScope(middleware.PermTransactionsRead)).Group(func(r route.Router) {
+			r.Get("/transactions", transactionCtrl.ListTransactions)
+			r.Get("/transactions/{id}", transactionCtrl.GetTransaction)
+			r.Get("/users/{external_id}/transactions", transactionCtrl.ListUserTransactions)
 		})
+
+		router.Middleware(middleware.APIScope(middleware.PermWebhooksWrite)).Post("/webhooks", webhookCtrl.CreateWebhook)
+		router.Middleware(middleware.APIScope(middleware.PermWebhooksRead)).Get("/webhooks", webhookCtrl.ListWebhooks)
+		router.Middleware(middleware.APIScope(middleware.PermWebhooksWrite)).Patch("/webhooks/{webhookId}", webhookCtrl.UpdateWebhook)
 	})
+}
 
-	// External API — account JWT token auth (Bearer JWT issued via /v1/accounts/{id}/tokens)
-	// Clients optionally add X-Signature: HMAC-SHA256(bearer_token, body) for request integrity.
-	facades.Route().Prefix("/api/v1").Middleware(middleware.APITokenAuth, noCache).Group(func(router route.Router) {
-		// Chains
-		router.Get("/chains", controllers.ListChains)
+func newFeeEstimateController() *controllers.FeeEstimateController {
+	return controllers.NewFeeEstimateController(container.MustMake[*feeestimate.Service]())
+}
 
-		// Wallets
-		router.Post("/wallets", controllers.CreateWallet)
-		router.Get("/wallets", controllers.ListWallets)
-		router.Get("/wallets/{walletId}", controllers.GetWallet)
+func newExternalTransactionsController() *exttransactions.TransactionsController {
+	return exttransactions.NewTransactionsController(container.MustMake[*withdraw.Service]())
+}
 
-		// Addresses
-		router.Post("/wallets/{walletId}/addresses", controllers.GenerateAddress)
-		router.Get("/wallets/{walletId}/addresses", controllers.ListWalletAddresses)
-		router.Get("/addresses/{address}", controllers.LookupAddress)
-		router.Get("/users/{external_id}/addresses", controllers.ListUserAddresses)
+func newExternalWebhooksController() *extwebhooks.WebhooksController {
+	return extwebhooks.NewWebhooksController(container.MustMake[*webhook.Service]())
+}
 
-		// Transactions
-		router.Get("/transactions", controllers.ListTransactions)
-		router.Get("/transactions/{id}", controllers.GetTransaction)
-		router.Get("/users/{external_id}/transactions", controllers.ListUserTransactions)
+func newExternalChainsController() *extchains.ChainsController {
+	return extchains.NewChainsController(
+		container.MustMake[*chainsvc.Service](),
+	)
+}
 
-		// Webhooks
-		router.Post("/webhooks", controllers.CreateWebhook)
-		router.Get("/webhooks", controllers.ListWebhooks)
+func newExternalAddressesController() *extaddresses.AddressesController {
+	return extaddresses.NewAddressesController(extaddresses.AddressesControllerDeps{
+		Addresses:     container.MustMake[*walletrecords.Addresses](),
+		WalletService: currentWalletService,
+		Deposits:      container.MustMake[*deposit.Service](),
+		Registry:      container.MustMake[*chainpkg.Registry](),
+	})
+}
+
+func newExternalSweepController() *extsweep.SweepController {
+	return extsweep.NewSweepController(extsweep.SweepControllerDeps{
+		Sweeps: container.MustMake[*sweep.Box]().Service,
+		Redis:  container.MustMake[*container.SharedRedis]().Client,
+		Flags:  container.MustMake[*featuressvc.Service](),
+	})
+}
+
+func newExternalWithdrawalsController() *extwithdrawals.WithdrawalsController {
+	return extwithdrawals.NewWithdrawalsController(extwithdrawals.WithdrawalsControllerDeps{
+		Withdrawals:       container.MustMake[*withdrawalrecords.Records](),
+		Chains:            container.MustMake[*chainsvc.Service](),
+		Users:             container.MustMake[*usersvc.Service](),
+		Transactions:      container.MustMake[*walletrecords.Transactions](),
+		Registry:          container.MustMake[*chainpkg.Registry](),
+		WithdrawalService: container.MustMake[*withdraw.Service](),
+		Passwords:         container.MustMake[*authsvc.Service](),
+		Flags:             container.MustMake[*featuressvc.Service](),
+		Events:            container.MustMake[*withdrawalevents.Publisher](),
+		Redis:             container.MustMake[*container.SharedRedis]().Client,
+		SecondFactor:      container.MustMake[*authsvc.SecondFactorVerifier](),
+	})
+}
+
+func newExternalWalletsController() *extwallets.WalletsController {
+	return extwallets.NewWalletsController(extwallets.WalletsControllerDeps{
+		Wallets:       container.MustMake[*walletrecords.Wallets](),
+		WalletService: currentWalletService,
 	})
 }

@@ -5,17 +5,18 @@ import (
 	"fmt"
 	"log/slog"
 
-	"github.com/google/uuid"
-	"github.com/goravel/framework/facades"
-
 	"github.com/macrowallets/waas/app/models"
+	"github.com/macrowallets/waas/app/repositories"
 )
 
 // SeedPairedAccounts creates prod + test Acme accounts and cross-links them.
-func SeedPairedAccounts(_ context.Context) error {
-	var prodExisting models.Account
-	prodExists := facades.Orm().Query().Where("id", acmeAccountID).First(&prodExisting) == nil && prodExisting.ID != uuid.Nil
+func SeedPairedAccounts(ctx context.Context) error {
+	repo := repositories.NewAccountRepository(nil)
 
+	prodExists, err := repo.Exists(ctx, acmeAccountID)
+	if err != nil {
+		return fmt.Errorf("find prod account: %w", err)
+	}
 	if !prodExists {
 		prod := models.Account{
 			ID:              acmeAccountID,
@@ -25,7 +26,7 @@ func SeedPairedAccounts(_ context.Context) error {
 			Environment:     models.EnvironmentProd,
 			LinkedAccountID: nil,
 		}
-		if err := facades.Orm().Query().Create(&prod); err != nil {
+		if err := repo.Create(ctx, &prod); err != nil {
 			return fmt.Errorf("create prod account: %w", err)
 		}
 		slog.Info("created prod account", "name", prod.Name)
@@ -33,9 +34,10 @@ func SeedPairedAccounts(_ context.Context) error {
 		slog.Info("prod account already exists, skipping create", "id", acmeAccountID)
 	}
 
-	var testExisting models.Account
-	testExists := facades.Orm().Query().Where("id", acmeTestAccountID).First(&testExisting) == nil && testExisting.ID != uuid.Nil
-
+	testExists, err := repo.Exists(ctx, acmeTestAccountID)
+	if err != nil {
+		return fmt.Errorf("find test account: %w", err)
+	}
 	if !testExists {
 		testLinked := acmeAccountID
 		test := models.Account{
@@ -46,7 +48,7 @@ func SeedPairedAccounts(_ context.Context) error {
 			Environment:     models.EnvironmentTest,
 			LinkedAccountID: &testLinked,
 		}
-		if err := facades.Orm().Query().Create(&test); err != nil {
+		if err := repo.Create(ctx, &test); err != nil {
 			return fmt.Errorf("create test account: %w", err)
 		}
 		slog.Info("created test account", "name", test.Name)
@@ -54,16 +56,16 @@ func SeedPairedAccounts(_ context.Context) error {
 		slog.Info("test account already exists, skipping create", "id", acmeTestAccountID)
 	}
 
-	if _, err := facades.Orm().Query().Model(&models.Account{}).Where("id = ?", acmeAccountID).Update(map[string]any{
-		"environment":       models.EnvironmentProd,
-		"linked_account_id": acmeTestAccountID,
-	}); err != nil {
+	if err := repo.SetEnvironment(ctx, acmeAccountID, models.EnvironmentProd); err != nil {
 		return fmt.Errorf("link prod account: %w", err)
 	}
-	if _, err := facades.Orm().Query().Model(&models.Account{}).Where("id = ?", acmeTestAccountID).Update(map[string]any{
-		"environment":       models.EnvironmentTest,
-		"linked_account_id": acmeAccountID,
-	}); err != nil {
+	if err := repo.SetLinkedAccountID(ctx, acmeAccountID, acmeTestAccountID); err != nil {
+		return fmt.Errorf("link prod account: %w", err)
+	}
+	if err := repo.SetEnvironment(ctx, acmeTestAccountID, models.EnvironmentTest); err != nil {
+		return fmt.Errorf("link test account: %w", err)
+	}
+	if err := repo.SetLinkedAccountID(ctx, acmeTestAccountID, acmeAccountID); err != nil {
 		return fmt.Errorf("link test account: %w", err)
 	}
 

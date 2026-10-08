@@ -1,0 +1,8 @@
+{
+ "jsonrpc": "2.0",
+ "error": {
+  "code": -32007,
+  "message": "Slot 506348904 was skipped, or missing due to ledger jump to recent snapshot"
+ },
+ "id": 1
+}

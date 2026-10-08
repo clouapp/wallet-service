@@ -6,7 +6,7 @@ import (
 )
 
 func (s *Service) RunReconciliation(ctx context.Context) error {
-	subs, err := s.subscriptionRepo.FindAllActive()
+	subs, err := s.subscriptionRepo.FindAllActive(ctx)
 	if err != nil {
 		return err
 	}

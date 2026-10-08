@@ -1,0 +1,165 @@
+package coingecko
+
+import (
+	"context"
+	"errors"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"testing"
+
+	"github.com/shopspring/decimal"
+
+	"github.com/macrowallets/waas/app/services/chain"
+	"github.com/macrowallets/waas/app/services/price"
+	"github.com/macrowallets/waas/pkg/httpclient"
+)
+
+func TestNew_Coin_GeckoProviderSelectsTheHost(t *testing.T) {
+	free := NewCoinGeckoProvider("")
+	if free.baseURL != publicBaseURL || free.apiKey != "" || free.client == nil {
+		t.Fatal("an empty key did not select the public CoinGecko host")
+	}
+	pro := NewCoinGeckoProvider("present")
+	if pro.baseURL != proBaseURL || pro.apiKey == "" || pro.client == nil {
+		t.Fatal("a key did not select the pro CoinGecko host")
+	}
+	if free.Name() != "coingecko" || pro.Name() != "coingecko" {
+		t.Fatal("CoinGecko provider name changed")
+	}
+}
+
+func TestFetch_Crypto_PricesSkipsUnknownCodesWithoutHTTP(t *testing.T) {
+	called := false
+	server := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		called = true
+	}))
+	t.Cleanup(server.Close)
+
+	provider := NewCoinGeckoProvider("")
+	provider.baseURL = server.URL
+	provider.client = httpclient.Wrap(server.Client())
+
+	prices, err := provider.FetchCryptoPrices(context.Background(), []string{"NOTACOIN"})
+	if err != nil {
+		t.Fatal("unknown codes failed the quote")
+	}
+	if len(prices) != 0 || called {
+		t.Fatal("unknown codes called CoinGecko or returned a price")
+	}
+}
+
+func TestFetch_Crypto_PricesReadsTheUSDQuote(t *testing.T) {
+	const proKey = "cg-pro-not-logged"
+	var sawKey bool
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/simple/price" {
+			t.Errorf("path = %s", r.URL.Path)
+		}
+		if r.URL.Query().Get("ids") != "bitcoin" || r.URL.Query().Get("vs_currencies") != "usd" {
+			t.Errorf("query = %s", r.URL.RawQuery)
+		}
+		if r.Header.Get("Accept") != "application/json" {
+			t.Error("Accept header was not application/json")
+		}
+		sawKey = r.Header.Get("x-cg-pro-api-key") == proKey
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"bitcoin":{"usd":50000.5},"unknown-coin":{"usd":9},"matic-network":{"usd":0}}`))
+	}))
+	t.Cleanup(server.Close)
+
+	provider := NewCoinGeckoProvider(proKey)
+	provider.baseURL = server.URL
+	provider.client = httpclient.Wrap(server.Client())
+
+	prices, err := provider.FetchCryptoPrices(context.Background(), []string{"btc"})
+	if err != nil {
+		t.Fatal("crypto quote failed")
+	}
+	if !sawKey {
+		t.Fatal("pro request did not send the configured key")
+	}
+	got, ok := prices["BTC"]
+	if !ok || !got.Equal(decimal.RequireFromString("50000.5")) {
+		t.Fatalf("BTC price = %s", got)
+	}
+	if _, ok := prices["MATIC"]; ok {
+		t.Fatal("a non-positive price was kept")
+	}
+	if len(prices) != 1 {
+		t.Fatalf("price count = %d", len(prices))
+	}
+}
+
+func TestFetch_Fiat_RatesInvertsTheUSDCQuote(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("x-cg-pro-api-key") != "" {
+			t.Error("public request sent a pro key")
+		}
+		if r.URL.Query().Get("ids") != "usd-coin" || r.URL.Query().Get("vs_currencies") != "eur,brl" {
+			t.Errorf("query = %s", r.URL.RawQuery)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"usd-coin":{"eur":5.1,"brl":0}}`))
+	}))
+	t.Cleanup(server.Close)
+
+	provider := NewCoinGeckoProvider("")
+	provider.baseURL = server.URL
+	provider.client = httpclient.Wrap(server.Client())
+
+	rates, err := provider.FetchFiatRates(context.Background(), []string{"EUR", "BRL"})
+	if err != nil {
+		t.Fatal("fiat quote failed")
+	}
+	want := price.InvertRate(decimal.RequireFromString("5.1"))
+	got, ok := rates["EUR"]
+	if !ok || !got.Equal(want) {
+		t.Fatalf("EUR rate = %s", got)
+	}
+	if _, ok := rates["BRL"]; ok || len(rates) != 1 {
+		t.Fatal("a non-positive fiat quote was kept")
+	}
+}
+
+func TestDo_Get_OmitsTheKeyFromAStatusError(t *testing.T) {
+	const proKey = "cg-pro-not-logged"
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusTooManyRequests)
+		_, _ = w.Write([]byte("slow down"))
+	}))
+	t.Cleanup(server.Close)
+
+	provider := NewCoinGeckoProvider(proKey)
+	provider.baseURL = server.URL
+	provider.client = httpclient.Wrap(server.Client())
+
+	_, err := provider.FetchCryptoPrices(context.Background(), []string{"ETH"})
+	if err == nil {
+		t.Fatal("a non-200 response was accepted")
+	}
+	if !errors.Is(err, chain.ErrRateLimited) || strings.Contains(err.Error(), proKey) || strings.Contains(err.Error(), "slow down") {
+		t.Fatal("status error was not the rate-limit sentinel, or it included the key or the provider body")
+	}
+}
+
+func TestFetch_Crypto_PricesStopsWhenTheContextIsCanceled(t *testing.T) {
+	called := false
+	server := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		called = true
+	}))
+	t.Cleanup(server.Close)
+
+	provider := NewCoinGeckoProvider("")
+	provider.baseURL = server.URL
+	provider.client = httpclient.Wrap(server.Client())
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, err := provider.FetchCryptoPrices(ctx, []string{"BTC"}); err == nil || called {
+		t.Fatal("a canceled context called CoinGecko or was accepted")
+	}
+	if _, err := provider.FetchCryptoPrices(nil, []string{"BTC"}); err == nil || called {
+		t.Fatal("a nil context called CoinGecko or was accepted")
+	}
+}

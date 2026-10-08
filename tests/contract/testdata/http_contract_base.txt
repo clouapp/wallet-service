@@ -1,0 +1,345 @@
+# HTTP contract recording of base commit 7f4c1f5f84f15f12b0ac328b0d5849c48440acbc.
+# Method, path, status and body for every request in the current scenario.
+# That commit's register answers 500, so the run inserted the user and the two
+# accounts register would have created, then issued these same requests.
+# Bodies are normalized (uuids, timestamps, tokens). Secret fields are placeholders.
+
+### 01 health: GET /health
+status: 200
+content-type: application/json; charset=utf-8
+{"status":"ok","version":"0.1.0","deposit_scanner":{"status":"ok","pending":{},"pending_total":0}}
+
+### 02 register without a body: POST /v1/auth/register
+status: 400
+content-type: application/json; charset=utf-8
+{"error":"invalid request body"}
+
+### 03 register with missing fields: POST /v1/auth/register
+status: 422
+content-type: application/json; charset=utf-8
+{"email":{"email":"Please provide a valid email address"},"organization_name":{"required":"Organization name is required"},"password":{"required":"Password is required"}}
+
+### 04 register: POST /v1/auth/register
+status: 500
+content-type: application/json; charset=utf-8
+{"error":"failed to create user"}
+
+### 05 register the same e-mail again: POST /v1/auth/register
+status: 500
+content-type: application/json; charset=utf-8
+{"error":"failed to create user"}
+
+### 06 login with a wrong password: POST /v1/auth/login
+status: 401
+content-type: application/json; charset=utf-8
+{"error":"invalid credentials"}
+
+### 07 login: POST /v1/auth/login
+status: 200
+content-type: application/json; charset=utf-8
+{"access_token":"<jwt>","account":{"environment":"prod","id":"<uuid:1>","linked_account_id":"<uuid:2>","name":"Contract Org","role":"owner","status":"active"},"account_id":"<uuid:1>","accounts":[{"environment":"prod","id":"<uuid:1>","linked_account_id":"<uuid:2>","name":"Contract Org","role":"owner","status":"active"},{"environment":"test","id":"<uuid:2>","linked_account_id":"<uuid:1>","name":"Contract Org [test]","role":"owner","status":"active"}],"refresh_token":"<refresh_token>","user":{"created_at":"<time>","updated_at":"<time>","id":"<uuid:3>","email":"contract@example.com","full_name":"Contract User","totp_enabled":false,"status":"active","default_account_id":"<uuid:1>","preferences":{}}}
+
+### 08 refresh with an unknown token: POST /v1/auth/refresh
+status: 401
+content-type: application/json; charset=utf-8
+{"error":"invalid or expired refresh token"}
+
+### 09 refresh: POST /v1/auth/refresh
+status: 200
+content-type: application/json; charset=utf-8
+{"access_token":"<jwt>","refresh_token":"<refresh_token>"}
+
+### 10 two-factor verify with a bad token: POST /v1/auth/2fa/verify
+status: 422
+content-type: application/json; charset=utf-8
+{"partial_token":{"required":"partial_token is required to not be empty"}}
+
+### 11 recover: POST /v1/auth/recover
+status: 200
+content-type: application/json; charset=utf-8
+{"message":"if that address is registered, you will receive a reset link"}
+
+### 12 recover confirm with an unknown token: POST /v1/auth/recover/confirm
+status: 422
+content-type: application/json; charset=utf-8
+{"new_password":{"required":"new_password is required to not be empty"}}
+
+### 13 me without a session: GET /v1/users/me
+status: 401
+content-type: 
+
+
+### 14 me with a malformed session: GET /v1/users/me
+status: 401
+content-type: 
+
+
+### 15 me: GET /v1/users/me
+status: 200
+content-type: application/json; charset=utf-8
+{"created_at":"<time>","updated_at":"<time>","id":"<uuid:3>","email":"contract@example.com","full_name":"Contract User","totp_enabled":false,"status":"active","default_account_id":"<uuid:1>","preferences":{}}
+
+### 16 update me: PATCH /v1/users/me
+status: 200
+content-type: application/json; charset=utf-8
+{"created_at":"<time>","updated_at":"<time>","id":"<uuid:3>","email":"contract@example.com","full_name":"Contract User","totp_enabled":false,"status":"active","default_account_id":"<uuid:1>","preferences":{}}
+
+### 17 my accounts: GET /v1/users/me/accounts
+status: 200
+content-type: application/json; charset=utf-8
+{"data":[{"created_at":"<time>","updated_at":"<time>","id":"<uuid:1>","name":"Contract Org","status":"active","view_all_wallets":false,"environment":"prod","linked_account_id":"<uuid:2>"},{"created_at":"<time>","updated_at":"<time>","id":"<uuid:2>","name":"Contract Org [test]","status":"active","view_all_wallets":false,"environment":"test","linked_account_id":"<uuid:1>"}],"limit":20,"offset":0,"total":2}
+
+### 18 change password with a wrong current one: POST /v1/users/me/password
+status: 401
+content-type: application/json; charset=utf-8
+{"error":"current password is incorrect"}
+
+### 19 preferences: GET /v1/me/preferences
+status: 200
+content-type: application/json; charset=utf-8
+{"display_in_fiat":true,"preferred_fiat_code":"USD"}
+
+### 20 update preferences: PUT /v1/me/preferences
+status: 200
+content-type: application/json; charset=utf-8
+{"display_in_fiat":false,"preferred_fiat_code":"BRL"}
+
+### 21 update preferences with an unknown fiat: PUT /v1/me/preferences
+status: 400
+content-type: application/json; charset=utf-8
+{"error":"invalid fiat currency code"}
+
+### 22 create account without a name: POST /v1/accounts
+status: 422
+content-type: application/json; charset=utf-8
+{"name":{"required":"name is required to not be empty"}}
+
+### 23 create account: POST /v1/accounts
+status: 201
+content-type: application/json; charset=utf-8
+{"created_at":"<time>","updated_at":"<time>","id":"<uuid:4>","name":"Contract Account","status":"active","view_all_wallets":false,"environment":"prod"}
+
+### 24 get account: GET /v1/accounts/{{account}}
+status: 200
+content-type: application/json; charset=utf-8
+{"created_at":"<time>","updated_at":"<time>","id":"<uuid:4>","name":"Contract Account","status":"active","view_all_wallets":false,"environment":"prod"}
+
+### 25 get an unknown account: GET /v1/accounts/00000000-0000-4000-8000-000000000000
+status: 404
+content-type: 
+
+
+### 26 update account: PATCH /v1/accounts/{{account}}
+status: 200
+content-type: application/json; charset=utf-8
+{"created_at":"<time>","updated_at":"<time>","id":"<uuid:4>","name":"Contract Account","status":"active","view_all_wallets":false,"environment":"prod"}
+
+### 27 account users: GET /v1/accounts/{{account}}/users
+status: 200
+content-type: application/json; charset=utf-8
+{"data":[{"created_at":"<time>","updated_at":"<time>","id":"<uuid:5>","account_id":"<uuid:4>","user_id":"<uuid:3>","role":"owner","status":"active"}],"limit":20,"offset":0,"total":1}
+
+### 28 add account user with an invalid role: POST /v1/accounts/{{account}}/users
+status: 422
+content-type: application/json; charset=utf-8
+{"role":{"in":"role value must be in the enum [owner admin viewer]"}}
+
+### 29 account tokens: GET /v1/accounts/{{account}}/tokens
+status: 200
+content-type: application/json; charset=utf-8
+{"data":[],"limit":20,"offset":0,"total":0}
+
+### 30 create account token: POST /v1/accounts/{{account}}/tokens
+status: 201
+content-type: application/json; charset=utf-8
+{"metadata":{"created_at":"<time>","updated_at":"<time>","id":"<uuid:6>","account_id":"<uuid:4>","created_by":"<uuid:3>","name":"contract token","spending_limit":"{}"},"token":"<jwt>"}
+
+### 31 chains without an account header: GET /v1/chains
+status: 400
+content-type: 
+
+
+### 32 chains: GET /v1/chains
+status: 200
+content-type: application/json; charset=utf-8
+{"data":[{"created_at":"<time>","updated_at":"<time>","id":"eth","name":"Ethereum","adapter_type":"evm","native_symbol":"eth","native_decimals":18,"network_id":1,"is_testnet":false,"required_confirmations":12,"icon_url":"https://s2.coinmarketcap.com/static/img/coins/64x64/1027.png","display_order":1,"status":"active"},{"created_at":"<time>","updated_at":"<time>","id":"btc","name":"Bitcoin","adapter_type":"bitcoin","native_symbol":"btc","native_decimals":8,"is_testnet":false,"required_confirmations":6,"icon_url":"https://s2.coinmarketcap.com/static/img/coins/64x64/1.png","display_order":3,"status":"active"},{"created_at":"<time>","updated_at":"<time>","id":"polygon","name":"Polygon","adapter_type":"evm","native_symbol":"pol","native_decimals":18,"network_id":137,"is_testnet":false,"required_confirmations":128,"icon_url":"https://s2.coinmarketcap.com/static/img/coins/64x64/3890.png","display_order":5,"status":"active"},{"created_at":"<time>","updated_at":"<time>","id":"sol","name":"Solana","adapter_type":"solana","native_symbol":"sol","native_decimals":9,"is_testnet":false,"required_confirmations":1,"icon_url":"https://s2.coinmarketcap.com/static/img/coins/64x64/5426.png","display_order":7,"status":"active"},{"created_at":"<time>","updated_at":"<time>","id":"base","name":"Base","adapter_type":"evm","native_symbol":"eth","native_decimals":18,"network_id":8453,"is_testnet":false,"required_confirmations":12,"icon_url":"https://icons.llamao.fi/icons/chains/rsz_base.jpg","display_order":9,"status":"active"},{"created_at":"<time>","updated_at":"<time>","id":"arbitrum","name":"Arbitrum One","adapter_type":"evm","native_symbol":"eth","native_decimals":18,"network_id":42161,"is_testnet":false,"required_confirmations":120,"icon_url":"https://s2.coinmarketcap.com/static/img/coins/64x64/11841.png","display_order":11,"status":"active"},{"created_at":"<time>","updated_at":"<time>","id":"bsc","name":"BNB Smart Chain","adapter_type":"evm","native_symbol":"bnb","native_decimals":18,"network_id":56,"is_testnet":false,"required_confirmations":30,"icon_url":"https://s2.coinmarketcap.com/static/img/coins/64x64/1839.png","display_order":13,"status":"active"}]}
+
+### 33 chain: GET /v1/chains/eth
+status: 200
+content-type: application/json; charset=utf-8
+{"chain":{"created_at":"<time>","updated_at":"<time>","id":"eth","name":"Ethereum","adapter_type":"evm","native_symbol":"eth","native_decimals":18,"network_id":1,"is_testnet":false,"required_confirmations":12,"icon_url":"https://s2.coinmarketcap.com/static/img/coins/64x64/1027.png","display_order":1,"status":"active"},"resources":[],"tokens":[{"created_at":"<time>","updated_at":"<time>","id":"<uuid:7>","chain_id":"eth","symbol":"USDT","name":"Tether USD","contract_address":"0xdAC17F958D2ee523a2206206994597C13D831ec7","decimals":6,"icon_url":"https://s2.coinmarketcap.com/static/img/coins/64x64/825.png","status":"active"},{"created_at":"<time>","updated_at":"<time>","id":"<uuid:8>","chain_id":"eth","symbol":"USDC","name":"USD Coin","contract_address":"0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48","decimals":6,"icon_url":"https://s2.coinmarketcap.com/static/img/coins/64x64/3408.png","status":"active"},{"created_at":"<time>","updated_at":"<time>","id":"<uuid:9>","chain_id":"eth","symbol":"WETH","name":"Wrapped Ether","contract_address":"0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2","decimals":18,"icon_url":"https://s2.coinmarketcap.com/static/img/coins/64x64/2396.png","status":"active"},{"created_at":"<time>","updated_at":"<time>","id":"<uuid:10>","chain_id":"eth","symbol":"WBTC","name":"Wrapped Bitcoin","contract_address":"0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599","decimals":8,"icon_url":"https://s2.coinmarketcap.com/static/img/coins/64x64/3717.png","status":"active"},{"created_at":"<time>","updated_at":"<time>","id":"<uuid:11>","chain_id":"eth","symbol":"DAI","name":"Dai Stablecoin","contract_address":"0x6B175474E89094C44Da98b954EedeAC495271d0F","decimals":18,"icon_url":"https://s2.coinmarketcap.com/static/img/coins/64x64/4943.png","status":"active"},{"created_at":"<time>","updated_at":"<time>","id":"<uuid:12>","chain_id":"eth","symbol":"LINK","name":"Chainlink","contract_address":"0x514910771AF9Ca656af840dff83E8264EcF986CA","decimals":18,"icon_url":"https://s2.coinmarketcap.com/static/img/coins/64x64/1975.png","status":"active"},{"created_at":"<time>","updated_at":"<time>","id":"<uuid:13>","chain_id":"eth","symbol":"UNI","name":"Uniswap","contract_address":"0x1f9840a85d5aF5bf1D1762F925BDADdC4201F984","decimals":18,"icon_url":"https://s2.coinmarketcap.com/static/img/coins/64x64/7083.png","status":"active"}]}
+
+### 34 unknown chain: GET /v1/chains/nochain
+status: 404
+content-type: application/json; charset=utf-8
+{"error":"chain not found"}
+
+### 35 chain tokens: GET /v1/chains/eth/tokens
+status: 200
+content-type: application/json; charset=utf-8
+{"data":[{"created_at":"<time>","updated_at":"<time>","id":"<uuid:7>","chain_id":"eth","symbol":"USDT","name":"Tether USD","contract_address":"0xdAC17F958D2ee523a2206206994597C13D831ec7","decimals":6,"icon_url":"https://s2.coinmarketcap.com/static/img/coins/64x64/825.png","status":"active"},{"created_at":"<time>","updated_at":"<time>","id":"<uuid:8>","chain_id":"eth","symbol":"USDC","name":"USD Coin","contract_address":"0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48","decimals":6,"icon_url":"https://s2.coinmarketcap.com/static/img/coins/64x64/3408.png","status":"active"},{"created_at":"<time>","updated_at":"<time>","id":"<uuid:9>","chain_id":"eth","symbol":"WETH","name":"Wrapped Ether","contract_address":"0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2","decimals":18,"icon_url":"https://s2.coinmarketcap.com/static/img/coins/64x64/2396.png","status":"active"},{"created_at":"<time>","updated_at":"<time>","id":"<uuid:10>","chain_id":"eth","symbol":"WBTC","name":"Wrapped Bitcoin","contract_address":"0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599","decimals":8,"icon_url":"https://s2.coinmarketcap.com/static/img/coins/64x64/3717.png","status":"active"},{"created_at":"<time>","updated_at":"<time>","id":"<uuid:11>","chain_id":"eth","symbol":"DAI","name":"Dai Stablecoin","contract_address":"0x6B175474E89094C44Da98b954EedeAC495271d0F","decimals":18,"icon_url":"https://s2.coinmarketcap.com/static/img/coins/64x64/4943.png","status":"active"},{"created_at":"<time>","updated_at":"<time>","id":"<uuid:12>","chain_id":"eth","symbol":"LINK","name":"Chainlink","contract_address":"0x514910771AF9Ca656af840dff83E8264EcF986CA","decimals":18,"icon_url":"https://s2.coinmarketcap.com/static/img/coins/64x64/1975.png","status":"active"},{"created_at":"<time>","updated_at":"<time>","id":"<uuid:13>","chain_id":"eth","symbol":"UNI","name":"Uniswap","contract_address":"0x1f9840a85d5aF5bf1D1762F925BDADdC4201F984","decimals":18,"icon_url":"https://s2.coinmarketcap.com/static/img/coins/64x64/7083.png","status":"active"}]}
+
+### 36 currencies: GET /v1/currencies
+status: 200
+content-type: application/json; charset=utf-8
+{"data":[{"created_at":"<time>","updated_at":"<time>","id":"<uuid:14>","name":"Cardano","code":"ADA","symbol":"₳","type":"crypto","logo":"https://s2.coinmarketcap.com/static/img/coins/64x64/2010.png","subunits":6,"current_price":1,"active":true},{"created_at":"<time>","updated_at":"<time>","id":"<uuid:15>","name":"Avalanche","code":"AVAX","symbol":"AVAX","type":"crypto","logo":"https://s2.coinmarketcap.com/static/img/coins/64x64/5805.png","subunits":18,"current_price":1,"active":true},{"created_at":"<time>","updated_at":"<time>","id":"<uuid:16>","name":"Bitcoin Cash","code":"BCH","symbol":"BCH","type":"crypto","logo":"https://s2.coinmarketcap.com/static/img/coins/64x64/1831.png","subunits":8,"current_price":1,"active":true},{"created_at":"<time>","updated_at":"<time>","id":"<uuid:17>","name":"BNB","code":"BNB","symbol":"BNB","type":"crypto","logo":"https://s2.coinmarketcap.com/static/img/coins/64x64/1839.png","subunits":18,"current_price":1,"active":true},{"created_at":"<time>","updated_at":"<time>","id":"<uuid:18>","name":"Bitcoin","code":"BTC","symbol":"₿","type":"crypto","logo":"https://s2.coinmarketcap.com/static/img/coins/64x64/1.png","subunits":8,"current_price":1,"active":true},{"created_at":"<time>","updated_at":"<time>","id":"<uuid:19>","name":"Dai","code":"DAI","symbol":"DAI","type":"crypto","logo":"https://s2.coinmarketcap.com/static/img/coins/64x64/4943.png","subunits":18,"current_price":1,"active":true},{"created_at":"<time>","updated_at":"<time>","id":"<uuid:20>","name":"Dogecoin","code":"DOGE","symbol":"Ð","type":"crypto","logo":"https://s2.coinmarketcap.com/static/img/coins/64x64/74.png","subunits":8,"current_price":1,"active":true},{"created_at":"<time>","updated_at":"<time>","id":"<uuid:21>","name":"Polkadot","code":"DOT","symbol":"DOT","type":"crypto","logo":"https://s2.coinmarketcap.com/static/img/coins/64x64/6636.png","subunits":10,"current_price":1,"active":true},{"created_at":"<time>","updated_at":"<time>","id":"<uuid:22>","name":"Ethereum","code":"ETH","symbol":"Ξ","type":"crypto","logo":"https://s2.coinmarketcap.com/static/img/coins/64x64/1027.png","subunits":18,"current_price":1,"active":true},{"created_at":"<time>","updated_at":"<time>","id":"<uuid:23>","name":"Chainlink","code":"LINK","symbol":"LINK","type":"crypto","logo":"https://s2.coinmarketcap.com/static/img/coins/64x64/1975.png","subunits":18,"current_price":1,"active":true},{"created_at":"<time>","updated_at":"<time>","id":"<uuid:24>","name":"Litecoin","code":"LTC","symbol":"Ł","type":"crypto","logo":"https://s2.coinmarketcap.com/static/img/coins/64x64/2.png","subunits":8,"current_price":1,"active":true},{"created_at":"<time>","updated_at":"<time>","id":"<uuid:25>","name":"Polygon","code":"POL","symbol":"POL","type":"crypto","logo":"https://s2.coinmarketcap.com/static/img/coins/64x64/3890.png","subunits":18,"current_price":1,"active":true},{"created_at":"<time>","updated_at":"<time>","id":"<uuid:26>","name":"Shiba Inu","code":"SHIB","symbol":"SHIB","type":"crypto","logo":"https://s2.coinmarketcap.com/static/img/coins/64x64/5994.png","subunits":18,"current_price":1,"active":true},{"created_at":"<time>","updated_at":"<time>","id":"<uuid:27>","name":"Solana","code":"SOL","symbol":"◎","type":"crypto","logo":"https://s2.coinmarketcap.com/static/img/coins/64x64/5426.png","subunits":9,"current_price":1,"active":true},{"created_at":"<time>","updated_at":"<time>","id":"<uuid:28>","name":"Toncoin","code":"TON","symbol":"TON","type":"crypto","logo":"https://s2.coinmarketcap.com/static/img/coins/64x64/11419.png","subunits":9,"current_price":1,"active":true},{"created_at":"<time>","updated_at":"<time>","id":"<uuid:29>","name":"TRON","code":"TRX","symbol":"TRX","type":"crypto","logo":"https://s2.coinmarketcap.com/static/img/coins/64x64/1958.png","subunits":6,"current_price":1,"active":true},{"created_at":"<time>","updated_at":"<time>","id":"<uuid:30>","name":"USD Coin","code":"USDC","symbol":"USDC","type":"crypto","logo":"https://s2.coinmarketcap.com/static/img/coins/64x64/3408.png","subunits":6,"current_price":1,"active":true},{"created_at":"<time>","updated_at":"<time>","id":"<uuid:31>","name":"Tether","code":"USDT","symbol":"₮","type":"crypto","logo":"https://s2.coinmarketcap.com/static/img/coins/64x64/825.png","subunits":6,"current_price":1,"active":true},{"created_at":"<time>","updated_at":"<time>","id":"<uuid:32>","name":"XRP","code":"XRP","symbol":"✕","type":"crypto","logo":"https://s2.coinmarketcap.com/static/img/coins/64x64/52.png","subunits":6,"current_price":1,"active":true},{"created_at":"<time>","updated_at":"<time>","id":"<uuid:33>","name":"Argentine Peso","code":"ARS","symbol":"$","type":"fiat","subunits":2,"current_price":1,"active":true},{"created_at":"<time>","updated_at":"<time>","id":"<uuid:34>","name":"Australian Dollar","code":"AUD","symbol":"$","type":"fiat","subunits":2,"current_price":1,"active":true},{"created_at":"<time>","updated_at":"<time>","id":"<uuid:35>","name":"Brazilian Real","code":"BRL","symbol":"R$","type":"fiat","subunits":2,"current_price":1,"active":true},{"created_at":"<time>","updated_at":"<time>","id":"<uuid:36>","name":"Canadian Dollar","code":"CAD","symbol":"$","type":"fiat","subunits":2,"current_price":1,"active":true},{"created_at":"<time>","updated_at":"<time>","id":"<uuid:37>","name":"Swiss Franc","code":"CHF","symbol":"CHF","type":"fiat","subunits":2,"current_price":1,"active":true},{"created_at":"<time>","updated_at":"<time>","id":"<uuid:38>","name":"Chinese Yuan","code":"CNY","symbol":"¥","type":"fiat","subunits":2,"current_price":1,"active":true},{"created_at":"<time>","updated_at":"<time>","id":"<uuid:39>","name":"Danish Krone","code":"DKK","symbol":"kr","type":"fiat","subunits":2,"current_price":1,"active":true},{"created_at":"<time>","updated_at":"<time>","id":"<uuid:40>","name":"Euro","code":"EUR","symbol":"€","type":"fiat","subunits":2,"current_price":1,"active":true},{"created_at":"<time>","updated_at":"<time>","id":"<uuid:41>","name":"British Pound","code":"GBP","symbol":"£","type":"fiat","subunits":2,"current_price":1,"active":true},{"created_at":"<time>","updated_at":"<time>","id":"<uuid:42>","name":"Indonesian Rupiah","code":"IDR","symbol":"Rp","type":"fiat","subunits":2,"current_price":1,"active":true},{"created_at":"<time>","updated_at":"<time>","id":"<uuid:43>","name":"Indian Rupee","code":"INR","symbol":"₹","type":"fiat","subunits":2,"current_price":1,"active":true},{"created_at":"<time>","updated_at":"<time>","id":"<uuid:44>","name":"Japanese Yen","code":"JPY","symbol":"¥","type":"fiat","subunits":2,"current_price":1,"active":true},{"created_at":"<time>","updated_at":"<time>","id":"<uuid:45>","name":"South Korean Won","code":"KRW","symbol":"₩","type":"fiat","subunits":2,"current_price":1,"active":true},{"created_at":"<time>","updated_at":"<time>","id":"<uuid:46>","name":"Mexican Peso","code":"MXN","symbol":"$","type":"fiat","subunits":2,"current_price":1,"active":true},{"created_at":"<time>","updated_at":"<time>","id":"<uuid:47>","name":"Nigerian Naira","code":"NGN","symbol":"₦","type":"fiat","subunits":2,"current_price":1,"active":true},{"created_at":"<time>","updated_at":"<time>","id":"<uuid:48>","name":"New Zealand Dollar","code":"NZD","symbol":"$","type":"fiat","subunits":2,"current_price":1,"active":true},{"created_at":"<time>","updated_at":"<time>","id":"<uuid:49>","name":"Peruvian Sol","code":"PEN","symbol":"S/.","type":"fiat","subunits":2,"current_price":1,"active":true},{"created_at":"<time>","updated_at":"<time>","id":"<uuid:50>","name":"Philippine Peso","code":"PHP","symbol":"₱","type":"fiat","subunits":2,"current_price":1,"active":true},{"created_at":"<time>","updated_at":"<time>","id":"<uuid:51>","name":"Polish Zloty","code":"PLN","symbol":"zł","type":"fiat","subunits":2,"current_price":1,"active":true},{"created_at":"<time>","updated_at":"<time>","id":"<uuid:52>","name":"Russian Ruble","code":"RUB","symbol":"₽","type":"fiat","subunits":2,"current_price":1,"active":true},{"created_at":"<time>","updated_at":"<time>","id":"<uuid:53>","name":"Turkish Lira","code":"TRY","symbol":"₺","type":"fiat","subunits":2,"current_price":1,"active":true},{"created_at":"<time>","updated_at":"<time>","id":"<uuid:54>","name":"US Dollar","code":"USD","symbol":"$","type":"fiat","subunits":2,"current_price":1,"active":true},{"created_at":"<time>","updated_at":"<time>","id":"<uuid:55>","name":"Vietnamese Dong","code":"VND","symbol":"₫","type":"fiat","subunits":2,"current_price":1,"active":true}]}
+
+### 37 currency: GET /v1/currencies/USD
+status: 200
+content-type: application/json; charset=utf-8
+{"created_at":"<time>","updated_at":"<time>","id":"<uuid:54>","name":"US Dollar","code":"USD","symbol":"$","type":"fiat","subunits":2,"current_price":1,"active":true}
+
+### 38 unknown currency: GET /v1/currencies/zzz
+status: 404
+content-type: application/json; charset=utf-8
+{"error":"currency not found"}
+
+### 39 wallets: GET /v1/wallets
+status: 200
+content-type: application/json; charset=utf-8
+{"data":[],"limit":20,"offset":0,"total":0}
+
+### 40 create wallet with an invalid body: POST /v1/wallets
+status: 422
+content-type: application/json; charset=utf-8
+{"chain":{"required":"Blockchain chain is required"},"confirm_passphrase":{"required":"Passphrase confirmation is required"},"label":{"required":"Wallet label is required"},"passphrase":{"required":"Passphrase is required"}}
+
+### 41 unknown wallet: GET /v1/wallets/00000000-0000-4000-8000-000000000000
+status: 404
+content-type: application/json; charset=utf-8
+{"error":"wallet not found"}
+
+### 42 wallet: GET /v1/wallets/{{wallet}}
+status: 200
+content-type: application/json; charset=utf-8
+{"id":"<uuid:56>","chain":"eth","label":"eth test wallet","address_index":0,"deposit_address_id":"<uuid:57>","account_id":"<uuid:4>","status":"active","required_approvals":1,"read_model_status":"idle","gas_status":"unseeded","sweep_policy_version":1,"deposit_address":{"created_at":"<time>","updated_at":"<time>","id":"<uuid:57>","wallet_id":"<uuid:56>","chain":"eth","address":"0x1111111111111111111111111111111111111111","derivation_index":0,"external_user_id":"system","metadata":"","is_active":true,"label":"Deposit Address","derivation_type":"genesis"},"created_at":"<time>","updated_at":"<time>","network":"ethereum-mainnet","testnet":false}
+
+### 43 wallet addresses: GET /v1/wallets/{{wallet}}/addresses
+status: 200
+content-type: application/json; charset=utf-8
+{"data":[{"created_at":"<time>","updated_at":"<time>","id":"<uuid:57>","wallet_id":"<uuid:56>","chain":"eth","address":"0x1111111111111111111111111111111111111111","derivation_index":0,"external_user_id":"system","metadata":"","is_active":true,"label":"Deposit Address","derivation_type":"genesis"}],"limit":20,"offset":0,"total":1}
+
+### 44 wallet users: GET /v1/wallets/{{wallet}}/users
+status: 200
+content-type: application/json; charset=utf-8
+{"data":[]}
+
+### 45 wallet whitelist: GET /v1/wallets/{{wallet}}/whitelist
+status: 200
+content-type: application/json; charset=utf-8
+{"data":[],"limit":20,"offset":0,"total":0}
+
+### 46 wallet webhooks: GET /v1/wallets/{{wallet}}/webhooks
+status: 200
+content-type: application/json; charset=utf-8
+{"data":[]}
+
+### 47 wallet settings: GET /v1/wallets/{{wallet}}/settings
+status: 200
+content-type: application/json; charset=utf-8
+{"label":"eth test wallet","fee_rate_min":null,"fee_rate_max":null,"fee_multiplier":null,"required_approvals":1,"frozen_until":null,"status":"active"}
+
+### 48 wallet transactions: GET /v1/wallets/{{wallet}}/transactions
+status: 200
+content-type: application/json; charset=utf-8
+{"data":[],"limit":50,"offset":0,"total":0}
+
+### 49 wallet withdrawals: GET /v1/wallets/{{wallet}}/withdrawals
+status: 200
+content-type: application/json; charset=utf-8
+{"data":[],"limit":50,"offset":0,"total":0}
+
+### 50 unknown wallet withdrawal: GET /v1/wallets/{{wallet}}/withdrawals/00000000-0000-4000-8000-000000000000
+status: 404
+content-type: application/json; charset=utf-8
+{"error":"withdrawal not found"}
+
+### 51 wallet unspents on an account chain: GET /v1/wallets/{{wallet}}/unspents
+status: 422
+content-type: 
+
+
+### 52 external without a token: GET /api/v1/wallets
+status: 401
+content-type: application/json; charset=utf-8
+{"error":"missing bearer token"}
+
+### 53 external with a malformed token: GET /api/v1/wallets
+status: 401
+content-type: application/json; charset=utf-8
+{"error":"invalid or expired api token"}
+
+### 54 external chains: GET /api/v1/chains
+status: 200
+content-type: application/json; charset=utf-8
+{"data":[{"created_at":"<time>","updated_at":"<time>","id":"eth","name":"Ethereum","adapter_type":"evm","native_symbol":"eth","native_decimals":18,"network_id":1,"is_testnet":false,"required_confirmations":12,"icon_url":"https://s2.coinmarketcap.com/static/img/coins/64x64/1027.png","display_order":1,"status":"active"},{"created_at":"<time>","updated_at":"<time>","id":"teth","name":"Sepolia","adapter_type":"evm","native_symbol":"eth","native_decimals":18,"network_id":11155111,"is_testnet":true,"mainnet_chain_id":"eth","required_confirmations":12,"icon_url":"https://s2.coinmarketcap.com/static/img/coins/64x64/1027.png","display_order":2,"status":"active"},{"created_at":"<time>","updated_at":"<time>","id":"btc","name":"Bitcoin","adapter_type":"bitcoin","native_symbol":"btc","native_decimals":8,"is_testnet":false,"required_confirmations":6,"icon_url":"https://s2.coinmarketcap.com/static/img/coins/64x64/1.png","display_order":3,"status":"active"},{"created_at":"<time>","updated_at":"<time>","id":"tbtc","name":"Bitcoin Testnet","adapter_type":"bitcoin","native_symbol":"btc","native_decimals":8,"is_testnet":true,"mainnet_chain_id":"btc","required_confirmations":6,"icon_url":"https://s2.coinmarketcap.com/static/img/coins/64x64/1.png","display_order":4,"status":"active"},{"created_at":"<time>","updated_at":"<time>","id":"polygon","name":"Polygon","adapter_type":"evm","native_symbol":"pol","native_decimals":18,"network_id":137,"is_testnet":false,"required_confirmations":128,"icon_url":"https://s2.coinmarketcap.com/static/img/coins/64x64/3890.png","display_order":5,"status":"active"},{"created_at":"<time>","updated_at":"<time>","id":"tpolygon","name":"Polygon Amoy","adapter_type":"evm","native_symbol":"pol","native_decimals":18,"network_id":80002,"is_testnet":true,"mainnet_chain_id":"polygon","required_confirmations":128,"icon_url":"https://s2.coinmarketcap.com/static/img/coins/64x64/3890.png","display_order":6,"status":"active"},{"created_at":"<time>","updated_at":"<time>","id":"sol","name":"Solana","adapter_type":"solana","native_symbol":"sol","native_decimals":9,"is_testnet":false,"required_confirmations":1,"icon_url":"https://s2.coinmarketcap.com/static/img/coins/64x64/5426.png","display_order":7,"status":"active"},{"created_at":"<time>","updated_at":"<time>","id":"tsol","name":"Solana Devnet","adapter_type":"solana","native_symbol":"sol","native_decimals":9,"is_testnet":true,"mainnet_chain_id":"sol","required_confirmations":1,"icon_url":"https://s2.coinmarketcap.com/static/img/coins/64x64/5426.png","display_order":8,"status":"active"},{"created_at":"<time>","updated_at":"<time>","id":"base","name":"Base","adapter_type":"evm","native_symbol":"eth","native_decimals":18,"network_id":8453,"is_testnet":false,"required_confirmations":12,"icon_url":"https://icons.llamao.fi/icons/chains/rsz_base.jpg","display_order":9,"status":"active"},{"created_at":"<time>","updated_at":"<time>","id":"tbase","name":"Base Sepolia","adapter_type":"evm","native_symbol":"eth","native_decimals":18,"network_id":84532,"is_testnet":true,"mainnet_chain_id":"base","required_confirmations":12,"icon_url":"https://icons.llamao.fi/icons/chains/rsz_base.jpg","display_order":10,"status":"active"},{"created_at":"<time>","updated_at":"<time>","id":"arbitrum","name":"Arbitrum One","adapter_type":"evm","native_symbol":"eth","native_decimals":18,"network_id":42161,"is_testnet":false,"required_confirmations":120,"icon_url":"https://s2.coinmarketcap.com/static/img/coins/64x64/11841.png","display_order":11,"status":"active"},{"created_at":"<time>","updated_at":"<time>","id":"tarbitrum","name":"Arbitrum Sepolia","adapter_type":"evm","native_symbol":"eth","native_decimals":18,"network_id":421614,"is_testnet":true,"mainnet_chain_id":"arbitrum","required_confirmations":120,"icon_url":"https://s2.coinmarketcap.com/static/img/coins/64x64/11841.png","display_order":12,"status":"active"},{"created_at":"<time>","updated_at":"<time>","id":"bsc","name":"BNB Smart Chain","adapter_type":"evm","native_symbol":"bnb","native_decimals":18,"network_id":56,"is_testnet":false,"required_confirmations":30,"icon_url":"https://s2.coinmarketcap.com/static/img/coins/64x64/1839.png","display_order":13,"status":"active"},{"created_at":"<time>","updated_at":"<time>","id":"tbsc","name":"BNB Smart Chain Testnet","adapter_type":"evm","native_symbol":"bnb","native_decimals":18,"network_id":97,"is_testnet":true,"mainnet_chain_id":"bsc","required_confirmations":30,"icon_url":"https://s2.coinmarketcap.com/static/img/coins/64x64/1839.png","display_order":14,"status":"active"}]}
+
+### 55 external wallets: GET /api/v1/wallets
+status: 200
+content-type: application/json; charset=utf-8
+{"data":[{"created_at":"<time>","updated_at":"<time>","id":"<uuid:56>","chain":"eth","label":"eth test wallet","address_index":0,"deposit_address_id":"<uuid:57>","account_id":"<uuid:4>","status":"active","required_approvals":1,"read_model_status":"idle","gas_status":"unseeded","sweep_policy_version":1,"deposit_address":{"created_at":"<time>","updated_at":"<time>","id":"<uuid:57>","wallet_id":"<uuid:56>","chain":"eth","address":"0x1111111111111111111111111111111111111111","derivation_index":0,"external_user_id":"system","metadata":"","is_active":true,"label":"Deposit Address","derivation_type":"genesis"},"network":"ethereum-mainnet","testnet":false,"assets":[]}],"limit":20,"offset":0,"total":1}
+
+### 56 external wallet: GET /api/v1/wallets/{{wallet}}
+status: 200
+content-type: application/json; charset=utf-8
+{"id":"<uuid:56>","chain":"eth","label":"eth test wallet","address_index":0,"deposit_address_id":"<uuid:57>","account_id":"<uuid:4>","status":"active","required_approvals":1,"read_model_status":"idle","gas_status":"unseeded","sweep_policy_version":1,"deposit_address":{"created_at":"<time>","updated_at":"<time>","id":"<uuid:57>","wallet_id":"<uuid:56>","chain":"eth","address":"0x1111111111111111111111111111111111111111","derivation_index":0,"external_user_id":"system","metadata":"","is_active":true,"label":"Deposit Address","derivation_type":"genesis"},"created_at":"<time>","updated_at":"<time>","network":"ethereum-mainnet","testnet":false}
+
+### 57 external wallet of another account: GET /api/v1/wallets/00000000-0000-4000-8000-000000000000
+status: 404
+content-type: application/json; charset=utf-8
+{"error":"wallet not found"}
+
+### 58 external wallet addresses: GET /api/v1/wallets/{{wallet}}/addresses
+status: 200
+content-type: application/json; charset=utf-8
+{"data":[{"created_at":"<time>","updated_at":"<time>","id":"<uuid:57>","wallet_id":"<uuid:56>","chain":"eth","address":"0x1111111111111111111111111111111111111111","derivation_index":0,"external_user_id":"system","metadata":"","is_active":true,"label":"Deposit Address","derivation_type":"genesis"}],"limit":20,"offset":0,"total":1}
+
+### 59 external unknown withdrawal: GET /api/v1/wallets/{{wallet}}/withdrawals/unknown-key
+status: 400
+content-type: application/json; charset=utf-8
+{"error":"idempotency_key must be a UUID"}
+
+### 60 external transactions: GET /api/v1/transactions
+status: 200
+content-type: application/json; charset=utf-8
+{"data":[],"limit":50,"offset":0,"total":0}
+
+### 61 external unknown transaction: GET /api/v1/transactions/00000000-0000-4000-8000-000000000000
+status: 404
+content-type: application/json; charset=utf-8
+{"error":"transaction not found"}
+
+### 62 external unknown address: GET /api/v1/addresses/0x0000000000000000000000000000000000000000
+status: 404
+content-type: application/json; charset=utf-8
+{"error":"address not found"}
+
+### 63 external webhooks: GET /api/v1/webhooks
+status: 200
+content-type: application/json; charset=utf-8
+{"data":[]}
+
+### 64 external create webhook with an invalid body: POST /api/v1/webhooks
+status: 422
+content-type: application/json; charset=utf-8
+{"events":{"required":"events is required to not be empty"},"secret":{"required":"secret is required to not be empty"},"url":{"required":"url is required to not be empty"}}
+
+### 65 ingest without a signature: POST /v1/webhooks/ingest/alchemy/eth
+status: 404
+content-type: application/json; charset=utf-8
+{"error":"webhook subscription not found"}
+
+### 66 revoke account token: DELETE /v1/accounts/{{account}}/tokens/{{apiTokenID}}
+status: 204
+content-type: 
+
+
+### 67 external with a revoked token: GET /api/v1/wallets
+status: 401
+content-type: application/json; charset=utf-8
+{"error":"token not found or revoked"}
+
+### 68 logout: POST /v1/auth/logout
+status: 204
+content-type: 
+

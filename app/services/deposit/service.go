@@ -2,19 +2,32 @@ package deposit
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
+	"time"
 
 	"github.com/google/uuid"
-	"github.com/redis/go-redis/v9"
 
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/repositories"
 	"github.com/macrowallets/waas/app/services/blockheight"
 	"github.com/macrowallets/waas/app/services/chain"
+	"github.com/macrowallets/waas/app/services/deposit/pending"
 	"github.com/macrowallets/waas/app/services/webhook"
 	"github.com/macrowallets/waas/pkg/types"
 )
+
+// RedisStore runs the scanner's checkpoint and watched-address commands.
+// The service keeps the keys. A nil RedisStore means Redis is not configured.
+type RedisStore interface {
+	Uint64(ctx context.Context, key string) (uint64, error)
+	Set(ctx context.Context, key string, value uint64, expiration time.Duration) error
+	SIsMember(ctx context.Context, key, member string) (bool, error)
+	SCard(ctx context.Context, key string) (int64, error)
+	SMIsMember(ctx context.Context, key string, members ...any) ([]bool, error)
+	ReplaceSet(ctx context.Context, key string, members ...any) error
+}
 
 // ---------------------------------------------------------------------------
 // Service — stateless deposit scanner designed for Lambda invocation.
@@ -23,30 +36,107 @@ import (
 // ---------------------------------------------------------------------------
 
 type Service struct {
-	rdb                  *redis.Client
+	store                RedisStore
 	registry             *chain.Registry
 	webhookSvc           *webhook.Service
-	addressRepo          repositories.AddressRepository
-	txRepo               repositories.TransactionRepository
+	addressRepo          *repositories.AddressRepository
+	txRepo               transactionStore
 	blockHeightProviders map[string]blockheight.Provider
 	heightFailures       map[string]int
+	withdrawals          WithdrawalConfirmations
+	deposits             DepositEvents
+	balances             WalletBalanceRefresher
+	scan                 ScanOptions
+	scanFallback         ScanOptions
+	scanSource           scanOptionSource
+	failure              FailurePolicy
+	pending              pending.Store
+	sleep                func(ctx context.Context, d time.Duration) error
+	now                  func() time.Time
 }
 
-func NewService(rdb *redis.Client, registry *chain.Registry, webhookSvc *webhook.Service, addressRepo repositories.AddressRepository, txRepo repositories.TransactionRepository, blockHeightProviders map[string]blockheight.Provider) *Service {
+// transactionStore is the deposit rows the scanner writes and the tracker updates.
+type transactionStore interface {
+	Create(ctx context.Context, tx *models.Transaction) error
+	CountByChainAndTxHash(ctx context.Context, chainID, txHash, txType string) (int64, error)
+	CountInternalTransfers(ctx context.Context, chainID, txHash string, walletID uuid.UUID) (int64, error)
+	FindPendingByChain(ctx context.Context, chainID string) ([]models.Transaction, error)
+	FindConfirmedOutboundWithoutFee(ctx context.Context, chainID string, limit int) ([]models.Transaction, error)
+	SetBlockNumber(ctx context.Context, id uuid.UUID, block uint64) error
+	SetFee(ctx context.Context, id uuid.UUID, fee string) error
+	RecordConfirmations(ctx context.Context, id uuid.UUID, confirmations int, status string, confirmedAt *time.Time) error
+}
+
+// DepositEvents publishes deposit webhooks scoped to the wallet's account with the
+// amount in base units and as a decimal.
+type DepositEvents interface {
+	Publish(ctx context.Context, eventType types.EventType, tx models.Transaction) error
+}
+
+// SetDepositEvents wires the deposit webhook publisher. Without it no deposit webhook
+// is sent: the raw transaction carries base units without decimals and reaches every
+// account, so there is no safe fallback.
+func (s *Service) SetDepositEvents(deposits DepositEvents) {
+	s.deposits = deposits
+}
+
+func (s *Service) publishDeposit(ctx context.Context, eventType types.EventType, tx models.Transaction) {
+	if s.deposits == nil {
+		slog.Error("deposit webhook not sent: no deposit events publisher configured", "event_type", eventType, "transaction_id", tx.ID)
+		return
+	}
+	if err := s.deposits.Publish(ctx, eventType, tx); err != nil {
+		slog.Error("deposit webhook not sent", "event_type", eventType, "transaction_id", tx.ID, "error", err)
+	}
+}
+
+// WithdrawalConfirmations publishes withdrawal.confirmed once a withdrawal transaction
+// reaches its required confirmations, and repairs confirmations whose event was lost.
+type WithdrawalConfirmations interface {
+	MarkConfirmed(ctx context.Context, tx *models.Transaction) error
+	Backfill(ctx context.Context, limit int) (int, error)
+}
+
+// SetWithdrawalConfirmations wires the withdrawal lifecycle publisher. Without it the
+// tracker falls back to the legacy raw-transaction withdrawal.confirmed event.
+func (s *Service) SetWithdrawalConfirmations(withdrawals WithdrawalConfirmations) {
+	s.withdrawals = withdrawals
+}
+
+// Deps is everything the deposit service needs. A nil field means that
+// dependency is absent.
+type Deps struct {
+	Store                RedisStore
+	Registry             *chain.Registry
+	Webhook              *webhook.Service
+	Addresses            *repositories.AddressRepository
+	Transactions         *repositories.TransactionRepository
+	BlockHeightProviders map[string]blockheight.Provider
+}
+
+// NewService wires the deposit service from Deps.
+func NewService(deps Deps) *Service {
 	return &Service{
-		rdb:                  rdb,
-		registry:             registry,
-		webhookSvc:           webhookSvc,
-		addressRepo:          addressRepo,
-		txRepo:               txRepo,
-		blockHeightProviders: blockHeightProviders,
+		store:                deps.Store,
+		registry:             deps.Registry,
+		webhookSvc:           deps.Webhook,
+		addressRepo:          deps.Addresses,
+		txRepo:               deps.Transactions,
+		blockHeightProviders: deps.BlockHeightProviders,
 		heightFailures:       make(map[string]int),
+		scan:                 DefaultScanOptions(),
+		scanFallback:         DefaultScanOptions(),
+		failure:              DefaultFailurePolicy(),
+		sleep:                sleepContext,
+		now:                  func() time.Time { return time.Now().UTC() },
 	}
 }
 
 // ScanLatestBlocks is the Lambda entry point. Scans new blocks for a chain.
 // Called by EventBridge on schedule (every 5-60s depending on chain).
 func (s *Service) ScanLatestBlocks(ctx context.Context, chainID string) error {
+	s.resolveScanOptions(ctx)
+
 	adapter, err := s.registry.Chain(chainID)
 	if err != nil {
 		return err
@@ -71,24 +161,23 @@ func (s *Service) ScanLatestBlocks(ctx context.Context, chainID string) error {
 		return nil
 	}
 
-	maxBlocks := uint64(50)
-	endBlock := lastBlock + maxBlocks
-	if endBlock > latestBlock {
-		endBlock = latestBlock
+	lag := latestBlock - lastBlock
+	endBlock := lastBlock + s.scanWindow(lag)
+	if lag > s.scan.BatchBlocks {
+		slog.Warn("deposit scanner behind the head, catching up", "chain", chainID, "checkpoint", lastBlock, "head", latestBlock, "lag", lag, "window", endBlock-lastBlock, "concurrency", s.scan.Concurrency)
 	}
 
 	slog.Info("scanning blocks", "chain", chainID, "from", lastBlock+1, "to", endBlock)
 
-	for blockNum := lastBlock + 1; blockNum <= endBlock; blockNum++ {
-		if err := s.processBlock(ctx, chainID, adapter, blockNum); err != nil {
-			slog.Error("process block failed", "chain", chainID, "block", blockNum, "error", err)
-			s.saveCheckpoint(ctx, chainID, blockNum-1)
-			return err
+	scannedTo, scanErr := s.scanRange(ctx, chainID, adapter, lastBlock+1, endBlock)
+	if scannedTo > lastBlock {
+		if err := s.saveCheckpoint(ctx, chainID, scannedTo); err != nil {
+			slog.Error("save checkpoint failed", "chain", chainID, "error", err)
 		}
 	}
-
-	if err := s.saveCheckpoint(ctx, chainID, endBlock); err != nil {
-		slog.Error("save checkpoint failed", "chain", chainID, "error", err)
+	if scanErr != nil {
+		slog.Error("process block failed", "chain", chainID, "checkpoint", scannedTo, "error", scanErr)
+		return scanErr
 	}
 
 	if err := s.updateConfirmations(ctx, chainID, adapter, latestBlock); err != nil {
@@ -99,44 +188,43 @@ func (s *Service) ScanLatestBlocks(ctx context.Context, chainID string) error {
 	return nil
 }
 
-func (s *Service) processBlock(ctx context.Context, chainID string, adapter types.Chain, blockNum uint64) error {
-	transfers, err := adapter.ScanBlock(ctx, blockNum)
+// processTransfer records a transfer to a watched address as a pending deposit and
+// reports whether it created one; a transaction already recorded is left as it is,
+// including one another process inserted at the same time (the unique deposit index
+// rejects the second insert).
+func (s *Service) processTransfer(ctx context.Context, chainID string, adapter types.Chain, transfer types.DetectedTransfer) (bool, error) {
+	watched, err := s.isWatchedAddress(ctx, chainID, transfer.To)
 	if err != nil {
-		return err
+		return false, classify(pending.ClassDatabase, err)
+	}
+	if !watched {
+		return false, nil
 	}
 
-	for _, transfer := range transfers {
-		if err := s.processTransfer(ctx, chainID, adapter, transfer); err != nil {
-			slog.Error("process transfer", "tx", transfer.TxHash, "error", err)
-		}
+	addr, err := s.addressRepo.FindByChainAndAddress(ctx, chainID, transfer.To)
+	if err != nil && !errors.Is(err, models.ErrRepositoryNotFound) {
+		return false, classify(pending.ClassDatabase, fmt.Errorf("lookup address: %w", err))
 	}
-	return nil
-}
-
-func (s *Service) processTransfer(ctx context.Context, chainID string, adapter types.Chain, transfer types.DetectedTransfer) error {
-	if s.rdb != nil {
-		isMine, err := s.rdb.SIsMember(ctx, "vault:addresses:"+chainID, transfer.To).Result()
-		if err != nil || !isMine {
-			return nil
-		}
-	} else {
-		count, err := s.addressRepo.CountByChainAndAddress(chainID, transfer.To)
-		if err != nil || count == 0 {
-			return nil
-		}
-	}
-
-	addr, err := s.addressRepo.FindByChainAndAddress(chainID, transfer.To)
 	if err != nil || addr == nil {
-		return fmt.Errorf("lookup address: %w", err)
+		slog.Warn("watched-address cache lists an address the database does not hold; skipping the transfer", "chain", chainID, "address", transfer.To, "tx", transfer.TxHash)
+		return false, nil
 	}
 
-	exists, err := s.txRepo.CountByChainAndTxHash(chainID, transfer.TxHash, "deposit")
+	exists, err := s.txRepo.CountByChainAndTxHash(ctx, chainID, transfer.TxHash, models.TxTypeDeposit)
 	if err != nil {
-		return err
+		return false, classify(pending.ClassDatabase, fmt.Errorf("check recorded deposit: %w", err))
 	}
 	if exists > 0 {
-		return nil
+		return false, nil
+	}
+
+	internal, err := s.txRepo.CountInternalTransfers(ctx, chainID, transfer.TxHash, addr.WalletID)
+	if err != nil {
+		return false, classify(pending.ClassDatabase, fmt.Errorf("check internal transfer: %w", err))
+	}
+	if internal > 0 {
+		slog.Info("transfer is a sweep or gas seed of the wallet, not a deposit", "chain", chainID, "tx", transfer.TxHash, "to", transfer.To)
+		return false, nil
 	}
 
 	asset := adapter.NativeAsset()
@@ -152,8 +240,9 @@ func (s *Service) processTransfer(ctx context.Context, chainID string, adapter t
 		WalletID:       addr.WalletID,
 		ExternalUserID: addr.ExternalUserID,
 		Chain:          chainID,
-		TxType:         "deposit",
+		TxType:         models.TxTypeDeposit,
 		TxHash:         transfer.TxHash,
+		LogIndex:       models.ScannerDepositLogIndex,
 		FromAddress:    transfer.From,
 		ToAddress:      transfer.To,
 		Amount:         transfer.Amount.String(),
@@ -164,16 +253,23 @@ func (s *Service) processTransfer(ctx context.Context, chainID string, adapter t
 		Status:         string(types.TxStatusPending),
 		BlockNumber:    int64(transfer.BlockNumber),
 		BlockHash:      transfer.BlockHash,
+		Direction:      models.TxDirectionInbound,
+		Source:         models.TxSourceChain,
+		RawPayload:     "{}",
 	}
 
-	if err := s.txRepo.Create(tx); err != nil {
-		return fmt.Errorf("insert tx: %w", err)
+	if err := s.txRepo.Create(ctx, tx); err != nil {
+		if repositories.IsUniqueViolation(err) {
+			slog.Info("deposit already recorded by another process", "chain", chainID, "tx", transfer.TxHash)
+			return false, nil
+		}
+		return false, classify(pending.ClassDatabase, fmt.Errorf("insert tx: %w", err))
 	}
 
-	s.webhookSvc.EnqueueEvent(ctx, tx.ID, types.EventDepositPending, tx)
+	s.publishDeposit(ctx, types.EventDepositPending, *tx)
 
 	slog.Info("deposit detected", "chain", chainID, "tx", transfer.TxHash, "user", addr.ExternalUserID, "asset", asset, "amount", transfer.Amount.String())
-	return nil
+	return true, nil
 }
 
 // ---------------------------------------------------------------------------
@@ -181,40 +277,128 @@ func (s *Service) processTransfer(ctx context.Context, chainID string, adapter t
 // ---------------------------------------------------------------------------
 
 func (s *Service) loadCheckpoint(ctx context.Context, chainID string) (uint64, error) {
-	if s.rdb == nil {
+	if s.store == nil {
 		return 0, fmt.Errorf("no redis")
 	}
-	return s.rdb.Get(ctx, "vault:checkpoint:"+chainID).Uint64()
+	return s.store.Uint64(ctx, "vault:checkpoint:"+chainID)
 }
 
 func (s *Service) saveCheckpoint(ctx context.Context, chainID string, blockNum uint64) error {
-	if s.rdb == nil {
+	if s.store == nil {
 		return nil
 	}
-	return s.rdb.Set(ctx, "vault:checkpoint:"+chainID, blockNum, 0).Err()
+	return s.store.Set(ctx, "vault:checkpoint:"+chainID, blockNum, 0)
+}
+
+// ---------------------------------------------------------------------------
+// Watched-address cache
+// ---------------------------------------------------------------------------
+
+func addressCacheKey(chainID string) string {
+	return "vault:addresses:" + chainID
+}
+
+// isWatchedAddress answers from the Redis set; when Redis is absent or fails it asks
+// the database, so an unavailable cache never drops a deposit silently.
+func (s *Service) isWatchedAddress(ctx context.Context, chainID, address string) (bool, error) {
+	if address == "" {
+		return false, nil
+	}
+	if s.store != nil {
+		isMember, err := s.store.SIsMember(ctx, addressCacheKey(chainID), address)
+		if err == nil {
+			return isMember, nil
+		}
+		slog.Warn("address cache unavailable, checking the database", "chain", chainID, "error", err)
+	}
+	count, err := s.addressRepo.CountByChainAndAddress(ctx, chainID, address)
+	if err != nil {
+		return false, fmt.Errorf("lookup watched address: %w", err)
+	}
+	return count > 0, nil
 }
 
 // RefreshAddressCache reloads monitored addresses into Redis.
 // Called after generating new addresses.
 func (s *Service) RefreshAddressCache(ctx context.Context, chainID string) error {
-	if s.rdb == nil {
+	if s.store == nil {
 		return nil
 	}
-	addresses, err := s.addressRepo.PluckActiveAddresses(chainID)
+	addresses, err := s.addressRepo.PluckActiveAddresses(ctx, chainID)
 	if err != nil {
 		return err
 	}
+	return s.replaceAddressCache(ctx, chainID, addresses)
+}
+
+// SyncAddressCache rebuilds the chain's watched-address set when it does not hold
+// exactly the active addresses in the database. Another process sharing Redis can
+// overwrite the set, and every missing member is a deposit the scanner would skip.
+// It reports whether the set was rebuilt.
+func (s *Service) SyncAddressCache(ctx context.Context, chainID string) (bool, error) {
+	if s.store == nil {
+		return false, nil
+	}
+	addresses, err := s.addressRepo.PluckActiveAddresses(ctx, chainID)
+	if err != nil {
+		return false, fmt.Errorf("load active %s addresses: %w", chainID, err)
+	}
+	inSync, cached, err := s.addressCacheMatches(ctx, chainID, addresses)
+	if err != nil {
+		return false, err
+	}
+	if inSync {
+		return false, nil
+	}
+	if err := s.replaceAddressCache(ctx, chainID, addresses); err != nil {
+		return false, err
+	}
+	slog.Warn("address cache was stale, rebuilt from the database", "chain", chainID, "cached", cached, "active", len(addresses))
+	return true, nil
+}
+
+func (s *Service) addressCacheMatches(ctx context.Context, chainID string, addresses []string) (bool, int64, error) {
+	key := addressCacheKey(chainID)
+	cached, err := s.store.SCard(ctx, key)
+	if err != nil {
+		return false, 0, fmt.Errorf("count cached %s addresses: %w", chainID, err)
+	}
+	if cached != int64(len(distinct(addresses))) {
+		return false, cached, nil
+	}
 	if len(addresses) == 0 {
-		return nil
+		return true, cached, nil
 	}
-	key := "vault:addresses:" + chainID
-	pipe := s.rdb.Pipeline()
-	pipe.Del(ctx, key)
+	present, err := s.store.SMIsMember(ctx, key, toMembers(addresses)...)
+	if err != nil {
+		return false, cached, fmt.Errorf("check cached %s addresses: %w", chainID, err)
+	}
+	for _, isMember := range present {
+		if !isMember {
+			return false, cached, nil
+		}
+	}
+	return true, cached, nil
+}
+
+// replaceAddressCache swaps the set in one MULTI/EXEC so a concurrent scan never sees
+// it empty; an empty address list clears a stale set instead of leaving it behind.
+func (s *Service) replaceAddressCache(ctx context.Context, chainID string, addresses []string) error {
+	return s.store.ReplaceSet(ctx, addressCacheKey(chainID), toMembers(addresses)...)
+}
+
+func toMembers(addresses []string) []interface{} {
 	members := make([]interface{}, len(addresses))
-	for i, a := range addresses {
-		members[i] = a
+	for i, address := range addresses {
+		members[i] = address
 	}
-	pipe.SAdd(ctx, key, members...)
-	_, err = pipe.Exec(ctx)
-	return err
+	return members
+}
+
+func distinct(values []string) map[string]struct{} {
+	set := make(map[string]struct{}, len(values))
+	for _, value := range values {
+		set[value] = struct{}{}
+	}
+	return set
 }

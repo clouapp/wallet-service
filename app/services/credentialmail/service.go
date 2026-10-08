@@ -1,0 +1,295 @@
+package credentialmail
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"log/slog"
+	"time"
+
+	"github.com/google/uuid"
+
+	"github.com/macrowallets/waas/app/models"
+	"github.com/macrowallets/waas/app/services/account"
+)
+
+const (
+	// PurposePasswordReset is the queue purpose for a reset link.
+	PurposePasswordReset = "password_reset"
+	// PurposeAccountInvite is the queue purpose for an invite link.
+	PurposeAccountInvite = "account_invite"
+	// PurposeWelcome names the post-register welcome. It is not a queue purpose.
+	// Register calls SendWelcome, which delivers with Mail().Send.
+	PurposeWelcome = "welcome"
+
+	passwordResetLifetime  = time.Hour
+	passwordResetURLPrefix = "https://vault.app/reset-password?token="
+)
+
+// UserLookup loads the user a reset mail is for.
+type UserLookup interface {
+	FindByID(ctx context.Context, id uuid.UUID) (*models.User, error)
+}
+
+// TokenIssuer mints a raw token and the hash that may be stored.
+type TokenIssuer interface {
+	GenerateRandomToken() (string, error)
+	HashToken(raw string) string
+}
+
+// ResetWriter stores a password-reset hash.
+type ResetWriter interface {
+	Create(ctx context.Context, token *models.PasswordResetToken) error
+}
+
+// InviteRefresher mints a new invite token and returns the message fields.
+type InviteRefresher interface {
+	RefreshInviteForMail(ctx context.Context, inviteID uuid.UUID, frontendBase string) (account.InviteMail, error)
+}
+
+// Sender delivers one already-built message with Mail().Send. It must not
+// enqueue the message.
+type Sender interface {
+	SendInvite(ctx context.Context, message account.InviteMail) error
+	SendReset(ctx context.Context, to, resetLink string) error
+	SendWelcome(ctx context.Context, to, fullName string) error
+}
+
+// DispatchFunc enqueues one credential mail. The arguments are the subject
+// id and the purpose, never the token or the link.
+type DispatchFunc func(subjectID uuid.UUID, purpose string) error
+
+// InviteDispatchFunc enqueues one invite mail and returns the link the job
+// minted. The link is for the caller that already shows it; it is not a
+// queue argument.
+type InviteDispatchFunc func(inviteID uuid.UUID) (string, error)
+
+// Deps is everything credential mail needs. Dispatch enqueues; the job calls
+// SendPasswordReset or SendAccountInvite, which mint the token.
+type Deps struct {
+	Users          UserLookup
+	Tokens         TokenIssuer
+	Resets         ResetWriter
+	Invites        InviteRefresher
+	Sender         Sender
+	Dispatch       DispatchFunc
+	DispatchInvite InviteDispatchFunc
+}
+
+// Service mints credential mail at send time.
+type Service struct {
+	users          UserLookup
+	tokens         TokenIssuer
+	resets         ResetWriter
+	invites        InviteRefresher
+	sender         Sender
+	dispatch       DispatchFunc
+	dispatchInvite InviteDispatchFunc
+}
+
+// NewService fails fast when a dependency is missing.
+func NewService(deps Deps) *Service {
+	if deps.Users == nil {
+		panic("credential mail: user lookup is required")
+	}
+	if deps.Tokens == nil {
+		panic("credential mail: token issuer is required")
+	}
+	if deps.Resets == nil {
+		panic("credential mail: reset store is required")
+	}
+	if deps.Invites == nil {
+		panic("credential mail: invite refresher is required")
+	}
+	if deps.Sender == nil {
+		panic("credential mail: sender is required")
+	}
+	if deps.Dispatch == nil {
+		panic("credential mail: dispatcher is required")
+	}
+	if deps.DispatchInvite == nil {
+		panic("credential mail: invite dispatcher is required")
+	}
+	return &Service{
+		users:          deps.Users,
+		tokens:         deps.Tokens,
+		resets:         deps.Resets,
+		invites:        deps.Invites,
+		sender:         deps.Sender,
+		dispatch:       deps.Dispatch,
+		dispatchInvite: deps.DispatchInvite,
+	}
+}
+
+// KnownPurpose reports whether purpose may be placed on the queue.
+// Welcome is not a queue purpose.
+func KnownPurpose(purpose string) bool {
+	switch purpose {
+	case PurposePasswordReset, PurposeAccountInvite:
+		return true
+	default:
+		return false
+	}
+}
+
+// Dispatch enqueues a credential mail. The payload is the subject id and the
+// purpose. The token is minted when the job runs.
+func (s *Service) Dispatch(subjectID uuid.UUID, purpose string) error {
+	if s == nil || s.dispatch == nil {
+		return errors.New("credential mail: dispatcher is required")
+	}
+	if subjectID == uuid.Nil {
+		return errors.New("credential mail: subject id is required")
+	}
+	if purpose == PurposeWelcome {
+		return errors.New("credential mail: welcome is sent, not queued")
+	}
+	if !KnownPurpose(purpose) {
+		return errors.New("credential mail: unknown purpose")
+	}
+	return s.dispatch(subjectID, purpose)
+}
+
+// DispatchAccountInvite enqueues an invite mail. The queue payload is the
+// invite id and the purpose. The returned link is the one the job minted.
+func (s *Service) DispatchAccountInvite(inviteID uuid.UUID) (string, error) {
+	if s == nil || s.dispatchInvite == nil {
+		return "", errors.New("credential mail: invite dispatcher is required")
+	}
+	if inviteID == uuid.Nil {
+		return "", errors.New("invite mail: invite id is required")
+	}
+	return s.dispatchInvite(inviteID)
+}
+
+// Send delivers one decoded credential-mail purpose. An invite returns the
+// minted link. A reset returns an empty link. Welcome is not a purpose here.
+func (s *Service) Send(ctx context.Context, subjectID uuid.UUID, purpose string) (string, error) {
+	switch purpose {
+	case PurposePasswordReset:
+		return "", s.SendPasswordReset(ctx, subjectID)
+	case PurposeAccountInvite:
+		return s.SendAccountInvite(ctx, subjectID)
+	default:
+		return "", fmt.Errorf("credential mail: unknown purpose %q", purpose)
+	}
+}
+
+// SendWelcome loads the user and sends the welcome message. The address and
+// name come from the row. They are not queue arguments.
+func (s *Service) SendWelcome(ctx context.Context, userID uuid.UUID) error {
+	if s == nil || s.users == nil || s.sender == nil {
+		return errors.New("credential mail: welcome dependencies are required")
+	}
+	if ctx == nil {
+		return errors.New("welcome mail: context is required")
+	}
+	if userID == uuid.Nil {
+		return errors.New("welcome mail: user id is required")
+	}
+	user, err := s.users.FindByID(ctx, userID)
+	if err != nil {
+		return fmt.Errorf("welcome mail: load user: %w", err)
+	}
+	if user == nil || user.Email == "" {
+		return errors.New("welcome mail: user not found")
+	}
+	if err := s.sender.SendWelcome(ctx, user.Email, user.FullName); err != nil {
+		return errors.New("welcome mail: send failed")
+	}
+	return nil
+}
+
+// SendPasswordReset mints a reset token, stores only its hash, and sends the
+// link. A send failure is returned without the token.
+func (s *Service) SendPasswordReset(ctx context.Context, userID uuid.UUID) error {
+	if s == nil || s.users == nil || s.tokens == nil || s.resets == nil || s.sender == nil {
+		return errors.New("credential mail: password reset dependencies are required")
+	}
+	if ctx == nil {
+		return errors.New("password reset mail: context is required")
+	}
+	if userID == uuid.Nil {
+		return errors.New("password reset mail: user id is required")
+	}
+	user, err := s.users.FindByID(ctx, userID)
+	if err != nil {
+		return fmt.Errorf("password reset mail: load user: %w", err)
+	}
+	if user == nil || user.Email == "" {
+		return errors.New("password reset mail: user not found")
+	}
+	raw, err := s.tokens.GenerateRandomToken()
+	if err != nil {
+		return fmt.Errorf("password reset mail: mint token: %w", err)
+	}
+	if raw == "" {
+		return errors.New("password reset mail: minted token is empty")
+	}
+	hash := s.tokens.HashToken(raw)
+	if hash == "" || hash == raw {
+		return errors.New("password reset mail: token hash is not stored form")
+	}
+	token := &models.PasswordResetToken{
+		ID:        uuid.New(),
+		UserID:    user.ID,
+		TokenHash: hash,
+		ExpiresAt: time.Now().Add(passwordResetLifetime),
+	}
+	if err := s.resets.Create(ctx, token); err != nil {
+		return fmt.Errorf("password reset mail: store token: %w", err)
+	}
+	before := ctx.Err()
+	err = s.sender.SendReset(ctx, user.Email, passwordResetURLPrefix+raw)
+	warnIfDeadlineHitMidSend(ctx, before, err, PurposePasswordReset)
+	if err != nil {
+		return errors.New("password reset mail: send failed")
+	}
+	return nil
+}
+
+// SendAccountInvite mints a new invite token, stores only its hash, and sends
+// the link. The link is returned so a response that already shows it can use
+// the same value. A send failure still returns that link and does not include
+// the token in the error.
+func (s *Service) SendAccountInvite(ctx context.Context, inviteID uuid.UUID) (string, error) {
+	if s == nil || s.invites == nil || s.sender == nil {
+		return "", errors.New("credential mail: invite dependencies are required")
+	}
+	if ctx == nil {
+		return "", errors.New("invite mail: context is required")
+	}
+	if inviteID == uuid.Nil {
+		return "", errors.New("invite mail: invite id is required")
+	}
+	base, err := account.FrontendBase()
+	if err != nil {
+		return "", err
+	}
+	message, err := s.invites.RefreshInviteForMail(ctx, inviteID, base)
+	if err != nil {
+		return "", err
+	}
+	if message.Link == "" || message.To == "" {
+		return "", errors.New("invite mail: minted message is incomplete")
+	}
+	before := ctx.Err()
+	err = s.sender.SendInvite(ctx, message)
+	warnIfDeadlineHitMidSend(ctx, before, err, PurposeAccountInvite)
+	if err != nil {
+		return message.Link, errors.New("invite mail: send failed")
+	}
+	return message.Link, nil
+}
+
+// warnIfDeadlineHitMidSend logs a credential send whose result is not known
+// because the deadline fired while Mail().Send was in progress. The line
+// names the purpose only.
+func warnIfDeadlineHitMidSend(ctx context.Context, before, sendErr error, purpose string) {
+	if sendErr == nil || ctx == nil || errors.Is(before, context.DeadlineExceeded) {
+		return
+	}
+	if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+		slog.Warn("credential mail send outcome unknown", "purpose", purpose)
+	}
+}

@@ -180,9 +180,8 @@ vault/
 ### Como rodar
 
 ```bash
-# Com Postgres local
-TEST_DATABASE_URL=postgres://vault:vault@localhost:5432/vault_test \
-  go test ./... -v -race -count=1
+# Com Postgres local; cria e usa somente vault_test
+make test
 
 # Testes que não precisam de DB (chain, types, middleware, rpc, sqs)
 go test ./app/services/chain/... ./app/http/middleware/... ./pkg/types/... -v
@@ -213,7 +212,7 @@ go tool cover -html=coverage.out
 
 **`tests/mocks/chain.go`** — MockChain implementa `types.Chain` com function fields overridáveis e call counters. MockSQS captura mensagens enviadas. Helpers `MakeTransfer` e `MakeTokenTransfer` para construir test data.
 
-**`tests/mocks/testdb.go`** — Conecta a um Postgres real via `TEST_DATABASE_URL`, limpa e recria o schema por teste, fornece fixtures `InsertWallet`, `InsertAddress`, `InsertTransaction`, `InsertWebhookConfig`. Se DB indisponível, `t.Skip()`.
+**`tests/mocks/testdb.go`** — Usa a conexão isolada definida em `.env.testing`, recusa bancos sem sufixo `_test`, limpa e recria somente o schema de testes e fornece fixtures `InsertWallet`, `InsertAddress`, `InsertTransaction`, `InsertWebhookConfig`.
 
 **`middleware/auth_test.go`** — Testa o HMAC auth end-to-end: computa signatures reais, valida que tampered body rejeita, valida janela de timestamp de 5 min em ambas direções.
 
@@ -240,8 +239,104 @@ go tool cover -html=coverage.out
 | `GET` | `/v1/transactions` | Listar transações (filtros) |
 | `GET` | `/v1/transactions/:id` | Detalhes da transação |
 | `GET` | `/v1/users/:ext_id/transactions` | Transações de um usuário |
-| `POST` | `/v1/webhooks` | Registrar webhook endpoint |
-| `GET` | `/v1/webhooks` | Listar webhooks |
+| `POST` | `/api/v1/webhooks` | Registrar webhook endpoint da conta do token |
+| `GET` | `/api/v1/webhooks` | Listar webhooks da conta do token |
+| `PATCH` | `/api/v1/webhooks/:webhookId` | Alterar eventos / `is_active` / reivindicar config legada |
+
+---
+
+## Webhooks de depósito
+
+`deposit.pending`, `deposit.confirming`, `deposit.confirmed` e `deposit.failed` usam a mesma assinatura e o
+mesmo escopo dos saques: cada config só recebe depósitos de wallets da própria conta (ou da própria wallet);
+configs legadas sem dono recebem tudo. Deduplicação por (config, tipo, transação).
+
+```json
+{
+  "id": "<delivery uuid>",
+  "type": "deposit.confirmed",
+  "created_at": "2026-10-01T12:00:00Z",
+  "data": {
+    "id": "<id da transação>",
+    "transaction_id": "<id da transação>",
+    "wallet_id": "cd8435dc-...",
+    "chain": "polygon",
+    "tx_hash": "0x...",
+    "to_address": "0x...",
+    "asset": "USDC",
+    "token_contract": "0x...",
+    "amount": "25",
+    "amount_format": "decimal",
+    "amount_base_units": "25000000",
+    "decimals": 6,
+    "confirmations": 128,
+    "required_confirmations": 128,
+    "status": "confirmed"
+  }
+}
+```
+
+- Contrato antigo (até 2026-10-01): `data` era a linha `transactions` crua e `amount` vinha em **unidades base**
+  sem `decimals` — ambíguo. Agora `amount` é sempre decimal (`amount_format: "decimal"`) e o valor exato está em
+  `amount_base_units` + `decimals`. O consumidor deve converter a partir de `amount_base_units`/`decimals` com
+  aritmética decimal exata e rejeitar payloads sem esses campos.
+- Se os decimais do ativo não forem conhecidos, o evento não é emitido (fica no log) em vez de sair ambíguo.
+
+## Webhooks de saque
+
+Assinatura e entrega iguais às de `deposit.confirmed`: corpo JSON assinado com HMAC-SHA256 do corpo bruto
+no header `X-Vault-Signature` (hex), mais `X-Vault-Event`, `X-Vault-Delivery-Id` e `X-Vault-Timestamp`.
+Cada config só recebe eventos de wallets da própria conta (configs legadas sem dono recebem tudo).
+
+| Evento | Quando |
+|---|---|
+| `withdrawal.broadcast` | O saque foi assinado e transmitido; `tx_hash` presente |
+| `withdrawal.confirmed` | A transação atingiu `required_confirmations` (mesma regra de confirmação do depósito por chain) |
+| `withdrawal.failed` | O saque falhou antes de transmitir; só traz o código público em `failure_code` |
+
+`withdrawal.broadcasting` continua existindo como evento interno legado do sweep e não é assinável.
+
+```json
+{
+  "id": "<delivery uuid, igual ao X-Vault-Delivery-Id>",
+  "type": "withdrawal.confirmed",
+  "created_at": "2026-09-30T12:00:00Z",
+  "data": {
+    "withdrawal_id": "1c629829-...",
+    "idempotency_key": "1c629829-...",
+    "wallet_id": "cd8435dc-...",
+    "transaction_id": "<id da transação no Macro Wallets ou null>",
+    "chain": "polygon",
+    "asset": "USDC",
+    "token_contract": "0x...",
+    "amount": "3",
+    "amount_base_units": "3000000",
+    "decimals": 6,
+    "destination_address": "0x...",
+    "tx_hash": "0x...",
+    "confirmations": 128,
+    "required_confirmations": 128,
+    "status": "confirmed",
+    "failure_code": null,
+    "occurred_at": "2026-09-30T12:00:00Z"
+  }
+}
+```
+
+- `amount` é decimal (string); `amount_base_units` é inteiro na menor unidade do ativo (string), com `decimals`.
+- `failure_code` ∈ `insufficient_funds`, `wallet_not_gas_ready`, `unsupported_chain`, `sweep_limit_exceeded`,
+  `invalid_passphrase`, `passphrase_too_short`, `concurrent_withdrawal`, `too_many_attempts`, `internal_error`.
+- Deduplicação: no máximo um evento por (config, tipo, saque) — índice único `webhook_events_subject_dedup_unique`.
+- Retentativas: até `max_attempts` (10) com backoff exponencial (10s → 10min no modo local; SQS em produção).
+- Reparo: o confirmation tracker também reprocessa saques `broadcast` cuja transação já está `confirmed`,
+  então uma confirmação perdida é emitida na próxima rodada.
+
+### Modo local
+
+Sem `WEBHOOK_QUEUE_URL`, o servidor HTTP local roda dois workers (`LOCAL_WORKERS_ENABLED`, padrão `true`):
+um tracker só de saques (`LOCAL_CONFIRMATION_INTERVAL_SECONDS`, padrão 30s — depósitos continuam esperando o
+`confirmation_tracker` real) e um entregador da fila `webhook_events` (`LOCAL_WEBHOOK_DELIVERY_INTERVAL_SECONDS`,
+padrão 5s). Os modos Lambda não mudam.
 
 ---
 

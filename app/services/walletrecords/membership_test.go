@@ -1,0 +1,199 @@
+package walletrecords_test
+
+import (
+	"context"
+	"errors"
+	"testing"
+	"time"
+
+	"github.com/google/uuid"
+	"github.com/stretchr/testify/assert"
+
+	"github.com/macrowallets/waas/app/models"
+	"github.com/macrowallets/waas/app/services/walletrecords"
+	"github.com/macrowallets/waas/pkg/numeric"
+)
+
+func TestMemberships_For_WalletReturnsTheStoredRoles(t *testing.T) {
+	t.Parallel()
+
+	accountID := uuid.New()
+	userID := uuid.New()
+	walletID := uuid.New()
+	wallets := &roleWallets{wallet: &models.Wallet{ID: walletID, AccountID: &accountID}}
+	members := &roleMembers{member: &models.WalletUser{Roles: "admin"}}
+	accounts := &roleAccounts{member: &models.AccountUser{Role: "owner"}}
+	loader := walletrecords.NewMemberships(walletrecords.MembershipsDeps{
+		Wallets:  walletrecords.NewWallets(wallets),
+		Members:  walletrecords.NewMembers(members),
+		Accounts: accounts,
+	})
+
+	walletRole, accountRole := loader.ForWallet(context.Background(), walletID, userID)
+	assert.Equal(t, "admin", walletRole)
+	assert.Equal(t, "owner", accountRole)
+	assert.Equal(t, walletID, members.walletID)
+	assert.Equal(t, userID, members.userID)
+	assert.Equal(t, accountID, accounts.accountID)
+}
+
+func TestMemberships_For_WalletTreatsAMissAsAnEmptyRole(t *testing.T) {
+	t.Parallel()
+
+	accountID := uuid.New()
+	userID := uuid.New()
+	walletID := uuid.New()
+	lookupErr := errors.New("missing")
+
+	walletRole, accountRole := walletrecords.NewMemberships(walletrecords.MembershipsDeps{
+		Wallets:  walletrecords.NewWallets(&roleWallets{err: lookupErr}),
+		Members:  walletrecords.NewMembers(&roleMembers{member: &models.WalletUser{Roles: "owner"}}),
+		Accounts: &roleAccounts{},
+	}).ForWallet(context.Background(), walletID, userID)
+	assert.Equal(t, "owner", walletRole)
+	assert.Equal(t, "", accountRole)
+
+	walletRole, accountRole = walletrecords.NewMemberships(walletrecords.MembershipsDeps{
+		Wallets:  walletrecords.NewWallets(&roleWallets{wallet: &models.Wallet{ID: walletID}}),
+		Members:  walletrecords.NewMembers(&roleMembers{err: lookupErr}),
+		Accounts: &roleAccounts{member: &models.AccountUser{Role: "admin"}},
+	}).ForWallet(context.Background(), walletID, userID)
+	assert.Equal(t, "", walletRole)
+	assert.Equal(t, "", accountRole)
+
+	walletRole, accountRole = walletrecords.NewMemberships(walletrecords.MembershipsDeps{
+		Wallets:  walletrecords.NewWallets(&roleWallets{wallet: &models.Wallet{ID: walletID, AccountID: &accountID}}),
+		Members:  walletrecords.NewMembers(&roleMembers{member: &models.WalletUser{Roles: "viewer"}}),
+		Accounts: &roleAccounts{err: lookupErr},
+	}).ForWallet(context.Background(), walletID, userID)
+	assert.Equal(t, "", walletRole)
+	assert.Equal(t, "", accountRole)
+}
+
+func TestMemberships_For_WalletDeniesWhenAMembershipReadFails(t *testing.T) {
+	t.Parallel()
+
+	accountID := uuid.New()
+	userID := uuid.New()
+	walletID := uuid.New()
+	storeErr := errors.New("membership store unavailable")
+
+	walletRole, accountRole := walletrecords.NewMemberships(walletrecords.MembershipsDeps{
+		Wallets:  walletrecords.NewWallets(&roleWallets{wallet: &models.Wallet{ID: walletID, AccountID: &accountID}}),
+		Members:  walletrecords.NewMembers(&roleMembers{err: storeErr}),
+		Accounts: &roleAccounts{member: &models.AccountUser{Role: "admin"}},
+	}).ForWallet(context.Background(), walletID, userID)
+	assert.Equal(t, "", walletRole)
+	assert.Equal(t, "", accountRole)
+
+	walletRole, accountRole = walletrecords.NewMemberships(walletrecords.MembershipsDeps{
+		Wallets:  walletrecords.NewWallets(&roleWallets{wallet: &models.Wallet{ID: walletID, AccountID: &accountID}}),
+		Members:  walletrecords.NewMembers(&roleMembers{member: &models.WalletUser{Roles: "admin"}}),
+		Accounts: &roleAccounts{err: storeErr},
+	}).ForWallet(context.Background(), walletID, userID)
+	assert.Equal(t, "", walletRole)
+	assert.Equal(t, "", accountRole)
+}
+
+func TestMemberships_For_WalletKeepsTheOtherRoleWhenAMembershipIsMissing(t *testing.T) {
+	t.Parallel()
+
+	accountID := uuid.New()
+	userID := uuid.New()
+	walletID := uuid.New()
+
+	walletRole, accountRole := walletrecords.NewMemberships(walletrecords.MembershipsDeps{
+		Wallets:  walletrecords.NewWallets(&roleWallets{wallet: &models.Wallet{ID: walletID, AccountID: &accountID}}),
+		Members:  walletrecords.NewMembers(&roleMembers{err: models.ErrRepositoryNotFound}),
+		Accounts: &roleAccounts{member: &models.AccountUser{Role: "admin"}},
+	}).ForWallet(context.Background(), walletID, userID)
+	assert.Equal(t, "", walletRole)
+	assert.Equal(t, "admin", accountRole)
+
+	walletRole, accountRole = walletrecords.NewMemberships(walletrecords.MembershipsDeps{
+		Wallets:  walletrecords.NewWallets(&roleWallets{wallet: &models.Wallet{ID: walletID, AccountID: &accountID}}),
+		Members:  walletrecords.NewMembers(&roleMembers{member: &models.WalletUser{Roles: "viewer"}}),
+		Accounts: &roleAccounts{err: models.ErrRepositoryNotFound},
+	}).ForWallet(context.Background(), walletID, userID)
+	assert.Equal(t, "viewer", walletRole)
+	assert.Equal(t, "", accountRole)
+}
+
+func TestNew_Memberships_RejectsAMissingDependency(t *testing.T) {
+	t.Parallel()
+
+	wallets := walletrecords.NewWallets(&roleWallets{})
+	members := walletrecords.NewMembers(&roleMembers{})
+	accounts := &roleAccounts{}
+	assert.Panics(t, func() {
+		walletrecords.NewMemberships(walletrecords.MembershipsDeps{Members: members, Accounts: accounts})
+	})
+	assert.Panics(t, func() {
+		walletrecords.NewMemberships(walletrecords.MembershipsDeps{Wallets: wallets, Accounts: accounts})
+	})
+	assert.Panics(t, func() {
+		walletrecords.NewMemberships(walletrecords.MembershipsDeps{Wallets: wallets, Members: members})
+	})
+}
+
+type roleWallets struct {
+	wallet *models.Wallet
+	err    error
+}
+
+func (f *roleWallets) PaginateByAccount(context.Context, uuid.UUID, string, int, int) ([]models.Wallet, int64, error) {
+	return nil, 0, f.err
+}
+func (f *roleWallets) PaginateByAccountAndMember(context.Context, uuid.UUID, uuid.UUID, string, int, int) ([]models.Wallet, int64, error) {
+	return nil, 0, f.err
+}
+func (f *roleWallets) FindByID(context.Context, uuid.UUID) (*models.Wallet, error) {
+	return f.wallet, f.err
+}
+func (f *roleWallets) FindByIDAndAccount(context.Context, uuid.UUID, uuid.UUID) (*models.Wallet, error) {
+	return f.wallet, f.err
+}
+func (f *roleWallets) SetFeeRateMin(context.Context, uuid.UUID, int) error { return f.err }
+func (f *roleWallets) SetFeeRateMax(context.Context, uuid.UUID, int) error { return f.err }
+func (f *roleWallets) SetFeeMultiplier(context.Context, uuid.UUID, numeric.NullDecimal) error {
+	return f.err
+}
+func (f *roleWallets) UpdateSettings(context.Context, uuid.UUID, map[string]any) error { return f.err }
+func (f *roleWallets) SetRequiredApprovals(context.Context, uuid.UUID, int) error      { return f.err }
+func (f *roleWallets) SetFrozenUntil(context.Context, uuid.UUID, time.Time) error      { return f.err }
+func (f *roleWallets) SetStatus(context.Context, uuid.UUID, string) error              { return f.err }
+func (f *roleWallets) SetLabel(context.Context, uuid.UUID, string) error               { return f.err }
+
+type roleMembers struct {
+	member   *models.WalletUser
+	err      error
+	walletID uuid.UUID
+	userID   uuid.UUID
+}
+
+func (f *roleMembers) FindByWalletID(context.Context, uuid.UUID) ([]models.WalletUser, error) {
+	return nil, f.err
+}
+func (f *roleMembers) FindByWalletAndUser(_ context.Context, walletID, userID uuid.UUID) (*models.WalletUser, error) {
+	f.walletID = walletID
+	f.userID = userID
+	return f.member, f.err
+}
+func (f *roleMembers) FindByWalletAndUserIncludeDeleted(context.Context, uuid.UUID, uuid.UUID) (*models.WalletUser, error) {
+	return f.member, f.err
+}
+func (f *roleMembers) Restore(context.Context, uuid.UUID) error               { return f.err }
+func (f *roleMembers) SetRoles(context.Context, uuid.UUID, string) error      { return f.err }
+func (f *roleMembers) Create(context.Context, *models.WalletUser) error       { return f.err }
+func (f *roleMembers) SoftDelete(context.Context, uuid.UUID, uuid.UUID) error { return f.err }
+
+type roleAccounts struct {
+	member    *models.AccountUser
+	err       error
+	accountID uuid.UUID
+}
+
+func (f *roleAccounts) FindMember(_ context.Context, accountID, _ uuid.UUID) (*models.AccountUser, error) {
+	f.accountID = accountID
+	return f.member, f.err
+}

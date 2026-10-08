@@ -15,9 +15,10 @@ import (
 // ---------------------------------------------------------------------------
 
 type MockChain struct {
-	IDVal                  string
-	NameVal                string
-	NativeAssetVal         string
+	IDVal                    string
+	NameVal                  string
+	NativeAssetVal           string
+	NativeDecimalsVal        int
 	RequiredConfirmationsVal uint64
 
 	DeriveAddressFn        func(masterKey []byte, index uint32) (string, error)
@@ -25,18 +26,33 @@ type MockChain struct {
 	GetBalanceFn           func(ctx context.Context, address string) (*types.Balance, error)
 	GetTokenBalanceFn      func(ctx context.Context, address string, token types.Token) (*types.Balance, error)
 	BuildTransferFn        func(ctx context.Context, req types.TransferRequest) (*types.UnsignedTx, error)
+	EstimateFeeFn          func(ctx context.Context, req types.TransferRequest) (*types.FeeEstimate, error)
 	SignTransactionFn      func(ctx context.Context, unsigned *types.UnsignedTx, privateKey []byte) (*types.SignedTx, error)
 	BroadcastTransactionFn func(ctx context.Context, signed *types.SignedTx) (string, error)
 	GetLatestBlockFn       func(ctx context.Context) (uint64, error)
 	ScanBlockFn            func(ctx context.Context, blockNum uint64) ([]types.DetectedTransfer, error)
+	BuildSweepFn           func(ctx context.Context, req types.SweepRequest) ([]types.UnsignedTx, error)
+	DustThresholdFn        func(asset string) *big.Int
+	EstimateGasPriceFn     func(ctx context.Context) (*big.Int, error)
+	GetTransactionBlockFn  func(ctx context.Context, txHash string) (uint64, error)
+
+	VerifySignedTransactionFn func(unsigned *types.UnsignedTx, signed *types.SignedTx, from string) error
+
+	GasReadinessThresholdVal *big.Int
+	EstimateGasPriceVal      *big.Int
+	EstimateGasPriceErr      error
+	GetTransactionBlockVal   uint64
+	GetTransactionBlockErr   error
 
 	// Call tracking
-	DeriveAddressCalls        int
-	ValidateAddressCalls      int
-	BuildTransferCalls        int
-	SignTransactionCalls      int
-	BroadcastTransactionCalls int
-	ScanBlockCalls            int
+	DeriveAddressCalls           int
+	ValidateAddressCalls         int
+	BuildTransferCalls           int
+	SignTransactionCalls         int
+	BroadcastTransactionCalls    int
+	VerifySignedTransactionCalls int
+	ScanBlockCalls               int
+	BuildSweepCalls              int
 }
 
 func NewMockChain(id string) *MockChain {
@@ -48,9 +64,10 @@ func NewMockChain(id string) *MockChain {
 	}
 }
 
-func (m *MockChain) ID() string                   { return m.IDVal }
-func (m *MockChain) Name() string                 { return m.NameVal }
+func (m *MockChain) ID() string                    { return m.IDVal }
+func (m *MockChain) Name() string                  { return m.NameVal }
 func (m *MockChain) NativeAsset() string           { return m.NativeAssetVal }
+func (m *MockChain) NativeDecimals() int           { return m.NativeDecimalsVal }
 func (m *MockChain) RequiredConfirmations() uint64 { return m.RequiredConfirmationsVal }
 
 func (m *MockChain) DeriveAddress(masterKey []byte, index uint32) (string, error) {
@@ -91,12 +108,29 @@ func (m *MockChain) BuildTransfer(ctx context.Context, req types.TransferRequest
 	return &types.UnsignedTx{ChainID: m.IDVal, RawBytes: []byte("unsigned"), Metadata: map[string]interface{}{"nonce": 0}}, nil
 }
 
+func (m *MockChain) EstimateFee(ctx context.Context, req types.TransferRequest) (*types.FeeEstimate, error) {
+	if m.EstimateFeeFn != nil {
+		return m.EstimateFeeFn(ctx, req)
+	}
+	return &types.FeeEstimate{Fee: "0", FeeAsset: m.NativeAssetVal}, nil
+}
+
 func (m *MockChain) SignTransaction(ctx context.Context, unsigned *types.UnsignedTx, privateKey []byte) (*types.SignedTx, error) {
 	m.SignTransactionCalls++
 	if m.SignTransactionFn != nil {
 		return m.SignTransactionFn(ctx, unsigned, privateKey)
 	}
 	return &types.SignedTx{ChainID: m.IDVal, TxHash: "0xmockhash123", RawBytes: []byte("signed")}, nil
+}
+
+// VerifySignedTransaction accepts every transaction unless VerifySignedTransactionFn
+// says otherwise; mock signatures are not real.
+func (m *MockChain) VerifySignedTransaction(unsigned *types.UnsignedTx, signed *types.SignedTx, from string) error {
+	m.VerifySignedTransactionCalls++
+	if m.VerifySignedTransactionFn != nil {
+		return m.VerifySignedTransactionFn(unsigned, signed, from)
+	}
+	return nil
 }
 
 func (m *MockChain) BroadcastTransaction(ctx context.Context, signed *types.SignedTx) (string, error) {
@@ -122,25 +156,46 @@ func (m *MockChain) ScanBlock(ctx context.Context, blockNum uint64) ([]types.Det
 	return nil, nil
 }
 
-// ---------------------------------------------------------------------------
-// MockSQS — captures messages sent to queues
-// ---------------------------------------------------------------------------
-
-type MockSQS struct {
-	WebhookMessages []types.WebhookMessage
-	SendWebhookErr  error
-}
-
-func NewMockSQS() *MockSQS {
-	return &MockSQS{}
-}
-
-func (m *MockSQS) SendWebhook(ctx context.Context, msg types.WebhookMessage) error {
-	if m.SendWebhookErr != nil {
-		return m.SendWebhookErr
+func (m *MockChain) BuildSweep(ctx context.Context, req types.SweepRequest) ([]types.UnsignedTx, error) {
+	m.BuildSweepCalls++
+	if m.BuildSweepFn != nil {
+		return m.BuildSweepFn(ctx, req)
 	}
-	m.WebhookMessages = append(m.WebhookMessages, msg)
-	return nil
+	return []types.UnsignedTx{{RawBytes: []byte("mocksweep"), ChainID: m.IDVal}}, nil
+}
+
+func (m *MockChain) GasReadinessThreshold() *big.Int {
+	return m.GasReadinessThresholdVal
+}
+
+func (m *MockChain) DustThreshold(asset string) *big.Int {
+	if m.DustThresholdFn != nil {
+		return m.DustThresholdFn(asset)
+	}
+	return big.NewInt(0)
+}
+
+func (m *MockChain) GetTransactionBlock(ctx context.Context, txHash string) (uint64, error) {
+	if m.GetTransactionBlockFn != nil {
+		return m.GetTransactionBlockFn(ctx, txHash)
+	}
+	if m.GetTransactionBlockErr != nil {
+		return 0, m.GetTransactionBlockErr
+	}
+	return m.GetTransactionBlockVal, nil
+}
+
+func (m *MockChain) EstimateGasPrice(ctx context.Context) (*big.Int, error) {
+	if m.EstimateGasPriceFn != nil {
+		return m.EstimateGasPriceFn(ctx)
+	}
+	if m.EstimateGasPriceErr != nil {
+		return nil, m.EstimateGasPriceErr
+	}
+	if m.EstimateGasPriceVal != nil {
+		return new(big.Int).Set(m.EstimateGasPriceVal), nil
+	}
+	return nil, nil
 }
 
 // ---------------------------------------------------------------------------

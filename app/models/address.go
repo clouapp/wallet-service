@@ -5,22 +5,25 @@ import (
 	"github.com/goravel/framework/database/orm"
 )
 
-
 type Address struct {
 	orm.Model
-	ID              uuid.UUID  `gorm:"type:uuid;primary_key" json:"id"`
-	WalletID        uuid.UUID  `gorm:"type:uuid;not null;index" json:"wallet_id"`
-	Chain           string     `gorm:"type:varchar(50);not null;index" json:"chain"`
-	Address         string     `gorm:"type:varchar(255);not null;unique" json:"address"`
-	DerivationIndex int        `gorm:"type:int;not null" json:"derivation_index"`
-	ExternalUserID  string     `gorm:"type:varchar(255);not null;index" json:"external_user_id"`
-	Metadata        string     `gorm:"type:text" json:"metadata"`
-	IsActive        bool       `gorm:"type:boolean;not null;default:true;index" json:"is_active"`
-	Label           string     `gorm:"type:varchar(255)" json:"label,omitempty"`
-	CreatedBy       *uuid.UUID `gorm:"type:uuid" json:"created_by,omitempty"`
+	ID                  uuid.UUID  `gorm:"type:uuid;primary_key"`
+	WalletID            uuid.UUID  `gorm:"type:uuid;not null;index"`
+	Chain               string     `gorm:"type:varchar(50);not null;index"`
+	Address             string     `gorm:"type:varchar(255);not null;unique"`
+	DerivationIndex     int        `gorm:"type:int;not null"`
+	ExternalUserID      string     `gorm:"type:varchar(255);not null;index"`
+	Metadata            string     `gorm:"type:text"`
+	IsActive            bool       `gorm:"type:boolean;not null;default:true;index"`
+	Label               string     `gorm:"type:varchar(255)"`
+	CreatedBy           *uuid.UUID `gorm:"type:uuid"`
+	DerivationType      string     `gorm:"type:varchar(20);not null;default:genesis"`
+	EncryptedPrivateKey string     `gorm:"type:text"`
+	EncryptionIV        string     `gorm:"type:text"`
+	EncryptionSalt      string     `gorm:"type:text"`
 
 	// Relationship
-	Wallet *Wallet `gorm:"foreignKey:WalletID" json:"wallet,omitempty"`
+	Wallet *Wallet `gorm:"foreignKey:WalletID"`
 }
 
 // TableName specifies the table name for Address model

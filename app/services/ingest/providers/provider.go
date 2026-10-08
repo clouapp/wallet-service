@@ -3,23 +3,25 @@ package providers
 import (
 	"context"
 	"math/big"
-	"net/http"
+	"net/textproto"
 	"time"
 
 	"github.com/macrowallets/waas/pkg/types"
 )
 
 type InboundTransfer struct {
-	TxHash      string
-	BlockNumber uint64
-	BlockHash   string
-	From        string
-	To          string
-	Amount      *big.Int
-	Asset       string
-	Token       *types.Token
-	LogIndex    int
-	Timestamp   time.Time
+	TxHash        string
+	BlockNumber   uint64
+	BlockHash     string
+	From          string
+	To            string
+	Amount        *big.Int
+	AmountIsHuman bool
+	HumanAmount   string
+	Asset         string
+	Token         *types.Token
+	LogIndex      int
+	Timestamp     time.Time
 }
 
 type ProviderConfig struct {
@@ -33,7 +35,23 @@ type ProviderConfig struct {
 
 type ProviderWebhook struct {
 	ProviderWebhookID string
-	SigningSecret      string
+	SigningSecret     string
+}
+
+// Header is the inbound webhook header map. Names match case-insensitively.
+type Header map[string][]string
+
+// Get returns the first value for key, or empty when absent.
+func (h Header) Get(key string) string {
+	if len(h) == 0 {
+		return ""
+	}
+	return textproto.MIMEHeader(h).Get(key)
+}
+
+// Set replaces the values for key.
+func (h Header) Set(key, value string) {
+	textproto.MIMEHeader(h).Set(key, value)
 }
 
 type WebhookProvider interface {
@@ -41,6 +59,28 @@ type WebhookProvider interface {
 	CreateWebhook(ctx context.Context, cfg ProviderConfig) (*ProviderWebhook, error)
 	SyncAddresses(ctx context.Context, webhookID string, allAddresses []string) error
 	DeleteWebhook(ctx context.Context, webhookID string) error
-	VerifyInbound(headers http.Header, body []byte, secret string) (bool, error)
+	VerifyInbound(headers Header, body []byte, secret string) (bool, error)
 	ParsePayload(body []byte) ([]InboundTransfer, error)
+}
+
+// Resolve returns the inbound provider for name. lookup is tried first. A miss
+// falls back to the adapter registered for Alchemy, Helius, or QuickNode.
+func Resolve(name string, lookup func() map[string]WebhookProvider) (WebhookProvider, bool) {
+	if lookup != nil {
+		if found, ok := lookup()[name]; ok && found != nil {
+			return found, true
+		}
+	}
+	var found WebhookProvider
+	switch name {
+	case "alchemy":
+		found = NewAlchemyProvider("")
+	case "helius":
+		found = NewHeliusProvider("")
+	case "quicknode":
+		found = NewQuickNodeProvider("")
+	default:
+		return nil, false
+	}
+	return found, found != nil
 }

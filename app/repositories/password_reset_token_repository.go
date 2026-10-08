@@ -1,43 +1,52 @@
 package repositories
 
 import (
+	"context"
+	"fmt"
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/goravel/framework/facades"
+	"github.com/goravel/framework/contracts/database/orm"
 
 	"github.com/macrowallets/waas/app/models"
+	"github.com/macrowallets/waas/app/repositories/internal/db"
 )
 
-type PasswordResetTokenRepository interface {
-	Create(token *models.PasswordResetToken) error
-	FindValidTokens() ([]models.PasswordResetToken, error)
-	MarkUsed(id uuid.UUID) error
+// PasswordResetTokenRepository persists password reset tokens.
+type PasswordResetTokenRepository struct {
+	db.Base
 }
 
-type passwordResetTokenRepository struct{}
-
-func NewPasswordResetTokenRepository() PasswordResetTokenRepository {
-	return &passwordResetTokenRepository{}
+// NewPasswordResetTokenRepository wraps an orm.Query. Pass nil for a fresh query per call.
+func NewPasswordResetTokenRepository(query orm.Query) *PasswordResetTokenRepository {
+	return &PasswordResetTokenRepository{Base: db.NewBase(query)}
 }
 
-func (r *passwordResetTokenRepository) Create(token *models.PasswordResetToken) error {
-	return facades.Orm().Query().Create(token)
+// Create inserts a password reset token.
+func (r *PasswordResetTokenRepository) Create(ctx context.Context, token *models.PasswordResetToken) error {
+	if token == nil {
+		return fmt.Errorf("create password reset token: token is nil")
+	}
+	if err := r.Query(ctx).Create(token); err != nil {
+		return fmt.Errorf("create password reset token: %w", err)
+	}
+	return nil
 }
 
-func (r *passwordResetTokenRepository) FindValidTokens() ([]models.PasswordResetToken, error) {
+// FindValidTokens returns reset tokens that have not expired and have not been used.
+func (r *PasswordResetTokenRepository) FindValidTokens(ctx context.Context) ([]models.PasswordResetToken, error) {
 	var tokens []models.PasswordResetToken
-	err := facades.Orm().Query().
-		Where("expires_at > ? AND used_at IS NULL", time.Now()).
-		Find(&tokens)
-	return tokens, err
+	if err := r.Query(ctx).Where("expires_at > ? AND used_at IS NULL", time.Now()).Find(&tokens); err != nil {
+		return nil, fmt.Errorf("list valid password reset tokens: %w", err)
+	}
+	return tokens, nil
 }
 
-func (r *passwordResetTokenRepository) MarkUsed(id uuid.UUID) error {
+// MarkUsed sets used_at on a password reset token.
+func (r *PasswordResetTokenRepository) MarkUsed(ctx context.Context, id uuid.UUID) error {
 	now := time.Now()
-	_, err := facades.Orm().Query().
-		Model(&models.PasswordResetToken{}).
-		Where("id = ?", id).
-		Update("used_at", now)
-	return err
+	if _, err := r.Query(ctx).Model(&models.PasswordResetToken{}).Where("id = ?", id).Update("used_at", now); err != nil {
+		return fmt.Errorf("mark password reset token used: %w", err)
+	}
+	return nil
 }

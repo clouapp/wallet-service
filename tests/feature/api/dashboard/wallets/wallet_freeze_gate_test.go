@@ -1,0 +1,207 @@
+package wallets
+
+import (
+	"encoding/json"
+	"fmt"
+	"testing"
+
+	"github.com/google/uuid"
+	contractstesting "github.com/goravel/framework/contracts/testing/http"
+	"github.com/goravel/framework/facades"
+
+	"github.com/macrowallets/waas/app/models"
+	authsvc "github.com/macrowallets/waas/app/services/auth"
+	"github.com/macrowallets/waas/tests/feature/support"
+	"github.com/macrowallets/waas/tests/feature/support/fixtures"
+)
+
+const walletFreezeGatePassword = "correct-horse-battery"
+
+// WalletFreezeGateTestSuite drives POST /v1/wallets/{walletId}/freeze through
+// WalletFreeze, which runs after WalletContext. Wallet role owner may freeze,
+// and so may account role owner or admin. A wallet admin may not. Auditor,
+// user, and the other wallet roles are refused before the wallet is frozen.
+// An account user with view_all_wallets false and no wallet membership is 404
+// from WalletContext.
+type WalletFreezeGateTestSuite struct {
+	support.HTTPSuite
+}
+
+func TestWallet_Freeze_GateSuite(t *testing.T) {
+	support.RunSuite(t, new(WalletFreezeGateTestSuite))
+}
+
+func (s *WalletFreezeGateTestSuite) SetupTest() {
+	fixtures.TestDB(s.T())
+}
+
+func (s *WalletFreezeGateTestSuite) TestWallet_Freeze_FollowsTheLoadedRoles() {
+	account := fixtures.InsertAccount(s.T(), "wallet freeze")
+	wallet := fixtures.InsertWalletWithAccount(s.T(), models.ChainETH, &account.ID)
+
+	denied := []struct {
+		accountRole string
+		walletRole  string
+	}{
+		{models.AccountRoleUser, models.WalletRoleViewer},
+		{models.AccountRoleAuditor, models.WalletRoleViewer},
+		{models.AccountRoleUser, models.WalletRoleSpender},
+		{models.AccountRoleUser, models.WalletRoleApprover},
+		{models.AccountRoleUser, models.WalletRoleAdmin},
+	}
+	for _, caller := range denied {
+		actor := s.member(caller.accountRole, account.ID)
+		s.assign(actor.id, wallet.ID, caller.walletRole)
+		resp := s.freeze(actor.token, account.ID, wallet.ID)
+		s.assertFreezeForbidden(resp)
+		s.assertUnfrozen(wallet.ID)
+	}
+
+	visible := fixtures.InsertAccount(s.T(), "wallet freeze visible")
+	s.setViewAll(visible.ID, true)
+	visibleWallet := fixtures.InsertWalletWithAccount(s.T(), models.ChainETH, &visible.ID)
+	for _, role := range []string{models.AccountRoleUser, models.AccountRoleAuditor} {
+		actor := s.member(role, visible.ID)
+		resp := s.freeze(actor.token, visible.ID, visibleWallet.ID)
+		s.assertFreezeForbidden(resp)
+		s.assertUnfrozen(visibleWallet.ID)
+	}
+
+	allowed := []struct {
+		accountRole string
+		walletRole  string
+	}{
+		{accountRole: models.AccountRoleOwner},
+		{accountRole: models.AccountRoleAdmin},
+		{accountRole: models.AccountRoleUser, walletRole: "owner"},
+	}
+	for _, caller := range allowed {
+		ownWallet := fixtures.InsertWalletWithAccount(s.T(), models.ChainETH, &account.ID)
+		actor := s.member(caller.accountRole, account.ID)
+		if caller.walletRole != "" {
+			s.assign(actor.id, ownWallet.ID, caller.walletRole)
+		}
+		invalid := s.freezeBody(actor.token, account.ID, ownWallet.ID, `{"frozen_until":"not-a-timestamp"}`)
+		s.AssertError(invalid, 422, "validation_failed", "validation failed")
+		invalidBody, err := invalid.Content()
+		s.Require().NoError(err)
+		s.Contains(invalidBody, "The frozen_until must be a valid RFC3339 timestamp.")
+		s.assertUnfrozen(ownWallet.ID)
+
+		resp := s.freezeBody(actor.token, account.ID, ownWallet.ID, `{}`)
+		resp.AssertOk()
+		s.Equal("frozen", s.jsonBody(resp)["status"])
+		s.NotEmpty(s.jsonBody(resp)["frozen_until"])
+		status, frozen := s.freezeState(ownWallet.ID)
+		s.Equal("frozen", status)
+		s.True(frozen)
+	}
+}
+
+func (s *WalletFreezeGateTestSuite) TestWallet_Freeze_StaysHiddenFromAnAccountUser() {
+	account := fixtures.InsertAccount(s.T(), "wallet freeze hidden")
+	wallet := fixtures.InsertWalletWithAccount(s.T(), models.ChainETH, &account.ID)
+	actor := s.member(models.AccountRoleUser, account.ID)
+
+	resp := s.freeze(actor.token, account.ID, wallet.ID)
+	resp.AssertStatus(404)
+	s.AssertError(resp, 404, "not_found", "wallet not found")
+	s.assertUnfrozen(wallet.ID)
+}
+
+type walletFreezeCaller struct {
+	id    uuid.UUID
+	token string
+}
+
+func (s *WalletFreezeGateTestSuite) member(role string, accountID uuid.UUID) walletFreezeCaller {
+	userID := s.insertUser(role + "-" + uuid.NewString()[:8] + "@example.com")
+	s.accountMember(accountID, userID, role)
+	return walletFreezeCaller{id: userID, token: s.login(userID)}
+}
+
+func (s *WalletFreezeGateTestSuite) insertUser(email string) uuid.UUID {
+	userID := uuid.New()
+	hash, err := authsvc.NewService().HashPassword(walletFreezeGatePassword)
+	s.Require().NoError(err)
+	_, err = facades.Orm().Query().Exec(
+		`INSERT INTO users (id, email, password_hash, status, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, NOW(), NOW())`,
+		userID, email, hash, "active",
+	)
+	s.Require().NoError(err)
+	return userID
+}
+
+func (s *WalletFreezeGateTestSuite) accountMember(accountID, userID uuid.UUID, role string) {
+	s.Require().NoError(facades.Orm().Query().Create(&models.AccountUser{
+		ID: uuid.New(), AccountID: accountID, UserID: userID, Role: role, Status: models.MembershipStatusActive,
+	}))
+}
+
+func (s *WalletFreezeGateTestSuite) assign(userID, walletID uuid.UUID, roles string) {
+	s.Require().NoError(facades.Orm().Query().Create(&models.WalletUser{
+		ID: uuid.New(), WalletID: walletID, UserID: userID, Roles: roles, Status: "active",
+	}))
+}
+
+func (s *WalletFreezeGateTestSuite) setViewAll(accountID uuid.UUID, viewAll bool) {
+	_, err := facades.Orm().Query().Exec(
+		`UPDATE accounts SET view_all_wallets = ? WHERE id = ?`, viewAll, accountID,
+	)
+	s.Require().NoError(err)
+}
+
+func (s *WalletFreezeGateTestSuite) login(userID uuid.UUID) string {
+	var email string
+	s.Require().NoError(facades.Orm().Query().Raw(`SELECT email FROM users WHERE id = ?`, userID).Scan(&email))
+	body := fmt.Sprintf(`{"email":%q,"password":%q}`, email, walletFreezeGatePassword)
+	resp := s.Post("/v1/auth/login", support.Session{}, body)
+	resp.AssertStatus(200)
+	var parsed struct {
+		AccessToken string `json:"access_token"`
+	}
+	s.Require().NoError(json.Unmarshal([]byte(s.body(resp)), &parsed))
+	s.Require().NotEmpty(parsed.AccessToken)
+	return parsed.AccessToken
+}
+
+func (s *WalletFreezeGateTestSuite) freeze(token string, accountID, walletID uuid.UUID) contractstesting.Response {
+	resp := s.Post("/v1/wallets/"+walletID.String()+"/freeze", support.Session{AccessToken: token, AccountID: accountID.String()}, nil)
+	return resp
+}
+
+func (s *WalletFreezeGateTestSuite) freezeBody(token string, accountID, walletID uuid.UUID, body string) contractstesting.Response {
+	resp := s.Post("/v1/wallets/"+walletID.String()+"/freeze", support.Session{AccessToken: token, AccountID: accountID.String()}, body)
+	return resp
+}
+
+func (s *WalletFreezeGateTestSuite) assertFreezeForbidden(resp contractstesting.Response) {
+	resp.AssertStatus(403)
+	s.AssertError(resp, 403, "forbidden", "only owners and account admins may freeze wallets")
+}
+
+func (s *WalletFreezeGateTestSuite) assertUnfrozen(walletID uuid.UUID) {
+	status, frozen := s.freezeState(walletID)
+	s.Equal("active", status)
+	s.False(frozen)
+}
+
+func (s *WalletFreezeGateTestSuite) freezeState(walletID uuid.UUID) (string, bool) {
+	var stored models.Wallet
+	s.Require().NoError(facades.Orm().Query().Where("id = ?", walletID).First(&stored))
+	return stored.Status, stored.FrozenUntil != nil
+}
+
+func (s *WalletFreezeGateTestSuite) jsonBody(resp contractstesting.Response) map[string]any {
+	parsed := map[string]any{}
+	s.Require().NoError(json.Unmarshal([]byte(s.body(resp)), &parsed))
+	return parsed
+}
+
+func (s *WalletFreezeGateTestSuite) body(resp contractstesting.Response) string {
+	s.T().Helper()
+	content, err := resp.Content()
+	s.Require().NoError(err)
+	return content
+}

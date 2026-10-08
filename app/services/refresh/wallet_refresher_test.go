@@ -1,0 +1,301 @@
+package refresh
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"strings"
+	"sync"
+	"testing"
+	"time"
+
+	"github.com/google/uuid"
+
+	"github.com/macrowallets/waas/app/models"
+	"github.com/macrowallets/waas/app/services/chain"
+)
+
+type fakeWalletStore struct {
+	wallets []models.Wallet
+	listErr error
+	findErr error
+}
+
+func (s *fakeWalletStore) FindByID(_ context.Context, id uuid.UUID) (*models.Wallet, error) {
+	if s.findErr != nil {
+		return nil, s.findErr
+	}
+	for i := range s.wallets {
+		if s.wallets[i].ID == id {
+			return &s.wallets[i], nil
+		}
+	}
+	return nil, nil
+}
+
+func (s *fakeWalletStore) FindAll(context.Context) ([]models.Wallet, error) {
+	return append([]models.Wallet(nil), s.wallets...), s.listErr
+}
+
+type fakeChains []string
+
+func (c fakeChains) ChainIDs() []string { return c }
+
+type recordingBalances struct {
+	mu        sync.Mutex
+	refreshed []string
+	failures  map[string]error
+	inFlight  int
+	peak      int
+	// entered and release are set by the serialization test. Each refresh
+	// reports that it is inside the critical section and waits until release
+	// is closed, so overlap is visible without a sleep.
+	entered chan struct{}
+	release chan struct{}
+}
+
+func (b *recordingBalances) RefreshWallet(_ context.Context, wallet *models.Wallet) error {
+	b.mu.Lock()
+	b.inFlight++
+	b.peak = max(b.peak, b.inFlight)
+	entered, release := b.entered, b.release
+	b.mu.Unlock()
+
+	if entered != nil {
+		select {
+		case entered <- struct{}{}:
+		default:
+		}
+		<-release
+	}
+
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.inFlight--
+	b.refreshed = append(b.refreshed, wallet.Label)
+	return b.failures[wallet.Label]
+}
+
+func walletOn(chainID, label string) models.Wallet {
+	addressID := uuid.New()
+	return models.Wallet{
+		ID: uuid.New(), Chain: chainID, Label: label, Status: "active", DepositAddressID: &addressID,
+		DepositAddress: &models.Address{ID: addressID, Chain: chainID, Address: label + "-base"},
+	}
+}
+
+type recordedPauses struct{ delays []time.Duration }
+
+func (p *recordedPauses) sleep(_ context.Context, d time.Duration) error {
+	p.delays = append(p.delays, d)
+	return nil
+}
+
+func newTestRefresher(t *testing.T, balances *recordingBalances, wallets *fakeWalletStore, chains fakeChains) (*WalletRefresher, *recordedPauses) {
+	t.Helper()
+	refresher, err := NewWalletRefresher(WalletRefresherDeps{
+		Balances: balances,
+		Wallets:  wallets,
+		Chains:   chains,
+		Spacing:  250 * time.Millisecond,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	pauses := &recordedPauses{}
+	refresher.sleep = pauses.sleep
+	return refresher, pauses
+}
+
+func TestNew_WalletRefresher_ValidatesDependencies(t *testing.T) {
+	if _, err := NewWalletRefresher(WalletRefresherDeps{Wallets: &fakeWalletStore{}, Chains: fakeChains{}}); err == nil {
+		t.Fatal("expected a missing balance service to be rejected")
+	}
+	if _, err := NewWalletRefresher(WalletRefresherDeps{
+		Balances: &recordingBalances{},
+		Wallets:  &fakeWalletStore{},
+		Chains:   fakeChains{},
+		Spacing:  -time.Second,
+	}); err == nil {
+		t.Fatal("expected a negative spacing to be rejected")
+	}
+}
+
+func TestRefresh_All_RefreshesEveryRegisteredChainAndPacesTheCalls(t *testing.T) {
+	archived := walletOn("eth", "eth_archived")
+	archived.Status = models.WalletStatusArchived
+	noAddress := walletOn("sol", "sol_no_address")
+	noAddress.DepositAddress = nil
+	wallets := &fakeWalletStore{wallets: []models.Wallet{
+		walletOn("eth", "eth_deposit"), walletOn("btc", "btc_deposit"), walletOn("sol", "sol_withdraw"),
+		walletOn("unregistered", "orphan"), archived, noAddress,
+	}}
+	balances := &recordingBalances{failures: map[string]error{"btc_deposit": errors.New("esplora GET /address: HTTP 502")}}
+	refresher, pauses := newTestRefresher(t, balances, wallets, fakeChains{"eth", "btc", "sol"})
+
+	summary, err := refresher.RefreshAll(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if summary != (PassSummary{Refreshed: 2, Failed: 1, Skipped: 3}) {
+		t.Fatalf("unexpected summary %+v", summary)
+	}
+	if got := strings.Join(balances.refreshed, ","); got != "eth_deposit,btc_deposit,sol_withdraw" {
+		t.Fatalf("a failed wallet must not stop the others, refreshed %s", got)
+	}
+	if got := fmt.Sprint(pauses.delays); got != "[250ms 250ms]" {
+		t.Fatalf("expected a pause between wallets only, got %s", got)
+	}
+}
+
+func TestRefresh_All_RateLimitedChainWaitsForTheNextPass(t *testing.T) {
+	wallets := &fakeWalletStore{wallets: []models.Wallet{
+		walletOn("sol", "sol_deposit"), walletOn("sol", "sol_withdraw"), walletOn("eth", "eth_deposit"),
+	}}
+	rateLimited := fmt.Errorf("get native balance: rpc call getBalance: %w (HTTP 429) after 6 attempts", chain.ErrRateLimited)
+	balances := &recordingBalances{failures: map[string]error{"sol_deposit": rateLimited}}
+	refresher, _ := newTestRefresher(t, balances, wallets, fakeChains{"sol", "eth"})
+
+	summary, err := refresher.RefreshAll(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.Join(balances.refreshed, ","); got != "sol_deposit,eth_deposit" {
+		t.Fatalf("the rate-limited chain's other wallets must be skipped, refreshed %s", got)
+	}
+	if summary != (PassSummary{Refreshed: 1, Failed: 1, Skipped: 1}) {
+		t.Fatalf("unexpected summary %+v", summary)
+	}
+}
+
+func TestRefresh_All_ReportsAWalletListFailure(t *testing.T) {
+	refresher, _ := newTestRefresher(t, &recordingBalances{}, &fakeWalletStore{listErr: errors.New("db down")}, fakeChains{"eth"})
+	if _, err := refresher.RefreshAll(context.Background()); err == nil {
+		t.Fatal("expected the wallet list failure")
+	}
+}
+
+func TestRefresh_Wallet_ByID(t *testing.T) {
+	target := walletOn("eth", "eth_withdraw")
+	balances := &recordingBalances{}
+	refresher, _ := newTestRefresher(t, balances, &fakeWalletStore{wallets: []models.Wallet{target}}, fakeChains{"eth"})
+
+	if err := refresher.RefreshWalletByID(context.Background(), target.ID); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Join(balances.refreshed, ",") != "eth_withdraw" {
+		t.Fatalf("expected the wallet refreshed, got %v", balances.refreshed)
+	}
+	if err := refresher.RefreshWalletByID(context.Background(), uuid.Nil); err == nil {
+		t.Fatal("expected a nil id to be rejected")
+	}
+	if err := refresher.RefreshWalletByID(context.Background(), uuid.New()); err == nil || !strings.Contains(err.Error(), "not found") {
+		t.Fatalf("expected an unknown wallet to be reported, got %v", err)
+	}
+}
+
+func TestQueued_Refresh_LoadsTheWalletAndMatchesTheChain(t *testing.T) {
+	target := walletOn("eth", "eth_job")
+	balances := &recordingBalances{}
+	refresher, _ := newTestRefresher(t, balances, &fakeWalletStore{wallets: []models.Wallet{target}}, fakeChains{"eth"})
+
+	calls := []struct {
+		name string
+		run  func(context.Context, uuid.UUID, string) error
+	}{
+		{"balances", refresher.RefreshBalances},
+		{"transactions", refresher.RefreshTransactions},
+		{"tokens", refresher.RefreshTokens},
+		{"reconcile", refresher.ReconcileWallet},
+	}
+	for _, tc := range calls {
+		t.Run(tc.name, func(t *testing.T) {
+			before := len(balances.refreshed)
+			if err := tc.run(context.Background(), target.ID, "eth"); err != nil {
+				t.Fatal(err)
+			}
+			if len(balances.refreshed) != before+1 || balances.refreshed[before] != "eth_job" {
+				t.Fatalf("refreshed %v", balances.refreshed)
+			}
+			if err := tc.run(context.Background(), target.ID, "btc"); err == nil || !strings.Contains(err.Error(), "does not match") {
+				t.Fatalf("chain mismatch: %v", err)
+			}
+			if len(balances.refreshed) != before+1 {
+				t.Fatal("a chain mismatch must not refresh")
+			}
+		})
+	}
+
+	missing, _ := newTestRefresher(t, &recordingBalances{}, &fakeWalletStore{findErr: models.ErrRepositoryNotFound}, fakeChains{"eth"})
+	if err := missing.RefreshBalances(context.Background(), uuid.New(), "eth"); err == nil || !strings.Contains(err.Error(), "not found") {
+		t.Fatalf("missing wallet: %v", err)
+	}
+	if err := (*WalletRefresher)(nil).RefreshBalances(context.Background(), target.ID, "eth"); err == nil || !strings.Contains(err.Error(), "not initialized") {
+		t.Fatalf("nil refresher: %v", err)
+	}
+}
+
+func TestRefresh_UTX_OsKeepsTheChainRuleInTheService(t *testing.T) {
+	eth := walletOn("eth", "eth_job")
+	btc := walletOn("btc", "btc_job")
+	balances := &recordingBalances{}
+	refresher, _ := newTestRefresher(t, balances, &fakeWalletStore{wallets: []models.Wallet{eth, btc}}, fakeChains{"eth", "btc"})
+
+	if err := refresher.RefreshUTXOs(context.Background(), eth.ID, "eth"); err != nil {
+		t.Fatal(err)
+	}
+	if err := refresher.RefreshUTXOs(context.Background(), btc.ID, "btc"); err != nil {
+		t.Fatal(err)
+	}
+	if len(balances.refreshed) != 0 {
+		t.Fatalf("utxo refresh must not refresh balances, got %v", balances.refreshed)
+	}
+	if err := refresher.RefreshUTXOs(context.Background(), btc.ID, "eth"); err == nil || !strings.Contains(err.Error(), "does not match") {
+		t.Fatalf("chain mismatch: %v", err)
+	}
+}
+
+func TestWallet_Refresher_SerializesRefreshes(t *testing.T) {
+	wallets := &fakeWalletStore{wallets: []models.Wallet{walletOn("eth", "a"), walletOn("eth", "b"), walletOn("eth", "c")}}
+	release := make(chan struct{})
+	entered := make(chan struct{}, 1)
+	balances := &recordingBalances{entered: entered, release: release}
+	refresher, _ := newTestRefresher(t, balances, wallets, fakeChains{"eth"})
+
+	const callers = 4
+	var ready, done sync.WaitGroup
+	start := make(chan struct{})
+	ready.Add(callers)
+	done.Add(callers)
+	launch := func(work func()) {
+		go func() {
+			defer done.Done()
+			ready.Done()
+			<-start
+			work()
+		}()
+	}
+	launch(func() { _, _ = refresher.RefreshAll(context.Background()) })
+	for _, wallet := range wallets.wallets {
+		id := wallet.ID
+		launch(func() { _ = refresher.RefreshWalletByID(context.Background(), id) })
+	}
+	ready.Wait()
+	close(start)
+
+	<-entered
+	balances.mu.Lock()
+	peak := balances.peak
+	balances.mu.Unlock()
+	if peak != 1 {
+		t.Fatalf("refreshes must never overlap, peak was %d", peak)
+	}
+	close(release)
+	done.Wait()
+	balances.mu.Lock()
+	peak = balances.peak
+	balances.mu.Unlock()
+	if peak != 1 {
+		t.Fatalf("refreshes must never overlap, peak was %d", peak)
+	}
+}

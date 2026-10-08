@@ -6,6 +6,8 @@
 *.dylib
 bin/
 dist/
+# Built by `make localstack-hooks` (static secrets-snapshot for waas-localstack)
+/docker/localstack/bin/
 
 # Test binary, built with `go test -c`
 *.test
@@ -52,6 +54,14 @@ Thumbs.db
 
 # Local development
 *.log
+/tmp/e2e-videos/
+__pycache__/
+*.pyc
+
+# Build output: Air builds into tmp/; `go build` at the root writes waas (or -o seed)
+/tmp/
+/seed
+/waas
 
 # Secrets and credentials
 *.pem

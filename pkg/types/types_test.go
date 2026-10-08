@@ -4,10 +4,10 @@ import (
 	"testing"
 )
 
-func TestEventTypes(t *testing.T) {
+func TestTypes_Event_Types(t *testing.T) {
 	events := []EventType{
 		EventDepositPending, EventDepositConfirming, EventDepositConfirmed, EventDepositFailed,
-		EventWithdrawalPending, EventWithdrawalSigned, EventWithdrawalBroadcast, EventWithdrawalConfirmed, EventWithdrawalFailed,
+		EventWithdrawalPending, EventWithdrawalSigned, EventWithdrawalBroadcasting, EventWithdrawalBroadcast, EventWithdrawalConfirmed, EventWithdrawalFailed,
 	}
 
 	seen := make(map[EventType]bool)
@@ -21,12 +21,12 @@ func TestEventTypes(t *testing.T) {
 		}
 	}
 
-	if len(events) != 9 {
-		t.Errorf("expected 9 event types, got %d", len(events))
+	if len(events) != 10 {
+		t.Errorf("expected 10 event types, got %d", len(events))
 	}
 }
 
-func TestTxStatuses(t *testing.T) {
+func TestTypes_Tx_Statuses(t *testing.T) {
 	statuses := []TxStatus{TxStatusPending, TxStatusConfirming, TxStatusConfirmed, TxStatusFailed}
 	for _, s := range statuses {
 		if string(s) == "" {
@@ -38,26 +38,38 @@ func TestTxStatuses(t *testing.T) {
 	}
 }
 
-func TestDepositScanEvent(t *testing.T) {
+func TestDeposit_Scan_Event(t *testing.T) {
 	evt := DepositScanEvent{Chain: "eth"}
 	if evt.Chain != "eth" {
 		t.Errorf("expected eth, got %s", evt.Chain)
 	}
 }
 
-func TestWebhookMessage_Fields(t *testing.T) {
+func TestWebhook_Message_Fields(t *testing.T) {
 	msg := WebhookMessage{
 		EventID: "e1", TransactionID: "t1", EventType: EventDepositConfirmed,
-		Payload: "{}", DeliveryURL: "https://example.com", Secret: "s", Attempt: 3,
+		Payload: "{}", DeliveryURL: "https://example.com", ConfigID: "cfg-1", Attempt: 3,
 	}
-	if msg.EventID != "e1" { t.Error("EventID") }
-	if msg.TransactionID != "t1" { t.Error("TransactionID") }
-	if msg.EventType != EventDepositConfirmed { t.Error("EventType") }
-	if msg.Attempt != 3 { t.Error("Attempt") }
+	if msg.EventID != "e1" {
+		t.Error("EventID")
+	}
+	if msg.TransactionID != "t1" {
+		t.Error("TransactionID")
+	}
+	if msg.EventType != EventDepositConfirmed {
+		t.Error("EventType")
+	}
+	if msg.Attempt != 3 {
+		t.Error("Attempt")
+	}
 }
 
-func TestToken_Fields(t *testing.T) {
+func TestTypes_Token_Fields(t *testing.T) {
 	tok := Token{Symbol: "usdt", Name: "Tether USD", Contract: "0xdAC17F", Decimals: 6, ChainID: "eth"}
-	if tok.Symbol != "usdt" { t.Error("Symbol") }
-	if tok.Decimals != 6 { t.Error("Decimals") }
+	if tok.Symbol != "usdt" {
+		t.Error("Symbol")
+	}
+	if tok.Decimals != 6 {
+		t.Error("Decimals")
+	}
 }

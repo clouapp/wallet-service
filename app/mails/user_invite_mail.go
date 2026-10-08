@@ -2,6 +2,7 @@ package mails
 
 import (
 	"fmt"
+	"html/template"
 
 	contractsmail "github.com/goravel/framework/contracts/mail"
 )
@@ -14,6 +15,12 @@ type UserInviteMail struct {
 	InviteLink  string
 }
 
+type userInviteData struct {
+	AccountName string
+	InvitedBy   string
+	InviteLink  template.URL
+}
+
 func (m *UserInviteMail) Envelope() *contractsmail.Envelope {
 	return &contractsmail.Envelope{
 		To:      []string{m.To},
@@ -23,21 +30,11 @@ func (m *UserInviteMail) Envelope() *contractsmail.Envelope {
 
 func (m *UserInviteMail) Content() *contractsmail.Content {
 	return &contractsmail.Content{
-		Html: fmt.Sprintf(`<!DOCTYPE html>
-<html>
-<body style="font-family:sans-serif;max-width:600px;margin:40px auto;color:#333;">
-  <h2>You've been invited to %s</h2>
-  <p>%s has invited you to collaborate on the <strong>%s</strong> account in Vault.</p>
-  <p>Click the button below to accept the invitation and set up your account.</p>
-  <p>
-    <a href="%s" style="display:inline-block;padding:12px 24px;background:#1a56db;color:#fff;text-decoration:none;border-radius:4px;">
-      Accept Invitation
-    </a>
-  </p>
-  <p>This invitation link expires in 72 hours.</p>
-  <p>If you were not expecting this invitation, you can safely ignore this email.</p>
-</body>
-</html>`, m.AccountName, m.InvitedBy, m.AccountName, m.InviteLink),
+		Html: render("user_invite.html", userInviteData{
+			AccountName: m.AccountName,
+			InvitedBy:   m.InvitedBy,
+			InviteLink:  template.URL(m.InviteLink),
+		}),
 	}
 }
 

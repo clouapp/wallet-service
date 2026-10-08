@@ -5,46 +5,79 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/goravel/framework/contracts/http"
-	"github.com/goravel/framework/facades"
 
+	"github.com/macrowallets/waas/app/facades"
+	"github.com/macrowallets/waas/app/http/middleware/requestctx"
+	"github.com/macrowallets/waas/app/http/responses"
 	"github.com/macrowallets/waas/app/models"
+	"github.com/macrowallets/waas/app/policies"
+	authsvc "github.com/macrowallets/waas/app/services/auth"
+	"github.com/macrowallets/waas/packages/activitylog"
 )
 
 // SessionAuth validates a Bearer JWT token issued by facades.Auth and injects
 // "user_id" and "user" into the request context for downstream handlers.
-// Returns 401 if the token is absent, invalid, or the user no longer exists.
-func SessionAuth(ctx http.Context) {
-	bearer := ctx.Request().Header("Authorization", "")
-	if !strings.HasPrefix(bearer, "Bearer ") {
-		ctx.Request().AbortWithStatus(http.StatusUnauthorized)
-		ctx.Response().Json(http.StatusUnauthorized, http.Json{"error": "missing or malformed bearer token"})
-		return
-	}
-	token := strings.TrimPrefix(bearer, "Bearer ")
+func SessionAuth() http.Middleware {
+	return func(ctx http.Context) {
+		bearer := ctx.Request().Header("Authorization", "")
+		if !strings.HasPrefix(bearer, "Bearer ") {
+			_ = responses.Send(ctx, http.StatusUnauthorized, http.Json{"error": "missing or malformed bearer token"}).Abort()
+			return
+		}
+		token := strings.TrimPrefix(bearer, "Bearer ")
 
-	authGuard := facades.Auth(ctx)
-	payload, err := authGuard.Parse(token)
-	if err != nil || payload == nil {
-		ctx.Request().AbortWithStatus(http.StatusUnauthorized)
-		ctx.Response().Json(http.StatusUnauthorized, http.Json{"error": "invalid token"})
-		return
-	}
+		authGuard := facades.Auth(ctx)
+		payload, err := authGuard.Parse(token)
+		if err != nil || payload == nil {
+			_ = responses.Send(ctx, http.StatusUnauthorized, http.Json{"error": "invalid token"}).Abort()
+			return
+		}
 
-	var user models.User
-	if err := authGuard.User(&user); err != nil {
-		ctx.Request().AbortWithStatus(http.StatusUnauthorized)
-		ctx.Response().Json(http.StatusUnauthorized, http.Json{"error": "user not found"})
-		return
-	}
+		var user models.User
+		if err := authGuard.User(&user); err != nil {
+			_ = responses.Send(ctx, http.StatusUnauthorized, http.Json{"error": "user not found"}).Abort()
+			return
+		}
 
-	ctx.WithValue("user_id", user.ID)
-	ctx.WithValue("user", &user)
-	ctx.Request().Next()
+		if user.ID == uuid.Nil {
+			_ = responses.Send(ctx, http.StatusUnauthorized, http.Json{"error": "user not found"}).Abort()
+			return
+		}
+		if !policies.UserMayHoldSession(user.Status) {
+			_ = responses.Send(ctx, http.StatusUnauthorized, http.Json{"error": "user is not active"}).Abort()
+			return
+		}
+		if policies.UserIsSuspended(user.SuspendedAt) {
+			_ = responses.SuspendedUser(ctx).Abort()
+			return
+		}
+		if authsvc.SessionRevoked(payload.IssuedAt, user.SessionsRevokedAt) {
+			_ = responses.Send(ctx, http.StatusUnauthorized, http.Json{"error": "session revoked"}).Abort()
+			return
+		}
+
+		ctx.WithValue(requestctx.KeyUserID, user.ID)
+		ctx.WithValue(requestctx.KeyUser, &user)
+		ctx.WithContext(activitylog.WithCauser(ctx.Context(), activitylog.Causer{
+			Type:  activitylog.CauserUsers,
+			ID:    user.ID.String(),
+			Label: user.Email,
+		}))
+		ctx.Request().Next()
+	}
 }
 
 // contextUserID extracts the user UUID from the request context.
-// Returns uuid.Nil if not set.
 func contextUserID(ctx http.Context) uuid.UUID {
-	id, _ := ctx.Value("user_id").(uuid.UUID)
+	id, _ := requestctx.UserID(ctx)
 	return id
+}
+
+// SessionUserID is the dashboard user SessionAuth stored. A missing value is
+// uuid.Nil. Callers outside middleware use this instead of reading the key.
+func SessionUserID(ctx http.Context) uuid.UUID {
+	if ctx == nil {
+		return uuid.Nil
+	}
+	return contextUserID(ctx)
 }

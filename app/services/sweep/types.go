@@ -1,0 +1,108 @@
+package sweep
+
+import (
+	"math/big"
+
+	"github.com/google/uuid"
+	"github.com/shopspring/decimal"
+
+	"github.com/macrowallets/waas/app/models"
+)
+
+// Strategy enumerates the withdrawal-source policy outcomes.
+type Strategy string
+
+const (
+	StrategyDirectFromBase  Strategy = "direct_from_base"
+	StrategyDirectFromChild Strategy = "direct_from_child"
+	StrategyMultiSweep      Strategy = "multi_sweep"
+	StrategyInsufficient    Strategy = "insufficient"
+)
+
+// SigningCredentials unlocks a wallet's keys for one plan. ShareA is the customer
+// share already decrypted by the caller; Passphrase decrypts the ed25519 child seeds
+// stored on each address. The caller owns ShareA and must zero it afterwards.
+type SigningCredentials struct {
+	ShareA     []byte
+	Passphrase string
+}
+
+// AddressBalance records a wallet address + its balance for plan transparency.
+type AddressBalance struct {
+	Address models.Address
+	Balance *big.Int
+	Reason  string // filled for dust-ignored entries
+}
+
+// PlannedSweep is one sweep leg in a multi_sweep plan.
+type PlannedSweep struct {
+	From      models.Address
+	Amount    *big.Int
+	NeedsGas  bool     // true → chain requires a gas_seed tx before the sweep (EVM ERC-20)
+	GasAmount *big.Int // size of the gas_seed tx (optional; executor may compute its own)
+}
+
+// Plan is the output of PlanForWithdrawal / ConsolidateAll; consumed by ExecutePlan.
+type Plan struct {
+	WalletID      uuid.UUID
+	Chain         string
+	Asset         string
+	Amount        *big.Int
+	Strategy      Strategy
+	SourceAddress *models.Address // set for direct_from_base / direct_from_child
+	Sweeps        []PlannedSweep  // set for multi_sweep
+	EstimatedGas  *big.Int
+	ReachesTarget bool
+	DustIgnored   []AddressBalance
+	BaseBalance   *big.Int
+}
+
+// CompletedSweep is a sweep leg that successfully broadcast.
+type CompletedSweep struct {
+	From         models.Address
+	TxHash       string
+	InternalTxID uuid.UUID
+	// Amount is what the sweep moved, in the asset's base units.
+	Amount *big.Int
+}
+
+// FailedStep records mid-plan failure position for idempotent retry.
+type FailedStep struct {
+	Index      int
+	LastError  string
+	RetryReady bool
+}
+
+// Result is the output of ExecutePlan / ConsolidateAll.
+type Result struct {
+	WithdrawalTxID  uuid.UUID
+	Sweeps          []CompletedSweep
+	FinalWithdrawTx *models.Transaction
+	FailedStep      *FailedStep
+	// EstimatedGas mirrors the originating Plan.EstimatedGas so consumers of
+	// Result (dashboard, API responses) can report the gas estimate without
+	// threading the Plan through. nil means "estimate unavailable" (non-EVM,
+	// gas-price fetch failure, or empty plan).
+	EstimatedGas *big.Int
+	// AssetDecimals are the decimals of the swept asset's base units; nil when unknown.
+	AssetDecimals *int
+}
+
+// GasStatus snapshots the gas-readiness check for a wallet.
+type GasStatus struct {
+	Status        string // "unseeded" | "seeded" | "low"
+	BaseAddress   string
+	NativeAsset   string
+	NativeBalance *big.Int
+	Threshold     *big.Int
+	LastCheckedAt int64 // unix seconds
+}
+
+// Limits is the per-account rate-limit config resolved at use time. An
+// account_sweep_limits row wins over the platform sweep_limits row, which
+// wins over the registry default. A blank daily cap means unlimited.
+type Limits struct {
+	MaxAddressesPerRequest  map[string]int // chain-type → max
+	MaxConsolidateReqPerDay int
+	DailyWithdrawCapUSD     *decimal.Decimal // nil = unlimited
+}

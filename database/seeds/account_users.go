@@ -2,17 +2,18 @@ package seeds
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 
 	"github.com/google/uuid"
-	"github.com/goravel/framework/facades"
 
 	"github.com/macrowallets/waas/app/models"
+	"github.com/macrowallets/waas/app/repositories"
 )
 
 // SeedAccountUsers links users to prod and test accounts with roles.
-func SeedAccountUsers(_ context.Context) error {
+func SeedAccountUsers(ctx context.Context) error {
 	members := []struct {
 		id        uuid.UUID
 		accountID uuid.UUID
@@ -26,19 +27,22 @@ func SeedAccountUsers(_ context.Context) error {
 		{uuid.MustParse("00000000-0000-0000-0000-000000000034"), acmeTestAccountID, aliceUserID, "admin"},
 		{uuid.MustParse("00000000-0000-0000-0000-000000000035"), acmeTestAccountID, bobUserID, "auditor"},
 	}
+	repo := repositories.NewAccountUserRepository(nil)
 	for _, m := range members {
-		var existing models.AccountUser
-		if err := facades.Orm().Query().Where("id", m.id).First(&existing); err == nil && existing.ID != uuid.Nil {
+		existing, err := repo.FindByID(ctx, m.id)
+		if err != nil && !errors.Is(err, models.ErrRepositoryNotFound) {
+			return fmt.Errorf("find account user %s: %w", m.role, err)
+		}
+		if existing != nil && existing.ID != uuid.Nil {
 			continue
 		}
-		au := models.AccountUser{
+		if err := repo.Create(ctx, &models.AccountUser{
 			ID:        m.id,
 			AccountID: m.accountID,
 			UserID:    m.userID,
 			Role:      m.role,
-			Status:    "active",
-		}
-		if err := facades.Orm().Query().Create(&au); err != nil {
+			Status:    models.MembershipStatusActive,
+		}); err != nil {
 			return fmt.Errorf("create account_user %s: %w", m.role, err)
 		}
 		slog.Info("added user to account", "account_id", m.accountID, "role", m.role)

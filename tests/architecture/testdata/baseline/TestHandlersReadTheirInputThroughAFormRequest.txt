@@ -1,0 +1,2 @@
+# TestHandlersReadTheirInputThroughAFormRequest: known violations, rewritten by go test ./tests/architecture -update-baseline
+app/http/controllers/ingest/ingest_controller.go calls ctx.Request().Input() (x2)

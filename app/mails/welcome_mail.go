@@ -1,15 +1,15 @@
 package mails
 
-import (
-	"fmt"
-
-	contractsmail "github.com/goravel/framework/contracts/mail"
-)
+import contractsmail "github.com/goravel/framework/contracts/mail"
 
 // WelcomeMail is sent to a user after successful registration.
 type WelcomeMail struct {
 	To       string
 	FullName string
+}
+
+type welcomeData struct {
+	Name string
 }
 
 func (m *WelcomeMail) Envelope() *contractsmail.Envelope {
@@ -25,19 +25,7 @@ func (m *WelcomeMail) Content() *contractsmail.Content {
 		name = "there"
 	}
 	return &contractsmail.Content{
-		Html: fmt.Sprintf(`<!DOCTYPE html>
-<html>
-<body style="font-family:sans-serif;max-width:600px;margin:40px auto;color:#333;">
-  <h2>Welcome to Vault, %s!</h2>
-  <p>Your account has been created. You can now log in and start managing your wallets.</p>
-  <p>
-    <a href="https://vault.app/login" style="display:inline-block;padding:12px 24px;background:#1a56db;color:#fff;text-decoration:none;border-radius:4px;">
-      Log In
-    </a>
-  </p>
-  <p>If you have any questions, contact our support team at support@vault.app.</p>
-</body>
-</html>`, name),
+		Html: render("welcome.html", welcomeData{Name: name}),
 	}
 }
 

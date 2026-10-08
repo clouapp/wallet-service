@@ -2,18 +2,19 @@ package seeds
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 
 	"github.com/google/uuid"
-	"github.com/goravel/framework/facades"
 	"golang.org/x/crypto/bcrypt"
 
 	"github.com/macrowallets/waas/app/models"
+	"github.com/macrowallets/waas/app/repositories"
 )
 
 // SeedUsers inserts dashboard users with deterministic IDs.
-func SeedUsers(_ context.Context) error {
+func SeedUsers(ctx context.Context) error {
 	users := []struct {
 		id       uuid.UUID
 		email    string
@@ -25,13 +26,18 @@ func SeedUsers(_ context.Context) error {
 		{bobUserID, "bob@macro.markets", "secret", "Bob Jones"},
 	}
 
+	repo := repositories.NewUserRepository(nil)
 	for _, u := range users {
-		var existing models.User
-		if err := facades.Orm().Query().Where("id", u.id).First(&existing); err == nil && existing.ID != uuid.Nil {
-			slog.Info("user already exists, ensuring default account", "email", u.email)
+		existing, err := repo.FindByID(ctx, u.id)
+		if err != nil && !errors.Is(err, models.ErrRepositoryNotFound) {
+			return fmt.Errorf("find user %s: %w", u.id, err)
+		}
+		if existing != nil && existing.ID != uuid.Nil {
+			slog.Info("user already exists, ensuring default account", "user_id", u.id)
 			if existing.DefaultAccountID == nil || *existing.DefaultAccountID != acmeAccountID {
-				if _, err := facades.Orm().Query().Model(&models.User{}).Where("id = ?", u.id).Update("default_account_id", acmeAccountID); err != nil {
-					return fmt.Errorf("update user default account %s: %w", u.email, err)
+				accountID := acmeAccountID
+				if err := repo.UpdateDefaultAccountID(ctx, u.id, &accountID); err != nil {
+					return fmt.Errorf("update user default account %s: %w", u.id, err)
 				}
 			}
 			continue
@@ -41,18 +47,19 @@ func SeedUsers(_ context.Context) error {
 			return err
 		}
 		defAcc := acmeAccountID
-		user := models.User{
+		// Preferences stay nil so UserRepository.Create omits the column and
+		// the jsonb default '{}' applies.
+		if err := repo.Create(ctx, &models.User{
 			ID:               u.id,
 			Email:            u.email,
 			PasswordHash:     string(hash),
 			FullName:         u.fullName,
 			Status:           "active",
 			DefaultAccountID: &defAcc,
+		}); err != nil {
+			return fmt.Errorf("create user %s: %w", u.id, err)
 		}
-		if err := facades.Orm().Query().Create(&user); err != nil {
-			return fmt.Errorf("create user %s: %w", u.email, err)
-		}
-		slog.Info("created user", "email", u.email)
+		slog.Info("created user", "user_id", u.id)
 	}
 	return nil
 }

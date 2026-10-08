@@ -1,0 +1,53 @@
+package settings
+
+import (
+	"context"
+	"strings"
+
+	"github.com/google/uuid"
+
+	"github.com/macrowallets/waas/app/policies"
+)
+
+// AccountGroup reads one account settings group for the dashboard.
+// GET /v1/accounts/{accountId}/settings/{group} applies policies.MayViewSettings
+// (settings.read) before the handler. This method does not repeat that
+// check. An unknown name and a platform-only group are ErrGroupNotFound.
+// A secret is omitted (is_set only). The read writes no activity and
+// lists only this account's rows. The account guard is not a second gate.
+func (s *Service) AccountGroup(ctx context.Context, accountID uuid.UUID, role, groupName string) (GroupView, error) {
+	if err := requireAccount(ctx, accountID); err != nil {
+		return GroupView{}, err
+	}
+	group, ok := accountScopedGroup(groupName)
+	if !ok {
+		return GroupView{}, ErrGroupNotFound
+	}
+	if err := requireAccountGuard(AccountSettingsCatalog()); err != nil {
+		return GroupView{}, err
+	}
+	if s == nil || s.store == nil {
+		return GroupView{}, errServiceRequired
+	}
+	rows, err := s.store.ListGroup(ctx, accountID, group.Name)
+	if err != nil {
+		return GroupView{}, err
+	}
+	canUpdate := policies.MayUpdateSettings(role) && group.ManagedBy == ManagedByAccount
+	return renderStoredGroup(group, rowsOwnedBy(accountID, group.Name, rows), canUpdate), nil
+}
+
+// AccountGroupExists reports a catalog group the account routes address.
+// A platform-only name does not exist on those routes.
+func AccountGroupExists(name string) bool {
+	_, ok := accountScopedGroup(name)
+	return ok
+}
+
+func accountScopedGroup(name string) (Group, bool) {
+	group, ok := FindGroup(strings.TrimSpace(name))
+	if !ok || group.Scope != ScopeAccount {
+		return Group{}, false
+	}
+	return group, true
+}

@@ -1,13 +1,16 @@
 package chain
 
 import (
+	"errors"
+	"strings"
 	"testing"
 
+	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/pkg/types"
 	"github.com/macrowallets/waas/tests/mocks"
 )
 
-func TestRegistry_RegisterAndGet(t *testing.T) {
+func TestRegistry_Register_AndGet(t *testing.T) {
 	r := NewRegistry()
 	mock := mocks.NewMockChain("eth")
 	r.RegisterChain(mock)
@@ -21,15 +24,15 @@ func TestRegistry_RegisterAndGet(t *testing.T) {
 	}
 }
 
-func TestRegistry_ChainNotFound(t *testing.T) {
+func TestRegistry_Chain_NotFound(t *testing.T) {
 	r := NewRegistry()
 	_, err := r.Chain("nonexistent")
-	if err == nil {
-		t.Fatal("expected error for unregistered chain")
+	if !errors.Is(err, ErrUnknownChain) {
+		t.Fatalf("err = %v", err)
 	}
 }
 
-func TestRegistry_ChainIDs(t *testing.T) {
+func TestRegistry_Chain_IDs(t *testing.T) {
 	r := NewRegistry()
 	r.RegisterChain(mocks.NewMockChain("eth"))
 	r.RegisterChain(mocks.NewMockChain("btc"))
@@ -41,10 +44,10 @@ func TestRegistry_ChainIDs(t *testing.T) {
 	}
 }
 
-func TestRegistry_OverwriteChain(t *testing.T) {
+func TestRegistry_Overwrite_Chain(t *testing.T) {
 	r := NewRegistry()
 	r.RegisterChain(mocks.NewMockChain("eth"))
-	
+
 	mock2 := mocks.NewMockChain("eth")
 	mock2.NameVal = "Ethereum v2"
 	r.RegisterChain(mock2)
@@ -55,7 +58,7 @@ func TestRegistry_OverwriteChain(t *testing.T) {
 	}
 }
 
-func TestRegistry_RegisterToken(t *testing.T) {
+func TestRegistry_Register_Token(t *testing.T) {
 	r := NewRegistry()
 	r.RegisterToken(types.Token{Symbol: "usdt", ChainID: "eth", Decimals: 6, Contract: "0xabc"})
 	r.RegisterToken(types.Token{Symbol: "usdc", ChainID: "eth", Decimals: 6, Contract: "0xdef"})
@@ -72,7 +75,7 @@ func TestRegistry_RegisterToken(t *testing.T) {
 	}
 }
 
-func TestRegistry_FindToken(t *testing.T) {
+func TestRegistry_Find_Token(t *testing.T) {
 	r := NewRegistry()
 	r.RegisterToken(types.Token{Symbol: "usdt", ChainID: "eth", Decimals: 6})
 	r.RegisterToken(types.Token{Symbol: "usdc", ChainID: "eth", Decimals: 6})
@@ -107,5 +110,35 @@ func TestRegistry_TokensForChain_Empty(t *testing.T) {
 	r := NewRegistry()
 	if len(r.TokensForChain("btc")) != 0 {
 		t.Error("expected empty token list for btc")
+	}
+}
+
+func TestFind_TokenByContract_CaseInsensitiveEVM(t *testing.T) {
+	r := NewRegistry()
+	r.RegisterToken(types.Token{
+		Symbol: models.SymbolUSDT, ChainID: models.ChainETH, Decimals: 6,
+		Contract: models.USDTContractETH,
+	})
+	got, err := r.FindTokenByContract(models.ChainETH, strings.ToLower(models.USDTContractETH))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Symbol != models.SymbolUSDT || got.Decimals != 6 {
+		t.Fatalf("got %+v", got)
+	}
+}
+
+func TestFind_TokenByContract_SolanaMintExact(t *testing.T) {
+	r := NewRegistry()
+	r.RegisterToken(types.Token{
+		Symbol: models.SymbolUSDC, ChainID: models.ChainSOL, Decimals: 6,
+		Contract: models.USDCMintSOL,
+	})
+	if _, err := r.FindTokenByContract(models.ChainSOL, strings.ToLower(models.USDCMintSOL)); err == nil {
+		t.Fatal("sol mint match must stay case-sensitive")
+	}
+	got, err := r.FindTokenByContract(models.ChainSOL, models.USDCMintSOL)
+	if err != nil || got.Decimals != 6 {
+		t.Fatalf("got %+v err %v", got, err)
 	}
 }

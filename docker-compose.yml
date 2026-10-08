@@ -17,6 +17,7 @@ services:
       - "${POSTGRES_PORT:-5432}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+      - ./docker/postgres/init-test-database.sh:/docker-entrypoint-initdb.d/10-create-test-database.sh:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-vault} -d ${POSTGRES_DB:-vault}"]
       interval: 10s
@@ -44,6 +45,24 @@ services:
       timeout: 5s
       retries: 5
       start_period: 10s
+    networks:
+      - waas-network
+
+  # =============================================================================
+  # Mailpit (local SMTP catcher)
+  # =============================================================================
+  # Local MAIL_MAILER=smtp with no host of its own delivers here. MAIL_MAILER=log
+  # is the other local driver and is refused when APP_ENV is production.
+  mailpit:
+    image: axllent/mailpit:v1.27.1
+    container_name: waas-mailpit
+    restart: unless-stopped
+    environment:
+      MP_SMTP_AUTH_ACCEPT_ANY: "1"
+      MP_SMTP_AUTH_ALLOW_INSECURE: "1"
+    ports:
+      - "${MAILPIT_SMTP_PORT:-1025}:1025"
+      - "${MAILPIT_UI_PORT:-8025}:8025"
     networks:
       - waas-network
 
@@ -84,10 +103,14 @@ services:
   # =============================================================================
   # LocalStack (AWS Service Emulation)
   # =============================================================================
+  # The community image has no native persistence: Secrets Manager (MPC share B) is re-seeded
+  # from encrypted snapshots in localstack_data by the hooks in docker/localstack/ (key outside the repo).
   localstack:
-    image: localstack/localstack:latest
+    # community 4.12.1.dev44 (build 2026-01-06), pinned so a pull cannot change the snapshot/hook behaviour
+    image: localstack/localstack@sha256:3225d60a8cbc8bbd129e97ea48a9f96acb3e1f51a1d19dbe586c444c4bcf762b
     container_name: waas-localstack
     restart: unless-stopped
+    stop_grace_period: 30s
     environment:
       - SERVICES=sqs,secretsmanager,kms
       - AWS_DEFAULT_REGION=us-east-1
@@ -95,12 +118,17 @@ services:
       - AWS_SECRET_ACCESS_KEY=test
       - DEBUG=0
       - DOCKER_HOST=unix:///var/run/docker.sock
+      - SECRETS_SNAPSHOT_INTERVAL=${LOCALSTACK_SECRETS_SNAPSHOT_INTERVAL:-60}
     ports:
       - "${LOCALSTACK_PORT:-4566}:4566"
       - "${LOCALSTACK_PORT_ALT:-4571}:4571"
     volumes:
       - localstack_data:/var/lib/localstack
       - /var/run/docker.sock:/var/run/docker.sock
+      - ./docker/localstack/bin:/etc/localstack/secrets-snapshot:ro
+      - ./docker/localstack/init/ready.d/50-secrets-snapshot.sh:/etc/localstack/init/ready.d/50-secrets-snapshot.sh:ro
+      - ./docker/localstack/init/shutdown.d/50-secrets-snapshot.sh:/etc/localstack/init/shutdown.d/50-secrets-snapshot.sh:ro
+      - ${LOCALSTACK_SEED_KEY_DIR:-${HOME}/.config/macro-wallets/localstack-seed}:/run/secrets/localstack-seed:ro
     healthcheck:
       test: ["CMD", "awslocal", "sqs", "list-queues"]
       interval: 10s
@@ -120,9 +148,19 @@ services:
       target: builder
     container_name: waas-test-runner
     environment:
-      TEST_DATABASE_URL: postgres://${POSTGRES_USER:-vault}:${POSTGRES_PASSWORD:-vault}@postgres:5432/${POSTGRES_DB:-vault}_test?sslmode=disable
-      REDIS_URL: redis://redis:6379
-    command: go test ./... -v -race -count=1
+      APP_ENV: testing
+      DB_CONNECTION: postgres
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_DATABASE: ${POSTGRES_DB:-vault}_test
+      DB_USERNAME: ${POSTGRES_USER:-vault}
+      DB_PASSWORD: ${POSTGRES_PASSWORD:-vault}
+      DB_SSLMODE: disable
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_DB: 15
+      TEST_DB_REQUIRED: 1
+    command: go test -p 1 ./... -v -race -count=1
     depends_on:
       postgres:
         condition: service_healthy

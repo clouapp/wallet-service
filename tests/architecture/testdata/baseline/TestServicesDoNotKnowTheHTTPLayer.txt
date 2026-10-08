@@ -1,0 +1,10 @@
+# TestServicesDoNotKnowTheHTTPLayer: known violations, rewritten by go test ./tests/architecture -update-baseline
+app/services/deposit imports app/repositories
+app/services/refresh imports app/repositories (x2)
+app/services/settings/seal.go calls facades.Crypt()
+app/services/settings/service.go calls facades.Cache()
+app/services/wallet/service.go calls facades.Config()
+app/services/webhooksync imports app/repositories
+app/services/webhooksync imports gorm.io/gorm
+app/services/webhooksync/service.go calls facades.Crypt()
+app/services/withdraw imports app/repositories
