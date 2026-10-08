@@ -15,9 +15,9 @@ func (r *WithdrawPreviewRequest) Authorize(ctx http.Context) error {
 
 func (r *WithdrawPreviewRequest) Messages(ctx http.Context) map[string]string {
 	return map[string]string{
-		"asset.required":         "Asset identifier is required",
-		"amount.required":        "Amount is required",
-		"amount.decimal_string":  "Amount must be a valid number",
+		"asset.required":        "Asset identifier is required",
+		"amount.required":       "Amount is required",
+		"amount.decimal_string": "Amount must be a valid number",
 	}
 }
 

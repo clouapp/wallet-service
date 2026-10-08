@@ -26,7 +26,7 @@ type WalletAssetBalance struct {
 	ValueUSD      numeric.NullDecimal `gorm:"type:numeric(28,10)"`
 	SourceAddress *string             `gorm:"type:text"`
 	LastSyncedAt  time.Time           `gorm:"type:timestamptz;not null"`
-	Wallet *Wallet `gorm:"foreignKey:WalletID"`
+	Wallet        *Wallet             `gorm:"foreignKey:WalletID"`
 }
 
 func (w *WalletAssetBalance) TableName() string {

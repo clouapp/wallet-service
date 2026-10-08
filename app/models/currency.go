@@ -28,7 +28,8 @@ type Currency struct {
 	CurrentPrice   numeric.Decimal     `gorm:"type:decimal(28,10);default:1"`
 	LastPrice      numeric.NullDecimal `gorm:"type:decimal(28,10)"`
 	PriceUpdatedAt *time.Time          `gorm:"type:timestamptz"`
-	Active         bool                `gorm:"default:false"`}
+	Active         bool                `gorm:"default:false"`
+}
 
 func (c *Currency) TableName() string { return "currencies" }
 
