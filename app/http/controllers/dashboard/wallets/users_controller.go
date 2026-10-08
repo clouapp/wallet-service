@@ -89,7 +89,7 @@ func (ctrl *UsersController) AddWalletUser(ctx http.Context) http.Response {
 	wallet := requestctx.MustWallet(ctx)
 
 	var req requests.AddWalletUserRequest
-	if resp := validateRequest(ctx, &req); resp != nil {
+	if resp := requests.Validate(ctx, &req); resp != nil {
 		return resp
 	}
 	targetID, _ := uuid.Parse(req.UserID)

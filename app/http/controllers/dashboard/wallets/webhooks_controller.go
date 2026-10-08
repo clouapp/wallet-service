@@ -84,7 +84,7 @@ func (ctrl *WebhooksController) CreateWalletWebhook(ctx http.Context) http.Respo
 	wallet := requestctx.MustWallet(ctx)
 
 	var req requests.CreateWalletWebhookRequest
-	if resp := validateRequest(ctx, &req); resp != nil {
+	if resp := requests.Validate(ctx, &req); resp != nil {
 		return resp
 	}
 

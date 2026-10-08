@@ -3,7 +3,6 @@ package preferences
 import (
 	"github.com/goravel/framework/contracts/http"
 
-	"github.com/macrowallets/waas/app/http/controllers"
 	"github.com/macrowallets/waas/app/http/middleware/requestctx"
 	"github.com/macrowallets/waas/app/http/requests"
 	"github.com/macrowallets/waas/app/http/responses"
@@ -11,10 +10,6 @@ import (
 	"github.com/macrowallets/waas/app/services/currencies"
 	usersvc "github.com/macrowallets/waas/app/services/users"
 )
-
-func validateRequest(ctx http.Context, req http.FormRequest) http.Response {
-	return controllers.ValidateRequest(ctx, req)
-}
 
 // PreferencesController serves the dashboard preference routes.
 type PreferencesController struct {
@@ -60,7 +55,7 @@ func (ctrl *PreferencesController) UpdatePreferences(ctx http.Context) http.Resp
 	user := requestctx.MustUser(ctx)
 
 	var req requests.UpdatePreferencesRequest
-	if errResp := validateRequest(ctx, &req); errResp != nil {
+	if errResp := requests.Validate(ctx, &req); errResp != nil {
 		return errResp
 	}
 

@@ -7,7 +7,6 @@ import (
 
 	appfacades "github.com/macrowallets/waas/app/facades"
 	"github.com/macrowallets/waas/app/http/middleware/requestctx"
-	"github.com/macrowallets/waas/app/http/requests"
 	chainresource "github.com/macrowallets/waas/app/http/resources/chains"
 	chainresources "github.com/macrowallets/waas/app/http/resources/dashboard/chains"
 	"github.com/macrowallets/waas/app/http/responses"
@@ -65,9 +64,7 @@ func (ctrl *ChainsController) ListChains(ctx http.Context) http.Response {
 
 // GetChain returns a single chain by ID with its tokens and resources.
 func (ctrl *ChainsController) GetChain(ctx http.Context) http.Response {
-	var path requests.ChainIDRequest
-	path.Load(ctx)
-	chainID := path.ChainID
+	chainID := ctx.Request().Route("chainId")
 	if chainID == "" {
 		return responses.Fail(ctx, http.StatusBadRequest, responses.CodeInvalidRequest, "chainId is required")
 	}
@@ -97,9 +94,7 @@ func (ctrl *ChainsController) GetChain(ctx http.Context) http.Response {
 
 // ListChainTokens returns tokens for a specific chain.
 func (ctrl *ChainsController) ListChainTokens(ctx http.Context) http.Response {
-	var path requests.ChainIDRequest
-	path.Load(ctx)
-	chainID := path.ChainID
+	chainID := ctx.Request().Route("chainId")
 	if chainID == "" {
 		return responses.Fail(ctx, http.StatusBadRequest, responses.CodeInvalidRequest, "chainId is required")
 	}
@@ -127,9 +122,7 @@ func (ctrl *ChainsController) ListChainTokens(ctx http.Context) http.Response {
 
 // ListChainResources returns resources (explorers, faucets, docs) for a chain.
 func (ctrl *ChainsController) ListChainResources(ctx http.Context) http.Response {
-	var path requests.ChainIDRequest
-	path.Load(ctx)
-	chainID := path.ChainID
+	chainID := ctx.Request().Route("chainId")
 	if chainID == "" {
 		return responses.Fail(ctx, http.StatusBadRequest, responses.CodeInvalidRequest, "chainId is required")
 	}

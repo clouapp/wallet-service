@@ -37,7 +37,7 @@ func TestWallets_Controller_Suite(t *testing.T) {
 
 // TestCreateWallet_MissingChain confirms that the external API rejects a
 // request with no chain. The shared validator maps rule violations to 422
-// (Unprocessable Entity) via controllers.validateRequest — not 400.
+// (Unprocessable Entity) via requests.Validate — not 400.
 func (s *WalletsControllerTestSuite) TestCreate_Wallet_MissingChain() {
 	testutil.SeededTestDB(s.T())
 	_, bearer, _ := ctltestutil.SetupAPIAuth(s.T(), false)

@@ -79,7 +79,7 @@ func (ctrl *WhitelistController) AddWhitelistEntry(ctx http.Context) http.Respon
 	wallet := requestctx.MustWallet(ctx)
 
 	var req requests.AddWhitelistEntryRequest
-	if resp := validateRequest(ctx, &req); resp != nil {
+	if resp := requests.Validate(ctx, &req); resp != nil {
 		return resp
 	}
 

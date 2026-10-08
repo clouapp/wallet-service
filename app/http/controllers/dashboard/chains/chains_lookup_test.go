@@ -53,7 +53,7 @@ type recordingRequest struct {
 	chainID string
 }
 
-func (r *recordingRequest) Input(string, ...string) string { return r.chainID }
+func (r *recordingRequest) Route(string) string { return r.chainID }
 
 type recordingResponse struct {
 	http.ContextResponse

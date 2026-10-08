@@ -10,7 +10,6 @@ import (
 	"github.com/goravel/framework/contracts/http"
 
 	"github.com/macrowallets/waas/app/http/middleware/requestctx"
-	"github.com/macrowallets/waas/app/http/requests"
 	"github.com/macrowallets/waas/app/http/responses"
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/services/chain"
@@ -69,13 +68,11 @@ func (ctrl *FeeEstimateController) GetWalletFeeEstimate(ctx http.Context) http.R
 		callerAccountID = *wallet.AccountID
 	}
 
-	var query requests.FeeEstimateRequest
-	query.Load(ctx)
 	estimate, err := ctrl.estimates.Estimate(ctx.Context(), feeestimate.Request{
 		Wallet:          wallet,
-		Asset:           query.Asset,
-		Amount:          query.Amount,
-		To:              query.To,
+		Asset:           ctx.Request().Query("asset"),
+		Amount:          ctx.Request().Query("amount"),
+		To:              ctx.Request().Query("to"),
 		CallerAccountID: callerAccountID,
 	})
 	if err != nil {

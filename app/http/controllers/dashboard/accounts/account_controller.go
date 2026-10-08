@@ -12,7 +12,6 @@ import (
 	"github.com/goravel/framework/contracts/http"
 
 	appfacades "github.com/macrowallets/waas/app/facades"
-	"github.com/macrowallets/waas/app/http/controllers"
 	"github.com/macrowallets/waas/app/http/middleware"
 	"github.com/macrowallets/waas/app/http/middleware/requestctx"
 	"github.com/macrowallets/waas/app/http/pagination"
@@ -27,10 +26,6 @@ import (
 	"github.com/macrowallets/waas/app/services/settings"
 	"github.com/macrowallets/waas/app/services/withdraw"
 )
-
-func validateRequest(ctx http.Context, req http.FormRequest) http.Response {
-	return controllers.ValidateRequest(ctx, req)
-}
 
 type AccountsController struct {
 	accountService *accountsvc.Service
@@ -99,7 +94,7 @@ func (ctrl *AccountsController) CreateAccount(ctx http.Context) http.Response {
 	userID := requestctx.MustUserID(ctx)
 
 	var req requests.CreateAccountRequest
-	if errResp := validateRequest(ctx, &req); errResp != nil {
+	if errResp := requests.Validate(ctx, &req); errResp != nil {
 		return errResp
 	}
 
@@ -172,7 +167,7 @@ func (ctrl *AccountsController) UpdateAccount(ctx http.Context) http.Response {
 	account := requestctx.MustAccount(ctx)
 
 	var req requests.UpdateAccountRequest
-	if errResp := validateRequest(ctx, &req); errResp != nil {
+	if errResp := requests.Validate(ctx, &req); errResp != nil {
 		return errResp
 	}
 
@@ -272,7 +267,7 @@ func (ctrl *AccountsController) AddAccountUser(ctx http.Context) http.Response {
 	account := requestctx.MustAccount(ctx)
 	callerID := requestctx.MustUserID(ctx)
 	var req requests.AddAccountUserRequest
-	if errResp := validateRequest(ctx, &req); errResp != nil {
+	if errResp := requests.Validate(ctx, &req); errResp != nil {
 		return errResp
 	}
 
@@ -358,7 +353,7 @@ func (ctrl *AccountsController) UpdateAccountUser(ctx http.Context) http.Respons
 	}
 
 	var req requests.UpdateAccountUserRequest
-	if errResp := validateRequest(ctx, &req); errResp != nil {
+	if errResp := requests.Validate(ctx, &req); errResp != nil {
 		return errResp
 	}
 
@@ -450,7 +445,7 @@ func (ctrl *AccountsController) CreateAccountToken(ctx http.Context) http.Respon
 	callerID, _ := requestctx.UserID(ctx)
 
 	var req requests.CreateAccountTokenRequest
-	if errResp := validateRequest(ctx, &req); errResp != nil {
+	if errResp := requests.Validate(ctx, &req); errResp != nil {
 		return errResp
 	}
 	if !policies.ValidAPITokenIPCIDR(req.IpCidr) {

@@ -59,16 +59,15 @@ func (ctrl *ChainsController) Update(ctx http.Context) http.Response {
 	if actorID == uuid.Nil {
 		return responses.Fail(ctx, http.StatusUnauthorized, responses.CodeUnauthorized, "unauthorized")
 	}
-	var path requests.ChainIDRequest
-	path.Load(ctx)
-	if path.ChainID == "" {
+	chainID := ctx.Request().Route("chainId")
+	if chainID == "" {
 		return responses.Fail(ctx, http.StatusBadRequest, responses.CodeInvalidRequest, "chainId is required")
 	}
 	document, err := requests.ChainThresholdDocument(ctx)
 	if err != nil {
 		return mapChainThresholdBodyError(ctx, err)
 	}
-	view, err := ctrl.thresholds.Update(ctx.Context(), actorID, path.ChainID, document)
+	view, err := ctrl.thresholds.Update(ctx.Context(), actorID, chainID, document)
 	if errResp := mapChainThresholdError(ctx, err); errResp != nil {
 		return errResp
 	}
@@ -94,16 +93,15 @@ func (ctrl *ChainsController) UpdateRPC(ctx http.Context) http.Response {
 	if actorID == uuid.Nil {
 		return responses.Fail(ctx, http.StatusUnauthorized, responses.CodeUnauthorized, "unauthorized")
 	}
-	var path requests.ChainIDRequest
-	path.Load(ctx)
-	if path.ChainID == "" {
+	chainID := ctx.Request().Route("chainId")
+	if chainID == "" {
 		return responses.Fail(ctx, http.StatusBadRequest, responses.CodeInvalidRequest, "chainId is required")
 	}
 	document, err := requests.ChainRPCDocument(ctx)
 	if err != nil {
 		return mapChainRPCBodyError(ctx, err)
 	}
-	view, err := ctrl.rpc.Update(ctx.Context(), actorID, path.ChainID, document)
+	view, err := ctrl.rpc.Update(ctx.Context(), actorID, chainID, document)
 	if errResp := mapChainRPCError(ctx, err); errResp != nil {
 		return errResp
 	}

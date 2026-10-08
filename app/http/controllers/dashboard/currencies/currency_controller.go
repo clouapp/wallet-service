@@ -8,7 +8,6 @@ import (
 
 	"github.com/goravel/framework/contracts/http"
 
-	"github.com/macrowallets/waas/app/http/requests"
 	currencyresources "github.com/macrowallets/waas/app/http/resources/dashboard/currencies"
 	"github.com/macrowallets/waas/app/http/responses"
 	"github.com/macrowallets/waas/app/models"
@@ -53,9 +52,7 @@ func (ctrl *CurrenciesController) ListCurrencies(ctx http.Context) http.Response
 }
 
 func (ctrl *CurrenciesController) GetCurrency(ctx http.Context) http.Response {
-	var path requests.CurrencyCodeRequest
-	path.Load(ctx)
-	code := path.Code
+	code := ctx.Request().Route("code")
 	if code == "" {
 		return responses.Fail(ctx, http.StatusBadRequest, responses.CodeInvalidRequest, "currency code is required")
 	}
@@ -74,11 +71,9 @@ func (ctrl *CurrenciesController) GetCurrency(ctx http.Context) http.Response {
 }
 
 func (ctrl *CurrenciesController) ConvertCurrency(ctx http.Context) http.Response {
-	var query requests.ConvertCurrencyRequest
-	query.Load(ctx)
-	from := query.From
-	to := query.To
-	amountStr := query.Amount
+	from := ctx.Request().Query("from")
+	to := ctx.Request().Query("to")
+	amountStr := ctx.Request().Query("amount", "0")
 
 	if from == "" || to == "" {
 		return responses.Fail(ctx, http.StatusBadRequest, responses.CodeInvalidRequest, "from, to, and amount are required")

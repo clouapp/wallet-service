@@ -77,9 +77,7 @@ func (ctrl *FeaturesController) Update(ctx http.Context) http.Response {
 	if errResp != nil {
 		return errResp
 	}
-	var path requests.FeatureKeyRequest
-	path.Load(ctx)
-	key := path.Key
+	key := strings.TrimSpace(ctx.Request().Route("key"))
 	enabled, err := requests.AccountFeatureEnabled(ctx)
 	if err != nil {
 		return mapPlatformFeatureBodyError(ctx, err)
@@ -110,9 +108,7 @@ func (ctrl *FeaturesController) ShowScope(ctx http.Context) http.Response {
 	if errResp != nil {
 		return errResp
 	}
-	var path requests.FeatureScopeRequest
-	path.Load(ctx)
-	view, err := ctrl.features.ListScopedForPlatform(ctx.Context(), userID, path.Scope, path.ID, ctrl.accounts)
+	view, err := ctrl.features.ListScopedForPlatform(ctx.Context(), userID, strings.TrimSpace(ctx.Request().Route("scope")), strings.TrimSpace(ctx.Request().Route("id")), ctrl.accounts)
 	if errResp := mapPlatformFeatureError(ctx, err); errResp != nil {
 		return errResp
 	}
@@ -136,9 +132,7 @@ func (ctrl *FeaturesController) ShowScope(ctx http.Context) http.Response {
 // @Failure      422  {object}  responses.ErrorBody
 // @Router       /platform/features/{scope}/{id} [put]
 func (ctrl *FeaturesController) UpdateScope(ctx http.Context) http.Response {
-	var path requests.FeatureScopeRequest
-	path.Load(ctx)
-	return ctrl.writeScope(ctx, path.Scope, path.ID, "", false)
+	return ctrl.writeScope(ctx, strings.TrimSpace(ctx.Request().Route("scope")), strings.TrimSpace(ctx.Request().Route("id")), "", false)
 }
 
 // UpdateScopeFeature godoc
@@ -159,9 +153,7 @@ func (ctrl *FeaturesController) UpdateScope(ctx http.Context) http.Response {
 // @Failure      422  {object}  responses.ErrorBody
 // @Router       /platform/features/{scope}/{id}/{feature} [put]
 func (ctrl *FeaturesController) UpdateScopeFeature(ctx http.Context) http.Response {
-	var path requests.FeatureScopeFeatureRequest
-	path.Load(ctx)
-	return ctrl.writeScope(ctx, path.Scope, path.ID, path.Feature, true)
+	return ctrl.writeScope(ctx, strings.TrimSpace(ctx.Request().Route("scope")), strings.TrimSpace(ctx.Request().Route("id")), strings.TrimSpace(ctx.Request().Route("feature")), true)
 }
 
 func (ctrl *FeaturesController) writeScope(ctx http.Context, scope, id, feature string, single bool) http.Response {

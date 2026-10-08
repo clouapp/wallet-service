@@ -26,10 +26,6 @@ import (
 	usersvc "github.com/macrowallets/waas/app/services/users"
 )
 
-func validateRequest(ctx http.Context, req http.FormRequest) http.Response {
-	return controllers.ValidateRequest(ctx, req)
-}
-
 type UsersController struct {
 	users        *usersvc.Service
 	accounts     *accountsvc.Service
@@ -144,7 +140,7 @@ func (ctrl *UsersController) UpdateMe(ctx http.Context) http.Response {
 	user := requestctx.MustUser(ctx)
 
 	var req requests.UpdateMeRequest
-	if errResp := validateRequest(ctx, &req); errResp != nil {
+	if errResp := requests.Validate(ctx, &req); errResp != nil {
 		return errResp
 	}
 
@@ -174,7 +170,7 @@ func (ctrl *UsersController) ChangePassword(ctx http.Context) http.Response {
 	user := requestctx.MustUser(ctx)
 
 	var req requests.ChangePasswordRequest
-	if errResp := validateRequest(ctx, &req); errResp != nil {
+	if errResp := requests.Validate(ctx, &req); errResp != nil {
 		return errResp
 	}
 
@@ -228,14 +224,12 @@ var myAccountsBounds = pagination.Bounds{DefaultLimit: myAccountsDefaultLimit, M
 func (ctrl *UsersController) ListMyAccounts(ctx http.Context) http.Response {
 	userID := requestctx.MustUserID(ctx)
 
-	var query requests.ListMyAccountsRequest
-	query.Load(ctx)
-	limit, offset, err := pagination.ParseStrict(query.Limit, query.Offset, myAccountsBounds)
+	limit, offset, err := pagination.ParseStrict(ctx.Request().Query("limit"), ctx.Request().Query("offset"), myAccountsBounds)
 	if err != nil {
 		return paginationError(ctx, err)
 	}
 
-	search, environment, errMessage := parseMyAccountsFilter(query.Search, query.Environment)
+	search, environment, errMessage := parseMyAccountsFilter(ctx.Request().Query("search"), ctx.Request().Query("environment"))
 	if errMessage != "" {
 		return responses.FailMessage(ctx, http.StatusBadRequest, errMessage)
 	}
@@ -326,7 +320,7 @@ func (ctrl *UsersController) UpdateDefaultAccount(ctx http.Context) http.Respons
 	userID := requestctx.MustUserID(ctx)
 
 	var req requests.UpdateDefaultAccountRequest
-	if errResp := validateRequest(ctx, &req); errResp != nil {
+	if errResp := requests.Validate(ctx, &req); errResp != nil {
 		return errResp
 	}
 
@@ -411,7 +405,7 @@ func (ctrl *UsersController) ConfirmTOTP(ctx http.Context) http.Response {
 	user := requestctx.MustUser(ctx)
 
 	var req requests.ConfirmTwoFactorRequest
-	if errResp := validateRequest(ctx, &req); errResp != nil {
+	if errResp := requests.Validate(ctx, &req); errResp != nil {
 		return errResp
 	}
 
@@ -505,7 +499,7 @@ func (ctrl *UsersController) DisableTOTP(ctx http.Context) http.Response {
 
 func (ctrl *UsersController) requireLiveSecondFactor(ctx http.Context, user *models.User) http.Response {
 	var req requests.DisableTotpRequest
-	if errResp := validateRequest(ctx, &req); errResp != nil {
+	if errResp := requests.Validate(ctx, &req); errResp != nil {
 		return errResp
 	}
 	if strings.TrimSpace(req.Code) == "" && strings.TrimSpace(req.RecoveryCode) == "" {

@@ -23,10 +23,6 @@ import (
 	usersvc "github.com/macrowallets/waas/app/services/users"
 )
 
-func validateRequest(ctx http.Context, req http.FormRequest) http.Response {
-	return controllers.ValidateRequest(ctx, req)
-}
-
 type AuthController struct {
 	users          *usersvc.Service
 	accounts       *accountsvc.Service
@@ -107,7 +103,7 @@ func (ctrl *AuthController) sessions() controllers.SessionIssuer {
 // @Router       /auth/register [post]
 func (ctrl *AuthController) Register(ctx http.Context) http.Response {
 	var req requests.RegisterRequest
-	if errResp := validateRequest(ctx, &req); errResp != nil {
+	if errResp := requests.Validate(ctx, &req); errResp != nil {
 		return errResp
 	}
 
@@ -167,7 +163,7 @@ func (ctrl *AuthController) Register(ctx http.Context) http.Response {
 // @Router       /auth/login [post]
 func (ctrl *AuthController) Login(ctx http.Context) http.Response {
 	var req requests.LoginRequest
-	if errResp := validateRequest(ctx, &req); errResp != nil {
+	if errResp := requests.Validate(ctx, &req); errResp != nil {
 		return errResp
 	}
 
@@ -237,7 +233,7 @@ func (ctrl *AuthController) Login(ctx http.Context) http.Response {
 // @Router       /auth/2fa/verify [post]
 func (ctrl *AuthController) VerifyTwoFactor(ctx http.Context) http.Response {
 	var req requests.VerifyTwoFactorRequest
-	if errResp := validateRequest(ctx, &req); errResp != nil {
+	if errResp := requests.Validate(ctx, &req); errResp != nil {
 		return errResp
 	}
 
@@ -282,7 +278,7 @@ func (ctrl *AuthController) VerifyTwoFactor(ctx http.Context) http.Response {
 // @Router       /auth/refresh [post]
 func (ctrl *AuthController) RefreshToken(ctx http.Context) http.Response {
 	var req requests.RefreshTokenRequest
-	if errResp := validateRequest(ctx, &req); errResp != nil {
+	if errResp := requests.Validate(ctx, &req); errResp != nil {
 		return errResp
 	}
 
@@ -370,7 +366,7 @@ func (ctrl *AuthController) Logout(ctx http.Context) http.Response {
 // @Router       /auth/forgot-password [post]
 func (ctrl *AuthController) ForgotPassword(ctx http.Context) http.Response {
 	var req requests.ForgotPasswordRequest
-	if errResp := validateRequest(ctx, &req); errResp != nil {
+	if errResp := requests.Validate(ctx, &req); errResp != nil {
 		return errResp
 	}
 
@@ -394,7 +390,7 @@ func (ctrl *AuthController) ForgotPassword(ctx http.Context) http.Response {
 // @Router       /auth/reset-password [post]
 func (ctrl *AuthController) ResetPassword(ctx http.Context) http.Response {
 	var req requests.ResetPasswordRequest
-	if errResp := validateRequest(ctx, &req); errResp != nil {
+	if errResp := requests.Validate(ctx, &req); errResp != nil {
 		return errResp
 	}
 

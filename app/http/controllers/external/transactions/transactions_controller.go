@@ -52,16 +52,14 @@ func (ctrl *TransactionsController) ListTransactions(ctx http.Context) http.Resp
 	}
 
 	limit, offset := pagination.ParseParams(ctx, 50)
-	var query requests.ListTransactionsRequest
-	query.Load(ctx)
 
 	txs, total, err := ctrl.withdrawals.ListTransactionsForAccount(
 		ctx.Context(),
 		accountID,
-		query.Chain,
-		query.Type,
-		query.Status,
-		query.UserID,
+		ctx.Request().Query("chain"),
+		ctx.Request().Query("type"),
+		ctx.Request().Query("status"),
+		ctx.Request().Query("user_id"),
 		limit,
 		offset,
 	)
@@ -116,13 +114,11 @@ func (ctrl *TransactionsController) ListUserTransactions(ctx http.Context) http.
 
 	limit, offset := pagination.ParseParams(ctx, 50)
 
-	var path requests.ExternalIDRequest
-	path.Load(ctx)
 	txs, total, err := ctrl.withdrawals.ListTransactionsForAccount(
 		ctx.Context(),
 		accountID,
 		"", "", "",
-		path.ExternalID,
+		ctx.Request().Route("external_id"),
 		limit,
 		offset,
 	)

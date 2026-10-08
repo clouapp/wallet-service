@@ -105,9 +105,14 @@ The status and code of each outcome are in
 
 Rules:
 
-- **Never call `ctx.Request().ValidateRequest`, `Bind`, `Input`, `All`, `Query`
-  or `Route` in a controller.** `requests.Validate` / `ValidatePath` /
-  `RouteID` are what a handler calls; `tests/architecture` refuses the rest.
+- **Body input has one entry point: `requests.Validate`** (it wraps
+  `ctx.Request().ValidateRequest`). A controller never calls `ValidateRequest`,
+  `Bind`, `Input`, `All` or `Json` itself, and there is no per-package wrapper;
+  `TestHandlers_Read_TheirInputThroughAFormRequest` refuses them.
+- **A path or query parameter is read in the handler** with
+  `ctx.Request().Route("id")` / `Query("limit")`, the documented Goravel way
+  (D2). A form request exists only where there are rules to run: no
+  `Load`-only request that copies a parameter into a struct.
 - Form requests live in `app/http/requests/<surface>/<feature>/<feature>_requests.go`,
   embed `requests.Open` (permission is route middleware), declare `Rules()` and,
   when the single error message matters, `FieldOrder()`.

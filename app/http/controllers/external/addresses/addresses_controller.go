@@ -16,10 +16,6 @@ import (
 	"github.com/macrowallets/waas/app/services/walletrecords"
 )
 
-func validateRequest(ctx http.Context, req http.FormRequest) http.Response {
-	return controllers.ValidateRequest(ctx, req)
-}
-
 // AddressesController serves the external address routes.
 type AddressesController struct {
 	addresses     *walletrecords.Addresses
@@ -82,7 +78,7 @@ func (ctrl *AddressesController) GenerateAddress(ctx http.Context) http.Response
 
 	var req requests.GenerateAddressRequest
 	defer controllers.DiscardPassphrase(&req.Passphrase)
-	if errResp := validateRequest(ctx, &req); errResp != nil {
+	if errResp := requests.Validate(ctx, &req); errResp != nil {
 		return errResp
 	}
 
@@ -121,7 +117,7 @@ func (ctrl *AddressesController) UpdateAddress(ctx http.Context) http.Response {
 	}
 
 	var req requests.UpdateAddressRequest
-	if errResp := validateRequest(ctx, &req); errResp != nil {
+	if errResp := requests.Validate(ctx, &req); errResp != nil {
 		return errResp
 	}
 
@@ -189,10 +185,8 @@ func (ctrl *AddressesController) LookupAddress(ctx http.Context) http.Response {
 		return responses.Fail(ctx, http.StatusUnauthorized, responses.CodeUnauthorized, "unauthorized")
 	}
 
-	var path requests.LookupAddressRequest
-	path.Load(ctx)
-	address := path.Address
-	chainFilter := path.Chain
+	address := ctx.Request().Route("address")
+	chainFilter := ctx.Request().Query("chain")
 
 	if chainFilter != "" {
 		addr, err := ctrl.walletService().LookupAddressForAccount(ctx.Context(), chainFilter, address, accountID)
@@ -230,11 +224,9 @@ func (ctrl *AddressesController) ListUserAddresses(ctx http.Context) http.Respon
 		return responses.Fail(ctx, http.StatusUnauthorized, responses.CodeUnauthorized, "unauthorized")
 	}
 
-	var path requests.ExternalIDRequest
-	path.Load(ctx)
 	addrs, err := ctrl.walletService().ListUserAddressesForAccount(
 		ctx.Context(),
-		path.ExternalID,
+		ctx.Request().Route("external_id"),
 		accountID,
 	)
 	if err != nil {

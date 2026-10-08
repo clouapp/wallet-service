@@ -19,10 +19,6 @@ import (
 	"github.com/macrowallets/waas/app/services/walletrecords"
 )
 
-func validateRequest(ctx http.Context, req http.FormRequest) http.Response {
-	return controllers.ValidateRequest(ctx, req)
-}
-
 // CreateWalletResponse is the external create response: the wallet fields and
 // the combined public key. The customer share, the passphrase, and the service
 // share are not on it.
@@ -97,7 +93,7 @@ func NewWalletsController(deps WalletsControllerDeps) *WalletsController {
 func (ctrl *WalletsController) CreateWallet(ctx http.Context) http.Response {
 	var req requests.CreateWalletRequest
 	defer controllers.DiscardPassphrase(&req.Passphrase)
-	if resp := validateRequest(ctx, &req); resp != nil {
+	if resp := requests.Validate(ctx, &req); resp != nil {
 		return resp
 	}
 
@@ -146,9 +142,7 @@ func (ctrl *WalletsController) ListWallets(ctx http.Context) http.Response {
 	}
 
 	limit, offset := pagination.ParseParams(ctx, 20)
-	var query requests.ListWalletsRequest
-	query.Load(ctx)
-	chain := query.Chain
+	chain := ctx.Request().Query("chain")
 
 	wallets, total, err := ctrl.wallets.PaginateByAccount(ctx.Context(), accountID, chain, limit, offset)
 	if err != nil {

@@ -2,6 +2,7 @@ package settings
 
 import (
 	"errors"
+	"strings"
 
 	"github.com/google/uuid"
 	"github.com/goravel/framework/contracts/http"
@@ -67,9 +68,7 @@ func (ctrl *SettingsController) ShowGroup(ctx http.Context) http.Response {
 	if errResp != nil {
 		return errResp
 	}
-	var path requests.SettingsGroupRequest
-	path.Load(ctx)
-	view, err := ctrl.settings.AccountGroup(ctx.Context(), account.ID, role, path.Group)
+	view, err := ctrl.settings.AccountGroup(ctx.Context(), account.ID, role, strings.TrimSpace(ctx.Request().Route("group")))
 	if errResp := mapSettingsError(ctx, err); errResp != nil {
 		return errResp
 	}
@@ -96,9 +95,7 @@ func (ctrl *SettingsController) Update(ctx http.Context) http.Response {
 	if errResp != nil {
 		return errResp
 	}
-	var path requests.SettingsGroupRequest
-	path.Load(ctx)
-	group := path.Group
+	group := strings.TrimSpace(ctx.Request().Route("group"))
 	actorID := middleware.SessionUserID(ctx)
 	if actorID == uuid.Nil {
 		return responses.Fail(ctx, http.StatusUnauthorized, "unauthenticated", "unauthenticated")
@@ -130,9 +127,7 @@ func (ctrl *SettingsController) Flush(ctx http.Context) http.Response {
 	if errResp != nil {
 		return errResp
 	}
-	var path requests.SettingsSectionRequest
-	path.Load(ctx)
-	if err := ctrl.settings.FlushSection(ctx.Context(), account.ID, role, path.Section); err != nil {
+	if err := ctrl.settings.FlushSection(ctx.Context(), account.ID, role, strings.TrimSpace(ctx.Request().Route("section"))); err != nil {
 		return mapSettingsError(ctx, err)
 	}
 	return ctx.Response().NoContent()
@@ -155,13 +150,11 @@ func (ctrl *SettingsController) Reset(ctx http.Context) http.Response {
 	if errResp != nil {
 		return errResp
 	}
-	var path requests.SettingsSectionRequest
-	path.Load(ctx)
 	actorID := middleware.SessionUserID(ctx)
 	if actorID == uuid.Nil {
 		return responses.Fail(ctx, http.StatusUnauthorized, "unauthenticated", "unauthenticated")
 	}
-	view, err := ctrl.settings.ResetSection(ctx.Context(), account.ID, actorID, role, path.Section)
+	view, err := ctrl.settings.ResetSection(ctx.Context(), account.ID, actorID, role, strings.TrimSpace(ctx.Request().Route("section")))
 	if errResp := mapSettingsError(ctx, err); errResp != nil {
 		return errResp
 	}

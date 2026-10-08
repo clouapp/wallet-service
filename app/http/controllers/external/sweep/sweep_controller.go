@@ -13,10 +13,6 @@ import (
 	sweep "github.com/macrowallets/waas/app/services/sweep"
 )
 
-func validateRequest(ctx http.Context, req http.FormRequest) http.Response {
-	return controllers.ValidateRequest(ctx, req)
-}
-
 // SweepController serves the external consolidate and gas routes.
 type SweepController struct {
 	sweeps sweep.Service
@@ -72,7 +68,7 @@ func (ctrl *SweepController) ConsolidateWallet(ctx http.Context) http.Response {
 
 	var req requests.ConsolidateRequest
 	defer controllers.DiscardPassphrase(&req.Passphrase)
-	if errResp := validateRequest(ctx, &req); errResp != nil {
+	if errResp := requests.Validate(ctx, &req); errResp != nil {
 		return errResp
 	}
 
@@ -155,7 +151,7 @@ func (ctrl *SweepController) PreviewWithdraw(ctx http.Context) http.Response {
 	}
 
 	var req requests.WithdrawPreviewRequest
-	if errResp := validateRequest(ctx, &req); errResp != nil {
+	if errResp := requests.Validate(ctx, &req); errResp != nil {
 		return errResp
 	}
 

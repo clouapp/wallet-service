@@ -53,18 +53,19 @@ func TestControllers_Take_TheirDependenciesByConstructor(t *testing.T) {
 	Report(t, &violations)
 }
 
-// requestReaders are the ctx.Request() methods a handler may not call: the
-// input goes through a form request (requests.Validate / ValidatePath / RouteID).
+// requestReaders are the ctx.Request() methods a handler may not call: body
+// input goes through a form request (requests.Validate). A path or query
+// parameter is read with ctx.Request().Route / Query, the documented Goravel
+// way, so those are not listed (decision D2). Input and All stay out because
+// they merge body, query and route.
 var requestReaders = map[string]bool{
 	"All": true, "Bind": true, "Input": true, "InputArray": true, "InputBool": true,
-	"InputInt": true, "InputInt64": true, "InputMap": true, "Json": true, "Query": true,
-	"QueryArray": true, "QueryBool": true, "QueryInt": true, "QueryInt64": true,
-	"QueryMap": true, "Queries": true, "Route": true, "RouteInt": true,
-	"RouteInt64": true, "Validate": true, "ValidateRequest": true, "File": true,
+	"InputInt": true, "InputInt64": true, "InputMap": true, "Json": true,
+	"Validate": true, "ValidateRequest": true, "File": true,
 }
 
 // TestHandlersReadTheirInputThroughAFormRequest reports controllers reading
-// the request directly.
+// the request body directly. Route and query parameters are read in the handler.
 func TestHandlers_Read_TheirInputThroughAFormRequest(t *testing.T) {
 	module := sharedModule(t)
 	var violations Violations

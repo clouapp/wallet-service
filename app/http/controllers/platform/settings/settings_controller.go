@@ -2,6 +2,7 @@ package settings
 
 import (
 	"errors"
+	"strings"
 
 	"github.com/google/uuid"
 	"github.com/goravel/framework/contracts/http"
@@ -72,12 +73,11 @@ func (ctrl *SettingsController) Show(ctx http.Context) http.Response {
 	if actorID == uuid.Nil {
 		return responses.Fail(ctx, http.StatusUnauthorized, responses.CodeUnauthorized, "unauthorized")
 	}
-	var path requests.SettingsGroupRequest
-	path.Load(ctx)
-	if path.Group == "" {
+	group := strings.TrimSpace(ctx.Request().Route("group"))
+	if group == "" {
 		return responses.Fail(ctx, http.StatusBadRequest, responses.CodeInvalidRequest, "group is required")
 	}
-	view, err := ctrl.settings.PlatformGroup(ctx.Context(), actorID, path.Group)
+	view, err := ctrl.settings.PlatformGroup(ctx.Context(), actorID, group)
 	if errResp := mapPlatformSettingsError(ctx, err); errResp != nil {
 		return errResp
 	}
@@ -102,16 +102,15 @@ func (ctrl *SettingsController) ShowAccount(ctx http.Context) http.Response {
 	if actorID == uuid.Nil {
 		return responses.Fail(ctx, http.StatusUnauthorized, responses.CodeUnauthorized, "unauthorized")
 	}
-	var path requests.PlatformAccountSettingsRequest
-	path.Load(ctx)
-	if path.Group == "" {
+	group := strings.TrimSpace(ctx.Request().Route("group"))
+	if group == "" {
 		return responses.Fail(ctx, http.StatusBadRequest, responses.CodeInvalidRequest, "group is required")
 	}
-	accountID, err := uuid.Parse(path.AccountID)
+	accountID, err := uuid.Parse(strings.TrimSpace(ctx.Request().Route("accountId")))
 	if err != nil {
 		accountID = uuid.Nil
 	}
-	view, err := ctrl.settings.PlatformAccountGroup(ctx.Context(), actorID, accountID, path.Group)
+	view, err := ctrl.settings.PlatformAccountGroup(ctx.Context(), actorID, accountID, group)
 	if errResp := mapPlatformSettingsError(ctx, err); errResp != nil {
 		return errResp
 	}
@@ -138,23 +137,22 @@ func (ctrl *SettingsController) UpdateAccount(ctx http.Context) http.Response {
 	if actorID == uuid.Nil {
 		return responses.Fail(ctx, http.StatusUnauthorized, responses.CodeUnauthorized, "unauthorized")
 	}
-	var path requests.PlatformAccountSettingsRequest
-	path.Load(ctx)
-	if path.Group == "" {
+	group := strings.TrimSpace(ctx.Request().Route("group"))
+	if group == "" {
 		return responses.Fail(ctx, http.StatusBadRequest, responses.CodeInvalidRequest, "group is required")
 	}
-	accountID, err := uuid.Parse(path.AccountID)
+	accountID, err := uuid.Parse(strings.TrimSpace(ctx.Request().Route("accountId")))
 	if err != nil {
 		accountID = uuid.Nil
 	}
-	if err := ctrl.settings.AuthorizePlatformAccountSweepWrite(ctx.Context(), actorID, accountID, path.Group); err != nil {
+	if err := ctrl.settings.AuthorizePlatformAccountSweepWrite(ctx.Context(), actorID, accountID, group); err != nil {
 		return mapPlatformSettingsError(ctx, err)
 	}
 	document, err := requests.AccountSettingsDocument(ctx)
 	if err != nil {
 		return mapPlatformSettingsBodyError(ctx, err)
 	}
-	view, err := ctrl.settings.SavePlatformAccountSweepLimits(ctx.Context(), actorID, accountID, path.Group, document)
+	view, err := ctrl.settings.SavePlatformAccountSweepLimits(ctx.Context(), actorID, accountID, group, document)
 	if errResp := mapPlatformSettingsError(ctx, err); errResp != nil {
 		return errResp
 	}
@@ -180,16 +178,15 @@ func (ctrl *SettingsController) Update(ctx http.Context) http.Response {
 	if actorID == uuid.Nil {
 		return responses.Fail(ctx, http.StatusUnauthorized, responses.CodeUnauthorized, "unauthorized")
 	}
-	var path requests.SettingsGroupRequest
-	path.Load(ctx)
-	if path.Group == "" {
+	group := strings.TrimSpace(ctx.Request().Route("group"))
+	if group == "" {
 		return responses.Fail(ctx, http.StatusBadRequest, responses.CodeInvalidRequest, "group is required")
 	}
 	document, err := requests.AccountSettingsDocument(ctx)
 	if err != nil {
 		return mapPlatformSettingsBodyError(ctx, err)
 	}
-	view, err := ctrl.settings.SavePlatform(ctx.Context(), actorID, path.Group, document)
+	view, err := ctrl.settings.SavePlatform(ctx.Context(), actorID, group, document)
 	if errResp := mapPlatformSettingsError(ctx, err); errResp != nil {
 		return errResp
 	}
@@ -212,9 +209,7 @@ func (ctrl *SettingsController) Flush(ctx http.Context) http.Response {
 	if actorID == uuid.Nil {
 		return responses.Fail(ctx, http.StatusUnauthorized, responses.CodeUnauthorized, "unauthorized")
 	}
-	var path requests.SettingsSectionRequest
-	path.Load(ctx)
-	if err := ctrl.settings.FlushPlatformSection(ctx.Context(), actorID, path.Section); err != nil {
+	if err := ctrl.settings.FlushPlatformSection(ctx.Context(), actorID, strings.TrimSpace(ctx.Request().Route("section"))); err != nil {
 		return mapPlatformSettingsError(ctx, err)
 	}
 	return ctx.Response().NoContent()
@@ -237,9 +232,7 @@ func (ctrl *SettingsController) Reset(ctx http.Context) http.Response {
 	if actorID == uuid.Nil {
 		return responses.Fail(ctx, http.StatusUnauthorized, responses.CodeUnauthorized, "unauthorized")
 	}
-	var path requests.SettingsSectionRequest
-	path.Load(ctx)
-	view, err := ctrl.settings.ResetPlatformSection(ctx.Context(), actorID, path.Section)
+	view, err := ctrl.settings.ResetPlatformSection(ctx.Context(), actorID, strings.TrimSpace(ctx.Request().Route("section")))
 	if errResp := mapPlatformSettingsError(ctx, err); errResp != nil {
 		return errResp
 	}

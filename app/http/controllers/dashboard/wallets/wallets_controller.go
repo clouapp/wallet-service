@@ -22,10 +22,6 @@ import (
 	"github.com/macrowallets/waas/app/services/walletrecords"
 )
 
-func validateRequest(ctx http.Context, req http.FormRequest) http.Response {
-	return controllers.ValidateRequest(ctx, req)
-}
-
 // WalletsController serves the dashboard wallet list, create, and activate routes.
 type WalletsController struct {
 	wallets       *walletrecords.Wallets
@@ -94,9 +90,7 @@ func (ctrl *WalletsController) ListWallets(ctx http.Context) http.Response {
 	}
 
 	limit, offset := pagination.ParseParams(ctx, 20)
-	var query requests.ListWalletsRequest
-	query.Load(ctx)
-	chain := query.Chain
+	chain := ctx.Request().Query("chain")
 
 	var (
 		wallets []models.Wallet
@@ -186,9 +180,9 @@ func (ctrl *WalletsController) hideUnlessVisible(ctx http.Context, walletID uuid
 // The response carries the wallet, the combined public key, and the activation
 // code. The customer share, the passphrase, and the service share are not on it.
 func (ctrl *WalletsController) CreateWalletAdmin(ctx http.Context) http.Response {
-	var req requests.CreateWalletAdminRequest
+	var req requests.CreateWalletRequest
 	defer controllers.DiscardPassphrase(&req.Passphrase)
-	if resp := validateRequest(ctx, &req); resp != nil {
+	if resp := requests.Validate(ctx, &req); resp != nil {
 		return resp
 	}
 
@@ -220,7 +214,7 @@ func (ctrl *WalletsController) ActivateWallet(ctx http.Context) http.Response {
 	}
 
 	var req requests.ActivateWalletRequest
-	if resp := validateRequest(ctx, &req); resp != nil {
+	if resp := requests.Validate(ctx, &req); resp != nil {
 		return resp
 	}
 

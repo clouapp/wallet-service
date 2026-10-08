@@ -24,12 +24,6 @@ import (
 	"github.com/macrowallets/waas/app/services/withdrawalrecords"
 )
 
-func validateRequest(ctx http.Context, req http.FormRequest) http.Response {
-	{
-		return controllers.ValidateRequest(ctx, req)
-	}
-}
-
 // WithdrawalsController serves the external withdrawal routes.
 type WithdrawalsController struct {
 	withdrawals       *withdrawalrecords.Records
@@ -135,7 +129,7 @@ func (ctrl *WithdrawalsController) CreateWalletWithdrawal(ctx http.Context) http
 
 	var req requests.CreateWalletWithdrawalRequest
 	defer controllers.DiscardPassphrase(&req.Passphrase)
-	if resp := validateRequest(ctx, &req); resp != nil {
+	if resp := requests.Validate(ctx, &req); resp != nil {
 		return resp
 	}
 

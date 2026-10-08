@@ -14,10 +14,6 @@ import (
 	"github.com/macrowallets/waas/app/services/walletrecords"
 )
 
-func validateRequest(ctx http.Context, req http.FormRequest) http.Response {
-	return controllers.ValidateRequest(ctx, req)
-}
-
 // AddressesController serves the dashboard address routes.
 type AddressesController struct {
 	addresses     *walletrecords.Addresses
@@ -74,7 +70,7 @@ func (ctrl *AddressesController) GenerateAddress(ctx http.Context) http.Response
 
 	var req requests.GenerateAddressRequest
 	defer controllers.DiscardPassphrase(&req.Passphrase)
-	if errResp := validateRequest(ctx, &req); errResp != nil {
+	if errResp := requests.Validate(ctx, &req); errResp != nil {
 		return errResp
 	}
 
@@ -121,7 +117,7 @@ func (ctrl *AddressesController) UpdateAddress(ctx http.Context) http.Response {
 	}
 
 	var req requests.UpdateAddressRequest
-	if errResp := validateRequest(ctx, &req); errResp != nil {
+	if errResp := requests.Validate(ctx, &req); errResp != nil {
 		return errResp
 	}
 

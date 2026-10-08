@@ -16,10 +16,6 @@ import (
 	"github.com/macrowallets/waas/app/services/webhook"
 )
 
-func validateRequest(ctx http.Context, req http.FormRequest) http.Response {
-	return controllers.ValidateRequest(ctx, req)
-}
-
 // WebhooksController serves the external webhook routes.
 type WebhooksController struct {
 	webhooks *webhook.Service
@@ -51,7 +47,7 @@ func NewWebhooksController(
 // @Router       /api/v1/webhooks [post]
 func (ctrl *WebhooksController) CreateWebhook(ctx http.Context) http.Response {
 	var req requests.CreateWebhookRequest
-	if errResp := validateRequest(ctx, &req); errResp != nil {
+	if errResp := requests.Validate(ctx, &req); errResp != nil {
 		return errResp
 	}
 

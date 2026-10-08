@@ -27,12 +27,6 @@ import (
 	"github.com/macrowallets/waas/pkg/types"
 )
 
-func validateRequest(ctx http.Context, req http.FormRequest) http.Response {
-	{
-		return controllers.ValidateRequest(ctx, req)
-	}
-}
-
 // WithdrawalsController serves the dashboard withdrawal routes.
 type WithdrawalsController struct {
 	withdrawals       *withdrawalrecords.Records
@@ -123,9 +117,7 @@ func (ctrl *WithdrawalsController) ListWalletWithdrawals(ctx http.Context) http.
 	wallet := requestctx.MustWallet(ctx)
 
 	limit, offset := pagination.ParseParams(ctx, 50)
-	var query requests.ListWithdrawalsRequest
-	query.Load(ctx)
-	status := query.Status
+	status := ctx.Request().Query("status")
 	withdrawals, total, err := ctrl.withdrawals.FindByWallet(ctx.Context(), wallet.ID, status, limit, offset)
 	if err != nil {
 		return responses.Fail(ctx, http.StatusInternalServerError, responses.CodeInternal, "failed to fetch withdrawals")
@@ -137,7 +129,7 @@ func (ctrl *WithdrawalsController) EstimateWithdrawalFee(ctx http.Context) http.
 	wallet := requestctx.MustWallet(ctx)
 
 	var req requests.EstimateWithdrawalRequest
-	if resp := validateRequest(ctx, &req); resp != nil {
+	if resp := requests.Validate(ctx, &req); resp != nil {
 		return resp
 	}
 
@@ -191,7 +183,7 @@ func (ctrl *WithdrawalsController) CreateWalletWithdrawal(ctx http.Context) http
 
 	var req requests.CreateWalletWithdrawalRequest
 	defer controllers.DiscardPassphrase(&req.Passphrase)
-	if resp := validateRequest(ctx, &req); resp != nil {
+	if resp := requests.Validate(ctx, &req); resp != nil {
 		return resp
 	}
 

@@ -262,7 +262,7 @@ func (ctrl *SettingsController) FreezeWallet(ctx http.Context) http.Response {
 	wallet := requestctx.MustWallet(ctx)
 
 	var req requests.FreezeWalletRequest
-	if errResp := validateRequest(ctx, &req); errResp != nil {
+	if errResp := requests.Validate(ctx, &req); errResp != nil {
 		return errResp
 	}
 

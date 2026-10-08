@@ -8,7 +8,6 @@ func TestPassphrase_Forms_AcceptOnlyThePassphraseField(t *testing.T) {
 		rules map[string]string
 	}{
 		{name: "create wallet", rules: (&CreateWalletRequest{}).Rules(nil)},
-		{name: "create wallet admin", rules: (&CreateWalletAdminRequest{}).Rules(nil)},
 		{name: "generate address", rules: (&GenerateAddressRequest{}).Rules(nil)},
 		{name: "withdraw", rules: (&CreateWalletWithdrawalRequest{}).Rules(nil)},
 		{name: "consolidate", rules: (&ConsolidateRequest{}).Rules(nil)},

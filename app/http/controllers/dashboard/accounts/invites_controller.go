@@ -106,7 +106,7 @@ func (ctrl *InvitesController) Create(ctx http.Context) http.Response {
 	account := requestctx.MustAccount(ctx)
 	callerID := requestctx.MustUserID(ctx)
 	var req requests.AddAccountUserRequest
-	if errResp := validateRequest(ctx, &req); errResp != nil {
+	if errResp := requests.Validate(ctx, &req); errResp != nil {
 		return errResp
 	}
 	base, errResp := requireFrontendBase(ctx, "failed to create invite")
@@ -227,7 +227,7 @@ func (ctrl *InvitesController) Preview(ctx http.Context) http.Response {
 // Accept spends an invite token.
 func (ctrl *InvitesController) Accept(ctx http.Context) http.Response {
 	var req requests.AcceptInviteRequest
-	if errResp := validateRequest(ctx, &req); errResp != nil {
+	if errResp := requests.Validate(ctx, &req); errResp != nil {
 		return errResp
 	}
 	sessionUser, sessionErr := optionalSessionUser(ctx)
