@@ -33,6 +33,7 @@ an earlier one refuses. `Cors` and `CacheControl` are not guards.
 | dashboard account `/v1/accounts/{accountId}` | `SessionAuth` → `AccountContext` → `TOTPEnrollment` |
 | dashboard wallet `/v1/wallets` | `SessionAuth` → `AccountHeader` → `TOTPEnrollment`, then `WalletContext` on the nested `/{walletId}` group, then `UTXOOnly` on unspents |
 | external `/api/v1` | `APITokenAuth` (includes `ip_cidr`) → `APIWalletContext` on `/{walletId}` (404 before the scope check) → `APIScope(permission)` on the routes the token catalog names |
+| platform `/v1/platform` | `SessionAuth` → `PlatformAdmin` on the whole group |
 | guest `/v1/auth/*` except logout | no auth middleware |
 | public `/health`, `/swagger/*` | no auth middleware |
 | inbound `/v1/webhooks/ingest/...` | `ProviderSignature` checks the provider signature before the body is parsed |
@@ -120,9 +121,13 @@ repository, a service, or a handler may not query them.
 Resolve the resource, answer 404 if it does not exist (or is not the caller's
 on the external API), then authorize.
 
-The exception is a platform-admin action on a user (suspend, reactivate, revoke
-sessions, reset MFA): the service checks `platform_admins` before it reads the
-user, so a caller who is not an admin gets 403 whether or not the user exists.
+The exception is everything under `/v1/platform`: `PlatformAdmin` checks
+`platform_admins` for the whole group before any handler resolves its target, so
+a caller who is not an admin gets 403 whether or not the account, user, chain or
+settings group exists. The 403 sentence is the one the route's service returns
+(`routes/platform_refusals.go`); the services keep their own check as well, for
+callers that are not HTTP. `tests/feature/api/platform/guard` fails when a
+platform route answers a member with anything but that 403.
 
 ## Second factor and signatures
 

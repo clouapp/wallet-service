@@ -175,7 +175,11 @@ func RegisterAdminRoutes() {
 		})
 	})
 
-	facades.Route().Prefix("/v1/platform").Middleware(middleware.SessionAuth(), noCache).Group(func(router route.Router) {
+	facades.Route().Prefix("/v1/platform").Middleware(
+		middleware.SessionAuth(),
+		middleware.PlatformAdmin(container.MustMake[*usersvc.Service](), platformRefusal),
+		noCache,
+	).Group(func(router route.Router) {
 		router.Get("/features", platformFeaturesCtrl.Index)
 		router.Patch("/features/{key}", platformFeaturesCtrl.Update)
 		// S2.4: GET /v1/platform/features/{scope}/{id} features.view.
@@ -188,7 +192,7 @@ func RegisterAdminRoutes() {
 		// Neither name is a permission row. A platform_admins row is the gate
 		// and stands in for both. The pair is not a second gate.
 		// Scope account is the only target this catalog stores. global is refused.
-		// user and chain are 404 before the admin check.
+		// user and chain are 404 for an admin. PlatformAdmin refuses a member first.
 		router.Put("/features/{scope}/{id}/{feature}", platformFeaturesCtrl.UpdateScopeFeature)
 		router.Put("/features/{scope}/{id}", platformFeaturesCtrl.UpdateScope)
 		// S1.4.7: chains.view and chains.update. A platform_admins row is the gate.

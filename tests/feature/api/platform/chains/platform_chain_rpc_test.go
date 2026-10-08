@@ -136,7 +136,7 @@ func (s *PlatformChainRPCTestSuite) TestA_Platform_AdminReplacesTheEndpointTheDi
 	}
 }
 
-func (s *PlatformChainRPCTestSuite) TestA_Non_AdminIsForbiddenAnUnknownChainIsNotFoundAndAnEmptyURLIsRejected() {
+func (s *PlatformChainRPCTestSuite) TestA_Non_AdminIsForbiddenWhateverTheChainAndAnEmptyURLIsRejected() {
 	member := s.seedUser(false)
 	session := s.signIn(member.Email)
 	before := s.loadChain(models.ChainETH).RpcURL
@@ -149,9 +149,10 @@ func (s *PlatformChainRPCTestSuite) TestA_Non_AdminIsForbiddenAnUnknownChainIsNo
 		s.Fail("a non-admin changed the stored endpoint")
 	}
 
+	// An unknown chain is not a 404 for a member: the group guard answers first.
 	missing := s.patchRaw(session.AccessToken, "/v1/platform/chains/no-such-chain/rpc", `{"rpcUrl":""}`)
-	missing.AssertNotFound()
-	s.AssertError(missing, 404, responses.CodeNotFound, "chain not found")
+	missing.AssertForbidden()
+	s.AssertError(missing, 403, responses.CodeForbidden, "you do not have permission to update chains")
 
 	admin := s.seedUser(false)
 	s.grantPlatformAdmin(admin.ID)

@@ -198,9 +198,10 @@ func (s *PlatformWebhookDeliveryTestSuite) TestZero_Or_NegativeIsRejectedAndANon
 	member := s.seedUser(false)
 	session := s.signIn(member.Email)
 
+	// An unknown group is not a 404 for a member: the group guard answers first.
 	missing := s.putRaw(session.AccessToken, "/v1/platform/settings/no-such-group", `{"max_attempts":1}`)
-	missing.AssertNotFound()
-	s.AssertError(missing, 404, responses.CodeNotFound, "settings group not found")
+	missing.AssertForbidden()
+	s.AssertError(missing, 403, responses.CodeForbidden, "you do not have permission to update settings")
 
 	forbidden := s.putRaw(session.AccessToken, "/v1/platform/settings/webhook_delivery", `{"max_attempts":4,"timeout_seconds":8}`)
 	forbidden.AssertForbidden()

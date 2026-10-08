@@ -212,7 +212,8 @@ Known violations include `app/models → app/services/mpc` and `config → app/m
 - Account flags reuse the settings permissions: list is `settings.view`, write
   is `settings.update`. An unknown key on write is 404 before the permission
   check. `GET|PATCH /v1/platform/features` is a platform admin
-  (`platform_admins`), not an account owner. — guarded by
+  (`platform_admins`), not an account owner; the whole `/v1/platform` group sits
+  behind `middleware.PlatformAdmin`. — guarded by
   `app/services/features/service_test.go` and `gate_test.go`.
 - `withdrawals-enabled`, `sweep-enabled`, `deposit-scan-enabled`,
   `wallet-creation-enabled`, and `webhook-delivery-enabled` default to on.

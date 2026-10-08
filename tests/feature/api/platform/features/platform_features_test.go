@@ -212,15 +212,26 @@ func (s *featureGateSuite) TestPlatform_Admin_ReadsOneAccountFeatureScope() {
 	s.AssertError(support.BodyRecorder(http.StatusForbidden, mustJSON(forbidden)), http.StatusForbidden, "forbidden", features.ErrPlatformForbidden.Error())
 	s.Equal(int64(0), s.accountFeatureCount(accountID))
 
+	// A non-admin gets 403 whatever the scope or the id: the group guard runs
+	// before the handler can tell a known target from an unknown one.
+	for _, path := range []string{
+		"/v1/platform/features/global/" + accountID.String(),
+		"/v1/platform/features/user/" + accountID.String(),
+		"/v1/platform/features/chain/" + accountID.String(),
+		"/v1/platform/features/account/not-a-uuid",
+	} {
+		refused := s.platform(session, http.MethodGet, path, "", http.StatusForbidden)
+		s.AssertError(support.BodyRecorder(http.StatusForbidden, mustJSON(refused)), http.StatusForbidden, "forbidden", features.ErrPlatformForbidden.Error())
+	}
+	s.Equal(int64(0), s.featureActivityCount())
+
+	s.grantPlatformAdmin(userID)
 	for _, scope := range []string{"global", "user", "chain"} {
 		refused := s.platform(session, http.MethodGet, "/v1/platform/features/"+scope+"/"+accountID.String(), "", http.StatusNotFound)
 		s.AssertError(support.BodyRecorder(http.StatusNotFound, mustJSON(refused)), http.StatusNotFound, "not_found", "feature scope not found")
 	}
 	badID := s.platform(session, http.MethodGet, "/v1/platform/features/account/not-a-uuid", "", http.StatusBadRequest)
 	s.AssertError(support.BodyRecorder(http.StatusBadRequest, mustJSON(badID)), http.StatusBadRequest, "invalid_request", "invalid account id")
-	s.Equal(int64(0), s.featureActivityCount())
-
-	s.grantPlatformAdmin(userID)
 	unknown := s.platform(session, http.MethodGet, "/v1/platform/features/account/"+uuid.New().String(), "", http.StatusNotFound)
 	s.AssertError(support.BodyRecorder(http.StatusNotFound, mustJSON(unknown)), http.StatusNotFound, "not_found", "account not found")
 
@@ -252,20 +263,32 @@ func (s *featureGateSuite) TestPlatform_Admin_WritesOneAccountFeatureScope() {
 	s.Equal(int64(0), s.globalRowCount())
 	s.Equal(int64(0), s.featureActivityCount())
 
-	for _, scope := range []string{"global", "user", "chain"} {
-		refused := s.platform(session, http.MethodPut, "/v1/platform/features/"+scope+"/"+accountID.String()+"/"+features.FlagWithdrawalsEnabled, "not-json", http.StatusNotFound)
-		s.AssertError(support.BodyRecorder(http.StatusNotFound, mustJSON(refused)), http.StatusNotFound, "not_found", "feature scope not found")
+	// A non-admin gets 403 whatever the scope or the id: the group guard runs
+	// before the handler can tell a known target from an unknown one.
+	for _, path := range []string{
+		"/v1/platform/features/global/" + accountID.String() + "/" + features.FlagWithdrawalsEnabled,
+		"/v1/platform/features/user/" + accountID.String() + "/" + features.FlagWithdrawalsEnabled,
+		"/v1/platform/features/chain/" + accountID.String() + "/" + features.FlagWithdrawalsEnabled,
+		"/v1/platform/features/account/not-a-uuid/" + features.FlagWithdrawalsEnabled,
+	} {
+		refused := s.platform(session, http.MethodPut, path, "not-json", http.StatusForbidden)
+		s.AssertError(support.BodyRecorder(http.StatusForbidden, mustJSON(refused)), http.StatusForbidden, "forbidden", features.ErrPlatformForbidden.Error())
 	}
 	s.Equal(int64(0), s.activityActionCount(activitylog.ActionUserFeaturesUpdated))
 	s.Equal(int64(0), s.activityActionCount(activitylog.ActionChainFeaturesUpdated))
 	s.Equal(int64(0), s.activityActionCount(activitylog.ActionAccountFeaturesUpdated))
 	s.Equal(int64(0), s.activityActionCount(activitylog.ActionFeaturesGlobalUpdated))
 	s.Equal(int64(0), s.featureActivityCount())
-	badID := s.platform(session, http.MethodPut, "/v1/platform/features/account/not-a-uuid/"+features.FlagWithdrawalsEnabled, "not-json", http.StatusBadRequest)
-	s.AssertError(support.BodyRecorder(http.StatusBadRequest, mustJSON(badID)), http.StatusBadRequest, "invalid_request", "invalid account id")
 	s.Equal(int64(0), s.accountFeatureCount(accountID))
 
 	s.grantPlatformAdmin(userID)
+	for _, scope := range []string{"global", "user", "chain"} {
+		refused := s.platform(session, http.MethodPut, "/v1/platform/features/"+scope+"/"+accountID.String()+"/"+features.FlagWithdrawalsEnabled, "not-json", http.StatusNotFound)
+		s.AssertError(support.BodyRecorder(http.StatusNotFound, mustJSON(refused)), http.StatusNotFound, "not_found", "feature scope not found")
+	}
+	badID := s.platform(session, http.MethodPut, "/v1/platform/features/account/not-a-uuid/"+features.FlagWithdrawalsEnabled, "not-json", http.StatusBadRequest)
+	s.AssertError(support.BodyRecorder(http.StatusBadRequest, mustJSON(badID)), http.StatusBadRequest, "invalid_request", "invalid account id")
+	s.Equal(int64(0), s.accountFeatureCount(accountID))
 	unknownAccount := s.platform(session, http.MethodPut, "/v1/platform/features/account/"+uuid.New().String()+"/"+features.FlagWithdrawalsEnabled, body, http.StatusNotFound)
 	s.AssertError(support.BodyRecorder(http.StatusNotFound, mustJSON(unknownAccount)), http.StatusNotFound, "not_found", "account not found")
 

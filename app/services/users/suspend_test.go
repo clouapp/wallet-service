@@ -172,6 +172,24 @@ func TestSuspend_Reports_AMissingUser(t *testing.T) {
 	assert.ErrorIs(t, err, users.ErrNotFound)
 }
 
+func TestIs_PlatformAdmin_ReadsThePlatformAdminsRow(t *testing.T) {
+	t.Parallel()
+
+	admin := uuid.New()
+	service := users.NewService(users.Deps{Admins: allowAdmins{admin}})
+
+	yes, err := service.IsPlatformAdmin(context.Background(), admin)
+	require.NoError(t, err)
+	assert.True(t, yes)
+
+	no, err := service.IsPlatformAdmin(context.Background(), uuid.New())
+	require.NoError(t, err)
+	assert.False(t, no)
+
+	_, err = users.NewService(users.Deps{}).IsPlatformAdmin(context.Background(), admin)
+	assert.Error(t, err)
+}
+
 type allowAdmins []uuid.UUID
 
 func (a allowAdmins) Contains(_ context.Context, userID uuid.UUID) (bool, error) {

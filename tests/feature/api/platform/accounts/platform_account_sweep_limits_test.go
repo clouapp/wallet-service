@@ -124,7 +124,7 @@ func (s *PlatformAccountSweepLimitsTestSuite) TestAn_Admin_WriteOverridesThePlat
 	s.NotContains(raw, "enc:v1:")
 }
 
-func (s *PlatformAccountSweepLimitsTestSuite) TestAnother_Group_AndAnUnknownAccountAreNotFoundBeforeForbidden() {
+func (s *PlatformAccountSweepLimitsTestSuite) TestAnother_Group_AndAnUnknownAccountAreNotFoundForAdminsAndForbiddenForMembers() {
 	member := s.seedUser(false)
 	memberSession := s.signIn(member.Email)
 	admin := s.seedUser(false)
@@ -133,19 +133,22 @@ func (s *PlatformAccountSweepLimitsTestSuite) TestAnother_Group_AndAnUnknownAcco
 	accountID := s.createAccount("Known")
 	body := `{"max_addresses_evm":7,"daily_withdraw_cap_usd":""}`
 
+	// A member is refused before the handler looks the group or the account up,
+	// so the answer does not tell which of them exist.
 	for _, group := range []string{"no-such-group", "sweep_limits", "mail_smtp", "account_security", "account_webhooks"} {
-		for _, token := range []string{memberSession.AccessToken, adminSession.AccessToken} {
-			missing := s.putRaw(token, s.groupPath(accountID, group), body)
-			s.AssertError(missing, 404, responses.CodeNotFound, "settings group not found")
-		}
+		refused := s.putRaw(memberSession.AccessToken, s.groupPath(accountID, group), body)
+		s.AssertError(refused, 403, responses.CodeForbidden, "you do not have permission to update settings")
+
+		missing := s.putRaw(adminSession.AccessToken, s.groupPath(accountID, group), body)
+		s.AssertError(missing, 404, responses.CodeNotFound, "settings group not found")
 	}
 	badID := s.putRaw(adminSession.AccessToken, "/v1/platform/accounts/not-a-uuid/settings/account_sweep_limits", body)
 	s.AssertError(badID, 404, "not_found", "account not found")
 	badIDOtherGroup := s.putRaw(memberSession.AccessToken, "/v1/platform/accounts/not-a-uuid/settings/no-such-group", body)
-	s.AssertError(badIDOtherGroup, 404, "not_found", "settings group not found")
+	s.AssertError(badIDOtherGroup, 403, responses.CodeForbidden, "you do not have permission to update settings")
 
 	unknownAccount := s.putRaw(memberSession.AccessToken, s.groupPath(uuid.New(), "account_sweep_limits"), body)
-	s.AssertError(unknownAccount, 404, responses.CodeNotFound, "account not found")
+	s.AssertError(unknownAccount, 403, responses.CodeForbidden, "you do not have permission to update settings")
 	unknownForAdmin := s.putRaw(adminSession.AccessToken, s.groupPath(uuid.New(), "account_sweep_limits"), body)
 	s.AssertError(unknownForAdmin, 404, "not_found", "account not found")
 

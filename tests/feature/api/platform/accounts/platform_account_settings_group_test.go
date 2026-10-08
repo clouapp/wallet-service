@@ -142,19 +142,22 @@ func (s *PlatformAccountSettingsGroupTestSuite) TestAn_Admin_ReadsOneAccountAndN
 	s.AssertError(badIDUnknownGroup, 404, "not_found", "settings group not found")
 }
 
-func (s *PlatformAccountSettingsGroupTestSuite) TestA_Non_AdminOnAKnownPairIsForbiddenAndAnUnknownAccountIsNotFound() {
+func (s *PlatformAccountSettingsGroupTestSuite) TestA_Non_AdminIsForbiddenWhetherOrNotTheAccountAndGroupExist() {
 	member := s.seedUser(false)
 	session := s.signIn(member.Email)
 	accountID := s.createAccount("Known")
 
-	unknownAccount := s.getRaw(session.AccessToken, s.groupPath(uuid.New(), "account_sweep_limits"))
-	s.AssertError(unknownAccount, 404, responses.CodeNotFound, "account not found")
-
-	unknownGroup := s.getRaw(session.AccessToken, s.groupPath(accountID, "no-such-group"))
-	s.AssertError(unknownGroup, 404, "not_found", "settings group not found")
-
-	platformOnly := s.getRaw(session.AccessToken, s.groupPath(accountID, "sweep_limits"))
-	s.AssertError(platformOnly, 404, "not_found", "settings group not found")
+	// The group guard answers before the handler looks the account or the group
+	// up, so a member cannot tell which ones exist.
+	for _, path := range []string{
+		s.groupPath(uuid.New(), "account_sweep_limits"),
+		s.groupPath(accountID, "no-such-group"),
+		s.groupPath(accountID, "sweep_limits"),
+		"/v1/platform/accounts/not-a-uuid/settings/account_sweep_limits",
+	} {
+		refused := s.getRaw(session.AccessToken, path)
+		s.AssertError(refused, 403, responses.CodeForbidden, "you do not have permission to view settings")
+	}
 
 	before := s.count(`SELECT count(*) FROM account_activity`)
 	known := s.getRaw(session.AccessToken, s.groupPath(accountID, "account_sweep_limits"))

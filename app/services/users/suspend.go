@@ -26,6 +26,15 @@ type PlatformAdmins interface {
 	Contains(ctx context.Context, userID uuid.UUID) (bool, error)
 }
 
+// IsPlatformAdmin reports whether the user has a platform_admins row. The
+// platform route group asks it before any handler runs.
+func (s *Service) IsPlatformAdmin(ctx context.Context, userID uuid.UUID) (bool, error) {
+	if s.admins == nil {
+		return false, fmt.Errorf("platform admin lookup: platform admins are required")
+	}
+	return s.admins.Contains(ctx, userID)
+}
+
 // Sessions ends the dashboard sessions of a user. Suspension calls RevokeAll
 // so a watermark and the refresh tokens move with suspended_at. RevokeAllBy
 // is the same revoke with the platform admin as the activity actor.

@@ -278,16 +278,16 @@ func (s *PlatformSettingsSectionResetTestSuite) TestNon_Admin_OnAKnownSectionIsF
 	s.Equal(int64(0), s.count(`SELECT count(*) FROM settings WHERE account_id IS NULL AND "group" = 'mail_smtp' AND "key" = 'host' AND value = ?`, platformResetStoredHost))
 }
 
-func (s *PlatformSettingsSectionResetTestSuite) TestNon_Admin_OnAnUnknownSectionIsNotFound() {
+func (s *PlatformSettingsSectionResetTestSuite) TestNon_Admin_OnAnUnknownSectionIsForbidden() {
 	member := s.seedUser(false)
 	session := s.signIn(member.Email)
 	key := "settings:platform:mail_smtp"
 	s.seedCache(key)
 
-	response := s.resetParsed(session.AccessToken, "not-a-section", 404)
+	response := s.resetParsed(session.AccessToken, "not-a-section", 403)
 	encoded, err := json.Marshal(response)
 	s.Require().NoError(err)
-	s.AssertError(support.BodyRecorder(404, string(encoded)), 404, responses.CodeNotFound, "settings section not found")
+	s.AssertError(support.BodyRecorder(403, string(encoded)), 403, responses.CodeForbidden, "you do not have permission to update settings")
 	s.Equal("stale-"+key, facades.Cache().GetString(key))
 
 	missing := s.Post("/v1/platform/settings/sections/mail/reset", support.Session{}, "{}")
