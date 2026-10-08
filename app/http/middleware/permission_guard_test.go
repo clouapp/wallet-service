@@ -61,7 +61,7 @@ func TestWallet_Can_FollowsTheWalletCatalog(t *testing.T) {
 				ctx := newGuardContext(nil)
 				ctx.WithValue(requestctx.KeyAccountRole, role)
 				if stored {
-					ctx.WithValue(policies.RequestGrantsKey(), policies.AttachRequestGrants(uuid.New(), uuid.New(), role))
+					ctx.WithValue(policies.RequestGrantsKey(), policies.AttachRequestGrants(role))
 				}
 
 				WalletCan(permission)(ctx)

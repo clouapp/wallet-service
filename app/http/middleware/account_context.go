@@ -56,7 +56,7 @@ func AccountContext(accounts accountScope) http.Middleware {
 
 		ctx.WithValue(requestctx.KeyAccount, accountPtr)
 		ctx.WithValue(requestctx.KeyAccountRole, au.Role)
-		ctx.WithValue(policies.RequestGrantsKey(), policies.AttachRequestGrants(accountID, userID, au.Role))
+		ctx.WithValue(policies.RequestGrantsKey(), policies.AttachRequestGrants(au.Role))
 		ctx.WithContext(activitylog.WithScope(ctx.Context(), "account:"+accountID.String()))
 		ctx.Request().Next()
 	}
