@@ -8,7 +8,6 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/google/uuid"
 	"github.com/goravel/framework/contracts/foundation"
 	"github.com/redis/go-redis/v9"
 
@@ -26,14 +25,12 @@ import (
 	"github.com/macrowallets/waas/app/facades"
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/repositories"
-	authsvc "github.com/macrowallets/waas/app/services/auth"
 	"github.com/macrowallets/waas/app/services/blockheight"
 	chainpkg "github.com/macrowallets/waas/app/services/chain"
 	"github.com/macrowallets/waas/app/services/chainregistry"
 	"github.com/macrowallets/waas/app/services/deposit"
 	"github.com/macrowallets/waas/app/services/deposit/pending"
 	"github.com/macrowallets/waas/app/services/depositevents"
-	"github.com/macrowallets/waas/app/services/features"
 	"github.com/macrowallets/waas/app/services/ingest"
 	mpc "github.com/macrowallets/waas/app/services/mpc"
 	"github.com/macrowallets/waas/app/services/price"
@@ -45,7 +42,6 @@ import (
 	"github.com/macrowallets/waas/app/services/webhooksync"
 	"github.com/macrowallets/waas/app/services/withdraw"
 	"github.com/macrowallets/waas/app/services/withdrawalevents"
-	"github.com/macrowallets/waas/app/services/withdrawalrecords"
 )
 
 // openChainEndpoint opens a sealed rpc_url and returns the URL to dial.
@@ -249,10 +245,6 @@ func buildVaultContainer(app foundation.Application) (*container.Container, erro
 		return nil, err
 	}
 	c.WalletService = walletService
-	flags, err := container.Make[*features.Service]()
-	if err != nil {
-		return nil, fmt.Errorf("vault: feature flags: %w", err)
-	}
 	prices, err := resolve[*price.Service](app)
 	if err != nil {
 		return nil, err
@@ -263,29 +255,16 @@ func buildVaultContainer(app foundation.Application) (*container.Container, erro
 		return nil, err
 	}
 	c.SweepService = box.Service
-	c.WithdrawalService = withdraw.NewService(withdraw.Deps{
-		Registry:     c.Registry,
-		Webhook:      c.WebhookService,
-		MPC:          c.MPCService,
-		Cache:        facades.Cache(),
-		Transactions: c.TransactionRepo,
-		Wallets:      c.WalletRepo,
-		Addresses:    c.AddressRepo,
-		Sweep:        c.SweepService,
-		Flags: func(ctx context.Context, accountID uuid.UUID) error {
-			return flags.Gate(ctx, accountID, features.FlagWithdrawalsEnabled, features.CodeWithdrawalsPaused)
-		},
-	})
-	c.WithdrawalService.UseUSDQuote(c.PriceService)
-	verifier, err := resolve[*authsvc.SecondFactorVerifier](app)
+	withdrawalService, err := resolve[*withdraw.Service](app)
 	if err != nil {
-		return nil, fmt.Errorf("vault: withdrawal create: %w", err)
+		return nil, err
 	}
-	withdrawalRows, err := resolve[*withdrawalrecords.Records](app)
+	c.WithdrawalService = withdrawalService
+	withdrawalEvents, err := resolve[*withdrawalevents.Publisher](app)
 	if err != nil {
-		return nil, fmt.Errorf("vault: withdrawal create: %w", err)
+		return nil, err
 	}
-	c.WithdrawalService.UseCreate(c.UserRepo, verifier, withdrawalRows, c.ChainRepo)
+	c.WithdrawalEvents = withdrawalEvents
 
 	etherscanKey := func(ctx context.Context) string {
 		envKey := facades.Config().GetString("vault.webhooks.etherscan_api_key")
@@ -302,13 +281,6 @@ func buildVaultContainer(app foundation.Application) (*container.Container, erro
 	assetDecimals := withdrawalevents.NewRegistryDecimals(withdrawalevents.RegistryDecimalsDeps{
 		Registry: c.Registry,
 		Chains:   c.ChainRepo,
-	})
-	c.WithdrawalEvents = withdrawalevents.NewPublisher(withdrawalevents.PublisherDeps{
-		Enqueuer:     c.WebhookService,
-		Withdrawals:  c.WithdrawalRepo,
-		Transactions: c.TransactionRepo,
-		Wallets:      c.WalletRepo,
-		Decimals:     assetDecimals,
 	})
 	c.DepositEvents = depositevents.NewPublisher(depositevents.PublisherDeps{
 		Enqueuer: c.WebhookService,

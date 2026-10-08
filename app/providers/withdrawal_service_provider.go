@@ -12,6 +12,7 @@ import (
 	"github.com/macrowallets/waas/app/facades"
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/repositories"
+	authsvc "github.com/macrowallets/waas/app/services/auth"
 	chainpkg "github.com/macrowallets/waas/app/services/chain"
 	"github.com/macrowallets/waas/app/services/features"
 	"github.com/macrowallets/waas/app/services/feeestimate"
@@ -21,12 +22,15 @@ import (
 	"github.com/macrowallets/waas/app/services/sweep"
 	"github.com/macrowallets/waas/app/services/walletrecords"
 	"github.com/macrowallets/waas/app/services/webhook"
+	"github.com/macrowallets/waas/app/services/withdraw"
+	"github.com/macrowallets/waas/app/services/withdrawalevents"
 	"github.com/macrowallets/waas/app/services/withdrawalrecords"
 )
 
 // WithdrawalServiceProvider binds the transaction and withdrawal repositories
 // by type, the withdrawal records over them, the sweep service that signs and
-// broadcasts, and the fee estimate built on it.
+// broadcasts, the fee estimate built on it, the withdrawal service, and the
+// publisher of withdrawal webhooks.
 type WithdrawalServiceProvider struct{}
 
 func (p *WithdrawalServiceProvider) Register(app foundation.Application) {
@@ -52,6 +56,12 @@ func (p *WithdrawalServiceProvider) Register(app foundation.Application) {
 	})
 	app.Singleton((*feeestimate.Service)(nil), func(app foundation.Application) (any, error) {
 		return newFeeEstimate(app)
+	})
+	app.Singleton((*withdraw.Service)(nil), func(app foundation.Application) (any, error) {
+		return newWithdrawalService(app)
+	})
+	app.Singleton((*withdrawalevents.Publisher)(nil), func(app foundation.Application) (any, error) {
+		return newWithdrawalEvents(app)
 	})
 	app.Singleton((*withdrawalrecords.Records)(nil), func(app foundation.Application) (any, error) {
 		store, err := resolve[*repositories.WithdrawalRepository](app)
@@ -135,6 +145,129 @@ func newSweepService(app foundation.Application) (sweep.Service, error) {
 		},
 		GasDefaults: nil,
 		TokenPricer: prices,
+	}), nil
+}
+
+// newWithdrawalService creates and executes withdrawals behind the
+// withdrawals-enabled flag. The USD quote and the create path (the second
+// factor and the withdrawal rows) are wired here, before anyone resolves it.
+func newWithdrawalService(app foundation.Application) (*withdraw.Service, error) {
+	registry, err := resolve[*chainpkg.Registry](app)
+	if err != nil {
+		return nil, err
+	}
+	webhookService, err := resolve[*webhook.Service](app)
+	if err != nil {
+		return nil, err
+	}
+	mpcService, err := resolve[*mpc.TSSService](app)
+	if err != nil {
+		return nil, err
+	}
+	transactions, err := resolve[*repositories.TransactionRepository](app)
+	if err != nil {
+		return nil, err
+	}
+	wallets, err := resolve[*repositories.WalletRepository](app)
+	if err != nil {
+		return nil, err
+	}
+	addresses, err := resolve[*repositories.AddressRepository](app)
+	if err != nil {
+		return nil, err
+	}
+	box, err := resolve[*sweep.Box](app)
+	if err != nil {
+		return nil, err
+	}
+	flags, err := resolve[*features.Service](app)
+	if err != nil {
+		return nil, fmt.Errorf("vault: feature flags: %w", err)
+	}
+	prices, err := resolve[*price.Service](app)
+	if err != nil {
+		return nil, err
+	}
+	users, err := resolve[*repositories.UserRepository](app)
+	if err != nil {
+		return nil, err
+	}
+	verifier, err := resolve[*authsvc.SecondFactorVerifier](app)
+	if err != nil {
+		return nil, fmt.Errorf("vault: withdrawal create: %w", err)
+	}
+	withdrawalRows, err := resolve[*withdrawalrecords.Records](app)
+	if err != nil {
+		return nil, fmt.Errorf("vault: withdrawal create: %w", err)
+	}
+	chains, err := resolve[*repositories.ChainRepository](app)
+	if err != nil {
+		return nil, err
+	}
+	service := withdraw.NewService(withdraw.Deps{
+		Registry:     registry,
+		Webhook:      webhookService,
+		MPC:          mpcService,
+		Cache:        facades.Cache(),
+		Transactions: transactions,
+		Wallets:      wallets,
+		Addresses:    addresses,
+		Sweep:        box.Service,
+		Flags: func(ctx context.Context, accountID uuid.UUID) error {
+			return flags.Gate(ctx, accountID, features.FlagWithdrawalsEnabled, features.CodeWithdrawalsPaused)
+		},
+	})
+	service.UseUSDQuote(prices)
+	service.UseCreate(users, verifier, withdrawalRows, chains)
+	return service, nil
+}
+
+// newWithdrawalEvents publishes the withdrawal webhooks with the asset
+// decimals the registry and the chain rows give.
+func newWithdrawalEvents(app foundation.Application) (*withdrawalevents.Publisher, error) {
+	webhookService, err := resolve[*webhook.Service](app)
+	if err != nil {
+		return nil, err
+	}
+	withdrawals, err := resolve[*repositories.WithdrawalRepository](app)
+	if err != nil {
+		return nil, err
+	}
+	transactions, err := resolve[*repositories.TransactionRepository](app)
+	if err != nil {
+		return nil, err
+	}
+	wallets, err := resolve[*repositories.WalletRepository](app)
+	if err != nil {
+		return nil, err
+	}
+	decimals, err := newAssetDecimals(app)
+	if err != nil {
+		return nil, err
+	}
+	return withdrawalevents.NewPublisher(withdrawalevents.PublisherDeps{
+		Enqueuer:     webhookService,
+		Withdrawals:  withdrawals,
+		Transactions: transactions,
+		Wallets:      wallets,
+		Decimals:     decimals,
+	}), nil
+}
+
+// newAssetDecimals reads an asset's decimals from the registry tokens and
+// the chain rows. It holds no state, so each publisher takes its own.
+func newAssetDecimals(app foundation.Application) (withdrawalevents.RegistryDecimals, error) {
+	registry, err := resolve[*chainpkg.Registry](app)
+	if err != nil {
+		return withdrawalevents.RegistryDecimals{}, err
+	}
+	chains, err := resolve[*repositories.ChainRepository](app)
+	if err != nil {
+		return withdrawalevents.RegistryDecimals{}, err
+	}
+	return withdrawalevents.NewRegistryDecimals(withdrawalevents.RegistryDecimalsDeps{
+		Registry: registry,
+		Chains:   chains,
 	}), nil
 }
 
