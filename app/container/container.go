@@ -58,11 +58,6 @@ type Container struct {
 	WebhookSyncService        *webhooksync.Service
 
 	PriceService *price.Service
-	PriceConfig  struct {
-		CoinGeckoAPIKey     string
-		CoinMarketCapAPIKey string
-		CoinAPIKey          string
-	}
 
 	Registry              *chainpkg.Registry
 	WalletService         *wallet.Service

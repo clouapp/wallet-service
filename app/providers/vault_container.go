@@ -17,12 +17,7 @@ import (
 	etherscantip "github.com/macrowallets/waas/app/adapters/blockheight/etherscan"
 	mempooltip "github.com/macrowallets/waas/app/adapters/blockheight/mempool"
 	solanatip "github.com/macrowallets/waas/app/adapters/blockheight/solana"
-	coinapiws "github.com/macrowallets/waas/app/adapters/price/coinapi"
 
-	// Link the CoinGecko HTTP client. Quotes still call price.NewCoinGeckoProvider.
-	_ "github.com/macrowallets/waas/app/adapters/price/coingecko"
-	// Link the CoinMarketCap HTTP client. Quotes still call price.NewCoinMarketCapProvider.
-	_ "github.com/macrowallets/waas/app/adapters/price/coinmarketcap"
 	"github.com/macrowallets/waas/app/adapters/redis/addresscache"
 	"github.com/macrowallets/waas/app/adapters/redis/addressset"
 	redispending "github.com/macrowallets/waas/app/adapters/redis/pending"
@@ -225,10 +220,6 @@ func buildVaultContainer(app foundation.Application) (*container.Container, erro
 	c.WalletSyncStateRepo = syncStates
 	c.CurrencyRepo = currencies
 
-	c.PriceConfig.CoinGeckoAPIKey = facades.Config().GetString("vault.price.coingecko_api_key")
-	c.PriceConfig.CoinMarketCapAPIKey = facades.Config().GetString("vault.price.coinmarketcap_api_key")
-	c.PriceConfig.CoinAPIKey = facades.Config().GetString("vault.price.coinapi_key")
-
 	accountSettings, err := container.Make[*settings.Service]()
 	if err != nil {
 		return nil, fmt.Errorf("vault: account settings: %w", err)
@@ -268,7 +259,11 @@ func buildVaultContainer(app foundation.Application) (*container.Container, erro
 	if err != nil {
 		return nil, fmt.Errorf("vault: feature flags: %w", err)
 	}
-	c.PriceService = buildPriceService(c, accountSettings)
+	prices, err := resolve[*price.Service](app)
+	if err != nil {
+		return nil, err
+	}
+	c.PriceService = prices
 	c.SweepService = sweep.NewService(sweep.Deps{
 		Registry:     c.Registry,
 		MPC:          c.MPCService,
@@ -407,32 +402,6 @@ func buildVaultContainer(app foundation.Application) (*container.Container, erro
 	c.DepositService.SetBalanceRefresher(c.WalletRefresher)
 
 	return c, nil
-}
-
-// buildPriceService quotes through price.SettingsSource on each refresh.
-// Provider keys are opened then, not copied into clients at boot. When no
-// settings provider is usable, the quote keeps the environment CoinAPI key.
-func buildPriceService(c *container.Container, accountSettings *settings.Service) *price.Service {
-	service := price.NewService(price.Deps{
-		Currencies: c.CurrencyRepo,
-		Cache:      facades.Cache(),
-	}).
-		WithQuoteDialer(coinapiws.Dialer{}).
-		WithEnvCoinAPIKey(c.PriceConfig.CoinAPIKey)
-	if accountSettings == nil {
-		return service
-	}
-	return service.WithSettingsSource(func(ctx context.Context) ([]price.Credential, error) {
-		opened, err := accountSettings.PriceProvidersForQuote(ctx)
-		if err != nil {
-			return nil, err
-		}
-		credentials := make([]price.Credential, 0, len(opened))
-		for _, item := range opened {
-			credentials = append(credentials, price.Credential{Name: item.Name, Key: item.Key})
-		}
-		return credentials, nil
-	})
 }
 
 // buildPendingDepositStore keeps failed deposit blocks in Redis and in a local

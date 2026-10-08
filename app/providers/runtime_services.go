@@ -14,7 +14,6 @@ import (
 	"github.com/macrowallets/waas/app/services/deposit"
 	"github.com/macrowallets/waas/app/services/feeestimate"
 	"github.com/macrowallets/waas/app/services/ingest"
-	"github.com/macrowallets/waas/app/services/price"
 	"github.com/macrowallets/waas/app/services/refresh"
 	"github.com/macrowallets/waas/app/services/sweep"
 	"github.com/macrowallets/waas/app/services/withdraw"
@@ -26,16 +25,12 @@ import (
 // on the container; routes read it through currentWalletService.
 func registerRuntimeServices(app foundation.Application) {
 	bindRuntime(app, func(c *container.Container) *deposit.Service { return c.DepositService }, "deposit service")
-	bindRuntime(app, func(c *container.Container) *price.Service { return c.PriceService }, "price service")
 	bindRuntime(app, func(c *container.Container) *ingest.Service { return c.IngestService }, "ingest service")
 	bindRuntime(app, func(c *container.Container) *refresh.BalanceService { return c.BalanceRefreshService }, "balance refresh service")
 	bindRuntime(app, func(c *container.Container) *refresh.WalletRefresher { return c.WalletRefresher }, "wallet refresher")
 	bindRuntime(app, func(c *container.Container) *withdraw.Service { return c.WithdrawalService }, "withdrawal service")
 	bindRuntime(app, func(c *container.Container) *withdrawalevents.Publisher { return c.WithdrawalEvents }, "withdrawal events")
 
-	app.Singleton((*price.CoinAPICredential)(nil), func(foundation.Application) (any, error) {
-		return &price.CoinAPICredential{Key: container.Get().PriceConfig.CoinAPIKey}, nil
-	})
 	app.Singleton((*sweep.Box)(nil), func(foundation.Application) (any, error) {
 		service := container.Get().SweepService
 		if service == nil {
