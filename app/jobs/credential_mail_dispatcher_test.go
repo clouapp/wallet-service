@@ -9,12 +9,13 @@ import (
 	"github.com/google/uuid"
 	"github.com/goravel/framework/contracts/queue"
 
+	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/services/credentialmail"
 )
 
 func TestCredential_Mail_DispatcherPayloadIsSubjectAndPurpose(t *testing.T) {
 	fake := &mailQueue{}
-	dispatcher := NewCredentialMailDispatcher(func() Enqueuer { return fake })
+	dispatcher := NewCredentialMailDispatcher(func() Enqueuer { return fake }, noMailService)
 	userID := uuid.MustParse("44444444-4444-4444-4444-444444444444")
 	inviteID := uuid.MustParse("55555555-5555-5555-5555-555555555555")
 	const secret = "raw-token-must-stay-off-the-queue"
@@ -38,7 +39,72 @@ func TestCredential_Mail_DispatcherRequiresAQueueClient(t *testing.T) {
 			t.Fatal("expected panic for a nil queue client")
 		}
 	}()
-	NewCredentialMailDispatcher(nil)
+	NewCredentialMailDispatcher(nil, noMailService)
+}
+
+func TestCredential_Mail_DispatcherRequiresAMailService(t *testing.T) {
+	defer func() {
+		if recover() == nil {
+			t.Fatal("expected panic for a nil mail service source")
+		}
+	}()
+	NewCredentialMailDispatcher(func() Enqueuer { return &mailQueue{} }, nil)
+}
+
+// The sync driver runs Handle on the job it is given, so that job must carry
+// the mail service the composition root resolved.
+func TestCredential_Mail_DispatcherHandsTheJobTheMailService(t *testing.T) {
+	fake := &mailQueue{}
+	mailer := idleMailService()
+	dispatcher := NewCredentialMailDispatcher(func() Enqueuer { return fake }, func() (*credentialmail.Service, error) {
+		return mailer, nil
+	})
+
+	if err := dispatcher.DispatchPasswordReset(uuid.New()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := dispatcher.DispatchAccountInvite(uuid.New()); err != nil {
+		t.Fatal(err)
+	}
+	if len(fake.services) != 2 || fake.services[0] != mailer || fake.services[1] != mailer {
+		t.Fatalf("jobs carried %v, want the resolved mail service twice", fake.services)
+	}
+}
+
+func TestCredential_Mail_DispatcherRefusesWhenTheMailServiceDoesNotResolve(t *testing.T) {
+	fake := &mailQueue{}
+	unresolved := errString("mail service is not bound")
+	dispatcher := NewCredentialMailDispatcher(func() Enqueuer { return fake }, func() (*credentialmail.Service, error) {
+		return nil, unresolved
+	})
+
+	if err := dispatcher.DispatchPasswordReset(uuid.New()); err != unresolved {
+		t.Fatalf("reset error = %v, want %v", err, unresolved)
+	}
+	if _, err := dispatcher.DispatchAccountInvite(uuid.New()); err != unresolved {
+		t.Fatalf("invite error = %v, want %v", err, unresolved)
+	}
+	if len(fake.payloads) != 0 {
+		t.Fatal("a dispatch without a mail service reached the queue")
+	}
+}
+
+// noMailService stands for a mail service the payload tests never reach: the
+// fake queue records the payload and does not run the job.
+func noMailService() (*credentialmail.Service, error) {
+	return idleMailService(), nil
+}
+
+func idleMailService() *credentialmail.Service {
+	return credentialmail.NewService(credentialmail.Deps{
+		Users:          mailUsers(func(uuid.UUID) (*models.User, error) { return nil, nil }),
+		Tokens:         mailTokens{},
+		Resets:         mailResets{},
+		Invites:        mailInvites{},
+		Sender:         mailSender{},
+		Dispatch:       func(uuid.UUID, string) error { return nil },
+		DispatchInvite: func(uuid.UUID) (string, error) { return "", nil },
+	})
 }
 
 func assertMailPayload(t *testing.T, payload string, subjectID uuid.UUID, purpose, secret string) {
@@ -60,9 +126,13 @@ func assertMailPayload(t *testing.T, payload string, subjectID uuid.UUID, purpos
 
 type mailQueue struct {
 	payloads []string
+	services []*credentialmail.Service
 }
 
 func (f *mailQueue) Job(job queue.Job, args ...[]queue.Arg) queue.PendingJob {
+	if sent, ok := job.(*SendCredentialMailJob); ok {
+		f.services = append(f.services, sent.service)
+	}
 	return &mailPending{queue: f, signature: job.Signature(), args: args}
 }
 

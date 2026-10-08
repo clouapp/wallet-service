@@ -38,7 +38,7 @@ func (p *CredentialMailServiceProvider) Register(app foundation.Application) {
 		if err != nil {
 			return nil, err
 		}
-		dispatcher := newCredentialMailDispatcher()
+		dispatcher := newCredentialMailDispatcher(app)
 		return credentialmail.NewService(credentialmail.Deps{
 			Users:          users,
 			Tokens:         tokens,
@@ -52,12 +52,13 @@ func (p *CredentialMailServiceProvider) Register(app foundation.Application) {
 }
 
 // newCredentialMailDispatcher enqueues reset and invite jobs with the process
-// queue. The providers receive it here because this is where the framework
-// queue facade is bound.
-func newCredentialMailDispatcher() *jobs.CredentialMailDispatcher {
-	return jobs.NewCredentialMailDispatcher(func() jobs.Enqueuer {
-		return appfacades.Queue()
-	})
+// queue. The mail service is resolved when a mail is dispatched: it depends
+// on the user and account services, which take this dispatcher.
+func newCredentialMailDispatcher(app foundation.Application) *jobs.CredentialMailDispatcher {
+	return jobs.NewCredentialMailDispatcher(
+		func() jobs.Enqueuer { return appfacades.Queue() },
+		func() (*credentialmail.Service, error) { return resolve[*credentialmail.Service](app) },
+	)
 }
 
 func (p *CredentialMailServiceProvider) Boot(foundation.Application) {}

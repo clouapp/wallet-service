@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/google/uuid"
+	"github.com/goravel/framework/contracts/queue"
 
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/services/account"
@@ -69,6 +70,26 @@ func TestSend_Credential_MailRejectsExtraArgsBeforeSending(t *testing.T) {
 	retry, delay := job.ShouldRetry(nil, 1)
 	if retry || delay != 0 {
 		t.Fatalf("retry = %v delay = %s", retry, delay)
+	}
+}
+
+func TestSend_Credential_MailRefusesAJobWithoutAMailService(t *testing.T) {
+	args, err := CredentialMailArgs(uuid.New(), credentialmail.PurposePasswordReset)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := (&SendCredentialMailJob{}).Handle(args[0].Value); err == nil {
+		t.Fatal("a job without a mail service must refuse the payload")
+	}
+	_, err = DispatchSyncAccountInvite(func(job queue.Job, args []queue.Arg) error {
+		values := make([]any, 0, len(args))
+		for _, arg := range args {
+			values = append(values, arg.Value)
+		}
+		return job.Handle(values...)
+	}, uuid.New(), nil)
+	if err == nil {
+		t.Fatal("an invite without a mail service must be refused")
 	}
 }
 

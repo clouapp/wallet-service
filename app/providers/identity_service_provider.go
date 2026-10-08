@@ -80,7 +80,7 @@ func (p *IdentityServiceProvider) Register(app foundation.Application) {
 			Activity:  activityLog,
 			Admins:    admins,
 			Sessions:  revoker,
-			ResetMail: newCredentialMailDispatcher(),
+			ResetMail: newCredentialMailDispatcher(app),
 		}), nil
 	})
 	app.Singleton((*sessions.RefreshTokens)(nil), func(app foundation.Application) (any, error) {
@@ -137,7 +137,7 @@ func (p *IdentityServiceProvider) Register(app foundation.Application) {
 			Tokens:      tokens,
 			Activity:    activityLog,
 			Invites:     invites,
-			InviteMail:  newCredentialMailDispatcher(),
+			InviteMail:  newCredentialMailDispatcher(app),
 			Passwords:   passwords,
 		}).WithPlatformAdmins(admins), nil
 	})
