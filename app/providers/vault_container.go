@@ -1,47 +1,18 @@
 package providers
 
 import (
-	"context"
+	"errors"
 	"fmt"
-	"log/slog"
 	"math/big"
-	"os"
-	"path/filepath"
 
 	"github.com/goravel/framework/contracts/foundation"
-	"github.com/redis/go-redis/v9"
-
-	blockstreamtip "github.com/macrowallets/waas/app/adapters/blockheight/blockstream"
-	etherscantip "github.com/macrowallets/waas/app/adapters/blockheight/etherscan"
-	mempooltip "github.com/macrowallets/waas/app/adapters/blockheight/mempool"
-	solanatip "github.com/macrowallets/waas/app/adapters/blockheight/solana"
-
-	"github.com/macrowallets/waas/app/adapters/redis/addressset"
-	redispending "github.com/macrowallets/waas/app/adapters/redis/pending"
-	"github.com/macrowallets/waas/app/adapters/redis/scanner"
-	sweepsecrets "github.com/macrowallets/waas/app/adapters/secretsmanager"
 
 	"github.com/macrowallets/waas/app/container"
 	"github.com/macrowallets/waas/app/facades"
 	"github.com/macrowallets/waas/app/models"
-	"github.com/macrowallets/waas/app/repositories"
-	"github.com/macrowallets/waas/app/services/blockheight"
-	chainpkg "github.com/macrowallets/waas/app/services/chain"
-	"github.com/macrowallets/waas/app/services/chainregistry"
-	"github.com/macrowallets/waas/app/services/deposit"
-	"github.com/macrowallets/waas/app/services/deposit/pending"
-	"github.com/macrowallets/waas/app/services/depositevents"
-	"github.com/macrowallets/waas/app/services/ingest"
 	mpc "github.com/macrowallets/waas/app/services/mpc"
-	"github.com/macrowallets/waas/app/services/price"
-	"github.com/macrowallets/waas/app/services/refresh"
 	"github.com/macrowallets/waas/app/services/settings"
 	"github.com/macrowallets/waas/app/services/sweep"
-	"github.com/macrowallets/waas/app/services/wallet"
-	"github.com/macrowallets/waas/app/services/webhook"
-	"github.com/macrowallets/waas/app/services/webhooksync"
-	"github.com/macrowallets/waas/app/services/withdraw"
-	"github.com/macrowallets/waas/app/services/withdrawalevents"
 )
 
 // openChainEndpoint opens a sealed rpc_url and returns the URL to dial.
@@ -70,322 +41,73 @@ func registerVaultContainer(app foundation.Application) {
 		}
 		return c, nil
 	})
-	registerRuntimeServices(app)
 }
 
+// buildVaultContainer fills the god struct with the instances the providers
+// bind, for the callers that still read container.Get.
 func buildVaultContainer(app foundation.Application) (*container.Container, error) {
-	c := &container.Container{}
-
 	redisClient, err := facades.Redis()
 	if err != nil {
 		return nil, fmt.Errorf("vault: redis: %w", err)
 	}
-	c.Redis = redisClient
-
-	secrets, err := resolve[*sweepsecrets.SDKClient](app)
-	if err != nil {
-		return nil, err
-	}
-	c.SecretsManager = secrets
-	mpcService, err := resolve[*mpc.TSSService](app)
-	if err != nil {
+	c := &container.Container{Redis: redisClient}
+	var mpcService *mpc.TSSService
+	var box *sweep.Box
+	if err := errors.Join(
+		bound(app, &c.SecretsManager),
+		bound(app, &mpcService),
+		bound(app, &c.UserRepo),
+		bound(app, &c.RefreshTokenRepo),
+		bound(app, &c.PasswordResetTokenRepo),
+		bound(app, &c.TotpRecoveryCodeRepo),
+		bound(app, &c.AccountRepo),
+		bound(app, &c.AccountUserRepo),
+		bound(app, &c.AccessTokenRepo),
+		bound(app, &c.WalletRepo),
+		bound(app, &c.WalletUserRepo),
+		bound(app, &c.AddressRepo),
+		bound(app, &c.TransactionRepo),
+		bound(app, &c.WithdrawalRepo),
+		bound(app, &c.WebhookConfigRepo),
+		bound(app, &c.WebhookEventRepo),
+		bound(app, &c.WhitelistEntryRepo),
+		bound(app, &c.ChainRepo),
+		bound(app, &c.TokenRepo),
+		bound(app, &c.ChainResourceRepo),
+		bound(app, &c.WebhookSubscriptionRepo),
+		bound(app, &c.WalletAssetBalanceRepo),
+		bound(app, &c.WalletBalanceSnapshotRepo),
+		bound(app, &c.WalletUTXORepo),
+		bound(app, &c.WalletSyncStateRepo),
+		bound(app, &c.CurrencyRepo),
+		bound(app, &c.WebhookSyncService),
+		bound(app, &c.PriceService),
+		bound(app, &c.Registry),
+		bound(app, &c.WalletService),
+		bound(app, &c.DepositService),
+		bound(app, &c.WithdrawalService),
+		bound(app, &box),
+		bound(app, &c.WebhookService),
+		bound(app, &c.WithdrawalEvents),
+		bound(app, &c.DepositEvents),
+		bound(app, &c.IngestService),
+		bound(app, &c.BalanceRefreshService),
+		bound(app, &c.WalletRefresher),
+	); err != nil {
 		return nil, err
 	}
 	c.MPCService = mpcService
-
-	users, err := resolve[*repositories.UserRepository](app)
-	if err != nil {
-		return nil, err
-	}
-	refreshTokens, err := resolve[*repositories.RefreshTokenRepository](app)
-	if err != nil {
-		return nil, err
-	}
-	passwordResets, err := resolve[*repositories.PasswordResetTokenRepository](app)
-	if err != nil {
-		return nil, err
-	}
-	recoveryCodes, err := resolve[*repositories.TotpRecoveryCodeRepository](app)
-	if err != nil {
-		return nil, err
-	}
-	accounts, err := resolve[*repositories.AccountRepository](app)
-	if err != nil {
-		return nil, err
-	}
-	memberships, err := resolve[*repositories.AccountUserRepository](app)
-	if err != nil {
-		return nil, err
-	}
-	accessTokens, err := resolve[*repositories.AccessTokenRepository](app)
-	if err != nil {
-		return nil, err
-	}
-	c.UserRepo = users
-	c.RefreshTokenRepo = refreshTokens
-	c.PasswordResetTokenRepo = passwordResets
-	c.TotpRecoveryCodeRepo = recoveryCodes
-	c.AccountRepo = accounts
-	c.AccountUserRepo = memberships
-	c.AccessTokenRepo = accessTokens
-	wallets, err := resolve[*repositories.WalletRepository](app)
-	if err != nil {
-		return nil, err
-	}
-	walletUsers, err := resolve[*repositories.WalletUserRepository](app)
-	if err != nil {
-		return nil, err
-	}
-	addresses, err := resolve[*repositories.AddressRepository](app)
-	if err != nil {
-		return nil, err
-	}
-	whitelist, err := resolve[*repositories.WhitelistEntryRepository](app)
-	if err != nil {
-		return nil, err
-	}
-	assetBalances, err := resolve[*repositories.WalletAssetBalanceRepository](app)
-	if err != nil {
-		return nil, err
-	}
-	balanceSnapshots, err := resolve[*repositories.WalletBalanceSnapshotRepository](app)
-	if err != nil {
-		return nil, err
-	}
-	utxos, err := resolve[*repositories.WalletUTXORepository](app)
-	if err != nil {
-		return nil, err
-	}
-	syncStates, err := resolve[*repositories.WalletSyncStateRepository](app)
-	if err != nil {
-		return nil, err
-	}
-	c.WalletRepo = wallets
-	c.WalletUserRepo = walletUsers
-	c.AddressRepo = addresses
-	transactions, err := resolve[*repositories.TransactionRepository](app)
-	if err != nil {
-		return nil, err
-	}
-	withdrawals, err := resolve[*repositories.WithdrawalRepository](app)
-	if err != nil {
-		return nil, err
-	}
-	c.TransactionRepo = transactions
-	c.WithdrawalRepo = withdrawals
-	chains, err := resolve[*repositories.ChainRepository](app)
-	if err != nil {
-		return nil, err
-	}
-	tokens, err := resolve[*repositories.TokenRepository](app)
-	if err != nil {
-		return nil, err
-	}
-	chainResources, err := resolve[*repositories.ChainResourceRepository](app)
-	if err != nil {
-		return nil, err
-	}
-	currencies, err := resolve[*repositories.CurrencyRepository](app)
-	if err != nil {
-		return nil, err
-	}
-	webhookConfigs, err := resolve[*repositories.WebhookConfigRepository](app)
-	if err != nil {
-		return nil, err
-	}
-	webhookEvents, err := resolve[*repositories.WebhookEventRepository](app)
-	if err != nil {
-		return nil, err
-	}
-	c.WebhookConfigRepo = webhookConfigs
-	c.WebhookEventRepo = webhookEvents
-	c.WhitelistEntryRepo = whitelist
-	c.ChainRepo = chains
-	c.TokenRepo = tokens
-	c.ChainResourceRepo = chainResources
-	webhookSubscriptions, err := resolve[*repositories.WebhookSubscriptionRepository](app)
-	if err != nil {
-		return nil, err
-	}
-	c.WebhookSubscriptionRepo = webhookSubscriptions
-	c.WalletAssetBalanceRepo = assetBalances
-	c.WalletBalanceSnapshotRepo = balanceSnapshots
-	c.WalletUTXORepo = utxos
-	c.WalletSyncStateRepo = syncStates
-	c.CurrencyRepo = currencies
-
-	accountSettings, err := container.Make[*settings.Service]()
-	if err != nil {
-		return nil, fmt.Errorf("vault: account settings: %w", err)
-	}
-	webhookSync, err := resolve[*webhooksync.Service](app)
-	if err != nil {
-		return nil, err
-	}
-	c.WebhookSyncService = webhookSync
-
-	registry, err := resolve[*chainpkg.Registry](app)
-	if err != nil {
-		return nil, err
-	}
-	c.Registry = registry
-	registryService, err := resolve[*chainregistry.ChainRegistryService](app)
-	if err != nil {
-		return nil, fmt.Errorf("vault: chain registry: %w", err)
-	}
-	networkByChain := registryService.Networks()
-
-	webhookService, err := resolve[*webhook.Service](app)
-	if err != nil {
-		return nil, err
-	}
-	c.WebhookService = webhookService
-	walletService, err := resolve[*wallet.Service](app)
-	if err != nil {
-		return nil, err
-	}
-	c.WalletService = walletService
-	prices, err := resolve[*price.Service](app)
-	if err != nil {
-		return nil, err
-	}
-	c.PriceService = prices
-	box, err := resolve[*sweep.Box](app)
-	if err != nil {
-		return nil, err
-	}
 	c.SweepService = box.Service
-	withdrawalService, err := resolve[*withdraw.Service](app)
-	if err != nil {
-		return nil, err
-	}
-	c.WithdrawalService = withdrawalService
-	withdrawalEvents, err := resolve[*withdrawalevents.Publisher](app)
-	if err != nil {
-		return nil, err
-	}
-	c.WithdrawalEvents = withdrawalEvents
-
-	etherscanKey := func(ctx context.Context) string {
-		envKey := facades.Config().GetString("vault.webhooks.etherscan_api_key")
-		return accountSettings.EtherscanKeyForHeight(ctx, envKey)
-	}
-	blockHeightProviders := blockheight.NewProviders(blockheight.ProvidersDeps{
-		Key:            etherscanKey,
-		NetworkByChain: networkByChain,
-		Etherscan:      etherscantip.New(blockheight.EtherscanDeps{KeyAtUse: etherscanKey}),
-		Blockstream:    blockstreamtip.New(),
-		Testnet4:       mempooltip.New(),
-		Solana:         solanatip.New(),
-	})
-	assetDecimals := withdrawalevents.NewRegistryDecimals(withdrawalevents.RegistryDecimalsDeps{
-		Registry: c.Registry,
-		Chains:   c.ChainRepo,
-	})
-	c.DepositEvents = depositevents.NewPublisher(depositevents.PublisherDeps{
-		Enqueuer: c.WebhookService,
-		Wallets:  c.WalletRepo,
-		Decimals: assetDecimals,
-	})
-	c.DepositService = deposit.NewService(deposit.Deps{
-		Store:                scanner.New(c.Redis),
-		Registry:             c.Registry,
-		Webhook:              c.WebhookService,
-		Addresses:            c.AddressRepo,
-		Transactions:         c.TransactionRepo,
-		BlockHeightProviders: blockHeightProviders,
-	})
-	c.DepositService.SetWithdrawalConfirmations(c.WithdrawalEvents)
-	c.DepositService.SetDepositEvents(c.DepositEvents)
-	// Each ScanLatestBlocks call reads deposit_scan and runs
-	// deposit.ScanOptionsFromSettings. A stored value overrides DEPOSIT_SCAN_*.
-	// A missing row, an invalid value, or a failed read keeps the environment
-	// window and the scan continues.
-	c.DepositService.SetScanOptionSource(func(ctx context.Context) (deposit.ScanOptions, error) {
-		envBatch := facades.Config().GetInt("vault.deposit_scan.batch_blocks")
-		envCatchUp := facades.Config().GetInt("vault.deposit_scan.catch_up_blocks")
-		envConcurrency := facades.Config().GetInt("vault.deposit_scan.concurrency")
-		stored, readErr := accountSettings.EffectiveDepositScan(ctx)
-		return deposit.ScanOptionsForRun(
-			envBatch, envCatchUp, envConcurrency,
-			stored.BatchBlocks, stored.CatchUpBlocks, stored.Concurrency,
-			readErr,
-		)
-	})
-	failurePolicy, err := deposit.FailurePolicyFromSettings(
-		facades.Config().GetInt("vault.deposit_scan.retry_attempts"),
-		facades.Config().GetInt("vault.deposit_scan.retry_delay_ms"),
-		facades.Config().GetInt("vault.deposit_scan.pending_retry_seconds"),
-		facades.Config().GetInt("vault.deposit_scan.pending_retry_max_seconds"),
-		facades.Config().GetInt("vault.deposit_scan.max_new_pending_per_cycle"),
-	)
-	if err != nil {
-		return nil, fmt.Errorf("vault: deposit failure policy: %w", err)
-	}
-	if err := c.DepositService.SetFailurePolicy(failurePolicy); err != nil {
-		return nil, fmt.Errorf("vault: deposit failure policy: %w", err)
-	}
-	if pendingDeposits := buildPendingDepositStore(c.Redis, facades.Config().GetString("vault.deposit_scan.pending_dir")); pendingDeposits != nil {
-		c.DepositService.SetPendingStore(pendingDeposits)
-	}
-	c.IngestService = ingest.NewService(ingest.Deps{
-		Addresses:    addressset.New(c.Redis),
-		Registry:     c.Registry,
-		Webhook:      c.WebhookService,
-		AddressRepo:  c.AddressRepo,
-		Transactions: c.TransactionRepo,
-	})
-	c.IngestService.SetDepositEvents(c.DepositEvents)
-	balances, err := resolve[*refresh.BalanceService](app)
-	if err != nil {
-		return nil, err
-	}
-	c.BalanceRefreshService = balances
-	walletRefresher, err := resolve[*refresh.WalletRefresher](app)
-	if err != nil {
-		return nil, err
-	}
-	c.WalletRefresher = walletRefresher
-	c.DepositService.SetBalanceRefresher(c.WalletRefresher)
-
 	return c, nil
 }
 
-// buildPendingDepositStore keeps failed deposit blocks in Redis and in a local
-// append-only file; either one is enough, and with neither the scanner stops before a
-// failing block instead of skipping it.
-func buildPendingDepositStore(rdb redis.UniversalClient, dir string) pending.Store {
-	var redisStore pending.Store
-	if rdb != nil {
-		store, err := redispending.NewRedisStore(redispending.RedisStoreDeps{Redis: rdb, KeyPrefix: redispending.DefaultRedisKeyPrefix})
-		if err != nil {
-			slog.Error("vault: pending deposit redis store unavailable", "error", err)
-		} else {
-			redisStore = store
-		}
-	}
-	if dir == "" {
-		dir = defaultPendingDepositDir()
-	}
-	fileStore, err := pending.NewFileStore(pending.FileStoreDeps{Dir: dir})
+func bound[T any](app foundation.Application, into *T) error {
+	value, err := resolve[T](app)
 	if err != nil {
-		slog.Error("vault: pending deposit file store unavailable", "dir", dir, "error", err)
-		fileStore = nil
+		return err
 	}
-	store, err := pending.NewDurableStore(pending.DurableStoreDeps{Redis: redisStore, File: fileStore})
-	if err != nil {
-		slog.Error("vault: no pending deposit store; a block that keeps failing stops the scan", "error", err)
-		return nil
-	}
-	slog.Info("vault: pending deposit store ready", "redis", redisStore != nil, "file_dir", dir, "file", fileStore != nil)
-	return store
-}
-
-func defaultPendingDepositDir() string {
-	if home, err := os.UserHomeDir(); err == nil && home != "" {
-		return filepath.Join(home, ".local", "state", "macro-wallets", "deposit-pending")
-	}
-	return filepath.Join(os.TempDir(), "macro-wallets", "deposit-pending")
+	*into = value
+	return nil
 }
 
 // lenientLogScanChains keep their deployed deposit scan: a block whose eth_getLogs

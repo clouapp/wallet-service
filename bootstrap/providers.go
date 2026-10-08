@@ -56,6 +56,7 @@ func Providers() []foundation.ServiceProvider {
 		&providers.CredentialMailServiceProvider{},
 		&providers.FeaturesServiceProvider{},
 		&providers.PriceServiceProvider{},
+		&providers.DepositServiceProvider{},
 		&providers.AppServiceProvider{},
 	}
 }
