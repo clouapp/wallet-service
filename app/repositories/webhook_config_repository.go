@@ -117,7 +117,7 @@ func (r *WebhookConfigRepository) FindOwnership(ctx context.Context, id uuid.UUI
 		Where("id = ?", id).
 		First(&row)
 	if err != nil {
-		return nil, db.NotFound(err, "find webhook ownership")
+		return nil, fmt.Errorf("find webhook ownership: %w", err)
 	}
 	if row.ID == uuid.Nil {
 		return nil, models.ErrRepositoryNotFound

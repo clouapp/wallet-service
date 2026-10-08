@@ -15,6 +15,7 @@ import (
 	"github.com/macrowallets/waas/app/services/chain"
 	"github.com/macrowallets/waas/app/services/deposit/pending"
 	"github.com/macrowallets/waas/app/services/webhook"
+	"github.com/macrowallets/waas/pkg/pgerr"
 	"github.com/macrowallets/waas/pkg/types"
 )
 
@@ -259,7 +260,7 @@ func (s *Service) processTransfer(ctx context.Context, chainID string, adapter t
 	}
 
 	if err := s.txRepo.Create(ctx, tx); err != nil {
-		if repositories.IsUniqueViolation(err) {
+		if pgerr.IsUniqueViolation(err) {
 			slog.Info("deposit already recorded by another process", "chain", chainID, "tx", transfer.TxHash)
 			return false, nil
 		}

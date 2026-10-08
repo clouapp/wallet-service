@@ -61,12 +61,6 @@ func (b Base) Query(ctx context.Context) orm.Query {
 	return facades.Orm().WithContext(ctx).Query()
 }
 
-// Bound returns the query this repository was built with, including nil.
-// Siblings on the same transaction take this, not Query.
-func (b Base) Bound() orm.Query {
-	return b.query
-}
-
 // Transaction runs fn atomically, joining a transaction already open instead
 // of starting a second one.
 func (b Base) Transaction(ctx context.Context, fn func(tx orm.Query) error) error {
@@ -78,6 +72,16 @@ func (b Base) Transaction(ctx context.Context, fn func(tx orm.Query) error) erro
 	if err != nil {
 		return fmt.Errorf("begin: %w", err)
 	}
+	// A panic in fn must not leave the transaction open on its connection, so
+	// roll back before it keeps unwinding. Goravel's own Orm().Transaction
+	// swallows the panic and drops the original error when the rollback fails,
+	// and it would not join a transaction already on ctx.
+	defer func() {
+		if r := recover(); r != nil {
+			_ = tx.Rollback()
+			panic(r)
+		}
+	}()
 	if err := fn(tx); err != nil {
 		if rollbackErr := tx.Rollback(); rollbackErr != nil {
 			return fmt.Errorf("%w (rollback: %w)", err, rollbackErr)

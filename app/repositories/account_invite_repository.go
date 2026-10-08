@@ -63,7 +63,7 @@ func (r *AccountInviteRepository) FindOpenByAccountAndID(ctx context.Context, ac
 		Where("id = ? AND account_id = ? AND accepted_at IS NULL AND revoked_at IS NULL", id, accountID).
 		First(&invite)
 	if err != nil {
-		return nil, db.NotFound(err, "find open invite")
+		return nil, fmt.Errorf("find open invite: %w", err)
 	}
 	if invite.ID == uuid.Nil {
 		return nil, models.ErrRepositoryNotFound
@@ -82,7 +82,7 @@ func (r *AccountInviteRepository) FindOpenByID(ctx context.Context, id uuid.UUID
 		Where("id = ? AND accepted_at IS NULL AND revoked_at IS NULL", id).
 		First(&invite)
 	if err != nil {
-		return nil, db.NotFound(err, "find open invite")
+		return nil, fmt.Errorf("find open invite: %w", err)
 	}
 	if invite.ID == uuid.Nil {
 		return nil, models.ErrRepositoryNotFound

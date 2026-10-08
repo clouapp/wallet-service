@@ -11,7 +11,10 @@
 func (r *WalletRepository) FindByID(ctx context.Context, id uuid.UUID, lock bool) (*models.Wallet, error) {
 	var row models.Wallet
 	if err := r.Query(ctx)...First(&row); err != nil {
-		return nil, db.NotFound(err, "find wallet")
+		return nil, fmt.Errorf("find wallet: %w", err)
+	}
+	if row.ID == uuid.Nil { // First does not fail on a miss
+		return nil, models.ErrRepositoryNotFound
 	}
 	return &row, nil
 }

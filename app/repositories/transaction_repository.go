@@ -73,7 +73,7 @@ func (r *TransactionRepository) FindByIDForAccount(ctx context.Context, id, acco
 		Where("id = ? AND wallet_id IN (SELECT id FROM wallets WHERE account_id = ?)", id, accountID).
 		First(&tx)
 	if err != nil {
-		return nil, db.NotFound(err, "find transaction")
+		return nil, fmt.Errorf("find transaction: %w", err)
 	}
 	if tx.ID == uuid.Nil {
 		return nil, models.ErrRepositoryNotFound

@@ -12,6 +12,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/macrowallets/waas/app/models"
+	"github.com/macrowallets/waas/pkg/pgerr"
 	"github.com/macrowallets/waas/pkg/types"
 )
 
@@ -131,7 +132,7 @@ func (s *Service) enqueueForConfig(ctx context.Context, cfg models.WebhookConfig
 		MaxAttempts:     s.resolveDeliverySettings(ctx).MaxAttempts,
 	}
 	if err := s.webhookEventRepo.Create(ctx, webhookEvent); err != nil {
-		if isUniqueViolation(err) {
+		if pgerr.IsUniqueViolation(err) {
 			return false, nil
 		}
 		return false, fmt.Errorf("insert webhook event: %w", err)
@@ -154,14 +155,6 @@ func (s *Service) enqueueForConfig(ctx context.Context, cfg models.WebhookConfig
 		}
 	}
 	return true, nil
-}
-
-func isUniqueViolation(err error) bool {
-	if err == nil {
-		return false
-	}
-	message := strings.ToLower(err.Error())
-	return strings.Contains(message, "duplicate key") || strings.Contains(message, "sqlstate 23505")
 }
 
 // DeliverPending is the local stand-in for the SQS webhook worker: it delivers stored

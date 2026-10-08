@@ -2,7 +2,6 @@ package repositories
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -46,9 +45,6 @@ func (r *WebhookEventRepository) AlreadyDelivered(ctx context.Context, eventID s
 	var event models.WebhookEvent
 	err := r.Query(ctx).Where("id = ?", id).First(&event)
 	if err != nil {
-		if errors.Is(db.NotFound(err, ""), models.ErrRepositoryNotFound) {
-			return false, nil
-		}
 		return false, fmt.Errorf("load webhook event: %w", err)
 	}
 	if event.ID == uuid.Nil {

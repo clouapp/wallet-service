@@ -16,9 +16,11 @@ a request context.
 ## `internal/db`
 
 The query seam (`Base.Query(ctx)`), joining a transaction already open
-(`Transaction(ctx, fn)`), and Postgres translation: `NotFound(err, op)` →
-`models.ErrRepositoryNotFound`, `RequireRow`, `IsUniqueViolation` (SQLSTATE
-23505 → `models.ErrAlreadyExists`). No business rule lives here.
+(`Transaction(ctx, fn)`, which rolls back and re-panics when `fn` panics), and
+`RequireRow` (no row affected → `models.ErrRepositoryNotFound`). `First` does
+not fail on a miss: the repository checks the zero ID. A duplicate key is
+recognised with `pkg/pgerr.IsUniqueViolation` (SQLSTATE 23505). No business
+rule lives here.
 
 ## `internal/types`
 

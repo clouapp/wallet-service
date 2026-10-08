@@ -21,6 +21,7 @@ import (
 	"github.com/macrowallets/waas/app/repositories"
 	"github.com/macrowallets/waas/app/services/deposit/pending"
 	"github.com/macrowallets/waas/app/services/depositevents"
+	"github.com/macrowallets/waas/pkg/pgerr"
 	"github.com/macrowallets/waas/pkg/types"
 	"github.com/macrowallets/waas/tests/feature/support/fixtures"
 	"github.com/macrowallets/waas/tests/feature/support/testutil"
@@ -644,7 +645,7 @@ func TestUnique_Deposit_IndexRejectsASecondRowForTheSameTransaction(t *testing.T
 		t.Fatal(err)
 	}
 	err := repo.Create(context.Background(), newDeposit(models.TxTypeDeposit))
-	if !repositories.IsUniqueViolation(err) {
+	if !pgerr.IsUniqueViolation(err) {
 		t.Fatalf("expected a unique violation for a second deposit row, got %v", err)
 	}
 	if err := repo.Create(context.Background(), newDeposit(models.TxTypeWithdrawal)); err != nil {
