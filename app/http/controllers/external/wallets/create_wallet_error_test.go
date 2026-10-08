@@ -14,6 +14,7 @@ import (
 	"github.com/macrowallets/waas/app/http/resources"
 	"github.com/macrowallets/waas/app/http/responses"
 	"github.com/macrowallets/waas/app/services/chainregistry"
+	"github.com/macrowallets/waas/app/services/wallet"
 )
 
 func TestMap_Create_WalletErrorDoesNotHideAnOutageAs409(t *testing.T) {
@@ -58,14 +59,14 @@ func TestMap_Create_WalletErrorKeepsCallerFailuresAs4(t *testing.T) {
 		},
 		{
 			name:    "short passphrase",
-			err:     errors.New("passphrase must be at least 12 characters"),
+			err:     wallet.ErrPassphraseTooShort,
 			status:  http.StatusUnprocessableEntity,
 			code:    responses.CodeUnprocessable,
 			message: "passphrase must be at least 12 characters",
 		},
 		{
 			name:    "missing account",
-			err:     errors.New("account_id is required"),
+			err:     wallet.ErrAccountRequired,
 			status:  http.StatusBadRequest,
 			code:    responses.CodeInvalidRequest,
 			message: "account_id is required",

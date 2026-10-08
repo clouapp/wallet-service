@@ -116,9 +116,9 @@ func mapCreateWalletError(ctx http.Context, err error) http.Response {
 	switch {
 	case errors.Is(err, chainregistry.ErrUnknownChain):
 		return responses.Fail(ctx, http.StatusConflict, responses.CodeConflict, "unknown chain")
-	case err.Error() == "passphrase must be at least 12 characters":
+	case errors.Is(err, wallet.ErrPassphraseTooShort):
 		return responses.Fail(ctx, http.StatusUnprocessableEntity, responses.CodeUnprocessable, "passphrase must be at least 12 characters")
-	case err.Error() == "account_id is required":
+	case errors.Is(err, wallet.ErrAccountRequired):
 		return responses.Fail(ctx, http.StatusBadRequest, responses.CodeInvalidRequest, "account_id is required")
 	default:
 		return responses.InternalError(ctx, err)

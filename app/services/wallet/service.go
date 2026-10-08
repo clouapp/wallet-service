@@ -27,6 +27,17 @@ var (
 	ErrWalletNotFound        = errors.New("wallet not found")
 	ErrWalletAlreadyActive   = errors.New("wallet is not pending activation")
 	ErrInvalidActivationCode = errors.New("invalid activation code")
+
+	ErrAccountRequired    = errors.New("account_id is required")
+	ErrPassphraseTooShort = errors.New("passphrase must be at least 12 characters")
+
+	// Refusals GenerateAddress and UpdateAddress hand back bare, so a caller
+	// can tell a client mistake from a store failure with errors.Is.
+	ErrAddressPassphraseRequired      = errors.New("passphrase is required for ed25519 address derivation")
+	ErrInvalidPassphrase              = errors.New("invalid passphrase")
+	ErrAddressNotFound                = errors.New("address not found")
+	ErrAddressLabelNotString          = errors.New("update address: label must be a string")
+	ErrAddressExternalUserIDNotString = errors.New("update address: external_user_id must be a string")
 )
 
 // CreateWalletResult holds the wallet record, the combined public key, and the
@@ -140,10 +151,10 @@ func (s *Service) cacheAddress(ctx context.Context, chainID, address string) {
 func (s *Service) CreateWallet(ctx context.Context, accountID uuid.UUID, chainID, label, passphrase string) (*CreateWalletResult, error) {
 	defer mpcshare.DiscardPassphrase(&passphrase)
 	if accountID == uuid.Nil {
-		return nil, fmt.Errorf("account_id is required")
+		return nil, ErrAccountRequired
 	}
 	if len(passphrase) < 12 {
-		return nil, fmt.Errorf("passphrase must be at least 12 characters")
+		return nil, ErrPassphraseTooShort
 	}
 
 	chainID = strings.ToLower(chainID)
@@ -303,16 +314,16 @@ func (s *Service) ListWallets(ctx context.Context) ([]models.Wallet, error) {
 func (s *Service) GenerateAddress(ctx context.Context, walletID uuid.UUID, externalUserID, label, metadata, passphrase string) (*models.Address, error) {
 	defer mpcshare.DiscardPassphrase(&passphrase)
 	if s.walletRepo == nil {
-		return nil, fmt.Errorf("wallet not found")
+		return nil, ErrWalletNotFound
 	}
 	w, err := s.walletRepo.FindByID(ctx, walletID)
 	if err != nil || w == nil {
-		return nil, fmt.Errorf("wallet not found")
+		return nil, ErrWalletNotFound
 	}
 
 	curve := mpc.Curve(w.MPCCurve)
 	if curve == mpc.CurveEd25519 && passphrase == "" {
-		return nil, fmt.Errorf("passphrase is required for ed25519 address derivation")
+		return nil, ErrAddressPassphraseRequired
 	}
 
 	newIndex, err := s.walletRepo.IncrementAddressIndex(ctx, walletID)
@@ -387,7 +398,7 @@ func (s *Service) generateEd25519Address(ctx context.Context, w *models.Wallet, 
 	shareA, err := w.DecryptShareA(passphrase)
 	if err != nil {
 		if errors.Is(err, mpc.ErrInvalidPassphrase) {
-			return nil, fmt.Errorf("invalid passphrase")
+			return nil, ErrInvalidPassphrase
 		}
 		return nil, err
 	}
@@ -506,7 +517,7 @@ func applyAddressFields(ctx context.Context, addresses AddressStore, addressID u
 	if label, ok := fields["label"]; ok {
 		text, ok := label.(string)
 		if !ok {
-			return fmt.Errorf("update address: label must be a string")
+			return ErrAddressLabelNotString
 		}
 		if err := addresses.SetLabel(ctx, addressID, text); err != nil {
 			return fmt.Errorf("update address: %w", err)
@@ -515,7 +526,7 @@ func applyAddressFields(ctx context.Context, addresses AddressStore, addressID u
 	if externalUserID, ok := fields["external_user_id"]; ok {
 		text, ok := externalUserID.(string)
 		if !ok {
-			return fmt.Errorf("update address: external_user_id must be a string")
+			return ErrAddressExternalUserIDNotString
 		}
 		if err := addresses.SetExternalUserID(ctx, addressID, text); err != nil {
 			return fmt.Errorf("update address: %w", err)
@@ -527,7 +538,7 @@ func applyAddressFields(ctx context.Context, addresses AddressStore, addressID u
 func (s *Service) UpdateAddress(ctx context.Context, addressID uuid.UUID, fields map[string]interface{}) (*models.Address, error) {
 	addr, err := s.addressRepo.FindByID(ctx, addressID)
 	if err != nil || addr == nil {
-		return nil, fmt.Errorf("address not found")
+		return nil, ErrAddressNotFound
 	}
 	if err := applyAddressFields(ctx, s.addressRepo, addressID, fields); err != nil {
 		return nil, err

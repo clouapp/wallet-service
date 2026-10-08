@@ -12,6 +12,7 @@ import (
 
 	"github.com/macrowallets/waas/app/http/controllers"
 	"github.com/macrowallets/waas/app/http/responses"
+	"github.com/macrowallets/waas/app/services/wallet"
 )
 
 func TestGenerate_Address_ErrorOmitsTheProviderText(t *testing.T) {
@@ -43,7 +44,7 @@ func TestGenerate_Address_ErrorOmitsTheProviderText(t *testing.T) {
 
 func TestGenerate_Address_ErrorKeepsTheHandlersOwnMessage(t *testing.T) {
 	response := &recordingResponse{}
-	controllers.AddressGenerationError(&recordingContext{base: context.Background(), response: response}, fmt.Errorf("wallet not found"))
+	controllers.AddressGenerationError(&recordingContext{base: context.Background(), response: response}, wallet.ErrWalletNotFound)
 
 	if response.status != http.StatusUnprocessableEntity {
 		t.Fatalf("status = %d, want 422", response.status)
