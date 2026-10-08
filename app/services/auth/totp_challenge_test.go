@@ -10,13 +10,14 @@ import (
 	"github.com/stretchr/testify/require"
 
 	authsvc "github.com/macrowallets/waas/app/services/auth"
+	"github.com/macrowallets/waas/tests/memcache"
 	"github.com/stretchr/testify/assert"
 )
 
 func redisChallengeStore(t *testing.T, ttl time.Duration) *authsvc.CacheTOTPChallengeStore {
 	t.Helper()
 	store, err := authsvc.NewCacheTOTPChallengeStore(authsvc.ChallengeStoreDeps{
-		Cache: newMemCache(),
+		Cache: memcache.New(),
 		TTL:   ttl,
 	})
 	require.NoError(t, err)
@@ -26,7 +27,7 @@ func redisChallengeStore(t *testing.T, ttl time.Duration) *authsvc.CacheTOTPChal
 func redisAttemptLimiter(t *testing.T, window time.Duration) *authsvc.CacheAttemptLimiter {
 	t.Helper()
 	limiter, err := authsvc.NewCacheAttemptLimiter(authsvc.AttemptLimiterDeps{
-		Cache:  newMemCache(),
+		Cache:  memcache.New(),
 		Window: window,
 	})
 	require.NoError(t, err)
@@ -56,7 +57,7 @@ func TestCache_TOTPChallengeStore_IssueAndResolve(t *testing.T) {
 }
 
 func TestCache_TOTPChallengeStore_KeysDoNotContainTheToken(t *testing.T) {
-	cache := newMemCache()
+	cache := memcache.New()
 	store, err := authsvc.NewCacheTOTPChallengeStore(authsvc.ChallengeStoreDeps{
 		Cache: cache,
 		TTL:   time.Minute,
@@ -67,7 +68,7 @@ func TestCache_TOTPChallengeStore_KeysDoNotContainTheToken(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(func() { store.Revoke(token) })
 
-	for _, key := range cache.keys() {
+	for _, key := range cache.Keys() {
 		assert.NotContains(t, key, token)
 	}
 }
@@ -143,7 +144,7 @@ func TestCache_TOTPChallengeStore_ValidatesInput(t *testing.T) {
 	_, err := authsvc.NewCacheTOTPChallengeStore(authsvc.ChallengeStoreDeps{TTL: time.Minute})
 	assert.Error(t, err)
 	_, err = authsvc.NewCacheTOTPChallengeStore(authsvc.ChallengeStoreDeps{
-		Cache: newMemCache(),
+		Cache: memcache.New(),
 		TTL:   0,
 	})
 	assert.Error(t, err)
