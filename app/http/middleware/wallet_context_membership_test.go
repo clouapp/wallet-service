@@ -75,12 +75,25 @@ func TestWallet_Context_DeniesWhenTheMembershipReadFails(t *testing.T) {
 	}
 }
 
+// bindContainer replaces the T binding for one test. TestMain boots the app,
+// which already built and cached the production instance, so the rebinding
+// drops that cache entry and the cleanup puts the production instance back for
+// the suites that share this process.
 func bindContainer[T any](t *testing.T, value T) {
 	t.Helper()
 	var zero T
-	foundation.App.Singleton(zero, func(contractsfoundation.Application) (any, error) {
-		return value, nil
-	})
+	production, err := container.Make[T]()
+	if err != nil {
+		t.Fatalf("resolve %T: %v", zero, err)
+	}
+	rebind := func(instance T) {
+		foundation.App.Singleton(zero, func(contractsfoundation.Application) (any, error) {
+			return instance, nil
+		})
+		foundation.App.Fresh(zero)
+	}
+	t.Cleanup(func() { rebind(production) })
+	rebind(value)
 	if _, err := container.Make[T](); err != nil {
 		t.Fatalf("bind %T: %v", zero, err)
 	}
