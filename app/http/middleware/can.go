@@ -187,9 +187,3 @@ func accountGrants(ctx http.Context) policies.Grants {
 	}
 	return grants
 }
-
-// accountPermissionHeld asks policies.Can with the role AccountContext or
-// AccountHeader already stored. An empty permission and an unknown role fail closed.
-func accountPermissionHeld(ctx http.Context, permission string) bool {
-	return policies.Can(accountGrants(ctx), permission)
-}
