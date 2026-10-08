@@ -95,15 +95,11 @@ func registerVaultContainer(app foundation.Application) {
 func buildVaultContainer(app foundation.Application) (*container.Container, error) {
 	c := &container.Container{}
 
-	redisURL := facades.Config().GetString("vault.redis_url")
-	if redisURL != "" {
-		opts, err := redis.ParseURL(redisURL)
-		if err != nil {
-			slog.Warn("vault: redis url parse failed", "error", err)
-		} else {
-			c.Redis = redis.NewClient(opts)
-		}
+	redisClient, err := facades.Redis()
+	if err != nil {
+		return nil, fmt.Errorf("vault: redis: %w", err)
 	}
+	c.Redis = redisClient
 
 	awsCfg, err := awsconfig.LoadDefaultConfig(context.Background())
 	if err != nil {
@@ -503,7 +499,7 @@ func buildPriceService(c *container.Container, accountSettings *settings.Service
 // buildPendingDepositStore keeps failed deposit blocks in Redis and in a local
 // append-only file; either one is enough, and with neither the scanner stops before a
 // failing block instead of skipping it.
-func buildPendingDepositStore(rdb *redis.Client, dir string) pending.Store {
+func buildPendingDepositStore(rdb redis.UniversalClient, dir string) pending.Store {
 	var redisStore pending.Store
 	if rdb != nil {
 		store, err := redispending.NewRedisStore(redispending.RedisStoreDeps{Redis: rdb, KeyPrefix: redispending.DefaultRedisKeyPrefix})

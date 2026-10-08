@@ -111,38 +111,17 @@ func TestApply_Database_OverrideStillRejectsUnsafeDatabase(t *testing.T) {
 	}
 }
 
-func TestTest_Redis_URLMovesTheDevURLToTheTestIndex(t *testing.T) {
+func TestValidate_Redis_DatabaseRefusesTheLiveIndexAndBadInput(t *testing.T) {
 	t.Parallel()
 
-	testCases := []struct{ redisURL, want string }{
-		{"redis://localhost:6380", "redis://localhost:6380/15"},
-		{"redis://localhost:6380/0", "redis://localhost:6380/15"},
-		{"redis://:secret@localhost:6380/3?dial_timeout=1s", "redis://:secret@localhost:6380/15?dial_timeout=1s"},
-		{"", ""},
-	}
-	for _, testCase := range testCases {
-		got, err := TestRedisURL(testCase.redisURL, "15")
-		if err != nil {
-			t.Fatalf("TestRedisURL(%q) error = %v", testCase.redisURL, err)
-		}
-		if got != testCase.want {
-			t.Fatalf("TestRedisURL(%q) = %q, want %q", testCase.redisURL, got, testCase.want)
+	for _, database := range []string{"1", "15", " 15 "} {
+		if err := ValidateRedisDatabase(database); err != nil {
+			t.Fatalf("ValidateRedisDatabase(%q) error = %v", database, err)
 		}
 	}
-}
-
-func TestTest_Redis_URLRefusesTheLiveIndexAndBadInput(t *testing.T) {
-	t.Parallel()
-
-	for _, testCase := range []struct{ redisURL, database string }{
-		{"redis://localhost:6380", "0"},
-		{"redis://localhost:6380", ""},
-		{"redis://localhost:6380", "16"},
-		{"redis://localhost:6380", "fifteen"},
-		{"postgres://localhost:5433/vault", "15"},
-	} {
-		if _, err := TestRedisURL(testCase.redisURL, testCase.database); err == nil {
-			t.Fatalf("TestRedisURL(%q, %q) error = nil, want refusal", testCase.redisURL, testCase.database)
+	for _, database := range []string{"0", "", "16", "-1", "fifteen"} {
+		if err := ValidateRedisDatabase(database); err == nil {
+			t.Fatalf("ValidateRedisDatabase(%q) error = nil, want refusal", database)
 		}
 	}
 }
@@ -158,7 +137,7 @@ func TestTesting_Environment_FileUsesANonLiveRedisIndex(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read .env.testing: %v", err)
 	}
-	if _, err := TestRedisURL("redis://localhost:6380", values[redisDatabaseVariable]); err != nil {
+	if err := ValidateRedisDatabase(values[redisDatabaseVariable]); err != nil {
 		t.Fatalf(".env.testing %s must be a non-live index: %v", redisDatabaseVariable, err)
 	}
 }

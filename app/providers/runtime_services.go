@@ -64,9 +64,6 @@ func registerRuntimeServices(app foundation.Application) {
 		}
 		return client, nil
 	})
-	app.Singleton((*container.SharedRedis)(nil), func(foundation.Application) (any, error) {
-		return &container.SharedRedis{Client: container.Get().Redis}, nil
-	})
 	app.Singleton((*sweep.Box)(nil), func(foundation.Application) (any, error) {
 		service := container.Get().SweepService
 		if service == nil {

@@ -6,7 +6,6 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/goravel/framework/contracts/http"
-	"github.com/redis/go-redis/v9"
 
 	"github.com/macrowallets/waas/app/http/controllers"
 	"github.com/macrowallets/waas/app/http/middleware"
@@ -44,13 +43,12 @@ type WithdrawalsController struct {
 	passwords         *authsvc.Service
 	flags             *features.Service
 	events            *withdrawalevents.Publisher
-	redis             *redis.Client
 	wallets           *walletrecords.Wallets
 	secondFactor      *authsvc.SecondFactorVerifier
 }
 
 // WithdrawalsControllerDeps is everything the dashboard withdrawals controller needs.
-// Events and Redis may be nil.
+// Events may be nil.
 type WithdrawalsControllerDeps struct {
 	Withdrawals       *withdrawalrecords.Records
 	Chains            *chainsvc.Service
@@ -60,7 +58,6 @@ type WithdrawalsControllerDeps struct {
 	Passwords         *authsvc.Service
 	Flags             *features.Service
 	Events            *withdrawalevents.Publisher
-	Redis             *redis.Client
 	Wallets           *walletrecords.Wallets
 	SecondFactor      *authsvc.SecondFactorVerifier
 }
@@ -103,7 +100,6 @@ func NewWithdrawalsController(deps WithdrawalsControllerDeps) *WithdrawalsContro
 		passwords:         deps.Passwords,
 		flags:             deps.Flags,
 		events:            deps.Events,
-		redis:             deps.Redis,
 		wallets:           deps.Wallets,
 		secondFactor:      deps.SecondFactor,
 	}

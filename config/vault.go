@@ -6,7 +6,6 @@ import "github.com/macrowallets/waas/app/facades"
 func registerVault() {
 	cfg := facades.Config()
 	cfg.Add("vault", map[string]any{
-		"redis_url":          envString("REDIS_URL", ""),
 		"lambda_mode":        envString("LAMBDA_MODE", ""),
 		"port":               envString("PORT", "8080"),
 		"api_key_secret":     envString("API_KEY_SECRET", ""),

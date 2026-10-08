@@ -140,7 +140,6 @@ func newExternalWithdrawalsController() *extwithdrawals.WithdrawalsController {
 		Passwords:         container.MustMake[*authsvc.Service](),
 		Flags:             container.MustMake[*featuressvc.Service](),
 		Events:            container.MustMake[*withdrawalevents.Publisher](),
-		Redis:             container.MustMake[*container.SharedRedis]().Client,
 		SecondFactor:      container.MustMake[*authsvc.SecondFactorVerifier](),
 	})
 }

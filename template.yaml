@@ -17,9 +17,8 @@ Parameters:
     Type: String
     NoEcho: true
   
-  RedisURL:
+  RedisHost:
     Type: String
-    NoEcho: true
   
   EthRpcURL:
     Type: String
@@ -75,7 +74,7 @@ Globals:
       Variables:
         ENV: !Ref Environment
         DATABASE_URL: !Ref DatabaseURL
-        REDIS_URL: !Ref RedisURL
+        REDIS_HOST: !Ref RedisHost
         ETH_RPC_URL: !Ref EthRpcURL
         POLYGON_RPC_URL: !Ref PolygonRpcURL
         SOLANA_RPC_URL: !Ref SolanaRpcURL
@@ -230,7 +229,7 @@ Resources:
           LAMBDA_MODE: confirmation_tracker
           ENV: !Ref Environment
           DATABASE_URL: !Ref DatabaseURL
-          REDIS_URL: !Ref RedisURL
+          REDIS_HOST: !Ref RedisHost
           ETHERSCAN_API_KEY: !Ref EtherscanAPIKey
       Events:
         Schedule:
@@ -258,7 +257,7 @@ Resources:
           LAMBDA_MODE: webhook_reconciler
           ENV: !Ref Environment
           DATABASE_URL: !Ref DatabaseURL
-          REDIS_URL: !Ref RedisURL
+          REDIS_HOST: !Ref RedisHost
           ALCHEMY_AUTH_TOKEN: !Ref AlchemyAuthToken
           HELIUS_API_KEY: !Ref HeliusAPIKey
           QUICKNODE_API_KEY: !Ref QuickNodeAPIKey

@@ -151,7 +151,7 @@ Known violations include `app/models → app/services/mpc` and `config → app/m
 | Mechanism | Carries | Consumer |
 |---|---|---|
 | Goravel queue, `database` connection, queue `blockchain` (`config/queue.go`) | wallet refresh / reconcile jobs (`app/jobs`) | the framework queue runner |
-| AWS SQS (`app/services/queue`) | outbound webhook delivery | `webhook_worker` Lambda |
+| AWS SQS (`app/adapters/queue/sqs`, port `queue.Sender`) | outbound webhook delivery | `webhook_worker` Lambda |
 | `app/services/localworkers` | local stand-in for `confirmation_tracker` and `webhook_worker` (and optional deposit scan) | started from `main.go` in local mode only |
 
 - Local webhook delivery from the outbox runs only when no SQS webhook queue is
@@ -192,7 +192,7 @@ Known violations include `app/models → app/services/mpc` and `config → app/m
   `TestApplyDatabaseOverrideToE2EDatabaseIsRefused`).
 - Tests use Redis index `REDIS_DB` (15) of `.env.testing`, never the live index 0, and
   never `FLUSHALL`/`FLUSHDB`; keys are namespaced per test. — guarded by
-  `TestTestRedisURLRefusesTheLiveIndexAndBadInput`,
+  `TestValidate_Redis_DatabaseRefusesTheLiveIndexAndBadInput`,
   `TestTestingEnvironmentFileUsesANonLiveRedisIndex`.
 
 ### 10. Settings
@@ -408,7 +408,7 @@ back/
 │   │   ├── deposit/         # Deposit scanning + confirmation tracking
 │   │   ├── ingest/          # Webhook ingest from chain providers
 │   │   ├── mpc/             # Multi-party computation
-│   │   ├── queue/           # SQS client
+│   │   ├── queue/           # Sender port (SQS adapter: app/adapters/queue/sqs)
 │   │   ├── wallet/          # Wallet + address derivation
 │   │   ├── webhook/         # Webhook delivery
 │   │   ├── webhooksync/     # Webhook reconciliation
@@ -480,7 +480,7 @@ DB_PORT=5432
 DB_DATABASE=vault
 DB_USERNAME=vault
 DB_PASSWORD=vault
-REDIS_HOST=localhost
+REDIS_HOST=localhost   # REDIS_HOST/PORT/PASSWORD/DB is the only Redis config (no REDIS_URL)
 REDIS_PORT=6379
 ETH_RPC_URL=https://eth-sepolia.public.blastapi.io
 POLYGON_RPC_URL=https://rpc-amoy.polygon.technology

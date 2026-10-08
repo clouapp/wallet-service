@@ -3,8 +3,6 @@ package withdrawals
 import (
 	"testing"
 
-	"github.com/redis/go-redis/v9"
-
 	authsvc "github.com/macrowallets/waas/app/services/auth"
 	chain "github.com/macrowallets/waas/app/services/chain"
 	chainsvc "github.com/macrowallets/waas/app/services/chains"
@@ -26,7 +24,6 @@ func withdrawalsControllerDeps() WithdrawalsControllerDeps {
 		Passwords:         &authsvc.Service{},
 		Flags:             &features.Service{},
 		Events:            &withdrawalevents.Publisher{},
-		Redis:             &redis.Client{},
 		Wallets:           &walletrecords.Wallets{},
 		SecondFactor:      &authsvc.SecondFactorVerifier{},
 	}
@@ -62,9 +59,6 @@ func TestNew_Withdrawals_ControllerKeepsItsDependencies(t *testing.T) {
 	if ctrl.events != deps.Events {
 		t.Fatal("withdrawals controller did not keep the withdrawal events publisher")
 	}
-	if ctrl.redis != deps.Redis {
-		t.Fatal("withdrawals controller did not keep the redis client")
-	}
 	if ctrl.wallets != deps.Wallets {
 		t.Fatal("withdrawals controller did not keep the wallets service")
 	}
@@ -73,16 +67,15 @@ func TestNew_Withdrawals_ControllerKeepsItsDependencies(t *testing.T) {
 	}
 }
 
-func TestNew_Withdrawals_ControllerAllowsNilEventsAndRedis(t *testing.T) {
+func TestNew_Withdrawals_ControllerAllowsNilEvents(t *testing.T) {
 	deps := withdrawalsControllerDeps()
 	deps.Events = nil
-	deps.Redis = nil
 	ctrl := NewWithdrawalsController(deps)
 	if ctrl == nil {
 		t.Fatal("NewWithdrawalsController returned nil")
 	}
-	if ctrl.events != nil || ctrl.redis != nil {
-		t.Fatal("withdrawals controller did not keep nil events and redis")
+	if ctrl.events != nil {
+		t.Fatal("withdrawals controller did not keep nil events")
 	}
 	if ctrl.withdrawals != deps.Withdrawals || ctrl.flags != deps.Flags || ctrl.secondFactor != deps.SecondFactor {
 		t.Fatal("withdrawals controller dropped a required dependency")

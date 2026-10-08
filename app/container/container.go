@@ -29,7 +29,7 @@ import (
 
 // Container holds the WaaS dependency graph, resolved once from the Goravel service container.
 type Container struct {
-	Redis          *redis.Client
+	Redis          redis.UniversalClient
 	SQS            queue.Sender
 	SecretsManager *secretsmanager.Client
 	MPCService     mpc.Service

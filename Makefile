@@ -74,7 +74,7 @@ S3_FLAG := $(if $(S3_BUCKET),--s3-bucket $(S3_BUCKET),--resolve-s3)
 PARAMETER_OVERRIDES = \
 	Environment=$(ENVIRONMENT) \
 	DatabaseURL=$(DATABASE_URL) \
-	RedisURL=$(REDIS_URL) \
+	RedisHost=$(REDIS_HOST) \
 	EthRpcURL=$(ETH_RPC_URL) \
 	PolygonRpcURL=$(POLYGON_RPC_URL) \
 	SolanaRpcURL=$(SOLANA_RPC_URL) \
@@ -515,7 +515,7 @@ docker-test: docker-build ## Build and run Docker container for testing
 		-p 8080:8080 \
 		--env-file .env.dev \
 		-e DATABASE_URL=postgres://vault:vault@host.docker.internal:5432/vault?sslmode=disable \
-		-e REDIS_URL=redis://host.docker.internal:6379 \
+		-e REDIS_HOST=host.docker.internal \
 		$(DOCKER_IMAGE_NAME):$(DOCKER_TAG)
 
 docker-shell: ## Open shell in PostgreSQL container
@@ -647,7 +647,7 @@ env-info: ## Display current environment configuration
 	@echo "Environment Variables:"
 	@echo "  ENVIRONMENT       = $(ENVIRONMENT)"
 	@echo "  DATABASE_URL      = $(DATABASE_URL)"
-	@echo "  REDIS_URL         = $(REDIS_URL)"
+	@echo "  REDIS_HOST        = $(REDIS_HOST)"
 	@echo "  ETH_RPC_URL       = $(ETH_RPC_URL)"
 	@echo "  POLYGON_RPC_URL   = $(POLYGON_RPC_URL)"
 	@echo "  SOLANA_RPC_URL    = $(SOLANA_RPC_URL)"

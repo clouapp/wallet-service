@@ -461,7 +461,6 @@ func newDashboardWithdrawalsController() *dashwithdrawals.WithdrawalsController 
 		Passwords:         container.MustMake[*authsvc.Service](),
 		Flags:             container.MustMake[*featuressvc.Service](),
 		Events:            container.MustMake[*withdrawalevents.Publisher](),
-		Redis:             container.MustMake[*container.SharedRedis]().Client,
 		Wallets:           container.MustMake[*walletrecords.Wallets](),
 		SecondFactor:      container.MustMake[*authsvc.SecondFactorVerifier](),
 	})

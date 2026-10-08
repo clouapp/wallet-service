@@ -79,7 +79,8 @@ services:
       ENV: dev
       PORT: ${PORT:-2002}
       DATABASE_URL: postgres://${POSTGRES_USER:-vault}:${POSTGRES_PASSWORD:-vault}@postgres:5432/${POSTGRES_DB:-vault}?sslmode=disable
-      REDIS_URL: redis://redis:6379
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
       ETH_RPC_URL: ${ETH_RPC_URL:-https://eth-mainnet.g.alchemy.com/v2/demo}
       POLYGON_RPC_URL: ${POLYGON_RPC_URL:-https://polygon-mainnet.g.alchemy.com/v2/demo}
       SOLANA_RPC_URL: ${SOLANA_RPC_URL:-https://api.mainnet-beta.solana.com}
