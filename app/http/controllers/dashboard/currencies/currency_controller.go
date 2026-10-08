@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"strings"
 
 	"github.com/goravel/framework/contracts/http"
 
@@ -102,36 +101,15 @@ func (ctrl *CurrenciesController) ConvertCurrency(ctx http.Context) http.Respons
 // typed. A missing quote is the provider. A store failure can carry SQL, so
 // the log keeps the type.
 func convertFailure(ctx http.Context, err error) http.Response {
-	if errors.Is(err, price.ErrPriceNotQuoted) || lonePrefix(err, "zero price for ") {
+	if errors.Is(err, price.ErrPriceNotQuoted) || errors.Is(err, price.ErrZeroPrice) {
 		return responses.ProviderError(ctx, err)
 	}
-	if lonePrefix(err, "currency not found") {
+	if errors.Is(err, price.ErrCurrencyNotFound) {
 		return responses.Error(ctx, http.StatusBadRequest, responses.CodeInvalidRequest, "currency not found")
 	}
-	if loneExact(err, "both currency codes are required to convert") || loneExact(err, "currency code is required") {
+	if errors.Is(err, price.ErrCurrencyCodesRequired) || errors.Is(err, price.ErrCurrencyCodeRequired) {
 		return responses.Error(ctx, http.StatusBadRequest, responses.CodeInvalidRequest, "from, to, and amount are required")
 	}
 	slog.Error("currency convert failed", "error_type", fmt.Sprintf("%T", err))
 	return responses.Error(ctx, http.StatusInternalServerError, responses.CodeInternal, "internal error")
-}
-
-func loneExact(err error, message string) bool {
-	text, ok := loneText(err)
-	return ok && text == message
-}
-
-func lonePrefix(err error, prefix string) bool {
-	text, ok := loneText(err)
-	return ok && strings.HasPrefix(text, prefix)
-}
-
-func loneText(err error) (string, bool) {
-	for err != nil {
-		next := errors.Unwrap(err)
-		if next == nil {
-			return err.Error(), true
-		}
-		err = next
-	}
-	return "", false
 }

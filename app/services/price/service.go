@@ -34,6 +34,15 @@ var usdPrice = decimal.NewFromInt(1)
 // ErrPriceNotQuoted marks a currency whose stored price no provider ever quoted.
 var ErrPriceNotQuoted = errors.New("price was never quoted by a provider")
 
+// Refusals Convert, GetPrice and QuotedUSDPrice wrap so a caller can tell a
+// caller mistake from a store failure with errors.Is.
+var (
+	ErrCurrencyNotFound      = errors.New("currency not found")
+	ErrCurrencyCodeRequired  = errors.New("currency code is required")
+	ErrCurrencyCodesRequired = errors.New("both currency codes are required to convert")
+	ErrZeroPrice             = errors.New("zero price")
+)
+
 type Service struct {
 	providers    []PriceProvider
 	currencyRepo currencyStore
@@ -191,7 +200,7 @@ func (s *Service) PriceWebSocket(apiKey string, cache contractscache.Driver) *We
 // the stored one.
 func (s *Service) GetPrice(ctx context.Context, code string) (decimal.Decimal, error) {
 	if strings.TrimSpace(code) == "" {
-		return decimal.Decimal{}, fmt.Errorf("currency code is required")
+		return decimal.Decimal{}, ErrCurrencyCodeRequired
 	}
 	if code == usdCode {
 		return usdPrice, nil
@@ -209,7 +218,7 @@ func (s *Service) GetPrice(ctx context.Context, code string) (decimal.Decimal, e
 		return decimal.Decimal{}, err
 	}
 	if cur == nil {
-		return decimal.Decimal{}, fmt.Errorf("currency not found: %s", code)
+		return decimal.Decimal{}, fmt.Errorf("%w: %s", ErrCurrencyNotFound, code)
 	}
 	return cur.CurrentPrice.Decimal, nil
 }
@@ -219,7 +228,7 @@ func (s *Service) GetPrice(ctx context.Context, code string) (decimal.Decimal, e
 // column default was never priced and answers ErrPriceNotQuoted.
 func (s *Service) QuotedUSDPrice(ctx context.Context, code string) (decimal.Decimal, error) {
 	if strings.TrimSpace(code) == "" {
-		return decimal.Decimal{}, fmt.Errorf("currency code is required")
+		return decimal.Decimal{}, ErrCurrencyCodeRequired
 	}
 	if code == usdCode {
 		return usdPrice, nil
@@ -232,7 +241,7 @@ func (s *Service) QuotedUSDPrice(ctx context.Context, code string) (decimal.Deci
 		return decimal.Decimal{}, err
 	}
 	if cur == nil {
-		return decimal.Decimal{}, fmt.Errorf("currency not found: %s", code)
+		return decimal.Decimal{}, fmt.Errorf("%w: %s", ErrCurrencyNotFound, code)
 	}
 	if cur.PriceUpdatedAt == nil || !cur.CurrentPrice.Decimal.IsPositive() {
 		return decimal.Decimal{}, fmt.Errorf("%w: %s", ErrPriceNotQuoted, code)
@@ -247,7 +256,7 @@ func (s *Service) UpdateSinglePrice(ctx context.Context, code string, newPrice d
 	}
 	cur, err := s.currencyRepo.FindByCode(ctx, code)
 	if err != nil || cur == nil {
-		return fmt.Errorf("currency not found: %s", code)
+		return fmt.Errorf("%w: %s", ErrCurrencyNotFound, code)
 	}
 	oldPrice := cur.CurrentPrice.Decimal
 	if err := s.currencyRepo.SetPrice(ctx, code, fitted, oldPrice); err != nil {

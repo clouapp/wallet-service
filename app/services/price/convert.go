@@ -16,7 +16,7 @@ const ConversionScale int32 = 18
 
 func (s *Service) Convert(ctx context.Context, from, to string, amount decimal.Decimal) (decimal.Decimal, error) {
 	if strings.TrimSpace(from) == "" || strings.TrimSpace(to) == "" {
-		return decimal.Decimal{}, fmt.Errorf("both currency codes are required to convert")
+		return decimal.Decimal{}, ErrCurrencyCodesRequired
 	}
 	if amount.IsNegative() {
 		return decimal.Decimal{}, fmt.Errorf("amount %s: %w", amount.String(), numeric.ErrNegative)
@@ -33,7 +33,7 @@ func (s *Service) Convert(ctx context.Context, from, to string, amount decimal.D
 		return decimal.Decimal{}, fmt.Errorf("price for %s: %w", to, err)
 	}
 	if !toPrice.IsPositive() {
-		return decimal.Decimal{}, fmt.Errorf("zero price for %s", to)
+		return decimal.Decimal{}, fmt.Errorf("%w for %s", ErrZeroPrice, to)
 	}
 	return amount.Mul(fromPrice).DivRound(toPrice, ConversionScale), nil
 }
