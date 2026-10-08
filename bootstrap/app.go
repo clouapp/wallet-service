@@ -7,31 +7,15 @@ import (
 	"os"
 	"time"
 
-	"github.com/goravel/framework/contracts/console"
 	contractsfoundation "github.com/goravel/framework/contracts/foundation"
 	contractsconfiguration "github.com/goravel/framework/contracts/foundation/configuration"
-	"github.com/goravel/framework/contracts/queue"
 	"github.com/goravel/framework/foundation"
 
-	"github.com/macrowallets/waas/app/console/commands"
 	"github.com/macrowallets/waas/app/container"
 	appfacades "github.com/macrowallets/waas/app/facades"
 	"github.com/macrowallets/waas/app/http/middleware"
-	"github.com/macrowallets/waas/app/jobs"
 	"github.com/macrowallets/waas/app/providers"
-	"github.com/macrowallets/waas/app/repositories"
-	"github.com/macrowallets/waas/app/services/activity"
-	chainpkg "github.com/macrowallets/waas/app/services/chain"
-	"github.com/macrowallets/waas/app/services/chainregistry"
-	"github.com/macrowallets/waas/app/services/chains"
-	"github.com/macrowallets/waas/app/services/credentialmail"
-	"github.com/macrowallets/waas/app/services/deposit"
 	"github.com/macrowallets/waas/app/services/ingest"
-	"github.com/macrowallets/waas/app/services/price"
-	"github.com/macrowallets/waas/app/services/refresh"
-	"github.com/macrowallets/waas/app/services/settings"
-	"github.com/macrowallets/waas/app/services/sweep"
-	"github.com/macrowallets/waas/app/services/walletrecords"
 	"github.com/macrowallets/waas/config"
 	"github.com/macrowallets/waas/database/seeders"
 	"github.com/macrowallets/waas/routes"
@@ -43,84 +27,8 @@ func Boot() contractsfoundation.Application {
 		WithMigrations(Migrations).
 		WithProviders(Providers).
 		WithSeeders(seeders.All).
-		WithJobs(func() []queue.Job {
-			return []queue.Job{
-				jobs.NewSendCredentialMailJob(container.MustMake[*credentialmail.Service]()),
-			}
-		}).
-		WithCommands(func() []console.Command {
-			balances := container.MustMake[*refresh.BalanceService]()
-			deposits := container.MustMake[*deposit.Service]()
-			registry := container.MustMake[*chainpkg.Registry]()
-			prices := container.MustMake[*price.Service]()
-			wallets := container.MustMake[*walletrecords.Wallets]()
-			addresses := container.MustMake[*walletrecords.Addresses]()
-			transactions := container.MustMake[*walletrecords.Transactions]()
-			return exitOnFailures([]console.Command{
-				commands.NewRefreshWallet(commands.RefreshWalletDeps{
-					Balances: balances,
-					Wallets:  wallets,
-				}),
-				commands.NewRefreshAddress(commands.RefreshAddressDeps{
-					Balances:  balances,
-					Wallets:   wallets,
-					Addresses: addresses,
-				}),
-				commands.NewRefreshCurrency(commands.RefreshCurrencyDeps{
-					Registry:  registry,
-					Balances:  balances,
-					Wallets:   wallets,
-					Addresses: addresses,
-				}),
-				commands.NewRefreshTx(commands.RefreshTxDeps{
-					Balances:     balances,
-					Wallets:      wallets,
-					Transactions: transactions,
-				}),
-				commands.NewScanDeposits(deposits),
-				commands.NewReconcileWallet(commands.ReconcileWalletDeps{
-					Balances: balances,
-					Wallets:  wallets,
-				}),
-				commands.NewPriceWebSocket(commands.PriceWebSocketDeps{
-					Prices:     prices,
-					CoinAPIKey: container.MustMake[*price.CoinAPICredential]().Key,
-					Cache:      appfacades.Cache(),
-				}),
-				commands.NewPriceCheckUpdate(prices),
-				commands.NewChainsSetRPC(chains.NewReplaceRPC(chains.ReplaceRPCDeps{
-					Store: container.MustMake[*repositories.ChainRepository](),
-					Seal:  func(plaintext string) (string, error) { return settings.Seal(appfacades.Crypt(), plaintext) },
-				})),
-				commands.NewChainsAlignNetwork(chainregistry.NewAligner(chainregistry.AlignerDeps{
-					Store:   repositories.NewChainRegistryRepository(nil),
-					Decrypt: decryptChainRPC,
-					Probe:   chainregistry.ProbeRPCNetwork,
-					Cache:   deposits,
-					Profile: configuredChainProfile,
-				})),
-				commands.NewChainsAddMissing(chainregistry.NewMissingChains(seedMissingAddedChains)),
-				commands.NewWithdrawPreflight(commands.WithdrawPreflightDeps{
-					Sweep:       container.MustMake[*sweep.Box]().Service,
-					Chains:      registry,
-					WalletChain: walletChainLookup(wallets),
-				}),
-				commands.NewPruneActivity(container.MustMake[*activity.Service]()),
-				commands.NewEVMCall(commands.EVMCallDeps{
-					Wallets: container.MustMake[*repositories.WalletRepository](),
-					Signer:  evmCallSigner(),
-				}),
-				commands.NewWalletsExportKeys(commands.WalletsExportKeysDeps{
-					Wallets:    container.MustMake[*repositories.WalletRepository](),
-					Addresses:  container.MustMake[*repositories.AddressRepository](),
-					Chains:     container.MustMake[*repositories.ChainRepository](),
-					ShareB:     exportShareB,
-					DecryptRPC: decryptChainRPC,
-					AppEnv:     appfacades.Config().GetString("app.env"),
-				}),
-				commands.NewTransactionsBackfillFees(deposits, registry),
-			})
-		}).
+		WithJobs(Jobs).
+		WithCommands(Commands).
 		WithRules(Rules).
 		WithConfig(bootConfig).
 		WithMiddleware(func(h contractsconfiguration.Middleware) {

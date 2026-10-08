@@ -22,7 +22,10 @@ today and has a fix tracked elsewhere. Do not read either as permission.
   Deploy (SAM `template.yaml`, EventBridge, the Lambda modes) is out of scope for any
   reorganization: `main.go` only has to keep compiling. — guarded by `go build ./...`.
 - Goravel is assembled in `bootstrap/app.go` (`foundation.Setup()…Create()`): migrations,
-  providers, seeders, jobs, commands, events, rules and config. Config is code in
+  providers, seeders, jobs, commands, events, rules and config. The lists live in the
+  skeleton's helper files (`bootstrap/migrations.go`, `providers.go`, `commands.go`,
+  `jobs.go`, `rules.go`), which `artisan make:migration|provider|command|job|rule` append
+  to; there is no `bootstrap/seeders.go` (see §8). Config is code in
   `config/*.go`, read from env through `config/env.go`. — UNGUARDED; known exception:
   `app/models/chain_rpc_url.go` resolves `${ENV}` placeholders in RPC URLs with
   `os.LookupEnv`.
@@ -322,7 +325,7 @@ snapshots in the `localstack_data` volume; the snapshot key lives in
 | Path | Holds |
 |---|---|
 | `main.go` | boot, Lambda mode switch, local server |
-| `bootstrap/` | Goravel setup: providers, migrations, rules |
+| `bootstrap/` | Goravel setup: providers, migrations, commands, jobs, rules |
 | `config/` | config as code, read from env |
 | `routes/` | `admin.go` (`/v1`), `api.go` (`/api/v1`), `webhooks.go` (ingest), `docs.go` (health, Swagger) |
 | `app/http/` | `controllers`, `middleware`, `requests` (FormRequests), `pagination` |
