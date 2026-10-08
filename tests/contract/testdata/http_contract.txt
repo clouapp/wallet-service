@@ -351,3 +351,120 @@ status: 429
 content-type: application/json
 {"error":{"code":"too_many_requests","message":"too many requests"}}
 
+
+### 71 register an admin: POST /v1/auth/register
+status: 201
+content-type: application/json; charset=utf-8
+{"access_token":"<jwt>","account":{"environment":"prod","id":"<uuid:58>","linked_account_id":"<uuid:59>","name":"Member Org","role":"owner","status":"active"},"account_id":"<uuid:58>","accounts":[{"environment":"prod","id":"<uuid:58>","linked_account_id":"<uuid:59>","name":"Member Org","role":"owner","status":"active"},{"environment":"test","id":"<uuid:59>","linked_account_id":"<uuid:58>","name":"Member Org [test]","role":"owner","status":"active"}],"user":{"created_at":"<time>","updated_at":"<time>","id":"<uuid:60>","email":"admin@example.com","full_name":"Contract Member","totp_enabled":false,"status":"active","default_account_id":"<uuid:58>","preferences":{}}}
+
+### 72 register an auditor: POST /v1/auth/register
+status: 201
+content-type: application/json; charset=utf-8
+{"access_token":"<jwt>","account":{"environment":"prod","id":"<uuid:61>","linked_account_id":"<uuid:62>","name":"Member Org","role":"owner","status":"active"},"account_id":"<uuid:61>","accounts":[{"environment":"prod","id":"<uuid:61>","linked_account_id":"<uuid:62>","name":"Member Org","role":"owner","status":"active"},{"environment":"test","id":"<uuid:62>","linked_account_id":"<uuid:61>","name":"Member Org [test]","role":"owner","status":"active"}],"user":{"created_at":"<time>","updated_at":"<time>","id":"<uuid:63>","email":"auditor@example.com","full_name":"Contract Member","totp_enabled":false,"status":"active","default_account_id":"<uuid:61>","preferences":{}}}
+
+### 73 register a user: POST /v1/auth/register
+status: 201
+content-type: application/json; charset=utf-8
+{"access_token":"<jwt>","account":{"environment":"prod","id":"<uuid:64>","linked_account_id":"<uuid:65>","name":"Member Org","role":"owner","status":"active"},"account_id":"<uuid:64>","accounts":[{"environment":"prod","id":"<uuid:64>","linked_account_id":"<uuid:65>","name":"Member Org","role":"owner","status":"active"},{"environment":"test","id":"<uuid:65>","linked_account_id":"<uuid:64>","name":"Member Org [test]","role":"owner","status":"active"}],"user":{"created_at":"<time>","updated_at":"<time>","id":"<uuid:66>","email":"user@example.com","full_name":"Contract Member","totp_enabled":false,"status":"active","default_account_id":"<uuid:64>","preferences":{}}}
+
+### 74 account users as a user: GET /v1/accounts/{{account}}/users
+status: 403
+content-type: application/json; charset=utf-8
+{"error":{"code":"forbidden","message":"forbidden"}}
+
+### 75 update account as an auditor: PATCH /v1/accounts/{{account}}
+status: 403
+content-type: application/json; charset=utf-8
+{"error":{"code":"forbidden","message":"forbidden"}}
+
+### 76 account tokens as a user: GET /v1/accounts/{{account}}/tokens
+status: 403
+content-type: application/json; charset=utf-8
+{"error":{"code":"forbidden","message":"forbidden"}}
+
+### 77 freeze wallet as an auditor: POST /v1/wallets/{{wallet}}/freeze
+status: 403
+content-type: application/json; charset=utf-8
+{"error":{"code":"forbidden","message":"only owners and account admins may freeze wallets"}}
+
+### 78 archive wallet as an auditor: POST /v1/wallets/{{wallet}}/archive
+status: 403
+content-type: application/json; charset=utf-8
+{"error":{"code":"forbidden","message":"only wallet/account owners and admins may archive wallets"}}
+
+### 79 account settings as a user: GET /v1/accounts/{{account}}/settings
+status: 403
+content-type: application/json; charset=utf-8
+{"error":{"code":"forbidden","message":"you do not have permission to view account settings"}}
+
+### 80 update account settings as an auditor: PATCH /v1/accounts/{{account}}/settings/account_security
+status: 403
+content-type: application/json; charset=utf-8
+{"error":{"code":"forbidden","message":"you do not have permission to update account settings"}}
+
+### 81 account activity as a user: GET /v1/accounts/{{account}}/activity
+status: 403
+content-type: application/json; charset=utf-8
+{"error":{"code":"forbidden","message":"you do not have permission to view account activity"}}
+
+### 82 account features as a user: GET /v1/accounts/{{account}}/features
+status: 403
+content-type: application/json; charset=utf-8
+{"error":{"code":"forbidden","message":"you do not have permission to view account features"}}
+
+### 83 platform accounts as an account admin: GET /v1/platform/accounts
+status: 403
+content-type: application/json
+{"error":{"code":"forbidden","message":"you do not have permission to view accounts"}}
+
+
+### 84 activate an active wallet: POST /v1/wallets/{{wallet}}/activate
+status: 409
+content-type: application/json
+{"error":{"code":"conflict","message":"wallet is not pending activation"}}
+
+
+### 85 archive a wallet: POST /v1/wallets/{{archivedWallet}}/archive
+status: 200
+content-type: application/json; charset=utf-8
+{"id":"<uuid:67>","chain":"eth","label":"eth test wallet","address_index":0,"deposit_address_id":"<uuid:68>","account_id":"<uuid:4>","status":"archived","required_approvals":1,"read_model_status":"idle","gas_status":"unseeded","sweep_policy_version":1,"deposit_address":{"created_at":"<time>","updated_at":"<time>","id":"<uuid:68>","wallet_id":"<uuid:67>","chain":"eth","address":"0x2222222222222222222222222222222222222222","derivation_index":0,"external_user_id":"system","metadata":"","is_active":true,"label":"Deposit Address","derivation_type":"genesis"},"created_at":"<time>","updated_at":"<time>","network":"ethereum-mainnet","testnet":false}
+
+### 86 archive an archived wallet: POST /v1/wallets/{{archivedWallet}}/archive
+status: 409
+content-type: application/json; charset=utf-8
+{"error":{"code":"conflict","message":"wallet already archived"}}
+
+### 87 test an undeliverable webhook: POST /v1/wallets/{{wallet}}/webhooks/{{webhook}}/test
+status: 502
+content-type: application/json; charset=utf-8
+{"error":{"code":"provider_unavailable","message":"webhook test delivery failed"}}
+
+### 88 withdraw preview on an unsupported chain: POST /v1/wallets/{{xrpWallet}}/withdraw/preview
+status: 422
+content-type: application/json; charset=utf-8
+{"error":{"code":"unsupported_chain","message":"unsupported_chain"}}
+
+### 89 convert a negative amount: GET /v1/convert?from=USD&to=BRL&amount=-1
+status: 400
+content-type: application/json; charset=utf-8
+{"error":{"code":"invalid_request","message":"amount must be a positive number"}}
+
+### 90 create a scoped account token: POST /v1/accounts/{{account}}/tokens
+status: 201
+content-type: application/json; charset=utf-8
+{"metadata":{"created_at":"<time>","updated_at":"<time>","id":"<uuid:69>","account_id":"<uuid:4>","created_by":"<uuid:60>","name":"contract scoped token","permissions":["transactions.read"],"spending_limit":"{}"},"token":"<jwt>"}
+
+### 91 external wallets outside the token scope: GET /api/v1/wallets
+status: 403
+content-type: application/json; charset=utf-8
+{"error":{"code":"forbidden","message":"forbidden"}}
+
+### 92 external transaction with a malformed id: GET /api/v1/transactions/not-a-uuid
+status: 400
+content-type: application/json; charset=utf-8
+{"error":{"code":"invalid_request","message":"invalid tx id"}}
+
+### 93 external withdraw preview on an unsupported chain: POST /api/v1/wallets/{{xrpWallet}}/withdraw/preview
+status: 422
+content-type: application/json; charset=utf-8
+{"error":{"code":"unsupported_chain","message":"unsupported_chain"}}

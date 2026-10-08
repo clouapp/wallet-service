@@ -337,3 +337,26 @@ content-type: application/json; charset=utf-8
 {"error":{"code":"unauthorized","message":"token not found or revoked"}}
 added: 69 external within the rate limit: GET /api/v1/wallets
 added: 70 external over the rate limit: GET /api/v1/wallets
+added: 71 register an admin: POST /v1/auth/register
+added: 72 register an auditor: POST /v1/auth/register
+added: 73 register a user: POST /v1/auth/register
+added: 74 account users as a user: GET /v1/accounts/{{account}}/users
+added: 75 update account as an auditor: PATCH /v1/accounts/{{account}}
+added: 76 account tokens as a user: GET /v1/accounts/{{account}}/tokens
+added: 77 freeze wallet as an auditor: POST /v1/wallets/{{wallet}}/freeze
+added: 78 archive wallet as an auditor: POST /v1/wallets/{{wallet}}/archive
+added: 79 account settings as a user: GET /v1/accounts/{{account}}/settings
+added: 80 update account settings as an auditor: PATCH /v1/accounts/{{account}}/settings/account_security
+added: 81 account activity as a user: GET /v1/accounts/{{account}}/activity
+added: 82 account features as a user: GET /v1/accounts/{{account}}/features
+added: 83 platform accounts as an account admin: GET /v1/platform/accounts
+added: 84 activate an active wallet: POST /v1/wallets/{{wallet}}/activate
+added: 85 archive a wallet: POST /v1/wallets/{{archivedWallet}}/archive
+added: 86 archive an archived wallet: POST /v1/wallets/{{archivedWallet}}/archive
+added: 87 test an undeliverable webhook: POST /v1/wallets/{{wallet}}/webhooks/{{webhook}}/test
+added: 88 withdraw preview on an unsupported chain: POST /v1/wallets/{{xrpWallet}}/withdraw/preview
+added: 89 convert a negative amount: GET /v1/convert?from=USD&to=BRL&amount=-1
+added: 90 create a scoped account token: POST /v1/accounts/{{account}}/tokens
+added: 91 external wallets outside the token scope: GET /api/v1/wallets
+added: 92 external transaction with a malformed id: GET /api/v1/transactions/not-a-uuid
+added: 93 external withdraw preview on an unsupported chain: POST /api/v1/wallets/{{xrpWallet}}/withdraw/preview

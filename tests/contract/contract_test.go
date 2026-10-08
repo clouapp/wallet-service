@@ -16,11 +16,13 @@ import (
 	"github.com/google/uuid"
 	"github.com/goravel/framework/facades"
 
+	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/repositories/chaincatalog"
 	"github.com/macrowallets/waas/bootstrap"
 	"github.com/macrowallets/waas/database/seeders"
 	"github.com/macrowallets/waas/tests/feature/support/fixtures"
 	"github.com/macrowallets/waas/tests/feature/support/testenv"
+	"github.com/macrowallets/waas/tests/feature/support/testutil"
 )
 
 const (
@@ -259,7 +261,8 @@ func contractScenario() []step {
 	register := fmt.Sprintf(`{"email":%q,"password":%q,"full_name":"Contract User","organization_name":"Contract Org"}`,
 		contractEmail, contractPassword)
 	login := fmt.Sprintf(`{"email":%q,"password":%q}`, contractEmail, contractPassword)
-	return []step{
+	apiRate := &apiRateLimit{}
+	return append([]step{
 		{name: "health", method: "GET", path: "/health"},
 
 		// Session lifecycle.
@@ -361,20 +364,178 @@ func contractScenario() []step {
 		// Rate limit: the second call of one token inside the minute is refused
 		// with the error envelope.
 		{name: "external within the rate limit", method: "GET", path: "/api/v1/wallets", bearer: "throttledToken",
-			before: limitAPIToOnePerMinute},
+			before: apiRate.limitToOnePerMinute},
 		{name: "external over the rate limit", method: "GET", path: "/api/v1/wallets", bearer: "throttledToken"},
+	}, refusalScenario(apiRate)...)
+}
+
+// refusalScenario records the refusals the steps above do not reach: a 403
+// from each family of permission guard (Can, Wallet*, May*), a non-admin on
+// /v1/platform, a 409 from each error writer, a 502, a domain code, a 400
+// with a sentence, and an API token scope refusal. Every step runs without a
+// chain call. It appends to the scenario so the earlier step numbers, and
+// the base recording they are compared with, do not move.
+func refusalScenario(apiRate *apiRateLimit) []step {
+	return []step{
+		{name: "register an admin", method: "POST", path: "/v1/auth/register", body: memberRegistration(adminEmail),
+			capture: map[string]string{"adminSession": "access_token"}},
+		{name: "register an auditor", method: "POST", path: "/v1/auth/register", body: memberRegistration(auditorEmail),
+			capture: map[string]string{"auditorSession": "access_token"}},
+		{name: "register a user", method: "POST", path: "/v1/auth/register", body: memberRegistration(userEmail),
+			capture: map[string]string{"userSession": "access_token"}},
+
+		// A 403 from Can, from a Wallet* guard and from each May* guard.
+		{name: "account users as a user", method: "GET", path: "/v1/accounts/{{account}}/users", bearer: "userSession",
+			before: addMemberships},
+		{name: "update account as an auditor", method: "PATCH", path: "/v1/accounts/{{account}}", bearer: "auditorSession",
+			body: `{"name":"Renamed By An Auditor"}`},
+		{name: "account tokens as a user", method: "GET", path: "/v1/accounts/{{account}}/tokens", bearer: "userSession"},
+		{name: "freeze wallet as an auditor", method: "POST", path: "/v1/wallets/{{wallet}}/freeze", bearer: "auditorSession",
+			account: "account", body: `{}`},
+		{name: "archive wallet as an auditor", method: "POST", path: "/v1/wallets/{{wallet}}/archive", bearer: "auditorSession",
+			account: "account"},
+		{name: "account settings as a user", method: "GET", path: "/v1/accounts/{{account}}/settings", bearer: "userSession"},
+		{name: "update account settings as an auditor", method: "PATCH", path: "/v1/accounts/{{account}}/settings/account_security",
+			bearer: "auditorSession", body: `{}`},
+		{name: "account activity as a user", method: "GET", path: "/v1/accounts/{{account}}/activity", bearer: "userSession"},
+		{name: "account features as a user", method: "GET", path: "/v1/accounts/{{account}}/features", bearer: "userSession"},
+		{name: "platform accounts as an account admin", method: "GET", path: "/v1/platform/accounts", bearer: "adminSession"},
+
+		// A 409 from responses.Error (activate) and from the legacy map (archive).
+		{name: "activate an active wallet", method: "POST", path: "/v1/wallets/{{wallet}}/activate", bearer: "adminSession",
+			account: "account", body: `{"code":"123456"}`},
+		{name: "archive a wallet", method: "POST", path: "/v1/wallets/{{archivedWallet}}/archive", bearer: "adminSession",
+			account: "account", before: insertArchivableWallet},
+		{name: "archive an archived wallet", method: "POST", path: "/v1/wallets/{{archivedWallet}}/archive", bearer: "adminSession",
+			account: "account"},
+
+		// A 502: the webhook test delivery cannot connect.
+		{name: "test an undeliverable webhook", method: "POST", path: "/v1/wallets/{{wallet}}/webhooks/{{webhook}}/test",
+			bearer: "adminSession", account: "account", before: insertUndeliverableWebhook},
+
+		// A domain code: XRP cannot be swept.
+		{name: "withdraw preview on an unsupported chain", method: "POST", path: "/v1/wallets/{{xrpWallet}}/withdraw/preview",
+			bearer: "adminSession", account: "account", body: `{"asset":"xrp","amount":"1"}`, before: insertXRPWallet},
+
+		// A 400 with a sentence.
+		{name: "convert a negative amount", method: "GET", path: "/v1/convert?from=USD&to=BRL&amount=-1", bearer: "adminSession"},
+
+		// The external API with a token minted again, limits restored.
+		{name: "create a scoped account token", method: "POST", path: "/v1/accounts/{{account}}/tokens", bearer: "adminSession",
+			body:    `{"name":"contract scoped token","permissions":["transactions.read"]}`,
+			capture: map[string]string{"scopedToken": "token"}, before: apiRate.restore},
+		{name: "external wallets outside the token scope", method: "GET", path: "/api/v1/wallets", bearer: "scopedToken"},
+		{name: "external transaction with a malformed id", method: "GET", path: "/api/v1/transactions/not-a-uuid", bearer: "scopedToken"},
+		{name: "external withdraw preview on an unsupported chain", method: "POST", path: "/api/v1/wallets/{{xrpWallet}}/withdraw/preview",
+			bearer: "scopedToken", body: `{"asset":"xrp","amount":"1"}`},
 	}
 }
 
-// limitAPIToOnePerMinute lets one call per token through and gives the step a
-// bearer no other run has used, so its bucket starts full.
-func limitAPIToOnePerMinute(t *testing.T, vars map[string]string) {
+const (
+	adminEmail   = "admin@example.com"
+	auditorEmail = "auditor@example.com"
+	userEmail    = "user@example.com"
+	// archivableDepositAddress replaces the random address of the wallet the scenario archives.
+	archivableDepositAddress = "0x2222222222222222222222222222222222222222"
+)
+
+func memberRegistration(email string) string {
+	return fmt.Sprintf(`{"email":%q,"password":%q,"full_name":"Contract Member","organization_name":"Member Org"}`,
+		email, contractPassword)
+}
+
+// addMemberships adds the three registered members to the scenario's account:
+// an admin, an auditor with a viewer row on its wallet (so WalletContext lets
+// the wallet guards decide), and a user.
+func addMemberships(t *testing.T, vars map[string]string) {
 	t.Helper()
-	const key = "http.throttle.api_per_minute"
-	previous := facades.Config().Get(key)
-	facades.Config().Add(key, 1)
-	t.Cleanup(func() { facades.Config().Add(key, previous) })
+	accountID := mustUUID(t, vars["account"])
+	walletID := mustUUID(t, vars["wallet"])
+	auditor := userIDByEmail(t, auditorEmail)
+	memberships := []models.AccountUser{
+		{ID: uuid.New(), AccountID: accountID, UserID: userIDByEmail(t, adminEmail), Role: models.AccountRoleAdmin, Status: models.MembershipStatusActive},
+		{ID: uuid.New(), AccountID: accountID, UserID: auditor, Role: models.AccountRoleAuditor, Status: models.MembershipStatusActive},
+		{ID: uuid.New(), AccountID: accountID, UserID: userIDByEmail(t, userEmail), Role: models.AccountRoleUser, Status: models.MembershipStatusActive},
+	}
+	for i := range memberships {
+		if err := facades.Orm().Query().Create(&memberships[i]); err != nil {
+			t.Fatalf("add membership: %v", err)
+		}
+	}
+	walletRow := models.WalletUser{ID: uuid.New(), WalletID: walletID, UserID: auditor, Roles: models.WalletRoleViewer, Status: models.StatusActive}
+	if err := facades.Orm().Query().Create(&walletRow); err != nil {
+		t.Fatalf("add wallet membership: %v", err)
+	}
+}
+
+func userIDByEmail(t *testing.T, email string) uuid.UUID {
+	t.Helper()
+	var user models.User
+	if err := facades.Orm().Query().Where("email = ?", email).First(&user); err != nil || user.ID == uuid.Nil {
+		t.Fatalf("user %s: %v", email, err)
+	}
+	return user.ID
+}
+
+func mustUUID(t *testing.T, text string) uuid.UUID {
+	t.Helper()
+	id, err := uuid.Parse(text)
+	if err != nil {
+		t.Fatalf("uuid %q: %v", text, err)
+	}
+	return id
+}
+
+// insertArchivableWallet is a second eth wallet, so archiving it leaves the
+// scenario's wallet active. Its deposit address is pinned like the first one.
+func insertArchivableWallet(t *testing.T, vars map[string]string) {
+	t.Helper()
+	accountID := mustUUID(t, vars["account"])
+	wallet := fixtures.InsertWalletWithAccount(t, "eth", &accountID)
+	if _, err := facades.Orm().Query().Exec(`UPDATE addresses SET address = ? WHERE id = ?`,
+		archivableDepositAddress, wallet.DepositAddress.ID); err != nil {
+		t.Fatalf("pin archivable deposit address: %v", err)
+	}
+	vars["archivedWallet"] = wallet.ID.String()
+}
+
+func insertXRPWallet(t *testing.T, vars map[string]string) {
+	t.Helper()
+	accountID := mustUUID(t, vars["account"])
+	vars["xrpWallet"] = fixtures.InsertWalletWithAccount(t, models.ChainXRP, &accountID).ID.String()
+}
+
+func insertUndeliverableWebhook(t *testing.T, vars map[string]string) {
+	t.Helper()
+	accountID := mustUUID(t, vars["account"])
+	walletID := mustUUID(t, vars["wallet"])
+	// A just-released local port refuses the connection; the body never names it.
+	webhook := fixtures.InsertScopedWebhookConfig(t, testutil.ClosedLocalURL(t)+"/hook", "contract-webhook-secret",
+		[]string{"deposit.confirmed"}, &accountID, &walletID)
+	vars["webhook"] = webhook.ID.String()
+}
+
+// apiRateLimit lowers the external API limit for the rate-limit steps and
+// puts it back for the steps after them.
+type apiRateLimit struct {
+	previous any
+}
+
+const apiPerMinuteKey = "http.throttle.api_per_minute"
+
+// limitToOnePerMinute lets one call per token through and gives the step a
+// bearer no other run has used, so its bucket starts full.
+func (l *apiRateLimit) limitToOnePerMinute(t *testing.T, vars map[string]string) {
+	t.Helper()
+	l.previous = facades.Config().Get(apiPerMinuteKey)
+	facades.Config().Add(apiPerMinuteKey, 1)
+	t.Cleanup(func() { facades.Config().Add(apiPerMinuteKey, l.previous) })
 	vars["throttledToken"] = "not-a-jwt-" + uuid.NewString()
+}
+
+func (l *apiRateLimit) restore(t *testing.T, _ map[string]string) {
+	t.Helper()
+	facades.Config().Add(apiPerMinuteKey, l.previous)
 }
 
 // insertFixtureWallet adds an eth wallet with its deposit address to the
