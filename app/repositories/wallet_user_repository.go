@@ -38,11 +38,8 @@ func (r *WalletUserRepository) Create(ctx context.Context, wu *models.WalletUser
 // FindByID returns the membership row, including one that is not active, or ErrRepositoryNotFound.
 func (r *WalletUserRepository) FindByID(ctx context.Context, id uuid.UUID) (*models.WalletUser, error) {
 	var wu models.WalletUser
-	if err := r.Query(ctx).Where("id = ?", id).First(&wu); err != nil {
-		return nil, fmt.Errorf("find wallet user by id: %w", err)
-	}
-	if wu.ID == uuid.Nil {
-		return nil, models.ErrRepositoryNotFound
+	if err := r.Query(ctx).Where("id = ?", id).FirstOrFail(&wu); err != nil {
+		return nil, db.LookupError(err, "find wallet user by id")
 	}
 	return &wu, nil
 }
@@ -59,11 +56,8 @@ func (r *WalletUserRepository) FindByWalletID(ctx context.Context, walletID uuid
 // FindByWalletAndUser returns the active membership, or ErrRepositoryNotFound.
 func (r *WalletUserRepository) FindByWalletAndUser(ctx context.Context, walletID, userID uuid.UUID) (*models.WalletUser, error) {
 	var wu models.WalletUser
-	if err := r.Query(ctx).Where("wallet_id = ? AND user_id = ? AND deleted_at IS NULL AND status = ?", walletID, userID, models.StatusActive).First(&wu); err != nil {
-		return nil, fmt.Errorf("find wallet user: %w", err)
-	}
-	if wu.ID == uuid.Nil {
-		return nil, models.ErrRepositoryNotFound
+	if err := r.Query(ctx).Where("wallet_id = ? AND user_id = ? AND deleted_at IS NULL AND status = ?", walletID, userID, models.StatusActive).FirstOrFail(&wu); err != nil {
+		return nil, db.LookupError(err, "find wallet user")
 	}
 	return &wu, nil
 }
@@ -71,11 +65,8 @@ func (r *WalletUserRepository) FindByWalletAndUser(ctx context.Context, walletID
 // FindByWalletAndUserIncludeDeleted returns the membership including a soft-deleted row, or ErrRepositoryNotFound.
 func (r *WalletUserRepository) FindByWalletAndUserIncludeDeleted(ctx context.Context, walletID, userID uuid.UUID) (*models.WalletUser, error) {
 	var wu models.WalletUser
-	if err := r.Query(ctx).Where("wallet_id = ? AND user_id = ?", walletID, userID).First(&wu); err != nil {
-		return nil, fmt.Errorf("find wallet user including deleted: %w", err)
-	}
-	if wu.ID == uuid.Nil {
-		return nil, models.ErrRepositoryNotFound
+	if err := r.Query(ctx).Where("wallet_id = ? AND user_id = ?", walletID, userID).FirstOrFail(&wu); err != nil {
+		return nil, db.LookupError(err, "find wallet user including deleted")
 	}
 	return &wu, nil
 }

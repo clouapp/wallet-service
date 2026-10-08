@@ -57,11 +57,8 @@ func (r *WhitelistEntryRepository) PaginateByWalletID(ctx context.Context, walle
 // FindByIDAndWallet returns the entry when it belongs to the wallet, or ErrRepositoryNotFound.
 func (r *WhitelistEntryRepository) FindByIDAndWallet(ctx context.Context, id, walletID uuid.UUID) (*models.WhitelistEntry, error) {
 	var entry models.WhitelistEntry
-	if err := r.Query(ctx).Where("id = ? AND wallet_id = ?", id, walletID).First(&entry); err != nil {
-		return nil, fmt.Errorf("find whitelist entry: %w", err)
-	}
-	if entry.ID == uuid.Nil {
-		return nil, models.ErrRepositoryNotFound
+	if err := r.Query(ctx).Where("id = ? AND wallet_id = ?", id, walletID).FirstOrFail(&entry); err != nil {
+		return nil, db.LookupError(err, "find whitelist entry")
 	}
 	return &entry, nil
 }

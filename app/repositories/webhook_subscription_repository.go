@@ -29,11 +29,8 @@ func (r *WebhookSubscriptionRepository) FindByChainID(ctx context.Context, chain
 		return nil, models.ErrRepositoryNotFound
 	}
 	var sub models.WebhookSubscription
-	if err := r.Query(ctx).Where("chain_id = ? AND status = ?", chainID, "active").First(&sub); err != nil {
-		return nil, fmt.Errorf("find webhook subscription: %w", err)
-	}
-	if sub.ID == uuid.Nil {
-		return nil, models.ErrRepositoryNotFound
+	if err := r.Query(ctx).Where("chain_id = ? AND status = ?", chainID, "active").FirstOrFail(&sub); err != nil {
+		return nil, db.LookupError(err, "find webhook subscription")
 	}
 	return &sub, nil
 }
@@ -41,11 +38,8 @@ func (r *WebhookSubscriptionRepository) FindByChainID(ctx context.Context, chain
 // FindByProviderAndChain returns the subscription for a provider and chain, or ErrRepositoryNotFound.
 func (r *WebhookSubscriptionRepository) FindByProviderAndChain(ctx context.Context, provider, chainID string) (*models.WebhookSubscription, error) {
 	var sub models.WebhookSubscription
-	if err := r.Query(ctx).Where("provider = ? AND chain_id = ?", provider, chainID).First(&sub); err != nil {
-		return nil, fmt.Errorf("find webhook subscription: %w", err)
-	}
-	if sub.ID == uuid.Nil {
-		return nil, models.ErrRepositoryNotFound
+	if err := r.Query(ctx).Where("provider = ? AND chain_id = ?", provider, chainID).FirstOrFail(&sub); err != nil {
+		return nil, db.LookupError(err, "find webhook subscription")
 	}
 	return &sub, nil
 }

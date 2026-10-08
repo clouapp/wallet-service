@@ -66,11 +66,8 @@ func (r *AccessTokenRepository) PaginateByAccountID(ctx context.Context, account
 // FindByIDAndAccount returns the token when it belongs to the account, or ErrRepositoryNotFound.
 func (r *AccessTokenRepository) FindByIDAndAccount(ctx context.Context, tokenID, accountID uuid.UUID) (*models.AccessToken, error) {
 	var token models.AccessToken
-	if err := r.Query(ctx).Where("id = ? AND account_id = ?", tokenID, accountID).First(&token); err != nil {
-		return nil, fmt.Errorf("find access token: %w", err)
-	}
-	if token.ID == uuid.Nil {
-		return nil, models.ErrRepositoryNotFound
+	if err := r.Query(ctx).Where("id = ? AND account_id = ?", tokenID, accountID).FirstOrFail(&token); err != nil {
+		return nil, db.LookupError(err, "find access token")
 	}
 	return &token, nil
 }

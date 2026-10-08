@@ -28,11 +28,8 @@ func NewUserRepository(query orm.Query) *UserRepository {
 // FindByEmail returns the user with this email, or ErrRepositoryNotFound.
 func (r *UserRepository) FindByEmail(ctx context.Context, email string) (*models.User, error) {
 	var user models.User
-	if err := r.Query(ctx).Where("email = ?", email).First(&user); err != nil {
-		return nil, fmt.Errorf("find user by email: %w", err)
-	}
-	if user.ID == uuid.Nil {
-		return nil, models.ErrRepositoryNotFound
+	if err := r.Query(ctx).Where("email = ?", email).FirstOrFail(&user); err != nil {
+		return nil, db.LookupError(err, "find user by email")
 	}
 	if err := r.attachSealedTotp(ctx, &user); err != nil {
 		return nil, err
@@ -43,11 +40,8 @@ func (r *UserRepository) FindByEmail(ctx context.Context, email string) (*models
 // FindByID returns the user with this id, or ErrRepositoryNotFound.
 func (r *UserRepository) FindByID(ctx context.Context, id uuid.UUID) (*models.User, error) {
 	var user models.User
-	if err := r.Query(ctx).Where("id = ?", id).First(&user); err != nil {
-		return nil, fmt.Errorf("find user by id: %w", err)
-	}
-	if user.ID == uuid.Nil {
-		return nil, models.ErrRepositoryNotFound
+	if err := r.Query(ctx).Where("id = ?", id).FirstOrFail(&user); err != nil {
+		return nil, db.LookupError(err, "find user by id")
 	}
 	if err := r.attachSealedTotp(ctx, &user); err != nil {
 		return nil, err

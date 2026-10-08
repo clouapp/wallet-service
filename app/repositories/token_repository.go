@@ -42,11 +42,8 @@ func (r *TokenRepository) FindActive(ctx context.Context) ([]models.Token, error
 // FindByID returns the token, or ErrRepositoryNotFound.
 func (r *TokenRepository) FindByID(ctx context.Context, id uuid.UUID) (*models.Token, error) {
 	var token models.Token
-	if err := r.Query(ctx).Where("id", id).First(&token); err != nil {
-		return nil, fmt.Errorf("find token: %w", err)
-	}
-	if token.ID == uuid.Nil {
-		return nil, models.ErrRepositoryNotFound
+	if err := r.Query(ctx).Where("id", id).FirstOrFail(&token); err != nil {
+		return nil, db.LookupError(err, "find token")
 	}
 	return &token, nil
 }
@@ -58,11 +55,8 @@ func (r *TokenRepository) FindByChainAndContract(ctx context.Context, chainID, c
 		return nil, models.ErrRepositoryNotFound
 	}
 	var token models.Token
-	if err := r.Query(ctx).Where("chain_id", chainID).Where("contract_address", contractAddress).First(&token); err != nil {
-		return nil, fmt.Errorf("find token by contract: %w", err)
-	}
-	if token.ID == uuid.Nil {
-		return nil, models.ErrRepositoryNotFound
+	if err := r.Query(ctx).Where("chain_id", chainID).Where("contract_address", contractAddress).FirstOrFail(&token); err != nil {
+		return nil, db.LookupError(err, "find token by contract")
 	}
 	return &token, nil
 }

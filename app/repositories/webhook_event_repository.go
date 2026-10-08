@@ -2,9 +2,12 @@ package repositories
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
+
+	goravelerrors "github.com/goravel/framework/errors"
 
 	"github.com/google/uuid"
 	"github.com/goravel/framework/contracts/database/orm"
@@ -43,12 +46,12 @@ func (r *WebhookEventRepository) AlreadyDelivered(ctx context.Context, eventID s
 		return false, fmt.Errorf("webhook event id is required")
 	}
 	var event models.WebhookEvent
-	err := r.Query(ctx).Where("id = ?", id).First(&event)
+	err := r.Query(ctx).Where("id = ?", id).FirstOrFail(&event)
+	if errors.Is(err, goravelerrors.OrmRecordNotFound) {
+		return false, nil
+	}
 	if err != nil {
 		return false, fmt.Errorf("load webhook event: %w", err)
-	}
-	if event.ID == uuid.Nil {
-		return false, nil
 	}
 	return event.DeliveryStatus == models.WebhookDeliveryDelivered, nil
 }

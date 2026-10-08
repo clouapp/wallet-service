@@ -120,10 +120,10 @@ func (r *AccountActivityRepository) Find(ctx context.Context, accountID, id uuid
 		return nil, models.ErrRepositoryNotFound
 	}
 	var row models.AccountActivity
-	if err := r.Query(ctx).Where("id = ? AND account_id = ?", id, accountID).First(&row); err != nil {
-		return nil, fmt.Errorf("find activity: %w", err)
+	if err := r.Query(ctx).Where("id = ? AND account_id = ?", id, accountID).FirstOrFail(&row); err != nil {
+		return nil, db.LookupError(err, "find activity")
 	}
-	if row.ID == uuid.Nil || row.AccountID == nil || *row.AccountID != accountID {
+	if row.AccountID == nil || *row.AccountID != accountID {
 		return nil, models.ErrRepositoryNotFound
 	}
 	return &row, nil

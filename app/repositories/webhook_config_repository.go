@@ -70,11 +70,8 @@ func (r *WebhookConfigRepository) FindByWalletID(ctx context.Context, walletID u
 // FindByIDAndWallet returns the config when it belongs to the wallet, or ErrRepositoryNotFound.
 func (r *WebhookConfigRepository) FindByIDAndWallet(ctx context.Context, id, walletID uuid.UUID) (*models.WebhookConfig, error) {
 	var cfg models.WebhookConfig
-	if err := r.Query(ctx).Where("id = ? AND wallet_id = ?", id, walletID).First(&cfg); err != nil {
-		return nil, fmt.Errorf("find webhook config: %w", err)
-	}
-	if cfg.ID == uuid.Nil {
-		return nil, models.ErrRepositoryNotFound
+	if err := r.Query(ctx).Where("id = ? AND wallet_id = ?", id, walletID).FirstOrFail(&cfg); err != nil {
+		return nil, db.LookupError(err, "find webhook config")
 	}
 	return r.openWebhookSecret(&cfg)
 }
@@ -107,12 +104,9 @@ func (r *WebhookConfigRepository) FindOwnership(ctx context.Context, id uuid.UUI
 	err := r.Query(ctx).Model(&models.WebhookConfig{}).
 		Select("id", "account_id", "wallet_id").
 		Where("id = ?", id).
-		First(&row)
+		FirstOrFail(&row)
 	if err != nil {
-		return nil, fmt.Errorf("find webhook ownership: %w", err)
-	}
-	if row.ID == uuid.Nil {
-		return nil, models.ErrRepositoryNotFound
+		return nil, db.LookupError(err, "find webhook ownership")
 	}
 	return &row, nil
 }
@@ -120,11 +114,8 @@ func (r *WebhookConfigRepository) FindOwnership(ctx context.Context, id uuid.UUI
 // FindByID returns the config, or ErrRepositoryNotFound. The secret is opened.
 func (r *WebhookConfigRepository) FindByID(ctx context.Context, id uuid.UUID) (*models.WebhookConfig, error) {
 	var cfg models.WebhookConfig
-	if err := r.Query(ctx).Where("id = ?", id).First(&cfg); err != nil {
-		return nil, fmt.Errorf("find webhook config: %w", err)
-	}
-	if cfg.ID == uuid.Nil {
-		return nil, models.ErrRepositoryNotFound
+	if err := r.Query(ctx).Where("id = ?", id).FirstOrFail(&cfg); err != nil {
+		return nil, db.LookupError(err, "find webhook config")
 	}
 	return r.openWebhookSecret(&cfg)
 }

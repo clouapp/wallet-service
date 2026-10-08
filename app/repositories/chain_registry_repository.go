@@ -69,11 +69,8 @@ func (r *ChainRegistryRepository) UpdateChainNetwork(ctx context.Context, chainI
 // FindAccount returns the account, or ErrRepositoryNotFound.
 func (r *ChainRegistryRepository) FindAccount(ctx context.Context, id uuid.UUID) (*models.Account, error) {
 	var account models.Account
-	if err := r.Query(ctx).Where("id = ?", id).First(&account); err != nil {
-		return nil, fmt.Errorf("find account: %w", err)
-	}
-	if account.ID == uuid.Nil {
-		return nil, models.ErrRepositoryNotFound
+	if err := r.Query(ctx).Where("id = ?", id).FirstOrFail(&account); err != nil {
+		return nil, db.LookupError(err, "find account")
 	}
 	return &account, nil
 }

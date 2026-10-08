@@ -41,12 +41,9 @@ func (r *AccountInviteRepository) FindPendingByAccountEmail(ctx context.Context,
 	var invite models.AccountInvite
 	err := r.Query(ctx).
 		Where("account_id = ? AND lower(email) = ? AND accepted_at IS NULL AND revoked_at IS NULL", accountID, strings.ToLower(strings.TrimSpace(email))).
-		First(&invite)
+		FirstOrFail(&invite)
 	if err != nil {
-		return nil, fmt.Errorf("find pending invite: %w", err)
-	}
-	if invite.ID == uuid.Nil {
-		return nil, models.ErrRepositoryNotFound
+		return nil, db.LookupError(err, "find pending invite")
 	}
 	return &invite, nil
 }
@@ -61,12 +58,9 @@ func (r *AccountInviteRepository) FindOpenByAccountAndID(ctx context.Context, ac
 	var invite models.AccountInvite
 	err := r.Query(ctx).
 		Where("id = ? AND account_id = ? AND accepted_at IS NULL AND revoked_at IS NULL", id, accountID).
-		First(&invite)
+		FirstOrFail(&invite)
 	if err != nil {
-		return nil, fmt.Errorf("find open invite: %w", err)
-	}
-	if invite.ID == uuid.Nil {
-		return nil, models.ErrRepositoryNotFound
+		return nil, db.LookupError(err, "find open invite")
 	}
 	return &invite, nil
 }
@@ -80,12 +74,9 @@ func (r *AccountInviteRepository) FindOpenByID(ctx context.Context, id uuid.UUID
 	var invite models.AccountInvite
 	err := r.Query(ctx).
 		Where("id = ? AND accepted_at IS NULL AND revoked_at IS NULL", id).
-		First(&invite)
+		FirstOrFail(&invite)
 	if err != nil {
-		return nil, fmt.Errorf("find open invite: %w", err)
-	}
-	if invite.ID == uuid.Nil {
-		return nil, models.ErrRepositoryNotFound
+		return nil, db.LookupError(err, "find open invite")
 	}
 	return &invite, nil
 }
@@ -95,12 +86,9 @@ func (r *AccountInviteRepository) FindPendingByTokenHash(ctx context.Context, to
 	var invite models.AccountInvite
 	err := r.Query(ctx).
 		Where("token_hash = ? AND accepted_at IS NULL AND revoked_at IS NULL AND expires_at > ?", tokenHash, now).
-		First(&invite)
+		FirstOrFail(&invite)
 	if err != nil {
-		return nil, fmt.Errorf("find invite by token: %w", err)
-	}
-	if invite.ID == uuid.Nil {
-		return nil, models.ErrRepositoryNotFound
+		return nil, db.LookupError(err, "find invite by token")
 	}
 	return &invite, nil
 }

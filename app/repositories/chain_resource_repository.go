@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/google/uuid"
 	"github.com/goravel/framework/contracts/database/orm"
 
 	"github.com/macrowallets/waas/app/models"
@@ -46,11 +45,8 @@ func (r *ChainResourceRepository) FindByChainTypeAndName(ctx context.Context, ch
 		return nil, models.ErrRepositoryNotFound
 	}
 	var resource models.ChainResource
-	if err := r.Query(ctx).Where("chain_id", chainID).Where("type", resourceType).Where("name", name).First(&resource); err != nil {
-		return nil, fmt.Errorf("find chain resource: %w", err)
-	}
-	if resource.ID == uuid.Nil {
-		return nil, models.ErrRepositoryNotFound
+	if err := r.Query(ctx).Where("chain_id", chainID).Where("type", resourceType).Where("name", name).FirstOrFail(&resource); err != nil {
+		return nil, db.LookupError(err, "find chain resource")
 	}
 	return &resource, nil
 }

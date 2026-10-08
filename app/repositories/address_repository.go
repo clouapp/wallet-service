@@ -54,11 +54,8 @@ func (r *AddressRepository) CountByChainAndAddress(ctx context.Context, chainID,
 // FindByChainAndAddress returns the address, or ErrRepositoryNotFound.
 func (r *AddressRepository) FindByChainAndAddress(ctx context.Context, chainID, address string) (*models.Address, error) {
 	var addr models.Address
-	if err := r.Query(ctx).Where("chain", chainID).Where("address", address).First(&addr); err != nil {
-		return nil, fmt.Errorf("find address: %w", err)
-	}
-	if addr.ID == uuid.Nil {
-		return nil, models.ErrRepositoryNotFound
+	if err := r.Query(ctx).Where("chain", chainID).Where("address", address).FirstOrFail(&addr); err != nil {
+		return nil, db.LookupError(err, "find address")
 	}
 	return &addr, nil
 }
@@ -93,11 +90,8 @@ func (r *AddressRepository) FindByChainAndAddressAndAccount(ctx context.Context,
 		Where("chain = ?", chainID).
 		Where("address = ?", address).
 		Where("wallet_id IN (SELECT id FROM wallets WHERE account_id = ?)", accountID).
-		First(&addr); err != nil {
-		return nil, fmt.Errorf("find address for account: %w", err)
-	}
-	if addr.ID == uuid.Nil {
-		return nil, models.ErrRepositoryNotFound
+		FirstOrFail(&addr); err != nil {
+		return nil, db.LookupError(err, "find address for account")
 	}
 	return &addr, nil
 }
@@ -105,11 +99,8 @@ func (r *AddressRepository) FindByChainAndAddressAndAccount(ctx context.Context,
 // FindByID returns the address, or ErrRepositoryNotFound.
 func (r *AddressRepository) FindByID(ctx context.Context, id uuid.UUID) (*models.Address, error) {
 	var addr models.Address
-	if err := r.Query(ctx).Where("id = ?", id).First(&addr); err != nil {
-		return nil, fmt.Errorf("find address by id: %w", err)
-	}
-	if addr.ID == uuid.Nil {
-		return nil, models.ErrRepositoryNotFound
+	if err := r.Query(ctx).Where("id = ?", id).FirstOrFail(&addr); err != nil {
+		return nil, db.LookupError(err, "find address by id")
 	}
 	return &addr, nil
 }
