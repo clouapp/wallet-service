@@ -4,8 +4,12 @@ import (
 	"strings"
 
 	"github.com/goravel/framework/facades"
+)
 
-	"github.com/macrowallets/waas/pkg/types"
+// The symbols as pkg/types spelled them when this migration was written.
+const (
+	nativeSymbolPOL         = "pol"
+	legacyNativeSymbolMATIC = "matic"
 )
 
 // M00000000000270RenamePolygonNativeMaticToPol relabels the Polygon native asset
@@ -19,11 +23,11 @@ func (r *M00000000000270RenamePolygonNativeMaticToPol) Signature() string {
 }
 
 func (r *M00000000000270RenamePolygonNativeMaticToPol) Up() error {
-	return renameNativeSymbol(types.LegacyNativeSymbolMATIC, types.NativeSymbolPOL)
+	return renameNativeSymbol(legacyNativeSymbolMATIC, nativeSymbolPOL)
 }
 
 func (r *M00000000000270RenamePolygonNativeMaticToPol) Down() error {
-	return renameNativeSymbol(types.NativeSymbolPOL, types.LegacyNativeSymbolMATIC)
+	return renameNativeSymbol(nativeSymbolPOL, legacyNativeSymbolMATIC)
 }
 
 func renameNativeSymbol(from, to string) error {
