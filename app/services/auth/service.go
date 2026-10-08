@@ -11,6 +11,11 @@ import (
 
 type Service struct{}
 
+// DummyPasswordHash is a bcrypt hash at bcrypt.DefaultCost of a random string
+// nobody knows. Login compares the submitted password against it when the email
+// has no user, so a missing user costs the same bcrypt time as a wrong password.
+const DummyPasswordHash = "$2a$10$NJIEW0bsDrp6v6qmmZ4t5.0cbwEo2J8oNSsiEklai1L7uSQVgXIPO"
+
 func NewService() *Service { return &Service{} }
 
 func (s *Service) HashPassword(password string) (string, error) {

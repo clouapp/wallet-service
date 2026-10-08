@@ -6,6 +6,7 @@ import (
 
 	"github.com/pquerna/otp/totp"
 	"github.com/stretchr/testify/suite"
+	"golang.org/x/crypto/bcrypt"
 
 	authsvc "github.com/macrowallets/waas/app/services/auth"
 )
@@ -69,4 +70,17 @@ func (s *AuthServiceTestSuite) TestHash_Token_IsDeterministicInCheck() {
 	hash := svc.HashToken(raw)
 	s.True(svc.CheckToken(raw, hash))
 	s.False(svc.CheckToken("other-token", hash))
+}
+
+func TestDummy_PasswordHash_CostsTheSameAsARealOne(t *testing.T) {
+	cost, err := bcrypt.Cost([]byte(authsvc.DummyPasswordHash))
+	if err != nil {
+		t.Fatalf("DummyPasswordHash is not a bcrypt hash: %v", err)
+	}
+	if cost != bcrypt.DefaultCost {
+		t.Fatalf("cost = %d, HashPassword uses %d", cost, bcrypt.DefaultCost)
+	}
+	if authsvc.NewService().CheckPassword("", authsvc.DummyPasswordHash) {
+		t.Fatal("the dummy hash must not match an empty password")
+	}
 }

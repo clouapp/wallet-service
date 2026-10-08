@@ -173,6 +173,9 @@ func (ctrl *AuthController) Login(ctx http.Context) http.Response {
 
 	userPtr, err := ctrl.users.FindByEmail(ctx.Context(), req.Email)
 	if err != nil || userPtr == nil {
+		// Spend the bcrypt time a wrong password would, so the response time
+		// does not tell a registered email from an unknown one.
+		ctrl.passwords.CheckPassword(req.Password, authsvc.DummyPasswordHash)
 		return responses.Send(ctx, http.StatusUnauthorized, http.Json{"error": "invalid credentials"})
 	}
 	user := *userPtr
