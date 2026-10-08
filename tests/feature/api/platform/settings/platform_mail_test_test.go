@@ -13,7 +13,6 @@ import (
 	"github.com/goravel/framework/facades"
 
 	"github.com/macrowallets/waas/app/container"
-	appfacades "github.com/macrowallets/waas/app/facades"
 	"github.com/macrowallets/waas/app/http/responses"
 	"github.com/macrowallets/waas/app/providers"
 	"github.com/macrowallets/waas/app/services/settings"
@@ -45,12 +44,10 @@ func (s *PlatformMailTestSuite) SetupTest() {
 	settings.FacadeCache{}.Forget("settings:platform:mail_delivery")
 	_, err := facades.Orm().Query().Exec(`DELETE FROM settings WHERE account_id IS NULL AND "group" IN ('mail_smtp', 'mail_delivery')`)
 	s.Require().NoError(err)
-	appfacades.RestoreMailBaseline()
 	s.sends = &mailTestCapture{}
 	container.MustMake[*settings.Service]().WithPlatformTestMailer(s.sends)
 	s.T().Cleanup(func() {
 		container.MustMake[*settings.Service]().WithPlatformTestMailer(providers.NewPlatformTestMailer())
-		appfacades.RestoreMailBaseline()
 	})
 }
 

@@ -46,11 +46,9 @@ func (s *PlatformMailProvidersTestSuite) SetupTest() {
 		)
 		s.Require().NoError(err)
 	}
-	appfacades.RestoreMailBaseline()
 }
 
 func (s *PlatformMailProvidersTestSuite) TearDownTest() {
-	appfacades.RestoreMailBaseline()
 }
 
 func (s *PlatformMailProvidersTestSuite) TestA_Platform_AdminStoresEachProvider() {

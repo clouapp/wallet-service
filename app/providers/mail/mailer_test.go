@@ -1,10 +1,12 @@
-package mailer
+package mail
 
 import (
 	"context"
 	"crypto/subtle"
 	"errors"
 	"testing"
+
+	"github.com/macrowallets/waas/app/services/settings"
 )
 
 func TestMerge_Dial_KeepsEnvFieldsThatAreNotInUse(t *testing.T) {
@@ -23,7 +25,7 @@ func TestMerge_Dial_KeepsEnvFieldsThatAreNotInUse(t *testing.T) {
 			},
 		},
 	}
-	mergeDial(cfg, Dial{
+	mergeDial(cfg, settings.MailSMTP{
 		Host: "127.0.0.1", Port: 2525, Encryption: "starttls", Username: "mailer",
 		UseHost: true, UsePort: true, UseEncryption: true, UseUsername: true,
 	})
@@ -60,7 +62,7 @@ func TestMerge_From_KeepsEnvFieldsThatAreNotInUse(t *testing.T) {
 			"smtp": map[string]any{"transport": "smtp", "password": "env-mailbox-secret"},
 		},
 	}
-	mergeFrom(cfg, From{Address: "from-header@example.test", UseAddress: true})
+	mergeFrom(cfg, settings.MailDelivery{Address: "from-header@example.test", UseAddress: true})
 	from := cfg["from"].(map[string]any)
 	if from["address"] != "from-header@example.test" {
 		t.Fatal("the from address was not applied for the send")
@@ -73,7 +75,7 @@ func TestMerge_From_KeepsEnvFieldsThatAreNotInUse(t *testing.T) {
 		t.Fatal("the from header replaced the env mailer")
 	}
 
-	mergeFrom(cfg, From{Name: "Macro", UseName: true})
+	mergeFrom(cfg, settings.MailDelivery{Name: "Macro", UseName: true})
 	if from["address"] != "from-header@example.test" || from["name"] != "Macro" {
 		t.Fatal("the from name was not applied on its own")
 	}
@@ -86,7 +88,7 @@ func TestMerge_Dial_AppliesAPasswordOnlyWhenAsked(t *testing.T) {
 	cfg := map[string]any{
 		"mailers": map[string]any{"smtp": map[string]any{"password": "env-mailbox-secret"}},
 	}
-	mergeDial(cfg, Dial{Password: stored, UsePassword: true})
+	mergeDial(cfg, settings.MailSMTP{Password: stored, UsePassword: true})
 	smtp := cfg["mailers"].(map[string]any)["smtp"].(map[string]any)
 	gotSMTP, _ := smtp["password"].(string)
 	gotRoot, _ := cfg["password"].(string)
@@ -100,17 +102,13 @@ func TestResolve_Keeps_TheEnvDocumentWhenTheReaderIsUnset(t *testing.T) {
 	t.Parallel()
 
 	const envPassword = "env-mailbox-secret"
-	cfg := NewConfig(Hooks{
-		Baseline: func() map[string]any {
-			return map[string]any{
-				"from": map[string]any{"address": "env@example.test", "name": "Env"},
-				"mailers": map[string]any{
-					"smtp": map[string]any{"transport": "smtp", "host": "env-host", "password": envPassword},
-				},
-			}
+	env := map[string]any{
+		"from": map[string]any{"address": "env@example.test", "name": "Env"},
+		"mailers": map[string]any{
+			"smtp": map[string]any{"transport": "smtp", "host": "env-host", "password": envPassword},
 		},
-	})
-	resolved := cfg.Resolve(context.Background())
+	}
+	resolved := NewMailer(MailerDeps{}).resolve(context.Background(), env)
 	if resolved["host"] != nil || resolved["password"] != nil {
 		t.Fatal("an unset reader wrote over the env mailer")
 	}
@@ -131,21 +129,16 @@ func TestResolve_Keeps_TheEnvDocumentWhenTheReaderIsUnset(t *testing.T) {
 func TestResolve_Keeps_TheEnvDocumentWhenTheReaderFails(t *testing.T) {
 	t.Parallel()
 
-	cfg := NewConfig(Hooks{
-		Baseline: func() map[string]any {
-			return map[string]any{
-				"mailers": map[string]any{"smtp": map[string]any{"host": "env-host"}},
-				"from":    map[string]any{"address": "env@example.test"},
-			}
-		},
-		SMTP: func(context.Context) (Dial, bool, error) {
-			return Dial{Host: "127.0.0.1", UseHost: true, Password: "stored-mailbox-secret", UsePassword: true}, true, errors.New("db down")
-		},
-		From: func(context.Context) (From, bool, error) {
-			return From{Address: "replaced@example.test", UseAddress: true}, true, errors.New("db down")
-		},
-	})
-	resolved := cfg.Resolve(context.Background())
+	env := map[string]any{
+		"mailers": map[string]any{"smtp": map[string]any{"host": "env-host"}},
+		"from":    map[string]any{"address": "env@example.test"},
+	}
+	resolved := NewMailer(MailerDeps{Settings: storedSettings{
+		smtp:    settings.MailSMTP{Host: "127.0.0.1", UseHost: true, Password: "stored-mailbox-secret", UsePassword: true},
+		smtpErr: errors.New("db down"),
+		from:    settings.MailDelivery{Address: "replaced@example.test", UseAddress: true},
+		fromErr: errors.New("db down"),
+	}}).resolve(context.Background(), env)
 	smtp := resolved["mailers"].(map[string]any)["smtp"].(map[string]any)
 	if smtp["host"] != "env-host" || smtp["password"] != nil || resolved["password"] != nil {
 		t.Fatal("a failed read replaced the env mailer")
@@ -159,25 +152,18 @@ func TestResolve_Applies_SMTPAndFromWhenTheRowsExist(t *testing.T) {
 	t.Parallel()
 
 	const stored = "stored-mailbox-secret"
-	cfg := NewConfig(Hooks{
-		Baseline: func() map[string]any {
-			return map[string]any{
-				"mailers": map[string]any{"smtp": map[string]any{"transport": "smtp", "host": "env-host"}},
-				"from":    map[string]any{"address": "env@example.test", "name": "Env"},
-			}
+	env := map[string]any{
+		"mailers": map[string]any{"smtp": map[string]any{"transport": "smtp", "host": "env-host"}},
+		"from":    map[string]any{"address": "env@example.test", "name": "Env"},
+	}
+	resolved := NewMailer(MailerDeps{Settings: storedSettings{
+		smtp: settings.MailSMTP{
+			Host: "127.0.0.1", Port: 2525, Encryption: "starttls", Username: "mailer",
+			Password: stored, UseHost: true, UsePort: true, UseEncryption: true,
+			UseUsername: true, UsePassword: true,
 		},
-		SMTP: func(context.Context) (Dial, bool, error) {
-			return Dial{
-				Host: "127.0.0.1", Port: 2525, Encryption: "starttls", Username: "mailer",
-				Password: stored, UseHost: true, UsePort: true, UseEncryption: true,
-				UseUsername: true, UsePassword: true,
-			}, true, nil
-		},
-		From: func(context.Context) (From, bool, error) {
-			return From{Address: "from-header@example.test", Name: "Macro", UseAddress: true, UseName: true}, true, nil
-		},
-	})
-	resolved := cfg.Resolve(context.Background())
+		from: settings.MailDelivery{Address: "from-header@example.test", Name: "Macro", UseAddress: true, UseName: true},
+	}}).resolve(context.Background(), env)
 	smtp := resolved["mailers"].(map[string]any)["smtp"].(map[string]any)
 	if smtp["transport"] != "smtp" || smtp["host"] != "127.0.0.1" || resolved["host"] != "127.0.0.1" {
 		t.Fatal("mail_smtp was not applied")
@@ -192,5 +178,9 @@ func TestResolve_Applies_SMTPAndFromWhenTheRowsExist(t *testing.T) {
 	from := resolved["from"].(map[string]any)
 	if from["address"] != "from-header@example.test" || from["name"] != "Macro" {
 		t.Fatal("mail_delivery was not applied")
+	}
+	if env["mailers"].(map[string]any)["smtp"].(map[string]any)["host"] != "env-host" ||
+		env["from"].(map[string]any)["address"] != "env@example.test" {
+		t.Fatal("the overlay wrote into the env document")
 	}
 }

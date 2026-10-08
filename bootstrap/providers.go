@@ -51,6 +51,7 @@ func Providers() []foundation.ServiceProvider {
 		&providers.ChainServiceProvider{},
 		&providers.WebhookServiceProvider{},
 		&providers.SettingsServiceProvider{},
+		&providers.MailServiceProvider{},
 		&providers.CredentialMailServiceProvider{},
 		&providers.FeaturesServiceProvider{},
 		&providers.PriceServiceProvider{},

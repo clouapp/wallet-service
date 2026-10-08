@@ -36,11 +36,9 @@ func (s *PlatformMailSMTPTestSuite) SetupTest() {
 	settings.FacadeCache{}.Forget("settings:platform:mail_smtp")
 	_, err := facades.Orm().Query().Exec(`DELETE FROM settings WHERE account_id IS NULL AND "group" = 'mail_smtp'`)
 	s.Require().NoError(err)
-	appfacades.RestoreMailBaseline()
 }
 
 func (s *PlatformMailSMTPTestSuite) TearDownTest() {
-	appfacades.RestoreMailBaseline()
 }
 
 func (s *PlatformMailSMTPTestSuite) TestA_Platform_AdminStoresASealedPasswordTheMailerReads() {
@@ -108,9 +106,9 @@ func (s *PlatformMailSMTPTestSuite) TestA_Platform_AdminStoresASealedPasswordThe
 		s.Fail("the mailer did not open the sealed password")
 	}
 
-	var seen appfacades.MailDial
+	var seen settings.MailSMTP
 	_ = sendWelcomeObserved(func() {
-		seen = appfacades.MailDial{
+		seen = settings.MailSMTP{
 			Host:       appfacades.Config().GetString("mail.host"),
 			Port:       appfacades.Config().GetInt("mail.port"),
 			Encryption: appfacades.Config().GetString("mail.encryption"),
@@ -154,10 +152,10 @@ func (s *PlatformMailSMTPTestSuite) TestA_Missing_RowKeepsTheEnvMailer() {
 	envEncryption := appfacades.Config().GetString("mail.mailers.smtp.encryption")
 	envPassword := appfacades.Config().GetString("mail.mailers.smtp.password")
 
-	var seen appfacades.MailDial
+	var seen settings.MailSMTP
 	_ = sendWelcomeObserved(func() {
 		smtp := mailSMTPMap(appfacades.Config().Get("mail"))
-		seen = appfacades.MailDial{
+		seen = settings.MailSMTP{
 			Host:       smtpString(smtp, "host"),
 			Port:       smtpInt(smtp, "port"),
 			Encryption: smtpString(smtp, "encryption"),
@@ -173,13 +171,10 @@ func (s *PlatformMailSMTPTestSuite) TestA_Missing_RowKeepsTheEnvMailer() {
 
 func (s *PlatformMailSMTPTestSuite) TestA_Failed_ReadKeepsTheEnvMailer() {
 	envHost := appfacades.Config().GetString("mail.mailers.smtp.host")
-	previous := appfacades.SetMailSMTPReader(func(context.Context) (appfacades.MailDial, error) {
-		return appfacades.MailDial{}, errMailReadFailed
-	})
-	defer appfacades.SetMailSMTPReader(previous)
+	failing := failedSMTPRead{Settings: container.MustMake[*settings.Service]()}
 
 	var sawHost string
-	_ = sendWelcomeObserved(func() {
+	_ = sendWelcomeObservedWith(failing, func() {
 		sawHost = smtpString(mailSMTPMap(appfacades.Config().Get("mail")), "host")
 	})
 	if sawHost != envHost {
