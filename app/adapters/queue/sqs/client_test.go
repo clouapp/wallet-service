@@ -15,24 +15,30 @@ import (
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	awssqs "github.com/aws/aws-sdk-go-v2/service/sqs"
 
-	"github.com/macrowallets/waas/app/services/queue"
+	"github.com/macrowallets/waas/pkg/types"
 )
 
-func TestNew_Returns_NilForANilClient(t *testing.T) {
-	if New(nil) != nil {
-		t.Fatal("expected a nil transport when SQS is not configured")
+func webhookMessage() types.WebhookMessage {
+	return types.WebhookMessage{
+		EventID:       "evt-123",
+		TransactionID: "tx-456",
+		EventType:     types.EventDepositConfirmed,
+		Payload:       `{"amount":"100"}`,
+		DeliveryURL:   "https://example.com/wh",
+		ConfigID:      "11111111-1111-1111-1111-111111111111",
+		Attempt:       1,
 	}
 }
 
-func TestSend_Copies_TheBodyAndStringAttributes(t *testing.T) {
+func TestSendWebhook_KeepsTheEncodedBodyAndAttribute(t *testing.T) {
 	var got sqsRequest
 	client := New(sqsClient(t, func(call sqsRequest, w http.ResponseWriter) {
 		got = call
 		writeSQSOk(w)
-	}))
-	attributes := map[string]string{"event_type": "deposit.confirmed"}
+	}), "https://sqs.example/webhook")
+	msg := webhookMessage()
 
-	if err := client.Send(context.Background(), "https://sqs.example/webhook", `{"n":1}`, attributes); err != nil {
+	if err := client.SendWebhook(context.Background(), msg); err != nil {
 		t.Fatalf("send: %v", err)
 	}
 	if got.target != "AmazonSQS.SendMessage" || got.method != http.MethodPost || got.path != "/" {
@@ -44,11 +50,19 @@ func TestSend_Copies_TheBodyAndStringAttributes(t *testing.T) {
 	if jsonString(t, got.body, "QueueUrl") != "https://sqs.example/webhook" {
 		t.Fatal("queue URL changed")
 	}
-	if jsonString(t, got.body, "MessageBody") != `{"n":1}` {
-		t.Fatal("message body changed")
+	want, err := json.Marshal(msg)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	body := jsonString(t, got.body, "MessageBody")
+	if body != string(want) {
+		t.Fatal("encoded body changed")
+	}
+	if strings.Contains(body, `"secret"`) {
+		t.Fatal("queued webhook body carries a secret")
 	}
 	attribute := messageAttribute(t, got.body, "event_type")
-	if attribute["DataType"] != "String" || attribute["StringValue"] != "deposit.confirmed" {
+	if attribute["DataType"] != "String" || attribute["StringValue"] != string(msg.EventType) {
 		t.Fatal("string attribute changed")
 	}
 	if len(messageAttributes(t, got.body)) != 1 {
@@ -56,74 +70,40 @@ func TestSend_Copies_TheBodyAndStringAttributes(t *testing.T) {
 	}
 }
 
-func TestSend_Batch_CopiesEntriesInOrder(t *testing.T) {
-	var got sqsRequest
-	client := New(sqsClient(t, func(call sqsRequest, w http.ResponseWriter) {
-		got = call
-		writeSQSOk(w)
-	}))
-	entries := []queue.BatchEntry{
-		{ID: "msg-0", Body: `{"n":0}`},
-		{ID: "msg-1", Body: `{"n":1}`},
-	}
+func TestSendWebhook_EmptyURLSkipsSQS(t *testing.T) {
+	client := New(sqsClient(t, func(sqsRequest, http.ResponseWriter) {
+		t.Fatal("an unconfigured queue must not reach SQS")
+	}), "")
 
-	if err := client.SendBatch(context.Background(), "https://sqs.example/batch", entries); err != nil {
-		t.Fatalf("batch: %v", err)
-	}
-	if got.target != "AmazonSQS.SendMessageBatch" || jsonString(t, got.body, "QueueUrl") != "https://sqs.example/batch" {
-		t.Fatal("batch queue URL changed")
-	}
-	batch := batchEntries(t, got.body)
-	if len(batch) != 2 {
-		t.Fatal("expected both batch entries")
-	}
-	if batch[0]["Id"] != "msg-0" || batch[0]["MessageBody"] != `{"n":0}` {
-		t.Fatal("first batch entry changed")
-	}
-	if batch[1]["Id"] != "msg-1" || batch[1]["MessageBody"] != `{"n":1}` {
-		t.Fatal("second batch entry changed")
-	}
-	if _, ok := batch[0]["MessageAttributes"]; ok {
-		t.Fatal("batch entries gained attributes")
-	}
-	if _, ok := batch[1]["MessageAttributes"]; ok {
-		t.Fatal("batch entries gained attributes")
+	if err := client.SendWebhook(context.Background(), webhookMessage()); err != nil {
+		t.Fatalf("empty URL: %v", err)
 	}
 }
 
-func TestSend_Forwards_TheAPIError(t *testing.T) {
+func TestSendWebhook_WrapsTheAPIError(t *testing.T) {
 	client := New(sqsClient(t, func(_ sqsRequest, w http.ResponseWriter) {
 		w.Header().Set("Content-Type", "application/x-amz-json-1.0")
 		w.Header().Set("X-Amzn-ErrorType", "InvalidParameterValue")
 		w.WriteHeader(http.StatusBadRequest)
 		_ = json.NewEncoder(w).Encode(map[string]string{"__type": "InvalidParameterValue", "message": "boom"})
-	}))
-	err := client.Send(context.Background(), "https://sqs.example/webhook", `{"n":1}`, nil)
-	if err == nil || !strings.Contains(err.Error(), "boom") {
+	}), "https://sqs.example/webhook")
+
+	err := client.SendWebhook(context.Background(), webhookMessage())
+	if err == nil || !strings.HasPrefix(err.Error(), "sqs send: ") || !strings.Contains(err.Error(), "boom") {
 		t.Fatalf("error = %v", err)
 	}
 }
 
-func TestSend_Forwards_ACanceledContext(t *testing.T) {
+func TestSendWebhook_ForwardsACanceledContext(t *testing.T) {
 	client := New(sqsClient(t, func(sqsRequest, http.ResponseWriter) {
 		t.Fatal("a canceled context must not reach SQS")
-	}))
+	}), "https://sqs.example/webhook")
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	err := client.Send(ctx, "https://sqs.example/webhook", `{"n":1}`, nil)
+	err := client.SendWebhook(ctx, webhookMessage())
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("error = %v", err)
-	}
-}
-
-func TestNil_Client_ReportsAMissingClient(t *testing.T) {
-	var client *Client
-	if err := client.Send(context.Background(), "https://sqs.example/webhook", `{"n":1}`, nil); err == nil {
-		t.Fatal("expected error for a nil client")
-	}
-	if err := client.SendBatch(context.Background(), "https://sqs.example/batch", nil); err == nil {
-		t.Fatal("expected error for a nil client batch")
 	}
 }
 
@@ -206,17 +186,4 @@ func messageAttribute(t *testing.T, body map[string]json.RawMessage, name string
 		t.Fatalf("missing attribute %s", name)
 	}
 	return attribute
-}
-
-func batchEntries(t *testing.T, body map[string]json.RawMessage) []map[string]any {
-	t.Helper()
-	raw, ok := body["Entries"]
-	if !ok {
-		t.Fatal("missing Entries")
-	}
-	var entries []map[string]any
-	if err := json.Unmarshal(raw, &entries); err != nil {
-		t.Fatal(err)
-	}
-	return entries
 }

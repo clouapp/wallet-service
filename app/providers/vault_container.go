@@ -55,7 +55,6 @@ import (
 	"github.com/macrowallets/waas/app/services/ingest/providers"
 	mpc "github.com/macrowallets/waas/app/services/mpc"
 	"github.com/macrowallets/waas/app/services/price"
-	"github.com/macrowallets/waas/app/services/queue"
 	"github.com/macrowallets/waas/app/services/refresh"
 	"github.com/macrowallets/waas/app/services/settings"
 	"github.com/macrowallets/waas/app/services/sweep"
@@ -114,12 +113,7 @@ func buildVaultContainer(app foundation.Application) (*container.Container, erro
 		return nil, fmt.Errorf("vault: aws config: %w", err)
 	}
 	sqsClient := sqs.NewFromConfig(awsCfg)
-	c.SQS = queue.NewSQSClient(queue.SQSClientDeps{
-		Transport: queuesqs.New(sqsClient),
-		URLs: queue.QueueURLs{
-			Webhook: facades.Config().GetString("vault.queues.webhook"),
-		},
-	})
+	c.SQS = queuesqs.New(sqsClient, facades.Config().GetString("vault.queues.webhook"))
 
 	c.SecretsManager = sweepsecrets.NewClient(awsCfg, facades.Config().GetString("vault.aws.endpoint_url"))
 	c.MPCService = mpc.NewTSSService()
