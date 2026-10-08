@@ -146,7 +146,7 @@ platform route answers a member with anything but that 403.
 ## Policy conventions
 
 - Ability names and argument keys are constants in the policy's own file.
-- Policies take primitives, `models` and `dtos` — never a `services` type
+- Policies take primitives and `models` — never a `services` type
   (`TestPoliciesLayerIsBelowServices`).
 - Ask with the request context:
   `facades.Gate().WithContext(ctx).Allows(policies.WalletCancelWithdrawal, map[string]any{...})`.

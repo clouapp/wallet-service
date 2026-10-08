@@ -24,7 +24,6 @@ const (
 	LayerMails        = "mails"
 	LayerConsole      = "console"
 	LayerJobs         = "jobs"
-	LayerEvents       = "events"
 	LayerRules        = "rules"
 	LayerFacades      = "facades"
 	LayerDatabase     = "database"
@@ -52,7 +51,6 @@ var zones = map[string]string{
 	"app/mails":        LayerMails,
 	"app/console":      LayerConsole,
 	"app/jobs":         LayerJobs,
-	"app/events":       LayerEvents,
 	"app/rules":        LayerRules,
 	"app/facades":      LayerFacades,
 	"database":         LayerDatabase,
@@ -69,7 +67,7 @@ var zones = map[string]string{
 var everything = []string{
 	LayerBootstrap, LayerConfig, LayerRoutes, LayerContainer, LayerProviders, LayerHTTP,
 	LayerPolicies, LayerServices, LayerAdapters, LayerRepositories, LayerModels,
-	LayerMails, LayerConsole, LayerJobs, LayerEvents, LayerRules, LayerFacades, LayerDatabase,
+	LayerMails, LayerConsole, LayerJobs, LayerRules, LayerFacades, LayerDatabase,
 	LayerPackages, LayerDocs,
 }
 
@@ -97,7 +95,6 @@ var allowed = map[string][]string{
 	LayerRules:        {LayerModels},
 	LayerConsole:      {LayerConsole, LayerContainer, LayerServices, LayerModels},
 	LayerJobs:         {LayerContainer, LayerServices, LayerModels},
-	LayerEvents:       {LayerEvents, LayerJobs, LayerContainer, LayerServices, LayerModels},
 	LayerDatabase:     {LayerDatabase, LayerConfig, LayerServices, LayerAdapters, LayerRepositories, LayerModels},
 	LayerTests:        append([]string{LayerTests}, everything...),
 	LayerTools:        append([]string{LayerTools}, everything...),

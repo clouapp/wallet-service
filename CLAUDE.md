@@ -307,9 +307,9 @@ snapshots in the `localstack_data` volume; the snapshot key lives in
 | `app/services/` | business logic and, for now, the chain/provider/AWS adapters |
 | `app/repositories/`, `app/models/` | persistence and schema types |
 | `app/policies/`, `app/providers/` | Gate policies; service providers and the container wiring |
-| `app/console/`, `app/jobs/`, `app/events/`, `app/mails/`, `app/rules/` | artisan commands, queue jobs, events, mail, validation rules |
+| `app/console/`, `app/jobs/`, `app/mails/`, `app/rules/` | artisan commands, queue jobs, mail, validation rules (there is no `app/events/` or `app/listeners/`) |
 | `database/` | migrations, seeders, seed logic |
-| `pkg/` | `amount`, `types`, `httpclient` |
+| `pkg/`, `packages/` | `pkg/`: `amount`, `numeric`, `types`, `httpclient`, `security`, `pgerr`, `lifecycle`, `mpcshare`, `e2evault`. `packages/activitylog`: Goravel package (own ServiceProvider, listed in `bootstrap/providers.go`) |
 | `tests/` | `feature/support` (suite, docker reuse, fixtures, request signing), hand-written `mocks`, `architecture` (machine-checked rules), `contract` (HTTP contract snapshot) |
 | `docs/` | Swagger output and design notes (`GORAVEL_INTEGRATION.md`, `INTEGRATION_STATUS.md` are historical) |
 
@@ -409,10 +409,9 @@ back/
 ├── pkg/
 │   ├── types/               # Shared types (WebhookMessage, etc.)
 │   ├── security/            # Input sanitization
-│   ├── pyjson/              # Python-compatible JSON (ledger/snapshot formats)
 │   └── e2evault/            # Verified wallet passphrases from the e2e vault
 ├── docs/                    # Swagger specs + design docs
-├── tools/                   # Standalone binaries: macro-e2e, localstack-secrets-snapshot
+├── tools/                   # Standalone binaries: macro-e2e, localstack-secrets-snapshot (`internal/pyjson`: Python-compatible JSON for their ledger/snapshot formats)
 └── tests/                   # Mocks + test utilities
 ```
 

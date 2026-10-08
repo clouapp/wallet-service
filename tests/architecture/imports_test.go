@@ -130,7 +130,6 @@ func TestLayer_Maps_EveryKnownZone(t *testing.T) {
 		"database/seeders":                LayerDatabase,
 		"tests/feature/support/testenv":   LayerTests,
 		"app/repositories":                LayerRepositories,
-		"app/events":                      LayerEvents,
 		"app/services/chain/testdata/sol": LayerServices,
 	}
 	for dir, want := range cases {
