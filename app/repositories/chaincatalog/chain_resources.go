@@ -1,11 +1,11 @@
-package seeds
+package chaincatalog
 
 import (
 	"context"
 )
 
 // SeedChainResources inserts explorer / faucet links per chain.
-func SeedChainResources(_ context.Context) error {
+func (cat *Catalog) SeedChainResources(_ context.Context) error {
 	resources := []resourceSeed{
 		{"eth", "explorer", "Etherscan", "https://etherscan.io"},
 		{"teth", "explorer", "Sepolia Etherscan", "https://sepolia.etherscan.io"},
@@ -22,17 +22,17 @@ func SeedChainResources(_ context.Context) error {
 		{"tsol", "faucet", "Solana Devnet Faucet", "https://faucet.solana.com"},
 	}
 
-	profile, err := configuredChainNetworkProfile()
+	profile, err := cat.profile()
 	if err != nil {
 		return err
 	}
-	added, err := addedChainResources(profileOrMainnet(profile))
+	added, err := cat.addedChainResources(profileOrMainnet(profile))
 	if err != nil {
 		return err
 	}
 
 	for _, r := range append(resources, added...) {
-		if _, err := createResourceUnlessPresent(r); err != nil {
+		if _, err := cat.createResourceUnlessPresent(r); err != nil {
 			return err
 		}
 	}

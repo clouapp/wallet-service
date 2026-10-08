@@ -4,7 +4,9 @@ import (
 	"context"
 	"testing"
 
-	"github.com/macrowallets/waas/database/seeds"
+	"github.com/goravel/framework/facades"
+
+	"github.com/macrowallets/waas/app/repositories/chaincatalog"
 	"github.com/macrowallets/waas/tests/feature/support/fixtures"
 )
 
@@ -21,10 +23,11 @@ func SeededTestDB(t *testing.T) {
 	fixtures.TestDB(t)
 
 	ctx := context.Background()
-	if err := seeds.SeedChains(ctx); err != nil {
+	catalog := chaincatalog.New(facades.Config(), facades.Crypt())
+	if err := catalog.SeedChains(ctx); err != nil {
 		t.Fatalf("SeedChains: %v", err)
 	}
-	if err := seeds.SeedTokens(ctx); err != nil {
+	if err := catalog.SeedTokens(ctx); err != nil {
 		t.Fatalf("SeedTokens: %v", err)
 	}
 }

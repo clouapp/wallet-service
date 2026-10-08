@@ -1,4 +1,4 @@
-package seeds_test
+package seeders_test
 
 import (
 	"context"
@@ -11,13 +11,13 @@ import (
 
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/repositories"
-	"github.com/macrowallets/waas/database/seeds"
+	"github.com/macrowallets/waas/database/seeders"
 	"github.com/macrowallets/waas/pkg/numeric"
 	"github.com/macrowallets/waas/tests/feature/support/fixtures"
 )
 
 func TestCurrencies_Seed_DoesNotQueryOutsideTheRepository(t *testing.T) {
-	source, err := os.ReadFile("currencies.go")
+	source, err := os.ReadFile("currency_seeder.go")
 	if err != nil {
 		t.Fatalf("read currencies seed: %v", err)
 	}
@@ -32,7 +32,7 @@ func TestCurrencies_Seed_DoesNotQueryOutsideTheRepository(t *testing.T) {
 func TestSeed_Currencies_InsertsTheCatalogAndLeavesExistingRowsOnRerun(t *testing.T) {
 	fixtures.TestDB(t)
 	ctx := context.Background()
-	if err := seeds.SeedCurrencies(ctx); err != nil {
+	if err := (&seeders.CurrencySeeder{}).Run(); err != nil {
 		t.Fatalf("seed currencies: %v", err)
 	}
 
@@ -52,7 +52,7 @@ func TestSeed_Currencies_InsertsTheCatalogAndLeavesExistingRowsOnRerun(t *testin
 	if err := currencies.SetPrice(ctx, "BTC", decimal.NewFromInt(42), decimal.NewFromInt(41)); err != nil {
 		t.Fatalf("drift bitcoin price: %v", err)
 	}
-	if err := seeds.SeedCurrencies(ctx); err != nil {
+	if err := (&seeders.CurrencySeeder{}).Run(); err != nil {
 		t.Fatalf("reseed currencies: %v", err)
 	}
 
@@ -93,7 +93,7 @@ func TestSeed_Currencies_KeepsADisabledRow(t *testing.T) {
 		t.Fatalf("create disabled bitcoin: %v", err)
 	}
 
-	if err := seeds.SeedCurrencies(ctx); err != nil {
+	if err := (&seeders.CurrencySeeder{}).Run(); err != nil {
 		t.Fatalf("seed currencies: %v", err)
 	}
 
@@ -115,7 +115,7 @@ func TestSeed_Currencies_KeepsADisabledRow(t *testing.T) {
 		t.Fatalf("ethereum was not seeded beside the disabled bitcoin")
 	}
 
-	if err := seeds.SeedCurrencies(ctx); err != nil {
+	if err := (&seeders.CurrencySeeder{}).Run(); err != nil {
 		t.Fatalf("reseed currencies: %v", err)
 	}
 	btc, err = currencies.FindByCode(ctx, "BTC")

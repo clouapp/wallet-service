@@ -1,4 +1,4 @@
-package seeds
+package chaincatalog
 
 import (
 	"testing"

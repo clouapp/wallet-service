@@ -1,4 +1,4 @@
-package seeds_test
+package seeders_test
 
 import (
 	"context"
@@ -10,12 +10,12 @@ import (
 
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/repositories"
-	"github.com/macrowallets/waas/database/seeds"
+	"github.com/macrowallets/waas/database/seeders"
 	"github.com/macrowallets/waas/tests/feature/support/fixtures"
 )
 
 func TestAccounts_Seed_DoesNotQueryOutsideTheRepository(t *testing.T) {
-	source, err := os.ReadFile("accounts.go")
+	source, err := os.ReadFile("paired_account_seeder.go")
 	if err != nil {
 		t.Fatalf("read accounts seed: %v", err)
 	}
@@ -34,12 +34,12 @@ func TestSeed_Paired_AccountsInsertsAndRestoresTheLinkOnRerun(t *testing.T) {
 	testID := uuid.MustParse("00000000-0000-0000-0000-000000000011")
 	accounts := repositories.NewAccountRepository(nil)
 
-	if err := seeds.SeedPairedAccounts(ctx); err != nil {
+	if err := (&seeders.PairedAccountSeeder{}).Run(); err != nil {
 		t.Fatalf("seed accounts: %v", err)
 	}
 	assertPairedAccounts(t, ctx, accounts, prodID, testID)
 
-	if err := seeds.SeedPairedAccounts(ctx); err != nil {
+	if err := (&seeders.PairedAccountSeeder{}).Run(); err != nil {
 		t.Fatalf("reseed accounts: %v", err)
 	}
 	assertPairedAccounts(t, ctx, accounts, prodID, testID)
@@ -78,7 +78,7 @@ func TestSeed_Paired_AccountsInsertsAndRestoresTheLinkOnRerun(t *testing.T) {
 		t.Fatalf("relink test: %v", err)
 	}
 
-	if err := seeds.SeedPairedAccounts(ctx); err != nil {
+	if err := (&seeders.PairedAccountSeeder{}).Run(); err != nil {
 		t.Fatalf("reseed after drift: %v", err)
 	}
 

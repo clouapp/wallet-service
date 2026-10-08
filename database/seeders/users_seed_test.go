@@ -1,4 +1,4 @@
-package seeds_test
+package seeders_test
 
 import (
 	"context"
@@ -11,7 +11,7 @@ import (
 
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/repositories"
-	"github.com/macrowallets/waas/database/seeds"
+	"github.com/macrowallets/waas/database/seeders"
 	"github.com/macrowallets/waas/tests/feature/support/fixtures"
 	"github.com/macrowallets/waas/tests/feature/support/testutil"
 )
@@ -22,7 +22,7 @@ func TestMain(m *testing.M) {
 }
 
 func TestUsers_Seed_DoesNotQueryOutsideTheRepository(t *testing.T) {
-	source, err := os.ReadFile("users.go")
+	source, err := os.ReadFile("user_seeder.go")
 	if err != nil {
 		t.Fatalf("read users seed: %v", err)
 	}
@@ -48,7 +48,7 @@ func TestSeed_Users_InsertsDashboardUsersAndKeepsThemOnRerun(t *testing.T) {
 		t.Fatalf("create default account: %v", err)
 	}
 
-	if err := seeds.SeedUsers(ctx); err != nil {
+	if err := (&seeders.UserSeeder{}).Run(); err != nil {
 		t.Fatalf("seed users: %v", err)
 	}
 
@@ -83,7 +83,7 @@ func TestSeed_Users_InsertsDashboardUsersAndKeepsThemOnRerun(t *testing.T) {
 		hashes[i] = found.PasswordHash
 	}
 
-	if err := seeds.SeedUsers(ctx); err != nil {
+	if err := (&seeders.UserSeeder{}).Run(); err != nil {
 		t.Fatalf("reseed users: %v", err)
 	}
 	for i, row := range want {
@@ -120,7 +120,7 @@ func TestSeed_Users_InsertsDashboardUsersAndKeepsThemOnRerun(t *testing.T) {
 		t.Fatalf("clear default account: %v", err)
 	}
 
-	if err := seeds.SeedUsers(ctx); err != nil {
+	if err := (&seeders.UserSeeder{}).Run(); err != nil {
 		t.Fatalf("reseed after drift: %v", err)
 	}
 	admin, err := users.FindByID(ctx, adminID)

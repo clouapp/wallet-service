@@ -1,4 +1,4 @@
-package seeds_test
+package chaincatalog_test
 
 import (
 	"context"
@@ -12,7 +12,6 @@ import (
 
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/repositories"
-	"github.com/macrowallets/waas/database/seeds"
 	"github.com/macrowallets/waas/pkg/numeric"
 	"github.com/macrowallets/waas/pkg/types"
 	"github.com/macrowallets/waas/tests/feature/support/fixtures"
@@ -38,7 +37,7 @@ func TestSeed_Chains_InsertsChainsAndRefreshesOnlyTheSealedEndpointOnRerun(t *te
 		t.Fatalf("expected an empty chain network profile, got %q", profile)
 	}
 
-	if err := seeds.SeedChains(ctx); err != nil {
+	if err := newCatalog().SeedChains(ctx); err != nil {
 		t.Fatalf("seed chains: %v", err)
 	}
 	assertSeededChains(t, ctx)
@@ -59,7 +58,7 @@ func TestSeed_Chains_InsertsChainsAndRefreshesOnlyTheSealedEndpointOnRerun(t *te
 		t.Fatalf("drift eth thresholds: %v", err)
 	}
 
-	if err := seeds.SeedChains(ctx); err != nil {
+	if err := newCatalog().SeedChains(ctx); err != nil {
 		t.Fatalf("reseed chains: %v", err)
 	}
 

@@ -9,5 +9,4 @@ app/services/webhooksync imports the framework facades
 config imports the framework facades (x10)
 database/migrations imports the framework facades (x36)
 database/seeders imports the framework facades
-database/seeds imports the framework facades (x4)
 routes imports the framework facades (x4)

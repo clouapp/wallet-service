@@ -9,16 +9,16 @@ import (
 
 	"github.com/macrowallets/waas/app/container"
 	"github.com/macrowallets/waas/app/models"
+	"github.com/macrowallets/waas/app/repositories/chaincatalog"
 	"github.com/macrowallets/waas/app/services/chainregistry"
 	"github.com/macrowallets/waas/app/services/evmcall"
 	"github.com/macrowallets/waas/app/services/sweep"
-	"github.com/macrowallets/waas/database/seeds"
 )
 
 const chainNetworkProfileConfigKey = "vault.chains.network_profile"
 
 func seedMissingAddedChains(ctx context.Context, apply bool) (chainregistry.AddedChainsPlan, error) {
-	plan, err := seeds.SeedMissingAddedChains(ctx, apply)
+	plan, err := chaincatalog.New(facades.Config(), facades.Crypt()).SeedMissingAddedChains(ctx, apply)
 	if err != nil {
 		return chainregistry.AddedChainsPlan{}, err
 	}

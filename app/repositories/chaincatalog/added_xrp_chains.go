@@ -1,4 +1,4 @@
-package seeds
+package chaincatalog
 
 import (
 	"github.com/macrowallets/waas/app/models"
@@ -20,8 +20,8 @@ var AddedXRPChainIDs = []string{
 	models.ChainTXRP,
 }
 
-func addedXRPChainSeeds() []chainSeed {
-	return buildAddedXRPChainSeeds(configuredConfirmations)
+func (cat *Catalog) addedXRPChainSeeds() []chainSeed {
+	return buildAddedXRPChainSeeds(cat.configuredConfirmations)
 }
 
 // buildAddedXRPChainSeeds lists the XRP Ledger records. confirmations returns

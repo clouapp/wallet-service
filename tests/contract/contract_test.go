@@ -17,8 +17,9 @@ import (
 	"github.com/goravel/framework/facades"
 
 	"github.com/macrowallets/waas/app/container"
+	"github.com/macrowallets/waas/app/repositories/chaincatalog"
 	"github.com/macrowallets/waas/bootstrap"
-	"github.com/macrowallets/waas/database/seeds"
+	"github.com/macrowallets/waas/database/seeders"
 	"github.com/macrowallets/waas/tests/feature/support/fixtures"
 	"github.com/macrowallets/waas/tests/feature/support/testenv"
 )
@@ -120,14 +121,15 @@ func refuseOutboundMail(t *testing.T) {
 func seedReferenceData(t *testing.T) {
 	t.Helper()
 	ctx := context.Background()
+	catalog := chaincatalog.New(facades.Config(), facades.Crypt())
 	// Ordered: tokens reference chains.
 	referenceSeeds := []struct {
 		name string
 		seed func(context.Context) error
 	}{
-		{"chains", seeds.SeedChains},
-		{"tokens", seeds.SeedTokens},
-		{"currencies", seeds.SeedCurrencies},
+		{"chains", catalog.SeedChains},
+		{"tokens", catalog.SeedTokens},
+		{"currencies", func(context.Context) error { return (&seeders.CurrencySeeder{}).Run() }},
 	}
 	for _, reference := range referenceSeeds {
 		if err := reference.seed(ctx); err != nil {

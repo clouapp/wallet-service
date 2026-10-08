@@ -1,4 +1,4 @@
-package seeds
+package chaincatalog
 
 import (
 	"github.com/macrowallets/waas/app/models"
@@ -22,8 +22,8 @@ var AddedTronLitecoinChainIDs = []string{
 	models.ChainTTron, models.ChainTLTC,
 }
 
-func addedTronLitecoinChainSeeds() []chainSeed {
-	return buildAddedTronLitecoinChainSeeds(configuredConfirmations)
+func (cat *Catalog) addedTronLitecoinChainSeeds() []chainSeed {
+	return buildAddedTronLitecoinChainSeeds(cat.configuredConfirmations)
 }
 
 // buildAddedTronLitecoinChainSeeds lists the TRON and Litecoin records;

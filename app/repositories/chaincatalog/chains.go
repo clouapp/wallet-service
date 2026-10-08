@@ -1,4 +1,4 @@
-package seeds
+package chaincatalog
 
 import (
 	"context"
@@ -7,7 +7,6 @@ import (
 	"log/slog"
 
 	"github.com/google/uuid"
-	"github.com/goravel/framework/facades"
 
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/repositories"
@@ -36,8 +35,8 @@ type chainSeed struct {
 }
 
 // chainSeeds lists every chain record, mainnets before testnets (FK targets first).
-func chainSeeds() []chainSeed {
-	return chainSeedsWith(addedChainSeeds())
+func (cat *Catalog) chainSeeds() []chainSeed {
+	return chainSeedsWith(cat.addedChainSeeds())
 }
 
 func chainSeedsWith(added []chainSeed) []chainSeed {
@@ -73,20 +72,20 @@ func chainSeedsWith(added []chainSeed) []chainSeed {
 // CHAIN_NETWORK_PROFILE set, the primary records (eth, btc, polygon, sol, base,
 // arbitrum, bsc) are created on that profile's networks and existing rows are
 // realigned to it (chains:align-network).
-func SeedChains(ctx context.Context) error {
-	profile, err := configuredChainNetworkProfile()
+func (cat *Catalog) SeedChains(ctx context.Context) error {
+	profile, err := cat.profile()
 	if err != nil {
 		return err
 	}
 
 	chains := repositories.NewChainRepository(nil)
-	for _, c := range chainSeeds() {
+	for _, c := range cat.chainSeeds() {
 		c, err = withProfileNetwork(c, profile)
 		if err != nil {
 			return err
 		}
 
-		encRPC, err := encryptSeedRPC(c)
+		encRPC, err := cat.encryptSeedRPC(c)
 		if err != nil {
 			return fmt.Errorf("encrypt RPC for chain %s: %w", c.id, err)
 		}
@@ -117,7 +116,7 @@ func SeedChains(ctx context.Context) error {
 	if profile == "" {
 		return nil
 	}
-	return alignSeededChains(ctx, profile)
+	return cat.alignSeededChains(ctx, profile)
 }
 
 // withProfileNetwork points a primary record at the network profile selects; the
@@ -137,15 +136,11 @@ func withProfileNetwork(c chainSeed, profile string) (chainSeed, error) {
 	return c, nil
 }
 
-func encryptSeedRPC(c chainSeed) (string, error) {
+func (cat *Catalog) encryptSeedRPC(c chainSeed) (string, error) {
 	if c.rpcEnvReference {
-		return facades.Crypt().EncryptString(models.RPCURLEnvPrefix + c.envVar)
+		return cat.cipher.EncryptString(models.RPCURLEnvPrefix + c.envVar)
 	}
-	return encryptRPCFromEnv(c.envVar)
-}
-
-func createSeedChain(c chainSeed, encRPC string, thresholds *seedThresholds) error {
-	return insertSeedChain(context.Background(), repositories.NewChainRepository(nil), c, encRPC, thresholds)
+	return cat.encryptRPCFromEnv(c.envVar)
 }
 
 func insertSeedChain(ctx context.Context, chains *repositories.ChainRepository, c chainSeed, encRPC string, thresholds *seedThresholds) error {
@@ -182,9 +177,9 @@ func insertSeedChain(ctx context.Context, chains *repositories.ChainRepository, 
 
 // alignSeededChains realigns rows that existed before the seed. No RPC probe: the
 // seed runs offline; chains:align-network checks the RPCs.
-func alignSeededChains(ctx context.Context, profile string) error {
+func (cat *Catalog) alignSeededChains(ctx context.Context, profile string) error {
 	store := repositories.NewChainRegistryRepository(nil)
-	alignment, err := chainregistry.PlanAlignment(ctx, profile, store, facades.Crypt().DecryptString, nil, uuid.Nil)
+	alignment, err := chainregistry.PlanAlignment(ctx, profile, store, cat.cipher.DecryptString, nil, uuid.Nil)
 	if err != nil {
 		return fmt.Errorf("align chains to the %s profile: %w", profile, err)
 	}

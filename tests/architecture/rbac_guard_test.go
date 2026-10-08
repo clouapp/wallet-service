@@ -21,7 +21,6 @@ var rbacPivotWriters = []string{
 	"app/policies",
 	"database/migrations",
 	"database/seeders",
-	"database/seeds",
 }
 
 // TestOnlyPoliciesCallAccountRoleOutranks fails when any production file

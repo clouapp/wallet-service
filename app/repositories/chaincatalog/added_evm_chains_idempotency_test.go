@@ -1,4 +1,4 @@
-package seeds
+package chaincatalog
 
 import (
 	"context"
@@ -22,11 +22,11 @@ func TestAdded_Chain_TokenAndResourceInsertsAreIdempotent(t *testing.T) {
 	}
 
 	token := tokenSeed{chainID: "base", symbol: "USDC", name: "USD Coin", contractAddress: "0xabc", decimals: 6, iconURL: "https://example.invalid/icon"}
-	created, err := createTokenUnlessPresent(token)
+	created, err := testCatalog().createTokenUnlessPresent(token)
 	if err != nil || !created {
 		t.Fatalf("create token: created=%v err=%v", created, err)
 	}
-	created, err = createTokenUnlessPresent(token)
+	created, err = testCatalog().createTokenUnlessPresent(token)
 	if err != nil || created {
 		t.Fatalf("repeat token insert: created=%v err=%v", created, err)
 	}
@@ -38,7 +38,7 @@ func TestAdded_Chain_TokenAndResourceInsertsAreIdempotent(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("create disabled token: %v", err)
 	}
-	created, err = createTokenUnlessPresent(tokenSeed{
+	created, err = testCatalog().createTokenUnlessPresent(tokenSeed{
 		chainID: "base", symbol: "OLD", name: "Old", contractAddress: "0xdef", decimals: 6, iconURL: "https://example.invalid/icon",
 	})
 	if err != nil || created {
@@ -50,11 +50,11 @@ func TestAdded_Chain_TokenAndResourceInsertsAreIdempotent(t *testing.T) {
 	}
 
 	resource := resourceSeed{chainID: "base", resourceType: "explorer", name: "Blockscout", url: "https://example.invalid/explorer"}
-	created, err = createResourceUnlessPresent(resource)
+	created, err = testCatalog().createResourceUnlessPresent(resource)
 	if err != nil || !created {
 		t.Fatalf("create resource: created=%v err=%v", created, err)
 	}
-	created, err = createResourceUnlessPresent(resource)
+	created, err = testCatalog().createResourceUnlessPresent(resource)
 	if err != nil || created {
 		t.Fatalf("repeat resource insert: created=%v err=%v", created, err)
 	}
@@ -65,7 +65,7 @@ func TestAdded_Chain_TokenAndResourceInsertsAreIdempotent(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("create disabled resource: %v", err)
 	}
-	created, err = createResourceUnlessPresent(resourceSeed{
+	created, err = testCatalog().createResourceUnlessPresent(resourceSeed{
 		chainID: "base", resourceType: "faucet", name: "Old faucet", url: "https://example.invalid/other",
 	})
 	if err != nil || created {

@@ -1,4 +1,4 @@
-package seeds
+package seeders
 
 import (
 	"context"
@@ -115,7 +115,7 @@ func TestValidate_Existing_SeedWalletSecretRejectsNilDependencies(t *testing.T) 
 }
 
 func TestWallets_Seed_DoesNotQueryOutsideTheRepository(t *testing.T) {
-	source, err := os.ReadFile("wallets.go")
+	source, err := os.ReadFile("wallet_seeder.go")
 	if err != nil {
 		t.Fatalf("read wallets seed: %v", err)
 	}

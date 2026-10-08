@@ -1,4 +1,4 @@
-package seeds_test
+package chaincatalog_test
 
 import (
 	"context"
@@ -10,7 +10,6 @@ import (
 
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/repositories"
-	"github.com/macrowallets/waas/database/seeds"
 	"github.com/macrowallets/waas/tests/feature/support/fixtures"
 )
 
@@ -34,10 +33,10 @@ func TestSeed_Sweep_ThresholdsWritesTheCatalogAndRefreshesItOnRerun(t *testing.T
 		t.Fatalf("expected an empty chain network profile, got %q", profile)
 	}
 
-	if err := seeds.SeedChains(ctx); err != nil {
+	if err := newCatalog().SeedChains(ctx); err != nil {
 		t.Fatalf("seed chains: %v", err)
 	}
-	if err := seeds.SeedSweepThresholds(ctx); err != nil {
+	if err := newCatalog().SeedSweepThresholds(ctx); err != nil {
 		t.Fatalf("seed sweep thresholds: %v", err)
 	}
 	assertSweepThresholdCatalog(t, ctx)
@@ -63,7 +62,7 @@ func TestSeed_Sweep_ThresholdsWritesTheCatalogAndRefreshesItOnRerun(t *testing.T
 		t.Fatalf("drift btc gas: %v", err)
 	}
 
-	if err := seeds.SeedSweepThresholds(ctx); err != nil {
+	if err := newCatalog().SeedSweepThresholds(ctx); err != nil {
 		t.Fatalf("reseed sweep thresholds: %v", err)
 	}
 	assertSweepThresholdCatalog(t, ctx)
@@ -79,7 +78,7 @@ func TestSeed_Sweep_ThresholdsWritesTheCatalogAndRefreshesItOnRerun(t *testing.T
 		t.Fatal("reseed stored an endpoint in the clear")
 	}
 
-	if err := seeds.SeedSweepThresholds(ctx); err != nil {
+	if err := newCatalog().SeedSweepThresholds(ctx); err != nil {
 		t.Fatalf("second reseed: %v", err)
 	}
 	assertSweepThresholdCatalog(t, ctx)

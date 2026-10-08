@@ -4,7 +4,11 @@ Reference for the fixtures created by `make db-seed` / `make migrate-fresh-seed`
 All values are test-only — LocalStack, devnet/testnet RPCs, deterministic UUIDs.
 Safe to commit. **Never use any of these values against mainnet.**
 
-Seed logic: `database/seeds/` · invoked by `database/seeders/DatabaseSeeder`.
+Seed logic: `database/seeders/` · `DatabaseSeeder` is the only registered seeder, so
+`artisan db:seed --seeder=ChainSeeder` (or any other sub-seeder) fails with
+`DatabaseSeederNotFound`; `db:seed` always runs the whole chain. The chain, token,
+resource and threshold catalog the seeders write is `app/repositories/chaincatalog`
+(shared with the production command `chains:add-missing`).
 
 ---
 
@@ -16,7 +20,7 @@ Seed logic: `database/seeds/` · invoked by `database/seeders/DatabaseSeeder`.
 | `alice@macro.markets` | `secret` | Account admin |
 | `bob@macro.markets` | `secret`  | Auditor |
 
-User UUIDs (`database/seeds/ids.go`):
+User UUIDs (`database/seeders/ids.go`):
 
 | User | ID |
 |---|---|

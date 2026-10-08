@@ -1,4 +1,4 @@
-package seeds
+package chaincatalog
 
 import (
 	"context"
@@ -7,7 +7,7 @@ import (
 )
 
 // SeedTokens inserts ERC-20 / SPL-style token rows per chain.
-func SeedTokens(_ context.Context) error {
+func (cat *Catalog) SeedTokens(_ context.Context) error {
 	tokens := []tokenSeed{
 		{"eth", "USDT", "Tether USD", "0xdAC17F958D2ee523a2206206994597C13D831ec7", 6, cmcIconBase + "/825.png"},
 		{"eth", "USDC", "USD Coin", "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48", 6, cmcIconBase + "/3408.png"},
@@ -36,17 +36,17 @@ func SeedTokens(_ context.Context) error {
 		{"tsol", "USDC", "USD Coin (Test)", "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU", 6, cmcIconBase + "/3408.png"},
 	}
 
-	profile, err := configuredChainNetworkProfile()
+	profile, err := cat.profile()
 	if err != nil {
 		return err
 	}
-	added, err := addedChainTokens(profileOrMainnet(profile))
+	added, err := cat.addedChainTokens(profileOrMainnet(profile))
 	if err != nil {
 		return err
 	}
 
 	for _, t := range append(tokens, added...) {
-		if _, err := createTokenUnlessPresent(t); err != nil {
+		if _, err := cat.createTokenUnlessPresent(t); err != nil {
 			return err
 		}
 	}

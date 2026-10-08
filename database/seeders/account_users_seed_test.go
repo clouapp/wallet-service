@@ -1,4 +1,4 @@
-package seeds_test
+package seeders_test
 
 import (
 	"context"
@@ -10,12 +10,12 @@ import (
 
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/repositories"
-	"github.com/macrowallets/waas/database/seeds"
+	"github.com/macrowallets/waas/database/seeders"
 	"github.com/macrowallets/waas/tests/feature/support/fixtures"
 )
 
 func TestAccount_Users_SeedDoesNotQueryOutsideTheRepository(t *testing.T) {
-	source, err := os.ReadFile("account_users.go")
+	source, err := os.ReadFile("account_user_seeder.go")
 	if err != nil {
 		t.Fatalf("read account users seed: %v", err)
 	}
@@ -31,18 +31,18 @@ func TestSeed_Account_UsersInsertsMembershipsAndLeavesThemOnRerun(t *testing.T) 
 	fixtures.TestDB(t)
 	ctx := context.Background()
 
-	if err := seeds.SeedPairedAccounts(ctx); err != nil {
+	if err := (&seeders.PairedAccountSeeder{}).Run(); err != nil {
 		t.Fatalf("seed accounts: %v", err)
 	}
-	if err := seeds.SeedUsers(ctx); err != nil {
+	if err := (&seeders.UserSeeder{}).Run(); err != nil {
 		t.Fatalf("seed users: %v", err)
 	}
-	if err := seeds.SeedAccountUsers(ctx); err != nil {
+	if err := (&seeders.AccountUserSeeder{}).Run(); err != nil {
 		t.Fatalf("seed account users: %v", err)
 	}
 	assertSeededAccountUsers(t, ctx)
 
-	if err := seeds.SeedAccountUsers(ctx); err != nil {
+	if err := (&seeders.AccountUserSeeder{}).Run(); err != nil {
 		t.Fatalf("reseed account users: %v", err)
 	}
 	assertSeededAccountUsers(t, ctx)
@@ -56,7 +56,7 @@ func TestSeed_Account_UsersInsertsMembershipsAndLeavesThemOnRerun(t *testing.T) 
 		t.Fatalf("change membership status: %v", err)
 	}
 
-	if err := seeds.SeedAccountUsers(ctx); err != nil {
+	if err := (&seeders.AccountUserSeeder{}).Run(); err != nil {
 		t.Fatalf("reseed after drift: %v", err)
 	}
 

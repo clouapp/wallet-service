@@ -133,7 +133,7 @@ Known violations include `app/models → app/services/mpc` and `config → app/m
   in **AWS Secrets Manager** (LocalStack locally), referenced by `MPCSecretARN` — its
   value is never in the database. — guarded by `app/services/mpc/*_test.go`
   (`TestEncryptDecryptRoundTrip`, `TestDecryptWrongPassphrase`, keygen and signing tests)
-  and `TestValidateExistingSeedWalletSecret*` (`database/seeds`).
+  and `TestValidateExistingSeedWalletSecret*` (`database/seeders`).
 - Key material (shares, passphrases, derived keys) is never returned after the one-time
   recovery material at creation, never logged, queued or cached. — guarded by
   `TestWalletRecoveryMaterialSuite` (`app/http/controllers/wallets_recovery_material_test.go`).
@@ -165,7 +165,10 @@ Known violations include `app/models → app/services/mpc` and `config → app/m
   migration tests beside them (e.g. `non_negative_amounts_test.go`).
 - Amounts are base-unit integers/strings (`pkg/amount`, `numeric` columns), never floats,
   and never negative. — guarded by `TestEnforceNonNegativeAmounts*`.
-- Seed data is test-only (`database/seeds`, `docs/DEV_SEED_DATA.md`).
+- Seed data is test-only (`database/seeders`, `docs/DEV_SEED_DATA.md`). Only `DatabaseSeeder` is
+  registered, so `db:seed --seeder=ChainSeeder` is not available. The chain catalog that
+  `chains:add-missing` writes in production is not seed data: it lives in
+  `app/repositories/chaincatalog`.
 
 ### 9. Tests never touch live data
 
@@ -403,8 +406,7 @@ back/
 │
 ├── database/
 │   ├── migrations/          # Goravel schema migrations (*.go)
-│   ├── seeders/             # Artisan seeders (DatabaseSeeder → `db:seed`)
-│   └── seeds/               # Seed logic (chains, users, wallets, …)
+│   └── seeders/             # Dev seed logic (DatabaseSeeder → `db:seed`)
 │
 ├── pkg/
 │   ├── types/               # Shared types (WebhookMessage, etc.)

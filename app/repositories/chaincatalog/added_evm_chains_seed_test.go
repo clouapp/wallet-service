@@ -1,4 +1,4 @@
-package seeds_test
+package chaincatalog_test
 
 import (
 	"context"
@@ -10,7 +10,7 @@ import (
 
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/repositories"
-	"github.com/macrowallets/waas/database/seeds"
+	"github.com/macrowallets/waas/app/repositories/chaincatalog"
 	"github.com/macrowallets/waas/tests/feature/support/fixtures"
 )
 
@@ -32,11 +32,11 @@ func TestSeed_Missing_AddedChainsInsertsOnceAndLeavesExistingRows(t *testing.T) 
 	ctx := context.Background()
 	restoreChainNetworkProfile(t, models.ChainNetworkProfileMainnet)
 
-	dry, err := seeds.SeedMissingAddedChains(ctx, false)
+	dry, err := newCatalog().SeedMissingAddedChains(ctx, false)
 	if err != nil {
 		t.Fatalf("dry run: %v", err)
 	}
-	if len(dry.Chains) != len(seeds.AddedChainIDs) || len(dry.Skipped) != 0 || len(dry.Tokens) != 9 || len(dry.Resources) != 18 {
+	if len(dry.Chains) != len(chaincatalog.AddedChainIDs) || len(dry.Skipped) != 0 || len(dry.Tokens) != 9 || len(dry.Resources) != 18 {
 		t.Fatalf("dry run reported chains=%d skipped=%d tokens=%d resources=%d", len(dry.Chains), len(dry.Skipped), len(dry.Tokens), len(dry.Resources))
 	}
 	chains := repositories.NewChainRepository(nil)
@@ -44,11 +44,11 @@ func TestSeed_Missing_AddedChainsInsertsOnceAndLeavesExistingRows(t *testing.T) 
 		t.Fatalf("dry run wrote %d chains (%v)", len(existing), err)
 	}
 
-	created, err := seeds.SeedMissingAddedChains(ctx, true)
+	created, err := newCatalog().SeedMissingAddedChains(ctx, true)
 	if err != nil {
 		t.Fatalf("seed added chains: %v", err)
 	}
-	if len(created.Chains) != len(seeds.AddedChainIDs) || len(created.Skipped) != 0 || len(created.Tokens) != 9 || len(created.Resources) != 18 {
+	if len(created.Chains) != len(chaincatalog.AddedChainIDs) || len(created.Skipped) != 0 || len(created.Tokens) != 9 || len(created.Resources) != 18 {
 		t.Fatalf("seed reported chains=%d skipped=%d tokens=%d resources=%d", len(created.Chains), len(created.Skipped), len(created.Tokens), len(created.Resources))
 	}
 	assertAddedEVMChains(t, ctx)
@@ -67,11 +67,11 @@ func TestSeed_Missing_AddedChainsInsertsOnceAndLeavesExistingRows(t *testing.T) 
 		t.Fatalf("drift base thresholds: %v", err)
 	}
 
-	again, err := seeds.SeedMissingAddedChains(ctx, true)
+	again, err := newCatalog().SeedMissingAddedChains(ctx, true)
 	if err != nil {
 		t.Fatalf("reseed added chains: %v", err)
 	}
-	if len(again.Chains) != 0 || len(again.Tokens) != 0 || len(again.Resources) != 0 || len(again.Skipped) != len(seeds.AddedChainIDs) {
+	if len(again.Chains) != 0 || len(again.Tokens) != 0 || len(again.Resources) != 0 || len(again.Skipped) != len(chaincatalog.AddedChainIDs) {
 		t.Fatalf("reseed reported chains=%d skipped=%d tokens=%d resources=%d", len(again.Chains), len(again.Skipped), len(again.Tokens), len(again.Resources))
 	}
 

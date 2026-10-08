@@ -1,4 +1,4 @@
-package seeds
+package chaincatalog
 
 import (
 	"context"
@@ -7,7 +7,6 @@ import (
 	"log/slog"
 
 	"github.com/google/uuid"
-	"github.com/goravel/framework/facades"
 	"github.com/shopspring/decimal"
 
 	"github.com/macrowallets/waas/app/models"
@@ -44,13 +43,13 @@ var AddedEVMChainIDs = []string{
 // AddedChainIDs are every record chains:add-missing may create.
 var AddedChainIDs = append(append(append([]string(nil), AddedEVMChainIDs...), AddedTronLitecoinChainIDs...), AddedXRPChainIDs...)
 
-func addedEVMChainSeeds() []chainSeed {
-	return buildAddedEVMChainSeeds(configuredConfirmations)
+func (cat *Catalog) addedEVMChainSeeds() []chainSeed {
+	return buildAddedEVMChainSeeds(cat.configuredConfirmations)
 }
 
 // addedChainSeeds are the EVM, TRON, Litecoin and XRP Ledger records added after eth/btc/polygon/sol.
-func addedChainSeeds() []chainSeed {
-	return append(append(addedEVMChainSeeds(), addedTronLitecoinChainSeeds()...), addedXRPChainSeeds()...)
+func (cat *Catalog) addedChainSeeds() []chainSeed {
+	return append(append(cat.addedEVMChainSeeds(), cat.addedTronLitecoinChainSeeds()...), cat.addedXRPChainSeeds()...)
 }
 
 // buildAddedEVMChainSeeds lists the added records; confirmations returns the
@@ -69,8 +68,8 @@ func buildAddedEVMChainSeeds(confirmations func(primaryChainID string) int) []ch
 	}
 }
 
-func configuredConfirmations(primaryChainID string) int {
-	return facades.Config().GetInt(confirmationsConfigKey + primaryChainID)
+func (cat *Catalog) configuredConfirmations(primaryChainID string) int {
+	return cat.config.GetInt(confirmationsConfigKey + primaryChainID)
 }
 
 type tokenSeed struct {
@@ -142,8 +141,8 @@ func addedChainNetwork(c chainSeed, profile string) (string, error) {
 	return network, nil
 }
 
-func addedChainTokens(profile string) ([]tokenSeed, error) {
-	return tokensForChains(addedChainSeeds(), profile)
+func (cat *Catalog) addedChainTokens(profile string) ([]tokenSeed, error) {
+	return tokensForChains(cat.addedChainSeeds(), profile)
 }
 
 func tokensOfNetwork(network string) []tokenSeed {
@@ -178,8 +177,8 @@ func tokensForChains(chains []chainSeed, profile string) ([]tokenSeed, error) {
 	return tokens, nil
 }
 
-func addedChainResources(profile string) ([]resourceSeed, error) {
-	return resourcesForChains(addedChainSeeds(), profile)
+func (cat *Catalog) addedChainResources(profile string) ([]resourceSeed, error) {
+	return resourcesForChains(cat.addedChainSeeds(), profile)
 }
 
 func resourcesForChains(chains []chainSeed, profile string) ([]resourceSeed, error) {
@@ -284,20 +283,20 @@ type AddedChain struct {
 // yet, with their thresholds, tokens and resources. It never updates an existing row
 // (unlike SeedChains, which re-encrypts every rpc_url), so it is safe on a live
 // database. With apply false it only reports what it would create.
-func SeedMissingAddedChains(ctx context.Context, apply bool) (AddedChainsResult, error) {
+func (cat *Catalog) SeedMissingAddedChains(ctx context.Context, apply bool) (AddedChainsResult, error) {
 	var result AddedChainsResult
-	profile, err := configuredChainNetworkProfile()
+	profile, err := cat.profile()
 	if err != nil {
 		return result, err
 	}
 	if profile == "" {
 		return result, fmt.Errorf("CHAIN_NETWORK_PROFILE is required: it decides which network base/arbitrum/bsc/tron/ltc/xrp point at")
 	}
-	tokens, err := addedChainTokens(profile)
+	tokens, err := cat.addedChainTokens(profile)
 	if err != nil {
 		return result, err
 	}
-	resources, err := addedChainResources(profile)
+	resources, err := cat.addedChainResources(profile)
 	if err != nil {
 		return result, err
 	}
@@ -307,7 +306,7 @@ func SeedMissingAddedChains(ctx context.Context, apply bool) (AddedChainsResult,
 	resourceRepo := repositories.NewChainResourceRepository(nil)
 
 	ordered := make([]chainSeed, 0)
-	for _, c := range chainSeeds() {
+	for _, c := range cat.chainSeeds() {
 		if isAddedChain(c.id) {
 			ordered = append(ordered, c)
 		}
@@ -338,7 +337,7 @@ func SeedMissingAddedChains(ctx context.Context, apply bool) (AddedChainsResult,
 		if err != nil {
 			return result, err
 		}
-		encRPC, err := encryptSeedRPC(c)
+		encRPC, err := cat.encryptSeedRPC(c)
 		if err != nil {
 			return result, fmt.Errorf("encrypt RPC for chain %s: %w", c.id, err)
 		}
@@ -386,7 +385,7 @@ func isAddedChain(chainID string) bool {
 }
 
 // createTokenUnlessPresent inserts t unless the chain already lists its contract.
-func createTokenUnlessPresent(t tokenSeed) (bool, error) {
+func (cat *Catalog) createTokenUnlessPresent(t tokenSeed) (bool, error) {
 	return insertTokenUnlessPresent(context.Background(), repositories.NewTokenRepository(nil), t)
 }
 
@@ -418,7 +417,7 @@ func insertTokenUnlessPresent(ctx context.Context, tokens *repositories.TokenRep
 
 // createResourceUnlessPresent inserts r unless the chain has a resource of that
 // type and name.
-func createResourceUnlessPresent(r resourceSeed) (bool, error) {
+func (cat *Catalog) createResourceUnlessPresent(r resourceSeed) (bool, error) {
 	return insertResourceUnlessPresent(context.Background(), repositories.NewChainResourceRepository(nil), r)
 }
 

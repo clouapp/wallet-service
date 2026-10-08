@@ -1,4 +1,4 @@
-package seeds
+package chaincatalog
 
 import (
 	"context"
@@ -23,7 +23,7 @@ type thresholdDef struct {
 // An empty gas_readiness_threshold_raw means "not applicable" (BTC) and is stored as an empty
 // string: the column is NOT NULL, and the model reads "" the same way it used to read NULL.
 // Bitcoin dust USD is 0: there are no tokens on BTC.
-func SeedSweepThresholds(ctx context.Context) error {
+func (cat *Catalog) SeedSweepThresholds(ctx context.Context) error {
 	defs, err := sweepThresholdDefs()
 	if err != nil {
 		return err
