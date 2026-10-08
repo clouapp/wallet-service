@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/macrowallets/waas/app/services/addressing"
+	"github.com/macrowallets/waas/app/services/chain"
 	"github.com/macrowallets/waas/pkg/types"
 )
 
@@ -228,7 +229,7 @@ func TestTronDecodeRejectsNonCanonicalOrUnknownData(t *testing.T) {
 func TestTronFeeProbeRecipientDerivation(t *testing.T) {
 	digest := sha256.Sum256([]byte("macro-wallets tron fee probe"))
 	probe, err := addressing.EncodeTronAddress(append([]byte{addressing.TronAddressPrefix}, digest[len(digest)-addressing.TronAddressBodySize:]...))
-	if err != nil || probe != TronFeeProbeRecipient() {
-		t.Fatalf("probe = %s, documented %s (%v)", probe, TronFeeProbeRecipient(), err)
+	if err != nil || probe != chain.TronFeeProbeRecipient() {
+		t.Fatalf("probe = %s, documented %s (%v)", probe, chain.TronFeeProbeRecipient(), err)
 	}
 }
