@@ -22,7 +22,7 @@ func TestFind_MissingRow_IsErrRepositoryNotFound(t *testing.T) {
 	ctx := context.Background()
 	missing, other := uuid.New(), uuid.New()
 	sealed := facades.Crypt()
-	webhookConfigs := repositories.NewWebhookConfigRepository(repositories.WebhookConfigRepositoryDeps{Cipher: sealed})
+	webhookConfigs := repositories.NewWebhookConfigRepository(nil, sealed)
 
 	lookups := map[string]func() error{
 		"account activity": func() error {

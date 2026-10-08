@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	contractsorm "github.com/goravel/framework/contracts/database/orm"
+	"github.com/goravel/framework/contracts/database/orm"
 
 	"github.com/macrowallets/waas/app/repositories/internal/db"
 )
@@ -16,7 +16,7 @@ type ActivityLogRepository struct {
 }
 
 // NewActivityLogRepository wraps an orm.Query. Pass nil for a fresh query per call.
-func NewActivityLogRepository(query contractsorm.Query) *ActivityLogRepository {
+func NewActivityLogRepository(query orm.Query) *ActivityLogRepository {
 	return &ActivityLogRepository{Base: db.NewBase(query)}
 }
 

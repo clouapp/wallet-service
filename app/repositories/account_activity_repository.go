@@ -6,7 +6,7 @@ import (
 	"strings"
 
 	"github.com/google/uuid"
-	contractsorm "github.com/goravel/framework/contracts/database/orm"
+	"github.com/goravel/framework/contracts/database/orm"
 
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/repositories/internal/db"
@@ -23,7 +23,7 @@ type AccountActivityRepository struct {
 }
 
 // NewAccountActivityRepository wraps an orm.Query. Pass nil for a fresh query per call.
-func NewAccountActivityRepository(query contractsorm.Query) *AccountActivityRepository {
+func NewAccountActivityRepository(query orm.Query) *AccountActivityRepository {
 	return &AccountActivityRepository{Base: db.NewBase(query)}
 }
 
@@ -33,7 +33,7 @@ func (r *AccountActivityRepository) Within(ctx context.Context, fn func(context.
 	if fn == nil {
 		return fmt.Errorf("account activity transaction: callback is required")
 	}
-	return r.Transaction(ctx, func(tx contractsorm.Query) error {
+	return r.Transaction(ctx, func(tx orm.Query) error {
 		return fn(db.WithTx(ctx, tx))
 	})
 }

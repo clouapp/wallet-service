@@ -312,9 +312,7 @@ func InsertWebhookConfig(t *testing.T, url, secret string, events []string) mode
 		Events:   pgArray(events),
 		IsActive: true,
 	}
-	if err := repositories.NewWebhookConfigRepository(repositories.WebhookConfigRepositoryDeps{
-		Cipher: facades.Crypt(),
-	}).Create(context.Background(), &cfg); err != nil {
+	if err := repositories.NewWebhookConfigRepository(nil, facades.Crypt()).Create(context.Background(), &cfg); err != nil {
 		t.Fatalf("insert webhook config: %v", err)
 	}
 	return cfg
@@ -333,9 +331,7 @@ func InsertScopedWebhookConfig(t *testing.T, url, secret string, events []string
 		AccountID: accountID,
 		WalletID:  walletID,
 	}
-	if err := repositories.NewWebhookConfigRepository(repositories.WebhookConfigRepositoryDeps{
-		Cipher: facades.Crypt(),
-	}).Create(context.Background(), &cfg); err != nil {
+	if err := repositories.NewWebhookConfigRepository(nil, facades.Crypt()).Create(context.Background(), &cfg); err != nil {
 		t.Fatalf("insert scoped webhook config: %v", err)
 	}
 	return cfg

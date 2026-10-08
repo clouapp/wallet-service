@@ -16,9 +16,7 @@ type WebhookServiceProvider struct{}
 
 func (p *WebhookServiceProvider) Register(app foundation.Application) {
 	app.Singleton((*repositories.WebhookConfigRepository)(nil), func(foundation.Application) (any, error) {
-		return repositories.NewWebhookConfigRepository(repositories.WebhookConfigRepositoryDeps{
-			Cipher: facades.LateCrypt(),
-		}), nil
+		return repositories.NewWebhookConfigRepository(nil, facades.LateCrypt()), nil
 	})
 	app.Singleton((*repositories.WebhookEventRepository)(nil), func(foundation.Application) (any, error) {
 		return repositories.NewWebhookEventRepository(nil), nil

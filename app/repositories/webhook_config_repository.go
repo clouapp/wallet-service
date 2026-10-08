@@ -23,20 +23,13 @@ type WebhookConfigRepository struct {
 	cipher settings.Cipher
 }
 
-// WebhookConfigRepositoryDeps is the query and the cipher that seals webhook secrets.
-// Query may be nil, which starts a fresh query per call. Cipher is required.
-type WebhookConfigRepositoryDeps struct {
-	Query  orm.Query
-	Cipher settings.Cipher
-}
-
-// NewWebhookConfigRepository wraps an orm.Query. A nil Query starts a fresh query per call.
-// Cipher seals and opens webhook_configs.secret; it is required.
-func NewWebhookConfigRepository(deps WebhookConfigRepositoryDeps) *WebhookConfigRepository {
-	if deps.Cipher == nil {
+// NewWebhookConfigRepository wraps an orm.Query. A nil query starts a fresh query per call.
+// The cipher seals and opens webhook_configs.secret; it is required.
+func NewWebhookConfigRepository(query orm.Query, cipher settings.Cipher) *WebhookConfigRepository {
+	if cipher == nil {
 		panic("webhook config repository: cipher is required")
 	}
-	return &WebhookConfigRepository{Base: db.NewBase(deps.Query), cipher: deps.Cipher}
+	return &WebhookConfigRepository{Base: db.NewBase(query), cipher: cipher}
 }
 
 // Create inserts a webhook config. The stored secret is sealed; cfg.Secret stays plaintext.

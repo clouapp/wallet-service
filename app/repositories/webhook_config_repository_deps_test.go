@@ -26,12 +26,10 @@ func TestNew_Webhook_ConfigRepositoryKeepsDependencies(t *testing.T) {
 				t.Fatal("a nil cipher was accepted")
 			}
 		}()
-		repositories.NewWebhookConfigRepository(repositories.WebhookConfigRepositoryDeps{
-			Query: facades.Orm().Query(),
-		})
+		repositories.NewWebhookConfigRepository(facades.Orm().Query(), nil)
 	}()
 
-	fresh := repositories.NewWebhookConfigRepository(repositories.WebhookConfigRepositoryDeps{Cipher: cipher})
+	fresh := repositories.NewWebhookConfigRepository(nil, cipher)
 	if fresh == nil {
 		t.Fatal("a nil query was refused")
 	}

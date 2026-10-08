@@ -6,7 +6,7 @@ import (
 	"strings"
 
 	"github.com/google/uuid"
-	contractsorm "github.com/goravel/framework/contracts/database/orm"
+	"github.com/goravel/framework/contracts/database/orm"
 
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/repositories/internal/db"
@@ -20,7 +20,7 @@ type FeatureRepository struct {
 }
 
 // NewFeatureRepository wraps an orm.Query. Pass nil for a fresh query per call.
-func NewFeatureRepository(query contractsorm.Query) *FeatureRepository {
+func NewFeatureRepository(query orm.Query) *FeatureRepository {
 	return &FeatureRepository{Base: db.NewBase(query)}
 }
 

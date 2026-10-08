@@ -6,7 +6,7 @@ import (
 	"strings"
 
 	"github.com/google/uuid"
-	contractsorm "github.com/goravel/framework/contracts/database/orm"
+	"github.com/goravel/framework/contracts/database/orm"
 
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/repositories/internal/db"
@@ -18,7 +18,7 @@ type SettingRepository struct {
 }
 
 // NewSettingRepository wraps an orm.Query. Pass nil for a fresh query per call.
-func NewSettingRepository(query contractsorm.Query) *SettingRepository {
+func NewSettingRepository(query orm.Query) *SettingRepository {
 	return &SettingRepository{Base: db.NewBase(query)}
 }
 
@@ -81,7 +81,7 @@ func (r *SettingRepository) UpsertMany(ctx context.Context, accountID uuid.UUID,
 		return nil
 	}
 
-	err := r.Transaction(ctx, func(tx contractsorm.Query) error {
+	err := r.Transaction(ctx, func(tx orm.Query) error {
 		writer := NewSettingRepository(tx)
 		for key, value := range values {
 			if err := writer.upsert(ctx, accountID, group, key, value); err != nil {
@@ -108,7 +108,7 @@ func (r *SettingRepository) UpsertPlatform(ctx context.Context, group string, va
 		return nil
 	}
 
-	err := r.Transaction(ctx, func(tx contractsorm.Query) error {
+	err := r.Transaction(ctx, func(tx orm.Query) error {
 		writer := NewSettingRepository(tx)
 		for key, value := range values {
 			if err := writer.upsertPlatform(ctx, group, key, value); err != nil {

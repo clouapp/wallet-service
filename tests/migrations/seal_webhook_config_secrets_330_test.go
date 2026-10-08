@@ -33,9 +33,7 @@ func TestAppendix_B330_SealsPlaintextAndDoesNotSealTwice(t *testing.T) {
 		t.Fatal("empty webhook secret was replaced")
 	}
 
-	loaded, err := repositories.NewWebhookConfigRepository(repositories.WebhookConfigRepositoryDeps{
-		Cipher: facades.Crypt(),
-	}).FindByID(context.Background(), configID)
+	loaded, err := repositories.NewWebhookConfigRepository(nil, facades.Crypt()).FindByID(context.Background(), configID)
 	require.NoError(t, err)
 	if loaded == nil || loaded.Secret != legacyWebhookSecret {
 		t.Fatal("delivery did not open the sealed webhook secret")
@@ -68,9 +66,7 @@ func TestAppendix_B330_PrefixesACryptEnvelopeWithoutEncryptingAgain(t *testing.T
 		t.Fatal("a second migrate sealed the webhook secret again")
 	}
 
-	loaded, err := repositories.NewWebhookConfigRepository(repositories.WebhookConfigRepositoryDeps{
-		Cipher: facades.Crypt(),
-	}).FindByID(context.Background(), configID)
+	loaded, err := repositories.NewWebhookConfigRepository(nil, facades.Crypt()).FindByID(context.Background(), configID)
 	require.NoError(t, err)
 	if loaded == nil || loaded.Secret != legacyWebhookSecret {
 		t.Fatal("delivery did not open the tagged webhook secret")
@@ -79,9 +75,7 @@ func TestAppendix_B330_PrefixesACryptEnvelopeWithoutEncryptingAgain(t *testing.T
 
 func TestAppendix_B330_StoresANewSecretWithTheSealPrefix(t *testing.T) {
 	fixtures.TestDB(t)
-	repo := repositories.NewWebhookConfigRepository(repositories.WebhookConfigRepositoryDeps{
-		Cipher: facades.Crypt(),
-	})
+	repo := repositories.NewWebhookConfigRepository(nil, facades.Crypt())
 	const plain = "new-webhook-signing-secret"
 	id := uuid.New()
 	require.NoError(t, repo.Create(context.Background(), &models.WebhookConfig{
