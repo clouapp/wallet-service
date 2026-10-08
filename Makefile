@@ -391,10 +391,10 @@ test: ## Run all tests: test-unit, then test-integration (both always run)
 		echo "🧪 unit: exit $$unit, integration: exit $$integration"; \
 		[ $$unit -eq 0 ] && [ $$integration -eq 0 ]
 
-test-unit: ## Unit tests: packages without PostgreSQL/Redis, all in parallel, no lock
+test-unit: ## Unit tests: packages without PostgreSQL/Redis, all in parallel, no lock; architecture runs in ratchet mode
 	@echo "🧪 Running unit tests..."
 	@set -a; [ ! -f .env.dev ] || . ./.env.dev; . ./.env.testing; set +a; \
-		go test -count=1 -timeout $(TEST_TIMEOUT) $(TEST_FLAGS) $(UNIT_TEST_PACKAGES)
+		ARCH_MODE=ratchet go test -count=1 -timeout $(TEST_TIMEOUT) $(TEST_FLAGS) $(UNIT_TEST_PACKAGES)
 
 test-integration: ## Integration tests (PostgreSQL/Redis): one cloned database per worker, -p TEST_PARALLEL
 	@echo "🔗 Running integration tests ($(TEST_PARALLEL) workers)..."

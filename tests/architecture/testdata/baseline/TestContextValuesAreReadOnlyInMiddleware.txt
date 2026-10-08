@@ -1,2 +1,0 @@
-# TestContextValuesAreReadOnlyInMiddleware: known violations, rewritten by go test ./tests/architecture -update-baseline
-app/policies/wallet_policy.go calls ctx.Value("...") (x3)

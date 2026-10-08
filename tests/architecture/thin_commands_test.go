@@ -8,10 +8,13 @@ import (
 )
 
 // commandExceptions stay fat on purpose: withdraw:preflight keeps the service
-// lookup macro-e2e does not own, and wallets:export-keys stays the zip path.
+// lookup macro-e2e does not own, wallets:export-keys stays the zip path, and
+// transactions:backfill-fees still reads the chain list and prints its report
+// through the service locator (container.Get).
 var commandExceptions = map[string]bool{
-	"app/console/commands/withdraw_preflight.go":  true,
-	"app/console/commands/wallets_export_keys.go": true,
+	"app/console/commands/withdraw_preflight.go":         true,
+	"app/console/commands/wallets_export_keys.go":        true,
+	"app/console/commands/transactions_backfill_fees.go": true,
 }
 
 // TestCommandsAreThin refuses an artisan command that queries, calls more

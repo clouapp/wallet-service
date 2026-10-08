@@ -1,3 +1,0 @@
-# TestNoServiceLocatorOutsideTheCompositionRoot: known violations, rewritten by go test ./tests/architecture -update-baseline
-app/console/commands/withdraw_preflight.go calls container.Get()
-routes/admin.go calls container.Get()
