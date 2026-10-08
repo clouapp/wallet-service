@@ -678,3 +678,30 @@ func (m *memWithdrawalRows) RetryBroadcast(_ context.Context, _ uuid.UUID, amoun
 	}
 	return nil
 }
+
+func TestCreate_Refusal_NeverCarriesTheInternalErrorText(t *testing.T) {
+	broadcaster := &fakeBroadcaster{}
+	feeChain := newCreateChain(t, broadcaster, "1", nil)
+	rows := &memWithdrawalRows{}
+	svc := newCreateService(t, feeChain.chain, rows, acceptTotp{}, &memChains{decimals: 18})
+
+	_, err := svc.Create(context.Background(), CreateInput{
+		Wallet:             sealedCreateWallet(t, "eth", nil),
+		DashboardUserID:    uuid.New(),
+		TotpCode:           "000000",
+		Passphrase:         createTestPassphrase,
+		Asset:              "NOTACOIN",
+		Amount:             "1",
+		DestinationAddress: "0xdest",
+	})
+	refusal, ok := err.(*CreateRefusal)
+	if !ok || refusal.Status != CreateStatusUnprocessable {
+		t.Fatalf("got %v", err)
+	}
+	if refusal.Message != "unknown asset" {
+		t.Fatalf("message %q echoes the resolver error instead of the fixed sentence", refusal.Message)
+	}
+	if !errors.Is(refusal, ErrUnknownAsset) {
+		t.Fatalf("the detailed error must stay reachable for the log through Unwrap: %v", refusal)
+	}
+}

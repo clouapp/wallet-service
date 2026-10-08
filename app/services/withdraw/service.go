@@ -26,13 +26,15 @@ import (
 // this package: importing it would cycle through the container.
 type accountGate func(ctx context.Context, accountID uuid.UUID) error
 
+const tooManyAttemptsMessage = "too many failed attempts, try again later"
+
 // Sentinel errors for HTTP response mapping in controller.
 var (
 	ErrInvalidPassphrase   = errors.New("invalid passphrase")
 	ErrInsufficientFunds   = errors.New("insufficient funds")
 	ErrConcurrentWithdraw  = errors.New("withdrawal already in progress for this wallet")
 	ErrPassphraseTooShort  = errors.New("passphrase must be at least 12 characters")
-	ErrTooManyAttempts     = errors.New("too many failed attempts, try again later")
+	ErrTooManyAttempts     = errors.New(tooManyAttemptsMessage)
 	ErrTransactionNotFound = errors.New("transaction not found")
 )
 
