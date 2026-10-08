@@ -8,7 +8,8 @@ import (
 	"fmt"
 
 	"github.com/goravel/framework/contracts/database/orm"
-	"github.com/goravel/framework/facades"
+
+	"github.com/macrowallets/waas/app/facades"
 )
 
 // Base is the query seam every repository embeds. Nil means a fresh query per

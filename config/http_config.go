@@ -2,8 +2,9 @@ package config
 
 import (
 	"github.com/goravel/framework/contracts/route"
-	"github.com/goravel/framework/facades"
 	ginfacades "github.com/goravel/gin/facades"
+
+	"github.com/macrowallets/waas/app/facades"
 )
 
 func registerHTTP() {

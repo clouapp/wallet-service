@@ -4,9 +4,9 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"github.com/goravel/framework/contracts/http"
-	"github.com/goravel/framework/facades"
 
 	"github.com/macrowallets/waas/app/container"
+	"github.com/macrowallets/waas/app/facades"
 	"github.com/macrowallets/waas/app/http/controllers/health"
 	"github.com/macrowallets/waas/app/services/deposit"
 	"github.com/macrowallets/waas/docs"

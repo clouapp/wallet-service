@@ -5,9 +5,9 @@ import (
 	"os"
 	"sync"
 
-	"github.com/goravel/framework/facades"
-
 	"github.com/aws/aws-sdk-go-v2/service/secretsmanager"
+	"github.com/goravel/framework/foundation"
+
 	"github.com/macrowallets/waas/app/repositories"
 	chainpkg "github.com/macrowallets/waas/app/services/chain"
 	"github.com/macrowallets/waas/app/services/deposit"
@@ -95,7 +95,7 @@ var (
 // Get returns the shared Container, resolving it from the application service container on first use.
 func Get() *Container {
 	resolveOnce.Do(func() {
-		raw, err := facades.App().Make(ContainerKey)
+		raw, err := foundation.App.Make(ContainerKey)
 		if err != nil {
 			slog.Error("vault: resolve container", "error", err)
 			os.Exit(1)

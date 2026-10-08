@@ -11,7 +11,6 @@ import (
 	"fmt"
 	"reflect"
 
-	"github.com/goravel/framework/facades"
 	"github.com/goravel/framework/foundation"
 )
 
@@ -22,7 +21,7 @@ func Make[T any]() (T, error) {
 	if foundation.App == nil {
 		return zero, fmt.Errorf("container: resolving %T: no application is booted", zero)
 	}
-	instance, err := facades.App().Make(zero)
+	instance, err := foundation.App.Make(zero)
 	if err != nil {
 		return zero, fmt.Errorf("container: resolving %T: %w", zero, err)
 	}

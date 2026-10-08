@@ -1,6 +1,6 @@
 package config
 
-import "github.com/goravel/framework/facades"
+import "github.com/macrowallets/waas/app/facades"
 
 // registerVault holds WaaS-specific settings (RPC, AWS, queues, provider API keys).
 func registerVault() {

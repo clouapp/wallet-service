@@ -12,9 +12,9 @@ import (
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-lambda-go/lambda"
 	"github.com/awslabs/aws-lambda-go-api-proxy/httpadapter"
-	"github.com/goravel/framework/facades"
 
 	"github.com/macrowallets/waas/app/container"
+	"github.com/macrowallets/waas/app/facades"
 	chainpkg "github.com/macrowallets/waas/app/services/chain"
 	"github.com/macrowallets/waas/app/services/deposit"
 	"github.com/macrowallets/waas/app/services/localworkers"

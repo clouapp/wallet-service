@@ -11,7 +11,6 @@ import (
 	contractsfoundation "github.com/goravel/framework/contracts/foundation"
 	contractsconfiguration "github.com/goravel/framework/contracts/foundation/configuration"
 	"github.com/goravel/framework/contracts/queue"
-	goravelfacades "github.com/goravel/framework/facades"
 	"github.com/goravel/framework/foundation"
 
 	"github.com/macrowallets/waas/app/adapters/redis/pricecache"
@@ -89,7 +88,7 @@ func Boot() contractsfoundation.Application {
 				commands.NewPriceCheckUpdate(prices),
 				commands.NewChainsSetRPC(chains.NewReplaceRPC(chains.ReplaceRPCDeps{
 					Store: container.MustMake[*repositories.ChainRepository](),
-					Seal:  func(plaintext string) (string, error) { return goravelfacades.Crypt().EncryptString(plaintext) },
+					Seal:  func(plaintext string) (string, error) { return appfacades.Crypt().EncryptString(plaintext) },
 				})),
 				commands.NewChainsAlignNetwork(chainregistry.NewAligner(chainregistry.AlignerDeps{
 					Store:   repositories.NewChainRegistryRepository(nil),
@@ -136,7 +135,7 @@ func registerRoutes() {
 func bootConfig() {
 	config.Boot()
 	checkBootConfig()
-	providers.InstallLogRedaction(appfacades.Config(), goravelfacades.App().Json())
+	providers.InstallLogRedaction(appfacades.Config(), appfacades.App().Json())
 }
 
 // RequestTimeoutHandler is the hard cut for the local server: it answers 504 at
