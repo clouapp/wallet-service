@@ -1,4 +1,4 @@
-package migrations_test
+package repositories_test
 
 import (
 	"context"

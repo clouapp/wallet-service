@@ -8,7 +8,7 @@ import (
 
 	"github.com/redis/go-redis/v9"
 
-	"github.com/macrowallets/waas/tests/feature/support/testutil"
+	"github.com/macrowallets/waas/tests/feature/support/testenv"
 )
 
 func TestNew_Returns_NilForANilClient(t *testing.T) {
@@ -35,8 +35,8 @@ func TestNil_Store_ReportsAMissingClient(t *testing.T) {
 }
 
 func TestSet_NX_WritesTheValueAndKeepsTheTTL(t *testing.T) {
-	client := testutil.TestRedis(t)
-	prefix := testutil.TestRedisPrefix(t, client)
+	client := testenv.TestRedis(t)
+	prefix := testenv.TestRedisPrefix(t, client)
 	key := prefix + "lock"
 	ctx := context.Background()
 	store := New(client)
@@ -73,8 +73,8 @@ func TestSet_NX_WritesTheValueAndKeepsTheTTL(t *testing.T) {
 }
 
 func TestDel_Removes_TheKey(t *testing.T) {
-	client := testutil.TestRedis(t)
-	prefix := testutil.TestRedisPrefix(t, client)
+	client := testenv.TestRedis(t)
+	prefix := testenv.TestRedisPrefix(t, client)
 	key := prefix + "lock"
 	ctx := context.Background()
 	if err := client.Set(ctx, key, "1", time.Minute).Err(); err != nil {
@@ -91,8 +91,8 @@ func TestDel_Removes_TheKey(t *testing.T) {
 }
 
 func TestIncr_Does_NotSetATTL(t *testing.T) {
-	client := testutil.TestRedis(t)
-	prefix := testutil.TestRedisPrefix(t, client)
+	client := testenv.TestRedis(t)
+	prefix := testenv.TestRedisPrefix(t, client)
 	key := prefix + "quota"
 	ctx := context.Background()
 	store := New(client)
@@ -121,8 +121,8 @@ func TestIncr_Does_NotSetATTL(t *testing.T) {
 }
 
 func TestExpire_Sets_TheTTL(t *testing.T) {
-	client := testutil.TestRedis(t)
-	prefix := testutil.TestRedisPrefix(t, client)
+	client := testenv.TestRedis(t)
+	prefix := testenv.TestRedisPrefix(t, client)
 	key := prefix + "quota"
 	ctx := context.Background()
 	store := New(client)
@@ -143,8 +143,8 @@ func TestExpire_Sets_TheTTL(t *testing.T) {
 }
 
 func TestSet_NX_CanceledContext(t *testing.T) {
-	client := testutil.TestRedis(t)
-	prefix := testutil.TestRedisPrefix(t, client)
+	client := testenv.TestRedis(t)
+	prefix := testenv.TestRedisPrefix(t, client)
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 

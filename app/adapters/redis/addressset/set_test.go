@@ -6,7 +6,7 @@ import (
 
 	"github.com/redis/go-redis/v9"
 
-	"github.com/macrowallets/waas/tests/feature/support/testutil"
+	"github.com/macrowallets/waas/tests/feature/support/testenv"
 )
 
 func TestNew_Returns_NilForANilClient(t *testing.T) {
@@ -29,8 +29,8 @@ func TestS_Is_MemberRejectsMissingContextAndKey(t *testing.T) {
 }
 
 func TestS_Is_MemberRoundTrip(t *testing.T) {
-	client := testutil.TestRedis(t)
-	prefix := testutil.TestRedisPrefix(t, client)
+	client := testenv.TestRedis(t)
+	prefix := testenv.TestRedisPrefix(t, client)
 	key := prefix + "addresses"
 	ctx := context.Background()
 	if err := client.SAdd(ctx, key, "0xabc").Err(); err != nil {
@@ -56,7 +56,7 @@ func TestS_Is_MemberRoundTrip(t *testing.T) {
 }
 
 func TestS_Is_MemberCanceledContext(t *testing.T) {
-	client := testutil.TestRedis(t)
+	client := testenv.TestRedis(t)
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 

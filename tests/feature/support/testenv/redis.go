@@ -1,4 +1,4 @@
-package testutil
+package testenv
 
 import (
 	"context"
@@ -18,7 +18,6 @@ import (
 const defaultTestRedisDialTimeout = 500 * time.Millisecond
 
 const (
-	liveRedisDatabase        = 0
 	defaultTestRedisDatabase = 15
 	defaultTestRedisHost     = "localhost"
 	defaultTestRedisPort     = "6379"

@@ -8,7 +8,7 @@ import (
 
 	"github.com/redis/go-redis/v9"
 
-	"github.com/macrowallets/waas/tests/feature/support/testutil"
+	"github.com/macrowallets/waas/tests/feature/support/testenv"
 )
 
 func TestNew_Returns_NilForANilClient(t *testing.T) {
@@ -34,8 +34,8 @@ func TestNil_Client_ReportsAMissingClient(t *testing.T) {
 }
 
 func TestSet_NX_WritesTheValueAndKeepsTheTTL(t *testing.T) {
-	client := testutil.TestRedis(t)
-	prefix := testutil.TestRedisPrefix(t, client)
+	client := testenv.TestRedis(t)
+	prefix := testenv.TestRedisPrefix(t, client)
 	key := prefix + "lock"
 	ctx := context.Background()
 	locker := New(client)
@@ -72,8 +72,8 @@ func TestSet_NX_WritesTheValueAndKeepsTheTTL(t *testing.T) {
 }
 
 func TestDel_Removes_TheKey(t *testing.T) {
-	client := testutil.TestRedis(t)
-	prefix := testutil.TestRedisPrefix(t, client)
+	client := testenv.TestRedis(t)
+	prefix := testenv.TestRedisPrefix(t, client)
 	key := prefix + "lock"
 	ctx := context.Background()
 	if err := client.Set(ctx, key, "1", time.Minute).Err(); err != nil {
@@ -90,8 +90,8 @@ func TestDel_Removes_TheKey(t *testing.T) {
 }
 
 func TestInt_Missing_KeyIsZero(t *testing.T) {
-	client := testutil.TestRedis(t)
-	prefix := testutil.TestRedisPrefix(t, client)
+	client := testenv.TestRedis(t)
+	prefix := testenv.TestRedisPrefix(t, client)
 	count, err := New(client).Int(context.Background(), prefix+"missing")
 	if err != nil {
 		t.Fatalf("missing: %v", err)
@@ -102,8 +102,8 @@ func TestInt_Missing_KeyIsZero(t *testing.T) {
 }
 
 func TestInt_Rejects_ANonInteger(t *testing.T) {
-	client := testutil.TestRedis(t)
-	prefix := testutil.TestRedisPrefix(t, client)
+	client := testenv.TestRedis(t)
+	prefix := testenv.TestRedisPrefix(t, client)
 	key := prefix + "bad"
 	ctx := context.Background()
 	if err := client.Set(ctx, key, "nope", time.Minute).Err(); err != nil {
@@ -117,8 +117,8 @@ func TestInt_Rejects_ANonInteger(t *testing.T) {
 }
 
 func TestIncr_Expire_CountsAndSetsTTL(t *testing.T) {
-	client := testutil.TestRedis(t)
-	prefix := testutil.TestRedisPrefix(t, client)
+	client := testenv.TestRedis(t)
+	prefix := testenv.TestRedisPrefix(t, client)
 	key := prefix + "attempts"
 	ctx := context.Background()
 	locker := New(client)
@@ -146,7 +146,7 @@ func TestIncr_Expire_CountsAndSetsTTL(t *testing.T) {
 }
 
 func TestSet_NX_CanceledContext(t *testing.T) {
-	client := testutil.TestRedis(t)
+	client := testenv.TestRedis(t)
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 

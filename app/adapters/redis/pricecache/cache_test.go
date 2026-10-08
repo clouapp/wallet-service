@@ -9,7 +9,7 @@ import (
 
 	"github.com/redis/go-redis/v9"
 
-	"github.com/macrowallets/waas/tests/feature/support/testutil"
+	"github.com/macrowallets/waas/tests/feature/support/testenv"
 )
 
 func TestNew_Returns_NilForANilClient(t *testing.T) {
@@ -29,8 +29,8 @@ func TestNil_Cache_ReportsAMissingClient(t *testing.T) {
 }
 
 func TestSet_Writes_TheBytesAndKeepsTheTTL(t *testing.T) {
-	client := testutil.TestRedis(t)
-	prefix := testutil.TestRedisPrefix(t, client)
+	client := testenv.TestRedis(t)
+	prefix := testenv.TestRedisPrefix(t, client)
 	key := prefix + "currency:BTC"
 	ctx := context.Background()
 	value := []byte("42.5")
@@ -56,8 +56,8 @@ func TestSet_Writes_TheBytesAndKeepsTheTTL(t *testing.T) {
 }
 
 func TestGet_Reads_TheStoredDecimalText(t *testing.T) {
-	client := testutil.TestRedis(t)
-	prefix := testutil.TestRedisPrefix(t, client)
+	client := testenv.TestRedis(t)
+	prefix := testenv.TestRedisPrefix(t, client)
 	key := prefix + "currency:ETH"
 	ctx := context.Background()
 	cache := New(client)
@@ -75,8 +75,8 @@ func TestGet_Reads_TheStoredDecimalText(t *testing.T) {
 }
 
 func TestGet_Missing_KeyIsRedisNil(t *testing.T) {
-	client := testutil.TestRedis(t)
-	prefix := testutil.TestRedisPrefix(t, client)
+	client := testenv.TestRedis(t)
+	prefix := testenv.TestRedisPrefix(t, client)
 
 	_, err := New(client).Get(context.Background(), prefix+"currency:missing")
 	if !errors.Is(err, redis.Nil) {
@@ -85,8 +85,8 @@ func TestGet_Missing_KeyIsRedisNil(t *testing.T) {
 }
 
 func TestCommands_Canceled_Context(t *testing.T) {
-	client := testutil.TestRedis(t)
-	prefix := testutil.TestRedisPrefix(t, client)
+	client := testenv.TestRedis(t)
+	prefix := testenv.TestRedisPrefix(t, client)
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	cache := New(client)

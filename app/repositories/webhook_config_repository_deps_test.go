@@ -12,11 +12,9 @@ import (
 	"github.com/macrowallets/waas/app/repositories"
 	"github.com/macrowallets/waas/pkg/pgerr"
 	"github.com/macrowallets/waas/tests/feature/support/fixtures"
-	"github.com/macrowallets/waas/tests/feature/support/testutil"
 )
 
 func TestNew_Webhook_ConfigRepositoryKeepsDependencies(t *testing.T) {
-	testutil.BootTest()
 	fixtures.TestDB(t)
 
 	ctx := context.Background()

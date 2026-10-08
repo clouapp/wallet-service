@@ -6,7 +6,7 @@ import (
 
 	"github.com/redis/go-redis/v9"
 
-	"github.com/macrowallets/waas/tests/feature/support/testutil"
+	"github.com/macrowallets/waas/tests/feature/support/testenv"
 )
 
 func TestNew_Returns_NilForANilClient(t *testing.T) {
@@ -39,8 +39,8 @@ func TestS_Add_RejectsMissingContextKeyAndMember(t *testing.T) {
 }
 
 func TestS_Add_WritesTheMemberAndSetsNoTTL(t *testing.T) {
-	client := testutil.TestRedis(t)
-	prefix := testutil.TestRedisPrefix(t, client)
+	client := testenv.TestRedis(t)
+	prefix := testenv.TestRedisPrefix(t, client)
 	key := prefix + "vault:addresses:eth"
 	ctx := context.Background()
 	cache := New(client)
@@ -69,8 +69,8 @@ func TestS_Add_WritesTheMemberAndSetsNoTTL(t *testing.T) {
 }
 
 func TestS_Add_CanceledContext(t *testing.T) {
-	client := testutil.TestRedis(t)
-	prefix := testutil.TestRedisPrefix(t, client)
+	client := testenv.TestRedis(t)
+	prefix := testenv.TestRedisPrefix(t, client)
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
@@ -81,8 +81,8 @@ func TestS_Add_CanceledContext(t *testing.T) {
 }
 
 func TestS_Add_UsesTheGivenKey(t *testing.T) {
-	client := testutil.TestRedis(t)
-	prefix := testutil.TestRedisPrefix(t, client)
+	client := testenv.TestRedis(t)
+	prefix := testenv.TestRedisPrefix(t, client)
 	key := prefix + "other"
 	ctx := context.Background()
 

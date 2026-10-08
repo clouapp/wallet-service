@@ -7,13 +7,13 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/macrowallets/waas/tests/feature/support/testutil"
+	"github.com/macrowallets/waas/tests/feature/support/testenv"
 )
 
 func TestIncr_By_OnTheTestRedisKeepsADailyTTL(t *testing.T) {
 	t.Setenv("REDIS_DB", "15")
 	t.Setenv("TEST_REDIS_ADDR", "localhost:6380")
-	client := testutil.TestRedis(t)
+	client := testenv.TestRedis(t)
 	locker := New(client)
 	if locker == nil {
 		t.Fatal("redis client was nil")

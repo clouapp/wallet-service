@@ -12,7 +12,7 @@ import (
 	"github.com/redis/go-redis/v9"
 
 	depositpending "github.com/macrowallets/waas/app/services/deposit/pending"
-	"github.com/macrowallets/waas/tests/feature/support/testutil"
+	"github.com/macrowallets/waas/tests/feature/support/testenv"
 )
 
 const testChain = "tpend"
@@ -52,8 +52,8 @@ func brokenFileStore(t *testing.T) *depositpending.FileStore {
 
 func TestRedis_Store_PutListDeleteWithIsolatedKeys(t *testing.T) {
 	ctx := context.Background()
-	client := testutil.TestRedis(t)
-	prefix := testutil.TestRedisPrefix(t, client)
+	client := testenv.TestRedis(t)
+	prefix := testenv.TestRedisPrefix(t, client)
 	store, err := NewRedisStore(RedisStoreDeps{Redis: client, KeyPrefix: prefix})
 	if err != nil {
 		t.Fatal(err)
@@ -140,8 +140,8 @@ func TestDurable_Store_FailsWhenEveryBackendIsDown(t *testing.T) {
 
 func TestDurable_Store_MergesBothBackendsKeepingTheNewestEntry(t *testing.T) {
 	ctx := context.Background()
-	client := testutil.TestRedis(t)
-	redisStore, err := NewRedisStore(RedisStoreDeps{Redis: client, KeyPrefix: testutil.TestRedisPrefix(t, client)})
+	client := testenv.TestRedis(t)
+	redisStore, err := NewRedisStore(RedisStoreDeps{Redis: client, KeyPrefix: testenv.TestRedisPrefix(t, client)})
 	if err != nil {
 		t.Fatal(err)
 	}

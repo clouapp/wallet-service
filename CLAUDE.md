@@ -162,7 +162,7 @@ Known violations include `app/models → app/services/mpc` and `config → app/m
 - Schema changes are Goravel migrations in `database/migrations/`, numbered
   `000000000NNNN0_<name>.go`, registered in `migrations.All()` (`bootstrap/migrations.go`).
   A migration never edits an applied one; it adds the next number. — guarded by the
-  migration tests beside them (e.g. `non_negative_amounts_test.go`).
+  migration tests in `tests/migrations` (e.g. `non_negative_amounts_test.go`).
 - Amounts are base-unit integers/strings (`pkg/amount`, `numeric` columns), never floats,
   and never negative. — guarded by `TestEnforceNonNegativeAmounts*`.
 - Seed data is test-only (`database/seeders`, `docs/DEV_SEED_DATA.md`). Only `DatabaseSeeder` is
