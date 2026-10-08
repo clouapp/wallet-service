@@ -152,6 +152,8 @@ func newExternalWithdrawalsController() *extwithdrawals.WithdrawalsController {
 func newExternalWalletsController() *extwallets.WalletsController {
 	return extwallets.NewWalletsController(extwallets.WalletsControllerDeps{
 		Wallets:       container.MustMake[*walletrecords.Wallets](),
+		Balances:      container.MustMake[*walletrecords.Balances](),
+		Chains:        container.MustMake[*chainsvc.Service](),
 		WalletService: currentWalletService,
 	})
 }

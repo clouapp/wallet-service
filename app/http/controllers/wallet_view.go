@@ -8,7 +8,6 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/macrowallets/waas/app/container"
 	"github.com/macrowallets/waas/app/facades"
 	walletresource "github.com/macrowallets/waas/app/http/resources/dashboard/wallets"
 	walletbalances "github.com/macrowallets/waas/app/http/resources/dashboard/wallets/balances"
@@ -74,12 +73,12 @@ func assetBalancesPricedFor(assets []models.WalletAssetBalance, resolved models.
 
 // loadWalletListItems adds network and asset balances to a page of wallets, reading
 // each chain and its tokens once.
-func loadWalletListItems(ctx context.Context, wallets []models.Wallet) ([]WalletListItem, error) {
+func loadWalletListItems(ctx context.Context, balances *walletrecords.Balances, chains *chainsvc.Service, wallets []models.Wallet) ([]WalletListItem, error) {
 	walletIDs := make([]uuid.UUID, 0, len(wallets))
 	for _, wallet := range wallets {
 		walletIDs = append(walletIDs, wallet.ID)
 	}
-	balanceRows, err := container.MustMake[*walletrecords.Balances]().ListByWallets(ctx, walletIDs)
+	balanceRows, err := balances.ListByWallets(ctx, walletIDs)
 	if err != nil {
 		return nil, fmt.Errorf("list wallet asset balances: %w", err)
 	}
@@ -88,13 +87,13 @@ func loadWalletListItems(ctx context.Context, wallets []models.Wallet) ([]Wallet
 		rowsByWallet[row.WalletID] = append(rowsByWallet[row.WalletID], row)
 	}
 
-	resolveNetwork := cachedWalletNetworkResolver(ctx)
+	resolveNetwork := cachedWalletNetworkResolver(ctx, chains)
 	tokensByChain := make(map[string][]models.Token)
 	items := make([]WalletListItem, 0, len(wallets))
 	for _, wallet := range wallets {
 		tokens, loaded := tokensByChain[wallet.Chain]
 		if !loaded {
-			tokens, err = container.MustMake[*chainsvc.Service]().FindTokens(ctx, wallet.Chain)
+			tokens, err = chains.FindTokens(ctx, wallet.Chain)
 			if err != nil {
 				return nil, fmt.Errorf("list tokens of chain %s: %w", wallet.Chain, err)
 			}
@@ -107,13 +106,13 @@ func loadWalletListItems(ctx context.Context, wallets []models.Wallet) ([]Wallet
 }
 
 // cachedWalletNetworkResolver resolves each chain once per request.
-func cachedWalletNetworkResolver(ctx context.Context) func(chainID string) models.ResolvedNetwork {
+func cachedWalletNetworkResolver(ctx context.Context, chains *chainsvc.Service) func(chainID string) models.ResolvedNetwork {
 	resolved := make(map[string]models.ResolvedNetwork)
 	return func(chainID string) models.ResolvedNetwork {
 		if network, ok := resolved[chainID]; ok {
 			return network
 		}
-		network := resolveWalletChainNetwork(ctx, chainID)
+		network := resolveWalletChainNetwork(ctx, chains, chainID)
 		resolved[chainID] = network
 		return network
 	}
@@ -121,8 +120,8 @@ func cachedWalletNetworkResolver(ctx context.Context) func(chainID string) model
 
 // resolveWalletChainNetwork reads the wallet's chain record; a failed read leaves
 // the network unknown instead of failing the wallet response.
-func resolveWalletChainNetwork(ctx context.Context, chainID string) models.ResolvedNetwork {
-	chainRecord, err := container.MustMake[*chainsvc.Service]().FindByID(ctx, chainID)
+func resolveWalletChainNetwork(ctx context.Context, chains *chainsvc.Service, chainID string) models.ResolvedNetwork {
+	chainRecord, err := chains.FindByID(ctx, chainID)
 	if errors.Is(err, models.ErrRepositoryNotFound) {
 		chainRecord, err = nil, nil
 	}
@@ -163,17 +162,17 @@ func networkReadFromRPCURL(adapterType string) bool {
 
 // LoadWalletListItems and ResolveWalletChainNetwork are the list wire helpers.
 // Dashboard and external wallet handlers both call them so the JSON stays the same bytes.
-func LoadWalletListItems(ctx context.Context, wallets []models.Wallet) ([]WalletListItem, error) {
-	return loadWalletListItems(ctx, wallets)
+func LoadWalletListItems(ctx context.Context, balances *walletrecords.Balances, chains *chainsvc.Service, wallets []models.Wallet) ([]WalletListItem, error) {
+	return loadWalletListItems(ctx, balances, chains, wallets)
 }
 
-func ResolveWalletChainNetwork(ctx context.Context, chainID string) models.ResolvedNetwork {
-	return resolveWalletChainNetwork(ctx, chainID)
+func ResolveWalletChainNetwork(ctx context.Context, chains *chainsvc.Service, chainID string) models.ResolvedNetwork {
+	return resolveWalletChainNetwork(ctx, chains, chainID)
 }
 
 // PricedConfiguredBalances is the wallet balance list: configured assets only,
 // with testnet prices removed. The dashboard balance handler calls it so the
 // JSON matches the wallet view.
-func PricedConfiguredBalances(ctx context.Context, chainID string, rows []models.WalletAssetBalance, tokens []models.Token) []models.WalletAssetBalance {
-	return assetBalancesPricedFor(configuredAssetBalances(rows, tokens), resolveWalletChainNetwork(ctx, chainID))
+func PricedConfiguredBalances(ctx context.Context, chains *chainsvc.Service, chainID string, rows []models.WalletAssetBalance, tokens []models.Token) []models.WalletAssetBalance {
+	return assetBalancesPricedFor(configuredAssetBalances(rows, tokens), resolveWalletChainNetwork(ctx, chains, chainID))
 }

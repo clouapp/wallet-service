@@ -120,11 +120,14 @@ func (s *WalletRecoveryMaterialTestSuite) registerCreateRoutes() {
 		service := func() *wallet.Service { return s.walletService }
 		external := extwallets.NewWalletsController(extwallets.WalletsControllerDeps{
 			Wallets:       container.MustMake[*walletrecords.Wallets](),
+			Balances:      container.MustMake[*walletrecords.Balances](),
+			Chains:        container.MustMake[*chainsvc.Service](),
 			WalletService: service,
 		})
 		dashboard := dashwallets.NewWalletsController(dashwallets.WalletsControllerDeps{
 			Wallets:       container.MustMake[*walletrecords.Wallets](),
 			Members:       container.MustMake[*walletrecords.Members](),
+			Balances:      container.MustMake[*walletrecords.Balances](),
 			Chains:        container.MustMake[*chainsvc.Service](),
 			WalletService: service,
 		})

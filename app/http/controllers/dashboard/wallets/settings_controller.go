@@ -243,7 +243,7 @@ func (ctrl *SettingsController) ArchiveWallet(ctx http.Context) http.Response {
 		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to archive wallet"})
 	}
 	wallet.Status = models.WalletStatusArchived
-	return responses.Send(ctx, http.StatusOK, walletresource.WithNetworkFrom(wallet, controllers.ResolveWalletChainNetwork(ctx.Context(), wallet.Chain)))
+	return responses.Send(ctx, http.StatusOK, walletresource.WithNetworkFrom(wallet, controllers.ResolveWalletChainNetwork(ctx.Context(), ctrl.chains, wallet.Chain)))
 }
 
 // FreezeWallet godoc

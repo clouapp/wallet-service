@@ -14,6 +14,7 @@ import (
 	walletresource "github.com/macrowallets/waas/app/http/resources/dashboard/wallets"
 	"github.com/macrowallets/waas/app/http/responses"
 	"github.com/macrowallets/waas/app/services/chainregistry"
+	chainsvc "github.com/macrowallets/waas/app/services/chains"
 	wallet "github.com/macrowallets/waas/app/services/wallet"
 	"github.com/macrowallets/waas/app/services/walletrecords"
 )
@@ -41,6 +42,8 @@ func newCreateWalletResponse(result *wallet.CreateWalletResult) CreateWalletResp
 // WalletsController serves the external wallet list, create, and get routes.
 type WalletsController struct {
 	wallets       *walletrecords.Wallets
+	balances      *walletrecords.Balances
+	chains        *chainsvc.Service
 	walletService func() *wallet.Service
 }
 
@@ -48,6 +51,8 @@ type WalletsController struct {
 // Every field is required. WalletService is stored and read on each call.
 type WalletsControllerDeps struct {
 	Wallets       *walletrecords.Wallets
+	Balances      *walletrecords.Balances
+	Chains        *chainsvc.Service
 	WalletService func() *wallet.Service
 }
 
@@ -56,11 +61,19 @@ func NewWalletsController(deps WalletsControllerDeps) *WalletsController {
 	if deps.Wallets == nil {
 		panic("external wallets controller: wallets service is required")
 	}
+	if deps.Balances == nil {
+		panic("external wallets controller: balances service is required")
+	}
+	if deps.Chains == nil {
+		panic("external wallets controller: chains service is required")
+	}
 	if deps.WalletService == nil || deps.WalletService() == nil {
 		panic("external wallets controller: wallet service is required")
 	}
 	return &WalletsController{
 		wallets:       deps.Wallets,
+		balances:      deps.Balances,
+		chains:        deps.Chains,
 		walletService: deps.WalletService,
 	}
 }
@@ -147,7 +160,7 @@ func (ctrl *WalletsController) ListWallets(ctx http.Context) http.Response {
 			"error": "failed to fetch wallets",
 		})
 	}
-	items, err := controllers.LoadWalletListItems(ctx.Context(), wallets)
+	items, err := controllers.LoadWalletListItems(ctx.Context(), ctrl.balances, ctrl.chains, wallets)
 	if err != nil {
 		slog.Error("load wallet list balances", "account", accountID, "error", err)
 		return responses.Send(ctx, http.StatusInternalServerError, http.Json{
@@ -190,7 +203,7 @@ func (ctrl *WalletsController) GetWallet(ctx http.Context) http.Response {
 			"error": "wallet not found",
 		})
 	}
-	return ctx.Response().Success().Json(walletresource.WithNetworkFrom(w, controllers.ResolveWalletChainNetwork(ctx.Context(), w.Chain)))
+	return ctx.Response().Success().Json(walletresource.WithNetworkFrom(w, controllers.ResolveWalletChainNetwork(ctx.Context(), ctrl.chains, w.Chain)))
 }
 
 // CreateWalletSwagger is the request body for creating a wallet.

@@ -62,6 +62,6 @@ func (ctrl *BalancesController) ListWalletBalances(ctx http.Context) http.Respon
 		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to fetch chain tokens"})
 	}
 
-	assets := walletbalances.BalancesFrom(controllers.PricedConfiguredBalances(ctx.Context(), wallet.Chain, rows, tokens), walletresource.WalletPtr)
+	assets := walletbalances.BalancesFrom(controllers.PricedConfiguredBalances(ctx.Context(), ctrl.tokens, wallet.Chain, rows, tokens), walletresource.WalletPtr)
 	return responses.Send(ctx, http.StatusOK, http.Json{"data": assets})
 }

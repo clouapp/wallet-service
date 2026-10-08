@@ -368,6 +368,7 @@ func newDashboardWalletsController() *dashwallets.WalletsController {
 	return dashwallets.NewWalletsController(dashwallets.WalletsControllerDeps{
 		Wallets:       container.MustMake[*walletrecords.Wallets](),
 		Members:       container.MustMake[*walletrecords.Members](),
+		Balances:      container.MustMake[*walletrecords.Balances](),
 		Chains:        container.MustMake[*chainsvc.Service](),
 		WalletService: currentWalletService,
 	})
@@ -422,6 +423,7 @@ func newDashboardBalancesController() *dashwallets.BalancesController {
 func newDashboardWalletTransactionsController() *dashwallets.TransactionsController {
 	return dashwallets.NewTransactionsController(
 		container.MustMake[*walletrecords.Transactions](),
+		container.MustMake[*chainsvc.Service](),
 	)
 }
 

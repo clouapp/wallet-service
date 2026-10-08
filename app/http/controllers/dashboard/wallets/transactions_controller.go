@@ -1,6 +1,10 @@
 package wallets
 
 import (
+	"context"
+	"errors"
+	"log/slog"
+
 	"github.com/goravel/framework/contracts/http"
 
 	"github.com/macrowallets/waas/app/http/middleware/requestctx"
@@ -9,23 +13,50 @@ import (
 	walletresources "github.com/macrowallets/waas/app/http/resources/dashboard/wallets"
 	"github.com/macrowallets/waas/app/http/responses"
 	"github.com/macrowallets/waas/app/models"
+	chainsvc "github.com/macrowallets/waas/app/services/chains"
 	"github.com/macrowallets/waas/app/services/walletrecords"
 )
 
 // TransactionsController serves the dashboard wallet transaction routes.
 type TransactionsController struct {
 	transactions *walletrecords.Transactions
+	chains       *chainsvc.Service
 }
 
 func NewTransactionsController(
 	transactions *walletrecords.Transactions,
+	chains *chainsvc.Service,
 ) *TransactionsController {
 	if transactions == nil {
 		panic("dashboard wallet transactions controller: transactions service is required")
 	}
+	if chains == nil {
+		panic("dashboard wallet transactions controller: chains service is required")
+	}
 	return &TransactionsController{
 		transactions: transactions,
+		chains:       chains,
 	}
+}
+
+// assetCatalog reads the chain and its active tokens for the transaction
+// decimals; a failed read leaves those decimals unknown instead of failing the
+// response.
+func (ctrl *TransactionsController) assetCatalog(ctx context.Context, chainID string) (*models.Chain, []models.Token) {
+	chainRecord, chainErr := ctrl.chains.FindByID(ctx, chainID)
+	if errors.Is(chainErr, models.ErrRepositoryNotFound) {
+		chainRecord, chainErr = nil, nil
+	}
+	if chainErr != nil {
+		slog.Warn("load chain for transaction decimals", "chain", chainID, "error", chainErr)
+		chainRecord = nil
+	}
+	tokens, tokenErr := ctrl.chains.FindTokens(ctx, chainID)
+	if tokenErr != nil {
+		slog.Warn("load tokens for transaction decimals", "chain", chainID, "error", tokenErr)
+		tokens = nil
+	}
+	return chainRecord, tokens
 }
 
 // ListWalletTransactions godoc
@@ -56,7 +87,8 @@ func (ctrl *TransactionsController) ListWalletTransactions(ctx http.Context) htt
 		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to fetch transactions"})
 	}
 
-	views := walletresources.TransactionsForChain(ctx.Context(), wallet.Chain, transactions)
+	chainRecord, tokens := ctrl.assetCatalog(ctx.Context(), wallet.Chain)
+	views := walletresources.TransactionsForChain(chainRecord, tokens, transactions)
 	return responses.Send(ctx, http.StatusOK, pagination.Response(views, total, limit, offset))
 }
 
@@ -83,7 +115,8 @@ func (ctrl *TransactionsController) GetWalletTransaction(ctx http.Context) http.
 		return responses.Send(ctx, http.StatusNotFound, http.Json{"error": "transaction not found"})
 	}
 
-	views := walletresources.TransactionsForChain(ctx.Context(), wallet.Chain, []models.Transaction{*tx})
+	chainRecord, tokens := ctrl.assetCatalog(ctx.Context(), wallet.Chain)
+	views := walletresources.TransactionsForChain(chainRecord, tokens, []models.Transaction{*tx})
 	return responses.Send(ctx, http.StatusOK, views[0])
 }
 

@@ -13,6 +13,7 @@ func walletsControllerDeps() (WalletsControllerDeps, *wallet.Service) {
 	return WalletsControllerDeps{
 		Wallets:       &walletrecords.Wallets{},
 		Members:       &walletrecords.Members{},
+		Balances:      &walletrecords.Balances{},
 		Chains:        &chainsvc.Service{},
 		WalletService: func() *wallet.Service { return svc },
 	}, svc
@@ -29,6 +30,9 @@ func TestNew_Wallets_ControllerKeepsItsDependencies(t *testing.T) {
 	}
 	if ctrl.members != deps.Members {
 		t.Fatal("wallets controller did not keep the wallet members service")
+	}
+	if ctrl.balances != deps.Balances {
+		t.Fatal("wallets controller did not keep the balances service")
 	}
 	if ctrl.chains != deps.Chains {
 		t.Fatal("wallets controller did not keep the chains service")
@@ -53,6 +57,11 @@ func TestNew_Wallets_ControllerRequiresEveryDependency(t *testing.T) {
 			name:  "wallet members service",
 			clear: func(deps *WalletsControllerDeps) { deps.Members = nil },
 			panic: "dashboard wallets controller: wallet members service is required",
+		},
+		{
+			name:  "balances service",
+			clear: func(deps *WalletsControllerDeps) { deps.Balances = nil },
+			panic: "dashboard wallets controller: balances service is required",
 		},
 		{
 			name:  "chains service",

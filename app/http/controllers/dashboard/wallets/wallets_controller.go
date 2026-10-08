@@ -30,6 +30,7 @@ func validateRequest(ctx http.Context, req http.FormRequest) http.Response {
 type WalletsController struct {
 	wallets       *walletrecords.Wallets
 	members       *walletrecords.Members
+	balances      *walletrecords.Balances
 	chains        *chainsvc.Service
 	walletService func() *wallet.Service
 }
@@ -39,6 +40,7 @@ type WalletsController struct {
 type WalletsControllerDeps struct {
 	Wallets       *walletrecords.Wallets
 	Members       *walletrecords.Members
+	Balances      *walletrecords.Balances
 	Chains        *chainsvc.Service
 	WalletService func() *wallet.Service
 }
@@ -51,6 +53,9 @@ func NewWalletsController(deps WalletsControllerDeps) *WalletsController {
 	if deps.Members == nil {
 		panic("dashboard wallets controller: wallet members service is required")
 	}
+	if deps.Balances == nil {
+		panic("dashboard wallets controller: balances service is required")
+	}
 	if deps.Chains == nil {
 		panic("dashboard wallets controller: chains service is required")
 	}
@@ -60,6 +65,7 @@ func NewWalletsController(deps WalletsControllerDeps) *WalletsController {
 	return &WalletsController{
 		wallets:       deps.Wallets,
 		members:       deps.Members,
+		balances:      deps.Balances,
 		chains:        deps.Chains,
 		walletService: deps.WalletService,
 	}
@@ -115,7 +121,7 @@ func (ctrl *WalletsController) ListWallets(ctx http.Context) http.Response {
 			"error": "failed to fetch wallets",
 		})
 	}
-	items, err := controllers.LoadWalletListItems(ctx.Context(), wallets)
+	items, err := controllers.LoadWalletListItems(ctx.Context(), ctrl.balances, ctrl.chains, wallets)
 	if err != nil {
 		slog.Error("load wallet list balances", "account", accountID, "error", err)
 		return responses.Send(ctx, http.StatusInternalServerError, http.Json{
@@ -161,7 +167,7 @@ func (ctrl *WalletsController) GetWallet(ctx http.Context) http.Response {
 	if resp := ctrl.hideUnlessVisible(ctx, w.ID); resp != nil {
 		return resp
 	}
-	return ctx.Response().Success().Json(walletresource.WithNetworkFrom(w, controllers.ResolveWalletChainNetwork(ctx.Context(), w.Chain)))
+	return ctx.Response().Success().Json(walletresource.WithNetworkFrom(w, controllers.ResolveWalletChainNetwork(ctx.Context(), ctrl.chains, w.Chain)))
 }
 
 // hideUnlessVisible answers 404 when view_all_wallets is off and the caller

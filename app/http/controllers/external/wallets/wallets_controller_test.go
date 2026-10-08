@@ -3,6 +3,7 @@ package wallets
 import (
 	"testing"
 
+	chainsvc "github.com/macrowallets/waas/app/services/chains"
 	wallet "github.com/macrowallets/waas/app/services/wallet"
 	"github.com/macrowallets/waas/app/services/walletrecords"
 )
@@ -11,6 +12,8 @@ func walletsControllerDeps() (WalletsControllerDeps, *wallet.Service) {
 	svc := &wallet.Service{}
 	return WalletsControllerDeps{
 		Wallets:       &walletrecords.Wallets{},
+		Balances:      &walletrecords.Balances{},
+		Chains:        &chainsvc.Service{},
 		WalletService: func() *wallet.Service { return svc },
 	}, svc
 }
@@ -23,6 +26,12 @@ func TestNew_Wallets_ControllerKeepsItsDependencies(t *testing.T) {
 	}
 	if ctrl.wallets != deps.Wallets {
 		t.Fatal("wallets controller did not keep the wallets service")
+	}
+	if ctrl.balances != deps.Balances {
+		t.Fatal("wallets controller did not keep the balances service")
+	}
+	if ctrl.chains != deps.Chains {
+		t.Fatal("wallets controller did not keep the chains service")
 	}
 	if ctrl.walletService == nil || ctrl.walletService() != svc {
 		t.Fatal("wallets controller did not keep the wallet service")
@@ -39,6 +48,16 @@ func TestNew_Wallets_ControllerRequiresEveryDependency(t *testing.T) {
 			name:  "wallets service",
 			clear: func(deps *WalletsControllerDeps) { deps.Wallets = nil },
 			panic: "external wallets controller: wallets service is required",
+		},
+		{
+			name:  "balances service",
+			clear: func(deps *WalletsControllerDeps) { deps.Balances = nil },
+			panic: "external wallets controller: balances service is required",
+		},
+		{
+			name:  "chains service",
+			clear: func(deps *WalletsControllerDeps) { deps.Chains = nil },
+			panic: "external wallets controller: chains service is required",
 		},
 		{
 			name:  "wallet service",
