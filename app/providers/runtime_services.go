@@ -11,7 +11,6 @@ import (
 	"github.com/macrowallets/waas/app/facades"
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/repositories"
-	chainpkg "github.com/macrowallets/waas/app/services/chain"
 	"github.com/macrowallets/waas/app/services/deposit"
 	"github.com/macrowallets/waas/app/services/feeestimate"
 	"github.com/macrowallets/waas/app/services/ingest"
@@ -30,7 +29,6 @@ import (
 func registerRuntimeServices(app foundation.Application) {
 	bindRuntime(app, func(c *container.Container) *deposit.Service { return c.DepositService }, "deposit service")
 	bindRuntime(app, func(c *container.Container) *price.Service { return c.PriceService }, "price service")
-	bindRuntime(app, func(c *container.Container) *chainpkg.Registry { return c.Registry }, "chain registry")
 	bindRuntime(app, func(c *container.Container) *webhook.Service { return c.WebhookService }, "webhook service")
 	bindRuntime(app, func(c *container.Container) *ingest.Service { return c.IngestService }, "ingest service")
 	bindRuntime(app, func(c *container.Container) *refresh.BalanceService { return c.BalanceRefreshService }, "balance refresh service")
