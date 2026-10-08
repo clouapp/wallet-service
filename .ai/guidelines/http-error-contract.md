@@ -119,7 +119,7 @@ Record method, path, status and body for every request the suite makes — on th
 base commit and on yours — and diff. Every difference must be one you meant,
 and the intended ones are listed at the end of this file with the date.
 
-The recording is `TestHTTPContract` in `tests/contract` (`make contract`): a fixed
+The recording is `TestContract_HTTP_Contract` in `tests/contract` (`make contract`): a fixed
 scenario whose normalized raw bodies are compared byte for byte with
 `tests/contract/testdata/http_contract.txt`. A refactor keeps it green; a decided
 change rewrites it (`make contract-update`) in the same PR that adds its row below.

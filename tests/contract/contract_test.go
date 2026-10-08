@@ -44,7 +44,7 @@ func TestMain(m *testing.M) {
 	os.Exit(m.Run())
 }
 
-// TestHTTPContract replays the scenario against the booted router on a
+// TestContract_HTTP_Contract replays the scenario against the booted router on a
 // freshly migrated database and compares every answer with the snapshot.
 // A difference is either a bug or a decided contract change: record the
 // decided ones in .ai/guidelines/http-error-contract.md and rewrite the

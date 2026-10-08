@@ -70,7 +70,7 @@ Known violations include `app/models → app/services/mpc` and `config → app/m
   ratchet fails on any mismatch. A new route needs a row in `routeTable`.
 - External integrators (Markets) consume `/api/v1`; the front consumes `/v1`. A change of
   status, error shape or success shape on either is a contract change, decided first and
-  recorded in `.ai/guidelines/http-error-contract.md`. — guarded by `TestHTTPContract`
+  recorded in `.ai/guidelines/http-error-contract.md`. — guarded by `TestContract_HTTP_Contract`
   (`tests/contract`): a fixed scenario over both surfaces (success and error paths, no
   chain call, no fund movement) whose method, path, status, content type and raw body
   (uuids, timestamps and tokens normalized) must match `tests/contract/testdata/http_contract.txt`
