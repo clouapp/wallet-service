@@ -14,7 +14,10 @@ import (
 
 func restoreSweepLimitsColumn(t *testing.T) {
 	t.Helper()
-	require.NoError(t, (&migrations.M00000000000530DropAccountsSweepLimits{}).Down())
+	drop := &migrations.M00000000000530DropAccountsSweepLimits{}
+	require.NoError(t, drop.Down())
+	// fixtures.TestDB only empties tables, so the column would leak into the next test.
+	t.Cleanup(func() { require.NoError(t, drop.Up()) })
 }
 
 func TestMove_Account_SweepLimitsCopiesTheJSONAndLeavesTheColumn(t *testing.T) {
