@@ -25,14 +25,8 @@ func TestNew_Addresses_ControllerKeepsItsDependencies(t *testing.T) {
 	if ctrl == nil {
 		t.Fatal("NewAddressesController returned nil")
 	}
-	if ctrl.addresses != deps.Addresses {
-		t.Fatal("addresses controller did not keep the addresses service")
-	}
 	if ctrl.walletService == nil || ctrl.walletService() != deps.WalletService() {
 		t.Fatal("addresses controller did not keep the wallet service")
-	}
-	if ctrl.deposits != deps.Deposits {
-		t.Fatal("addresses controller did not keep the deposit service")
 	}
 	if ctrl.registry != deps.Registry {
 		t.Fatal("addresses controller did not keep the chain registry")

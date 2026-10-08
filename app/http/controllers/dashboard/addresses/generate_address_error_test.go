@@ -10,6 +10,7 @@ import (
 
 	"github.com/goravel/framework/contracts/http"
 
+	"github.com/macrowallets/waas/app/http/controllers"
 	"github.com/macrowallets/waas/app/http/responses"
 )
 
@@ -17,7 +18,7 @@ func TestGenerate_Address_ErrorOmitsTheProviderText(t *testing.T) {
 	const upstream = "api error AccessDeniedException: not authorized for arn:aws:secretsmanager:us-east-1:0:secret:share-b-AbCdEf"
 	cause := fmt.Errorf("fetch service share: %w", stubProviderError{text: upstream})
 	response := &recordingResponse{}
-	generateAddressError(&recordingContext{base: context.Background(), response: response}, cause)
+	controllers.AddressGenerationError(&recordingContext{base: context.Background(), response: response}, cause)
 
 	if response.status != http.StatusBadGateway {
 		t.Fatalf("status = %d, want 502", response.status)
@@ -42,7 +43,7 @@ func TestGenerate_Address_ErrorOmitsTheProviderText(t *testing.T) {
 
 func TestGenerate_Address_ErrorKeepsTheHandlersOwnMessage(t *testing.T) {
 	response := &recordingResponse{}
-	generateAddressError(&recordingContext{base: context.Background(), response: response}, fmt.Errorf("wallet not found"))
+	controllers.AddressGenerationError(&recordingContext{base: context.Background(), response: response}, fmt.Errorf("wallet not found"))
 
 	if response.status != http.StatusUnprocessableEntity {
 		t.Fatalf("status = %d, want 422", response.status)
@@ -65,7 +66,7 @@ func TestGenerate_Address_ErrorHidesAWrappedCause(t *testing.T) {
 	const query = `pq: insert into addresses (label) values ('secret-label')`
 	cause := fmt.Errorf("create address: %w", fmt.Errorf("%s", query))
 	response := &recordingResponse{}
-	generateAddressError(&recordingContext{base: context.Background(), response: response}, cause)
+	controllers.AddressGenerationError(&recordingContext{base: context.Background(), response: response}, cause)
 
 	if response.status != http.StatusInternalServerError {
 		t.Fatalf("status = %d, want 500", response.status)
