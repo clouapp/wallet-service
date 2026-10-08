@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -123,39 +124,60 @@ func TestTimeout_Handler_WithoutADeadlineIsTheHandlerItself(t *testing.T) {
 }
 
 // Request A overruns the deadline and writes late; request B, served by the
-// same engine and its pooled contexts, must never receive A's bytes.
+// same engine and its pooled contexts, must never receive A's bytes. Channels
+// order the events, so B is always in flight when A's handler writes.
 func TestTimeout_Handler_LateWriteNeverReachesTheNextRequest(t *testing.T) {
+	const limit = 100 * time.Millisecond
+	type round struct{ release, bStarted, aWrote chan struct{} }
+	var current atomic.Pointer[round]
+
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
 	engine.GET("/a", func(c *gin.Context) {
-		time.Sleep(2 * timeoutLimit)
+		r := current.Load()
+		<-r.release // outlives the deadline until the test lets it go
 		c.String(http.StatusOK, "SECRET-OF-REQUEST-A")
+		close(r.aWrote)
 	})
 	engine.GET("/b", func(c *gin.Context) {
-		time.Sleep(timeoutLimit / 2)
+		r := current.Load()
+		close(r.bStarted)
+		<-r.aWrote
 		c.String(http.StatusOK, "answer-of-b")
 	})
-	server := httptest.NewServer(TimeoutHandler(timeoutLimit)(engine))
+	server := httptest.NewServer(TimeoutHandler(limit)(engine))
 	defer server.Close()
 
 	get := func(path string) (int, string) {
 		response, err := http.Get(server.URL + path)
 		if err != nil {
-			t.Fatalf("GET %s: %v", path, err)
+			t.Errorf("GET %s: %v", path, err)
+			return 0, ""
 		}
 		defer response.Body.Close()
 		body, _ := io.ReadAll(response.Body)
 		return response.StatusCode, string(body)
 	}
-	for i := range 20 {
+	for i := range 10 {
+		r := &round{release: make(chan struct{}), bStarted: make(chan struct{}), aWrote: make(chan struct{})}
+		current.Store(r)
 		if status, _ := get("/a"); status != http.StatusGatewayTimeout {
 			t.Fatalf("iteration %d: A status = %d", i, status)
 		}
-		// B starts while A's handler is still running and writes after it.
-		status, body := get("/b")
-		if strings.Contains(body, "SECRET") || status != http.StatusOK || body != "answer-of-b" {
-			t.Fatalf("iteration %d: B = %d %q", i, status, body)
+		type answer struct {
+			status int
+			body   string
 		}
-		time.Sleep(timeoutLimit)
+		answered := make(chan answer, 1)
+		go func() {
+			status, body := get("/b")
+			answered <- answer{status, body}
+		}()
+		<-r.bStarted
+		close(r.release)
+		got := <-answered
+		if strings.Contains(got.body, "SECRET") || got.status != http.StatusOK || got.body != "answer-of-b" {
+			t.Fatalf("iteration %d: B = %d %q", i, got.status, got.body)
+		}
 	}
 }
