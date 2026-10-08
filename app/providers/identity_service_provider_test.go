@@ -15,9 +15,11 @@ import (
 func TestIdentityProvider_RegistersTheAccountGraph(t *testing.T) {
 	require.NotNil(t, foundation.App)
 	(&IdentityServiceProvider{}).Register(foundation.App)
-	// The account service resolves the activity log registered by production
-	// boot. This test's app is only the providers it registers itself.
+	// The account service resolves the activity log and the platform-admin
+	// lookup registered by production boot. This test's app is only the
+	// providers it registers itself.
 	(&ActivityServiceProvider{}).Register(foundation.App)
+	(&FeaturesServiceProvider{}).Register(foundation.App)
 
 	users, err := container.Make[*repositories.UserRepository]()
 	require.NoError(t, err)
