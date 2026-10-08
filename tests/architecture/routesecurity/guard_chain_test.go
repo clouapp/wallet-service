@@ -383,10 +383,12 @@ func guardLabel(expr ast.Expr, bindings map[string]string, perms map[string]stri
 			return "", true
 		}
 		if selector.Sel.Name == "APIScope" || selector.Sel.Name == "Can" || selector.Sel.Name == "WalletCan" {
-			if len(typed.Args) != 1 {
+			// The permission is the last argument; the leading ones are the
+			// dependencies the guard reads (Can(accounts, perm), APIScope(lookups, perm)).
+			if len(typed.Args) == 0 {
 				return selector.Sel.Name + "(?)", true
 			}
-			return selector.Sel.Name + "(" + permissionArg(typed.Args[0], perms) + ")", true
+			return selector.Sel.Name + "(" + permissionArg(typed.Args[len(typed.Args)-1], perms) + ")", true
 		}
 		return selector.Sel.Name, true
 	default:

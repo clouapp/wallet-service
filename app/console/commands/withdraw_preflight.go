@@ -13,9 +13,8 @@ import (
 	"github.com/goravel/framework/contracts/console"
 	"github.com/goravel/framework/contracts/console/command"
 
-	"github.com/macrowallets/waas/app/container"
 	"github.com/macrowallets/waas/app/services/sweep"
-	"github.com/macrowallets/waas/app/services/walletrecords"
+	"github.com/macrowallets/waas/pkg/types"
 )
 
 const (
@@ -27,7 +26,40 @@ const (
 // WithdrawPreflight signs, verifies, and prints what a withdrawal or consolidation
 // would broadcast, without broadcasting or writing anything. The request, which
 // carries the wallet passphrase, is read from stdin so it never appears in argv.
-type WithdrawPreflight struct{}
+type WithdrawPreflight struct {
+	run preflightRunner
+}
+
+// preflightChains resolves the chain adapter a wallet's destination is checked
+// against; *chain.Registry is the one implementation.
+type preflightChains interface {
+	Chain(id string) (types.Chain, error)
+}
+
+// WithdrawPreflightDeps is everything withdraw:preflight needs. Sweep must also
+// implement sweep.Preflighter, which the command checks when it runs, so a
+// process whose sweep service cannot sign still serves the other commands.
+// WalletChain answers which chain a wallet is on.
+type WithdrawPreflightDeps struct {
+	Sweep       sweep.Service
+	Chains      preflightChains
+	WalletChain func(ctx context.Context, walletID uuid.UUID) (string, error)
+}
+
+// NewWithdrawPreflight wires withdraw:preflight from WithdrawPreflightDeps.
+func NewWithdrawPreflight(deps WithdrawPreflightDeps) *WithdrawPreflight {
+	if deps.Sweep == nil || deps.Chains == nil || deps.WalletChain == nil {
+		panic("withdraw:preflight: sweep service, chain registry and wallet lookup are required")
+	}
+	return &WithdrawPreflight{run: preflightRunner{sweep: deps.Sweep, chains: deps.Chains, walletChain: deps.WalletChain}}
+}
+
+// preflightRunner plans and signs the request; it holds no terminal state.
+type preflightRunner struct {
+	sweep       sweep.Service
+	chains      preflightChains
+	walletChain func(ctx context.Context, walletID uuid.UUID) (string, error)
+}
 
 type preflightRequest struct {
 	Mode       string `json:"mode"`
@@ -74,10 +106,9 @@ func (c *WithdrawPreflight) Handle(ctx console.Context) error {
 	if err != nil {
 		return fail(ctx, err)
 	}
-	output, err := runPreflight(context.Background(), request)
+	output, err := c.run.preflight(context.Background(), request)
 	if err != nil {
-		ctx.Error(redactedLine("preflight failed: " + err.Error()))
-		return redactedError(err)
+		return fail(ctx, fmt.Errorf("preflight failed: %w", err))
 	}
 	encoded, err := json.Marshal(output)
 	if err != nil {
@@ -123,9 +154,8 @@ func readPreflightRequest(input io.Reader) (preflightRequest, error) {
 	return request, nil
 }
 
-func runPreflight(ctx context.Context, request preflightRequest) (*preflightOutput, error) {
-	ctr := container.Get()
-	preflighter, ok := ctr.SweepService.(sweep.Preflighter)
+func (r preflightRunner) preflight(ctx context.Context, request preflightRequest) (*preflightOutput, error) {
+	preflighter, ok := r.sweep.(sweep.Preflighter)
 	if !ok {
 		return nil, fmt.Errorf("sweep service does not support preflight")
 	}
@@ -135,7 +165,7 @@ func runPreflight(ctx context.Context, request preflightRequest) (*preflightOutp
 	var err error
 	switch request.Mode {
 	case preflightModeWithdrawal:
-		result, err = preflightWithdrawal(ctx, ctr, preflighter, walletID, request)
+		result, err = r.preflightWithdrawal(ctx, preflighter, walletID, request)
 	default:
 		result, err = preflighter.PreflightConsolidation(ctx, walletID, request.Asset, request.Passphrase)
 	}
@@ -145,20 +175,20 @@ func runPreflight(ctx context.Context, request preflightRequest) (*preflightOutp
 	return newPreflightOutput(request, result), nil
 }
 
-func preflightWithdrawal(ctx context.Context, ctr *container.Container, preflighter sweep.Preflighter, walletID uuid.UUID, request preflightRequest) (*sweep.Preflight, error) {
-	wallet, err := container.MustMake[*walletrecords.Wallets]().FindByID(context.Background(), walletID)
-	if err != nil || wallet == nil {
-		return nil, fmt.Errorf("wallet %s not found", walletID)
+func (r preflightRunner) preflightWithdrawal(ctx context.Context, preflighter sweep.Preflighter, walletID uuid.UUID, request preflightRequest) (*sweep.Preflight, error) {
+	chainID, err := r.walletChain(ctx, walletID)
+	if err != nil {
+		return nil, err
 	}
-	adapter, err := ctr.Registry.Chain(wallet.Chain)
+	adapter, err := r.chains.Chain(chainID)
 	if err != nil {
 		return nil, err
 	}
 	if !adapter.ValidateAddress(request.To) {
-		return nil, fmt.Errorf("invalid address for chain %s", wallet.Chain)
+		return nil, fmt.Errorf("invalid address for chain %s", chainID)
 	}
 	amount, _ := new(big.Int).SetString(request.Amount, 10)
-	plan, err := ctr.SweepService.PlanForWithdrawal(ctx, walletID, request.Asset, amount, request.To, uuid.Nil)
+	plan, err := r.sweep.PlanForWithdrawal(ctx, walletID, request.Asset, amount, request.To, uuid.Nil)
 	if err != nil {
 		return nil, fmt.Errorf("plan withdrawal: %w", err)
 	}

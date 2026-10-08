@@ -2,16 +2,23 @@ package bootstrap
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
+	"github.com/aws/aws-sdk-go-v2/service/secretsmanager"
+	"github.com/google/uuid"
+
+	secretsadapter "github.com/macrowallets/waas/app/adapters/secretsmanager"
 	"github.com/macrowallets/waas/app/container"
 	"github.com/macrowallets/waas/app/facades"
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/repositories/chaincatalog"
 	"github.com/macrowallets/waas/app/services/chainregistry"
 	"github.com/macrowallets/waas/app/services/evmcall"
+	"github.com/macrowallets/waas/app/services/keyexport"
 	"github.com/macrowallets/waas/app/services/sweep"
+	"github.com/macrowallets/waas/app/services/walletrecords"
 )
 
 const chainNetworkProfileConfigKey = "vault.chains.network_profile"
@@ -39,6 +46,27 @@ func decryptChainRPC(encrypted string) (string, error) {
 		return "", err
 	}
 	return models.ResolveRPCURL(stored)
+}
+
+// walletChainLookup answers which chain a wallet is on for withdraw:preflight.
+func walletChainLookup(wallets *walletrecords.Wallets) func(ctx context.Context, walletID uuid.UUID) (string, error) {
+	return func(ctx context.Context, walletID uuid.UUID) (string, error) {
+		wallet, err := wallets.FindByID(ctx, walletID)
+		if err != nil || wallet == nil {
+			return "", fmt.Errorf("wallet %s not found", walletID)
+		}
+		return wallet.Chain, nil
+	}
+}
+
+// exportShareB opens the Secrets Manager reader when wallets:export-keys runs,
+// so a process without Secrets Manager still serves the other commands.
+func exportShareB() (keyexport.ShareBSource, error) {
+	secrets, err := container.Make[*secretsmanager.Client]()
+	if err != nil {
+		return nil, errors.New("secrets manager is not configured; share B cannot be fetched")
+	}
+	return secretsadapter.NewShareB(secrets), nil
 }
 
 func configuredChainProfile() string {

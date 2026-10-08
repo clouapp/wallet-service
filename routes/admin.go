@@ -1,7 +1,6 @@
 package routes
 
 import (
-	contractshttp "github.com/goravel/framework/contracts/http"
 	"github.com/goravel/framework/contracts/route"
 
 	"github.com/macrowallets/waas/app/container"
@@ -53,9 +52,6 @@ func RegisterAdminRoutes() {
 	noCache := middleware.CacheControl(0)
 	accounts := container.MustMake[*accountsvc.Service]()
 	accountHeader := middleware.AccountHeader(accounts)
-	can := func(permission string) contractshttp.Middleware {
-		return middleware.Can(accounts, permission)
-	}
 	whitelist := container.MustMake[*walletrecords.Whitelist]()
 	walletWebhooks := container.MustMake[*walletrecords.Webhooks]()
 	requireTOTP := middleware.RequireEnabledTOTP(
@@ -129,31 +125,31 @@ func RegisterAdminRoutes() {
 		router.Post("", accountsCtrl.CreateAccount)
 		router.Prefix("/{accountId}").Middleware(middleware.AccountContext(accounts), totpEnrollment).Group(func(r route.Router) {
 			r.Get("", accountsCtrl.GetAccount)
-			r.Middleware(can(middleware.PermAccountWrite)).Patch("", accountsCtrl.UpdateAccount)
-			r.Middleware(can(middleware.PermAccountLifecycle)).Post("/archive", accountsCtrl.ArchiveAccount)
-			r.Middleware(can(middleware.PermAccountLifecycle)).Post("/freeze", accountsCtrl.FreezeAccount)
+			r.Middleware(middleware.Can(accounts, middleware.PermAccountWrite)).Patch("", accountsCtrl.UpdateAccount)
+			r.Middleware(middleware.Can(accounts, middleware.PermAccountLifecycle)).Post("/archive", accountsCtrl.ArchiveAccount)
+			r.Middleware(middleware.Can(accounts, middleware.PermAccountLifecycle)).Post("/freeze", accountsCtrl.FreezeAccount)
 
-			r.Middleware(can(middleware.PermUsersRead)).Get("/users", accountsCtrl.ListAccountUsers)
-			r.Middleware(can(middleware.PermUsersWrite)).Post("/users", accountsCtrl.AddAccountUser)
+			r.Middleware(middleware.Can(accounts, middleware.PermUsersRead)).Get("/users", accountsCtrl.ListAccountUsers)
+			r.Middleware(middleware.Can(accounts, middleware.PermUsersWrite)).Post("/users", accountsCtrl.AddAccountUser)
 			r.Middleware(middleware.AccountUpdateMember(accounts)).Patch("/users/{userId}", accountsCtrl.UpdateAccountUser)
-			r.Middleware(can(middleware.PermUsersWrite)).Delete("/users/{userId}", accountsCtrl.RemoveAccountUser)
-			r.Middleware(can(middleware.PermUsersRead)).Get("/invites", inviteCtrl.List)
-			r.Middleware(can(middleware.PermUsersWrite)).Post("/invites", inviteCtrl.Create)
-			r.Middleware(can(middleware.PermUsersWrite)).Post("/invites/{id}/resend", inviteCtrl.Resend)
-			r.Middleware(can(middleware.PermUsersWrite)).Delete("/invites/{id}", inviteCtrl.Delete)
+			r.Middleware(middleware.Can(accounts, middleware.PermUsersWrite)).Delete("/users/{userId}", accountsCtrl.RemoveAccountUser)
+			r.Middleware(middleware.Can(accounts, middleware.PermUsersRead)).Get("/invites", inviteCtrl.List)
+			r.Middleware(middleware.Can(accounts, middleware.PermUsersWrite)).Post("/invites", inviteCtrl.Create)
+			r.Middleware(middleware.Can(accounts, middleware.PermUsersWrite)).Post("/invites/{id}/resend", inviteCtrl.Resend)
+			r.Middleware(middleware.Can(accounts, middleware.PermUsersWrite)).Delete("/invites/{id}", inviteCtrl.Delete)
 
 			// S3.4.2: GET /v1/accounts/{accountId}/roles roles.read.
 			// Effective grants are the code catalog. There is no
 			// account_role_permissions row and no write on this path.
-			r.Middleware(can(middleware.PermRolesRead)).Get("/roles", accountRolesCtrl.Index)
+			r.Middleware(middleware.Can(accounts, middleware.PermRolesRead)).Get("/roles", accountRolesCtrl.Index)
 			// S3.4.2: GET /v1/accounts/{accountId}/permissions roles.read.
 			// The catalog is the same code. There is no permissions table
 			// and no write on this path.
-			r.Middleware(can(middleware.PermRolesRead)).Get("/permissions", accountRolesCtrl.Permissions)
+			r.Middleware(middleware.Can(accounts, middleware.PermRolesRead)).Get("/permissions", accountRolesCtrl.Permissions)
 
-			r.Middleware(can(middleware.PermTokensRead)).Get("/tokens", accountsCtrl.ListAccountTokens)
-			r.Middleware(can(middleware.PermTokensWrite), middleware.MintAPITokenPermissions()).Post("/tokens", accountsCtrl.CreateAccountToken)
-			r.Middleware(can(middleware.PermTokensWrite)).Delete("/tokens/{tokenId}", accountsCtrl.RevokeAccountToken)
+			r.Middleware(middleware.Can(accounts, middleware.PermTokensRead)).Get("/tokens", accountsCtrl.ListAccountTokens)
+			r.Middleware(middleware.Can(accounts, middleware.PermTokensWrite), middleware.MintAPITokenPermissions()).Post("/tokens", accountsCtrl.CreateAccountToken)
+			r.Middleware(middleware.Can(accounts, middleware.PermTokensWrite)).Delete("/tokens/{tokenId}", accountsCtrl.RevokeAccountToken)
 
 			// S1.4.7: GET /v1/accounts/{accountId}/settings settings.read (policies.MayViewSettings).
 			r.Middleware(middleware.MayViewSettings()).Get("/settings", accountSettingsCtrl.Show)
@@ -282,7 +278,7 @@ func RegisterAdminRoutes() {
 			r.Post("/activate", walletCtrl.ActivateWallet)
 
 			r.Get("/addresses", addressCtrl.ListWalletAddresses)
-			r.Middleware(can(middleware.PermAddressesCreate)).Post("/addresses", addressCtrl.GenerateAddress)
+			r.Middleware(middleware.Can(accounts, middleware.PermAddressesCreate)).Post("/addresses", addressCtrl.GenerateAddress)
 			r.Patch("/addresses/{addressId}", addressCtrl.UpdateAddress)
 
 			r.Get("/users", walletUsersCtrl.ListWalletUsers)

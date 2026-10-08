@@ -30,6 +30,7 @@ import (
 	"github.com/macrowallets/waas/app/services/ingest"
 	"github.com/macrowallets/waas/app/services/price"
 	"github.com/macrowallets/waas/app/services/refresh"
+	"github.com/macrowallets/waas/app/services/sweep"
 	"github.com/macrowallets/waas/app/services/walletrecords"
 	"github.com/macrowallets/waas/config"
 	"github.com/macrowallets/waas/database/seeders"
@@ -99,18 +100,25 @@ func Boot() contractsfoundation.Application {
 					Profile: configuredChainProfile,
 				})),
 				commands.NewChainsAddMissing(chainregistry.NewMissingChains(seedMissingAddedChains)),
-				&commands.WithdrawPreflight{},
+				commands.NewWithdrawPreflight(commands.WithdrawPreflightDeps{
+					Sweep:       container.MustMake[*sweep.Box]().Service,
+					Chains:      registry,
+					WalletChain: walletChainLookup(wallets),
+				}),
 				commands.NewPruneActivity(container.MustMake[*activity.Service]()),
 				commands.NewEVMCall(commands.EVMCallDeps{
 					Wallets: container.MustMake[*repositories.WalletRepository](),
 					Signer:  evmCallSigner(),
 				}),
 				commands.NewWalletsExportKeys(commands.WalletsExportKeysDeps{
-					Wallets:   container.MustMake[*repositories.WalletRepository](),
-					Addresses: container.MustMake[*repositories.AddressRepository](),
-					Chains:    container.MustMake[*repositories.ChainRepository](),
+					Wallets:    container.MustMake[*repositories.WalletRepository](),
+					Addresses:  container.MustMake[*repositories.AddressRepository](),
+					Chains:     container.MustMake[*repositories.ChainRepository](),
+					ShareB:     exportShareB,
+					DecryptRPC: decryptChainRPC,
+					AppEnv:     appfacades.Config().GetString("app.env"),
 				}),
-				&commands.TransactionsBackfillFees{},
+				commands.NewTransactionsBackfillFees(deposits, registry),
 			})
 		}).
 		WithRules(Rules).
