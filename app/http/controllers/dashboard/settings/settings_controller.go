@@ -101,7 +101,7 @@ func (ctrl *SettingsController) Update(ctx http.Context) http.Response {
 	group := path.Group
 	actorID := middleware.SessionUserID(ctx)
 	if actorID == uuid.Nil {
-		return responses.Send(ctx, http.StatusUnauthorized, http.Json{"error": "unauthenticated"})
+		return responses.Fail(ctx, http.StatusUnauthorized, "unauthenticated", "unauthenticated")
 	}
 	document, err := requests.AccountSettingsDocument(ctx)
 	if err != nil {
@@ -159,7 +159,7 @@ func (ctrl *SettingsController) Reset(ctx http.Context) http.Response {
 	path.Load(ctx)
 	actorID := middleware.SessionUserID(ctx)
 	if actorID == uuid.Nil {
-		return responses.Send(ctx, http.StatusUnauthorized, http.Json{"error": "unauthenticated"})
+		return responses.Fail(ctx, http.StatusUnauthorized, "unauthenticated", "unauthenticated")
 	}
 	view, err := ctrl.settings.ResetSection(ctx.Context(), account.ID, actorID, role, path.Section)
 	if errResp := mapSettingsError(ctx, err); errResp != nil {
@@ -171,7 +171,7 @@ func (ctrl *SettingsController) Reset(ctx http.Context) http.Response {
 func accountCaller(ctx http.Context) (*models.Account, string, http.Response) {
 	account, _ := requestctx.Account(ctx)
 	if account == nil {
-		return nil, "", responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "internal_error"})
+		return nil, "", responses.Fail(ctx, http.StatusInternalServerError, responses.CodeInternalError, "internal_error")
 	}
 	role, _ := requestctx.AccountRole(ctx)
 	return account, role, nil
@@ -179,9 +179,9 @@ func accountCaller(ctx http.Context) (*models.Account, string, http.Response) {
 
 func mapDocumentError(ctx http.Context, err error) http.Response {
 	if errors.Is(err, requests.ErrAccountSettingsBodyTooLarge) {
-		return responses.Send(ctx, http.StatusRequestEntityTooLarge, http.Json{"error": "request body is too large"})
+		return responses.Fail(ctx, http.StatusRequestEntityTooLarge, responses.CodeRequestTooLarge, "request body is too large")
 	}
-	return responses.Send(ctx, http.StatusBadRequest, http.Json{"error": "invalid request body"})
+	return responses.Fail(ctx, http.StatusBadRequest, responses.CodeInvalidRequest, "invalid request body")
 }
 
 func mapSettingsError(ctx http.Context, err error) http.Response {
@@ -200,9 +200,9 @@ func mapSettingsError(ctx http.Context, err error) http.Response {
 	}
 	switch {
 	case errors.Is(err, settingssvc.ErrGroupNotFound):
-		return responses.Send(ctx, http.StatusNotFound, http.Json{"error": "settings group not found"})
+		return responses.Fail(ctx, http.StatusNotFound, responses.CodeNotFound, "settings group not found")
 	case errors.Is(err, settingssvc.ErrSectionNotFound):
-		return responses.Send(ctx, http.StatusNotFound, http.Json{"error": "settings section not found"})
+		return responses.Fail(ctx, http.StatusNotFound, responses.CodeNotFound, "settings section not found")
 	case errors.Is(err, settingssvc.ErrViewForbidden):
 		return responses.Error(ctx, http.StatusForbidden, responses.CodeForbidden, settingssvc.ErrViewForbidden.Error())
 	case errors.Is(err, settingssvc.ErrUpdateForbidden):
@@ -210,6 +210,6 @@ func mapSettingsError(ctx http.Context, err error) http.Response {
 	case errors.Is(err, settingssvc.ErrManagedByPlatform):
 		return responses.Error(ctx, http.StatusForbidden, responses.CodeForbidden, settingssvc.ErrManagedByPlatform.Error())
 	default:
-		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "internal_error"})
+		return responses.Fail(ctx, http.StatusInternalServerError, responses.CodeInternalError, "internal_error")
 	}
 }

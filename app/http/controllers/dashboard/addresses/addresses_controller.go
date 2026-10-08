@@ -69,9 +69,7 @@ func NewAddressesController(deps AddressesControllerDeps) *AddressesController {
 func (ctrl *AddressesController) GenerateAddress(ctx http.Context) http.Response {
 	walletID, err := requests.RouteUUID(ctx, "walletId")
 	if err != nil {
-		return responses.Send(ctx, http.StatusBadRequest, http.Json{
-			"error": "invalid wallet id",
-		})
+		return responses.Fail(ctx, http.StatusBadRequest, responses.CodeInvalidRequest, "invalid wallet id")
 	}
 
 	var req requests.GenerateAddressRequest
@@ -119,9 +117,7 @@ func generateAddressError(ctx http.Context, err error) http.Response {
 func (ctrl *AddressesController) UpdateAddress(ctx http.Context) http.Response {
 	addressID, err := requests.RouteUUID(ctx, "addressId")
 	if err != nil {
-		return responses.Send(ctx, http.StatusBadRequest, http.Json{
-			"error": "invalid address id",
-		})
+		return responses.Fail(ctx, http.StatusBadRequest, responses.CodeInvalidRequest, "invalid address id")
 	}
 
 	var req requests.UpdateAddressRequest
@@ -138,9 +134,7 @@ func (ctrl *AddressesController) UpdateAddress(ctx http.Context) http.Response {
 	}
 
 	if len(fields) == 0 {
-		return responses.Send(ctx, http.StatusBadRequest, http.Json{
-			"error": "no fields to update",
-		})
+		return responses.Fail(ctx, http.StatusBadRequest, responses.CodeInvalidRequest, "no fields to update")
 	}
 
 	addr, err := ctrl.walletService().UpdateAddress(ctx.Context(), addressID, fields)
@@ -166,16 +160,12 @@ func (ctrl *AddressesController) UpdateAddress(ctx http.Context) http.Response {
 func (ctrl *AddressesController) ListWalletAddresses(ctx http.Context) http.Response {
 	walletID, err := requests.RouteUUID(ctx, "walletId")
 	if err != nil {
-		return responses.Send(ctx, http.StatusBadRequest, http.Json{
-			"error": "invalid wallet id",
-		})
+		return responses.Fail(ctx, http.StatusBadRequest, responses.CodeInvalidRequest, "invalid wallet id")
 	}
 	limit, offset := pagination.ParseParams(ctx, 20)
 	addrs, total, err := ctrl.addresses.PaginateByWalletID(ctx.Context(), walletID, limit, offset)
 	if err != nil {
-		return responses.Send(ctx, http.StatusInternalServerError, http.Json{
-			"error": "failed to fetch addresses",
-		})
+		return responses.Fail(ctx, http.StatusInternalServerError, responses.CodeInternal, "failed to fetch addresses")
 	}
 	return responses.Send(ctx, http.StatusOK, pagination.Response(addressresource.AddressesFrom(addrs, walletresource.WalletPtr), total, limit, offset))
 }

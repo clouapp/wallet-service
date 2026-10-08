@@ -55,11 +55,11 @@ func (ctrl *BalancesController) ListWalletBalances(ctx http.Context) http.Respon
 
 	rows, err := ctrl.balances.ListByWallet(ctx.Context(), wallet.ID)
 	if err != nil {
-		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to fetch balances"})
+		return responses.Fail(ctx, http.StatusInternalServerError, responses.CodeInternal, "failed to fetch balances")
 	}
 	tokens, err := ctrl.tokens.FindTokens(ctx.Context(), wallet.Chain)
 	if err != nil {
-		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to fetch chain tokens"})
+		return responses.Fail(ctx, http.StatusInternalServerError, responses.CodeInternal, "failed to fetch chain tokens")
 	}
 
 	assets := walletbalances.BalancesFrom(controllers.PricedConfiguredBalances(ctx.Context(), ctrl.tokens, wallet.Chain, rows, tokens), walletresource.WalletPtr)

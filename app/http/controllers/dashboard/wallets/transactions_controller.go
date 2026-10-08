@@ -84,7 +84,7 @@ func (ctrl *TransactionsController) ListWalletTransactions(ctx http.Context) htt
 	status := query.Status
 	transactions, total, err := ctrl.transactions.FindByWallet(ctx.Context(), wallet.ID, txType, status, limit, offset)
 	if err != nil {
-		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to fetch transactions"})
+		return responses.Fail(ctx, http.StatusInternalServerError, responses.CodeInternal, "failed to fetch transactions")
 	}
 
 	chainRecord, tokens := ctrl.assetCatalog(ctx.Context(), wallet.Chain)
@@ -112,7 +112,7 @@ func (ctrl *TransactionsController) GetWalletTransaction(ctx http.Context) http.
 	txIDStr := path.TxID
 	tx, err := ctrl.transactions.FindByIDAndWallet(ctx.Context(), txIDStr, wallet.ID)
 	if err != nil || tx == nil {
-		return responses.Send(ctx, http.StatusNotFound, http.Json{"error": "transaction not found"})
+		return responses.Fail(ctx, http.StatusNotFound, responses.CodeNotFound, "transaction not found")
 	}
 
 	chainRecord, tokens := ctrl.assetCatalog(ctx.Context(), wallet.Chain)

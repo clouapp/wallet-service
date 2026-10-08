@@ -67,7 +67,7 @@ func (ctrl *UsersController) ListWalletUsers(ctx http.Context) http.Response {
 
 	members, err := ctrl.members.FindByWalletID(ctx.Context(), wallet.ID)
 	if err != nil {
-		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to fetch wallet users"})
+		return responses.Fail(ctx, http.StatusInternalServerError, responses.CodeInternal, "failed to fetch wallet users")
 	}
 	return responses.Send(ctx, http.StatusOK, http.Json{"data": walletusers.WalletUsersFrom(members)})
 }
@@ -109,11 +109,11 @@ func (ctrl *UsersController) AddWalletUser(ctx http.Context) http.Response {
 	existing, existErr := ctrl.members.FindByWalletAndUserIncludeDeleted(ctx.Context(), wallet.ID, targetID)
 	if existErr != nil && !errors.Is(existErr, models.ErrRepositoryNotFound) {
 		facades.Log().WithContext(ctx).Errorf("wallet-users: lookup existing: %v", existErr)
-		return responses.Send(ctx, http.StatusServiceUnavailable, http.Json{"error": "failed to load membership"})
+		return responses.Fail(ctx, http.StatusServiceUnavailable, responses.CodeUnavailable, "failed to load membership")
 	}
 	if existing != nil && existing.DeletedAt != nil {
 		if err := ctrl.members.Restore(ctx.Context(), existing.ID); err != nil {
-			return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to restore wallet user"})
+			return responses.Fail(ctx, http.StatusInternalServerError, responses.CodeInternal, "failed to restore wallet user")
 		}
 		if err := ctrl.members.SetRoles(ctx.Context(), existing.ID, roleList); err != nil {
 			facades.Log().WithContext(ctx).Errorf("wallet-users: update roles: %v", err)
@@ -131,7 +131,7 @@ func (ctrl *UsersController) AddWalletUser(ctx http.Context) http.Response {
 		Status:   "active",
 	}
 	if err := ctrl.members.Create(ctx.Context(), wu); err != nil {
-		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to add wallet user"})
+		return responses.Fail(ctx, http.StatusInternalServerError, responses.CodeInternal, "failed to add wallet user")
 	}
 	return responses.Send(ctx, http.StatusCreated, walletusers.WalletUserPtr(wu))
 }
@@ -140,17 +140,17 @@ func (ctrl *UsersController) AddWalletUser(ctx http.Context) http.Response {
 // the wallet's account. An unknown user gets the same 422.
 func (ctrl *UsersController) requireActiveAccountMember(ctx http.Context, wallet *models.Wallet, userID uuid.UUID) http.Response {
 	if wallet.AccountID == nil {
-		return responses.Send(ctx, http.StatusUnprocessableEntity, http.Json{"error": "user is not an active member of this account"})
+		return responses.Fail(ctx, http.StatusUnprocessableEntity, responses.CodeUnprocessable, "user is not an active member of this account")
 	}
 	member, err := ctrl.accounts.FindMember(ctx.Context(), *wallet.AccountID, userID)
 	if err != nil {
 		if errors.Is(err, models.ErrRepositoryNotFound) {
-			return responses.Send(ctx, http.StatusUnprocessableEntity, http.Json{"error": "user is not an active member of this account"})
+			return responses.Fail(ctx, http.StatusUnprocessableEntity, responses.CodeUnprocessable, "user is not an active member of this account")
 		}
-		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to add wallet user"})
+		return responses.Fail(ctx, http.StatusInternalServerError, responses.CodeInternal, "failed to add wallet user")
 	}
 	if member == nil || member.Status != "active" {
-		return responses.Send(ctx, http.StatusUnprocessableEntity, http.Json{"error": "user is not an active member of this account"})
+		return responses.Fail(ctx, http.StatusUnprocessableEntity, responses.CodeUnprocessable, "user is not an active member of this account")
 	}
 	return nil
 }
@@ -172,11 +172,11 @@ func (ctrl *UsersController) RemoveWalletUser(ctx http.Context) http.Response {
 
 	targetID, err := requests.RouteUUID(ctx, "userId")
 	if err != nil {
-		return responses.Send(ctx, http.StatusBadRequest, http.Json{"error": "invalid user id"})
+		return responses.Fail(ctx, http.StatusBadRequest, responses.CodeInvalidRequest, "invalid user id")
 	}
 
 	if err := ctrl.members.SoftDelete(ctx.Context(), wallet.ID, targetID); err != nil {
-		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to remove wallet user"})
+		return responses.Fail(ctx, http.StatusInternalServerError, responses.CodeInternal, "failed to remove wallet user")
 	}
 	return ctx.Response().NoContent()
 }

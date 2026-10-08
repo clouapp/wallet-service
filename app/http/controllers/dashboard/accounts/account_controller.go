@@ -109,7 +109,7 @@ func (ctrl *AccountsController) CreateAccount(ctx http.Context) http.Response {
 	}
 	view, err := ctrl.accountView(ctx, *acc)
 	if err != nil {
-		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to create account"})
+		return responses.Fail(ctx, http.StatusInternalServerError, responses.CodeInternal, "failed to create account")
 	}
 	return responses.Send(ctx, http.StatusCreated, view)
 }
@@ -129,12 +129,12 @@ func (ctrl *AccountsController) GetAccount(ctx http.Context) http.Response {
 	account := requestctx.MustAccount(ctx)
 	view, err := ctrl.accountView(ctx, *account)
 	if err != nil {
-		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to fetch account"})
+		return responses.Fail(ctx, http.StatusInternalServerError, responses.CodeInternal, "failed to fetch account")
 	}
 	names, err := ctrl.features.ActiveForAccount(ctx.Context(), account.ID)
 	if err != nil {
 		logActiveFeaturesFailure(ctx, err)
-		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to fetch account"})
+		return responses.Fail(ctx, http.StatusInternalServerError, responses.CodeInternal, "failed to fetch account")
 	}
 	return responses.Send(ctx, http.StatusOK, AccountDetail{Account: view, Features: names})
 }
@@ -177,12 +177,12 @@ func (ctrl *AccountsController) UpdateAccount(ctx http.Context) http.Response {
 	}
 
 	if err := ctrl.accountService.UpdateAccount(ctx.Context(), account, req.Name, req.ViewAllWallets); err != nil {
-		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to update account"})
+		return responses.Fail(ctx, http.StatusInternalServerError, responses.CodeInternal, "failed to update account")
 	}
 
 	view, err := ctrl.accountView(ctx, *account)
 	if err != nil {
-		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to update account"})
+		return responses.Fail(ctx, http.StatusInternalServerError, responses.CodeInternal, "failed to update account")
 	}
 	return responses.Send(ctx, http.StatusOK, view)
 }
@@ -202,11 +202,11 @@ func (ctrl *AccountsController) ArchiveAccount(ctx http.Context) http.Response {
 	account := requestctx.MustAccount(ctx)
 
 	if err := ctrl.accountService.SetStatus(ctx.Context(), account, "archived"); err != nil {
-		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to archive account"})
+		return responses.Fail(ctx, http.StatusInternalServerError, responses.CodeInternal, "failed to archive account")
 	}
 	view, err := ctrl.accountView(ctx, *account)
 	if err != nil {
-		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to archive account"})
+		return responses.Fail(ctx, http.StatusInternalServerError, responses.CodeInternal, "failed to archive account")
 	}
 	return responses.Send(ctx, http.StatusOK, view)
 }
@@ -225,11 +225,11 @@ func (ctrl *AccountsController) FreezeAccount(ctx http.Context) http.Response {
 	account := requestctx.MustAccount(ctx)
 
 	if err := ctrl.accountService.SetStatus(ctx.Context(), account, "frozen"); err != nil {
-		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to freeze account"})
+		return responses.Fail(ctx, http.StatusInternalServerError, responses.CodeInternal, "failed to freeze account")
 	}
 	view, err := ctrl.accountView(ctx, *account)
 	if err != nil {
-		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to freeze account"})
+		return responses.Fail(ctx, http.StatusInternalServerError, responses.CodeInternal, "failed to freeze account")
 	}
 	return responses.Send(ctx, http.StatusOK, view)
 }
@@ -250,7 +250,7 @@ func (ctrl *AccountsController) ListAccountUsers(ctx http.Context) http.Response
 	limit, offset := pagination.ParseParams(ctx, 20)
 	members, total, err := ctrl.accountService.ListMembers(ctx.Context(), account.ID, limit, offset)
 	if err != nil {
-		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to fetch members"})
+		return responses.Fail(ctx, http.StatusInternalServerError, responses.CodeInternal, "failed to fetch members")
 	}
 	return responses.Send(ctx, http.StatusOK, pagination.Response(tokenresource.AccountUsersFrom(members), total, limit, offset))
 }
@@ -278,7 +278,7 @@ func (ctrl *AccountsController) AddAccountUser(ctx http.Context) http.Response {
 
 	targetPtr, findErr := ctrl.accountService.FindUserByEmail(ctx.Context(), req.Email)
 	if findErr != nil && !errors.Is(findErr, models.ErrRepositoryNotFound) {
-		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to look up user"})
+		return responses.Fail(ctx, http.StatusInternalServerError, responses.CodeInternal, "failed to look up user")
 	}
 	if targetPtr == nil || errors.Is(findErr, models.ErrRepositoryNotFound) {
 		base, errResp := requireFrontendBase(ctx, "failed to create invite")
@@ -290,7 +290,7 @@ func (ctrl *AccountsController) AddAccountUser(ctx http.Context) http.Response {
 			if errors.Is(issueErr, accountsvc.ErrGrantRole) {
 				return inviteGrantForbidden(ctx, issueErr)
 			}
-			return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to create invite"})
+			return responses.Fail(ctx, http.StatusInternalServerError, responses.CodeInternal, "failed to create invite")
 		}
 		if issued.MailErr != nil {
 			appfacades.Log().WithContext(ctx).Errorf("account: send invite mail failed")
@@ -308,13 +308,13 @@ func (ctrl *AccountsController) AddAccountUser(ctx http.Context) http.Response {
 		if errors.Is(err, accountsvc.ErrGrantRole) {
 			return inviteGrantForbidden(ctx, err)
 		}
-		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to add user"})
+		return responses.Fail(ctx, http.StatusInternalServerError, responses.CodeInternal, "failed to add user")
 	}
 
 	au, auErr := ctrl.accountService.FindMember(ctx.Context(), account.ID, targetPtr.ID)
 	if auErr != nil && !errors.Is(auErr, models.ErrRepositoryNotFound) {
 		appfacades.Log().WithContext(ctx).Errorf("account: find membership after add: %v", auErr)
-		return responses.Send(ctx, http.StatusForbidden, http.Json{"error": "not a member of this account"})
+		return responses.Fail(ctx, http.StatusForbidden, responses.CodeForbidden, "not a member of this account")
 	}
 	return responses.Send(ctx, http.StatusCreated, tokenresource.AccountUserPtr(au))
 }
@@ -345,16 +345,16 @@ func inviteGrantForbidden(ctx http.Context, err error) http.Response {
 func (ctrl *AccountsController) UpdateAccountUser(ctx http.Context) http.Response {
 	account := middleware.AccountFrom(ctx)
 	if account == nil {
-		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "internal_error"})
+		return responses.Fail(ctx, http.StatusInternalServerError, responses.CodeInternalError, "internal_error")
 	}
 	callerID := middleware.SessionUserID(ctx)
 	if callerID == uuid.Nil {
-		return responses.Send(ctx, http.StatusUnauthorized, http.Json{"error": "unauthenticated"})
+		return responses.Fail(ctx, http.StatusUnauthorized, "unauthenticated", "unauthenticated")
 	}
 
 	targetID, err := requests.RouteUUID(ctx, "userId")
 	if err != nil {
-		return responses.Send(ctx, http.StatusBadRequest, http.Json{"error": "invalid user id"})
+		return responses.Fail(ctx, http.StatusBadRequest, responses.CodeInvalidRequest, "invalid user id")
 	}
 
 	var req requests.UpdateAccountUserRequest
@@ -398,11 +398,11 @@ func (ctrl *AccountsController) RemoveAccountUser(ctx http.Context) http.Respons
 	account := requestctx.MustAccount(ctx)
 	callerID := middleware.SessionUserID(ctx)
 	if callerID == uuid.Nil {
-		return responses.Send(ctx, http.StatusUnauthorized, http.Json{"error": "unauthenticated"})
+		return responses.Fail(ctx, http.StatusUnauthorized, "unauthenticated", "unauthenticated")
 	}
 	targetID, err := requests.RouteUUID(ctx, "userId")
 	if err != nil {
-		return responses.Send(ctx, http.StatusBadRequest, http.Json{"error": "invalid user id"})
+		return responses.Fail(ctx, http.StatusBadRequest, responses.CodeInvalidRequest, "invalid user id")
 	}
 
 	if err := ctrl.accountService.RemoveMember(ctx.Context(), account.ID, callerID, targetID); err != nil {
@@ -427,7 +427,7 @@ func (ctrl *AccountsController) ListAccountTokens(ctx http.Context) http.Respons
 	limit, offset := pagination.ParseParams(ctx, 20)
 	tokens, total, err := ctrl.accountService.ListAccessTokens(ctx.Context(), account.ID, limit, offset)
 	if err != nil {
-		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to fetch tokens"})
+		return responses.Fail(ctx, http.StatusInternalServerError, responses.CodeInternal, "failed to fetch tokens")
 	}
 	return responses.Send(ctx, http.StatusOK, pagination.Response(tokenresource.AccessTokensFrom(tokens), total, limit, offset))
 }
@@ -460,7 +460,7 @@ func (ctrl *AccountsController) CreateAccountToken(ctx http.Context) http.Respon
 	}
 	storedPermissions, err := storedAPITokenPermissions(req.Permissions)
 	if err != nil {
-		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to create token"})
+		return responses.Fail(ctx, http.StatusInternalServerError, responses.CodeInternal, "failed to create token")
 	}
 	storedLimit, err := withdraw.StoreSpendingLimit(req.SpendingLimit)
 	if err != nil {
@@ -475,7 +475,7 @@ func (ctrl *AccountsController) CreateAccountToken(ctx http.Context) http.Respon
 
 	secret, err := ctrl.passwords.GenerateAPITokenSecret()
 	if err != nil {
-		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to create token"})
+		return responses.Fail(ctx, http.StatusInternalServerError, responses.CodeInternal, "failed to create token")
 	}
 	tokenID := uuid.New()
 	token := &models.AccessToken{
@@ -493,12 +493,12 @@ func (ctrl *AccountsController) CreateAccountToken(ctx http.Context) http.Respon
 		token.ValidUntil = &t
 	}
 	if err := ctrl.accountService.CreateAccessToken(ctx.Context(), token); err != nil {
-		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to create token"})
+		return responses.Fail(ctx, http.StatusInternalServerError, responses.CodeInternal, "failed to create token")
 	}
 
 	jwt, err := middleware.MintAPITokenWithSecret(token, req.RequireSignature, secret)
 	if err != nil {
-		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to sign token"})
+		return responses.Fail(ctx, http.StatusInternalServerError, responses.CodeInternal, "failed to sign token")
 	}
 
 	return responses.Send(ctx, http.StatusCreated, http.Json{
@@ -524,15 +524,15 @@ func (ctrl *AccountsController) RevokeAccountToken(ctx http.Context) http.Respon
 
 	tokenID, err := requests.RouteUUID(ctx, "tokenId")
 	if err != nil {
-		return responses.Send(ctx, http.StatusBadRequest, http.Json{"error": "invalid token id"})
+		return responses.Fail(ctx, http.StatusBadRequest, responses.CodeInvalidRequest, "invalid token id")
 	}
 
 	callerID, _ := requestctx.UserID(ctx)
 	if err := ctrl.accountService.RevokeAccessToken(ctx.Context(), account.ID, callerID, tokenID); err != nil {
 		if errors.Is(err, accountsvc.ErrAccessTokenNotFound) {
-			return responses.Send(ctx, http.StatusNotFound, http.Json{"error": "token not found"})
+			return responses.Fail(ctx, http.StatusNotFound, responses.CodeNotFound, "token not found")
 		}
-		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to revoke token"})
+		return responses.Fail(ctx, http.StatusInternalServerError, responses.CodeInternal, "failed to revoke token")
 	}
 	return ctx.Response().NoContent()
 }

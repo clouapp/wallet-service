@@ -57,7 +57,7 @@ func (ctrl *WhitelistController) ListWhitelistEntries(ctx http.Context) http.Res
 	limit, offset := pagination.ParseParams(ctx, 20)
 	entries, total, err := ctrl.entries.PaginateByWalletID(ctx.Context(), wallet.ID, limit, offset)
 	if err != nil {
-		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to fetch whitelist entries"})
+		return responses.Fail(ctx, http.StatusInternalServerError, responses.CodeInternal, "failed to fetch whitelist entries")
 	}
 	return responses.Send(ctx, http.StatusOK, pagination.Response(whitelist.WhitelistEntriesFrom(entries), total, limit, offset))
 }
@@ -90,7 +90,7 @@ func (ctrl *WhitelistController) AddWhitelistEntry(ctx http.Context) http.Respon
 		Label:    req.Label,
 	}
 	if err := ctrl.entries.Create(ctx.Context(), entry); err != nil {
-		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to add whitelist entry"})
+		return responses.Fail(ctx, http.StatusInternalServerError, responses.CodeInternal, "failed to add whitelist entry")
 	}
 	return responses.Send(ctx, http.StatusCreated, whitelist.WhitelistEntryFrom(*entry))
 }
@@ -112,16 +112,16 @@ func (ctrl *WhitelistController) DeleteWhitelistEntry(ctx http.Context) http.Res
 
 	entryID, err := requests.RouteUUID(ctx, "entryId")
 	if err != nil {
-		return responses.Send(ctx, http.StatusBadRequest, http.Json{"error": "invalid entry id"})
+		return responses.Fail(ctx, http.StatusBadRequest, responses.CodeInvalidRequest, "invalid entry id")
 	}
 
 	entry, err := ctrl.entries.FindByIDAndWallet(ctx.Context(), entryID, wallet.ID)
 	if err != nil || entry == nil {
-		return responses.Send(ctx, http.StatusNotFound, http.Json{"error": "whitelist entry not found"})
+		return responses.Fail(ctx, http.StatusNotFound, responses.CodeNotFound, "whitelist entry not found")
 	}
 
 	if err := ctrl.entries.Delete(ctx.Context(), entry); err != nil {
-		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to delete whitelist entry"})
+		return responses.Fail(ctx, http.StatusInternalServerError, responses.CodeInternal, "failed to delete whitelist entry")
 	}
 	return ctx.Response().NoContent()
 }

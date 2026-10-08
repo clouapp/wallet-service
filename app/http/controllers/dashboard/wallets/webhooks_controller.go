@@ -62,7 +62,7 @@ func (ctrl *WebhooksController) ListWalletWebhooks(ctx http.Context) http.Respon
 
 	cfgs, err := ctrl.configs.FindByWalletID(ctx.Context(), wallet.ID)
 	if err != nil {
-		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to fetch wallet webhooks"})
+		return responses.Fail(ctx, http.StatusInternalServerError, responses.CodeInternal, "failed to fetch wallet webhooks")
 	}
 	return responses.Send(ctx, http.StatusOK, http.Json{"data": webhooks.WebhookConfigsFrom(cfgs)})
 }
@@ -97,7 +97,7 @@ func (ctrl *WebhooksController) CreateWalletWebhook(ctx http.Context) http.Respo
 		Type:     "wallet",
 	}
 	if err := ctrl.configs.Create(ctx.Context(), cfg); err != nil {
-		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to create webhook"})
+		return responses.Fail(ctx, http.StatusInternalServerError, responses.CodeInternal, "failed to create webhook")
 	}
 	return responses.Send(ctx, http.StatusCreated, webhooks.WebhookConfigPtr(cfg))
 }
@@ -119,16 +119,16 @@ func (ctrl *WebhooksController) DeleteWalletWebhook(ctx http.Context) http.Respo
 
 	webhookID, err := requests.RouteUUID(ctx, "webhookId")
 	if err != nil {
-		return responses.Send(ctx, http.StatusBadRequest, http.Json{"error": "invalid webhook id"})
+		return responses.Fail(ctx, http.StatusBadRequest, responses.CodeInvalidRequest, "invalid webhook id")
 	}
 
 	cfg, err := ctrl.configs.FindByIDAndWallet(ctx.Context(), webhookID, wallet.ID)
 	if err != nil || cfg == nil {
-		return responses.Send(ctx, http.StatusNotFound, http.Json{"error": "webhook not found"})
+		return responses.Fail(ctx, http.StatusNotFound, responses.CodeNotFound, "webhook not found")
 	}
 
 	if err := ctrl.configs.Delete(ctx.Context(), cfg); err != nil {
-		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to delete webhook"})
+		return responses.Fail(ctx, http.StatusInternalServerError, responses.CodeInternal, "failed to delete webhook")
 	}
 	return ctx.Response().NoContent()
 }
@@ -151,16 +151,16 @@ func (ctrl *WebhooksController) TestWalletWebhook(ctx http.Context) http.Respons
 
 	webhookID, err := requests.RouteUUID(ctx, "webhookId")
 	if err != nil {
-		return responses.Send(ctx, http.StatusBadRequest, http.Json{"error": "invalid webhook id"})
+		return responses.Fail(ctx, http.StatusBadRequest, responses.CodeInvalidRequest, "invalid webhook id")
 	}
 
 	cfg, err := ctrl.configs.FindByIDAndWallet(ctx.Context(), webhookID, wallet.ID)
 	if err != nil || cfg == nil {
-		return responses.Send(ctx, http.StatusNotFound, http.Json{"error": "webhook not found"})
+		return responses.Fail(ctx, http.StatusNotFound, responses.CodeNotFound, "webhook not found")
 	}
 
 	if err := ctrl.delivery.SendTest(ctx.Context(), cfg, wallet.ID); err != nil {
-		return responses.Send(ctx, http.StatusBadGateway, http.Json{"error": "webhook test delivery failed"})
+		return responses.Fail(ctx, http.StatusBadGateway, responses.CodeProviderUnavailable, "webhook test delivery failed")
 	}
 	return responses.Send(ctx, http.StatusOK, http.Json{"delivered": true})
 }

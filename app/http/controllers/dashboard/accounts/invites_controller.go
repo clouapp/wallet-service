@@ -60,7 +60,7 @@ func requireFrontendBase(ctx http.Context, clientError string) (string, http.Res
 	base, err := frontendBaseURL()
 	if err != nil {
 		appfacades.Log().WithContext(ctx).Errorf("account: invite link base is not configured")
-		return "", responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": clientError})
+		return "", responses.FailMessage(ctx, http.StatusInternalServerError, clientError)
 	}
 	return base, nil
 }
@@ -118,7 +118,7 @@ func (ctrl *InvitesController) Create(ctx http.Context) http.Response {
 		if errors.Is(err, accountsvc.ErrGrantRole) {
 			return inviteGrantForbidden(ctx, err)
 		}
-		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to create invite"})
+		return responses.Fail(ctx, http.StatusInternalServerError, responses.CodeInternal, "failed to create invite")
 	}
 	logInviteMail(ctx, issued)
 	return responses.Send(ctx, http.StatusAccepted, inviteCreatedView(issued.Invite))
@@ -130,7 +130,7 @@ func (ctrl *InvitesController) Resend(ctx http.Context) http.Response {
 	account := requestctx.MustAccount(ctx)
 	inviteID, err := requests.RouteUUID(ctx, "id")
 	if err != nil {
-		return responses.Send(ctx, http.StatusBadRequest, http.Json{"error": "invalid invite id"})
+		return responses.Fail(ctx, http.StatusBadRequest, responses.CodeInvalidRequest, "invalid invite id")
 	}
 	base, errResp := requireFrontendBase(ctx, "failed to resend invite")
 	if errResp != nil {
@@ -141,7 +141,7 @@ func (ctrl *InvitesController) Resend(ctx http.Context) http.Response {
 		if errors.Is(err, accountsvc.ErrInviteInvalid) {
 			return responses.Error(ctx, http.StatusNotFound, responses.CodeNotFound, accountsvc.ErrInviteInvalid.Error())
 		}
-		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to resend invite"})
+		return responses.Fail(ctx, http.StatusInternalServerError, responses.CodeInternal, "failed to resend invite")
 	}
 	logInviteMail(ctx, issued)
 	return responses.Send(ctx, http.StatusAccepted, inviteCreatedView(issued.Invite))
@@ -153,13 +153,13 @@ func (ctrl *InvitesController) Delete(ctx http.Context) http.Response {
 	account := requestctx.MustAccount(ctx)
 	inviteID, err := requests.RouteUUID(ctx, "id")
 	if err != nil {
-		return responses.Send(ctx, http.StatusBadRequest, http.Json{"error": "invalid invite id"})
+		return responses.Fail(ctx, http.StatusBadRequest, responses.CodeInvalidRequest, "invalid invite id")
 	}
 	if err := ctrl.accounts.RevokeInvite(ctx.Context(), account.ID, inviteID); err != nil {
 		if errors.Is(err, accountsvc.ErrInviteInvalid) {
 			return responses.Error(ctx, http.StatusNotFound, responses.CodeNotFound, accountsvc.ErrInviteInvalid.Error())
 		}
-		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to revoke invite"})
+		return responses.Fail(ctx, http.StatusInternalServerError, responses.CodeInternal, "failed to revoke invite")
 	}
 	return ctx.Response().NoContent()
 }
@@ -187,7 +187,7 @@ func (ctrl *InvitesController) List(ctx http.Context) http.Response {
 	limit, offset := pagination.ParseParams(ctx, 20)
 	invites, total, err := ctrl.accounts.ListInvites(ctx.Context(), account.ID, limit, offset)
 	if err != nil {
-		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to fetch invites"})
+		return responses.Fail(ctx, http.StatusInternalServerError, responses.CodeInternal, "failed to fetch invites")
 	}
 	return responses.Send(ctx, http.StatusOK, pagination.Response(inviteListItems(invites), total, limit, offset))
 }
@@ -196,11 +196,11 @@ func (ctrl *InvitesController) List(ctx http.Context) http.Response {
 func (ctrl *InvitesController) Preview(ctx http.Context) http.Response {
 	token, err := requests.RouteString(ctx, "token")
 	if err != nil {
-		return responses.Send(ctx, http.StatusNotFound, http.Json{"error": "invite is invalid or expired"})
+		return responses.Fail(ctx, http.StatusNotFound, responses.CodeNotFound, "invite is invalid or expired")
 	}
 	invite, needsPassword, err := ctrl.accounts.PreviewInvite(ctx.Context(), token)
 	if err != nil || invite == nil {
-		return responses.Send(ctx, http.StatusNotFound, http.Json{"error": "invite is invalid or expired"})
+		return responses.Fail(ctx, http.StatusNotFound, responses.CodeNotFound, "invite is invalid or expired")
 	}
 	accountName := ""
 	if account, accErr := ctrl.accounts.FindByID(ctx.Context(), invite.AccountID); accErr == nil && account != nil {
@@ -232,7 +232,7 @@ func (ctrl *InvitesController) Accept(ctx http.Context) http.Response {
 	}
 	sessionUser, sessionErr := optionalSessionUser(ctx)
 	if sessionErr != nil {
-		return responses.Send(ctx, http.StatusUnauthorized, http.Json{"error": "invalid token"})
+		return responses.Fail(ctx, http.StatusUnauthorized, responses.CodeUnauthorized, "invalid token")
 	}
 	user, err := ctrl.accounts.AcceptInvite(ctx.Context(), req.Token, req.Password, req.FullName, sessionUser)
 	if err != nil {
@@ -246,7 +246,7 @@ func (ctrl *InvitesController) Accept(ctx http.Context) http.Response {
 		case errors.Is(err, accountsvc.ErrGrantRole):
 			return responses.Error(ctx, http.StatusUnprocessableEntity, responses.CodeUnprocessable, accountsvc.ErrGrantRole.Error())
 		default:
-			return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to accept invite"})
+			return responses.Fail(ctx, http.StatusInternalServerError, responses.CodeInternal, "failed to accept invite")
 		}
 	}
 	return responses.Send(ctx, http.StatusOK, http.Json{

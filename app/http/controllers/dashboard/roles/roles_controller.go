@@ -31,7 +31,7 @@ func NewController() *Controller {
 func (ctrl *Controller) Index(ctx http.Context) http.Response {
 	account, _ := requestctx.Account(ctx)
 	if account == nil {
-		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "internal_error"})
+		return responses.Fail(ctx, http.StatusInternalServerError, responses.CodeInternalError, "internal_error")
 	}
 	return responses.Send(ctx, http.StatusOK, roleList{Roles: policies.EffectiveRoleGrants()})
 }
@@ -51,7 +51,7 @@ func (ctrl *Controller) Index(ctx http.Context) http.Response {
 func (ctrl *Controller) Permissions(ctx http.Context) http.Response {
 	account, _ := requestctx.Account(ctx)
 	if account == nil {
-		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "internal_error"})
+		return responses.Fail(ctx, http.StatusInternalServerError, responses.CodeInternalError, "internal_error")
 	}
 	return responses.Send(ctx, http.StatusOK, permissionCatalog{Permissions: policies.AccountPermissionCatalog()})
 }

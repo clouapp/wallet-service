@@ -104,7 +104,7 @@ func (ctrl *ActivityController) Show(ctx http.Context) http.Response {
 func (ctrl *ActivityController) Platform(ctx http.Context) http.Response {
 	userID := middleware.SessionUserID(ctx)
 	if userID == uuid.Nil {
-		return responses.Send(ctx, http.StatusUnauthorized, http.Json{"error": "unauthorized"})
+		return responses.Fail(ctx, http.StatusUnauthorized, responses.CodeUnauthorized, "unauthorized")
 	}
 	limit, offset := pagination.ParseParams(ctx, activityPageSize)
 	rows, total, err := ctrl.activity.ListPlatform(ctx.Context(), userID, limit, offset)
@@ -117,7 +117,7 @@ func (ctrl *ActivityController) Platform(ctx http.Context) http.Response {
 func accountCaller(ctx http.Context) (*models.Account, string, http.Response) {
 	account, _ := requestctx.Account(ctx)
 	if account == nil {
-		return nil, "", responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "internal_error"})
+		return nil, "", responses.Fail(ctx, http.StatusInternalServerError, responses.CodeInternalError, "internal_error")
 	}
 	role, _ := requestctx.AccountRole(ctx)
 	return account, role, nil
@@ -136,5 +136,5 @@ func mapActivityError(ctx http.Context, err error) http.Response {
 	if errors.Is(err, activitysvc.ErrPlatformForbidden) {
 		return responses.Error(ctx, http.StatusForbidden, responses.CodeForbidden, activitysvc.ErrPlatformForbidden.Error())
 	}
-	return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "internal_error"})
+	return responses.Fail(ctx, http.StatusInternalServerError, responses.CodeInternalError, "internal_error")
 }

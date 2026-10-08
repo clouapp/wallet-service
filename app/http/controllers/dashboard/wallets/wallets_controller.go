@@ -84,17 +84,13 @@ func NewWalletsController(deps WalletsControllerDeps) *WalletsController {
 func (ctrl *WalletsController) ListWallets(ctx http.Context) http.Response {
 	accountID, ok := requestctx.AccountID(ctx)
 	if !ok || accountID == uuid.Nil {
-		return responses.Send(ctx, http.StatusBadRequest, http.Json{
-			"error": "account is required",
-		})
+		return responses.Fail(ctx, http.StatusBadRequest, responses.CodeInvalidRequest, "account is required")
 	}
 
 	account, accountOK := requestctx.Account(ctx)
 	role, _ := requestctx.AccountRole(ctx)
 	if !accountOK || account == nil || account.ID != accountID {
-		return responses.Send(ctx, http.StatusBadRequest, http.Json{
-			"error": "account is required",
-		})
+		return responses.Fail(ctx, http.StatusBadRequest, responses.CodeInvalidRequest, "account is required")
 	}
 
 	limit, offset := pagination.ParseParams(ctx, 20)
@@ -112,21 +108,17 @@ func (ctrl *WalletsController) ListWallets(ctx http.Context) http.Response {
 	} else {
 		userID, userOK := requestctx.UserID(ctx)
 		if !userOK || userID == uuid.Nil {
-			return responses.Send(ctx, http.StatusUnauthorized, http.Json{"error": "unauthorized"})
+			return responses.Fail(ctx, http.StatusUnauthorized, responses.CodeUnauthorized, "unauthorized")
 		}
 		wallets, total, err = ctrl.wallets.PaginateByAccountAndMember(ctx.Context(), accountID, userID, chain, limit, offset)
 	}
 	if err != nil {
-		return responses.Send(ctx, http.StatusInternalServerError, http.Json{
-			"error": "failed to fetch wallets",
-		})
+		return responses.Fail(ctx, http.StatusInternalServerError, responses.CodeInternal, "failed to fetch wallets")
 	}
 	items, err := controllers.LoadWalletListItems(ctx.Context(), ctrl.balances, ctrl.chains, wallets)
 	if err != nil {
 		slog.Error("load wallet list balances", "account", accountID, "error", err)
-		return responses.Send(ctx, http.StatusInternalServerError, http.Json{
-			"error": "failed to fetch wallet balances",
-		})
+		return responses.Fail(ctx, http.StatusInternalServerError, responses.CodeInternal, "failed to fetch wallet balances")
 	}
 	return responses.Send(ctx, http.StatusOK, pagination.Response(items, total, limit, offset))
 }
@@ -146,23 +138,17 @@ func (ctrl *WalletsController) ListWallets(ctx http.Context) http.Response {
 func (ctrl *WalletsController) GetWallet(ctx http.Context) http.Response {
 	id, err := requests.RouteUUID(ctx, "walletId")
 	if err != nil {
-		return responses.Send(ctx, http.StatusBadRequest, http.Json{
-			"error": "invalid wallet id",
-		})
+		return responses.Fail(ctx, http.StatusBadRequest, responses.CodeInvalidRequest, "invalid wallet id")
 	}
 
 	accountID, ok := requestctx.AccountID(ctx)
 	if !ok || accountID == uuid.Nil {
-		return responses.Send(ctx, http.StatusBadRequest, http.Json{
-			"error": "account is required",
-		})
+		return responses.Fail(ctx, http.StatusBadRequest, responses.CodeInvalidRequest, "account is required")
 	}
 
 	w, err := ctrl.wallets.FindByIDAndAccount(ctx.Context(), id, accountID)
 	if err != nil || w == nil {
-		return responses.Send(ctx, http.StatusNotFound, http.Json{
-			"error": "wallet not found",
-		})
+		return responses.Fail(ctx, http.StatusNotFound, responses.CodeNotFound, "wallet not found")
 	}
 	if resp := ctrl.hideUnlessVisible(ctx, w.ID); resp != nil {
 		return resp
@@ -176,7 +162,7 @@ func (ctrl *WalletsController) GetWallet(ctx http.Context) http.Response {
 func (ctrl *WalletsController) hideUnlessVisible(ctx http.Context, walletID uuid.UUID) http.Response {
 	account, ok := requestctx.Account(ctx)
 	if !ok || account == nil {
-		return responses.Send(ctx, http.StatusBadRequest, http.Json{"error": "account is required"})
+		return responses.Fail(ctx, http.StatusBadRequest, responses.CodeInvalidRequest, "account is required")
 	}
 	role, _ := requestctx.AccountRole(ctx)
 	if policies.SeesEveryAccountWallet(role, account.ViewAllWallets) {
@@ -184,16 +170,16 @@ func (ctrl *WalletsController) hideUnlessVisible(ctx http.Context, walletID uuid
 	}
 	userID, userOK := requestctx.UserID(ctx)
 	if !userOK || userID == uuid.Nil {
-		return responses.Send(ctx, http.StatusUnauthorized, http.Json{"error": "unauthorized"})
+		return responses.Fail(ctx, http.StatusUnauthorized, responses.CodeUnauthorized, "unauthorized")
 	}
 	_, err := ctrl.members.FindByWalletAndUser(ctx.Context(), walletID, userID)
 	if err == nil {
 		return nil
 	}
 	if errors.Is(err, models.ErrRepositoryNotFound) {
-		return responses.Send(ctx, http.StatusNotFound, http.Json{"error": "wallet not found"})
+		return responses.Fail(ctx, http.StatusNotFound, responses.CodeNotFound, "wallet not found")
 	}
-	return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to fetch wallet"})
+	return responses.Fail(ctx, http.StatusInternalServerError, responses.CodeInternal, "failed to fetch wallet")
 }
 
 // CreateWalletAdmin creates a wallet from the admin panel with full MPC keygen.
@@ -209,7 +195,7 @@ func (ctrl *WalletsController) CreateWalletAdmin(ctx http.Context) http.Response
 	if env, ok := requestctx.AccountEnvironment(ctx); ok && env != "" {
 		chainRecord, _ := ctrl.chains.FindByID(ctx.Context(), req.Chain)
 		if chainRecord != nil && chainRecord.IsTestnet != (env == models.EnvironmentTest) {
-			return responses.Send(ctx, http.StatusForbidden, http.Json{"error": "chain not available in current environment"})
+			return responses.Fail(ctx, http.StatusForbidden, responses.CodeForbidden, "chain not available in current environment")
 		}
 	}
 
@@ -230,7 +216,7 @@ func (ctrl *WalletsController) CreateWalletAdmin(ctx http.Context) http.Response
 func (ctrl *WalletsController) ActivateWallet(ctx http.Context) http.Response {
 	walletID, err := requests.RouteUUID(ctx, "walletId")
 	if err != nil {
-		return responses.Send(ctx, http.StatusBadRequest, http.Json{"error": "invalid wallet id"})
+		return responses.Fail(ctx, http.StatusBadRequest, responses.CodeInvalidRequest, "invalid wallet id")
 	}
 
 	var req requests.ActivateWalletRequest
@@ -248,7 +234,7 @@ func (ctrl *WalletsController) ActivateWallet(ctx http.Context) http.Response {
 		case errors.Is(err, wallet.ErrInvalidActivationCode):
 			return responses.Error(ctx, http.StatusBadRequest, responses.CodeInvalidRequest, wallet.ErrInvalidActivationCode.Error())
 		default:
-			return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "internal error"})
+			return responses.Fail(ctx, http.StatusInternalServerError, responses.CodeInternal, "internal error")
 		}
 	}
 

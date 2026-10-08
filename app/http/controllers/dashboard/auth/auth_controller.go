@@ -113,7 +113,7 @@ func (ctrl *AuthController) Register(ctx http.Context) http.Response {
 
 	hash, err := ctrl.passwords.HashPassword(req.Password)
 	if err != nil {
-		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to hash password"})
+		return responses.Fail(ctx, http.StatusInternalServerError, responses.CodeInternal, "failed to hash password")
 	}
 
 	user, err := ctrl.accounts.Onboard(ctx.Context(), accountsvc.OnboardInput{
@@ -128,7 +128,7 @@ func (ctrl *AuthController) Register(ctx http.Context) http.Response {
 		return nil
 	})
 	if err != nil {
-		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to create user"})
+		return responses.Fail(ctx, http.StatusInternalServerError, responses.CodeInternal, "failed to create user")
 	}
 
 	accounts, defaultAccount, accountsErr := ctrl.loadUserAccounts(user)
@@ -139,7 +139,7 @@ func (ctrl *AuthController) Register(ctx http.Context) http.Response {
 	accessToken, err := appfacades.Auth(ctx).LoginUsingID(user.ID.String())
 	if err != nil {
 		appfacades.Log().WithContext(ctx).Errorf("auth: login after register: %v", err)
-		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to create session"})
+		return responses.Fail(ctx, http.StatusInternalServerError, responses.CodeInternal, "failed to create session")
 	}
 
 	resp := http.Json{
@@ -180,12 +180,12 @@ func (ctrl *AuthController) Login(ctx http.Context) http.Response {
 		// Spend the bcrypt time a wrong password would, so the response time
 		// does not tell a registered email from an unknown one.
 		ctrl.passwords.CheckPassword(req.Password, authsvc.DummyPasswordHash)
-		return responses.Send(ctx, http.StatusUnauthorized, http.Json{"error": "invalid credentials"})
+		return responses.Fail(ctx, http.StatusUnauthorized, responses.CodeUnauthorized, "invalid credentials")
 	}
 	user := *userPtr
 
 	if !ctrl.passwords.CheckPassword(req.Password, user.PasswordHash) {
-		return responses.Send(ctx, http.StatusUnauthorized, http.Json{"error": "invalid credentials"})
+		return responses.Fail(ctx, http.StatusUnauthorized, responses.CodeUnauthorized, "invalid credentials")
 	}
 	if !policies.UserMayHoldSession(user.Status) {
 		return controllers.InactiveUserResponse(ctx)
@@ -197,12 +197,12 @@ func (ctrl *AuthController) Login(ctx http.Context) http.Response {
 	if user.TotpEnabled {
 		if err := ctrl.revoker.AwaitIssuable(user.SessionsRevokedAt); err != nil {
 			appfacades.Log().WithContext(ctx).Errorf("auth: begin 2fa: %v", err)
-			return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to create session"})
+			return responses.Fail(ctx, http.StatusInternalServerError, responses.CodeInternal, "failed to create session")
 		}
 		challenge, err := ctrl.twoFactor.Begin(&user)
 		if err != nil {
 			appfacades.Log().WithContext(ctx).Errorf("auth: begin 2fa: %v", err)
-			return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to create session"})
+			return responses.Fail(ctx, http.StatusInternalServerError, responses.CodeInternal, "failed to create session")
 		}
 		return responses.Send(ctx, http.StatusOK, http.Json{
 			"requires_2fa":    true,
@@ -219,7 +219,7 @@ func (ctrl *AuthController) Login(ctx http.Context) http.Response {
 	tokens, err := ctrl.sessions().IssueSession(ctx, user.ID, user.SessionsRevokedAt)
 	if err != nil {
 		appfacades.Log().WithContext(ctx).Errorf("auth: login: %v", err)
-		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to create session"})
+		return responses.Fail(ctx, http.StatusInternalServerError, responses.CodeInternal, "failed to create session")
 	}
 	return responses.Send(ctx, http.StatusOK, ctrl.signedInResponse(&user, tokens, accounts, defaultAccount))
 }
@@ -242,7 +242,7 @@ func (ctrl *AuthController) VerifyTwoFactor(ctx http.Context) http.Response {
 	}
 
 	if req.Code == "" && req.RecoveryCode == "" {
-		return responses.Send(ctx, http.StatusUnprocessableEntity, http.Json{"error": "code or recovery_code is required"})
+		return responses.Fail(ctx, http.StatusUnprocessableEntity, responses.CodeUnprocessable, "code or recovery_code is required")
 	}
 
 	user, err := ctrl.twoFactor.Complete(req.ChallengeToken, req.Code, req.RecoveryCode)
@@ -264,7 +264,7 @@ func (ctrl *AuthController) VerifyTwoFactor(ctx http.Context) http.Response {
 	tokens, err := ctrl.sessions().IssueSession(ctx, user.ID, user.SessionsRevokedAt)
 	if err != nil {
 		appfacades.Log().WithContext(ctx).Errorf("auth: 2fa login: %v", err)
-		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to create session"})
+		return responses.Fail(ctx, http.StatusInternalServerError, responses.CodeInternal, "failed to create session")
 	}
 	return responses.Send(ctx, http.StatusOK, ctrl.signedInResponse(user, tokens, accounts, defaultAccount))
 }
@@ -299,28 +299,28 @@ func (ctrl *AuthController) RefreshToken(ctx http.Context) http.Response {
 		}
 	}
 	if matched == nil {
-		return responses.Send(ctx, http.StatusUnauthorized, http.Json{"error": "invalid or expired refresh token"})
+		return responses.Fail(ctx, http.StatusUnauthorized, responses.CodeUnauthorized, "invalid or expired refresh token")
 	}
 
 	rotated, err := ctrl.refreshTokens.RevokeIfActive(ctx.Context(), matched.ID)
 	if err != nil {
 		appfacades.Log().WithContext(ctx).Errorf("auth: revoke refresh token: %v", err)
-		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to create session"})
+		return responses.Fail(ctx, http.StatusInternalServerError, responses.CodeInternal, "failed to create session")
 	}
 	if !rotated {
-		return responses.Send(ctx, http.StatusUnauthorized, http.Json{"error": "invalid or expired refresh token"})
+		return responses.Fail(ctx, http.StatusUnauthorized, responses.CodeUnauthorized, "invalid or expired refresh token")
 	}
 
 	owner, err := ctrl.users.FindByID(ctx.Context(), matched.UserID)
 	if err != nil {
 		appfacades.Log().WithContext(ctx).Errorf("auth: refresh: load user: %v", err)
-		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to create session"})
+		return responses.Fail(ctx, http.StatusInternalServerError, responses.CodeInternal, "failed to create session")
 	}
 	if owner == nil || errors.Is(err, models.ErrRepositoryNotFound) {
-		return responses.Send(ctx, http.StatusUnauthorized, http.Json{"error": "invalid or expired refresh token"})
+		return responses.Fail(ctx, http.StatusUnauthorized, responses.CodeUnauthorized, "invalid or expired refresh token")
 	}
 	if !policies.UserMayHoldSession(owner.Status) {
-		return responses.Send(ctx, http.StatusUnauthorized, http.Json{"error": "user is not active"})
+		return responses.Fail(ctx, http.StatusUnauthorized, responses.CodeUnauthorized, "user is not active")
 	}
 	if policies.UserIsSuspended(owner.SuspendedAt) {
 		return responses.SuspendedUser(ctx)
@@ -329,7 +329,7 @@ func (ctrl *AuthController) RefreshToken(ctx http.Context) http.Response {
 	session, err := ctrl.sessions().IssueSession(ctx, owner.ID, owner.SessionsRevokedAt)
 	if err != nil {
 		appfacades.Log().WithContext(ctx).Errorf("auth: refresh: %v", err)
-		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to create session"})
+		return responses.Fail(ctx, http.StatusInternalServerError, responses.CodeInternal, "failed to create session")
 	}
 	return responses.Send(ctx, http.StatusOK, http.Json{
 		"access_token":  session.AccessToken,
@@ -411,17 +411,17 @@ func (ctrl *AuthController) ResetPassword(ctx http.Context) http.Response {
 		}
 	}
 	if matched == nil {
-		return responses.Send(ctx, http.StatusUnauthorized, http.Json{"error": "invalid or expired token"})
+		return responses.Fail(ctx, http.StatusUnauthorized, responses.CodeUnauthorized, "invalid or expired token")
 	}
 
 	hash, err := ctrl.passwords.HashPassword(req.NewPassword)
 	if err != nil {
-		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to hash password"})
+		return responses.Fail(ctx, http.StatusInternalServerError, responses.CodeInternal, "failed to hash password")
 	}
 
 	if err := ctrl.users.UpdatePasswordHash(ctx.Context(), matched.UserID, hash); err != nil {
 		appfacades.Log().WithContext(ctx).Errorf("auth: update password: %v", err)
-		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to update password"})
+		return responses.Fail(ctx, http.StatusInternalServerError, responses.CodeInternal, "failed to update password")
 	}
 
 	if err := ctrl.passwordResets.MarkUsed(ctx.Context(), matched.ID); err != nil {
@@ -429,7 +429,7 @@ func (ctrl *AuthController) ResetPassword(ctx http.Context) http.Response {
 	}
 	if _, err := ctrl.revoker.RevokeAll(ctx.Context(), matched.UserID); err != nil {
 		appfacades.Log().WithContext(ctx).Errorf("auth: reset password: revoke sessions: %v", err)
-		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "password reset but existing sessions could not be revoked"})
+		return responses.Fail(ctx, http.StatusInternalServerError, responses.CodeInternal, "password reset but existing sessions could not be revoked")
 	}
 
 	return responses.Send(ctx, http.StatusOK, http.Json{"message": "password reset successfully"})
@@ -451,7 +451,7 @@ func (ctrl *AuthController) signedInResponse(user *models.User, tokens controlle
 }
 
 func membershipReadUnavailable(ctx http.Context) http.Response {
-	return responses.Send(ctx, http.StatusServiceUnavailable, http.Json{"error": "failed to load accounts"})
+	return responses.Fail(ctx, http.StatusServiceUnavailable, responses.CodeUnavailable, "failed to load accounts")
 }
 
 func (ctrl *AuthController) loadUserAccounts(user *models.User) ([]map[string]interface{}, map[string]interface{}, error) {

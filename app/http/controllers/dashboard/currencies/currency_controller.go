@@ -47,7 +47,7 @@ func NewCurrenciesController(deps CurrenciesControllerDeps) *CurrenciesControlle
 func (ctrl *CurrenciesController) ListCurrencies(ctx http.Context) http.Response {
 	currencies, err := ctrl.currencies.FindAllActive(ctx.Context())
 	if err != nil {
-		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to fetch currencies"})
+		return responses.Fail(ctx, http.StatusInternalServerError, responses.CodeInternal, "failed to fetch currencies")
 	}
 	return responses.Send(ctx, http.StatusOK, http.Json{"data": currencyresources.CurrenciesFrom(currencies)})
 }
@@ -57,7 +57,7 @@ func (ctrl *CurrenciesController) GetCurrency(ctx http.Context) http.Response {
 	path.Load(ctx)
 	code := path.Code
 	if code == "" {
-		return responses.Send(ctx, http.StatusBadRequest, http.Json{"error": "currency code is required"})
+		return responses.Fail(ctx, http.StatusBadRequest, responses.CodeInvalidRequest, "currency code is required")
 	}
 
 	currency, err := ctrl.currencies.FindByCode(ctx.Context(), code)
@@ -65,10 +65,10 @@ func (ctrl *CurrenciesController) GetCurrency(ctx http.Context) http.Response {
 		currency, err = nil, nil
 	}
 	if err != nil {
-		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to fetch currency"})
+		return responses.Fail(ctx, http.StatusInternalServerError, responses.CodeInternal, "failed to fetch currency")
 	}
 	if currency == nil {
-		return responses.Send(ctx, http.StatusNotFound, http.Json{"error": "currency not found"})
+		return responses.Fail(ctx, http.StatusNotFound, responses.CodeNotFound, "currency not found")
 	}
 	return responses.Send(ctx, http.StatusOK, currencyresources.CurrencyPtr(currency))
 }
@@ -81,12 +81,12 @@ func (ctrl *CurrenciesController) ConvertCurrency(ctx http.Context) http.Respons
 	amountStr := query.Amount
 
 	if from == "" || to == "" {
-		return responses.Send(ctx, http.StatusBadRequest, http.Json{"error": "from, to, and amount are required"})
+		return responses.Fail(ctx, http.StatusBadRequest, responses.CodeInvalidRequest, "from, to, and amount are required")
 	}
 
 	amount, err := numeric.Parse("amount", amountStr)
 	if err != nil || !amount.IsPositive() {
-		return responses.Send(ctx, http.StatusBadRequest, http.Json{"error": "amount must be a positive number"})
+		return responses.Fail(ctx, http.StatusBadRequest, responses.CodeInvalidRequest, "amount must be a positive number")
 	}
 
 	result, err := ctrl.prices.Convert(ctx.Context(), from, to, amount)

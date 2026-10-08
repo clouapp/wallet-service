@@ -72,7 +72,7 @@ func (ctrl *PreferencesController) UpdatePreferences(ctx http.Context) http.Resp
 	if req.PreferredFiatCode != "" {
 		cur, err := ctrl.currencies.FindByCode(ctx.Context(), req.PreferredFiatCode)
 		if err != nil || cur == nil || !cur.Active || cur.Type != models.CurrencyTypeFiat {
-			return responses.Send(ctx, http.StatusBadRequest, http.Json{"error": "invalid fiat currency code"})
+			return responses.Fail(ctx, http.StatusBadRequest, responses.CodeInvalidRequest, "invalid fiat currency code")
 		}
 		prefs.PreferredFiatCode = req.PreferredFiatCode
 	}
@@ -81,7 +81,7 @@ func (ctrl *PreferencesController) UpdatePreferences(ctx http.Context) http.Resp
 	}
 
 	if err := ctrl.users.UpdatePreferences(ctx.Context(), userID, prefs); err != nil {
-		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to update preferences"})
+		return responses.Fail(ctx, http.StatusInternalServerError, responses.CodeInternal, "failed to update preferences")
 	}
 
 	return responses.Send(ctx, http.StatusOK, http.Json{

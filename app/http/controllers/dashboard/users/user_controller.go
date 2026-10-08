@@ -109,12 +109,12 @@ func (ctrl *UsersController) sessions() controllers.SessionIssuer {
 func (ctrl *UsersController) GetMe(ctx http.Context) http.Response {
 	user := requestctx.MustUser(ctx)
 	if user == nil {
-		return responses.Send(ctx, http.StatusUnauthorized, http.Json{"error": "unauthenticated"})
+		return responses.Fail(ctx, http.StatusUnauthorized, "unauthenticated", "unauthenticated")
 	}
 	names, err := ctrl.features.ActiveGlobal(ctx.Context())
 	if err != nil {
 		appfacades.Log().WithContext(ctx).Errorf("user: active features: %v", err)
-		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "internal_error"})
+		return responses.Fail(ctx, http.StatusInternalServerError, responses.CodeInternalError, "internal_error")
 	}
 	return responses.Send(ctx, http.StatusOK, MeProfile{User: *userresource.UserFrom(user), Features: names})
 }
@@ -150,7 +150,7 @@ func (ctrl *UsersController) UpdateMe(ctx http.Context) http.Response {
 
 	if req.FullName != "" {
 		if err := ctrl.users.UpdateFullName(ctx.Context(), user.ID, req.FullName); err != nil {
-			return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to update profile"})
+			return responses.Fail(ctx, http.StatusInternalServerError, responses.CodeInternal, "failed to update profile")
 		}
 		user.FullName = req.FullName
 	}
@@ -179,22 +179,22 @@ func (ctrl *UsersController) ChangePassword(ctx http.Context) http.Response {
 	}
 
 	if !ctrl.passwords.CheckPassword(req.CurrentPassword, user.PasswordHash) {
-		return responses.Send(ctx, http.StatusUnauthorized, http.Json{"error": "current password is incorrect"})
+		return responses.Fail(ctx, http.StatusUnauthorized, responses.CodeUnauthorized, "current password is incorrect")
 	}
 
 	hash, err := ctrl.passwords.HashPassword(req.NewPassword)
 	if err != nil {
-		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to hash password"})
+		return responses.Fail(ctx, http.StatusInternalServerError, responses.CodeInternal, "failed to hash password")
 	}
 
 	if err := ctrl.users.UpdatePasswordHash(ctx.Context(), user.ID, hash); err != nil {
-		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to update password"})
+		return responses.Fail(ctx, http.StatusInternalServerError, responses.CodeInternal, "failed to update password")
 	}
 
 	session, err := ctrl.sessions().ReplaceSessions(ctx, user.ID)
 	if err != nil {
 		appfacades.Log().WithContext(ctx).Errorf("auth: change password: replace sessions: %v", err)
-		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "password updated but sessions could not be renewed"})
+		return responses.Fail(ctx, http.StatusInternalServerError, responses.CodeInternal, "password updated but sessions could not be renewed")
 	}
 	return responses.Send(ctx, http.StatusOK, http.Json{
 		"message":       "password updated successfully",
@@ -237,19 +237,19 @@ func (ctrl *UsersController) ListMyAccounts(ctx http.Context) http.Response {
 
 	search, environment, errMessage := parseMyAccountsFilter(query.Search, query.Environment)
 	if errMessage != "" {
-		return responses.Send(ctx, http.StatusBadRequest, http.Json{"error": errMessage})
+		return responses.FailMessage(ctx, http.StatusBadRequest, errMessage)
 	}
 
 	accounts, total, err := ctrl.accounts.ListForMember(ctx.Context(), userID, search, environment, limit, offset)
 	if err != nil {
 		appfacades.Log().WithContext(ctx).Errorf("user: list my accounts: %v", err)
-		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to fetch accounts"})
+		return responses.Fail(ctx, http.StatusInternalServerError, responses.CodeInternal, "failed to fetch accounts")
 	}
 
 	items, err := ctrl.accountsWithCallerRole(ctx, userID, accounts)
 	if err != nil {
 		appfacades.Log().WithContext(ctx).Errorf("user: list my accounts roles: %v", err)
-		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to fetch accounts"})
+		return responses.Fail(ctx, http.StatusInternalServerError, responses.CodeInternal, "failed to fetch accounts")
 	}
 
 	return responses.Send(ctx, http.StatusOK, pagination.Response(items, total, limit, offset))
@@ -334,16 +334,16 @@ func (ctrl *UsersController) UpdateDefaultAccount(ctx http.Context) http.Respons
 
 	au, err := ctrl.accounts.FindMember(ctx.Context(), accountID, userID)
 	if err != nil || au == nil {
-		return responses.Send(ctx, http.StatusForbidden, http.Json{"error": "not a member of this account"})
+		return responses.Fail(ctx, http.StatusForbidden, responses.CodeForbidden, "not a member of this account")
 	}
 
 	userPtr, _ := ctrl.users.FindByID(ctx.Context(), userID)
 	if userPtr == nil {
-		return responses.Send(ctx, http.StatusNotFound, http.Json{"error": "user not found"})
+		return responses.Fail(ctx, http.StatusNotFound, responses.CodeNotFound, "user not found")
 	}
 	userPtr.DefaultAccountID = &accountID
 	if err := ctrl.users.UpdateDefaultAccountID(ctx.Context(), userPtr.ID, &accountID); err != nil {
-		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to update default account"})
+		return responses.Fail(ctx, http.StatusInternalServerError, responses.CodeInternal, "failed to update default account")
 	}
 
 	account, _ := ctrl.accounts.FindByID(ctx.Context(), accountID)
@@ -352,7 +352,7 @@ func (ctrl *UsersController) UpdateDefaultAccount(ctx http.Context) http.Respons
 	}
 	view, err := ctrl.accountView(ctx, *account)
 	if err != nil {
-		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to update default account"})
+		return responses.Fail(ctx, http.StatusInternalServerError, responses.CodeInternal, "failed to update default account")
 	}
 	return responses.Send(ctx, http.StatusOK, http.Json{"account": &view})
 }
@@ -369,23 +369,23 @@ func (ctrl *UsersController) UpdateDefaultAccount(ctx http.Context) http.Respons
 func (ctrl *UsersController) SetupTOTP(ctx http.Context) http.Response {
 	user := requestctx.MustUser(ctx)
 	if user.TotpEnabled {
-		return responses.Send(ctx, http.StatusConflict, http.Json{"error": "2FA is already enabled"})
+		return responses.Fail(ctx, http.StatusConflict, responses.CodeConflict, "2FA is already enabled")
 	}
 
 	secret, qrURL, err := ctrl.passwords.GenerateTOTP(user.Email)
 	if err != nil {
-		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to generate TOTP secret"})
+		return responses.Fail(ctx, http.StatusInternalServerError, responses.CodeInternal, "failed to generate TOTP secret")
 	}
 
 	sealed, err := settings.Seal(appfacades.Crypt(), secret)
 	if err != nil {
 		appfacades.Log().WithContext(ctx).Errorf("user: setup totp: seal failed")
-		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to encrypt secret"})
+		return responses.Fail(ctx, http.StatusInternalServerError, responses.CodeInternal, "failed to encrypt secret")
 	}
 
 	if err := ctrl.users.UpdateTotpSecret(ctx.Context(), user.ID, sealed); err != nil {
 		appfacades.Log().WithContext(ctx).Errorf("user: setup totp: save failed")
-		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to save TOTP secret"})
+		return responses.Fail(ctx, http.StatusInternalServerError, responses.CodeInternal, "failed to save TOTP secret")
 	}
 
 	return responses.Send(ctx, http.StatusOK, http.Json{
@@ -418,28 +418,28 @@ func (ctrl *UsersController) ConfirmTOTP(ctx http.Context) http.Response {
 	decryptedSecret, err := ctrl.secondFactor.OpenSecret(user.ID)
 	if err != nil {
 		appfacades.Log().WithContext(ctx).Errorf("user: confirm totp: open secret failed")
-		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to decrypt secret"})
+		return responses.Fail(ctx, http.StatusInternalServerError, responses.CodeInternal, "failed to decrypt secret")
 	}
 	if decryptedSecret == "" {
-		return responses.Send(ctx, http.StatusBadRequest, http.Json{"error": "no TOTP secret found — call setup first"})
+		return responses.Fail(ctx, http.StatusBadRequest, responses.CodeInvalidRequest, "no TOTP secret found — call setup first")
 	}
 
 	matched, err := ctrl.secondFactor.RecordConfirmedCode(user.ID, decryptedSecret, req.Code)
 	if err != nil {
 		appfacades.Log().WithContext(ctx).Errorf("user: confirm totp: %v", err)
-		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to enable 2FA"})
+		return responses.Fail(ctx, http.StatusInternalServerError, responses.CodeInternal, "failed to enable 2FA")
 	}
 	if !matched {
-		return responses.Send(ctx, http.StatusUnauthorized, http.Json{"error": "invalid verification code"})
+		return responses.Fail(ctx, http.StatusUnauthorized, responses.CodeUnauthorized, "invalid verification code")
 	}
 
 	if err := ctrl.users.EnableTotp(ctx.Context(), user.ID); err != nil {
-		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to enable 2FA"})
+		return responses.Fail(ctx, http.StatusInternalServerError, responses.CodeInternal, "failed to enable 2FA")
 	}
 
 	codes, hashes, err := ctrl.passwords.GenerateRecoveryCodes()
 	if err != nil {
-		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to generate recovery codes"})
+		return responses.Fail(ctx, http.StatusInternalServerError, responses.CodeInternal, "failed to generate recovery codes")
 	}
 
 	_ = ctrl.users.DeleteRecoveryCodes(ctx.Context(), user.ID)
@@ -476,7 +476,7 @@ func (ctrl *UsersController) DisableTOTP(ctx http.Context) http.Response {
 	sessionUser := requestctx.MustUser(ctx)
 	user, err := ctrl.users.FindByID(ctx.Context(), sessionUser.ID)
 	if err != nil || user == nil {
-		return responses.Send(ctx, http.StatusNotFound, http.Json{"error": "user not found"})
+		return responses.Fail(ctx, http.StatusNotFound, responses.CodeNotFound, "user not found")
 	}
 	if user.TotpEnabled {
 		if resp := ctrl.requireLiveSecondFactor(ctx, user); resp != nil {
@@ -485,14 +485,14 @@ func (ctrl *UsersController) DisableTOTP(ctx http.Context) http.Response {
 	}
 
 	if err := ctrl.users.DisableTotp(ctx.Context(), user.ID); err != nil {
-		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to disable 2FA"})
+		return responses.Fail(ctx, http.StatusInternalServerError, responses.CodeInternal, "failed to disable 2FA")
 	}
 	_ = ctrl.users.DeleteRecoveryCodes(ctx.Context(), user.ID)
 
 	session, err := ctrl.sessions().ReplaceSessions(ctx, user.ID)
 	if err != nil {
 		appfacades.Log().WithContext(ctx).Errorf("auth: disable totp: replace sessions: %v", err)
-		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "2FA disabled but sessions could not be renewed"})
+		return responses.Fail(ctx, http.StatusInternalServerError, responses.CodeInternal, "2FA disabled but sessions could not be renewed")
 	}
 	user.TotpEnabled = false
 	user.TotpSecret = ""

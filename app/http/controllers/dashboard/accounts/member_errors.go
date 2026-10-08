@@ -15,7 +15,7 @@ func mapMemberError(ctx http.Context, err error) http.Response {
 	}
 	switch {
 	case errors.Is(err, accountsvc.ErrMemberNotFound):
-		return responses.Send(ctx, http.StatusNotFound, http.Json{"error": accountsvc.ErrMemberNotFound.Error()})
+		return responses.FailMessage(ctx, http.StatusNotFound, accountsvc.ErrMemberNotFound.Error())
 	case errors.Is(err, accountsvc.ErrMemberRole):
 		return memberFieldError(ctx, "role", "role must be owner, admin, auditor or user")
 	case errors.Is(err, accountsvc.ErrMemberStatus):
@@ -33,12 +33,12 @@ func mapMemberError(ctx http.Context, err error) http.Response {
 	case errors.Is(err, accountsvc.ErrLastOwner):
 		return memberForbidden(ctx, accountsvc.ErrLastOwner)
 	default:
-		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "internal_error"})
+		return responses.Fail(ctx, http.StatusInternalServerError, responses.CodeInternalError, "internal_error")
 	}
 }
 
 func memberForbidden(ctx http.Context, sentinel error) http.Response {
-	return responses.Send(ctx, http.StatusForbidden, http.Json{"error": sentinel.Error()})
+	return responses.FailMessage(ctx, http.StatusForbidden, sentinel.Error())
 }
 
 func memberFieldError(ctx http.Context, field, message string) http.Response {

@@ -67,7 +67,7 @@ func (ctrl *SweepController) ConsolidateWallet(ctx http.Context) http.Response {
 
 	walletID, err := requests.RouteUUID(ctx, "walletId")
 	if err != nil {
-		return responses.Send(ctx, http.StatusBadRequest, http.Json{"error": "invalid wallet id"})
+		return responses.Fail(ctx, http.StatusBadRequest, responses.CodeInvalidRequest, "invalid wallet id")
 	}
 
 	var req requests.ConsolidateRequest
@@ -103,7 +103,7 @@ func (ctrl *SweepController) ConsolidateWallet(ctx http.Context) http.Response {
 func (ctrl *SweepController) GetGasStatus(ctx http.Context) http.Response {
 	walletID, err := requests.RouteUUID(ctx, "walletId")
 	if err != nil {
-		return responses.Send(ctx, http.StatusBadRequest, http.Json{"error": "invalid wallet id"})
+		return responses.Fail(ctx, http.StatusBadRequest, responses.CodeInvalidRequest, "invalid wallet id")
 	}
 
 	status, err := ctrl.sweeps.RefreshGasStatus(ctx.Context(), walletID)
@@ -151,7 +151,7 @@ func (ctrl *SweepController) ForceGasCheck(ctx http.Context) http.Response {
 func (ctrl *SweepController) PreviewWithdraw(ctx http.Context) http.Response {
 	walletID, err := requests.RouteUUID(ctx, "walletId")
 	if err != nil {
-		return responses.Send(ctx, http.StatusBadRequest, http.Json{"error": "invalid wallet id"})
+		return responses.Fail(ctx, http.StatusBadRequest, responses.CodeInvalidRequest, "invalid wallet id")
 	}
 
 	var req requests.WithdrawPreviewRequest
@@ -161,7 +161,7 @@ func (ctrl *SweepController) PreviewWithdraw(ctx http.Context) http.Response {
 
 	amount, ok := new(big.Int).SetString(req.Amount, 10)
 	if !ok {
-		return responses.Send(ctx, http.StatusBadRequest, http.Json{"error": "invalid amount"})
+		return responses.Fail(ctx, http.StatusBadRequest, responses.CodeInvalidRequest, "invalid amount")
 	}
 
 	callerAccountID, _ := requestctx.AccountID(ctx)

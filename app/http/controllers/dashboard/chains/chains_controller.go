@@ -37,7 +37,7 @@ func (ctrl *ChainsController) findChain(ctx http.Context, chainID string) (*mode
 		return nil, responses.InternalError(ctx, nil)
 	}
 	if chain == nil {
-		return nil, responses.Send(ctx, http.StatusNotFound, http.Json{"error": "chain not found"})
+		return nil, responses.Fail(ctx, http.StatusNotFound, responses.CodeNotFound, "chain not found")
 	}
 	return chain, nil
 }
@@ -57,7 +57,7 @@ func (ctrl *ChainsController) ListChains(ctx http.Context) http.Response {
 
 	chainList, err := ctrl.chains.ListForEnvironment(ctx.Context(), env)
 	if err != nil {
-		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to fetch chains"})
+		return responses.Fail(ctx, http.StatusInternalServerError, responses.CodeInternal, "failed to fetch chains")
 	}
 
 	return ctx.Response().Success().Json(http.Json{"data": chainresource.ChainsFrom(chainList)})
@@ -69,7 +69,7 @@ func (ctrl *ChainsController) GetChain(ctx http.Context) http.Response {
 	path.Load(ctx)
 	chainID := path.ChainID
 	if chainID == "" {
-		return responses.Send(ctx, http.StatusBadRequest, http.Json{"error": "chainId is required"})
+		return responses.Fail(ctx, http.StatusBadRequest, responses.CodeInvalidRequest, "chainId is required")
 	}
 
 	chain, failure := ctrl.findChain(ctx, chainID)
@@ -81,7 +81,7 @@ func (ctrl *ChainsController) GetChain(ctx http.Context) http.Response {
 	if env == models.EnvironmentProd || env == models.EnvironmentTest {
 		isTestnet := env == models.EnvironmentTest
 		if chain.IsTestnet != isTestnet {
-			return responses.Send(ctx, http.StatusForbidden, http.Json{"error": "chain not available in current environment"})
+			return responses.Fail(ctx, http.StatusForbidden, responses.CodeForbidden, "chain not available in current environment")
 		}
 	}
 
@@ -101,7 +101,7 @@ func (ctrl *ChainsController) ListChainTokens(ctx http.Context) http.Response {
 	path.Load(ctx)
 	chainID := path.ChainID
 	if chainID == "" {
-		return responses.Send(ctx, http.StatusBadRequest, http.Json{"error": "chainId is required"})
+		return responses.Fail(ctx, http.StatusBadRequest, responses.CodeInvalidRequest, "chainId is required")
 	}
 
 	chain, failure := ctrl.findChain(ctx, chainID)
@@ -113,13 +113,13 @@ func (ctrl *ChainsController) ListChainTokens(ctx http.Context) http.Response {
 	if env == models.EnvironmentProd || env == models.EnvironmentTest {
 		isTestnet := env == models.EnvironmentTest
 		if chain.IsTestnet != isTestnet {
-			return responses.Send(ctx, http.StatusForbidden, http.Json{"error": "chain not available in current environment"})
+			return responses.Fail(ctx, http.StatusForbidden, responses.CodeForbidden, "chain not available in current environment")
 		}
 	}
 
 	tokens, tokenErr := ctrl.chains.FindTokens(ctx.Context(), chainID)
 	if tokenErr != nil {
-		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to fetch tokens"})
+		return responses.Fail(ctx, http.StatusInternalServerError, responses.CodeInternal, "failed to fetch tokens")
 	}
 
 	return ctx.Response().Success().Json(http.Json{"data": chainresources.TokensFrom(tokens)})
@@ -131,7 +131,7 @@ func (ctrl *ChainsController) ListChainResources(ctx http.Context) http.Response
 	path.Load(ctx)
 	chainID := path.ChainID
 	if chainID == "" {
-		return responses.Send(ctx, http.StatusBadRequest, http.Json{"error": "chainId is required"})
+		return responses.Fail(ctx, http.StatusBadRequest, responses.CodeInvalidRequest, "chainId is required")
 	}
 
 	chain, failure := ctrl.findChain(ctx, chainID)
@@ -143,13 +143,13 @@ func (ctrl *ChainsController) ListChainResources(ctx http.Context) http.Response
 	if env == models.EnvironmentProd || env == models.EnvironmentTest {
 		isTestnet := env == models.EnvironmentTest
 		if chain.IsTestnet != isTestnet {
-			return responses.Send(ctx, http.StatusForbidden, http.Json{"error": "chain not available in current environment"})
+			return responses.Fail(ctx, http.StatusForbidden, responses.CodeForbidden, "chain not available in current environment")
 		}
 	}
 
 	resources, resErr := ctrl.chains.FindResources(ctx.Context(), chainID)
 	if resErr != nil {
-		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to fetch resources"})
+		return responses.Fail(ctx, http.StatusInternalServerError, responses.CodeInternal, "failed to fetch resources")
 	}
 
 	return ctx.Response().Success().Json(http.Json{"data": chainresources.ChainResourcesFrom(resources)})

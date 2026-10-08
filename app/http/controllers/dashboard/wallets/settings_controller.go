@@ -111,11 +111,11 @@ func (ctrl *SettingsController) UpdateWalletSettings(ctx http.Context) http.Resp
 		return walletSettingsErrorResponse(ctx, err)
 	}
 	if err := ctrl.wallets.UpdateSettings(ctx.Context(), wallet.ID, columns); err != nil {
-		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to update wallet settings"})
+		return responses.Fail(ctx, http.StatusInternalServerError, responses.CodeInternal, "failed to update wallet settings")
 	}
 	updated, err := ctrl.wallets.FindByID(ctx.Context(), wallet.ID)
 	if err != nil || updated == nil {
-		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to update wallet settings"})
+		return responses.Fail(ctx, http.StatusInternalServerError, responses.CodeInternal, "failed to update wallet settings")
 	}
 	auditWalletSettingsChange(ctx, wallet, updated, columns)
 	return walletSettingsJSON(ctx, updated)
@@ -129,7 +129,7 @@ func (ctrl *SettingsController) settingsAdapterType(ctx http.Context, chainID st
 	}
 	chainEntity, err := ctrl.chains.FindByID(ctx.Context(), chainID)
 	if err != nil || chainEntity == nil {
-		return "", responses.Send(ctx, http.StatusUnprocessableEntity, http.Json{"error": "chain not found"})
+		return "", responses.Fail(ctx, http.StatusUnprocessableEntity, responses.CodeUnprocessable, "chain not found")
 	}
 	return chainEntity.AdapterType, nil
 }
@@ -160,7 +160,7 @@ func walletSettingsErrorResponse(ctx http.Context, err error) http.Response {
 	if errors.As(err, &fieldErr) {
 		return responses.FieldsFailed(ctx, map[string][]string{fieldErr.Field: {fieldErr.Message}})
 	}
-	return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to update wallet settings"})
+	return responses.Fail(ctx, http.StatusInternalServerError, responses.CodeInternal, "failed to update wallet settings")
 }
 
 func settingsBodyError(ctx http.Context, err error) http.Response {
@@ -237,10 +237,10 @@ var _ walletresource.Wallet
 func (ctrl *SettingsController) ArchiveWallet(ctx http.Context) http.Response {
 	wallet := requestctx.MustWallet(ctx)
 	if wallet.Status == models.WalletStatusArchived {
-		return responses.Send(ctx, http.StatusConflict, http.Json{"error": "wallet already archived"})
+		return responses.Fail(ctx, http.StatusConflict, responses.CodeConflict, "wallet already archived")
 	}
 	if err := ctrl.wallets.SetStatus(ctx.Context(), wallet.ID, models.WalletStatusArchived); err != nil {
-		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to archive wallet"})
+		return responses.Fail(ctx, http.StatusInternalServerError, responses.CodeInternal, "failed to archive wallet")
 	}
 	wallet.Status = models.WalletStatusArchived
 	return responses.Send(ctx, http.StatusOK, walletresource.WithNetworkFrom(wallet, controllers.ResolveWalletChainNetwork(ctx.Context(), ctrl.chains, wallet.Chain)))
@@ -276,10 +276,10 @@ func (ctrl *SettingsController) FreezeWallet(ctx http.Context) http.Response {
 	}
 
 	if err := ctrl.wallets.SetFrozenUntil(ctx.Context(), wallet.ID, frozenUntil); err != nil {
-		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to freeze wallet"})
+		return responses.Fail(ctx, http.StatusInternalServerError, responses.CodeInternal, "failed to freeze wallet")
 	}
 	if err := ctrl.wallets.SetStatus(ctx.Context(), wallet.ID, "frozen"); err != nil {
-		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to freeze wallet"})
+		return responses.Fail(ctx, http.StatusInternalServerError, responses.CodeInternal, "failed to freeze wallet")
 	}
 	wallet.FrozenUntil = &frozenUntil
 	wallet.Status = "frozen"

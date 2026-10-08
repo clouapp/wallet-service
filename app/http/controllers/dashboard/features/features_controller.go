@@ -50,7 +50,7 @@ func (ctrl *FeaturesController) Index(ctx http.Context) http.Response {
 func accountCaller(ctx http.Context) (*models.Account, string, http.Response) {
 	account, _ := requestctx.Account(ctx)
 	if account == nil {
-		return nil, "", responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "internal_error"})
+		return nil, "", responses.Fail(ctx, http.StatusInternalServerError, responses.CodeInternalError, "internal_error")
 	}
 	role, _ := requestctx.AccountRole(ctx)
 	return account, role, nil
@@ -62,12 +62,12 @@ func mapFeatureError(ctx http.Context, err error) http.Response {
 	}
 	switch {
 	case errors.Is(err, featuressvc.ErrNotFound):
-		return responses.Send(ctx, http.StatusNotFound, http.Json{"error": "feature not found"})
+		return responses.Fail(ctx, http.StatusNotFound, responses.CodeNotFound, "feature not found")
 	case errors.Is(err, featuressvc.ErrViewForbidden):
 		return responses.Error(ctx, http.StatusForbidden, responses.CodeForbidden, featuressvc.ErrViewForbidden.Error())
 	case errors.Is(err, featuressvc.ErrUpdateForbidden):
 		return responses.Error(ctx, http.StatusForbidden, responses.CodeForbidden, featuressvc.ErrUpdateForbidden.Error())
 	default:
-		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "internal_error"})
+		return responses.Fail(ctx, http.StatusInternalServerError, responses.CodeInternalError, "internal_error")
 	}
 }

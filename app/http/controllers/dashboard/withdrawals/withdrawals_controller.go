@@ -128,7 +128,7 @@ func (ctrl *WithdrawalsController) ListWalletWithdrawals(ctx http.Context) http.
 	status := query.Status
 	withdrawals, total, err := ctrl.withdrawals.FindByWallet(ctx.Context(), wallet.ID, status, limit, offset)
 	if err != nil {
-		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to fetch withdrawals"})
+		return responses.Fail(ctx, http.StatusInternalServerError, responses.CodeInternal, "failed to fetch withdrawals")
 	}
 	return responses.Send(ctx, http.StatusOK, pagination.Response(withdrawalresource.WithdrawalsFrom(withdrawals), total, limit, offset))
 }
@@ -143,10 +143,7 @@ func (ctrl *WithdrawalsController) EstimateWithdrawalFee(ctx http.Context) http.
 
 	adapter, err := ctrl.registry.Chain(wallet.Chain)
 	if err != nil {
-		return responses.Send(ctx, http.StatusUnprocessableEntity, http.Json{
-			"error": "fee estimation unavailable",
-			"code":  "FEE_ESTIMATE_FAILED",
-		})
+		return responses.Fail(ctx, http.StatusUnprocessableEntity, "FEE_ESTIMATE_FAILED", "fee estimation unavailable")
 	}
 
 	estimate, err := adapter.EstimateFee(ctx.Context(), types.TransferRequest{
@@ -155,10 +152,7 @@ func (ctrl *WithdrawalsController) EstimateWithdrawalFee(ctx http.Context) http.
 		Asset: adapter.NativeAsset(),
 	})
 	if err != nil {
-		return responses.Send(ctx, http.StatusUnprocessableEntity, http.Json{
-			"error": "fee estimation unavailable",
-			"code":  "FEE_ESTIMATE_FAILED",
-		})
+		return responses.Fail(ctx, http.StatusUnprocessableEntity, "FEE_ESTIMATE_FAILED", "fee estimation unavailable")
 	}
 
 	return responses.Send(ctx, http.StatusOK, estimate)
@@ -208,7 +202,7 @@ func (ctrl *WithdrawalsController) CreateWalletWithdrawal(ctx http.Context) http
 	} else {
 		accountID, hasAccount := requestctx.AccountID(ctx)
 		if !hasAccount || accountID == uuid.Nil {
-			return responses.Send(ctx, http.StatusUnauthorized, http.Json{"error": "unauthenticated"})
+			return responses.Fail(ctx, http.StatusUnauthorized, "unauthenticated", "unauthenticated")
 		}
 	}
 
@@ -323,12 +317,12 @@ func (ctrl *WithdrawalsController) GetWalletWithdrawal(ctx http.Context) http.Re
 
 	withdrawalID, err := requests.RouteUUID(ctx, "withdrawalId")
 	if err != nil {
-		return responses.Send(ctx, http.StatusBadRequest, http.Json{"error": "invalid withdrawal id"})
+		return responses.Fail(ctx, http.StatusBadRequest, responses.CodeInvalidRequest, "invalid withdrawal id")
 	}
 
 	w, err := ctrl.withdrawals.FindByIDAndWallet(ctx.Context(), withdrawalID, wallet.ID)
 	if err != nil || w == nil {
-		return responses.Send(ctx, http.StatusNotFound, http.Json{"error": "withdrawal not found"})
+		return responses.Fail(ctx, http.StatusNotFound, responses.CodeNotFound, "withdrawal not found")
 	}
 	return responses.Send(ctx, http.StatusOK, withdrawalresource.WithdrawalPtr(w))
 }
@@ -348,22 +342,22 @@ func (ctrl *WithdrawalsController) GetWalletWithdrawal(ctx http.Context) http.Re
 func (ctrl *WithdrawalsController) GetDashboardWithdrawal(ctx http.Context) http.Response {
 	accountID, ok := requestctx.AccountID(ctx)
 	if !ok || accountID == uuid.Nil {
-		return responses.Send(ctx, http.StatusBadRequest, http.Json{"error": "X-Account-Id header is required"})
+		return responses.Fail(ctx, http.StatusBadRequest, responses.CodeInvalidRequest, "X-Account-Id header is required")
 	}
 
 	withdrawalID, err := requests.RouteUUID(ctx, "withdrawalId")
 	if err != nil {
-		return responses.Send(ctx, http.StatusBadRequest, http.Json{"error": "invalid withdrawal id"})
+		return responses.Fail(ctx, http.StatusBadRequest, responses.CodeInvalidRequest, "invalid withdrawal id")
 	}
 
 	withdrawal, err := ctrl.withdrawals.FindByID(ctx.Context(), withdrawalID)
 	if err != nil || withdrawal == nil {
-		return responses.Send(ctx, http.StatusNotFound, http.Json{"error": "withdrawal not found"})
+		return responses.Fail(ctx, http.StatusNotFound, responses.CodeNotFound, "withdrawal not found")
 	}
 
 	wallet, err := ctrl.wallets.FindByID(ctx.Context(), withdrawal.WalletID)
 	if err != nil || wallet == nil || wallet.AccountID == nil || *wallet.AccountID != accountID {
-		return responses.Send(ctx, http.StatusNotFound, http.Json{"error": "withdrawal not found"})
+		return responses.Fail(ctx, http.StatusNotFound, responses.CodeNotFound, "withdrawal not found")
 	}
 	return responses.Send(ctx, http.StatusOK, withdrawalresource.WithdrawalPtr(withdrawal))
 }
@@ -386,26 +380,24 @@ func (ctrl *WithdrawalsController) CancelWalletWithdrawal(ctx http.Context) http
 
 	withdrawalID, err := requests.RouteUUID(ctx, "withdrawalId")
 	if err != nil {
-		return responses.Send(ctx, http.StatusBadRequest, http.Json{"error": "invalid withdrawal id"})
+		return responses.Fail(ctx, http.StatusBadRequest, responses.CodeInvalidRequest, "invalid withdrawal id")
 	}
 
 	w, err := ctrl.withdrawals.FindByIDAndWallet(ctx.Context(), withdrawalID, wallet.ID)
 	if err != nil || w == nil {
-		return responses.Send(ctx, http.StatusNotFound, http.Json{"error": "withdrawal not found"})
+		return responses.Fail(ctx, http.StatusNotFound, responses.CodeNotFound, "withdrawal not found")
 	}
 
 	if w.Status != "pending" {
-		return responses.Send(ctx, http.StatusUnprocessableEntity, http.Json{
-			"error": "only pending withdrawals can be cancelled",
-		})
+		return responses.Fail(ctx, http.StatusUnprocessableEntity, responses.CodeUnprocessable, "only pending withdrawals can be cancelled")
 	}
 
 	actorID := middleware.SessionUserID(ctx)
 	if wallet.AccountID == nil || actorID == uuid.Nil {
-		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to cancel withdrawal"})
+		return responses.Fail(ctx, http.StatusInternalServerError, responses.CodeInternal, "failed to cancel withdrawal")
 	}
 	if err := ctrl.withdrawals.Cancel(ctx.Context(), *wallet.AccountID, actorID, w.ID); err != nil {
-		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to cancel withdrawal"})
+		return responses.Fail(ctx, http.StatusInternalServerError, responses.CodeInternal, "failed to cancel withdrawal")
 	}
 	w.Status = "cancelled"
 	return responses.Send(ctx, http.StatusOK, withdrawalresource.WithdrawalPtr(w))
