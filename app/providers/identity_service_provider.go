@@ -11,9 +11,9 @@ import (
 	usersvc "github.com/macrowallets/waas/app/services/users"
 )
 
-// IdentityServiceProvider binds the account-and-user repositories and the
-// account service by type. The vault container still holds the same instances
-// for callers that have not moved off container.Get.
+// IdentityServiceProvider binds the account-and-user repositories, the
+// account and user services, and the second-factor and session services by
+// type.
 type IdentityServiceProvider struct{}
 
 func (p *IdentityServiceProvider) Register(app foundation.Application) {
@@ -43,6 +43,15 @@ func (p *IdentityServiceProvider) Register(app foundation.Application) {
 	})
 	app.Singleton((*authsvc.Service)(nil), func(foundation.Application) (any, error) {
 		return authsvc.NewService(appfacades.Hash()), nil
+	})
+	app.Singleton((*authsvc.SecondFactorVerifier)(nil), func(app foundation.Application) (any, error) {
+		return newSecondFactorVerifier(app)
+	})
+	app.Singleton((*authsvc.TwoFactorLogin)(nil), func(app foundation.Application) (any, error) {
+		return newTwoFactorLogin(app)
+	})
+	app.Singleton((*authsvc.SessionRevoker)(nil), func(app foundation.Application) (any, error) {
+		return newSessionRevoker(app)
 	})
 	app.Singleton((*usersvc.Service)(nil), func(app foundation.Application) (any, error) {
 		store, err := resolve[*repositories.UserRepository](app)

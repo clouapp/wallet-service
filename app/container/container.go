@@ -79,12 +79,6 @@ type Container struct {
 	IngestService         *ingest.Service
 	BalanceRefreshService *refresh.BalanceService
 	WalletRefresher       *refresh.WalletRefresher
-
-	// Auth services are stored as any so this package does not import app/services/auth.
-	// The providers that construct and bind them own the concrete types.
-	SecondFactor   any
-	TwoFactorLogin any
-	SessionRevoker any
 }
 
 var (

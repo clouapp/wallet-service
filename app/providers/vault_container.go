@@ -232,10 +232,6 @@ func buildVaultContainer(app foundation.Application) (*container.Container, erro
 	c.WalletSyncStateRepo = syncStates
 	c.CurrencyRepo = currencies
 
-	if err := wireAuthServices(c); err != nil {
-		return nil, err
-	}
-
 	c.PriceConfig.CoinGeckoAPIKey = facades.Config().GetString("vault.price.coingecko_api_key")
 	c.PriceConfig.CoinMarketCapAPIKey = facades.Config().GetString("vault.price.coinmarketcap_api_key")
 	c.PriceConfig.CoinAPIKey = facades.Config().GetString("vault.price.coinapi_key")
@@ -317,9 +313,9 @@ func buildVaultContainer(app foundation.Application) (*container.Container, erro
 		},
 	})
 	c.WithdrawalService.UseUSDQuote(c.PriceService)
-	verifier, ok := c.SecondFactor.(*authsvc.SecondFactorVerifier)
-	if !ok || verifier == nil {
-		return nil, fmt.Errorf("vault: withdrawal create: second factor verifier is required")
+	verifier, err := resolve[*authsvc.SecondFactorVerifier](app)
+	if err != nil {
+		return nil, fmt.Errorf("vault: withdrawal create: %w", err)
 	}
 	withdrawalRows, err := resolve[*withdrawalrecords.Records](app)
 	if err != nil {

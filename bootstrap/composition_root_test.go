@@ -11,7 +11,6 @@ import (
 	sweepsecrets "github.com/macrowallets/waas/app/adapters/secretsmanager"
 	"github.com/macrowallets/waas/app/container"
 	"github.com/macrowallets/waas/app/repositories"
-	authsvc "github.com/macrowallets/waas/app/services/auth"
 	chainpkg "github.com/macrowallets/waas/app/services/chain"
 	"github.com/macrowallets/waas/app/services/chainregistry"
 	"github.com/macrowallets/waas/app/services/deposit"
@@ -91,9 +90,6 @@ func TestComposition_Root_TheVaultContainerHoldsTheBoundInstances(t *testing.T) 
 		{"WalletUTXORepo", vault.WalletUTXORepo, container.MustMake[*repositories.WalletUTXORepository]()},
 		{"WalletSyncStateRepo", vault.WalletSyncStateRepo, container.MustMake[*repositories.WalletSyncStateRepository]()},
 		{"CurrencyRepo", vault.CurrencyRepo, container.MustMake[*repositories.CurrencyRepository]()},
-		{"SecondFactor", vault.SecondFactor, container.MustMake[*authsvc.SecondFactorVerifier]()},
-		{"TwoFactorLogin", vault.TwoFactorLogin, container.MustMake[*authsvc.TwoFactorLogin]()},
-		{"SessionRevoker", vault.SessionRevoker, container.MustMake[*authsvc.SessionRevoker]()},
 		{"SecretsManager", vault.SecretsManager, container.MustMake[*sweepsecrets.SDKClient]()},
 		{"Registry", vault.Registry, container.MustMake[*chainpkg.Registry]()},
 		{"WebhookService", vault.WebhookService, container.MustMake[*webhook.Service]()},

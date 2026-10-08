@@ -12,7 +12,6 @@ import (
 	"github.com/macrowallets/waas/app/facades"
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/repositories"
-	authsvc "github.com/macrowallets/waas/app/services/auth"
 	chainpkg "github.com/macrowallets/waas/app/services/chain"
 	"github.com/macrowallets/waas/app/services/deposit"
 	"github.com/macrowallets/waas/app/services/feeestimate"
@@ -41,18 +40,6 @@ func registerRuntimeServices(app foundation.Application) {
 	bindRuntime(app, func(c *container.Container) *withdrawalevents.Publisher { return c.WithdrawalEvents }, "withdrawal events")
 	bindRuntime(app, func(c *container.Container) *webhooksync.Service { return c.WebhookSyncService }, "webhook sync service")
 	bindRuntime(app, func(c *container.Container) *ingest.Catalog { return ingest.NewCatalog(c.WebhookProviders) }, "ingest provider catalog")
-	bindRuntime(app, func(c *container.Container) *authsvc.SecondFactorVerifier {
-		verifier, _ := c.SecondFactor.(*authsvc.SecondFactorVerifier)
-		return verifier
-	}, "second factor verifier")
-	bindRuntime(app, func(c *container.Container) *authsvc.TwoFactorLogin {
-		login, _ := c.TwoFactorLogin.(*authsvc.TwoFactorLogin)
-		return login
-	}, "two factor login")
-	bindRuntime(app, func(c *container.Container) *authsvc.SessionRevoker {
-		revoker, _ := c.SessionRevoker.(*authsvc.SessionRevoker)
-		return revoker
-	}, "session revoker")
 
 	app.Singleton((*price.CoinAPICredential)(nil), func(foundation.Application) (any, error) {
 		return &price.CoinAPICredential{Key: container.Get().PriceConfig.CoinAPIKey}, nil
