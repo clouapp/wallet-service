@@ -190,6 +190,11 @@ func (s *contractGapsSuite) TestArchive_Wallet_Unauthenticated() {
 
 func (s *contractGapsSuite) TestArchive_Wallet_ForbiddenForAccountUser() {
 	walletID := s.seedWallet("archive forbidden")
+	// Since 3f78a9c a user only sees an unassigned wallet when the account lists
+	// every wallet; otherwise the wallet is 404. Let the user see it, so the
+	// refusal under test is the archive permission.
+	_, err := facades.Orm().Query().Exec(`UPDATE accounts SET view_all_wallets = TRUE WHERE id = ?`, s.accountID)
+	s.Require().NoError(err)
 	_, _, token := s.seedSession("user")
 
 	resp := s.call(http.MethodPost, "/v1/wallets/"+walletID.String()+"/archive", token, "")

@@ -148,7 +148,12 @@ func (s *WalletSettingsTestSuite) TestChain_Rules_ForFeeSettings() {
 	s.AssertError(tooHigh, 422, "validation_failed", "validation failed")
 	tooHighBody, err := tooHigh.Content()
 	s.Require().NoError(err)
-	s.Contains(tooHighBody, "fee_rate_min must not exceed fee_rate_max: 41 > 40")
+	// encoding/json escapes ">" as \u003e on the wire, so compare the decoded message.
+	var tooHighParsed struct {
+		Errors map[string][]string `json:"errors"`
+	}
+	s.Require().NoError(json.Unmarshal([]byte(tooHighBody), &tooHighParsed))
+	s.Equal([]string{"fee_rate_min must not exceed fee_rate_max: 41 > 40"}, tooHighParsed.Errors["fee_rate_min"])
 
 	sol := s.wallet(models.ChainSOL)
 	flat := s.patch(s.ownerToken, sol.ID, `{"fee_multiplier": 2}`)
