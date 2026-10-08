@@ -35,8 +35,11 @@ type apiTokenLookup interface {
 // APITokenClaims are the JWT claims embedded in account API tokens.
 //
 // RequireSignature, when true, forces APITokenAuth to reject requests that
-// do not carry a valid X-Signature HMAC header. External API tokens minted
-// from the dashboard set this to true; internal/test tokens leave it false.
+// do not carry an X-Signature header. It is set at mint time from the
+// create-token request's require_signature field, which defaults to false, and
+// the dashboard does not send it today, so tokens minted from it do not require
+// a signature. A signature that is present is verified whether or not this is
+// set. The scheme and its proposed v2 are in docs/api-request-signing.md.
 type APITokenClaims struct {
 	AccountID        string `json:"account_id"`
 	RequireSignature bool   `json:"sig,omitempty"`
@@ -164,10 +167,9 @@ func APITokenAuth(tokens apiTokenLookup) http.Middleware {
 
 // MintAPIToken creates a signed JWT for the given AccessToken record.
 //
-// Set requireSignature=true for tokens intended for external API use
-// (e.g. dashboard-issued integration tokens) so APITokenAuth will reject
-// requests that omit a valid X-Signature HMAC header. Internal/test
-// tokens should pass false.
+// Set requireSignature=true for a token whose callers must always sign, so
+// APITokenAuth rejects a request that has no X-Signature header. A request that
+// does send one is verified either way. Internal/test tokens pass false.
 func MintAPIToken(token *models.AccessToken, requireSignature bool) (string, error) {
 	return mintAPIToken(token, requireSignature, "")
 }

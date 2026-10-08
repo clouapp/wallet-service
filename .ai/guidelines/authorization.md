@@ -135,8 +135,13 @@ platform route answers a member with anything but that 403.
   whitelist, change webhook endpoints) requires TOTP when the user has it on;
   re-authentication is a route-level or service-level rule, never an `if` on
   "is this a session caller" inside a shared handler.
-- External tokens minted with `require_signature` must carry a valid
-  `X-Signature` HMAC; `APITokenAuth` refuses before anything reads the body.
+- External tokens minted with `require_signature` must carry an `X-Signature`
+  header. A signature that is present is verified whether or not the token
+  requires one: `APITokenAuth` reads the body to compute the HMAC (key: the whole
+  bearer JWT, message: the body only) and hands it back to the handler. A token
+  without the claim, which is every token the dashboard mints today, is bearer-only
+  and an optional signature. The scheme's limits and the proposed v2 are in
+  [`docs/api-request-signing.md`](../../docs/api-request-signing.md).
 
 ## Policy conventions
 
