@@ -10,6 +10,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/goravel/framework/facades"
 
+	appfacades "github.com/macrowallets/waas/app/facades"
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/repositories"
 	"github.com/macrowallets/waas/tests/feature/support/testenv"
@@ -47,10 +48,47 @@ func TestDB(t *testing.T) {
 		t.Fatalf("migration failed: %v", freshSchemaErr)
 	}
 	truncateTables(t)
+	forgetSettingsCache(t)
 	t.Cleanup(func() {
 		requireSafeTestDatabase(t)
 		truncateTables(t)
+		forgetSettingsCache(t)
 	})
+}
+
+// settingsCachePattern matches the settings service's cache keys
+// (settings:platform:<group>, settings:account:<uuid>:<group>) under any cache
+// prefix.
+const settingsCachePattern = "*settings:*"
+
+// forgetSettingsCache drops the cached settings groups along with the rows the
+// truncation deleted. The cache lives in Redis, which the truncation does not
+// touch, so a platform group one test cached (or a test package that ran before
+// on the same worker) would otherwise outlive its rows and the next reader would
+// see stale limits. It deletes by pattern on the worker's own test Redis index,
+// never FLUSHDB.
+func forgetSettingsCache(t *testing.T) {
+	t.Helper()
+
+	client, err := appfacades.Redis()
+	if err != nil {
+		t.Fatalf("forget settings cache: %v", err)
+	}
+	ctx := context.Background()
+	var keys []string
+	iter := client.Scan(ctx, 0, settingsCachePattern, 0).Iterator()
+	for iter.Next(ctx) {
+		keys = append(keys, iter.Val())
+	}
+	if err := iter.Err(); err != nil {
+		t.Fatalf("forget settings cache: scan: %v", err)
+	}
+	if len(keys) == 0 {
+		return
+	}
+	if err := client.Del(ctx, keys...).Err(); err != nil {
+		t.Fatalf("forget settings cache: delete: %v", err)
+	}
 }
 
 // TestDBFreshSchema migrates the schema fresh before and after the test, for tests
