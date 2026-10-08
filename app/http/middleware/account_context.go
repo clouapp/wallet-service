@@ -28,25 +28,25 @@ func AccountContext(accounts accountScope) http.Middleware {
 		rawID := ctx.Request().Input("accountId")
 		accountID, err := uuid.Parse(rawID)
 		if err != nil {
-			_ = responses.Send(ctx, http.StatusNotFound, http.Json{"error": "invalid account id"}).Abort()
+			_ = responses.Fail(ctx, http.StatusNotFound, responses.CodeNotFound, "invalid account id").Abort()
 			return
 		}
 
 		accountPtr, err := accounts.FindByID(ctx.Context(), accountID)
 		if err != nil || accountPtr == nil {
-			_ = responses.Send(ctx, http.StatusNotFound, http.Json{"error": "account not found"}).Abort()
+			_ = responses.Fail(ctx, http.StatusNotFound, responses.CodeNotFound, "account not found").Abort()
 			return
 		}
 
 		userID := contextUserID(ctx)
 		if userID == uuid.Nil {
-			_ = responses.Send(ctx, http.StatusUnauthorized, http.Json{"error": "unauthenticated"}).Abort()
+			_ = responses.Fail(ctx, http.StatusUnauthorized, "unauthenticated", "unauthenticated").Abort()
 			return
 		}
 
 		au, err := accounts.FindMember(ctx.Context(), accountID, userID)
 		if err != nil || au == nil || !models.MembershipGrantsAccess(au.Status) {
-			_ = responses.Send(ctx, http.StatusForbidden, http.Json{"error": "not a member of this account"}).Abort()
+			_ = responses.Fail(ctx, http.StatusForbidden, responses.CodeForbidden, "not a member of this account").Abort()
 			return
 		}
 

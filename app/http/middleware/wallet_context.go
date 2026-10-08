@@ -33,13 +33,13 @@ func WalletContext(deps WalletContextDeps) http.Middleware {
 		rawID := ctx.Request().Route("walletId")
 		walletID, err := uuid.Parse(rawID)
 		if err != nil {
-			_ = responses.Send(ctx, http.StatusNotFound, http.Json{"error": "invalid wallet id"}).Abort()
+			_ = responses.Fail(ctx, http.StatusNotFound, responses.CodeNotFound, "invalid wallet id").Abort()
 			return
 		}
 
 		wallet, err := wallets.FindByID(ctx.Context(), walletID)
 		if err != nil || wallet == nil {
-			_ = responses.Send(ctx, http.StatusNotFound, http.Json{"error": "wallet not found"}).Abort()
+			_ = responses.Fail(ctx, http.StatusNotFound, responses.CodeNotFound, "wallet not found").Abort()
 			return
 		}
 
@@ -49,7 +49,7 @@ func WalletContext(deps WalletContextDeps) http.Middleware {
 		if wallet.AccountID != nil {
 			member, memberErr := accounts.FindMember(ctx.Context(), *wallet.AccountID, userID)
 			if memberErr != nil && !errors.Is(memberErr, models.ErrRepositoryNotFound) {
-				_ = responses.Send(ctx, http.StatusServiceUnavailable, http.Json{"error": "failed to load membership"}).Abort()
+				_ = responses.Fail(ctx, http.StatusServiceUnavailable, responses.CodeUnavailable, "failed to load membership").Abort()
 				return
 			}
 			if memberErr == nil && member != nil {
@@ -62,7 +62,7 @@ func WalletContext(deps WalletContextDeps) http.Middleware {
 		}
 		_, walletErr := members.FindByWalletAndUser(ctx.Context(), walletID, userID)
 		if walletErr != nil && !errors.Is(walletErr, models.ErrRepositoryNotFound) {
-			_ = responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to fetch wallet"}).Abort()
+			_ = responses.Fail(ctx, http.StatusInternalServerError, responses.CodeInternal, "failed to fetch wallet").Abort()
 			return
 		}
 		hasWalletMembership := walletErr == nil
@@ -70,11 +70,11 @@ func WalletContext(deps WalletContextDeps) http.Middleware {
 		if accountMember != nil {
 			viewAll := account != nil && account.ViewAllWallets
 			if !policies.SeesEveryAccountWallet(accountMember.Role, viewAll) && !hasWalletMembership {
-				_ = responses.Send(ctx, http.StatusNotFound, http.Json{"error": "wallet not found"}).Abort()
+				_ = responses.Fail(ctx, http.StatusNotFound, responses.CodeNotFound, "wallet not found").Abort()
 				return
 			}
 		} else if !hasWalletMembership {
-			_ = responses.Send(ctx, http.StatusForbidden, http.Json{"error": "not a member of this wallet or its account"}).Abort()
+			_ = responses.Fail(ctx, http.StatusForbidden, responses.CodeForbidden, "not a member of this wallet or its account").Abort()
 			return
 		}
 

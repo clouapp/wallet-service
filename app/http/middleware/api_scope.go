@@ -46,7 +46,7 @@ func APIScope(lookups ScopeLookups, permission string) http.Middleware {
 	return func(ctx http.Context) {
 		token, ok := requestctx.APIToken(ctx)
 		if !ok || token == nil {
-			abortWithJSON(ctx, http.StatusUnauthorized, http.Json{"error": "unauthenticated"})
+			_ = responses.Fail(ctx, http.StatusUnauthorized, "unauthenticated", "unauthenticated").Abort()
 			return
 		}
 		switch gateExternalChild(ctx, lookups) {
@@ -57,7 +57,7 @@ func APIScope(lookups ScopeLookups, permission string) http.Middleware {
 			return
 		}
 		if !policies.APITokenAllows(token.Permissions, permission) {
-			abortWithJSON(ctx, http.StatusForbidden, http.Json{"error": responses.CodeForbidden})
+			_ = responses.Fail(ctx, http.StatusForbidden, responses.CodeForbidden, responses.CodeForbidden).Abort()
 			return
 		}
 		ctx.Request().Next()
@@ -84,16 +84,16 @@ func gateExternalTransaction(ctx http.Context, transactions *walletrecords.Trans
 	}
 	accountID, ok := requestctx.AccountID(ctx)
 	if !ok || accountID == uuid.Nil {
-		abortWithJSON(ctx, http.StatusUnauthorized, http.Json{"error": "unauthenticated"})
+		_ = responses.Fail(ctx, http.StatusUnauthorized, "unauthenticated", "unauthenticated").Abort()
 		return childAnswered
 	}
 	tx, err := transactions.FindByIDForAccount(ctx.Context(), id, accountID)
 	if err != nil && !rowMissing(err) {
-		abortWithJSON(ctx, http.StatusInternalServerError, http.Json{"error": "failed to load transaction"})
+		_ = responses.Fail(ctx, http.StatusInternalServerError, responses.CodeInternal, "failed to load transaction").Abort()
 		return childAnswered
 	}
 	if rowMissing(err) || tx == nil || tx.ID == uuid.Nil {
-		abortWithJSON(ctx, http.StatusNotFound, http.Json{"error": "transaction not found"})
+		_ = responses.Fail(ctx, http.StatusNotFound, responses.CodeNotFound, "transaction not found").Abort()
 		return childAnswered
 	}
 	return childCheck
@@ -106,16 +106,16 @@ func gateExternalWebhook(ctx http.Context, webhooks *walletrecords.Webhooks, raw
 	}
 	accountID, ok := requestctx.AccountID(ctx)
 	if !ok || accountID == uuid.Nil {
-		abortWithJSON(ctx, http.StatusUnauthorized, http.Json{"error": "unauthenticated"})
+		_ = responses.Fail(ctx, http.StatusUnauthorized, "unauthenticated", "unauthenticated").Abort()
 		return childAnswered
 	}
 	row, err := webhooks.FindOwnership(ctx.Context(), id)
 	if err != nil && !rowMissing(err) {
-		abortWithJSON(ctx, http.StatusInternalServerError, http.Json{"error": "failed to load webhook"})
+		_ = responses.Fail(ctx, http.StatusInternalServerError, responses.CodeInternal, "failed to load webhook").Abort()
 		return childAnswered
 	}
 	if rowMissing(err) || !webhookVisibleToAccount(row, accountID) {
-		abortWithJSON(ctx, http.StatusNotFound, http.Json{"error": "webhook not found"})
+		_ = responses.Fail(ctx, http.StatusNotFound, responses.CodeNotFound, "webhook not found").Abort()
 		return childAnswered
 	}
 	return childCheck

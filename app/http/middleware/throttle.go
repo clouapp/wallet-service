@@ -116,8 +116,7 @@ func tooManyRequests(ctx http.Context) {
 // gasCheckLimited keeps the body ForceGasCheck answered before the limit moved
 // into this middleware.
 func gasCheckLimited(ctx http.Context) {
-	_ = responses.Send(ctx, http.StatusTooManyRequests, http.Json{
-		"error":               "rate_limited",
+	_ = responses.FailWith(ctx, http.StatusTooManyRequests, "rate_limited", "rate_limited", map[string]any{
 		"limit_type":          "gas_check",
 		"retry_after_seconds": gasCheckRetryAfterSeconds,
 	}).Abort()

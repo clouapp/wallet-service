@@ -3,6 +3,7 @@ package middleware
 import (
 	"github.com/goravel/framework/contracts/http"
 
+	"github.com/macrowallets/waas/app/http/responses"
 	"github.com/macrowallets/waas/app/policies"
 )
 
@@ -21,7 +22,7 @@ func RequireFundAction(action string) http.Middleware {
 	return func(ctx http.Context) {
 		role := AccountRole(ctx)
 		if !policies.MayPerformFundAction(role, action) {
-			abortWithJSON(ctx, http.StatusForbidden, http.Json{"error": "insufficient role"})
+			_ = responses.Fail(ctx, http.StatusForbidden, responses.CodeForbidden, "insufficient role").Abort()
 			return
 		}
 		ctx.Request().Next()

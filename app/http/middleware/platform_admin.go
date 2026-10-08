@@ -39,7 +39,7 @@ func PlatformAdmin(admins PlatformAdminLookup, refusal func(method, pattern stri
 	return func(ctx contractshttp.Context) {
 		userID, ok := requestctx.UserID(ctx)
 		if !ok {
-			_ = responses.Send(ctx, http.StatusUnauthorized, contractshttp.Json{"error": "user not found"}).Abort()
+			_ = responses.Fail(ctx, http.StatusUnauthorized, responses.CodeUnauthorized, "user not found").Abort()
 			return
 		}
 		admin, err := admins.IsPlatformAdmin(ctx.Context(), userID)

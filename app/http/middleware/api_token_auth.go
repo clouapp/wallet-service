@@ -57,7 +57,7 @@ func APITokenAuth(tokens apiTokenLookup) http.Middleware {
 	return func(ctx http.Context) {
 		bearer := ctx.Request().Header("Authorization", "")
 		if !strings.HasPrefix(bearer, "Bearer ") {
-			abortWithJSON(ctx, http.StatusUnauthorized, http.Json{"error": "missing bearer token"})
+			_ = responses.Fail(ctx, http.StatusUnauthorized, responses.CodeUnauthorized, "missing bearer token").Abort()
 			return
 		}
 		rawToken := strings.TrimPrefix(bearer, "Bearer ")
@@ -71,50 +71,50 @@ func APITokenAuth(tokens apiTokenLookup) http.Middleware {
 			return []byte(secret), nil
 		})
 		if err != nil || !parsed.Valid {
-			abortWithJSON(ctx, http.StatusUnauthorized, http.Json{"error": "invalid or expired api token"})
+			_ = responses.Fail(ctx, http.StatusUnauthorized, responses.CodeUnauthorized, "invalid or expired api token").Abort()
 			return
 		}
 		if sub, _ := claims.GetSubject(); sub != "api_token" {
-			abortWithJSON(ctx, http.StatusUnauthorized, http.Json{"error": "token is not an api token"})
+			_ = responses.Fail(ctx, http.StatusUnauthorized, responses.CodeUnauthorized, "token is not an api token").Abort()
 			return
 		}
 
 		tokenID, err := uuid.Parse(claims.ID)
 		if err != nil {
-			abortWithJSON(ctx, http.StatusUnauthorized, http.Json{"error": "invalid token id"})
+			_ = responses.Fail(ctx, http.StatusUnauthorized, responses.CodeUnauthorized, "invalid token id").Abort()
 			return
 		}
 
 		accountID, err := uuid.Parse(claims.AccountID)
 		if err != nil {
-			abortWithJSON(ctx, http.StatusUnauthorized, http.Json{"error": "invalid account id in token"})
+			_ = responses.Fail(ctx, http.StatusUnauthorized, responses.CodeUnauthorized, "invalid account id in token").Abort()
 			return
 		}
 
 		tokenPtr, err := tokens.FindAccessToken(ctx.Context(), tokenID, accountID)
 		if err != nil || tokenPtr == nil {
-			abortWithJSON(ctx, http.StatusUnauthorized, http.Json{"error": "token not found or revoked"})
+			_ = responses.Fail(ctx, http.StatusUnauthorized, responses.CodeUnauthorized, "token not found or revoked").Abort()
 			return
 		}
 		token := *tokenPtr
 
 		if token.RevokedAt != nil {
-			abortWithJSON(ctx, http.StatusUnauthorized, http.Json{"error": "token not found or revoked"})
+			_ = responses.Fail(ctx, http.StatusUnauthorized, responses.CodeUnauthorized, "token not found or revoked").Abort()
 			return
 		}
 
 		if token.ValidUntil != nil && token.ValidUntil.Before(time.Now()) {
-			abortWithJSON(ctx, http.StatusUnauthorized, http.Json{"error": "token expired"})
+			_ = responses.Fail(ctx, http.StatusUnauthorized, responses.CodeUnauthorized, "token expired").Abort()
 			return
 		}
 		if !authsvc.APITokenHashAccepts(claims.Secret, token.TokenHash) {
-			abortWithJSON(ctx, http.StatusUnauthorized, http.Json{"error": "invalid or expired api token"})
+			_ = responses.Fail(ctx, http.StatusUnauthorized, responses.CodeUnauthorized, "invalid or expired api token").Abort()
 			return
 		}
 
 		sig := ctx.Request().Header("X-Signature", "")
 		if claims.RequireSignature && sig == "" {
-			abortWithJSON(ctx, http.StatusUnauthorized, http.Json{"error": "missing request signature"})
+			_ = responses.Fail(ctx, http.StatusUnauthorized, responses.CodeInvalidSignature, "missing request signature").Abort()
 			return
 		}
 		if sig != "" {
@@ -125,14 +125,14 @@ func APITokenAuth(tokens apiTokenLookup) http.Middleware {
 			mac.Write(bodyBytes)
 			expected := hex.EncodeToString(mac.Sum(nil))
 			if !hmac.Equal([]byte(sig), []byte(expected)) {
-				abortWithJSON(ctx, http.StatusUnauthorized, http.Json{"error": "invalid request signature"})
+				_ = responses.Fail(ctx, http.StatusUnauthorized, responses.CodeInvalidSignature, "invalid request signature").Abort()
 				return
 			}
 		}
 
 		account, err := tokens.FindByID(ctx.Context(), accountID)
 		if err != nil || account == nil {
-			abortWithJSON(ctx, http.StatusUnauthorized, http.Json{"error": "token not found or revoked"})
+			_ = responses.Fail(ctx, http.StatusUnauthorized, responses.CodeUnauthorized, "token not found or revoked").Abort()
 			return
 		}
 		if !abortUnlessAccountAllows(ctx, account) {
@@ -144,7 +144,7 @@ func APITokenAuth(tokens apiTokenLookup) http.Middleware {
 		// authenticated caller who is not permitted. A blank allowlist is
 		// not a miss.
 		if !policies.APITokenIPAllows(token.IpCidr, ClientIP(ctx)) {
-			abortWithJSON(ctx, http.StatusForbidden, http.Json{"error": responses.CodeForbidden})
+			_ = responses.Fail(ctx, http.StatusForbidden, responses.CodeForbidden, responses.CodeForbidden).Abort()
 			return
 		}
 

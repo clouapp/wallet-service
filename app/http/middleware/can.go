@@ -10,6 +10,7 @@ import (
 
 	"github.com/macrowallets/waas/app/facades"
 	"github.com/macrowallets/waas/app/http/middleware/requestctx"
+	"github.com/macrowallets/waas/app/http/responses"
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/policies"
 	accountsvc "github.com/macrowallets/waas/app/services/account"
@@ -104,7 +105,7 @@ func gateMember(ctx http.Context, accounts *accountsvc.Service) childGate {
 	}
 	member, err := accounts.FindMember(ctx.Context(), accountID, id)
 	if err != nil && !rowMissing(err) {
-		abortWithJSON(ctx, http.StatusServiceUnavailable, http.Json{"error": "failed to load membership"})
+		_ = responses.Fail(ctx, http.StatusServiceUnavailable, responses.CodeUnavailable, "failed to load membership").Abort()
 		return childAnswered
 	}
 	if rowMissing(err) || member == nil || member.ID == uuid.Nil {
@@ -124,7 +125,7 @@ func gateToken(ctx http.Context, accounts *accountsvc.Service) childGate {
 	}
 	token, err := accounts.FindAccessToken(ctx.Context(), id, accountID)
 	if err != nil && !rowMissing(err) {
-		abortWithJSON(ctx, http.StatusServiceUnavailable, http.Json{"error": "failed to load token"})
+		_ = responses.Fail(ctx, http.StatusServiceUnavailable, responses.CodeUnavailable, "failed to load token").Abort()
 		return childAnswered
 	}
 	if rowMissing(err) || token == nil || token.ID == uuid.Nil {
@@ -144,7 +145,7 @@ func gateInvite(ctx http.Context, accounts *accountsvc.Service) childGate {
 	}
 	invite, err := accounts.FindOpenInvite(ctx.Context(), accountID, id)
 	if err != nil && !rowMissing(err) {
-		abortWithJSON(ctx, http.StatusServiceUnavailable, http.Json{"error": "failed to load invite"})
+		_ = responses.Fail(ctx, http.StatusServiceUnavailable, responses.CodeUnavailable, "failed to load invite").Abort()
 		return childAnswered
 	}
 	if rowMissing(err) || invite == nil || invite.ID == uuid.Nil {

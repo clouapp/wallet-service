@@ -47,7 +47,7 @@ func TOTPEnrollment(flags totpFlagReader, policy totpPolicyReader) http.Middlewa
 		}
 		user, ok := requestctx.User(ctx)
 		if !ok || user == nil || user.ID == uuid.Nil {
-			_ = responses.Send(ctx, http.StatusUnauthorized, http.Json{"error": "unauthenticated"}).Abort()
+			_ = responses.Fail(ctx, http.StatusUnauthorized, "unauthenticated", "unauthenticated").Abort()
 			return
 		}
 		if user.TotpEnabled {
@@ -56,17 +56,17 @@ func TOTPEnrollment(flags totpFlagReader, policy totpPolicyReader) http.Middlewa
 		}
 		account, ok := requestctx.Account(ctx)
 		if !ok || account == nil || account.ID == uuid.Nil {
-			_ = responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "internal"}).Abort()
+			_ = responses.Fail(ctx, http.StatusInternalServerError, responses.CodeInternal, "internal").Abort()
 			return
 		}
 		required, err := enrollmentRequired(ctx.Context(), flags, policy, account.ID)
 		if err != nil {
 			slog.Error("totp enrollment check failed", "account_id", account.ID, "error", err)
-			_ = responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "internal"}).Abort()
+			_ = responses.Fail(ctx, http.StatusInternalServerError, responses.CodeInternal, "internal").Abort()
 			return
 		}
 		if required {
-			_ = responses.Send(ctx, http.StatusForbidden, http.Json{"error": CodeTwoFactorEnrollmentRequired}).Abort()
+			_ = responses.Fail(ctx, http.StatusForbidden, "two_factor_enrollment_required", CodeTwoFactorEnrollmentRequired).Abort()
 			return
 		}
 		ctx.Request().Next()

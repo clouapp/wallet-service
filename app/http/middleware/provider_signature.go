@@ -12,6 +12,7 @@ import (
 	contractshttp "github.com/goravel/framework/contracts/http"
 
 	"github.com/macrowallets/waas/app/facades"
+	"github.com/macrowallets/waas/app/http/responses"
 	"github.com/macrowallets/waas/app/models"
 	ingestsvc "github.com/macrowallets/waas/app/services/ingest"
 	"github.com/macrowallets/waas/app/services/ingest/providers"
@@ -59,30 +60,30 @@ func ProviderSignature(deps InboundSignatureDeps) contractshttp.Middleware {
 		}
 		rawBody, status, message := readInboundBody(ginCtx.Request)
 		if status != 0 {
-			abortWithJSON(ctx, status, contractshttp.Json{"error": message})
+			_ = responses.FailMessage(ctx, status, message).Abort()
 			return
 		}
 
 		sub, status, message := inboundSubscription(ctx, deps, providerName, chainID)
 		if status != 0 {
-			abortWithJSON(ctx, status, contractshttp.Json{"error": message})
+			_ = responses.FailMessage(ctx, status, message).Abort()
 			return
 		}
 		secret, err := decryptInboundSecret(deps, sub.SigningSecret)
 		if err != nil {
 			slog.Error("ingest decrypt signing secret")
-			abortWithJSON(ctx, http.StatusInternalServerError, contractshttp.Json{"error": "configuration error"})
+			_ = responses.Fail(ctx, http.StatusInternalServerError, responses.CodeInternal, "configuration error").Abort()
 			return
 		}
 		provider, found := deps.provider(providerName)
 		if !found {
-			abortWithJSON(ctx, http.StatusBadRequest, contractshttp.Json{"error": "unknown provider"})
+			_ = responses.Fail(ctx, http.StatusBadRequest, responses.CodeInvalidRequest, "unknown provider").Abort()
 			return
 		}
 		valid, verifyErr := provider.VerifyInbound(providers.Header(ginCtx.Request.Header), rawBody, secret)
 		if verifyErr != nil || !valid {
 			slog.Warn("ingest webhook signature rejected", "provider", providerName)
-			abortWithJSON(ctx, http.StatusUnauthorized, contractshttp.Json{"error": "invalid webhook signature"})
+			_ = responses.Fail(ctx, http.StatusUnauthorized, responses.CodeInvalidSignature, "invalid webhook signature").Abort()
 			return
 		}
 

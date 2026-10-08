@@ -44,7 +44,7 @@ missing or mistyped argument refuses.
 Every guard is `middleware.authorize(gate, ability, subject)`. The subject
 resolves the child the path names first (so 404 stays ahead of 403, and a
 failed read is 503), then hands the Gate its arguments; a refusal is 403 with
-the ability's sentence, written by `abortWithJSON`. The Gate answers an
+the ability's sentence, written by `responses.FailMessage`. The Gate answers an
 undefined name with "ability doesn't exist: …", which must never reach a body,
 so `authorize` refuses to build a guard for a name `policies.IsAbility`
 rejects, and booting the routes fails. The refusal sentences are constants in

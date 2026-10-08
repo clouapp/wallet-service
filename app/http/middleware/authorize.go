@@ -4,6 +4,7 @@ import (
 	contractsaccess "github.com/goravel/framework/contracts/auth/access"
 	"github.com/goravel/framework/contracts/http"
 
+	"github.com/macrowallets/waas/app/http/responses"
 	"github.com/macrowallets/waas/app/policies"
 )
 
@@ -28,7 +29,7 @@ type subject func(ctx http.Context) (map[string]any, outcome)
 // authorize is the permission guard behind Can, AccountUpdateMember, the
 // May* guards and the Wallet* guards. It asks the Gate for ability with the
 // subject's arguments and answers a refusal with 403 and the ability's
-// sentence, written by abortWithJSON as those guards always wrote it. The
+// sentence, through responses.FailMessage as those guards always wrote it. The
 // Gate answers an ability it does not know with "ability doesn't exist", so
 // a guard is never built for one.
 func authorize(gate contractsaccess.Gate, ability string, subject subject) http.Middleware {
@@ -48,7 +49,7 @@ func authorize(gate contractsaccess.Gate, ability string, subject subject) http.
 			return
 		}
 		if response := gate.WithContext(ctx).Inspect(ability, arguments); !response.Allowed() {
-			abortWithJSON(ctx, http.StatusForbidden, http.Json{"error": response.Message()})
+			_ = responses.FailMessage(ctx, http.StatusForbidden, response.Message()).Abort()
 			return
 		}
 		ctx.Request().Next()

@@ -25,19 +25,19 @@ func APIWalletContext(wallets *walletrecords.Wallets) http.Middleware {
 	return func(ctx http.Context) {
 		walletID, err := uuid.Parse(ctx.Request().Route("walletId"))
 		if err != nil {
-			abortWithJSON(ctx, http.StatusNotFound, http.Json{"error": "wallet not found"})
+			_ = responses.Fail(ctx, http.StatusNotFound, responses.CodeNotFound, "wallet not found").Abort()
 			return
 		}
 
 		accountID, ok := requestctx.AccountID(ctx)
 		if !ok || accountID == uuid.Nil {
-			abortWithJSON(ctx, http.StatusUnauthorized, http.Json{"error": "unauthenticated"})
+			_ = responses.Fail(ctx, http.StatusUnauthorized, "unauthenticated", "unauthenticated").Abort()
 			return
 		}
 
 		wallet, err := wallets.FindByIDAndAccount(ctx.Context(), walletID, accountID)
 		if err != nil || wallet == nil {
-			abortWithJSON(ctx, http.StatusNotFound, http.Json{"error": "wallet not found"})
+			_ = responses.Fail(ctx, http.StatusNotFound, responses.CodeNotFound, "wallet not found").Abort()
 			return
 		}
 
@@ -45,11 +45,4 @@ func APIWalletContext(wallets *walletrecords.Wallets) http.Middleware {
 		ctx.WithValue(requestctx.KeyWalletID, wallet.ID)
 		ctx.Request().Next()
 	}
-}
-
-// abortWithJSON short-circuits the middleware chain with a JSON body. Using
-// Response().Json(...).Abort() is the non-deprecated pattern in Goravel v1.17
-// and ensures the body is actually written before the abort takes effect.
-func abortWithJSON(ctx http.Context, code int, body http.Json) {
-	_ = responses.Send(ctx, code, body).Abort()
 }
