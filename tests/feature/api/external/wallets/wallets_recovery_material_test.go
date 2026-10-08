@@ -19,6 +19,7 @@ import (
 	extwallets "github.com/macrowallets/waas/app/http/controllers/external/wallets"
 	"github.com/macrowallets/waas/app/http/middleware"
 	"github.com/macrowallets/waas/app/models"
+	"github.com/macrowallets/waas/app/repositories"
 	accountsvc "github.com/macrowallets/waas/app/services/account"
 	authsvc "github.com/macrowallets/waas/app/services/auth"
 	"github.com/macrowallets/waas/app/services/chain"
@@ -98,15 +99,12 @@ func (s *WalletRecoveryMaterialTestSuite) SetupTest() {
 	registry.RegisterChain(mocks.NewMockChain(recoveryTestChain))
 	s.mpcService = &recordingMPCService{MockMPCService: mocks.NewMockMPCService()}
 
-	deps := container.Get()
-	s.Require().NotNil(deps.WalletRepo)
-	s.Require().NotNil(deps.AddressRepo)
 	s.walletService = wallet.NewService(wallet.Deps{
 		Registry:  registry,
 		MPC:       s.mpcService,
 		Secrets:   mocks.NewMockSecretsManager(),
-		Wallets:   deps.WalletRepo,
-		Addresses: deps.AddressRepo,
+		Wallets:   container.MustMake[*repositories.WalletRepository](),
+		Addresses: container.MustMake[*repositories.AddressRepository](),
 	})
 	s.registerCreateRoutes()
 }

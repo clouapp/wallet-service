@@ -1,8 +1,8 @@
 # HTTP Layer Guideline
 
 > Status: TARGET. Today handlers are free functions in one `controllers` package,
-> read dependencies through `container.Get()`, write JSON inline and read the
-> caller from `ctx.Value("string")`. Migration: alignment prompt (Part 1) §3.2–§3.5.
+> write JSON inline and read the caller from `ctx.Value("string")`. Migration:
+> alignment prompt (Part 1) §3.2–§3.5.
 
 The HTTP layer binds a request, calls **one** service, maps that service's
 errors and renders a resource. Everything it needs lives in four packages under

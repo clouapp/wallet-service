@@ -10,7 +10,6 @@ import (
 	goravelTesting "github.com/goravel/framework/testing"
 	"github.com/stretchr/testify/suite"
 
-	"github.com/macrowallets/waas/app/container"
 	"github.com/macrowallets/waas/app/http/middleware"
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/bootstrap"
@@ -31,7 +30,6 @@ func TestMain(m *testing.M) {
 		_ = os.Setenv("AWS_DEFAULT_REGION", "us-east-1")
 	}
 	bootstrap.Boot()
-	_ = container.Get()
 	os.Exit(m.Run())
 }
 

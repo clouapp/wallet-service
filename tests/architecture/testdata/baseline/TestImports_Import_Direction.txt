@@ -1,20 +1,4 @@
 # TestImports_Import_Direction: known violations, rewritten by go test ./tests/architecture -update-baseline
-app/container → app/repositories (container → repositories)
-app/container → app/services/chain (container → services)
-app/container → app/services/deposit (container → services)
-app/container → app/services/depositevents (container → services)
-app/container → app/services/ingest (container → services)
-app/container → app/services/ingest/providers (container → services)
-app/container → app/services/mpc (container → services)
-app/container → app/services/price (container → services)
-app/container → app/services/queue (container → services)
-app/container → app/services/refresh (container → services)
-app/container → app/services/sweep (container → services)
-app/container → app/services/wallet (container → services)
-app/container → app/services/webhook (container → services)
-app/container → app/services/webhooksync (container → services)
-app/container → app/services/withdraw (container → services)
-app/container → app/services/withdrawalevents (container → services)
 app/http/controllers/ingest → app/adapters/ingest/alchemy (http → adapters) [test]
 app/http/controllers/ingest → app/adapters/ingest/helius (http → adapters) [test]
 app/http/controllers/ingest → app/adapters/ingest/quicknode (http → adapters) [test]

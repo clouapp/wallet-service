@@ -144,30 +144,25 @@ func TestPermission_Decisions_GoThroughThePolicy(t *testing.T) {
 	Report(t, &violations)
 }
 
-// TestNoServiceLocatorOutsideTheCompositionRoot reports container.Get() and
-// the string container key outside app/container, app/providers and main.go:
-// the "god struct" must not come back once a package stops using it.
+// TestNoServiceLocatorOutsideTheCompositionRoot reports container.Make and
+// container.MustMake outside the composition root (bootstrap, routes,
+// app/providers and main.go): everything else receives its dependencies
+// through its constructor.
 func TestNo_Service_LocatorOutsideTheCompositionRoot(t *testing.T) {
 	module := sharedModule(t)
 	containerPath := module.ImportPathOf("app/container")
+	compositionRoot := []string{"bootstrap", "routes", "app/providers", "app/container", "tests", "tools", "scripts"}
 	var violations Violations
 	for _, file := range module.ProductionFiles() {
-		if hasAnyPrefix(file.Dir, []string{"app/container", "app/providers", "tests", "tools", "scripts"}) {
+		if file.Dir == "." || hasAnyPrefix(file.Dir, compositionRoot) {
 			continue
 		}
-		for range packageCalls(file, containerPath, "container")["Get"] {
-			violations.Add("%s calls container.Get()", file.Path)
+		calls := packageCalls(file, containerPath, "container")
+		for _, locator := range []string{"Make", "MustMake"} {
+			for range calls[locator] {
+				violations.Add("%s calls container.%s()", file.Path, locator)
+			}
 		}
-		ast.Inspect(file.AST, func(node ast.Node) bool {
-			literal, ok := node.(*ast.BasicLit)
-			if !ok || literal.Kind != token.STRING {
-				return true
-			}
-			if value, err := strconv.Unquote(literal.Value); err == nil && value == "vault.container" {
-				violations.Add("%s uses the string container key", file.Path)
-			}
-			return true
-		})
 	}
 	Report(t, &violations)
 }

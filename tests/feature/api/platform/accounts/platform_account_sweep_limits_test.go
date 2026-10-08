@@ -201,7 +201,7 @@ func (s *PlatformAccountSweepLimitsTestSuite) TestZero_Negative_AndANegativeCapL
 
 func (s *PlatformAccountSweepLimitsTestSuite) loadLimits(accountID uuid.UUID) *sweep.Limits {
 	s.T().Helper()
-	limits, err := container.Get().SweepService.LoadLimits(context.Background(), accountID)
+	limits, err := container.MustMake[*sweep.Box]().Service.LoadLimits(context.Background(), accountID)
 	s.Require().NoError(err)
 	s.Require().NotNil(limits)
 	return limits

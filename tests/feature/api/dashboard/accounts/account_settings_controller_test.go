@@ -72,12 +72,10 @@ func (s *accountSettingsSuite) TestStored_Sweep_LimitIsAppliedWhenSweepLoadsLimi
 }
 
 func (s *accountSettingsSuite) sweepService() sweep.Service {
-	raw, err := facades.App().Make(container.ContainerKey)
+	box, err := container.Make[*sweep.Box]()
 	s.Require().NoError(err)
-	vault, ok := raw.(*container.Container)
-	s.Require().True(ok)
-	s.Require().NotNil(vault.SweepService)
-	return vault.SweepService
+	s.Require().NotNil(box.Service)
+	return box.Service
 }
 
 func (s *accountSettingsSuite) TestGet_Hides_SecretAndShowsIsSet() {

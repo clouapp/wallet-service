@@ -16,7 +16,6 @@ import (
 	"github.com/google/uuid"
 	"github.com/goravel/framework/facades"
 
-	"github.com/macrowallets/waas/app/container"
 	"github.com/macrowallets/waas/app/repositories/chaincatalog"
 	"github.com/macrowallets/waas/bootstrap"
 	"github.com/macrowallets/waas/database/seeders"
@@ -41,7 +40,6 @@ func TestMain(m *testing.M) {
 		panic(err)
 	}
 	bootstrap.Boot()
-	_ = container.Get()
 	os.Exit(m.Run())
 }
 

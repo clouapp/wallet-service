@@ -36,7 +36,6 @@ func (receiver *AppServiceProvider) Register(app foundation.Application) {
 	app.Singleton((*mpc.TSSService)(nil), func(foundation.Application) (any, error) {
 		return mpc.NewTSSService(), nil
 	})
-	registerVaultContainer(app)
 }
 
 func (receiver *AppServiceProvider) Boot(app foundation.Application) {

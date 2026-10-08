@@ -2,9 +2,10 @@
 // the type that was bound, so a consumer can name a dependency without naming
 // the provider that built it.
 //
-// app/providers is the composition root: it registers each singleton under a
-// typed nil. Routes ask for that type with MustMake. A binding is never keyed
-// by string.
+// app/providers registers each singleton under a typed nil. The rest of the
+// composition root (bootstrap, routes, main.go) asks for that type with
+// MustMake and hands it to a constructor. An app binding is never keyed by
+// string.
 package container
 
 import (

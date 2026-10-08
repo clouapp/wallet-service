@@ -11,7 +11,6 @@ import (
 
 	"github.com/goravel/framework/facades"
 
-	"github.com/macrowallets/waas/app/container"
 	"github.com/macrowallets/waas/bootstrap"
 	"github.com/macrowallets/waas/tests/architecture"
 	"github.com/macrowallets/waas/tests/feature/support/testenv"
@@ -248,7 +247,6 @@ func TestMain(m *testing.M) {
 		panic(err)
 	}
 	bootstrap.Boot()
-	_ = container.Get()
 	os.Exit(m.Run())
 }
 

@@ -1,8 +1,9 @@
 # Chain and provider adapters
 
 > Status: TARGET. Today adapters live inside `app/services/` (`chain`,
-> `ingest/providers`, `price`, `blockheight`) and the registry is built in
-> `providers/vault_container.go` with database reads at Register time.
+> `ingest/providers`, `price`, `blockheight`). The registry is bound by
+> `ChainServiceProvider` and filled from the chain catalog that
+> `AppServiceProvider.Boot` reads.
 > Migration: alignment prompt (Part 1) §3.1, §3.6, §3.8.
 
 ## Where things go

@@ -10,7 +10,7 @@ else is business logic and belongs in `app/services`, where it is tested with
 mocks instead of through HTTP.
 
 ```
-routes/<surface>_<feature>.go   the route table; resolves services from app/container
+routes/<surface>_<feature>.go   the route table; builds controllers with container.MustMake
   ↓
 app/http/middleware              auth, account/wallet scope, permission, throttle
   ↓
@@ -25,8 +25,13 @@ app/models                       schema types and the vocabulary everything shar
 
 `app/providers` is the composition root: it adapts repositories and adapters to
 the ports the services declare, injects `facades.Hash()/Crypt()/Cache()`, and
-binds every service by type. `tests/architecture` enforces the direction, and
-it is blocking.
+binds every service by type. Each provider binds the services of its domain
+(`WalletServiceProvider`, `WithdrawalServiceProvider`, `DepositServiceProvider`,
+…) as a singleton that resolves its own dependencies by type, so a service is
+built once and shared; a setter a service still takes runs inside its
+singleton, before anyone resolves it. `container.MustMake` is used only in
+`bootstrap/`, `routes/`, `app/providers/` and `main.go`.
+`tests/architecture` enforces the direction, and it is blocking.
 
 ## Dependencies come through the constructor
 

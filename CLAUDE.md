@@ -30,9 +30,16 @@ today and has a fix tracked elsewhere. Do not read either as permission.
   (`config.ValidateSecrets`, called from `bootstrap.checkBootConfig`), except for
   `artisan key:generate` and `artisan jwt:secret`, which create them. A
   `JWT_SECRET` under 32 characters only warns. — guarded by `config/boot_check_test.go`.
-- Services are built once in `app/providers/vault_container.go` and reached through
-  `app/container` (the "god struct", being replaced by typed bindings — see
-  `.ai/guidelines/controllers-and-services.md`). — UNGUARDED.
+- Each service provider binds its own services under their type
+  (`app.Singleton((*T)(nil), …)`), and each singleton is built once, on first
+  resolution, by resolving its dependencies the same way. Everything else gets its
+  dependencies through its constructor: `container.Make`/`MustMake` (the typed
+  `facades.App().Make`) appear only in the composition root — `bootstrap/`,
+  `routes/`, `app/providers/` and `main.go`. There is no container struct (see
+  `.ai/guidelines/controllers-and-services.md`). — guarded by
+  `TestComposition_Root_ResolvesEveryTypedBindingToOneInstance`
+  (`bootstrap/composition_root_test.go`) and
+  `TestNo_Service_LocatorOutsideTheCompositionRoot` (`tests/architecture`).
 
 ### 2. Layers point down
 
@@ -321,7 +328,7 @@ snapshots in the `localstack_data` volume; the snapshot key lives in
 | `app/http/` | `controllers`, `middleware`, `requests` (FormRequests), `pagination` |
 | `app/services/` | business logic and, for now, the chain/provider/AWS adapters |
 | `app/repositories/`, `app/models/` | persistence and schema types |
-| `app/policies/`, `app/providers/` | Gate policies; service providers and the container wiring |
+| `app/policies/`, `app/providers/` | Gate policies; service providers, each binding the services of its domain |
 | `app/console/`, `app/jobs/`, `app/mails/`, `app/rules/` | artisan commands, queue jobs, mail, validation rules (there is no `app/events/` or `app/listeners/`) |
 | `database/` | migrations, seeders, seed logic |
 | `pkg/`, `packages/` | `pkg/`: `amount`, `numeric`, `types`, `httpclient`, `pgerr`, `lifecycle`, `mpcshare`, `e2evault`. `packages/activitylog`: Goravel package (own ServiceProvider, listed in `bootstrap/providers.go`) |
@@ -391,8 +398,8 @@ back/
 │   └── api.go               # All route definitions (Goravel routing)
 │
 ├── app/
-│   ├── container/           # DI container (boots all services)
-│   ├── providers/           # Goravel service providers (migrations, auth)
+│   ├── container/           # typed Make/MustMake over the Goravel container
+│   ├── providers/           # Goravel service providers (each binds its services)
 │   ├── models/              # Goravel ORM models (embed orm.Model)
 │   ├── repositories/        # Database queries via facades.Orm().Query()
 │   ├── http/

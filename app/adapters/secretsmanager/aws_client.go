@@ -10,7 +10,7 @@ import (
 )
 
 // SDKClient is the AWS Secrets Manager client. Services never name this type.
-// The process container still holds one so key export can resolve it.
+// AppServiceProvider binds one, which key export resolves.
 type SDKClient = awssm.Client
 
 type endpointResolver struct{ url string }

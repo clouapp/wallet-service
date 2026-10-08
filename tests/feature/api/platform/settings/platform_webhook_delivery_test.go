@@ -119,7 +119,7 @@ func (s *PlatformWebhookDeliveryTestSuite) TestA_Stored_LimitAndTimeoutAreWhatDe
 	s.Equal(int64(1), s.count(`SELECT count(*) FROM account_activity WHERE action = 'settings.updated'`))
 
 	wallet := fixtures.InsertWalletWithAccount(s.T(), models.ChainETH, &accountID)
-	svc := container.Get().WebhookService
+	svc := container.MustMake[*webhook.Service]()
 	enqueued, err := svc.EnqueueScoped(context.Background(), webhook.ScopedEvent{
 		EventType: types.EventWithdrawalBroadcast,
 		SubjectID: uuid.NewString(),
@@ -169,7 +169,7 @@ func (s *PlatformWebhookDeliveryTestSuite) TestA_Missing_RowKeepsTheDefault() {
 
 	cfg := fixtures.InsertScopedWebhookConfig(s.T(), receiver.URL, "delivery-default-secret", []string{"withdrawal.broadcast"}, &accountID, nil)
 	wallet := fixtures.InsertWalletWithAccount(s.T(), models.ChainETH, &accountID)
-	svc := container.Get().WebhookService
+	svc := container.MustMake[*webhook.Service]()
 	enqueued, err := svc.EnqueueScoped(context.Background(), webhook.ScopedEvent{
 		EventType: types.EventWithdrawalBroadcast,
 		SubjectID: uuid.NewString(),
