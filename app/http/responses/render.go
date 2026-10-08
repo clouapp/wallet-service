@@ -85,20 +85,18 @@ func SuspendedUser(ctx contractshttp.Context) contractshttp.AbortableResponse {
 	return Fail(ctx, http.StatusForbidden, CodeForbidden, SuspendedUserMessage)
 }
 
-// Send writes body, wrapping a legacy {"error":"text"} map into the envelope.
-// A body that is not that legacy shape is written unchanged, through
-// ctx.Response().Json so success bytes stay where they are.
+// Send writes a success body through ctx.Response().Json, so success bytes
+// stay where they are. A failure goes through Fail, FailWith, FailMessage or
+// Error, never through Send.
 func Send(ctx contractshttp.Context, status int, body any) contractshttp.AbortableResponse {
-	if wrapped, ok := WrapLegacy(status, body); ok {
-		return ctx.Response().Json(status, wrapped)
-	}
 	return ctx.Response().Json(status, body)
 }
 
-// Fail writes the error envelope through ctx.Response().Json, the writer the
-// legacy {"error":"text"} maps used: content type application/json;
-// charset=utf-8 and no trailing newline. Error writes the same envelope
-// through JSON, with a trailing newline; a route keeps the writer it has.
+// Fail writes the error envelope through ctx.Response().Json: content type
+// application/json; charset=utf-8 and no trailing newline, the bytes the
+// legacy {"error":"text"} maps were written with. Error writes the same
+// envelope through JSON, with a trailing newline; a route keeps the writer
+// it has, since moving it changes the bytes on the wire.
 func Fail(ctx contractshttp.Context, status int, code, message string) contractshttp.AbortableResponse {
 	return FailWith(ctx, status, code, message, nil)
 }
@@ -112,6 +110,7 @@ func FailWith(ctx contractshttp.Context, status int, code, message string, field
 
 // FailMessage is Fail for a message known only at run time: the code is
 // CodeFor(status, message), the rule the legacy maps were wrapped with.
+// A message known when the call is written names its code with Fail.
 func FailMessage(ctx contractshttp.Context, status int, message string) contractshttp.AbortableResponse {
 	return Fail(ctx, status, CodeFor(status, message), message)
 }
@@ -174,35 +173,6 @@ func FieldError(ctx contractshttp.Context, field, message string) contractshttp.
 	return FieldsFailed(ctx, map[string][]string{field: {message}})
 }
 
-// WrapLegacy converts a legacy error map into the envelope. The bool is false
-// when body is not a map whose "error" value is a string.
-func WrapLegacy(status int, body any) (resources.ErrorEnvelope, bool) {
-	fields, ok := asMap(body)
-	if !ok {
-		return resources.ErrorEnvelope{}, false
-	}
-	message, ok := fields["error"].(string)
-	if !ok {
-		return resources.ErrorEnvelope{}, false
-	}
-	explicit, _ := fields["code"].(string)
-	extra := map[string]any{}
-	for key, value := range fields {
-		if key == "error" || key == "code" {
-			continue
-		}
-		extra[key] = value
-	}
-	code := explicit
-	if code == "" {
-		code = CodeFor(status, message)
-	}
-	return resources.NewError(resources.ErrorDeps{
-		Code:    code,
-		Message: message,
-	}).With(extra), true
-}
-
 // FieldMessages flattens Goravel's {field: {rule: message}} bag into
 // {field: [message, ...]} with rule names sorted, so the wire is stable.
 func FieldMessages(errs contractsvalidation.Errors) map[string][]string {
@@ -237,8 +207,8 @@ func FieldMessages(errs contractsvalidation.Errors) map[string][]string {
 // CodeFor is the code of a message whose code the caller does not name: a
 // listed sentence (the signature failures), a message that is itself a
 // machine code, or the status default. It is the heuristic the legacy maps
-// were wrapped with; FailMessage keeps it for messages known only at run
-// time, and every message known when the code is written names its code.
+// were wrapped with, kept only for FailMessage: a decision's sentence, a
+// refusal the service chose, a sentinel's text.
 func CodeFor(status int, message string) string {
 	if code, ok := messageCodes[message]; ok {
 		return code
@@ -279,15 +249,4 @@ func CodeFor(status int, message string) string {
 func encodeFailure(ctx contractshttp.Context) contractshttp.AbortableResponse {
 	body := []byte(`{"error":{"code":"` + resources.CodeInternal + `","message":"` + internalMessage + `"}}` + "\n")
 	return ctx.Response().Data(http.StatusInternalServerError, contentTypeJSON, body)
-}
-
-func asMap(body any) (map[string]any, bool) {
-	switch typed := body.(type) {
-	case map[string]any:
-		return typed, true
-	case contractshttp.Json:
-		return map[string]any(typed), true
-	default:
-		return nil, false
-	}
 }
