@@ -7,8 +7,10 @@
 
 Every query lives in `app/repositories`. A repository is a concrete struct that
 embeds `db.Base` and has **no interface of its own** — the consumer declares the
-port. `NewX(nil)` resolves a fresh query per call; `NewX(tx)` binds one
-transaction. Context is an argument of every method; the singleton never stores
+port. Every constructor takes the `orm.Query` first (`NewX(nil)` resolves a fresh
+query per call; `NewX(tx)` binds one transaction); a repository that needs a
+collaborator takes it as the next argument (`NewWebhookConfigRepository(query,
+cipher)`). Context is an argument of every method; the singleton never stores
 a request context.
 
 `app/repositories/internal` is visible only to `app/repositories`.
@@ -17,8 +19,10 @@ a request context.
 
 The query seam (`Base.Query(ctx)`), joining a transaction already open
 (`Transaction(ctx, fn)`, which rolls back and re-panics when `fn` panics), and
-`RequireRow` (no row affected → `models.ErrRepositoryNotFound`). `First` does
-not fail on a miss: the repository checks the zero ID. A duplicate key is
+`RequireRow` (no row affected → `models.ErrRepositoryNotFound`). A single-row
+lookup is `FirstOrFail`, and `LookupError` turns `OrmRecordNotFound` into the
+bare `models.ErrRepositoryNotFound` (anything else is wrapped). Do not use
+`First` and a zero-ID check. A duplicate key is
 recognised with `pkg/pgerr.IsUniqueViolation` (SQLSTATE 23505). No business
 rule lives here.
 

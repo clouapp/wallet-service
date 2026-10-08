@@ -141,7 +141,9 @@ Known violations include `app/models → app/services/mpc` and `config → app/m
   persist) is not changed "in passing". Any change to `mpc`, `wallet`, `withdraw` or
   `sweep` runs the testnet e2e (`scripts/e2e`, `tools/e2e-funder`: SOL, BTC, ETH, POL).
 - `facades.Crypt()` (`APP_KEY`) seals TOTP secrets, RPC URLs and ingest signing secrets at
-  rest; it is not the MPC share envelope. **KNOWN VIOLATION** S11: `webhook_configs.secret`
+  rest; it is not the MPC share envelope. One write format, `settings.Seal` (`enc:v1:` +
+  the Crypt envelope); `settings.OpenStored` also opens the bare envelope that older
+  `chains.rpc_url` rows hold. — guarded by `app/services/settings/seal_legacy_test.go`. **KNOWN VIOLATION** S11: `webhook_configs.secret`
   is plain text.
 
 ### 7. Queues and workers
@@ -322,7 +324,7 @@ snapshots in the `localstack_data` volume; the snapshot key lives in
 | `app/policies/`, `app/providers/` | Gate policies; service providers and the container wiring |
 | `app/console/`, `app/jobs/`, `app/mails/`, `app/rules/` | artisan commands, queue jobs, mail, validation rules (there is no `app/events/` or `app/listeners/`) |
 | `database/` | migrations, seeders, seed logic |
-| `pkg/`, `packages/` | `pkg/`: `amount`, `numeric`, `types`, `httpclient`, `security`, `pgerr`, `lifecycle`, `mpcshare`, `e2evault`. `packages/activitylog`: Goravel package (own ServiceProvider, listed in `bootstrap/providers.go`) |
+| `pkg/`, `packages/` | `pkg/`: `amount`, `numeric`, `types`, `httpclient`, `pgerr`, `lifecycle`, `mpcshare`, `e2evault`. `packages/activitylog`: Goravel package (own ServiceProvider, listed in `bootstrap/providers.go`) |
 | `tests/` | `feature/support` (suite, docker reuse, fixtures, request signing), hand-written `mocks`, `architecture` (machine-checked rules), `contract` (HTTP contract snapshot) |
 | `docs/` | Swagger output and design notes (`GORAVEL_INTEGRATION.md`, `INTEGRATION_STATUS.md` are historical) |
 
@@ -420,7 +422,6 @@ back/
 │
 ├── pkg/
 │   ├── types/               # Shared types (WebhookMessage, etc.)
-│   ├── security/            # Input sanitization
 │   └── e2evault/            # Verified wallet passphrases from the e2e vault
 ├── docs/                    # Swagger specs + design docs
 ├── tools/                   # Standalone binaries: macro-e2e, localstack-secrets-snapshot (`internal/pyjson`: Python-compatible JSON for their ledger/snapshot formats)
