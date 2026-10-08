@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/shopspring/decimal"
@@ -151,34 +152,52 @@ func TestCheck_AddressesPerRequest_UnknownAdapterHasNoCap(t *testing.T) {
 // Redis helpers — nil-client safety (no Redis configured)
 // ---------------------------------------------------------------------------
 
-func TestAcquireWalletOpsLock_NilRdb_IsNoop(t *testing.T) {
+func TestAcquireWalletOpsLock_NilRdb_Refuses(t *testing.T) {
 	svc := &service{rdb: nil}
 	release, err := svc.acquireWalletOpsLock(context.Background(), uuid.New())
-	if err != nil {
-		t.Fatalf("nil Redis client must be a no-op, got %v", err)
+	if !errors.Is(err, ErrRedisUnavailable) {
+		t.Fatalf("without Redis the wallet lock must refuse, got %v", err)
 	}
-	if release == nil {
-		t.Fatal("release func must not be nil even when Redis is disabled")
+	if release != nil {
+		t.Fatal("no release func expected when the lock was not taken")
 	}
-	release() // must not panic
 }
 
-func TestIncrDailyQuota_NilRdb_IsNoop(t *testing.T) {
+func TestIncrDailyQuota_NilRdb_Refuses(t *testing.T) {
 	svc := &service{rdb: nil}
 	limits := &Limits{MaxConsolidateReqPerDay: 1}
-	if err := svc.incrDailyQuota(context.Background(), uuid.New(), limits); err != nil {
-		t.Fatalf("nil Redis client must be a no-op, got %v", err)
+	if err := svc.incrDailyQuota(context.Background(), uuid.New(), limits); !errors.Is(err, ErrRedisUnavailable) {
+		t.Fatalf("without Redis the daily quota must refuse, got %v", err)
 	}
 }
 
 func TestIncr_DailyQuota_NilAccountIsNoop(t *testing.T) {
-	// Even with a non-nil Redis client placeholder, a nil accountID must
-	// short-circuit before any Redis call. We assert by passing nil rdb as
-	// well (any call would panic) — proving the accountID guard runs first.
+	// There is no account to meter, so the guard runs before any Redis call.
 	svc := &service{rdb: nil}
 	limits := &Limits{MaxConsolidateReqPerDay: 1}
 	if err := svc.incrDailyQuota(context.Background(), uuid.Nil, limits); err != nil {
 		t.Fatalf("nil accountID must be a no-op, got %v", err)
+	}
+}
+
+type failingRedis struct{ err error }
+
+func (f failingRedis) SetNX(context.Context, string, string, time.Duration) (bool, error) {
+	return false, f.err
+}
+func (f failingRedis) Del(context.Context, string) error                   { return f.err }
+func (f failingRedis) Incr(context.Context, string) (int64, error)         { return 0, f.err }
+func (f failingRedis) Expire(context.Context, string, time.Duration) error { return f.err }
+
+func TestRedisHelpers_RedisError_Refuses(t *testing.T) {
+	down := errors.New("down")
+	svc := &service{rdb: failingRedis{err: down}}
+	if _, err := svc.acquireWalletOpsLock(context.Background(), uuid.New()); !errors.Is(err, down) {
+		t.Fatalf("a Redis error must refuse the wallet lock, got %v", err)
+	}
+	limits := &Limits{MaxConsolidateReqPerDay: 1}
+	if err := svc.incrDailyQuota(context.Background(), uuid.New(), limits); !errors.Is(err, down) {
+		t.Fatalf("a Redis error must refuse the daily quota, got %v", err)
 	}
 }
 

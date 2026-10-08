@@ -56,6 +56,7 @@ func TestConsolidate_All_BitcoinNoChildren(t *testing.T) {
 	registry.RegisterChain(mockChain)
 	svc := &service{
 		registry:    registry,
+		rdb:         newRedisStore(),
 		walletRepo:  &fakeWalletRepo{wallet: wallet},
 		addressRepo: &fakeAddressRepo{children: []models.Address{baseAddr}},
 		chainRepo:   &fakeChainRepo{chain: chainEntity},
@@ -118,6 +119,7 @@ func TestConsolidateAll_NoEligibleChildren_Noop(t *testing.T) {
 	txRepo := &fakeTxRepo{}
 	svc := &service{
 		registry:    registry,
+		rdb:         newRedisStore(),
 		walletRepo:  &fakeWalletRepo{wallet: wallet},
 		addressRepo: &fakeAddressRepo{children: []models.Address{baseAddr}},
 		chainRepo:   &fakeChainRepo{chain: chainEntity},

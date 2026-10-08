@@ -204,17 +204,21 @@ func (s *Service) verifyDashboardTOTP(ctx context.Context, userID uuid.UUID, cod
 
 func (s *Service) verifyPassphraseBeforePersist(ctx context.Context, wallet *models.Wallet, passphrase string) error {
 	defer mpcshare.DiscardPassphrase(&passphrase)
-	if s.locker != nil {
-		if err := s.checkRateLimit(ctx, wallet.ID.String()); err != nil {
+	if s.locker == nil {
+		slog.Error("withdraw: passphrase attempt limiter needs Redis, which is not configured")
+		return &CreateRefusal{Status: CreateStatusInternal, Message: "internal error"}
+	}
+	if err := s.checkRateLimit(ctx, wallet.ID.String()); err != nil {
+		if errors.Is(err, ErrTooManyAttempts) {
 			return &CreateRefusal{Status: CreateStatusTooManyRequests, Message: err.Error()}
 		}
+		slog.Error("withdraw: passphrase attempt limiter", "wallet_id", wallet.ID, "error", err)
+		return &CreateRefusal{Status: CreateStatusInternal, Message: "internal error"}
 	}
 	shareA, err := wallet.DecryptShareA(passphrase)
 	if err != nil {
 		if errors.Is(err, mpcpkg.ErrInvalidPassphrase) {
-			if s.locker != nil {
-				s.recordFailedAttempt(ctx, wallet.ID.String())
-			}
+			s.recordFailedAttempt(ctx, wallet.ID.String())
 			return &CreateRefusal{Status: CreateStatusUnauthorized, Message: ErrInvalidPassphrase.Error()}
 		}
 		return &CreateRefusal{Status: CreateStatusInternal, Message: "internal error"}

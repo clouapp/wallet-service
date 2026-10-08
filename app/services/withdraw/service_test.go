@@ -166,7 +166,7 @@ func TestRequest_Lock_ErrorIsWrapped(t *testing.T) {
 	}
 }
 
-func TestCheck_Rate_LimitKeepsTheThresholdAndFailOpen(t *testing.T) {
+func TestCheck_Rate_LimitKeepsTheThresholdAndFailsClosed(t *testing.T) {
 	walletID := "wallet-1"
 	open := &recordingLocker{}
 	if err := (&Service{locker: open}).checkRateLimit(context.Background(), walletID); err != nil {
@@ -184,8 +184,9 @@ func TestCheck_Rate_LimitKeepsTheThresholdAndFailOpen(t *testing.T) {
 		t.Fatalf("threshold: %v", err)
 	}
 	down := &recordingLocker{readErr: errors.New("down")}
-	if err := (&Service{locker: down}).checkRateLimit(context.Background(), walletID); err != nil {
-		t.Fatalf("redis error: %v", err)
+	err := (&Service{locker: down}).checkRateLimit(context.Background(), walletID)
+	if err == nil || errors.Is(err, ErrTooManyAttempts) {
+		t.Fatalf("a Redis read error must refuse without claiming the cap was hit, got %v", err)
 	}
 }
 

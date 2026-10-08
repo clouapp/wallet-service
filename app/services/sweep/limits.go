@@ -60,11 +60,10 @@ func limitsFromSettings(accountID uuid.UUID, values settings.SweepLimitValues) *
 
 // acquireWalletOpsLock takes a short-lived Redis mutex keyed by walletID so
 // that only one in-flight withdrawal/consolidation touches a given wallet's
-// addresses at a time. When Redis is not configured (s.rdb == nil) the lock
-// is a no-op — safe for unit tests and dev runs without a Redis instance.
+// addresses at a time. Without Redis the lock cannot be taken, so it refuses.
 func (s *service) acquireWalletOpsLock(ctx context.Context, walletID uuid.UUID) (func(), error) {
 	if s.rdb == nil {
-		return func() {}, nil
+		return nil, ErrRedisUnavailable
 	}
 	key := "vault:lock:wallet_ops:" + walletID.String()
 	ok, err := s.rdb.SetNX(ctx, key, "1", 60*time.Second)
@@ -84,10 +83,13 @@ func (s *service) acquireWalletOpsLock(ctx context.Context, walletID uuid.UUID) 
 // incrDailyQuota atomically increments the per-account daily consolidate
 // counter in Redis and returns ErrDailyQuotaExceeded once the limit is
 // crossed. The first increment of a given UTC day sets a 24h TTL so the key
-// self-expires. No-op when Redis is not configured or when accountID is nil.
+// self-expires. A nil accountID has nothing to meter; without Redis it refuses.
 func (s *service) incrDailyQuota(ctx context.Context, accountID uuid.UUID, limits *Limits) error {
-	if s.rdb == nil || accountID == uuid.Nil {
+	if accountID == uuid.Nil {
 		return nil
+	}
+	if s.rdb == nil {
+		return ErrRedisUnavailable
 	}
 	key := fmt.Sprintf("vault:quota:consolidate:%s:%s",
 		accountID.String(), time.Now().UTC().Format("2006-01-02"))

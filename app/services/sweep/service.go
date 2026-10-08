@@ -23,6 +23,7 @@ var (
 	ErrInsufficientFunds     = errors.New("sweep: insufficient funds across wallet")
 	ErrInFlightConsolidation = errors.New("sweep: another consolidation in flight for this wallet")
 	ErrDailyQuotaExceeded    = errors.New("sweep: daily consolidation quota exceeded")
+	ErrRedisUnavailable      = errors.New("sweep: redis is not configured")
 	ErrTooManyAddresses      = errors.New("sweep: too many addresses per request")
 	// ErrGasEstimateFailed is chain.ErrGasEstimateFailed, re-exported for controllers.
 	ErrGasEstimateFailed = chain.ErrGasEstimateFailed

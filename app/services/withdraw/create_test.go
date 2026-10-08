@@ -22,7 +22,7 @@ const createTestPassphrase = "create-passphrase-0001"
 func TestCreate_Unknown_ChainIsNotAStoreFailure(t *testing.T) {
 	registry := chain.NewRegistry()
 	registry.RegisterChain(mocks.NewMockChain("eth"))
-	svc := &Service{registry: registry}
+	svc := &Service{registry: registry, locker: &recordingLocker{}}
 	svc.UseCreate(memUsers{}, acceptTotp{}, &memWithdrawalRows{}, &memChains{decimals: 18})
 	storeDown := errors.New("db down")
 	_, missing := svc.Create(context.Background(), CreateInput{
@@ -270,6 +270,38 @@ func TestCreate_Stops_AtThePassphraseAttemptCap(t *testing.T) {
 	}
 }
 
+func TestCreate_Refuses_WhenThePassphraseCounterCannotBeRead(t *testing.T) {
+	for name, locker := range map[string]Locker{
+		"redis not configured": nil,
+		"redis read error":     &recordingLocker{readErr: errors.New("down")},
+	} {
+		t.Run(name, func(t *testing.T) {
+			broadcaster := &fakeBroadcaster{}
+			feeChain := newCreateChain(t, broadcaster, "1", nil)
+			rows := &memWithdrawalRows{}
+			svc := newCreateService(t, feeChain.chain, rows, acceptTotp{}, &memChains{decimals: 18})
+			svc.locker = locker
+
+			_, err := svc.Create(context.Background(), CreateInput{
+				Wallet:             sealedCreateWallet(t, "eth", nil),
+				DashboardUserID:    uuid.New(),
+				TotpCode:           "000000",
+				Passphrase:         createTestPassphrase,
+				Amount:             "1",
+				DestinationAddress: "0xdest",
+				IdempotencyKey:     uuid.New().String(),
+			})
+			refusal, ok := err.(*CreateRefusal)
+			if !ok || refusal.Status != CreateStatusInternal || refusal.Message != "internal error" {
+				t.Fatalf("got %v", err)
+			}
+			if rows.creates != 0 || broadcaster.calls != 0 {
+				t.Fatalf("creates %d broadcasts %d", rows.creates, broadcaster.calls)
+			}
+		})
+	}
+}
+
 func TestCreate_Skips_TOTPForAnAccessTokenCaller(t *testing.T) {
 	broadcaster := &fakeBroadcaster{}
 	feeChain := newCreateChain(t, broadcaster, "1", nil)
@@ -477,7 +509,7 @@ func newCreateService(t *testing.T, mock *mocks.MockChain, rows WithdrawalRows, 
 	t.Helper()
 	registry := chain.NewRegistry()
 	registry.RegisterChain(mock)
-	svc := &Service{registry: registry}
+	svc := &Service{registry: registry, locker: &recordingLocker{}}
 	svc.UseCreate(memUsers{}, totp, rows, chains)
 	return svc
 }

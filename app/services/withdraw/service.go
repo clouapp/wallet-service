@@ -359,7 +359,8 @@ func (s *Service) checkRateLimit(ctx context.Context, walletID string) error {
 	key := fmt.Sprintf("vault:ratelimit:passphrase:%s", walletID)
 	count, err := s.locker.Int(ctx, key)
 	if err != nil {
-		return nil
+		// Without the counter the cap cannot be enforced, so refuse.
+		return fmt.Errorf("passphrase attempt counter: %w", err)
 	}
 	if count >= 5 {
 		return ErrTooManyAttempts
@@ -369,7 +370,9 @@ func (s *Service) checkRateLimit(ctx context.Context, walletID string) error {
 
 func (s *Service) recordFailedAttempt(ctx context.Context, walletID string) {
 	key := fmt.Sprintf("vault:ratelimit:passphrase:%s", walletID)
-	_ = s.locker.IncrExpire(ctx, key, 60*time.Second)
+	if err := s.locker.IncrExpire(ctx, key, 60*time.Second); err != nil {
+		slog.Error("withdraw: record failed passphrase attempt", "wallet_id", walletID, "error", err)
+	}
 }
 
 // zeroShare wipes a byte slice in place so sensitive key material does not
