@@ -57,12 +57,12 @@ func NewChainsController(deps ChainsControllerDeps) *ChainsController {
 func (ctrl *ChainsController) Update(ctx http.Context) http.Response {
 	actorID := middleware.SessionUserID(ctx)
 	if actorID == uuid.Nil {
-		return responses.Send(ctx, http.StatusUnauthorized, http.Json{"error": "unauthorized"})
+		return responses.Fail(ctx, http.StatusUnauthorized, responses.CodeUnauthorized, "unauthorized")
 	}
 	var path requests.ChainIDRequest
 	path.Load(ctx)
 	if path.ChainID == "" {
-		return responses.Send(ctx, http.StatusBadRequest, http.Json{"error": "chainId is required"})
+		return responses.Fail(ctx, http.StatusBadRequest, responses.CodeInvalidRequest, "chainId is required")
 	}
 	document, err := requests.ChainThresholdDocument(ctx)
 	if err != nil {
@@ -92,12 +92,12 @@ func (ctrl *ChainsController) Update(ctx http.Context) http.Response {
 func (ctrl *ChainsController) UpdateRPC(ctx http.Context) http.Response {
 	actorID := middleware.SessionUserID(ctx)
 	if actorID == uuid.Nil {
-		return responses.Send(ctx, http.StatusUnauthorized, http.Json{"error": "unauthorized"})
+		return responses.Fail(ctx, http.StatusUnauthorized, responses.CodeUnauthorized, "unauthorized")
 	}
 	var path requests.ChainIDRequest
 	path.Load(ctx)
 	if path.ChainID == "" {
-		return responses.Send(ctx, http.StatusBadRequest, http.Json{"error": "chainId is required"})
+		return responses.Fail(ctx, http.StatusBadRequest, responses.CodeInvalidRequest, "chainId is required")
 	}
 	document, err := requests.ChainRPCDocument(ctx)
 	if err != nil {
@@ -112,9 +112,9 @@ func (ctrl *ChainsController) UpdateRPC(ctx http.Context) http.Response {
 
 func mapChainRPCBodyError(ctx http.Context, err error) http.Response {
 	if errors.Is(err, requests.ErrChainRPCBodyTooLarge) {
-		return responses.Send(ctx, http.StatusRequestEntityTooLarge, http.Json{"error": "request body is too large"})
+		return responses.Fail(ctx, http.StatusRequestEntityTooLarge, responses.CodeRequestTooLarge, "request body is too large")
 	}
-	return responses.Send(ctx, http.StatusBadRequest, http.Json{"error": "invalid request body"})
+	return responses.Fail(ctx, http.StatusBadRequest, responses.CodeInvalidRequest, "invalid request body")
 }
 
 func mapChainRPCError(ctx http.Context, err error) http.Response {
@@ -127,19 +127,19 @@ func mapChainRPCError(ctx http.Context, err error) http.Response {
 	}
 	switch {
 	case errors.Is(err, chainsvc.ErrNotFound):
-		return responses.Send(ctx, http.StatusNotFound, http.Json{"error": "chain not found"})
+		return responses.Fail(ctx, http.StatusNotFound, responses.CodeNotFound, "chain not found")
 	case errors.Is(err, chainsvc.ErrPlatformForbidden):
 		return responses.Error(ctx, http.StatusForbidden, responses.CodeForbidden, chainsvc.ErrPlatformForbidden.Error())
 	default:
-		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "internal_error"})
+		return responses.Fail(ctx, http.StatusInternalServerError, responses.CodeInternalError, "internal_error")
 	}
 }
 
 func mapChainThresholdBodyError(ctx http.Context, err error) http.Response {
 	if errors.Is(err, requests.ErrChainThresholdBodyTooLarge) {
-		return responses.Send(ctx, http.StatusRequestEntityTooLarge, http.Json{"error": "request body is too large"})
+		return responses.Fail(ctx, http.StatusRequestEntityTooLarge, responses.CodeRequestTooLarge, "request body is too large")
 	}
-	return responses.Send(ctx, http.StatusBadRequest, http.Json{"error": "invalid request body"})
+	return responses.Fail(ctx, http.StatusBadRequest, responses.CodeInvalidRequest, "invalid request body")
 }
 
 func mapChainThresholdError(ctx http.Context, err error) http.Response {
@@ -152,10 +152,10 @@ func mapChainThresholdError(ctx http.Context, err error) http.Response {
 	}
 	switch {
 	case errors.Is(err, chainsvc.ErrNotFound):
-		return responses.Send(ctx, http.StatusNotFound, http.Json{"error": "chain not found"})
+		return responses.Fail(ctx, http.StatusNotFound, responses.CodeNotFound, "chain not found")
 	case errors.Is(err, chainsvc.ErrPlatformForbidden):
 		return responses.Error(ctx, http.StatusForbidden, responses.CodeForbidden, chainsvc.ErrPlatformForbidden.Error())
 	default:
-		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "internal_error"})
+		return responses.Fail(ctx, http.StatusInternalServerError, responses.CodeInternalError, "internal_error")
 	}
 }

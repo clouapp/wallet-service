@@ -146,7 +146,7 @@ func (ctrl *WithdrawalsController) CreateWalletWithdrawal(ctx http.Context) http
 	} else {
 		accountID, hasAccount := requestctx.AccountID(ctx)
 		if !hasAccount || accountID == uuid.Nil {
-			return responses.Send(ctx, http.StatusUnauthorized, http.Json{"error": "unauthenticated"})
+			return responses.Fail(ctx, http.StatusUnauthorized, "unauthenticated", "unauthenticated")
 		}
 		// A set spending_limit is enforced later, inside withdraw.Service,
 		// after the passphrase check. This handler does not reserve the cap.
@@ -264,12 +264,12 @@ func (ctrl *WithdrawalsController) GetWalletWithdrawalByIdempotencyKey(ctx http.
 
 	withdrawalID, err := requests.RouteUUID(ctx, "idempotencyKey")
 	if err != nil {
-		return responses.Send(ctx, http.StatusBadRequest, http.Json{"error": "idempotency_key must be a UUID"})
+		return responses.Fail(ctx, http.StatusBadRequest, responses.CodeInvalidRequest, "idempotency_key must be a UUID")
 	}
 
 	w, err := ctrl.withdrawals.FindByIDAndWallet(ctx.Context(), withdrawalID, wallet.ID)
 	if err != nil || w == nil {
-		return responses.Send(ctx, http.StatusNotFound, http.Json{"error": "withdrawal not found"})
+		return responses.Fail(ctx, http.StatusNotFound, responses.CodeNotFound, "withdrawal not found")
 	}
 
 	response := controllers.WithdrawalLookupResponse{

@@ -11,6 +11,8 @@ import (
 	ginpkg "github.com/goravel/gin"
 
 	"github.com/macrowallets/waas/app/http/responses"
+	"github.com/macrowallets/waas/app/models"
+	"github.com/macrowallets/waas/app/services/feeestimate"
 	"github.com/macrowallets/waas/app/services/sweep"
 	"github.com/macrowallets/waas/app/services/withdraw"
 )
@@ -78,6 +80,11 @@ func TestError_Mappers_KeepTheirBytes(t *testing.T) {
 			return MapSpendingLimitError(ctx, withdraw.ErrSpendingQuoteUnavailable)
 		},
 			503, legacyJSON, `{"error":{"code":"spending_limit_quote_unavailable","message":"spending_limit_quote_unavailable"}}`},
+		{"a fee estimate refusal keeps its own code", func(ctx http.Context) http.Response {
+			return feeEstimateErrorResponse(ctx, &models.Wallet{}, &feeestimate.Error{
+				Kind: feeestimate.KindUnprocessable, Code: feeestimate.CodeUnknownAsset, Message: "unknown asset ZZZ",
+			})
+		}, 422, legacyJSON, `{"error":{"code":"unknown_asset","message":"unknown asset"}}`},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

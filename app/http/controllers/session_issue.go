@@ -76,20 +76,20 @@ func (s SessionIssuer) ReplaceSessions(ctx http.Context, userID uuid.UUID) (Sess
 
 // InactiveUserResponse answers a sign-in by a user whose status forbids a session.
 func InactiveUserResponse(ctx http.Context) http.Response {
-	return responses.Send(ctx, http.StatusForbidden, http.Json{"error": "user is not active"})
+	return responses.Fail(ctx, http.StatusForbidden, responses.CodeForbidden, "user is not active")
 }
 
 // TwoFactorErrorResponse maps a second-factor failure onto the auth status codes.
 func TwoFactorErrorResponse(ctx http.Context, err error) http.Response {
 	switch {
 	case errors.Is(err, authsvc.ErrChallengeInvalid):
-		return responses.Send(ctx, http.StatusUnauthorized, http.Json{"error": "invalid or expired partial token"})
+		return responses.Fail(ctx, http.StatusUnauthorized, responses.CodeUnauthorized, "invalid or expired partial token")
 	case errors.Is(err, authsvc.ErrInvalidSecondFactor):
-		return responses.Send(ctx, http.StatusUnauthorized, http.Json{"error": "invalid 2FA code"})
+		return responses.Fail(ctx, http.StatusUnauthorized, responses.CodeUnauthorized, "invalid 2FA code")
 	case errors.Is(err, authsvc.ErrSecondFactorLocked):
-		return responses.Send(ctx, http.StatusTooManyRequests, http.Json{"error": "too many 2FA attempts, sign in again later"})
+		return responses.Fail(ctx, http.StatusTooManyRequests, responses.CodeTooManyRequests, "too many 2FA attempts, sign in again later")
 	default:
 		appfacades.Log().WithContext(ctx).Errorf("auth: verify 2fa: %v", err)
-		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "internal error"})
+		return responses.Fail(ctx, http.StatusInternalServerError, responses.CodeInternal, "internal error")
 	}
 }

@@ -42,10 +42,7 @@ func BlockFlag(ctx contractshttp.Context, flags *features.Service, accountID uui
 	}
 	var gate *features.GateError
 	if errors.As(err, &gate) && gate != nil && gate.Code != "" {
-		return responses.Send(ctx, http.StatusConflict, contractshttp.Json{
-			"error": gate.Code,
-			"code":  gate.Code,
-		})
+		return responses.Fail(ctx, http.StatusConflict, gate.Code, gate.Code)
 	}
 	return MapInternalError(ctx, err, endpoint)
 }

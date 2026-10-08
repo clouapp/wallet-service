@@ -50,11 +50,11 @@ func NewUsersController(accounts *accountsvc.Service) *UsersController {
 func (ctrl *UsersController) Index(ctx http.Context) http.Response {
 	actorID := middleware.SessionUserID(ctx)
 	if actorID == uuid.Nil {
-		return responses.Send(ctx, http.StatusUnauthorized, http.Json{"error": "unauthorized"})
+		return responses.Fail(ctx, http.StatusUnauthorized, responses.CodeUnauthorized, "unauthorized")
 	}
 	accountID, err := requests.RouteUUID(ctx, "accountId")
 	if err != nil {
-		return responses.Send(ctx, http.StatusBadRequest, http.Json{"error": "invalid account id"})
+		return responses.Fail(ctx, http.StatusBadRequest, responses.CodeInvalidRequest, "invalid account id")
 	}
 	limit, offset := pagination.ParseParams(ctx, platformAccountUsersDefaultLimit)
 	rows, total, err := ctrl.accounts.ListUsersForPlatform(ctx.Context(), actorID, accountID, limit, offset)
@@ -74,6 +74,6 @@ func mapAccountUsersError(ctx http.Context, err error) http.Response {
 	case errors.Is(err, accountsvc.ErrAccountNotFound):
 		return responses.Error(ctx, http.StatusNotFound, responses.CodeNotFound, accountsvc.ErrAccountNotFound.Error())
 	default:
-		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "internal_error"})
+		return responses.Fail(ctx, http.StatusInternalServerError, responses.CodeInternalError, "internal_error")
 	}
 }

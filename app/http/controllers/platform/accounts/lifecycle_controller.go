@@ -88,11 +88,11 @@ func (ctrl *LifecycleController) Archive(ctx http.Context) http.Response {
 func (ctrl *LifecycleController) set(ctx http.Context, status string) http.Response {
 	actorID := middleware.SessionUserID(ctx)
 	if actorID == uuid.Nil {
-		return responses.Send(ctx, http.StatusUnauthorized, http.Json{"error": "unauthorized"})
+		return responses.Fail(ctx, http.StatusUnauthorized, responses.CodeUnauthorized, "unauthorized")
 	}
 	accountID, err := requests.RouteUUID(ctx, "accountId")
 	if err != nil {
-		return responses.Send(ctx, http.StatusBadRequest, http.Json{"error": "invalid account id"})
+		return responses.Fail(ctx, http.StatusBadRequest, responses.CodeInvalidRequest, "invalid account id")
 	}
 	account, err := ctrl.accounts.SetPlatformLifecycle(ctx.Context(), actorID, accountID, status)
 	if err != nil {
@@ -108,6 +108,6 @@ func mapLifecycleError(ctx http.Context, err error) http.Response {
 	case errors.Is(err, accountsvc.ErrAccountNotFound):
 		return responses.Error(ctx, http.StatusNotFound, responses.CodeNotFound, accountsvc.ErrAccountNotFound.Error())
 	default:
-		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "internal_error"})
+		return responses.Fail(ctx, http.StatusInternalServerError, responses.CodeInternalError, "internal_error")
 	}
 }

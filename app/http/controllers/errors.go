@@ -24,9 +24,7 @@ func MapInternalError(ctx http.Context, err error, endpoint string) http.Respons
 		"endpoint", endpoint,
 		"error", err,
 	)
-	return responses.Send(ctx, http.StatusInternalServerError, http.Json{
-		"error": "internal_error",
-	})
+	return responses.Fail(ctx, http.StatusInternalServerError, responses.CodeInternalError, "internal_error")
 }
 
 // MapSweepError maps sentinel errors from the sweep package to HTTP responses
@@ -39,38 +37,19 @@ func MapSweepError(ctx http.Context, err error) http.Response {
 	}
 	switch {
 	case errors.Is(err, sweep.ErrInFlightConsolidation):
-		return responses.Send(ctx, http.StatusTooManyRequests, http.Json{
-			"error":               "sweep_limit_exceeded",
-			"limit_type":          "in_flight_consolidation",
-			"retry_after_seconds": 60,
-		})
+		return responses.FailWith(ctx, http.StatusTooManyRequests, responses.CodeSweepLimitExceeded, "sweep_limit_exceeded", map[string]any{"limit_type": "in_flight_consolidation", "retry_after_seconds": 60})
 	case errors.Is(err, sweep.ErrDailyQuotaExceeded):
-		return responses.Send(ctx, http.StatusTooManyRequests, http.Json{
-			"error":      "sweep_limit_exceeded",
-			"limit_type": "daily_quota",
-		})
+		return responses.FailWith(ctx, http.StatusTooManyRequests, responses.CodeSweepLimitExceeded, "sweep_limit_exceeded", map[string]any{"limit_type": "daily_quota"})
 	case errors.Is(err, sweep.ErrTooManyAddresses):
-		return responses.Send(ctx, http.StatusTooManyRequests, http.Json{
-			"error":      "sweep_limit_exceeded",
-			"limit_type": "addresses_per_request",
-		})
+		return responses.FailWith(ctx, http.StatusTooManyRequests, responses.CodeSweepLimitExceeded, "sweep_limit_exceeded", map[string]any{"limit_type": "addresses_per_request"})
 	case errors.Is(err, sweep.ErrWalletNotGasReady):
-		return responses.Send(ctx, http.StatusUnprocessableEntity, http.Json{
-			"error":  "wallet_not_gas_ready",
-			"action": "fund_base_address",
-		})
+		return responses.FailWith(ctx, http.StatusUnprocessableEntity, responses.CodeWalletNotGasReady, "wallet_not_gas_ready", map[string]any{"action": "fund_base_address"})
 	case errors.Is(err, sweep.ErrInsufficientFunds):
-		return responses.Send(ctx, http.StatusUnprocessableEntity, http.Json{
-			"error": "insufficient_funds",
-		})
+		return responses.Fail(ctx, http.StatusUnprocessableEntity, responses.CodeInsufficientFunds, "insufficient_funds")
 	case errors.Is(err, sweep.ErrUnsupportedChain):
-		return responses.Send(ctx, http.StatusUnprocessableEntity, http.Json{
-			"error": "unsupported_chain",
-		})
+		return responses.Fail(ctx, http.StatusUnprocessableEntity, responses.CodeUnsupportedChain, "unsupported_chain")
 	case errors.Is(err, sweep.ErrGasEstimateFailed):
-		return responses.Send(ctx, http.StatusUnprocessableEntity, http.Json{
-			"error": "gas_estimate_failed",
-		})
+		return responses.Fail(ctx, http.StatusUnprocessableEntity, "gas_estimate_failed", "gas_estimate_failed")
 	}
 	return nil
 }
@@ -110,7 +89,7 @@ func mapWithdrawalRefusal(ctx http.Context, refusal *withdraw.CreateRefusal) htt
 	if strings.HasPrefix(message, "unknown asset ") {
 		message = "unknown asset"
 	}
-	return responses.Send(ctx, createRefusalStatus(refusal.Status), http.Json{"error": message})
+	return responses.FailMessage(ctx, createRefusalStatus(refusal.Status), message)
 }
 
 func createRefusalStatus(status withdraw.CreateStatus) int {
@@ -136,18 +115,11 @@ func createRefusalStatus(status withdraw.CreateStatus) int {
 func MapSpendingLimitError(ctx http.Context, err error) http.Response {
 	switch {
 	case errors.Is(err, withdraw.ErrSpendingLimitExceeded):
-		return responses.Send(ctx, http.StatusTooManyRequests, http.Json{
-			"error":      "spending_limit_exceeded",
-			"limit_type": "daily_usd",
-		})
+		return responses.FailWith(ctx, http.StatusTooManyRequests, responses.CodeSpendingLimitExceeded, "spending_limit_exceeded", map[string]any{"limit_type": "daily_usd"})
 	case errors.Is(err, withdraw.ErrSpendingLimitInvalid):
-		return responses.Send(ctx, http.StatusUnprocessableEntity, http.Json{
-			"error": "spending_limit_invalid",
-		})
+		return responses.Fail(ctx, http.StatusUnprocessableEntity, responses.CodeSpendingLimitInvalid, "spending_limit_invalid")
 	case errors.Is(err, withdraw.ErrSpendingQuoteUnavailable):
-		return responses.Send(ctx, http.StatusServiceUnavailable, http.Json{
-			"error": "spending_limit_quote_unavailable",
-		})
+		return responses.Fail(ctx, http.StatusServiceUnavailable, responses.CodeSpendingLimitQuoteUnavailable, "spending_limit_quote_unavailable")
 	default:
 		return nil
 	}

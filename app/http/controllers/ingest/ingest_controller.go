@@ -52,16 +52,16 @@ func (ctrl *IngestController) provider(name string) (providers.WebhookProvider, 
 func (ctrl *IngestController) HandleWebhookIngest(ctx http.Context) http.Response {
 	providerName, chainID, rawBody, verified := middleware.VerifiedInboundWebhook(ctx)
 	if !verified {
-		return responses.Send(ctx, http.StatusUnauthorized, http.Json{"error": "invalid webhook signature"})
+		return responses.Fail(ctx, http.StatusUnauthorized, responses.CodeInvalidSignature, "invalid webhook signature")
 	}
 	provider, found := ctrl.provider(providerName)
 	if !found {
-		return responses.Send(ctx, http.StatusBadRequest, http.Json{"error": "unknown provider"})
+		return responses.Fail(ctx, http.StatusBadRequest, responses.CodeInvalidRequest, "unknown provider")
 	}
 	transfers, err := provider.ParsePayload(rawBody)
 	if err != nil {
 		slog.Warn("ingest parse rejected", "provider", providerName)
-		return responses.Send(ctx, http.StatusBadRequest, http.Json{"error": "invalid payload"})
+		return responses.Fail(ctx, http.StatusBadRequest, responses.CodeInvalidRequest, "invalid payload")
 	}
 	if err := ctrl.ingest.Ingest(ctx.Context(), ingestsvc.InboundEvent{
 		ChainID:   chainID,

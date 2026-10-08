@@ -46,7 +46,7 @@ func NewSettingsController(settings *settingssvc.Service) *SettingsController {
 func (ctrl *SettingsController) Index(ctx http.Context) http.Response {
 	actorID := middleware.SessionUserID(ctx)
 	if actorID == uuid.Nil {
-		return responses.Send(ctx, http.StatusUnauthorized, http.Json{"error": "unauthorized"})
+		return responses.Fail(ctx, http.StatusUnauthorized, responses.CodeUnauthorized, "unauthorized")
 	}
 	view, err := ctrl.settings.PlatformIndex(ctx.Context(), actorID)
 	if errResp := mapPlatformSettingsError(ctx, err); errResp != nil {
@@ -70,12 +70,12 @@ func (ctrl *SettingsController) Index(ctx http.Context) http.Response {
 func (ctrl *SettingsController) Show(ctx http.Context) http.Response {
 	actorID := middleware.SessionUserID(ctx)
 	if actorID == uuid.Nil {
-		return responses.Send(ctx, http.StatusUnauthorized, http.Json{"error": "unauthorized"})
+		return responses.Fail(ctx, http.StatusUnauthorized, responses.CodeUnauthorized, "unauthorized")
 	}
 	var path requests.SettingsGroupRequest
 	path.Load(ctx)
 	if path.Group == "" {
-		return responses.Send(ctx, http.StatusBadRequest, http.Json{"error": "group is required"})
+		return responses.Fail(ctx, http.StatusBadRequest, responses.CodeInvalidRequest, "group is required")
 	}
 	view, err := ctrl.settings.PlatformGroup(ctx.Context(), actorID, path.Group)
 	if errResp := mapPlatformSettingsError(ctx, err); errResp != nil {
@@ -100,12 +100,12 @@ func (ctrl *SettingsController) Show(ctx http.Context) http.Response {
 func (ctrl *SettingsController) ShowAccount(ctx http.Context) http.Response {
 	actorID := middleware.SessionUserID(ctx)
 	if actorID == uuid.Nil {
-		return responses.Send(ctx, http.StatusUnauthorized, http.Json{"error": "unauthorized"})
+		return responses.Fail(ctx, http.StatusUnauthorized, responses.CodeUnauthorized, "unauthorized")
 	}
 	var path requests.PlatformAccountSettingsRequest
 	path.Load(ctx)
 	if path.Group == "" {
-		return responses.Send(ctx, http.StatusBadRequest, http.Json{"error": "group is required"})
+		return responses.Fail(ctx, http.StatusBadRequest, responses.CodeInvalidRequest, "group is required")
 	}
 	accountID, err := uuid.Parse(path.AccountID)
 	if err != nil {
@@ -136,12 +136,12 @@ func (ctrl *SettingsController) ShowAccount(ctx http.Context) http.Response {
 func (ctrl *SettingsController) UpdateAccount(ctx http.Context) http.Response {
 	actorID := middleware.SessionUserID(ctx)
 	if actorID == uuid.Nil {
-		return responses.Send(ctx, http.StatusUnauthorized, http.Json{"error": "unauthorized"})
+		return responses.Fail(ctx, http.StatusUnauthorized, responses.CodeUnauthorized, "unauthorized")
 	}
 	var path requests.PlatformAccountSettingsRequest
 	path.Load(ctx)
 	if path.Group == "" {
-		return responses.Send(ctx, http.StatusBadRequest, http.Json{"error": "group is required"})
+		return responses.Fail(ctx, http.StatusBadRequest, responses.CodeInvalidRequest, "group is required")
 	}
 	accountID, err := uuid.Parse(path.AccountID)
 	if err != nil {
@@ -178,12 +178,12 @@ func (ctrl *SettingsController) UpdateAccount(ctx http.Context) http.Response {
 func (ctrl *SettingsController) Update(ctx http.Context) http.Response {
 	actorID := middleware.SessionUserID(ctx)
 	if actorID == uuid.Nil {
-		return responses.Send(ctx, http.StatusUnauthorized, http.Json{"error": "unauthorized"})
+		return responses.Fail(ctx, http.StatusUnauthorized, responses.CodeUnauthorized, "unauthorized")
 	}
 	var path requests.SettingsGroupRequest
 	path.Load(ctx)
 	if path.Group == "" {
-		return responses.Send(ctx, http.StatusBadRequest, http.Json{"error": "group is required"})
+		return responses.Fail(ctx, http.StatusBadRequest, responses.CodeInvalidRequest, "group is required")
 	}
 	document, err := requests.AccountSettingsDocument(ctx)
 	if err != nil {
@@ -210,7 +210,7 @@ func (ctrl *SettingsController) Update(ctx http.Context) http.Response {
 func (ctrl *SettingsController) Flush(ctx http.Context) http.Response {
 	actorID := middleware.SessionUserID(ctx)
 	if actorID == uuid.Nil {
-		return responses.Send(ctx, http.StatusUnauthorized, http.Json{"error": "unauthorized"})
+		return responses.Fail(ctx, http.StatusUnauthorized, responses.CodeUnauthorized, "unauthorized")
 	}
 	var path requests.SettingsSectionRequest
 	path.Load(ctx)
@@ -235,7 +235,7 @@ func (ctrl *SettingsController) Flush(ctx http.Context) http.Response {
 func (ctrl *SettingsController) Reset(ctx http.Context) http.Response {
 	actorID := middleware.SessionUserID(ctx)
 	if actorID == uuid.Nil {
-		return responses.Send(ctx, http.StatusUnauthorized, http.Json{"error": "unauthorized"})
+		return responses.Fail(ctx, http.StatusUnauthorized, responses.CodeUnauthorized, "unauthorized")
 	}
 	var path requests.SettingsSectionRequest
 	path.Load(ctx)
@@ -262,7 +262,7 @@ func (ctrl *SettingsController) Reset(ctx http.Context) http.Response {
 func (ctrl *SettingsController) TestMail(ctx http.Context) http.Response {
 	actorID := middleware.SessionUserID(ctx)
 	if actorID == uuid.Nil {
-		return responses.Send(ctx, http.StatusUnauthorized, http.Json{"error": "unauthorized"})
+		return responses.Fail(ctx, http.StatusUnauthorized, responses.CodeUnauthorized, "unauthorized")
 	}
 	if err := ctrl.settings.AuthorizePlatformMailTest(ctx.Context(), actorID); err != nil {
 		return mapPlatformSettingsError(ctx, err)
@@ -274,16 +274,16 @@ func (ctrl *SettingsController) TestMail(ctx http.Context) http.Response {
 	err := ctrl.settings.SendPlatformMailTest(ctx.Context(), req.To)
 	if err != nil {
 		appfacades.Log().Error(mailTestFailedMessage)
-		return responses.Send(ctx, http.StatusBadGateway, http.Json{"error": mailTestFailedMessage})
+		return responses.Fail(ctx, http.StatusBadGateway, responses.CodeProviderUnavailable, mailTestFailedMessage)
 	}
 	return responses.Send(ctx, http.StatusOK, http.Json{"sent": true})
 }
 
 func mapPlatformSettingsBodyError(ctx http.Context, err error) http.Response {
 	if errors.Is(err, requests.ErrAccountSettingsBodyTooLarge) {
-		return responses.Send(ctx, http.StatusRequestEntityTooLarge, http.Json{"error": "request body is too large"})
+		return responses.Fail(ctx, http.StatusRequestEntityTooLarge, responses.CodeRequestTooLarge, "request body is too large")
 	}
-	return responses.Send(ctx, http.StatusBadRequest, http.Json{"error": "invalid request body"})
+	return responses.Fail(ctx, http.StatusBadRequest, responses.CodeInvalidRequest, "invalid request body")
 }
 
 func mapPlatformSettingsError(ctx http.Context, err error) http.Response {
@@ -296,16 +296,16 @@ func mapPlatformSettingsError(ctx http.Context, err error) http.Response {
 	}
 	switch {
 	case errors.Is(err, settingssvc.ErrGroupNotFound):
-		return responses.Send(ctx, http.StatusNotFound, http.Json{"error": "settings group not found"})
+		return responses.Fail(ctx, http.StatusNotFound, responses.CodeNotFound, "settings group not found")
 	case errors.Is(err, settingssvc.ErrAccountNotFound):
 		return responses.Error(ctx, http.StatusNotFound, responses.CodeNotFound, settingssvc.ErrAccountNotFound.Error())
 	case errors.Is(err, settingssvc.ErrSectionNotFound):
-		return responses.Send(ctx, http.StatusNotFound, http.Json{"error": "settings section not found"})
+		return responses.Fail(ctx, http.StatusNotFound, responses.CodeNotFound, "settings section not found")
 	case errors.Is(err, settingssvc.ErrPlatformForbidden):
 		return responses.Error(ctx, http.StatusForbidden, responses.CodeForbidden, settingssvc.ErrPlatformForbidden.Error())
 	case errors.Is(err, settingssvc.ErrPlatformViewForbidden):
 		return responses.Error(ctx, http.StatusForbidden, responses.CodeForbidden, settingssvc.ErrPlatformViewForbidden.Error())
 	default:
-		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "internal_error"})
+		return responses.Fail(ctx, http.StatusInternalServerError, responses.CodeInternalError, "internal_error")
 	}
 }

@@ -87,7 +87,7 @@ func (ctrl *FeeEstimateController) GetWalletFeeEstimate(ctx http.Context) http.R
 func feeEstimateErrorResponse(ctx http.Context, wallet *models.Wallet, err error) http.Response {
 	var estimateErr *feeestimate.Error
 	if !errors.As(err, &estimateErr) {
-		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to estimate the fee"})
+		return responses.Fail(ctx, http.StatusInternalServerError, responses.CodeInternal, "failed to estimate the fee")
 	}
 	status := feeEstimateStatus(estimateErr.Kind)
 	if status >= http.StatusInternalServerError {
@@ -97,7 +97,8 @@ func feeEstimateErrorResponse(ctx http.Context, wallet *models.Wallet, err error
 	if strings.HasPrefix(message, "unknown asset ") {
 		message = "unknown asset"
 	}
-	return responses.Send(ctx, status, http.Json{"error": message, "code": estimateErr.Code})
+	// newError, the only constructor of feeestimate.Error, always sets Code.
+	return responses.Fail(ctx, status, estimateErr.Code, message)
 }
 
 func errType(err error) string {

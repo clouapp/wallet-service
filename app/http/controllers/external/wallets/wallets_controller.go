@@ -107,9 +107,7 @@ func (ctrl *WalletsController) CreateWallet(ctx http.Context) http.Response {
 		return mapCreateWalletError(ctx, err)
 	}
 	if result == nil || result.Wallet == nil {
-		return responses.Send(ctx, http.StatusInternalServerError, http.Json{
-			"error": "wallet service returned no wallet",
-		})
+		return responses.Fail(ctx, http.StatusInternalServerError, responses.CodeInternal, "wallet service returned no wallet")
 	}
 	return responses.Send(ctx, http.StatusCreated, newCreateWalletResponse(result))
 }
@@ -121,11 +119,11 @@ func (ctrl *WalletsController) CreateWallet(ctx http.Context) http.Response {
 func mapCreateWalletError(ctx http.Context, err error) http.Response {
 	switch {
 	case errors.Is(err, chainregistry.ErrUnknownChain):
-		return responses.Send(ctx, http.StatusConflict, http.Json{"error": "unknown chain"})
+		return responses.Fail(ctx, http.StatusConflict, responses.CodeConflict, "unknown chain")
 	case err.Error() == "passphrase must be at least 12 characters":
-		return responses.Send(ctx, http.StatusUnprocessableEntity, http.Json{"error": "passphrase must be at least 12 characters"})
+		return responses.Fail(ctx, http.StatusUnprocessableEntity, responses.CodeUnprocessable, "passphrase must be at least 12 characters")
 	case err.Error() == "account_id is required":
-		return responses.Send(ctx, http.StatusBadRequest, http.Json{"error": "account_id is required"})
+		return responses.Fail(ctx, http.StatusBadRequest, responses.CodeInvalidRequest, "account_id is required")
 	default:
 		return responses.InternalError(ctx, err)
 	}
@@ -144,9 +142,7 @@ func mapCreateWalletError(ctx http.Context, err error) http.Response {
 func (ctrl *WalletsController) ListWallets(ctx http.Context) http.Response {
 	accountID, ok := requestctx.AccountID(ctx)
 	if !ok || accountID == uuid.Nil {
-		return responses.Send(ctx, http.StatusBadRequest, http.Json{
-			"error": "account is required",
-		})
+		return responses.Fail(ctx, http.StatusBadRequest, responses.CodeInvalidRequest, "account is required")
 	}
 
 	limit, offset := pagination.ParseParams(ctx, 20)
@@ -156,16 +152,12 @@ func (ctrl *WalletsController) ListWallets(ctx http.Context) http.Response {
 
 	wallets, total, err := ctrl.wallets.PaginateByAccount(ctx.Context(), accountID, chain, limit, offset)
 	if err != nil {
-		return responses.Send(ctx, http.StatusInternalServerError, http.Json{
-			"error": "failed to fetch wallets",
-		})
+		return responses.Fail(ctx, http.StatusInternalServerError, responses.CodeInternal, "failed to fetch wallets")
 	}
 	items, err := controllers.LoadWalletListItems(ctx.Context(), ctrl.balances, ctrl.chains, wallets)
 	if err != nil {
 		slog.Error("load wallet list balances", "account", accountID, "error", err)
-		return responses.Send(ctx, http.StatusInternalServerError, http.Json{
-			"error": "failed to fetch wallet balances",
-		})
+		return responses.Fail(ctx, http.StatusInternalServerError, responses.CodeInternal, "failed to fetch wallet balances")
 	}
 	return responses.Send(ctx, http.StatusOK, pagination.Response(items, total, limit, offset))
 }
@@ -185,23 +177,17 @@ func (ctrl *WalletsController) ListWallets(ctx http.Context) http.Response {
 func (ctrl *WalletsController) GetWallet(ctx http.Context) http.Response {
 	id, err := requests.RouteUUID(ctx, "walletId")
 	if err != nil {
-		return responses.Send(ctx, http.StatusBadRequest, http.Json{
-			"error": "invalid wallet id",
-		})
+		return responses.Fail(ctx, http.StatusBadRequest, responses.CodeInvalidRequest, "invalid wallet id")
 	}
 
 	accountID, ok := requestctx.AccountID(ctx)
 	if !ok || accountID == uuid.Nil {
-		return responses.Send(ctx, http.StatusBadRequest, http.Json{
-			"error": "account is required",
-		})
+		return responses.Fail(ctx, http.StatusBadRequest, responses.CodeInvalidRequest, "account is required")
 	}
 
 	w, err := ctrl.wallets.FindByIDAndAccount(ctx.Context(), id, accountID)
 	if err != nil || w == nil {
-		return responses.Send(ctx, http.StatusNotFound, http.Json{
-			"error": "wallet not found",
-		})
+		return responses.Fail(ctx, http.StatusNotFound, responses.CodeNotFound, "wallet not found")
 	}
 	return ctx.Response().Success().Json(walletresource.WithNetworkFrom(w, controllers.ResolveWalletChainNetwork(ctx.Context(), ctrl.chains, w.Chain)))
 }

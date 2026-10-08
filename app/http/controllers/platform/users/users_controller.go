@@ -48,7 +48,7 @@ func NewUsersController(users *usersvc.Service) *UsersController {
 func (ctrl *UsersController) Index(ctx http.Context) http.Response {
 	actorID := middleware.SessionUserID(ctx)
 	if actorID == uuid.Nil {
-		return responses.Send(ctx, http.StatusUnauthorized, http.Json{"error": "unauthorized"})
+		return responses.Fail(ctx, http.StatusUnauthorized, responses.CodeUnauthorized, "unauthorized")
 	}
 	limit, offset := pagination.ParseParams(ctx, platformUsersDefaultLimit)
 	rows, total, err := ctrl.users.List(ctx.Context(), actorID, limit, offset)
@@ -65,7 +65,7 @@ func mapListError(ctx http.Context, err error) http.Response {
 	if errors.Is(err, usersvc.ErrViewForbidden) {
 		return responses.Error(ctx, http.StatusForbidden, responses.CodeForbidden, usersvc.ErrViewForbidden.Error())
 	}
-	return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "internal_error"})
+	return responses.Fail(ctx, http.StatusInternalServerError, responses.CodeInternalError, "internal_error")
 }
 
 // Suspend godoc
@@ -114,11 +114,11 @@ func (ctrl *UsersController) Reactivate(ctx http.Context) http.Response {
 func (ctrl *UsersController) RevokeSessions(ctx http.Context) http.Response {
 	actorID := middleware.SessionUserID(ctx)
 	if actorID == uuid.Nil {
-		return responses.Send(ctx, http.StatusUnauthorized, http.Json{"error": "unauthorized"})
+		return responses.Fail(ctx, http.StatusUnauthorized, responses.CodeUnauthorized, "unauthorized")
 	}
 	targetID, err := requests.RouteUUID(ctx, "id")
 	if err != nil {
-		return responses.Send(ctx, http.StatusBadRequest, http.Json{"error": "invalid user id"})
+		return responses.Fail(ctx, http.StatusBadRequest, responses.CodeInvalidRequest, "invalid user id")
 	}
 	if err := ctrl.users.RevokeSessions(ctx.Context(), actorID, targetID); err != nil {
 		if errResp := mapSuspensionError(ctx, err); errResp != nil {
@@ -142,11 +142,11 @@ func (ctrl *UsersController) RevokeSessions(ctx http.Context) http.Response {
 func (ctrl *UsersController) ResetMFA(ctx http.Context) http.Response {
 	actorID := middleware.SessionUserID(ctx)
 	if actorID == uuid.Nil {
-		return responses.Send(ctx, http.StatusUnauthorized, http.Json{"error": "unauthorized"})
+		return responses.Fail(ctx, http.StatusUnauthorized, responses.CodeUnauthorized, "unauthorized")
 	}
 	targetID, err := requests.RouteUUID(ctx, "id")
 	if err != nil {
-		return responses.Send(ctx, http.StatusBadRequest, http.Json{"error": "invalid user id"})
+		return responses.Fail(ctx, http.StatusBadRequest, responses.CodeInvalidRequest, "invalid user id")
 	}
 	if err := ctrl.users.ResetMFA(ctx.Context(), actorID, targetID); err != nil {
 		return mapMFAResetError(ctx, err)
@@ -157,11 +157,11 @@ func (ctrl *UsersController) ResetMFA(ctx http.Context) http.Response {
 func mapMFAResetError(ctx http.Context, err error) http.Response {
 	switch {
 	case errors.Is(err, usersvc.ErrNotFound):
-		return responses.Send(ctx, http.StatusNotFound, http.Json{"error": "user not found"})
+		return responses.Fail(ctx, http.StatusNotFound, responses.CodeNotFound, "user not found")
 	case errors.Is(err, usersvc.ErrMFAForbidden):
 		return responses.Error(ctx, http.StatusForbidden, responses.CodeForbidden, usersvc.ErrMFAForbidden.Error())
 	default:
-		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "internal_error"})
+		return responses.Fail(ctx, http.StatusInternalServerError, responses.CodeInternalError, "internal_error")
 	}
 }
 
@@ -173,11 +173,11 @@ type suspensionBody struct {
 func (ctrl *UsersController) change(ctx http.Context, suspend bool) http.Response {
 	actorID := middleware.SessionUserID(ctx)
 	if actorID == uuid.Nil {
-		return responses.Send(ctx, http.StatusUnauthorized, http.Json{"error": "unauthorized"})
+		return responses.Fail(ctx, http.StatusUnauthorized, responses.CodeUnauthorized, "unauthorized")
 	}
 	targetID, err := requests.RouteUUID(ctx, "id")
 	if err != nil {
-		return responses.Send(ctx, http.StatusBadRequest, http.Json{"error": "invalid user id"})
+		return responses.Fail(ctx, http.StatusBadRequest, responses.CodeInvalidRequest, "invalid user id")
 	}
 	var (
 		result  usersvc.Suspension
@@ -215,8 +215,8 @@ func mapSuspensionError(ctx http.Context, err error) http.Response {
 	case errors.Is(err, usersvc.ErrSessionsForbidden):
 		return responses.Error(ctx, http.StatusForbidden, responses.CodeForbidden, usersvc.ErrSessionsForbidden.Error())
 	case errors.Is(err, usersvc.ErrNotFound):
-		return responses.Send(ctx, http.StatusNotFound, http.Json{"error": "user not found"})
+		return responses.Fail(ctx, http.StatusNotFound, responses.CodeNotFound, "user not found")
 	default:
-		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "internal_error"})
+		return responses.Fail(ctx, http.StatusInternalServerError, responses.CodeInternalError, "internal_error")
 	}
 }

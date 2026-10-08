@@ -82,7 +82,7 @@ func (ctrl *WebhooksController) CreateWebhook(ctx http.Context) http.Response {
 func (ctrl *WebhooksController) ListWebhooks(ctx http.Context) http.Response {
 	accountID, ok := requestctx.AccountID(ctx)
 	if !ok || accountID == uuid.Nil {
-		return responses.Send(ctx, http.StatusUnauthorized, http.Json{"error": "unauthenticated"})
+		return responses.Fail(ctx, http.StatusUnauthorized, "unauthenticated", "unauthenticated")
 	}
 
 	configs, err := ctrl.webhooks.ListAccountConfigs(ctx.Context(), accountID)
@@ -114,17 +114,17 @@ func (ctrl *WebhooksController) ListWebhooks(ctx http.Context) http.Response {
 func (ctrl *WebhooksController) UpdateWebhook(ctx http.Context) http.Response {
 	accountID, ok := requestctx.AccountID(ctx)
 	if !ok || accountID == uuid.Nil {
-		return responses.Send(ctx, http.StatusUnauthorized, http.Json{"error": "unauthenticated"})
+		return responses.Fail(ctx, http.StatusUnauthorized, "unauthenticated", "unauthenticated")
 	}
 
 	webhookID, err := requests.RouteUUID(ctx, "webhookId")
 	if err != nil {
-		return responses.Send(ctx, http.StatusBadRequest, http.Json{"error": "invalid webhook id"})
+		return responses.Fail(ctx, http.StatusBadRequest, responses.CodeInvalidRequest, "invalid webhook id")
 	}
 
 	var req requests.UpdateWebhookRequest
 	if err := requests.Bind(ctx, &req); err != nil {
-		return responses.Send(ctx, http.StatusBadRequest, http.Json{"error": "invalid request body"})
+		return responses.Fail(ctx, http.StatusBadRequest, responses.CodeInvalidRequest, "invalid request body")
 	}
 
 	cfg, err := ctrl.webhooks.UpdateAccountConfig(ctx.Context(), accountID, webhookID, webhook.ConfigUpdate{

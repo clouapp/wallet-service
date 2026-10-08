@@ -201,7 +201,7 @@ func (ctrl *FeaturesController) writeScope(ctx http.Context, scope, id, feature 
 	}
 	if single {
 		if len(view.Features) != 1 {
-			return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "internal_error"})
+			return responses.Fail(ctx, http.StatusInternalServerError, responses.CodeInternalError, "internal_error")
 		}
 		return responses.Send(ctx, http.StatusOK, view.Features[0])
 	}
@@ -211,7 +211,7 @@ func (ctrl *FeaturesController) writeScope(ctx http.Context, scope, id, feature 
 func platformCaller(ctx http.Context) (uuid.UUID, http.Response) {
 	userID := middleware.SessionUserID(ctx)
 	if userID == uuid.Nil {
-		return uuid.Nil, responses.Send(ctx, http.StatusUnauthorized, http.Json{"error": "unauthorized"})
+		return uuid.Nil, responses.Fail(ctx, http.StatusUnauthorized, responses.CodeUnauthorized, "unauthorized")
 	}
 	return userID, nil
 }
@@ -219,7 +219,7 @@ func platformCaller(ctx http.Context) (uuid.UUID, http.Response) {
 func mapPlatformFeatureScopeBodyError(ctx http.Context, err error) http.Response {
 	switch {
 	case errors.Is(err, requests.ErrPlatformFeatureScopeBodyTooLarge):
-		return responses.Send(ctx, http.StatusRequestEntityTooLarge, http.Json{"error": "request body is too large"})
+		return responses.Fail(ctx, http.StatusRequestEntityTooLarge, responses.CodeRequestTooLarge, "request body is too large")
 	case errors.Is(err, requests.ErrPlatformFeatureScopeFeaturesRequired):
 		return responses.FieldsFailed(ctx, map[string][]string{
 			"features": {"features is required"},
@@ -229,26 +229,18 @@ func mapPlatformFeatureScopeBodyError(ctx http.Context, err error) http.Response
 			"features": {"feature key is duplicated"},
 		})
 	default:
-		return responses.Send(ctx, http.StatusBadRequest, http.Json{"error": "invalid request body"})
+		return responses.Fail(ctx, http.StatusBadRequest, responses.CodeInvalidRequest, "invalid request body")
 	}
 }
 
 func mapPlatformFeatureBodyError(ctx http.Context, err error) http.Response {
 	switch {
 	case errors.Is(err, requests.ErrAccountFeatureBodyTooLarge):
-		return responses.Send(ctx, http.StatusRequestEntityTooLarge, http.Json{"error": "request body is too large"})
+		return responses.Fail(ctx, http.StatusRequestEntityTooLarge, responses.CodeRequestTooLarge, "request body is too large")
 	case errors.Is(err, requests.ErrAccountFeatureEnabledRequired):
-		return responses.Send(ctx, http.StatusUnprocessableEntity, map[string]any{
-			"error": map[string]any{
-				"code":    responses.CodeValidationFailed,
-				"message": "validation failed",
-			},
-			"errors": map[string][]string{
-				"enabled": {"enabled is required"},
-			},
-		})
+		return responses.FieldError(ctx, "enabled", "enabled is required")
 	default:
-		return responses.Send(ctx, http.StatusBadRequest, http.Json{"error": "invalid request body"})
+		return responses.Fail(ctx, http.StatusBadRequest, responses.CodeInvalidRequest, "invalid request body")
 	}
 }
 
@@ -272,6 +264,6 @@ func mapPlatformFeatureError(ctx http.Context, err error) http.Response {
 	case errors.Is(err, featuressvc.ErrPlatformForbidden):
 		return responses.Error(ctx, http.StatusForbidden, responses.CodeForbidden, featuressvc.ErrPlatformForbidden.Error())
 	default:
-		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "internal_error"})
+		return responses.Fail(ctx, http.StatusInternalServerError, responses.CodeInternalError, "internal_error")
 	}
 }

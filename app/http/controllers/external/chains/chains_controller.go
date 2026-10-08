@@ -38,7 +38,7 @@ func (ctrl *ChainsController) ListChains(ctx http.Context) http.Response {
 
 	chainList, err := ctrl.chains.ListForEnvironment(ctx.Context(), env)
 	if err != nil {
-		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "failed to fetch chains"})
+		return responses.Fail(ctx, http.StatusInternalServerError, responses.CodeInternal, "failed to fetch chains")
 	}
 
 	return ctx.Response().Success().Json(http.Json{"data": chainresource.ChainsFrom(chainList)})

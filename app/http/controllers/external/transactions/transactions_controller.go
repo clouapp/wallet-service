@@ -48,9 +48,7 @@ func NewTransactionsController(
 func (ctrl *TransactionsController) ListTransactions(ctx http.Context) http.Response {
 	accountID, ok := requestctx.AccountID(ctx)
 	if !ok {
-		return responses.Send(ctx, http.StatusUnauthorized, http.Json{
-			"error": "unauthorized",
-		})
+		return responses.Fail(ctx, http.StatusUnauthorized, responses.CodeUnauthorized, "unauthorized")
 	}
 
 	limit, offset := pagination.ParseParams(ctx, 50)
@@ -88,15 +86,11 @@ func (ctrl *TransactionsController) ListTransactions(ctx http.Context) http.Resp
 func (ctrl *TransactionsController) GetTransaction(ctx http.Context) http.Response {
 	id, err := requests.RouteUUID(ctx, "id")
 	if err != nil {
-		return responses.Send(ctx, http.StatusBadRequest, http.Json{
-			"error": "invalid tx id",
-		})
+		return responses.Fail(ctx, http.StatusBadRequest, responses.CodeInvalidRequest, "invalid tx id")
 	}
 	tx, err := ctrl.withdrawals.GetTransaction(ctx.Context(), id)
 	if err != nil || tx == nil {
-		return responses.Send(ctx, http.StatusNotFound, http.Json{
-			"error": "transaction not found",
-		})
+		return responses.Fail(ctx, http.StatusNotFound, responses.CodeNotFound, "transaction not found")
 	}
 	return ctx.Response().Success().Json(exttransactions.TransactionFrom(*tx))
 }
@@ -117,9 +111,7 @@ func (ctrl *TransactionsController) GetTransaction(ctx http.Context) http.Respon
 func (ctrl *TransactionsController) ListUserTransactions(ctx http.Context) http.Response {
 	accountID, ok := requestctx.AccountID(ctx)
 	if !ok {
-		return responses.Send(ctx, http.StatusUnauthorized, http.Json{
-			"error": "unauthorized",
-		})
+		return responses.Fail(ctx, http.StatusUnauthorized, responses.CodeUnauthorized, "unauthorized")
 	}
 
 	limit, offset := pagination.ParseParams(ctx, 50)

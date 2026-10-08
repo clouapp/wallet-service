@@ -48,11 +48,11 @@ func NewOwnersController(accounts *accountsvc.Service) *OwnersController {
 func (ctrl *OwnersController) Attach(ctx http.Context) http.Response {
 	actorID := middleware.SessionUserID(ctx)
 	if actorID == uuid.Nil {
-		return responses.Send(ctx, http.StatusUnauthorized, http.Json{"error": "unauthorized"})
+		return responses.Fail(ctx, http.StatusUnauthorized, responses.CodeUnauthorized, "unauthorized")
 	}
 	accountID, err := requests.RouteUUID(ctx, "accountId")
 	if err != nil {
-		return responses.Send(ctx, http.StatusBadRequest, http.Json{"error": "invalid account id"})
+		return responses.Fail(ctx, http.StatusBadRequest, responses.CodeInvalidRequest, "invalid account id")
 	}
 	var req requests.AttachPlatformOwnerRequest
 	if errResp := requests.Validate(ctx, &req); errResp != nil {
@@ -63,7 +63,7 @@ func (ctrl *OwnersController) Attach(ctx http.Context) http.Response {
 		return errResp
 	}
 	if member == nil {
-		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "internal_error"})
+		return responses.Fail(ctx, http.StatusInternalServerError, responses.CodeInternalError, "internal_error")
 	}
 	if !changed {
 		return ctx.Response().NoContent()
@@ -83,6 +83,6 @@ func mapAttachOwnerError(ctx http.Context, err error) http.Response {
 	case errors.Is(err, accountsvc.ErrPlatformOwnerUserNotFound):
 		return responses.Error(ctx, http.StatusNotFound, responses.CodeNotFound, accountsvc.ErrPlatformOwnerUserNotFound.Error())
 	default:
-		return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "internal_error"})
+		return responses.Fail(ctx, http.StatusInternalServerError, responses.CodeInternalError, "internal_error")
 	}
 }

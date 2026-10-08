@@ -24,5 +24,5 @@ func Deny(ctx http.Context, decision contractsaccess.Response) http.Response {
 	if decision.Allowed() {
 		return nil
 	}
-	return responses.Send(ctx, http.StatusForbidden, http.Json{"error": decision.Message()})
+	return responses.FailMessage(ctx, http.StatusForbidden, decision.Message())
 }

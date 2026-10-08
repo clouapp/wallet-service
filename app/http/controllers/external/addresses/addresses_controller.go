@@ -77,9 +77,7 @@ func NewAddressesController(deps AddressesControllerDeps) *AddressesController {
 func (ctrl *AddressesController) GenerateAddress(ctx http.Context) http.Response {
 	walletID, err := requests.RouteUUID(ctx, "walletId")
 	if err != nil {
-		return responses.Send(ctx, http.StatusBadRequest, http.Json{
-			"error": "invalid wallet id",
-		})
+		return responses.Fail(ctx, http.StatusBadRequest, responses.CodeInvalidRequest, "invalid wallet id")
 	}
 
 	var req requests.GenerateAddressRequest
@@ -119,9 +117,7 @@ func (ctrl *AddressesController) GenerateAddress(ctx http.Context) http.Response
 func (ctrl *AddressesController) UpdateAddress(ctx http.Context) http.Response {
 	addressID, err := requests.RouteUUID(ctx, "addressId")
 	if err != nil {
-		return responses.Send(ctx, http.StatusBadRequest, http.Json{
-			"error": "invalid address id",
-		})
+		return responses.Fail(ctx, http.StatusBadRequest, responses.CodeInvalidRequest, "invalid address id")
 	}
 
 	var req requests.UpdateAddressRequest
@@ -138,9 +134,7 @@ func (ctrl *AddressesController) UpdateAddress(ctx http.Context) http.Response {
 	}
 
 	if len(fields) == 0 {
-		return responses.Send(ctx, http.StatusBadRequest, http.Json{
-			"error": "no fields to update",
-		})
+		return responses.Fail(ctx, http.StatusBadRequest, responses.CodeInvalidRequest, "no fields to update")
 	}
 
 	addr, err := ctrl.walletService().UpdateAddress(ctx.Context(), addressID, fields)
@@ -166,16 +160,12 @@ func (ctrl *AddressesController) UpdateAddress(ctx http.Context) http.Response {
 func (ctrl *AddressesController) ListWalletAddresses(ctx http.Context) http.Response {
 	walletID, err := requests.RouteUUID(ctx, "walletId")
 	if err != nil {
-		return responses.Send(ctx, http.StatusBadRequest, http.Json{
-			"error": "invalid wallet id",
-		})
+		return responses.Fail(ctx, http.StatusBadRequest, responses.CodeInvalidRequest, "invalid wallet id")
 	}
 	limit, offset := pagination.ParseParams(ctx, 20)
 	addrs, total, err := ctrl.addresses.PaginateByWalletID(ctx.Context(), walletID, limit, offset)
 	if err != nil {
-		return responses.Send(ctx, http.StatusInternalServerError, http.Json{
-			"error": "failed to fetch addresses",
-		})
+		return responses.Fail(ctx, http.StatusInternalServerError, responses.CodeInternal, "failed to fetch addresses")
 	}
 	return responses.Send(ctx, http.StatusOK, pagination.Response(addressresource.AddressesFrom(addrs, walletresource.WalletPtr), total, limit, offset))
 }
@@ -196,9 +186,7 @@ func (ctrl *AddressesController) ListWalletAddresses(ctx http.Context) http.Resp
 func (ctrl *AddressesController) LookupAddress(ctx http.Context) http.Response {
 	accountID, ok := requestctx.AccountID(ctx)
 	if !ok {
-		return responses.Send(ctx, http.StatusUnauthorized, http.Json{
-			"error": "unauthorized",
-		})
+		return responses.Fail(ctx, http.StatusUnauthorized, responses.CodeUnauthorized, "unauthorized")
 	}
 
 	var path requests.LookupAddressRequest
@@ -209,9 +197,7 @@ func (ctrl *AddressesController) LookupAddress(ctx http.Context) http.Response {
 	if chainFilter != "" {
 		addr, err := ctrl.walletService().LookupAddressForAccount(ctx.Context(), chainFilter, address, accountID)
 		if err != nil || addr == nil {
-			return responses.Send(ctx, http.StatusNotFound, http.Json{
-				"error": "address not found",
-			})
+			return responses.Fail(ctx, http.StatusNotFound, responses.CodeNotFound, "address not found")
 		}
 		return ctx.Response().Success().Json(addressresource.AddressPtr(addr, walletresource.WalletPtr))
 	}
@@ -224,9 +210,7 @@ func (ctrl *AddressesController) LookupAddress(ctx http.Context) http.Response {
 			return ctx.Response().Success().Json(addressresource.AddressPtr(addr, walletresource.WalletPtr))
 		}
 	}
-	return responses.Send(ctx, http.StatusNotFound, http.Json{
-		"error": "address not found",
-	})
+	return responses.Fail(ctx, http.StatusNotFound, responses.CodeNotFound, "address not found")
 }
 
 // ListUserAddresses godoc
@@ -243,9 +227,7 @@ func (ctrl *AddressesController) LookupAddress(ctx http.Context) http.Response {
 func (ctrl *AddressesController) ListUserAddresses(ctx http.Context) http.Response {
 	accountID, ok := requestctx.AccountID(ctx)
 	if !ok {
-		return responses.Send(ctx, http.StatusUnauthorized, http.Json{
-			"error": "unauthorized",
-		})
+		return responses.Fail(ctx, http.StatusUnauthorized, responses.CodeUnauthorized, "unauthorized")
 	}
 
 	var path requests.ExternalIDRequest

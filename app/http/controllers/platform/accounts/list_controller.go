@@ -46,7 +46,7 @@ func NewListController(accounts *accountsvc.Service) *ListController {
 func (ctrl *ListController) Index(ctx http.Context) http.Response {
 	actorID := middleware.SessionUserID(ctx)
 	if actorID == uuid.Nil {
-		return responses.Send(ctx, http.StatusUnauthorized, http.Json{"error": "unauthorized"})
+		return responses.Fail(ctx, http.StatusUnauthorized, responses.CodeUnauthorized, "unauthorized")
 	}
 	limit, offset := pagination.ParseParams(ctx, platformAccountsDefaultLimit)
 	rows, total, err := ctrl.accounts.ListForPlatform(ctx.Context(), actorID, limit, offset)
@@ -63,5 +63,5 @@ func mapListError(ctx http.Context, err error) http.Response {
 	if errors.Is(err, accountsvc.ErrPlatformViewForbidden) {
 		return responses.Error(ctx, http.StatusForbidden, responses.CodeForbidden, accountsvc.ErrPlatformViewForbidden.Error())
 	}
-	return responses.Send(ctx, http.StatusInternalServerError, http.Json{"error": "internal_error"})
+	return responses.Fail(ctx, http.StatusInternalServerError, responses.CodeInternalError, "internal_error")
 }
