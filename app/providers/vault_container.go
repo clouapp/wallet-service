@@ -9,7 +9,7 @@ import (
 	"path/filepath"
 	"time"
 
-	awsconfig "github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/sqs"
 	"github.com/google/uuid"
 	"github.com/goravel/framework/contracts/foundation"
@@ -101,15 +101,23 @@ func buildVaultContainer(app foundation.Application) (*container.Container, erro
 	}
 	c.Redis = redisClient
 
-	awsCfg, err := awsconfig.LoadDefaultConfig(context.Background())
+	awsCfg, err := resolve[*aws.Config](app)
 	if err != nil {
-		return nil, fmt.Errorf("vault: aws config: %w", err)
+		return nil, err
 	}
-	sqsClient := sqs.NewFromConfig(awsCfg)
+	sqsClient := sqs.NewFromConfig(*awsCfg)
 	c.SQS = queuesqs.New(sqsClient, facades.Config().GetString("vault.queues.webhook"))
 
-	c.SecretsManager = sweepsecrets.NewClient(awsCfg, facades.Config().GetString("vault.aws.endpoint_url"))
-	c.MPCService = mpc.NewTSSService()
+	secrets, err := resolve[*sweepsecrets.SDKClient](app)
+	if err != nil {
+		return nil, err
+	}
+	c.SecretsManager = secrets
+	mpcService, err := resolve[*mpc.TSSService](app)
+	if err != nil {
+		return nil, err
+	}
+	c.MPCService = mpcService
 
 	users, err := resolve[*repositories.UserRepository](app)
 	if err != nil {

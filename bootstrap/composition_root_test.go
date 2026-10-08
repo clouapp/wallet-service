@@ -15,6 +15,7 @@ import (
 	"github.com/macrowallets/waas/app/services/chainregistry"
 	"github.com/macrowallets/waas/app/services/deposit"
 	"github.com/macrowallets/waas/app/services/ingest"
+	mpc "github.com/macrowallets/waas/app/services/mpc"
 	"github.com/macrowallets/waas/app/services/price"
 	"github.com/macrowallets/waas/app/services/refresh"
 	"github.com/macrowallets/waas/app/services/sweep"
@@ -90,6 +91,7 @@ func TestComposition_Root_TheVaultContainerHoldsTheBoundInstances(t *testing.T) 
 		{"WalletUTXORepo", vault.WalletUTXORepo, container.MustMake[*repositories.WalletUTXORepository]()},
 		{"WalletSyncStateRepo", vault.WalletSyncStateRepo, container.MustMake[*repositories.WalletSyncStateRepository]()},
 		{"CurrencyRepo", vault.CurrencyRepo, container.MustMake[*repositories.CurrencyRepository]()},
+		{"MPCService", vault.MPCService, container.MustMake[*mpc.TSSService]()},
 		{"SecretsManager", vault.SecretsManager, container.MustMake[*sweepsecrets.SDKClient]()},
 		{"Registry", vault.Registry, container.MustMake[*chainpkg.Registry]()},
 		{"WebhookService", vault.WebhookService, container.MustMake[*webhook.Service]()},
