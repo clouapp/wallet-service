@@ -72,8 +72,7 @@ func (c *WithdrawPreflight) Extend() command.Extend {
 func (c *WithdrawPreflight) Handle(ctx console.Context) error {
 	request, err := readPreflightRequest(os.Stdin)
 	if err != nil {
-		ctx.Error(err.Error())
-		return err
+		return fail(ctx, err)
 	}
 	output, err := runPreflight(context.Background(), request)
 	if err != nil {
@@ -82,7 +81,7 @@ func (c *WithdrawPreflight) Handle(ctx console.Context) error {
 	}
 	encoded, err := json.Marshal(output)
 	if err != nil {
-		return fmt.Errorf("encode preflight: %w", err)
+		return fail(ctx, fmt.Errorf("encode preflight: %w", err))
 	}
 	fmt.Println("PREFLIGHT " + string(encoded))
 	return nil

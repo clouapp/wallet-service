@@ -55,7 +55,7 @@ func Boot() contractsfoundation.Application {
 			wallets := container.MustMake[*walletrecords.Wallets]()
 			addresses := container.MustMake[*walletrecords.Addresses]()
 			transactions := container.MustMake[*walletrecords.Transactions]()
-			return []console.Command{
+			return exitOnFailures([]console.Command{
 				commands.NewRefreshWallet(commands.RefreshWalletDeps{
 					Balances: balances,
 					Wallets:  wallets,
@@ -111,7 +111,7 @@ func Boot() contractsfoundation.Application {
 					Chains:    container.MustMake[*repositories.ChainRepository](),
 				}),
 				&commands.TransactionsBackfillFees{},
-			}
+			})
 		}).
 		WithRules(Rules).
 		WithConfig(bootConfig).
