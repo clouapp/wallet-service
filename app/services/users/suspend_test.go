@@ -88,13 +88,17 @@ func TestSuspend_Refuses_ACallerWhoIsNotAPlatformAdmin(t *testing.T) {
 	_, err = service.Reactivate(context.Background(), actor, target)
 	require.ErrorIs(t, err, users.ErrPlatformForbidden)
 
+	// A missing user is not told apart from an existing one: the admin check
+	// comes first and no user is read (H4).
+	missing := &suspensionStore{err: models.ErrRepositoryNotFound}
 	_, err = users.NewService(users.Deps{
-		Store:    &suspensionStore{err: models.ErrRepositoryNotFound},
+		Store:    missing,
 		Activity: activity,
 		Admins:   allowAdmins{},
 		Sessions: &suspensionSessions{},
 	}).Suspend(context.Background(), actor, uuid.New())
-	assert.ErrorIs(t, err, users.ErrNotFound)
+	assert.ErrorIs(t, err, users.ErrPlatformForbidden)
+	assert.Zero(t, missing.finds)
 }
 
 func TestRevoke_Sessions_RecordsTheAdminAndRefusesEveryoneElse(t *testing.T) {
@@ -131,13 +135,17 @@ func TestRevoke_Sessions_RecordsTheAdminAndRefusesEveryoneElse(t *testing.T) {
 	require.ErrorIs(t, err, users.ErrSessionsForbidden)
 	assert.Len(t, sessions.targets, 2)
 
+	// The admin check comes first and no user is read, so a missing user is
+	// not told apart from an existing one (H4).
+	unknown := &suspensionStore{err: models.ErrRepositoryNotFound}
 	err = users.NewService(users.Deps{
-		Store:    &suspensionStore{err: models.ErrRepositoryNotFound},
+		Store:    unknown,
 		Activity: activity,
 		Admins:   allowAdmins{},
 		Sessions: sessions,
 	}).RevokeSessions(context.Background(), uuid.New(), uuid.New())
-	assert.ErrorIs(t, err, users.ErrNotFound)
+	assert.ErrorIs(t, err, users.ErrSessionsForbidden)
+	assert.Zero(t, unknown.finds)
 
 	missing := users.NewService(users.Deps{
 		Store:    &suspensionStore{err: models.ErrRepositoryNotFound},
@@ -176,14 +184,16 @@ func (a allowAdmins) Contains(_ context.Context, userID uuid.UUID) (bool, error)
 }
 
 type suspensionStore struct {
-	user *models.User
-	err  error
+	user  *models.User
+	err   error
+	finds int
 }
 
 func (s *suspensionStore) FindByEmail(context.Context, string) (*models.User, error) {
 	return nil, errors.New("unused")
 }
 func (s *suspensionStore) FindByID(context.Context, uuid.UUID) (*models.User, error) {
+	s.finds++
 	if s.err != nil {
 		return nil, s.err
 	}

@@ -71,9 +71,6 @@ func (s *Service) RevokeSessions(ctx context.Context, actorID, targetID uuid.UUI
 	if s.sessions == nil {
 		return fmt.Errorf("revoke sessions: sessions are required")
 	}
-	if _, err := s.existingUser(ctx, targetID); err != nil {
-		return err
-	}
 	admin, err := s.admins.Contains(ctx, actorID)
 	if err != nil {
 		return err
@@ -122,9 +119,6 @@ func (s *Service) changeSuspension(ctx context.Context, actorID, targetID uuid.U
 	}
 	if suspend && s.sessions == nil {
 		return Suspension{}, fmt.Errorf("%s: sessions are required", op)
-	}
-	if _, err := s.existingUser(ctx, targetID); err != nil {
-		return Suspension{}, err
 	}
 	admin, err := s.admins.Contains(ctx, actorID)
 	if err != nil {
@@ -180,23 +174,6 @@ func (s *Service) changeSuspension(ctx context.Context, actorID, targetID uuid.U
 		return Suspension{}, err
 	}
 	return result, nil
-}
-
-// existingUser resolves the platform user before an admin check. A missing
-// user is ErrNotFound. The caller still has to be a platform admin before
-// anything is written.
-func (s *Service) existingUser(ctx context.Context, id uuid.UUID) (*models.User, error) {
-	user, err := s.store.FindByID(ctx, id)
-	if err != nil {
-		if errors.Is(err, models.ErrRepositoryNotFound) {
-			return nil, ErrNotFound
-		}
-		return nil, err
-	}
-	if user == nil || user.ID == uuid.Nil {
-		return nil, ErrNotFound
-	}
-	return user, nil
 }
 
 func suspensionChange(suspend bool, now time.Time) (*time.Time, string, models.ActivityMetadata, error) {

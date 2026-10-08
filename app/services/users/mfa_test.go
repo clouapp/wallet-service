@@ -108,7 +108,9 @@ func TestReset_MFA_RefusesACallerWhoIsNotAPlatformAdmin(t *testing.T) {
 
 	err := service.ResetMFA(context.Background(), uuid.New(), target)
 	assert.ErrorIs(t, err, users.ErrMFAForbidden)
-	assert.Equal(t, 1, store.finds)
+	// The admin check comes first: no user is read, so a missing user is not
+	// told apart from an existing one (H4).
+	assert.Zero(t, store.finds)
 	assert.True(t, store.user.TotpEnabled)
 	assert.Equal(t, "sealed-marker", store.user.TotpSecret)
 	assert.Equal(t, int64(1), recovery.count)
@@ -121,8 +123,8 @@ func TestReset_MFA_RefusesACallerWhoIsNotAPlatformAdmin(t *testing.T) {
 		Admins:   allowAdmins{},
 		Recovery: recovery,
 	}).ResetMFA(context.Background(), uuid.New(), uuid.New())
-	assert.ErrorIs(t, err, users.ErrNotFound)
-	assert.Equal(t, 1, missing.finds)
+	assert.ErrorIs(t, err, users.ErrMFAForbidden)
+	assert.Zero(t, missing.finds)
 }
 
 func TestReset_MFA_ReportsAMissingUserToAPlatformAdmin(t *testing.T) {

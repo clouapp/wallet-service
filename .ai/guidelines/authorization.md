@@ -120,6 +120,10 @@ repository, a service, or a handler may not query them.
 Resolve the resource, answer 404 if it does not exist (or is not the caller's
 on the external API), then authorize.
 
+The exception is a platform-admin action on a user (suspend, reactivate, revoke
+sessions, reset MFA): the service checks `platform_admins` before it reads the
+user, so a caller who is not an admin gets 403 whether or not the user exists.
+
 ## Second factor and signatures
 
 - Moving funds from the dashboard (create withdrawal, approve, change
