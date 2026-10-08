@@ -4,10 +4,12 @@ import (
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
+	"fmt"
 	"strings"
 	"testing"
 
 	"github.com/google/uuid"
+	contractstestinghttp "github.com/goravel/framework/contracts/testing/http"
 	"github.com/goravel/framework/facades"
 	goravelTesting "github.com/goravel/framework/testing"
 	"github.com/stretchr/testify/suite"
@@ -156,6 +158,140 @@ func (s *APITokenAuthHMACTestSuite) TestAPITokenAuth_ValidOK_WhenClaimTrue() {
 	content, err := resp.Content()
 	s.Require().NoError(err)
 	s.assertNotSignatureReject(content)
+}
+
+// The tests below pin the X-Signature scheme as it is today (v1), so the v2
+// scheme in docs/api-request-signing.md can be added next to it without a
+// client that works now breaking. v1: the key is the whole bearer JWT, the
+// message is the body only, the value is lowercase hex of HMAC-SHA256, and a
+// signature that is present is checked even when the token does not require one.
+
+func (s *APITokenAuthHMACTestSuite) signatureRejected(resp contractstestinghttp.Response) {
+	s.T().Helper()
+	resp.AssertStatus(401).AssertJson(map[string]any{"error": map[string]any{
+		"code":    "invalid_signature",
+		"message": "invalid request signature",
+	}})
+}
+
+// An optional signature is still verified: a token that does not require one
+// is refused when it sends a wrong one.
+func (s *APITokenAuthHMACTestSuite) TestV1_WrongSignature_IsRefused_EvenWhenTheTokenDoesNotRequireOne() {
+	jwt := s.mintToken(false, "v1-optional-wrong")
+
+	resp, err := s.Http(s.T()).
+		WithHeader("Authorization", "Bearer "+jwt).
+		WithHeader("X-Signature", hmacHex(jwt, "something else")).
+		Get("/api/v1/chains")
+	s.Require().NoError(err)
+
+	s.signatureRejected(resp)
+}
+
+func (s *APITokenAuthHMACTestSuite) TestV1_RightSignature_IsAccepted_WhenTheTokenDoesNotRequireOne() {
+	jwt := s.mintToken(false, "v1-optional-right")
+
+	resp, err := s.Http(s.T()).
+		WithHeader("Authorization", "Bearer "+jwt).
+		WithHeader("X-Signature", hmacHex(jwt, "")).
+		Get("/api/v1/chains")
+	s.Require().NoError(err)
+
+	resp.AssertStatus(200)
+}
+
+// The message is the body alone: a GET signs the empty string, so its
+// signature is the same on every path and query.
+func (s *APITokenAuthHMACTestSuite) TestV1_AGet_SignsTheEmptyBody_WhateverThePathOrQuery() {
+	jwt := s.mintToken(true, "v1-get")
+	sig := hmacHex(jwt, "")
+
+	for _, path := range []string{"/api/v1/chains", "/api/v1/wallets", "/api/v1/wallets?limit=1"} {
+		resp, err := s.Http(s.T()).
+			WithHeader("Authorization", "Bearer "+jwt).
+			WithHeader("X-Signature", sig).
+			Get(path)
+		s.Require().NoError(err)
+		content, err := resp.Content()
+		s.Require().NoError(err)
+		s.assertNotSignatureReject(content)
+	}
+}
+
+// The compare is case-sensitive on the hex digits.
+func (s *APITokenAuthHMACTestSuite) TestV1_UppercaseHex_IsRefused() {
+	jwt := s.mintToken(true, "v1-uppercase")
+	sig := strings.ToUpper(hmacHex(jwt, ""))
+	s.Require().NotEqual(hmacHex(jwt, ""), sig)
+
+	resp, err := s.Http(s.T()).
+		WithHeader("Authorization", "Bearer "+jwt).
+		WithHeader("X-Signature", sig).
+		Get("/api/v1/chains")
+	s.Require().NoError(err)
+
+	s.signatureRejected(resp)
+}
+
+// The key is the bearer JWT: a signature made with any other key is refused.
+func (s *APITokenAuthHMACTestSuite) TestV1_SignatureMadeWithAnotherKey_IsRefused() {
+	jwt := s.mintToken(true, "v1-other-key")
+
+	resp, err := s.Http(s.T()).
+		WithHeader("Authorization", "Bearer "+jwt).
+		WithHeader("X-Signature", hmacHex(jwt+"x", "")).
+		Get("/api/v1/chains")
+	s.Require().NoError(err)
+
+	s.signatureRejected(resp)
+}
+
+// Verifying the signature reads the body; the handler must still see all of it.
+// An empty body is a 400, so a signed request answering the same as an unsigned
+// one proves the body was handed back.
+func (s *APITokenAuthHMACTestSuite) TestV1_TheHandlerStillSeesTheWholeBodyAfterVerification() {
+	jwt := s.mintToken(false, "v1-body")
+	body := `{"url":"not-a-url"}`
+
+	post := func(headers map[string]string) string {
+		request := s.Http(s.T()).
+			WithHeader("Authorization", "Bearer "+jwt).
+			WithHeader("Content-Type", "application/json")
+		for name, value := range headers {
+			request = request.WithHeader(name, value)
+		}
+		resp, err := request.Post("/api/v1/webhooks", strings.NewReader(body))
+		s.Require().NoError(err)
+		content, err := resp.Content()
+		s.Require().NoError(err)
+		return content
+	}
+
+	unsignedBody := post(nil)
+	signedBody := post(map[string]string{"X-Signature": hmacHex(jwt, body)})
+
+	s.Equal(unsignedBody, signedBody)
+	s.NotContains(signedBody, "invalid request body")
+	s.assertNotSignatureReject(signedBody)
+}
+
+// A v2-format value (docs/api-request-signing.md) is not a valid v1 value, so
+// today it is a 401 for every token. That is what lets the server accept the
+// format later, by dispatching on it, without changing the answer for any
+// client that works now.
+func (s *APITokenAuthHMACTestSuite) TestV1_AV2FormatHeader_IsRefused_Today() {
+	for _, requireSignature := range []bool{false, true} {
+		jwt := s.mintToken(requireSignature, fmt.Sprintf("v1-v2-format-%t", requireSignature))
+		value := "t=1760000000,n=00112233445566778899aabbccddeeff,v2=" + hmacHex(jwt, "")
+
+		resp, err := s.Http(s.T()).
+			WithHeader("Authorization", "Bearer "+jwt).
+			WithHeader("X-Signature", value).
+			Get("/api/v1/chains")
+		s.Require().NoError(err)
+
+		s.signatureRejected(resp)
+	}
 }
 
 func (s *APITokenAuthHMACTestSuite) TestSuccessful_Call_StampsLastUsedWithoutChangingBody() {
