@@ -93,7 +93,7 @@ var allowed = map[string][]string{
 	LayerRepositories: {LayerRepositories, LayerServices, LayerModels},
 	LayerHTTP:         {LayerHTTP, LayerContainer, LayerModels, LayerServices, LayerMails, LayerPolicies, LayerFacades},
 	LayerFacades:      {},
-	LayerRoutes:       {LayerContainer, LayerHTTP, LayerServices, LayerModels},
+	LayerRoutes:       {LayerContainer, LayerHTTP, LayerServices, LayerModels, LayerDocs},
 	LayerRules:        {LayerModels},
 	LayerConsole:      {LayerConsole, LayerContainer, LayerServices, LayerModels},
 	LayerJobs:         {LayerContainer, LayerServices, LayerModels},

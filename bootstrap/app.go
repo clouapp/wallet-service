@@ -30,6 +30,7 @@ import (
 	"github.com/macrowallets/waas/app/services/walletrecords"
 	"github.com/macrowallets/waas/config"
 	"github.com/macrowallets/waas/database/seeders"
+	"github.com/macrowallets/waas/routes"
 )
 
 // Boot wires Goravel and returns the application instance.
@@ -115,7 +116,7 @@ func Boot() contractsfoundation.Application {
 			h.Use(middleware.GlobalChain(requestTimeout())...).
 				Recover(middleware.RecoverPanic)
 		}).
-		WithRouting(providers.RegisterRoutes).
+		WithRouting(routes.RegisterHTTP).
 		Create()
 }
 

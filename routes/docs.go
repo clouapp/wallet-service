@@ -9,6 +9,7 @@ import (
 	"github.com/macrowallets/waas/app/container"
 	"github.com/macrowallets/waas/app/http/controllers/health"
 	"github.com/macrowallets/waas/app/services/deposit"
+	"github.com/macrowallets/waas/docs"
 )
 
 // swaggerBootScript starts the UI. It is inline, so the page's policy allows it
@@ -50,9 +51,7 @@ var swaggerCSP = func() string {
 		"frame-ancestors 'none'"
 }()
 
-// RegisterDocs exposes health and the Swagger UI. The spec document is
-// registered by the route service provider so this package does not import
-// the generated docs package.
+// RegisterDocs exposes health, the Swagger UI and the generated spec.
 func RegisterDocs() {
 	facades.Route().Get("/health", health.NewController(container.MustMake[*deposit.Service]()).Show)
 
@@ -61,5 +60,11 @@ func RegisterDocs() {
 			Header("Content-Security-Policy", swaggerCSP).
 			Header("Content-Type", "text/html; charset=utf-8").
 			String(http.StatusOK, swaggerHTML)
+	})
+
+	facades.Route().Get("/swagger/doc.json", func(ctx http.Context) http.Response {
+		return ctx.Response().
+			Header("Content-Type", "application/json").
+			String(http.StatusOK, docs.SwaggerInfo.ReadDoc())
 	})
 }

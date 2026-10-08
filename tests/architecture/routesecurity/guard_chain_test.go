@@ -21,7 +21,6 @@ var skippedGuards = map[string]bool{
 // parser will not see it and the booted router will.
 var routeRegistrationFiles = []string{
 	"routes/",
-	"app/providers/route_service_provider.go",
 }
 
 // TestGuardChainMatchesRegistration fails when a served route has no row, a
