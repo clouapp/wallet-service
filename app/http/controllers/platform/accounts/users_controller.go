@@ -61,7 +61,7 @@ func (ctrl *UsersController) Index(ctx http.Context) http.Response {
 	if errResp := mapAccountUsersError(ctx, err); errResp != nil {
 		return errResp
 	}
-	return responses.Send(ctx, http.StatusOK, pagination.Response(platformaccounts.AccountUsersFrom(rows), total, limit, offset))
+	return ctx.Response().Success().Json(pagination.Response(platformaccounts.AccountUsersFrom(rows), total, limit, offset))
 }
 
 func mapAccountUsersError(ctx http.Context, err error) http.Response {

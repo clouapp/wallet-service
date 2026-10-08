@@ -55,7 +55,7 @@ func (ctrl *UsersController) Index(ctx http.Context) http.Response {
 	if errResp := mapListError(ctx, err); errResp != nil {
 		return errResp
 	}
-	return responses.Send(ctx, http.StatusOK, pagination.Response(platformusers.UsersFrom(rows), total, limit, offset))
+	return ctx.Response().Success().Json(pagination.Response(platformusers.UsersFrom(rows), total, limit, offset))
 }
 
 func mapListError(ctx http.Context, err error) http.Response {
@@ -191,7 +191,7 @@ func (ctrl *UsersController) change(ctx http.Context, suspend bool) http.Respons
 	if errResp := mapSuspensionError(ctx, callErr); errResp != nil {
 		return errResp
 	}
-	return responses.Send(ctx, http.StatusOK, suspensionBody{
+	return ctx.Response().Success().Json(suspensionBody{
 		ID:          result.ID,
 		SuspendedAt: formatSuspendedAt(result.SuspendedAt),
 	})

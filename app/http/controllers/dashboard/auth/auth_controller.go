@@ -151,7 +151,7 @@ func (ctrl *AuthController) Register(ctx http.Context) http.Response {
 		resp["account_id"] = defaultAccount["id"]
 		resp["account"] = defaultAccount
 	}
-	return responses.Send(ctx, http.StatusCreated, resp)
+	return ctx.Response().Status(http.StatusCreated).Json(resp)
 }
 
 // Login godoc
@@ -204,7 +204,7 @@ func (ctrl *AuthController) Login(ctx http.Context) http.Response {
 			appfacades.Log().WithContext(ctx).Errorf("auth: begin 2fa: %v", err)
 			return responses.Fail(ctx, http.StatusInternalServerError, responses.CodeInternal, "failed to create session")
 		}
-		return responses.Send(ctx, http.StatusOK, http.Json{
+		return ctx.Response().Success().Json(http.Json{
 			"requires_2fa":    true,
 			"challenge_token": challenge.Token,
 			"expires_in":      int(challenge.ExpiresIn.Seconds()),
@@ -221,7 +221,7 @@ func (ctrl *AuthController) Login(ctx http.Context) http.Response {
 		appfacades.Log().WithContext(ctx).Errorf("auth: login: %v", err)
 		return responses.Fail(ctx, http.StatusInternalServerError, responses.CodeInternal, "failed to create session")
 	}
-	return responses.Send(ctx, http.StatusOK, ctrl.signedInResponse(&user, tokens, accounts, defaultAccount))
+	return ctx.Response().Success().Json(ctrl.signedInResponse(&user, tokens, accounts, defaultAccount))
 }
 
 // VerifyTwoFactor godoc
@@ -266,7 +266,7 @@ func (ctrl *AuthController) VerifyTwoFactor(ctx http.Context) http.Response {
 		appfacades.Log().WithContext(ctx).Errorf("auth: 2fa login: %v", err)
 		return responses.Fail(ctx, http.StatusInternalServerError, responses.CodeInternal, "failed to create session")
 	}
-	return responses.Send(ctx, http.StatusOK, ctrl.signedInResponse(user, tokens, accounts, defaultAccount))
+	return ctx.Response().Success().Json(ctrl.signedInResponse(user, tokens, accounts, defaultAccount))
 }
 
 // RefreshToken godoc
@@ -331,7 +331,7 @@ func (ctrl *AuthController) RefreshToken(ctx http.Context) http.Response {
 		appfacades.Log().WithContext(ctx).Errorf("auth: refresh: %v", err)
 		return responses.Fail(ctx, http.StatusInternalServerError, responses.CodeInternal, "failed to create session")
 	}
-	return responses.Send(ctx, http.StatusOK, http.Json{
+	return ctx.Response().Success().Json(http.Json{
 		"access_token":  session.AccessToken,
 		"refresh_token": session.RefreshToken,
 	})
@@ -378,7 +378,7 @@ func (ctrl *AuthController) ForgotPassword(ctx http.Context) http.Response {
 		appfacades.Log().WithContext(ctx).Errorf("auth: send password reset mail failed")
 	}
 
-	return responses.Send(ctx, http.StatusOK, http.Json{"message": "if that address is registered, you will receive a reset link"})
+	return ctx.Response().Success().Json(http.Json{"message": "if that address is registered, you will receive a reset link"})
 }
 
 // ResetPassword godoc
@@ -432,7 +432,7 @@ func (ctrl *AuthController) ResetPassword(ctx http.Context) http.Response {
 		return responses.Fail(ctx, http.StatusInternalServerError, responses.CodeInternal, "password reset but existing sessions could not be revoked")
 	}
 
-	return responses.Send(ctx, http.StatusOK, http.Json{"message": "password reset successfully"})
+	return ctx.Response().Success().Json(http.Json{"message": "password reset successfully"})
 }
 
 func (ctrl *AuthController) signedInResponse(user *models.User, tokens controllers.SessionTokens, accounts []map[string]interface{}, defaultAccount map[string]interface{}) http.Json {

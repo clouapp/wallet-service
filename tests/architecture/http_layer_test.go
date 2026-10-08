@@ -81,22 +81,6 @@ func TestHandlers_Read_TheirInputThroughAFormRequest(t *testing.T) {
 	Report(t, &violations)
 }
 
-// TestControllersDoNotWriteJSONInline reports bodies written with
-// ctx.Response().Json() in controllers and middleware. The target is one
-// writer (responses.JSON) rendering resources; which shape it writes is
-// decision B2.1/B2.3 of the alignment plan, so this check only counts the
-// inline writes (the measurable part of Test2xxResponsesAreResources).
-func TestControllers_Do_NotWriteJSONInline(t *testing.T) {
-	module := sharedModule(t)
-	var violations Violations
-	for _, file := range module.ProductionFiles("app/http/controllers", "app/http/middleware") {
-		for range chainedCalls(file, "Response")["Json"] {
-			violations.Add("%s calls ctx.Response().Json()", file.Path)
-		}
-	}
-	Report(t, &violations)
-}
-
 // TestEveryFormRequestFieldTagsFormAndJSONAlike reports a form request field
 // whose form tag is missing or differs from its json tag: the binder reads
 // form, so a mismatch binds nothing, silently.

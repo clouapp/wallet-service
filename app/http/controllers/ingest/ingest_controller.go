@@ -69,5 +69,5 @@ func (ctrl *IngestController) HandleWebhookIngest(ctx http.Context) http.Respons
 	}); err != nil {
 		return responses.InternalError(ctx, err)
 	}
-	return responses.Send(ctx, http.StatusOK, http.Json{"ok": true})
+	return ctx.Response().Success().Json(http.Json{"ok": true})
 }

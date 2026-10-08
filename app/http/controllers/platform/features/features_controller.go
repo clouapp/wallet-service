@@ -56,7 +56,7 @@ func (ctrl *FeaturesController) Index(ctx http.Context) http.Response {
 	if errResp := mapPlatformFeatureError(ctx, err); errResp != nil {
 		return errResp
 	}
-	return responses.Send(ctx, http.StatusOK, view)
+	return ctx.Response().Success().Json(view)
 }
 
 // Update godoc
@@ -88,7 +88,7 @@ func (ctrl *FeaturesController) Update(ctx http.Context) http.Response {
 	if errResp := mapPlatformFeatureError(ctx, err); errResp != nil {
 		return errResp
 	}
-	return responses.Send(ctx, http.StatusOK, flag)
+	return ctx.Response().Success().Json(flag)
 }
 
 // ShowScope godoc
@@ -116,7 +116,7 @@ func (ctrl *FeaturesController) ShowScope(ctx http.Context) http.Response {
 	if errResp := mapPlatformFeatureError(ctx, err); errResp != nil {
 		return errResp
 	}
-	return responses.Send(ctx, http.StatusOK, view)
+	return ctx.Response().Success().Json(view)
 }
 
 // UpdateScope godoc
@@ -203,9 +203,9 @@ func (ctrl *FeaturesController) writeScope(ctx http.Context, scope, id, feature 
 		if len(view.Features) != 1 {
 			return responses.Fail(ctx, http.StatusInternalServerError, responses.CodeInternalError, "internal_error")
 		}
-		return responses.Send(ctx, http.StatusOK, view.Features[0])
+		return ctx.Response().Success().Json(view.Features[0])
 	}
-	return responses.Send(ctx, http.StatusOK, view)
+	return ctx.Response().Success().Json(view)
 }
 
 func platformCaller(ctx http.Context) (uuid.UUID, http.Response) {

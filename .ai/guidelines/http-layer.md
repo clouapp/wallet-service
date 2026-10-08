@@ -11,7 +11,7 @@ errors and renders a resource. Everything it needs lives in four packages under
 | Package | Use it for |
 |---|---|
 | `requests` | running a form request (`Validate`, `ValidatePath`), a path id (`RouteID`, `ParseUUID`), a list window (`Paging`) |
-| `responses` | every body: `JSON`, and the failures `Error`, `InternalError`, `ProviderError` (502 for a chain/RPC/provider failure: logs the cause, answers the endpoint's own message), `ValidationFailed`, `FieldError` |
+| `responses` | every failure body: `Error`, `InternalError`, `ProviderError` (502 for a chain/RPC/provider failure: logs the cause, answers the endpoint's own message), `ValidationFailed`, `FieldError` |
 | `resources` | the wire shape. **JSON tags exist only here** — a model carries none, not even `json:"-"` |
 | `middleware` | who is asking and what they may reach: `CurrentUser`, `CurrentAPIToken`, `CurrentAccount`, `CurrentWallet`, `HasPermission`, `Throttle` |
 
@@ -59,7 +59,7 @@ func (c *WalletsController) CreateWallet(ctx contractshttp.Context) contractshtt
 	if err != nil {
 		return mapError(ctx, err, "creating wallet")
 	}
-	return responses.JSON(ctx, http.StatusCreated, walletsresources.WalletFrom(wallet))
+	return ctx.Response().Status(http.StatusCreated).Json(walletsresources.WalletFrom(wallet))
 }
 ```
 
@@ -136,8 +136,13 @@ Rules:
   `map`, never a `WalletView{*models.Wallet}` embedding a model.
 - Paginated lists keep the envelope `{data,total,limit,offset}` through
   `resources.Page` and `requests.Paging`.
-- **JSON is written with `encoding/json`** through `responses.JSON`, never
-  `ctx.Response().Json()`. Deliberate.
+- **A success body is written with the Goravel idiom**: `ctx.Response().Success().Json(body)`
+  for 200, `ctx.Response().Status(http.StatusCreated).Json(body)` (or `Json(status, body)`)
+  for any other 2xx, `ctx.Response().NoContent()` for 204. Permanent rule.
+  The bytes are `application/json; charset=utf-8` with no trailing newline;
+  `responses.JSON` (trailing newline, `application/json`) belongs to the error
+  family only, and a route keeps the writer it has because moving it changes the
+  wire (`tests/contract`).
 - `responses.InternalError(ctx, fmt.Errorf("doing x: %w", err))` for every
   unexpected error: it logs the cause and answers without it.
 - A chain/RPC/provider failure the caller can retry is `responses.ProviderError`

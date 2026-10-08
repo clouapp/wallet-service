@@ -53,7 +53,7 @@ func (ctrl *ListController) Index(ctx http.Context) http.Response {
 	if errResp := mapListError(ctx, err); errResp != nil {
 		return errResp
 	}
-	return responses.Send(ctx, http.StatusOK, pagination.Response(platformaccounts.AccountsFrom(rows), total, limit, offset))
+	return ctx.Response().Success().Json(pagination.Response(platformaccounts.AccountsFrom(rows), total, limit, offset))
 }
 
 func mapListError(ctx http.Context, err error) http.Response {

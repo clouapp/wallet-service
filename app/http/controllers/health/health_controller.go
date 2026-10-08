@@ -8,7 +8,6 @@ import (
 
 	"github.com/goravel/framework/contracts/http"
 
-	"github.com/macrowallets/waas/app/http/responses"
 	"github.com/macrowallets/waas/app/services/deposit"
 )
 
@@ -55,7 +54,7 @@ func NewController(deposits *deposit.Service) *Controller {
 // @Success      200  {object}  HealthResponse
 // @Router       /health [get]
 func (c *Controller) Show(ctx http.Context) http.Response {
-	return responses.Send(ctx, http.StatusOK, HealthResponse{
+	return ctx.Response().Success().Json(HealthResponse{
 		Status:         "ok",
 		Version:        "0.1.0",
 		DepositScanner: c.depositScannerHealth(ctx.Context()),

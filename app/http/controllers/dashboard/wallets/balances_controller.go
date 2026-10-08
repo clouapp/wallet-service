@@ -63,5 +63,5 @@ func (ctrl *BalancesController) ListWalletBalances(ctx http.Context) http.Respon
 	}
 
 	assets := walletbalances.BalancesFrom(controllers.PricedConfiguredBalances(ctx.Context(), ctrl.tokens, wallet.Chain, rows, tokens), walletresource.WalletPtr)
-	return responses.Send(ctx, http.StatusOK, http.Json{"data": assets})
+	return ctx.Response().Success().Json(http.Json{"data": assets})
 }

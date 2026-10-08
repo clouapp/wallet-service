@@ -209,7 +209,7 @@ func intPointerText(value *int) string {
 }
 
 func walletSettingsJSON(ctx http.Context, wallet *models.Wallet) http.Response {
-	return responses.Send(ctx, http.StatusOK, WalletSettingsResponse{
+	return ctx.Response().Success().Json(WalletSettingsResponse{
 		Label:             wallet.Label,
 		FeeRateMin:        wallet.FeeRateMin,
 		FeeRateMax:        wallet.FeeRateMax,
@@ -243,7 +243,7 @@ func (ctrl *SettingsController) ArchiveWallet(ctx http.Context) http.Response {
 		return responses.Fail(ctx, http.StatusInternalServerError, responses.CodeInternal, "failed to archive wallet")
 	}
 	wallet.Status = models.WalletStatusArchived
-	return responses.Send(ctx, http.StatusOK, walletresource.WithNetworkFrom(wallet, controllers.ResolveWalletChainNetwork(ctx.Context(), ctrl.chains, wallet.Chain)))
+	return ctx.Response().Success().Json(walletresource.WithNetworkFrom(wallet, controllers.ResolveWalletChainNetwork(ctx.Context(), ctrl.chains, wallet.Chain)))
 }
 
 // FreezeWallet godoc
@@ -284,7 +284,7 @@ func (ctrl *SettingsController) FreezeWallet(ctx http.Context) http.Response {
 	wallet.FrozenUntil = &frozenUntil
 	wallet.Status = "frozen"
 
-	return responses.Send(ctx, http.StatusOK, http.Json{
+	return ctx.Response().Success().Json(http.Json{
 		"status":       wallet.Status,
 		"frozen_until": wallet.FrozenUntil,
 	})

@@ -98,7 +98,7 @@ func (ctrl *LifecycleController) set(ctx http.Context, status string) http.Respo
 	if err != nil {
 		return mapLifecycleError(ctx, err)
 	}
-	return responses.Send(ctx, http.StatusOK, lifecycleBody{ID: account.ID, Status: account.Status})
+	return ctx.Response().Success().Json(lifecycleBody{ID: account.ID, Status: account.Status})
 }
 
 func mapLifecycleError(ctx http.Context, err error) http.Response {

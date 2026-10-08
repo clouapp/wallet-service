@@ -65,7 +65,7 @@ func (ctrl *WebhooksController) CreateWebhook(ctx http.Context) http.Response {
 		slog.Error("create webhook config failed", "error_type", fmt.Sprintf("%T", err))
 		return responses.Error(ctx, http.StatusInternalServerError, responses.CodeInternal, "internal error")
 	}
-	return responses.Send(ctx, http.StatusCreated, webhookresource.WebhookConfigPtr(cfg))
+	return ctx.Response().Status(http.StatusCreated).Json(webhookresource.WebhookConfigPtr(cfg))
 }
 
 // ListWebhooks godoc
@@ -134,7 +134,7 @@ func (ctrl *WebhooksController) UpdateWebhook(ctx http.Context) http.Response {
 	})
 	switch {
 	case err == nil:
-		return responses.Send(ctx, http.StatusOK, webhookresource.WebhookConfigPtr(cfg))
+		return ctx.Response().Success().Json(webhookresource.WebhookConfigPtr(cfg))
 	case errors.Is(err, webhook.ErrWebhookConfigNotFound):
 		return responses.Error(ctx, http.StatusNotFound, responses.CodeNotFound, webhook.ErrWebhookConfigNotFound.Error())
 	case errors.Is(err, webhook.ErrWebhookOwnershipNotProven):

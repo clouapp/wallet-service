@@ -130,7 +130,7 @@ func (ctrl *WithdrawalsController) ListWalletWithdrawals(ctx http.Context) http.
 	if err != nil {
 		return responses.Fail(ctx, http.StatusInternalServerError, responses.CodeInternal, "failed to fetch withdrawals")
 	}
-	return responses.Send(ctx, http.StatusOK, pagination.Response(withdrawalresource.WithdrawalsFrom(withdrawals), total, limit, offset))
+	return ctx.Response().Success().Json(pagination.Response(withdrawalresource.WithdrawalsFrom(withdrawals), total, limit, offset))
 }
 
 func (ctrl *WithdrawalsController) EstimateWithdrawalFee(ctx http.Context) http.Response {
@@ -155,7 +155,7 @@ func (ctrl *WithdrawalsController) EstimateWithdrawalFee(ctx http.Context) http.
 		return responses.Fail(ctx, http.StatusUnprocessableEntity, "FEE_ESTIMATE_FAILED", "fee estimation unavailable")
 	}
 
-	return responses.Send(ctx, http.StatusOK, estimate)
+	return ctx.Response().Success().Json(estimate)
 }
 
 // CreateWalletWithdrawal godoc
@@ -231,7 +231,7 @@ func (ctrl *WithdrawalsController) CreateWalletWithdrawal(ctx http.Context) http
 		return controllers.MapInternalError(ctx, fmt.Errorf("create withdrawal: empty result"), "create_wallet_withdrawal")
 	}
 	if created.Replayed {
-		return responses.Send(ctx, http.StatusOK, withdrawalresource.WithdrawalPtr(created.Withdrawal))
+		return ctx.Response().Success().Json(withdrawalresource.WithdrawalPtr(created.Withdrawal))
 	}
 	resolved := created.Resolved
 	idempotencyKey := created.IdempotencyKey
@@ -297,7 +297,7 @@ func (ctrl *WithdrawalsController) CreateWalletWithdrawal(ctx http.Context) http
 		return controllers.MapInternalError(ctx, updateErr, "persist_broadcast_withdrawal")
 	}
 	controllers.PublishWithdrawalBroadcast(ctx, ctrl.events, w, tx)
-	return responses.Send(ctx, http.StatusCreated, withdrawalresource.WithdrawalPtr(w))
+	return ctx.Response().Status(http.StatusCreated).Json(withdrawalresource.WithdrawalPtr(w))
 }
 
 // GetWalletWithdrawal godoc
@@ -324,7 +324,7 @@ func (ctrl *WithdrawalsController) GetWalletWithdrawal(ctx http.Context) http.Re
 	if err != nil || w == nil {
 		return responses.Fail(ctx, http.StatusNotFound, responses.CodeNotFound, "withdrawal not found")
 	}
-	return responses.Send(ctx, http.StatusOK, withdrawalresource.WithdrawalPtr(w))
+	return ctx.Response().Success().Json(withdrawalresource.WithdrawalPtr(w))
 }
 
 // GetDashboardWithdrawal godoc
@@ -359,7 +359,7 @@ func (ctrl *WithdrawalsController) GetDashboardWithdrawal(ctx http.Context) http
 	if err != nil || wallet == nil || wallet.AccountID == nil || *wallet.AccountID != accountID {
 		return responses.Fail(ctx, http.StatusNotFound, responses.CodeNotFound, "withdrawal not found")
 	}
-	return responses.Send(ctx, http.StatusOK, withdrawalresource.WithdrawalPtr(withdrawal))
+	return ctx.Response().Success().Json(withdrawalresource.WithdrawalPtr(withdrawal))
 }
 
 // CancelWalletWithdrawal godoc
@@ -400,5 +400,5 @@ func (ctrl *WithdrawalsController) CancelWalletWithdrawal(ctx http.Context) http
 		return responses.Fail(ctx, http.StatusInternalServerError, responses.CodeInternal, "failed to cancel withdrawal")
 	}
 	w.Status = "cancelled"
-	return responses.Send(ctx, http.StatusOK, withdrawalresource.WithdrawalPtr(w))
+	return ctx.Response().Success().Json(withdrawalresource.WithdrawalPtr(w))
 }

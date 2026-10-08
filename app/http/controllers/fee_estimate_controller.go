@@ -81,7 +81,7 @@ func (ctrl *FeeEstimateController) GetWalletFeeEstimate(ctx http.Context) http.R
 	if err != nil {
 		return feeEstimateErrorResponse(ctx, wallet, err)
 	}
-	return responses.Send(ctx, http.StatusOK, estimate)
+	return ctx.Response().Success().Json(estimate)
 }
 
 func feeEstimateErrorResponse(ctx http.Context, wallet *models.Wallet, err error) http.Response {

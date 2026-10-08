@@ -49,7 +49,7 @@ func (ctrl *CurrenciesController) ListCurrencies(ctx http.Context) http.Response
 	if err != nil {
 		return responses.Fail(ctx, http.StatusInternalServerError, responses.CodeInternal, "failed to fetch currencies")
 	}
-	return responses.Send(ctx, http.StatusOK, http.Json{"data": currencyresources.CurrenciesFrom(currencies)})
+	return ctx.Response().Success().Json(http.Json{"data": currencyresources.CurrenciesFrom(currencies)})
 }
 
 func (ctrl *CurrenciesController) GetCurrency(ctx http.Context) http.Response {
@@ -70,7 +70,7 @@ func (ctrl *CurrenciesController) GetCurrency(ctx http.Context) http.Response {
 	if currency == nil {
 		return responses.Fail(ctx, http.StatusNotFound, responses.CodeNotFound, "currency not found")
 	}
-	return responses.Send(ctx, http.StatusOK, currencyresources.CurrencyPtr(currency))
+	return ctx.Response().Success().Json(currencyresources.CurrencyPtr(currency))
 }
 
 func (ctrl *CurrenciesController) ConvertCurrency(ctx http.Context) http.Response {
@@ -94,7 +94,7 @@ func (ctrl *CurrenciesController) ConvertCurrency(ctx http.Context) http.Respons
 		return convertFailure(ctx, err)
 	}
 	rate := result.DivRound(amount, price.ConversionScale)
-	return responses.Send(ctx, http.StatusOK, http.Json{
+	return ctx.Response().Success().Json(http.Json{
 		"from":   from,
 		"to":     to,
 		"amount": numeric.NewDecimal(amount),

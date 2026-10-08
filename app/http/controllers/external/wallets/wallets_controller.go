@@ -109,7 +109,7 @@ func (ctrl *WalletsController) CreateWallet(ctx http.Context) http.Response {
 	if result == nil || result.Wallet == nil {
 		return responses.Fail(ctx, http.StatusInternalServerError, responses.CodeInternal, "wallet service returned no wallet")
 	}
-	return responses.Send(ctx, http.StatusCreated, newCreateWalletResponse(result))
+	return ctx.Response().Status(http.StatusCreated).Json(newCreateWalletResponse(result))
 }
 
 // mapCreateWalletError answers a CreateWallet failure. A 4xx is a failure the
@@ -159,7 +159,7 @@ func (ctrl *WalletsController) ListWallets(ctx http.Context) http.Response {
 		slog.Error("load wallet list balances", "account", accountID, "error", err)
 		return responses.Fail(ctx, http.StatusInternalServerError, responses.CodeInternal, "failed to fetch wallet balances")
 	}
-	return responses.Send(ctx, http.StatusOK, pagination.Response(items, total, limit, offset))
+	return ctx.Response().Success().Json(pagination.Response(items, total, limit, offset))
 }
 
 // GetWallet godoc

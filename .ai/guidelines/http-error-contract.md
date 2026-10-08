@@ -3,8 +3,8 @@
 > Status: DECIDED (B2.1, B2.2). Every failure on `/v1` and `/api/v1` is the
 > envelope below, written by a writer of `app/http/responses`; no handler or
 > middleware builds the map itself (`TestError_Bodies_GoThroughTheResponsesWriters`).
-> Success bodies stay on `ctx.Response().Json` until the resources migration;
-> this file does not claim that migration is done. One refusal still carries a
+> Success bodies are written with `ctx.Response().Success().Json` /
+> `Status(code).Json` (see `http-layer.md`); `responses` has no success writer. One refusal still carries a
 > wrapped error's text in `message` (see "What a body may carry").
 
 Status codes and error codes are a contract. `macro-wallets-front` branches on

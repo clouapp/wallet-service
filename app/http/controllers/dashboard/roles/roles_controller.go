@@ -33,7 +33,7 @@ func (ctrl *Controller) Index(ctx http.Context) http.Response {
 	if account == nil {
 		return responses.Fail(ctx, http.StatusInternalServerError, responses.CodeInternalError, "internal_error")
 	}
-	return responses.Send(ctx, http.StatusOK, roleList{Roles: policies.EffectiveRoleGrants()})
+	return ctx.Response().Success().Json(roleList{Roles: policies.EffectiveRoleGrants()})
 }
 
 // Permissions godoc
@@ -53,7 +53,7 @@ func (ctrl *Controller) Permissions(ctx http.Context) http.Response {
 	if account == nil {
 		return responses.Fail(ctx, http.StatusInternalServerError, responses.CodeInternalError, "internal_error")
 	}
-	return responses.Send(ctx, http.StatusOK, permissionCatalog{Permissions: policies.AccountPermissionCatalog()})
+	return ctx.Response().Success().Json(permissionCatalog{Permissions: policies.AccountPermissionCatalog()})
 }
 
 type roleList struct {

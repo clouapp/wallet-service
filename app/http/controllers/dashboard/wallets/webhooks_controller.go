@@ -64,7 +64,7 @@ func (ctrl *WebhooksController) ListWalletWebhooks(ctx http.Context) http.Respon
 	if err != nil {
 		return responses.Fail(ctx, http.StatusInternalServerError, responses.CodeInternal, "failed to fetch wallet webhooks")
 	}
-	return responses.Send(ctx, http.StatusOK, http.Json{"data": webhooks.WebhookConfigsFrom(cfgs)})
+	return ctx.Response().Success().Json(http.Json{"data": webhooks.WebhookConfigsFrom(cfgs)})
 }
 
 // CreateWalletWebhook godoc
@@ -99,7 +99,7 @@ func (ctrl *WebhooksController) CreateWalletWebhook(ctx http.Context) http.Respo
 	if err := ctrl.configs.Create(ctx.Context(), cfg); err != nil {
 		return responses.Fail(ctx, http.StatusInternalServerError, responses.CodeInternal, "failed to create webhook")
 	}
-	return responses.Send(ctx, http.StatusCreated, webhooks.WebhookConfigPtr(cfg))
+	return ctx.Response().Status(http.StatusCreated).Json(webhooks.WebhookConfigPtr(cfg))
 }
 
 // DeleteWalletWebhook godoc
@@ -162,7 +162,7 @@ func (ctrl *WebhooksController) TestWalletWebhook(ctx http.Context) http.Respons
 	if err := ctrl.delivery.SendTest(ctx.Context(), cfg, wallet.ID); err != nil {
 		return responses.Fail(ctx, http.StatusBadGateway, responses.CodeProviderUnavailable, "webhook test delivery failed")
 	}
-	return responses.Send(ctx, http.StatusOK, http.Json{"delivered": true})
+	return ctx.Response().Success().Json(http.Json{"delivered": true})
 }
 
 // ---- Request/Response types ----

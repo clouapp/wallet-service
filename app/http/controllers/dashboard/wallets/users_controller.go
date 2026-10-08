@@ -69,7 +69,7 @@ func (ctrl *UsersController) ListWalletUsers(ctx http.Context) http.Response {
 	if err != nil {
 		return responses.Fail(ctx, http.StatusInternalServerError, responses.CodeInternal, "failed to fetch wallet users")
 	}
-	return responses.Send(ctx, http.StatusOK, http.Json{"data": walletusers.WalletUsersFrom(members)})
+	return ctx.Response().Success().Json(http.Json{"data": walletusers.WalletUsersFrom(members)})
 }
 
 // AddWalletUser godoc
@@ -120,7 +120,7 @@ func (ctrl *UsersController) AddWalletUser(ctx http.Context) http.Response {
 		} else {
 			existing.Roles = roleList
 		}
-		return responses.Send(ctx, http.StatusCreated, walletusers.WalletUserPtr(existing))
+		return ctx.Response().Status(http.StatusCreated).Json(walletusers.WalletUserPtr(existing))
 	}
 
 	wu := &models.WalletUser{
@@ -133,7 +133,7 @@ func (ctrl *UsersController) AddWalletUser(ctx http.Context) http.Response {
 	if err := ctrl.members.Create(ctx.Context(), wu); err != nil {
 		return responses.Fail(ctx, http.StatusInternalServerError, responses.CodeInternal, "failed to add wallet user")
 	}
-	return responses.Send(ctx, http.StatusCreated, walletusers.WalletUserPtr(wu))
+	return ctx.Response().Status(http.StatusCreated).Json(walletusers.WalletUserPtr(wu))
 }
 
 // requireActiveAccountMember rejects a user_id that is not an active member of

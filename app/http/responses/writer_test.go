@@ -120,13 +120,31 @@ func TestJSON_Matches_StdlibEncoder(t *testing.T) {
 	assert.Equal(t, "encoding/json", gincodecjson.Package)
 }
 
-func TestSend_Success_BodyIsNotAnErrorEnvelope(t *testing.T) {
-	ctx, rec := newContext(t, httptest.NewRequest(http.MethodGet, "/", nil))
+// TestSuccess_Json_KeepsTheLegacyBytes pins how a 2xx leaves a handler:
+// ctx.Response().Success().Json and Status(code).Json render
+// application/json; charset=utf-8 with no trailing newline, unlike JSON.
+func TestSuccess_Json_KeepsTheLegacyBytes(t *testing.T) {
+	cases := []struct {
+		name   string
+		answer func(contractshttp.Context) contractshttp.AbortableResponse
+		status int
+	}{
+		{"Success", func(ctx contractshttp.Context) contractshttp.AbortableResponse {
+			return ctx.Response().Success().Json(contractshttp.Json{"status": "ok"})
+		}, http.StatusOK},
+		{"Status", func(ctx contractshttp.Context) contractshttp.AbortableResponse {
+			return ctx.Response().Status(http.StatusCreated).Json(contractshttp.Json{"status": "ok"})
+		}, http.StatusCreated},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx, rec := newContext(t, httptest.NewRequest(http.MethodGet, "/", nil))
+			require.NoError(t, tc.answer(ctx).Render())
+			rec.Flush()
 
-	require.NoError(t, Send(ctx, http.StatusOK, contractshttp.Json{"status": "ok"}).Render())
-	rec.Flush()
-
-	assert.Equal(t, http.StatusOK, rec.Code)
-	assert.JSONEq(t, `{"status":"ok"}`, rec.Body.String())
-	assert.NotContains(t, rec.Body.String(), "error")
+			assert.Equal(t, tc.status, rec.Code)
+			assert.Equal(t, "application/json; charset=utf-8", rec.Header().Get("Content-Type"))
+			assert.Equal(t, `{"status":"ok"}`, rec.Body.String())
+		})
+	}
 }

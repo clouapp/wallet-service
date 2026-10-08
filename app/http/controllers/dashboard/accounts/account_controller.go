@@ -111,7 +111,7 @@ func (ctrl *AccountsController) CreateAccount(ctx http.Context) http.Response {
 	if err != nil {
 		return responses.Fail(ctx, http.StatusInternalServerError, responses.CodeInternal, "failed to create account")
 	}
-	return responses.Send(ctx, http.StatusCreated, view)
+	return ctx.Response().Status(http.StatusCreated).Json(view)
 }
 
 // GetAccount godoc
@@ -136,7 +136,7 @@ func (ctrl *AccountsController) GetAccount(ctx http.Context) http.Response {
 		logActiveFeaturesFailure(ctx, err)
 		return responses.Fail(ctx, http.StatusInternalServerError, responses.CodeInternal, "failed to fetch account")
 	}
-	return responses.Send(ctx, http.StatusOK, AccountDetail{Account: view, Features: names})
+	return ctx.Response().Success().Json(AccountDetail{Account: view, Features: names})
 }
 
 // logActiveFeaturesFailure records that the account's active feature keys
@@ -184,7 +184,7 @@ func (ctrl *AccountsController) UpdateAccount(ctx http.Context) http.Response {
 	if err != nil {
 		return responses.Fail(ctx, http.StatusInternalServerError, responses.CodeInternal, "failed to update account")
 	}
-	return responses.Send(ctx, http.StatusOK, view)
+	return ctx.Response().Success().Json(view)
 }
 
 // ArchiveAccount godoc
@@ -208,7 +208,7 @@ func (ctrl *AccountsController) ArchiveAccount(ctx http.Context) http.Response {
 	if err != nil {
 		return responses.Fail(ctx, http.StatusInternalServerError, responses.CodeInternal, "failed to archive account")
 	}
-	return responses.Send(ctx, http.StatusOK, view)
+	return ctx.Response().Success().Json(view)
 }
 
 // FreezeAccount godoc
@@ -231,7 +231,7 @@ func (ctrl *AccountsController) FreezeAccount(ctx http.Context) http.Response {
 	if err != nil {
 		return responses.Fail(ctx, http.StatusInternalServerError, responses.CodeInternal, "failed to freeze account")
 	}
-	return responses.Send(ctx, http.StatusOK, view)
+	return ctx.Response().Success().Json(view)
 }
 
 // ListAccountUsers godoc
@@ -252,7 +252,7 @@ func (ctrl *AccountsController) ListAccountUsers(ctx http.Context) http.Response
 	if err != nil {
 		return responses.Fail(ctx, http.StatusInternalServerError, responses.CodeInternal, "failed to fetch members")
 	}
-	return responses.Send(ctx, http.StatusOK, pagination.Response(tokenresource.AccountUsersFrom(members), total, limit, offset))
+	return ctx.Response().Success().Json(pagination.Response(tokenresource.AccountUsersFrom(members), total, limit, offset))
 }
 
 // AddAccountUser godoc
@@ -295,7 +295,7 @@ func (ctrl *AccountsController) AddAccountUser(ctx http.Context) http.Response {
 		if issued.MailErr != nil {
 			appfacades.Log().WithContext(ctx).Errorf("account: send invite mail failed")
 		}
-		return responses.Send(ctx, http.StatusAccepted, http.Json{
+		return ctx.Response().Status(http.StatusAccepted).Json(http.Json{
 			"invite_id":   issued.Invite.ID,
 			"email":       issued.Invite.Email,
 			"role":        issued.Invite.Role,
@@ -316,7 +316,7 @@ func (ctrl *AccountsController) AddAccountUser(ctx http.Context) http.Response {
 		appfacades.Log().WithContext(ctx).Errorf("account: find membership after add: %v", auErr)
 		return responses.Fail(ctx, http.StatusForbidden, responses.CodeForbidden, "not a member of this account")
 	}
-	return responses.Send(ctx, http.StatusCreated, tokenresource.AccountUserPtr(au))
+	return ctx.Response().Status(http.StatusCreated).Json(tokenresource.AccountUserPtr(au))
 }
 
 // inviteGrantForbidden answers a role the caller cannot grant. ErrGrantRole may
@@ -366,7 +366,7 @@ func (ctrl *AccountsController) UpdateAccountUser(ctx http.Context) http.Respons
 	if errResp := mapMemberError(ctx, err); errResp != nil {
 		return errResp
 	}
-	return responses.Send(ctx, http.StatusOK, tokenresource.AccountUserPtr(member))
+	return ctx.Response().Success().Json(tokenresource.AccountUserPtr(member))
 }
 
 func memberChange(req requests.UpdateAccountUserRequest) accountsvc.MemberChange {
@@ -429,7 +429,7 @@ func (ctrl *AccountsController) ListAccountTokens(ctx http.Context) http.Respons
 	if err != nil {
 		return responses.Fail(ctx, http.StatusInternalServerError, responses.CodeInternal, "failed to fetch tokens")
 	}
-	return responses.Send(ctx, http.StatusOK, pagination.Response(tokenresource.AccessTokensFrom(tokens), total, limit, offset))
+	return ctx.Response().Success().Json(pagination.Response(tokenresource.AccessTokensFrom(tokens), total, limit, offset))
 }
 
 // CreateAccountToken godoc
@@ -501,7 +501,7 @@ func (ctrl *AccountsController) CreateAccountToken(ctx http.Context) http.Respon
 		return responses.Fail(ctx, http.StatusInternalServerError, responses.CodeInternal, "failed to sign token")
 	}
 
-	return responses.Send(ctx, http.StatusCreated, http.Json{
+	return ctx.Response().Status(http.StatusCreated).Json(http.Json{
 		"token":    jwt,
 		"metadata": tokenresource.AccessTokenPtr(token),
 	})

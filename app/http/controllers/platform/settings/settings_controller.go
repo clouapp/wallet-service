@@ -52,7 +52,7 @@ func (ctrl *SettingsController) Index(ctx http.Context) http.Response {
 	if errResp := mapPlatformSettingsError(ctx, err); errResp != nil {
 		return errResp
 	}
-	return responses.Send(ctx, http.StatusOK, view)
+	return ctx.Response().Success().Json(view)
 }
 
 // Show godoc
@@ -81,7 +81,7 @@ func (ctrl *SettingsController) Show(ctx http.Context) http.Response {
 	if errResp := mapPlatformSettingsError(ctx, err); errResp != nil {
 		return errResp
 	}
-	return responses.Send(ctx, http.StatusOK, view)
+	return ctx.Response().Success().Json(view)
 }
 
 // ShowAccount godoc
@@ -115,7 +115,7 @@ func (ctrl *SettingsController) ShowAccount(ctx http.Context) http.Response {
 	if errResp := mapPlatformSettingsError(ctx, err); errResp != nil {
 		return errResp
 	}
-	return responses.Send(ctx, http.StatusOK, view)
+	return ctx.Response().Success().Json(view)
 }
 
 // UpdateAccount godoc
@@ -158,7 +158,7 @@ func (ctrl *SettingsController) UpdateAccount(ctx http.Context) http.Response {
 	if errResp := mapPlatformSettingsError(ctx, err); errResp != nil {
 		return errResp
 	}
-	return responses.Send(ctx, http.StatusOK, view)
+	return ctx.Response().Success().Json(view)
 }
 
 // Update godoc
@@ -193,7 +193,7 @@ func (ctrl *SettingsController) Update(ctx http.Context) http.Response {
 	if errResp := mapPlatformSettingsError(ctx, err); errResp != nil {
 		return errResp
 	}
-	return responses.Send(ctx, http.StatusOK, view)
+	return ctx.Response().Success().Json(view)
 }
 
 // Flush godoc
@@ -243,7 +243,7 @@ func (ctrl *SettingsController) Reset(ctx http.Context) http.Response {
 	if errResp := mapPlatformSettingsError(ctx, err); errResp != nil {
 		return errResp
 	}
-	return responses.Send(ctx, http.StatusOK, view)
+	return ctx.Response().Success().Json(view)
 }
 
 // TestMail godoc
@@ -276,7 +276,7 @@ func (ctrl *SettingsController) TestMail(ctx http.Context) http.Response {
 		appfacades.Log().Error(mailTestFailedMessage)
 		return responses.Fail(ctx, http.StatusBadGateway, responses.CodeProviderUnavailable, mailTestFailedMessage)
 	}
-	return responses.Send(ctx, http.StatusOK, http.Json{"sent": true})
+	return ctx.Response().Success().Json(http.Json{"sent": true})
 }
 
 func mapPlatformSettingsBodyError(ctx http.Context, err error) http.Response {

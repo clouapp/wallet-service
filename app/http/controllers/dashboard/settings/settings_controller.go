@@ -47,7 +47,7 @@ func (ctrl *SettingsController) Show(ctx http.Context) http.Response {
 	if errResp := mapSettingsError(ctx, err); errResp != nil {
 		return errResp
 	}
-	return responses.Send(ctx, http.StatusOK, view)
+	return ctx.Response().Success().Json(view)
 }
 
 // ShowGroup godoc
@@ -73,7 +73,7 @@ func (ctrl *SettingsController) ShowGroup(ctx http.Context) http.Response {
 	if errResp := mapSettingsError(ctx, err); errResp != nil {
 		return errResp
 	}
-	return responses.Send(ctx, http.StatusOK, view)
+	return ctx.Response().Success().Json(view)
 }
 
 // Update godoc
@@ -111,7 +111,7 @@ func (ctrl *SettingsController) Update(ctx http.Context) http.Response {
 	if errResp := mapSettingsError(ctx, err); errResp != nil {
 		return errResp
 	}
-	return responses.Send(ctx, http.StatusOK, view)
+	return ctx.Response().Success().Json(view)
 }
 
 // Flush godoc
@@ -165,7 +165,7 @@ func (ctrl *SettingsController) Reset(ctx http.Context) http.Response {
 	if errResp := mapSettingsError(ctx, err); errResp != nil {
 		return errResp
 	}
-	return responses.Send(ctx, http.StatusOK, view)
+	return ctx.Response().Success().Json(view)
 }
 
 func accountCaller(ctx http.Context) (*models.Account, string, http.Response) {

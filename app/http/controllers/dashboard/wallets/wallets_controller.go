@@ -120,7 +120,7 @@ func (ctrl *WalletsController) ListWallets(ctx http.Context) http.Response {
 		slog.Error("load wallet list balances", "account", accountID, "error", err)
 		return responses.Fail(ctx, http.StatusInternalServerError, responses.CodeInternal, "failed to fetch wallet balances")
 	}
-	return responses.Send(ctx, http.StatusOK, pagination.Response(items, total, limit, offset))
+	return ctx.Response().Success().Json(pagination.Response(items, total, limit, offset))
 }
 
 // GetWallet godoc
@@ -205,7 +205,7 @@ func (ctrl *WalletsController) CreateWalletAdmin(ctx http.Context) http.Response
 		return createWalletError(ctx, err)
 	}
 
-	return responses.Send(ctx, http.StatusCreated, http.Json{
+	return ctx.Response().Status(http.StatusCreated).Json(http.Json{
 		"wallet":             walletresource.WalletPtr(result.Wallet),
 		"service_public_key": result.ServicePublicKey,
 		"activation_code":    result.ActivationCode,
@@ -238,7 +238,7 @@ func (ctrl *WalletsController) ActivateWallet(ctx http.Context) http.Response {
 		}
 	}
 
-	return responses.Send(ctx, http.StatusOK, http.Json{"status": "active"})
+	return ctx.Response().Success().Json(http.Json{"status": "active"})
 }
 
 // createWalletError keeps an unknown chain at 400 without the chain the

@@ -44,7 +44,7 @@ func (ctrl *FeaturesController) Index(ctx http.Context) http.Response {
 	if errResp := mapFeatureError(ctx, err); errResp != nil {
 		return errResp
 	}
-	return responses.Send(ctx, http.StatusOK, view)
+	return ctx.Response().Success().Json(view)
 }
 
 func accountCaller(ctx http.Context) (*models.Account, string, http.Response) {

@@ -54,7 +54,7 @@ func (ctrl *ActivityController) Index(ctx http.Context) http.Response {
 	if errResp := mapActivityError(ctx, err); errResp != nil {
 		return errResp
 	}
-	return responses.Send(ctx, http.StatusOK, pagination.Response(activityresource.AccountActivitiesFrom(rows), total, limit, offset))
+	return ctx.Response().Success().Json(pagination.Response(activityresource.AccountActivitiesFrom(rows), total, limit, offset))
 }
 
 // Show godoc
@@ -86,7 +86,7 @@ func (ctrl *ActivityController) Show(ctx http.Context) http.Response {
 	if errResp := mapActivityError(ctx, err); errResp != nil {
 		return errResp
 	}
-	return responses.Send(ctx, http.StatusOK, activityresource.AccountActivityFrom(row))
+	return ctx.Response().Success().Json(activityresource.AccountActivityFrom(row))
 }
 
 // Platform godoc
@@ -111,7 +111,7 @@ func (ctrl *ActivityController) Platform(ctx http.Context) http.Response {
 	if errResp := mapActivityError(ctx, err); errResp != nil {
 		return errResp
 	}
-	return responses.Send(ctx, http.StatusOK, pagination.Response(activityresource.AccountActivitiesFrom(rows), total, limit, offset))
+	return ctx.Response().Success().Json(pagination.Response(activityresource.AccountActivitiesFrom(rows), total, limit, offset))
 }
 
 func accountCaller(ctx http.Context) (*models.Account, string, http.Response) {

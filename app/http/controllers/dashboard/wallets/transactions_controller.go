@@ -89,7 +89,7 @@ func (ctrl *TransactionsController) ListWalletTransactions(ctx http.Context) htt
 
 	chainRecord, tokens := ctrl.assetCatalog(ctx.Context(), wallet.Chain)
 	views := walletresources.TransactionsForChain(chainRecord, tokens, transactions)
-	return responses.Send(ctx, http.StatusOK, pagination.Response(views, total, limit, offset))
+	return ctx.Response().Success().Json(pagination.Response(views, total, limit, offset))
 }
 
 // GetWalletTransaction godoc
@@ -117,7 +117,7 @@ func (ctrl *TransactionsController) GetWalletTransaction(ctx http.Context) http.
 
 	chainRecord, tokens := ctrl.assetCatalog(ctx.Context(), wallet.Chain)
 	views := walletresources.TransactionsForChain(chainRecord, tokens, []models.Transaction{*tx})
-	return responses.Send(ctx, http.StatusOK, views[0])
+	return ctx.Response().Success().Json(views[0])
 }
 
 // WalletTransactionListResponse documents the paginated wallet transaction list.

@@ -68,7 +68,7 @@ func (ctrl *OwnersController) Attach(ctx http.Context) http.Response {
 	if !changed {
 		return ctx.Response().NoContent()
 	}
-	return responses.Send(ctx, http.StatusCreated, platformaccounts.AccountUserFrom(*member))
+	return ctx.Response().Status(http.StatusCreated).Json(platformaccounts.AccountUserFrom(*member))
 }
 
 func mapAttachOwnerError(ctx http.Context, err error) http.Response {

@@ -64,7 +64,7 @@ func (ctrl *UnspentsController) ListUnspentOutputs(ctx http.Context) http.Respon
 		})
 	}
 
-	return responses.Send(ctx, http.StatusOK, http.Json{"data": result})
+	return ctx.Response().Success().Json(http.Json{"data": result})
 }
 
 // ---- Response types ----

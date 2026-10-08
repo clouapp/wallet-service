@@ -59,7 +59,7 @@ func (ctrl *WhitelistController) ListWhitelistEntries(ctx http.Context) http.Res
 	if err != nil {
 		return responses.Fail(ctx, http.StatusInternalServerError, responses.CodeInternal, "failed to fetch whitelist entries")
 	}
-	return responses.Send(ctx, http.StatusOK, pagination.Response(whitelist.WhitelistEntriesFrom(entries), total, limit, offset))
+	return ctx.Response().Success().Json(pagination.Response(whitelist.WhitelistEntriesFrom(entries), total, limit, offset))
 }
 
 // AddWhitelistEntry godoc
@@ -92,7 +92,7 @@ func (ctrl *WhitelistController) AddWhitelistEntry(ctx http.Context) http.Respon
 	if err := ctrl.entries.Create(ctx.Context(), entry); err != nil {
 		return responses.Fail(ctx, http.StatusInternalServerError, responses.CodeInternal, "failed to add whitelist entry")
 	}
-	return responses.Send(ctx, http.StatusCreated, whitelist.WhitelistEntryFrom(*entry))
+	return ctx.Response().Status(http.StatusCreated).Json(whitelist.WhitelistEntryFrom(*entry))
 }
 
 // DeleteWhitelistEntry godoc

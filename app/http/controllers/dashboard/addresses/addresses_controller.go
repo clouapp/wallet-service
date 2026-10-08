@@ -88,7 +88,7 @@ func (ctrl *AddressesController) GenerateAddress(ctx http.Context) http.Response
 		ctrl.deposits.RefreshAddressCache(ctx.Context(), w.Chain)
 	}
 
-	return responses.Send(ctx, http.StatusCreated, addressresource.AddressPtr(addr, walletresource.WalletPtr))
+	return ctx.Response().Status(http.StatusCreated).Json(addressresource.AddressPtr(addr, walletresource.WalletPtr))
 }
 
 // generateAddressError answers a failed derivation. An upstream provider
@@ -167,5 +167,5 @@ func (ctrl *AddressesController) ListWalletAddresses(ctx http.Context) http.Resp
 	if err != nil {
 		return responses.Fail(ctx, http.StatusInternalServerError, responses.CodeInternal, "failed to fetch addresses")
 	}
-	return responses.Send(ctx, http.StatusOK, pagination.Response(addressresource.AddressesFrom(addrs, walletresource.WalletPtr), total, limit, offset))
+	return ctx.Response().Success().Json(pagination.Response(addressresource.AddressesFrom(addrs, walletresource.WalletPtr), total, limit, offset))
 }

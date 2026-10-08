@@ -177,7 +177,7 @@ func (ctrl *WithdrawalsController) CreateWalletWithdrawal(ctx http.Context) http
 		return controllers.MapInternalError(ctx, fmt.Errorf("create withdrawal: empty result"), "create_wallet_withdrawal")
 	}
 	if created.Replayed {
-		return responses.Send(ctx, http.StatusOK, withdrawalresource.WithdrawalPtr(created.Withdrawal))
+		return ctx.Response().Success().Json(withdrawalresource.WithdrawalPtr(created.Withdrawal))
 	}
 	resolved := created.Resolved
 	idempotencyKey := created.IdempotencyKey
@@ -243,7 +243,7 @@ func (ctrl *WithdrawalsController) CreateWalletWithdrawal(ctx http.Context) http
 		return controllers.MapInternalError(ctx, updateErr, "persist_broadcast_withdrawal")
 	}
 	controllers.PublishWithdrawalBroadcast(ctx, ctrl.events, w, tx)
-	return responses.Send(ctx, http.StatusCreated, withdrawalresource.WithdrawalPtr(w))
+	return ctx.Response().Status(http.StatusCreated).Json(withdrawalresource.WithdrawalPtr(w))
 }
 
 // GetWalletWithdrawalByIdempotencyKey godoc
@@ -297,5 +297,5 @@ func (ctrl *WithdrawalsController) GetWalletWithdrawalByIdempotencyKey(ctx http.
 		}
 	}
 
-	return responses.Send(ctx, http.StatusOK, response)
+	return ctx.Response().Success().Json(response)
 }

@@ -116,7 +116,7 @@ func (ctrl *UsersController) GetMe(ctx http.Context) http.Response {
 		appfacades.Log().WithContext(ctx).Errorf("user: active features: %v", err)
 		return responses.Fail(ctx, http.StatusInternalServerError, responses.CodeInternalError, "internal_error")
 	}
-	return responses.Send(ctx, http.StatusOK, MeProfile{User: *userresource.UserFrom(user), Features: names})
+	return ctx.Response().Success().Json(MeProfile{User: *userresource.UserFrom(user), Features: names})
 }
 
 // MeProfile is GET /v1/users/me. User fields stay as they are. Features is
@@ -155,7 +155,7 @@ func (ctrl *UsersController) UpdateMe(ctx http.Context) http.Response {
 		user.FullName = req.FullName
 	}
 
-	return responses.Send(ctx, http.StatusOK, userresource.UserFrom(user))
+	return ctx.Response().Success().Json(userresource.UserFrom(user))
 }
 
 // ChangePassword godoc
@@ -196,7 +196,7 @@ func (ctrl *UsersController) ChangePassword(ctx http.Context) http.Response {
 		appfacades.Log().WithContext(ctx).Errorf("auth: change password: replace sessions: %v", err)
 		return responses.Fail(ctx, http.StatusInternalServerError, responses.CodeInternal, "password updated but sessions could not be renewed")
 	}
-	return responses.Send(ctx, http.StatusOK, http.Json{
+	return ctx.Response().Success().Json(http.Json{
 		"message":       "password updated successfully",
 		"access_token":  session.AccessToken,
 		"refresh_token": session.RefreshToken,
@@ -252,7 +252,7 @@ func (ctrl *UsersController) ListMyAccounts(ctx http.Context) http.Response {
 		return responses.Fail(ctx, http.StatusInternalServerError, responses.CodeInternal, "failed to fetch accounts")
 	}
 
-	return responses.Send(ctx, http.StatusOK, pagination.Response(items, total, limit, offset))
+	return ctx.Response().Success().Json(pagination.Response(items, total, limit, offset))
 }
 
 // accountsWithCallerRole copies each account and adds the caller's stored
@@ -348,13 +348,13 @@ func (ctrl *UsersController) UpdateDefaultAccount(ctx http.Context) http.Respons
 
 	account, _ := ctrl.accounts.FindByID(ctx.Context(), accountID)
 	if account == nil {
-		return responses.Send(ctx, http.StatusOK, http.Json{"account": accountresource.AccountPtr(nil)})
+		return ctx.Response().Success().Json(http.Json{"account": accountresource.AccountPtr(nil)})
 	}
 	view, err := ctrl.accountView(ctx, *account)
 	if err != nil {
 		return responses.Fail(ctx, http.StatusInternalServerError, responses.CodeInternal, "failed to update default account")
 	}
-	return responses.Send(ctx, http.StatusOK, http.Json{"account": &view})
+	return ctx.Response().Success().Json(http.Json{"account": &view})
 }
 
 // SetupTOTP godoc
@@ -388,7 +388,7 @@ func (ctrl *UsersController) SetupTOTP(ctx http.Context) http.Response {
 		return responses.Fail(ctx, http.StatusInternalServerError, responses.CodeInternal, "failed to save TOTP secret")
 	}
 
-	return responses.Send(ctx, http.StatusOK, http.Json{
+	return ctx.Response().Success().Json(http.Json{
 		"secret": secret,
 		"qr_url": qrURL,
 	})
@@ -460,7 +460,7 @@ func (ctrl *UsersController) ConfirmTOTP(ctx http.Context) http.Response {
 		"user":           userresource.UserFrom(user),
 		"recovery_codes": codes,
 	}
-	return responses.Send(ctx, http.StatusOK, resp)
+	return ctx.Response().Success().Json(resp)
 }
 
 // DisableTOTP godoc
@@ -496,7 +496,7 @@ func (ctrl *UsersController) DisableTOTP(ctx http.Context) http.Response {
 	}
 	user.TotpEnabled = false
 	user.TotpSecret = ""
-	return responses.Send(ctx, http.StatusOK, http.Json{
+	return ctx.Response().Success().Json(http.Json{
 		"user":          userresource.UserFrom(user),
 		"access_token":  session.AccessToken,
 		"refresh_token": session.RefreshToken,

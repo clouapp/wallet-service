@@ -72,7 +72,7 @@ func (ctrl *ChainsController) Update(ctx http.Context) http.Response {
 	if errResp := mapChainThresholdError(ctx, err); errResp != nil {
 		return errResp
 	}
-	return responses.Send(ctx, http.StatusOK, view)
+	return ctx.Response().Success().Json(view)
 }
 
 // UpdateRPC godoc
@@ -107,7 +107,7 @@ func (ctrl *ChainsController) UpdateRPC(ctx http.Context) http.Response {
 	if errResp := mapChainRPCError(ctx, err); errResp != nil {
 		return errResp
 	}
-	return responses.Send(ctx, http.StatusOK, view)
+	return ctx.Response().Success().Json(view)
 }
 
 func mapChainRPCBodyError(ctx http.Context, err error) http.Response {

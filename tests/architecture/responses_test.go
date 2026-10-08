@@ -353,8 +353,8 @@ func responseIsModelPackage(modulePath string, pkg *types.Package) bool {
 
 // TestError_Bodies_GoThroughTheResponsesWriters reports a map literal with an
 // "error" key whose value is not an object, in production code under app/ or
-// routes/: the legacy {"error":"text"} shape. responses.Send no longer wraps
-// it into the envelope, so it would reach the wire as written. A failure is
+// routes/: the legacy {"error":"text"} shape. Nothing wraps it into the
+// envelope, so it would reach the wire as written. A failure is
 // written by responses.Fail, FailWith, FailMessage or Error
 // (.ai/guidelines/http-error-contract.md).
 func TestError_Bodies_GoThroughTheResponsesWriters(t *testing.T) {

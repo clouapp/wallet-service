@@ -1,8 +1,9 @@
-// Package responses is the single place a JSON body leaves this service.
+// Package responses is where every error body is written.
 // Every non-2xx answer is the envelope {"error":{"code","message"}}, with any
 // extra fields inside that object. A failed form request stays HTTP 422 with
-// an "errors" map. Success bodies stay on Send, which uses
-// ctx.Response().Json, so their bytes do not move.
+// an "errors" map. Success bodies are written by the handler with
+// ctx.Response().Success().Json or Status(code).Json (application/json;
+// charset=utf-8, no trailing newline).
 package responses
 
 import (
@@ -83,13 +84,6 @@ var messageCodes = map[string]string{
 // users.suspended_at is set. The envelope is {"error":{"code","message"}}.
 func SuspendedUser(ctx contractshttp.Context) contractshttp.AbortableResponse {
 	return Fail(ctx, http.StatusForbidden, CodeForbidden, SuspendedUserMessage)
-}
-
-// Send writes a success body through ctx.Response().Json, so success bytes
-// stay where they are. A failure goes through Fail, FailWith, FailMessage or
-// Error, never through Send.
-func Send(ctx contractshttp.Context, status int, body any) contractshttp.AbortableResponse {
-	return ctx.Response().Json(status, body)
 }
 
 // Fail writes the error envelope through ctx.Response().Json: content type

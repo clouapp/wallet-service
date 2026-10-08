@@ -121,7 +121,7 @@ func (ctrl *InvitesController) Create(ctx http.Context) http.Response {
 		return responses.Fail(ctx, http.StatusInternalServerError, responses.CodeInternal, "failed to create invite")
 	}
 	logInviteMail(ctx, issued)
-	return responses.Send(ctx, http.StatusAccepted, inviteCreatedView(issued.Invite))
+	return ctx.Response().Status(http.StatusAccepted).Json(inviteCreatedView(issued.Invite))
 }
 
 // Resend rotates the invite token. users.write is the route middleware. The
@@ -144,7 +144,7 @@ func (ctrl *InvitesController) Resend(ctx http.Context) http.Response {
 		return responses.Fail(ctx, http.StatusInternalServerError, responses.CodeInternal, "failed to resend invite")
 	}
 	logInviteMail(ctx, issued)
-	return responses.Send(ctx, http.StatusAccepted, inviteCreatedView(issued.Invite))
+	return ctx.Response().Status(http.StatusAccepted).Json(inviteCreatedView(issued.Invite))
 }
 
 // Delete revokes one open invite. users.write is the route middleware. The
@@ -189,7 +189,7 @@ func (ctrl *InvitesController) List(ctx http.Context) http.Response {
 	if err != nil {
 		return responses.Fail(ctx, http.StatusInternalServerError, responses.CodeInternal, "failed to fetch invites")
 	}
-	return responses.Send(ctx, http.StatusOK, pagination.Response(inviteListItems(invites), total, limit, offset))
+	return ctx.Response().Success().Json(pagination.Response(inviteListItems(invites), total, limit, offset))
 }
 
 // Preview reports the public facts of a pending invite.
@@ -215,7 +215,7 @@ func (ctrl *InvitesController) Preview(ctx http.Context) http.Response {
 			}
 		}
 	}
-	return responses.Send(ctx, http.StatusOK, http.Json{
+	return ctx.Response().Success().Json(http.Json{
 		"account_name":   accountName,
 		"inviter":        inviter,
 		"role":           invite.Role,
@@ -249,7 +249,7 @@ func (ctrl *InvitesController) Accept(ctx http.Context) http.Response {
 			return responses.Fail(ctx, http.StatusInternalServerError, responses.CodeInternal, "failed to accept invite")
 		}
 	}
-	return responses.Send(ctx, http.StatusOK, http.Json{
+	return ctx.Response().Success().Json(http.Json{
 		"user_id": user.ID,
 		"email":   user.Email,
 		"status":  user.Status,
