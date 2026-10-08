@@ -46,18 +46,7 @@ func (s *PlatformPriceSettingsTestSuite) TestA_Platform_AdminStoresTheOrderAndOn
 	s.grantPlatformAdmin(admin.ID)
 	session := s.signIn(admin.Email)
 
-	order := s.putRaw(session.AccessToken, "/v1/platform/settings/price_lookup", priceJSON(map[string]any{
-		"provider_order": []string{"coingecko", "coinmarketcap", "coinapi"},
-	}))
-	order.AssertOk()
-	s.Equal("coingecko,coinmarketcap,coinapi", s.settingValue("price_lookup", "provider_order"))
-	s.Equal(int64(1), s.count(
-		`SELECT count(*) FROM account_activity
-		 WHERE action = 'settings.updated' AND target_type = 'settings' AND target_id = 'price_lookup'
-		   AND account_id IS NULL AND actor_user_id = ?
-		   AND metadata = ?::jsonb`,
-		admin.ID, `{"fields":["provider_order"],"group":"price_lookup"}`,
-	))
+	s.enableProviders(session.AccessToken, "price_coingecko", "price_coinmarketcap")
 
 	saved := s.putRaw(session.AccessToken, "/v1/platform/settings/price_coinapi", priceJSON(map[string]any{
 		"enabled": true,
@@ -115,6 +104,19 @@ func (s *PlatformPriceSettingsTestSuite) TestA_Platform_AdminStoresTheOrderAndOn
 		"%"+priceCoinAPIKeyFixture+"%",
 	))
 
+	order := s.putRaw(session.AccessToken, "/v1/platform/settings/price_lookup", priceJSON(map[string]any{
+		"provider_order": []string{"coingecko", "coinmarketcap", "coinapi"},
+	}))
+	order.AssertOk()
+	s.Equal("coingecko,coinmarketcap,coinapi", s.settingValue("price_lookup", "provider_order"))
+	s.Equal(int64(1), s.count(
+		`SELECT count(*) FROM account_activity
+		 WHERE action = 'settings.updated' AND target_type = 'settings' AND target_id = 'price_lookup'
+		   AND account_id IS NULL AND actor_user_id = ?
+		   AND metadata = ?::jsonb`,
+		admin.ID, `{"fields":["provider_order"],"group":"price_lookup"}`,
+	))
+
 	blank := s.putRaw(session.AccessToken, "/v1/platform/settings/price_coinapi", priceJSON(map[string]any{
 		"api_key": "",
 	}))
@@ -144,6 +146,7 @@ func (s *PlatformPriceSettingsTestSuite) TestAn_Unknown_ProviderIsNotStored() {
 	s.Equal(int64(0), s.count(`SELECT count(*) FROM settings WHERE account_id IS NULL AND "group" = 'price_lookup'`))
 	s.Equal(int64(0), s.count(`SELECT count(*) FROM account_activity WHERE action = 'settings.updated' AND target_id = 'price_lookup'`))
 
+	s.enableProviders(session.AccessToken, "price_coinapi")
 	saved := s.putRaw(session.AccessToken, "/v1/platform/settings/price_lookup", priceJSON(map[string]any{
 		"provider_order": []string{"coinapi"},
 	}))
@@ -199,6 +202,16 @@ func (s *PlatformPriceSettingsTestSuite) putRaw(token, path, body string) contra
 	s.T().Helper()
 	resp := s.Put(path, support.Session{AccessToken: token}, body)
 	return resp
+}
+
+// enableProviders turns on provider groups. Since 66a5df7 a price_lookup save
+// may name only enabled providers, so a test that stores an order enables them first.
+func (s *PlatformPriceSettingsTestSuite) enableProviders(token string, groups ...string) {
+	s.T().Helper()
+	for _, group := range groups {
+		resp := s.putRaw(token, "/v1/platform/settings/"+group, priceJSON(map[string]any{"enabled": true}))
+		resp.AssertOk()
+	}
 }
 
 func (s *PlatformPriceSettingsTestSuite) count(query string, args ...any) int64 {
