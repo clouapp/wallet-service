@@ -1,8 +1,11 @@
 package chains
 
 import (
+	"errors"
+
 	"github.com/goravel/framework/contracts/http"
 
+	appfacades "github.com/macrowallets/waas/app/facades"
 	"github.com/macrowallets/waas/app/http/middleware/requestctx"
 	"github.com/macrowallets/waas/app/http/requests"
 	chainresource "github.com/macrowallets/waas/app/http/resources/chains"
@@ -22,6 +25,21 @@ func NewChainsController(chains *chainsvc.Service) *ChainsController {
 		panic("dashboard chains controller: chains service is required")
 	}
 	return &ChainsController{chains: chains}
+}
+
+// findChain loads the chain or returns the response that ends the request.
+// A missing chain is a 404. Any other repository error is our outage: it is
+// logged and answered as the internal error, never as "not found".
+func (ctrl *ChainsController) findChain(ctx http.Context, chainID string) (*models.Chain, http.Response) {
+	chain, err := ctrl.chains.FindByID(ctx.Context(), chainID)
+	if err != nil && !errors.Is(err, models.ErrRepositoryNotFound) {
+		appfacades.Log().WithContext(ctx).Errorf("chains: find chain %s: %v", chainID, err)
+		return nil, responses.InternalError(ctx, nil)
+	}
+	if chain == nil {
+		return nil, responses.Send(ctx, http.StatusNotFound, http.Json{"error": "chain not found"})
+	}
+	return chain, nil
 }
 
 // ListChains godoc
@@ -54,9 +72,9 @@ func (ctrl *ChainsController) GetChain(ctx http.Context) http.Response {
 		return responses.Send(ctx, http.StatusBadRequest, http.Json{"error": "chainId is required"})
 	}
 
-	chain, err := ctrl.chains.FindByID(ctx.Context(), chainID)
-	if err != nil || chain == nil {
-		return responses.Send(ctx, http.StatusNotFound, http.Json{"error": "chain not found"})
+	chain, failure := ctrl.findChain(ctx, chainID)
+	if failure != nil {
+		return failure
 	}
 
 	env, _ := requestctx.AccountEnvironment(ctx)
@@ -86,9 +104,9 @@ func (ctrl *ChainsController) ListChainTokens(ctx http.Context) http.Response {
 		return responses.Send(ctx, http.StatusBadRequest, http.Json{"error": "chainId is required"})
 	}
 
-	chain, err := ctrl.chains.FindByID(ctx.Context(), chainID)
-	if err != nil || chain == nil {
-		return responses.Send(ctx, http.StatusNotFound, http.Json{"error": "chain not found"})
+	chain, failure := ctrl.findChain(ctx, chainID)
+	if failure != nil {
+		return failure
 	}
 
 	env, _ := requestctx.AccountEnvironment(ctx)
@@ -116,9 +134,9 @@ func (ctrl *ChainsController) ListChainResources(ctx http.Context) http.Response
 		return responses.Send(ctx, http.StatusBadRequest, http.Json{"error": "chainId is required"})
 	}
 
-	chain, err := ctrl.chains.FindByID(ctx.Context(), chainID)
-	if err != nil || chain == nil {
-		return responses.Send(ctx, http.StatusNotFound, http.Json{"error": "chain not found"})
+	chain, failure := ctrl.findChain(ctx, chainID)
+	if failure != nil {
+		return failure
 	}
 
 	env, _ := requestctx.AccountEnvironment(ctx)
