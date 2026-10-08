@@ -36,7 +36,7 @@ func TestSeed_Missing_AddedChainsInsertsOnceAndLeavesExistingRows(t *testing.T) 
 	if err != nil {
 		t.Fatalf("dry run: %v", err)
 	}
-	if len(dry.Chains) != len(seeds.AddedEVMChainIDs) || len(dry.Skipped) != 0 || len(dry.Tokens) != 7 || len(dry.Resources) != 9 {
+	if len(dry.Chains) != len(seeds.AddedChainIDs) || len(dry.Skipped) != 0 || len(dry.Tokens) != 9 || len(dry.Resources) != 18 {
 		t.Fatalf("dry run reported chains=%d skipped=%d tokens=%d resources=%d", len(dry.Chains), len(dry.Skipped), len(dry.Tokens), len(dry.Resources))
 	}
 	chains := repositories.NewChainRepository(nil)
@@ -48,7 +48,7 @@ func TestSeed_Missing_AddedChainsInsertsOnceAndLeavesExistingRows(t *testing.T) 
 	if err != nil {
 		t.Fatalf("seed added chains: %v", err)
 	}
-	if len(created.Chains) != len(seeds.AddedEVMChainIDs) || len(created.Skipped) != 0 || len(created.Tokens) != 7 || len(created.Resources) != 9 {
+	if len(created.Chains) != len(seeds.AddedChainIDs) || len(created.Skipped) != 0 || len(created.Tokens) != 9 || len(created.Resources) != 18 {
 		t.Fatalf("seed reported chains=%d skipped=%d tokens=%d resources=%d", len(created.Chains), len(created.Skipped), len(created.Tokens), len(created.Resources))
 	}
 	assertAddedEVMChains(t, ctx)
@@ -71,7 +71,7 @@ func TestSeed_Missing_AddedChainsInsertsOnceAndLeavesExistingRows(t *testing.T) 
 	if err != nil {
 		t.Fatalf("reseed added chains: %v", err)
 	}
-	if len(again.Chains) != 0 || len(again.Tokens) != 0 || len(again.Resources) != 0 || len(again.Skipped) != len(seeds.AddedEVMChainIDs) {
+	if len(again.Chains) != 0 || len(again.Tokens) != 0 || len(again.Resources) != 0 || len(again.Skipped) != len(seeds.AddedChainIDs) {
 		t.Fatalf("reseed reported chains=%d skipped=%d tokens=%d resources=%d", len(again.Chains), len(again.Skipped), len(again.Tokens), len(again.Resources))
 	}
 

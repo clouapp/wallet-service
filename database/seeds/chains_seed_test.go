@@ -93,6 +93,9 @@ func assertSeededChains(t *testing.T, ctx context.Context) {
 	baseConfirmations := configuredConfirmations(t, models.ChainBase)
 	arbitrumConfirmations := configuredConfirmations(t, models.ChainArbitrum)
 	bscConfirmations := configuredConfirmations(t, models.ChainBSC)
+	tronConfirmations := configuredConfirmations(t, models.ChainTron)
+	litecoinConfirmations := configuredConfirmations(t, models.ChainLTC)
+	xrpConfirmations := configuredConfirmations(t, models.ChainXRP)
 	want := []seededChain{
 		{id: models.ChainETH, name: "Ethereum", adapter: models.AdapterTypeEVM, native: "eth", decimals: 18, network: 1, hasNetwork: true, envVar: "ETH_RPC_URL", confirmations: 12, order: 1, gas: "5000000000000000", dust: "500000000000000", dustUSD: "1"},
 		{id: models.ChainBTC, name: "Bitcoin", adapter: models.AdapterTypeBitcoin, native: "btc", decimals: 8, envVar: "BTC_RPC_URL", confirmations: 6, order: 3, gas: "", dust: "10000", dustUSD: "0"},
@@ -108,6 +111,12 @@ func assertSeededChains(t *testing.T, ctx context.Context) {
 		{id: models.ChainTBase, name: "Base Sepolia", adapter: models.AdapterTypeEVM, native: models.NativeETH, decimals: 18, network: models.EVMNetworkIDBaseSepolia, hasNetwork: true, envVar: "TBASE_RPC_URL", envReference: true, testnet: true, mainnet: models.ChainBase, confirmations: baseConfirmations, order: 10, gas: "200000000000000", dust: "20000000000000", dustUSD: "0.1"},
 		{id: models.ChainTArbitrum, name: "Arbitrum Sepolia", adapter: models.AdapterTypeEVM, native: models.NativeETH, decimals: 18, network: models.EVMNetworkIDArbitrumSepolia, hasNetwork: true, envVar: "TARBITRUM_RPC_URL", envReference: true, testnet: true, mainnet: models.ChainArbitrum, confirmations: arbitrumConfirmations, order: 12, gas: "200000000000000", dust: "20000000000000", dustUSD: "0.1"},
 		{id: models.ChainTBSC, name: "BNB Smart Chain Testnet", adapter: models.AdapterTypeEVM, native: models.NativeBNB, decimals: 18, network: models.EVMNetworkIDBSCTestnet, hasNetwork: true, envVar: "TBSC_RPC_URL", envReference: true, testnet: true, mainnet: models.ChainBSC, confirmations: bscConfirmations, order: 14, gas: "500000000000000", dust: "50000000000000", dustUSD: "0.1"},
+		{id: models.ChainTron, name: "TRON", adapter: models.AdapterTypeTron, native: models.NativeTRX, decimals: 6, envVar: "TRON_RPC_URL", envReference: true, confirmations: tronConfirmations, order: 15, gas: "20000000", dust: "1000000", dustUSD: "1"},
+		{id: models.ChainTTron, name: "TRON Nile", adapter: models.AdapterTypeTron, native: models.NativeTRX, decimals: 6, envVar: "TTRON_RPC_URL", envReference: true, testnet: true, mainnet: models.ChainTron, confirmations: tronConfirmations, order: 16, gas: "20000000", dust: "1000000", dustUSD: "1"},
+		{id: models.ChainLTC, name: "Litecoin", adapter: models.AdapterTypeBitcoin, native: models.NativeLTC, decimals: 8, envVar: "LTC_RPC_URL", envReference: true, confirmations: litecoinConfirmations, order: 17, gas: "", dust: "10000", dustUSD: "0"},
+		{id: models.ChainTLTC, name: "Litecoin Testnet", adapter: models.AdapterTypeBitcoin, native: models.NativeLTC, decimals: 8, envVar: "TLTC_RPC_URL", envReference: true, testnet: true, mainnet: models.ChainLTC, confirmations: litecoinConfirmations, order: 18, gas: "", dust: "10000", dustUSD: "0"},
+		{id: models.ChainXRP, name: "XRP Ledger", adapter: models.AdapterTypeXRP, native: models.NativeXRP, decimals: 6, envVar: "XRP_RPC_URL", envReference: true, confirmations: xrpConfirmations, order: 19, gas: "", dust: "1", dustUSD: "0"},
+		{id: models.ChainTXRP, name: "XRP Ledger Testnet", adapter: models.AdapterTypeXRP, native: models.NativeXRP, decimals: 6, envVar: "TXRP_RPC_URL", envReference: true, testnet: true, mainnet: models.ChainXRP, confirmations: xrpConfirmations, order: 20, gas: "", dust: "1", dustUSD: "0"},
 	}
 
 	chains := repositories.NewChainRepository(nil)
