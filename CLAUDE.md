@@ -143,8 +143,8 @@ Known violations include `app/models → app/services/mpc` and `config → app/m
 - `facades.Crypt()` (`APP_KEY`) seals TOTP secrets, RPC URLs and ingest signing secrets at
   rest; it is not the MPC share envelope. One write format, `settings.Seal` (`enc:v1:` +
   the Crypt envelope); `settings.OpenStored` also opens the bare envelope that older
-  `chains.rpc_url` rows hold. — guarded by `app/services/settings/seal_legacy_test.go`. **KNOWN VIOLATION** S11: `webhook_configs.secret`
-  is plain text.
+  `chains.rpc_url` rows hold. — guarded by `app/services/settings/seal_legacy_test.go`.
+  **KNOWN VIOLATION** S11: `webhook_configs.secret` is plain text.
 
 ### 7. Queues and workers
 
