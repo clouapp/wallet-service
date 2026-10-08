@@ -14,6 +14,7 @@ import (
 var skippedGuards = map[string]bool{
 	"CacheControl": true,
 	"Cors":         true,
+	"Throttle":     true,
 }
 
 // routeRegistrationFiles are the only files that attach HTTP routes. A route

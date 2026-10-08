@@ -6,7 +6,6 @@ import (
 	"testing"
 
 	"github.com/google/uuid"
-	"github.com/redis/go-redis/v9"
 
 	"github.com/macrowallets/waas/app/services/features"
 	sweepsvc "github.com/macrowallets/waas/app/services/sweep"
@@ -37,7 +36,6 @@ func (*sweepServiceStub) LoadLimits(context.Context, uuid.UUID) (*sweepsvc.Limit
 func sweepControllerDeps() SweepControllerDeps {
 	return SweepControllerDeps{
 		Sweeps: &sweepServiceStub{},
-		Redis:  &redis.Client{},
 		Flags:  &features.Service{},
 	}
 }
@@ -51,26 +49,8 @@ func TestNew_Sweep_ControllerKeepsItsDependencies(t *testing.T) {
 	if ctrl.sweeps != deps.Sweeps {
 		t.Fatal("sweep controller did not keep the sweep service")
 	}
-	if ctrl.redis != deps.Redis {
-		t.Fatal("sweep controller did not keep the redis client")
-	}
 	if ctrl.flags != deps.Flags {
 		t.Fatal("sweep controller did not keep the feature flags")
-	}
-}
-
-func TestNew_Sweep_ControllerAllowsNilRedis(t *testing.T) {
-	deps := sweepControllerDeps()
-	deps.Redis = nil
-	ctrl := NewSweepController(deps)
-	if ctrl == nil {
-		t.Fatal("NewSweepController returned nil")
-	}
-	if ctrl.redis != nil {
-		t.Fatal("sweep controller did not keep a nil redis client")
-	}
-	if ctrl.sweeps != deps.Sweeps || ctrl.flags != deps.Flags {
-		t.Fatal("sweep controller dropped a required dependency")
 	}
 }
 

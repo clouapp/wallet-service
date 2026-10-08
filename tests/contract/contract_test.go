@@ -357,7 +357,24 @@ func contractScenario() []step {
 		{name: "revoke account token", method: "DELETE", path: "/v1/accounts/{{account}}/tokens/{{apiTokenID}}", bearer: "session"},
 		{name: "external with a revoked token", method: "GET", path: "/api/v1/wallets", bearer: "apiToken"},
 		{name: "logout", method: "POST", path: "/v1/auth/logout", bearer: "session"},
+
+		// Rate limit: the second call of one token inside the minute is refused
+		// with the error envelope.
+		{name: "external within the rate limit", method: "GET", path: "/api/v1/wallets", bearer: "throttledToken",
+			before: limitAPIToOnePerMinute},
+		{name: "external over the rate limit", method: "GET", path: "/api/v1/wallets", bearer: "throttledToken"},
 	}
+}
+
+// limitAPIToOnePerMinute lets one call per token through and gives the step a
+// bearer no other run has used, so its bucket starts full.
+func limitAPIToOnePerMinute(t *testing.T, vars map[string]string) {
+	t.Helper()
+	const key = "http.throttle.api_per_minute"
+	previous := facades.Config().Get(key)
+	facades.Config().Add(key, 1)
+	t.Cleanup(func() { facades.Config().Add(key, previous) })
+	vars["throttledToken"] = "not-a-jwt-" + uuid.NewString()
 }
 
 // insertFixtureWallet adds an eth wallet with its deposit address to the

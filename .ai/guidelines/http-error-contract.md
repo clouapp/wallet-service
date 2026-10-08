@@ -92,7 +92,7 @@ public withdrawal failure codes (`too_many_attempts`, …).
 | 404 | the resource does not exist, or is not the caller's | stop asking |
 | 409 | the resource is in a state that refuses the action | wait or change state |
 | 422 | a domain refusal the caller can act on (insufficient funds, below dust, not gas-ready) | change the request |
-| 429 | a rate limit or a sweep/withdrawal quota refused | back off (`retry_after_seconds`) |
+| 429 | a rate limit or a sweep/withdrawal quota refused | back off (`Retry-After` header, or `retry_after_seconds` in a quota body) |
 | 500 | our fault | retry later |
 | 502 | a chain node, RPC or provider failed | retry later |
 | 503 | not configured, or a store we fail closed on is unreachable | retry later |
@@ -124,6 +124,28 @@ scenario whose normalized raw bodies are compared byte for byte with
 `tests/contract/testdata/http_contract.txt`. A refactor keeps it green; a decided
 change rewrites it (`make contract-update`) in the same PR that adds its row below.
 
+## Rate limits (`middleware.Throttle`)
+
+A request over a limit gets 429 `too_many_requests` in the envelope
+(`{"error":{"code":"too_many_requests","message":"too many requests"}}`) with the
+framework's `Retry-After`, `X-RateLimit-Limit`, `X-RateLimit-Remaining` and
+`X-RateLimit-Reset` headers. The limiters live in `middleware.RegisterThrottles`;
+their keys are built from `middleware.ClientIP` (so `TRUSTED_PROXIES` must match
+the deployment) and the limits come from `http.throttle.*` (`THROTTLE_*` env, per
+minute, `0` turns one off). The counters are in the default Cache (Redis); a cache
+failure lets the request through.
+
+| Limiter | Routes | Key | Default |
+|---|---|---|---|
+| `auth-login` | `POST /v1/auth/login` | client IP + email; client IP | 10/min; 60/min |
+| `auth-recover` | `POST /v1/auth/recover` | client IP + email; client IP | 5/min; 60/min |
+| `auth` | `/v1/auth/{2fa/verify,refresh,register,recover/confirm,invites/accept}` | client IP + path | 60/min |
+| `api` | the whole `/api/v1` group | the bearer token (hashed), or the client IP without one | 600/min |
+| `gas-check` | `POST .../wallets/{walletId}/gas-check` (both surfaces) | wallet | 1/min, body below |
+
+`gas-check` keeps the body it always had, not the envelope code above:
+`{"error":{"code":"rate_limited","message":"rate_limited","limit_type":"gas_check","retry_after_seconds":60}}`.
+
 New tests for error paths assert the body: `s.AssertError(rec, status, code, message)`.
 
 ## Intended differences
@@ -146,3 +168,4 @@ two bugfixes that landed in the commits before it.
 | `GET /v1/accounts/{id}` | 2026-10-05, account feature keys | no `features` | `features` lists the active flags |
 | `GET /v1/users/me/accounts` | 2026-10-05, caller role | no `role` | `role` |
 | `POST /v1/auth/2fa/verify` | body names `challenge_token`, 2026-10-05, second-factor token rename | 422, `partial_token` required | 401 `unauthorized`, `invalid or expired partial token` |
+| any route in the table above | 2026-10-08, rate limiting (H1) | no limit, never 429 | 429 `too_many_requests` over the limit (contract steps 69 and 70) |

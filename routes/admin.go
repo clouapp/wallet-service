@@ -89,14 +89,14 @@ func RegisterAdminRoutes() {
 	feeEstimateCtrl := newFeeEstimateController()
 
 	facades.Route().Prefix("/v1/auth").Middleware(noCache).Group(func(router route.Router) {
-		router.Post("/register", authCtrl.Register)
-		router.Post("/login", authCtrl.Login)
-		router.Post("/2fa/verify", authCtrl.VerifyTwoFactor)
-		router.Post("/refresh", authCtrl.RefreshToken)
-		router.Post("/recover", authCtrl.ForgotPassword)
-		router.Post("/recover/confirm", authCtrl.ResetPassword)
+		router.Middleware(middleware.Throttle(middleware.ThrottleAuth)).Post("/register", authCtrl.Register)
+		router.Middleware(middleware.Throttle(middleware.ThrottleLogin)).Post("/login", authCtrl.Login)
+		router.Middleware(middleware.Throttle(middleware.ThrottleAuth)).Post("/2fa/verify", authCtrl.VerifyTwoFactor)
+		router.Middleware(middleware.Throttle(middleware.ThrottleAuth)).Post("/refresh", authCtrl.RefreshToken)
+		router.Middleware(middleware.Throttle(middleware.ThrottleRecover)).Post("/recover", authCtrl.ForgotPassword)
+		router.Middleware(middleware.Throttle(middleware.ThrottleAuth)).Post("/recover/confirm", authCtrl.ResetPassword)
 		router.Get("/invites/{token}", inviteCtrl.Preview)
-		router.Post("/invites/accept", inviteCtrl.Accept)
+		router.Middleware(middleware.Throttle(middleware.ThrottleAuth)).Post("/invites/accept", inviteCtrl.Accept)
 	})
 	facades.Route().Prefix("/v1/auth").Middleware(middleware.SessionAuth(), noCache).Group(func(router route.Router) {
 		router.Post("/logout", authCtrl.Logout)
@@ -297,7 +297,7 @@ func RegisterAdminRoutes() {
 
 			r.Middleware(middleware.RequireFundAction(middleware.FundSweep)).Post("/consolidate", sweepCtrl.ConsolidateWallet)
 			r.Get("/gas-status", sweepCtrl.GetGasStatus)
-			r.Post("/gas-check", sweepCtrl.ForceGasCheck)
+			r.Middleware(middleware.Throttle(middleware.ThrottleGasCheck)).Post("/gas-check", sweepCtrl.ForceGasCheck)
 			r.Post("/withdraw/preview", sweepCtrl.PreviewWithdraw)
 
 			r.Prefix("/unspents").Middleware(middleware.UTXOOnly()).Group(func(ur route.Router) {
@@ -452,7 +452,6 @@ func newDashboardWithdrawalsController() *dashwithdrawals.WithdrawalsController 
 func newDashboardSweepController() *dashsweep.SweepController {
 	return dashsweep.NewSweepController(dashsweep.SweepControllerDeps{
 		Sweeps: container.MustMake[*sweep.Box]().Service,
-		Redis:  container.MustMake[*container.SharedRedis]().Client,
 		Flags:  container.MustMake[*featuressvc.Service](),
 	})
 }

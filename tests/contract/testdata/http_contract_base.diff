@@ -335,3 +335,5 @@ content-type: application/json; charset=utf-8
 status: 401
 content-type: application/json; charset=utf-8
 {"error":{"code":"unauthorized","message":"token not found or revoked"}}
+added: 69 external within the rate limit: GET /api/v1/wallets
+added: 70 external over the rate limit: GET /api/v1/wallets

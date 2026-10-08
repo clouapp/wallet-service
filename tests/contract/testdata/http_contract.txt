@@ -340,3 +340,14 @@ content-type: application/json; charset=utf-8
 status: 204
 content-type: 
 
+
+### 69 external within the rate limit: GET /api/v1/wallets
+status: 401
+content-type: application/json; charset=utf-8
+{"error":{"code":"unauthorized","message":"invalid or expired api token"}}
+
+### 70 external over the rate limit: GET /api/v1/wallets
+status: 429
+content-type: application/json
+{"error":{"code":"too_many_requests","message":"too many requests"}}
+

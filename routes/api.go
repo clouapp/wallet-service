@@ -47,7 +47,7 @@ func RegisterExternalAPI() {
 	withdrawalCtrl := newExternalWithdrawalsController()
 	feeEstimateCtrl := newFeeEstimateController()
 
-	facades.Route().Prefix("/api/v1").Middleware(middleware.APITokenAuth(
+	facades.Route().Prefix("/api/v1").Middleware(middleware.Throttle(middleware.ThrottleAPI), middleware.APITokenAuth(
 		container.MustMake[*accountsvc.Service](),
 	), noCache).Group(func(router route.Router) {
 		// APIScope follows the S3.4.6 catalog and the S3.4.2 verbs:
@@ -72,7 +72,7 @@ func RegisterExternalAPI() {
 
 			r.Middleware(middleware.APIScope(middleware.PermSweepExecute)).Post("/consolidate", sweepCtrl.ConsolidateWallet)
 			r.Get("/gas-status", sweepCtrl.GetGasStatus)
-			r.Post("/gas-check", sweepCtrl.ForceGasCheck)
+			r.Middleware(middleware.Throttle(middleware.ThrottleGasCheck)).Post("/gas-check", sweepCtrl.ForceGasCheck)
 			r.Post("/withdraw/preview", sweepCtrl.PreviewWithdraw)
 			r.Get("/fee-estimate", feeEstimateCtrl.GetWalletFeeEstimate)
 			r.Middleware(middleware.APIScope(middleware.PermWithdrawalsCreate)).Post("/withdrawals", withdrawalCtrl.CreateWalletWithdrawal)
@@ -121,7 +121,6 @@ func newExternalAddressesController() *extaddresses.AddressesController {
 func newExternalSweepController() *extsweep.SweepController {
 	return extsweep.NewSweepController(extsweep.SweepControllerDeps{
 		Sweeps: container.MustMake[*sweep.Box]().Service,
-		Redis:  container.MustMake[*container.SharedRedis]().Client,
 		Flags:  container.MustMake[*featuressvc.Service](),
 	})
 }

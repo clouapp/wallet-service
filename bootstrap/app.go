@@ -116,8 +116,15 @@ func Boot() contractsfoundation.Application {
 			h.Use(middleware.GlobalChain(requestTimeout())...).
 				Recover(middleware.RecoverPanic)
 		}).
-		WithRouting(routes.RegisterHTTP).
+		WithRouting(registerRoutes).
 		Create()
+}
+
+// registerRoutes names the rate limiters before the routes that use them, then
+// registers every route group.
+func registerRoutes() {
+	middleware.RegisterThrottles(appfacades.RateLimiter())
+	routes.RegisterHTTP()
 }
 
 // bootConfig loads configuration and then installs the redacting log handler.

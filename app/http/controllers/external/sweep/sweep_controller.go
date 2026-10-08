@@ -2,7 +2,6 @@ package sweep
 
 import (
 	"math/big"
-	"time"
 
 	"github.com/goravel/framework/contracts/http"
 
@@ -12,32 +11,22 @@ import (
 	"github.com/macrowallets/waas/app/http/responses"
 	"github.com/macrowallets/waas/app/services/features"
 	sweep "github.com/macrowallets/waas/app/services/sweep"
-	"github.com/redis/go-redis/v9"
 )
 
 func validateRequest(ctx http.Context, req http.FormRequest) http.Response {
 	return controllers.ValidateRequest(ctx, req)
 }
 
-// gasCheckRateLimitWindow caps ForceGasCheck to one on-chain read per wallet
-// per minute. The limit is enforced via Redis SETNX so it is shared across all
-// API nodes and Lambda handlers. When Redis is unavailable we fall through to
-// the underlying handler — availability of the endpoint is more important than
-// a perfect rate limit, and the chain adapter itself has short-term caching.
-const gasCheckRateLimitWindow = 60 * time.Second
-
 // SweepController serves the external consolidate and gas routes.
 type SweepController struct {
 	sweeps sweep.Service
-	redis  *redis.Client
 	flags  *features.Service
 }
 
 // SweepControllerDeps is everything the external sweep controller needs.
-// Sweeps and Flags are required. Redis may be nil; ForceGasCheck then skips the shared rate limit.
+// Sweeps and Flags are required.
 type SweepControllerDeps struct {
 	Sweeps sweep.Service
-	Redis  *redis.Client
 	Flags  *features.Service
 }
 
@@ -51,7 +40,6 @@ func NewSweepController(deps SweepControllerDeps) *SweepController {
 	}
 	return &SweepController{
 		sweeps: deps.Sweeps,
-		redis:  deps.Redis,
 		flags:  deps.Flags,
 	}
 }
@@ -142,23 +130,7 @@ func (ctrl *SweepController) GetGasStatus(ctx http.Context) http.Response {
 // @Failure      429       {object}  ErrorResponse
 // @Router       /v1/wallets/{walletId}/gas-check [post]
 func (ctrl *SweepController) ForceGasCheck(ctx http.Context) http.Response {
-	walletID, err := requests.RouteUUID(ctx, "walletId")
-	if err != nil {
-		return responses.Send(ctx, http.StatusBadRequest, http.Json{"error": "invalid wallet id"})
-	}
-
-	if rdb := ctrl.redis; rdb != nil {
-		key := "vault:ratelimit:gas-check:" + walletID.String()
-		ok, setErr := rdb.SetNX(ctx.Context(), key, "1", gasCheckRateLimitWindow).Result()
-		if setErr == nil && !ok {
-			return responses.Send(ctx, http.StatusTooManyRequests, http.Json{
-				"error":               "rate_limited",
-				"limit_type":          "gas_check",
-				"retry_after_seconds": int(gasCheckRateLimitWindow / time.Second),
-			})
-		}
-	}
-
+	// The per-wallet rate limit is middleware.Throttle(ThrottleGasCheck) on the route.
 	return ctrl.GetGasStatus(ctx)
 }
 
