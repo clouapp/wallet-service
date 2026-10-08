@@ -346,5 +346,5 @@ func responseIsModelPackage(modulePath string, pkg *types.Package) bool {
 	if pkg == nil {
 		return false
 	}
-	return pkg.Path() == modulePath+"/app/models" || pkg.Path() == modulePath+"/pkg/authmodel"
+	return pkg.Path() == modulePath+"/app/models"
 }

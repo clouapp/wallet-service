@@ -1,10 +1,6 @@
 package config
 
-import (
-	"github.com/goravel/framework/facades"
-
-	"github.com/macrowallets/waas/pkg/authmodel"
-)
+import "github.com/goravel/framework/facades"
 
 func registerAuth() {
 	facades.Config().Add("auth", map[string]any{
@@ -24,7 +20,6 @@ func registerAuth() {
 		"providers": map[string]any{
 			"users": map[string]any{
 				"driver": "orm",
-				"model":  authmodel.User{},
 			},
 		},
 	})

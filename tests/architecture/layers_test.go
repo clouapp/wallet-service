@@ -15,7 +15,7 @@ import (
 // of the users.preferences jsonb document.
 func TestModels_Carry_NoWireTags(t *testing.T) {
 	module := sharedModule(t)
-	for _, file := range module.ProductionFiles("app/models", "pkg/authmodel") {
+	for _, file := range module.ProductionFiles("app/models") {
 		structTags(file, func(typeName, fieldName, tag string) {
 			value, ok := reflect.StructTag(tag).Lookup("json")
 			if !ok {
@@ -25,7 +25,7 @@ func TestModels_Carry_NoWireTags(t *testing.T) {
 			if name == "-" {
 				return
 			}
-			if file.Path == "pkg/authmodel/preferences.go" && typeName == "UserPreferences" &&
+			if file.Path == "app/models/user_preferences.go" && typeName == "UserPreferences" &&
 				(name == "preferred_fiat_code" || name == "display_in_fiat") {
 				return
 			}
