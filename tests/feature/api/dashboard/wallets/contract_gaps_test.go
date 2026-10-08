@@ -50,7 +50,7 @@ func (s *contractGapsSuite) seedSession(role string) (uuid.UUID, uuid.UUID, stri
 
 	userID := uuid.New()
 	email := role + "-" + userID.String()[:8] + "@example.com"
-	hash, err := authsvc.NewService().HashPassword(contractGapPassword)
+	hash, err := authsvc.NewService(appfacades.Hash()).HashPassword(contractGapPassword)
 	s.Require().NoError(err)
 	_, err = facades.Orm().Query().Exec(
 		`INSERT INTO users (id, email, password_hash, status, created_at, updated_at)
@@ -362,7 +362,7 @@ func (s *contractGapsSuite) TestAdd_WalletUser_RejectsAnUnknownRole() {
 func (s *contractGapsSuite) TestAdd_WalletUser_RejectsUserWhoIsNotAMember() {
 	walletID := s.seedWallet("wallet user outsider")
 	outsiderID := uuid.New()
-	hash, err := authsvc.NewService().HashPassword(contractGapPassword)
+	hash, err := authsvc.NewService(appfacades.Hash()).HashPassword(contractGapPassword)
 	s.Require().NoError(err)
 	_, err = facades.Orm().Query().Exec(
 		`INSERT INTO users (id, email, password_hash, status, created_at, updated_at)

@@ -10,7 +10,6 @@ import (
 
 	"github.com/macrowallets/waas/app/models"
 	activitylog "github.com/macrowallets/waas/app/services/activity"
-	authsvc "github.com/macrowallets/waas/app/services/auth"
 	audit "github.com/macrowallets/waas/packages/activitylog"
 )
 
@@ -19,8 +18,8 @@ import (
 // membership, the accepted stamp and invite.accepted commit together. The
 // activity metadata is the role. The raw token and its hash stay out of the trail.
 func (s *Service) AcceptInvite(ctx context.Context, rawToken, password, fullName string, sessionUser *models.User) (*models.User, error) {
-	if s == nil || s.invites == nil || s.users == nil {
-		return nil, errors.New("account invite stores are required")
+	if s == nil || s.invites == nil || s.users == nil || s.passwords == nil {
+		return nil, errors.New("account invite stores and password hasher are required")
 	}
 	if err := s.requireActivity(); err != nil {
 		return nil, err
@@ -48,7 +47,7 @@ func (s *Service) AcceptInvite(ctx context.Context, rawToken, password, fullName
 			if len(password) < 8 {
 				return ErrInvitePassword
 			}
-			hash, hashErr := authsvc.NewService().HashPassword(password)
+			hash, hashErr := s.passwords.HashPassword(password)
 			if hashErr != nil {
 				return hashErr
 			}

@@ -9,6 +9,7 @@ import (
 	contractstesting "github.com/goravel/framework/contracts/testing/http"
 	"github.com/goravel/framework/facades"
 
+	appfacades "github.com/macrowallets/waas/app/facades"
 	"github.com/macrowallets/waas/app/models"
 	authsvc "github.com/macrowallets/waas/app/services/auth"
 	"github.com/macrowallets/waas/tests/feature/support"
@@ -87,7 +88,7 @@ func (s *WalletVisibilityTestSuite) TestFlag_On_LetsUserAndAuditorSeeEveryWallet
 }
 
 func (s *WalletVisibilityTestSuite) member(role string) sessionUser {
-	hash, err := authsvc.NewService().HashPassword(walletVisibilityPassword)
+	hash, err := authsvc.NewService(appfacades.Hash()).HashPassword(walletVisibilityPassword)
 	s.Require().NoError(err)
 	userID := uuid.New()
 	email := role + "-" + userID.String()[:8] + "@example.com"

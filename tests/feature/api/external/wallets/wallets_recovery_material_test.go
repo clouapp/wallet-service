@@ -13,6 +13,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/goravel/framework/facades"
 
+	appfacades "github.com/macrowallets/waas/app/facades"
 	"github.com/macrowallets/waas/app/container"
 	dashwallets "github.com/macrowallets/waas/app/http/controllers/dashboard/wallets"
 	extwallets "github.com/macrowallets/waas/app/http/controllers/external/wallets"
@@ -282,7 +283,7 @@ func (s *WalletRecoveryMaterialTestSuite) TestAdmin_Create_ResponseShapeUnchange
 }
 
 func (s *WalletRecoveryMaterialTestSuite) setupAdminSession() (uuid.UUID, string) {
-	hash, err := authsvc.NewService().HashPassword(recoveryAdminPassword)
+	hash, err := authsvc.NewService(appfacades.Hash()).HashPassword(recoveryAdminPassword)
 	s.Require().NoError(err)
 	userID := uuid.New()
 	email := recoveryTestAccountLabel + "-" + userID.String()[:8] + "@example.com"

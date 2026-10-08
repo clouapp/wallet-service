@@ -14,6 +14,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/goravel/framework/facades"
 
+	appfacades "github.com/macrowallets/waas/app/facades"
 	authsvc "github.com/macrowallets/waas/app/services/auth"
 	"github.com/macrowallets/waas/tests/feature/support"
 	"github.com/macrowallets/waas/tests/feature/support/testutil"
@@ -71,7 +72,7 @@ func (s *PlatformGuardSuite) call(method, path, bearer, body string) (int, strin
 
 // signIn creates a user that is not a platform admin and returns its access token.
 func (s *PlatformGuardSuite) signIn() string {
-	hash, err := authsvc.NewService().HashPassword(password)
+	hash, err := authsvc.NewService(appfacades.Hash()).HashPassword(password)
 	s.Require().NoError(err)
 	id := uuid.New()
 	email := "member-" + id.String()[:8] + "@example.com"

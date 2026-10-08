@@ -188,7 +188,7 @@ type twoFactorFixture struct {
 
 func newTwoFactorFixture(t *testing.T) *twoFactorFixture {
 	t.Helper()
-	svc := authsvc.NewService()
+	svc := authsvc.NewService(nil)
 	secret := newTOTPSecret(t)
 	now := time.Unix(1_700_000_010, 0)
 
@@ -440,7 +440,7 @@ func TestTwo_FactorLogin_NoCodeAtAllIsInvalid(t *testing.T) {
 func TestSecond_FactorVerifier_ConfirmedCodeCannotCompleteALogin(t *testing.T) {
 	f := newTwoFactorFixture(t)
 	verifier, err := authsvc.NewSecondFactorVerifier(authsvc.VerifierDeps{
-		Service:  authsvc.NewService(),
+		Service:  authsvc.NewService(nil),
 		Counters: f.users,
 		Recovery: f.users,
 		Decrypt:  fakeDecrypt,
@@ -458,7 +458,7 @@ func TestSecond_FactorVerifier_ConfirmedCodeCannotCompleteALogin(t *testing.T) {
 
 func TestSecond_FactorVerifier_RefusesNotEnrolledUsers(t *testing.T) {
 	verifier, err := authsvc.NewSecondFactorVerifier(authsvc.VerifierDeps{
-		Service:  authsvc.NewService(),
+		Service:  authsvc.NewService(nil),
 		Counters: newFakeUsers(),
 		Recovery: newFakeUsers(),
 		Decrypt:  fakeDecrypt,
@@ -475,7 +475,7 @@ func TestSecond_FactorVerifier_RefusesNotEnrolledUsers(t *testing.T) {
 func TestNew_TwoFactorLogin_ValidatesDependencies(t *testing.T) {
 	f := newTwoFactorFixture(t)
 	verifier, err := authsvc.NewSecondFactorVerifier(authsvc.VerifierDeps{
-		Service:  authsvc.NewService(),
+		Service:  authsvc.NewService(nil),
 		Counters: f.users,
 		Recovery: f.users,
 		Decrypt:  fakeDecrypt,
@@ -498,7 +498,7 @@ func TestNew_TwoFactorLogin_ValidatesDependencies(t *testing.T) {
 	})
 	assert.Error(t, err)
 	_, err = authsvc.NewSecondFactorVerifier(authsvc.VerifierDeps{
-		Service:  authsvc.NewService(),
+		Service:  authsvc.NewService(nil),
 		Counters: f.users,
 		Recovery: f.users,
 	})

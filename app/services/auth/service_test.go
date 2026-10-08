@@ -1,6 +1,7 @@
 package auth_test
 
 import (
+	"errors"
 	"testing"
 	"time"
 
@@ -36,7 +37,7 @@ func TestService_Auth_Service(t *testing.T) {
 }
 
 func (s *AuthServiceTestSuite) TestHash_Password_ReturnsBcryptHash() {
-	svc := authsvc.NewServiceWithHasher(newHasher())
+	svc := authsvc.NewService(newHasher())
 	hash, err := svc.HashPassword("mysecret")
 	s.Require().NoError(err)
 	s.Require().NotEmpty(hash)
@@ -44,13 +45,13 @@ func (s *AuthServiceTestSuite) TestHash_Password_ReturnsBcryptHash() {
 }
 
 func (s *AuthServiceTestSuite) TestCheckPassword_WrongPassword_ReturnsFalse() {
-	svc := authsvc.NewServiceWithHasher(newHasher())
+	svc := authsvc.NewService(newHasher())
 	hash, _ := svc.HashPassword("correct")
 	s.False(svc.CheckPassword("wrong", hash))
 }
 
 func (s *AuthServiceTestSuite) TestGenerate_TOTP_ReturnsKeyAndQR() {
-	svc := authsvc.NewService()
+	svc := authsvc.NewService(nil)
 	key, qr, err := svc.GenerateTOTP("user@example.com")
 	s.Require().NoError(err)
 	s.NotEmpty(key)
@@ -58,7 +59,7 @@ func (s *AuthServiceTestSuite) TestGenerate_TOTP_ReturnsKeyAndQR() {
 }
 
 func (s *AuthServiceTestSuite) TestVerifyTOTP_ValidCode_ReturnsTrue() {
-	svc := authsvc.NewService()
+	svc := authsvc.NewService(nil)
 	key, _, _ := svc.GenerateTOTP("user@example.com")
 	code, err := totp.GenerateCode(key, time.Now())
 	s.Require().NoError(err)
@@ -66,7 +67,7 @@ func (s *AuthServiceTestSuite) TestVerifyTOTP_ValidCode_ReturnsTrue() {
 }
 
 func (s *AuthServiceTestSuite) TestGenerate_RecoveryCodes_Returns10Codes() {
-	svc := authsvc.NewService()
+	svc := authsvc.NewService(nil)
 	codes, hashes, err := svc.GenerateRecoveryCodes()
 	s.Require().NoError(err)
 	s.Len(codes, 10)
@@ -74,14 +75,14 @@ func (s *AuthServiceTestSuite) TestGenerate_RecoveryCodes_Returns10Codes() {
 }
 
 func (s *AuthServiceTestSuite) TestVerify_RecoveryCode_MatchesHash() {
-	svc := authsvc.NewService()
+	svc := authsvc.NewService(nil)
 	codes, hashes, _ := svc.GenerateRecoveryCodes()
 	s.True(svc.VerifyRecoveryCode(codes[0], hashes[0]))
 	s.False(svc.VerifyRecoveryCode(codes[0], hashes[1]))
 }
 
 func (s *AuthServiceTestSuite) TestHash_Token_IsDeterministicInCheck() {
-	svc := authsvc.NewService()
+	svc := authsvc.NewService(nil)
 	raw := "some-refresh-token"
 	hash := svc.HashToken(raw)
 	s.True(svc.CheckToken(raw, hash))
@@ -96,7 +97,7 @@ func TestDummy_PasswordHash_CostsTheSameAsARealOne(t *testing.T) {
 	if cost != bcrypt.DefaultCost {
 		t.Fatalf("cost = %d, HashPassword uses %d", cost, bcrypt.DefaultCost)
 	}
-	if authsvc.NewServiceWithHasher(newHasher()).CheckPassword("", authsvc.DummyPasswordHash) {
+	if authsvc.NewService(newHasher()).CheckPassword("", authsvc.DummyPasswordHash) {
 		t.Fatal("the dummy hash must not match an empty password")
 	}
 }
@@ -110,7 +111,7 @@ func TestPassword_HashFromTheBcryptLibrary_StillVerifies(t *testing.T) {
 		t.Fatalf("hash with the old code: %v", err)
 	}
 	hasher := newHasher()
-	svc := authsvc.NewServiceWithHasher(hasher)
+	svc := authsvc.NewService(hasher)
 	if !svc.CheckPassword("old-secret", string(stored)) {
 		t.Fatal("a hash made by the old code no longer verifies")
 	}
@@ -123,12 +124,23 @@ func TestPassword_HashFromTheBcryptLibrary_StillVerifies(t *testing.T) {
 }
 
 func TestPassword_NewHash_VerifiesWithTheBcryptLibrary(t *testing.T) {
-	svc := authsvc.NewServiceWithHasher(newHasher())
+	svc := authsvc.NewService(newHasher())
 	made, err := svc.HashPassword("new-secret")
 	if err != nil {
 		t.Fatalf("hash password: %v", err)
 	}
 	if bcrypt.CompareHashAndPassword([]byte(made), []byte("new-secret")) != nil {
 		t.Fatal("a new hash is not readable by the old verifier")
+	}
+}
+
+func TestPassword_WithoutAHasher_RefusesInsteadOfHashingWeakly(t *testing.T) {
+	svc := authsvc.NewService(nil)
+	if _, err := svc.HashPassword("secret"); !errors.Is(err, authsvc.ErrHasherRequired) {
+		t.Fatalf("HashPassword error = %v, want ErrHasherRequired", err)
+	}
+	stored, _ := bcrypt.GenerateFromPassword([]byte("secret"), bcrypt.MinCost)
+	if svc.CheckPassword("secret", string(stored)) {
+		t.Fatal("a service without a hasher accepted a password")
 	}
 }

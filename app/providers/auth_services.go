@@ -82,7 +82,7 @@ func wireAuthServices(c *container.Container) error {
 	}
 	bridge := authRepoBridge{users: c.UserRepo, recovery: c.TotpRecoveryCodeRepo, refresh: c.RefreshTokenRepo}
 	verifier, err := authsvc.NewSecondFactorVerifier(authsvc.VerifierDeps{
-		Service:  authsvc.NewService(),
+		Service:  authsvc.NewService(appfacades.Hash()),
 		Counters: bridge,
 		Recovery: bridge,
 		Decrypt:  openSealedTotp,

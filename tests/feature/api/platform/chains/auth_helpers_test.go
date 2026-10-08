@@ -12,6 +12,7 @@ import (
 	"github.com/goravel/framework/facades"
 	"github.com/pquerna/otp/totp"
 
+	appfacades "github.com/macrowallets/waas/app/facades"
 	authsvc "github.com/macrowallets/waas/app/services/auth"
 	"github.com/macrowallets/waas/tests/feature/support"
 )
@@ -42,7 +43,7 @@ type authSuite struct {
 }
 
 func (s *authSuite) seedUser(withTOTP bool) seededAuthUser {
-	svc := authsvc.NewService()
+	svc := authsvc.NewService(appfacades.Hash())
 	hash, err := svc.HashPassword(authTestPassword)
 	s.Require().NoError(err)
 

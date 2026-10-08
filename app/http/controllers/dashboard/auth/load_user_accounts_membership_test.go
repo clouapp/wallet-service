@@ -52,7 +52,7 @@ func TestLogin_Denies_WhenTheMembershipReadFails(t *testing.T) {
 		}),
 		RefreshTokens:  sessions.NewRefreshTokens(refreshes),
 		PasswordResets: &sessions.PasswordResets{},
-		Passwords:      authsvc.NewServiceWithHasher(testHasher()),
+		Passwords:      authsvc.NewService(testHasher()),
 		TwoFactor:      &authsvc.TwoFactorLogin{},
 		Revoker:        &authsvc.SessionRevoker{},
 		CredentialMail: &credentialmail.Service{},

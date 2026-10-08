@@ -13,6 +13,7 @@ import (
 	contractstestinghttp "github.com/goravel/framework/contracts/testing/http"
 	"github.com/goravel/framework/facades"
 
+	appfacades "github.com/macrowallets/waas/app/facades"
 	"github.com/macrowallets/waas/app/http/middleware"
 	"github.com/macrowallets/waas/app/models"
 	authsvc "github.com/macrowallets/waas/app/services/auth"
@@ -157,7 +158,7 @@ func (s *featureGateSuite) rows(model any, walletID uuid.UUID) int64 {
 
 func (s *featureGateSuite) ownerWallet() (uuid.UUID, uuid.UUID, string, uuid.UUID) {
 	s.T().Helper()
-	hash, err := authsvc.NewService().HashPassword(featureGatePassword)
+	hash, err := authsvc.NewService(appfacades.Hash()).HashPassword(featureGatePassword)
 	s.Require().NoError(err)
 	userID := uuid.New()
 	email := "owner-" + userID.String()[:8] + "@example.com"

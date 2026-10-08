@@ -42,7 +42,7 @@ func loginWith(t *testing.T, store lookupUsers) *recordingResponse {
 		Accounts:       accountsvc.NewService(accountsvc.Deps{}),
 		RefreshTokens:  &sessions.RefreshTokens{},
 		PasswordResets: &sessions.PasswordResets{},
-		Passwords:      authsvc.NewServiceWithHasher(testHasher()),
+		Passwords:      authsvc.NewService(testHasher()),
 		TwoFactor:      &authsvc.TwoFactorLogin{},
 		Revoker:        &authsvc.SessionRevoker{},
 		CredentialMail: &credentialmail.Service{},

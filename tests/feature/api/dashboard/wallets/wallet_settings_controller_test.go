@@ -9,6 +9,7 @@ import (
 	contractstesting "github.com/goravel/framework/contracts/testing/http"
 	"github.com/goravel/framework/facades"
 
+	appfacades "github.com/macrowallets/waas/app/facades"
 	"github.com/macrowallets/waas/app/models"
 	authsvc "github.com/macrowallets/waas/app/services/auth"
 	"github.com/macrowallets/waas/tests/feature/support"
@@ -53,7 +54,7 @@ func (s *WalletSettingsTestSuite) SetupTest() {
 }
 
 func (s *WalletSettingsTestSuite) memberToken(role string) string {
-	hash, err := authsvc.NewService().HashPassword(walletSettingsTestPassword)
+	hash, err := authsvc.NewService(appfacades.Hash()).HashPassword(walletSettingsTestPassword)
 	s.Require().NoError(err)
 	userID := uuid.New()
 	email := role + "-" + userID.String()[:8] + "@example.com"

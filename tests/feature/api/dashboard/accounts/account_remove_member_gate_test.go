@@ -9,6 +9,7 @@ import (
 	contractstesting "github.com/goravel/framework/contracts/testing/http"
 	"github.com/goravel/framework/facades"
 
+	appfacades "github.com/macrowallets/waas/app/facades"
 	"github.com/macrowallets/waas/app/models"
 	authsvc "github.com/macrowallets/waas/app/services/auth"
 	"github.com/macrowallets/waas/tests/feature/support"
@@ -85,7 +86,7 @@ func (s *AccountRemoveMemberGateTestSuite) insertMember(accountID uuid.UUID, rol
 }
 
 func (s *AccountRemoveMemberGateTestSuite) insertUserWithID(userID uuid.UUID, email string) {
-	hash, err := authsvc.NewService().HashPassword(accountRemoveMemberGatePassword)
+	hash, err := authsvc.NewService(appfacades.Hash()).HashPassword(accountRemoveMemberGatePassword)
 	s.Require().NoError(err)
 	_, err = facades.Orm().Query().Exec(
 		`INSERT INTO users (id, email, password_hash, status, created_at, updated_at)

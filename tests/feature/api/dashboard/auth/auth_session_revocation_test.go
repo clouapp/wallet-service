@@ -9,6 +9,7 @@ import (
 	contractstesting "github.com/goravel/framework/contracts/testing/http"
 	"github.com/goravel/framework/facades"
 
+	appfacades "github.com/macrowallets/waas/app/facades"
 	authsvc "github.com/macrowallets/waas/app/services/auth"
 	"github.com/macrowallets/waas/tests/feature/support"
 	"github.com/macrowallets/waas/tests/feature/support/fixtures"
@@ -40,7 +41,7 @@ func (s *SessionRevocationTestSuite) changePassword(bearer, current, next string
 }
 
 func (s *SessionRevocationTestSuite) seedResetToken(userID uuid.UUID) string {
-	svc := authsvc.NewService()
+	svc := authsvc.NewService(appfacades.Hash())
 	raw, err := svc.GenerateRandomToken()
 	s.Require().NoError(err)
 	_, err = facades.Orm().Query().Exec(

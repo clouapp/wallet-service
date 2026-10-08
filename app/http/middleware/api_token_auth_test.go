@@ -353,7 +353,7 @@ func (s *APITokenAuthHMACTestSuite) TestAPI_TokenAuth_LegacyStoredHashStillAuthe
 		AccountID: s.account.ID,
 		Name:      "legacy-id-hash",
 	}
-	stored := authsvc.NewService().HashToken(record.ID.String())
+	stored := authsvc.NewService(nil).HashToken(record.ID.String())
 	_, err := facades.Orm().Query().Exec(
 		`INSERT INTO access_tokens (id, account_id, name, token_hash, spending_limit, created_at, updated_at)
 		 VALUES (?, ?, ?, ?, ?, NOW(), NOW())`,
@@ -378,7 +378,7 @@ func (s *APITokenAuthHMACTestSuite) TestAPI_TokenAuth_SecretDigestRejectsAMissin
 		AccountID: s.account.ID,
 		Name:      "digest-without-claim",
 	}
-	passwords := authsvc.NewService()
+	passwords := authsvc.NewService(nil)
 	secret, err := passwords.GenerateAPITokenSecret()
 	s.Require().NoError(err)
 	_, err = facades.Orm().Query().Exec(

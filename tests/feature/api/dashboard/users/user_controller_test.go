@@ -11,6 +11,7 @@ import (
 	contractstesting "github.com/goravel/framework/contracts/testing/http"
 	"github.com/goravel/framework/facades"
 
+	appfacades "github.com/macrowallets/waas/app/facades"
 	"github.com/macrowallets/waas/app/models"
 	authsvc "github.com/macrowallets/waas/app/services/auth"
 	"github.com/macrowallets/waas/app/services/features"
@@ -56,7 +57,7 @@ func TestUser_Controller_Suite(t *testing.T) {
 func (s *UserControllerTestSuite) SetupTest() {
 	fixtures.TestDB(s.T())
 
-	hash, err := authsvc.NewService().HashPassword(myAccountsTestPassword)
+	hash, err := authsvc.NewService(appfacades.Hash()).HashPassword(myAccountsTestPassword)
 	s.Require().NoError(err)
 	s.userID = uuid.New()
 	email := "accounts-" + s.userID.String()[:8] + "@example.com"

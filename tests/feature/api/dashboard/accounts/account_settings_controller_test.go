@@ -11,6 +11,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/goravel/framework/facades"
 
+	appfacades "github.com/macrowallets/waas/app/facades"
 	"github.com/macrowallets/waas/app/container"
 	"github.com/macrowallets/waas/app/models"
 	authsvc "github.com/macrowallets/waas/app/services/auth"
@@ -995,7 +996,7 @@ func (s *accountSettingsSuite) member(accountID uuid.UUID, role string) string {
 
 func (s *accountSettingsSuite) user(role string) (uuid.UUID, string) {
 	s.T().Helper()
-	hash, err := authsvc.NewService().HashPassword(accountSettingsPassword)
+	hash, err := authsvc.NewService(appfacades.Hash()).HashPassword(accountSettingsPassword)
 	s.Require().NoError(err)
 	userID := uuid.New()
 	email := role + "-" + userID.String()[:8] + "@example.com"

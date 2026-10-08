@@ -2,6 +2,11 @@ package config
 
 import "github.com/macrowallets/waas/app/facades"
 
+// registerHashing configures the hash facade the password service uses.
+func registerHashing() {
+	facades.Config().Add("hashing", hashingDocument())
+}
+
 func registerAuth() {
 	facades.Config().Add("auth", map[string]any{
 		"defaults": map[string]any{"guard": "web"},

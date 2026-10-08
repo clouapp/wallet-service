@@ -12,6 +12,7 @@ import (
 	contractstestinghttp "github.com/goravel/framework/contracts/testing/http"
 	"github.com/goravel/framework/facades"
 
+	appfacades "github.com/macrowallets/waas/app/facades"
 	"github.com/macrowallets/waas/app/http/middleware"
 	"github.com/macrowallets/waas/app/models"
 	authsvc "github.com/macrowallets/waas/app/services/auth"
@@ -109,7 +110,7 @@ func (s *totpEnrollmentSuite) memberID(totp bool) (uuid.UUID, uuid.UUID, string)
 
 func (s *totpEnrollmentSuite) memberEmail(totp bool) (uuid.UUID, uuid.UUID, string) {
 	s.T().Helper()
-	hash, err := authsvc.NewService().HashPassword(totpEnrollmentPassword)
+	hash, err := authsvc.NewService(appfacades.Hash()).HashPassword(totpEnrollmentPassword)
 	s.Require().NoError(err)
 	userID := uuid.New()
 	email := "member-" + userID.String()[:8] + "@example.com"
@@ -256,7 +257,7 @@ func (s *totpEnrollmentSuite) setTotpEnabled(userID uuid.UUID, enabled bool) err
 	); err != nil || !enabled {
 		return err
 	}
-	secret, _, err := authsvc.NewService().GenerateTOTP(userID.String() + "@example.com")
+	secret, _, err := authsvc.NewService(appfacades.Hash()).GenerateTOTP(userID.String() + "@example.com")
 	if err != nil {
 		return err
 	}

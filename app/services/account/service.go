@@ -93,6 +93,11 @@ type InviteMailDispatcher interface {
 	DispatchAccountInvite(inviteID uuid.UUID) (string, error)
 }
 
+// PasswordHasher hashes the password of a user an invite creates.
+type PasswordHasher interface {
+	HashPassword(password string) (string, error)
+}
+
 // Deps is everything Account needs. Users, Tokens and Activity are required
 // for the dashboard member and token handlers. Older callers that only create
 // accounts may leave them nil. A nil InviteMail leaves an issued invite
@@ -105,6 +110,8 @@ type Deps struct {
 	Activity    ActivityLog
 	Invites     InviteStore
 	InviteMail  InviteMailDispatcher
+	// Passwords is required by AcceptInvite, which creates a user.
+	Passwords PasswordHasher
 }
 
 // MemberChange is a PATCH of one membership. A nil field is left as stored.
@@ -123,6 +130,7 @@ type Service struct {
 	invites     InviteStore
 	admins      PlatformAdmins
 	inviteMail  InviteMailDispatcher
+	passwords   PasswordHasher
 }
 
 // NewService builds an account service from Deps.
@@ -135,6 +143,7 @@ func NewService(deps Deps) *Service {
 		activity:    deps.Activity,
 		invites:     deps.Invites,
 		inviteMail:  deps.InviteMail,
+		passwords:   deps.Passwords,
 	}
 }
 

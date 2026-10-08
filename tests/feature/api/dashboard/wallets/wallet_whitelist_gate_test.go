@@ -10,6 +10,7 @@ import (
 	contractstesting "github.com/goravel/framework/contracts/testing/http"
 	"github.com/goravel/framework/facades"
 
+	appfacades "github.com/macrowallets/waas/app/facades"
 	"github.com/macrowallets/waas/app/models"
 	authsvc "github.com/macrowallets/waas/app/services/auth"
 	"github.com/macrowallets/waas/tests/feature/support"
@@ -179,7 +180,7 @@ func (s *WalletWhitelistGateTestSuite) member(role string, accountID uuid.UUID) 
 
 func (s *WalletWhitelistGateTestSuite) insertUser(email string) uuid.UUID {
 	userID := uuid.New()
-	hash, err := authsvc.NewService().HashPassword(walletWhitelistGatePassword)
+	hash, err := authsvc.NewService(appfacades.Hash()).HashPassword(walletWhitelistGatePassword)
 	s.Require().NoError(err)
 	_, err = facades.Orm().Query().Exec(
 		`INSERT INTO users (id, email, password_hash, status, created_at, updated_at)
