@@ -110,7 +110,6 @@ func WalletGrants(role string) Grants {
 }
 
 var (
-	ErrRoleAbove         = errors.New("cannot grant a role above your own")
 	ErrCannotActOnMember = errors.New("cannot act on a member above your role")
 	ErrCannotRemoveSelf  = errors.New("cannot remove yourself")
 	ErrLastOwner         = errors.New("cannot remove the last owner")
