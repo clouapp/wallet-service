@@ -2,6 +2,7 @@ package chains
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/macrowallets/waas/app/models"
@@ -98,4 +99,24 @@ func (s *Service) ListForEnvironment(ctx context.Context, environment string) ([
 		return s.chains.FindByTestnet(ctx, environment == models.EnvironmentTest)
 	}
 	return s.chains.FindActive(ctx)
+}
+
+// ErrChainNotInEnvironment is FindForEnvironment's answer for a chain whose
+// network kind does not match the account environment.
+var ErrChainNotInEnvironment = errors.New("chain not available in current environment")
+
+// FindForEnvironment is FindByID restricted to the chains an account environment
+// may use: prod sees mainnet chains and test sees testnet chains, anything else
+// sees every chain (as ListForEnvironment). A chain of the other kind comes back
+// with ErrChainNotInEnvironment. A missing chain and a store failure pass through
+// as FindByID returned them.
+func (s *Service) FindForEnvironment(ctx context.Context, id, environment string) (*models.Chain, error) {
+	chain, err := s.FindByID(ctx, id)
+	if err != nil || chain == nil {
+		return chain, err
+	}
+	if (environment == models.EnvironmentProd || environment == models.EnvironmentTest) && chain.IsTestnet != (environment == models.EnvironmentTest) {
+		return chain, ErrChainNotInEnvironment
+	}
+	return chain, nil
 }

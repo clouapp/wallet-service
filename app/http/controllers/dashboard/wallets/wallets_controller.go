@@ -186,10 +186,14 @@ func (ctrl *WalletsController) CreateWalletAdmin(ctx http.Context) http.Response
 		return resp
 	}
 
-	if env, ok := requestctx.AccountEnvironment(ctx); ok && env != "" {
-		chainRecord, _ := ctrl.chains.FindByID(ctx.Context(), req.Chain)
-		if chainRecord != nil && chainRecord.IsTestnet != (env == models.EnvironmentTest) {
-			return responses.Fail(ctx, http.StatusForbidden, responses.CodeForbidden, "chain not available in current environment")
+	env, _ := requestctx.AccountEnvironment(ctx)
+	if _, err := ctrl.chains.FindForEnvironment(ctx.Context(), req.Chain, env); err != nil {
+		if errors.Is(err, chainsvc.ErrChainNotInEnvironment) {
+			return responses.Fail(ctx, http.StatusForbidden, responses.CodeForbidden, err.Error())
+		}
+		// A failed or empty lookup is not a refusal: CreateWallet answers for the chain.
+		if !errors.Is(err, models.ErrRepositoryNotFound) {
+			slog.Warn("create wallet: check chain environment", "chain", req.Chain, "error", err)
 		}
 	}
 

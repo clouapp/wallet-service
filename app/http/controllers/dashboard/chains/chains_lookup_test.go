@@ -14,6 +14,7 @@ import (
 	contractslog "github.com/goravel/framework/contracts/log"
 	"github.com/goravel/framework/foundation"
 
+	"github.com/macrowallets/waas/app/http/middleware/requestctx"
 	"github.com/macrowallets/waas/app/http/resources"
 	"github.com/macrowallets/waas/app/http/responses"
 	"github.com/macrowallets/waas/app/models"
@@ -134,4 +135,79 @@ func TestChain_Lookup_DistinguishesNotFoundFromAnOutage(t *testing.T) {
 			})
 		}
 	}
+}
+
+func TestChain_Lookup_RefusesAChainOfTheOtherNetworkKind(t *testing.T) {
+	handlers := map[string]func(*ChainsController, http.Context) http.Response{
+		"GetChain":           (*ChainsController).GetChain,
+		"ListChainTokens":    (*ChainsController).ListChainTokens,
+		"ListChainResources": (*ChainsController).ListChainResources,
+	}
+	for handlerName, handler := range handlers {
+		t.Run(handlerName, func(t *testing.T) {
+			ctrl := NewChainsController(chainsvc.NewService(chainsvc.Deps{Chains: lookupCatalog{chain: &models.Chain{ID: "sepolia", IsTestnet: true}}}))
+			response := &recordingResponse{}
+			handler(ctrl, &recordingContext{
+				base:     context.WithValue(context.Background(), requestctx.KeyAccountEnvironment, models.EnvironmentProd),
+				request:  &recordingRequest{chainID: "sepolia"},
+				response: response,
+			})
+
+			if response.status != http.StatusForbidden {
+				t.Fatalf("status = %d, want 403", response.status)
+			}
+			var body resources.ErrorEnvelope
+			if err := json.Unmarshal(response.raw, &body); err != nil {
+				t.Fatalf("body is not the error envelope: %v", err)
+			}
+			if body.Error.Code != responses.CodeForbidden || body.Error.Message != "chain not available in current environment" {
+				t.Fatalf("envelope = %+v", body.Error)
+			}
+		})
+	}
+}
+
+type failingTokens struct{}
+
+func (failingTokens) FindByChainID(context.Context, string) ([]models.Token, error) {
+	return nil, errors.New("tokens store down")
+}
+
+type failingResources struct{}
+
+func (failingResources) FindByChainID(context.Context, string) ([]models.ChainResource, error) {
+	return nil, errors.New("resources store down")
+}
+
+// A failed token or resource read leaves that list null in the chain view instead of failing it.
+func TestGet_Chain_ServesTheChainWhenTheSideReadsFail(t *testing.T) {
+	ctrl := NewChainsController(chainsvc.NewService(chainsvc.Deps{
+		Chains:    lookupCatalog{chain: &models.Chain{ID: "eth"}},
+		Tokens:    failingTokens{},
+		Resources: failingResources{},
+	}))
+	response := &recordingResponse{}
+	ctrl.GetChain(&recordingContext{
+		base:     context.Background(),
+		request:  &recordingRequest{chainID: "eth"},
+		response: response,
+	})
+
+	if response.status != http.StatusOK {
+		t.Fatalf("status = %d, want 200", response.status)
+	}
+	if !strings.Contains(string(response.raw), `"tokens":null`) || !strings.Contains(string(response.raw), `"resources":null`) {
+		t.Fatalf("body = %s", response.raw)
+	}
+}
+
+func (r *recordingResponse) Success() http.ResponseStatus { return successStatus{response: r} }
+
+type successStatus struct {
+	http.ResponseStatus
+	response *recordingResponse
+}
+
+func (s successStatus) Json(obj any) http.AbortableResponse {
+	return s.response.Json(http.StatusOK, obj)
 }

@@ -2,6 +2,7 @@ package chains
 
 import (
 	"errors"
+	"log/slog"
 
 	"github.com/goravel/framework/contracts/http"
 
@@ -26,11 +27,16 @@ func NewChainsController(chains *chainsvc.Service) *ChainsController {
 	return &ChainsController{chains: chains}
 }
 
-// findChain loads the chain or returns the response that ends the request.
-// A missing chain is a 404. Any other repository error is our outage: it is
-// logged and answered as the internal error, never as "not found".
+// findChain loads the chain the account environment may use, or returns the
+// response that ends the request. A missing chain is a 404 and one of the other
+// network kind a 403. Any other repository error is our outage: it is logged and
+// answered as the internal error, never as "not found".
 func (ctrl *ChainsController) findChain(ctx http.Context, chainID string) (*models.Chain, http.Response) {
-	chain, err := ctrl.chains.FindByID(ctx.Context(), chainID)
+	env, _ := requestctx.AccountEnvironment(ctx)
+	chain, err := ctrl.chains.FindForEnvironment(ctx.Context(), chainID, env)
+	if errors.Is(err, chainsvc.ErrChainNotInEnvironment) {
+		return nil, responses.Fail(ctx, http.StatusForbidden, responses.CodeForbidden, err.Error())
+	}
 	if err != nil && !errors.Is(err, models.ErrRepositoryNotFound) {
 		appfacades.Log().WithContext(ctx).Errorf("chains: find chain %s: %v", chainID, err)
 		return nil, responses.InternalError(ctx, nil)
@@ -74,16 +80,15 @@ func (ctrl *ChainsController) GetChain(ctx http.Context) http.Response {
 		return failure
 	}
 
-	env, _ := requestctx.AccountEnvironment(ctx)
-	if env == models.EnvironmentProd || env == models.EnvironmentTest {
-		isTestnet := env == models.EnvironmentTest
-		if chain.IsTestnet != isTestnet {
-			return responses.Fail(ctx, http.StatusForbidden, responses.CodeForbidden, "chain not available in current environment")
-		}
+	// A failed read leaves the list empty rather than failing the chain view.
+	tokens, err := ctrl.chains.FindTokens(ctx.Context(), chainID)
+	if err != nil {
+		slog.Warn("chains: load tokens for chain view", "chain", chainID, "error", err)
 	}
-
-	tokens, _ := ctrl.chains.FindTokens(ctx.Context(), chainID)
-	resources, _ := ctrl.chains.FindResources(ctx.Context(), chainID)
+	resources, err := ctrl.chains.FindResources(ctx.Context(), chainID)
+	if err != nil {
+		slog.Warn("chains: load resources for chain view", "chain", chainID, "error", err)
+	}
 
 	return ctx.Response().Success().Json(http.Json{
 		"chain":     chainresource.ChainPtr(chain),
@@ -99,17 +104,9 @@ func (ctrl *ChainsController) ListChainTokens(ctx http.Context) http.Response {
 		return responses.Fail(ctx, http.StatusBadRequest, responses.CodeInvalidRequest, "chainId is required")
 	}
 
-	chain, failure := ctrl.findChain(ctx, chainID)
+	_, failure := ctrl.findChain(ctx, chainID)
 	if failure != nil {
 		return failure
-	}
-
-	env, _ := requestctx.AccountEnvironment(ctx)
-	if env == models.EnvironmentProd || env == models.EnvironmentTest {
-		isTestnet := env == models.EnvironmentTest
-		if chain.IsTestnet != isTestnet {
-			return responses.Fail(ctx, http.StatusForbidden, responses.CodeForbidden, "chain not available in current environment")
-		}
 	}
 
 	tokens, tokenErr := ctrl.chains.FindTokens(ctx.Context(), chainID)
@@ -127,17 +124,9 @@ func (ctrl *ChainsController) ListChainResources(ctx http.Context) http.Response
 		return responses.Fail(ctx, http.StatusBadRequest, responses.CodeInvalidRequest, "chainId is required")
 	}
 
-	chain, failure := ctrl.findChain(ctx, chainID)
+	_, failure := ctrl.findChain(ctx, chainID)
 	if failure != nil {
 		return failure
-	}
-
-	env, _ := requestctx.AccountEnvironment(ctx)
-	if env == models.EnvironmentProd || env == models.EnvironmentTest {
-		isTestnet := env == models.EnvironmentTest
-		if chain.IsTestnet != isTestnet {
-			return responses.Fail(ctx, http.StatusForbidden, responses.CodeForbidden, "chain not available in current environment")
-		}
 	}
 
 	resources, resErr := ctrl.chains.FindResources(ctx.Context(), chainID)
