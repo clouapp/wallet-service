@@ -1,6 +1,10 @@
 package features
 
-import "errors"
+import (
+	"errors"
+
+	"github.com/macrowallets/waas/app/policies"
+)
 
 var (
 	// ErrNotFound is a key that is not in the catalog. The route answers 404
@@ -19,7 +23,7 @@ var (
 	// Nothing is stored.
 	ErrDuplicateWrite = errors.New("feature key is duplicated")
 	// ErrViewForbidden is a member who does not hold settings.view.
-	ErrViewForbidden = errors.New("you do not have permission to view account features")
+	ErrViewForbidden = errors.New(policies.MsgFeaturesViewDenied)
 	// ErrUpdateForbidden is a member who does not hold settings.update.
 	ErrUpdateForbidden = errors.New("you do not have permission to update account features")
 	// ErrNotStored means the write returned without a row to read back.

@@ -14,6 +14,7 @@ import (
 	"github.com/macrowallets/waas/app/container"
 	appfacades "github.com/macrowallets/waas/app/facades"
 	"github.com/macrowallets/waas/app/http/middleware"
+	"github.com/macrowallets/waas/app/policies"
 	"github.com/macrowallets/waas/app/providers"
 	"github.com/macrowallets/waas/app/services/ingest"
 	"github.com/macrowallets/waas/config"
@@ -39,7 +40,13 @@ func Boot() contractsfoundation.Application {
 				Recover(middleware.RecoverPanic)
 		}).
 		WithRouting(registerRoutes).
+		WithCallback(defineGates).
 		Create()
+}
+
+// defineGates registers the permission abilities the route guards ask.
+func defineGates() {
+	policies.DefineGates(appfacades.Gate())
 }
 
 // registerRoutes names the rate limiters before the routes that use them, then

@@ -42,7 +42,6 @@ func Providers() []foundation.ServiceProvider {
 		&frameworkcrypt.ServiceProvider{},
 		&frameworkhash.ServiceProvider{},
 		&activitylog.ServiceProvider{},
-		&providers.AuthServiceProvider{},
 		&providers.IdentityServiceProvider{},
 		&providers.ActivityServiceProvider{},
 		&providers.ActivityLogServiceProvider{},

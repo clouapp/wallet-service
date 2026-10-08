@@ -1,6 +1,10 @@
 package settings
 
-import "errors"
+import (
+	"errors"
+
+	"github.com/macrowallets/waas/app/policies"
+)
 
 var (
 	// ErrGroupNotFound is an unknown group name. The account route answers
@@ -17,9 +21,9 @@ var (
 	// for an unknown page, including a page that only holds account groups.
 	ErrSectionNotFound = errors.New("settings section not found")
 	// ErrViewForbidden is a member who does not hold settings.read.
-	ErrViewForbidden = errors.New("you do not have permission to view account settings")
+	ErrViewForbidden = errors.New(policies.MsgSettingsViewDenied)
 	// ErrUpdateForbidden is a member who does not hold settings.write.
-	ErrUpdateForbidden = errors.New("you do not have permission to update account settings")
+	ErrUpdateForbidden = errors.New(policies.MsgSettingsUpdateDenied)
 	// ErrManagedByPlatform is an account-scoped group only platform staff may write.
 	ErrManagedByPlatform = errors.New("platform staff manage this settings group")
 	// ErrPlatformForbidden is a caller who is not a platform admin. S1.4.4 names

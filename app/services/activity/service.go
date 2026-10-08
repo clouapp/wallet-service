@@ -12,7 +12,7 @@ import (
 )
 
 // ErrReadForbidden is a member who does not hold activity.read.
-var ErrReadForbidden = errors.New("you do not have permission to view account activity")
+var ErrReadForbidden = errors.New(policies.MsgActivityReadDenied)
 
 // ErrNotFound is a row this account cannot see: unknown id, another account,
 // or a platform row (null account id). The three cases are the same error.
