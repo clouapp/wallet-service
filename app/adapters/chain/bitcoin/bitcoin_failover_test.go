@@ -17,6 +17,7 @@ import (
 	"github.com/btcsuite/btcd/wire"
 
 	"github.com/macrowallets/waas/app/models"
+	"github.com/macrowallets/waas/app/services/chain"
 	"github.com/macrowallets/waas/pkg/types"
 )
 
@@ -152,10 +153,13 @@ func TestBitcoinFailover_BothDownIsOneClearError(t *testing.T) {
 	if err == nil {
 		t.Fatal("want an error when every provider is down")
 	}
-	for _, want := range []string{"every provider failed", "primary (esplora)", "fallback-1 (esplora)", "522"} {
+	for _, want := range []string{"every provider failed", "primary (esplora)", "fallback-1 (esplora)"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("error %q does not mention %q", err, want)
 		}
+	}
+	if !errors.Is(err, chain.ErrProvider) {
+		t.Errorf("error %q is not the provider sentinel; the 522 stays on the typed cause", err)
 	}
 	if strings.Contains(err.Error(), primarySrv.URL) || strings.Contains(err.Error(), fallbackSrv.URL) {
 		t.Errorf("error %q leaks a provider URL", err)
