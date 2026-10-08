@@ -27,8 +27,8 @@ func TestJobs_Are_Thin(t *testing.T) {
 			}
 		}
 	}
-	if handlers != 6 {
-		t.Fatalf("job handlers = %d, want 6", handlers)
+	if handlers != 1 {
+		t.Fatalf("job handlers = %d, want 1", handlers)
 	}
 	for _, line := range violations {
 		t.Errorf("fat job: %s", line)

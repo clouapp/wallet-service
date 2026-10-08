@@ -10,17 +10,15 @@ import (
 )
 
 type RefreshWallet struct {
-	balances   *refresh.BalanceService
-	dispatcher refresh.Dispatcher
-	run        *refresh.Operator
+	balances *refresh.BalanceService
+	run      *refresh.Operator
 }
 
 // RefreshWalletDeps is everything the refresh:wallet command needs.
-// Balances and Dispatcher are required.
+// Balances is required.
 type RefreshWalletDeps struct {
-	Balances   *refresh.BalanceService
-	Dispatcher refresh.Dispatcher
-	Wallets    refresh.WalletLookup
+	Balances *refresh.BalanceService
+	Wallets  refresh.WalletLookup
 }
 
 // NewRefreshWallet refreshes one wallet's read model.
@@ -28,16 +26,11 @@ func NewRefreshWallet(deps RefreshWalletDeps) *RefreshWallet {
 	if deps.Balances == nil {
 		panic("refresh:wallet: balance refresh service is required")
 	}
-	if deps.Dispatcher == nil {
-		panic("refresh:wallet: refresh dispatcher is required")
-	}
 	return &RefreshWallet{
-		balances:   deps.Balances,
-		dispatcher: deps.Dispatcher,
+		balances: deps.Balances,
 		run: refresh.NewOperator(refresh.OperatorDeps{
-			Balances:   deps.Balances,
-			Dispatcher: deps.Dispatcher,
-			Wallets:    deps.Wallets,
+			Balances: deps.Balances,
+			Wallets:  deps.Wallets,
 		}),
 	}
 }
@@ -57,7 +50,6 @@ func (c *RefreshWallet) Extend() command.Extend {
 		Flags: []command.Flag{
 			&command.StringFlag{Name: "scope", Value: "full", Usage: "balances|transactions|tokens|utxos|full"},
 			&command.StringFlag{Name: "chain", Usage: "chain override"},
-			&command.BoolFlag{Name: "queue", Usage: "dispatch to queue instead of sync execution"},
 			&command.BoolFlag{Name: "force", Usage: "ignore freshness guards"},
 			&command.StringFlag{Name: "reason", Value: "manual", Usage: "reason for refresh"},
 		},
@@ -69,7 +61,6 @@ func (c *RefreshWallet) Handle(ctx console.Context) error {
 		WalletID: ctx.ArgumentString("wallet_id"),
 		Scope:    ctx.Option("scope"),
 		Chain:    ctx.Option("chain"),
-		Queue:    ctx.OptionBool("queue"),
 		Reason:   ctx.Option("reason"),
 	})
 	printReport(ctx, out.Info, out.Warning, out.Line, out.SoftError)

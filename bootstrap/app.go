@@ -16,7 +16,6 @@ import (
 	appfacades "github.com/macrowallets/waas/app/facades"
 	"github.com/macrowallets/waas/app/http/middleware"
 	"github.com/macrowallets/waas/app/jobs"
-	"github.com/macrowallets/waas/app/listeners"
 	"github.com/macrowallets/waas/app/providers"
 	"github.com/macrowallets/waas/app/repositories"
 	"github.com/macrowallets/waas/app/services/activity"
@@ -39,19 +38,12 @@ func Boot() contractsfoundation.Application {
 		WithProviders(Providers).
 		WithSeeders(seeders.All).
 		WithJobs(func() []queue.Job {
-			refresher := container.MustMake[*refresh.WalletRefresher]()
 			return []queue.Job{
-				jobs.NewRefreshWalletBalances(refresher),
-				jobs.NewRefreshWalletTransactions(refresher),
-				jobs.NewRefreshWalletTokens(refresher),
-				jobs.NewRefreshWalletUTXOs(refresher),
-				jobs.NewReconcileWalletState(refresher),
 				jobs.NewSendCredentialMailJob(container.MustMake[*credentialmail.Service]()),
 			}
 		}).
 		WithCommands(func() []console.Command {
 			balances := container.MustMake[*refresh.BalanceService]()
-			dispatcher := listeners.NewRefreshDispatcher()
 			deposits := container.MustMake[*deposit.Service]()
 			registry := container.MustMake[*chainpkg.Registry]()
 			prices := container.MustMake[*price.Service]()
@@ -60,34 +52,29 @@ func Boot() contractsfoundation.Application {
 			transactions := container.MustMake[*walletrecords.Transactions]()
 			return []console.Command{
 				commands.NewRefreshWallet(commands.RefreshWalletDeps{
-					Balances:   balances,
-					Dispatcher: dispatcher,
-					Wallets:    wallets,
+					Balances: balances,
+					Wallets:  wallets,
 				}),
 				commands.NewRefreshAddress(commands.RefreshAddressDeps{
-					Balances:   balances,
-					Dispatcher: dispatcher,
-					Wallets:    wallets,
-					Addresses:  addresses,
+					Balances:  balances,
+					Wallets:   wallets,
+					Addresses: addresses,
 				}),
 				commands.NewRefreshCurrency(commands.RefreshCurrencyDeps{
-					Registry:   registry,
-					Balances:   balances,
-					Dispatcher: dispatcher,
-					Wallets:    wallets,
-					Addresses:  addresses,
+					Registry:  registry,
+					Balances:  balances,
+					Wallets:   wallets,
+					Addresses: addresses,
 				}),
 				commands.NewRefreshTx(commands.RefreshTxDeps{
 					Balances:     balances,
-					Dispatcher:   dispatcher,
 					Wallets:      wallets,
 					Transactions: transactions,
 				}),
 				commands.NewScanDeposits(deposits),
 				commands.NewReconcileWallet(commands.ReconcileWalletDeps{
-					Balances:   balances,
-					Dispatcher: dispatcher,
-					Wallets:    wallets,
+					Balances: balances,
+					Wallets:  wallets,
 				}),
 				commands.NewPriceWebSocket(commands.PriceWebSocketDeps{
 					Prices:     prices,

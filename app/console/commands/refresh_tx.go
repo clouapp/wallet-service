@@ -10,16 +10,14 @@ import (
 )
 
 type RefreshTx struct {
-	balances   *refresh.BalanceService
-	dispatcher refresh.Dispatcher
-	run        *refresh.Operator
+	balances *refresh.BalanceService
+	run      *refresh.Operator
 }
 
 // RefreshTxDeps is everything the refresh:tx command needs.
-// Balances and Dispatcher are required.
+// Balances is required.
 type RefreshTxDeps struct {
 	Balances     *refresh.BalanceService
-	Dispatcher   refresh.Dispatcher
 	Wallets      refresh.WalletLookup
 	Transactions refresh.TransactionLookup
 }
@@ -29,15 +27,10 @@ func NewRefreshTx(deps RefreshTxDeps) *RefreshTx {
 	if deps.Balances == nil {
 		panic("refresh:tx: balance refresh service is required")
 	}
-	if deps.Dispatcher == nil {
-		panic("refresh:tx: refresh dispatcher is required")
-	}
 	return &RefreshTx{
-		balances:   deps.Balances,
-		dispatcher: deps.Dispatcher,
+		balances: deps.Balances,
 		run: refresh.NewOperator(refresh.OperatorDeps{
 			Balances:     deps.Balances,
-			Dispatcher:   deps.Dispatcher,
 			Wallets:      deps.Wallets,
 			Transactions: deps.Transactions,
 		}),
@@ -58,7 +51,6 @@ func (c *RefreshTx) Extend() command.Extend {
 			&command.ArgumentString{Name: "tx_hash", Usage: "transaction hash to refresh", Required: true},
 		},
 		Flags: []command.Flag{
-			&command.BoolFlag{Name: "queue", Usage: "dispatch to queue instead of sync execution"},
 			&command.BoolFlag{Name: "force", Usage: "ignore freshness guards"},
 			&command.StringFlag{Name: "reason", Value: "manual", Usage: "reason for refresh"},
 		},
@@ -69,7 +61,6 @@ func (c *RefreshTx) Handle(ctx console.Context) error {
 	out, err := c.run.RefreshTransaction(context.Background(), refresh.TxCommand{
 		Chain:  ctx.ArgumentString("chain"),
 		TxHash: ctx.ArgumentString("tx_hash"),
-		Queue:  ctx.OptionBool("queue"),
 		Reason: ctx.Option("reason"),
 	})
 	printReport(ctx, out.Info, out.Warning, out.Line, out.SoftError)

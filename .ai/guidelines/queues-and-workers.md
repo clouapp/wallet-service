@@ -8,7 +8,8 @@
 
 | Mechanism | Used for | Consumer |
 |---|---|---|
-| Goravel queue (`database` connection, queue `blockchain`) | wallet refresh jobs (balances, transactions, tokens, UTXOs), reconcile | the framework's queue runner |
+| Goravel queue (`sync` default) | credential mail (`SendCredentialMailJob`, always `DispatchSync`) | runs in the dispatching process |
+| `localworkers` balance loop | the wallet balance read model (`WalletRefresher.RefreshAll`, every `vault.local_workers` interval) | started from `main.go` only in local; the deployed Lambdas have no balance refresher yet |
 | AWS SQS (`app/adapters/queue/sqs`) | outbound webhook delivery | the webhook worker (local: `localworkers`) |
 | `localworkers` | local stand-in for the deployed workers (goroutine tickers) | started from `main.go` only in local |
 
@@ -34,9 +35,13 @@ keep compiling.
   re-sent).
 - **No domain events.** The app registers none (`bootstrap/app.go` has no
   `WithEvents`): Goravel's `Dispatch` fails with `EventListenerNotBind` for an
-  event without a listener. Work that only enqueues a job is dispatched
-  straight through the `refresh.Dispatcher` port (`refresh:wallet --queue`
-  included). Add an event only together with a listener that does something.
+  event without a listener. Add an event only together with a listener that
+  does something.
+- **No queue without a consumer.** The wallet refresh jobs were removed because
+  nothing ran `queue:work` and there is no `jobs` table; a wallet's balances
+  are refreshed by the `localworkers` loop and by the `refresh:*` /
+  `reconcile:wallet` commands, which run in process. Add a queue only together
+  with its worker and its table.
 - Services never call `facades.Queue()` directly; they get a
   dispatcher port.
 - Artisan commands are thin (resolve a typed service → one call), end through one

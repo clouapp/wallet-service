@@ -12,7 +12,6 @@ import (
 	"github.com/macrowallets/waas/app/services/chain"
 	"github.com/macrowallets/waas/app/services/chainregistry"
 	"github.com/macrowallets/waas/app/services/ingest/providers"
-	"github.com/macrowallets/waas/app/services/refresh"
 	"github.com/macrowallets/waas/app/services/webhook"
 	"github.com/macrowallets/waas/app/services/withdraw"
 	"github.com/macrowallets/waas/pkg/amount"
@@ -50,7 +49,6 @@ type Service struct {
 	addressRepo addressReader
 	txRepo      transactionStore
 	deposits    DepositEvents
-	dispatcher  refresh.Dispatcher
 }
 
 // DepositEvents publishes deposit webhooks scoped to the wallet's account with the
@@ -72,7 +70,6 @@ type Deps struct {
 	Webhook      *webhook.Service
 	AddressRepo  addressReader
 	Transactions transactionStore
-	Dispatcher   refresh.Dispatcher
 }
 
 // NewService wires the ingest service from Deps.
@@ -83,7 +80,6 @@ func NewService(deps Deps) *Service {
 		webhookSvc:  deps.Webhook,
 		addressRepo: deps.AddressRepo,
 		txRepo:      deps.Transactions,
-		dispatcher:  deps.Dispatcher,
 	}
 }
 
@@ -222,17 +218,9 @@ func (s *Service) processTransfer(ctx context.Context, chainID string, adapter t
 	}
 
 	s.publishDepositPending(ctx, *tx)
-	s.dispatchTransactionRefresh(tx.WalletID.String(), chainID)
 
 	slog.Info("ingest deposit", "chain", chainID, "tx", transfer.TxHash, "log_index", transfer.LogIndex, "user", addr.ExternalUserID, "asset", asset, "amount", transfer.Amount.String())
 	return nil
-}
-
-func (s *Service) dispatchTransactionRefresh(walletID, chainID string) {
-	if s.dispatcher == nil {
-		return
-	}
-	_ = s.dispatcher.DispatchTransactions(walletID, chainID)
 }
 
 func (s *Service) publishDepositPending(ctx context.Context, tx models.Transaction) {

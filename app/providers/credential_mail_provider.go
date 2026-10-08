@@ -7,7 +7,7 @@ import (
 	"github.com/goravel/framework/contracts/foundation"
 
 	appfacades "github.com/macrowallets/waas/app/facades"
-	"github.com/macrowallets/waas/app/listeners"
+	"github.com/macrowallets/waas/app/jobs"
 	"github.com/macrowallets/waas/app/mails"
 	"github.com/macrowallets/waas/app/services/account"
 	authsvc "github.com/macrowallets/waas/app/services/auth"
@@ -38,7 +38,7 @@ func (p *CredentialMailServiceProvider) Register(app foundation.Application) {
 		if err != nil {
 			return nil, err
 		}
-		dispatcher := listeners.NewCredentialMailDispatcher()
+		dispatcher := newCredentialMailDispatcher()
 		return credentialmail.NewService(credentialmail.Deps{
 			Users:          users,
 			Tokens:         tokens,
@@ -48,6 +48,15 @@ func (p *CredentialMailServiceProvider) Register(app foundation.Application) {
 			Dispatch:       dispatcher.Dispatch,
 			DispatchInvite: dispatcher.DispatchAccountInvite,
 		}), nil
+	})
+}
+
+// newCredentialMailDispatcher enqueues reset and invite jobs with the process
+// queue. The providers receive it here because this is where the framework
+// queue facade is bound.
+func newCredentialMailDispatcher() *jobs.CredentialMailDispatcher {
+	return jobs.NewCredentialMailDispatcher(func() jobs.Enqueuer {
+		return appfacades.Queue()
 	})
 }
 

@@ -11,6 +11,11 @@ import (
 	"github.com/macrowallets/waas/app/services/users"
 )
 
+// Enqueuer is the queue surface a credential mail dispatch needs.
+type Enqueuer interface {
+	Job(job queue.Job, args ...[]queue.Arg) queue.PendingJob
+}
+
 // CredentialMailDispatcher enqueues a credential-mail job. The payload is the
 // subject id and the purpose. An invite dispatch returns the link the job
 // minted; that link is not a queue argument. The queue client is injected so

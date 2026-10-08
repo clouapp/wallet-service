@@ -14,7 +14,6 @@ import (
 	"github.com/macrowallets/waas/app/services/chain"
 	"github.com/macrowallets/waas/app/services/chainregistry"
 	"github.com/macrowallets/waas/app/services/ingest/providers"
-	"github.com/macrowallets/waas/app/services/refresh"
 	"github.com/macrowallets/waas/app/services/webhook"
 	"github.com/macrowallets/waas/pkg/types"
 	"github.com/macrowallets/waas/tests/mocks"
@@ -214,69 +213,6 @@ func TestProcess_Transfers_AddressSetKeepsTheMembershipDecision(t *testing.T) {
 	require.NoError(t, err)
 	assert.Empty(t, failed.created)
 }
-
-func TestProcess_Transfers_DispatchesTheTransactionRefresh(t *testing.T) {
-	const to = "0xReceiver"
-	reg, addrs, txs := ingestFixture(to)
-	jobs := &recordingRefresh{}
-	svc := NewService(Deps{
-		Addresses:    &stubAddressSet{member: true},
-		Registry:     reg,
-		AddressRepo:  addrs,
-		Transactions: txs,
-		Dispatcher:   jobs,
-	})
-
-	err := svc.ProcessTransfers(t.Context(), models.ChainETH, []providers.InboundTransfer{{
-		TxHash: "0xnative",
-		To:     to,
-		From:   "0xfrom",
-		Amount: big.NewInt(42),
-	}})
-	require.NoError(t, err)
-	assert.Equal(t, []recordedRefresh{{
-		method:   "transactions",
-		walletID: addrs.addr.WalletID.String(),
-		chainID:  models.ChainETH,
-	}}, jobs.calls)
-}
-
-type recordedRefresh struct {
-	method   string
-	walletID string
-	chainID  string
-}
-
-type recordingRefresh struct {
-	calls []recordedRefresh
-}
-
-func (r *recordingRefresh) DispatchBalances(walletID, chainID string) error {
-	return r.record("balances", walletID, chainID)
-}
-
-func (r *recordingRefresh) DispatchTransactions(walletID, chainID string) error {
-	return r.record("transactions", walletID, chainID)
-}
-
-func (r *recordingRefresh) DispatchTokens(walletID, chainID string) error {
-	return r.record("tokens", walletID, chainID)
-}
-
-func (r *recordingRefresh) DispatchUTXOs(walletID, chainID string) error {
-	return r.record("utxos", walletID, chainID)
-}
-
-func (r *recordingRefresh) DispatchReconcile(walletID, chainID string) error {
-	return r.record("reconcile", walletID, chainID)
-}
-
-func (r *recordingRefresh) record(method, walletID, chainID string) error {
-	r.calls = append(r.calls, recordedRefresh{method: method, walletID: walletID, chainID: chainID})
-	return nil
-}
-
-var _ refresh.Dispatcher = (*recordingRefresh)(nil)
 
 func ingestFixture(to string) (*chain.Registry, *ingestAddressRepo, *ingestTxRepo) {
 	reg := chain.NewRegistry()

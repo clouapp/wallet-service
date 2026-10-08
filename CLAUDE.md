@@ -302,7 +302,7 @@ snapshots in the `localstack_data` volume; the snapshot key lives in
 | `app/services/` | business logic and, for now, the chain/provider/AWS adapters |
 | `app/repositories/`, `app/models/` | persistence and schema types |
 | `app/policies/`, `app/providers/` | Gate policies; service providers and the container wiring |
-| `app/console/`, `app/jobs/`, `app/events/`, `app/listeners/`, `app/mails/`, `app/rules/` | artisan commands, queue jobs, events, mail, validation rules |
+| `app/console/`, `app/jobs/`, `app/events/`, `app/mails/`, `app/rules/` | artisan commands, queue jobs, events, mail, validation rules |
 | `database/` | migrations, seeders, seed logic |
 | `pkg/` | `amount`, `types`, `httpclient` |
 | `tests/` | `feature/support` (suite, docker reuse, fixtures, request signing), hand-written `mocks`, `architecture` (machine-checked rules), `contract` (HTTP contract snapshot) |

@@ -194,67 +194,6 @@ func TestRefresh_Wallet_ByID(t *testing.T) {
 	}
 }
 
-func TestQueued_Refresh_LoadsTheWalletAndMatchesTheChain(t *testing.T) {
-	target := walletOn("eth", "eth_job")
-	balances := &recordingBalances{}
-	refresher, _ := newTestRefresher(t, balances, &fakeWalletStore{wallets: []models.Wallet{target}}, fakeChains{"eth"})
-
-	calls := []struct {
-		name string
-		run  func(context.Context, uuid.UUID, string) error
-	}{
-		{"balances", refresher.RefreshBalances},
-		{"transactions", refresher.RefreshTransactions},
-		{"tokens", refresher.RefreshTokens},
-		{"reconcile", refresher.ReconcileWallet},
-	}
-	for _, tc := range calls {
-		t.Run(tc.name, func(t *testing.T) {
-			before := len(balances.refreshed)
-			if err := tc.run(context.Background(), target.ID, "eth"); err != nil {
-				t.Fatal(err)
-			}
-			if len(balances.refreshed) != before+1 || balances.refreshed[before] != "eth_job" {
-				t.Fatalf("refreshed %v", balances.refreshed)
-			}
-			if err := tc.run(context.Background(), target.ID, "btc"); err == nil || !strings.Contains(err.Error(), "does not match") {
-				t.Fatalf("chain mismatch: %v", err)
-			}
-			if len(balances.refreshed) != before+1 {
-				t.Fatal("a chain mismatch must not refresh")
-			}
-		})
-	}
-
-	missing, _ := newTestRefresher(t, &recordingBalances{}, &fakeWalletStore{findErr: models.ErrRepositoryNotFound}, fakeChains{"eth"})
-	if err := missing.RefreshBalances(context.Background(), uuid.New(), "eth"); err == nil || !strings.Contains(err.Error(), "not found") {
-		t.Fatalf("missing wallet: %v", err)
-	}
-	if err := (*WalletRefresher)(nil).RefreshBalances(context.Background(), target.ID, "eth"); err == nil || !strings.Contains(err.Error(), "not initialized") {
-		t.Fatalf("nil refresher: %v", err)
-	}
-}
-
-func TestRefresh_UTX_OsKeepsTheChainRuleInTheService(t *testing.T) {
-	eth := walletOn("eth", "eth_job")
-	btc := walletOn("btc", "btc_job")
-	balances := &recordingBalances{}
-	refresher, _ := newTestRefresher(t, balances, &fakeWalletStore{wallets: []models.Wallet{eth, btc}}, fakeChains{"eth", "btc"})
-
-	if err := refresher.RefreshUTXOs(context.Background(), eth.ID, "eth"); err != nil {
-		t.Fatal(err)
-	}
-	if err := refresher.RefreshUTXOs(context.Background(), btc.ID, "btc"); err != nil {
-		t.Fatal(err)
-	}
-	if len(balances.refreshed) != 0 {
-		t.Fatalf("utxo refresh must not refresh balances, got %v", balances.refreshed)
-	}
-	if err := refresher.RefreshUTXOs(context.Background(), btc.ID, "eth"); err == nil || !strings.Contains(err.Error(), "does not match") {
-		t.Fatalf("chain mismatch: %v", err)
-	}
-}
-
 func TestWallet_Refresher_SerializesRefreshes(t *testing.T) {
 	wallets := &fakeWalletStore{wallets: []models.Wallet{walletOn("eth", "a"), walletOn("eth", "b"), walletOn("eth", "c")}}
 	release := make(chan struct{})
