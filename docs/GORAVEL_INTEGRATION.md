@@ -173,26 +173,19 @@ DB_PASSWORD=vault
 
 To create a new migration:
 
-1. **Create Migration File**:
+1. **Generate it**:
    ```bash
-   touch database/migrations/20260318000001_add_column_to_users.go
+   go run . artisan make:migration add_column_to_users
    ```
+   The command creates `database/migrations/<timestamp>_add_column_to_users.go` and
+   appends it to `Migrations()` in `bootstrap/migrations.go`. The framework keeps only the
+   last segment of the module path, so the generated import reads `waas/app/facades`:
+   change it to `github.com/macrowallets/waas/app/facades`.
 
-2. **Implement Migration**:
+2. **Implement Migration** with the schema builder (`facades.Schema()` from `app/facades`);
+   write raw SQL only for what the builder cannot express (CHECK or partial-unique
+   constraints, `USING` casts, enum types, data backfills):
    ```go
-   package migrations
-
-   import (
-       "github.com/goravel/framework/contracts/database/schema"
-       "github.com/goravel/framework/facades"
-   )
-
-   type M20260318000001AddColumnToUsers struct {}
-
-   func (r *M20260318000001AddColumnToUsers) Signature() string {
-       return "20260318000001_add_column_to_users"
-   }
-
    func (r *M20260318000001AddColumnToUsers) Up() error {
        return facades.Schema().Table("users", func(table schema.Blueprint) {
            table.String("new_column", 255).Nullable()
@@ -205,8 +198,9 @@ To create a new migration:
        })
    }
    ```
+   A migration imports no app code; copy what it needs into the migration.
 
-3. **Register Migration** in `bootstrap/migrations.go`:
+3. **Register Migration**: done by the generator. Check that `bootstrap/migrations.go` lists it:
    ```go
    func Migrations() []schema.Migration {
        return []schema.Migration{

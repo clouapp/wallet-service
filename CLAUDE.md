@@ -160,9 +160,19 @@ Known violations include `app/models → app/services/mpc` and `config → app/m
 ### 8. Database and migrations
 
 - Schema changes are Goravel migrations in `database/migrations/`, numbered
-  `000000000NNNN0_<name>.go`, registered in `migrations.All()` (`bootstrap/migrations.go`).
-  A migration never edits an applied one; it adds the next number. — guarded by the
-  migration tests in `tests/migrations` (e.g. `non_negative_amounts_test.go`).
+  `000000000NNNN0_<name>.go`, one migration per file, registered in the literal list of
+  `Migrations()` in `bootstrap/migrations.go`. A migration never edits an applied one; it adds
+  the next number. — guarded by the migration tests in `tests/migrations` (e.g.
+  `non_negative_amounts_test.go`).
+- A NEW migration uses the schema builder, `facades.Schema()` from `app/facades`
+  (`Create`, `Table`, `DropIfExists`), unless it needs a Postgres feature the builder does not
+  express (CHECK or partial-unique constraints, `USING` casts, enum types, data backfills):
+  then it runs raw SQL. The applied migrations keep their raw SQL; do not rewrite them. A
+  migration imports no app code (`app/models`, `app/services`, `pkg/*`): copy what it needs
+  into the migration, so a later change there cannot change what a fresh database gets.
+  `artisan make:migration` creates the file and appends it to `Migrations()`, but the
+  framework drops the host and organisation of the module path, so the generated import
+  reads `waas/app/facades`: change it to `github.com/macrowallets/waas/app/facades`.
 - Amounts are base-unit integers/strings (`pkg/amount`, `numeric` columns), never floats,
   and never negative. — guarded by `TestEnforceNonNegativeAmounts*`.
 - Seed data is test-only (`database/seeders`, `docs/DEV_SEED_DATA.md`). Only `DatabaseSeeder` is

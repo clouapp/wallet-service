@@ -22,8 +22,8 @@ import (
 	goravelpostgres "github.com/goravel/postgres"
 	goravelredis "github.com/goravel/redis"
 
+	"github.com/macrowallets/waas/bootstrap"
 	"github.com/macrowallets/waas/config"
-	"github.com/macrowallets/waas/database/migrations"
 	"github.com/macrowallets/waas/tests/feature/support/testenv"
 )
 
@@ -34,7 +34,7 @@ func BootTest() contractsfoundation.Application {
 		panic(fmt.Sprintf("load isolated testing environment: %v", err))
 	}
 	return frameworkfoundation.Setup().
-		WithMigrations(migrations.All).
+		WithMigrations(bootstrap.Migrations).
 		WithProviders(testProviders).
 		WithConfig(config.Boot).
 		Create()
