@@ -94,8 +94,8 @@ func gateMember(ctx http.Context) childGate {
 	if !ok {
 		return childPass
 	}
-	accountID, ok := requestctx.AccountID(ctx)
-	if !ok || accountID == uuid.Nil {
+	accountID, ok := gatedAccountID(ctx)
+	if !ok {
 		return childCheck
 	}
 	member, err := container.MustMake[*accountsvc.Service]().FindMember(ctx.Context(), accountID, id)
@@ -114,8 +114,8 @@ func gateToken(ctx http.Context) childGate {
 	if !ok {
 		return childPass
 	}
-	accountID, ok := requestctx.AccountID(ctx)
-	if !ok || accountID == uuid.Nil {
+	accountID, ok := gatedAccountID(ctx)
+	if !ok {
 		return childCheck
 	}
 	token, err := container.MustMake[*accountsvc.Service]().FindAccessToken(ctx.Context(), id, accountID)
@@ -134,8 +134,8 @@ func gateInvite(ctx http.Context) childGate {
 	if !ok {
 		return childPass
 	}
-	accountID, ok := requestctx.AccountID(ctx)
-	if !ok || accountID == uuid.Nil {
+	accountID, ok := gatedAccountID(ctx)
+	if !ok {
 		return childCheck
 	}
 	invite, err := container.MustMake[*repositories.AccountInviteRepository]().FindOpenByAccountAndID(ctx.Context(), accountID, id)
@@ -147,6 +147,19 @@ func gateInvite(ctx http.Context) childGate {
 		return childPass
 	}
 	return childCheck
+}
+
+// gatedAccountID is the account the child belongs to. AccountHeader and the
+// API token store its id; AccountContext, which fronts the dashboard routes,
+// stores only the account, so fall back to that one.
+func gatedAccountID(ctx http.Context) (uuid.UUID, bool) {
+	if id, ok := requestctx.AccountID(ctx); ok && id != uuid.Nil {
+		return id, true
+	}
+	if account := AccountFrom(ctx); account != nil && account.ID != uuid.Nil {
+		return account.ID, true
+	}
+	return uuid.Nil, false
 }
 
 func childUUID(ctx http.Context, name string) (uuid.UUID, bool) {
