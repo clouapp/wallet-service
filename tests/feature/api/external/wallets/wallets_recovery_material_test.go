@@ -13,8 +13,8 @@ import (
 	"github.com/google/uuid"
 	"github.com/goravel/framework/facades"
 
-	appfacades "github.com/macrowallets/waas/app/facades"
 	"github.com/macrowallets/waas/app/container"
+	appfacades "github.com/macrowallets/waas/app/facades"
 	dashwallets "github.com/macrowallets/waas/app/http/controllers/dashboard/wallets"
 	extwallets "github.com/macrowallets/waas/app/http/controllers/external/wallets"
 	"github.com/macrowallets/waas/app/http/middleware"

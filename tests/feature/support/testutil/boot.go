@@ -10,6 +10,7 @@ import (
 	frameworkdatabase "github.com/goravel/framework/database"
 	frameworkevent "github.com/goravel/framework/event"
 	frameworkfoundation "github.com/goravel/framework/foundation"
+	frameworkhash "github.com/goravel/framework/hash"
 	frameworkhttp "github.com/goravel/framework/http"
 	frameworklog "github.com/goravel/framework/log"
 	frameworkmail "github.com/goravel/framework/mail"
@@ -58,5 +59,6 @@ func testProviders() []contractsfoundation.ServiceProvider {
 		&frameworkevent.ServiceProvider{},
 		&frameworkmail.ServiceProvider{},
 		&frameworkcrypt.ServiceProvider{},
+		&frameworkhash.ServiceProvider{},
 	}
 }

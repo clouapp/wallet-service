@@ -11,8 +11,8 @@ import (
 	"github.com/google/uuid"
 	"github.com/goravel/framework/facades"
 
-	appfacades "github.com/macrowallets/waas/app/facades"
 	"github.com/macrowallets/waas/app/container"
+	appfacades "github.com/macrowallets/waas/app/facades"
 	"github.com/macrowallets/waas/app/models"
 	authsvc "github.com/macrowallets/waas/app/services/auth"
 	"github.com/macrowallets/waas/app/services/settings"

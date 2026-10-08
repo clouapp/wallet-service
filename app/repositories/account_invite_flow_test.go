@@ -10,9 +10,11 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
+	appfacades "github.com/macrowallets/waas/app/facades"
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/repositories"
 	accountsvc "github.com/macrowallets/waas/app/services/account"
+	authsvc "github.com/macrowallets/waas/app/services/auth"
 	"github.com/macrowallets/waas/tests/feature/support/fixtures"
 	"github.com/stretchr/testify/assert"
 )
@@ -32,6 +34,7 @@ func TestInvite_Token_CanBeAcceptedWithoutAnEmptyPassword(t *testing.T) {
 		Users:       repositories.NewUserRepository(nil),
 		Invites:     repositories.NewAccountInviteRepository(nil),
 		Activity:    repositories.NewAccountActivityRepository(nil),
+		Passwords:   authsvc.NewService(appfacades.Hash()),
 	})
 	issued, err := svc.IssueInvite(context.Background(), account.ID, "new-invite@example.com", models.AccountRoleAuditor, ownerID, "http://localhost:2001")
 	require.NoError(t, err)
@@ -115,6 +118,7 @@ func TestResend_Invite_RotatesTheOpenToken(t *testing.T) {
 		Users:       repositories.NewUserRepository(nil),
 		Invites:     repositories.NewAccountInviteRepository(nil),
 		Activity:    repositories.NewAccountActivityRepository(nil),
+		Passwords:   authsvc.NewService(appfacades.Hash()),
 	})
 	const frontend = "http://localhost:2001"
 	issued, err := svc.IssueInvite(context.Background(), account.ID, "resend-me@example.com", models.AccountRoleAuditor, ownerID, frontend)
@@ -174,6 +178,7 @@ func TestRevoke_Invite_StampsRevokedAtAndLeavesTheToken(t *testing.T) {
 		Users:       repositories.NewUserRepository(nil),
 		Invites:     repositories.NewAccountInviteRepository(nil),
 		Activity:    repositories.NewAccountActivityRepository(nil),
+		Passwords:   authsvc.NewService(appfacades.Hash()),
 	})
 	const frontend = "http://localhost:2001"
 	issued, err := svc.IssueInvite(context.Background(), account.ID, "revoke-me@example.com", models.AccountRoleAuditor, ownerID, frontend)
