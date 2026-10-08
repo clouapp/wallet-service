@@ -202,6 +202,9 @@ const (
 	defaultLocalPort        = "8080"
 	exitCodeFailure         = 1
 	exitCodeShutdownTimeout = 2
+	// maxHeaderBytes is the gin driver's default header_limit (4096 KiB), which
+	// its Listen applied before the server moved into pkg/lifecycle.
+	maxHeaderBytes = 4096 << 10
 )
 
 // runLocal serves HTTP and runs the local workers until SIGINT or SIGTERM, then
@@ -218,9 +221,13 @@ func runLocal() {
 		slog.Error("server error", "error", err)
 		os.Exit(exitCodeFailure)
 	}
+	// The hard request cut lives here, at the net/http level. In Lambda mode only
+	// the cooperative middleware.RequestTimeout deadline applies.
 	server, err := lifecycle.NewListenerServer(lifecycle.ListenerServerDeps{
-		Router:   facades.Route(),
-		Listener: listener,
+		Router:         facades.Route(),
+		Listener:       listener,
+		Wrap:           bootstrap.RequestTimeoutHandler(),
+		MaxHeaderBytes: maxHeaderBytes,
 	})
 	if err != nil {
 		slog.Error("server error", "error", err)

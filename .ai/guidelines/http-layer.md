@@ -162,6 +162,12 @@ driver defaults: `RequestTimeout`, `RequestID`, `SecurityHeaders`, `BodyLimit`,
 `CORS`, with `RecoverPanic` as the recovery. `tests/architecture/middleware_chain_test.go`
 reads the effective chain back off `facades.Route()` after Boot.
 
+`RequestTimeout` only installs a deadline on the request context; it never
+answers and never spawns a goroutine (a goroutine that outlives the request
+writes into a pooled gin context). The hard 504 is `middleware.TimeoutHandler`,
+wrapped around the router by `pkg/lifecycle` in `runLocal`, with the handler
+writing into a private buffer. Lambda mode has only the cooperative deadline.
+
 Per-route guards are mounted **per verb in the route file**, in a fixed order:
 `Throttle → Auth (SessionAuth | APITokenAuth) → Scope (Account → Wallet) → Permission`.
 See [`authorization.md`](./authorization.md).

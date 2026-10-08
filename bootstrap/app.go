@@ -1,6 +1,7 @@
 package bootstrap
 
 import (
+	"net/http"
 	"time"
 
 	"github.com/goravel/framework/contracts/console"
@@ -124,6 +125,12 @@ func Boot() contractsfoundation.Application {
 func bootConfig() {
 	config.Boot()
 	providers.InstallLogRedaction(appfacades.Config(), goravelfacades.App().Json())
+}
+
+// RequestTimeoutHandler is the hard cut for the local server: it answers 504 at
+// http.request_timeout whatever the handler does. Lambda mode does not use it.
+func RequestTimeoutHandler() func(http.Handler) http.Handler {
+	return middleware.TimeoutHandler(requestTimeout())
 }
 
 // requestTimeout is http.request_timeout, the same key the gin driver used.

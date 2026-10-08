@@ -16,13 +16,8 @@ func Cors() http.Middleware {
 	return func(ctx http.Context) {
 		origin := ctx.Request().Header("Origin", "")
 
-		if origin != "" && isAllowedCorsOrigin(origin) {
-			ctx.Response().Header("Access-Control-Allow-Origin", origin)
-			ctx.Response().Header("Access-Control-Allow-Credentials", "true")
-			ctx.Response().Header("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Account-Id, X-API-Key, X-Timestamp, X-Signature")
-			ctx.Response().Header("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
-			ctx.Response().Header("Vary", "Origin")
-		}
+		response := ctx.Response()
+		setCorsHeaders(func(key, value string) { response.Header(key, value) }, origin)
 
 		// Respond to preflight requests immediately
 		if ctx.Request().Method() == "OPTIONS" {
@@ -32,6 +27,19 @@ func Cors() http.Middleware {
 
 		ctx.Request().Next()
 	}
+}
+
+// setCorsHeaders stamps the CORS headers through set when origin is allowed.
+// TimeoutHandler uses it too, so a browser can read its 504.
+func setCorsHeaders(set func(key, value string), origin string) {
+	if origin == "" || !isAllowedCorsOrigin(origin) {
+		return
+	}
+	set("Access-Control-Allow-Origin", origin)
+	set("Access-Control-Allow-Credentials", "true")
+	set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Account-Id, X-API-Key, X-Timestamp, X-Signature")
+	set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
+	set("Vary", "Origin")
 }
 
 // isAllowedCorsOrigin checks if the origin is permitted.

@@ -2,18 +2,22 @@ package middleware
 
 import (
 	"context"
-	"errors"
-	"net/http"
 	"time"
 
 	contractshttp "github.com/goravel/framework/contracts/http"
-
-	"github.com/macrowallets/waas/app/http/responses"
 )
 
-// RequestTimeout bounds the rest of the global chain. A non-positive duration
-// does not install a deadline. The chain continues without building the
-// Goravel request, because that build JSON-decodes the body.
+// RequestTimeout installs a deadline on the request context and continues the
+// chain on the same goroutine. It never answers: handlers and RPC calls that
+// honour ctx stop on their own, and the hard cut is TimeoutHandler at the
+// net/http server (runLocal). In Lambda mode this deadline is all there is;
+// Lambda enforces its own invocation timeout. A non-positive duration installs
+// no deadline. The chain continues without building the Goravel request,
+// because that build JSON-decodes the body.
+//
+// Running the chain on a second goroutine and returning at the deadline was
+// the previous design: the goroutine kept writing to a gin context the pool
+// had already handed to the next request.
 func RequestTimeout(timeout time.Duration) contractshttp.Middleware {
 	return func(ctx contractshttp.Context) {
 		if timeout <= 0 {
@@ -24,26 +28,6 @@ func RequestTimeout(timeout time.Duration) contractshttp.Middleware {
 		timeoutCtx, cancel := context.WithTimeout(ctx.Context(), timeout)
 		defer cancel()
 		ctx.WithContext(timeoutCtx)
-
-		done := make(chan struct{})
-		go func() {
-			defer func() {
-				if recovered := recover(); recovered != nil {
-					RecoverPanic(ctx, recovered)
-				}
-				close(done)
-			}()
-			continueChain(ctx)
-		}()
-
-		select {
-		case <-done:
-		case <-timeoutCtx.Done():
-			if errors.Is(timeoutCtx.Err(), context.DeadlineExceeded) {
-				_ = responses.Send(ctx, http.StatusGatewayTimeout, contractshttp.Json{
-					"error": "request timed out",
-				}).Abort()
-			}
-		}
+		continueChain(ctx)
 	}
 }

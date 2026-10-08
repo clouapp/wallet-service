@@ -23,10 +23,7 @@ type requestIDKey struct{}
 // cannot carry free text.
 func RequestID() contractshttp.Middleware {
 	return func(ctx contractshttp.Context) {
-		id := ctx.Request().Header(requestIDHeader)
-		if !acceptableRequestID(id) {
-			id = newRequestID()
-		}
+		id := requestIDFor(ctx.Request().Header(requestIDHeader))
 		ctx.Response().Header(requestIDHeader, id)
 		if origin := ctx.Request().Origin(); origin != nil {
 			ctx.WithContext(context.WithValue(origin.Context(), requestIDKey{}, id))
@@ -42,6 +39,14 @@ func RequestIDFromContext(ctx context.Context) string {
 	}
 	id, _ := ctx.Value(requestIDKey{}).(string)
 	return id
+}
+
+// requestIDFor keeps an acceptable inbound id and replaces any other.
+func requestIDFor(inbound string) string {
+	if acceptableRequestID(inbound) {
+		return inbound
+	}
+	return newRequestID()
 }
 
 func acceptableRequestID(id string) bool {

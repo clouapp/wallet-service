@@ -94,26 +94,6 @@ func TestBody_Limit_RefusesADeclaredLengthAboveTheCeiling(t *testing.T) {
 	}
 }
 
-func TestRequest_Timeout_AnswersTheEnvelopeWhenTheHandlerOverruns(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-	recorder := httptest.NewRecorder()
-	engine := gin.New()
-	engine.Use(func(c *gin.Context) {
-		RequestTimeout(20 * time.Millisecond)(ginpkg.NewContext(c))
-	})
-	engine.GET("/", func(c *gin.Context) {
-		time.Sleep(150 * time.Millisecond)
-		c.Status(http.StatusOK)
-	})
-	engine.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/", nil))
-	if recorder.Code != http.StatusGatewayTimeout {
-		t.Fatalf("status = %d, body %s", recorder.Code, recorder.Body.String())
-	}
-	if !strings.Contains(recorder.Body.String(), `"code":"timeout"`) {
-		t.Fatalf("body = %s", recorder.Body.String())
-	}
-}
-
 func TestRecover_Panic_OmitsTheRequestFromTheBody(t *testing.T) {
 	ctx, recorder := newChainContext(http.MethodPost, nil, 0)
 	ctx.Request().Origin().Header.Set("Authorization", "Bearer secret-token")

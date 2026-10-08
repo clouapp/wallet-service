@@ -2,47 +2,18 @@ package lifecycle
 
 import (
 	"context"
-	"errors"
 	"io"
 	"net"
 	"net/http"
-	"sync"
 	"testing"
 	"time"
 )
 
-// httpRouter mirrors Goravel's gin route: Listen creates the http.Server, Shutdown
-// is a no-op until it exists.
-type httpRouter struct {
-	mu     sync.Mutex
-	server *http.Server
-}
+// httpRouter stands in for Goravel's route, which is an http.Handler.
+type httpRouter struct{}
 
-func (r *httpRouter) Listen(l net.Listener) error {
-	server := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		_, _ = io.WriteString(w, "ok")
-	})}
-	r.mu.Lock()
-	r.server = server
-	r.mu.Unlock()
-	if err := server.Serve(l); !errors.Is(err, http.ErrServerClosed) {
-		return err
-	}
-	return nil
-}
-
-func (r *httpRouter) Shutdown(ctx ...context.Context) error {
-	r.mu.Lock()
-	server := r.server
-	r.mu.Unlock()
-	if server == nil {
-		return nil
-	}
-	shutdownCtx := context.Background()
-	if len(ctx) > 0 {
-		shutdownCtx = ctx[0]
-	}
-	return server.Shutdown(shutdownCtx)
+func (*httpRouter) ServeHTTP(w http.ResponseWriter, _ *http.Request) {
+	_, _ = io.WriteString(w, "ok")
 }
 
 func listenLocal(t *testing.T) net.Listener {
@@ -71,10 +42,7 @@ func TestNew_Listener_ServerKeepsItsDependencies(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewListenerServer: %v", err)
 	}
-	if server.router != router {
-		t.Fatal("listener server did not keep the router")
-	}
-	if server.listener != listener {
+	if server.listener != listener || server.server.Handler == nil {
 		t.Fatal("listener server did not keep the listener")
 	}
 }
@@ -113,7 +81,8 @@ func TestListener_Server_ServesUntilShutdown(t *testing.T) {
 }
 
 func TestListener_Server_ShutdownBeforeServeClosesTheListener(t *testing.T) {
-	server, err := NewListenerServer(ListenerServerDeps{Router: &httpRouter{}, Listener: listenLocal(t)})
+	listener := listenLocal(t)
+	server, err := NewListenerServer(ListenerServerDeps{Router: &httpRouter{}, Listener: listener})
 	if err != nil {
 		t.Fatalf("NewListenerServer: %v", err)
 	}
@@ -124,11 +93,37 @@ func TestListener_Server_ShutdownBeforeServeClosesTheListener(t *testing.T) {
 	served := make(chan error, 1)
 	go func() { served <- server.Serve() }()
 	select {
-	case err := <-served:
-		if err == nil {
-			t.Fatal("Serve on a closed listener must fail")
-		}
+	case <-served:
 	case <-time.After(time.Second):
-		t.Fatal("Serve kept accepting after an early Shutdown")
+		t.Fatal("Serve kept running after an early Shutdown")
+	}
+	if _, err := net.DialTimeout("tcp", listener.Addr().String(), 200*time.Millisecond); err == nil {
+		t.Fatal("the port must not accept connections after an early Shutdown")
+	}
+}
+
+func TestListener_Server_WrapSitsInFrontOfTheRouter(t *testing.T) {
+	listener := listenLocal(t)
+	wrap := func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("X-Wrapped", "yes")
+			next.ServeHTTP(w, r)
+		})
+	}
+	server, err := NewListenerServer(ListenerServerDeps{Router: &httpRouter{}, Listener: listener, Wrap: wrap})
+	if err != nil {
+		t.Fatalf("NewListenerServer: %v", err)
+	}
+	go func() { _ = server.Serve() }()
+	t.Cleanup(func() { _ = server.Shutdown(context.Background()) })
+
+	response, err := http.Get("http://" + listener.Addr().String())
+	if err != nil {
+		t.Fatalf("GET: %v", err)
+	}
+	defer response.Body.Close()
+	body, _ := io.ReadAll(response.Body)
+	if response.Header.Get("X-Wrapped") != "yes" || string(body) != "ok" {
+		t.Fatalf("wrapped = %q %v", body, response.Header)
 	}
 }

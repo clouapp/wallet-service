@@ -18,15 +18,22 @@ const (
 // that is already TLS.
 func SecurityHeaders() contractshttp.Middleware {
 	return func(ctx contractshttp.Context) {
+		origin := ctx.Request().Origin()
 		response := ctx.Response()
-		response.Header("Content-Security-Policy", headerCSP)
-		response.Header("X-Frame-Options", headerFrameOptions)
-		response.Header("X-Content-Type-Options", headerContentTypeOptions)
-		response.Header("Referrer-Policy", headerReferrerPolicy)
-		response.Header("Cache-Control", headerCacheControl)
-		if origin := ctx.Request().Origin(); origin != nil && origin.TLS != nil {
-			response.Header("Strict-Transport-Security", headerHSTS)
-		}
+		setSecurityHeaders(func(key, value string) { response.Header(key, value) }, origin != nil && origin.TLS != nil)
 		ctx.Request().Next()
+	}
+}
+
+// setSecurityHeaders stamps the defensive headers through set. TimeoutHandler
+// uses it too, so its 504 carries the same headers as any other answer.
+func setSecurityHeaders(set func(key, value string), overTLS bool) {
+	set("Content-Security-Policy", headerCSP)
+	set("X-Frame-Options", headerFrameOptions)
+	set("X-Content-Type-Options", headerContentTypeOptions)
+	set("Referrer-Policy", headerReferrerPolicy)
+	set("Cache-Control", headerCacheControl)
+	if overTLS {
+		set("Strict-Transport-Security", headerHSTS)
 	}
 }
