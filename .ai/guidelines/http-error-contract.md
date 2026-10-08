@@ -1,9 +1,11 @@
 # HTTP Error Contract Guideline
 
 > Status: DECIDED (B2.1, B2.2). Every failure on `/v1` and `/api/v1` is the
-> envelope below, written by `app/http/responses`. Success bodies stay on
-> `ctx.Response().Json` until the resources migration; this file does not claim
-> that migration is done. Some handlers still put `err.Error()` in `message`.
+> envelope below, written by a writer of `app/http/responses`; no handler or
+> middleware builds the map itself (`TestError_Bodies_GoThroughTheResponsesWriters`).
+> Success bodies stay on `ctx.Response().Json` until the resources migration;
+> this file does not claim that migration is done. One refusal still carries a
+> wrapped error's text in `message` (see "What a body may carry").
 
 Status codes and error codes are a contract. `macro-wallets-front` branches on
 them, and external integrators (Markets) consume `/api/v1`. A status or a code
@@ -49,14 +51,31 @@ message. The keys are the ones `parseApiErrorBody` on `origin/feat/forms` reads:
 `wallet_not_gas_ready`) has no `errors` map. `code` is snake_case;
 `FEE_ESTIMATE_FAILED` stays as the explicit code the handler already sent.
 
+## The writers
+
+| Writer | Wire | Used by |
+|---|---|---|
+| `responses.Fail(ctx, status, code, message)`, `FailWith(…, fields)` | `ctx.Response().Json`: `application/json; charset=utf-8`, no trailing newline | every refusal that was a legacy `{"error":"text"}` map |
+| `responses.FailMessage(ctx, status, message)` | same as `Fail` | a message known only at run time (a policy decision's sentence, a refusal the service picked, a sentinel's text) |
+| `responses.Error`, `InternalError`, `ProviderError` | `responses.JSON`: `application/json`, trailing newline | the routes that were written on the envelope from the start |
+| `responses.FieldsFailed`, `FieldError`, `ValidationFailed` | same as `Fail` | HTTP 422 with `errors` |
+
+The two writers do not produce the same bytes, and `tests/contract` records
+both. A route keeps the writer it has; moving one is a contract change. A
+middleware ends the chain with the writer's `.Abort()`.
+
 ## The codes
 
-`responses.Code*`, in `app/http/responses`. The resources package is not part of
-this change. A legacy string that matches `^[a-z][a-z0-9_]*$` is the code and
-the message. These sentences map to `invalid_signature`: "missing request
-signature", "invalid request signature", "invalid webhook signature". Anything
-else takes the status default (`invalid_request`, `unauthorized`, `forbidden`,
-`not_found`, `conflict`, `unprocessable`, `too_many_requests`, `internal`, …).
+`responses.Code*`, in `app/http/responses`. Each call names its code; the
+generic ones are the status default below, and a domain code is spelled with
+its constant (`responses.CodeSweepLimitExceeded`, …) or its string.
+`FailMessage` is the one place a code is derived from a message, with
+`responses.CodeFor`: these sentences map to `invalid_signature`: "missing
+request signature", "invalid request signature", "invalid webhook signature";
+a message that matches `^[a-z][a-z0-9_]*$` is the code and the message;
+anything else takes the status default. Those are the rules the legacy maps
+were wrapped with, so the codes did not move when the maps were replaced:
+`"unauthenticated"` on a 401 is still its own code, not `unauthorized`.
 Generic:
 
 | Code | Status |
@@ -70,10 +89,18 @@ Generic:
 | `invalid_request`, `invalid_json` | 400 |
 | `request_too_large` | 413 |
 | `too_many_requests` | 429 |
-| `internal` | 500 |
+| `internal` | 500 (see below: `internal_error` too) |
 | `provider_unavailable` | 502 |
 | `unavailable` | 503 |
 | `timeout` | 504 |
+
+**Two 500 codes.** `MapInternalError` and 24 handlers answer 500
+`{"code":"internal_error","message":"internal_error"}`; every other 500 is
+`internal` (a sentence, `InternalError`, the encode failure). Both reach the
+front and Markets. `internal_error` is also the persisted withdrawal
+`failure_reason`. Unify only with a coordinated change: the front adds
+`errorCodes.internal` to its three locales first, Markets is told, then the
+backend moves the 25 `internal_error` sites to `internal`.
 
 Domain codes that exist today and must survive the migration (inventory them
 from `controllers/errors.go`, `withdrawal_failure.go` and the handlers before
@@ -104,10 +131,12 @@ outage behind a message about the caller.
 
 ## What a body may carry
 
-- **Never `err.Error()`.** A wrapped error can carry an RPC URL with its API key,
-  a SQL fragment, or what the customer typed. The envelope switch did not do
-  that redaction: a handler that already sent `err.Error()` still does, now as
-  `message`.
+- **Never a wrapped error's text.** `err.Error()` of a wrapped error can carry
+  an RPC URL with its API key, a SQL fragment, or what the customer typed. A
+  fixed sentinel's text (`settings.ErrViewForbidden.Error()`) is a sentence
+  like any other and may be the message. Known exception: a withdrawal create
+  refusal for an invalid amount or a spending-limit read carries the cause's
+  text (`withdraw/create.go`, through `MapWithdrawalCreateError`).
 - **Never a provider's raw text** — `responses.ProviderError` answers the
   endpoint's own message and logs the cause.
 - A secret field never comes back on a read: `"<field>Set": true|false`.

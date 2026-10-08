@@ -160,7 +160,10 @@ Rules:
 - **Controllers never import `app/repositories`, never call `facades.Orm()`,
   `facades.Mail()`, `facades.Crypt()`, `facades.Auth()` or `facades.Gate()`.**
   Those belong to services, providers and middleware.
-- Middleware aborts with `responses.Error(ctx, status, code, message).Abort()`.
+- Middleware aborts with a `responses` writer and `.Abort()`: a new refusal
+  with `responses.Error(ctx, status, code, message).Abort()`; an existing one
+  keeps the writer it has (`responses.Fail`), because the bytes are part of the
+  contract (`http-error-contract.md`, "The writers").
 
 ## The global chain
 
