@@ -91,7 +91,7 @@ func (s *service) ConsolidateAll(
 		return nil, ErrUnsupportedChain
 	}
 
-	release, err := s.acquireWalletOpsLock(ctx, walletID)
+	release, err := s.acquireWalletOpsLock(walletID)
 	if err != nil {
 		return nil, err
 	}
@@ -125,7 +125,7 @@ func (s *service) ConsolidateAll(
 	}
 	defer zeroBytes(shareA)
 
-	if err := s.incrDailyQuota(ctx, callerAccountID, limits); err != nil {
+	if err := s.incrDailyQuota(callerAccountID, limits); err != nil {
 		return nil, err
 	}
 

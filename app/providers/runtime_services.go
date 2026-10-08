@@ -7,7 +7,6 @@ import (
 
 	"github.com/goravel/framework/contracts/foundation"
 
-	"github.com/macrowallets/waas/app/adapters/redis/feecache"
 	sweepsecrets "github.com/macrowallets/waas/app/adapters/secretsmanager"
 	"github.com/macrowallets/waas/app/container"
 	"github.com/macrowallets/waas/app/facades"
@@ -89,7 +88,7 @@ func registerRuntimeServices(app foundation.Application) {
 			Quoter:   quoter,
 			Registry: c.Registry,
 			Chains:   feeEstimateChains{repo: c.ChainRepo},
-			Cache:    feecache.New(c.Redis),
+			Cache:    facades.Cache(),
 			CacheTTL: time.Duration(seconds) * time.Second,
 			Now:      time.Now,
 		})

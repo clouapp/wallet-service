@@ -52,7 +52,7 @@ func TestWithdrawal_Request_HonoursAClosedGlobalFlag(t *testing.T) {
 		Passphrase:      "validpassphrase123",
 		CallerAccountID: accountID,
 	})
-	if err == nil || !strings.Contains(err.Error(), "redis is not configured") {
+	if err == nil || !strings.Contains(err.Error(), "cache is not configured") {
 		t.Fatalf("reopened global should pass the flag: %v", err)
 	}
 }

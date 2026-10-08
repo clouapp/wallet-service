@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	contractscache "github.com/goravel/framework/contracts/cache"
 
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/services/chain"
@@ -23,7 +24,7 @@ var (
 	ErrInsufficientFunds     = errors.New("sweep: insufficient funds across wallet")
 	ErrInFlightConsolidation = errors.New("sweep: another consolidation in flight for this wallet")
 	ErrDailyQuotaExceeded    = errors.New("sweep: daily consolidation quota exceeded")
-	ErrRedisUnavailable      = errors.New("sweep: redis is not configured")
+	ErrCacheUnavailable      = errors.New("sweep: cache is not configured")
 	ErrTooManyAddresses      = errors.New("sweep: too many addresses per request")
 	// ErrGasEstimateFailed is chain.ErrGasEstimateFailed, re-exported for controllers.
 	ErrGasEstimateFailed = chain.ErrGasEstimateFailed
@@ -85,16 +86,6 @@ type SecretStore interface {
 	Binary(ctx context.Context, secretID string) ([]byte, error)
 }
 
-// RedisStore runs the wallet-ops lock and the daily consolidate counter.
-// The service keeps the keys, the lock value, and the TTLs. A nil RedisStore
-// means Redis is not configured.
-type RedisStore interface {
-	SetNX(ctx context.Context, key, value string, expiration time.Duration) (bool, error)
-	Del(ctx context.Context, key string) error
-	Incr(ctx context.Context, key string) (int64, error)
-	Expire(ctx context.Context, key string, expiration time.Duration) error
-}
-
 // chainLookup is the adapter and token catalog sweep reads.
 type chainLookup interface {
 	Chain(id string) (types.Chain, error)
@@ -131,7 +122,7 @@ type service struct {
 	registry    chainLookup
 	mpc         mpcSigner
 	secrets     SecretStore
-	rdb         RedisStore
+	cache       contractscache.Driver
 	webhookSvc  eventEnqueuer
 	walletRepo  walletReader
 	addressRepo addressReader
@@ -154,7 +145,7 @@ type Deps struct {
 	Registry     chainLookup
 	MPC          mpcSigner
 	Secrets      SecretStore
-	Redis        RedisStore
+	Cache        contractscache.Driver
 	Webhook      eventEnqueuer
 	Wallets      walletReader
 	Addresses    addressReader
@@ -173,7 +164,7 @@ func NewService(deps Deps) Service {
 		registry:    deps.Registry,
 		mpc:         deps.MPC,
 		secrets:     deps.Secrets,
-		rdb:         deps.Redis,
+		cache:       deps.Cache,
 		webhookSvc:  deps.Webhook,
 		walletRepo:  deps.Wallets,
 		addressRepo: deps.Addresses,

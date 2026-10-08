@@ -1,9 +1,9 @@
 package price
 
 import (
-	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 
@@ -11,32 +11,42 @@ import (
 
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/pkg/numeric"
+	"github.com/macrowallets/waas/tests/memcache"
 )
 
+// recordingPriceCache is the in-memory driver plus a record of the calls the
+// price service makes.
 type recordingPriceCache struct {
-	value   string
-	readErr error
-	getKey  string
-	gets    int
+	*memcache.Cache
+	getKey string
+	gets   int
 
 	setKey   string
-	setValue []byte
+	setValue string
 	setTTL   time.Duration
 	setErr   error
 	sets     int
 }
 
-func (r *recordingPriceCache) Get(_ context.Context, key string) (string, error) {
-	r.gets++
-	r.getKey = key
-	return r.value, r.readErr
+func newRecordingPriceCache(stored string) *recordingPriceCache {
+	cache := &recordingPriceCache{Cache: memcache.New()}
+	if stored != "" {
+		_ = cache.Cache.Put("currency:BTC", stored, 0)
+	}
+	return cache
 }
 
-func (r *recordingPriceCache) Set(_ context.Context, key string, value []byte, expiration time.Duration) error {
+func (r *recordingPriceCache) GetString(key string, def ...string) string {
+	r.gets++
+	r.getKey = key
+	return r.Cache.GetString(key, def...)
+}
+
+func (r *recordingPriceCache) Put(key string, value any, ttl time.Duration) error {
 	r.sets++
 	r.setKey = key
-	r.setValue = append([]byte(nil), value...)
-	r.setTTL = expiration
+	r.setValue = fmt.Sprint(value)
+	r.setTTL = ttl
 	return r.setErr
 }
 
@@ -85,7 +95,7 @@ func mustPrice(text string) decimal.Decimal {
 }
 
 func TestGet_Price_USDSkipsTheCache(t *testing.T) {
-	cache := &recordingPriceCache{value: "9"}
+	cache := newRecordingPriceCache("9")
 	svc := NewService(Deps{Currencies: &cacheCurrencyStore{}, Cache: cache})
 
 	got, err := svc.GetPrice(context.Background(), "USD")
@@ -101,7 +111,7 @@ func TestGet_Price_USDSkipsTheCache(t *testing.T) {
 }
 
 func TestGet_Price_UsesTheCurrencyKey(t *testing.T) {
-	cache := &recordingPriceCache{value: "42.5"}
+	cache := newRecordingPriceCache("42.5")
 	store := &cacheCurrencyStore{currency: &models.Currency{Code: "BTC", CurrentPrice: priceOf("1")}}
 	svc := NewService(Deps{Currencies: store, Cache: cache})
 
@@ -137,14 +147,15 @@ func TestGet_Price_NilCacheReadsTheStore(t *testing.T) {
 }
 
 func TestGet_Price_FallsThroughWhenTheCacheMisses(t *testing.T) {
-	cases := []recordingPriceCache{
-		{readErr: errors.New("miss")},
-		{value: "0"},
-		{value: "-1"},
+	cases := []*recordingPriceCache{
+		newRecordingPriceCache(""),
+		newRecordingPriceCache("0"),
+		newRecordingPriceCache("-1"),
+		newRecordingPriceCache("not a number"),
 	}
 	for _, cache := range cases {
 		store := &cacheCurrencyStore{currency: &models.Currency{Code: "BTC", CurrentPrice: priceOf("7")}}
-		svc := NewService(Deps{Currencies: store, Cache: &cache})
+		svc := NewService(Deps{Currencies: store, Cache: cache})
 
 		got, err := svc.GetPrice(context.Background(), "BTC")
 		if err != nil {
@@ -165,7 +176,7 @@ func TestCache_Price_NilCacheDoesNothing(t *testing.T) {
 }
 
 func TestCache_Price_KeepsTheKeyTTLAndJSONNumber(t *testing.T) {
-	cache := &recordingPriceCache{}
+	cache := newRecordingPriceCache("")
 	svc := NewService(Deps{Currencies: &cacheCurrencyStore{}, Cache: cache})
 
 	svc.cachePrice(context.Background(), "BTC", mustPrice("42.5"))
@@ -179,13 +190,14 @@ func TestCache_Price_KeepsTheKeyTTLAndJSONNumber(t *testing.T) {
 	if cache.setTTL != redisCurrencyTTL {
 		t.Fatalf("ttl = %s", cache.setTTL)
 	}
-	if !bytes.Equal(cache.setValue, []byte("42.5")) {
+	if cache.setValue != "42.5" {
 		t.Fatalf("cached payload = %s", cache.setValue)
 	}
 }
 
-func TestCache_Price_ContinuesWhenRedisFails(t *testing.T) {
-	cache := &recordingPriceCache{setErr: errors.New("boom")}
+func TestCache_Price_ContinuesWhenTheCacheFails(t *testing.T) {
+	cache := newRecordingPriceCache("")
+	cache.setErr = errors.New("boom")
 	svc := NewService(Deps{Currencies: &cacheCurrencyStore{}, Cache: cache})
 
 	svc.cachePrice(context.Background(), "ETH", mustPrice("1"))
@@ -196,7 +208,7 @@ func TestCache_Price_ContinuesWhenRedisFails(t *testing.T) {
 }
 
 func TestProcess_Message_WritesTheCurrencyKey(t *testing.T) {
-	cache := &recordingPriceCache{}
+	cache := newRecordingPriceCache("")
 	store := &cacheCurrencyStore{currency: &models.Currency{Code: "BTC", CurrentPrice: priceOf("1")}}
 	client := NewWebSocketClient(WebSocketClientDeps{
 		APIKey:     "key",
@@ -216,7 +228,7 @@ func TestProcess_Message_WritesTheCurrencyKey(t *testing.T) {
 	if cache.setTTL != redisCurrencyTTL {
 		t.Fatalf("ttl = %s", cache.setTTL)
 	}
-	if !bytes.Equal(cache.setValue, []byte("42.5")) {
+	if cache.setValue != "42.5" {
 		t.Fatalf("cached payload = %s", cache.setValue)
 	}
 }
@@ -233,7 +245,8 @@ func TestProcess_Message_SkipsANilCache(t *testing.T) {
 }
 
 func TestProcess_Message_IgnoresACacheError(t *testing.T) {
-	cache := &recordingPriceCache{setErr: errors.New("boom")}
+	cache := newRecordingPriceCache("")
+	cache.setErr = errors.New("boom")
 	store := &cacheCurrencyStore{currency: &models.Currency{Code: "BTC", CurrentPrice: priceOf("1")}}
 	client := NewWebSocketClient(WebSocketClientDeps{
 		APIKey:     "key",

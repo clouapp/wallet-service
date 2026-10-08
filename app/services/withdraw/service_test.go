@@ -11,10 +11,12 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/macrowallets/waas/app/models"
+	"github.com/macrowallets/waas/app/services/cacheguard"
 	"github.com/macrowallets/waas/app/services/chain"
 	mpcpkg "github.com/macrowallets/waas/app/services/mpc"
 	"github.com/macrowallets/waas/app/services/sweep"
 	"github.com/macrowallets/waas/pkg/types"
+	"github.com/macrowallets/waas/tests/memcache"
 	"github.com/macrowallets/waas/tests/mocks"
 )
 
@@ -89,60 +91,22 @@ func setupWithdrawService(t *testing.T) (*Service, *mocks.MockChain, *memTransac
 	return svc, mockChain, txs
 }
 
-type recordingLocker struct {
-	key        string
-	value      string
-	expiration time.Duration
-	acquired   bool
-	setErr     error
-	count      int
-	readKey    string
-	readErr    error
-	incrKey    string
-	incrTTL    time.Duration
-}
-
-func (r *recordingLocker) SetNX(_ context.Context, key, value string, expiration time.Duration) (bool, error) {
-	r.key = key
-	r.value = value
-	r.expiration = expiration
-	return r.acquired, r.setErr
-}
-
-func (r *recordingLocker) Del(context.Context, string) error { return nil }
-
-func (r *recordingLocker) Int(_ context.Context, key string) (int, error) {
-	r.readKey = key
-	return r.count, r.readErr
-}
-
-func (r *recordingLocker) IncrExpire(_ context.Context, key string, expiration time.Duration) error {
-	r.incrKey = key
-	r.incrTTL = expiration
-	return nil
-}
-
-func (r *recordingLocker) IncrBy(context.Context, string, int64, time.Duration) (int64, error) {
-	return 0, nil
-}
-
-func (r *recordingLocker) DecrBy(context.Context, string, int64) error { return nil }
-
-func TestRequest_Nil_LockerReportsRedisNotConfigured(t *testing.T) {
+func TestRequest_Nil_CacheReportsItIsNotConfigured(t *testing.T) {
 	svc := &Service{}
 	_, _, err := svc.Request(context.Background(), WithdrawRequest{
 		Passphrase: "validpassphrase123",
 		WalletID:   uuid.New(),
 	})
-	if err == nil || err.Error() != "redis lock: redis is not configured" {
+	if err == nil || err.Error() != "withdrawal lock: cache is not configured" {
 		t.Fatalf("got %v", err)
 	}
 }
 
-func TestRequest_Lock_UsesTheSameKeyValueAndTTL(t *testing.T) {
+func TestRequest_Lock_AHeldWalletKeyIsAConcurrentWithdrawal(t *testing.T) {
 	walletID := uuid.New()
-	locker := &recordingLocker{}
-	svc := &Service{locker: locker}
+	cache := memcache.New()
+	cache.Add("vault:lock:withdrawal:"+walletID.String(), 1, time.Minute)
+	svc := &Service{cache: cache}
 	_, _, err := svc.Request(context.Background(), WithdrawRequest{
 		Passphrase: "validpassphrase123",
 		WalletID:   walletID,
@@ -150,51 +114,50 @@ func TestRequest_Lock_UsesTheSameKeyValueAndTTL(t *testing.T) {
 	if !errors.Is(err, ErrConcurrentWithdraw) {
 		t.Fatalf("got %v", err)
 	}
-	if locker.key != "vault:lock:withdrawal:"+walletID.String() || locker.value != "1" || locker.expiration != 60*time.Second {
-		t.Fatal("withdrawal lock command changed")
-	}
 }
 
-func TestRequest_Lock_ErrorIsWrapped(t *testing.T) {
-	svc := &Service{locker: &recordingLocker{setErr: errors.New("boom")}}
+// A cache outage makes Add report false, which must not read as a held lock:
+// the operator would chase a concurrent withdrawal that is not there.
+func TestRequest_Lock_AnOutageIsNotAConcurrentWithdrawal(t *testing.T) {
+	svc := &Service{cache: memcache.Down{Cache: memcache.New()}}
 	_, _, err := svc.Request(context.Background(), WithdrawRequest{
 		Passphrase: "validpassphrase123",
 		WalletID:   uuid.New(),
 	})
-	if err == nil || err.Error() != "redis lock: boom" {
+	if err == nil || errors.Is(err, ErrConcurrentWithdraw) || !errors.Is(err, cacheguard.ErrUnavailable) {
 		t.Fatalf("got %v", err)
 	}
 }
 
-func TestCheck_Rate_LimitKeepsTheThresholdAndFailsClosed(t *testing.T) {
-	walletID := "wallet-1"
-	open := &recordingLocker{}
-	if err := (&Service{locker: open}).checkRateLimit(context.Background(), walletID); err != nil {
-		t.Fatalf("missing count: %v", err)
+func TestCheck_Rate_LimitCapsFailuresAtFivePerWindowOnTheSameKey(t *testing.T) {
+	cache := memcache.New()
+	svc := &Service{cache: cache}
+	if err := svc.checkRateLimit("wallet-1"); err != nil {
+		t.Fatalf("no failures yet: %v", err)
 	}
-	if open.readKey != "vault:ratelimit:passphrase:"+walletID {
-		t.Fatal("passphrase counter key changed")
+	for failure := 1; failure <= 4; failure++ {
+		svc.recordFailedAttempt("wallet-1")
 	}
-	below := &recordingLocker{count: 4}
-	if err := (&Service{locker: below}).checkRateLimit(context.Background(), walletID); err != nil {
-		t.Fatalf("below threshold: %v", err)
+	if err := svc.checkRateLimit("wallet-1"); err != nil {
+		t.Fatalf("below the cap: %v", err)
 	}
-	blocked := &recordingLocker{count: 5}
-	if err := (&Service{locker: blocked}).checkRateLimit(context.Background(), walletID); !errors.Is(err, ErrTooManyAttempts) {
-		t.Fatalf("threshold: %v", err)
+	svc.recordFailedAttempt("wallet-1")
+	if got := cache.GetInt("vault:ratelimit:passphrase:wallet-1"); got != 5 {
+		t.Fatalf("counter = %d, want 5 on the key the limiter always used", got)
 	}
-	down := &recordingLocker{readErr: errors.New("down")}
-	err := (&Service{locker: down}).checkRateLimit(context.Background(), walletID)
-	if err == nil || errors.Is(err, ErrTooManyAttempts) {
-		t.Fatalf("a Redis read error must refuse without claiming the cap was hit, got %v", err)
+	if err := svc.checkRateLimit("wallet-1"); !errors.Is(err, ErrTooManyAttempts) {
+		t.Fatalf("at the cap: %v", err)
+	}
+	if err := svc.checkRateLimit("wallet-2"); err != nil {
+		t.Fatalf("another wallet is not limited: %v", err)
 	}
 }
 
-func TestRecord_Failed_AttemptUsesTheSameCounterCommand(t *testing.T) {
-	locker := &recordingLocker{}
-	(&Service{locker: locker}).recordFailedAttempt(context.Background(), "wallet-1")
-	if locker.incrKey != "vault:ratelimit:passphrase:wallet-1" || locker.incrTTL != 60*time.Second {
-		t.Fatal("passphrase counter command changed")
+func TestCheck_Rate_LimitFailsClosedWhenTheCacheIsDown(t *testing.T) {
+	svc := &Service{cache: memcache.Down{Cache: memcache.New()}}
+	err := svc.checkRateLimit("wallet-1")
+	if err == nil || errors.Is(err, ErrTooManyAttempts) {
+		t.Fatalf("a cache outage must refuse without claiming the cap was hit, got %v", err)
 	}
 }
 

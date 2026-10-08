@@ -13,7 +13,6 @@ import (
 	"github.com/goravel/framework/contracts/queue"
 	"github.com/goravel/framework/foundation"
 
-	"github.com/macrowallets/waas/app/adapters/redis/pricecache"
 	"github.com/macrowallets/waas/app/console/commands"
 	"github.com/macrowallets/waas/app/container"
 	appfacades "github.com/macrowallets/waas/app/facades"
@@ -86,7 +85,7 @@ func Boot() contractsfoundation.Application {
 				commands.NewPriceWebSocket(commands.PriceWebSocketDeps{
 					Prices:     prices,
 					CoinAPIKey: container.MustMake[*price.CoinAPICredential]().Key,
-					Cache:      pricecache.New(container.MustMake[*container.SharedRedis]().Client),
+					Cache:      appfacades.Cache(),
 				}),
 				commands.NewPriceCheckUpdate(prices),
 				commands.NewChainsSetRPC(chains.NewReplaceRPC(chains.ReplaceRPCDeps{

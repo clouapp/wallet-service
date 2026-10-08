@@ -110,8 +110,12 @@ service is missing a sentinel** — add it there. Never `err.Error()` in a body.
   half-built service possible. Neither.
 - **A service never imports `app/http`, `app/repositories`, `app/adapters`, or
   an I/O library** (go-redis, aws-sdk, net/http clients, go-ethereum's
-  `ethclient`). Redis locks/quotas, SQS, Secrets Manager, RPC and HTTP providers
-  are ports implemented in `app/adapters` and injected by the provider.
+  `ethclient`). SQS, Secrets Manager, RPC and HTTP providers and the Redis
+  set/zset/hash stores are ports implemented in `app/adapters` and injected by the
+  provider. Locks, counters and short-lived values use the Cache contract
+  (`contractscache.Driver`, injected through `Deps`), not a Redis port; the cache
+  driver hides a backend outage (`Add` reports false, `Get` returns the default), so
+  fail-closed callers go through `app/services/cacheguard` (`Acquire`, `Count`, `Read`).
   Pure libraries (cryptography, encoding) are allowed and listed in
   `tests/architecture`.
 - `facades.Event()`, `facades.Config()`, `facades.Crypt()` do not appear in a

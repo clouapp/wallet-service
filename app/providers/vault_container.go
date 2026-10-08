@@ -31,11 +31,8 @@ import (
 	queuesqs "github.com/macrowallets/waas/app/adapters/queue/sqs"
 	"github.com/macrowallets/waas/app/adapters/redis/addresscache"
 	"github.com/macrowallets/waas/app/adapters/redis/addressset"
-	redislock "github.com/macrowallets/waas/app/adapters/redis/lock"
 	redispending "github.com/macrowallets/waas/app/adapters/redis/pending"
-	"github.com/macrowallets/waas/app/adapters/redis/pricecache"
 	"github.com/macrowallets/waas/app/adapters/redis/scanner"
-	sweepredis "github.com/macrowallets/waas/app/adapters/redis/sweep"
 	sweepsecrets "github.com/macrowallets/waas/app/adapters/secretsmanager"
 
 	// Link the webhook delivery HTTP client. The service still signs each post.
@@ -297,7 +294,7 @@ func buildVaultContainer(app foundation.Application) (*container.Container, erro
 		Registry:     c.Registry,
 		MPC:          c.MPCService,
 		Secrets:      sweepsecrets.New(c.SecretsManager),
-		Redis:        sweepredis.New(c.Redis),
+		Cache:        facades.Cache(),
 		Webhook:      c.WebhookService,
 		Wallets:      c.WalletRepo,
 		Addresses:    c.AddressRepo,
@@ -314,7 +311,7 @@ func buildVaultContainer(app foundation.Application) (*container.Container, erro
 		Registry:     c.Registry,
 		Webhook:      c.WebhookService,
 		MPC:          c.MPCService,
-		Locker:       redislock.New(c.Redis),
+		Cache:        facades.Cache(),
 		Transactions: c.TransactionRepo,
 		Wallets:      c.WalletRepo,
 		Addresses:    c.AddressRepo,
@@ -483,7 +480,7 @@ func ingestEnvConfigKey(provider string) string {
 func buildPriceService(c *container.Container, accountSettings *settings.Service) *price.Service {
 	service := price.NewService(price.Deps{
 		Currencies: c.CurrencyRepo,
-		Cache:      pricecache.New(c.Redis),
+		Cache:      facades.Cache(),
 	}).
 		WithQuoteDialer(coinapiws.Dialer{}).
 		WithEnvCoinAPIKey(c.PriceConfig.CoinAPIKey)

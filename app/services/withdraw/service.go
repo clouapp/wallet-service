@@ -9,9 +9,11 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	contractscache "github.com/goravel/framework/contracts/cache"
 
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/repositories"
+	"github.com/macrowallets/waas/app/services/cacheguard"
 	mpcpkg "github.com/macrowallets/waas/app/services/mpc"
 	"github.com/macrowallets/waas/app/services/sweep"
 	"github.com/macrowallets/waas/app/services/webhook"
@@ -33,23 +35,6 @@ var (
 	ErrTooManyAttempts     = errors.New("too many failed attempts, try again later")
 	ErrTransactionNotFound = errors.New("transaction not found")
 )
-
-// Locker is the withdrawal lock and the passphrase-attempt counter.
-// The provider supplies it; this package never imports the Redis client.
-// A nil Locker means Redis is not configured.
-type Locker interface {
-	SetNX(ctx context.Context, key, value string, expiration time.Duration) (bool, error)
-	Del(ctx context.Context, key string) error
-	// Int reads a counter. A missing key returns 0 and a nil error.
-	Int(ctx context.Context, key string) (int, error)
-	// IncrExpire increments key and sets its TTL in one pipeline.
-	IncrExpire(ctx context.Context, key string, expiration time.Duration) error
-	// IncrBy adds delta and returns the new total. When the key was absent
-	// (the new total equals delta) it sets expiration. delta must be positive.
-	IncrBy(ctx context.Context, key string, delta int64, expiration time.Duration) (int64, error)
-	// DecrBy subtracts delta. A rejected daily spend uses it to return the reserved cents.
-	DecrBy(ctx context.Context, key string, delta int64) error
-}
 
 // chainLookup is the registered adapter and token list a withdrawal reads.
 type chainLookup interface {
@@ -82,7 +67,7 @@ type Service struct {
 	registry        chainLookup
 	webhookSvc      *webhook.Service
 	mpc             mpcpkg.Service
-	locker          Locker
+	cache           contractscache.Driver
 	transactionRepo transactionStore
 	walletRepo      walletReader
 	addressRepo     *repositories.AddressRepository
@@ -103,7 +88,7 @@ type Deps struct {
 	Registry     chainLookup
 	Webhook      *webhook.Service
 	MPC          mpcpkg.Service
-	Locker       Locker
+	Cache        contractscache.Driver
 	Transactions transactionStore
 	Wallets      walletReader
 	Addresses    *repositories.AddressRepository
@@ -117,7 +102,7 @@ func NewService(deps Deps) *Service {
 		registry:        deps.Registry,
 		webhookSvc:      deps.Webhook,
 		mpc:             deps.MPC,
-		locker:          deps.Locker,
+		cache:           deps.Cache,
 		transactionRepo: deps.Transactions,
 		walletRepo:      deps.Wallets,
 		addressRepo:     deps.Addresses,
@@ -181,18 +166,18 @@ func (s *Service) Request(ctx context.Context, req WithdrawRequest) (*models.Tra
 		}
 	}
 
-	if s.locker == nil {
-		return nil, nil, fmt.Errorf("redis lock: redis is not configured")
+	if s.cache == nil {
+		return nil, nil, fmt.Errorf("withdrawal lock: cache is not configured")
 	}
 	lockKey := fmt.Sprintf("vault:lock:withdrawal:%s", req.WalletID)
-	acquired, err := s.locker.SetNX(ctx, lockKey, "1", 60*time.Second)
+	acquired, err := cacheguard.Acquire(s.cache, lockKey, 60*time.Second)
 	if err != nil {
-		return nil, nil, fmt.Errorf("redis lock: %w", err)
+		return nil, nil, fmt.Errorf("withdrawal lock: %w", err)
 	}
 	if !acquired {
 		return nil, nil, ErrConcurrentWithdraw
 	}
-	defer s.locker.Del(ctx, lockKey)
+	defer s.cache.Forget(lockKey)
 	if err := s.enforceTokenSpendingLimit(ctx, req); err != nil {
 		return nil, nil, err
 	}
@@ -225,7 +210,7 @@ func (s *Service) Request(ctx context.Context, req WithdrawRequest) (*models.Tra
 		return nil, nil, fmt.Errorf("invalid amount: %s", req.Amount)
 	}
 
-	if err := s.checkRateLimit(ctx, req.WalletID.String()); err != nil {
+	if err := s.checkRateLimit(req.WalletID.String()); err != nil {
 		return nil, nil, err
 	}
 
@@ -255,7 +240,7 @@ func (s *Service) Request(ctx context.Context, req WithdrawRequest) (*models.Tra
 		}
 	}
 
-	shareA, err := s.decryptShareA(ctx, &wallet, req.Passphrase)
+	shareA, err := s.decryptShareA(&wallet, req.Passphrase)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -330,12 +315,12 @@ func (s *Service) gate(ctx context.Context, accountID uuid.UUID) error {
 	return s.flags(ctx, accountID)
 }
 
-func (s *Service) decryptShareA(ctx context.Context, wallet *models.Wallet, passphrase string) ([]byte, error) {
+func (s *Service) decryptShareA(wallet *models.Wallet, passphrase string) ([]byte, error) {
 	defer mpcshare.DiscardPassphrase(&passphrase)
 	shareA, err := wallet.DecryptShareA(passphrase)
 	if err != nil {
 		if errors.Is(err, mpcpkg.ErrInvalidPassphrase) {
-			s.recordFailedAttempt(ctx, wallet.ID.String())
+			s.recordFailedAttempt(wallet.ID.String())
 			return nil, ErrInvalidPassphrase
 		}
 		return nil, err
@@ -343,22 +328,32 @@ func (s *Service) decryptShareA(ctx context.Context, wallet *models.Wallet, pass
 	return shareA, nil
 }
 
-func (s *Service) checkRateLimit(ctx context.Context, walletID string) error {
-	key := fmt.Sprintf("vault:ratelimit:passphrase:%s", walletID)
-	count, err := s.locker.Int(ctx, key)
+// maxPassphraseAttempts is how many wrong passphrases one wallet may enter per
+// passphraseAttemptWindow. The window opens at the first wrong passphrase and
+// later ones do not extend it, as in the second-factor limiter.
+const (
+	maxPassphraseAttempts   = 5
+	passphraseAttemptWindow = 60 * time.Second
+)
+
+func passphraseAttemptsKey(walletID string) string {
+	return fmt.Sprintf("vault:ratelimit:passphrase:%s", walletID)
+}
+
+func (s *Service) checkRateLimit(walletID string) error {
+	count, err := cacheguard.Read(s.cache, passphraseAttemptsKey(walletID))
 	if err != nil {
 		// Without the counter the cap cannot be enforced, so refuse.
 		return fmt.Errorf("passphrase attempt counter: %w", err)
 	}
-	if count >= 5 {
+	if count >= maxPassphraseAttempts {
 		return ErrTooManyAttempts
 	}
 	return nil
 }
 
-func (s *Service) recordFailedAttempt(ctx context.Context, walletID string) {
-	key := fmt.Sprintf("vault:ratelimit:passphrase:%s", walletID)
-	if err := s.locker.IncrExpire(ctx, key, 60*time.Second); err != nil {
+func (s *Service) recordFailedAttempt(walletID string) {
+	if _, err := cacheguard.Count(s.cache, passphraseAttemptsKey(walletID), 1, passphraseAttemptWindow); err != nil {
 		slog.Error("withdraw: record failed passphrase attempt", "wallet_id", walletID, "error", err)
 	}
 }

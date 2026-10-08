@@ -1,7 +1,6 @@
 package sweep
 
 import (
-	"context"
 	"errors"
 	"sync"
 	"sync/atomic"
@@ -9,6 +8,8 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
+
+	"github.com/macrowallets/waas/tests/memcache"
 )
 
 // burst releases n goroutines together once every one is waiting.
@@ -31,7 +32,7 @@ func burst(n int, work func()) {
 }
 
 func TestService_AcquireWalletOpsLock_ExactlyOneCallerWins(t *testing.T) {
-	svc := &service{rdb: newRedisStore()}
+	svc := &service{cache: memcache.New()}
 	walletID := uuid.New()
 	const callers = 16
 
@@ -40,7 +41,7 @@ func TestService_AcquireWalletOpsLock_ExactlyOneCallerWins(t *testing.T) {
 	var release func()
 
 	burst(callers, func() {
-		unlock, err := svc.acquireWalletOpsLock(context.Background(), walletID)
+		unlock, err := svc.acquireWalletOpsLock(walletID)
 		if err == nil {
 			wins.Add(1)
 			releaseMu.Lock()
@@ -60,14 +61,14 @@ func TestService_AcquireWalletOpsLock_ExactlyOneCallerWins(t *testing.T) {
 }
 
 func TestService_IncrDailyQuota_ExactlyOneCallerWins(t *testing.T) {
-	svc := &service{rdb: newRedisStore()}
+	svc := &service{cache: memcache.New()}
 	accountID := uuid.New()
 	limits := &Limits{MaxConsolidateReqPerDay: 1}
 	const callers = 16
 
 	var wins, blocked atomic.Int32
 	burst(callers, func() {
-		err := svc.incrDailyQuota(context.Background(), accountID, limits)
+		err := svc.incrDailyQuota(accountID, limits)
 		if err == nil {
 			wins.Add(1)
 			return

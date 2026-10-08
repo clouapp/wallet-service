@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	contractscache "github.com/goravel/framework/contracts/cache"
 	"github.com/shopspring/decimal"
 
 	"github.com/macrowallets/waas/app/models"
@@ -33,18 +34,10 @@ var usdPrice = decimal.NewFromInt(1)
 // ErrPriceNotQuoted marks a currency whose stored price no provider ever quoted.
 var ErrPriceNotQuoted = errors.New("price was never quoted by a provider")
 
-// PriceCache reads and writes one currency price.
-// The service keeps the key, the TTL, and the JSON number.
-// A nil PriceCache means Redis is not configured.
-type PriceCache interface {
-	Get(ctx context.Context, key string) (string, error)
-	Set(ctx context.Context, key string, value []byte, expiration time.Duration) error
-}
-
 type Service struct {
 	providers    []PriceProvider
 	currencyRepo currencyStore
-	cache        PriceCache
+	cache        contractscache.Driver
 	quotes       QuoteDialer
 	settings     SettingsSource
 	envCoinAPI   string
@@ -56,7 +49,7 @@ type Service struct {
 type Deps struct {
 	Providers  []PriceProvider
 	Currencies currencyStore
-	Cache      PriceCache
+	Cache      contractscache.Driver
 }
 
 // NewService wires the price service from Deps.
@@ -182,7 +175,7 @@ func (s *Service) WithQuoteDialer(dialer QuoteDialer) *Service {
 
 // PriceWebSocket streams CoinAPI quotes through the currency rows this service updates.
 // cache may be nil when Redis is not configured; it is not the service's own cache.
-func (s *Service) PriceWebSocket(apiKey string, cache PriceCache) *WebSocketClient {
+func (s *Service) PriceWebSocket(apiKey string, cache contractscache.Driver) *WebSocketClient {
 	if s == nil {
 		return nil
 	}
@@ -270,8 +263,8 @@ func (s *Service) cachedPrice(ctx context.Context, code string) (decimal.Decimal
 	if s.cache == nil {
 		return decimal.Decimal{}, false
 	}
-	text, err := s.cache.Get(ctx, "currency:"+code)
-	if err != nil {
+	text := s.cache.GetString("currency:"+code, "")
+	if text == "" {
 		return decimal.Decimal{}, false
 	}
 	cached, err := numeric.Parse("cached price of "+code, text)
@@ -285,8 +278,8 @@ func (s *Service) cachePrice(ctx context.Context, code string, price decimal.Dec
 	if s.cache == nil {
 		return
 	}
-	if err := s.cache.Set(ctx, "currency:"+code, []byte(price.String()), redisCurrencyTTL); err != nil {
-		slog.Warn("redis cache currency failed", "code", code, "error", err)
+	if err := s.cache.Put("currency:"+code, price.String(), redisCurrencyTTL); err != nil {
+		slog.Warn("cache currency failed", "code", code, "error", err)
 	}
 }
 

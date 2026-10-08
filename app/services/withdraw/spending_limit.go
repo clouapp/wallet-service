@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"math/big"
 	"regexp"
 	"strings"
@@ -14,6 +15,7 @@ import (
 	"github.com/shopspring/decimal"
 
 	"github.com/macrowallets/waas/app/models"
+	"github.com/macrowallets/waas/app/services/cacheguard"
 	"github.com/macrowallets/waas/pkg/numeric"
 )
 
@@ -123,16 +125,18 @@ func (s *Service) enforceTokenSpendingLimit(ctx context.Context, req WithdrawReq
 	if err != nil {
 		return err
 	}
-	if s == nil || s.locker == nil {
-		return fmt.Errorf("redis lock: redis is not configured")
+	if s == nil || s.cache == nil {
+		return fmt.Errorf("spending limit: cache is not configured")
 	}
 	key := spendingLimitKey(req.AccessTokenID, time.Now().UTC())
-	total, err := s.locker.IncrBy(ctx, key, spendCents, spendingLimitTTL)
+	total, err := cacheguard.Count(s.cache, key, spendCents, spendingLimitTTL)
 	if err != nil {
 		return fmt.Errorf("incr token spending limit: %w", err)
 	}
 	if total > limitCents {
-		_ = s.locker.DecrBy(ctx, key, spendCents)
+		if _, err := s.cache.Decrement(key, spendCents); err != nil {
+			slog.Error("withdraw: return rejected spend to the daily counter", "key", key, "error", err)
+		}
 		return ErrSpendingLimitExceeded
 	}
 	return nil

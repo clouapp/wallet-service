@@ -4,13 +4,14 @@ import (
 	"context"
 	"errors"
 	"testing"
-	"time"
 
 	"github.com/google/uuid"
 	"github.com/shopspring/decimal"
 
 	"github.com/macrowallets/waas/app/models"
+	"github.com/macrowallets/waas/app/services/cacheguard"
 	"github.com/macrowallets/waas/app/services/settings"
+	"github.com/macrowallets/waas/tests/memcache"
 )
 
 // ---------------------------------------------------------------------------
@@ -149,13 +150,13 @@ func TestCheck_AddressesPerRequest_UnknownAdapterHasNoCap(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// Redis helpers — nil-client safety (no Redis configured)
+// Cache helpers — nil-cache safety (no cache configured)
 // ---------------------------------------------------------------------------
 
 func TestAcquireWalletOpsLock_NilRdb_Refuses(t *testing.T) {
-	svc := &service{rdb: nil}
-	release, err := svc.acquireWalletOpsLock(context.Background(), uuid.New())
-	if !errors.Is(err, ErrRedisUnavailable) {
+	svc := &service{cache: nil}
+	release, err := svc.acquireWalletOpsLock(uuid.New())
+	if !errors.Is(err, ErrCacheUnavailable) {
 		t.Fatalf("without Redis the wallet lock must refuse, got %v", err)
 	}
 	if release != nil {
@@ -164,59 +165,48 @@ func TestAcquireWalletOpsLock_NilRdb_Refuses(t *testing.T) {
 }
 
 func TestIncrDailyQuota_NilRdb_Refuses(t *testing.T) {
-	svc := &service{rdb: nil}
+	svc := &service{cache: nil}
 	limits := &Limits{MaxConsolidateReqPerDay: 1}
-	if err := svc.incrDailyQuota(context.Background(), uuid.New(), limits); !errors.Is(err, ErrRedisUnavailable) {
+	if err := svc.incrDailyQuota(uuid.New(), limits); !errors.Is(err, ErrCacheUnavailable) {
 		t.Fatalf("without Redis the daily quota must refuse, got %v", err)
 	}
 }
 
 func TestIncr_DailyQuota_NilAccountIsNoop(t *testing.T) {
 	// There is no account to meter, so the guard runs before any Redis call.
-	svc := &service{rdb: nil}
+	svc := &service{cache: nil}
 	limits := &Limits{MaxConsolidateReqPerDay: 1}
-	if err := svc.incrDailyQuota(context.Background(), uuid.Nil, limits); err != nil {
+	if err := svc.incrDailyQuota(uuid.Nil, limits); err != nil {
 		t.Fatalf("nil accountID must be a no-op, got %v", err)
 	}
 }
 
-type failingRedis struct{ err error }
-
-func (f failingRedis) SetNX(context.Context, string, string, time.Duration) (bool, error) {
-	return false, f.err
-}
-func (f failingRedis) Del(context.Context, string) error                   { return f.err }
-func (f failingRedis) Incr(context.Context, string) (int64, error)         { return 0, f.err }
-func (f failingRedis) Expire(context.Context, string, time.Duration) error { return f.err }
-
-func TestRedisHelpers_RedisError_Refuses(t *testing.T) {
-	down := errors.New("down")
-	svc := &service{rdb: failingRedis{err: down}}
-	if _, err := svc.acquireWalletOpsLock(context.Background(), uuid.New()); !errors.Is(err, down) {
-		t.Fatalf("a Redis error must refuse the wallet lock, got %v", err)
+func TestCacheHelpers_Outage_Refuses(t *testing.T) {
+	svc := &service{cache: memcache.Down{Cache: memcache.New()}}
+	_, err := svc.acquireWalletOpsLock(uuid.New())
+	if !errors.Is(err, cacheguard.ErrUnavailable) || errors.Is(err, ErrInFlightConsolidation) {
+		t.Fatalf("a cache outage must refuse the wallet lock without reporting a busy wallet, got %v", err)
 	}
 	limits := &Limits{MaxConsolidateReqPerDay: 1}
-	if err := svc.incrDailyQuota(context.Background(), uuid.New(), limits); !errors.Is(err, down) {
-		t.Fatalf("a Redis error must refuse the daily quota, got %v", err)
+	if err := svc.incrDailyQuota(uuid.New(), limits); !errors.Is(err, memcache.ErrUnavailable) {
+		t.Fatalf("a cache outage must refuse the daily quota, got %v", err)
 	}
 }
 
 // ---------------------------------------------------------------------------
-// Redis helpers — real Redis (docker-compose waas-redis on localhost:6379)
-// These tests skip automatically when Redis is offline.
+// Cache helpers — in-memory driver
 // ---------------------------------------------------------------------------
 
-// TestAcquireWalletOpsLock_RealRedis_Contention exercises the SetNX lock path
+// TestAcquireWalletOpsLock_Cache_Contention exercises the SetNX lock path
 // against a live Redis: a second acquire for the same wallet must return
 // ErrInFlightConsolidation until the first release runs, after which a fresh
 // acquire succeeds.
-func TestAcquireWalletOpsLock_RealRedis_Contention(t *testing.T) {
-	svc := &service{rdb: newRedisStore()}
-	ctx := context.Background()
+func TestAcquireWalletOpsLock_Cache_Contention(t *testing.T) {
+	svc := &service{cache: memcache.New()}
 
 	walletID := uuid.New()
 
-	release1, err := svc.acquireWalletOpsLock(ctx, walletID)
+	release1, err := svc.acquireWalletOpsLock(walletID)
 	if err != nil {
 		t.Fatalf("first acquire must succeed, got %v", err)
 	}
@@ -224,37 +214,36 @@ func TestAcquireWalletOpsLock_RealRedis_Contention(t *testing.T) {
 		t.Fatal("release func must not be nil on successful acquire")
 	}
 
-	if _, err := svc.acquireWalletOpsLock(ctx, walletID); !errors.Is(err, ErrInFlightConsolidation) {
+	if _, err := svc.acquireWalletOpsLock(walletID); !errors.Is(err, ErrInFlightConsolidation) {
 		t.Fatalf("second acquire must return ErrInFlightConsolidation, got %v", err)
 	}
 
 	release1()
 
-	release2, err := svc.acquireWalletOpsLock(ctx, walletID)
+	release2, err := svc.acquireWalletOpsLock(walletID)
 	if err != nil {
 		t.Fatalf("acquire after release must succeed, got %v", err)
 	}
 	release2()
 }
 
-// TestIncrDailyQuota_RealRedis_Exceeds verifies the INCR-based daily quota:
+// TestIncrDailyQuota_Cache_Exceeds verifies the INCR-based daily quota:
 // the first N calls (N == MaxConsolidateReqPerDay) succeed, and the (N+1)th
 // returns ErrDailyQuotaExceeded. Uses a fresh accountID per run so the daily
 // counter starts at zero.
-func TestIncrDailyQuota_RealRedis_Exceeds(t *testing.T) {
-	svc := &service{rdb: newRedisStore()}
-	ctx := context.Background()
+func TestIncrDailyQuota_Cache_Exceeds(t *testing.T) {
+	svc := &service{cache: memcache.New()}
 
 	accountID := uuid.New()
 	limits := &Limits{MaxConsolidateReqPerDay: 3}
 
 	for i := 1; i <= limits.MaxConsolidateReqPerDay; i++ {
-		if err := svc.incrDailyQuota(ctx, accountID, limits); err != nil {
+		if err := svc.incrDailyQuota(accountID, limits); err != nil {
 			t.Fatalf("call %d must succeed within quota, got %v", i, err)
 		}
 	}
 
-	if err := svc.incrDailyQuota(ctx, accountID, limits); !errors.Is(err, ErrDailyQuotaExceeded) {
+	if err := svc.incrDailyQuota(accountID, limits); !errors.Is(err, ErrDailyQuotaExceeded) {
 		t.Fatalf("call %d must return ErrDailyQuotaExceeded, got %v",
 			limits.MaxConsolidateReqPerDay+1, err)
 	}

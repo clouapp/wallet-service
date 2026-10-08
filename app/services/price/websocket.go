@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	contractscache "github.com/goravel/framework/contracts/cache"
 	"github.com/shopspring/decimal"
 	"log/slog"
 	"strings"
@@ -42,7 +43,7 @@ func init() {
 type WebSocketClient struct {
 	apiKey       string
 	currencyRepo currencyStore
-	cache        PriceCache
+	cache        contractscache.Driver
 	dialer       QuoteDialer
 	activeCodes  []string
 }
@@ -52,7 +53,7 @@ type WebSocketClient struct {
 type WebSocketClientDeps struct {
 	APIKey     string
 	Currencies currencyStore
-	Cache      PriceCache
+	Cache      contractscache.Driver
 	Dialer     QuoteDialer
 }
 
@@ -201,8 +202,8 @@ func (w *WebSocketClient) processMessage(ctx context.Context, data []byte) {
 	}
 
 	if w.cache != nil {
-		if err := w.cache.Set(ctx, "currency:"+code, []byte(rate.String()), redisCurrencyTTL); err != nil {
-			slog.Warn("ws redis cache currency failed", "code", code, "error", err)
+		if err := w.cache.Put("currency:"+code, rate.String(), redisCurrencyTTL); err != nil {
+			slog.Warn("ws cache currency failed", "code", code, "error", err)
 		}
 	}
 
