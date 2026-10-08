@@ -1,7 +1,7 @@
 # Queues and workers
 
 > Status: PARTLY HOLDS (the split exists). TARGET: one consumer per queue,
-> thin jobs with typed payloads, no dead events, the split written down and
+> thin jobs with typed payloads, no domain events, the split written down and
 > tested. Migration: alignment prompt (Part 1) §3.10.
 
 ## What runs where
@@ -32,10 +32,12 @@ keep compiling.
 - `ShouldRetry` distinguishes a known failure (retry) from an unknown outcome
   (do not retry; e.g. a broadcast whose result is unknown is reconciled, not
   re-sent).
-- **Events**: every registered event has a dispatcher and a listener. Remove
-  events nobody dispatches and listeners nobody registers. If an event only
-  enqueues one job, the service dispatches the job through a `Dispatcher` port.
-- Services never call `facades.Queue()` / `facades.Event()` directly; they get a
+- **No domain events.** The app registers none (`bootstrap/app.go` has no
+  `WithEvents`): Goravel's `Dispatch` fails with `EventListenerNotBind` for an
+  event without a listener. Work that only enqueues a job is dispatched
+  straight through the `refresh.Dispatcher` port (`refresh:wallet --queue`
+  included). Add an event only together with a listener that does something.
+- Services never call `facades.Queue()` directly; they get a
   dispatcher port.
 - Artisan commands are thin (resolve a typed service → one call), end through one
   `fail(ctx, err)` helper with a non-zero exit, and contain no query.

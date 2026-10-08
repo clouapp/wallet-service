@@ -5,11 +5,9 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/goravel/framework/contracts/event"
 	"github.com/goravel/framework/facades"
 
 	"github.com/macrowallets/waas/app/container"
-	"github.com/macrowallets/waas/app/dtos"
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/services/chainregistry"
 	"github.com/macrowallets/waas/app/services/evmcall"
@@ -46,17 +44,6 @@ func decryptChainRPC(encrypted string) (string, error) {
 
 func configuredChainProfile() string {
 	return strings.TrimSpace(facades.Config().GetString(chainNetworkProfileConfigKey))
-}
-
-func dispatchWalletRefreshRequested(walletID, chainID string) error {
-	ev := facades.Event()
-	if ev == nil {
-		return fmt.Errorf("refresh:wallet: event dispatcher is not initialized")
-	}
-	return ev.Job(&dtos.WalletRefreshRequested{}, []event.Arg{
-		{Type: "string", Value: walletID},
-		{Type: "string", Value: chainID},
-	}).Dispatch()
 }
 
 func evmCallSigner() evmcall.Signer {

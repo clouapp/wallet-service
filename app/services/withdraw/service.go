@@ -311,10 +311,8 @@ func (s *Service) Request(ctx context.Context, req WithdrawRequest) (*models.Tra
 	// The sweep executor already enqueues EventWithdrawalBroadcasting for the
 	// final tx — do not re-emit here. The public withdrawal.broadcast event is
 	// published by withdrawalevents.Publisher once the withdrawal row is
-	// marked broadcast. The balance refresh is the domain event's only job,
-	// so the service dispatches both through the Dispatcher port.
+	// marked broadcast. The balance refresh goes through the Dispatcher port.
 	s.dispatchBalanceRefresh(finalTx.WalletID.String(), wallet.Chain)
-	s.dispatchWithdrawalBroadcasted(finalTx.WalletID.String(), wallet.Chain)
 
 	slog.Info("withdrawal broadcast",
 		"tx_id", finalTx.ID,
@@ -331,13 +329,6 @@ func (s *Service) dispatchBalanceRefresh(walletID, chainID string) {
 		return
 	}
 	_ = s.dispatcher.DispatchBalances(walletID, chainID)
-}
-
-func (s *Service) dispatchWithdrawalBroadcasted(walletID, chainID string) {
-	if s.dispatcher == nil {
-		return
-	}
-	_ = s.dispatcher.DispatchWithdrawalBroadcasted(walletID, chainID)
 }
 
 // decryptShareA decrypts the wallet's MPC customer share (share A) using the

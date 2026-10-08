@@ -223,7 +223,6 @@ func (s *Service) processTransfer(ctx context.Context, chainID string, adapter t
 
 	s.publishDepositPending(ctx, *tx)
 	s.dispatchTransactionRefresh(tx.WalletID.String(), chainID)
-	s.dispatchDepositDetected(tx.WalletID.String(), chainID, transfer.TxHash)
 
 	slog.Info("ingest deposit", "chain", chainID, "tx", transfer.TxHash, "log_index", transfer.LogIndex, "user", addr.ExternalUserID, "asset", asset, "amount", transfer.Amount.String())
 	return nil
@@ -234,13 +233,6 @@ func (s *Service) dispatchTransactionRefresh(walletID, chainID string) {
 		return
 	}
 	_ = s.dispatcher.DispatchTransactions(walletID, chainID)
-}
-
-func (s *Service) dispatchDepositDetected(walletID, chainID, txHash string) {
-	if s.dispatcher == nil {
-		return
-	}
-	_ = s.dispatcher.DispatchDepositDetected(walletID, chainID, txHash)
 }
 
 func (s *Service) publishDepositPending(ctx context.Context, tx models.Transaction) {

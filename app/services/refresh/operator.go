@@ -44,37 +44,34 @@ type ChainCatalog interface {
 
 // OperatorDeps is everything the refresh and reconcile commands share.
 type OperatorDeps struct {
-	Balances       *BalanceService
-	Dispatcher     Dispatcher
-	Wallets        WalletLookup
-	Addresses      AddressLookup
-	Transactions   TransactionLookup
-	Chains         ChainCatalog
-	RequestRefresh func(walletID, chainID string) error
+	Balances     *BalanceService
+	Dispatcher   Dispatcher
+	Wallets      WalletLookup
+	Addresses    AddressLookup
+	Transactions TransactionLookup
+	Chains       ChainCatalog
 }
 
 // Operator runs one refresh or reconcile the way the artisan command asks.
 type Operator struct {
-	balances       *BalanceService
-	dispatcher     Dispatcher
-	wallets        WalletLookup
-	addresses      AddressLookup
-	transactions   TransactionLookup
-	chains         ChainCatalog
-	requestRefresh func(walletID, chainID string) error
+	balances     *BalanceService
+	dispatcher   Dispatcher
+	wallets      WalletLookup
+	addresses    AddressLookup
+	transactions TransactionLookup
+	chains       ChainCatalog
 }
 
 // NewOperator wires the operator from OperatorDeps. A missing finder is
 // reported when that command runs.
 func NewOperator(deps OperatorDeps) *Operator {
 	return &Operator{
-		balances:       deps.Balances,
-		dispatcher:     deps.Dispatcher,
-		wallets:        deps.Wallets,
-		addresses:      deps.Addresses,
-		transactions:   deps.Transactions,
-		chains:         deps.Chains,
-		requestRefresh: deps.RequestRefresh,
+		balances:     deps.Balances,
+		dispatcher:   deps.Dispatcher,
+		wallets:      deps.Wallets,
+		addresses:    deps.Addresses,
+		transactions: deps.Transactions,
+		chains:       deps.Chains,
 	}
 }
 
@@ -100,7 +97,7 @@ func (o *Operator) RefreshWallet(ctx context.Context, cmd WalletCommand) (Output
 	}
 	if cmd.Queue {
 		out.Info = append(out.Info, "dispatching wallet refresh to blockchain queue: wallet="+cmd.WalletID+" scope="+cmd.Scope+" reason="+cmd.Reason)
-		return out, o.dispatchQueuedRefresh(cmd.Scope, cmd.WalletID, chainID)
+		return out, o.dispatchScopedJobs(cmd.Scope, cmd.WalletID, chainID)
 	}
 	out.Info = append(out.Info, "sync mode: refreshing wallet="+cmd.WalletID+" scope="+cmd.Scope+" reason="+cmd.Reason)
 	if err := o.refresh(ctx, "refresh:wallet", wallet); err != nil {
@@ -363,30 +360,6 @@ func (o *Operator) dispatchNamed(label, name, walletID, chainID string) error {
 	default:
 		return fmt.Errorf("%s: refresh dispatcher is not initialized", label)
 	}
-}
-
-func (o *Operator) dispatchQueuedRefresh(scope, walletID, chainID string) error {
-	switch scope {
-	case "balances":
-		if err := o.requestWalletRefresh(walletID, chainID); err != nil {
-			return err
-		}
-		return o.dispatchNamed("refresh:wallet", "balances", walletID, chainID)
-	case "full":
-		if err := o.requestWalletRefresh(walletID, chainID); err != nil {
-			return err
-		}
-		return o.dispatchScopedJobs(scope, walletID, chainID)
-	default:
-		return o.dispatchScopedJobs(scope, walletID, chainID)
-	}
-}
-
-func (o *Operator) requestWalletRefresh(walletID, chainID string) error {
-	if o == nil || o.requestRefresh == nil {
-		return fmt.Errorf("refresh:wallet: event dispatcher is not initialized")
-	}
-	return o.requestRefresh(walletID, chainID)
 }
 
 func (o *Operator) dispatchScopedJobs(scope, walletID, chainID string) error {

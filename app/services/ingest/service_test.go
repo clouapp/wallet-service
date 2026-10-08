@@ -238,11 +238,6 @@ func TestProcess_Transfers_DispatchesTheTransactionRefresh(t *testing.T) {
 		method:   "transactions",
 		walletID: addrs.addr.WalletID.String(),
 		chainID:  models.ChainETH,
-	}, {
-		method:   "deposit",
-		walletID: addrs.addr.WalletID.String(),
-		chainID:  models.ChainETH,
-		txHash:   "0xnative",
 	}}, jobs.calls)
 }
 
@@ -250,7 +245,6 @@ type recordedRefresh struct {
 	method   string
 	walletID string
 	chainID  string
-	txHash   string
 }
 
 type recordingRefresh struct {
@@ -258,43 +252,27 @@ type recordingRefresh struct {
 }
 
 func (r *recordingRefresh) DispatchBalances(walletID, chainID string) error {
-	return r.record("balances", walletID, chainID, "")
+	return r.record("balances", walletID, chainID)
 }
 
 func (r *recordingRefresh) DispatchTransactions(walletID, chainID string) error {
-	return r.record("transactions", walletID, chainID, "")
+	return r.record("transactions", walletID, chainID)
 }
 
 func (r *recordingRefresh) DispatchTokens(walletID, chainID string) error {
-	return r.record("tokens", walletID, chainID, "")
+	return r.record("tokens", walletID, chainID)
 }
 
 func (r *recordingRefresh) DispatchUTXOs(walletID, chainID string) error {
-	return r.record("utxos", walletID, chainID, "")
+	return r.record("utxos", walletID, chainID)
 }
 
 func (r *recordingRefresh) DispatchReconcile(walletID, chainID string) error {
-	return r.record("reconcile", walletID, chainID, "")
+	return r.record("reconcile", walletID, chainID)
 }
 
-func (r *recordingRefresh) DispatchWalletCreated(walletID, chainID string) error {
-	return r.record("created", walletID, chainID, "")
-}
-
-func (r *recordingRefresh) DispatchWalletActivated(walletID, chainID string) error {
-	return r.record("activated", walletID, chainID, "")
-}
-
-func (r *recordingRefresh) DispatchDepositDetected(walletID, chainID, txHash string) error {
-	return r.record("deposit", walletID, chainID, txHash)
-}
-
-func (r *recordingRefresh) DispatchWithdrawalBroadcasted(walletID, chainID string) error {
-	return r.record("withdrawal", walletID, chainID, "")
-}
-
-func (r *recordingRefresh) record(method, walletID, chainID, txHash string) error {
-	r.calls = append(r.calls, recordedRefresh{method: method, walletID: walletID, chainID: chainID, txHash: txHash})
+func (r *recordingRefresh) record(method, walletID, chainID string) error {
+	r.calls = append(r.calls, recordedRefresh{method: method, walletID: walletID, chainID: chainID})
 	return nil
 }
 

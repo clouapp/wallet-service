@@ -4,7 +4,6 @@ import (
 	"time"
 
 	"github.com/goravel/framework/contracts/console"
-	contractsevent "github.com/goravel/framework/contracts/event"
 	contractsfoundation "github.com/goravel/framework/contracts/foundation"
 	contractsconfiguration "github.com/goravel/framework/contracts/foundation/configuration"
 	"github.com/goravel/framework/contracts/queue"
@@ -14,7 +13,6 @@ import (
 	"github.com/macrowallets/waas/app/adapters/redis/pricecache"
 	"github.com/macrowallets/waas/app/console/commands"
 	"github.com/macrowallets/waas/app/container"
-	"github.com/macrowallets/waas/app/dtos"
 	appfacades "github.com/macrowallets/waas/app/facades"
 	"github.com/macrowallets/waas/app/http/middleware"
 	"github.com/macrowallets/waas/app/jobs"
@@ -62,10 +60,9 @@ func Boot() contractsfoundation.Application {
 			transactions := container.MustMake[*walletrecords.Transactions]()
 			return []console.Command{
 				commands.NewRefreshWallet(commands.RefreshWalletDeps{
-					Balances:       balances,
-					Dispatcher:     dispatcher,
-					Wallets:        wallets,
-					RequestRefresh: dispatchWalletRefreshRequested,
+					Balances:   balances,
+					Dispatcher: dispatcher,
+					Wallets:    wallets,
 				}),
 				commands.NewRefreshAddress(commands.RefreshAddressDeps{
 					Balances:   balances,
@@ -122,18 +119,6 @@ func Boot() contractsfoundation.Application {
 					Chains:    container.MustMake[*repositories.ChainRepository](),
 				}),
 				&commands.TransactionsBackfillFees{},
-			}
-		}).
-		WithEvents(func() map[contractsevent.Event][]contractsevent.Listener {
-			// These events stay registered. Each one only enqueues one job, so the
-			// service dispatches that job through the refresh Dispatcher port
-			// and no listener remains.
-			return map[contractsevent.Event][]contractsevent.Listener{
-				&dtos.WalletCreated{}:          {},
-				&dtos.WalletActivated{}:        {},
-				&dtos.DepositDetected{}:        {},
-				&dtos.WithdrawalBroadcasted{}:  {},
-				&dtos.WalletRefreshRequested{}: {},
 			}
 		}).
 		WithRules(Rules).

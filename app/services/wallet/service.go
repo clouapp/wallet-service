@@ -245,7 +245,6 @@ func (s *Service) CreateWallet(ctx context.Context, accountID uuid.UUID, chainID
 
 	s.cacheAddress(ctx, chainID, depositAddressStr)
 	s.dispatchBalanceRefresh(walletID.String(), chainID)
-	s.dispatchWalletCreated(walletID.String(), chainID)
 
 	if s.webhookSyncSvc != nil {
 		go func() {
@@ -285,7 +284,6 @@ func (s *Service) ActivateWallet(ctx context.Context, walletID uuid.UUID, code s
 	w.ActivationCode = nil
 
 	s.dispatchBalanceRefresh(w.ID.String(), w.Chain)
-	s.dispatchWalletActivated(w.ID.String(), w.Chain)
 
 	return w, nil
 }
@@ -295,20 +293,6 @@ func (s *Service) dispatchBalanceRefresh(walletID, chainID string) {
 		return
 	}
 	_ = s.dispatcher.DispatchBalances(walletID, chainID)
-}
-
-func (s *Service) dispatchWalletCreated(walletID, chainID string) {
-	if s.dispatcher == nil {
-		return
-	}
-	_ = s.dispatcher.DispatchWalletCreated(walletID, chainID)
-}
-
-func (s *Service) dispatchWalletActivated(walletID, chainID string) {
-	if s.dispatcher == nil {
-		return
-	}
-	_ = s.dispatcher.DispatchWalletActivated(walletID, chainID)
 }
 
 func curveForChain(chainID string) mpc.Curve {

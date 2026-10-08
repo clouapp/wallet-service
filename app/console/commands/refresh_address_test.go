@@ -13,18 +13,6 @@ func (refreshAddressDispatcherStub) DispatchTransactions(string, string) error {
 func (refreshAddressDispatcherStub) DispatchTokens(string, string) error       { return nil }
 func (refreshAddressDispatcherStub) DispatchUTXOs(string, string) error        { return nil }
 func (refreshAddressDispatcherStub) DispatchReconcile(string, string) error    { return nil }
-func (refreshAddressDispatcherStub) DispatchWalletCreated(string, string) error {
-	return nil
-}
-func (refreshAddressDispatcherStub) DispatchWalletActivated(string, string) error {
-	return nil
-}
-func (refreshAddressDispatcherStub) DispatchDepositDetected(string, string, string) error {
-	return nil
-}
-func (refreshAddressDispatcherStub) DispatchWithdrawalBroadcasted(string, string) error {
-	return nil
-}
 
 func TestNew_Refresh_AddressKeepsItsDependencies(t *testing.T) {
 	balances := refresh.NewBalanceService(refresh.Deps{})

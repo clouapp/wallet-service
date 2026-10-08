@@ -1,8 +1,13 @@
 package refresh
 
 import (
+	"context"
 	"errors"
 	"testing"
+
+	"github.com/google/uuid"
+
+	"github.com/macrowallets/waas/app/models"
 )
 
 func TestRefresh_Wallet_QueueScopeDispatchesEveryJobForFull(t *testing.T) {
@@ -72,111 +77,32 @@ func TestRefresh_Wallet_QueueScopeStopsOnTheFirstError(t *testing.T) {
 	}
 }
 
-func TestQueued_Refresh_DispatchesWalletRefreshRequestedForBalances(t *testing.T) {
+func TestRefresh_Wallet_QueueFlagEnqueuesTheJobs(t *testing.T) {
+	id := uuid.New()
 	recorder := &recordingDispatcher{}
-	var events []recordedDispatch
-	op := &Operator{
-		dispatcher: recorder,
-		requestRefresh: func(walletID, chainID string) error {
-			events = append(events, recordedDispatch{kind: "event", walletID: walletID, chainID: chainID})
-			return nil
-		},
+	op := NewOperator(OperatorDeps{
+		Dispatcher: recorder,
+		Wallets:    walletLookupStub{wallet: &models.Wallet{ID: id, Chain: "eth"}},
+	})
+	out, err := op.RefreshWallet(context.Background(), WalletCommand{
+		WalletID: id.String(), Scope: "balances", Queue: true, Reason: "manual",
+	})
+	if err != nil {
+		t.Fatalf("refresh: %v", err)
 	}
-	if err := op.dispatchQueuedRefresh("balances", "wallet-1", "eth"); err != nil {
-		t.Fatalf("dispatch: %v", err)
+	if len(out.Info) != 1 {
+		t.Fatalf("info = %#v", out.Info)
 	}
-	if len(events) != 1 || events[0] != (recordedDispatch{kind: "event", walletID: "wallet-1", chainID: "eth"}) {
-		t.Fatalf("events = %#v", events)
-	}
-	if len(recorder.calls) != 1 || recorder.calls[0] != (recordedDispatch{kind: "balances", walletID: "wallet-1", chainID: "eth"}) {
-		t.Fatalf("calls = %#v", recorder.calls)
-	}
-}
-
-func TestQueued_Refresh_UsesTheEventForBalancesAndJobsForTheRest(t *testing.T) {
-	recorder := &recordingDispatcher{}
-	var events int
-	op := &Operator{
-		dispatcher: recorder,
-		requestRefresh: func(walletID, chainID string) error {
-			events++
-			if walletID != "wallet-1" || chainID != "eth" {
-				t.Fatalf("event payload = %s %s", walletID, chainID)
-			}
-			return nil
-		},
-	}
-	if err := op.dispatchQueuedRefresh("full", "wallet-1", "eth"); err != nil {
-		t.Fatalf("dispatch: %v", err)
-	}
-	if events != 1 {
-		t.Fatalf("events = %d, want 1", events)
-	}
-	want := []recordedDispatch{
-		{kind: "balances", walletID: "wallet-1", chainID: "eth"},
-		{kind: "transactions", walletID: "wallet-1", chainID: "eth"},
-		{kind: "tokens", walletID: "wallet-1", chainID: "eth"},
-		{kind: "utxos", walletID: "wallet-1", chainID: "eth"},
-	}
-	if len(recorder.calls) != len(want) {
+	want := recordedDispatch{kind: "balances", walletID: id.String(), chainID: "eth"}
+	if len(recorder.calls) != 1 || recorder.calls[0] != want {
 		t.Fatalf("calls = %#v, want %#v", recorder.calls, want)
 	}
-	for i, call := range want {
-		if recorder.calls[i] != call {
-			t.Fatalf("call %d = %#v, want %#v", i, recorder.calls[i], call)
-		}
-	}
 }
 
-func TestQueued_Refresh_LeavesANarrowScopeOnTheJobDispatcher(t *testing.T) {
-	recorder := &recordingDispatcher{}
-	op := &Operator{
-		dispatcher: recorder,
-		requestRefresh: func(string, string) error {
-			t.Fatal("WalletRefreshRequested is the balances refresh")
-			return nil
-		},
-	}
-	if err := op.dispatchQueuedRefresh("transactions", "wallet-2", "btc"); err != nil {
-		t.Fatalf("dispatch: %v", err)
-	}
-	if len(recorder.calls) != 1 || recorder.calls[0].kind != "transactions" {
-		t.Fatalf("calls = %#v", recorder.calls)
-	}
-}
+type walletLookupStub struct{ wallet *models.Wallet }
 
-func TestQueued_Refresh_StopsWhenTheEventDispatchFails(t *testing.T) {
-	want := errors.New("event down")
-	recorder := &recordingDispatcher{}
-	op := &Operator{
-		dispatcher: recorder,
-		requestRefresh: func(string, string) error {
-			return want
-		},
-	}
-	err := op.dispatchQueuedRefresh("full", "wallet-1", "eth")
-	if !errors.Is(err, want) {
-		t.Fatalf("error = %v, want %v", err, want)
-	}
-	if len(recorder.calls) != 0 {
-		t.Fatalf("jobs dispatched after the event failed: %#v", recorder.calls)
-	}
-}
-
-func TestQueued_Refresh_BalancesNeedsTheDispatcher(t *testing.T) {
-	op := &Operator{requestRefresh: func(string, string) error { return nil }}
-	err := op.dispatchQueuedRefresh("balances", "wallet-1", "eth")
-	if err == nil || err.Error() != "refresh:wallet: refresh dispatcher is not initialized" {
-		t.Fatalf("error = %v", err)
-	}
-}
-
-func TestQueued_Refresh_RejectsAMissingEventDispatcher(t *testing.T) {
-	op := &Operator{}
-	err := op.dispatchQueuedRefresh("balances", "wallet-1", "eth")
-	if err == nil || err.Error() != "refresh:wallet: event dispatcher is not initialized" {
-		t.Fatalf("error = %v", err)
-	}
+func (s walletLookupStub) FindByID(context.Context, uuid.UUID) (*models.Wallet, error) {
+	return s.wallet, nil
 }
 
 func TestRefresh_Wallet_QueueScopeRejectsNilDispatcher(t *testing.T) {
@@ -218,16 +144,6 @@ func (r *recordingDispatcher) DispatchUTXOs(walletID, chainID string) error {
 func (r *recordingDispatcher) DispatchReconcile(walletID, chainID string) error {
 	return r.record("reconcile", walletID, chainID)
 }
-
-func (r *recordingDispatcher) DispatchWalletCreated(string, string) error { return nil }
-
-func (r *recordingDispatcher) DispatchWalletActivated(string, string) error { return nil }
-
-func (r *recordingDispatcher) DispatchDepositDetected(string, string, string) error {
-	return nil
-}
-
-func (r *recordingDispatcher) DispatchWithdrawalBroadcasted(string, string) error { return nil }
 
 func (r *recordingDispatcher) record(kind, walletID, chainID string) error {
 	r.calls = append(r.calls, recordedDispatch{kind: kind, walletID: walletID, chainID: chainID})

@@ -18,10 +18,9 @@ type RefreshWallet struct {
 // RefreshWalletDeps is everything the refresh:wallet command needs.
 // Balances and Dispatcher are required.
 type RefreshWalletDeps struct {
-	Balances       *refresh.BalanceService
-	Dispatcher     refresh.Dispatcher
-	Wallets        refresh.WalletLookup
-	RequestRefresh func(walletID, chainID string) error
+	Balances   *refresh.BalanceService
+	Dispatcher refresh.Dispatcher
+	Wallets    refresh.WalletLookup
 }
 
 // NewRefreshWallet refreshes one wallet's read model.
@@ -36,10 +35,9 @@ func NewRefreshWallet(deps RefreshWalletDeps) *RefreshWallet {
 		balances:   deps.Balances,
 		dispatcher: deps.Dispatcher,
 		run: refresh.NewOperator(refresh.OperatorDeps{
-			Balances:       deps.Balances,
-			Dispatcher:     deps.Dispatcher,
-			Wallets:        deps.Wallets,
-			RequestRefresh: deps.RequestRefresh,
+			Balances:   deps.Balances,
+			Dispatcher: deps.Dispatcher,
+			Wallets:    deps.Wallets,
 		}),
 	}
 }
