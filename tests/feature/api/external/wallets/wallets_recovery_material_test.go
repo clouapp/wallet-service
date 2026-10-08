@@ -1,6 +1,7 @@
 package wallets
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
 	"encoding/hex"
@@ -52,8 +53,10 @@ const (
 
 var omittedSecretFields = [...]string{encryptedUserKeyField, encryptedPasscodeField}
 
-// recordingMPCService captures the last keygen so tests can compare the
-// response material against the shares the service actually produced.
+// recordingMPCService captures a copy of the last keygen so tests can compare
+// the response material against the shares the service actually produced. It
+// must be a copy: the wallet service zeroes the buffers it is handed once it
+// has sealed them (61d4608).
 type recordingMPCService struct {
 	*mocks.MockMPCService
 	lastKeygen *mpc.KeygenResult
@@ -62,7 +65,12 @@ type recordingMPCService struct {
 func (r *recordingMPCService) Keygen(ctx context.Context, curve mpc.Curve) (*mpc.KeygenResult, error) {
 	result, err := r.MockMPCService.Keygen(ctx, curve)
 	if err == nil {
-		r.lastKeygen = result
+		r.lastKeygen = &mpc.KeygenResult{
+			ShareA:         bytes.Clone(result.ShareA),
+			ShareB:         bytes.Clone(result.ShareB),
+			CombinedPubKey: bytes.Clone(result.CombinedPubKey),
+			ChainCode:      bytes.Clone(result.ChainCode),
+		}
 	}
 	return result, err
 }
