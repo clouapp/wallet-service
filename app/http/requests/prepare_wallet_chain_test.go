@@ -1,4 +1,4 @@
-package requests
+package requests_test
 
 import (
 	"context"
@@ -9,6 +9,8 @@ import (
 	"github.com/goravel/framework/contracts/validation"
 
 	"github.com/macrowallets/waas/app/http/middleware/requestctx"
+	whitelistrequests "github.com/macrowallets/waas/app/http/requests/dashboard/wallets/whitelist"
+	withdrawalsrequests "github.com/macrowallets/waas/app/http/requests/withdrawals"
 	"github.com/macrowallets/waas/app/models"
 )
 
@@ -16,7 +18,9 @@ func TestPrepare_For_ValidationReadsTheWalletChainFromTheRequest(t *testing.T) {
 	wallet := &models.Wallet{Chain: "eth"}
 	ctx := scopeContext{ctx: context.WithValue(context.Background(), requestctx.KeyWallet, wallet)}
 	preparers := []validationPreparer{
-		&AddWhitelistEntryRequest{},
+		&withdrawalsrequests.EstimateRequest{},
+		&whitelistrequests.StoreRequest{},
+		&withdrawalsrequests.StoreRequest{},
 	}
 	for _, preparer := range preparers {
 		data := chainData{}
@@ -32,7 +36,9 @@ func TestPrepare_For_ValidationReadsTheWalletChainFromTheRequest(t *testing.T) {
 
 func TestPrepare_For_ValidationLeavesTheChainUnsetWhenTheWalletIsMissing(t *testing.T) {
 	preparers := []validationPreparer{
-		&AddWhitelistEntryRequest{},
+		&withdrawalsrequests.EstimateRequest{},
+		&whitelistrequests.StoreRequest{},
+		&withdrawalsrequests.StoreRequest{},
 	}
 	contexts := []http.Context{
 		scopeContext{ctx: context.Background()},

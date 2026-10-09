@@ -21,6 +21,10 @@ import (
 	dashwalletbalances "github.com/macrowallets/waas/app/http/controllers/dashboard/wallets/balances"
 	dashwalletsettings "github.com/macrowallets/waas/app/http/controllers/dashboard/wallets/settings"
 	dashwallettransactions "github.com/macrowallets/waas/app/http/controllers/dashboard/wallets/transactions"
+	dashwalletunspents "github.com/macrowallets/waas/app/http/controllers/dashboard/wallets/unspents"
+	dashwalletusers "github.com/macrowallets/waas/app/http/controllers/dashboard/wallets/users"
+	dashwalletwebhooks "github.com/macrowallets/waas/app/http/controllers/dashboard/wallets/webhooks"
+	dashwalletwhitelist "github.com/macrowallets/waas/app/http/controllers/dashboard/wallets/whitelist"
 	dashwithdrawals "github.com/macrowallets/waas/app/http/controllers/dashboard/withdrawals"
 	platformaccounts "github.com/macrowallets/waas/app/http/controllers/platform/accounts"
 	platformchains "github.com/macrowallets/waas/app/http/controllers/platform/chains"
@@ -285,18 +289,18 @@ func RegisterAdminRoutes() {
 			r.Middleware(middleware.Can(accounts, middleware.PermAddressesCreate)).Post("/addresses", addressCtrl.Store)
 			r.Patch("/addresses/{addressId}", addressCtrl.Update)
 
-			r.Get("/users", walletUsersCtrl.ListWalletUsers)
-			r.Middleware(middleware.WalletAddUser(walletPolicyMemberships())).Post("/users", walletUsersCtrl.AddWalletUser)
-			r.Middleware(middleware.WalletRemoveUser(walletPolicyMemberships())).Delete("/users/{userId}", walletUsersCtrl.RemoveWalletUser)
+			r.Get("/users", walletUsersCtrl.Index)
+			r.Middleware(middleware.WalletAddUser(walletPolicyMemberships())).Post("/users", walletUsersCtrl.Store)
+			r.Middleware(middleware.WalletRemoveUser(walletPolicyMemberships())).Delete("/users/{userId}", walletUsersCtrl.Destroy)
 
-			r.Get("/whitelist", whitelistCtrl.ListWhitelistEntries)
-			r.Middleware(middleware.WalletWhitelist(walletPolicyMemberships(), whitelist), requireTOTP).Post("/whitelist", whitelistCtrl.AddWhitelistEntry)
-			r.Middleware(middleware.WalletWhitelist(walletPolicyMemberships(), whitelist), requireTOTP).Delete("/whitelist/{entryId}", whitelistCtrl.DeleteWhitelistEntry)
+			r.Get("/whitelist", whitelistCtrl.Index)
+			r.Middleware(middleware.WalletWhitelist(walletPolicyMemberships(), whitelist), requireTOTP).Post("/whitelist", whitelistCtrl.Store)
+			r.Middleware(middleware.WalletWhitelist(walletPolicyMemberships(), whitelist), requireTOTP).Delete("/whitelist/{entryId}", whitelistCtrl.Destroy)
 
-			r.Get("/webhooks", walletWebhooksCtrl.ListWalletWebhooks)
-			r.Middleware(middleware.WalletManageWebhooks(walletPolicyMemberships(), walletWebhooks), requireTOTP).Post("/webhooks", walletWebhooksCtrl.CreateWalletWebhook)
-			r.Middleware(middleware.WalletManageWebhooks(walletPolicyMemberships(), walletWebhooks)).Post("/webhooks/{webhookId}/test", walletWebhooksCtrl.TestWalletWebhook)
-			r.Middleware(middleware.WalletManageWebhooks(walletPolicyMemberships(), walletWebhooks), requireTOTP).Delete("/webhooks/{webhookId}", walletWebhooksCtrl.DeleteWalletWebhook)
+			r.Get("/webhooks", walletWebhooksCtrl.Index)
+			r.Middleware(middleware.WalletManageWebhooks(walletPolicyMemberships(), walletWebhooks), requireTOTP).Post("/webhooks", walletWebhooksCtrl.Store)
+			r.Middleware(middleware.WalletManageWebhooks(walletPolicyMemberships(), walletWebhooks)).Post("/webhooks/{webhookId}/test", walletWebhooksCtrl.Test)
+			r.Middleware(middleware.WalletManageWebhooks(walletPolicyMemberships(), walletWebhooks), requireTOTP).Delete("/webhooks/{webhookId}", walletWebhooksCtrl.Destroy)
 
 			r.Get("/settings", walletSettingsCtrl.Show)
 			r.Patch("/settings", walletSettingsCtrl.Update)
@@ -321,7 +325,7 @@ func RegisterAdminRoutes() {
 			r.Post("/withdraw/preview", sweepCtrl.Preview)
 
 			r.Prefix("/unspents").Middleware(middleware.UTXOOnly(container.MustMake[*walletrecords.Wallets]())).Group(func(ur route.Router) {
-				ur.Get("", unspentsCtrl.ListUnspentOutputs)
+				ur.Get("", unspentsCtrl.Index)
 			})
 		})
 	})
@@ -384,27 +388,22 @@ func walletPolicyMemberships() *walletrecords.Memberships {
 	})
 }
 
-func newDashboardWalletUsersController() *dashwallets.UsersController {
-	return dashwallets.NewUsersController(dashwallets.WalletUsersControllerDeps{
-		Members:     container.MustMake[*walletrecords.Members](),
-		Accounts:    container.MustMake[*accountsvc.Service](),
-		Memberships: walletPolicyMemberships(),
-	})
+func newDashboardWalletUsersController() *dashwalletusers.UserController {
+	return dashwalletusers.NewUserController(
+		container.MustMake[*walletrecords.Members](),
+		walletPolicyMemberships(),
+	)
 }
 
-func newDashboardWhitelistController() *dashwallets.WhitelistController {
-	return dashwallets.NewWhitelistController(dashwallets.WhitelistControllerDeps{
-		Entries:     container.MustMake[*walletrecords.Whitelist](),
-		Memberships: walletPolicyMemberships(),
-	})
+func newDashboardWhitelistController() *dashwalletwhitelist.WhitelistController {
+	return dashwalletwhitelist.NewWhitelistController(container.MustMake[*walletrecords.Whitelist]())
 }
 
-func newDashboardWalletWebhooksController() *dashwallets.WebhooksController {
-	return dashwallets.NewWebhooksController(dashwallets.WebhooksControllerDeps{
-		Configs:     container.MustMake[*walletrecords.Webhooks](),
-		Delivery:    container.MustMake[*webhook.Service](),
-		Memberships: walletPolicyMemberships(),
-	})
+func newDashboardWalletWebhooksController() *dashwalletwebhooks.WebhookController {
+	return dashwalletwebhooks.NewWebhookController(
+		container.MustMake[*walletrecords.Webhooks](),
+		container.MustMake[*webhook.Service](),
+	)
 }
 
 func newDashboardWalletSettingsController() *dashwalletsettings.SettingsController {
@@ -476,8 +475,8 @@ func newDashboardSweepController() *dashsweep.SweepController {
 	})
 }
 
-func newDashboardUnspentsController() *dashwallets.UnspentsController {
-	return dashwallets.NewUnspentsController(
+func newDashboardUnspentsController() *dashwalletunspents.UnspentController {
+	return dashwalletunspents.NewUnspentController(
 		container.MustMake[*walletrecords.UTXOs](),
 	)
 }
