@@ -3,7 +3,6 @@ package currencies
 import (
 	"github.com/goravel/framework/contracts/http"
 
-	"github.com/macrowallets/waas/app/http/requests"
 	currencyresources "github.com/macrowallets/waas/app/http/resources/dashboard/currencies"
 	"github.com/macrowallets/waas/app/http/responses"
 	"github.com/macrowallets/waas/app/services/currencies"
@@ -40,8 +39,8 @@ func (c *CurrencyController) Index(ctx http.Context) http.Response {
 
 // Show returns one currency by code.
 func (c *CurrencyController) Show(ctx http.Context) http.Response {
-	code, err := requests.RouteString(ctx, "code")
-	if err != nil {
+	code := ctx.Request().Route("code")
+	if code == "" {
 		return responses.Fail(ctx, http.StatusBadRequest, responses.CodeInvalidRequest, "currency code is required")
 	}
 

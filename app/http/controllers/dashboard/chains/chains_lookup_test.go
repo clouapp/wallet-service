@@ -250,3 +250,39 @@ func TestTokens_And_Resources_AnswerTheirOwnMessageWhenTheirReadFails(t *testing
 		})
 	}
 }
+
+// The path segment is used as it arrives: only an empty one is the 400. A blank
+// id ("   ") reaches the lookup and answers 404, as it did before the handlers
+// moved to the controller standard (requests.RouteString would trim it to "").
+func TestChain_Lookup_PassesABlankIDToTheLookup(t *testing.T) {
+	handlers := map[string]func(*ChainController, http.Context) http.Response{
+		"Show":      (*ChainController).Show,
+		"Tokens":    (*ChainController).Tokens,
+		"Resources": (*ChainController).Resources,
+	}
+	previous := foundation.App
+	foundation.App = quietApp{}
+	t.Cleanup(func() { foundation.App = previous })
+
+	for handlerName, handler := range handlers {
+		for _, id := range []string{"", "   "} {
+			t.Run(fmt.Sprintf("%s/%q", handlerName, id), func(t *testing.T) {
+				ctrl := NewChainController(chainsvc.NewService(chainsvc.Deps{Chains: lookupCatalog{}}))
+				response := &recordingResponse{}
+				handler(ctrl, &recordingContext{
+					base:     context.Background(),
+					request:  &recordingRequest{chainID: id},
+					response: response,
+				})
+
+				want := http.StatusNotFound
+				if id == "" {
+					want = http.StatusBadRequest
+				}
+				if response.status != want {
+					t.Fatalf("status = %d, want %d", response.status, want)
+				}
+			})
+		}
+	}
+}

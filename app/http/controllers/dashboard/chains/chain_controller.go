@@ -4,7 +4,6 @@ import (
 	"github.com/goravel/framework/contracts/http"
 
 	"github.com/macrowallets/waas/app/http/middleware/requestctx"
-	"github.com/macrowallets/waas/app/http/requests"
 	chainresource "github.com/macrowallets/waas/app/http/resources/chains"
 	chainresources "github.com/macrowallets/waas/app/http/resources/dashboard/chains"
 	"github.com/macrowallets/waas/app/http/responses"
@@ -50,8 +49,8 @@ func (c *ChainController) Index(ctx http.Context) http.Response {
 func (c *ChainController) Show(ctx http.Context) http.Response {
 	environment, _ := requestctx.AccountEnvironment(ctx)
 
-	chainID, err := requests.RouteString(ctx, "chainId")
-	if err != nil {
+	chainID := ctx.Request().Route("chainId")
+	if chainID == "" {
 		return responses.Fail(ctx, http.StatusBadRequest, responses.CodeInvalidRequest, "chainId is required")
 	}
 
@@ -67,8 +66,8 @@ func (c *ChainController) Show(ctx http.Context) http.Response {
 func (c *ChainController) Tokens(ctx http.Context) http.Response {
 	environment, _ := requestctx.AccountEnvironment(ctx)
 
-	chainID, err := requests.RouteString(ctx, "chainId")
-	if err != nil {
+	chainID := ctx.Request().Route("chainId")
+	if chainID == "" {
 		return responses.Fail(ctx, http.StatusBadRequest, responses.CodeInvalidRequest, "chainId is required")
 	}
 
@@ -84,8 +83,8 @@ func (c *ChainController) Tokens(ctx http.Context) http.Response {
 func (c *ChainController) Resources(ctx http.Context) http.Response {
 	environment, _ := requestctx.AccountEnvironment(ctx)
 
-	chainID, err := requests.RouteString(ctx, "chainId")
-	if err != nil {
+	chainID := ctx.Request().Route("chainId")
+	if chainID == "" {
 		return responses.Fail(ctx, http.StatusBadRequest, responses.CodeInvalidRequest, "chainId is required")
 	}
 
