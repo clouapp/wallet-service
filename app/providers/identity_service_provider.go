@@ -6,6 +6,7 @@ import (
 	appfacades "github.com/macrowallets/waas/app/facades"
 	"github.com/macrowallets/waas/app/repositories"
 	"github.com/macrowallets/waas/app/services/account"
+	"github.com/macrowallets/waas/app/services/apitoken"
 	authsvc "github.com/macrowallets/waas/app/services/auth"
 	"github.com/macrowallets/waas/app/services/sessions"
 	usersvc "github.com/macrowallets/waas/app/services/users"
@@ -140,6 +141,21 @@ func (p *IdentityServiceProvider) Register(app foundation.Application) {
 			InviteMail:  newCredentialMailDispatcher(app),
 			Passwords:   passwords,
 		}).WithPlatformAdmins(admins), nil
+	})
+	app.Singleton((*apitoken.Service)(nil), func(app foundation.Application) (any, error) {
+		accounts, err := resolve[*account.Service](app)
+		if err != nil {
+			return nil, err
+		}
+		passwords, err := resolve[*authsvc.Service](app)
+		if err != nil {
+			return nil, err
+		}
+		return apitoken.NewService(apitoken.Deps{
+			Tokens:     accounts,
+			Secrets:    passwords,
+			SigningKey: appfacades.Config().GetString("jwt.secret"),
+		}), nil
 	})
 }
 

@@ -4,7 +4,6 @@ import (
 	"testing"
 
 	accountsvc "github.com/macrowallets/waas/app/services/account"
-	authsvc "github.com/macrowallets/waas/app/services/auth"
 	featuressvc "github.com/macrowallets/waas/app/services/features"
 	"github.com/macrowallets/waas/app/services/settings"
 )
@@ -12,7 +11,6 @@ import (
 func accountsControllerDeps() AccountsControllerDeps {
 	return AccountsControllerDeps{
 		AccountService: &accountsvc.Service{},
-		Passwords:      &authsvc.Service{},
 		Limits:         &settings.Service{},
 		Features:       &featuressvc.Service{},
 	}
@@ -26,9 +24,6 @@ func TestNew_Accounts_ControllerKeepsItsDependencies(t *testing.T) {
 	}
 	if ctrl.accountService != deps.AccountService {
 		t.Fatal("accounts controller did not keep the account service")
-	}
-	if ctrl.passwords != deps.Passwords {
-		t.Fatal("accounts controller did not keep the auth service")
 	}
 	if ctrl.limits != deps.Limits {
 		t.Fatal("accounts controller did not keep the settings service")
@@ -48,11 +43,6 @@ func TestNew_Accounts_ControllerRequiresEveryDependency(t *testing.T) {
 			name:  "account service",
 			clear: func(deps *AccountsControllerDeps) { deps.AccountService = nil },
 			panic: "dashboard accounts controller: account service is required",
-		},
-		{
-			name:  "auth service",
-			clear: func(deps *AccountsControllerDeps) { deps.Passwords = nil },
-			panic: "dashboard accounts controller: auth service is required",
 		},
 		{
 			name:  "settings service",

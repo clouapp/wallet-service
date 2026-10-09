@@ -1,11 +1,13 @@
 package accounts
 
 import (
+	"errors"
 	"strings"
 
 	"github.com/goravel/framework/contracts/http"
 
 	"github.com/macrowallets/waas/app/policies"
+	"github.com/macrowallets/waas/app/services/withdraw"
 )
 
 type CreateAccountTokenRequest struct {
@@ -35,4 +37,20 @@ func (r *CreateAccountTokenRequest) Rules(ctx http.Context) map[string]string {
 		"permissions":   "array",
 		"permissions.*": "in:" + strings.Join(policies.APITokenPermissionCatalog(), ","),
 	}
+}
+
+// After checks the restrictions no rule reaches, once the rules passed: the
+// ip_cidr allowlist, then the spending_limit object. The first one that fails
+// is the only field answered.
+func (r *CreateAccountTokenRequest) After(ctx http.Context) map[string][]string {
+	if !policies.ValidAPITokenIPCIDR(r.IpCidr) {
+		return map[string][]string{"ip_cidr": {"The ip_cidr must be a valid CIDR."}}
+	}
+	if _, err := withdraw.StoreSpendingLimit(r.SpendingLimit); err != nil {
+		if errors.Is(err, withdraw.ErrNegativeSpendingLimit) {
+			return map[string][]string{"spending_limit.daily_usd": {"must be a decimal string greater than or equal to 0"}}
+		}
+		return map[string][]string{"spending_limit": {"must be an object with an optional daily_usd decimal"}}
+	}
+	return nil
 }

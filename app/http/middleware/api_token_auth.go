@@ -6,7 +6,6 @@ import (
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
-	"errors"
 	"io"
 	"strings"
 	"time"
@@ -158,13 +157,4 @@ func APITokenAuth(tokens apiTokenLookup) http.Middleware {
 // does send one is verified either way.
 func MintAPIToken(token *models.AccessToken, requireSignature bool) (string, error) {
 	return apitoken.Sign(facades.Config().GetString("jwt.secret"), token, requireSignature, "")
-}
-
-// MintAPITokenWithSecret signs a JWT that carries the one-time secret claim.
-// The database stores only sha256 of that secret.
-func MintAPITokenWithSecret(token *models.AccessToken, requireSignature bool, secret string) (string, error) {
-	if secret == "" {
-		return "", errors.New("api token secret is required")
-	}
-	return apitoken.Sign(facades.Config().GetString("jwt.secret"), token, requireSignature, secret)
 }

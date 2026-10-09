@@ -34,6 +34,7 @@ import (
 	"github.com/macrowallets/waas/app/http/middleware"
 	accountsvc "github.com/macrowallets/waas/app/services/account"
 	activitysvc "github.com/macrowallets/waas/app/services/activity"
+	"github.com/macrowallets/waas/app/services/apitoken"
 	authsvc "github.com/macrowallets/waas/app/services/auth"
 	chainpkg "github.com/macrowallets/waas/app/services/chain"
 	chainsvc "github.com/macrowallets/waas/app/services/chains"
@@ -80,6 +81,7 @@ func RegisterAdminRoutes() {
 	authCtrl := newDashboardAuthController()
 	usersCtrl := newDashboardUsersController()
 	accountsCtrl := newDashboardAccountsController()
+	tokenCtrl := newDashboardTokenController()
 	accountSettingsCtrl := newDashboardAccountSettingsController()
 	accountActivityCtrl := newDashboardAccountActivityController()
 	accountFeaturesCtrl := newDashboardAccountFeaturesController()
@@ -155,9 +157,9 @@ func RegisterAdminRoutes() {
 			// and no write on this path.
 			r.Middleware(middleware.Can(accounts, middleware.PermRolesRead)).Get("/permissions", accountRolesCtrl.Permissions)
 
-			r.Middleware(middleware.Can(accounts, middleware.PermTokensRead)).Get("/tokens", accountsCtrl.ListAccountTokens)
-			r.Middleware(middleware.Can(accounts, middleware.PermTokensWrite), middleware.MintAPITokenPermissions()).Post("/tokens", accountsCtrl.CreateAccountToken)
-			r.Middleware(middleware.Can(accounts, middleware.PermTokensWrite)).Delete("/tokens/{tokenId}", accountsCtrl.RevokeAccountToken)
+			r.Middleware(middleware.Can(accounts, middleware.PermTokensRead)).Get("/tokens", tokenCtrl.Index)
+			r.Middleware(middleware.Can(accounts, middleware.PermTokensWrite), middleware.MintAPITokenPermissions()).Post("/tokens", tokenCtrl.Store)
+			r.Middleware(middleware.Can(accounts, middleware.PermTokensWrite)).Delete("/tokens/{tokenId}", tokenCtrl.Destroy)
 
 			// S1.4.7: GET /v1/accounts/{accountId}/settings settings.read (policies.MayViewSettings).
 			r.Middleware(middleware.MayViewSettings()).Get("/settings", accountSettingsCtrl.Show)
@@ -550,10 +552,16 @@ func newPlatformFeaturesController() *platformfeatures.FeatureController {
 func newDashboardAccountsController() *dashaccounts.AccountsController {
 	return dashaccounts.NewAccountsController(dashaccounts.AccountsControllerDeps{
 		AccountService: container.MustMake[*accountsvc.Service](),
-		Passwords:      container.MustMake[*authsvc.Service](),
 		Limits:         container.MustMake[*settingssvc.Service](),
 		Features:       container.MustMake[*featuressvc.Service](),
 	})
+}
+
+func newDashboardTokenController() *dashaccounts.TokenController {
+	return dashaccounts.NewTokenController(
+		container.MustMake[*accountsvc.Service](),
+		container.MustMake[*apitoken.Service](),
+	)
 }
 
 func newDashboardInvitesController() *dashaccounts.InvitesController {

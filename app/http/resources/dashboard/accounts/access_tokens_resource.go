@@ -9,6 +9,7 @@ import (
 	"github.com/goravel/framework/support/carbon"
 
 	"github.com/macrowallets/waas/app/models"
+	"github.com/macrowallets/waas/app/services/apitoken"
 )
 
 // AccessToken is the access-token row the dashboard reads. Field order and
@@ -81,4 +82,17 @@ func AccessTokenPtr(token *models.AccessToken) *AccessToken {
 	}
 	view := AccessTokenFrom(*token)
 	return &view
+}
+
+// MintedToken is the answer to POST /v1/accounts/{accountId}/tokens: the JWT,
+// shown once, and the stored row. The keys keep the order the answer has
+// always had.
+type MintedToken struct {
+	Metadata *AccessToken `json:"metadata"`
+	Token    string       `json:"token"`
+}
+
+// NewMintedToken shapes a token the token service minted.
+func NewMintedToken(minted apitoken.Minted) MintedToken {
+	return MintedToken{Metadata: AccessTokenPtr(minted.Token), Token: minted.JWT}
 }

@@ -19,7 +19,6 @@ import (
 	"github.com/macrowallets/waas/app/http/responses"
 	"github.com/macrowallets/waas/app/models"
 	accountsvc "github.com/macrowallets/waas/app/services/account"
-	authsvc "github.com/macrowallets/waas/app/services/auth"
 	featuressvc "github.com/macrowallets/waas/app/services/features"
 	"github.com/macrowallets/waas/app/services/settings"
 )
@@ -45,9 +44,8 @@ func TestAdd_Account_UserDeniesWhenTheMembershipReadFails(t *testing.T) {
 				ID: targetID, Email: "member@example.com",
 			}},
 		}),
-		Passwords: &authsvc.Service{},
-		Limits:    &settings.Service{},
-		Features:  &featuressvc.Service{},
+		Limits:   &settings.Service{},
+		Features: &featuressvc.Service{},
 	})
 	response := &recordingResponse{}
 	ctx := &recordingContext{

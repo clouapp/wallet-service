@@ -5,8 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"strings"
-	"time"
 
 	"github.com/google/uuid"
 	"github.com/goravel/framework/contracts/http"
@@ -21,29 +19,23 @@ import (
 	tokenresource "github.com/macrowallets/waas/app/http/resources/dashboard/accounts"
 	"github.com/macrowallets/waas/app/http/responses"
 	"github.com/macrowallets/waas/app/models"
-	"github.com/macrowallets/waas/app/policies"
 	accountsvc "github.com/macrowallets/waas/app/services/account"
-	authsvc "github.com/macrowallets/waas/app/services/auth"
 	featuressvc "github.com/macrowallets/waas/app/services/features"
 	"github.com/macrowallets/waas/app/services/settings"
-	"github.com/macrowallets/waas/app/services/withdraw"
 )
 
 type AccountsController struct {
 	accountService *accountsvc.Service
-	passwords      *authsvc.Service
 	limits         *settings.Service
 	features       *featuressvc.Service
 }
 
 // AccountsControllerDeps is everything the dashboard accounts controller needs.
-// Persistence goes through AccountService. Passwords only turns a new API token
-// secret into its sha256 digest. Limits supplies sweep_limits from settings.
+// Persistence goes through AccountService. Limits supplies sweep_limits from settings.
 // Features supplies the active flag keys on GET. Every field is required.
 // Invite mail is dispatched by the account service.
 type AccountsControllerDeps struct {
 	AccountService *accountsvc.Service
-	Passwords      *authsvc.Service
 	Limits         *settings.Service
 	Features       *featuressvc.Service
 }
@@ -53,9 +45,6 @@ func NewAccountsController(deps AccountsControllerDeps) *AccountsController {
 	if deps.AccountService == nil {
 		panic("dashboard accounts controller: account service is required")
 	}
-	if deps.Passwords == nil {
-		panic("dashboard accounts controller: auth service is required")
-	}
 	if deps.Limits == nil {
 		panic("dashboard accounts controller: settings service is required")
 	}
@@ -64,7 +53,6 @@ func NewAccountsController(deps AccountsControllerDeps) *AccountsController {
 	}
 	return &AccountsController{
 		accountService: deps.AccountService,
-		passwords:      deps.Passwords,
 		limits:         deps.Limits,
 		features:       deps.Features,
 	}
@@ -402,132 +390,6 @@ func (ctrl *AccountsController) RemoveAccountUser(ctx http.Context) http.Respons
 	return ctx.Response().NoContent()
 }
 
-// ListAccountTokens godoc
-// @Summary      List API access tokens for an account
-// @Description  Returns the account's API tokens. Requires tokens.read.
-// @Tags         Accounts
-// @Security     BearerAuth
-// @Produce      json
-// @Param        accountId  path  string  true  "Account UUID"
-// @Success      200  {object}  AccessTokenListResponse
-// @Failure      403  {object}  responses.ErrorBody
-// @Router       /accounts/{accountId}/tokens [get]
-func (ctrl *AccountsController) ListAccountTokens(ctx http.Context) http.Response {
-	account := requestctx.MustAccount(ctx)
-
-	limit, offset := pagination.ParseParams(ctx, 20)
-	tokens, total, err := ctrl.accountService.ListAccessTokens(ctx.Context(), account.ID, limit, offset)
-	if err != nil {
-		return responses.Fail(ctx, http.StatusInternalServerError, responses.CodeInternal, "failed to fetch tokens")
-	}
-	return ctx.Response().Success().Json(pagination.Response(tokenresource.AccessTokensFrom(tokens), total, limit, offset))
-}
-
-// CreateAccountToken godoc
-// @Summary      Create an API access token for an account
-// @Description  Creates a named access token. The raw token is returned once — store it safely. Requires tokens.write.
-// @Tags         Accounts
-// @Security     BearerAuth
-// @Accept       json
-// @Produce      json
-// @Param        accountId  path      string                          true  "Account UUID"
-// @Param        request    body      CreateAccountTokenSwagger       true  "Token payload"
-// @Success      201        {object}  CreateAccountTokenResponse
-// @Failure      400        {object}  responses.ErrorBody
-// @Failure      403        {object}  responses.ErrorBody
-// @Router       /accounts/{accountId}/tokens [post]
-func (ctrl *AccountsController) CreateAccountToken(ctx http.Context) http.Response {
-	account := requestctx.MustAccount(ctx)
-	callerID, _ := requestctx.UserID(ctx)
-
-	var req accountsrequests.CreateAccountTokenRequest
-	if errResp := requests.Validate(ctx, &req); errResp != nil {
-		return errResp
-	}
-	if !policies.ValidAPITokenIPCIDR(req.IpCidr) {
-		return responses.FieldsFailed(ctx, map[string][]string{
-			"ip_cidr": {"The ip_cidr must be a valid CIDR."},
-		})
-	}
-	storedPermissions, err := storedAPITokenPermissions(req.Permissions)
-	if err != nil {
-		return responses.Fail(ctx, http.StatusInternalServerError, responses.CodeInternal, "failed to create token")
-	}
-	storedLimit, err := withdraw.StoreSpendingLimit(req.SpendingLimit)
-	if err != nil {
-		field := "spending_limit"
-		message := "must be an object with an optional daily_usd decimal"
-		if errors.Is(err, withdraw.ErrNegativeSpendingLimit) {
-			field = "spending_limit.daily_usd"
-			message = "must be a decimal string greater than or equal to 0"
-		}
-		return responses.FieldsFailed(ctx, map[string][]string{field: {message}})
-	}
-
-	secret, err := ctrl.passwords.GenerateAPITokenSecret()
-	if err != nil {
-		return responses.Fail(ctx, http.StatusInternalServerError, responses.CodeInternal, "failed to create token")
-	}
-	tokenID := uuid.New()
-	token := &models.AccessToken{
-		ID:            tokenID,
-		AccountID:     account.ID,
-		CreatedBy:     &callerID,
-		Name:          req.Name,
-		TokenHash:     ctrl.passwords.HashAPITokenSecret(secret),
-		Permissions:   storedPermissions,
-		IpCidr:        strings.TrimSpace(req.IpCidr),
-		SpendingLimit: storedLimit,
-	}
-	if req.ValidUntil != "" {
-		t, _ := time.Parse(time.RFC3339, req.ValidUntil)
-		token.ValidUntil = &t
-	}
-	if err := ctrl.accountService.CreateAccessToken(ctx.Context(), token); err != nil {
-		return responses.Fail(ctx, http.StatusInternalServerError, responses.CodeInternal, "failed to create token")
-	}
-
-	jwt, err := middleware.MintAPITokenWithSecret(token, req.RequireSignature, secret)
-	if err != nil {
-		return responses.Fail(ctx, http.StatusInternalServerError, responses.CodeInternal, "failed to sign token")
-	}
-
-	return ctx.Response().Status(http.StatusCreated).Json(http.Json{
-		"token":    jwt,
-		"metadata": tokenresource.AccessTokenPtr(token),
-	})
-}
-
-// RevokeAccountToken godoc
-// @Summary      Revoke an API access token
-// @Description  Soft-revokes an access token by ID. The row stays for audit. Requires tokens.write.
-// @Tags         Accounts
-// @Security     BearerAuth
-// @Produce      json
-// @Param        accountId  path  string  true  "Account UUID"
-// @Param        tokenId    path  string  true  "Token UUID"
-// @Success      204  "No content"
-// @Failure      403  {object}  responses.ErrorBody
-// @Failure      404  {object}  responses.ErrorBody
-// @Router       /accounts/{accountId}/tokens/{tokenId} [delete]
-func (ctrl *AccountsController) RevokeAccountToken(ctx http.Context) http.Response {
-	account := requestctx.MustAccount(ctx)
-
-	tokenID, err := requests.RouteUUID(ctx, "tokenId")
-	if err != nil {
-		return responses.Fail(ctx, http.StatusBadRequest, responses.CodeInvalidRequest, "invalid token id")
-	}
-
-	callerID, _ := requestctx.UserID(ctx)
-	if err := ctrl.accountService.RevokeAccessToken(ctx.Context(), account.ID, callerID, tokenID); err != nil {
-		if errors.Is(err, accountsvc.ErrAccessTokenNotFound) {
-			return responses.Fail(ctx, http.StatusNotFound, responses.CodeNotFound, "token not found")
-		}
-		return responses.Fail(ctx, http.StatusInternalServerError, responses.CodeInternal, "failed to revoke token")
-	}
-	return ctx.Response().NoContent()
-}
-
 // ---- Swagger-only types (keep for @Param annotations) ----
 
 type CreateAccountSwagger struct {
@@ -549,23 +411,6 @@ type UpdateAccountUserSwagger struct {
 	Status string `json:"status,omitempty" example:"suspended"`
 }
 
-type CreateAccountTokenSwagger struct {
-	Name             string     `json:"name" example:"CI Token"`
-	ValidUntil       *time.Time `json:"valid_until,omitempty"`
-	RequireSignature bool       `json:"require_signature,omitempty" example:"true"`
-	Permissions      []string   `json:"permissions,omitempty"`
-	IpCidr           string     `json:"ip_cidr,omitempty" example:"192.0.2.0/24"`
-}
-
 type AccountUserListResponse struct {
 	Data []tokenresource.AccountUser `json:"data"`
-}
-
-type AccessTokenListResponse struct {
-	Data []tokenresource.AccessToken `json:"data"`
-}
-
-type CreateAccountTokenResponse struct {
-	Token    string                    `json:"token"`
-	Metadata tokenresource.AccessToken `json:"metadata"`
 }
