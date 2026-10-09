@@ -3,33 +3,26 @@ package settings
 import (
 	"github.com/goravel/framework/contracts/http"
 
-	"github.com/macrowallets/waas/app/http/controllers"
 	"github.com/macrowallets/waas/app/http/middleware/requestctx"
 	"github.com/macrowallets/waas/app/http/requests"
 	settingsrequests "github.com/macrowallets/waas/app/http/requests/dashboard/wallets/settings"
 	walletresource "github.com/macrowallets/waas/app/http/resources/dashboard/wallets"
 	settingsresources "github.com/macrowallets/waas/app/http/resources/dashboard/wallets/settings"
-	"github.com/macrowallets/waas/app/policies"
-	"github.com/macrowallets/waas/app/services/walletrecords"
 	"github.com/macrowallets/waas/app/services/walletsettings"
 )
 
-// SettingsController serves the dashboard wallet settings, freeze and archive routes.
+// SettingsController serves the dashboard wallet settings, freeze and archive
+// routes. Who may update, freeze or archive is the route's Wallet* guard.
 type SettingsController struct {
-	settings    *walletsettings.Service
-	memberships *walletrecords.Memberships
+	settings *walletsettings.Service
 }
 
-// NewSettingsController wires the controller with the wallet settings and the
-// wallet memberships the update policy reads.
-func NewSettingsController(settings *walletsettings.Service, memberships *walletrecords.Memberships) *SettingsController {
+// NewSettingsController wires the controller with the wallet settings.
+func NewSettingsController(settings *walletsettings.Service) *SettingsController {
 	if settings == nil {
 		panic("dashboard wallet settings controller: wallet settings are required")
 	}
-	if memberships == nil {
-		panic("dashboard wallet settings controller: wallet memberships are required")
-	}
-	return &SettingsController{settings: settings, memberships: memberships}
+	return &SettingsController{settings: settings}
 }
 
 // Show godoc
@@ -68,9 +61,6 @@ func (c *SettingsController) Show(ctx http.Context) http.Response {
 func (c *SettingsController) Update(ctx http.Context) http.Response {
 	wallet := requestctx.MustWallet(ctx)
 	actorID, _ := requestctx.UserID(ctx)
-	if response := controllers.Deny(ctx, policies.WalletUpdate(controllers.WalletMembership(ctx, c.memberships, wallet.ID))); response != nil {
-		return response
-	}
 
 	req, err := settingsrequests.ReadUpdateRequest(ctx)
 	if err != nil {

@@ -9,6 +9,7 @@ import (
 // Wallet gate abilities the route guards ask.
 const (
 	AbilityWalletArchive          = "wallet.archive"
+	AbilityWalletUpdate           = "wallet.update"
 	AbilityWalletFreeze           = "wallet.freeze"
 	AbilityWalletAddUser          = "wallet.add-user"
 	AbilityWalletRemoveUser       = "wallet.remove-user"

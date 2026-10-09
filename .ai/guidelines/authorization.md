@@ -5,11 +5,9 @@
 > middleware order and the rank rule live in `app/policies`, `APIScope` enforces
 > the external token catalog, and `tokens.read` / `tokens.write` / `settings.view`
 > / `settings.update` / `activity.read` are route guards. Every user-permission
-> route guard asks the Gate through `middleware.authorize`. One handler check is
-> left: `UpdateWalletSettings` asks `policies.WalletUpdate` itself (through
-> `controllers.Deny`; wallet or account owner/admin), after WalletContext and
-> before it reads the body. The open items are the product decisions in the
-> inventory at the end.
+> route guard asks the Gate through `middleware.authorize`, and no handler
+> checks a permission itself (the wallet settings update is the `WalletUpdate`
+> guard). The open items are the product decisions in the inventory at the end.
 
 Every authorization decision belongs in exactly one of three places, and **what
 the decision depends on picks the place.**
@@ -42,7 +40,7 @@ missing or mistyped argument refuses.
 | one per account permission (`users.read`, `tokens.write`, `addresses.create`, …) | `policies.Can` over `ArgGrants` | `Can(accounts, perm)`, `WalletCan(perm)` |
 | `account.update-member` | `users.write` over `ArgGrants`, refused with the member sentence | `AccountUpdateMember` |
 | `account.view-settings`, `account.update-settings`, `account.read-activity`, `account.view-features` | `MayViewSettings`, `MayUpdateSettings`, `MayReadActivity` on `ArgAccountRole` | the four `May*` guards |
-| `wallet.freeze`, `wallet.archive`, `wallet.add-user`, `wallet.remove-user`, `wallet.whitelist`, `wallet.manage-webhooks`, `wallet.cancel-withdrawal` | the `Wallet*` policy of the same name on the loaded membership (and `ArgCreatorID`) | the `Wallet*` guard of the same name |
+| `wallet.freeze`, `wallet.archive`, `wallet.update`, `wallet.add-user`, `wallet.remove-user`, `wallet.whitelist`, `wallet.manage-webhooks`, `wallet.cancel-withdrawal` | the `Wallet*` policy of the same name on the loaded membership (and `ArgCreatorID`) | the `Wallet*` guard of the same name |
 
 Every guard is `middleware.authorize(gate, ability, subject)`. The subject
 resolves the child the path names first (so 404 stays ahead of 403, and a

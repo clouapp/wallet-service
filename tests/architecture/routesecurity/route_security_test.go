@@ -63,6 +63,7 @@ const (
 	chainWalletWebhooksTOTP     = chainWalletManageWebhooks + " > RequireEnabledTOTP"
 	chainWalletArchive          = chainWallet + " > WalletArchive"
 	chainWalletFreeze           = chainWallet + " > WalletFreeze"
+	chainWalletUpdate           = chainWallet + " > WalletUpdate"
 	chainWalletCancelWithdrawal = chainWallet + " > WalletCancelWithdrawal"
 	chainUnspent                = "SessionAuth > AccountHeader > TOTPEnrollment > WalletContext > UTXOOnly"
 	chainAPI                    = "APITokenAuth"
@@ -220,7 +221,7 @@ var routeTable = map[string]routeSecurity{
 	"POST /v1/wallets/{walletId}/gas-check":                            session(chainWallet),
 	"GET|HEAD /v1/wallets/{walletId}/gas-status":                       session(chainWallet),
 	"GET|HEAD /v1/wallets/{walletId}/settings":                         session(chainWallet),
-	"PATCH /v1/wallets/{walletId}/settings":                            session(chainWallet),
+	"PATCH /v1/wallets/{walletId}/settings":                            session(chainWalletUpdate),
 	"GET|HEAD /v1/wallets/{walletId}/transactions":                     session(chainWallet),
 	"GET|HEAD /v1/wallets/{walletId}/transactions/{txId}":              session(chainWallet),
 	"GET|HEAD /v1/wallets/{walletId}/unspents":                         session(chainUnspent),

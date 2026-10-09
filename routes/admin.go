@@ -313,7 +313,7 @@ func RegisterAdminRoutes() {
 			r.Middleware(middleware.WalletManageWebhooks(walletPolicyMemberships(), walletWebhooks), requireTOTP).Delete("/webhooks/{webhookId}", walletWebhooksCtrl.Destroy)
 
 			r.Get("/settings", walletSettingsCtrl.Show)
-			r.Patch("/settings", walletSettingsCtrl.Update)
+			r.Middleware(middleware.WalletUpdate(walletPolicyMemberships())).Patch("/settings", walletSettingsCtrl.Update)
 			r.Middleware(middleware.WalletFreeze(walletPolicyMemberships())).Post("/freeze", walletSettingsCtrl.Freeze)
 			r.Middleware(middleware.WalletArchive(walletPolicyMemberships())).Post("/archive", walletSettingsCtrl.Archive)
 
@@ -421,14 +421,11 @@ func newDashboardWalletWebhooksController() *dashwalletwebhooks.WebhookControlle
 }
 
 func newDashboardWalletSettingsController() *dashwalletsettings.SettingsController {
-	return dashwalletsettings.NewSettingsController(
-		walletsettings.NewService(walletsettings.Deps{
-			Wallets:  container.MustMake[*walletrecords.Wallets](),
-			Chains:   container.MustMake[*chainsvc.Service](),
-			Networks: newWalletView(),
-		}),
-		walletPolicyMemberships(),
-	)
+	return dashwalletsettings.NewSettingsController(walletsettings.NewService(walletsettings.Deps{
+		Wallets:  container.MustMake[*walletrecords.Wallets](),
+		Chains:   container.MustMake[*chainsvc.Service](),
+		Networks: newWalletView(),
+	}))
 }
 
 func newDashboardBalancesController() *dashwalletbalances.BalanceController {

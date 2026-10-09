@@ -62,6 +62,7 @@ func TestGate_Abilities_AnswerLikeThePolicyTheyWrap(t *testing.T) {
 	walletDecisions := map[string]func(WalletMembership) contractsaccess.Response{
 		AbilityWalletFreeze:         WalletFreeze,
 		AbilityWalletArchive:        WalletArchive,
+		AbilityWalletUpdate:         WalletUpdate,
 		AbilityWalletAddUser:        WalletAddUser,
 		AbilityWalletRemoveUser:     WalletRemoveUser,
 		AbilityWalletWhitelist:      WalletWhitelist,

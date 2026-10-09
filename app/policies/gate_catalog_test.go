@@ -15,6 +15,7 @@ func TestGate_Ability_NamesStayTheLiveCatalog(t *testing.T) {
 		{AbilityAccountReadActivity, "account.read-activity"},
 		{AbilityAccountViewFeatures, "account.view-features"},
 		{AbilityWalletArchive, "wallet.archive"},
+		{AbilityWalletUpdate, "wallet.update"},
 		{AbilityWalletFreeze, "wallet.freeze"},
 		{AbilityWalletAddUser, "wallet.add-user"},
 		{AbilityWalletRemoveUser, "wallet.remove-user"},

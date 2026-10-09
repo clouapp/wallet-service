@@ -79,6 +79,7 @@ func gateAbilities() map[string]ability {
 		AbilityAccountViewFeatures:    roleAbility(MayViewSettings, MsgFeaturesViewDenied),
 		AbilityWalletFreeze:           walletAbility(WalletFreeze),
 		AbilityWalletArchive:          walletAbility(WalletArchive),
+		AbilityWalletUpdate:           walletAbility(WalletUpdate),
 		AbilityWalletAddUser:          walletAbility(WalletAddUser),
 		AbilityWalletRemoveUser:       walletAbility(WalletRemoveUser),
 		AbilityWalletWhitelist:        walletAbility(WalletWhitelist),
