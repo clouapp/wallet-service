@@ -271,8 +271,8 @@ func RegisterAdminRoutes() {
 	})
 
 	facades.Route().Prefix("/v1/me").Middleware(middleware.SessionAuth(), noCache).Group(func(router route.Router) {
-		router.Get("/preferences", preferencesCtrl.GetPreferences)
-		router.Put("/preferences", preferencesCtrl.UpdatePreferences)
+		router.Get("/preferences", preferencesCtrl.Show)
+		router.Put("/preferences", preferencesCtrl.Update)
 	})
 
 	facades.Route().Prefix("/v1/convert").Middleware(middleware.SessionAuth(), noCache).Group(func(router route.Router) {
@@ -448,10 +448,7 @@ func newDashboardCurrenciesController() *dashcurrencies.CurrencyController {
 }
 
 func newDashboardPreferencesController() *dashpreferences.PreferencesController {
-	return dashpreferences.NewPreferencesController(dashpreferences.PreferencesControllerDeps{
-		Users:      container.MustMake[*usersvc.Service](),
-		Currencies: container.MustMake[*currencies.Service](),
-	})
+	return dashpreferences.NewPreferencesController(container.MustMake[*usersvc.Service]())
 }
 
 func newDashboardAddressesController() *dashaddresses.AddressController {

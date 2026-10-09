@@ -8,6 +8,7 @@ import (
 	"github.com/macrowallets/waas/app/services/account"
 	"github.com/macrowallets/waas/app/services/apitoken"
 	authsvc "github.com/macrowallets/waas/app/services/auth"
+	"github.com/macrowallets/waas/app/services/currencies"
 	"github.com/macrowallets/waas/app/services/features"
 	"github.com/macrowallets/waas/app/services/sessions"
 	"github.com/macrowallets/waas/app/services/settings"
@@ -89,13 +90,18 @@ func (p *IdentityServiceProvider) Register(app foundation.Application) {
 		if err != nil {
 			return nil, err
 		}
+		currencyCatalog, err := resolve[*currencies.Service](app)
+		if err != nil {
+			return nil, err
+		}
 		return usersvc.NewService(usersvc.Deps{
-			Store:     store,
-			Recovery:  recovery,
-			Activity:  activityLog,
-			Admins:    admins,
-			Sessions:  revoker,
-			ResetMail: newCredentialMailDispatcher(app),
+			Store:      store,
+			Recovery:   recovery,
+			Activity:   activityLog,
+			Admins:     admins,
+			Sessions:   revoker,
+			ResetMail:  newCredentialMailDispatcher(app),
+			Currencies: currencyCatalog,
 		}), nil
 	})
 	app.Singleton((*sessions.RefreshTokens)(nil), func(app foundation.Application) (any, error) {
