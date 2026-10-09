@@ -85,7 +85,7 @@ func TestError_Mappers_KeepTheirBytes(t *testing.T) {
 			500, envelopeJSON, `{"error":{"code":"internal","message":"internal error"}}` + "\n"},
 		{"responses.ProviderError", func(ctx http.Context) http.Response { return responses.ProviderError(ctx, cause) },
 			502, envelopeJSON, `{"error":{"code":"provider_unavailable","message":"provider unavailable"}}` + "\n"},
-		{"AddressGenerationError", func(ctx http.Context) http.Response { return AddressGenerationError(ctx, cause) },
+		{"mapAddressError", func(ctx http.Context) http.Response { return mapAddressError(ctx, cause, "generate address") },
 			500, envelopeJSON, `{"error":{"code":"internal","message":"internal error"}}` + "\n"},
 		{"in-flight consolidation", func(ctx http.Context) http.Response { return MapSweepError(ctx, sweep.ErrInFlightConsolidation) },
 			429, legacyJSON, `{"error":{"code":"sweep_limit_exceeded","limit_type":"in_flight_consolidation","message":"sweep_limit_exceeded","retry_after_seconds":60}}`},

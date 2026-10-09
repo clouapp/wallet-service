@@ -3,33 +3,28 @@ package controllers
 import (
 	"testing"
 
-	deposit "github.com/macrowallets/waas/app/services/deposit"
-	wallet "github.com/macrowallets/waas/app/services/wallet"
-	"github.com/macrowallets/waas/app/services/walletrecords"
+	"github.com/macrowallets/waas/app/services/walletops"
 )
 
-func addressesHandlerDeps() AddressesHandlerDeps {
-	svc := &wallet.Service{}
-	return AddressesHandlerDeps{
-		Addresses:     &walletrecords.Addresses{},
-		WalletService: func() *wallet.Service { return svc },
-		Deposits:      &deposit.Service{},
+func TestNew_AddressesHandler_KeepsItsOperations(t *testing.T) {
+	ops := &walletops.Service{}
+
+	handler := NewAddressesHandler("test", ops)
+
+	if handler.ops != ops {
+		t.Fatal("addresses handler did not keep the wallet operations")
 	}
 }
 
-func TestNew_AddressesHandler_KeepsItsDependencies(t *testing.T) {
-	deps := addressesHandlerDeps()
-	ctrl := NewAddressesHandler("test", deps)
-	if ctrl == nil {
-		t.Fatal("NewAddressesHandler returned nil")
-	}
-	if ctrl.addresses != deps.Addresses {
-		t.Fatal("addresses controller did not keep the addresses service")
-	}
-	if ctrl.walletService == nil || ctrl.walletService() != deps.WalletService() {
-		t.Fatal("addresses controller did not keep the wallet service")
-	}
-	if ctrl.deposits != deps.Deposits {
-		t.Fatal("addresses controller did not keep the deposit service")
-	}
+func TestNew_AddressesHandler_RequiresTheOperationsAndNamesTheSurface(t *testing.T) {
+	const want = "test addresses controller: wallet operations are required"
+	defer func() {
+		if got := recover(); got != want {
+			t.Fatalf("panic = %v", got)
+		}
+	}()
+
+	NewAddressesHandler("test", nil)
+
+	t.Fatal("expected a panic")
 }

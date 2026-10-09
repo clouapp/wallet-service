@@ -1,9 +1,11 @@
-package requests
+package sweep
 
 import (
 	"github.com/goravel/framework/contracts/http"
 )
 
+// ConsolidateRequest is the body of a consolidation: the wallet passphrase and the
+// asset whose child balances are swept into the base address.
 type ConsolidateRequest struct {
 	Passphrase     string `form:"passphrase"      json:"passphrase"`
 	Asset          string `form:"asset"           json:"asset"`

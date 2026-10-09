@@ -15,9 +15,7 @@ import (
 	extwithdrawals "github.com/macrowallets/waas/app/http/controllers/external/withdrawals"
 	"github.com/macrowallets/waas/app/http/middleware"
 	accountsvc "github.com/macrowallets/waas/app/services/account"
-	chainpkg "github.com/macrowallets/waas/app/services/chain"
 	chainsvc "github.com/macrowallets/waas/app/services/chains"
-	"github.com/macrowallets/waas/app/services/deposit"
 	featuressvc "github.com/macrowallets/waas/app/services/features"
 	"github.com/macrowallets/waas/app/services/feeestimate"
 	"github.com/macrowallets/waas/app/services/sweep"
@@ -61,20 +59,20 @@ func RegisterExternalAPI() {
 		router.Middleware(middleware.APIScope(scopeLookups, middleware.PermWalletsCreate)).Post("/wallets", walletCtrl.CreateWallet)
 		router.Middleware(middleware.APIScope(scopeLookups, middleware.PermWalletsRead)).Get("/wallets", walletCtrl.ListWallets)
 
-		router.Get("/addresses/{address}", addressCtrl.LookupAddress)
-		router.Get("/users/{external_id}/addresses", addressCtrl.ListUserAddresses)
+		router.Get("/addresses/{address}", addressCtrl.Show)
+		router.Get("/users/{external_id}/addresses", addressCtrl.ByUser)
 
 		router.Prefix("/wallets/{walletId}").Middleware(middleware.APIWalletContext(container.MustMake[*walletrecords.Wallets]())).Group(func(r route.Router) {
 			r.Middleware(middleware.APIScope(scopeLookups, middleware.PermWalletsRead)).Get("", walletCtrl.GetWallet)
 
-			r.Middleware(middleware.APIScope(scopeLookups, middleware.PermAddressesCreate)).Post("/addresses", addressCtrl.GenerateAddress)
-			r.Get("/addresses", addressCtrl.ListWalletAddresses)
-			r.Patch("/addresses/{addressId}", addressCtrl.UpdateAddress)
+			r.Middleware(middleware.APIScope(scopeLookups, middleware.PermAddressesCreate)).Post("/addresses", addressCtrl.Store)
+			r.Get("/addresses", addressCtrl.Index)
+			r.Patch("/addresses/{addressId}", addressCtrl.Update)
 
-			r.Middleware(middleware.APIScope(scopeLookups, middleware.PermSweepExecute)).Post("/consolidate", sweepCtrl.ConsolidateWallet)
-			r.Get("/gas-status", sweepCtrl.GetGasStatus)
-			r.Middleware(middleware.Throttle(middleware.ThrottleGasCheck)).Post("/gas-check", sweepCtrl.ForceGasCheck)
-			r.Post("/withdraw/preview", sweepCtrl.PreviewWithdraw)
+			r.Middleware(middleware.APIScope(scopeLookups, middleware.PermSweepExecute)).Post("/consolidate", sweepCtrl.Consolidate)
+			r.Get("/gas-status", sweepCtrl.GasStatus)
+			r.Middleware(middleware.Throttle(middleware.ThrottleGasCheck)).Post("/gas-check", sweepCtrl.GasCheck)
+			r.Post("/withdraw/preview", sweepCtrl.Preview)
 			r.Get("/fee-estimate", feeEstimateCtrl.GetWalletFeeEstimate)
 			r.Middleware(middleware.APIScope(scopeLookups, middleware.PermWithdrawalsCreate)).Post("/withdrawals", withdrawalCtrl.Store)
 			r.Get("/withdrawals/{idempotencyKey}", withdrawalCtrl.ShowByKey)
@@ -110,13 +108,8 @@ func newExternalChainsController() *extchains.ChainController {
 	)
 }
 
-func newExternalAddressesController() *extaddresses.AddressesController {
-	return extaddresses.NewAddressesController(extaddresses.AddressesControllerDeps{
-		Addresses:     container.MustMake[*walletrecords.Addresses](),
-		WalletService: boundWalletService(),
-		Deposits:      container.MustMake[*deposit.Service](),
-		Registry:      container.MustMake[*chainpkg.Registry](),
-	})
+func newExternalAddressesController() *extaddresses.AddressController {
+	return extaddresses.NewAddressController(newWalletOps())
 }
 
 func newExternalSweepController() *extsweep.SweepController {

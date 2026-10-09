@@ -9,16 +9,16 @@ import (
 
 	"github.com/macrowallets/waas/app/http/responses"
 	"github.com/macrowallets/waas/app/services/wallet"
+	"github.com/macrowallets/waas/app/services/walletops"
 )
 
-// AddressGenerationError answers a failed derivation. An upstream provider
-// failure stays 502 provider_unavailable. A message the handler owns stays
-// 422. Anything else is 500: the cause can name a key, a passphrase, or a
-// query, so the log keeps the type and the body is internal error.
-func AddressGenerationError(ctx http.Context, err error) http.Response {
-	if err == nil {
-		return nil
-	}
+// mapAddressError answers a failed address route. An upstream provider failure
+// stays 502 provider_unavailable. A derivation refusal the wallet service owns
+// is 422, an update refusal 404, an update that sets nothing 400, and a page of
+// addresses that could not be read a plain 500 sentence. Anything else is 500:
+// the cause can name a key, a passphrase, or a query, so the log keeps the type
+// of the failed action and the body is internal error.
+func mapAddressError(ctx http.Context, err error, action string) http.Response {
 	if upstreamProvider(err) {
 		return responses.ProviderError(ctx, err)
 	}
@@ -27,19 +27,18 @@ func AddressGenerationError(ctx http.Context, err error) http.Response {
 			return responses.Error(ctx, http.StatusUnprocessableEntity, responses.CodeUnprocessable, refusal.Error())
 		}
 	}
-	slog.Error("address generation failed", "error_type", fmt.Sprintf("%T", err))
-	return responses.Error(ctx, http.StatusInternalServerError, responses.CodeInternal, "internal error")
-}
-
-// AddressUpdateError answers a failed address update. The messages the
-// handler owns stay 404. A wrapped store failure is 500 without the query.
-func AddressUpdateError(ctx http.Context, err error) http.Response {
 	for _, refusal := range []error{wallet.ErrAddressNotFound, wallet.ErrAddressLabelNotString, wallet.ErrAddressExternalUserIDNotString} {
 		if errors.Is(err, refusal) {
 			return responses.Error(ctx, http.StatusNotFound, responses.CodeNotFound, refusal.Error())
 		}
 	}
-	slog.Error("address update failed", "error_type", fmt.Sprintf("%T", err))
+	switch {
+	case errors.Is(err, walletops.ErrNoFields):
+		return responses.Fail(ctx, http.StatusBadRequest, responses.CodeInvalidRequest, walletops.ErrNoFields.Error())
+	case errors.Is(err, walletops.ErrAddressesUnavailable):
+		return responses.Fail(ctx, http.StatusInternalServerError, responses.CodeInternal, "failed to fetch addresses")
+	}
+	slog.Error(action+" failed", "error_type", fmt.Sprintf("%T", err))
 	return responses.Error(ctx, http.StatusInternalServerError, responses.CodeInternal, "internal error")
 }
 

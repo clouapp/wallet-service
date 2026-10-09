@@ -1,12 +1,12 @@
 package controllers
 
 import (
-	"math/big"
-
 	"github.com/goravel/framework/contracts/http"
 
 	"github.com/macrowallets/waas/app/http/middleware/requestctx"
 	"github.com/macrowallets/waas/app/http/requests"
+	sweeprequests "github.com/macrowallets/waas/app/http/requests/sweep"
+	sweepresources "github.com/macrowallets/waas/app/http/resources/sweep"
 	"github.com/macrowallets/waas/app/http/responses"
 	"github.com/macrowallets/waas/app/services/features"
 	sweep "github.com/macrowallets/waas/app/services/sweep"
@@ -42,25 +42,27 @@ func NewSweepHandler(surface string, deps SweepHandlerDeps) *SweepHandler {
 	}
 }
 
-// ConsolidateWallet godoc
-// @Summary      Consolidate wallet balances
-// @Description  Sweep all eligible child addresses' balance into the wallet's base deposit address.
-// @Tags         Wallets
-// @Accept       json
-// @Produce      json
-// @Security     ApiKeyAuth
-// @Security     BearerAuth
-// @Param        walletId  path      string                       true  "Wallet UUID"  format(uuid)
-// @Param        body      body      ConsolidateRequestSwagger    true  "Consolidation request"
-// @Success      200       {object}  ConsolidateResponse
-// @Failure      400       {object}  responses.ErrorBody
-// @Failure      422       {object}  responses.ErrorBody
-// @Failure      429       {object}  responses.ErrorBody
-// @Router       /v1/wallets/{walletId}/consolidate [post]
-func (ctrl *SweepHandler) ConsolidateWallet(ctx http.Context) http.Response {
+// Consolidate godoc
+//
+//	@Summary		Consolidate wallet balances
+//	@Description	Sweep all eligible child addresses' balance into the wallet's base deposit address.
+//	@Tags			Wallets
+//	@Accept			json
+//	@Produce		json
+//	@Security		ApiKeyAuth
+//	@Security		BearerAuth
+//	@Param			walletId	path		string						true	"Wallet UUID"	format(uuid)
+//	@Param			body		body		ConsolidateRequestSwagger	true	"Consolidation request"
+//	@Success		200			{object}	ConsolidateResponse
+//	@Failure		400			{object}	responses.ErrorBody
+//	@Failure		422			{object}	responses.ErrorBody
+//	@Failure		429			{object}	responses.ErrorBody
+//	@Router			/v1/wallets/{walletId}/consolidate [post]
+func (c *SweepHandler) Consolidate(ctx http.Context) http.Response {
 	wallet, _ := requestctx.Wallet(ctx)
-	if resp := BlockFlag(ctx, ctrl.flags, AccountIDForWallet(ctx, wallet), features.FlagSweepEnabled, features.CodeSweepPaused, "consolidate"); resp != nil {
-		return resp
+	callerAccountID, _ := requestctx.AccountID(ctx)
+	if response := BlockFlag(ctx, c.flags, AccountIDForWallet(ctx, wallet), features.FlagSweepEnabled, features.CodeSweepPaused, "consolidate"); response != nil {
+		return response
 	}
 
 	walletID, err := requests.RouteUUID(ctx, "walletId")
@@ -68,111 +70,105 @@ func (ctrl *SweepHandler) ConsolidateWallet(ctx http.Context) http.Response {
 		return responses.Fail(ctx, http.StatusBadRequest, responses.CodeInvalidRequest, "invalid wallet id")
 	}
 
-	var req requests.ConsolidateRequest
+	var req sweeprequests.ConsolidateRequest
 	defer DiscardPassphrase(&req.Passphrase)
-	if errResp := requests.Validate(ctx, &req); errResp != nil {
-		return errResp
+	if response := requests.Validate(ctx, &req); response != nil {
+		return response
 	}
 
-	callerAccountID, _ := requestctx.AccountID(ctx)
-
-	result, err := ctrl.sweeps.ConsolidateAll(ctx.Context(), walletID, req.Asset, req.Passphrase, callerAccountID)
+	result, err := c.sweeps.ConsolidateAll(ctx.Context(), walletID, req.Asset, req.Passphrase, callerAccountID)
 	if err != nil {
-		if resp := MapSweepError(ctx, err); resp != nil {
-			return resp
-		}
-		return MapInternalError(ctx, err, "consolidate")
+		return mapSweepFailure(ctx, err, "consolidate")
 	}
-	return ctx.Response().Success().Json(MapConsolidateResponse(result))
+
+	return ctx.Response().Success().Json(sweepresources.NewConsolidation(result))
 }
 
-// GetGasStatus godoc
-// @Summary      Get wallet gas readiness
-// @Description  Returns the gas readiness status, native balance, and configured threshold for a wallet's base address.
-// @Tags         Wallets
-// @Produce      json
-// @Security     ApiKeyAuth
-// @Security     BearerAuth
-// @Param        walletId  path      string  true  "Wallet UUID"  format(uuid)
-// @Success      200       {object}  GasStatusResponse
-// @Failure      400       {object}  responses.ErrorBody
-// @Failure      422       {object}  responses.ErrorBody
-// @Failure      429  {object}  responses.ErrorBody  "Rate limit exceeded (too_many_requests, Retry-After header)"
-// @Router       /v1/wallets/{walletId}/gas-status [get]
-func (ctrl *SweepHandler) GetGasStatus(ctx http.Context) http.Response {
+// GasStatus godoc
+//
+//	@Summary		Get wallet gas readiness
+//	@Description	Returns the gas readiness status, native balance, and configured threshold for a wallet's base address.
+//	@Tags			Wallets
+//	@Produce		json
+//	@Security		ApiKeyAuth
+//	@Security		BearerAuth
+//	@Param			walletId	path		string	true	"Wallet UUID"	format(uuid)
+//	@Success		200			{object}	GasStatusResponse
+//	@Failure		400			{object}	responses.ErrorBody
+//	@Failure		422			{object}	responses.ErrorBody
+//	@Failure		429			{object}	responses.ErrorBody	"Rate limit exceeded (too_many_requests, Retry-After header)"
+//	@Router			/v1/wallets/{walletId}/gas-status [get]
+func (c *SweepHandler) GasStatus(ctx http.Context) http.Response {
 	walletID, err := requests.RouteUUID(ctx, "walletId")
 	if err != nil {
 		return responses.Fail(ctx, http.StatusBadRequest, responses.CodeInvalidRequest, "invalid wallet id")
 	}
 
-	status, err := ctrl.sweeps.RefreshGasStatus(ctx.Context(), walletID)
+	status, err := c.sweeps.RefreshGasStatus(ctx.Context(), walletID)
 	if err != nil {
-		if resp := MapSweepError(ctx, err); resp != nil {
-			return resp
-		}
-		return MapInternalError(ctx, err, "gas_status")
+		return mapSweepFailure(ctx, err, "gas_status")
 	}
-	return ctx.Response().Success().Json(GasStatusBody(status))
+
+	return ctx.Response().Success().Json(sweepresources.NewGasStatus(status))
 }
 
-// ForceGasCheck godoc
-// @Summary      Force refresh of wallet gas status
-// @Description  Action variant of gas-status. Forces an on-chain read. Rate-limited per wallet.
-// @Tags         Wallets
-// @Produce      json
-// @Security     ApiKeyAuth
-// @Security     BearerAuth
-// @Param        walletId  path      string  true  "Wallet UUID"  format(uuid)
-// @Success      200       {object}  GasStatusResponse
-// @Failure      400       {object}  responses.ErrorBody
-// @Failure      422       {object}  responses.ErrorBody
-// @Failure      429       {object}  responses.ErrorBody
-// @Router       /v1/wallets/{walletId}/gas-check [post]
-func (ctrl *SweepHandler) ForceGasCheck(ctx http.Context) http.Response {
+// GasCheck godoc
+//
+//	@Summary		Force refresh of wallet gas status
+//	@Description	Action variant of gas-status. Forces an on-chain read. Rate-limited per wallet.
+//	@Tags			Wallets
+//	@Produce		json
+//	@Security		ApiKeyAuth
+//	@Security		BearerAuth
+//	@Param			walletId	path		string	true	"Wallet UUID"	format(uuid)
+//	@Success		200			{object}	GasStatusResponse
+//	@Failure		400			{object}	responses.ErrorBody
+//	@Failure		422			{object}	responses.ErrorBody
+//	@Failure		429			{object}	responses.ErrorBody
+//	@Router			/v1/wallets/{walletId}/gas-check [post]
+func (c *SweepHandler) GasCheck(ctx http.Context) http.Response {
 	// The per-wallet rate limit is middleware.Throttle(ThrottleGasCheck) on the route.
-	return ctrl.GetGasStatus(ctx)
+	return c.GasStatus(ctx)
 }
 
-// PreviewWithdraw godoc
-// @Summary      Preview a withdrawal
-// @Description  Returns the planned sweep strategy without executing any transaction.
-// @Tags         Wallets
-// @Accept       json
-// @Produce      json
-// @Security     ApiKeyAuth
-// @Security     BearerAuth
-// @Param        walletId  path      string                            true  "Wallet UUID"  format(uuid)
-// @Param        body      body      WithdrawPreviewRequestSwagger     true  "Preview request"
-// @Success      200       {object}  WithdrawPreviewResponse
-// @Failure      400       {object}  responses.ErrorBody
-// @Failure      422       {object}  responses.ErrorBody
-// @Failure      429  {object}  responses.ErrorBody  "Rate limit exceeded (too_many_requests, Retry-After header)"
-// @Router       /v1/wallets/{walletId}/withdraw/preview [post]
-func (ctrl *SweepHandler) PreviewWithdraw(ctx http.Context) http.Response {
+// Preview godoc
+//
+//	@Summary		Preview a withdrawal
+//	@Description	Returns the planned sweep strategy without executing any transaction.
+//	@Tags			Wallets
+//	@Accept			json
+//	@Produce		json
+//	@Security		ApiKeyAuth
+//	@Security		BearerAuth
+//	@Param			walletId	path		string							true	"Wallet UUID"	format(uuid)
+//	@Param			body		body		WithdrawPreviewRequestSwagger	true	"Preview request"
+//	@Success		200			{object}	WithdrawPreviewResponse
+//	@Failure		400			{object}	responses.ErrorBody
+//	@Failure		422			{object}	responses.ErrorBody
+//	@Failure		429			{object}	responses.ErrorBody	"Rate limit exceeded (too_many_requests, Retry-After header)"
+//	@Router			/v1/wallets/{walletId}/withdraw/preview [post]
+func (c *SweepHandler) Preview(ctx http.Context) http.Response {
+	callerAccountID, _ := requestctx.AccountID(ctx)
+
 	walletID, err := requests.RouteUUID(ctx, "walletId")
 	if err != nil {
 		return responses.Fail(ctx, http.StatusBadRequest, responses.CodeInvalidRequest, "invalid wallet id")
 	}
 
-	var req requests.WithdrawPreviewRequest
-	if errResp := requests.Validate(ctx, &req); errResp != nil {
-		return errResp
+	var req sweeprequests.PreviewRequest
+	if response := requests.Validate(ctx, &req); response != nil {
+		return response
 	}
 
-	amount, ok := new(big.Int).SetString(req.Amount, 10)
-	if !ok {
-		return responses.Fail(ctx, http.StatusBadRequest, responses.CodeInvalidRequest, "invalid amount")
-	}
-
-	callerAccountID, _ := requestctx.AccountID(ctx)
-
-	const previewHasNoDestination = ""
-	plan, err := ctrl.sweeps.PlanForWithdrawal(ctx.Context(), walletID, req.Asset, amount, previewHasNoDestination, callerAccountID)
+	plan, err := sweep.Preview(ctx.Context(), c.sweeps, sweep.PreviewInput{
+		WalletID:        walletID,
+		Asset:           req.Asset,
+		Amount:          req.Amount,
+		CallerAccountID: callerAccountID,
+	})
 	if err != nil {
-		if resp := MapSweepError(ctx, err); resp != nil {
-			return resp
-		}
-		return MapInternalError(ctx, err, "preview_withdraw")
+		return mapSweepFailure(ctx, err, "preview_withdraw")
 	}
-	return ctx.Response().Success().Json(WithdrawPreviewBody(plan))
+
+	return ctx.Response().Success().Json(sweepresources.NewPreview(plan))
 }

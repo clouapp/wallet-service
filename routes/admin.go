@@ -28,6 +28,7 @@ import (
 	accountsvc "github.com/macrowallets/waas/app/services/account"
 	activitysvc "github.com/macrowallets/waas/app/services/activity"
 	authsvc "github.com/macrowallets/waas/app/services/auth"
+	chainpkg "github.com/macrowallets/waas/app/services/chain"
 	chainsvc "github.com/macrowallets/waas/app/services/chains"
 	"github.com/macrowallets/waas/app/services/credentialmail"
 	"github.com/macrowallets/waas/app/services/currencies"
@@ -39,6 +40,7 @@ import (
 	"github.com/macrowallets/waas/app/services/sweep"
 	usersvc "github.com/macrowallets/waas/app/services/users"
 	walletsvc "github.com/macrowallets/waas/app/services/wallet"
+	"github.com/macrowallets/waas/app/services/walletops"
 	"github.com/macrowallets/waas/app/services/walletrecords"
 	"github.com/macrowallets/waas/app/services/webhook"
 	"github.com/macrowallets/waas/app/services/withdraw"
@@ -274,9 +276,9 @@ func RegisterAdminRoutes() {
 		})).Group(func(r route.Router) {
 			r.Post("/activate", walletCtrl.ActivateWallet)
 
-			r.Get("/addresses", addressCtrl.ListWalletAddresses)
-			r.Middleware(middleware.Can(accounts, middleware.PermAddressesCreate)).Post("/addresses", addressCtrl.GenerateAddress)
-			r.Patch("/addresses/{addressId}", addressCtrl.UpdateAddress)
+			r.Get("/addresses", addressCtrl.Index)
+			r.Middleware(middleware.Can(accounts, middleware.PermAddressesCreate)).Post("/addresses", addressCtrl.Store)
+			r.Patch("/addresses/{addressId}", addressCtrl.Update)
 
 			r.Get("/users", walletUsersCtrl.ListWalletUsers)
 			r.Middleware(middleware.WalletAddUser(walletPolicyMemberships())).Post("/users", walletUsersCtrl.AddWalletUser)
@@ -308,10 +310,10 @@ func RegisterAdminRoutes() {
 			r.Get("/withdrawals/{withdrawalId}", withdrawalCtrl.Show)
 			r.Middleware(middleware.WalletCancelWithdrawal(walletPolicyMemberships(), container.MustMake[*withdrawalrecords.Records]())).Post("/withdrawals/{withdrawalId}/cancel", withdrawalCtrl.Cancel)
 
-			r.Middleware(middleware.RequireFundAction(middleware.FundSweep)).Post("/consolidate", sweepCtrl.ConsolidateWallet)
-			r.Get("/gas-status", sweepCtrl.GetGasStatus)
-			r.Middleware(middleware.Throttle(middleware.ThrottleGasCheck)).Post("/gas-check", sweepCtrl.ForceGasCheck)
-			r.Post("/withdraw/preview", sweepCtrl.PreviewWithdraw)
+			r.Middleware(middleware.RequireFundAction(middleware.FundSweep)).Post("/consolidate", sweepCtrl.Consolidate)
+			r.Get("/gas-status", sweepCtrl.GasStatus)
+			r.Middleware(middleware.Throttle(middleware.ThrottleGasCheck)).Post("/gas-check", sweepCtrl.GasCheck)
+			r.Post("/withdraw/preview", sweepCtrl.Preview)
 
 			r.Prefix("/unspents").Middleware(middleware.UTXOOnly(container.MustMake[*walletrecords.Wallets]())).Group(func(ur route.Router) {
 				ur.Get("", unspentsCtrl.ListUnspentOutputs)
@@ -442,11 +444,18 @@ func newDashboardPreferencesController() *dashpreferences.PreferencesController 
 	})
 }
 
-func newDashboardAddressesController() *dashaddresses.AddressesController {
-	return dashaddresses.NewAddressesController(dashaddresses.AddressesControllerDeps{
-		Addresses:     container.MustMake[*walletrecords.Addresses](),
-		WalletService: boundWalletService(),
-		Deposits:      container.MustMake[*deposit.Service](),
+func newDashboardAddressesController() *dashaddresses.AddressController {
+	return dashaddresses.NewAddressController(newWalletOps())
+}
+
+// newWalletOps composes the wallet and address operations both surfaces serve.
+func newWalletOps() *walletops.Service {
+	return walletops.NewService(walletops.Deps{
+		Wallets:   container.MustMake[*walletsvc.Service](),
+		Addresses: container.MustMake[*walletrecords.Addresses](),
+		Chains:    container.MustMake[*chainsvc.Service](),
+		Cache:     container.MustMake[*deposit.Service](),
+		Registry:  container.MustMake[*chainpkg.Registry](),
 	})
 }
 
