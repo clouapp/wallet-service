@@ -508,8 +508,8 @@ func newDashboardAccountPermissionsController() *dashroles.PermissionController 
 	return dashroles.NewPermissionController()
 }
 
-func newDashboardAccountFeaturesController() *dashfeatures.FeaturesController {
-	return dashfeatures.NewFeaturesController(
+func newDashboardAccountFeaturesController() *dashfeatures.FeatureController {
+	return dashfeatures.NewFeatureController(
 		container.MustMake[*featuressvc.Service](),
 	)
 }
