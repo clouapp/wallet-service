@@ -40,7 +40,7 @@ func TestSend_Platform_MailTestUsesTheSenderAndDropsTheTransportError(t *testing
 		WithPlatformTestMailer(sender)
 
 	err := service.SendPlatformMailTest(context.Background(), "mail-test@example.test")
-	if !errors.Is(err, errPlatformTestMail) {
+	if !errors.Is(err, ErrPlatformTestMail) {
 		t.Fatalf("err = %v", err)
 	}
 	if strings.Contains(err.Error(), "password") || strings.Contains(err.Error(), "smtp.mail-test.invalid") || strings.Contains(err.Error(), "mail-test-smtp-secret") {
@@ -59,8 +59,8 @@ func TestSend_Platform_MailTestRefusesAMissingSender(t *testing.T) {
 
 	service := NewService(Deps{Store: newMemoryStore(), Sealer: prefixSealer{}, Cache: nopCache{}, Activity: &countingMailTestActivity{}})
 	err := service.SendPlatformMailTest(context.Background(), "mail-test@example.test")
-	if err == nil {
-		t.Fatal("expected a missing sender to fail")
+	if !errors.Is(err, ErrPlatformTestMail) {
+		t.Fatalf("a missing sender is a failed send, got %v", err)
 	}
 }
 

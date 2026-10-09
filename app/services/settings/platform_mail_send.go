@@ -49,13 +49,13 @@ func (s *Service) SendPlatformMailTest(ctx context.Context, to string) error {
 		return fmt.Errorf("platform settings: context is required")
 	}
 	if s == nil || s.testMail == nil {
-		return fmt.Errorf("platform settings: test mail sender is required")
+		return fmt.Errorf("%w: test mail sender is required", ErrPlatformTestMail)
 	}
 	if to == "" {
 		return fmt.Errorf("platform settings: recipient is required")
 	}
 	if err := s.testMail.Send(ctx, to); err != nil {
-		return errPlatformTestMail
+		return ErrPlatformTestMail
 	}
 	return nil
 }
