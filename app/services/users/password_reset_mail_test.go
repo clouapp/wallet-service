@@ -1,8 +1,11 @@
 package users_test
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"log/slog"
+	"strings"
 	"testing"
 	"time"
 
@@ -109,4 +112,32 @@ func (f *resetMailStore) SetSuspendedAt(context.Context, uuid.UUID, *time.Time) 
 }
 func (f *resetMailStore) List(context.Context, int, int) ([]models.User, int64, error) {
 	return nil, 0, errors.New("unused")
+}
+
+func TestForgot_Password_DispatchesAndLogsAFailureItDoesNotReturn(t *testing.T) {
+	var logs bytes.Buffer
+	previous := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&logs, nil)))
+	t.Cleanup(func() { slog.SetDefault(previous) })
+
+	dispatched := 0
+	svc := users.NewService(users.Deps{
+		Store: &resetMailStore{user: &models.User{ID: uuid.New(), Email: "ada@example.com"}},
+		ResetMail: resetMailFunc(func(uuid.UUID) error {
+			dispatched++
+			return errors.New("queue down")
+		}),
+	})
+
+	svc.ForgotPassword(context.Background(), "ada@example.com")
+
+	if dispatched != 1 {
+		t.Fatalf("dispatches = %d, want 1", dispatched)
+	}
+	if !strings.Contains(logs.String(), "auth: send password reset mail failed") {
+		t.Fatal("the failed dispatch was not logged")
+	}
+	if strings.Contains(logs.String(), "ada@example.com") {
+		t.Fatal("the log carries the address")
+	}
 }

@@ -11,7 +11,9 @@ import (
 	appfacades "github.com/macrowallets/waas/app/facades"
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/repositories"
+	"github.com/macrowallets/waas/app/services/account"
 	authsvc "github.com/macrowallets/waas/app/services/auth"
+	"github.com/macrowallets/waas/app/services/credentialmail"
 	"github.com/macrowallets/waas/app/services/sessions"
 	"github.com/macrowallets/waas/app/services/settings"
 	usersvc "github.com/macrowallets/waas/app/services/users"
@@ -258,4 +260,55 @@ func newTOTPEnrollment(app foundation.Application) (*authsvc.TOTPEnrollment, err
 		return nil, fmt.Errorf("vault: totp enrollment: %w", err)
 	}
 	return enrollment, nil
+}
+
+// newSignIn signs dashboard users in and out: registration with its welcome
+// mail, the password login and its 2FA step, refresh and logout.
+func newSignIn(app foundation.Application) (*authsvc.SignIn, error) {
+	users, err := resolve[*usersvc.Service](app)
+	if err != nil {
+		return nil, err
+	}
+	accounts, err := resolve[*account.Service](app)
+	if err != nil {
+		return nil, err
+	}
+	welcome, err := resolve[*credentialmail.Service](app)
+	if err != nil {
+		return nil, err
+	}
+	passwords, err := resolve[*authsvc.Service](app)
+	if err != nil {
+		return nil, err
+	}
+	twoFactor, err := resolve[*authsvc.TwoFactorLogin](app)
+	if err != nil {
+		return nil, err
+	}
+	issuer, err := resolve[*authsvc.SessionIssuer](app)
+	if err != nil {
+		return nil, err
+	}
+	refresh, err := resolve[*sessions.RefreshTokens](app)
+	if err != nil {
+		return nil, err
+	}
+	revoker, err := resolve[*authsvc.SessionRevoker](app)
+	if err != nil {
+		return nil, err
+	}
+	signIn, err := authsvc.NewSignIn(authsvc.SignInDeps{
+		Users:     users,
+		Accounts:  accounts,
+		Welcome:   welcome,
+		Passwords: passwords,
+		TwoFactor: twoFactor,
+		Sessions:  issuer,
+		Refresh:   refresh,
+		Revoker:   revoker,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("vault: sign in: %w", err)
+	}
+	return signIn, nil
 }

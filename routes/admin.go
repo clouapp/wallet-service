@@ -38,12 +38,10 @@ import (
 	authsvc "github.com/macrowallets/waas/app/services/auth"
 	chainpkg "github.com/macrowallets/waas/app/services/chain"
 	chainsvc "github.com/macrowallets/waas/app/services/chains"
-	"github.com/macrowallets/waas/app/services/credentialmail"
 	"github.com/macrowallets/waas/app/services/currencies"
 	"github.com/macrowallets/waas/app/services/deposit"
 	featuressvc "github.com/macrowallets/waas/app/services/features"
 	"github.com/macrowallets/waas/app/services/price"
-	"github.com/macrowallets/waas/app/services/sessions"
 	settingssvc "github.com/macrowallets/waas/app/services/settings"
 	"github.com/macrowallets/waas/app/services/sweep"
 	usersvc "github.com/macrowallets/waas/app/services/users"
@@ -79,6 +77,7 @@ func RegisterAdminRoutes() {
 	currencyCtrl := newDashboardCurrenciesController()
 	preferencesCtrl := newDashboardPreferencesController()
 	authCtrl := newDashboardAuthController()
+	passwordResetCtrl := newDashboardPasswordResetController()
 	totpCtrl := newDashboardTotpController()
 	userAccountCtrl := newDashboardUserAccountController()
 	profileCtrl := newDashboardProfileController()
@@ -113,10 +112,10 @@ func RegisterAdminRoutes() {
 	facades.Route().Prefix("/v1/auth").Middleware(noCache).Group(func(router route.Router) {
 		router.Middleware(middleware.Throttle(middleware.ThrottleAuth)).Post("/register", authCtrl.Register)
 		router.Middleware(middleware.Throttle(middleware.ThrottleLogin)).Post("/login", authCtrl.Login)
-		router.Middleware(middleware.Throttle(middleware.ThrottleAuth)).Post("/2fa/verify", authCtrl.VerifyTwoFactor)
-		router.Middleware(middleware.Throttle(middleware.ThrottleAuth)).Post("/refresh", authCtrl.RefreshToken)
-		router.Middleware(middleware.Throttle(middleware.ThrottleRecover)).Post("/recover", authCtrl.ForgotPassword)
-		router.Middleware(middleware.Throttle(middleware.ThrottleAuth)).Post("/recover/confirm", authCtrl.ResetPassword)
+		router.Middleware(middleware.Throttle(middleware.ThrottleAuth)).Post("/2fa/verify", authCtrl.Verify)
+		router.Middleware(middleware.Throttle(middleware.ThrottleAuth)).Post("/refresh", authCtrl.Refresh)
+		router.Middleware(middleware.Throttle(middleware.ThrottleRecover)).Post("/recover", passwordResetCtrl.Forgot)
+		router.Middleware(middleware.Throttle(middleware.ThrottleAuth)).Post("/recover/confirm", passwordResetCtrl.Reset)
 		router.Get("/invites/{token}", inviteCtrl.Preview)
 		router.Middleware(middleware.Throttle(middleware.ThrottleAuth)).Post("/invites/accept", inviteCtrl.Accept)
 	})
@@ -344,16 +343,14 @@ func RegisterAdminRoutes() {
 }
 
 func newDashboardAuthController() *dashauth.AuthController {
-	return dashauth.NewAuthController(dashauth.AuthControllerDeps{
-		Users:          container.MustMake[*usersvc.Service](),
-		Accounts:       container.MustMake[*accountsvc.Service](),
-		RefreshTokens:  container.MustMake[*sessions.RefreshTokens](),
-		PasswordResets: container.MustMake[*sessions.PasswordResets](),
-		Passwords:      container.MustMake[*authsvc.Service](),
-		TwoFactor:      container.MustMake[*authsvc.TwoFactorLogin](),
-		Revoker:        container.MustMake[*authsvc.SessionRevoker](),
-		CredentialMail: container.MustMake[*credentialmail.Service](),
-	})
+	return dashauth.NewAuthController(container.MustMake[*authsvc.SignIn]())
+}
+
+func newDashboardPasswordResetController() *dashauth.PasswordController {
+	return dashauth.NewPasswordController(
+		container.MustMake[*usersvc.Service](),
+		container.MustMake[*authsvc.Credentials](),
+	)
 }
 
 func newDashboardPasswordController() *dashusers.PasswordController {

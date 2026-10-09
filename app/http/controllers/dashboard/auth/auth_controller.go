@@ -1,524 +1,168 @@
 package auth
 
 import (
-	"context"
-	"errors"
-
-	"github.com/google/uuid"
 	"github.com/goravel/framework/contracts/http"
 
 	appfacades "github.com/macrowallets/waas/app/facades"
-	"github.com/macrowallets/waas/app/http/controllers"
 	"github.com/macrowallets/waas/app/http/middleware/requestctx"
 	"github.com/macrowallets/waas/app/http/requests"
 	authrequests "github.com/macrowallets/waas/app/http/requests/dashboard/auth"
-	userresource "github.com/macrowallets/waas/app/http/resources/dashboard/users"
-	"github.com/macrowallets/waas/app/http/responses"
-	"github.com/macrowallets/waas/app/models"
-	"github.com/macrowallets/waas/app/policies"
-	accountsvc "github.com/macrowallets/waas/app/services/account"
+	resources "github.com/macrowallets/waas/app/http/resources/dashboard/auth"
 	authsvc "github.com/macrowallets/waas/app/services/auth"
-	"github.com/macrowallets/waas/app/services/credentialmail"
-	"github.com/macrowallets/waas/app/services/sessions"
-	usersvc "github.com/macrowallets/waas/app/services/users"
 )
 
+// AuthController signs dashboard users in and out: registration, the
+// password login and its 2FA step, the session refresh and the logout. The
+// session JWT is signed with the request's own guard.
 type AuthController struct {
-	users          *usersvc.Service
-	accounts       *accountsvc.Service
-	refreshTokens  *sessions.RefreshTokens
-	passwordResets *sessions.PasswordResets
-	passwords      *authsvc.Service
-	twoFactor      *authsvc.TwoFactorLogin
-	revoker        *authsvc.SessionRevoker
-	credentialMail *credentialmail.Service
+	signIn *authsvc.SignIn
 }
 
-// AuthControllerDeps is everything the dashboard auth controller needs.
-// Every field is required.
-type AuthControllerDeps struct {
-	Users          *usersvc.Service
-	Accounts       *accountsvc.Service
-	RefreshTokens  *sessions.RefreshTokens
-	PasswordResets *sessions.PasswordResets
-	Passwords      *authsvc.Service
-	TwoFactor      *authsvc.TwoFactorLogin
-	Revoker        *authsvc.SessionRevoker
-	CredentialMail *credentialmail.Service
-}
-
-// NewAuthController wires the dashboard auth handlers from AuthControllerDeps.
-// Every dependency is a provider singleton, resolved once when the route table is built.
-func NewAuthController(deps AuthControllerDeps) *AuthController {
-	if deps.Users == nil {
-		panic("dashboard auth controller: users service is required")
+// NewAuthController wires the auth handlers to the sign-in flows.
+func NewAuthController(signIn *authsvc.SignIn) *AuthController {
+	if signIn == nil {
+		panic("dashboard auth controller: sign in is required")
 	}
-	if deps.Accounts == nil {
-		panic("dashboard auth controller: account service is required")
-	}
-	if deps.RefreshTokens == nil {
-		panic("dashboard auth controller: refresh token service is required")
-	}
-	if deps.PasswordResets == nil {
-		panic("dashboard auth controller: password reset service is required")
-	}
-	if deps.Passwords == nil {
-		panic("dashboard auth controller: auth service is required")
-	}
-	if deps.TwoFactor == nil {
-		panic("dashboard auth controller: two factor login is required")
-	}
-	if deps.Revoker == nil {
-		panic("dashboard auth controller: session revoker is required")
-	}
-	if deps.CredentialMail == nil {
-		panic("dashboard auth controller: credential mail is required")
-	}
-	return &AuthController{
-		users:          deps.Users,
-		accounts:       deps.Accounts,
-		refreshTokens:  deps.RefreshTokens,
-		passwordResets: deps.PasswordResets,
-		passwords:      deps.Passwords,
-		twoFactor:      deps.TwoFactor,
-		revoker:        deps.Revoker,
-		credentialMail: deps.CredentialMail,
-	}
-}
-
-func (ctrl *AuthController) sessions() controllers.SessionIssuer {
-	return controllers.SessionIssuer{Passwords: ctrl.passwords, Refresh: ctrl.refreshTokens, Revoker: ctrl.revoker}
+	return &AuthController{signIn: signIn}
 }
 
 // Register godoc
-// @Summary      Register a new user
-// @Description  Creates a new user account and sends a welcome email
-// @Tags         Auth
-// @Accept       json
-// @Produce      json
-// @Param        request  body      RegisterSwagger  true  "Registration payload"
-// @Success      201      {object}  AuthResponse
-// @Failure      400      {object}  responses.ErrorBody
-// @Failure      422      {object}  responses.ErrorBody
-// @Failure      429  {object}  responses.ErrorBody  "Rate limit exceeded (too_many_requests, Retry-After header)"
-// @Router       /auth/register [post]
-func (ctrl *AuthController) Register(ctx http.Context) http.Response {
+//
+//	@Summary		Register a new user
+//	@Description	Creates a new user account and sends a welcome email
+//	@Tags			Auth
+//	@Accept			json
+//	@Produce		json
+//	@Param			request	body		RegisterSwagger		true	"Registration payload"
+//	@Success		201		{object}	AuthResponse
+//	@Failure		400		{object}	responses.ErrorBody
+//	@Failure		422		{object}	responses.ErrorBody
+//	@Failure		429		{object}	responses.ErrorBody	"Rate limit exceeded (too_many_requests, Retry-After header)"
+//	@Router			/auth/register [post]
+func (c *AuthController) Register(ctx http.Context) http.Response {
 	var req authrequests.RegisterRequest
-	if errResp := requests.Validate(ctx, &req); errResp != nil {
-		return errResp
+	if response := requests.Validate(ctx, &req); response != nil {
+		return response
 	}
 
-	hash, err := ctrl.passwords.HashPassword(req.Password)
-	if err != nil {
-		return responses.Fail(ctx, http.StatusInternalServerError, responses.CodeInternal, "failed to hash password")
-	}
-
-	user, err := ctrl.accounts.Onboard(ctx.Context(), accountsvc.OnboardInput{
+	registered, err := c.signIn.Register(ctx.Context(), appfacades.Auth(ctx), authsvc.RegisterInput{
 		Email:            req.Email,
-		PasswordHash:     hash,
+		Password:         req.Password,
 		FullName:         req.FullName,
 		OrganizationName: req.OrganizationName,
-	}, func(userID uuid.UUID) error {
-		if mailErr := ctrl.credentialMail.SendWelcome(ctx.Context(), userID); mailErr != nil {
-			appfacades.Log().WithContext(ctx).Error("auth: send welcome mail failed")
-		}
-		return nil
 	})
 	if err != nil {
-		return responses.Fail(ctx, http.StatusInternalServerError, responses.CodeInternal, "failed to create user")
+		return mapError(ctx, err, "failed to create user")
 	}
 
-	accounts, defaultAccount, accountsErr := ctrl.loadUserAccounts(user)
-	if accountsErr != nil {
-		return membershipReadUnavailable(ctx)
-	}
-
-	accessToken, err := appfacades.Auth(ctx).LoginUsingID(user.ID.String())
-	if err != nil {
-		appfacades.Log().WithContext(ctx).Errorf("auth: login after register: %v", err)
-		return responses.Fail(ctx, http.StatusInternalServerError, responses.CodeInternal, "failed to create session")
-	}
-
-	resp := http.Json{
-		"access_token": accessToken,
-		"user":         userresource.UserFrom(user),
-		"accounts":     accounts,
-	}
-	if defaultAccount != nil {
-		resp["account_id"] = defaultAccount["id"]
-		resp["account"] = defaultAccount
-	}
-	return ctx.Response().Status(http.StatusCreated).Json(resp)
+	return ctx.Response().Status(http.StatusCreated).Json(resources.NewRegistered(registered))
 }
 
 // Login godoc
-// @Summary      Authenticate a user
-// @Description  Validates credentials and returns JWT access + refresh tokens. If TOTP is enabled, returns a challenge token requiring 2FA.
-// @Tags         Auth
-// @Accept       json
-// @Produce      json
-// @Param        request  body      LoginSwagger  true  "Login credentials"
-// @Success      200      {object}  AuthResponse
-// @Failure      400      {object}  responses.ErrorBody
-// @Failure      401      {object}  responses.ErrorBody
-// @Failure      429  {object}  responses.ErrorBody  "Rate limit exceeded (too_many_requests, Retry-After header)"
-// @Router       /auth/login [post]
-func (ctrl *AuthController) Login(ctx http.Context) http.Response {
+//
+//	@Summary		Authenticate a user
+//	@Description	Validates credentials and returns JWT access + refresh tokens. If TOTP is enabled, returns a challenge token requiring 2FA.
+//	@Tags			Auth
+//	@Accept			json
+//	@Produce		json
+//	@Param			request	body		LoginSwagger		true	"Login credentials"
+//	@Success		200		{object}	AuthResponse
+//	@Failure		400		{object}	responses.ErrorBody
+//	@Failure		401		{object}	responses.ErrorBody
+//	@Failure		429		{object}	responses.ErrorBody	"Rate limit exceeded (too_many_requests, Retry-After header)"
+//	@Router			/auth/login [post]
+func (c *AuthController) Login(ctx http.Context) http.Response {
 	var req authrequests.LoginRequest
-	if errResp := requests.Validate(ctx, &req); errResp != nil {
-		return errResp
+	if response := requests.Validate(ctx, &req); response != nil {
+		return response
 	}
 
-	userPtr, err := ctrl.users.FindByEmail(ctx.Context(), req.Email)
-	if err != nil && !errors.Is(err, models.ErrRepositoryNotFound) {
-		appfacades.Log().WithContext(ctx).Errorf("auth: login: find user: %v", err)
-		return responses.InternalError(ctx, nil)
-	}
-	if userPtr == nil {
-		// Spend the bcrypt time a wrong password would, so the response time
-		// does not tell a registered email from an unknown one.
-		ctrl.passwords.CheckPassword(req.Password, authsvc.DummyPasswordHash)
-		return responses.Fail(ctx, http.StatusUnauthorized, responses.CodeUnauthorized, "invalid credentials")
-	}
-	user := *userPtr
-
-	if !ctrl.passwords.CheckPassword(req.Password, user.PasswordHash) {
-		return responses.Fail(ctx, http.StatusUnauthorized, responses.CodeUnauthorized, "invalid credentials")
-	}
-	if !policies.UserMayHoldSession(user.Status) {
-		return controllers.InactiveUserResponse(ctx)
-	}
-	if policies.UserIsSuspended(user.SuspendedAt) {
-		return responses.SuspendedUser(ctx)
-	}
-
-	if user.TotpEnabled {
-		if err := ctrl.revoker.AwaitIssuable(user.SessionsRevokedAt); err != nil {
-			appfacades.Log().WithContext(ctx).Errorf("auth: begin 2fa: %v", err)
-			return responses.Fail(ctx, http.StatusInternalServerError, responses.CodeInternal, "failed to create session")
-		}
-		challenge, err := ctrl.twoFactor.Begin(&user)
-		if err != nil {
-			appfacades.Log().WithContext(ctx).Errorf("auth: begin 2fa: %v", err)
-			return responses.Fail(ctx, http.StatusInternalServerError, responses.CodeInternal, "failed to create session")
-		}
-		return ctx.Response().Success().Json(http.Json{
-			"requires_2fa":    true,
-			"challenge_token": challenge.Token,
-			"expires_in":      int(challenge.ExpiresIn.Seconds()),
-		})
-	}
-
-	accounts, defaultAccount, accountsErr := ctrl.loadUserAccounts(&user)
-	if accountsErr != nil {
-		return membershipReadUnavailable(ctx)
-	}
-
-	tokens, err := ctrl.sessions().IssueSession(ctx, user.ID, user.SessionsRevokedAt)
+	signedIn, err := c.signIn.Login(ctx.Context(), appfacades.Auth(ctx), authsvc.LoginInput{Email: req.Email, Password: req.Password})
 	if err != nil {
-		appfacades.Log().WithContext(ctx).Errorf("auth: login: %v", err)
-		return responses.Fail(ctx, http.StatusInternalServerError, responses.CodeInternal, "failed to create session")
+		return mapError(ctx, err, "failed to create session")
 	}
-	return ctx.Response().Success().Json(ctrl.signedInResponse(&user, tokens, accounts, defaultAccount))
+
+	if signedIn.Challenge != nil {
+		return ctx.Response().Success().Json(resources.NewTwoFactorChallenge(*signedIn.Challenge))
+	}
+	return ctx.Response().Success().Json(resources.NewSignedIn(signedIn))
 }
 
-// VerifyTwoFactor godoc
-// @Summary      Complete 2FA login
-// @Description  Validates a TOTP code or recovery code and returns full JWT tokens
-// @Tags         Auth
-// @Accept       json
-// @Produce      json
-// @Param        request  body      TwoFactorSwagger  true  "2FA verification payload"
-// @Success      200      {object}  AuthResponse
-// @Failure      400      {object}  responses.ErrorBody
-// @Failure      401      {object}  responses.ErrorBody
-// @Failure      429  {object}  responses.ErrorBody  "Rate limit exceeded (too_many_requests, Retry-After header)"
-// @Router       /auth/2fa/verify [post]
-func (ctrl *AuthController) VerifyTwoFactor(ctx http.Context) http.Response {
+// Verify godoc
+//
+//	@Summary		Complete 2FA login
+//	@Description	Validates a TOTP code or recovery code and returns full JWT tokens
+//	@Tags			Auth
+//	@Accept			json
+//	@Produce		json
+//	@Param			request	body		TwoFactorSwagger	true	"2FA verification payload"
+//	@Success		200		{object}	AuthResponse
+//	@Failure		400		{object}	responses.ErrorBody
+//	@Failure		401		{object}	responses.ErrorBody
+//	@Failure		429		{object}	responses.ErrorBody	"Rate limit exceeded (too_many_requests, Retry-After header)"
+//	@Router			/auth/2fa/verify [post]
+func (c *AuthController) Verify(ctx http.Context) http.Response {
 	var req authrequests.VerifyTwoFactorRequest
-	if errResp := requests.Validate(ctx, &req); errResp != nil {
-		return errResp
+	if response := requests.Validate(ctx, &req); response != nil {
+		return response
 	}
 
-	if req.Code == "" && req.RecoveryCode == "" {
-		return responses.Fail(ctx, http.StatusUnprocessableEntity, responses.CodeUnprocessable, "code or recovery_code is required")
-	}
-
-	user, err := ctrl.twoFactor.Complete(req.ChallengeToken, req.Code, req.RecoveryCode)
+	signedIn, err := c.signIn.Verify(ctx.Context(), appfacades.Auth(ctx), authsvc.VerifyInput{
+		ChallengeToken: req.ChallengeToken,
+		Code:           req.Code,
+		RecoveryCode:   req.RecoveryCode,
+	})
 	if err != nil {
-		return controllers.TwoFactorErrorResponse(ctx, err)
-	}
-	if !policies.UserMayHoldSession(user.Status) {
-		return controllers.InactiveUserResponse(ctx)
-	}
-	if policies.UserIsSuspended(user.SuspendedAt) {
-		return responses.SuspendedUser(ctx)
+		return mapError(ctx, err, "internal error")
 	}
 
-	accounts, defaultAccount, accountsErr := ctrl.loadUserAccounts(user)
-	if accountsErr != nil {
-		return membershipReadUnavailable(ctx)
-	}
-
-	tokens, err := ctrl.sessions().IssueSession(ctx, user.ID, user.SessionsRevokedAt)
-	if err != nil {
-		appfacades.Log().WithContext(ctx).Errorf("auth: 2fa login: %v", err)
-		return responses.Fail(ctx, http.StatusInternalServerError, responses.CodeInternal, "failed to create session")
-	}
-	return ctx.Response().Success().Json(ctrl.signedInResponse(user, tokens, accounts, defaultAccount))
+	return ctx.Response().Success().Json(resources.NewSignedIn(signedIn))
 }
 
-// RefreshToken godoc
-// @Summary      Refresh access token
-// @Description  Exchanges a valid refresh token for a new access + refresh token pair
-// @Tags         Auth
-// @Accept       json
-// @Produce      json
-// @Param        request  body      RefreshTokenSwagger  true  "Refresh token"
-// @Success      200      {object}  AuthResponse
-// @Failure      400      {object}  responses.ErrorBody
-// @Failure      401      {object}  responses.ErrorBody
-// @Failure      429  {object}  responses.ErrorBody  "Rate limit exceeded (too_many_requests, Retry-After header)"
-// @Router       /auth/refresh [post]
-func (ctrl *AuthController) RefreshToken(ctx http.Context) http.Response {
+// Refresh godoc
+//
+//	@Summary		Refresh access token
+//	@Description	Exchanges a valid refresh token for a new access + refresh token pair
+//	@Tags			Auth
+//	@Accept			json
+//	@Produce		json
+//	@Param			request	body		RefreshTokenSwagger	true	"Refresh token"
+//	@Success		200		{object}	AuthResponse
+//	@Failure		400		{object}	responses.ErrorBody
+//	@Failure		401		{object}	responses.ErrorBody
+//	@Failure		429		{object}	responses.ErrorBody	"Rate limit exceeded (too_many_requests, Retry-After header)"
+//	@Router			/auth/refresh [post]
+func (c *AuthController) Refresh(ctx http.Context) http.Response {
 	var req authrequests.RefreshTokenRequest
-	if errResp := requests.Validate(ctx, &req); errResp != nil {
-		return errResp
+	if response := requests.Validate(ctx, &req); response != nil {
+		return response
 	}
 
-	tokens, tokErr := ctrl.refreshTokens.FindValidTokens(ctx.Context())
-	if tokErr != nil {
-		appfacades.Log().WithContext(ctx).Errorf("auth: find refresh tokens: %v", tokErr)
-	}
-
-	var matched *models.RefreshToken
-	for i := range tokens {
-		if ctrl.passwords.CheckToken(req.RefreshToken, tokens[i].TokenHash) {
-			matched = &tokens[i]
-			break
-		}
-	}
-	if matched == nil {
-		return responses.Fail(ctx, http.StatusUnauthorized, responses.CodeUnauthorized, "invalid or expired refresh token")
-	}
-
-	rotated, err := ctrl.refreshTokens.RevokeIfActive(ctx.Context(), matched.ID)
+	tokens, err := c.signIn.Refresh(ctx.Context(), appfacades.Auth(ctx), req.RefreshToken)
 	if err != nil {
-		appfacades.Log().WithContext(ctx).Errorf("auth: revoke refresh token: %v", err)
-		return responses.Fail(ctx, http.StatusInternalServerError, responses.CodeInternal, "failed to create session")
-	}
-	if !rotated {
-		return responses.Fail(ctx, http.StatusUnauthorized, responses.CodeUnauthorized, "invalid or expired refresh token")
+		return mapRefreshError(ctx, err)
 	}
 
-	owner, err := ctrl.users.FindByID(ctx.Context(), matched.UserID)
-	if err != nil {
-		appfacades.Log().WithContext(ctx).Errorf("auth: refresh: load user: %v", err)
-		return responses.Fail(ctx, http.StatusInternalServerError, responses.CodeInternal, "failed to create session")
-	}
-	if owner == nil || errors.Is(err, models.ErrRepositoryNotFound) {
-		return responses.Fail(ctx, http.StatusUnauthorized, responses.CodeUnauthorized, "invalid or expired refresh token")
-	}
-	if !policies.UserMayHoldSession(owner.Status) {
-		return responses.Fail(ctx, http.StatusUnauthorized, responses.CodeUnauthorized, "user is not active")
-	}
-	if policies.UserIsSuspended(owner.SuspendedAt) {
-		return responses.SuspendedUser(ctx)
-	}
-
-	session, err := ctrl.sessions().IssueSession(ctx, owner.ID, owner.SessionsRevokedAt)
-	if err != nil {
-		appfacades.Log().WithContext(ctx).Errorf("auth: refresh: %v", err)
-		return responses.Fail(ctx, http.StatusInternalServerError, responses.CodeInternal, "failed to create session")
-	}
-	return ctx.Response().Success().Json(http.Json{
-		"access_token":  session.AccessToken,
-		"refresh_token": session.RefreshToken,
-	})
+	return ctx.Response().Success().Json(resources.NewSession(tokens))
 }
 
 // Logout godoc
-// @Summary      Logout current user
-// @Description  Ends every session of the user: access tokens and refresh tokens
-// @Tags         Auth
-// @Security     BearerAuth
-// @Produce      json
-// @Success      204  "No content"
-// @Failure      401  {object}  responses.ErrorBody
-// @Failure      500  {object}  responses.ErrorBody
-// @Router       /auth/logout [post]
-func (ctrl *AuthController) Logout(ctx http.Context) http.Response {
-	// The session watermark, not the guard's per-token blacklist: a JWT carries
-	// only whole-second claims, so a sign-in in the second of the logout would
-	// mint the very token the blacklist just refused (see session_revocation.go).
-	if uid, ok := requestctx.UserID(ctx); ok {
-		if _, err := ctrl.revoker.RevokeAll(ctx.Context(), uid); err != nil {
-			appfacades.Log().WithContext(ctx).Errorf("auth: logout: revoke sessions: %v", err)
-			return responses.Fail(ctx, http.StatusInternalServerError, responses.CodeInternal, "failed to end session")
-		}
+//
+//	@Summary		Logout current user
+//	@Description	Ends every session of the user: access tokens and refresh tokens
+//	@Tags			Auth
+//	@Security		BearerAuth
+//	@Produce		json
+//	@Success		204	"No content"
+//	@Failure		401	{object}	responses.ErrorBody
+//	@Failure		500	{object}	responses.ErrorBody
+//	@Router			/auth/logout [post]
+func (c *AuthController) Logout(ctx http.Context) http.Response {
+	userID := requestctx.MustUserID(ctx)
+
+	if err := c.signIn.Logout(ctx.Context(), userID); err != nil {
+		return mapError(ctx, err, "failed to end session")
 	}
+
 	return ctx.Response().NoContent()
-}
-
-// ForgotPassword godoc
-// @Summary      Request password reset email
-// @Description  Sends a password reset link to the user's email if the address is registered
-// @Tags         Auth
-// @Accept       json
-// @Produce      json
-// @Param        request  body      ForgotPasswordSwagger  true  "Email address"
-// @Success      200      {object}  map[string]string
-// @Failure      400      {object}  responses.ErrorBody
-// @Failure      429  {object}  responses.ErrorBody  "Rate limit exceeded (too_many_requests, Retry-After header)"
-// @Router       /auth/recover [post]
-func (ctrl *AuthController) ForgotPassword(ctx http.Context) http.Response {
-	var req authrequests.ForgotPasswordRequest
-	if errResp := requests.Validate(ctx, &req); errResp != nil {
-		return errResp
-	}
-
-	if err := ctrl.users.RequestPasswordReset(ctx.Context(), req.Email); err != nil {
-		appfacades.Log().WithContext(ctx).Errorf("auth: send password reset mail failed")
-	}
-
-	return ctx.Response().Success().Json(http.Json{"message": "if that address is registered, you will receive a reset link"})
-}
-
-// ResetPassword godoc
-// @Summary      Reset password using token
-// @Description  Validates the reset token and updates the user's password
-// @Tags         Auth
-// @Accept       json
-// @Produce      json
-// @Param        request  body      ResetPasswordSwagger  true  "Token and new password"
-// @Success      200      {object}  map[string]string
-// @Failure      400      {object}  responses.ErrorBody
-// @Failure      401      {object}  responses.ErrorBody
-// @Failure      429  {object}  responses.ErrorBody  "Rate limit exceeded (too_many_requests, Retry-After header)"
-// @Router       /auth/recover/confirm [post]
-func (ctrl *AuthController) ResetPassword(ctx http.Context) http.Response {
-	var req authrequests.ResetPasswordRequest
-	if errResp := requests.Validate(ctx, &req); errResp != nil {
-		return errResp
-	}
-
-	tokens, tokErr := ctrl.passwordResets.FindValidTokens(ctx.Context())
-	if tokErr != nil {
-		appfacades.Log().WithContext(ctx).Errorf("auth: find reset tokens: %v", tokErr)
-	}
-
-	var matched *models.PasswordResetToken
-	for i := range tokens {
-		if ctrl.passwords.CheckToken(req.Token, tokens[i].TokenHash) {
-			matched = &tokens[i]
-			break
-		}
-	}
-	if matched == nil {
-		return responses.Fail(ctx, http.StatusUnauthorized, responses.CodeUnauthorized, "invalid or expired token")
-	}
-
-	hash, err := ctrl.passwords.HashPassword(req.NewPassword)
-	if err != nil {
-		return responses.Fail(ctx, http.StatusInternalServerError, responses.CodeInternal, "failed to hash password")
-	}
-
-	if err := ctrl.users.UpdatePasswordHash(ctx.Context(), matched.UserID, hash); err != nil {
-		appfacades.Log().WithContext(ctx).Errorf("auth: update password: %v", err)
-		return responses.Fail(ctx, http.StatusInternalServerError, responses.CodeInternal, "failed to update password")
-	}
-
-	if err := ctrl.passwordResets.MarkUsed(ctx.Context(), matched.ID); err != nil {
-		appfacades.Log().WithContext(ctx).Errorf("auth: mark reset token used: %v", err)
-	}
-	if _, err := ctrl.revoker.RevokeAll(ctx.Context(), matched.UserID); err != nil {
-		appfacades.Log().WithContext(ctx).Errorf("auth: reset password: revoke sessions: %v", err)
-		return responses.Fail(ctx, http.StatusInternalServerError, responses.CodeInternal, "password reset but existing sessions could not be revoked")
-	}
-
-	return ctx.Response().Success().Json(http.Json{"message": "password reset successfully"})
-}
-
-func (ctrl *AuthController) signedInResponse(user *models.User, tokens controllers.SessionTokens, accounts []map[string]interface{}, defaultAccount map[string]interface{}) http.Json {
-	user.TotpSecret = ""
-	resp := http.Json{
-		"access_token":  tokens.AccessToken,
-		"refresh_token": tokens.RefreshToken,
-		"user":          userresource.UserFrom(user),
-		"accounts":      accounts,
-	}
-	if defaultAccount != nil {
-		resp["account_id"] = defaultAccount["id"]
-		resp["account"] = defaultAccount
-	}
-	return resp
-}
-
-func membershipReadUnavailable(ctx http.Context) http.Response {
-	return responses.Fail(ctx, http.StatusServiceUnavailable, responses.CodeUnavailable, "failed to load accounts")
-}
-
-func (ctrl *AuthController) loadUserAccounts(user *models.User) ([]map[string]interface{}, map[string]interface{}, error) {
-	signIn, err := ctrl.accounts.SignInAccounts(context.Background(), user.ID, user.DefaultAccountID)
-	if err != nil {
-		appfacades.Log().Errorf("auth: load memberships: %v", err)
-		return nil, nil, err
-	}
-
-	var accounts []map[string]interface{}
-	var defaultAccount map[string]interface{}
-	for _, member := range signIn.Accounts {
-		entry := map[string]interface{}{
-			"id":                member.Account.ID,
-			"name":              member.Account.Name,
-			"environment":       member.Account.Environment,
-			"linked_account_id": member.Account.LinkedAccountID,
-			"status":            member.Account.Status,
-			"role":              member.Role,
-		}
-		accounts = append(accounts, entry)
-		if member.Account.ID == signIn.DefaultID {
-			defaultAccount = entry
-		}
-	}
-	return accounts, defaultAccount, nil
-}
-
-// ---- Swagger-only types ----
-
-type RegisterSwagger struct {
-	Email            string `json:"email" example:"user@example.com"`
-	Password         string `json:"password" example:"s3cr3t"`
-	FullName         string `json:"full_name" example:"Alice Smith"`
-	OrganizationName string `json:"organization_name" example:"Acme Corp"`
-}
-
-type LoginSwagger struct {
-	Email    string `json:"email" example:"user@example.com"`
-	Password string `json:"password" example:"s3cr3t"`
-}
-
-type TwoFactorSwagger struct {
-	ChallengeToken string `json:"challenge_token"`
-	Code           string `json:"code" example:"123456"`
-	RecoveryCode   string `json:"recovery_code" example:"ABCDEFGH12345678"`
-}
-
-type RefreshTokenSwagger struct {
-	RefreshToken string `json:"refresh_token"`
-}
-
-type ForgotPasswordSwagger struct {
-	Email string `json:"email" example:"user@example.com"`
-}
-
-type ResetPasswordSwagger struct {
-	Token       string `json:"token"`
-	NewPassword string `json:"new_password" example:"newS3cr3t"`
-}
-
-type AuthResponse struct {
-	AccessToken  string            `json:"access_token"`
-	RefreshToken string            `json:"refresh_token,omitempty"`
-	User         userresource.User `json:"user,omitempty"`
 }

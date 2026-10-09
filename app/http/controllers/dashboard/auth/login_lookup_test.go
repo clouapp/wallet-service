@@ -15,9 +15,6 @@ import (
 	"github.com/macrowallets/waas/app/http/responses"
 	"github.com/macrowallets/waas/app/models"
 	accountsvc "github.com/macrowallets/waas/app/services/account"
-	authsvc "github.com/macrowallets/waas/app/services/auth"
-	"github.com/macrowallets/waas/app/services/credentialmail"
-	"github.com/macrowallets/waas/app/services/sessions"
 	usersvc "github.com/macrowallets/waas/app/services/users"
 )
 
@@ -37,16 +34,8 @@ func loginWith(t *testing.T, store lookupUsers) *recordingResponse {
 	foundation.App = quietApp{}
 	t.Cleanup(func() { foundation.App = previous })
 
-	ctrl := NewAuthController(AuthControllerDeps{
-		Users:          usersvc.NewService(usersvc.Deps{Store: store}),
-		Accounts:       accountsvc.NewService(accountsvc.Deps{}),
-		RefreshTokens:  &sessions.RefreshTokens{},
-		PasswordResets: &sessions.PasswordResets{},
-		Passwords:      authsvc.NewService(testHasher()),
-		TwoFactor:      &authsvc.TwoFactorLogin{},
-		Revoker:        &authsvc.SessionRevoker{},
-		CredentialMail: &credentialmail.Service{},
-	})
+	ctrl := NewAuthController(newTestSignIn(t, usersvc.NewService(usersvc.Deps{Store: store}),
+		accountsvc.NewService(accountsvc.Deps{}), &flagRefreshStore{}))
 	response := &recordingResponse{}
 	ctrl.Login(&recordingContext{
 		base:     context.Background(),
