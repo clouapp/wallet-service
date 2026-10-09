@@ -77,6 +77,12 @@ definitions:
         example: admin
         type: string
     type: object
+  accounts.AttachOwnerRequest:
+    properties:
+      email:
+        example: owner@example.com
+        type: string
+    type: object
   accounts.CreateAccountSwagger:
     properties:
       name:
@@ -106,6 +112,13 @@ definitions:
         example: true
         type: boolean
       valid_until:
+        type: string
+    type: object
+  accounts.Lifecycle:
+    properties:
+      id:
+        type: string
+      status:
         type: string
     type: object
   accounts.UpdateAccountSwagger:
@@ -140,13 +153,6 @@ definitions:
         type: string
       totp_enabled:
         type: boolean
-    type: object
-  accounts.lifecycleBody:
-    properties:
-      id:
-        type: string
-      status:
-        type: string
     type: object
   activity.AccountActivity:
     properties:
@@ -401,27 +407,6 @@ definitions:
       tx_hash:
         type: string
     type: object
-  controllers.CreateWalletWithdrawalSwagger:
-    properties:
-      amount:
-        example: "0.001"
-        type: string
-      asset:
-        example: USDT
-        type: string
-      destination_address:
-        example: bc1q...
-        type: string
-      note:
-        example: Monthly payment
-        type: string
-      passphrase:
-        example: my-secure-wallet-passphrase
-        type: string
-      totp_code:
-        example: "123456"
-        type: string
-    type: object
   controllers.GasStatusResponse:
     properties:
       base_address:
@@ -572,44 +557,6 @@ definitions:
       sweeps_required:
         example: 2
         type: integer
-    type: object
-  controllers.WithdrawalListResponse:
-    properties:
-      data:
-        items:
-          $ref: '#/definitions/withdrawals.Withdrawal'
-        type: array
-    type: object
-  controllers.WithdrawalLookupResponse:
-    properties:
-      amount:
-        example: "4"
-        type: string
-      created_at:
-        type: string
-      destination_address:
-        type: string
-      failure_reason:
-        example: insufficient_funds
-        type: string
-      id:
-        example: 80571fff-8d0b-5c1e-9a3f-2b6f0f7c1a11
-        type: string
-      idempotency_key:
-        example: 80571fff-8d0b-5c1e-9a3f-2b6f0f7c1a11
-        type: string
-      status:
-        example: broadcast
-        type: string
-      transaction_status:
-        example: confirming
-        type: string
-      tx_hash:
-        type: string
-      updated_at:
-        type: string
-      wallet_id:
-        type: string
     type: object
   features.Flag:
     properties:
@@ -872,7 +819,14 @@ definitions:
       user_id:
         type: string
     type: object
-  health.DepositScannerHealth:
+  github_com_macrowallets_waas_app_http_resources_platform_users.Suspension:
+    properties:
+      id:
+        type: string
+      suspended_at:
+        type: string
+    type: object
+  health.DepositScanner:
     properties:
       error:
         type: string
@@ -887,10 +841,10 @@ definitions:
         example: ok
         type: string
     type: object
-  health.HealthResponse:
+  health.Health:
     properties:
       deposit_scanner:
-        $ref: '#/definitions/health.DepositScannerHealth'
+        $ref: '#/definitions/health.DepositScanner'
       status:
         example: ok
         type: string
@@ -912,11 +866,6 @@ definitions:
           type: string
         type: array
       role:
-        type: string
-    type: object
-  requests.AttachPlatformOwnerRequest:
-    properties:
-      email:
         type: string
     type: object
   requests.UpdateAddressRequest:
@@ -1008,6 +957,12 @@ definitions:
       updated_at:
         type: string
     type: object
+  settings.MailTestSent:
+    properties:
+      sent:
+        example: true
+        type: boolean
+    type: object
   settings.ManagedBy:
     enum:
     - account
@@ -1065,6 +1020,22 @@ definitions:
     - TypeDecimal
     - TypeStringList
     - TypeBigInt
+  transactions.List:
+    properties:
+      data:
+        items:
+          $ref: '#/definitions/transactions.Transaction'
+        type: array
+      limit:
+        example: 50
+        type: integer
+      offset:
+        example: 0
+        type: integer
+      total:
+        example: 1
+        type: integer
+    type: object
   transactions.Transaction:
     properties:
       address:
@@ -1152,13 +1123,6 @@ definitions:
         $ref: '#/definitions/wallets.Wallet'
       wallet_id:
         type: string
-    type: object
-  transactions.TransactionListResponse:
-    properties:
-      data:
-        items:
-          $ref: '#/definitions/transactions.Transaction'
-        type: array
     type: object
   users.AccountListResponse:
     properties:
@@ -1286,13 +1250,6 @@ definitions:
         $ref: '#/definitions/github_com_goravel_framework_support_carbon.DateTime'
       view_all_wallets:
         type: boolean
-    type: object
-  users.suspensionBody:
-    properties:
-      id:
-        type: string
-      suspended_at:
-        type: string
     type: object
   wallets.AddWalletUserSwagger:
     properties:
@@ -1688,7 +1645,14 @@ definitions:
         format: date-time
         type: string
     type: object
-  webhooks.CreateWebhookRequest:
+  webhooks.ConfigList:
+    properties:
+      data:
+        items:
+          $ref: '#/definitions/webhooks.WebhookConfig'
+        type: array
+    type: object
+  webhooks.StoreRequest:
     properties:
       events:
         example:
@@ -1706,7 +1670,7 @@ definitions:
         example: https://example.com/webhook
         type: string
     type: object
-  webhooks.UpdateWebhookRequest:
+  webhooks.UpdateRequest:
     properties:
       events:
         example:
@@ -1758,6 +1722,77 @@ definitions:
       updated_at:
         $ref: '#/definitions/github_com_goravel_framework_support_carbon.DateTime'
       wallet_id:
+        type: string
+    type: object
+  withdrawals.List:
+    properties:
+      data:
+        items:
+          $ref: '#/definitions/withdrawals.Withdrawal'
+        type: array
+      limit:
+        example: 50
+        type: integer
+      offset:
+        example: 0
+        type: integer
+      total:
+        example: 1
+        type: integer
+    type: object
+  withdrawals.Lookup:
+    properties:
+      amount:
+        example: "4"
+        type: string
+      created_at:
+        type: string
+      destination_address:
+        type: string
+      failure_reason:
+        example: insufficient_funds
+        type: string
+      id:
+        example: 80571fff-8d0b-5c1e-9a3f-2b6f0f7c1a11
+        type: string
+      idempotency_key:
+        example: 80571fff-8d0b-5c1e-9a3f-2b6f0f7c1a11
+        type: string
+      status:
+        example: broadcast
+        type: string
+      transaction_status:
+        example: confirming
+        type: string
+      tx_hash:
+        type: string
+      updated_at:
+        type: string
+      wallet_id:
+        type: string
+    type: object
+  withdrawals.StoreRequest:
+    properties:
+      amount:
+        example: "0.001"
+        type: string
+      asset:
+        example: USDT
+        type: string
+      destination_address:
+        example: bc1q...
+        type: string
+      idempotency_key:
+        example: 80571fff-8d0b-5c1e-9a3f-2b6f0f7c1a11
+        type: string
+      note:
+        example: Monthly payment
+        type: string
+      passphrase:
+        example: my-secure-wallet-passphrase
+        type: string
+      totp_code:
+        example: "123456"
         type: string
     type: object
   withdrawals.Withdrawal:
@@ -2704,7 +2739,7 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/controllers.WithdrawalLookupResponse'
+            $ref: '#/definitions/withdrawals.Lookup'
         "400":
           description: idempotency_key must be a UUID
           schema:
@@ -2736,7 +2771,7 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/controllers.WebhookConfigListResponse'
+            $ref: '#/definitions/webhooks.ConfigList'
         "401":
           description: Unauthorized
           schema:
@@ -2770,7 +2805,7 @@ paths:
         name: body
         required: true
         schema:
-          $ref: '#/definitions/webhooks.CreateWebhookRequest'
+          $ref: '#/definitions/webhooks.StoreRequest'
       produces:
       - application/json
       responses:
@@ -2815,7 +2850,7 @@ paths:
         name: body
         required: true
         schema:
-          $ref: '#/definitions/webhooks.UpdateWebhookRequest'
+          $ref: '#/definitions/webhooks.UpdateRequest'
       produces:
       - application/json
       responses:
@@ -3087,7 +3122,7 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/health.HealthResponse'
+            $ref: '#/definitions/health.Health'
       summary: Health check
       tags:
       - System
@@ -3142,7 +3177,7 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/accounts.lifecycleBody'
+            $ref: '#/definitions/accounts.Lifecycle'
         "400":
           description: Bad Request
           schema:
@@ -3181,7 +3216,7 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/accounts.lifecycleBody'
+            $ref: '#/definitions/accounts.Lifecycle'
         "400":
           description: Bad Request
           schema:
@@ -3225,7 +3260,7 @@ paths:
         name: request
         required: true
         schema:
-          $ref: '#/definitions/requests.AttachPlatformOwnerRequest'
+          $ref: '#/definitions/accounts.AttachOwnerRequest'
       produces:
       - application/json
       responses:
@@ -3375,7 +3410,7 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/accounts.lifecycleBody'
+            $ref: '#/definitions/accounts.Lifecycle'
         "400":
           description: Bad Request
           schema:
@@ -3927,9 +3962,7 @@ paths:
         "200":
           description: OK
           schema:
-            additionalProperties:
-              type: boolean
-            type: object
+            $ref: '#/definitions/settings.MailTestSent'
         "401":
           description: Unauthorized
           schema:
@@ -4105,7 +4138,7 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/users.suspensionBody'
+            $ref: '#/definitions/github_com_macrowallets_waas_app_http_resources_platform_users.Suspension'
         "401":
           description: Unauthorized
           schema:
@@ -4170,7 +4203,7 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/users.suspensionBody'
+            $ref: '#/definitions/github_com_macrowallets_waas_app_http_resources_platform_users.Suspension'
         "401":
           description: Unauthorized
           schema:
@@ -4540,7 +4573,7 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/transactions.TransactionListResponse'
+            $ref: '#/definitions/transactions.List'
         "401":
           description: Unauthorized
           schema:
@@ -4653,7 +4686,7 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/transactions.TransactionListResponse'
+            $ref: '#/definitions/transactions.List'
         "429":
           description: Rate limit exceeded (too_many_requests, Retry-After header)
           schema:
@@ -5734,7 +5767,7 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/controllers.WithdrawalListResponse'
+            $ref: '#/definitions/withdrawals.List'
         "403":
           description: Forbidden
           schema:
@@ -5751,8 +5784,9 @@ paths:
     post:
       consumes:
       - application/json
-      description: Initiates a new withdrawal. The withdrawal is created in 'pending'
-        status and queued for approval/processing.
+      description: |-
+        Initiates a new withdrawal. The withdrawal is created in 'pending' status and queued for approval/processing.
+        The access token itself is the authentication factor (reinforced by HMAC signing when the token has require_signature=true), so no TOTP is required. The withdrawal is attributed to the token's account. The wallet passphrase is verified before the withdrawal row is persisted.
       parameters:
       - description: Wallet UUID
         in: path
@@ -5764,7 +5798,7 @@ paths:
         name: request
         required: true
         schema:
-          $ref: '#/definitions/controllers.CreateWalletWithdrawalSwagger'
+          $ref: '#/definitions/withdrawals.StoreRequest'
       produces:
       - application/json
       responses:

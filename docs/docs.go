@@ -1329,7 +1329,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/controllers.WithdrawalLookupResponse"
+                            "$ref": "#/definitions/withdrawals.Lookup"
                         }
                     },
                     "400": {
@@ -1381,7 +1381,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/controllers.WebhookConfigListResponse"
+                            "$ref": "#/definitions/webhooks.ConfigList"
                         }
                     },
                     "401": {
@@ -1431,7 +1431,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/webhooks.CreateWebhookRequest"
+                            "$ref": "#/definitions/webhooks.StoreRequest"
                         }
                     }
                 ],
@@ -1498,7 +1498,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/webhooks.UpdateWebhookRequest"
+                            "$ref": "#/definitions/webhooks.UpdateRequest"
                         }
                     }
                 ],
@@ -1902,7 +1902,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/health.HealthResponse"
+                            "$ref": "#/definitions/health.Health"
                         }
                     }
                 }
@@ -1988,7 +1988,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/accounts.lifecycleBody"
+                            "$ref": "#/definitions/accounts.Lifecycle"
                         }
                     },
                     "400": {
@@ -2046,7 +2046,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/accounts.lifecycleBody"
+                            "$ref": "#/definitions/accounts.Lifecycle"
                         }
                     },
                     "400": {
@@ -2108,7 +2108,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/requests.AttachPlatformOwnerRequest"
+                            "$ref": "#/definitions/accounts.AttachOwnerRequest"
                         }
                     }
                 ],
@@ -2308,7 +2308,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/accounts.lifecycleBody"
+                            "$ref": "#/definitions/accounts.Lifecycle"
                         }
                     },
                     "400": {
@@ -2952,10 +2952,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "boolean"
-                            }
+                            "$ref": "#/definitions/settings.MailTestSent"
                         }
                     },
                     "401": {
@@ -3320,7 +3317,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/users.suspensionBody"
+                            "$ref": "#/definitions/github_com_macrowallets_waas_app_http_resources_platform_users.Suspension"
                         }
                     },
                     "401": {
@@ -3418,7 +3415,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/users.suspensionBody"
+                            "$ref": "#/definitions/github_com_macrowallets_waas_app_http_resources_platform_users.Suspension"
                         }
                     },
                     "401": {
@@ -3993,7 +3990,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/transactions.TransactionListResponse"
+                            "$ref": "#/definitions/transactions.List"
                         }
                     },
                     "401": {
@@ -4169,7 +4166,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/transactions.TransactionListResponse"
+                            "$ref": "#/definitions/transactions.List"
                         }
                     },
                     "429": {
@@ -5821,7 +5818,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/controllers.WithdrawalListResponse"
+                            "$ref": "#/definitions/withdrawals.List"
                         }
                     },
                     "403": {
@@ -5844,7 +5841,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Initiates a new withdrawal. The withdrawal is created in 'pending' status and queued for approval/processing.",
+                "description": "Initiates a new withdrawal. The withdrawal is created in 'pending' status and queued for approval/processing.\nThe access token itself is the authentication factor (reinforced by HMAC signing when the token has require_signature=true), so no TOTP is required. The withdrawal is attributed to the token's account. The wallet passphrase is verified before the withdrawal row is persisted.",
                 "consumes": [
                     "application/json"
                 ],
@@ -5869,7 +5866,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/controllers.CreateWalletWithdrawalSwagger"
+                            "$ref": "#/definitions/withdrawals.StoreRequest"
                         }
                     }
                 ],
@@ -6185,6 +6182,15 @@ const docTemplate = `{
                 }
             }
         },
+        "accounts.AttachOwnerRequest": {
+            "type": "object",
+            "properties": {
+                "email": {
+                    "type": "string",
+                    "example": "owner@example.com"
+                }
+            }
+        },
         "accounts.CreateAccountSwagger": {
             "type": "object",
             "properties": {
@@ -6227,6 +6233,17 @@ const docTemplate = `{
                     "example": true
                 },
                 "valid_until": {
+                    "type": "string"
+                }
+            }
+        },
+        "accounts.Lifecycle": {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "type": "string"
+                },
+                "status": {
                     "type": "string"
                 }
             }
@@ -6277,17 +6294,6 @@ const docTemplate = `{
                 },
                 "totp_enabled": {
                     "type": "boolean"
-                }
-            }
-        },
-        "accounts.lifecycleBody": {
-            "type": "object",
-            "properties": {
-                "id": {
-                    "type": "string"
-                },
-                "status": {
-                    "type": "string"
                 }
             }
         },
@@ -6666,35 +6672,6 @@ const docTemplate = `{
                 }
             }
         },
-        "controllers.CreateWalletWithdrawalSwagger": {
-            "type": "object",
-            "properties": {
-                "amount": {
-                    "type": "string",
-                    "example": "0.001"
-                },
-                "asset": {
-                    "type": "string",
-                    "example": "USDT"
-                },
-                "destination_address": {
-                    "type": "string",
-                    "example": "bc1q..."
-                },
-                "note": {
-                    "type": "string",
-                    "example": "Monthly payment"
-                },
-                "passphrase": {
-                    "type": "string",
-                    "example": "my-secure-wallet-passphrase"
-                },
-                "totp_code": {
-                    "type": "string",
-                    "example": "123456"
-                }
-            }
-        },
         "controllers.GasStatusResponse": {
             "type": "object",
             "properties": {
@@ -6913,61 +6890,6 @@ const docTemplate = `{
                 "sweeps_required": {
                     "type": "integer",
                     "example": 2
-                }
-            }
-        },
-        "controllers.WithdrawalListResponse": {
-            "type": "object",
-            "properties": {
-                "data": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/withdrawals.Withdrawal"
-                    }
-                }
-            }
-        },
-        "controllers.WithdrawalLookupResponse": {
-            "type": "object",
-            "properties": {
-                "amount": {
-                    "type": "string",
-                    "example": "4"
-                },
-                "created_at": {
-                    "type": "string"
-                },
-                "destination_address": {
-                    "type": "string"
-                },
-                "failure_reason": {
-                    "type": "string",
-                    "example": "insufficient_funds"
-                },
-                "id": {
-                    "type": "string",
-                    "example": "80571fff-8d0b-5c1e-9a3f-2b6f0f7c1a11"
-                },
-                "idempotency_key": {
-                    "type": "string",
-                    "example": "80571fff-8d0b-5c1e-9a3f-2b6f0f7c1a11"
-                },
-                "status": {
-                    "type": "string",
-                    "example": "broadcast"
-                },
-                "transaction_status": {
-                    "type": "string",
-                    "example": "confirming"
-                },
-                "tx_hash": {
-                    "type": "string"
-                },
-                "updated_at": {
-                    "type": "string"
-                },
-                "wallet_id": {
-                    "type": "string"
                 }
             }
         },
@@ -7348,7 +7270,18 @@ const docTemplate = `{
                 }
             }
         },
-        "health.DepositScannerHealth": {
+        "github_com_macrowallets_waas_app_http_resources_platform_users.Suspension": {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "type": "string"
+                },
+                "suspended_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "health.DepositScanner": {
             "type": "object",
             "properties": {
                 "error": {
@@ -7370,11 +7303,11 @@ const docTemplate = `{
                 }
             }
         },
-        "health.HealthResponse": {
+        "health.Health": {
             "type": "object",
             "properties": {
                 "deposit_scanner": {
-                    "$ref": "#/definitions/health.DepositScannerHealth"
+                    "$ref": "#/definitions/health.DepositScanner"
                 },
                 "status": {
                     "type": "string",
@@ -7407,14 +7340,6 @@ const docTemplate = `{
                     }
                 },
                 "role": {
-                    "type": "string"
-                }
-            }
-        },
-        "requests.AttachPlatformOwnerRequest": {
-            "type": "object",
-            "properties": {
-                "email": {
                     "type": "string"
                 }
             }
@@ -7555,6 +7480,15 @@ const docTemplate = `{
                 }
             }
         },
+        "settings.MailTestSent": {
+            "type": "object",
+            "properties": {
+                "sent": {
+                    "type": "boolean",
+                    "example": true
+                }
+            }
+        },
         "settings.ManagedBy": {
             "type": "string",
             "enum": [
@@ -7634,6 +7568,29 @@ const docTemplate = `{
                 "TypeStringList",
                 "TypeBigInt"
             ]
+        },
+        "transactions.List": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/transactions.Transaction"
+                    }
+                },
+                "limit": {
+                    "type": "integer",
+                    "example": 50
+                },
+                "offset": {
+                    "type": "integer",
+                    "example": 0
+                },
+                "total": {
+                    "type": "integer",
+                    "example": 1
+                }
+            }
         },
         "transactions.Transaction": {
             "type": "object",
@@ -7758,17 +7715,6 @@ const docTemplate = `{
                 },
                 "wallet_id": {
                     "type": "string"
-                }
-            }
-        },
-        "transactions.TransactionListResponse": {
-            "type": "object",
-            "properties": {
-                "data": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/transactions.Transaction"
-                    }
                 }
             }
         },
@@ -7960,17 +7906,6 @@ const docTemplate = `{
                 },
                 "view_all_wallets": {
                     "type": "boolean"
-                }
-            }
-        },
-        "users.suspensionBody": {
-            "type": "object",
-            "properties": {
-                "id": {
-                    "type": "string"
-                },
-                "suspended_at": {
-                    "type": "string"
                 }
             }
         },
@@ -8550,7 +8485,18 @@ const docTemplate = `{
                 }
             }
         },
-        "webhooks.CreateWebhookRequest": {
+        "webhooks.ConfigList": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/webhooks.WebhookConfig"
+                    }
+                }
+            }
+        },
+        "webhooks.StoreRequest": {
             "type": "object",
             "properties": {
                 "events": {
@@ -8575,7 +8521,7 @@ const docTemplate = `{
                 }
             }
         },
-        "webhooks.UpdateWebhookRequest": {
+        "webhooks.UpdateRequest": {
             "type": "object",
             "properties": {
                 "events": {
@@ -8652,6 +8598,106 @@ const docTemplate = `{
                 },
                 "wallet_id": {
                     "type": "string"
+                }
+            }
+        },
+        "withdrawals.List": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/withdrawals.Withdrawal"
+                    }
+                },
+                "limit": {
+                    "type": "integer",
+                    "example": 50
+                },
+                "offset": {
+                    "type": "integer",
+                    "example": 0
+                },
+                "total": {
+                    "type": "integer",
+                    "example": 1
+                }
+            }
+        },
+        "withdrawals.Lookup": {
+            "type": "object",
+            "properties": {
+                "amount": {
+                    "type": "string",
+                    "example": "4"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "destination_address": {
+                    "type": "string"
+                },
+                "failure_reason": {
+                    "type": "string",
+                    "example": "insufficient_funds"
+                },
+                "id": {
+                    "type": "string",
+                    "example": "80571fff-8d0b-5c1e-9a3f-2b6f0f7c1a11"
+                },
+                "idempotency_key": {
+                    "type": "string",
+                    "example": "80571fff-8d0b-5c1e-9a3f-2b6f0f7c1a11"
+                },
+                "status": {
+                    "type": "string",
+                    "example": "broadcast"
+                },
+                "transaction_status": {
+                    "type": "string",
+                    "example": "confirming"
+                },
+                "tx_hash": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "wallet_id": {
+                    "type": "string"
+                }
+            }
+        },
+        "withdrawals.StoreRequest": {
+            "type": "object",
+            "properties": {
+                "amount": {
+                    "type": "string",
+                    "example": "0.001"
+                },
+                "asset": {
+                    "type": "string",
+                    "example": "USDT"
+                },
+                "destination_address": {
+                    "type": "string",
+                    "example": "bc1q..."
+                },
+                "idempotency_key": {
+                    "type": "string",
+                    "example": "80571fff-8d0b-5c1e-9a3f-2b6f0f7c1a11"
+                },
+                "note": {
+                    "type": "string",
+                    "example": "Monthly payment"
+                },
+                "passphrase": {
+                    "type": "string",
+                    "example": "my-secure-wallet-passphrase"
+                },
+                "totp_code": {
+                    "type": "string",
+                    "example": "123456"
                 }
             }
         },
