@@ -73,6 +73,10 @@ func RegisterAdminRoutes() {
 		container.MustMake[*featuressvc.Service](),
 		container.MustMake[*settingssvc.Service](),
 	)
+	withdrawalsEnabled := middleware.FeatureEnabled(container.MustMake[*featuressvc.Service](),
+		featuressvc.FlagWithdrawalsEnabled, featuressvc.CodeWithdrawalsPaused, "create_wallet_withdrawal")
+	sweepEnabled := middleware.FeatureEnabled(container.MustMake[*featuressvc.Service](),
+		featuressvc.FlagSweepEnabled, featuressvc.CodeSweepPaused, "consolidate")
 	chainCtrl := newDashboardChainsController()
 	currencyCtrl := newDashboardCurrenciesController()
 	preferencesCtrl := newDashboardPreferencesController()
@@ -319,13 +323,13 @@ func RegisterAdminRoutes() {
 			r.Get("/transactions/{txId}", walletTxCtrl.Show)
 
 			r.Get("/withdrawals", withdrawalCtrl.Index)
-			r.Middleware(middleware.RequireFundAction(middleware.FundWithdraw)).Post("/withdrawals", withdrawalCtrl.Store)
+			r.Middleware(middleware.RequireFundAction(middleware.FundWithdraw), withdrawalsEnabled).Post("/withdrawals", withdrawalCtrl.Store)
 			r.Post("/withdrawals/estimate", withdrawalCtrl.Estimate)
 			r.Get("/fee-estimate", feeEstimateCtrl.Show)
 			r.Get("/withdrawals/{withdrawalId}", withdrawalCtrl.Show)
 			r.Middleware(middleware.WalletCancelWithdrawal(walletPolicyMemberships(), container.MustMake[*withdrawalrecords.Records]())).Post("/withdrawals/{withdrawalId}/cancel", withdrawalCtrl.Cancel)
 
-			r.Middleware(middleware.RequireFundAction(middleware.FundSweep)).Post("/consolidate", sweepCtrl.Consolidate)
+			r.Middleware(middleware.RequireFundAction(middleware.FundSweep), sweepEnabled).Post("/consolidate", sweepCtrl.Consolidate)
 			r.Get("/gas-status", sweepCtrl.GasStatus)
 			r.Middleware(middleware.Throttle(middleware.ThrottleGasCheck)).Post("/gas-check", sweepCtrl.GasCheck)
 			r.Post("/withdraw/preview", sweepCtrl.Preview)
@@ -471,15 +475,11 @@ func newDashboardWithdrawalsController() *dashwithdrawals.WithdrawalController {
 	return dashwithdrawals.NewWithdrawalController(
 		container.MustMake[*withdrawalrecords.Records](),
 		container.MustMake[*withdraw.Service](),
-		container.MustMake[*featuressvc.Service](),
 	)
 }
 
 func newDashboardSweepController() *dashsweep.SweepController {
-	return dashsweep.NewSweepController(
-		container.MustMake[*sweep.Box]().Service,
-		container.MustMake[*featuressvc.Service](),
-	)
+	return dashsweep.NewSweepController(container.MustMake[*sweep.Box]().Service)
 }
 
 func newDashboardUnspentsController() *dashwalletunspents.UnspentController {

@@ -244,5 +244,6 @@ routes that use them; a route mounts `middleware.Throttle(name)`
 (`http-error-contract.md`, "Rate limits").
 
 Per-route guards are mounted **per verb in the route file**, in a fixed order:
-`Throttle → Auth (SessionAuth | APITokenAuth) → Scope (Account → Wallet) → Permission`.
+`Throttle → Auth (SessionAuth | APITokenAuth) → Scope (Account → Wallet) → Permission`,
+then `FeatureEnabled` on the routes a flag can pause (withdrawals, consolidate).
 See [`authorization.md`](./authorization.md).

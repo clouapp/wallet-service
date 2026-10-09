@@ -8,29 +8,24 @@ import (
 	sweeprequests "github.com/macrowallets/waas/app/http/requests/sweep"
 	sweepresources "github.com/macrowallets/waas/app/http/resources/sweep"
 	"github.com/macrowallets/waas/app/http/responses"
-	"github.com/macrowallets/waas/app/services/features"
 	sweep "github.com/macrowallets/waas/app/services/sweep"
 )
 
 // SweepHandler serves the consolidate, gas and withdraw-preview routes both
 // HTTP surfaces (dashboard and external) expose; each surface mounts it on its
-// own routes and guards.
+// own routes and guards. The sweep-enabled flag that pauses consolidation is
+// the route's last guard (middleware.FeatureEnabled).
 type SweepHandler struct {
 	sweeps sweep.Service
-	flags  *features.Service
 }
 
-// NewSweepHandler wires the sweep handlers with the sweep service and the
-// feature flags that can pause consolidation. surface ("dashboard" or
-// "external") only names the surface in the panic messages.
-func NewSweepHandler(surface string, sweeps sweep.Service, flags *features.Service) *SweepHandler {
+// NewSweepHandler wires the sweep handlers with the sweep service. surface
+// ("dashboard" or "external") only names the surface in the panic message.
+func NewSweepHandler(surface string, sweeps sweep.Service) *SweepHandler {
 	if sweeps == nil {
 		panic(surface + " sweep controller: sweep service is required")
 	}
-	if flags == nil {
-		panic(surface + " sweep controller: feature flags are required")
-	}
-	return &SweepHandler{sweeps: sweeps, flags: flags}
+	return &SweepHandler{sweeps: sweeps}
 }
 
 // Consolidate godoc
@@ -50,11 +45,7 @@ func NewSweepHandler(surface string, sweeps sweep.Service, flags *features.Servi
 //	@Failure		429			{object}	responses.ErrorBody
 //	@Router			/v1/wallets/{walletId}/consolidate [post]
 func (c *SweepHandler) Consolidate(ctx http.Context) http.Response {
-	wallet, _ := requestctx.Wallet(ctx)
 	callerAccountID, _ := requestctx.AccountID(ctx)
-	if response := BlockFlag(ctx, c.flags, AccountIDForWallet(ctx, wallet), features.FlagSweepEnabled, features.CodeSweepPaused, "consolidate"); response != nil {
-		return response
-	}
 
 	walletID, err := requests.RouteUUID(ctx, "walletId")
 	if err != nil {

@@ -7,7 +7,6 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/macrowallets/waas/app/services/features"
 	sweepsvc "github.com/macrowallets/waas/app/services/sweep"
 )
 
@@ -37,11 +36,9 @@ func TestNew_SweepController_RequiresEveryDependency(t *testing.T) {
 	cases := []struct {
 		name   string
 		sweeps sweepsvc.Service
-		flags  *features.Service
 		panic  string
 	}{
-		{"sweep service", nil, &features.Service{}, "external sweep controller: sweep service is required"},
-		{"feature flags", &sweepServiceStub{}, nil, "external sweep controller: feature flags are required"},
+		{"sweep service", nil, "external sweep controller: sweep service is required"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -50,7 +47,7 @@ func TestNew_SweepController_RequiresEveryDependency(t *testing.T) {
 					t.Fatalf("panic = %v", got)
 				}
 			}()
-			NewSweepController(tc.sweeps, tc.flags)
+			NewSweepController(tc.sweeps)
 			t.Fatal("expected a panic")
 		})
 	}

@@ -41,6 +41,10 @@ func RegisterExternalAPI() {
 	sweepCtrl := newExternalSweepController()
 	withdrawalCtrl := newExternalWithdrawalsController()
 	feeEstimateCtrl := newFeeEstimateController()
+	withdrawalsEnabled := middleware.FeatureEnabled(container.MustMake[*featuressvc.Service](),
+		featuressvc.FlagWithdrawalsEnabled, featuressvc.CodeWithdrawalsPaused, "create_wallet_withdrawal")
+	sweepEnabled := middleware.FeatureEnabled(container.MustMake[*featuressvc.Service](),
+		featuressvc.FlagSweepEnabled, featuressvc.CodeSweepPaused, "consolidate")
 	scopeLookups := middleware.ScopeLookups{
 		Transactions: container.MustMake[*walletrecords.Transactions](),
 		Webhooks:     container.MustMake[*walletrecords.Webhooks](),
@@ -69,12 +73,12 @@ func RegisterExternalAPI() {
 			r.Get("/addresses", addressCtrl.Index)
 			r.Patch("/addresses/{addressId}", addressCtrl.Update)
 
-			r.Middleware(middleware.APIScope(scopeLookups, middleware.PermSweepExecute)).Post("/consolidate", sweepCtrl.Consolidate)
+			r.Middleware(middleware.APIScope(scopeLookups, middleware.PermSweepExecute), sweepEnabled).Post("/consolidate", sweepCtrl.Consolidate)
 			r.Get("/gas-status", sweepCtrl.GasStatus)
 			r.Middleware(middleware.Throttle(middleware.ThrottleGasCheck)).Post("/gas-check", sweepCtrl.GasCheck)
 			r.Post("/withdraw/preview", sweepCtrl.Preview)
 			r.Get("/fee-estimate", feeEstimateCtrl.Show)
-			r.Middleware(middleware.APIScope(scopeLookups, middleware.PermWithdrawalsCreate)).Post("/withdrawals", withdrawalCtrl.Store)
+			r.Middleware(middleware.APIScope(scopeLookups, middleware.PermWithdrawalsCreate), withdrawalsEnabled).Post("/withdrawals", withdrawalCtrl.Store)
 			r.Get("/withdrawals/{idempotencyKey}", withdrawalCtrl.ShowByKey)
 		})
 
@@ -113,17 +117,13 @@ func newExternalAddressesController() *extaddresses.AddressController {
 }
 
 func newExternalSweepController() *extsweep.SweepController {
-	return extsweep.NewSweepController(
-		container.MustMake[*sweep.Box]().Service,
-		container.MustMake[*featuressvc.Service](),
-	)
+	return extsweep.NewSweepController(container.MustMake[*sweep.Box]().Service)
 }
 
 func newExternalWithdrawalsController() *extwithdrawals.WithdrawalController {
 	return extwithdrawals.NewWithdrawalController(
 		container.MustMake[*withdrawalrecords.Records](),
 		container.MustMake[*withdraw.Service](),
-		container.MustMake[*featuressvc.Service](),
 	)
 }
 

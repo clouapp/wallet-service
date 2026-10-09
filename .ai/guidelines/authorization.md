@@ -74,6 +74,12 @@ an earlier one refuses. `Cors` and `CacheControl` are not guards.
 | public `/health`, `/swagger/*` | no auth middleware |
 | inbound `/v1/webhooks/ingest/...` | `ProviderSignature` checks the provider signature before the body is parsed |
 
+The money-movement routes (`POST .../withdrawals` and `POST .../consolidate`
+on both surfaces) end with `FeatureEnabled`, after the permission and before
+the body is read: a `withdrawals-enabled` / `sweep-enabled` flag that is off
+for the wallet's account, or an explicit global false, is 409
+`withdrawals_paused` / `sweep_paused`. It is a kill switch, not a permission.
+
 `AccountContext` answers 404 for an unknown account and 403 when the caller has
 no active membership. `APIScope` answers 403 when a token that lists
 permissions does not hold the route's permission. A blank permissions store

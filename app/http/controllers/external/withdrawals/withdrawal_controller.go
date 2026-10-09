@@ -9,7 +9,6 @@ import (
 	withdrawalsrequests "github.com/macrowallets/waas/app/http/requests/withdrawals"
 	resources "github.com/macrowallets/waas/app/http/resources/withdrawals"
 	"github.com/macrowallets/waas/app/http/responses"
-	"github.com/macrowallets/waas/app/services/features"
 	"github.com/macrowallets/waas/app/services/withdraw"
 	"github.com/macrowallets/waas/app/services/withdrawalrecords"
 )
@@ -18,21 +17,17 @@ import (
 type WithdrawalController struct {
 	records *withdrawalrecords.Records
 	service *withdraw.Service
-	flags   *features.Service
 }
 
 // NewWithdrawalController wires the external withdrawal handlers.
-func NewWithdrawalController(records *withdrawalrecords.Records, service *withdraw.Service, flags *features.Service) *WithdrawalController {
+func NewWithdrawalController(records *withdrawalrecords.Records, service *withdraw.Service) *WithdrawalController {
 	if records == nil {
 		panic("external withdrawals controller: withdrawals service is required")
 	}
 	if service == nil {
 		panic("external withdrawals controller: withdrawal service is required")
 	}
-	if flags == nil {
-		panic("external withdrawals controller: feature flags are required")
-	}
-	return &WithdrawalController{records: records, service: service, flags: flags}
+	return &WithdrawalController{records: records, service: service}
 }
 
 // Store godoc
@@ -53,9 +48,6 @@ func NewWithdrawalController(records *withdrawalrecords.Records, service *withdr
 //	@Router			/wallets/{walletId}/withdrawals [post]
 func (c *WithdrawalController) Store(ctx http.Context) http.Response {
 	wallet := requestctx.MustWallet(ctx)
-	if response := controllers.BlockFlag(ctx, c.flags, controllers.AccountIDForWallet(ctx, wallet), features.FlagWithdrawalsEnabled, features.CodeWithdrawalsPaused, "create_wallet_withdrawal"); response != nil {
-		return response
-	}
 
 	var req withdrawalsrequests.StoreRequest
 	defer controllers.DiscardPassphrase(&req.Passphrase)

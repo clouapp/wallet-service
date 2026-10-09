@@ -8,7 +8,6 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/macrowallets/waas/app/services/features"
 	sweepsvc "github.com/macrowallets/waas/app/services/sweep"
 )
 
@@ -38,11 +37,9 @@ func TestNew_SweepHandler_RequiresEveryDependencyAndNamesTheSurface(t *testing.T
 	cases := []struct {
 		name   string
 		sweeps sweepsvc.Service
-		flags  *features.Service
 		panic  string
 	}{
-		{"sweep service", nil, &features.Service{}, "test sweep controller: sweep service is required"},
-		{"feature flags", &sweepServiceStub{}, nil, "test sweep controller: feature flags are required"},
+		{"sweep service", nil, "test sweep controller: sweep service is required"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -51,14 +48,14 @@ func TestNew_SweepHandler_RequiresEveryDependencyAndNamesTheSurface(t *testing.T
 					t.Fatalf("panic = %v", got)
 				}
 			}()
-			controllers.NewSweepHandler("test", tc.sweeps, tc.flags)
+			controllers.NewSweepHandler("test", tc.sweeps)
 			t.Fatal("expected a panic")
 		})
 	}
 }
 
 func TestNew_SweepHandler_AcceptsCompleteDependencies(t *testing.T) {
-	if controllers.NewSweepHandler("test", &sweepServiceStub{}, &features.Service{}) == nil {
+	if controllers.NewSweepHandler("test", &sweepServiceStub{}) == nil {
 		t.Fatal("NewSweepHandler returned nil")
 	}
 }

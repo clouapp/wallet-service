@@ -28,7 +28,9 @@ const (
 	guardAPIToken          guard = "api-token"          // middleware.APITokenAuth (external, /api/v1)
 )
 
-// Repeated guard chains. Cors and CacheControl are not guards. The ingest
+// Repeated guard chains. Cors and CacheControl are not guards. The money
+// movement routes (withdrawals, consolidate) end with FeatureEnabled, the
+// withdrawals-enabled / sweep-enabled pause, after the permission. The ingest
 // route's guard is ProviderSignature, which checks the provider signature
 // before the body is parsed. It is installed once in the global chain
 // (app/http/middleware/global_chain.go), so the route files register none.
@@ -51,7 +53,7 @@ const (
 	chainHeader                 = "SessionAuth > AccountHeader > TOTPEnrollment"
 	chainCreateWallet           = chainHeader + " > RequireFundAction"
 	chainWallet                 = "SessionAuth > AccountHeader > TOTPEnrollment > WalletContext"
-	chainMoveFunds              = chainWallet + " > RequireFundAction"
+	chainMoveFunds              = chainWallet + " > RequireFundAction > FeatureEnabled"
 	chainGenerateAddress        = chainWallet + " > Can(addresses.create)"
 	chainWalletAddUser          = chainWallet + " > WalletAddUser"
 	chainWalletRemoveUser       = chainWallet + " > WalletRemoveUser"
@@ -69,8 +71,8 @@ const (
 	chainWalletsCreate          = "APITokenAuth > APIScope(wallets.create)"
 	chainWalletRead             = "APITokenAuth > APIWalletContext > APIScope(wallets.read)"
 	chainAddresses              = "APITokenAuth > APIWalletContext > APIScope(addresses.create)"
-	chainSweep                  = "APITokenAuth > APIWalletContext > APIScope(sweep.execute)"
-	chainWithdrawals            = "APITokenAuth > APIWalletContext > APIScope(withdrawals.create)"
+	chainSweep                  = "APITokenAuth > APIWalletContext > APIScope(sweep.execute) > FeatureEnabled"
+	chainWithdrawals            = "APITokenAuth > APIWalletContext > APIScope(withdrawals.create) > FeatureEnabled"
 	chainTransactions           = "APITokenAuth > APIScope(transactions.read)"
 	chainWebhooksRead           = "APITokenAuth > APIScope(webhooks.read)"
 	chainWebhooksWrite          = "APITokenAuth > APIScope(webhooks.write)"
