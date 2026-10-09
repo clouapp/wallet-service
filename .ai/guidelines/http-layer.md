@@ -189,7 +189,8 @@ document). Regenerate in the same change that edits an annotation.
 - Errors a controller maps to a status are matched with `errors.Is` against the
   service's sentinels. The helpers shared by several controllers live in
   `app/http/controllers/errors.go` (`MapInternalError`, `MapSweepError`,
-  `MapWithdrawalError`, `MapSpendingLimitError`) and `address_errors.go`;
+  `MapWithdrawalError`, `MapSpendingLimitError`), `addresses_errors.go` and
+  `sweep_errors.go`;
   a controller package keeps a `mapError` of its own for its service's sentinels.
 - Controllers hold no helpers for reading input, authorizing or writing a body of
   their own: `requests` reads, `responses` writes, `middleware` says who is
@@ -200,9 +201,10 @@ document). Regenerate in the same change that edits an annotation.
   come through `app/facades` (`TestFramework_Facades_ComeThroughAppFacades`).
   Documented exceptions in controllers: `appfacades.Auth(ctx).LoginUsingID` mints
   the access token of a new session (`session_issue.go`, `auth_controller.go`) and
-  reads the guard for the invite acceptance; `Crypt` is opened in
-  `wallet_view.go` (a chain RPC URL, to name the network) and sealed in the TOTP
-  setup of `user_controller.go` — both should move behind a service.
+  reads the guard for the invite acceptance; `Crypt` is sealed in the TOTP setup
+  of `user_controller.go` and should move behind a service. The chain RPC URL a
+  wallet's network is read from is opened by `walletview.Service`, which
+  receives the cipher through its `Deps`.
 - Middleware aborts with a `responses` writer and `.Abort()`: a new refusal with
   `responses.Error(ctx, status, code, message).Abort()`; an existing one keeps the
   writer it has (`responses.Fail`), because the bytes are part of the contract
