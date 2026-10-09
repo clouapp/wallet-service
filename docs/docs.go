@@ -1431,7 +1431,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/webhooks.StoreRequest"
+                            "$ref": "#/definitions/github_com_macrowallets_waas_app_http_requests_external_webhooks.StoreRequest"
                         }
                     }
                 ],
@@ -4258,7 +4258,7 @@ const docTemplate = `{
                     "201": {
                         "description": "Created",
                         "schema": {
-                            "$ref": "#/definitions/wallets.CreateWalletResponse"
+                            "$ref": "#/definitions/wallets.Created"
                         }
                     },
                     "400": {
@@ -4519,7 +4519,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/requests.UpdateAddressRequest"
+                            "$ref": "#/definitions/addresses.UpdateRequest"
                         }
                     }
                 ],
@@ -4935,7 +4935,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/wallets.FreezeWalletSwagger"
+                            "$ref": "#/definitions/settings.FreezeWalletSwagger"
                         }
                     }
                 ],
@@ -4943,7 +4943,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/wallets.WalletSettingsResponse"
+                            "$ref": "#/definitions/settings.Settings"
                         }
                     },
                     "403": {
@@ -4983,7 +4983,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/wallets.WalletSettingsResponse"
+                            "$ref": "#/definitions/settings.Settings"
                         }
                     },
                     "403": {
@@ -5031,7 +5031,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/wallets.UpdateWalletSettingsSwagger"
+                            "$ref": "#/definitions/settings.UpdateWalletSettingsSwagger"
                         }
                     }
                 ],
@@ -5039,7 +5039,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/wallets.WalletSettingsResponse"
+                            "$ref": "#/definitions/settings.Settings"
                         }
                     },
                     "400": {
@@ -5126,7 +5126,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/wallets.WalletTransactionListResponse"
+                            "$ref": "#/definitions/transactions.WalletTransactionListResponse"
                         }
                     },
                     "403": {
@@ -5225,7 +5225,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/wallets.UnspentOutputListResponse"
+                            "$ref": "#/definitions/unspents.UnspentOutputListResponse"
                         }
                     },
                     "403": {
@@ -5277,7 +5277,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/wallets.WalletUserListResponse"
+                            "$ref": "#/definitions/users.WalletUserListResponse"
                         }
                     },
                     "403": {
@@ -5325,7 +5325,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/wallets.AddWalletUserSwagger"
+                            "$ref": "#/definitions/users.AddWalletUserSwagger"
                         }
                     }
                 ],
@@ -5477,7 +5477,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/wallets.CreateWalletWebhookSwagger"
+                            "$ref": "#/definitions/webhooks.CreateWalletWebhookSwagger"
                         }
                     }
                 ],
@@ -5588,7 +5588,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/wallets.WebhookTestResponse"
+                            "$ref": "#/definitions/webhooks.WebhookTestResponse"
                         }
                     },
                     "403": {
@@ -5640,7 +5640,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/wallets.WhitelistEntryListResponse"
+                            "$ref": "#/definitions/whitelist.WhitelistEntryListResponse"
                         }
                     },
                     "403": {
@@ -5688,7 +5688,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/wallets.AddWhitelistEntrySwagger"
+                            "$ref": "#/definitions/whitelist.AddWhitelistEntrySwagger"
                         }
                     }
                 ],
@@ -6375,6 +6375,17 @@ const docTemplate = `{
                 }
             }
         },
+        "addresses.UpdateRequest": {
+            "type": "object",
+            "properties": {
+                "external_user_id": {
+                    "type": "string"
+                },
+                "label": {
+                    "type": "string"
+                }
+            }
+        },
         "auth.AuthResponse": {
             "type": "object",
             "properties": {
@@ -6722,104 +6733,13 @@ const docTemplate = `{
                 }
             }
         },
-        "controllers.WalletListItem": {
-            "type": "object",
-            "properties": {
-                "account_id": {
-                    "type": "string"
-                },
-                "address_index": {
-                    "type": "integer"
-                },
-                "assets": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/balances.Balance"
-                    }
-                },
-                "balance": {
-                    "type": "string"
-                },
-                "balance_asset": {
-                    "type": "string"
-                },
-                "balance_last_synced_at": {
-                    "type": "string"
-                },
-                "balance_raw": {
-                    "type": "string"
-                },
-                "balance_usd": {
-                    "$ref": "#/definitions/numeric.NullDecimal"
-                },
-                "chain": {
-                    "type": "string"
-                },
-                "created_at": {
-                    "$ref": "#/definitions/github_com_goravel_framework_support_carbon.DateTime"
-                },
-                "deposit_address": {
-                    "$ref": "#/definitions/addresses.Address"
-                },
-                "deposit_address_id": {
-                    "type": "string"
-                },
-                "fee_multiplier": {
-                    "$ref": "#/definitions/numeric.NullDecimal"
-                },
-                "fee_rate_max": {
-                    "type": "integer"
-                },
-                "fee_rate_min": {
-                    "type": "integer"
-                },
-                "frozen_until": {
-                    "type": "string"
-                },
-                "gas_last_checked_at": {
-                    "type": "string"
-                },
-                "gas_status": {
-                    "type": "string"
-                },
-                "id": {
-                    "type": "string"
-                },
-                "label": {
-                    "type": "string"
-                },
-                "network": {
-                    "type": "string",
-                    "example": "polygon-amoy"
-                },
-                "read_model_status": {
-                    "type": "string"
-                },
-                "required_approvals": {
-                    "type": "integer"
-                },
-                "status": {
-                    "type": "string"
-                },
-                "sweep_policy_version": {
-                    "type": "integer"
-                },
-                "testnet": {
-                    "type": "boolean",
-                    "example": true
-                },
-                "updated_at": {
-                    "$ref": "#/definitions/github_com_goravel_framework_support_carbon.DateTime"
-                }
-            }
-        },
         "controllers.WalletListResponse": {
             "type": "object",
             "properties": {
                 "data": {
                     "type": "array",
                     "items": {
-                        "$ref": "#/definitions/controllers.WalletListItem"
+                        "$ref": "#/definitions/wallets.ListItem"
                     }
                 }
             }
@@ -7136,6 +7056,31 @@ const docTemplate = `{
                 "error": {}
             }
         },
+        "github_com_macrowallets_waas_app_http_requests_external_webhooks.StoreRequest": {
+            "type": "object",
+            "properties": {
+                "events": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "deposit.confirmed",
+                        "withdrawal.broadcast",
+                        "withdrawal.confirmed",
+                        "withdrawal.failed"
+                    ]
+                },
+                "secret": {
+                    "type": "string",
+                    "example": "my-webhook-secret"
+                },
+                "url": {
+                    "type": "string",
+                    "example": "https://example.com/webhook"
+                }
+            }
+        },
         "github_com_macrowallets_waas_app_http_resources_dashboard_accounts.Account": {
             "type": "object",
             "properties": {
@@ -7344,17 +7289,6 @@ const docTemplate = `{
                 }
             }
         },
-        "requests.UpdateAddressRequest": {
-            "type": "object",
-            "properties": {
-                "external_user_id": {
-                    "type": "string"
-                },
-                "label": {
-                    "type": "string"
-                }
-            }
-        },
         "responses.ErrorBody": {
             "type": "object",
             "properties": {
@@ -7446,6 +7380,14 @@ const docTemplate = `{
                     "$ref": "#/definitions/settings.Type"
                 },
                 "value": {}
+            }
+        },
+        "settings.FreezeWalletSwagger": {
+            "type": "object",
+            "properties": {
+                "frozen_until": {
+                    "type": "string"
+                }
             }
         },
         "settings.GroupView": {
@@ -7550,6 +7492,32 @@ const docTemplate = `{
                 }
             }
         },
+        "settings.Settings": {
+            "type": "object",
+            "properties": {
+                "fee_multiplier": {
+                    "$ref": "#/definitions/numeric.NullDecimal"
+                },
+                "fee_rate_max": {
+                    "type": "integer"
+                },
+                "fee_rate_min": {
+                    "type": "integer"
+                },
+                "frozen_until": {
+                    "type": "string"
+                },
+                "label": {
+                    "type": "string"
+                },
+                "required_approvals": {
+                    "type": "integer"
+                },
+                "status": {
+                    "type": "string"
+                }
+            }
+        },
         "settings.Type": {
             "type": "string",
             "enum": [
@@ -7568,6 +7536,31 @@ const docTemplate = `{
                 "TypeStringList",
                 "TypeBigInt"
             ]
+        },
+        "settings.UpdateWalletSettingsSwagger": {
+            "type": "object",
+            "properties": {
+                "fee_multiplier": {
+                    "type": "number",
+                    "example": 1.25
+                },
+                "fee_rate_max": {
+                    "type": "integer",
+                    "example": 50
+                },
+                "fee_rate_min": {
+                    "type": "integer",
+                    "example": 2
+                },
+                "label": {
+                    "type": "string",
+                    "example": "Treasury"
+                },
+                "required_approvals": {
+                    "type": "integer",
+                    "example": 1
+                }
+            }
         },
         "transactions.List": {
             "type": "object",
@@ -7718,6 +7711,48 @@ const docTemplate = `{
                 }
             }
         },
+        "transactions.WalletTransactionListResponse": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/wallets.Transaction"
+                    }
+                }
+            }
+        },
+        "unspents.UnspentOutput": {
+            "type": "object",
+            "properties": {
+                "address": {
+                    "type": "string"
+                },
+                "height": {
+                    "type": "integer"
+                },
+                "tx_hash": {
+                    "type": "string"
+                },
+                "value": {
+                    "type": "integer"
+                },
+                "vout": {
+                    "type": "integer"
+                }
+            }
+        },
+        "unspents.UnspentOutputListResponse": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/unspents.UnspentOutput"
+                    }
+                }
+            }
+        },
         "users.AccountListResponse": {
             "type": "object",
             "properties": {
@@ -7738,6 +7773,19 @@ const docTemplate = `{
                 "total": {
                     "type": "integer",
                     "example": 64
+                }
+            }
+        },
+        "users.AddWalletUserSwagger": {
+            "type": "object",
+            "properties": {
+                "roles": {
+                    "type": "string",
+                    "example": "viewer"
+                },
+                "user_id": {
+                    "type": "string",
+                    "example": "00000000-0000-0000-0000-000000000001"
                 }
             }
         },
@@ -7873,6 +7921,17 @@ const docTemplate = `{
                 }
             }
         },
+        "users.WalletUserListResponse": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/users.WalletUser"
+                    }
+                }
+            }
+        },
         "users.myAccount": {
             "type": "object",
             "properties": {
@@ -7909,33 +7968,24 @@ const docTemplate = `{
                 }
             }
         },
-        "wallets.AddWalletUserSwagger": {
+        "wallets.CreateWalletSwagger": {
             "type": "object",
             "properties": {
-                "roles": {
+                "chain": {
                     "type": "string",
-                    "example": "viewer"
-                },
-                "user_id": {
-                    "type": "string",
-                    "example": "00000000-0000-0000-0000-000000000001"
-                }
-            }
-        },
-        "wallets.AddWhitelistEntrySwagger": {
-            "type": "object",
-            "properties": {
-                "address": {
-                    "type": "string",
-                    "example": "bc1qar0srrr7xfkvy5l643lydnw9re59gtzzwf5mdq"
+                    "example": "eth"
                 },
                 "label": {
                     "type": "string",
-                    "example": "Cold Storage"
+                    "example": "My Ethereum Wallet"
+                },
+                "passphrase": {
+                    "type": "string",
+                    "example": "my-secret-passphrase-12chars"
                 }
             }
         },
-        "wallets.CreateWalletResponse": {
+        "wallets.Created": {
             "type": "object",
             "properties": {
                 "account_id": {
@@ -8017,45 +8067,94 @@ const docTemplate = `{
                 }
             }
         },
-        "wallets.CreateWalletSwagger": {
+        "wallets.ListItem": {
             "type": "object",
             "properties": {
+                "account_id": {
+                    "type": "string"
+                },
+                "address_index": {
+                    "type": "integer"
+                },
+                "assets": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/balances.Balance"
+                    }
+                },
+                "balance": {
+                    "type": "string"
+                },
+                "balance_asset": {
+                    "type": "string"
+                },
+                "balance_last_synced_at": {
+                    "type": "string"
+                },
+                "balance_raw": {
+                    "type": "string"
+                },
+                "balance_usd": {
+                    "$ref": "#/definitions/numeric.NullDecimal"
+                },
                 "chain": {
-                    "type": "string",
-                    "example": "eth"
+                    "type": "string"
                 },
-                "label": {
-                    "type": "string",
-                    "example": "My Ethereum Wallet"
+                "created_at": {
+                    "$ref": "#/definitions/github_com_goravel_framework_support_carbon.DateTime"
                 },
-                "passphrase": {
-                    "type": "string",
-                    "example": "my-secret-passphrase-12chars"
-                }
-            }
-        },
-        "wallets.CreateWalletWebhookSwagger": {
-            "type": "object",
-            "properties": {
-                "events": {
-                    "type": "string",
-                    "example": "deposit.confirmed,withdrawal.confirmed"
+                "deposit_address": {
+                    "$ref": "#/definitions/addresses.Address"
                 },
-                "secret": {
-                    "type": "string",
-                    "example": "wh_secret_123"
+                "deposit_address_id": {
+                    "type": "string"
                 },
-                "url": {
-                    "type": "string",
-                    "example": "https://example.com/hook"
-                }
-            }
-        },
-        "wallets.FreezeWalletSwagger": {
-            "type": "object",
-            "properties": {
+                "fee_multiplier": {
+                    "$ref": "#/definitions/numeric.NullDecimal"
+                },
+                "fee_rate_max": {
+                    "type": "integer"
+                },
+                "fee_rate_min": {
+                    "type": "integer"
+                },
                 "frozen_until": {
                     "type": "string"
+                },
+                "gas_last_checked_at": {
+                    "type": "string"
+                },
+                "gas_status": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "label": {
+                    "type": "string"
+                },
+                "network": {
+                    "type": "string",
+                    "example": "polygon-amoy"
+                },
+                "read_model_status": {
+                    "type": "string"
+                },
+                "required_approvals": {
+                    "type": "integer"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "sweep_policy_version": {
+                    "type": "integer"
+                },
+                "testnet": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "updated_at": {
+                    "$ref": "#/definitions/github_com_goravel_framework_support_carbon.DateTime"
                 }
             }
         },
@@ -8197,62 +8296,6 @@ const docTemplate = `{
                 }
             }
         },
-        "wallets.UnspentOutput": {
-            "type": "object",
-            "properties": {
-                "address": {
-                    "type": "string"
-                },
-                "height": {
-                    "type": "integer"
-                },
-                "tx_hash": {
-                    "type": "string"
-                },
-                "value": {
-                    "type": "integer"
-                },
-                "vout": {
-                    "type": "integer"
-                }
-            }
-        },
-        "wallets.UnspentOutputListResponse": {
-            "type": "object",
-            "properties": {
-                "data": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/wallets.UnspentOutput"
-                    }
-                }
-            }
-        },
-        "wallets.UpdateWalletSettingsSwagger": {
-            "type": "object",
-            "properties": {
-                "fee_multiplier": {
-                    "type": "number",
-                    "example": 1.25
-                },
-                "fee_rate_max": {
-                    "type": "integer",
-                    "example": 50
-                },
-                "fee_rate_min": {
-                    "type": "integer",
-                    "example": 2
-                },
-                "label": {
-                    "type": "string",
-                    "example": "Treasury"
-                },
-                "required_approvals": {
-                    "type": "integer",
-                    "example": 1
-                }
-            }
-        },
         "wallets.Wallet": {
             "type": "object",
             "properties": {
@@ -8327,74 +8370,6 @@ const docTemplate = `{
                 },
                 "updated_at": {
                     "$ref": "#/definitions/github_com_goravel_framework_support_carbon.DateTime"
-                }
-            }
-        },
-        "wallets.WalletSettingsResponse": {
-            "type": "object",
-            "properties": {
-                "fee_multiplier": {
-                    "$ref": "#/definitions/numeric.NullDecimal"
-                },
-                "fee_rate_max": {
-                    "type": "integer"
-                },
-                "fee_rate_min": {
-                    "type": "integer"
-                },
-                "frozen_until": {
-                    "type": "string"
-                },
-                "label": {
-                    "type": "string"
-                },
-                "required_approvals": {
-                    "type": "integer"
-                },
-                "status": {
-                    "type": "string"
-                }
-            }
-        },
-        "wallets.WalletTransactionListResponse": {
-            "type": "object",
-            "properties": {
-                "data": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/wallets.Transaction"
-                    }
-                }
-            }
-        },
-        "wallets.WalletUserListResponse": {
-            "type": "object",
-            "properties": {
-                "data": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/users.WalletUser"
-                    }
-                }
-            }
-        },
-        "wallets.WebhookTestResponse": {
-            "type": "object",
-            "properties": {
-                "delivered": {
-                    "type": "boolean",
-                    "example": true
-                }
-            }
-        },
-        "wallets.WhitelistEntryListResponse": {
-            "type": "object",
-            "properties": {
-                "data": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/whitelist.WhitelistEntry"
-                    }
                 }
             }
         },
@@ -8496,28 +8471,20 @@ const docTemplate = `{
                 }
             }
         },
-        "webhooks.StoreRequest": {
+        "webhooks.CreateWalletWebhookSwagger": {
             "type": "object",
             "properties": {
                 "events": {
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    },
-                    "example": [
-                        "deposit.confirmed",
-                        "withdrawal.broadcast",
-                        "withdrawal.confirmed",
-                        "withdrawal.failed"
-                    ]
+                    "type": "string",
+                    "example": "deposit.confirmed,withdrawal.confirmed"
                 },
                 "secret": {
                     "type": "string",
-                    "example": "my-webhook-secret"
+                    "example": "wh_secret_123"
                 },
                 "url": {
                     "type": "string",
-                    "example": "https://example.com/webhook"
+                    "example": "https://example.com/hook"
                 }
             }
         },
@@ -8578,6 +8545,28 @@ const docTemplate = `{
                 }
             }
         },
+        "webhooks.WebhookTestResponse": {
+            "type": "object",
+            "properties": {
+                "delivered": {
+                    "type": "boolean",
+                    "example": true
+                }
+            }
+        },
+        "whitelist.AddWhitelistEntrySwagger": {
+            "type": "object",
+            "properties": {
+                "address": {
+                    "type": "string",
+                    "example": "bc1qar0srrr7xfkvy5l643lydnw9re59gtzzwf5mdq"
+                },
+                "label": {
+                    "type": "string",
+                    "example": "Cold Storage"
+                }
+            }
+        },
         "whitelist.WhitelistEntry": {
             "type": "object",
             "properties": {
@@ -8598,6 +8587,17 @@ const docTemplate = `{
                 },
                 "wallet_id": {
                     "type": "string"
+                }
+            }
+        },
+        "whitelist.WhitelistEntryListResponse": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/whitelist.WhitelistEntry"
+                    }
                 }
             }
         },

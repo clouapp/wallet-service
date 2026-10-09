@@ -206,6 +206,13 @@ definitions:
       wallet_id:
         type: string
     type: object
+  addresses.UpdateRequest:
+    properties:
+      external_user_id:
+        type: string
+      label:
+        type: string
+    type: object
   auth.AuthResponse:
     properties:
       access_token:
@@ -443,72 +450,11 @@ definitions:
         example: '{"tier":"premium"}'
         type: string
     type: object
-  controllers.WalletListItem:
-    properties:
-      account_id:
-        type: string
-      address_index:
-        type: integer
-      assets:
-        items:
-          $ref: '#/definitions/balances.Balance'
-        type: array
-      balance:
-        type: string
-      balance_asset:
-        type: string
-      balance_last_synced_at:
-        type: string
-      balance_raw:
-        type: string
-      balance_usd:
-        $ref: '#/definitions/numeric.NullDecimal'
-      chain:
-        type: string
-      created_at:
-        $ref: '#/definitions/github_com_goravel_framework_support_carbon.DateTime'
-      deposit_address:
-        $ref: '#/definitions/addresses.Address'
-      deposit_address_id:
-        type: string
-      fee_multiplier:
-        $ref: '#/definitions/numeric.NullDecimal'
-      fee_rate_max:
-        type: integer
-      fee_rate_min:
-        type: integer
-      frozen_until:
-        type: string
-      gas_last_checked_at:
-        type: string
-      gas_status:
-        type: string
-      id:
-        type: string
-      label:
-        type: string
-      network:
-        example: polygon-amoy
-        type: string
-      read_model_status:
-        type: string
-      required_approvals:
-        type: integer
-      status:
-        type: string
-      sweep_policy_version:
-        type: integer
-      testnet:
-        example: true
-        type: boolean
-      updated_at:
-        $ref: '#/definitions/github_com_goravel_framework_support_carbon.DateTime'
-    type: object
   controllers.WalletListResponse:
     properties:
       data:
         items:
-          $ref: '#/definitions/controllers.WalletListItem'
+          $ref: '#/definitions/wallets.ListItem'
         type: array
     type: object
   controllers.WebhookConfigListResponse:
@@ -731,6 +677,24 @@ definitions:
     properties:
       error: {}
     type: object
+  github_com_macrowallets_waas_app_http_requests_external_webhooks.StoreRequest:
+    properties:
+      events:
+        example:
+        - deposit.confirmed
+        - withdrawal.broadcast
+        - withdrawal.confirmed
+        - withdrawal.failed
+        items:
+          type: string
+        type: array
+      secret:
+        example: my-webhook-secret
+        type: string
+      url:
+        example: https://example.com/webhook
+        type: string
+    type: object
   github_com_macrowallets_waas_app_http_resources_dashboard_accounts.Account:
     properties:
       created_at:
@@ -868,13 +832,6 @@ definitions:
       role:
         type: string
     type: object
-  requests.UpdateAddressRequest:
-    properties:
-      external_user_id:
-        type: string
-      label:
-        type: string
-    type: object
   responses.ErrorBody:
     properties:
       error:
@@ -935,6 +892,11 @@ definitions:
       type:
         $ref: '#/definitions/settings.Type'
       value: {}
+    type: object
+  settings.FreezeWalletSwagger:
+    properties:
+      frozen_until:
+        type: string
     type: object
   settings.GroupView:
     properties:
@@ -1004,6 +966,23 @@ definitions:
       name:
         type: string
     type: object
+  settings.Settings:
+    properties:
+      fee_multiplier:
+        $ref: '#/definitions/numeric.NullDecimal'
+      fee_rate_max:
+        type: integer
+      fee_rate_min:
+        type: integer
+      frozen_until:
+        type: string
+      label:
+        type: string
+      required_approvals:
+        type: integer
+      status:
+        type: string
+    type: object
   settings.Type:
     enum:
     - string
@@ -1020,6 +999,24 @@ definitions:
     - TypeDecimal
     - TypeStringList
     - TypeBigInt
+  settings.UpdateWalletSettingsSwagger:
+    properties:
+      fee_multiplier:
+        example: 1.25
+        type: number
+      fee_rate_max:
+        example: 50
+        type: integer
+      fee_rate_min:
+        example: 2
+        type: integer
+      label:
+        example: Treasury
+        type: string
+      required_approvals:
+        example: 1
+        type: integer
+    type: object
   transactions.List:
     properties:
       data:
@@ -1124,6 +1121,33 @@ definitions:
       wallet_id:
         type: string
     type: object
+  transactions.WalletTransactionListResponse:
+    properties:
+      data:
+        items:
+          $ref: '#/definitions/wallets.Transaction'
+        type: array
+    type: object
+  unspents.UnspentOutput:
+    properties:
+      address:
+        type: string
+      height:
+        type: integer
+      tx_hash:
+        type: string
+      value:
+        type: integer
+      vout:
+        type: integer
+    type: object
+  unspents.UnspentOutputListResponse:
+    properties:
+      data:
+        items:
+          $ref: '#/definitions/unspents.UnspentOutput'
+        type: array
+    type: object
   users.AccountListResponse:
     properties:
       data:
@@ -1139,6 +1163,15 @@ definitions:
       total:
         example: 64
         type: integer
+    type: object
+  users.AddWalletUserSwagger:
+    properties:
+      roles:
+        example: viewer
+        type: string
+      user_id:
+        example: 00000000-0000-0000-0000-000000000001
+        type: string
     type: object
   users.ChangePasswordSwagger:
     properties:
@@ -1227,6 +1260,13 @@ definitions:
       wallet_id:
         type: string
     type: object
+  users.WalletUserListResponse:
+    properties:
+      data:
+        items:
+          $ref: '#/definitions/users.WalletUser'
+        type: array
+    type: object
   users.myAccount:
     properties:
       created_at:
@@ -1251,25 +1291,19 @@ definitions:
       view_all_wallets:
         type: boolean
     type: object
-  wallets.AddWalletUserSwagger:
+  wallets.CreateWalletSwagger:
     properties:
-      roles:
-        example: viewer
-        type: string
-      user_id:
-        example: 00000000-0000-0000-0000-000000000001
-        type: string
-    type: object
-  wallets.AddWhitelistEntrySwagger:
-    properties:
-      address:
-        example: bc1qar0srrr7xfkvy5l643lydnw9re59gtzzwf5mdq
+      chain:
+        example: eth
         type: string
       label:
-        example: Cold Storage
+        example: My Ethereum Wallet
+        type: string
+      passphrase:
+        example: my-secret-passphrase-12chars
         type: string
     type: object
-  wallets.CreateWalletResponse:
+  wallets.Created:
     properties:
       account_id:
         type: string
@@ -1324,34 +1358,66 @@ definitions:
       updated_at:
         $ref: '#/definitions/github_com_goravel_framework_support_carbon.DateTime'
     type: object
-  wallets.CreateWalletSwagger:
+  wallets.ListItem:
     properties:
+      account_id:
+        type: string
+      address_index:
+        type: integer
+      assets:
+        items:
+          $ref: '#/definitions/balances.Balance'
+        type: array
+      balance:
+        type: string
+      balance_asset:
+        type: string
+      balance_last_synced_at:
+        type: string
+      balance_raw:
+        type: string
+      balance_usd:
+        $ref: '#/definitions/numeric.NullDecimal'
       chain:
-        example: eth
         type: string
-      label:
-        example: My Ethereum Wallet
+      created_at:
+        $ref: '#/definitions/github_com_goravel_framework_support_carbon.DateTime'
+      deposit_address:
+        $ref: '#/definitions/addresses.Address'
+      deposit_address_id:
         type: string
-      passphrase:
-        example: my-secret-passphrase-12chars
-        type: string
-    type: object
-  wallets.CreateWalletWebhookSwagger:
-    properties:
-      events:
-        example: deposit.confirmed,withdrawal.confirmed
-        type: string
-      secret:
-        example: wh_secret_123
-        type: string
-      url:
-        example: https://example.com/hook
-        type: string
-    type: object
-  wallets.FreezeWalletSwagger:
-    properties:
+      fee_multiplier:
+        $ref: '#/definitions/numeric.NullDecimal'
+      fee_rate_max:
+        type: integer
+      fee_rate_min:
+        type: integer
       frozen_until:
         type: string
+      gas_last_checked_at:
+        type: string
+      gas_status:
+        type: string
+      id:
+        type: string
+      label:
+        type: string
+      network:
+        example: polygon-amoy
+        type: string
+      read_model_status:
+        type: string
+      required_approvals:
+        type: integer
+      status:
+        type: string
+      sweep_policy_version:
+        type: integer
+      testnet:
+        example: true
+        type: boolean
+      updated_at:
+        $ref: '#/definitions/github_com_goravel_framework_support_carbon.DateTime'
     type: object
   wallets.Transaction:
     properties:
@@ -1453,44 +1519,6 @@ definitions:
       wallet_id:
         type: string
     type: object
-  wallets.UnspentOutput:
-    properties:
-      address:
-        type: string
-      height:
-        type: integer
-      tx_hash:
-        type: string
-      value:
-        type: integer
-      vout:
-        type: integer
-    type: object
-  wallets.UnspentOutputListResponse:
-    properties:
-      data:
-        items:
-          $ref: '#/definitions/wallets.UnspentOutput'
-        type: array
-    type: object
-  wallets.UpdateWalletSettingsSwagger:
-    properties:
-      fee_multiplier:
-        example: 1.25
-        type: number
-      fee_rate_max:
-        example: 50
-        type: integer
-      fee_rate_min:
-        example: 2
-        type: integer
-      label:
-        example: Treasury
-        type: string
-      required_approvals:
-        example: 1
-        type: integer
-    type: object
   wallets.Wallet:
     properties:
       account_id:
@@ -1541,50 +1569,6 @@ definitions:
         type: integer
       updated_at:
         $ref: '#/definitions/github_com_goravel_framework_support_carbon.DateTime'
-    type: object
-  wallets.WalletSettingsResponse:
-    properties:
-      fee_multiplier:
-        $ref: '#/definitions/numeric.NullDecimal'
-      fee_rate_max:
-        type: integer
-      fee_rate_min:
-        type: integer
-      frozen_until:
-        type: string
-      label:
-        type: string
-      required_approvals:
-        type: integer
-      status:
-        type: string
-    type: object
-  wallets.WalletTransactionListResponse:
-    properties:
-      data:
-        items:
-          $ref: '#/definitions/wallets.Transaction'
-        type: array
-    type: object
-  wallets.WalletUserListResponse:
-    properties:
-      data:
-        items:
-          $ref: '#/definitions/users.WalletUser'
-        type: array
-    type: object
-  wallets.WebhookTestResponse:
-    properties:
-      delivered:
-        example: true
-        type: boolean
-    type: object
-  wallets.WhitelistEntryListResponse:
-    properties:
-      data:
-        items:
-          $ref: '#/definitions/whitelist.WhitelistEntry'
-        type: array
     type: object
   wallets.WithNetwork:
     properties:
@@ -1652,22 +1636,16 @@ definitions:
           $ref: '#/definitions/webhooks.WebhookConfig'
         type: array
     type: object
-  webhooks.StoreRequest:
+  webhooks.CreateWalletWebhookSwagger:
     properties:
       events:
-        example:
-        - deposit.confirmed
-        - withdrawal.broadcast
-        - withdrawal.confirmed
-        - withdrawal.failed
-        items:
-          type: string
-        type: array
+        example: deposit.confirmed,withdrawal.confirmed
+        type: string
       secret:
-        example: my-webhook-secret
+        example: wh_secret_123
         type: string
       url:
-        example: https://example.com/webhook
+        example: https://example.com/hook
         type: string
     type: object
   webhooks.UpdateRequest:
@@ -1709,6 +1687,21 @@ definitions:
       wallet_id:
         type: string
     type: object
+  webhooks.WebhookTestResponse:
+    properties:
+      delivered:
+        example: true
+        type: boolean
+    type: object
+  whitelist.AddWhitelistEntrySwagger:
+    properties:
+      address:
+        example: bc1qar0srrr7xfkvy5l643lydnw9re59gtzzwf5mdq
+        type: string
+      label:
+        example: Cold Storage
+        type: string
+    type: object
   whitelist.WhitelistEntry:
     properties:
       address:
@@ -1723,6 +1716,13 @@ definitions:
         $ref: '#/definitions/github_com_goravel_framework_support_carbon.DateTime'
       wallet_id:
         type: string
+    type: object
+  whitelist.WhitelistEntryListResponse:
+    properties:
+      data:
+        items:
+          $ref: '#/definitions/whitelist.WhitelistEntry'
+        type: array
     type: object
   withdrawals.List:
     properties:
@@ -2805,7 +2805,7 @@ paths:
         name: body
         required: true
         schema:
-          $ref: '#/definitions/webhooks.StoreRequest'
+          $ref: '#/definitions/github_com_macrowallets_waas_app_http_requests_external_webhooks.StoreRequest'
       produces:
       - application/json
       responses:
@@ -4746,7 +4746,7 @@ paths:
         "201":
           description: Created
           schema:
-            $ref: '#/definitions/wallets.CreateWalletResponse'
+            $ref: '#/definitions/wallets.Created'
         "400":
           description: Missing account
           schema:
@@ -4913,7 +4913,7 @@ paths:
         name: body
         required: true
         schema:
-          $ref: '#/definitions/requests.UpdateAddressRequest'
+          $ref: '#/definitions/addresses.UpdateRequest'
       produces:
       - application/json
       responses:
@@ -5184,14 +5184,14 @@ paths:
         name: request
         required: true
         schema:
-          $ref: '#/definitions/wallets.FreezeWalletSwagger'
+          $ref: '#/definitions/settings.FreezeWalletSwagger'
       produces:
       - application/json
       responses:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/wallets.WalletSettingsResponse'
+            $ref: '#/definitions/settings.Settings'
         "403":
           description: Forbidden
           schema:
@@ -5216,7 +5216,7 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/wallets.WalletSettingsResponse'
+            $ref: '#/definitions/settings.Settings'
         "403":
           description: Forbidden
           schema:
@@ -5251,14 +5251,14 @@ paths:
         name: request
         required: true
         schema:
-          $ref: '#/definitions/wallets.UpdateWalletSettingsSwagger'
+          $ref: '#/definitions/settings.UpdateWalletSettingsSwagger'
       produces:
       - application/json
       responses:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/wallets.WalletSettingsResponse'
+            $ref: '#/definitions/settings.Settings'
         "400":
           description: no settings to update
           schema:
@@ -5316,7 +5316,7 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/wallets.WalletTransactionListResponse'
+            $ref: '#/definitions/transactions.WalletTransactionListResponse'
         "403":
           description: Forbidden
           schema:
@@ -5380,7 +5380,7 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/wallets.UnspentOutputListResponse'
+            $ref: '#/definitions/unspents.UnspentOutputListResponse'
         "403":
           description: Forbidden
           schema:
@@ -5413,7 +5413,7 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/wallets.WalletUserListResponse'
+            $ref: '#/definitions/users.WalletUserListResponse'
         "403":
           description: Forbidden
           schema:
@@ -5443,7 +5443,7 @@ paths:
         name: request
         required: true
         schema:
-          $ref: '#/definitions/wallets.AddWalletUserSwagger'
+          $ref: '#/definitions/users.AddWalletUserSwagger'
       produces:
       - application/json
       responses:
@@ -5542,7 +5542,7 @@ paths:
         name: request
         required: true
         schema:
-          $ref: '#/definitions/wallets.CreateWalletWebhookSwagger'
+          $ref: '#/definitions/webhooks.CreateWalletWebhookSwagger'
       produces:
       - application/json
       responses:
@@ -5617,7 +5617,7 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/wallets.WebhookTestResponse'
+            $ref: '#/definitions/webhooks.WebhookTestResponse'
         "403":
           description: Forbidden
           schema:
@@ -5651,7 +5651,7 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/wallets.WhitelistEntryListResponse'
+            $ref: '#/definitions/whitelist.WhitelistEntryListResponse'
         "403":
           description: Forbidden
           schema:
@@ -5680,7 +5680,7 @@ paths:
         name: request
         required: true
         schema:
-          $ref: '#/definitions/wallets.AddWhitelistEntrySwagger'
+          $ref: '#/definitions/whitelist.AddWhitelistEntrySwagger'
       produces:
       - application/json
       responses:
